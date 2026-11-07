@@ -36,7 +36,13 @@ const LIVE = 'https://red1oon.github.io/bim-ootb/modeller/modeller.html', ROOT =
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.wasm': 'application/wasm', '.json': 'application/json', '.css': 'text/css', '.db': 'application/octet-stream' };
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 const t0 = Date.now();
-function loadPuppeteer() { try { return require('puppeteer'); } catch (e) { process.stderr.write('edit_cli: puppeteer not found. Run: npm install puppeteer\n'); process.exit(1); } }
+function loadPuppeteer() {
+  try { return require('puppeteer'); }
+  catch (e) {
+    process.stderr.write('edit_cli: ' + (e.code === 'MODULE_NOT_FOUND' ? 'puppeteer not found.' : 'puppeteer would not load (' + e.code + '), which usually means this Node is too old for that version.') + ' Run: npm install puppeteer@24\n');
+    process.exit(1);
+  }
+}
 function serveRepo() {
   const server = http.createServer((q, r) => { fs.readFile(path.join(ROOT, decodeURIComponent(q.url.split('?')[0])), (e, b) => { if (e) { r.writeHead(404); r.end(); return; } r.writeHead(200, { 'Content-Type': MIME[path.extname(q.url.split('?')[0])] || 'application/octet-stream', 'Accept-Ranges': 'bytes' }); r.end(b); }); });
   return new Promise(res => server.listen(0, () => res(server)));
@@ -56,7 +62,7 @@ function serveRepo() {
     await pg.goto(url, { waitUntil: 'load', timeout: 120000 });
     await pg.waitForFunction('window.__sceneReady===true && !!window.THREE && !!window.A && !!window.Bonsai', { timeout: 60000 }).catch(() => {});
     await pg.click('#b-open'); await sleep(200);
-    if (!await pg.$('#m-open-panel .mo-row[data-key="' + building + '"]')) { const k = await pg.evaluate(() => Array.from(document.querySelectorAll('#m-open-panel .mo-row')).map(r => r.dataset.key).filter(Boolean)); throw new Error('no building ' + building + ' (' + k.join(', ') + ')'); }
+    if (!await pg.$('#m-open-panel .mo-row[data-key="' + building + '"]')) { const k = await pg.evaluate(() => Array.from(document.querySelectorAll('#m-open-panel .mo-row')).map(r => r.dataset.key).filter(k => k && k.indexOf('__') !== 0)); throw new Error('no building ' + building + ' (' + k.join(', ') + ')'); }
     await pg.click('#m-open-panel .mo-row[data-key="' + building + '"]');
     await pg.waitForFunction(() => !!window.__dwBuf, { timeout: 120000 }).catch(() => {});
     await sleep(2200);

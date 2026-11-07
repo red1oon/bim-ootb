@@ -1,0 +1,1227 @@
+{
+ "model": "claude-sonnet-5-5",
+ "modelsSeen": [
+  "claude-sonnet-5-5"
+ ],
+ "cost_usd": 0.4514,
+ "reps": 3,
+ "runs": [
+  {
+   "brief": "G1",
+   "rep": 0,
+   "attempts": [
+    {
+     "n": 0,
+     "raw": "gy8 = 86.616 and gy9 = 92.106, so the bay is currently 5.490 m. Widening it to 7.0 m means adding 1.510 m. Using \"shift\" on gy9 moves gy9 and all later lines together, so only the bay just before gy9 (gy8–gy9) changes width. Later bays stay unchanged.\n\n{\"edits\":[{\"shift\":\"gy9\",\"move\":1.51}],\"decline\":false,\"reason\":\"The bay gy8-gy9 is currently 5.490 m. Shifting gy9 and all later y-lines by +1.510 m makes it 7.0 m while keeping every other bay width unchanged.\",\"expect_problems\":true,\"problems_expected\":\"Everything at or beyond gy9 moves 1.51 m in y, so elements crossing the gy8-gy9 bay will stretch. Girders, slabs, or ramps spanning this bay may need re-checking for longer spans. Elements that connect to the part of the building before gy9, or to neighbouring structures, may also be affected.\"}",
+     "edits": [
+      {
+       "shift": "gy9",
+       "move": 1.51
+      }
+     ],
+     "decline": false,
+     "reason": "The bay gy8-gy9 is currently 5.490 m. Shifting gy9 and all later y-lines by +1.510 m makes it 7.0 m while keeping every other bay width unchanged.",
+     "expect_problems": true,
+     "forecast": "Everything at or beyond gy9 moves 1.51 m in y, so elements crossing the gy8-gy9 bay will stretch. Girders, slabs, or ramps spanning this bay may need re-checking for longer spans. Elements that connect to the part of the building before gy9, or to neighbouring structures, may also be affected.",
+     "cls": "CLEAN",
+     "goal": true,
+     "crossed": false,
+     "code": 0,
+     "ms": 10915
+    }
+   ]
+  },
+  {
+   "brief": "G2",
+   "rep": 0,
+   "attempts": [
+    {
+     "n": 0,
+     "raw": "{\"edits\":[{\"shift\":\"gy11\",\"move\":-1.49}],\"decline\":false,\"reason\":\"The bay between gy10 (y=97.595) and gy11 (y=103.085) is currently 5.490 m. Shifting gy11 and every later line by -1.490 m makes it 4.0 m. Later bays keep their widths and elements beyond gy11 move unchanged. Elements crossing gy11 stretch only within this bay.\",\"expect_problems\":true,\"problems_expected\":\"Girders and slabs spanning this bay will be shortened by 1.49 m, and the shift moves everything beyond gy11. Check for clashes with elements that cross gy11 but are not meant to stretch, and for girders that become too short or change their structural behaviour.\"}",
+     "edits": [
+      {
+       "shift": "gy11",
+       "move": -1.49
+      }
+     ],
+     "decline": false,
+     "reason": "The bay between gy10 (y=97.595) and gy11 (y=103.085) is currently 5.490 m. Shifting gy11 and every later line by -1.490 m makes it 4.0 m. Later bays keep their widths and elements beyond gy11 move unchanged. Elements crossing gy11 stretch only within this bay.",
+     "expect_problems": true,
+     "forecast": "Girders and slabs spanning this bay will be shortened by 1.49 m, and the shift moves everything beyond gy11. Check for clashes with elements that cross gy11 but are not meant to stretch, and for girders that become too short or change their structural behaviour.",
+     "cls": "RED",
+     "goal": true,
+     "crossed": false,
+     "code": 0,
+     "ms": 11417
+    },
+    {
+     "n": 1,
+     "raw": "{\"edits\":[{\"grid\":\"gy11\",\"move\":-1.49}],\"decline\":false,\"reason\":\"The gy10-gy11 bay is 5.490 m, so it must shrink by 1.49 m. The block shift of gy11 and every later line moved 473 elements and produced 2 new box overlaps and 2 walls driven into. This revision moves only gy11 by -1.49 m, so just the elements attached to that line follow. The neighbouring bay gy11-gy12 widens from 5.490 m to 6.980 m, which the requester should know about. I haven't tested whether this avoids the earlier clashes.\",\"expect_problems\":true,\"problems_expected\":\"Elements attached to gy11 may still clash with nearby elements. Beams and slabs in the gy11-gy12 bay will be stretched by 1.49 m, so spans there should be re-checked.\"}",
+     "edits": [
+      {
+       "grid": "gy11",
+       "move": -1.49
+      }
+     ],
+     "decline": false,
+     "reason": "The gy10-gy11 bay is 5.490 m, so it must shrink by 1.49 m. The block shift of gy11 and every later line moved 473 elements and produced 2 new box overlaps and 2 walls driven into. This revision moves only gy11 by -1.49 m, so just the elements attached to that line follow. The neighbouring bay gy11-gy12 widens from 5.490 m to 6.980 m, which the requester should know about. I haven't tested whether this avoids the earlier clashes.",
+     "expect_problems": true,
+     "forecast": "Elements attached to gy11 may still clash with nearby elements. Beams and slabs in the gy11-gy12 bay will be stretched by 1.49 m, so spans there should be re-checked.",
+     "cls": "RED",
+     "goal": true,
+     "crossed": false,
+     "code": 0,
+     "ms": 11271
+    },
+    {
+     "n": 2,
+     "raw": "{\"edits\":[{\"grid\":\"gy10\",\"move\":1.49}],\"decline\":false,\"reason\":\"The gy10-gy11 bay is 5.490 m, so narrowing it to 4.0 m means closing 1.49 m. Moving gy11 by -1.49 m as a single line (proposal 2) caused a box overlap and new clearance problems. Shifting gy11 and every later line (proposal 1) caused two overlaps and two walls driven into. This proposal moves gy10 by +1.49 m instead, which keeps everything beyond gy11 in place. The gy9-gy10 bay will widen by 1.49 m as a side effect.\",\"expect_problems\":true,\"problems_expected\":\"Elements attached to gy10 will move toward gy11 and may overlap or crowd elements in the narrowed bay. The gy9-gy10 bay widens to about 6.98 m, so beam spans there could newly need a depth check.\"}",
+     "edits": [
+      {
+       "grid": "gy10",
+       "move": 1.49
+      }
+     ],
+     "decline": false,
+     "reason": "The gy10-gy11 bay is 5.490 m, so narrowing it to 4.0 m means closing 1.49 m. Moving gy11 by -1.49 m as a single line (proposal 2) caused a box overlap and new clearance problems. Shifting gy11 and every later line (proposal 1) caused two overlaps and two walls driven into. This proposal moves gy10 by +1.49 m instead, which keeps everything beyond gy11 in place. The gy9-gy10 bay will widen by 1.49 m as a side effect.",
+     "expect_problems": true,
+     "forecast": "Elements attached to gy10 will move toward gy11 and may overlap or crowd elements in the narrowed bay. The gy9-gy10 bay widens to about 6.98 m, so beam spans there could newly need a depth check.",
+     "cls": "RED",
+     "goal": true,
+     "crossed": false,
+     "code": 0,
+     "ms": 12146
+    }
+   ]
+  },
+  {
+   "brief": "G3",
+   "rep": 0,
+   "attempts": [
+    {
+     "n": 0,
+     "raw": "{\"edits\":[{\"shift\":\"gx8\",\"move\":1.5}],\"decline\":false,\"reason\":\"Shifting gx8 and every later line on the x axis by +1.5 m widens only the bay between gx7 and gx8 (5.591 m to 7.091 m). All bays beyond gx8 keep their widths and move together.\",\"expect_problems\":true,\"problems_expected\":\"Elements crossing gx8, such as girders spanning gx7 to gx8, will stretch by 1.5 m. Their structural capacity may need rechecking at the longer span. Elements at or beyond gx8 travel unchanged, so clashes are unlikely there, but the garage's slab and ramp geometry across the widened bay may need review.\"}",
+     "edits": [
+      {
+       "shift": "gx8",
+       "move": 1.5
+      }
+     ],
+     "decline": false,
+     "reason": "Shifting gx8 and every later line on the x axis by +1.5 m widens only the bay between gx7 and gx8 (5.591 m to 7.091 m). All bays beyond gx8 keep their widths and move together.",
+     "expect_problems": true,
+     "forecast": "Elements crossing gx8, such as girders spanning gx7 to gx8, will stretch by 1.5 m. Their structural capacity may need rechecking at the longer span. Elements at or beyond gx8 travel unchanged, so clashes are unlikely there, but the garage's slab and ramp geometry across the widened bay may need review.",
+     "cls": "CLEAN",
+     "goal": true,
+     "crossed": false,
+     "code": 0,
+     "ms": 11283
+    }
+   ]
+  },
+  {
+   "brief": "G4",
+   "rep": 0,
+   "attempts": [
+    {
+     "n": 0,
+     "raw": "Bay gx5 to gx6 is currently 161.234 − 150.051 = 11.183 m. To reach 13 m it must widen by 1.817 m.\n\nUsing shift on gx6 moves gx6 and every later line by +1.817 m. Only the bay just before gx6 changes width, so the other bays keep their widths and the rest of the building travels intact.\n\n{\"edits\":[{\"shift\":\"gx6\",\"move\":1.817}],\"decline\":false,\"reason\":\"The gx5–gx6 bay is 11.183 m and needs +1.817 m to reach 13 m. Shifting gx6 and all later lines keeps the other bays unchanged.\",\"expect_problems\":true,\"problems_expected\":\"Girders crossing the gx5–gx6 bay will stretch by 1.817 m, which may overstress them or need larger sections. Elements attached to lines gx6 and beyond move as a unit, so any connections to fixed elements outside the grid, such as ramps or adjacent structures, may be affected.\"}",
+     "edits": [
+      {
+       "shift": "gx6",
+       "move": 1.817
+      }
+     ],
+     "decline": false,
+     "reason": "The gx5–gx6 bay is 11.183 m and needs +1.817 m to reach 13 m. Shifting gx6 and all later lines keeps the other bays unchanged.",
+     "expect_problems": true,
+     "forecast": "Girders crossing the gx5–gx6 bay will stretch by 1.817 m, which may overstress them or need larger sections. Elements attached to lines gx6 and beyond move as a unit, so any connections to fixed elements outside the grid, such as ramps or adjacent structures, may be affected.",
+     "cls": "RED",
+     "goal": true,
+     "crossed": false,
+     "code": 0,
+     "ms": 25684
+    },
+    {
+     "n": 1,
+     "raw": "{\"edits\":[{\"shift\":\"gx6\",\"move\":1.817}],\"decline\":false,\"reason\":\"The bay gx5-gx6 is currently 11.183 m wide, so widening it to 13 m needs +1.817 m. Shifting gx6 and every later line is the cleanest way to do that, because only that one bay changes width. The compiler showed no new overlaps, wall conflicts or door/window problems. The only problem is the span limit, and any edit that makes this bay 13 m will cause it. The girder span in gx5-gx6 goes from 11.18 m to 12.99 m, which is over the 12 m RC limit. The engineer should confirm, and this bay may need a deeper beam, an intermediate support, or a different material. The edit also leaves 18 new clearance-under-limit warnings (orange) to review.\",\"expect_problems\":true,\"problems_expected\":\"The gx5-gx6 girder span becomes 12.99 m, over the 12 m RC limit, so one more beam span is flagged as over limit. Expect 18 orange clearance warnings. The spans that include this bay (gx5-gx7, gx2-gx14, gx1-gx15) were already over the limit and get longer.\"}",
+     "edits": [
+      {
+       "shift": "gx6",
+       "move": 1.817
+      }
+     ],
+     "decline": false,
+     "reason": "The bay gx5-gx6 is currently 11.183 m wide, so widening it to 13 m needs +1.817 m. Shifting gx6 and every later line is the cleanest way to do that, because only that one bay changes width. The compiler showed no new overlaps, wall conflicts or door/window problems. The only problem is the span limit, and any edit that makes this bay 13 m will cause it. The girder span in gx5-gx6 goes from 11.18 m to 12.99 m, which is over the 12 m RC limit. The engineer should confirm, and this bay may need a deeper beam, an intermediate support, or a different material. The edit also leaves 18 new clearance-under-limit warnings (orange) to review.",
+     "expect_problems": true,
+     "forecast": "The gx5-gx6 girder span becomes 12.99 m, over the 12 m RC limit, so one more beam span is flagged as over limit. Expect 18 orange clearance warnings. The spans that include this bay (gx5-gx7, gx2-gx14, gx1-gx15) were already over the limit and get longer.",
+     "cls": "RED",
+     "goal": true,
+     "crossed": false,
+     "code": 0,
+     "ms": 25684
+    },
+    {
+     "n": 2,
+     "raw": "{\"edits\":[{\"shift\":\"gx6\",\"move\":1.817}],\"decline\":false,\"reason\":\"The gx5-gx6 bay is currently 11.183 m, so widening it to 13 m needs a +1.817 m shift of gx6 and every later line. A shift changes only that one bay's width, and the later bays keep their widths. Moving gx6 alone would instead shrink the gx6-gx7 bay. The compiler found no new clashes, door or window problems, or gaps at touching elements. This is the same edit as before, because I found no better way to meet the request. The 13 m width is itself over the 12 m RC span limit, so no edit can avoid that flag.\",\"expect_problems\":true,\"problems_expected\":\"The girder across gx5-gx6 goes from 11.176 m to 12.993 m, which newly exceeds the 12 m RC span limit. A structural engineer needs to confirm it, and it may need a deeper section, a transfer beam or an intermediate support. The edit also lengthens spans that were already over the limit (gx1-gx15, gx2-gx14, gx5-gx7). The compiler also reported 18 new orange clearance-under-limit warnings.\"}",
+     "edits": [
+      {
+       "shift": "gx6",
+       "move": 1.817
+      }
+     ],
+     "decline": false,
+     "reason": "The gx5-gx6 bay is currently 11.183 m, so widening it to 13 m needs a +1.817 m shift of gx6 and every later line. A shift changes only that one bay's width, and the later bays keep their widths. Moving gx6 alone would instead shrink the gx6-gx7 bay. The compiler found no new clashes, door or window problems, or gaps at touching elements. This is the same edit as before, because I found no better way to meet the request. The 13 m width is itself over the 12 m RC span limit, so no edit can avoid that flag.",
+     "expect_problems": true,
+     "forecast": "The girder across gx5-gx6 goes from 11.176 m to 12.993 m, which newly exceeds the 12 m RC span limit. A structural engineer needs to confirm it, and it may need a deeper section, a transfer beam or an intermediate support. The edit also lengthens spans that were already over the limit (gx1-gx15, gx2-gx14, gx5-gx7). The compiler also reported 18 new orange clearance-under-limit warnings.",
+     "cls": "RED",
+     "goal": true,
+     "crossed": false,
+     "code": 0,
+     "ms": 25684
+    }
+   ]
+  },
+  {
+   "brief": "G5",
+   "rep": 0,
+   "attempts": [
+    {
+     "n": 0,
+     "raw": "{\"edits\":[{\"grid\":\"gy12\",\"move\":0.6}],\"decline\":false,\"reason\":\"Moving gy12 from y=108.575 to y=109.175. Adjacent bays change: gy11-gy12 widens from 5.49 m to 6.09 m, and gy12-gy13 narrows from 5.49 m to 4.89 m. Walls and elements attached to gy12 follow the line.\",\"expect_problems\":true,\"problems_expected\":\"Girders and slabs spanning the two adjacent bays will change length (one longer, one shorter), which may affect member capacity or clearances. Elements attached to gy12 will move with it, and any that are not meant to move with the stair alignment may need to be checked.\"}",
+     "edits": [
+      {
+       "grid": "gy12",
+       "move": 0.6
+      }
+     ],
+     "decline": false,
+     "reason": "Moving gy12 from y=108.575 to y=109.175. Adjacent bays change: gy11-gy12 widens from 5.49 m to 6.09 m, and gy12-gy13 narrows from 5.49 m to 4.89 m. Walls and elements attached to gy12 follow the line.",
+     "expect_problems": true,
+     "forecast": "Girders and slabs spanning the two adjacent bays will change length (one longer, one shorter), which may affect member capacity or clearances. Elements attached to gy12 will move with it, and any that are not meant to move with the stair alignment may need to be checked.",
+     "cls": "REFUSED",
+     "goal": true,
+     "crossed": false,
+     "code": 3,
+     "ms": 12095
+    },
+    {
+     "n": 1,
+     "raw": "{\"edits\":[],\"decline\":true,\"reason\":\"Moving gy12 by +0.6 m was refused. The move would push opening #109 (108.16..109.18) about 0.2 m past the end of wall #107 (108.36..112.64), so the opening would no longer sit inside the wall. A smaller move would avoid this, but it wouldn't line up with the new stair, so I haven't substituted one. To go ahead with the full +0.6 m, let opening #109 ride with the line (ctrl+click it) or shorten or reposition it first. If the stair can accept a smaller offset, tell me the value and I'll retry.\",\"expect_problems\":true,\"problems_expected\":\"A +0.6 m move of gy12 would leave opening #109 extending beyond wall #107 unless the opening is allowed to ride or is adjusted.\"}",
+     "edits": [],
+     "decline": true,
+     "reason": "Moving gy12 by +0.6 m was refused. The move would push opening #109 (108.16..109.18) about 0.2 m past the end of wall #107 (108.36..112.64), so the opening would no longer sit inside the wall. A smaller move would avoid this, but it wouldn't line up with the new stair, so I haven't substituted one. To go ahead with the full +0.6 m, let opening #109 ride with the line (ctrl+click it) or shorten or reposition it first. If the stair can accept a smaller offset, tell me the value and I'll retry.",
+     "expect_problems": true,
+     "forecast": "A +0.6 m move of gy12 would leave opening #109 extending beyond wall #107 unless the opening is allowed to ride or is adjusted.",
+     "cls": "DECLINED",
+     "goal": false,
+     "crossed": false,
+     "ms": null
+    }
+   ]
+  },
+  {
+   "brief": "G6",
+   "rep": 0,
+   "attempts": [
+    {
+     "n": 0,
+     "raw": "The bay between gy4 and gy5 widens by 2 m if gy5 and every later line shift by +2 m. Because a shift changes only the bay just before the shifted line, the bay gy5–gy6 keeps its width, since gy6 moves by the same amount. The bay gy3–gy4 is untouched because gy4 stays put.\n\n{\"edits\":[{\"shift\":\"gy5\",\"move\":2}],\"decline\":false,\"reason\":\"Shifting gy5 and all later lines on the y axis by +2 m widens only the gy4–gy5 bay (5.490 m to 7.490 m). The neighbouring bays gy3–gy4 and gy5–gy6 keep their widths. Elements beyond gy5 move unchanged, and elements crossing gy5 stretch only within the gy4–gy5 bay.\",\"expect_problems\":false,\"problems_expected\":\"\"}",
+     "edits": [
+      {
+       "shift": "gy5",
+       "move": 2
+      }
+     ],
+     "decline": false,
+     "reason": "Shifting gy5 and all later lines on the y axis by +2 m widens only the gy4–gy5 bay (5.490 m to 7.490 m). The neighbouring bays gy3–gy4 and gy5–gy6 keep their widths. Elements beyond gy5 move unchanged, and elements crossing gy5 stretch only within the gy4–gy5 bay.",
+     "expect_problems": false,
+     "forecast": "",
+     "cls": "CLEAN",
+     "goal": true,
+     "crossed": false,
+     "code": 0,
+     "ms": 11776
+    }
+   ]
+  },
+  {
+   "brief": "G7",
+   "rep": 0,
+   "attempts": [
+    {
+     "n": 0,
+     "raw": "{\"edits\":[{\"shift\":\"gy20\",\"move\":3}],\"decline\":false,\"reason\":\"Used a shift rather than moving the single line. Moving gy20 alone by 3 m would put it at y=137.194, past gy21 (136.456) and reorder the grid. Shifting moves gy20 and every later line (gy21 to gy28) by 3 m, so their spacing is preserved. Only the bay between gy19 and gy20 widens, from about 0.915 m to 3.915 m. Elements crossing gy20 stretch within that bay.\",\"expect_problems\":false,\"problems_expected\":\"\"}",
+     "edits": [
+      {
+       "shift": "gy20",
+       "move": 3
+      }
+     ],
+     "decline": false,
+     "reason": "Used a shift rather than moving the single line. Moving gy20 alone by 3 m would put it at y=137.194, past gy21 (136.456) and reorder the grid. Shifting moves gy20 and every later line (gy21 to gy28) by 3 m, so their spacing is preserved. Only the bay between gy19 and gy20 widens, from about 0.915 m to 3.915 m. Elements crossing gy20 stretch within that bay.",
+     "expect_problems": false,
+     "forecast": "",
+     "cls": "CLEAN",
+     "goal": true,
+     "crossed": false,
+     "code": 0,
+     "ms": 10914
+    }
+   ]
+  },
+  {
+   "brief": "S1",
+   "rep": 0,
+   "attempts": [
+    {
+     "n": 0,
+     "raw": "Current bay width between gx0 (1.62) and gx1 (6.265) is 4.645 m. To make it 5 m, gx1 must move +0.355 m. Using \"shift\" on gx1 moves gx1 and all later lines together, preserving the other bays (gx1 is the last gx line, so this is equivalent, but shift keeps downstream elements unchanged in size).\n\n{\"edits\":[{\"shift\":\"gx1\",\"move\":0.355}],\"decline\":false,\"reason\":\"Bay gx0-gx1 is currently 4.645 m; shifting gx1 by +0.355 m makes it 5.000 m wide.\",\"expect_problems\":true,\"problems_expected\":\"This is a wall-bearing system, so walls on gx1 are load-bearing. Moving it 0.355 m may change spans for floor/roof elements bearing on it, and any openings or elements attached to that wall will move with it. Check the structural spans and adjacent bay dimensions afterwards.\"}",
+     "edits": [
+      {
+       "shift": "gx1",
+       "move": 0.355
+      }
+     ],
+     "decline": false,
+     "reason": "Bay gx0-gx1 is currently 4.645 m; shifting gx1 by +0.355 m makes it 5.000 m wide.",
+     "expect_problems": true,
+     "forecast": "This is a wall-bearing system, so walls on gx1 are load-bearing. Moving it 0.355 m may change spans for floor/roof elements bearing on it, and any openings or elements attached to that wall will move with it. Check the structural spans and adjacent bay dimensions afterwards.",
+     "cls": "LEFT_BEHIND",
+     "goal": true,
+     "crossed": false,
+     "code": 0,
+     "ms": 5951
+    },
+    {
+     "n": 1,
+     "raw": "{\"edits\":[{\"grid\":\"gx0\",\"move\":-0.355}],\"decline\":false,\"reason\":\"The bay between gx0 and gx1 is 4.645 m wide, so it needs 0.355 m more. My first proposal shifted gx1 and everything after it east by 0.355 m. That opened gaps at 2 touching elements and left 2 furniture items behind. This revision moves gx0 west by 0.355 m instead, which leaves gx1 and the later lines where they are. The bay then becomes 5.000 m wide, and the building grows on the west side by the same amount.\",\"expect_problems\":true,\"problems_expected\":\"Elements attached to gx0 will follow it west. Furniture or elements touching the west side may be left behind or open small gaps. I can't tell in advance whether this removes the 2 gaps from the first attempt.\"}",
+     "edits": [
+      {
+       "grid": "gx0",
+       "move": -0.355
+      }
+     ],
+     "decline": false,
+     "reason": "The bay between gx0 and gx1 is 4.645 m wide, so it needs 0.355 m more. My first proposal shifted gx1 and everything after it east by 0.355 m. That opened gaps at 2 touching elements and left 2 furniture items behind. This revision moves gx0 west by 0.355 m instead, which leaves gx1 and the later lines where they are. The bay then becomes 5.000 m wide, and the building grows on the west side by the same amount.",
+     "expect_problems": true,
+     "forecast": "Elements attached to gx0 will follow it west. Furniture or elements touching the west side may be left behind or open small gaps. I can't tell in advance whether this removes the 2 gaps from the first attempt.",
+     "cls": "RED",
+     "goal": true,
+     "crossed": false,
+     "code": 0,
+     "ms": 6534
+    },
+    {
+     "n": 2,
+     "raw": "{\"edits\":[{\"grid\":\"gx1\",\"move\":0.355}],\"decline\":false,\"reason\":\"The bay between gx0 and gx1 is 4.645 m wide, so it needs 0.355 m more. Moving gx0 outward caused red clashes. A block shift of gx1 caused no red problems, but it left 2 touching elements with a gap. This proposal moves only gx1, so attached elements and riders follow it. The bay between gx1 and gx2 does not change width in a shift, but it will in a single-line move, and any elements crossing gx1 will be re-composed.\",\"expect_problems\":true,\"problems_expected\":\"Elements on or near gx1 may shift relative to their neighbours, possibly leaving gaps at touching elements. The bay on the far side of gx1 is affected too.\"}",
+     "edits": [
+      {
+       "grid": "gx1",
+       "move": 0.355
+      }
+     ],
+     "decline": false,
+     "reason": "The bay between gx0 and gx1 is 4.645 m wide, so it needs 0.355 m more. Moving gx0 outward caused red clashes. A block shift of gx1 caused no red problems, but it left 2 touching elements with a gap. This proposal moves only gx1, so attached elements and riders follow it. The bay between gx1 and gx2 does not change width in a shift, but it will in a single-line move, and any elements crossing gx1 will be re-composed.",
+     "expect_problems": true,
+     "forecast": "Elements on or near gx1 may shift relative to their neighbours, possibly leaving gaps at touching elements. The bay on the far side of gx1 is affected too.",
+     "cls": "CLEAN",
+     "goal": true,
+     "crossed": false,
+     "code": 0,
+     "ms": 10176
+    }
+   ]
+  },
+  {
+   "brief": "S2",
+   "rep": 0,
+   "attempts": [
+    {
+     "n": 0,
+     "raw": "{\"edits\":[{\"grid\":\"gx1\",\"move\":1}],\"decline\":false,\"reason\":\"Moving gx1 by +1 m takes it from x=6.265 to x=7.265. The bay between gx0 and gx1 widens from 4.645 m to 5.645 m. Walls attached to gx1 follow it. In a wall-bearing system, bearing walls moving off their original positions can change load paths and floor or roof spans.\",\"expect_problems\":true,\"problems_expected\":\"Walls on gx1 will shift 1 m, so any perpendicular walls, openings, or floor and roof spans crossing the bay may stretch or become longer. Bearing wall alignment between floors could be disrupted, and spans may exceed the limits for the existing floor or roof structure.\"}",
+     "edits": [
+      {
+       "grid": "gx1",
+       "move": 1
+      }
+     ],
+     "decline": false,
+     "reason": "Moving gx1 by +1 m takes it from x=6.265 to x=7.265. The bay between gx0 and gx1 widens from 4.645 m to 5.645 m. Walls attached to gx1 follow it. In a wall-bearing system, bearing walls moving off their original positions can change load paths and floor or roof spans.",
+     "expect_problems": true,
+     "forecast": "Walls on gx1 will shift 1 m, so any perpendicular walls, openings, or floor and roof spans crossing the bay may stretch or become longer. Bearing wall alignment between floors could be disrupted, and spans may exceed the limits for the existing floor or roof structure.",
+     "cls": "CLEAN",
+     "goal": true,
+     "crossed": false,
+     "code": 0,
+     "ms": 17699
+    }
+   ]
+  },
+  {
+   "brief": "S3",
+   "rep": 0,
+   "attempts": [
+    {
+     "n": 0,
+     "raw": "Current bay between gy0 (-1.246) and gy1 (0.899) is 2.145 m. Target is 3.5 m, so the change is +1.355 m. Using shift on gy1 moves gy1 and gy2 together, so only that bay changes width and the later bay (gy1–gy2) keeps its width of 3.655 m.\n\n{\"edits\":[{\"shift\":\"gy1\",\"move\":1.355}],\"decline\":false,\"reason\":\"Bay gy0–gy1 is currently 2.145 m; shifting gy1 (and gy2 with it) by +1.355 m makes it 3.5 m while keeping the gy1–gy2 bay unchanged at 3.655 m. Note that this is a wall-bearing system, so walls on gy1 and gy2 move and the floor/roof spans in the widened bay increase.\",\"expect_problems\":true,\"problems_expected\":\"Widening the bay in a wall-bearing structure increases the span of floors/roofs between bearing walls, and walls crossing gy1 may stretch. Openings or elements attached to the moved walls may need review.\"}",
+     "edits": [
+      {
+       "shift": "gy1",
+       "move": 1.355
+      }
+     ],
+     "decline": false,
+     "reason": "Bay gy0–gy1 is currently 2.145 m; shifting gy1 (and gy2 with it) by +1.355 m makes it 3.5 m while keeping the gy1–gy2 bay unchanged at 3.655 m. Note that this is a wall-bearing system, so walls on gy1 and gy2 move and the floor/roof spans in the widened bay increase.",
+     "expect_problems": true,
+     "forecast": "Widening the bay in a wall-bearing structure increases the span of floors/roofs between bearing walls, and walls crossing gy1 may stretch. Openings or elements attached to the moved walls may need review.",
+     "cls": "REFUSED",
+     "goal": true,
+     "crossed": false,
+     "code": 3,
+     "ms": 14482
+    },
+    {
+     "n": 1,
+     "raw": "{\"edits\":[{\"grid\":\"gy0\",\"move\":-1.355}],\"decline\":false,\"reason\":\"The bay between gy0 and gy1 is currently 2.145 m wide, so it needs to grow by 1.355 m. Shifting gy1 was refused because wall #5 crosses it and carries a cut. gy0 is the first line on its axis, so moving it 1.355 m in the negative direction widens only this bay to 3.5 m. The gy1 to gy2 bay is unchanged, and wall #5 does not have to follow a shift.\",\"expect_problems\":true,\"problems_expected\":\"Elements attached to gy0, such as the boundary wall, will move with it. If any wall that crosses gy0 carries a cut, the compiler may refuse this edit too.\"}",
+     "edits": [
+      {
+       "grid": "gy0",
+       "move": -1.355
+      }
+     ],
+     "decline": false,
+     "reason": "The bay between gy0 and gy1 is currently 2.145 m wide, so it needs to grow by 1.355 m. Shifting gy1 was refused because wall #5 crosses it and carries a cut. gy0 is the first line on its axis, so moving it 1.355 m in the negative direction widens only this bay to 3.5 m. The gy1 to gy2 bay is unchanged, and wall #5 does not have to follow a shift.",
+     "expect_problems": true,
+     "forecast": "Elements attached to gy0, such as the boundary wall, will move with it. If any wall that crosses gy0 carries a cut, the compiler may refuse this edit too.",
+     "cls": "CLEAN",
+     "goal": true,
+     "crossed": false,
+     "code": 0,
+     "ms": 38151
+    }
+   ]
+  },
+  {
+   "brief": "G1",
+   "rep": 1,
+   "attempts": [
+    {
+     "n": 0,
+     "raw": "gy8 = 86.616 and gy9 = 92.106, so the bay is currently 5.490 m wide. Widening it to 7.0 m means adding 1.510 m.\n\nUsing shift on gy9 moves gy9 and every later line by +1.510. Only the bay just before gy9 (gy8–gy9) changes width, and everything beyond travels unchanged.\n\n{\"edits\":[{\"shift\":\"gy9\",\"move\":1.51}],\"decline\":false,\"reason\":\"The gy8–gy9 bay is currently 5.490 m (86.616 to 92.106). Shifting gy9 and all later lines on the y axis by +1.510 m makes it 7.0 m. Later bays keep their widths, and the whole structure beyond gy9 moves 1.51 m in y.\",\"expect_problems\":true,\"problems_expected\":\"Girders and walls crossing gy9 will stretch within the widened bay. Elements beyond gy9 move rigidly, so anything connecting to the unmoved part of the structure, such as ramps, long-span members or services, may be affected. Columns in the widened bay may also need rechecking for span and slenderness.\"}",
+     "edits": [
+      {
+       "shift": "gy9",
+       "move": 1.51
+      }
+     ],
+     "decline": false,
+     "reason": "The gy8–gy9 bay is currently 5.490 m (86.616 to 92.106). Shifting gy9 and all later lines on the y axis by +1.510 m makes it 7.0 m. Later bays keep their widths, and the whole structure beyond gy9 moves 1.51 m in y.",
+     "expect_problems": true,
+     "forecast": "Girders and walls crossing gy9 will stretch within the widened bay. Elements beyond gy9 move rigidly, so anything connecting to the unmoved part of the structure, such as ramps, long-span members or services, may be affected. Columns in the widened bay may also need rechecking for span and slenderness.",
+     "cls": "CLEAN",
+     "goal": true,
+     "crossed": false,
+     "code": 0,
+     "ms": 10915
+    }
+   ]
+  },
+  {
+   "brief": "G2",
+   "rep": 1,
+   "attempts": [
+    {
+     "n": 0,
+     "raw": "{\"edits\":[{\"shift\":\"gy11\",\"move\":-1.49}],\"decline\":false,\"reason\":\"The bay between gy10 (y=97.595) and gy11 (y=103.085) is 5.490 m wide. Shifting gy11 and every later line by -1.49 m makes it 4.0 m. Only that bay changes width, and everything beyond gy11 keeps its spacing.\",\"expect_problems\":true,\"problems_expected\":\"Girders and slabs spanning gy10 to gy11 will be shortened by 1.49 m. Columns on gy11 and beyond move as a group, so check for clashes or changed clearances in the garage layout, such as ramps and parking.\"}",
+     "edits": [
+      {
+       "shift": "gy11",
+       "move": -1.49
+      }
+     ],
+     "decline": false,
+     "reason": "The bay between gy10 (y=97.595) and gy11 (y=103.085) is 5.490 m wide. Shifting gy11 and every later line by -1.49 m makes it 4.0 m. Only that bay changes width, and everything beyond gy11 keeps its spacing.",
+     "expect_problems": true,
+     "forecast": "Girders and slabs spanning gy10 to gy11 will be shortened by 1.49 m. Columns on gy11 and beyond move as a group, so check for clashes or changed clearances in the garage layout, such as ramps and parking.",
+     "cls": "RED",
+     "goal": true,
+     "crossed": false,
+     "code": 0,
+     "ms": 11417
+    },
+    {
+     "n": 1,
+     "raw": "{\"edits\":[{\"grid\":\"gy11\",\"move\":-1.49}],\"decline\":false,\"reason\":\"The gy10-gy11 bay is 5.49 m, so narrowing it to 4.0 m means moving gy11 by -1.49 m. The block shift moved 473 elements and produced 2 box overlaps and 2 elements driven into walls they touch. This revision moves only gy11 and leaves the later lines in place, so far fewer elements move. The cost is that the gy11-gy12 bay widens from 5.49 m to 6.98 m, still under the 12 m span limit.\",\"expect_problems\":true,\"problems_expected\":\"Elements attached to gy11 will follow it, so a few overlaps or clearance warnings may remain near gy11. Beams and walls crossing gy11-gy12 will stretch, and that bay is now wider.\"}",
+     "edits": [
+      {
+       "grid": "gy11",
+       "move": -1.49
+      }
+     ],
+     "decline": false,
+     "reason": "The gy10-gy11 bay is 5.49 m, so narrowing it to 4.0 m means moving gy11 by -1.49 m. The block shift moved 473 elements and produced 2 box overlaps and 2 elements driven into walls they touch. This revision moves only gy11 and leaves the later lines in place, so far fewer elements move. The cost is that the gy11-gy12 bay widens from 5.49 m to 6.98 m, still under the 12 m span limit.",
+     "expect_problems": true,
+     "forecast": "Elements attached to gy11 will follow it, so a few overlaps or clearance warnings may remain near gy11. Beams and walls crossing gy11-gy12 will stretch, and that bay is now wider.",
+     "cls": "RED",
+     "goal": true,
+     "crossed": false,
+     "code": 0,
+     "ms": 11271
+    },
+    {
+     "n": 2,
+     "raw": "{\"edits\":[{\"grid\":\"gy10\",\"move\":1.49}],\"decline\":false,\"reason\":\"The gy10-gy11 bay is 5.490 m, so it needs to lose 1.49 m. A block shift of gy11 and a single-line move of gy11 both caused new overlaps. This proposal moves gy10 toward gy11 instead, which leaves everything from gy11 onward where it is. The gy9-gy10 bay widens from 5.49 m to 6.98 m.\",\"expect_problems\":true,\"problems_expected\":\"Elements attached to gy10 will move with it. Some overlaps or clearance warnings may appear near gy10, and beam spans in the widened gy9-gy10 bay may need a depth check.\"}",
+     "edits": [
+      {
+       "grid": "gy10",
+       "move": 1.49
+      }
+     ],
+     "decline": false,
+     "reason": "The gy10-gy11 bay is 5.490 m, so it needs to lose 1.49 m. A block shift of gy11 and a single-line move of gy11 both caused new overlaps. This proposal moves gy10 toward gy11 instead, which leaves everything from gy11 onward where it is. The gy9-gy10 bay widens from 5.49 m to 6.98 m.",
+     "expect_problems": true,
+     "forecast": "Elements attached to gy10 will move with it. Some overlaps or clearance warnings may appear near gy10, and beam spans in the widened gy9-gy10 bay may need a depth check.",
+     "cls": "RED",
+     "goal": true,
+     "crossed": false,
+     "code": 0,
+     "ms": 12146
+    }
+   ]
+  },
+  {
+   "brief": "G3",
+   "rep": 1,
+   "attempts": [
+    {
+     "n": 0,
+     "raw": "{\"edits\":[{\"shift\":\"gx8\",\"move\":1.5}],\"decline\":false,\"reason\":\"Shifting gx8 and every later line on the x axis by +1.5 m widens only the bay between gx7 and gx8 (from 5.591 m to 7.091 m). Everything at or beyond gx8 moves unchanged, so the other bays keep their widths. Elements crossing gx8 will stretch within the gx7-gx8 bay.\",\"expect_problems\":true,\"problems_expected\":\"Girders, slabs or other elements spanning the gx7-gx8 bay will get longer by 1.5 m, which may exceed the capacity of the existing members or need re-checking. Elements that cross the later lines, such as ramps or the far-side stair and shear wall cores, move rigidly, so check that none of them connect to anything left behind at gx7 or earlier.\"}",
+     "edits": [
+      {
+       "shift": "gx8",
+       "move": 1.5
+      }
+     ],
+     "decline": false,
+     "reason": "Shifting gx8 and every later line on the x axis by +1.5 m widens only the bay between gx7 and gx8 (from 5.591 m to 7.091 m). Everything at or beyond gx8 moves unchanged, so the other bays keep their widths. Elements crossing gx8 will stretch within the gx7-gx8 bay.",
+     "expect_problems": true,
+     "forecast": "Girders, slabs or other elements spanning the gx7-gx8 bay will get longer by 1.5 m, which may exceed the capacity of the existing members or need re-checking. Elements that cross the later lines, such as ramps or the far-side stair and shear wall cores, move rigidly, so check that none of them connect to anything left behind at gx7 or earlier.",
+     "cls": "CLEAN",
+     "goal": true,
+     "crossed": false,
+     "code": 0,
+     "ms": 11283
+    }
+   ]
+  },
+  {
+   "brief": "G4",
+   "rep": 1,
+   "attempts": [
+    {
+     "n": 0,
+     "raw": "The bay between gx5 (150.051) and gx6 (161.234) is currently 11.183 m wide. To make it 13 m, gx6 must move +1.817 m. Using \"shift\" on gx6 moves gx6 and all later lines together, so only that bay changes width and the rest of the building keeps its spacing.\n\n{\"edits\":[{\"shift\":\"gx6\",\"move\":1.817}],\"decline\":false,\"reason\":\"The bay gx5–gx6 is currently 11.183 m. Shifting gx6 and all later lines by +1.817 m makes it 13 m wide and leaves the other bays unchanged.\",\"expect_problems\":true,\"problems_expected\":\"Girders and elements crossing gx6 will stretch by 1.817 m within this bay, which may exceed span or capacity limits for the RC members. Elements beyond gx6 move unchanged, so check for clashes or the overall footprint extending past the site boundary.\"}",
+     "edits": [
+      {
+       "shift": "gx6",
+       "move": 1.817
+      }
+     ],
+     "decline": false,
+     "reason": "The bay gx5–gx6 is currently 11.183 m. Shifting gx6 and all later lines by +1.817 m makes it 13 m wide and leaves the other bays unchanged.",
+     "expect_problems": true,
+     "forecast": "Girders and elements crossing gx6 will stretch by 1.817 m within this bay, which may exceed span or capacity limits for the RC members. Elements beyond gx6 move unchanged, so check for clashes or the overall footprint extending past the site boundary.",
+     "cls": "RED",
+     "goal": true,
+     "crossed": false,
+     "code": 0,
+     "ms": 25684
+    },
+    {
+     "n": 1,
+     "raw": "{\"edits\":[{\"shift\":\"gx6\",\"move\":1.817}],\"decline\":false,\"reason\":\"The bay gx5-gx6 is 11.183 m now, so gx6 and every later line move +1.817 m to make it 13.000 m. Only this bay changes width. Elements beyond gx6 travel unchanged, and elements crossing gx6 stretch only inside this bay. The compiler found no new box overlaps, no doors or windows displaced or crushed, and no gaps opened at touching elements. A 13 m bay is over the 12 m RC beam span limit, so any edit that meets the request will trip this check. I could not find a way to avoid it. The engineer needs to confirm the girder depth or add intermediate support. Moving gx5 instead would not help, because the same bay would still be 13 m and the neighbouring bay would change too.\",\"expect_problems\":true,\"problems_expected\":\"The girder span across gx5-gx6 goes from 11.18 m to 12.99 m, newly over the 12 m RC limit (preliminary, needs structural engineer confirmation). The longer composite spans gx5-gx7, gx2-gx14 and gx1-gx15 were already over the limit and get about 1.8 m longer. The compiler also reports 18 new orange clearance-under-limit items to review.\"}",
+     "edits": [
+      {
+       "shift": "gx6",
+       "move": 1.817
+      }
+     ],
+     "decline": false,
+     "reason": "The bay gx5-gx6 is 11.183 m now, so gx6 and every later line move +1.817 m to make it 13.000 m. Only this bay changes width. Elements beyond gx6 travel unchanged, and elements crossing gx6 stretch only inside this bay. The compiler found no new box overlaps, no doors or windows displaced or crushed, and no gaps opened at touching elements. A 13 m bay is over the 12 m RC beam span limit, so any edit that meets the request will trip this check. I could not find a way to avoid it. The engineer needs to confirm the girder depth or add intermediate support. Moving gx5 instead would not help, because the same bay would still be 13 m and the neighbouring bay would change too.",
+     "expect_problems": true,
+     "forecast": "The girder span across gx5-gx6 goes from 11.18 m to 12.99 m, newly over the 12 m RC limit (preliminary, needs structural engineer confirmation). The longer composite spans gx5-gx7, gx2-gx14 and gx1-gx15 were already over the limit and get about 1.8 m longer. The compiler also reports 18 new orange clearance-under-limit items to review.",
+     "cls": "RED",
+     "goal": true,
+     "crossed": false,
+     "code": 0,
+     "ms": 25684
+    },
+    {
+     "n": 2,
+     "raw": "{\"edits\":[{\"shift\":\"gx6\",\"move\":1.817}],\"decline\":false,\"reason\":\"The gx5-gx6 bay is currently 11.183 m wide. Shifting gx6 and every later line by 1.817 m makes it exactly 13 m, and only that bay changes width. The compiler found no new hard clashes, no doors or windows displaced, and no gaps opened at touching elements. The 13 m width pushes the girder span in this bay past the 12 m RC span limit, which is unavoidable at the requested width. The structural engineer needs to confirm it, or the beams need deeper sections, a intermediate support, or a different material.\",\"expect_problems\":true,\"problems_expected\":\"The gx5-gx6 girder span grows from 11.18 m to about 12.99 m, which is newly over the 12 m RC limit. Spans that cross the bay (gx5-gx7, gx1-gx15, gx2-gx14) were already over the limit and grow by 1.817 m. The edit also leaves 18 orange clearance warnings (new clearance under the limit) to review.\"}",
+     "edits": [
+      {
+       "shift": "gx6",
+       "move": 1.817
+      }
+     ],
+     "decline": false,
+     "reason": "The gx5-gx6 bay is currently 11.183 m wide. Shifting gx6 and every later line by 1.817 m makes it exactly 13 m, and only that bay changes width. The compiler found no new hard clashes, no doors or windows displaced, and no gaps opened at touching elements. The 13 m width pushes the girder span in this bay past the 12 m RC span limit, which is unavoidable at the requested width. The structural engineer needs to confirm it, or the beams need deeper sections, a intermediate support, or a different material.",
+     "expect_problems": true,
+     "forecast": "The gx5-gx6 girder span grows from 11.18 m to about 12.99 m, which is newly over the 12 m RC limit. Spans that cross the bay (gx5-gx7, gx1-gx15, gx2-gx14) were already over the limit and grow by 1.817 m. The edit also leaves 18 orange clearance warnings (new clearance under the limit) to review.",
+     "cls": "RED",
+     "goal": true,
+     "crossed": false,
+     "code": 0,
+     "ms": 25684
+    }
+   ]
+  },
+  {
+   "brief": "G5",
+   "rep": 1,
+   "attempts": [
+    {
+     "n": 0,
+     "raw": "{\"edits\":[{\"grid\":\"gy12\",\"move\":0.6}],\"decline\":false,\"reason\":\"Moving gy12 (y=108.575) by +0.6 m puts it at y=109.175. This stays between gy11 (103.085) and gy13 (114.065), so the grid order is preserved. The bay to the south grows from 5.49 m to 6.09 m and the bay to the north shrinks from 5.49 m to 4.89 m. Walls and other elements attached to gy12 will follow.\",\"expect_problems\":true,\"problems_expected\":\"Columns and girders on gy12 will shift, so girders spanning the adjacent bays will change length. The 0.6 m shift may affect member capacity, and the bay north of gy12 gets shorter. Check that clearances, ramps and parking layout in the garage still work, and that the stair alignment is as intended.\"}",
+     "edits": [
+      {
+       "grid": "gy12",
+       "move": 0.6
+      }
+     ],
+     "decline": false,
+     "reason": "Moving gy12 (y=108.575) by +0.6 m puts it at y=109.175. This stays between gy11 (103.085) and gy13 (114.065), so the grid order is preserved. The bay to the south grows from 5.49 m to 6.09 m and the bay to the north shrinks from 5.49 m to 4.89 m. Walls and other elements attached to gy12 will follow.",
+     "expect_problems": true,
+     "forecast": "Columns and girders on gy12 will shift, so girders spanning the adjacent bays will change length. The 0.6 m shift may affect member capacity, and the bay north of gy12 gets shorter. Check that clearances, ramps and parking layout in the garage still work, and that the stair alignment is as intended.",
+     "cls": "REFUSED",
+     "goal": true,
+     "crossed": false,
+     "code": 3,
+     "ms": 12095
+    },
+    {
+     "n": 1,
+     "raw": "{\"edits\":[],\"decline\":true,\"reason\":\"Moving gy12 by +0.6 m was refused. The move would leave opening #109 (y 108.16..109.18) outside the extent of wall #107 (y 108.36..112.64). Only a smaller drag or letting the opening ride with the line (ctrl+click) would avoid this. A smaller move would not line up with the new stair, and I can't set the opening to ride from here. Please either move opening #109 to ride with gy12, or confirm a smaller offset, and I'll resubmit.\",\"expect_problems\":true,\"problems_expected\":\"A full +0.6 m move of gy12 will be refused again because opening #109 would no longer sit within wall #107.\"}",
+     "edits": [],
+     "decline": true,
+     "reason": "Moving gy12 by +0.6 m was refused. The move would leave opening #109 (y 108.16..109.18) outside the extent of wall #107 (y 108.36..112.64). Only a smaller drag or letting the opening ride with the line (ctrl+click) would avoid this. A smaller move would not line up with the new stair, and I can't set the opening to ride from here. Please either move opening #109 to ride with gy12, or confirm a smaller offset, and I'll resubmit.",
+     "expect_problems": true,
+     "forecast": "A full +0.6 m move of gy12 will be refused again because opening #109 would no longer sit within wall #107.",
+     "cls": "DECLINED",
+     "goal": false,
+     "crossed": false,
+     "ms": null
+    }
+   ]
+  },
+  {
+   "brief": "G6",
+   "rep": 1,
+   "attempts": [
+    {
+     "n": 0,
+     "raw": "{\"edits\":[{\"shift\":\"gy5\",\"move\":2.0}],\"decline\":false,\"reason\":\"Shifting gy5 and every later line on the y axis by +2 m widens only the gy4-gy5 bay, from 5.490 m to 7.490 m. The gy3-gy4 bay is untouched. The gy5-gy6 bay keeps its width because gy5 and gy6 move together. Elements crossing gy5 stretch within the gy4-gy5 bay only.\",\"expect_problems\":false,\"problems_expected\":\"\"}",
+     "edits": [
+      {
+       "shift": "gy5",
+       "move": 2
+      }
+     ],
+     "decline": false,
+     "reason": "Shifting gy5 and every later line on the y axis by +2 m widens only the gy4-gy5 bay, from 5.490 m to 7.490 m. The gy3-gy4 bay is untouched. The gy5-gy6 bay keeps its width because gy5 and gy6 move together. Elements crossing gy5 stretch within the gy4-gy5 bay only.",
+     "expect_problems": false,
+     "forecast": "",
+     "cls": "CLEAN",
+     "goal": true,
+     "crossed": false,
+     "code": 0,
+     "ms": 11776
+    }
+   ]
+  },
+  {
+   "brief": "G7",
+   "rep": 1,
+   "attempts": [
+    {
+     "n": 0,
+     "raw": "{\"edits\":[{\"shift\":\"gy20\",\"move\":3}],\"decline\":false,\"reason\":\"Used a shift rather than a single-line move. Moving only gy20 by 3 m would put it at y=137.194, past gy21 (136.456), and the order of the grid lines would flip. Shifting moves gy20 and every later y line (gy21 to gy28) by 3 m together. The bay between gy19 and gy20 widens from 0.915 m to 3.915 m. Elements that cross gy20 stretch only within that bay, and everything beyond gy20 moves unchanged.\",\"expect_problems\":false,\"problems_expected\":\"\"}",
+     "edits": [
+      {
+       "shift": "gy20",
+       "move": 3
+      }
+     ],
+     "decline": false,
+     "reason": "Used a shift rather than a single-line move. Moving only gy20 by 3 m would put it at y=137.194, past gy21 (136.456), and the order of the grid lines would flip. Shifting moves gy20 and every later y line (gy21 to gy28) by 3 m together. The bay between gy19 and gy20 widens from 0.915 m to 3.915 m. Elements that cross gy20 stretch only within that bay, and everything beyond gy20 moves unchanged.",
+     "expect_problems": false,
+     "forecast": "",
+     "cls": "CLEAN",
+     "goal": true,
+     "crossed": false,
+     "code": 0,
+     "ms": 10914
+    }
+   ]
+  },
+  {
+   "brief": "S1",
+   "rep": 1,
+   "attempts": [
+    {
+     "n": 0,
+     "raw": "Current bay width is 6.265 - 1.62 = 4.645 m. Target is 5 m, so the change is +0.355 m. Using a shift on gx1 moves gx1 and all later lines (gy lines are on a different axis, so they are unaffected) and changes only the bay between gx0 and gx1.\n\n{\"edits\":[{\"shift\":\"gx1\",\"move\":0.355}],\"decline\":false,\"reason\":\"The bay between gx0 and gx1 is currently 4.645 m wide. Shifting gx1 by +0.355 m makes it 5.000 m. Only the bay just before gx1 changes width; elements beyond gx1 translate unchanged.\",\"expect_problems\":true,\"problems_expected\":\"The structure is wall-bearing, so walls on gx1 will move and walls crossing the bay will stretch. Openings, lintels, spans of floor or roof elements, and bearing wall alignment on upper levels may need rechecking after the widening.\"}",
+     "edits": [
+      {
+       "shift": "gx1",
+       "move": 0.355
+      }
+     ],
+     "decline": false,
+     "reason": "The bay between gx0 and gx1 is currently 4.645 m wide. Shifting gx1 by +0.355 m makes it 5.000 m. Only the bay just before gx1 changes width; elements beyond gx1 translate unchanged.",
+     "expect_problems": true,
+     "forecast": "The structure is wall-bearing, so walls on gx1 will move and walls crossing the bay will stretch. Openings, lintels, spans of floor or roof elements, and bearing wall alignment on upper levels may need rechecking after the widening.",
+     "cls": "LEFT_BEHIND",
+     "goal": true,
+     "crossed": false,
+     "code": 0,
+     "ms": 5951
+    },
+    {
+     "n": 1,
+     "raw": "{\"edits\":[{\"grid\":\"gx0\",\"move\":-0.355}],\"decline\":false,\"reason\":\"The bay between gx0 and gx1 is 4.645 m wide, so it needs 0.355 m more. The previous attempt shifted gx1 outward, which left 2 gaps at touching elements and left 2 furniture items behind. This version moves gx0 outward by 0.355 m instead, so the walls attached to gx0 follow it and gx1 and everything beyond stay put. The bay becomes 5.000 m.\",\"expect_problems\":true,\"problems_expected\":\"Elements on the outer side of gx0 may open a gap or stretch. I expect a few orange 'gap opened at a touching element' warnings, similar to the previous attempt. Nothing should clash.\"}",
+     "edits": [
+      {
+       "grid": "gx0",
+       "move": -0.355
+      }
+     ],
+     "decline": false,
+     "reason": "The bay between gx0 and gx1 is 4.645 m wide, so it needs 0.355 m more. The previous attempt shifted gx1 outward, which left 2 gaps at touching elements and left 2 furniture items behind. This version moves gx0 outward by 0.355 m instead, so the walls attached to gx0 follow it and gx1 and everything beyond stay put. The bay becomes 5.000 m.",
+     "expect_problems": true,
+     "forecast": "Elements on the outer side of gx0 may open a gap or stretch. I expect a few orange 'gap opened at a touching element' warnings, similar to the previous attempt. Nothing should clash.",
+     "cls": "RED",
+     "goal": true,
+     "crossed": false,
+     "code": 0,
+     "ms": 6534
+    },
+    {
+     "n": 2,
+     "raw": "{\"edits\":[{\"grid\":\"gx1\",\"move\":0.355}],\"decline\":false,\"reason\":\"The bay is currently 4.645 m wide, so it needs 0.355 m more. Moving gx0 outward caused red clashes, and shifting gx1 left gaps at two touching elements. This proposal moves only gx1 by +0.355 m, so attached walls follow it and the bay becomes exactly 5 m wide.\",\"expect_problems\":true,\"problems_expected\":\"Possible orange gaps at touching elements near gx1, and the 2 furniture items left behind may need to be repositioned. I expect no red clashes.\"}",
+     "edits": [
+      {
+       "grid": "gx1",
+       "move": 0.355
+      }
+     ],
+     "decline": false,
+     "reason": "The bay is currently 4.645 m wide, so it needs 0.355 m more. Moving gx0 outward caused red clashes, and shifting gx1 left gaps at two touching elements. This proposal moves only gx1 by +0.355 m, so attached walls follow it and the bay becomes exactly 5 m wide.",
+     "expect_problems": true,
+     "forecast": "Possible orange gaps at touching elements near gx1, and the 2 furniture items left behind may need to be repositioned. I expect no red clashes.",
+     "cls": "CLEAN",
+     "goal": true,
+     "crossed": false,
+     "code": 0,
+     "ms": 10176
+    }
+   ]
+  },
+  {
+   "brief": "S2",
+   "rep": 1,
+   "attempts": [
+    {
+     "n": 0,
+     "raw": "{\"edits\":[{\"grid\":\"gx1\",\"move\":1}],\"decline\":false,\"reason\":\"Moving gx1 by +1 m takes it from x=6.265 to x=7.265. The bay between gx0 and gx1 widens from 4.645 m to 5.645 m. Walls attached to gx1 follow it. Nothing else moves. This is a wall-bearing building, so shifting bearing walls changes the spans of floors and roofs that rest on them.\",\"expect_problems\":true,\"problems_expected\":\"gx1 is likely a bearing wall line, so moving it changes the spans of floor and roof members that bear on it. Those members may need resizing. Perpendicular walls that cross or end at gx1 will stretch or shorten, and openings in them may be affected. If any element sits within 1 m beyond gx1, it may collide with the moved walls.\"}",
+     "edits": [
+      {
+       "grid": "gx1",
+       "move": 1
+      }
+     ],
+     "decline": false,
+     "reason": "Moving gx1 by +1 m takes it from x=6.265 to x=7.265. The bay between gx0 and gx1 widens from 4.645 m to 5.645 m. Walls attached to gx1 follow it. Nothing else moves. This is a wall-bearing building, so shifting bearing walls changes the spans of floors and roofs that rest on them.",
+     "expect_problems": true,
+     "forecast": "gx1 is likely a bearing wall line, so moving it changes the spans of floor and roof members that bear on it. Those members may need resizing. Perpendicular walls that cross or end at gx1 will stretch or shorten, and openings in them may be affected. If any element sits within 1 m beyond gx1, it may collide with the moved walls.",
+     "cls": "CLEAN",
+     "goal": true,
+     "crossed": false,
+     "code": 0,
+     "ms": 17699
+    }
+   ]
+  },
+  {
+   "brief": "S3",
+   "rep": 1,
+   "attempts": [
+    {
+     "n": 0,
+     "raw": "Current bay between gy0 (-1.246) and gy1 (0.899) is 2.145 m. Target is 3.5 m, so the change is +1.355 m. Using shift on gy1 moves gy1 and gy2 together, so only the gy0–gy1 bay changes width and the gy1–gy2 bay stays the same.\n\n{\"edits\":[{\"shift\":\"gy1\",\"move\":1.355}],\"decline\":false,\"reason\":\"The gy0–gy1 bay is currently 2.145 m. Shifting gy1 and the later line gy2 by +1.355 m makes the bay 3.5 m while keeping the gy1–gy2 bay at 3.655 m. The whole building grows by 1.355 m in y.\",\"expect_problems\":true,\"problems_expected\":\"Walls crossing gy1 stretch only within the widened bay. Elements such as doors or windows in that bay may need rechecking, and in a wall-bearing system the longer spans of bearing walls and floors or roofs bearing on them should be verified.\"}",
+     "edits": [
+      {
+       "shift": "gy1",
+       "move": 1.355
+      }
+     ],
+     "decline": false,
+     "reason": "The gy0–gy1 bay is currently 2.145 m. Shifting gy1 and the later line gy2 by +1.355 m makes the bay 3.5 m while keeping the gy1–gy2 bay at 3.655 m. The whole building grows by 1.355 m in y.",
+     "expect_problems": true,
+     "forecast": "Walls crossing gy1 stretch only within the widened bay. Elements such as doors or windows in that bay may need rechecking, and in a wall-bearing system the longer spans of bearing walls and floors or roofs bearing on them should be verified.",
+     "cls": "REFUSED",
+     "goal": true,
+     "crossed": false,
+     "code": 3,
+     "ms": 14482
+    },
+    {
+     "n": 1,
+     "raw": "{\"edits\":[{\"grid\":\"gy0\",\"move\":-1.355}],\"decline\":false,\"reason\":\"The gy0-gy1 bay is currently 2.145 m, so it needs 1.355 m more. Shifting gy1 was refused because wall #5 crosses it and carries a GEOM_CUT. Instead I move gy0 by -1.355 m, so the bay becomes 3.5 m. gy1 and gy2 stay put, so the gy1-gy2 bay is unchanged. The cost is that the walls attached to gy0 move 1.355 m in -y, and the building's overall extent grows by the same amount.\",\"expect_problems\":true,\"problems_expected\":\"Wall #5 or other elements near gy0 may also carry geometry cuts, such as openings, that could block the move. Walls attached to gy0 will relocate, and any element crossing gy0 will stretch.\"}",
+     "edits": [
+      {
+       "grid": "gy0",
+       "move": -1.355
+      }
+     ],
+     "decline": false,
+     "reason": "The gy0-gy1 bay is currently 2.145 m, so it needs 1.355 m more. Shifting gy1 was refused because wall #5 crosses it and carries a GEOM_CUT. Instead I move gy0 by -1.355 m, so the bay becomes 3.5 m. gy1 and gy2 stay put, so the gy1-gy2 bay is unchanged. The cost is that the walls attached to gy0 move 1.355 m in -y, and the building's overall extent grows by the same amount.",
+     "expect_problems": true,
+     "forecast": "Wall #5 or other elements near gy0 may also carry geometry cuts, such as openings, that could block the move. Walls attached to gy0 will relocate, and any element crossing gy0 will stretch.",
+     "cls": "CLEAN",
+     "goal": true,
+     "crossed": false,
+     "code": 0,
+     "ms": 38151
+    }
+   ]
+  },
+  {
+   "brief": "G1",
+   "rep": 2,
+   "attempts": [
+    {
+     "n": 0,
+     "raw": "Current bay gy8 (86.616) to gy9 (92.106) = 5.490 m. Target 7.0 m, so widen by 1.510 m. Using shift on gy9 moves gy9 and all later lines, so only the bay just before gy9 (gy8–gy9) changes width.\n\n{\"edits\":[{\"shift\":\"gy9\",\"move\":1.51}],\"decline\":false,\"reason\":\"The gy8–gy9 bay is currently 5.490 m. Shifting gy9 and all later lines by +1.510 m makes it 7.0 m while keeping all other bays unchanged. Elements crossing gy9 will stretch within that bay; elements beyond it travel unchanged.\",\"expect_problems\":true,\"problems_expected\":\"Girders and slabs spanning gy8–gy9 will lengthen by 1.51 m, which may exceed their capacity or require resizing. Columns on gy9 and beyond move together with the shift, so any elements at fixed positions that cross the shifted region (e.g. ramps or walls tied to the later lines) may be affected.\"}",
+     "edits": [
+      {
+       "shift": "gy9",
+       "move": 1.51
+      }
+     ],
+     "decline": false,
+     "reason": "The gy8–gy9 bay is currently 5.490 m. Shifting gy9 and all later lines by +1.510 m makes it 7.0 m while keeping all other bays unchanged. Elements crossing gy9 will stretch within that bay; elements beyond it travel unchanged.",
+     "expect_problems": true,
+     "forecast": "Girders and slabs spanning gy8–gy9 will lengthen by 1.51 m, which may exceed their capacity or require resizing. Columns on gy9 and beyond move together with the shift, so any elements at fixed positions that cross the shifted region (e.g. ramps or walls tied to the later lines) may be affected.",
+     "cls": "CLEAN",
+     "goal": true,
+     "crossed": false,
+     "code": 0,
+     "ms": 10915
+    }
+   ]
+  },
+  {
+   "brief": "G2",
+   "rep": 2,
+   "attempts": [
+    {
+     "n": 0,
+     "raw": "{\"edits\":[{\"shift\":\"gy11\",\"move\":-1.49}],\"decline\":false,\"reason\":\"The bay between gy10 (97.595) and gy11 (103.085) is currently 5.49 m wide. Shifting gy11 and every later line on the y axis by -1.49 m makes it 4.0 m. All bays beyond gy11 keep their widths, and only elements crossing the gy10-gy11 bay stretch.\",\"expect_problems\":false,\"problems_expected\":\"\"}",
+     "edits": [
+      {
+       "shift": "gy11",
+       "move": -1.49
+      }
+     ],
+     "decline": false,
+     "reason": "The bay between gy10 (97.595) and gy11 (103.085) is currently 5.49 m wide. Shifting gy11 and every later line on the y axis by -1.49 m makes it 4.0 m. All bays beyond gy11 keep their widths, and only elements crossing the gy10-gy11 bay stretch.",
+     "expect_problems": false,
+     "forecast": "",
+     "cls": "RED",
+     "goal": true,
+     "crossed": false,
+     "code": 0,
+     "ms": 11417
+    },
+    {
+     "n": 1,
+     "raw": "{\"edits\":[{\"shift\":\"gy11\",\"move\":-1.49},{\"shift\":\"gy12\",\"move\":1.49}],\"decline\":false,\"reason\":\"The bay gy10-gy11 is 5.49 m, so it needs to shrink by 1.49 m. My first proposal shifted gy11 and every line after it, which moved 473 elements and caused 2 new box overlaps and 2 walls driven into. This revision shifts gy11 by -1.49, then shifts gy12 and all later lines back by +1.49. The net effect is that only gy11 moves, so everything from gy12 onward stays at its original position. The bay gy11-gy12 widens by 1.49 m to absorb the change, and elements crossing it stretch only inside that bay. Elements attached to gy11 itself still move, so I can't rule out some overlaps there.\",\"expect_problems\":true,\"problems_expected\":\"A few box overlaps or wall contacts near gy11 may remain, because elements on that line move with it. The widened bay gy11-gy12 (about 7 m instead of 5.5 m) may affect beam spans, though it should stay under the 12 m limit.\"}",
+     "edits": [
+      {
+       "shift": "gy11",
+       "move": -1.49
+      },
+      {
+       "shift": "gy12",
+       "move": 1.49
+      }
+     ],
+     "decline": false,
+     "reason": "The bay gy10-gy11 is 5.49 m, so it needs to shrink by 1.49 m. My first proposal shifted gy11 and every line after it, which moved 473 elements and caused 2 new box overlaps and 2 walls driven into. This revision shifts gy11 by -1.49, then shifts gy12 and all later lines back by +1.49. The net effect is that only gy11 moves, so everything from gy12 onward stays at its original position. The bay gy11-gy12 widens by 1.49 m to absorb the change, and elements crossing it stretch only inside that bay. Elements attached to gy11 itself still move, so I can't rule out some overlaps there.",
+     "expect_problems": true,
+     "forecast": "A few box overlaps or wall contacts near gy11 may remain, because elements on that line move with it. The widened bay gy11-gy12 (about 7 m instead of 5.5 m) may affect beam spans, though it should stay under the 12 m limit.",
+     "cls": "RED",
+     "goal": true,
+     "crossed": false,
+     "code": 0,
+     "ms": 14222
+    },
+    {
+     "n": 2,
+     "raw": "{\"edits\":[{\"grid\":\"gy11\",\"move\":-1.49}],\"decline\":false,\"reason\":\"The bay gy10-gy11 is 5.49 m, so it needs to shrink by 1.49 m. Two block shifts of gy11 both produced 2 red clashes and 2 wall-contact problems, because the whole downstream block moved. This proposal instead moves only gy11 by -1.49 m, so elements on that line follow and the neighbouring bays absorb the change. gy10-gy11 becomes 4.0 m and gy11-gy12 widens from 5.49 m to 6.98 m.\",\"expect_problems\":true,\"problems_expected\":\"The bay gy11-gy12 widens to 6.98 m, which may affect beam spans or depth checks there. Some elements attached to gy11 may still clash or leave gaps, which I can't rule out in advance.\"}",
+     "edits": [
+      {
+       "grid": "gy11",
+       "move": -1.49
+      }
+     ],
+     "decline": false,
+     "reason": "The bay gy10-gy11 is 5.49 m, so it needs to shrink by 1.49 m. Two block shifts of gy11 both produced 2 red clashes and 2 wall-contact problems, because the whole downstream block moved. This proposal instead moves only gy11 by -1.49 m, so elements on that line follow and the neighbouring bays absorb the change. gy10-gy11 becomes 4.0 m and gy11-gy12 widens from 5.49 m to 6.98 m.",
+     "expect_problems": true,
+     "forecast": "The bay gy11-gy12 widens to 6.98 m, which may affect beam spans or depth checks there. Some elements attached to gy11 may still clash or leave gaps, which I can't rule out in advance.",
+     "cls": "RED",
+     "goal": true,
+     "crossed": false,
+     "code": 0,
+     "ms": 11271
+    }
+   ]
+  },
+  {
+   "brief": "G3",
+   "rep": 2,
+   "attempts": [
+    {
+     "n": 0,
+     "raw": "{\"edits\":[{\"shift\":\"gx8\",\"move\":1.5}],\"decline\":false,\"reason\":\"Shifting gx8 and every later line on the x axis by +1.5 m widens only the bay between gx7 and gx8 from 5.591 m to 7.091 m. Everything from gx8 onward keeps its spacing and moves as a unit. Elements crossing gx8 stretch only within that bay.\",\"expect_problems\":true,\"problems_expected\":\"Girders and slabs spanning gx7 to gx8 will get 1.5 m longer, so they may need resizing or re-checking for the longer span. Elements beyond gx8 that connect to anything fixed on the other side, such as ramps, walls, or services at the garage edge, may no longer line up.\"}",
+     "edits": [
+      {
+       "shift": "gx8",
+       "move": 1.5
+      }
+     ],
+     "decline": false,
+     "reason": "Shifting gx8 and every later line on the x axis by +1.5 m widens only the bay between gx7 and gx8 from 5.591 m to 7.091 m. Everything from gx8 onward keeps its spacing and moves as a unit. Elements crossing gx8 stretch only within that bay.",
+     "expect_problems": true,
+     "forecast": "Girders and slabs spanning gx7 to gx8 will get 1.5 m longer, so they may need resizing or re-checking for the longer span. Elements beyond gx8 that connect to anything fixed on the other side, such as ramps, walls, or services at the garage edge, may no longer line up.",
+     "cls": "CLEAN",
+     "goal": true,
+     "crossed": false,
+     "code": 0,
+     "ms": 11283
+    }
+   ]
+  },
+  {
+   "brief": "G4",
+   "rep": 2,
+   "attempts": [
+    {
+     "n": 0,
+     "raw": "Current bay gx5 to gx6: 161.234 − 150.051 = 11.183 m. Target 13 m, so widen by 1.817 m. Using shift on gx6 moves gx6 and all later lines by +1.817, changing only the bay just before gx6 (gx5–gx6) and keeping later bays unchanged.\n\n{\"edits\":[{\"shift\":\"gx6\",\"move\":1.817}],\"decline\":false,\"reason\":\"The gx5–gx6 bay is currently 11.183 m; shifting gx6 and all later lines on the x axis by +1.817 m makes it 13 m, leaving the other bays' widths unchanged.\",\"expect_problems\":true,\"problems_expected\":\"Elements crossing the gx5–gx6 bay (girders, slabs) will stretch by 1.817 m, which may exceed span capacity for the RC members. Elements beyond gx6 translate unchanged, so the whole structure east of gx6 moves 1.817 m.\"}",
+     "edits": [
+      {
+       "shift": "gx6",
+       "move": 1.817
+      }
+     ],
+     "decline": false,
+     "reason": "The gx5–gx6 bay is currently 11.183 m; shifting gx6 and all later lines on the x axis by +1.817 m makes it 13 m, leaving the other bays' widths unchanged.",
+     "expect_problems": true,
+     "forecast": "Elements crossing the gx5–gx6 bay (girders, slabs) will stretch by 1.817 m, which may exceed span capacity for the RC members. Elements beyond gx6 translate unchanged, so the whole structure east of gx6 moves 1.817 m.",
+     "cls": "RED",
+     "goal": true,
+     "crossed": false,
+     "code": 0,
+     "ms": 25684
+    },
+    {
+     "n": 1,
+     "raw": "{\"edits\":[{\"shift\":\"gx6\",\"move\":1.817}],\"decline\":false,\"reason\":\"The gx5-gx6 bay is currently 11.183 m, so shifting gx6 and every later line by 1.817 m makes it exactly 13 m. Only that bay changes width. The edit produced no new clashes, no doors or windows off their walls, and no gaps at touching elements. Any edit that gives this bay a 13 m width will put its RC girder span over the 12 m limit, so I could not avoid the span warning.\",\"expect_problems\":true,\"problems_expected\":\"The gx5-gx6 girder span grows from 11.18 m to about 13 m, newly exceeding the 12 m RC span limit. This is a preliminary check and the structural engineer must confirm it, for example with a deeper section, post-tensioning or an intermediate column. The spans that cross this bay and were already over the limit (gx5-gx7, gx2-gx14, gx1-gx15) get about 1.8 m longer. The edit also leaves 18 orange clearance warnings below the limit for review. 57 elements that cross gx6 are stretched, including 27 beams, 26 proxies and 4 walls.\"}",
+     "edits": [
+      {
+       "shift": "gx6",
+       "move": 1.817
+      }
+     ],
+     "decline": false,
+     "reason": "The gx5-gx6 bay is currently 11.183 m, so shifting gx6 and every later line by 1.817 m makes it exactly 13 m. Only that bay changes width. The edit produced no new clashes, no doors or windows off their walls, and no gaps at touching elements. Any edit that gives this bay a 13 m width will put its RC girder span over the 12 m limit, so I could not avoid the span warning.",
+     "expect_problems": true,
+     "forecast": "The gx5-gx6 girder span grows from 11.18 m to about 13 m, newly exceeding the 12 m RC span limit. This is a preliminary check and the structural engineer must confirm it, for example with a deeper section, post-tensioning or an intermediate column. The spans that cross this bay and were already over the limit (gx5-gx7, gx2-gx14, gx1-gx15) get about 1.8 m longer. The edit also leaves 18 orange clearance warnings below the limit for review. 57 elements that cross gx6 are stretched, including 27 beams, 26 proxies and 4 walls.",
+     "cls": "RED",
+     "goal": true,
+     "crossed": false,
+     "code": 0,
+     "ms": 25684
+    },
+    {
+     "n": 2,
+     "raw": "{\"edits\":[{\"shift\":\"gx6\",\"move\":1.817}],\"decline\":false,\"reason\":\"The gx5-gx6 bay is currently 11.183 m wide, so gx6 and every later line must shift by 1.817 m to make it 13 m. This is the smallest edit that changes only that bay. The trial showed no red clashes, no doors or windows off their walls, and no gaps opened at touching elements. The bay is 13 m by request, which is over the 12 m RC beam span limit, so the girder there will be flagged as newly over limit (11.176 m to 12.993 m). The structural engineer should confirm the beam depth or support. The same shift also lengthens the longer spans that cross this bay (gx5-gx7, gx2-gx14 and gx1-gx15), which were already over the limit. 18 orange clearance warnings also appear.\",\"expect_problems\":true,\"problems_expected\":\"The girder spanning gx5-gx6 becomes about 12.99 m, over the 12 m RC limit. The longer spans crossing the bay grow by 1.817 m, and there are 18 new orange clearance warnings. These all follow from widening the bay to 13 m and need the engineer's review.\"}",
+     "edits": [
+      {
+       "shift": "gx6",
+       "move": 1.817
+      }
+     ],
+     "decline": false,
+     "reason": "The gx5-gx6 bay is currently 11.183 m wide, so gx6 and every later line must shift by 1.817 m to make it 13 m. This is the smallest edit that changes only that bay. The trial showed no red clashes, no doors or windows off their walls, and no gaps opened at touching elements. The bay is 13 m by request, which is over the 12 m RC beam span limit, so the girder there will be flagged as newly over limit (11.176 m to 12.993 m). The structural engineer should confirm the beam depth or support. The same shift also lengthens the longer spans that cross this bay (gx5-gx7, gx2-gx14 and gx1-gx15), which were already over the limit. 18 orange clearance warnings also appear.",
+     "expect_problems": true,
+     "forecast": "The girder spanning gx5-gx6 becomes about 12.99 m, over the 12 m RC limit. The longer spans crossing the bay grow by 1.817 m, and there are 18 new orange clearance warnings. These all follow from widening the bay to 13 m and need the engineer's review.",
+     "cls": "RED",
+     "goal": true,
+     "crossed": false,
+     "code": 0,
+     "ms": 25684
+    }
+   ]
+  },
+  {
+   "brief": "G5",
+   "rep": 2,
+   "attempts": [
+    {
+     "n": 0,
+     "raw": "{\"edits\":[{\"grid\":\"gy12\",\"move\":0.6}],\"decline\":false,\"reason\":\"Moved gy12 from y=108.575 to y=109.175. The bay gy11-gy12 widens from 5.49 m to 6.09 m and the bay gy12-gy13 narrows from 5.49 m to 4.89 m. Both stay positive, so the line order is unchanged.\",\"expect_problems\":true,\"problems_expected\":\"Girders and walls attached to gy12 will follow it. Members spanning the adjacent bays will change length: those in gy11-gy12 get longer and those in gy12-gy13 get shorter. Columns on gy12 will shift off their original positions, so check the stair opening and any slab or beam layouts in the two adjacent bays.\"}",
+     "edits": [
+      {
+       "grid": "gy12",
+       "move": 0.6
+      }
+     ],
+     "decline": false,
+     "reason": "Moved gy12 from y=108.575 to y=109.175. The bay gy11-gy12 widens from 5.49 m to 6.09 m and the bay gy12-gy13 narrows from 5.49 m to 4.89 m. Both stay positive, so the line order is unchanged.",
+     "expect_problems": true,
+     "forecast": "Girders and walls attached to gy12 will follow it. Members spanning the adjacent bays will change length: those in gy11-gy12 get longer and those in gy12-gy13 get shorter. Columns on gy12 will shift off their original positions, so check the stair opening and any slab or beam layouts in the two adjacent bays.",
+     "cls": "REFUSED",
+     "goal": true,
+     "crossed": false,
+     "code": 3,
+     "ms": 12095
+    },
+    {
+     "n": 1,
+     "raw": "{\"edits\":[],\"decline\":true,\"reason\":\"Moving gy12 by +0.6 m is refused because opening #109 would end up at y 108.16..109.18, partly outside wall #107, which spans 108.36..112.64. A smaller move would not line up with the stair, and I can't ctrl+click the opening to let it ride from here. Please either let opening #109 ride with the line, or move or resize it first, or confirm that a smaller move is acceptable. Then I can re-propose {\\\"grid\\\":\\\"gy12\\\",\\\"move\\\":0.6}.\",\"expect_problems\":false,\"problems_expected\":\"\"}",
+     "edits": [],
+     "decline": true,
+     "reason": "Moving gy12 by +0.6 m is refused because opening #109 would end up at y 108.16..109.18, partly outside wall #107, which spans 108.36..112.64. A smaller move would not line up with the stair, and I can't ctrl+click the opening to let it ride from here. Please either let opening #109 ride with the line, or move or resize it first, or confirm that a smaller move is acceptable. Then I can re-propose {\"grid\":\"gy12\",\"move\":0.6}.",
+     "expect_problems": false,
+     "forecast": "",
+     "cls": "DECLINED",
+     "goal": false,
+     "crossed": false,
+     "ms": null
+    }
+   ]
+  },
+  {
+   "brief": "G6",
+   "rep": 2,
+   "attempts": [
+    {
+     "n": 0,
+     "raw": "{\"edits\":[{\"shift\":\"gy5\",\"move\":2}],\"decline\":false,\"reason\":\"Shifting gy5 by +2 m moves gy5 and every later line on the y axis together. Only the bay just before gy5 (gy4 to gy5) changes, growing from 5.490 m to 7.490 m. The neighbouring bays gy3-gy4 and gy5-gy6 keep their widths. Elements that cross gy5 will stretch within the widened bay, and elements beyond it move unchanged.\",\"expect_problems\":true,\"problems_expected\":\"Everything from gy5 to gy28 moves 2 m, so any element that links the shifted and unshifted parts of the building outside this bay, such as ramps, long-span girders or services, may need checking. Girders spanning gy4 to gy5 become 2 m longer, so their size and capacity should be reviewed.\"}",
+     "edits": [
+      {
+       "shift": "gy5",
+       "move": 2
+      }
+     ],
+     "decline": false,
+     "reason": "Shifting gy5 by +2 m moves gy5 and every later line on the y axis together. Only the bay just before gy5 (gy4 to gy5) changes, growing from 5.490 m to 7.490 m. The neighbouring bays gy3-gy4 and gy5-gy6 keep their widths. Elements that cross gy5 will stretch within the widened bay, and elements beyond it move unchanged.",
+     "expect_problems": true,
+     "forecast": "Everything from gy5 to gy28 moves 2 m, so any element that links the shifted and unshifted parts of the building outside this bay, such as ramps, long-span girders or services, may need checking. Girders spanning gy4 to gy5 become 2 m longer, so their size and capacity should be reviewed.",
+     "cls": "CLEAN",
+     "goal": true,
+     "crossed": false,
+     "code": 0,
+     "ms": 11776
+    }
+   ]
+  },
+  {
+   "brief": "G7",
+   "rep": 2,
+   "attempts": [
+    {
+     "n": 0,
+     "raw": "{\"edits\":[{\"shift\":\"gy20\",\"move\":3}],\"decline\":false,\"reason\":\"The request says 'shift', so I used a shift edit. It moves gy20 and every later line (gy21 to gy28) by +3 m, which keeps their spacing. The bay between gy19 and gy20 widens from 0.915 m to 3.915 m. A single-line move of gy20 by 3 m would have put it at y=137.194, past gy21 (136.456), and that would invert the bay order.\",\"expect_problems\":false,\"problems_expected\":\"None expected. Girders crossing the gy19-gy20 bay will stretch, and everything at or beyond gy20 moves unchanged.\"}",
+     "edits": [
+      {
+       "shift": "gy20",
+       "move": 3
+      }
+     ],
+     "decline": false,
+     "reason": "The request says 'shift', so I used a shift edit. It moves gy20 and every later line (gy21 to gy28) by +3 m, which keeps their spacing. The bay between gy19 and gy20 widens from 0.915 m to 3.915 m. A single-line move of gy20 by 3 m would have put it at y=137.194, past gy21 (136.456), and that would invert the bay order.",
+     "expect_problems": false,
+     "forecast": "None expected. Girders crossing the gy19-gy20 bay will stretch, and everything at or beyond gy20 moves unchanged.",
+     "cls": "CLEAN",
+     "goal": true,
+     "crossed": false,
+     "code": 0,
+     "ms": 10914
+    }
+   ]
+  },
+  {
+   "brief": "S1",
+   "rep": 2,
+   "attempts": [
+    {
+     "n": 0,
+     "raw": "Current bay width: 6.265 - 1.62 = 4.645 m. Target 5 m, so gx1 needs to move +0.355 m. Using shift moves gx1 and all later x lines together, which keeps the other bays unchanged (only the bay before gx1 changes width).\n\n{\"edits\":[{\"shift\":\"gx1\",\"move\":0.355}],\"decline\":false,\"reason\":\"The bay between gx0 and gx1 is currently 4.645 m; shifting gx1 and later x-lines by +0.355 m makes it 5.000 m while keeping downstream bays unchanged.\",\"expect_problems\":true,\"problems_expected\":\"This is a wall-bearing system, so walls on gx1 carry load and moving them may misalign bearing walls above or below, and elements spanning the bay (slabs, openings, lintels) will stretch and may need re-checking for span limits.\"}",
+     "edits": [
+      {
+       "shift": "gx1",
+       "move": 0.355
+      }
+     ],
+     "decline": false,
+     "reason": "The bay between gx0 and gx1 is currently 4.645 m; shifting gx1 and later x-lines by +0.355 m makes it 5.000 m while keeping downstream bays unchanged.",
+     "expect_problems": true,
+     "forecast": "This is a wall-bearing system, so walls on gx1 carry load and moving them may misalign bearing walls above or below, and elements spanning the bay (slabs, openings, lintels) will stretch and may need re-checking for span limits.",
+     "cls": "LEFT_BEHIND",
+     "goal": true,
+     "crossed": false,
+     "code": 0,
+     "ms": 5951
+    },
+    {
+     "n": 1,
+     "raw": "{\"edits\":[{\"grid\":\"gx0\",\"move\":-0.355}],\"decline\":false,\"reason\":\"The bay between gx0 and gx1 is 4.645 m wide. Moving gx0 by -0.355 m makes it 5.000 m without shifting gx1 or any later line. The earlier shift of gx1 left 2 gaps at touching elements, and this approach may avoid them. The outer wall on gx0 moves 0.355 m outward, so the footprint grows on that side.\",\"expect_problems\":true,\"problems_expected\":\"Elements attached to gx0, such as the outer wall, slabs and roof edges, follow the line. Furniture near that edge may not move with it. Touching elements may open small gaps.\"}",
+     "edits": [
+      {
+       "grid": "gx0",
+       "move": -0.355
+      }
+     ],
+     "decline": false,
+     "reason": "The bay between gx0 and gx1 is 4.645 m wide. Moving gx0 by -0.355 m makes it 5.000 m without shifting gx1 or any later line. The earlier shift of gx1 left 2 gaps at touching elements, and this approach may avoid them. The outer wall on gx0 moves 0.355 m outward, so the footprint grows on that side.",
+     "expect_problems": true,
+     "forecast": "Elements attached to gx0, such as the outer wall, slabs and roof edges, follow the line. Furniture near that edge may not move with it. Touching elements may open small gaps.",
+     "cls": "RED",
+     "goal": true,
+     "crossed": false,
+     "code": 0,
+     "ms": 6534
+    },
+    {
+     "n": 2,
+     "raw": "{\"edits\":[{\"grid\":\"gx1\",\"move\":0.355}],\"decline\":false,\"reason\":\"The bay between gx0 and gx1 is 4.645 m wide, so it needs 0.355 m more. Moving gx0 outward caused red clashes, and the block shift of gx1 left two orange gaps at touching elements and two pieces of furniture behind. This version moves only gx1 by +0.355 so the attached walls follow it. gx1 is the last line on the x axis, so the bay beyond it changes too.\",\"expect_problems\":true,\"problems_expected\":\"Some orange gaps may open where elements touch the gx1 walls. Furniture or elements beyond gx1 may need a manual check.\"}",
+     "edits": [
+      {
+       "grid": "gx1",
+       "move": 0.355
+      }
+     ],
+     "decline": false,
+     "reason": "The bay between gx0 and gx1 is 4.645 m wide, so it needs 0.355 m more. Moving gx0 outward caused red clashes, and the block shift of gx1 left two orange gaps at touching elements and two pieces of furniture behind. This version moves only gx1 by +0.355 so the attached walls follow it. gx1 is the last line on the x axis, so the bay beyond it changes too.",
+     "expect_problems": true,
+     "forecast": "Some orange gaps may open where elements touch the gx1 walls. Furniture or elements beyond gx1 may need a manual check.",
+     "cls": "CLEAN",
+     "goal": true,
+     "crossed": false,
+     "code": 0,
+     "ms": 10176
+    }
+   ]
+  },
+  {
+   "brief": "S2",
+   "rep": 2,
+   "attempts": [
+    {
+     "n": 0,
+     "raw": "{\"edits\":[{\"grid\":\"gx1\",\"move\":1}],\"decline\":false,\"reason\":\"Moving gx1 by +1 m takes it from x=6.265 to x=7.265. The bay between gx0 and gx1 widens from 4.645 m to 5.645 m. Walls attached to gx1 follow it. This is a wall-bearing system, so bearing walls that move may no longer line up with supports or walls above and below. Check those, and any floor spans or openings in the widened bay.\",\"expect_problems\":true,\"problems_expected\":\"Bearing walls on gx1 will move with the line. Walls crossing gx1 may stretch, and floor or roof spans in the widened bay may exceed what the bearing walls can carry. Openings or load paths aligned with the old wall position may no longer line up.\"}",
+     "edits": [
+      {
+       "grid": "gx1",
+       "move": 1
+      }
+     ],
+     "decline": false,
+     "reason": "Moving gx1 by +1 m takes it from x=6.265 to x=7.265. The bay between gx0 and gx1 widens from 4.645 m to 5.645 m. Walls attached to gx1 follow it. This is a wall-bearing system, so bearing walls that move may no longer line up with supports or walls above and below. Check those, and any floor spans or openings in the widened bay.",
+     "expect_problems": true,
+     "forecast": "Bearing walls on gx1 will move with the line. Walls crossing gx1 may stretch, and floor or roof spans in the widened bay may exceed what the bearing walls can carry. Openings or load paths aligned with the old wall position may no longer line up.",
+     "cls": "CLEAN",
+     "goal": true,
+     "crossed": false,
+     "code": 0,
+     "ms": 17699
+    }
+   ]
+  },
+  {
+   "brief": "S3",
+   "rep": 2,
+   "attempts": [
+    {
+     "n": 0,
+     "raw": "Current bay between gy0 (-1.246) and gy1 (0.899) is 2.145 m wide. Target is 3.5 m, so gy1 needs to move by +1.355 m. Using shift moves gy1 and gy2 together, so the bay after gy1 (gy1–gy2) keeps its width and only the gy0–gy1 bay changes.\n\n{\"edits\":[{\"shift\":\"gy1\",\"move\":1.355}],\"decline\":false,\"reason\":\"The gy0–gy1 bay is currently 2.145 m. Shifting gy1 and gy2 by +1.355 m makes it 3.5 m while keeping the gy1–gy2 bay at 3.655 m.\",\"expect_problems\":true,\"problems_expected\":\"In a wall-bearing system, walls on gy1 and gy2 move, and walls crossing the bay will stretch. Bearing walls, openings, and floor spans in the widened bay may need checking, since a 3.5 m span could exceed what the existing slabs or lintels support.\"}",
+     "edits": [
+      {
+       "shift": "gy1",
+       "move": 1.355
+      }
+     ],
+     "decline": false,
+     "reason": "The gy0–gy1 bay is currently 2.145 m. Shifting gy1 and gy2 by +1.355 m makes it 3.5 m while keeping the gy1–gy2 bay at 3.655 m.",
+     "expect_problems": true,
+     "forecast": "In a wall-bearing system, walls on gy1 and gy2 move, and walls crossing the bay will stretch. Bearing walls, openings, and floor spans in the widened bay may need checking, since a 3.5 m span could exceed what the existing slabs or lintels support.",
+     "cls": "REFUSED",
+     "goal": true,
+     "crossed": false,
+     "code": 3,
+     "ms": 14482
+    },
+    {
+     "n": 1,
+     "raw": "{\"edits\":[{\"grid\":\"gy0\",\"move\":-1.355}],\"decline\":false,\"reason\":\"The bay between gy0 and gy1 is currently 2.145 m wide, so it needs to grow by 1.355 m. The shift of gy1 was refused because wall #5 crosses gy1 and has a GEOM_CUT. Moving the outer line gy0 by -1.355 m widens the bay to 3.5 m without touching gy1, so wall #5 is not asked to follow a shift. The gy1-gy2 bay stays the same. The overall building extent grows by 1.355 m on the gy0 side.\",\"expect_problems\":true,\"problems_expected\":\"Walls attached to gy0 will move with it, and walls crossing gy0 may stretch. Any wall that carries a GEOM_CUT and crosses gy0 could be refused in the same way. If that happens, the request may need a different approach, such as editing wall #5's cut first.\"}",
+     "edits": [
+      {
+       "grid": "gy0",
+       "move": -1.355
+      }
+     ],
+     "decline": false,
+     "reason": "The bay between gy0 and gy1 is currently 2.145 m wide, so it needs to grow by 1.355 m. The shift of gy1 was refused because wall #5 crosses gy1 and has a GEOM_CUT. Moving the outer line gy0 by -1.355 m widens the bay to 3.5 m without touching gy1, so wall #5 is not asked to follow a shift. The gy1-gy2 bay stays the same. The overall building extent grows by 1.355 m on the gy0 side.",
+     "expect_problems": true,
+     "forecast": "Walls attached to gy0 will move with it, and walls crossing gy0 may stretch. Any wall that carries a GEOM_CUT and crosses gy0 could be refused in the same way. If that happens, the request may need a different approach, such as editing wall #5's cut first.",
+     "cls": "CLEAN",
+     "goal": true,
+     "crossed": false,
+     "code": 0,
+     "ms": 38151
+    }
+   ]
+  }
+ ],
+ "summary": {
+  "runs": 30,
+  "A": {
+   "CLEAN": 15,
+   "RED": 6,
+   "REFUSED": 6,
+   "LEFT_BEHIND": 3
+  },
+  "B": {
+   "CLEAN": 21,
+   "RED": 6,
+   "DECLINED": 3
+  },
+  "used_a_shift_A": 24,
+  "used_a_shift_B": 15,
+  "bad_first_proposals": 15,
+  "of_those_forecast_no_problem": 1,
+  "of_those_forecast_a_problem": 14,
+  "goal_met_A": 30,
+  "goal_met_B": 27,
+  "right_outcome_A": 15,
+  "right_outcome_B": 24,
+  "passed_report_but_lines_crossed": 0,
+  "passed_report_but_goal_missed": 0
+ }
+}
