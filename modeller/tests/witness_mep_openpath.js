@@ -69,6 +69,7 @@ const server = http.createServer((q, r) => { let p = decodeURIComponent(q.url.sp
   const R = {};
   for (const key of RESIDENTS) {
     const pg = await br.newPage(); await pg.setViewport({ width: 1200, height: 850 });
+  await pg.evaluateOnNewDocument(() => { window.__dwKeepPatternStubs = true; });   // §WALK-MAINS note (prompts/DISC_WALK_DRAWN_MAINS.md §9): a user Walk no longer routes by pattern on ACMV, FP or PLB. This witness tests the pattern ENGINE and what renders it, behind the witness-only switch. W-WALK-MAINS proves the user path.
     const errs = [], lines = []; let tWalk = 0;   // captured lines carry [+s] since the Walk click, so per-discipline cost is MEASURED
     pg.on('pageerror', e => errs.push(String(e).slice(0, 200)));
     pg.on('console', m => { const t = m.text(); if (/§WALK |§WALK-PATTERN|§WALK-SCHED|§WALK-NOSPACES|§SCHED-FALLBACK|§ROUTER-CHAIN|§MEP-REROUTE|§DISC-WALK [A-Za-z]+ placed|§DW-LOD400-REFUSE disc=/.test(t)) lines.push((tWalk ? '[+' + ((Date.now() - tWalk) / 1000).toFixed(1) + 's] ' : '') + t); });

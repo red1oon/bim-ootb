@@ -1,7 +1,7 @@
 # ⚠ DO NOT REMOVE
 SCOPE: reading a service's drawn centrelines into a plan-level route record, for ANY building. Read the log after every run; exit code is not evidence. Public repo: no client or project names; a real test set is "a private Revit-exported set".
 Owner (2026-11-07): "we are abstracting a rules engine not custom to any particular design." On mains, for a file with no ducts in it: a main exists only where a drawn centreline is held, otherwise no main and the walker says so; the reader is its own specced job (`MODELLER_MASTER.md` §RESUME 2026-11-07b).
-Status: SPEC ONLY, nothing built. Design lane wrote it; the Modeller lane executes it. Stopping stub runs does not wait for this reader.
+Status: the reader is SPEC ONLY, nothing built. Design lane wrote it; the Modeller lane executes it. Stub runs stopped ahead of it: §9.
 
 ## §1 Issue
 Routed runs on a file with no ducts are unconnected stubs: they have no source. Drawings may hold the real route. Nothing reads it, so the walker cannot say which it has. This reader records what a sheet draws, and says plainly what it does not state.
@@ -55,3 +55,24 @@ Design lane re-runs the private set on the merged code against §2. **A second s
 
 ## §8 Not in this change
 Solids, fittings as parts, airflow, plumbing and tray layers (the same reader may take them later by data rows), PDF sheets, and any change to `hostBind` or band density.
+
+## §9 Stub runs stop now, ahead of the reader (owner 2026-11-07; built by the Modeller lane)
+**Owner's rulings:** HVAC, *"Drawn centreline only"*, then for the other services, *"HVAC, FP and PLB"*: on a file with none of that service, a discipline stops producing runs and the walker says why.
+**Issue.** Measured on the 9 ARC-only residents, the pattern bridge's runs are not a network: ACMV and FP are lone 2-point stubs (Hospital ACMV 3,047 runs = 3,047 components, 22.6 km; FP 2,908 = 2,908, 34.9 km; HHS FP has one exception of 14 points); PLB is small clusters (Hospital 19,457 runs = 8,778 components, largest 45 of 28,024 points, 136 km).
+**Rule.**
+1. A data row by discipline: `ACMV`, `FP`, `PLB` take their mains from a drawing only. The pattern bridge (`_bridgeIfEmpty`) makes no runs for them. `routePattern` itself is unchanged and still callable.
+2. **Real runs still route.** `routeChains` pairs real `elements_meta` rows and is untouched: a file holding that service keeps its runs, and its log says `real=<n>`.
+3. **The walker says so.** `§WALK-MAINS disc= drawn=<metres> | none reason=<no sheet held | sheet refused | no centreline layer>`. Only `no sheet held` can fire until the reader exists. The status line says the same in words. The result carries `mains: { real, none }`.
+4. **Not in this rule:** `ELEC` (13 connected runs on 2 residents, not asked), and a `bom-tree` row (§D65, a built tree from the library's sprinkler BOM, the owner's own rule, only in `farm_rules.db`). Band placements, including band duct and pipe pieces, do not change. Whether those pieces should stay with no main is a separate question for the owner.
+5. `opts.keepPatternStubs` restores the bridge. For witnesses only; no UI.
+**Witness `modeller/tests/witness_walk_mains.js` (W-WALK-MAINS).** Issue it proves or disproves: runs with no source are still produced, or the rule removed real runs.
+- **N1** each ruled discipline on an ARC-only resident: 0 runs, and `§WALK-MAINS ... none reason=no sheet held`. **Red control:** `keepPatternStubs` must route more than 0, so the gate is what removed them. A resident the bridge never routed is not judged.
+- **N2** placements are identical with and without the gate, by class and position to 1e-3 m.
+- **N3** a file with that service keeps its runs: same count as the walker before this change, log says `real=`.
+- **N4** ELEC runs and a `bom-tree` row are unchanged.
+- **N5** a walk with nothing to judge prints INCONCLUSIVE.
+
+**§9 RESULT 2026-11-07.** Fleet, 118 walks against #2681: placed unchanged on every walk, 0 walks to zero. Runs: FP 12,273 → 0; ACMV 18,335 → 11,682; PLB 69,157 → 37,407; ELEC 13 → 13. What remains in ACMV and PLB is real rows only (N3: Hospital ACMV 4,736, PLB 13,824, Terminal ACMV 1,002, PLB 4,315, each unchanged, each logging `real=`). A file with sprinklers and no pipes (Hospital and Terminal FP) now says `none`.
+W-WALK-MAINS 7 of 7 (23 walks judged, 34,944 stub runs in its red control). Real page: W-BAND-NO-HOST B7f, ACMV and FP on public Clinic: `__dwChains` 0 and status `no main: no sheet held`.
+Pattern engine witnesses now run behind the witness-only `window.__dwKeepPatternStubs` / `opts.keepPatternStubs`, same results as before: W-ROUTE-PATTERN-BRIDGE 10/0, W-SEED-OUTWARD-REVEAL 9/0, W-MEP-OPENPATH 27/2 (M5, M7 fail on main too). W-WALK-ROUTED W6 still prints `WRONG unconnected stubs` on the engine, as it should. Not run here, exit 1 before and after for reasons outside this change: W-DISC-DENSITY, W-MEP-ROUTE-RENDER, W-MODELLER-ROUTER-NNCHAIN. W-FP-BOM-TREE is INCONCLUSIVE (its marked set is absent), so the `bom-tree` path has no run behind it here; the code path only changes by its log line.
+**Left for the owner:** band duct and pipe pieces still stand with no main (fleet: 22,562 duct pieces on ACMV walks, 19,752 pipe segments on PLB walks).

@@ -1,7 +1,7 @@
 # ⚠ DO NOT REMOVE
 SCOPE: what the disc walker does with a band device that has no host, for ANY building. Read the log after every run; exit code is not evidence. Public repo: no client or project names; a real test set is "a private Revit-exported set".
 Owner (2026-11-07): "we are abstracting a rules engine not custom to any particular design." On this rule: "go with your advice, write the spec".
-Status: SPEC ONLY, nothing built. Design lane wrote it; the Modeller lane executes it. Start after `prompts/IMPORT_KEEPS_IFCSPACE.md` merges.
+Status: MERGED with the owner's word, 2026-11-07. Read §10 and §10.3; §7 RESULT is the earlier build. The doctrine edit is §10's wording, made separately in BIMCompiler `docs/internal/WalkerDoctrine.md`.
 
 ## §1 Issue
 The measured-band walk copies device density from a reference building. A device that finds no host stays in the model at its band height, floating, and counts as placed.
@@ -65,6 +65,25 @@ This rule changes band counts on every building that uses bands, and it may prov
   Do not pick a threshold to make the table pass. If "a few" needs a number, that is the question to ask.
 - `⛔ BLOCKED: <the one question>` is the right outcome here. Do not loosen the rule to get through.
 
+## §7 RESULT 2026-11-07: ⛔ STOPPED before merge, stop conditions 1 and 3 fired. For the owner.
+N = 118 walks (21 DBs with elements × each discipline the rules hold; `modeller/tests/fleet_band_table.js`, page call order, before = #2677's walker, after = this branch). 12 rows are not judged: both LTU_AHouse DBs hit the sql.js wasm limit in node, before and after, so they read 0 placed; that is the instrument, not a result.
+**Accounting holds and nothing moved:** before placed = after placed + refused on every walk with band devices (B3 fleet), and bound counts are identical before and after on every row.
+**Stop 1, a building walked with rules measured on itself loses most of its band devices.** Terminal, `terminal_rules.db`:
+| DB | ACMV | ELEC | FP | PLB | STR |
+|---|---:|---:|---:|---:|---:|
+| `Terminal_ARC.db` | 1,325 → 412 | 808 → 118 | 1,054 → 260 | 924 → 0 | 623 → 0 |
+| `Terminal_extracted.db` | 1,312 → 425 | 744 → 114 | 972 → 248 | 890 → 0 | 666 → 0 |
+| `Terminal_meta.db` | 1,334 → 402 | 745 → 111 | 973 → 238 | 890 → 0 | 675 → 0 |
+ACMV, ELEC and FP refusals are all `out-of-reach`. PLB and STR are all `no-rule`. The spec reads this as "the rule or the host search is wrong, not the building".
+**Stop 3, walks that placed devices now place none: 36 of the judged walks.** Every DB's PLB (no `rule_shim` row for it) and STR (same), plus `Garage_ARC.db` ACMV 4,007 → 0 and every class on the small warehouse DB.
+**Stop 2 did not fire.** The FP borrow keeps its bound devices: SampleCastle 126 → 126 bound 126, Duplex 46 → 29 bound 29, SampleHouse 17 → 16 bound 16. The spec's "151 sprinklers" is the older build copy's count; the shipped walker binds 126.
+**Routing collapses with the band devices:** e.g. Hospital_ARC PLB 19,457 runs → 0, FP 3,028 → 36, ACMV 3,352 → 3, Terminal_ARC ACMV 754 → 0. These were the stub runs measured in bim-compiler `MODELLER_MASTER.md` §G RESULTS.
+**The largest drops by building:** Garage ELEC 2,756 → 49, HHS_ARC ELEC 722 → 12, Hospital_ARC ELEC 3,190 → 193.
+**Spec text that does not match the code:** §2 says band duct pieces have no host rule. They do fall through `_shimForFixture` to the discipline-level shim, so they bind to ceilings and are refused only as `out-of-reach`; `no-rule` never fires for ACMV. Not changed. `scripts/witness_*` named in §6 test bim-compiler's older `build/disc_walker.js`, so as written they cannot see this change; a run pointed at the shipped walker exists for the baseline only (below).
+**Baseline before this change, shipped walker:** W-BORROW-FP 6/0, W-DWWALK-HOSTBIND 6/0, W-ELEC-HOSTBIND 5/0, W-SHIM-SELECT 6/0, W-TERM-NOSPACES 8/0, W-DW-LIVEWIRE 12/12, W-UX-DISC 5/3 (B3, B4, B6 fail on main too); W-SPACE-SCOPED could not run (a scratch path from an earlier session is gone). **Not yet run after this change.** B7 (real page) not built.
+**W-BAND-NO-HOST:** B1-B6 PASS on public Clinic ELEC, red control included. Also found: 87 of 723 bound devices share a spot with another of their class (`hostBind` re-snaps to the host's centre), today's behaviour, not changed here.
+**The one question:** with Terminal itself keeping only about 15 to 30 % of its services and PLB and STR gone everywhere, should the rule stand as written, apply only to the classes a host rule covers, or does the host search's reach need looking at first? No threshold was picked.
+
 ## §8 Then, design lane
 The design lane runs the private set on the merged code and compares placed and bound with the 269 drawn, by room, using its existing assignment. A count near 269 alone proves nothing; it reports positions as well. Report on this lane as: a rules engine, not custom to any design.
 
@@ -72,3 +91,53 @@ The design lane runs the private set on the merged code and compares placed and 
 - Where a main's shape comes from: open question to the owner.
 - Device counts for large rooms, and the missing schedule rows.
 - Ceiling heights read from drawings. That could later give real hosts to devices this rule refuses, and the refused counts show where it would help most.
+
+## §10 Owner's ruling 2026-11-07: amends §2, §3 and §4. Read this before §5. Not built
+Asked by the design lane: should "no ceiling object" count as no host? Advice: no; refuse only where a ceiling is stated and the device does not fit it, and the host is the ceiling whose real outline holds the device, with the device keeping its position. Owner: *"agree with you"*. This answers the one question in §7 RESULT.
+**Evidence, an observation that tests the rule, not its source.** Real devices at real positions on a private Revit-exported set, three readings: a real ceiling outline holds 78 to 89%, so 11 to 22% have no ceiling object above them. Median distance from a device to its ceiling's centre is 6.6 to 11.7 m, and moving devices to the centre puts 215 of them on 11 spots. These are real devices, so they show what a model can lack. They do not show that any particular band device is right.
+**The rule now:**
+1. **Host search changes, so §3's "`hostBind()` itself" no longer holds.** The host is the ceiling whose real plan outline holds the device, at or above it. The device keeps its X and Y and takes the height from that ceiling. Reach to a host's centre and the snap to that centre both go.
+2. **No ceiling object at that spot is not a refusal.** The device is placed and labelled `unhosted`. It is counted apart from bound devices, so a reader can tell them apart. This is what §1 complained of.
+3. **For a ceiling host, refusal stays for one case: a stated ceiling exists and the device does not fit it.** The walker reads no ceiling plan today (§9), so this case cannot fire until that input exists. Do not stand in a guess for it.
+   **Rules 2 and 3 cover `IfcCovering` rows only.** Wall, window, slab and roof rows keep §2: a band device with no host is not placed, and is counted as refused. The owner's word and the evidence were about ceiling objects only, and those hosts were not measured. So refused stays a live, testable result. Extending `unhosted` to them is the owner's decision.
+4. **`no-rule` classes are reported as not judged** (owner, *"Fix host search first"*, recorded in bim-compiler `MODELLER_MASTER.md` §RESUME 2026-11-07b): not bound, not refused, output as today. So `Terminal` PLB and STR do not go to zero.
+5. **Accounting per class: input = bound + unhosted + not judged + refused.** The log line and `refusedNoHost` carry all four.
+6. **§4 still holds:** density numbers are not changed, and a room's top is not a ceiling host.
+**What this costs, derived, not yet measured:** the rule no longer reduces the band count on a ceiling-poor building. The §1 figures, 1,701 ACMV bands against 269 drawn, stay about the same, now labelled. So §1's labelling issue is answered, and **band density is a separate open question for the owner**.
+**Witness changes:** B2 tests `unhosted`, present and labelled, not absent. B5 becomes: no `placed:*` device reads as bound without a host. Add B8, oracle: a building's real devices at real positions through `hostBind`: position unchanged, distinct spots = devices, with a red control on the old centre snap. Re-run the §7 fleet; stop conditions 1, 2 and 3 stand.
+**Doctrine:** the §5.7 wording is now out of date. At merge, state §4's rule as this section does, using the owner's approval above.
+
+### §10.1 Host search detail, measured 2026-11-07, closes the limits left open in the first oracle test
+Log `§` per walk: hosts rejected by the shape test, devices with more than one candidate, bound devices on a host that is not flat. Numbers below test the rule; none is a default.
+- **Area or point host: a data row by host class, never a size threshold.** `IfcCovering`, `IfcSlab` and `IfcRoof` are area hosts. Everything else keeps today's branch, so a window stays a point host, and a wall stays `SIDE`. A small ceiling is still an area host.
+- **Do not filter `IfcCovering` by name words or by type.** Across 25 fleet DBs, 0 coverings have a name that reads as a floor finish, so that fear is not measured here. The real hazard is different: `SampleCastle` holds 1,214 coverings named as wall layers, `LTU_AHouse` 24,321 with no usable name, and many are thick. Names are design-specific, and most DBs carry no type column. **Use shape: a ceiling is flatter than it is wide.** Measure the separation on the fleet and bring the numbers before fixing a ratio. A world box of a diagonal wall can look wide, so report that case.
+- **Height test: keep `_zOverlaps` against the device's band.** That already separates stacked ceilings. Where several candidates remain, take the nearest face in height. A placement with no band stays on `same_storey`, and a host with neither test stays unverified in the log.
+- **A plan box is enough to say a host exists, not always to say which.** On a real set rotated from world axes, 275 devices: 256 under a real outline, 257 under its world box, so only 1 false host. But for 57, a box offers a candidate whose outline does not hold the device, and the ceiling's outline fills only 0.57 of its box at the median. First slice: box plus height, with the ambiguous count logged. Real outlines only if that count moves results; they cost heap, see the perf budget.
+- **A host's lower face is not its soffit when the host is not flat.** On the same set a ceiling 1.84 m deep holds devices through that whole depth; 191 of 249 lights have mid-height inside their ceiling's height range +/- 0.15 m. A band device taking that face can be off by up to the depth. Do not fix it here; log it.
+**B8 oracle, thresholds fixed now:** on public buildings with real devices, every bound device keeps X and Y to 1e-3 m, distinct spots equal devices, and bound count is at least today's. Red control: the centre snap must fail.
+
+### §10.2 Shape test and space filter, build lane's measurements 2026-11-07, accepted by the design lane
+- **Shape test: `bbox_z / min(bbox_x, bbox_y) < 1`, in words: height less than its narrower plan side.** Independent reader: mesh normals, 11 sets with coverings. Excluding `LTU_AHouse`, 2,271 meshed: flat rejected 0 and upright kept 9 at every R from 1 to 1.5. **R is a data value, not a code constant.** `IfcCovering` only; slabs and roofs were not measured.
+- **Known leaks, stated, not fixed in this slice:** 9 upright pieces pass, 1 of them a roof fascia ring 35.7 x 27.2 m, which only the mesh sees. Add a mesh normal test only if the fleet shows false binds. `§` log which hosts bound devices came from the upright-by-mesh list, so that question has an answer.
+- **Fragile near the limit:** 3 flat pieces on a set rotated from world axes read 0.96-0.97. A world box grows with rotation, so a passing ratio there is not a measure of flatness.
+- **Measure on what the walk reads.** The stored box and the mesh box disagree on 3,831 rotated rows of `LTU_AHouse`. State which box the R table used, use that same box in the walk, and log how many rows took each source. If they differ, re-run the table. Reading mesh for this has a heap cost: log it, per the perf budget. `LTU_AHouse` stays not judged.
+- **Space filter:** with `spaceBBox`, area hosts drop the host-centre-inside-space filter. Its reason was the centre snap (code comment at that filter), and §10 removes the snap. Point hosts still snap, so they keep it. The device must still be inside the space. A witness: a ceiling centred outside a room holds a device inside the room, bound, position unchanged; run a space-scoped walk before and after. `W-SPACE-SCOPED` could not run at the §7 baseline, so restore it or say it stayed unrun.
+
+### §10.3 RESULT 2026-11-07: built; stop condition 2 fired; ✅ owner: merge as built
+Code: `modeller/disc_walker.js` `_AREA_HOST`, `_bindAreaHost`, `_bandHostPass`. N = 118 walks, same denominator and page call order as §7, before = #2677's walker. `LTU_AHouse`'s 12 rows stay not judged (sql.js wasm limit, before and after).
+**Added beyond §10.2, because its condition was met: the mesh normal test.** The upright log showed 117 band devices on 1 upright host across 5 walks, a roof fascia ring on `JKR` that the box test passes, plus 39 real devices in the oracle. So `uprightHz: 0.3` is now a data value on the `IfcCovering` row, read only for hosts a device reaches. A host with no faces at hand is not judged by it and the box test stands (`noNormals=312` of hosts read). After it: `uprightRejected=5` across the fleet.
+**Box source, as §10.2 asks.** The walk reads the mesh's world box when a mesh is at hand, else the stored row. The §10.2 table re-run on that same source is unchanged on the 10 sets: R=1 flat rejected 0, upright kept 9. Across the fleet walks: `boxFromMesh=14003`, `boxFromRow=4469`. Row centres are off the mesh's middle by up to 12 m, so the mesh is the better box: of 5,865 ceiling-kind real devices, 87 are held only by the mesh box, 35 only by the row box. A resident with no mesh file takes the weaker box. Largest `heapDeltaMB` on one pass 9.7; nothing is kept.
+**Stop conditions:**
+- **Stop 3 no longer fires.** Walks that placed devices and now place none: 36 → 0.
+- **Stop 1 does not fire on my reading; the "few" is yours.** Terminal on its own rules, placed before → after, bound before → after, DB `Terminal_ARC`: ACMV 1,325 → 1,325, 412 → 457; ELEC 808 → 805, 118 → 135; FP 1,054 → 1,044, 260 → 348. The losses are wall rows refused. Still, most of them are unhosted, not bound: ACMV 868, ELEC 670, FP 696.
+- **Stop 2 FIRES: the FP borrow loses bound devices.** SampleCastle 126 → 24, Duplex 29 → 9, SampleHouse 16 → 6. No device is lost; they are now unhosted. Ceiling binds only, what the old ones were bound to:
+  | Resident | Old ceiling binds | On flat / upright / mixed host | Old spots | Old snap median | New ceiling binds | New unhosted |
+  |---|---:|---|---:|---:|---:|---:|
+  | SampleCastle | 116 | 18 / 80 / 18 | 108 | 1.08 m | 14 | 102 |
+  | Duplex | 28 | 28 / 0 / 0 | 11 | 3.09 m | 8 | 37 |
+  | SampleHouse | 11 | no mesh | 2 | 2.48 m | 6 | 6 |
+  So on SampleCastle most old binds were on wall layers, and on Duplex a real ceiling held the host but only by moving devices 3 m onto 11 spots.
+**Fleet totals, band walks (85):** placed 111,128 → 110,305; bound 16,454 → 17,985; unhosted 56,088; not judged 35,560; refused 823; routed runs 99,098 → 99,390 (these are the stub runs; stopping them is a separate change, owner's G1(b) ruling). Bound falls on 20 walks, rises or holds on the rest; the full table is in the run log, not reproduced here. **As §10 derived, band counts stay about the same, now labelled. Band density stays open for the owner.**
+**Real devices, B8, classes the rules send to a ceiling, Hospital + JKR + Terminal:** 4,695 bound against the old 4,262 (the same number as the design lane's first test), 0 moved, 0 new stacks against the old 3,730. A plain `IfcFlowTerminal` is printed, not judged: it holds receptacles, switches, sconces and floor traps, which the old search bound by reach alone.
+**Witnesses, final code:** W-BAND-NO-HOST 35 of 35 (F1-F7 hand-calculated; B1-B6, B8; B3 on 85 fleet walks). W-BAND-NO-HOST B7 real page, ARC-only public Clinic, 13 of 13: log, held placements, committed rows and status text agree per discipline. Pointed at the shipped walker, before → after: W-BORROW-FP 6/0 → 6/0, W-ELEC-HOSTBIND 5/0 → 5/0, W-SHIM-SELECT 6/0 → 6/0, W-TERM-NOSPACES 8/0 → 8/0, W-TERMINAL-GEOSPLIT 12/0 → 12/0, W-DW-LIVEWIRE 12/12 → 12/12, **W-SPACE-SCOPED restored on public Clinic: 5/0 → 5/0**, W-UX-DISC 5/3 → 6/2 (fails on main too). **W-DWWALK-HOSTBIND 6/0 → 5/1: W3 asserts a wall row keeps the floating count, the assertion §6 said to update.** That script tests bim-compiler's older `build/disc_walker.js`, so it is not changed here.
+**Not in this change:** stopping stub runs (next, its own PR, `§WALK-MAINS`); the doctrine §4 edit, at merge, with the owner.
