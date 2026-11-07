@@ -38,7 +38,7 @@ const TAG = '§W-BAND-PAGE';
     window.Bonsai.oplog._geomOps().forEach(x => { const d = x.parameters && x.parameters._dw; if (!d || !d.ifc) return; const c = comm[d.disc] = comm[d.disc] || { rows: 0, bound: 0, unhosted: 0, not_judged: 0, none: 0 }; c.rows++; c[d.hostState || 'none']++; });
     const chains = {}; Object.keys(window.__dwChains || {}).forEach(d => { chains[d] = (window.__dwChains[d] || []).length; }); return { held, comm, chains, stats: window.__stats, heapMB: performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : null }; });
   console.log(TAG + ' done=' + done + ' heldByDisc=' + JSON.stringify(seen.held) + ' committedByDisc=' + JSON.stringify(seen.comm) + ' heapMB=' + seen.heapMB);
-  const walked = lines.filter(l => /§WALK-BAND-NOHOST/.test(l) && !/VACUOUS/.test(l)).map(l => { const g = k => +(l.match(new RegExp(' ' + k + '=(\\d+)')) || [])[1]; return { disc: (l.match(/disc=(\S+)/) || [])[1], input: g('input'), bound: g('bound'), unhosted: g('unhosted'), notJudged: g('notJudged'), refused: g('refused') }; });
+  const walked = lines.filter(l => /§WALK-BAND-NOHOST/.test(l) && !/VACUOUS/.test(l)).map(l => { const g = k => +(l.match(new RegExp(' ' + k + '=(\\d+)')) || [])[1]; return { disc: (l.match(/disc=(\S+)/) || [])[1], input: g('input'), bound: g('bound'), unhosted: g('unhosted'), notJudged: g('notJudged'), refused: g('refused'), noMain: g('noMain') }; });
   const last = {}; walked.forEach(w => { last[w.disc] = w; });
   if (!done || !Object.keys(last).length) { console.log(TAG + ' INCONCLUSIVE no walk had band devices (done=' + done + '), nothing judged'); await br.close(); srv.close(); process.exit(0); }
   Object.keys(last).forEach(d => { const w = last[d], h = seen.held[d] || {}, c = seen.comm[d] || {}, commitLine = lines.filter(l => new RegExp('§DISC-WALK-COMMIT disc=' + d + ' ').test(l)).pop() || '', committedN = +(commitLine.match(/committed=(\d+)/) || [])[1];
@@ -46,7 +46,7 @@ const TAG = '§W-BAND-PAGE';
     ok('B7b ' + d + ': committed rows carry the labels, same counts', c.bound === w.bound && c.unhosted === w.unhosted && c.not_judged === w.notJudged, 'committed=' + JSON.stringify(c) + ' §commit=' + committedN);
     ok('B7c ' + d + ': every placement the page holds is a committed row', committedN === h.all, 'held=' + h.all + ' §commit=' + committedN);
     const st = seen.stats.filter(t => t.indexOf(d + ' — ') === 0).pop() || '', want = w.bound + ' on a host, ' + w.unhosted + ' unhosted';
-    ok('B7d ' + d + ': the status a user reads says the same', st.indexOf(want) >= 0 && (!w.notJudged || st.indexOf(w.notJudged + ' not judged') >= 0) && (!w.refused || st.indexOf(w.refused + ' not placed') >= 0), JSON.stringify(st.slice(0, 170)));
+    ok('B7d ' + d + ': the status a user reads says the same', st.indexOf(want) >= 0 && (!w.notJudged || st.indexOf(w.notJudged + ' not judged') >= 0) && (!(w.refused - w.noMain) || st.indexOf((w.refused - w.noMain) + ' not placed, no host') >= 0) && (!w.noMain || st.indexOf(w.noMain + ' duct or pipe pieces not placed, no main') >= 0), JSON.stringify(st.slice(0, 170)));
   });
   // §WALK-MAINS (DISC_WALK_DRAWN_MAINS.md §9): the user is told, the model holds no run. A file holding the service would say real=, so this only judges walks that said none.
   const ruled = lines.filter(l => /§WALK-MAINS disc=\S+ .*none reason=no sheet held/.test(l)).map(l => (l.match(/disc=(\S+)/) || [])[1]);

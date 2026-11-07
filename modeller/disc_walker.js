@@ -2583,11 +2583,12 @@
   // everything else (schedule rows, `shim:host-*`) passes through untouched. Per class: input = bound + unhosted + not judged + refused.
   // unhosted = a ceiling row, no ceiling object at that spot: placed and labelled, counted apart from bound. not judged = the class has no host rule: output as before.
   // refused = any other host rule (wall, window, slab, roof) with no host: not placed, counted. opts.keepUnhosted restores refused devices' floating output, for witnesses only.
-  function _noBandHostAcct() { return { total: 0, input: 0, bound: 0, unhosted: 0, notJudged: 0, refused: 0, byClass: {} }; }
+  function _noBandHostAcct() { return { total: 0, input: 0, bound: 0, unhosted: 0, notJudged: 0, refused: 0, noMain: 0, byClass: {} }; }
   function _bandHostPass(disc, placed, bdb, shimSrc, geoDb, spaceBBox, opts, buildingName) {
     var band = [], out = [], byCls = {}, acct = _noBandHostAcct(), info = [], hosts = {}, percepts = {}, mounts = {};
     placed.forEach(function (p) { if (/^placed:/.test(p.prov || '')) { band.push(p); (byCls[p.ifc_class] = byCls[p.ifc_class] || []).push(p); } else out.push(p); });
     acct.input = band.length;
+    var noMains = _mainsDrawnOnly(disc, opts);   // §WALK-MAINS §9.2: a band duct or pipe piece with no main is not placed
     function noHost(c, shim, list, why) {       // a device with a host rule and no host: the row says which
       var a = _AREA_HOST[shim.host_ifc_class], un = !!(a && a.noHost === 'unhosted');
       c[why] += list.length;
@@ -2595,7 +2596,8 @@
       else { c.refused += list.length; acct.refused += list.length; acct.total += list.length; if (opts && opts.keepUnhosted) out = out.concat(list); }
     }
     Object.keys(byCls).forEach(function (cls) {
-      var grp = byCls[cls], shim = _shimForFixture(shimSrc, disc, cls), c = acct.byClass[cls] = { input: grp.length, bound: 0, unhosted: 0, notJudged: 0, refused: 0, 'host-absent': 0, 'no-host-here': 0 };
+      var grp = byCls[cls], shim = _shimForFixture(shimSrc, disc, cls), c = acct.byClass[cls] = { input: grp.length, bound: 0, unhosted: 0, notJudged: 0, refused: 0, 'host-absent': 0, 'no-host-here': 0, 'no-main': 0 };
+      if (noMains && _MAIN_PIECE_CLASSES.indexOf(cls) >= 0) { c['no-main'] = c.refused = grp.length; acct.noMain += grp.length; acct.refused += grp.length; acct.total += grp.length; if (opts && opts.keepUnhosted) out = out.concat(grp); return; }
       if (!shim) { grp.forEach(function (p) { p.hostState = 'not_judged'; }); out = out.concat(grp); c.notJudged = grp.length; acct.notJudged += grp.length; return; }
       var hb = hostBind(grp, bdb, shim, geoDb, spaceBBox);
       if (hb.noHost) { noHost(c, shim, grp, 'host-absent'); info.push({ ifc_class: cls, percept: shim.product_value, host: shim.host_ifc_class, mount: shim.mount, bound: 0, refused: c.refused, unhosted: c.unhosted, noHost: true }); return; }
@@ -2605,11 +2607,11 @@
       if (hb.bound.length) { hosts[shim.host_ifc_class] = 1; percepts[shim.product_value] = 1; mounts[shim.mount] = 1; }
       info.push({ ifc_class: cls, percept: shim.product_value, host: shim.host_ifc_class, mount: shim.mount, bound: hb.bound.length, refused: c.refused, unhosted: c.unhosted });
     });
-    var classes = Object.keys(acct.byClass).map(function (k) { var r = acct.byClass[k]; return k + ': input=' + r.input + ' bound=' + r.bound + ' unhosted=' + r.unhosted + ' notJudged=' + r.notJudged + ' refused=' + r.refused + (r.unhosted + r.refused ? ' (host-absent=' + r['host-absent'] + ' no-host-here=' + r['no-host-here'] + ')' : ''); });
-    console.log(TAG + ' §WALK-BAND-NOHOST disc=' + disc + ' bldg=' + (buildingName || '') + (band.length ? ' input=' + band.length + ' bound=' + acct.bound + ' unhosted=' + acct.unhosted + ' notJudged=' + acct.notJudged + ' refused=' + acct.refused : ' input=0 VACUOUS') + (opts && opts.keepUnhosted ? ' keepUnhosted(refused kept floating, witness only)' : '') + (classes.length ? ' [' + classes.join(' | ') + ']' : ''));
+    var classes = Object.keys(acct.byClass).map(function (k) { var r = acct.byClass[k]; return k + ': input=' + r.input + ' bound=' + r.bound + ' unhosted=' + r.unhosted + ' notJudged=' + r.notJudged + ' refused=' + r.refused + (r.unhosted + r.refused ? ' (host-absent=' + r['host-absent'] + ' no-host-here=' + r['no-host-here'] + ' no-main=' + r['no-main'] + ')' : ''); });
+    console.log(TAG + ' §WALK-BAND-NOHOST disc=' + disc + ' bldg=' + (buildingName || '') + (band.length ? ' input=' + band.length + ' bound=' + acct.bound + ' unhosted=' + acct.unhosted + ' notJudged=' + acct.notJudged + ' refused=' + acct.refused + ' noMain=' + acct.noMain : ' input=0 VACUOUS') + (opts && opts.keepUnhosted ? ' keepUnhosted(refused kept floating, witness only)' : '') + (classes.length ? ' [' + classes.join(' | ') + ']' : ''));
     return { placements: out, bound: acct.bound, refusedNoHost: acct, input: band.length, byClassInfo: info, hostsSeen: hosts, perceptsSeen: percepts, mountsSeen: mounts };
   }
-  function _noHostReason(r) { return r.total + ' band device(s) refused, no host: not placed (' + Object.keys(r.byClass).filter(function (c) { return r.byClass[c].refused; }).join(', ') + ')'; }
+  function _noHostReason(r) { return r.total + ' band device(s) refused, not placed (' + (r.noMain ? r.noMain + ' duct or pipe pieces with no main; ' : '') + Object.keys(r.byClass).filter(function (c) { return r.byClass[c].refused; }).join(', ') + ')'; }
 
   // §WALK-BRIDGE-ALL (2026-09-24, MODELLER_MASTER §STRATEGY L1) — SPEC. The §CAMPAIGN M1 routePattern bridge used
   // to run ONLY on the legacy walk (below). The live Walk calls dwWalk(…,{schedule:true}) first
@@ -2626,6 +2628,7 @@
   // §WALK-MAINS (prompts/DISC_WALK_DRAWN_MAINS.md §9, witness W-WALK-MAINS): these disciplines take a main from a drawing only. On a file with none of the service the pattern bridge's runs have no source
   // (measured: lone stubs, no network), so it makes none and the walker says why. Real runs (routeChains) are untouched. Only `no sheet held` can fire until the reader exists.
   var _MAINS_DRAWN_ONLY = { ACMV: 1, FP: 1, PLB: 1 };
+  function _mainsDrawnOnly(disc, opts) { return !!_MAINS_DRAWN_ONLY[disc] && !(opts && opts.keepPatternStubs) && !ROOT.__dwKeepPatternStubs; }   // both switches: witnesses of the pattern engine only, no UI
   // §9.1: "no sheet held" must not be said of a file that holds the service. Pieces of this discipline, by the label the file gives them. A routing row is measured data, so a held service with no row stays unrouted and says so.
   var _MAIN_PIECE_CLASSES = ['IfcPipeSegment', 'IfcPipeFitting', 'IfcDuctSegment', 'IfcDuctFitting', 'IfcFlowSegment', 'IfcFlowFitting'];
   function _heldMainPieces(disc, bdb) {
@@ -2633,7 +2636,7 @@
     catch (e) { return 0; }                                       // no discipline column on this DB: nothing held by label
   }
   function _bridgeIfEmpty(disc, bdb, buildingName, placements, rc, opts) {
-    if (_MAINS_DRAWN_ONLY[disc] && !(opts && opts.keepPatternStubs) && !ROOT.__dwKeepPatternStubs) {   // both switches: witnesses of the pattern engine only, no UI
+    if (_mainsDrawnOnly(disc, opts)) {
 
       if (rc.segs.length) {
         console.log(TAG + ' §WALK-MAINS disc=' + disc + ' bldg=' + buildingName + ' real=' + rc.segs.length);
