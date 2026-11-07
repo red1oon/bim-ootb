@@ -1,7 +1,7 @@
 # ⚠ DO NOT REMOVE
 SCOPE: what the disc walker does with a band device that has no host, for ANY building. Read the log after every run; exit code is not evidence. Public repo: no client or project names; a real test set is "a private Revit-exported set".
 Owner (2026-11-07): "we are abstracting a rules engine not custom to any particular design." On this rule: "go with your advice, write the spec".
-Status: BUILT on branch `feat/walk-band-no-host`, NOT merged: §7 stop conditions fired, see §7 RESULT. The doctrine edit in §5.7 was not made.
+Status: MERGED with the owner's word, 2026-11-07. Read §10 and §10.3; §7 RESULT is the earlier build. The doctrine edit is §10's wording, made separately in BIMCompiler `docs/internal/WalkerDoctrine.md`.
 
 ## §1 Issue
 The measured-band walk copies device density from a reference building. A device that finds no host stays in the model at its band height, floating, and counts as placed.
@@ -123,7 +123,7 @@ Log `§` per walk: hosts rejected by the shape test, devices with more than one 
 - **Measure on what the walk reads.** The stored box and the mesh box disagree on 3,831 rotated rows of `LTU_AHouse`. State which box the R table used, use that same box in the walk, and log how many rows took each source. If they differ, re-run the table. Reading mesh for this has a heap cost: log it, per the perf budget. `LTU_AHouse` stays not judged.
 - **Space filter:** with `spaceBBox`, area hosts drop the host-centre-inside-space filter. Its reason was the centre snap (code comment at that filter), and §10 removes the snap. Point hosts still snap, so they keep it. The device must still be inside the space. A witness: a ceiling centred outside a room holds a device inside the room, bound, position unchanged; run a space-scoped walk before and after. `W-SPACE-SCOPED` could not run at the §7 baseline, so restore it or say it stayed unrun.
 
-### §10.3 RESULT 2026-11-07: built, ⛔ HELD before merge, stop condition 2 fired. For the owner.
+### §10.3 RESULT 2026-11-07: built; stop condition 2 fired; ✅ owner: merge as built
 Code: `modeller/disc_walker.js` `_AREA_HOST`, `_bindAreaHost`, `_bandHostPass`. N = 118 walks, same denominator and page call order as §7, before = #2677's walker. `LTU_AHouse`'s 12 rows stay not judged (sql.js wasm limit, before and after).
 **Added beyond §10.2, because its condition was met: the mesh normal test.** The upright log showed 117 band devices on 1 upright host across 5 walks, a roof fascia ring on `JKR` that the box test passes, plus 39 real devices in the oracle. So `uprightHz: 0.3` is now a data value on the `IfcCovering` row, read only for hosts a device reaches. A host with no faces at hand is not judged by it and the box test stands (`noNormals=312` of hosts read). After it: `uprightRejected=5` across the fleet.
 **Box source, as §10.2 asks.** The walk reads the mesh's world box when a mesh is at hand, else the stored row. The §10.2 table re-run on that same source is unchanged on the 10 sets: R=1 flat rejected 0, upright kept 9. Across the fleet walks: `boxFromMesh=14003`, `boxFromRow=4469`. Row centres are off the mesh's middle by up to 12 m, so the mesh is the better box: of 5,865 ceiling-kind real devices, 87 are held only by the mesh box, 35 only by the row box. A resident with no mesh file takes the weaker box. Largest `heapDeltaMB` on one pass 9.7; nothing is kept.
