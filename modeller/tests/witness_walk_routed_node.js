@@ -29,9 +29,9 @@ const sha = b => crypto.createHash('sha1').update(b).digest('hex').slice(0, 12);
   for (const disc of DISCS) {
     // RED CONTROL: the engine switched off must reproduce the baseline's refusal, or this witness cannot see the engine at all.
     global._rwReady = false;
-    const red = H.walkLive(SQL, stack, disc, new Uint8Array(raw), NAME, avoid);
+    const red = H.walkLive(SQL, stack, disc, new Uint8Array(raw), NAME, avoid, { keepPatternStubs: true });
     global._rwReady = true;
-    const w = H.walkLive(SQL, stack, disc, new Uint8Array(raw), NAME, avoid);
+    const w = H.walkLive(SQL, stack, disc, new Uint8Array(raw), NAME, avoid, { keepPatternStubs: true });   // §WALK-MAINS: tests the engine; W-WALK-MAINS proves a user walk makes none
     const segs = w.chainSegs || [];
     console.log('§WALK-ROUTED ' + disc + ' mode=' + (w.mode || (w.schedule ? 'schedule' : 'legacy')) + ' placed=' + w.placed + ' chainSegs=' + segs.length +
       ' chainByRule=' + JSON.stringify(w.chainByRule || []));

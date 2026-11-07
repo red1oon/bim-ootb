@@ -2623,7 +2623,16 @@
   //     whose substrate z (the MEDIAN element-centre z of that storey, i.e. roughly mid-storey, from this building's
   //     own elements, not invented) is NEAREST its z. The count re-keyed is logged.
   //   - an empty-but-not-refused bridge result is logged (§WALK-PATTERN EMPTY); it used to be silent.
+  // §WALK-MAINS (prompts/DISC_WALK_DRAWN_MAINS.md §9, witness W-WALK-MAINS): these disciplines take a main from a drawing only. On a file with none of the service the pattern bridge's runs have no source
+  // (measured: lone stubs, no network), so it makes none and the walker says why. Real runs (routeChains) are untouched. Only `no sheet held` can fire until the reader exists.
+  var _MAINS_DRAWN_ONLY = { ACMV: 1, FP: 1, PLB: 1 };
   function _bridgeIfEmpty(disc, bdb, buildingName, placements, rc, opts) {
+    if (_MAINS_DRAWN_ONLY[disc] && !(opts && opts.keepPatternStubs) && !ROOT.__dwKeepPatternStubs) {   // both switches: witnesses of the pattern engine only, no UI
+
+      if (rc.segs.length) console.log(TAG + ' §WALK-MAINS disc=' + disc + ' bldg=' + buildingName + ' real=' + rc.segs.length);
+      else if (placements && placements.length) console.log(TAG + ' §WALK-MAINS disc=' + disc + ' bldg=' + buildingName + ' none reason=no sheet held');
+      return { rc: rc, patternInfo: null, mains: rc.segs.length ? { real: rc.segs.length } : { none: 'no sheet held' } };
+    }
     if (rc.segs.length || (opts && opts.noPattern) || !placements || !placements.length) return { rc: rc, patternInfo: null };
     var sub = substrate(bdb), names = {}, rekeyed = 0, pl = placements;
     sub.forEach(function (st) { names[st.name] = 1; });
@@ -2703,7 +2712,7 @@
           return { disc: disc, refused: true, verdict: true, reason: mWhy, placed: 0, placements: [], refusedNoHost: mRefusedNoHost };
         }
         var mChains = route(disc, bdb), mBr = _bridgeIfEmpty(disc, bdb, buildingName, mPlaced, routeChains(disc, bdb), opts), mSrc = mBr.rc;
-        if (!mSrc.segs.length) { var mBt = _bomTree(disc, bdb, mPlaced); if (mBt && mBt.segs.length) { mSrc = { segs: mBt.segs, byRule: mBt.byRule }; mBr = { rc: mSrc, patternInfo: { seed: mBt.seed, riser: null } }; } }   // §D65
+        if (!mSrc.segs.length) { var mBt = _bomTree(disc, bdb, mPlaced); if (mBt && mBt.segs.length) { mSrc = { segs: mBt.segs, byRule: mBt.byRule }; mBr = { rc: mSrc, patternInfo: { seed: mBt.seed, riser: null } }; console.log(TAG + ' §WALK-MAINS disc=' + disc + ' bldg=' + buildingName + ' bom-tree=' + mSrc.segs.length); } }   // §D65
         var mRefN = Object.keys(pm.refused).reduce(function (a, k) { return a + pm.refused[k]; }, 0);
         if (srcPart) {
           console.log(TAG + ' §DW-SCHED-MIXED disc=' + disc + ' scheduled=' + ps.placements.length + ' measuredKept=' + mPlaced.length + ' measuredDropped=' + pmDropped);
@@ -2715,7 +2724,7 @@
         return { disc: disc, refused: false, mode: srcPart ? 'schedule+measured' : 'measured-band', placed: mPlaced.length, placements: mPlaced, refusedNoHost: mRefusedNoHost,
           schedule: srcPart ? { spaces: ps.spaces, spacesUsed: ps.spacesUsed, skippedSpaces: ps.skippedSpaces, lod400Refused: ps.refused } : undefined,
           measured: { zones: pm.zones, hostBound: mBound, floats: mFloat, lod400Refused: pm.refused },
-          chains: mChains, chainSegs: mSrc.segs, chainByRule: mSrc.byRule, storeys: 0, patternBridge: mBr.patternInfo };
+          chains: mChains, chainSegs: mSrc.segs, chainByRule: mSrc.byRule, storeys: 0, patternBridge: mBr.patternInfo, mains: mBr.mains };
       }
       _bandHostPass(disc, [], bdb, [], null, null, opts, buildingName);   // a schedule walk has no band devices: says so (input=0 VACUOUS)
       var schains = route(disc, bdb), sBr = _bridgeIfEmpty(disc, bdb, buildingName, ps.placements, routeChains(disc, bdb), opts), src2 = sBr.rc;
@@ -2726,7 +2735,7 @@
         ' skippedSpaces=' + ps.skippedSpaces.length);
       return { disc: disc, refused: false, placed: ps.placements.length, placements: ps.placements, refusedNoHost: _noBandHostAcct(),
         schedule: { spaces: ps.spaces, spacesUsed: ps.spacesUsed, skippedSpaces: ps.skippedSpaces, lod400Refused: ps.refused },
-        chains: schains, chainSegs: src2.segs, chainByRule: src2.byRule, storeys: 0, patternBridge: sBr.patternInfo };
+        chains: schains, chainSegs: src2.segs, chainByRule: src2.byRule, storeys: 0, patternBridge: sBr.patternInfo, mains: sBr.mains };
     }
     var reps = repRules(disc);
     // §SPACE-SCOPED piece 2: opts.spaceGuid narrows the walk to ONE real IfcSpace's own boundary instead
@@ -2801,7 +2810,7 @@
       ' chains=' + chains.length + ' chainSegs=' + rc.segs.length + ' storeys=' + sub.length +
       (rc.byRule.length ? ' [' + rc.byRule.map(function (b) { return b.from.replace('Ifc', '') + '→' + b.to.replace('Ifc', '') + ':' + (b.skipped || (b.segs + '/' + (b.segs + b.noNbr))); }).join(' ') + ']' : ''));
     return { disc: disc, refused: false, placed: placements.length, placements: placements, hostBind: hbInfo, refusedNoHost: refusedNoHost,
-      chains: chains, chainSegs: rc.segs, chainByRule: rc.byRule, storeys: sub.length, patternBridge: patternInfo };
+      chains: chains, chainSegs: rc.segs, chainByRule: rc.byRule, storeys: sub.length, patternBridge: patternInfo, mains: br.mains };
   }
 
   // ── SEED PICKER (human-in-the-loop service entry; W-SEED-TRUNK / W-SEED-DEFAULT) ──────────────────
