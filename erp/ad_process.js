@@ -207,12 +207,15 @@
   // Implementing AD_PROCESS_FOLD_LANE.md §P1 — Witness: W-PROC-GENPO
   // ════════════════════════════════════════════════════════════════════════════════════════════════════════
 
-  // projectGenGate — ProjectGenOrder.getProject's four IllegalArgumentException checks, as a returnable verdict.
+  // projectGenGate — ProjectGenOrder.getProject's four IllegalArgumentException checks + doIt's Service-Charge refusal, as a returnable verdict.
   function projectGenGate(p) {
     if (!p || !p.c_project_id)                       return { ok: false, missing: 'C_Project_ID',          message: 'Project not found' };
     if (!p.m_pricelist_version_id)                   return { ok: false, missing: 'M_PriceList_Version_ID', message: 'Project has no Price List' };
     if (!p.m_warehouse_id)                           return { ok: false, missing: 'M_Warehouse_ID',         message: 'Project has no Warehouse' };
     if (!p.c_bpartner_id || !p.c_bpartner_location_id) return { ok: false, missing: 'C_BPartner(_Location)_ID', message: 'Project has no Business Partner/Location' };
+    // doIt (ProjectGenOrder.java:80-84): MProject.PROJECTCATEGORY_ServiceChargeProject ('S') throws after the
+    // order was begun inside the transaction — rolled back, nothing kept. Here the refusal precedes any op.
+    if (p.projectcategory === 'S')                   return { ok: false, missing: 'ProjectCategory',        message: 'Service Charge Projects are on the TODO List' };
     return { ok: true };
   }
 
