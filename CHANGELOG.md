@@ -4,6 +4,32 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.85.0](https://github.com/red1oon/bim-ootb/compare/v1.84.2...v1.85.0) (2026-11-07)
+
+
+### ✨ Features
+
+* **materials:** a colourless proxy takes its material from what it is, not the teal flag (§PROXY_SUBSTANCE) ([#2667](https://github.com/red1oon/bim-ootb/issues/2667)) ([a127fd1](https://github.com/red1oon/bim-ootb/commit/a127fd193da0384808a8b13f16265b3ef2112953))
+* **modeller:** complex buildings read room schedules from a named rule set ([#2672](https://github.com/red1oon/bim-ootb/issues/2672)) ([fd68e39](https://github.com/red1oon/bim-ootb/commit/fd68e3902e080b5e852ccb97686d4fae077d3da7))
+* **modeller:** edit_cli, a call that takes a grid edit and returns the proof ([#2678](https://github.com/red1oon/bim-ootb/issues/2678)) ([0a53cc9](https://github.com/red1oon/bim-ootb/commit/0a53cc98ca4750c41b2bd209ff60ecc2f3c95b53))
+* **modeller:** the edit report, red ink before and after a grid move (§EDIT-REPORT) ([#2674](https://github.com/red1oon/bim-ootb/issues/2674)) ([577d475](https://github.com/red1oon/bim-ootb/commit/577d475ebed9c3edda768b41107c3165a47c7caa))
+* **modeller:** the walker types a space from the words of its name ([#2670](https://github.com/red1oon/bim-ootb/issues/2670)) ([54143b8](https://github.com/red1oon/bim-ootb/commit/54143b8107150698e56bdf54c7665f9bf1bff5af))
+* one record of a file's stated rooms, both JS routes (§IMPORT_SPACES) ([#2676](https://github.com/red1oon/bim-ootb/issues/2676)) ([b6ac9f4](https://github.com/red1oon/bim-ootb/commit/b6ac9f4d880223f4c197c07ce6d2bdfd56d5bc58))
+* **walk:** declared storey ladder, duplicate shells, open a Viewer-saved DB, page-order walk harness ([#2677](https://github.com/red1oon/bim-ootb/issues/2677)) ([0295309](https://github.com/red1oon/bim-ootb/commit/0295309a91ec968fef2b71f1edb009d32d5d8628))
+* **walk:** host search by footprint and height, every band device accounted for (W-BAND-NO-HOST) ([#2681](https://github.com/red1oon/bim-ootb/issues/2681)) ([6b4d61f](https://github.com/red1oon/bim-ootb/commit/6b4d61f3a00e17b867aeaf1c569a566dd0b8d294))
+
+
+### 🐛 Fixes
+
+* **modeller:** flag a wall driven into a wall it abuts (§ABUTS-DEEPEN) ([#2673](https://github.com/red1oon/bim-ootb/issues/2673)) ([8dcd3ec](https://github.com/red1oon/bim-ootb/commit/8dcd3ecf4c4527c38ad8abd60e3f4fdb096486ff))
+
+
+### 📝 Documentation
+
+* **viewer:** neutral wording in two code comments and a witness header ([#2669](https://github.com/red1oon/bim-ootb/issues/2669)) ([cddb618](https://github.com/red1oon/bim-ootb/commit/cddb6188bbe5a417668aa3d85155a3ce7c308f51))
+* **walker:** spec, a band device with no host is not placed (W-BAND-NO-HOST) ([#2675](https://github.com/red1oon/bim-ootb/issues/2675)) ([5f6fd4a](https://github.com/red1oon/bim-ootb/commit/5f6fd4af9c9fef7e1cf531e8311b3ab3e5d46977))
+* **walker:** spec, a reader for drawn service centrelines ([#2680](https://github.com/red1oon/bim-ootb/issues/2680)) ([66ed647](https://github.com/red1oon/bim-ootb/commit/66ed6473e9931671bfdcb1ce5e464b97f6b4bae6))
+
 ## [1.84.2](https://github.com/red1oon/bim-ootb/compare/v1.84.1...v1.84.2) (2026-11-06)
 
 
