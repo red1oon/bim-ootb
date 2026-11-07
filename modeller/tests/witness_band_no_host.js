@@ -120,9 +120,13 @@ function oracle(SQL, DW, OLD) {
 (async () => {
   if (!fs.existsSync(DB)) { log('§W_BAND VERDICT INCONCLUSIVE db absent'); process.exit(0); }
   const SQL = await initSqlJs(), stack = await H.loadStack(SQL), raw = fs.readFileSync(DB), DW = stack.DW;
-  const oldFile = path.join(BEFORE, 'modeller', 'disc_walker.js'); let OLD = null;
-  if (fs.existsSync(oldFile) && fs.realpathSync(oldFile) !== fs.realpathSync(path.join(__dirname, '..', 'disc_walker.js'))) OLD = require(oldFile);
-  log('§W_BAND trees new=' + path.join(__dirname, '..') + ' before=' + (OLD ? BEFORE : 'none, B4 and B8 unrun'));
+  // The red controls need the walker from BEFORE the host search. A default tree goes stale the moment the fix merges (it did: B8's red read 0), so without BEFORE_TREE the walker is taken
+  // from a pinned commit, the last one before #2681. Printed, so a reader knows which code the controls ran.
+  const PINNED = '0295309a'; let OLD = null, oldFrom = 'none, B4 and B8 unrun';
+  if (process.env.BEFORE_TREE) { const oldFile = path.join(BEFORE, 'modeller', 'disc_walker.js'); if (fs.existsSync(oldFile) && fs.realpathSync(oldFile) !== fs.realpathSync(path.join(__dirname, '..', 'disc_walker.js'))) { OLD = require(oldFile); oldFrom = BEFORE; } }
+  else { try { const dir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'wband-old-')), git = a => require('child_process').execSync('git -C "' + path.join(__dirname, '..', '..') + '" show ' + PINNED + ':' + a, { maxBuffer: 1 << 26 });
+    ['disc_walker.js', 'real_placement_resolver.js', 'room_type_classifier.js'].forEach(f => { try { fs.writeFileSync(path.join(dir, f), git('modeller/' + f)); } catch (e) { /* not at that commit */ } }); OLD = require(path.join(dir, 'disc_walker.js')); oldFrom = 'pinned ' + PINNED; } catch (e) { oldFrom = 'none, the pinned commit could not be read (' + String(e.message).slice(0, 60) + ')'; } }
+  log('§W_BAND trees new=' + path.join(__dirname, '..') + ' before=' + oldFrom);
   units(SQL, DW);
   H.openBuildingRules(SQL, stack, NAME);
   const walkOf = st => (disc, extra) => quiet(() => H.walkLive(SQL, st, disc, new Uint8Array(raw), NAME, [], extra)).r;
