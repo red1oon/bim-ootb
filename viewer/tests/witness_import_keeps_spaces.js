@@ -83,8 +83,15 @@ const tables = (db) => { const r = db.exec("SELECT name FROM sqlite_master WHERE
       const spread = off.map(o => Math.max(...o) - Math.min(...o));
       W(miss === 0 && nameBad === 0 && Object.keys(R).length === rows.length, 'W6 parity with the extractor DB: same rooms and names', `DB ${rows.length}, extractor ${Object.keys(R).length}, missing ${miss}, name differs ${nameBad}`);
       W(cmp > 0 && sizeBad === 0 && spread.every(x => x < 0.02), 'W6b parity: same sizes, one constant frame offset', `compared ${cmp}, max size diff ${maxSize.toFixed(4)} m, offset ${off.map(o => o[0].toFixed(3)).join(',')}, spread ${spread.map(x => x.toFixed(4)).join(',')}`);
+      const refCols = ref.exec('PRAGMA table_info(ifc_spaces)');
+      if (refCols.length) {
+        const LN = {}; ref.exec('SELECT guid,long_name FROM ifc_spaces')[0].values.forEach(v => { LN[v[0]] = v[1]; });
+        const lnRows = db.exec('SELECT guid,long_name FROM ifc_spaces')[0].values, lnBad = lnRows.filter(v => LN[v[0]] !== v[1]).length, lnSet = lnRows.filter(v => v[1]).length;
+        W(lnSet > 0 && lnBad === 0, 'W7 parity: both routes record the same long names', `named ${lnSet} of ${lnRows.length}, differ ${lnBad}`);
+      } else console.log('  §W7 INCONCLUSIVE extractor DB has no ifc_spaces, long names not compared');
       ref.close();
     }
+    if (process.env.KEEP_DB && want > 0) { fs.writeFileSync(process.env.KEEP_DB, Buffer.from(db.export())); console.log('  §KEEP_DB ' + name + ' written'); }
     db.close();
   }
   // Red control: the same witness on a worker with the pass removed must fail W1.

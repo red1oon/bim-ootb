@@ -260,6 +260,20 @@
   // LongName (the space-TYPE key, e.g. 'Bathroom 1') rides in element_name for (a) and in
   // object_type for (b) (stamped verbatim from the source IFC by scripts/stamp_space_longnames.py).
   function spacesOf(bdb) {
+    // §IMPORT_SPACES part 2 (prompts/IMPORT_KEEPS_IFCSPACE.md): the rooms the file itself states, when an importer kept them. Read only, the Find panel keeps owning spatial_structure.
+    if (_rows(bdb, "SELECT 1 FROM sqlite_master WHERE type='table' AND name='ifc_spaces'").length) {
+      var rec = _rows(bdb, "SELECT guid, COALESCE(NULLIF(long_name,''), NULLIF(object_type,''), name) label, long_name ln, storey, " +
+        "center_x cx, center_y cy, center_z cz, COALESCE(size_x,0) bx, COALESCE(size_y,0) by_, COALESCE(size_z,0) bz FROM ifc_spaces");
+      var recBox = rec.filter(function (s) { return s.bx > 0.1 && s.by_ > 0.1; });
+      if (recBox.length) {
+        console.log('§DW-SPACE-SOURCE source=ifc_spaces rooms=' + recBox.length + ' named=' + recBox.filter(function (s) { return s.ln; }).length + ' noBox=' + (rec.length - recBox.length));
+        return recBox.map(function (s) {
+          return { guid: s.guid, label: s.label, storey: s.storey || 'Unknown',
+            x0: s.cx - s.bx / 2, x1: s.cx + s.bx / 2, y0: s.cy - s.by_ / 2, y1: s.cy + s.by_ / 2,
+            z0: s.cz - s.bz / 2, z1: s.cz + s.bz / 2 };
+        });
+      }
+    }
     var out = _rows(bdb, "SELECT m.guid guid, COALESCE(m.element_name, m.guid) label, m.storey storey, " +
       "t.center_x cx, t.center_y cy, t.center_z cz, COALESCE(t.bbox_x,0) bx, COALESCE(t.bbox_y,0) by_, " +
       "COALESCE(t.bbox_z,0) bz FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid " +
