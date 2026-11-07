@@ -8,8 +8,13 @@
 const fs = require('fs'), path = require('path');
 const initSqlJs = require(path.join(process.env.HOME, 'bim-compiler', 'node_modules', 'sql.js'));
 const B = path.join(process.env.HOME, 'bim-ootb', 'buildings'), DEPLOY = path.join(process.env.HOME, 'bim-compiler', 'deploy', 'buildings');
-const BEFORE = process.env.BEFORE_TREE;
-if (!BEFORE) { console.log('§W_TRUNK VERDICT INCONCLUSIVE no BEFORE_TREE, the red controls cannot run, nothing judged'); process.exit(0); }
+// The red controls need the router from BEFORE §10.4. A default tree goes stale once the fix merges, so without BEFORE_TREE the files come from a pinned commit, the parent of the fix (#2691).
+const PINNED = 'd549558a~1';
+let BEFORE = process.env.BEFORE_TREE, beforeFrom = BEFORE;
+if (!BEFORE) { try { const dir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'wtrunk-old-')), m = path.join(dir, 'modeller'); fs.mkdirSync(m);
+  ['disc_walker.js', 'seed_trunk.js', 'real_placement_resolver.js', 'room_type_classifier.js'].forEach(f => { try { fs.writeFileSync(path.join(m, f), require('child_process').execSync('git -C "' + path.join(__dirname, '..', '..') + '" show ' + PINNED + ':modeller/' + f, { maxBuffer: 1 << 26 })); } catch (e) { } });
+  BEFORE = dir; beforeFrom = 'pinned ' + PINNED; } catch (e) { console.log('§W_TRUNK VERDICT INCONCLUSIVE the pinned commit could not be read, nothing judged'); process.exit(0); } }
+console.log('§W_TRUNK before=' + beforeFrom);
 const OLD_DW = require(path.join(BEFORE, 'modeller', 'disc_walker.js')), OLD_ST = require(path.join(BEFORE, 'modeller', 'seed_trunk.js'));
 const DW = require('../disc_walker.js'), ST = require('../seed_trunk.js');
 globalThis.DiscWalker = DW;   // what the page's script tag does; the old router never reads it

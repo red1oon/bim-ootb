@@ -161,11 +161,39 @@ function oracle(SQL, DW, OLD) {
     oracle(SQL, DW, OLD);
     quiet(() => H.openBuildingRules(SQL, stack, NAME));
   } else log('§W_BAND B4 UNRUN no old walker · B8 UNRUN no old walker');
+  // ── §11 P1-P6 (prompts/DISC_WALK_BAND_NO_HOST.md §11): every band row is provisional and out of `placed`. ──
+  const bandOut = w => (w.placements || []).filter(p => p.hostState === 'bound' || p.hostState === 'unhosted' || p.hostState === 'not_judged');
+  const P1rows = bandOut(real).concat(bandOut(noRule)), P1bad = P1rows.filter(p => !p.provisional);
+  if (P1rows.length) chk('P1 every band row is provisional: bound, unhosted and not judged', !P1bad.length && bandOut(real).some(p => p.hostState === 'bound') && bandOut(noRule).some(p => p.hostState === 'not_judged'), 'rows=' + P1rows.length + ' notProvisional=' + P1bad.length);
+  else log('§W_BAND P1 INCONCLUSIVE no band rows to judge');
+  const P2 = w => { const A = w.refusedNoHost || {}, out = w.placements || [], pv = out.filter(p => p.provisional).length; return { ok: w.placed + w.provisional === out.length && w.provisional === pv && pv === (A.bound + A.unhosted + A.notJudged), txt: 'placed=' + w.placed + ' provisional=' + w.provisional + ' refused=' + A.refused + ' rows=' + out.length + ' (bound ' + A.bound + ' unhosted ' + A.unhosted + ' notJudged ' + A.notJudged + ')' }; };
+  [['real', real], ['noRule', noRule], ['wallFar', wallFar]].forEach(([n, w]) => { const r = P2(w); chk('P2 ' + n + ': placed + provisional = rows out, provisional = bound + unhosted + not judged, refused apart', r.ok, r.txt); });
+  // P3: positions identical with and without the rule. "Without" = main's walker, read from git, so the comparison is the shipped code before this change.
+  let MAIN = null; try { const dir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'wband-main-')), gitm = a => require('child_process').execSync('git -C "' + path.join(__dirname, '..', '..') + '" show origin/main:' + a, { maxBuffer: 1 << 26 });
+    ['disc_walker.js', 'real_placement_resolver.js', 'room_type_classifier.js'].forEach(f => { try { fs.writeFileSync(path.join(dir, f), gitm('modeller/' + f)); } catch (e) { } }); MAIN = require(path.join(dir, 'disc_walker.js')); } catch (e) { MAIN = null; }
+  if (MAIN) { const st = { DW: MAIN, WalkRules: stack.WalkRules }; quiet(() => H.openBuildingRules(SQL, st, NAME)); const before = walkOf(st)(DISC, {}); quiet(() => H.openBuildingRules(SQL, stack, NAME));
+    const bag = w => { const m = {}; (w.placements || []).forEach(p => { const k = key(p); m[k] = (m[k] || 0) + 1; }); return m; }, b0 = bag(before), b1 = bag(real), d = [...new Set(Object.keys(b0).concat(Object.keys(b1)))].filter(k => b0[k] !== b1[k]);
+    chk('P3 positions identical to main\'s walker, to 1e-3 m; only the count changed', !d.length && before.placed === real.placed + real.provisional, 'differing=' + d.length + ' main placed=' + before.placed + ' now placed=' + real.placed + ' + provisional=' + real.provisional); }
+  else log('§W_BAND P3 INCONCLUSIVE main\'s walker could not be read from git');
+  // P4 (node half): the walk's own total leaves them out; red control, the witness switch counts them.
+  global.__dwCountProvisional = true; const counted = walk(DISC, {}); global.__dwCountProvisional = false;
+  chk('P4 the walk total leaves provisional rows out', real.placed === (real.placements || []).length - real.provisional && real.provisional > 0, 'placed=' + real.placed + ' of ' + (real.placements || []).length);
+  chk('P4 RED: the switch that counts them puts them back', counted.placed === (counted.placements || []).length && counted.placed > real.placed, 'counted placed=' + counted.placed + ' vs ' + real.placed);
+  // P5: a walk whose only rows are not-judged band rows (PLB on an ARC-only resident) takes no refused and no §SCHED-FALLBACK path. Red: the old test, !w.placed, would have.
+  const arcF = path.join(process.env.HOME, 'bim-ootb', 'modeller', 'Clinic_ARC.db');
+  if (fs.existsSync(arcF)) { const arc = fs.readFileSync(arcF); quiet(() => H.openBuildingRules(SQL, stack, 'Clinic'));
+    const q5 = quiet(() => H.walkLive(SQL, stack, 'PLB', new Uint8Array(arc), 'Clinic', [], {})), w5 = q5.r, onlyNJ = (w5.placements || []).length > 0 && (w5.placements || []).every(p => p.hostState === 'not_judged');
+    if (onlyNJ) { chk('P5 a walk of only not-judged band rows takes no fallback and is not refused', !w5.refused && w5.mode === 'measured-band' && !q5.lines.some(l => /§SCHED-FALLBACK/.test(l)) && w5.placed === 0 && w5.provisional > 0, 'mode=' + w5.mode + ' placed=' + w5.placed + ' provisional=' + w5.provisional);
+      chk('P5 RED: the old test, !w.placed, would have sent it to the fallback', !w5.placed, 'placed=' + w5.placed); }
+    else log('§W_BAND P5 INCONCLUSIVE that walk is not only not-judged rows here (' + JSON.stringify([...new Set((w5.placements || []).map(p => p.hostState || p.prov))]) + ')');
+    quiet(() => H.openBuildingRules(SQL, stack, NAME)); }
+  else log('§W_BAND P5 INCONCLUSIVE no ARC-only resident at hand');
   // B6: a walk with no band devices says VACUOUS. A schedule walk on the public residential building.
   const dupF = path.join(DIR, 'Duplex_extracted.db');
   if (fs.existsSync(dupF)) {
     const dup = fs.readFileSync(dupF); quiet(() => H.openBuildingRules(SQL, stack, 'Duplex')); const q = quiet(() => H.walkLive(SQL, stack, 'ACMV', new Uint8Array(dup), 'Duplex', [], {})), line = q.lines.find(l => /§WALK-BAND-NOHOST/.test(l)) || '';
     chk('B6 a walk with no band devices prints VACUOUS', /input=0 VACUOUS/.test(line) && q.r.mode !== 'measured-band', line.slice(0, 120));
+    chk('P6 a walk with no band rows has nothing provisional and says VACUOUS', /input=0 VACUOUS/.test(line) && !q.r.provisional && q.r.placed > 0, 'placed=' + q.r.placed + ' provisional=' + (q.r.provisional || 0));
   } else log('§W_BAND B6 INCONCLUSIVE no schedule building at hand');
   // B3 over every walk in the fleet run: raw input against the after row's own four counts.
   const bf = arg('--before'), af = arg('--after');
