@@ -5,18 +5,20 @@
 // headless through the real commit path and prints §EDIT_REPORT's JSON. Deliberately not a Node copy of the fold: one engine, the page's. Stops nothing,
 // adds no rule, saves nothing: every run starts from a fresh Open. No AI inside.
 //   node modeller/tools/edit_cli.js --building HospitalGarage --grid gy8 --move 1.5 [--grid gy9 --move -0.5]
+//   node modeller/tools/edit_cli.js --building HospitalGarage --lines     what a caller needs to propose: the grid lines, the system, the material
 // stdout: JSON only, {ok, building, edits:[report | {refused,grid,move,reason}], ms}. Logs: stderr. Exit: 0 every edit reported · 3 an edit refused · 2 usage · 1 failed.
 'use strict';
 const path = require('path');
-const args = process.argv.slice(2), edits = []; let building = null, bad = null;
+const args = process.argv.slice(2), edits = []; let building = null, bad = null, wantLines = false;
 for (let i = 0; i < args.length; i++) {
   if (args[i] === '--building') building = args[++i];
+  else if (args[i] === '--lines') wantLines = true;
   else if (args[i] === '--grid') edits.push({ grid: args[++i] });
   else if (args[i] === '--move') { const v = Number(args[++i]); if (!edits.length || edits[edits.length - 1].move != null || !isFinite(v)) bad = '--move needs a number after a --grid'; else edits[edits.length - 1].move = v; }
   else bad = 'unknown argument ' + args[i];
 }
 if (!bad && !building) bad = '--building is required';
-if (!bad && !edits.length) bad = 'at least one --grid and --move is required';
+if (!bad && !edits.length && !wantLines) bad = 'at least one --grid and --move is required';
 if (!bad && edits.some(e => e.move == null)) bad = 'every --grid needs a --move';
 if (bad) { process.stderr.write('edit_cli: ' + bad + '\n'); process.exit(2); }
 
@@ -26,7 +28,7 @@ const { runE2E } = require(path.join(__dirname, '..', 'tests', 'e2e_harness.js')
 const t0 = Date.now();
 
 (async () => {
-  const results = []; let opened = false;
+  const results = []; let opened = false, info = null;
   const r = await runE2E('EDIT-CLI', async (t) => {
     await t.open(building, {});
     // Settled = the seed has armed the Save baseline with real boxes. Editing sooner moves nothing and reports "not judged", so the answer would depend on machine load.
@@ -40,6 +42,10 @@ const t0 = Date.now();
       await t.sleep(5000);
       await t.clickSel('#b-gridmove'); await t.sleep(600);
     } else await t.sleep(1500);
+    if (wantLines) {
+      info = await t.pg.evaluate(() => { const i = window.swbGateInfo && window.swbGateInfo(), m = window.GridSpanGate && window.__dwBuf ? (() => { const d = new window.SQL.Database(new Uint8Array(window.__dwBuf)); const v = window.GridSpanGate.readMaterial(d); d.close(); return v; })() : {};
+        return { system: i ? i.system : null, material: m.material || null, mixed: !!m.mixed, girders: i && i.base0 ? i.base0.girders.length : 0, lines: window.Bonsai.gridmove.gridLines().map(l => ({ id: l.id, axis: l.axis, pos: +(+l.pos).toFixed(3) })) }; });
+    }
     for (const e of edits) {
       const res = await t.pg.evaluate(async (grid, move) => {
         const known = window.Bonsai.gridmove.gridLines().map(l => l.id);
@@ -52,8 +58,8 @@ const t0 = Date.now();
       }, e.grid, e.move);
       results.push(res.report ? res.report : { refused: true, grid: e.grid, move: e.move, reason: res.reason });
     }
-    t.assert('edit_cli judged every edit', results.length === edits.length);
+    t.assert('edit_cli judged every edit', results.length === edits.length && (!wantLines || !!info));
   }, { noExit: true });
   const refused = results.some(x => x.refused), failed = !opened || results.length !== edits.length || (r && r.fail);
-  out(JSON.stringify({ ok: !failed && !refused, building, edits: results, ms: Date.now() - t0 }) + '\n', () => process.exit(failed ? 1 : refused ? 3 : 0));
+  out(JSON.stringify(Object.assign({ ok: !failed && !refused, building, edits: results, ms: Date.now() - t0 }, info ? { model: info } : {})) + '\n', () => process.exit(failed ? 1 : refused ? 3 : 0));
 })().catch(e => { process.stderr.write('edit_cli: ' + (e && e.stack || e) + '\n'); process.exit(1); });
