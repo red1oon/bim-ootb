@@ -25,6 +25,7 @@ try {
   console.log('[S220] §WORKER_SRC cdn unpkg');
 }
 console.log('[S220] §WORKER_LOADED web-ifc IIFE loaded, WebIFC=' + typeof WebIFC);
+try { importScripts('ifc_declared_storeys.js'); } catch (eDS) { console.warn('§IFC_STOREYS_FAIL load ' + eDS.message); }   // §IFC_STOREYS (bim-compiler MODELLER_MASTER §G3 SPEC)
 try { importScripts('ifc_surface_names.js'); } catch (eSN) { console.warn('§IFC_SURFACE_NAMES_FAIL load ' + eSN.message); }   // §IFC_SURFACE_NAMES
 
 // Discipline classification (same as Python pipeline)
@@ -1218,6 +1219,16 @@ self.onmessage = async function(e) {
         ' values=' + psets.length + ' ms=' + (Date.now() - _psT0) + (psets.length ? '' : ' VACUOUS — no non-empty property values'));
     }
 
+    // §IFC_STOREYS (bim-compiler MODELLER_MASTER §G3 SPEC): the file's own storey elevations, by its own unit, in the geometry frame.
+    var _declaredStoreys = [];
+    try {
+      if (self.IfcDeclaredStoreys) {
+        var _ds = self.IfcDeclaredStoreys.read(ifcApi, modelID, WebIFC, normalizeStorey, georefOffset[2]);
+        _declaredStoreys = _ds.rows;
+        console.log('§IFC_STOREYS file=' + filename + ' unitScale=' + _ds.scale + ' rows=' + _ds.rows.length + ' skipped=' + _ds.skipped + ' referencePlanes=' + _ds.refPlanes + (_ds.rows.length ? '' : ' VACUOUS — no storey declares an elevation'));
+      }
+    } catch (dsErr) { console.warn('§IFC_STOREYS_ERR ' + dsErr.message); }
+
     const result = {
       type: 'done',
       meta: {
@@ -1234,6 +1245,7 @@ self.onmessage = async function(e) {
         siteGuid: siteGuid,          // §SITE_IDENTITY — this file's own IfcSite GlobalId, if any
         siteLocation: siteLocation,  // §SITE_IDENTITY — that site's raw placement, scaled to metres
         georef: georef,              // §GEOREF — real lat/long/elevation + true-north rotation
+        declaredStoreys: _declaredStoreys,   // §IFC_STOREYS — this file's IfcBuildingStorey.Elevation in metres, by its own IfcUnitAssignment
       },
       elements: renderableElements,
       geometries: geometries,

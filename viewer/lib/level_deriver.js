@@ -100,6 +100,24 @@
         if (hi - lo > 0.01) L.ambiguousNames.push(nm + ' spread=' + (hi - lo).toFixed(2) + 'm');
       });
     }
+    // §IFC_STOREYS (bim-compiler MODELLER_MASTER §G3 SPEC): where a file's own declared storeys exist they ARE the ladder; the compiled
+    // STC_ rows (mid-wall, not a floor line, §K.4) stop being read as declarations. No table = no change to any line above.
+    if (tableExists(db, 'storey_elevation')) {
+      var declZs = {};
+      L.storeyCenterZ = {}; L.storeyNameCenterZ = {}; L.ambiguousNames = [];
+      db.exec('SELECT guid, name, COALESCE(placement_z_m, elevation_attr_m) FROM storey_elevation').forEach(function (res) {
+        res.values.forEach(function (row) {
+          if (row[2] == null || !isFinite(row[2])) return;
+          L.storeyCenterZ[row[0]] = row[2];
+          if (row[1]) (declZs[row[1]] || (declZs[row[1]] = [])).push(row[2]);
+        });
+      });
+      Object.keys(declZs).forEach(function (nm) {
+        var zs = declZs[nm], lo = Math.min.apply(null, zs), hi = Math.max.apply(null, zs);
+        L.storeyNameCenterZ[nm] = zs[0];
+        if (hi - lo > 0.01) L.ambiguousNames.push(nm + ' spread=' + (hi - lo).toFixed(2) + 'm');
+      });
+    }
     return L;
   }
 
