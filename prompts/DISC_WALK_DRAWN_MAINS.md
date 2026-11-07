@@ -2,6 +2,7 @@
 SCOPE: reading a service's drawn centrelines into a plan-level route record, for ANY building. Read the log after every run; exit code is not evidence. Public repo: no client or project names; a real test set is "a private Revit-exported set".
 Owner (2026-11-07): "we are abstracting a rules engine not custom to any particular design." On mains, for a file with no ducts in it: a main exists only where a drawn centreline is held, otherwise no main and the walker says so; the reader is its own specced job (`MODELLER_MASTER.md` §RESUME 2026-11-07b).
 Status: the reader is SPEC ONLY, nothing built. Design lane wrote it; the Modeller lane executes it. Stub runs stopped ahead of it: §9.
+**Owner 2026-11-07, *"Yes"*: start the reader once band spec §11 (provisional) has merged.** Ducts first. Pipe layers get their own data row before the reader takes FP or PLB: on one measured set the water sheets' centreline layer held only fitting stubs, and the runs sat on the single-line pipe layer.
 
 ## §1 Issue
 Routed runs on a file with no ducts are unconnected stubs: they have no source. Drawings may hold the real route. Nothing reads it, so the walker cannot say which it has. This reader records what a sheet draws, and says plainly what it does not state.
