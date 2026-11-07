@@ -197,5 +197,6 @@
   "VideoEncoder": "readonly",
   "VideoFrame": "readonly",
   "IfcSurfaceNames": "readonly",
-  "LightLaw": "readonly"
+  "LightLaw": "readonly",
+  "ProvTotals": "readonly"
 }
