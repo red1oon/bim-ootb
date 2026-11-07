@@ -375,6 +375,8 @@ async function extractToDb(ctx) {
           discipline: ctx.discOverride || classifyDisc(ifcClass, el.Name ? el.Name.value : ''),  // §FLOWTERM-REFINE
           material: '',
           _bboxX: null, _bboxY: null, _bboxZ: null,
+          // §IMPORT_SPACES part 2 (prompts/IMPORT_KEEPS_IFCSPACE.md): what `name` above merges, kept apart for the room record.
+          _room: ifcClass === 'IfcSpace' ? { name: el.Name ? el.Name.value : null, longName: el.LongName ? el.LongName.value : null, objectType: el.ObjectType ? el.ObjectType.value : null, predefinedType: el.PredefinedType ? el.PredefinedType.value : null } : null,
         });
       } catch(e) {}
     }
@@ -1053,6 +1055,19 @@ async function extractToDb(ctx) {
   const psStmt = db.prepare('INSERT OR IGNORE INTO element_pset_common VALUES (?,?,?,?,?)');
   for (const r of psetRows) psStmt.run(r.guid, r.pset, r.name, r.value, r.source);
   log(`§WORLD_BBOX rows=${worldBbox.length}`);
+  // §IMPORT_SPACES part 2 (prompts/IMPORT_KEEPS_IFCSPACE.md): the rooms the file states, the same record the browser import writes. Additive, after every existing
+  // table; only when the file has rooms. residentRule does not list this table, so it survives the drop of the rooms' element rows.
+  const roomEls = elements.filter(e => e._room);
+  if (roomEls.length) {
+    db.exec(`CREATE TABLE ifc_spaces (guid TEXT PRIMARY KEY, name TEXT, long_name TEXT, storey TEXT, object_type TEXT, predefined_type TEXT, center_x REAL, center_y REAL, center_z REAL, size_x REAL, size_y REAL, size_z REAL)`);
+    const roomStmt = db.prepare('INSERT OR IGNORE INTO ifc_spaces (guid,name,long_name,storey,object_type,predefined_type) VALUES (?,?,?,?,?,?)');
+    for (const e of roomEls) roomStmt.run(e.guid, e._room.name, e._room.longName, e.storey, e._room.objectType, e._room.predefinedType);
+    // The box is the room's true world bounds (§WORLD_BBOX). element_transforms carries a placement origin here, not a box centre (measured on Duplex: up to 3.1 m off).
+    const roomBox = db.prepare('UPDATE ifc_spaces SET center_x=?, center_y=?, center_z=?, size_x=?, size_y=?, size_z=? WHERE guid=?');
+    const roomGuid = new Set(roomEls.map(e => e.guid));
+    for (const w of worldBbox) if (roomGuid.has(w.guid)) roomBox.run((w.b[0] + w.b[1]) / 2, (w.b[2] + w.b[3]) / 2, (w.b[4] + w.b[5]) / 2, w.b[1] - w.b[0], w.b[3] - w.b[2], w.b[5] - w.b[4], w.guid);
+    log(`§OPEN_SPACES rows=${roomEls.length}`);
+  }
 
 
   db.exec('COMMIT');

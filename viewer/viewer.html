@@ -1006,11 +1006,11 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
 <script src="semantic_enrichment.js?v=1"></script>
 <script src="scene_to_db.js?v=1"></script>
 <script src="vertex_weld.js?v=1"></script>
-<script src="import_db_builder.js?v=9"></script>
+<script src="import_db_builder.js?v=11"></script>
 <script src="diff.js?v=5"></script>
 <script src="variation_order.js?v=2"></script>
 <script src="../common/import_key.js?v=2"></script>
-<script src="import.js?v=12"></script>
+<script src="import.js?v=14"></script>
 <script src="mep_coordination.js?v=1" onerror="console.warn('§LOAD_FAIL mep_coordination.js — MEP coordination disabled')"></script>
 <script src="real_placement_resolver.js?v=1" onerror="console.warn('§RPR LOAD_FAIL real_placement_resolver.js')"></script>
 <script src="routewalker.js?v=4" onerror="console.warn('§LOAD_FAIL routewalker.js — MEP generation disabled')"></script>
@@ -1064,7 +1064,7 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
      window.RoomWalker first). If any of the three fail, cpm_schedule logs §CELL_GATE unavailable
      and runs the graph engine unchanged — loud degrade, never silent. -->
 <script src="lib/room_walker.js?v=3" onerror="console.warn('§LOAD_FAIL lib/room_walker.js — compiled rooms unavailable, schedule falls back to graph engine')"></script>
-<script src="lib/level_deriver.js?v=1" onerror="console.warn('§LOAD_FAIL lib/level_deriver.js — level axis unavailable, schedule falls back to graph engine')"></script>
+<script src="lib/level_deriver.js?v=2" onerror="console.warn('§LOAD_FAIL lib/level_deriver.js — level axis unavailable, schedule falls back to graph engine')"></script>
 <script src="location_axis.js?v=1" onerror="console.warn('§LOAD_FAIL location_axis.js — cell gate unavailable, schedule falls back to graph engine')"></script>
 <script src="cpm_schedule.js?v=3" onerror="console.warn('§LOAD_FAIL cpm_schedule.js')"></script>
 <!-- §S53 (F3, 4D_GANTT_TM_REFACTOR.md): the Gantt bar MODEL, extracted out of time_machine.js.
@@ -1100,7 +1100,7 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
      two call sites, never a second copy. -->
 <script src="info_dxf2bim.js?v=1" onerror="console.warn('§LOAD_FAIL info_dxf2bim.js')"></script>
 <script src="info_4d_panel.js?v=2" onerror="console.warn('§LOAD_FAIL info_4d_panel.js — #info-4d will stay hidden')"></script>
-<script src="schedule_author.js?v=18" onerror="console.warn('§LOAD_FAIL schedule_author.js')"></script>
+<script src="schedule_author.js?v=19" onerror="console.warn('§LOAD_FAIL schedule_author.js')"></script>
 <!-- §S7-INJECT (TM_4D5D_VARIANCE_LANE §S7-INJECT): "generate the programme once, on the fly" trigger
      + honest progress/persist reporting. Depends on ScheduleAuthor (loaded above) and, lazily at
      call time, window.tm4DTemplate (time_machine.js) / window._4dTemplate — never loads a second

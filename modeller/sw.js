@@ -16,7 +16,7 @@
 // v213 (2026-11-03) §SEAM-W3C F8/F18: common/walk_rules.js (ONE rules-DB/class owner, modeller _dwRules delegates) + disc_walker.js?v=12 dwRulesKey; rules-cache bust keys via dwRulesKey, logs §RULES_BUST deleted=true|false
 // v214 (2026-11-03) §ONE_LIB: shared libs (sql-wasm, OrbitControls, web-ifc, planegcs) load from ../common/lib/ (modeller/lib copies kept as compat mirrors); SHELL/DEFERRED lists re-pointed, deferred stays off the install path.
 // v215 (2026-11-03) §THREE_ONE_BUILD: importmap 'three' -> three.module.min.js (one wrapper; the 638 KB webgpu wrapper is no longer evaluated on load nor precached on install; still cache-on-use).
-const CACHE_VERSION = 'v232';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v235';   // bump on each deploy; per-change detail is the git commit message.
 const CACHE_PREFIX = 'bim-modeller-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -88,6 +88,9 @@ const PRECACHE_ASSETS = [
   'str_walker.js',
   'str_walker_bridge.js',
   'grid_span_gate.js',
+  'edit_report.js',
+  'edit_report_panel.js',
+  'edit_report_coverage.json',
   'str_walker_outliner.js',
   'walker_confidence.js',
   'grid_kinematics.js',

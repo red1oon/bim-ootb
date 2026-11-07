@@ -166,7 +166,7 @@ function setupImport(A) {
     console.log('[S220] §IMPORT_START file=' + file.name + ' size=' + sizeMB + 'MB');
 
     return new Promise((resolve, reject) => {
-      const workerUrl = new URL('import_worker.js?v=17', location.href).href;
+      const workerUrl = new URL('import_worker.js?v=19', location.href).href;
       const worker = new Worker(workerUrl);
 
       worker.onmessage = async function(e) {
@@ -288,6 +288,7 @@ function setupImport(A) {
 
     // Process each file sequentially — accumulate results
     var allElements = [], allGeometries = [], allTransforms = [], allPsets = [];   // §CIVIL_PSETS
+    var allSpaces = [], allSpaceProps = [];   // §IMPORT_SPACES
     var allDiscs = {}, allStoreys = new Set();
     var allDeclaredStoreys = [];
     var totalElements = 0;
@@ -320,6 +321,7 @@ function setupImport(A) {
         allGeometries = allGeometries.concat(result.geometries);
         allTransforms = allTransforms.concat(result.transforms);
         if (result.psets && result.psets.length) allPsets = allPsets.concat(result.psets);   // §CIVIL_PSETS
+        allSpaces = allSpaces.concat(result.spaces || []); allSpaceProps = allSpaceProps.concat(result.spaceProps || []);   // §IMPORT_SPACES
         totalElements += result.meta.elementCount;
         for (var d in result.meta.disciplines) {
           allDiscs[d] = (allDiscs[d] || 0) + result.meta.disciplines[d];
@@ -359,6 +361,7 @@ function setupImport(A) {
         geometries: allGeometries,
         transforms: allTransforms,
         psets: allPsets,   // §CIVIL_PSETS
+        spaces: allSpaces, spaceProps: allSpaceProps,   // §IMPORT_SPACES
       };
       var dbs = buildImportDBs(SQL, mergedData);
 
@@ -403,7 +406,7 @@ function setupImport(A) {
   function _parseOneIFC(file, onProgress, forceGeorefOffset) {
     return new Promise(function(resolve, reject) {
       file.arrayBuffer().then(function(arrayBuffer) {
-        var worker = new Worker(new URL('import_worker.js?v=17', location.href).href);
+        var worker = new Worker(new URL('import_worker.js?v=19', location.href).href);
         worker.onmessage = function(e) {
           var msg = e.data;
           if (msg.type === 'progress') {

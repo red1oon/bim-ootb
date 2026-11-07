@@ -225,6 +225,21 @@ function buildImportDBs(SQL, data) {
     console.log('§CIVIL_PSETS_TABLE rows=' + data.psets.length);
   }
 
+  // §IMPORT_SPACES (prompts/IMPORT_KEEPS_IFCSPACE.md): what the file states about its rooms, kept as a record beside the model.
+  // NEVER spatial_structure or rel_contained_in_space: those belong to the Find panel room injection, and a row there would switch its needle off.
+  if (data.spaces && data.spaces.length) {
+    db.run('CREATE TABLE IF NOT EXISTS ifc_spaces (guid TEXT PRIMARY KEY, name TEXT, long_name TEXT, storey TEXT, object_type TEXT, predefined_type TEXT, center_x REAL, center_y REAL, center_z REAL, size_x REAL, size_y REAL, size_z REAL)');
+    var stmtSp = db.prepare('INSERT OR IGNORE INTO ifc_spaces VALUES (?,?,?,?,?,?, ?,?,?, ?,?,?)');
+    data.spaces.forEach(function (r) { stmtSp.run([r.guid, r.name, r.longName, r.storey, r.objectType, r.predefinedType, r.cx, r.cy, r.cz, r.sx, r.sy, r.sz]); });
+    stmtSp.free();
+    // Same table as the shared extractor (ifc_extract_core.js), read by the Modeller's open_building_db.js. Rooms only here.
+    db.run('CREATE TABLE IF NOT EXISTS element_pset_common (guid TEXT, pset TEXT, name TEXT, value TEXT, source TEXT, PRIMARY KEY (guid, pset, name))');
+    var stmtSpp = db.prepare("INSERT OR IGNORE INTO element_pset_common VALUES (?,?,?,?,'occurrence')");
+    (data.spaceProps || []).forEach(function (r) { stmtSpp.run(r); });
+    stmtSpp.free();
+    console.log('§IMPORT_SPACES_DB spaces=' + data.spaces.length + ' props=' + (data.spaceProps || []).length);
+  }
+
   db.run('COMMIT');
 
   console.log('[S220] §DB_BUILD single_db: elements=' + data.elements.length + ' transforms=' + data.transforms.length + ' instances=' + data.geometries.length + ' geometries=' + data.geometries.length);
