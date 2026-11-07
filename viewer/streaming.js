@@ -458,7 +458,7 @@ function setupStreaming(A) {
       // bind list drops with it — every row IS this building by definition of the fallback.
       const _bldOk = A._hasBuildingCol(A.db);
       const matNameCol = A._hasMatNameCol(A.db) ? ', m.material_name' : ', NULL';
-      const rows = _topUpRows(A.dbQuery(`
+      let rows = _topUpRows(A.dbQuery(`
         SELECT m.guid, i.geometry_hash, m.material_rgba, m.discipline,
                t.center_x, t.center_y, t.center_z,
                t.rotation_x, t.rotation_y, t.rotation_z,
@@ -470,6 +470,13 @@ function setupStreaming(A) {
           AND i.geometry_hash IS NOT NULL
           AND m.ifc_class != 'IfcOpeningElement'
       `, _bldOk ? [nearest] : []));
+      // §DUP_SHELL (bim-compiler MODELLER_MASTER §G4 SPEC): one place, one class, one material: show one. Display only, in DB order, before the camera sort.
+      if (window.DupShell) rows = window.DupShell.filterRows(rows, function (h) {
+        var g = A.dbQuery('SELECT vertices FROM component_geometries WHERE geometry_hash = ?', [h]);
+        if ((!g.length || !g[0][0]) && A.libDb && A.libDb !== A.db) { try { var lr = A.libDb.exec('SELECT vertices FROM component_geometries WHERE geometry_hash = ?', [h]); if (lr.length) g = lr[0].values; } catch (e) { g = []; } }
+        if (!g.length || !g[0][0]) return null;
+        var b = g[0][0]; return new Float32Array(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength));
+      }, nearest);
       if (!rows.length) {
         console.log(`[S192] §DS_EMPTY bld=${nearest} — no streamable elements`);
         return;

@@ -650,10 +650,15 @@
       } catch (e) { /* column or table absent → an EMPTY candidate, never a throw */ }
       return out;
     }
-    return [
+    var cands = [
       { source: 'elevation', rows: q("SELECT name, elevation FROM spatial_structure WHERE type='IfcBuildingStorey' AND elevation IS NOT NULL") },
       { source: 'center_z',  rows: q("SELECT name, center_z FROM spatial_structure WHERE type='IfcBuildingStorey' AND center_z IS NOT NULL") }
     ];
+    // §IFC_STOREYS (bim-compiler MODELLER_MASTER §G3 SPEC): the file's own storeys in metres, ahead of a compiled rung. Still judged by the frame test. Offered only
+    // when present, so a building without the table reads exactly as before, §-line included. Placement z is the geometry's own frame, so it wins when a route wrote it.
+    var declared = q("SELECT name, COALESCE(placement_z_m, elevation_attr_m) FROM storey_elevation");
+    if (declared.length) cands.splice(1, 0, { source: 'storey_elevation', rows: declared });
+    return cands;
   }
   // Sort by datum; two storeys at the same datum are one floor under two names — keep the first,
   // deterministically. Unchanged from #1551.

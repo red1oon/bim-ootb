@@ -289,6 +289,7 @@ function setupImport(A) {
     // Process each file sequentially — accumulate results
     var allElements = [], allGeometries = [], allTransforms = [], allPsets = [];   // §CIVIL_PSETS
     var allDiscs = {}, allStoreys = new Set();
+    var allDeclaredStoreys = [];
     var totalElements = 0;
     // §GEOREF_REBASE federation frame: the first file that computes a georef offset pins it
     // for every subsequent file in this drop, so all disciplines rebase into ONE shared local
@@ -324,6 +325,7 @@ function setupImport(A) {
           allDiscs[d] = (allDiscs[d] || 0) + result.meta.disciplines[d];
         }
         result.meta.storeys.forEach(function(s) { allStoreys.add(s); });
+        if (result.meta.declaredStoreys) allDeclaredStoreys = allDeclaredStoreys.concat(result.meta.declaredStoreys);   // §IFC_STOREYS
 
         console.log('[S220] §MULTI_FILE_DONE ' + fileLabel +
           ' elements=' + result.meta.elementCount + ' geom=' + result.meta.geomCount);
@@ -349,6 +351,7 @@ function setupImport(A) {
           geomCount: allGeometries.length,
           disciplines: allDiscs,
           storeys: Array.from(allStoreys).sort(),
+          declaredStoreys: allDeclaredStoreys,   // §IFC_STOREYS: each file's own, each by its own unit
           georefOffset: sessionGeorefOffset || [0, 0, 0],  // §GEOREF_REBASE traceability → project_metadata
           unitScale: sessionUnitScale,
         },

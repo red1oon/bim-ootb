@@ -142,6 +142,16 @@ function buildImportDBs(SQL, data) {
     console.log('§REL_FILLS_HOST_TABLE rows=' + data.relFills.length + ' (D69)');
   }
 
+  // §IFC_STOREYS (bim-compiler MODELLER_MASTER §G3 SPEC): each file's declared storeys in metres, in the table the shared extractor already writes (ifc_extract_core.js §STOREY_ELEVATION).
+  // Not spatial_structure: it writes no room, so the Find panel's rooms injection is untouched. No storey row in the source = no table = byte-identical.
+  if (data.meta && data.meta.declaredStoreys && data.meta.declaredStoreys.length) {
+    db.run('CREATE TABLE IF NOT EXISTS storey_elevation (guid TEXT PRIMARY KEY, name TEXT, elevation_attr_m REAL, placement_z_m REAL)');
+    var stmtSt = db.prepare('INSERT OR IGNORE INTO storey_elevation VALUES (?,?,?,?)');
+    data.meta.declaredStoreys.forEach(function (r) { stmtSt.run([r.guid, r.name, r.elevation_attr_m, r.placement_z_m]); });
+    stmtSt.free();
+    console.log('§IFC_STOREYS_TABLE rows=' + data.meta.declaredStoreys.length);
+  }
+
   // 4D_CAPTURE_AND_FALLBACK.md T1/T1b — native IFC 4D schedule (W-CAPTURE / W-VOCAB).
   // Widened DDL (§5.2): CPM dates, float, is_critical, WBS (wbs_parent+is_summary),
   // predefined_type, nullable resource (OUR template concept, captured=null), + a thin

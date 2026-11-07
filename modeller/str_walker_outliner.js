@@ -175,8 +175,15 @@
       // (Export ▸ Native .db) carries a kernel_ops table — no resident/substrate .db does (probed all 8,
       // 2026-07-03). Route it to the op-log import (the symmetric read of the export) instead of the
       // walker; every building-substrate .db falls through byte-identically to the path below.
+      // §OPEN-VIEWER-SAVED (bim-compiler MODELLER_MASTER §G2): a building DB the Viewer has saved also carries kernel_ops (its open, pick and 4D rows), and it is a
+      // building: the op-log import took it, found 0 modelling ops, and the Open ended with nothing on screen and no message. A building's element rows decide.
       var isNative = false;
-      try { isNative = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='kernel_ops'").length > 0; } catch (e) { }
+      try {
+        isNative = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='kernel_ops'").length > 0;
+        if (isNative && db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='elements_meta'").length && db.exec('SELECT 1 FROM elements_meta LIMIT 1').length) {
+          isNative = false; console.log(TAG + ' §OPEN-VIEWER-SAVED "' + name + '" has kernel_ops and element rows: opened as a building, its ops are not replayed');
+        }
+      } catch (e) { }
       if (isNative) {
         db.close();
         console.log(TAG + ' §EXPORT-NATIVE "' + name + '" is a native op-log .db → oplog import');
