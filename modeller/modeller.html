@@ -299,7 +299,6 @@ if (window.WholeHistory && WholeHistory.mount) WholeHistory.mount({ page: 'model
 <script src="str_walker_bridge.js?v=10" onerror="console.warn('§STRWALK LOAD_FAIL str_walker_bridge.js')"></script>
 <script src="grid_span_gate.js?v=3" onerror="console.warn('§GRID-SPAN LOAD_FAIL grid_span_gate.js')"></script>
 <script src="edit_report.js?v=2" onerror="console.warn('§EDIT_REPORT LOAD_FAIL edit_report.js')"></script>
-<script src="bay_add.js?v=3" onerror="console.warn('§BLOCK-SHIFT LOAD_FAIL bay_add.js')"></script>
 <script src="edit_report_panel.js?v=2" onerror="console.warn('§EDIT_REPORT LOAD_FAIL edit_report_panel.js')"></script>
 <script src="../viewer/lib/room_walker.js?v=3" onerror="console.warn('§MODELLER-ROOM-INJECT LOAD_FAIL room_walker.js')"></script>
 <script src="str_walker_outliner.js?v=27" onerror="console.warn('§STRWALK LOAD_FAIL str_walker_outliner.js')"></script>
@@ -2397,7 +2396,15 @@ function _shiftRows(axis, th) {
     return { id: o.id, cls: o.parameters.ifc_class, params: o.parameters, lo, hi };
   }).filter(r => isFinite(r.lo));
 }
+// §14.6 bay_add.js loads on the first shift, as DXF2BIM loads it on the first "Add a bay": nothing a person can reach needs it at open.
+let _bayAddP = null;
+function _ensureBayAdd() {
+  if (window.BayAdd) return Promise.resolve(true);
+  if (!_bayAddP) _bayAddP = new Promise((res, rej) => { const s = document.createElement('script'); s.src = 'bay_add.js?v=3'; s.onload = () => { console.log('§BLOCK-SHIFT bay_add.js loaded on first use'); res(true); }; s.onerror = () => { _bayAddP = null; rej(new Error('bay_add.js did not load')); }; document.head.appendChild(s); });
+  return _bayAddP;
+}
 window.__gridShift = async (id, delta) => {
+  try { await _ensureBayAdd(); } catch (e) { setStat('FAIL ' + e.message); return null; }
   const GM = window.Bonsai.gridmove, G = window.Bonsai.grid, t0 = performance.now(); GM.gridLines(); const m = GM._map[id];
   if (!m) { setStat('FAIL no grid line ' + id); return null; }
   if (Math.abs(delta || 0) < 0.05) { console.log('§EDIT_REPORT NO-OP delta=' + (delta || 0).toFixed(3) + ' — nothing committed, nothing judged'); return null; }
