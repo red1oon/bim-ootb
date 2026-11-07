@@ -54,7 +54,7 @@ Design lane re-runs the private set on the merged code against §2. **A second s
 2. **How the user supplies sheets** on an opened building, once the record is proven.
 
 ## §8 Not in this change
-Solids, fittings as parts, airflow, plumbing and tray layers (the same reader may take them later by data rows), PDF sheets, and any change to `hostBind` or band density.
+Solids, fittings as parts, airflow, tray layers, PDF sheets, and any change to `hostBind` or band density. **FP and PLB:** the owner's ruling covers them, and the same reader takes them by data rows, but §2 was measured on duct layers only. Measure pipe layers the same way before enabling those rows.
 
 ## §9 Stub runs stop now, ahead of the reader (owner 2026-11-07; built by the Modeller lane)
 **Owner's rulings:** HVAC, *"Drawn centreline only"*, then for the other services, *"HVAC, FP and PLB"*: on a file with none of that service, a discipline stops producing runs and the walker says why.
@@ -72,7 +72,17 @@ Solids, fittings as parts, airflow, plumbing and tray layers (the same reader ma
 - **N4** ELEC runs and a `bom-tree` row are unchanged.
 - **N5** a walk with nothing to judge prints INCONCLUSIVE.
 
-**§9 RESULT 2026-11-07.** Fleet, 118 walks against #2681: placed unchanged on every walk, 0 walks to zero. Runs: FP 12,273 → 0; ACMV 18,335 → 11,682; PLB 69,157 → 37,407; ELEC 13 → 13. What remains in ACMV and PLB is real rows only (N3: Hospital ACMV 4,736, PLB 13,824, Terminal ACMV 1,002, PLB 4,315, each unchanged, each logging `real=`). A file with sprinklers and no pipes (Hospital and Terminal FP) now says `none`.
+**§9 RESULT 2026-11-07.** Fleet, 118 walks against #2681: placed unchanged on every walk, 0 walks to zero. Runs: FP 12,273 → 0; ACMV 18,335 → 11,682; PLB 69,157 → 37,407; ELEC 13 → 13. What remains in ACMV and PLB is real rows only (N3: Hospital ACMV 4,736, PLB 13,824, Terminal ACMV 1,002, PLB 4,315, each unchanged, each logging `real=`). Hospital and Terminal FP now say `none`. **CORRECTED, see §9.1:** only Terminal has no FP-labelled pipes; Hospital holds them.
 W-WALK-MAINS 7 of 7 (23 walks judged, 34,944 stub runs in its red control). Real page: W-BAND-NO-HOST B7f, ACMV and FP on public Clinic: `__dwChains` 0 and status `no main: no sheet held`.
 Pattern engine witnesses now run behind the witness-only `window.__dwKeepPatternStubs` / `opts.keepPatternStubs`, same results as before: W-ROUTE-PATTERN-BRIDGE 10/0, W-SEED-OUTWARD-REVEAL 9/0, W-MEP-OPENPATH 27/2 (M5, M7 fail on main too). W-WALK-ROUTED W6 still prints `WRONG unconnected stubs` on the engine, as it should. Not run here, exit 1 before and after for reasons outside this change: W-DISC-DENSITY, W-MEP-ROUTE-RENDER, W-MODELLER-ROUTER-NNCHAIN. W-FP-BOM-TREE is INCONCLUSIVE (its marked set is absent), so the `bom-tree` path has no run behind it here; the code path only changes by its log line.
 **Left for the owner:** band duct and pipe pieces still stand with no main (fleet: 22,562 duct pieces on ACMV walks, 19,752 pipe segments on PLB walks).
+
+### §9.1 `no sheet held` must not be said of a file that holds the service (design lane, 2026-11-07, checked against the data). Not built
+**Issue.** `§WALK-MAINS` prints `none reason=no sheet held` whenever `routeChains` returns 0. That also fires when the file holds the service and no routing rule pairs it.
+**Measured:** `Hospital_extracted.db` holds 6,228 pipe segments and 5,900 pipe fittings labelled FP, beside 1,354 sprinklers. `terminal_rules.db` has no `nn` row for FP, only `array` and `grid`, so `routeChains` gives 0 and the walker tells the user `no main: no sheet held`. Removing its 2,655 pattern runs was right; the reason it states is false, and the ruling's own words are "on a file with none of the service". `Terminal_extracted.db` has 0 FP-labelled pipes (its 8,064 pipes are labelled MEP, or PLB in `Terminal_meta.db`), so its `none` holds for the label, and which of those pipes serve fire is not known.
+**Rule.**
+1. Before saying `none`, count the real pieces of that discipline in the file, classes by a data row (`IfcPipeSegment`, `IfcPipeFitting`, `IfcDuctSegment`, `IfcDuctFitting`, and the generic flow classes).
+2. Pieces held and 0 runs: `§WALK-MAINS disc= bldg= held=<n> real=0 reason=no routing rule pairs them`. The result carries `mains: { held, real }`. Status text: `main in the file, not routed: no rule for it`.
+3. 0 pieces held: `none reason=no sheet held`, as now.
+4. **Do not add an FP `nn` row to make this pass.** A routing row is measured data; adding one is a separate job.
+**Witness, added to W-WALK-MAINS:** N6, on `Hospital_extracted.db` FP: prints `held=`, never `no sheet held`. Red control: a fixture with the service's pieces removed prints `none`. Print per fleet walk how many change reason. A walk with no such pieces is not judged here.
