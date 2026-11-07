@@ -299,12 +299,12 @@ if (window.WholeHistory && WholeHistory.mount) WholeHistory.mount({ page: 'model
 <script src="str_walker_bridge.js?v=10" onerror="console.warn('§STRWALK LOAD_FAIL str_walker_bridge.js')"></script>
 <script src="grid_span_gate.js?v=3" onerror="console.warn('§GRID-SPAN LOAD_FAIL grid_span_gate.js')"></script>
 <script src="edit_report.js?v=2" onerror="console.warn('§EDIT_REPORT LOAD_FAIL edit_report.js')"></script>
-<script src="bay_add.js?v=2" onerror="console.warn('§BLOCK-SHIFT LOAD_FAIL bay_add.js')"></script>
+<script src="bay_add.js?v=3" onerror="console.warn('§BLOCK-SHIFT LOAD_FAIL bay_add.js')"></script>
 <script src="edit_report_panel.js?v=2" onerror="console.warn('§EDIT_REPORT LOAD_FAIL edit_report_panel.js')"></script>
 <script src="../viewer/lib/room_walker.js?v=3" onerror="console.warn('§MODELLER-ROOM-INJECT LOAD_FAIL room_walker.js')"></script>
 <script src="str_walker_outliner.js?v=27" onerror="console.warn('§STRWALK LOAD_FAIL str_walker_outliner.js')"></script>
 <!-- Bonsai library: insert a real catalog component (assemble, don't draw) as ONE signed GEOM_INSERT op @ LOD. -->
-<script src="bonsai_library.js?v=24" onerror="console.warn('§LIBRARY LOAD_FAIL bonsai_library.js')"></script>
+<script src="bonsai_library.js?v=25" onerror="console.warn('§LIBRARY LOAD_FAIL bonsai_library.js')"></script>
 <!-- Connect Scene broker (prompts/CONNECT_SCENE_SPEC.md): shared cross-surface CONTEXT (selection/timeline/
      identity) over the one signed op-log; surfaces stay separate, only context crosses. Opt-in toggle. -->
 <script src="../viewer/connect_scene.js?v=2" onerror="console.warn('§CONNECT LOAD_FAIL connect_scene.js')"></script>
@@ -2338,7 +2338,7 @@ async function _erEmit(e) {
     const cov = await _erLoadCoverage();
     if (!cov || !Array.isArray(cov.not_checked) || !cov.not_checked.length) { console.warn('§EDIT_REPORT refused: edit_report_coverage.json did not load, and a table without its NOT-checked line reads as an all-clear'); return; }
     const SG = window.SdgGate, gate = window.__lastGateDetail, after = _gateBoxes(), rel = _gateRel(), spanAfter = window.__editReportBreak ? e.spanBefore : _erSpanState();
-    const lo = _latticeGateOpts(e.delta) || undefined, tol = lo ? lo.clashTol : (SG ? SG.CLASH_TOL : null);
+    const lo = (!e.plainTol && _latticeGateOpts(e.delta)) || undefined, tol = lo ? lo.clashTol : (SG ? SG.CLASH_TOL : null);   // §14.1 a shift has no sideways error, so it is judged at the plain tolerance
     const overlap = (SG && gate) ? { tolMm: tol * 1000, before: SG.pairsOver(e.gateBefore, moved, rel, lo), after: SG.pairsOver(after, moved, rel, lo) } : { tolMm: tol == null ? null : tol * 1000, refused: 'the conformity gate did not run' };
     const span = (e.spanBefore.refused || spanAfter.refused) ? { refused: e.spanBefore.refused || spanAfter.refused } : { before: e.spanBefore.tally, after: spanAfter.tally, prelim: spanAfter.prelim, material: spanAfter.material, mixed: spanAfter.mixed };
     const report = window.EditReport.compose({
@@ -2404,22 +2404,22 @@ window.__gridShift = async (id, delta) => {
   const info = window.swbGateInfo && window.swbGateInfo(), th = (info && info.theta) || 0, c0 = (info && info.centroid) || { x: 0, y: 0 }, world = m.axis === 'x' ? G.xs : G.ys;
   const lines = world.map(w => (m.axis === 'x' ? window.swToFrame(w, c0.y, th)[0] : window.swToFrame(c0.x, w, th)[1]));   // the same world-to-lattice projection as the walker (_frameDatum)
   const rows = _shiftRows(m.axis, th), cx = await window.Bonsai.copyCtx(), GK = window.GridKinematics;
-  const P = window.BayAdd.shift(rows, { axis: m.axis, index: m.index, lines, delta, theta: th, stretch: GM._STRUCTURAL_CLASSES, edgeTol: GK.EDGE_TOL, yawTol: GK.YAW_TOL }, cx.cascade, cx.ops);
+  const P = window.BayAdd.shift(rows, { axis: m.axis, index: m.index, lines, delta, theta: th, follow: GM._STRUCTURAL_CLASSES.concat(['IfcMember', 'IfcCovering', 'IfcBuildingElementProxy']), edgeTol: GK.EDGE_TOL }, cx.cascade, cx.ops);
   if (!P.ok) { console.log('§BLOCK-SHIFT refused grid=' + id + ' reason=' + P.why); setStat('FAIL ' + P.why); return null; }
   const travel = window.__blockShiftBreak ? 1.1 : 1;   // falsifier (W-BLOCK-SHIFT SHIFT_BREAK=1): the elements travel a different distance from the lines
-  if (travel !== 1) P.ops.forEach(o => { if (o.op_type === 'GEOM_MOVE') { o.params.dx *= travel; o.params.dy *= travel; } });
+  if (travel !== 1) { P.ops.forEach(o => { if (o.op_type === 'GEOM_MOVE') { o.params.dx *= travel; o.params.dy *= travel; } }); P.commands.forEach(c => { c.dx *= travel; c.dy *= travel; }); }
   const gridIds = world.map((_, i) => 'g' + m.axis + i).slice(m.index);
-  const ops = gridIds.map(g => ({ op_type: 'GEOM_GRID_MOVE', params: { gridId: g, delta, commands: [], induced: 'block-shift' } })).concat(P.ops);
+  const ops = gridIds.map((g, i) => ({ op_type: 'GEOM_GRID_MOVE', params: { gridId: g, delta, commands: i === 0 ? P.commands : [], induced: 'block-shift' } })).concat(P.ops);   // the hinges ride the first line's op: one gesture, one order
   setStat('recomposing…');
   const gateBefore = _gateBoxes(), spanBefore = _erSpanState(); window.__lastGateDetail = null;
   try {
-    const r = await _commitUserGesture(ops), changed = P.moved.concat(P.stretched), gateMsg = _runGate(gateBefore, changed.concat(P.riders), _latticeGateOpts(delta)); window.__lastGate = gateMsg;
-    const byCls = {}; P.left.forEach(l => { byCls[l.cls] = (byCls[l.cls] || 0) + 1; });
-    const change = { kind: 'block-shift', grid: id, through: gridIds[gridIds.length - 1], lines: gridIds.length, delta: +delta.toFixed(6), moved: P.moved.length, stretched: P.stretched.length, riders: P.riders.length, stayed: P.stayed, left: { count: P.left.length, by_class: byCls }, verify: r.verify };
+    const r = await _commitUserGesture(ops), changed = P.moved.concat(P.stretched), gateMsg = _runGate(gateBefore, changed.concat(P.riders)); window.__lastGate = gateMsg;
+    const byCls = {}; P.left.forEach(l => { byCls[l.cls] = (byCls[l.cls] || 0) + 1; }); const stCls = {}, clsOf = {}; rows.forEach(q => { clsOf[q.id] = q.cls; }); P.stretched.forEach(f => { stCls[clsOf[f]] = (stCls[clsOf[f]] || 0) + 1; });
+    const change = { kind: 'block-shift', grid: id, through: gridIds[gridIds.length - 1], lines: gridIds.length, delta: +delta.toFixed(6), moved: P.moved.length, stretched: P.stretched.length, stretched_by_class: stCls, riders: P.riders.length, stayed: P.stayed, left: { count: P.left.length, by_class: byCls }, verify: r.verify };
     console.log('§BLOCK-SHIFT grid=' + id + ' through=' + change.through + ' lines=' + gridIds.length + ' delta=' + delta + ' band=' + P.band.toFixed(3) + ' moved=' + P.moved.length + ' stretched=' + P.stretched.length + ' riders=' + P.riders.length + ' stayed=' + P.stayed + ' left=' + P.left.length + ' ' + JSON.stringify(byCls) + ' verify=' + r.verify + ' gate=' + (gateMsg || 'clean') + ' ms=' + (performance.now() - t0).toFixed(0));
     setStat('grid ' + id + ' and ' + (gridIds.length - 1) + ' after it moved ' + delta.toFixed(2) + '  moved=' + P.moved.length + ' stretched=' + P.stretched.length + '  verify=' + r.verify + (gateMsg ? '  ' + gateMsg : ''));
     syncHistory();
-    await _erEmit({ id, delta, res: { commands: changed.map(f => ({ featureId: f })), riders: P.riders.map(f => ({ featureId: f })), verify: r.verify }, gateBefore, spanBefore, change });
+    await _erEmit({ id, delta, res: { commands: changed.map(f => ({ featureId: f })), riders: P.riders.map(f => ({ featureId: f })), verify: r.verify }, gateBefore, spanBefore, change, plainTol: true });
     return change;
   } catch (err) { setStat('FAIL ' + (err && err.message || err)); console.warn('§BLOCK-SHIFT fail ' + err); return null; }
 };
