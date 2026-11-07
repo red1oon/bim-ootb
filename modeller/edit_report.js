@@ -97,5 +97,18 @@
       notChecked: input.notChecked.slice()
     };
   }
-  return { compose: compose, MAX_PAIRS: MAX_PAIRS, MAX_BAYS: MAX_BAYS };
+  // §15.1 the stop on outside calls (bim-compiler prompts/NEURO_SYMBOLIC_ORDER_CONTRACT.md §15.1, W-EDIT-CLI C13-C16). Reads only the report's own rows: no threshold of its own.
+  // stop when a red new row counts above 0 (any red kind, known or not), the span-over-limit row is JUDGED and rose, or it names a bay newly over. NOT_JUDGED never stops and is listed.
+  function gateVerdict(r) {
+    var why = [], nj = [];
+    (r.rows || []).forEach(function (x) { if (x.state !== 'JUDGED') nj.push(x.id); });
+    (r.newRows || []).forEach(function (n) { if (n.state !== 'JUDGED') { if (nj.indexOf(n.id) < 0) nj.push(n.id); return; } if (n.level === 'red' && n.count > 0) why.push(n.label + ': ' + n.count); });
+    var sr = (r.rows || []).filter(function (x) { return x.id === 'span_red'; })[0];
+    if (sr && sr.state === 'JUDGED') {
+      if (sr.delta > 0) why.push(sr.label + ': ' + sr.before + ' -> ' + sr.after + (sr.limit != null ? ' (limit ' + sr.limit + ' m' + (sr.material ? ', ' + sr.material : '') + ')' : ''));
+      (sr.over_limit_changed || []).forEach(function (b) { if (b.newly_over) why.push('bay ' + b.bay + ' newly over the limit: ' + b.after + ' m'); });
+    }
+    return { stop: why.length > 0, reasons: why, not_judged: nj };
+  }
+  return { compose: compose, gateVerdict: gateVerdict, MAX_PAIRS: MAX_PAIRS, MAX_BAYS: MAX_BAYS };
 });

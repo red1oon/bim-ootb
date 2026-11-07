@@ -8,16 +8,19 @@
 //   node modeller/tools/edit_cli.js --building HospitalGarage --shift gy9 --move 1.51     that line and every later line on its axis move together (§13.1)
 //   node modeller/tools/edit_cli.js --building HospitalGarage --lines     what a caller needs to propose: the grid lines, where they came from, the system, the material
 //   --lattice-boxes  judge overlaps on boxes in the lattice frame, not world boxes (§13.6). No effect at theta 0. The app itself stays on world boxes.
+//   An edit that adds new red is STOPPED (§15.1): undone, a recount checks Before is back, and it comes back as {refused, stopped_by_gate, reason, report}, exit 3.
+//   --report-only  no stop: every edit stands and is reported (diagnosis, and comparing with the page byte for byte)
 //   --url <modeller.html>  drive that page. Default: this repo's own files when this script stands in one, otherwise the live site below. One file plus puppeteer is all it needs.
 //   --own-grid  on a wall-bearing building, use the lines derived from its walls, not the app's default grid (§13.2). Refused if the building has none.
 // stdout: JSON only, {ok, building, edits:[report | {refused,grid,move,reason}], ms}. Logs: stderr. Exit: 0 every edit reported · 3 an edit refused · 2 usage · 1 failed.
 'use strict';
 const path = require('path');
-const args = process.argv.slice(2), edits = []; let building = null, bad = null, wantLines = false, ownGrid = false, latticeBoxes = false, url = null;
+const args = process.argv.slice(2), edits = []; let building = null, bad = null, wantLines = false, ownGrid = false, latticeBoxes = false, url = null, reportOnly = false;
 for (let i = 0; i < args.length; i++) {
   if (args[i] === '--building') building = args[++i];
   else if (args[i] === '--lines') wantLines = true;
   else if (args[i] === '--url') url = args[++i];
+  else if (args[i] === '--report-only') reportOnly = true;
   else if (args[i] === '--own-grid') ownGrid = true;
   else if (args[i] === '--lattice-boxes') latticeBoxes = true;
   else if (args[i] === '--grid') edits.push({ grid: args[++i] });
@@ -49,7 +52,7 @@ function serveRepo() {
 }
 
 (async () => {
-  const puppeteer = loadPuppeteer(), results = []; let opened = false, info = null, failed = null, server = null;
+  const puppeteer = loadPuppeteer(), results = [], gates = []; let opened = false, info = null, failed = null, server = null;
   if (!url && fs.existsSync(HERE)) { server = await serveRepo(); url = 'http://localhost:' + server.address().port + '/modeller/modeller.html'; }
   if (!url) url = LIVE;
   process.stderr.write('edit_cli: ' + url + '\n');
@@ -96,12 +99,26 @@ function serveRepo() {
         if (window.__lastEditReport && window.__lastEditReport !== before) return { report: window.__lastEditReport };
         return { refused: true, reason: stat.replace(/^FAIL\s*/, '') || 'the edit produced no report' };
       }, e.grid, e.move, !!e.shift);
-      results.push(res.report ? res.report : Object.assign({ refused: true, grid: e.grid, move: e.move, reason: res.reason }, e.shift ? { shift: true } : {}));
+      if (!res.report) { results.push(Object.assign({ refused: true, grid: e.grid, move: e.move, reason: res.reason }, e.shift ? { shift: true } : {})); gates.push(null); continue; }
+      if (reportOnly) { results.push(res.report); gates.push(null); continue; }
+      const g = await pg.evaluate(async (rep) => {
+        await window.__ensureEditReport(); const v = window.EditReport.gateVerdict(rep);
+        if (!v.stop) return { v };
+        await window.Bonsai.oplog.undo();
+        const row = (id) => rep.rows.filter(x => x.id === id)[0], want = { overlap: row('overlap'), red: row('span_red'), orange: row('span_orange') };
+        let c = null, back = false;
+        for (let i = 0; i < 40 && !back; i++) { await new Promise(z => setTimeout(z, 250)); c = window.__editReportRecount();
+          back = !!c && (want.overlap.state !== 'JUDGED' || c.overlap === want.overlap.before) && (want.red.state !== 'JUDGED' || (c.span && c.span.RED === want.red.before && c.span.ORANGE === want.orange.before)); }
+        return { v, back, recount: c && { overlap: c.overlap, red: c.span ? c.span.RED : null, orange: c.span ? c.span.ORANGE : null } };
+      }, res.report);
+      if (g.v.stop && !g.back) throw new Error('the stop undid the edit but a recount did not return to Before: ' + JSON.stringify(g.recount));
+      gates.push({ edit: results.length, stopped: g.v.stop, not_judged: g.v.not_judged });
+      results.push(g.v.stop ? Object.assign({ refused: true, stopped_by_gate: true, grid: e.grid, move: e.move }, e.shift ? { shift: true } : {}, { reason: 'stopped: ' + g.v.reasons.join('; '), report: res.report }) : res.report);
     }
   } catch (e) { failed = String(e && e.message || e); }
   await br.close().catch(() => {}); if (server) server.close();
   if (errs.length) process.stderr.write('edit_cli: page errors: ' + errs.slice(0, 2).join(' | ') + '\n');
   if (failed) process.stderr.write('edit_cli: ' + failed + '\n');
   const refused = results.some(x => x.refused), bad = !!failed || errs.length > 0 || !opened || results.length !== edits.length || (wantLines && !info);
-  out(JSON.stringify(Object.assign({ ok: !bad && !refused, building, edits: results, ms: Date.now() - t0 }, info ? { model: info } : {}, failed ? { error: failed } : {})) + '\n', () => process.exit(bad ? 1 : refused ? 3 : 0));
+  out(JSON.stringify(Object.assign({ ok: !bad && !refused, building, edits: results, ms: Date.now() - t0 }, info ? { model: info } : {}, reportOnly ? { gate: 'off (--report-only)' } : (gates.some(Boolean) ? { gate: gates.filter(Boolean) } : {}), failed ? { error: failed } : {})) + '\n', () => process.exit(bad ? 1 : refused ? 3 : 0));
 })().catch(e => { process.stderr.write('edit_cli: ' + (e && e.stack || e) + '\n'); process.exit(1); });
