@@ -7,7 +7,8 @@
 'use strict';
 const fs = require('fs'), os = require('os'), path = require('path'), cp = require('child_process');
 const NM = path.join(process.env.HOME, 'bim-compiler', 'node_modules');
-const WebIFC = require(path.join(NM, 'web-ifc'));
+const WebIFC = require(path.join(NM, 'web-ifc/web-ifc-api-node.js'));
+const _init = WebIFC.IfcAPI.prototype.Init; WebIFC.IfcAPI.prototype.Init = function () { return _init.call(this); };   // the real worker passes a browser wasm locator
 const S = require('../ifc_declared_storeys.js');
 const SG = require('../schedule_gate.js'); global.ScheduleGate = SG; const SA = require('../schedule_author.js');
 const arg = n => { const o = []; process.argv.forEach((a, i) => { if (a === n) o.push(process.argv[i + 1]); }); return o; };
@@ -53,6 +54,21 @@ const FT = '#1=IFCSIUNIT(*,.LENGTHUNIT.,$,.METRE.);\n#2=IFCDIMENSIONALEXPONENTS(
   // LIMIT, stated not hidden: the median test cannot see a unit error when the wrong span still contains the median. The unit reader (U1-U3, R1) is the only guard.
   const lim = SA._chooseStoreyDatum(SA._storeyDatumCandidates(mk([['G', 0], ['L1', 4800], ['R', 9050]])), ez);
   console.log('§W_STOREY LIMIT a millimetre ladder read at scale 1 with rung 0 still passes the frame test: chosen=' + lim.source + '. So U1-U3 + R1 guard the unit, not the frame test.');
+  // The two JS routes write ONE table. Public Duplex through the real import worker + builder, against the shared extractor's own rows.
+  const pub = path.join(__dirname, '..', '..', 'IFC', 'Duplex_ARC.ifc');
+  if (!fs.existsSync(pub)) console.log('§W_STOREY R0 INCONCLUSIVE no public IFC at hand');
+  else {
+    const vm = require('vm'), V = path.join(__dirname, '..'), base = () => ({ URL, Blob, TextDecoder, TextEncoder, setTimeout, Math, JSON, Date, Float32Array, Float64Array, Int32Array, Uint8Array, Uint32Array, Uint16Array, Int8Array, Int16Array, ArrayBuffer, Map, Set, Object, Array, String, Number, parseInt, parseFloat, isNaN, isFinite, Promise, performance }), q = { log() {}, warn() {}, error() {} };
+    const imp = await new Promise(res => { const self = { IfcDeclaredStoreys: S }, c = Object.assign(base(), { self, WebIFC, console: q, importScripts() {} });
+      self.postMessage = m => { if (m.type === 'done') { const c2 = Object.assign(base(), { console: q }); vm.createContext(c2); vm.runInContext(fs.readFileSync(path.join(V, 'import_db_builder.js'), 'utf8'), c2); const o = c2.buildImportDBs(SQL, m); res(new SQL.Database(new Uint8Array(o.metaDb || o.extractedDb))); } else if (m.type === 'error') { console.log('§W_STOREY R0 worker error ' + m.message); res(null); } };
+      vm.createContext(c); vm.runInContext(fs.readFileSync(path.join(V, 'import_worker.js'), 'utf8'), c); const b = fs.readFileSync(pub); self.onmessage({ data: { arrayBuffer: b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength), filename: path.basename(pub) } }); });
+    const Core = require(path.join(V, '..', 'modeller', 'dxf2bim', 'ifc_extract_core.js')), IOD = require(path.join(V, '..', 'modeller', 'ifc_open_db.js')), api2 = new WebIFC.IfcAPI(); api2.SetWasmPath(path.join(NM, 'web-ifc') + '/', true); await api2.Init();
+    const op = (await IOD.open({ WebIFC, ifcApi: api2, SQL, Core, bytes: new Uint8Array(fs.readFileSync(pub)), name: 'Duplex_ARC', log() {} })).db;
+    const rows = d => { const r = d.exec('SELECT guid, name, elevation_attr_m FROM storey_elevation ORDER BY guid'); return r.length ? r[0].values : []; };
+    const ra = imp ? rows(imp) : [], rb = rows(op), byB = {}; rb.forEach(v => byB[v[0]] = v);
+    const worst = ra.reduce((w, v) => Math.max(w, byB[v[0]] ? Math.abs(v[2] - byB[v[0]][2]) : Infinity), 0);
+    chk('R0 both JS routes write one storey_elevation: same storeys, same metres', ra.length > 0 && ra.length === rb.length && worst < 0.0002, 'import ' + ra.length + ' open ' + rb.length + ' worst ' + worst);
+  }
   // Real set, optional: the web-ifc reading against the independent STEP-text reading.
   const ifcs = arg('--ifc');
   if (!ifcs.length) console.log('§W_STOREY REAL INCONCLUSIVE no --ifc given, the real-file legs were not judged');

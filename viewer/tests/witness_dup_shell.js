@@ -61,6 +61,20 @@ chk('U8 no mesh at hand: unjudged, nothing hidden', !Object.keys(noMesh.hidden).
     console.log('§W_DUP DB ' + name + ' rows=' + rows.length + ' shown=' + kept.length + ' hidden=' + (rows.length - kept.length));
     db.close();
   }
+  // The page: the real Viewer on a public DB. Does the filter run, is the count on screen the shown count, and is the page clean? No pixel judged.
+  if (process.env.DUP_PAGE) {
+    const http = require('http'), pup = require(path.join(process.env.HOME, 'bim-compiler', 'node_modules', 'puppeteer')), ROOT = path.join(__dirname, '..', '..'), SH = path.join(process.env.HOME, 'bim-ootb');
+    const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.wasm': 'application/wasm', '.json': 'application/json', '.css': 'text/css' };
+    const srv = http.createServer((q, r) => { const u = decodeURIComponent(q.url.split('?')[0]), a = path.join(ROOT, u), b = path.join(SH, u); fs.readFile(fs.existsSync(a) ? a : b, (e, d) => { if (e) { r.writeHead(404); r.end(); return; } r.writeHead(200, { 'Content-Type': MIME[path.extname(u)] || 'application/octet-stream' }); r.end(d); }); });
+    await new Promise(r => srv.listen(0, '127.0.0.1', r));
+    const br = await pup.launch({ headless: 'new', args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] }), pg = await br.newPage(), lines = [], errs = [];
+    pg.on('console', m => { const t = m.text(); if (/§DUP_SHELL /.test(t)) lines.push(t); }); pg.on('pageerror', e => errs.push(String(e).slice(0, 200)));
+    await pg.goto('http://127.0.0.1:' + srv.address().port + '/viewer/viewer.html?db=' + encodeURIComponent('../buildings/' + process.env.DUP_PAGE), { waitUntil: 'load', timeout: 120000 });
+    let t = ''; for (let i = 0; i < 150 && !/DONE/.test(t); i++) { await new Promise(r => setTimeout(r, 1000)); t = await pg.evaluate(() => (document.getElementById('status') || document.body).innerText).catch(() => ''); }
+    console.log('§W_DUP PAGE ' + (lines[0] || 'no §DUP_SHELL line') + ' | status=' + String((t.match(/DONE[^\n]{0,80}/) || [''])[0]));
+    chk('P1 the page ran the filter and finished, 0 page errors', lines.length > 0 && /DONE/.test(t) && !errs.length, 'lines=' + lines.length + ' errors=' + errs.length + ' ' + (errs[0] || ''));
+    await br.close(); srv.close();
+  } else console.log('§W_DUP PAGE INCONCLUSIVE set DUP_PAGE=<db in buildings/> to judge the page');
   console.log('§W_DUP VERDICT pass=' + pass + ' fail=' + fail);
   process.exit(fail ? 1 : 0);
 })().catch(e => { console.log('§W_DUP ERROR ' + (e && e.stack || e)); process.exit(1); });

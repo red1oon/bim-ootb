@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MIT
 # ifc_storeys_patch.py — the patch SQL that gives an already-imported DB its `storey_elevation` table (§IFC_STOREYS, bim-compiler MODELLER_MASTER §G3 SPEC).
 # Reads the STEP text directly: a second, independent reading of the same files `viewer/ifc_declared_storeys.js` reads through web-ifc, which
-# witness_ifc_storeys.js compares. Usage: ifc_storeys_patch.py [--z-offset M] [--unit-scale-override S] a.ifc b.ifc > patch.sql
+# witness_ifc_storeys.js compares. Usage: ifc_storeys_patch.py [--z-offset M] a.ifc b.ifc > patch.sql
 import argparse, os, re, sys
 
 SUFFIXES = [' Ceiling', ' TOS', ' T.O.S.', ' Top of Steel', ' Soffit']   # viewer/import_worker.js normalizeStorey, so names match elements_meta.storey
@@ -67,7 +67,6 @@ def fold(name):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--z-offset', type=float, default=0.0, help='whole-metre z the import subtracted from every centre (project_metadata georef_offset_z)')
-    ap.add_argument('--unit-scale-override', type=float, default=None, help='RED CONTROL ONLY: force a wrong unit to prove the frame test refuses it')
     ap.add_argument('ifc', nargs='+')
     args = ap.parse_args()
     q = lambda s: "'" + str(s).replace("'", "''") + "'"
@@ -76,7 +75,6 @@ def main():
     print('DELETE FROM storey_elevation;')
     for path in args.ifc:
         scale, rows = read(path)
-        if args.unit_scale_override is not None: scale = args.unit_scale_override
         print('§IFC_STOREYS_PATCH file=%s unitScale=%s rows=%d' % (os.path.basename(path), scale, len(rows)), file=sys.stderr)
         if scale is None:
             print('§IFC_STOREYS_PATCH REFUSED %s no length unit in IfcUnitAssignment' % os.path.basename(path), file=sys.stderr)
