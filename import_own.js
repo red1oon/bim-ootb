@@ -352,7 +352,7 @@ async function handleImportFile(file) {
   progressBar.parentElement.style.display = 'block'; progressBar.style.width = '0%'; progressBar.style.background = '#0277bd';
   if (file.size > 200 * 1024 * 1024) status.textContent = 'Very large (' + sizeMB + 'MB) — may take a few minutes';
   const arrayBuffer = await file.arrayBuffer();
-  var workerFile = (fmt.route === 'ifc') ? 'viewer/import_worker.js?v=16' : 'viewer/mesh_import_worker.js?v=2';
+  var workerFile = (fmt.route === 'ifc') ? 'viewer/import_worker.js?v=18' : 'viewer/mesh_import_worker.js?v=2';
   var workerMsg = (fmt.route === 'ifc') ? { arrayBuffer, filename: file.name } : { arrayBuffer, filename: file.name, ext: fmt.ext };
   if (fmt.route === 'ifc') {
     try { workerMsg.wasmBytes = await _getWebIfcWasm(); }
@@ -524,7 +524,7 @@ function _parseOwnIFC(file, onProgress, forceGeorefOffset) {
     var workerMsg = { arrayBuffer: await file.arrayBuffer(), filename: file.name, forceGeorefOffset: forceGeorefOffset || null };
     try { workerMsg.wasmBytes = await _getWebIfcWasm(); }
     catch (engineErr) { reject(engineErr); return; }
-    var worker = _createWorker('viewer/import_worker.js?v=16');
+    var worker = _createWorker('viewer/import_worker.js?v=18');
     worker.onmessage = function (e) {
       var msg = e.data;
       if (msg.type === 'progress') { if (onProgress) onProgress(msg.pct, msg.phase); return; }
@@ -583,6 +583,7 @@ function _applySiteIdentityCorrection(fileResults, sessionGeorefOffset) {
         applied[2] - e.loc[2] + canonical[2] - sessOff[2],
       ];
       e.fr.result.transforms.forEach(function (t) { t.cx += shift[0]; t.cy += shift[1]; t.cz += shift[2]; });
+      (e.fr.result.spaces || []).forEach(function (r) { if (r.cx != null) { r.cx += shift[0]; r.cy += shift[1]; r.cz += shift[2]; } });   // §IMPORT_SPACES
       console.log('§SITE_IDENTITY_AUTOFIX ' + e.fr.name + ' site guid=' + guid + ' own=(' + e.loc.join(',') +
         ') vs sibling-consensus=(' + canonical.join(',') + ') corrected shift=(' +
         shift.map(function (v) { return v.toFixed(2); }).join(',') + ')');
@@ -617,6 +618,7 @@ async function importMultiIFC(files) {
     ' names=' + Array.prototype.map.call(files, function (f) { return f.name; }).join(','));
   if (status) status.textContent = 'Merging ' + files.length + ' IFC files → ' + buildingName + '...';
 
+  var allSpaces = [], allSpaceProps = [];   // §IMPORT_SPACES
   var allElements = [], allGeometries = [], allTransforms = [], allPsets = [], allDiscs = {}, allStoreys = new Set(), totalElements = 0;   // §CIVIL_PSETS
   // §GEOREF_REBASE federation frame (ported from viewer/import.js fe535d5 — this landing-page
   // path builds its OWN worker calls and was missing the fix entirely): the first file that
@@ -667,6 +669,7 @@ async function importMultiIFC(files) {
     allGeometries = allGeometries.concat(fr.result.geometries);
     allTransforms = allTransforms.concat(fr.result.transforms);
     if (fr.result.psets && fr.result.psets.length) allPsets = allPsets.concat(fr.result.psets);   // §CIVIL_PSETS
+    allSpaces = allSpaces.concat(fr.result.spaces || []); allSpaceProps = allSpaceProps.concat(fr.result.spaceProps || []);   // §IMPORT_SPACES
   });
 
   if (status) status.textContent = 'Building merged database (' + totalElements + ' elements)...';
@@ -678,6 +681,7 @@ async function importMultiIFC(files) {
               disciplines: allDiscs, storeys: Array.from(allStoreys).sort(),
               georefOffset: sessionGeorefOffset || [0, 0, 0], unitScale: sessionUnitScale },
       elements: allElements, geometries: allGeometries, transforms: allTransforms, psets: allPsets,
+      spaces: allSpaces, spaceProps: allSpaceProps,
     };
     var dbs = buildImportDBs(SQL, mergedData);
     var _recSplit = dbs.metaDb && dbs.geoDb;
