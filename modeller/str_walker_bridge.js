@@ -369,7 +369,15 @@
     return { xs: xs, ys: ys, xlabels: lab(xs.length, true), ylabels: lab(ys.length, false), columnDerived: true, z: isFinite(z) ? z : 0 };
   }
 
-  var api = { swbGateInfo: swbGateInfo, swbGridSpec: swbGridSpec, swbInit: swbInit, swbOnGridMove: swbOnGridMove, swbReplay: swbReplay, swbRenderOps: swbRenderOps, swbCanopyOps: swbCanopyOps, swbTabData: swbTabData };
+  // A wall-bearing building's own lines: the semi-grid swbInit derived from its walls (swDeriveSemiGrid). Not laid automatically: a person's Move Grid on a wall-bearing building keeps
+  // the app's default grid, which existing edits and witnesses rely on. A caller that must not call a default grid the building's own asks for this (edit_cli --own-grid). null otherwise.
+  function swbSemiGridSpec() {
+    if (!_state || _state.system !== 'wall-bearing') return null;
+    var g = _state.base.grid;
+    return { xs: g.xLines.slice(), ys: g.yLines.slice(), source: _state.gridSource };
+  }
+
+  var api = { swbGateInfo: swbGateInfo, swbGridSpec: swbGridSpec, swbSemiGridSpec: swbSemiGridSpec, swbInit: swbInit, swbOnGridMove: swbOnGridMove, swbReplay: swbReplay, swbRenderOps: swbRenderOps, swbCanopyOps: swbCanopyOps, swbTabData: swbTabData };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (typeof window !== 'undefined') Object.keys(api).forEach(function (k) { window[k] = api[k]; });
 })();

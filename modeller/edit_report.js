@@ -18,7 +18,7 @@
     ['clearance', 'New clearance under the limit', 'orange'],
     ['abuts-realign', 'Gap opened at a touching element', 'orange']
   ];
-  var MAX_PAIRS = 20, NOTHING_MOVED = 'no scene element moved in this edit, so there was nothing to judge';
+  var MAX_PAIRS = 20, MAX_BAYS = 8, NOTHING_MOVED = 'no scene element moved in this edit, so there was nothing to judge';
 
   function judged(id, label, scope, before, after, note) {
     return { id: id, label: label, scope: scope, state: 'JUDGED', before: before, after: after, delta: after - before, note: note || '' };
@@ -50,7 +50,18 @@
       return [notNumbered(R, RL, scope, 'INCONCLUSIVE', d), notNumbered(O, OL, scope, 'INCONCLUSIVE', d)];
     }
     var note = s.prelim || '', sc = s.after.pieces + ' walked girders' + (s.material ? ', ' + s.material : '') + (s.mixed ? ' (mixed building)' : '');
-    return [judged(R, RL, sc, s.before.RED, s.after.RED, note), judged(O, OL, sc, s.before.ORANGE, s.after.ORANGE, note)];
+    var red = judged(R, RL, sc, s.before.RED, s.after.RED, note), ch = overLimitChanged(s.before.bays, s.after.bays);
+    red.limit = s.after.limit != null ? s.after.limit : null; red.material = s.material || null; red.over_limit_changed = ch.slice(0, MAX_BAYS); red.over_limit_changed_total = ch.length;
+    return [red, judged(O, OL, sc, s.before.ORANGE, s.after.ORANGE, note)];
+  }
+  // §13.4 each bay over the limit after the edit whose span changed: newly over first, then longest. Every number is the span check's own.
+  function overLimitChanged(b0, b1) {
+    b0 = b0 || {}; b1 = b1 || {}; var out = [], r3 = function (v) { return Math.round(v * 1000) / 1000; };
+    Object.keys(b1).forEach(function (k) {
+      var a = b1[k], o = b0[k]; if (a.signal !== 'RED' || (o && Math.abs(a.span - o.span) < 1e-6)) return;
+      out.push({ bay: k, before: o ? r3(o.span) : null, after: r3(a.span), newly_over: !o || o.signal !== 'RED' });
+    });
+    return out.sort(function (p, q) { return (q.newly_over - p.newly_over) || (q.after - p.after) || (p.bay < q.bay ? -1 : 1); });
   }
 
   function newRows(gate, nothingMoved) {
@@ -86,5 +97,5 @@
       notChecked: input.notChecked.slice()
     };
   }
-  return { compose: compose, MAX_PAIRS: MAX_PAIRS };
+  return { compose: compose, MAX_PAIRS: MAX_PAIRS, MAX_BAYS: MAX_BAYS };
 });

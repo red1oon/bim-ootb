@@ -509,7 +509,8 @@
           const r1 = rot * Math.PI / 180, c1 = Math.cos(r1), s1 = Math.sin(r1);
           ox = wcx - (c1 * lcx - s1 * lcy); oy = wcy - (s1 * lcx + c1 * lcy);     // re-anchor so the centre stays put
         }
-        pl = { x: ox, y: oy, z: oz, rot };
+        // §13.1 W-BLOCK-SHIFT: a move keeps a §ARC-3AXIS placement. This used to rebuild pl with yaw only, so place() fell to its yaw branch: a wall moved +1 m in y also rose 10.03 m and turned.
+        pl = (P.placement.rotX || P.placement.rotY) && !mv.drot ? Object.assign({}, pl, { x: ox, y: oy, z: oz }) : { x: ox, y: oy, z: oz, rot };
       }
       const positions = place(base.positions, pl, base.bbox || (c ? c.bbox : rawBox));   // real mesh seats on its own bbox
       // §STRETCH-1: GEOM_GRID_MOVE makes an insert grid-STRETCHABLE host-side (the worker folds only B-rep solids).

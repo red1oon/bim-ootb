@@ -30,8 +30,14 @@
     el.textContent = ''; open = false;
     var c = r.change || {}, head = make('div', 'er-head'), left = make('div');
     left.appendChild(make('div', 'er-title', 'WHAT THIS EDIT DID'));
-    left.appendChild(make('div', 'er-what', 'Grid ' + c.grid + ' moved ' + (c.delta >= 0 ? '+' : '−') + Math.abs(c.delta).toFixed(2) + ' m'));
-    left.appendChild(make('div', 'er-scope', c.recomposed + ' recomposed, ' + c.riders + ' carried along. One change, can undo.'));
+    var dtxt = (c.delta >= 0 ? '+' : '−') + Math.abs(c.delta).toFixed(2) + ' m';
+    if (c.kind === 'block-shift') {
+      left.appendChild(make('div', 'er-what', 'Grid ' + c.grid + ' and the ' + (c.lines - 1) + ' lines after it moved ' + dtxt));
+      left.appendChild(make('div', 'er-scope', c.moved + ' moved, ' + c.stretched + ' stretched, ' + c.riders + ' carried along, ' + c.left.count + ' crossing the line did not follow. One change, can undo.'));
+    } else {
+      left.appendChild(make('div', 'er-what', 'Grid ' + c.grid + ' moved ' + dtxt));
+      left.appendChild(make('div', 'er-scope', c.recomposed + ' recomposed, ' + c.riders + ' carried along. One change, can undo.'));
+    }
     var x = make('button', 'er-x', '×'); x.title = 'Close'; x.setAttribute('aria-label', 'Close report'); x.onclick = hide;
     head.appendChild(left); head.appendChild(x); el.appendChild(head);
 
@@ -47,6 +53,10 @@
         var w = make('td', 'why', (row.state === 'NOT_JUDGED' ? 'Not judged: ' : 'Inconclusive: ') + row.note); w.colSpan = 3; tr.appendChild(w);
       }
       t.appendChild(tr);
+      if (row.limit != null) {   // the limit and the bays behind the count
+        var lr = make('tr'), ltd = make('td', 'why', 'Limit ' + row.limit + ' m' + (row.material ? ', ' + row.material : '') + (row.over_limit_changed_total ? '. Changed and over it: ' + row.over_limit_changed.map(function (b) { return b.bay + ' ' + (b.before != null ? b.before.toFixed(2) + ' → ' : '') + b.after.toFixed(2) + ' m'; }).join(', ') + (row.over_limit_changed_total > row.over_limit_changed.length ? ', and ' + (row.over_limit_changed_total - row.over_limit_changed.length) + ' more' : '') : ''));
+        ltd.colSpan = 4; lr.dataset.row = row.id + '_limit'; lr.appendChild(ltd); t.appendChild(lr);
+      }
     });
     el.appendChild(t);
 

@@ -13,6 +13,7 @@
  *   R8  the panel prints something else: DOM against the JSON, the banned words, overlap with the toolbar
  *   R9  a real drag: the same report from the real mouse path
  *   R10 the case this feature exists for: SampleHouse gx1 +1 m drives walls through wall 22
+ *   R12 no proposer declined because the count rose without saying what the limit is (§13.4): the row names the limit and the bay, against a recount
  * Falsifier: EDIT_REPORT_BREAK=1 (the after-tally reuses the before) must turn this RED.
  */
 'use strict';
@@ -69,6 +70,12 @@ const relKeys = (t, moved, boxes) => t.pg.evaluate((mv) => { const r = window.__
     const hp = SG.pairsOver(hb, [1], { related: (a, b) => a + b === 4 });
     t.assert('W0e pairsOver by hand: 1-2 over, 1-3 related and left out, 4 clear; population stated', hp.count === 1 && hp.pairs[0].a === 1 && hp.pairs[0].b === 2 && hp.moved === 1 && hp.against === 4, JSON.stringify(hp));
     t.assert('W0f the unknown-material tally is null, never zeros', GS.tally({ base0: { grid: { xLines: [0, 1], yLines: [0, 1] }, walked: [], girders: [] } }, [], 0, 'WOOD', 0.5) === null);
+
+    const hBays = (o) => ({ RED: 0, ORANGE: 0, pieces: 2, limit: 12, bays: o });
+    const p3 = ER.compose({ change: {}, span: { before: hBays({ 'gx0-gx1': { span: 10, signal: 'GREEN' }, 'gx1-gx2': { span: 20, signal: 'RED' }, 'gx2-gx3': { span: 30, signal: 'RED' } }), after: hBays({ 'gx0-gx1': { span: 13, signal: 'RED' }, 'gx1-gx2': { span: 21, signal: 'RED' }, 'gx2-gx3': { span: 30, signal: 'RED' } }), material: 'RC' }, gate: null, notChecked: ['a'] });
+    const c3 = row(p3, 'span_red').over_limit_changed;
+    t.assert('W0h the row names only over-limit bays whose span changed, newly over first', row(p3, 'span_red').limit === 12 && row(p3, 'span_red').material === 'RC' && c3.length === 2 && c3[0].bay === 'gx0-gx1' && c3[0].newly_over && c3[1].bay === 'gx1-gx2' && !c3[1].newly_over, JSON.stringify(c3));
+    t.assert('W0i a refused span has no limit and no bay', p0.rows.every(r => r.limit === undefined && r.over_limit_changed === undefined));
 
     await openGarage(t);
     const pg = t.pg;
@@ -166,6 +173,22 @@ const relKeys = (t, moved, boxes) => t.pg.evaluate((mv) => { const r = window.__
     const cost = t.slog.filter(l => /§EDIT_REPORT_COST/.test(l)).pop();
     L('cost ' + cost);
     t.assert('R11 the cost is logged', !!cost);
+  });
+
+  await run('W-EDIT-REPORT-LIMIT', async (t) => {
+    await openGarage(t);
+    const xl = await t.pg.evaluate(() => { const i = window.swbGateInfo(); return i.base0.grid.xLines.slice(); });
+    const r = await stretch(t, 'gx6', 1.817), sr = row(r, 'span_red'), hit = (sr.over_limit_changed || []).filter(b => b.bay === 'gx5-gx6')[0];
+    L('limit ' + JSON.stringify({ limit: sr.limit, material: sr.material, list: sr.over_limit_changed, total: sr.over_limit_changed_total }));
+    t.assert('R12a the row names the limit, the material and the bay put over it', sr.limit === SW.SW_SPAN_RULES.RC.maxBeamSpan && sr.material === 'RC' && !!hit && hit.newly_over === true, JSON.stringify(hit));
+    t.assert('R12b the bay\'s numbers = the walker\'s own lines', hit && Math.abs(hit.before - (xl[6] - xl[5])) < 1e-3 && Math.abs(hit.after - (xl[6] + 1.817 - xl[5])) < 1e-3 && hit.after > sr.limit, JSON.stringify([xl[5], xl[6]]));
+    const txt = await t.pg.evaluate(() => document.querySelector('#edit-report tr[data-row="span_red_limit"]').textContent);
+    t.assert('R12c the panel prints the same', txt.indexOf('Limit 12 m, RC') >= 0 && txt.indexOf('gx5-gx6') >= 0 && txt.indexOf(hit.after.toFixed(2)) >= 0, txt.slice(0, 120));
+  });
+  await run('W-EDIT-REPORT-NONEWBAY', async (t) => {
+    await openGarage(t);
+    const r = await stretch(t, 'gy8', 1.5), sr = row(r, 'span_red');
+    t.assert('R12d a move that puts no bay over the limit names no new bay', sr.delta === 0 && (sr.over_limit_changed || []).every(b => !b.newly_over), JSON.stringify(sr.over_limit_changed));
   });
 
   await run('W-EDIT-REPORT-FRESH', async (t) => {
