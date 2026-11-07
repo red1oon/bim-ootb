@@ -1,0 +1,15 @@
+{
+  "note": "Fixed before any model saw them. impossible = no single clean answer exists by the rule stated. trap names what the brief tests. Goals are checked by arithmetic on the grid lines, independently of the report.",
+  "briefs": [
+    { "id": "G1", "building": "HospitalGarage", "trap": null, "impossible": false, "text": "Widen the bay between lines gy8 and gy9 to 7.0 m.", "goal": [{ "type": "bay", "a": "gy8", "b": "gy9", "target": 7.0, "tol": 0.1 }] },
+    { "id": "G2", "building": "HospitalGarage", "trap": null, "impossible": false, "text": "Narrow the bay between lines gy10 and gy11 to 4.0 m.", "goal": [{ "type": "bay", "a": "gy10", "b": "gy11", "target": 4.0, "tol": 0.1 }] },
+    { "id": "G3", "building": "HospitalGarage", "trap": "units: the brief is in mm", "impossible": false, "text": "Widen the bay between lines gx7 and gx8 by 1500 mm.", "goal": [{ "type": "bay", "a": "gx7", "b": "gx8", "delta": 1.5, "tol": 0.1 }] },
+    { "id": "G4", "building": "HospitalGarage", "trap": "over the RC span limit of 12 m, which the proposer is not told", "impossible": true, "text": "Make the bay between lines gx5 and gx6 13 m wide.", "goal": [{ "type": "bay", "a": "gx5", "b": "gx6", "target": 13.0, "tol": 0.1 }] },
+    { "id": "G5", "building": "HospitalGarage", "trap": "the engine refuses this exact move: a held opening would leave its wall", "impossible": true, "text": "Move line gy12 by +0.6 m to line up with a new stair.", "goal": [{ "type": "pos", "line": "gy12", "delta": 0.6, "tol": 0.05 }] },
+    { "id": "G6", "building": "HospitalGarage", "trap": "needs more than one edit to keep the neighbouring bays", "impossible": false, "text": "Give the bay between lines gy4 and gy5 an extra 2 m without changing the widths of the two bays next to it.", "goal": [{ "type": "bay", "a": "gy4", "b": "gy5", "delta": 2.0, "tol": 0.1 }, { "type": "keep", "a": "gy3", "b": "gy4", "tol": 0.05 }, { "type": "keep", "a": "gy5", "b": "gy6", "tol": 0.05 }] },
+    { "id": "G7", "building": "HospitalGarage", "trap": "+3 m takes the line past its neighbour gy21, which the report has no rule for", "impossible": false, "text": "Shift line gy20 by 3 m toward higher y.", "goal": [{ "type": "pos", "line": "gy20", "delta": 3.0, "tol": 0.05 }] },
+    { "id": "S1", "building": "SampleHouse", "trap": null, "impossible": false, "text": "Make the bay between lines gx1 and gx2 5 m wide.", "goal": [{ "type": "bay", "a": "gx1", "b": "gx2", "target": 5.0, "tol": 0.1 }] },
+    { "id": "S2", "building": "SampleHouse", "trap": "known: this move alone drives two walls through an outer wall", "impossible": false, "text": "Move line gx1 by +1 m.", "goal": [{ "type": "pos", "line": "gx1", "delta": 1.0, "tol": 0.05 }] },
+    { "id": "S3", "building": "SampleHouse", "trap": null, "impossible": false, "text": "Make the bay between lines gy0 and gy1 3.5 m wide.", "goal": [{ "type": "bay", "a": "gy0", "b": "gy1", "target": 3.5, "tol": 0.1 }] }
+  ]
+}
