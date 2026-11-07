@@ -44,7 +44,7 @@
           // gate flags surfaced 1:1 (⛔ clash / ⚠ gated) — same semantics as the 3-material render split
           return { id: pre + disc + '|' + e.idx, kind: 'element',
             dwp: { disc: disc, idx: e.idx, asm: asm },
-            label: short + ' #' + e.idx + (e.p.clash ? ' ⛔' : (e.p.gated ? ' ⚠' : '')),
+            label: short + ' #' + e.idx + (e.p.clash ? ' ⛔' : (e.p.gated ? ' ⚠' : '')) + (e.p.provisional ? ' · provisional' : ''),   // §11 the device says so when identified
             sub: e.p.storey || (asm && e.p.guid ? String(e.p.guid).slice(0, 10) : '') };
         })
       };

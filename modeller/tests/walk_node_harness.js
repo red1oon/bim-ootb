@@ -62,7 +62,7 @@ function walkLive(SQL, stack, disc, buf, name, avoid, extra) {
   const bdb = new SQL.Database(buf);
   try { bdb.run("DELETE FROM element_transforms WHERE transform_source='void_anchor'"); } catch (e) { /* no such column on an older DB, same as the page */ }
   let w = stack.DW.dwWalk(disc, bdb, name, Object.assign({ schedule: true, avoid: avoid || [] }, extra || {}));
-  if ((w.refused || !w.placed) && !w.verdict) {
+  if ((w.refused || !((w.placed || 0) + (w.provisional || 0))) && !w.verdict) {   // §11: a walk of provisional rows is not a refused walk
     console.log('§SCHED-FALLBACK ' + disc + ' schedule/measured-band yielded 0 (' + (w.reason || 'no placements') + ') -> legacy walk');
     w = stack.DW.dwWalk(disc, bdb, name, Object.assign({}, extra || {}));
   }
