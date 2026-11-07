@@ -185,7 +185,7 @@
     var CINEMA_MEP_SKIP_FRACTION = 0.5;  // majority of contained elements are plant/services classes
     function _cinemaMepFraction(guid) {
       var rows = A.dbQuery ? A.dbQuery(
-        "SELECT m.ifc_class, COUNT(*) FROM rel_contained_in_space r " +
+        "SELECT m.ifc_class, " + ProvTotals.count(A.db, 'm.guid', 'cinema.roomMep') + " FROM rel_contained_in_space r " +
         "JOIN elements_meta m ON m.guid=r.element_guid WHERE r.space_guid=? GROUP BY m.ifc_class",
         [guid]) : [];
       if (!rows.length) return 0;

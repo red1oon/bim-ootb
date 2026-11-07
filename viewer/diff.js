@@ -356,7 +356,7 @@ function setupDiff(A) {
         var chunk = guids.slice(i, i + 900);
         var ph = chunk.map(function () { return '?'; }).join(',');
         var rows;
-        try { rows = db.exec("SELECT ifc_class, discipline, COUNT(*) FROM elements_meta WHERE guid IN (" + ph + ") GROUP BY ifc_class, discipline", chunk); }
+        try { rows = db.exec("SELECT ifc_class, discipline, " + ProvTotals.count(db, 'guid', 'diff.vo') + " FROM elements_meta WHERE guid IN (" + ph + ") GROUP BY ifc_class, discipline", chunk); }
         catch (e) { console.log('[RP-F] §VO_PRICE_ERR ' + e.message); rows = []; }
         (rows.length ? rows[0].values : []).forEach(function (r) {
           var cls = r[0] || 'Unknown', disc = r[1] || '_', k = status + '|' + cls;

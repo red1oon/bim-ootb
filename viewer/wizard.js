@@ -96,7 +96,7 @@
     var analysis = {};
 
     // Element count
-    var r = db.exec("SELECT COUNT(*) FROM elements_meta");
+    var r = db.exec("SELECT " + ProvTotals.count(db, 'guid', 'wizard.total') + " FROM elements_meta");
     analysis.totalElements = r.length ? r[0].values[0][0] : 0;
 
     // Storey bands
@@ -106,7 +106,7 @@
     // Storey counts + elevation ranges
     analysis.storeyCounts = {};
     analysis.storeyElevations = {};
-    r = db.exec("SELECT storey, COUNT(*) as cnt FROM elements_meta GROUP BY storey ORDER BY cnt DESC");
+    r = db.exec("SELECT storey, " + ProvTotals.count(db, 'guid', 'wizard.storeys') + " as cnt FROM elements_meta GROUP BY storey ORDER BY cnt DESC");
     if (r.length) {
       for (var i = 0; i < r[0].values.length; i++) {
         analysis.storeyCounts[r[0].values[i][0]] = r[0].values[i][1];
@@ -133,7 +133,7 @@
 
     // Discipline counts
     analysis.disciplines = {};
-    r = db.exec("SELECT discipline, COUNT(*) as cnt FROM elements_meta GROUP BY discipline ORDER BY cnt DESC");
+    r = db.exec("SELECT discipline, " + ProvTotals.count(db, 'guid', 'wizard.discs') + " as cnt FROM elements_meta GROUP BY discipline ORDER BY cnt DESC");
     if (r.length) {
       for (var i = 0; i < r[0].values.length; i++) {
         analysis.disciplines[r[0].values[i][0]] = r[0].values[i][1];
@@ -142,7 +142,7 @@
 
     // IFC class counts
     analysis.ifcClasses = {};
-    r = db.exec("SELECT ifc_class, COUNT(*) as cnt FROM elements_meta GROUP BY ifc_class ORDER BY cnt DESC");
+    r = db.exec("SELECT ifc_class, " + ProvTotals.count(db, 'guid', 'wizard.types') + " as cnt FROM elements_meta GROUP BY ifc_class ORDER BY cnt DESC");
     if (r.length) {
       for (var i = 0; i < r[0].values.length; i++) {
         analysis.ifcClasses[r[0].values[i][0]] = r[0].values[i][1];

@@ -125,7 +125,7 @@ var PrintSheet = (function() {
 
     try {
       var classResult = A.db.exec(
-        'SELECT ifc_class,COUNT(*) as n FROM elements_meta GROUP BY ifc_class ORDER BY n DESC LIMIT 8'
+        'SELECT ifc_class,' + ProvTotals.count(A.db, 'guid', 'print.classCounts') + ' as n FROM elements_meta GROUP BY ifc_class ORDER BY n DESC LIMIT 8'
       );
       if (classResult.length > 0) {
         var rows = classResult[0].values;

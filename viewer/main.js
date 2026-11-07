@@ -236,11 +236,11 @@ async function initViewer() {
         'find_ask.js?v=4',
         'nf_ui_history.js?v=1',
         'nf_tree_lens.js?v=2',
-        'nf_highlight_cost.js?v=1',
+        'nf_highlight_cost.js?v=2',
         'nf_room.js?v=1',
         'nf_trees.js?v=1',
-        'nf_isolate_drill.js?v=1',
-        'nf_panel_search.js?v=1',
+        'nf_isolate_drill.js?v=2',
+        'nf_panel_search.js?v=2',
         // navigate_find.js is now the setup shell for the nf_*.js parts above (move-only split, scripts/split_closure.js)
         'navigate_find.js?v=65',
         'navigate_grid.js?v=1',
@@ -299,7 +299,7 @@ async function initViewer() {
         return;
       }
       var s = document.createElement('script');
-      s.src = 'wizard.js?v=3';
+      s.src = 'wizard.js?v=4';
       s.onload = function() {
         APP._wizardLoaded = true;
         console.log('[S239] §WIZARD_LAZY_LOADED');
@@ -479,23 +479,23 @@ async function initViewer() {
         var bld = APP.activeBuilding.replace(/'/g, "''");
         try {
           var countRows = APP.db.exec(
-            "SELECT m.discipline, m.ifc_class, m.storey, COUNT(*) as cnt, COUNT(DISTINCT i.geometry_hash) as meshes " +
+            "SELECT m.discipline, m.ifc_class, m.storey, " + ProvTotals.count(APP.db, 'm.guid', 'relay.cnt') + " as cnt, COUNT(DISTINCT i.geometry_hash) as meshes " +
             "FROM elements_meta m LEFT JOIN element_instances i ON m.guid = i.guid " +
             "WHERE m.building = '" + bld + "' GROUP BY m.discipline, m.ifc_class, m.storey " +
             "ORDER BY m.discipline, m.storey, cnt DESC"
           );
           var dimRows = APP.db.exec(
             "SELECT m.discipline, m.ifc_class, m.storey, " +
-            "SUM(MAX(t.bbox_x, t.bbox_y, t.bbox_z)) as total_length, " +
-            "SUM(MAX(t.bbox_x, t.bbox_y, t.bbox_z) * " +
+            ProvTotals.sum(APP.db, "MAX(t.bbox_x, t.bbox_y, t.bbox_z)", 'm.guid', 'relay.len') + " as total_length, " +
+            ProvTotals.sum(APP.db, "MAX(t.bbox_x, t.bbox_y, t.bbox_z) * " +
             "CASE WHEN t.bbox_x >= t.bbox_y AND t.bbox_x >= t.bbox_z THEN MAX(t.bbox_y, t.bbox_z) " +
             "WHEN t.bbox_y >= t.bbox_x AND t.bbox_y >= t.bbox_z THEN MAX(t.bbox_x, t.bbox_z) " +
-            "ELSE MAX(t.bbox_x, t.bbox_y) END) as total_area, " +
+            "ELSE MAX(t.bbox_x, t.bbox_y) END", 'm.guid', 'relay.area') + " as total_area, " +
             // §FOOTING_M3 (2026-08-12): 6th column. IfcFooting is now priced unit:'M3' (rates.js),
             // and boq_charts' M3 branch bills this SUM. Without it the relay path silently fell
             // through to count and under-billed the class by avgVolume (5.66x on cidb rates).
             // Same expression as foldCost/_volumeWeighting/analysis_sidecar vol_m3 — one volume.
-            "SUM(t.bbox_x * t.bbox_y * t.bbox_z) as total_vol " +
+            ProvTotals.sum(APP.db, "t.bbox_x * t.bbox_y * t.bbox_z", 'm.guid', 'relay.vol') + " as total_vol " +
             "FROM elements_meta m JOIN element_transforms t ON m.guid = t.guid " +
             "WHERE m.building = '" + bld + "' AND t.bbox_x IS NOT NULL AND t.bbox_x > 0 " +
             "GROUP BY m.discipline, m.ifc_class, m.storey"

@@ -249,7 +249,8 @@
 // v1696 (2026-11-06) §IMPORT_SPACES: browser IFC import records the file's IfcSpace + Pset_SpaceCommon in ifc_spaces + element_pset_common, Find panel room injection untouched (import_worker.js?v=18, import_db_builder.js?v=10, import.js?v=13); a file with no spaces is unchanged
 // v1697 (2026-11-07) §IMPORT_SPACES part 2: the Modeller's walker reads the record of a file's stated rooms first (disc_walker.js?v=15)
 // v1698 (2026-11-07) §IFC_STOREYS: the import keeps each file's storey elevations in metres (storey_elevation, the extractor's table) and the declared ladder bands the schedule (ifc_declared_storeys.js, import_worker.js?v=19, import_db_builder.js?v=11, import.js?v=14, schedule_author.js?v=19, lib/level_deriver.js?v=2); §DUP_SHELL: one place, one class, one material shows one element (dup_shell.js, streaming.js?v=92)
-const CACHE_VERSION = 'v1698';
+// v1699 (2026-11-08) §11 P7 PROV-TOTALS: Viewer totals and quantities leave provisional walked devices out (provisional_totals.js, one owner; COUNT(*) unchanged on a DB with no walk set); they stay listed and labelled
+const CACHE_VERSION = 'v1699';
 // v1637 (rebase of PR #1191/#1196) §CLASS_UNMATCHED_INHERITED + §EXACT_LOOKUP_BLINDSPOT: rates/ifc_schema_hierarchy.json added to PRECACHE_ASSETS; schedule_author.js/proj_fold.js/boq_charts.html/schedule_read_4d.js/tm_sched_xray.js classify via the schema hierarchy.
 // v1636 (rebase of PR #1317) §ARCH_AREA_WEIGHT/§VOL_WEIGHT/§FOOTING_M3: schedule_author.js, time_machine parts, rates.js and rates/*.json changed install DURATIONS (area/volume weighting, IfcFooting priced M3); all precached cache-first, so a client holding the old cache would keep the flat times forever.
 // v1635 (rebase of PR #676, BCF half only) §BCF_EXPORT: bcf_export.js added to PRECACHE_ASSETS; viewer.html loads it + Export BCF button in the Issues toolbar; main.js wires setupBcfExport/exportIssuesBcf. The Open-button IFC half of #676 was superseded by main's A._openIfcFiles.
@@ -1051,6 +1052,7 @@ const PRECACHE_ASSETS = [
   'config.js',
   'db_resolve.js',
   'helpers.js',
+  'provisional_totals.js',
   'silhouette_refine.js',
   'vertex_weld.js',
   'surface_r10.js',

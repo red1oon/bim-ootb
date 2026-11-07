@@ -107,7 +107,7 @@ function setupNlp(A) {
       fn: m => {
         const ifc = ifcLike(m[2]); const bld = bldFilter();
         return {
-          sql: `SELECT ifc_class, COUNT(*) as count, storey FROM elements_meta
+          sql: `SELECT ifc_class, ${_pc()} as count, storey FROM elements_meta
                 WHERE (${ifc.sql}) AND LOWER(storey) LIKE LOWER(?)
                 ${bld.sql} GROUP BY ifc_class, storey`,
           params: [...ifc.params, floorPattern(m[1]), ...bld.params],
@@ -118,7 +118,7 @@ function setupNlp(A) {
       fn: m => {
         const ifc = ifcLike(m[1]); const bld = bldFilter();
         return {
-          sql: `SELECT ifc_class, COUNT(*) as count, storey FROM elements_meta
+          sql: `SELECT ifc_class, ${_pc()} as count, storey FROM elements_meta
                 WHERE (${ifc.sql}) AND LOWER(storey) LIKE LOWER(?)
                 ${bld.sql} GROUP BY ifc_class, storey`,
           params: [...ifc.params, '%0%', ...bld.params],
@@ -130,7 +130,7 @@ function setupNlp(A) {
       fn: m => {
         const ifc = ifcLike(m[1]); const bld = bldFilter();
         return {
-          sql: `SELECT ifc_class, COUNT(*) as count FROM elements_meta
+          sql: `SELECT ifc_class, ${_pc()} as count FROM elements_meta
                 WHERE (${ifc.sql}) ${bld.sql} GROUP BY ifc_class`,
           params: [...ifc.params, ...bld.params],
           desc: `count ${singularize(m[1])}`
@@ -141,7 +141,7 @@ function setupNlp(A) {
       fn: () => {
         const bld = bldFilter('WHERE');
         return {
-          sql: `SELECT ifc_class, COUNT(*) as qty FROM elements_meta ${bld.sql} GROUP BY ifc_class ORDER BY qty DESC`,
+          sql: `SELECT ifc_class, ${_pc()} as qty FROM elements_meta ${bld.sql} GROUP BY ifc_class ORDER BY qty DESC`,
           params: [...bld.params],
           desc: 'total building cost',
           costMode: 'total'
@@ -153,7 +153,7 @@ function setupNlp(A) {
         if (d) {
           const bld = bldFilter(true);
           return {
-            sql: `SELECT ifc_class, COUNT(*) as qty FROM elements_meta
+            sql: `SELECT ifc_class, ${_pc()} as qty FROM elements_meta
                   WHERE discipline = ? ${bld.sql} GROUP BY ifc_class ORDER BY qty DESC`,
             params: [d, ...bld.params],
             desc: `cost of ${m[1]}`,
@@ -162,7 +162,7 @@ function setupNlp(A) {
         }
         const ifc = ifcLike(m[1]); const bld = bldFilter();
         return {
-          sql: `SELECT ifc_class, COUNT(*) as qty FROM elements_meta
+          sql: `SELECT ifc_class, ${_pc()} as qty FROM elements_meta
                 WHERE (${ifc.sql}) ${bld.sql} GROUP BY ifc_class ORDER BY qty DESC`,
           params: [...ifc.params, ...bld.params],
           desc: `cost of ${singularize(m[1])}`,
@@ -175,14 +175,14 @@ function setupNlp(A) {
         if (m[2]) {
           const ifc = ifcLike(m[2]); const bld = bldFilter();
           return {
-            sql: `SELECT ifc_class, COUNT(*) as qty FROM elements_meta WHERE (${ifc.sql}) ${bld.sql} GROUP BY ifc_class ORDER BY qty DESC`,
+            sql: `SELECT ifc_class, ${_pc()} as qty FROM elements_meta WHERE (${ifc.sql}) ${bld.sql} GROUP BY ifc_class ORDER BY qty DESC`,
             params: [...ifc.params, ...bld.params],
             desc: `total ${m[1]} of ${singularize(m[2])} (element count — no QTO dimensions in DB)`
           };
         }
         const bld = bldFilter('WHERE');
         return {
-          sql: `SELECT ifc_class, COUNT(*) as qty FROM elements_meta ${bld.sql} GROUP BY ifc_class ORDER BY qty DESC`,
+          sql: `SELECT ifc_class, ${_pc()} as qty FROM elements_meta ${bld.sql} GROUP BY ifc_class ORDER BY qty DESC`,
           params: [...bld.params],
           desc: `total ${m[1]} (element count — no QTO dimensions in DB)`
         };
@@ -191,7 +191,7 @@ function setupNlp(A) {
       fn: () => {
         const bld = bldFilter();
         return {
-          sql: `SELECT ifc_class, COUNT(*) as qty FROM elements_meta
+          sql: `SELECT ifc_class, ${_pc()} as qty FROM elements_meta
                 WHERE LOWER(ifc_class) LIKE '%slab%' ${bld.sql} GROUP BY ifc_class`,
           params: [...bld.params],
           desc: 'slab count (floor area dimensions not in DB)'
@@ -204,7 +204,7 @@ function setupNlp(A) {
         if (d) {
           const bld = bldFilter();
           return {
-            sql: `SELECT ifc_class, COUNT(*) as count FROM elements_meta
+            sql: `SELECT ifc_class, ${_pc()} as count FROM elements_meta
                   WHERE discipline = ? ${bld.sql} GROUP BY ifc_class ORDER BY count DESC`,
             params: [d, ...bld.params],
             desc: `${m[1]} elements`
@@ -217,7 +217,7 @@ function setupNlp(A) {
       fn: () => {
         const bld = bldFilter('WHERE');
         return {
-          sql: `SELECT discipline, COUNT(*) as count FROM elements_meta
+          sql: `SELECT discipline, ${_pc()} as count FROM elements_meta
                 ${bld.sql} GROUP BY discipline ORDER BY discipline`,
           params: [...bld.params],
           desc: 'all disciplines'
@@ -246,6 +246,8 @@ function setupNlp(A) {
   ];
 
   // ── Building filter helpers (parameterized) ──
+  // §11 P7: every count pattern counts through ProvTotals (provisional walked devices left out; COUNT(*) when none).
+  function _pc() { return ProvTotals.count(A.db, 'guid', 'nlp'); }
   function bldFilter(mode) {
     if (!A.activeBuilding) return { sql: '', params: [] };
     if (mode === 'WHERE') return { sql: `WHERE building = ?`, params: [A.activeBuilding] };
@@ -287,7 +289,7 @@ function setupNlp(A) {
     // falls through to the legacy regex PATTERNS below. See decoder.js "HOW TO USE".
     if (typeof BimDecoder !== 'undefined') {
       try {
-        const d = BimDecoder.decode(text, { storeys: _nlpStoreys() });
+        const d = BimDecoder.decode(text, { storeys: _nlpStoreys(), countExpr: ProvTotals.count(A.db, 'guid', 'decoder') });
         if (d && d.kind !== 'none') {
           const cur = typeof _TRL!=='undefined'&&_TRL.cur||'RM',
                 cur2 = typeof _TRL!=='undefined'&&_TRL.cur2||'USD',

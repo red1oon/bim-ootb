@@ -624,7 +624,10 @@ function setupPicking(A) {
         return;
       }
       const [cls, name, g, bld, storey, disc, mat] = rows[0];
-      document.getElementById('info-class').textContent = cls || '—';
+      // §11 P7: a provisional walked device (borrowed density, left out of every total) says so when identified.
+      const _prov = !!(window.ProvTotals && ProvTotals.provisional(A.db) > 0 && ProvTotals.isProvisional(A.db, g || guid));
+      document.getElementById('info-class').textContent = (cls || '—') + (_prov ? ' · provisional' : '');
+      if (_prov) console.log('§PROV-TOTALS site=pick.label guid=' + (g || guid) + ' provisional=1');
       document.getElementById('info-name').textContent = name || '—';
       document.getElementById('info-guid').textContent = g || '—';
       document.getElementById('info-building').textContent = bld || '—';
