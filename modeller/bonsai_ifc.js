@@ -225,6 +225,10 @@
       };
 
       const matProducts = {};
+      // §11 (prompts/DISC_WALK_BAND_NO_HOST.md, rule 5): a walked fixture carries its walk label into the file, so a provisional device stays provisional in another tool. A custom set
+      // (the Pset_ prefix is buildingSMART's), one per distinct value combination, related to all its fixtures by one IfcRelDefinesByProperties: a few entities, not one per device.
+      // window.__ifcNoWalkSet turns it off: a witness's red control only, no UI.
+      const walkSets = new Map(), WALK_SET = 'BIMOOTB_Walk';
       const AP = window.Dxf2Ifc ? window.Dxf2Ifc.appearance({ api, T, mID, enumOf, label, gid: spatialGid }) : null;   // §L26 colours + the evidence set Dxf2Bim_Evidence from the body's typing
       let seedColoured = 0, seedPsets = 0;
       let derivedSkipped = 0, carriedIns = 0, carriedCuts = 0, carriedCutNoHost = 0;
@@ -268,6 +272,7 @@
           }
           const prodE = productFromRep(rep, T[ent], (tp && tp.type_name) || (op.carried ? (op.carried.name || cls) : ((P.ifc_class || (P._dw && P._dw.ifc) || (_cat && _cat.ifc_class) || 'Element') + ' ' + op.id)), op.carried ? op.carried.guid : gn++, pdx, tp && tp.type_name);
           if (tp) seedTyped++;
+          if (P._dw && P._dw.ifc && !window.__ifcNoWalkSet) { const wk = [!!P._dw.provisional, String(P._dw.prov || ''), String(P._dw.hostState || '')].join('|'); (walkSets.get(wk) || walkSets.set(wk, []).get(wk)).push(prodE); }
           productByFeature.set(op.id, prodE); if (fid !== op.id) productByFeature.set(fid, prodE);
           if (tp && tp.material) (matProducts[tp.material] = matProducts[tp.material] || []).push(prodE);   // §L13.3 material dress
           if (AP && tp) { if (AP.style(fs, tp.colour)) seedColoured++; if (AP.pset(prodE, tp.props)) seedPsets++; }
@@ -367,6 +372,20 @@
         }
       }
 
+      // §11 the walk sets, written once each.
+      const _ws0 = Date.now(), _wsHeap0 = (typeof performance !== 'undefined' && performance.memory) ? performance.memory.usedJSHeapSize : 0;
+      let walkFixtures = 0, walkProvisional = 0, wsN = 0;
+      walkSets.forEach((prods, wk) => {
+        const parts = wk.split('|'), prov = parts[0] === 'true';
+        const hp = [api.CreateIfcEntity(mID, T.IFCPROPERTYSINGLEVALUE, label('Provisional'), null, api.CreateIfcType(mID, T.IFCBOOLEAN, prov), null),
+          api.CreateIfcEntity(mID, T.IFCPROPERTYSINGLEVALUE, label('Provenance'), null, api.CreateIfcType(mID, T.IFCTEXT, parts[1]), null),
+          api.CreateIfcEntity(mID, T.IFCPROPERTYSINGLEVALUE, label('HostState'), null, api.CreateIfcType(mID, T.IFCTEXT, parts[2]), null)];
+        const ps = api.CreateIfcEntity(mID, T.IFCPROPERTYSET, spatialGid(5000000 + 2 * wsN), null, label(WALK_SET), null, hp); api.WriteLine(mID, ps);
+        api.WriteLine(mID, api.CreateIfcEntity(mID, T.IFCRELDEFINESBYPROPERTIES, spatialGid(5000000 + 2 * wsN + 1), null, null, null, prods, ps));
+        wsN++; walkFixtures += prods.length; if (prov) walkProvisional += prods.length;
+      });
+      console.log(TAG + ' §IFC-WALKSET sets=' + wsN + ' fixtures=' + walkFixtures + ' provisional=' + walkProvisional + (window.__ifcNoWalkSet ? ' OFF(witness switch)' : '') + ' ms=' + (Date.now() - _ws0) +
+        ' heapDeltaMB=' + (_wsHeap0 ? ((performance.memory.usedJSHeapSize - _wsHeap0) / 1048576).toFixed(1) : 'n/a'));
       // §IFC-SPATIAL: aggregation + containment, then one log line with the counts (read it).
       const rel = (type, a, b) => api.WriteLine(mID, api.CreateIfcEntity(mID, type, spatialGid(500000 + (gn++)), null, null, null, a, b));
       rel(T.IFCRELAGGREGATES, project, [site]);
@@ -391,7 +410,7 @@
       console.log(TAG + ' §IFC-SEED seeded=' + seeded + ' tris=' + seedTris + ' anchorsExcluded=' + seedAnchors +
         ' noMeshSkipped=' + seedNoMesh + ' proxyTyped=' + seedProxy + ' typed=' + seedTyped + ' coloured=' + seedColoured + ' psets=' + seedPsets + ' byClass=' + JSON.stringify(seedByClass));
       return { bytes, walls, openings, rels, arrays, arrayMembers, firstWall, firstArray,
-               seeded, seedTris, seedAnchors, seedNoMesh, seedProxy, seedTyped, seedColoured, seedPsets, seedByClass };
+               seeded, seedTris, seedAnchors, seedNoMesh, seedProxy, seedTyped, seedColoured, seedPsets, seedByClass, walkSets: wsN, walkFixtures, walkProvisional };
     },
 
     // Build + trigger a browser download of the .ifc file.

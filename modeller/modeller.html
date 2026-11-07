@@ -4406,7 +4406,7 @@ async function _dwLod400Only(disc, w) {
   });
   if (nRef) console.log('§DW-LOD400-REFUSE disc=' + disc + ' refused=' + nRef + ' kept=' + kept.length + ' geoBuf=' + !!window.__dwGeoBuf +
     ' waited=' + (Date.now() - t0) + 'ms [' + Object.keys(refused).map(function (k) { return k + '×' + refused[k]; }).join(' ') + '] (no box, no LOD200 — fail hard)');
-  w.placements = kept; w.placed = kept.length;
+  w.placements = kept; var _pv = kept.filter(function (p) { return p.provisional; }).length; w.provisional = (window.__dwCountProvisional ? 0 : _pv); w.placed = kept.length - w.provisional;   // §11 the count keeps its split
   if (!kept.length) { w.refused = true; w.reason = 'no LOD400 mesh for any of ' + nRef + ' placement(s) — refused, never a box (§WALK-LOD400-ONLY)'; }
   return w;
 }
@@ -4467,14 +4467,15 @@ async function _discWalkOneBody(disc, ctx, opts) {
       if (d2 !== disc) avoid = avoid.concat(window.__dwWalks[d2] || []);
     });
     var w = window.DiscWalker.dwWalk(disc, bdb, name || window.__dwName || '', { schedule: true, geoDb: gdb || undefined, avoid: avoid });
-    if ((w.refused || !w.placed) && !w.verdict) {   // §ROOF-PATTERN: a deliberate verdict (present/refused) is final
+    var _wTotal = function () { return (w.placed || 0) + (w.provisional || 0); };   // §11 TRAP: a walk of provisional rows is not a refused walk
+    if ((w.refused || !_wTotal()) && !w.verdict) {   // §ROOF-PATTERN: a deliberate verdict (present/refused) is final
       console.log('§SCHED-FALLBACK ' + disc + ' schedule/measured-band yielded 0 (' + (w.reason || 'no placements') + ') → legacy walk (pre-flip behaviour, unchanged)');
       w = window.DiscWalker.dwWalk(disc, bdb, name || window.__dwName || '', { geoDb: gdb || undefined });
     }
     if (gdb) { try { gdb.close(); } catch (e2) { } }
     bdb.close();
-    if (!w.refused && w.placed && !w.verdict) await _dwLod400Only(disc, w);   // §WALK-LOD400-ONLY: refuse, never box
-    if (w.refused || !w.placed) {
+    if (!w.refused && _wTotal() && !w.verdict) await _dwLod400Only(disc, w);   // §WALK-LOD400-ONLY: refuse, never box
+    if (w.refused || !_wTotal()) {
       _clearDiscWalk(disc);
       setStat(disc + ' — no walk (' + (w.reason || 'no placements') + ')');
       console.log('§DISC-WALK ' + disc + ' REFUSE ' + (w.reason || 'no placements') + ' (honest, 0 fabricated)');
@@ -4502,8 +4503,8 @@ async function _discWalkOneBody(disc, ctx, opts) {
     // the legacy walk keeps its per-storey wording — honest about which engine path actually ran.
     var scopeTxt = w.schedule ? (w.schedule.spacesUsed + '/' + w.schedule.spaces + ' spaces')
       : (w.mode === 'measured-band' ? (w.measured.zones + ' measured zones') : (w.storeys + ' storeys'));
-    setStat(disc + ' — ' + w.placed + ' placed across ' + scopeTxt + (gatedN ? ' · ' + gatedN + ' gated' : '') + (clashN ? ' · ' + clashN + ' CLASH (red)' : '') + (w.refusedNoHost && w.refusedNoHost.input ? ' · ' + w.refusedNoHost.bound + ' on a host, ' + w.refusedNoHost.unhosted + ' unhosted' + (w.refusedNoHost.notJudged ? ', ' + w.refusedNoHost.notJudged + ' not judged' : '') + (w.refusedNoHost.refused - w.refusedNoHost.noMain ? ', ' + (w.refusedNoHost.refused - w.refusedNoHost.noMain) + ' not placed, no host' : '') + (w.refusedNoHost.noMain ? ', ' + w.refusedNoHost.noMain + ' duct or pipe pieces not placed, no main' : '') : '') + (nSeg ? ' · ' + nSeg + ' nn-chains' : (w.mains && w.mains.none ? ' · no main: ' + w.mains.none : w.mains && w.mains.held ? ' · main in the file, not routed: no rule for it' : (w.chains ? ' · ' + w.chains.length + ' routed' : ''))));
-    console.log('§DISC-WALK ' + disc + ' placed=' + w.placed + ' storeys=' + w.storeys + ' chains=' + (w.chains ? w.chains.length : 0) + ' chainSegs=' + nSeg + ' gated=' + gatedN + ' clash=' + clashN + ' (DiscWalker/' + ((window.DiscWalker.loadedFile && window.DiscWalker.loadedFile()) || 'rules') + ')');
+    setStat(disc + ' — ' + w.placed + ' placed' + (w.provisional ? ' · ' + w.provisional + ' provisional' : '') + ' across ' + scopeTxt + (gatedN ? ' · ' + gatedN + ' gated' : '') + (clashN ? ' · ' + clashN + ' CLASH (red)' : '') + (w.refusedNoHost && w.refusedNoHost.input ? ' · ' + w.refusedNoHost.bound + ' on a host, ' + w.refusedNoHost.unhosted + ' unhosted' + (w.refusedNoHost.notJudged ? ', ' + w.refusedNoHost.notJudged + ' not judged' : '') + (w.refusedNoHost.refused - w.refusedNoHost.noMain ? ', ' + (w.refusedNoHost.refused - w.refusedNoHost.noMain) + ' not placed, no host' : '') + (w.refusedNoHost.noMain ? ', ' + w.refusedNoHost.noMain + ' duct or pipe pieces not placed, no main' : '') : '') + (nSeg ? ' · ' + nSeg + ' nn-chains' : (w.mains && w.mains.none ? ' · no main: ' + w.mains.none : w.mains && w.mains.held ? ' · main in the file, not routed: no rule for it' : (w.chains ? ' · ' + w.chains.length + ' routed' : ''))));
+    console.log('§DISC-WALK ' + disc + ' placed=' + w.placed + ' provisional=' + (w.provisional || 0) + ' storeys=' + w.storeys + ' chains=' + (w.chains ? w.chains.length : 0) + ' chainSegs=' + nSeg + ' gated=' + gatedN + ' clash=' + clashN + ' (DiscWalker/' + ((window.DiscWalker.loadedFile && window.DiscWalker.loadedFile()) || 'rules') + ')');
     try { await _dwYieldPass(disc, 'before'); } catch (e) { console.warn('§DW-YIELD ' + (e && e.message)); }   // §D72 this walk's fixtures clear what other discs already drew
     // Tack placements into the signed op-log as GEOM_INSERT — undoable + enterprise-foldable (W-DW-OPLOG)
     await _commitDiscWalk(disc, w.placements);
@@ -4546,7 +4547,7 @@ async function _discWalkOneBody(disc, ctx, opts) {
       }
     } catch (e) { console.warn('§DW-ASSEMBLE ' + disc + ' failed ' + (e && e.message)); }
     try { await _dwYieldPass(disc, 'after'); } catch (e) { console.warn('§DW-YIELD ' + (e && e.message)); }   // §D72 fixtures walked earlier give way to this walk's drawn pieces (network and parts included)
-    return { refused: false, placed: w.placed, storeys: w.storeys, gated: gatedN, clash: clashN };
+    return { refused: false, placed: w.placed, provisional: w.provisional || 0, storeys: w.storeys, gated: gatedN, clash: clashN };
   } catch (e) { console.warn('§DISC-WALK ' + disc + ' failed ' + (e && e.message)); return { refused: true, reason: 'error: ' + (e && e.message), placed: 0 }; }
 }
 
@@ -4976,7 +4977,7 @@ window.discWalkAll = async function (ctx) {
       var disc = ds[i];
       var r = await _discWalkOne(disc, ctx, { flash: true });
       if (r && r.refused) { refused.push({ disc: disc, reason: r.reason }); console.log('§DISCWALK-ALL ' + disc + ' REFUSED honestly — ' + r.reason); }
-      else if (r) { walked.push({ disc: disc, placed: r.placed }); console.log('§DISCWALK-ALL ' + disc + ' walked placed=' + r.placed); }
+      else if (r) { walked.push({ disc: disc, placed: r.placed, provisional: r.provisional || 0 }); console.log('§DISCWALK-ALL ' + disc + ' walked placed=' + r.placed + ' provisional=' + (r.provisional || 0)); }
       // _commitDiscWalk's per-disc commitSeedGroup does a FULL authoritative re-fold (clears + rebuilds every
       // authored mesh from the signed op-log) — that wipes the glass/glow x-ray materials xrayReveal(true)
       // applied above them, disc-by-disc, as each commit lands (verified live: 0/263 meshes still carried
@@ -4999,11 +5000,11 @@ window.discWalkAll = async function (ctx) {
     if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
     console.log('§DISCWALK-ALL xray-off t=' + (Date.now() - t0) + 'ms (dwRoot decorative layer restored)');
   }
-  var placedTotal = walked.reduce(function (s, w) { return s + w.placed; }, 0);
+  var placedTotal = walked.reduce(function (s, w) { return s + w.placed; }, 0), provisionalTotal = walked.reduce(function (s, w) { return s + (w.provisional || 0); }, 0);
   var ms = Date.now() - t0;
-  setStat('Walk ALL — ' + walked.length + '/' + ds.length + ' disciplines · ' + placedTotal + ' placed' + (refused.length ? ' · ' + refused.length + ' refused' : ''));
+  setStat('Walk ALL — ' + walked.length + '/' + ds.length + ' disciplines · ' + placedTotal + ' placed' + (provisionalTotal ? ' · ' + provisionalTotal + ' provisional' : '') + (refused.length ? ' · ' + refused.length + ' refused' : ''));
   console.log('§DISCWALK-ALL done walked=[' + walked.map(function (w) { return w.disc; }).join(',') + '] refused=[' + refused.map(function (r) { return r.disc; }).join(',') + '] placedTotal=' + placedTotal + ' ms=' + ms);
-  window.__dwAllResult = { walked: walked, refused: refused, placedTotal: placedTotal, ms: ms, proxyMode: proxyMode, disciplines: ds, skipped: _carried };
+  window.__dwAllResult = { walked: walked, refused: refused, placedTotal: placedTotal, provisionalTotal: provisionalTotal, ms: ms, proxyMode: proxyMode, disciplines: ds, skipped: _carried };
   window.__dwAllDone = true;   // sentinel for the witness
   return window.__dwAllResult;
 };
@@ -5135,7 +5136,7 @@ async function _commitDiscWalk(disc, placements) {
                   realGeomHash: p.geometry_hash,
                   placement: { x: +p.x.toFixed(4), y: +p.y.toFixed(4), z: +(p.z - hbz / 2).toFixed(4), rot: +((p.yaw || 0) * 180 / Math.PI).toFixed(4) },
                   lod: '200', color: color,
-                  _dw: { disc: p.disc, storey: p.storey || '', prov: p.prov || '', ifc: p.ifc_class, host: p.host || null, hostState: p.hostState || null, cz: +p.z.toFixed(4) } } });
+                  _dw: { disc: p.disc, storey: p.storey || '', prov: p.prov || '', ifc: p.ifc_class, host: p.host || null, hostState: p.hostState || null, provisional: !!p.provisional, cz: +p.z.toFixed(4) } } });
       continue;
     }
     var found = cat.find(function (c) { return c.ifc_class === p.ifc_class; });
@@ -5150,7 +5151,7 @@ async function _commitDiscWalk(disc, placements) {
         params: { bbox: [-fbx / 2, fbx / 2, -fby / 2, fby / 2, -fbz / 2, fbz / 2],
                   placement: { x: +p.x.toFixed(4), y: +p.y.toFixed(4), z: +(p.z - fbz / 2).toFixed(4), rot: +((p.yaw || 0) * 180 / Math.PI).toFixed(4) },
                   lod: '200', color: color,
-                  _dw: { disc: p.disc, storey: p.storey || '', prov: p.prov || '', ifc: p.ifc_class, host: p.host || null, hostState: p.hostState || null } } });
+                  _dw: { disc: p.disc, storey: p.storey || '', prov: p.prov || '', ifc: p.ifc_class, host: p.host || null, hostState: p.hostState || null, provisional: !!p.provisional } } });
       continue;
     }
     // §DW-ROT-UNIT (W-DW-ROT-UNITS): p.yaw is RADIANS (disc_walker hostBind Math.PI/2 / wall rotation_z);
@@ -5160,7 +5161,7 @@ async function _commitDiscWalk(disc, placements) {
     ops.push({ op_type: 'GEOM_INSERT',
       params: { hash: found.hash, placement: { x: +p.x.toFixed(4), y: +p.y.toFixed(4), z: +p.z.toFixed(4), rot: (p.yaw || 0) * 180 / Math.PI },
                 lod: '200', color: color,
-                _dw: { disc: p.disc, storey: p.storey || '', prov: p.prov || '', ifc: p.ifc_class, host: p.host || null, hostState: p.hostState || null } } });
+                _dw: { disc: p.disc, storey: p.storey || '', prov: p.prov || '', ifc: p.ifc_class, host: p.host || null, hostState: p.hostState || null, provisional: !!p.provisional } } });
   }
   var committed = 0;
   if (ops.length) {
@@ -5514,7 +5515,7 @@ function _dwOplogPlacements(disc) {
   O._geomOps().forEach(function (op) {
     if (!want[op.id] || op.op_type !== 'GEOM_INSERT' || !op.parameters || !op.parameters.placement) return;
     var pp = op.parameters.placement, dw = op.parameters._dw || {}, mv = O.moveDeltaFor(op.id);
-    out.push({ disc: disc, ifc_class: dw.ifc, storey: dw.storey, prov: dw.prov,
+    out.push({ disc: disc, ifc_class: dw.ifc, storey: dw.storey, prov: dw.prov, provisional: !!dw.provisional,
       x: pp.x + (mv.dx || 0), y: pp.y + (mv.dy || 0), z: (dw.cz != null ? dw.cz : pp.z) + (mv.dz || 0) });
   });
   return out;
@@ -5974,8 +5975,8 @@ function _registerDiscRoster() {
         // element (grid drag — W-E2E-GRIDMOVE-ROOF); walkers FILL IN services. So no roof walk row (it could only ever say
         // "already present" or refuse — §ROOF-PATTERN). The engine keeps that verdict; only the Outliner button goes.
         var rosterNode = { id: 'dw-root', label: 'Not extracted — walk from ' + rf, kind: 'group', children: [allNode].concat(absent.filter(function (d) { return d !== 'roof'; }).map(function (d) {
-          var n = (window.__dwWalks && window.__dwWalks[d]) ? window.__dwWalks[d].length : 0;
-          return { id: 'dw-' + d, label: d, kind: 'disc', disc: d, sub: n ? (n + ' placed ▶') : '▶ walk' };
+          var L = (window.__dwWalks && window.__dwWalks[d]) || [], pv = L.filter(function (p) { return p.provisional; }).length, n = L.length - pv;   // §11
+          return { id: 'dw-' + d, label: d, kind: 'disc', disc: d, sub: L.length ? (n + ' placed' + (pv ? ' · ' + pv + ' provisional' : '') + ' ▶') : '▶ walk' };
         })) };
         return roots.concat([rosterNode]);
       } catch (e) { console.warn('§DISC-WALK roster merge failed', e && e.message); return roots; }

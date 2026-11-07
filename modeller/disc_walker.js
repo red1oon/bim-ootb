@@ -2589,7 +2589,14 @@
   // everything else (schedule rows, `shim:host-*`) passes through untouched. Per class: input = bound + unhosted + not judged + refused.
   // unhosted = a ceiling row, no ceiling object at that spot: placed and labelled, counted apart from bound. not judged = the class has no host rule: output as before.
   // refused = any other host rule (wall, window, slab, roof) with no host: not placed, counted. opts.keepUnhosted restores refused devices' floating output, for witnesses only.
-  function _noBandHostAcct() { return { total: 0, input: 0, bound: 0, unhosted: 0, notJudged: 0, refused: 0, noMain: 0, byClass: {} }; }
+  function _noBandHostAcct() { return { total: 0, input: 0, bound: 0, unhosted: 0, notJudged: 0, refused: 0, noMain: 0, provisional: 0, byClass: {} }; }
+  // §11 (prompts/DISC_WALK_BAND_NO_HOST.md): a band row's density is borrowed, so its count is not a claim about the building. Every band row in the output is provisional, whatever
+  // its host state, and is left out of `placed`; `provisional` carries it. ROOT.__dwCountProvisional / opts.countProvisional count them as placed again: witnesses' red control only, no UI.
+  function _countSplit(list, opts) {
+    var pv = 0; (list || []).forEach(function (p) { if (p.provisional) pv++; });
+    if ((opts && opts.countProvisional) || ROOT.__dwCountProvisional) return { placed: (list || []).length, provisional: 0 };
+    return { placed: (list || []).length - pv, provisional: pv };
+  }
   function _bandHostPass(disc, placed, bdb, shimSrc, geoDb, spaceBBox, opts, buildingName) {
     var band = [], out = [], byCls = {}, acct = _noBandHostAcct(), info = [], hosts = {}, percepts = {}, mounts = {};
     placed.forEach(function (p) { if (/^placed:/.test(p.prov || '')) { band.push(p); (byCls[p.ifc_class] = byCls[p.ifc_class] || []).push(p); } else out.push(p); });
@@ -2598,23 +2605,24 @@
     function noHost(c, shim, list, why) {       // a device with a host rule and no host: the row says which
       var a = _AREA_HOST[shim.host_ifc_class], un = !!(a && a.noHost === 'unhosted');
       c[why] += list.length;
-      if (un) { list.forEach(function (p) { p.hostState = 'unhosted'; }); out = out.concat(list); c.unhosted += list.length; acct.unhosted += list.length; }
+      if (un) { list.forEach(function (p) { p.hostState = 'unhosted'; p.provisional = true; }); out = out.concat(list); c.unhosted += list.length; acct.unhosted += list.length; }
       else { c.refused += list.length; acct.refused += list.length; acct.total += list.length; if (opts && opts.keepUnhosted) out = out.concat(list); }
     }
     Object.keys(byCls).forEach(function (cls) {
       var grp = byCls[cls], shim = _shimForFixture(shimSrc, disc, cls), c = acct.byClass[cls] = { input: grp.length, bound: 0, unhosted: 0, notJudged: 0, refused: 0, 'host-absent': 0, 'no-host-here': 0, 'no-main': 0 };
       if (noMains && _MAIN_PIECE_CLASSES.indexOf(cls) >= 0) { c['no-main'] = c.refused = grp.length; acct.noMain += grp.length; acct.refused += grp.length; acct.total += grp.length; if (opts && opts.keepUnhosted) out = out.concat(grp); return; }
-      if (!shim) { grp.forEach(function (p) { p.hostState = 'not_judged'; }); out = out.concat(grp); c.notJudged = grp.length; acct.notJudged += grp.length; return; }
+      if (!shim) { grp.forEach(function (p) { p.hostState = 'not_judged'; p.provisional = true; }); out = out.concat(grp); c.notJudged = grp.length; acct.notJudged += grp.length; return; }
       var hb = hostBind(grp, bdb, shim, geoDb, spaceBBox);
       if (hb.noHost) { noHost(c, shim, grp, 'host-absent'); info.push({ ifc_class: cls, percept: shim.product_value, host: shim.host_ifc_class, mount: shim.mount, bound: 0, refused: c.refused, unhosted: c.unhosted, noHost: true }); return; }
-      hb.bound.forEach(function (p) { p.hostState = 'bound'; });
+      hb.bound.forEach(function (p) { p.hostState = 'bound'; p.provisional = true; });   // binding to a real host does not make a borrowed position known (§11)
       out = out.concat(hb.bound); c.bound = hb.bound.length; acct.bound += hb.bound.length;
       if (hb.refusedList && hb.refusedList.length) noHost(c, shim, hb.refusedList, 'no-host-here');
       if (hb.bound.length) { hosts[shim.host_ifc_class] = 1; percepts[shim.product_value] = 1; mounts[shim.mount] = 1; }
       info.push({ ifc_class: cls, percept: shim.product_value, host: shim.host_ifc_class, mount: shim.mount, bound: hb.bound.length, refused: c.refused, unhosted: c.unhosted });
     });
     var classes = Object.keys(acct.byClass).map(function (k) { var r = acct.byClass[k]; return k + ': input=' + r.input + ' bound=' + r.bound + ' unhosted=' + r.unhosted + ' notJudged=' + r.notJudged + ' refused=' + r.refused + (r.unhosted + r.refused ? ' (host-absent=' + r['host-absent'] + ' no-host-here=' + r['no-host-here'] + ' no-main=' + r['no-main'] + ')' : ''); });
-    console.log(TAG + ' §WALK-BAND-NOHOST disc=' + disc + ' bldg=' + (buildingName || '') + (band.length ? ' input=' + band.length + ' bound=' + acct.bound + ' unhosted=' + acct.unhosted + ' notJudged=' + acct.notJudged + ' refused=' + acct.refused + ' noMain=' + acct.noMain : ' input=0 VACUOUS') + (opts && opts.keepUnhosted ? ' keepUnhosted(refused kept floating, witness only)' : '') + (classes.length ? ' [' + classes.join(' | ') + ']' : ''));
+    acct.provisional = acct.bound + acct.unhosted + acct.notJudged;
+    console.log(TAG + ' §WALK-BAND-NOHOST disc=' + disc + ' bldg=' + (buildingName || '') + (band.length ? ' input=' + band.length + ' provisional=' + acct.provisional + ' bound=' + acct.bound + ' unhosted=' + acct.unhosted + ' notJudged=' + acct.notJudged + ' refused=' + acct.refused + ' noMain=' + acct.noMain : ' input=0 VACUOUS') + (opts && opts.keepUnhosted ? ' keepUnhosted(refused kept floating, witness only)' : '') + (classes.length ? ' [' + classes.join(' | ') + ']' : ''));
     return { placements: out, bound: acct.bound, refusedNoHost: acct, input: band.length, byClassInfo: info, hostsSeen: hosts, perceptsSeen: percepts, mountsSeen: mounts };
   }
   function _noHostReason(r) { return r.total + ' band device(s) refused, not placed (' + (r.noMain ? r.noMain + ' duct or pipe pieces with no main; ' : '') + Object.keys(r.byClass).filter(function (c) { return r.byClass[c].refused; }).join(', ') + ')'; }
@@ -2737,10 +2745,11 @@
           console.log(TAG + ' §DW-SCHED-MIXED disc=' + disc + ' scheduled=' + ps.placements.length + ' measuredKept=' + mPlaced.length + ' measuredDropped=' + pmDropped);
           mPlaced = ps.placements.concat(mPlaced);
         }
-        console.log(TAG + (srcPart ? ' §WALK-SCHED-MIXED' : ' §WALK-NOSPACES') + ' disc=' + disc + ' bldg=' + buildingName + ' placed=' + mPlaced.length +
+        console.log(TAG + (srcPart ? ' §WALK-SCHED-MIXED' : ' §WALK-NOSPACES') + ' disc=' + disc + ' bldg=' + buildingName + ' placed=' + _countSplit(mPlaced, opts).placed + ' provisional=' + _countSplit(mPlaced, opts).provisional +
           ' zones=' + pm.zones + ' hostBound=' + mBound + ' floats=' + mFloat + ' lod400Refused=' + mRefN +
           (Object.keys(pm.refused).length ? ' [' + Object.keys(pm.refused).map(function (k) { return k + '×' + pm.refused[k]; }).join(' ') + ']' : ''));
-        return { disc: disc, refused: false, mode: srcPart ? 'schedule+measured' : 'measured-band', placed: mPlaced.length, placements: mPlaced, refusedNoHost: mRefusedNoHost,
+        var mSplit = _countSplit(mPlaced, opts);
+        return { disc: disc, refused: false, mode: srcPart ? 'schedule+measured' : 'measured-band', placed: mSplit.placed, provisional: mSplit.provisional, placements: mPlaced, refusedNoHost: mRefusedNoHost,
           schedule: srcPart ? { spaces: ps.spaces, spacesUsed: ps.spacesUsed, skippedSpaces: ps.skippedSpaces, lod400Refused: ps.refused } : undefined,
           measured: { zones: pm.zones, hostBound: mBound, floats: mFloat, lod400Refused: pm.refused },
           chains: mChains, chainSegs: mSrc.segs, chainByRule: mSrc.byRule, storeys: 0, patternBridge: mBr.patternInfo, mains: mBr.mains };
@@ -2752,7 +2761,7 @@
         ' spaces=' + ps.spacesUsed + '/' + ps.spaces + ' lod400Refused=' + refusedN +
         (Object.keys(ps.refused).length ? ' [' + Object.keys(ps.refused).map(function (k) { return k + '×' + ps.refused[k]; }).join(' ') + ']' : '') +
         ' skippedSpaces=' + ps.skippedSpaces.length);
-      return { disc: disc, refused: false, placed: ps.placements.length, placements: ps.placements, refusedNoHost: _noBandHostAcct(),
+      return { disc: disc, refused: false, placed: ps.placements.length, provisional: 0, placements: ps.placements, refusedNoHost: _noBandHostAcct(),
         schedule: { spaces: ps.spaces, spacesUsed: ps.spacesUsed, skippedSpaces: ps.skippedSpaces, lod400Refused: ps.refused },
         chains: schains, chainSegs: src2.segs, chainByRule: src2.byRule, storeys: 0, patternBridge: sBr.patternInfo, mains: sBr.mains };
     }
@@ -2825,10 +2834,11 @@
     // byte-identical behaviour (used by generalization/regression checks that want routeChains in isolation).
     var br = _bridgeIfEmpty(disc, bdb, buildingName, placements, rc, opts), patternInfo = br.patternInfo;
     rc = br.rc;
-    console.log(TAG + ' §WALK disc=' + disc + ' bldg=' + buildingName + ' placed=' + placements.length +
+    console.log(TAG + ' §WALK disc=' + disc + ' bldg=' + buildingName + ' placed=' + _countSplit(placements, opts).placed + ' provisional=' + _countSplit(placements, opts).provisional +
       ' chains=' + chains.length + ' chainSegs=' + rc.segs.length + ' storeys=' + sub.length +
       (rc.byRule.length ? ' [' + rc.byRule.map(function (b) { return b.from.replace('Ifc', '') + '→' + b.to.replace('Ifc', '') + ':' + (b.skipped || (b.segs + '/' + (b.segs + b.noNbr))); }).join(' ') + ']' : ''));
-    return { disc: disc, refused: false, placed: placements.length, placements: placements, hostBind: hbInfo, refusedNoHost: refusedNoHost,
+    var lSplit = _countSplit(placements, opts);
+    return { disc: disc, refused: false, placed: lSplit.placed, provisional: lSplit.provisional, placements: placements, hostBind: hbInfo, refusedNoHost: refusedNoHost,
       chains: chains, chainSegs: rc.segs, chainByRule: rc.byRule, storeys: sub.length, patternBridge: patternInfo, mains: br.mains };
   }
 

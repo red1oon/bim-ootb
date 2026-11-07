@@ -91,7 +91,9 @@ const server = http.createServer((q, r) => { let p = decodeURIComponent(q.url.sp
       walked = await pg.waitForFunction(() => window.__dwAllDone === true, { timeout: 600000, polling: 500 }).then(() => true).catch(() => false);
       walkMs = Date.now() - t1;
       if (walked) await pg.waitForFunction(() => Object.keys(window.__dwChainAnimating || {}).every(d => !window.__dwChainAnimating[d]), { timeout: 60000, polling: 250 }).catch(() => {});
-      D = await pg.evaluate(() => {
+      // The census reads tubes, and a redraw after the walk clears and rebuilds them more than once: a read in the gap sees 0 (measured on Terminal, on main and on a branch: one read later
+      // all 3,957 runs are drawn). So it is re-taken until every disc's tubes equal its runs, up to 15 s, and the LAST reading is judged. A run never drawn still fails M3.
+      const census = () => pg.evaluate(() => {
         const out = {}, roster = window.DiscWalker.disciplines();
         const g = window.Bonsai.group(), root = g.children.find(o => o.userData && o.userData.dwRoot);
         const geom = window.Bonsai.oplog._geomOps();
@@ -108,6 +110,8 @@ const server = http.createServer((q, r) => { let p = decodeURIComponent(q.url.sp
         });
         return out;
       });
+      const tCen = Date.now(); D = await census();
+      while (Date.now() - tCen < 15000 && !Object.values(D).every(x => x.tubes === x.segs)) { await sleep(500); D = await census(); }
       chain = await pg.evaluate(async () => { try { const db = await window.Bonsai.oplog._ensureDb(); return !!(await window.KernelOps.verifyChain(db)).ok; } catch (e) { return 'ERR:' + e.message; } });
     }
     R[key] = { opened, walked, D, chain, errs, lines };

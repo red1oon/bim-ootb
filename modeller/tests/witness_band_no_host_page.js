@@ -52,6 +52,48 @@ const TAG = '§W-BAND-PAGE';
   const ruled = lines.filter(l => /§WALK-MAINS disc=\S+ .*none reason=no sheet held/.test(l)).map(l => (l.match(/disc=(\S+)/) || [])[1]);
   [...new Set(ruled)].forEach(d => { const st = seen.stats.filter(t => t.indexOf(d + ' — ') === 0).pop() || '', runs = seen.chains[d] || 0; ok('B7f ' + d + ': no run, and the status says why', runs === 0 && st.indexOf('no main: no sheet held') >= 0, 'runs=' + runs + ' ' + JSON.stringify(st.slice(0, 170))); });
   if (!ruled.length) console.log(TAG + ' B7f INCONCLUSIVE no walk said none');
+  // ── §11 P4 on the page: every consumer of a count leaves provisional rows out, and the label travels. ──
+  const pg4 = await pg.evaluate(async () => {
+    const W = window.__dwWalks || {}, held = {}; Object.keys(W).forEach(d => { const L = W[d] || []; held[d] = { all: L.length, prov: L.filter(p => p.provisional).length }; });
+    const all = window.__dwAllResult || {}, tree = window.DWInstancesOutliner ? window.DWInstancesOutliner._tree() : [], leaves = [];
+    (function walk(n) { (n || []).forEach(x => { if (x.kind === 'element') leaves.push(x.label); walk(x.children); }); })(tree);
+    const body = document.body.innerText || '';
+    return { held, provTotal: all.provisionalTotal, placedTotal: all.placedTotal, leaves: leaves.length, provLeaves: leaves.filter(l => /provisional/.test(l)).length, outlinerText: (body.match(/\d+ placed · \d+ provisional ▶/g) || []).slice(0, 6) };
+  });
+  const heldProv = Object.keys(pg4.held).reduce((a, d) => a + pg4.held[d].prov, 0), heldAll = Object.keys(pg4.held).reduce((a, d) => a + pg4.held[d].all, 0);
+  ok('P4a walk-all total leaves provisional out and reports it apart', pg4.provTotal === heldProv && pg4.placedTotal === heldAll - heldProv && heldProv > 0, 'placedTotal=' + pg4.placedTotal + ' provisionalTotal=' + pg4.provTotal + ' held=' + heldAll + '/' + heldProv);
+  ok('P4b every provisional device says so where it is identified (Walked Fixtures leaves)', pg4.provLeaves === heldProv, 'leaves=' + pg4.leaves + ' labelled provisional=' + pg4.provLeaves);
+  Object.keys(last).forEach(d => { const st = seen.stats.filter(t => t.indexOf(d + ' — ') === 0).pop() || '', h = pg4.held[d] || { all: 0, prov: 0 };
+    ok('P4c ' + d + ': the status says N placed · M provisional', st.indexOf((h.all - h.prov) + ' placed · ' + h.prov + ' provisional') === d.length + 3, JSON.stringify(st.slice(0, 90))); });
+  // The Outliner's discipline row (modeller.html, the Disciplines category): its count, read from the rendered tree text.
+  if (pg4.outlinerText.length) ok('P4f the Outliner discipline rows say N placed · M provisional', pg4.outlinerText.every(t => / 0 placed · \d+ provisional/.test(t) || /\d+ placed · \d+ provisional/.test(t)) && pg4.outlinerText.some(t => new RegExp('0 placed · (' + Object.keys(pg4.held).map(d => pg4.held[d].prov).join('|') + ') provisional').test(t)), JSON.stringify(pg4.outlinerText));
+  else console.log(TAG + ' P4f INCONCLUSIVE the Outliner discipline rows are not in the rendered page text (panel collapsed?)');
+  // IFC: export, read the walk set back out of the file text, re-open. Red controls: the writer switch off writes no set; a walked fixture with the flag off reads false.
+  const readWalkSets = () => pg.evaluate(async () => {
+    const b = await window.Bonsai.ifc.build(), txt = new TextDecoder('latin1').decode(b.bytes), L = {}, re = /^#(\d+)=\s*([A-Z0-9]+)\((.*)\);\s*$/gm; let m;
+    while ((m = re.exec(txt))) L[m[1]] = { t: m[2], a: m[3] };
+    const sv = {}; Object.keys(L).forEach(k => { if (L[k].t === 'IFCPROPERTYSINGLEVALUE' && /^'Provisional'/.test(L[k].a)) sv[k] = /IFCBOOLEAN\(\.T\.\)/.test(L[k].a); });
+    let prov = 0, notProv = 0, sets = 0;
+    Object.keys(L).forEach(k => { if (L[k].t !== 'IFCPROPERTYSET' || !/'BIMOOTB_Walk'/.test(L[k].a)) return; sets++;
+      const pv = (L[k].a.match(/#(\d+)/g) || []).map(x => x.slice(1)).filter(x => x in sv)[0];
+      Object.keys(L).forEach(r => { if (L[r].t !== 'IFCRELDEFINESBYPROPERTIES' || !new RegExp(',#' + k + '$').test(L[r].a)) return; const n = ((L[r].a.match(/\(([^()]*)\),#\d+$/) || [])[1] || '').split(',').filter(Boolean).length; if (sv[pv]) prov += n; else notProv += n; }); });
+    let back = null; try { back = await window.Bonsai.ifc.reimport(b.bytes); } catch (e) { back = { error: String(e) }; }
+    return { sets, prov, notProv, reopened: !!back && !back.error, walkProvisional: b.walkProvisional };
+  });
+  const ifc1 = await readWalkSets();
+  ok('P4d IFC: the file carries the label, and its provisional count equals the walk\'s', ifc1.sets > 0 && ifc1.prov === heldProv && ifc1.reopened, 'sets=' + ifc1.sets + ' provisional in file=' + ifc1.prov + ' held=' + heldProv + ' reopened=' + ifc1.reopened);
+  await pg.evaluate(() => { window.__ifcNoWalkSet = true; }); const ifcOff = await readWalkSets(); await pg.evaluate(() => { window.__ifcNoWalkSet = false; });
+  ok('P4d RED: with the writer switch off the file has no walk set', ifcOff.sets === 0, 'sets=' + ifcOff.sets);
+  const flagOff = await pg.evaluate(async () => { const O = window.Bonsai.oplog, src = O._geomOps().find(x => x.parameters && x.parameters._dw && x.parameters._dw.provisional); if (!src) return null;
+    const p = JSON.parse(JSON.stringify(src.parameters)); p._dw.provisional = false; p._dw.prov = 'sched:witness-flag-off'; await O.commitSeedGroup([{ op_type: 'GEOM_INSERT', params: p }], 'p4-flagoff-' + O.length); return true; });
+  const ifc2 = flagOff ? await readWalkSets() : null;
+  ok('P4d RED: a walked fixture with the flag off reads false', !!ifc2 && ifc2.notProv === ifc1.notProv + 1 && ifc2.prov === ifc1.prov, ifc2 ? 'notProvisional ' + ifc1.notProv + '→' + ifc2.notProv : 'no walked op to clone');
+  // Viewer DB export: the same label lands in element_pset_common.
+  const vdb = await pg.evaluate(async () => { const r = await window.Bonsai.exportViewerDb({ download: false, carry: false }); if (!r || !r.bytes) return null;
+    const d = new window.SQL.Database(r.bytes), q = s => { const x = d.exec(s); return x.length ? x[0].values : []; };
+    const out = { t: q("SELECT value, COUNT(*) FROM element_pset_common WHERE pset='BIMOOTB_Walk' AND name='Provisional' GROUP BY value"), elements: r.elements }; d.close(); return out; });
+  const vT = vdb ? ((vdb.t.find(v => v[0] === 'TRUE') || [0, 0])[1]) : -1;
+  ok('P4e the label travels into an exported Viewer DB', !!vdb && vT === ifc2.prov, vdb ? 'TRUE rows=' + vT + ' (file ' + (ifc2 && ifc2.prov) + ') ' + JSON.stringify(vdb.t) : 'export returned nothing');
   ok('B7e no page errors', errs.length === 0, 'errors=' + errs.length);
   console.log(TAG + ' VERDICT judged=' + judged + ' fail=' + fails);
   await br.close(); srv.close(); fs.rmSync(tmp, { recursive: true, force: true }); process.exit(fails ? 1 : 0);

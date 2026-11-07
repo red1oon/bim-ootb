@@ -876,13 +876,16 @@ async function extractToDb(ctx) {
     } catch (e) { log(`§ELEMENT_PARTS_FAIL ${e.message}`); }
     try {
       const want = new Set(['IsExternal', 'LoadBearing']);
+      // §11 (bim-ootb prompts/DISC_WALK_BAND_NO_HOST.md rule 5): the Modeller's walk label travels into an extracted DB, in this same table. Only that one named set, only its three properties.
+      const WALK_SET = 'BIMOOTB_Walk', walkWant = new Set(['Provisional', 'Provenance', 'HostState']);
       const extracted = new Set(elements.map(e => e.expressID));
       const readPset = (psetId, guid, source, into) => {
         const ps = ifcApi.GetLine(modelID, psetId);
-        if (!ps || ps.type !== WebIFC.IFCPROPERTYSET || !ps.Name || !/^Pset_.*Common$/.test(ps.Name.value)) return;
+        const isWalk = !!(ps && ps.Name && ps.Name.value === WALK_SET);
+        if (!ps || ps.type !== WebIFC.IFCPROPERTYSET || !ps.Name || !(isWalk || /^Pset_.*Common$/.test(ps.Name.value))) return;
         for (const ph of ps.HasProperties || []) {
           const p = ifcApi.GetLine(modelID, ref(ph));
-          if (!p || p.type !== WebIFC.IFCPROPERTYSINGLEVALUE || !p.Name || !want.has(p.Name.value) || !p.NominalValue) continue;
+          if (!p || p.type !== WebIFC.IFCPROPERTYSINGLEVALUE || !p.Name || !(isWalk ? walkWant : want).has(p.Name.value) || !p.NominalValue) continue;
           let v = p.NominalValue.value;
           if (v === true || v === 'T' || v === '.T.') v = 'TRUE'; else if (v === false || v === 'F' || v === '.F.') v = 'FALSE'; else if (v === 'U' || v === '.U.') v = 'UNKNOWN';
           into.set(ps.Name.value + '|' + p.Name.value, { guid, pset: ps.Name.value, name: p.Name.value, value: String(v), source });
