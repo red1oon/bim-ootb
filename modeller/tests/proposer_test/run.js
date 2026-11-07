@@ -10,6 +10,7 @@
  * The proposer runs isolated: no tools, no files, no project instructions.
  * §13: a shift is one edit (--shift), every building is on its own grid (--own-grid), overlaps are judged on lattice boxes (--lattice-boxes), a judged-fine result ends the run, the report names the limit and the bay.
  * §14: everything crossing a shift's line follows it by one rule, and one that is left behind scores LEFT_BEHIND.
+ * §15: edit_cli stops an edit that adds red, and it scores STOPPED.
  */
 'use strict';
 const fs = require('fs'), os = require('os'), path = require('path'), { spawn } = require('child_process');
@@ -47,6 +48,7 @@ function classify(edits, verdict, decline) {
   if (!edits.length) return 'INVALID';
   const out = verdict.json;
   if (!out || !Array.isArray(out.edits) || out.edits.length !== edits.length) return 'FAILED';
+  if (out.edits.some(e => e.stopped_by_gate)) return 'STOPPED';   // §15.1 the stop undid an edit that added red
   if (out.edits.some(e => e.refused)) return 'REFUSED';
   const row = (r, id) => r.rows.filter(x => x.id === id)[0] || {};
   const red = out.edits.some(r => (row(r, 'span_red').state === 'JUDGED' && row(r, 'span_red').delta > 0) || r.newRows.some(n => RED_NEW.indexOf(n.id) >= 0 && n.count > 0));
@@ -119,7 +121,7 @@ async function askModel(text) {
   cost += j.total_cost_usd || 0; Object.keys(j.modelUsage || {}).forEach(k => { models[k] = 1; });
   return { text: j.result || '' };
 }
-function feedbackOf(verdict) { const o = verdict.json; if (!o) return { error: 'the call failed' }; return o.edits.map(e => e.refused ? { refused: true, line: e.grid, reason: e.reason } : { change: e.change, rows: e.rows, new_from_this_edit: e.newRows, not_checked: e.notChecked }); }
+function feedbackOf(verdict) { const o = verdict.json; if (!o) return { error: 'the call failed' }; return o.edits.map(e => e.stopped_by_gate ? { stopped: true, line: e.grid, reason: e.reason, change: e.report.change, rows: e.report.rows, new_from_this_edit: e.report.newRows, not_checked: e.report.notChecked } : e.refused ? { refused: true, line: e.grid, reason: e.reason } : { change: e.change, rows: e.rows, new_from_this_edit: e.newRows, not_checked: e.notChecked }); }
 
 async function runBrief(brief, rep, propose, judgeWith) {
   const m = await modelOf(brief.building), attempts = [], history = [], jd = judgeWith || judge;
@@ -136,7 +138,7 @@ async function runBrief(brief, rep, propose, judgeWith) {
   return { brief: brief.id, rep, attempts };
 }
 function summarise(runs) {
-  const bad = ['RED', 'LEFT_BEHIND', 'REFUSED', 'FAILED', 'INVALID'], s = { runs: runs.length, A: {}, B: {} };
+  const bad = ['RED', 'STOPPED', 'LEFT_BEHIND', 'REFUSED', 'FAILED', 'INVALID'], s = { runs: runs.length, A: {}, B: {} };
   const tally = (a, key) => { s[key][a.cls] = (s[key][a.cls] || 0) + 1; };
   let usedShiftA = 0, usedShiftB = 0, falseAssurance = 0, forecastRight = 0, badFirst = 0, goalA = 0, goalB = 0, goodA = 0, goodB = 0, crossedHidden = 0, wrongGoalHidden = 0;
   runs.forEach(r => {
@@ -169,7 +171,7 @@ function summarise(runs) {
     const g5 = await runBrief(by('G5'), 0, stub), s2 = await runBrief(by('S2'), 0, stub), g1 = await runBrief(by('G1'), 0, stub);
     log('§PROPOSER_STUB_G1 ' + JSON.stringify(g1.attempts.map(a => [a.cls, a.goal])));
     chk('S1a engine refusal scores REFUSED, then a decline stops the run', g5.attempts[0].cls === 'REFUSED' && g5.attempts[1].cls === 'DECLINED' && g5.attempts.length === 2);
-    chk('S1b the single-line move into a wall scores RED: gy9 +1.51', g1.attempts[0].cls === 'RED');
+    chk('S1b §15.1 the single-line move into a wall is stopped: gy9 +1.51 scores STOPPED', g1.attempts[0].cls === 'STOPPED');
     chk('S1c an unknown line scores REFUSED, and bad JSON scores INVALID', s2.attempts[0].cls === 'REFUSED' && s2.attempts[1].cls === 'INVALID');
     chk('S1d attempts stop at the limit', s2.attempts.length === MAX_ATTEMPTS);
     chk('S1e the same goal as one shift scores CLEAN, meets the goal, and ends the run', g1.attempts[1].cls === 'CLEAN' && g1.attempts[1].goal === true && g1.attempts.length === 2);
@@ -214,6 +216,7 @@ function summarise(runs) {
     fs.rmSync(fakeBin, { recursive: true, force: true });
     const st = stamp('handoff', 'this session');
     chk('H3 a hand-off results file says it is a rehearsal, not a measurement, and who answered', st.measurement === false && st.mode === 'handoff rehearsal' && st.answered_by === 'this session' && st.model === null);
+    chk('S3g a stopped edit is STOPPED, not REFUSED and not RED', classify(E1, { json: { edits: [{ refused: true, stopped_by_gate: true, reason: 'stopped: x', report: rep('JUDGED', 1) }] } }, false) === 'STOPPED');
     chk('S3e a new clearance is not RED, and a span count that falls is not RED', classify(E1, { json: { edits: [rep('JUDGED', -2, [{ id: 'clearance', count: 3 }])] } }, false) === 'CLEAN');
     log('§PROPOSER_STUB fail=' + fail + ' verdict=' + (fail ? 'FAIL' : 'PASS')); process.exit(fail ? 1 : 0);
   }

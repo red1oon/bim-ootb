@@ -77,8 +77,18 @@ const relKeys = (t, moved, boxes) => t.pg.evaluate((mv) => { const r = window.__
     t.assert('W0h the row names only over-limit bays whose span changed, newly over first', row(p3, 'span_red').limit === 12 && row(p3, 'span_red').material === 'RC' && c3.length === 2 && c3[0].bay === 'gx0-gx1' && c3[0].newly_over && c3[1].bay === 'gx1-gx2' && !c3[1].newly_over, JSON.stringify(c3));
     t.assert('W0i a refused span has no limit and no bay', p0.rows.every(r => r.limit === undefined && r.over_limit_changed === undefined));
 
+    const gv = (rows, newRows) => ER.gateVerdict({ rows, newRows });
+    const J = (id, d, extra) => Object.assign({ id, state: 'JUDGED', before: 1, after: 1 + d, delta: d }, extra || {}), NR = (id, level, count) => ({ id, label: id, level, state: 'JUDGED', count });
+    t.assert('W0j §15.1 the stop: a red new row stops; orange does not; a new red kind stops; a rising span stops; a newly-over bay stops; NOT_JUDGED never stops and is listed',
+      gv([J('overlap', 3)], [NR('clash', 'red', 1)]).stop && !gv([J('overlap', 3)], [NR('clearance', 'orange', 5), NR('abuts-realign', 'orange', 2)]).stop && gv([], [NR('brand-new', 'red', 1)]).stop &&
+      gv([J('span_red', 1)], []).stop && !gv([J('span_red', -1)], []).stop && gv([J('span_red', 0, { over_limit_changed: [{ bay: 'gx5-gx6', newly_over: true, after: 13 }] })], []).stop &&
+      !gv([{ id: 'span_red', state: 'NOT_JUDGED' }, { id: 'overlap', state: 'NOT_JUDGED' }], [{ id: 'clash', level: 'red', state: 'NOT_JUDGED', count: null }]).stop &&
+      gv([{ id: 'span_red', state: 'NOT_JUDGED' }], []).not_judged.join() === 'span_red');
+
     await openGarage(t);
     const pg = t.pg;
+    const lz0 = await pg.evaluate(() => ({ er: !!window.EditReport, panel: !!window.EditReportPanel, tags: document.querySelectorAll('script[src^="edit_report"]').length }));
+    t.assert('Z1 §15.2 the report\'s modules are not in the page at open', !lz0.er && !lz0.panel && lz0.tags === 0, JSON.stringify(lz0));
     const info = await pg.evaluate(() => { const i = window.swbGateInfo(); return { base0: { grid: { xLines: i.base0.grid.xLines, yLines: i.base0.grid.yLines }, girders: i.base0.girders.map(g => ({ axis: g.axis, fromDatum: g.fromDatum, toDatum: g.toDatum })) }, depth: i.section.depth }; });
     const ops0 = await t.oplog();
 
@@ -87,6 +97,7 @@ const relKeys = (t, moved, boxes) => t.pg.evaluate((mv) => { const r = window.__
     sampleA = JSON.stringify(r1);
     L('report ' + sampleA);
     t.assert('R1z a report exists and the edit was a real grid move', !!r1 && r1.change.grid === 'gy8' && Math.abs(r1.change.delta - D) < 1e-9);
+    t.assert('Z2 the first committed grid move loaded them, and said so', t.slog.some(l => /§EDIT_REPORT modules loaded on first use/.test(l)));
     const rb = recountSpans(info.base0, 'RC', info.depth, []), ra = recountSpans(info.base0, 'RC', info.depth, [{ axis: 'y', index: 8, delta: D }]);
     const sr = row(r1, 'span_red'), so = row(r1, 'span_orange');
     L('recount before=' + JSON.stringify(rb) + ' after=' + JSON.stringify(ra));
