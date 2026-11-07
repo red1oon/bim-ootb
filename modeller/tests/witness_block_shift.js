@@ -76,7 +76,10 @@ const sameBoxes = (a, b) => { const bad = []; Object.keys(a).forEach(k => { if (
     const info = await pg.evaluate(() => { const i = window.swbGateInfo(); return { theta: i.theta, depth: i.section.depth, base0: { grid: { xLines: i.base0.grid.xLines, yLines: i.base0.grid.yLines }, girders: i.base0.girders.map(g => ({ axis: g.axis, fromDatum: g.fromDatum, toDatum: g.toDatum })) } }; });
     const ys0 = await pg.evaluate(() => window.Bonsai.grid.ys.slice()), n0 = await pg.evaluate(() => window.Bonsai.oplog._geomOps().length);
     await pg.evaluate(() => { const v = {}; window.Bonsai.group().children.forEach(m => { if (m.isMesh && m.userData.featureId != null) v[m.userData.featureId] = m.geometry.attributes.position.array.slice(); }); window.__v0 = v; });   // this witness's own copy, every vertex before the edit
+    const lazy0 = await pg.evaluate(() => ({ loaded: !!window.BayAdd, tag: !!document.querySelector('script[src^="bay_add.js"]') }));
+    t.assert('Z1 §14.6 bay_add.js is not in the page until a shift is asked for', !lazy0.loaded && !lazy0.tag, JSON.stringify(lazy0));
     const rep = await pg.evaluate(async (d) => { await window.__gridShift('gy9', d); return window.__lastEditReport; }, D);
+    t.assert('Z2 the first shift loads it, and says so', t.slog.some(l => /§BLOCK-SHIFT bay_add\.js loaded on first use/.test(l)));
     t.assert('L0 a report exists and names a block shift', !!rep && rep.change.kind === 'block-shift' && rep.change.through === 'gy28' && rep.change.lines === 20, JSON.stringify(rep && rep.change));
     L('report ' + JSON.stringify(rep.change) + ' rows ' + JSON.stringify(rep.rows.map(r => [r.id, r.state, r.before, r.after])));
     L('line ' + t.slog.filter(l => /§BLOCK-SHIFT/.test(l)).pop());

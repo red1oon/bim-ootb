@@ -2,8 +2,10 @@
 /**
  * # ⚠ DO NOT REMOVE — W-PROPOSER (bim-compiler prompts/NEURO_SYMBOLIC_ORDER_CONTRACT.md §12 first test, §13 this version). READ THE LOG after every run.
  * ISSUE: "a deterministic layer gives better results than the AI alone" has never been measured. Rules are fixed in the spec before the first model call.
- *   node run.js --stub                  the scorer against known outcomes, no model call. Must pass before tokens are spent.
- *   node run.js --reps 3 --out x.json   the real run. Each attempt: the proposer proposes, edit_cli judges from a fresh Open.
+ *   node run.js --stub                  the scorer against known outcomes, no model call. Must pass before any run.
+ *   node run.js --handoff <dir> --answered-by "<who>" --reps 1 --out x.json
+ *                                       §14.6 the free path: each prompt is written to <dir>/q_*.txt and the run waits for <dir>/a_*.json. A rehearsal, never a measurement.
+ *   node run.js --model-calls --reps 3 --out x.json   spawns `claude -p`. Owner directive 2026-11-08: no session passes --model-calls (bim-compiler prompts/NEURO_SYMBOLIC_ORDER_CONTRACT.md §14.6).
  * Arm A = the proposer alone: its first proposal and its own forecast. Arm B = the same run continued: the report goes back, up to 2 revisions.
  * The proposer runs isolated: no tools, no files, no project instructions.
  * §13: a shift is one edit (--shift), every building is on its own grid (--own-grid), overlaps are judged on lattice boxes (--lattice-boxes), a judged-fine result ends the run, the report names the limit and the bay.
@@ -98,6 +100,16 @@ function prompt(brief, m, history) {
   return t;
 }
 let cost = 0, models = {};
+// §14.6 hand-off: the prompt goes to a file, the answer comes back as a file. Whoever answers, nothing here calls a model.
+const qName = (brief, rep, n) => brief.id + '_' + rep + '_' + n;
+async function handoffAsk(dir, key, text, waitS) {
+  const q = path.join(dir, 'q_' + key + '.txt'), a = path.join(dir, 'a_' + key + '.json');
+  fs.writeFileSync(q, 'SYSTEM: ' + SYSTEM + '\n\n' + text + '\n');
+  log('§PROPOSER_HANDOFF waiting q=' + q + ' answer=' + a);
+  for (let i = 0; i < waitS * 2; i++) { if (fs.existsSync(a)) { await new Promise(r => setTimeout(r, 200)); return fs.readFileSync(a, 'utf8'); } await new Promise(r => setTimeout(r, 500)); }
+  throw new Error('no answer at ' + a + ' within ' + waitS + ' s');
+}
+function stamp(mode, answeredBy) { return mode === 'handoff' ? { mode: 'handoff rehearsal', measurement: false, answered_by: answeredBy, model: null, note: 'answered outside an isolated model: never quote as a measurement (§14.6)' } : { mode: 'model', measurement: true, model: MODEL }; }
 async function askModel(text) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'prop_iso_'));
   const r = await runCmd('claude', ['-p', text, '--model', MODEL, '--tools', '', '--setting-sources', '', '--strict-mcp-config', '--system-prompt', SYSTEM, '--no-session-persistence', '--output-format', 'json'], { cwd: dir, env: process.env });
@@ -187,16 +199,39 @@ function summarise(runs) {
     chk('S3c nothing red, scene not judged: PARTLY_JUDGED, never CLEAN', classify(E1, { json: { edits: [rep('NOT_JUDGED', 0)] } }, false) === 'PARTLY_JUDGED');
     chk('S3d a span over limit, or a new RED row, beats both', classify(E1, { json: { edits: [rep('NOT_JUDGED', 1)] } }, false) === 'RED' && classify(E1, { json: { edits: [rep('JUDGED', 0, [{ id: 'abuts-clash', count: 1 }])] } }, false) === 'RED');
     chk('S3f §14.1 a shift that left crossing elements behind is LEFT_BEHIND, never CLEAN, and RED still beats it', classify(E1, { json: { edits: [Object.assign(rep('JUDGED', 0), { change: { kind: 'block-shift', left: { count: 3 } } })] } }, false) === 'LEFT_BEHIND' && classify(E1, { json: { edits: [Object.assign(rep('JUDGED', 1), { change: { kind: 'block-shift', left: { count: 3 } } })] } }, false) === 'RED');
+    // ---- §14.6 hand-off and the gate ----
+    const hd = fs.mkdtempSync(path.join(os.tmpdir(), 'handoff_stub_'));
+    const answerer = setInterval(() => { fs.readdirSync(hd).filter(f => /^q_.*\.txt$/.test(f)).forEach(f => { const a = path.join(hd, f.replace(/^q_/, 'a_').replace(/\.txt$/, '.json')); if (!fs.existsSync(a)) fs.writeFileSync(a, JSON.stringify({ edits: [{ shift: 'gy9', move: 1.51 }], decline: false, reason: 'stub answerer', expect_problems: false, problems_expected: '' })); }); }, 300);
+    const hb = await runBrief(by('G1'), 0, (b, m, h, n) => handoffAsk(hd, qName(b, 0, n), prompt(b, m, h), 60));
+    clearInterval(answerer);
+    const qText = fs.readFileSync(path.join(hd, 'q_G1_0_0.txt'), 'utf8'); fs.rmSync(hd, { recursive: true, force: true });
+    chk('H1 a hand-off answer is scored like any other: the G1 shift is CLEAN and ends the run', hb.attempts.length === 1 && hb.attempts[0].cls === 'CLEAN' && hb.attempts[0].goal === true);
+    chk('H1b the question file is the exact prompt a model would get', qText.indexOf(SYSTEM) >= 0 && qText.indexOf(prompt(by('G1'), mG, [])) >= 0);
+    const fakeBin = fs.mkdtempSync(path.join(os.tmpdir(), 'fakeclaude_')), mark = path.join(fakeBin, 'CALLED');
+    fs.writeFileSync(path.join(fakeBin, 'claude'), '#!/bin/sh\ntouch ' + mark + '\n'); fs.chmodSync(path.join(fakeBin, 'claude'), 0o755);
+    const gated = await runCmd('node', [__filename, '--reps', '1', '--out', path.join(fakeBin, 'x.json')], { env: Object.assign({}, process.env, { PATH: fakeBin + ':' + process.env.PATH }) });
+    chk('H2 without --model-calls: refused, it names the hand-off, and no claude process ran', gated.code === 2 && /--handoff/.test(gated.out + gated.err) && !fs.existsSync(mark), 'exit=' + gated.code);
+    fs.rmSync(fakeBin, { recursive: true, force: true });
+    const st = stamp('handoff', 'this session');
+    chk('H3 a hand-off results file says it is a rehearsal, not a measurement, and who answered', st.measurement === false && st.mode === 'handoff rehearsal' && st.answered_by === 'this session' && st.model === null);
     chk('S3e a new clearance is not RED, and a span count that falls is not RED', classify(E1, { json: { edits: [rep('JUDGED', -2, [{ id: 'clearance', count: 3 }])] } }, false) === 'CLEAN');
     log('§PROPOSER_STUB fail=' + fail + ' verdict=' + (fail ? 'FAIL' : 'PASS')); process.exit(fail ? 1 : 0);
   }
-  const reps = +arg('--reps', 3), outFile = arg('--out', path.join(os.tmpdir(), 'proposer_results.json')), runs = [];
-  const propose = async (brief, m, history) => { const r = await askModel(prompt(brief, m, history)); return r.text; };
-  for (let rep = 0; rep < reps; rep++) for (const b of BRIEFS) {
-    runs.push(await runBrief(b, rep, propose));
-    fs.writeFileSync(outFile, JSON.stringify({ model: MODEL, modelsSeen: Object.keys(models), cost_usd: +cost.toFixed(4), reps, runs, summary: summarise(runs) }, null, 1) + '\n');
+  const hdir = arg('--handoff', null), who = arg('--answered-by', null), modelCalls = process.argv.indexOf('--model-calls') >= 0;
+  if (!hdir && !modelCalls) { log('§PROPOSER refused: no --model-calls, so no model is called (owner directive 2026-11-08, §14.6). For a free rehearsal: --handoff <dir> --answered-by "<who>"'); process.exit(2); }
+  if (hdir && modelCalls) { log('§PROPOSER refused: --handoff and --model-calls together'); process.exit(2); }
+  if (hdir && !who) { log('§PROPOSER refused: --handoff needs --answered-by "<who>", so the results say who answered'); process.exit(2); }
+  const only = arg('--briefs', null), list = only ? BRIEFS.filter(b => only.split(',').indexOf(b.id) >= 0) : BRIEFS;
+  const reps = +arg('--reps', 3), outFile = arg('--out', path.join(os.tmpdir(), 'proposer_results.json')), runs = [], S0 = stamp(hdir ? 'handoff' : 'model', who);
+  if (hdir) fs.mkdirSync(hdir, { recursive: true });
+  const propose = hdir ? ((brief, m, history, n) => handoffAsk(hdir, qName(brief, curRep, n), prompt(brief, m, history), +arg('--wait-s', 3600)))
+                       : (async (brief, m, history) => { const r = await askModel(prompt(brief, m, history)); return r.text; });
+  let curRep = 0;
+  for (let rep = 0; rep < reps; rep++) for (const b of list) {
+    curRep = rep; runs.push(await runBrief(b, rep, propose));
+    fs.writeFileSync(outFile, JSON.stringify(Object.assign({}, S0, { modelsSeen: Object.keys(models), cost_usd: hdir ? 0 : +cost.toFixed(4), reps, briefs: list.map(b => b.id), runs, summary: summarise(runs) }), null, 1) + '\n');
   }
   const summary = summarise(runs);
-  log('§PROPOSER_SUMMARY ' + JSON.stringify(summary)); log('§PROPOSER_COST usd=' + cost.toFixed(4) + ' models=' + Object.keys(models).join(',') + ' cliCalls=' + cache.size);
+  log('§PROPOSER_SUMMARY ' + JSON.stringify(summary)); log('§PROPOSER_MODE ' + JSON.stringify(S0)); log('§PROPOSER_COST usd=' + cost.toFixed(4) + ' models=' + Object.keys(models).join(',') + ' cliCalls=' + cache.size);
   process.exit(0);
 })().catch(e => { log('§PROPOSER verdict=INCONCLUSIVE reason=' + (e && e.stack || e)); process.exit(1); });
