@@ -91,3 +91,17 @@ The design lane runs the private set on the merged code and compares placed and 
 - Where a main's shape comes from: open question to the owner.
 - Device counts for large rooms, and the missing schedule rows.
 - Ceiling heights read from drawings. That could later give real hosts to devices this rule refuses, and the refused counts show where it would help most.
+
+## §10 Owner's ruling 2026-11-07: amends §2, §3 and §4. Read this before §5. Not built
+Asked by the design lane: should "no ceiling object" count as no host? Advice: no; refuse only where a ceiling is stated and the device does not fit it, and the host is the ceiling whose real outline holds the device, with the device keeping its position. Owner: *"agree with you"*. This answers the one question in §7 RESULT.
+**Evidence, an observation that tests the rule, not its source.** Real devices at real positions on a private Revit-exported set, three readings: a real ceiling outline holds 78 to 89%, so 11 to 22% have no ceiling object above them. Median distance from a device to its ceiling's centre is 6.6 to 11.7 m, and moving devices to the centre puts 215 of them on 11 spots. These are real devices, so they show what a model can lack. They do not show that any particular band device is right.
+**The rule now:**
+1. **Host search changes, so §3's "`hostBind()` itself" no longer holds.** The host is the ceiling whose real plan outline holds the device, at or above it. The device keeps its X and Y and takes the height from that ceiling. Reach to a host's centre and the snap to that centre both go.
+2. **No ceiling object at that spot is not a refusal.** The device is placed and labelled `unhosted`. It is counted apart from bound devices, so a reader can tell them apart. This is what §1 complained of.
+3. **Refusal stays for one case: a stated ceiling exists and the device does not fit it.** The walker reads no ceiling plan today (§9), so this case cannot fire until that input exists. Do not stand in a guess for it.
+4. **`no-rule` classes follow from 2 and 3:** nothing is refused for lack of a host rule. So `Terminal` PLB and STR do not go to zero.
+5. **Accounting per class: input = bound + unhosted + refused.** The log line and `refusedNoHost` carry all three.
+6. **§4 still holds:** density numbers are not changed, and a room's top is not a ceiling host.
+**What this costs, derived, not yet measured:** the rule no longer reduces the band count on a ceiling-poor building. The §1 figures, 1,701 ACMV bands against 269 drawn, stay about the same, now labelled. So §1's labelling issue is answered, and **band density is a separate open question for the owner**.
+**Witness changes:** B2 tests `unhosted`, present and labelled, not absent. B5 becomes: no `placed:*` device reads as bound without a host. Add B8, oracle: a building's real devices at real positions through `hostBind`: position unchanged, distinct spots = devices, with a red control on the old centre snap. Re-run the §7 fleet; stop conditions 1, 2 and 3 stand.
+**Doctrine:** the §5.7 wording is now out of date. At merge, state §4's rule as this section does, using the owner's approval above.
