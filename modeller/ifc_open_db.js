@@ -41,7 +41,7 @@
   // → { db (sql.js Database, the building DB), total, kept, dropped, meshesDropped, psetRows, ms, line }
   async function open(ctx) {
     var t0 = Date.now(), log = ctx.log || function () {}, db = new ctx.SQL.Database();
-    await ctx.Core.extractToDb({ WebIFC: ctx.WebIFC, ifcApi: ctx.ifcApi, ifcData: ctx.bytes, db: ctx.Core.sqljsDb(db), Buf: ctx.Core.browserBuf,
+    await ctx.Core.extractToDb({ GridRead: ctx.GridRead, WebIFC: ctx.WebIFC, ifcApi: ctx.ifcApi, ifcData: ctx.bytes, db: ctx.Core.sqljsDb(db), Buf: ctx.Core.browserBuf,
       buildingName: ctx.name, sourceName: ctx.name + '.ifc', log: log, progress: ctx.progress || function () {} });
     var total = one(db, 'SELECT count(*) FROM elements_meta'), r = residentRule(db, ctx.drop);
     var kept = one(db, 'SELECT count(*) FROM elements_meta'), psetRows = has(db, 'element_pset_common') ? one(db, 'SELECT count(*) FROM element_pset_common') : 0;
