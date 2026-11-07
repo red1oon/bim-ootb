@@ -24,6 +24,7 @@
   "DocCanvas": "readonly",
   "DocEngine": "readonly",
   "DoorArcs": "readonly",
+  "DrawnMains": "readonly",
   "EQUIPMENT_ALLOCATION": "readonly",
   "EQUIPMENT_RATES": "readonly",
   "ERPEngine": "readonly",
