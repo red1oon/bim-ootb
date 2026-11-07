@@ -167,8 +167,10 @@
   {
    "id": "E2_wall_driven_into_abuts_partner",
    "gate": "SdgGate",
-   "verdict": "NONE",
-   "kinds": [],
+   "verdict": "RED",
+   "kinds": [
+    "abuts-clash"
+   ],
    "how": "run",
    "note": "real pair 15/3 overlap 0.300 m",
    "label": "walls driven into a wall they already touch",
@@ -336,7 +338,6 @@
   "invalid coordinates",
   "real beams: only girders walked from columns are span-checked",
   "unknown element types",
-  "walls driven into a wall they already touch",
   "wrong units or absurd sizes, unless they hit something",
   "zero-size elements",
   "load capacity",

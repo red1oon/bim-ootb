@@ -216,6 +216,31 @@ initSqlJs({ wasmBinary: wasmBinary }).then(async function (SQL) {
     !g8c.orange.some(function (o) { return o.kind === 'abuts-realign' && ((o.a === 9002 && o.b === A) || (o.a === A && o.b === 9002)); }),
     'orange=' + JSON.stringify(g8c.orange));
 
+  // A9 — §ABUTS-DEEPEN (MODELLER_MASTER §EDIT-REPORT): E2 of W-EDIT-REPORT-COVERAGE. A pair that touches is expected contact; one
+  // driven INTO the other is not. Real wall A + a constructed flush neighbour on its +X end (A5/A8's precedent), declared related + abuts.
+  var w9 = base[A], n9 = [w9[1], w9[1] + 1, w9[2], w9[3], w9[4], w9[5]];   // flush against A's +X end: overlap on X = 0
+  var b9 = {}; Object.keys(base).forEach(function (f) { b9[f] = base[f]; }); b9[9003] = n9;
+  var rel9 = { related: function (a, b) { return (a === A && b === 9003) || (a === 9003 && b === A); }, hostOf: {}, abuts: [{ a: A, b: 9003 }] };
+  var after9 = function (dA, dN) { var o = {}; Object.keys(b9).forEach(function (f) { o[f] = b9[f]; }); o[A] = tr(w9, dA); o[9003] = tr(n9, dN); return o; };
+  var names9 = function (r, kind) { return r.some(function (x) { return x.kind === kind && ((x.a === A && x.b === 9003) || (x.a === 9003 && x.b === A)); }); };
+  var g9 = SdgGate.evaluate(b9, after9([0.3, 0, 0], [0, 0, 0]), [A], rel9, {});
+  chk('A9 wall driven 0.3 m into the wall it abuts → RED abuts-clash', names9(g9.red, 'abuts-clash'), JSON.stringify(g9.red.filter(function (x) { return x.kind === 'abuts-clash'; })));
+  var g9b = SdgGate.evaluate(b9, after9([0.015, 0, 0], [0, 0, 0]), [A], rel9, {});
+  chk('A9b driven in 15 mm, under the 20 mm tolerance → no abuts-clash', !names9(g9b.red, 'abuts-clash'), JSON.stringify(g9b.red));
+  var g9c = SdgGate.evaluate(b9, after9([1, 0, 0], [1, 0, 0]), [A, 9003], rel9, {});
+  chk('A9c the pair moved together → no abuts-clash', !names9(g9c.red, 'abuts-clash'), JSON.stringify(g9c.red));
+  var g9d = SdgGate.evaluate(b9, after9([-0.3, 0, 0], [0, 0, 0]), [A], rel9, {});
+  chk('A9d pulled apart → no abuts-clash (abuts-realign still owns this case)', !names9(g9d.red, 'abuts-clash') && names9(g9d.orange, 'abuts-realign'), 'orange=' + g9d.orange.length);
+  var b9e = {}; Object.keys(b9).forEach(function (f) { b9e[f] = b9[f]; }); b9e[A] = tr(w9, [0.1, 0, 0]);
+  var a9e = after9([0.1, 0, 0], [0, 0, 0]); a9e[A] = tr(w9, [0.105, 0, 0]);
+  var g9e = SdgGate.evaluate(b9e, a9e, [A], rel9, {});
+  chk('A9e already 0.1 m in, 5 mm further → no abuts-clash (delta-honest)', !names9(g9e.red, 'abuts-clash'), JSON.stringify(g9e.red));
+  var relH = { related: rel9.related, hostOf: {}, abuts: rel9.abuts }; relH.hostOf[9003] = A;
+  var g9f = SdgGate.evaluate(b9, after9([0.3, 0, 0], [0, 0, 0]), [A], relH, {});
+  chk('A9f same move, the pair is host + filling → expected contact, no abuts-clash', !names9(g9f.red, 'abuts-clash'), JSON.stringify(g9f.red));
+  var g9g = SdgGate.evaluate(b9, after9([0.3, 0, 0], [0, 0, 0]), [A], rel9, { bruteForce: true });
+  chk('A9g the §GATE-SCALE index and the brute-force loop agree', names9(g9g.red, 'abuts-clash') && JSON.stringify(g9g.red) === JSON.stringify(g9.red));
+
   console.log('W-SDG-GATE: ' + pass + ' PASS / ' + fail + ' FAIL');
   process.exit(fail ? 1 : 0);
 }).catch(function (e) { console.error('WITNESS ERROR', e && e.stack || e); process.exit(1); });
