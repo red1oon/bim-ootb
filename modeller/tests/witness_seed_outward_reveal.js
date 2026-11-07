@@ -53,6 +53,7 @@ const server = http.createServer((q, r) => { let p = decodeURIComponent(q.url.sp
   await new Promise(r => server.listen(0, r)); const port = server.address().port;
   const br = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
   const pg = await br.newPage(); await pg.setViewport({ width: 1100, height: 800 });
+  await pg.evaluateOnNewDocument(() => { window.__dwKeepPatternStubs = true; });   // §WALK-MAINS note (prompts/DISC_WALK_DRAWN_MAINS.md §9): a user Walk no longer routes by pattern on ACMV, FP or PLB. This witness tests the pattern ENGINE and what renders it, behind the witness-only switch. W-WALK-MAINS proves the user path.
   const logs = []; pg.on('console', m => { const t = m.text(); if (/^§(DW-CHAIN-ANIM|DW-TUBE|DISC-WALK)/.test(t)) logs.push(t); });
   const errs = []; pg.on('pageerror', e => errs.push(String(e).slice(0, 200)));
 
