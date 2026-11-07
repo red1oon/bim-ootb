@@ -19,10 +19,11 @@ const incon = (id, why) => { log('§INCONCLUSIVE ' + id + ' ' + why); inc++; };
 const near = (a, b, tol) => Math.abs(a - b) <= tol;
 
 // ---- fixtures ----
-const L = { C: 'M-DUCT-CNTR', O: 'M-DUCT-OTLN', F: 'M-DUCT-FITG', G: 'M-GRID', T: 'M-GRID-TAG', W: 'M-WALL' };
+const L = { C: 'M-HVAC-DUCT-CNTR', O: 'M-HVAC-DUCT-OTLN', F: 'M-HVAC-DUCT-OTLN', G: 'S-GRID', T: 'S-GRID-IDEN', W: 'M-WALL', TERM: 'M-HVAC-CDFF-OTLN' };   // US NCS layers; a fitting is an INSERT on the outline layer
 const GRID_V = [['1', 0], ['2', 6], ['3', 12], ['4', 18]], GRID_H = [['A', 0], ['B', 5], ['C', 10], ['D', 15]];   // building metres
 const buildingGrid = (guid, k) => { k = k || 1; const o = []; GRID_V.forEach(v => o.push({ grid_guid: guid, tag: v[0], x0: v[1] * k, y0: -2, x1: v[1] * k, y1: 22 })); GRID_H.forEach(h => o.push({ grid_guid: guid, tag: h[0], x0: -2, y0: h[1] * k, x1: 20, y1: h[1] * k })); return o; };
 const BOX1 = { entities: [{ type: 'LWPOLYLINE', vertices: [{ x: 0, y: 0 }, { x: 2000, y: 0 }, { x: 2000, y: 1000 }, { x: 0, y: 1000 }], shape: true }] };   // 2 m x 1 m fitting block, local, in mm
+const BOXNEG = { entities: [{ type: 'LWPOLYLINE', vertices: [{ x: -1000, y: 0 }, { x: 0, y: 0 }, { x: 0, y: 1000 }, { x: -1000, y: 1000 }], shape: true }] };   // 1 m box to the left of its insertion point
 const BOX2 = { entities: [{ type: 'LWPOLYLINE', vertices: [{ x: 0, y: 0 }, { x: 1000, y: 0 }, { x: 1000, y: 1000 }, { x: 0, y: 1000 }], shape: true }] };   // 1 m x 1 m
 
 // Build one sheet. rotDeg/t: building = R(rot) * sheet + t (metres). content(B) draws in BUILDING metres; the fixture puts it on the sheet in mm.
@@ -35,15 +36,18 @@ function sheetFixture(o) {
   if (o.nest) {   // the grid sits inside ONE block insert (offset, rotated, optionally scaled/mirrored): block-local coordinates are the inverse of the insert's transform
     const n = o.nest, a = (n.rot || 0) * Math.PI / 180, ca = Math.cos(a), sa = Math.sin(a), sx = n.sx == null ? 1 : n.sx, sy = n.sy == null ? 1 : n.sy, ents = [];
     const toLocal = (gx, gy) => { const dx = gx - n.pos[0], dy = gy - n.pos[1]; return { x: (ca * dx + sa * dy) / sx, y: (-sa * dx + ca * dy) / sy, z: 0 }; };
-    const sub = o.tagSub || (x => x), put = (tag, a0, b0, tp) => { const A = toSheet(a0[0], a0[1]), Bp = toSheet(b0[0], b0[1]), Tp = toSheet(tp[0], tp[1]); ents.push({ type: 'LINE', layer: L.G, vertices: [toLocal(A[0], A[1]), toLocal(Bp[0], Bp[1])] }); ents.push({ type: 'TEXT', layer: L.T, startPoint: toLocal(Tp[0], Tp[1]), text: sub(tag) }); };
+    const sub = o.tagSub || (x => x), put = (tag, a0, b0, tp) => { const A = toSheet(a0[0], a0[1]), Bp = toSheet(b0[0], b0[1]), Tp = toSheet(tp[0], tp[1]); ents.push({ type: 'LINE', layer: L.G, vertices: [toLocal(A[0], A[1]), toLocal(Bp[0], Bp[1])] }); ents.push({ type: 'MTEXT', layer: L.T, position: toLocal(Tp[0], Tp[1]), text: '{\\fArial|b0;' + sub(tag) + '}\\P' }); ents.push({ type: 'INSERT', layer: L.T, name: 'BUBBLE', position: toLocal(Tp[0], Tp[1]), xScale: 1, yScale: 1, rotation: 0 }); };
     GRID_V.forEach(v => put(v[0], [v[1], -2], [v[1], 22], [v[1], -2.3])); GRID_H.forEach(h => put(h[0], [-2, h[1]], [20, h[1]], [-2.3, h[1]]));
     blocks.LINKED_MODEL = { name: 'LINKED_MODEL', position: { x: 0, y: 0, z: 0 }, entities: ents };
     extra.push({ type: 'INSERT', layer: 'M-LINK', name: 'LINKED_MODEL', position: { x: n.pos[0], y: n.pos[1], z: 0 }, xScale: sx, yScale: sy, rotation: n.rot || 0 });
   }
   if (!o.noGrid && !o.nest) {
-    const sub = o.tagSub || (x => x);
-    GRID_V.forEach(v => { const a = toSheet(v[1], -2), b = toSheet(v[1], 22), tp = toSheet(v[1], -2.3); d.line(L.G, a, b); d.text(L.T, sub(v[0]), tp, 200); });
-    GRID_H.forEach(h => { const a = toSheet(-2, h[1]), b = toSheet(20, h[1]), tp = toSheet(-2.3, h[1]); d.line(L.G, a, b); d.text(L.T, sub(h[0]), tp, 200); });
+    const sub = o.tagSub || (x => x), tag = (t, tp) => {
+      const q = sub(t); if (o.mtext) extra.push({ type: 'MTEXT', layer: L.T, position: { x: tp[0], y: tp[1], z: 0 }, text: '{\\fArial|b0|i0|c0|p34;\\H200;' + q + '}\\P' }); else d.text(L.T, q, tp, 200);
+      extra.push({ type: 'INSERT', layer: L.T, name: 'BUBBLE', position: { x: tp[0], y: tp[1], z: 0 }, xScale: 1, yScale: 1, rotation: 0 });   // the grid bubble: an insert on the tag layer, not a tag
+    };
+    GRID_V.forEach(v => { const a = toSheet(v[1], -2), b = toSheet(v[1], 22), tp = toSheet(v[1], -2.3); d.line(L.G, a, b); tag(v[0], tp); });
+    GRID_H.forEach(h => { const a = toSheet(-2, h[1]), b = toSheet(20, h[1]), tp = toSheet(-2.3, h[1]); d.line(L.G, a, b); tag(h[0], tp); });
   }
   const B = {
     line: (layer, a, b) => d.line(layer, toSheet(a[0], a[1]), toSheet(b[0], b[1])),
@@ -53,7 +57,7 @@ function sheetFixture(o) {
   };
   if (o.content) o.content(B);
   const parsed = new DxfParser().parseSync(d.toString());
-  return { entities: parsed.entities.concat(extra), blocks: Object.assign({ BOX2000: BOX1, BOX1000: BOX2 }, parsed.blocks || {}, blocks), dxfBytes: d.toString().length };
+  return { entities: parsed.entities.concat(extra), blocks: Object.assign({ BOX2000: BOX1, BOX1000: BOX2, BOXNEG, BUBBLE: { entities: [{ type: 'TEXT', layer: L.T, startPoint: { x: 0, y: 0, z: 0 }, text: 'ZZ' }] } }, parsed.blocks || {}, blocks), dxfBytes: d.toString().length };
 }
 const capture = f => { const lines = []; const orig = console.log; console.log = s => { lines.push(String(s)); orig(s); }; try { return { r: f(), lines }; } finally { console.log = orig; } };
 function run(name, fx, grid, variant, extraArgs) {
@@ -132,20 +136,44 @@ const G1 = buildingGrid('G1');
   r = run('m5-g2only', fxd, G2);
   ok('M5d RED: offered only G2, the sheet REFUSES (no other grid is borrowed)', !!r.r.sheet.refused, r.r.sheet.refused);
 
-  // ---- M6: mirrored fitting ----
-  const m6c = B => { B.line(L.C, [6, 0], [10, 0]); B.line(L.C, [11, 0], [15, 0]); B.ins(L.F, 'BOX1000', 10, -0.5, -1); };   // block box 1 m, X scale -1: naive box 9..10, true box 10..11
-  const m6 = sheetFixture({ content: m6c });
-  r = run('m6', m6, G1);
-  ok('M6 a mirrored fitting joins after correction (naive box 9..10 m, true box 10..11 m), and the log counts it: mirrored=1', r.r.sheet.components === 1 && / mirrored=1$/.test(r.lines.find(l => /§MAINS-READ/.test(l)) || ''), 'components=' + r.r.sheet.components + ' empty=' + r.r.sheet.emptyBoxes);
-  r = run('m6-nofix', m6, G1, { noMirrorFix: true });
-  ok('M6 RED: without the correction the same set reads 2 components (the box sits on the wrong side)', r.r.sheet.components === 2, 'components=' + r.r.sheet.components);
-  ok('M6 a set with no mirrored block logs mirrored=0', / mirrored=0$/.test(m2log.split('\n').find(l => /§MAINS-READ/.test(l)) || ''), (m2log.split('\n').find(l => /§MAINS-READ/.test(l)) || '').replace(/.*mirrored/, 'mirrored'));
+  // ---- M6: the converter negates an insert's X insertion point (amendment 2.3). Guarded by the sheet's own extents. ----
+  const mline = q => (q.lines.find(l => /§MAINS-READ/.test(l)) || ''), fired = q => (q.lines.find(l => /§MAINS-MIRROR/.test(l)) || '');
+  // (a) true box 10..11 m; the converter wrote the insert at X = -10, so the stored box is -11..-10, outside the drawing (6..15), its reflection 10..11 inside
+  const m6 = sheetFixture({ content: B => { B.line(L.C, [6, 0], [10, 0]); B.line(L.C, [11, 0], [15, 0]); B.ins(L.F, 'BOXNEG', -10, -0.5, 1); } });
+  r = run('m6a', m6, G1);
+  ok('M6a an insert at negated X, box outside the drawn extents and its reflection inside: corrected, joins (1 component), mirrored=1, fired=yes', r.r.sheet.components === 1 && / mirrored=1 /.test(mline(r)) && /fired=yes n=1/.test(fired(r)), 'components=' + r.r.sheet.components + ' | ' + fired(r).replace(/^.*§MAINS-MIRROR/, '§MAINS-MIRROR'));
+  r = run('m6b', m6, G1, { noMirrorFix: true });
+  ok('M6b RED: correction off, the same set does not join (2 components)', r.r.sheet.components === 2, 'components=' + r.r.sheet.components);
+  // (c) the whole drawing really sits at negative X, inserts at negative X too: nothing moves
+  const m6c = sheetFixture({ content: B => { B.line(L.C, [-15, 0], [-11, 0]); B.line(L.C, [-10, 0], [-6, 0]); B.ins(L.F, 'BOXNEG', -10, -0.5, 1); } });
+  r = run('m6c', m6c, G1);
+  ok('M6c a sheet drawn at negative X with its inserts at negative X: mirrored=0, fired=no, the fitting joins where it stands', r.r.sheet.components === 1 && / mirrored=0 /.test(mline(r)) && /fired=no/.test(fired(r)), 'components=' + r.r.sheet.components + ' | ' + fired(r).replace(/^.*§MAINS-MIRROR/, '§MAINS-MIRROR'));
+  // (d) none
+  ok('M6d a set with no mirrored insert logs mirrored=0 and fired=no', / mirrored=0 /.test(m2log.split('\n').find(l => /§MAINS-READ/.test(l)) || '') && /fired=no/.test(m2log.split('\n').find(l => /§MAINS-MIRROR/.test(l)) || ''), (m2log.split('\n').find(l => /§MAINS-MIRROR/.test(l)) || '').replace(/.*§MAINS-MIRROR/, '§MAINS-MIRROR'));
+  // (e) a genuinely negative scale is applied as drawn, not corrected: box 10..11 from X scale -1 at X = 11 on a 0..1000 block
+  const m6e = sheetFixture({ content: B => { B.line(L.C, [6, 0], [10, 0]); B.line(L.C, [11, 0], [15, 0]); B.ins(L.F, 'BOX1000', 11, -0.5, -1); } });
+  r = run('m6e', m6e, G1);
+  ok('M6e a real negative X scale is applied as drawn (box 10..11): joins with mirrored=0', r.r.sheet.components === 1 && / mirrored=0 /.test(mline(r)), 'components=' + r.r.sheet.components);
+
+  // ---- missing block definition (amendment 2.2) ----
+  const m14 = sheetFixture({ content: B => { B.line(L.C, [0, 0], [10, 0]); B.ins('S-STRUCT-LINK', 'STRUCTURE_LINK_ABSENT', 0, 0, 1); } });
+  let thrown = null; try { r = run('m14', m14, G1); } catch (e) { thrown = e; }
+  ok('M14 an insert naming a block with no definition reads without throwing and counts missingBlocks=1, naming it', !thrown && r.r.sheet.pieces === 1 && r.r.sheet.missingBlocks === 1 && / missingBlocks=1$/.test(mline(r)) && r.lines.some(l => /§MAINS-MISSING-BLOCKS .* names=STRUCTURE_LINK_ABSENT/.test(l)), thrown ? String(thrown) : 'missingBlocks=' + r.r.sheet.missingBlocks);
+  ok('M14 RED: a set whose blocks all exist logs missingBlocks=0', / missingBlocks=0$/.test(m2log.split('\n').find(l => /§MAINS-READ/.test(l)) || ''), '');
+
+  // ---- tags as MTEXT with formatting codes, a bubble insert on the tag layer is not a tag (amendment 2.1) ----
+  const fxm = sheetFixture({ rotDeg: 30, t: [123.4, -56.7], mtext: true, content: geom });
+  r = run('m5-mtext', fxm, G1);
+  const bub = fxm.entities.filter(e => e.type === 'INSERT' && e.name === 'BUBBLE').length, mt = fxm.entities.filter(e => e.type === 'MTEXT').length;
+  ok('M5e MTEXT tags with formatting codes ({\\f..;\\H..;A}\\P) read as plain tags: fit passes on 8 tags with ' + bub + ' bubble inserts beside them, none read as a tag', mt === 8 && bub === 8 && r.r.sheet.fit_tags === 8 && !r.r.sheet.refused && r.r.rows.length === 2, 'tags=' + r.r.sheet.fit_tags + ' bubbles=' + bub);
+  const strip = ['{\\fArial|b0;A}\\P', '\\A1;B1', '{\\H2.5;\\C1;C-2}', 'D'].map(t => DM.plainText({ type: 'MTEXT', text: t }));
+  ok('M5e the MTEXT code stripper leaves the tag: -> ' + strip.join(','), strip.join(',') === 'A,B1,C-2,D', '');
 
   // ---- M7: system ----
   const m7 = sheetFixture({ content: B => {
-    B.line(L.C, [0, 0], [10, 0]); B.ins('M-TERM', 'SUPPLY_DIFFUSER', 2, 0.5, 1); B.ins('M-TERM', 'RETURN_GRILLE', 8, -0.8, 1);
-    B.line(L.C, [0, 5], [10, 5]); B.ins('M-TERM', 'SUPPLY_DIFFUSER', 5, 5.5, 1);
-    B.line(L.C, [0, 10], [10, 10]); B.ins('M-TERM', 'SUPPLY_DIFFUSER', 5, 13, 1);
+    B.line(L.C, [0, 0], [10, 0]); B.ins(L.TERM, 'SUPPLY_DIFFUSER', 2, 0.5, 1); B.ins(L.TERM, 'RETURN_GRILLE', 8, -0.8, 1);
+    B.line(L.C, [0, 5], [10, 5]); B.ins(L.TERM, 'SUPPLY_DIFFUSER', 5, 5.5, 1);
+    B.line(L.C, [0, 10], [10, 10]); B.ins(L.TERM, 'SUPPLY_DIFFUSER', 5, 13, 1);
     B.line(L.C, [0, 15], [10, 15]); } });
   r = run('m7', m7, G1); const sysBy = {}; r.r.rows.forEach(w => { sysBy[w.piece] = w.system; });
   ok('M7 supply+return on one component = mixed; one kind = that kind; none in 1 m = unknown', sysBy[1] === 'mixed' && sysBy[2] === 'supply' && sysBy[3] === 'unknown' && sysBy[4] === 'unknown' && r.r.sheet.terminals === 4 && r.r.sheet.no_run === 1, JSON.stringify(sysBy) + ' terminals=' + r.r.sheet.terminals + ' no_run=' + r.r.sheet.no_run);
