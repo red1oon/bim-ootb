@@ -5822,8 +5822,12 @@ window.seedTrunk = async function (disc) {
     if (seedInfo.refused) { alert('No entry element (door/stair) to seed the trunk from: ' + seedInfo.reason); return; }
     var chosen = await _seedPopup(disc, seedInfo);
     if (!chosen) return;                                    // user cancelled
-    var net = window.SeedTrunk.planTrunk(bdb, fixtures, { x: chosen.x, y: chosen.y, storey: chosen.storey },
-      _seedRisers(bdb), { storeys: _seedStoreys(bdb, fixtures), groundStorey: chosen.storey });
+    var tgdb = null;   // §TRUNK-BOX the walls' real boxes live in the geometry file on a split resident, as for the walk
+    try { if (window.__dwGeoBuf) tgdb = new window.SQL.Database(new Uint8Array(window.__dwGeoBuf)); } catch (ge) { console.warn('§TRUNK-BOX geoDb open failed: ' + (ge && ge.message)); tgdb = null; }
+    var net;
+    try { net = window.SeedTrunk.planTrunk(bdb, fixtures, { x: chosen.x, y: chosen.y, storey: chosen.storey },
+      _seedRisers(bdb), { storeys: _seedStoreys(bdb, fixtures), groundStorey: chosen.storey, geoDb: tgdb || undefined }); }
+    finally { if (tgdb) { try { tgdb.close(); } catch (e2) { } } }
     if (net.refused === true) { alert('Could not route a trunk: ' + (net.reason || 'no storeys')); return; }   // boolean refusal only (refused is else a fixture COUNT)
     _renderSeedTrunk(disc, net);
     if (window.Bonsai && window.Bonsai.outliner) window.Bonsai.outliner.refresh();

@@ -79,6 +79,7 @@
     return { reached: reached, len: len, cross: cross, polys: polys };
   }
 
+  function _heap() { var m = (typeof performance !== 'undefined' && performance.memory) ? performance.memory.usedJSHeapSize : ((typeof process !== 'undefined' && process.memoryUsage) ? process.memoryUsage().heapUsed : 0); return m / 1048576; }
   function planTrunk(bdb, fixtures, seedPt, risers, opts) {
     opts = opts || {}; var CELL = opts.cell || 0.25;
     var bb = _rows(bdb, "SELECT MIN(center_x) x0, MAX(center_x) x1, MIN(center_y) y0, MAX(center_y) y1 FROM element_transforms")[0];
@@ -102,10 +103,19 @@
     if (!ground) ground = storeys[0];
     // NOTE: parenthesize z — a NEGATIVE storey z (e.g. a foundation at -1.4) would render `center_z--1.4`, and SQLite
     // reads `--` as a line comment, truncating the query ("incomplete input"). `(z)` keeps it a subtraction.
-    function wallsNear(z) { return _rows(bdb, "SELECT t.center_x x, t.center_y y, t.bbox_x bx, t.bbox_y by_ FROM elements_meta m " +
-      "JOIN element_transforms t ON m.guid=t.guid WHERE (m.ifc_class LIKE '%Wall%' OR m.ifc_class LIKE '%Column%') AND ABS(t.center_z-(" + z + "))<1.8"); }
-    function doorsOn(name) { return _rows(bdb, "SELECT t.center_x x, t.center_y y FROM elements_meta m JOIN element_transforms t " +
-      "ON m.guid=t.guid WHERE m.ifc_class LIKE '%Door%' AND m.storey='" + _esc(name) + "'"); }
+    // §TRUNK-BOX (prompts/DISC_WALK_BAND_NO_HOST.md §10.4): walls and doors through THE reader of an element's real box, mesh else row. Row centres sit off the mesh, by metres on some buildings.
+    var COLS = "m.guid g, t.center_x x, t.center_y y, t.center_z z, t.bbox_x bx, t.bbox_y by_, t.bbox_z bz, t.rotation_x rx, t.rotation_y ry, t.rotation_z rot";
+    var DWK = root && root.DiscWalker, tB0 = Date.now(), hB0 = _heap(), nW = 0, nD = 0, nMesh = 0, nRow = 0, boxes = {};
+    function real(r) {
+      if (!DWK || !DWK.realBox) { nRow++; return { x: r.x, y: r.y, bx: r.bx, by_: r.by_ }; }   // module used alone: the stored row, and the log says so
+      var b = boxes[r.g] || (boxes[r.g] = DWK.realBox(bdb, r, opts.geoDb));
+      if (b.source === 'mesh') nMesh++; else nRow++;
+      return { x: b.x, y: b.y, bx: b.ex, by_: b.ey };
+    }
+    function wallsNear(z) { var L = _rows(bdb, "SELECT " + COLS + " FROM elements_meta m " +
+      "JOIN element_transforms t ON m.guid=t.guid WHERE (m.ifc_class LIKE '%Wall%' OR m.ifc_class LIKE '%Column%') AND ABS(t.center_z-(" + z + "))<1.8").map(real); nW += L.length; return L; }
+    function doorsOn(name) { var L = _rows(bdb, "SELECT " + COLS + " FROM elements_meta m JOIN element_transforms t " +
+      "ON m.guid=t.guid WHERE m.ifc_class LIKE '%Door%' AND m.storey='" + _esc(name) + "'").map(real); nD += L.length; return L; }
 
     var out = { seed: seedPt, risers: [], storeys: [], served: 0, refused: 0, totalLen: 0, oneNetwork: true };
     // GROUND: corridor backbone from the seed; must also reach every riser base
@@ -137,6 +147,7 @@
     });
     out.risers.forEach(function (r) { r.z1 = storeys[storeys.length - 1].z; });
     out.oneNetwork = risersFed.some(Boolean) || storeys.length === 1;
+    console.log('§TRUNK-BOX walls=' + nW + ' doors=' + nD + ' boxFromMesh=' + nMesh + ' boxFromRow=' + nRow + ' ms=' + (Date.now() - tB0) + ' heapDeltaMB=' + (_heap() - hB0).toFixed(1));
     return out;
   }
 

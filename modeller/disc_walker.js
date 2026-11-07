@@ -1253,6 +1253,12 @@
     return { x: (wMin[0] + wMax[0]) / 2, y: (wMin[1] + wMax[1]) / 2, z: (wMin[2] + wMax[2]) / 2, verified: true, ex: wMax[0] - wMin[0], ey: wMax[1] - wMin[1], ez: wMax[2] - wMin[2] };
   }
 
+  // §TRUNK-BOX (prompts/DISC_WALK_BAND_NO_HOST.md §10.4): THE reader of an element's real box, mesh else row. row = { g, x, y, z, bx, by_, bz, rx, ry, rot }. Row centres sit off the mesh, by metres on some buildings.
+  function realBox(bdb, row, geoDb) {
+    var mid = _trueMidpoint(bdb, row.g, row, geoDb);
+    return mid.verified ? { x: mid.x, y: mid.y, z: mid.z, ex: mid.ex, ey: mid.ey, ez: mid.ez, source: 'mesh' }
+      : { x: row.x, y: row.y, z: row.z, ex: row.bx || 0, ey: row.by_ || 0, ez: row.bz || 0, source: 'row' };
+  }
   // `geoDb` (optional, §GEO-SPLIT): a SEPARATE sql.js handle carrying the geometry table for residents where
   // it can't live in `bdb` itself (Terminal_geo.db, 250MB, kept apart from Terminal_meta.db). Omitted → old
   // single-file behaviour, unchanged (SampleHouse/Duplex/SampleCastle all embed their own geometry).
@@ -1323,7 +1329,7 @@
     var off = shim.offset_m || 0, sign = mount === 'BOTTOM' ? -1 : 1, faceHalf = mount === 'CENTER' ? 0 : 1, sameStorey = !!shim.same_storey;
     var shapeRejected = 0, multi = 0, deep = 0, depthMax = 0, noHeightTest = 0, bound = [], refusedList = [], boxMesh = 0, boxRow = 0, usedHost = {}, zMoves = [], upright = [], noNormals = 0, heap0 = _heapMB();
     var live = hosts.filter(function (h) {
-      if (h.midVerified) { h.ex = h.mex; h.ey = h.mey; h.ez = h.mez; boxMesh++; } else { h.ex = h.bx || 0; h.ey = h.by_ || 0; h.ez = h.bz || 0; boxRow++; }   // the box the §10.2 table measured
+      if (h.midVerified) boxMesh++; else boxRow++;   // the box the §10.2 table measured
       if (area.flatness != null && h.ez >= area.flatness * Math.min(h.ex, h.ey)) { shapeRejected++; return false; }
       return true;
     });
@@ -1388,9 +1394,9 @@
     if (!hosts.length) return { bound: [], refused: placements.length, noHost: true, hostClass: hostClass };
     var unverifiedHosts = 0;
     hosts.forEach(function (h) {
-      var mid = _trueMidpoint(bdb, h.g, h, geoDb);
-      h.tx = mid.x; h.ty = mid.y; h.tz = mid.z; h.midVerified = mid.verified; h.mex = mid.ex; h.mey = mid.ey; h.mez = mid.ez;
-      if (!mid.verified) {
+      var box = realBox(bdb, h, geoDb);
+      h.tx = box.x; h.ty = box.y; h.tz = box.z; h.midVerified = box.source === 'mesh'; h.ex = box.ex; h.ey = box.ey; h.ez = box.ez;
+      if (!h.midVerified) {
         unverifiedHosts++;
         console.log(TAG + ' §DW-UNVERIFIED-MIDPOINT host=' + h.g + ' ifc=' + hostClass +
           ' (no mesh geometry on this DB -- raw center used, may be off up to half the host length; RESUME_DISC_WALKER_ENVELOPE_BOUND.md §BUG-A)');
@@ -1812,7 +1818,7 @@
     var ST = (opts && opts.SeedTrunk) || ROOT.SeedTrunk;
     if (!ST) return [];
     var risers = _risers(bdb);
-    var net = ST.planTrunk(bdb, placements, seed, risers, { storeys: sub, groundStorey: seed.storey });
+    var net = ST.planTrunk(bdb, placements, seed, risers, { storeys: sub, groundStorey: seed.storey, geoDb: opts && opts.geoDb });
     if (net.refused === true) return [];
     var STEP = (opts && opts.junctionStep > 0) ? opts.junctionStep : 3, out = [], seen = {}, n = 0;
     net.storeys.forEach(function (st) {
@@ -2890,6 +2896,7 @@
     _setSpaceTypeWordOff: function (v) { _spaceTypeWordOff = !!v; }, _spaceTypeLastHow: function () { return _spaceTypeHow; },
     _shimForDisc: _shimForDisc, _shimForFixture: _shimForFixture, _loadRuleShims: _loadRuleShims,
     _trueMidpoint: _trueMidpoint,
+    realBox: realBox,
     bendFinder: bendFinder, fittingOrientation: fittingOrientation, bendFittings: bendFittings,
     lookupRealFitting: lookupRealFitting, MEP_REAL_FITTINGS: MEP_REAL_FITTINGS,
     disciplines: disciplines, loadedFile: loadedFile, _ready: function () { return _ready; },

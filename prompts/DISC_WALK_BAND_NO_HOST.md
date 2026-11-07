@@ -142,6 +142,29 @@ Code: `modeller/disc_walker.js` `_AREA_HOST`, `_bindAreaHost`, `_bandHostPass`. 
 **Witnesses, final code:** W-BAND-NO-HOST 35 of 35 (F1-F7 hand-calculated; B1-B6, B8; B3 on 85 fleet walks). W-BAND-NO-HOST B7 real page, ARC-only public Clinic, 13 of 13: log, held placements, committed rows and status text agree per discipline. Pointed at the shipped walker, before → after: W-BORROW-FP 6/0 → 6/0, W-ELEC-HOSTBIND 5/0 → 5/0, W-SHIM-SELECT 6/0 → 6/0, W-TERM-NOSPACES 8/0 → 8/0, W-TERMINAL-GEOSPLIT 12/0 → 12/0, W-DW-LIVEWIRE 12/12 → 12/12, **W-SPACE-SCOPED restored on public Clinic: 5/0 → 5/0**, W-UX-DISC 5/3 → 6/2 (fails on main too). **W-DWWALK-HOSTBIND 6/0 → 5/1: W3 asserts a wall row keeps the floating count, the assertion §6 said to update.** That script tests bim-compiler's older `build/disc_walker.js`, so it is not changed here.
 **Not in this change:** stopping stub runs (next, its own PR, `§WALK-MAINS`); the doctrine §4 edit, at merge, with the owner.
 
+### §10.4 One reader of an element's real box; the corridor trunk uses it (2026-11-07, named defect, found tracing W-CORRIDOR-TRUNK CT3)
+**Issue.** §10.3 measured row centres off the mesh. `seed_trunk.js` builds its nav grid from those row centres, for walls and for doors. Duplex: 34 of 57 walls are over 10 cm off, the worst 3.12 m. So the trunk avoids walls that are not there and can cross ones that are, while its doctrine says it does not cross walls. W-CORRIDOR-TRUNK could not see this because it builds its grid the same wrong way: its falsifier reads 14 of 14 with or without doors.
+**Rule.** One reader, `DiscWalker.realBox(bdb, row, geoDb)`: the element's world box from its mesh when one is at hand, else the stored row, and it says which. The host search takes its box from this reader, so there is no second implementation. `planTrunk` reads walls and doors through it, passed `opts.geoDb` by its callers.
+**Not changed:** seed, stairs and risers (the engineer's choice and real anchors), the band devices, whether a trunk counts as a main (owner's question).
+**Log.** `§TRUNK-BOX walls= doors= boxFromMesh= boxFromRow= ms= heapDeltaMB=` per plan.
+**Witness `modeller/tests/witness_trunk_real_box.js` (W-TRUNK-REAL-BOX).** Issue it proves or disproves: the trunk is planned around walls that are not where the row says.
+- **K1** hand-built: a wall whose mesh sits 3 m off its row centre blocks the grid where the mesh is, not where the row is. Red control: the old walker's row box fails this.
+- **K2** a door whose mesh sits off its row centre carves the passage at the mesh.
+- **K3** real buildings, before and after: served, refused, length, and how many trunk segments cross a true wall box away from any door. Old walker's count is the red control. Printed per building; a building with no mesh is not judged.
+- **K4** the host search takes the same box: a ceiling whose mesh sits off its row centre holds a device under the mesh, not one under the row.
+Trunk lengths will change. They are reported, not tuned.
+**§10.4 RESULT 2026-11-07.** W-TRUNK-REAL-BOX 6 of 6 (K1, K2 hand-built with red controls on the old walker; K4 the host search takes the same box). Real buildings, before → after, ELEC fixtures, the default seed:
+| Building | served | refused | trunk length, m | segments crossing a true wall box |
+|---|---|---|---|---|
+| Duplex | 29 → 29 | 71 → 71 | 112.1 → 87.0 | 25 → 0 |
+| SampleHouse | 14 → 14 | 3 → 3 | 67.3 → 61.0 | 5 → 1 |
+| HHS | 801 → 800 | 8 → 9 | 5,116.5 → 4,900.8 | 282 → 57 |
+| Clinic | 1,187 → 1,098 | 815 → 904 | 6,947.8 → 6,666.6 | 3,831 → 2,514 |
+| JKR | 1,178 → 973 | 430 → 635 | 5,471.7 → 3,836.4 | 1,273 → 25 |
+**Served falls on 3 buildings, as the doctrine says it should:** a fixture reachable only through a real wall is refused. **Crossings do not reach 0 on Clinic (2,514 remain):** not traced. The count samples a world box, so a diagonal wall's box overstates it, and the router's wall filter is still `|centre z − storey z| < 1.8` on the row; either may account for it. All boxes came from the mesh on these files (`boxFromRow=0`). Cost, largest: 661 ms, heap +6.7 MB. In bim-compiler, W-CORRIDOR-TRUNK CT3 now fails on row boxes and passes on real ones (1 of 14 without doors, 14 of 14 with), and W-SEEDTRUNK-ENGINE keeps 30 / 26 / 7 on real boxes.
+Unchanged: band fleet, 118 walks, placed, bound and runs identical to #2687. W-BAND-NO-HOST 34/0, its B8 red control now pinned to `0295309a` (a default tree went stale once the fix merged), B7 page 15 of 15, W-WALK-MAINS 11/0, W-E2E-SEEDTRUNK 6/0, W-SEED-TRUNK-RENDER 8/0, W-ROUTE-PATTERN-BRIDGE 10/0, W-SEED-OUTWARD-REVEAL 9/0, W-MEP-OPENPATH 27/2 (M5, M7, as on main).
+**Checks asked for the trunk's place in the mains ruling (owner's §9.3):** by code read, `window.seedTrunk` renders `LineSegments` into `__dwTrunk` and commits nothing to the op-log, so it cannot reach the saved DB or the IFC export. **Not user-triggered only:** `_corridorJunctions` calls `planTrunk` inside the automatic pattern path, and of `_RW_PATTERN_DISC` (PLB, FP, ACMV, ELEC) the mains gate stops three, so **ELEC still reaches it on every walk where no real ELEC run pairs.**
+
 ## §11 Band density: borrowed-density devices are provisional (owner 2026-11-07, *"Yes to all four"*). Not built
 Asked: should borrowed-density devices be provisional and left out of the placed count and quantities? Density numbers stay untouched, as §4 says.
 **Issue.** A walk reports borrowed-density devices as placed, so a count reads as a claim about the building. Measured on a private Revit-exported set, ACMV, on the merged code: 706 air terminals against 269 drawn; inside the author's rooms, nearest drawn device 2.55 m for band and 2.88 m for bound, against 2.73 m and 2.96 m for random points in the same rooms. Borrowed density gives a count and no location. One building: it tests the rule; it is not its source.
