@@ -78,9 +78,10 @@
     var y1 = Math.min.apply(null, ys), y2 = Math.max.apply(null, ys);
 
     var sql =
-      'SELECT m.ifc_class, COUNT(*) AS qty, ' +
-      'ROUND(SUM(t.bbox_x * t.bbox_y), 2) AS area_m2, ' +
-      'ROUND(SUM(t.bbox_x * t.bbox_y * t.bbox_z), 3) AS vol_m3 ' +
+      // §11 P7: provisional walked devices out of qty, area and volume (ProvTotals).
+      'SELECT m.ifc_class, ' + ProvTotals.count(APP.db, 'm.guid', 'cost.qty') + ' AS qty, ' +
+      'ROUND(' + ProvTotals.sum(APP.db, 't.bbox_x * t.bbox_y', 'm.guid', 'cost.area') + ', 2) AS area_m2, ' +
+      'ROUND(' + ProvTotals.sum(APP.db, 't.bbox_x * t.bbox_y * t.bbox_z', 'm.guid', 'cost.vol') + ', 3) AS vol_m3 ' +
       'FROM elements_meta m JOIN element_transforms t ON m.guid = t.guid ' +
       'WHERE t.center_x BETWEEN ? AND ? AND t.center_y BETWEEN ? AND ? ' +
       'GROUP BY m.ifc_class ORDER BY vol_m3 DESC';

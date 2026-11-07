@@ -168,6 +168,8 @@
   // language storey resolution. Omit it and storey scoping falls back to "Level N" guess.
   function decode(text, ctx) {
     ctx = ctx || {};
+    // §11 P7: the caller's count expression (ProvTotals.count) so provisional walked devices stay out of every count; pure default.
+    const C = ctx.countExpr || 'COUNT(*)';
     const clean = String(text || '').toLowerCase().replace(/[?.!,;:'"]/g, ' ').replace(/\s+/g, ' ').trim();
     if (!clean) return { kind: 'none', desc: 'empty' };
     const rawTokens = clean.split(' ');
@@ -186,11 +188,11 @@
     // meta breakdowns (no specific noun)
     if (!nouns && /\bdisciplines?\b/.test(clean)) {
       return { kind: 'group', desc: 'disciplines breakdown',
-        sql: 'SELECT discipline, COUNT(*) AS count FROM elements_meta GROUP BY discipline ORDER BY count DESC', params: [] };
+        sql: 'SELECT discipline, ' + C + ' AS count FROM elements_meta GROUP BY discipline ORDER BY count DESC', params: [] };
     }
     if (!nouns && !rankM && /\b(stor(e?ys?|ies)|floors?|levels?)\b/.test(clean) && !storey) {
       return { kind: 'group', desc: 'storeys breakdown',
-        sql: 'SELECT storey, COUNT(*) AS count FROM elements_meta GROUP BY storey ORDER BY count DESC', params: [] };
+        sql: 'SELECT storey, ' + C + ' AS count FROM elements_meta GROUP BY storey ORDER BY count DESC', params: [] };
     }
 
     const wantsFloorRank = /\b(floor|level|storey|story)\b/.test(clean);
@@ -204,7 +206,7 @@
       const w = where.length ? ' WHERE ' + where.join(' AND ') : '';
       const dim = wantsFloorRank ? 'storey' : 'ifc_class';
       return { kind: 'rank', desc: `${dir === 'ASC' ? 'fewest' : 'most'} ${nouns ? nouns.label : 'elements'} by ${dim}`,
-        sql: `SELECT ${dim} AS label, COUNT(*) AS count FROM elements_meta${w} GROUP BY ${dim} ORDER BY count ${dir} LIMIT 1`, params };
+        sql: `SELECT ${dim} AS label, ${C} AS count FROM elements_meta${w} GROUP BY ${dim} ORDER BY count ${dir} LIMIT 1`, params };
     }
 
     // ── COST (qto_cache: material+labour+equipment) ──
@@ -241,12 +243,12 @@
       const label = descBits.join(' ');
       if (isCount && !isList) {
         return { kind: 'count', desc: 'count ' + label,
-          sql: 'SELECT ifc_class, COUNT(*) AS count FROM elements_meta' + w + ' GROUP BY ifc_class ORDER BY count DESC', params };
+          sql: 'SELECT ifc_class, ' + C + ' AS count FROM elements_meta' + w + ' GROUP BY ifc_class ORDER BY count DESC', params };
       }
       return { kind: 'list', desc: 'show ' + label,
         sql: 'SELECT guid, ifc_class, element_name, storey FROM elements_meta' + w + ' ORDER BY ifc_class LIMIT 500', params,
         guidSql: 'SELECT guid FROM elements_meta' + w, guidParams: params.slice(),   // ALL matches → 3D highlight (table stays capped at 500)
-        countSql: 'SELECT COUNT(*) AS n FROM elements_meta' + w, countParams: params.slice() };
+        countSql: 'SELECT ' + C + ' AS n FROM elements_meta' + w, countParams: params.slice() };
     }
 
     return { kind: 'none', desc: 'no match for "' + clean + '"' };

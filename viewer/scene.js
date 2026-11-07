@@ -1377,9 +1377,9 @@ async function setupScene(A) {
       ' added=' + JSON.stringify(added));
 
     try {
-      var er = A.dbQuery('SELECT COUNT(*) FROM elements_meta');
+      var er = A.dbQuery('SELECT ' + ProvTotals.count(A.db, 'guid', 'scene.totalElements') + ' FROM elements_meta');
       A.totalElements = er.length ? er[0][0] : A.totalElements;
-      var dr = A.dbQuery('SELECT discipline, COUNT(*) FROM elements_meta GROUP BY discipline');
+      var dr = A.dbQuery('SELECT discipline, ' + ProvTotals.count(A.db, 'guid', 'scene.discCounts') + ' FROM elements_meta GROUP BY discipline');
       A.discCounts = {};
       for (var di = 0; di < dr.length; di++) A.discCounts[dr[di][0]] = dr[di][1];
     } catch (e) {}
@@ -1498,9 +1498,9 @@ async function setupScene(A) {
       ' added=' + JSON.stringify(added));
 
     try {
-      var er = A.dbQuery('SELECT COUNT(*) FROM elements_meta');
+      var er = A.dbQuery('SELECT ' + ProvTotals.count(A.db, 'guid', 'scene.totalElements') + ' FROM elements_meta');
       A.totalElements = er.length ? er[0][0] : A.totalElements;
-      var dr = A.dbQuery('SELECT discipline, COUNT(*) FROM elements_meta GROUP BY discipline');
+      var dr = A.dbQuery('SELECT discipline, ' + ProvTotals.count(A.db, 'guid', 'scene.discCounts') + ' FROM elements_meta GROUP BY discipline');
       A.discCounts = {};
       for (var di = 0; di < dr.length; di++) A.discCounts[dr[di][0]] = dr[di][1];
     } catch (e) {}

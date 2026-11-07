@@ -4124,9 +4124,10 @@ function setupStreaming(A) {
     A.ground.visible = !!(A._shadowOn || A._nightMode);
     console.log('[S200] §GROUND_INIT y=' + A.ground.position.y.toFixed(1) + ' visible=' + A.ground.visible);
 
-    const elemRows = A.dbQuery(`SELECT COUNT(*) FROM elements_meta`);
+    const elemRows = A.dbQuery('SELECT ' + ProvTotals.count(A.db, 'guid', 'streaming.totalElements') + ' FROM elements_meta');
     A.totalElements = elemRows.length ? elemRows[0][0] : 0;
-    const discRows = A.dbQuery(`SELECT discipline, COUNT(*) FROM elements_meta GROUP BY discipline ORDER BY COUNT(*) DESC`);
+    const _pvc = ProvTotals.count(A.db, 'guid', 'streaming.discCounts');
+    const discRows = A.dbQuery('SELECT discipline, ' + _pvc + ' FROM elements_meta GROUP BY discipline ORDER BY ' + _pvc + ' DESC');
     if (discRows.length > 0) {
       for (const r of discRows) {
         A.discCounts[r[0]] = r[1];

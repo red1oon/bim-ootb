@@ -59,6 +59,9 @@
   // ── 5D quantities (currency-free) ───────────────────────────────────────
   // Longest dim = length_m; longest × second-longest = dominant face area_m2;
   // bbox envelope = vol_m3. Same expressions as mep_report.html / cost_panel.js.
+  function _pvPT() { return (typeof globalThis !== 'undefined' && globalThis.ProvTotals) || null; }
+  function _pvC(db) { var P = _pvPT(); return P ? P.count(db, 'm.guid', 'sidecar.cnt') : 'COUNT(*)'; }
+  function _pvS(db, e) { var P = _pvPT(); return P ? P.sum(db, e, 'm.guid', 'sidecar.sum') : 'SUM(' + e + ')'; }
   function compute5D(db, building) {
     var bld = String(building).replace(/'/g, "''");
     var areaExpr =
@@ -67,10 +70,11 @@
       "WHEN t.bbox_y>=t.bbox_x AND t.bbox_y>=t.bbox_z THEN MAX(t.bbox_x,t.bbox_z) " +
       "ELSE MAX(t.bbox_x,t.bbox_y) END";
     var sql =
-      "SELECT m.discipline, m.ifc_class, m.storey, COUNT(*) AS cnt, " +
-      "ROUND(SUM(MAX(t.bbox_x,t.bbox_y,t.bbox_z)),3) AS length_m, " +
-      "ROUND(SUM(" + areaExpr + "),3) AS area_m2, " +
-      "ROUND(SUM(t.bbox_x*t.bbox_y*t.bbox_z),3) AS vol_m3 " +
+      // §11 P7: provisional walked devices out of 5D quantities (ProvTotals; guarded, this file also loads in report pages).
+      "SELECT m.discipline, m.ifc_class, m.storey, " + _pvC(db) + " AS cnt, " +
+      "ROUND(" + _pvS(db, "MAX(t.bbox_x,t.bbox_y,t.bbox_z)") + ",3) AS length_m, " +
+      "ROUND(" + _pvS(db, areaExpr) + ",3) AS area_m2, " +
+      "ROUND(" + _pvS(db, "t.bbox_x*t.bbox_y*t.bbox_z") + ",3) AS vol_m3 " +
       "FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid " +
       "WHERE m.building='" + bld + "' AND t.bbox_x IS NOT NULL AND t.bbox_x>0 " +
       "GROUP BY m.discipline, m.ifc_class, m.storey";

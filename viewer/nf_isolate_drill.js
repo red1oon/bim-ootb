@@ -49,7 +49,7 @@
       var bld = NF._scopeBld();
       var total = 0;
       try {
-        var tr = A.db.exec('SELECT COUNT(*) FROM elements_meta' + (bld ? ' WHERE building = ?' : ''), bld ? [bld] : []);
+        var tr = A.db.exec('SELECT ' + ProvTotals.count(A.db, 'guid', 'drill.total') + ' FROM elements_meta' + (bld ? ' WHERE building = ?' : ''), bld ? [bld] : []);
         if (tr.length) total = tr[0].values[0][0];
       } catch(e) { /* total stays 0 */ }
       console.log('[RP-A1] §FILTER visible=' + set.size + ' hidden=' + Math.max(0, total - set.size) +
@@ -264,7 +264,7 @@
 
     // §S280: Storey mode — parent nodes instant, children lazy-load on expand
     function _buildStoreyTree(bld, filter) {
-      var storeySql = 'SELECT storey, COUNT(*) as cnt FROM elements_meta' +
+      var storeySql = 'SELECT storey, ' + ProvTotals.count(A.db, 'guid', 'drill.storeys') + ' as cnt FROM elements_meta' +
         ' WHERE storey IS NOT NULL' + (bld ? ' AND building = ?' : '') +
         ' GROUP BY storey ORDER BY storey';
       var storeys = A.db.exec(storeySql, bld ? [bld] : []);
@@ -283,7 +283,7 @@
             if (container._loaded) return;
             container._loaded = true;
             // Lazy: spaces/rooms (large→small), fallback to types
-            var spaceSql = 'SELECT element_name, COUNT(*) as cnt FROM elements_meta' +
+            var spaceSql = 'SELECT element_name, ' + ProvTotals.count(A.db, 'guid', 'drill.rooms') + ' as cnt FROM elements_meta' +
               ' WHERE storey = ? AND ifc_class IN (\'IfcSpace\',\'IfcRoom\',\'IfcZone\')' +
               (bld ? ' AND building = ?' : '') +
               ' GROUP BY element_name ORDER BY cnt DESC';
@@ -295,7 +295,7 @@
                 }));
               });
             } else {
-              var typeSql = 'SELECT ifc_class, COUNT(*) as cnt FROM elements_meta' +
+              var typeSql = 'SELECT ifc_class, ' + ProvTotals.count(A.db, 'guid', 'drill.types') + ' as cnt FROM elements_meta' +
                 ' WHERE storey = ?' + (bld ? ' AND building = ?' : '') +
                 ' GROUP BY ifc_class ORDER BY cnt DESC LIMIT 10';
               var types = A.db.exec(typeSql, bld ? [storey, bld] : [storey]);
@@ -321,7 +321,7 @@
 
     // §S280: Disc mode — parent nodes instant, children lazy-load on expand
     function _buildDiscTree(bld, filter) {
-      var discSql = 'SELECT discipline, COUNT(*) as cnt FROM elements_meta' +
+      var discSql = 'SELECT discipline, ' + ProvTotals.count(A.db, 'guid', 'drill.discs') + ' as cnt FROM elements_meta' +
         ' WHERE discipline IS NOT NULL' + (bld ? ' AND building = ?' : '') +
         ' GROUP BY discipline ORDER BY cnt DESC';
       var discs = A.db.exec(discSql, bld ? [bld] : []);
@@ -342,7 +342,7 @@
           onExpand: function(container) {
             if (container._loaded) return;
             container._loaded = true;
-            var typeSql = 'SELECT ifc_class, COUNT(*) as cnt FROM elements_meta' +
+            var typeSql = 'SELECT ifc_class, ' + ProvTotals.count(A.db, 'guid', 'drill.types') + ' as cnt FROM elements_meta' +
               ' WHERE discipline = ?' + (bld ? ' AND building = ?' : '') +
               ' GROUP BY ifc_class ORDER BY cnt DESC';
             var types = A.db.exec(typeSql, bld ? [disc, bld] : [disc]);

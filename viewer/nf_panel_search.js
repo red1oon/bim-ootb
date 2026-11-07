@@ -197,7 +197,7 @@
         // ── Phase 1 (sync): Storeys — fast query, no JOIN ──
         var matchByStorey = {};
         if (name) {
-          var msSql = 'SELECT storey, COUNT(*) as cnt FROM elements_meta WHERE storey IS NOT NULL' +
+          var msSql = 'SELECT storey, ' + ProvTotals.count(A.db, 'guid', 'find.storeyMatches') + ' as cnt FROM elements_meta WHERE storey IS NOT NULL' +
             ' AND (LOWER(element_name) LIKE LOWER(?) OR LOWER(ifc_class) LIKE LOWER(?))' +
             (bld ? ' AND building = ?' : '') + ' GROUP BY storey';
           var msParams = ['%' + name + '%', '%' + name + '%'];
@@ -207,7 +207,7 @@
         }
 
         // Storeys — simple GROUP BY, no JOIN to element_transforms
-        var storeySql = 'SELECT storey, COUNT(*) as cnt FROM elements_meta' +
+        var storeySql = 'SELECT storey, ' + ProvTotals.count(A.db, 'guid', 'find.storeys') + ' as cnt FROM elements_meta' +
           ' WHERE storey IS NOT NULL' + (bld ? ' AND building = ?' : '') +
           ' GROUP BY storey ORDER BY storey';
         var storeys = A.db.exec(storeySql, bld ? [bld] : []);
@@ -266,7 +266,7 @@
       try {
         var matchByType = {};
         if (name) {
-          var mtSql = 'SELECT ifc_class, COUNT(*) as cnt FROM elements_meta WHERE' +
+          var mtSql = 'SELECT ifc_class, ' + ProvTotals.count(A.db, 'guid', 'find.typeMatches') + ' as cnt FROM elements_meta WHERE' +
             ' (LOWER(element_name) LIKE LOWER(?) OR LOWER(ifc_class) LIKE LOWER(?))' +
             (bld ? ' AND building = ?' : '') +
             (savedStorey ? ' AND storey = ?' : '') + ' GROUP BY ifc_class';
@@ -283,7 +283,7 @@
         if (bld) { typeClauses.push('building = ?'); typeParams.push(bld); }
         if (savedStorey) { typeClauses.push('storey = ?'); typeParams.push(savedStorey); }
         if (typeClauses.length) typeWhere += ' ' + typeClauses.join(' AND ');
-        var typeSql = 'SELECT ifc_class, COUNT(*) as cnt FROM elements_meta' +
+        var typeSql = 'SELECT ifc_class, ' + ProvTotals.count(A.db, 'guid', 'find.types') + ' as cnt FROM elements_meta' +
           typeWhere + ' GROUP BY ifc_class ORDER BY cnt DESC';
         var types = A.db.exec(typeSql, typeParams);
         NF.elType.innerHTML = '<option value="">All types</option>';
@@ -373,7 +373,10 @@
       } catch(e) { console.warn('[S233] search error', e); }
 
       if (nav.results.length > 0) {
-        NF.elCount.textContent = (typeof _TRL!=='undefined'&&_TRL.ui_find_matches||'{n} found').replace('{n}', nav.results.length);
+        // §11 P7: the count line leaves provisional walked devices out; the list below still shows them, labelled.
+        var _nProv = nav.results.filter(function (r) { return r.provisional = ProvTotals.isProvisional(A.db, r.guid) && ProvTotals.provisional(A.db) > 0; }).length;
+        NF.elCount.textContent = (typeof _TRL!=='undefined'&&_TRL.ui_find_matches||'{n} found').replace('{n}', nav.results.length - _nProv);
+        if (_nProv) console.log('§PROV-TOTALS site=find.found listed=' + nav.results.length + ' provisional=' + _nProv + ' counted=' + (nav.results.length - _nProv));
         renderResults();
         // No auto-select — user picks from the list. Navigate auto-selects first if needed.
       } else {
@@ -396,7 +399,7 @@
         var wordClauses = words.map(function() { return '(LOWER(m.element_name) LIKE ? OR LOWER(m.ifc_class) LIKE ?)'; });
         var wordParams = [];
         words.forEach(function(w) { wordParams.push('%' + w + '%', '%' + w + '%'); });
-        var sql = 'SELECT DISTINCT m.element_name, m.ifc_class, m.storey, COUNT(*) as cnt' +
+        var sql = 'SELECT DISTINCT m.element_name, m.ifc_class, m.storey, ' + ProvTotals.count(A.db, 'm.guid', 'find.suggest') + ' as cnt' +
           ' FROM elements_meta m WHERE (' + wordClauses.join(' OR ') + ')' +
           (bld ? ' AND m.building = ?' : '') +
           ' GROUP BY m.element_name, m.ifc_class, m.storey ORDER BY cnt DESC LIMIT 8';
@@ -413,7 +416,7 @@
 
       // Strategy 2: if still nothing, check if filters (type/storey) are too restrictive
       if (suggestions.length === 0 && (NF.elType.value || NF.elStorey.value)) {
-        var relaxSql = 'SELECT DISTINCT m.element_name, m.ifc_class, m.storey, COUNT(*) as cnt' +
+        var relaxSql = 'SELECT DISTINCT m.element_name, m.ifc_class, m.storey, ' + ProvTotals.count(A.db, 'm.guid', 'find.suggestRelax') + ' as cnt' +
           ' FROM elements_meta m WHERE (LOWER(m.element_name) LIKE LOWER(?) OR LOWER(m.ifc_class) LIKE LOWER(?))' +
           (bld ? ' AND m.building = ?' : '') +
           ' GROUP BY m.element_name, m.ifc_class, m.storey ORDER BY cnt DESC LIMIT 5';
@@ -432,7 +435,7 @@
       // Strategy 3: show what IS available (top element names containing any 3+ char substring)
       if (suggestions.length === 0 && name.length >= 3) {
         var sub = name.substring(0, 3).toLowerCase();
-        var subSql = 'SELECT DISTINCT m.element_name, m.ifc_class, m.storey, COUNT(*) as cnt' +
+        var subSql = 'SELECT DISTINCT m.element_name, m.ifc_class, m.storey, ' + ProvTotals.count(A.db, 'm.guid', 'find.suggestSub') + ' as cnt' +
           ' FROM elements_meta m WHERE LOWER(m.element_name) LIKE ?' +
           (bld ? ' AND m.building = ?' : '') +
           ' GROUP BY m.element_name, m.ifc_class, m.storey ORDER BY cnt DESC LIMIT 5';
@@ -502,7 +505,7 @@
         var icon = classIcon(r.ifc_class);
         div.innerHTML = '<span class="ri-icon">' + icon + '</span>' +
           '<div class="ri-body"><div class="ri-name">' + escHtml(dispName) + '</div>' +
-          '<div class="ri-meta">' + escHtml(dispClass) + ' · ' + escHtml(r.storey || '?') + '</div></div>';
+          '<div class="ri-meta">' + escHtml(dispClass) + ' · ' + escHtml(r.storey || '?') + (r.provisional ? ' · provisional' : '') + '</div></div>';
         // Both onclick (desktop) and touchend (mobile) — touchend avoids scroll/tap conflict
         function handleTap(e) {
           e.stopPropagation();
@@ -680,7 +683,8 @@
           'SELECT m.ifc_class, m.element_name, m.guid, m.building, m.storey, m.discipline, m.material_rgba' +
           ' FROM elements_meta m WHERE m.guid = ?', [guid]);
         if (!rows.length) return;
-        document.getElementById('info-class').textContent = rows[0][0] || '—';
+        // §11 P7: same label as picking.js on the Find pick.
+        document.getElementById('info-class').textContent = (rows[0][0] || '—') + ((ProvTotals.provisional(A.db) > 0 && ProvTotals.isProvisional(A.db, guid)) ? ' · provisional' : '');
         document.getElementById('info-name').textContent = rows[0][1] || '—';
         document.getElementById('info-guid').textContent = rows[0][2] || '—';
         document.getElementById('info-building').textContent = rows[0][3] || '—';

@@ -481,11 +481,12 @@ function setupCpeResourcePanel(A) {
       try { if (!A.db) return null; var r = A.db.exec(sql); return r.length ? r[0].values : null; }
       catch (e) { return null; }
     }
-    var tot = q("SELECT COUNT(*) FROM elements_meta");
+    var tot = q("SELECT " + ProvTotals.count(A.db, 'guid', 'cards.total') + " FROM elements_meta");
     if (tot && tot[0]) out.push({ big: (+tot[0][0]).toLocaleString(), label: 'elements coordinated', src: 'elements_meta' });
 
     var mep = null;
-    var disc = q("SELECT discipline, COUNT(*) FROM elements_meta WHERE discipline IS NOT NULL AND discipline<>'' GROUP BY 1 ORDER BY 2 DESC");
+    var _pvd = ProvTotals.count(A.db, 'guid', 'cards.discs');
+    var disc = q("SELECT discipline, " + _pvd + " FROM elements_meta WHERE discipline IS NOT NULL AND discipline<>'' GROUP BY 1 ORDER BY 2 DESC");
     if (disc && disc.length) {
       out.push({ big: String(disc.length), label: 'disciplines federated',
                  sub: disc.slice(0, 3).map(function (d) { return d[0] + ' ' + (+d[1]).toLocaleString(); }).join('   '),
@@ -501,7 +502,7 @@ function setupCpeResourcePanel(A) {
     // BOTH the densest-level card and the level COUNT, so "8 levels" cannot be inflated by a bucket
     // that is not a level.
     var NOT_PLACEHOLDER = " AND storey IS NOT NULL AND storey<>'' AND LOWER(storey) NOT IN ('unknown','none','n/a','-') ";
-    var st = q("SELECT storey, COUNT(*) FROM elements_meta WHERE discipline='MEP'" + NOT_PLACEHOLDER + "GROUP BY 1 ORDER BY 2 DESC LIMIT 1");
+    var st = q("SELECT storey, " + _pvd + " FROM elements_meta WHERE discipline='MEP'" + NOT_PLACEHOLDER + "GROUP BY 1 ORDER BY 2 DESC LIMIT 1");
     // Also dropped when it merely restates the MEP total — the same number twice in a rotation reads
     // as a bug, not as two facts (Clinic showed 102 then 102).
     if (st && st[0] && (!mep || +st[0][1] < +mep)) {
@@ -642,7 +643,7 @@ function setupCpeResourcePanel(A) {
                src: 'element_transforms MIN/MAX' });
     // Opening census — a COMPLETE count from elements_meta, so these are facts, not proxies.
     try {
-      var cr = A.dbQuery("SELECT REPLACE(ifc_class,'Ifc','') AS cls, COUNT(*) FROM elements_meta " +
+      var cr = A.dbQuery("SELECT REPLACE(ifc_class,'Ifc','') AS cls, " + ProvTotals.count(A.db, 'guid', 'cards.census') + " FROM elements_meta " +
         "WHERE ifc_class IN ('IfcDoor','IfcWindow','IfcWall','IfcWallStandardCase') GROUP BY cls");
       var cnt = {}; (cr || []).forEach(function (r) { cnt[r[0]] = (cnt[r[0]] || 0) + (+r[1]); });
       var walls = (cnt.Wall || 0) + (cnt.WallStandardCase || 0);
@@ -664,7 +665,7 @@ function setupCpeResourcePanel(A) {
       var labour = (A._hrCost && A._hrCost.total > 0) ? A._hrCost.total : 0;
       var mat = 0;
       if (A.MATERIAL_COSTS) {
-        var mr = A.dbQuery('SELECT ifc_class, COUNT(*) FROM elements_meta GROUP BY ifc_class');
+        var mr = A.dbQuery('SELECT ifc_class, ' + ProvTotals.count(A.db, 'guid', 'cards.materialCost') + ' FROM elements_meta GROUP BY ifc_class');
         (mr || []).forEach(function (r) {
           var mc = A.MATERIAL_COSTS[r[0]];
           if (mc) mat += (+r[1]) * mc.rate;

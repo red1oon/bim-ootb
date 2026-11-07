@@ -57,7 +57,8 @@
 
 <script src="../common/lib/sql-wasm.js"></script>
 <script src="rates.js?v=12"></script>
-<script src="analysis_sidecar.js?v=1"></script>
+<script src="provisional_totals.js?v=1"></script>
+<script src="analysis_sidecar.js?v=2"></script>
 <script src="locale_loader.js?v=14"></script>
 
 <script>
@@ -271,17 +272,17 @@ async function init() {
     _5d.rows.forEach(function (r) { var k = r.disc + '|' + r.cls + '|' + r.storey; linearMap[k] = r.length_m; areaMap[k] = r.area_m2; volMap[k] = r.vol_m3; });
     console.log('§MEP_5D_SIDECAR source=' + (_5d.basis || 'sidecar') + ' rows=' + _5d.rows.length);
   } else {
-    countRows = db.exec("SELECT m.discipline, m.ifc_class, m.storey, COUNT(*) as cnt FROM elements_meta m WHERE m.building = '" + bldSafe + "' GROUP BY m.discipline, m.ifc_class, m.storey");
+    countRows = db.exec("SELECT m.discipline, m.ifc_class, m.storey, " + ProvTotals.count(db, 'm.guid', 'mep.cnt') + " as cnt FROM elements_meta m WHERE m.building = '" + bldSafe + "' GROUP BY m.discipline, m.ifc_class, m.storey");
     try {
-      var linR = db.exec("SELECT m.discipline, m.ifc_class, m.storey, SUM(MAX(t.bbox_x, t.bbox_y, t.bbox_z)) FROM elements_meta m JOIN element_transforms t ON m.guid = t.guid WHERE m.building = '" + bldSafe + "' AND t.bbox_x IS NOT NULL AND t.bbox_x > 0 GROUP BY m.discipline, m.ifc_class, m.storey");
+      var linR = db.exec("SELECT m.discipline, m.ifc_class, m.storey, " + ProvTotals.sum(db, "MAX(t.bbox_x, t.bbox_y, t.bbox_z)", 'm.guid', 'mep.len') + " FROM elements_meta m JOIN element_transforms t ON m.guid = t.guid WHERE m.building = '" + bldSafe + "' AND t.bbox_x IS NOT NULL AND t.bbox_x > 0 GROUP BY m.discipline, m.ifc_class, m.storey");
       if (linR.length) for (var i = 0; i < linR[0].values.length; i++) { var v = linR[0].values[i]; linearMap[v[0]+'|'+v[1]+'|'+v[2]] = v[3]; }
     } catch(e) {}
     try {
-      var aR = db.exec("SELECT m.discipline, m.ifc_class, m.storey, SUM(MAX(t.bbox_x, t.bbox_y, t.bbox_z) * CASE WHEN t.bbox_x >= t.bbox_y AND t.bbox_x >= t.bbox_z THEN MAX(t.bbox_y, t.bbox_z) WHEN t.bbox_y >= t.bbox_x AND t.bbox_y >= t.bbox_z THEN MAX(t.bbox_x, t.bbox_z) ELSE MAX(t.bbox_x, t.bbox_y) END) FROM elements_meta m JOIN element_transforms t ON m.guid = t.guid WHERE m.building = '" + bldSafe + "' AND t.bbox_x IS NOT NULL AND t.bbox_x > 0 GROUP BY m.discipline, m.ifc_class, m.storey");
+      var aR = db.exec("SELECT m.discipline, m.ifc_class, m.storey, " + ProvTotals.sum(db, "MAX(t.bbox_x, t.bbox_y, t.bbox_z) * CASE WHEN t.bbox_x >= t.bbox_y AND t.bbox_x >= t.bbox_z THEN MAX(t.bbox_y, t.bbox_z) WHEN t.bbox_y >= t.bbox_x AND t.bbox_y >= t.bbox_z THEN MAX(t.bbox_x, t.bbox_z) ELSE MAX(t.bbox_x, t.bbox_y) END", 'm.guid', 'mep.area') + " FROM elements_meta m JOIN element_transforms t ON m.guid = t.guid WHERE m.building = '" + bldSafe + "' AND t.bbox_x IS NOT NULL AND t.bbox_x > 0 GROUP BY m.discipline, m.ifc_class, m.storey");
       if (aR.length) for (var i = 0; i < aR[0].values.length; i++) { var v = aR[0].values[i]; areaMap[v[0]+'|'+v[1]+'|'+v[2]] = v[3]; }
     } catch(e) {}
     try {   // §FOOTING_M3 — bbox envelope volume, same shape as the length/area aggregates above
-      var vR = db.exec("SELECT m.discipline, m.ifc_class, m.storey, SUM(t.bbox_x * t.bbox_y * t.bbox_z) FROM elements_meta m JOIN element_transforms t ON m.guid = t.guid WHERE m.building = '" + bldSafe + "' AND t.bbox_x IS NOT NULL AND t.bbox_x > 0 GROUP BY m.discipline, m.ifc_class, m.storey");
+      var vR = db.exec("SELECT m.discipline, m.ifc_class, m.storey, " + ProvTotals.sum(db, "t.bbox_x * t.bbox_y * t.bbox_z", 'm.guid', 'mep.vol') + " FROM elements_meta m JOIN element_transforms t ON m.guid = t.guid WHERE m.building = '" + bldSafe + "' AND t.bbox_x IS NOT NULL AND t.bbox_x > 0 GROUP BY m.discipline, m.ifc_class, m.storey");
       if (vR.length) for (var i = 0; i < vR[0].values.length; i++) { var v = vR[0].values[i]; volMap[v[0]+'|'+v[1]+'|'+v[2]] = v[3]; }
     } catch(e) {}
   }

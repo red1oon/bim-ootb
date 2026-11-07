@@ -513,9 +513,9 @@
         var chunk = guids.slice(i, i + 900);
         var ph = chunk.map(function () { return '?'; }).join(',');
         var rows = A.dbQuery(
-          "SELECT m.discipline, m.ifc_class, m.storey, COUNT(*) cnt, " +
-          "SUM(MAX(t.bbox_x,t.bbox_y,t.bbox_z)) len, SUM(" + _AREA_EXPR_SC + ") area, " +
-          "SUM(t.bbox_x*t.bbox_y*t.bbox_z) vol " +
+          "SELECT m.discipline, m.ifc_class, m.storey, " + ProvTotals.count(A.db, 'm.guid', 'selcost.cnt') + " cnt, " +
+          ProvTotals.sum(A.db, 'MAX(t.bbox_x,t.bbox_y,t.bbox_z)', 'm.guid', 'selcost.len') + " len, " + ProvTotals.sum(A.db, _AREA_EXPR_SC, 'm.guid', 'selcost.area') + " area, " +
+          ProvTotals.sum(A.db, 't.bbox_x*t.bbox_y*t.bbox_z', 'm.guid', 'selcost.vol') + " vol " +
           "FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid " +
           "WHERE m.guid IN (" + ph + ") AND t.bbox_x IS NOT NULL AND t.bbox_x>0 " +
           "GROUP BY m.discipline, m.ifc_class, m.storey", chunk) || [];

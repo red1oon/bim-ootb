@@ -1612,16 +1612,18 @@ function setupMeasure(A) {
       storeyLabel = storey || 'All Elements';
     }
     // Class counts from DB (instant GROUP BY)
+    // §11 P7: provisional walked devices out of the class counts (ProvTotals; the Modeller also loads this file, so guarded).
+    function _pvCount() { return window.ProvTotals ? ProvTotals.count(A.db, 'm.guid', 'measure.summary') : 'COUNT(*)'; }
     var counts = {};
     var dbRows;
     if (storey) {
       dbRows = A.dbQuery(
-        "SELECT REPLACE(m.ifc_class,'Ifc','') AS cls, COUNT(*) AS n FROM elements_meta m JOIN element_transforms t ON m.guid = t.guid WHERE m.storey = ? AND m.ifc_class != 'IfcOpeningElement' GROUP BY cls ORDER BY n DESC",
+        "SELECT REPLACE(m.ifc_class,'Ifc','') AS cls, " + _pvCount() + " AS n FROM elements_meta m JOIN element_transforms t ON m.guid = t.guid WHERE m.storey = ? AND m.ifc_class != 'IfcOpeningElement' GROUP BY cls ORDER BY n DESC",
         [storey]
       );
     } else {
       dbRows = A.dbQuery(
-        "SELECT REPLACE(m.ifc_class,'Ifc','') AS cls, COUNT(*) AS n FROM elements_meta m JOIN element_transforms t ON m.guid = t.guid WHERE m.ifc_class != 'IfcOpeningElement' GROUP BY cls ORDER BY n DESC LIMIT 20"
+        "SELECT REPLACE(m.ifc_class,'Ifc','') AS cls, " + _pvCount() + " AS n FROM elements_meta m JOIN element_transforms t ON m.guid = t.guid WHERE m.ifc_class != 'IfcOpeningElement' GROUP BY cls ORDER BY n DESC LIMIT 20"
       );
     }
     var totalFromDb = 0;
