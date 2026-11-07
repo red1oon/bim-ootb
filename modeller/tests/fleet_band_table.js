@@ -7,7 +7,7 @@ const fs = require('fs'), path = require('path');
 const initSqlJs = require(path.join(process.env.HOME, 'bim-compiler', 'node_modules', 'sql.js'));
 const H = require('./walk_node_harness.js');
 const DIR = process.argv[2] || path.join(process.env.HOME, 'bim-ootb', 'buildings');
-const realLog = console.log; const quiet = () => { console.log = function (s) { if (/§WALK-BAND-NOHOST|§WALK-AREAHOST|§SCHED-FALLBACK/.test(String(s))) realLog(s); }; };
+const realLog = console.log; const quiet = () => { console.log = function (s) { if (/§WALK-BAND-NOHOST|§WALK-AREAHOST|§WALK-MAINS|§SCHED-FALLBACK/.test(String(s))) realLog(s); }; };
 // Each DB runs in its own process: sql.js's wasm heap does not return memory across many large opens (it ran out at the 34th walk).
 const cp = require('child_process'), MOD = path.join(process.env.HOME, 'bim-ootb', 'modeller');
 function list() {
@@ -21,7 +21,7 @@ if (!process.env.FLEET_ONE) {
   out.forEach(p => {
     const tmp = (process.env.WALK_OUT || '/tmp/fleet') + '.' + path.basename(p) + '.json';
     const r = cp.spawnSync(process.execPath, ['--max-old-space-size=8000', __filename], { env: Object.assign({}, process.env, { FLEET_ONE: p, WALK_OUT_ONE: tmp }), encoding: 'utf8', maxBuffer: 1 << 28, timeout: 900000 });
-    process.stdout.write((r.stdout || '').split('\n').filter(l => /§FLEET_ROW|§FLEET_SKIP|§WALK-BAND-NOHOST|§WALK-AREAHOST|§SCHED-FALLBACK|ERROR/.test(l)).join('\n') + '\n');
+    process.stdout.write((r.stdout || '').split('\n').filter(l => /§FLEET_ROW|§FLEET_SKIP|§WALK-BAND-NOHOST|§WALK-AREAHOST|§WALK-MAINS|§SCHED-FALLBACK|ERROR/.test(l)).join('\n') + '\n');
     if (r.status !== 0) realLog('§FLEET_FAIL ' + path.basename(p) + ' status=' + r.status + ' ' + String(r.stderr || '').slice(0, 200));
     if (fs.existsSync(tmp)) { rows.push.apply(rows, JSON.parse(fs.readFileSync(tmp))); fs.unlinkSync(tmp); ok++; }
     if (process.env.WALK_OUT) fs.writeFileSync(process.env.WALK_OUT, JSON.stringify(rows));
@@ -46,7 +46,7 @@ if (!process.env.FLEET_ONE) {
     console.log = realLog;
     const P = w.placements || [], cls = {}; let bound = 0, band = 0, sched = 0;
     P.forEach(q => { const k = q.ifc_class || '?'; cls[k] = (cls[k] || 0) + 1; if (/^shim:host/.test(q.prov || '')) bound++; else if (/^placed:/.test(q.prov || '')) band++; else if (/^sched:/.test(q.prov || '')) sched++; });
-    const r = { file: f, kind, building: name, n, disc, mode: w.mode || (w.schedule ? 'schedule' : (w.refused ? 'refused' : 'legacy')), placed: w.placed || 0, bound, floatBand: band, sched, chainSegs: (w.chainSegs || []).length, refused: w.refused || false, reason: w.reason || null, refusedNoHost: w.refusedNoHost || null, byClass: cls, ms: Date.now() - t0, err };
+    const r = { file: f, kind, building: name, n, disc, mode: w.mode || (w.schedule ? 'schedule' : (w.refused ? 'refused' : 'legacy')), placed: w.placed || 0, bound, floatBand: band, sched, chainSegs: (w.chainSegs || []).length, refused: w.refused || false, reason: w.reason || null, refusedNoHost: w.refusedNoHost || null, mains: w.mains || null, byClass: cls, ms: Date.now() - t0, err };
     rows.push(r);
     realLog('§FLEET_ROW ' + f + ' ' + disc + ' mode=' + r.mode + ' placed=' + r.placed + ' bound=' + bound + ' floatBand=' + band + ' sched=' + sched + ' chainSegs=' + r.chainSegs + ' unhosted=' + (r.refusedNoHost ? r.refusedNoHost.unhosted : '-') + ' notJudged=' + (r.refusedNoHost ? r.refusedNoHost.notJudged : '-') + ' refused=' + (r.refusedNoHost ? r.refusedNoHost.refused != null ? r.refusedNoHost.refused : r.refusedNoHost.total : '-') + ' ms=' + r.ms + (err ? ' ERROR ' + err.slice(0, 120) : ''));
     fs.writeFileSync(process.env.WALK_OUT_ONE, JSON.stringify(rows));

@@ -2626,12 +2626,22 @@
   // §WALK-MAINS (prompts/DISC_WALK_DRAWN_MAINS.md §9, witness W-WALK-MAINS): these disciplines take a main from a drawing only. On a file with none of the service the pattern bridge's runs have no source
   // (measured: lone stubs, no network), so it makes none and the walker says why. Real runs (routeChains) are untouched. Only `no sheet held` can fire until the reader exists.
   var _MAINS_DRAWN_ONLY = { ACMV: 1, FP: 1, PLB: 1 };
+  // §9.1: "no sheet held" must not be said of a file that holds the service. Pieces of this discipline, by the label the file gives them. A routing row is measured data, so a held service with no row stays unrouted and says so.
+  var _MAIN_PIECE_CLASSES = ['IfcPipeSegment', 'IfcPipeFitting', 'IfcDuctSegment', 'IfcDuctFitting', 'IfcFlowSegment', 'IfcFlowFitting'];
+  function _heldMainPieces(disc, bdb) {
+    try { return +(_rows(bdb, "SELECT COUNT(*) n FROM elements_meta WHERE discipline='" + _esc(disc) + "' AND ifc_class IN ('" + _MAIN_PIECE_CLASSES.join("','") + "')")[0] || {}).n || 0; }
+    catch (e) { return 0; }                                       // no discipline column on this DB: nothing held by label
+  }
   function _bridgeIfEmpty(disc, bdb, buildingName, placements, rc, opts) {
     if (_MAINS_DRAWN_ONLY[disc] && !(opts && opts.keepPatternStubs) && !ROOT.__dwKeepPatternStubs) {   // both switches: witnesses of the pattern engine only, no UI
 
-      if (rc.segs.length) console.log(TAG + ' §WALK-MAINS disc=' + disc + ' bldg=' + buildingName + ' real=' + rc.segs.length);
-      else if (placements && placements.length) console.log(TAG + ' §WALK-MAINS disc=' + disc + ' bldg=' + buildingName + ' none reason=no sheet held');
-      return { rc: rc, patternInfo: null, mains: rc.segs.length ? { real: rc.segs.length } : { none: 'no sheet held' } };
+      if (rc.segs.length) {
+        console.log(TAG + ' §WALK-MAINS disc=' + disc + ' bldg=' + buildingName + ' real=' + rc.segs.length);
+        return { rc: rc, patternInfo: null, mains: { real: rc.segs.length } };
+      }
+      var held = _heldMainPieces(disc, bdb);
+      if (placements && placements.length) console.log(TAG + ' §WALK-MAINS disc=' + disc + ' bldg=' + buildingName + (held ? ' held=' + held + ' real=0 reason=no routing rule pairs them' : ' none reason=no sheet held'));
+      return { rc: rc, patternInfo: null, mains: held ? { held: held, real: 0 } : { none: 'no sheet held' } };
     }
     if (rc.segs.length || (opts && opts.noPattern) || !placements || !placements.length) return { rc: rc, patternInfo: null };
     var sub = substrate(bdb), names = {}, rekeyed = 0, pl = placements;
