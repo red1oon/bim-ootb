@@ -245,6 +245,12 @@
     // before, this pass wrote visible=true every tick and undid the reveal round's once-per-slot hide (HHS: 17 IfcDoor meshes, §REVEAL_TRAP).
     var _hd = (app.hiddenDiscs && app.hiddenDiscs.size) ? app.hiddenDiscs : null, _discKept = 0;
     function _discShown(o) { if (_hd && o.userData.disc && _hd.has(o.userData.disc)) { _discKept++; return false; } return true; }
+    // §TM_ISOLATE (prompts/DRAWN_SERVICES_FILM.md §7.2, owner 2026-11-09 "Fix, then re-bake"): the same split for an active GUID isolate.
+    // This pass owns "is it built"; A.filterByGuids (panels.js) owns "is it shown" and keeps its set in app.activeGuidFilter. Before, a hidden
+    // element came back the moment it was built (W-DRAWN-FILM-FRAME on the public Duplex fixture: 237 of 299 hidden elements visible at the end of the build-up).
+    // A hidden element is treated exactly like an unbuilt one in each branch below. app.__tmIsolateOff = witness red switch only.
+    var _gf = (!app.__tmIsolateOff && app.activeGuidFilter instanceof Set) ? app.activeGuidFilter : null, _isoKept = 0;
+    function _isoShown(g) { if (_gf && !_gf.has(g)) { _isoKept++; return false; } return true; }
     var _perfT0 = performance.now(), _perfObjs = 0, _perfSkipped = 0, _perfHideForProxy = 0;
     app.scene.traverse(function(obj) {
       _perfObjs++;
@@ -274,6 +280,8 @@
         var hideForProxy = _dlodOn && isPlaced && !isFrontier && !isRecent && !TMS._dlodInView(g);
         if (hideForProxy) _perfHideForProxy++;
         var showReal = (isRecent || isPlaced) && !hideForProxy && !isStagedNow;
+        // §TM_ISOLATE: outside the active isolate = treated as unbuilt here (hidden, no highlight, no camera-follow or spark position).
+        if (!_isoShown(g)) { isFrontier = false; showReal = false; }
 
         // Visibility + highlighting
         if (isFrontier) {
@@ -352,7 +360,7 @@
           // MEP, batched for performance) previously had NO staging check at all and showed fully
           // solid before its own support finished — the worse half of the bug this removal closes.
           var bStaged = !frontier[bg] && (TMS._tmXraySolidifyTs[bg] !== undefined && cursorMs < TMS._tmXraySolidifyTs[bg]);
-          var bShow = (placed[bg] || frontier[bg] || recent[bg] !== undefined) && !bHideForProxy && !bStaged;
+          var bShow = (placed[bg] || frontier[bg] || recent[bg] !== undefined) && !bHideForProxy && !bStaged && _isoShown(bg);   // §TM_ISOLATE
           if (_bdW && _bdW[bg]) {
             TMS._bdSeen(bg, 'BM', bShow, null);
             // §CPE_BUILDUP_PLACED — a batched slot's world Y comes from its own slot matrix, not
@@ -428,7 +436,7 @@
           var iHideForProxy = _dlodOn && !!placed[ig] && !frontier[ig] && recent[ig] === undefined && !TMS._dlodInView(ig);
           // §XRAY_STAGING_REMOVED — same gate as the single-mesh/BatchedMesh branches.
           var iStaged = !frontier[ig] && (TMS._tmXraySolidifyTs[ig] !== undefined && cursorMs < TMS._tmXraySolidifyTs[ig]);
-          var iShow = (placed[ig] || frontier[ig] || recent[ig] !== undefined) && !iHideForProxy && !iStaged;
+          var iShow = (placed[ig] || frontier[ig] || recent[ig] !== undefined) && !iHideForProxy && !iStaged && _isoShown(ig);   // §TM_ISOLATE
           if (_bdW && _bdW[ig]) {
             TMS._bdSeen(ig, 'IM', iShow, null);
             var _isv = TMS._savedInstanceMatrices[meshId][mi];
@@ -466,6 +474,10 @@
     });
 
     var _travMs = performance.now() - _perfT0;
+    // §TM_ISOLATE log: once per change of the isolate's size, never per frame.
+    var _isoSz = _gf ? _gf.size : 0;
+    if (_isoSz !== TMS._tmIsoLoggedSz) { TMS._tmIsoLoggedSz = _isoSz;
+      console.log('§TM_ISOLATE isolate=' + _isoSz + ' keptHidden=' + _isoKept + ' (the filter owns "shown", the TM owns "built")'); }
     if (TMS._gspRoll % 10 === 0) console.log('§PERF_TRAVERSE ms=' + _travMs.toFixed(1) +
       ' objs=' + _perfObjs + ' skipped=' + _perfSkipped + ' mode=' + (_incrOK ? 'delta' : 'full') +
       ' span=' + Math.round((_dHi - _dLo) / 3600000) + 'h cand=' + (TMS._gspCand.length / 3) + (_hd ? ' discKept=' + _discKept + ' hiddenDiscs=[' + Array.from(_hd).join(',') + ']' : ''));

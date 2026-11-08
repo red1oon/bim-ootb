@@ -2390,6 +2390,9 @@
           console.log('§FRAME_QA i=' + (_frameRange ? _frameRange.a + i : i) + ' qaEvery=1 ' + (_fq.err ? 'ERR ' + _fq.err : 'lumaMean=' + (+_fq.mean).toFixed(2) + ' lumaMin=' + (+_fq.min).toFixed(1) +
             ' lumaMax=' + (+_fq.max).toFixed(1) + ' darkPct=' + (+_fq.dark).toFixed(2) + ' clipPct=' + (+_fq.clip).toFixed(2)) + ' reused=' + (_fqR ? 1 : 0) +
             ' cam=[' + (A.camera ? [A.camera.position.x, A.camera.position.y, A.camera.position.z].map(function(v) { return v.toFixed(3); }).join(',') : '-') + ']');
+          // §DRAWN-OVERLAY-FRAME (DRAWN_SERVICES_FILM.md §7.3): every frame of a --drawn-services bake says what it showed, so the log proves the
+          // overlay stayed up and the drawn-only isolate held frame by frame (a once-at-setup count could not).
+          if (A.drawnServicesFrame) { var _dsf = A.drawnServicesFrame(_frameRange ? _frameRange.a + i : i); if (_dsf) console.log(_dsf); }
         } catch (eFh) { console.warn('§FRAME_HASH_ERR ' + eFh.message); }
         // §MAXQ_IDB_SALVAGE (2026-07-25, real user repro on Hospital AND HHS_Office — both mid-bake,
         // ~100+ frames in): a backgrounded/throttled tab can have Chrome force-close this run's IDB
@@ -2714,8 +2717,12 @@
       // Defined unconditionally (a witness drives it on a plain page); the bake reaches it through the --drawn-services flag below.
       window.APP.drawnServicesEnable = function(on) {
         var A2 = window.APP;
+        // §CEASE_SUBJECT (DRAWN_SERVICES_FILM.md §7.1): the bake calls this BEFORE start() attaches A.filmLayer (§FILM_LAYER below), so the
+        // overlay would register with nothing. Attach the SAME registry function here; start() later assigns the identical function object.
+        if (!A2.filmLayer) A2.filmLayer = MQS._filmLayerRegister;
+        A2.__cease3DProbe = MQS._cease3D;   // witness hook only (W-DRAWN-FILM-FRAME C1/C2): the shipped sweep, called as is
         var ready = window.setupCpeDrawnServices ? Promise.resolve() : (A2._drawnSvcP = A2._drawnSvcP || new Promise(function(res, rej) {
-          var s = document.createElement('script'); s.src = new URL('cpe_drawn_services.js?v=1', document.baseURI).href;
+          var s = document.createElement('script'); s.src = new URL('cpe_drawn_services.js?v=2', document.baseURI).href;
           s.onload = function() { console.log('§DRAWN-SERVICES cpe_drawn_services.js loaded on first use'); res(true); };
           s.onerror = function() { A2._drawnSvcP = null; rej(new Error('load failed cpe_drawn_services.js')); }; document.head.appendChild(s); }));
         return ready.then(function() { if (!A2.drawnServicesApply) window.setupCpeDrawnServices(A2); var r = A2.drawnServicesApply(!!on); A2.drawnOnlyView(!!on); return r; });
