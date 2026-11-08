@@ -59,15 +59,19 @@ node export.js --host 10.0.0.5 --port 8069 --db mydb --login me --cutover 2026-1
 NON-INVENT: every value written is a recorded Odoo row. Nothing is fabricated.
 SPDX-License-Identifier: MIT — Copyright (c) 2025-2026 Redhuan D. Oon.
 
-## Export your master data (new — `export.js`, no `npm install` needed)
+## Export your master data (`export.js`, no `npm install` needed)
 
 ```bash
-node export.js                      # → ./odoo_export/  (one CSV per iDempiere import, in load order, + manifest.json)
+node export.js                      # → ./odoo_export/odoo_migration.xlsx + manifest.json + provenance.json
 CUTOVER=2026-12-31 node export.js   # the date your opening stock is counted at (default: today)
 ```
 
 Same `ODOO_HOST / ODOO_PORT / ODOO_DB / ODOO_LOGIN / ODOO_PASSWORD` variables as above. It reads (never writes)
-your units of measure, payment terms, product categories, chart of accounts, partners + contacts, products + vendor
-prices, sale prices, warehouses, locations and on-hand stock. `manifest.json` records how many rows Odoo has of
-each, so the ERP can prove nothing was dropped or made up; `provenance.json` maps every row back to its Odoo record. Your own company and your Odoo users' contact cards
-go to a separate file (`05b_bpartners_internal.csv`) — you choose on the summary screen whether to bring them in.
+your units of measure, payment terms, product categories, chart of accounts, partners + contacts + addresses, products
++ vendor prices, sale prices, warehouses, locations and on-hand stock, and writes ONE workbook: one sheet per ERP table,
+in the order they must load, row 1 = the ERP column names (the Ninja migration sheet shape). Where the ERP needs a value
+Odoo has no field for (the partner group, the tax category, …), the cell asks the ERP for its own default by the same
+rule the ERP's import uses; every such cell is listed in `manifest.json` → `patches`. `manifest.json` also records how
+many rows Odoo has of each, so the ERP can prove nothing was dropped or made up, and lists under `held` your own
+company and your Odoo users' contact cards — you choose on the summary screen whether to bring them in.
+`provenance.json` maps every sheet row back to its Odoo record. `xlsx.mini.min.js` (SheetJS) is the one helper file it uses.
