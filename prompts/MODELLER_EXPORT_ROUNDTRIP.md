@@ -79,3 +79,23 @@ The walk label survives (C4 BIMOOTB_Walk, Provisional) and positions of what is 
 | C9i runs in a system / with ports | 0 of 0 / 0 of 0 INCONCLUSIVE (no runs on public files) | same | file text |
 | C9i walked fixtures in an `IfcDistributionSystem` | 0 of 177 GAP | 0 of 24 GAP | file text (`IfcDistributionSystem` = 0) |
 The vertex-count GAP is re-tessellation on re-open (triangulated face set vs the extractor's mesh), not lost shape: bbox volume matches on every matched element.
+
+## RESULT 2026-11-08 far-coordinate leg (`RT_FAR=dx,dy`; log `/tmp/rt_out/rt_far2.log`)
+Why: a real file at map coordinates (x ~465,251 m, y ~2,766,484 m) showed 1,284 of 4,147 matched elements moved over 1 cm and bbox volume within 1% on only 181 of 1,371. Hypothesis: float32 precision at large coordinates.
+Instrument: the witness copies public `IFC/Duplex_ARC.ifc` to a temp dir and edits STEP text only: a new `#39115=IFCCARTESIANPOINT((465000.000,2766000.000,0.))` is appended and the site's `IfcAxis2Placement3D #38272` Location is repointed from the shared origin point `#3` (`(0.,0.,0.)`, used by other placements, so it is left alone) to it. Site `#38274` -> placement `#38273` -> axis `#38272`. C6d's denominator is now every A element with a position (an element with no same-class element within 2 m is a mismatch, not a move): local Duplex C6d reads 373 of 392 GAP, was 373 of 373 (the 19 are the no-geometry and STR rows, as in C6b).
+| Duplex | local | far (465000, 2766000) |
+|---|---|---|
+| centre distance | <=1 mm 373 / all others 0 | <=1 mm 173, <=1 cm 15, <=3 cm 62, <=6 cm 73, <=10 cm 33, <=50 cm 15, >50 cm 0 (371 matched) |
+| \|dx\| | all 373 <=1 mm | <=1 mm 185, <=1 cm 170, <=3 cm 16; max 0.0134 m; float32 half-step at x 0.0156 m |
+| \|dy\| | all 373 <=1 mm | <=1 mm 178, <=1 cm 24, <=3 cm 49, <=6 cm 73, <=10 cm 33, <=50 cm 14; max 0.1165 m; half-step at y 0.125 m |
+| \|dz\| | all <=1 mm | 368 <=1 mm, 3 above 1 cm, max 0.4973 m (z is a few metres: not float32; looks like 1-3 mispaired same-class neighbours) |
+| C6d within 1 cm | 373 of 392 | 188 of 390 |
+| C9b bbox volume within 1% | 196 of 196; deviation all <=0.1% | 24 of 196; <=1% 24, <=5% 47, <=10% 13, <=50% 93, >50% 19 |
+`§RT-PRECISION [Duplex_FAR] float32 on x and y CONFIRMED`: measured max sits at 0.86 x half-step on x and 0.93 x on y. The far copy reproduces the real file's moves, so large-coordinate float32 is the cause, not the centre rule.
+
+### Float32 paths world coordinates pass through (code read only, nothing changed)
+- WRITE side, the cause: `bonsai_library.js:87` and `:100` (`place()`: `new Float32Array(positions.length)`, then `out[i] = cs*x - sn*y + ox` and the quaternion branch `out[i] = v.x + ox`). The world position is added to the local vertex and stored as float32 at world scale. `foldInsert` returns these arrays; `bonsai_ifc.js` `_build` seeded branch (`:~260-263`, `_arrMesh(fo.positions, ...)` for carried rows, and the scene mesh `geometry.attributes.position` for seeded ones) copies them into `IfcCartesianPointList3D` (`triFaceSet`, `bonsai_ifc.js:~236-246`) with no recentring and no placement. Scene meshes are three.js float32 BufferGeometry.
+- Seed: `arc_editable.js:79` (`new Float32Array(vb.buffer, ...)`, slide hosts: blob-local, recentred by `RealGeometry.recenter`, small values); the element centre is `center_xyz` from `element_transforms` (double), added back in `place()` above (`ox`, `oy`, `oz`, `rotAnchor` returns doubles).
+- Open route (extractor): `dxf2bim/ifc_extract_core.js:459-460` `GetVertexArray` returns web-ifc's float32 vertex buffer (element-local); `:475-482` applies `flatTransformation` in doubles (`wx = m[0]*lx + ... + m[12]`) into the JS array `allVerts` (doubles); `:490-497` the centre is the double mean; `:499-503` `new Float32Array(allVerts.length)` stores `allVerts - c` (centre-subtracted, small, so precise). The stored mesh blobs and `component_geometries` are therefore not the problem; `element_transforms.center_*` and `element_world_bbox` are doubles. `:583` is the mm autoScale on the blob.
+- So the open route is precise at large coordinates only for what it reads from a clean file. Re-open of OUR export reads the already-quantised points: the loss happens at export (`bonsai_library.js:87,100` -> `triFaceSet`), not at re-open. web-ifc `StreamAllMeshes` is not used by these files.
+- A fix is out of scope here; the shape of it (recentre per element and write an IfcLocalPlacement, or accumulate in doubles) is the design lane's call.
