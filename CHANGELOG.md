@@ -4,6 +4,43 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.86.0](https://github.com/red1oon/bim-ootb/compare/v1.85.0...v1.86.0) (2026-11-08)
+
+
+### ✨ Features
+
+* **erp-migrate:** odoo_agent export.js — user-run Odoo master-data export to iDempiere import files (W-ODOO-EXPORT) ([#2709](https://github.com/red1oon/bim-ootb/issues/2709)) ([66ea55d](https://github.com/red1oon/bim-ootb/commit/66ea55d98ae04638a497c619c447fcfcc6d65185))
+* **erp:** Attachment on every AD window tab, one generic module (ad_attachment.js), W-ATTACH witness ([#2707](https://github.com/red1oon/bim-ootb/issues/2707)) ([59d9a32](https://github.com/red1oon/bim-ootb/commit/59d9a32389b8d3e11f070dc90d2e5227cfe8a964))
+* **ifc:** keep the IFC's stated grid on both open routes (ifc_grid_axis, W-IFC-GRID 29/0) ([#2702](https://github.com/red1oon/bim-ootb/issues/2702)) ([8d1ede9](https://github.com/red1oon/bim-ootb/commit/8d1ede96ce76a76dd161839c60e8fb9764ba5fd9))
+* **ifc:** ONE FRAME, both IFC routes land a file in one local frame with a recorded offset; site facts read (W-ONE-FRAME 28/0) ([#2710](https://github.com/red1oon/bim-ootb/issues/2710)) ([fbe06d6](https://github.com/red1oon/bim-ootb/commit/fbe06d6426066b363bfb7c998dee54fd6e91df47))
+* **modeller:** a block shift hinges every crossing element at one plane; edit_cli needs one file and can drive the live site (§14) ([#2688](https://github.com/red1oon/bim-ootb/issues/2688)) ([16b0b65](https://github.com/red1oon/bim-ootb/commit/16b0b65aa31fbd6c1bd01aca4fbb4fc716dc4773))
+* **modeller:** block shift as one edit, limit and bay in the report, 3-axis move fix (§13) ([#2685](https://github.com/red1oon/bim-ootb/issues/2685)) ([36d0885](https://github.com/red1oon/bim-ootb/commit/36d0885300a427b67a77d65a7bab0cac6a895607))
+* **modeller:** drawn-mains reader, plan-level duct centrelines (W-DRAWN-MAINS 41/0) ([#2700](https://github.com/red1oon/bim-ootb/issues/2700)) ([507efca](https://github.com/red1oon/bim-ootb/commit/507efca86761ef53c0c47b2e78bcdde6f38d55d6))
+* **modeller:** edit_cli stops an edit that adds red; the edit report loads on the first grid move (§15) ([#2699](https://github.com/red1oon/bim-ootb/issues/2699)) ([3ef4cd2](https://github.com/red1oon/bim-ootb/commit/3ef4cd26302087dc7fa96004d64214039a586914))
+* **modeller:** no model calls without --model-calls, a free hand-off mode, bay_add.js loads on first use again (§14.6) ([#2697](https://github.com/red1oon/bim-ootb/issues/2697)) ([4a07085](https://github.com/red1oon/bim-ootb/commit/4a0708565818df58aaa30ddee584e2106375aeb1))
+* **trunk:** a corridor trunk says it is a proposal, never a main (W-E2E-SEEDTRUNK N10) ([#2692](https://github.com/red1oon/bim-ootb/issues/2692)) ([29c22c9](https://github.com/red1oon/bim-ootb/commit/29c22c9f50ef7b6527084669f344f0f8ddcc9314))
+* **viewer:** totals and quantities leave provisional walked devices out (§11 P7, W-PROV-TOTALS) ([#2698](https://github.com/red1oon/bim-ootb/issues/2698)) ([50fbbc2](https://github.com/red1oon/bim-ootb/commit/50fbbc284717469e545f0387b999a5e7fb917831))
+* **walk:** a band duct or pipe piece with no main is not placed (W-WALK-MAINS N7-N9) ([#2687](https://github.com/red1oon/bim-ootb/issues/2687)) ([6c3cb3a](https://github.com/red1oon/bim-ootb/commit/6c3cb3ac0af1f5e6e42fb7311261dd7346b0096e))
+* **walk:** borrowed-density devices are provisional, out of the placed count, labelled everywhere (§11) ([#2695](https://github.com/red1oon/bim-ootb/issues/2695)) ([c5ddd57](https://github.com/red1oon/bim-ootb/commit/c5ddd57917be42da425d828495eb9702d1fd52bf))
+* **walk:** no main without a drawing on ACMV, FP and PLB; the walker says why (W-WALK-MAINS) ([#2682](https://github.com/red1oon/bim-ootb/issues/2682)) ([c47562a](https://github.com/red1oon/bim-ootb/commit/c47562ad89feb7a21e5247ee615989d559bff686))
+
+
+### 🐛 Fixes
+
+* **modeller:** drawn-mains reader takes the US NCS layers, missing blocks, guarded mirror correction (W-DRAWN-MAINS 47/0) ([#2701](https://github.com/red1oon/bim-ootb/issues/2701)) ([a27b88c](https://github.com/red1oon/bim-ootb/commit/a27b88c005322fd28ecc735f30e9937906121b15))
+* **modeller:** mains grid choice prefers more tags then the sheet's storey; fittings_unjoined in the log (W-DRAWN-MAINS 53/0) ([#2704](https://github.com/red1oon/bim-ootb/issues/2704)) ([3ccbe69](https://github.com/red1oon/bim-ootb/commit/3ccbe69ce8a460b3d391834d821afeb78e78e488))
+* **trunk:** plan the corridor trunk on walls and doors where the mesh is (W-TRUNK-REAL-BOX) ([#2691](https://github.com/red1oon/bim-ootb/issues/2691)) ([d549558](https://github.com/red1oon/bim-ootb/commit/d549558ad3ac36ae3871e5679a1dcaac04058291))
+* **walk:** do not say no sheet held of a file that holds the service (W-WALK-MAINS N6) ([#2686](https://github.com/red1oon/bim-ootb/issues/2686)) ([7e4efcb](https://github.com/red1oon/bim-ootb/commit/7e4efcba9d9682adca10e0102152aab3011fd923))
+
+
+### 📝 Documentation
+
+* **walker:** do not say "no sheet held" of a file holding the service ([#2684](https://github.com/red1oon/bim-ootb/issues/2684)) ([f534c35](https://github.com/red1oon/bim-ootb/commit/f534c35ba4e59e912ca076b8e7f06be6ce3a295f))
+* **walker:** owner's go for the drawn-mains reader, after band spec §11 ([#2694](https://github.com/red1oon/bim-ootb/issues/2694)) ([748b259](https://github.com/red1oon/bim-ootb/commit/748b259dfc46ef58da693995c3de2c52392c7458))
+* **walker:** owner's rulings on band density, run height, corridor trunks ([#2690](https://github.com/red1oon/bim-ootb/issues/2690)) ([a0b3d66](https://github.com/red1oon/bim-ootb/commit/a0b3d665be2ccf717ced5fd3bba4dacf69d58705))
+* **walker:** provisional covers every band row, not-judged included ([#2693](https://github.com/red1oon/bim-ootb/issues/2693)) ([5ebd30d](https://github.com/red1oon/bim-ootb/commit/5ebd30d2963b510b8246dea0f5e85058ecf78da8))
+* **walker:** Viewer totals skip provisional devices, Find panel untouched ([#2696](https://github.com/red1oon/bim-ootb/issues/2696)) ([5d802fe](https://github.com/red1oon/bim-ootb/commit/5d802fea67c2e9d44fd8ed4d2bb83aeb35cde2b2))
+
 ## [1.85.0](https://github.com/red1oon/bim-ootb/compare/v1.84.2...v1.85.0) (2026-11-07)
 
 
