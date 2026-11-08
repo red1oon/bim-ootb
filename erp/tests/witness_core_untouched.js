@@ -25,7 +25,11 @@ var baseHasSeam = /overlay\/boot\.js/.test(sh('git show ' + BASE + ':erp/idempie
 check('CU2 idempiere.html differs ONLY by the one overlay seam line (' + h.length + ' changed line(s); base has seam=' + baseHasSeam + ')', baseHasSeam ? h.length === 0 : (h.length === 1 && seam.length === 1), h.slice(0, 4));
 var s = tagged('erp/sw.js') ? [] : hunks('erp/sw.js');
 check('CU3 sw.js differs ONLY by CACHE_VERSION (the existing per-deploy bump)', (s.length === 0 || s.length === 2) && s.every(function (l) { return /CACHE_VERSION/.test(l); }), s.slice(0, 4));
-var refs = sh('git grep -l -E "overlay/(boot|home|pills|quicksetup_ui|goal_engine|dashboard_|setup_lens|window_lens|quick_input|invoice_open)" -- erp ":!erp/overlay" ":!erp/tests" ":!erp/patches" ":!erp/sqljs" || true').split('\n').filter(Boolean);
+// a line that only NAMES an overlay module in a comment (provenance prose) is not a reference; any code line is
+var refHits = sh('git grep -n -E "overlay/(boot|home|pills|quicksetup_ui|goal_engine|dashboard_|setup_lens|window_lens|quick_input|invoice_open)" -- erp ":!erp/overlay" ":!erp/tests" ":!erp/patches" ":!erp/sqljs" || true').split('\n').filter(Boolean);
+var refs = Array.from(new Set(refHits.filter(function (l) { var m = /^([^:]+):\d+:(.*)$/.exec(l); return m && !/^\s*(\/\/|\*|\/\*|<!--)/.test(m[2]); }).map(function (l) { return l.split(':')[0]; })));
+var commentOnly = Array.from(new Set(refHits.map(function (l) { return l.split(':')[0]; }))).filter(function (f) { return refs.indexOf(f) < 0; });
+if (commentOnly.length) log('§CU comment-only mentions (not references): ' + commentOnly.join(', '));
 log('§CU core files referencing an overlay module: ' + (refs.join(', ') || 'none'));
 check('CU4 only idempiere.html (the seam) references an overlay module', refs.every(function (f) { return f === 'erp/idempiere.html'; }) && refs.length <= 1, refs);
 var v = !judged ? 'INCONCLUSIVE' : fails ? 'FAIL' : 'PASS'; log('§CU-VERDICT ' + v + ' judged=' + judged + ' failed=' + fails); process.exit(v === 'PASS' ? 0 : v === 'FAIL' ? 1 : 3);
