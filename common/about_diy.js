@@ -202,7 +202,7 @@
   var AGENT_ORDER = ['odoo', 'idempiere', 'sap', 'oracle', 'dynamics'];
   var AGENTS = {
     odoo: { label: 'Odoo', file: 'erp/odoo_agent.zip', txt: 'Download odoo_agent.zip',
-      note: 'Unzip, then per its README: <code>cd odoo_agent &amp;&amp; npm install &amp;&amp; node agent.js</code> → writes <code>odoo_chain.json</code>. Load that file back here.' },
+      note: 'Unzip, then per its README: <code>cd odoo_agent &amp;&amp; npm install &amp;&amp; node agent.js &amp;&amp; node export.js</code> → writes <code>odoo_chain.json</code> (one order, checked to the cent) and <code>odoo_export/</code> (your master data). Demo Odoo by default; for your own add <code>--host --db --login</code> (the password is asked in the terminal). Load the results back here.' },
     idempiere: { label: 'iDempiere', file: 'erp/idempiere_agent.zip', txt: 'Download idempiere_agent.zip',
       note: 'Unzip, then per its README: <code>cd idempiere_agent &amp;&amp; npm install &amp;&amp; node migrate_agent.js --masters</code> → writes <code>ad_masters.db</code>. Load that file back here.' },
     sap: { label: 'SAP', soon: true },
