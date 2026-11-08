@@ -26,6 +26,7 @@ try {
 }
 console.log('[S220] §WORKER_LOADED web-ifc IIFE loaded, WebIFC=' + typeof WebIFC);
 try { importScripts('ifc_declared_storeys.js'); } catch (eDS) { console.warn('§IFC_STOREYS_FAIL load ' + eDS.message); }   // §IFC_STOREYS (bim-compiler MODELLER_MASTER §G3 SPEC)
+try { importScripts('../common/georef_frame.js'); } catch (eGF) { console.warn('§GEOREF unavailable route=import: georef_frame.js failed to load ' + eGF.message); }   // §ONE-FRAME: the rebase rule + site facts, shared with the Modeller open route (required: the import refuses to run without it rather than silently skip the rebase)
 try { importScripts('../common/ifc_grid_read.js'); } catch (eGR) { console.warn('§IFC-GRID unavailable route=import: reader failed to load ' + eGR.message); }   // prompts/DISC_WALK_DRAWN_MAINS.md §4.2a
 try { importScripts('ifc_surface_names.js'); } catch (eSN) { console.warn('§IFC_SURFACE_NAMES_FAIL load ' + eSN.message); }   // §IFC_SURFACE_NAMES
 
@@ -703,58 +704,16 @@ self.onmessage = async function(e) {
     // >1.5 km metre model, crushing it 1000× (JELAPANG road: 2 km → 2 m). Removed — no rescale here.
     //   Still: any axis whose coordinates sit > 10 km from origin ⇒ georeferenced ⇒ REBASE that axis
     //   to a local origin (whole-metre offset, recorded in project_metadata as georef_offset_*).
+    if (!self.GeorefFrame) throw new Error('§GEOREF unavailable: common/georef_frame.js did not load; refusing to import without the shared rebase rule');
     var autoScale = 1.0;
     var georefOffset = [0, 0, 0];
     if (transforms.length > 0) {
-      var _minC = [Infinity, Infinity, Infinity], _maxC = [-Infinity, -Infinity, -Infinity], _maxBbox = 0;
-      for (var ti = 0; ti < transforms.length; ti++) {
-        var _t = transforms[ti], _cs = [_t.cx, _t.cy, _t.cz];
-        for (var _ax = 0; _ax < 3; _ax++) {
-          if (_cs[_ax] < _minC[_ax]) _minC[_ax] = _cs[_ax];
-          if (_cs[_ax] > _maxC[_ax]) _maxC[_ax] = _cs[_ax];
-        }
-        _maxBbox = Math.max(_maxBbox, _t.bx || 0, _t.by || 0, _t.bz || 0);
-      }
-      var _span = Math.max(_maxC[0] - _minC[0], _maxC[1] - _minC[1], _maxC[2] - _minC[2], _maxBbox);
-      var _computed = [0, 0, 0];
-      for (var _ax = 0; _ax < 3; _ax++) {
-        var _mid = (_minC[_ax] + _maxC[_ax]) / 2;
-        if (Math.abs(_mid) > 10000) _computed[_ax] = Math.round(_mid);
-      }
-      var _forced = e.data.forceGeorefOffset;
-      if (_forced && (_forced[0] || _forced[1] || _forced[2])) {
-        // Federation frame pinned by an earlier file in this drop — use it verbatim so all
-        // files share ONE local origin, UNLESS this file's own data disagrees by >1km, which
-        // is a source-file defect (e.g. a zeroed IfcSite while siblings carry the real map
-        // base). In that case do NOT force the alien offset onto data that was never in that
-        // frame to begin with — verified live 2026-07-12: force-applying it moved the
-        // defective file from ~300m off (its own near-zero local frame) to ~271km off (the
-        // full federation offset applied to coordinates that never had it), which is worse,
-        // not "as-authored". Fall back to this file's own honest (usually zero) offset and
-        // flag it loudly instead.
-        var _dev = Math.max(Math.abs(_computed[0] - _forced[0]),
-                            Math.abs(_computed[1] - _forced[1]),
-                            Math.abs(_computed[2] - _forced[2]));
-        if (_dev > 1000) {
-          georefOffset = _computed;
-          console.log('[S220] §GEOREF_MISMATCH ' + filename + ' computed=(' + _computed.join(',') +
-            ') vs federation frame=(' + _forced.join(',') + ') — this file sits >1km from its siblings' +
-            ' (zeroed IfcSite / different base point?). Kept at its OWN frame (not force-shifted into the' +
-            ' federation frame — that would move it further, not closer); repair the source or use the offline extractor.');
-        } else {
-          georefOffset = [_forced[0], _forced[1], _forced[2]];
-        }
-      } else {
-        georefOffset = _computed;
-      }
-      if (georefOffset[0] || georefOffset[1] || georefOffset[2]) {
-        for (var ti = 0; ti < transforms.length; ti++) {
-          transforms[ti].cx -= georefOffset[0];
-          transforms[ti].cy -= georefOffset[1];
-          transforms[ti].cz -= georefOffset[2];
-        }
-        console.log('[S220] §GEOREF_REBASE offset=(' + georefOffset.join(',') + ') — georeferenced site rebased to local origin (offset kept in project_metadata)');
-      }
+      // §ONE-FRAME: the per-axis >10 km test, the whole-metre offset, the federation pin and the >1 km disagreement fallback live in common/georef_frame.js (prompts/MODELLER_ONE_FRAME.md §2)
+      var _rg = self.GeorefFrame.range(transforms), _minC = _rg.min, _maxC = _rg.max, _span = _rg.span;
+      var _pin = self.GeorefFrame.pin(_minC, _maxC, e.data.forceGeorefOffset);   // the ONE rebase rule (common/georef_frame.js; shared with the Modeller open route)
+      georefOffset = _pin.offset;
+      self.GeorefFrame.logLines('import', filename, _pin).forEach(function (l) { console.log(l); });
+      self.GeorefFrame.rebase(transforms, georefOffset);
       console.log('[S220] §UNITS_V3 span=' + _span.toFixed(1) + 'm autoScale=1 (web-ifc normalised to metres; no span rescale)');
     } else {
       console.log('[S220] §UNITS_V3 span=n/a autoScale=1 (no transforms) INCONCLUSIVE');
@@ -841,95 +800,8 @@ self.onmessage = async function(e) {
       trueNorthAngle: 0, trueNorthSource: 'default_zero',
       latitude: null, longitude: null, elevationM: null, latLongSource: 'unknown'
     };
-    // IfcCompoundPlaneAngleMeasure -> decimal degrees. Components are [deg, min, sec,
-    // millionths-of-sec] and web-ifc hands each one back wrapped, so unwrap before arithmetic.
-    // Per the IFC spec every component carries the SAME sign, but exporters disagree:
-    // SampleHouse_ARC.ifc writes RefLongitude = (0, -7, -34, -450321) with an UNSIGNED zero
-    // degrees component. Take the sign from ANY negative component, then sum magnitudes — summing
-    // signed parts is right there by luck and wrong for a (-3, 30, 0)-style export.
-    function _cpaToDegrees(parts) {
-      if (!parts || !parts.length) return null;
-      var v = [], i, p;
-      for (i = 0; i < 4; i++) {
-        p = parts[i];
-        if (p == null) { v.push(0); continue; }
-        if (typeof p === 'number') v.push(p);
-        else if (typeof p.value === 'number') v.push(p.value);
-        else if (typeof p._representationValue === 'number') v.push(p._representationValue);
-        else return null;
-      }
-      var sign = (v[0] < 0 || v[1] < 0 || v[2] < 0 || v[3] < 0) ? -1 : 1;
-      return sign * (Math.abs(v[0]) + Math.abs(v[1]) / 60 + Math.abs(v[2]) / 3600 +
-                     Math.abs(v[3]) / 3600000000);
-    }
-    function _num(x) {
-      if (x == null) return null;
-      if (typeof x === 'number') return x;
-      if (typeof x.value === 'number') return x.value;
-      if (typeof x._representationValue === 'number') return x._representationValue;
-      return null;
-    }
-    try {
-      var ctxIds = ifcApi.GetLineIDsWithType(modelID, WebIFC.IFCGEOMETRICREPRESENTATIONCONTEXT);
-      for (var gci = 0; gci < ctxIds.size(); gci++) {
-        var _ctx = ifcApi.GetLine(modelID, ctxIds.get(gci));
-        if (!_ctx || !_ctx.TrueNorth || _ctx.TrueNorth.value == null) continue;
-        var _dir = ifcApi.GetLine(modelID, _ctx.TrueNorth.value);
-        var _dr = _dir && _dir.DirectionRatios;
-        if (!_dr || _dr.length < 2) continue;
-        // ⚠ TRUE NORTH MUST LIE IN THE GROUND PLANE, and some exporters write something that does
-        // not. FOUND IN THIS FLEET 2026-09-18 in four shipped source files (Clinic_Electrical_
-        // IFC2x3.ifc #11050, Clinic_HVAC_IFC2x3.ifc #76172, Ifc2x3_Duplex_Plumbing.ifc #40,
-        // LTU_AHouse_STR.ifc #66): TrueNorth = IFCDIRECTION((2.0, 6.12303176911189E-17, 1.0)) —
-        // a THREE-component direction with z = 1.0 and an XY part of length 2. Not a bearing, and
-        // not conformant (IFC defines TrueNorth in a 3D context as a 2D direction in the XY plane).
-        // Its first two ratios give atan2(-2, 0) = -90 deg exactly: precise, confident, and a
-        // quarter turn wrong on every site-camera and walk-mode fix. REFUSE it; say that it was
-        // refused, which is a different fact from "the file had none".
-        // Mirrors DAGCompiler/python/extractIFCtoDB.py `extract_georef` so the two import paths
-        // cannot disagree about which files are trustworthy.
-        var _tz = _dr.length > 2 ? _num(_dr[2]) : 0;
-        if (_tz != null && Math.abs(_tz) > 1e-6) {
-          georef.trueNorthSource = 'malformed_truenorth_ignored';
-          continue;
-        }
-        var _tx = _num(_dr[0]), _ty = _num(_dr[1]);
-        if (_tx == null || _ty == null || (!_tx && !_ty)) continue;
-        var _ang = Math.atan2(-_tx, _ty) * 180 / Math.PI;
-        // Revit writes cos(90 deg) as 6.123e-17 rather than 0, so "true north IS model north"
-        // arrives as ~-3.5e-15 deg. Snap that float noise; 1e-9 deg is 0.1 mm of arc.
-        georef.trueNorthAngle = Math.abs(_ang) < 1e-9 ? 0 : _ang;
-        georef.trueNorthSource = 'ifc_truenorth';   // a REAL authored 0 — not the old stub 0
-        break;
-      }
-    } catch (tnErr) {
-      console.log('[S220] §GEOREF_TRUENORTH_ERROR ' + tnErr.message);
-    }
-    try {
-      var _gsIds = ifcApi.GetLineIDsWithType(modelID, WebIFC.IFCSITE);
-      for (var gsi = 0; gsi < _gsIds.size(); gsi++) {
-        var _gs = ifcApi.GetLine(modelID, _gsIds.get(gsi));
-        var _lat = _cpaToDegrees(_gs && _gs.RefLatitude);
-        var _lon = _cpaToDegrees(_gs && _gs.RefLongitude);
-        if (_lat == null || _lon == null) continue;  // a federated drop can carry a bare IfcSite
-        georef.latitude = _lat;
-        georef.longitude = _lon;
-        georef.latLongSource = 'ifc_site';
-        // RefElevation is an IfcLengthMeasure in the FILE's own length unit, not metres —
-        // _lengthUnitScale is the declared LENGTHUNIT read above, the SAME reason §SITE_IDENTITY
-        // could not use `autoScale` here (raw GetLine values are never auto-normalised).
-        var _re = _num(_gs && _gs.RefElevation);
-        if (_re != null) georef.elevationM = _re * _lengthUnitScale;
-        break;
-      }
-    } catch (geoErr) {
-      console.log('[S220] §GEOREF_SITE_ERROR ' + geoErr.message);
-    }
-    console.log('[S220] §GEOREF true_north=' + georef.trueNorthAngle.toFixed(6) + 'deg src=' +
-      georef.trueNorthSource + ' lat=' + (georef.latitude == null ? 'n/a' : georef.latitude.toFixed(8)) +
-      ' lon=' + (georef.longitude == null ? 'n/a' : georef.longitude.toFixed(8)) +
-      ' elev=' + (georef.elevationM == null ? 'n/a' : georef.elevationM.toFixed(4) + 'm') +
-      ' src=' + georef.latLongSource);
+    // §ONE-FRAME: the site facts are read by common/georef_frame.js (the same reader the Modeller open route calls); it also logs the §GEOREF line.
+    var georef = self.GeorefFrame.readSite(ifcApi, modelID, WebIFC, _lengthUnitScale, function (l) { console.log(l); });
     console.log('[S220] §GEOM_DONE elements=' + elements.length + ' withGeometry=' + geometries.length + ' skipped=' + (elements.length - geometries.length) + ' withMaterial=' + matCount);
     post('progress', 95, 'Packaging results...');
 

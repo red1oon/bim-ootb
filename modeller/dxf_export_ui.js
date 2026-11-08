@@ -8,9 +8,9 @@
 // No unicode glyphs: Lucide line icons inline. Loads its scripts lazily on first use (none at boot). Logs §DXF-EXPORT.
 (function () {
   'use strict';
-  var TAG = '§DXF-EXPORT', V = '1';
+  var TAG = '§DXF-EXPORT', V = '2';
   var SCRIPTS = ['lib/dxf-parser.js', 'dxf2bim/dxf2bim.js', 'dxf2bim/dxf2marks.js', 'dxf2bim/dxf2shell_config.js', 'dxf2bim_import.js', 'dxf2bim/polygon-clipping.js',
-    'dxf2bim/std2d_geom.js', 'dxf2bim/std2d_dxf.js', 'dxf2bim/std2d_scopes.js', 'dxf2bim/std2d.js', 'dxf2bim/std2d_marks.js', 'dxf2bim/ifc_extract_core.js'];
+    'dxf2bim/std2d_geom.js', 'dxf2bim/std2d_dxf.js', 'dxf2bim/std2d_scopes.js', 'dxf2bim/std2d.js', 'dxf2bim/std2d_marks.js', '../common/georef_frame.js', 'dxf2bim/ifc_extract_core.js'];
   var _base = (document.currentScript && document.currentScript.src) || location.href;
   var _loaded = null;
   function loadScripts() {
@@ -81,13 +81,13 @@
     var api = new window.WebIFC.IfcAPI(); await api.Init(function (p) { return new URL((p === 'web-ifc.wasm' ? '../common/lib/' : 'lib/') + p, _base).href; });
     var Core = window.IfcExtractCore, sdb = new window.SQL.Database(), exLog = [];
     step('Extracting the model (web-ifc)');
-    await Core.extractToDb({ WebIFC: window.WebIFC, ifcApi: api, ifcData: data, db: Core.sqljsDb(sdb), Buf: Core.browserBuf, buildingName: prefix, sourceName: file.name,
+    var ex0 = await Core.extractToDb({ WebIFC: window.WebIFC, ifcApi: api, ifcData: data, db: Core.sqljsDb(sdb), Buf: Core.browserBuf, buildingName: prefix, sourceName: file.name,
       log: function (m) { exLog.push(m); }, progress: function (m) { step(m); } });
     var qOf = function (db) { return function (sql) { var r = db.exec(sql); if (!r.length) return []; return r[0].values.map(function (v) { var o = {}; r[0].columns.forEach(function (c, i) { o[c] = v[i]; }); return o; }); }; };
     for (var xi = 0; xi < (extras || []).length; xi++) {
       step('Reading ' + extras[xi].name + ' (columns for the grid)');
       var xdb = new window.SQL.Database(), xapi = new window.WebIFC.IfcAPI(); await xapi.Init(function (p) { return new URL((p === 'web-ifc.wasm' ? '../common/lib/' : 'lib/') + p, _base).href; });
-      await Core.extractToDb({ WebIFC: window.WebIFC, ifcApi: xapi, ifcData: new Uint8Array(await extras[xi].arrayBuffer()), db: Core.sqljsDb(xdb), Buf: Core.browserBuf, buildingName: extras[xi].name, sourceName: extras[xi].name, log: function () {}, progress: function () {} });
+      await Core.extractToDb({ WebIFC: window.WebIFC, ifcApi: xapi, ifcData: new Uint8Array(await extras[xi].arrayBuffer()), db: Core.sqljsDb(xdb), Buf: Core.browserBuf, forceGeorefOffset: ex0 && ex0.georefOffset,   /* §ONE-FRAME: files opened together share the first file's pin */ buildingName: extras[xi].name, sourceName: extras[xi].name, log: function () {}, progress: function () {} });
       Core.mergeElements(Core.sqljsDb(sdb), qOf(sdb), qOf(xdb), ['IfcColumn'], function (m) { exLog.push(m); }); xdb.close();
     }
     var q = function (sql) { var r = sdb.exec(sql); if (!r.length) return []; return r[0].values.map(function (v) { var o = {}; r[0].columns.forEach(function (c, i) { o[c] = v[i]; }); return o; }); };

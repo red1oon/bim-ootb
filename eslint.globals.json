@@ -200,5 +200,6 @@
   "IfcSurfaceNames": "readonly",
   "LightLaw": "readonly",
   "ProvTotals": "readonly",
+  "GeorefFrame": "readonly",
   "IfcGridRead": "readonly"
 }

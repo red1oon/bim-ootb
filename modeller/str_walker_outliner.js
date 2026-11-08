@@ -280,7 +280,7 @@
     console.log(TAG + ' §IFC-OPEN start file=' + file.name + ' size=' + (file.size / 1048576).toFixed(1) + 'MB');
     var name = file.name.replace(/\.ifc$/i, '');
     file.arrayBuffer().then(function (arrayBuffer) {
-      var worker = new Worker(new URL('ifc_open_worker.js?v=3', location.href).href);
+      var worker = new Worker(new URL('ifc_open_worker.js?v=4', location.href).href);
       worker.onmessage = function (e) {
         var msg = e.data; worker.terminate();
         (msg.logs || []).forEach(function (l) { console.log(TAG + ' ' + l); });   // the extractor's own § lines + §IFC-OPEN-X

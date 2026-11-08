@@ -21,12 +21,8 @@ const T0 = Date.now(), TAG = '§RT';
 const FILES0 = process.env.RT_DB ? [{ file: process.env.RT_DB, kind: 'db' }] : (process.env.RT_IFC ? process.env.RT_IFC.split(',') : [path.join(ROOT, 'IFC', 'Duplex_ARC.ifc'), path.join(ROOT, 'IFC', 'SampleHouse_ARC.ifc')]).map(f => ({ file: f, kind: 'ifc' }));
 const summary = [];
 if (process.env.RT_FAR) {   // RT_FAR=dx,dy : a copy of the public Duplex IFC with the IfcSite placement moved to map-scale coordinates, edited as STEP text (one new IfcCartesianPoint + the site IfcAxis2Placement3D's Location reference)
-  const [dx, dy] = process.env.RT_FAR.split(',').map(Number), src = path.join(ROOT, 'IFC', 'Duplex_ARC.ifc'), dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rtfar-')), dst = path.join(dir, 'Duplex_FAR.ifc');
-  let t = fs.readFileSync(src, 'latin1'); const m = /^(#\d+)=IFCSITE\([^;]*?,(#\d+),\$,\$,\.ELEMENT\./m.exec(t), lp = new RegExp('^' + m[2] + '=IFCLOCALPLACEMENT\\(\\$,(#\\d+)\\);', 'm').exec(t), ax = new RegExp('^(' + lp[1] + '=IFCAXIS2PLACEMENT3D\\()(#\\d+)(,[^;]*\\);)', 'm').exec(t), oldPt = new RegExp('^' + ax[2] + '=IFCCARTESIANPOINT\\(([^;]*)\\);', 'm').exec(t);
-  const newId = '#' + (Math.max.apply(null, (t.match(/^#(\d+)=/gm) || []).map(x => parseInt(x.slice(1)))) + 1), newPt = `(${dx.toFixed(3)},${dy.toFixed(3)},0.)`;
-  t = t.replace(ax[0], ax[1] + newId + ax[3]).replace('\nENDSEC;', `\n${newId}=IFCCARTESIANPOINT(${newPt});\nENDSEC;`);   // the origin point #3 is shared by other placements, so it is left alone and the site gets its own
-  fs.writeFileSync(dst, t, 'latin1');
-  console.log(`§RT-FAR site ${m[1]} placement ${m[2]} -> axis ${lp[1]} Location ${ax[2]} was ${oldPt[1]}; now ${newId}=IFCCARTESIANPOINT${newPt} (new point appended; the axis ${lp[1]} Location ${ax[2]} -> ${newId}). Copy: ${dst}`);
+  const [dx, dy] = process.env.RT_FAR.split(',').map(Number), far = require('./lib_far_fixture.js').farCopy(path.join(ROOT, 'IFC', 'Duplex_ARC.ifc'), dx, dy), dst = far.file;   // the fixture method lives in lib_far_fixture.js (W-ONE-FRAME uses the same code)
+  console.log(far.log);
   process.env.RT_FAR_FILE = dst;
 }
 const FILES = FILES0.concat(process.env.RT_FAR_FILE ? [{ file: process.env.RT_FAR_FILE, kind: 'ifc' }] : []);

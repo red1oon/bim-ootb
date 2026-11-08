@@ -50,12 +50,12 @@ async function main() {
   await ifcApi.Init();
   if (fs.existsSync(outPath)) fs.unlinkSync(outPath);
   const db = new Database(outPath);
-  await Core.extractToDb({ WebIFC, ifcApi, ifcData, db, Buf: Buffer, discOverride,
+  const ex0 = await Core.extractToDb({ WebIFC, ifcApi, ifcData, db, Buf: Buffer, discOverride,
     buildingName: path.basename(ifcPath, '.ifc').replace(/\.ifc$/i, ''), sourceName: path.basename(ifcPath),
     log: console.log, progress: m => process.stdout.write('\r  ' + m + '...') });
   if (alsoPath) {
     const edb = new Database(':memory:');
-    await Core.extractToDb({ WebIFC, ifcApi, ifcData: new Uint8Array(fs.readFileSync(alsoPath)), db: edb, Buf: Buffer, discOverride,
+    await Core.extractToDb({ WebIFC, ifcApi, ifcData: new Uint8Array(fs.readFileSync(alsoPath)), db: edb, Buf: Buffer, discOverride, forceGeorefOffset: ex0 && ex0.georefOffset,   // §ONE-FRAME: --also shares the first file's pin
       buildingName: path.basename(alsoPath, '.ifc'), sourceName: path.basename(alsoPath), log: () => {}, progress: () => {} });
     const qm = sql => db.prepare(sql).all(), qe = sql => edb.prepare(sql).all();
     Core.mergeElements(db, qm, qe, ['IfcColumn'], console.log);
