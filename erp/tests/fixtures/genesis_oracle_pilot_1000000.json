@@ -1,0 +1,781 @@
+{
+ "treeTypes": [
+  "AY",
+  "BP",
+  "EV",
+  "MC",
+  "OO",
+  "PJ",
+  "PR",
+  "SR"
+ ],
+ "clientInfoSet": [
+  "ad_client_id",
+  "ad_org_id",
+  "isactive",
+  "created",
+  "createdby",
+  "updated",
+  "updatedby",
+  "isdiscountlineamt",
+  "c_calendar_id",
+  "c_acctschema1_id",
+  "ad_tree_menu_id",
+  "ad_tree_org_id",
+  "ad_tree_bpartner_id",
+  "ad_tree_project_id",
+  "ad_tree_salesregion_id",
+  "ad_tree_product_id",
+  "m_productfreight_id",
+  "c_bpartnercashtrx_id",
+  "ad_tree_activity_id",
+  "ad_tree_campaign_id",
+  "isconfirmondocclose",
+  "isconfirmondocvoid"
+ ],
+ "legacyEmpty": {
+  "ad_orginfo": [
+   "receiptfootermsg"
+  ]
+ },
+ "source": "docker postgres idempiere_pilot, AD_Client_ID=1000000 (created by Initial Client Setup 2026-10-12), mandatory List/Yes-No columns, distinct values",
+ "recorded": "2026-11-09",
+ "tables": {
+  "ad_client": {
+   "issmtpauthorization": [
+    "N"
+   ],
+   "isusebetafunctions": [
+    "Y"
+   ],
+   "mmpolicy": [
+    "F"
+   ],
+   "issecuresmtp": [
+    "N"
+   ],
+   "isactive": [
+    "Y"
+   ],
+   "autoarchive": [
+    "N"
+   ],
+   "ismultilingualdocument": [
+    "N"
+   ],
+   "isuseasp": [
+    "N"
+   ],
+   "ispostimmediate": [
+    "N"
+   ],
+   "authenticationtype": [
+    "AAS"
+   ]
+  },
+  "ad_org": {
+   "issummary": [
+    "N"
+   ],
+   "isactive": [
+    "Y"
+   ]
+  },
+  "ad_role": {
+   "ispersonallock": [
+    "N"
+   ],
+   "isuseuserorgaccess": [
+    "N"
+   ],
+   "allow_info_asset": [
+    "Y"
+   ],
+   "allow_info_schedule": [
+    "Y"
+   ],
+   "ispersonalaccess": [
+    "N"
+   ],
+   "isshowacct": [
+    "N",
+    "Y"
+   ],
+   "iscanreport": [
+    "Y"
+   ],
+   "ischangelog": [
+    "N"
+   ],
+   "overwritepricelimit": [
+    "N"
+   ],
+   "allow_info_invoice": [
+    "Y"
+   ],
+   "allow_info_payment": [
+    "Y"
+   ],
+   "allow_info_order": [
+    "Y"
+   ],
+   "allow_info_resource": [
+    "Y"
+   ],
+   "allow_info_bpartner": [
+    "Y"
+   ],
+   "allow_info_product": [
+    "Y"
+   ],
+   "allow_info_account": [
+    "Y"
+   ],
+   "iscanapproveowndoc": [
+    "Y"
+   ],
+   "isactive": [
+    "Y"
+   ],
+   "ismenuautoexpand": [
+    "N"
+   ],
+   "ismanual": [
+    "N"
+   ],
+   "iscanexport": [
+    "Y"
+   ],
+   "isclientadministrator": [
+    "N",
+    "Y"
+   ],
+   "isdiscountuptolimitprice": [
+    "N"
+   ],
+   "isdiscountallowedontotal": [
+    "N"
+   ],
+   "isaccessallorgs": [
+    "N"
+   ],
+   "preferencetype": [
+    "C",
+    "O"
+   ],
+   "allow_info_inout": [
+    "Y"
+   ],
+   "ismasterrole": [
+    "N"
+   ]
+  },
+  "ad_user": {
+   "isinpayroll": [
+    "N"
+   ],
+   "isfullbpaccess": [
+    "Y"
+   ],
+   "isexpired": [
+    "N"
+   ],
+   "isactive": [
+    "Y"
+   ],
+   "issaleslead": [
+    "N"
+   ],
+   "islocked": [
+    "N"
+   ],
+   "isaddmailtextautomatically": [
+    "N"
+   ],
+   "issupportuser": [
+    "N"
+   ],
+   "notificationtype": [
+    "X"
+   ],
+   "isshipto": [
+    "N"
+   ],
+   "isbillto": [
+    "N"
+   ],
+   "isnopasswordreset": [
+    "N"
+   ],
+   "isnoexpire": [
+    "N"
+   ],
+   "isvendorlead": [
+    "N"
+   ]
+  },
+  "ad_user_roles": {
+   "isactive": [
+    "Y"
+   ]
+  },
+  "c_location": {
+   "isactive": [
+    "Y"
+   ]
+  },
+  "ad_orginfo": {
+   "isactive": [
+    "Y"
+   ]
+  },
+  "c_calendar": {
+   "isactive": [
+    "Y"
+   ]
+  },
+  "c_year": {
+   "isactive": [
+    "Y"
+   ]
+  },
+  "c_period": {
+   "periodtype": [
+    "S"
+   ],
+   "isactive": [
+    "Y"
+   ]
+  },
+  "c_element": {
+   "elementtype": [
+    "A"
+   ],
+   "isnaturalaccount": [
+    "Y"
+   ],
+   "isbalancing": [
+    "N"
+   ],
+   "isactive": [
+    "Y"
+   ]
+  },
+  "c_elementvalue": {
+   "issummary": [
+    "N",
+    "Y"
+   ],
+   "postencumbrance": [
+    "Y"
+   ],
+   "accountsign": [
+    "N"
+   ],
+   "postactual": [
+    "Y"
+   ],
+   "poststatistical": [
+    "Y"
+   ],
+   "accounttype": [
+    "A",
+    "E",
+    "L",
+    "M",
+    "R"
+   ],
+   "postbudget": [
+    "Y"
+   ],
+   "isactive": [
+    "Y"
+   ],
+   "isdetailbpartner": [
+    "N"
+   ],
+   "isdetailproduct": [
+    "N"
+   ]
+  },
+  "c_acctschema": {},
+  "c_validcombination": {
+   "isfullyqualified": [
+    "Y"
+   ],
+   "isactive": [
+    "Y"
+   ]
+  },
+  "c_acctschema_default": {
+   "isactive": [
+    "Y"
+   ]
+  },
+  "c_acctschema_gl": {
+   "usecurrencybalancing": [
+    "Y"
+   ],
+   "usesuspensebalancing": [
+    "Y"
+   ],
+   "usesuspenseerror": [
+    "Y"
+   ],
+   "isactive": [
+    "Y"
+   ]
+  },
+  "gl_category": {
+   "categorytype": [
+    "D",
+    "M"
+   ],
+   "isdefault": [
+    "N",
+    "Y"
+   ],
+   "isactive": [
+    "Y"
+   ]
+  },
+  "ad_sequence": {
+   "isautosequence": [
+    "Y"
+   ],
+   "isorglevelsequence": [
+    "N"
+   ],
+   "startnewmonth": [
+    "N"
+   ]
+  },
+  "c_doctype": {
+   "isdefault": [
+    "N"
+   ],
+   "issotrx": [
+    "N",
+    "Y"
+   ],
+   "iscreatecounter": [
+    "Y"
+   ],
+   "isindexed": [
+    "Y"
+   ],
+   "isshipconfirm": [
+    "N"
+   ],
+   "issplitwhendifference": [
+    "N"
+   ],
+   "isdefaultcounterdoc": [
+    "N"
+   ],
+   "isintransit": [
+    "N"
+   ],
+   "ispickqaconfirm": [
+    "N"
+   ],
+   "ispreparesplitdocument": [
+    "Y"
+   ],
+   "isdocnocontrolled": [
+    "N",
+    "Y"
+   ],
+   "hascharges": [
+    "N"
+   ],
+   "isactive": [
+    "Y"
+   ],
+   "docbasetype": [
+    "APC",
+    "API",
+    "APP",
+    "ARC",
+    "ARF",
+    "ARI",
+    "ARR",
+    "CMA",
+    "CMB",
+    "CMC",
+    "DOO",
+    "FAA",
+    "FAD",
+    "FDP",
+    "GLD",
+    "GLJ",
+    "HRP",
+    "MCC",
+    "MMI",
+    "MMM",
+    "MMP",
+    "MMR",
+    "MMS",
+    "MOF",
+    "MOP",
+    "MQO",
+    "MXI",
+    "MXP",
+    "PJI",
+    "POO",
+    "POR",
+    "SOO"
+   ],
+   "isautogenerateinvoice": [
+    "N",
+    "Y"
+   ],
+   "isautogenerateinout": [
+    "N",
+    "Y"
+   ],
+   "iscanbereactivated": [
+    "N"
+   ],
+   "isalwaysposted": [
+    "N"
+   ]
+  },
+  "m_warehouse": {
+   "isdisallownegativeinv": [
+    "N"
+   ],
+   "isactive": [
+    "Y"
+   ],
+   "isdisableinventorypopup": [
+    "N"
+   ]
+  },
+  "m_locator": {
+   "isdefault": [
+    "Y"
+   ],
+   "isactive": [
+    "Y"
+   ]
+  },
+  "m_pricelist": {
+   "issopricelist": [
+    "N"
+   ],
+   "istaxincluded": [
+    "N"
+   ],
+   "isdefault": [
+    "N",
+    "Y"
+   ],
+   "enforcepricelimit": [
+    "N"
+   ],
+   "isactive": [
+    "Y"
+   ]
+  },
+  "m_discountschema": {
+   "isquantitybased": [
+    "Y"
+   ],
+   "discounttype": [
+    "P"
+   ],
+   "isbpartnerflatdiscount": [
+    "N"
+   ],
+   "isactive": [
+    "Y"
+   ]
+  },
+  "m_pricelist_version": {
+   "isactive": [
+    "Y"
+   ]
+  },
+  "c_bp_group": {
+   "isdefault": [
+    "Y"
+   ],
+   "isconfidentialinfo": [
+    "N"
+   ],
+   "isactive": [
+    "Y"
+   ]
+  },
+  "c_bpartner": {
+   "iscustomer": [
+    "Y"
+   ],
+   "isonetime": [
+    "N"
+   ],
+   "sendemail": [
+    "N"
+   ],
+   "issummary": [
+    "N"
+   ],
+   "isemployee": [
+    "N",
+    "Y"
+   ],
+   "ispotaxexempt": [
+    "N"
+   ],
+   "issalesrep": [
+    "N",
+    "Y"
+   ],
+   "isvendor": [
+    "N"
+   ],
+   "isactive": [
+    "Y"
+   ],
+   "is1099vendor": [
+    "N"
+   ],
+   "isprospect": [
+    "Y"
+   ]
+  },
+  "c_bpartner_location": {
+   "isshipto": [
+    "Y"
+   ],
+   "isbillto": [
+    "Y"
+   ],
+   "ispayfrom": [
+    "Y"
+   ],
+   "isremitto": [
+    "Y"
+   ],
+   "isactive": [
+    "Y"
+   ],
+   "ispreservecustomname": [
+    "N"
+   ]
+  },
+  "c_bp_customer_acct": {
+   "isactive": [
+    "Y"
+   ]
+  },
+  "m_product_category": {
+   "isdefault": [
+    "Y"
+   ],
+   "mmpolicy": [
+    "F"
+   ],
+   "isselfservice": [
+    "Y"
+   ],
+   "isactive": [
+    "Y"
+   ]
+  },
+  "m_product_category_acct": {
+   "isactive": [
+    "Y"
+   ]
+  },
+  "c_taxcategory": {
+   "isdefault": [
+    "N",
+    "Y"
+   ],
+   "isactive": [
+    "Y"
+   ]
+  },
+  "m_product": {
+   "producttype": [
+    "I",
+    "S"
+   ],
+   "issummary": [
+    "N"
+   ],
+   "isexcludeautodelivery": [
+    "N"
+   ],
+   "ispicklistprintdetails": [
+    "N"
+   ],
+   "ispurchased": [
+    "Y"
+   ],
+   "iswebstorefeatured": [
+    "N"
+   ],
+   "issold": [
+    "Y"
+   ],
+   "isstocked": [
+    "N",
+    "Y"
+   ],
+   "isselfservice": [
+    "Y"
+   ],
+   "isactive": [
+    "Y"
+   ],
+   "isbom": [
+    "N"
+   ],
+   "iskanban": [
+    "N"
+   ],
+   "ismanufactured": [
+    "N"
+   ],
+   "isphantom": [
+    "N"
+   ],
+   "isownbox": [
+    "N"
+   ],
+   "isautoproduce": [
+    "N"
+   ],
+   "isdropship": [
+    "N"
+   ],
+   "isinvoiceprintdetails": [
+    "N"
+   ],
+   "isverified": [
+    "N"
+   ]
+  },
+  "m_productprice": {
+   "isactive": [
+    "Y"
+   ]
+  },
+  "c_tax": {
+   "sopotype": [
+    "B"
+   ],
+   "isdefault": [
+    "N",
+    "Y"
+   ],
+   "isdocumentlevel": [
+    "Y"
+   ],
+   "issummary": [
+    "N"
+   ],
+   "requirestaxcertificate": [
+    "N"
+   ],
+   "istaxexempt": [
+    "N"
+   ],
+   "issalestax": [
+    "N"
+   ],
+   "isactive": [
+    "Y"
+   ]
+  },
+  "c_paymentterm": {
+   "isduefixed": [
+    "N"
+   ],
+   "isvalid": [
+    "N"
+   ],
+   "paymenttermusage": [
+    "B"
+   ],
+   "afterdelivery": [
+    "N"
+   ],
+   "isactive": [
+    "Y"
+   ]
+  },
+  "c_tax_acct": {
+   "isactive": [
+    "Y"
+   ]
+  },
+  "ad_tree": {
+   "treetype": [
+    "AY",
+    "BP",
+    "EV",
+    "MC",
+    "OO",
+    "PJ",
+    "PR",
+    "SR"
+   ],
+   "isdefault": [
+    "N"
+   ],
+   "isallnodes": [
+    "Y"
+   ],
+   "isactive": [
+    "Y"
+   ],
+   "istreedrivenbyvalue": [
+    "N"
+   ],
+   "isloadallnodesimmediately": [
+    "Y"
+   ],
+   "isvaluedisplayed": [
+    "N"
+   ]
+  },
+  "ad_treenode": {
+   "isactive": [
+    "Y"
+   ]
+  },
+  "ad_treenodebp": {
+   "isactive": [
+    "Y"
+   ]
+  },
+  "ad_treenodepr": {
+   "isactive": [
+    "Y"
+   ]
+  },
+  "m_costtype": {
+   "isactive": [
+    "Y"
+   ]
+  },
+  "ad_clientinfo": {
+   "isactive": [
+    "Y"
+   ],
+   "isconfirmondocvoid": [
+    "N"
+   ],
+   "isconfirmondocclose": [
+    "N"
+   ],
+   "isdiscountlineamt": [
+    "N"
+   ]
+  }
+ }
+}

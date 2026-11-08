@@ -239,10 +239,17 @@
   // COMMENTED OUT in this iDempiere (X_C_Order.java:43 `/** if (C_Order_ID == 0) {…} */`), so AD_Column.DefaultValue is NOT stamped here (that is
   // GridTab.dataNew / getDefault, ad_callout.js); the M class ctor's setInitialDefaults come from MODEL[table].initialDefaults, and the physical column DEFAULTs
   // (ad_ddl_default) apply at Trx.insert. (§MODEL-NEWPO-JAVA — deleted the AD-mandatory-default stamping that Java does not do.)
+  var GEN_DEFAULTS = {};   // table -> { src, init: {col: value}, clock: [col] } — model_initial_defaults.js registers it (setGeneratedDefaults)
+  function setGeneratedDefaults(g) { GEN_DEFAULTS = g || {}; }
+  // initialDefaultsOf(table) — what newPO stamps from the ctor (generated + hand, hand wins; clock columns not included): one source for every writer (genesis install too)
+  function initialDefaultsOf(table) { table = String(table).toLowerCase(); var o = {}, g = GEN_DEFAULTS[table], M = MODEL[table];
+    if (g) Object.keys(g.init).forEach(function (c) { o[c] = g.init[c]; }); if (M && M.initialDefaults) Object.keys(M.initialDefaults).forEach(function (c) { o[c] = M.initialDefaults[c]; }); return o; }
   function newPO(trx, table, fields) {
     table = table.toLowerCase();
     var row = {}, env = trx.env;
-    // the M class ctor's setInitialDefaults (registered as MODEL[table].initialDefaults — clock-valued ones are left to the caller)
+    // the M class ctor's setInitialDefaults: the GENERATED table first (model_initial_defaults.js, extracted from the iDempiere source, all classes), then a hand-registered
+    //   MODEL[table].initialDefaults on top (bim-compiler MIGRATE_INSTALL_TENANT.md §G1-SPEC, W-GENESIS-COMPLETE)
+    var Gd = GEN_DEFAULTS[table]; if (Gd) { Object.keys(Gd.init).forEach(function (c) { row[c] = Gd.init[c]; }); if (Gd.clock) Gd.clock.forEach(function (c) { row[c] = trx.env.date; }); }
     var M = MODEL[table]; if (M && M.initialDefaults) Object.keys(M.initialDefaults).forEach(function (c) { row[c] = M.initialDefaults[c]; });
     if (M && M.initialClock) M.initialClock.forEach(function (c) { row[c] = trx.env.date; });   // the ctor's new Timestamp(System.currentTimeMillis()) defaults (ERP_WS_API.md S2: a WS-created order)
     var cols0 = columnsOf(trx, table);   // only the columns the table has (C_InvoiceLine/C_InvoiceTax carry no Posted/Processing)
@@ -773,7 +780,8 @@
         var rec2 = {}; for (var k2 in spec.record) rec2[k2.toLowerCase()] = spec.record[k2];
         var M2 = MODEL[table] || {}, before = Object.assign({}, rec2);
         // a NEW record from a window is `new MX(ctx,0)` first: the class's setInitialDefaults fill what the form left empty
-        if (spec.isNew && M2.initialDefaults) Object.keys(M2.initialDefaults).forEach(function (c) { if (rec2[c] == null || rec2[c] === '') rec2[c] = M2.initialDefaults[c]; });
+        //   (the generated + hand table, initialDefaultsOf — the same one newPO stamps; bim-compiler MIGRATE_INSTALL_TENANT.md §G1-SPEC)
+        if (spec.isNew) { var ID2 = initialDefaultsOf(table); Object.keys(ID2).forEach(function (c) { if (rec2[c] == null || rec2[c] === '') rec2[c] = ID2[c]; }); }
         var e2 = M2.beforeSave ? M2.beforeSave(trx, rec2, !!spec.isNew, spec.old || null) : null;
         if (!e2) e2 = fire(trx, spec.isNew ? 'BEFORE_NEW' : 'BEFORE_CHANGE', table, rec2, { recordOld: spec.old || null });
         var derived = {}; Object.keys(rec2).forEach(function (c) { if (String(rec2[c]) !== String(before[c])) derived[c] = rec2[c]; });
@@ -790,7 +798,7 @@
   //   {observe:true} subscriptions of every save/delete in the group, once. resolve(finalOpIndex, table) -> the committed key of a row created in the group (omit: placeholders stay, info.unresolved).
   function deliverObserved(res, ctx, resolve) { return MV.deliverObserved(res && res.observed !== undefined ? res.observed : res, ctx || {}, resolve); }
 
-  return { PO: PO, po: po, newRecord: newRecord, setDocNoAllocator: setDocNoAllocator, columnsOf: columnsOf, setPoster: setPoster, getPoster: function () { return _poster; }, clientAccounting: clientAccounting, MV: MV, Trx: Trx, D: D, N: N, isNewId: isNewId, keyColsOf: keyColsOf, newPO: newPO, copyValues: copyValues, saveEx: saveEx, registerModel: registerModel, unregisterModel: unregisterModel, saveReplica: saveReplica, fireReplica: fireReplica, saveReplicaEx: saveReplicaEx, removeReplica: removeReplica, deliverObserved: deliverObserved, unregisterDocAction: unregisterDocAction, removeOwner: removeOwner, describe: describe, MODEL: MODEL, fire: fire,
+  return { setGeneratedDefaults: setGeneratedDefaults, initialDefaultsOf: initialDefaultsOf, generatedDefaults: function () { return GEN_DEFAULTS; }, PO: PO, po: po, newRecord: newRecord, setDocNoAllocator: setDocNoAllocator, columnsOf: columnsOf, setPoster: setPoster, getPoster: function () { return _poster; }, clientAccounting: clientAccounting, MV: MV, Trx: Trx, D: D, N: N, isNewId: isNewId, keyColsOf: keyColsOf, newPO: newPO, copyValues: copyValues, saveEx: saveEx, registerModel: registerModel, unregisterModel: unregisterModel, saveReplica: saveReplica, fireReplica: fireReplica, saveReplicaEx: saveReplicaEx, removeReplica: removeReplica, deliverObserved: deliverObserved, unregisterDocAction: unregisterDocAction, removeOwner: removeOwner, describe: describe, MODEL: MODEL, fire: fire,
            save: save, remove: remove, fkPlan: fkPlan, registerDocAction: registerDocAction, docActionFor: docActionFor, DOCS: DOCS,
            uniqueError: uniqueError,   // B0: the legacy unique-index refusal, ONE implementation (ws_adinterface.js no longer has its own)
            eventSeq: function (trx) { return (trx && trx._events || []).map(function (e) { return e.event + '@' + e.table; }); }, processIt: processIt, runWorkflow: runWorkflow, workflowOf: workflowOf, tableIdOf: tableIdOf, run: run };

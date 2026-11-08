@@ -65,6 +65,15 @@
       var d = make('div', 'er-new' + (n.count ? ' ' + n.level : '')); d.dataset.row = n.id;
       d.appendChild(make('span', '', n.label)); d.appendChild(make('b', '', n.state === 'JUDGED' ? String(n.count) : 'not judged')); el.appendChild(d);
     });
+    var sh = r.shapes; // §20.2.10 the real-shape check: words, totals, and the pairs (full counts; the list is capped on screen only)
+    if (sh && sh.state === 'JUDGED') {
+      el.appendChild(make('div', 'er-sec', 'SHAPE CHECK (' + sh.judged + ' box pair' + (sh.judged === 1 ? '' : 's') + ' judged at ' + sh.tol_mm + ' mm)'));
+      el.appendChild(make('div', 'er-note', sh.tally.clash + ' clash, ' + sh.tally['not judged'] + ' not judged, checked and cleared: ' + sh.cleared + ' (' + sh.tally.touching + ' touching, ' + sh.tally['box only, shapes clear'] + ' box only, shapes clear)' +
+        (sh.resolved ? '. Resolved against before: ' + sh.resolved.count + ' (box level)' : '')));
+      var shown = sh.pairs.filter(function (p) { return p.verdict === 'clash' || p.verdict === 'not judged'; }), nm = function (e) { return (e.name || ('#' + e.fid)) + (e.cls ? ' (' + String(e.cls).replace(/^Ifc/, '') + (e.disc ? ', ' + e.disc : '') + (e.storey ? ', ' + e.storey : '') + ')' : ''); };
+      shown.slice(0, 8).forEach(function (p) { var d = make('div', 'er-new red'); d.dataset.shape = p.verdict; d.appendChild(make('span', '', nm(p.a) + ' x ' + nm(p.b) + ' [' + p.status + ']')); d.appendChild(make('b', '', p.verdict === 'clash' ? p.depth_mm + ' mm' : 'not judged')); el.appendChild(d); });
+      if (shown.length > 8) el.appendChild(make('div', 'er-note', (shown.length - 8) + ' more clash or not-judged pairs: the full list is in the report.'));
+    } else if (sh && sh.state === 'FALLBACK') el.appendChild(make('div', 'er-note', 'Shape check unavailable (' + sh.reason + '). The box stop applies.'));
     var prelim = r.rows.map(function (q) { return q.id.indexOf('span') === 0 && q.state === 'JUDGED' ? q.note : ''; }).filter(Boolean)[0];
     if (prelim) el.appendChild(make('div', 'er-note', prelim));
 
