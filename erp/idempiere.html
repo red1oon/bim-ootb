@@ -788,7 +788,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
      withBundle/curChain/__crudHostAnchor so the ring binds to the FOCUSED record; T1 fan-out + T2 list-tip +
      T4 owner-gate ride along unchanged. -->
 <!-- T7 (W-T7-INC): memoized tip-folds (fix 3) + signed shard boundary (fix 4/4b) — load BEFORE crud_overlay so it delegates. -->
-<script src="tip_fold.js?v=1"></script>
+<script src="tip_fold.js?v=2"></script>
 <script src="erp_shard.js?v=1"></script>
 <!-- §S60 physical split: the pure CORE (window.CrudCore) — MUST load before crud_overlay.js -->
 <script src="crud_core.js?v=10"></script>
@@ -2451,9 +2451,9 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     });
     if (ctx && ctx.legal.length) {
       if (items.length) { var sp = el('div', null); sp.style.cssText = 'border-top:1px solid #4a2f44;margin:6px 0'; box.appendChild(sp); }
-      var hdr = el('div', null, 'Document Action' + '  ·  ' + (DOCSTATUS_LABEL[ctx.ds] || ctx.ds) + ' · ' + ctx.ds); hdr.style.cssText = 'font-weight:700;margin:2px 4px 4px;color:#fbeaf7'; box.appendChild(hdr);
+      var hdr = el('div', null, 'Document Action' + '  ·  ' + _famLbl(ctx.tid, 'status', ctx.ds) + ' · ' + ctx.ds); hdr.style.cssText = 'font-weight:700;margin:2px 4px 4px;color:#fbeaf7'; box.appendChild(hdr);
       ctx.legal.forEach(function (act) {
-        var b = el('button', null, ACTION_LABEL[act] || act); b.style.cssText = itemCss; b.setAttribute('data-docact', act);
+        var b = el('button', null, _famLbl(ctx.tid, 'action', act)); b.style.cssText = itemCss; b.setAttribute('data-docact', act);
         b.addEventListener('click', function () {
           var res = ctx.dispatch(act);
           console.log('§FORM-PILL process record=' + ctx.recId + ' act=' + act + (res.ok ? ' from=' + res.from + ' to=' + res.to : ' REJECTED=' + res.reason));
@@ -3201,6 +3201,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     RA: 'Reverse — Accrual', RE: 'Re-Activate', XL: 'Unlock', IN: 'Invalidate', RJ: 'Reject', AP: 'Approve', PO: 'Post' };
   var DOCSTATUS_LABEL = { DR: 'Drafted', IP: 'In Progress', IN: 'Invalid', AP: 'Approved', NA: 'Not Approved',
     CO: 'Completed', CL: 'Closed', RE: 'Reversed', VO: 'Voided', WP: 'Waiting Payment', WC: 'Waiting Confirmation' };
+  // a plugin family's own words for the same codes (AdDocFsm.DOC_FAMILY[tableId].labels = { status:{}, action:{} }, data of the family, no table named); the core words otherwise
+  function _famLbl(tid, kind, code) { var f = window.AdDocFsm && window.AdDocFsm.DOC_FAMILY && window.AdDocFsm.DOC_FAMILY[Number(tid)], m = f && f.labels && f.labels[kind]; return (m && m[code]) || (kind === 'status' ? DOCSTATUS_LABEL[code] : ACTION_LABEL[code]) || code; }
   // USER_JOURNEY_LANE punch-list #2 — status-at-a-glance. A record HAS a status iff it carries a DocStatus
   // value (model-agnostic — any absorbed model with a DocStatus column lights up; no per-model hardcode).
   function _recStatus(rec) { var ds = recVal(rec, 'DocStatus'); return (ds == null || ds === '') ? null : String(ds); }
@@ -3431,9 +3433,9 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     console.log('§AD-DOCFSM-LIVE table=' + ctx.tid + '(' + tab.tableName + ') record=' + ctx.recId + ' status=' + ctx.ds +
       ' legal=[' + ctx.legal.join(',') + '] periodOpen=' + ctx.po.open + '(' + ctx.po.why + ') backDate=true(named-default)');
     var bar = el('div', 'idmp-docfsm');
-    bar.appendChild(el('span', 'chip st-' + ctx.ds, (DOCSTATUS_LABEL[ctx.ds] || ctx.ds) + ' · ' + ctx.ds));
+    bar.appendChild(el('span', 'chip st-' + ctx.ds, _famLbl(ctx.tid, 'status', ctx.ds) + ' · ' + ctx.ds));
     ctx.legal.forEach(function (act) {
-      var btn = el('button', null, ACTION_LABEL[act] || act);
+      var btn = el('button', null, _famLbl(ctx.tid, 'action', act));
       btn.setAttribute('data-doc-action', act);
       btn.addEventListener('click', function () {
         var res = ctx.dispatch(act);
