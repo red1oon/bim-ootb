@@ -100,7 +100,7 @@ function storeySet(db, meta) {
         if (e.type !== 'INSERT' || isF(e) || !e.position) return;
         const nm = String(e.name || '').toUpperCase(), kind = Object.keys(words).filter(w => (words[w] || []).some(x => nm.indexOf(String(x).toUpperCase()) >= 0))[0];
         if (!(kind || termM(e.layer))) return;
-        const x = e.position.x * k, y = e.position.y * k;
+        const pc = DM.insertCentre(e, blocks, k), x = pc.x, y = pc.y;   // the reader's one rule: centre of the transformed block geometry, not the INSERT point
         db.run('INSERT INTO drawn_terminal VALUES(?,?,?,?,?)', [s.sheet, c * x - sn * y + s.fit_dx, sn * x + c * y + s.fit_dy, kind || null, null]); tn++;   // the terminal's storey is picked by the walker, by the ceiling that holds it
       });
     }
