@@ -59,3 +59,16 @@ node agent.js
 
 NON-INVENT: every value written is a recorded Odoo row. Nothing is fabricated.
 SPDX-License-Identifier: MIT — Copyright (c) 2025-2026 Redhuan D. Oon.
+
+## Export your master data (new — `export.js`, no `npm install` needed)
+
+```bash
+node export.js                      # → ./odoo_export/  (one CSV per iDempiere import, in load order, + manifest.json)
+CUTOVER=2026-12-31 node export.js   # the date your opening stock is counted at (default: today)
+```
+
+Same `ODOO_HOST / ODOO_PORT / ODOO_DB / ODOO_LOGIN / ODOO_PASSWORD` variables as above. It reads (never writes)
+your units of measure, payment terms, product categories, chart of accounts, partners + contacts, products + vendor
+prices, sale prices, warehouses, locations and on-hand stock. `manifest.json` records how many rows Odoo has of
+each, so the ERP can prove nothing was dropped or made up. Your own company and your Odoo users' contact cards
+go to a separate file (`05b_bpartners_internal.csv`) — you choose on the summary screen whether to bring them in.
