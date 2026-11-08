@@ -110,9 +110,10 @@ function storeySet(db, meta) {
   // §9 item 1: the no-void height row travels in the DB (like the equipment rule), so removing the row removes the behaviour
   if (files.length) {
     db.run('DROP TABLE IF EXISTS drawn_height_rule');
-    db.run('CREATE TABLE drawn_height_rule(id TEXT, role TEXT, rule TEXT, label TEXT, source TEXT)');
-    if (rl.voidRule) db.run('INSERT INTO drawn_height_rule VALUES(?,?,?,?,?)', [rl.voidRule.id, rl.voidRule.role, rl.voidRule.rule, rl.voidRule.label, rl.voidRule.source || null]);
-    log('§MAINS-HEIGHT-RULE no_void_height=' + (rl.voidRule ? rl.voidRule.id : 'none'));
+    db.run('CREATE TABLE drawn_height_rule(id TEXT, role TEXT, rule TEXT, label TEXT, source TEXT, roof_words TEXT, roof_classes TEXT, roof_predefined TEXT)');
+    if (rl.voidRule) db.run('INSERT INTO drawn_height_rule VALUES(?,?,?,?,?,?,?,?)', [rl.voidRule.id, rl.voidRule.role, rl.voidRule.rule, rl.voidRule.label, rl.voidRule.source || null, null, null, null]);
+    if (rl.roofRule) db.run('INSERT INTO drawn_height_rule VALUES(?,?,?,?,?,?,?,?)', [rl.roofRule.id, rl.roofRule.role, rl.roofRule.rule, rl.roofRule.label, rl.roofRule.source || null, JSON.stringify(rl.roofRule.roof_words || []), JSON.stringify(rl.roofRule.roof_classes || []), JSON.stringify(rl.roofRule.roof_predefined || [])]);
+    log('§MAINS-HEIGHT-RULE no_void_height=' + (rl.voidRule ? rl.voidRule.id : 'none') + ' roof_surface_height=' + (rl.roofRule ? rl.roofRule.id : 'none'));
   }
   // §9 item 2: the author's answer on sprinklers, a per-building fact (project_metadata, the table that already holds georef_offset_*). Never inferred from drawn equipment.
   if (sprArg != null) {
