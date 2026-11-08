@@ -56,6 +56,29 @@ ok('R8', !/gen_app_surface\.js:|witness_app_surface\.js:/.test(idx), 'generator/
 ok('R9', !/`APP\._emberEnabled` \| `viewer\/effects\.js:4567`/.test(idx),
    'comment prose not indexed as a write site');
 
+// R9b — a `/*` inside a `//` comment must not hide the code after it (NEURO contract §19.2).
+//       Real case: viewer/tools.js:25 `// ...buildings/*.db...` blanked A.screenshot (tools.js:613).
+//       Temp tree: a file that binds A, a `// a/*.db` line, then `A.x = 1` and a later `*/`.
+const os = require('os');
+const r9b = (extraEnv) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'appsurf-'));
+  fs.mkdirSync(path.join(dir, 'viewer'));
+  fs.writeFileSync(path.join(dir, 'viewer/t.js'),
+    'function setupT(A) {\n// a/*.db\nA.x = 1;\n/* real block */\nA.y = 2;\n}\n');
+  execFileSync('node', [path.join(ROOT, 'scripts/gen_app_surface.js')],
+    { encoding: 'utf8', env: { ...process.env, APPSURF_ROOT: dir, APPSURF_OUT: dir, ...extraEnv } });
+  const t = fs.readFileSync(path.join(dir, 'APP_SURFACE.md'), 'utf8');
+  fs.rmSync(dir, { recursive: true, force: true });
+  return t;
+};
+const good = r9b({});
+ok('R9b', /`APP\.x` \| `viewer\/t\.js:3`/.test(good) && !/`APP\.x`.*phantom/.test(good) && /`APP\.y` \| `viewer\/t\.js:5`/.test(good),
+   'A.x after a `// a/*.db` line is written (t.js:3), not phantom; A.y after a real block comment kept (t.js:5)');
+const red = r9b({ APPSURF_OLD_STRIP: '1' });
+ok('R9b-RED', /`APP\.x`.*phantom|!`APP\.x`/.test(red) || !/`APP\.x` \| `viewer\/t\.js:3`/.test(red),
+   'falsifier APPSURF_OLD_STRIP=1: old strip order loses A.x (R9b would FAIL) -> caught');
+ok('R9c', /`APP\.screenshot` \| `viewer\/tools\.js:\d+`/.test(idx), 'APP.screenshot (real tree) resolves to its tools.js write site');
+
 // R5 negative — the gate holds: a bare local `A` in a file that never binds A to APP
 //               must not pollute. THREE.js math helpers use `A.x`/`A.y` heavily.
 ok('R5n', !/`APP\.(elements|isVector3)`/.test(idx), 'unbound local `A` did not pollute the index');

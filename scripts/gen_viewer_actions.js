@@ -30,44 +30,8 @@ const OUT = opt('--out') || path.join(ROOT, 'internal/VIEWER_ACTIONS.md');
 const JSON_OUT = argv.includes('--json');
 const BREAK = process.env.VA_BREAK === '1';   // falsifier: drop the last _shortcuts key (must fail VA1)
 
-// ── tokenizer: blank comments (keep length + newlines); optionally blank string/regex bodies ──
-const REGEX_PREV = /[(,=:[!&|?{};+\-*%<>~^]$/;
-const REGEX_KW = /(?:^|[^\w$])(?:return|typeof|case|in|of|delete|void|throw|new|else)$/;
-function scan(src) {
-  const code = src.split(''), mask = src.split('');
-  const blank = (arr, a, b) => { for (let k = a; k < b; k++) if (arr[k] !== '\n') arr[k] = ' '; };
-  let i = 0; const n = src.length; const tpl = []; let depth = 0;
-  let lastSig = '';  // last significant code text (for regex detection)
-  while (i < n) {
-    const c = src[i], d = src[i + 1];
-    if (c === '/' && d === '/') { let j = src.indexOf('\n', i); if (j < 0) j = n; blank(code, i, j); blank(mask, i, j); i = j; continue; }
-    if (c === '/' && d === '*') { let j = src.indexOf('*/', i + 2); j = j < 0 ? n : j + 2; blank(code, i, j); blank(mask, i, j); i = j; continue; }
-    if (c === "'" || c === '"') {
-      let j = i + 1; while (j < n && src[j] !== c && src[j] !== '\n') { if (src[j] === '\\') j++; j++; }
-      blank(mask, i + 1, j); i = j + 1; lastSig = 'x'; continue;
-    }
-    if (c === '`' || (c === '}' && tpl.length && tpl[tpl.length - 1] === depth)) {
-      if (c === '}') tpl.pop();
-      let j = i + 1;
-      while (j < n && src[j] !== '`') { if (src[j] === '\\') { j += 2; continue; } if (src[j] === '$' && src[j + 1] === '{') break; j++; }
-      blank(mask, i + 1, j);
-      if (src[j] === '$') { tpl.push(depth); i = j + 2; } else { i = j + 1; }
-      lastSig = 'x'; continue;
-    }
-    if (c === '/') {
-      const before = src.slice(Math.max(0, i - 12), i).replace(/\s+$/, '');
-      if (before === '' || REGEX_PREV.test(before) || REGEX_KW.test(before)) {
-        let j = i + 1, cls = false;
-        while (j < n && src[j] !== '\n') { if (src[j] === '\\') { j += 2; continue; } if (src[j] === '[') cls = true; else if (src[j] === ']') cls = false; else if (src[j] === '/' && !cls) break; j++; }
-        blank(mask, i + 1, j); i = j + 1; while (/[a-z]/.test(src[i] || '')) i++; lastSig = 'x'; continue;
-      }
-    }
-    if (c === '{') depth++; else if (c === '}') depth--;
-    if (!/\s/.test(c)) lastSig = c;
-    i++;
-  }
-  return { code: code.join(''), mask: mask.join('') };
-}
+// ── tokenizer: shared module scripts/lib/js_scan.js (blank comments; also string/regex bodies in `mask`) ──
+const { scan } = require('./lib/js_scan');
 
 const OPEN = { '(': ')', '[': ']', '{': '}' };
 function match(mask, at) {   // index of the bracket closing the one at `at`
@@ -381,7 +345,6 @@ for (const r of rows) {
     if (rule) { basis.push(`${c}: ${rule.why}`); if (RANK[rule.cls] > RANK[cls]) cls = rule.cls; }
   }
   r.cls = cls; r.basis = basis.length ? basis.join('; ') : 'no gpu/writes/leaves callee found';
-  r.verb = '';   // X: filled when a Viewer verb is added for this row (§19.0 step 3)
 }
 const phantoms = rows.flatMap(r => r.defs.filter(d => d.at === null).map(d => ({ row: r, callee: d.c })));
 const usedRules = new Set(rows.flatMap(r => r.calls.flatMap(c => [c, canon(c)])));
@@ -407,10 +370,15 @@ for (const r of rows.filter(x => x.source !== '_actions')) {
   if (pill) r.label = pill.label.split(' — ')[0] + ' *(pill ' + pill.pill + ')*';
 }
 const actions = new Set(rows.map(r => r.action));
-const X = rows.filter(r => r.verb).length;
+// §19.4: the verb map. Key = the action (pill id, as r.action), value = the verbs offered for it (bim_mcp.js tools, viewer/tools/viewer_verbs.js).
+// Both verbs wrap the Find panel's Ask answers (viewer/find_ask.js), so both belong to the one action `find`.
+const VERBS = { find: ['viewer_counts', 'viewer_clashes'] };
+for (const r of rows) r.verb = (VERBS[r.action] || []).join(', ');
+const verbNames = new Set(Object.values(VERBS).flat());
+const X = new Set(rows.filter(r => r.verb).map(r => r.action)).size;   // distinct actions with a verb (not entry rows)
 const by = s => rows.filter(r => r.source === s).length;
 
-const summary = `§VIEWER_ACTIONS N_entry=${rows.length} N_actions=${actions.size} X=${X} shortcuts=${by('_shortcuts')} direct=${by('direct')} pills=${by('_actions')} phantom=${phantoms.length} conflicts=${conflicts.length} listeners=${listenerFiles.length} unaccounted=${unaccounted.length} direct_missing=${directMissing.length}`;
+const summary = `§VIEWER_ACTIONS N_entry=${rows.length} N_actions=${actions.size} X=${X} verbs=${verbNames.size} shortcuts=${by('_shortcuts')} direct=${by('direct')} pills=${by('_actions')} phantom=${phantoms.length} conflicts=${conflicts.length} listeners=${listenerFiles.length} unaccounted=${unaccounted.length} direct_missing=${directMissing.length}`;
 
 if (JSON_OUT) {
   process.stdout.write(JSON.stringify({ rows, phantoms: phantoms.map(p => ({ key: p.row.key, pill: p.row.pill, callee: p.callee })), conflicts, listenerFiles, scanned: SCANNED, excluded: EXCLUDED, unaccounted, directMissing, ignored, unusedRules, actions: actions.size, summary }, null, 1));
@@ -431,7 +399,8 @@ L.push(`| — \`_shortcuts\` keys (viewer/scene.js) | ${by('_shortcuts')} |`);
 L.push(`| — direct keydown branches | ${by('direct')} |`);
 L.push(`| — pill entries incl. long-press (viewer/panels.js \`_actions\`) | ${by('_actions')} |`);
 L.push(`| distinct actions (N_actions) | ${actions.size} |`);
-L.push(`| offered as verbs (X) | ${X} |`);
+L.push(`| actions offered as verbs (X) | ${X} |`);
+L.push(`| verbs offered (viewer/tools/viewer_verbs.js) | ${verbNames.size} |`);
 for (const c of ['view', 'leaves', 'writes', 'gpu']) L.push(`| class ${c} | ${rows.filter(r => r.cls === c).length} |`);
 L.push(`| callees with no definition (PHANTOM) | ${phantoms.length} |`);
 L.push(`| pill key conflicts | ${conflicts.length} |`);
@@ -451,10 +420,10 @@ if (phantoms.length) {
   L.push('');
 }
 L.push('## Entry points', '');
-L.push('| # | source | key | pill | label (the app\'s own words) | calls → defined at | class | basis |', '|---:|---|---|---|---|---|---|---|');
+L.push('| # | source | key | pill | label (the app\'s own words) | calls → defined at | class | basis | verb |', '|---:|---|---|---|---|---|---|---|---|');
 rows.forEach((r, i) => {
   const calls = r.defs.map(d => md(d.c) + (d.at === 'builtin' ? '' : d.at ? ' ' + md(d.at) : ' **PHANTOM**')).join('<br>') || '—';
-  L.push(`| ${i + 1} | ${md(r.file + ':' + r.line)} | ${r.key ? md(r.key) : ''} | ${r.pill ? md(r.pill) : ''}${r.when ? ' *(' + r.when + ')*' : ''} | ${esc(r.label)} | ${calls} | ${r.cls} | ${esc(r.basis)} |`);
+  L.push(`| ${i + 1} | ${md(r.file + ':' + r.line)} | ${r.key ? md(r.key) : ''} | ${r.pill ? md(r.pill) : ''}${r.when ? ' *(' + r.when + ')*' : ''} | ${esc(r.label)} | ${calls} | ${r.cls} | ${esc(r.basis)} | ${r.verb ? esc(r.verb) : ''} |`);
 });
 L.push('');
 L.push('## Keydown listener files (R4)', '');

@@ -555,8 +555,11 @@ function setupMeasure(A) {
   A._queryClashesPairAll = function(rules, discA, discB) {
     if (!A._hasBbox) return [];
     if (A._clashRtreeReady) {
-      // Single R-tree join — no storey loop, no page limit
-      return A._queryClashesPairRtree(null, rules, discA, discB, 0, null);
+      // Single R-tree join — no storey loop
+      // _queryClashesPairRtree stops at A._CLASH_PAGE_SIZE (measure.js:~392 `results.length < limit`), so a bare call
+      // returned one page (200) as if it were the total. Lift the page for this one call, restore after.
+      var savedPS = A._CLASH_PAGE_SIZE; A._CLASH_PAGE_SIZE = 1e9;
+      try { return A._queryClashesPairRtree(null, rules, discA, discB, 0, null); } finally { A._CLASH_PAGE_SIZE = savedPS; }
     }
     // Fallback: storey-by-storey cross-join (R-tree not ready)
     var w = A._clashWhereParts(rules, discA, discB);

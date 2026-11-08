@@ -7,7 +7,9 @@
 //   descriptor = { title,
 //     params:  [{ name, label, type: 'list'|'string'|'number'|'date'|'yesno', mandatory, options(trx, params) -> [{ value, label }], default(trx, params) -> value }],
 //     columns: [{ key, label, type: 'string'|'number', editable }],
-//     rows(trx, params) -> [{ key, selected, <column key>: value, ... }],
+//     rows(trx, params, current) -> [{ key, selected, locked?, lockedBy?, <column key>: value, ... }]   (current = the grid as it stands on Refresh, or null)
+//   params[].type 'file' (multiple?, accept?) -> [{ name, size, data }] (.xlsx a SheetJS workbook, .json parsed, else bytes); columns[].type 'string' + editable = a text cell
+//   (a row that does not carry the field shows nothing there); emptyText = what an empty grid says. (bim-compiler MIGRATE_INSTALL_TENANT.md §B4-IMPL-SPEC G-a..G-d)
 //     run(trx, params, rows) -> message   // throws to refuse; everything it writes goes through ModelLayer.save / processIt }
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory(require('./layered_registry.js'), function () { return require('./model_layer.js'); });

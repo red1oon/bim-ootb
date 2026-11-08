@@ -31,7 +31,7 @@ function client() {
   const c = client(), B = 'HospitalGarage';
   const init = await c.rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'witness_bim_mcp', version: '1' } }); c.note('notifications/initialized');
   const tl = await c.rpc('tools/list', {}), tools = (tl.result && tl.result.tools) || [], by = (n) => tools.filter(t => t.name === n)[0];
-  const described = tools.length === 2 && tools.every(t => t.description && t.description.length > 60 && Object.keys(t.inputSchema.properties).every(k => (t.inputSchema.properties[k].description || '').length > 5));
+  const described = tools.length === 4 && tools.every(t => t.description && t.description.length > 60 && Object.keys(t.inputSchema.properties).every(k => (t.inputSchema.properties[k].description || '').length > 5));
   chk('M1 the menu: both verbs, each described, every input described; move says metres; the instructions come with initialize',
     !!by('bim_lines') && !!by('bim_try_shift') && described && /metres/.test(by('bim_try_shift').inputSchema.properties.move.description) && /Never call a result safe/.test((init.result || {}).instructions || ''),
     'tools=' + tools.map(t => t.name).join(',') + ' version=' + (init.result && init.result.protocolVersion));

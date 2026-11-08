@@ -21,17 +21,20 @@
 //   R8 this script and its witness are excluded — they quote `APP.x` in prose and would self-index
 //   R9 comments are stripped before matching. A regex cannot tell code from prose, and this
 //      tree documents its own fields IN prose ("set A._bloomOff = false to try it again").
+//      R9 uses the single-pass tokenizer scripts/lib/js_scan.js (a `/*` in a `//` line no longer hides code).
 //      Without R9 those 30 sentences enter the index as definitions. R8 patched one instance
 //      of this class (the tool indexing itself); R9 closes the class.
 // NON-INVENT: every line number is a real match; nothing is inferred or carried over.
 // Run: node scripts/gen_app_surface.js   (writes internal/APP_SURFACE.md, prints the counts)
 'use strict';
 const fs = require('fs'), path = require('path');
+const { scan } = require('./lib/js_scan');
 
 // R8: the tool must not index itself — both files quote `APP.x` in their own spec text.
 const SKIP = ['/lib/', '/node_modules/', '.min.', 'web-ifc', 'qrcode', '/archive/', '/.git',
   'scripts/gen_app_surface.js', 'tests/witness_app_surface.js'];
-const ROOT = path.resolve(__dirname, '..');
+const ROOT = path.resolve(process.env.APPSURF_ROOT || path.join(__dirname, '..'));
+const OUT_DIR = process.env.APPSURF_OUT || path.join(ROOT, 'internal');
 
 function walk(dir, out) {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -64,9 +67,12 @@ for (const f of files) {
   // R9: blank out comment bodies, preserving line count and column offsets so every
   // reported file:line still points at the real line in the untouched file.
   const raw = fs.readFileSync(f, 'utf8');
-  const src = raw
+  // One tokenizer pass (scripts/lib/js_scan.js): a `/*` inside a `//` line comment must not open a
+  // block comment (NEURO contract §19.2). APPSURF_OLD_STRIP=1 restores the old two-regex order (falsifier).
+  const src = process.env.APPSURF_OLD_STRIP === '1' ? raw
     .replace(/\/\*[\s\S]*?\*\//g, c => c.replace(/[^\n]/g, ' '))
-    .replace(/(^|[^:'"\\])\/\/[^\n]*/g, (m, p) => p + ' '.repeat(m.length - p.length));
+    .replace(/(^|[^:'"\\])\/\/[^\n]*/g, (m, p) => p + ' '.repeat(m.length - p.length))
+    : scan(raw).code;
   const aliased = BINDS_A.test(src);           // R5: only then is bare `A.` the god object
   const lcAlias = BINDS_app.test(src);         // R6: same gate for the lowercase `app.` spelling
   src.split('\n').forEach((ln, i) => {
@@ -127,6 +133,6 @@ for (const n of names) {
   const at = d ? `\`${d.rel}:${d.line}\`` + (d.as !== 'APP' ? ' *(as `' + d.as + '.`)*' : '') : '— *phantom*';
   L.push(`| \`APP.${n}\` | ${at} | ${w ? w.length : 0} | ${(reads.get(n) || []).length} |`);
 }
-fs.mkdirSync(path.join(ROOT, 'internal'), { recursive: true });
-fs.writeFileSync(path.join(ROOT, 'internal/APP_SURFACE.md'), L.join('\n') + '\n');
+fs.mkdirSync(OUT_DIR, { recursive: true });
+fs.writeFileSync(path.join(OUT_DIR, 'APP_SURFACE.md'), L.join('\n') + '\n');
 console.log(`§APP_SURFACE files=${files.length} fields=${names.length} alias_only=${aliasOnly.length} phantom=${phantom.length}`);
