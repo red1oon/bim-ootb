@@ -57,9 +57,14 @@ function prodType(t) { return t === 'service' ? 'S' : (t === 'consu' || t === 'p
     counts[model + ' ' + JSON.stringify(domain)] = await ex(model, 'search_count', [domain]);
     return ex(model, 'search_read', [domain], { fields: fields, order: order || 'id' });
   }
-  function write(name, target, header, rows, sourceKey) {
+  // The CSV header carries ONLY iDempiere columns: legacy refuses a file whose first line is not the template's
+  //   CSVHeader (MImportTemplate.validateFile). The odoo_* columns go to provenance.json (row i of the file → Odoo fields).
+  var provenance = {};
+  function write(name, target, allHeader, rows, sourceKey) {
+    var header = allHeader.filter(function (h) { return !/^odoo_/.test(h); }), prov = allHeader.filter(function (h) { return /^odoo_/.test(h); });
     var txt = header.map(cell).join(',') + '\n' + rows.map(function (r) { return header.map(function (h) { return cell(r[h]); }).join(','); }).join('\n') + (rows.length ? '\n' : '');
     fs.writeFileSync(path.join(OUT, name), txt);
+    provenance[name] = rows.map(function (r) { var o = {}; prov.forEach(function (h) { if (r[h] !== undefined && r[h] !== '') o[h.slice(5)] = r[h]; }); return o; });
     files.push({ file: name, target: target, rows: rows.length, source: sourceKey });
     console.log('§ODOO-EXPORT file=' + name + ' target=' + target + ' rows=' + rows.length);
   }
@@ -159,9 +164,9 @@ function prodType(t) { return t === 'service' ? 'S' : (t === 'consu' || t === 'p
   write('06_products.csv', 'I_Product', PH, pRows, 'product.product []');
 
   // 6b Sale price → I_PriceList (Odoo list_price). Name = where it came from.
-  write('06b_pricelist.csv', 'I_PriceList', ['Name', 'IsSOPriceList', 'ISO_Code', 'ValidFrom', 'ProductValue', 'PriceList', 'PriceStd', 'PriceLimit'],
+  write('06b_pricelist.csv', 'I_PriceList', ['Name', 'IsSOPriceList', 'ISO_Code', 'ValidFrom', 'ProductValue', 'PriceList', 'PriceStd', 'PriceLimit', 'odoo_id'],
     prods.map(function (p) { return { Name: 'Odoo list_price', IsSOPriceList: 'Y', ISO_Code: iso, ValidFrom: CUTOVER, ProductValue: pval(p),
-      PriceList: p.list_price, PriceStd: p.list_price, PriceLimit: '' }; }), 'product.product []');
+      PriceList: p.list_price, PriceStd: p.list_price, PriceLimit: '', odoo_id: p.id }; }), 'product.product []');
 
   // 7 Warehouses + locators (window CSV import) and on-hand stock at cutover → I_Inventory.
   var whs = await slice('stock.warehouse', [], ['id', 'name', 'code', 'lot_stock_id']);
@@ -198,7 +203,8 @@ function prodType(t) { return t === 'service' ? 'S' : (t === 'consu' || t === 'p
   var manifest = { tool: 'odoo_agent/export.js', odoo_version: version, db: DB, cutover: CUTOVER, currency: iso,
     company: company.map(function (c) { return c.name; }), files: files, source_counts: counts, notes: notes, self_check_fails: fails };
   fs.writeFileSync(path.join(OUT, 'manifest.json'), JSON.stringify(manifest, null, 1));
+  fs.writeFileSync(path.join(OUT, 'provenance.json'), JSON.stringify(provenance));
   notes.forEach(function (n) { console.log('§ODOO-EXPORT note ' + n); });
-  console.log('\n' + (fails ? '🔴 ODOO-EXPORT FAIL (' + fails + ')' : '🟢 ODOO-EXPORT PASS') + ' — ' + files.length + ' files, manifest.json written to ' + OUT);
+  console.log('\n' + (fails ? '🔴 ODOO-EXPORT FAIL (' + fails + ')' : '🟢 ODOO-EXPORT PASS') + ' — ' + files.length + ' files + manifest.json + provenance.json written to ' + OUT);
   process.exit(fails ? 1 : 0);
 })().catch(function (e) { console.log('§ODOO-EXPORT ERROR ' + e.message); process.exit(2); });
