@@ -70,5 +70,5 @@ CUTOVER=2026-12-31 node export.js   # the date your opening stock is counted at 
 Same `ODOO_HOST / ODOO_PORT / ODOO_DB / ODOO_LOGIN / ODOO_PASSWORD` variables as above. It reads (never writes)
 your units of measure, payment terms, product categories, chart of accounts, partners + contacts, products + vendor
 prices, sale prices, warehouses, locations and on-hand stock. `manifest.json` records how many rows Odoo has of
-each, so the ERP can prove nothing was dropped or made up. Your own company and your Odoo users' contact cards
+each, so the ERP can prove nothing was dropped or made up; `provenance.json` maps every row back to its Odoo record. Your own company and your Odoo users' contact cards
 go to a separate file (`05b_bpartners_internal.csv`) — you choose on the summary screen whether to bring them in.
