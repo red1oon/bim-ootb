@@ -162,13 +162,26 @@ function fileFacts(text) {
       const clsB = {}; bEl.forEach(e => clsB[e.guid] = e.cls);
       const items = aEl.filter(e => cA[e.guid]).map(e => ({ cls: e.cls, c: cA[e.guid], guid: e.guid })).concat(walked.filter(o => o.c).map(o => ({ cls: o.cls, c: o.c, guid: null })));
       const poolBy = {}; Object.keys(cB).forEach(g => (poolBy[clsB[g]] = poolBy[clsB[g]] || []).push({ g, c: cB[g], used: false }));
-      const d = [], dist = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]); let byId = 0, byNear = 0, none = 0;
-      items.forEach(it => { let hit = it.guid && cB[it.guid]; if (hit) { byId++; d.push(dist(it.c, cB[it.guid])); return; }
+      const pairs = [], d = [], dist = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]); let byId = 0, byNear = 0, none = 0;
+      items.forEach(it => { let hit = it.guid && cB[it.guid]; if (hit) { byId++; pairs.push([it.guid, it.guid]); d.push(dist(it.c, cB[it.guid])); return; }
         let best = null, bd = 2; (poolBy[it.cls] || (it.cls === 'IfcWallStandardCase' ? poolBy.IfcWall : null) || []).forEach(p => { if (p.used) return; const x = dist(it.c, p.c); if (x < bd) { bd = x; best = p; } });
-        if (best) { best.used = true; byNear++; d.push(bd); } else none++; });
+        if (best) { best.used = true; byNear++; d.push(bd); if (it.guid) pairs.push([it.guid, best.g]); } else none++; });
       verdict(key, 'C6b elements with a position in A that have a same-class element within 2 m in B', byId + byNear, items.length, `byGlobalId=${byId} byNearestCentre(fallback)=${byNear} unmatched=${none}`);
       say(`${TAG} [${key}] C6c centre difference m over ${d.length} matched: median=${med(d) === null ? 'n/a' : med(d).toFixed(4)} max=${d.length ? Math.max.apply(null, d).toFixed(4) : 'n/a'}  (fallback matches are a lower bound; a position GAP hides in the unmatched)`);
-      verdict(key, 'C6d matched centres within 1 cm', d.filter(x => x < 0.01).length, d.length); }
+      verdict(key, 'C6d matched centres within 1 cm', d.filter(x => x < 0.01).length, d.length);
+      // ── (b) geometry per element, (c) materials and colours: pairs = A db elements matched to B (GlobalId, else same class + nearest centre). Measured from the re-open DBs (component_geometries, elements_meta) ──
+      const vc = (db, g) => { const r = rows(db, "SELECT length(c.vertices)/12 FROM element_instances i JOIN component_geometries c ON c.geometry_hash=i.geometry_hash WHERE i.guid='" + g.replace(/'/g, "''") + "'"); return r && r[0] ? r[0][0] : null; };
+      const vol = (db, g) => { const r = rows(db, "SELECT (maxX-minX)*(maxY-minY)*(maxZ-minZ) FROM element_world_bbox WHERE guid='" + g.replace(/'/g, "''") + "'"); return r && r[0] ? r[0][0] : null; };
+      const mat = (db, g) => { const r = rows(db, "SELECT material_name, material_rgba FROM elements_meta WHERE guid='" + g.replace(/'/g, "''") + "'"); return r && r[0] ? r[0] : [null, null]; };
+      let vEq = 0, volEq = 0, nmEq = 0, rgEq = 0, nmN = 0, rgN = 0; const vEx = [];
+      pairs.forEach(([ga, gb]) => { const a = vc(dbA, ga), b = vc(B, gb); if (a === b) vEq++; else if (vEx.length < 3) vEx.push(ga.slice(0, 8) + ' ' + a + '/' + b);
+        const va = vol(dbA, ga), vb = vol(B, gb); if (va !== null && vb !== null && Math.abs(va - vb) <= 0.01 * Math.max(Math.abs(va), 1e-9)) volEq++;
+        const ma = mat(dbA, ga), mb = mat(B, gb); if (ma[0]) { nmN++; if (ma[0] === mb[0]) nmEq++; } if (ma[1]) { rgN++; if (ma[1] === mb[1]) rgEq++; } });
+      verdict(key, 'C9b vertex count per matched element (A vs B, from the re-open DBs)', vEq, pairs.length, `pairs=${pairs.length} (GlobalId ${byId}, fallback ${byNear}); first diffs: ${vEx.join(' | ') || '(none)'}`);
+      verdict(key, 'C9b bbox volume per matched element within 1%', volEq, pairs.length);
+      verdict(key, 'C9c material_name per matched element (A has a name)', nmEq, nmN, 'from the re-open DBs');
+      verdict(key, 'C9c material_rgba per matched element (A has a colour)', rgEq, rgN, 'from the re-open DBs'); }
+
 
     // ── C7 frame ──
     // C7a skips import_date (differs by construction) and building_name/source_file (set from the open call's file name: instrument-forced, not carried by the file)
@@ -178,6 +191,32 @@ function fileFacts(text) {
       if (FS) { const items = [['IfcSite RefLatitude', FS.siteLat, FB.siteLat], ['IfcSite RefLongitude', FS.siteLon, FB.siteLon], ['IfcMapConversion', !!FS.byType.IFCMAPCONVERSION, !!FB.byType.IFCMAPCONVERSION], ['IfcProjectedCRS', !!FS.byType.IFCPROJECTEDCRS, !!FB.byType.IFCPROJECTEDCRS]].filter(x => x[1]);
         items.forEach(x => say(`    source has ${x[0]}: in export ${x[2]}`)); verdict(key, 'C7b frame facts the source IFC states, present in the export', items.filter(x => x[2]).length, items.length, 'source states: ' + (items.map(x => x[0]).join(', ') || 'none')); }
       else say(`${TAG} [${key}] C7b INCONCLUSIVE no source IFC (db input)`); }
+
+
+    // ── C9 further measures from the design lane. Where the re-open DB does not carry a fact, it is counted in the exported FILE TEXT (stated per line) ──
+    { const tx = FB.text, st = srcText || '', cT = (re, t) => (t.match(re) || []).length;
+      // (a) GlobalId stability is C6a above.
+      // (e) site placement: georef offset keys, site lat/long (C7b), true north
+      const gA = (rows(dbA, "SELECT key, value FROM project_metadata WHERE key LIKE 'georef_offset%'") || []), gBm = {}; (rows(B, "SELECT key, value FROM project_metadata WHERE key LIKE 'georef_offset%'") || []).forEach(r => gBm[r[0]] = r[1]);
+      verdict(key, 'C9e georef_offset_* keys equal (re-open DBs)', gA.filter(r => String(gBm[r[0]]) === String(r[1])).length, gA.length, gA.length ? '' : 'A holds no georef_offset (local model): VACUOUS');
+      const tn = t => { const m = /IFCGEOMETRICREPRESENTATIONCONTEXT\(([^;]*)\);/.exec(t); return m ? topArgs(m[1])[5] !== '$' && topArgs(m[1])[5] !== undefined : false; };
+      verdict(key, 'C9e true north: source states it, export states it (file text)', srcText && tn(st) ? (tn(tx) ? 1 : 0) : 0, srcText && tn(st) ? 1 : 0);
+      // (f) room property sets
+      const sA = (rows(dbA, "SELECT count(*) FROM element_pset_common WHERE pset='Pset_SpaceCommon'") || [[0]])[0][0], sSrc = cT(/IFCPROPERTYSET\([^;]*'Pset_SpaceCommon'/g, st), sBf = cT(/IFCPROPERTYSET\([^;]*'Pset_SpaceCommon'/g, tx), nSp = sA || sSrc;
+      verdict(key, 'C9f Pset_SpaceCommon property sets (A db rows ' + sA + '; source file text ' + sSrc + ') vs export file text', Math.min(sBf, nSp), nSp, 'IfcSpace rows are dropped from A by the open rule, so N comes from the source text when A has none');
+      // (g) openings and voids
+      const opA = (rows(dbA, 'SELECT count(DISTINCT opening_guid) FROM rel_fills_host') || [[0]])[0][0], cutsA = opsInfo.filter(o => o.t === 'GEOM_CUT').length, opF = FB.byType.IFCOPENINGELEMENT || 0, vdF = FB.byType.IFCRELVOIDSELEMENT || 0;
+      verdict(key, 'C9g IfcOpeningElement in the file vs openings A holds (rel_fills_host)', Math.min(opF, opA), opA, `A op-log GEOM_CUT=${cutsA}; file IfcOpeningElement=${opF}`);
+      verdict(key, 'C9g IfcRelVoidsElement in the file vs openings A holds', Math.min(vdF, opA), opA, `file IfcRelVoidsElement=${vdF}`);
+      // (h) units
+      const lu = t => { for (const m of t.matchAll(/IFCSIUNIT\(([^;]*)\);/g)) { const a = topArgs(m[1]); if (a[1] === '.LENGTHUNIT.') return (a[2] === '$' ? '' : a[2]) + a[3]; } const cb = /IFCCONVERSIONBASEDUNIT\([^;]*\.LENGTHUNIT\.[^;]*'([^']*)'/.exec(t); return cb ? 'conv:' + cb[1] : null; };
+      const lS = srcText ? lu(st) : null, lB = lu(tx);
+      verdict(key, 'C9h length unit: export = source', srcText && lS ? (lS === lB ? 1 : 0) : 0, srcText && lS ? 1 : 0, `source=${lS} export=${lB} (file text)`);
+      // (i) MEP hand-off, file text. N = walked runs; the walked fixtures are measured too.
+      const runsA = walked.filter(o => o.run).length, fixA = walked.length - runsA, sys = FB.byType.IFCDISTRIBUTIONSYSTEM || 0, nest = FB.byType.IFCRELNESTS || 0, rcp = FB.byType.IFCRELCONNECTSPORTS || 0, ports = FB.byType.IFCDISTRIBUTIONPORT || 0, asg = FB.byType.IFCRELASSIGNSTOGROUP || 0;
+      verdict(key, 'C9i walked runs assigned to an IfcDistributionSystem (IfcRelAssignsToGroup)', Math.min(asg, runsA), runsA, `file: IfcDistributionSystem=${sys} IfcRelAssignsToGroup=${asg}`);
+      verdict(key, 'C9i walked runs with ports (IfcRelNests/IfcRelConnectsPorts)', Math.min(rcp, runsA), runsA, `file: IfcDistributionPort=${ports} IfcRelNests=${nest} IfcRelConnectsPorts=${rcp}`);
+      verdict(key, 'C9i walked fixtures in an IfcDistributionSystem', Math.min(sys > 0 ? asg : 0, fixA), fixA, `file: IfcDistributionSystem=${sys}`); }
 
     // ── C8 red control: ONE seeded element removed ──
     { const seeded = opsInfo.filter(o => o.t === 'GEOM_INSERT' && !o.dw && !o.anchor && o.cls), bExp = by(bEl, e => e.cls), aC = by(aAll, e => e.cls);

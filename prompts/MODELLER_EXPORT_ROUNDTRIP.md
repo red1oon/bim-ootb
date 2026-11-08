@@ -20,6 +20,7 @@ Parent spec: bim-compiler `prompts/MODELLER_MASTER.md` `## §EXPORT-ROUNDTRIP` (
 - C5 routed runs: walked ops without `_dw.ifc` (pipe/duct segments, fittings) vs B class counts of those classes; swept solids and ports counted in the file text (ports are not held in the op-log: A side stated n/a).
 - C6 position: GlobalId survival (A guids found in B), then for matched elements the world-bbox centre difference (median, max, metres). Matching is by GlobalId first, else same class + nearest centre within 2 m (labelled `fallback`). Walked fixtures: A centre from `Bonsai.library.foldInsert` (the renderer's own fold, never re-derived).
 - C7 frame: every `project_metadata` key of A equal in B; site RefLatitude/RefLongitude, IfcMapConversion, IfcProjectedCRS of the SOURCE file present in the export.
+- C9 (added 2026-11-08, design lane): (a) GlobalId stability = C6a; (b) geometry per matched element: vertex count and bbox volume within 1%, from the re-open DBs (pairs = GlobalId, else same class + nearest centre, so a pairing error would show as a volume mismatch); (c) `material_name` and `material_rgba` per matched element, re-open DBs; (d) storey elevation values = C4; (e) `georef_offset_*` keys (re-open DBs), true north (file text, source states it vs export); (f) `Pset_SpaceCommon` property sets, N from the source text because the open rule drops IfcSpace rows from A, B counted in the export file text; (g) `IfcOpeningElement` and `IfcRelVoidsElement` in the export text vs the openings A holds (distinct `rel_fills_host.opening_guid`; op-log GEOM_CUT also logged); (h) length unit of source vs export, file text; (i) walked runs in an `IfcDistributionSystem` / with ports, file text (N = walked runs, VACUOUS on public files; walked fixtures in a system measured too).
 - C8 RED CONTROL: the same model exported with ONE seeded element removed from `_geomOps`. C1 for that class must show B-1 (GAP, chosen from a class that PASSES in the main run) and no other class may change. If it does not, the instrument is blind: `§RT-CONTROL BLIND`.
 
 ## Harness rules
@@ -59,3 +60,22 @@ C1 rows that GAP, Duplex: `IfcWallStandardCase` 0 of 56 (written as `IfcWall`, w
 C2: walked ELEC/ACMV/PLB discipline is lost (Duplex ELEC 0 of 102, ACMV 0 of 19, PLB 0 of 18; B reads all 139 as `MEP`); FP 38 of 38.
 Not measurable here: C5 (no drawn mains on a public file, `§WALK-MAINS none reason=no sheet held`, so no routed runs exist to export; swept solids and ports in the file are 0 and 0; ports are not held in the op-log); C4 grid (no public IFC states a grid); a private leg (`RT_DB`, later, results stay out of the repo).
 The walk label survives (C4 BIMOOTB_Walk, Provisional) and positions of what is exported are exact; everything the Modeller holds about structure, identity and context does not.
+
+### RESULT 2026-11-08 addendum, C9 (log `/tmp/rt_out/rt_run3.log`; whole run PASS=10 GAP=50 INCONCLUSIVE=14, exit 0, red control still SEES IT on both)
+| Claim | Duplex | SampleHouse | How measured |
+|---|---|---|---|
+| C9a GlobalId stability | 0 of 218 GAP | 0 of 60 GAP | re-open DBs (= C6a) |
+| C9b vertex count per matched element | 33 of 196 GAP | 2 of 24 GAP | re-open DBs; pairs by nearest centre (no GlobalId survives) |
+| C9b bbox volume within 1% | 196 of 196 PASS | 24 of 24 PASS | re-open DBs (also confirms the pairing) |
+| C9c `material_name` | 0 of 0 INCONCLUSIVE (A holds no names) | same | re-open DBs |
+| C9c `material_rgba` | 52 of 196 GAP | 10 of 24 GAP | re-open DBs |
+| C9d storey elevation values | 0 of 4 GAP | 0 of 2 GAP | = C4 |
+| C9e `georef_offset_*` | 0 of 0 INCONCLUSIVE (local model) | same | re-open DBs |
+| C9e true north | 0 of 0 INCONCLUSIVE (source does not state it) | 0 of 1 GAP | file text |
+| C9e site lat/long | 0 of 2 GAP | 0 of 2 GAP | = C7b, file text |
+| C9f `Pset_SpaceCommon` | 0 of 21 GAP | 0 of 4 GAP | N from source text, B from export text |
+| C9g `IfcOpeningElement` in file / `IfcRelVoidsElement` | 0 of 50 / 0 of 50 GAP | 0 of 7 / 0 of 7 GAP | file text; op-log GEOM_CUT = 0 on both (the opened model holds openings only as `rel_fills_host`) |
+| C9h length unit export = source | 1 of 1 PASS (metre) | 0 of 1 GAP (source millimetre, export metre; positions already agree, C6d) | file text |
+| C9i runs in a system / with ports | 0 of 0 / 0 of 0 INCONCLUSIVE (no runs on public files) | same | file text |
+| C9i walked fixtures in an `IfcDistributionSystem` | 0 of 177 GAP | 0 of 24 GAP | file text (`IfcDistributionSystem` = 0) |
+The vertex-count GAP is re-tessellation on re-open (triangulated face set vs the extractor's mesh), not lost shape: bbox volume matches on every matched element.
