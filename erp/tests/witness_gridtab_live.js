@@ -44,7 +44,11 @@ const PAGELOG = [];
   const access = (role, w) => Q("SELECT 1 FROM AD_Window_Access WHERE AD_Role_ID=? AND AD_Window_ID=? AND IsActive='Y'", [role, w]).length > 0;
   const ACCT_N = Q("SELECT count(*) FROM C_AcctSchema WHERE AD_Client_ID=11 AND IsActive='Y'")[0][0];   // PO.insert_Accounting (model_master.js): saving a header auto-creates ONE <X>_Acct child row per accounting schema of the client (iDempiere AFTER-SAVE, not a leak)
   const isIdLink = (W, col) => { const x = Q("SELECT c.ad_reference_id FROM AD_Column c JOIN AD_Table t ON t.AD_Table_ID=c.AD_Table_ID WHERE lower(t.TableName)=lower(?) AND lower(c.ColumnName)=lower(?)", [W.childTable, col || '']); return x.length ? [13, 18, 19, 30, 21, 31, 25, 33, 35, 32, 53370, 200202, 200231].indexOf(Number(x[0][0])) >= 0 : true; };
-  const autoRows = W => /_acct$/i.test(W.childTable) ? ACCT_N : 0;
+  // MAssetGroup.afterSave (MAssetGroup.java:189-205) does NOT call insert_Accounting: a new group COPIES the _Acct rows of the
+  //   group getDefault_ID picks (:162-174, IsDefault DESC then lowest id). GardenWorld has no default, so that is group 100 with 0 rows.
+  const ASSET_DEF = Q("SELECT g.A_Asset_Group_ID FROM A_Asset_Group g WHERE g.AD_Client_ID=11 ORDER BY g.IsDefault DESC, g.A_Asset_Group_ID ASC LIMIT 1");
+  const ASSET_N = ASSET_DEF.length ? Q("SELECT count(*) FROM A_Asset_Group_Acct WHERE A_Asset_Group_ID=?", [ASSET_DEF[0][0]])[0][0] : 0;
+  const autoRows = W => /^a_asset_group_acct$/i.test(W.childTable) ? ASSET_N : /_acct$/i.test(W.childTable) ? ACCT_N : 0;
   const POPW = [];
   for (const [wid, wname] of Q("SELECT AD_Window_ID, Name FROM AD_Window WHERE IsActive='Y' ORDER BY AD_Window_ID")) {
     const tabs = Q("SELECT t.AD_Tab_ID, t.Name, t.TabLevel, tb.TableName FROM AD_Tab t JOIN AD_Table tb ON tb.AD_Table_ID=t.AD_Table_ID WHERE t.AD_Window_ID=? AND t.IsActive='Y' ORDER BY t.SeqNo", [wid]);
