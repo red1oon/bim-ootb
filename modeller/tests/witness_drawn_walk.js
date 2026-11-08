@@ -86,13 +86,16 @@ const STR_B = ifcDoc({ storeyO: [OFF[0], OFF[1], 0], tag: 'STR_B', boxes: [
 
 // ── a duct-sheet DXF in raw ASCII (LINE, TEXT, INSERT), mm. building = sheet/1000 - off (translation only), so the fit has to recover the offset. ──
 function sheetDxf(o) {   // o: { off:[ox,oy] metres (sheet = building + off), grid:{u:[[tag,x,y0,y1]],v:[[tag,y,x0,x1]]}, pieces:[[x0,y0,x1,y1]], terminals:[[x,y,name]] }  building metres
-  const out = ['0', 'SECTION', '2', 'ENTITIES'], mm = (v, k) => String(Math.round((v + o.off[k]) * 1000));
+  const out = [], mm = (v, k) => String(Math.round((v + o.off[k]) * 1000));
+  if (o.blocks) { out.push('0', 'SECTION', '2', 'BLOCKS'); Object.keys(o.blocks).forEach(n => out.push('0', 'BLOCK', '8', '0', '2', n, '70', '0', '10', '0', '20', '0', '30', '0', '3', n, '0', 'LINE', '8', '0', '10', '0', '20', '0', '30', '0', '11', '100', '21', '0', '31', String(o.blocks[n]), '0', 'ENDBLK', '8', '0')); out.push('0', 'ENDSEC'); }   // o.blocks: { name: Z extent in sheet units (mm) }
+  out.push('0', 'SECTION', '2', 'ENTITIES');
   const line = (layer, a, b) => out.push('0', 'LINE', '8', layer, '10', mm(a[0], 0), '20', mm(a[1], 1), '30', '0', '11', mm(b[0], 0), '21', mm(b[1], 1), '31', '0');
   const text = (layer, s, p) => out.push('0', 'TEXT', '8', layer, '10', mm(p[0], 0), '20', mm(p[1], 1), '30', '0', '40', '200', '1', s);
   o.grid.u.forEach(([t, x, y0, y1]) => { line('S-GRID', [x, y0], [x, y1]); text('S-GRID-IDEN', t, [x, y0 - 0.3]); });
   o.grid.v.forEach(([t, y, x0, x1]) => { line('S-GRID', [x0, y], [x1, y]); text('S-GRID-IDEN', t, [x0 - 0.3, y]); });
   o.pieces.forEach(p => line('M-HVAC-DUCT-CNTR', [p[0], p[1]], [p[2], p[3]]));
   (o.terminals || []).forEach(t => out.push('0', 'INSERT', '8', 'M-HVAC-CDFF-OTLN', '2', t[2], '10', mm(t[0], 0), '20', mm(t[1], 1), '30', '0'));
+  (o.equip || []).forEach(e => out.push('0', 'INSERT', '8', e[3] || 'M-EQPM', '2', e[2], '10', mm(e[0], 0), '20', mm(e[1], 1), '30', '0'));   // equipment: [x, y, block name, layer]
   out.push('0', 'ENDSEC', '0', 'EOF'); return out.join('\n') + '\n';
 }
 const rowsOf = (db, sql, args) => { const st = db.prepare(sql); return args ? st.all(...args) : st.all(); };
@@ -309,6 +312,89 @@ const logsOf = f => { const lines = [], orig = console.log; console.log = s => {
         ok('D5c a drawn terminal keeps its drawn x,y (< 1 mm), takes its height from the ceiling that holds it (host, bottom face), and a terminal of no kind is placed and gives no system', near1 && drawnT.every(p => p.host && p.heightBasis === 'ceiling:' + p.host && p.provisional === false) && noKindT.length === 1 && drawnT.filter(p => p.system).length === 2, 'positions match=' + near1 + ' noKind=' + noKindT.length + ' kinds=' + JSON.stringify(drawnT.map(p => p.system)));
       }
     }
+  }
+
+  // ── P: FP equipment in the walk (prompts/DISC_WALK_DRAWN_INTEGRATION.md §8). Fixture C (public, written here): Level 1 with two floor slabs that STEP (A top 0.00 over x 0..6, B top 0.30 over x 6..12) and a grid.
+  // ISSUES IT EXPOSES: (P1) equipment placed at a guessed or storey-elevation z; (P2) a stepped floor ignored; (P3) a block whose bottom would sit under 0.10 m left unclamped; (P4) band sprinkler heads left beside drawn equipment;
+  // (P5) an item with no floor placed anyway; (P6) borrowed kinds unlabelled, or the height's basis/source missing; (P7) a box (or any mesh not keyed on the item's kind) standing in for the item.
+  {
+    const SLAB_A = guid(901), SLAB_B = guid(902), kv = (l, k) => { const m = new RegExp(k + '=(\\S+)').exec(l); return m ? m[1] : null; };
+    const ARC_C = ifcDoc({ storeyO: [0, 0, 0], tag: 'ARC_C', boxes: [
+      { cls: 'IfcSlab', name: 'Floor A', box: [0, 0, -0.2, 6, 8, 0], pre: '.FLOOR.', gid: SLAB_A },
+      { cls: 'IfcSlab', name: 'Floor B', box: [6, 0, 0.1, 12, 8, 0.3], pre: '.FLOOR.', gid: SLAB_B }],
+      grid: { gid: guid(950), name: 'Grid C', u: [['A', [[0, -1], [0, 9]]], ['B', [[6, -1], [6, 9]]], ['C', [[12, -1], [12, 9]]]], v: [['1', [[-1, 0], [13, 0]]], ['2', [[-1, 4], [13, 4]]], ['3', [[-1, 8], [13, 8]]]] } });
+    const ifcC = path.join(TMP, 'ARC_C.ifc'), dbC = path.join(TMP, 'fp_C.db'), dbCbase = path.join(TMP, 'fp_C_base.db');
+    fs.writeFileSync(ifcC, ARC_C); sh([TOOL, '--ifc', ifcC, '-o', dbCbase]);
+    { const g0 = new SQL.Database(new Uint8Array(fs.readFileSync(dbCbase)));   // the single-file extract states no grid rows (the reader is handed in only by the federated path): given directly, as D5 does for Clinic
+      g0.run('CREATE TABLE IF NOT EXISTS ifc_grid_axis(grid_guid TEXT, grid_name TEXT, storey TEXT, axis_guid TEXT, tag TEXT, x0 REAL, y0 REAL, x1 REAL, y1 REAL, axis_set TEXT)');
+      [['A', 0], ['B', 6], ['C', 12]].forEach(([t, x], i) => g0.run('INSERT INTO ifc_grid_axis VALUES(?,?,?,?,?,?,?,?,?,?)', ['G-C', 'Grid C', 'Level 1', 'g:U' + i, t, x, -1, x, 9, 'U']));
+      [['1', 0], ['2', 4], ['3', 8]].forEach(([t, y], i) => g0.run('INSERT INTO ifc_grid_axis VALUES(?,?,?,?,?,?,?,?,?,?)', ['G-C', 'Grid C', 'Level 1', 'g:V' + i, t, -1, y, 13, y, 'V']));
+      fs.writeFileSync(dbCbase, Buffer.from(g0.export())); g0.close(); }
+    fs.copyFileSync(dbCbase, dbC);
+    const EQS = [[2, 2, 'EXTINGUISHER FOAM 9L'], [9, 4, 'EXTINGUISHER FOAM 9L'], [3, 6, 'FIRE CABINET 1'], [10, 6, 'Fire_Blanket'], [4, 1, 'FIRE CABINET TALL'], [20, 4, 'EXTINGUISHER FOAM 9L']];   // items 1..6 in DXF order
+    const dxfE = path.join(TMP, 'FP-101.dxf');
+    fs.writeFileSync(dxfE, sheetDxf({ off: [100, 200], grid: { u: [['A', 0, -1, 9], ['B', 6, -1, 9], ['C', 12, -1, 9]], v: [['1', 0, -1, 13], ['2', 4, -1, 13], ['3', 8, -1, 13]] }, pieces: [], terminals: [], equip: EQS, blocks: { 'FIRE CABINET TALL': 1600 } }));
+    const mE = sh([MAINS, dbC, dxfE, '--sheet-meta=' + JSON.stringify({ number: 'FP-101', revision: 'A', storeys: ['Level 1'] })]);
+    log(mE.split('\n').filter(l => /§MAINS-(EQUIP-TO-DB|TO-DB|READ|EQUIP |REFUSE|INCONCLUSIVE|STOREYS)/.test(l)).map(l => '  tool ' + l.slice(0, 260)).join('\n'));
+    const pdb = new SQL.Database(new Uint8Array(fs.readFileSync(dbC)));
+    const nEq = q(pdb, 'SELECT count(*) FROM drawn_equipment')[0][0], ruleRow = q(pdb, 'SELECT id, top_m, min_bottom_m FROM drawn_equipment_rule')[0], sizeRows = q(pdb, 'SELECT block, height_m FROM drawn_equipment_size');
+    log('§W_DW P tool result: drawn_equipment=' + nEq + ' rule=' + JSON.stringify(ruleRow) + ' sizes=' + JSON.stringify(sizeRows) + ' storeys=' + JSON.stringify(q(pdb, 'SELECT sheet_number, storey FROM drawn_sheet_meta')));
+    if (nEq !== EQS.length || !ruleRow) incon('P*', 'the equipment sheet was not stored (items ' + nEq + ' of ' + EQS.length + ', rule ' + JSON.stringify(ruleRow) + '): nothing walked');
+    else {
+      H.openBuildingRules(SQL, stack, 'Duplex');
+      const walkFP = file => { const buf = new Uint8Array(fs.readFileSync(file)); return logsOf(() => H.walkLive(SQL, stack, 'FP', buf, 'Duplex', [], {})); };
+      const DWm = stack.DW, RULESJ = JSON.parse(fs.readFileSync(path.join(M, 'drawn_mains_rules.json'), 'utf8')), ROW = RULESJ.rows.find(r => r.role === 'mount_height');
+      const WP = walkFP(dbC), wp = WP.r, ops = wp.drawn ? DWm.drawnOps(wp.drawn) : [], fpL = (WP.lines.filter(l => /§FP-EQUIP placed=/.test(l))[0] || '');
+      log('  walk: ' + WP.lines.filter(l => /§FP-EQUIP/.test(l)).map(l => l.slice(0, 300)).join('\n        '));
+      const byItem = {}; ops.forEach(o => { byItem[o.params._dw.item] = o; });
+      const zTop = o => o.params.placement.z + o.params.bbox[5], zBot = o => o.params.placement.z;
+      const fl = g => q(pdb, "SELECT maxZ FROM element_world_bbox WHERE guid='" + g + "'")[0][0];
+      const floorA = fl(SLAB_A), floorB = fl(SLAB_B), TOP = ROW.top_m, MINB = ROW.min_bottom_m;
+      const top = (i, f) => byItem[i] && near(zTop(byItem[i]), f + TOP, 0.0005);
+      ok('P1 equipment-only sheet through mains_to_db, walk FP: the rule-row items are placed with TOP = floor + ' + TOP + ' m (oracle: the floor element\'s own world box)', !!ROW && ROW.id === 'fp-mount-nfpa10' && top(1, floorA) && top(2, floorB) && top(3, floorA) && top(4, floorB) && ops.length === 5 && kv(fpL, 'placed') === '5' && kv(fpL, 'heightRule') === 'fp-mount-nfpa10',
+        'floors A=' + floorA.toFixed(3) + ' B=' + floorB.toFixed(3) + ' tops=' + [1, 2, 3, 4].map(i => byItem[i] ? zTop(byItem[i]).toFixed(4) : 'none') + ' ops=' + ops.length + ' | ' + fpL.slice(0, 200));
+      const dbNo = path.join(TMP, 'fp_C_norule.db'); fs.copyFileSync(dbC, dbNo); { const d0 = new SQL.Database(new Uint8Array(fs.readFileSync(dbNo))); d0.run('DELETE FROM drawn_equipment_rule'); fs.writeFileSync(dbNo, Buffer.from(d0.export())); d0.close(); }
+      const WN = walkFP(dbNo), wn = WN.r, nL = (WN.lines.filter(l => /§FP-EQUIP placed=/.test(l))[0] || ''), nD = (WN.lines.filter(l => /§FP-EQUIP-DETAIL/.test(l))[0] || '');
+      ok('P1 RED: with the height row removed nothing is placed: placed=0, heightRule=none, all ' + EQS.length + ' counted noRule, no op and so no z (never a guessed one)', kv(nL, 'placed') === '0' && kv(nL, 'heightRule') === 'none' && kv(nD, 'noRule') === String(EQS.length) && DWm.drawnOps(wn.drawn).length === 0, nL.slice(0, 160) + ' | ' + nD.slice(0, 120));
+      ok('P2 a floor step (two slabs in one storey, tops ' + floorA.toFixed(2) + ' and ' + floorB.toFixed(2) + ') puts each item on its own floor: items 1,3 on slab A, items 2,4 on slab B, floorZ and host recorded', floorB - floorA > 0.25 && [1, 3].every(i => byItem[i] && byItem[i].params._dw.floor === SLAB_A && near(byItem[i].params._dw.floorZ, floorA, 0.0005)) && [2, 4].every(i => byItem[i] && byItem[i].params._dw.floor === SLAB_B && near(byItem[i].params._dw.floorZ, floorB, 0.0005)),
+        [1, 2, 3, 4].map(i => i + ':' + (byItem[i] ? byItem[i].params._dw.floor.slice(-3) + '@' + byItem[i].params._dw.floorZ : 'none')).join(' '));
+      const o5 = byItem[5];
+      ok('P3 bottom clamp: the 1.6 m block (top ' + TOP + ' would put its bottom at ' + (TOP - 1.6).toFixed(2) + ' m) gets bottom ' + MINB + ' m above its floor; bottomClamped=1 and only that item is flagged', !!o5 && near(zBot(o5), floorA + MINB, 0.0005) && near(zTop(o5), floorA + MINB + 1.6, 0.0005) && o5.params._dw.bottomClamped === true && kv(fpL, 'bottomClamped') === '1' && ops.filter(o => o.params._dw.bottomClamped).length === 1,
+        'bottom=' + (o5 ? zBot(o5).toFixed(4) : 'none') + ' top=' + (o5 ? zTop(o5).toFixed(4) : 'none') + ' ' + fpL.slice(0, 160));
+      ok('P5 no floor under an item (item 6, 8 m past the last slab): not placed, counted noFloor=1, no op', !byItem[6] && kv(fpL, 'noFloor') === '1' && ops.length === 5, 'noFloor=' + kv(fpL, 'noFloor') + ' item6 op=' + (byItem[6] ? 'present' : 'none'));
+      const strengthOK = o => { const d = o.params._dw; return d.heightBasis === 'code-default' && d.source === ROW.source && d.heightRule === ROW.id && d.strength.position === 'drawn' && d.strength.height === 'provisional' && d.provisional === false && d.positionBasis === 'drawn'; };
+      ok('P6 the cabinet (3) and blanket (4) are labelled borrowed, the extinguishers (1, 2) are not; every op carries HeightBasis=code-default and Source = the row\'s citation; strength: position drawn, height provisional, no Provisional flag', byItem[3].params._dw.heightRuleUse === 'borrowed' && byItem[4].params._dw.heightRuleUse === 'borrowed' && byItem[1].params._dw.heightRuleUse === 'rule' && byItem[2].params._dw.heightRuleUse === 'rule' && kv(fpL, 'borrowedKinds') === '3' && ops.every(strengthOK),
+        'borrowedKinds=' + kv(fpL, 'borrowedKinds') + ' uses=' + ops.map(o => o.params._dw.heightRuleUse).join(',') + ' source=' + (ops[0] && ops[0].params._dw.source || '').slice(0, 50));
+      const kindOT = { extinguisher: 'FIREEXTINGUISHER', cabinet: 'FIRECABINET', blanket: 'FIREBLANKET' };
+      ok('P6b the IFC class comes from the row: IfcFireSuppressionTerminal, USERDEFINED, ObjectType by kind; discipline FP', ops.every(o => { const d = o.params._dw; return d.disc === 'FP' && d.ifcClass === 'IfcFireSuppressionTerminal' && d.predefined === 'USERDEFINED' && d.objectType === kindOT[d.itemKind] && d.label === d.objectType; }), ops.map(o => o.params._dw.objectType).join(','));
+      ok('P7 no box and no borrowed mesh: every op is anchorOnly with no geometry hash, no prim, a marker bbox only; noMesh counts every placed item; the mined FP mesh row is not keyed on ObjectType, so none may be used', ops.length === 5 && ops.every(o => o.op_type === 'GEOM_INSERT' && o.params.anchorOnly === true && !o.params.geometry_hash && !o.params.prim && o.params._dw.meshState === 'noMesh' && o.params.bbox[1] <= 0.05 + 1e-9 && o.params.bbox[3] <= 0.05 + 1e-9) && kv(fpL, 'noMesh') === '5' && /objectTypeKeyedMesh=no/.test(WP.lines.join('\n')) && !(wp.placements || []).some(p => /^drawn:equipment/.test(p.prov || '')),
+        'noMesh=' + kv(fpL, 'noMesh') + ' ' + (WP.lines.filter(l => /objectTypeKeyedMesh/.test(l))[0] || '').slice(0, 220));
+      pdb.close();
+    }
+    // P4 band sprinkler heads, on the Duplex + STR_A federation: a sheet covering Level 1 (its equipment on Level 1 floors); heads on Level 1 dropped and counted, Level 2 unchanged
+    const dbF = path.join(TMP, 'fp_F.db'); fs.copyFileSync(fedA, dbF);
+    const dxfF = path.join(TMP, 'FP-102.dxf');
+    fs.writeFileSync(dxfF, sheetDxf({ off: [100, 200], grid: GRIDSHEET, pieces: [], terminals: [], equip: [[1.5, -2, 'EXTINGUISHER FOAM 9L'], [6, -14, 'FIRE CABINET 1']] }));
+    sh([MAINS, dbF, dxfF, '--sheet-meta=' + JSON.stringify({ number: 'FP-102', revision: 'A', storeys: ['Level 1'] })]);
+    H.openBuildingRules(SQL, stack, 'Duplex');
+    const fdb = new SQL.Database(new Uint8Array(fs.readFileSync(fedA)));
+    const walkF = file => { const buf = new Uint8Array(fs.readFileSync(file)); return logsOf(() => H.walkLive(SQL, stack, 'FP', buf, 'Duplex', [], {})); };
+    const Fb = walkF(fedA), Fd = walkF(dbF), fb = Fb.r, fw = Fd.r;
+    const stz = {}; q(fdb, "SELECT m.storey, t.center_z FROM elements_meta m JOIN element_transforms t USING(guid) WHERE m.storey<>'Unknown'").forEach(r => { (stz[r[0]] = stz[r[0]] || []).push(r[1]); });
+    const med = a => { a = a.slice().sort((x, y) => x - y); return a[a.length >> 1]; }, stm = Object.keys(stz).map(k => [k, med(stz[k])]);
+    const hostStorey = g => { const r = q(fdb, "SELECT storey FROM elements_meta WHERE guid='" + g.replace(/'/g, "''") + "'")[0]; return r ? r[0] : null; };
+    const stOf = p => (p.host && hostStorey(p.host)) || stm.slice().sort((a, b) => Math.abs(a[1] - p.z) - Math.abs(b[1] - p.z))[0][0];
+    const isHead = p => /FireSuppressionTerminal|Sprinkler/i.test(p.ifc_class || '');
+    const heads = (fb.placements || []).filter(isHead), onL1 = heads.filter(p => stOf(p) === 'Level 1'), elsewhereN = heads.length - onL1.length;
+    const fL = (Fd.lines.filter(l => /§FP-EQUIP placed=/.test(l))[0] || ''), keptHeads = (fw.placements || []).filter(p => isHead(p) && !/^drawn:/.test(p.prov || ''));
+    log('  duplex base FP heads=' + heads.length + ' on Level 1=' + onL1.length + ' elsewhere=' + elsewhereN + ' | drawn walk: ' + Fd.lines.filter(l => /§FP-EQUIP/.test(l)).map(l => l.slice(0, 260)).join(' || '));
+    if (!onL1.length || !elsewhereN) incon('P4', 'the base Duplex FP walk has no band head on Level 1 or elsewhere (' + onL1.length + ' / ' + elsewhereN + '): nothing judged');
+    else {
+      ok('P4 band sprinkler heads on the covered storey are dropped and counted (bandDropped = the base walk\'s Level 1 heads); on the uncovered storey they are unchanged and still provisional', kv(fL, 'bandDropped') === String(onL1.length) && keptHeads.length === elsewhereN && keptHeads.every(p => p.provisional === true && stOf(p) !== 'Level 1'),
+        'base heads=' + heads.length + ' L1=' + onL1.length + ' elsewhere=' + elsewhereN + ' | drawn walk bandDropped=' + kv(fL, 'bandDropped') + ' kept=' + keptHeads.length + ' | ' + fL.slice(0, 170));
+      ok('P4b RED: the base walk (no drawn_equipment) is untouched: no §FP-EQUIP line, no drawn record, every head kept', !Fb.lines.some(l => /§FP-EQUIP/.test(l)) && !fb.drawn && heads.length === onL1.length + elsewhereN, 'lines=' + Fb.lines.filter(l => /§FP-EQUIP/.test(l)).length);
+    }
+    fdb.close();
   }
   log('§VERDICT ' + (fail ? 'CLAIM NOT MET' : inc ? 'INCONCLUSIVE' : 'CLAIM MET') + ' pass=' + pass + ' fail=' + fail + ' inconclusive=' + inc);
   process.exit(fail ? 1 : 0);

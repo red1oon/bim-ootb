@@ -5215,13 +5215,14 @@ async function _commitDrawnMains(disc, drawn) {
 function _renderDrawnMains(disc) {
   var root = _dwRoot(); if (!root) return;
   root.children.slice().forEach(function (o) { if (o.userData && o.userData.dwDrawn === disc) root.remove(o); });
-  var d = window.__dwDrawn && window.__dwDrawn[disc]; if (!d || !d.known.length) return;
-  var pos = new Float32Array(d.known.length * 6);
+  var d = window.__dwDrawn && window.__dwDrawn[disc], eq = (d && d.equip && d.equip.placed) || []; if (!d || !(d.known.length + eq.length)) return;   // §8: FP equipment is a vertical tick (bottom to top), never a solid
+  var pos = new Float32Array((d.known.length + eq.length) * 6);
   d.known.forEach(function (p, i) { pos.set([p.x0, p.y0, p.z, p.x1, p.y1, p.z], i * 6); });
+  eq.forEach(function (e, i) { pos.set([e.x, e.y, e.bottom == null ? e.top - 0.01 : e.bottom, e.x, e.y, e.top], (d.known.length + i) * 6); });
   var g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   var ln = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: DW_COLOR[disc] || 0xc0c0c0 }));
   ln.userData.dwDrawn = disc; root.add(ln);
-  console.log('§DW-DRAWN-LINES ' + disc + ' segments=' + d.known.length + ' planOnly=' + d.planOnly.length);
+  console.log('§DW-DRAWN-LINES ' + disc + ' segments=' + d.known.length + ' equipTicks=' + eq.length + ' planOnly=' + d.planOnly.length);
   if (window.A && A.requestRender) A.requestRender();
 }
 
