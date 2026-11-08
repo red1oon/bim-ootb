@@ -2750,9 +2750,16 @@
   }
   // the structure candidates, once: STR-discipline slabs, beams and roofs only. An ARC finish slab is not structure (§4).
   function _drawnStructure(bdb, geoDb, anyDisc) {   // anyDisc: a witness's red control only (an ARC finish slab taken as structure), no UI
-    var rows = _rows(bdb, "SELECT m.guid g, m.storey st, m.ifc_class c, t.center_x x, t.center_y y, t.center_z z, t.bbox_x bx, t.bbox_y by_, t.bbox_z bz, t.rotation_x rx, t.rotation_y ry, t.rotation_z rot " +
+    var rows = _rows(bdb, "SELECT m.guid g, m.storey st, m.discipline d, m.ifc_class c, t.center_x x, t.center_y y, t.center_z z, t.bbox_x bx, t.bbox_y by_, t.bbox_z bz, t.rotation_x rx, t.rotation_y ry, t.rotation_z rot " +
       "FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid WHERE " + (anyDisc ? '1=1' : "m.discipline='" + _DRAWN_STRUCT_DISC + "'") + " AND m.ifc_class IN ('" + _DRAWN_STRUCT_CLASSES.join("','") + "')");
     rows.forEach(function (h) { var b = realBox(bdb, h, geoDb); h.tx = b.x; h.ty = b.y; h.tz = b.z; h.ex = b.ex; h.ey = b.ey; h.ez = b.ez; h.lower = b.z - b.ez / 2; });
+    return rows;
+  }
+  // §10: every IfcSlab of any discipline and storey, once, with its real world box: the floors a no-ceiling item can stand on.
+  function _drawnSlabs(bdb, geoDb) {
+    var rows = _rows(bdb, "SELECT m.guid g, m.storey st, m.discipline d, m.ifc_class c, t.center_x x, t.center_y y, t.center_z z, t.bbox_x bx, t.bbox_y by_, t.bbox_z bz, t.rotation_x rx, t.rotation_y ry, t.rotation_z rot " +
+      "FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid WHERE m.ifc_class='IfcSlab'");
+    rows.forEach(function (h) { var b = realBox(bdb, h, geoDb); h.tx = b.x; h.ty = b.y; h.tz = b.z; h.ex = b.ex; h.ey = b.ey; h.ez = b.ez; h.top = b.z + b.ez / 2; h.lower = b.z - b.ez / 2; });
     return rows;
   }
   function _drawnLoad(bdb) {
@@ -2788,18 +2795,40 @@
     if (!_hasTable(bdb, 'drawn_height_rule')) return null;
     var r = _rows(bdb, "SELECT id, rule, label, source FROM drawn_height_rule WHERE role='no_void_height'")[0]; return r ? { id: r.id, rule: r.rule, label: r.label, source: r.source } : null;
   }
-  // The lowest structure above the storey floor at (x, y), per storey of the set (floor = the storey's stated elevation; a floor slab's lower face is under it). One distinct structure across the set: state 'one'; none: 'none'; two or more: 'ambiguous'.
-  function _exposedAbove(bdb, geoDb, str, set, x, y, boxOnly) {
-    var cands = {}, nStated = 0;
+  // §10 floor first (prompts/DISC_WALK_DRAWN_INTEGRATION.md): for an item no ceiling holds, find the FLOOR under it, then the lowest STR structure above THAT floor's top face.
+  // 1. the floor of a set storey (matched by elevation; top face at most _FLOOR_ABOVE_ELEV_M above its storey's stated elevation) whose outline holds the point: the highest top if several;
+  // 2. none: the highest slab top at or below the set's lowest elevation on ANY storey (source 'below');  3. structure: lower face at or above the floor's top, never the floor itself;
+  // 4. no floor outline at all: state 'nofloor'. States: 'one' (height found), 'none' (a floor, no structure above), 'nofloor'.
+  var _FLOOR_ABOVE_ELEV_M = 0.5;
+  function _exposedFloorFirst(bdb, geoDb, str, slabs, set, x, y, boxOnly) {
+    var fl = null, minE = null, lowSk = null;
     set.forEach(function (sk) {
-      var e = _storeyElevStated(bdb, sk); if (e == null) return; nStated++;
-      var best = null;
-      str.forEach(function (h) { if (h.lower < e - _DRAWN_TOL_M || (best && h.lower >= best.lower)) return; if (_hostHoldsPoint(bdb, h, geoDb, x, y, boxOnly)) best = h; });
-      if (best) cands[best.g] = { h: best, storey: sk };
+      var e = _storeyElevStated(bdb, sk); if (e == null) return;
+      if (minE === null || e < minE) { minE = e; lowSk = sk; }
+      var al = _elevAlias(bdb, sk).names; al[sk] = 1;
+      slabs.forEach(function (h) {
+        if (!al[h.st] || h.top > e + _FLOOR_ABOVE_ELEV_M || (fl && h.top <= fl.top)) return;
+        if (_hostHoldsPoint(bdb, h, geoDb, x, y, boxOnly)) fl = { h: h, top: h.top, storey: sk, source: 'set' };
+      });
     });
-    var k = Object.keys(cands);
-    if (k.length === 1) { var c = cands[k[0]]; return { state: 'one', g: c.h.g, c: c.h.c, lower: c.h.lower, storey: c.storey }; }
-    return { state: k.length ? 'ambiguous' : 'none', n: k.length, stated: nStated };
+    if (!fl && minE !== null) slabs.forEach(function (h) {
+      if (h.top > minE + _DRAWN_TOL_M || (fl && h.top <= fl.top)) return;
+      if (_hostHoldsPoint(bdb, h, geoDb, x, y, boxOnly)) fl = { h: h, top: h.top, storey: lowSk, source: 'below' };
+    });
+    if (!fl) return { state: 'nofloor', stated: minE !== null };
+    var best = null;
+    str.forEach(function (h) {
+      if (h.g === fl.h.g || h.lower < fl.top - _DRAWN_TOL_M || (best && h.lower >= best.lower)) return;
+      if (_hostHoldsPoint(bdb, h, geoDb, x, y, boxOnly)) best = h;
+    });
+    if (!best) return { state: 'none', floor: fl };
+    return { state: 'one', floor: fl, g: best.g, c: best.c, d: best.d, lower: best.lower, storey: fl.storey };
+  }
+  function _exposedItemLog(sh, id, ex, cnt) {   // one line per no-ceiling item; the counts the summary line carries
+    var fl = ex.floor;
+    if (ex.state === 'nofloor') cnt.noFloor++; else if (fl.source === 'below') cnt.below++;
+    console.log(TAG + ' §WALK-EXPOSED-ITEM sheet=' + sh + '#' + id + ' floor=' + (fl ? (fl.source === 'below' ? fl.h.st : fl.storey) + '@' + fl.top.toFixed(3) : 'none') + ' floorSource=' + (fl ? fl.source : 'none') +
+      ' structure=' + (ex.state === 'one' ? ex.c + '/' + ex.d + '@' + ex.lower.toFixed(3) : 'none') + ' height=' + (ex.state === 'one' ? ex.lower.toFixed(3) : 'none'));
   }
   function _drawnCeilings(bdb, geoDb, pts, storey, mount, hostClass) {   // hostClass: IfcCovering (default) for ACMV, IfcSlab for the §8 floor under FP equipment
     var out = pts.map(function () { return null; });
@@ -2836,7 +2865,7 @@
     _dctx.boxOnly = boxOnly; _dctx.elevLogged = {};
     // ── heights (§4)
     var pcs = D.pieces, bySheet = {}; pcs.forEach(function (p, i) { p.mx = (p.x0 + p.x1) / 2; p.my = (p.y0 + p.y1) / 2; p.len = Math.hypot(p.x1 - p.x0, p.y1 - p.y0); p.z = null; p.why = null; p.heightBasis = 'none'; (bySheet[p.sh] = bySheet[p.sh] || []).push(i); });
-    var str = _drawnStructure(bdb, geoDb, !!(opts && opts.drawnStructAnyDisc)), noStorey = 0, noCeil = 0, noStr = 0, noVoid = 0, ambig = 0, ceilUsed = {}, byStoreyN = {}, exposedP = 0;
+    var str = _drawnStructure(bdb, geoDb, !!(opts && opts.drawnStructAnyDisc)), noStorey = 0, noCeil = 0, noStr = 0, noVoid = 0, ambig = 0, ceilUsed = {}, byStoreyN = {}, exposedP = 0, cnt = { below: 0, noFloor: 0 }, slabs = _drawnSlabs(bdb, geoDb);
     var setExposed = function (p, ex) { p.z = ex.lower; p.heightBasis = vrule.id; p.exposed = true; p.heightLabel = vrule.label; p.structure = ex.g; p.structureClass = ex.c; p.structureLower = ex.lower; p.storey = ex.storey; exposedP++; byStoreyN[ex.storey] = (byStoreyN[ex.storey] || 0) + 1; };
     Object.keys(bySheet).forEach(function (sh) {
       var idx = bySheet[sh], set = pcs[idx[0]].set;
@@ -2844,10 +2873,10 @@
       var pk = _drawnPickStorey(bdb, geoDb, idx.map(function (i) { return [pcs[i].mx, pcs[i].my]; }), set, 'TOP');
       idx.forEach(function (i, k) {
         var p = pcs[i], r = pk[k];
-        if (r.state === 'none' && vrule) {   // §9 item 1: no ceiling void here: the underside of the lowest structure above the storey floor
-          var ex = _exposedAbove(bdb, geoDb, str, set, p.mx, p.my, boxOnly);
+        if (r.state === 'none' && vrule) {   // §9 item 1 / §10: no ceiling void here: floor first, then the underside of the lowest structure above that floor
+          var ex = _exposedFloorFirst(bdb, geoDb, str, slabs, set, p.mx, p.my, boxOnly); _exposedItemLog(sh, 'p' + p.pc, ex, cnt);
           if (ex.state === 'one') { setExposed(p, ex); return; }
-          if (ex.state === 'ambiguous') { ambig++; p.why = 'no ceiling, and structure above in ' + ex.n + ' storeys of the set: a plan states no z'; return; }
+          if (ex.state === 'nofloor') { p.why = 'no floor slab (by outline) under the item on any storey: a plan states no z'; return; }
         }
         if (r.state === 'none') { noCeil++; p.why = 'no modelled ceiling of the sheet\'s storeys holds the midpoint' + (vrule ? ' and no structure above the storey floor here' : ''); return; }
         if (r.state === 'ambiguous') { ambig++; p.why = 'the ceilings of ' + r.n + ' storeys of the set hold the midpoint: a plan states no z'; return; }
@@ -2873,8 +2902,8 @@
       ' steppedComponents=' + stepped + ' sloped=' + sloped + ' slopedCeilings=' + slopedHosts + ' (sloped = ceiling bbox_z > ' + _DRAWN_SLOPED_M + ' m; a non-horizontal ceiling mesh is refused as a host by hostBind, so it holds none) rule=middle of the void between the ceiling top and the lowest STR lower face (provisional)');
     if (planOnly.length) console.log(TAG + ' §WALK-MAINS-PLANONLY n=' + planOnly.length + ' length=' + planOnly.reduce(function (a, p) { return a + p.len; }, 0).toFixed(3) + ' [' + planOnly.slice(0, 12).map(function (p) { return p.sh + '#' + p.pc + ': ' + p.why; }).join(' | ') + (planOnly.length > 12 ? ' | +' + (planOnly.length - 12) : '') + ']');
     // ── terminals (§5, §7.5): on the storeys a held sheet covers, the drawn terminals replace the borrowed band ones AND the schedule ones
-    var tInfo = _drawnTerminals(w, D, bdb, geoDb, { rule: vrule, str: str, boxOnly: boxOnly });
-    console.log(TAG + ' §WALK-MAINS-EXPOSED pieces=' + exposedP + ' terminals=' + tInfo.exposed + ' rule=' + (vrule ? vrule.id : 'none') + (vrule ? ' (' + vrule.rule + '; ' + vrule.label + ')' : ' (no row: pieces with no void stay plan only)') + ' outlineTests=' + (_outlineStats.mesh - os0.mesh) + ' boxFallback=' + (_outlineStats.box - os0.box));
+    var tInfo = _drawnTerminals(w, D, bdb, geoDb, { rule: vrule, str: str, slabs: slabs, cnt: cnt, boxOnly: boxOnly });
+    console.log(TAG + ' §WALK-MAINS-EXPOSED pieces=' + exposedP + ' terminals=' + tInfo.exposed + ' floorBelowSet=' + cnt.below + ' noFloorAnyStorey=' + cnt.noFloor + ' rule=' + (vrule ? vrule.id : 'none') + (vrule ? ' (' + vrule.rule + '; ' + vrule.label + ')' : ' (no row: pieces with no void stay plan only)') + ' outlineTests=' + (_outlineStats.mesh - os0.mesh) + ' boxFallback=' + (_outlineStats.box - os0.box));
     if (!w || w.refused || !w.placements) w = { disc: disc, refused: false, mode: 'drawn', placements: [], refusedNoHost: _noBandHostAcct(), chains: [], chainSegs: [], chainByRule: [], storeys: 0, patternBridge: null };
     w.verdict = false; w.refused = false;
     if (tInfo.placements.length || tInfo.dropIds.size) w.placements = w.placements.filter(function (p) { return !tInfo.dropIds.has(p); }).concat(tInfo.placements);
@@ -2904,7 +2933,7 @@
       ts.forEach(function (t, i) {
         var r = pk[i];
         if (r.state === 'none' && X.rule) {   // §9 item 1: no ceiling holds it: it hangs from the underside of the lowest structure above the storey floor
-          var ex = _exposedAbove(bdb, geoDb, X.str || [], set, t.x, t.y, X.boxOnly);
+          var ex = _exposedFloorFirst(bdb, geoDb, X.str || [], X.slabs || [], set, t.x, t.y, X.boxOnly); _exposedItemLog(sh, 't' + i, ex, X.cnt);
           if (ex.state === 'one') { r = { state: 'one', c: { z: ex.lower, host: ex.g, storey: ex.storey }, exposed: true }; out.exposed++; }
         }
         t.exposed = !!r.exposed; t.state = r.state; t.c = r.c; if (r.state === 'one') (assigned[r.c.storey] = assigned[r.c.storey] || []).push(t); else unplaced[r.state]++; });

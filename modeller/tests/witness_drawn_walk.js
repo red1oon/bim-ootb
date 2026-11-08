@@ -38,7 +38,7 @@ function ifcDoc(o) {   // o: { storeyO:[x,y,z], boxes:[{cls,name,box:[x0,y0,z0,x
   e(32, `IFCBUILDING('${guid(32)}',$,'Building',$,$,#33,$,$,.ELEMENT.,$,$,$)`); e(33, 'IFCLOCALPLACEMENT(#31,#13)');
   e(34, `IFCBUILDINGSTOREY('${guid(34 + (o.gsh || 0))}',$,'${o.storeyName || 'Level 1'}',$,$,#35,$,$,.ELEMENT.,${f(so[2])})`); e(35, 'IFCLOCALPLACEMENT(#33,#36)'); e(36, 'IFCAXIS2PLACEMENT3D(#37,$,$)'); e(37, `IFCCARTESIANPOINT((${so.map(f).join(',')}))`);
   e(40, `IFCRELAGGREGATES('${guid(40)}',$,$,$,#1,(#30))`); e(41, `IFCRELAGGREGATES('${guid(41)}',$,$,$,#30,(#32))`); e(42, `IFCRELAGGREGATES('${guid(42)}',$,$,$,#32,(#34${X ? ',#60' : ''}))`);
-  if (X) { e(60, `IFCBUILDINGSTOREY('${guid(60)}',$,'${X.name}',$,$,#61,$,$,.ELEMENT.,${f(X.o[2])})`); e(61, 'IFCLOCALPLACEMENT(#33,#62)'); e(62, 'IFCAXIS2PLACEMENT3D(#63,$,$)'); e(63, `IFCCARTESIANPOINT((${X.o.map(f).join(',')}))`); }
+  if (X) { e(60, `IFCBUILDINGSTOREY('${guid(60 + (o.gx || 0))}',$,'${X.name}',$,$,#61,$,$,.ELEMENT.,${f(X.o[2])})`); e(61, 'IFCLOCALPLACEMENT(#33,#62)'); e(62, 'IFCAXIS2PLACEMENT3D(#63,$,$)'); e(63, `IFCCARTESIANPOINT((${X.o.map(f).join(',')}))`); }
   const contained = [], containedX = [];
   (o.boxes || []).forEach((b, k) => {
     const base = 1000 + k * 40, xs = b.st === 'x' && X, sO = xs ? X.o : so, X0 = b.box || null;
@@ -106,7 +106,8 @@ const ARC_X = ifcDoc({ storeyO: [0, 0, 0], tag: 'ARC_X', boxes: [
   { cls: 'IfcCovering', name: 'Ceiling A', box: [0, 0, 2.6, 6, 8, 2.7], pre: '.CEILING.', gid: XS.CA },
   { cls: 'IfcCovering', name: 'Ceiling B', box: [0, 9, 2.6, 6, 12, 2.7], pre: '.CEILING.', gid: XS.CB },
   { cls: 'IfcSpace', name: 'Room', box: [0, 0, 0, 6, 8, 2.6], pre: '', gid: guid(1109) },
-  { cls: 'IfcSlab', name: 'L floor', poly: [[0, 0], [10, 0], [10, 4], [5, 4], [5, 8], [0, 8]], z: [-0.2, 0], pre: '.FLOOR.', gid: XS.LSLAB }], grid: XGRID('Grid ARC X', guid(1150)) });
+  { cls: 'IfcSlab', name: 'L floor', poly: [[0, 0], [10, 0], [10, 4], [5, 4], [5, 8], [0, 8]], z: [-0.2, 0], pre: '.FLOOR.', gid: XS.LSLAB },
+  { cls: 'IfcSlab', name: 'E floor', box: [20, 0, -0.2, 30, 8, 0], pre: '.FLOOR.', gid: guid(1110) }], grid: XGRID('Grid ARC X', guid(1150)) });   // §10: a floor under the L roof, so E5 is judged by the roof's outline and not by the missing floor
 const STR_X = ifcDoc({ gsh: 500, storeyO: [0, 0, 0], k: 1000, storeyName: 'STR GROUND', extra: { name: 'STR LEVEL 01', o: [0, 0, 4] }, tag: 'STR_X', boxes: [
   { cls: 'IfcSlab', name: 'STR slab S1', box: [-1, -1, 3.4, 11, 9, 3.7], pre: '.FLOOR.', gid: XS.S1, st: 'x' },
   { cls: 'IfcSlab', name: 'STR tight', box: [0, 9, 2.71, 6, 12, 2.9], pre: '.FLOOR.', gid: XS.TIGHT, st: 'x' },
@@ -492,13 +493,13 @@ const logsOf = f => { const lines = [], orig = console.log; console.log = s => {
         const t1 = (xd.terminals && xd.terminals.byStorey) ? xd.terminals : null, wt = XA.lines.filter(l => /§WALK-TERMINALS-DETAIL/.test(l)).join(' | ');
         const tp = (xw.placements || []).filter(p => p.prov === 'drawn:terminal'), tpE = tp.filter(p => p.exposed);
         ok('X1d a drawn terminal with no ceiling (8, 2) hangs from the structure underside: counted in the log (terminals=1); when a device mesh exists it is placed at the soffit with the label, otherwise it is listed noMesh', kv(ex, 'terminals') === '1' && (tpE.length === 0 ? /noMesh=[1-9]/.test(wt) : tpE.length === 1 && near(tpE[0].z, s1.minZ, 0.002) && tpE[0].heightBasis === 'exposed-under-structure' && tpE[0].heightLabel === 'exposed, height provisional'), 'terminals(exposed)=' + kv(ex, 'terminals') + ' placedExposed=' + tpE.length + ' drawnTerminalsPlaced=' + tp.length + ' ' + wt.slice(0, 160));
-        // X1e: the same on the Duplex + STR_A federation, where Level 1 carries rule-mined terminal meshes: a terminal at (9.5,-5), past the last ceiling, under the STR slab, is PLACED at the slab soffit
+        // X1e: the same on the Duplex + STR_A federation, where Level 1 carries rule-mined terminal meshes: a terminal at (5,2), past the last ceiling (9.5,-5 lies on no floor slab of Duplex, so §10 leaves it plan only), over the Level 1 floor slab and under the STR slab, is PLACED at the slab soffit
         const dxfT = path.join(TMP, 'XT-101.dxf'), dbT = path.join(TMP, 'x_term.db'); fs.copyFileSync(fedA, dbT);
-        fs.writeFileSync(dxfT, sheetDxf({ off: [100, 200], grid: GRIDSHEET, pieces: [PCS.P1], terminals: [[9.5, -5, 'DIFFUSER_SUPPLY'], [1.5, -2, 'DIFFUSER_SUPPLY']] }));
+        fs.writeFileSync(dxfT, sheetDxf({ off: [100, 200], grid: GRIDSHEET, pieces: [PCS.P1], terminals: [[5, 2, 'DIFFUSER_SUPPLY'], [1.5, -2, 'DIFFUSER_SUPPLY']] }));
         sh([MAINS, dbT, dxfT, '--sheet-meta=' + JSON.stringify({ number: 'XT-101', revision: 'A', storeys: ['Level 1'] })]);
         const dtt = new Database(dbT, { readonly: true }), strS = rowsOf(dtt, 'SELECT minZ FROM element_world_bbox WHERE guid=?', [STR_SLAB])[0].minZ; dtt.close();
         const XTW = walkA(dbT), xtp = (XTW.r.placements || []).filter(p => p.prov === 'drawn:terminal'), xte = xtp.filter(p => p.exposed), xtl = L1(XTW.lines, /§WALK-MAINS-EXPOSED/);
-        ok('X1e a drawn terminal past the last ceiling (9.5,-5) is PLACED at the underside of the STR slab (' + strS.toFixed(3) + '), labelled exposed; the terminal under a ceiling (1.5,-2) still hangs from the ceiling lower face', xte.length === 1 && near(xte[0].z, strS, 0.002) && xte[0].heightBasis === 'exposed-under-structure' && xte[0].heightLabel === 'exposed, height provisional' && xte[0].host === STR_SLAB && kv(xtl, 'terminals') === '1' && xtp.length === 2 && xtp.filter(p => !p.exposed).every(p => /^ceiling:/.test(p.heightBasis) && p.z < strS),
+        ok('X1e a drawn terminal past the last ceiling (5,2) is PLACED at the underside of the STR slab (' + strS.toFixed(3) + '), labelled exposed; the terminal under a ceiling (1.5,-2) still hangs from the ceiling lower face', xte.length === 1 && near(xte[0].z, strS, 0.002) && xte[0].heightBasis === 'exposed-under-structure' && xte[0].heightLabel === 'exposed, height provisional' && xte[0].host === STR_SLAB && kv(xtl, 'terminals') === '1' && xtp.length === 2 && xtp.filter(p => !p.exposed).every(p => /^ceiling:/.test(p.heightBasis) && p.z < strS),
           'placed drawn terminals=' + xtp.length + ' exposed=' + xte.length + ' z=' + xtp.map(p => p.z.toFixed(3) + (p.exposed ? '(exposed)' : '')).join(',') + ' | ' + xtl.slice(0, 120));
         // RED: row removed from the DB: stays plan only
         const dbXN = path.join(TMP, 'x_acmv_norule.db'); fs.copyFileSync(dbXM, dbXN); { const d0 = new SQL.Database(new Uint8Array(fs.readFileSync(dbXN))); d0.run('DELETE FROM drawn_height_rule'); fs.writeFileSync(dbXN, Buffer.from(d0.export())); d0.close(); }
@@ -598,6 +599,92 @@ const logsOf = f => { const lines = [], orig = console.log; console.log = s => {
         ok('X7b display only: the op-log ops, placed/provisional totals and every list are identical before and after (op-log string equal, ' + before.n + ' placements, placed ' + before.placed + ')', JSON.stringify(stack.DW.drawnOps(w7.drawn)) === opsBefore && w7.placed === before.placed && w7.provisional === before.prov && (w7.placements || []).length === before.n && w7.drawn.known.length === before.known && w7.drawn.planOnly.length === before.plan, 'ops equal=' + (JSON.stringify(stack.DW.drawnOps(w7.drawn)) === opsBefore));
         const V0 = logsOf(() => stack.DW.setDrawnOnlyView(false, { ACMV: pl }, { ACMV: w7.drawn }, setVis));
         ok('X7c turning it off restores every device (all visible again) and still changes no count', Object.keys(vis).every(i => vis[i]) && V0.r.hidden === 0 && kv(L1(V0.lines, /§VIEW-DRAWN-ONLY/), 'on') === 'false' && w7.placed === before.placed && (w7.placements || []).length === before.n, L1(V0.lines, /§VIEW-DRAWN-ONLY/).slice(0, 140));
+      }
+
+      // ---- Y: floor first for items with no ceiling (prompts/DISC_WALK_DRAWN_INTEGRATION.md §10). Fixtures Y1-Y3 (public, written here): an ARC file (storeys, a far ceiling, the grid) + a STR file (floors, roof), federated; storeys pair by elevation.
+      // ISSUES IT EXPOSES: (Y1) a lower storey taking the upper storey's own floor slab as "structure above" so a no-ceiling piece is called ambiguous and left plan only; (Y2) no floor of the set under an item (double-height hall) leaving it plan only; (Y3) an item with no floor under it on any storey still given a height;
+      // (Y4) a height with no per-item trace of the floor and structure it came from; (Y5) the floor-first rule changing items that sit under a ceiling.
+      {
+        const YGS = { u: [['A', 0, -1, 13], ['B', 6, -1, 13], ['C', 12, -1, 13]], v: [['1', 0, -1, 21], ['2', 4, -1, 21], ['3', 12, -1, 21]] };
+        const Y = { A1: guid(1301), B1: guid(1302), R1: guid(1303), G2: guid(1311), L2: guid(1312), R2: guid(1313), A3: guid(1321), R3: guid(1322), CE: guid(1399) };
+        const arcY = (nm, s0, s1) => ifcDoc({ storeyO: [0, 0, s0[1]], storeyName: s0[0], extra: { name: s1[0], o: [0, 0, s1[1]] }, tag: nm, boxes: [{ cls: 'IfcCovering', name: 'Far ceiling', box: [40, 0, s0[1] + 2.6, 45, 8, s0[1] + 2.7], pre: '.CEILING.', gid: Y.CE }, { cls: 'IfcSpace', name: 'Far room', box: [40, 10, s0[1], 44, 14, s0[1] + 2.6], pre: '', gid: guid(1398) }], grid: XGRID('Grid ' + nm, guid(1350)) });
+        const strY = (nm, s0, s1, boxes) => ifcDoc({ gsh: 500, gx: 500, storeyO: [0, 0, s0[1]], storeyName: s0[0], extra: { name: s1[0], o: [0, 0, s1[1]] }, tag: nm, boxes: boxes });
+        const slab = (name, box, pre, gid, st) => ({ cls: 'IfcSlab', name: name, box: box, pre: pre, gid: gid, st: st });
+        const yBuild = (key, arcDoc, strDoc, set, pieces) => {
+          const a = path.join(TMP, 'ARC_' + key + '.ifc'), b = path.join(TMP, 'STR_' + key + '.ifc'), fed = path.join(TMP, 'fed_' + key + '.db'), dx = path.join(TMP, key + '-101.dxf'), out = path.join(TMP, 'acmv_' + key + '.db');
+          fs.writeFileSync(a, arcDoc); fs.writeFileSync(b, strDoc);
+          sh([TOOL, '--ifc', a, '--federate', b, '--federate-disc', 'STR', '-o', fed]);
+          if (!fs.existsSync(fed)) return null;
+          fs.writeFileSync(dx, sheetDxf({ off: [100, 200], grid: YGS, pieces: pieces, terminals: [] })); fs.copyFileSync(fed, out);
+          const m = sh([MAINS, out, dx, '--sheet-meta=' + JSON.stringify({ number: key + '-101', revision: 'A', storeys: set })]);
+          return { fed: fed, db: out, sheet: key + '-101', tool: m };
+        };
+        const yWalk = (stk, file) => { const buf = new Uint8Array(fs.readFileSync(file)); return logsOf(() => H.walkLive(SQL, stk, 'ACMV', buf, 'Duplex', [], {})); };
+        const itemLines = lines => lines.filter(l => /§WALK-EXPOSED-ITEM/.test(l));
+        const preFile = path.join(M, '_pre_disc_walker_tmp.js');
+        const bb = (fedPath, g) => { const d = new Database(fedPath, { readonly: true }); try { return rowsOf(d, 'SELECT minZ, maxZ FROM element_world_bbox WHERE guid=?', [g])[0]; } finally { d.close(); } };
+        const Y1 = yBuild('Y1', arcY('ARC_Y1', ['Level A', 0], ['Level B', -0.3]), strY('STR_Y1', ['STR GROUND', 0], ['STR LOW', -0.3], [
+          slab('STR A floor', [0, 0, -0.2, 10, 4, 0], '.FLOOR.', Y.A1), slab('STR B floor', [0, 2, -0.5, 10, 8, -0.3], '.FLOOR.', Y.B1, 'x'), slab('STR roof', [0, 0, 3.0, 10, 8, 3.3], '.ROOF.', Y.R1)]),
+          ['Level A', 'Level B'], [[3, 3, 7, 3], [3, 6, 7, 6]]);
+        const Y2 = yBuild('Y2', arcY('ARC_Y2', ['Ground', 0], ['Level 1', 4]), strY('STR_Y2', ['STR G', 0], ['STR L1', 4], [
+          slab('STR ground floor', [0, 0, -0.2, 10, 8, 0], '.FLOOR.', Y.G2), slab('STR gallery floor', [0, 0, 3.8, 10, 3, 4.0], '.FLOOR.', Y.L2, 'x'), slab('STR hall roof', [0, 0, 8.0, 10, 8, 8.3], '.ROOF.', Y.R2, 'x')]),
+          ['Level 1'], [[3, 1.5, 7, 1.5], [3, 6, 7, 6]]);
+        const Y3 = yBuild('Y3', arcY('ARC_Y3', ['Level A', 0], ['Level B', -0.3]), strY('STR_Y3', ['STR GROUND', 0], ['STR LOW', -0.3], [
+          slab('STR A floor', [0, 0, -0.2, 10, 4, 0], '.FLOOR.', Y.A3), slab('STR wide roof', [0, 0, 3.0, 25, 8, 3.3], '.ROOF.', Y.R3)]),
+          ['Level A', 'Level B'], [[3, 2, 7, 2], [17, 4, 19, 4]]);
+        if (!Y1 || !Y2 || !Y3) incon('Y*', 'a Y federation was not written: Y1=' + !!Y1 + ' Y2=' + !!Y2 + ' Y3=' + !!Y3);
+        else {
+          H.openBuildingRules(SQL, stack, 'Duplex');
+          const W1 = yWalk(stack, Y1.db), W2 = yWalk(stack, Y2.db), W3 = yWalk(stack, Y3.db);
+          const d1 = W1.r.drawn, d2 = W2.r.drawn, d3 = W3.r.drawn;
+          log('  Y walks:\n          ' + [W1, W2, W3].map(W => W.lines.filter(l => /§WALK-EXPOSED-ITEM|§WALK-MAINS-EXPOSED|§WALK-MAINS-PLANONLY/.test(l)).map(l => l.slice(0, 300)).join('\n          ')).join('\n          '));
+          if (!d1 || !d2 || !d3) incon('Y*', 'a Y walk holds no drawn record: ' + [d1, d2, d3].map(d => !!d));
+          else {
+            const a1 = bb(Y1.fed, Y.A1), b1 = bb(Y1.fed, Y.B1), r1 = bb(Y1.fed, Y.R1), g2 = bb(Y2.fed, Y.G2), l2 = bb(Y2.fed, Y.L2), r2 = bb(Y2.fed, Y.R2), r3 = bb(Y3.fed, Y.R3), a3 = bb(Y3.fed, Y.A3);
+            const sx1 = L1(W1.lines, /§WALK-MAINS-EXPOSED/), sx2 = L1(W2.lines, /§WALK-MAINS-EXPOSED/), sx3 = L1(W3.lines, /§WALK-MAINS-EXPOSED/);
+            ok('Y1 self-hit: set {Level A 0.0, Level B -0.3}, A\'s STR floor overlapping B\'s in plan: the piece over both (5,3) takes the roof soffit (' + r1.minZ.toFixed(3) + '), floor A (top ' + a1.maxZ.toFixed(3) + '), and never A\'s slab (lower ' + a1.minZ.toFixed(3) + ') as structure; the piece over B\'s floor only (5,6) takes the same soffit from floor B (top ' + b1.maxZ.toFixed(3) + ')',
+              d1.pieces[0].z != null && near(d1.pieces[0].z, r1.minZ, 0.002) && d1.pieces[0].structure === Y.R1 && d1.pieces[0].structure !== Y.A1 && d1.pieces[1].z != null && near(d1.pieces[1].z, r1.minZ, 0.002) && d1.pieces[1].structure === Y.R1 && kv(sx1, 'pieces') === '2' && d1.planOnly.length === 0,
+              'z=' + d1.pieces.map(p => p.z && p.z.toFixed(3)) + ' structure=' + d1.pieces.map(p => p.structure === Y.R1 ? 'roof' : p.structure === Y.A1 ? 'A-SLAB' : p.structure) + ' | ' + sx1.slice(0, 160));
+            ok('Y2 floor below: set {Level 1 @4.0}: the piece over the gallery (5,1.5) stands on the Level 1 slab (top ' + l2.maxZ.toFixed(3) + ', set) and takes the hall roof (' + r2.minZ.toFixed(3) + '); the piece over the double-height hall (5,6), no Level 1 floor there, stands on the ground slab (top ' + g2.maxZ.toFixed(3) + ', below the set) and takes the same roof: floorBelowSet=1',
+              d2.pieces[0].z != null && near(d2.pieces[0].z, r2.minZ, 0.002) && d2.pieces[1].z != null && near(d2.pieces[1].z, r2.minZ, 0.002) && d2.pieces[1].structure === Y.R2 && kv(sx2, 'floorBelowSet') === '1' && kv(sx2, 'noFloorAnyStorey') === '0' && kv(sx2, 'pieces') === '2',
+              'z=' + d2.pieces.map(p => p.z && p.z.toFixed(3)) + ' | ' + sx2.slice(0, 160));
+            ok('Y3 no floor under the item on any storey: the piece at (18,4) is under the wide roof (soffit ' + r3.minZ.toFixed(3) + ') but over no slab: plan only with a reason, noFloorAnyStorey=1; the piece over A\'s floor (5,2) still takes the roof',
+              d3.pieces[1].z == null && /no floor slab/.test(d3.pieces[1].why || '') && d3.pieces[0].z != null && near(d3.pieces[0].z, r3.minZ, 0.002) && kv(sx3, 'noFloorAnyStorey') === '1' && kv(sx3, 'pieces') === '1' && d3.planOnly.length === 1,
+              'z=' + d3.pieces.map(p => p.z && p.z.toFixed(3)) + ' why=' + d3.pieces[1].why + ' | ' + sx3.slice(0, 160));
+            // Y4: one line per no-ceiling item, values against the oracle (element_world_bbox)
+            const i1 = itemLines(W1.lines), i2 = itemLines(W2.lines), i3 = itemLines(W3.lines);
+            const f3 = v => v.toFixed(3);
+            const has4 = (lines, sheet, id, fl, src, st, h) => lines.filter(l => l.indexOf('sheet=' + sheet + '#' + id + ' ') >= 0 && l.indexOf(' floor=' + fl + ' ') >= 0 && l.indexOf(' floorSource=' + src + ' ') >= 0 && l.indexOf(' structure=' + st + ' ') >= 0 && / height=(\S+)/.exec(l)[1] === h).length === 1;
+            ok('Y4 the per-item detail line, one per no-ceiling item, carries floor@top, floorSource, structure class/discipline@lower and height, each equal to the oracle from element_world_bbox (Y1: floor A@' + f3(a1.maxZ) + ' set, floor B@' + f3(b1.maxZ) + ' set; Y2: floor Level 1@' + f3(l2.maxZ) + ' set, floor STR G (the slab\'s own storey)@' + f3(g2.maxZ) + ' below; Y3: floor Level A@' + f3(a3.maxZ) + ' set, none)',
+              i1.length === 2 && i2.length === 2 && i3.length === 2 &&
+              has4(i1, Y1.sheet, 'p1', 'Level A@' + f3(a1.maxZ), 'set', 'IfcSlab/STR@' + f3(r1.minZ), f3(r1.minZ)) && has4(i1, Y1.sheet, 'p2', 'Level B@' + f3(b1.maxZ), 'set', 'IfcSlab/STR@' + f3(r1.minZ), f3(r1.minZ)) &&
+              has4(i2, Y2.sheet, 'p1', 'Level 1@' + f3(l2.maxZ), 'set', 'IfcSlab/STR@' + f3(r2.minZ), f3(r2.minZ)) && has4(i2, Y2.sheet, 'p2', 'STR G@' + f3(g2.maxZ), 'below', 'IfcSlab/STR@' + f3(r2.minZ), f3(r2.minZ)) &&
+              has4(i3, Y3.sheet, 'p1', 'Level A@' + f3(a3.maxZ), 'set', 'IfcSlab/STR@' + f3(r3.minZ), f3(r3.minZ)) && i3.filter(l => l.indexOf('#p2 ') >= 0 && /floor=none floorSource=none structure=none height=none/.test(l)).length === 1,
+              (i1.concat(i2, i3)).map(l => l.slice(l.indexOf('sheet='))).join(' || ').slice(0, 900));
+            // RED + Y5 against the pre-change walker (9ea689c6)
+            let preStack = null, perr = null;
+            try {
+              fs.writeFileSync(preFile, cp.execFileSync('git', ['-C', ROOT, 'show', '9ea689c6:modeller/disc_walker.js'], { maxBuffer: 1 << 26 }).toString());
+              preStack = { DW: require(preFile), WalkRules: stack.WalkRules }; H.openBuildingRules(SQL, preStack, 'Duplex');
+            } catch (e) { perr = e.message; }
+            if (!preStack) incon('Y RED / Y5', 'the pre-change walker did not load: ' + perr);
+            else {
+              try {
+                const P1 = yWalk(preStack, Y1.db), P3 = yWalk(preStack, Y3.db), p1 = P1.r.drawn, p3 = P3.r.drawn;
+                ok('Y1 RED: the pre-change rule (9ea689c6) leaves the self-hit piece (5,3) plan only as "structure above in 2 storeys of the set" while the piece over B\'s floor only (5,6) is fine', !!p1 && p1.pieces[0].z == null && /structure above in 2 storeys/.test(p1.pieces[0].why || '') && p1.pieces[1].z != null, 'pre-change z=' + (p1 && p1.pieces.map(p => p.z)) + ' why=' + (p1 && p1.pieces[0].why));
+                ok('Y3 RED: the pre-change rule gives the floorless piece (18,4) the roof soffit (' + r3.minZ.toFixed(3) + ') anyway', !!p3 && p3.pieces[1].z != null && near(p3.pieces[1].z, r3.minZ, 0.002), 'pre-change z=' + (p3 && p3.pieces.map(p => p.z)));
+                // Y5: every item under a ceiling, on the X ceiling walk and the Duplex drawn walk, is byte-identical (z and basis) to the pre-change walker
+                const cmp = (file) => { const nw = walkA(file), od = yWalk(preStack, file); const np = nw.r.drawn.pieces, op = od.r.drawn.pieces; let n = 0, same = 0; np.forEach((p, i) => { if (!p.ceiling) return; n++; if (op[i] && op[i].ceiling === p.ceiling && op[i].z === p.z && op[i].heightBasis === p.heightBasis) same++; });
+                  const tn = (nw.r.placements || []).filter(p => p.prov === 'drawn:terminal' && !p.exposed), to = (od.r.placements || []).filter(p => p.prov === 'drawn:terminal' && !p.exposed); let tsame = 0; tn.forEach((p, i) => { if (to[i] && to[i].z === p.z && to[i].host === p.host) tsame++; });
+                  return { n: n, same: same, tn: tn.length, tsame: tsame }; };
+                const cx = cmp(dbXM), cd = cmp(dbDrawn);
+                H.openBuildingRules(SQL, stack, 'Duplex');
+                ok('Y5 items under a ceiling keep their heights byte-identical to the pre-change walker (z === and HeightBasis, per piece; ceiling terminals z and host): fixture X ' + cx.same + '/' + cx.n + ' pieces ' + cx.tsame + '/' + cx.tn + ' terminals, Duplex drawn walk ' + cd.same + '/' + cd.n + ' pieces ' + cd.tsame + '/' + cd.tn + ' terminals',
+                  cx.n >= 2 && cx.same === cx.n && cx.tsame === cx.tn && cd.n >= 4 && cd.same === cd.n && cd.tsame === cd.tn && cd.tn >= 1, JSON.stringify({ X: cx, D: cd }));
+              } finally { try { fs.unlinkSync(preFile); } catch (e) { /* absent */ } H.openBuildingRules(SQL, stack, 'Duplex'); }
+            }
+          }
+        }
       }
       xdb.close();
     }
