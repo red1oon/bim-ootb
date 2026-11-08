@@ -7,6 +7,7 @@
 //   node modeller/tools/edit_cli.js --building HospitalGarage --grid gy8 --move 1.5 [--grid gy9 --move -0.5]
 //   node modeller/tools/edit_cli.js --building HospitalGarage --shift gy9 --move 1.51     that line and every later line on its axis move together (§13.1)
 //   node modeller/tools/edit_cli.js --building HospitalGarage --lines     what a caller needs to propose: the grid lines, where they came from, the system, the material
+//              each line's pos is across the lattice (the frame a --move uses); on a rotated building rotation_deg says by how much and world is the app's world-axis line
 //   --lattice-boxes  judge overlaps on boxes in the lattice frame, not world boxes (§13.6). No effect at theta 0. The app itself stays on world boxes.
 //   An edit that adds new red is STOPPED (§15.1): undone, a recount checks Before is back, and it comes back as {refused, stopped_by_gate, reason, report}, exit 3.
 //   --report-only  no stop: every edit stands and is reported (diagnosis, and comparing with the page byte for byte)
@@ -86,8 +87,14 @@ function serveRepo() {
       if (!laid) throw new Error('--own-grid: this building has no grid derived from itself');
     }
     if (wantLines) {
-      info = await pg.evaluate(() => { const i = window.swbGateInfo && window.swbGateInfo(), m = window.GridSpanGate && window.__dwBuf ? (() => { const d = new window.SQL.Database(new Uint8Array(window.__dwBuf)); const v = window.GridSpanGate.readMaterial(d); d.close(); return v; })() : {};
-        const G = window.Bonsai.grid; return { grid_source: G._columnDerived ? 'column-derived' : (window.__ownGridSource || 'app-default'), system: i ? i.system : null, material: m.material || null, mixed: !!m.mixed, girders: i && i.base0 ? i.base0.girders.length : 0, lines: window.Bonsai.gridmove.gridLines().map(l => ({ id: l.id, axis: l.axis, pos: +(+l.pos).toFixed(3) })) }; });
+      info = await pg.evaluate((breakLines) => { const i = window.swbGateInfo && window.swbGateInfo(), m = window.GridSpanGate && window.__dwBuf ? (() => { const d = new window.SQL.Database(new Uint8Array(window.__dwBuf)); const v = window.GridSpanGate.readMaterial(d); d.close(); return v; })() : {};
+        const G = window.Bonsai.grid; return { grid_source: G._columnDerived ? 'column-derived' : (window.__ownGridSource || 'app-default'), system: i ? i.system : null, material: m.material || null, mixed: !!m.mixed, girders: i && i.base0 ? i.base0.girders.length : 0, ...(() => { const g0 = i && i.base0 && i.base0.grid, own = !!(G._columnDerived && g0), th = own ? (g0.theta || 0) : 0;
+          // §17 (bim-compiler NEURO_SYMBOLIC_ORDER_CONTRACT.md): pos is the line's position ACROSS the lattice, the frame a --move and the span check use. On a rotated
+          // building the app's world-axis line (kept as world) reads every bay 1/cos(theta) long. At theta 0 the two are equal. breakLines = the witness's falsifier.
+          const lines = window.Bonsai.gridmove.gridLines().map(l => { const w = +(+l.pos).toFixed(3); if (!own) return { id: l.id, axis: l.axis, pos: w };
+            const mm = /^g([xy])(\d+)$/.exec(l.id), arr = mm && (mm[1] === 'x' ? g0.xLines : g0.yLines), u = arr ? arr[+mm[2]] : null;
+            return { id: l.id, axis: l.axis, pos: (u == null || breakLines) ? w : +(+u).toFixed(3), world: w }; });
+          return { rotation_deg: +(th * 180 / Math.PI).toFixed(3), frame: own && Math.abs(th) > 1e-9 ? 'building' : 'world', lines: lines }; })() }; }, process.env.LINES_BREAK === '1');
     }
     for (const e of edits) {
       const res = await pg.evaluate(async (grid, move, shift) => {

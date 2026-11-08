@@ -18,6 +18,10 @@
  *   C15 the stop changes a clean answer: an edit with no red passes byte for byte
  *   C16 a not-judged row reads as passed: it is listed as not judged
  *   C11 a refused shift reads as success: a crossing wall carrying a cut gives refused, the reason, exit 3
+ *   C17 a bay read from --lines is not the bay the check measures (§17): on the rotated Garage pos(gx6)-pos(gx5) = the span check's own before-value, and rotation_deg is stated
+ *   C18 the move is not in the frame of pos (§17): --shift gx6 --move (13 - that bay) gives the span check an after-value of 13 m
+ *   C19 the fix moved a building that is not rotated (§17): on the Hospital every pos equals world, rotation 0
+ *   Falsifier LINES_BREAK=1 (the old world pos) must fail C17 and C18.
  */
 'use strict';
 const path = require('path'), { spawn } = require('child_process');
@@ -100,6 +104,15 @@ const J1 = ['--building', 'SampleHouse', '--report-only', '--grid', 'gx1', '--mo
   const cleanArgs = ['--building', 'HospitalGarage', '--lattice-boxes', '--grid', 'gy8', '--move', '-1.51'], cg = await call(...cleanArgs), co = await call(...cleanArgs, '--report-only');
   chk('C15 an edit with no red passes the stop byte for byte', cg.code === 0 && !!edits(cg) && edits(cg) === edits(co) && cg.json.gate[0].stopped === false, JSON.stringify(cg.json && cg.json.gate));
   chk('C16 a not-judged row is listed as not judged, never as passed', two.json.gate.every(g => g.not_judged.indexOf('span_red') >= 0) && cg.json.gate[0].not_judged.indexOf('span_red') < 0);
+  const near = (x, y) => Math.abs(x - y) <= 0.0015;   // both sides are printed to 3 decimals
+  const gl = await call('--building', 'HospitalGarage', '--lines'), gm = gl.json && gl.json.model, gp = (id) => gm.lines.filter(l => l.id === id)[0].pos, bay = gm ? +(gp('gx6') - gp('gx5')).toFixed(3) : NaN;
+  const gs = await call('--building', 'HospitalGarage', '--report-only', '--lattice-boxes', '--shift', 'gx6', '--move', String(+(13 - bay).toFixed(3)));
+  const ol = gs.json && gs.json.edits[0] && gs.json.edits[0].rows ? (gs.json.edits[0].rows.filter(r => r.id === 'span_red')[0].over_limit_changed || []).filter(o => o.bay === 'gx5-gx6')[0] : null;
+  L('§17 Garage --lines bay gx5-gx6=' + bay + ' rotation_deg=' + (gm && gm.rotation_deg) + ' frame=' + (gm && gm.frame) + ' | span check before=' + (ol && ol.before) + ' after=' + (ol && ol.after) + ' for --move ' + (+(13 - bay).toFixed(3)));
+  chk('C17 on the rotated Garage the --lines bay is the span check\'s own bay, and the rotation is stated', !!ol && near(bay, ol.before) && Math.abs(gm.rotation_deg + 2) <= 0.001 && gm.frame === 'building', 'bay=' + bay + ' check=' + (ol && ol.before));
+  chk('C18 a move computed from --lines lands on its target: 13 m asked, 13 m measured', !!ol && near(ol.after, 13), 'after=' + (ol && ol.after));
+  const hl = await call('--building', 'Hospital', '--lines'), hm = hl.json && hl.json.model;
+  chk('C19 a building that is not rotated keeps its positions: every pos equals world, rotation 0', !!hm && hm.lines.length > 0 && hm.lines.every(l => l.pos === l.world) && hm.rotation_deg === 0 && hm.frame === 'world', hm && ('lines=' + hm.lines.length + ' rot=' + hm.rotation_deg));
   L('time quiet SampleHouse ms=' + s1.json.ms + ',' + s2.json.ms + ' Garage ms=' + g1.json.ms + ' | four at once ms=' + conc.map(c => c.json && c.json.ms).join(','));
   chk('C7 a time is reported per run', s1.json.ms > 0 && g1.json.ms > 0);
   const total = a.fail + b.fail + c.fail + fail;
