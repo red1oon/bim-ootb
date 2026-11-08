@@ -12,7 +12,10 @@
 // PROGRESS IS COMPUTED, never stored (§BIMDOC-4 point 5, §BIMDOC-5 b): per task and per phase, deliverables Issued for construction over all deliverables, and earned hours =
 //   hours budget x credit (credit 1 at Issued for construction, 0 before; §BIMDOC-5 b). A deliverable = (project, deliverable no); its state is that of its latest revision;
 //   a Superseded revision is not a deliverable of its own. Phase completion stays MANUAL (C_ProjectPhase.IsComplete + the phase Generate Order): the count only proposes it.
-// NOT HERE (named, not faked): "Open in Modeller / Viewer" (§BIMDOC-4 point 6) - no existing hand-off carries a file into those apps; see the witness log §BIMDOC-OPEN.
+// OPEN IN MODELLER / VIEWER (§BIMDOC-OPEN, built): one lens action on the BIM Document. The file kind of the row -> the app comes from the Description of its 'BIM File Kind' list row (data);
+//   the entry's bytes go into the shared file store (generic AdAttachment.promote, phase 2) and the app is opened at <app>?open=store:<sha256>&name=<file>. No table is named in the host.
+// HOURS (§BIMDOC-4 point 4): the progress action also logs the time and expense lines booked on the task (s_timeexpenseline.c_projecttask_id): §BIMDOC-HOURS.
+// CHAIN (film beat 10): completing a deliverable logs the project's issued count before and after (§BIMDOC-CHAIN).
 // Id band 9541001-9541999 (no seed row, no other bundle).
 const NOW = '2026-11-09 00:00:00';
 const STD = { ad_client_id: 0, ad_org_id: 0, isactive: 'Y', created: NOW, createdby: 100, updated: NOW, updatedby: 100, entitytype: 'U' };
@@ -24,7 +27,9 @@ export const TABLE = 'BIM_Document';
 // the four issue states, as a firm prints them in a title block (§BIMDOC-3); the codes are the framework's own (DR/IP/CO/RE) so the FSM and the status machinery are the common ones
 export const STATES = [['DR', 'Draft'], ['IP', 'Issued for review'], ['CO', 'Issued for construction'], ['RE', 'Superseded']];
 export const DISCIPLINES = [['ARC', 'Architecture'], ['STR', 'Structure'], ['MEP', 'Mechanical, Electrical and Plumbing'], ['ELE', 'Electrical'], ['FPR', 'Fire Protection'], ['CIV', 'Civil']];
-export const FILE_KINDS = [['DXF', 'DXF drawing'], ['IFC', 'IFC model'], ['PDF', 'PDF sheet']];
+// file kind -> the app that opens it. The mapping is DATA: the Description of each AD_Ref_List row of 'BIM File Kind' names the app page (relative to the app root); a kind with no description opens nowhere.
+//   The Viewer takes IFC only; the Modeller takes IFC, DB and DXF (BIMDOC_OPEN_FILE_STORE.md §3). A row removed from the dictionary stops the action (§BIMDOC-OPEN REFUSED).
+export const FILE_KINDS = [['DXF', 'DXF drawing', 'modeller/modeller.html'], ['IFC', 'IFC model', 'viewer/viewer.html'], ['PDF', 'PDF sheet', null]];
 // the family flags of ad_docfsm.DOC_FAMILY: prepare/complete only; every other arm is not offered (allow), the labels are the firm's words for the same codes
 export const FAMILY = { name: 'BIM_Document', reActivate: false, rc: false, ra: false, vo: {},
   allow: { DR: ['PR', 'CO'], IN: ['PR'], IP: ['CO'], CO: [], RE: [] },
@@ -64,8 +69,8 @@ const lc = (s) => s.toLowerCase();
 const refRows = [[R_STATUS, 'BIM Document Status', 'The four states a firm prints in a title block (framework codes DR/IP/CO/RE)'], [R_DISC, 'BIM Discipline', 'Discipline of a deliverable'], [R_KIND, 'BIM File Kind', 'Kind of the file a deliverable carries']]
   .map((r) => Object.assign({ ad_reference_id: r[0], name: r[1], description: r[2], validationtype: 'L', isorderbyvalue: 'N' }, STD));
 const lists = []; let li = LIST0;
-[[R_STATUS, STATES], [R_DISC, DISCIPLINES], [R_KIND, FILE_KINDS]].forEach(([rid, vs]) => vs.forEach(([v, n]) => lists.push(Object.assign({ ad_ref_list_id: li++, ad_reference_id: rid, value: v, name: n }, STD))));
-lists.push(Object.assign({ ad_ref_list_id: li++, ad_reference_id: 183, value: 'BIM', name: 'BIM Document' }, STD));   // C_DocType.DocBaseType
+[[R_STATUS, STATES], [R_DISC, DISCIPLINES], [R_KIND, FILE_KINDS]].forEach(([rid, vs]) => vs.forEach(([v, n, d]) => lists.push(Object.assign({ ad_ref_list_id: li++, ad_reference_id: rid, value: v, name: n, description: d || null }, STD))));
+lists.push(Object.assign({ ad_ref_list_id: li++, ad_reference_id: 183, value: 'BIM', name: 'BIM Document', description: null }, STD));   // C_DocType.DocBaseType
 refRows.push(Object.assign({ ad_reference_id: R_REV, name: 'BIM Document Reversal', description: 'The revision that superseded this one (the Reversal_ID pattern)', validationtype: 'T', isorderbyvalue: 'N' }, STD));
 const refTable = Object.assign({ ad_reference_id: R_REV, ad_table_id: T_ID, ad_key: colId('BIM_Document_ID'), ad_display: colId('Name'), isvaluedisplayed: 'N', ad_ref_table_uu: 'bimdoc-reftable-' + R_REV }, STD);
 
@@ -137,19 +142,51 @@ export const docAction = {
   },
   completeIt(trx, doc) {
     const older = siblings(trx, doc).filter((o) => (o.docstatus === 'CO' || o.docstatus === 'IP') && Number(o.revision) < Number(doc.revision));
+    const proj = trx.find('bim_document', { c_project_id: doc.c_project_id }), issuedOf = (rows) => { const p = computeProgress(rows).byProject[doc.c_project_id]; return p ? p.issued : 0; };
+    const before = issuedOf(proj), olderIds = older.map((o) => String(o.bim_document_id));
+    const after = issuedOf(proj.map((r) => (same(r.bim_document_id, doc.bim_document_id) ? Object.assign({}, r, { docstatus: 'CO' }) : olderIds.indexOf(String(r.bim_document_id)) >= 0 ? Object.assign({}, r, { docstatus: 'RE' }) : r)));
     older.forEach((o) => {
       trx.update('bim_document', o, { docstatus: 'RE', reversal_id: doc.bim_document_id, processed: 'Y', docaction: '--' });
       trx.say('§BIMDOC-SUPERSEDE deliverable=' + doc.deliverableno + ' old=' + o.bim_document_id + '(rev ' + o.revision + ') by=' + doc.bim_document_id + '(rev ' + doc.revision + ') old.docstatus=RE reversal_id=' + doc.bim_document_id);
     });
     trx.update('bim_document', doc, { processed: 'Y', docaction: '--' });
     trx.say('§BIMDOC-ISSUED id=' + doc.bim_document_id + ' deliverable=' + doc.deliverableno + ' rev=' + doc.revision + ' status=CO superseded=' + older.length);
+    trx.say('§BIMDOC-CHAIN project=' + doc.c_project_id + ' deliverable=' + doc.deliverableno + ' issued-before=' + before + ' issued-after=' + after + ' delta=' + (after - before) + ' deliverables=' + computeProgress(proj).byProject[doc.c_project_id].total);
     return 'CO';
   }
 };
 
 // ── activate: the physical table, the rows that depend on who is in the database (doc types, window access), the DocAction class + FSM family, the progress lens ──
+// "Open in Modeller / Viewer": file kind (row) -> app (data row) -> the attachment entry of that kind into the file store -> <app>?open=store:<sha256>&name=<file>
+async function openInApp(api) {
+  const rd = globalThis.__tipRead && globalThis.__tipRead.rows, id = api.keyVal, say = (m) => { try { api.status && api.status(m); } catch (e) { /* log only */ } };
+  const refuse = (why) => { console.log('§BIMDOC-OPEN REFUSED id=' + id + ' reason=' + why); say('Open: ' + why); return null; };
+  const row = rd && rd('SELECT filekind, deliverableno FROM bim_document WHERE bim_document_id=' + Number(id))[0];
+  if (!row) return refuse('no-document');
+  const kind = row.filekind;
+  if (!kind) return refuse('no-file-kind');
+  const lit = (v) => "'" + String(v).replace(/'/g, "''") + "'";
+  const app = ((dictQ && dictQ('SELECT description AS d FROM ad_ref_list WHERE ad_reference_id=' + R_KIND + ' AND value=' + lit(kind) + " AND isactive='Y'")) || [])[0];
+  if (!app || !app.d) return refuse('no-app-for-kind kind=' + kind);
+  if (!api.attachments) return refuse('no-attachment-module');
+  const AT = await api.attachments(), host = api.attachmentHost(), cx = api.attachmentCtx && api.attachmentCtx();
+  if (!AT || !cx) return refuse('no-attachment-module');
+  const att = AT.lookup(host, cx);
+  if (!att) return refuse('no-attachment kind=' + kind);
+  let st; try { st = await AT.load(att); } catch (e) { return refuse('attachment-unreadable ' + (e && e.message)); }
+  const ext = '.' + String(kind).toLowerCase(), ent = st.entries.filter((e) => e.name.toLowerCase().endsWith(ext))[0];
+  if (!ent) return refuse('no-entry-of-kind kind=' + kind + ' entries=' + st.entries.length);
+  const pr = await AT.promote(host, cx, ent.name);
+  if (!pr.ok) return refuse('store-' + pr.reason);
+  const url = new URL('../' + app.d + '?open=store:' + pr.sha256 + '&name=' + encodeURIComponent(ent.name), globalThis.location.href).href;
+  console.log('§BIMDOC-OPEN id=' + id + ' deliverable=' + row.deliverableno + ' kind=' + kind + ' app=' + app.d + ' name=' + ent.name + ' size=' + pr.size + ' sha256=' + pr.sha256 + ' promoted=' + (pr.promoted ? 1 : 0) + ' url=' + url);
+  globalThis.open(url, '_blank');
+  return url;
+}
+let dictQ = null;   // the dictionary reader of the running plugin (the file-kind -> app rows are data)
 export async function activate(ctx) {
   const db = ctx.db, q = (s, p) => (db.query ? db.query(s, p || []) : []);
+  dictQ = q;
   const ddl = COLS.map((c) => '"' + lc(c.n) + '" ' + (NUMERIC_REFS[c.ref] ? 'NUMERIC' : 'TEXT')).join(', ');
   if (db.run) db.run('CREATE TABLE IF NOT EXISTS "bim_document" (' + ddl + ', PRIMARY KEY ("bim_document_id"))');
   // document type "BIM Document" for every client that already has Project Issue (the project clients)
@@ -180,9 +217,13 @@ export async function activate(ctx) {
   if (ctx.lens) ctx.lens.register('bimdoc', {
     actions(api) {
       const t = api && api.tab && String(api.tab.tableName || '').toLowerCase();
-      return (t === 'c_projecttask' || t === 'c_projectphase' || t === lc(TABLE)) && api.keyVal != null ? [{ id: 'progress', label: 'BIM progress', title: 'Deliverables issued for construction over all deliverables, and earned hours (computed, never stored)' }] : [];
+      const out = [];
+      if ((t === 'c_projecttask' || t === 'c_projectphase' || t === lc(TABLE)) && api.keyVal != null) out.push({ id: 'progress', label: 'BIM progress', title: 'Deliverables issued for construction over all deliverables, and earned hours (computed, never stored)' });
+      if (t === lc(TABLE) && api.keyVal != null) out.push({ id: 'open', label: 'Open in Modeller / Viewer', title: 'Open the attached file in the app its file kind names' });
+      return out;
     },
     run(id, api) {
+      if (id === 'open') return openInApp(api);
       if (id !== 'progress') return;
       const t = String(api.tab.tableName).toLowerCase(), rd = globalThis.__tipRead && globalThis.__tipRead.rows;
       if (!rd) { console.log('§BIMDOC-PROGRESS REFUSED no tip reader'); return; }
@@ -193,6 +234,10 @@ export async function activate(ctx) {
       else { const r = rows.find((x) => same(x.bim_document_id, api.keyVal)); task = r && r.c_projecttask_id; phase = r && r.c_projectphase_id; }
       const fmt = (x) => (x ? x.issued + ' of ' + x.total + ' issued for construction (' + x.pct + '%), earned hours ' + x.earned + ' of ' + x.budget : 'no deliverables');
       if (task != null) console.log('§BIMDOC-REGISTER task=' + task + ' rows=' + rows.filter((x) => same(x.c_projecttask_id, task)).length + ' deliverables=' + (P.byTask[task] ? P.byTask[task].total : 0));
+      if (task != null) {   // hours booked on the task (S_TimeExpenseLine), next to the deliverables' earned hours: the project's cost and the deliverable meet on the task
+        const tl = rd('SELECT s_timeexpenseline_id AS id, qty FROM s_timeexpenseline WHERE c_projecttask_id=' + Number(task) + " AND isactive<>'N' ORDER BY s_timeexpenseline_id"), hrs = tl.reduce((a, x) => a + Number(x.qty || 0), 0);
+        console.log('§BIMDOC-HOURS task=' + task + ' lines=' + tl.length + ' qty=[' + tl.map((x) => Number(x.qty || 0)).join(',') + '] total=' + hrs);
+      }
       const lines = []; if (task != null) lines.push(['Task ' + task, P.byTask[task]]); if (phase != null) lines.push(['Phase ' + phase, P.byPhase[phase]]);
       lines.forEach(([l, x]) => console.log('§BIMDOC-PROGRESS ' + l.toLowerCase().replace(' ', '=') + ' ' + (x ? 'issued=' + x.issued + ' total=' + x.total + ' pct=' + x.pct + ' budget=' + x.budget + ' earned=' + x.earned : 'issued=0 total=0')));
       const old = document.getElementById('bimdoc-progress'); if (old) old.remove();

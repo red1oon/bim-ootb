@@ -14,7 +14,13 @@
 //   R-1 RED     an illegal transition is refused (Superseded -> Issue-for-construction): the bar offers nothing AND the FSM says no; the judge fed the opposite says FAIL.
 //   R-2 RED     completing an OLDER revision when a newer one is already Issued for construction is refused by the DocAction class, status unchanged.
 //   R-3 RED     the progress judge fed a wrong hand count says FAIL.
-//   O-1 OPEN    "Open in Modeller / Viewer" (item 4): NOT BUILT - no existing hand-off carries a file into those apps. Reported NOT-BUILT, never PASS.
+//   S-1 STORE   a 20 MB file attached through the generic dialog goes to the shared file store (ad_attachment row = Title 'fs' + index of name/size/sha256, NO bytes), reads back with sha256 == node's, and again after a reload.
+//   O-1 OPEN    the "Open in Modeller / Viewer" action on the BIM Document: the URL is exactly <app>?open=store:<sha256>&name=<file>, and the TARGET APP's own log (§FILESTORE-OPEN) shows the same sha256 opened.
+//   R-4 RED     the file-kind DATA row (AD_Ref_List 'BIM File Kind' DXF) removed -> the Open action is refused (no popup, §BIMDOC-OPEN REFUSED); restored -> it opens again.
+//   R-5 RED     a store entry altered in OPFS -> the app refuses it (§FILESTORE-OPEN REFUSED reason=mismatch), no success line.
+//   R-6 RED     two rows share one hash: deleting one attachment keeps the bytes (sweep kept>=1 removed=0), deleting the last one removes them (so the first keep is not vacuous).
+//   H-1 HOURS   time lines booked on the task: §BIMDOC-HOURS lines/qty/total equal the hand count.   X-1 CHAIN  issuing a deliverable moves the project's issued count by one (§BIMDOC-CHAIN before/after, hand count).
+//   FILM        the §BIMDOC-FILM evidence lines in order; beats 1 and 9 are NOT BUILT in the kernel (named with file:line), never faked.
 // Verdict per arm: PASS | FAIL | INCONCLUSIVE(reason). INCONCLUSIVE when N is 0 (nothing judged). Overall exit 0 only if no FAIL and no INCONCLUSIVE among the built arms.
 // Run: NODE_PATH=~/bim-ootb/node_modules node erp/tests/witness_bimdoc_live.js
 'use strict';
@@ -46,6 +52,7 @@ const HAND = {                       // by hand: a deliverable = (project, numbe
 const EXPECT_LEGAL = { DR: { PR: 'IP', CO: 'CO' }, IP: { CO: 'CO' }, CO: {}, RE: {} };   // §BIMDOC-3
 const judgeCount = (got, want) => (got && want && ['total', 'issued', 'budget', 'earned'].every(k => Number(got[k]) === want[k]) && Math.abs(Number(got.pct) - want.pct) < 0.05) ? 'PASS' : 'FAIL';
 const judgePair = (offered, to, want) => (want ? (offered && to === want) : !offered) ? 'PASS' : 'FAIL';
+const BIG = crypto.randomBytes(20 * 1024 * 1024), BIG_SHA = sha(BIG);   // the 20 MB fixture (synthetic, above the 16 MB DB cap)
 const DXF = Buffer.from('0\nSECTION\n2\nENTITIES\n0\nLINE\n8\nWALLS\n10\n0.0\n20\n0.0\n11\n9.0\n21\n0.0\n0\nENDSEC\n0\nEOF\n');   // a synthetic one-line DXF (no private set)
 
 (async () => {
@@ -55,6 +62,8 @@ const DXF = Buffer.from('0\nSECTION\n2\nENTITIES\n0\nLINE\n8\nWALLS\n10\n0.0\n20
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, acceptDownloads: true }); const page = await ctx.newPage(); page.setDefaultTimeout(20000);
   page.on('console', m => PAGELOG.push(m.text())); page.on('pageerror', e => PAGELOG.push('PAGEERR ' + e)); page.on('dialog', d => d.dismiss().catch(() => {}));
   const mark = () => PAGELOG.length;
+  const APPLOG = []; ctx.on('page', p => { if (p === page) return; p.on('console', m => { APPLOG.push(m.text()); PAGELOG.push('[app] ' + m.text()); }); p.on('pageerror', e => APPLOG.push('PAGEERR ' + e)); });
+  const appSince = (n, re) => APPLOG.slice(n).filter(l => re.test(l));
   const since = (n, re) => PAGELOG.slice(n).filter(l => re.test(l));
   async function boot(suffix) {
     for (let g = 0; g < 3; g++) { try { await page.goto('about:blank'); await page.goto(base + '?login=GardenAdmin' + (suffix || ''), { waitUntil: 'load' }); break; } catch (e) { if (g === 2) throw e; await sleep(1500); } }
@@ -186,6 +195,125 @@ const DXF = Buffer.from('0\nSECTION\n2\nENTITIES\n0\nLINE\n8\nWALLS\n10\n0.0\n20
     verdict('F-1 attach', fail.length ? 'FAIL' : 'PASS', fail.length ? fail.join(' ; ') : 'duplex_ground_floor.dxf sha256=' + sha(DXF).slice(0, 16) + ' on BIM_Document ' + ID['A-101/1']);
   }
 
+  // ════════ phase 2 + Open in Modeller / Viewer ════════
+  const DXF_SHA = sha(DXF), ORIGIN = new URL(base).origin;
+  const opfsList = () => page.evaluate(async () => { try { const d = await (await navigator.storage.getDirectory()).getDirectoryHandle('bim_files'); const k = []; for await (const x of d.keys()) k.push(x); return k.sort(); } catch (e) { return []; } });
+  const attRow = id => rd("SELECT ad_attachment_id, title, length(binarydata) AS len, binarydata FROM ad_attachment WHERE ad_table_id=" + T_ID + " AND record_id=" + id);
+  async function dialogAttach(key, name, buf) {
+    await openDoc(key); let btn = await page.$('#idmp-toolbar button[data-tb="attachment"]'); let dis = btn ? await btn.evaluate(b => b.disabled) : true;
+    if (dis) { await page.click('#idmp-toolbar button[data-tb="refresh"]').catch(() => {}); await sleep(1800); btn = await page.$('#idmp-toolbar button[data-tb="attachment"]'); dis = btn ? await btn.evaluate(b => b.disabled) : true; }
+    if (dis) return false;
+    await page.click('#idmp-toolbar button[data-tb="attachment"]'); await page.waitForSelector('[data-att="dialog"]', { timeout: 10000 });
+    await page.setInputFiles('[data-att="file"]', [{ name, mimeType: 'application/octet-stream', buffer: buf }]); await sleep(buf.length > 1e6 ? 4000 : 900);
+    await page.click('[data-att="ok"]'); await page.waitForSelector('[data-att="dialog"]', { state: 'detached', timeout: 60000 }); await sleep(1500); return true;
+  }
+  async function dialogDeleteAll(key) {
+    await openDoc(key); let btn = await page.$('#idmp-toolbar button[data-tb="attachment"]'); if (!btn || await btn.evaluate(b => b.disabled)) { await page.click('#idmp-toolbar button[data-tb="refresh"]').catch(() => {}); await sleep(1800); }
+    await page.click('#idmp-toolbar button[data-tb="attachment"]'); await page.waitForSelector('[data-att="dialog"]', { timeout: 10000 });
+    await page.click('[data-att="deleteall"]'); await page.click('[data-att="yes"]'); await page.waitForSelector('[data-att="dialog"]', { state: 'detached', timeout: 30000 }); await sleep(1500);
+  }
+  // read the attachment of a record back the way the dialog does, hash it in the page: {title, indexLen, entries:[{name,size,sha,stored}]}; polls while the sidecar hydrates
+  const readBack = (recId) => page.evaluate(async ([t, r]) => {
+    if (!window.AdAttachment) await new Promise((res, rej) => { const s = document.createElement('script'); s.src = 'ad_attachment.js?v=1'; s.onload = res; s.onerror = rej; document.head.appendChild(s); });
+    const A = window.AdAttachment, hex = d => crypto.subtle.digest('SHA-256', d).then(h => [...new Uint8Array(h)].map(x => ('0' + x.toString(16)).slice(-2)).join(''));
+    let row = null; for (let i = 0; i < 80 && !row; i++) { row = A.lookup({ rows: window.__tipRead.rows }, { tableId: t, recordId: r }); if (!row) await new Promise(q => setTimeout(q, 500)); }
+    if (!row) return null;
+    const st = await A.load(row), out = [];
+    for (const e of st.entries) { const d = await A.bytes(e); out.push({ name: e.name, size: e.size, stored: !!e.stored, sha: await hex(d), len: d.length }); }
+    return { title: row.title, entries: out };
+  }, [T_ID, recId]);
+  async function storeAltered(sha, fn) { return page.evaluate(async ([s, mode]) => { const d = await (await navigator.storage.getDirectory()).getDirectoryHandle('bim_files'); const h = await d.getFileHandle(s); const f = await h.getFile(); const orig = new Uint8Array(await f.arrayBuffer());
+      const w = await h.createWritable(); const bad = orig.slice(); bad[0] = bad[0] ^ 255; await w.write(mode === 'alter' ? bad : new Uint8Array(0)); await w.close(); return orig.length; }, [sha, fn]); }
+  {
+    const fail = [];
+    // O-1: the action opens the app its file kind names; the app's own log shows the same sha256
+    await openDoc('A-101/1'); const n0 = mark(), a0 = APPLOG.length;
+    const SEL = '[data-lens-action="bimdoc:open"]';
+    const has = await page.$(SEL); if (!has) fail.push('no "Open in Modeller / Viewer" action on the BIM Document');
+    let popup = null, urlLine = null;
+    if (has) {
+      [popup] = await Promise.all([page.waitForEvent('popup', { timeout: 30000 }).catch(() => null), page.click(SEL)]);
+      for (let i = 0; i < 40 && !since(n0, /^§BIMDOC-OPEN id=/).length; i++) await sleep(250);
+      urlLine = since(n0, /^§BIMDOC-OPEN id=/)[0] || null;
+    }
+    const want = ORIGIN + '/modeller/modeller.html?open=store:' + DXF_SHA + '&name=duplex_ground_floor.dxf';
+    const gotUrl = urlLine ? (/ url=(\S+)$/.exec(urlLine) || [])[1] : null;
+    if (gotUrl !== want) fail.push('action URL ' + gotUrl + ' != expected ' + want);
+    if (popup) { await popup.waitForLoadState('domcontentloaded').catch(() => {}); if (popup.url() !== want) fail.push('popup URL ' + popup.url()); }
+    else if (has) fail.push('no popup opened');
+    for (let i = 0; i < 360 && !appSince(a0, /^§FILESTORE-OPEN sha=|^§FILESTORE-OPEN REFUSED/).length; i++) await sleep(250);
+    const appOpen = appSince(a0, /^§FILESTORE-OPEN sha=/)[0] || null, appGet = appSince(a0, /^§FILESTORE-GET sha=/)[0] || null;
+    if (!appOpen || !appOpen.includes('sha=' + DXF_SHA.slice(0, 12)) || !/name=duplex_ground_floor\.dxf/.test(appOpen)) fail.push('the app did not log the same sha256 opened: ' + appOpen);
+    const ar = (await attRow(ID['A-101/1']))[0];
+    if (!ar || ar.title !== 'fs') fail.push('attachment row not promoted to the store: ' + JSON.stringify(ar && { title: ar.title }));
+    say('§W-BIMDOC-OPEN url=' + gotUrl + ' | app-log: ' + appOpen + ' | ' + appGet + ' | row.title=' + (ar && ar.title) + ' | action-line: ' + (urlLine || '').slice(0, 200));
+    verdict('O-1 open in Modeller', fail.length ? 'FAIL' : 'PASS', fail.length ? fail.join(' ; ') : 'exact URL, popup URL equal, Modeller logged §FILESTORE-OPEN sha=' + DXF_SHA.slice(0, 12) + ' (= node sha256 ' + DXF_SHA.slice(0, 16) + ')');
+    if (popup) await popup.close().catch(() => {});
+
+    // R-4 red: the file-kind data row removed stops the action; restored, it works again
+    const kindRef = Number((await dq("SELECT AD_Reference_Value_ID FROM AD_Column WHERE AD_Table_ID=" + T_ID + " AND ColumnName='FileKind'"))[0]?.[0] || 0);
+    const saved = await page.evaluate(r => { const x = window.__idmpDb.exec("SELECT * FROM ad_ref_list WHERE ad_reference_id=" + r + " AND value='DXF'"); return x.length ? { cols: x[0].columns, vals: x[0].values[0] } : null; }, kindRef);
+    const rf = [];
+    if (!saved) rf.push('population: the DXF file-kind row is not in the dictionary (INCONCLUSIVE)');
+    else {
+      await openDoc('A-101/1'); await page.evaluate(r => window.__idmpDb.exec("DELETE FROM ad_ref_list WHERE ad_reference_id=" + r + " AND value='DXF'"), kindRef);   // no reload after the delete: the dictionary is in memory
+      const m1 = mark();
+      const pp = await Promise.all([page.waitForEvent('popup', { timeout: 5000 }).catch(() => null), page.click(SEL)]); await sleep(1500);
+      const refusal = since(m1, /^§BIMDOC-OPEN REFUSED .*reason=no-app-for-kind/);
+      if (pp[0]) { rf.push('a popup opened although the file-kind row was removed'); await pp[0].close().catch(() => {}); }
+      if (!refusal.length) rf.push('no §BIMDOC-OPEN REFUSED reason=no-app-for-kind line');
+      await page.evaluate(([c, v]) => window.__idmpDb.run('INSERT INTO ad_ref_list (' + c.join(',') + ') VALUES (' + c.map(() => '?').join(',') + ')', v), [saved.cols, saved.vals]);
+      const m2 = mark();
+      const pp2 = await Promise.all([page.waitForEvent('popup', { timeout: 20000 }).catch(() => null), page.click(SEL)]); await sleep(800);
+      if (!pp2[0]) rf.push('after restoring the row the action still did not open'); else await pp2[0].close().catch(() => {});
+      say('§W-BIMDOC-REDKIND removed=' + JSON.stringify(refusal.slice(0, 1)) + ' restoredOpened=' + !!pp2[0]);
+    }
+    verdict('R-4 red file-kind row removed', !saved ? 'INCONCLUSIVE' : (rf.length ? 'FAIL' : 'PASS'), rf.length ? rf.join(' ; ') : 'row removed -> refused, no popup; restored -> opens again');
+
+    // R-5 red: an altered store entry is refused by the app
+    const len = await storeAltered(DXF_SHA, 'alter');
+    const a1 = APPLOG.length, p2 = await ctx.newPage(); await p2.goto(want, { waitUntil: 'domcontentloaded' }).catch(() => {});
+    for (let i = 0; i < 120 && !appSince(a1, /^§FILESTORE-OPEN (sha=|REFUSED)/).length; i++) await sleep(250);
+    const rfs = appSince(a1, /^§FILESTORE-OPEN REFUSED/)[0] || null, okLine = appSince(a1, /^§FILESTORE-OPEN sha=/)[0] || null;
+    await p2.close().catch(() => {});
+    await page.evaluate(async ([s, hex]) => { const b = Uint8Array.from(atob(hex), c => c.charCodeAt(0)); const d = await (await navigator.storage.getDirectory()).getDirectoryHandle('bim_files'); const w = await (await d.getFileHandle(s)).createWritable(); await w.write(b); await w.close(); }, [DXF_SHA, DXF.toString('base64')]);
+    say('§W-BIMDOC-REDSTORE altered ' + len + ' bytes; app said: ' + (rfs || okLine || 'nothing'));
+    verdict('R-5 red altered store entry', !len ? 'INCONCLUSIVE' : (rfs && /reason=mismatch/.test(rfs) && !okLine ? 'PASS' : 'FAIL'), 'app line: ' + (rfs || okLine || 'none'));
+  }
+  {
+    // S-1: the 20 MB file through the generic dialog -> store; R-6: shared hash
+    const fail = [], n0 = mark();
+    const ok = await dialogAttach('A-103/1', 'fixture_sheetset_20mb.bin', BIG);
+    if (!ok) fail.push('Attachment button disabled');
+    const put = since(n0, /^§FILESTORE-PUT sha=/)[0] || null, sv = since(n0, /^§ATT save op=create entries=1 .*store=1/)[0] || null;
+    if (!put || !put.includes('sha=' + BIG_SHA.slice(0, 12)) || !put.includes('size=' + BIG.length)) fail.push('no §FILESTORE-PUT with the node sha/size: ' + put);
+    if (!sv) fail.push('no §ATT save ... store=1 line');
+    const row = (await attRow(ID['A-103/1']))[0];
+    if (!row || row.title !== 'fs') fail.push('row title ' + (row && row.title));
+    else if (Number(row.len) > 2048) fail.push('the row holds ' + row.len + ' bytes: the bytes are in the DB, not the store');
+    let rb = await readBack(ID['A-103/1']);
+    const eq = r => r && r.entries.length === 1 && r.entries[0].sha === BIG_SHA && r.entries[0].len === BIG.length && r.entries[0].stored && r.entries[0].name === 'fixture_sheetset_20mb.bin';
+    if (!eq(rb)) fail.push('readback ' + JSON.stringify(rb)); 
+    await boot('&window=' + W_ID); const rb2 = await readBack(ID['A-103/1']);
+    if (!eq(rb2)) fail.push('after reload ' + JSON.stringify(rb2));
+    say('§W-BIMDOC-STORE put=' + put + ' | ' + sv + ' | row=' + JSON.stringify(row && { title: row.title, len: row.len }) + ' readback.sha=' + (rb && rb.entries[0] && rb.entries[0].sha) + ' node.sha=' + BIG_SHA + ' reload.sha=' + (rb2 && rb2.entries[0] && rb2.entries[0].sha));
+    verdict('S-1 20 MB through the store', fail.length ? 'FAIL' : 'PASS', fail.length ? fail.join(' ; ') : 'sha256 ' + BIG_SHA.slice(0, 16) + ' equal to node before and after a reload; the row holds ' + row.len + ' bytes of index');
+
+    // R-6: a second row, same bytes -> deduped; delete one -> bytes stay; delete the last -> bytes go
+    const rf = [], m1 = mark();
+    await dialogAttach('A-102/1', 'fixture_sheetset_20mb.bin', BIG);
+    const put2 = since(m1, /^§FILESTORE-PUT sha=/)[0] || null; if (!put2 || !/dedup=1/.test(put2)) rf.push('second row did not dedup: ' + put2);
+    const L1 = (await opfsList()).filter(x => x === BIG_SHA).length; if (L1 !== 1) rf.push('store holds ' + L1 + ' copies of the hash');
+    const m2 = mark(); await dialogDeleteAll('A-102/1');
+    const sw1 = since(m2, /^§FILESTORE-SWEEP /)[0] || null, still = (await opfsList()).includes(BIG_SHA), other = await readBack(ID['A-103/1']);
+    if (!sw1) rf.push('no sweep line after deleting the first row'); if (!still) rf.push('bytes were removed although another row uses the hash'); if (!eq(other)) rf.push('the other row no longer reads back');
+    const m3 = mark(); await dialogDeleteAll('A-103/1');
+    const sw2 = since(m3, /^§FILESTORE-SWEEP /)[0] || null, gone = !(await opfsList()).includes(BIG_SHA), dxfKept = (await opfsList()).includes(DXF_SHA);
+    if (!gone) rf.push('the last reference was deleted but the bytes stayed (the sweep is a no-op)'); if (!dxfKept) rf.push('an unrelated referenced entry (the DXF) was swept');
+    say('§W-BIMDOC-REDSHARE after-first-delete: ' + sw1 + ' stillThere=' + still + ' | after-last-delete: ' + sw2 + ' gone=' + gone + ' dxfKept=' + dxfKept);
+    verdict('R-6 red shared hash keeps its bytes', !put2 ? 'INCONCLUSIVE' : (rf.length ? 'FAIL' : 'PASS'), rf.length ? rf.join(' ; ') : 'one stored copy for two rows; first delete kept it, last delete removed it, the referenced DXF survived both sweeps');
+  }
+
   // B-1 FSM pair sweep through the common machine
   {
     const res = await page.evaluate(([tid, sts, acts]) => { const stub = { prepare: () => ({ get: () => null }) }, out = [];
@@ -274,6 +402,23 @@ const DXF = Buffer.from('0\nSECTION\n2\nENTITIES\n0\nLINE\n8\nWALLS\n10\n0.0\n20
     verdict('E-1 sub-tab under Project Task', fail.length ? 'FAIL' : 'PASS', fail.length ? fail.join(' ; ') : 'rows per task ' + notes.join(', ') + '; a document created in the sub-tab took project/phase/task from its parents');
   }
 
+  // H-1 hours: time and expense lines booked on the task (signed CRUD lane, the kernel's own S_TimeExpense tables), then read back through the lens action
+  {
+    const HAND_H = { lines: 3, qty: [3.5, 2, 1.5], total: 7 };
+    const r = await page.evaluate(([prj, ph, tk, H]) => new Promise(res => { const A = window.APP || {}, std = { actor: A.actor, clientId: A.clientId, orgId: A.orgId || 0 };
+      const mk = (t, f) => ({ key: t, table: t, verb: 'create', op_type: 'CRUD_CREATE', op_uuid: null, cas: null, fields: f, stdDefaults: std });
+      const ops = [mk('s_timeexpense', { documentno: 'TE-BIMDOC-1', datereport: '2026-11-09', isactive: 'Y', processed: 'N' })];
+      H.qty.forEach((q, i) => ops.push(mk('s_timeexpenseline', { s_timeexpense_id: { __opRef: 0 }, line: (i + 1) * 10, istimereport: 'Y', dateexpense: '2026-11-09', qty: q, c_project_id: prj, c_projectphase_id: ph, c_projecttask_id: tk, description: 'Duplex plans, drafting hours', isactive: 'Y', processed: 'N' })));
+      window.__crud.applyOpGroup(ops, rr => res(rr)); }), [PRJ.c_project_id, TK.Plans.ph, TK.Plans.id, HAND_H]);
+    await sleep(1500);
+    const lines = await rd("SELECT qty FROM s_timeexpenseline WHERE c_projecttask_id=" + TK.Plans.id + " AND isactive<>'N'");
+    await toTask(FIX.phases[0], 'Plans'); const n0 = mark(); const has = await page.$('[data-lens-action="bimdoc:progress"]'); if (has) { await page.click('[data-lens-action="bimdoc:progress"]'); await sleep(1200); }
+    const hl = since(n0, /^§BIMDOC-HOURS /)[0] || null, judgeH = (line, w) => (line && line.includes('lines=' + w.lines + ' ') && line.includes('qty=[' + w.qty.slice().sort((x, y) => x - y).join(',') + ']')   /* the log lists lines by id, synthetic ids run downward: compare as a set */ && line.includes('total=' + w.total)) ? 'PASS' : 'FAIL';
+    say('§W-BIMDOC-HOURS committed=' + (r && r.committed) + ' rows-read-back=' + lines.length + ' line: ' + hl);
+    const v = judgeH(hl, HAND_H), ctl = judgeH(hl, Object.assign({}, HAND_H, { total: HAND_H.total + 1 }));
+    verdict('H-1 hours on the task', lines.length === 0 ? 'INCONCLUSIVE' : (v === 'PASS' && ctl === 'FAIL' ? 'PASS' : 'FAIL'), 'line "' + hl + '" vs hand count ' + JSON.stringify(HAND_H) + '; judge fed total+1 says ' + ctl + (r && r.committed ? '' : ' (booking not committed: ' + JSON.stringify(r).slice(0, 160) + ')'));
+  }
+
   // D-1 progress: the module and the UI action against the HAND COUNT
   {
     const P = await page.evaluate(() => window.BimDocProgress.compute(window.__tipRead.rows('SELECT * FROM bim_document')));
@@ -305,21 +450,29 @@ const DXF = Buffer.from('0\nSECTION\n2\nENTITIES\n0\nLINE\n8\nWALLS\n10\n0.0\n20
     verdict('R-3 red progress judge', judgeCount(P.byTask[TK.Plans.id], wrong) === 'FAIL' ? 'PASS' : 'FAIL', 'judge fed a wrong count (issued+1) says ' + judgeCount(P.byTask[TK.Plans.id], wrong));
   }
 
-  verdict('O-1 Open in Modeller / Viewer', 'NOT-BUILT', 'item 4: no existing transport carries a file into the Modeller or the Viewer; question reported, nothing faked');
+  // X-1 beat 10: issuing one more deliverable moves the project's issued count by one link (hand count: A-101 CO, A-201 rev2 CO = 2 -> A-103 issued = 3)
+  {
+    const n0 = mark(); await act('A-103/1', 'CO'); const ln = since(n0, /^§BIMDOC-CHAIN /)[0] || null, st = await status('A-103/1');
+    const hand = { before: 2, after: 3 };
+    const judgeC = (line, h) => line && line.includes('issued-before=' + h.before + ' ') && line.includes('issued-after=' + h.after + ' ') ? 'PASS' : 'FAIL';
+    say('§W-BIMDOC-CHAIN-LINE ' + ln + ' status=' + JSON.stringify(st));
+    verdict('X-1 the measure moves one link', !ln ? 'INCONCLUSIVE' : (judgeC(ln, hand) === 'PASS' && judgeC(ln, { before: 2, after: 4 }) === 'FAIL' && st && st.docstatus === 'CO' ? 'PASS' : 'FAIL'), 'line "' + ln + '" vs hand count 2 -> 3; judge fed 2 -> 4 says ' + judgeC(ln, { before: 2, after: 4 }));
+  }
   return finish();
 
   function finish() {
     // ── the ten evidence lines of §BIMDOC-FILM, in order, as far as items 1-4 cover them ──
     let last = -1, orderOk = true; const rows = [];
     const findAfter = (re, after) => { for (let i = after + 1; i < PAGELOG.length; i++) if (re.test(PAGELOG[i])) return i; return -1; };
-    const EV = [[1, 'project from its type (copy-phases log)', null], [2, 'sheet register (row count per task)', /^§BIMDOC-REGISTER /], [3, 'drawing attached', /^§ATT hash name=duplex_ground_floor/], [4, 'open in the app', null],
-      [5, 'issued (signed transition lines)', /^§CRUD process committed key=bim_document .*to=(IP|CO)/], [6, 'revised (supersede link)', /^§BIMDOC-SUPERSEDE /], [7, 'hours booked on the task', null], [8, 'progress, computed', /^§BIMDOC-PROGRESS /], [9, 'billed (phase order + invoice)', null], [10, 'the measure moves (sheet chain)', null]];
-    EV.forEach(([n, what, re]) => { const i = re ? findAfter(re, last) : -1; if (!re) rows.push('§BIMDOC-FILM-EVIDENCE ' + n + ' ABSENT ' + what + ' (' + (n === 4 ? 'item 4 not built' : n === 1 ? 'the kernel logs no copy-phases line' : 'outside items 1-4: existing project/time/order path, not part of this build') + ')');
+    const EV = [[1, 'project from its type (copy-phases log)', null], [2, 'sheet register (row count per task)', /^§BIMDOC-REGISTER /], [3, 'drawing attached', /^§ATT hash name=duplex_ground_floor/], [4, 'open in the app', /^§BIMDOC-OPEN id=/],
+      [5, 'issued (signed transition lines)', /^§CRUD process committed key=bim_document .*to=(IP|CO)/], [6, 'revised (supersede link)', /^§BIMDOC-SUPERSEDE /], [7, 'hours booked on the task', /^§BIMDOC-HOURS task=-?\d+ lines=[1-9]/], [8, 'progress, computed', /^§BIMDOC-PROGRESS /], [9, 'billed (phase order + invoice)', null], [10, 'the measure moves (sheet chain)', /^§BIMDOC-CHAIN .*delta=1 /]];
+    EV.forEach(([n, what, re]) => { const i = re ? findAfter(re, last) : -1; if (!re) rows.push('§BIMDOC-FILM-EVIDENCE ' + n + ' ABSENT ' + what + ' (' + (n === 1 ? '⛔ the kernel has no MProject.setProjectType/copyPhasesFrom twin: erp/model_project.js registers only c_projectline (:49), AD_Process 215 ProjectSetType has no handler in erp/ad_process.js' : '⛔ the kernel has no ProjectPhaseGenOrder (AD_Process 216): erp/ad_process.js registers only ProjectGenOrder (:462, project level, refuses category S :217)') + ')');
       else if (i < 0) { rows.push('§BIMDOC-FILM-EVIDENCE ' + n + ' MISSING-IN-ORDER ' + what); orderOk = false; }
       else { rows.push('§BIMDOC-FILM-EVIDENCE ' + n + ' PRESENT line#' + i + ' ' + what + ' :: ' + PAGELOG[i].slice(0, 150)); last = i; } });
     rows.forEach(say);
     const present = rows.filter(r => / PRESENT /.test(r)).length;
-    verdict('FILM evidence order', present === 0 ? 'INCONCLUSIVE' : (orderOk ? 'PASS' : 'FAIL'), present + ' of 10 present in order (1,4,7,9,10 named absent)');
+    verdict('FILM evidence order', present === 0 ? 'INCONCLUSIVE' : (orderOk ? 'PASS' : 'FAIL'), present + ' of 10 present, in order (1 and 9 named absent with file:line)');
+    verdict('FILM evidence 10 of 10', present === 10 && orderOk ? 'PASS' : 'NOT-BUILT', present + ' of 10; absent beats are kernel gaps, not faked');
     const built = VERD.filter(v => v.v !== 'NOT-BUILT'), bad = built.filter(v => v.v !== 'PASS');
     say('§W-BIMDOC-SUMMARY arms=' + VERD.length + ' pass=' + VERD.filter(v => v.v === 'PASS').length + ' fail=' + VERD.filter(v => v.v === 'FAIL').length + ' inconclusive=' + VERD.filter(v => v.v === 'INCONCLUSIVE').length + ' not-built=' + VERD.filter(v => v.v === 'NOT-BUILT').length);
     fs.writeFileSync(LOGF, OUT.join('\n') + '\n'); fs.writeFileSync(PAGELOGF, PAGELOG.join('\n') + '\n');

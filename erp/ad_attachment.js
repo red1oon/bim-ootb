@@ -5,11 +5,12 @@
 //   WAttachment (the dialog: Load, Delete entry, Save, Save as zip | entry select + size | text | preview | Delete all, Preview, OK, Cancel),
 //   MAttachment (one row per AD_Table_ID + Record_ID/Record_UU; Title 'zip'; addEntry replaces a same-named entry; an empty attachment is deleted),
 //   AttachmentDBSystem (BinaryData = a java.util.zip archive, one DEFLATED entry per file named by the file, archive comment "iDempiere"; Title<>'zip' = old single-file format).
-//   Store = the DB method only. Phase 2 (large files via a storage provider) is not here. No table is named: the host passes the tab's table id and record.
+//   Store = the DB method (phase 1) AND, above the DB cap, the browser file store (phase 2, ERP_IDEMPIERE_UX_PARITY §BIMDOC-OPEN: the twin of AttachmentFileSystem + MStorageProvider; bytes in common/file_store.js
+//   OPFS bim_files/<sha256>, the row keeps name/size/sha256 as a JSON index in BinaryData with Title 'fs', as legacy's file-system provider keeps an index of paths). No table is named: the host passes the tab's table id and record.
 //   Loaded on first use by idempiere.html (nothing at open needs it). Host contract: { rows(sql)->[{col:val}], commit(ops)->Promise<bool>, msg(value,en), std }.
 (function (root) {
   'use strict';
-  var ZIP = 'zip', ZIP_COMMENT = 'iDempiere';
+  var ZIP = 'zip', FSX = 'fs', ZIP_COMMENT = 'iDempiere', HEX64 = /^[0-9a-f]{64}$/;
   var MAX_BYTES = 16 * 1024 * 1024;   // §ATT size cap of the DB method: the whole BinaryData (zip) may not exceed this. MEASURED (tests/witness_attach_cap_probe.txt): the kernel commit holds a 64 MB zip (heap ~15x the payload, 954 MB) and fails at 128 MB ("Invalid array length"); 16 MB keeps the transient heap near 250 MB, inside a phone tab's ~0.6 GB (CLAUDE.md PERF BUDGET)
 
   // ── GridTab.canHaveAttachment :2168: key column ends _ID/_UU, or the table has its <Table>_UU column among the tab's fields ──
@@ -75,6 +76,48 @@
   function sha256(bytes) { return crypto.subtle.digest('SHA-256', bytes).then(function (h) { return Array.prototype.map.call(new Uint8Array(h), function (x) { return ('0' + x.toString(16)).slice(-2); }).join(''); }); }
   function bytesOf(v) { if (v == null || v === '') return new Uint8Array(0); if (v instanceof Uint8Array) return v; if (typeof v === 'string') return unb64(v); return new Uint8Array(v); }   // the seed holds a BLOB, a row written by the kernel holds base64 (the op-log is JSON)
 
+
+  // ── phase 2: the shared browser file store, loaded lazily (nothing at open needs it) ──
+  var _fsP = null;
+  function fileStore() {
+    if (root.FileStore) return Promise.resolve(root.FileStore);
+    if (!_fsP) _fsP = new Promise(function (res, rej) { var s = document.createElement('script'); s.src = '../common/file_store.js?v=1';
+      s.onload = function () { console.log('§ATT-STORE file_store.js loaded on first use'); res(root.FileStore); }; s.onerror = function () { _fsP = null; rej(new Error('the file store did not load')); }; document.head.appendChild(s); });
+    return _fsP;
+  }
+  function entSize(e) { return e.size != null ? e.size : (e.data ? e.data.length : 0); }
+  function bytes(e) {   // the entry's bytes: in memory (DB method / just added) or read back from the store, re-hashed (refused on absent or altered)
+    if (e.data) return Promise.resolve(e.data);
+    return fileStore().then(function (FS) { return FS.get(e.sha256, e.name); }).then(function (f) { return f.arrayBuffer(); }).then(function (a) { return new Uint8Array(a); });
+  }
+  function fsIndexEncode(entries) { return b64(new TextEncoder().encode(JSON.stringify({ v: 1, store: 'opfs:bim_files', entries: entries.map(function (e) { return { name: e.name, size: entSize(e), sha256: e.sha256 }; }) }))); }
+  function fsIndexParse(binarydata) {   // throws on a damaged index (refused, never shown as empty)
+    var j; try { j = JSON.parse(new TextDecoder().decode(bytesOf(binarydata))); } catch (e) { throw new Error('corrupt attachment index'); }
+    if (!j || !Array.isArray(j.entries)) throw new Error('corrupt attachment index');
+    return j.entries.map(function (x) { if (!x || typeof x.name !== 'string' || !HEX64.test(String(x.sha256)) || typeof x.size !== 'number') throw new Error('corrupt attachment index'); return { name: x.name, size: x.size, sha256: x.sha256, stored: true, data: null }; });
+  }
+  function packStore(entries) {   // every entry into the store (put hashes once, dedups); resolves the index; rejects {reason}
+    return fileStore().then(function (FS) {
+      return entries.reduce(function (p, e) {
+        return p.then(function () {
+          if (e.stored && e.sha256 && !e.data) return FS.has(e.sha256).then(function (h) { if (!h) { var er = new Error('store-missing'); er.reason = 'store-missing'; throw er; } });
+          return FS.put(new Blob([e.data])).then(function (r) { e.sha256 = r.sha256; e.size = r.size; e.stored = true; });
+        });
+      }, Promise.resolve()).then(function () { return fsIndexEncode(entries); });
+    }).catch(function (er) { var x = new Error(er && er.message); x.reason = er && er.reason || 'no-store'; throw x; });
+  }
+  function referencedShas(host) {   // every sha256 any 'fs' row points at; null = an index could not be read, so nothing may be swept
+    var set = new Set(), ok = true;
+    (host.rows("SELECT binarydata FROM ad_attachment WHERE title='" + FSX + "'") || []).forEach(function (r) { try { fsIndexParse(r.binarydata).forEach(function (e) { set.add(e.sha256); }); } catch (e) { ok = false; } });
+    return ok ? set : null;
+  }
+  function sweepStore(host) {   // after a commit that touched an 'fs' row: remove bytes no row references any more (a hash another row uses stays)
+    var refs = referencedShas(host);
+    if (!refs) { console.log('§ATT-STORE sweep SKIPPED reason=unreadable-index'); return Promise.resolve(null); }
+    return fileStore().then(function (FS) { return FS.sweep(refs).then(function (r) { console.log('§ATT-STORE sweep referenced=' + refs.size + ' entries=' + r.entries + ' kept=' + r.kept + ' removed=' + r.removed); return r; }); })
+      .catch(function (er) { console.log('§ATT-STORE sweep SKIPPED reason=' + (er && er.message)); return null; });
+  }
+
   // ── MAttachment lookup: getID(Table_ID, Record_ID, Record_UU) - by UU when the record has one, else by Record_ID ──
   function lookup(host, ctx) {
     var lit = function (v) { return "'" + String(v).replace(/'/g, "''") + "'"; };
@@ -86,34 +129,57 @@
     if (!row) return Promise.resolve({ entries: [], text: '' });
     var data = bytesOf(row.binarydata), text = row.textmsg == null ? '' : String(row.textmsg);
     if (!data.length) return Promise.resolve({ entries: [], text: text });
-    if (row.title !== ZIP) return Promise.resolve({ entries: [{ name: String(row.title), data: data }], text: text });   // old format - single file
-    return zipParse(data).then(function (entries) { return { entries: entries, text: text }; });
+    if (row.title === FSX) { try { return Promise.resolve({ entries: fsIndexParse(row.binarydata), text: text }); } catch (e) { return Promise.reject(e); } }   // phase 2: an index, the bytes stay in the store
+    if (row.title !== ZIP) return Promise.resolve({ entries: [{ name: String(row.title), data: data, size: data.length }], text: text });   // old format - single file
+    return zipParse(data).then(function (entries) { entries.forEach(function (e) { e.size = e.data.length; }); return { entries: entries, text: text }; });
   }
   // MAttachment.addEntry: a same-named entry is replaced in place, else appended
-  function addEntry(entries, name, data) { for (var i = 0; i < entries.length; i++) if (entries[i].name === name) { entries[i] = { name: name, data: data }; return entries; } entries.push({ name: name, data: data }); return entries; }
+  function addEntry(entries, name, data) { for (var i = 0; i < entries.length; i++) if (entries[i].name === name) { entries[i] = { name: name, data: data, size: data.length }; return entries; } entries.push({ name: name, data: data, size: data.length }); return entries; }
 
   // ── save: create / update / delete the one ad_attachment row, as signed CRUD ops through the host (nothing else is written) ──
-  function save(host, ctx, row, entries, text) {   // -> Promise<{ok, op, bytes, reason}>
-    var empty = !entries.length && !text;
+  //   Which store (phase 2): the DB zip (legacy AttachmentDBSystem) while the entries fit the cap; ABOVE it (raw total or the zip) the file store, all entries of the row, Title 'fs'.
+  //   Why only above the cap and not always: everything the DB method can hold stays byte-comparable with a legacy row in the parallel run and readable as before; the store takes
+  //   what the DB cannot. A row that is already 'fs' stays 'fs'. opts.store forces the store (the "Open in ..." action needs the bytes there).
+  function save(host, ctx, row, entries, text, opts) {   // -> Promise<{ok, op, bytes, store, reason}>
+    var empty = !entries.length && !text, wasFs = !!row && row.title === FSX;
     if (empty) {   // WAttachment OK: no text and no entries -> m_attachment.delete(true)
       if (!row) return Promise.resolve({ ok: true, op: 'none', bytes: 0 });
-      return host.commit([{ key: 'ad_attachment', table: 'ad_attachment', verb: 'delete', op_type: 'CRUD_DELETE', op_uuid: null, id: row.ad_attachment_id, tombstone: true, reversible: true }]).then(function (ok) { return { ok: ok, op: 'delete', bytes: 0 }; });
+      return host.commit([{ key: 'ad_attachment', table: 'ad_attachment', verb: 'delete', op_type: 'CRUD_DELETE', op_uuid: null, id: row.ad_attachment_id, tombstone: true, reversible: true }])
+        .then(function (ok) { return (ok && wasFs ? sweepStore(host) : Promise.resolve()).then(function () { return { ok: ok, op: 'delete', bytes: 0, store: wasFs }; }); });
     }
-    return (entries.length ? zipBuild(entries) : Promise.resolve(null)).then(function (zip) {
-      if (zip && zip.length > MAX_BYTES) return { ok: false, op: 'refused', bytes: zip.length, reason: 'too-big' };
-      var bin = zip ? b64(zip) : null, op;
+    var raw = entries.reduce(function (s, e) { return s + entSize(e); }, 0);
+    var wantStore = !!(opts && opts.store) || wasFs || raw > MAX_BYTES || entries.some(function (e) { return e.stored; });
+    var plan = wantStore || !entries.length ? Promise.resolve({ zip: null, idx: null }) : zipBuild(entries).then(function (zip) { return { zip: zip, idx: null }; });
+    return plan.then(function (pl) {
+      if (entries.length && (wantStore || pl.zip.length > MAX_BYTES)) return packStore(entries).then(function (idx) { return { zip: null, idx: idx }; });
+      return pl;
+    }).then(function (pl) {
+      var toStore = !!pl.idx, bin = toStore ? pl.idx : (pl.zip ? b64(pl.zip) : null), title = toStore ? FSX : (pl.zip ? ZIP : 'None'), op;
       if (row) {
         op = { key: 'ad_attachment', table: 'ad_attachment', verb: 'update', op_type: 'CRUD_UPDATE', op_uuid: null, id: row.ad_attachment_id,
-          changes: { title: { old: row.title, new: zip ? ZIP : 'None' }, binarydata: { old: null, new: bin }, textmsg: { old: row.textmsg == null ? null : row.textmsg, new: text || null } } };
+          changes: { title: { old: row.title, new: title }, binarydata: { old: null, new: bin }, textmsg: { old: row.textmsg == null ? null : row.textmsg, new: text || null } } };
         if (host.std && host.std.actor != null) op.actor = host.std.actor;
       } else {
-        var f = { ad_table_id: Number(ctx.tableId), record_id: Number(ctx.recordId), title: zip ? ZIP : 'None', binarydata: bin, textmsg: text || null, isactive: 'Y' };
+        var f = { ad_table_id: Number(ctx.tableId), record_id: Number(ctx.recordId), title: title, binarydata: bin, textmsg: text || null, isactive: 'Y' };
         if (ctx.recordUU) f.record_uu = ctx.recordUU;
         op = { key: 'ad_attachment', table: 'ad_attachment', verb: 'create', op_type: 'CRUD_CREATE', op_uuid: null, cas: null, fields: f };
         if (host.std) op.stdDefaults = host.std;
       }
-      return host.commit([op]).then(function (ok) { return { ok: ok, op: row ? 'update' : 'create', bytes: zip ? zip.length : 0 }; });
-    });
+      var nbytes = toStore ? raw : (pl.zip ? pl.zip.length : 0);
+      return host.commit([op]).then(function (ok) { return ((ok && (toStore || wasFs)) ? sweepStore(host) : Promise.resolve()).then(function () { return { ok: ok, op: row ? 'update' : 'create', bytes: nbytes, store: toStore }; }); });
+    }).catch(function (er) { console.log('§ATT-STORE refused reason=' + (er && er.reason || er && er.message)); return { ok: false, op: 'refused', bytes: raw, reason: (er && er.reason) || 'no-store' }; });
+  }
+  // promote - the entry named `name` into the file store (the row becomes 'fs' if it was a DB zip) -> Promise<{ok, name, size, sha256, promoted}>; the "Open in ..." action uses this
+  function promote(host, ctx, name) {
+    var row = lookup(host, ctx); if (!row) return Promise.resolve({ ok: false, reason: 'no-attachment' });
+    return load(row).then(function (st) {
+      var e = st.entries.filter(function (x) { return x.name === name; })[0]; if (!e) return { ok: false, reason: 'no-entry' };
+      if (e.stored) return { ok: true, name: e.name, size: e.size, sha256: e.sha256, promoted: false };
+      return save(host, ctx, row, st.entries, st.text || '', { store: true }).then(function (r) {
+        if (!r.ok) return { ok: false, reason: r.reason || 'not-saved' };
+        console.log('§ATT-STORE promote name=' + e.name + ' size=' + e.size + ' sha256=' + e.sha256); return { ok: true, name: e.name, size: e.size, sha256: e.sha256, promoted: true };
+      });
+    }, function (er) { return { ok: false, reason: 'corrupt', detail: er && er.message }; });
   }
 
   // ── WAttachment look and feel ──
@@ -149,15 +215,15 @@
         var bDel = ibtn('delete', 'Delete24.png', T('Delete', 'Delete'), function () { confirm_(T('AttachmentDeleteEntry?', 'Delete this attachment entry?'), function () {
           var n = entries[sel] && entries[sel].name; if (n == null) return; entries.splice(sel, 1); sel = 0; changed = true;
           commit_(function () { console.log('§ATT delete-entry name=' + n + ' left=' + entries.length); fill(); }); }); });
-        var bSave = ibtn('export', 'Export24.png', T('AttachmentSave', 'Save Attachment'), function () { var e = entries[sel]; if (e) download(e.name, e.data); });
-        var bZip = ibtn('zip', 'SaveAsZip24.png', T('ExportZIP', 'Export ZIP'), function () { zipBuild(entries).then(function (z) { download((ctx.tableName || 'attachment') + '_' + (ctx.recordUU || ctx.recordId) + '.zip', z); }); });
+        var bSave = ibtn('export', 'Export24.png', T('AttachmentSave', 'Save Attachment'), function () { var e = entries[sel]; if (e) bytes(e).then(function (d) { download(e.name, d); }, function (er) { storeErr_(er); }); });
+        var bZip = ibtn('zip', 'SaveAsZip24.png', T('ExportZIP', 'Export ZIP'), function () { Promise.all(entries.map(function (e) { return bytes(e).then(function (d) { return { name: e.name, data: d }; }); })).then(zipBuild).then(function (z) { download((ctx.tableName || 'attachment') + '_' + (ctx.recordUU || ctx.recordId) + '.zip', z); }, function (er) { storeErr_(er); }); });
         var bAll = ibtn('deleteall', 'Delete24.png', T('DeleteAll', 'Delete All'), function () { confirm_(T('AttachmentDelete?', 'Delete the entire attachment?'), function () {
           entries.length = 0; txt.value = ''; save(host, ctx, lookup(host, ctx), [], '').then(function (r) { console.log('§ATT delete-all ok=' + r.ok + ' op=' + r.op); close_(); }); }); });
         var bPv = ibtn('preview', 'Find24.png', T('Preview', 'Preview'), function () { preview(true); });
         var bOk = el('button', { 'data-att': 'ok', onclick: function () {
           var dirty = changed || txt.value !== (st.text || '');
           if (!dirty) return close_();
-          save(host, ctx, lookup(host, ctx), entries, txt.value).then(function (r) { if (!r.ok) return msg_(r); console.log('§ATT save op=' + r.op + ' entries=' + entries.length + ' bytes=' + r.bytes + ' ok=' + r.ok); changed = false; close_(); });
+          save(host, ctx, lookup(host, ctx), entries, txt.value).then(function (r) { if (!r.ok) return msg_(r); console.log('§ATT save op=' + r.op + ' entries=' + entries.length + ' bytes=' + r.bytes + ' ok=' + r.ok + ' store=' + (r.store ? 1 : 0)); changed = false; close_(); });
         } }, [el('img', { class: 'ic', src: IMG + 'Ok24.png', alt: '' })]);
         var bCancel = el('button', { 'data-att': 'cancel', onclick: function () { close_(); } }, [el('img', { class: 'ic', src: IMG + 'Cancel24.png', alt: '' })]);
         var win = el('div', { id: 'att-win', style: 'position:relative' }, [
@@ -165,16 +231,19 @@
           el('div', { class: 'att-bar' }, [bLoad, bDel, bSave, bZip, cb, lbl]), txt, pv, err,
           el('div', { class: 'att-foot' }, [bAll, bPv, el('span', { class: 'att-sp' }), bOk, bCancel]), file, ask]);
         var ov = el('div', { id: 'att-ov', 'data-att': 'dialog' }, [win]); document.body.appendChild(ov); txt.value = st.text || '';
-        function msg_(r) { err.textContent = r.reason === 'too-big' ? T('AttachmentTooBig', 'Too big for the database store: ' + sizeLabel(r.bytes) + ' against a limit of ' + sizeLabel(MAX_BYTES) + '. Large files need a storage provider (not in this release).') : 'Not saved'; console.log('§ATT refused reason=' + r.reason + ' bytes=' + r.bytes + ' cap=' + MAX_BYTES); }
+        function msg_(r) { err.textContent = r.reason === 'too-big' ? T('AttachmentTooBig', 'Too big for the database store: ' + sizeLabel(r.bytes) + ' against a limit of ' + sizeLabel(MAX_BYTES) + '.') : (r.reason === 'no-store' || r.reason === 'store-missing') ? T('AttachmentNoStore', 'Too big for the database store (' + sizeLabel(r.bytes) + ', limit ' + sizeLabel(MAX_BYTES) + ') and the browser file store is not available.') : 'Not saved'; console.log('§ATT refused reason=' + r.reason + ' bytes=' + r.bytes + ' cap=' + MAX_BYTES); }
+        function storeErr_(er) { err.textContent = T('AttachmentStoreRefused', 'This file cannot be read from the file store: ' + (er && (er.refused || er.message))); console.log('§ATT refused reason=store-read detail=' + (er && (er.refused || er.message))); }
         function confirm_(q, yes) { ask.style.display = 'flex'; ask.innerHTML = ''; ask.appendChild(el('div', { text: q })); ask.appendChild(el('div', {}, [
           el('button', { 'data-att': 'yes', text: T('Yes', 'Yes'), onclick: function () { ask.style.display = 'none'; yes(); } }), el('button', { 'data-att': 'no', text: T('No', 'No'), onclick: function () { ask.style.display = 'none'; } })])); }
         function commit_(after) { save(host, ctx, lookup(host, ctx), entries, txt.value).then(function (r) { if (!r.ok) msg_(r); else after(); }); }   // an entry delete saves at once (WAttachment.deleteAttachmentEntry)
         function fill() { cb.innerHTML = ''; entries.forEach(function (e, i) { cb.appendChild(el('option', { value: i, text: e.name })); }); if (entries.length) cb.value = String(sel); cur(); preview(false); }
-        function cur() { var e = entries[sel]; lbl.textContent = e ? sizeLabel(e.data.length) : ''; bDel.disabled = bSave.disabled = bPv.disabled = !e; bZip.disabled = !entries.length; }
+        function cur() { var e = entries[sel]; lbl.textContent = e ? sizeLabel(entSize(e)) : ''; bDel.disabled = bSave.disabled = bPv.disabled = !e; bZip.disabled = !entries.length; }
         function preview(force) {
-          if (pvUrl) { URL.revokeObjectURL(pvUrl); pvUrl = null; } pv.innerHTML = ''; var e = entries[sel]; if (!e) return; var m = mimeOf(e.name);
-          if (/^image\//.test(m)) { pvUrl = URL.createObjectURL(new Blob([e.data], { type: m })); pv.appendChild(el('img', { src: pvUrl, alt: e.name })); }
-          else if (m === 'text/plain') pv.appendChild(el('pre', { text: new TextDecoder().decode(e.data.subarray(0, 20000)) }));
+          if (pvUrl) { URL.revokeObjectURL(pvUrl); pvUrl = null; } pv.innerHTML = ''; var e = entries[sel]; if (!e) return; var m = mimeOf(e.name), show = function (d) {
+            if (entries[sel] !== e) return;   // the selection moved while the store was read
+            if (/^image\//.test(m)) { pvUrl = URL.createObjectURL(new Blob([d], { type: m })); pv.appendChild(el('img', { src: pvUrl, alt: e.name })); }
+            else if (m === 'text/plain') pv.appendChild(el('pre', { text: new TextDecoder().decode(d.subarray(0, 20000)) })); };
+          if (/^image\//.test(m) || m === 'text/plain') { if (e.data || entSize(e) <= 8 * 1024 * 1024) bytes(e).then(show, storeErr_); else pv.appendChild(el('div', { text: T('NoPreview', 'No preview for this file type') })); }
           else if (force) pv.appendChild(el('div', { text: T('NoPreview', 'No preview for this file type') }));
         }
         function close_() { if (pvUrl) URL.revokeObjectURL(pvUrl); ov.remove(); var has = hasAttachment(host, ctx); console.log('§ATT close has=' + has); done({ has: has, changed: changed }); }
@@ -193,7 +262,7 @@
     });
   }
 
-  var api = { canHave: canHave, keyColumn: keyColumn, lookup: lookup, hasAttachment: hasAttachment, load: load, save: save, addEntry: addEntry, open: open,
-    zipBuild: zipBuild, zipParse: zipParse, crc32: crc32, b64: b64, unb64: unb64, sha256: sha256, MAX_BYTES: MAX_BYTES, ZIP: ZIP };
+  var api = { canHave: canHave, keyColumn: keyColumn, lookup: lookup, hasAttachment: hasAttachment, load: load, save: save, promote: promote, bytes: bytes, entSize: entSize, referencedShas: referencedShas, addEntry: addEntry, open: open,
+    zipBuild: zipBuild, zipParse: zipParse, crc32: crc32, b64: b64, unb64: unb64, sha256: sha256, MAX_BYTES: MAX_BYTES, ZIP: ZIP, FS: FSX };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.AdAttachment = api;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -10,7 +10,7 @@
 //   B-2 PERSIST each commit is ONE signed op in ad_attachment and nothing else (§CRUD-GROUP-PERSIST ops=1).
 //   R-1 RED    a tab with no key column shows no enabled button (judge fed an enabled button on such a tab MUST say FAIL).
 //   R-2 RED    a corrupted zip is REFUSED with a message, not shown as an empty attachment (judge fed an empty list with no message MUST say FAIL).
-//   C-1 CAP    the DB method's size cap is enforced with the clear message (cap+1 refused, cap accepted, read back, hash equal).
+//   C-1 CAP    the DB method's size cap: cap-8KB stays in the DB zip (store=0), cap+64KB goes to the file store (phase 2, store=1, not refused); both read back, hash equal, and survive a reload.
 // Verdict per arm: PASS | FAIL | INCONCLUSIVE(reason). INCONCLUSIVE when nothing was judged (N=0, no window driven).
 // Run: NODE_PATH=~/bim-ootb/node_modules node erp/tests/witness_attach_live.js   (AT_PART=sweep|rt|red|cap to limit; AT_WORKERS=4; AT_ONLY=143,181 limits the sweep)
 'use strict';
@@ -277,7 +277,7 @@ const judgeCorrupt = (shownEntries, shownError) => (shownError && shownEntries =
     await openWin(page, 'GardenAdmin', 123, BPREC); await waitAtt(page, 30000);
     const s0 = await snap(page), tid = tableIdOf(s0.table), rid = Number(s0.currentKey);
     const cap = await page.evaluate(() => window.AdAttachment.MAX_BYTES);
-    for (const [label, size, expectOk] of [['cap-8KB', cap - 8192, true], ['cap+64KB', cap + 65536, false]]) {
+    for (const [label, size, expectOk, wantStore] of [['cap-8KB', cap - 8192, true, 0], ['cap+64KB', cap + 65536, true, 1]]) {   // phase 2: above the DB cap the entry goes to the file store instead of being refused
       await page.evaluate(() => { const d = document.querySelector('[data-att="dialog"]'); if (d) d.remove(); });
       const n = PL.length; await page.click('#idmp-toolbar button[data-tb="attachment"]'); await page.waitForSelector('[data-att="dialog"]', { timeout: 10000 });
       const buf = prng(size, 777); await page.setInputFiles('[data-att="file"]', [{ name: 'big.bin', mimeType: 'application/octet-stream', buffer: buf }]); await sleep(1500);
@@ -285,15 +285,16 @@ const judgeCorrupt = (shownEntries, shownError) => (shownError && shownEntries =
       const err = await page.$eval('[data-att="error"]', e => e.textContent).catch(() => '');
       const refused = PL.slice(n).some(l => /^§ATT refused reason=too-big/.test(l));
       let rb = null;
-      if (expectOk) { await page.waitForSelector('[data-att="dialog"]', { state: 'detached', timeout: 20000 }).catch(() => {}); rb = await page.evaluate(async ([t, r]) => { const A = window.AdAttachment, st = await A.load(A.lookup({ rows: window.__tipRead.rows }, { tableId: t, recordId: r })); return st.entries.length ? { len: st.entries[0].data.length, sha: await A.sha256(st.entries[0].data) } : null; }, [tid, rid]); }
-      const ok = expectOk ? (!refused && rb && rb.len === size && rb.sha === sha(buf)) : (refused && /limit/.test(err));
+      if (expectOk) { await page.waitForSelector('[data-att="dialog"]', { state: 'detached', timeout: 20000 }).catch(() => {}); rb = await page.evaluate(async ([t, r]) => { const A = window.AdAttachment, st = await A.load(A.lookup({ rows: window.__tipRead.rows }, { tableId: t, recordId: r })); if (!st.entries.length) return null; const d = await A.bytes(st.entries[0]); return { len: d.length, sha: await A.sha256(d), stored: !!st.entries[0].stored }; }, [tid, rid]); }
+      const storeLine = PL.slice(n).some(l => new RegExp('^§ATT save op=\\w+ entries=1 .* store=' + wantStore + '$').test(l));
+      const ok = expectOk ? (!refused && storeLine && rb && rb.len === size && rb.sha === sha(buf) && rb.stored === !!wantStore) : (refused && /limit/.test(err));
       say('§W-ATTACH-CAP ' + label + ' file=' + size + ' refused=' + refused + ' message="' + err.slice(0, 120) + '" readback=' + JSON.stringify(rb) + ' → ' + (ok ? 'as expected' : 'UNEXPECTED'));
       verdict('C-1 cap ' + label, ok ? 'PASS' : 'FAIL', '');
       if (expectOk) {   // survives a reload (the kernel's persistence path), bytes equal
         await openWin(page, 'GardenAdmin', 123, BPREC); await waitAtt(page, 30000);
         let rb2 = null, waited = 0;   // the sidecar hydrates after the page opens: poll for the row (a read before it sees the bare seed), report how long it took
         for (; waited < 60000 && !rb2; waited += 500) {
-          rb2 = await page.evaluate(async ([t, r]) => { const A = window.AdAttachment, row = A.lookup({ rows: window.__tipRead.rows }, { tableId: t, recordId: r }); if (!row) return null; const st = await A.load(row); return st.entries.length ? { len: st.entries[0].data.length, sha: await A.sha256(st.entries[0].data) } : null; }, [tid, rid]);
+          rb2 = await page.evaluate(async ([t, r]) => { const A = window.AdAttachment, row = A.lookup({ rows: window.__tipRead.rows }, { tableId: t, recordId: r }); if (!row) return null; const st = await A.load(row); if (!st.entries.length) return null; const d = await A.bytes(st.entries[0]); return { len: d.length, sha: await A.sha256(d), stored: !!st.entries[0].stored }; }, [tid, rid]);
           if (!rb2) await sleep(500);
         }
         say('§W-ATTACH-CAP ' + label + ' reload hydrate-wait-ms=' + waited);
