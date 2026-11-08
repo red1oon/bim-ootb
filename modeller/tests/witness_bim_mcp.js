@@ -7,6 +7,7 @@
  *   M3 the loop does not close without a person: a scripted client, no AI, plays G4 through the connector alone: read the grid, shift gx6 by
  *      13 - bay, get stopped_by_gate with the reason, and the span check measures exactly 13 m (edit_cli itself fails if the stop's recount is not Before)
  *   M4 an unknown verb or a bad input reads as success: each returns isError, and no run happens
+ *   M5 the record of what the AI asked is not what happened: with BIM_MCP_LOG set, every call is logged with its exact arguments and the exact answer returned
  * Falsifier: MCP_BREAK=1 (the connector halves the move) must fail M2 and M3. No model is called anywhere.
  */
 'use strict';
@@ -17,8 +18,9 @@ const chk = (name, ok, info) => { if (ok) pass++; else fail++; console.log('  ' 
 const strip = (t) => { try { const j = JSON.parse(t); delete j.ms; return JSON.stringify(j); } catch (e) { return 'UNPARSEABLE ' + String(t).slice(0, 80); } };
 const direct = (argv) => new Promise((res) => { let o = ''; const p = spawn(process.execPath, [CLI].concat(argv, INSTRUMENT), { env: Object.assign({}, process.env, { MCP_BREAK: '' }), stdio: ['ignore', 'pipe', 'ignore'] });
   p.stdout.on('data', d => { o += d; }); p.on('close', c => res({ code: c, out: o.trim() })); });
+const os = require('os'), fs = require('fs'), LOGF = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'bim_mcp_log_')), 'calls.jsonl');
 function client() {
-  const p = spawn(process.execPath, [SRV], { env: process.env, stdio: ['pipe', 'pipe', 'pipe'] }), wait = {}; let buf = '', id = 0, log = '';
+  const p = spawn(process.execPath, [SRV], { env: Object.assign({}, process.env, { BIM_MCP_LOG: LOGF }), stdio: ['pipe', 'pipe', 'pipe'] }), wait = {}; let buf = '', id = 0, log = '';
   p.stderr.on('data', d => { log += d; });
   p.stdout.on('data', d => { buf += d; let i; while ((i = buf.indexOf('\n')) >= 0) { const l = buf.slice(0, i); buf = buf.slice(i + 1); if (!l.trim()) continue; const m = JSON.parse(l); if (wait[m.id]) { wait[m.id](m); delete wait[m.id]; } } });
   const rpc = (method, params) => new Promise((res) => { const k = ++id; wait[k] = res; p.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: k, method, params }) + '\n'); });
@@ -47,6 +49,8 @@ function client() {
     sr.result.isError === false && !!e0 && e0.stopped_by_gate === true && /newly over the limit/.test(e0.reason) && !!ol && Math.abs(ol.after - 13) <= 0.0015, 'after=' + (ol && ol.after));
   const un = await c.rpc('tools/call', { name: 'bim_add_tower', arguments: {} }), mi = await c.rpc('tools/call', { name: 'bim_try_shift', arguments: { building: B, line: 'gx6' } });
   chk('M4 an unknown verb and a missing input are errors, not results', un.result.isError === true && /unknown tool/.test(un.result.content[0].text) && mi.result.isError === true && /missing input: move/.test(mi.result.content[0].text));
+  const rec = fs.existsSync(LOGF) ? fs.readFileSync(LOGF, 'utf8').trim().split('\n').map(l => JSON.parse(l)) : [], rc = rec.filter(x => x.tool);
+  chk('M5 the call log holds each call verbatim: arguments as sent, answer as returned', rc.length === 4 && rc[0].tool === 'bim_lines' && rc[0].result === lt && rc[1].tool === 'bim_try_shift' && rc[1].arguments.move === move && rc[1].result === st && rc[2].isError === true && !!rec.filter(x => x.initialize)[0], 'calls=' + rc.length);
   const slog = await c.close(); slog.split('\n').filter(Boolean).forEach(l => L('server ' + l));
   console.log('§WITNESS_BIM_MCP pass=' + pass + ' fail=' + fail + ' verdict=' + (fail ? 'FAIL' : 'PASS') + (process.env.MCP_BREAK === '1' ? ' (MCP_BREAK=1)' : ''));
   process.exit(fail ? 1 : 0);

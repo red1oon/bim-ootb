@@ -8,12 +8,15 @@
 //
 //   Claude Code:     claude mcp add bim -- node /path/to/bim_mcp.js
 //   Claude Desktop:  "mcpServers": { "bim": { "command": "node", "args": ["/path/to/bim_mcp.js"] } }
+//   BIM_MCP_LOG=<file>  optional: append every tools/call (the AI's request, verbatim) and the answer returned, one JSON line each. Off unless set.
 'use strict';
 const path = require('path'), fs = require('fs'), { spawn } = require('child_process');
 const CLI = path.join(__dirname, 'edit_cli.js');
 const INSTRUMENT = ['--own-grid', '--lattice-boxes'];   // the proposer test's instrument (§13.2, §13.6): the building's own grid; lattice boxes, no effect at theta 0
 const VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05'];
 const say = (s) => process.stderr.write('§BIM_MCP ' + s + '\n');
+const LOGF = process.env.BIM_MCP_LOG || null;
+const record = (o) => { if (!LOGF) return; try { fs.appendFileSync(LOGF, JSON.stringify(Object.assign({ t: new Date().toISOString() }, o)) + '\n'); } catch (e) { say('log write failed ' + e.message); } };
 
 const INSTRUCTIONS = [
   'These tools operate a real BIM app. The app, not you, makes each change and checks it; it has no AI inside.',
@@ -69,11 +72,11 @@ async function handle(m) {
   if (!m || m.jsonrpc !== '2.0' || typeof m.method !== 'string') { if (m && m.id !== undefined) send({ jsonrpc: '2.0', id: m.id, error: { code: -32600, message: 'invalid request' } }); return; }
   if (m.id === undefined) return;   // a notification (e.g. notifications/initialized): no answer
   const ok = (result) => send({ jsonrpc: '2.0', id: m.id, result }), p = m.params || {};
-  if (m.method === 'initialize') { const v = VERSIONS.indexOf(p.protocolVersion) >= 0 ? p.protocolVersion : VERSIONS[0]; say('initialize client=' + JSON.stringify(p.clientInfo || null) + ' version=' + v);
+  if (m.method === 'initialize') { const v = VERSIONS.indexOf(p.protocolVersion) >= 0 ? p.protocolVersion : VERSIONS[0]; say('initialize client=' + JSON.stringify(p.clientInfo || null) + ' version=' + v); record({ initialize: p.clientInfo || null, version: v });
     return ok({ protocolVersion: v, capabilities: { tools: {} }, serverInfo: { name: 'bim', version: '0.1.0' }, instructions: INSTRUCTIONS }); }
   if (m.method === 'ping') return ok({});
   if (m.method === 'tools/list') return ok({ tools: TOOLS.map(t => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })) });
-  if (m.method === 'tools/call') return ok(await call(p.name, p.arguments));
+  if (m.method === 'tools/call') { const r = await call(p.name, p.arguments); record({ tool: p.name, arguments: p.arguments, isError: r.isError, result: r.content[0].text }); return ok(r); }
   send({ jsonrpc: '2.0', id: m.id, error: { code: -32601, message: 'method not found: ' + m.method } });
 }
 let buf = '';
