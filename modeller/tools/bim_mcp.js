@@ -12,6 +12,7 @@
 'use strict';
 const path = require('path'), fs = require('fs'), { spawn } = require('child_process');
 const CLI = path.join(__dirname, 'edit_cli.js');
+const VCLI = path.join(__dirname, '..', '..', 'viewer', 'tools', 'viewer_verbs.js');   // §19.4: the Viewer verbs run in their own process (a headless Viewer page)
 const INSTRUMENT = ['--own-grid', '--lattice-boxes'];   // the proposer test's instrument (§13.2, §13.6): the building's own grid; lattice boxes, no effect at theta 0
 const VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05'];
 const say = (s) => process.stderr.write('§BIM_MCP ' + s + '\n');
@@ -22,6 +23,7 @@ const INSTRUCTIONS = [
   'These tools operate a real BIM app. The app, not you, makes each change and checks it; it has no AI inside.',
   'Read the grid with bim_lines before proposing. A bay is the difference of two line positions (pos), in metres, in the building\'s own frame.',
   'bim_try_shift makes the change on a fresh copy of the building and returns the app\'s report. If the change adds new problems the app undoes it and says why ("stopped_by_gate"). Nothing is ever saved.',
+  'viewer_counts and viewer_clashes read a building in the Viewer and give the answer the Viewer shows a person, with its own log line (viewerLine). They only read. If the Viewer says it cannot answer (unknown building, no clash rule for the pair), report that; do not guess a number.',
   'Treat a stopped or refused result as bad. You may try again up to 2 times; if the request cannot be met without a bad result, decline and tell the user why. Do not keep a bad change and add a note.',
   'A row marked NOT_JUDGED was not checked: say so. Never call a result safe, compliant or OK.',
   'Always tell the user what the report lists under notChecked. Load capacity is never checked; a structural engineer has the last word.'
@@ -38,14 +40,30 @@ const TOOLS = [
       building: { type: 'string', description: 'The building name, as in bim_lines.' },
       line: { type: 'string', description: 'The grid line to shift, e.g. "gx6".' },
       move: { type: 'number', description: 'The distance in metres, e.g. 1.824. Negative moves towards lower positions.' } }, required: ['building', 'line', 'move'] },
-    args: (a) => ['--building', a.building, '--shift', a.line, '--move', String(process.env.MCP_BREAK === '1' ? a.move / 2 : a.move)] }   // MCP_BREAK = the witness's falsifier
+    args: (a) => ['--building', a.building, '--shift', a.line, '--move', String(process.env.MCP_BREAK === '1' ? a.move / 2 : a.move)] },   // MCP_BREAK = the witness's falsifier
+  // ── Viewer verbs (§19.4): the Viewer's own Find ▸ Ask answers, read only, headless, no GPU ──
+  { name: 'viewer_counts', viewer: true,
+    description: 'Open a building in the Viewer and count its elements, the same answer the Viewer\'s Find panel gives for "Find element count by discipline" (or by storey). Returns the total and the count per group, plus the Viewer\'s own log line for the same answer. Opens a fresh headless copy of the Viewer on the CPU; takes about 20 to 90 seconds. Changes and saves nothing.',
+    inputSchema: { type: 'object', properties: {
+      building: { type: 'string', description: 'The building name, e.g. "Duplex" or "Clinic". An unknown name is an error.' },
+      by: { type: 'string', description: 'What to count by: "discipline" (the default, e.g. ARC, MEP) or "storey" (floor level).' } }, required: ['building'] },
+    vargs: (a) => ['counts', '--building', a.building].concat(a.by !== undefined ? ['--by', a.by] : []) },
+  { name: 'viewer_clashes', viewer: true,
+    description: 'Open a building in the Viewer and list the clashes between two disciplines, the same answer the Viewer\'s Find panel gives for "Find clashes between A and B": how many element boxes overlap at the rule\'s tolerance (in metres), how many of those are true clashes after the shape tests, and the first 20 rows with the overlap in metres. A pair with no clash rule is an error, not zero. Opens a fresh headless copy of the Viewer on the CPU; takes about 20 to 120 seconds. Changes and saves nothing.',
+    inputSchema: { type: 'object', properties: {
+      building: { type: 'string', description: 'The building name, e.g. "Clinic". An unknown name is an error.' },
+      discA: { type: 'string', description: 'First discipline code, e.g. "ARC" (architecture), "STR", "MEP".' },
+      discB: { type: 'string', description: 'Second discipline code, e.g. "MEP". Order does not matter.' } }, required: ['building', 'discA', 'discB'] },
+    vargs: (a) => ['clashes', '--building', a.building, '--a', a.discA, '--b', a.discB] }
 ];
 
-function runCli(argv) {
+function runCli(argv, cli) {
+  cli = cli || CLI;
   return new Promise((res) => {
-    if (!fs.existsSync(CLI)) return res({ code: 1, out: '', err: 'edit_cli.js is not beside bim_mcp.js. Download it: curl -O https://red1oon.github.io/bim-ootb/modeller/tools/edit_cli.js' });
+    if (cli === VCLI && !fs.existsSync(VCLI)) return res({ code: 1, out: '', err: 'viewer/tools/viewer_verbs.js is not at ../../viewer/tools from bim_mcp.js. Use a bim-ootb checkout.' });
+    if (!fs.existsSync(cli)) return res({ code: 1, out: '', err: 'edit_cli.js is not beside bim_mcp.js. Download it: curl -O https://red1oon.github.io/bim-ootb/modeller/tools/edit_cli.js' });
     let out = '', err = '';
-    const p = spawn(process.execPath, [CLI].concat(argv), { env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
+    const p = spawn(process.execPath, [cli].concat(argv), { env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
     p.stdout.on('data', d => { out += d; }); p.stderr.on('data', d => { err += d; });
     p.on('close', code => res({ code, out: out.trim(), err: err.trim() }));
   });
@@ -60,6 +78,12 @@ async function call(name, a) {
   const t = TOOLS.filter(x => x.name === name)[0];
   if (!t) return { content: [{ type: 'text', text: 'unknown tool: ' + name + '. Tools: ' + TOOLS.map(x => x.name).join(', ') }], isError: true };
   const b = bad(a || {}, t); if (b) return { content: [{ type: 'text', text: b }], isError: true };
+  if (t.viewer) {   // Viewer verbs: exit 0 = the Viewer answered (stdout is one JSON line); 1 = an error with the reason on stderr; 2 = usage
+    const t1 = Date.now(), v = await runCli(t.vargs(a), VCLI);
+    say('call ' + name + ' ' + JSON.stringify(a) + ' -> exit=' + v.code + ' ms=' + (Date.now() - t1));
+    if (v.code === 0 && v.out) return { content: [{ type: 'text', text: v.out }], isError: false };
+    return { content: [{ type: 'text', text: 'the Viewer could not answer (exit ' + v.code + '): ' + (v.err.split('\n').filter(l => /VIEWER_VERB FAIL|viewer/.test(l)).pop() || v.err || v.out || 'no output').replace(/^§VIEWER_VERB FAIL /, '') }], isError: true };
+  }
   const argv = t.args(a).concat(INSTRUMENT), t0 = Date.now(), r = await runCli(argv);
   say('call ' + name + ' ' + JSON.stringify(a) + ' -> exit=' + r.code + ' ms=' + (Date.now() - t0));
   // edit_cli: exit 0 every edit reported · 3 refused or stopped (an answer, not an error) · 2 usage · 1 failed

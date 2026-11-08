@@ -16,17 +16,10 @@
 // Run: node viewer/tools/film_path_vis.js --db <viewer.db> [--path override.json] [--samples 240] [--min-band-samples 20]
 //        [--width 1280 --height 720] [--json] [--log file] [--poses]
 'use strict';
-const fs = require('fs'), path = require('path'), http = require('http'), os = require('os');
+const fs = require('fs'), path = require('path');
 
-const puppeteer = (function () {
-  for (const id of [process.env.PUPPETEER_PATH, 'puppeteer', path.join(os.homedir(), 'bim-compiler', 'node_modules', 'puppeteer')]) {
-    if (!id) continue; try { return require(id); } catch (e) { /* next */ }
-  }
-  console.error('§FILM-PATH-VIS FAIL could not load puppeteer (npm install puppeteer, or PUPPETEER_PATH=…)'); process.exit(2);
-})();
+const VD = require('./viewer_driver');
 
-const ROOT = path.resolve(__dirname, '..', '..');
-const SW_ARGS = ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'];   // cli_silent_bake.js `sw`
 const BAND_TOL_M = 0.5;   // F1
 const LINE_PTS = 9;       // F2
 
@@ -40,37 +33,15 @@ async function run(o) {
   const logLines = [];
   const log = s => { logLines.push(s); if (!o.quiet) console.log(s); };
 
-  const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.json': 'application/json',
-    '.wasm': 'application/wasm', '.db': 'application/octet-stream', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml',
-    '.hdr': 'application/octet-stream', '.webp': 'image/webp', '.woff2': 'font/woff2' };
-  const server = http.createServer((req, res) => {
-    try {
-      const u = decodeURIComponent(req.url.split('?')[0]);
-      const fp = u === '/__fpv/model.db' ? dbFile : path.join(ROOT, u.replace(/^\/+/, ''));
-      if (!fp.startsWith(ROOT) && fp !== dbFile) { res.writeHead(403); res.end(); return; }
-      if (!fs.existsSync(fp) || fs.statSync(fp).isDirectory()) { res.writeHead(404); res.end('404'); return; }
-      res.writeHead(200, { 'Content-Type': MIME[path.extname(fp).toLowerCase()] || 'application/octet-stream', 'Cache-Control': 'no-store' });
-      fs.createReadStream(fp).pipe(res);
-    } catch (e) { res.writeHead(500); res.end(String(e)); }
-  });
-  await new Promise(r => server.listen(0, '127.0.0.1', r));
-  const port = server.address().port;
-  const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'fpv-prof-'));
-  const browser = await puppeteer.launch({ headless: true, userDataDir: profile, protocolTimeout: 10 * 60 * 1000,
-    args: ['--no-sandbox', '--disable-background-networking', '--disable-component-update', '--no-first-run', `--window-size=${W},${H}`].concat(SW_ARGS) });
-  const pageErrors = [];
+  let drv;
+  try { drv = await VD.start({ db: dbFile, width: W, height: H, pageLog: o.pageLog }); }
+  catch (e) { if (/puppeteer/.test(String(e.message))) { console.error('§FILM-PATH-VIS FAIL ' + e.message); process.exit(2); } throw e; }
+  const pageErrors = drv.pageErrors;
   try {
-    const page = await browser.newPage();
-    await page.setViewport({ width: W, height: H });
-    page.on('pageerror', e => pageErrors.push(String(e && e.message || e).slice(0, 200)));
-    page.on('console', m => { const t = m.text(); if (o.pageLog) o.pageLog.push(t); });
-    const url = `http://127.0.0.1:${port}/viewer/viewer.html?db=/__fpv/model.db`;
+    const page = drv.page;
     log(`§FILM-PATH-VIS env db=${path.basename(dbFile)} gl=swiftshader viewport=${W}x${H} samples=${N0} minBandSamples=${MINB} path=${override ? 'file' : 'db:cinema_path'}`);
-    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 120000 });
-    await page.waitForFunction(() => window.APP && window.APP.camera && typeof window.APP.cinemaPathPlan === 'function' && window.THREE,
-      { timeout: 300000, polling: 500 });
-    await page.waitForFunction(() => window.APP.activeBuilding && window.APP.db && window.APP.buildingsRendered &&
-      window.APP.buildingsRendered.has(window.APP.activeBuilding) && !window.APP.streaming, { timeout: 600000, polling: 1000 });
+    await drv.open();
+    await drv.waitLoaded();
 
     const evalFn = (opt) => {
       const A = window.APP, T = window.THREE;
@@ -193,9 +164,7 @@ async function run(o) {
     if (pageErrors.length) log(`§FILM-PATH-VIS pageErrors=${pageErrors.length} first=${J(pageErrors[0])}`);
     return { verdict, ...R, pageErrors, log: logLines };
   } finally {
-    await browser.close().catch(() => {});
-    server.close();
-    fs.rmSync(profile, { recursive: true, force: true });
+    await drv.close();
   }
 }
 
