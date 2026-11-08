@@ -67,7 +67,8 @@ function ifcDoc(o) {   // o: { storeyO:[x,y,z], boxes:[{cls,name,box:[x0,y0,z0,x
 const STR_SLAB = guid(701), STR_BEAM = guid(702);
 const STR_A = ifcDoc({ storeyO: [0, 0, 0], tag: 'STR_A', boxes: [
   { cls: 'IfcSlab', name: 'STR slab', box: [-2, -20, 2.90, 11, 3, 3.20], pre: '.FLOOR.', gid: STR_SLAB },
-  { cls: 'IfcBeam', name: 'STR beam', box: [4.5, -10, 2.75, 4.8, 0, 2.85], pre: '.BEAM.', gid: STR_BEAM }],
+  { cls: 'IfcBeam', name: 'STR beam', box: [4.5, -10, 2.75, 4.8, 0, 2.85], pre: '.BEAM.', gid: STR_BEAM },
+  { cls: 'IfcSlab', name: 'STR roof slab', box: [-2, -20, 6.10, 20, 3, 6.40], pre: '.ROOF.', gid: guid(703) }],
   grid: { gid: guid(50), name: 'Grid STR', u: [['A', [[0, -20], [0, 4]]], ['B', [[4, -20], [4, 4]]], ['C', [[8, -20], [8, 4]]]], v: [['1', [[-2, -16], [10, -16]]], ['2', [[-2, -9], [10, -9]]], ['3', [[-2, -3], [10, -3]]], ['4', [[-2, 2], [10, 2]]]] } });
 // ── fixture B: a mapped pair, 500 km from the origin (one frame, F3): ARC (slab, ceiling, room, grid) + STR (slab, beam) ──
 const OFF = [500123.25, 2750456.75, 0];
@@ -161,7 +162,7 @@ const logsOf = f => { const lines = [], orig = console.log; console.log = s => {
   const GRIDSHEET = { u: [['A', 0, -20, 4], ['B', 4, -20, 4], ['C', 8, -20, 4]], v: [['1', -16, -2, 10], ['2', -9, -2, 10], ['3', -3, -2, 10], ['4', 2, -2, 10]] };
   const dxfA = path.join(TMP, 'M-101.dxf'); fs.writeFileSync(dxfA, sheetDxf({ off: [100, 200], grid: GRIDSHEET, pieces: Object.values(PCS), terminals: TERMS }));
   const dbDrawn = path.join(TMP, 'drawn_A.db'); fs.copyFileSync(fedA, dbDrawn);
-  const meta = JSON.stringify({ number: 'M-101', revision: 'A', storey: 'Level 1' });
+  const meta = JSON.stringify({ number: 'M-101', revision: 'A', storeys: ['Level 1'] });
   const m1 = sh([MAINS, dbDrawn, dxfA, '--sheet-meta=' + meta]);
   log(m1.split('\n').filter(l => /§MAINS-(TO-DB|READ|FIT|TERMINALS|REFUSE)/.test(l)).map(l => '  tool ' + l.slice(0, 260)).join('\n'));
   const dd = new SQL.Database(new Uint8Array(fs.readFileSync(dbDrawn)));
@@ -178,8 +179,8 @@ const logsOf = f => { const lines = [], orig = console.log; console.log = s => {
 
   // D1
   const drawn = w.drawn;
-  ok('D1 the ACMV runs equal the drawn_route pieces (count and length), none from the band', !!drawn && drawn.pieces.length === routeN[0] && near(drawn.length, routeN[1], 1e-6) && w.mains.pieces === routeN[0] &&
-    !(w.placements || []).some(p => _isMainPiece(p)) && new RegExp('drawn=' + routeN[1].toFixed(3) + ' pieces=' + routeN[0] + ' ').test(wl), 'walk pieces=' + (drawn && drawn.pieces.length) + ' length=' + (drawn && drawn.length.toFixed(4)) + ' record rows=' + routeN[0] + ' length=' + routeN[1].toFixed(4) + ' line=' + wl.trim());
+  ok('D1 the ACMV runs equal the drawn_route pieces (count and length), none from the band', !!drawn && drawn.pieces.length === routeN[0] && near(drawn.length, routeN[1], 1e-6) && w.mains.pieces === routeN[0] && w.mains.placed === drawn.known.length && w.placed === (w.placements || []).filter(p => !p.provisional).length + drawn.known.length &&
+    !(w.placements || []).some(p => _isMainPiece(p)) && new RegExp('drawn=' + routeN[0] + '/' + routeN[1].toFixed(3) + ' placed=4 planOnly=1').test(wl), 'walk pieces=' + (drawn && drawn.pieces.length) + ' length=' + (drawn && drawn.length.toFixed(4)) + ' record rows=' + routeN[0] + ' length=' + routeN[1].toFixed(4) + ' line=' + wl.trim());
   function _isMainPiece(p) { return ['IfcPipeSegment', 'IfcPipeFitting', 'IfcDuctSegment', 'IfcDuctFitting', 'IfcFlowSegment', 'IfcFlowFitting'].indexOf(p.ifc_class) >= 0 && /^placed:/.test(p.prov || ''); }
   const pristine = walk(fedA);
   ok('D1 RED: the same building with no drawn_route walks as §9 did: no drawn pieces, "none reason=no sheet held"', !pristine.r.drawn && has(pristine.lines, /§WALK-MAINS disc=ACMV .*none reason=no sheet held/).length === 1 && (pristine.r.mains || {}).none === 'no sheet held', 'mains=' + JSON.stringify(pristine.r.mains));
@@ -200,7 +201,7 @@ const logsOf = f => { const lines = [], orig = console.log; console.log = s => {
   ok('D2c a component whose pieces sit at different heights is counted, not bridged (P1+P5+P3)', drawn.stepped === 1 && has(W.lines, /steppedComponents=1/).length === 1, 'stepped=' + drawn.stepped);
   const arcOnly = path.join(TMP, 'drawn_A_arconly.db'); { const d = new SQL.Database(new Uint8Array(fs.readFileSync(dbDrawn))); d.run("DELETE FROM elements_meta WHERE discipline='STR' AND ifc_class IN ('IfcSlab','IfcBeam')"); fs.writeFileSync(arcOnly, Buffer.from(d.export())); d.close(); }
   const Wn = walk(arcOnly), wn = Wn.r;
-  ok('D2 RED: with no STR the pieces are plan only (heightKnown=0, planOnly=5) and none gets a z', wn.drawn && wn.drawn.known.length === 0 && wn.drawn.planOnly.length === 5 && wn.drawn.pieces.every(p => p.z == null) && has(Wn.lines, /heightKnown=0 planOnly=5/).length === 1, 'known=' + (wn.drawn && wn.drawn.known.length) + ' why(P1)=' + (wn.drawn && wn.drawn.pieces[0].why));
+  ok('D2 RED: with no STR the pieces are plan only (placed=0, planOnly=5) and none gets a z', wn.drawn && wn.drawn.known.length === 0 && wn.drawn.planOnly.length === 5 && wn.drawn.pieces.every(p => p.z == null) && has(Wn.lines, /placed=0 planOnly=5/).length === 1, 'known=' + (wn.drawn && wn.drawn.known.length) + ' why(P1)=' + (wn.drawn && wn.drawn.pieces[0].why));
   // D3
   const arcSlabLower = q(dd, "SELECT min(t.center_z - t.bbox_z/2) FROM elements_meta m JOIN element_transforms t USING(guid) WHERE m.ifc_class='IfcSlab' AND m.discipline='ARC' AND m.storey='Level 2'")[0][0];
   const Wr = walk(arcOnly, { drawnStructAnyDisc: true }), wr = Wr.r, pr1 = wr.drawn.pieces[0];
@@ -229,9 +230,39 @@ const logsOf = f => { const lines = [], orig = console.log; console.log = s => {
   const html = fs.readFileSync(path.join(M, 'modeller.html'), 'utf8'), body = (html.match(/function _renderDrawnMains[\s\S]*?\n}\n/) || [''])[0];
   ok('D7 the look: committed runs are line ops (invisible anchor inserts carrying a line), plan-only pieces are not committed, and the page draws LineSegments only', noSolid && ops.length === drawn.known.length && ops.length < drawn.pieces.length && /LineSegments/.test(body) && !/new THREE\.Mesh|InstancedMesh|CylinderGeometry|BoxGeometry/.test(body) && body.length > 0,
     'ops=' + ops.length + ' of ' + drawn.pieces.length + ' pieces; renderer source: ' + (body.length ? 'LineSegments only' : 'NOT FOUND'));
-  // terminals on the Duplex case: no borrowed band terminals exist here, so none to drop and no rule mesh to seat a drawn one on
-  const tD = drawn.terminals.byStorey['Level 1'];
-  ok('D5a (Duplex) terminals: 3 drawn on the covered storey, 0 borrowed to drop, none boxed (no rule mesh to seat them on: listed, counted)', tD && tD.drawn === 3 && tD.borrowedDropped === 0 && tD.noMesh >= 1 && tD.noKind === 1, JSON.stringify(tD));
+  // terminals on the Duplex case (D5a): the walk's own schedule terminals are borrowed (projected from room schedules), so on the covered storey they are dropped and counted apart; the other storeys keep theirs
+  const tD = drawn.terminals.byStorey['Level 1'], baseP = pristine.r.placements || [], schedOn = sk => baseP.filter(p => /^sched:/.test(p.prov || '') && p.storey === sk).length;
+  const keptSched = (w.placements || []).filter(p => /^sched:/.test(p.prov || '')).length;
+  ok('D5a (Duplex) §7.5: 3 drawn terminals on the covered storey, the schedule terminals there dropped and counted apart, those on other storeys kept', tD && tD.drawn === 3 && tD.borrowedDropped === 0 && tD.schedDropped === schedOn('Level 1') && tD.schedDropped > 0 && keptSched === baseP.filter(p => /^sched:/.test(p.prov || '')).length - schedOn('Level 1') && tD.placed + tD.noMesh === 3 && tD.noKind === 1,
+    JSON.stringify(tD) + ' | independent: base walk schedule terminals on Level 1=' + schedOn('Level 1') + ', kept=' + keptSched + ' of ' + baseP.filter(p => /^sched:/.test(p.prov || '')).length + ' | ' + (has(W.lines, /§WALK-TERMINALS storey=Level 1/)[0] || '').trim());
+  // D8 (§7.3): a sheet naming a SET of storeys. Pieces: Q1 under a Level 1 ceiling only, Q2 under a Level 2 ceiling only, P1 under both (ambiguous), Q3 under none.
+  // Duplex's Level 2 ceilings all lie inside its Level 1 footprint (measured), so no point is under Level 2 alone. The fixture DB gets ONE extra Level 2 ceiling: a copy of an existing one moved 10 m in x (a stated edit of the fixture, rows copied in
+  // elements_meta, element_transforms, element_world_bbox, element_instances). Q2 sits under it only.
+  const Q = { Q1: [4.2, -3, 4.6, -3], Q2: [16, -4, 17, -4], P1: [0.6, -3, 4, -3], Q3: [30, 0, 34, 0] };
+  const dxfB = path.join(TMP, 'M-102.dxf'); fs.writeFileSync(dxfB, sheetDxf({ off: [100, 200], grid: GRIDSHEET, pieces: Object.values(Q) }));
+  const dbSet = path.join(TMP, 'drawn_set.db');
+  { const d = new SQL.Database(new Uint8Array(fs.readFileSync(fedA))), src = q(d, "SELECT m.guid FROM elements_meta m JOIN element_world_bbox b USING(guid) WHERE m.ifc_class='IfcCovering' AND m.storey='Level 2' AND b.minX>4.6 AND b.maxX<8.4 AND b.minY>-6.7 AND b.maxY<-0.4")[0][0], ng = 'CLONE_L2_CEILING';
+    const clone = (t, mut) => { const r = d.exec("SELECT * FROM " + t + " WHERE guid='" + src + "'")[0], cols = r.columns, v = r.values[0].slice(); v[cols.indexOf('guid')] = ng; Object.keys(mut).forEach(c => { v[cols.indexOf(c)] += mut[c]; }); d.run('INSERT INTO ' + t + ' VALUES(' + cols.map(() => '?').join(',') + ')', v); };
+    clone('elements_meta', {}); clone('element_transforms', { center_x: 10 }); clone('element_world_bbox', { minX: 10, maxX: 10 }); clone('element_instances', {}); fs.writeFileSync(dbSet, Buffer.from(d.export())); d.close(); }
+  const mSet = sh([MAINS, dbSet, dxfB, '--sheet-meta=' + JSON.stringify({ number: 'M-102', revision: 'A', storeys: ['Level 1', 'Level 2'] })]);
+  log(mSet.split('\n').filter(l => /§MAINS-(STOREYS|TO-DB)/.test(l)).map(l => '  tool ' + l.slice(0, 200)).join('\n'));
+  const Ws = walk(dbSet), ws = Ws.r, pq = n => ws.drawn.pieces[Object.keys(Q).indexOf(n)];
+  const ddSet = new SQL.Database(new Uint8Array(fs.readFileSync(dbSet))), covers = (sk, p) => q(ddSet, "SELECT m.guid FROM elements_meta m JOIN element_world_bbox b USING(guid) WHERE m.ifc_class='IfcCovering' AND m.storey='" + sk + "' AND (b.maxZ-b.minZ)<0.15 AND " + p.mx + " BETWEEN b.minX AND b.maxX AND " + p.my + " BETWEEN b.minY AND b.maxY").map(r => r[0]);
+  const exp = n => { const p = pq(n), l1 = covers('Level 1', p), l2 = covers('Level 2', p); return { l1: l1.length, l2: l2.length }; };
+  const e1 = exp('Q1'), e2 = exp('Q2'), eP = exp('P1'), e3 = exp('Q3');
+  ok('D8 a 2-storey set places pieces on BOTH storeys by the ceiling that holds them (independent: world boxes of the coverings): Q1 on Level 1, Q2 on Level 2', e1.l1 > 0 && e1.l2 === 0 && e2.l2 > 0 && e2.l1 === 0 && pq('Q1').storey === 'Level 1' && pq('Q2').storey === 'Level 2' && pq('Q1').z != null && pq('Q2').z != null && pq('Q2').z > pq('Q1').z + 2,
+    'Q1 storey=' + pq('Q1').storey + ' z=' + (pq('Q1').z && pq('Q1').z.toFixed(3)) + ' (coverings L1/L2 ' + e1.l1 + '/' + e1.l2 + ') Q2 storey=' + pq('Q2').storey + ' z=' + (pq('Q2').z && pq('Q2').z.toFixed(3)) + ' (' + e2.l1 + '/' + e2.l2 + ') | ' + (has(Ws.lines, /§WALK-MAINS disc=ACMV/)[0] || '').trim());
+  ok('D8b a piece held by the ceilings of both storeys is ambiguous: plan only, counted, never picked (P1); a piece under none is plan only (Q3)', eP.l1 > 0 && eP.l2 > 0 && pq('P1').z == null && /ceilings of 2 storeys/.test(pq('P1').why) && e3.l1 === 0 && e3.l2 === 0 && pq('Q3').z == null && has(Ws.lines, /ambiguous=1 /).length === 1 && ws.drawn.known.length === 2, 'P1 why=' + pq('P1').why + ' | ' + (has(Ws.lines, /§WALK-MAINS-HEIGHT/)[0] || '').slice(0, 230));
+  // D9 (§7.3): the set from the view title through the alias row, and a title that matches nothing
+  const dbT1 = path.join(TMP, 'drawn_title1.db'), dbT2 = path.join(TMP, 'drawn_title2.db'); fs.copyFileSync(fedA, dbT1); fs.copyFileSync(fedA, dbT2);
+  const mT1 = sh([MAINS, dbT1, dxfB, '--sheet-meta=' + JSON.stringify({ number: 'M-103', revision: 'A', title: 'FIRST FLOOR CEILING PLAN' })]);
+  const mT2 = sh([MAINS, dbT2, dxfB, '--sheet-meta=' + JSON.stringify({ number: 'M-104', revision: 'A', title: 'BASEMENT SERVICES PLAN' })]);
+  const stl1 = (mT1.match(/§MAINS-STOREYS[^\n]*/) || [''])[0], stl2 = (mT2.match(/§MAINS-STOREYS[^\n]*/) || [''])[0];
+  log('  tool ' + stl1 + '\n  tool ' + stl2);
+  const Wt1 = walk(dbT1), Wt2 = walk(dbT2);
+  ok('D9 a title word matched by the alias row gives the set ("first floor" = the first storey above ground = Level 2 here), and its pieces are placed on it', /source=title storeys=\["Level 2"\]/.test(stl1) && Wt1.r.drawn.known.some(p => p.storey === 'Level 2') && Wt1.r.drawn.known.every(p => p.storey === 'Level 2'), stl1.slice(0, 200) + ' | placed storeys=' + JSON.stringify([...new Set(Wt1.r.drawn.known.map(p => p.storey))]));
+  ok('D9b a title word that matches no storey and has no argument gives plan only, logged (tool and walker)', /source=title none: no storey word/.test(stl2) && Wt2.r.drawn.known.length === 0 && Wt2.r.drawn.planOnly.length === 4 && has(Wt2.lines, /noStoreySet=4/).length === 1 && has(Wt2.lines, /placed=0 planOnly=4/).length === 1, stl2.slice(0, 200) + ' | ' + (has(Wt2.lines, /§WALK-MAINS disc=ACMV/)[0] || '').trim());
+  ok('D4d §7.4 the log states the sloped rule: sloped=<n> with the 0.3 m threshold', has(W.lines, /sloped=0 slopedCeilings=0 \(sloped = ceiling bbox_z > 0.3 m;/).length === 1, (has(W.lines, /§WALK-MAINS-HEIGHT/)[0] || '').slice(0, 300));
 
   // ── D5 on the public Clinic DB: borrowed band terminals exist (provisional), one storey is covered by a drawn sheet ──
   const clinicPath = path.join(process.env.HOME, 'bim-ootb', 'buildings', 'Clinic_extracted.db');
@@ -252,7 +283,7 @@ const logsOf = f => { const lines = [], orig = console.log; console.log = s => {
       fs.copyFileSync(clinicBase, clinicDb);
       const terms = picks.slice(0, 3).map((c, i) => [c[0], c[1], i === 2 ? 'DIFFUSER' : 'DIFFUSER_SUPPLY']);
       const dxfC = path.join(TMP, 'M-201.dxf'); fs.writeFileSync(dxfC, sheetDxf({ off: [50, 70], grid: { u: gu.map(([t, x]) => [t, x, y0, y1]), v: gv.map(([t, y]) => [t, y, x0, x1]) }, pieces: [[picks[0][0], picks[0][1], picks[1][0], picks[1][1]]], terminals: terms }));
-      const mc = sh([MAINS, clinicDb, dxfC, '--sheet-meta=' + JSON.stringify({ number: 'M-201', revision: 'A', storey: 'First Floor' })]);
+      const mc = sh([MAINS, clinicDb, dxfC, '--sheet-meta=' + JSON.stringify({ number: 'M-201', revision: 'A', storeys: ['First Floor'] })]);
       log(mc.split('\n').filter(l => /§MAINS-(TO-DB|READ|TERMINALS|REFUSE)/.test(l)).map(l => '  tool ' + l.slice(0, 220)).join('\n'));
       H.openBuildingRules(SQL, stack, 'Clinic');
       const walkC = (file, extra) => { const buf = new Uint8Array(fs.readFileSync(file)); return logsOf(() => H.walkLive(SQL, stack, 'ACMV', buf, 'Clinic', [], extra)); };
@@ -266,11 +297,11 @@ const logsOf = f => { const lines = [], orig = console.log; console.log = s => {
       const borrowed = (cb.placements || []).filter(p => p.provisional === true && !_isMainPiece(p) && p.ifc_class !== 'IfcDuctSegment' && p.ifc_class !== 'IfcDuctFitting');
       const onFF = borrowed.filter(p => stOf(p) === 'First Floor'), elsewhere = borrowed.length - onFF.length;
       const termL = Cd.lines.filter(l => /§WALK-TERMINALS storey=First Floor drawn=/.test(l))[0] || '';
-      const dropN = +((/borrowedDropped=(\d+)/.exec(termL) || [])[1]), drawnN = +((/drawn=(\d+)/.exec(termL) || [])[1]);
+      const dropN = +((/borrowedDropped=(\d+)/.exec(termL) || [])[1]), schedN = +((/schedDropped=(\d+)/.exec(termL) || [])[1]), schedFF = (cb.placements || []).filter(p => /^sched:/.test(p.prov || '') && p.storey === 'First Floor').length, schedAll = (cb.placements || []).filter(p => /^sched:/.test(p.prov || '')).length, drawnN = +((/drawn=(\d+)/.exec(termL) || [])[1]);
       const after = (cw.placements || []), drawnT = after.filter(p => p.prov === 'drawn:terminal'), stillBorrowed = after.filter(p => p.provisional === true && !_isMainPiece(p) && p.ifc_class !== 'IfcDuctSegment' && p.ifc_class !== 'IfcDuctFitting');
       if (!borrowed.length || !onFF.length) incon('D5', 'the base Clinic walk has no borrowed terminal on First Floor (' + onFF.length + ' of ' + borrowed.length + '): nothing judged');
       else {
-        ok('D5 covered storey: the drawn terminals are placed and the borrowed band ones dropped, both counted', drawnN === 3 && dropN === onFF.length && drawnT.length === 3 && stillBorrowed.length === elsewhere && !stillBorrowed.some(p => stOf(p) === 'First Floor'),
+        ok('D5 covered storey: the drawn terminals are placed and the borrowed band ones dropped, both counted', drawnN === 3 && dropN === onFF.length && schedN === schedFF && schedFF > 0 && (cw.placements || []).filter(p => /^sched:/.test(p.prov || '')).length === schedAll - schedFF && drawnT.length === 3 && stillBorrowed.length === elsewhere && !stillBorrowed.some(p => stOf(p) === 'First Floor'),
           'log: ' + termL.trim() + ' | independent: borrowed on First Floor=' + onFF.length + ' of ' + borrowed.length + ', drawn placed=' + drawnT.length + ', borrowed kept=' + stillBorrowed.length + ' (expected ' + elsewhere + ')');
         ok('D5b uncovered storeys keep their borrowed terminals provisional', stillBorrowed.length === elsewhere && stillBorrowed.every(p => p.provisional === true), 'kept=' + stillBorrowed.length + ' provisional=' + stillBorrowed.filter(p => p.provisional === true).length);
         const near1 = drawnT.every(p => terms.some(t => near(t[0], p.x, 0.001) && near(t[1], p.y, 0.001)));
