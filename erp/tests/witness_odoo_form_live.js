@@ -60,8 +60,8 @@ var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms);
     // 2 — reload, log in as the new tenant's admin, open the menu leaf
     pg = await open();
     await login('Odoo Live Co', 'liveAdmin', inst.role);
-    var leaf = await pg.evaluate(function () { var lf = document.querySelector('#idmp-tree .idmp-row.leaf[data-menu-id="9541001"]'); if (!lf) return false; var n = lf.parentElement; while (n && n.id !== 'idmp-tree') { if (n.style) n.style.display = ''; n = n.parentElement; } lf.click(); return true; });
-    check('menu', leaf, 'the new tenant admin sees the menu leaf "Migrate from Odoo" (9541001) and it opens', leaf, null);
+    var leaf = await pg.evaluate(function () { var lf = document.querySelector('#idmp-tree .idmp-row.leaf[data-menu-id="9542001"]'); if (!lf) return false; var n = lf.parentElement; while (n && n.id !== 'idmp-tree') { if (n.style) n.style.display = ''; n = n.parentElement; } lf.click(); return true; });
+    check('menu', leaf, 'the new tenant admin sees the menu leaf "Migrate from Odoo" (9542001) and it opens', leaf, null);
     var shown = await pg.waitForSelector('[data-gform="org.kernel.odoo.MigrateFromOdoo"] [data-gform-param="Files"]', { timeout: 20000 }).then(function () { return true; }, function () { return false; });
     check('restored', logs.some(function (l) { return /§ODOO-FORM descriptor registered/.test(l); }) && logs.filter(function (l) { return /§PLUGIN-BOOT restored=/.test(l); }).length > 0, 'after the reload the started bundles are restored and the form descriptor registered', logs.filter(function (l) { return /§PLUGIN-BOOT/.test(l); }));
     check('form', shown, 'the generic renderer draws the form with a FILE parameter (G-a)', shown, null);

@@ -2,14 +2,14 @@
 // SPDX-License-Identifier: MIT
 // ⚠ DO NOT REMOVE — odoo_migrate.mjs: the "Migrate from Odoo" plugin (bim-compiler prompts/MIGRATE_INSTALL_TENANT.md §B4-SPEC + §B4-IMPL-SPEC — Witness: W-ODOO-FORM,
 //   erp/tests/witness_odoo_form.js). READ THE LOG: §ODOO-FORM lines.
-// WHAT IT STAGES (DICTIONARY DATA + one form descriptor; the host has no code for it — AD-LAYER LAW): AD_Form 9541001 "Migrate from Odoo" (classname org.kernel.odoo.MigrateFromOdoo)
+// WHAT IT STAGES (DICTIONARY DATA + one form descriptor; the host has no code for it — AD-LAYER LAW): AD_Form 9542001 "Migrate from Odoo" (classname org.kernel.odoo.MigrateFromOdoo)
 //   drawn by the ONE generic form renderer; a menu leaf under Data Import (163); AD_Form_Access for role 0 (System Administrator) and 102 (GardenWorld Admin). The form
 //   (hot chunk odoo_migrate_form.mjs) reads the export folder the user picks, asks the units, shows the summary from a dry run of the Ninja loader (AD_Process 9540001,
 //   plugins/ninja_migrate.mjs — it must be started too), and on Process runs that same loader for real, all or nothing. Not core (AD-LAYER LAW §6): a plugin.
-// Id band 9541001-9541999 (no seed row, no other bundle).
+// Id band 9542001-9542999 (no seed row, no other bundle).
 const NOW = '2026-11-09 00:00:00';
 const STD = { ad_client_id: 0, ad_org_id: 0, isactive: 'Y', created: NOW, createdby: 100, updated: NOW, updatedby: 100, entitytype: 'U' };
-const F_ID = 9541001, M_ID = 9541001, TREE = 10, PARENT = 163, ROLES = [[0, 0], [102, 11]];
+const F_ID = 9542001, M_ID = 9542001, TREE = 10, PARENT = 163, ROLES = [[0, 0], [102, 11]];
 const form = Object.assign({ ad_form_id: F_ID, name: 'Migrate from Odoo', description: 'Load the export of your Odoo (odoo_migration.xlsx + manifest.json) into this tenant',
   help: 'Pick the files the Odoo agent wrote (export.js). Answer which ERP unit each Odoo unit is. Read the summary: every sheet says how many rows will import and why any would be refused. Untick what you do not want (a sheet another one needs stays ticked). Process loads everything in one go, or nothing.',
   accesslevel: '3', classname: 'org.kernel.odoo.MigrateFromOdoo', isbetafunctionality: 'N' }, STD);
