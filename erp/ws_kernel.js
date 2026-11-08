@@ -28,6 +28,7 @@ function build(db) {
   const ML = require('./model_layer.js');
   fs.readdirSync(path.join(__dirname, 'processes')).filter(function (f) { return /\.js$/.test(f); }).forEach(function (f) { try { require('./processes/' + f); } catch (e) { /* a port needing a browser-only global stays unregistered, named by the process answer */ } });
   ['model_trade', 'model_ctor', 'model_cost', 'model_match', 'model_order', 'model_invoice', 'model_post', 'model_master'].forEach(function (m) { require('./' + m + '.js'); });
+  require('./model_initial_defaults.js');   // the generated setInitialDefaults table (§G1-SPEC) - the page loads it after model_layer.js too
   function q(sql, params) {
     const st = db.prepare(sql), out = [];
     try { if (params && params.length) st.bind(params.map(function (v) { return v === undefined ? null : v; })); while (st.step()) { const o = st.getAsObject(), r = {}; for (const k in o) r[k.toLowerCase()] = o[k]; out.push(r); } } finally { st.free(); }

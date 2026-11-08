@@ -98,11 +98,8 @@
     var regionId = input.regionId != null ? Number(input.regionId) : null, city = input.city || null;
 
     var id = new IdGen(1000000), groups = [], parent = '0'.repeat(64);
-    function group(label, ops) {
-      var tip = sha256(parent + JSON.stringify(ops));
-      groups.push({ seq: groups.length + 1, label: label, ops: ops, parent: parent, tip: tip });
-      parent = tip;
-    }
+    function group(label, ops) { groups.push({ seq: groups.length + 1, label: label, ops: ops }); }   // hashed in order at the end (sealGroups)
+    function sealGroups() { groups.forEach(function (g) { g.parent = parent; g.tip = sha256(parent + JSON.stringify(g.ops)); parent = g.tip; }); }
     // FIX-A (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2 — Witness: W-ERP-FIRST-SETUP S08/S09).
     // Every setup row iDempiere writes carries AD_Org_ID; unless the model gives it an org it is 0 ('*'):
     // MSetup.java:179 m_stdValues = AD_Client_ID + ",0,'Y',..." and bpg/bp/pc/tax/product/pl/plv.setAD_Org_ID(0)
@@ -133,7 +130,7 @@
       // The row's table is AD_OrgInfo (MOrgInfo); it was emitted as 'ad_org_info', which no resident schema carries, so
       // mergeGenesisInto skipped it (honest skip) — a born org had NO AD_OrgInfo row at all (Tax.get: TaxCriteriaNotFound).
       create('c_location', { c_location_id: locOrgId, ad_client_id: clientId, c_country_id: countryId, c_region_id: regionId, city: city }),
-      create('ad_orginfo', { ad_org_id: orgId, ad_client_id: clientId, c_location_id: locOrgId })
+      create('ad_orginfo', { ad_org_id: orgId, ad_client_id: clientId, c_location_id: locOrgId, duns: '?', taxid: '?' })   // MOrgInfo.java:145-146 (the ctor MOrg.afterSave goes through)
     ]);
 
     // ── G2 CALENDAR + YEAR + 12 PERIODS — FS-2 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2g — Witness:
@@ -167,7 +164,8 @@
       });
     }
     var elementId = id.next(), coa = customCoa ? customCoa.accounts : SEED.coa, evByValue = {};
-    var g3 = [create('c_element', { c_element_id: elementId, ad_client_id: clientId, name: 'Account', elementtype: 'A' })];
+    var elementRow = { c_element_id: elementId, ad_client_id: clientId, name: 'Account', elementtype: 'A', isnaturalaccount: 'Y' };   // MElement.java:95 IsNaturalAccount = (ElementType == A)   // ad_tree_id = the Element Value tree, set in G7 (MSetup.java:491-492)
+    var g3 = [create('c_element', elementRow)];
     coa.forEach(function (a) {
       var evId = id.next(); evByValue[a.value] = evId;
       var row = { c_elementvalue_id: evId, c_element_id: elementId, ad_client_id: clientId,
@@ -179,8 +177,8 @@
 
     // ── G4 ACCTSCHEMA + default-account wiring (DERIVE: col -> validcombination -> elementvalue) ──────────────
     var asId = id.next();
-    var g4 = [create('c_acctschema', { c_acctschema_id: asId, ad_client_id: clientId, name: clientName + ' US/' + ccyIso,
-      c_currency_id: ccyId, c_element_id: elementId })];
+    var asRow = { c_acctschema_id: asId, ad_client_id: clientId, name: clientName + ' US/' + ccyIso, c_currency_id: ccyId, c_element_id: elementId };   // m_costtype_id set in G7
+    var g4 = [create('c_acctschema', asRow)];
     var GLMAP = SEED.acctMapGL || {};                                       // FS-18: C_AcctSchema_GL's account columns
     var map = {}, vcByColumn = {};
     Object.keys(SEED.acctMap).forEach(function (c) { map[c] = SEED.acctMap[c]; });
@@ -196,10 +194,13 @@
       var evId = evByValue[map[col]];
       if (evId == null) return;                                            // value not in CoA -> skip (honest)
       var vcId = id.next(); vcByColumn[col] = vcId;
+      // IsFullyQualified: MAccount.setValueDescription :843 — every mandatory schema element is set (Org 0 + Account; pilot oracle 53/53 'Y')
       g4.push(create('c_validcombination', { c_validcombination_id: vcId, ad_client_id: clientId,
-        c_acctschema_id: asId, account_id: evId }));
+        c_acctschema_id: asId, account_id: evId, isfullyqualified: 'Y' }));
     });
-    var defRow = { c_acctschema_id: asId, ad_client_id: clientId }, glRow = { c_acctschema_id: asId, ad_client_id: clientId }, nGl = 0;
+    // MSetup.createAccountingRecord :877-893 sets every Yes-No column of the record TRUE (C_AcctSchema_GL: UseCurrencyBalancing, UseSuspenseBalancing, UseSuspenseError - the dictionary's
+    //   ref-20 columns; C_AcctSchema_Default has none)
+    var defRow = { c_acctschema_id: asId, ad_client_id: clientId }, glRow = { c_acctschema_id: asId, ad_client_id: clientId, usecurrencybalancing: 'Y', usesuspensebalancing: 'Y', usesuspenseerror: 'Y' }, nGl = 0;
     Object.keys(vcByColumn).forEach(function (col) { if (GLMAP[col] !== undefined) { glRow[col] = vcByColumn[col]; nGl++; } else defRow[col] = vcByColumn[col]; });
     g4.push(create('c_acctschema_default', defRow));
     // FS-18: MSetup.java:683 createAccountingRecord(C_AcctSchema_GL) — the GL row was never born (its 7 account columns were absent).
@@ -215,9 +216,10 @@
       ['ARI', 'AR Invoice', 'D', 'N'], ['ARR', 'AR Receipt', 'D', 'N'], ['MM', 'Material Management', 'D', 'N'],
       ['API', 'AP Invoice', 'D', 'N'], ['APP', 'AP Payment', 'D', 'N'], ['CASH', 'Cash/Payments', 'D', 'N'],
       ['MFG', 'Manufacturing', 'D', 'N'], ['DIST', 'Distribution', 'D', 'N'], ['PAY', 'Payroll', 'D', 'N']
-    ].forEach(function (c) {
+    ].forEach(function (c, gi) {
       var gid = glByKey[c[0]] = id.next();
-      g5.push(create('gl_category', { gl_category_id: gid, ad_client_id: clientId, name: c[1], categorytype: c[2], isdefault: c[3] }));
+      // Value: MSetup sets none, so PO.saveNew numbers it from the table sequence (PO.java:3594), start 1000000 in creation order (pilot oracle: 1000000, 1000001, ...)
+      g5.push(create('gl_category', { gl_category_id: gid, ad_client_id: clientId, value: String(1000000 + gi), name: c[1], categorytype: c[2], isdefault: c[3] }));
     });
     // [key, Name, PrintName (Msg.getElement → AD_Element Name / PO_Name; '' → defaults to Name), DocBaseType,
     //  DocSubType, shipment key, invoice key, StartNo, GL key, isReturnTrx]                 MSetup.java:710-831
@@ -300,30 +302,35 @@
     group('G6 base ops', [
       // FS-12: MSetup.java:1298-1303 — the warehouse gets its own MLocation.
       create('c_location', { c_location_id: locWhId, ad_client_id: clientId, c_country_id: countryId, c_region_id: regionId, city: city }),
-      create('m_warehouse', { m_warehouse_id: whId, ad_client_id: clientId, ad_org_id: orgId, name: 'HQ Warehouse', c_location_id: locWhId }),
+      // MSetup.java:1302-1304 wh.setValue(defaultName); wh.setName(defaultName) — defaultName = Msg 'Standard'
+      create('m_warehouse', { m_warehouse_id: whId, ad_client_id: clientId, ad_org_id: orgId, value: 'Standard', name: 'Standard', c_location_id: locWhId }),
       // FIX-A: MLocator.java:290 setClientOrg(warehouse) — the locator takes its warehouse's org, not '*'.
-      create('m_locator', { m_locator_id: locId, m_warehouse_id: whId, ad_client_id: clientId, ad_org_id: orgId, value: 'Std' }),
+      // MSetup.java:1310-1311 new MLocator(wh, defaultName) (MLocator.java ctor: setValue, setXYZ("0","0","0")) + setIsDefault(true)
+      create('m_locator', { m_locator_id: locId, m_warehouse_id: whId, ad_client_id: clientId, ad_org_id: orgId, value: 'Standard', x: '0', y: '0', z: '0', isdefault: 'Y' }),
       // FS-12: MSetup.java:1333-1353 — IsDefault=Y; MPriceList.setInitialDefaults :243-249 (IsSOPriceList=N — the setup
       // list is NOT a sales list in iDempiere either; a Sales Order reaches it via Login.loadDefault #M_PriceList_ID);
       // a DiscountSchema 'P'; the version's ValidFrom = today (MPriceListVersion.setName :177-187 — here the explicit
       // dateAcct, which the wizard sets to today); MProductPrice(plv, product, 1, 1, 1) (:1355-1356).
       create('m_pricelist', { m_pricelist_id: plId, ad_client_id: clientId, name: 'Standard', c_currency_id: ccyId, isdefault: 'Y',
         issopricelist: 'N', enforcepricelimit: 'N', istaxincluded: 'N', priceprecision: 2 }),
-      create('m_discountschema', { m_discountschema_id: dsId, ad_client_id: clientId, name: 'Standard', discounttype: 'P' }),
+      // ValidFrom: MDiscountSchema.beforeSave :433-434 sets today when empty (here the explicit dateAcct, the wizard's today)
+      create('m_discountschema', { m_discountschema_id: dsId, ad_client_id: clientId, name: 'Standard', discounttype: 'P', validfrom: dateAcct }),
       create('m_pricelist_version', { m_pricelist_version_id: plvId, m_pricelist_id: plId, ad_client_id: clientId, name: 'Std ' + year,
         validfrom: dateAcct, m_discountschema_id: dsId }),
       // MSetup.java:1172-1176 — the Standard group is the client's DEFAULT (Value=Name=defaultName, setIsDefault(true)): MBPGroup.getDefault (MBPartner.getBPGroup :876-886) and
       //   Import Business Partner's default group (ImportBPartner.java:129-132) read it. Found by W-NINJA-MIGRATE (a born tenant had no IsDefault group).
       create('c_bp_group', { c_bp_group_id: bpGroupId, ad_client_id: clientId, value: 'Standard', name: 'Standard', isdefault: 'Y' }),
       // FIX-A: MBPartner.java:286 setInitialDefaults → setIsSummary(false) — AD_Val_Rule 230 hid a NULL.
-      create('c_bpartner', { c_bpartner_id: bpId, ad_client_id: clientId, c_bp_group_id: bpGroupId, name: 'Standard BP', iscustomer: 'Y', issummary: 'N' }),
+      // MSetup.java:1184-1186 bp.setValue(defaultName); bp.setName(defaultName)
+      create('c_bpartner', { c_bpartner_id: bpId, ad_client_id: clientId, c_bp_group_id: bpGroupId, value: 'Standard', name: 'Standard', iscustomer: 'Y', issummary: 'N' }),
       // FS-12: MSetup.java:1193-1198 — the Standard BP's location (X_C_BPartner_Location defaults Bill/Ship/PayFrom/RemitTo=Y,
       // MBPartnerLocation.java:93 Name '.'); without it MOrder.beforeSave setBPartner rejects the order (MOrder.java:772-774).
       create('c_location', { c_location_id: locBpId, ad_client_id: clientId, c_country_id: countryId, c_region_id: regionId, city: city }),
       create('c_bpartner_location', { c_bpartner_location_id: bpLocId, c_bpartner_id: bpId, c_location_id: locBpId, ad_client_id: clientId,
         name: '.', isbillto: 'Y', isshipto: 'Y', ispayfrom: 'Y', isremitto: 'Y' }),
       create('c_bp_customer_acct', { c_bpartner_id: bpId, c_acctschema_id: asId, ad_client_id: clientId, c_receivable_acct: vcByColumn['c_receivable_acct'] }),
-      create('m_product_category', { m_product_category_id: pcatId, ad_client_id: clientId, name: 'Standard' }),
+      // MSetup.java:1215-1218 pc.setValue(defaultName); pc.setName(defaultName); pc.setIsDefault(true)
+      create('m_product_category', { m_product_category_id: pcatId, ad_client_id: clientId, value: 'Standard', name: 'Standard', isdefault: 'Y' }),
       create('m_product_category_acct', { m_product_category_id: pcatId, c_acctschema_id: asId, ad_client_id: clientId, p_revenue_acct: vcByColumn['p_revenue_acct'] }),
       // FS-4: MSetup.java:1227-1236 one C_TaxCategory (no country input → Msg 'Standard'), IsDefault=Y; the setup tax is
       // made IN it (:1251) and the product uses it (:1263-1275). Rate stays 9 (W-GENESIS-MINIMAL oracle; MSetup's is 0).
@@ -345,9 +352,33 @@
       create('c_tax_acct', { c_tax_id: taxId, c_acctschema_id: asId, ad_client_id: clientId, t_due_acct: vcByColumn['t_due_acct'] })
     ]);
 
+    // ── G7 CLIENT INFO + TREES (bim-compiler MIGRATE_INSTALL_TENANT.md §G1-SPEC — Witness: W-GENESIS-COMPLETE). MClient.setupClientInfo (MClient.java:372-485): one AD_Tree per
+    //   active TreeType of AD_Ref_List 120 (input.treeTypes, read from the dictionary by the host: Genesis.treeTypesFrom) except Menu, Custom Table and User1-4 (:460-466), named
+    //   client name + ' ' + the list name; MTree_Base.afterSave (:438-466) gives each a root node 0 (BP -> AD_TreeNodeBP, PR -> AD_TreeNodePR, else AD_TreeNode). The client info
+    //   (MClientInfo ctor :192-210, AD_Tree_Menu_ID=10 HARDCODED :201) carries the tree ids; MSetup sets C_AcctSchema1_ID + C_Calendar_ID (:838-839) and C_BPartnerCashTrx_ID +
+    //   M_ProductFreight_ID (:1317-1318). The account element uses the Element Value tree (MSetup.java:491-492). MAcctSchema.checkCosting (:581-587) makes the schema's cost type.
+    //   Ids are taken AFTER G6's, so no earlier id moves.
+    var NO_TREE = { MM: 1, TL: 1, U1: 1, U2: 1, U3: 1, U4: 1 }, treeIds = {}, g7 = [];
+    (input.treeTypes || SEED.treeTypes || []).forEach(function (tt) {
+      if (NO_TREE[tt[0]]) return;
+      var tid = treeIds[tt[0]] = id.next();
+      g7.push(create('ad_tree', { ad_tree_id: tid, ad_client_id: clientId, name: clientName + ' ' + tt[1], treetype: tt[0] }));
+      g7.push(create(tt[0] === 'BP' ? 'ad_treenodebp' : tt[0] === 'PR' ? 'ad_treenodepr' : 'ad_treenode', { ad_tree_id: tid, node_id: 0, parent_id: null, seqno: 0, ad_client_id: clientId }));
+    });
+    if (treeIds.EV) elementRow.ad_tree_id = treeIds.EV;
+    var costTypeId = id.next();
+    g7.push(create('m_costtype', { m_costtype_id: costTypeId, ad_client_id: clientId, name: asRow.name }));
+    asRow.m_costtype_id = costTypeId;
+    // IsDiscountLineAmt: the ctor's setIsDiscountLineAmt(false) wins over the column DEFAULT 'Y'
+    g7.push(create('ad_clientinfo', { ad_client_id: clientId, isdiscountlineamt: 'N', ad_tree_menu_id: 10, ad_tree_org_id: treeIds.OO, ad_tree_bpartner_id: treeIds.BP, ad_tree_project_id: treeIds.PJ,
+      ad_tree_salesregion_id: treeIds.SR, ad_tree_product_id: treeIds.PR, ad_tree_campaign_id: treeIds.MC, ad_tree_activity_id: treeIds.AY,
+      c_acctschema1_id: asId, c_calendar_id: calId, c_bpartnercashtrx_id: bpId, m_productfreight_id: prodId }));
+    group('G7 client info + trees', g7);
+    sealGroups();
+
     return {
       input: { clientName: clientName, currencyId: ccyId, currencyPrecision: ccyPrec, currencyIso: ccyIso, adminUser: adminUser, dateAcct: dateAcct, countryId: countryId },
-      groups: groups, tip: parent,
+      groups: groups, tip: parent, trees: treeIds,
       refs: { clientId: clientId, orgId: orgId, roleAdminId: roleAdminId, userId: userId,
               acctSchemaId: asId, bpartnerId: bpId, productId: prodId, priceListId: plId, priceListVersionId: plvId, bpLocationId: bpLocId,
               taxId: taxId, taxCategoryId: taxCatId, paymentTermId: payTermId, doctypeAriId: dtAriId, doctypes: doctypes, warehouseId: whId, periodId: periodId,
@@ -493,8 +524,43 @@
   //   AD, client N data). So we INTERSECT each row with the resident table's real columns (case-insensitive — born
   //   rows are lowercase, resident tables CamelCase) and INSERT OR IGNORE (idempotent re-install). A table or column
   //   the resident schema does not carry is skipped, never synthesized (NON-INVENT). Mirrors installShard's merge.
-  function mergeGenesisInto(groups, db) {
-    var schema = {}, n = 0;
+  //   opts (§G1-SPEC, bim-compiler MIGRATE_INSTALL_TENANT.md — Witness: W-GENESIS-COMPLETE): legacy MSetup saves every row through PO.save, so the install fills, for each row,
+  //   the columns it does not carry, in PO order: (1) PO.setStandardDefaults (PO.java:1973-2001) Created/Updated = opts.now, CreatedBy/UpdatedBy = opts.user, IsActive Y,
+  //   Processed/Processing/Posted N where the table has them; (2) the model's setInitialDefaults = opts.initialDefaults(table) (the host hands ModelLayer.MODEL, the save path's
+  //   own registry); (3) the physical column DEFAULT (ad_ddl_default, the pg defaults in the seed patch). The row's own values win. No opts = raw merge (genesis.html's scratch fold).
+  function poFill(db, opts, groups) {
+    var ddl = {}, acctCols = {}, defaults = {};
+    // PO.insert_Accounting (PO.java:4907-4990): an accounting row copies every Account column (AD_Reference_ID=25) of the schema's C_AcctSchema_Default row it does not carry
+    (groups || []).forEach(function (g) { (g.ops || []).forEach(function (o) { if (o.op === 'CREATE' && o.table === 'c_acctschema_default') defaults[String(o.row.c_acctschema_id)] = o.row; }); });
+    function accountColumnsOf(t) {
+      if (acctCols[t] !== undefined) return acctCols[t];
+      var a = []; if (!/^[a-z0-9_]+$/.test(t)) return (acctCols[t] = a);
+      try { a = (db.prepare("SELECT lower(c.columnname) AS c FROM ad_column c JOIN ad_table tb ON tb.ad_table_id=c.ad_table_id WHERE lower(tb.tablename)='" + t + "' AND c.ad_reference_id=25 AND c.isactive='Y'").all() || []).map(function (r) { return r.c; }); } catch (e) { a = []; }
+      return (acctCols[t] = a);
+    }
+    function ddlOf(t) {
+      if (ddl[t] !== undefined) return ddl[t];
+      var o = {}; if (!/^[a-z0-9_]+$/.test(t)) return (ddl[t] = o);
+      try { (db.prepare("SELECT columnname AS c, defaultvalue AS d FROM ad_ddl_default WHERE tablename='" + t + "'").all() || [])
+        .forEach(function (r) { o[String(r.c).toLowerCase()] = /^-?\d+(\.\d+)?$/.test(r.d) ? Number(r.d) : r.d; }); } catch (e) { /* no ad_ddl_default in this db */ }
+      return (ddl[t] = o);
+    }
+    return function (table, row, has) {                                       // has(col) = the resident table has that column
+      var t = String(table).toLowerCase(), out = {}, k;
+      for (k in row) if (Object.prototype.hasOwnProperty.call(row, k)) out[k.toLowerCase()] = row[k];
+      function put(c, v) { if ((out[c] === undefined || out[c] === null) && has(c) && v !== undefined && v !== null) out[c] = v; }
+      put('created', opts.now); put('updated', opts.now); put('createdby', opts.user); put('updatedby', opts.user); put('isactive', 'Y');
+      ['processed', 'processing', 'posted'].forEach(function (c) { put(c, 'N'); });
+      var init = (opts.initialDefaults && opts.initialDefaults(t)) || {}; for (k in init) put(k.toLowerCase(), init[k]);
+      var d = ddlOf(t); for (k in d) put(k, d[k]);
+      if (/_acct$/.test(t) && t !== 'c_acctschema_default' && out.c_acctschema_id != null && defaults[String(out.c_acctschema_id)]) {
+        var def = defaults[String(out.c_acctschema_id)]; accountColumnsOf(t).forEach(function (c) { if (def[c] != null) put(c, def[c]); });
+      }
+      return out;
+    };
+  }
+  function mergeGenesisInto(groups, db, opts) {
+    var schema = {}, n = 0, fill = opts ? poFill(db, opts, groups) : null;
     function cols(t) {
       if (schema[t] !== undefined) return schema[t];
       var info; try { info = db.prepare('PRAGMA table_info("' + t + '")').all(); } catch (e) { info = []; }
@@ -505,12 +571,13 @@
     groups.forEach(function (g) { (g.ops || []).forEach(function (o) {
       if (o.op !== 'CREATE') return;
       var c = cols(o.table); if (!c) return;                                  // resident has no such table → skip
-      var keys = Object.keys(o.row).filter(function (k) { return c[k.toLowerCase()]; });
+      var row = fill ? fill(o.table, o.row, function (k) { return !!c[k]; }) : o.row;
+      var keys = Object.keys(row).filter(function (k) { return c[k.toLowerCase()]; });
       if (!keys.length) return;
       var canon = keys.map(function (k) { return '"' + c[k.toLowerCase()] + '"'; });
       var sql = 'INSERT OR IGNORE INTO "' + o.table + '" (' + canon.join(',') + ') VALUES (' +
         keys.map(function (k) { return '@' + k; }).join(',') + ')';
-      try { db.prepare(sql).run(o.row); n++; } catch (e) { /* honest skip; caller logs the count */ }
+      try { db.prepare(sql).run(row); n++; } catch (e) { /* honest skip; caller logs the count */ }
     }); });
     return n;
   }
@@ -633,7 +700,8 @@
     return { merged: merged, invId: inv, pf: pf, gl: { lines: lines, balanced: lines.length > 0 && sDr === sCr, sumDr: sDr, sumCr: sCr, basis: pf.state, absent: pf.refusal ? [pf.refusal] : [] } };
   }
 
-  var _api = { birthTenant: birthTenant, parseCoA: parseCoA, foldGenesis: foldGenesis, signHead: signHead, IdGen: IdGen, sha256: sha256,
+  function treeTypesFrom(db) { try { return (db.prepare("SELECT value AS v, name AS n FROM ad_ref_list WHERE ad_reference_id=120 AND isactive='Y' ORDER BY value").all() || []).map(function (r) { return [r.v, r.n]; }); } catch (e) { return []; } }
+  var _api = { treeTypesFrom: treeTypesFrom, birthTenant: birthTenant, parseCoA: parseCoA, foldGenesis: foldGenesis, signHead: signHead, IdGen: IdGen, sha256: sha256,
     rebandGenesis: rebandGenesis, mergeGenesisInto: mergeGenesisInto, nextClientId: nextClientId,
     grantFullAccess: grantFullAccess, b3: b3, buildPostingDb: buildPostingDb, postSampleInvoice: postSampleInvoice };
   if (typeof module !== 'undefined' && module.exports) module.exports = _api;
