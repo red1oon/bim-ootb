@@ -272,7 +272,7 @@
           }
           const prodE = productFromRep(rep, T[ent], (tp && tp.type_name) || (op.carried ? (op.carried.name || cls) : ((P.ifc_class || (P._dw && P._dw.ifc) || (_cat && _cat.ifc_class) || 'Element') + ' ' + op.id)), op.carried ? op.carried.guid : gn++, pdx, tp && tp.type_name);
           if (tp) seedTyped++;
-          if (P._dw && P._dw.ifc && !window.__ifcNoWalkSet) { const wk = [!!P._dw.provisional, String(P._dw.prov || ''), String(P._dw.hostState || '')].join('|'); (walkSets.get(wk) || walkSets.set(wk, []).get(wk)).push(prodE); }
+          if (P._dw && P._dw.ifc && !window.__ifcNoWalkSet) { const wk = [!!P._dw.provisional, String(P._dw.prov || ''), String(P._dw.hostState || ''), String(P._dw.heightBasis || '')].join('|'); (walkSets.get(wk) || walkSets.set(wk, []).get(wk)).push(prodE); }
           productByFeature.set(op.id, prodE); if (fid !== op.id) productByFeature.set(fid, prodE);
           if (tp && tp.material) (matProducts[tp.material] = matProducts[tp.material] || []).push(prodE);   // §L13.3 material dress
           if (AP && tp) { if (AP.style(fs, tp.colour)) seedColoured++; if (AP.pset(prodE, tp.props)) seedPsets++; }
@@ -380,6 +380,7 @@
         const hp = [api.CreateIfcEntity(mID, T.IFCPROPERTYSINGLEVALUE, label('Provisional'), null, api.CreateIfcType(mID, T.IFCBOOLEAN, prov), null),
           api.CreateIfcEntity(mID, T.IFCPROPERTYSINGLEVALUE, label('Provenance'), null, api.CreateIfcType(mID, T.IFCTEXT, parts[1]), null),
           api.CreateIfcEntity(mID, T.IFCPROPERTYSINGLEVALUE, label('HostState'), null, api.CreateIfcType(mID, T.IFCTEXT, parts[2]), null)];
+        if (parts[3]) hp.push(api.CreateIfcEntity(mID, T.IFCPROPERTYSINGLEVALUE, label('HeightBasis'), null, api.CreateIfcType(mID, T.IFCTEXT, parts[3]), null));   // §DRAWN-WALK: only a drawn piece states one
         const ps = api.CreateIfcEntity(mID, T.IFCPROPERTYSET, spatialGid(5000000 + 2 * wsN), null, label(WALK_SET), null, hp); api.WriteLine(mID, ps);
         api.WriteLine(mID, api.CreateIfcEntity(mID, T.IFCRELDEFINESBYPROPERTIES, spatialGid(5000000 + 2 * wsN + 1), null, null, null, prods, ps));
         wsN++; walkFixtures += prods.length; if (prov) walkProvisional += prods.length;

@@ -907,7 +907,7 @@ async function extractToDb(ctx) {
     try {
       const want = new Set(['IsExternal', 'LoadBearing']);
       // §11 (bim-ootb prompts/DISC_WALK_BAND_NO_HOST.md rule 5): the Modeller's walk label travels into an extracted DB, in this same table. Only that one named set, only its three properties.
-      const WALK_SET = 'BIMOOTB_Walk', walkWant = new Set(['Provisional', 'Provenance', 'HostState']);
+      const WALK_SET = 'BIMOOTB_Walk', walkWant = new Set(['Provisional', 'Provenance', 'HostState', 'HeightBasis']);
       const extracted = new Set(elements.map(e => e.expressID));
       const readPset = (psetId, guid, source, into) => {
         const ps = ifcApi.GetLine(modelID, psetId);
@@ -1123,10 +1123,11 @@ async function extractToDb(ctx) {
 // guids already in the main DB are never overwritten. q = (sql) -> [row objects] over the extra DB; main = exec/prepare surface. Returns the number of elements merged.
 function mergeElements(main, qMain, qExtra, classes, log) {
   log = log || function () {}; classes = classes || ['IfcColumn'];
-  const inList = classes.map(c => "'" + c + "'").join(',');
+  const all = classes === '*';   // §1a federation (prompts/DISC_WALK_DRAWN_INTEGRATION.md): every element of the second file, not a class list
+  const inList = all ? '' : classes.map(c => "'" + c + "'").join(',');
   const have = new Set(qMain('SELECT guid FROM elements_meta').map(r => r.guid));
-  const rows = qExtra(`SELECT guid FROM elements_meta WHERE ifc_class IN (${inList}) ORDER BY guid`).map(r => r.guid).filter(g => !have.has(g));
-  if (!rows.length) { log('§MERGE classes=' + classes.join(',') + ' merged=0'); return 0; }
+  const rows = qExtra(`SELECT guid FROM elements_meta ${all ? '' : `WHERE ifc_class IN (${inList})`} ORDER BY guid`).map(r => r.guid).filter(g => !have.has(g));
+  if (!rows.length) { log('§MERGE classes=' + (all ? '*' : classes.join(',')) + ' merged=0'); return 0; }
   const guidSet = rows.map(g => "'" + g.replace(/'/g, "''") + "'").join(',');
   const copy = (table, sql) => {
     const data = qExtra(sql); if (!data.length) return 0;
@@ -1140,7 +1141,12 @@ function mergeElements(main, qMain, qExtra, classes, log) {
   n.geometries = copy('component_geometries', `SELECT * FROM component_geometries WHERE geometry_hash IN (SELECT geometry_hash FROM element_instances WHERE guid IN (${guidSet}))`);
   n.bbox = copy('element_world_bbox', `SELECT * FROM element_world_bbox WHERE guid IN (${guidSet})`);
   n.psets = copy('element_pset_common', `SELECT * FROM element_pset_common WHERE guid IN (${guidSet})`);
-  log('§MERGE classes=' + classes.join(',') + ' merged=' + rows.length + ' ' + JSON.stringify(n));
+  if (all) {   // the type, part and fill relations of the merged elements
+    n.types = copy('element_type', `SELECT * FROM element_type WHERE guid IN (${guidSet})`);
+    n.parts = copy('element_parts', `SELECT * FROM element_parts WHERE child_guid IN (${guidSet})`);
+    n.fills = copy('rel_fills_host', `SELECT * FROM rel_fills_host WHERE opening_guid IN (${guidSet})`);
+  }
+  log('§MERGE classes=' + (all ? '*' : classes.join(',')) + ' merged=' + rows.length + ' ' + JSON.stringify(n));
   return rows.length;
 }
 
