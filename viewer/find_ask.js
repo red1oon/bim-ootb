@@ -83,11 +83,14 @@
     var val = { discA: a, discB: b, toleranceM: rules._activeTolerance, bboxOverlaps: broad, rtree: !!A._clashRtreeReady };
     var summary;
     if (narrow && narrow.counts) {
-      val.meshClashes = (narrow.counts.meshTrue || 0) + (narrow.counts.contained || 0);
-      // every broad row gets exactly one verdict: clash (meshTrue+contained), unjudged, or cleared
+      // clash_narrow.js:498/:534 count every CLASH in meshTrue and ALSO in contained when the reason is containment:
+      // contained is a subset of meshTrue (spec NEURO_SYMBOLIC_ORDER_CONTRACT §20.2.9), never added to it.
+      val.meshClashes = narrow.counts.meshTrue || 0; val.contained = narrow.counts.contained || 0;
+      // every broad row gets exactly one verdict: clash (meshTrue), unjudged, or cleared
       // (rejected by the oriented-box test OR by the triangle test) — cleared = the remainder.
       val.unknown = narrow.counts.unknown || 0; val.obbRejected = narrow.counts.obbRejected || 0; val.triangleClear = narrow.counts.meshClear || 0;
       val.cleared = broad - val.meshClashes - val.unknown;
+      console.log('§CLASH_COUNT_SUM ' + a + ' vs ' + b + ' bbox=' + broad + ' meshClashes=' + val.meshClashes + ' (of which contained=' + val.contained + ') cleared=' + val.cleared + ' unknown=' + val.unknown + ' sum=' + (val.meshClashes + val.cleared + val.unknown) + ' ' + (val.meshClashes + val.cleared + val.unknown === broad && val.cleared >= 0 ? 'OK' : 'MISMATCH'));
       summary = val.meshClashes + ' mesh-level clashes (' + broad + ' box overlaps: ' + val.cleared + ' cleared by the shape tests, ' + val.unknown + ' unjudged) at ' + (val.toleranceM * 1000) + ' mm';
     } else {
       summary = broad + ' box overlaps at ' + (val.toleranceM * 1000) + ' mm' + (broad > NARROW_CAP ? ' (too many for the mesh test here — box count only)' : ' (mesh test unavailable — box count only)');

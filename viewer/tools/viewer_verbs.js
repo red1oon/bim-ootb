@@ -64,6 +64,9 @@ function pack(verb, building, r, rowCap) {
   if (process.env.VIEWER_VERB_BREAK === '1') {   // the witness's falsifier: the verb lies about the Viewer's number
     if (typeof value.total === 'number') value.total -= 1; else if (typeof value.bboxOverlaps === 'number') value.bboxOverlaps += 1;
   }
+  if (process.env.VIEWER_VERB_OLDSUM === '1' && typeof value.meshClashes === 'number') {   // falsifier: restore the old double count (meshTrue + contained)
+    value.meshClashes += value.contained || 0; value.cleared = value.bboxOverlaps - value.meshClashes - value.unknown;
+  }
   const out = { verb, building, verdict: a.verdict, question: a.question, summary: a.summary, value, viewerLine: r.line, viewerLog: r.lines, source: a.sources };
   if (a.cols) { out.cols = a.cols; out.rowsTotal = (a.rows || []).length; out.rows = rowCap ? (a.rows || []).slice(0, rowCap) : a.rows; }
   if (r.pageErrors.length) out.pageErrors = r.pageErrors;
