@@ -49,6 +49,13 @@
     [[lb[0], lb[1]], [lb[2], lb[1]], [lb[2], lb[3]], [lb[0], lb[3]]].forEach(p => { const lx = p[0] * sx, ly = p[1] * sy, x = px + c * lx - s * ly, y = py + s * lx + c * ly; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; });
     return [x0, y0, x1, y1];
   }
+  // Point items (terminals, equipment): the position is the centre of the insert's TRANSFORMED block geometry, not the INSERT point.
+  // Converted sheets often insert a block at the origin with its geometry offset inside it (design lane, 2026-11-08). No geometry -> the insert point, flagged.
+  function insertCentre(ins, blocks, k) {
+    const bx = insertBox(ins, blockBox((blocks || {})[ins.name], k), k);
+    if (bx) return { x: (bx[0] + bx[2]) / 2, y: (bx[1] + bx[3]) / 2, fromGeometry: true };
+    return { x: (ins.position ? ins.position.x : 0) * k, y: (ins.position ? ins.position.y : 0) * k, fromGeometry: false };
+  }
   // MTEXT carries formatting codes: {\fArial|b0;A}, \H2.5;, \P. Strip them; the tag is what is left.
   function plainText(e) {
     let t = String(e.text == null ? '' : e.text); if (e.type !== 'MTEXT') return t.trim();
@@ -178,8 +185,8 @@
       let bw = null, bd = Infinity; left.forEach(l => right.forEach(r => { const dd = Math.abs(l - r); if (dd <= WIDTH_EQ_M && dd < bd) { bd = dd; bw = Math.round((l + r) * 1000); } })); return bw;
     });
     // system (§4.6): terminal kinds within 1 m of a component
-    const words = rl.terminalWords || {}, terms = [];
-    ents.forEach(e => { if (e.type !== 'INSERT' || isF(e) || !e.position) return; const nm = String(e.name || '').toUpperCase(); const kind = Object.keys(words).filter(w => (words[w] || []).some(x => nm.indexOf(String(x).toUpperCase()) >= 0))[0]; if (kind || isTm(e.layer)) terms.push({ kind: kind || null, x: e.position.x * k, y: e.position.y * k }); });   // a diffuser insert with no known word is a terminal of no kind
+    const words = rl.terminalWords || {}, terms = []; let termAtInsert = 0;
+    ents.forEach(e => { if (e.type !== 'INSERT' || isF(e) || !e.position) return; const nm = String(e.name || '').toUpperCase(); const kind = Object.keys(words).filter(w => (words[w] || []).some(x => nm.indexOf(String(x).toUpperCase()) >= 0))[0]; if (kind || isTm(e.layer)) { const pc = V.insertPointOnly ? { x: e.position.x * k, y: e.position.y * k, fromGeometry: false } : insertCentre(e, a.blocks, k); if (!pc.fromGeometry) termAtInsert++; terms.push({ kind: kind || null, x: pc.x, y: pc.y }); } });   // a diffuser insert with no known word is a terminal of no kind
     const cand = {}; let noRun = 0;
     terms.forEach(t => { const dm = {}; pieces.forEach((p, i) => { const d = ptSeg(t.x, t.y, p.s); if (dm[comp[i]] == null || d < dm[comp[i]]) dm[comp[i]] = d; });
       let any = false; Object.keys(dm).forEach(c => { if (dm[c] <= TERM_M) { any = true; if (t.kind) (cand[c] = cand[c] || []).push({ kind: t.kind, d: dm[c] }); } }); if (!any) noRun++; });
@@ -189,14 +196,14 @@
     pieces.forEach((p, i) => { const L = Math.hypot(p.s[2] - p.s[0], p.s[3] - p.s[1]), a0 = toB(p.s[0], p.s[1]), a1 = toB(p.s[2], p.s[3]); len += L; clen[comp[i]] = (clen[comp[i]] || 0) + L; if (width[i] != null) wlen += L;
       res.rows.push({ sheet, piece: i + 1, x0: a0[0], y0: a0[1], x1: a1[0], y1: a1[1], component: comp[i], system: sysOf(comp[i]), width_drawn_mm: width[i], provenance: 'position=drawn;width=' + (width[i] == null ? 'none' : 'drawn') + ';system=derived;height=none' }); });
     // equipment (§10): point items at their drawn spots, building coordinates through the same fit; no z (no height is stated)
-    let eqStacked = 0, eqUnknown = 0, eqMirrored = 0; const eqBy = {}, eqUnk = {}; res.equipment = [];
+    let eqStacked = 0, eqUnknown = 0, eqMirrored = 0, eqAtInsert = 0; const eqBy = {}, eqUnk = {}; res.equipment = [];
     if (eqIns.length) {
       let gx0 = ex0, gy0 = ey0, gx1 = ex1, gy1 = ey1; const isGL = matcher(rowsDef.grid_line); ents.forEach(e => { if (isGL(e.layer)) segsOf(e, k).forEach(s => { gx0 = Math.min(gx0, s[0], s[2]); gx1 = Math.max(gx1, s[0], s[2]); gy0 = Math.min(gy0, s[1], s[3]); gy1 = Math.max(gy1, s[1], s[3]); }); });
       const inX = (x, y) => x >= gx0 - JOIN_M && x <= gx1 + JOIN_M && y >= gy0 - JOIN_M && y <= gy1 + JOIN_M, kept = [];
       eqIns.forEach(e => {
         const nm = String(e.name || ''), hit = EQ.kinds.filter(q => q.rx.test(nm)), kinds = Array.from(new Set(hit.map(q => q.kind)));
         if (kinds.length !== 1) { eqUnknown++; eqUnk[nm] = (eqUnk[nm] || 0) + 1; return; }   // no word, or two kinds: not placed
-        const q = hit[0]; let x = e.position.x * k, y = e.position.y * k;
+        const q = hit[0], pc = V.insertPointOnly ? { x: e.position.x * k, y: e.position.y * k, fromGeometry: false } : insertCentre(e, a.blocks, k); let x = pc.x, y = pc.y; if (!pc.fromGeometry) eqAtInsert++;
         if (!V.noMirrorFix && !inX(x, y) && inX(-x, y)) { x = -x; eqMirrored++; }
         if (!V.noCollapse && kept.some(o => o.kind === q.kind && o.block === nm && Math.hypot(o.sx - x, o.sy - y) <= 0.010)) { eqStacked++; return; }
         const b = toB(x, y); kept.push({ kind: q.kind, block: nm, sx: x, sy: y });
@@ -208,12 +215,14 @@
     res.sheet = { sheet, revision: sid.revision, nested: nestedN, fittings_unjoined: unjoined, fittings_unjoined_nomirror: unjoinedRaw, fit_rot_deg: best.rot * 180 / Math.PI, fit_dx: best.tx, fit_dy: best.ty, fit_median_mm: best.medMm, fit_tags: best.n, grid_guid: best.gid, pieces: N, length_m: len, components: nc, over5m: over5, width_share: share, terminals: terms.length, no_run: noRun, mirrored, refused: null, emptyBoxes, fittings, missingBlocks: missingBlocks.length };
     if (!runsDef) { res.sheet.inconclusive = 'no centreline layer'; log('§MAINS-INCONCLUSIVE sheet=' + sheet + ' reason=no centreline layer (runs only; equipment read)'); } else
     log('§MAINS-READ sheet=' + sheet + ' fit=rot:' + f3(res.sheet.fit_rot_deg) + 'deg,dx:' + f3(best.tx) + 'm,dy:' + f3(best.ty) + 'm,med:' + f3(best.medMm) + 'mm,tags:' + best.n + ',grid:' + best.gid + ' pieces=' + N + ' length=' + f3(len) + 'm components=' + nc + ' over5m=' + over5 + ' width_share=' + f3(share) + ' terminals=' + terms.length + ' no_run=' + noRun + ' mirrored=' + mirrored + ' fittings=' + fittings + ' fittings_unjoined=' + unjoined + ' fittings_unjoined_nomirror=' + unjoinedRaw + ' missingBlocks=' + missingBlocks.length);
+    log('§MAINS-POINTS sheet=' + sheet + ' role=terminal n=' + terms.length + ' fromGeometry=' + (terms.length - termAtInsert) + ' atInsertPoint=' + termAtInsert + ' (position = centre of the transformed block geometry; the insert point only when the block holds none)');
     if (runsDef) log('§MAINS-MIRROR sheet=' + sheet + ' fired=' + (mirrored ? 'yes' : 'no') + ' n=' + mirrored + ' of fittings=' + fittings + ' extents=' + (N ? f3(ex0) + ',' + f3(ey0) + ',' + f3(ex1) + ',' + f3(ey1) : 'none'));
     if (eqIns.length) {
       res.sheet.equipment = res.equipment.length; res.sheet.equip_stacked = eqStacked; res.sheet.equip_unknown_kind = eqUnknown; res.sheet.equip_mirrored = eqMirrored;
       log('§MAINS-MIRROR sheet=' + sheet + ' role=equipment fired=' + (eqMirrored ? 'yes' : 'no') + ' n=' + eqMirrored + ' of inserts=' + eqIns.length);
       Object.keys(eqUnk).forEach(n => log('§MAINS-EQUIP-UNKNOWN sheet=' + sheet + ' block=' + n + ' n=' + eqUnk[n] + ' not placed'));
       log('§MAINS-EQUIP sheet=' + sheet + ' fit=rot:' + f3(res.sheet.fit_rot_deg) + 'deg,dx:' + f3(best.tx) + 'm,dy:' + f3(best.ty) + 'm,med:' + f3(best.medMm) + 'mm,tags:' + best.n + ',grid:' + best.gid + ' items=' + res.equipment.length + ' stacked=' + eqStacked + ' unknownKind=' + eqUnknown + ' byKind=' + JSON.stringify(eqBy) + ' mirrored=' + eqMirrored + ' missingBlocks=' + missingBlocks.length + ' height=none (not stated)');
+      log('§MAINS-POINTS sheet=' + sheet + ' role=equipment n=' + res.equipment.length + ' atInsertPoint=' + eqAtInsert + ' (position = centre of the transformed block geometry)');
     }
     if (missingBlocks.length) log('§MAINS-MISSING-BLOCKS sheet=' + sheet + ' n=' + missingBlocks.length + ' names=' + missingBlocks.join(','));
     return fin();
@@ -239,5 +248,5 @@
     if (!why) result.rows.forEach(r => db.run('INSERT INTO drawn_route VALUES(?,?,?,?,?,?,?,?,?,?)', [r.sheet, r.piece, r.x0, r.y0, r.x1, r.y1, r.component, r.system, r.width_drawn_mm, r.provenance]));
     return why ? 0 : result.rows.length;
   }
-  return { read, write, rulesFrom, expand, cmpRev, plainText };
+  return { read, write, rulesFrom, expand, cmpRev, plainText, insertCentre };
 });
