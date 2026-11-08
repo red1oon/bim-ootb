@@ -17,6 +17,16 @@
   var FAR_M = 10000;        // an axis whose midpoint sits further than this from the origin is georeferenced => rebased
   var DISAGREE_M = 1000;    // a file whose own offset differs from the federation pin by more than this is not in the pin's frame
 
+  // §2a ONE input for the pin: the rows range() sees, defined once. Both routes hand their element centres + a guid->ifcClass map; the rows of a class that is no built element
+  // (a room volume, a void) or that the import never tessellates (never renderable) are not part of the pin. These are exactly the classes the import's own list never produced, so its offsets do not move.
+  var PIN_EXCLUDED_CLASSES = { IfcSpace: 1, IfcOpeningElement: 1, IfcSite: 1, IfcBuilding: 1, IfcBuildingStorey: 1, IfcAnnotation: 1, IfcGrid: 1, IfcVirtualElement: 1,
+    IfcFireSuppressionTerminal: 1, IfcAlarm: 1, IfcSensor: 1, IfcActuator: 1, IfcController: 1, IfcFlowInstrument: 1, IfcProtectiveDeviceTrippingUnit: 1 };
+  function pinInput(transforms, classByGuid) {
+    var out = [];
+    for (var i = 0; i < transforms.length; i++) { var c = classByGuid && classByGuid[transforms[i].guid]; if (!(c && PIN_EXCLUDED_CLASSES[c])) out.push(transforms[i]); }
+    return out;
+  }
+
   // min/max/maxBbox of element centres {cx,cy,cz,bx,by,bz} — the import's own scan
   function range(transforms) {
     var mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity], maxBbox = 0;
@@ -163,5 +173,5 @@
     return r;
   }
 
-  return { FAR_M: FAR_M, DISAGREE_M: DISAGREE_M, range: range, pin: pin, isShifted: isShifted, rebase: rebase, logLines: logLines, cpaToDegrees: cpaToDegrees, readSite: readSite, metadataRows: metadataRows };
+  return { PIN_EXCLUDED_CLASSES: PIN_EXCLUDED_CLASSES, pinInput: pinInput, FAR_M: FAR_M, DISAGREE_M: DISAGREE_M, range: range, pin: pin, isShifted: isShifted, rebase: rebase, logLines: logLines, cpaToDegrees: cpaToDegrees, readSite: readSite, metadataRows: metadataRows };
 });

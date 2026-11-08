@@ -608,8 +608,11 @@ async function extractToDb(ctx) {
   let georefOffset = [0, 0, 0], georefPin = null;
   if (!GF) log('§GEOREF unavailable route=open (georef_frame.js not loaded): NO rebase, NO site facts, INCONCLUSIVE');
   else if (transforms.length > 0) {
-    const rg = GF.range(transforms);
-    georefPin = GF.pin(rg.min, rg.max, ctx.forceGeorefOffset);
+    const classByGuid = {}; for (const el of elements) classByGuid[el.guid] = el.ifcClass;
+    const pinRows = GF.pinInput(transforms, classByGuid);   // §2a: the SAME rows the import ranges over (common/georef_frame.js owns the set)
+    log(`§GEOREF_PIN_INPUT route=open rows=${pinRows.length} of ${transforms.length} (dropped ${transforms.length - pinRows.length}: not built elements)`);
+    const rg = pinRows.length ? GF.range(pinRows) : null;   // no built element => no pin (the import, whose list holds none of the excluded classes, has no transforms then and does not rebase)
+    georefPin = rg ? GF.pin(rg.min, rg.max, ctx.forceGeorefOffset) : GF.pin([0, 0, 0], [0, 0, 0], null);
     georefOffset = georefPin.offset;
     GF.logLines('open', ctx.sourceName, georefPin).forEach(log);
     if (GF.isShifted(georefOffset)) {

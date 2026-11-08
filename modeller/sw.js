@@ -18,7 +18,8 @@
 // v215 (2026-11-03) §THREE_ONE_BUILD: importmap 'three' -> three.module.min.js (one wrapper; the 638 KB webgpu wrapper is no longer evaluated on load nor precached on install; still cache-on-use).
 // v245 (2026-11-08) §4.2a IFC-GRID: an opened IFC keeps its stated grid (ifc_grid_axis) via ../common/ifc_grid_read.js in the open worker (prompts/DISC_WALK_DRAWN_MAINS.md §4.2a)
 // v246 (2026-11-08) §ONE-FRAME: an opened IFC lands in the Viewer import's local frame (local origin + recorded georef_offset_*) via ../common/georef_frame.js in the open worker + dxf export (prompts/MODELLER_ONE_FRAME.md §2, W-ONE-FRAME)
-const CACHE_VERSION = 'v246';   // bump on each deploy; per-change detail is the git commit message.
+// v247 (2026-11-08) §ONE-FRAME §2a: ifc_extract_core.js + georef_frame.js pass the pin ONE input (GeorefFrame.pinInput)
+const CACHE_VERSION = 'v247';   // bump on each deploy; per-change detail is the git commit message.
 const CACHE_PREFIX = 'bim-modeller-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 

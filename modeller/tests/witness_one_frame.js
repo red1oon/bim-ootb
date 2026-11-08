@@ -26,7 +26,7 @@ const FAR = [465000, 2766000], FARZ = 12000;
 
 // ── the code trees: ROOT (the code under test) and origin/main's (git show into a temp tree, same layout) ──────────────────────────────────────────────────────────────────────────────
 function baseTree(ref) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wone_base_')), files = ['modeller/dxf2bim/ifc_extract_core.js', 'modeller/ifc_open_db.js', 'viewer/import_worker.js', 'viewer/import_db_builder.js', 'viewer/ifc_declared_storeys.js', 'viewer/ifc_surface_names.js', 'common/ifc_grid_read.js'];
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wone_base_')), files = ['modeller/dxf2bim/ifc_extract_core.js', 'modeller/ifc_open_db.js', 'viewer/import_worker.js', 'viewer/import_db_builder.js', 'viewer/ifc_declared_storeys.js', 'viewer/ifc_surface_names.js', 'common/ifc_grid_read.js', 'common/georef_frame.js'];
   try { for (const f of files) { const out = cp.execFileSync('git', ['-C', ROOT, 'show', ref + ':' + f], { maxBuffer: 1 << 26 }); fs.mkdirSync(path.dirname(path.join(dir, f)), { recursive: true }); fs.writeFileSync(path.join(dir, f), out); } return { dir }; }
   catch (e) { return { dir: null, err: e.message.split('\n')[0] }; }
 }
@@ -137,6 +137,23 @@ function sweep(far, local, offset, shift, cols, label) {
   const ao = await openRoute(SQL, api, ROOT, enc(alien.file), 'alien', oo), ai = await importRoute(SQL, ROOT, enc(alien.file), 'alien.ifc', oo);
   const own = offOf(metaOf(ao.db)), ownI = ai.db ? offOf(metaOf(ai.db)) : null;
   chk('F1c a file >1 km from the pin keeps its OWN offset on both routes and says so (§GEOREF_MISMATCH)', own.some(v => v) && JSON.stringify(own) === JSON.stringify(ownI) && JSON.stringify(own) !== JSON.stringify(oo) && ao.logs.some(l => l.includes('§GEOREF_MISMATCH')) && ai.logs.some(l => l.includes('§GEOREF_MISMATCH')), 'own open ' + JSON.stringify(own) + ' import ' + JSON.stringify(ownI) + ' pin ' + JSON.stringify(oo) + ' mismatch lines open=' + ao.logs.filter(l => l.includes('§GEOREF_MISMATCH')).length + ' import=' + ai.logs.filter(l => l.includes('§GEOREF_MISMATCH')).length);
+
+  // ── F1d (the issue-#2710 follow-up): ONE input for the pin. A far element of a class one route used to count and the other not (IfcSpace / IfcOpeningElement are in the open route's element list, never in the import's) moved the midpoint ──
+  const OUT_DY = Number(process.env.OUTLIER_DY || 30);
+  for (const cls of ['IFCSPACE', 'IFCOPENINGELEMENT']) {
+    const fx = farCopy(PUB, FAR[0], FAR[1], { outlier: { cls, dy: OUT_DY } }); say(fx.log);
+    const xo = await openRoute(SQL, api, ROOT, enc(fx.file), 'out', null), xi = await importRoute(SQL, ROOT, enc(fx.file), 'out.ifc');
+    const o1 = offOf(metaOf(xo.db)), i1 = xi.db ? offOf(metaOf(xi.db)) : null;
+    say('§F1d ' + cls + ' +' + OUT_DY + ' m in y: open offset=' + JSON.stringify(o1) + ' import offset=' + JSON.stringify(i1) + ' (plain far copy: ' + JSON.stringify(oo) + ')');
+    chk('F1d ' + cls + ' outlier: identical georef_offset on both routes', !!i1 && o1.every((v, i) => v === i1[i]), 'open ' + JSON.stringify(o1) + ' import ' + JSON.stringify(i1));
+    chk('F1d ' + cls + ' outlier: the import offset equals the plain far copy\'s (the import did not move)', !!i1 && i1.every((v, i) => v === oo[i]), 'import ' + JSON.stringify(i1) + ' plain ' + JSON.stringify(oo));
+    if (bt.dir) {   // RED: origin/main's code on the SAME fixture must disagree (else the fixture proves nothing)
+      const bo = await openRoute(SQL, api, bt.dir, enc(fx.file), 'out', null), bi = await importRoute(SQL, bt.dir, enc(fx.file), 'out.ifc');
+      const bo1 = offOf(metaOf(bo.db)), bi1 = bi.db ? offOf(metaOf(bi.db)) : null;
+      say('§F1d RED ' + cls + ' origin/main: open offset=' + JSON.stringify(bo1) + ' import offset=' + JSON.stringify(bi1));
+      if (process.env.BASE_IS_FIXED) inc('F1d RED ' + cls, 'BASE_IS_FIXED set: red not asserted'); else chk('F1d RED ' + cls + ': origin/main gives DIFFERENT offsets on this fixture (the fixture exposes the bug)', !!bi1 && !bo1.every((v, i) => v === bi1[i]), 'open ' + JSON.stringify(bo1) + ' import ' + JSON.stringify(bi1));
+    } else inc('F1d RED ' + cls, 'base tree unavailable');
+  }
 
   // ── F2 the sweep (x, y AND z shifted: the fixture also lifts the site 12 km) ──────────────────────────────────────────────────────────────
   const lo = await openRoute(SQL, api, ROOT, localB, 'local'), li = await importRoute(SQL, ROOT, localB, 'local.ifc');

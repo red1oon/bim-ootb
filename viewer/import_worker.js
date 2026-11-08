@@ -709,7 +709,10 @@ self.onmessage = async function(e) {
     var georefOffset = [0, 0, 0];
     if (transforms.length > 0) {
       // §ONE-FRAME: the per-axis >10 km test, the whole-metre offset, the federation pin and the >1 km disagreement fallback live in common/georef_frame.js (prompts/MODELLER_ONE_FRAME.md §2)
-      var _rg = self.GeorefFrame.range(transforms), _minC = _rg.min, _maxC = _rg.max, _span = _rg.span;
+      var _cbg = {}; elements.forEach(function (x) { _cbg[x.guid] = x.ifcClass; });
+      var _pinRows = self.GeorefFrame.pinInput(transforms, _cbg);   // §2a: the SAME rows the open route ranges over (common/georef_frame.js owns the set)
+      console.log('§GEOREF_PIN_INPUT route=import rows=' + _pinRows.length + ' of ' + transforms.length);
+      var _rg = self.GeorefFrame.range(_pinRows), _minC = _rg.min, _maxC = _rg.max, _span = _rg.span;
       var _pin = self.GeorefFrame.pin(_minC, _maxC, e.data.forceGeorefOffset);   // the ONE rebase rule (common/georef_frame.js; shared with the Modeller open route)
       georefOffset = _pin.offset;
       self.GeorefFrame.logLines('import', filename, _pin).forEach(function (l) { console.log(l); });
