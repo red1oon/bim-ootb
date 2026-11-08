@@ -29,26 +29,38 @@ const sh = (args, quiet) => { try { return cp.execFileSync('node', args, { env, 
 // ── an IFC4 fixture writer: storey Level 1, boxes (faceted breps centred on their placement origin), an optional IfcGrid placed on the storey. Elements are given in WORLD metres. ──
 const guid = n => '3' + String(n).padStart(21, '0');
 function ifcDoc(o) {   // o: { storeyO:[x,y,z], boxes:[{cls,name,box:[x0,y0,z0,x1,y1,z1],pre,gid}], grid:{u:[[tag,[[x,y],[x,y]]]], v:[...]}|null, tag }
-  const L = [], f = x => (Number.isInteger(x) ? x + '.' : String(x)), e = (n, s) => L.push('#' + n + '=' + s + ';'), so = o.storeyO;
+  const K = o.k || 1, UNDECL = !!o.undeclared, L = [], f0 = x => (Number.isInteger(x) ? x + '.' : String(x)), f = x => f0(+(x * K).toFixed(6)), e = (n, s) => L.push('#' + n + '=' + s + ';'), so = o.storeyO, X = o.extra || null;   // K: file length unit in metres^-1 (1000 = a millimetre file); every written length is metres * K
   e(10, 'IFCCARTESIANPOINT((0.,0.,0.))'); e(11, 'IFCDIRECTION((0.,0.,1.))'); e(12, 'IFCDIRECTION((1.,0.,0.))'); e(13, 'IFCAXIS2PLACEMENT3D(#10,#11,#12)');
-  e(14, 'IFCSIUNIT(*,.LENGTHUNIT.,$,.METRE.)'); e(15, 'IFCUNITASSIGNMENT((#14))');
+  e(14, K === 1000 && !UNDECL ? 'IFCSIUNIT(*,.LENGTHUNIT.,.MILLI.,.METRE.)' : 'IFCSIUNIT(*,.LENGTHUNIT.,$,.METRE.)'); e(15, 'IFCUNITASSIGNMENT((#14))');
   e(20, "IFCGEOMETRICREPRESENTATIONCONTEXT($,'Model',3,1.E-5,#13,$)"); e(21, "IFCGEOMETRICREPRESENTATIONSUBCONTEXT('Body','Model',*,*,*,*,#20,$,.MODEL_VIEW.,$)");
   e(1, `IFCPROJECT('${guid(1)}',$,'Fixture',$,$,$,$,(#20),#15)`);
   e(30, `IFCSITE('${guid(30)}',$,'Site',$,$,#31,$,$,.ELEMENT.,$,$,$,$,$)`); e(31, 'IFCLOCALPLACEMENT($,#13)');
   e(32, `IFCBUILDING('${guid(32)}',$,'Building',$,$,#33,$,$,.ELEMENT.,$,$,$)`); e(33, 'IFCLOCALPLACEMENT(#31,#13)');
-  e(34, `IFCBUILDINGSTOREY('${guid(34)}',$,'Level 1',$,$,#35,$,$,.ELEMENT.,${f(so[2])})`); e(35, 'IFCLOCALPLACEMENT(#33,#36)'); e(36, 'IFCAXIS2PLACEMENT3D(#37,$,$)'); e(37, `IFCCARTESIANPOINT((${so.map(f).join(',')}))`);
-  e(40, `IFCRELAGGREGATES('${guid(40)}',$,$,$,#1,(#30))`); e(41, `IFCRELAGGREGATES('${guid(41)}',$,$,$,#30,(#32))`); e(42, `IFCRELAGGREGATES('${guid(42)}',$,$,$,#32,(#34))`);
-  const contained = [];
+  e(34, `IFCBUILDINGSTOREY('${guid(34 + (o.gsh || 0))}',$,'${o.storeyName || 'Level 1'}',$,$,#35,$,$,.ELEMENT.,${f(so[2])})`); e(35, 'IFCLOCALPLACEMENT(#33,#36)'); e(36, 'IFCAXIS2PLACEMENT3D(#37,$,$)'); e(37, `IFCCARTESIANPOINT((${so.map(f).join(',')}))`);
+  e(40, `IFCRELAGGREGATES('${guid(40)}',$,$,$,#1,(#30))`); e(41, `IFCRELAGGREGATES('${guid(41)}',$,$,$,#30,(#32))`); e(42, `IFCRELAGGREGATES('${guid(42)}',$,$,$,#32,(#34${X ? ',#60' : ''}))`);
+  if (X) { e(60, `IFCBUILDINGSTOREY('${guid(60)}',$,'${X.name}',$,$,#61,$,$,.ELEMENT.,${f(X.o[2])})`); e(61, 'IFCLOCALPLACEMENT(#33,#62)'); e(62, 'IFCAXIS2PLACEMENT3D(#63,$,$)'); e(63, `IFCCARTESIANPOINT((${X.o.map(f).join(',')}))`); }
+  const contained = [], containedX = [];
   (o.boxes || []).forEach((b, k) => {
-    const base = 1000 + k * 40, X = b.box, c = [(X[0] + X[3]) / 2, (X[1] + X[4]) / 2, (X[2] + X[5]) / 2], h = [(X[3] - X[0]) / 2, (X[4] - X[1]) / 2, (X[5] - X[2]) / 2], P = [];
+    const base = 1000 + k * 40, xs = b.st === 'x' && X, sO = xs ? X.o : so, X0 = b.box || null;
+    const cls = b.cls.toUpperCase(), tail = cls === 'IFCSPACE' ? `,'${b.name}',.ELEMENT.,.INTERNAL.,$` : `,$,${b.pre}`;
+    if (b.poly) {   // an extruded plan outline (world metres, z0..z1): the L-shaped slab of X3. Profile points are relative to the element origin (plan 0,0 at the storey origin).
+      const z0 = b.z[0], z1 = b.z[1], pts = b.poly.concat([b.poly[0]]);
+      pts.forEach((p, i) => e(base + i, `IFCCARTESIANPOINT((${f(p[0] - sO[0])},${f(p[1] - sO[1])}))`));
+      e(base + 20, `IFCPOLYLINE((${pts.map((p, i) => '#' + (base + i)).join(',')}))`); e(base + 21, `IFCARBITRARYCLOSEDPROFILEDEF(.AREA.,$,#${base + 20})`);
+      e(base + 22, `IFCEXTRUDEDAREASOLID(#${base + 21},#13,#11,${f(z1 - z0)})`);
+      e(base + 28, `IFCSHAPEREPRESENTATION(#21,'Body','SweptSolid',(#${base + 22}))`); e(base + 29, `IFCPRODUCTDEFINITIONSHAPE($,$,(#${base + 28}))`);
+      e(base + 33, `IFCCARTESIANPOINT((0.,0.,${f(z0 - sO[2])}))`); e(base + 32, `IFCAXIS2PLACEMENT3D(#${base + 33},$,$)`); e(base + 31, `IFCLOCALPLACEMENT(#${xs ? 61 : 35},#${base + 32})`);
+      e(base + 30, `${cls}('${b.gid}',$,'${b.name}',$,$,#${base + 31},#${base + 29}${tail})`);
+      (xs ? containedX : contained).push(base + 30); return;
+    }
+    const c = [(X0[0] + X0[3]) / 2, (X0[1] + X0[4]) / 2, (X0[2] + X0[5]) / 2], h = [(X0[3] - X0[0]) / 2, (X0[4] - X0[1]) / 2, (X0[5] - X0[2]) / 2], P = [];
     let n = 0; for (const z of [-h[2], h[2]]) for (const [x, y] of [[-h[0], -h[1]], [h[0], -h[1]], [h[0], h[1]], [-h[0], h[1]]]) { e(base + n, `IFCCARTESIANPOINT((${f(+x.toFixed(6))},${f(+y.toFixed(6))},${f(+z.toFixed(6))}))`); P.push(base + n); n++; }
     [[0, 3, 2, 1], [4, 5, 6, 7], [0, 1, 5, 4], [1, 2, 6, 5], [2, 3, 7, 6], [3, 0, 4, 7]].forEach((q, i) => { e(base + 8 + i, `IFCPOLYLOOP((${q.map(j => '#' + P[j]).join(',')}))`); e(base + 14 + i, `IFCFACEOUTERBOUND(#${base + 8 + i},.T.)`); e(base + 20 + i, `IFCFACE((#${base + 14 + i}))`); });
     e(base + 26, `IFCCLOSEDSHELL((${[0, 1, 2, 3, 4, 5].map(i => '#' + (base + 20 + i)).join(',')}))`); e(base + 27, `IFCFACETEDBREP(#${base + 26})`);
     e(base + 28, `IFCSHAPEREPRESENTATION(#21,'Body','Brep',(#${base + 27}))`); e(base + 29, `IFCPRODUCTDEFINITIONSHAPE($,$,(#${base + 28}))`);
-    e(base + 33, `IFCCARTESIANPOINT((${[c[0] - so[0], c[1] - so[1], c[2] - so[2]].map(v => f(+v.toFixed(6))).join(',')}))`); e(base + 32, `IFCAXIS2PLACEMENT3D(#${base + 33},$,$)`); e(base + 31, `IFCLOCALPLACEMENT(#35,#${base + 32})`);
-    const cls = b.cls.toUpperCase(), tail = cls === 'IFCSPACE' ? `,'${b.name}',.ELEMENT.,.INTERNAL.,$` : `,$,${b.pre}`;
+    e(base + 33, `IFCCARTESIANPOINT((${[c[0] - sO[0], c[1] - sO[1], c[2] - sO[2]].map(v => f(+v.toFixed(6))).join(',')}))`); e(base + 32, `IFCAXIS2PLACEMENT3D(#${base + 33},$,$)`); e(base + 31, `IFCLOCALPLACEMENT(#${xs ? 61 : 35},#${base + 32})`);
     e(base + 30, `${cls}('${b.gid}',$,'${b.name}',$,$,#${base + 31},#${base + 29}${tail})`);
-    contained.push(base + 30);
+    (xs ? containedX : contained).push(base + 30);
   });
   if (o.grid) {
     let n = 100; const axes = [], pt = p => { e(++n, `IFCCARTESIANPOINT((${f(p[0] - so[0])},${f(p[1] - so[1])}))`); return '#' + n; };
@@ -58,6 +70,7 @@ function ifcDoc(o) {   // o: { storeyO:[x,y,z], boxes:[{cls,name,box:[x0,y0,z0,x
     contained.push(50);
   }
   e(90, `IFCRELCONTAINEDINSPATIALSTRUCTURE('${guid(90)}',$,$,$,(${contained.map(i => '#' + i).join(',')}),#34)`);
+  if (containedX.length) e(91, `IFCRELCONTAINEDINSPATIALSTRUCTURE('${guid(91)}',$,$,$,(${containedX.map(i => '#' + i).join(',')}),#60)`);
   L.sort((a, b) => parseInt(a.slice(1)) - parseInt(b.slice(1)));
   return "ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION(('ViewDefinition [ReferenceView]'),'2;1');\nFILE_NAME('" + (o.tag || 'fixture') + ".ifc','2026-11-08',(''),(''),'','','');\nFILE_SCHEMA(('IFC4'));\nENDSEC;\nDATA;\n" + L.join('\n') + '\nENDSEC;\nEND-ISO-10303-21;\n';
 }
@@ -83,6 +96,23 @@ const STR_B = ifcDoc({ storeyO: [OFF[0], OFF[1], 0], tag: 'STR_B', boxes: [
   { cls: 'IfcSlab', name: 'STR slab', box: bx([-1, -1, 3.4], [11, 9, 3.7]), pre: '.FLOOR.', gid: guid(811) },
   { cls: 'IfcBeam', name: 'STR beam', box: bx([4.8, 0, 3.0], [5.2, 8, 3.4]), pre: '.BEAM.', gid: guid(812) }],
   grid: { gid: guid(860), name: 'Grid STR', u: [['A', [[0, -1], [0, 9]]], ['B', [[5, -1], [5, 9]]]], v: [['1', [[-1, 0], [11, 0]]], ['2', [[-1, 4], [11, 4]]]] } });
+
+// ── fixture X (§9 rulings, all written here): ARC_X in metres (storey Level 1, z 0): two ceilings (A over y 0..8, B over y 9..12), an L-SHAPED floor slab (box x 0..10 x y 0..8 with the notch x 5..10 x y 4..8 missing).
+// STR_X in MILLIMETRES (generic names): storey STR GROUND (z 0, pairs with Level 1 by elevation) and STR LEVEL 01 (z 4 m, no partner). On STR LEVEL 01: S1 soffit 3.4 over x -1..11 y -1..9; TIGHT soffit 2.71 over ceiling B (ceiling top 2.70);
+// an L-shaped roof (soffit 3.4, box x 20..30 y 0..8, notch x 25..30 y 4..8); a slab far out. On STR GROUND: a floor slab F top 0.15 at x 12..20 (no ARC slab there). The grid is written into ARC_X only, so the sheet fit has one set of axes.
+const XS = { LROOF: guid(1108), S1: guid(1101), TIGHT: guid(1102), F: guid(1103), UP: guid(1104), LSLAB: guid(1105), CA: guid(1106), CB: guid(1107) };
+const XGRID = (nm, g) => ({ gid: g, name: nm, u: [['A', [[0, -1], [0, 13]]], ['B', [[6, -1], [6, 13]]], ['C', [[12, -1], [12, 13]]]], v: [['1', [[-1, 0], [21, 0]]], ['2', [[-1, 4], [21, 4]]], ['3', [[-1, 12], [21, 12]]]] });
+const ARC_X = ifcDoc({ storeyO: [0, 0, 0], tag: 'ARC_X', boxes: [
+  { cls: 'IfcCovering', name: 'Ceiling A', box: [0, 0, 2.6, 6, 8, 2.7], pre: '.CEILING.', gid: XS.CA },
+  { cls: 'IfcCovering', name: 'Ceiling B', box: [0, 9, 2.6, 6, 12, 2.7], pre: '.CEILING.', gid: XS.CB },
+  { cls: 'IfcSpace', name: 'Room', box: [0, 0, 0, 6, 8, 2.6], pre: '', gid: guid(1109) },
+  { cls: 'IfcSlab', name: 'L floor', poly: [[0, 0], [10, 0], [10, 4], [5, 4], [5, 8], [0, 8]], z: [-0.2, 0], pre: '.FLOOR.', gid: XS.LSLAB }], grid: XGRID('Grid ARC X', guid(1150)) });
+const STR_X = ifcDoc({ gsh: 500, storeyO: [0, 0, 0], k: 1000, storeyName: 'STR GROUND', extra: { name: 'STR LEVEL 01', o: [0, 0, 4] }, tag: 'STR_X', boxes: [
+  { cls: 'IfcSlab', name: 'STR slab S1', box: [-1, -1, 3.4, 11, 9, 3.7], pre: '.FLOOR.', gid: XS.S1, st: 'x' },
+  { cls: 'IfcSlab', name: 'STR tight', box: [0, 9, 2.71, 6, 12, 2.9], pre: '.FLOOR.', gid: XS.TIGHT, st: 'x' },
+  { cls: 'IfcSlab', name: 'STR L roof', poly: [[20, 0], [30, 0], [30, 4], [25, 4], [25, 8], [20, 8]], z: [3.4, 3.5], pre: '.ROOF.', gid: XS.LROOF, st: 'x' },
+  { cls: 'IfcSlab', name: 'STR floor F', box: [12, 0, -0.05, 20, 8, 0.15], pre: '.FLOOR.', gid: XS.F },
+  { cls: 'IfcSlab', name: 'STR upper slab', box: [30, 0, 3.9, 40, 8, 4.0], pre: '.FLOOR.', gid: XS.UP, st: 'x' }] });
 
 // ── a duct-sheet DXF in raw ASCII (LINE, TEXT, INSERT), mm. building = sheet/1000 - off (translation only), so the fit has to recover the offset. ──
 function sheetDxf(o) {   // o: { off:[ox,oy] metres (sheet = building + off), grid:{u:[[tag,x,y0,y1]],v:[[tag,y,x0,x1]]}, pieces:[[x0,y0,x1,y1]], terminals:[[x,y,name]] }  building metres
@@ -337,37 +367,42 @@ const logsOf = f => { const lines = [], orig = console.log; console.log = s => {
     const mE = sh([MAINS, dbC, dxfE, '--sheet-meta=' + JSON.stringify({ number: 'FP-101', revision: 'A', storeys: ['Level 1'] })]);
     log(mE.split('\n').filter(l => /§MAINS-(EQUIP-TO-DB|TO-DB|READ|EQUIP |REFUSE|INCONCLUSIVE|STOREYS)/.test(l)).map(l => '  tool ' + l.slice(0, 260)).join('\n'));
     const pdb = new SQL.Database(new Uint8Array(fs.readFileSync(dbC)));
-    const nEq = q(pdb, 'SELECT count(*) FROM drawn_equipment')[0][0], ruleRow = q(pdb, 'SELECT id, top_m, min_bottom_m FROM drawn_equipment_rule')[0], sizeRows = q(pdb, 'SELECT block, height_m FROM drawn_equipment_size');
+    const nEq = q(pdb, 'SELECT count(*) FROM drawn_equipment')[0][0], ruleRow = q(pdb, 'SELECT id, mount_m, basis FROM drawn_equipment_rule')[0], sizeRows = q(pdb, 'SELECT block, height_m FROM drawn_equipment_size');
     log('§W_DW P tool result: drawn_equipment=' + nEq + ' rule=' + JSON.stringify(ruleRow) + ' sizes=' + JSON.stringify(sizeRows) + ' storeys=' + JSON.stringify(q(pdb, 'SELECT sheet_number, storey FROM drawn_sheet_meta')));
     if (nEq !== EQS.length || !ruleRow) incon('P*', 'the equipment sheet was not stored (items ' + nEq + ' of ' + EQS.length + ', rule ' + JSON.stringify(ruleRow) + '): nothing walked');
     else {
       H.openBuildingRules(SQL, stack, 'Duplex');
       const walkFP = file => { const buf = new Uint8Array(fs.readFileSync(file)); return logsOf(() => H.walkLive(SQL, stack, 'FP', buf, 'Duplex', [], {})); };
-      const DWm = stack.DW, RULESJ = JSON.parse(fs.readFileSync(path.join(M, 'drawn_mains_rules.json'), 'utf8')), ROW = RULESJ.rows.find(r => r.role === 'mount_height');
+      const DWm = stack.DW, RULESJ = JSON.parse(fs.readFileSync(path.join(M, 'drawn_mains_rules.json'), 'utf8')), ROW = RULESJ.rows.find(r => r.role === 'mount_height');   // §9 item 8: the owner's 1.2 m anchor row
       const WP = walkFP(dbC), wp = WP.r, ops = wp.drawn ? DWm.drawnOps(wp.drawn) : [], fpL = (WP.lines.filter(l => /§FP-EQUIP placed=/.test(l))[0] || '');
       log('  walk: ' + WP.lines.filter(l => /§FP-EQUIP/.test(l)).map(l => l.slice(0, 300)).join('\n        '));
       const byItem = {}; ops.forEach(o => { byItem[o.params._dw.item] = o; });
-      const zTop = o => o.params.placement.z + o.params.bbox[5], zBot = o => o.params.placement.z;
+      const zAnc = o => o.params.placement.z;   // the anchor (mount point) of the item
       const fl = g => q(pdb, "SELECT maxZ FROM element_world_bbox WHERE guid='" + g + "'")[0][0];
-      const floorA = fl(SLAB_A), floorB = fl(SLAB_B), TOP = ROW.top_m, MINB = ROW.min_bottom_m;
-      const top = (i, f) => byItem[i] && near(zTop(byItem[i]), f + TOP, 0.0005);
-      ok('P1 equipment-only sheet through mains_to_db, walk FP: the rule-row items are placed with TOP = floor + ' + TOP + ' m (oracle: the floor element\'s own world box)', !!ROW && ROW.id === 'fp-mount-nfpa10' && top(1, floorA) && top(2, floorB) && top(3, floorA) && top(4, floorB) && ops.length === 5 && kv(fpL, 'placed') === '5' && kv(fpL, 'heightRule') === 'fp-mount-nfpa10',
-        'floors A=' + floorA.toFixed(3) + ' B=' + floorB.toFixed(3) + ' tops=' + [1, 2, 3, 4].map(i => byItem[i] ? zTop(byItem[i]).toFixed(4) : 'none') + ' ops=' + ops.length + ' | ' + fpL.slice(0, 200));
+      const floorA = fl(SLAB_A), floorB = fl(SLAB_B), MOUNT = ROW.mount_m;
+      const top = (i, f) => byItem[i] && near(zAnc(byItem[i]), f + MOUNT, 0.0005);
+      ok('P1 equipment-only sheet through mains_to_db, walk FP: every item (extinguisher, cabinet, blanket) is anchored at floor + ' + MOUNT + ' m (owner: wall mounted at 1.2 m; oracle: the floor element\'s own world box); the log states mount_m and basis=owner', !!ROW && ROW.id === 'fp-mount-owner-1p2' && MOUNT === 1.2 && top(1, floorA) && top(2, floorB) && top(3, floorA) && top(4, floorB) && ops.length === 6 && kv(fpL, 'placed') === '6' && kv(fpL, 'heightRule') === 'fp-mount-owner-1p2' && kv(fpL, 'mount_m') === '1.2' && kv(fpL, 'basis') === 'owner',
+        'floors A=' + floorA.toFixed(3) + ' B=' + floorB.toFixed(3) + ' anchors=' + [1, 2, 3, 4].map(i => byItem[i] ? zAnc(byItem[i]).toFixed(4) : 'none') + ' ops=' + ops.length + ' | ' + fpL.slice(0, 260));
       const dbNo = path.join(TMP, 'fp_C_norule.db'); fs.copyFileSync(dbC, dbNo); { const d0 = new SQL.Database(new Uint8Array(fs.readFileSync(dbNo))); d0.run('DELETE FROM drawn_equipment_rule'); fs.writeFileSync(dbNo, Buffer.from(d0.export())); d0.close(); }
       const WN = walkFP(dbNo), wn = WN.r, nL = (WN.lines.filter(l => /§FP-EQUIP placed=/.test(l))[0] || ''), nD = (WN.lines.filter(l => /§FP-EQUIP-DETAIL/.test(l))[0] || '');
       ok('P1 RED: with the height row removed nothing is placed: placed=0, heightRule=none, all ' + EQS.length + ' counted noRule, no op and so no z (never a guessed one)', kv(nL, 'placed') === '0' && kv(nL, 'heightRule') === 'none' && kv(nD, 'noRule') === String(EQS.length) && DWm.drawnOps(wn.drawn).length === 0, nL.slice(0, 160) + ' | ' + nD.slice(0, 120));
       ok('P2 a floor step (two slabs in one storey, tops ' + floorA.toFixed(2) + ' and ' + floorB.toFixed(2) + ') puts each item on its own floor: items 1,3 on slab A, items 2,4 on slab B, floorZ and host recorded', floorB - floorA > 0.25 && [1, 3].every(i => byItem[i] && byItem[i].params._dw.floor === SLAB_A && near(byItem[i].params._dw.floorZ, floorA, 0.0005)) && [2, 4].every(i => byItem[i] && byItem[i].params._dw.floor === SLAB_B && near(byItem[i].params._dw.floorZ, floorB, 0.0005)),
         [1, 2, 3, 4].map(i => i + ':' + (byItem[i] ? byItem[i].params._dw.floor.slice(-3) + '@' + byItem[i].params._dw.floorZ : 'none')).join(' '));
       const o5 = byItem[5];
-      ok('P3 bottom clamp: the 1.6 m block (top ' + TOP + ' would put its bottom at ' + (TOP - 1.6).toFixed(2) + ' m) gets bottom ' + MINB + ' m above its floor; bottomClamped=1 and only that item is flagged', !!o5 && near(zBot(o5), floorA + MINB, 0.0005) && near(zTop(o5), floorA + MINB + 1.6, 0.0005) && o5.params._dw.bottomClamped === true && kv(fpL, 'bottomClamped') === '1' && ops.filter(o => o.params._dw.bottomClamped).length === 1,
-        'bottom=' + (o5 ? zBot(o5).toFixed(4) : 'none') + ' top=' + (o5 ? zTop(o5).toFixed(4) : 'none') + ' ' + fpL.slice(0, 160));
-      ok('P5 no floor under an item (item 6, 8 m past the last slab): not placed, counted noFloor=1, no op', !byItem[6] && kv(fpL, 'noFloor') === '1' && ops.length === 5, 'noFloor=' + kv(fpL, 'noFloor') + ' item6 op=' + (byItem[6] ? 'present' : 'none'));
-      const strengthOK = o => { const d = o.params._dw; return d.heightBasis === 'code-default' && d.source === ROW.source && d.heightRule === ROW.id && d.strength.position === 'drawn' && d.strength.height === 'provisional' && d.provisional === false && d.positionBasis === 'drawn'; };
-      ok('P6 the cabinet (3) and blanket (4) are labelled borrowed, the extinguishers (1, 2) are not; every op carries HeightBasis=code-default and Source = the row\'s citation; strength: position drawn, height provisional, no Provisional flag', byItem[3].params._dw.heightRuleUse === 'borrowed' && byItem[4].params._dw.heightRuleUse === 'borrowed' && byItem[1].params._dw.heightRuleUse === 'rule' && byItem[2].params._dw.heightRuleUse === 'rule' && kv(fpL, 'borrowedKinds') === '3' && ops.every(strengthOK),
-        'borrowedKinds=' + kv(fpL, 'borrowedKinds') + ' uses=' + ops.map(o => o.params._dw.heightRuleUse).join(',') + ' source=' + (ops[0] && ops[0].params._dw.source || '').slice(0, 50));
+      ok('P3 no size logic in the active path: the 1.6 m block (item 5) is anchored at floor + ' + MOUNT + ' like every other item; no bottom clamp, no bottomClamped on the log or the op', !!o5 && near(zAnc(o5), floorA + MOUNT, 0.0005) && o5.params._dw.bottomClamped === undefined && kv(fpL, 'bottomClamped') === null && ops.every(o => o.params._dw.bottomClamped === undefined),
+        'anchor=' + (o5 ? zAnc(o5).toFixed(4) : 'none') + ' ' + fpL.slice(0, 160));
+      const o6 = byItem[6];
+      ok('P5 no slab under an item (item 6, 8 m past the last slab): the floor is the set storey\'s STATED elevation, labelled "floor = storey elevation, no slab under", floorFromStoreyElev=1, noFloor=0 (§9 item 5)', !!o6 && o6.params._dw.floorBasis === 'storey-elevation' && o6.params._dw.floorLabel === 'floor = storey elevation, no slab under' && o6.params._dw.floor === null && near(o6.params._dw.floorZ, 0, 1e-9) && near(zAnc(o6), MOUNT, 0.0005) && kv(fpL, 'floorFromStoreyElev') === '1' && kv(fpL, 'noFloor') === '0',
+        'item6 floorBasis=' + (o6 && o6.params._dw.floorBasis) + ' anchor=' + (o6 ? zAnc(o6).toFixed(4) : 'none') + ' ' + fpL.slice(0, 220));
+      const dbNoSE = path.join(TMP, 'fp_C_noelev.db'); fs.copyFileSync(dbC, dbNoSE); { const d0 = new SQL.Database(new Uint8Array(fs.readFileSync(dbNoSE))); d0.run('DELETE FROM storey_elevation'); fs.writeFileSync(dbNoSE, Buffer.from(d0.export())); d0.close(); }
+      const WE = walkFP(dbNoSE), eL = (WE.lines.filter(l => /§FP-EQUIP placed=/.test(l))[0] || '');
+      ok('P5 RED: with no stated storey elevation there is no floor to state: item 6 is not placed, noFloor=1, floorFromStoreyElev=0 (never a guessed z)', kv(eL, 'noFloor') === '1' && kv(eL, 'floorFromStoreyElev') === '0' && kv(eL, 'placed') === '5', eL.slice(0, 200));
+      const strengthOK = o => { const d = o.params._dw; return d.heightBasis === 'owner-stated' && d.source === ROW.source && d.heightRule === ROW.id && d.strength.position === 'drawn' && d.strength.height === 'owner-stated' && d.provisional === false && d.positionBasis === 'drawn' && d.mountM === 1.2 && d.heightDatum === 'anchor'; };
+      ok('P6 all three kinds take the one owner row and none is borrowed (borrowedKinds=0, heightRuleUse=rule); every op carries HeightBasis=owner-stated and Source = the row\'s citation; strength: position drawn, height owner-stated; no Provisional flag', ops.every(o => o.params._dw.heightRuleUse === 'rule') && kv(fpL, 'borrowedKinds') === '0' && ops.every(strengthOK) && /owner 2026-11-08: wall mounted at 1\.2 m/.test(ROW.source) && /NFPA 10/.test(ROW.note) && ROW.top_m === undefined,
+        'borrowedKinds=' + kv(fpL, 'borrowedKinds') + ' uses=' + ops.map(o => o.params._dw.heightRuleUse).join(',') + ' basis=' + (ops[0] && ops[0].params._dw.heightBasis) + ' source=' + (ops[0] && ops[0].params._dw.source || '').slice(0, 50));
       const kindOT = { extinguisher: 'FIREEXTINGUISHER', cabinet: 'FIRECABINET', blanket: 'FIREBLANKET' };
       ok('P6b the IFC class comes from the row: IfcFireSuppressionTerminal, USERDEFINED, ObjectType by kind; discipline FP', ops.every(o => { const d = o.params._dw; return d.disc === 'FP' && d.ifcClass === 'IfcFireSuppressionTerminal' && d.predefined === 'USERDEFINED' && d.objectType === kindOT[d.itemKind] && d.label === d.objectType; }), ops.map(o => o.params._dw.objectType).join(','));
-      ok('P7 no box and no borrowed mesh: every op is anchorOnly with no geometry hash, no prim, a marker bbox only; noMesh counts every placed item; the mined FP mesh row is not keyed on ObjectType, so none may be used', ops.length === 5 && ops.every(o => o.op_type === 'GEOM_INSERT' && o.params.anchorOnly === true && !o.params.geometry_hash && !o.params.prim && o.params._dw.meshState === 'noMesh' && o.params.bbox[1] <= 0.05 + 1e-9 && o.params.bbox[3] <= 0.05 + 1e-9) && kv(fpL, 'noMesh') === '5' && /objectTypeKeyedMesh=no/.test(WP.lines.join('\n')) && !(wp.placements || []).some(p => /^drawn:equipment/.test(p.prov || '')),
+      ok('P7 no box and no borrowed mesh: every op is anchorOnly with no geometry hash, no prim, a marker bbox only; noMesh counts every placed item; the mined FP mesh row is not keyed on ObjectType, so none may be used', ops.length === 6 && ops.every(o => o.op_type === 'GEOM_INSERT' && o.params.anchorOnly === true && !o.params.geometry_hash && !o.params.prim && o.params._dw.meshState === 'noMesh' && o.params.bbox[1] <= 0.05 + 1e-9 && o.params.bbox[3] <= 0.05 + 1e-9) && kv(fpL, 'noMesh') === '6' && /objectTypeKeyedMesh=no/.test(WP.lines.join('\n')) && !(wp.placements || []).some(p => /^drawn:equipment/.test(p.prov || '')),
         'noMesh=' + kv(fpL, 'noMesh') + ' ' + (WP.lines.filter(l => /objectTypeKeyedMesh/.test(l))[0] || '').slice(0, 220));
       pdb.close();
     }
@@ -395,6 +430,177 @@ const logsOf = f => { const lines = [], orig = console.log; console.log = s => {
       ok('P4b RED: the base walk (no drawn_equipment) is untouched: no §FP-EQUIP line, no drawn record, every head kept', !Fb.lines.some(l => /§FP-EQUIP/.test(l)) && !fb.drawn && heads.length === onL1.length + elsewhereN, 'lines=' + Fb.lines.filter(l => /§FP-EQUIP/.test(l)).length);
     }
     fdb.close();
+  }
+  // ── X: the §9 owner rulings and defect fixes (prompts/DISC_WALK_DRAWN_INTEGRATION.md §9). Fixture X (public, written here): ARC_X in metres + STR_X in millimetres, federated (see the fixture comment above).
+  // ISSUES IT EXPOSES: (X1) a run or terminal with no ceiling void left plan only / at a guessed z; (X2) sprinkler heads placed where the author has not said there are sprinklers, or residents changed; (X3) a slab's BOX standing for its outline (floor and structure-above);
+  // (X4) a federated second file's storeys lost, in raw millimetres, or not matched to the first file's by elevation; (X5) an unstated floor; (X6) "refused" for a sheet that only lacks a centreline layer; (X7) a film filter that changes data or counts.
+  {
+    const kv = (l, k) => { const m = new RegExp(k + '=(\\S+)').exec(l || ''); return m ? m[1] : null; };
+    const L1 = (lines, rx) => (lines.filter(l => rx.test(l))[0] || '');
+    const xArc = path.join(TMP, 'ARC_X.ifc'), xStr = path.join(TMP, 'STR_X.ifc'), fedX = path.join(TMP, 'fed_X.db');
+    fs.writeFileSync(xArc, ARC_X); fs.writeFileSync(xStr, STR_X);
+    const fedOut = sh([TOOL, '--ifc', xArc, '--federate', xStr, '--federate-disc', 'STR', '-o', fedX]);
+    const fsLine = L1(fedOut.split('\n'), /§FEDERATE-STOREYS/);
+    log('  X tool: ' + fsLine.slice(0, 260));
+    if (!fs.existsSync(fedX)) incon('X*', 'the X federation was not written: ' + fedOut.slice(-300));
+    else {
+      const xdb = new Database(fedX, { readonly: true });
+      // ---- X4: federation storeys. Oracle: the fixture states STR LEVEL 01 at 4000 mm = 4 m and STR GROUND at 0 (file 2 is in millimetres).
+      const se = rowsOf(xdb, 'SELECT name, elevation_attr_m a, placement_z_m z FROM storey_elevation ORDER BY name'), ss = rowsOf(xdb, "SELECT name, elevation e FROM spatial_structure WHERE type='IfcBuildingStorey' ORDER BY name");
+      const zOf = n => (se.find(r => r.name === n) || {}).z, eOf = n => (ss.find(r => r.name === n) || {}).e;
+      ok('X4 the federation merges the second (millimetre) file\'s storeys in METRES: STR LEVEL 01 = 4 (not 4000) in storey_elevation and spatial_structure, STR GROUND = 0, file 1\'s Level 1 untouched; elements keep the second file\'s storey names',
+        se.length === 3 && near(zOf('STR LEVEL 01'), 4, 1e-6) && near(zOf('STR GROUND'), 0, 1e-6) && near(zOf('Level 1'), 0, 1e-6) && near(eOf('STR LEVEL 01'), 4, 1e-6) && ss.length === 3 && rowsOf(xdb, "SELECT count(DISTINCT storey) n FROM elements_meta WHERE discipline='STR'")[0].n === 2,
+        'storey_elevation=' + JSON.stringify(se.map(r => [r.name, r.z])) + ' spatial=' + JSON.stringify(ss.map(r => [r.name, r.e])));
+      ok('X4b the pairing is by ELEVATION within 0.05 m and logged: STR GROUND pairs with Level 1 under a different name, STR LEVEL 01 has no partner and stays its own storey', /paired=1 of 2 /.test(fsLine) && /unpaired=\["STR LEVEL 01"\]/.test(fsLine), fsLine.slice(0, 200));
+      // RED: the unfixed tool (HEAD's copy, written beside it for the run and removed) keeps none of file 2's storeys
+      const preTool = path.join(M, 'tools', '_pre_fix_extract_tmp.js'), preDb = path.join(TMP, 'fed_X_prefix.db');
+      let preSe = null;
+      try { fs.writeFileSync(preTool, cp.execFileSync('git', ['-C', ROOT, 'show', '98122fc0:modeller/tools/extract_ifc2db.js']).toString()); sh([preTool, '--ifc', xArc, '--federate', xStr, '--federate-disc', 'STR', '-o', preDb]); const pdb = new Database(preDb, { readonly: true }); preSe = rowsOf(pdb, 'SELECT name FROM storey_elevation').map(r => r.name); pdb.close(); } catch (e) { preSe = 'ERR ' + e.message; } finally { try { fs.unlinkSync(preTool); } catch (e) { /* absent */ } }
+      if (!Array.isArray(preSe)) incon('X4 RED', 'the pre-change tool did not run: ' + preSe);
+      else ok('X4 RED: before the merge fix the federated DB holds 0 storeys from file 2 (only Level 1), though the STR elements carry their own storey names', preSe.length === 1 && preSe[0] === 'Level 1', 'pre-change tool storey_elevation=' + JSON.stringify(preSe));
+      // an undeclared-unit millimetre file: the storeys take the geometry's factor, never raw millimetres
+      const undIfc = path.join(TMP, 'STR_UND.ifc'), undDb = path.join(TMP, 'STR_UND.db');
+      fs.writeFileSync(undIfc, ifcDoc({ storeyO: [0, 0, 0], k: 1000, undeclared: true, storeyName: 'STR UND', extra: { name: 'STR UND UP', o: [0, 0, 4] }, tag: 'STR_UND', boxes: [{ cls: 'IfcSlab', name: 'a', box: [0, 0, -0.2, 20, 20, 0], pre: '.FLOOR.', gid: guid(1201) }, { cls: 'IfcSlab', name: 'b', box: [0, 0, 3.8, 20, 20, 4], pre: '.FLOOR.', gid: guid(1202), st: 'x' }] }));
+      const undOut = sh([TOOL, '--ifc', undIfc, '-o', undDb]); const udb = new Database(undDb, { readonly: true }); const useRows = rowsOf(udb, 'SELECT name, placement_z_m z, elevation_attr_m a FROM storey_elevation ORDER BY z'); udb.close();
+      ok('X4c a millimetre file that declares metres (undeclared unit): storey_elevation takes the geometry\'s factor, so STR UND UP = 4 m and not 4000', useRows.length === 2 && near(useRows[1].z, 4, 1e-6) && near(useRows[1].a, 4, 1e-6) && /§STOREY_ELEVATION_UNITS/.test(undOut), JSON.stringify(useRows) + ' ' + L1(undOut.split('\n'), /§STOREY_ELEVATION_UNITS/).slice(0, 160));
+
+      // ---- X1 / X3 (structure) : ACMV on X
+      const XP = { E1: [7.5, 2, 9.5, 2], E2: [1, 2, 5, 2], E3: [1, 10.5, 5, 10.5], E4: [20, -2, 24, -2], E5: [26, 6, 28, 6] }, XT = [[8, 2, 'DIFFUSER_SUPPLY'], [2, 2, 'DIFFUSER_SUPPLY']];
+      const XGS = { u: [['A', 0, -1, 13], ['B', 6, -1, 13], ['C', 12, -1, 13]], v: [['1', 0, -1, 21], ['2', 4, -1, 21], ['3', 12, -1, 21]] };
+      const dxfXM = path.join(TMP, 'XM-101.dxf'); fs.writeFileSync(dxfXM, sheetDxf({ off: [100, 200], grid: XGS, pieces: Object.values(XP), terminals: XT }));
+      const dbXM = path.join(TMP, 'x_acmv.db'); fs.copyFileSync(fedX, dbXM);
+      const mX = sh([MAINS, dbXM, dxfXM, '--sheet-meta=' + JSON.stringify({ number: 'XM-101', revision: 'A', storeys: ['Level 1'] })]);
+      log(mX.split('\n').filter(l => /§MAINS-(TO-DB|READ|FIT|TERMINALS|REFUSE|HEIGHT-RULE)/.test(l)).map(l => '  tool ' + l.slice(0, 260)).join('\n'));
+      H.openBuildingRules(SQL, stack, 'Duplex');
+      const walkA = (file, extra) => { const buf = new Uint8Array(fs.readFileSync(file)); return logsOf(() => H.walkLive(SQL, stack, 'ACMV', buf, 'Duplex', [], extra || {})); };
+      const bbX = g => rowsOf(xdb, 'SELECT minZ, maxZ FROM element_world_bbox WHERE guid=?', [g])[0];
+      const XA = walkA(dbXM), xw = XA.r, xd = xw.drawn;
+      log('  X walk: ' + XA.lines.filter(l => /§WALK-(MAINS|OUTLINE)|§STOREY-ELEV/.test(l)).map(l => l.slice(0, 330)).join('\n          '));
+      if (!xd) incon('X1', 'no drawn record on the X walk');
+      else {
+        const px = n => xd.pieces[Object.keys(XP).indexOf(n)], ex = XA.lines.filter(l => /§WALK-MAINS-EXPOSED/.test(l))[0] || '';
+        const s1 = bbX(XS.S1), tg = bbX(XS.TIGHT), cB = bbX(XS.CB), cA = bbX(XS.CA);
+        ok('X1 a run with NO ceiling (E1) takes the underside of the lowest structure above (STR slab S1 soffit ' + s1.minZ.toFixed(3) + '), labelled exposed with HeightBasis = exposed-under-structure; a run with structure within 20 mm of its ceiling (E3) takes that soffit (' + tg.minZ.toFixed(3) + '); both counted',
+          px('E1').z != null && near(px('E1').z, s1.minZ, 0.002) && px('E1').heightBasis === 'exposed-under-structure' && px('E1').heightLabel === 'exposed, height provisional' && px('E1').structure === XS.S1 && !px('E1').ceiling &&
+          px('E3').z != null && near(px('E3').z, tg.minZ, 0.002) && px('E3').heightBasis === 'exposed-under-structure' && px('E3').structure === XS.TIGHT && px('E3').ceiling === XS.CB && kv(ex, 'pieces') === '2' && kv(ex, 'rule') === 'exposed-under-structure',
+          'E1 z=' + (px('E1').z && px('E1').z.toFixed(4)) + ' E3 z=' + (px('E3').z && px('E3').z.toFixed(4)) + ' | ' + ex.slice(0, 200));
+        const e2 = px('E2'), kn = xd.known.length;
+        ok('X1b controls: E2 under ceiling A keeps the void middle ((ceiling top ' + cA.maxZ.toFixed(3) + ' + S1 soffit ' + s1.minZ.toFixed(3) + ')/2); E4 (no ceiling, no structure above the storey floor) stays plan only; placed/planOnly follow',
+          e2.z != null && near(e2.z, (cA.maxZ + s1.minZ) / 2, 0.002) && e2.heightBasis === 'void-middle' && px('E4').z == null && px('E4').heightBasis === 'none' && kn === 3 && xd.planOnly.length === 2 && new RegExp('placed=3 planOnly=2').test(L1(XA.lines, /§WALK-MAINS disc=ACMV drawn=/)), 'known=' + kn + ' planOnly=' + xd.planOnly.length + ' ' + L1(XA.lines, /§WALK-MAINS disc=ACMV drawn=/).slice(0, 120));
+        const xops = stack.DW.drawnOps(xd), e1op = xops.find(o => o.params._dw.piece === 1);
+        ok('X1c the op of an exposed run carries the label and strength: HeightBasis exposed-under-structure, exposed=true, strength.height provisional, no Provisional flag, the structure it hangs from', !!e1op && e1op.params._dw.heightBasis === 'exposed-under-structure' && e1op.params._dw.exposed === true && e1op.params._dw.heightLabel === 'exposed, height provisional' && e1op.params._dw.strength.height === 'provisional' && e1op.params._dw.provisional === false && e1op.params._dw.structure === XS.S1 && near(e1op.params.line.from[2], s1.minZ, 0.002), JSON.stringify(e1op && e1op.params._dw).slice(0, 220));
+        const t1 = (xd.terminals && xd.terminals.byStorey) ? xd.terminals : null, wt = XA.lines.filter(l => /§WALK-TERMINALS-DETAIL/.test(l)).join(' | ');
+        const tp = (xw.placements || []).filter(p => p.prov === 'drawn:terminal'), tpE = tp.filter(p => p.exposed);
+        ok('X1d a drawn terminal with no ceiling (8, 2) hangs from the structure underside: counted in the log (terminals=1); when a device mesh exists it is placed at the soffit with the label, otherwise it is listed noMesh', kv(ex, 'terminals') === '1' && (tpE.length === 0 ? /noMesh=[1-9]/.test(wt) : tpE.length === 1 && near(tpE[0].z, s1.minZ, 0.002) && tpE[0].heightBasis === 'exposed-under-structure' && tpE[0].heightLabel === 'exposed, height provisional'), 'terminals(exposed)=' + kv(ex, 'terminals') + ' placedExposed=' + tpE.length + ' drawnTerminalsPlaced=' + tp.length + ' ' + wt.slice(0, 160));
+        // X1e: the same on the Duplex + STR_A federation, where Level 1 carries rule-mined terminal meshes: a terminal at (9.5,-5), past the last ceiling, under the STR slab, is PLACED at the slab soffit
+        const dxfT = path.join(TMP, 'XT-101.dxf'), dbT = path.join(TMP, 'x_term.db'); fs.copyFileSync(fedA, dbT);
+        fs.writeFileSync(dxfT, sheetDxf({ off: [100, 200], grid: GRIDSHEET, pieces: [PCS.P1], terminals: [[9.5, -5, 'DIFFUSER_SUPPLY'], [1.5, -2, 'DIFFUSER_SUPPLY']] }));
+        sh([MAINS, dbT, dxfT, '--sheet-meta=' + JSON.stringify({ number: 'XT-101', revision: 'A', storeys: ['Level 1'] })]);
+        const dtt = new Database(dbT, { readonly: true }), strS = rowsOf(dtt, 'SELECT minZ FROM element_world_bbox WHERE guid=?', [STR_SLAB])[0].minZ; dtt.close();
+        const XTW = walkA(dbT), xtp = (XTW.r.placements || []).filter(p => p.prov === 'drawn:terminal'), xte = xtp.filter(p => p.exposed), xtl = L1(XTW.lines, /§WALK-MAINS-EXPOSED/);
+        ok('X1e a drawn terminal past the last ceiling (9.5,-5) is PLACED at the underside of the STR slab (' + strS.toFixed(3) + '), labelled exposed; the terminal under a ceiling (1.5,-2) still hangs from the ceiling lower face', xte.length === 1 && near(xte[0].z, strS, 0.002) && xte[0].heightBasis === 'exposed-under-structure' && xte[0].heightLabel === 'exposed, height provisional' && xte[0].host === STR_SLAB && kv(xtl, 'terminals') === '1' && xtp.length === 2 && xtp.filter(p => !p.exposed).every(p => /^ceiling:/.test(p.heightBasis) && p.z < strS),
+          'placed drawn terminals=' + xtp.length + ' exposed=' + xte.length + ' z=' + xtp.map(p => p.z.toFixed(3) + (p.exposed ? '(exposed)' : '')).join(',') + ' | ' + xtl.slice(0, 120));
+        // RED: row removed from the DB: stays plan only
+        const dbXN = path.join(TMP, 'x_acmv_norule.db'); fs.copyFileSync(dbXM, dbXN); { const d0 = new SQL.Database(new Uint8Array(fs.readFileSync(dbXN))); d0.run('DELETE FROM drawn_height_rule'); fs.writeFileSync(dbXN, Buffer.from(d0.export())); d0.close(); }
+        const XN = walkA(dbXN), xn = XN.r.drawn, exN = XN.lines.filter(l => /§WALK-MAINS-EXPOSED/.test(l))[0] || '';
+        ok('X1 RED: with the row removed, the same pieces stay plan only (E1 no ceiling, E3 no void): pieces=0 terminals=0 rule=none, placed=1 planOnly=4', xn.pieces[0].z == null && xn.pieces[2].z == null && kv(exN, 'pieces') === '0' && kv(exN, 'terminals') === '0' && kv(exN, 'rule') === 'none' && xn.known.length === 1 && xn.planOnly.length === 4, 'known=' + xn.known.length + ' planOnly=' + xn.planOnly.length + ' ' + exN.slice(0, 120));
+        // X3 structure-above: E5 is inside the L roof's BOX but in its notch
+        const poly = [[20, 0], [30, 0], [30, 4], [25, 4], [25, 8], [20, 8]], inPoly = (x, y) => { let c = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { if ((poly[i][1] > y) !== (poly[j][1] > y) && x < (poly[j][0] - poly[i][0]) * (y - poly[i][1]) / (poly[j][1] - poly[i][1]) + poly[i][0]) c = !c; } return c; };
+        const lrw = rowsOf(xdb, 'SELECT minX, maxX, minY, maxY FROM element_world_bbox WHERE guid=?', [XS.LROOF])[0], e5 = px('E5'), inBox = e5.mx >= lrw.minX && e5.mx <= lrw.maxX && e5.my >= lrw.minY && e5.my <= lrw.maxY;
+        ok('X3 structure-above uses the OUTLINE: E5 midpoint (' + e5.mx.toFixed(1) + ',' + e5.my.toFixed(1) + ') is inside the L roof\'s box but outside its outline (independent polygon test), so it is not "under" it: plan only', inBox && !inPoly(e5.mx, e5.my) && e5.z == null, 'inBox=' + inBox + ' inPolygon=' + inPoly(e5.mx, e5.my) + ' E5 z=' + e5.z + ' why=' + e5.why);
+        const XB = walkA(dbXM, { drawnBoxOnly: true }), xb = XB.r.drawn;
+        ok('X3 RED: a box-only test (witness control) would say E5 is under the L roof and give it the soffit ' + bbX(XS.LROOF).minZ.toFixed(3), xb && xb.pieces[4].z != null && near(xb.pieces[4].z, bbX(XS.LROOF).minZ, 0.002) && xb.pieces[4].structure === XS.LROOF, 'box-only E5 z=' + (xb && xb.pieces[4].z));
+      }
+
+      // ---- FP on X: items Q1 in the L slab\'s notch (box yes, outline no), Q2 on the L slab, Q3 on the STR GROUND floor slab F (second file, differently named storey, same elevation)
+      const XQ = [[7, 6, 'EXTINGUISHER FOAM 9L'], [2, 2, 'EXTINGUISHER FOAM 9L'], [16, 4, 'EXTINGUISHER FOAM 9L']];
+      const dxfXF = path.join(TMP, 'XF-201.dxf'); fs.writeFileSync(dxfXF, sheetDxf({ off: [100, 200], grid: XGS, pieces: [], terminals: [], equip: XQ }));
+      const dbXF = path.join(TMP, 'x_fp.db'); fs.copyFileSync(fedX, dbXF);
+      const mF = sh([MAINS, dbXF, dxfXF, '--sheet-meta=' + JSON.stringify({ number: 'XF-201', revision: 'A', storeys: ['Level 1'] })]);
+      log(mF.split('\n').filter(l => /§MAINS-(TO-DB|EQUIP-TO-DB|STOREYS|NO-CENTRELINE)/.test(l)).map(l => '  tool ' + l.slice(0, 260)).join('\n'));
+      const walkP = (file, extra) => { const buf = new Uint8Array(fs.readFileSync(file)); return logsOf(() => H.walkLive(SQL, stack, 'FP', buf, 'Duplex', [], extra || {})); };
+      const XFW = walkP(dbXF), xfw = XFW.r, xfl = L1(XFW.lines, /§FP-EQUIP placed=/), em = L1(XFW.lines, /§STOREY-ELEV-MATCH set=Level 1/);
+      log('  X FP walk: ' + XFW.lines.filter(l => /§FP-EQUIP|§STOREY-ELEV|§WALK-AREAHOST/.test(l)).map(l => l.slice(0, 330)).join('\n             '));
+      const fops = xfw.drawn ? stack.DW.drawnOps(xfw.drawn) : [], fI = i => fops.find(o => o.params._dw.item === i);
+      if (fops.length !== 3) incon('X*FP', 'expected 3 FP ops, got ' + fops.length + ' | ' + xfl);
+      else {
+        const lsw = rowsOf(xdb, 'SELECT minX, maxX, minY, maxY FROM element_world_bbox WHERE guid=?', [XS.LSLAB])[0], lpoly = [[0, 0], [10, 0], [10, 4], [5, 4], [5, 8], [0, 8]];
+        const inP = (x, y) => { let c = false; for (let i = 0, j = lpoly.length - 1; i < lpoly.length; j = i++) { if ((lpoly[i][1] > y) !== (lpoly[j][1] > y) && x < (lpoly[j][0] - lpoly[i][0]) * (y - lpoly[i][1]) / (lpoly[j][1] - lpoly[i][1]) + lpoly[i][0]) c = !c; } return c; };
+        const q1in = XQ[0][0] >= lsw.minX && XQ[0][0] <= lsw.maxX && XQ[0][1] >= lsw.minY && XQ[0][1] <= lsw.maxY, f = bbX(XS.F), MOUNT = 1.2;
+        const d1 = fI(1).params._dw, d2 = fI(2).params._dw, d3 = fI(3).params._dw;
+        ok('X3 FP floor uses the OUTLINE: Q1 (7,6) is inside the L slab\'s box but outside its outline (independent polygon test), so no slab is under it; Q2 (2,2) on the slab takes it', q1in && !inP(7, 6) && inP(2, 2) && d1.floor === null && d2.floor === XS.LSLAB, 'Q1 inBox=' + q1in + ' inPolygon=' + inP(7, 6) + ' floor=' + d1.floor + ' | Q2 floor=' + d2.floor);
+        ok('X5 the item with no slab outline under it (Q1) takes the set storey\'s STATED elevation as its floor (0), labelled "floor = storey elevation, no slab under", anchor = floor + ' + MOUNT + '; counted floorFromStoreyElev=1', d1.floorBasis === 'storey-elevation' && d1.floorLabel === 'floor = storey elevation, no slab under' && near(d1.floorZ, 0, 1e-9) && near(fI(1).params.placement.z, MOUNT, 0.0005) && kv(xfl, 'floorFromStoreyElev') === '1' && kv(xfl, 'noFloor') === '0', xfl.slice(0, 260));
+        ok('X4d storey match by ELEVATION: Q3 (16,4) sits on the STR GROUND slab F (top ' + f.maxZ.toFixed(3) + '), a floor of the second file\'s differently named storey at Level 1\'s elevation; it is found, and the log names the matched STR storey', d3.floor === XS.F && near(d3.floorZ, f.maxZ, 0.002) && d3.floorBasis === 'slab' && /matched=\["STR GROUND@0\.000\[STR:1\]"\]/.test(em), 'Q3 floor=' + d3.floor + ' floorZ=' + d3.floorZ + ' | ' + em.slice(0, 220));
+        // RED: STR GROUND's stated elevation moved out of tolerance -> not the same storey -> name-only behaviour: the slab is not seen
+        const dbXS = path.join(TMP, 'x_fp_shift.db'); fs.copyFileSync(dbXF, dbXS); { const d0 = new SQL.Database(new Uint8Array(fs.readFileSync(dbXS))); d0.run("UPDATE storey_elevation SET placement_z_m=0.30 WHERE name='STR GROUND'"); fs.writeFileSync(dbXS, Buffer.from(d0.export())); d0.close(); }
+        const XS2 = walkP(dbXS), fo2 = XS2.r.drawn ? stack.DW.drawnOps(XS2.r.drawn) : [], q3 = fo2.find(o => o.params._dw.item === 3);
+        ok('X4d RED: with STR GROUND 0.30 m off Level 1 (outside +/-0.05 m) it is not matched, as a name-only filter would: Q3 does not see slab F and falls back to the storey elevation', !!q3 && q3.params._dw.floor === null && q3.params._dw.floorBasis === 'storey-elevation' && kv(L1(XS2.lines, /§FP-EQUIP placed=/), 'floorFromStoreyElev') === '2', 'Q3 floor=' + (q3 && q3.params._dw.floor) + ' ' + L1(XS2.lines, /§FP-EQUIP placed=/).slice(0, 200));
+        // X3 RED: box-only says Q1 is under the L slab
+        const XFB = walkP(dbXF, { drawnBoxOnly: true }), fb = XFB.r.drawn ? stack.DW.drawnOps(XFB.r.drawn) : [], b1 = fb.find(o => o.params._dw.item === 1);
+        ok('X3 RED: a box-only test (witness control) would say Q1 is under the L slab and give it that slab as its floor', !!b1 && b1.params._dw.floor === XS.LSLAB, 'box-only Q1 floor=' + (b1 && b1.params._dw.floor));
+      }
+
+      // ---- X6: wording
+      const dxfE6 = path.join(TMP, 'FP-E6.dxf'), dbE6 = path.join(TMP, 'x_e6.db'); fs.copyFileSync(fedX, dbE6);
+      fs.writeFileSync(dxfE6, sheetDxf({ off: [100, 200], grid: XGS, pieces: [], terminals: [], equip: [[2, 2, 'EXTINGUISHER FOAM 9L']] }));
+      const m6 = sh([MAINS, dbE6, dxfE6, '--sheet-meta=' + JSON.stringify({ number: 'FP-E6', revision: 'A', storeys: ['Level 1'] })]);
+      const l6 = L1(m6.split('\n'), /§MAINS-TO-DB sheets=/), n6 = L1(m6.split('\n'), /§MAINS-NO-CENTRELINE/);
+      const dxfR = path.join(TMP, 'XR.dxf'), dbR = path.join(TMP, 'x_ref.db'); fs.copyFileSync(fedX, dbR);
+      fs.writeFileSync(dxfR, sheetDxf({ off: [100, 200], grid: { u: [], v: [] }, pieces: [[1, 2, 5, 2]], terminals: [] }));
+      const mR = sh([MAINS, dbR, dxfR, '--sheet-meta=' + JSON.stringify({ number: 'XR', revision: 'A', storeys: ['Level 1'] })]), lR = L1(mR.split('\n'), /§MAINS-TO-DB sheets=/);
+      ok('X6 a sheet with no centreline layer for the discipline is counted noCentreline, not refused: "refused=0 noCentreline=1" and the line says "no centreline layer for this discipline"', /refused=0 noCentreline=1 /.test(l6) && /no centreline layer for this discipline/.test(n6) && !/refused/.test(n6.replace('not refused', '')), l6.slice(0, 160) + ' | ' + n6.slice(0, 160));
+      ok('X6 RED: a real refusal (a run sheet with no grid to fit) is still "refused": refused=1 noCentreline=0', /refused=1 noCentreline=0 /.test(lR), lR.slice(0, 160));
+
+      // ---- X2: sprinklered
+      const baseFP = path.join(TMP, 'x2_base.db'); fs.copyFileSync(fedA, baseFP);
+      const setSpr = (v, from) => { const dst = path.join(TMP, 'x2_' + v + '.db'); fs.copyFileSync(from || fedA, dst); sh([MAINS, dst, '--sprinklered=' + v]); return dst; };
+      const heads = w => (w.placements || []).filter(p => /FireSuppressionTerminal|Sprinkler/i.test(p.ifc_class || '') && !/^drawn:/.test(p.prov || ''));
+      H.openBuildingRules(SQL, stack, 'Duplex');
+      const B0 = walkP(baseFP), h0 = heads(B0.r).length, tot0 = B0.r.placed + B0.r.provisional;
+      const U = walkP(setSpr('unknown')), N = walkP(setSpr('no')), Y = walkP(setSpr('yes'));
+      const sl = r => L1(r.lines, /§FP-SPRINKLERED/);
+      ok('X2 sprinklered=unknown turns every band sprinkler head off (base walk ' + h0 + ' heads on all storeys -> 0), logged value=unknown bandHeadsOff=' + h0 + '; the totals follow (placed+provisional drops by exactly the heads)', h0 > 0 && heads(U.r).length === 0 && kv(sl(U), 'value') === 'unknown' && kv(sl(U), 'bandHeadsOff') === String(h0) && (U.r.placed + U.r.provisional) === tot0 - h0, 'base heads=' + h0 + ' unknown heads=' + heads(U.r).length + ' | ' + sl(U).slice(0, 140));
+      ok('X2b sprinklered=no does the same; sprinklered=yes is today\'s band behaviour (all ' + h0 + ' heads kept, bandHeadsOff=0)', heads(N.r).length === 0 && kv(sl(N), 'bandHeadsOff') === String(h0) && heads(Y.r).length === h0 && kv(sl(Y), 'bandHeadsOff') === '0' && (Y.r.placed + Y.r.provisional) === tot0, 'no heads=' + heads(N.r).length + ' yes heads=' + heads(Y.r).length);
+      ok('X2 RED: with no row set nothing changes (resident non-regression): same head count and totals as the base walk, no §FP-SPRINKLERED line', !B0.lines.some(l => /§FP-SPRINKLERED/.test(l)) && heads(B0.r).length === h0 && h0 === 51, 'base heads=' + h0 + ' (Duplex, equal to the 51 the P4 base walk logged before this change)');
+      // not inferred from drawn equipment: a building with drawn equipment AND unknown has heads off everywhere (incl. the storey no sheet covers) while the drawn items are still placed
+      const dbU2 = path.join(TMP, 'x2_eq_unknown.db'), dxfU2 = path.join(TMP, 'FP-U2.dxf'); fs.copyFileSync(fedA, dbU2);
+      fs.writeFileSync(dxfU2, sheetDxf({ off: [100, 200], grid: GRIDSHEET, pieces: [], terminals: [], equip: [[1.5, -2, 'EXTINGUISHER FOAM 9L'], [6, -14, 'FIRE CABINET 1']] }));
+      sh([MAINS, dbU2, dxfU2, '--sheet-meta=' + JSON.stringify({ number: 'FP-U2', revision: 'A', storeys: ['Level 1'] }), '--sprinklered=unknown']);
+      const U2 = walkP(dbU2), eqU = L1(U2.lines, /§FP-EQUIP placed=/);
+      ok('X2c drawn equipment is present AND sprinklered=unknown: heads are off on EVERY storey (not only the covered one) and the drawn items are still placed; the answer is a stored fact, never inferred from the equipment', heads(U2.r).length === 0 && kv(eqU, 'placed') === '2' && kv(sl(U2), 'bandHeadsOff') === String(h0), eqU.slice(0, 160) + ' | ' + sl(U2).slice(0, 120));
+      const tool2 = sh([MAINS, path.join(TMP, 'x2_unknown.db'), '--sprinklered=unknown']), dbR2 = new SQL.Database(new Uint8Array(fs.readFileSync(path.join(TMP, 'x2_unknown.db'))));
+      ok('X2d the answer is stored as project_metadata fp_sprinklered (the table that already holds per-building facts), set by mains_to_db --sprinklered, logged', q(dbR2, "SELECT value FROM project_metadata WHERE key='fp_sprinklered'")[0][0] === 'unknown' && /§MAINS-SPRINKLERED fp_sprinklered=unknown/.test(tool2), L1(tool2.split('\n'), /§MAINS-SPRINKLERED/).slice(0, 140)); dbR2.close();
+      // Clinic resident, if present
+      const clinicDb = path.join(M, 'Clinic_ARC.db');
+      if (fs.existsSync(clinicDb) && fs.statSync(clinicDb).size > 10240) {
+        H.openBuildingRules(SQL, stack, 'Clinic');
+        const wc = file => logsOf(() => H.walkLive(SQL, stack, 'FP', new Uint8Array(fs.readFileSync(file)), 'Clinic', [], {}));
+        const C0 = wc(clinicDb), c0 = heads(C0.r).length, cu = path.join(TMP, 'clinic_unk.db'); fs.copyFileSync(clinicDb, cu); sh([MAINS, cu, '--sprinklered=unknown']);
+        const CU = wc(cu);
+        log('  X2 Clinic: base heads=' + c0 + ' unknown heads=' + heads(CU.r).length + ' | ' + sl(CU).slice(0, 120));
+        if (!c0) incon('X2 Clinic', 'the Clinic base FP walk has no sprinkler heads: nothing judged'); else ok('X2e Clinic resident: no row = base heads (' + c0 + '), none of its FP lines mention sprinklered; unknown = 0 heads', !C0.lines.some(l => /§FP-SPRINKLERED/.test(l)) && heads(CU.r).length === 0 && kv(sl(CU), 'bandHeadsOff') === String(c0), 'base=' + c0 + ' unknown=' + heads(CU.r).length);
+        H.openBuildingRules(SQL, stack, 'Duplex');
+      } else incon('X2 Clinic', 'Clinic_ARC.db absent or a stub: Duplex judged alone');
+
+      // ---- X7: the drawn-only film filter, on the Duplex drawn walk (D) : display only
+      H.openBuildingRules(SQL, stack, 'Duplex');
+      const walkD = file => logsOf(() => H.walkLive(SQL, stack, 'ACMV', new Uint8Array(fs.readFileSync(file)), 'Duplex', [], {}));
+      const D7 = walkD(dbDrawn), w7 = D7.r, opsBefore = JSON.stringify(stack.DW.drawnOps(w7.drawn)), pl = w7.placements || [], nonDrawn = pl.filter(p => !/^drawn:/.test(p.prov || '')), drawnP = pl.filter(p => /^drawn:/.test(p.prov || ''));
+      const before = { placed: w7.placed, prov: w7.provisional, n: pl.length, known: w7.drawn.known.length, plan: w7.drawn.planOnly.length };
+      if (!nonDrawn.length || !drawnP.length) incon('X7', 'the Duplex drawn walk has ' + nonDrawn.length + ' non-drawn and ' + drawnP.length + ' drawn placements: nothing to filter');
+      else {
+        const vis = {}; pl.forEach((p, i) => { vis[i] = true; }); const calls = [];
+        const setVis = (d, i, v) => { calls.push([d, i, v]); const ch = vis[i] !== v; vis[i] = v; return ch; };
+        const V = logsOf(() => stack.DW.setDrawnOnlyView(true, { ACMV: pl }, { ACMV: w7.drawn }, setVis));
+        const hiddenIdx = Object.keys(vis).filter(i => !vis[i]).map(Number), expectIdx = pl.map((p, i) => /^drawn:/.test(p.prov || '') ? -1 : i).filter(i => i >= 0);
+        const vl = L1(V.lines, /§VIEW-DRAWN-ONLY/);
+        ok('X7 the drawn-only view hides exactly the non-drawn walk devices (' + nonDrawn.length + ') and shows what the drawings state (' + drawnP.length + ' drawn terminals + ' + w7.drawn.known.length + ' drawn runs); logged', JSON.stringify(hiddenIdx) === JSON.stringify(expectIdx) && kv(vl, 'on') === 'true' && kv(vl, 'hidden') === String(nonDrawn.length) && kv(vl, 'shown') === String(drawnP.length + w7.drawn.known.length) && V.r.hidden === nonDrawn.length && calls.every(c => c[2] === false), vl.slice(0, 160));
+        ok('X7b display only: the op-log ops, placed/provisional totals and every list are identical before and after (op-log string equal, ' + before.n + ' placements, placed ' + before.placed + ')', JSON.stringify(stack.DW.drawnOps(w7.drawn)) === opsBefore && w7.placed === before.placed && w7.provisional === before.prov && (w7.placements || []).length === before.n && w7.drawn.known.length === before.known && w7.drawn.planOnly.length === before.plan, 'ops equal=' + (JSON.stringify(stack.DW.drawnOps(w7.drawn)) === opsBefore));
+        const V0 = logsOf(() => stack.DW.setDrawnOnlyView(false, { ACMV: pl }, { ACMV: w7.drawn }, setVis));
+        ok('X7c turning it off restores every device (all visible again) and still changes no count', Object.keys(vis).every(i => vis[i]) && V0.r.hidden === 0 && kv(L1(V0.lines, /§VIEW-DRAWN-ONLY/), 'on') === 'false' && w7.placed === before.placed && (w7.placements || []).length === before.n, L1(V0.lines, /§VIEW-DRAWN-ONLY/).slice(0, 140));
+      }
+      xdb.close();
+    }
   }
   log('§VERDICT ' + (fail ? 'CLAIM NOT MET' : inc ? 'INCONCLUSIVE' : 'CLAIM MET') + ' pass=' + pass + ' fail=' + fail + ' inconclusive=' + inc);
   process.exit(fail ? 1 : 0);

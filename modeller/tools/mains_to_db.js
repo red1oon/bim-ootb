@@ -16,12 +16,13 @@ const DxfParser = require(path.join(M, 'lib', 'dxf-parser.js')), DM = require(pa
 const log = s => console.log(s);
 
 const args = process.argv.slice(2), files = [];
-let dbPath = null, metaArg = null, rulesPath = path.join(M, 'drawn_mains_rules.json');
+let dbPath = null, metaArg = null, sprArg = null, rulesPath = path.join(M, 'drawn_mains_rules.json');
 for (const a of args) {
-  if (a.startsWith('--sheet-meta=')) metaArg = a.slice(13); else if (a.startsWith('--rules=')) rulesPath = a.slice(8);
+  if (a.startsWith('--sprinklered=')) sprArg = a.slice(14); else if (a.startsWith('--sheet-meta=')) metaArg = a.slice(13); else if (a.startsWith('--rules=')) rulesPath = a.slice(8);
   else if (!dbPath) dbPath = a; else files.push(a);
 }
-if (!dbPath || !files.length) { console.error('Usage: node modeller/tools/mains_to_db.js <building.db> <sheet.dxf>... [--sheet-meta=<json>|@file] [--rules=<rules.json>]'); process.exit(1); }
+if (sprArg != null && !/^(unknown|yes|no)$/.test(sprArg)) { console.error('--sprinklered must be unknown, yes or no'); process.exit(1); }
+if (!dbPath || (!files.length && sprArg == null)) { console.error('Usage: node modeller/tools/mains_to_db.js <building.db> <sheet.dxf>... [--sheet-meta=<json>|@file] [--rules=<rules.json>] [--sprinklered=unknown|yes|no]'); process.exit(1); }
 
 function metaFor(i, file) {
   let m = metaArg;
@@ -51,26 +52,26 @@ function storeySet(db, meta) {
   log('§MAINS-TO-DB db=' + path.basename(dbPath) + ' grid_axes=' + grid.length + ' sheets_given=' + files.length);
   db.run('CREATE TABLE IF NOT EXISTS drawn_sheet_meta(sheet_number TEXT, revision TEXT, storey TEXT)');
   db.run('CREATE TABLE IF NOT EXISTS drawn_terminal(sheet_number TEXT, x REAL, y REAL, kind TEXT, storey TEXT)');
-  let sheets = 0, pieces = 0, length = 0, refused = 0, terminals = 0;
+  let sheets = 0, pieces = 0, length = 0, refused = 0, terminals = 0, noCentreline = 0;
   // §8: beside drawn_equipment (whose columns W-DRAWN-MAINS pins): the sheet's storey set, the height rule row as held, and each block's drawn Z extent when the block states one.
   const zOf = e => { const zs = []; [e.position, e.startPoint, e.endPoint, e.center].forEach(p => { if (p && typeof p.z === 'number') zs.push(p.z); }); (e.vertices || []).forEach(v => { if (typeof v.z === 'number') zs.push(v.z); }); return zs; };
   function storeEquip(s, res, ss, blocks) {
     const eq = res.equipment || []; if (!eq.length) return;
     db.run('DELETE FROM drawn_sheet_meta WHERE sheet_number=?', [s.sheet]);
     (ss.set.length ? ss.set : [null]).forEach(st => db.run('INSERT INTO drawn_sheet_meta VALUES(?,?,?)', [s.sheet, s.revision || '', st]));
-    db.run('CREATE TABLE IF NOT EXISTS drawn_equipment_rule(id TEXT, top_m REAL, min_bottom_m REAL, applies_to TEXT, borrowed_for TEXT, standard TEXT, source TEXT)');
+    db.run('DROP TABLE IF EXISTS drawn_equipment_rule');   // §9: the row carries the mount point (mount_m, datum, basis), not the NFPA top/bottom pair; an older table is replaced
+    db.run('CREATE TABLE drawn_equipment_rule(id TEXT, mount_m REAL, datum TEXT, basis TEXT, applies_to TEXT, borrowed_for TEXT, standard TEXT, source TEXT, note TEXT)');
     db.run('CREATE TABLE IF NOT EXISTS drawn_equipment_size(sheet_number TEXT, block TEXT, height_m REAL)');
     db.run('DELETE FROM drawn_equipment_size WHERE sheet_number=?', [s.sheet]);
     const hr = res.equipment_height_rule;
-    db.run('DELETE FROM drawn_equipment_rule');
-    if (hr) db.run('INSERT INTO drawn_equipment_rule VALUES(?,?,?,?,?,?,?)', [hr.id, hr.top_m, hr.min_bottom_m, JSON.stringify(hr.applies_to || []), JSON.stringify(hr.borrowed_for || []), hr.standard || null, hr.source || null]);
+    if (hr) db.run('INSERT INTO drawn_equipment_rule VALUES(?,?,?,?,?,?,?,?,?)', [hr.id, hr.mount_m, hr.datum || null, hr.basis || null, JSON.stringify(hr.applies_to || []), JSON.stringify(hr.borrowed_for || []), hr.standard || null, hr.source || null, hr.note || null]);
     const k = RULES.sheet_unit_m || 0.001; let sized = 0;
     Array.from(new Set(eq.map(q => q.block))).forEach(nm => {
       const b = (blocks || {})[nm]; if (!b) return; let zs = []; (b.entities || []).forEach(e => { zs = zs.concat(zOf(e)); });
       const h = zs.length ? (Math.max.apply(null, zs) - Math.min.apply(null, zs)) * k : 0;
       if (h > 0.001) { db.run('INSERT INTO drawn_equipment_size VALUES(?,?,?)', [s.sheet, nm, h]); sized++; }
     });
-    log('§MAINS-EQUIP-TO-DB sheet=' + s.sheet + ' items=' + eq.length + ' blocksWithSize=' + sized + ' rule=' + (hr ? hr.id : 'none') + ' storeys=' + (ss.set.length ? JSON.stringify(ss.set) : 'none'));
+    log('§MAINS-EQUIP-TO-DB sheet=' + s.sheet + ' items=' + eq.length + ' blocksWithSize=' + sized + ' rule=' + (hr ? hr.id : 'none') + (hr ? ' mount_m=' + hr.mount_m + ' basis=' + (hr.basis || 'none') : '') + ' storeys=' + (ss.set.length ? JSON.stringify(ss.set) : 'none'));
   }
   files.forEach((file, i) => {
     const meta = metaFor(i, file), dxf = new DxfParser().parseSync(fs.readFileSync(file, 'utf8')), ents = dxf.entities || [], blocks = dxf.blocks || {};
@@ -78,7 +79,7 @@ function storeySet(db, meta) {
     log('§MAINS-STOREYS sheet=' + meta.number + ' source=' + ss.source + (ss.set.length ? ' storeys=' + JSON.stringify(ss.set) + (ss.words ? ' title-words=' + ss.words : '') : ' none: ' + ss.why + ' (the sheet is plan only)') + (meta.title ? ' title(argument, not read from the DXF)="' + meta.title + '"' : ''));
     const res = DM.read({ entities: ents, blocks, sheet: { number: meta.number, revision: meta.revision, storey: ss.set.length === 1 ? ss.set[0] : null }, rules: RULES.rows, grid, unitM: RULES.sheet_unit_m, tagReachM: RULES.tag_reach_m });
     const s = res.sheet; sheets++;
-    if (s.refused || s.inconclusive) { refused++; DM.write(db, res); if (!s.refused && (res.equipment || []).length) storeEquip(s, res, ss, blocks); return; }   // an equipment-only sheet is INCONCLUSIVE for runs; its equipment is kept (DISC_WALK_DRAWN_INTEGRATION.md §8)
+    if (s.refused || s.inconclusive) { if (s.inconclusive && !s.refused) { noCentreline++; log('§MAINS-NO-CENTRELINE sheet=' + s.sheet + ' no centreline layer for this discipline (not refused; equipment, if any, is kept)'); } else refused++; DM.write(db, res); if (!s.refused && (res.equipment || []).length) storeEquip(s, res, ss, blocks); return; }   // an equipment-only sheet is INCONCLUSIVE for runs; its equipment is kept (DISC_WALK_DRAWN_INTEGRATION.md §8)
     const wrote = DM.write(db, res);
     if (s.writeRefused) { refused++; return; }
     storeEquip(s, res, ss, blocks);
@@ -106,7 +107,20 @@ function storeySet(db, meta) {
     terminals += tn;
     log('§MAINS-TERMINALS sheet=' + s.sheet + ' stored=' + tn + ' reader_count=' + s.terminals + (tn === s.terminals ? ' agree' : ' DISAGREE') + ' storeys=' + (ss.set.length ? JSON.stringify(ss.set) : 'none'));
   });
+  // §9 item 1: the no-void height row travels in the DB (like the equipment rule), so removing the row removes the behaviour
+  if (files.length) {
+    db.run('DROP TABLE IF EXISTS drawn_height_rule');
+    db.run('CREATE TABLE drawn_height_rule(id TEXT, role TEXT, rule TEXT, label TEXT, source TEXT)');
+    if (rl.voidRule) db.run('INSERT INTO drawn_height_rule VALUES(?,?,?,?,?)', [rl.voidRule.id, rl.voidRule.role, rl.voidRule.rule, rl.voidRule.label, rl.voidRule.source || null]);
+    log('§MAINS-HEIGHT-RULE no_void_height=' + (rl.voidRule ? rl.voidRule.id : 'none'));
+  }
+  // §9 item 2: the author's answer on sprinklers, a per-building fact (project_metadata, the table that already holds georef_offset_*). Never inferred from drawn equipment.
+  if (sprArg != null) {
+    db.run('CREATE TABLE IF NOT EXISTS project_metadata (key TEXT PRIMARY KEY, value TEXT)');
+    db.run('DELETE FROM project_metadata WHERE key=?', ['fp_sprinklered']); db.run('INSERT INTO project_metadata VALUES(?,?)', ['fp_sprinklered', sprArg]);
+    log('§MAINS-SPRINKLERED fp_sprinklered=' + sprArg + ' (' + (sprArg === 'unknown' ? 'pending the author: band sprinkler heads off' : sprArg === 'no' ? 'band sprinkler heads off' : 'band behaviour') + ')');
+  }
   fs.writeFileSync(dbPath, Buffer.from(db.export()));
-  log('§MAINS-TO-DB sheets=' + sheets + ' pieces=' + pieces + ' length=' + length.toFixed(3) + ' refused=' + refused + ' terminals=' + terminals);
+  log('§MAINS-TO-DB sheets=' + sheets + ' pieces=' + pieces + ' length=' + length.toFixed(3) + ' refused=' + refused + ' noCentreline=' + noCentreline + ' terminals=' + terminals);
   db.close();
 })().catch(e => { console.log('§MAINS-TO-DB ERROR ' + (e && e.stack || e)); process.exit(1); });

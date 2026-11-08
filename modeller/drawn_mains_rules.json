@@ -1,5 +1,5 @@
 {
-  "_note": "W-DRAWN-MAINS data rows (prompts/DISC_WALK_DRAWN_MAINS.md section 4.3). Row shape {discipline, role, pattern, standard, source}, so it can become a DB table without a shape change. layer roles: centreline, outline, fitting, grid_line, grid_tag (pattern = case-insensitive regex on the DXF layer name); terminal_<system> rows: pattern = a name word matched inside an INSERT block name. Ducts (ACMV) only: no FP or PLB rows until pipe layers are measured (section 8). Layer patterns follow the US National CAD Standard (spec 4.3 amendments 2); fitting = an INSERT on the outline layer (entity INSERT); terminal_layer = diffuser inserts; the terminal words were tested on one set only (section 4.6). No existing word store maps terminal names to a system (grep of modeller/, viewer/, common/ 2026-11-08: viewer/import_worker.js maps names to a discipline only), so the terminal words live here. FP equipment rows (section 10): equipment_layer = top-level INSERT layer; equipment_kind = a word matched inside the block name (case-insensitive regex), the kind comes from the word and never from the layer; each carries its IFC class, PredefinedType and ObjectType. HOSEREEL only when the block name says hose reel.",
+  "_note": "W-DRAWN-MAINS data rows (prompts/DISC_WALK_DRAWN_MAINS.md section 4.3). Row shape {discipline, role, pattern, standard, source}, so it can become a DB table without a shape change. layer roles: centreline, outline, fitting, grid_line, grid_tag (pattern = case-insensitive regex on the DXF layer name); terminal_<system> rows: pattern = a name word matched inside an INSERT block name. Ducts (ACMV) only: no FP or PLB rows until pipe layers are measured (section 8). Layer patterns follow the US National CAD Standard (spec 4.3 amendments 2); fitting = an INSERT on the outline layer (entity INSERT); terminal_layer = diffuser inserts; the terminal words were tested on one set only (section 4.6). No existing word store maps terminal names to a system (grep of modeller/, viewer/, common/ 2026-11-08: viewer/import_worker.js maps names to a discipline only), so the terminal words live here. FP equipment rows (section 10): equipment_layer = top-level INSERT layer; equipment_kind = a word matched inside the block name (case-insensitive regex), the kind comes from the word and never from the layer; each carries its IFC class, PredefinedType and ObjectType. HOSEREEL only when the block name says hose reel. Height rows (DISC_WALK_DRAWN_INTEGRATION.md section 9): mount_height = the FP mount point above the floor under each item (owner 2026-11-08, wall mounted at 1.2 m; datum = the anchor, whether top/centre/bracket once a sized mesh exists is open); no_void_height = where a drawn run or terminal with no ceiling void sits (owner: exposed under structure).",
   "sheet_unit_m": 0.001,
   "tag_reach_m": 2.0,
   "rows": [
@@ -150,18 +150,27 @@
     {
       "discipline": "FP",
       "role": "mount_height",
-      "id": "fp-mount-nfpa10",
-      "top_m": 1.53,
-      "min_bottom_m": 0.1,
+      "id": "fp-mount-owner-1p2",
+      "mount_m": 1.2,
+      "datum": "anchor",
+      "basis": "owner",
       "applies_to": [
-        "extinguisher"
-      ],
-      "borrowed_for": [
+        "extinguisher",
         "cabinet",
         "blanket"
       ],
-      "standard": "NFPA 10",
-      "source": "NFPA 10 (basis of the UAE fire code): portable extinguisher top at most 1.53 m above floor, bottom at least 0.10 m"
+      "borrowed_for": [],
+      "standard": "owner ruling",
+      "source": "owner 2026-11-08: wall mounted at 1.2 m",
+      "note": "NFPA 10 (basis of the UAE fire code), kept as a note only and not the active rule: portable extinguisher top at most 1.53 m above floor, bottom at least 0.10 m"
+    },
+    {
+      "discipline": "ACMV",
+      "role": "no_void_height",
+      "id": "exposed-under-structure",
+      "rule": "underside of the lowest structure above",
+      "label": "exposed, height provisional",
+      "source": "owner ruling 2026-11-08"
     }
   ]
 }
