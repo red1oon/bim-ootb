@@ -2892,7 +2892,9 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var msg = el('div', 'err'); box.appendChild(msg);
     // status bar (setStatusDB :3938-3942): " Records = N " - N = COUNT(*) under the tab's own filter + access (getNoOfRecords :3455-3490 = the grid's gq.where)
     var status = el('div', 'fw-status'), nRec = '?';
-    try { var bw = _findBase[_findKey()]; var rc = db.exec('SELECT count(*) FROM ' + tab.tableName + (bw ? ' WHERE ' + bw : '')); nRec = rc.length ? Number(rc[0].values[0][0]) : 0; } catch (eC) { nRec = '?'; }
+    // counted through THE tip reader (_sqlRows: the bundle + this device's committed op groups), as the grid reads its rows — a raw db.exec saw the bundle only, so a window whose rows
+    //   came in through the op-log (a migration, any session's saves) said "Records = 1" over a grid of 8 (found by the Odoo migration film, bim-compiler MIGRATE_INSTALL_TENANT.md)
+    try { var bw = _findBase[_findKey()]; var rc = _sqlRows('SELECT count(*) AS n FROM ' + tab.tableName + (bw ? ' WHERE ' + bw : '')); nRec = rc && rc.length ? Number(rc[0].n != null ? rc[0].n : rc[0][Object.keys(rc[0])[0]]) : 0; } catch (eC) { nRec = '?'; }
     status.textContent = _findMsg('Records', 'Records') + ' = ' + nRec; status.setAttribute('data-find-records', String(nRec)); box.appendChild(status);
     function show(m) { mode = m; pSimple.style.display = m === 'simple' ? '' : 'none'; pAdv.style.display = m === 'advanced' ? '' : 'none'; sLeft.style.visibility = m === 'simple' ? '' : 'hidden';
       tSimple.classList.toggle('sel', m === 'simple'); tAdv.classList.toggle('sel', m === 'advanced'); }
