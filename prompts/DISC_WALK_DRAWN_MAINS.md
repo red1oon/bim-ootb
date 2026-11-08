@@ -182,3 +182,38 @@ Other witnesses: W-BAND-NO-HOST 34/0, B7 real page 15 of 15, W-WALKED-EXPORT-DB 
 1. **Grid choice tie-break.** The old rule kept the first passing grid at equal median: it took a 5-tag grid from another storey over a 19-tag grid, both at 0 mm. Now: lowest median; within 1 mm, the grid with more matched tags; then the grid on the sheet's own storey (`read({ sheet: { storey } })`), if the caller states it. A grid's storey only breaks a tie; no row ever takes a level from it. `§MAINS-FIT-CHOICE` names the choice when more than one grid passes. Fact for the record: this author splits each storey's grid into 3 IfcGrid (19 + 5 + 4 axes), so one grid caps the fit at 19 of 28 tags. That is enough, so no pooling is needed.
 2. **`fittings_unjoined`:** a fitting whose box touches no centreline piece. It is logged in `§MAINS-READ` beside `fittings_unjoined_nomirror`, the same count with the mirror correction off, so the correction's effect reads from the log. `emptyBoxes` (a block with no geometry) is a different count.
 **RESULT:** W-DRAWN-MAINS 53/0. The new claims are M5f (more tags wins, both orders), M5g (sheet storey breaks the tie; no row carries a level) and M6f (0 unjoined with the correction, 1 without, plus a red control). The same witness on main's reader: 48/5, all five on the new claims.
+
+## §10 Drawn equipment (FP), 2026-11-08
+
+*§FP-EQUIPMENT SPEC (2026-11-08; data measured by the design lane on one private set; owner's FP ruling "Drawn equipment + ask").*
+
+- **Reader:** the drawn-mains reader (`modeller/drawn_mains.js`) gains an `equipment` role: point items, no runs. It reuses the same sheet fit (one held grid), the nested-block expansion, missing-block logging and the mirror guard.
+- **Rows (US NCS, fine to commit):**
+  - equipment = top-level INSERTs on `M-EQPM` and `P-SANR-FIXT`;
+  - KIND from block-name words, not the layer (extinguishers are split across both layers): `FIRE CABINET` → cabinet; `EXTINGUISHER` → extinguisher (foam 9 L and 4 kg dry powder families); `Fire_Blanket` / `FB` → blanket;
+  - grid = `S-GRID` LINE + `S-GRID-IDEN` MTEXT (the existing patterns cover it);
+  - the layer-0 linked-model INSERT is background: ignore it for equipment.
+- **Duplicates:** the sheet stacks copies at one spot, 16 inserts for 11 distinct items. Collapse identical kind + block name + position within 10 mm and log `stacked=`. Distinct on that sheet: cabinets 3, blankets 4, foam extinguishers 2, powder extinguishers 2.
+- **IFC class (design lane's advice; the owner may overrule):** IfcFireSuppressionTerminal, PredefinedType USERDEFINED, ObjectType from the word (FIRECABINET / FIREEXTINGUISHER / FIREBLANKET); HOSEREEL only when the sheet says hose reel (these cabinets say "EMPTY"). Discipline FP. One data row per word. Not IfcFurnishingElement.
+- **Provenance:** `drawn` position, sheet + fit numbers. **Height: none stated. Ask the design lane / owner before giving one** (no wall-mounted height rule is held).
+- **Witness:** the stack of 3 at one spot gives 1 item (red control: no collapse gives 3). The mirror guard logs fired=no on this sheet (a real negative). The kind comes from the word even when the layer differs.
+- **Film:** FP = these items at their drawn spots; the film states "no sprinklers drawn; asked".
+- **Mount height (owner 2026-11-08: "Named code default").** One data row, `mount_height` / `fp-mount-nfpa10` in `modeller/drawn_mains_rules.json` (editable there, never hard-coded): top 1.53 m, minimum bottom 0.10 m, applies to extinguishers, borrowed for cabinets and blankets. Source: NFPA 10 (basis of the UAE fire code): portable extinguisher top at most 1.53 m above floor, bottom at least 0.10 m.
+  - Each item's TOP sits 1.53 m above the measured storey floor under it, unless the block's drawn size would put its bottom under 0.10 m; then bottom = 0.10 m, and that is logged.
+  - Cabinets and blankets take the same row, labelled borrowed.
+  - Strength: position = drawn, height = provisional (HeightBasis = code-default, Source = the row's citation).
+  - Log: `§FP-EQUIP placed=<n> heightRule=<row id> borrowedKinds=<n> bottomClamped=<n>`.
+  - A sheet or model that states a height always wins.
+  - **Placement at height: built in the walk step, not in this branch.** The reader has no floor plane and gives no z; it only reads the row and exposes it as `result.equipment_height_rule`.
+
+### §10.1 Build decisions (this branch)
+- Rows: roles `equipment_layer` (one row per layer, entity INSERT), `equipment_kind` (a block-name word, case-insensitive regex, with kind, ifc_class, predefined, object_type), `mount_height`. The existing ACMV `equipment` row is untouched. Blanket has two rows (`Fire_Blanket`, and `FB` as a whole word: non-alphanumeric on both sides, so `FB1` is unknown). Hose reel is a row (`HOSE ?REEL`) that fires only when the block name says so.
+- Equipment is read from the top-level entities only; the expansion of the layer-0 linked block is never used for equipment.
+- A name matching no word, or two different kinds, is `unknownKind`: not placed, logged `§MAINS-EQUIP-UNKNOWN`.
+- Roles are independent: no centreline layer gives `inconclusive` for runs only; the sheet still fits and reads equipment. The grid patterns then come from any row that holds them. A sheet with neither centreline nor equipment inserts is INCONCLUSIVE as before.
+- Mirror guard for points: extents = centreline + outline + grid lines; a point outside them whose X-reflection lands inside is reflected. Logged `§MAINS-MIRROR sheet= role=equipment fired= n= of inserts=`.
+- Collapse: same kind + block name within 10 mm in the sheet frame; `stacked` counts the dropped inserts. Items keep `z: null`; the table has no z column.
+- `write()` creates `drawn_equipment` only when equipment exists, so a mains-only database still gains exactly the two route tables (M8w, M12 stay as claimed). Re-writing a sheet replaces its equipment rows; the revision refusal is the same as `drawn_route`.
+- Witness claims E1 to E9 in `modeller/tests/witness_drawn_mains.js`.
+
+**RESULT (§10):** W-DRAWN-MAINS 67/0 (53 existing unchanged, 14 new: E1, E1 RED, E2, E3, E4, E5 x2, E6, E6 control, E7, E8, E8 RED, E9, E9 RED). W-ONE-FRAME F6 (W-DRAWN-MAINS) green; its two F1d RED lines fail identically on the tree without this change (not caused here). Not built here, by design: placement at height, the `§FP-EQUIP` line (walk step), any UI or walker change.
