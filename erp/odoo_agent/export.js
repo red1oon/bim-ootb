@@ -9,14 +9,12 @@
 //   The browser never connects to Odoo. Nothing is invented: every cell is a field of a real Odoo row; where iDempiere
 //   needs a value Odoo does not have (UoM X12DE355 code), the cell is left for the user to map in the summary screen.
 //   No npm dependency — plain Node.
-// Run:  node export.js        env: ODOO_HOST ODOO_PORT ODOO_DB ODOO_LOGIN ODOO_PASSWORD CUTOVER(YYYY-MM-DD, default today)
+// Run:  node export.js [--host H --port P --db D --login L --cutover YYYY-MM-DD]   (see cli.js; the password is asked, never a flag)
 'use strict';
 var path = require('path'), fs = require('fs'), http = require('http');
 
-var HOST = process.env.ODOO_HOST || 'localhost', PORT = Number(process.env.ODOO_PORT || 8069);
-var DB = process.env.ODOO_DB || 'odoodemo', LOGIN = process.env.ODOO_LOGIN || 'admin', PASSWORD = process.env.ODOO_PASSWORD || 'admin';
-var CUTOVER = process.env.CUTOVER || new Date().toISOString().slice(0, 10);
-var OUT = path.join(process.cwd(), process.env.EXPORT_DIR || 'odoo_export');
+var HOST, PORT, DB, LOGIN, PASSWORD, CUTOVER;   // set from cli.js (flags / env / demo defaults) when the run starts
+var FINAL = path.join(process.cwd(), process.env.EXPORT_DIR || 'odoo_export'), OUT = FINAL + '.partial';   // written here, renamed to FINAL only when the run succeeds
 
 function rpc(service, method, args) {
   return new Promise(function (resolve, reject) {
@@ -46,6 +44,9 @@ function acctType(t) {
 function prodType(t) { return t === 'service' ? 'S' : (t === 'consu' || t === 'product') ? 'I' : ''; }
 
 (async function () {
+  var cfg = await require('./cli').config();
+  HOST = cfg.HOST; PORT = cfg.PORT; DB = cfg.DB; LOGIN = cfg.LOGIN; PASSWORD = cfg.PASSWORD; CUTOVER = cfg.CUTOVER;
+  console.log('§ODOO-EXPORT target db=' + DB + ' host=' + HOST + ':' + PORT + ' login=' + LOGIN + ' demo=' + (cfg.demo ? 'Y' : 'N') + ' password=' + cfg.passwordFrom);
   var fails = 0, files = [], counts = {}, notes = [];
   function ok(c, m, d) { if (!c) fails++; console.log('   ' + (c ? '✓' : '✗ FAIL:') + ' ' + m + (d ? ' — ' + d : '')); }
   console.log('\n══ ODOO-EXPORT — master data from ' + DB + ' @ ' + HOST + ':' + PORT + ' → ' + OUT + ' (cutover ' + CUTOVER + ') ══\n');
@@ -68,7 +69,7 @@ function prodType(t) { return t === 'service' ? 'S' : (t === 'consu' || t === 'p
     files.push({ file: name, target: target, rows: rows.length, source: sourceKey });
     console.log('§ODOO-EXPORT file=' + name + ' target=' + target + ' rows=' + rows.length);
   }
-  fs.mkdirSync(OUT, { recursive: true });
+  fs.rmSync(OUT, { recursive: true, force: true }); fs.mkdirSync(OUT, { recursive: true });
 
   var company = (await ex('res.company', 'search_read', [[]], { fields: ['id', 'name', 'partner_id', 'currency_id'], order: 'id' }));
   var iso = company.length ? (await ex('res.currency', 'read', [[m2o(company[0].currency_id)]], { fields: ['name'] }))[0].name : '';
@@ -205,6 +206,16 @@ function prodType(t) { return t === 'service' ? 'S' : (t === 'consu' || t === 'p
   fs.writeFileSync(path.join(OUT, 'manifest.json'), JSON.stringify(manifest, null, 1));
   fs.writeFileSync(path.join(OUT, 'provenance.json'), JSON.stringify(provenance));
   notes.forEach(function (n) { console.log('§ODOO-EXPORT note ' + n); });
-  console.log('\n' + (fails ? '🔴 ODOO-EXPORT FAIL (' + fails + ')' : '🟢 ODOO-EXPORT PASS') + ' — ' + files.length + ' files + manifest.json + provenance.json written to ' + OUT);
+  if (!fails) { fs.rmSync(FINAL, { recursive: true, force: true }); fs.renameSync(OUT, FINAL); }
+  console.log('\n' + (fails ? '🔴 ODOO-EXPORT FAIL (' + fails + ') — nothing published; the incomplete files are in ' + OUT : '🟢 ODOO-EXPORT PASS — ' + files.length + ' files + manifest.json + provenance.json written to ' + FINAL));
   process.exit(fails ? 1 : 0);
-})().catch(function (e) { console.log('§ODOO-EXPORT ERROR ' + e.message); process.exit(2); });
+})().catch(function (e) {
+  try { fs.rmSync(OUT, { recursive: true, force: true }); } catch (x) {}   // a half export must never look like a whole one
+  var m = /not allowed to access '([^']+)' \(([a-z0-9_.]+)\)/.exec(e.message || '');
+  if (m) {
+    console.log('§ODOO-EXPORT FAIL access: the Odoo user cannot read ' + m[1] + ' (' + m[2] + '). Run it with an Odoo login that can read your accounting and stock (an administrator, or a user in the groups Odoo names below). Nothing was written.');
+    console.log('   Odoo says: ' + e.message.replace(/\\n|\n/g, ' ').replace(/\\t|\t/g, ''));
+    process.exit(1);
+  }
+  console.log('§ODOO-EXPORT ERROR ' + e.message + ' — nothing was written.'); process.exit(2);
+});

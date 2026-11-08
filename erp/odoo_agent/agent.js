@@ -18,9 +18,7 @@ var initSqlJs = require('sql.js');
 var K = require('./erp_kernel');
 var A = require('./odoo_adapter');
 
-var HOST = process.env.ODOO_HOST || 'localhost', PORT = Number(process.env.ODOO_PORT || 8069);
-var DB = process.env.ODOO_DB || 'odoodemo', LOGIN = process.env.ODOO_LOGIN || 'admin', PASSWORD = process.env.ODOO_PASSWORD || 'admin';
-var SO = process.env.ODOO_SO || 'S00023';
+var HOST, PORT, DB, LOGIN, PASSWORD, SO;   // set from cli.js (flags / env / demo defaults) when the run starts
 var OUT = path.join(process.cwd(), 'odoo_chain.json');
 
 function rpc(service, method, args) {
@@ -38,8 +36,11 @@ function rpc(service, method, args) {
 function n2(x) { return Number(x).toFixed(2); }
 
 (async function () {
+  var cfg = await require('./cli').config();
+  HOST = cfg.HOST; PORT = cfg.PORT; DB = cfg.DB; LOGIN = cfg.LOGIN; PASSWORD = cfg.PASSWORD; SO = cfg.SO || (cfg.demo ? 'S00023' : '');
+  console.log('§ODOO-AGENT target db=' + DB + ' host=' + HOST + ':' + PORT + ' login=' + LOGIN + ' demo=' + (cfg.demo ? 'Y' : 'N') + ' password=' + cfg.passwordFrom);
   var fails = 0; function ok(c, m, d) { if (!c) fails++; console.log('   ' + (c ? '🟢' : '🔴') + ' ' + m + (d ? ' — ' + d : '')); }
-  console.log('\n══ ODOO-AGENT — extract+fold SO ' + SO + ' from the RUNNING odoo (' + DB + ' @ ' + HOST + ':' + PORT + ') ══\n');
+  console.log('\n══ ODOO-AGENT — extract+fold one sale order from the RUNNING odoo (' + DB + ' @ ' + HOST + ':' + PORT + ') ══\n');
 
   // ── connect ──
   var uid = await rpc('common', 'login', [DB, LOGIN, PASSWORD]);
@@ -47,6 +48,14 @@ function n2(x) { return Number(x).toFixed(2); }
   if (!uid) { console.log('\n§ODOO-AGENT FAIL auth\n'); process.exit(1); }
   var ex = function (model, method, args, kw) { return rpc('object', 'execute_kw', [DB, uid, PASSWORD, model, method, args, kw || {}]); };
 
+  // ── which order: --so / ODOO_SO, the demo's S00023, else YOUR most recent order that has a posted customer invoice ──
+  if (!SO || SO === 'latest') {
+    var invd = await ex('account.move', 'search_read', [[['move_type', '=', 'out_invoice'], ['state', '=', 'posted'], ['invoice_origin', '!=', false]]], { fields: ['invoice_origin'] });
+    var names = Array.from(new Set(invd.map(function (m) { return m.invoice_origin; })));
+    var latest = names.length ? (await ex('sale.order', 'search_read', [[['name', 'in', names]]], { fields: ['name'], order: 'date_order desc, id desc', limit: 1 }))[0] : null;
+    if (!latest) { console.log('§ODOO-AGENT FAIL no sale order with a posted customer invoice in ' + DB + ' — pass one with --so'); process.exit(1); }
+    SO = latest.name; console.log('§ODOO-AGENT so=' + SO + ' picked=latest-invoiced (pass --so to choose another)');
+  }
   // ── extract the O2C chain LIVE (same shape as odoo_oracle.json; nothing fabricated) ──
   var so = (await ex('sale.order', 'search_read', [[['name', '=', SO]]], { fields: ['id', 'name', 'state', 'amount_untaxed', 'amount_tax', 'amount_total'] }))[0];
   ok(!!so, 'live SO found', so && (so.name + ' id=' + so.id + ' state=' + so.state));
