@@ -9,7 +9,7 @@
 // Usage: node modeller/tools/mains_to_db.js <building.db> <sheet.dxf>... [--sheet-meta=<json>|@file.json] [--rules=<rules.json>]
 //   sheet meta: {"number":"M-101","revision":"B","storey":"Level 1"} for one sheet, an array in file order, or an object keyed by the DXF file's base name.
 'use strict';
-const fs = require('fs'), path = require('path');
+const fs = require('fs'), path = require('path'), { Buffer } = require('buffer');
 const M = path.join(__dirname, '..');
 const initSqlJs = require(require.resolve('sql.js', { paths: [process.cwd(), path.join(process.env.HOME || '', 'bim-compiler', 'node_modules'), M] }));
 const DxfParser = require(path.join(M, 'lib', 'dxf-parser.js')), DM = require(path.join(M, 'drawn_mains.js'));
