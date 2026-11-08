@@ -64,11 +64,23 @@
     return out.sort(function (p, q) { return (q.newly_over - p.newly_over) || (q.after - p.after) || (p.bay < q.bay ? -1 : 1); });
   }
 
-  function newRows(gate, nothingMoved) {
+  // §20.2.10 the "clash" row when the shapes were judged: it counts what STOPS (clash + not judged); the box count stays as box_count.
+  // A failed shape module leaves the box count and says so in `shape_note`. Neither changes any threshold: the words come from the Viewer's narrow phase.
+  function shapedClash(row, shapes) {
+    if (!shapes || row.id !== 'clash') return row;
+    if (shapes.state === 'JUDGED') {
+      row.box_count = row.count; row.count = shapes.stop_count; row.label = 'New or deeper overlap (shapes checked)';
+      row.shape_note = shapes.tally.clash + ' clash, ' + shapes['tally']['not judged'] + ' not judged (box verdict kept), ' + shapes.cleared + ' cleared (' + shapes.tally.touching + ' touching, ' + shapes.tally['box only, shapes clear'] + ' box only)';
+    } else if (shapes.state === 'FALLBACK') row.shape_note = 'shape check unavailable: ' + shapes.reason + '; the box count and box stop apply';
+    else if (shapes.state === 'NOTHING_TO_JUDGE') row.shape_note = 'no box overlap to judge, so the shape check was not run';
+    return row;
+  }
+
+  function newRows(gate, nothingMoved, shapes) {
     if (!gate || nothingMoved) return NEW_KINDS.map(function (k) { return { id: k[0], label: k[1], level: k[2], state: 'NOT_JUDGED', count: null }; });
     var all = (gate.red || []).concat(gate.orange || []);
     var rows = NEW_KINDS.map(function (k) {
-      return { id: k[0], label: k[1], level: k[2], state: 'JUDGED', count: all.filter(function (x) { return x.kind === k[0]; }).length };
+      return shapedClash({ id: k[0], label: k[1], level: k[2], state: 'JUDGED', count: all.filter(function (x) { return x.kind === k[0]; }).length }, shapes);
     });
     all.forEach(function (x) {   // a kind this file has not heard of is still counted, never dropped
       if (!NEW_KINDS.some(function (k) { return k[0] === x.kind; }) && !rows.some(function (r) { return r.id === x.kind; })) {
@@ -92,8 +104,9 @@
     return {
       tag: 'EDIT_REPORT', version: 1, change: input.change,
       rows: [overlapRow(input.overlap)].concat(spanRows(input.span)),
-      newRows: newRows(input.gate, !!(input.overlap && input.overlap.after && !input.overlap.after.moved)),
+      newRows: newRows(input.gate, !!(input.overlap && input.overlap.after && !input.overlap.after.moved), input.shapes),
       newPairs: newPairs(input.overlap),
+      shapes: input.shapes || { state: 'NOT_RUN', reason: 'no shape input' },
       notChecked: input.notChecked.slice()
     };
   }
@@ -102,7 +115,7 @@
   function gateVerdict(r) {
     var why = [], nj = [];
     (r.rows || []).forEach(function (x) { if (x.state !== 'JUDGED') nj.push(x.id); });
-    (r.newRows || []).forEach(function (n) { if (n.state !== 'JUDGED') { if (nj.indexOf(n.id) < 0) nj.push(n.id); return; } if (n.level === 'red' && n.count > 0) why.push(n.label + ': ' + n.count); });
+    (r.newRows || []).forEach(function (n) { if (n.state !== 'JUDGED') { if (nj.indexOf(n.id) < 0) nj.push(n.id); return; } if (n.level === 'red' && n.count > 0) why.push(n.label + ': ' + n.count + (n.shape_note ? ' (' + n.shape_note + (n.box_count != null ? '; ' + n.box_count + ' box pairs' : '') + ')' : '')); });
     var sr = (r.rows || []).filter(function (x) { return x.id === 'span_red'; })[0];
     if (sr && sr.state === 'JUDGED') {
       if (sr.delta > 0) why.push(sr.label + ': ' + sr.before + ' -> ' + sr.after + (sr.limit != null ? ' (limit ' + sr.limit + ' m' + (sr.material ? ', ' + sr.material : '') + ')' : ''));

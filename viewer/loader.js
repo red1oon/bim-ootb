@@ -190,10 +190,10 @@ async function loadAllLibs() {
     if (arguments[0] && typeof arguments[0] === 'string' && arguments[0].indexOf('Multiple instances of Three.js') >= 0) return;
     _origWarn.apply(console, arguments);
   };
-  console.log('§BVH_LOADING importing three-mesh-bvh@0.8.0 from CDN...');
+  console.log('§BVH_LOADING importing three-mesh-bvh@0.8.0 from common/lib (vendored, offline)...');
   var _bvhT0 = performance.now();
   try {
-    const bvh = await import('https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.8.0/+esm');
+    const bvh = await import('../common/lib/three-mesh-bvh.module.js')   /* §NARROW_BUILD one local copy, one version (bim-compiler NEURO_SYMBOLIC_ORDER_CONTRACT.md §20.2.9 Q2); resolves 'three' through the page import map */;
     var _bvhMs = (performance.now() - _bvhT0).toFixed(0);
     console.log('§BVH_FETCHED ms=' + _bvhMs + ' exports=' + Object.keys(bvh).join(','));
     if (!bvh.computeBoundsTree) throw new Error('computeBoundsTree not exported');

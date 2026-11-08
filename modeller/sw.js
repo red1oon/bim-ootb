@@ -24,7 +24,8 @@
 // v253 (2026-11-09) §ON-ROOF-SURFACE: a drawn run or terminal over a roof surface with nothing above sits on its top face (owner 2026-11-08, drawn_mains_rules.json roof_surface_height row; prompts/DISC_WALK_DRAWN_INTEGRATION.md §11)
 // v254 (2026-11-09) §11a on-roof surface = the highest roof-classified element on the deck (disc_walker.js?v=18)
 // v255 (2026-11-09) drawn services reach the film: viewer_db_export.js?v=3 writes drawn_walk_line / drawn_walk_marker
-const CACHE_VERSION = 'v255';   // bump on each deploy; per-change detail is the git commit message.
+// v256 (2026-11-09) §NARROW_BUILD the overlap row's real-shape check: common/lib/three-mesh-bvh.module.js + viewer/clash_narrow.js stored for offline; modeller.html?, edit_report.js?v=4
+const CACHE_VERSION = 'v256';   // bump on each deploy; per-change detail is the git commit message.
 const CACHE_PREFIX = 'bim-modeller-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -33,6 +34,8 @@ const LOCAL_LIBS = [
   'lib/three.module.min.js',
   'lib/three.core.min.js',
   '../common/lib/OrbitControls.module.js',
+  '../common/lib/three-mesh-bvh.module.js',   // §NARROW_BUILD vendored BVH for the shape check (offline)
+  '../viewer/clash_narrow.js',
   '../common/lib/sql-wasm.js',
   '../common/lib/sql-wasm.wasm',
   'lib/dxf-parser.js',
@@ -100,6 +103,7 @@ const PRECACHE_ASSETS = [
   'grid_span_gate.js',
   'edit_report.js',
   'edit_report_panel.js',
+  'edit_shapes.js',   // §NARROW_BUILD the real-shape check glue (lazy-loaded; stored so it works offline)
   'edit_report_coverage.json',
   'str_walker_outliner.js',
   'walker_confidence.js',

@@ -2332,9 +2332,17 @@ let _erModsP = null;
 function _ensureEditReport() {
   if (window.EditReport && window.EditReportPanel) return Promise.resolve(true);
   const one = (src) => new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error(src + ' did not load')); document.head.appendChild(s); });
-  if (!_erModsP) _erModsP = one('edit_report.js?v=3').then(() => one('edit_report_panel.js?v=2')).then(() => { console.log('§EDIT_REPORT modules loaded on first use'); return true; }).catch(e => { _erModsP = null; throw e; });
+  if (!_erModsP) _erModsP = one('edit_report.js?v=4').then(() => one('edit_report_panel.js?v=3')).then(() => { console.log('§EDIT_REPORT modules loaded on first use'); return true; }).catch(e => { _erModsP = null; throw e; });
   return _erModsP;
 }
+// §20.2.10 the real-shape check loads with the report, on the first committed grid move (never at open): edit_shapes.js, then clash_narrow.js + the vendored BVH. Resolves true/false, never throws.
+let _erShapeP = null;
+function _ensureEditShapes() {
+  if (!_erShapeP) _erShapeP = new Promise((res) => { const s = document.createElement('script'); s.src = 'edit_shapes.js?v=1'; s.onload = res; s.onerror = () => res(); document.head.appendChild(s); })
+    .then(() => window.EditShapes ? window.EditShapes.load() : (window.__editShapesLoadError = 'edit_shapes.js did not load', false)).catch(() => false);
+  return _erShapeP;
+}
+window.__ensureEditShapes = _ensureEditShapes;
 window.__ensureEditReport = _ensureEditReport;   // edit_cli reads EditReport.gateVerdict after a report
 function _erTok() { const O = window.Bonsai.oplog; return O.length + ':' + O.cursor; }
 async function _erEmit(e) {
@@ -2348,8 +2356,13 @@ async function _erEmit(e) {
     const lo = (!e.plainTol && _latticeGateOpts(e.delta)) || undefined, tol = lo ? lo.clashTol : (SG ? SG.CLASH_TOL : null);   // §14.1 a shift has no sideways error, so it is judged at the plain tolerance
     const overlap = (SG && gate) ? { tolMm: tol * 1000, before: SG.pairsOver(e.gateBefore, moved, rel, lo), after: SG.pairsOver(after, moved, rel, lo) } : { tolMm: tol == null ? null : tol * 1000, refused: 'the conformity gate did not run' };
     const span = (e.spanBefore.refused || spanAfter.refused) ? { refused: e.spanBefore.refused || spanAfter.refused } : { before: e.spanBefore.tally, after: spanAfter.tally, prelim: spanAfter.prelim, material: spanAfter.material, mixed: spanAfter.mixed };
+    let shapes = { state: 'NOTHING_TO_JUDGE' }; window.__editShapesCost = null;
+    const clashPairs = (gate && gate.red || []).filter(x => x.kind === 'clash');
+    const shapesOk = await _ensureEditShapes();   // loads on the first committed grid move; false = fall back to the box stop
+    if (clashPairs.length) shapes = (shapesOk && window.EditShapes) ? window.EditShapes.judge({ pairs: clashPairs, before: overlap.before ? overlap.before.pairs : null, after: overlap.after ? overlap.after.pairs : null, tolMm: overlap.tolMm })
+      : { state: 'FALLBACK', reason: (window.EditShapes && window.EditShapes.loadError) || window.__editShapesLoadError || 'the shape module did not load' };
     const report = window.EditReport.compose({
-      change: e.change || { kind: 'grid-move', grid: e.id, delta: +e.delta.toFixed(6), recomposed: (e.res.commands || []).length, riders: (e.res.riders || []).length, verify: e.res.verify },
+      shapes, change: e.change || { kind: 'grid-move', grid: e.id, delta: +e.delta.toFixed(6), recomposed: (e.res.commands || []).length, riders: (e.res.riders || []).length, verify: e.res.verify },
       overlap, span, gate: gate ? { red: gate.red, orange: gate.orange } : null, notChecked: cov.not_checked
     });
     _erLast = { tok: _erTok(), moved, report };
@@ -2358,7 +2371,7 @@ async function _erEmit(e) {
     console.log('§EDIT_REPORT ' + JSON.stringify(report));
     if (window.EditReportPanel) window.EditReportPanel.show(report);
     const pm = performance.memory;
-    console.log('§EDIT_REPORT_COST ms=' + (performance.now() - t0).toFixed(1) + ' moved=' + moved.length + ' elements=' + Object.keys(after).length + ' heapMB=' + (pm ? (pm.usedJSHeapSize / 1048576).toFixed(0) : '?') + ' verts=0');
+    console.log('§EDIT_REPORT_COST ms=' + (performance.now() - t0).toFixed(1) + ' moved=' + moved.length + ' elements=' + Object.keys(after).length + ' heapMB=' + (pm ? (pm.usedJSHeapSize / 1048576).toFixed(0) : '?') + ' verts=' + (clashPairs.length && window.__editShapesCost ? window.__editShapesCost.verts : 0) + ' shape_ms=' + (clashPairs.length && window.__editShapesCost ? window.__editShapesCost.shape_ms : 0) + ' shape_pairs=' + (clashPairs.length && window.__editShapesCost ? window.__editShapesCost.shape_pairs : 0) + ' bvh_heap_mb=' + (clashPairs.length && window.__editShapesCost ? window.__editShapesCost.bvh_heap_mb : 0) + ' shapes=' + shapes.state);
   } catch (err) { console.warn('§EDIT_REPORT FAIL ' + (err && err.message || err) + ' — the edit stands, no report'); }
 }
 // The numbers belong to one state of the model: undo, redo or a scrub makes the panel stale, so it goes rather than lie.
