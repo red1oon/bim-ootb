@@ -183,7 +183,7 @@ function summarise(runs) {
     chk('S2b the unit trap: gx8 +1.5 meets it, gx8 +1500 does not', goalMet(by('G3'), mG.lines, [{ grid: 'gx8', move: 1.5 }]) === true && goalMet(by('G3'), mG.lines, [{ grid: 'gx8', move: 1500 }]) === false);
     chk('S2c the neighbour trap: gy5 +2 alone breaks it, gy5 and gy6 +2 meets it', goalMet(by('G6'), mG.lines, [{ grid: 'gy5', move: 2 }]) === false && goalMet(by('G6'), mG.lines, [{ grid: 'gy5', move: 2 }, { grid: 'gy6', move: 2 }]) === true);
     chk('S2d crossing, judged here: gy20 +3 passes gy21, +1 does not', crossed(mG.lines, [{ grid: 'gy20', move: 3 }]) === true && crossed(mG.lines, [{ grid: 'gy20', move: 1 }]) === false);
-    chk('S2e the proposer sees the system and the lines', /column-framed/.test(prompt(by('G1'), mG, [])) && /gy8 y=86\.616/.test(prompt(by('G1'), mG, [])), mG.system + ' ' + mG.material + ' lines=' + mG.lines.length);
+    chk('S2e the proposer sees the system and the lines', /column-framed/.test(prompt(by('G1'), mG, [])) && /gy8 y=92\.436/.test(prompt(by('G1'), mG, []))   /* §17: the building-frame position (world 86.616) */, mG.system + ' ' + mG.material + ' lines=' + mG.lines.length);
     const mS = await modelOf('SampleHouse');
     chk('S4a §13.2 the wall-bearing building is on its own lines, and the prompt says where they came from', mS.grid_source === 'derived:arc-semigrid' && /derived from the building's own walls/.test(prompt(by('S1'), mS, [])) && /derived from the building's own columns/.test(prompt(by('G1'), mG, [])), mS.lines.map(l => l.id + '=' + l.pos).join(' '));
     chk('S4b every brief names lines that exist', BRIEFS.every(b => b.goal.every(g => [g.a, g.b, g.line].filter(Boolean).every(id => (b.building === 'SampleHouse' ? mS : mG).lines.some(l => l.id === id)))));
