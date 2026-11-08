@@ -31,22 +31,21 @@ Then go back to the browser → **Migrate ▸ Odoo ▸ step ③** and load that 
 
 ## Point it at your own Odoo
 
-Override any default with an environment variable:
+Add flags — they work in every shell (Windows `cmd`, PowerShell, bash):
 
 ```bash
-ODOO_HOST=10.0.0.5 ODOO_PORT=8069 ODOO_DB=mydb \
-ODOO_LOGIN=admin ODOO_PASSWORD=secret ODOO_SO=S00042 \
-node agent.js
+node agent.js  --host 10.0.0.5 --port 8069 --db mydb --login me
+node export.js --host 10.0.0.5 --port 8069 --db mydb --login me --cutover 2026-12-31
 ```
 
-| Variable        | Default       | Meaning                          |
-| --------------- | ------------- | -------------------------------- |
-| `ODOO_HOST`     | `localhost`   | Odoo host                        |
-| `ODOO_PORT`     | `8069`        | Odoo JSON-RPC port               |
-| `ODOO_DB`       | `odoodemo`    | Odoo database name               |
-| `ODOO_LOGIN`    | `admin`       | Odoo login                       |
-| `ODOO_PASSWORD` | `admin`       | Odoo password                    |
-| `ODOO_SO`       | `S00023`      | Sale order to migrate            |
+- **Your password is asked in the terminal** (hidden as you type). It is never a flag (that would stay in your shell
+  history) and never typed into the browser. For an unattended run, set `ODOO_PASSWORD` in the environment instead.
+- **The login needs read rights on accounting and stock** (an administrator, or a user in *Invoicing/Billing
+  Administrator*). If it lacks them, the export stops, names what it could not read, and writes nothing.
+- `agent.js` checks one sales order to the cent. On your own Odoo it picks your most recent order that has a posted
+  customer invoice (`--so latest`), or the one you name: `--so S00042`.
+- With no flags at all, both use the demo Odoo (`odoodemo` on `localhost:8069`, login `admin`).
+- The older environment variables still work (`ODOO_HOST ODOO_PORT ODOO_DB ODOO_LOGIN ODOO_PASSWORD ODOO_SO CUTOVER`); a flag wins.
 
 ## What's in the bundle
 
