@@ -16,6 +16,10 @@ if [ -d "$SCRIPTS" ]; then
   echo "re-vendored erp_kernel.js + odoo_adapter.js from $SCRIPTS"
 fi
 
+# export.js writes the workbook with SheetJS: vendor the twin's own copy (erp/xlsx.mini.min.js) into the folder,
+#   so the zip stays a byte-copy of erp/odoo_agent/ (W-AGENT-ZIP-SYNC).
+cp "$ERP_DIR/xlsx.mini.min.js" "$SRC/xlsx.mini.min.js"
+
 cd "$ERP_DIR"
 rm -f odoo_agent.zip
 # Zip the folder (so it unzips to ./odoo_agent/). -X = no extra attrs for reproducibility.

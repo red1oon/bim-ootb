@@ -610,12 +610,12 @@ const logsOf = f => { const lines = [], orig = console.log; console.log = s => {
         const arcY = (nm, s0, s1) => ifcDoc({ storeyO: [0, 0, s0[1]], storeyName: s0[0], extra: { name: s1[0], o: [0, 0, s1[1]] }, tag: nm, boxes: [{ cls: 'IfcCovering', name: 'Far ceiling', box: [40, 0, s0[1] + 2.6, 45, 8, s0[1] + 2.7], pre: '.CEILING.', gid: Y.CE }, { cls: 'IfcSpace', name: 'Far room', box: [40, 10, s0[1], 44, 14, s0[1] + 2.6], pre: '', gid: guid(1398) }], grid: XGRID('Grid ' + nm, guid(1350)) });
         const strY = (nm, s0, s1, boxes) => ifcDoc({ gsh: 500, gx: 500, storeyO: [0, 0, s0[1]], storeyName: s0[0], extra: { name: s1[0], o: [0, 0, s1[1]] }, tag: nm, boxes: boxes });
         const slab = (name, box, pre, gid, st) => ({ cls: 'IfcSlab', name: name, box: box, pre: pre, gid: gid, st: st });
-        const yBuild = (key, arcDoc, strDoc, set, pieces) => {
+        const yBuild = (key, arcDoc, strDoc, set, pieces, terms) => {
           const a = path.join(TMP, 'ARC_' + key + '.ifc'), b = path.join(TMP, 'STR_' + key + '.ifc'), fed = path.join(TMP, 'fed_' + key + '.db'), dx = path.join(TMP, key + '-101.dxf'), out = path.join(TMP, 'acmv_' + key + '.db');
           fs.writeFileSync(a, arcDoc); fs.writeFileSync(b, strDoc);
           sh([TOOL, '--ifc', a, '--federate', b, '--federate-disc', 'STR', '-o', fed]);
           if (!fs.existsSync(fed)) return null;
-          fs.writeFileSync(dx, sheetDxf({ off: [100, 200], grid: YGS, pieces: pieces, terminals: [] })); fs.copyFileSync(fed, out);
+          fs.writeFileSync(dx, sheetDxf({ off: [100, 200], grid: YGS, pieces: pieces, terminals: terms || [] })); fs.copyFileSync(fed, out);
           const m = sh([MAINS, out, dx, '--sheet-meta=' + JSON.stringify({ number: key + '-101', revision: 'A', storeys: set })]);
           return { fed: fed, db: out, sheet: key + '-101', tool: m };
         };
@@ -682,6 +682,82 @@ const logsOf = f => { const lines = [], orig = console.log; console.log = s => {
                 ok('Y5 items under a ceiling keep their heights byte-identical to the pre-change walker (z === and HeightBasis, per piece; ceiling terminals z and host): fixture X ' + cx.same + '/' + cx.n + ' pieces ' + cx.tsame + '/' + cx.tn + ' terminals, Duplex drawn walk ' + cd.same + '/' + cd.n + ' pieces ' + cd.tsame + '/' + cd.tn + ' terminals',
                   cx.n >= 2 && cx.same === cx.n && cx.tsame === cx.tn && cd.n >= 4 && cd.same === cd.n && cd.tsame === cd.tn && cd.tn >= 1, JSON.stringify({ X: cx, D: cd }));
               } finally { try { fs.unlinkSync(preFile); } catch (e) { /* absent */ } H.openBuildingRules(SQL, stack, 'Duplex'); }
+            }
+          }
+        }
+
+        // ---- R: on the roof surface (prompts/DISC_WALK_DRAWN_INTEGRATION.md §11, owner 2026-11-08 "On the roof surface"). Fixtures R1-R4 (public, written here): the Y federation shape, set {Roof L @3.2}.
+        // ISSUES IT EXPOSES: (R1) a run on a low roof with nothing above left plan only; (R2) the rule putting a duct on an INDOOR floor whose roof is missing; (R3) "roof" decided by a name only, so an IfcRoof is missed; (R4) the roof rule firing before exposed-under-structure; (R5) the rule moving items that sit under a ceiling.
+        {
+          const RG = { A1: guid(1401), B1: guid(1402), C1: guid(1403), D1: guid(1404), U1: guid(1405) };
+          const arcR = (nm, more) => ifcDoc({ storeyO: [0, 0, 0], storeyName: 'Level A', extra: { name: 'Roof L', o: [0, 0, 3.2] }, tag: nm, boxes: (more || []).concat([{ cls: 'IfcCovering', name: 'Far ceiling', box: [40, 0, 2.6, 45, 8, 2.7], pre: '.CEILING.', gid: guid(1498) }, { cls: 'IfcSpace', name: 'Far room', box: [40, 10, 0, 44, 14, 2.6], pre: '', gid: guid(1497) }]), grid: XGRID('Grid ' + nm, guid(1450)) });
+          const strR = (nm, boxes) => ifcDoc({ gsh: 500, gx: 500, storeyO: [0, 0, 0], storeyName: 'STR G', extra: { name: 'STR RL', o: [0, 0, 3.2] }, tag: nm, boxes: boxes });
+          const sl = (name, box, pre, gid, cls) => ({ cls: cls || 'IfcSlab', name: name, box: box, pre: pre, gid: gid, st: 'x' });
+          const rBuild = (key, boxes, pieces, terms, arcBoxes) => {
+            const a = path.join(TMP, 'ARC_' + key + '.ifc'), b = path.join(TMP, 'STR_' + key + '.ifc'), fed = path.join(TMP, 'fed_' + key + '.db'), dx = path.join(TMP, key + '-101.dxf'), out = path.join(TMP, 'acmv_' + key + '.db');
+            fs.writeFileSync(a, arcR('ARC_' + key, arcBoxes)); fs.writeFileSync(b, strR('STR_' + key, boxes));
+            sh([TOOL, '--ifc', a, '--federate', b, '--federate-disc', 'STR', '-o', fed]);
+            if (!fs.existsSync(fed)) return null;
+            fs.writeFileSync(dx, sheetDxf({ off: [100, 200], grid: YGS, pieces: pieces, terminals: terms || [] })); fs.copyFileSync(fed, out);
+            const m = sh([MAINS, out, dx, '--sheet-meta=' + JSON.stringify({ number: key + '-101', revision: 'A', storeys: ['Roof L'] })]);
+            return { fed: fed, db: out, sheet: key + '-101', tool: m };
+          };
+          const rWalk = (stk, file) => { const buf = new Uint8Array(fs.readFileSync(file)); return logsOf(() => H.walkLive(SQL, stk, 'ACMV', buf, 'Duplex', [], {})); };
+          const bbR = (fedPath, g) => { const d = new Database(fedPath, { readonly: true }); try { return rowsOf(d, 'SELECT minZ, maxZ FROM element_world_bbox WHERE guid=?', [g])[0]; } finally { d.close(); } };
+          const R1 = rBuild('R1', [sl('Roofing membrane TPO', [0, 0, 3.0, 10, 8, 3.4], '.FLOOR.', RG.A1)], [[3, 3, 7, 3]], [[8, 5, 'DIFFUSER_SUPPLY']]);
+          const R2 = rBuild('R2', [sl('Floor finish', [0, 0, 3.0, 10, 8, 3.2], '.FLOOR.', RG.B1)], [[3, 3, 7, 3]]);
+          const R3 = rBuild('R3', [sl('Cover', [0, 0, 3.0, 10, 8, 3.4], '.FLAT_ROOF.', RG.C1, 'IfcRoof')], [[3, 3, 7, 3]]);
+          const R6 = rBuild('R6', [sl('Floor:SLAB 200', [0, 0, 2.85, 10, 8, 3.05], '.FLOOR.', guid(1406))], [[3, 3, 7, 3]], null, [sl('Basic Roof:COMBO ROOFING_150mm', [0, 0, 3.05, 10, 8, 3.8], '.FLOOR.', guid(1407))]);
+          const R4 = rBuild('R4', [sl('Roofing membrane', [0, 0, 3.0, 10, 8, 3.4], '.FLOOR.', RG.D1), sl('Deck above', [0, 0, 6.0, 10, 8, 6.3], '.FLOOR.', RG.U1)], [[3, 3, 7, 3]]);
+          if (!R1 || !R2 || !R3 || !R4 || !R6) incon('R*', 'an R federation was not written: ' + [R1, R2, R3, R4].map(x => !!x));
+          else {
+            H.openBuildingRules(SQL, stack, 'Duplex');
+            const V1 = rWalk(stack, R1.db), V2 = rWalk(stack, R2.db), V3 = rWalk(stack, R3.db), V4 = rWalk(stack, R4.db);
+            log('  R walks:\n          ' + [V1, V2, V3, V4].map(W => W.lines.filter(l => /§WALK-EXPOSED-ITEM|§WALK-MAINS-ONROOF|§WALK-MAINS-PLANONLY/.test(l)).map(l => l.slice(0, 330)).join('\n          ')).join('\n          '));
+            const e1 = V1.r.drawn, e2 = V2.r.drawn, e3 = V3.r.drawn, e4 = V4.r.drawn;
+            if (!e1 || !e2 || !e3 || !e4) incon('R*', 'an R walk holds no drawn record');
+            else {
+              const t1 = bbR(R1.fed, RG.A1), t3 = bbR(R3.fed, RG.C1), u4 = bbR(R4.fed, RG.U1), f3 = v => v.toFixed(3);
+              const on1 = L1(V1.lines, /§WALK-MAINS-ONROOF/), on2 = L1(V2.lines, /§WALK-MAINS-ONROOF/), on3 = L1(V3.lines, /§WALK-MAINS-ONROOF/), on4 = L1(V4.lines, /§WALK-MAINS-ONROOF/);
+              const it = (W, id) => itemLinesR(W.lines).filter(l => l.indexOf('#' + id + ' ') >= 0);
+              const itemLinesR = lines => lines.filter(l => /§WALK-EXPOSED-ITEM/.test(l));
+              const term1 = (V1.r.placements || []).filter(p => p.prov === 'drawn:terminal');
+              ok('R1 a run over a slab NAMED "Roofing membrane TPO" (class IfcSlab, PredefinedType FLOOR), nothing above, sits on the slab top (' + f3(t1.maxZ) + '): HeightBasis on-roof-surface, label "on roof, height provisional"; the drawn terminal over it too (terminals=1); the item line names structure=none surface=IfcSlab:roof@top height basis=on-roof-surface',
+                e1.pieces[0].z != null && near(e1.pieces[0].z, t1.maxZ, 0.002) && e1.pieces[0].heightBasis === 'on-roof-surface' && e1.pieces[0].heightLabel === 'on roof, height provisional' && kv(on1, 'pieces') === '1' && kv(on1, 'terminals') === '1' && kv(on1, 'rule') === 'on-roof-surface' && kv(on1, 'notRoofNoStructure') === '0' &&
+                it(V1, 'p1').length === 1 && it(V1, 'p1')[0].indexOf(' structure=none surface=IfcSlab:roof@' + f3(t1.maxZ) + ' height=' + f3(t1.maxZ) + ' basis=on-roof-surface') >= 0 && it(V1, 't0').length === 1 && /basis=on-roof-surface/.test(it(V1, 't0')[0]) && e1.planOnly.length === 0 && (term1.length === 0 || (term1.length === 1 && near(term1[0].z, t1.maxZ, 0.002) && term1[0].heightBasis === 'on-roof-surface')),
+                'z=' + e1.pieces[0].z + ' | ' + on1.slice(0, 150) + ' | ' + (it(V1, 'p1')[0] || '').slice(-140) + ' | terminal placements=' + term1.length);
+              // R1 RED: the row removed from the building DB (the rule travels in the DB), same run
+              const r1x = path.join(TMP, 'acmv_R1_norow.db'); fs.copyFileSync(R1.db, r1x); const dbx = new SQL.Database(new Uint8Array(fs.readFileSync(r1x))); dbx.run("DELETE FROM drawn_height_rule WHERE role='roof_surface_height'"); fs.writeFileSync(r1x, Buffer.from(dbx.export())); dbx.close();
+              const V1x = rWalk(stack, r1x), e1x = V1x.r.drawn;
+              ok('R1 RED: with the row removed from drawn_height_rule the same run is plan only (no height), no §WALK-MAINS-ONROOF line', !!e1x && e1x.pieces[0].z == null && e1x.planOnly.length === 1 && !V1x.lines.some(l => /§WALK-MAINS-ONROOF/.test(l)), 'z=' + (e1x && e1x.pieces[0].z) + ' ' + (e1x && e1x.pieces[0].why));
+              ok('R2 guard: a slab that is NOT a roof by class, PredefinedType or name ("Floor finish"), nothing above, stays plan only; notRoofNoStructure=1; never a duct on an indoor floor (a walk that places nothing is run twice by the harness, so its lines repeat)',
+                e2.pieces[0].z == null && e2.planOnly.length === 1 && kv(on2, 'pieces') === '0' && kv(on2, 'notRoofNoStructure') === '1' && !it(V2, 'p1').some(l => /surface=/.test(l)) && it(V2, 'p1').length >= 1, on2.slice(0, 150) + ' | ' + (it(V2, 'p1')[0] || '').slice(-90));
+              ok('R3 an IfcRoof element ("Cover", no roof word in its name, no slab under the run) under the run qualifies by class: z = its top (' + f3(t3.maxZ) + '), surface=IfcRoof:class',
+                e3.pieces[0].z != null && near(e3.pieces[0].z, t3.maxZ, 0.002) && e3.pieces[0].heightBasis === 'on-roof-surface' && kv(on3, 'pieces') === '1' && it(V3, 'p1').length === 1 && it(V3, 'p1')[0].indexOf('surface=IfcRoof:class@' + f3(t3.maxZ)) >= 0, 'z=' + e3.pieces[0].z + ' | ' + (it(V3, 'p1')[0] || '').slice(-120));
+              ok('R4 order: the same run under STR structure above (deck lower face ' + f3(u4.minZ) + ') over a slab named "Roofing membrane" takes exposed-under-structure at the deck soffit, not on-roof; no surface= on its line; ONROOF pieces=0',
+                e4.pieces[0].z != null && near(e4.pieces[0].z, u4.minZ, 0.002) && e4.pieces[0].heightBasis === 'exposed-under-structure' && kv(on4, 'pieces') === '0' && it(V4, 'p1').length === 1 && !/surface=/.test(it(V4, 'p1')[0]) && /structure=IfcSlab\/STR@/.test(it(V4, 'p1')[0]), 'z=' + e4.pieces[0].z + ' | ' + (it(V4, 'p1')[0] || '').slice(-110));
+              {
+                const V6 = rWalk(stack, R6.db), e6 = V6.r.drawn, roofTop = bbR(R6.fed, guid(1407)), deckTop = bbR(R6.fed, guid(1406)), it6 = itemLinesR(V6.lines).filter(l => l.indexOf('#p1 ') >= 0);
+                ok('R6 (§11a) a non-roof STR deck "Floor:SLAB 200" (top ' + f3(deckTop.maxZ) + ') with a roof-named ARC build-up "Basic Roof:COMBO ROOFING_150mm" on top (top ' + f3(roofTop.maxZ) + '), nothing above: the run sits on the BUILD-UP top, not the deck top; the item line names the roofing surface',
+                  e6.pieces[0].z != null && near(e6.pieces[0].z, roofTop.maxZ, 0.002) && !near(e6.pieces[0].z, deckTop.maxZ, 0.01) && e6.pieces[0].heightBasis === 'on-roof-surface' && kv(L1(V6.lines, /§WALK-MAINS-ONROOF/), 'pieces') === '1' && it6.length >= 1 && it6[0].indexOf('surface=IfcSlab:roof@' + f3(roofTop.maxZ)) >= 0, 'z=' + e6.pieces[0].z + ' | ' + (it6[0] || '').slice(-120));
+                const r6x = path.join(TMP, 'acmv_R6_norow.db'); fs.copyFileSync(R6.db, r6x); const d6 = new SQL.Database(new Uint8Array(fs.readFileSync(r6x))); d6.run("DELETE FROM drawn_height_rule WHERE role='roof_surface_height'"); fs.writeFileSync(r6x, Buffer.from(d6.export())); d6.close();
+                ok('R6 RED: with the row removed the same run is plan only', rWalk(stack, r6x).r.drawn.pieces[0].z == null, 'row removed');
+              }
+              // R5: items under a ceiling, byte-identical z against the 37130e8e walker (git show into a temp file)
+              const preR = path.join(M, '_pre_disc_walker_r_tmp.js'); let preR_stack = null, perrR = null;
+              try { fs.writeFileSync(preR, cp.execFileSync('git', ['-C', ROOT, 'show', '37130e8e:modeller/disc_walker.js'], { maxBuffer: 1 << 26 }).toString()); preR_stack = { DW: require(preR), WalkRules: stack.WalkRules }; H.openBuildingRules(SQL, preR_stack, 'Duplex'); } catch (e) { perrR = e.message; }
+              if (!preR_stack) incon('R5', 'the 37130e8e walker did not load: ' + perrR);
+              else {
+                try {
+                  const cmpR = file => { const nw = walkA(file), od = rWalk(preR_stack, file), np = nw.r.drawn.pieces, op = od.r.drawn.pieces; let n = 0, same = 0; np.forEach((p, i) => { if (!p.ceiling) return; n++; if (op[i] && op[i].ceiling === p.ceiling && op[i].z === p.z && op[i].heightBasis === p.heightBasis) same++; });
+                    const tn = (nw.r.placements || []).filter(p => p.prov === 'drawn:terminal' && !p.exposed), to = (od.r.placements || []).filter(p => p.prov === 'drawn:terminal' && !p.exposed); let tsame = 0; tn.forEach((p, i) => { if (to[i] && to[i].z === p.z && to[i].host === p.host) tsame++; });
+                    return { n: n, same: same, tn: tn.length, tsame: tsame }; };
+                  const cx = cmpR(dbXM), cd = cmpR(dbDrawn);
+                  H.openBuildingRules(SQL, stack, 'Duplex');
+                  ok('R5 items under a ceiling keep z, HeightBasis and host byte-identical (===) to the 37130e8e walker: fixture X ' + cx.same + '/' + cx.n + ' pieces ' + cx.tsame + '/' + cx.tn + ' terminals, Duplex drawn walk ' + cd.same + '/' + cd.n + ' pieces ' + cd.tsame + '/' + cd.tn + ' terminals',
+                    cx.n >= 2 && cx.same === cx.n && cx.tsame === cx.tn && cd.n >= 4 && cd.same === cd.n && cd.tsame === cd.tn && cd.tn >= 1, JSON.stringify({ X: cx, D: cd }));
+                } finally { try { fs.unlinkSync(preR); } catch (e) { /* absent */ } H.openBuildingRules(SQL, stack, 'Duplex'); }
+              }
             }
           }
         }
