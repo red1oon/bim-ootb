@@ -1875,6 +1875,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       s.onload = function () { console.log('§ATT ad_attachment.js loaded on first use'); res(true); renderToolbar(); }; s.onerror = function () { _attP = null; res(false); }; document.head.appendChild(s); });
     return null;
   }
+  function _attLoad() { _attMod(); return window.AdAttachment ? Promise.resolve(window.AdAttachment) : _attP.then(function (ok) { return ok ? window.AdAttachment : null; }); }   // for a lens: the module, loaded on first use
   function _attHost() {
     var App = window.APP || {};
     return { rows: _sqlRows, msg: _findMsg, std: (App.actor != null || App.clientId != null) ? { actor: App.actor, clientId: App.clientId, orgId: App.orgId != null ? App.orgId : 0 } : null,
@@ -2045,6 +2046,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         return res;
       },
       forms: _lensForms,
+      status: status,
+      attachments: _attLoad, attachmentHost: _attHost, attachmentCtx: function () { var AT = window.AdAttachment; return (AT && tab && rec && !_newMode) ? _attCtx(AT, tab, rec) : null; },   // §ATT phase 2: a lens action reaches the generic attachment module through the host's own seams
       hasAfterSave: !!(tab && tab.tableName && window.ModelLayer && window.ModelLayer.MODEL[String(tab.tableName).toLowerCase()] && window.ModelLayer.MODEL[String(tab.tableName).toLowerCase()].afterSave),
       previewSave: function (cb) {
         if (!window.__crud || typeof window.__crud.previewInline !== 'function') { console.log('§OPS-LENS preview REFUSED no preview seam'); return; }
