@@ -651,6 +651,11 @@
   }
   var CEASE_3D_GROUPS = ['flythruDatum', 'flythruCue', 'indoorBeats', 'slabBeat'];
   var CEASE_3D_EXEMPT_RX = /^escapeRouteGlow/;
+  // §CEASE_SUBJECT (prompts/DRAWN_SERVICES_FILM.md §7.1, owner 2026-11-09: "Exempt drawn services"). A film's SUBJECT is not signage: the
+  // drawn ducts and FP markers ARE what a drawn-services film is about, and the net hid them for the whole closing orbit (measured on the
+  // first real bake). A NAMED list of registered layers (A.filmLayer), checked by the layer tag, never by a loose name — so an unregistered
+  // depthTest:false object, or one registered under any other layer, is still hidden exactly as before. APP.__ceaseSubjectOff = witness red only.
+  var CEASE_3D_SUBJECT_LAYERS = ['drawn.services'];
   function _ceaseOwnerName(o) {
     // The OUTERMOST named ancestor: the nearest one is usually an anonymous mesh, and what the log
     // has to name is the MODULE that put this in the scene.
@@ -674,7 +679,8 @@
   function _cease3D() {
     var A2 = window.APP;
     if (!A2 || !A2.scene || !A2._findingsHudSuppress) return;
-    var hidNow = 0, kept = 0, unreg = 0, fresh = [];
+    var hidNow = 0, kept = 0, unreg = 0, subj = 0, fresh = [];
+    var _subjL = A2.__ceaseSubjectOff ? [] : CEASE_3D_SUBJECT_LAYERS;
     A2._cease3DSeen = A2._cease3DSeen || {};
     // ══ §RULE_TINT_CEASE — THE STRUCTURAL SANITY OVERLAY COMES DOWN ═════════════════════════════
     // red1, repeatedly: "the overlay of Sanity Structural/Safety still lingering in the building",
@@ -734,6 +740,7 @@
         // layer nobody wired to the mechanism — the log says so in those words, so the next person
         // reads a defect rather than "(unnamed Sprite)" and a mystery.
         var tag = _ceaseLayerTag(o);
+        if (tag && _subjL.indexOf(tag) >= 0) { subj++; return; }   // §CEASE_SUBJECT: the film's subject stays
         if (!tag) {
           unreg++;
           // FINGERPRINT, not a guess. An unregistered offender has no layer name by definition, so
@@ -761,8 +768,10 @@
     // every frame and a log that repeated 193 times would drown the run it is meant to explain.
     var keptFirst = (kept > 0 && !A2._cease3DKeptSeen);
     if (keptFirst) A2._cease3DKeptSeen = 1;
+    if (subj > 0 && !A2._cease3DSubjSeen) { A2._cease3DSubjSeen = 1;
+      console.log('§FINDINGS_CEASE_3D subject layer="' + _subjL.join(',') + '" kept ' + subj + ' objects (the film\'s subject, owner 2026-11-09: "Exempt drawn services")'); }
     if (!fresh.length && !keptFirst) return;
-    console.log('§FINDINGS_CEASE_3D sweep hid=' + hidNow + ' exempt=' + kept +
+    console.log('§FINDINGS_CEASE_3D sweep hid=' + hidNow + ' exempt=' + kept + ' subject=' + subj +
       ' unregistered=' + unreg + ' (exempt is the live beat\'s own glow; unregistered>0 means a' +
       ' layer is still relying on the net instead of its own switch) layers=[' +
       Object.keys(A2._cease3DSeen).join(' | ') + ']');

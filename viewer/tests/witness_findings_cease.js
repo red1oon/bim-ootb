@@ -114,6 +114,27 @@ ck('and NOTHING else is ceased — the sun clock, the compass, the day counter, 
      /depthTest: false[\s\S]{0,400}name = 'escapeRouteGlow'/.test(esc) ||
      /name = 'escapeRouteGlow'[\s\S]{0,400}depthTest: false/.test(esc),
      'without it the sweep would hide the escape beat\'s own room boxes');
+  // §CEASE_SUBJECT (prompts/DRAWN_SERVICES_FILM.md §7.1, owner 2026-11-09 "Exempt drawn services"). ISSUE: the net hid the drawn-services
+  // overlay — the film's SUBJECT — for the whole closing orbit (first real bake). The fix must be a NAMED list of registered
+  // layers, read by the layer tag, so the net still catches every unregistered object; a loosened net or a name regex would not be.
+  const subjM = /var CEASE_3D_SUBJECT_LAYERS = \[([^\]]*)\];/.exec(mq);
+  const escRxM = /var ESC_SUPPRESS_RX = \/(.*)\/;/.exec(mq);
+  const dsSrc = __readSrc(path.join(ROOT, 'viewer/cpe_drawn_services.js'), 'utf8');
+  ck('§CEASE_SUBJECT: one NAMED subject-layer list, holding drawn.services, checked by the REGISTERED layer tag (not a name match)',
+     !!subjM && (mq.match(/CEASE_3D_SUBJECT_LAYERS = /g) || []).length === 1 && /'drawn\.services'/.test(subjM[1]) &&
+     /if \(tag && _subjL\.indexOf\(tag\) >= 0\) \{ subj\+\+; return; \}/.test(ceaseFn),
+     subjM ? 'subject layers=[' + subjM[1] + ']' : 'NOT FOUND');
+  ck('…the net is unchanged for everything else: an untagged object is still hidden, after the subject check',
+     /if \(!tag\) \{[\s\S]*?unreg\+\+;/.test(ceaseFn) && /o\.visible = false; hidNow\+\+;/.test(ceaseFn) &&
+     ceaseFn.indexOf('_subjL.indexOf(tag)') < ceaseFn.indexOf('if (!tag) {'),
+     'subject keep comes first, then the unregistered hide as before');
+  ck('…the drawn-services beat registers EVERY object it adds under that layer, and adds none another way',
+     /LAYER = 'drawn\.services'/.test(dsSrc) && /A\.filmLayer\(LAYER, o\)/.test(dsSrc) && !/A\.scene\.add\((ln|m|sp)\)/.test(dsSrc) &&
+     (dsSrc.match(/_add\((ln|m|sp)\)/g) || []).length === 3,
+     'lines, markers and labels each go through _add (scene.add + filmLayer)');
+  ck('…and the subject is not signage: arm 0 (the layer switch) never gates its name',
+     !!escRxM && !new RegExp(escRxM[1]).test('drawn.services'),
+     'ESC_SUPPRESS_RX=/' + (escRxM ? escRxM[1] : '?') + '/ does not match drawn.services');
   ck('…it runs AFTER every beat writes its own visibility, and before the capture',
      /_cease3D\(\);\s*\n\s*var _escInfo = null/.test(mq),
      'last word on what reaches the frame is the cease rule\'s');
