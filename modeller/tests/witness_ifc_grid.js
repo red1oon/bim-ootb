@@ -97,7 +97,7 @@ function importRoute(SQL, dir, bytes, withReader) {   // dir: a code tree holdin
   const base = () => ({ URL, Blob, TextDecoder, TextEncoder, setTimeout, Math, JSON, Date, Float32Array, Float64Array, Int32Array, Uint8Array, Uint32Array, Uint16Array, Int8Array, Int16Array, ArrayBuffer, Map, Set, Object, Array, String, Number, parseInt, parseFloat, isNaN, isFinite, Promise, performance });
   const cons = { log: (...a) => logs.push(a.join(' ')), warn: (...a) => logs.push('WARN ' + a.join(' ')), error: (...a) => logs.push('ERR ' + a.join(' ')) };
   return new Promise(res => {
-    const self = { IfcDeclaredStoreys: S2 }; if (withReader) self.IfcGridRead = GridRead;
+    const self = { IfcDeclaredStoreys: S2 }; if (fs.existsSync(path.join(dir, 'common', 'georef_frame.js'))) self.GeorefFrame = require(path.join(dir, 'common', 'georef_frame.js')); /* §ONE-FRAME: the worker's rebase module (absent in a base tree that predates it) */ if (withReader) self.IfcGridRead = GridRead;
     const c = Object.assign(base(), { self, WebIFC, console: cons, importScripts() {} });
     self.postMessage = m => {
       if (m.type === 'done') { const c2 = Object.assign(base(), { console: cons }); vm.createContext(c2); vm.runInContext(fs.readFileSync(path.join(V, 'import_db_builder.js'), 'utf8'), c2); const o = c2.buildImportDBs(SQL, m); res({ db: new SQL.Database(new Uint8Array(o.metaDb || o.extractedDb)), logs }); }
@@ -152,16 +152,16 @@ function baseTree(ref) {
       chk(`G2-RED ${key}/${route} control: axes WITHOUT the placement chain fail G2 (so G2 can see a missing chain)`, !(rB < 0.001 && r2 < 0.001), `rawB=${rB.toFixed(3)}m raw2=${r2.toFixed(3)}m from the column`);
       // G4: ends as stated, lifted through the chain (computed here independently), in this route's frame (import: minus its rebase)
       const offs = route === 'import' ? [Math.round(0), 0] : [0, 0];
-      const baseOff = route === 'import' ? (() => { const m = r.logs.find(l => l.includes('§GEOREF_REBASE')); const mm = m && /offset=\(([^)]*)\)/.exec(m); return mm ? mm[1].split(',').map(Number) : [0, 0, 0]; })() : [0, 0, 0];
+      const baseOff = (() => { const m = r.logs.find(l => l.includes('§GEOREF_REBASE')); const mm = m && /offset=\(([^)]*)\)/.exec(m); return mm ? mm[1].split(',').map(Number) : [0, 0, 0]; })();   // §ONE-FRAME: both routes rebase now, and both log the §GEOREF_REBASE offset
       const want = (tag, set) => { const src = (set === 'U' ? U : V).find(a => a[0] === tag)[1]; return [src[0], src[src.length - 1]].map(p => { const w = world(so, p); return [w[0] - baseOff[0], w[1] - baseOff[1]]; }); };
       let worst = 0; const bad = [];
       ax.forEach(a => { const w = want(a[3], a[8]), d = Math.max(Math.hypot(a[4] - w[0][0], a[5] - w[0][1]), Math.hypot(a[6] - w[1][0], a[7] - w[1][1])); worst = Math.max(worst, d); if (d > 0.001) bad.push(a[3]); });
       chk(`G4 ${key}/${route} every axis keeps its stated ends (trimmed by points: A, by parameters: 3, 3-point polyline: C)`, worst < 0.001 && !bad.length, `worst end error=${(worst * 1000).toFixed(4)}mm bad=[${bad}] frameOffset=(${baseOff})`);
     }
   }
-  // frame difference between the routes on the mapped copy: the import route rebased, the open route did not
+  // §ONE-FRAME: the frame of the two routes on the mapped copy. Before (A) the open route kept the map offset and the import was local (two frames, G2-FRAME asserted that difference); now both are local and equal
   { const m = results.mapped; if (m.o.db && m.im.db) { const a = axesOf(m.o.db).find(x => x[3] === 'B'), b = axesOf(m.im.db).find(x => x[3] === 'B');
-      const dx = a[4] - b[4]; chk('G2-FRAME mapped: the open route keeps the map offset, the import route is local (own frames)', Math.abs(dx) > 100000 && Math.abs(a[4]) > 100000 && Math.abs(b[4]) < 1000, `open B.x0=${a[4].toFixed(3)} import B.x0=${b[4].toFixed(3)} diff=${dx.toFixed(3)}`); } }
+      const dx = a[4] - b[4]; chk('G2-FRAME mapped: ONE frame: the open route and the import route give the grid in the same local frame (B.x0 equal within 1 mm, both < 1 km)', Math.abs(dx) < 0.001 && Math.abs(a[4]) < 1000 && Math.abs(b[4]) < 1000, `open B.x0=${a[4].toFixed(3)} import B.x0=${b[4].toFixed(3)} diff=${dx.toFixed(3)}`); } }
   // G3: no grid
   const noGrid = enc(ifc([100, 200, 3], false));
   const o0 = await openRoute(SQL, api, ROOT, noGrid, true), i0 = await importRoute(SQL, ROOT, noGrid, true);

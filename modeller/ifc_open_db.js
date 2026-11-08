@@ -38,17 +38,18 @@
     return { dropped: dropped, meshesDropped: meshesDropped };
   }
   // open(ctx): ctx = { WebIFC, ifcApi (initialised), SQL, Core (IfcExtractCore), bytes (Uint8Array), name (file stem), log, drop }
-  // → { db (sql.js Database, the building DB), total, kept, dropped, meshesDropped, psetRows, ms, line }
+  // ctx.forceGeorefOffset = the federation pin (the georefOffset an earlier file opened together returned); ctx.GeorefFrame optional (global / node require otherwise).
+  // → { georefOffset, georef, db (sql.js Database, the building DB), total, kept, dropped, meshesDropped, psetRows, ms, line }
   async function open(ctx) {
     var t0 = Date.now(), log = ctx.log || function () {}, db = new ctx.SQL.Database();
-    await ctx.Core.extractToDb({ GridRead: ctx.GridRead, WebIFC: ctx.WebIFC, ifcApi: ctx.ifcApi, ifcData: ctx.bytes, db: ctx.Core.sqljsDb(db), Buf: ctx.Core.browserBuf,
+    var ex = await ctx.Core.extractToDb({ GridRead: ctx.GridRead, GeorefFrame: ctx.GeorefFrame, forceGeorefOffset: ctx.forceGeorefOffset, WebIFC: ctx.WebIFC, ifcApi: ctx.ifcApi, ifcData: ctx.bytes, db: ctx.Core.sqljsDb(db), Buf: ctx.Core.browserBuf,
       buildingName: ctx.name, sourceName: ctx.name + '.ifc', log: log, progress: ctx.progress || function () {} });
     var total = one(db, 'SELECT count(*) FROM elements_meta'), r = residentRule(db, ctx.drop);
     var kept = one(db, 'SELECT count(*) FROM elements_meta'), psetRows = has(db, 'element_pset_common') ? one(db, 'SELECT count(*) FROM element_pset_common') : 0;
     var ms = Date.now() - t0;
     var line = '§IFC-OPEN-X file=' + ctx.name + '.ifc elements=' + total + ' kept=' + kept + ' dropped=' + JSON.stringify(r.dropped) + ' meshesDropped=' + r.meshesDropped + ' psetRows=' + psetRows + ' ms=' + ms;
     log(line);
-    return { db: db, total: total, kept: kept, dropped: r.dropped, meshesDropped: r.meshesDropped, psetRows: psetRows, ms: ms, line: line };
+    return { georefOffset: (ex && ex.georefOffset) || [0, 0, 0], georef: ex && ex.georef, db: db, total: total, kept: kept, dropped: r.dropped, meshesDropped: r.meshesDropped, psetRows: psetRows, ms: ms, line: line };
   }
   return { DROP: DROP, ELEMENT_TABLES: ELEMENT_TABLES, residentRule: residentRule, open: open };
 });

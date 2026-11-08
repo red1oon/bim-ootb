@@ -56,6 +56,8 @@ function buildImportDBs(SQL, data) {
      'site_longitude', _gr.longitude == null ? '' : String(_gr.longitude),
      'site_elevation_m', _gr.elevationM == null ? '' : String(_gr.elevationM),
      'site_latlong_source', String(_gr.latLongSource || 'unknown')]);
+  // §ONE-FRAME: IfcMapConversion (IFC4), recorded as the file states it (keys named by common/georef_frame.js readSite); written only when the file has one
+  if (_gr.mapConversion) Object.keys(_gr.mapConversion).forEach(function (k) { db.run('INSERT OR REPLACE INTO project_metadata VALUES (?,?)', [k, _gr.mapConversion[k]]); });
 
   // Elements
   db.run('CREATE TABLE IF NOT EXISTS elements_meta (guid TEXT PRIMARY KEY, ifc_class TEXT, element_name TEXT, storey TEXT, discipline TEXT, material_name TEXT, material_rgba TEXT, building TEXT)');

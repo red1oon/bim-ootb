@@ -17,7 +17,8 @@
 // v214 (2026-11-03) §ONE_LIB: shared libs (sql-wasm, OrbitControls, web-ifc, planegcs) load from ../common/lib/ (modeller/lib copies kept as compat mirrors); SHELL/DEFERRED lists re-pointed, deferred stays off the install path.
 // v215 (2026-11-03) §THREE_ONE_BUILD: importmap 'three' -> three.module.min.js (one wrapper; the 638 KB webgpu wrapper is no longer evaluated on load nor precached on install; still cache-on-use).
 // v245 (2026-11-08) §4.2a IFC-GRID: an opened IFC keeps its stated grid (ifc_grid_axis) via ../common/ifc_grid_read.js in the open worker (prompts/DISC_WALK_DRAWN_MAINS.md §4.2a)
-const CACHE_VERSION = 'v245';   // bump on each deploy; per-change detail is the git commit message.
+// v246 (2026-11-08) §ONE-FRAME: an opened IFC lands in the Viewer import's local frame (local origin + recorded georef_offset_*) via ../common/georef_frame.js in the open worker + dxf export (prompts/MODELLER_ONE_FRAME.md §2, W-ONE-FRAME)
+const CACHE_VERSION = 'v246';   // bump on each deploy; per-change detail is the git commit message.
 const CACHE_PREFIX = 'bim-modeller-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -55,6 +56,7 @@ const PRECACHE_ASSETS = [
   'props_panel.js',   // U1 the Properties panel (what the selected part's IFC carries)
   'open_building_db.js',   // U7 the one reader of the open building's DB (Properties panel, edit deltas, project order)
   'ifc_open_worker.js',
+  '../common/georef_frame.js',   // §ONE-FRAME the one rebase rule + site facts (open worker, dxf export; shared with the Viewer import)
   '../common/ifc_grid_read.js',   // §4.2a the one IFC grid reader (open worker + Viewer import)   // P-X a raw .ifc opened: the shared extractor in a worker
   'ifc_open_db.js',   // P-X the residents' rule over the extractor's DB (the one owner of IFC -> building DB)
   'bonsai_ifc.js',

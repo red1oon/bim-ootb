@@ -18,7 +18,7 @@ const sharedCtx = () => ({ URL, Blob, TextDecoder, TextEncoder, setTimeout, Math
 const quiet = { log() {}, warn() {}, error() {} };
 function importRoute(SQL, file) {
   return new Promise((resolve) => {
-    const self = {}, ctx = Object.assign(sharedCtx(), { self, WebIFC, console: quiet, importScripts() {} });
+    const self = { GeorefFrame: require(path.join(V, '..', 'common', 'georef_frame.js')) }, ctx = Object.assign(sharedCtx(), { self, WebIFC, console: quiet, importScripts() {} });
     self.postMessage = (m) => { if (m.type === 'done' || m.type === 'error') {
       if (m.type === 'error') return resolve(null);
       const c2 = Object.assign(sharedCtx(), { console: quiet }); vm.createContext(c2); vm.runInContext(BUILDER, c2); const o = c2.buildImportDBs(SQL, m);

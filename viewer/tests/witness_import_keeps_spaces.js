@@ -17,7 +17,7 @@ const W = (ok, label, detail) => { judged++; if (!ok) fails++; console.log(`§W 
 
 function runWorker(file, src) {
   return new Promise((resolve) => {
-    const logs = [], self = {};
+    const logs = [], self = { GeorefFrame: require(path.join(VIEWER, '..', 'common', 'georef_frame.js')) };
     const con = { log: (...a) => logs.push(a.join(' ')), warn: (...a) => logs.push(a.join(' ')), error: (...a) => logs.push(a.join(' ')) };
     const ctx = { self, WebIFC, console: con, importScripts: () => {}, URL, Blob, TextDecoder, TextEncoder, setTimeout, Math, JSON, Date, Float32Array, Float64Array, Int32Array, Uint8Array, Uint32Array, Uint16Array, ArrayBuffer, Map, Set, Promise, atob: (s) => Buffer.from(s, 'base64').toString('binary') };
     self.postMessage = (m) => { if (m.type === 'done' || m.type === 'error') resolve({ msg: m, logs }); };

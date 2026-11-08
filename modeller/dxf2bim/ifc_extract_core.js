@@ -169,6 +169,8 @@ function extractColorFromRepresentation(ifcApi, modelID, repExpressID) {
 async function extractToDb(ctx) {
   const WebIFC = ctx.WebIFC, Buf = ctx.Buf, log = ctx.log || function () {}, progress = ctx.progress || function () {};
   const ifcPath = ctx.sourceName;
+  // §ONE-FRAME (prompts/MODELLER_ONE_FRAME.md §2): the rebase rule + site facts are common/georef_frame.js, the module the Viewer import also calls. Passed in, or the global, or (node) required.
+  const GF = ctx.GeorefFrame || (typeof GeorefFrame !== 'undefined' ? GeorefFrame : null) || (typeof require === 'function' ? (() => { try { return require('../../common/georef_frame.js'); } catch (e) { return null; } })() : null);
   log(`§EXTRACT_START ifc=${ifcPath}`);
   const ifcData = ctx.ifcData;
   log(`§IFC_SIZE ${(ifcData.byteLength / 1024 / 1024).toFixed(1)}MB`);
@@ -600,6 +602,25 @@ async function extractToDb(ctx) {
     }
   }
 
+  // ── §ONE-FRAME: the local frame. A georeferenced file (an axis whose centres sit > 10 km out) lands at a local origin plus a recorded whole-metre offset, exactly as the Viewer
+  // import does (same module, same rule, same federation pin). Every world-coordinate column below is written already shifted: centres, world boxes, door origins, space boxes
+  // (from the world boxes), grid ends, storey elevations (z). Element-local geometry blobs are centred on the element and do not move.
+  let georefOffset = [0, 0, 0], georefPin = null;
+  if (!GF) log('§GEOREF unavailable route=open (georef_frame.js not loaded): NO rebase, NO site facts, INCONCLUSIVE');
+  else if (transforms.length > 0) {
+    const rg = GF.range(transforms);
+    georefPin = GF.pin(rg.min, rg.max, ctx.forceGeorefOffset);
+    georefOffset = georefPin.offset;
+    GF.logLines('open', ctx.sourceName, georefPin).forEach(log);
+    if (GF.isShifted(georefOffset)) {
+      GF.rebase(transforms, georefOffset);
+      for (const w of worldBbox) { w.b[0] -= georefOffset[0]; w.b[1] -= georefOffset[0]; w.b[2] -= georefOffset[1]; w.b[3] -= georefOffset[1]; w.b[4] -= georefOffset[2]; w.b[5] -= georefOffset[2]; }
+      for (const sid in storeyElevation) { if (storeyElevation[sid] != null) storeyElevation[sid] -= georefOffset[2]; }
+      log(`§GEOREF_APPLIED route=open offset=(${georefOffset.join(',')}) centres=${transforms.length} worldBoxes=${worldBbox.length}`);
+    }
+  }
+  let georef = null;   // the site facts the file states (read in the door/grid block, where the file's length unit is known)
+
   // ── 4D extraction (if present) ──
   const schedules = [], tasks = [], taskSequences = [], taskElements = [];
   try {
@@ -712,6 +733,7 @@ async function extractToDb(ctx) {
         break;
       }
     }
+    if (GF) georef = GF.readSite(ifcApi, modelID, WebIFC, lengthScale, log);   // §ONE-FRAME: IfcSite lat/long, TrueNorth, IfcMapConversion — read, never invented
     const norm = a => { const l = Math.hypot(a[0], a[1], a[2]); return l > 0 ? [a[0] / l, a[1] / l, a[2] / l] : null; };
     const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
     const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
@@ -777,7 +799,7 @@ async function extractToDb(ctx) {
       const v3 = a => a ? JSON.stringify(a) : null;
       const row = { guid: el.guid, op, source,
         x: pl ? v3(pl.x) : null, y: pl ? v3(pl.y) : null, z: pl ? v3(pl.z) : null,
-        o: (pl && S != null) ? v3(pl.o.map(c => c * S)) : null,
+        o: (pl && S != null) ? v3(pl.o.map((c, i) => c * S - georefOffset[i])) : null,
         w: (d.OverallWidth != null && S != null) ? num(d.OverallWidth) * S : null,
         h: (d.OverallHeight != null && S != null) ? num(d.OverallHeight) * S : null };
       doorOps.push(row);
@@ -791,12 +813,12 @@ async function extractToDb(ctx) {
       const pl = st && st.ObjectPlacement ? placement(ref(st.ObjectPlacement), 0) : null;
       const raw = storeyElevationRaw[sid];
       storeyElevRows.push({ guid: storeyGuid[sid], name: storeyMap[sid],
-        attr: (raw != null && lengthScale != null) ? raw * lengthScale : null,
-        z: (pl && lengthScale != null) ? pl.o[2] * lengthScale : null });
+        attr: (raw != null && lengthScale != null) ? raw * lengthScale - georefOffset[2] : null,
+        z: (pl && lengthScale != null) ? pl.o[2] * lengthScale - georefOffset[2] : null });
     }
     // §IFC-GRID: the grid axes in THIS route's element_transforms frame (metres, the map offset kept, times the same span factor the centres got)
     const GR = ctx.GridRead || (typeof IfcGridRead !== 'undefined' ? IfcGridRead : null);
-    if (GR) gridRes = GR.read(ifcApi, modelID, WebIFC, { lengthScale, scaleOut: autoScale, offset: [0, 0], storeyName: sid => storeyMap[sid] });
+    if (GR) gridRes = GR.read(ifcApi, modelID, WebIFC, { lengthScale, scaleOut: autoScale, offset: [georefOffset[0], georefOffset[1]], storeyName: sid => storeyMap[sid] });
     else log('§IFC-GRID unavailable route=open (reader not loaded)');
     log(`§DOOR_OPERATION rows=${doorOps.length} style=${doorOpCount.style} type=${doorOpCount.type} occurrence=${doorOpCount.occurrence} none=${doorOpCount.none} noPlacement=${doorOpCount.noPlacement} lengthScale=${lengthScale}`);
   } catch (e) {
@@ -972,6 +994,7 @@ async function extractToDb(ctx) {
   metaStmt.run('building_name', buildingName);
   metaStmt.run('source_file', ctx.sourceName);
   if (buildingType) metaStmt.run('building_type', buildingType);
+  if (GF) for (const [k, v] of GF.metadataRows(georefOffset, georef, autoScale)) metaStmt.run(k, v);   // §ONE-FRAME: georef_offset_* (only when shifted, as the import) + the site facts (always; '' when the file states none)
 
   // Insert elements
   const elStmt = db.prepare('INSERT OR IGNORE INTO elements_meta VALUES (?,?,?,?,?,?,?,?)');
@@ -1089,6 +1112,7 @@ async function extractToDb(ctx) {
   db.exec('COMMIT');
   log(`§SUMMARY elements=${elements.length} geometries=${geometries.length} uniqueHashes=${seenHashes.size} 4D_tasks=${tasks.length}`);
   log(`§S18_SPATIAL_STRUCTURE buildings=${Object.keys(buildingMap).length} storeys=${Object.keys(storeyMap).length} storeysWithElevation=${Object.values(storeyElevation).filter(v => v != null).length} storeysWithRealParent=${Object.keys(storeyParentBuildingGuid).length} relAggregates=${Object.keys(storeyParentBuildingGuid).length}`);
+  return { georefOffset, georef, pin: georefPin };   // §ONE-FRAME: a federation caller pins the next file with georefOffset (ctx.forceGeorefOffset)
 }
 
 // §L5.8: a second IFC (e.g. the structural model of a federated set) contributes ONLY the listed classes (default IfcColumn) to the main DB: the column axes are

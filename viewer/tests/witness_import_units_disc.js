@@ -15,7 +15,7 @@ const SRC = fs.readFileSync(process.env.WORKER_SRC || path.join(__dirname, '..',
 function runOne(file) {
   return new Promise((resolve) => {
     const logs = [];
-    const self = {};
+    const self = { GeorefFrame: require(path.join(__dirname, '..', '..', 'common', 'georef_frame.js')) };
     const ctx = {
       self, WebIFC, console: { log: (...a) => logs.push(a.join(' ')), warn: (...a) => logs.push(a.join(' ')), error: (...a) => logs.push(a.join(' ')) },
       importScripts: () => {}, URL, Blob, TextDecoder, TextEncoder, setTimeout, Math, JSON, Date,

@@ -6,16 +6,17 @@
 // Output { type: 'done', bytes: Uint8Array (the building DB), logs, kept, total, ms } or { type: 'error', message, logs }. The extractor's own § lines pass through in logs.
 importScripts('../common/lib/web-ifc-api-iife.js', '../common/lib/sql-wasm.js', 'dxf2bim/ifc_extract_core.js', 'ifc_open_db.js');
 try { importScripts('../common/ifc_grid_read.js'); } catch (eG) { console.warn('§IFC-GRID unavailable: reader failed to load ' + eG.message); }   // §4.2a: the one grid reader (the extractor logs 'unavailable' if it is missing)
+try { importScripts('../common/georef_frame.js'); } catch (eF) { console.warn('§GEOREF unavailable: georef_frame.js failed to load ' + eF.message); }   // §ONE-FRAME: the rebase rule + site facts, the same module the Viewer import calls
 self.onmessage = async function (e) {
   var d = e.data, logs = [], base = self.location.href;
   try {
     var api = new self.WebIFC.IfcAPI();
     await api.Init(function (p) { return new URL((p === 'web-ifc.wasm' ? '../common/lib/' : 'lib/') + p, base).href; });
     var SQL = await self.initSqlJs({ locateFile: function (f) { return new URL((f === 'sql-wasm.wasm' ? '../common/lib/' : 'lib/') + f, base).href; } });
-    var out = await self.IfcOpenDb.open({ WebIFC: self.WebIFC, ifcApi: api, SQL: SQL, Core: self.IfcExtractCore, bytes: new Uint8Array(d.bytes), name: d.name,
-      log: function (l) { l = String(l); if (/^§(SUMMARY|PSET_COMMON|GEOM_EMPTY|REL_FILLS_HOST|IFC-OPEN-X)|FAIL/.test(l)) logs.push(l); } });
+    var out = await self.IfcOpenDb.open({ WebIFC: self.WebIFC, ifcApi: api, SQL: SQL, Core: self.IfcExtractCore, bytes: new Uint8Array(d.bytes), name: d.name, forceGeorefOffset: d.forceGeorefOffset || null,
+      log: function (l) { l = String(l); if (/^§(SUMMARY|PSET_COMMON|GEOM_EMPTY|REL_FILLS_HOST|IFC-OPEN-X|GEOREF)|\[S220\] §GEOREF|FAIL/.test(l)) logs.push(l); } });
     var bytes = out.db.export(); out.db.close();
-    self.postMessage({ type: 'done', bytes: bytes, logs: logs, total: out.total, kept: out.kept, ms: out.ms }, [bytes.buffer]);
+    self.postMessage({ type: 'done', bytes: bytes, logs: logs, georefOffset: out.georefOffset, total: out.total, kept: out.kept, ms: out.ms }, [bytes.buffer]);
   } catch (err) {
     self.postMessage({ type: 'error', message: String((err && err.message) || err), logs: logs });
   }

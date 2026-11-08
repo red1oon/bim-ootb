@@ -12,7 +12,7 @@
   'use strict';
   var TAG = '§REG_REPORT_UI', FACTS_KEY = 'dagevu_reg_facts';
   // the owners, in load order (RoomGraph needs its four helpers before it, hallway_backbone after it: viewer/main.js's own order)
-  var SCRIPTS = ['reg_report.js', 'load_summary.js', 'dxf2bim/ifc_extract_core.js', '../common/storey_raster.js', '../common/storey_footprint.js', '../common/room_habitability.js',
+  var SCRIPTS = ['reg_report.js', 'load_summary.js', '../common/georef_frame.js', 'dxf2bim/ifc_extract_core.js', '../common/storey_raster.js', '../common/storey_footprint.js', '../common/room_habitability.js',
     '../common/room_graph.js', '../common/hallway_backbone.js', '../common/room_coverage.js', '../viewer/structural_sanity.js', '../viewer/egress_sanity.js', '../viewer/rule_report.js'];
   // the globals assemble() reads, each from the script that defines it (Dxf2Ifc, Dxf2Bill, WebIFC, SQL come with the page / the importer)
   var GLOBALS = ['RegReport', 'LoadSummary', 'IfcExtractCore', 'StoreyRaster', 'StoreyFootprint', 'RoomHabitability', 'RoomGraph', 'HallwayBackbone', 'RoomCoverage', 'StructuralSanity', 'EgressSanity', 'RuleReport'];
