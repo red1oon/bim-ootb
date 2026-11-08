@@ -165,15 +165,24 @@ function prodType(t) { return t === 'service' ? 'S' : (t === 'consu' || t === 'p
       C_UOM_ID: p.uom_id && p.uom_id[1], ProductType: prodType(p.detailed_type), UPC: p.barcode, Weight: p.weight, Volume: p.volume, 'C_TaxCategory_ID>IsDefault': 'Y',
       _odoo: { model: 'product.product', id: p.id } }; }), 'product.product []');
   patch('M_Product', 'C_TaxCategory_ID', 'C_TaxCategory_ID>IsDefault = Y', "ImportProduct.java:415 — the client's default tax category", prods.length);
-  var poRows = [], vpnPatched = 0;
+  // ONE row per (product, vendor): legacy has one M_Product_PO per vendor (unique index m_product_po_vendorprodno on C_BPartner_ID+VendorProductNo, found by W-NINJA-MIGRATE);
+  //   Odoo's quantity price breaks for the same vendor fold into the row of the lowest minimum quantity, the others stay in provenance (ids) and are named in the notes.
+  var poRows = [], vpnPatched = 0, breaks = [];
   prods.forEach(function (p) {
+    var byVendor = {};
     sellers.filter(function (s) { return (s.product_id && m2o(s.product_id) === p.id) || (!s.product_id && m2o(s.product_tmpl_id) === tmplOf[p.id]); }).forEach(function (s) {
-      var bp = byId[m2o(s.partner_id)], top = bp && (bp.parent_id ? byId[m2o(bp.parent_id)] : bp);
+      var bp = byId[m2o(s.partner_id)], top = bp && (bp.parent_id ? byId[m2o(bp.parent_id)] : bp), k = top ? val(top) : '';
+      (byVendor[k] = byVendor[k] || []).push(s);
+    });
+    Object.keys(byVendor).sort().forEach(function (k) {
+      var ss = byVendor[k].slice().sort(function (a, b) { return (a.min_qty - b.min_qty) || (a.id - b.id); }), s = ss[0];
+      if (ss.length > 1) breaks.push(pval(p) + '/' + k + ' ×' + ss.length);
       if (!s.product_code) vpnPatched++;
-      poRows.push({ 'M_Product_ID>Value': pval(p), 'C_BPartner_ID>Value': top ? val(top) : '', PricePO: s.price, VendorProductNo: s.product_code || pval(p),
-        Order_Min: s.min_qty, DeliveryTime_Promised: s.delay, _odoo: { model: 'product.supplierinfo', id: s.id, product: p.id } });
+      poRows.push({ 'M_Product_ID>Value': pval(p), 'C_BPartner_ID>Value': k, PricePO: s.price, VendorProductNo: s.product_code || pval(p),
+        Order_Min: s.min_qty, DeliveryTime_Promised: s.delay, _odoo: { model: 'product.supplierinfo', id: s.id, ids: ss.map(function (x) { return x.id; }), product: p.id } });
     });
   });
+  if (breaks.length) notes.push(breaks.length + ' product/vendor pair(s) have Odoo quantity price breaks (' + breaks.join(', ') + '): the lowest-quantity price is the vendor price; the breaks are in provenance.json (M_ProductPriceVendorBreak is not in this set).');
   sheet('M_Product_PO', ['M_Product_ID>Value', 'C_BPartner_ID>Value', 'PricePO', 'VendorProductNo', 'Order_Min', 'DeliveryTime_Promised'], poRows, 'product.supplierinfo []');
   if (vpnPatched) patch('M_Product_PO', 'VendorProductNo', "the product's Value", 'ImportProduct.java:393-394 — VendorProductNo=Value when the vendor gave none', vpnPatched);
 
@@ -193,8 +202,14 @@ function prodType(t) { return t === 'service' ? 'S' : (t === 'consu' || t === 'p
   var whById = {}; whs.forEach(function (w) { whById[w.id] = w; });
   sheet('M_Warehouse', ['Value', 'Name', 'C_Location_ID>Address1'], whs.map(function (w) { return { Value: w.code, Name: w.name, 'C_Location_ID>Address1': whAddr[w.id] || '',
     _odoo: { model: 'stock.warehouse', id: w.id, partner: m2o(w.partner_id) } }; }), 'stock.warehouse []');
-  sheet('M_Locator', ['M_Warehouse_ID>Value', 'Value', 'X', 'Y', 'Z'], locs.map(function (l) { return { 'M_Warehouse_ID>Value': l.warehouse_id ? whById[m2o(l.warehouse_id)].code : '',
-    Value: l.complete_name, X: String(l.posx), Y: String(l.posy), Z: String(l.posz), _odoo: { model: 'stock.location', id: l.id } }; }), 'stock.location [["usage","=","internal"]]');
+  // X/Y/Z (aisle/bin/level) are unique per warehouse in legacy (index m_location_where, found by W-NINJA-MIGRATE); Odoo's posx/posy/posz are usually all 0. Where a warehouse
+  //   repeats a triple, Z takes the Odoo location id (traceable, unique) — a named patch.
+  var xyzSeen = {}, zPatched = 0;
+  sheet('M_Locator', ['M_Warehouse_ID>Value', 'Value', 'X', 'Y', 'Z'], locs.map(function (l) {
+    var w = l.warehouse_id ? whById[m2o(l.warehouse_id)].code : '', key = w + '|' + l.posx + '|' + l.posy + '|' + l.posz, z = String(l.posz);
+    if (xyzSeen[key]) { z = String(l.id); zPatched++; } xyzSeen[key] = 1;
+    return { 'M_Warehouse_ID>Value': w, Value: l.complete_name, X: String(l.posx), Y: String(l.posy), Z: z, _odoo: { model: 'stock.location', id: l.id, posz: l.posz } }; }), 'stock.location [["usage","=","internal"]]');
+  if (zPatched) patch('M_Locator', 'Z', 'the Odoo stock.location id', 'legacy unique index m_location_where (M_Warehouse_ID, X, Y, Z); Odoo repeats posx/posy/posz within the warehouse', zPatched);
 
   // 16-17 opening stock at cutover: one physical inventory per warehouse, one line per stock.quant
   var quants = await slice('stock.quant', [['location_id.usage', '=', 'internal']], ['id', 'product_id', 'location_id', 'quantity', 'lot_id']);
@@ -203,15 +218,22 @@ function prodType(t) { return t === 'service' ? 'S' : (t === 'consu' || t === 'p
   function whOfQuant(q) { var l = locById[m2o(q.location_id)]; return l && l.warehouse_id ? whById[m2o(l.warehouse_id)] : null; }
   var invWh = whs.filter(function (w) { return quants.some(function (q) { var x = whOfQuant(q); return x && x.id === w.id; }); });
   function docNo(w) { return 'OPEN-' + w.code + '-' + CUTOVER; }
-  sheet('M_Inventory', ['DocumentNo', 'M_Warehouse_ID>Value', 'MovementDate', 'C_DocType_ID>DocBaseType', 'Description'],
-    invWh.map(function (w) { return { DocumentNo: docNo(w), 'M_Warehouse_ID>Value': w.code, MovementDate: CUTOVER, 'C_DocType_ID>DocBaseType': 'MMI',
+  sheet('M_Inventory', ['DocumentNo', 'M_Warehouse_ID>Value', 'MovementDate', 'C_DocType_ID>DocSubTypeInv', 'Description'],
+    invWh.map(function (w) { return { DocumentNo: docNo(w), 'M_Warehouse_ID>Value': w.code, MovementDate: CUTOVER, 'C_DocType_ID>DocSubTypeInv': 'PI',
       Description: 'Opening stock from Odoo ' + DB + ' at ' + CUTOVER, _odoo: { model: 'stock.warehouse', id: w.id } }; }), 'stock.warehouse [] (with stock)');
-  patch('M_Inventory', 'C_DocType_ID', 'C_DocType_ID>DocBaseType = MMI', 'ImportInventory.java:207-208 — the Material Physical Inventory document type', invWh.length);
+  patch('M_Inventory', 'C_DocType_ID', 'C_DocType_ID>DocSubTypeInv = PI', 'MInventory.java:301-304 refuses none; MSetup.java:776 makes ONE Physical Inventory type (DocBaseType MMI, DocSubTypeInv PI) — MMI alone also matches Internal Use and Cost Adjustment', invWh.length);
   patch('M_Inventory', 'DocumentNo', 'OPEN-<warehouse>-<cutover>', 'the lines find their header by DocumentNo (Ninja MigrateExcelData Line rule); legacy would number it from the sequence', invWh.length);
-  sheet('M_InventoryLine', ['M_Inventory_ID', 'M_Locator_ID>Value', 'M_Product_ID>Value', 'QtyCount'],
-    quants.map(function (q) { var l = locById[m2o(q.location_id)], p = prodById[m2o(q.product_id)], w = whOfQuant(q);
-      return { M_Inventory_ID: w ? docNo(w) : '', 'M_Locator_ID>Value': l ? l.complete_name : '', 'M_Product_ID>Value': p ? pval(p) : '', QtyCount: q.quantity,
-        _odoo: { model: 'stock.quant', id: q.id, lot: q.lot_id && q.lot_id[1], cost: p ? p.standard_price : null } }; }), 'stock.quant [["location_id.usage","=","internal"]]');
+  // ONE line per (locator, product): legacy's unique index m_inventoryline_productlocattr (M_Inventory_ID, M_Locator_ID, M_Product_ID, M_AttributeSetInstance_ID), found by
+  //   W-NINJA-MIGRATE. Odoo splits a product's stock by lot; without the lot → attribute-set-instance step the lot quants are SUMMED (every quant id + lot kept in provenance).
+  var qLines = [], qByKey = {};
+  quants.forEach(function (q) { var l = locById[m2o(q.location_id)], p = prodById[m2o(q.product_id)], w = whOfQuant(q), key = m2o(q.location_id) + '|' + m2o(q.product_id);
+    var e = qByKey[key];
+    if (!e) { e = qByKey[key] = { M_Inventory_ID: w ? docNo(w) : '', 'M_Locator_ID>Value': l ? l.complete_name : '', 'M_Product_ID>Value': p ? pval(p) : '', QtyCount: 0,
+      _odoo: { model: 'stock.quant', ids: [], lots: [], cost: p ? p.standard_price : null } }; qLines.push(e); }
+    e.QtyCount = Math.round((e.QtyCount + q.quantity) * 1e6) / 1e6; e._odoo.ids.push(q.id); if (q.lot_id) e._odoo.lots.push(q.lot_id[1]); });
+  sheet('M_InventoryLine', ['M_Inventory_ID', 'M_Locator_ID>Value', 'M_Product_ID>Value', 'QtyCount'], qLines, 'stock.quant [["location_id.usage","=","internal"]]');
+  var summed = qLines.filter(function (e) { return e._odoo.ids.length > 1; });
+  if (summed.length) notes.push(summed.length + ' stock line(s) sum several Odoo quants of one product in one location (lots: ' + summed.map(function (e) { return e['M_Product_ID>Value'] + ' ×' + e._odoo.ids.length; }).join(', ') + ').');
   var lots = quants.filter(function (q) { return q.lot_id; }).length, neg = quants.filter(function (q) { return q.quantity < 0; });
   if (lots) notes.push(lots + ' stock line(s) carry an Odoo lot (in provenance.json): the lot → attribute set instance step is not in this set yet.');
   if (neg.length) notes.push(neg.length + ' stock line(s) are NEGATIVE in Odoo (' + neg.map(function (q) { return prodById[m2o(q.product_id)] ? pval(prodById[m2o(q.product_id)]) : q.id; }).join(', ') + '): exported as Odoo has them; the summary screen shows them.');
@@ -221,7 +243,8 @@ function prodType(t) { return t === 'service' ? 'S' : (t === 'consu' || t === 'p
   var placed = bpRows.length + userRows.length + held.length;
   ok(placed === partners.length, 'every res.partner is a partner, a contact or held', placed + '==' + partners.length + ' (' + bpRows.length + ' partners, ' + userRows.length + ' contacts, ' + held.length + ' held)');
   ok(sheets.filter(function (s) { return s.table === 'M_Product'; })[0].rows.length === prods.length, 'every product.product is one M_Product row', prods.length);
-  ok(sheets.filter(function (s) { return s.table === 'M_InventoryLine'; })[0].rows.length === quants.length, 'every stock.quant is one M_InventoryLine row', quants.length);
+  var qIn = qLines.reduce(function (n, e) { return n + e._odoo.ids.length; }, 0);
+  ok(qIn === quants.length, 'every stock.quant is in exactly one M_InventoryLine row', qIn + '==' + quants.length + ' in ' + qLines.length + ' lines');
   var keyOf = { C_UOM: 'Name', C_PaymentTerm: 'Value', M_Product_Category: 'Value', C_BPartner: 'Value', C_Location: 'Address1', M_Product: 'Value',
     M_PriceList: 'Name', M_PriceList_Version: 'Name', M_Warehouse: 'Value', M_Locator: 'Value', M_Inventory: 'DocumentNo' };
   var bad = [];

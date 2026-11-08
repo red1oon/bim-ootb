@@ -156,13 +156,16 @@
     // ── setup masters (NC-6/7/8; every message is the AD_Message text measured on the legacy pilot by scripts/bridge/nc6_legacy.js) ──
     c_conversion_rate: { before: function (trx, r, isNew, old) { return convRateBefore(trx, r, isNew); },                                                                             // MConversionRate.beforeSave
                          afterNew: [convRateReciprocal], afterChange: [convRateReciprocal] },                                                                                         // MConversionRate.afterSave (reverse rate)
-    m_warehouse: { before: function (trx, r, isNew, old) { return warehouseBefore(trx, r, isNew, old); },                                                                             // MWarehouse.beforeSave
+    m_warehouse: { init: { separator: '*' },                                                                                                                                         // MWarehouse.setInitialDefaults :158-160
+                   before: function (trx, r, isNew, old) { return warehouseBefore(trx, r, isNew, old); },                                                                             // MWarehouse.beforeSave
                    afterNew: [function (trx, r) { insertAccounting(trx, 'm_warehouse', r, 'm_warehouse_acct', 'c_acctschema_default', null); }] },                                      // MWarehouse.afterSave
-    m_product_category: { before: function (trx, r, isNew) { return productCategoryBefore(trx, r, isNew); },                                                                         // MProductCategory.beforeSave
+    m_product_category: { init: { mmpolicy: 'F', plannedmargin: 0, isdefault: 'N', isselfservice: 'Y' },                                                                          // MProductCategory.setInitialDefaults :166-171 (W-NINJA-MIGRATE: PlannedMargin was left NULL)
+                          before: function (trx, r, isNew) { return productCategoryBefore(trx, r, isNew); },                                                                         // MProductCategory.beforeSave
                           afterNew: [function (trx, r) { insertAccounting(trx, 'm_product_category', r, 'm_product_category_acct', 'c_acctschema_default', null); }] },               // MProductCategory.afterSave
     c_bp_group: { afterNew: [function (trx, r) { insertAccounting(trx, 'c_bp_group', r, 'c_bp_group_acct', 'c_acctschema_default', null); }] },                                       // MBPGroup.afterSave
     c_charge: { afterNew: [function (trx, r) { insertAccounting(trx, 'c_charge', r, 'c_charge_acct', 'c_acctschema_default', null); }] },                                             // MCharge.afterSave
-    c_paymentterm: { before: function (trx, r, isNew) { return paymentTermBefore(trx, r, isNew); } },                                                                                 // MPaymentTerm.beforeSave
+    c_paymentterm: { init: { afterdelivery: 'N', netdays: 0, discount: 0, discount2: 0, discountdays: 0, discountdays2: 0, gracedays: 0, isduefixed: 'N', isvalid: 'N' },   // MPaymentTerm.setInitialDefaults :77-87
+                     before: function (trx, r, isNew) { return paymentTermBefore(trx, r, isNew); } },                                                                                 // MPaymentTerm.beforeSave
     m_pricelist_version: { before: function (trx, r) { if (!r.validfrom) r.validfrom = trx.env.date; if (!r.name) r.name = fmtDateUS(r.validfrom); return null; } },                   // MPriceListVersion.setName :177-187 (en_US DisplayType.Date)
     c_uom_conversion: { before: function (trx, r) { return uomConversionBefore(trx, r); } },                                                                                         // MUOMConversion.beforeSave
     c_year: { before: function (trx, r) { return yearBefore(r); } },                                                                                                                  // MYear.beforeSave
@@ -181,7 +184,17 @@
         if (changed(old, r, 'value')) np1(trx, r, 'PR');                                                                                                               // :898
         if (changed(old, r, 'value') || changed(old, r, 'name')) notPorted(trx, 'NP-2', 'MAccount.updateValueDescription M_Product_ID', 'c_validcombination', 'm_product_id=?', [r.m_product_id]);   // :868-869
         if (changed(old, r, 'name') || changed(old, r, 'description')) notPorted(trx, 'NP-3', 'A_Asset Name/Description', 'a_asset', "isactive='Y' AND m_product_id=?", [r.m_product_id]);              // :872-883
-        if (changed(old, r, 'm_product_category_id')) mcostCreate(trx, r); }] }                                                                                        // :902-903
+        if (changed(old, r, 'm_product_category_id')) mcostCreate(trx, r); }] },                                                                                        // :902-903
+    // setInitialDefaults of the M classes the registry had no entry for (found by W-NINJA-MIGRATE: a record saved through the model layer left these AD-mandatory columns NULL;
+    //   legacy's ctor sets them). Read from org.adempiere.base/src/org/compiere/model, commented lines excluded.
+    c_uom: { init: { isdefault: 'N', stdprecision: 2, costingprecision: 6 } },                                                                                                       // MUOM.setInitialDefaults :207-213
+    m_locator: { init: { isdefault: 'N', priorityno: 50 } },                                                                                                                          // MLocator.setInitialDefaults :277-280
+    c_elementvalue: { init: { issummary: 'N', accountsign: 'N', accounttype: 'E', isdoccontrolled: 'N', isforeigncurrency: 'N', isbankaccount: 'N', postactual: 'Y', postbudget: 'Y',
+      postencumbrance: 'Y', poststatistical: 'Y' } },                                                                                                                                 // MElementValue.setInitialDefaults :73-85 (ACCOUNTSIGN_Natural, ACCOUNTTYPE_Expense)
+    c_bpartner_location: { init: { name: '.', isshipto: 'Y', isremitto: 'Y', ispayfrom: 'Y', isbillto: 'Y' } },                                                                    // MBPartnerLocation.setInitialDefaults :92-99
+    ad_user: { init: { isfullbpaccess: 'Y', notificationtype: 'X' } },                                                                                                                // MUser.setInitialDefaults :372-375 (NOTIFICATIONTYPE_None)
+    m_product_po: { init: { iscurrentvendor: 'Y' } },                                                                                                                                 // MProductPO.setInitialDefaults :89-91
+    m_pricelist: { init: { enforcepricelimit: 'N', isdefault: 'N', issopricelist: 'N', istaxincluded: 'N', priceprecision: 2 } },                                                   // MPriceList.setInitialDefaults :243-249
   };
 
 

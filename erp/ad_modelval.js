@@ -968,13 +968,19 @@
   function installMBPartnerLocationSaveHooks(db) {
     function d(info) { return (info.derived = info.derived || {}); }
     var H = [
-      ['MBPartnerLocation.locationMandatory', function (ctx, info) { return Number(info.record.c_location_id) ? null : 'C_Location_ID mandatory (MBPartnerLocation.java:208-209)'; }],
+      // a C_Location saved earlier in the SAME transaction carries its pending id '#new:n' (legacy: a real id, same trx) - set, not missing (found by W-NINJA-MIGRATE)
+      ['MBPartnerLocation.locationMandatory', function (ctx, info) { var v = info.record.c_location_id; return (Number(v) || /^#new:\d+$/.test(String(v))) ? null : 'C_Location_ID mandatory (MBPartnerLocation.java:208-209)'; }],
       ['MBPartnerLocation.nameFromAddress', function (ctx, info) {
         var r = info.record;
         if (String(r.name == null ? '.' : r.name) !== '.' || String(r.ispreservecustomname || 'N') === 'Y') return null;
-        var a = db.prepare('SELECT l.city, l.address1, l.address2, g.name AS region, l.c_location_id AS id FROM c_location l LEFT JOIN c_region g ON g.c_region_id=l.c_region_id WHERE l.c_location_id=?').get(Number(r.c_location_id));
+        // read through the caller's transaction when it is there (ctx.trx, ModelLayer.fire): legacy reads the location inside the SAME trx, so a location saved a moment ago is seen
+        var T = ctx && ctx.trx, a;
+        if (T) { var L = T.get('c_location', r.c_location_id), G = L && L.c_region_id ? T.get('c_region', L.c_region_id) : null;
+          a = L ? { city: L.city, address1: L.address1, address2: L.address2, region: G ? G.name : null, id: L.c_location_id } : null; }
+        else a = db.prepare('SELECT l.city, l.address1, l.address2, g.name AS region, l.c_location_id AS id FROM c_location l LEFT JOIN c_region g ON g.c_region_id=l.c_region_id WHERE l.c_location_id=?').get(Number(r.c_location_id));
         if (!a) return null;
-        var others = (db.prepare('SELECT name FROM c_bpartner_location WHERE c_bpartner_id=? AND c_bpartner_location_id<>?').all(Number(r.c_bpartner_id), Number(r.c_bpartner_location_id || 0)) || []).map(function (o) { return o.name; });
+        var others = (T ? T.find('c_bpartner_location', { c_bpartner_id: r.c_bpartner_id }).filter(function (o) { return String(o.c_bpartner_location_id) !== String(r.c_bpartner_location_id || 0); })
+          : (db.prepare('SELECT name FROM c_bpartner_location WHERE c_bpartner_id=? AND c_bpartner_location_id<>?').all(Number(r.c_bpartner_id), Number(r.c_bpartner_location_id || 0)) || [])).map(function (o) { return o.name; });
         function mk(level) {
           var n = '';
           if (level >= 0 || !n.length) { if (a.city) n = String(a.city); }
