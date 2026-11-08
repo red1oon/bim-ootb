@@ -18,13 +18,24 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/jav
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const say = s => console.log(s);
 const T0 = Date.now(), TAG = '§RT';
-const FILES = process.env.RT_DB ? [{ file: process.env.RT_DB, kind: 'db' }] : (process.env.RT_IFC ? process.env.RT_IFC.split(',') : [path.join(ROOT, 'IFC', 'Duplex_ARC.ifc'), path.join(ROOT, 'IFC', 'SampleHouse_ARC.ifc')]).map(f => ({ file: f, kind: 'ifc' }));
+const FILES0 = process.env.RT_DB ? [{ file: process.env.RT_DB, kind: 'db' }] : (process.env.RT_IFC ? process.env.RT_IFC.split(',') : [path.join(ROOT, 'IFC', 'Duplex_ARC.ifc'), path.join(ROOT, 'IFC', 'SampleHouse_ARC.ifc')]).map(f => ({ file: f, kind: 'ifc' }));
 const summary = [];
+if (process.env.RT_FAR) {   // RT_FAR=dx,dy : a copy of the public Duplex IFC with the IfcSite placement moved to map-scale coordinates, edited as STEP text (one new IfcCartesianPoint + the site IfcAxis2Placement3D's Location reference)
+  const [dx, dy] = process.env.RT_FAR.split(',').map(Number), src = path.join(ROOT, 'IFC', 'Duplex_ARC.ifc'), dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rtfar-')), dst = path.join(dir, 'Duplex_FAR.ifc');
+  let t = fs.readFileSync(src, 'latin1'); const m = /^(#\d+)=IFCSITE\([^;]*?,(#\d+),\$,\$,\.ELEMENT\./m.exec(t), lp = new RegExp('^' + m[2] + '=IFCLOCALPLACEMENT\\(\\$,(#\\d+)\\);', 'm').exec(t), ax = new RegExp('^(' + lp[1] + '=IFCAXIS2PLACEMENT3D\\()(#\\d+)(,[^;]*\\);)', 'm').exec(t), oldPt = new RegExp('^' + ax[2] + '=IFCCARTESIANPOINT\\(([^;]*)\\);', 'm').exec(t);
+  const newId = '#' + (Math.max.apply(null, (t.match(/^#(\d+)=/gm) || []).map(x => parseInt(x.slice(1)))) + 1), newPt = `(${dx.toFixed(3)},${dy.toFixed(3)},0.)`;
+  t = t.replace(ax[0], ax[1] + newId + ax[3]).replace('\nENDSEC;', `\n${newId}=IFCCARTESIANPOINT(${newPt});\nENDSEC;`);   // the origin point #3 is shared by other placements, so it is left alone and the site gets its own
+  fs.writeFileSync(dst, t, 'latin1');
+  console.log(`§RT-FAR site ${m[1]} placement ${m[2]} -> axis ${lp[1]} Location ${ax[2]} was ${oldPt[1]}; now ${newId}=IFCCARTESIANPOINT${newPt} (new point appended; the axis ${lp[1]} Location ${ax[2]} -> ${newId}). Copy: ${dst}`);
+  process.env.RT_FAR_FILE = dst;
+}
+const FILES = FILES0.concat(process.env.RT_FAR_FILE ? [{ file: process.env.RT_FAR_FILE, kind: 'ifc' }] : []);
 const verdict = (key, claim, X, N, extra) => { const v = N === 0 ? 'INCONCLUSIVE' : (X === N ? 'PASS' : 'GAP'); say(`${TAG} [${key}] ${claim} ${X} of ${N} ${v}${extra ? '  ' + extra : ''}`); summary.push({ key, claim, X, N, v }); return v; };
 const rows = (db, sql) => { try { const r = db.exec(sql); return r.length ? r[0].values : []; } catch (e) { return null; } };
 const has = (db, t) => (rows(db, "SELECT 1 FROM sqlite_master WHERE type='table' AND name='" + t + "'") || []).length > 0;
 const cnt = (db, t) => has(db, t) ? rows(db, 'SELECT count(*) FROM "' + t + '"')[0][0] : null;   // null = table absent
 const by = (list, f) => { const o = {}; list.forEach(x => { const k = f(x); o[k] = (o[k] || 0) + 1; }); return o; };
+const hist = (vals, edges, unit) => { const c = new Array(edges.length + 1).fill(0); vals.forEach(v => { let i = 0; while (i < edges.length && v > edges[i]) i++; c[i]++; }); return edges.map((e, i) => `<=${e}${unit}:${c[i]}`).concat(`>${edges[edges.length - 1]}${unit}:${c[edges.length]}`).join('  '); };
 const med = a => { if (!a.length) return null; const s = a.slice().sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
 
 // ── file-text facts. The file is NEVER turned into one JS string (a ~600 MB export exceeds V8's 512 MB string limit): it is scanned as a Buffer in 32 MB pieces cut at statement ends, and only the few entity kinds judged are kept ──
@@ -174,23 +185,38 @@ function fileFacts(buf) {
       const clsB = {}; bEl.forEach(e => clsB[e.guid] = e.cls);
       const items = aEl.filter(e => cA[e.guid]).map(e => ({ cls: e.cls, c: cA[e.guid], guid: e.guid })).concat(walked.filter(o => o.c).map(o => ({ cls: o.cls, c: o.c, guid: null })));
       const poolBy = {}; Object.keys(cB).forEach(g => (poolBy[clsB[g]] = poolBy[clsB[g]] || []).push({ g, c: cB[g], used: false }));
-      const pairs = [], d = [], dist = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]); let byId = 0, byNear = 0, none = 0;
-      items.forEach(it => { let hit = it.guid && cB[it.guid]; if (hit) { byId++; pairs.push([it.guid, it.guid]); d.push(dist(it.c, cB[it.guid])); return; }
+      const pairs = [], d = [], dv = [], ref = [], dist = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]); let byId = 0, byNear = 0, none = 0;
+      items.forEach(it => { let hit = it.guid && cB[it.guid]; if (hit) { byId++; pairs.push([it.guid, it.guid]); d.push(dist(it.c, cB[it.guid])); dv.push([0, 1, 2].map(k => Math.abs(it.c[k] - cB[it.guid][k]))); ref.push(it.c); return; }
         let best = null, bd = 2; (poolBy[it.cls] || (it.cls === 'IfcWallStandardCase' ? poolBy.IfcWall : null) || []).forEach(p => { if (p.used) return; const x = dist(it.c, p.c); if (x < bd) { bd = x; best = p; } });
-        if (best) { best.used = true; byNear++; d.push(bd); if (it.guid) pairs.push([it.guid, best.g]); } else none++; });
+        if (best) { best.used = true; byNear++; d.push(bd); dv.push([0, 1, 2].map(k => Math.abs(it.c[k] - best.c[k]))); ref.push(it.c); if (it.guid) pairs.push([it.guid, best.g]); } else none++; });
       vB(key, 'C6b elements with a position in A that have a same-class element within 2 m in B', byId + byNear, items.length, `byGlobalId=${byId} byNearestCentre(fallback)=${byNear} unmatched=${none}`);
       say(`${TAG} [${key}] C6c centre difference m over ${d.length} matched: median=${med(d) === null ? 'n/a' : med(d).toFixed(4)} max=${d.length ? Math.max.apply(null, d).toFixed(4) : 'n/a'}  (fallback matches are a lower bound; a position GAP hides in the unmatched)`);
-      vB(key, 'C6d matched centres within 1 cm', d.filter(x => x < 0.01).length, d.length);
+      say(`${TAG} [${key}] C6c centre-difference histogram (${d.length} matched): ${hist(d, [0.001, 0.01, 0.03, 0.06, 0.1, 0.5], 'm')}`);
+      // per axis (same bands), and the float32 prediction from the ACTUAL coordinates: step(v) = 2^(floor(log2|v|) - 23), max rounding error = step/2
+      const hs = v => v === 0 ? 0 : Math.pow(2, Math.floor(Math.log2(Math.abs(v))) - 23) / 2, pct = (a, q) => a.length ? a.slice().sort((x, y) => x - y)[Math.min(a.length - 1, Math.floor(q * a.length))] : 0;
+      ['x', 'y', 'z'].forEach((ax, k) => { const a = dv.map(v => v[k]); say(`${TAG} [${key}] C6c |d${ax}| histogram: ${hist(a, [0.001, 0.01, 0.03, 0.06, 0.1, 0.5], 'm')}  median=${pct(a, 0.5).toFixed(4)} p90=${pct(a, 0.9).toFixed(4)} max=${a.length ? Math.max.apply(null, a).toFixed(4) : 'n/a'}`); });
+      const hX = ref.length ? Math.max.apply(null, ref.map(c => hs(c[0]))) : 0, hY = ref.length ? Math.max.apply(null, ref.map(c => hs(c[1]))) : 0, hZ = ref.length ? Math.max.apply(null, ref.map(c => hs(c[2]))) : 0, mx = k => dv.length ? Math.max.apply(null, dv.map(v => v[k])) : 0;
+      say(`${TAG}-PRECISION [${key}] float32 half-step from the actual coordinates: x max ${hX.toExponential(2)} m, y max ${hY.toExponential(2)} m, z max ${hZ.toExponential(2)} m; measured max |dx|=${mx(0).toFixed(4)} |dy|=${mx(1).toFixed(4)} |dz|=${mx(2).toFixed(4)} m (cap: A elements with no same-class element within 2 m are counted as mismatches below, not as moves)`);
+      { const conf = (m, h) => h >= 0.001 && m >= 0.25 * h && m <= 4 * h, ok = [conf(mx(0), hX), conf(mx(1), hY)];
+        if (hX < 0.001 && hY < 0.001) say(`${TAG}-PRECISION [${key}] n/a: at these coordinates float32 half-step is below 1 mm on x and y (control: measured max |dx|=${mx(0).toFixed(5)} |dy|=${mx(1).toFixed(5)})`);
+        else if (ok[0] && ok[1]) say(`${TAG}-PRECISION [${key}] float32 on x and y CONFIRMED (measured max within 0.25..4 x half-step on both axes)`);
+        else if (ok[0] || ok[1]) say(`${TAG}-PRECISION [${key}] float32 on ${ok[0] ? 'x' : 'y'} only (the other axis does not reach its half-step scale or exceeds 4x it)`);
+        else if (mx(0) < 0.001 && mx(1) < 0.001) { say(`${TAG}-PRECISION [${key}] not float32: look at the centre rule (vertex mean vs bbox centre after re-tessellation)`);
+          const vm = pairs.map(([ga, gb]) => { const a = rows(dbA, "SELECT center_x,center_y,center_z FROM element_transforms WHERE guid='" + ga.replace(/'/g, "''") + "'"), b = rows(B, "SELECT center_x,center_y,center_z FROM element_transforms WHERE guid='" + gb.replace(/'/g, "''") + "'"); return a && a[0] && b && b[0] ? Math.hypot(a[0][0] - b[0][0], a[0][1] - b[0][1], a[0][2] - b[0][2]) : null; }).filter(x => x !== null);
+          say(`${TAG}-PRECISION [${key}] vertex-mean (element_transforms) difference over ${vm.length} pairs: ${hist(vm, [0.001, 0.01, 0.03, 0.06, 0.1, 0.5], 'm')}; bbox-centre difference (above): ${hist(d, [0.001, 0.01, 0.03, 0.06, 0.1, 0.5], 'm')}`); }
+        else say(`${TAG}-PRECISION [${key}] neither float32 (measured max |dx|=${mx(0).toFixed(4)} |dy|=${mx(1).toFixed(4)} against half-step x=${hX.toExponential(2)} y=${hY.toExponential(2)}) nor mm scale: inspect`); }
+      vB(key, 'C6d matched centres within 1 cm (denominator = all A elements with a position: no same-class element within 2 m counts as a mismatch)', d.filter(x => x < 0.01).length, items.length);
       // ── (b) geometry per element, (c) materials and colours: pairs = A db elements matched to B (GlobalId, else same class + nearest centre). Measured from the re-open DBs (component_geometries, elements_meta) ──
       const vc = (db, g) => { const r = rows(db, "SELECT length(c.vertices)/12 FROM element_instances i JOIN component_geometries c ON c.geometry_hash=i.geometry_hash WHERE i.guid='" + g.replace(/'/g, "''") + "'"); return r && r[0] ? r[0][0] : null; };
       const vol = (db, g) => { const r = rows(db, "SELECT (maxX-minX)*(maxY-minY)*(maxZ-minZ) FROM element_world_bbox WHERE guid='" + g.replace(/'/g, "''") + "'"); return r && r[0] ? r[0][0] : null; };
       const mat = (db, g) => { const r = rows(db, "SELECT material_name, material_rgba FROM elements_meta WHERE guid='" + g.replace(/'/g, "''") + "'"); return r && r[0] ? r[0] : [null, null]; };
-      let vEq = 0, volEq = 0, nmEq = 0, rgEq = 0, nmN = 0, rgN = 0; const vEx = [];
+      const volDev = []; let vEq = 0, volEq = 0, nmEq = 0, rgEq = 0, nmN = 0, rgN = 0; const vEx = [];
       pairs.forEach(([ga, gb]) => { const a = vc(dbA, ga), b = vc(B, gb); if (a === b) vEq++; else if (vEx.length < 3) vEx.push(ga.slice(0, 8) + ' ' + a + '/' + b);
-        const va = vol(dbA, ga), vb = vol(B, gb); if (va !== null && vb !== null && Math.abs(va - vb) <= 0.01 * Math.max(Math.abs(va), 1e-9)) volEq++;
+        const va = vol(dbA, ga), vb = vol(B, gb); if (va !== null && vb !== null) volDev.push(Math.abs(vb - va) / Math.max(Math.abs(va), 1e-9) * 100); if (va !== null && vb !== null && Math.abs(va - vb) <= 0.01 * Math.max(Math.abs(va), 1e-9)) volEq++;
         const ma = mat(dbA, ga), mb = mat(B, gb); if (ma[0]) { nmN++; if (ma[0] === mb[0]) nmEq++; } if (ma[1]) { rgN++; if (ma[1] === mb[1]) rgEq++; } });
       vB(key, 'C9b vertex count per matched element (A vs B, from the re-open DBs)', vEq, pairs.length, `pairs=${pairs.length} (GlobalId ${byId}, fallback ${byNear}); first diffs: ${vEx.join(' | ') || '(none)'}`);
       vB(key, 'C9b bbox volume per matched element within 1%', volEq, pairs.length);
+      say(`${TAG} [${key}] C9b bbox volume deviation histogram (% of A volume, ${volDev.length} pairs): ${hist(volDev, [0.1, 1, 5, 10, 50], '%')}`);
       vB(key, 'C9c material_name per matched element (A has a name)', nmEq, nmN, 'from the re-open DBs');
       vB(key, 'C9c material_rgba per matched element (A has a colour)', rgEq, rgN, 'from the re-open DBs'); }
 
