@@ -255,7 +255,7 @@ if (window.WholeHistory && WholeHistory.mount) WholeHistory.mount({ page: 'model
 <script src="dxf2ifc.js?v=1" onerror="console.warn('§IFC LOAD_FAIL dxf2ifc.js')"></script>
 <script src="open_building_db.js?v=2" onerror="console.warn('§PROPS LOAD_FAIL open_building_db.js')"></script>
 <script src="props_panel.js?v=2" onerror="console.warn('§PROPS LOAD_FAIL props_panel.js')"></script>
-<script src="bonsai_ifc.js?v=7" onerror="console.warn('§IFC LOAD_FAIL bonsai_ifc.js')"></script>
+<script src="bonsai_ifc.js?v=8" onerror="console.warn('§IFC LOAD_FAIL bonsai_ifc.js')"></script>
 <script src="bcf_export.js?v=1" onerror="console.warn('§BCF LOAD_FAIL bcf_export.js')"></script>
 <!-- DXF2BIM lane L3 (prompts/DXF2BIM_MODELLER_LANE.md §L3): Open ▸ 2D drawings (.dxf) → canvas → Convert. Loads its pipeline lazily. -->
 <script src="dxf_export_ui.js?v=2" onerror="console.warn('§DXF-EXPORT LOAD_FAIL dxf_export_ui.js')"></script>
@@ -331,7 +331,7 @@ if (window.WholeHistory && WholeHistory.mount) WholeHistory.mount({ page: 'model
      terminal_rules.db (mined off Terminal). Supersedes the thin mep_rw.db recipes for the disc-node walk —
      every disc walks on ANY opened building from rules measured off a real coordinated building. -->
 <script src="../common/walk_rules.js?v=2" onerror="console.warn('§WALK_RULES LOAD_FAIL walk_rules.js')"></script>
-<script src="disc_walker.js?v=15" onerror="console.warn('§DW LOAD_FAIL disc_walker.js')"></script>
+<script src="disc_walker.js?v=16" onerror="console.warn('§DW LOAD_FAIL disc_walker.js')"></script>
 <!-- §I5 per-instance hide (SPEC_INSTANCE_HIDE.md §I5d): Walked-Fixtures Outliner category — one row per
      walked instance (windowed via §V4 OL_CHUNK), eye = hide that exact instanceId. Witness: W-E2E-INSTHIDE. -->
 <script src="dw_instances_outliner.js?v=1" onerror="console.warn('§DWINST LOAD_FAIL dw_instances_outliner.js')"></script>
@@ -4518,11 +4518,12 @@ async function _discWalkOneBody(disc, ctx, opts) {
     // the legacy walk keeps its per-storey wording — honest about which engine path actually ran.
     var scopeTxt = w.schedule ? (w.schedule.spacesUsed + '/' + w.schedule.spaces + ' spaces')
       : (w.mode === 'measured-band' ? (w.measured.zones + ' measured zones') : (w.storeys + ' storeys'));
-    setStat(disc + ' — ' + w.placed + ' placed' + (w.provisional ? ' · ' + w.provisional + ' provisional' : '') + ' across ' + scopeTxt + (gatedN ? ' · ' + gatedN + ' gated' : '') + (clashN ? ' · ' + clashN + ' CLASH (red)' : '') + (w.refusedNoHost && w.refusedNoHost.input ? ' · ' + w.refusedNoHost.bound + ' on a host, ' + w.refusedNoHost.unhosted + ' unhosted' + (w.refusedNoHost.notJudged ? ', ' + w.refusedNoHost.notJudged + ' not judged' : '') + (w.refusedNoHost.refused - w.refusedNoHost.noMain ? ', ' + (w.refusedNoHost.refused - w.refusedNoHost.noMain) + ' not placed, no host' : '') + (w.refusedNoHost.noMain ? ', ' + w.refusedNoHost.noMain + ' duct or pipe pieces not placed, no main' : '') : '') + (nSeg ? ' · ' + nSeg + ' nn-chains' : (w.mains && w.mains.none ? ' · no main: ' + w.mains.none : w.mains && w.mains.held ? ' · main in the file, not routed: no rule for it' : (w.chains ? ' · ' + w.chains.length + ' routed' : ''))));
+    setStat(disc + ' — ' + w.placed + ' placed' + (w.provisional ? ' · ' + w.provisional + ' provisional' : '') + ' across ' + scopeTxt + (gatedN ? ' · ' + gatedN + ' gated' : '') + (clashN ? ' · ' + clashN + ' CLASH (red)' : '') + (w.refusedNoHost && w.refusedNoHost.input ? ' · ' + w.refusedNoHost.bound + ' on a host, ' + w.refusedNoHost.unhosted + ' unhosted' + (w.refusedNoHost.notJudged ? ', ' + w.refusedNoHost.notJudged + ' not judged' : '') + (w.refusedNoHost.refused - w.refusedNoHost.noMain ? ', ' + (w.refusedNoHost.refused - w.refusedNoHost.noMain) + ' not placed, no host' : '') + (w.refusedNoHost.noMain ? ', ' + w.refusedNoHost.noMain + ' duct or pipe pieces not placed, no main' : '') : '') + (w.drawn ? ' · drawn: ' + w.drawn.known.length + ' runs at height (provisional, middle of the void), ' + w.drawn.planOnly.length + ' plan only, ' + w.drawn.length.toFixed(1) + ' m' : '') + (nSeg ? ' · ' + nSeg + ' nn-chains' : (w.mains && w.mains.none ? ' · no main: ' + w.mains.none : w.mains && w.mains.held ? ' · main in the file, not routed: no rule for it' : (w.chains ? ' · ' + w.chains.length + ' routed' : ''))));
     console.log('§DISC-WALK ' + disc + ' placed=' + w.placed + ' provisional=' + (w.provisional || 0) + ' storeys=' + w.storeys + ' chains=' + (w.chains ? w.chains.length : 0) + ' chainSegs=' + nSeg + ' gated=' + gatedN + ' clash=' + clashN + ' (DiscWalker/' + ((window.DiscWalker.loadedFile && window.DiscWalker.loadedFile()) || 'rules') + ')');
     try { await _dwYieldPass(disc, 'before'); } catch (e) { console.warn('§DW-YIELD ' + (e && e.message)); }   // §D72 this walk's fixtures clear what other discs already drew
     // Tack placements into the signed op-log as GEOM_INSERT — undoable + enterprise-foldable (W-DW-OPLOG)
     await _commitDiscWalk(disc, w.placements);
+    if (w.drawn) await _commitDrawnMains(disc, w.drawn); else if (window.__dwDrawn) delete window.__dwDrawn[disc];   // §DRAWN-WALK: the sheet-drawn runs, as line ops
     // ROUTER LIVE (§ROUTER-NNCHAIN): real nn-chain network → render ALL as 3D lines, fold a bounded sample to op-log
     if (nSeg) { _renderDiscChains(disc, w.chainSegs, { patternBridge: w.patternBridge ? { seed: w.patternBridge.seed, riser: w.patternBridge.riser } : null }); await _commitDiscChains(disc, w.chainSegs); }
     // §CAMPAIGN M5: bend/tee FITTING placement at real bends in the M1 pattern-bridge network (routePattern's
@@ -4578,8 +4579,9 @@ function _dwRoot() {
 }
 function _clearDiscWalk(disc) {
   var root = _dwRoot(); if (!root) return;
-  root.children.slice().forEach(function (o) { if (o.userData && (o.userData.dwDisc === disc || o.userData.dwAsm === disc)) root.remove(o); });
+  root.children.slice().forEach(function (o) { if (o.userData && (o.userData.dwDisc === disc || o.userData.dwAsm === disc || o.userData.dwDrawn === disc)) root.remove(o); });
   delete window.__dwWalks[disc];
+  if (window.__dwDrawn) delete window.__dwDrawn[disc];
   if (window.__dwAssembly) delete window.__dwAssembly[disc];
   window.__dwInstVer++;   // §I5: bucket set changed → invalidate the record→(im,i) ref map
 }
@@ -4601,6 +4603,7 @@ function _clearAllDiscWalks() {
   if (window.__dwChainRevealMeta) window.__dwChainRevealMeta = {};
   if (window.__dwAssembly) window.__dwAssembly = {};
   if (window.__dwTrunk) window.__dwTrunk = {};
+  window.__dwDrawn = {};
   if (window.__dwFittings) window.__dwFittings = {};   // §CAMPAIGN M5 — bookkeeping only (committed rows already fold generically)
   window.__dwInstVer++;   // §I5: bucket set changed → invalidate the record→(im,i) ref map
   console.log('§DISC-WALK §GRID-CLEAR-LEAK onClear — __dwWalks/__dwChains/__dwChainMeta/__dwAssembly/__dwTrunk/__dwFittings cleared');
@@ -5196,6 +5199,32 @@ async function _commitDiscWalk(disc, placements) {
   return committed;
 }
 
+// §DRAWN-WALK (prompts/DISC_WALK_DRAWN_INTEGRATION.md §3): the runs a held duct sheet draws. Each run with a height is ONE signed GEOM_INSERT, an invisible anchor that carries its line and its per-attribute strength
+// (DiscWalker.drawnOps builds them); the look is a LINE at height, never a solid or a ribbon (the drawn width is a property, not geometry; no depth is stated). A plan-only piece (no z) is listed and counted, not committed.
+// An anchor insert is skipped by the IFC export and by every count, so a run is not saved as a duct (same as the proposed trunk, §9.3).
+window.__dwDrawn = window.__dwDrawn || {};   // disc -> the walk's drawn record (for the redraw-after-scrub)
+async function _commitDrawnMains(disc, drawn) {
+  window.__dwDrawn[disc] = drawn;
+  var O = window.Bonsai && window.Bonsai.oplog, ops = window.DiscWalker && window.DiscWalker.drawnOps ? window.DiscWalker.drawnOps(drawn) : [], committed = 0;
+  if (O && ops.length) { try { var res = await O.commitSeedGroup(ops, 'dwdrawn-' + disc + '-' + O.length); committed = (res.ids || []).length; } catch (e) { console.warn('§DISC-WALK-COMMIT-DRAWN batch fail ' + (e && e.message)); } }
+  _renderDrawnMains(disc);
+  if (committed) { _redrawAllDiscWalks(); syncHistory(); }
+  console.log('§DISC-WALK-COMMIT-DRAWN disc=' + disc + ' lines=' + ops.length + ' committed=' + committed + ' planOnly=' + drawn.planOnly.length + ' (line ops, no solid; plan-only pieces listed, not drawn)');
+  return committed;
+}
+function _renderDrawnMains(disc) {
+  var root = _dwRoot(); if (!root) return;
+  root.children.slice().forEach(function (o) { if (o.userData && o.userData.dwDrawn === disc) root.remove(o); });
+  var d = window.__dwDrawn && window.__dwDrawn[disc]; if (!d || !d.known.length) return;
+  var pos = new Float32Array(d.known.length * 6);
+  d.known.forEach(function (p, i) { pos.set([p.x0, p.y0, p.z, p.x1, p.y1, p.z], i * 6); });
+  var g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  var ln = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: DW_COLOR[disc] || 0xc0c0c0 }));
+  ln.userData.dwDrawn = disc; root.add(ln);
+  console.log('§DW-DRAWN-LINES ' + disc + ' segments=' + d.known.length + ' planOnly=' + d.planOnly.length);
+  if (window.A && A.requestRender) A.requestRender();
+}
+
 // ── ROUTER nn-CHAIN render + op-log fold (§ROUTER-NNCHAIN) ──────────────────────────────────────────
 // The Router produces real nearest-neighbour-3d segments between actual MEP elements (pipe fittings↔
 // segments, ducts↔terminals), measured on the OPEN building's own element positions. Render the WHOLE
@@ -5496,6 +5525,7 @@ function _redrawAllDiscWalks() {
   Object.keys(window.__dwChains).forEach(function (d) { if (window.__dwChains[d]) _renderDiscChains(d, window.__dwChains[d], { instant: !window.__dwChainAnimating[d] }); });
   if (window.__dwAssembly) Object.keys(window.__dwAssembly).forEach(function (d) { if (window.__dwAssembly[d]) _renderDiscAssembly(d, window.__dwAssembly[d]); });   // §3c
   if (window.__dwTrunk) Object.keys(window.__dwTrunk).forEach(function (d) { if (window.__dwTrunk[d]) _renderSeedTrunk(d, window.__dwTrunk[d]); });   // seed→trunk
+  if (window.__dwDrawn) Object.keys(window.__dwDrawn).forEach(function (d) { if (window.__dwDrawn[d]) _renderDrawnMains(d); });   // §DRAWN-WALK
   _hideUndoneWalkLayers();
   _xrayReapply('dw-redraw');   // §XRAY-REFOLD: fresh buckets come back without the x-ray glow
 }

@@ -2656,6 +2656,12 @@
         console.log(TAG + ' §WALK-MAINS disc=' + disc + ' bldg=' + buildingName + ' real=' + rc.segs.length);
         return { rc: rc, patternInfo: null, mains: { real: rc.segs.length } };
       }
+      var dst = _drawnState(disc, bdb);   // §DRAWN-WALK §1/§2: once a drawn record is held the walk says so itself (_drawnIntegrate), never 'no sheet held'
+      if (dst.sheets) {
+        if (dst.pieces) return { rc: rc, patternInfo: null, mains: { drawn: true } };
+        console.log(TAG + ' §WALK-MAINS disc=' + disc + ' bldg=' + buildingName + ' none reason=sheet refused');
+        return { rc: rc, patternInfo: null, mains: { none: 'sheet refused' } };
+      }
       var held = _heldMainPieces(disc, bdb);
       if (placements && placements.length) console.log(TAG + ' §WALK-MAINS disc=' + disc + ' bldg=' + buildingName + (held ? ' held=' + held + ' real=0 reason=no routing rule pairs them' : ' none reason=no sheet held'));
       return { rc: rc, patternInfo: null, mains: held ? { held: held, real: 0 } : { none: 'no sheet held' } };
@@ -2687,7 +2693,142 @@
     return { rc: { segs: pat.segs, byRule: pat.byRule }, patternInfo: pat };
   }
 
+  // ── §DRAWN-WALK (prompts/DISC_WALK_DRAWN_INTEGRATION.md §2-§5, witness W-DRAWN-WALK). Where the opened building holds a drawn-route record (drawn_route, written by modeller/tools/mains_to_db.js through DrawnMains.write),
+  // the ACMV walk's runs ARE the drawn pieces. Position is drawn. Height (§7.1 of DISC_WALK_DRAWN_MAINS.md) is the middle of the void between the real ceiling that holds the piece's midpoint (the host search,
+  // hostBind, IfcCovering rule of _AREA_HOST) and the lowest STRUCTURE-discipline IfcSlab/IfcBeam/IfcRoof lower face above it. No ceiling or no structure: plan only, counted, no z. A drawn length is real data and counts in totals,
+  // so no piece carries the §11 Provisional flag; the height's strength is its own property (heightBasis).
+  var _DRAWN_STRUCT_CLASSES = ['IfcSlab', 'IfcBeam', 'IfcRoof'], _DRAWN_STRUCT_DISC = 'STR', _DRAWN_MIN_VOID_M = 0.02, _DRAWN_TOL_M = 0.001;
+  function _hasTable(bdb, t) { try { return _rows(bdb, "SELECT 1 x FROM sqlite_master WHERE type='table' AND name='" + _esc(t) + "'").length > 0; } catch (e) { return false; } }
+  // sheets held (any row in drawn_route_sheet, refused or not) and pieces held (rows in drawn_route)
+  function _drawnState(disc, bdb) {
+    if (disc !== 'ACMV' || !bdb || !_hasTable(bdb, 'drawn_route_sheet')) return { sheets: 0, pieces: 0 };
+    var s = +(_rows(bdb, 'SELECT COUNT(*) n FROM drawn_route_sheet')[0] || {}).n || 0, p = _hasTable(bdb, 'drawn_route') ? (+(_rows(bdb, 'SELECT COUNT(*) n FROM drawn_route')[0] || {}).n || 0) : 0;
+    return { sheets: s, pieces: p };
+  }
+  function _storeyZ(bdb, name) {
+    var r = _hasTable(bdb, 'storey_elevation') ? _rows(bdb, "SELECT placement_z_m z FROM storey_elevation WHERE name='" + _esc(name) + "'")[0] : null;
+    if (r && r.z != null) return +r.z;
+    var sub = substrate(bdb).filter(function (x) { return x.name === name; })[0]; return sub ? sub.z : 0;
+  }
+  // the structure candidates, once: STR-discipline slabs, beams and roofs only. An ARC finish slab is not structure (§4).
+  function _drawnStructure(bdb, geoDb, anyDisc) {   // anyDisc: a witness's red control only (an ARC finish slab taken as structure), no UI
+    var rows = _rows(bdb, "SELECT m.guid g, m.storey st, m.ifc_class c, t.center_x x, t.center_y y, t.center_z z, t.bbox_x bx, t.bbox_y by_, t.bbox_z bz, t.rotation_x rx, t.rotation_y ry, t.rotation_z rot " +
+      "FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid WHERE " + (anyDisc ? '1=1' : "m.discipline='" + _DRAWN_STRUCT_DISC + "'") + " AND m.ifc_class IN ('" + _DRAWN_STRUCT_CLASSES.join("','") + "')");
+    rows.forEach(function (h) { var b = realBox(bdb, h, geoDb); h.tx = b.x; h.ty = b.y; h.tz = b.z; h.ex = b.ex; h.ey = b.ey; h.ez = b.ez; h.lower = b.z - b.ez / 2; });
+    return rows;
+  }
+  function _drawnLoad(bdb) {
+    var sheets = _rows(bdb, "SELECT s.sheet_number sn, s.revision rv, s.refused rf, s.pieces np, s.length_m len, m.storey st FROM drawn_route_sheet s LEFT JOIN " + (_hasTable(bdb, 'drawn_sheet_meta') ? 'drawn_sheet_meta' : "(SELECT NULL sheet_number, NULL storey) ") + " m ON m.sheet_number=s.sheet_number");
+    var pcs = _rows(bdb, 'SELECT d.sheet sh, d.piece pc, d.x0, d.y0, d.x1, d.y1, d.component cmp, d.system sys, d.width_drawn_mm w FROM drawn_route d ORDER BY d.sheet, d.piece');
+    var stByS = {}; sheets.forEach(function (r) { if (!r.rf) stByS[r.sn] = r.st || null; });
+    pcs.forEach(function (p) { p.st = stByS[p.sh] == null ? null : stByS[p.sh]; });
+    var terms = _hasTable(bdb, 'drawn_terminal') ? _rows(bdb, 'SELECT sheet_number sh, x, y, kind, storey st FROM drawn_terminal') : [];
+    return { sheets: sheets, pieces: pcs, terminals: terms };
+  }
+  // The ceiling for a list of points, by the existing host search (one hostBind call per storey). mount 'TOP' gives the ceiling's upper face (the void starts there), 'BOTTOM' its lower face (a terminal hangs there).
+  // Returns an array parallel to pts: { z, host } or null.
+  function _drawnCeilings(bdb, geoDb, pts, storey, mount) {
+    var out = pts.map(function () { return null; });
+    if (!pts.length || storey == null) return out;
+    var plc = pts.map(function (p, i) { return { disc: 'ACMV', ifc_class: 'IfcDuctSegment', x: p[0], y: p[1], z: p[2], storey: storey, src: i }; });
+    var hb = hostBind(plc, bdb, { host_ifc_class: 'IfcCovering', mount: mount, same_storey: true, offset_m: 0 }, geoDb);
+    (hb.bound || []).forEach(function (b) { out[b.src] = { z: b.z, host: b.host }; });
+    return out;
+  }
+  function _drawnIntegrate(disc, bdb, name, opts, w) {
+    if (disc !== 'ACMV' || (opts && opts.noDrawn) || !bdb) return w;
+    var st = _drawnState(disc, bdb); if (!st.pieces) return w;
+    var geoDb = opts && opts.geoDb, D = _drawnLoad(bdb), heap0 = _heapMB();
+    // ── heights (§4)
+    var pcs = D.pieces, byStorey = {}; pcs.forEach(function (p, i) { p.mx = (p.x0 + p.x1) / 2; p.my = (p.y0 + p.y1) / 2; p.len = Math.hypot(p.x1 - p.x0, p.y1 - p.y0); p.z = null; p.why = null; p.heightBasis = 'none'; (byStorey[p.st == null ? '' : p.st] = byStorey[p.st == null ? '' : p.st] || []).push(i); });
+    var str = _drawnStructure(bdb, geoDb, !!(opts && opts.drawnStructAnyDisc)), noStorey = 0, noCeil = 0, noStr = 0, noVoid = 0, ceilUsed = {};
+    Object.keys(byStorey).forEach(function (sk) {
+      var idx = byStorey[sk];
+      if (sk === '') { noStorey += idx.length; idx.forEach(function (i) { pcs[i].why = 'no storey stated for the sheet'; }); return; }
+      var z0 = _storeyZ(bdb, sk), ce = _drawnCeilings(bdb, geoDb, idx.map(function (i) { return [pcs[i].mx, pcs[i].my, z0]; }), sk, 'TOP');
+      idx.forEach(function (i, k) {
+        var p = pcs[i], c = ce[k];
+        if (!c) { noCeil++; p.why = 'no modelled ceiling holds the midpoint'; return; }
+        ceilUsed[c.host] = 1; p.ceiling = c.host;
+        var best = null; str.forEach(function (h) { if (Math.abs(p.mx - h.tx) > h.ex / 2 || Math.abs(p.my - h.ty) > h.ey / 2) return; if (h.lower < c.z - _DRAWN_TOL_M) return; if (!best || h.lower < best.lower) best = h; });
+        if (!best) { noStr++; p.why = str.length ? 'no structure above the ceiling here' : 'no STR slab, beam or roof in the file'; return; }
+        if (best.lower - c.z < _DRAWN_MIN_VOID_M) { noVoid++; p.why = 'no void (structure within ' + (_DRAWN_MIN_VOID_M * 1000) + ' mm of the ceiling)'; return; }
+        p.z = (c.z + best.lower) / 2; p.heightBasis = 'void-middle'; p.structure = best.g; p.structureClass = best.c; p.ceilingTop = c.z; p.structureLower = best.lower;
+      });
+    });
+    var known = pcs.filter(function (p) { return p.z != null; }), planOnly = pcs.filter(function (p) { return p.z == null; });
+    var totalLen = pcs.reduce(function (a, p) { return a + p.len; }, 0);
+    // §7.1.4 a component's pieces at different heights (ceilings step): recorded and counted, never bridged
+    var zs = {}; known.forEach(function (p) { var k = p.sh + '#' + p.cmp; (zs[k] = zs[k] || []).push(p.z); });
+    var stepped = Object.keys(zs).filter(function (k) { return Math.max.apply(null, zs[k]) - Math.min.apply(null, zs[k]) > _DRAWN_TOL_M; }).length;
+    // §7.1.5 pieces on a deep or sloped ceiling: its lower face is not its soffit
+    var deepPieces = 0, deepHosts = 0;
+    Object.keys(ceilUsed).forEach(function (g) { var r = _rows(bdb, "SELECT bbox_z bz FROM element_transforms WHERE guid='" + _esc(g) + "'")[0]; if (r && r.bz > _DEEP_HOST_M) { deepHosts++; ceilUsed[g] = 2; } });
+    pcs.forEach(function (p) { if (p.ceiling && ceilUsed[p.ceiling] === 2) deepPieces++; });
+    console.log(TAG + ' §WALK-MAINS disc=ACMV drawn=' + totalLen.toFixed(3) + ' pieces=' + pcs.length + ' heightKnown=' + known.length + ' planOnly=' + planOnly.length);
+    console.log(TAG + ' §WALK-MAINS-HEIGHT sheets=' + D.sheets.filter(function (r) { return !r.rf; }).length + ' structure=' + str.length + ' ceilingsUsed=' + Object.keys(ceilUsed).length + ' noStorey=' + noStorey + ' noCeiling=' + noCeil + ' noStructure=' + noStr + ' noVoid=' + noVoid +
+      ' steppedComponents=' + stepped + ' piecesOnDeepCeiling=' + deepPieces + ' deepCeilings=' + deepHosts + ' rule=middle of the void between the ceiling top and the lowest STR lower face (provisional)');
+    if (planOnly.length) console.log(TAG + ' §WALK-MAINS-PLANONLY n=' + planOnly.length + ' length=' + planOnly.reduce(function (a, p) { return a + p.len; }, 0).toFixed(3) + ' [' + planOnly.slice(0, 12).map(function (p) { return p.sh + '#' + p.pc + ': ' + p.why; }).join(' | ') + (planOnly.length > 12 ? ' | +' + (planOnly.length - 12) : '') + ']');
+    // ── terminals (§5): on a storey a held sheet covers, the drawn terminals replace the borrowed band ones
+    var tInfo = _drawnTerminals(w, D, bdb, geoDb);
+    if (!w || w.refused || !w.placements) w = { disc: disc, refused: false, mode: 'drawn', placements: [], refusedNoHost: _noBandHostAcct(), chains: [], chainSegs: [], chainByRule: [], storeys: 0, patternBridge: null };
+    w.verdict = false; w.refused = false;
+    if (tInfo.placements.length || tInfo.dropIds.size) w.placements = w.placements.filter(function (p) { return !tInfo.dropIds.has(p); }).concat(tInfo.placements);
+    var sp = _countSplit(w.placements, opts);
+    w.placed = sp.placed + pcs.length; w.provisional = sp.provisional;   // a drawn piece is real data: it counts as placed
+    w.mains = { drawn: totalLen, pieces: pcs.length, heightKnown: known.length, planOnly: planOnly.length, real: w.mains && w.mains.real };
+    w.drawn = { pieces: pcs, known: known, planOnly: planOnly, terminals: tInfo, length: totalLen, stepped: stepped, sheets: D.sheets };
+    console.log(TAG + ' §WALK-DRAWN disc=ACMV bldg=' + name + ' placed=' + w.placed + ' provisional=' + w.provisional + ' drawnPieces=' + pcs.length + ' heapDeltaMB=' + (_heapMB() - heap0).toFixed(1));
+    return w;
+  }
+  // which building storey a walked placement is on: its host's storey when it has one, else the storey whose median z is nearest (the same re-key the pattern bridge uses)
+  function _placementStorey(bdb, p, sub, hostSt) {
+    if (p.host) { if (hostSt[p.host] === undefined) { var r = _rows(bdb, "SELECT storey s FROM elements_meta WHERE guid='" + _esc(p.host) + "'")[0]; hostSt[p.host] = r ? r.s : null; } if (hostSt[p.host]) return hostSt[p.host]; }
+    var best = null; sub.forEach(function (s) { if (best === null || Math.abs(s.z - p.z) < Math.abs(best.z - p.z)) best = s; }); return best ? best.name : null;
+  }
+  function _drawnTerminals(w, D, bdb, geoDb) {
+    var out = { placements: [], dropIds: new Set(), byStorey: {} }, covered = {};
+    D.sheets.forEach(function (r) { if (!r.rf && r.st) covered[r.st] = 1; });
+    var sub = substrate(bdb), hostSt = {}, band = (w && w.placements) || [];
+    Object.keys(covered).forEach(function (sk) {
+      var dt = D.terminals.filter(function (t) { return t.st === sk; });
+      var dropped = band.filter(function (p) { return p.provisional === true && _MAIN_PIECE_CLASSES.indexOf(p.ifc_class) < 0 && !/^drawn:/.test(p.prov || '') && _placementStorey(bdb, p, sub, hostSt) === sk; });
+      dropped.forEach(function (p) { out.dropIds.add(p); });
+      var ce = _drawnCeilings(bdb, geoDb, dt.map(function (t) { return [t.x, t.y, _storeyZ(bdb, sk)]; }), sk, 'BOTTOM'), tmpl = dropped.filter(function (p) { return p.geometry_hash; })[0] || null, placed = 0, planOnly = 0, noKind = 0, noMesh = 0;
+      dt.forEach(function (t, i) {
+        if (!t.kind) noKind++;
+        if (!ce[i]) { planOnly++; return; }
+        if (!tmpl) { noMesh++; return; }   // no rule-mined device mesh to seat it on: listed, never boxed
+        placed++;
+        out.placements.push({ disc: 'ACMV', ifc_class: tmpl.ifc_class, x: t.x, y: t.y, z: ce[i].z, yaw: 0, storey: sk, host: ce[i].host, mount: 'BOTTOM', prov: 'drawn:terminal', hostState: 'bound', provisional: false,
+          bx: tmpl.bx, by: tmpl.by, bz: tmpl.bz, prim: tmpl.prim, geometry_hash: tmpl.geometry_hash, system: t.kind || null, positionBasis: 'drawn', heightBasis: 'ceiling:' + ce[i].host });
+      });
+      out.byStorey[sk] = { drawn: dt.length, placed: placed, planOnly: planOnly, noKind: noKind, noMesh: noMesh, borrowedDropped: dropped.length };
+      console.log(TAG + ' §WALK-TERMINALS storey=' + sk + ' drawn=' + dt.length + ' borrowedDropped=' + dropped.length);
+      console.log(TAG + ' §WALK-TERMINALS-DETAIL storey=' + sk + ' placed=' + placed + ' planOnly=' + planOnly + ' noKind=' + noKind + ' noMesh=' + noMesh + ' (a terminal of no kind is placed and counted, and gives no system)');
+    });
+    var left = band.filter(function (p) { return p.provisional === true && _MAIN_PIECE_CLASSES.indexOf(p.ifc_class) < 0 && !out.dropIds.has(p); }).length;
+    console.log(TAG + ' §WALK-TERMINALS-ELSEWHERE borrowedKept=' + left + ' (provisional, storeys no held sheet covers)');
+    return out;
+  }
+  // The pure op builder the page commits (modeller.html _commitDrawnMains). A drawn run is an INVISIBLE anchor insert carrying its line: no solid and no ribbon (the page draws it as a line at height), not exported as a duct.
+  // Strength per attribute: position drawn; width drawn when the reader found it, else none; height provisional (void-middle) or none.
+  function drawnOps(drawn) {
+    return ((drawn && drawn.known) || []).map(function (p) {
+      var L = p.len, yaw = Math.atan2(p.y1 - p.y0, p.x1 - p.x0) * 180 / Math.PI, h = 0.005;
+      return { op_type: 'GEOM_INSERT', params: { bbox: [-L / 2, L / 2, -h, h, -h, h], anchorOnly: true, lod: '200', placement: { x: +p.mx.toFixed(4), y: +p.my.toFixed(4), z: +(p.z - h).toFixed(4), rot: +yaw.toFixed(4) },
+        line: { from: [+p.x0.toFixed(4), +p.y0.toFixed(4), +p.z.toFixed(4)], to: [+p.x1.toFixed(4), +p.y1.toFixed(4), +p.z.toFixed(4)] },
+        _dw: { disc: 'ACMV', kind: 'drawn-main', sheet: p.sh, piece: p.pc, component: p.cmp, system: p.sys, widthMm: p.w == null ? null : p.w, provisional: false, prov: 'drawn:route', hostState: null,
+          positionBasis: 'drawn', widthBasis: p.w == null ? 'none' : 'drawn', heightBasis: p.heightBasis, strength: { position: 'drawn', width: p.w == null ? 'none' : 'drawn', height: p.heightBasis === 'void-middle' ? 'provisional' : 'none' },
+          ceiling: p.ceiling || null, structure: p.structure || null, structureClass: p.structureClass || null } } };
+    });
+  }
+
   function dwWalk(disc, bdb, buildingName, opts) {
+    var w = _dwWalkBase(disc, bdb, buildingName, opts);
+    return _drawnIntegrate(disc, bdb, buildingName, opts, w);
+  }
+  function _dwWalkBase(disc, bdb, buildingName, opts) {
     if (!_ready) { console.warn(TAG + ' not initialised'); return { disc: disc, refused: true, reason: 'engine not initialised', placed: 0 }; }
     // §SCHED-WALK (Step 2 PLACE, opt-in): schedule-driven per-space placement — the transcribed
     // Java semantics over the Step-1 mined rules. Fixture generation ONLY; routing (route/
@@ -2889,7 +3030,7 @@
     return ds.filter(function (d) { return d && d !== 'ARC'; });
   }
 
-  var API = { rulesMeta: function () { return _rulesMeta; }, hasRules: function (disc) { try { var r = _db && _db.exec("SELECT COUNT(*) FROM rule_placement WHERE disc='" + String(disc).replace(/'/g, "''") + "'"); return !!(r && r.length && r[0].values[0][0] > 0); } catch (e) { return false; } }, dwInit: dwInit, dwRulesKey: dwRulesKey, dwOpen: dwOpen, dwBorrow: dwBorrow, dwBorrowFile: dwBorrowFile, dwWalk: dwWalk, assemble: assemble, connectorFor: connectorFor, connectorEnrich: connectorEnrich, substrate: substrate, place: place, hostBind: hostBind, dwTraceZ: dwTraceZ,
+  var API = { drawnOps: drawnOps, rulesMeta: function () { return _rulesMeta; }, hasRules: function (disc) { try { var r = _db && _db.exec("SELECT COUNT(*) FROM rule_placement WHERE disc='" + String(disc).replace(/'/g, "''") + "'"); return !!(r && r.length && r[0].values[0][0] > 0); } catch (e) { return false; } }, dwInit: dwInit, dwRulesKey: dwRulesKey, dwOpen: dwOpen, dwBorrow: dwBorrow, dwBorrowFile: dwBorrowFile, dwWalk: dwWalk, assemble: assemble, connectorFor: connectorFor, connectorEnrich: connectorEnrich, substrate: substrate, place: place, hostBind: hostBind, dwTraceZ: dwTraceZ,
     route: route, routeChains: routeChains, routePattern: routePattern,
     // §MEP-ROUTE-DISC: the disciplines the pattern bridge covers (modeller.html gates its mep_rw.db load on this)
     patternDiscs: function () { return Object.keys(_RW_PATTERN_DISC); },
