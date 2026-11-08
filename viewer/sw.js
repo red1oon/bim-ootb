@@ -255,7 +255,8 @@
 // v1702 (2026-11-08) §ONE-FRAME §2a: both IFC routes pass the SAME rows to the georef pin (GeorefFrame.pinInput); import_worker.js?v=22, import.js?v=16
 // v1704 (2026-11-09) §TM_ISOLATE + §CEASE_SUBJECT + §DRAWN-OVERLAY-FRAME (DRAWN_SERVICES_FILM §7): tm_render.js ANDs the build-up with the active isolate; the ending-orbit cease keeps the drawn.services layer; cpe_drawn_services.js?v=2
 // v1705 (2026-11-09) §FILESTORE-OPEN (prompts/BIMDOC_OPEN_FILE_STORE.md): ?open=store:<sha256>&name= opens a BIM Document attachment from the shared OPFS store; common/file_store.js precached
-const CACHE_VERSION = 'v1705';
+// v1706 (2026-11-09) §NARROW_BUILD loader.js imports the vendored common/lib/three-mesh-bvh.module.js (no CDN); the file is in PRECACHE_ASSETS
+const CACHE_VERSION = 'v1706';
 // v1637 (rebase of PR #1191/#1196) §CLASS_UNMATCHED_INHERITED + §EXACT_LOOKUP_BLINDSPOT: rates/ifc_schema_hierarchy.json added to PRECACHE_ASSETS; schedule_author.js/proj_fold.js/boq_charts.html/schedule_read_4d.js/tm_sched_xray.js classify via the schema hierarchy.
 // v1636 (rebase of PR #1317) §ARCH_AREA_WEIGHT/§VOL_WEIGHT/§FOOTING_M3: schedule_author.js, time_machine parts, rates.js and rates/*.json changed install DURATIONS (area/volume weighting, IfcFooting priced M3); all precached cache-first, so a client holding the old cache would keep the flat times forever.
 // v1635 (rebase of PR #676, BCF half only) §BCF_EXPORT: bcf_export.js added to PRECACHE_ASSETS; viewer.html loads it + Export BCF button in the Issues toolbar; main.js wires setupBcfExport/exportIssuesBcf. The Open-button IFC half of #676 was superseded by main's A._openIfcFiles.
@@ -971,6 +972,7 @@ const SHELL_LIBS = [
   'lib/three.module.min.js', // §S276: r184 standard ESM fallback
   'lib/three.core.min.js',  // §GI_LIVE: r186 core (split build); three.module.min.js (WebGL renderer) unchanged
   '../common/lib/OrbitControls.module.js',  // §S276: r184 ESM
+  '../common/lib/three-mesh-bvh.module.js',  // §NARROW_BUILD vendored BVH (MIT), loader.js imports it
   '../common/lib/sql-wasm.js',
   '../common/lib/sql-wasm.wasm',
   'lib/chart.umd.min.js',
