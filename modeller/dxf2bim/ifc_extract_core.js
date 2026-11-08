@@ -810,14 +810,18 @@ async function extractToDb(ctx) {
     }
     // §STOREY_ELEVATION (§L1.6 R1'): each storey's ObjectPlacement origin z resolved to world (the frame the geometry is
     // in), and its Elevation attribute, both in metres (file length unit; never assumed: null when the unit is unresolved)
+    // §9 item 4 (DISC_WALK_DRAWN_INTEGRATION.md): the geometry frame is metres. A file that declares metres but whose coordinates the span heuristic had to divide by 1000 (autoScale != 1) is a millimetre file with an undeclared unit:
+    // its storeys take the same factor as its geometry, so storey_elevation never holds raw millimetres. A declared unit (lengthScale != 1) is used as stated.
+    const uScale = (lengthScale === 1 && autoScale !== 1) ? autoScale : lengthScale;
+    if (uScale !== lengthScale) log(`§STOREY_ELEVATION_UNITS declared=${lengthScale} geometryAutoScale=${autoScale} used=${uScale} (undeclared millimetre file)`);
     for (const sid in storeyGuid) {
       if (!storeyGuid[sid]) continue;
       const st = ifcApi.GetLine(modelID, Number(sid));
       const pl = st && st.ObjectPlacement ? placement(ref(st.ObjectPlacement), 0) : null;
       const raw = storeyElevationRaw[sid];
       storeyElevRows.push({ guid: storeyGuid[sid], name: storeyMap[sid],
-        attr: (raw != null && lengthScale != null) ? raw * lengthScale - georefOffset[2] : null,
-        z: (pl && lengthScale != null) ? pl.o[2] * lengthScale - georefOffset[2] : null });
+        attr: (raw != null && uScale != null) ? raw * uScale - georefOffset[2] : null,
+        z: (pl && uScale != null) ? pl.o[2] * uScale - georefOffset[2] : null });
     }
     // §IFC-GRID: the grid axes in THIS route's element_transforms frame (metres, the map offset kept, times the same span factor the centres got)
     const GR = ctx.GridRead || (typeof IfcGridRead !== 'undefined' ? IfcGridRead : null);

@@ -201,5 +201,6 @@
   "LightLaw": "readonly",
   "ProvTotals": "readonly",
   "GeorefFrame": "readonly",
-  "IfcGridRead": "readonly"
+  "IfcGridRead": "readonly",
+  "setDrawnOnlyView": "readonly"
 }

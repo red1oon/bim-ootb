@@ -85,6 +85,22 @@ async function main() {
       const ins = rows.length ? db.prepare(`INSERT OR IGNORE INTO ifc_spaces (${cols.join(',')}) VALUES (${cols.map(() => '?').join(',')})`) : null;
       rows.forEach(r => { ins.run(...cols.map(c => r[c])); spaces++; });
     }
+    // §FEDERATE-STOREYS (DISC_WALK_DRAWN_INTEGRATION.md §9 item 4): file 2's storey_elevation + spatial_structure storey rows join file 1's, under their own names (file 1's rows are never overwritten).
+    // Both are already METRES in the shared frame (the second extract used its own unit scale and the first file's pin z offset). Pairing is by ELEVATION within +/-0.05 m; an unpaired storey stays its own storey.
+    if (has(edb, 'storey_elevation') && has(db, 'storey_elevation')) {
+      const TOL = 0.05, mine = qm('SELECT guid, name, placement_z_m z FROM storey_elevation'), theirs = qe('SELECT guid, name, elevation_attr_m a, placement_z_m z FROM storey_elevation');
+      const names = new Set(mine.map(r => r.name)), unpaired = []; let paired = 0, added = 0, sameName = 0;
+      const insSE = db.prepare('INSERT OR IGNORE INTO storey_elevation VALUES (?,?,?,?)'), insSS = db.prepare('INSERT OR IGNORE INTO spatial_structure (guid,type,name,parent_guid,object_type,predefined_type,elevation) VALUES (?,?,?,?,?,?,?)');
+      const ssOf = {}; if (has(edb, 'spatial_structure')) qe("SELECT guid, name, elevation FROM spatial_structure WHERE type='IfcBuildingStorey'").forEach(r => { ssOf[r.guid] = r; });
+      theirs.forEach(r => {
+        const hit = r.z != null && mine.some(m => m.z != null && Math.abs(m.z - r.z) <= TOL);
+        if (hit) paired++; else unpaired.push(r.name);
+        if (names.has(r.name)) { sameName++; return; }   // a name file 1 already holds is not overwritten
+        added += insSE.run(r.guid, r.name, r.a, r.z).changes;
+        if (ssOf[r.guid]) insSS.run(r.guid, 'IfcBuildingStorey', r.name, null, null, null, r.a != null ? r.a : ssOf[r.guid].elevation);   // metres from storey_elevation (a millimetre file's own spatial_structure.elevation is its raw attribute, left as the single open writes it); no building row of file 2 is merged, so no parent
+      });
+      console.log(`§FEDERATE-STOREYS paired=${paired} of ${theirs.length} unpaired=${JSON.stringify(unpaired)} added=${added} sameNameKept=${sameName} tol=${TOL}m source=storey_elevation.placement_z_m (metres, shared frame)`);
+    }
     const byDisc = {}; qe('SELECT discipline d, count(*) n FROM elements_meta GROUP BY 1').forEach(r => { byDisc[r.d] = r.n; });
     const off = (db.prepare("SELECT value FROM project_metadata WHERE key LIKE 'georef_offset_%' ORDER BY key").all() || []).map(r => r.value);
     console.log(`§FEDERATE second=${path.basename(federatePath)} merged=${n} classes=${qe('SELECT count(DISTINCT ifc_class) n FROM elements_meta')[0].n} byDisc=${JSON.stringify(byDisc)} grid_axes=${axes} spaces=${spaces} offset=(${(ex0 && ex0.georefOffset || [0, 0, 0]).join(',')}) georef_offset_rows=${off.length}`);
