@@ -9,7 +9,7 @@
 'use strict';
 var fs = require('fs'), path = require('path');
 var ERP = path.join(__dirname, '..'), G = require(path.join(ERP, 'genesis.js')), QI = require(path.join(ERP, 'overlay', 'quick_input.js'));   // core genesis.js is untouched; quickInput lives in the overlay
-var initSqlJs; try { initSqlJs = require('sql.js'); } catch (e) { initSqlJs = require(path.join(ERP, 'sqljs', 'sql-wasm.js')); }
+var initSqlJs; initSqlJs = require(path.join(ERP, 'sqljs', 'sql-wasm.js'));   // the JS that matches the shipped wasm loaded below (node_modules sql.js is another version and crashes on it)
 var log = console.log, fails = 0, judged = 0;
 function check(sec, name, ok, info) { judged++; if (!ok) fails++; log('  §QS-CHECK ' + sec + ' ' + name + ' ' + (ok ? 'OK' : 'FAIL') + (ok ? '' : ' ' + JSON.stringify(info))); }
 (async function () {

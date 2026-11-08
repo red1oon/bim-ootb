@@ -9,7 +9,7 @@
 var fs = require('fs'), path = require('path');
 var ERP = path.join(__dirname, '..'), L = null;
 try { L = require(path.join(ERP, 'overlay', 'window_lens.js')); } catch (e) { L = null; }
-var initSqlJs; try { initSqlJs = require('sql.js'); } catch (e) { initSqlJs = require(path.join(ERP, 'sqljs', 'sql-wasm.js')); }
+var initSqlJs; initSqlJs = require(path.join(ERP, 'sqljs', 'sql-wasm.js'));   // the JS that matches the shipped wasm loaded below (node_modules sql.js is another version and crashes on it)
 var LEG = process.env.WL_LEGACY || '/home/red1/bim-compiler/scripts/bridge/out/window_anatomy_legacy.json';
 var log = console.log, fails = 0, judged = 0;
 function check(name, ok, info) { judged++; if (!ok) fails++; log('  §WL-CHECK ' + name + ' ' + (ok ? 'OK' : 'FAIL') + (ok ? '' : ' ' + JSON.stringify(info))); }

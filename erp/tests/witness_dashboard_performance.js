@@ -11,7 +11,7 @@
 var fs = require('fs'), path = require('path');
 var ERP = path.join(__dirname, '..'), DG = null, GE = require(path.join(ERP, 'goal_engine.js'));
 try { DG = require(path.join(ERP, 'overlay', 'dashboard_gadgets.js')); } catch (e) { DG = null; }
-var initSqlJs; try { initSqlJs = require('sql.js'); } catch (e) { initSqlJs = require(path.join(ERP, 'sqljs', 'sql-wasm.js')); }
+var initSqlJs; initSqlJs = require(path.join(ERP, 'sqljs', 'sql-wasm.js'));   // the JS that matches the shipped wasm loaded below (node_modules sql.js is another version and crashes on it)
 var ORA = process.env.GE_ORACLE || '/home/red1/bim-compiler/scripts/bridge/out/goal_oracle_legacy.json', log = console.log, fails = 0, judged = 0;
 function check(name, ok, info) { judged++; if (!ok) fails++; log('  §DP-CHECK ' + name + ' ' + (ok ? 'OK' : 'FAIL') + (ok ? '' : ' ' + JSON.stringify(info))); }
 (async function () {

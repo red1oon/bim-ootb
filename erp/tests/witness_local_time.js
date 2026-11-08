@@ -26,7 +26,7 @@ var pass = 0, fail = 0, ok = function (id, n, c, d) { console.log((c ? '  ✅ ' 
   console.log('§LT-DAY localDay=' + day + ' utcDay=' + new Date(T).toISOString().slice(0, 10) + ' fmt=' + C.fmtKernelTs(T));
   ok('B', 'today at 02:30 local = 2026-10-16 (legacy #Date), not the UTC date 2026-10-15', day === '2026-10-16' && C.fmtKernelTs(T) === '2026-10-16 02:30:00', day);
   var sites = [['idempiere.html', /put\('date', ([^)]*\))/], ['idempiere.html', /ln === 'date'\) return ([^;]*);/], ['idempiere.html', /today: (CrudCore[^}]*?|\(new Date[^}]*?) \}/], ['idempiere.html', /today: (CrudCore\.localDay\(\)|\(function \(\) \{ var d = new Date\(\)[^,]*)\,/], ['crud_overlay.js', /function today\(\) \{ try \{ return ([^;]*);/],
-    ['ad_process.js', /var today = ctx\.today \|\| ([^;]*);/], ['pos_lens.js', /var today = ([^;]*localDay\(\)|new Date\(\)\.toISOString\(\)\.slice\(0, 10\));/]];
+    ['ad_process.js', /var today = ctx\.today \|\| ([^;]*);/]]   // pos_lens.js was deleted by #2585 (the till replaced it; the till has no clock-'today' site);
   var got = sites.map(function (s) { var m = s[1].exec(fs.readFileSync(path.join(ERP, s[0]), 'utf8')); return s[0] + ': ' + (m ? m[1] : 'NOT FOUND'); });
   console.log('§LT-SITES ' + JSON.stringify(got));
   ok('C', 'every clock-"today" call site uses the one localDay (none on toISOString)', got.every(function (g) { return /localDay\(\)/.test(g) && !/toISOString/.test(g); }), got.filter(function (g) { return !/localDay\(\)/.test(g); }).join(' | '));
