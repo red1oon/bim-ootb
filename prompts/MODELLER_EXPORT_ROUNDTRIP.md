@@ -81,9 +81,9 @@ The walk label survives (C4 BIMOOTB_Walk, Provisional) and positions of what is 
 The vertex-count GAP is re-tessellation on re-open (triangulated face set vs the extractor's mesh), not lost shape: bbox volume matches on every matched element.
 
 ## RESULT 2026-11-08 far-coordinate leg (`RT_FAR=dx,dy`; log `/tmp/rt_out/rt_far2.log`)
-Why: a real file at map coordinates (x ~465,251 m, y ~2,766,484 m) showed 1,284 of 4,147 matched elements moved over 1 cm and bbox volume within 1% on only 181 of 1,371. Hypothesis: float32 precision at large coordinates.
-Instrument: the witness copies public `IFC/Duplex_ARC.ifc` to a temp dir and edits STEP text only: a new `#39115=IFCCARTESIANPOINT((465000.000,2766000.000,0.))` is appended and the site's `IfcAxis2Placement3D #38272` Location is repointed from the shared origin point `#3` (`(0.,0.,0.)`, used by other placements, so it is left alone) to it. Site `#38274` -> placement `#38273` -> axis `#38272`. C6d's denominator is now every A element with a position (an element with no same-class element within 2 m is a mismatch, not a move): local Duplex C6d reads 373 of 392 GAP, was 373 of 373 (the 19 are the no-geometry and STR rows, as in C6b).
-| Duplex | local | far (465000, 2766000) |
+Why: a real file at map coordinates (hundreds of km from the origin in x and thousands in y) showed 1,284 of 4,147 matched elements moved over 1 cm and bbox volume within 1% on only 181 of 1,371. Hypothesis: float32 precision at large coordinates.
+Instrument: the witness copies public `IFC/Duplex_ARC.ifc` to a temp dir and edits STEP text only: a new `#39115=IFCCARTESIANPOINT((dx,dy,0.))` is appended and the site's `IfcAxis2Placement3D #38272` Location is repointed from the shared origin point `#3` (`(0.,0.,0.)`, used by other placements, so it is left alone) to it. Site `#38274` -> placement `#38273` -> axis `#38272`. C6d's denominator is now every A element with a position (an element with no same-class element within 2 m is a mismatch, not a move): local Duplex C6d reads 373 of 392 GAP, was 373 of 373 (the 19 are the no-geometry and STR rows, as in C6b).
+| Duplex | local | far (500000, 3000000) |
 |---|---|---|
 | centre distance | <=1 mm 373 / all others 0 | <=1 mm 173, <=1 cm 15, <=3 cm 62, <=6 cm 73, <=10 cm 33, <=50 cm 15, >50 cm 0 (371 matched) |
 | \|dx\| | all 373 <=1 mm | <=1 mm 185, <=1 cm 170, <=3 cm 16; max 0.0134 m; float32 half-step at x 0.0156 m |

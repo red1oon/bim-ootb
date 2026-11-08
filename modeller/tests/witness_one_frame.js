@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: MIT
 // # ⚠ DO NOT REMOVE — W-ONE-FRAME. SCOPE: prompts/MODELLER_ONE_FRAME.md §1-§3 (part A: the open route lands in the Viewer import's local frame). Read the log after EVERY run; exit code 0 is not evidence.
 // ISSUE IT EXPOSES: "one file, two frames; world-scale float32 drift at map coordinates". The Modeller open kept raw map coordinates where the Viewer import rebased to a local origin
-// (+ a recorded whole-metre offset), so one file sat in two frames and every float32 mesh/export at x~465 km, y~2766 km lost up to 1.6 cm (x) and 12.5 cm (y).
+// (+ a recorded whole-metre offset), so one file sat in two frames and every float32 mesh/export at map scale (x ~500 km, y ~3,000 km) lost up to 1.6 cm (x) and 12.5 cm (y).
 // Fixture: the public IFC/Duplex_ARC.ifc with its IfcSite placement moved far (lib_far_fixture.js, the RT_FAR method of W-EXPORT-ROUNDTRIP), plus the unshifted Duplex.
 // Claims: F1 identical georef_offset on both routes (+ federation pin + >1 km fallback) | F2 sweep X of N: every world-coordinate column shifted (red control: one table left unshifted)
 //   F3 W-EXPORT-ROUNDTRIP far leg after (A): centres within 1 mm, bbox volume within 1% | F4 site facts as the file states them, with a source; none stated records none
@@ -22,7 +22,7 @@ let pass = 0, fail = 0, inconclusive = 0;
 const chk = (id, ok, d) => { if (ok) pass++; else fail++; say((ok ? '§PASS ' : '§FAIL ') + id + ' | ' + d); return ok; };
 const inc = (id, d) => { inconclusive++; say('§INCONCLUSIVE ' + id + ' | ' + d); };
 const PUB = path.join(ROOT, 'IFC', 'Duplex_ARC.ifc'), HOUSE = path.join(ROOT, 'IFC', 'SampleHouse_ARC.ifc');
-const FAR = [465000, 2766000], FARZ = 12000;
+const FAR = [500000, 3000000], FARZ = 12000;
 
 // ── the code trees: ROOT (the code under test) and origin/main's (git show into a temp tree, same layout) ──────────────────────────────────────────────────────────────────────────────
 function baseTree(ref) {
