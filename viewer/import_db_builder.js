@@ -152,6 +152,16 @@ function buildImportDBs(SQL, data) {
     console.log('§IFC_STOREYS_TABLE rows=' + data.meta.declaredStoreys.length);
   }
 
+  // §IFC-GRID (prompts/DISC_WALK_DRAWN_MAINS.md §4.2a): the IFC's stated IfcGrid axes, same table as the open route (common/ifc_grid_read.js DDL).
+  // No grid in the source = no table = byte-identical to before.
+  if (data.meta && data.meta.gridAxes && data.meta.gridAxes.length) {
+    db.run('CREATE TABLE IF NOT EXISTS ifc_grid_axis (grid_guid TEXT, grid_name TEXT, storey TEXT, axis_guid TEXT, tag TEXT, x0 REAL, y0 REAL, x1 REAL, y1 REAL, axis_set TEXT)');
+    var stmtGA = db.prepare('INSERT INTO ifc_grid_axis VALUES (?,?,?,?,?,?,?,?,?,?)');
+    data.meta.gridAxes.forEach(function (r) { stmtGA.run([r.grid_guid, r.grid_name, r.storey, r.axis_guid, r.tag, r.x0, r.y0, r.x1, r.y1, r.axis_set]); });
+    stmtGA.free();
+    console.log('§IFC-GRID_TABLE rows=' + data.meta.gridAxes.length);
+  }
+
   // 4D_CAPTURE_AND_FALLBACK.md T1/T1b — native IFC 4D schedule (W-CAPTURE / W-VOCAB).
   // Widened DDL (§5.2): CPM dates, float, is_critical, WBS (wbs_parent+is_summary),
   // predefined_type, nullable resource (OUR template concept, captured=null), + a thin

@@ -41,18 +41,23 @@
     });
     return x0 === Infinity ? null : [x0, y0, x1, y1];
   }
-  function insertBox(ins, lb, k, mirrorFix) {   // block local box -> parent frame. A negative X scale is a mirrored block: true X = -X when the fix is on.
-    if (!lb) return null; const px = (ins.position ? ins.position.x : 0) * k, py = (ins.position ? ins.position.y : 0) * k, sx0 = ins.xScale == null ? 1 : ins.xScale, sy = ins.yScale == null ? 1 : ins.yScale;
-    const sx = (sx0 < 0 && mirrorFix) ? -sx0 : sx0, a = (ins.rotation || 0) * Math.PI / 180, c = Math.cos(a), s = Math.sin(a);
+  function insertBox(ins, lb, k) {   // block local box -> parent frame, the insert's own transform as drawn (a negative scale is applied as drawn)
+    if (!lb) return null; const px = (ins.position ? ins.position.x : 0) * k, py = (ins.position ? ins.position.y : 0) * k, sx = ins.xScale == null ? 1 : ins.xScale, sy = ins.yScale == null ? 1 : ins.yScale;
+    const a = (ins.rotation || 0) * Math.PI / 180, c = Math.cos(a), s = Math.sin(a);
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     [[lb[0], lb[1]], [lb[2], lb[1]], [lb[2], lb[3]], [lb[0], lb[3]]].forEach(p => { const lx = p[0] * sx, ly = p[1] * sy, x = px + c * lx - s * ly, y = py + s * lx + c * ly; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; });
     return [x0, y0, x1, y1];
+  }
+  // MTEXT carries formatting codes: {\fArial|b0;A}, \H2.5;, \P. Strip them; the tag is what is left.
+  function plainText(e) {
+    let t = String(e.text == null ? '' : e.text); if (e.type !== 'MTEXT') return t.trim();
+    t = t.replace(/\\[Pp]/g, ' ').replace(/\\[fFHhWwQqTtAaCc][^;]*;/g, '').replace(/\\[LlOoKk]/g, '').replace(/\\([\\{}])/g, '$1').replace(/[{}]/g, ''); return t.trim();
   }
 
   // ---- frame fit (§4.2, §4.2a): one grid_guid at a time ----
   function sheetGridTags(entities, rows, k, reach) {
     const isL = matcher(rows.grid_line), isT = matcher(rows.grid_tag), lines = [], texts = [];
-    entities.forEach(e => { if (e.type === 'TEXT' || e.type === 'MTEXT') { if (isT(e.layer)) { const p = e.startPoint || e.position; if (p) texts.push({ tag: String(e.text || '').trim(), x: p.x * k, y: p.y * k }); } } else if (isL(e.layer)) segsOf(e, k).forEach(s => lines.push(s)); });
+    entities.forEach(e => { if (e.type === 'TEXT' || e.type === 'MTEXT') { if (isT(e.layer)) { const p = e.startPoint || e.position; if (p) texts.push({ tag: plainText(e), x: p.x * k, y: p.y * k }); } } else if (isL(e.layer)) segsOf(e, k).forEach(s => lines.push(s)); });
     const claim = new Map();   // line index -> nearest tag
     texts.forEach(t => { let bi = -1, bd = Infinity; lines.forEach((s, i) => { const d = Math.min(Math.hypot(t.x - s[0], t.y - s[1]), Math.hypot(t.x - s[2], t.y - s[3])); if (d < bd) { bd = d; bi = i; } }); if (bi >= 0 && bd <= reach) { const c = claim.get(bi); if (!c || bd < c.d) claim.set(bi, { tag: t.tag, d: bd }); } });
     const byTag = {}; claim.forEach((c, i) => { (byTag[c.tag] = byTag[c.tag] || []).push(lines[i]); });
@@ -79,15 +84,15 @@
 
   // ---- data rows -> reader arguments. rows: [{discipline, role, pattern, ...}] ----
   function rulesFrom(rows) {
-    const by = {}, words = {}; (rows || []).forEach(r => { if (/^terminal_/.test(r.role)) { const k = r.role.slice(9); (words[k] = words[k] || []).push(r.pattern); } else { (by[r.discipline] = by[r.discipline] || { discipline: r.discipline })[r.role] = r.pattern; } });
+    const by = {}, words = {}; (rows || []).forEach(r => { if (/^terminal_/.test(r.role) && r.role !== 'terminal_layer') { const k = r.role.slice(9); (words[k] = words[k] || []).push(r.pattern); } else { const o = (by[r.discipline] = by[r.discipline] || { discipline: r.discipline }); o[r.role === 'terminal_layer' ? 'terminal' : r.role] = r.pattern; if (r.entity) o[(r.role === 'terminal_layer' ? 'terminal' : r.role) + '_entity'] = r.entity; } });
     return { layerRows: Object.keys(by).map(d => by[d]), terminalWords: words };
   }
   // ---- nested content (spec 4.3 amendment 1): lines, tags and inserts inside block inserts, recursively, each insert's transform applied (position, rotation, x/y scale; a negative scale is applied as drawn) ----
   function expand(ents, blocks, skip) {
-    const out = ents.slice(); let nested = 0;
+    const out = ents.slice(); let nested = 0; const missing = new Set();
     const tf = (m, x, y) => { const lx = x * m.sx, ly = y * m.sy; return { x: m.px + m.c * lx - m.s * ly, y: m.py + m.s * lx + m.c * ly }; };
     const walk = (ins, m, depth, seen) => {
-      const b = (blocks || {})[ins.name]; if (!b || depth > 8 || seen.indexOf(ins.name) >= 0) return; const bp = b.position || { x: 0, y: 0 };
+      const b = (blocks || {})[ins.name]; if (!b) { missing.add(String(ins.name)); return; } if (depth > 8 || seen.indexOf(ins.name) >= 0) return; const bp = b.position || { x: 0, y: 0 };
       const mm = { px: m.px, py: m.py, c: m.c, s: m.s, sx: m.sx, sy: m.sy };
       (b.entities || []).forEach(e => {
         const T = (p) => tf(mm, p.x - bp.x, p.y - bp.y), c = Object.assign({}, e);
@@ -100,7 +105,7 @@
       });
     };
     ents.forEach(e => { if (e.type === 'INSERT' && !(skip && skip(e))) { const a = (e.rotation || 0) * Math.PI / 180; walk(e, { px: (e.position ? e.position.x : 0), py: (e.position ? e.position.y : 0), c: Math.cos(a), s: Math.sin(a), sx: e.xScale == null ? 1 : e.xScale, sy: e.yScale == null ? 1 : e.yScale }, 0, []); } });
-    return { ents: out, nested };
+    return { ents: out, nested, missing: Array.from(missing) };
   }
   // revision order: both numeric -> by number; else upper-case by length then text (A < B < ... < Z < AA). Equal = same.
   function cmpRev(a, b) { a = String(a == null ? '' : a).trim().toUpperCase(); b = String(b == null ? '' : b).trim().toUpperCase(); if (/^\d+$/.test(a) && /^\d+$/.test(b)) return Math.sign(+a - +b); return (a.length - b.length) || (a < b ? -1 : a > b ? 1 : 0); }
@@ -117,18 +122,23 @@
     const fin = () => { const ms = Date.now() - t0, heap = (typeof performance !== 'undefined' && performance.memory) ? performance.memory.usedJSHeapSize : (typeof process !== 'undefined' && process.memoryUsage ? process.memoryUsage().heapUsed : null); log('§MAINS-COST sheet=' + sheet + ' ms=' + ms + ' heap_mb=' + (heap == null ? 'n/a' : (heap / 1048576).toFixed(1))); return res; };
     const rl = a.rules ? rulesFrom(a.rules) : { layerRows: a.layerRows, terminalWords: a.terminalWords };
     // nested content: grid lines, tags and run layers may sit inside block inserts (amendment 1). Fitting-layer inserts keep their block as the box, not as content.
-    const fitRx = (rl.layerRows || []).map(r => matcher(r.fitting)); let nestedN = 0, ents = ents0;
-    if (!V.topLevelOnly) { const ex = expand(ents0, a.blocks, e => fitRx.some(m => m(e.layer))); ents = ex.ents; nestedN = ex.nested; }
+    const fitRx = (rl.layerRows || []).reduce((l, r) => l.concat([matcher(r.fitting), matcher(r.grid_tag)]), []); let nestedN = 0, ents = ents0, missingBlocks = [];   // fitting inserts keep their block as the box; a grid bubble is not content
+    if (!V.topLevelOnly) { const ex = expand(ents0, a.blocks, e => fitRx.some(m => m(e.layer))); ents = ex.ents; nestedN = ex.nested; missingBlocks = ex.missing; }
     // layers by data row (§4.1)
     const rowsDef = (rl.layerRows || []).filter(r => ents.some(e => matcher(r.centreline)(e.layer)))[0];
     if (!rowsDef) { res.sheet.inconclusive = 'no centreline layer'; log('§MAINS-INCONCLUSIVE sheet=' + sheet + ' reason=no centreline layer'); return fin(); }
-    const isC = matcher(rowsDef.centreline), isO = matcher(rowsDef.outline), isF = matcher(rowsDef.fitting);
+    const isC = matcher(rowsDef.centreline), isO = matcher(rowsDef.outline), isF = e => e.type === 'INSERT' && (!rowsDef.fitting_entity || rowsDef.fitting_entity === 'INSERT') && matcher(rowsDef.fitting)(e.layer), isTm = matcher(rowsDef.terminal);
     // frame (§4.2, §4.2a)
     const grid = a.grid || [];
     if (!grid.length) return refuse('no named grid held on this route');
     const st = sheetGridTags(ents, rowsDef, k, reach), byG = {}; grid.forEach(g => { (byG[g.grid_guid] = byG[g.grid_guid] || []).push(g); });
+    // Grid choice (amendment 3): lowest median; within TIE_MM the grid with more matched tags; then the grid on the sheet's own storey, if the caller states it.
+    // A grid's storey only breaks a tie: it never gives a row a level.
+    const TIE_MM = 1, sheetStorey = (a.sheet && typeof a.sheet === 'object' && a.sheet.storey) || null;
+    const better = (f, b) => { if (!b) return true; if (f.medMm < b.medMm - TIE_MM) return true; if (f.medMm > b.medMm + TIE_MM) return false; if (f.n !== b.n) return f.n > b.n; if (sheetStorey && (f.storey === sheetStorey) !== (b.storey === sheetStorey)) return f.storey === sheetStorey; return f.medMm < b.medMm; };
     let best = null; const tried = [];
-    Object.keys(byG).forEach(gid => { const f = fitOne(st.tags, byG[gid]); f.gid = gid; tried.push(f); log('§MAINS-FIT sheet=' + sheet + ' grid=' + gid + ' tags=' + f.n + ' median_mm=' + (f.medMm == null ? 'n/a' : f3(f.medMm)) + ' ' + (f.pass ? 'PASS' : 'FAIL ' + f.why)); if (f.pass && (!best || f.medMm < best.medMm)) best = f; });
+    Object.keys(byG).forEach(gid => { const f = fitOne(st.tags, byG[gid]); f.gid = gid; tried.push(f); log('§MAINS-FIT sheet=' + sheet + ' grid=' + gid + ' tags=' + f.n + ' median_mm=' + (f.medMm == null ? 'n/a' : f3(f.medMm)) + ' ' + (f.pass ? 'PASS' : 'FAIL ' + f.why)); f.storey = byG[gid][0].storey == null ? null : byG[gid][0].storey; if (f.pass && better(f, best)) best = f; });
+    if (best && tried.filter(f => f.pass).length > 1) log('§MAINS-FIT-CHOICE sheet=' + sheet + ' grid=' + best.gid + ' tags=' + best.n + ' median_mm=' + f3(best.medMm) + ' of passing=' + tried.filter(f => f.pass).length + ' rule=lowest median, within ' + TIE_MM + ' mm the most tags, then the sheet storey' + (sheetStorey ? ' (' + sheetStorey + ')' : ' (none given)'));
     if (!best) { const nb = tried.slice().sort((x, y) => (y.n - x.n) || ((x.medMm == null ? 1e9 : x.medMm) - (y.medMm == null ? 1e9 : y.medMm)))[0]; return refuse('frame fit failed: ' + (nb ? 'best grid ' + nb.gid + ' ' + nb.why : 'no grid') + '; sheet tags=' + Object.keys(st.tags).length); }
     const cR = Math.cos(best.rot), sR = Math.sin(best.rot), toB = (x, y) => [cR * x - sR * y + best.tx, sR * x + cR * y + best.ty];
     // pieces: drawn centreline segments, nothing else (§3.1)
@@ -139,11 +149,17 @@
     const bucket = new Map(), key = (x, y) => Math.floor(x / JOIN_M) + ',' + Math.floor(y / JOIN_M);
     pieces.forEach((p, i) => [[p.s[0], p.s[1]], [p.s[2], p.s[3]]].forEach(pt => { const kk = key(pt[0], pt[1]); (bucket.get(kk) || bucket.set(kk, []).get(kk)).push({ i, x: pt[0], y: pt[1] }); }));
     pieces.forEach((p, i) => [[p.s[0], p.s[1]], [p.s[2], p.s[3]]].forEach(pt => { const cx = Math.floor(pt[0] / JOIN_M), cy = Math.floor(pt[1] / JOIN_M); for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) (bucket.get((cx + dx) + ',' + (cy + dy)) || []).forEach(o => { if (o.i !== i && Math.hypot(o.x - pt[0], o.y - pt[1]) <= JOIN_M) uni(i, o.i); }); }));
-    let mirrored = 0, emptyBoxes = 0, fittings = 0;
-    ents.forEach(e => { if (e.type === 'INSERT' && isF(e.layer)) {
-      fittings++; if ((e.xScale == null ? 1 : e.xScale) < 0) mirrored++;
-      const bx = insertBox(e, blockBox((a.blocks || {})[e.name], k), k, !V.noMirrorFix); if (!bx) { emptyBoxes++; return; }
+    // Mirror (amendment 2.3): the converter negates an insert's X insertion point. Reflect the box about the Y axis only when it falls outside the sheet's own drawn extents (centreline + outline) and the reflection lands inside.
+    let mirrored = 0, emptyBoxes = 0, fittings = 0, unjoined = 0, unjoinedRaw = 0, ex0 = Infinity, ey0 = Infinity, ex1 = -Infinity, ey1 = -Infinity;
+    pieces.map(p => p.s).concat(outl).forEach(s => { ex0 = Math.min(ex0, s[0], s[2]); ex1 = Math.max(ex1, s[0], s[2]); ey0 = Math.min(ey0, s[1], s[3]); ey1 = Math.max(ey1, s[1], s[3]); });
+    const hitsExt = b => b[2] >= ex0 - JOIN_M && b[0] <= ex1 + JOIN_M && b[3] >= ey0 - JOIN_M && b[1] <= ey1 + JOIN_M;
+    ents.forEach(e => { if (isF(e)) {
+      fittings++; let bx = insertBox(e, blockBox((a.blocks || {})[e.name], k), k); if (!bx) { emptyBoxes++; return; } const raw = bx;
+      if (!V.noMirrorFix && N && !hitsExt(bx)) { const rf = [-bx[2], bx[1], -bx[0], bx[3]], cx = (rf[0] + rf[2]) / 2, cy = (rf[1] + rf[3]) / 2; if (cx >= ex0 && cx <= ex1 && cy >= ey0 - JOIN_M && cy <= ey1 + JOIN_M) { bx = rf; mirrored++; } }
       const hit = []; pieces.forEach((p, i) => { if (segBox(p.s, bx, JOIN_M)) hit.push(i); }); for (let q = 1; q < hit.length; q++) uni(hit[0], hit[q]);
+      // fittings_unjoined (amendment 3): a fitting whose box touches no centreline piece; the same count with the mirror correction off, so the correction's effect reads from the log.
+      if (!hit.length) unjoined++;
+      if (bx !== raw) { if (!pieces.some(p => segBox(p.s, raw, JOIN_M))) unjoinedRaw++; } else if (!hit.length) unjoinedRaw++;
     } });
     if (V.touchJoin) for (let i = 0; i < N; i++) for (let j = i + 1; j < N; j++) if (segSeg(pieces[i].s, pieces[j].s) <= JOIN_M) uni(i, j);   // witness-only broken variant
     const cid = {}; let nc = 0; const comp = pieces.map((_, i) => { const r = find(i); if (cid[r] == null) cid[r] = ++nc; return cid[r]; });
@@ -158,18 +174,20 @@
     });
     // system (§4.6): terminal kinds within 1 m of a component
     const words = rl.terminalWords || {}, terms = [];
-    ents.forEach(e => { if (e.type !== 'INSERT' || isF(e.layer)) return; const nm = String(e.name || '').toUpperCase(); const kind = Object.keys(words).filter(w => (words[w] || []).some(x => nm.indexOf(String(x).toUpperCase()) >= 0))[0]; if (kind && e.position) terms.push({ kind, x: e.position.x * k, y: e.position.y * k }); });
+    ents.forEach(e => { if (e.type !== 'INSERT' || isF(e) || !e.position) return; const nm = String(e.name || '').toUpperCase(); const kind = Object.keys(words).filter(w => (words[w] || []).some(x => nm.indexOf(String(x).toUpperCase()) >= 0))[0]; if (kind || isTm(e.layer)) terms.push({ kind: kind || null, x: e.position.x * k, y: e.position.y * k }); });   // a diffuser insert with no known word is a terminal of no kind
     const cand = {}; let noRun = 0;
     terms.forEach(t => { const dm = {}; pieces.forEach((p, i) => { const d = ptSeg(t.x, t.y, p.s); if (dm[comp[i]] == null || d < dm[comp[i]]) dm[comp[i]] = d; });
-      let any = false; Object.keys(dm).forEach(c => { if (dm[c] <= TERM_M) { any = true; (cand[c] = cand[c] || []).push({ kind: t.kind, d: dm[c] }); } }); if (!any) noRun++; });
+      let any = false; Object.keys(dm).forEach(c => { if (dm[c] <= TERM_M) { any = true; if (t.kind) (cand[c] = cand[c] || []).push({ kind: t.kind, d: dm[c] }); } }); if (!any) noRun++; });
     const sysOf = c => { const l = cand[c]; if (!l) return 'unknown'; if (V.nearestSystem) return l.slice().sort((x, y) => x.d - y.d)[0].kind; const ks = new Set(l.map(x => x.kind)); return ks.size === 1 ? Array.from(ks)[0] : 'mixed'; };
     // record: building coordinates, a drawn piece each
     let len = 0, wlen = 0; const clen = {};
     pieces.forEach((p, i) => { const L = Math.hypot(p.s[2] - p.s[0], p.s[3] - p.s[1]), a0 = toB(p.s[0], p.s[1]), a1 = toB(p.s[2], p.s[3]); len += L; clen[comp[i]] = (clen[comp[i]] || 0) + L; if (width[i] != null) wlen += L;
       res.rows.push({ sheet, piece: i + 1, x0: a0[0], y0: a0[1], x1: a1[0], y1: a1[1], component: comp[i], system: sysOf(comp[i]), width_drawn_mm: width[i], provenance: 'position=drawn;width=' + (width[i] == null ? 'none' : 'drawn') + ';system=derived;height=none' }); });
     const over5 = Object.keys(clen).filter(c => clen[c] > OVER_M).length, share = len ? wlen / len : 0;
-    res.sheet = { sheet, revision: sid.revision, nested: nestedN, fit_rot_deg: best.rot * 180 / Math.PI, fit_dx: best.tx, fit_dy: best.ty, fit_median_mm: best.medMm, fit_tags: best.n, grid_guid: best.gid, pieces: N, length_m: len, components: nc, over5m: over5, width_share: share, terminals: terms.length, no_run: noRun, mirrored, refused: null, emptyBoxes, fittings };
-    log('§MAINS-READ sheet=' + sheet + ' fit=rot:' + f3(res.sheet.fit_rot_deg) + 'deg,dx:' + f3(best.tx) + 'm,dy:' + f3(best.ty) + 'm,med:' + f3(best.medMm) + 'mm,tags:' + best.n + ',grid:' + best.gid + ' pieces=' + N + ' length=' + f3(len) + 'm components=' + nc + ' over5m=' + over5 + ' width_share=' + f3(share) + ' terminals=' + terms.length + ' no_run=' + noRun + ' mirrored=' + mirrored);
+    res.sheet = { sheet, revision: sid.revision, nested: nestedN, fittings_unjoined: unjoined, fittings_unjoined_nomirror: unjoinedRaw, fit_rot_deg: best.rot * 180 / Math.PI, fit_dx: best.tx, fit_dy: best.ty, fit_median_mm: best.medMm, fit_tags: best.n, grid_guid: best.gid, pieces: N, length_m: len, components: nc, over5m: over5, width_share: share, terminals: terms.length, no_run: noRun, mirrored, refused: null, emptyBoxes, fittings, missingBlocks: missingBlocks.length };
+    log('§MAINS-READ sheet=' + sheet + ' fit=rot:' + f3(res.sheet.fit_rot_deg) + 'deg,dx:' + f3(best.tx) + 'm,dy:' + f3(best.ty) + 'm,med:' + f3(best.medMm) + 'mm,tags:' + best.n + ',grid:' + best.gid + ' pieces=' + N + ' length=' + f3(len) + 'm components=' + nc + ' over5m=' + over5 + ' width_share=' + f3(share) + ' terminals=' + terms.length + ' no_run=' + noRun + ' mirrored=' + mirrored + ' fittings=' + fittings + ' fittings_unjoined=' + unjoined + ' fittings_unjoined_nomirror=' + unjoinedRaw + ' missingBlocks=' + missingBlocks.length);
+    log('§MAINS-MIRROR sheet=' + sheet + ' fired=' + (mirrored ? 'yes' : 'no') + ' n=' + mirrored + ' of fittings=' + fittings + ' extents=' + (N ? f3(ex0) + ',' + f3(ey0) + ',' + f3(ex1) + ',' + f3(ey1) : 'none'));
+    if (missingBlocks.length) log('§MAINS-MISSING-BLOCKS sheet=' + sheet + ' n=' + missingBlocks.length + ' names=' + missingBlocks.join(','));
     return fin();
     function refuse(why) { res.sheet = { sheet, revision: sid.revision, refused: why }; log('§MAINS-REFUSE sheet=' + sheet + ' reason=' + why); return fin(); }
   }
@@ -188,5 +206,5 @@
     if (!why) result.rows.forEach(r => db.run('INSERT INTO drawn_route VALUES(?,?,?,?,?,?,?,?,?,?)', [r.sheet, r.piece, r.x0, r.y0, r.x1, r.y1, r.component, r.system, r.width_drawn_mm, r.provenance]));
     return why ? 0 : result.rows.length;
   }
-  return { read, write, rulesFrom, expand, cmpRev };
+  return { read, write, rulesFrom, expand, cmpRev, plainText };
 });

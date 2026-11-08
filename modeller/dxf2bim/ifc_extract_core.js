@@ -685,6 +685,7 @@ async function extractToDb(ctx) {
   // world (IFC Z-up = DB frame). Origin in metres via IfcProject.UnitsInContext. New table only.
   const doorOps = [];
   const storeyElevRows = [];   // §L1.6: { guid, name, attr, z } metres
+  let gridRes = null;   // §IFC-GRID (prompts/DISC_WALK_DRAWN_MAINS.md §4.2a): the file's stated grid, read by common/ifc_grid_read.js
   const doorOpCount = { style: 0, type: 0, occurrence: 0, none: 0, noPlacement: 0 };
   try {
     const ref = v => (v && typeof v === 'object' && 'value' in v) ? v.value : v;
@@ -793,6 +794,10 @@ async function extractToDb(ctx) {
         attr: (raw != null && lengthScale != null) ? raw * lengthScale : null,
         z: (pl && lengthScale != null) ? pl.o[2] * lengthScale : null });
     }
+    // §IFC-GRID: the grid axes in THIS route's element_transforms frame (metres, the map offset kept, times the same span factor the centres got)
+    const GR = ctx.GridRead || (typeof IfcGridRead !== 'undefined' ? IfcGridRead : null);
+    if (GR) gridRes = GR.read(ifcApi, modelID, WebIFC, { lengthScale, scaleOut: autoScale, offset: [0, 0], storeyName: sid => storeyMap[sid] });
+    else log('§IFC-GRID unavailable route=open (reader not loaded)');
     log(`§DOOR_OPERATION rows=${doorOps.length} style=${doorOpCount.style} type=${doorOpCount.type} occurrence=${doorOpCount.occurrence} none=${doorOpCount.none} noPlacement=${doorOpCount.noPlacement} lengthScale=${lengthScale}`);
   } catch (e) {
     log(`§DOOR_OP_FAIL ${e.message}`);
@@ -1039,6 +1044,14 @@ async function extractToDb(ctx) {
   const seStmt = db.prepare('INSERT OR IGNORE INTO storey_elevation VALUES (?,?,?,?)');
   for (const r of storeyElevRows) seStmt.run(r.guid, r.name, r.attr, r.z);
   log(`§STOREY_ELEVATION ` + storeyElevRows.map(r => `${JSON.stringify(r.name)}:attr=${r.attr == null ? null : r.attr.toFixed(4)},z=${r.z == null ? null : r.z.toFixed(4)}`).join(' '));
+  if (gridRes) {   // no IfcGrid in the file = no table (an empty table would change a file that states no grid)
+    log(ctx.GridRead ? ctx.GridRead.line('open', gridRes) : IfcGridRead.line('open', gridRes));
+    if (gridRes.rows.length) {
+      db.exec(ctx.GridRead ? ctx.GridRead.DDL : IfcGridRead.DDL);
+      const gaStmt = db.prepare('INSERT INTO ifc_grid_axis VALUES (?,?,?,?,?,?,?,?,?,?)');
+      for (const r of gridRes.rows) gaStmt.run(r.grid_guid, r.grid_name, r.storey, r.axis_guid, r.tag, r.x0, r.y0, r.x1, r.y1, r.axis_set);
+    }
+  }
   db.exec(`CREATE TABLE element_pset_common (guid TEXT, pset TEXT, name TEXT, value TEXT, source TEXT, PRIMARY KEY (guid, pset, name))`);
   const wbStmt = db.prepare('INSERT OR IGNORE INTO element_world_bbox VALUES (?,?,?,?,?,?,?)');
   for (const w of worldBbox) wbStmt.run(w.guid, ...w.b);

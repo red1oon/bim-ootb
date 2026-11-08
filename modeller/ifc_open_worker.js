@@ -5,6 +5,7 @@
 // (dxf2bim/ifc_extract_core.js) + the residents' rule (ifc_open_db.js). Input { bytes: ArrayBuffer, name: file stem }.
 // Output { type: 'done', bytes: Uint8Array (the building DB), logs, kept, total, ms } or { type: 'error', message, logs }. The extractor's own § lines pass through in logs.
 importScripts('../common/lib/web-ifc-api-iife.js', '../common/lib/sql-wasm.js', 'dxf2bim/ifc_extract_core.js', 'ifc_open_db.js');
+try { importScripts('../common/ifc_grid_read.js'); } catch (eG) { console.warn('§IFC-GRID unavailable: reader failed to load ' + eG.message); }   // §4.2a: the one grid reader (the extractor logs 'unavailable' if it is missing)
 self.onmessage = async function (e) {
   var d = e.data, logs = [], base = self.location.href;
   try {

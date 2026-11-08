@@ -199,5 +199,6 @@
   "VideoFrame": "readonly",
   "IfcSurfaceNames": "readonly",
   "LightLaw": "readonly",
-  "ProvTotals": "readonly"
+  "ProvTotals": "readonly",
+  "IfcGridRead": "readonly"
 }
