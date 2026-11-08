@@ -8,7 +8,7 @@
 'use strict';
 var fs = require('fs'), path = require('path');
 var ERP = path.join(__dirname, '..');
-var initSqlJs; try { initSqlJs = require('sql.js'); } catch (e) { initSqlJs = require(path.join(ERP, 'sqljs', 'sql-wasm.js')); }
+var initSqlJs; initSqlJs = require(path.join(ERP, 'sqljs', 'sql-wasm.js'));   // the JS that matches the shipped wasm loaded below (node_modules sql.js is another version and crashes on it)
 var LEG = process.env.DD_LEGACY || '/home/red1/bim-compiler/scripts/bridge/out/dashboard_dict_legacy.json', log = console.log, fails = 0, judged = 0;
 function norm(v) { if (v === null || v === undefined) return null; var s = String(v); return /^-?\d+(\.\d+)?$/.test(s) ? String(Number(s)) : s; }
 (async function () {

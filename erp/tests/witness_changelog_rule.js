@@ -9,7 +9,7 @@
 'use strict';
 const fs = require('fs'), path = require('path'), cp = require('child_process');
 const ERP = path.join(__dirname, '..');
-let initSqlJs; try { initSqlJs = require('sql.js'); } catch (e) { initSqlJs = require(path.join(ERP, 'sqljs', 'sql-wasm.js')); }
+let initSqlJs; initSqlJs = require(path.join(ERP, 'sqljs', 'sql-wasm.js'));   // the JS that matches the shipped wasm loaded below (node_modules sql.js is another version and crashes on it)
 (async () => {
   const SQL = await initSqlJs({ wasmBinary: fs.readFileSync(path.join(ERP, 'sqljs', 'sql-wasm.wasm')) }); const db = new SQL.Database(fs.readFileSync(path.join(__dirname, '..', 'ad_seed.db')));
   globalThis.__idmpDb = db; const C = require('../crud_core.js');
