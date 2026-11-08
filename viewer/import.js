@@ -166,7 +166,7 @@ function setupImport(A) {
     console.log('[S220] §IMPORT_START file=' + file.name + ' size=' + sizeMB + 'MB');
 
     return new Promise((resolve, reject) => {
-      const workerUrl = new URL('import_worker.js?v=21', location.href).href;
+      const workerUrl = new URL('import_worker.js?v=22', location.href).href;
       const worker = new Worker(workerUrl);
 
       worker.onmessage = async function(e) {
@@ -409,7 +409,7 @@ function setupImport(A) {
   function _parseOneIFC(file, onProgress, forceGeorefOffset) {
     return new Promise(function(resolve, reject) {
       file.arrayBuffer().then(function(arrayBuffer) {
-        var worker = new Worker(new URL('import_worker.js?v=21', location.href).href);
+        var worker = new Worker(new URL('import_worker.js?v=22', location.href).href);
         worker.onmessage = function(e) {
           var msg = e.data;
           if (msg.type === 'progress') {

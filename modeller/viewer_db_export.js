@@ -10,7 +10,7 @@
   function loadCore() {
     if (window.IfcExtractCore) return Promise.resolve(true);
     if (_core) return _core;
-    _core = new Promise(function (res, rej) { var s = document.createElement('script'); s.src = new URL('dxf2bim/ifc_extract_core.js?v=1', _base).href; s.onload = res; s.onerror = function () { _core = null; rej(new Error('load failed dxf2bim/ifc_extract_core.js')); }; document.head.appendChild(s); });
+    _core = new Promise(function (res, rej) { var s = document.createElement('script'); s.src = new URL('dxf2bim/ifc_extract_core.js?v=2', _base).href; s.onload = res; s.onerror = function () { _core = null; rej(new Error('load failed dxf2bim/ifc_extract_core.js')); }; document.head.appendChild(s); });
     return _core;
   }
   function nameOf() {   // the drawing set's own @SET when a DXF set was converted (a person typed it), else the open model's name

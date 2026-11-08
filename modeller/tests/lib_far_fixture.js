@@ -8,6 +8,7 @@ const fs = require('fs'), path = require('path'), os = require('os');
 // farCopy(src, dx, dy, opts) → { file, dir, log }
 //   opts.lat / opts.lon: [deg,min,sec,millionths] (or null to write $) replace the IfcSite RefLatitude/RefLongitude
 //   opts.dz: also move the site up by dz metres (z columns)
+//   opts.outlier: { cls: 'IFCSPACE'|'IFCOPENINGELEMENT', dy, dx } (W-ONE-FRAME F1b): ONE more element of that class, a clone of the file's first one (same shape) placed dx,dy metres from the moved site origin
 //   opts.trueNorth: [x,y] a TrueNorth direction written into the 'Model' IfcGeometricRepresentationContext
 function farCopy(src, dx, dy, opts) {
   opts = opts || {}; const dz = opts.dz || 0;
@@ -31,6 +32,15 @@ function farCopy(src, dx, dy, opts) {
     if (!ctx) throw new Error('lib_far_fixture: Model context not in the expected shape');
     t = t.replace(ctx[0], ctx[1] + dId + ctx[2]); addEntity(`${dId}=IFCDIRECTION((${opts.trueNorth.map(v => v.toFixed(9)).join(',')}));`);
     edits.push('TrueNorth=' + opts.trueNorth.join(','));
+  }
+  if (opts.outlier) {
+    const o = opts.outlier, tm = new RegExp("^(#\\d+)=" + o.cls + "\\(('[^']*')(,#\\d+,(?:'[^']*'|\\$),(?:'[^']*'|\\$),(?:'[^']*'|\\$),)(#\\d+)(,[^;]*\\);)", 'm').exec(t);
+    if (!tm) throw new Error('lib_far_fixture: no ' + o.cls + ' to clone');
+    const pt = '#' + (maxId() + 1); addEntity(`${pt}=IFCCARTESIANPOINT((${(o.dx || 0).toFixed(3)},${o.dy.toFixed(3)},0.));`);
+    const ax2 = '#' + (maxId() + 1); addEntity(`${ax2}=IFCAXIS2PLACEMENT3D(${pt},$,$);`);
+    const lp2 = '#' + (maxId() + 1); addEntity(`${lp2}=IFCLOCALPLACEMENT(${m[2]},${ax2});`);
+    const el = '#' + (maxId() + 1); addEntity(`${el}=${o.cls}('0OUTLIERxxxxxxxxxxxxx'${tm[3]}${lp2}${tm[5]}`);
+    edits.push(`outlier ${o.cls} ${el} (clone of ${tm[1]}) at site+(${o.dx || 0},${o.dy},0)`);
   }
   fs.writeFileSync(dst, t, 'latin1');
   return { file: dst, dir, log: `§RT-FAR site ${m[1]} placement ${m[2]} -> axis ${lp[1]} Location ${ax[2]} was ${oldPt[1]}; now ${newId}=IFCCARTESIANPOINT${newPt} (new point appended; the axis ${lp[1]} Location ${ax[2]} -> ${newId}). Copy: ${dst}` + (edits.length ? ' edits: ' + edits.join('; ') : '') };
