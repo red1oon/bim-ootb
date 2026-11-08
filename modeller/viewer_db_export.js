@@ -46,6 +46,30 @@
       return { ops: ops, skipDerivedClasses: skip, added: added, release: function () { return L.releaseRealGeometry(added); }, stats: { rows: ops.length - openN, openings: openN, instVerts: instVerts, assetVerts: assetVerts, byClass: byClass, refused: built.skipped.length } };
     } finally { try { if (bdb) bdb.close(); } catch (e) { } try { if (gdb) gdb.close(); } catch (e) { } }
   }
+  // §DRAWN-TABLES (prompts/DRAWN_SERVICES_FILM.md §2): the walk's drawn services have no mesh (a drawn run is an anchor-only line op, drawn FP equipment an anchor-only marker), so the IFC build
+  // above drops them. They reach the Viewer DB as two tables of STATED values read from the committed op-log rows (no re-derivation, no invented shape): the line (from/to, drawn width, system,
+  // the op's HeightBasis) and the marker (position, kind, label, class, ObjectType, HeightBasis). The sheet is stored and never shown. A table is written only when it has rows.
+  function writeDrawn(sdb) {
+    var ops = window.Bonsai.oplog._geomOps(), lines = [], marks = [], byBasis = {};
+    ops.forEach(function (o) {
+      var P = o.parameters, d = P && P._dw; if (!P || !P.anchorOnly || !d) return;
+      var pl = P.placement || {};
+      if (d.kind === 'drawn-main' && P.line && P.line.from && P.line.to) { lines.push([d.sheet == null ? null : String(d.sheet), d.piece, P.line.from[0], P.line.from[1], P.line.from[2], P.line.to[0], P.line.to[1], P.line.to[2], d.widthMm == null ? null : d.widthMm, d.system == null ? null : String(d.system), d.heightBasis == null ? null : String(d.heightBasis), d.heightLabel == null ? null : String(d.heightLabel)]); byBasis[d.heightBasis] = (byBasis[d.heightBasis] || 0) + 1; }
+      else if (d.kind === 'drawn-equipment' || d.meshState === 'noMesh') { marks.push([d.sheet == null ? null : String(d.sheet), d.item, d.itemKind == null ? null : String(d.itemKind), pl.x, pl.y, pl.z, d.heightBasis == null ? null : String(d.heightBasis), d.label == null ? null : String(d.label), d.ifcClass == null ? null : String(d.ifcClass), d.objectType == null ? null : String(d.objectType)]); }
+    });
+    if (lines.length) { sdb.run('CREATE TABLE drawn_walk_line(sheet TEXT, piece INTEGER, x0 REAL, y0 REAL, z0 REAL, x1 REAL, y1 REAL, z1 REAL, width_drawn_mm REAL, system TEXT, basis TEXT, label TEXT)');
+      var si = sdb.prepare('INSERT INTO drawn_walk_line VALUES (?,?,?,?,?,?,?,?,?,?,?,?)'); lines.forEach(function (r) { si.run(r); }); si.free(); }
+    if (marks.length) { sdb.run('CREATE TABLE drawn_walk_marker(sheet TEXT, item INTEGER, kind TEXT, x REAL, y REAL, z REAL, basis TEXT, label TEXT, ifc_class TEXT, object_type TEXT)');
+      var sm = sdb.prepare('INSERT INTO drawn_walk_marker VALUES (?,?,?,?,?,?,?,?,?,?)'); marks.forEach(function (r) { sm.run(r); }); sm.free(); }
+    // the ONE-FRAME offset (common/georef_frame.js metadataRows): the opened building's own georef_offset_* rows + unit_scale reach the export unchanged. The IFC built above is already in the local frame, so the
+    // extractor never sees the offset; without these rows the exported drawn values could not be put back on the map.
+    var off = 0, bdb = null;
+    try { if (window.__dwBuf && window.SQL) { bdb = new window.SQL.Database(new Uint8Array(window.__dwBuf));
+      var r = bdb.exec("SELECT key, value FROM project_metadata WHERE key IN ('georef_offset_x','georef_offset_y','georef_offset_z','unit_scale')");
+      (r.length ? r[0].values : []).forEach(function (v) { sdb.run('INSERT OR REPLACE INTO project_metadata(key, value) VALUES (?, ?)', [v[0], v[1]]); off++; }); } } catch (e) { console.warn(TAG + ' offset carry failed ' + e); } finally { try { if (bdb) bdb.close(); } catch (e2) { } }
+    console.log(TAG + ' §DRAWN-TABLES lines=' + lines.length + ' markers=' + marks.length + ' byBasis=' + JSON.stringify(byBasis) + ' offsetRows=' + off);
+    return { lines: lines.length, markers: marks.length, offsetRows: off };
+  }
   window.Bonsai = window.Bonsai || {};
   window.Bonsai.exportViewerDb = async function (opts) {
     var O = window.Bonsai.oplog;
@@ -60,6 +84,7 @@
     await Core.extractToDb({ WebIFC: window.WebIFC, ifcApi: api, ifcData: built.bytes, db: Core.sqljsDb(sdb), Buf: Core.browserBuf, buildingName: prefix, sourceName: name + '.ifc',
       log: function (m) { exLog.push(String(m)); }, progress: function () { } });
     var one = function (sql) { try { var r = sdb.exec(sql); return r.length ? r[0].values[0][0] : null; } catch (e) { return null; } };
+    var drawnInfo = (opts && opts.drawn === false) ? null : writeDrawn(sdb);   // opts.drawn === false = the witness's falsifier (mechanism off)
     var tables = sdb.exec("select name from sqlite_master where type='table'")[0].values.map(function (v) { return v[0]; }), counts = {};
     tables.forEach(function (t) { counts[t] = one('select count(*) from "' + t + '"'); });
     var bytes = sdb.export(), elements = one('select count(*) from elements_meta');
@@ -69,6 +94,6 @@
       catch (e) { console.warn(TAG + ' download failed ' + e); }
     }
     sdb.close();
-    return { bytes: bytes, elements: elements, tables: tables, counts: counts, name: name, exLog: exLog, ifcBytes: built.bytes };
+    return { bytes: bytes, elements: elements, tables: tables, counts: counts, name: name, drawn: drawnInfo, exLog: exLog, ifcBytes: built.bytes };
   };
 })();

@@ -2710,6 +2710,16 @@
       // script ran (puppeteer evaluateOnNewDocument), so no user session ever sees it. Resolves
       // the stored path — object | named IndexedDB plan | the building DB's own cinema_path
       // table — into the ONE _buildOverride() shape and hands it to start(). No second schema.
+      // §DRAWN-FILM (prompts/DRAWN_SERVICES_FILM.md §4): the drawn-services overlay + drawn-only view load on first use (no tag in viewer.html; the page open does not need them).
+      // Defined unconditionally (a witness drives it on a plain page); the bake reaches it through the --drawn-services flag below.
+      window.APP.drawnServicesEnable = function(on) {
+        var A2 = window.APP;
+        var ready = window.setupCpeDrawnServices ? Promise.resolve() : (A2._drawnSvcP = A2._drawnSvcP || new Promise(function(res, rej) {
+          var s = document.createElement('script'); s.src = new URL('cpe_drawn_services.js?v=1', document.baseURI).href;
+          s.onload = function() { console.log('§DRAWN-SERVICES cpe_drawn_services.js loaded on first use'); res(true); };
+          s.onerror = function() { A2._drawnSvcP = null; rej(new Error('load failed cpe_drawn_services.js')); }; document.head.appendChild(s); }));
+        return ready.then(function() { if (!A2.drawnServicesApply) window.setupCpeDrawnServices(A2); var r = A2.drawnServicesApply(!!on); A2.drawnOnlyView(!!on); return r; });
+      };
       if (window.__MAXQ_SILENT) window.__maxqBake = async function(o) {
         o = o || {};
         var a = window.APP;
@@ -2750,7 +2760,7 @@
         // Shallow copy before the flag-merge so a staged holder (A._cinemaPathEdit) is never
         // mutated (§CPE_HOLDER_INTEGRITY, same reasoning as _buildOverride's deep copies).
         var ov2 = {}; for (var k in ov) ov2[k] = ov[k]; ov = ov2;
-        if (o.flags) ['buildup', 'roomTitle', 'reveal', 'dayCounter', 'clash', 'measure', 'storeyReveal', 'loadPath', 'ledger', 'cost', 'sunCompass', 'sunDate', 'escapeRoute', 'visualPanel', 'audioPanel', 'filmBounce'].forEach(function(fk) {   // §FREEZE_PERF_PANEL added visualPanel/audioPanel
+        if (o.flags) ['buildup', 'roomTitle', 'reveal', 'dayCounter', 'clash', 'measure', 'storeyReveal', 'loadPath', 'ledger', 'cost', 'sunCompass', 'sunDate', 'escapeRoute', 'visualPanel', 'audioPanel', 'filmBounce', 'drawnServices'].forEach(function(fk) {   // §FREEZE_PERF_PANEL added visualPanel/audioPanel
             // §FLYTHRU_DATUM §28.1: 'measure' was missing — a CLI --measure was silently dropped; §129 GATING added 'ledger'/'cost' (2026-09-15)
           if (o.flags[fk] !== undefined) ov[fk] = o.flags[fk];
         });
@@ -2775,6 +2785,8 @@
           ' storeyReveal=' + (ov.storeyReveal ? 1 : 0) + ' measure=' + (ov.measure ? 1 : 0) +
           ' loadPath=' + (ov.loadPath ? 1 : 0) + ' ledger=' + (ov.ledger ? 1 : 0) + ' cost=' + (ov.cost ? 1 : 0) +
           ' sunCompass=' + (ov.sunCompass ? 1 : 0) + ' sunDate=' + (ov.sunDate || '-'));
+        if (ov.drawnServices) await a.drawnServicesEnable(true);   // §DRAWN-FILM: --drawn-services = the overlay beat + the drawn-only view, for the whole film
+        console.log('§CLI_BAKE_DRAWN_SERVICES drawnServices=' + (ov.drawnServices ? 1 : 0));
         await start({ editor: false, preview: false, override: ov, overrideSource: src,
                       frames: o.frames, fps: o.fps, forceWebm: o.forceWebm,
                       burninDatumDir: o.burninDatumDir,   // §DATUM_DECOUPLE — was silently dropped here

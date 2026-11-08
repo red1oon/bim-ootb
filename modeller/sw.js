@@ -23,7 +23,8 @@
 // v252 (2026-11-08) point items (terminals, equipment) take their position from the transformed block geometry, not the INSERT point (drawn_mains.js insertCentre)
 // v253 (2026-11-09) §ON-ROOF-SURFACE: a drawn run or terminal over a roof surface with nothing above sits on its top face (owner 2026-11-08, drawn_mains_rules.json roof_surface_height row; prompts/DISC_WALK_DRAWN_INTEGRATION.md §11)
 // v254 (2026-11-09) §11a on-roof surface = the highest roof-classified element on the deck (disc_walker.js?v=18)
-const CACHE_VERSION = 'v254';   // bump on each deploy; per-change detail is the git commit message.
+// v255 (2026-11-09) drawn services reach the film: viewer_db_export.js?v=3 writes drawn_walk_line / drawn_walk_marker
+const CACHE_VERSION = 'v255';   // bump on each deploy; per-change detail is the git commit message.
 const CACHE_PREFIX = 'bim-modeller-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
