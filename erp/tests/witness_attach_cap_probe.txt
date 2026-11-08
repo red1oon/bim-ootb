@@ -1,0 +1,10 @@
+# W-ATTACH size-cap probe (2026-11-08). Real page, headless Chromium, software rendering. One CRUD_CREATE of ad_attachment (BinaryData = base64 of a zip of ONE incompressible file) through
+# __crud.applyOpGroup at each rung, read back through the tip reader (bytes length checked), then deleted. Script: the ladder loop in this task's capprobe (rungs 1,4,8,16,32,64,128 MB of file data).
+{"mb":1,"zip":1049022,"ok":true,"ms":1753,"readback":true}
+{"mb":4,"zip":4195710,"ok":true,"ms":498,"readback":true}
+{"mb":8,"zip":8391294,"ok":true,"ms":1439,"readback":true}
+{"mb":16,"zip":16782462,"ok":true,"ms":1338,"readback":true}
+{"mb":32,"zip":33564798,"ok":true,"ms":3437,"readback":true}
+{"mb":64,"zip":67129470,"ok":true,"ms":6335,"readback":true,"heapMB_after":954}
+{"mb":128,"zip":134258814,"ok":"no:transaction failed: Invalid array length","ms":10139,"readback":null}
+# reading: the kernel commit path tolerates up to a 64 MB zip and fails at 128 MB (a JS string/array length limit when the op is serialised). Cap chosen = 16 MB (heap at 64 MB was ~15x payload).
