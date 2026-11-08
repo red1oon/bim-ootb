@@ -312,7 +312,9 @@
       create('m_discountschema', { m_discountschema_id: dsId, ad_client_id: clientId, name: 'Standard', discounttype: 'P' }),
       create('m_pricelist_version', { m_pricelist_version_id: plvId, m_pricelist_id: plId, ad_client_id: clientId, name: 'Std ' + year,
         validfrom: dateAcct, m_discountschema_id: dsId }),
-      create('c_bp_group', { c_bp_group_id: bpGroupId, ad_client_id: clientId, name: 'Standard' }),
+      // MSetup.java:1172-1176 — the Standard group is the client's DEFAULT (Value=Name=defaultName, setIsDefault(true)): MBPGroup.getDefault (MBPartner.getBPGroup :876-886) and
+      //   Import Business Partner's default group (ImportBPartner.java:129-132) read it. Found by W-NINJA-MIGRATE (a born tenant had no IsDefault group).
+      create('c_bp_group', { c_bp_group_id: bpGroupId, ad_client_id: clientId, value: 'Standard', name: 'Standard', isdefault: 'Y' }),
       // FIX-A: MBPartner.java:286 setInitialDefaults → setIsSummary(false) — AD_Val_Rule 230 hid a NULL.
       create('c_bpartner', { c_bpartner_id: bpId, ad_client_id: clientId, c_bp_group_id: bpGroupId, name: 'Standard BP', iscustomer: 'Y', issummary: 'N' }),
       // FS-12: MSetup.java:1193-1198 — the Standard BP's location (X_C_BPartner_Location defaults Bill/Ship/PayFrom/RemitTo=Y,
