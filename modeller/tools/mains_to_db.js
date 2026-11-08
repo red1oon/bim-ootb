@@ -52,15 +52,36 @@ function storeySet(db, meta) {
   db.run('CREATE TABLE IF NOT EXISTS drawn_sheet_meta(sheet_number TEXT, revision TEXT, storey TEXT)');
   db.run('CREATE TABLE IF NOT EXISTS drawn_terminal(sheet_number TEXT, x REAL, y REAL, kind TEXT, storey TEXT)');
   let sheets = 0, pieces = 0, length = 0, refused = 0, terminals = 0;
+  // §8: beside drawn_equipment (whose columns W-DRAWN-MAINS pins): the sheet's storey set, the height rule row as held, and each block's drawn Z extent when the block states one.
+  const zOf = e => { const zs = []; [e.position, e.startPoint, e.endPoint, e.center].forEach(p => { if (p && typeof p.z === 'number') zs.push(p.z); }); (e.vertices || []).forEach(v => { if (typeof v.z === 'number') zs.push(v.z); }); return zs; };
+  function storeEquip(s, res, ss, blocks) {
+    const eq = res.equipment || []; if (!eq.length) return;
+    db.run('DELETE FROM drawn_sheet_meta WHERE sheet_number=?', [s.sheet]);
+    (ss.set.length ? ss.set : [null]).forEach(st => db.run('INSERT INTO drawn_sheet_meta VALUES(?,?,?)', [s.sheet, s.revision || '', st]));
+    db.run('CREATE TABLE IF NOT EXISTS drawn_equipment_rule(id TEXT, top_m REAL, min_bottom_m REAL, applies_to TEXT, borrowed_for TEXT, standard TEXT, source TEXT)');
+    db.run('CREATE TABLE IF NOT EXISTS drawn_equipment_size(sheet_number TEXT, block TEXT, height_m REAL)');
+    db.run('DELETE FROM drawn_equipment_size WHERE sheet_number=?', [s.sheet]);
+    const hr = res.equipment_height_rule;
+    db.run('DELETE FROM drawn_equipment_rule');
+    if (hr) db.run('INSERT INTO drawn_equipment_rule VALUES(?,?,?,?,?,?,?)', [hr.id, hr.top_m, hr.min_bottom_m, JSON.stringify(hr.applies_to || []), JSON.stringify(hr.borrowed_for || []), hr.standard || null, hr.source || null]);
+    const k = RULES.sheet_unit_m || 0.001; let sized = 0;
+    Array.from(new Set(eq.map(q => q.block))).forEach(nm => {
+      const b = (blocks || {})[nm]; if (!b) return; let zs = []; (b.entities || []).forEach(e => { zs = zs.concat(zOf(e)); });
+      const h = zs.length ? (Math.max.apply(null, zs) - Math.min.apply(null, zs)) * k : 0;
+      if (h > 0.001) { db.run('INSERT INTO drawn_equipment_size VALUES(?,?,?)', [s.sheet, nm, h]); sized++; }
+    });
+    log('§MAINS-EQUIP-TO-DB sheet=' + s.sheet + ' items=' + eq.length + ' blocksWithSize=' + sized + ' rule=' + (hr ? hr.id : 'none') + ' storeys=' + (ss.set.length ? JSON.stringify(ss.set) : 'none'));
+  }
   files.forEach((file, i) => {
     const meta = metaFor(i, file), dxf = new DxfParser().parseSync(fs.readFileSync(file, 'utf8')), ents = dxf.entities || [], blocks = dxf.blocks || {};
     const ss = storeySet(db, meta);
     log('§MAINS-STOREYS sheet=' + meta.number + ' source=' + ss.source + (ss.set.length ? ' storeys=' + JSON.stringify(ss.set) + (ss.words ? ' title-words=' + ss.words : '') : ' none: ' + ss.why + ' (the sheet is plan only)') + (meta.title ? ' title(argument, not read from the DXF)="' + meta.title + '"' : ''));
     const res = DM.read({ entities: ents, blocks, sheet: { number: meta.number, revision: meta.revision, storey: ss.set.length === 1 ? ss.set[0] : null }, rules: RULES.rows, grid, unitM: RULES.sheet_unit_m, tagReachM: RULES.tag_reach_m });
     const s = res.sheet; sheets++;
-    if (s.refused || s.inconclusive) { refused++; DM.write(db, res); return; }
+    if (s.refused || s.inconclusive) { refused++; DM.write(db, res); if (!s.refused && (res.equipment || []).length) storeEquip(s, res, ss, blocks); return; }   // an equipment-only sheet is INCONCLUSIVE for runs; its equipment is kept (DISC_WALK_DRAWN_INTEGRATION.md §8)
     const wrote = DM.write(db, res);
     if (s.writeRefused) { refused++; return; }
+    storeEquip(s, res, ss, blocks);
     // a held sheet's storey: the caller's statement, kept beside the record
     db.run('DELETE FROM drawn_sheet_meta WHERE sheet_number=?', [s.sheet]);
     (ss.set.length ? ss.set : [null]).forEach(st => db.run('INSERT INTO drawn_sheet_meta VALUES(?,?,?)', [s.sheet, s.revision || '', st]));   // one row per storey of the set

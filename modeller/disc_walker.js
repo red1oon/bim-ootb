@@ -2701,6 +2701,7 @@
   function _hasTable(bdb, t) { try { return _rows(bdb, "SELECT 1 x FROM sqlite_master WHERE type='table' AND name='" + _esc(t) + "'").length > 0; } catch (e) { return false; } }
   // sheets held (any row in drawn_route_sheet, refused or not) and pieces held (rows in drawn_route)
   function _drawnState(disc, bdb) {
+    if (disc === 'FP' && bdb && _hasTable(bdb, 'drawn_equipment')) { var e = +(_rows(bdb, 'SELECT COUNT(*) n FROM drawn_equipment')[0] || {}).n || 0; return { sheets: e ? 1 : 0, pieces: e }; }   // §8: a held equipment record is a held sheet
     if (disc !== 'ACMV' || !bdb || !_hasTable(bdb, 'drawn_route_sheet')) return { sheets: 0, pieces: 0 };
     var s = +(_rows(bdb, 'SELECT COUNT(*) n FROM drawn_route_sheet')[0] || {}).n || 0, p = _hasTable(bdb, 'drawn_route') ? (+(_rows(bdb, 'SELECT COUNT(*) n FROM drawn_route')[0] || {}).n || 0) : 0;
     return { sheets: s, pieces: p };
@@ -2729,21 +2730,22 @@
   }
   // The ceiling for a list of points, by the existing host search (one hostBind call per storey). mount 'TOP' gives the ceiling's upper face (the void starts there), 'BOTTOM' its lower face (a terminal hangs there).
   // Returns an array parallel to pts: { z, host } or null.
-  function _drawnCeilings(bdb, geoDb, pts, storey, mount) {
+  function _drawnCeilings(bdb, geoDb, pts, storey, mount, hostClass) {   // hostClass: IfcCovering (default) for ACMV, IfcSlab for the §8 floor under FP equipment
     var out = pts.map(function () { return null; });
     if (!pts.length || storey == null) return out;
     var plc = pts.map(function (p, i) { return { disc: 'ACMV', ifc_class: 'IfcDuctSegment', x: p[0], y: p[1], z: p[2], storey: storey, src: i }; });
-    var hb = hostBind(plc, bdb, { host_ifc_class: 'IfcCovering', mount: mount, same_storey: true, offset_m: 0 }, geoDb);
+    var hb = hostBind(plc, bdb, { host_ifc_class: hostClass || 'IfcCovering', mount: mount, same_storey: true, offset_m: 0 }, geoDb);
     (hb.bound || []).forEach(function (b) { out[b.src] = { z: b.z, host: b.host, storey: storey }; });
     return out;
   }
   // §7.3: per item, the storey of the sheet's set whose ceiling holds it. Returns { hit: [{z,host,storey}|null], none, ambiguous }: a plan states no z, so an item held by the ceilings of two storeys is ambiguous and is not picked.
-  function _drawnPickStorey(bdb, geoDb, items, set, mount) {
+  function _drawnPickStorey(bdb, geoDb, items, set, mount, hostClass) {
     var holds = items.map(function () { return []; });
-    set.forEach(function (sk) { var ce = _drawnCeilings(bdb, geoDb, items.map(function (it) { return [it[0], it[1], _storeyZ(bdb, sk)]; }), sk, mount); ce.forEach(function (c, i) { if (c) holds[i].push(c); }); });
+    set.forEach(function (sk) { var ce = _drawnCeilings(bdb, geoDb, items.map(function (it) { return [it[0], it[1], _storeyZ(bdb, sk)]; }), sk, mount, hostClass); ce.forEach(function (c, i) { if (c) holds[i].push(c); }); });
     return holds.map(function (h) { return h.length === 1 ? { c: h[0], state: 'one' } : { c: null, state: h.length ? 'ambiguous' : 'none', n: h.length }; });
   }
   function _drawnIntegrate(disc, bdb, name, opts, w) {
+    if (disc === 'FP') return (opts && opts.noDrawn) || !bdb ? w : _equipIntegrate(bdb, name, opts, w);
     if (disc !== 'ACMV' || (opts && opts.noDrawn) || !bdb) return w;
     var st = _drawnState(disc, bdb); if (!st.pieces) return w;
     var geoDb = opts && opts.geoDb, D = _drawnLoad(bdb), heap0 = _heapMB();
@@ -2830,17 +2832,75 @@
     console.log(TAG + ' §WALK-TERMINALS-ELSEWHERE borrowedKept=' + left + ' schedKept=' + leftS + ' drawnNoCeiling=' + unplaced.none + ' drawnAmbiguous=' + unplaced.ambiguous + ' (provisional or schedule terminals on storeys no held sheet covers stay; drawn terminals no single ceiling holds are listed, not placed)');
     return out;
   }
+  // ── §8 FP equipment (prompts/DISC_WALK_DRAWN_INTEGRATION.md §8). Drawn items (drawn_equipment) are placed at the code-default mount height on the floor under each drawn spot; the band sprinkler heads on a covered storey are dropped.
+  function _equipLoad(bdb) {
+    var items = _rows(bdb, 'SELECT sheet sh, item it, kind, block, x, y, ifc_class cls, predefined pre, object_type ot FROM drawn_equipment ORDER BY sheet, item');
+    var sets = {}; if (_hasTable(bdb, 'drawn_sheet_meta')) _rows(bdb, 'SELECT sheet_number sn, storey st FROM drawn_sheet_meta').forEach(function (r) { (sets[r.sn] = sets[r.sn] || []); if (r.st != null && sets[r.sn].indexOf(r.st) < 0) sets[r.sn].push(r.st); });
+    var sizes = {}; if (_hasTable(bdb, 'drawn_equipment_size')) _rows(bdb, 'SELECT sheet_number sn, block b, height_m h FROM drawn_equipment_size').forEach(function (r) { sizes[r.sn + '\u0001' + r.b] = r.h; });
+    var rule = null; if (_hasTable(bdb, 'drawn_equipment_rule')) { var r0 = _rows(bdb, 'SELECT id, top_m top, min_bottom_m minb, applies_to ap, borrowed_for bf, standard std, source src FROM drawn_equipment_rule')[0]; if (r0) { try { rule = { id: r0.id, top: r0.top, minb: r0.minb, applies: JSON.parse(r0.ap || '[]'), borrowed: JSON.parse(r0.bf || '[]'), standard: r0.std, source: r0.src }; } catch (e) { rule = null; } } }
+    items.forEach(function (q) { q.set = sets[q.sh] || []; q.size = sizes[q.sh + '\u0001' + q.block]; });
+    return { items: items, rule: rule };
+  }
+  // A rule mesh seats an item only if the rule_mesh_binding row is keyed on its ObjectType. Measured: the table is keyed (disc, ifc_class) alone, and its one FP IfcFireSuppressionTerminal row is the mode of the sprinkler heads, so it is no mesh of a cabinet or an extinguisher.
+  function _equipMeshKeyed() { try { return !!_db && _rows(_db, 'PRAGMA table_info(rule_mesh_binding)').some(function (c) { return c.name === 'object_type'; }); } catch (e) { return false; } }
+  function _equipIntegrate(bdb, name, opts, w) {
+    if (!_hasTable(bdb, 'drawn_equipment')) return w;
+    var L = _equipLoad(bdb); if (!L.items.length) return w;
+    var geoDb = opts && opts.geoDb, heap0 = _heapMB(), rule = L.rule, covered = {}, noRule = 0, noFloor = 0, ambiguous = 0, noMesh = 0, clamped = 0, borrowedKinds = 0, sizeUnknown = 0, byKind = {}, placed = [];
+    L.items.forEach(function (q) { q.set.forEach(function (s) { covered[s] = 1; }); });
+    var keyed = _equipMeshKeyed(), bySheet = {}; L.items.forEach(function (q) { (bySheet[q.sh] = bySheet[q.sh] || []).push(q); });
+    Object.keys(bySheet).forEach(function (sh) {
+      var qs = bySheet[sh], set = qs[0].set;
+      var ruled = qs.filter(function (q) { var use = rule && (rule.applies.indexOf(q.kind) >= 0 ? 'rule' : rule.borrowed.indexOf(q.kind) >= 0 ? 'borrowed' : null); q.use = use || null; if (!q.use) { noRule++; return false; } return true; });
+      if (!ruled.length) return;
+      if (!set.length) { noFloor += ruled.length; return; }
+      var pk = _drawnPickStorey(bdb, geoDb, ruled.map(function (q) { return [q.x, q.y]; }), set, 'TOP', 'IfcSlab');
+      ruled.forEach(function (q, i) {
+        var r = pk[i]; if (r.state !== 'one') { noFloor++; if (r.state === 'ambiguous') ambiguous++; return; }
+        var f = r.c.z, top = f + rule.top, h = q.size == null ? null : q.size, bottom = h == null ? null : top - h, clampedHere = false;
+        if (h == null) sizeUnknown++; else if (bottom < f + rule.minb - 1e-9) { bottom = f + rule.minb; top = bottom + h; clampedHere = true; clamped++; }
+        if (q.use === 'borrowed') borrowedKinds++;
+        noMesh++;   // no ObjectType-keyed rule mesh (see _equipMeshKeyed): an anchor-only op with its label, never a box
+        byKind[q.kind] = (byKind[q.kind] || 0) + 1;
+        placed.push({ sh: q.sh, it: q.it, kind: q.kind, block: q.block, x: q.x, y: q.y, storey: r.c.storey, floorHost: r.c.host, floorZ: f, top: top, bottom: bottom, h: h, clamped: clampedHere, use: q.use, cls: q.cls, pre: q.pre, ot: q.ot, ruleId: rule.id, source: rule.source || rule.standard || null });
+      });
+    });
+    // band sprinkler heads on a covered storey are not placed: dropped and counted. Elsewhere unchanged.
+    var sub = substrate(bdb), hostSt = {}, band = (w && w.placements) || [], dropIds = new Set();
+    band.forEach(function (p) { if (/FireSuppressionTerminal|Sprinkler/i.test(p.ifc_class || '') && !/^drawn:/.test(p.prov || '') && covered[_placementStorey(bdb, p, sub, hostSt)]) dropIds.add(p); });
+    var bandKept = band.filter(function (p) { return /FireSuppressionTerminal|Sprinkler/i.test(p.ifc_class || '') && !dropIds.has(p); }).length;
+    if (!w || w.refused || !w.placements) w = { disc: 'FP', refused: false, mode: 'drawn', placements: [], refusedNoHost: _noBandHostAcct(), chains: [], chainSegs: [], chainByRule: [], storeys: 0, patternBridge: null };
+    w.verdict = false; w.refused = false;
+    if (dropIds.size) w.placements = w.placements.filter(function (p) { return !dropIds.has(p); });
+    var sp = _countSplit(w.placements, opts);
+    w.placed = sp.placed + placed.length; w.provisional = sp.provisional;
+    if (!w.placed && !w.provisional) w.reason = L.items.length + ' drawn equipment items held, none placed (noRule=' + noRule + ' noFloor=' + noFloor + '); listed and counted';
+    w.drawn = { known: [], planOnly: [], pieces: [], terminals: null, length: 0, stepped: 0, sheets: [], equip: { placed: placed, items: L.items.length, noFloor: noFloor, noRule: noRule, noMesh: noMesh, bandDropped: dropIds.size } };
+    console.log(TAG + ' §FP-EQUIP placed=' + placed.length + ' heightRule=' + (rule ? rule.id : 'none') + ' borrowedKinds=' + borrowedKinds + ' bottomClamped=' + clamped + ' noFloor=' + noFloor + ' noMesh=' + noMesh + ' bandDropped=' + dropIds.size);
+    console.log(TAG + ' §FP-EQUIP-DETAIL bldg=' + name + ' items=' + L.items.length + ' noRule=' + noRule + ' ambiguousFloor=' + ambiguous + ' sizeUnknown=' + sizeUnknown + ' byKind=' + JSON.stringify(byKind) + ' bandKept=' + bandKept + ' coveredStoreys=' + JSON.stringify(Object.keys(covered)) + ' objectTypeKeyedMesh=' + (keyed ? 'yes' : 'no') + ' heapDeltaMB=' + (_heapMB() - heap0).toFixed(1) + (rule ? ' rule=' + (rule.source || rule.standard) : ''));
+    return w;
+  }
+  // The anchor-only op of a placed equipment item: no mesh exists for its kind, so it is a labelled marker with its height span, never a box. Strength per attribute: position drawn; height provisional (code default).
+  function equipOps(drawn) {
+    return ((drawn && drawn.equip && drawn.equip.placed) || []).map(function (e) {
+      var hh = e.h == null ? 0.01 : e.h, z0 = e.bottom == null ? e.top - hh : e.bottom;
+      return { op_type: 'GEOM_INSERT', params: { bbox: [-0.05, 0.05, -0.05, 0.05, 0, hh], anchorOnly: true, lod: '200', placement: { x: +e.x.toFixed(4), y: +e.y.toFixed(4), z: +z0.toFixed(4), rot: 0 }, label: e.ot || e.kind,
+        _dw: { disc: 'FP', kind: 'drawn-equipment', itemKind: e.kind, label: e.ot || e.kind, ifcClass: e.cls, predefined: e.pre, objectType: e.ot, sheet: e.sh, item: e.it, block: e.block, provisional: false, prov: 'drawn:equipment', hostState: null,
+          positionBasis: 'drawn', heightBasis: 'code-default', source: e.source, heightRule: e.ruleId, heightRuleUse: e.use, bottomClamped: e.clamped, sizeBasis: e.h == null ? 'none' : 'drawn', meshState: 'noMesh',
+          strength: { position: 'drawn', height: 'provisional' }, floor: e.floorHost, floorZ: +e.floorZ.toFixed(4), topZ: +e.top.toFixed(4), storey: e.storey } } };
+    });
+  }
   // The pure op builder the page commits (modeller.html _commitDrawnMains). A drawn run is an INVISIBLE anchor insert carrying its line: no solid and no ribbon (the page draws it as a line at height), not exported as a duct.
   // Strength per attribute: position drawn; width drawn when the reader found it, else none; height provisional (void-middle) or none.
   function drawnOps(drawn) {
-    return ((drawn && drawn.known) || []).map(function (p) {
+    return equipOps(drawn).concat(((drawn && drawn.known) || []).map(function (p) {
       var L = p.len, yaw = Math.atan2(p.y1 - p.y0, p.x1 - p.x0) * 180 / Math.PI, h = 0.005;
       return { op_type: 'GEOM_INSERT', params: { bbox: [-L / 2, L / 2, -h, h, -h, h], anchorOnly: true, lod: '200', placement: { x: +p.mx.toFixed(4), y: +p.my.toFixed(4), z: +(p.z - h).toFixed(4), rot: +yaw.toFixed(4) },
         line: { from: [+p.x0.toFixed(4), +p.y0.toFixed(4), +p.z.toFixed(4)], to: [+p.x1.toFixed(4), +p.y1.toFixed(4), +p.z.toFixed(4)] },
         _dw: { disc: 'ACMV', kind: 'drawn-main', sheet: p.sh, piece: p.pc, component: p.cmp, system: p.sys, widthMm: p.w == null ? null : p.w, provisional: false, prov: 'drawn:route', hostState: null,
           positionBasis: 'drawn', widthBasis: p.w == null ? 'none' : 'drawn', heightBasis: p.heightBasis, strength: { position: 'drawn', width: p.w == null ? 'none' : 'drawn', height: p.heightBasis === 'void-middle' ? 'provisional' : 'none' },
           ceiling: p.ceiling || null, structure: p.structure || null, structureClass: p.structureClass || null } } };
-    });
+    }));
   }
 
   function dwWalk(disc, bdb, buildingName, opts) {
