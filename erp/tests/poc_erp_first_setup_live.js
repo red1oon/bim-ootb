@@ -383,7 +383,7 @@ const tipOf = (page, table, id) => page.evaluate(([t, i]) => new Promise(res => 
   //    DeliveryViaRule 'P' default, Tax.java:539-542), else its IsDefault tax. NEGATIVE CONTROL: the price list the line
   //    priced from must belong to THIS client (a borrowed GardenWorld list would also give a number).
   try {
-    const bpN = Number(await one(page, "SELECT C_BPartner_ID FROM C_BPartner WHERE AD_Client_ID=" + CID + " AND Name='Standard BP'"));
+    const bpN = Number(await one(page, "SELECT C_BPartner_ID FROM C_BPartner WHERE AD_Client_ID=" + CID + " AND Name='Standard'"));
     const prodN = Number(await one(page, 'SELECT M_Product_ID FROM M_Product WHERE AD_Client_ID=' + CID + ' ORDER BY M_Product_ID LIMIT 1'));
     const plN = Number(await one(page, "SELECT M_PriceList_ID FROM M_PriceList WHERE IsDefault='Y' AND IsActive='Y' AND AD_Client_ID IN (0," + CID + ') ORDER BY AD_Client_ID DESC, AD_Org_ID DESC, M_PriceList_ID LIMIT 1'));
     const plvN = Number(await one(page, 'SELECT M_PriceList_Version_ID FROM M_PriceList_Version WHERE M_PriceList_ID=' + plN + " AND date(ValidFrom)<=date('now') ORDER BY ValidFrom DESC LIMIT 1"));

@@ -9,6 +9,9 @@
   // FS-18 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2p): the C_AcctSchema_GL account columns (MSetup.createAccountingRecord
   // :683) — extracted from idempiere_test c_acctschema_gl (schema 101) → c_validcombination → c_elementvalue.value (2026-10-03).
   SEED.acctMapGL = {"intercompanyduefrom_acct":"12800","intercompanydueto_acct":"21800","currencybalancing_acct":"82550","suspensebalancing_acct":"79200","commitmentoffset_acct":"952","commitmentoffsetsales_acct":"953","ppvoffset_acct":"58300"};
+  // §G1-SPEC (bim-compiler MIGRATE_INSTALL_TENANT.md): the TreeType list MClient.setupClientInfo reads (AD_Ref_List 120, active, base language; MClient.java:380-382) -
+  //   extracted from erp/ad_seed.db 2026-11-09, the default when the host passes none (genesis.html births without a dictionary).
+  SEED.treeTypes = [["AY","Activity"],["BP","BPartner"],["EV","Element Value"],["MC","Campaign"],["MM","Menu"],["OO","Organization"],["PJ","Project"],["PR","Product"],["SR","Sales Region"],["TL","Custom Table"],["U1","User 1"],["U2","User 2"],["U3","User 3"],["U4","User 4"]];
   if (typeof module !== "undefined" && module.exports) module.exports = SEED;
   else g.GenesisSeed = SEED;
 })(typeof globalThis !== "undefined" ? globalThis : this);
