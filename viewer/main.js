@@ -1042,7 +1042,25 @@ async function initViewer() {
 
   // Go — §S287b: single guarded kickoff (no double loop if focus/pageshow fired during init)
   _startLoop();
+  // §FILESTORE-OPEN (prompts/BIMDOC_OPEN_FILE_STORE.md §3): a BIM Document's "Open in Viewer" arrives as ?open=store:<sha256>&name=<file>.
+  // The store loads ONLY then (no tag, no cost on a normal open); the bytes go to the Viewer's existing IFC route, A._openIfcFiles.
+  function _openFromStoreParam() {
+    if (!/[?&]open=/.test(location.search)) return;
+    var say = function (t) { if (APP.status) APP.status.textContent = t; };
+    var go = function () {
+      window.FileStore.openFromUrl({ ifc: function (f) { return APP._openIfcFiles([f]); }, _noRouteHint: { dxf: 'DXF opens in the Modeller' } }, say)
+        .catch(function (e) { console.log('§FILESTORE-OPEN REFUSED reason=' + (e && e.message)); say('Could not open the attachment: ' + (e && e.message)); });
+    };
+    var ready = function () { return typeof APP._openIfcFiles === 'function' && !!APP.importMultiIFC; };
+    var whenReady = function (n) { if (ready()) return go(); if (n > 240) { console.log('§FILESTORE-OPEN REFUSED reason=viewer-not-ready'); return say('Could not open the attachment: the Viewer did not get ready'); } setTimeout(function () { whenReady(n + 1); }, 250); };
+    if (window.FileStore) return whenReady(0);
+    var sc = document.createElement('script'); sc.src = '../common/file_store.js?v=1';
+    sc.onload = function () { whenReady(0); };
+    sc.onerror = function () { console.warn('§LOAD_FAIL file_store.js'); say('Could not open the attachment: the file store did not load'); };
+    document.head.appendChild(sc);
+  }
   APP.init().then(async function() {
+    _openFromStoreParam();
     // S223: Load diff DB if ?diffdb= param present (variation comparison)
     const diffDbUrl = new URLSearchParams(location.search).get('diffdb');
     console.log('[S223] §DIFF_PARAM diffdb=' + (diffDbUrl || 'none') + ' db_ready=' + !!APP.db + ' computeDiff=' + (typeof APP.computeDiff));

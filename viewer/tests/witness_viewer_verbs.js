@@ -5,11 +5,12 @@
 //  VV1 the verb's number is not the Viewer's: reply value == the Viewer's own §ASK_ANSWER line (to its 400-char cut) AND == a count taken here from the DB file.
 //  VV2 the storey input is ignored: by=storey groups == GROUP BY storey from the DB, and differ from the discipline reply.
 //  VV3 the clash list is made up: bboxOverlaps == hits= of the Viewer's own §CLASH_QUERY_RTREE line == the §ASK_ANSWER value; rowsTotal == the rows the Viewer returned.
+//  VV3b the counts do not add up: meshClashes + cleared + unknown == bboxOverlaps, cleared >= 0, contained <= meshClashes, and bboxOverlaps == an uncapped SQL count of the same pair made here (a one-page cap or a double count fails it). INCONCLUSIVE if that count is 0.
 //  VV4 a bad input reads as a result: missing / unknown building, bad `by`, a pair with no rule are errors through the connector; the first two start no browser (< 3 s).
 //  VV5 the connector does not offer them: tools/list names both, each described with every input described; a scripted client gets the same value and Viewer line as the direct call.
 //  VV6 the verbs write: the DB sha256 is unchanged after all runs.
 //  VV-RED the witness cannot fail: VIEWER_VERB_BREAK=1 shifts the Viewer's number by 1; VV1 and VV3 must then catch it.
-// A case whose population is empty prints INCONCLUSIVE, never PASS. Env: VIEWER_VERB_BREAK=1 (run the whole witness with the falsifier on: must FAIL), FIXTURE_DB.
+// A case whose population is empty prints INCONCLUSIVE, never PASS. Env: VIEWER_VERB_OLDSUM=1 (restore the old meshTrue+contained sum: VV3b must FAIL), VIEWER_VERB_BREAK=1 (run the whole witness with the falsifier on: must FAIL), FIXTURE_DB.
 'use strict';
 const fs = require('fs'), path = require('path'), os = require('os'), crypto = require('crypto'), { spawn, spawnSync } = require('child_process');
 const ROOT = path.resolve(__dirname, '..', '..');
@@ -58,7 +59,19 @@ function client() {
     const rt = (jk.viewerLog.filter(l => l.indexOf('§CLASH_QUERY_RTREE ARC vs MEP') === 0).pop() || '').match(/hits=(\d+)/), hits = rt ? +rt[1] : null;
     ok('VV3', hits === jk.value.bboxOverlaps && jk.rowsTotal === hits && jk.rows.length === Math.min(20, hits) && JSON.stringify(jk.value).slice(0, 400) === lineVal(jk),
       'verb bboxOverlaps=' + jk.value.bboxOverlaps + ' Viewer §CLASH_QUERY_RTREE hits=' + hits + ' rowsTotal=' + jk.rowsTotal + ' rows=' + jk.rows.length + ' tol=' + jk.value.toleranceM);
-    const v = jk.value; L('§W-VIEWER-VERBS OBSERVED Viewer answer, not changed by the verb: bboxOverlaps=' + v.bboxOverlaps + ' meshClashes=' + v.meshClashes + ' cleared=' + v.cleared + (v.cleared < 0 ? ' (NEGATIVE: the Viewer counts more mesh clashes than box overlaps; Viewer defect, find_ask.js runClash)' : ''));
+    // VV3b: the counts add up, and the box count is the uncapped total of the pair, counted here from the DB file by the witness's own SQL (not the Viewer's R-tree).
+    const v = jk.value, rules = JSON.parse(fs.readFileSync(path.join(ROOT, 'viewer', 'clash_rules.json'), 'utf8')).clash_rules;
+    const rule = rules.filter(r => (r.source.discipline === 'ARC' && r.target.discipline === 'MEP') || (r.source.discipline === 'MEP' && r.target.discipline === 'ARC'))[0];
+    const ign = (rule.ignore_classes || []).map(c => "'" + c + "'").join(','), tol = rule.tolerance_m;
+    const ov = (ax) => 'MIN(a.center_' + ax + '+a.bbox_' + ax + '/2,b.center_' + ax + '+b.bbox_' + ax + '/2)-MAX(a.center_' + ax + '-a.bbox_' + ax + '/2,b.center_' + ax + '-b.bbox_' + ax + '/2)';
+    const indep = sql("SELECT count(*) FROM (SELECT " + ov('x') + " ox," + ov('y') + " oy," + ov('z') + " oz FROM element_transforms a JOIN elements_meta ma ON a.guid=ma.guid JOIN element_transforms b JOIN elements_meta mb ON b.guid=mb.guid" +
+      " WHERE ma.discipline='ARC' AND mb.discipline='MEP' AND a.guid<>b.guid AND a.bbox_x IS NOT NULL AND b.bbox_x IS NOT NULL" + (ign ? " AND ma.ifc_class NOT IN (" + ign + ") AND mb.ifc_class NOT IN (" + ign + ")" : '') +
+      ") WHERE ox>0 AND oy>0 AND oz>0 AND MIN(ox,oy,oz)>=" + tol)[0][0];
+    const sum = v.meshClashes + v.cleared + v.unknown;
+    L('§W-VIEWER-VERBS OBSERVED Viewer answer: bboxOverlaps=' + v.bboxOverlaps + ' meshClashes=' + v.meshClashes + ' (contained=' + v.contained + ') cleared=' + v.cleared + ' unknown=' + v.unknown + ' sum=' + sum + ' independent-uncapped-SQL-count=' + indep + ' pageSizeWas200=' + (v.bboxOverlaps === 200));
+    if (!(indep > 0)) incon('VV3b', 'independent SQL count found no ARC/MEP overlaps: nothing judged');
+    else ok('VV3b', sum === v.bboxOverlaps && v.cleared >= 0 && v.contained <= v.meshClashes && v.bboxOverlaps === indep,
+      'meshClashes ' + v.meshClashes + ' + cleared ' + v.cleared + ' + unknown ' + v.unknown + ' = ' + sum + ' vs bboxOverlaps ' + v.bboxOverlaps + '; independent uncapped count ' + indep + '; contained ' + v.contained + ' is a breakdown of meshClashes');
   }
   // VV5 + VV4 through the connector
   const c = client();

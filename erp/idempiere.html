@@ -576,8 +576,8 @@
      FOLD-frozen verbs (post_resolver/doc_poster, UMD) + the seam; renders via the SAME AcctsPosted renderer. -->
 <script src="post_resolver.js?v=1"></script>
 <script src="doc_poster.js?v=6"></script>
-<script src="genesis_seed.js?v=2"></script><!-- SYSTEM_ADMIN_LANE §SA1 — default-CoA seed; MUST load before genesis.js (it reads global.GenesisSeed at load) -->
-<script src="genesis.js?v=10"></script>
+<script src="genesis_seed.js?v=3"></script><!-- SYSTEM_ADMIN_LANE §SA1 — default-CoA seed; MUST load before genesis.js (it reads global.GenesisSeed at load) -->
+<script src="genesis.js?v=12"></script>
 <script src="system_tenant.js?v=1"></script><!-- SYSTEM_ADMIN_LANE §SA1 — boot overlay: make System(0) a log-in-able tenant -->
 <script src="field_health.js?v=1"></script><!-- SYSTEM_MONITOR_WIDGETS §H — 4 field-health widgets engine (ERP.FieldHealth.fold); folded into the System Monitor panel below -->
 <script src="system_monitor.js?v=4"></script><!-- SYSTEM_ADMIN_LANE §6 — iDempiere System Monitor, serverless reframe (window.SystemMonitor) + §H field-health widgets -->
@@ -653,7 +653,8 @@
      ModelLayer.run; every write lands in the same signed op-group. Needs bigdecimal.js + ad_modelval.js (loaded above). -->
 <script src="ad_workflow.js?v=1"></script>
 <script src="fk_rules.js?v=1"></script>
-<script src="model_layer.js?v=9"></script>
+<script src="model_layer.js?v=10"></script>
+<script src="model_initial_defaults.js?v=1"></script><!-- GENERATED setInitialDefaults of every model class (bim-compiler MIGRATE_INSTALL_TENANT.md §G1-SPEC, W-GENESIS-COMPLETE) -->
 <script src="model_trade.js?v=5"></script>
 <script src="model_ctor.js?v=1"></script>
 <script src="model_cost.js?v=1"></script>
@@ -788,7 +789,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
      withBundle/curChain/__crudHostAnchor so the ring binds to the FOCUSED record; T1 fan-out + T2 list-tip +
      T4 owner-gate ride along unchanged. -->
 <!-- T7 (W-T7-INC): memoized tip-folds (fix 3) + signed shard boundary (fix 4/4b) — load BEFORE crud_overlay so it delegates. -->
-<script src="tip_fold.js?v=1"></script>
+<script src="tip_fold.js?v=2"></script>
 <script src="erp_shard.js?v=1"></script>
 <!-- §S60 physical split: the pure CORE (window.CrudCore) — MUST load before crud_overlay.js -->
 <script src="crud_core.js?v=10"></script>
@@ -1057,7 +1058,12 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var dbw = _b3w(db);                                        // full (writeable) better-sqlite3 shim over the live db
     var newId = window.Genesis.nextClientId(dbw);
     var rb = window.Genesis.rebandGenesis(bundle, { clientId: newId });
-    var rows = window.Genesis.mergeGenesisInto(rb.groups, dbw);
+    // the rows are filled as legacy MSetup's PO saves write them (bim-compiler MIGRATE_INSTALL_TENANT.md §G1-SPEC, W-GENESIS-COMPLETE): Created/Updated = now, CreatedBy/UpdatedBy =
+    //   the user running the setup (the logged-in user; none at boot = 100 SuperUser, the pilot oracle of Initial Client Setup), the model ctor defaults, the column DEFAULTs
+    var d0 = new Date(), pad = function (n) { return (n < 10 ? '0' : '') + n; };
+    var nowTs = d0.getFullYear() + '-' + pad(d0.getMonth() + 1) + '-' + pad(d0.getDate()) + ' ' + pad(d0.getHours()) + ':' + pad(d0.getMinutes()) + ':' + pad(d0.getSeconds());
+    var setupUser = (typeof _session !== 'undefined' && _session && _session.user && _session.user.id != null) ? Number(_session.user.id) : 100;
+    var rows = window.Genesis.mergeGenesisInto(rb.groups, dbw, { now: nowTs, user: setupUser, initialDefaults: window.ModelLayer && window.ModelLayer.initialDefaultsOf });
     // GRANT the born admin role access to the shared System dictionary — else it logs in to an EMPTY menu. Same
     // setup-default the headless witness proves (W-GENESIS-RESIDENT): read the System windows, grant them.
     var grants = window.Genesis.grantFullAccess(dbw, rb.refs.roleAdminId, newId, rb.refs.orgId);
@@ -2451,9 +2457,9 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     });
     if (ctx && ctx.legal.length) {
       if (items.length) { var sp = el('div', null); sp.style.cssText = 'border-top:1px solid #4a2f44;margin:6px 0'; box.appendChild(sp); }
-      var hdr = el('div', null, 'Document Action' + '  ·  ' + (DOCSTATUS_LABEL[ctx.ds] || ctx.ds) + ' · ' + ctx.ds); hdr.style.cssText = 'font-weight:700;margin:2px 4px 4px;color:#fbeaf7'; box.appendChild(hdr);
+      var hdr = el('div', null, 'Document Action' + '  ·  ' + _famLbl(ctx.tid, 'status', ctx.ds) + ' · ' + ctx.ds); hdr.style.cssText = 'font-weight:700;margin:2px 4px 4px;color:#fbeaf7'; box.appendChild(hdr);
       ctx.legal.forEach(function (act) {
-        var b = el('button', null, ACTION_LABEL[act] || act); b.style.cssText = itemCss; b.setAttribute('data-docact', act);
+        var b = el('button', null, _famLbl(ctx.tid, 'action', act)); b.style.cssText = itemCss; b.setAttribute('data-docact', act);
         b.addEventListener('click', function () {
           var res = ctx.dispatch(act);
           console.log('§FORM-PILL process record=' + ctx.recId + ' act=' + act + (res.ok ? ' from=' + res.from + ' to=' + res.to : ' REJECTED=' + res.reason));
@@ -3201,6 +3207,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     RA: 'Reverse — Accrual', RE: 'Re-Activate', XL: 'Unlock', IN: 'Invalidate', RJ: 'Reject', AP: 'Approve', PO: 'Post' };
   var DOCSTATUS_LABEL = { DR: 'Drafted', IP: 'In Progress', IN: 'Invalid', AP: 'Approved', NA: 'Not Approved',
     CO: 'Completed', CL: 'Closed', RE: 'Reversed', VO: 'Voided', WP: 'Waiting Payment', WC: 'Waiting Confirmation' };
+  // a plugin family's own words for the same codes (AdDocFsm.DOC_FAMILY[tableId].labels = { status:{}, action:{} }, data of the family, no table named); the core words otherwise
+  function _famLbl(tid, kind, code) { var f = window.AdDocFsm && window.AdDocFsm.DOC_FAMILY && window.AdDocFsm.DOC_FAMILY[Number(tid)], m = f && f.labels && f.labels[kind]; return (m && m[code]) || (kind === 'status' ? DOCSTATUS_LABEL[code] : ACTION_LABEL[code]) || code; }
   // USER_JOURNEY_LANE punch-list #2 — status-at-a-glance. A record HAS a status iff it carries a DocStatus
   // value (model-agnostic — any absorbed model with a DocStatus column lights up; no per-model hardcode).
   function _recStatus(rec) { var ds = recVal(rec, 'DocStatus'); return (ds == null || ds === '') ? null : String(ds); }
@@ -3431,9 +3439,9 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     console.log('§AD-DOCFSM-LIVE table=' + ctx.tid + '(' + tab.tableName + ') record=' + ctx.recId + ' status=' + ctx.ds +
       ' legal=[' + ctx.legal.join(',') + '] periodOpen=' + ctx.po.open + '(' + ctx.po.why + ') backDate=true(named-default)');
     var bar = el('div', 'idmp-docfsm');
-    bar.appendChild(el('span', 'chip st-' + ctx.ds, (DOCSTATUS_LABEL[ctx.ds] || ctx.ds) + ' · ' + ctx.ds));
+    bar.appendChild(el('span', 'chip st-' + ctx.ds, _famLbl(ctx.tid, 'status', ctx.ds) + ' · ' + ctx.ds));
     ctx.legal.forEach(function (act) {
-      var btn = el('button', null, ACTION_LABEL[act] || act);
+      var btn = el('button', null, _famLbl(ctx.tid, 'action', act));
       btn.setAttribute('data-doc-action', act);
       btn.addEventListener('click', function () {
         var res = ctx.dispatch(act);
@@ -4520,7 +4528,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       }
       run.disabled = true; run.textContent = 'Creating…';
       var born;
-      try { born = window.Genesis.birthTenant(input); }
+      try { if (!input.treeTypes && window.Genesis.treeTypesFrom && typeof _b3w === 'function') { var _tt = window.Genesis.treeTypesFrom(_b3w(db)); if (_tt.length) input.treeTypes = _tt; }   // MClient.setupClientInfo reads AD_Ref_List 120 (§G1-SPEC)
+        born = window.Genesis.birthTenant(input); }
       catch (e) { out.textContent = 'Genesis failed: ' + e.message; out.setAttribute('data-genesis-error', '1'); run.disabled = false; run.textContent = 'Create tenant';
         console.log('§W-GENESIS-SYSADMIN-LIVE create FAIL ' + e.message); return; }
       console.log('§W-GENESIS-SYSADMIN-LIVE born client=' + input.clientName + ' groups=' + born.groups.length + ' head=' + born.tip.slice(0, 12));

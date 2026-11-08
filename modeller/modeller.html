@@ -6387,6 +6387,24 @@ window.__dwOcclusionProbe = function (disc) {
 setStat('ready — supported=' + (window.Bonsai ? window.Bonsai.isSupported() : '?'));
 window.__sceneReady = true;
 console.log('§MODELLER scene ready supported=' + (window.Bonsai ? window.Bonsai.isSupported() : '?'));
+// §FILESTORE-OPEN (prompts/BIMDOC_OPEN_FILE_STORE.md §3): a BIM Document's "Open in Modeller" arrives as ?open=store:<sha256>&name=<file>.
+// The store loads ONLY then; the bytes go to the SAME calls the Open panel and the DXF chooser make (no new open route).
+(function openFromStoreParam() {
+  if (!/[?&]open=/.test(location.search)) return;
+  var SWo = window.STRWalkerOutliner;
+  var olOpen = function () { try { localStorage.setItem('dagevu_modeller_ol_open', '1'); } catch (e) {} document.body.classList.remove('ol-collapsed'); };
+  var routes = {
+    ifc: function (f) { console.log('§MODELLER-OPEN store pick local=' + f.name); SWo._openIfcFile(f); olOpen(); },
+    db: function (f) { console.log('§MODELLER-OPEN store pick local=' + f.name); SWo._openStrDb(f); olOpen(); },
+    dxf: function (f) { return window.DxfImportUI.openFiles([f], { chooser: true }); }
+  };
+  var go = function () { window.FileStore.openFromUrl(routes, setStat).catch(function (e) { console.log('§FILESTORE-OPEN REFUSED reason=' + (e && e.message)); setStat('Could not open the attachment: ' + (e && e.message)); }); };
+  if (!SWo || !window.DxfImportUI) { console.log('§FILESTORE-OPEN REFUSED reason=modeller-not-ready'); setStat('Could not open the attachment: the Modeller did not get ready'); return; }
+  if (window.FileStore) return go();
+  var sc = document.createElement('script'); sc.src = '../common/file_store.js?v=1'; sc.onload = go;
+  sc.onerror = function () { console.warn('§LOAD_FAIL file_store.js'); setStat('Could not open the attachment: the file store did not load'); };
+  document.head.appendChild(sc);
+})();
 
 // ── CHROME (MODELLER_BOM_CATALOG_SPEC §panel-reorg): the toolbar becomes a Viewer-style ⋯ pill rail and the
 // Outliner becomes a collapsible Bonsai-style left panel. PURE chrome — no engine/op-log change; the existing
