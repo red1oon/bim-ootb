@@ -381,7 +381,6 @@ for (const r of rows) {
     if (rule) { basis.push(`${c}: ${rule.why}`); if (RANK[rule.cls] > RANK[cls]) cls = rule.cls; }
   }
   r.cls = cls; r.basis = basis.length ? basis.join('; ') : 'no gpu/writes/leaves callee found';
-  r.verb = '';   // X: filled when a Viewer verb is added for this row (§19.0 step 3)
 }
 const phantoms = rows.flatMap(r => r.defs.filter(d => d.at === null).map(d => ({ row: r, callee: d.c })));
 const usedRules = new Set(rows.flatMap(r => r.calls.flatMap(c => [c, canon(c)])));
@@ -407,10 +406,15 @@ for (const r of rows.filter(x => x.source !== '_actions')) {
   if (pill) r.label = pill.label.split(' — ')[0] + ' *(pill ' + pill.pill + ')*';
 }
 const actions = new Set(rows.map(r => r.action));
-const X = rows.filter(r => r.verb).length;
+// §19.4: the verb map. Key = the action (pill id, as r.action), value = the verbs offered for it (bim_mcp.js tools, viewer/tools/viewer_verbs.js).
+// Both verbs wrap the Find panel's Ask answers (viewer/find_ask.js), so both belong to the one action `find`.
+const VERBS = { find: ['viewer_counts', 'viewer_clashes'] };
+for (const r of rows) r.verb = (VERBS[r.action] || []).join(', ');
+const verbNames = new Set(Object.values(VERBS).flat());
+const X = new Set(rows.filter(r => r.verb).map(r => r.action)).size;   // distinct actions with a verb (not entry rows)
 const by = s => rows.filter(r => r.source === s).length;
 
-const summary = `§VIEWER_ACTIONS N_entry=${rows.length} N_actions=${actions.size} X=${X} shortcuts=${by('_shortcuts')} direct=${by('direct')} pills=${by('_actions')} phantom=${phantoms.length} conflicts=${conflicts.length} listeners=${listenerFiles.length} unaccounted=${unaccounted.length} direct_missing=${directMissing.length}`;
+const summary = `§VIEWER_ACTIONS N_entry=${rows.length} N_actions=${actions.size} X=${X} verbs=${verbNames.size} shortcuts=${by('_shortcuts')} direct=${by('direct')} pills=${by('_actions')} phantom=${phantoms.length} conflicts=${conflicts.length} listeners=${listenerFiles.length} unaccounted=${unaccounted.length} direct_missing=${directMissing.length}`;
 
 if (JSON_OUT) {
   process.stdout.write(JSON.stringify({ rows, phantoms: phantoms.map(p => ({ key: p.row.key, pill: p.row.pill, callee: p.callee })), conflicts, listenerFiles, scanned: SCANNED, excluded: EXCLUDED, unaccounted, directMissing, ignored, unusedRules, actions: actions.size, summary }, null, 1));
@@ -431,7 +435,8 @@ L.push(`| — \`_shortcuts\` keys (viewer/scene.js) | ${by('_shortcuts')} |`);
 L.push(`| — direct keydown branches | ${by('direct')} |`);
 L.push(`| — pill entries incl. long-press (viewer/panels.js \`_actions\`) | ${by('_actions')} |`);
 L.push(`| distinct actions (N_actions) | ${actions.size} |`);
-L.push(`| offered as verbs (X) | ${X} |`);
+L.push(`| actions offered as verbs (X) | ${X} |`);
+L.push(`| verbs offered (viewer/tools/viewer_verbs.js) | ${verbNames.size} |`);
 for (const c of ['view', 'leaves', 'writes', 'gpu']) L.push(`| class ${c} | ${rows.filter(r => r.cls === c).length} |`);
 L.push(`| callees with no definition (PHANTOM) | ${phantoms.length} |`);
 L.push(`| pill key conflicts | ${conflicts.length} |`);
@@ -451,10 +456,10 @@ if (phantoms.length) {
   L.push('');
 }
 L.push('## Entry points', '');
-L.push('| # | source | key | pill | label (the app\'s own words) | calls → defined at | class | basis |', '|---:|---|---|---|---|---|---|---|');
+L.push('| # | source | key | pill | label (the app\'s own words) | calls → defined at | class | basis | verb |', '|---:|---|---|---|---|---|---|---|---|');
 rows.forEach((r, i) => {
   const calls = r.defs.map(d => md(d.c) + (d.at === 'builtin' ? '' : d.at ? ' ' + md(d.at) : ' **PHANTOM**')).join('<br>') || '—';
-  L.push(`| ${i + 1} | ${md(r.file + ':' + r.line)} | ${r.key ? md(r.key) : ''} | ${r.pill ? md(r.pill) : ''}${r.when ? ' *(' + r.when + ')*' : ''} | ${esc(r.label)} | ${calls} | ${r.cls} | ${esc(r.basis)} |`);
+  L.push(`| ${i + 1} | ${md(r.file + ':' + r.line)} | ${r.key ? md(r.key) : ''} | ${r.pill ? md(r.pill) : ''}${r.when ? ' *(' + r.when + ')*' : ''} | ${esc(r.label)} | ${calls} | ${r.cls} | ${esc(r.basis)} | ${r.verb ? esc(r.verb) : ''} |`);
 });
 L.push('');
 L.push('## Keydown listener files (R4)', '');
