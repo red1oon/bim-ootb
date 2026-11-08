@@ -266,6 +266,65 @@ const G1 = buildingGrid('G1');
   const tam = back.map(v => v.slice()); tam[0][2] += 1e-9;
   ok('M12 RED: one coordinate off by 1e-9 is caught by the same comparison', !same(res12.rows, tam), '');
 
+  // ---- E1-E8 (§10 drawn equipment, FP): point items on M-EQPM / P-SANR-FIXT, kind from the block-name WORD, own role (no centreline needed) ----
+  const EQ = { E: 'M-EQPM', S: 'P-SANR-FIXT' }, eqLines = q => q.lines.filter(l => /§MAINS-EQUIP /.test(l)).join('\n'), eqKV = (q, key) => { const m = new RegExp(key + '=(\\S+)').exec(eqLines(q)); return m ? m[1] : null; };
+  const SPOT = (i) => [1 + (i % 5) * 3, 1 + Math.floor(i / 5) * 2.5];   // 11 distinct building spots, > 10 mm apart
+  const e1content = B => {
+    for (let i = 0; i < 11; i++) { const p = SPOT(i), nm = i < 3 ? 'FIRE CABINET 1' : i < 7 ? 'Fire_Blanket' : i < 9 ? 'EXTINGUISHER FOAM 9L' : 'EXTINGUISHER DRY POWDER 4KG'; B.ins(i < 9 ? EQ.E : EQ.S, nm, p[0], p[1], 1); }
+    const s0 = SPOT(0); B.ins(EQ.E, 'FIRE CABINET 1', s0[0] + 0.004, s0[1] - 0.003, 1); B.ins(EQ.E, 'FIRE CABINET 1', s0[0], s0[1], 1);   // 3 stacked at one spot (within 10 mm)
+    [3, 5, 8].forEach(i => { const p = SPOT(i); B.ins(EQ.E, i === 3 || i === 5 ? 'Fire_Blanket' : 'EXTINGUISHER FOAM 9L', p[0], p[1], 1); });   // 3 more exact copies elsewhere: 16 inserts, 11 distinct spots
+  };
+  const qe1 = sheetFixture({ content: e1content });
+  const nIns = qe1.entities.filter(e => e.type === 'INSERT' && (e.layer === EQ.E || e.layer === EQ.S)).length;
+  r = run('qe1', qe1, G1); const spot0 = r.r.equipment.filter(q => Math.hypot(q.x - SPOT(0)[0], q.y - SPOT(0)[1]) < 0.02 && q.kind === 'cabinet');
+  ok('E1 ' + nIns + ' inserts with 3 stacked at one spot give 11 items; the stacked spot gives 1', nIns === 16 && r.r.equipment.length === 11 && spot0.length === 1 && eqKV(r, 'stacked') === '5', 'inserts=' + nIns + ' items=' + r.r.equipment.length + ' spot0=' + spot0.length + ' | ' + eqLines(r).slice(0, 260));
+  r = run('qe1-red', qe1, G1, { noCollapse: true }); const spot0r = r.r.equipment.filter(q => Math.hypot(q.x - SPOT(0)[0], q.y - SPOT(0)[1]) < 0.02 && q.kind === 'cabinet');
+  ok('E1 RED: with the collapse off the stacked spot gives 3 (and 16 items)', spot0r.length === 3 && r.r.equipment.length === 16, 'spot0=' + spot0r.length + ' items=' + r.r.equipment.length);
+  // E2: the word decides, not the layer
+  r = run('e2', sheetFixture({ content: B => { B.ins(EQ.S, 'EXTINGUISHER FOAM 9L', 2, 2, 1); B.ins(EQ.E, 'EXTINGUISHER FOAM 9L', 5, 2, 1); B.ins(EQ.S, 'FIRE CABINET 2', 8, 2, 1); B.ins(EQ.E, 'FB', 11, 2, 1); B.ins(EQ.E, 'FB1', 14, 2, 1); } }), G1);
+  const kinds = r.r.equipment.map(q => q.kind + ':' + q.object_type).join(',');
+  ok('E2 kind comes from the word, not the layer (extinguisher on P-SANR-FIXT; FB whole word only: FB1 is unknown)', kinds === 'extinguisher:FIREEXTINGUISHER,extinguisher:FIREEXTINGUISHER,cabinet:FIRECABINET,blanket:FIREBLANKET' && r.r.equipment.every(q => q.ifc_class === 'IfcFireSuppressionTerminal' && q.predefined === 'USERDEFINED') && eqKV(r, 'unknownKind') === '1', kinds + ' ' + eqKV(r, 'unknownKind'));
+  // E3: unknown block name is not placed, counted, logged
+  r = run('e3', sheetFixture({ content: B => { B.ins(EQ.E, 'AHU-3 PLAN', 4, 4, 1); B.ins(EQ.E, 'FIRE CABINET 1', 8, 4, 1); } }), G1);
+  ok('E3 an unknown block name on M-EQPM is not placed; unknownKind=1 is logged', r.r.equipment.length === 1 && eqKV(r, 'unknownKind') === '1' && r.lines.some(l => /§MAINS-EQUIP-UNKNOWN sheet=e3 block=AHU-3 PLAN/.test(l)), eqLines(r).slice(0, 200));
+  // E4: equipment inside the layer-0 linked block is background
+  const qe4 = sheetFixture({ rotDeg: 30, t: [123.4, -56.7], nest: nests[0], content: B => { B.ins(EQ.E, 'FIRE CABINET 1', 6, 6, 1); } });
+  qe4.blocks.LINKED_MODEL.entities.push({ type: 'INSERT', layer: EQ.E, name: 'FIRE CABINET 9', position: { x: 100, y: 100, z: 0 }, xScale: 1, yScale: 1, rotation: 0 }, { type: 'INSERT', layer: EQ.S, name: 'EXTINGUISHER X', position: { x: 300, y: 100, z: 0 }, xScale: 1, yScale: 1, rotation: 0 });
+  r = run('qe4', qe4, G1);
+  ok('E4 equipment inside the linked-model block is ignored (1 top-level item, 2 hidden inside)', r.r.equipment.length === 1 && r.r.equipment[0].block === 'FIRE CABINET 1' && r.r.sheet.nested > 0, 'items=' + r.r.equipment.length + ' nested=' + r.r.sheet.nested + ' fit_tags=' + r.r.sheet.fit_tags);
+  // E5: rotated, offset sheet
+  const e5pts = [[3, 2], [15, 2], [15, 12.5], [7.25, 9.5]];
+  [[30, [123.4, -56.7]], [-150, [-40.25, 77.125]]].forEach(c => {
+    r = run('e5-' + c[0], sheetFixture({ rotDeg: c[0], t: c[1], content: B => e5pts.forEach((p, i) => B.ins(i % 2 ? EQ.S : EQ.E, 'FIRE CABINET ' + i, p[0], p[1], 1)) }), G1);
+    let worst = 9; if (r.r.equipment.length === 4) { worst = 0; r.r.equipment.forEach((q, i) => { worst = Math.max(worst, Math.abs(q.x - e5pts[i][0]), Math.abs(q.y - e5pts[i][1])); }); }
+    ok('E5 sheet rotated ' + c[0] + ' deg, offset ' + JSON.stringify(c[1]) + ': items land on the building to 1 mm', worst <= 0.001 && r.r.sheet.fit_tags === 8, 'worst=' + (worst * 1000).toFixed(4) + ' mm tags=' + r.r.sheet.fit_tags);
+  });
+  // E6: mirror guard, real negative on points inside the extents + a positive control
+  r = run('e6', sheetFixture({ content: B => { B.ins(EQ.E, 'FIRE CABINET 1', 4, 4, 1); B.ins(EQ.S, 'EXTINGUISHER FOAM 9L', 12, 9, 1); } }), G1);
+  ok('E6 the mirror guard logs fired=no on an equipment-only sheet whose inserts sit inside the extents', r.lines.some(l => /§MAINS-MIRROR sheet=e6 role=equipment fired=no n=0 of inserts=2/.test(l)) && r.r.equipment.length === 2, r.lines.filter(l => /MIRROR/.test(l)).join(' | '));
+  r = run('e6-ctl', sheetFixture({ content: B => { B.ins(EQ.E, 'FIRE CABINET 1', -6, 4, 1); } }), G1);
+  ok('E6 CONTROL: a point outside the extents whose reflection lands inside fires the guard (fired=yes) and is placed reflected', r.lines.some(l => /role=equipment fired=yes n=1/.test(l)) && r.r.equipment.length === 1 && near(r.r.equipment[0].x, 6, 0.001), r.lines.filter(l => /MIRROR/.test(l)).join(' | '));
+  // E7: equipment-only sheet, no centreline layer
+  const qe7 = sheetFixture({ content: B => { B.ins(EQ.E, 'FIRE CABINET 1', 4, 4, 1); B.ins(EQ.E, 'FIRE CABINET 1', 9, 4, 1); } });
+  r = run('qe7', qe7, G1);
+  ok('E7 an equipment-only sheet (no centreline layer) still reads its equipment; runs are INCONCLUSIVE', r.r.equipment.length === 2 && r.r.rows.length === 0 && r.r.sheet.inconclusive === 'no centreline layer' && r.lines.some(l => /§MAINS-INCONCLUSIVE sheet=qe7 reason=no centreline layer/.test(l)) && !r.lines.some(l => /§MAINS-READ/.test(l)) && /height=none \(not stated\)/.test(eqLines(r)), eqLines(r).slice(0, 200));
+  // E8: write() round trip
+  const d8 = new SQL.Database(); d8.run('CREATE TABLE elements_meta(guid TEXT); CREATE TABLE other(a INTEGER)'); const c8 = cnts(d8);
+  const q8 = run('e8', sheetFixture({ rotDeg: 30, t: [123.4, -56.7], content: B => { B.line(L.C, [3, 2], [15, 2]); e5pts.forEach((p, i) => B.ins(EQ.E, 'FIRE CABINET ' + i, p[0], p[1], 1)); } }), G1, null, { sheet: { number: 'FP-1', revision: 'A' } }).r;
+  DM.write(d8, q8); DM.write(d8, q8);   // twice: re-reading replaces, no duplicates
+  const b8 = new SQL.Database(new Uint8Array(d8.export())), eqv = b8.exec('SELECT sheet,item,kind,block,x,y,ifc_class,predefined,object_type,provenance FROM drawn_equipment ORDER BY item')[0].values, cols8 = b8.exec("PRAGMA table_info(drawn_equipment)")[0].values.map(v => v[1]), c8b = cnts(b8);
+  const same8 = eqv.length === 4 && q8.equipment.every((q, i) => { const v = eqv[i]; return v[0] === q.sheet && v[1] === q.item && v[2] === q.kind && v[3] === q.block && v[4] === q.x && v[5] === q.y && v[6] === q.ifc_class && v[7] === q.predefined && v[8] === q.object_type && v[9] === 'drawn'; });
+  const oth8 = Object.keys(c8).every(t => c8b[t] === c8[t]), newT8 = Object.keys(c8b).filter(t => !(t in c8)).sort().join(',');
+  ok('E8 write() round trip: drawn_equipment rows identical after export/reopen, written twice = 4 rows, no z column, no other table changed', same8 && cols8.join(',') === 'sheet,item,kind,block,x,y,ifc_class,predefined,object_type,provenance' && !cols8.includes('z') && oth8 && newT8 === 'drawn_equipment,drawn_route,drawn_route_sheet' && c8b.drawn_route === 1, 'rows=' + eqv.length + ' cols=' + cols8.join(',') + ' tables=' + newT8);
+  const tam8 = eqv.map(v => v.slice()); tam8[0][4] += 1e-9;
+  ok('E8 RED: one coordinate off by 1e-9 is caught by the same comparison', !q8.equipment.every((q, i) => q.x === tam8[i][4]), '');
+
+  // E9: the mount-height rule is data, exposed with its citation; the reader gives no z
+  r = run('e9', sheetFixture({ content: B => { B.ins(EQ.E, 'FIRE CABINET 1', 4, 4, 1); B.ins(EQ.S, 'EXTINGUISHER FOAM 9L', 12, 9, 1); } }), G1); const hr = r.r.equipment_height_rule;
+  ok('E9 the mount_height row (fp-mount-nfpa10) is read from the rules and exposed with its citation; no item gets a z from the reader', !!hr && hr.id === 'fp-mount-nfpa10' && hr.top_m === 1.53 && hr.min_bottom_m === 0.10 && hr.applies_to.join() === 'extinguisher' && hr.borrowed_for.join() === 'cabinet,blanket' && hr.standard === 'NFPA 10' && /NFPA 10/.test(hr.source) && r.r.equipment.length === 2 && r.r.equipment.every(q => q.z === null), 'rule=' + JSON.stringify(hr && { id: hr.id, top_m: hr.top_m, min_bottom_m: hr.min_bottom_m }) + ' z=' + r.r.equipment.map(q => q.z).join());
+  const noRule = capture(() => DM.read({ entities: sheetFixture({ content: B => { B.ins(EQ.E, 'FIRE CABINET 1', 4, 4, 1); } }).entities, sheet: 'e9n', rules: RULES.rows.filter(w => w.role !== 'mount_height'), grid: G1, unitM: 0.001, blocks: {} }));
+  ok('E9 RED: with the row removed from the rules, nothing is exposed (the rule is data, not hard-coded)', noRule.r.equipment_height_rule === null && noRule.r.equipment.length === 1, 'rule=' + noRule.r.equipment_height_rule);
+
   // ---- M9: the walker, with no sheet held ----
   try {
     const H = require(path.join(__dirname, 'walk_node_harness.js')), dbf = path.join(M, 'Clinic_ARC.db');
