@@ -110,12 +110,14 @@ function eq(key, rule, got, want) { return { key: key, rule: rule, ok: JSON.stri
   // window path -- the REAL host route: BEFORE_SAVE (ML.run, as crud_overlay.fireBeforeSaveHooks) -> derived values ride the op's fields (CREATE keeps every derived value, crud_overlay :1148)
   // -> the fold stamps Client/Org/IsActive/... from stdDefaults ONLY when the field is missing (crud_core.js :438-452) -> AFTER_SAVE through crud_overlay's OWN _modelAfterSave
   // (its source is extracted from the shipped file and run against this db; the form supplies NO ad_client_id / ad_org_id, as a real window does).
+  // _modelAfterSave was split at 77ca03e8: it dispatches to _modelAfterSaveGo / _modelDeleteGo, so those are extracted too.
   var OV = fs.readFileSync(path.join(ERP, 'crud_overlay.js'), 'utf8'), vm = require('vm');
   function fnSrc(name) { var i = OV.indexOf('  function ' + name + '('); if (i < 0) return null; var d = 0, j = OV.indexOf('{', i); for (var k = j; k < OV.length; k++) { if (OV[k] === '{') d++; else if (OV[k] === '}' && --d === 0) return OV.slice(i, k + 1); } return null; }
-  var ovSrc = ['_modelQuery', '_modelEnv', '_needThen', '_noteTouched', '_modelRunNow', 'modelRun', '_modelAfterSave'].map(fnSrc);   // + the lazy-activation seam helpers modelRun now calls (Host work H2)
+  var ovSrc = ['_modelQuery', '_modelEnv', '_needThen', '_noteTouched', '_modelRunNow', 'modelRun', '_modelAfterSave', '_modelAfterSaveGo', '_modelDeleteGo', '_sideTables'].map(fnSrc);   // + the lazy-activation seam helpers modelRun now calls (Host work H2)
   var ovOk = ovSrc.every(Boolean), hostLogs = [], HOSTCTX = null;
   if (ovOk) { HOSTCTX = vm.createContext({ console: { log: function (l) { hostLogs.push(String(l)); }, warn: function () {} }, SIDE: null, _tipShadowOn: function () { return []; }, _tipShadowOff: function () {},
-    withBundle: function (cb) { cb(db); }, Date: Date, global: { ModelLayer: ML, AdModelVal: MV, APP: { clientId: 11, orgId: 11, actor: 100 }, crypto: require('crypto').webcrypto } });
+    withBundle: function (cb) { cb(db); }, withSidecar: function (cb) { cb(null); }, _modelSession: {},   // crud_overlay.js:444 module-level login-context holder (_modelEnv reads it)   // no sidecar here (SIDE: null); _modelRunNow hydrates it lazily since §TIP_READ_HYDRATED
+    Date: Date, global: { ModelLayer: ML, AdModelVal: MV, APP: { clientId: 11, orgId: 11, actor: 100 }, crypto: require('crypto').webcrypto } });
     vm.runInContext(ovSrc.join('\n') + '\nthis._modelAfterSave = _modelAfterSave;', HOSTCTX); }
   // the window save of a NEW row: returns { before, rowId, afterOps }. fields = what the FORM typed (no tenant columns).
   function windowSave(table, fields) {
