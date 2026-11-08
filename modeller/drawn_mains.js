@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 // # ⚠ DO NOT REMOVE — drawn-mains READER, prompts/DISC_WALK_DRAWN_MAINS.md §3, §4, §4.2a, §4.3, §5. Witness: modeller/tests/witness_drawn_mains.js (W-DRAWN-MAINS). Read the log after every run.
 // Reads plan-level duct centrelines from ALREADY-PARSED DXF entities into a route record: a piece is a drawn piece and nothing else (no bridging, no z, no depth, no invented main).
+// Also reads drawn FIRE-FIGHTING EQUIPMENT as point items (prompts/DISC_WALK_DRAWN_MAINS.md §10): own role, independent of the centreline role.
 // Pure: no DOM, no fs, no parsing. Layer patterns and terminal words are data rows (modeller/drawn_mains_rules.json), passed in by the caller.
 (function (root, factory) { if (typeof module === 'object' && module.exports) module.exports = factory(); else root.DrawnMains = factory(); })(this, function () {
   'use strict';
@@ -84,8 +85,8 @@
 
   // ---- data rows -> reader arguments. rows: [{discipline, role, pattern, ...}] ----
   function rulesFrom(rows) {
-    const by = {}, words = {}; (rows || []).forEach(r => { if (/^terminal_/.test(r.role) && r.role !== 'terminal_layer') { const k = r.role.slice(9); (words[k] = words[k] || []).push(r.pattern); } else { const o = (by[r.discipline] = by[r.discipline] || { discipline: r.discipline }); o[r.role === 'terminal_layer' ? 'terminal' : r.role] = r.pattern; if (r.entity) o[(r.role === 'terminal_layer' ? 'terminal' : r.role) + '_entity'] = r.entity; } });
-    return { layerRows: Object.keys(by).map(d => by[d]), terminalWords: words };
+    const by = {}, words = {}, equip = { layers: [], kinds: [] }; let heightRule = null; (rows || []).forEach(r => { if (r.role === 'mount_height') heightRule = r; else if (r.role === 'equipment_layer') equip.layers.push(matcher(r.pattern)); else if (r.role === 'equipment_kind') equip.kinds.push({ kind: r.kind, rx: new RegExp(r.pattern, 'i'), ifc_class: r.ifc_class, predefined: r.predefined, object_type: r.object_type }); else if (/^terminal_/.test(r.role) && r.role !== 'terminal_layer') { const k = r.role.slice(9); (words[k] = words[k] || []).push(r.pattern); } else { const o = (by[r.discipline] = by[r.discipline] || { discipline: r.discipline }); o[r.role === 'terminal_layer' ? 'terminal' : r.role] = r.pattern; if (r.entity) o[(r.role === 'terminal_layer' ? 'terminal' : r.role) + '_entity'] = r.entity; } });
+    return { layerRows: Object.keys(by).map(d => by[d]), terminalWords: words, equip: equip.layers.length && equip.kinds.length ? equip : null, heightRule };
   }
   // ---- nested content (spec 4.3 amendment 1): lines, tags and inserts inside block inserts, recursively, each insert's transform applied (position, rotation, x/y scale; a negative scale is applied as drawn) ----
   function expand(ents, blocks, skip) {
@@ -120,12 +121,16 @@
   function read(a) {
     const t0 = Date.now(), sid = sheetId(a.sheet), sheet = sid.number, V = a.variant || {}, ents0 = a.entities || [], k = a.unitM || 0.001, reach = a.tagReachM || 2.0, res = { sheet: { sheet, revision: sid.revision }, rows: [] };
     const fin = () => { const ms = Date.now() - t0, heap = (typeof performance !== 'undefined' && performance.memory) ? performance.memory.usedJSHeapSize : (typeof process !== 'undefined' && process.memoryUsage ? process.memoryUsage().heapUsed : null); log('§MAINS-COST sheet=' + sheet + ' ms=' + ms + ' heap_mb=' + (heap == null ? 'n/a' : (heap / 1048576).toFixed(1))); return res; };
-    const rl = a.rules ? rulesFrom(a.rules) : { layerRows: a.layerRows, terminalWords: a.terminalWords };
+    const rl = a.rules ? rulesFrom(a.rules) : { layerRows: a.layerRows, terminalWords: a.terminalWords, equip: null, heightRule: null }, EQ = rl.equip;
+    res.equipment_height_rule = rl.heightRule || null;   // a data row (code default), exposed as held; the reader gives no z: it has no floor plane, placing at height is the walk's job
     // nested content: grid lines, tags and run layers may sit inside block inserts (amendment 1). Fitting-layer inserts keep their block as the box, not as content.
     const fitRx = (rl.layerRows || []).reduce((l, r) => l.concat([matcher(r.fitting), matcher(r.grid_tag)]), []); let nestedN = 0, ents = ents0, missingBlocks = [];   // fitting inserts keep their block as the box; a grid bubble is not content
     if (!V.topLevelOnly) { const ex = expand(ents0, a.blocks, e => fitRx.some(m => m(e.layer))); ents = ex.ents; nestedN = ex.nested; missingBlocks = ex.missing; }
     // layers by data row (§4.1)
-    const rowsDef = (rl.layerRows || []).filter(r => ents.some(e => matcher(r.centreline)(e.layer)))[0];
+    const runsDef = (rl.layerRows || []).filter(r => ents.some(e => matcher(r.centreline)(e.layer)))[0];
+    // equipment is its own role (§10): top-level INSERTs only (the layer-0 linked model is background), independent of the centreline role
+    const eqIns = EQ ? ents0.filter(e => e.type === 'INSERT' && e.position && EQ.layers.some(m => m(e.layer))) : [];
+    const rowsDef = runsDef || (eqIns.length ? ((rl.layerRows || []).filter(r => r.grid_line)[0] || {}) : null);   // equipment-only sheet: the grid patterns come from any row that holds them
     if (!rowsDef) { res.sheet.inconclusive = 'no centreline layer'; log('§MAINS-INCONCLUSIVE sheet=' + sheet + ' reason=no centreline layer'); return fin(); }
     const isC = matcher(rowsDef.centreline), isO = matcher(rowsDef.outline), isF = e => e.type === 'INSERT' && (!rowsDef.fitting_entity || rowsDef.fitting_entity === 'INSERT') && matcher(rowsDef.fitting)(e.layer), isTm = matcher(rowsDef.terminal);
     // frame (§4.2, §4.2a)
@@ -183,16 +188,39 @@
     let len = 0, wlen = 0; const clen = {};
     pieces.forEach((p, i) => { const L = Math.hypot(p.s[2] - p.s[0], p.s[3] - p.s[1]), a0 = toB(p.s[0], p.s[1]), a1 = toB(p.s[2], p.s[3]); len += L; clen[comp[i]] = (clen[comp[i]] || 0) + L; if (width[i] != null) wlen += L;
       res.rows.push({ sheet, piece: i + 1, x0: a0[0], y0: a0[1], x1: a1[0], y1: a1[1], component: comp[i], system: sysOf(comp[i]), width_drawn_mm: width[i], provenance: 'position=drawn;width=' + (width[i] == null ? 'none' : 'drawn') + ';system=derived;height=none' }); });
+    // equipment (§10): point items at their drawn spots, building coordinates through the same fit; no z (no height is stated)
+    let eqStacked = 0, eqUnknown = 0, eqMirrored = 0; const eqBy = {}, eqUnk = {}; res.equipment = [];
+    if (eqIns.length) {
+      let gx0 = ex0, gy0 = ey0, gx1 = ex1, gy1 = ey1; const isGL = matcher(rowsDef.grid_line); ents.forEach(e => { if (isGL(e.layer)) segsOf(e, k).forEach(s => { gx0 = Math.min(gx0, s[0], s[2]); gx1 = Math.max(gx1, s[0], s[2]); gy0 = Math.min(gy0, s[1], s[3]); gy1 = Math.max(gy1, s[1], s[3]); }); });
+      const inX = (x, y) => x >= gx0 - JOIN_M && x <= gx1 + JOIN_M && y >= gy0 - JOIN_M && y <= gy1 + JOIN_M, kept = [];
+      eqIns.forEach(e => {
+        const nm = String(e.name || ''), hit = EQ.kinds.filter(q => q.rx.test(nm)), kinds = Array.from(new Set(hit.map(q => q.kind)));
+        if (kinds.length !== 1) { eqUnknown++; eqUnk[nm] = (eqUnk[nm] || 0) + 1; return; }   // no word, or two kinds: not placed
+        const q = hit[0]; let x = e.position.x * k, y = e.position.y * k;
+        if (!V.noMirrorFix && !inX(x, y) && inX(-x, y)) { x = -x; eqMirrored++; }
+        if (!V.noCollapse && kept.some(o => o.kind === q.kind && o.block === nm && Math.hypot(o.sx - x, o.sy - y) <= 0.010)) { eqStacked++; return; }
+        const b = toB(x, y); kept.push({ kind: q.kind, block: nm, sx: x, sy: y });
+        res.equipment.push({ sheet, item: res.equipment.length + 1, kind: q.kind, block: nm, x: b[0], y: b[1], z: null, ifc_class: q.ifc_class, predefined: q.predefined, object_type: q.object_type, provenance: 'drawn', fit_median_mm: best.medMm, fit_tags: best.n, grid_guid: best.gid });
+        eqBy[q.kind] = (eqBy[q.kind] || 0) + 1;
+      });
+    }
     const over5 = Object.keys(clen).filter(c => clen[c] > OVER_M).length, share = len ? wlen / len : 0;
     res.sheet = { sheet, revision: sid.revision, nested: nestedN, fittings_unjoined: unjoined, fittings_unjoined_nomirror: unjoinedRaw, fit_rot_deg: best.rot * 180 / Math.PI, fit_dx: best.tx, fit_dy: best.ty, fit_median_mm: best.medMm, fit_tags: best.n, grid_guid: best.gid, pieces: N, length_m: len, components: nc, over5m: over5, width_share: share, terminals: terms.length, no_run: noRun, mirrored, refused: null, emptyBoxes, fittings, missingBlocks: missingBlocks.length };
+    if (!runsDef) { res.sheet.inconclusive = 'no centreline layer'; log('§MAINS-INCONCLUSIVE sheet=' + sheet + ' reason=no centreline layer (runs only; equipment read)'); } else
     log('§MAINS-READ sheet=' + sheet + ' fit=rot:' + f3(res.sheet.fit_rot_deg) + 'deg,dx:' + f3(best.tx) + 'm,dy:' + f3(best.ty) + 'm,med:' + f3(best.medMm) + 'mm,tags:' + best.n + ',grid:' + best.gid + ' pieces=' + N + ' length=' + f3(len) + 'm components=' + nc + ' over5m=' + over5 + ' width_share=' + f3(share) + ' terminals=' + terms.length + ' no_run=' + noRun + ' mirrored=' + mirrored + ' fittings=' + fittings + ' fittings_unjoined=' + unjoined + ' fittings_unjoined_nomirror=' + unjoinedRaw + ' missingBlocks=' + missingBlocks.length);
-    log('§MAINS-MIRROR sheet=' + sheet + ' fired=' + (mirrored ? 'yes' : 'no') + ' n=' + mirrored + ' of fittings=' + fittings + ' extents=' + (N ? f3(ex0) + ',' + f3(ey0) + ',' + f3(ex1) + ',' + f3(ey1) : 'none'));
+    if (runsDef) log('§MAINS-MIRROR sheet=' + sheet + ' fired=' + (mirrored ? 'yes' : 'no') + ' n=' + mirrored + ' of fittings=' + fittings + ' extents=' + (N ? f3(ex0) + ',' + f3(ey0) + ',' + f3(ex1) + ',' + f3(ey1) : 'none'));
+    if (eqIns.length) {
+      res.sheet.equipment = res.equipment.length; res.sheet.equip_stacked = eqStacked; res.sheet.equip_unknown_kind = eqUnknown; res.sheet.equip_mirrored = eqMirrored;
+      log('§MAINS-MIRROR sheet=' + sheet + ' role=equipment fired=' + (eqMirrored ? 'yes' : 'no') + ' n=' + eqMirrored + ' of inserts=' + eqIns.length);
+      Object.keys(eqUnk).forEach(n => log('§MAINS-EQUIP-UNKNOWN sheet=' + sheet + ' block=' + n + ' n=' + eqUnk[n] + ' not placed'));
+      log('§MAINS-EQUIP sheet=' + sheet + ' fit=rot:' + f3(res.sheet.fit_rot_deg) + 'deg,dx:' + f3(best.tx) + 'm,dy:' + f3(best.ty) + 'm,med:' + f3(best.medMm) + 'mm,tags:' + best.n + ',grid:' + best.gid + ' items=' + res.equipment.length + ' stacked=' + eqStacked + ' unknownKind=' + eqUnknown + ' byKind=' + JSON.stringify(eqBy) + ' mirrored=' + eqMirrored + ' missingBlocks=' + missingBlocks.length + ' height=none (not stated)');
+    }
     if (missingBlocks.length) log('§MAINS-MISSING-BLOCKS sheet=' + sheet + ' n=' + missingBlocks.length + ' names=' + missingBlocks.join(','));
     return fin();
     function refuse(why) { res.sheet = { sheet, revision: sid.revision, refused: why }; log('§MAINS-REFUSE sheet=' + sheet + ' reason=' + why); return fin(); }
   }
 
-  // ---- record (§4.3, §5): sql.js-style db.run. Only these two tables are written; re-reading a sheet replaces its rows. ----
+  // ---- record (§4.3, §5): sql.js-style db.run. Only these three tables are written (drawn_route, drawn_route_sheet, drawn_equipment); re-reading a sheet replaces its rows. ----
   function write(db, result) {
     db.run('CREATE TABLE IF NOT EXISTS drawn_route(sheet TEXT, piece INTEGER, x0 REAL, y0 REAL, x1 REAL, y1 REAL, component INTEGER, system TEXT, width_drawn_mm REAL, provenance TEXT)');
     db.run('CREATE TABLE IF NOT EXISTS drawn_route_sheet(sheet TEXT, sheet_number TEXT, revision TEXT, fit_rot_deg REAL, fit_dx REAL, fit_dy REAL, fit_median_mm REAL, fit_tags INTEGER, grid_guid TEXT, pieces INTEGER, length_m REAL, components INTEGER, over5m INTEGER, width_share REAL, terminals INTEGER, no_run INTEGER, mirrored INTEGER, refused TEXT)');
@@ -200,6 +228,11 @@
     // the key is sheet number + revision, not the file name: a newer or same revision replaces, an older one is refused and the held rows stay
     const held = (db.exec('SELECT revision FROM drawn_route_sheet WHERE sheet_number=?', [s.sheet])[0] || { values: [] }).values;
     if (held.length && cmpRev(s.revision, held[0][0]) < 0) { s.writeRefused = 'older revision held (' + held[0][0] + ' > ' + (s.revision == null ? '' : s.revision) + ')'; log('§MAINS-REFUSE sheet=' + s.sheet + ' reason=' + s.writeRefused); return 0; }
+    // drawn_equipment is created only when equipment exists (a mains-only database keeps exactly the two route tables)
+    const eqRows = s.refused ? [] : (result.equipment || []), eqHeld = (db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='drawn_equipment'")[0] || { values: [] }).values.length > 0;
+    if (eqRows.length && !eqHeld) db.run('CREATE TABLE drawn_equipment(sheet TEXT, item INTEGER, kind TEXT, block TEXT, x REAL, y REAL, ifc_class TEXT, predefined TEXT, object_type TEXT, provenance TEXT)');
+    if (eqRows.length || eqHeld) db.run('DELETE FROM drawn_equipment WHERE sheet=?', [s.sheet]);
+    eqRows.forEach(q => db.run('INSERT INTO drawn_equipment VALUES(?,?,?,?,?,?,?,?,?,?)', [q.sheet, q.item, q.kind, q.block, q.x, q.y, q.ifc_class, q.predefined, q.object_type, q.provenance]));   // equipment is its own role: a runs-INCONCLUSIVE sheet still keeps its equipment
     db.run('DELETE FROM drawn_route WHERE sheet=?', [s.sheet]); db.run('DELETE FROM drawn_route_sheet WHERE sheet_number=?', [s.sheet]);
     const why = s.refused || (s.inconclusive ? 'inconclusive: ' + s.inconclusive : null), v = f => (why ? null : f);
     db.run('INSERT INTO drawn_route_sheet VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)', [s.sheet, s.sheet, s.revision || '', v(s.fit_rot_deg), v(s.fit_dx), v(s.fit_dy), v(s.fit_median_mm), v(s.fit_tags), v(s.grid_guid), v(s.pieces), v(s.length_m), v(s.components), v(s.over5m), v(s.width_share), v(s.terminals), v(s.no_run), v(s.mirrored), why]);

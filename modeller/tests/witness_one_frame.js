@@ -114,7 +114,7 @@ function sweep(far, local, offset, shift, cols, label) {
 (async () => {
   const SQL = await initSqlJs(), api = new WebIFC.IfcAPI(); await api.Init();
   const enc = f => new Uint8Array(fs.readFileSync(f));
-  const bt = baseTree(process.env.BASE || 'origin/main');
+  const bt = baseTree(process.env.BASE || 'fbe06d64');
   say('§ONE_FRAME code under test ' + ROOT + '; base tree ' + (bt.dir || 'UNAVAILABLE ' + bt.err));
   const farF = farCopy(PUB, FAR[0], FAR[1]); say(farF.log);
   const farZ = farCopy(PUB, FAR[0], FAR[1], { dz: FARZ }); say(farZ.log);
