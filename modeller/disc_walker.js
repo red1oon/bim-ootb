@@ -2847,8 +2847,14 @@
     if (!rr) return ex;
     if (ex.state === 'nofloor' && X.roofEls && X.roofEls.length) { var e2 = _exposedFloorFirst(bdb, geoDb, X.str || [], X.roofEls, set, x, y, X.boxOnly); if (e2.state !== 'nofloor') ex = e2; }   // an IfcRoof element is a surface too, searched only where no slab holds the point
     if (ex.state === 'none') {
-      var by = _roofBy(bdb, ex.floor.h, rr);
-      if (by) { ex.state = 'roof'; ex.surf = { g: ex.floor.h.g, c: ex.floor.h.c, by: by, top: ex.floor.top, storey: ex.floor.storey }; } else ex.notRoof = true;
+      // §11a: the roof SURFACE is the highest roof-classified element (any discipline, slab or IfcRoof) whose outline holds the point and whose top is at or above the found floor's top (0.02 m): the build-up sits on the structural deck.
+      var best = null, bestBy = null, ft = ex.floor.top - 0.02;
+      (X.slabs || []).concat(X.roofEls || []).forEach(function (h) {
+        if (h.top < ft || (best && h.top <= best.top)) return;
+        var by = _roofBy(bdb, h, rr); if (!by || !_hostHoldsPoint(bdb, h, geoDb, x, y, X.boxOnly)) return;
+        best = h; bestBy = by;
+      });
+      if (best) { ex.state = 'roof'; ex.surf = { g: best.g, c: best.c, by: bestBy, top: best.top, storey: ex.floor.storey, deck: best.g !== ex.floor.h.g }; } else ex.notRoof = true;
     }
     return ex;
   }
