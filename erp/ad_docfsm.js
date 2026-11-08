@@ -283,6 +283,8 @@
       // no block (M_Requisition / S_TimeExpense / M_ProjectIssue / the FA tail) = generic-only:
       // getValidActions falls through, completed docs offer just the :1050-1053 Close.
     }
+    // a plugin family may NARROW the offered set per status (fam.allow = { DR: ['PR','CO'], ... }): its DocAction class implements only those arms, so the others are never offered (XL, the lock release, stays)
+    if (fam.allow) { var al = fam.allow[s] || []; a = a.filter(function (x) { return x === 'XL' || al.indexOf(x) >= 0; }); }
     return a;
   }
 
