@@ -253,7 +253,7 @@
 // v1700 (2026-11-08) §IFC-GRID (DISC_WALK_DRAWN_MAINS §4.2a): the import keeps the IFC's stated IfcGrid axes (ifc_grid_axis; common/ifc_grid_read.js, import_worker.js?v=20, import_db_builder.js?v=12, import.js?v=15)
 // v1701 (2026-11-08) §ONE-FRAME: import_worker.js?v=21 takes its rebase rule + site facts from ../common/georef_frame.js (shared with the Modeller open route); import behaviour unchanged (prompts/MODELLER_ONE_FRAME.md §2)
 // v1702 (2026-11-08) §ONE-FRAME §2a: both IFC routes pass the SAME rows to the georef pin (GeorefFrame.pinInput); import_worker.js?v=22, import.js?v=16
-const CACHE_VERSION = 'v1702';
+const CACHE_VERSION = 'v1703';
 // v1637 (rebase of PR #1191/#1196) §CLASS_UNMATCHED_INHERITED + §EXACT_LOOKUP_BLINDSPOT: rates/ifc_schema_hierarchy.json added to PRECACHE_ASSETS; schedule_author.js/proj_fold.js/boq_charts.html/schedule_read_4d.js/tm_sched_xray.js classify via the schema hierarchy.
 // v1636 (rebase of PR #1317) §ARCH_AREA_WEIGHT/§VOL_WEIGHT/§FOOTING_M3: schedule_author.js, time_machine parts, rates.js and rates/*.json changed install DURATIONS (area/volume weighting, IfcFooting priced M3); all precached cache-first, so a client holding the old cache would keep the flat times forever.
 // v1635 (rebase of PR #676, BCF half only) §BCF_EXPORT: bcf_export.js added to PRECACHE_ASSETS; viewer.html loads it + Export BCF button in the Issues toolbar; main.js wires setupBcfExport/exportIssuesBcf. The Open-button IFC half of #676 was superseded by main's A._openIfcFiles.
@@ -1089,7 +1089,7 @@ const PRECACHE_ASSETS = [
   'cpe_day_counter.js','cpe_path_overview.js','cpe_resource_panel.js','cpe_storey_reveal.js','cpe_flythru_dims.js',
   'cpe_flythru_cues.js','cpe_flythru_datum.js','sun_path.js','cpe_sun_compass.js','lp_chain.js','lp_geom_pick.js','lp_build.js','lp_backdrop_diag.js','lp_apply_restore.js','lp_hud.js','cpe_load_path.js','road_check.js','earthworks_volume.js','cpe_road_panels.js','civil_sections.js','wing_2d.js','dxf_sheet_view.js','cpe_freeze_perf.js',
   'cpe_ledger_ticker.js','cpe_slab_beat.js','cpe_linear_beat.js','cpe_indoor_beats.js','cpe_flyout_beats.js',
-  'cpe_film_boxes.js','../common/flythru_maths.js','../common/storey_raster.js','cpe_escape_route.js',
+  'cpe_film_boxes.js','../common/flythru_maths.js','../common/storey_raster.js','cpe_escape_route.js','cpe_drawn_services.js',
   'tour.js',
   'clash_matrix.js',
   'clash_narrow.js',

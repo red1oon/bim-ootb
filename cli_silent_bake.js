@@ -32,6 +32,7 @@
 //     [--cost] [--no-cost]                              §129.5 running cost/hours figure, a row of the SAME
 //                                                       pie-chart HUD, directly above Ledger — same --label/--4d5d
 //                                                       fold as Ledger, not --measure (§129.6 item 6b)
+//     [--drawn-services] [--no-drawn-services]         §DRAWN-FILM: the drawn ducts as lines + labelled equipment markers, walked/borrowed meshes hidden
 //     [--escape-route] [--no-escape-route]            §ESCAPE_ROUTE_REVEAL: during the closing orbit the
 //                                                       worst-case room shines through and an orange dotted
 //                                                       line traces its REAL computed route to the exit,
@@ -215,6 +216,9 @@ const _fEscapeRoute = triState('escape-route', 'no-escape-route');
 // It draws nothing at all on a building whose DB has no site latitude/longitude, and the bake log
 // says §SUN_COMPASS INCONCLUSIVE with the reason — read the log, do not infer from the video.
 const _fSunCompass = triState('sun-compass', 'no-sun-compass');
+// §DRAWN-FILM (prompts/DRAWN_SERVICES_FILM.md §4): the services the drawings state (lines + labelled markers from the exported drawn_walk_* tables) and the drawn-only view
+// (walked/borrowed meshes hidden). Same tri-state; absent = off. Draws nothing, with no error, on a DB that has no drawn tables.
+const _fDrawnServices = triState('drawn-services', 'no-drawn-services');
 // §FREEZE_PERF_PANEL (bim-compiler PERFORMANCE_AS_CLASH.md §19) — Audio / Visual panels in the load-path freeze; draw only with --load-path.
 const _fVisualPanel = triState('visual-panel', 'no-visual-panel');
 const _fAudioPanel = triState('audio-panel', 'no-audio-panel');
@@ -230,6 +234,7 @@ if (_fLedger !== undefined) FLAGS.ledger = _fLedger;
 if (_fCost !== undefined) FLAGS.cost = _fCost;
 if (_fEscapeRoute !== undefined) FLAGS.escapeRoute = _fEscapeRoute;
 if (_fSunCompass !== undefined) FLAGS.sunCompass = _fSunCompass;
+if (_fDrawnServices !== undefined) FLAGS.drawnServices = _fDrawnServices;
 if (_fVisualPanel !== undefined) FLAGS.visualPanel = _fVisualPanel;
 if (_fAudioPanel !== undefined) FLAGS.audioPanel = _fAudioPanel;
 // §CPE_CHECKBOX_SAVE: an explicit --bounce overrides the saved Bounce-light box; absent = the stored path decides.

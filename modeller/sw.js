@@ -21,7 +21,7 @@
 // v247 (2026-11-08) §ONE-FRAME §2a: ifc_extract_core.js + georef_frame.js pass the pin ONE input (GeorefFrame.pinInput)
 // v248 (2026-11-08) §DRAWN-WALK: drawn services enter the walk: disc_walker.js?v=16 (drawn runs, heights, terminals), modeller.html (line ops + lines), bonsai_ifc.js?v=8 (HeightBasis in the walk set), ifc_extract_core.js (federation merge, HeightBasis read) (prompts/DISC_WALK_DRAWN_INTEGRATION.md)
 // v252 (2026-11-08) point items (terminals, equipment) take their position from the transformed block geometry, not the INSERT point (drawn_mains.js insertCentre)
-const CACHE_VERSION = 'v252';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v253';   // bump on each deploy; per-change detail is the git commit message.
 const CACHE_PREFIX = 'bim-modeller-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 

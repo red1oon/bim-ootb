@@ -137,6 +137,7 @@
   "setupClashSnag": "readonly",
   "setupConfig": "readonly",
   "setupCpeDayCounter": "readonly",
+  "setupCpeDrawnServices": "readonly",
   "setupCpeFlythruCues": "readonly",
   "setupCpeFlythruDatum": "readonly",
   "setupCpeSunCompass": "readonly",
