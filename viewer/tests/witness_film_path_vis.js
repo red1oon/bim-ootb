@@ -12,6 +12,8 @@
 //   FV3 the verb's camera is not the film's       — the flown track passes every stored band centre ≤ 0.05 m
 //                                                   (the bake's own bandAnchorMinDistM) and the derived plan does not (≥ 1 m)
 //   FV4 vacuous reads as a result                 — the drawn tables dropped → INCONCLUSIVE, never SEES/BLIND
+//   FV6 a thin band reads as judged             — --samples 20 resamples until every band has ≥ 20 (min off: stays thin)
+//   FV7 the interior count is not what it says  — the `bands` union = per-band indices recomputed, off-path excluded
 //   FV5 the verb writes                           — the DB's sha256 is unchanged by a run
 //   FV-RED falsifier                              — FPV_BREAK=1 (frustum test always true) must fail FV2
 // Run: node viewer/tests/witness_film_path_vis.js   (SwiftShader, CPU only; no GPU, no bake). Exit 0 = pass.
@@ -43,8 +45,8 @@ function fixture(dir, name, { reverse = false, drawn = true, spin = 0 } = {}) {
     INSERT INTO drawn_walk_marker VALUES ('FIX','m1','equipment', 2,-3.5,1.2,'owner-stated','fixture','IfcFireSuppressionTerminal',NULL);`);
   return db;
 }
-function verb(db, env) {
-  const r = spawnSync('node', [VERB, '--db', db, '--json'], { encoding: 'utf8', env: { ...process.env, ...(env || {}) }, timeout: 600000 });
+function verb(db, env, extra) {
+  const r = spawnSync('node', [VERB, '--db', db, '--json', ...(extra || [])], { encoding: 'utf8', env: { ...process.env, ...(env || {}) }, timeout: 600000 });
   let j = null; try { j = JSON.parse(r.stdout); } catch (e) { /* reported below */ }
   if (j) for (const l of j.log) console.log('  ' + l);
   else console.log('  verb exit=' + r.status + ' stderr=' + (r.stderr || '').slice(0, 300));
@@ -69,6 +71,17 @@ try {
   const anc = (A && A.anchorMinDistM) || [], der = (A && A.derivedAnchorMinDistM) || [];
   ok('FV3', anc.length === 2 && anc.every(d => d <= 0.05) && der.length === 2 && der.some(d => d >= 1),
     `flown bandAnchorMinDistM=[${anc}] (≤ 0.05) derived-plan=[${der}] (some ≥ 1: the stored path, not the derived one)`);
+  // FV7 (the interior count is not what it says): the `bands` union = the union of per-band row indices, off-path excluded
+  { const bl = new Set(), bm = new Set(); for (const b of (A && A.per) || []) if (b.band !== 'off-path') { b.lineIdx.forEach(x => bl.add(x)); b.markerIdx.forEach(x => bm.add(x)); }
+    ok('FV7', !!A && A.bandLines === bl.size && A.bandMarkers === bm.size && A.log.some(l => /§FILM-PATH-VIS bands linesInView=/.test(l)),
+      `bands union printed lines=${A && A.bandLines} markers=${A && A.bandMarkers}, recomputed lines=${bl.size} markers=${bm.size}`); }
+  // FV6 (a thin band reads as judged): --samples 20 must resample until every band has ≥ 20; with the minimum off the same run stays thin
+  console.log('§W-FILM-PATH-VIS run thin: --samples 20');
+  const T1 = verb(dbA, null, ['--samples', '20']), T0 = verb(dbA, null, ['--samples', '20', '--min-band-samples', '0']);
+  const bandCounts = j => [0, 1].map(i => band(j, String(i)).samples);
+  const c1 = bandCounts(T1), c0 = bandCounts(T0);
+  ok('FV6', !!T1 && !!T0 && c1.every(c => c >= 20) && T1.log.some(l => /§FILM-PATH-VIS resample from=20 /.test(l)) && c0.some(c => c < 20),
+    `min 20: band samples=[${c1}] samplesUsed=${T1 && T1.samplesUsed} (expect all ≥ 20, resample line printed); min 0: band samples=[${c0}] (expect some < 20)`);
   ok('FV5', sha(dbA) === hA, `DB sha256 unchanged after the run (${hA.slice(0, 12)}…)`);
   console.log('§W-FILM-PATH-VIS run reversed');
   const B = verb(dbB), r0 = band(B, '0');

@@ -13,7 +13,7 @@
 //        NOT applied: the bake-only §57.5 gaze blend (A._bakeCameraPoseAt, ±1.5 frames).
 // Rules F1-F4 in the spec. byStorey = n/a: the drawn tables state no storey (DRAWN_SERVICES_FILM.md §2).
 // The sheet column is never printed.
-// Run: node viewer/tools/film_path_vis.js --db <viewer.db> [--path override.json] [--samples 240]
+// Run: node viewer/tools/film_path_vis.js --db <viewer.db> [--path override.json] [--samples 240] [--min-band-samples 20]
 //        [--width 1280 --height 720] [--json] [--log file] [--poses]
 'use strict';
 const fs = require('fs'), path = require('path'), http = require('http'), os = require('os');
@@ -33,7 +33,9 @@ const LINE_PTS = 9;       // F2
 async function run(o) {
   const dbFile = path.resolve(o.db);
   if (!fs.existsSync(dbFile)) throw new Error('no such DB: ' + dbFile);
-  const W = +o.width || 1280, H = +o.height || 720, N = Math.max(2, +o.samples || 240);
+  const W = +o.width || 1280, H = +o.height || 720, N0 = Math.max(2, +o.samples || 240);
+  const MINB = o.minBandSamples != null && o.minBandSamples !== '' ? Math.max(0, +o.minBandSamples) : 20;   // F5
+  const NCAP = 24000;
   const override = o.path ? JSON.parse(fs.readFileSync(path.resolve(o.path), 'utf8')) : null;
   const logLines = [];
   const log = s => { logLines.push(s); if (!o.quiet) console.log(s); };
@@ -63,14 +65,14 @@ async function run(o) {
     page.on('pageerror', e => pageErrors.push(String(e && e.message || e).slice(0, 200)));
     page.on('console', m => { const t = m.text(); if (o.pageLog) o.pageLog.push(t); });
     const url = `http://127.0.0.1:${port}/viewer/viewer.html?db=/__fpv/model.db`;
-    log(`§FILM-PATH-VIS env db=${path.basename(dbFile)} gl=swiftshader viewport=${W}x${H} samples=${N} path=${override ? 'file' : 'db:cinema_path'}`);
+    log(`§FILM-PATH-VIS env db=${path.basename(dbFile)} gl=swiftshader viewport=${W}x${H} samples=${N0} minBandSamples=${MINB} path=${override ? 'file' : 'db:cinema_path'}`);
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 120000 });
     await page.waitForFunction(() => window.APP && window.APP.camera && typeof window.APP.cinemaPathPlan === 'function' && window.THREE,
       { timeout: 300000, polling: 500 });
     await page.waitForFunction(() => window.APP.activeBuilding && window.APP.db && window.APP.buildingsRendered &&
       window.APP.buildingsRendered.has(window.APP.activeBuilding) && !window.APP.streaming, { timeout: 600000, polling: 1000 });
 
-    const R = await page.evaluate((opt) => {
+    const evalFn = (opt) => {
       const A = window.APP, T = window.THREE;
       const has = n => (A.dbQuery("SELECT name FROM sqlite_master WHERE type='table' AND name=?", [n]) || []).length > 0;
       const lines = has('drawn_walk_line') ? A.dbQuery('SELECT rowid,x0,y0,z0,x1,y1,z1,system,basis FROM drawn_walk_line ORDER BY rowid') : [];
@@ -148,7 +150,20 @@ async function run(o) {
       const anyL = new Set(), anyM = new Set(); for (const B of buckets.values()) { B.lines.forEach(x => anyL.add(x)); B.markers.forEach(x => anyM.add(x)); }
       return { src, dur: +dur.toFixed(3), bands: ov.bands.length, nLines: lines.length, nMarkers: markers.length, fov: A.camera.fov, near: A.camera.near, far: A.camera.far,
         per: out, totalLines: anyL.size, totalMarkers: anyM.size, anchorMinDistM: anchorMin(plan), derivedAnchorMinDistM: derivedAnchor, poses };
-    }, { override, N, W, H, tol: BAND_TOL_M, linePts: LINE_PTS, poses: !!o.poses, brk: process.env.FPV_BREAK === '1' });
+    };
+    const pass = n => page.evaluate(evalFn, { override, N: n, W, H, tol: BAND_TOL_M, linePts: LINE_PTS, poses: !!o.poses, brk: process.env.FPV_BREAK === '1' });
+    // F5: every band gets at least MINB samples — repeat at N × ⌈MINB ÷ fewest⌉ until it does or the cap is hit
+    let N = N0, R = await pass(N);
+    const bandMin = r => { const b = (r.per || []).filter(x => x.band !== 'off-path'); const seen = new Set(b.map(x => +x.band));
+      let k = -1, n = Infinity; for (let i = 0; i < (r.bands || 0); i++) { const c = seen.has(i) ? b.find(x => +x.band === i).samples : 0; if (c < n) { n = c; k = i; } } return { k, n }; };
+    for (let guard = 0; !R.noPath && MINB > 0 && guard < 6; guard++) {
+      const m = bandMin(R); if (m.n >= MINB || N >= NCAP) break;
+      const to = Math.min(NCAP, N * Math.ceil(MINB / Math.max(1, m.n)));
+      if (to <= N) break;
+      log(`§FILM-PATH-VIS resample from=${N} to=${to} reason=band ${m.k} had ${m.n} < ${MINB}`);
+      N = to; R = await pass(N);
+    }
+    R.samplesUsed = N;
 
     const J = JSON.stringify;
     let verdict;
@@ -159,13 +174,20 @@ async function run(o) {
       log(`§FILM-PATH-VIS plan src=${R.src} bands=${R.bands} durSec=${R.dur} fov=${R.fov} near=${R.near} far=${R.far} drawnLines=${R.nLines} drawnMarkers=${R.nMarkers}`);
       for (const b of R.per) log(`§FILM-PATH-VIS band=${b.band} samples=${b.samples} stillSamples=${b.still} linesInView=${b.lines}/${R.nLines} markersInView=${b.markers}/${R.nMarkers} whileMoving=${b.movingLines}+${b.movingMarkers} byBasis=${J(b.byBasis)} bySystem=${J(b.bySystem)} byStorey=n/a`);
       log(`§FILM-PATH-VIS anchors bandAnchorMinDistM=[${R.anchorMinDistM.join(',')}] derivedPlanAnchorMinDistM=[${(R.derivedAnchorMinDistM || []).join(',')}] (the bake's own posecheck measure)`);
+      // F6: union over the bands only (interior views), beside the any-sample total
+      const bl = new Set(), bm = new Set(); for (const b of R.per) if (b.band !== 'off-path') { b.lineIdx.forEach(x => bl.add(x)); b.markerIdx.forEach(x => bm.add(x)); }
+      R.bandLines = bl.size; R.bandMarkers = bm.size;
+      log(`§FILM-PATH-VIS bands linesInView=${bl.size}/${R.nLines} markersInView=${bm.size}/${R.nMarkers} (union over bands, off-path excluded)`);
       log(`§FILM-PATH-VIS total linesInView=${R.totalLines}/${R.nLines} markersInView=${R.totalMarkers}/${R.nMarkers} (distinct, any sample)`);
+      const thin = []; for (let i = 0; i < R.bands; i++) { const b = R.per.find(x => x.band === String(i)); const c = b ? b.samples : 0; if (MINB > 0 && c < MINB) thin.push(i + ':' + c); }
+      R.thin = thin;
+      for (const t of thin) log(`§FILM-PATH-VIS THIN band=${t.split(':')[0]} samples=${t.split(':')[1]} < ${MINB} at samples=${N} (cap ${NCAP}): a view between samples can be missed`);
       const onBand = R.per.filter(b => b.band !== 'off-path').reduce((s, b) => s + b.samples, 0);
       if (!R.nLines && !R.nMarkers) verdict = 'INCONCLUSIVE';
       else if (!onBand) verdict = 'INCONCLUSIVE';
       else verdict = (R.totalLines + R.totalMarkers) > 0 ? 'SEES' : 'BLIND';
       const why = !R.nLines && !R.nMarkers ? ' (this DB states no drawn services: nothing judged)' : !onBand ? ` (no sample within ${BAND_TOL_M} m of a band: nothing judged)` : '';
-      log(`§FILM-PATH-VIS verdict=${verdict}${why}`);
+      log(`§FILM-PATH-VIS verdict=${verdict}${why}${R.thin.length ? ` (${R.thin.length} THIN band${R.thin.length > 1 ? 's' : ''})` : ''} samplesUsed=${N}`);
     }
     log('§FILM-PATH-VIS not-checked: the bake-only §57.5 gaze blend (±1.5 frames); the findings-beat _cease3D hide; on-screen pixel size; storey (not stated in the drawn tables). Occlusion does not apply: the overlay is drawn depthTest:false.');
     if (pageErrors.length) log(`§FILM-PATH-VIS pageErrors=${pageErrors.length} first=${J(pageErrors[0])}`);
@@ -181,9 +203,9 @@ module.exports = { run };
 
 if (require.main === module) {
   const a = process.argv.slice(2), arg = (k, d) => { const i = a.indexOf('--' + k); return i >= 0 ? a[i + 1] : d; };
-  if (!arg('db')) { console.error('usage: node viewer/tools/film_path_vis.js --db <viewer.db> [--path override.json] [--samples 240] [--width 1280 --height 720] [--json] [--log f] [--poses]'); process.exit(2); }
+  if (!arg('db')) { console.error('usage: node viewer/tools/film_path_vis.js --db <viewer.db> [--path override.json] [--samples 240] [--min-band-samples 20] [--width 1280 --height 720] [--json] [--log f] [--poses]'); process.exit(2); }
   const quiet = a.includes('--json');
-  run({ db: arg('db'), path: arg('path'), samples: arg('samples'), width: arg('width'), height: arg('height'), poses: a.includes('--poses'), quiet })
+  run({ db: arg('db'), path: arg('path'), samples: arg('samples'), minBandSamples: arg('min-band-samples'), width: arg('width'), height: arg('height'), poses: a.includes('--poses'), quiet })
     .then(r => {
       if (arg('log')) fs.writeFileSync(arg('log'), r.log.join('\n') + '\n');
       if (quiet) process.stdout.write(JSON.stringify(r, null, 1) + '\n');
