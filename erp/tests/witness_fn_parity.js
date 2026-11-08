@@ -21,7 +21,11 @@ var log = function (s) { console.log(s); };
   var ML = require(path.join(ERP, 'model_layer.js')), MT = require(path.join(ERP, 'model_trade.js'));
   var lit = function (v, t) { return v === null ? 'NULL' : t === 's' ? "'" + String(v).replace(/'/g, "''") + "'" : t === 't' ? "'" + v + "'" : String(v); };
   var num = function (x) { return x != null && x !== '' && !isNaN(Number(x)); };
-  var byFn = {}, bad = [], total = 0;
+  var byFn = {}, bad = [], total = 0, stale = [];
+  // a case that reads the CLOCK (SYSDATE / now()) was answered by the pilot on the day the oracle was recorded; the twin answers
+  //   today. On another day that is not a twin difference, it is a stale oracle: reported, not judged (re-run fn_parity_legacy.js).
+  var ORACLE_DAY = String(L.date || '').slice(0, 10), TODAY = new Date().toISOString().slice(0, 10), STALE = ORACLE_DAY !== TODAY;
+  var clockDep = function (c) { return c.fn === '@sql' && (c.clock || /SYSDATE|now\(\)|CURRENT_(DATE|TIMESTAMP)|statement_timestamp/i.test(c.sql || '')); };
   L.scenarios.forEach(function (sc) {
     var db = new SQL.Database(), tn = 0, made = {};                                   // a FRESH scratch twin per scenario: the rows the pilot function read
     Object.keys(sc.tables).sort(function (a, b) { return (b[0] === '_') - (a[0] === '_'); }).forEach(function (t) {
@@ -35,6 +39,7 @@ var log = function (s) { console.log(s); };
     A.bind(function (sql, params) { var st = db.prepare(sql), out = []; try { if (params && params.length) st.bind(params); while (st.step()) { var o = st.getAsObject(), r = {}; for (var k in o) r[k.toLowerCase()] = o[k]; out.push(r); } } finally { st.free(); } return out; }, {});
     log('§FN_PARITY-SEED scenario=' + sc.name + ' legacy=' + path.basename(LEG) + ' date=' + L.date + ' scratchTables=' + tn + ' cases=' + sc.cases.length);
     sc.cases.forEach(function (c) {
+      if (STALE && clockDep(c)) { stale.push(sc.name + ':' + c.label); return; }
       total++;
       var twin, terr = null;
       try { var r = db.exec(c.fn === '@sql' ? A.convertSql(c.sql) : 'SELECT ' + c.fn + '(' + c.args.map(function (a, i) { return lit(a, c.types[i]); }).join(',') + ')'); twin = r[0] ? r[0].values[0][0] : null; } catch (e) { terr = String(e.message || e); }
@@ -69,6 +74,7 @@ var log = function (s) { console.log(s); };
     if (v === 'FAIL') worst = 1;
   });
   bad.slice(0, 40).forEach(function (s) { log('  §FN_PARITY-DIFF ' + s); });
-  log('§FN_PARITY summary functions=' + Object.keys(byFn).length + ' PASS=' + Object.keys(byFn).filter(function (f) { return !byFn[f].fail && byFn[f].informative; }).length + ' FAIL=' + Object.keys(byFn).filter(function (f) { return byFn[f].fail; }).length + ' INCONCLUSIVE=' + Object.keys(byFn).filter(function (f) { return !byFn[f].fail && !byFn[f].informative; }).length);
+  if (stale.length) log('§FN_PARITY-STALE oracle_day=' + ORACLE_DAY + ' today=' + TODAY + ' clock_cases_not_judged=' + stale.length + ' (re-run bim-compiler scripts/bridge/fn_parity_legacy.js to judge them) ' + JSON.stringify(stale.slice(0, 10)));
+  log('§FN_PARITY summary clock_cases_stale=' + stale.length + ' functions=' + Object.keys(byFn).length + ' PASS=' + Object.keys(byFn).filter(function (f) { return !byFn[f].fail && byFn[f].informative; }).length + ' FAIL=' + Object.keys(byFn).filter(function (f) { return byFn[f].fail; }).length + ' INCONCLUSIVE=' + Object.keys(byFn).filter(function (f) { return !byFn[f].fail && !byFn[f].informative; }).length);
   process.exit(worst);
 })().catch(function (e) { console.log('§FN_PARITY ERROR ' + (e.stack || e)); process.exit(2); });
