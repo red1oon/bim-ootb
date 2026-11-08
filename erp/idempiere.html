@@ -3738,11 +3738,12 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     if (pinfo) { pane.setAttribute('data-gform-from', (pinfo.tableName || '') + ':' + pinfo.recordId); console.log('§AD-FORM-GENERIC open class=' + cls + ' from window table=' + pinfo.tableName + ' record=' + pinfo.recordId + ' process=' + pinfo.processId + ' (ProcessInfo handed to the form, as ADForm.openForm)'); }
     pane.appendChild(el('h3', null, desc.title || row.name));
     pane.appendChild(el('div', 'sub', 'AD_Form ' + row.ad_form_id + ' · ' + cls + ' · generic form (described by its module, no host code)'));
-    var fields = el('div', 'fld'), ctl = {}, opts = {}, vals = {};
+    var fields = el('div', 'fld'), ctl = {}, opts = {}, vals = {}, fileVals = {};
     desc.params.forEach(function (p) {
       fields.appendChild(el('label', null, p.label + (p.mandatory ? ' *' : '')));
       var c;
       if (p.type === 'list') c = document.createElement('select');
+      else if (p.type === 'file') { c = document.createElement('input'); c.type = 'file'; if (p.multiple) c.multiple = true; if (p.accept) c.accept = p.accept; }   // G-a (FileName/FilePath editors)
       else { c = document.createElement('input'); c.type = p.type === 'date' ? 'date' : p.type === 'number' ? 'number' : p.type === 'yesno' ? 'checkbox' : 'text'; if (p.type === 'number') c.step = 'any'; }
       c.setAttribute('data-gform-param', p.name); ctl[p.name] = c; fields.appendChild(c);
     });
@@ -3755,8 +3756,19 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     closeBtn.addEventListener('click', function () {
       $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>'; status('Ready');
     });
+    // G-a: a file parameter's value = [{name, data}] read on change (.xlsx -> the vendored SheetJS workbook, .json -> parsed, else the bytes); the browser keeps the file local
+    function readFiles(p) {
+      var list = Array.prototype.slice.call(ctl[p.name].files || []);
+      var needX = list.some(function (f) { return /\.xlsx?$/i.test(f.name); });
+      var ready = needX && !window.XLSX ? loadScript('xlsx.mini.min.js?v=1') : Promise.resolve();
+      return ready.then(function () { return Promise.all(list.map(function (f) { return f.arrayBuffer().then(function (buf) {
+        var data = /\.xlsx?$/i.test(f.name) ? window.XLSX.read(new Uint8Array(buf), { type: 'array' }) : /\.json$/i.test(f.name) ? JSON.parse(new TextDecoder().decode(buf)) : buf;
+        return { name: f.name, size: f.size, data: data }; }); })); })
+        .then(function (vs) { fileVals[p.name] = vs; console.log('§AD-FORM-GENERIC file class=' + cls + ' param=' + p.name + ' files=' + JSON.stringify(vs.map(function (v) { return v.name + ':' + v.size; }))); });
+    }
     function readParam(p) {
       var c = ctl[p.name];
+      if (p.type === 'file') return fileVals[p.name] || null;
       if (p.type === 'list') { var o = (opts[p.name] || [])[c.selectedIndex]; return o ? o.value : null; }
       if (p.type === 'yesno') return c.checked ? 'Y' : 'N';
       if (p.type === 'number') return c.value === '' ? null : Number(c.value);
@@ -3766,6 +3778,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     function paint(p, v) {
       var c = ctl[p.name];
       if (p.type === 'list') { var os = opts[p.name] || [], i = 0; os.forEach(function (o, k) { if (String(o.value) === String(v)) i = k; }); c.selectedIndex = os.length ? i : -1; }
+      else if (p.type === 'file') return;   // a picked file stays picked
       else if (p.type === 'yesno') c.checked = v === 'Y' || v === true;
       else c.value = v == null ? '' : v;
     }
@@ -3784,18 +3797,22 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       });
     }
     function loadRows() {
-      var params = collect(), rows = AF.read(withT, function (trx) { return desc.rows(trx, params); }) || [];
+      var params = collect(), current = grid.querySelector('tr[data-gform-row]') ? collectRows() : null;   // G-d: the grid as it stands (selections + edited cells) survives a recompute
+      var rows = AF.read(withT, function (trx) { return desc.rows(trx, params, current); }) || [];
       grid.innerHTML = '';
       console.log('§AD-FORM-GENERIC rows class=' + cls + ' n=' + rows.length + ' params=' + JSON.stringify(params));
-      if (!rows.length) { grid.appendChild(el('div', 'sub', 'No component rows for this delivery rule.')); return; }
+      if (!rows.length) { grid.appendChild(el('div', 'sub', desc.emptyText || 'No component rows for this delivery rule.')); return; }
       var t = document.createElement('table'); t.className = 'idmp-grid'; var hr = document.createElement('tr');
       hr.appendChild(el('th', null, '')); desc.columns.forEach(function (c) { hr.appendChild(el('th', null, c.label)); }); t.appendChild(hr);
       rows.forEach(function (r) {
         var tr = document.createElement('tr'); tr.setAttribute('data-gform-row', String(r.key));
         var td0 = document.createElement('td'), cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = !!r.selected; cb.setAttribute('data-gform-sel', '1'); td0.appendChild(cb); tr.appendChild(td0);
+        if (r.locked) { cb.disabled = true; if (r.lockedBy) cb.title = r.lockedBy; tr.setAttribute('data-gform-locked', '1'); }   // G-c: a row the form will not let go of
         desc.columns.forEach(function (c) {
           var td = document.createElement('td');
-          if (c.editable) { var inp = document.createElement('input'); inp.type = 'number'; inp.step = 'any'; inp.value = r[c.key] == null ? '' : r[c.key]; inp.setAttribute('data-gform-cell', c.key); td.appendChild(inp); }
+          if (c.editable && !(c.type === 'string' && r[c.key] === undefined)) {   // G-b: a string column is a text cell; a row without that field shows nothing there
+            var inp = document.createElement('input'); if (c.type === 'string') inp.type = 'text'; else { inp.type = 'number'; inp.step = 'any'; }
+            inp.value = r[c.key] == null ? '' : r[c.key]; inp.setAttribute('data-gform-cell', c.key); if (c.type === 'string') inp.setAttribute('data-gform-cell-type', 'string'); td.appendChild(inp); }
           else td.textContent = r[c.key] == null ? '' : r[c.key];
           tr.appendChild(td);
         });
@@ -3807,13 +3824,15 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       var out = [];
       grid.querySelectorAll('tr[data-gform-row]').forEach(function (tr) {
         var r = { key: Number(tr.getAttribute('data-gform-row')), selected: tr.querySelector('[data-gform-sel]').checked };
-        tr.querySelectorAll('[data-gform-cell]').forEach(function (i) { r[i.getAttribute('data-gform-cell')] = i.value === '' ? null : Number(i.value); });
+        tr.querySelectorAll('[data-gform-cell]').forEach(function (i) { r[i.getAttribute('data-gform-cell')] = i.value === '' ? null : i.getAttribute('data-gform-cell-type') === 'string' ? i.value : Number(i.value); });
         out.push(r);
       });
       return out;
     }
     desc.params.forEach(function (p, i) {
-      ctl[p.name].addEventListener('change', function () { loadParams(i + 1); loadRows(); });
+      ctl[p.name].addEventListener('change', function () {
+        if (p.type === 'file') { readFiles(p).then(function () { loadParams(i + 1); loadRows(); }, function (e) { msg.className = 'msg err'; msg.textContent = 'Could not read the file: ' + (e && e.message || e); }); return; }
+        loadParams(i + 1); loadRows(); });
     });
     refBtn.addEventListener('click', function () { loadParams(0); loadRows(); });
     runBtn.addEventListener('click', function () {

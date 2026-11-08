@@ -13,7 +13,10 @@
 function setupCpeDrawnServices(A) {
   'use strict';
   var THREE = window.THREE, TAG = '§DRAWN', LINE_HEX = 0x00e5ff, MARK_HEX = 0xff5252;
-  var _objs = [], _on = false, _rec = null, _only = null;
+  var _objs = [], _on = false, _rec = null, _only = null, LAYER = 'drawn.services';
+  // §CEASE_SUBJECT (§7.1): every object this beat adds is registered as the film layer 'drawn.services', the NAMED subject layer the
+  // ending-orbit cease keeps. A.filmLayer is attached by maxq_start.js drawnServicesEnable before this file is set up; the tag is the contract.
+  function _add(o) { A.scene.add(o); _objs.push(o); if (A.filmLayer) A.filmLayer(LAYER, o); else { o.userData = o.userData || {}; o.userData.filmLayer = LAYER; } }
 
   function _hasTable(n) {
     try { var r = A.db.exec("SELECT 1 FROM sqlite_master WHERE type='table' AND name='" + n + "'"); return !!(r && r.length); } catch (e) { return false; }
@@ -39,6 +42,7 @@ function setupCpeDrawnServices(A) {
       if (o.geometry) o.geometry.dispose();
       if (o.material) { if (o.material.map) o.material.map.dispose(); o.material.dispose(); }
     });
+    if (A._filmLayers) A._filmLayers = A._filmLayers.filter(function (e) { return _objs.indexOf(e.obj) < 0; });   // disposed objects leave the registry
     _objs = []; _on = false;
   }
   function _build(d) {
@@ -52,15 +56,15 @@ function setupCpeDrawnServices(A) {
       var g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
       var ln = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: LINE_HEX, transparent: true, opacity: 0.95, depthTest: false }));
       ln.renderOrder = 1005; ln.name = 'drawnServicesLines'; ln.userData.drawnLines = nl;
-      A.scene.add(ln); _objs.push(ln);
+      _add(ln);
     }
     d.markers.forEach(function (r) {
       p = A.ifc2three(r.x, r.y, r.z);
       var m = new THREE.Mesh(new THREE.OctahedronGeometry(0.12), new THREE.MeshBasicMaterial({ color: MARK_HEX, depthTest: false, depthWrite: false }));
       m.position.set(p.x, p.y, p.z); m.renderOrder = 1005; m.name = 'drawnServicesMarker'; m.userData.drawnMarker = { sheet: r.sheet, item: r.item };
-      A.scene.add(m); _objs.push(m); nm++; byBasis[r.basis] = (byBasis[r.basis] || 0) + 1;
+      _add(m); nm++; byBasis[r.basis] = (byBasis[r.basis] || 0) + 1;
       var sp = _label(r.label || r.kind || ''); sp.position.set(p.x, p.y + 0.35, p.z); sp.name = 'drawnServicesLabel';
-      A.scene.add(sp); _objs.push(sp);
+      _add(sp);
     });
     return { lines: nl, markers: nm, byBasis: byBasis };
   }
@@ -88,11 +92,34 @@ function setupCpeDrawnServices(A) {
     var keep = new Set();
     all.forEach(function (r) { if (hide[r.guid]) { byClass[r.ifc_class] = (byClass[r.ifc_class] || 0) + 1; n++; } else keep.add(r.guid); });
     if (!_only) _only = { prev: A.activeGuidFilter || null };
+    _only.hide = new Set(Object.keys(hide));   // §7.3: the frame witness reads it
     A.filterByGuids(keep);
     var ov = _rec ? _rec.lines + _rec.markers : 0;
     console.log(TAG + '-ONLY hidden=' + JSON.stringify(byClass) + ' hiddenTotal=' + n + ' shown=' + keep.size + ' overlay=' + ov + ' elements=' + all.length +
       (n ? '' : ' VACUOUS (no BIMOOTB_Walk rows: nothing was hidden, nothing is proven)'));
     return { hidden: byClass, hiddenTotal: n, shown: keep.size, overlay: ov, elements: all.length };
+  };
+  // §DRAWN-OVERLAY-FRAME (§7.3): what ONE frame shows, read from scene state (no re-derivation). visible = overlay objects visible with every
+  // ancestor; hiddenGuidVisible = drawn-only hidden elements whose slot is visible (single mesh + ancestors, batched getVisibleAt, instanced
+  // non-zero matrix: the __tmSnapshotVisible reads). Returns the log line, or null when the overlay is off.
+  var _fm4 = null;
+  function _chainVisible(o) { for (var p = o; p; p = p.parent) if (!p.visible) return false; return true; }
+  A.drawnServicesFrame = function (i) {
+    if (!_on) return null;
+    var v = 0; _objs.forEach(function (o) { if (o.parent && _chainVisible(o)) v++; });
+    var H = _only && _only.hide, hv = 0, hn = H ? H.size : 0;
+    if (H && hn) {
+      if (!_fm4) _fm4 = new THREE.Matrix4();
+      A.scene.traverse(function (o) {
+        if (!o.userData) return;
+        if (o.userData.guid !== undefined) { if (H.has(o.userData.guid) && _chainVisible(o)) hv++; return; }
+        if (o.isBatchedMesh && A._batchMeta && A._batchMeta[o.id]) { if (!_chainVisible(o)) return;
+          A._batchMeta[o.id].forEach(function (b) { if (H.has(b.guid) && (o.getVisibleAt ? o.getVisibleAt(b.slotId) : true)) hv++; }); return; }
+        if (o.isInstancedMesh && A._instanceMeta && A._instanceMeta[o.id]) { if (!_chainVisible(o)) return;
+          A._instanceMeta[o.id].forEach(function (m, k) { if (!H.has(m.guid)) return; o.getMatrixAt(k, _fm4); var e = _fm4.elements; if (!(e[0] === 0 && e[5] === 0 && e[10] === 0)) hv++; }); }
+      });
+    }
+    return TAG + '-OVERLAY-FRAME i=' + i + ' visible=' + v + '/' + _objs.length + ' hiddenGuidVisible=' + hv + '/' + hn;
   };
   console.log(TAG + '-SERVICES wired (lazy; no allocation until drawnServicesApply)');
 }

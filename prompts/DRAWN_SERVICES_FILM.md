@@ -42,3 +42,47 @@ Finding: before this change the export carried NO `georef_offset_*` (V6 RED show
 Regression, before (clean copy of origin/main 37130e8e, logs `reg_base_*`) and after (`reg_new_*`): W-DRAWN-WALK 75 pass 0 fail -> 79 pass 0 fail (the baseline copy has no .git so its Y RED was INCONCLUSIVE; not a change); W-DRAWN-MAINS 71/0 -> 71/0; W-WALKED-EXPORT INCONCLUSIVE both (the private shed set is absent here); W-E2E-EXPORT-DB 5 pass / 1 fail both (E1 expects 3 menu rows, the menu has 8: failing on main already, unrelated), E4 byte-identical re-export holds.
 NOT run: the bake. The `--drawn-services` path (flag -> `__maxqBake` -> `drawnServicesEnable`) is syntax-checked only; it is unproven that `start()` leaves scene objects added before it in place. First thing to read in the first real bake: `§CLI_BAKE_DRAWN_SERVICES`, then `§DRAWN-OVERLAY` and `§DRAWN-ONLY` and whether `sceneObjects` survives.
 Open: the exposed / on-roof bases and a lone plan-only fixture are not in this fixture's rows; labels for line rows are the stated `heightLabel` only (NULL for void-middle).
+
+## §7 SPEC (2026-11-09) — the first real bake's two defects + a frame witness (owner rulings relayed by the design lane)
+First real bake (a private set, main `c43d5b72`): the overlay was set up, survived `start()` and was still drawing when the closing movement began; then two defects. Owner: (1) *"Exempt drawn services"*, (2) *"Fix, then re-bake"*.
+**§7.1 Ending orbit (defect 1, measured).** `maxq_hud_layers.js` `_cease3D` arm 2 (the net) hides every visible depthTest:false object from storey-reveal onset to the end. The overlay is unregistered, so it was hidden for the whole closing movement. Rule:
+- `cpe_drawn_services.js` registers each object it adds as the film layer `drawn.services` (`A.filmLayer`, the §FILM_LAYER mechanism). The layer name does not match `ESC_SUPPRESS_RX` (`/^(measure\.|clash\.)/`), so arm 0 never gates it.
+- Arm 2 keeps an object whose registered layer tag is in a NAMED list `CEASE_3D_SUBJECT_LAYERS = ['drawn.services']` (the film's subject, not signage) and counts it as `subject=`. The net itself is unchanged: an object with no layer tag, or with any other tag, is hidden exactly as before. `CEASE_3D_EXEMPT_RX` (the escape glow, by name) is untouched, so W-CEASE's "exactly one name exemption" still holds; W-CEASE gains claims for the subject list.
+- Log: the sweep line gains `subject=<n>`; one line `§FINDINGS_CEASE_3D subject layer="drawn.services" kept <n> objects (the film's subject, owner 2026-11-09: "Exempt drawn services")` the first time it keeps any.
+- Red switch (witness only): `APP.__ceaseSubjectOff = true` empties the list for that call.
+**§7.2 Build-up vs drawn-only (defect 2, from a code read; measured first, §7.4 P0).** `tm_render.js` `renderAtTime` sets single-mesh `visible`, batched `setVisibleAt` and instanced matrices from the schedule alone. `filterByGuids` stores its keep-set in `APP.activeGuidFilter` (`panels.js` 862-864) and no `tm_*.js` reads it, so a hidden element reappears when it is built. Rule, the `§REVEAL_DOOR_LEAK` pattern (the TM owns "is it built", the filter owns "is it shown"):
+- In all three branches, the TM's show decision is ANDed with `_isoShown(guid)`. That is true when `APP.activeGuidFilter` is not a Set, or when the Set has the guid. Nothing else changes: frontier highlight, shadows, spark positions and DLOD proxy all keep their own conditions; a hidden element is treated like an unbuilt one in that branch's own way (`visible=false` / `setVisibleAt(false)` / zero matrix).
+- Merged meshes are not touched by the TM (no guid branch), so `filterMergedMesh` already holds.
+- Log (once per change of the isolate's size, not per frame): `§TM_ISOLATE isolate=<n> keptHidden=<n> (the filter owns "shown", the TM owns "built")`.
+**§7.3 Frame witness.** In the bake loop, right after `§FRAME_QA`, when `APP.drawnServicesFrame` exists and the overlay is on: `§DRAWN-OVERLAY-FRAME i=<frame> visible=<n>/<objects> hiddenGuidVisible=<n>/<hiddenTotal>`.
+- `visible` = overlay objects that are visible with every ancestor visible.
+- `hiddenGuidVisible` = elements in the drawn-only hidden set whose TM slot is visible (single mesh visible with its ancestors, batched `getVisibleAt`, instanced non-zero matrix: the `__tmSnapshotVisible` reads).
+- `cpe_drawn_services.js` keeps the hidden set as a Set when the drawn-only view is on.
+- The re-bake log is then judged frame by frame: `visible` = objects on every frame, and `hiddenGuidVisible=0` on every frame.
+**§7.4 Witness W-DRAWN-FILM-FRAME** (`viewer/tests/witness_drawn_film_frame.js`, public, software GL):
+- Fixture: a temp copy of the shipped `buildings/Duplex_extracted.db` plus stated rows: 2 `drawn_walk_line`, 1 `drawn_walk_marker`, and `element_pset_common` `BIMOOTB_Walk/Provenance='band'` on every 4th guid (ordered by guid), so the drawn-only view has a hidden set.
+- `--db <file>` runs P0 only, read-only, on any DB (the private probe).
+- **P0** (the measurement): with the drawn-only view on and the TM primed (`tmActivateForBake`), at cursor fractions 0.25, 0.5, 0.75, 1.0 (`tmSetCursor`), count hidden-set guids visible (`__tmSnapshotVisible`). On main this is > 0 (defect 2 proven); after the fix it is 0 at every sample.
+- **P1**: with no isolate, the visible snapshot at each fraction equals the one taken with the fix's AND switched off (`APP.__tmIsolateOff = true`): build-up unchanged when no isolate is active.
+- **P2 RED**: with `APP.__tmIsolateOff = true` and the isolate on, hidden-visible > 0 again (the AND is load-bearing).
+- **C1**: `_cease3D` with `_findingsHudSuppress=true`: the overlay's 3 objects stay visible (subject=3), while an added unregistered depthTest:false mesh and an added `measure.datum`-registered one are hidden.
+- **C2 RED**: `__ceaseSubjectOff` → the overlay is hidden too.
+- **F1**: `APP.drawnServicesFrame(i)` returns `visible=3/3 hiddenGuidVisible=0/<n>` at a mid cursor after the fix, and `hiddenGuidVisible>0` with `__tmIsolateOff`.
+- Regression: W-DRAWN-FILM, W-CEASE, W-INCR-EQUIV if present, before/after on the same tree.
+
+## §8 RESULT (2026-11-09) — §7 built
+Logs read (session scratchpad `dff/`): `base_public.log` (main `7f08bdc5`), `fix_public.log`, `reg_*`, `wdf_*`, `cease_new*`.
+- **P0 on main = defect 2 proven:** with the drawn-only view on, hidden elements visible at build-up fractions 0.25/0.5/0.75/1.0 = 47/125/191/237 of 299 (public Duplex fixture). The same read-only P0 on the private film DB was also > 0 at the end of the build-up (number kept out of this file).
+- **After the fix: `§W-DRAWN-FILM-FRAME PASS pass=6 fail=0`.**
+  - P0: 0/0/0/0 of 299.
+  - P2 RED, AND off: 47/125/191/237 again.
+  - P1, no isolate: snapshot visible 219/487/819/1076 with the AND on and off, identical.
+  - With the fix, visible = main's visible − main's hidden-visible at each fraction (172/362/628/839), so only the hidden elements are removed.
+  - C1: subject=3 kept; the unregistered depthTest:false object and a `measure.datum` object are still hidden. C2 RED: subject list emptied → the overlay is hidden.
+  - F1: `§DRAWN-OVERLAY-FRAME i=7 visible=3/3 hiddenGuidVisible=0/299`, and 191/299 with the AND off.
+  - 0 page errors.
+- **W-CEASE 35/0 → 39/0**, 4 claims added for §CEASE_SUBJECT. The 2 mechanism claims go WRONG on main's code (37/2), the red control; the 2 guards hold either way.
+- **Regression, base vs fix:** W-DRAWN-FILM 12/0 = 12/0 (the first base run timed out cold at its Modeller wait, the re-run gave 12/0; the Modeller files are identical on both trees); W-DLOD-TM-OWNERSHIP 4/0 = 4/0; W-RWB 22/0 = 22/0; W-TM-DRAWN-VS-SCHEDULED 4/2 = 4/2 (the 2 fail on main already, unrelated). ESLint clean on the changed files.
+- `cpe_drawn_services.js?v=2`, sw `v1704`.
+- **Found:** `A.filmLayer` is attached only inside `start()`, but `drawnServicesEnable` runs before it. A plain `if (A.filmLayer)` registration would silently do nothing, so `drawnServicesEnable` attaches the same function first.
+- **NOT run:** the re-bake (GPU, next). Judge it by `§DRAWN-OVERLAY-FRAME` on every frame: `visible` = objects, `hiddenGuidVisible=0`.
