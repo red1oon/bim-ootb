@@ -44,9 +44,12 @@
   function N(bd) { return bd == null ? null : Number(D(bd).toString()); }   // the store is REAL — converted once, at write
 
   // ── key columns from the DICTIONARY (AD_Column.IsKey, else IsParent) — never a hand table list ──────────
+  // Caches are keyed by (database, table), not by table name alone (NEURO_SYMBOLIC_ORDER_CONTRACT.md §0.5.11 correction 5): a model that carries its own dictionary is a SECOND database
+  // (env.db names it; the ERP's own is ''), and two databases may both have a table of one name with different keys. `db` is optional: omitted = the ERP database, as before.
+  function ck(db, table) { return (db || '') + '\u0000' + table; }
   var _keyCache = {};
-  function keyColsOf(q, table) {
-    if (_keyCache[table]) return _keyCache[table];
+  function keyColsOf(q, table, db) {
+    if (_keyCache[ck(db, table)]) return _keyCache[ck(db, table)];
     var cols = [];
     try {
       var rows = q("SELECT c.columnname AS c, c.iskey AS k, c.isparent AS p FROM ad_column c JOIN ad_table t ON t.ad_table_id=c.ad_table_id WHERE lower(t.tablename)=? AND c.isactive='Y'", [table]);
@@ -55,13 +58,13 @@
       cols = keys.map(function (r) { return String(r.c).toLowerCase(); });
     } catch (e) { cols = []; }
     if (!cols.length) cols = [table + '_id'];
-    return (_keyCache[table] = cols);
+    return (_keyCache[ck(db, table)] = cols);
   }
 
   // is `col` an AD_Column.IsKey column of `table` (vs the IsParent fallback keyColsOf uses when a table has no IsKey column)
   var _realKey = {};
-  function isRealKey(q, table, col) {
-    var k = table + '.' + col;
+  function isRealKey(q, table, col, db) {
+    var k = ck(db, table + '.' + col);
     if (k in _realKey) return _realKey[k];
     var r = false;
     try { r = q("SELECT 1 AS x FROM ad_column c JOIN ad_table t ON t.ad_table_id=c.ad_table_id WHERE lower(t.tablename)=? AND lower(c.columnname)=? AND c.iskey='Y' AND c.isactive='Y'", [table, col]).length > 0; } catch (e) { r = true; }
@@ -70,10 +73,11 @@
 
   var _ddl = {};
   function ddlDefaults(trx, table) {
-    if (_ddl[table]) return _ddl[table];
+    var dk = ck(trx.dbId, table);
+    if (_ddl[dk]) return _ddl[dk];
     var o = {};
     try { trx.q('SELECT columnname AS c, defaultvalue AS d FROM ad_ddl_default WHERE tablename=?', [table]).forEach(function (r) { o[r.c] = /^-?\d+(\.\d+)?$/.test(r.d) ? Number(r.d) : r.d; }); } catch (e) {}
-    return (_ddl[table] = o);
+    return (_ddl[dk] = o);
   }
 
   // ══ Trx — the unit of work ══════════════════════════════════════════════════════════════════════════════
@@ -81,6 +85,7 @@
     if (!(this instanceof Trx)) return new Trx(query, env);
     this.q = function (sql, params) { return (query(sql, params || []) || []).map(lc); };
     this.env = env || {};
+    this.dbId = this.env.db || '';   // which database `query` reads (cache key part); '' = the ERP database
     this.ops = [];                 // the group, in write order
     this.pend = {};                // table -> idKey -> {row, orig, isNew, opIdx, deleted}
     this.log = [];                 // §-lines the rules emit (host prints them; the witness reads them)
@@ -93,7 +98,7 @@
     try { return structuredClone(snap); } catch (e) { return JSON.parse(JSON.stringify(snap)); }
   };
   Trx.prototype.rollbackTo = function (sp) { this.ops = sp.ops; this.pend = sp.pend; this._newSeq = sp.n; if (this._observed) this._observed.length = Math.min(this._observed.length, sp.obs || 0); };   // observers queued after the savepoint are dropped with its writes
-  Trx.prototype.keyCols = function (table) { return keyColsOf(this.q, table); };
+  Trx.prototype.keyCols = function (table) { return keyColsOf(this.q, table, this.dbId); };
   // single-column identity of a row: its key when the key is one column, else its <table>_uu (recorded identity).
   Trx.prototype.idCol = function (table) { var k = this.keyCols(table); return k.length === 1 ? k[0] : table + '_uu'; };
   Trx.prototype._p = function (table) { return (this.pend[table] = this.pend[table] || {}); };
@@ -150,7 +155,7 @@
     var opIdx = this.ops.length, id = NEW + opIdx;
     // a key that is the dictionary's IsKey column gets the new-row placeholder (PO.saveNew assigns it); a table keyed only by its IsParent
     // column (C_AcctSchema_GL / _Default: key = C_AcctSchema_ID) KEEPS the parent id the caller gave (§MODEL-INSERT-KEEPKEY) unless that identity is taken in this Trx.
-    var givenParent = this.keyCols(table).length === 1 && row[idc] != null && !isRealKey(this.q, table, idc) && !this._p(table)[String(row[idc])];
+    var givenParent = this.keyCols(table).length === 1 && row[idc] != null && !isRealKey(this.q, table, idc, this.dbId) && !this._p(table)[String(row[idc])];
     // PO.saveNew :3530-3535 - a REPLICA keeps the key it was sent (`if (isReplication() && get_ID() > 0) no = get_ID()`): opts.keepKey, a real (non-placeholder) positive key not yet taken in this Trx
     var keepRecv = !!(opts && opts.keepKey) && this.keyCols(table).length === 1 && row[idc] != null && !isNewId(row[idc]) && Number(row[idc]) > 0 && !this._p(table)[String(row[idc])];
     if (givenParent || keepRecv) { /* keep row[idc] */ }
@@ -265,14 +270,15 @@
   // key, UUID, standard (AD_Client/AD_Org/IsActive/Processing/Created*/Updated*; MColumn.java:277-291) and IsAllowCopy='Y'
   var STD = /^(ad_client_id|ad_org_id|isactive|processing|created|createdby|updated|updatedby)$/, _cc = {};
   function copyCols(trx, table) {
-    if (_cc[table]) return _cc[table];
+    var dk = ck(trx.dbId, table);
+    if (_cc[dk]) return _cc[dk];
     var out = [];
     trx.q("SELECT lower(c.columnname) AS c, c.iskey AS k, c.isallowcopy AS ac, c.columnsql AS s FROM ad_column c JOIN ad_table t ON t.ad_table_id=c.ad_table_id WHERE lower(t.tablename)=? AND c.isactive='Y'", [table])
       .forEach(function (r) {
         if ((r.s != null && r.s !== '') || r.k === 'Y' || r.c === table + '_uu' || STD.test(r.c) || r.ac !== 'Y') return;
         out.push(r.c);
       });
-    return (_cc[table] = out);
+    return (_cc[dk] = out);
   }
   function copyValues(trx, table, from, to, client, org) {
     var f = from.row || from;
@@ -420,12 +426,13 @@
   var _cols = {}, _alloc = null;
   function setDocNoAllocator(a) { _alloc = a; }
   function columnsOf(trx, table) {
-    if (_cols[table]) return _cols[table];
+    var dk = ck(trx.dbId, table);
+    if (_cols[dk]) return _cols[dk];
     var o = {}, tn = null;
     try { trx.q("SELECT c.columnname AS c, t.tablename AS t, c.columnsql AS s FROM ad_column c JOIN ad_table t ON t.ad_table_id=c.ad_table_id WHERE lower(t.tablename)=? AND c.isactive='Y'", [table])
       .forEach(function (r) { o[String(r.c).toLowerCase()] = { name: r.c, virtual: r.s != null && r.s !== '' }; tn = r.t; }); } catch (e) {}
     o.__tableName = tn || table;
-    return (_cols[table] = o);
+    return (_cols[dk] = o);
   }
   function saveNewNumbers(trx, table, rec) {
     if (!_alloc || /^t_/.test(table)) return;

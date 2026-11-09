@@ -2025,11 +2025,18 @@ async function setupScene(A) {
       if (/;\s*$/.test(ln)) { statements.push(stBuf.join('\n')); stBuf = []; }
     }
     if (stBuf.length) statements.push(stBuf.join('\n'));  // trailing content with no `;` (comment-only tail, etc.)
-    var CHUNK = 500;
-    for (var i = 0; i < statements.length; i += CHUNK) {
-      db.run(statements.slice(i, i + CHUNK).join('\n'));
+    // §OBJ_DICT (NEURO_SYMBOLIC_ORDER_CONTRACT.md §0.8): ALTER TABLE .. ADD COLUMN has no IF NOT EXISTS, so a patch that adds a column is not idempotent by itself.
+    // Run each such statement on its own and skip exactly "duplicate column name" (the column is already there = the patch is already applied); any other error still throws.
+    var CHUNK = 500, batch = [], chunks = 0, skipped = 0, flush = function() { if (batch.length) { db.run(batch.join('\n')); chunks++; batch = []; } };
+    for (var i = 0; i < statements.length; i++) {
+      if (/^\s*(--[^\n]*\n\s*)*ALTER\s+TABLE\s+\S+\s+ADD\s+COLUMN\b/i.test(statements[i])) {
+        flush();
+        try { db.run(statements[i]); chunks++; } catch (e) { if (/duplicate column name/i.test(e && e.message)) skipped++; else throw e; }
+      } else { batch.push(statements[i]); if (batch.length >= CHUNK) flush(); }
     }
-    return { statements: statements.length, chunks: Math.ceil(statements.length / CHUNK) };
+    flush();
+    if (skipped) console.log('§PATCH_ADDCOL_SKIP ' + skipped + ' ALTER .. ADD COLUMN already applied (idempotent re-apply)');
+    return { statements: statements.length, chunks: chunks };
   };
 
   // §LIGHT_FIELD_PATCH (bim-compiler PHOTOREAL_STILL_RENDER.md, red1 2026-09-29 "can the initial glass data be injected into the DB
