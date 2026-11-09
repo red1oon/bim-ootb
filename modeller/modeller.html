@@ -331,7 +331,7 @@ if (window.WholeHistory && WholeHistory.mount) WholeHistory.mount({ page: 'model
      terminal_rules.db (mined off Terminal). Supersedes the thin mep_rw.db recipes for the disc-node walk —
      every disc walks on ANY opened building from rules measured off a real coordinated building. -->
 <script src="../common/walk_rules.js?v=2" onerror="console.warn('§WALK_RULES LOAD_FAIL walk_rules.js')"></script>
-<script src="disc_walker.js?v=18" onerror="console.warn('§DW LOAD_FAIL disc_walker.js')"></script>
+<script src="disc_walker.js?v=19" onerror="console.warn('§DW LOAD_FAIL disc_walker.js')"></script>
 <!-- §I5 per-instance hide (SPEC_INSTANCE_HIDE.md §I5d): Walked-Fixtures Outliner category — one row per
      walked instance (windowed via §V4 OL_CHUNK), eye = hide that exact instanceId. Witness: W-E2E-INSTHIDE. -->
 <script src="dw_instances_outliner.js?v=1" onerror="console.warn('§DWINST LOAD_FAIL dw_instances_outliner.js')"></script>
@@ -1409,17 +1409,31 @@ window.Bonsai.frameInstanceRow = (rowId) => {
   const c = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3());
   const CONTEXT = 8;                                       // presentation: the element ≈ 1/8 of the frame height
   const dist = Math.max(_fitDistForBox(size) * CONTEXT, (camera.near || 0.05) * 4);
-  // Side: from below first when it hangs under a ceiling (mount BOTTOM), else from above; a ray from that camera spot to the
-  // centre must hit THIS instance first, otherwise the other side is tried (a pendant with no stated mount under a slab).
+  // §FACING: stand in front of the face the walker mounted it by (rec.face, disc_walker _faceFor/_schedFacing/SIDE perp):
+  // a wall face → in front of it, a little above; faces down (hangs under a ceiling) → from below; up or unstated → from above.
+  // The ray test is a guard only: a first hit inside the device's own box (+2 cm) is the device (its signed folded twin).
   const below = new THREE.Vector3(ZOOM_ISO_DIR.x, ZOOM_ISO_DIR.y, -ZOOM_ISO_DIR.z);
-  const order = rec.mount === 'BOTTOM' ? [['up', below], ['down', ZOOM_ISO_DIR]] : [['down', ZOOM_ISO_DIR], ['up', below]];
+  const f = Array.isArray(rec.face) ? rec.face : (rec.mount === 'BOTTOM' ? [0, 0, -1] : null);
+  let order;
+  if (f && Math.abs(f[2]) < 0.5) { const fr = new THREE.Vector3(f[0], f[1], 0.35).normalize(); order = [['front', fr], ['down', ZOOM_ISO_DIR]]; }
+  else if (f && f[2] <= -0.5) order = [['up', below], ['down', ZOOM_ISO_DIR]];
+  else order = [['down', ZOOM_ISO_DIR], ['up', below]];
+  const own = box.clone().expandByScalar(0.02);
   const rc = new THREE.Raycaster(), seen = (d) => { const from = c.clone().addScaledVector(d, dist); rc.set(from, c.clone().sub(from).normalize());
     const h = rc.intersectObjects(scene.children, true).find(x => x.object.visible !== false && x.object.isMesh && !(x.object.material && x.object.material.visible === false));
-    return !!(h && h.object === im && h.instanceId === i); };
-  let pick = order.find(o => seen(o[1])), occl = !pick; if (!pick) pick = order[0];
-  const up = pick[0] === 'up';
-  _lerpCam(c, dist, pick[1]);
-  console.log('§FRAME-LEAF ' + m[1] + '=' + m[2] + '/' + m[3] + ' mount=' + (rec.mount || '-') + ' dist=' + dist.toFixed(3) + ' dir=' + (up ? 'up' : 'down') + (occl ? ' occluded=both' : '') +
+    return !!(h && ((h.object === im && h.instanceId === i) || own.containsPoint(h.point))); };
+  // the camera stays in the space the device faces: cap the distance at 90% of the free run along each direction (the
+  // first surface a ray from the centre meets beyond the device's own box) — measured per shot, no constant room size.
+  const freeRun = (d) => { rc.set(c.clone(), d.clone()); const h = rc.intersectObjects(scene.children, true).find(x => x.object.visible !== false && x.object.isMesh &&
+    !(x.object.material && x.object.material.visible === false) && !own.containsPoint(x.point)); return h ? h.distance : Infinity; };
+  order = order.map(o => { const fr = freeRun(o[1]); return [o[0], o[1], Math.max(Math.min(dist, fr * 0.9), (camera.near || 0.05) * 4), fr]; });
+  const seenAt = (o) => { const from = c.clone().addScaledVector(o[1], o[2]); rc.set(from, c.clone().sub(from).normalize());
+    const h = rc.intersectObjects(scene.children, true).find(x => x.object.visible !== false && x.object.isMesh && !(x.object.material && x.object.material.visible === false));
+    return !!(h && ((h.object === im && h.instanceId === i) || own.containsPoint(h.point))); };
+  let pick = order.find(o => seenAt(o)), occl = !pick; if (!pick) pick = [order[0][0], order[0][1], dist, order[0][3]];   // blocked both ways: no cap (logged)
+  _lerpCam(c, pick[2], pick[1]);
+  console.log('§FRAME-LEAF ' + m[1] + '=' + m[2] + '/' + m[3] + ' mount=' + (rec.mount || '-') + ' face=' + (f ? f.map(v => (+v).toFixed(2)).join(',') : '-') + ' dist=' + pick[2].toFixed(3) +
+    (pick[2] < dist ? ' (fit ' + dist.toFixed(2) + ', free ' + pick[3].toFixed(2) + ')' : '') + ' dir=' + pick[0] + (occl ? ' occluded=both' : '') +
     ' size=' + size.x.toFixed(3) + 'x' + size.y.toFixed(3) + 'x' + size.z.toFixed(3) + ' centre=[' + c.toArray().map(v => v.toFixed(2)).join(',') + ']');
   return true;
 };

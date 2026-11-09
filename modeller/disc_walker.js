@@ -448,6 +448,10 @@
     return alongX ? [pos, base[1], base[2]] : [base[0], pos, base[2]];
   }
 
+  // §FACING (bim-compiler prompts/MODELLER_ZOOM_TO_SELECTION.md §FACING, owner 2026-11-09 "Shim, anchor facing, depends on
+  // direction"): the unit normal of the face a device is mounted by, written where the walker DECIDES it, never guessed.
+  // BOTTOM = hangs under its host (faces down), TOP = sits on it (faces up); SIDE / wall-anchored = the room-side normal.
+  function _faceFor(mount) { return mount === 'BOTTOM' ? [0, 0, -1] : (mount === 'TOP' ? [0, 0, 1] : undefined); }
   // Wall-mounted fixtures face INTO the room: yaw from the edge the offset rule anchored to.
   // Convention: yaw = atan2(dir_y, dir_x) of the facing direction (radians, world XY).
   function _schedFacing(e) {
@@ -668,7 +672,7 @@
           }
           out.push({ disc: disc, ifc_class: 'IfcFlowTerminal', device: e.device_id,
             x: pos[0], y: pos[1], z: pos[2], storey: sp.storey, spaceGuid: sp.guid,
-            space: sp.label, rot: yaw, yaw: meshYaw == null ? undefined : meshYaw,
+            space: sp.label, rot: yaw, yaw: meshYaw == null ? undefined : meshYaw, face: (meshYaw != null && yaw != null) ? [Math.cos(yaw), Math.sin(yaw), 0] : undefined,
             bx: e.dim_x_m || null, by: e.dim_y_m || null, bz: e.dim_z_m || null,
             geometry_hash: e.geometry_hash, element_name: e.element_name,
             prim: _primFor('IfcFlowTerminal'),
@@ -1454,7 +1458,7 @@
       (usedHost[bh.g] = usedHost[bh.g] || { h: bh, n: 0 }).n++;
       zMoves.push(best);
       bound.push({ reanchor: p.reanchor, disc: p.disc, ifc_class: p.ifc_class, x: p.x, y: p.y, z: bh.tz + sign * faceHalf * (bh.ez / 2) + sign * off, yaw: bh.ex >= bh.ey ? 0 : Math.PI / 2,
-        storey: p.storey, host: bh.g, mount: mount, prov: 'shim:host-' + hostClass + '-' + mount.toLowerCase(),
+        storey: p.storey, host: bh.g, mount: mount, face: _faceFor(mount), prov: 'shim:host-' + hostClass + '-' + mount.toLowerCase(),
         bx: p.bx, by: p.by, bz: p.bz, prim: p.prim, src: p.src, snapDist: 0, midVerified: bh.midVerified, band: p.band, geometry_hash: p.geometry_hash });
     });
     console.log(TAG + ' §WALK-AREAHOST host=' + hostClass + ' mount=' + mount + ' hosts=' + hosts.length + ' boxFromMesh=' + boxMesh + ' boxFromRow=' + boxRow + ' flatness=' + area.flatness + ' shapeRejected=' + shapeRejected + ' input=' + placements.length + ' bound=' + bound.length +
@@ -1563,7 +1567,7 @@
           (bl.w.tz + bl.w.bz / 2).toFixed(2) + '] pz=' + ((shim.height_m != null && p.storeyZ != null)
             ? ('storeyZ(' + (+p.storeyZ).toFixed(2) + ')+height_m(' + shim.height_m + ')=') : 'rule-z p.z=') + pz.toFixed(2));
         bound.push({ reanchor: p.reanchor, disc: p.disc, ifc_class: p.ifc_class, x: fx, y: fy, z: pz, yaw: bl.horiz === 0 ? 0 : Math.PI / 2,
-          storey: p.storey, host: bl.w.g, mount: 'SIDE', prov: 'shim:host-' + hostClass + '-side',
+          storey: p.storey, host: bl.w.g, mount: 'SIDE', face: [perpx / pl, perpy / pl, 0], prov: 'shim:host-' + hostClass + '-side',
           bx: p.bx, by: p.by, bz: p.bz, prim: p.prim, src: p.src, snapDist: +best.toFixed(4), midVerified: bl.w.midVerified,
           band: p.band, geometry_hash: p.geometry_hash });      // §NOSPACES carry-through (undefined on legacy walks)
       });
@@ -1615,7 +1619,7 @@
         (faceHalf ? (sign > 0 ? '+' : '-') + 'bz/2(' + (bh.bz / 2).toFixed(2) + ')' : '') +
         (off ? (sign > 0 ? '+' : '-') + 'off(' + off + ')' : '') + '=' + pz.toFixed(2));
       bound.push({ reanchor: p.reanchor, disc: p.disc, ifc_class: p.ifc_class, x: bh.x, y: bh.y, z: pz, yaw: horiz === 0 ? 0 : Math.PI / 2,
-        storey: p.storey, host: bh.g, mount: mount, prov: 'shim:host-' + hostClass + '-' + mount.toLowerCase(),
+        storey: p.storey, host: bh.g, mount: mount, face: _faceFor(mount), prov: 'shim:host-' + hostClass + '-' + mount.toLowerCase(),
         bx: p.bx, by: p.by, bz: p.bz, prim: p.prim, src: p.src, snapDist: +best.toFixed(4), midVerified: bh.midVerified,
         band: p.band, geometry_hash: p.geometry_hash });        // §NOSPACES carry-through (undefined on legacy walks)
     });
@@ -3058,7 +3062,7 @@
         if (!t.kind) noKind++;
         if (!tmpl) { noMesh++; return; }   // no rule-mined device mesh to seat it on: listed, never boxed
         placed++;
-        out.placements.push({ disc: 'ACMV', ifc_class: tmpl.ifc_class, x: t.x, y: t.y, z: t.c.z, yaw: 0, storey: sk, host: t.c.host, mount: 'BOTTOM', prov: 'drawn:terminal', hostState: 'bound', provisional: false,
+        out.placements.push({ disc: 'ACMV', ifc_class: tmpl.ifc_class, x: t.x, y: t.y, z: t.c.z, yaw: 0, storey: sk, host: t.c.host, mount: 'BOTTOM', face: [0, 0, -1], prov: 'drawn:terminal', hostState: 'bound', provisional: false,
           bx: tmpl.bx, by: tmpl.by, bz: tmpl.bz, prim: tmpl.prim, geometry_hash: tmpl.geometry_hash, system: t.kind || null, positionBasis: 'drawn', heightBasis: t.roof ? X.roof.id : t.exposed ? X.rule.id : 'ceiling:' + t.c.host, exposed: !!t.exposed, heightLabel: t.roof ? X.roof.label : t.exposed ? X.rule.label : null });
       });
       out.byStorey[sk] = { drawn: dt.length, placed: placed, noKind: noKind, noMesh: noMesh, borrowedDropped: dropB.length, schedDropped: dropS.length };
