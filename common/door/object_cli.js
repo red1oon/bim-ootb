@@ -212,4 +212,4 @@ async function main(argv) {
   }
 }
 if (require.main === module) main(process.argv.slice(2)).then(c => process.exit(c));
-module.exports = { main, describe, read, update, attach, history, boot, open, kindOf, columnsOf, childTabs, applyOp, loadChunker, Refused };
+module.exports = { main, describe, read, update, attach, history, boot, open, kindOf, columnsOf, childTabs, applyOp, loadChunker, Refused, oplogFile, readOps };

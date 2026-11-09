@@ -15,9 +15,9 @@ The ERP's DocActions and processes from the application dictionary (`erp/ad_seed
 | of which from built-in plugins (doc pairs / processes) | 2 / 1 |
 | NOT IMPLEMENTED (doc / process) | 637 / 414 |
 | handlers without a dictionary row (doc / process) | 1 / 0 |
-| **(c) X offered to actors** | 0 |
+| **(c) X offered to actors** | 1 |
 
-Basis for X: erp/actor_verbs.json does not exist: no verb list is offered to actors.
+Basis for X: pairs of erp/actor_verbs.json that are dictionary pairs AND have a registerDocAction site AND a MATCH line in their evidence file.
 
 **What "handler" means here:** a function registered under (table, action) in the kernel handler registry. The generic Kanban handler (`erp/kanban_host.js:73`) returns one `SET_STATUS` op and posts nothing, so a doc pair marked implemented by it is a status change, not the legacy Complete with its accounting; the twin check for that is §21.5 A5, not this file. Tables whose name ends `_v` are dictionary views that carry a DocAction column; they are counted because the dictionary says so.
 
@@ -36,7 +36,7 @@ The dictionary rows each BUILT-IN plugin (`erp/plugin_overlay.js` BUILTINS) stag
 | site | kind | pairs | how resolved |
 |---|---|---:|---|
 | `erp/erp_picker.js:396` | DYNAMIC (NOT COUNTED) | 0 | docType/action come from the events of a chain file loaded at run time (ev.d) |
-| `erp/kanban_host.js:73` | LOOP | 52 | tables ← erp/idempiere.html:6272 KDOC_TABLES; actions ← erp/manifest.json wfmc.transitions (13) |
+| `erp/kanban_host.js:73` | LOOP | 52 | tables ← erp/idempiere.html:6268 KDOC_TABLES; actions ← erp/manifest.json wfmc.transitions (13) |
 | `erp/kanban_lens.html:254` | LOOP | 52 | tables ← erp/kanban_lens.html:249 tables; actions ← erp/manifest.json wfmc.transitions (13) |
 | `erp/mfg_snapshot.js:100` | LITERAL | 1 | literal arguments |
 | `erp/odoo_agent/agent.js:89` | DYNAMIC (NOT COUNTED) | 0 | docType/action come from the events of a chain file loaded at run time (ev.d) |
