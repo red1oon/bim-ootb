@@ -262,7 +262,7 @@
     });
   }
 
-  var api = { canHave: canHave, keyColumn: keyColumn, lookup: lookup, hasAttachment: hasAttachment, load: load, save: save, promote: promote, bytes: bytes, entSize: entSize, referencedShas: referencedShas, addEntry: addEntry, open: open,
+  var api = { canHave: canHave, keyColumn: keyColumn, lookup: lookup, hasAttachment: hasAttachment, load: load, save: save, promote: promote, sweep: sweepStore, bytes: bytes, entSize: entSize, referencedShas: referencedShas, addEntry: addEntry, open: open,
     zipBuild: zipBuild, zipParse: zipParse, crc32: crc32, b64: b64, unb64: unb64, sha256: sha256, MAX_BYTES: MAX_BYTES, ZIP: ZIP, FS: FSX };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.AdAttachment = api;
 })(typeof window !== 'undefined' ? window : globalThis);

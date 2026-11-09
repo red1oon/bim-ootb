@@ -52,5 +52,37 @@
     afterSave: function (trx, l) { return updateHeader(trx, l); },
     afterDelete: function (trx, l) { return updateHeader(trx, l); }
   });
-  return { beforeSave: beforeSave, updateHeader: updateHeader };
+
+  // ── MProject.setProjectType(MProjectType) MProject.java:370-378 and copyPhasesFrom(MProjectType) :385-405 (+ MProjectPhase(project, typePhase) MProjectPhase.java:107-119,
+  //    copyTasksFrom(MProjectTypePhase) :240-258, MProjectTask(phase, typeTask) MProjectTask.java:109-121). Phases and tasks are copied ONLY for a Service project ('S').
+  //    MProjectType.getPhases :166 / MProjectTypePhase.getTasks :94: IsActive='Y' ORDER BY SeqNo, <id>. Returns { category, phases, tasks }; logs §PROJECT-SETTYPE.
+  function bySeq(rows, idc) { return rows.filter(function (r) { return r.isactive !== 'N'; }).sort(function (a, b) { return (Number(a.seqno) - Number(b.seqno)) || (Number(a[idc]) - Number(b[idc])); }); }
+  function copyPhasesFrom(trx, project, type) {
+    var phases = 0, tasks = 0;
+    bySeq(trx.find('c_phase', { c_projecttype_id: type.c_projecttype_id }), 'c_phase_id').forEach(function (tp) {
+      var ph = ML.newRecord(trx, 'c_projectphase', {});
+      ph.set('ad_client_id', project.ad_client_id).set('ad_org_id', project.ad_org_id).set('c_project_id', project.c_project_id)
+        .set('c_phase_id', tp.c_phase_id).set('name', tp.name).set('seqno', tp.seqno).set('description', tp.description).set('help', tp.help).set('qty', tp.standardqty);
+      if (nz(tp.m_product_id)) ph.set('m_product_id', tp.m_product_id);
+      if (!ph.save()) return;
+      phases++;
+      bySeq(trx.find('c_task', { c_phase_id: tp.c_phase_id }), 'c_task_id').forEach(function (tt) {
+        var tk = ML.newRecord(trx, 'c_projecttask', {});
+        tk.set('ad_client_id', ph.get('ad_client_id')).set('ad_org_id', ph.get('ad_org_id')).set('c_projectphase_id', ph.id())
+          .set('c_task_id', tt.c_task_id).set('seqno', tt.seqno).set('name', tt.name).set('description', tt.description).set('help', tt.help).set('qty', tt.standardqty);
+        if (nz(tt.m_product_id)) tk.set('m_product_id', tt.m_product_id);
+        if (tk.save()) tasks++;
+      });
+    });
+    return { phases: phases, tasks: tasks };
+  }
+  function setProjectType(trx, project, type) {
+    var c = { phases: 0, tasks: 0 };
+    if (String(type.projectcategory) === 'S') c = copyPhasesFrom(trx, project, type);   // PROJECTCATEGORY_ServiceChargeProject
+    var r = ML.save(trx, 'c_project', project, { c_projecttype_id: type.c_projecttype_id, projectcategory: type.projectcategory });
+    if (!r.ok) throw new Error(r.error || 'SaveError c_project');
+    trx.say('§PROJECT-SETTYPE project=' + project.c_project_id + ' type=' + type.c_projecttype_id + ' category=' + type.projectcategory + ' phases=' + c.phases + ' tasks=' + c.tasks);
+    return { category: type.projectcategory, phases: c.phases, tasks: c.tasks };
+  }
+  return { beforeSave: beforeSave, updateHeader: updateHeader, setProjectType: setProjectType, copyPhasesFrom: copyPhasesFrom };
 });

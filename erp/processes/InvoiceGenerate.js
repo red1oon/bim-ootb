@@ -179,6 +179,10 @@
         var inv = trx.get('c_invoice', invoice.id());
         this.addBufferLog(inv.c_invoice_id, inv.dateinvoiced, null, '@InvoiceProcessed@ ' + inv.documentno, 318, inv.c_invoice_id);
         this.m_created++;
+        trx.say('§INVOICE-GENERATE invoice=' + inv.c_invoice_id + ' documentno=' + inv.documentno + ' order=' + inv.c_order_id + ' docstatus=' + inv.docstatus + ' totallines=' + inv.totallines + ' grandtotal=' + inv.grandtotal);
+        trx.find('c_invoiceline', { c_invoice_id: inv.c_invoice_id }, ['line', 'c_invoiceline_id']).forEach(function (l) {
+          trx.say('§INVOICE-GENERATE-LINE invoice=' + inv.c_invoice_id + ' line=' + l.line + ' product=' + l.m_product_id + ' qty=' + l.qtyinvoiced + ' price=' + l.priceactual + ' amount=' + l.linenetamt);
+        });
       }
       this.m_invoice = null; this.m_ship = null; this.m_line = 0;
     };

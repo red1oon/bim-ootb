@@ -75,7 +75,7 @@ const DXF = Buffer.from('0\nSECTION\n2\nENTITIES\n0\nLINE\n8\nWALLS\n10\n0.0\n20
   const dq = sql => page.evaluate(s => { const r = window.__idmpDb.exec(s); return r.length ? r[0].values : []; }, sql);   // the dictionary as the page holds it
   const snap = () => page.evaluate(() => window.IdmpGridTab.snapshot());
   const setv = (col, v) => page.evaluate(([c, v]) => { const e = document.querySelector('#idmp-inline-mount select[data-col="' + c + '"], #idmp-inline-mount input[data-col="' + c + '"]'); if (!e) return 'nofield';
-    e.value = String(v); e.dispatchEvent(new Event('change', { bubbles: true })); e.dispatchEvent(new Event('input', { bubbles: true })); return e.value; }, [col, v]);
+    e.value = String(v); if (e.tagName !== 'SELECT') { e.dispatchEvent(new Event('change', { bubbles: true })); e.dispatchEvent(new Event('input', { bubbles: true })); } return e.value; }, [col, v]);   // no change event on a picker: its dependents refilter and empty a key the picker does not list yet
 
   // ════════ population N, from the page's own dictionary ════════
   await boot();
@@ -91,18 +91,65 @@ const DXF = Buffer.from('0\nSECTION\n2\nENTITIES\n0\nLINE\n8\nWALLS\n10\n0.0\n20
   if (!T_ID) { verdict('population', 'INCONCLUSIVE', 'BIM_Document is not in the dictionary: the plugin did not start'); return finish(); }
 
   // ════════ fixture: project, phases, tasks (set-up through the signed CRUD lane; the project path itself is not under test) ════════
-  const fx = await page.evaluate(F => new Promise(res => { const A = window.APP || {}, std = { actor: A.actor, clientId: A.clientId, orgId: A.orgId || 0 };
-    const mk = (t, f) => ({ key: t, table: t, verb: 'create', op_type: 'CRUD_CREATE', op_uuid: null, cas: null, fields: f, stdDefaults: std });
-    const ops = [mk('c_project', { value: 'DUPLEX-SHEETS', name: F.project, isactive: 'Y', projectcategory: 'S', isactive_: 'Y' })];
-    F.phases.forEach((p, i) => ops.push(mk('c_projectphase', { c_project_id: { __opRef: 0 }, name: p, seqno: (i + 1) * 10, isactive: 'Y', iscomplete: 'N' })));
-    F.tasks.forEach(([t, pi], i) => ops.push(mk('c_projecttask', { c_projectphase_id: { __opRef: 1 + pi }, name: t, seqno: (i + 1) * 10, isactive: 'Y' })));
-    ops.forEach(o => { delete o.fields.isactive_; });
-    window.__crud.applyOpGroup(ops, r => res(r)); }), FIX);
+  const mkOp = (t, f) => ({ key: t, table: t, verb: 'create', op_type: 'CRUD_CREATE', op_uuid: null, cas: null, fields: f, stdDefaults: null });
+  const commitOps = ops => page.evaluate(o => new Promise(res => { const A = window.APP || {}, std = { actor: A.actor, clientId: A.clientId, orgId: A.orgId || 0 }; o.forEach(x => { if (x.stdDefaults === null) x.stdDefaults = std; }); window.__crud.applyOpGroup(o, r => res(r)); }), ops);
+  // the two projects: the sheet-set project (billable: partner, warehouse, price list version of the public GardenWorld seed) and a non-Service one (red control)
+  const BILL = { c_bpartner_id: 117, c_bpartner_location_id: 112, m_warehouse_id: 103, m_pricelist_version_id: 104, c_currency_id: 100 };
+  const fxp = await commitOps([mkOp('c_project', Object.assign({ value: 'DUPLEX-SHEETS', name: FIX.project, isactive: 'Y' }, BILL)), mkOp('c_project', Object.assign({ value: 'DUPLEX-GENERAL', name: 'Duplex General Project', isactive: 'Y' }, BILL))]);
   await sleep(1200);
-  const PRJ = (await rd("SELECT c_project_id FROM c_project WHERE name='" + FIX.project + "'"))[0];
-  const PH = {}, TK = {};
-  (await rd("SELECT c_projectphase_id AS id, name FROM c_projectphase WHERE c_project_id=" + (PRJ ? PRJ.c_project_id : 0))).forEach(r => PH[r.name] = r.id);
-  (await rd("SELECT c_projecttask_id AS id, name, c_projectphase_id AS ph FROM c_projecttask WHERE c_projectphase_id IN (" + Object.values(PH).concat([0]).join(',') + ")")).forEach(r => TK[r.name] = { id: r.id, ph: r.ph });
+  const PRJ = (await rd("SELECT c_project_id FROM c_project WHERE name='" + FIX.project + "'"))[0], PRJ2 = (await rd("SELECT c_project_id FROM c_project WHERE name='Duplex General Project'"))[0];
+
+  // ════════ B-1 beat 1: a project from its type. ProjectSetType (AD_Process 215) driven from the Project window's button; the hand count is read from the dictionary's own C_Phase/C_Task rows ════════
+  async function runSetType(projId, typeId) {
+    await boot('&window=130'); await selectRow(projId); await sleep(800);
+    const n0 = mark(); const btn = await page.$('[data-proc-btn="C_ProjectType_ID"]'); if (!btn) return { noButton: true, lines: [] };
+    await btn.click(); await page.waitForSelector('[data-proc-param="C_ProjectType_ID"]', { timeout: 15000 });
+    await setProc('C_ProjectType_ID', typeId); await page.click('[data-proc-run]');
+    for (let i = 0; i < 60 && !(await page.$('#idmp-procdlg .idmp-procresult')); i++) await sleep(250);
+    await sleep(1500);
+    const res = await page.evaluate(() => { const r = document.querySelector('#idmp-procdlg .idmp-procresult'); return r ? { chip: (r.querySelector('.ok-chip') || {}).textContent, msg: (r.querySelector('.msg') || {}).textContent } : null; });
+    await page.click('[data-procdlg-ok]').catch(() => {}); await sleep(800);
+    return { res, lines: since(n0, /^§PROJECT-SETTYPE /), all: since(n0, /./) };
+  }
+  const setProc = (col, v) => page.evaluate(([c, v]) => { const e = document.querySelector('[data-proc-param="' + c + '"]'); if (!e) return 'nofield'; if (e.tagName === 'SELECT' && ![...e.options].some(o => o.value === String(v))) { const o = document.createElement('option'); o.value = String(v); o.textContent = String(v); e.appendChild(o); }   /* the picker lists committed rows only; a row of this session is offered by its key */ e.value = String(v); e.dispatchEvent(new Event('change', { bubbles: true })); e.dispatchEvent(new Event('input', { bubbles: true })); return e.value; }, [col, v]);
+  const projRows = async id => ({ ph: (await rd("SELECT count(*) n FROM c_projectphase WHERE c_project_id=" + id))[0].n, tk: (await rd("SELECT count(*) n FROM c_projecttask WHERE c_projectphase_id IN (SELECT c_projectphase_id FROM c_projectphase WHERE c_project_id=" + id + ")"))[0].n,
+    p: (await rd("SELECT c_projecttype_id AS t, projectcategory AS c FROM c_project WHERE c_project_id=" + id))[0] });
+  const TYPE_S = 101, TYPE_N = 102;
+  {
+    const hp = Number((await dq("SELECT count(*) FROM C_Phase WHERE C_ProjectType_ID=" + TYPE_S + " AND IsActive='Y'"))[0][0]), ht = Number((await dq("SELECT count(*) FROM C_Task WHERE IsActive='Y' AND C_Phase_ID IN (SELECT C_Phase_ID FROM C_Phase WHERE C_ProjectType_ID=" + TYPE_S + " AND IsActive='Y')"))[0][0]);
+    const hn = Number((await dq("SELECT count(*) FROM C_Phase WHERE C_ProjectType_ID=" + TYPE_N + " AND IsActive='Y'"))[0][0]);
+    const catS = (await dq("SELECT ProjectCategory FROM C_ProjectType WHERE C_ProjectType_ID=" + TYPE_S))[0]?.[0], catN = (await dq("SELECT ProjectCategory FROM C_ProjectType WHERE C_ProjectType_ID=" + TYPE_N))[0]?.[0];
+    const fail = [];
+    if (!PRJ || !PRJ2) { verdict('B-1 project from its type', 'INCONCLUSIVE', 'projects not readable back'); return finish(); }
+    const before = await projRows(PRJ.c_project_id);
+    const r1 = await runSetType(PRJ.c_project_id, TYPE_S), after = await projRows(PRJ.c_project_id);
+    const line = r1.lines[0] || null;
+    if (r1.noButton) fail.push('no Set Project Type button on the Project form');
+    if (!line || !line.includes('phases=' + hp + ' tasks=' + ht) || !line.includes('category=' + catS)) fail.push('log line ' + line + ' vs hand phases=' + hp + ' tasks=' + ht + ' category=' + catS);
+    if (Number(after.ph) !== Number(before.ph) + hp || Number(after.tk) !== Number(before.tk) + ht) fail.push('rows ' + JSON.stringify(before) + ' -> ' + JSON.stringify(after) + ' want +' + hp + '/+' + ht);
+    if (!after.p || Number(after.p.t) !== TYPE_S || after.p.c !== catS) fail.push('project not typed: ' + JSON.stringify(after.p));
+    say('§W-BIMDOC-SETTYPE ' + (line || 'no line') + ' | rows ' + JSON.stringify(before) + ' -> ' + JSON.stringify(after) + ' | ui=' + JSON.stringify(r1.res));
+    verdict('B-1 project from its Service type', hp === 0 ? 'INCONCLUSIVE' : (fail.length ? 'FAIL' : 'PASS'), fail.length ? fail.join(' ; ') : 'phases=' + hp + ' tasks=' + ht + ' copied, category ' + catS + ' (hand count from C_Phase/C_Task)');
+    // R-7 red: a project that already has a type is refused, nothing copied
+    const r2 = await runSetType(PRJ.c_project_id, TYPE_S), after2 = await projRows(PRJ.c_project_id), rf = [];
+    if (!r2.res || !/Failed/i.test(r2.res.chip || '') || !/already has Type/.test(r2.res.msg || '')) rf.push('not refused: ' + JSON.stringify(r2.res));
+    if (Number(after2.ph) !== Number(after.ph) || Number(after2.tk) !== Number(after.tk)) rf.push('rows changed on a refused run ' + JSON.stringify(after2));
+    verdict('R-7 red type already set is refused', rf.length ? 'FAIL' : 'PASS', rf.length ? rf.join(' ; ') : 'message "' + (r2.res && r2.res.msg) + '", rows unchanged');
+    // R-8 red: a non-Service type copies nothing but still types the project
+    const b3 = await projRows(PRJ2.c_project_id), r3 = await runSetType(PRJ2.c_project_id, TYPE_N), a3 = await projRows(PRJ2.c_project_id), l3 = r3.lines[0] || null, f3 = [];
+    if (catN === 'S') f3.push('population: type ' + TYPE_N + ' is a Service type');
+    if (!l3 || !l3.includes('phases=0 tasks=0') || !l3.includes('category=' + catN)) f3.push('log ' + l3);
+    if (Number(a3.ph) !== Number(b3.ph) || Number(a3.tk) !== Number(b3.tk)) f3.push('rows copied for a non-Service type ' + JSON.stringify(a3) + ' (the type has ' + hn + ' phases)');
+    if (!a3.p || Number(a3.p.t) !== TYPE_N) f3.push('project not typed ' + JSON.stringify(a3.p));
+    verdict('R-8 red non-Service type copies no phases', hn === 0 ? 'INCONCLUSIVE' : (f3.length ? 'FAIL' : 'PASS'), f3.length ? f3.join(' ; ') : 'type ' + TYPE_N + ' (' + catN + ') has ' + hn + ' phases; project typed, 0 phases/0 tasks copied: ' + l3);
+  }
+  // the sheet-set's own stages (the firm's phases and tasks), on top of the copied ones
+  const fx = await commitOps(FIX.phases.map((p, i) => mkOp('c_projectphase', { c_project_id: PRJ.c_project_id, name: p, seqno: 100 + (i + 1) * 10, isactive: 'Y', iscomplete: 'N' }))
+    .concat(FIX.tasks.map(([t, pi], i) => mkOp('c_projecttask', { c_projectphase_id: { __opRef: pi }, name: t, seqno: (i + 1) * 10, isactive: 'Y' }))));
+  await sleep(1200);
+  const PH = {}, TK = {}, inFix = n => FIX.phases.indexOf(n) >= 0 || FIX.tasks.some(t => t[0] === n);
+  (await rd("SELECT c_projectphase_id AS id, name FROM c_projectphase WHERE c_project_id=" + (PRJ ? PRJ.c_project_id : 0))).filter(r => FIX.phases.indexOf(r.name) >= 0).forEach(r => PH[r.name] = r.id);
+  (await rd("SELECT c_projecttask_id AS id, name, c_projectphase_id AS ph FROM c_projecttask WHERE c_projectphase_id IN (" + Object.values(PH).concat([0]).join(',') + ")")).filter(r => FIX.tasks.some(t => t[0] === r.name)).forEach(r => TK[r.name] = { id: r.id, ph: r.ph });
   say('§W-BIMDOC fixture committed=' + (fx && fx.committed) + ' project=' + (PRJ && PRJ.c_project_id) + ' phases=' + JSON.stringify(PH) + ' tasks=' + JSON.stringify(Object.fromEntries(Object.entries(TK).map(([k, v]) => [k, v.id]))));
   if (!PRJ || Object.keys(PH).length !== FIX.phases.length || Object.keys(TK).length !== FIX.tasks.length) { verdict('fixture', 'INCONCLUSIVE', 'fixture rows not readable back'); return finish(); }
 
@@ -312,6 +359,26 @@ const DXF = Buffer.from('0\nSECTION\n2\nENTITIES\n0\nLINE\n8\nWALLS\n10\n0.0\n20
     if (!gone) rf.push('the last reference was deleted but the bytes stayed (the sweep is a no-op)'); if (!dxfKept) rf.push('an unrelated referenced entry (the DXF) was swept');
     say('§W-BIMDOC-REDSHARE after-first-delete: ' + sw1 + ' stillThere=' + still + ' | after-last-delete: ' + sw2 + ' gone=' + gone + ' dxfKept=' + dxfKept);
     verdict('R-6 red shared hash keeps its bytes', !put2 ? 'INCONCLUSIVE' : (rf.length ? 'FAIL' : 'PASS'), rf.length ? rf.join(' ; ') : 'one stored copy for two rows; first delete kept it, last delete removed it, the referenced DXF survived both sweeps');
+    // R-10 (§ATT-NEXT item 2, PO.delete :4508-4512): deleting a RECORD deletes its attachment row, then the store keeps what another row uses and drops the rest
+    {
+      const df = [], X1 = ['A-901', 1, 'Duplex delete probe one', 'ARC', 'DXF', 1, 'Plans'], X2 = ['A-902', 1, 'Duplex delete probe two', 'ARC', 'DXF', 1, 'Plans'];
+      const i1 = await createDoc(X1), i2 = await createDoc(X2); ID['A-901/1'] = i1; ID['A-902/1'] = i2;
+      if (!i1 || !i2) df.push('probe rows not created');
+      else {
+        await dialogAttach('A-901/1', 'fixture_sheetset_20mb.bin', BIG); await dialogAttach('A-902/1', 'fixture_sheetset_20mb.bin', BIG);
+        const both = (await opfsList()).includes(BIG_SHA) && (await attRow(i1)).length === 1 && (await attRow(i2)).length === 1;
+        if (!both) df.push('setup: both rows must hold the attachment');
+        const delRecord = async key => { await openDoc(key); await page.click('#idmp-toolbar [data-tb="delete"]'); await page.waitForSelector('#idmp-delete-ov [data-del-ok]', { timeout: 8000 }); await page.click('#idmp-delete-ov [data-del-ok]'); await sleep(3500); };
+        const m1 = mark(); await delRecord('A-901/1');
+        const a1 = (await attRow(i1)).length, rec1 = (await rd("SELECT count(*) n FROM bim_document WHERE bim_document_id=" + i1))[0].n, kept = (await opfsList()).includes(BIG_SHA), sw1 = since(m1, /^§FILESTORE-SWEEP /)[0] || null;
+        if (Number(rec1) !== 0) df.push('record 1 not deleted'); if (a1 !== 0) df.push('record 1 deleted but its ad_attachment row remains'); if (!kept) df.push('bytes removed although record 2 still uses the hash'); if (!sw1) df.push('no sweep after the record delete');
+        const m2 = mark(); await delRecord('A-902/1');
+        const a2 = (await attRow(i2)).length, gone = !(await opfsList()).includes(BIG_SHA), sw2 = since(m2, /^§FILESTORE-SWEEP /)[0] || null;
+        if (a2 !== 0) df.push('record 2 deleted but its attachment row remains'); if (!gone) df.push('last record deleted but the bytes stayed'); 
+        say('§W-BIMDOC-RECDELETE first: attRows=' + a1 + ' ' + sw1 + ' bytesKept=' + kept + ' | last: attRows=' + a2 + ' ' + sw2 + ' bytesGone=' + gone);
+      }
+      verdict('R-10 record delete takes its attachment and sweeps', !(ID['A-901/1'] && ID['A-902/1']) ? 'INCONCLUSIVE' : (df.length ? 'FAIL' : 'PASS'), df.length ? df.join(' ; ') : 'attachment rows cascade with the record; shared bytes kept until the last record is deleted');
+    }
   }
 
   // B-1 FSM pair sweep through the common machine
@@ -380,6 +447,8 @@ const DXF = Buffer.from('0\nSECTION\n2\nENTITIES\n0\nLINE\n8\nWALLS\n10\n0.0\n20
     await tabClick('Phase'); await selectRow(PH[phaseName]);
     await tabClick('Task'); await selectRow(TK[taskName].id);
   }
+  if (process.env.BD_ONLY9) { await beat9(); return finish(); }
+
   {
     const fail = [], notes = [];
     const expectRows = { Plans: 3, Sections: 3 };       // rows (every revision) of the task, by hand: A-101,A-102,A-103 ; A-201 rev1 (Superseded) + rev2 + the stale copy of rev1 made for R-2
@@ -450,6 +519,70 @@ const DXF = Buffer.from('0\nSECTION\n2\nENTITIES\n0\nLINE\n8\nWALLS\n10\n0.0\n20
     verdict('R-3 red progress judge', judgeCount(P.byTask[TK.Plans.id], wrong) === 'FAIL' ? 'PASS' : 'FAIL', 'judge fed a wrong count (issued+1) says ' + judgeCount(P.byTask[TK.Plans.id], wrong));
   }
 
+  await beat9();
+
+  // ════════ beat 9: the user ticks the phase complete (manual, §BIMDOC-5 c), runs the phase's Generate Order (ProjectPhaseGenOrder, AD_Process 216), the order is completed, Generate Invoices (119) bills it ════════
+  async function beat9() {
+    const fail = [], P_QTY = 8, P_PRICE = 50, HAND_AMT = P_QTY * P_PRICE;   // by hand: 8 x 50 = 400 (the phase's own PriceActual wins over the price list, ProjectPhaseGenOrder.java:93-95)
+    const kv = (line, k) => { const m = new RegExp(' ' + k + '=(\\S+)').exec(line || ''); return m ? m[1] : null; };
+    const judgeAmt = (line, w) => (line && Number(kv(line, 'qty')) === w.qty && Number(kv(line, 'price')) === w.price && Number(kv(line, 'amount')) === w.amount) ? 'PASS' : 'FAIL';
+    const ph0 = (await rd("SELECT * FROM c_projectphase WHERE c_projectphase_id=" + PH.Concept))[0];
+    const upd = await page.evaluate(([id, row, qty, price]) => new Promise(res => { const A = window.APP || {};
+      const ch = { m_product_id: { old: row.m_product_id == null ? null : row.m_product_id, new: 126 }, qty: { old: row.qty == null ? null : row.qty, new: qty }, priceactual: { old: row.priceactual == null ? null : row.priceactual, new: price }, iscomplete: { old: row.iscomplete || 'N', new: 'Y' } };
+      window.__crud.applyOpGroup([{ key: 'c_projectphase', table: 'c_projectphase', verb: 'update', op_type: 'CRUD_UPDATE', op_uuid: null, id: id, changes: ch, actor: A.actor }], r => res(r)); }), [PH.Concept, ph0, P_QTY, P_PRICE]);
+    await sleep(1200);
+    async function runPhaseOrder(phaseId) {
+      await boot('&window=130'); await selectRow(PRJ.c_project_id); await tabClick('Phase'); await selectRow(phaseId); await sleep(800);
+      const n0 = mark(); await page.click('#idmp-toolbar [data-tb="process"]').catch(() => {}); await sleep(600);
+      const btn = await page.$('[data-tbb="GenerateOrder"]'); if (!btn) return { noButton: true, lines: [], n0 };   // a flagged Button field (IsToolbarButton Y) lives in the gear popup, ADTabpanel.getToolbarButtons
+      await btn.click(); for (let i = 0; i < 80 && !(await page.$('#idmp-procdlg .idmp-procresult')); i++) await sleep(250); await sleep(1500);
+      const res = await page.evaluate(() => { const r = document.querySelector('#idmp-procdlg .idmp-procresult'); return r ? { chip: (r.querySelector('.ok-chip') || {}).textContent, msg: (r.querySelector('.msg') || {}).textContent } : null; });
+      await page.click('[data-procdlg-ok]').catch(() => {}); await sleep(800);
+      return { res, n0, head: since(n0, /^§PROJECT-PHASE-GENORDER /)[0] || null, lines: since(n0, /^§PROJECT-PHASE-GENORDER-LINE /) };
+    }
+    const g = await runPhaseOrder(PH.Concept);
+    if (g.noButton) fail.push('no Generate Order button on the Phase form');
+    const docNo = g.head ? kv(g.head, 'documentno') : null;   // the order's key is synthetic until the group commits ('#new:1' in the process log): the document number is what the log can name
+    const ordRow = docNo ? (await rd("SELECT c_order_id AS id FROM c_order WHERE documentno='" + docNo + "' AND c_project_id=" + PRJ.c_project_id))[0] : null, orderId = ordRow ? Number(ordRow.id) : null;
+    if (!g.head || kv(g.head, 'lines') !== '1' || !g.lines.length || judgeAmt(g.lines[0], { qty: P_QTY, price: P_PRICE, amount: HAND_AMT }) !== 'PASS') fail.push('order lines: head=' + g.head + ' line=' + g.lines[0] + ' want qty ' + P_QTY + ' price ' + P_PRICE + ' amount ' + HAND_AMT);
+    const ord = orderId != null ? (await rd("SELECT docstatus, c_project_id, c_bpartner_id, issotrx, c_doctypetarget_id FROM c_order WHERE c_order_id=" + orderId))[0] : null;
+    if (!ord || String(ord.c_project_id) !== String(PRJ.c_project_id) || ord.docstatus !== 'DR' || ord.issotrx !== 'Y') fail.push('order header ' + JSON.stringify(ord));
+    say('§W-BIMDOC-PHASEORDER ui=' + JSON.stringify(g.res) + ' | ' + g.head + ' | ' + (g.lines[0] || 'no line') + ' | header=' + JSON.stringify(ord) + ' | phase complete committed=' + (upd && upd.committed));
+    verdict('B-2 phase Generate Order', fail.length ? 'FAIL' : 'PASS', fail.length ? fail.join(' ; ') : 'phase ticked complete, order ' + orderId + ' with 1 line 8 x 50 = 400 (hand count)');
+    // complete the order through the Sales Order window's document-action bar; an On-Credit order invoices itself on Complete
+    const f2 = [];
+    if (orderId != null) {
+      await boot('&window=143'); await selectRow(orderId); await sleep(800);
+      const n1 = mark(); const bar = await barActs();
+      if (bar.indexOf('CO') < 0) f2.push('Complete not offered on the order: ' + bar);
+      else { await page.click('.idmp-docfsm [data-doc-action="CO"]'); for (let i = 0; i < 80 && !since(n1, /^§CRUD process committed key=c_order|REFUSED by the model|REJECTED/).length; i++) await sleep(250); await sleep(1500); }
+      const od = (await rd("SELECT docstatus FROM c_order WHERE c_order_id=" + orderId))[0];
+      if (!od || od.docstatus !== 'CO') f2.push('order docstatus ' + (od && od.docstatus) + ' ' + JSON.stringify(since(n1, /REFUSED|REJECTED|SEVERE/).slice(0, 3)));
+      { const dr = (await rd("SELECT docstatus, isactive, c_doctype_id, c_doctypetarget_id, invoicerule, issotrx, c_bpartner_id, processed FROM c_order WHERE c_order_id=" + orderId))[0], dl = await rd("SELECT qtyordered, qtyinvoiced FROM c_orderline WHERE c_order_id=" + orderId), dt = dr ? await rd("SELECT docbasetype, docsubtypeso FROM c_doctype WHERE c_doctype_id=" + Number(dr.c_doctype_id || 0)) : [];
+        say('§W-BIMDOC-ORDER-ROW ' + JSON.stringify(dr) + ' lines=' + JSON.stringify(dl) + ' doctype=' + JSON.stringify(dt)); }
+      // the order is On-Credit (DocSubTypeSO WI): MOrder.completeIt raises the invoice itself (model_invoice.js MOrder.createInvoice) - 'the invoice through the existing path'
+      const ih = since(n1, /^§ORDER-CREATEINVOICE /)[0] || null, il = since(n1, /^§ORDER-CREATEINVOICE-LINE /);
+      if (!ih || !il.length) f2.push('no §ORDER-CREATEINVOICE lines'); else if (judgeAmt(il[0], { qty: P_QTY, price: P_PRICE, amount: HAND_AMT }) !== 'PASS') f2.push('invoice line ' + il[0]);
+      const ctl = judgeAmt(il[0], { qty: P_QTY, price: P_PRICE, amount: HAND_AMT + 1 });
+      if (il.length && ctl !== 'FAIL') f2.push('the judge fed amount+1 says ' + ctl);
+      const inv = (await rd("SELECT docstatus, grandtotal FROM c_invoice WHERE c_order_id=" + orderId))[0];
+      if (!inv || inv.docstatus !== 'CO') f2.push('invoice row ' + JSON.stringify(inv));
+      say('§W-BIMDOC-INVOICE ' + ih + ' | ' + (il[0] || 'no line') + ' | row=' + JSON.stringify(inv));
+    }
+    verdict('B-3 order completed and invoiced', fail.length ? 'INCONCLUSIVE' : (f2.length ? 'FAIL' : 'PASS'), f2.length ? f2.join(' ; ') : 'order CO, invoice line 8 x 50 = 400 equal to the hand count; judge fed 401 says FAIL');
+    // R-9 red: a phase with nothing to order yields an order with 0 lines (legacy saves the header first, ProjectPhaseGenOrder.java:75-77, then loops over nothing)
+    await commitOps([mkOp('c_projectphase', { c_project_id: PRJ.c_project_id, name: 'Empty stage', seqno: 900, isactive: 'Y', iscomplete: 'N' })]); await sleep(1200);
+    const eph = (await rd("SELECT c_projectphase_id AS id FROM c_projectphase WHERE c_project_id=" + PRJ.c_project_id + " AND name='Empty stage'"))[0];
+    const e = eph ? await runPhaseOrder(eph.id) : null, rf = [];
+    if (!eph) rf.push('empty phase not readable');
+    else {
+      if (!e.head || kv(e.head, 'lines') !== '0') rf.push('head ' + e.head);
+      if (e.lines.length) rf.push('lines logged ' + e.lines.length);
+      if (!e.res || !/\(0\)/.test(e.res.msg || '')) rf.push('message ' + JSON.stringify(e.res));
+    }
+    verdict('R-9 red nothing to order yields 0 lines', !eph ? 'INCONCLUSIVE' : (rf.length ? 'FAIL' : 'PASS'), rf.length ? rf.join(' ; ') : 'order header created, 0 lines, message "' + (e.res && e.res.msg) + '"');
+  }
+
   // X-1 beat 10: issuing one more deliverable moves the project's issued count by one link (hand count: A-101 CO, A-201 rev2 CO = 2 -> A-103 issued = 3)
   {
     const n0 = mark(); await act('A-103/1', 'CO'); const ln = since(n0, /^§BIMDOC-CHAIN /)[0] || null, st = await status('A-103/1');
@@ -464,8 +597,8 @@ const DXF = Buffer.from('0\nSECTION\n2\nENTITIES\n0\nLINE\n8\nWALLS\n10\n0.0\n20
     // ── the ten evidence lines of §BIMDOC-FILM, in order, as far as items 1-4 cover them ──
     let last = -1, orderOk = true; const rows = [];
     const findAfter = (re, after) => { for (let i = after + 1; i < PAGELOG.length; i++) if (re.test(PAGELOG[i])) return i; return -1; };
-    const EV = [[1, 'project from its type (copy-phases log)', null], [2, 'sheet register (row count per task)', /^§BIMDOC-REGISTER /], [3, 'drawing attached', /^§ATT hash name=duplex_ground_floor/], [4, 'open in the app', /^§BIMDOC-OPEN id=/],
-      [5, 'issued (signed transition lines)', /^§CRUD process committed key=bim_document .*to=(IP|CO)/], [6, 'revised (supersede link)', /^§BIMDOC-SUPERSEDE /], [7, 'hours booked on the task', /^§BIMDOC-HOURS task=-?\d+ lines=[1-9]/], [8, 'progress, computed', /^§BIMDOC-PROGRESS /], [9, 'billed (phase order + invoice)', null], [10, 'the measure moves (sheet chain)', /^§BIMDOC-CHAIN .*delta=1 /]];
+    const EV = [[1, 'project from its type (copy-phases log)', /^§PROJECT-SETTYPE .*phases=[1-9]/], [2, 'sheet register (row count per task)', /^§BIMDOC-REGISTER /], [3, 'drawing attached', /^§ATT hash name=duplex_ground_floor/], [4, 'open in the app', /^§BIMDOC-OPEN id=/],
+      [5, 'issued (signed transition lines)', /^§CRUD process committed key=bim_document .*to=(IP|CO)/], [6, 'revised (supersede link)', /^§BIMDOC-SUPERSEDE /], [7, 'hours booked on the task', /^§BIMDOC-HOURS task=-?\d+ lines=[1-9]/], [8, 'progress, computed', /^§BIMDOC-PROGRESS /], [9, 'billed (phase order + invoice)', /^§ORDER-CREATEINVOICE-LINE /], [10, 'the measure moves (sheet chain)', /^§BIMDOC-CHAIN .*delta=1 /]];
     EV.forEach(([n, what, re]) => { const i = re ? findAfter(re, last) : -1; if (!re) rows.push('§BIMDOC-FILM-EVIDENCE ' + n + ' ABSENT ' + what + ' (' + (n === 1 ? '⛔ the kernel has no MProject.setProjectType/copyPhasesFrom twin: erp/model_project.js registers only c_projectline (:49), AD_Process 215 ProjectSetType has no handler in erp/ad_process.js' : '⛔ the kernel has no ProjectPhaseGenOrder (AD_Process 216): erp/ad_process.js registers only ProjectGenOrder (:462, project level, refuses category S :217)') + ')');
       else if (i < 0) { rows.push('§BIMDOC-FILM-EVIDENCE ' + n + ' MISSING-IN-ORDER ' + what); orderOk = false; }
       else { rows.push('§BIMDOC-FILM-EVIDENCE ' + n + ' PRESENT line#' + i + ' ' + what + ' :: ' + PAGELOG[i].slice(0, 150)); last = i; } });
