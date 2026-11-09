@@ -23,6 +23,14 @@ export const HEADERS = {
   M_Inventory: ['DocumentNo', 'M_Warehouse_ID>Value', 'MovementDate', 'C_DocType_ID>DocSubTypeInv', 'Description'], M_InventoryLine: ['M_Inventory_ID', 'M_Locator_ID>Value', 'M_Product_ID>Value', 'QtyCount'] };
 export const ORDER = Object.keys(HEADERS);
 
+// §E3C-SPEC (b) — the OPEN-BALANCE sheets of the cut-over method (bim-compiler prompts/MIGRATE_INSTALL_TENANT.md §B3-SCOUT, §ENGINE-SPEC §3): legacy IMPORT tables, loaded as rows and
+//   then turned into documents by the legacy import processes (ImportGLJournal 220 -> Complete; ImportInvoice 207 DocAction CO). OPTIONAL: the engine emits one, numbered after the
+//   17 masters, only when a template has an entity for it - a source without open balances keeps its 17-sheet book byte for byte. Columns = AD_Column names of the I_ table.
+export const OPEN_HEADERS = {
+  I_GLJournal: ['BatchDocumentNo', 'BatchDescription', 'JournalDocumentNo', 'DocTypeName', 'CategoryName', 'PostingType', 'DateAcct', 'ISO_Code', 'AccountValue', 'AmtSourceDr', 'AmtSourceCr', 'Description', 'I_IsImported'],
+  I_Invoice: ['DocumentNo', 'DocTypeName', 'IsSOTrx', 'BPartnerValue', 'DateInvoiced', 'DateAcct', 'ISO_Code', 'PaymentTermValue', 'ChargeName', 'QtyOrdered', 'PriceActual', 'TaxIndicator', 'Description', 'I_IsImported'] };
+export const OPEN_ORDER = Object.keys(OPEN_HEADERS);
+
 // ── SHA-1 (sync; crypto.subtle is async and the form engine's rows() is not) for UUID v5 ──
 function sha1(bytes) {
   const H = [0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476, 0xC3D2E1F0], l = bytes.length, n = ((l + 8) >> 6) + 1, w = new Uint32Array(n * 16);

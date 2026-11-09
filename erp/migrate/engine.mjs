@@ -7,7 +7,9 @@
 // A template is DATA: a closed set of block keys and expression operators, evaluated here by ONE evaluator (no eval, no JS in a template). Anything outside the closed sets,
 //   a reference to a sheet not produced yet, or a ${VAR} / %let / def / valueMap that is not declared = the template is REFUSED at load, the reason named.
 // Pure: no I/O, no clock, no random. Browser + node.
-import { HEADERS, ORDER, uuid5, finishBook } from './workbook.mjs';
+import { HEADERS as MASTER_HEADERS, ORDER as MASTER_ORDER, OPEN_HEADERS, OPEN_ORDER, uuid5, finishBook } from './workbook.mjs';
+// the target sheets a template may name: the 17 masters + the optional open-balance sheets (§E3C-SPEC b)
+const HEADERS = Object.assign({}, MASTER_HEADERS, OPEN_HEADERS), ORDER = MASTER_ORDER.concat(OPEN_ORDER);
 
 const s = (v) => (v == null ? '' : String(v));
 const BLOCK_KEYS = ['from', 'tag', 'sort', 'where', 'once', 'refuse', 'fields', 'rename', 'unique', 'group', 'prov', 'patches', 'notes', 'problems'];
@@ -16,9 +18,10 @@ const TOP_KEYS = ['template', 'version', 'source', 'connector', 'srcKey', 'varia
 // operator → [min args, max args] (an operator takes ONE value: a single expression or an array of them)
 const OPS = { str: 1, num: 1, not: 1, has: 1, first: -1, or: -1, and: -1, eq: 2, ne: 2, in: 2, if: 3, map: 2, concat: -1, cut: 2, uuid5: 1, add: -1, sub: 2, mul: -1,
   seq: 1, count: 1, size: 1, exists: 3, out: 2, src: 2, countWhere: 2, collect: 3, join: 2, def: 1, pick: 1,
-  enum: 3, caption: 1, re: 4, replace: 4, trim: 1, gt: 2, lt: 2, len: 1, take: 2, any: 2, obj: 1, with: 2, lookup: 4, treeDepth: 4, row: 2, hasSet: 1, counter: 1 };
+  enum: 3, caption: 1, re: 4, replace: 4, trim: 1, gt: 2, lt: 2, len: 1, take: 2, any: 2, obj: 1, with: 2, lookup: 4, treeDepth: 4, row: 2, hasSet: 1, counter: 1,
+  find: 4, round: 2, abs: 1, sumSet: 3 };   // §E3C-SPEC (b): find = a row of a RAW source set by key (a source whose rows point at each other by id); sumSet = a total over a raw set
 const SHEET_OPS = { count: 0, exists: 0, out: 0, src: 0, countWhere: 0, collect: 0, lookup: 0 };   // first argument names a sheet
-const LITERAL_ARGS = { enum: [1], re: [0, 1, 3], replace: [1, 2], row: [0, 1], hasSet: [0], counter: [0], treeDepth: [0, 1, 2, 3], any: [0] };   // arguments that are names/patterns, not expressions
+const LITERAL_ARGS = { enum: [1], re: [0, 1, 3], replace: [1, 2], row: [0, 1], hasSet: [0], counter: [0], treeDepth: [0, 1, 2, 3], any: [0], find: [0, 1, 3], sumSet: [0] };   // arguments that are names/patterns, not expressions
 const SPECIAL = ['#tag', '#v', '#prev', '#label'];
 const fld = (e) => { const i = e.indexOf('.'); return i < 0 ? [e, null] : [e.slice(0, i), e.slice(i + 1)]; };   // "%NAME.Field name." — the field may itself contain dots ("No.")
 
@@ -111,9 +114,10 @@ export function load(t) {
 export function run(t, conn, variables) {
   load(t);
   const V = Object.assign({}, t.variables || {}, variables || {}), maps = t.valueMaps || {}, defs = t.defs || {}, letE = t.let || {}, letV = {}, seqs = {};
-  const sheets = {}, prov = {}, accepted = {}; ORDER.forEach((k) => { sheets[k] = []; prov[k] = []; accepted[k] = []; });
+  const open = OPEN_ORDER.filter((k) => k in t.entities);   // the optional sheets this template produces
+  const sheets = {}, prov = {}, accepted = {}; MASTER_ORDER.concat(open).forEach((k) => { sheets[k] = []; prov[k] = []; accepted[k] = []; });
   const patches = [], renamed = [], refused = [], notes = (conn.notes || []).slice(), problems = (conn.problems || []).slice();
-  const truthy = (v) => !!v, counters = {}, onceSeen = {}, renameUsed = {}, lookIdx = new Map(), treeIdx = new Map();
+  const truthy = (v) => !!v, counters = {}, onceSeen = {}, renameUsed = {}, lookIdx = new Map(), treeIdx = new Map(), findIdx = new Map();
   const letGet = (n) => { if (!(n in letV)) letV[n] = ev(letE[n], {}); return letV[n]; };
   function ev(e, cx) {
     if (e == null || typeof e === 'number' || typeof e === 'boolean') return e;
@@ -182,6 +186,12 @@ export function run(t, conn, variables) {
       case 'row': return conn.rows(A[0])[A[1]];
       case 'hasSet': return conn.hasSet(A[0]);
       case 'counter': return counters[A[0]] || 0;
+      case 'find': { // [set, key field, the value looked for, the field answered] - the FIRST row of the raw set with that key (ids are unique in the source)
+        const k = A[0] + '|' + A[1]; let by = findIdx.get(k); if (!by) { by = new Map(); conn.rows(A[0]).forEach((r) => { const kv = s(r[A[1]]); if (!by.has(kv)) by.set(kv, r); }); findIdx.set(k, by); }
+        const hit = by.get(s(x(2))); return hit ? hit[A[3]] : undefined; }
+      case 'round': { const f = Math.pow(10, Number(x(1)) || 0); return Math.round(Number(x(0)) * f) / f; }
+      case 'abs': return Math.abs(Number(x(0)));
+      case 'sumSet': return conn.rows(A[0]).reduce((n, r) => (ev(A[1], { row: r }) ? n + Number(ev(A[2], { row: r })) : n), 0);
     }
     throw new TemplateError('unknown operator ' + op);
   }
@@ -245,10 +255,11 @@ export function run(t, conn, variables) {
   });
   const patch = (table, column, cell, rule, rows) => { if (rows) patches.push({ table, column, cell, rule, rows }); };
   const book = finishBook(sheets, patch, renamed, t.srcKey || 'src');
+  open.forEach((k) => book.push({ name: String(book.length + 1).padStart(2, '0') + k, rows: [OPEN_HEADERS[k]].concat(sheets[k].map((r) => OPEN_HEADERS[k].map((h) => (r[h] == null ? '' : String(r[h]))))) }));
   const M = t.manifest || {}, manifest = {};
   Object.keys(M).forEach((k) => { manifest[k] = ev(M[k], {}); });
   if (conn.setsReportAs) manifest[conn.setsReportAs] = conn.report();
-  Object.assign(manifest, { problems, sheets: book.map((b, i) => ({ sheet: b.name, table: ORDER[i], rows: b.rows.length - 1, header: b.rows[0], source: t.srcKey || 'src' })), patches, renamed, refused, notes });
+  Object.assign(manifest, { problems, sheets: book.map((b) => ({ sheet: b.name, table: b.name.slice(2), rows: b.rows.length - 1, header: b.rows[0], source: t.srcKey || 'src' })), patches, renamed, refused, notes });
   return { book, manifest, provenance: prov };
 }
 
