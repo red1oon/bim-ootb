@@ -553,6 +553,9 @@
       describe: describe,
       hasPending: hasPending,
       noteTouched: noteTouched,
+      // stageManifestDictionary(manifest): stage ONLY manifest.dictionary into host.db through the same stageDictionary/ctx.dict.insert a Start uses (refcounted, undoable); no activate(), no engines.
+      //   The seam for headless readers of the dictionary a bundle adds (scripts/gen_erp_verbs.js, bim-compiler NEURO_SYMBOLIC_ORDER_CONTRACT.md 21.7). Returns the number of rows inserted.
+      stageManifestDictionary: function (manifest) { var sc = makeScope(manifest.id); return stageDictionary({ manifest: manifest }, sc); },
       mayWrite: mayWrite,
       resolveDeps: resolveDeps,
       list: list,
