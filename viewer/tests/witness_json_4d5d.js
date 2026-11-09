@@ -17,7 +17,7 @@ const canon = v => Array.isArray(v) ? v.map(canon) : v && typeof v === 'object' 
 const files = fs.readdirSync(D).filter(f => /\.json$/.test(f) && f !== 'ifc_schema_hierarchy.json');   // the schema hierarchy is not a reference a user edits
 const trip = SE => files.filter(f => { const raw = JSON.parse(fs.readFileSync(path.join(D, f), 'utf8')); try { return JSON.stringify(canon(SE.schemaToJson(SE.jsonToSchema(JSON.parse(JSON.stringify(raw)))))) !== JSON.stringify(canon(raw)); } catch (e) { return true; } });
 // the falsifier must be a real editor: a missing file must stop the witness, not count every file as 'differs'
-const now = trip(editor(fs.readFileSync(path.join(V, 'settings_editor.js'), 'utf8'))), mainSrc = cp.execFileSync('git', ['-C', ROOT, 'show', '159d65065745:viewer/settings_editor.js'], { encoding: 'utf8' });
+const now = trip(editor(fs.readFileSync(path.join(V, '..', 'common', 'settings_editor.js'), 'utf8'))), mainSrc = cp.execFileSync('git', ['-C', ROOT, 'show', '159d65065745:viewer/settings_editor.js'], { encoding: 'utf8' });
 if (!/function jsonToSchema/.test(mainSrc)) { console.log('MISSING input: the pre-fix editor (159d65065745:viewer/settings_editor.js)'); process.exit(2); }
 const main = trip(editor(mainSrc));
 ok('J1 every reference JSON survives the editor with identical values (falsifier: the editor before the nested-value fix, 159d65065)', now.length === 0 && main.length > 0, 'files=' + files.length + ' differ now=' + now.length + ' before-fix=' + main.length + ' [' + main.join(' ') + ']');

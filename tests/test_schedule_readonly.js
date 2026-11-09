@@ -35,7 +35,7 @@ const localStorageShim = {
   setItem(k, v) { store[k] = String(v); }, removeItem(k) { delete store[k]; }
 };
 
-const src = fs.readFileSync(path.resolve(__dirname, '..', 'viewer', 'settings_editor.js'), 'utf8');
+const src = fs.readFileSync(path.resolve(__dirname, '..', 'common', 'settings_editor.js'), 'utf8');
 const logs = [];
 const sandbox = { window: {}, document: documentShim, localStorage: localStorageShim,
   console: { log: (m) => { logs.push(m); }, warn: () => {} } };

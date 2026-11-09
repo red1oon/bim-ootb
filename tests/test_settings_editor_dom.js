@@ -36,7 +36,7 @@ const localStorageShim = {
 };
 
 // ── load the editor in a sandbox ─────────────────────────────────────────────
-const src = fs.readFileSync(path.resolve(__dirname, '..', 'viewer', 'settings_editor.js'), 'utf8');
+const src = fs.readFileSync(path.resolve(__dirname, '..', 'common', 'settings_editor.js'), 'utf8');
 const logs = [];
 const sandbox = {
   window: {}, document: documentShim, localStorage: localStorageShim,

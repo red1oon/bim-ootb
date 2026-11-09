@@ -185,6 +185,7 @@
   <button id="b-connect" title="Connect Scene — share selection/timeline with the Viewer &amp; ERP (opt-in; surfaces stay separate)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><line x1="8" x2="16" y1="12" y2="12"/></svg><span>Connect</span></button>
   <button id="b-teams" title="Team — click to start or join a team" aria-pressed="false" data-team-state="off"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span>Teams</span></button>
   <button id="b-xray" title="X-ray reveal (X) — structure goes glass so the routed MEP systems glow through in their discipline colours"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></svg><span>X-ray</span></button>
+  <button id="b-rules" title="Walker rules (JSON): read and edit the rules the walker uses for this building type"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H6a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2 2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h2"/><path d="M16 3h2a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2 2 2 0 0 0-2 2v4a2 2 0 0 1-2 2h-2"/></svg><span>Rules</span></button>
 </div>
 <!-- Typed dimension fields (Move step/rotate/scale/depth/profile/radius/sketch W+H): found LIVE 2026-07-07 —
      as plain flow children of #bar (position:fixed;inset:0;pointer-events:none), every one of these inputs
@@ -331,7 +332,7 @@ if (window.WholeHistory && WholeHistory.mount) WholeHistory.mount({ page: 'model
      terminal_rules.db (mined off Terminal). Supersedes the thin mep_rw.db recipes for the disc-node walk —
      every disc walks on ANY opened building from rules measured off a real coordinated building. -->
 <script src="../common/walk_rules.js?v=2" onerror="console.warn('§WALK_RULES LOAD_FAIL walk_rules.js')"></script>
-<script src="disc_walker.js?v=20" onerror="console.warn('§DW LOAD_FAIL disc_walker.js')"></script>
+<script src="disc_walker.js?v=21" onerror="console.warn('§DW LOAD_FAIL disc_walker.js')"></script>
 <!-- §I5 per-instance hide (SPEC_INSTANCE_HIDE.md §I5d): Walked-Fixtures Outliner category — one row per
      walked instance (windowed via §V4 OL_CHUNK), eye = hide that exact instanceId. Witness: W-E2E-INSTHIDE. -->
 <script src="dw_instances_outliner.js?v=1" onerror="console.warn('§DWINST LOAD_FAIL dw_instances_outliner.js')"></script>
@@ -716,6 +717,10 @@ function _xrayReapply(src) {
     xrayReveal(true).then(r => console.log('§XRAY-REFOLD reapplied src=' + src + ' glass=' + r.glass + ' glow=' + r.glow)); }, 0);
 }
 window.Bonsai.decor.register('xray', () => { _xrayReapply('refold'); return _xrayOn ? 'on' : 'off'; });   // §B1-ROW1 (was its own listener)
+// prompts/MODELLER_RULES_EDITOR.md (W-E2E-RULES-EDIT): the walker's rules as JSON in the project's ONE JSON editor; loaded on first click
+{ const bR = document.getElementById('b-rules'); let _rl = null;
+  if (bR) bR.onclick = async () => { try { if (!window.RulesEditor) { _rl = _rl || new Promise((ok, no) => { const sc = document.createElement('script'); sc.src = 'rules_editor.js?v=1'; sc.onload = ok; sc.onerror = () => no(new Error('rules_editor.js failed to load')); document.head.appendChild(sc); }); await _rl; }
+    if (document.getElementById('rules-ed')) window.RulesEditor.close(); else await window.RulesEditor.open(); } catch (e) { _rl = null; console.warn('§RULES-EDIT load failed ' + (e && e.message)); } }; }
 const bXray = document.getElementById('b-xray');
 function paintXray() { if (bXray) bXray.classList.toggle('on', _xrayOn); }
 if (bXray) bXray.onclick = async () => {

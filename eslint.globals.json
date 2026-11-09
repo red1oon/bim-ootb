@@ -203,5 +203,6 @@
   "ProvTotals": "readonly",
   "GeorefFrame": "readonly",
   "IfcGridRead": "readonly",
-  "setDrawnOnlyView": "readonly"
+  "setDrawnOnlyView": "readonly",
+  "RulesEditor": "readonly"
 }

@@ -190,6 +190,30 @@
       console.log(TAG + ' §DW-RULES-PATCH file=' + file + ' rows=' + n + ' ok'); return true; }
     catch (e) { console.warn(TAG + ' §DW-RULES-PATCH file=' + file + ' error ' + (e && e.message)); return false; }
   }
+  // ── USER RULE EDITS (prompts/MODELLER_RULES_EDITOR.md — Witness: W-E2E-RULES-EDIT) ─────────────────────────────
+  // An edit is a CELL: { "<table>:<rowid>": { <column>: value } }, stored per rules file. Applied with bound parameters;
+  // a row or column that no longer exists is skipped and counted, never invented.
+  function userRulesKey(file) { return 'dw_rules_user:' + file; }
+  function userRules(file) { try { var t = ROOT.localStorage && ROOT.localStorage.getItem(userRulesKey(file)); return t ? JSON.parse(t) : null; } catch (e) { return null; } }
+  function _ident(s) { return /^[A-Za-z_][A-Za-z0-9_]*$/.test(String(s)) ? '"' + s + '"' : null; }
+  function applyCells(db, cells) {
+    var done = 0, skipped = 0;
+    Object.keys(cells || {}).forEach(function (rk) {
+      var m = /^([A-Za-z_][A-Za-z0-9_]*):(\d+)$/.exec(rk); if (!m) { skipped++; return; }
+      var t = _ident(m[1]); var cols = t ? _rows(db, 'PRAGMA table_info(' + t + ')').map(function (c) { return c.name; }) : [];
+      Object.keys(cells[rk]).forEach(function (col) {
+        if (!t || cols.indexOf(col) < 0 || !_rows(db, 'SELECT 1 FROM ' + t + ' WHERE rowid=' + (+m[2])).length) { skipped++; return; }
+        var st = db.prepare('UPDATE ' + t + ' SET ' + _ident(col) + '=? WHERE rowid=?'); st.run([cells[rk][col], +m[2]]); st.free(); done++;
+      });
+    });
+    return { done: done, skipped: skipped };
+  }
+  function applyUserRules(db, file) {
+    var u = userRules(file); if (!u || !u.cells) return null;
+    try { var r = applyCells(db, u.cells); console.log(TAG + ' §DW-RULES-USER file=' + file + ' cells=' + r.done + ' skipped=' + r.skipped + ' ok'); return r; }
+    catch (e) { console.warn(TAG + ' §DW-RULES-USER file=' + file + ' error ' + (e && e.message)); return null; }
+  }
+  async function reloadRules(SQL, baseUrl) { var f = _loadedFile; _ready = false; _loadedFile = null; return dwInit(SQL, baseUrl, f); }
   async function _patchRulesFromUrl(db, file, baseUrl) {
     if (typeof fetch !== 'function') return false;
     var url = (baseUrl || './').replace(/\/?$/, '/') + 'patches/' + file + '.sql', txt = null;
@@ -206,6 +230,7 @@
     _db = new SQL.Database(new Uint8Array(buf));
     _ready = true; _loadedFile = file;
     await _patchRulesFromUrl(_db, file, baseUrl);   // §12 rule 1: self-heal rules patch (prompts/DISC_WALK_BAND_NO_HOST.md)
+    applyUserRules(_db, file);                       // prompts/MODELLER_RULES_EDITOR.md rule 4: the user's own edits, after the shipped patch
     var n = function (t) { var r = _db.exec('SELECT COUNT(*) FROM ' + t); return r.length ? r[0].values[0][0] : 0; };
     console.log(TAG + ' dwInit ' + file + ' placement=' + n('rule_placement') + ' routing=' + n('rule_routing') +
       ' place_order=' + n('rule_place_order') + ' avoidance=' + n('rule_avoidance'));
@@ -3380,7 +3405,7 @@
     return ds.filter(function (d) { return d && d !== 'ARC'; });
   }
 
-  var API = { __test: { placeMeasured: placeMeasured, bandHostPass: _bandHostPass }, applyRulesPatch: applyRulesPatch, setDrawnOnlyView: setDrawnOnlyView, drawnOps: drawnOps, rulesMeta: function () { return _rulesMeta; }, hasRules: function (disc) { try { var r = _db && _db.exec("SELECT COUNT(*) FROM rule_placement WHERE disc='" + String(disc).replace(/'/g, "''") + "'"); return !!(r && r.length && r[0].values[0][0] > 0); } catch (e) { return false; } }, dwInit: dwInit, dwRulesKey: dwRulesKey, dwOpen: dwOpen, dwBorrow: dwBorrow, dwBorrowFile: dwBorrowFile, dwWalk: dwWalk, assemble: assemble, connectorFor: connectorFor, connectorEnrich: connectorEnrich, substrate: substrate, place: place, hostBind: hostBind, dwTraceZ: dwTraceZ,
+  var API = { __test: { placeMeasured: placeMeasured, bandHostPass: _bandHostPass }, applyRulesPatch: applyRulesPatch, rulesDb: function () { return _db; }, userRulesKey: userRulesKey, userRules: userRules, applyCells: applyCells, applyUserRules: applyUserRules, reloadRules: reloadRules, setDrawnOnlyView: setDrawnOnlyView, drawnOps: drawnOps, rulesMeta: function () { return _rulesMeta; }, hasRules: function (disc) { try { var r = _db && _db.exec("SELECT COUNT(*) FROM rule_placement WHERE disc='" + String(disc).replace(/'/g, "''") + "'"); return !!(r && r.length && r[0].values[0][0] > 0); } catch (e) { return false; } }, dwInit: dwInit, dwRulesKey: dwRulesKey, dwOpen: dwOpen, dwBorrow: dwBorrow, dwBorrowFile: dwBorrowFile, dwWalk: dwWalk, assemble: assemble, connectorFor: connectorFor, connectorEnrich: connectorEnrich, substrate: substrate, place: place, hostBind: hostBind, dwTraceZ: dwTraceZ,
     route: route, routeChains: routeChains, routePattern: routePattern,
     // §MEP-ROUTE-DISC: the disciplines the pattern bridge covers (modeller.html gates its mep_rw.db load on this)
     patternDiscs: function () { return Object.keys(_RW_PATTERN_DISC); },

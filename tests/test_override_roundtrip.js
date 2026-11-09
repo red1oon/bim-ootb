@@ -31,7 +31,7 @@ const localStorageShim = {
   removeItem(k) { delete store[k]; }
 };
 
-const src = fs.readFileSync(path.join(viewer, 'settings_editor.js'), 'utf8');
+const src = fs.readFileSync(path.join(viewer, '..', 'common', 'settings_editor.js'), 'utf8');
 const sandbox = { window: {}, document: { createElement() { return {}; } },
   localStorage: localStorageShim, fetch: fetchShim, console: { log() {}, warn() {} } };
 vm.createContext(sandbox);
