@@ -197,7 +197,7 @@
       + '<span class="adq-dim">— viewer + serve script + README</span></div>';
   }
 
-  // The two live delegate agents + the roadmap sources (greyed, "Under construction" — shown for
+  // The live delegate agents (SAP Business One as ALPHA) + the roadmap sources (greyed, "Under construction" — shown for
   // roadmap consistency, NOT advertised as working: soon=true → disabled, no download, honest).
   var AGENT_ORDER = ['odoo', 'idempiere', 'sap', 'oracle', 'dynamics'];
   var AGENTS = {
@@ -205,7 +205,8 @@
       note: 'Unzip, then per its README: <code>cd odoo_agent &amp;&amp; npm install &amp;&amp; node agent.js &amp;&amp; node export.js</code> → writes <code>odoo_chain.json</code> (one order, checked to the cent) and <code>odoo_export/</code> (your master data). Demo Odoo by default; for your own add <code>--host --db --login</code> (the password is asked in the terminal). Load the results back here.' },
     idempiere: { label: 'iDempiere', file: 'erp/idempiere_agent.zip', txt: 'Download idempiere_agent.zip',
       note: 'Unzip, then per its README: <code>cd idempiere_agent &amp;&amp; npm install &amp;&amp; node migrate_agent.js --masters</code> → writes <code>ad_masters.db</code>. Load that file back here.' },
-    sap: { label: 'SAP', soon: true },
+    sap: { label: 'SAP B1 (alpha)', file: 'erp/sap_agent.zip', txt: 'Download sap_agent.zip (alpha)',
+      note: 'ALPHA, a proof of concept. Unzip, then per its README (Node 18+, nothing to install): <code>cd sap_agent &amp;&amp; node agent.js --url https://&lt;server&gt;:50000 --company &lt;CompanyDB&gt; --user &lt;user&gt;</code> → reads your Service Layer (read only) and writes <code>sap_export.json</code>. Drop it on ERP → Data Import → <b>Migrate from SAP Business One (alpha)</b>. Please send back the <code>§SAP</code> lines it prints (counts and field names, no data).' },   // bim-compiler MIGRATE_INSTALL_TENANT.md §SAP-SPEC
     oracle: { label: 'Oracle', soon: true },
     dynamics: { label: 'Dynamics', soon: true }
   };

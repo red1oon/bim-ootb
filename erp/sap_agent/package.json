@@ -1,0 +1,11 @@
+{
+  "name": "sap-b1-migrate-agent",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ALPHA proof of concept: reads master data from YOUR SAP Business One Service Layer (read only) and writes sap_export.json for the BIM-OOTB ERP \"Migrate from SAP Business One (alpha)\" form. The browser never connects to SAP.",
+  "license": "MIT",
+  "author": "Redhuan D. Oon <red1org@gmail.com>",
+  "main": "agent.js",
+  "engines": { "node": ">=18" },
+  "scripts": { "start": "node agent.js" }
+}
