@@ -1,0 +1,59 @@
+#!/usr/bin/env node
+// Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
+// SPDX-License-Identifier: MIT
+// # ⚠ DO NOT REMOVE — gen_erp_door_verbs.js (lane B, bim-compiler prompts/NEURO_SYMBOLIC_ORDER_CONTRACT.md §0.4 detail 2). Read the §ERP_DOOR_VERBS line after every run.
+// The erp.* entries of common/door/verbs.json are GENERATED, not hand-kept (AD-LAYER LAW, W-VOCAB-FRESH): from the application dictionary (erp/ad_seed.db: AD_Ref_List of reference 135 gives each
+// action's name and description, AD_Table the document kinds) and erp/actor_verbs.json (which (table, action) pairs are offered, each with its legacy-parity evidence). Two read verbs (find,
+// actions) are generic over every document table; one verb per offered DocAction takes the document. The harm class of an action is gen_erp_verbs.js's own rule (CO posts).
+// Usage: node scripts/gen_erp_door_verbs.js [--check]   (--check writes nothing and exits 1 if verbs.json is not what the generator would write: the staleness test)
+'use strict';
+const fs = require('fs'), path = require('path');
+const ROOT = path.join(__dirname, '..');
+const HARM = { CO: 'posts', PO: 'posts', RC: 'posts', RA: 'posts' };   // gen_erp_verbs.js DOC_CLASS; every other DocAction changes status only
+async function main() {
+  const SQL = await require(path.join(ROOT, 'modeller/lib/sql-wasm.js'))({ wasmBinary: fs.readFileSync(path.join(ROOT, 'modeller/lib/sql-wasm.wasm')) });
+  const db = new SQL.Database(new Uint8Array(fs.readFileSync(path.join(ROOT, 'erp/ad_seed.db'))));
+  const rows = (sql, p) => { const st = db.prepare(sql), o = []; try { if (p) st.bind(p); while (st.step()) o.push(st.getAsObject()); } finally { st.free(); } return o; };
+  const av = JSON.parse(fs.readFileSync(path.join(ROOT, 'erp/actor_verbs.json'), 'utf8')).verbs;
+  const kinds = rows("SELECT DISTINCT t.name AS name, t.tablename AS tn FROM AD_Column c JOIN AD_Table t ON t.AD_Table_ID=c.AD_Table_ID WHERE lower(c.columnname)='docaction' AND t.isactive='Y' AND t.isview<>'Y' ORDER BY t.tablename");
+  const kindOf = (tn) => (kinds.filter(k => k.tn.toLowerCase() === String(tn).toLowerCase())[0] || {}).name;
+  const exKind = (kindOf('C_Order') || 'Order');
+  const ref = (a) => rows("SELECT name, description FROM AD_Ref_List WHERE AD_Reference_ID=135 AND value=?", [a])[0];
+  const kindIn = { name: 'kind', description: 'The kind of document, as the dictionary names it (an AD_Table with a DocAction column), e.g. "' + exKind + '". ' + kinds.length + ' kinds exist; an unknown kind or a table that is not a document is refused naming the reason.', required: true, type: 'string', example: exKind };
+  const idIn = { name: 'id', description: 'The document\'s key (its _ID), as erp.find returns it.', required: false, type: 'string', example: '1500004' };
+  const numIn = { name: 'number', description: 'The document number (DocumentNo) as shown in the window; if two documents carry it, name one with id.', required: false, type: 'string', example: '50000' };
+  const roleIn = { name: 'role', description: 'Optional: an AD_Role id. The answer is what that role is OFFERED (Document Action Access, as the window\'s action list does); without it, the engine\'s own legal set.', required: false, type: 'string', example: '102' };
+  const WIT = 'common/door/tests/witness_erp_verbs.js';
+  const mk = (verb, title, description, inputs, harm, argv, returnsShape, fields, witness) => ({ verb, app: 'erp', title, description, inputs, harm, calls: { cli: 'erp_cli', who: 'the ERP engine', argv }, returns: { shape: returnsShape, fields }, actors: ['human', 'ai'], witness: witness || WIT });
+  const out = [
+    mk('erp.find', 'Find a document', 'Find a document by its number, the way a window\'s Find does (DocumentNo, else Name or Value). Returns every match with its key, DocStatus and DocAction. Nothing is changed. ' + 'Kinds: any document table of the dictionary (' + kinds.length + ').',
+      [kindIn, { name: 'number', description: numIn.description, required: true, type: 'string', example: '50000' }], 'read', ['find', '--kind', '{kind}', '--number', '{number}'],
+      'erp_cli JSON {kind,by,matches:[{kind,id,number,docStatus,docAction,doctypeId,org}]} or {refused,reason}', [{ path: 'kind', type: 'string' }, { path: 'matches[*].id', type: 'number' }]),
+    mk('erp.actions', 'What can be done to a document', 'The legal document actions for this document in its current state, from the engine\'s own list (DocumentEngine.getValidActions), then narrowed by the role\'s Document Action Access when a role is given. Nothing is changed. The reply\'s `next` carries the same list.',
+      [kindIn, idIn, numIn, roleIn], 'read', ['actions', '--kind', '{kind}', { if: 'id', args: ['--id', '{id}'] }, { if: 'number', args: ['--number', '{number}'] }, { if: 'role', args: ['--role', '{role}'] }],
+      'erp_cli JSON {document,docStatus,actions:[codes],legal,period,role?} or {refused,reason}', [{ path: 'docStatus', type: 'string' }, { path: 'actions', type: 'array' }]),
+    // the generic object layer (object_cli's describe/read) over the ERP's own AD rows: any AD table, no per-table code
+    mk('erp.describe', 'Describe a kind of ERP record', 'Reflection over the application dictionary: the properties of a kind (name, type, mandatory, updateable, list values), its child tabs and the generic methods it supports, read only from the AD rows. Works for any AD table, a document or not. Nothing is changed.',
+      [{ name: 'kind', description: 'An AD table, by its name or table name, e.g. "' + exKind + '" or "C_BPartner". An unknown kind is an error that lists the kinds the dictionary registers.', required: true, type: 'string', example: exKind }], 'read', ['describe', '--kind', '{kind}'],
+      'object_cli JSON {kind,table,key,properties:[{name,type,mandatory,updateable,...}],childTabs,methods}', [{ path: 'kind', type: 'string' }, { path: 'table', type: 'string' }]),
+    mk('erp.read', 'Read an ERP record', 'Read one record of any AD table by its key, with the rows of its single-row child tabs. Nothing is changed. The record shown includes what earlier verbs (erp.complete) wrote to the ERP op-log.',
+      [{ name: 'kind', description: kindIn.description.split('. ')[0].replace('document', 'record').replace('(an AD_Table with a DocAction column)', '(an AD table)') + '.', required: true, type: 'string', example: exKind }, { name: 'id', description: 'The record\'s key value (its _ID).', required: true, type: 'string', example: '1500004' }], 'read', ['read', '--kind', '{kind}', '--id', '{id}'],
+      'object_cli JSON {kind,uu,record,children:[{kind,rows}]} or {refused,reason}', [{ path: 'kind', type: 'string' }])
+  ];
+  const seen = new Set();
+  for (const a of av) {
+    if (seen.has(a.verb)) continue; seen.add(a.verb);
+    const r = ref(a.action); if (!r) throw new Error('actor_verbs.json: action ' + a.action + ' is not in reference 135');
+    const tabs = av.filter(x => x.verb === a.verb).map(x => x.table), names = tabs.map(t => (kindOf(t) || t) + ' (' + t + ')');
+    out.push(mk(a.verb, r.name + ' a document', r.description + '. Runs DocAction ' + a.action + ' through the ERP engine (DocumentEngine.processIt) on the named document, with the books it posts. Offered for: ' + names.join(', ') + ' (each compared with legacy iDempiere in the parallel run, evidence common/door/tests/logs/a5_erp_complete_parity.log). A person at the terminal runs it; an AI\'s call is held as a claim until a person confirms. A refusal says which rule.',
+      [kindIn, idIn, numIn, roleIn], HARM[a.action] || 'writes', [a.verb.split('.')[1], '--kind', '{kind}', { if: 'id', args: ['--id', '{id}'] }, { if: 'number', args: ['--number', '{number}'] }, { if: 'role', args: ['--role', '{role}'] }],
+      'erp_cli JSON {document,before,after,ops,opSummary,related,facts,engine,actions} or {refused,reason}', [{ path: 'after.docStatus', type: 'string' }]));
+  }
+  const vf = path.join(ROOT, 'common/door/verbs.json'), j = JSON.parse(fs.readFileSync(vf, 'utf8'));
+  j.verbs = j.verbs.filter(v => v.app !== 'erp').concat(out);
+  const text = JSON.stringify(j, null, 1) + '\n', cur = fs.readFileSync(vf, 'utf8');
+  console.log('§ERP_DOOR_VERBS erp_entries=' + out.length + ' [' + out.map(o => o.verb + ':' + o.harm).join(', ') + '] kinds_in_dictionary=' + kinds.length + ' source=erp/ad_seed.db+erp/actor_verbs.json');
+  if (process.argv.includes('--check')) { console.log('§ERP_DOOR_VERBS ' + (text === cur ? 'CURRENT' : 'STALE')); process.exit(text === cur ? 0 : 1); }
+  fs.writeFileSync(vf, text); console.log('§ERP_DOOR_VERBS written ' + vf);
+}
+main().catch(e => { console.error(e); process.exit(1); });

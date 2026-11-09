@@ -1,0 +1,9 @@
+  ✅ D1 the same request id twice, in turn: the CLI ran once, the answers are equal  spawned=1
+  ✅ D2 the same id three times at once: one more spawn only  spawned=2
+  ✅ D3 a new door over the same journal answers R-1 from the record, no spawn  spawned=2
+  ✅ D4 the journal holds exactly one started and one done for R-1, started first, with the line, actor and proof  rows=started,done
+  ✅ D5 a different id runs again
+  ✅ D6a started-but-never-finished, a trial verb: re-run (safe)  spawned=4
+  ✅ D6b started-but-never-finished, a writes verb: refused, not re-run on a guess  status=refused
+§W-DOOR-DUP dup requests judged: spawns=4 journalRows=12
+§WITNESS_DOOR_DUP pass=7 fail=0 inconclusive=0 verdict=PASS
