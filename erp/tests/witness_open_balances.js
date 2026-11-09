@@ -1,0 +1,204 @@
+#!/usr/bin/env node
+// Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
+// SPDX-License-Identifier: MIT
+// ⚠ DO NOT REMOVE — W-OPEN-BALANCES (bim-compiler prompts/MIGRATE_INSTALL_TENANT.md §E3C-SPEC 1(d)+(e), §3). READ THE LOG after every run: every verdict is a §OB line and the
+//   shipped loader's own §MIG-* lines are printed with it; the exit code is not the evidence. INCONCLUSIVE when nothing was judged.
+// THE ISSUE it proves/disproves: after "Migrate from Odoo" with the agent's odoo_export.json, are the migrated tenant's BOOKS the source's books at the cut-over — the trial
+//   balance account by account, every open customer / vendor invoice and credit note open again per partner, and the clearing accounts back at zero (the cut-over method's own proof,
+//   §B3-SCOUT)? Before §E3C a migration brought master data only: no Fact_Acct at all.
+// SOURCE = the RECORDED export of the live demo Odoo 17 (fixtures/odoo_export_2026-11-10: workbook + manifest + odoo_export.json, written by erp/odoo_agent/export.js). The ORACLE
+//   is computed here from the RAW rows of odoo_export.json (account.move.line totals and open lines as Odoo returned them) — never through the engine, the template or the loader.
+// SPEC (claims written before the code; each check names the issue it proves):
+//   SUMMARY  before anything is written the form shows the two open sheets (rows predicted), the lines it could not bring in (refused, why), and what it will create; nothing is written.
+//   PERIOD   a cut-over whose period is not open (login long after it, Automatic Period Control on) is refused BEFORE anything is written, saying what to do (legacy's own gate).
+//   RUN      Process + stage 2: Import GL Journal 220 -> batch Completed; Import Invoice 207 DocAction CO -> every document Completed, Posted, not paid; the loader's own
+//            §MIG-VERIFY says PASS.
+//   PREREQ   the clearing accounts, the no-tax tax and the two Opening Charges exist once, and each charge's account IS its clearing account (the link the proof rests on).
+//   TB       the tenant's books (ALL Fact_Acct of the tenant) == the source trial balance, account by account, for every account that is not receivable / payable / bank;
+//            the source's receivable and payable totals sit on the tenant's own control accounts; the bank total waits on Bank Clearing (state OPEN, an asserted amount); sum == 0.
+//   CLEAR    AR Clearing == 0 and AP Clearing == 0.
+//   OPEN     per partner and side, the open amount of the tenant's documents == the source's open lines; each document keeps its number, its date, its kind; one charge line, no tax.
+//   RERUN    a second Process is refused whole; nothing changes.
+//   PERIOD-OPEN (a third tenant, login 2026-12-20, weeks after the cut-over) the user does what legacy asks — unticks Automatic Period Control on the Accounting Schema and opens the
+//            cut-over period with Period Status (AD_Process 167); the form still refuses until TODAY's period is open too (legacy dates the journal batch today); then the same
+//            files load: stage 2 completes, §MIG-VERIFY says PASS.
+//   FALSIFY  (a second tenant) one open line removed from the export -> stage 2 is refused and NAMES that exact amount on the clearing account; no journal, no invoice stays.
+// Command: node erp/tests/witness_open_balances.js 2>&1 | tee /tmp/count_logs/open_balances.log
+'use strict';
+var fs = require('fs'), path = require('path'), url = require('url');
+if (!global.window) global.window = {};
+if (!global.crypto || !global.crypto.subtle) global.crypto = require('crypto').webcrypto;
+var ERP = path.join(__dirname, '..'), FIXD = path.join(__dirname, 'fixtures', 'odoo_export_2026-11-10');
+var _log = console.log, SHIPPED = []; console.log = function () { var l = Array.prototype.join.call(arguments, ' '); if (/^§(MIG-|E1-STOCK|ODOO-FORM run|IMPORT_|PROC-)/.test(l)) SHIPPED.push(l); };
+function say(s) { _log(s); }
+var CASES = {}, ALL = { judged: 0, failed: 0 };
+function J(x) { return JSON.stringify(x); }
+function check(cs, key, rule, ok, info) { var c = CASES[cs] = CASES[cs] || { judged: 0, failed: 0 }; c.judged++; ALL.judged++; if (!ok) { c.failed++; ALL.failed++; }
+  say('  §OB-CHECK case=' + cs + ' key=' + key + ' ' + (ok ? 'OK' : 'FAIL') + ' rule="' + rule + '"' + (ok ? '' : ' got=' + String(J(info)).slice(0, 1800))); }
+function verdict(cs) { var c = CASES[cs] || { judged: 0, failed: 0 }, v = !c.judged ? 'INCONCLUSIVE' : c.failed ? 'FAIL' : 'PASS'; say('§OB-' + cs + ' verdict=' + v + ' judged=' + c.judged + ' failed=' + c.failed); return v; }
+var cents = function (v) { return Math.round(Number(v || 0) * 100); }, money = function (c) { return (c / 100).toFixed(2); };
+
+(async function main() {
+  var K = require(path.join(ERP, 'ws_kernel.js')), k = await K.load(), db = k.db, ML = k.ML, AP = require(path.join(ERP, 'ad_process.js'));
+  (fs.readFileSync(path.join(ERP, 'idempiere.html'), 'utf8').match(/<script src="(model_[a-z_]+\.js)/g) || []).forEach(function (m) { try { require(path.join(ERP, m.replace('<script src="', ''))); } catch (e) {} });
+  ['ImportInventory.js', 'ImportGLJournal.js', 'ImportInvoice.js'].forEach(function (f) { try { require(path.join(ERP, 'processes', f)); } catch (e) { say('§OB-LOAD ' + f + ' not loadable: ' + e.message); } });
+  var G = require(path.join(ERP, 'genesis.js')), PR = require(path.join(ERP, 'plugin_registry.js')), AF = require(path.join(ERP, 'ad_form_generic.js')), XLSX = require(path.join(ERP, 'xlsx.mini.min.js'));
+  function q(sql, p) { return k.q(sql, p || []); }
+  var shim = { prepare: function (sql) { return { all: function () { return q(sql); },
+    run: function (row) { var b = {}; Object.keys(row || {}).forEach(function (x) { b['@' + x] = row[x] == null ? null : row[x]; }); var s = db.prepare(sql); try { s.bind(b); s.step(); } finally { s.free(); } } }; } };
+  function birth(name) {
+    var born = G.birthTenant({ clientName: name, currencyId: 100, currencyIso: 'USD', currencyPrecision: 2, adminUser: name.replace(/\W/g, '') + 'Admin', dateAcct: '2026-11-10', countryId: 100 });
+    var rb = G.rebandGenesis({ groups: born.groups, refs: born.refs, input: born.input, tip: born.tip }, { clientId: G.nextClientId(shim) });
+    G.mergeGenesisInto(rb.groups, shim, { now: '2026-11-10 09:00:00', user: 100, initialDefaults: ML.initialDefaultsOf });
+    var R = rb.refs; return { clientId: R.clientId, orgId: R.orgId, userId: R.userId || 100, roleId: R.roleAdminId, actor: 'witness:open-balances' };
+  }
+  var hostDb = { query: function (sql, p) { return q(sql, p); }, run: function (sql, p) { db.run(sql, p || []); } };
+  var host = { engineVersion: '1.0.0', db: hostDb, ops: { append: function () { return 1; } }, process: AP, docAction: ML, form: AF,
+    import: function (u) { return import(url.pathToFileURL(path.resolve(path.join(ERP, 'plugins'), u)).href); } };
+  var reg = PR.create(host);
+  await reg.installBundle(await import(url.pathToFileURL(path.join(ERP, 'plugins', 'ninja_migrate.mjs')).href)); await reg.startBundle('org.idempiere.ninja.migrate');
+  await reg.installBundle(await import(url.pathToFileURL(path.join(ERP, 'plugins', 'odoo_migrate.mjs')).href)); await reg.startBundle('org.kernel.odoo.migrate');
+  var CLS = 'org.kernel.odoo.MigrateFromOdoo', D = AF.get(CLS);
+  var wbuf = fs.readFileSync(path.join(FIXD, 'odoo_migration.xlsx')), man = JSON.parse(fs.readFileSync(path.join(FIXD, 'manifest.json'), 'utf8')), EXP = JSON.parse(fs.readFileSync(path.join(FIXD, 'odoo_export.json'), 'utf8'));
+  function files(exp) { return { Files: [{ name: 'odoo_migration.xlsx', size: wbuf.length, data: XLSX.read(wbuf) }, { name: 'manifest.json', size: 1, data: man }, { name: 'odoo_export.json', size: 1, data: exp || EXP }] }; }
+  var CUT = EXP.manifest.cutover, ANS = { Units: 'Each', Days: 'Day', Hours: 'Hour' };
+  function session(S, loginDate) {
+    var withT = function (fn) { return fn(k.q, Object.assign(k.env(S), { date: loginDate + ' 00:00:00' })); };
+    return { S: S, rows: function (params, cur) { return AF.read(withT, function (trx) { return D.rows(trx, params, cur); }); },
+      execute: function (params, cur) { var r = AF.execute(withT, CLS, params, cur); if (r.ok && r.ops && r.ops.length) k.commit(S, r.ops, { ws: 'open_balances' }); return r; },
+      after: function (params, cur) { var r = AF.executeAfter(withT, CLS, params, cur); if (r.ok && r.ops && r.ops.length) k.commit(S, r.ops, { ws: 'open_balances' }); return r; } };
+  }
+  function answer(rs) { return rs.map(function (r) { var o = { key: r.key, selected: r.selected }; if (r.erpunit !== undefined) { var u = r.item.replace(/^Unit: /, ''); o.erpunit = ANS[u] != null ? ANS[u] : r.erpunit; } return o; }); }
+  function n(C, t) { return q('SELECT count(*) AS n FROM ' + t + ' WHERE ad_client_id=?', [C])[0].n; }
+  function snap(C) { var o = {}; ['c_bpartner', 'c_elementvalue', 'i_gljournal', 'i_invoice', 'gl_journal', 'c_invoice', 'fact_acct', 'c_charge', 'c_tax'].forEach(function (t) { o[t] = n(C, t); }); return o; }
+
+  // ── the ORACLE, from the raw rows only ──
+  var acct = {}; EXP.sets['account.account'].forEach(function (a) { acct[a.id] = a; });
+  var pkey = {}; EXP.sets.partner_keys.forEach(function (p) { pkey[p.id] = p; });
+  var KCLS = { asset_receivable: 'AR', liability_payable: 'AP', asset_cash: 'BANK' }, SRC = { plain: {}, cls: { AR: 0, AP: 0, BANK: 0 } };
+  EXP.sets.tb.forEach(function (r) { var c = cents(r.balance), kc = KCLS[acct[r.account_id].account_type]; if (!c) return; if (kc) SRC.cls[kc] += c; else SRC.plain[acct[r.account_id].code] = c; });
+  var INVT = { out_invoice: 'ARI', out_refund: 'ARC', in_invoice: 'API', in_refund: 'APC' }, SRCOPEN = {}, SRCDOC = {}, srcEntry = 0;
+  EXP.sets.open_lines.forEach(function (l) { var b = INVT[l.move_type]; if (!b) { srcEntry++; return; } var side = b[1] === 'R' ? 'AR' : 'AP', kk = side + '|' + pkey[l.partner_id].value;
+    SRCOPEN[kk] = (SRCOPEN[kk] || 0) + cents(l.amount_residual); var d = SRCDOC[l.move_name] = SRCDOC[l.move_name] || { base: b, bp: pkey[l.partner_id].value, date: l.invoice_date || l.date, amt: 0 }; d.amt += Math.abs(cents(l.amount_residual)); });
+  say('§OB-SOURCE cutover=' + CUT + ' plain_accounts=' + Object.keys(SRC.plain).length + ' AR=' + money(SRC.cls.AR) + ' AP=' + money(SRC.cls.AP) + ' BANK=' + money(SRC.cls.BANK) + ' open_documents=' + Object.keys(SRCDOC).length + ' open_partners=' + J(Object.keys(SRCOPEN).sort().map(function (p) { return p + '=' + money(SRCOPEN[p]); })) + ' non_invoice_open_lines=' + srcEntry);
+
+  // ═══ PERIOD: login long after the cut-over, Automatic Period Control on ⇒ refused before anything is written ═══
+  var T1 = birth('Open Co'), C = T1.clientId, late = session(T1, '2027-02-01'), C0 = snap(C);
+  say('§OB-TENANT client=' + C + ' cutover=' + CUT);
+  var rl = late.rows(files(), null), lateP = rl.filter(function (r) { return /^⚠ Open balances: the period of the cut-over date/.test(r.item); });
+  check('PERIOD', 'refused-summary', 'the summary of a login on 2027-02-01 carries the problem row naming the cut-over date ' + CUT + ', the document base types and the step (untick Automatic Period Control, open the period)', lateP.length === 1 && lateP[0].item.indexOf(CUT) > 0 && /GLJ/.test(lateP[0].item) && /Automatic Period Control/.test(lateP[0].item), { items: rl.filter(function (r) { return /^⚠/.test(r.item); }).map(function (r) { return r.item; }) });
+  var el = late.execute(files(), answer(rl));
+  check('PERIOD', 'refused-run', 'Process on that login is refused and the tenant is unchanged (no master, no import row, no document)', !el.ok && J(snap(C)) === J(C0), { ok: el.ok, msg: String(el.msg).slice(0, 200), snap: snap(C) });
+  verdict('PERIOD');
+
+  // ═══ SUMMARY (login the day after the cut-over: inside Automatic Period Control's window, as a migration AT the cut-over is) ═══
+  var ses = session(T1, '2026-11-11'), r1 = ses.rows(files(), null), cur = answer(r1), r2 = ses.rows(files(), cur);
+  var item = function (rs, it) { return rs.filter(function (r) { return r.item === it; })[0]; }, gj = item(r2, 'I_GLJournal'), iv = item(r2, 'I_Invoice');
+  say('§OB-SUMMARY problems=' + J(r2.filter(function (r) { return /^⚠/.test(r.item); }).map(function (r) { return r.item; })) + ' journal=' + J(gj && [gj.odoo, gj.infile, gj.will, gj.refused]) + ' invoices=' + J(iv && [iv.odoo, iv.infile, iv.will, iv.refused, iv.reason, iv.locked]) + ' info=' + J(r2.filter(function (r) { return /^ℹ/.test(r.item); }).map(function (r) { return r.item; })));
+  check('SUMMARY', 'no-problem', 'with the units answered there is no problem row', !r2.some(function (r) { return /^⚠/.test(r.item); }), r2.filter(function (r) { return /^⚠/.test(r.item); }).map(function (r) { return r.item; }));
+  check('SUMMARY', 'journal', 'the opening journal is a sheet of the summary: ' + EXP.sets.tb.length + ' lines in the file, all predicted to import', !!gj && gj.infile === EXP.sets.tb.length && gj.will === gj.infile && !gj.refused, gj);
+  check('SUMMARY', 'invoices', 'the open documents are a sheet: ' + Object.keys(SRCDOC).length + ' predicted; the ' + srcEntry + ' open lines that are not invoices are shown as refused with the reason; the sheet is locked to the journal', !!iv && iv.infile === Object.keys(SRCDOC).length && iv.will === iv.infile && iv.refused === srcEntry && /not an invoice/.test(iv.reason || '') && iv.locked, iv);
+  var info = r2.filter(function (r) { return /^ℹ Will create/.test(r.item); }).map(function (r) { return r.item; });
+  check('SUMMARY', 'will-create', 'the summary names what it will create: 3 clearing accounts (AR, AP, bank), the no-tax tax, the 2 Opening Charges', info.length === 6 && info.filter(function (t) { return /account /.test(t); }).length === 3 && info.filter(function (t) { return /charge /.test(t); }).length === 2 && info.filter(function (t) { return /tax /.test(t); }).length === 1, info);
+  check('SUMMARY', 'readonly', 'the summary wrote nothing (same counts before and after)', J(snap(C)) === J(C0), { before: C0, after: snap(C) });
+  verdict('SUMMARY');
+
+  // ═══ RUN ═══
+  var mark = SHIPPED.length, res = ses.execute(files(), cur), aft = res.ok ? ses.after(files(), cur) : { ok: false, msg: 'stage 1 refused' };
+  say('§OB-RUN stage1 ok=' + res.ok + ' msg=' + String(res.msg).slice(0, 260));
+  say('§OB-RUN stage2 ok=' + aft.ok + ' msg=' + String(aft.msg).slice(0, 400));
+  SHIPPED.slice(mark).filter(function (l) { return /^§(MIG-|PROC-UNPORTED|PROC-SQL)/.test(l); }).forEach(function (l) { say('  shipped> ' + l.slice(0, 330)); });
+  var verLine = SHIPPED.slice(mark).filter(function (l) { return /^§MIG-VERIFY/.test(l); }).pop() || '';
+  check('RUN', 'stage1', 'Process loads the masters, the import rows and the prerequisites in one transaction', res.ok, res.msg);
+  check('RUN', 'stage2', 'stage 2 (Import GL Journal → Complete, Import Invoice CO, the verifier) ends without a refusal and says so', aft.ok && /Open balances completed/.test(String(aft.msg)), aft.msg);
+  check('RUN', 'shipped-verifier', 'the loader\'s own verifier printed §MIG-VERIFY verdict=PASS with > 0 checks judged (the shipped log is the primary evidence)', /verdict=PASS judged=[1-9]/.test(verLine), verLine);
+  var batches = q('SELECT docstatus AS s, count(*) AS n FROM gl_journalbatch WHERE ad_client_id=? GROUP BY 1', [C]), jr = q('SELECT gl_journal_id AS id, docstatus AS s, posted AS p FROM gl_journal WHERE ad_client_id=?', [C]), jl = n(C, 'gl_journalline');
+  check('RUN', 'journal', 'ONE batch, ONE journal, Completed and Posted, with one line per source account that has a balance (' + EXP.sets.tb.length + ')', J(batches) === J([{ s: 'CO', n: 1 }]) && jr.length === 1 && jr[0].s === 'CO' && jr[0].p === 'Y' && jl === EXP.sets.tb.length, { batches: batches, jr: jr, lines: jl });
+  var invs = q('SELECT i.c_invoice_id AS id, i.documentno AS no, i.docstatus AS s, i.posted AS p, i.ispaid AS paid, i.grandtotal AS total, i.totallines AS net, substr(i.dateinvoiced,1,10) AS d, substr(i.dateacct,1,10) AS da, bp.value AS bp, dt.docbasetype AS b, ' +
+    '(SELECT count(*) FROM c_invoiceline l WHERE l.c_invoice_id=i.c_invoice_id) AS nl, (SELECT count(*) FROM c_invoiceline l WHERE l.c_invoice_id=i.c_invoice_id AND l.c_charge_id IS NOT NULL AND l.m_product_id IS NULL) AS nc, ' +
+    '(SELECT COALESCE(SUM(t.taxamt),0) FROM c_invoicetax t WHERE t.c_invoice_id=i.c_invoice_id) AS tax FROM c_invoice i JOIN c_bpartner bp ON bp.c_bpartner_id=i.c_bpartner_id JOIN c_doctype dt ON dt.c_doctype_id=i.c_doctype_id WHERE i.ad_client_id=? ORDER BY i.documentno', [C]);
+  var notOk = invs.filter(function (i) { return i.s !== 'CO' || i.p !== 'Y' || i.paid === 'Y'; });
+  check('RUN', 'documents', Object.keys(SRCDOC).length + ' documents, every one Completed, Posted, not paid', invs.length === Object.keys(SRCDOC).length && notOk.length === 0, { n: invs.length, notOk: notOk.slice(0, 4) });
+  verdict('RUN');
+
+  // ═══ PREREQ ═══
+  var VARS = (await import(url.pathToFileURL(path.join(ERP, 'plugins', 'odoo_migrate_convert.mjs')).href)).TEMPLATE.variables;
+  var CLR = { AR: VARS.AR_CLEARING, AP: VARS.AP_CLEARING, BANK: VARS.BANK_CLEARING };
+  var evs = q('SELECT value, accounttype FROM c_elementvalue WHERE ad_client_id=? AND value IN (?,?,?) ORDER BY value', [C, CLR.AR, CLR.AP, CLR.BANK]);
+  var tx = q('SELECT t.rate AS rate, t.istaxexempt AS ex, tc.name AS cat FROM c_tax t JOIN c_taxcategory tc ON tc.c_taxcategory_id=t.c_taxcategory_id WHERE t.ad_client_id=? AND t.taxindicator=?', [C, VARS.TAX_NONE]);
+  var chg = q('SELECT ch.name AS name, ev.value AS acct FROM c_charge ch JOIN c_charge_acct ca ON ca.c_charge_id=ch.c_charge_id JOIN c_validcombination vc ON vc.c_validcombination_id=ca.ch_expense_acct JOIN c_elementvalue ev ON ev.c_elementvalue_id=vc.account_id WHERE ch.ad_client_id=? ORDER BY ch.name', [C]);
+  check('PREREQ', 'accounts', 'the three clearing accounts exist exactly once each', evs.length === 3, evs);
+  check('PREREQ', 'tax', 'ONE tax with TaxIndicator ' + VARS.TAX_NONE + ': rate 0, exempt, in its own tax category', tx.length === 1 && Number(tx[0].rate) === 0 && tx[0].ex === 'Y' && /Opening Balance/.test(tx[0].cat), tx);
+  check('PREREQ', 'charge-link', 'the two Opening Charges exist and each charge\'s account IS its clearing account (AP → ' + CLR.AP + ', AR → ' + CLR.AR + ') — the link the zero-proof rests on', J(chg) === J([{ name: VARS.CHARGE_AP, acct: CLR.AP }, { name: VARS.CHARGE_AR, acct: CLR.AR }]), chg);
+  verdict('PREREQ');
+
+  // ═══ TB + CLEAR: ALL the tenant's Fact_Acct against the source ═══
+  var books = {}; q('SELECT ev.value AS v, SUM(f.amtacctdr) AS dr, SUM(f.amtacctcr) AS cr, COUNT(*) AS n FROM fact_acct f JOIN c_elementvalue ev ON ev.c_elementvalue_id=f.account_id WHERE f.ad_client_id=? GROUP BY ev.value', [C]).forEach(function (r) { books[r.v] = cents(r.dr) - cents(r.cr); });
+  var srcCodes = Object.keys(SRC.plain), offPlain = srcCodes.filter(function (a) { return books[a] !== SRC.plain[a]; });
+  var clearing = [CLR.AR, CLR.AP, CLR.BANK], control = Object.keys(books).filter(function (a) { return srcCodes.indexOf(a) < 0 && clearing.indexOf(a) < 0; });
+  var ctl = {}; q('SELECT ev.value AS v, dt.docbasetype AS b, SUM(f.amtacctdr) AS dr, SUM(f.amtacctcr) AS cr FROM fact_acct f JOIN c_elementvalue ev ON ev.c_elementvalue_id=f.account_id JOIN c_invoice i ON i.c_invoice_id=f.record_id JOIN c_doctype dt ON dt.c_doctype_id=i.c_doctype_id WHERE f.ad_client_id=? AND f.ad_table_id=318 GROUP BY ev.value, dt.docbasetype', [C])
+    .forEach(function (r) { if (clearing.indexOf(r.v) >= 0) return; var side = r.b[1] === 'R' ? 'AR' : 'AP'; ctl[side] = (ctl[side] || 0) + cents(r.dr) - cents(r.cr); (ctl[side + '_accounts'] = ctl[side + '_accounts'] || {})[r.v] = 1; });
+  var total = Object.keys(books).reduce(function (s, a) { return s + books[a]; }, 0);
+  say('§OB-BOOKS accounts=' + Object.keys(books).length + ' plain=' + srcCodes.length + ' differing=' + offPlain.length + ' control=' + J(control) + ' AR_control=' + money(ctl.AR || 0) + ' AP_control=' + money(ctl.AP || 0) +
+    ' clearing=' + J(clearing.map(function (a) { return a + '=' + money(books[a] || 0); })) + ' sum=' + money(total));
+  check('TB', 'per-account', 'every source account that is not receivable / payable / bank has the same balance in the tenant\'s books (' + srcCodes.length + ' accounts)', srcCodes.length > 0 && offPlain.length === 0, offPlain.map(function (a) { return a + ' books ' + money(books[a] || 0) + ' source ' + money(SRC.plain[a]); }));
+  check('TB', 'receivable', 'the source receivable total ' + money(SRC.cls.AR) + ' sits on the tenant\'s receivable control account(s) ' + J(Object.keys(ctl.AR_accounts || {})), SRC.cls.AR !== 0 && (ctl.AR || 0) === SRC.cls.AR, ctl);
+  check('TB', 'payable', 'the source payable total ' + money(SRC.cls.AP) + ' sits on the tenant\'s payable control account(s) ' + J(Object.keys(ctl.AP_accounts || {})), SRC.cls.AP !== 0 && (ctl.AP || 0) === SRC.cls.AP, ctl);
+  check('TB', 'nothing-else', 'no account other than the source\'s, the control accounts and the clearing accounts was posted to; the books sum to zero', control.every(function (a) { return (ctl.AR_accounts || {})[a] || (ctl.AP_accounts || {})[a]; }) && total === 0, { control: control, total: total });
+  check('TB', 'bank-open', 'the bank total ' + money(SRC.cls.BANK) + ' waits on ' + CLR.BANK + ' (state OPEN — the opening bank statement is not built; asserted, not passed over)', SRC.cls.BANK !== 0 && books[CLR.BANK] === SRC.cls.BANK, books[CLR.BANK]);
+  verdict('TB');
+  check('CLEAR', 'AR', 'AR Clearing (' + CLR.AR + ') == 0.00 after the journal and every open customer document (it was posted to: ' + (CLR.AR in books) + ')', (CLR.AR in books) && books[CLR.AR] === 0, books[CLR.AR]);
+  check('CLEAR', 'AP', 'AP Clearing (' + CLR.AP + ') == 0.00 after the journal and every open vendor document', (CLR.AP in books) && books[CLR.AP] === 0, books[CLR.AP]);
+  verdict('CLEAR');
+
+  // ═══ OPEN ═══
+  var SG = { ARI: 1, ARC: -1, API: -1, APC: 1 }, got = {}; invs.forEach(function (i) { var kk = (i.b[1] === 'R' ? 'AR' : 'AP') + '|' + i.bp; got[kk] = (got[kk] || 0) + cents(i.total) * SG[i.b]; });
+  var ps = Array.from(new Set(Object.keys(SRCOPEN).concat(Object.keys(got)))).sort(), offP = ps.filter(function (p) { return (SRCOPEN[p] || 0) !== (got[p] || 0); });
+  say('§OB-OPEN ' + J(ps.map(function (p) { return p + ' source=' + money(SRCOPEN[p] || 0) + ' tenant=' + money(got[p] || 0); })));
+  check('OPEN', 'per-partner', 'per partner and side the tenant\'s open amount == the source\'s open lines (' + ps.length + ' partner/side pairs)', ps.length > 0 && offP.length === 0, offP);
+  var offD = invs.filter(function (i) { var d = SRCDOC[i.no]; return !d || d.base !== i.b || d.bp !== i.bp || d.date !== i.d || d.amt !== cents(i.total) || i.da !== CUT || i.nl !== 1 || i.nc !== 1 || cents(i.tax) !== 0 || cents(i.net) !== cents(i.total); });
+  check('OPEN', 'per-document', 'each document keeps its Odoo number, kind (ARI / ARC / API / APC), partner and own date; DateAcct = the cut-over; ONE charge line, no product, no tax; total = the unpaid amount', invs.length > 0 && offD.length === 0, offD.slice(0, 3));
+  verdict('OPEN');
+
+  // ═══ RERUN ═══
+  var C1 = snap(C), res2 = ses.execute(files(), cur);
+  check('RERUN', 'refused', 'a second Process is refused whole and nothing changes', !res2.ok && J(snap(C)) === J(C1), { ok: res2.ok, msg: String(res2.msg).slice(0, 200) });
+  verdict('RERUN');
+
+  // ═══ FALSIFY: a second tenant, one open line removed from the export ═══
+  var T2 = birth('Falsify Co'), C2 = T2.clientId, s2 = session(T2, '2026-11-11'), EXP2 = JSON.parse(JSON.stringify(EXP));
+  var gone = EXP2.sets.open_lines.filter(function (l) { return l.move_type === 'out_invoice'; }).pop(); EXP2.sets.open_lines = EXP2.sets.open_lines.filter(function (l) { return l !== gone; });
+  var f1 = s2.rows(files(EXP2), null), fcur = answer(f1), fr = s2.execute(files(EXP2), fcur), mark2 = SHIPPED.length, fa = fr.ok ? s2.after(files(EXP2), fcur) : { ok: false, msg: 'stage 1 refused: ' + fr.msg };
+  say('§OB-FALSIFY removed=' + gone.move_name + ' amount=' + money(cents(gone.amount_residual)) + ' stage1=' + fr.ok + ' stage2=' + fa.ok + ' msg=' + String(fa.msg).slice(0, 300));
+  SHIPPED.slice(mark2).filter(function (l) { return /^§MIG-(CLEAR|VERIFY)/.test(l); }).forEach(function (l) { say('  shipped> ' + l.slice(0, 300)); });
+  check('FALSIFY', 'named', 'with ' + gone.move_name + ' (' + money(cents(gone.amount_residual)) + ') missing from the export, stage 2 is refused and names exactly that amount left on AR Clearing', fr.ok && !fa.ok && String(fa.msg).indexOf(money(cents(gone.amount_residual))) >= 0 && /AR clearing/.test(String(fa.msg)), fa.msg);
+  check('FALSIFY', 'rolled-back', 'the refused stage 2 left no journal, no invoice and no Fact_Acct in that tenant (the masters stay, as legacy)', n(C2, 'gl_journal') === 0 && n(C2, 'c_invoice') === 0 && n(C2, 'fact_acct') === 0 && n(C2, 'c_bpartner') > 1, snap(C2));
+  verdict('FALSIFY');
+
+  // ═══ PERIOD-OPEN: a third tenant, a login weeks after the cut-over; the periods opened the legacy way ═══
+  var LATE = '2026-12-20', T3 = birth('Later Co'), C3 = T3.clientId, s3 = session(T3, LATE);
+  var perOf = function (d) { return q("SELECT p.c_period_id AS id, p.name AS n FROM c_period p WHERE p.ad_client_id=? AND date(p.startdate)<=date(?) AND date(p.enddate)>=date(?)", [C3, d, d])[0]; }, perCut = perOf(CUT), perNow = perOf(LATE);
+  var probs = function (rs) { return rs.filter(function (r) { return /^⚠ Open balances: the period/.test(r.item); }).map(function (r) { return r.item; }); };
+  var before3 = probs(s3.rows(files(), null));
+  var p167 = q('SELECT classname AS c, name AS n FROM ad_process WHERE ad_process_id=167')[0];
+  try { require(path.join(ERP, 'processes', 'PeriodStatus.js')); } catch (e) { say('§OB-LOAD PeriodStatus.js not loadable: ' + e.message); }
+  var open167 = function (per, untick) { return k.inTrx(T3, {}, function (trx) { if (untick) { var as = trx.find('c_acctschema', { ad_client_id: C3 })[0]; trx.update('c_acctschema', as, { autoperiodcontrol: 'N' }); }
+    var r = AP.runJava(k.q, trx.env, { AD_Process_ID: 167, className: p167.c, title: p167.n, Record_ID: per.id, Table_ID: 142, params: { PeriodAction: 'O' }, trx: trx }); return { ok: !!r.ok, summary: String(r.summary || '') }; }); };
+  var o1 = open167(perCut, true), mid3 = probs(s3.rows(files(), null)), o2 = open167(perNow, false);
+  var ctl = q("SELECT periodstatus AS s, count(*) AS n FROM c_periodcontrol WHERE c_period_id IN (?,?) GROUP BY 1", [perCut.id, perNow.id]);
+  say('§OB-PERIOD-OPEN client=' + C3 + ' login=' + LATE + ' periods=' + perCut.n + ',' + perNow.n + ' problems_before=' + before3.length + ' after_cutover_period_opened=' + J(mid3) + ' process167=' + J([o1.ok, o1.summary, o2.ok, o2.summary]) + ' controls=' + J(ctl));
+  var g1 = s3.rows(files(), null), gcur = answer(g1), g2 = s3.rows(files(), gcur), gprob = g2.filter(function (r) { return /^⚠/.test(r.item); }).map(function (r) { return r.item; });
+  check('PERIOD-OPEN', 'refused-first', 'the login of ' + LATE + ' (Automatic Period Control on, cut-over ' + CUT + ' more than 2 days back) is refused with the period problem row', before3.length === 1 && before3[0].indexOf(CUT) > 0, before3);
+  check('PERIOD-OPEN', 'batch-date', 'with only the cut-over period opened the summary still refuses: legacy dates the journal batch TODAY (MJournalBatch.beforeSave), so today\'s period must be open for GLJ too — named with today\'s date', o1.ok && mid3.length === 1 && mid3[0].indexOf(LATE) > 0 && /GLJ/.test(mid3[0]), { o1: o1, mid3: mid3 });
+  check('PERIOD-OPEN', 'problem-gone', 'after Period Status (167) opened ' + perCut.n + ' and ' + perNow.n + ' (controls ' + J(ctl) + '), the summary has no problem row', o2.ok && gprob.length === 0 && ctl.length === 1 && ctl[0].s === 'O', { gprob: gprob, ctl: ctl });
+  var mark3 = SHIPPED.length, g3 = s3.execute(files(), gcur), g4 = g3.ok ? s3.after(files(), gcur) : { ok: false, msg: 'stage 1 refused: ' + g3.msg }, ver3 = SHIPPED.slice(mark3).filter(function (l) { return /^§MIG-VERIFY/.test(l); }).pop() || '';
+  if (!g4.ok) (g4.log || []).filter(function (l) { return /IMPORT_GLJ|PROC-|MODEL-(ERR|WARN|MSG)|PeriodClosed|Errors/.test(l); }).slice(-16).forEach(function (l) { say('  trxlog> ' + String(l).slice(0, 300)); });
+  say('§OB-PERIOD-OPEN stage1=' + g3.ok + ' stage2=' + g4.ok + ' ' + ver3 + ' msg=' + String(g4.msg).slice(0, 200));
+  check('PERIOD-OPEN', 'loads', 'the same files then load on that login: stage 2 completes and the loader\'s own §MIG-VERIFY says PASS', g3.ok && g4.ok && /verdict=PASS judged=[1-9]/.test(ver3) && n(C3, 'c_invoice') === Object.keys(SRCDOC).length, { g3: g3.msg, g4: g4.msg, ver3: ver3 });
+  verdict('PERIOD-OPEN');
+
+  var v = ['PERIOD', 'SUMMARY', 'RUN', 'PREREQ', 'TB', 'CLEAR', 'OPEN', 'RERUN', 'FALSIFY', 'PERIOD-OPEN'].map(function (c) { var x = CASES[c] || {}; return !x.judged ? 'INCONCLUSIVE' : x.failed ? 'FAIL' : 'PASS'; });
+  var all = v.indexOf('FAIL') >= 0 ? 'FAIL' : v.indexOf('INCONCLUSIVE') >= 0 ? 'INCONCLUSIVE' : 'PASS';
+  say('§OB-VERDICT ' + all + ' judged=' + ALL.judged + ' failed=' + ALL.failed + ' cases=' + J(v));
+  process.exit(all === 'PASS' ? 0 : all === 'INCONCLUSIVE' ? 3 : 1);
+})().catch(function (e) { say('§OB-VERDICT FAIL threw ' + (e && e.stack || e)); process.exit(1); });

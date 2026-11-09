@@ -9,6 +9,8 @@
 //   name match); units nothing uses are left out. Refused before anything runs: the manifest's files/sheets/row counts differ from what was picked; a used unit has no answer.
 // Deterministic: no clock, no random.
 import { putFile, dropFile, mapUom, sheetRows, bookToWorkbook } from './ninja_migrate_process.mjs';
+import * as OB from './open_balances.mjs';                    // §E3C-SPEC 1(d)+(e): the open balances of ANY source (prerequisites, the two import processes, the verifier)
+import { isExport, openBalances } from './odoo_migrate_convert.mjs';   // §E3C-SPEC 1(c): the agent's raw odoo_export.json → the open sheets, by the engine on templates/odoo-17.json
 export const CLASSNAME = 'org.kernel.odoo.MigrateFromOdoo';
 const NINJA_PROCESS = 9540001, FILE = 'odoo_migration.from-form.xlsx';
 let AP = null;
@@ -31,7 +33,7 @@ function isMandatory(trx, table, col) {
 
 // plan(trx, params, current) -> { problems[], units[], sheets[], book (effective), files } — everything the summary and the run share
 export function plan(trx, params, current) {
-  const out = { problems: [], units: [], sheets: [], book: null };
+  const out = { problems: [], units: [], sheets: [], book: null, open: null, source: null };
   const files = (params && params.Files) || [];
   const wbf = files.find((f) => /\.xlsx?$/i.test(f.name)), mf = files.find((f) => /manifest\.json$/i.test(f.name));
   if (!wbf) out.problems.push('Pick the workbook odoo_migration.xlsx from your export folder.');
@@ -43,11 +45,20 @@ export function plan(trx, params, current) {
   let book = wb.SheetNames.map((n) => ({ name: n, rows: sheetRows(wb.Sheets[n]) }));
   // manifest == what was picked (the export's own count of every sheet)
   if (man.workbook && man.workbook !== wbf.name) out.problems.push('The manifest is for ' + man.workbook + ', not ' + wbf.name + '.');
-  const mSheets = man.sheets || [];
+  const mSheets = (man.sheets || []).slice();
   mSheets.forEach((m) => { const s = book.find((b) => b.name === m.sheet);
     if (!s) out.problems.push('Sheet ' + m.sheet + ' is in the manifest but not in the workbook.');
     else if (s.rows.length - 1 !== m.rows) out.problems.push('Sheet ' + m.sheet + ' has ' + (s.rows.length - 1) + ' rows; the manifest says ' + m.rows + '.'); });
   book.forEach((b) => { if (!mSheets.some((m) => m.sheet === b.name)) out.problems.push('Sheet ' + b.name + ' is not in the manifest.'); });
+  // §E3C-SPEC: the optional third file, the agent's RAW rows (odoo_export.json) → the open-balance sheets, appended after the masters (their own manifest counts them)
+  const xf = files.find((f) => isExport(f.data)); let openCfg = null; const openNames = [];
+  if (xf) {
+    const xm = xf.data.manifest, c = openBalances(xf.data);
+    ['db', 'cutover', 'company_id'].forEach((k) => { if (man[k] != null && String(man[k]) !== String(xm[k])) out.problems.push(xf.name + ' is not from the same export as ' + wbf.name + ' (' + k + ': ' + xm[k] + ' / ' + man[k] + ').'); });
+    (c.manifest.problems || []).forEach((p) => out.problems.push(p));
+    c.sheets.forEach((sh) => { const name = String(book.length + 1).padStart(2, '0') + sh.table; book.push({ name, rows: sh.rows }); mSheets.push({ sheet: name, rows: sh.rows.length - 1 }); openNames.push(name); });
+    openCfg = c.manifest; out.source = c.manifest;
+  }
   const cur = {}; (current || []).forEach((r) => { cur[r.key] = r; });
 
   // units the products use, with the user's answer (or an exact-name suggestion)
@@ -80,6 +91,9 @@ export function plan(trx, params, current) {
     const lt = lookupTable(trx, t, col); if (!lt || lt === t.toUpperCase()) return; const pi = tables.indexOf(lt); if (pi < 0) return;
     edges.push({ child: b.name, parent: book[pi].name, col: col, hi: hi, mandatory: isMandatory(trx, t, col) }); }); });
   const lockedBy = {};
+  // the opening journal and the open documents go together: the journal puts the receivable / payable balance on the clearing accounts, the documents take it off again
+  const jn = openNames.find((n) => tableOfSheet(n) === 'I_GLJournal'), inn = openNames.find((n) => tableOfSheet(n) === 'I_Invoice');
+  if (jn && inn) { if (sel[jn]) lockedBy[inn] = ['I_GLJournal (its clearing accounts)']; else sel[inn] = false; }
   edges.forEach((e) => { if (e.mandatory && sel[e.child]) (lockedBy[e.parent] = lockedBy[e.parent] || []).push(tableOfSheet(e.child)); });
   Object.keys(lockedBy).forEach((p) => { if (!sel[p]) say(trx, '§ODOO-FORM relock ' + p + ' (needed by ' + lockedBy[p].join(',') + ')'); sel[p] = true; });
   const drops = {};
@@ -92,6 +106,7 @@ export function plan(trx, params, current) {
   eff = eff.map((b) => { const d = drops[b.name]; if (!d) return b; const cut = d.map((e) => e.hi);
     return { name: b.name, rows: b.rows.map((r) => r.filter((v, i) => cut.indexOf(i) < 0)) }; });
   out.book = eff;
+  if (openCfg) { out.open = OB.openOf(eff, openCfg); OB.problems(trx, out.open).forEach((p) => out.problems.push(p)); }
   book.forEach((b, i) => {
     const t = tableOfSheet(b.name), m = mSheets.find((x) => x.sheet === b.name);
     const needs = edges.filter((e) => e.child === b.name).map((e) => tableOfSheet(e.parent) + (e.mandatory ? '' : ' (optional)'));
@@ -131,7 +146,7 @@ export function openingStockSheets(book) {
 }
 
 // load(trx, book) -> { ok, summary, perTable{T: n}, refusals{sheet: [reasons]} } — the Ninja loader in THIS transaction (stage 1: masters + the I_Inventory rows, §E1)
-export function load(trx, book) {
+export function load(trx, book, open) {
   const st = openingStockSheets(book), loadBook = st ? st.book : book;
   putFile(FILE, bookToWorkbook(loadBook));
   const mark = trx.log.length;
@@ -146,7 +161,9 @@ export function load(trx, book) {
     perTable.M_INVENTORY = st.headers; shown.M_Inventory = st.headers; perTable.M_INVENTORYLINE = n; shown.M_InventoryLine = n;
     say(trx, '§E1-STOCK stage=1 I_Inventory rows=' + n + ' (source headers=' + st.headers + '); stage 2 (Import Inventory, DocAction CO) runs after these masters are committed');
   }
-  return { ok: !!(r && r.ok), summary: r && r.summary, perTable, shown, refusals };
+  // §E3C-SPEC 1(d) stage 1: what the open balances need and the tenant lacks (clearing accounts, the no-tax tax, the Opening Charges), through the model, each named
+  const created = r && r.ok && open ? OB.prerequisites(trx, open) : [];
+  return { ok: !!(r && r.ok), summary: r && r.summary, perTable, shown, refusals, created };
 }
 
 // stage 2 (§E1): ImportInventory with DocAction CO over the I_Inventory rows stage 1 left. It must run AFTER stage 1 is committed: the process looks products / locators / warehouses up
@@ -169,7 +186,7 @@ export function completeOpeningStock(trx) {
 export const DESC = {
   title: 'Migrate from Odoo',
   emptyText: 'Pick odoo_migration.xlsx and manifest.json from the folder the Odoo agent wrote (node export.js).',
-  params: [{ name: 'Files', label: 'Export files (odoo_migration.xlsx + manifest.json)', type: 'file', multiple: true, accept: '.xlsx,.json', mandatory: true }],
+  params: [{ name: 'Files', label: 'Export files (odoo_migration.xlsx + manifest.json; add odoo_export.json for the open balances)', type: 'file', multiple: true, accept: '.xlsx,.json', mandatory: true }],
   columns: [{ key: 'item', label: 'Item' }, { key: 'odoo', label: 'Odoo rows' }, { key: 'infile', label: 'In file' }, { key: 'erpunit', label: 'ERP unit', type: 'string', editable: true },
     { key: 'will', label: 'Will import' }, { key: 'refused', label: 'Refused' }, { key: 'reason', label: 'Why / effect' }, { key: 'needs', label: 'Needs' },
     { key: 'neededby', label: 'Needed by' }, { key: 'intenant', label: 'In this tenant now' }],
@@ -177,18 +194,27 @@ export const DESC = {
     const p = plan(trx, params, current);
     const probRows = p.problems.map((t, i) => ({ key: 900 + i, item: '⚠ ' + t, selected: false, locked: true }));
     if (!p.book || p.problems.length) { say(trx, '§ODOO-FORM summary problems=' + p.problems.length + ' ' + JSON.stringify(p.problems)); return probRows.concat(p.units, p.sheets); }
-    const dry = load(trx, p.book);   // the READ transaction: thrown away by the engine
+    const will = p.open ? OB.willCreate(trx, p.open) : [];
+    const dry = load(trx, p.book, p.open);   // the READ transaction: thrown away by the engine
     p.sheets.forEach((s) => { const inBook = p.book.some((b) => b.name === s.sheet), ref = dry.refusals[s.sheet] || [];
       s.will = !inBook ? 0 : dry.ok ? (dry.perTable[s.table.toUpperCase()] || 0) : 0; s.refused = ref.length;
       if (ref.length) s.reason = ref[0] + (ref.length > 1 ? ' (+' + (ref.length - 1) + ' more)' : ''); else if (!inBook && !s.reason) s.reason = s.table === 'C_UOM' ? 'every unit maps to an ERP unit' : 'unticked'; });
     say(trx, '§ODOO-FORM summary ok=' + dry.ok + ' will=' + JSON.stringify(p.sheets.map((s) => s.table + ':' + s.will)) + ' refused=' + p.sheets.reduce((n, s) => n + s.refused, 0));
-    return p.units.concat(p.sheets);
+    const rs = p.units.concat(p.sheets);
+    if (!p.open) return rs;
+    const info = will.map((t, i) => ({ key: 930 + i, item: 'ℹ Will create (open balances need it): ' + t, selected: false, locked: true }));
+    return withSourceRows(rs, p.source).concat(info);
   },
-  after(trx) { return completeOpeningStock(trx); },   // stage 2, run by the host after stage 1 is committed (AdFormGeneric.executeAfter)
+  // stage 2, run by the host after stage 1 is committed (AdFormGeneric.executeAfter): the opening stock (§E1), then the open balances (§E3C-SPEC 1(d): Import GL Journal → Complete,
+  //   Import Invoice with DocAction CO, the books checked against the source)
+  after(trx, params, rows) {
+    const a = completeOpeningStock(trx), p = plan(trx, params, rows), b = OB.complete(trx, AP, p.open);
+    return [a, b].filter(Boolean).join(' ');
+  },
   run(trx, params, rows) {
     const p = plan(trx, params, rows);
     if (p.problems.length) throw new Error('Not migrated: ' + p.problems.join(' '));
-    const r = load(trx, p.book);
+    const r = load(trx, p.book, p.open);
     say(trx, '§ODOO-FORM run ok=' + r.ok + ' perTable=' + JSON.stringify(r.perTable));
     if (!r.ok) throw new Error(String(r.summary || 'The load was refused.'));
     return 'Migrated from Odoo: ' + Object.keys(r.shown).filter((t) => r.shown[t] > 0).map((t) => t + ' ' + r.shown[t]).join(', ') + '.';

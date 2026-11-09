@@ -62,7 +62,7 @@ SPDX-License-Identifier: MIT — Copyright (c) 2025-2026 Redhuan D. Oon.
 ## Export your master data (`export.js`, no `npm install` needed)
 
 ```bash
-node export.js                      # → ./odoo_export/odoo_migration.xlsx + manifest.json + provenance.json
+node export.js                      # → ./odoo_export/odoo_migration.xlsx + manifest.json + provenance.json + odoo_export.json
 CUTOVER=2026-12-31 node export.js   # the date your opening stock is counted at (default: today)
 ```
 
@@ -74,7 +74,12 @@ Odoo has no field for (the partner group, the tax category, …), the cell asks 
 rule the ERP's import uses; every such cell is listed in `manifest.json` → `patches`. `manifest.json` also records how
 many rows Odoo has of each, so the ERP can prove nothing was dropped or made up, and lists under `held` your own
 company and your Odoo users' contact cards — you choose on the summary screen whether to bring them in.
-`provenance.json` maps every sheet row back to its Odoo record. `xlsx.mini.min.js` (SheetJS) is the one helper file it uses.
+`provenance.json` maps every sheet row back to its Odoo record.
+`odoo_export.json` holds your OPEN BALANCES at the cut-over date, as Odoo returned them (read only, nothing converted): the trial balance per account
+(posted journal items up to the date) and every open receivable / payable line. Pick it together with the workbook and `manifest.json` in
+"Migrate from Odoo": the ERP then brings in one opening journal and your open invoices and credit notes, and checks its books against these rows.
+Leave it out and only the master data and the opening stock move.
+ `xlsx.mini.min.js` (SheetJS) is the one helper file it uses.
 
 ### Real Odoo data — what the export does for you (§HARDEN-SPEC)
 

@@ -51,13 +51,18 @@ var LEN = { 'AD_User.EMail': 60, 'AD_User.Name': 60, 'AD_User.Phone': 40, 'AD_Us
   'M_Product_Category.Value': 40, 'M_Product.Description': 255, 'M_Product.Name': 255, 'M_Product.UPC': 30, 'M_Product.Value': 510, 'M_Product_PO.VendorProductNo': 40,
   'M_Warehouse.Name': 60, 'M_Warehouse.Value': 40 };
 // §HARDEN-SPEC H6: every Odoo field this export reads, per model — checked with fields_get BEFORE anything is read, so an Odoo version with other field names stops with its name.
-var NEEDS = { 'res.company': ['name', 'partner_id', 'currency_id', 'country_id'], 'res.currency': ['name'], 'uom.uom': ['name', 'category_id', 'uom_type', 'factor', 'rounding'],
+var NEEDS = { 'res.company': ['name', 'partner_id', 'currency_id', 'country_id'], 'res.currency': ['name', 'decimal_places'], 'uom.uom': ['name', 'category_id', 'uom_type', 'factor', 'rounding'],
   'account.payment.term': ['name', 'line_ids'], 'account.payment.term.line': ['payment_id', 'value', 'value_amount', 'nb_days'], 'product.category': ['name', 'complete_name', 'parent_id'],
   'account.account': ['code', 'name', 'account_type', 'group_id'], 'res.partner': ['name', 'ref', 'is_company', 'parent_id', 'commercial_partner_id', 'type', 'email', 'phone', 'mobile',
   'street', 'street2', 'city', 'state_id', 'zip', 'country_id', 'vat', 'customer_rank', 'supplier_rank', 'active'], 'res.users': ['partner_id'], 'res.country': ['code'],
   'res.country.state': ['name'], 'stock.warehouse': ['name', 'code', 'lot_stock_id', 'partner_id'], 'product.product': ['default_code', 'name', 'categ_id', 'uom_id', 'detailed_type',
   'barcode', 'weight', 'volume', 'description', 'list_price', 'standard_price', 'product_tmpl_id', 'active'], 'product.supplierinfo': ['partner_id', 'product_id', 'product_tmpl_id',
-  'price', 'product_code', 'min_qty', 'delay'], 'stock.location': ['complete_name', 'warehouse_id', 'posx', 'posy', 'posz', 'usage', 'active'], 'stock.quant': ['product_id', 'location_id', 'quantity', 'lot_id'] };
+  'price', 'product_code', 'min_qty', 'delay'], 'stock.location': ['complete_name', 'warehouse_id', 'posx', 'posy', 'posz', 'usage', 'active'], 'stock.quant': ['product_id', 'location_id', 'quantity', 'lot_id'],
+  // §E3C-SPEC (a): the open balances at the cut-over, shipped RAW in odoo_export.json (the mapping is the browser's: migrate/templates/odoo-17.json)
+  'account.move.line': ['move_id', 'move_name', 'move_type', 'partner_id', 'account_id', 'date', 'invoice_date', 'date_maturity', 'balance', 'debit', 'credit', 'amount_residual',
+    'amount_residual_currency', 'currency_id', 'company_currency_id', 'payment_id', 'ref', 'name', 'parent_state'],
+  'account.move': ['name', 'move_type', 'partner_id', 'commercial_partner_id', 'invoice_date', 'date', 'invoice_date_due', 'invoice_payment_term_id', 'currency_id', 'amount_total',
+    'amount_residual', 'ref', 'payment_state', 'state'] };
 
 // Odoo account_type → iDempiere AccountType (A asset, L liability, O owner's equity, R revenue, E expense, M memo)
 function acctType(t) {
@@ -80,7 +85,8 @@ function prodType(t) { return t === 'service' ? 'S' : (t === 'consu' || t === 'p
   var version = (await rpc('common', 'version', [])).server_version;
   // H6: the fields this export reads exist in THIS Odoo (it is written against Odoo 17's names), checked before any data is read
   var missing = [];
-  for (var model of Object.keys(NEEDS)) { var fg = await ex(model, 'fields_get', [], { attributes: ['type'] }); NEEDS[model].forEach(function (f) { if (!fg[f]) missing.push(model + '.' + f); }); }
+  var TYPES = {};
+  for (var model of Object.keys(NEEDS)) { var fg = await ex(model, 'fields_get', [], { attributes: ['type'] }); TYPES[model] = fg; NEEDS[model].forEach(function (f) { if (!fg[f]) missing.push(model + '.' + f); }); }
   if (missing.length) { console.log('§ODOO-EXPORT FAIL version: Odoo ' + version + ' has no ' + missing.join(', ') + ' — this export reads Odoo 17 field names; your version is not supported yet. Nothing was written.'); process.exit(1); }
   console.log('§ODOO-EXPORT version ' + version + ' fields=' + Object.keys(NEEDS).reduce(function (n, m) { return n + NEEDS[m].length; }, 0) + ' all present');
   // H4: one Odoo company = one ERP company. No --company = the login's own company (the one Odoo opens on); the others are named with the command that exports each.
@@ -309,6 +315,43 @@ function prodType(t) { return t === 'service' ? 'S' : (t === 'consu' || t === 'p
   if (lots) notes.push(lots + ' stock line(s) carry an Odoo lot (in provenance.json): the lot → attribute set instance step is not in this set yet.');
   if (neg.length) notes.push(neg.length + ' stock line(s) are NEGATIVE in Odoo (' + neg.map(function (q) { return prodById[m2o(q.product_id)] ? pval(prodById[m2o(q.product_id)]) : q.id; }).join(', ') + '): exported as Odoo has them; the summary screen shows them.');
 
+  // ── §E3C-SPEC (a): the open balances at the cut-over, RAW (door duties only: read, count, name the fields — no mapping here). ──
+  //   odoo_export.json = { manifest: { format, sets: { <set>: { count, fields_read, fields_missing, domain } } }, sets: { <set>: rows } } — the shape the migration engine's
+  //   export-json connector reads (migrate/connectors/export_json.mjs). A many2one arrives from Odoo as [id, "display name"]: written as <field> = id and <field>__name = the name;
+  //   Odoo's `false` for an empty non-boolean field is written as null. Nothing else is changed.
+  var RAW = {}, RAWMAN = {};
+  function flat(model, rows) {
+    return rows.map(function (r) { var o = {}; Object.keys(r).forEach(function (k) { if (k === '__domain') return; var v = r[k], t = TYPES[model] && TYPES[model][k] && TYPES[model][k].type;
+      if (Array.isArray(v) && (t === 'many2one' || k === 'account_id' && v.length === 2)) { o[k] = v[0]; o[k + '__name'] = v[1]; }
+      else if (v === false && t !== 'boolean') o[k] = null; else o[k] = v; }); return o; });
+  }
+  function rawSet(name, model, fields, domain, rows, count) { RAW[name] = rows;
+    var read = fields.slice(); fields.forEach(function (f) { var t = TYPES[model] && TYPES[model][f] && TYPES[model][f].type; if (t === 'many2one' && name !== 'partner_keys') read.push(f + '__name'); });   // the name half of a many2one
+    RAWMAN[name] = { model: model, count: count, fields_read: read, fields_missing: [], domain: JSON.stringify(domain) };
+    console.log('§ODOO-EXPORT raw set=' + name + ' model=' + model + ' rows=' + rows.length + ' count=' + count); }
+  var curRow = company.length ? (await ex('res.currency', 'read', [[m2o(company[0].currency_id)]], { fields: ['name', 'decimal_places'] }))[0] : null;
+  rawSet('account.account', 'account.account', ['id', 'code', 'name', 'account_type', 'reconcile'], [],
+    flat('account.account', await ex('account.account', 'search_read', [[]], { fields: ['id', 'code', 'name', 'account_type', 'reconcile'], order: 'id' })), await ex('account.account', 'search_count', [[]]));
+  var tbDom = [['parent_state', '=', 'posted'], ['date', '<=', CUTOVER]];
+  var tbRows = flat('account.move.line', await ex('account.move.line', 'read_group', [tbDom, ['balance:sum', 'debit:sum', 'credit:sum'], ['account_id']], { lazy: false, orderby: 'account_id' }));
+  var tbCount = await ex('account.move.line', 'search_count', [tbDom]);
+  rawSet('tb', 'account.move.line', ['account_id', 'balance', 'debit', 'credit', '__count'], tbDom, tbRows, tbCount);
+  var olF = ['id', 'move_id', 'move_name', 'move_type', 'partner_id', 'account_id', 'date', 'invoice_date', 'date_maturity', 'balance', 'amount_residual', 'amount_residual_currency',
+    'currency_id', 'company_currency_id', 'payment_id', 'ref', 'name'];
+  var olDom = [['parent_state', '=', 'posted'], ['account_id.account_type', 'in', ['asset_receivable', 'liability_payable']], ['amount_residual', '!=', 0], ['date', '<=', CUTOVER]];
+  var openLines = flat('account.move.line', await ex('account.move.line', 'search_read', [olDom], { fields: olF, order: 'id' }));
+  rawSet('open_lines', 'account.move.line', olF, olDom, openLines, await ex('account.move.line', 'search_count', [olDom]));
+  var omF = ['id', 'name', 'move_type', 'partner_id', 'commercial_partner_id', 'invoice_date', 'date', 'invoice_date_due', 'invoice_payment_term_id', 'currency_id', 'amount_total',
+    'amount_residual', 'ref', 'payment_state'];
+  var omIds = Array.from(new Set(openLines.map(function (l) { return l.move_id; }))).sort(function (a, b) { return a - b; });
+  rawSet('open_moves', 'account.move', omF, [['id', 'in', '(the moves of open_lines)']], omIds.length ? flat('account.move', await ex('account.move', 'read', [omIds], { fields: omF })) : [], omIds.length);
+  // BRIDGE (deleted when the masters run on the engine): the business partner Value this export's workbook gave each partner's commercial partner, and who is held
+  rawSet('partner_keys', 'res.partner', ['id', 'commercial', 'value', 'held'], [], partners.map(function (p) { return { id: p.id, commercial: top(p).id, value: val(top(p)) || '', held: isHeld(p) ? String(isHeld(p)) : '' }; }), partners.length);
+  var tbSum = tbRows.reduce(function (n, r) { return n + r.balance; }, 0), tbLines = tbRows.reduce(function (n, r) { return n + r.__count; }, 0);
+  console.log('§ODOO-EXPORT tb accounts=' + tbRows.length + ' lines=' + tbLines + ' count=' + tbCount + ' sum=' + tbSum.toFixed(curRow ? curRow.decimal_places : 2) + ' open_lines=' + openLines.length + ' open_moves=' + omIds.length);
+  ok(tbLines === tbCount, 'every posted account.move.line up to the cut-over is in exactly one trial-balance row', tbLines + '==' + tbCount);
+  if (Math.abs(tbSum) >= 0.005) notes.push('The trial balance at ' + CUTOVER + ' does not sum to zero (' + tbSum.toFixed(2) + '): the opening journal will be refused as unbalanced until that is explained.');
+
   // ── lengths + renamed keys (H3): text longer than the ERP column is cut as legacy PO.set_Value cuts it (PO.java:1079-1082); keys were already shortened consistently ──
   sheets.forEach(function (s) {
     s.header.forEach(function (h, hi) {
@@ -360,9 +403,11 @@ function prodType(t) { return t === 'service' ? 'S' : (t === 'consu' || t === 'p
     source_counts: counts, patches: patches, renamed: renamed, held: held, notes: notes, self_check_fails: fails };
   fs.writeFileSync(path.join(OUT, 'manifest.json'), JSON.stringify(manifest, null, 1));
   fs.writeFileSync(path.join(OUT, 'provenance.json'), JSON.stringify(provenance));
+  fs.writeFileSync(path.join(OUT, 'odoo_export.json'), JSON.stringify({ manifest: { tool: 'odoo_agent/export.js', format: 'odoo-export-json-v1', odoo_version: version, db: DB, cutover: CUTOVER,
+    currency: iso, currency_places: curRow ? curRow.decimal_places : null, company_id: coId, sets: RAWMAN }, sets: RAW }, null, 1));
   notes.forEach(function (n) { console.log('§ODOO-EXPORT note ' + n); });
   if (!fails) { fs.rmSync(FINAL, { recursive: true, force: true }); fs.renameSync(OUT, FINAL); }
-  console.log('\n' + (fails ? '🔴 ODOO-EXPORT FAIL (' + fails + ') — nothing published; the incomplete files are in ' + OUT : '🟢 ODOO-EXPORT PASS — odoo_migration.xlsx (' + sheets.length + ' sheets) + manifest.json + provenance.json written to ' + FINAL));
+  console.log('\n' + (fails ? '🔴 ODOO-EXPORT FAIL (' + fails + ') — nothing published; the incomplete files are in ' + OUT : '🟢 ODOO-EXPORT PASS — odoo_migration.xlsx (' + sheets.length + ' sheets) + manifest.json + provenance.json + odoo_export.json (open balances) written to ' + FINAL));
   process.exit(fails ? 1 : 0);
 })().catch(function (e) {
   try { fs.rmSync(OUT, { recursive: true, force: true }); } catch (x) {}   // a half export must never look like a whole one

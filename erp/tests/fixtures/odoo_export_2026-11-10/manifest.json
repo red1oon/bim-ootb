@@ -1,0 +1,449 @@
+{
+ "tool": "odoo_agent/export.js",
+ "format": "ninja-workbook-v3",
+ "workbook": "odoo_migration.xlsx",
+ "odoo_version": "17.0-20260528",
+ "db": "odoodemo",
+ "cutover": "2026-11-10",
+ "currency": "USD",
+ "company": [
+  "My Company (San Francisco)"
+ ],
+ "company_id": 1,
+ "other_companies": [
+  {
+   "id": 2,
+   "name": "My Company (Chicago)"
+  }
+ ],
+ "sheets": [
+  {
+   "sheet": "01C_UOM",
+   "table": "C_UOM",
+   "rows": 28,
+   "header": [
+    "Name",
+    "UOMSymbol",
+    "StdPrecision",
+    "X12DE355"
+   ],
+   "source": "uom.uom []"
+  },
+  {
+   "sheet": "02C_PaymentTerm",
+   "table": "C_PaymentTerm",
+   "rows": 11,
+   "header": [
+    "Value",
+    "Name",
+    "NetDays"
+   ],
+   "source": "account.payment.term []"
+  },
+  {
+   "sheet": "03M_Product_Category",
+   "table": "M_Product_Category",
+   "rows": 9,
+   "header": [
+    "Value",
+    "Name",
+    "M_Product_Category_Parent_ID>Value"
+   ],
+   "source": "product.category []"
+  },
+  {
+   "sheet": "04C_ElementValue",
+   "table": "C_ElementValue",
+   "rows": 47,
+   "header": [
+    "Value",
+    "Name",
+    "AccountType",
+    "AccountSign",
+    "IsSummary",
+    "C_Element_ID>ElementType"
+   ],
+   "source": "account.account []"
+  },
+  {
+   "sheet": "05C_BPartner",
+   "table": "C_BPartner",
+   "rows": 7,
+   "header": [
+    "Value",
+    "Name",
+    "TaxID",
+    "IsCustomer",
+    "IsVendor",
+    "C_BP_Group_ID>IsDefault",
+    "IsActive"
+   ],
+   "source": "res.partner [] (archived too)"
+  },
+  {
+   "sheet": "06C_Location",
+   "table": "C_Location",
+   "rows": 8,
+   "header": [
+    "Address1",
+    "Address2",
+    "City",
+    "Postal",
+    "RegionName",
+    "C_Country_ID>CountryCode",
+    "C_Location_UU"
+   ],
+   "source": "res.partner [] (addresses)"
+  },
+  {
+   "sheet": "07C_BPartner_Location",
+   "table": "C_BPartner_Location",
+   "rows": 7,
+   "header": [
+    "C_BPartner_ID>Value",
+    "C_Location_ID>C_Location_UU",
+    "Name"
+   ],
+   "source": "res.partner [] (addresses)"
+  },
+  {
+   "sheet": "08AD_User",
+   "table": "AD_User",
+   "rows": 23,
+   "header": [
+    "Name",
+    "EMail",
+    "Phone",
+    "Phone2",
+    "C_BPartner_ID>Value",
+    "IsActive"
+   ],
+   "source": "res.partner [] (contacts)"
+  },
+  {
+   "sheet": "09M_Product",
+   "table": "M_Product",
+   "rows": 48,
+   "header": [
+    "Value",
+    "Name",
+    "Description",
+    "M_Product_Category_ID>Value",
+    "C_UOM_ID",
+    "ProductType",
+    "UPC",
+    "Weight",
+    "Volume",
+    "C_TaxCategory_ID>IsDefault",
+    "IsActive"
+   ],
+   "source": "product.product [] (archived too)"
+  },
+  {
+   "sheet": "10M_Product_PO",
+   "table": "M_Product_PO",
+   "rows": 30,
+   "header": [
+    "M_Product_ID>Value",
+    "C_BPartner_ID>Value",
+    "PricePO",
+    "VendorProductNo",
+    "Order_Min",
+    "DeliveryTime_Promised"
+   ],
+   "source": "product.supplierinfo []"
+  },
+  {
+   "sheet": "11M_PriceList",
+   "table": "M_PriceList",
+   "rows": 1,
+   "header": [
+    "Name",
+    "IsSOPriceList",
+    "C_Currency_ID>ISO_Code"
+   ],
+   "source": "product.product [] (list_price)"
+  },
+  {
+   "sheet": "12M_PriceList_Version",
+   "table": "M_PriceList_Version",
+   "rows": 1,
+   "header": [
+    "M_PriceList_ID",
+    "Name",
+    "ValidFrom",
+    "M_DiscountSchema_ID>DiscountType"
+   ],
+   "source": "cutover"
+  },
+  {
+   "sheet": "13M_ProductPrice",
+   "table": "M_ProductPrice",
+   "rows": 48,
+   "header": [
+    "M_PriceList_Version_ID",
+    "M_Product_ID>Value",
+    "PriceList",
+    "PriceStd"
+   ],
+   "source": "product.product []"
+  },
+  {
+   "sheet": "14M_Warehouse",
+   "table": "M_Warehouse",
+   "rows": 1,
+   "header": [
+    "Value",
+    "Name",
+    "C_Location_ID>C_Location_UU"
+   ],
+   "source": "stock.warehouse []"
+  },
+  {
+   "sheet": "15M_Locator",
+   "table": "M_Locator",
+   "rows": 14,
+   "header": [
+    "M_Warehouse_ID>Value",
+    "Value",
+    "X",
+    "Y",
+    "Z",
+    "IsActive"
+   ],
+   "source": "stock.location [[\"usage\",\"=\",\"internal\"]] (archived too)"
+  },
+  {
+   "sheet": "16M_Inventory",
+   "table": "M_Inventory",
+   "rows": 1,
+   "header": [
+    "DocumentNo",
+    "M_Warehouse_ID>Value",
+    "MovementDate",
+    "C_DocType_ID>DocSubTypeInv",
+    "Description"
+   ],
+   "source": "stock.warehouse [] (with stock)"
+  },
+  {
+   "sheet": "17M_InventoryLine",
+   "table": "M_InventoryLine",
+   "rows": 25,
+   "header": [
+    "M_Inventory_ID",
+    "M_Locator_ID>Value",
+    "M_Product_ID>Value",
+    "QtyCount"
+   ],
+   "source": "stock.quant [[\"location_id.usage\",\"=\",\"internal\"]]"
+  }
+ ],
+ "source_counts": {
+  "uom.uom []": 28,
+  "account.payment.term []": 11,
+  "product.category []": 9,
+  "account.account []": 47,
+  "res.partner [] (archived too)": 42,
+  "stock.warehouse []": 1,
+  "product.product [] (archived too)": 48,
+  "product.supplierinfo []": 30,
+  "stock.location [[\"usage\",\"=\",\"internal\"]] (archived too)": 14,
+  "stock.quant [[\"location_id.usage\",\"=\",\"internal\"]]": 35
+ },
+ "patches": [
+  {
+   "table": "C_UOM",
+   "column": "X12DE355",
+   "cell": "(blank)",
+   "rule": "no Odoo field: the ERP \"Migrate from Odoo\" form maps each Odoo UoM to an iDempiere UoM (§B4-SPEC step 2)",
+   "rows": 28
+  },
+  {
+   "table": "C_ElementValue",
+   "column": "C_Element_ID",
+   "cell": "C_Element_ID>ElementType = A",
+   "rule": "ImportAccount.java:130-143 — the account element of the tenant (legacy: the element the user names)",
+   "rows": 47
+  },
+  {
+   "table": "C_BPartner",
+   "column": "C_BP_Group_ID",
+   "cell": "C_BP_Group_ID>IsDefault = Y",
+   "rule": "ImportBPartner.java:129-132 — the client's default business partner group",
+   "rows": 7
+  },
+  {
+   "table": "C_Location",
+   "column": "C_Location_UU",
+   "cell": "UUID v5 of \"<db>/res.partner/<id>\"",
+   "rule": "iDempiere's record key for moving data between systems (2Pack resolves by the _UU column): the address is found by it, not by its street",
+   "rows": 8
+  },
+  {
+   "table": "M_Product",
+   "column": "C_TaxCategory_ID",
+   "cell": "C_TaxCategory_ID>IsDefault = Y",
+   "rule": "ImportProduct.java:415 — the client's default tax category",
+   "rows": 48
+  },
+  {
+   "table": "M_Product_PO",
+   "column": "VendorProductNo",
+   "cell": "the product's Value",
+   "rule": "ImportProduct.java:393-394 — VendorProductNo=Value when the vendor gave none",
+   "rows": 30
+  },
+  {
+   "table": "M_PriceList",
+   "column": "Name",
+   "cell": "Odoo list_price",
+   "rule": "Odoo keeps the sale price on the product (list_price), not in a named list: one list named after that field",
+   "rows": 1
+  },
+  {
+   "table": "M_PriceList_Version",
+   "column": "Name",
+   "cell": "2026-11-10",
+   "rule": "the cutover date — what the AD default @#Date@ gives a new version in the window",
+   "rows": 1
+  },
+  {
+   "table": "M_PriceList_Version",
+   "column": "M_DiscountSchema_ID",
+   "cell": "M_DiscountSchema_ID>DiscountType = P",
+   "rule": "ImportPriceList.java:97-98 — the first price-list schema of the client",
+   "rows": 1
+  },
+  {
+   "table": "M_Locator",
+   "column": "Z",
+   "cell": "the Odoo stock.location id",
+   "rule": "legacy unique index m_location_where (M_Warehouse_ID, X, Y, Z); Odoo repeats posx/posy/posz within the warehouse",
+   "rows": 13
+  },
+  {
+   "table": "M_Inventory",
+   "column": "C_DocType_ID",
+   "cell": "C_DocType_ID>DocSubTypeInv = PI",
+   "rule": "MInventory.java:301-304 refuses none; MSetup.java:776 makes ONE Physical Inventory type (DocBaseType MMI, DocSubTypeInv PI) — MMI alone also matches Internal Use and Cost Adjustment",
+   "rows": 1
+  },
+  {
+   "table": "M_Inventory",
+   "column": "DocumentNo",
+   "cell": "OPEN-<warehouse>-<cutover>",
+   "rule": "the lines find their header by DocumentNo (Ninja MigrateExcelData Line rule); legacy would number it from the sequence",
+   "rows": 1
+  },
+  {
+   "table": "M_Locator",
+   "column": "Value",
+   "cell": "<code>-<odoo id> or <cut>~<odoo id>",
+   "rule": "the ERP needs one Value per company (unique index) and at most 40 characters; Odoo has \"WH/Input/Order Processing/Dispatch Zone/Gate A\" → \"WH/Input/Order Processing/Dispatch Zo~21\" (longer than 40); \"WH/Input/Order Processing/Dispatch Zone/Gate B\" → \"WH/Input/Order Processing/Dispatch Zo~22\" (longer than 40)",
+   "rows": 2
+  }
+ ],
+ "renamed": [
+  {
+   "table": "M_Locator",
+   "column": "Value",
+   "odoo_id": 21,
+   "odoo": "WH/Input/Order Processing/Dispatch Zone/Gate A",
+   "erp": "WH/Input/Order Processing/Dispatch Zo~21",
+   "why": "longer than 40"
+  },
+  {
+   "table": "M_Locator",
+   "column": "Value",
+   "odoo_id": 22,
+   "odoo": "WH/Input/Order Processing/Dispatch Zone/Gate B",
+   "erp": "WH/Input/Order Processing/Dispatch Zo~22",
+   "why": "longer than 40"
+  }
+ ],
+ "held": [
+  {
+   "model": "res.partner",
+   "id": 1,
+   "name": "My Company (San Francisco)",
+   "why": "internal-company"
+  },
+  {
+   "model": "res.partner",
+   "id": 2,
+   "name": "OdooBot",
+   "why": "internal-user"
+  },
+  {
+   "model": "res.partner",
+   "id": 3,
+   "name": "Mitchell Admin",
+   "why": "internal-user"
+  },
+  {
+   "model": "res.partner",
+   "id": 4,
+   "name": "Public user",
+   "why": "internal-user"
+  },
+  {
+   "model": "res.partner",
+   "id": 5,
+   "name": "Default User Template",
+   "why": "internal-user"
+  },
+  {
+   "model": "res.partner",
+   "id": 6,
+   "name": "Portal User Template",
+   "why": "internal-user"
+  },
+  {
+   "model": "res.partner",
+   "id": 7,
+   "name": "Marc Demo",
+   "why": "internal-user"
+  },
+  {
+   "model": "res.partner",
+   "id": 8,
+   "name": "Joel Willis",
+   "why": "internal-user"
+  },
+  {
+   "model": "res.partner",
+   "id": 39,
+   "name": "Chester Reed",
+   "why": "contact of internal-company"
+  },
+  {
+   "model": "res.partner",
+   "id": 40,
+   "name": "Dwayne Newman",
+   "why": "contact of internal-company"
+  },
+  {
+   "model": "res.partner",
+   "id": 41,
+   "name": "My Company (Chicago)",
+   "why": "internal-company"
+  },
+  {
+   "model": "res.partner",
+   "id": 42,
+   "name": "Jeff Lawson",
+   "why": "contact of internal-company"
+  }
+ ],
+ "notes": [
+  "2 payment term(s) have several installments (30% Now, Balance 60 Days; 30% Advance End of Following Month): imported as the term only; the installments are in provenance.json for C_PaySchedule.",
+  "account.group has 0 rows: the chart of accounts imports flat (no summary parents in the source).",
+  "1 product/vendor pair(s) have Odoo quantity price breaks (E-COM07/12 ×2): the lowest-quantity price is the vendor price; the breaks are in provenance.json (M_ProductPriceVendorBreak is not in this set).",
+  "3 stock line(s) sum several Odoo quants of one product in one location (lots: FURN_8855 ×3, FURN_5555 ×2, FURN_8522 ×8).",
+  "16 stock line(s) carry an Odoo lot (in provenance.json): the lot → attribute set instance step is not in this set yet.",
+  "1 stock line(s) are NEGATIVE in Odoo (E-COM11): exported as Odoo has them; the summary screen shows them.",
+  "This Odoo has 2 companies; this export is ONLY \"My Company (San Francisco)\". Each company moves into its own ERP company — export the others with: node export.js --cutover 2026-11-10 --company 2   (My Company (Chicago))"
+ ],
+ "self_check_fails": 0
+}
