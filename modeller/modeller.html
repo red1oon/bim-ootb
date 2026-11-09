@@ -4739,15 +4739,30 @@ window._dwPrimGeo = window._dwPrimGeo || function (prim, bx, by, bz, ifcClass) {
 };
 // §D64 the build-up of a fresh walk: its instances are drawn in placement order on a wall-clock timeline (a redraw resumes it; done = all, at once). window.__dwReveal[disc] = the front.
 window.__dwRevealMeta = window.__dwRevealMeta || {}; window.__dwReveal = window.__dwReveal || {};
+// §REVEAL-FRAME-CLOCK (bim-compiler MODELLER_MASTER.md — Witness: W-E2E-REVEAL-CLOCK): the build-up runs on RENDERED time. Each tick
+// advances by the frame gap, but a STALL (a gap over 4x the page's own recent median frame, and over ½ s: the page drew nothing) counts as one 250 ms step, so a stretch where the page draws nothing (the walk's own commit blocks it for seconds on a real
+// building) cannot finish the build-up unseen. R.t = rendered ms so far, R.last = the previous tick, R.ticks = frames drawn.
+var _REVEAL_STEP_MS = 250, _REVEAL_STALL_MIN_MS = 500, _REVEAL_STALL_X = 4;   // presentation: a stall = a gap over 4x this page's own recent median frame (and over ½ s); it costs one ¼ s step, a slow-but-drawing page keeps the stated speed
+function _revealK(R) {
+  var now = performance.now();
+  if (R.t == null) { R.t = 0; R.last = now; R.ticks = 0; }
+  var gap = Math.max(0, now - R.last), G = R.gaps || (R.gaps = []);
+  var med = G.length ? G.slice().sort(function (a, b) { return a - b; })[G.length >> 1] : 0;
+  var stall = gap > Math.max(_REVEAL_STALL_MIN_MS, _REVEAL_STALL_X * med) && (G.length > 0 || gap > 2 * _REVEAL_STALL_MIN_MS);
+  if (stall) R.stalls = (R.stalls || 0) + 1;
+  if (gap > 0) { G.push(gap); if (G.length > 8) G.shift(); }   // every gap joins the history, so a steadily slow page re-baselines; a lone block still stands out
+  R.t += stall ? _REVEAL_STEP_MS : gap; R.last = now; R.ticks++;
+  return Math.min(1, R.t / R.dur);
+}
 function _dwRevealTick(disc) {
   var R = window.__dwRevealMeta[disc]; if (!R) return;
   var root = _dwRoot(), ims = []; if (root) root.children.forEach(function (o) { if (o.isInstancedMesh && o.userData && o.userData.dwDisc === disc && o.userData.dwSub) ims.push(o); });
-  var k = Math.min(1, (performance.now() - R.start) / R.dur);
+  var k = _revealK(R);
   ims.forEach(function (im) { var n = im.userData.dwSub.length, c = Math.max(k >= 1 ? n : 0, Math.floor(n * k)); im.count = c;
     if (im === ims[0] && c > 0) { var p = im.userData.dwSub[c - 1]; window.__dwReveal[disc] = { i: c, n: n, x: p.x, y: p.y, z: p.z, done: k >= 1 }; } });
   if (window.A && window.A.requestRender) window.A.requestRender();
   if (k < 1) { R.raf = requestAnimationFrame(function () { _dwRevealTick(disc); }); }
-  else { window.__dwReveal[disc] = Object.assign({}, window.__dwReveal[disc] || {}, { done: true }); delete window.__dwRevealMeta[disc]; console.log('§DW-REVEAL disc=' + disc + ' done n=' + (ims[0] ? ims[0].userData.dwSub.length : 0) + ' ms=' + Math.round(R.dur)); }
+  else { window.__dwReveal[disc] = Object.assign({}, window.__dwReveal[disc] || {}, { done: true }); delete window.__dwRevealMeta[disc]; console.log('§DW-REVEAL disc=' + disc + ' done n=' + (ims[0] ? ims[0].userData.dwSub.length : 0) + ' ms=' + Math.round(R.t) + ' wallMs=' + Math.round(performance.now() - R.start) + ' ticks=' + R.ticks + ' stalls=' + (R.stalls || 0) + ' dur=' + Math.round(R.dur)); }
 }
 // §D66.1 a fresh walk's joint parts build up when they land: each bucket (ordered by its head's placement order) in step, so a head's drop, transition and tee appear together, never before
 // their head is drawn (a part's head = the placement under its tee node, plan position 1 mm). Done = all, once the heads' own build-up is done too.
@@ -4761,7 +4776,7 @@ function _dwArmReveals(disc) {
 }
 function _dwAsmRevealTick(disc) {
   var R = window.__dwAsmRevealMeta[disc], root = _dwRoot(); if (!R || !root) return;
-  var k = Math.min(1, (performance.now() - R.start) / R.dur), fx = !!window.__dwRevealMeta[disc], shown = {}, xy = function (x, y) { return Math.round(x * 1000) + ',' + Math.round(y * 1000); };
+  var k = _revealK(R), fx = !!window.__dwRevealMeta[disc], shown = {}, xy = function (x, y) { return Math.round(x * 1000) + ',' + Math.round(y * 1000); };
   root.children.forEach(function (o) { if (o.isInstancedMesh && o.userData && o.userData.dwDisc === disc && o.userData.dwSub) for (var i = 0; i < o.count; i++) shown[xy(o.userData.dwSub[i].x, o.userData.dwSub[i].y)] = 1; });
   var nAll = 0;
   root.children.forEach(function (o) { if (!(o.isInstancedMesh && o.userData && o.userData.dwAsm === disc && o.userData.dwSub)) return; var L = o.userData.dwSub, c = 0, lim = k >= 1 ? L.length : Math.floor(L.length * k);
