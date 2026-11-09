@@ -28,29 +28,33 @@ async function loadStack(SQL) {
 }
 
 /** @param {Object} SQL @param {string} file - rules DB basename under modeller/ @returns {Object} an open sql.js DB. */
-function openRules(SQL, file, DW) {
+function openRules(SQL, file, DW, edit) {
   const db = new SQL.Database(new Uint8Array(fs.readFileSync(path.join(MODELLER, file))));
   db._dwFile = file;
   // §12 rule 1: the page's self-heal rules patch, applied the same way here (DW.applyRulesPatch is the one applier)
   const pf = path.join(MODELLER, 'patches', file + '.sql');
   if (DW && DW.applyRulesPatch && !process.env.DW_NO_RULES_PATCH) DW.applyRulesPatch(db, file, fs.existsSync(pf) ? fs.readFileSync(pf, 'utf8') : null);
+  // MODELLER_RULES_EDITOR.md §CLASS-SHARED (c2): a user's edit cells on THIS file, wherever it is opened (own, schedule source, FP borrow)
+  if (edit && edit.file === file && DW && DW.applyCells) { const r = DW.applyCells(db, edit.cells || {}); edit.applied = (edit.applied || []).concat([{ file, done: r.done, skipped: r.skipped }]); console.log('§WALKNODE edit file=' + file + ' cells=' + r.done + ' skipped=' + r.skipped); }
   return db;
 }
 
 /**
  * Register the rules for a building, as `__ensureDiscWalker` + `_discWalkOne` do.
  * @param {Object} SQL @param {Object} stack - from loadStack @param {string} name - building name.
- * @returns {{rules:string, schedule:(string|null)}} which rule sets the name selected.
+ * @param {{file:string, cells:Object}} [edit] - user edit cells applied to that rules file wherever it is opened.
+ * @returns {{rules:string, schedule:(string|null), borrowFP:(string|null)}} which rule sets the name selected.
  */
-function openBuildingRules(SQL, stack, name) {
+function openBuildingRules(SQL, stack, name, edit) {
   const { DW, WalkRules } = stack;
   const rules = WalkRules.rulesDb(name), schedule = WalkRules.scheduleDb(name);
-  DW.dwOpen(openRules(SQL, rules, DW));
-  DW.dwScheduleSource(schedule ? openRules(SQL, schedule, DW) : null);
+  DW.dwOpen(openRules(SQL, rules, DW, edit));
+  DW.dwScheduleSource(schedule ? openRules(SQL, schedule, DW, edit) : null);
+  let borrowFP = null;
   if (rules === 'terminal_rules.db' || (DW.hasRules && DW.hasRules('FP'))) DW.dwBorrow('FP', null);   // _dwEnsureBorrow
-  else DW.dwBorrow('FP', openRules(SQL, 'terminal_rules.db', DW));
-  console.log('§WALKNODE rules=' + rules + ' schedule=' + schedule + ' building=' + name);
-  return { rules, schedule };
+  else { borrowFP = 'terminal_rules.db'; DW.dwBorrow('FP', openRules(SQL, borrowFP, DW, edit)); }
+  console.log('§WALKNODE rules=' + rules + ' schedule=' + schedule + ' borrowFP=' + borrowFP + ' building=' + name);
+  return { rules, schedule, borrowFP };
 }
 
 /**

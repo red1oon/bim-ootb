@@ -28,7 +28,8 @@
     return { cls: CLASS_OF[db], rulesDb: db };
   }
   function scheduleDb(name) { return SCHEDULE_SOURCE[rulesDb(name)] || null; }
-  var API = { rulesDb: rulesDb, buildingClass: buildingClass, scheduleDb: scheduleDb, RULES_DBS: RULES_DBS.slice() };
+  function classOf(file) { return CLASS_OF[file] || null; }   // the class a rules FILE serves (MODELLER_RULES_EDITOR.md §CLASS-SHARED: the editor names the loaded file's class, not the open building's)
+  var API = { rulesDb: rulesDb, buildingClass: buildingClass, scheduleDb: scheduleDb, classOf: classOf, RULES_DBS: RULES_DBS.slice() };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   else root.WalkRules = API;
 })(typeof window !== 'undefined' ? window : this);

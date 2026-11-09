@@ -54,7 +54,7 @@ async function runE2E(NAME, body, opts) {
   try { fs.mkdirSync(SHOTS, { recursive: true }); } catch (e) {}
   const server = serve();
   await new Promise(r => server.listen(0, r)); const port = server.address().port;
-  const br = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
+  const br = await puppeteer.launch({ headless: 'new', protocolTimeout: opts.protocolTimeout || 180000, args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
   const pg = await br.newPage(); await pg.setViewport({ width: opts.width || 1280, height: opts.height || 860, deviceScaleFactor: opts.dpr || 1 });
   const errs = []; pg.on('pageerror', e => errs.push(String(e).slice(0, 180)));
   const slog = []; pg.on('console', m => { const t = m.text(); if (/^§/.test(t)) slog.push(t); });
