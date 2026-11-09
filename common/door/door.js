@@ -22,7 +22,7 @@ const ROOT = path.join(__dirname, '..', '..');
 const LIVE = 'https://red1oon.github.io/bim-ootb/';
 const FILES = {   // name -> [repo path from the repo root, name beside door.js]
   'door.js': ['common/door/door.js'], 'verbs.json': ['common/door/verbs.json'], 'edit_cli.js': ['modeller/tools/edit_cli.js'],
-  'bim_mcp.js': ['modeller/tools/bim_mcp.js'], 'viewer_verbs.js': ['viewer/tools/viewer_verbs.js'], 'film_path_vis.js': ['viewer/tools/film_path_vis.js'], 'schedule_verbs.js': ['viewer/tools/schedule_verbs.js'], 'object_cli.js': ['common/door/object_cli.js']
+  'bim_mcp.js': ['modeller/tools/bim_mcp.js'], 'viewer_verbs.js': ['viewer/tools/viewer_verbs.js'], 'film_path_vis.js': ['viewer/tools/film_path_vis.js'], 'schedule_verbs.js': ['viewer/tools/schedule_verbs.js'], 'object_cli.js': ['common/door/object_cli.js'], 'erp_cli.js': ['common/door/erp_cli.js']
 };
 function locate(name) {
   const beside = path.join(__dirname, name), repo = path.join(ROOT, FILES[name][0]);
@@ -31,7 +31,7 @@ function locate(name) {
 const curlFor = (names) => names.map(n => 'curl -O ' + LIVE + FILES[n][0]).join('\n');
 function missingFiles(names) { return names.filter(n => !fs.existsSync(locate(n))); }
 // The ONLY programs a verb may call. A vocabulary entry names one of these keys; it never names a path or a program (W-VOCAB-NOESCAPE).
-const CLI_TABLE = { edit_cli: locate('edit_cli.js'), viewer_verbs: locate('viewer_verbs.js'), film_path_vis: locate('film_path_vis.js'), schedule_verbs: locate('schedule_verbs.js'), object_cli: locate('object_cli.js') };
+const CLI_TABLE = { edit_cli: locate('edit_cli.js'), viewer_verbs: locate('viewer_verbs.js'), film_path_vis: locate('film_path_vis.js'), schedule_verbs: locate('schedule_verbs.js'), object_cli: locate('object_cli.js'), erp_cli: locate('erp_cli.js') };
 const HARM = ['read', 'trial', 'writes', 'posts', 'sends'];
 const STATUS = ['ok', 'refused', 'claim', 'error', 'inconclusive'];
 // §0.6 detail 4. Only the local actors are wired; any other name (email, mobile, device, an outside system) has no proof here: read only, the rest is a claim.
@@ -310,6 +310,15 @@ function createDoor(opts) {
       const a = parse();
       if ((r.code === 0 || r.code === 3) && a !== undefined) return r.code === 3 ? envelope(base, 'refused', { answer: a, raw: r.out, why: a.reason || 'refused' }) : envelope(base, 'ok', { answer: a, raw: r.out, ops: a.ops || [] });
       return fail('the object engine could not answer (exit ' + r.code + '): ' + (r.err.split('\n').filter(l => /§OBJECT FAIL/.test(l)).pop() || r.err || r.out || 'no output').replace(/^§OBJECT FAIL /, ''));
+    }
+    if (entry.calls.cli === 'erp_cli') {   // exit 0 answered · 3 refused (not found, not offered, the engine said no: an answer) · 1 failed · 2 usage. `next` = the legal actions the engine reports (verbs(ctx))
+      const a = parse();
+      if ((r.code === 0 || r.code === 3) && a !== undefined) {
+        const e = r.code === 3 ? envelope(base, 'refused', { answer: a, raw: r.out, why: a.reason || 'refused' }) : envelope(base, 'ok', { answer: a, raw: r.out, ops: a.ops || [] });
+        const nx = a.actions && a.actions.actions ? a.actions.actions : a.actions; if (Array.isArray(nx)) e.next = nx.slice();
+        return e;
+      }
+      return fail('the ERP engine could not answer (exit ' + r.code + '): ' + (r.err.split('\n').filter(l => /§ERP FAIL/.test(l)).pop() || r.err || r.out || 'no output').replace(/^§ERP FAIL /, ''));
     }
     return fail('no result mapping for ' + entry.calls.cli);
   }

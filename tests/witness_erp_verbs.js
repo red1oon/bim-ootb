@@ -143,6 +143,20 @@ if (process.env.EV_NO_PLUGIN_REGS !== '1' && gDoc && gProc) {
   const Q = genJson({ EV_NO_PLUGIN_REGS: '1' });
   ok('EV10', !implOk(Q) && Q.implDoc < J.implDoc && Q.implProc < J.implProc, `EV_NO_PLUGIN_REGS=1 generator impl doc=${Q.implDoc} proc=${Q.implProc} (normal ${J.implDoc}/${J.implProc}) → EV9 would ${implOk(Q) ? 'PASS (witness blind)' : 'FAIL (caught)'}`);
 }
+// ── EV11: X is counted from evidence, independently (lane B) ──
+//   ISSUE: X inflated by a pair that was never compared to legacy. An independent re-count (grep, not the generator's code path): rows of erp/actor_verbs.json whose evidence file holds the
+//   `§A5_PAIR table=T action=A verdict=MATCH` line AND whose table has a literal registerDocAction('<t>' in erp/model_*.js.
+{
+  const avj = fs.existsSync(path.join(ROOT, 'erp/actor_verbs.json')) ? JSON.parse(fs.readFileSync(path.join(ROOT, 'erp/actor_verbs.json'), 'utf8')).verbs : [];
+  const models = fs.readdirSync(path.join(ROOT, 'erp')).filter(f => /^model_.*\.js$/.test(f)).map(f => fs.readFileSync(path.join(ROOT, 'erp', f), 'utf8')).join('\n');
+  const indep = avj.filter(v => { const f = path.join(ROOT, v.evidence || ''); return v.evidence && fs.existsSync(f) && fs.readFileSync(f, 'utf8').includes('§A5_PAIR table=' + v.table + ' action=' + v.action + ' verdict=MATCH') && models.includes("registerDocAction('" + v.table.toLowerCase() + "'"); }).length;
+  if (!avj.length) inc('EV11', 'erp/actor_verbs.json has no rows: X cannot be judged');
+  else ok('EV11', indep === J.X && J.X > 0, `independent recount of witnessed+implemented pairs = ${indep}; generator X=${J.X}; rows ${JSON.stringify((J.xRows || []).map(r => r.table + ':' + r.action + '=' + (r.counted ? 'counted' : 'NOT(' + r.why + ')')))}`);
+  if (process.env.EV_NO_EVIDENCE !== '1' && avj.length) {
+    const Z = genJson({ EV_NO_EVIDENCE: '1' });
+    ok('EV12', Z.X === 0 && Z.X !== indep, `EV_NO_EVIDENCE=1 generator X=${Z.X} (independent count ${indep}) → EV11 would ${Z.X === indep ? 'PASS (witness blind)' : 'FAIL (caught)'}`);
+  }
+}
 // ── EV6: X ──
 const av = path.join(ROOT, 'erp/actor_verbs.json');
 ok('EV6', fs.existsSync(av) ? J.X > 0 : J.X === 0, `erp/actor_verbs.json ${fs.existsSync(av) ? 'exists' : 'absent'}; X=${J.X}`);
