@@ -51,8 +51,8 @@ function openBuildingRules(SQL, stack, name, edit) {
   DW.dwOpen(openRules(SQL, rules, DW, edit));
   DW.dwScheduleSource(schedule ? openRules(SQL, schedule, DW, edit) : null);
   let borrowFP = null;
-  if (rules === 'terminal_rules.db' || (DW.hasRules && DW.hasRules('FP'))) DW.dwBorrow('FP', null);   // _dwEnsureBorrow
-  else { borrowFP = 'terminal_rules.db'; DW.dwBorrow('FP', openRules(SQL, borrowFP, DW, edit)); }
+  if (rules === WalkRules.FP_BORROW || (DW.hasRules && DW.hasRules('FP'))) DW.dwBorrow('FP', null);   // _dwEnsureBorrow
+  else { borrowFP = WalkRules.FP_BORROW; DW.dwBorrow('FP', openRules(SQL, borrowFP, DW, edit)); }
   console.log('§WALKNODE rules=' + rules + ' schedule=' + schedule + ' borrowFP=' + borrowFP + ' building=' + name);
   return { rules, schedule, borrowFP };
 }

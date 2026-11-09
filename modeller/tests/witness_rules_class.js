@@ -11,7 +11,15 @@
  *                  discipline, same rules content hash, nothing stored. farm_rules.db (no resident): content hash only, walk NOT JUDGED.
  *                  A resident whose reference walk placed nothing is VACUOUS (not counted as a pass).
  *   C4 NOT BLIND   Duplex with one stored cell (+0.5 m z_offset_m of a placed device's schedule row): the same comparison differs.
- * Usage: [RESIDENTS=Duplex,Terminal] [FARM=1] node modeller/tests/witness_rules_class.js   (software GL, headless)
+ * §ALL-READERS (an edit applies wherever its file is read):
+ *   C1 (ext)       Duplex header: "Also read by HHS, Clinic, Hospital, HospitalGarage, Terminal for their room schedules";
+ *                  Terminal header: "Also read by SampleHouse, Duplex, SampleCastle for their sprinkler (FP) rules".
+ *   C5 SCHEDULE-READER  stored z_offset_m=1.35 on duplex_rules.db rule_space_schedule:78 -> Clinic ELEC walk: the room-schedule copy it
+ *                  opened holds 1.35 and §DW-RULES-USER ... as=schedule (no public resident serves a space from it: rules, not devices).
+ *   C6 BORROW-READER    stored n_measured=999 on terminal_rules.db rule_placement:10 (FP) -> Duplex FP walk: the borrowed FP rules
+ *                  hold 999 and §DW-RULES-USER ... as=borrow:FP (proves the cell reaches the borrowed rules, not a moved sprinkler).
+ *   C7 STALE-COPY  Clinic still open: store 1.6 instead, walk ELEC again -> the copy holds 1.6 (an open copy is reopened on a newer edit).
+ * Usage: [RESIDENTS=Duplex,Terminal] [FARM=1] [READERS=1] node modeller/tests/witness_rules_class.js   (software GL, headless)
  */
 'use strict';
 const { runE2E } = require('./e2e_harness');
@@ -64,8 +72,10 @@ runE2E('W-RULES-CLASS', async (t) => {
     const head = await t.pg.evaluate(() => { const e = document.getElementById('rules-shared'); return e ? e.textContent : null; });
     const cls = await t.pg.evaluate(k => window.WalkRules.buildingClass(k).cls, key);
     if (key === 'Duplex' || key === 'Terminal' || !process.env.RESIDENTS) {
-      const named = expect.every(k => head && head.indexOf(k) >= 0), others = all.filter(r => r.file !== file).every(r => !head || head.indexOf(r.key) < 0);
-      t.assert('C1 HEADER ' + key + ' (shared by every ' + cls + ' building, lists ' + expect.length + ')', !!head && head.indexOf('shared by every ' + cls + ' building') >= 0 && named && others, '"' + (head || 'no #rules-shared') + '"');
+      const own = head ? head.split('Also read by')[0] : '', named = expect.every(k => own.indexOf(k) >= 0), others = all.filter(r => r.file !== file).every(r => own.indexOf(r.key) < 0);
+      const ALSO = { Duplex: 'Also read by HHS, Clinic, Hospital, HospitalGarage, Terminal for their room schedules', Terminal: 'Also read by SampleHouse, Duplex, SampleCastle for their sprinkler (FP) rules' };
+      const also = !ALSO[key] || (head || '').indexOf(ALSO[key]) >= 0;
+      t.assert('C1 HEADER ' + key + ' (shared by every ' + cls + ' building, lists ' + expect.length + (ALSO[key] ? '; names the other readers' : '') + ')', !!head && own.indexOf('shared by every ' + cls + ' building') >= 0 && named && others && also, '"' + (head || 'no #rules-shared') + '"');
     }
     if (key === 'Duplex') {
       await t.pg.click('#rules-dl'); await t.sleep(300);
@@ -92,6 +102,36 @@ runE2E('W-RULES-CLASS', async (t) => {
     const f1 = await rulesHash(t);
     console.log(TAG + ' farm file=' + lf + ' hash=' + f0 + '/' + f1 + ' header="' + fh + '" walk=NOT JUDGED (no farm building)');
     t.assert('C3 NO-EDIT farm_rules.db (header names the farm class; content unchanged; walk not judged: no farm building)', lf === 'farm_rules.db' && f0 && f0 === f1 && /shared by every farm building; no resident building uses them/.test(fh || ''), 'file=' + lf + ' hash=' + f0 + '/' + f1 + ' "' + fh + '"');
+  }
+
+  // §ALL-READERS C5-C7 — the edit reaches the buildings that read the file as schedule source or FP borrow
+  if (!process.env.RESIDENTS || process.env.READERS) {
+    const fresh = async () => { await t.pg.reload({ waitUntil: 'load' }); await t.pg.waitForFunction('window.__sceneReady===true && !!window.Bonsai', { timeout: 60000 }).catch(() => {}); };
+    await fresh();
+    const KEYD = await t.pg.evaluate(() => window.DiscWalker.userRulesKey('duplex_rules.db')), KEYT = await t.pg.evaluate(() => window.DiscWalker.userRulesKey('terminal_rules.db'));
+    await t.pg.evaluate((a, b) => { localStorage.removeItem(a); localStorage.removeItem(b); }, KEYD, KEYT);
+    const walkOne = async (disc, k) => { const n0 = t.slog.length; await t.pg.evaluate((d, k) => { window.__dwLastDoneDisc = null; window.discWalk(d, { building: k }); }, disc, k);
+      await t.pg.waitForFunction(d => window.__dwLastDoneDisc === d, { timeout: 1800000, polling: 500 }, disc).catch(() => {}); await t.sleep(500);
+      const w = await t.pg.evaluate(d => (window.__dwWalks[d] || []).map(p => ({ device: p.device || null, prov: p.prov || '', z: p.z })), disc); return { w, lines: t.slog.slice(n0) }; };
+    // C5/C7: the stored cell must be in the duplex copy a terminal walk opens as its room-schedule source. Measured: no public
+    // resident's walk serves a space from it (§DW-SCHED-SOURCE spaces=0 on HHS, Clinic, Terminal), so this proves the rules the
+    // walk reads, not a moved device.
+    const schedVal = () => t.pg.evaluate(() => { const DW = window.DiscWalker, sd = DW.sideDbs ? DW.sideDbs() : null, db = sd && sd.schedule; if (!db) return 'no sideDbs().schedule';
+      const r = db.exec('SELECT z_offset_m FROM rule_space_schedule WHERE rowid=78'); return r.length ? r[0].values[0][0] : null; });
+    const store = (z, stamp) => t.pg.evaluate((k, z, st) => localStorage.setItem(k, JSON.stringify({ rulesFile: 'duplex_rules.db', saved: st, cells: { 'rule_space_schedule:78': { z_offset_m: z } } })), KEYD, z, stamp);
+    await store(1.35, 's1'); await fresh(); await t.open('Clinic'); const c1 = await walkOne('ELEC', 'Clinic'), v1 = await schedVal();
+    const u1 = c1.lines.filter(l => /§DW-RULES-USER file=duplex_rules\.db/.test(l)).pop() || '', sl = c1.lines.filter(l => /§DW-SCHED-SOURCE disc=ELEC/.test(l)).pop() || '';
+    t.assert('C5 SCHEDULE-READER (stored duplex cell -> the schedule copy Clinic opens holds it)', v1 === 1.35 && /as=schedule/.test(u1), 'held=' + v1 + ' "' + u1.slice(0, 110) + '" "' + sl.slice(0, 120) + '"');
+    await store(1.6, 's2'); await walkOne('ELEC', 'Clinic'); const v2 = await schedVal();
+    t.assert('C7 STALE-COPY (Clinic still open; newer stored value -> the next walk reads it)', v2 === 1.6, 'held=' + v2);
+    await t.pg.evaluate(k => localStorage.removeItem(k), KEYD);
+    await t.pg.evaluate(k => localStorage.setItem(k, JSON.stringify({ rulesFile: 'terminal_rules.db', saved: 's3', cells: { 'rule_placement:10': { n_measured: 999 } } })), KEYT);
+    await fresh(); const m6 = t.slog.length; await t.open('Duplex'); await walkOne('FP', 'Duplex');   // the borrow is made on open (__ensureDiscWalker), so read the log from before it
+    const held = await t.pg.evaluate(() => { const DW = window.DiscWalker, sd = DW.sideDbs ? DW.sideDbs() : null, db = sd && sd.borrow && sd.borrow.FP; if (!db) return 'no sideDbs().borrow.FP';
+      const r = db.exec('SELECT n_measured FROM rule_placement WHERE rowid=10'); return r.length ? r[0].values[0][0] : null; });
+    const u6 = t.slog.slice(m6).filter(l => /§DW-RULES-USER file=terminal_rules\.db/.test(l)).pop() || '';
+    t.assert('C6 BORROW-READER (stored terminal cell -> the FP rules Duplex borrows hold it)', held === 999 && /as=borrow:FP/.test(u6), 'held=' + held + ' "' + u6.slice(0, 110) + '"');
+    await t.pg.evaluate(k => localStorage.removeItem(k), KEYT);
   }
 
   // C4 — the comparison is not blind: one stored cell on Duplex moves its walk

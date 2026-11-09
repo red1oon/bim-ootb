@@ -66,21 +66,22 @@
   // cross-disc clearances stay on the primary. Reuses _loadDbBuf (same offline cache as dwInit). Idempotent per
   // file. Browser-only (node witnesses use dwBorrow with an fs-opened handle and never reach _loadDbBuf's fetch).
   async function dwBorrowFile(disc, SQL, baseUrl, file) {
-    if (_borrow[disc] && _borrow[disc]._dwFile === file) return _borrow[disc];   // already borrowed this file
+    if (_fresh(_borrow[disc], file)) return _borrow[disc];   // already borrowed this file, carrying the stored edit
     var url = dwRulesKey(file, baseUrl);
     var buf = await _loadDbBuf(url);
     var db = new SQL.Database(new Uint8Array(buf));
     db._dwFile = file; _borrow[disc] = db;
-    await _patchRulesFromUrl(db, file, baseUrl);   // §12 rule 1: self-heal rules patch
+    await _openSide(db, file, baseUrl, 'borrow:' + disc);   // §12 rule 1 self-heal patch + §ALL-READERS the user's cells
     console.log(TAG + ' §DW-BORROW ' + disc + ' ← ' + file);
     return db;
   }
 
   async function dwScheduleSourceFile(SQL, baseUrl, file) {
     if (!file) { _schedSource = null; return null; }
-    if (_schedSource && _schedSource._dwFile === file) return _schedSource;   // already registered
+    if (_fresh(_schedSource, file)) return _schedSource;   // already registered, carrying the stored edit
     var db = new SQL.Database(new Uint8Array(await _loadDbBuf(dwRulesKey(file, baseUrl))));
     db._dwFile = file; _schedSource = db;
+    await _openSide(db, file, baseUrl, 'schedule');   // §ALL-READERS: patch + the user's cells, as the own rules get them (the node harness already patched here)
     console.log(TAG + ' §DW-SCHED-SOURCE registered ' + file);
     return db;
   }
@@ -208,10 +209,26 @@
     });
     return { done: done, skipped: skipped };
   }
-  function applyUserRules(db, file) {
+  function _userRaw(file) { try { return (ROOT.localStorage && ROOT.localStorage.getItem(userRulesKey(file))) || null; } catch (e) { return null; } }
+  // `as` names the role this copy plays (own | schedule | borrow:<disc>); db._dwUser records which stored edit it carries
+  // (prompts/MODELLER_RULES_EDITOR.md §ALL-READERS rule 2: a copy whose stored edit is older is reopened).
+  function applyUserRules(db, file, as) {
+    if (db) db._dwUser = _userRaw(file);
     var u = userRules(file); if (!u || !u.cells) return null;
-    try { var r = applyCells(db, u.cells); console.log(TAG + ' §DW-RULES-USER file=' + file + ' cells=' + r.done + ' skipped=' + r.skipped + ' ok'); return r; }
-    catch (e) { console.warn(TAG + ' §DW-RULES-USER file=' + file + ' error ' + (e && e.message)); return null; }
+    try { var r = applyCells(db, u.cells); console.log(TAG + ' §DW-RULES-USER file=' + file + ' cells=' + r.done + ' skipped=' + r.skipped + ' ok as=' + (as || 'own')); return r; }
+    catch (e) { console.warn(TAG + ' §DW-RULES-USER file=' + file + ' error ' + (e && e.message) + ' as=' + (as || 'own')); return null; }
+  }
+  // §ALL-READERS rule 1: ONE opener for a rules file read as schedule source or FP borrow, the same order as dwInit (patch, then the user's cells)
+  async function _openSide(db, file, baseUrl, as) { await _patchRulesFromUrl(db, file, baseUrl); applyUserRules(db, file, as); return db; }
+  function _fresh(db, file) { return !!db && db._dwFile === file && db._dwUser === _userRaw(file); }
+  // Does a rules FILE hold rows for a discipline? (the header's FP-borrow readers; the same cached loader as dwInit)
+  var _hasCache = {};
+  async function fileHasRules(SQL, baseUrl, file, disc) {
+    var k = file + '|' + disc; if (k in _hasCache) return _hasCache[k];
+    var db = (file === _loadedFile && _db) ? _db : new SQL.Database(new Uint8Array(await _loadDbBuf(dwRulesKey(file, baseUrl))));
+    var n = _rows(db, "SELECT COUNT(*) AS n FROM rule_placement WHERE disc='" + String(disc).replace(/'/g, "''") + "'")[0].n;
+    if (db !== _db) db.close();
+    return (_hasCache[k] = n > 0);
   }
   async function reloadRules(SQL, baseUrl) { var f = _loadedFile; _ready = false; _loadedFile = null; return dwInit(SQL, baseUrl, f); }
   async function _patchRulesFromUrl(db, file, baseUrl) {
@@ -3405,7 +3422,7 @@
     return ds.filter(function (d) { return d && d !== 'ARC'; });
   }
 
-  var API = { __test: { placeMeasured: placeMeasured, bandHostPass: _bandHostPass }, applyRulesPatch: applyRulesPatch, rulesDb: function () { return _db; }, userRulesKey: userRulesKey, userRules: userRules, applyCells: applyCells, applyUserRules: applyUserRules, reloadRules: reloadRules, setDrawnOnlyView: setDrawnOnlyView, drawnOps: drawnOps, rulesMeta: function () { return _rulesMeta; }, hasRules: function (disc) { try { var r = _db && _db.exec("SELECT COUNT(*) FROM rule_placement WHERE disc='" + String(disc).replace(/'/g, "''") + "'"); return !!(r && r.length && r[0].values[0][0] > 0); } catch (e) { return false; } }, dwInit: dwInit, dwRulesKey: dwRulesKey, dwOpen: dwOpen, dwBorrow: dwBorrow, dwBorrowFile: dwBorrowFile, dwWalk: dwWalk, assemble: assemble, connectorFor: connectorFor, connectorEnrich: connectorEnrich, substrate: substrate, place: place, hostBind: hostBind, dwTraceZ: dwTraceZ,
+  var API = { __test: { placeMeasured: placeMeasured, bandHostPass: _bandHostPass }, applyRulesPatch: applyRulesPatch, rulesDb: function () { return _db; }, userRulesKey: userRulesKey, userRules: userRules, applyCells: applyCells, applyUserRules: applyUserRules, fileHasRules: fileHasRules, sideDbs: function () { return { schedule: _schedSource, borrow: Object.assign({}, _borrow) }; }, reloadRules: reloadRules, setDrawnOnlyView: setDrawnOnlyView, drawnOps: drawnOps, rulesMeta: function () { return _rulesMeta; }, hasRules: function (disc) { try { var r = _db && _db.exec("SELECT COUNT(*) FROM rule_placement WHERE disc='" + String(disc).replace(/'/g, "''") + "'"); return !!(r && r.length && r[0].values[0][0] > 0); } catch (e) { return false; } }, dwInit: dwInit, dwRulesKey: dwRulesKey, dwOpen: dwOpen, dwBorrow: dwBorrow, dwBorrowFile: dwBorrowFile, dwWalk: dwWalk, assemble: assemble, connectorFor: connectorFor, connectorEnrich: connectorEnrich, substrate: substrate, place: place, hostBind: hostBind, dwTraceZ: dwTraceZ,
     route: route, routeChains: routeChains, routePattern: routePattern,
     // §MEP-ROUTE-DISC: the disciplines the pattern bridge covers (modeller.html gates its mep_rw.db load on this)
     patternDiscs: function () { return Object.keys(_RW_PATTERN_DISC); },

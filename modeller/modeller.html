@@ -331,8 +331,8 @@ if (window.WholeHistory && WholeHistory.mount) WholeHistory.mount({ page: 'model
 <!-- DiscWalker: the ONE shared discipline-walker engine (Placer/Router/Gate) reading the MEASURED
      terminal_rules.db (mined off Terminal). Supersedes the thin mep_rw.db recipes for the disc-node walk —
      every disc walks on ANY opened building from rules measured off a real coordinated building. -->
-<script src="../common/walk_rules.js?v=3" onerror="console.warn('§WALK_RULES LOAD_FAIL walk_rules.js')"></script>
-<script src="disc_walker.js?v=21" onerror="console.warn('§DW LOAD_FAIL disc_walker.js')"></script>
+<script src="../common/walk_rules.js?v=4" onerror="console.warn('§WALK_RULES LOAD_FAIL walk_rules.js')"></script>
+<script src="disc_walker.js?v=22" onerror="console.warn('§DW LOAD_FAIL disc_walker.js')"></script>
 <!-- §I5 per-instance hide (SPEC_INSTANCE_HIDE.md §I5d): Walked-Fixtures Outliner category — one row per
      walked instance (windowed via §V4 OL_CHUNK), eye = hide that exact instanceId. Witness: W-E2E-INSTHIDE. -->
 <script src="dw_instances_outliner.js?v=1" onerror="console.warn('§DWINST LOAD_FAIL dw_instances_outliner.js')"></script>
@@ -719,7 +719,7 @@ function _xrayReapply(src) {
 window.Bonsai.decor.register('xray', () => { _xrayReapply('refold'); return _xrayOn ? 'on' : 'off'; });   // §B1-ROW1 (was its own listener)
 // prompts/MODELLER_RULES_EDITOR.md (W-E2E-RULES-EDIT): the walker's rules as JSON in the project's ONE JSON editor; loaded on first click
 { const bR = document.getElementById('b-rules'); let _rl = null;
-  if (bR) bR.onclick = async () => { try { if (!window.RulesEditor) { _rl = _rl || new Promise((ok, no) => { const sc = document.createElement('script'); sc.src = 'rules_editor.js?v=4'; sc.onload = ok; sc.onerror = () => no(new Error('rules_editor.js failed to load')); document.head.appendChild(sc); }); await _rl; }
+  if (bR) bR.onclick = async () => { try { if (!window.RulesEditor) { _rl = _rl || new Promise((ok, no) => { const sc = document.createElement('script'); sc.src = 'rules_editor.js?v=5'; sc.onload = ok; sc.onerror = () => no(new Error('rules_editor.js failed to load')); document.head.appendChild(sc); }); await _rl; }
     if (document.getElementById('rules-ed')) window.RulesEditor.close(); else await window.RulesEditor.open(); } catch (e) { _rl = null; console.warn('§RULES-EDIT load failed ' + (e && e.message)); } }; }
 const bXray = document.getElementById('b-xray');
 function paintXray() { if (bXray) bXray.classList.toggle('on', _xrayOn); }
@@ -6221,8 +6221,9 @@ window._dwBustStaleRulesCache = async function () {
 window._dwEnsureBorrow = async function () {
   if (!window.DiscWalker || !window.DiscWalker.dwBorrowFile) return;
   var primary = (window.DiscWalker.loadedFile && window.DiscWalker.loadedFile()) || '';
-  if (primary === 'terminal_rules.db' || (window.DiscWalker.hasRules && window.DiscWalker.hasRules('FP'))) { if (window.DiscWalker.dwBorrow) window.DiscWalker.dwBorrow('FP', null); return; }   // §D62 a reference with its own FP rule does not borrow
-  try { await window.DiscWalker.dwBorrowFile('FP', window.SQL, window._DW_BASE, 'terminal_rules.db'); }
+  var _fpSrc = window.WalkRules.FP_BORROW;   // §ALL-READERS: named once in common/walk_rules.js
+  if (primary === _fpSrc || (window.DiscWalker.hasRules && window.DiscWalker.hasRules('FP'))) { if (window.DiscWalker.dwBorrow) window.DiscWalker.dwBorrow('FP', null); return; }   // §D62 a reference with its own FP rule does not borrow
+  try { await window.DiscWalker.dwBorrowFile('FP', window.SQL, window._DW_BASE, _fpSrc); }
   catch (e) { console.warn('§DISC-WALK borrow FP←terminal failed ' + (e && e.message)); }
 };
 // Ensure the engine is loaded (building-class rules fetch) + the roster is registered. Called on open.
