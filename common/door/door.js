@@ -17,12 +17,21 @@
 const fs = require('fs'), path = require('path'), os = require('os'), { spawn } = require('child_process');
 
 const ROOT = path.join(__dirname, '..', '..');
-// The ONLY programs a verb may call. A vocabulary entry names one of these keys; it never names a path or a program (W-VOCAB-NOESCAPE).
-const CLI_TABLE = {
-  edit_cli: path.join(ROOT, 'modeller', 'tools', 'edit_cli.js'),
-  viewer_verbs: path.join(ROOT, 'viewer', 'tools', 'viewer_verbs.js'),
-  film_path_vis: path.join(ROOT, 'viewer', 'tools', 'film_path_vis.js')
+// ONE resolver (bim_mcp.js asks it too). A file is looked for BESIDE this script first (the flat download an outsider makes: bim_mcp.js, edit_cli.js,
+// door.js, verbs.json in one folder), then at its place in the repo layout. Missing files are reported with the exact curl line from the live site.
+const LIVE = 'https://red1oon.github.io/bim-ootb/';
+const FILES = {   // name -> [repo path from the repo root, name beside door.js]
+  'door.js': ['common/door/door.js'], 'verbs.json': ['common/door/verbs.json'], 'edit_cli.js': ['modeller/tools/edit_cli.js'],
+  'bim_mcp.js': ['modeller/tools/bim_mcp.js'], 'viewer_verbs.js': ['viewer/tools/viewer_verbs.js'], 'film_path_vis.js': ['viewer/tools/film_path_vis.js']
 };
+function locate(name) {
+  const beside = path.join(__dirname, name), repo = path.join(ROOT, FILES[name][0]);
+  return fs.existsSync(beside) ? beside : repo;   // when neither exists, the repo path is what the error names
+}
+const curlFor = (names) => names.map(n => 'curl -O ' + LIVE + FILES[n][0]).join('\n');
+function missingFiles(names) { return names.filter(n => !fs.existsSync(locate(n))); }
+// The ONLY programs a verb may call. A vocabulary entry names one of these keys; it never names a path or a program (W-VOCAB-NOESCAPE).
+const CLI_TABLE = { edit_cli: locate('edit_cli.js'), viewer_verbs: locate('viewer_verbs.js'), film_path_vis: locate('film_path_vis.js') };
 const HARM = ['read', 'trial', 'writes', 'posts', 'sends'];
 const STATUS = ['ok', 'refused', 'claim', 'error', 'inconclusive'];
 // §0.6 detail 4. Only the local actors are wired; any other name (email, mobile, device, an outside system) has no proof here: read only, the rest is a claim.
@@ -69,7 +78,7 @@ const TYPES = {   // door-side shape checks; the engine checks meaning (does the
 };
 const jsType = (t) => (t === 'number' ? 'number' : 'string');
 function loadVocab(file) {
-  const j = JSON.parse(fs.readFileSync(file || path.join(__dirname, 'verbs.json'), 'utf8')), byVerb = new Map();
+  const j = JSON.parse(fs.readFileSync(file || locate('verbs.json'), 'utf8')), byVerb = new Map();
   for (const e of j.verbs) { if (byVerb.has(e.verb)) throw new Error('verbs.json: duplicate verb ' + e.verb); byVerb.set(e.verb, e); }
   return { verbs: j.verbs, byVerb, raw: j };
 }
@@ -257,7 +266,7 @@ function createDoor(opts) {
   function spawnCli(key, argv) {
     return new Promise((res) => {
       const file = cli[key];
-      if (!file || !fs.existsSync(file)) return res({ code: 1, out: '', err: key + ' is not at ' + file + '. Use a bim-ootb checkout.' });
+      if (!file || !fs.existsSync(file)) return res({ code: 1, out: '', err: key + ' is not at ' + file + '. ' + (key === 'edit_cli' ? 'Download it beside door.js: ' + curlFor(['edit_cli.js']) : 'The Viewer tools need a bim-ootb checkout (the Viewer page tree).') });
       door.spawned++;
       let out = '', err = '';
       const p = spawn(process.execPath, [file].concat(argv), { env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -367,7 +376,7 @@ function createDoor(opts) {
   return door;
 }
 
-module.exports = { createDoor, loadVocab, validate, coerce, parseLine, tokenize, evalExpr, mcpTools, Dec, CLI_TABLE, HARM, STATUS, ACTORS, TYPES };
+module.exports = { locate, missingFiles, curlFor, createDoor, loadVocab, validate, coerce, parseLine, tokenize, evalExpr, mcpTools, Dec, CLI_TABLE, HARM, STATUS, ACTORS, TYPES };
 
 if (require.main === module) {
   (async () => {

@@ -10,7 +10,7 @@
 //   Claude Desktop:  "mcpServers": { "bim": { "command": "node", "args": ["/path/to/bim_mcp.js"] } }
 //   BIM_MCP_LOG=<file>  optional: append every tools/call (the AI's request, verbatim) and the answer returned, one JSON line each. Off unless set.
 'use strict';
-const fs = require('fs');
+const fs = require('fs'), path = require('path');
 const VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05'];
 const say = (s) => process.stderr.write('§BIM_MCP ' + s + '\n');
 const LOGF = process.env.BIM_MCP_LOG || null;
@@ -29,8 +29,15 @@ const INSTRUCTIONS = [
 // ── The verb list is common/door/verbs.json (D1): tools/list is generated from it, and every call goes through the door (common/door/door.js, D4),
 // the same path a person's terminal takes. Names, descriptions and schemas are the published ones, byte for byte (W-VOCAB-FRESH). Spec §0.7.
 let DOOR = null, TOOLS = [];
-try { DOOR = require('../../common/door/door.js').createDoor(); TOOLS = DOOR.mcpTools(); }
-catch (e) { say('FAIL the door is not available (' + (e && e.message || e) + '). bim_mcp.js needs a bim-ootb checkout: common/door/door.js and verbs.json.'); process.exit(1); }
+const LIVE_DL = 'https://red1oon.github.io/bim-ootb/', DL = ['modeller/tools/edit_cli.js', 'common/door/door.js', 'common/door/verbs.json'];
+const failStart = (why, files) => { say('FAIL ' + why + '. Put these files in one folder with bim_mcp.js (or use a bim-ootb checkout):\n' + files.map(f => '  curl -O ' + LIVE_DL + f).join('\n')); process.exit(1); };
+try {
+  const beside = path.join(__dirname, 'door.js'), doorFile = fs.existsSync(beside) ? beside : path.join(__dirname, '..', '..', 'common', 'door', 'door.js');   // beside first, then the repo layout
+  if (!fs.existsSync(doorFile)) failStart('door.js is not beside bim_mcp.js', DL);
+  const D = require(doorFile), miss = D.missingFiles(['verbs.json', 'edit_cli.js']);
+  if (miss.length) failStart('missing beside bim_mcp.js: ' + miss.join(', '), DL.filter(f => miss.indexOf(path.basename(f)) >= 0));
+  DOOR = D.createDoor(); TOOLS = DOOR.mcpTools();
+} catch (e) { failStart('the door is not available (' + (e && e.message || e) + ')', DL); }
 const MCP2VERB = {}; DOOR.vocab.verbs.forEach(v => { if (v.mcp_name) MCP2VERB[v.mcp_name] = v.verb; });
 
 async function call(name, a) {

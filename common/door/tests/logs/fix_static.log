@@ -1,0 +1,32 @@
+  ✅ accepts  modeller.try_shift building=HospitalGarage line=gx6 move=1.824  line=ok json=ok spawns=1/1
+  ✅ accepts  modeller.try_shift building=HospitalGarage line=gx6 move=-0.5  line=ok json=ok spawns=1/1
+  ✅ accepts  modeller.lines building=Hospital  line=ok json=ok spawns=1/1
+  ✅ accepts  viewer.counts building=Duplex by=storey  line=ok json=ok spawns=1/1
+  ✅ accepts  viewer.counts building=Duplex  line=ok json=ok spawns=1/1
+  ✅ accepts  viewer.clashes building=Clinic discA=ARC discB=MEP  line=ok json=ok spawns=1/1
+  ✅ rejects  modeller.try_shift building=HospitalGarage line=gx6  line=error(missing input: move) json=error spawns=0/0
+  ✅ rejects  modeller.try_shift line=gx6 move=1  line=error(missing input: building) json=error spawns=0/0
+  ✅ rejects  modeller.try_shift building=HospitalGarage move=1  line=error(missing input: line) json=error spawns=0/0
+  ✅ rejects  modeller.try_shift building=HospitalGarage line=gx6 move=abc  line=error(input move must be a plain number in m, got "abc") json=error spawns=0/0
+  ✅ rejects  modeller.try_shift building=HospitalGarage line=gx6 move=1824mm  line=error(input move must be a plain number in m, got "1824mm" (units ) json=error spawns=0/0
+  ✅ rejects  modeller.try_shift building=HospitalGarage line=gx6 move=1 colour=red  line=error(unknown input: colour (the verb modeller.try_shift takes: bu) json=error spawns=0/0
+  ✅ rejects  modeller.try_shift building="--url" line=gx6 move=1  line=error(input building must be a building name (letters, digits, _ .) json=error spawns=0/0
+  ✅ rejects  viewer.counts building=Duplex by=floor  line=error(input by must be one of discipline, storey, got "floor") json=error spawns=0/0
+  ✅ rejects  viewer.clashes building=Clinic discA=ARC discB="M E P"  line=error(input discB must be a discipline code such as ARC or MEP, go) json=error spawns=0/0
+  ✅ rejects  modeller.add_tower building=Hospital  line=error(unknown verb: modeller.add_tower. Verbs: modeller.lines, mod) json=error spawns=0/0
+§W-DOOR-SHAPE shape cases=16 bad=10 good=6 lineOK=16 jsonOK=16
+  ✅ free text goes back as a question, nothing runs  status=refused
+  ✅ FRESH every entry has the §0.4 fields (calls or a body)  entries=6 missing=
+  ✅ FRESH every entry's calls.cli is in the door's table and the script exists  bad=
+  ✅ FRESH every entry's witness file exists  bad=
+  ✅ FRESH harm and actors are from the vocabulary
+  ✅ FRESH tools/list built from verbs.json = the pre-D1 published bytes (names, descriptions, schemas)  sha=31e328c54be5 tools=bim_lines,bim_try_shift,viewer_counts,viewer_clashes
+  ✅ FRESH every connector tool comes from verbs.json, and every mcp_name is offered (live bim_mcp.js asked)  live=bim_lines,bim_try_shift,viewer_clashes,viewer_counts
+  ✅ NOESCAPE the real vocabulary has no eval, SQL or shell path  offences=0
+  ✅ NOESCAPE planted x.shell is caught  x.shell: cli sh is not in the door's table
+  ✅ NOESCAPE planted x.eval is caught  x.eval: argv -e
+  ✅ NOESCAPE planted x.code is caught  x.code: input script has type code; x.code: input script is named like code
+  ✅ NOESCAPE planted x.sql is caught  x.sql: input sql is named like code
+  ✅ NOESCAPE the door refuses to run a planted entry whose cli is not in its table (nothing spawned)  status=error why=verb x.shell names a program (sh) that is not in the door's table; not
+§W-DOOR-SHAPE static cases judged=29+0
+§WITNESS_DOOR_SHAPE pass=29 fail=0 inconclusive=0 verdict=PASS
