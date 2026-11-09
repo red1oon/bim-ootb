@@ -42,13 +42,14 @@ const SDB = path.join(T0, 'staged.db'); fs.copyFileSync(DB, SDB);
 const overlay = fs.readFileSync(path.join(ROOT, 'erp/plugin_overlay.js'), 'utf8').split('\n').find(l => /^\s*var BUILTINS = \[/.test(l)) || '';
 const BUILT = [...overlay.replace(/\].*$/, '').matchAll(/'([^']+)'/g)].map(x => x[1]);
 const lit = v => v == null ? 'NULL' : typeof v === 'number' ? String(v) : "'" + String(v).replace(/'/g, "''") + "'";
-let stagedSql = 0;
+let stagedSql = 0, plugTabs = 0, plugPairs = 0;   // plugin document tables, and their (table, offered action) pairs
 const stagePromise = (async () => {
   let q = 'BEGIN;\n';
   for (const b of BUILT) {
     const m = await import(require('url').pathToFileURL(path.join(ROOT, 'erp', b)).href);
     for (const d of (m.manifest && m.manifest.dictionary) || []) for (const r of d.rows) {
       const cols = Object.keys(r); stagedSql++;
+      if (d.table.toLowerCase() === 'ad_table' && m.FAMILY && m.FAMILY.allow) { plugTabs++; const offered = [...new Set(Object.values(m.FAMILY.allow).flat())]; plugPairs += offered.filter(a => sql(DB, `select count(*) from AD_Ref_List where AD_Reference_ID=135 and value='${a}'`) === '1').length; }
       q += `INSERT OR IGNORE INTO ${d.table} (${cols.join(',')}) VALUES (${cols.map(c => lit(r[c])).join(',')});\n`;
     }
   }
@@ -65,8 +66,8 @@ const iProcAct = +sql(SDB, "select count(*) from ad_process where isactive='Y'")
 const iProcAll = +sql(SDB, 'select count(*) from ad_process');
 if (!iTables || !iActions || !iProcAct) inc('EV1', `empty independent population tables=${iTables} actions=${iActions} procs=${iProcAct}`);
 else {
-  const good = J.tables.length === iTables && J.actions.length === iActions && J.procActive === iProcAct && J.procInactive === iProcAll - iProcAct && J.N === iTables * iActions + iProcAct;
-  ok('EV1', good, `SQL tables=${iTables} actions=${iActions} active procs=${iProcAct} (inactive ${iProcAll - iProcAct}) → N=${iTables * iActions + iProcAct}; generator tables=${J.tables.length} actions=${J.actions.length} procs=${J.procActive} N=${J.N}`);
+  const good = J.tables.length === iTables && J.actions.length === iActions && J.procActive === iProcAct && J.procInactive === iProcAll - iProcAct && J.N === ((iTables - plugTabs) * iActions + plugPairs) + iProcAct;
+  ok('EV1', good, `SQL tables=${iTables} actions=${iActions} active procs=${iProcAct} (inactive ${iProcAll - iProcAct}) → N=${((iTables - plugTabs) * iActions + plugPairs) + iProcAct}; generator tables=${J.tables.length} actions=${J.actions.length} procs=${J.procActive} N=${J.N}`);
 }
 // ── EV2: independent line grep of registration sites ──
 const SKIP = /\/(lib|node_modules|archive|tests|\.git|docs)(\/|$)|\.min\./;
@@ -111,18 +112,18 @@ else {
 // ── EV5: falsifier ──
 if (process.env.EV_BREAK !== '1') {
   const B = genJson({ EV_BREAK: '1' });
-  ok('EV5', !(B.actions.length === iActions && B.N === iTables * iActions + iProcAct), `EV_BREAK=1 generator lists ${B.actions.length} DocActions (SQL ${iActions}), N=${B.N} (SQL ${iTables * iActions + iProcAct}) → EV1 would ${B.actions.length === iActions ? 'PASS (witness blind)' : 'FAIL (caught)'}`);
+  ok('EV5', !(B.actions.length === iActions && B.N === ((iTables - plugTabs) * iActions + plugPairs) + iProcAct), `EV_BREAK=1 generator lists ${B.actions.length} DocActions (SQL ${iActions}), N=${B.N} (SQL ${((iTables - plugTabs) * iActions + plugPairs) + iProcAct}) → EV1 would ${B.actions.length === iActions ? 'PASS (witness blind)' : 'FAIL (caught)'}`);
 }
 // ── EV7: the plugin dictionary is inside N ──
 const iSeedProc = +sql(DB, "select count(*) from ad_process where isactive='Y'"), iSeedTab = +sql(DB, "select count(distinct t.tablename) from AD_Column c join AD_Table t on t.AD_Table_ID=c.AD_Table_ID where lower(c.columnname)='docaction'");
 const hasOpen = j => (j.procRows || []).some(r => r.value === 'BIM_Document_Open' && r.src === 'plugin bim_document') && j.tables.includes('BIM_Document');
 const sqlOpen = sql(SDB, "select count(*) from ad_process where value='BIM_Document_Open' and isactive='Y'") === '1';
 if (!BUILT.length || !stagedSql) inc('EV7', `no built-in plugin dictionary rows found (BUILTINS=${BUILT.length}, rows=${stagedSql}): nothing judged`);
-else ok('EV7', hasOpen(J) && sqlOpen && J.N === (iTables * iActions + iProcAct) && J.N > iSeedTab * iActions + iSeedProc, `BIM_Document_Open in N with source "plugin bim_document" (generator) and in the independently staged SQL; plugin rows staged by SQL=${stagedSql}; N=${J.N} equals SQL recount ${iTables * iActions + iProcAct}; seed-only N would be ${iSeedTab * iActions + iSeedProc}`);
+else ok('EV7', hasOpen(J) && sqlOpen && J.N === (((iTables - plugTabs) * iActions + plugPairs) + iProcAct) && J.N > iSeedTab * iActions + iSeedProc, `BIM_Document_Open in N with source "plugin bim_document" (generator) and in the independently staged SQL; plugin rows staged by SQL=${stagedSql}; N=${J.N} equals SQL recount ${((iTables - plugTabs) * iActions + plugPairs) + iProcAct}; seed-only N would be ${iSeedTab * iActions + iSeedProc}`);
 // ── EV8: falsifier ──
 if (process.env.EV_NO_PLUGINS !== '1' && stagedSql) {
   const P = genJson({ EV_NO_PLUGINS: '1' });
-  ok('EV8', !hasOpen(P) && P.N !== iTables * iActions + iProcAct, `EV_NO_PLUGINS=1 generator N=${P.N} (SQL ${iTables * iActions + iProcAct}); BIM_Document_Open present=${hasOpen(P)} → EV7 would ${hasOpen(P) ? 'PASS (witness blind)' : 'FAIL (caught)'}`);
+  ok('EV8', !hasOpen(P) && P.N !== ((iTables - plugTabs) * iActions + plugPairs) + iProcAct, `EV_NO_PLUGINS=1 generator N=${P.N} (SQL ${((iTables - plugTabs) * iActions + plugPairs) + iProcAct}); BIM_Document_Open present=${hasOpen(P)} → EV7 would ${hasOpen(P) ? 'PASS (witness blind)' : 'FAIL (caught)'}`);
 }
 // ── EV6: X ──
 const av = path.join(ROOT, 'erp/actor_verbs.json');

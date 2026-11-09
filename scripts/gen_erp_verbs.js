@@ -127,7 +127,10 @@ async function main() {
   const procActive = procs.filter(p => p.isactive === 'Y'), procInactive = procs.length - procActive.length;
   const procSrc = id => seedProcIds.has(id) ? 'seed' : 'plugin ' + ((plugins.find(pl => pl.tables.includes('ad_process') && pl.procIds && pl.procIds.has(id)) || {}).name || '?');
   const tableSrc = t => seedTables.has(t) ? 'seed' : 'plugin ' + ((plugins.find(pl => pl.docTables && pl.docTables.includes(t)) || {}).name || '?');
-  const N_doc = docTables.length * actions.length, N_proc = procActive.length, N = N_doc + N_proc;
+  // pairs of a table: a seed table = every DocAction of reference 135; a plugin table with a DocAction family = the family's OFFERED actions (union of FAMILY.allow); owner ruling 2026-11-09
+  const famOf = t => { if (seedTables.has(t)) return null; const pl = plugins.find(q => q.docTables.includes(t)); return pl && pl.family ? pl.family : null; };
+  const pairsOf = t => { const f = famOf(t); return f ? actions.filter(a => f.includes(a.value)) : actions; };
+  const N_doc = docTables.reduce((a, t) => a + pairsOf(t).length, 0), N_proc = procActive.length, N = N_doc + N_proc;
   const empty = !actions.length || !docTables.length || !procActive.length;
 
   // wfmc (the kernel's state machine): which actions have ≥ 1 legal transition
@@ -174,7 +177,7 @@ async function main() {
   const counted = sites.filter(s => s.kind === 'LOOP' || s.kind === 'LITERAL');
   const handlerPairs = new Map();   // 'table:action' → [site descr]
   for (const s of counted) for (const [t, a] of s.pairs) { const k = t.toLowerCase() + ':' + a; if (!handlerPairs.has(k)) handlerPairs.set(k, []); handlerPairs.get(k).push(`${s.file}:${s.line}`); }
-  const dictPair = new Set(); for (const t of docTables) for (const a of actions) dictPair.add(t.toLowerCase() + ':' + a.value);
+  const dictPair = new Set(); for (const t of docTables) for (const a of pairsOf(t)) dictPair.add(t.toLowerCase() + ':' + a.value);
   const implDoc = [...dictPair].filter(k => handlerPairs.has(k)).length;
   const noDict = [...handlerPairs.keys()].filter(k => !dictPair.has(k)).sort();
 
@@ -212,13 +215,13 @@ async function main() {
 
   const notImplDoc = N_doc - implDoc, notImplProc = N_proc - implProc;
   const dynamic = sites.filter(s => s.kind === 'DYNAMIC' || s.kind === 'SPIKE').length + dynProc.length;
-  const summary = `§ERP_VERBS N=${N} N_doc=${N_doc} (tables=${docTables.length} actions=${actions.length}) N_proc=${N_proc} (inactive=${procInactive}) ` +
+  const summary = `§ERP_VERBS N=${N} N_doc=${N_doc} (tables=${docTables.length} actions=${actions.length} plugin_family_pairs=${docTables.filter(t => famOf(t)).reduce((a, t) => a + pairsOf(t).length, 0)}) N_proc=${N_proc} (inactive=${procInactive}) ` +
     `impl=${implDoc + implProc} (doc=${implDoc} proc=${implProc}) not_impl=${notImplDoc + notImplProc} X=${X} handler_no_dict=${noDict.length + procHandlerNoRow.length} dynamic=${dynamic} unresolved=${unresolved.length}${empty ? ' VACUOUS INCONCLUSIVE' : ''}`;
   const pluginRows = plugins.map(pl => {
     const procs = procRows.filter(r => r.src === 'plugin ' + pl.name), tabs = docTables.filter(t => tableSrc(t) === 'plugin ' + pl.name);
-    return { name: pl.name, file: pl.file, staged: pl.staged, manifestRows: pl.manifestRows, procs: procs.map(r => r.value), docTables: tabs, pairs: tabs.length * actions.length, family: pl.family, virtualCols: pl.virtualCols };
+    return { name: pl.name, file: pl.file, staged: pl.staged, manifestRows: pl.manifestRows, procs: procs.map(r => r.value), docTables: tabs, pairs: tabs.reduce((a, t) => a + pairsOf(t).length, 0), family: pl.family, virtualCols: pl.virtualCols };
   });
-  const pluginLines = pluginRows.map(pl => `§ERP_VERBS_PLUGINS plugin=${pl.name} staged_rows=${pl.staged}/${pl.manifestRows} new_processes=${pl.procs.length} [${pl.procs.join(',')}] new_doc_tables=${pl.docTables.length} [${pl.docTables.join(',')}] doc_pairs=${pl.pairs} family_offers=[${(pl.family || []).join(',')}] columnsql_properties=${pl.virtualCols} (not counted)`);
+  const pluginLines = pluginRows.map(pl => `§ERP_VERBS_PLUGINS plugin=${pl.name} staged_rows=${pl.staged}/${pl.manifestRows} new_processes=${pl.procs.length} [${pl.procs.join(',')}] new_doc_tables=${pl.docTables.length} [${pl.docTables.join(',')}] doc_pairs=${pl.pairs} (rule: family offered actions) family_offers=[${(pl.family || []).join(',')}] columnsql_properties=${pl.virtualCols} (not counted)`);
   const J = { plugins: pluginRows, procRows: procRows.map(r => ({ id: r.id, value: r.value, src: r.src })), N, N_doc, N_proc, tables: docTables, actions: actions.map(a => a.value), procActive: N_proc, procInactive, implDoc, implProc, X, noDict, procHandlerNoRow,
     sites: sites.map(s => ({ file: s.file, line: s.line, kind: s.kind, pairs: s.pairs.length })), unresolved: unresolved.map(s => s.file + ':' + s.line), dynamic, empty, summary,
     handlerSites: sites.map(s => s.file + ':' + s.line), procLits: [...procLits.entries()], dynProc };
@@ -234,7 +237,7 @@ async function main() {
   L.push('The ERP\'s DocActions and processes from the application dictionary (`erp/ad_seed.db`), whether a handler is registered for each, and a harm class by rule. The denominator for "X of N ERP verbs offered to actors" (§21.2). Reads are not in N (§21.7). A `read` class never means safe.', '');
   L.push('| | |', '|---|---:|');
   L.push(`| **N** (N_doc + N_proc) | ${N} |`);
-  L.push(`| N_doc = ${docTables.length} document tables × ${actions.length} DocActions | ${N_doc} |`);
+  L.push(`| N_doc = ${docTables.filter(t => !famOf(t)).length} document tables × ${actions.length} DocActions + ${docTables.filter(t => famOf(t)).length} plugin table(s) × their family's offered actions | ${N_doc} |`);
   L.push(`| N_proc = active AD_Process rows (${procInactive} inactive, not in N) | ${N_proc} |`);
   L.push(`| (b) doc pairs with a registered handler | ${implDoc} |`);
   L.push(`| (b) processes whose resolved class name has a handler | ${implProc} |`);
@@ -246,7 +249,7 @@ async function main() {
   L.push(`Basis for X: ${xBasis}.`, '');
   L.push('**What "handler" means here:** a function registered under (table, action) in the kernel handler registry. The generic Kanban handler (`erp/kanban_host.js:73`) returns one `SET_STATUS` op and posts nothing, so a doc pair marked implemented by it is a status change, not the legacy Complete with its accounting; the twin check for that is §21.5 A5, not this file. Tables whose name ends `_v` are dictionary views that carry a DocAction column; they are counted because the dictionary says so.', '');
   L.push('## Built-in plugins counted (source column below)', '');
-  L.push('The dictionary rows each BUILT-IN plugin (`erp/plugin_overlay.js` BUILTINS) stages at activation are staged into the in-memory dictionary by the host\'s own registry (`stageManifestDictionary` → `ctx.dict.insert`) before counting. ColumnSQL (virtual) columns are properties of a record, not actions: not counted. A plugin\'s DocAction class and process class are registered through the plugin context (`registerDocAction`, `defineProcess`), not `K.register` / `registerHandler(\'…\')`, so rule (b) does not see them: its rows read NOT IMPLEMENTED until (b) is widened. Plugin pairs use the seed rule (table with a DocAction column × every DocAction); the plugin family\'s own offer list is shown for information.', '');
+  L.push('The dictionary rows each BUILT-IN plugin (`erp/plugin_overlay.js` BUILTINS) stages at activation are staged into the in-memory dictionary by the host\'s own registry (`stageManifestDictionary` → `ctx.dict.insert`) before counting. ColumnSQL (virtual) columns are properties of a record, not actions: not counted. A plugin\'s DocAction class and process class are registered through the plugin context (`registerDocAction`, `defineProcess`), not `K.register` / `registerHandler(\'…\')`, so rule (b) does not see them: its rows read NOT IMPLEMENTED until (b) is widened. A plugin document table with a DocAction family counts the family\'s OFFERED actions only (union of `FAMILY.allow`; owner ruling 2026-11-09: RE is set by a newer revision, never offered), not the 13 of reference 135; a seed table counts all 13.', '');
   L.push('| plugin | file | rows staged | new processes | new document tables | doc pairs | family offers | ColumnSQL properties (not counted) |', '|---|---|---:|---|---|---:|---|---:|');
   for (const pl of pluginRows) L.push(`| ${pl.name} | ${md(pl.file)} | ${pl.staged} of ${pl.manifestRows} | ${pl.procs.map(md).join(' ') || '—'} | ${pl.docTables.map(md).join(' ') || '—'} | ${pl.pairs} | ${(pl.family || []).join(' ') || '—'} | ${pl.virtualCols} |`);
   if (!pluginRows.length) L.push('| (none staged) | | | | | | | |');

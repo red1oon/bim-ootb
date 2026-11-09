@@ -7,13 +7,13 @@ The ERP's DocActions and processes from the application dictionary (`erp/ad_seed
 
 | | |
 |---|---:|
-| **N** (N_doc + N_proc) | 1167 |
-| N_doc = 55 document tables × 13 DocActions | 715 |
+| **N** (N_doc + N_proc) | 1156 |
+| N_doc = 54 document tables × 13 DocActions + 1 plugin table(s) × their family's offered actions | 704 |
 | N_proc = active AD_Process rows (25 inactive, not in N) | 452 |
 | (b) doc pairs with a registered handler | 65 |
 | (b) processes whose resolved class name has a handler | 37 |
-| of which from built-in plugins (doc pairs / processes) | 13 / 1 |
-| NOT IMPLEMENTED (doc / process) | 650 / 415 |
+| of which from built-in plugins (doc pairs / processes) | 2 / 1 |
+| NOT IMPLEMENTED (doc / process) | 639 / 415 |
 | handlers without a dictionary row (doc / process) | 1 / 0 |
 | **(c) X offered to actors** | 0 |
 
@@ -23,13 +23,13 @@ Basis for X: erp/actor_verbs.json does not exist: no verb list is offered to act
 
 ## Built-in plugins counted (source column below)
 
-The dictionary rows each BUILT-IN plugin (`erp/plugin_overlay.js` BUILTINS) stages at activation are staged into the in-memory dictionary by the host's own registry (`stageManifestDictionary` → `ctx.dict.insert`) before counting. ColumnSQL (virtual) columns are properties of a record, not actions: not counted. A plugin's DocAction class and process class are registered through the plugin context (`registerDocAction`, `defineProcess`), not `K.register` / `registerHandler('…')`, so rule (b) does not see them: its rows read NOT IMPLEMENTED until (b) is widened. Plugin pairs use the seed rule (table with a DocAction column × every DocAction); the plugin family's own offer list is shown for information.
+The dictionary rows each BUILT-IN plugin (`erp/plugin_overlay.js` BUILTINS) stages at activation are staged into the in-memory dictionary by the host's own registry (`stageManifestDictionary` → `ctx.dict.insert`) before counting. ColumnSQL (virtual) columns are properties of a record, not actions: not counted. A plugin's DocAction class and process class are registered through the plugin context (`registerDocAction`, `defineProcess`), not `K.register` / `registerHandler('…')`, so rule (b) does not see them: its rows read NOT IMPLEMENTED until (b) is widened. A plugin document table with a DocAction family counts the family's OFFERED actions only (union of `FAMILY.allow`; owner ruling 2026-11-09: RE is set by a newer revision, never offered), not the 13 of reference 135; a seed table counts all 13.
 
 | plugin | file | rows staged | new processes | new document tables | doc pairs | family offers | ColumnSQL properties (not counted) |
 |---|---|---:|---|---|---:|---|---:|
 | ninja_excel | `erp/plugins/ninja_excel.mjs` | 0 of 0 | — | — | 0 | — | 0 |
 | ninja_create | `erp/plugins/ninja_create.mjs` | 0 of 0 | — | — | 0 | — | 0 |
-| bim_document | `erp/plugins/bim_document.mjs` | 92 of 92 | `BIM_Document_Open` | `BIM_Document` | 13 | CO PR | 7 |
+| bim_document | `erp/plugins/bim_document.mjs` | 92 of 92 | `BIM_Document_Open` | `BIM_Document` | 2 | CO PR | 7 |
 
 ## Handler registration sites (`K.register`, outside tests/)
 
