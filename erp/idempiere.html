@@ -653,7 +653,7 @@
      ModelLayer.run; every write lands in the same signed op-group. Needs bigdecimal.js + ad_modelval.js (loaded above). -->
 <script src="ad_workflow.js?v=1"></script>
 <script src="fk_rules.js?v=1"></script>
-<script src="model_layer.js?v=10"></script>
+<script src="model_layer.js?v=11"></script>
 <script src="model_initial_defaults.js?v=1"></script><!-- GENERATED setInitialDefaults of every model class (bim-compiler MIGRATE_INSTALL_TENANT.md §G1-SPEC, W-GENESIS-COMPLETE) -->
 <script src="model_trade.js?v=5"></script>
 <script src="model_ctor.js?v=1"></script>
@@ -795,7 +795,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
 <script src="tip_fold.js?v=2"></script>
 <script src="erp_shard.js?v=1"></script>
 <!-- §S60 physical split: the pure CORE (window.CrudCore) — MUST load before crud_overlay.js -->
-<script src="crud_core.js?v=10"></script>
+<script src="crud_core.js?v=11"></script>
 <script src="crud_overlay.js?v=42"></script>
 <!-- TEAMWORK_FRAMEWORK.md §13.1 (W1, W-TEAM-SO): the local comm layer + erp/team_sync.js — written ONLY when the page is opened with ?team=1
      (otherwise no script tag, no DOM, no global: the page is byte-for-byte what it was). Parser-blocking so TeamSync exists before the first commit. -->
@@ -1880,7 +1880,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   var _attP = null, _attLogged = {};
   function _attMod() {
     if (window.AdAttachment) return window.AdAttachment;
-    if (!_attP) _attP = new Promise(function (res) { var s = document.createElement('script'); s.src = 'ad_attachment.js?v=1';
+    if (!_attP) _attP = new Promise(function (res) { var s = document.createElement('script'); s.src = 'ad_attachment.js?v=2';
       s.onload = function () { console.log('§ATT ad_attachment.js loaded on first use'); res(true); renderToolbar(); }; s.onerror = function () { _attP = null; res(false); }; document.head.appendChild(s); });
     return null;
   }
@@ -1892,11 +1892,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     return { rows: _sqlRows, msg: _findMsg, std: (App.actor != null || App.clientId != null) ? { actor: App.actor, clientId: App.clientId, orgId: App.orgId != null ? App.orgId : 0 } : null,
       commit: function (ops) { return new Promise(function (res) { if (!window.__crud || !window.__crud.applyOpGroup) { res(false); return; } window.__crud.applyOpGroup(ops, function (cr) { res(!!(cr && cr.committed)); }); }); } };
   }
-  function _attCtx(AT, tab, rec) {   // AbstractADWindowContent.onAttachment: Record_ID = the key value (-1 for a _UU key), Record_UU = the <Table>_UU column value
-    var kc = AT.keyColumn(tab), kv = recVal(rec, kc), uu = recVal(rec, String(tab.tableName) + '_UU');
-    var rid = /_ID$/.test(kc) && kv !== '' && kv != null ? Number(kv) : null, ruu = uu != null && uu !== '' ? String(uu) : (/_UU$/.test(kc) && kv ? String(kv) : null);
-    return (rid == null && !ruu) ? null : { tableId: tab.tableId, tableName: tab.tableName, recordId: rid, recordUU: ruu };
-  }
+  function _attCtx(AT, tab, rec) { return AT.ctxFor(tab, rec); }   // AbstractADWindowContent.onAttachment: the rule lives in ad_attachment.js ctxFor (the object layer's attach uses the same one)
   function _attOpen() {
     var AT = window.AdAttachment, tab = _curTab(), rec = _records[_recIdx]; if (!AT || !tab || !rec) return;
     var cx = _attCtx(AT, tab, rec); if (!cx) return;

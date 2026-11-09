@@ -346,6 +346,354 @@
     "fields": []
    },
    "witness": "common/door/tests/witness_door_dsl.js"
+  },
+  {
+   "verb": "object.describe",
+   "title": "Describe an object kind",
+   "description": "Reflection. Given a kind (and optionally one record), return what the model's own dictionary says about it: each property (name, type, mandatory, updateable, key, list values, min and max), the child tabs below it, and the generic methods that are legal for it (read, update, attach, history). Reads only dictionary rows; no data row is opened. An unknown kind is an error naming it. Nothing is changed.",
+   "inputs": [
+    {
+     "name": "building",
+     "description": "The building name, e.g. \"Duplex\". Its model must carry its own dictionary (a patch with the object layer).",
+     "required": true,
+     "type": "building",
+     "example": "Duplex"
+    },
+    {
+     "name": "kind",
+     "description": "The kind of object, as the model's dictionary names it, e.g. \"Element\". An unknown kind is an error that lists the kinds the model registers.",
+     "required": true,
+     "type": "string",
+     "example": "Element"
+    },
+    {
+     "name": "uu",
+     "description": "Optional. A record's UU; the answer then also names how its child tabs link to it.",
+     "required": false,
+     "type": "string",
+     "example": "2O2Fr$t4X7Zf8NOew3FKau"
+    }
+   ],
+   "harm": "read",
+   "calls": {
+    "cli": "object_cli",
+    "who": "the object engine",
+    "argv": [
+     "describe",
+     "--building",
+     "{building}",
+     "--kind",
+     "{kind}",
+     {
+      "if": "uu",
+      "args": [
+       "--uu",
+       "{uu}"
+      ]
+     }
+    ]
+   },
+   "returns": {
+    "shape": "object_cli JSON {kind,table,uu,key,highVolume,properties:[{name,label,type,mandatory,updateable,key,parent,length,values?}],childTabs:[{kind,table,tab,single,readonly,link}],methods,record?}",
+    "fields": [
+     {
+      "path": "kind",
+      "type": "string"
+     },
+     {
+      "path": "properties[*].name",
+      "type": "string"
+     },
+     {
+      "path": "methods[*]",
+      "type": "string"
+     }
+    ]
+   },
+   "app": "object",
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "witness": "common/door/tests/witness_object_rung1.js"
+  },
+  {
+   "verb": "object.read",
+   "title": "Read an object",
+   "description": "Read one record of a registered kind by its UU key, with the rows of its single-row child tabs (for an element, its transform). Nothing is changed.",
+   "inputs": [
+    {
+     "name": "building",
+     "description": "The building name, e.g. \"Duplex\". Its model must carry its own dictionary (a patch with the object layer).",
+     "required": true,
+     "type": "building",
+     "example": "Duplex"
+    },
+    {
+     "name": "kind",
+     "description": "The kind of object, as the model's dictionary names it, e.g. \"Element\". An unknown kind is an error that lists the kinds the model registers.",
+     "required": true,
+     "type": "string",
+     "example": "Element"
+    },
+    {
+     "name": "uu",
+     "description": "The record's UU key (for an element, its IFC guid).",
+     "required": true,
+     "type": "string",
+     "example": "2O2Fr$t4X7Zf8NOew3FKau"
+    }
+   ],
+   "harm": "read",
+   "calls": {
+    "cli": "object_cli",
+    "who": "the object engine",
+    "argv": [
+     "read",
+     "--building",
+     "{building}",
+     "--kind",
+     "{kind}",
+     "--uu",
+     "{uu}"
+    ]
+   },
+   "returns": {
+    "shape": "object_cli JSON {kind,uu,record,children:[{kind,rows}]}",
+    "fields": [
+     {
+      "path": "kind",
+      "type": "string"
+     },
+     {
+      "path": "uu",
+      "type": "string"
+     }
+    ]
+   },
+   "app": "object",
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "witness": "common/door/tests/witness_object_rung1.js"
+  },
+  {
+   "verb": "object.history",
+   "title": "History of an object",
+   "description": "The change-log rows legacy iDempiere would have written for one record, derived from the op-log of edits made through the object engine (column, old value, new value, event). Nothing is changed.",
+   "inputs": [
+    {
+     "name": "building",
+     "description": "The building name, e.g. \"Duplex\". Its model must carry its own dictionary (a patch with the object layer).",
+     "required": true,
+     "type": "building",
+     "example": "Duplex"
+    },
+    {
+     "name": "kind",
+     "description": "The kind of object, as the model's dictionary names it, e.g. \"Element\". An unknown kind is an error that lists the kinds the model registers.",
+     "required": true,
+     "type": "string",
+     "example": "Element"
+    },
+    {
+     "name": "uu",
+     "description": "The record's UU key (for an element, its IFC guid).",
+     "required": true,
+     "type": "string",
+     "example": "2O2Fr$t4X7Zf8NOew3FKau"
+    }
+   ],
+   "harm": "read",
+   "calls": {
+    "cli": "object_cli",
+    "who": "the object engine",
+    "argv": [
+     "history",
+     "--building",
+     "{building}",
+     "--kind",
+     "{kind}",
+     "--uu",
+     "{uu}"
+    ]
+   },
+   "returns": {
+    "shape": "object_cli JSON {kind,uu,entries:[{column,old,new,event,uu,record}]}",
+    "fields": [
+     {
+      "path": "kind",
+      "type": "string"
+     }
+    ]
+   },
+   "app": "object",
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "witness": "common/door/tests/witness_object_rung1.js"
+  },
+  {
+   "verb": "object.update",
+   "title": "Change one property of an object",
+   "description": "Change one property of a record of a registered kind. The dictionary decides whether it may: the property must exist and be updateable, a list value must be on its list, a number must be a number, a mandatory property may not be emptied. A refusal says which rule. The change is written as an op to the op-log, not into the model file.",
+   "inputs": [
+    {
+     "name": "building",
+     "description": "The building name, e.g. \"Duplex\". Its model must carry its own dictionary (a patch with the object layer).",
+     "required": true,
+     "type": "building",
+     "example": "Duplex"
+    },
+    {
+     "name": "kind",
+     "description": "The kind of object, as the model's dictionary names it, e.g. \"Element\". An unknown kind is an error that lists the kinds the model registers.",
+     "required": true,
+     "type": "string",
+     "example": "Element"
+    },
+    {
+     "name": "uu",
+     "description": "The record's UU key (for an element, its IFC guid).",
+     "required": true,
+     "type": "string",
+     "example": "2O2Fr$t4X7Zf8NOew3FKau"
+    },
+    {
+     "name": "column",
+     "description": "The property to change, as describe lists it, e.g. \"element_name\".",
+     "required": true,
+     "type": "string",
+     "example": "element_name"
+    },
+    {
+     "name": "value",
+     "description": "The new value, as text.",
+     "required": true,
+     "type": "string",
+     "example": "Party wall"
+    }
+   ],
+   "harm": "writes",
+   "calls": {
+    "cli": "object_cli",
+    "who": "the object engine",
+    "argv": [
+     "update",
+     "--building",
+     "{building}",
+     "--kind",
+     "{kind}",
+     "--uu",
+     "{uu}",
+     "--column",
+     "{column}",
+     "--value",
+     "{value}"
+    ]
+   },
+   "returns": {
+    "shape": "object_cli JSON {kind,uu,ops,record} or {refused,reason}",
+    "fields": [
+     {
+      "path": "kind",
+      "type": "string"
+     }
+    ]
+   },
+   "app": "object",
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "witness": "common/door/tests/witness_object_rung1.js"
+  },
+  {
+   "verb": "object.attach",
+   "title": "Attach a file or note to an object",
+   "description": "Attach a file (or a text note) to a record of a registered kind, the way the ERP window's Attachment button does: one attachment row per record, keyed by the record's UU. Written as an op to the op-log, not into the model file. A kind whose key is neither an _ID nor a _UU column cannot have attachments.",
+   "inputs": [
+    {
+     "name": "building",
+     "description": "The building name, e.g. \"Duplex\". Its model must carry its own dictionary (a patch with the object layer).",
+     "required": true,
+     "type": "building",
+     "example": "Duplex"
+    },
+    {
+     "name": "kind",
+     "description": "The kind of object, as the model's dictionary names it, e.g. \"Element\". An unknown kind is an error that lists the kinds the model registers.",
+     "required": true,
+     "type": "string",
+     "example": "Element"
+    },
+    {
+     "name": "uu",
+     "description": "The record's UU key (for an element, its IFC guid).",
+     "required": true,
+     "type": "string",
+     "example": "2O2Fr$t4X7Zf8NOew3FKau"
+    },
+    {
+     "name": "file",
+     "description": "Path of the file to attach.",
+     "required": false,
+     "type": "file",
+     "example": "/tmp/note.txt"
+    },
+    {
+     "name": "text",
+     "description": "A text note to attach, when no file is given.",
+     "required": false,
+     "type": "string",
+     "example": "checked on site"
+    }
+   ],
+   "harm": "writes",
+   "calls": {
+    "cli": "object_cli",
+    "who": "the object engine",
+    "argv": [
+     "attach",
+     "--building",
+     "{building}",
+     "--kind",
+     "{kind}",
+     "--uu",
+     "{uu}",
+     {
+      "if": "file",
+      "args": [
+       "--file",
+       "{file}"
+      ]
+     },
+     {
+      "if": "text",
+      "args": [
+       "--text",
+       "{text}"
+      ]
+     }
+    ]
+   },
+   "returns": {
+    "shape": "object_cli JSON {kind,uu,ops,attachment:{id,record_uu,title},entries} or {refused,reason}",
+    "fields": [
+     {
+      "path": "kind",
+      "type": "string"
+     }
+    ]
+   },
+   "app": "object",
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "witness": "common/door/tests/witness_object_rung1.js"
   }
  ]
 }

@@ -16,7 +16,16 @@
   // ── GridTab.canHaveAttachment :2168: key column ends _ID/_UU, or the table has its <Table>_UU column among the tab's fields ──
   function keyColumn(tab) { var k = ''; (tab.fields || []).forEach(function (f) { if (f.isKey) k = f.columnName; }); return k; }
   function hasUuidField(tab) { var u = String(tab.tableName || '').toLowerCase() + '_uu'; return (tab.fields || []).some(function (f) { return String(f.columnName).toLowerCase() === u; }); }
-  function canHave(tab) { var k = keyColumn(tab); return !!tab && (/_ID$/.test(k) || /_UU$/.test(k) || hasUuidField(tab)); }
+  // case-insensitive: a model that carries its own dictionary names its key `<table>_uu` (lower case, as the physical column is), the ERP's dictionary `C_Order_UU`; legacy has one spelling, so the rule is the suffix, not the case
+  function canHave(tab) { var k = keyColumn(tab); return !!tab && (/_ID$/i.test(k) || /_UU$/i.test(k) || hasUuidField(tab)); }
+  function recVal(rec, col) { if (!rec) return ''; if (col in rec) return rec[col]; var lc = String(col).toLowerCase(); for (var k in rec) if (String(k).toLowerCase() === lc) return rec[k]; return ''; }
+  // AbstractADWindowContent.onAttachment :1259-1278: Record_ID = the key value (-1/absent for a _UU key), Record_UU = the <Table>_UU column value; neither -> "No Key", null. A table keyed by its <Table>_UU
+  // (MTable.isUUIDKeyTable, MTable.java:542-546) has no numeric id, so the key value IS the record's UU (MAttachment.get by Record_UU, MAttachment.java:98-111).
+  function ctxFor(tab, rec) {
+    var kc = keyColumn(tab), kv = recVal(rec, kc), uu = recVal(rec, String(tab.tableName) + '_UU');
+    var rid = /_ID$/i.test(kc) && kv !== '' && kv != null ? Number(kv) : null, ruu = uu != null && uu !== '' ? String(uu) : (/_UU$/i.test(kc) && kv ? String(kv) : null);
+    return (rid == null && !ruu) ? null : { tableId: tab.tableId, tableName: tab.tableName, recordId: rid, recordUU: ruu };
+  }
 
   // ── zip (PKZIP) writer/reader over the browser's native deflate-raw; the layout AttachmentDBSystem.save writes ──
   var CRC = (function () { var t = new Uint32Array(256); for (var n = 0; n < 256; n++) { var c = n; for (var k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
@@ -262,7 +271,7 @@
     });
   }
 
-  var api = { canHave: canHave, keyColumn: keyColumn, lookup: lookup, hasAttachment: hasAttachment, load: load, save: save, promote: promote, sweep: sweepStore, bytes: bytes, entSize: entSize, referencedShas: referencedShas, addEntry: addEntry, open: open,
+  var api = { canHave: canHave, ctxFor: ctxFor, keyColumn: keyColumn, lookup: lookup, hasAttachment: hasAttachment, load: load, save: save, promote: promote, sweep: sweepStore, bytes: bytes, entSize: entSize, referencedShas: referencedShas, addEntry: addEntry, open: open,
     zipBuild: zipBuild, zipParse: zipParse, crc32: crc32, b64: b64, unb64: unb64, sha256: sha256, MAX_BYTES: MAX_BYTES, ZIP: ZIP, FS: FSX };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.AdAttachment = api;
 })(typeof window !== 'undefined' ? window : globalThis);

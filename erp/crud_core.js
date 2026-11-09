@@ -1146,7 +1146,7 @@
       var st = stateOf(t, R, id), seq = 0;
       var push = function (ev, actor, col, o, n) {
         if (!R.logged || !R.loggable[col] || (o == null && n == null) || same(o, n)) return;
-        entries.push({ opId: opId, seq: seq++, ts: ts, actor: actor, table: t, tableId: R.tableId, record: id, uu: st[t + '_uu'] == null ? null : st[t + '_uu'], client: st.ad_client_id, org: st.ad_org_id,
+        entries.push({ opId: opId, seq: seq++, ts: ts, actor: actor, table: t, tableId: R.tableId, record: id, uu: st[t + '_uu'] != null ? st[t + '_uu'] : (R.key && R.key === t + '_uu' ? id : null),   /* a table keyed by its <Table>_UU (MTable.isUUIDKeyTable): the record id IS the UU (MChangeLog.java:173-198 stores Record_UU) */ client: st.ad_client_id, org: st.ad_org_id,
           column: R.loggable[col], old: o == null ? null : o, 'new': n == null ? null : n, event: ev });
       };
       if (opType === 'CRUD_CREATE') {
@@ -1169,9 +1169,9 @@
     return entries;
   }
   function changeLog(sideDb, table, recordId, opts) {
-    var mdb = (typeof globalThis !== 'undefined' && globalThis.__idmpDb) || null;
-    if (!mdb || !sideDb) return null;
     opts = opts || {};
+    var mdb = opts.dictDb || (typeof globalThis !== 'undefined' && globalThis.__idmpDb) || null;   // opts.dictDb: the database whose AD_* rows describe the table (a model that carries its own dictionary; default = the ERP's)
+    if (!mdb || !sideDb) return null;
     try {
       var tbl = String(table || ''), R = changeRule(mdb, tbl, opts);
       if (!R) return null;
