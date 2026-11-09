@@ -13,6 +13,9 @@
 //   EV3 stale file                   — regenerating gives the committed bytes, twice
 //   EV4 vacuous                      — an empty dictionary gives INCONCLUSIVE (exit 2), never PASS
 //   EV5 falsifier                    — EV_BREAK=1 (generator drops one DocAction value) must fail EV1
+//   EV7 plugin dictionary invisible — BIM_Document_Open (source plugin bim_document) is in N and BIM_Document is a counted
+//                                     document table; N equals an independent recount that staged the same plugin rows by plain SQL
+//   EV8 falsifier                    — EV_NO_PLUGINS=1 (generator skips plugin staging) must make EV7 FAIL
 //   EV6 X is invented                — X = 0 while erp/actor_verbs.json does not exist
 // Run: node tests/witness_erp_verbs.js — exit 0 = pass.
 'use strict';
@@ -33,15 +36,38 @@ const sql = (db, q) => { const r = spawnSync('sqlite3', ['-readonly', db, q], { 
 if (sql(DB, 'select 1') === null) { inc('EV0', 'sqlite3 CLI or erp/ad_seed.db unavailable: the independent count cannot run (nothing judged)'); console.log('§W-ERP-VERBS verdict=INCONCLUSIVE fail=0 inconclusive=1'); process.exit(1); }
 
 const J = genJson();
-// ── EV1: independent plain-SQL counts ──
-const iTables = +sql(DB, "select count(distinct t.tablename) from AD_Column c join AD_Table t on t.AD_Table_ID=c.AD_Table_ID where lower(c.columnname)='docaction'");
-const iActions = +sql(DB, "select count(*) from AD_Ref_List where AD_Reference_ID=135 and value<>'--'");
-const iProcAct = +sql(DB, "select count(*) from ad_process where isactive='Y'");
-const iProcAll = +sql(DB, 'select count(*) from ad_process');
+// ── independent staging: the BUILTINS list is read by a line grep, each manifest.dictionary row is INSERTed by plain SQL (sqlite3 CLI) into a temp copy of the seed ──
+const T0 = fs.mkdtempSync(path.join(os.tmpdir(), 'ev-stage-'));
+const SDB = path.join(T0, 'staged.db'); fs.copyFileSync(DB, SDB);
+const overlay = fs.readFileSync(path.join(ROOT, 'erp/plugin_overlay.js'), 'utf8').split('\n').find(l => /^\s*var BUILTINS = \[/.test(l)) || '';
+const BUILT = [...overlay.replace(/\].*$/, '').matchAll(/'([^']+)'/g)].map(x => x[1]);
+const lit = v => v == null ? 'NULL' : typeof v === 'number' ? String(v) : "'" + String(v).replace(/'/g, "''") + "'";
+let stagedSql = 0, plugTabs = 0, plugPairs = 0;   // plugin document tables, and their (table, offered action) pairs
+const stagePromise = (async () => {
+  let q = 'BEGIN;\n';
+  for (const b of BUILT) {
+    const m = await import(require('url').pathToFileURL(path.join(ROOT, 'erp', b)).href);
+    for (const d of (m.manifest && m.manifest.dictionary) || []) for (const r of d.rows) {
+      const cols = Object.keys(r); stagedSql++;
+      if (d.table.toLowerCase() === 'ad_table' && m.FAMILY && m.FAMILY.allow) { plugTabs++; const offered = [...new Set(Object.values(m.FAMILY.allow).flat())]; plugPairs += offered.filter(a => sql(DB, `select count(*) from AD_Ref_List where AD_Reference_ID=135 and value='${a}'`) === '1').length; }
+      q += `INSERT OR IGNORE INTO ${d.table} (${cols.join(',')}) VALUES (${cols.map(c => lit(r[c])).join(',')});\n`;
+    }
+  }
+  fs.writeFileSync(path.join(T0, 'stage.sql'), q + 'COMMIT;\n');
+  return spawnSync('sqlite3', [SDB, '.read ' + path.join(T0, 'stage.sql')], { encoding: 'utf8' });
+})();
+stagePromise.then(main);
+function main(stg) {
+if (stg.status !== 0 || stg.stderr) { console.log('§W-ERP-VERBS FAIL EV7 — independent plugin staging failed: ' + stg.stderr); process.exit(1); }
+// ── EV1: independent plain-SQL counts (seed + the plugin rows staged above) ──
+const iTables = +sql(SDB, "select count(distinct t.tablename) from AD_Column c join AD_Table t on t.AD_Table_ID=c.AD_Table_ID where lower(c.columnname)='docaction'");
+const iActions = +sql(SDB, "select count(*) from AD_Ref_List where AD_Reference_ID=135 and value<>'--'");
+const iProcAct = +sql(SDB, "select count(*) from ad_process where isactive='Y'");
+const iProcAll = +sql(SDB, 'select count(*) from ad_process');
 if (!iTables || !iActions || !iProcAct) inc('EV1', `empty independent population tables=${iTables} actions=${iActions} procs=${iProcAct}`);
 else {
-  const good = J.tables.length === iTables && J.actions.length === iActions && J.procActive === iProcAct && J.procInactive === iProcAll - iProcAct && J.N === iTables * iActions + iProcAct;
-  ok('EV1', good, `SQL tables=${iTables} actions=${iActions} active procs=${iProcAct} (inactive ${iProcAll - iProcAct}) → N=${iTables * iActions + iProcAct}; generator tables=${J.tables.length} actions=${J.actions.length} procs=${J.procActive} N=${J.N}`);
+  const good = J.tables.length === iTables && J.actions.length === iActions && J.procActive === iProcAct && J.procInactive === iProcAll - iProcAct && J.N === ((iTables - plugTabs) * iActions + plugPairs) + iProcAct;
+  ok('EV1', good, `SQL tables=${iTables} actions=${iActions} active procs=${iProcAct} (inactive ${iProcAll - iProcAct}) → N=${((iTables - plugTabs) * iActions + plugPairs) + iProcAct}; generator tables=${J.tables.length} actions=${J.actions.length} procs=${J.procActive} N=${J.N}`);
 }
 // ── EV2: independent line grep of registration sites ──
 const SKIP = /\/(lib|node_modules|archive|tests|\.git|docs)(\/|$)|\.min\./;
@@ -86,13 +112,25 @@ else {
 // ── EV5: falsifier ──
 if (process.env.EV_BREAK !== '1') {
   const B = genJson({ EV_BREAK: '1' });
-  ok('EV5', !(B.actions.length === iActions && B.N === iTables * iActions + iProcAct), `EV_BREAK=1 generator lists ${B.actions.length} DocActions (SQL ${iActions}), N=${B.N} (SQL ${iTables * iActions + iProcAct}) → EV1 would ${B.actions.length === iActions ? 'PASS (witness blind)' : 'FAIL (caught)'}`);
+  ok('EV5', !(B.actions.length === iActions && B.N === ((iTables - plugTabs) * iActions + plugPairs) + iProcAct), `EV_BREAK=1 generator lists ${B.actions.length} DocActions (SQL ${iActions}), N=${B.N} (SQL ${((iTables - plugTabs) * iActions + plugPairs) + iProcAct}) → EV1 would ${B.actions.length === iActions ? 'PASS (witness blind)' : 'FAIL (caught)'}`);
+}
+// ── EV7: the plugin dictionary is inside N ──
+const iSeedProc = +sql(DB, "select count(*) from ad_process where isactive='Y'"), iSeedTab = +sql(DB, "select count(distinct t.tablename) from AD_Column c join AD_Table t on t.AD_Table_ID=c.AD_Table_ID where lower(c.columnname)='docaction'");
+const hasOpen = j => (j.procRows || []).some(r => r.value === 'BIM_Document_Open' && r.src === 'plugin bim_document') && j.tables.includes('BIM_Document');
+const sqlOpen = sql(SDB, "select count(*) from ad_process where value='BIM_Document_Open' and isactive='Y'") === '1';
+if (!BUILT.length || !stagedSql) inc('EV7', `no built-in plugin dictionary rows found (BUILTINS=${BUILT.length}, rows=${stagedSql}): nothing judged`);
+else ok('EV7', hasOpen(J) && sqlOpen && J.N === (((iTables - plugTabs) * iActions + plugPairs) + iProcAct) && J.N > iSeedTab * iActions + iSeedProc, `BIM_Document_Open in N with source "plugin bim_document" (generator) and in the independently staged SQL; plugin rows staged by SQL=${stagedSql}; N=${J.N} equals SQL recount ${((iTables - plugTabs) * iActions + plugPairs) + iProcAct}; seed-only N would be ${iSeedTab * iActions + iSeedProc}`);
+// ── EV8: falsifier ──
+if (process.env.EV_NO_PLUGINS !== '1' && stagedSql) {
+  const P = genJson({ EV_NO_PLUGINS: '1' });
+  ok('EV8', !hasOpen(P) && P.N !== ((iTables - plugTabs) * iActions + plugPairs) + iProcAct, `EV_NO_PLUGINS=1 generator N=${P.N} (SQL ${((iTables - plugTabs) * iActions + plugPairs) + iProcAct}); BIM_Document_Open present=${hasOpen(P)} → EV7 would ${hasOpen(P) ? 'PASS (witness blind)' : 'FAIL (caught)'}`);
 }
 // ── EV6: X ──
 const av = path.join(ROOT, 'erp/actor_verbs.json');
 ok('EV6', fs.existsSync(av) ? J.X > 0 : J.X === 0, `erp/actor_verbs.json ${fs.existsSync(av) ? 'exists' : 'absent'}; X=${J.X}`);
-fs.rmSync(tmp, { recursive: true, force: true });
+fs.rmSync(tmp, { recursive: true, force: true }); fs.rmSync(T0, { recursive: true, force: true });
 console.log(J.summary);
 const verdict = fail ? 'FAIL' : inconclusive ? 'INCONCLUSIVE' : 'PASS';
 console.log(`§W-ERP-VERBS verdict=${verdict} fail=${fail} inconclusive=${inconclusive}`);
 process.exit(fail || inconclusive ? 1 : 0);
+}
