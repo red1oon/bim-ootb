@@ -13,6 +13,8 @@
 //          as business data — fed to BOTH; every differing cell printed. COVER: each converter branch the run hit; a branch never hit = INCONCLUSIVE, never PASS.
 //   MUTANT one rule changed in a COPY of the template → DIFF must find a difference (a diff that cannot fail is not a witness).
 //   FIELD  every "$Field" the template reads from a top-level set is one the agent reads (its SETS model) — a field outside it is NAMED.
+//   BC-*   the same four claims for Business Central (templates/bc-w1.json vs the frozen hand converter erp/tests/fixtures/bc_convert_reference.mjs): BC-GUIDE on Microsoft's demo
+//          company (Contoso), BC-DIFF on packages generated from Contoso's own rows (sampled, fields blanked, codes repeated, links broken), BC-MUTANT.
 // Command: node erp/tests/witness_migrate_engine.js 2>&1 | tee /tmp/count_logs/migrate_engine.log      (MIGE_N=<cases> to change the DIFF size, default 400)
 'use strict';
 var fs = require('fs'), path = require('path'), url = require('url');
@@ -168,7 +170,103 @@ var ALL_BRANCHES = ['refuse:lead', 'refuse:fixed-asset', 'refuse:po-no-supplier'
     check('MUTANT', mu[0], 'the template with "' + mu[0] + '" differs from the converter on some seed ≤ ' + M + ' (the DIFF can fail)', found > 0, 'no seed found a difference'); if (found) say('  §MIGE-MUTANT ' + mu[0] + ' caught at seed=' + found); });
   verdict('MUTANT');
 
-  var V = ['LOAD', 'FIELD', 'GUIDE', 'DIFF', 'MUTANT'].map(function (k) { var c = CASES[k] || {}; return !c.judged ? 'INCONCLUSIVE' : c.failed ? 'FAIL' : 'PASS'; });
+  // ═══════════ BUSINESS CENTRAL: templates/bc-w1.json vs the frozen hand converter (erp/tests/fixtures/bc_convert_reference.mjs) ═══════════
+  var XLSX = require(path.join(ERP, 'xlsx.mini.min.js')), BFX = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'bc_package_contoso', 'rows.json'), 'utf8'));
+  var BMODEL = (await import(url.pathToFileURL(path.join(ERP, 'plugins', 'bc_model.mjs')).href)).default, BSHIP = await import(url.pathToFileURL(path.join(ERP, 'plugins', 'bc_migrate_convert.mjs')).href);
+  var BREF = await import(url.pathToFileURL(path.join(__dirname, 'fixtures', 'bc_convert_reference.mjs')).href), BTPL = JSON.parse(fs.readFileSync(path.join(ERP, 'migrate', 'templates', 'bc-w1.json'), 'utf8'));
+  var BCN = await import(url.pathToFileURL(path.join(ERP, 'migrate', 'connectors', 'bc_package.mjs')).href);
+  var bengine = function (tpl, pkg, opts) { return EN.run(tpl, BCN.bcPackage(pkg, BMODEL, tpl.connector), { CUTOVER: (opts && opts.cutover) || '' }); };
+  var bbuf = require(path.join(__dirname, 'bc_package_writer.js')).write(XLSX, BMODEL, BFX, 'CONTOSO-ALPHA'), BPKG = BSHIP.readPackage(XLSX.read(bbuf), BMODEL);
+  var lb = true, lbw = ''; try { EN.load(BTPL); } catch (e) { lb = false; lbw = e.message; }
+  check('BC-LOAD', 'template', 'bc-w1.json loads (closed sets, no forward reference)', lb, lbw);
+  check('BC-LOAD', 'shipped-is-engine', 'plugins/bc_migrate_convert.mjs runs the engine on the template file, not a hand mapping', same(BSHIP.TEMPLATE, BTPL) && !/T\(27\)\.forEach/.test(fs.readFileSync(path.join(ERP, 'plugins', 'bc_migrate_convert.mjs'), 'utf8')), null);
+  var bmodel = {}; Object.keys(BMODEL.tables).forEach(function (id) { bmodel[id] = BMODEL.tables[id].fields.map(function (f) { return f.name; }); });
+  var bfc = EN.fieldCheck(BTPL, bmodel), bout = bfc.filter(function (f) { return !f.ok || !f.known; });
+  bout.forEach(function (f) { say('  §MIG-FIELD missing set=' + f.set + ' field=' + f.field + (f.known ? '' : ' (table unknown to the model)')); });
+  check('BC-LOAD', 'fields⊆model', 'every one of the ' + bfc.length + ' "$Field"s read from a BC table is a field of that table in Microsoft\'s published model (bc_model.mjs)', bfc.length > 0 && !bout.length, bout);
+  verdict('BC-LOAD');
+  ['2026-11-09', ''].forEach(function (cut) { var a = BREF.convert(BPKG, BMODEL, { cutover: cut }), b = BSHIP.convert(BPKG, BMODEL, { cutover: cut }), d = diff(a, b);
+    say('§MIGE-BC-GUIDE cutover=' + (cut || '(none)') + ' rows=' + a.book.map(function (s) { return s.rows.length - 1; }).join(',') + ' cells=' + a.book.reduce(function (n, s) { return n + s.rows.length * s.rows[0].length; }, 0) + ' differing=' + d.length);
+    check('BC-GUIDE', 'contoso-' + (cut || 'nocut'), 'Microsoft\'s demo company (Contoso, ' + Object.keys(BPKG.tables).length + ' tables): shipped convert (engine + bc-w1.json) == the frozen hand converter — book, manifest, provenance', !d.length, d.slice(0, 10)); });
+  verdict('BC-GUIDE');
+  // generated packages: Contoso's own rows, sampled and edited (fields blanked, codes repeated, links broken) — a test input for the equality of two implementations only
+  function bgen(seed) {
+    var R = mulberry32(seed), pick = function (a) { return a[Math.floor(R() * a.length)]; }, P = JSON.parse(JSON.stringify(BPKG)), T = P.tables;
+    var ids = function (id) { return (T[id] ? T[id].rows : []).map(function (r) { return r['No.'] || r.Code; }); };
+    var KEY = { 'No.': 1, Code: 1, 'Customer No.': 1, 'Item No.': 1 };   // a table's primary key is always filled in a BC export: never blanked
+    Object.keys(T).forEach(function (id) { T[id].rows = T[id].rows.filter(function () { return R() < 0.6; }).map(function (r) { Object.keys(r).forEach(function (k) { if (!KEY[k] && !(id === '7354' && k === 'Location Code') && R() < 0.08) delete r[k]; }); return r; }); });
+    (T[3] || { rows: [] }).rows.forEach(function (r) { r['Due Date Calculation'] = pick(['30D', '<14D>', 'CM', '1M+8D', '', undefined, '7d']); });
+    (T[15] || { rows: [] }).rows.forEach(function (r) { if (R() < 0.3) r['Account Category'] = pick([' ', 'Assets', 'Cost of Goods Sold', 'Income', undefined, 'Bogus']); if (R() < 0.3) r['Account Type'] = pick(['Posting', 'Heading', 'Total', undefined]); });
+    var custNos = ids(18);
+    (T[23] || { rows: [] }).rows.forEach(function (r) { if (R() < 0.3 && custNos.length) r['No.'] = pick(custNos); });
+    [18, 23].forEach(function (id) { (T[id] || { rows: [] }).rows.forEach(function (r) { if (R() < 0.4) r.Blocked = pick(id === 18 ? [' ', 'Ship', 'Invoice', 'All'] : [' ', 'Payment', 'All']); if (R() < 0.1) r['No.'] = 'N' + 'x'.repeat(41) + seed;
+      if (R() < 0.3) { delete r.Address; delete r['Address 2']; delete r.City; delete r['Post Code']; } if (R() < 0.3) delete r['Country/Region Code']; if (R() < 0.2) r['Phone No.'] = '555'; }); });
+    (T[222] || { rows: [] }).rows.forEach(function (r) { if (R() < 0.2) r['Customer No.'] = 'NOT-A-CUSTOMER'; if (R() < 0.3) delete r['Country/Region Code']; });
+    var itemNos = ids(27), vendNos = ids(23);
+    (T[27] || { rows: [] }).rows.forEach(function (r) { if (R() < 0.3) r.Type = pick(['Inventory', 'Service', 'Non-Inventory', undefined]); if (R() < 0.3) r.Blocked = pick(['true', 'false', 'Yes', ' 1 ', undefined]);
+      if (R() < 0.3) r['Vendor No.'] = pick(vendNos.concat(['NO-VENDOR', undefined])); if (R() < 0.3) delete r['Vendor Item No.']; if (R() < 0.2) delete r['Item Category Code']; });
+    if (itemNos.length && vendNos.length) T[99] = { caption: 'Item Vendor', sheet: 'Item Vendor', fields: [], rows: Array.from({ length: Math.floor(R() * 6) }, function () { return { 'Item No.': pick(itemNos.concat(['NO-ITEM'])), 'Vendor No.': pick(vendNos.concat(['NO-VENDOR'])), 'Vendor Item No.': pick(['VI1', undefined]) }; }) };
+    var cats = ids(5722); (T[5722] || { rows: [] }).rows.forEach(function (r) { if (R() < 0.3) r['Parent Category'] = pick(cats.concat(['MISSING', undefined])); });
+    (T[14] || { rows: [] }).rows.forEach(function (r) { if (R() < 0.4) { delete r.Address; delete r['Address 2']; delete r.City; delete r['Post Code']; delete r['Country/Region Code']; } });
+    var locs = ids(14);
+    (T[7354] || { rows: [] }).rows.forEach(function (r) { if (R() < 0.2) r['Location Code'] = 'NO-LOC'; });
+    (T[32] || { rows: [] }).rows.forEach(function (r) { if (R() < 0.15) delete r['Location Code']; if (R() < 0.1) delete r['Posting Date']; if (R() < 0.15) r['Posting Date'] = '2030-01-01'; if (R() < 0.2) r.Quantity = pick(['-5', '0', '2.5', '0.1', '0.2']); });
+    if (T[32] && T[32].rows.length && R() < 0.5) { var e = T[32].rows[0]; T[32].rows.push(Object.assign({}, e, { Quantity: String(-Number(e.Quantity || 0)) })); }   // a pair that sums to zero
+    if (R() < 0.1) delete T[98]; else if (T[98] && T[98].rows[0] && R() < 0.1) delete T[98].rows[0]['LCY Code'];
+    if (R() < 0.15) delete T[79]; else if (T[79] && T[79].rows[0] && R() < 0.3) { var c = T[79].rows[0]; delete c.Address; delete c['Address 2']; delete c.City; delete c['Post Code']; if (R() < 0.5) delete c['Country/Region Code']; }
+    void locs; return { pkg: P, opts: { cutover: pick(['2026-11-09', '', '2020-01-01', '2026-01-15']) } };
+  }
+  function bbranches(g, c) {
+    var m = c.manifest, H = {}, hit = function (k, v) { if (v) H[k] = 1; }, ref = function (sh) { return (m.refused || []).some(function (r) { return r.sheet === sh; }); };
+    var note = function (re) { return (m.notes || []).some(function (x) { return re.test(x); }); }, pat = function (t, col) { return (m.patches || []).some(function (p) { return p.table === t && p.column === col; }); };
+    var rows = function (t) { return c.book[ORDERI(t)].rows.slice(1); }, col = function (t, h, v) { var k = c.book[ORDERI(t)].rows[0].indexOf(h); return rows(t).some(function (r) { return v === null ? r[k] !== '' : r[k] === v; }); };
+    hit('refuse:shipto-no-customer', ref('C_BPartner_Location')); hit('refuse:po-missing', ref('M_Product_PO')); hit('refuse:bin-no-location', ref('M_Locator')); hit('refuse:undated-entry', ref('M_InventoryLine'));
+    hit('note:complex-term', note(/due-date formula/)); hit('note:no-category', note(/no Account Category/)); hit('note:no-category>8', note(/no Account Category.* …\)/)); hit('note:partly-blocked', note(/partly blocked/));
+    hit('note:non-inventory', note(/Non-Inventory/)); hit('note:after-cutover', note(/after the cutover/));
+    hit('patch:no-location', pat('M_Warehouse', 'Value')); hit('patch:warehouse-no-address', pat('M_Warehouse', 'C_Location_ID')); hit('patch:no-country', pat('C_Location', 'C_Country_ID'));
+    hit('patch:vendor-product-no', pat('M_Product_PO', 'VendorProductNo')); hit('patch:category-default', pat('M_Product', 'M_Product_Category_ID'));
+    hit('rename:same-no-customer-vendor', (m.renamed || []).some(function (r) { return /the same No\./.test(r.why); })); hit('rename:key-cut', (m.renamed || []).some(function (r) { return /longer than/.test(r.why); }));
+    hit('problem:no-gl-setup', (m.problems || []).some(function (p) { return /Add the table/.test(p); })); hit('problem:no-lcy', (m.problems || []).some(function (p) { return /no LCY Code/.test(p); }));
+    hit('location:company-address', (c.provenance.C_Location || []).some(function (p) { return p.bc === '79/company'; })); hit('location:ship-to', (c.provenance.C_Location || []).some(function (p) { return /^222\//.test(p.bc); }));
+    var wNoAddr = (c.provenance.M_Warehouse || []).length - (c.provenance.C_Location || []).filter(function (p) { return /^14\//.test(p.bc); }).length; hit('location:company-shared', wNoAddr > 1 && (c.provenance.C_Location || []).some(function (p) { return p.bc === '79/company'; }));
+    hit('category:parent-first', (c.provenance.M_Product_Category || []).length > 1 && col('M_Product_Category', 'M_Product_Category_Parent_ID>Value', null));
+    var e32 = (g.pkg.tables[32] || { rows: [] }).rows, k = {}; e32.forEach(function (e) { var kk = (e['Location Code'] || '') + '|' + e['Item No.']; k[kk] = (k[kk] || 0) + 1; });
+    hit('stock:sum-of-several', Object.keys(k).some(function (x) { return k[x] > 1; }) && rows('M_InventoryLine').length);
+    hit('stock:zero-sum-dropped', (c.provenance.M_Inventory || []).length && rows('M_InventoryLine').length < Object.keys(k).length);
+    hit('stock:no-location', (c.provenance.M_Inventory || []).some(function (p) { return p.key === ''; }));
+    hit('price:row', rows('M_ProductPrice').length); hit('account:summary', col('C_ElementValue', 'IsSummary', 'Y')); hit('bp:inactive', col('C_BPartner', 'IsActive', 'N'));
+    hit('product:service', col('M_Product', 'ProductType', 'S')); hit('product:inactive', col('M_Product', 'IsActive', 'N')); hit('term:netdays', col('C_PaymentTerm', 'NetDays', null));
+    hit('po:item-vendor-table', (c.provenance.M_Product_PO || []).some(function (p) { return p.bc === 99; })); hit('user:contact', rows('AD_User').length);
+    return H;
+  }
+  var ORDERI = function (t) { return CV.ORDER.indexOf(t); };
+  var BALL = ['refuse:shipto-no-customer', 'refuse:po-missing', 'refuse:bin-no-location', 'refuse:undated-entry', 'note:complex-term', 'note:no-category', 'note:no-category>8', 'note:partly-blocked', 'note:non-inventory',
+    'note:after-cutover', 'patch:no-location', 'patch:warehouse-no-address', 'patch:no-country', 'patch:vendor-product-no', 'patch:category-default', 'rename:same-no-customer-vendor', 'rename:key-cut',
+    'problem:no-gl-setup', 'problem:no-lcy', 'location:company-address', 'location:ship-to', 'location:company-shared', 'category:parent-first', 'stock:sum-of-several', 'stock:zero-sum-dropped', 'stock:no-location',
+    'price:row', 'account:summary', 'bp:inactive', 'product:service', 'product:inactive', 'term:netdays', 'po:item-vendor-table', 'user:contact'];
+  var BN = Number(process.env.MIGE_BC_N || 300), bbad = 0, bfirst = null, bcover = {}, bcells = 0;
+  for (var bi = 1; bi <= BN; bi++) { var bg = bgen(bi), ba = BREF.convert(bg.pkg, BMODEL, bg.opts), bb = BSHIP.convert(bg.pkg, BMODEL, bg.opts), bd = diff(ba, bb);
+    bcells += ba.book.reduce(function (n, s) { return n + s.rows.length * s.rows[0].length; }, 0); Object.keys(bbranches(bg, ba)).forEach(function (k) { bcover[k] = (bcover[k] || 0) + 1; });
+    if (bd.length) { bbad++; if (!bfirst) bfirst = { seed: bi, opts: bg.opts, diffs: bd.slice(0, 12) }; } }
+  if (bfirst) say('  §MIGE-BC-DIFF first seed=' + bfirst.seed + ' ' + J(bfirst).slice(0, 3000));
+  say('§MIGE-BC-DIFF cases=' + BN + ' cells=' + bcells + ' differing_cases=' + bbad);
+  check('BC-DIFF', 'equal', 'on ' + BN + ' generated packages the engine result == the hand converter result (book cells, manifest, provenance)', bbad === 0, bfirst);
+  BALL.forEach(function (k) { say('  §MIGE-BC-COVER branch=' + k + (bcover[k] ? ' cases=' + bcover[k] : ' INCONCLUSIVE — no case hit it')); });
+  var bmissed = BALL.filter(function (k) { return !bcover[k]; }); missed = missed.concat(bmissed.map(function (k) { return 'bc:' + k; }));
+  say('§MIGE-BC-COVER hit=' + (BALL.length - bmissed.length) + '/' + BALL.length + (bmissed.length ? ' INCONCLUSIVE=' + bmissed.join(',') : ''));
+  verdict('BC-DIFF');
+  var BMUT = [
+    ['rename-removed', function (t) { t.entities.C_BPartner.forEach(function (b) { delete b.rename; }); }],
+    ['zero-sum-kept', function (t) { delete t.entities.M_InventoryLine.group.having; }],
+    ['po-once-removed', function (t) { t.entities.M_Product_PO.forEach(function (b) { delete b.once; }); }],
+    ['category-sort-removed', function (t) { delete t.entities.M_Product_Category.sort; }],
+    ['later-counted-as-refusal', function (t) { var r = t.entities.M_InventoryLine.refuse[1]; delete r.silent; r.why = 'later'; }],
+    ['company-address-ignored', function (t) { t.defs.coAddr = false; }]];
+  BMUT.forEach(function (mu) { var t = JSON.parse(JSON.stringify(BTPL)); mu[1](t); var found = 0; for (var i = 1; i <= Math.min(BN, 200) && !found; i++) { var g = bgen(i); if (diff(BREF.convert(g.pkg, BMODEL, g.opts), bengine(t, g.pkg, g.opts)).length) found = i; }
+    check('BC-MUTANT', mu[0], 'the template with "' + mu[0] + '" differs from the hand converter on some generated package (the BC diff can fail)', found > 0, 'no seed found a difference'); if (found) say('  §MIGE-MUTANT bc:' + mu[0] + ' caught at seed=' + found); });
+  verdict('BC-MUTANT');
+
+  var V = ['LOAD', 'FIELD', 'GUIDE', 'DIFF', 'MUTANT', 'BC-LOAD', 'BC-GUIDE', 'BC-DIFF', 'BC-MUTANT'].map(function (k) { var c = CASES[k] || {}; return !c.judged ? 'INCONCLUSIVE' : c.failed ? 'FAIL' : 'PASS'; });
   var overall = V.indexOf('FAIL') >= 0 ? 'FAIL' : (V.indexOf('INCONCLUSIVE') >= 0 || missed.length) ? 'INCONCLUSIVE' : 'PASS';
   say('§MIGE verdict=' + overall + ' judged=' + ALL.judged + ' failed=' + ALL.failed + (missed.length ? ' (DIFF coverage gaps: ' + missed.length + ')' : ''));
   process.exit(overall === 'FAIL' ? 1 : 0);

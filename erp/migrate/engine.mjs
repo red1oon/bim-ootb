@@ -7,16 +7,20 @@
 // A template is DATA: a closed set of block keys and expression operators, evaluated here by ONE evaluator (no eval, no JS in a template). Anything outside the closed sets,
 //   a reference to a sheet not produced yet, or a ${VAR} / %let / def / valueMap that is not declared = the template is REFUSED at load, the reason named.
 // Pure: no I/O, no clock, no random. Browser + node.
-import { HEADERS, ORDER, uuid5, finishBook } from '../plugins/bc_migrate_convert.mjs';
+import { HEADERS, ORDER, uuid5, finishBook } from './workbook.mjs';
 
 const s = (v) => (v == null ? '' : String(v));
-const BLOCK_KEYS = ['from', 'where', 'refuse', 'fields', 'unique', 'group', 'prov', 'patches', 'notes', 'problems'];
+const BLOCK_KEYS = ['from', 'tag', 'sort', 'where', 'once', 'refuse', 'fields', 'rename', 'unique', 'group', 'prov', 'patches', 'notes', 'problems'];
 const FROM_KEYS = ['of', 'each', 'match', 'first', 'ifNone', 'let'];
 const TOP_KEYS = ['template', 'version', 'source', 'connector', 'srcKey', 'variables', 'valueMaps', 'let', 'defs', 'entities', 'manifest', 'description'];
 // operator → [min args, max args] (an operator takes ONE value: a single expression or an array of them)
 const OPS = { str: 1, num: 1, not: 1, has: 1, first: -1, or: -1, and: -1, eq: 2, ne: 2, in: 2, if: 3, map: 2, concat: -1, cut: 2, uuid5: 1, add: -1, sub: 2, mul: -1,
-  seq: 1, count: 1, size: 1, exists: 3, out: 2, src: 2, countWhere: 2, collect: 3, join: 2, def: 1, pick: 1 };
-const SHEET_OPS = { count: 0, exists: 0, out: 0, src: 0, countWhere: 0, collect: 0 };   // first argument names a sheet
+  seq: 1, count: 1, size: 1, exists: 3, out: 2, src: 2, countWhere: 2, collect: 3, join: 2, def: 1, pick: 1,
+  enum: 3, caption: 1, re: 4, replace: 4, trim: 1, gt: 2, lt: 2, len: 1, take: 2, any: 2, obj: 1, with: 2, lookup: 4, treeDepth: 4, row: 2, hasSet: 1, counter: 1 };
+const SHEET_OPS = { count: 0, exists: 0, out: 0, src: 0, countWhere: 0, collect: 0, lookup: 0 };   // first argument names a sheet
+const LITERAL_ARGS = { enum: [1], re: [0, 1, 3], replace: [1, 2], row: [0, 1], hasSet: [0], counter: [0], treeDepth: [0, 1, 2, 3], any: [0] };   // arguments that are names/patterns, not expressions
+const SPECIAL = ['#tag', '#v', '#prev', '#label'];
+const fld = (e) => { const i = e.indexOf('.'); return i < 0 ? [e, null] : [e.slice(0, i), e.slice(i + 1)]; };   // "%NAME.Field name." — the field may itself contain dots ("No.")
 
 export class TemplateError extends Error { constructor(why) { super('template refused: ' + why); this.why = why; } }
 
@@ -33,7 +37,8 @@ export function load(t) {
     if (typeof e === 'string') {
       const v = e.match(/^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$/); if (v && !(v[1] in vars)) bad(where + ': variable ${' + v[1] + '} is not declared in "variables"');
       if (/\$\{/.test(e) && !v) bad(where + ': "' + e + '" — a ${VAR} must be the whole value (use concat)');
-      if (e[0] === '%') { const n = e.slice(1).split('.')[0]; if (!(n in lets)) bad(where + ': %' + n + ' is not declared in "let"'); }
+      if (e[0] === '%') { const n = fld(e.slice(1))[0]; if (!(n in lets)) bad(where + ': %' + n + ' is not declared in "let"'); }
+      if (e[0] === '#' && !SPECIAL.includes(e)) bad(where + ': "' + e + '" — only ' + SPECIAL.join(', ') + ' start with #');
       return;
     }
     if (Array.isArray(e)) { e.forEach((x) => expr(x, where, sheet, inLet)); return; }
@@ -49,6 +54,11 @@ export function load(t) {
     if (op === 'def' && !(args[0] in defs)) bad(where + ': def "' + args[0] + '" is not declared');
     if (op === 'def') { const k = args[0] + '|' + sheet; if (!defSeen.has(k)) { defSeen.add(k); expr(defs[args[0]], where + ' (def ' + args[0] + ')', sheet, inLet); } return; }   // a def is a macro: checked where it is used
     if (op === 'seq' || op === 'size' || op === 'map') { if (op === 'map') expr(args[1], where, sheet, inLet); return; }
+    if (op === 'obj') { if (!a || typeof a !== 'object' || Array.isArray(a)) bad(where + ': obj takes an object of expressions'); Object.keys(a).forEach((k) => expr(a[k], where + '.' + k, sheet, inLet)); return; }
+    if (op in LITERAL_ARGS) {
+      if ((op === 're' || op === 'replace')) { const pi = op === 're' ? 0 : 1; try { new RegExp(args[pi], args[pi + 1] || ''); } catch (er) { bad(where + ': ' + op + ' pattern does not compile: ' + er.message); }
+        if (!/^[gimsu]*$/.test(String(args[pi + 1] || ''))) bad(where + ': ' + op + ' flags "' + args[pi + 1] + '" (only g i m s u)'); }
+      args.forEach((x, i) => { if (!LITERAL_ARGS[op].includes(i)) expr(x, where, sheet, inLet); }); return; }
     if (op === 'pick') { const p = a || {}; Object.keys(p).forEach((k) => { if (!['from', 'sortBy', 'prefer'].includes(k)) bad(where + ': pick has no key "' + k + '"'); });
       if (typeof p.from !== 'string') bad(where + ': pick.from names a source set'); expr(p.sortBy, where, sheet, inLet); expr(p.prefer, where, sheet, inLet); return; }
     args.forEach((x) => expr(x, where, sheet, inLet));
@@ -72,11 +82,16 @@ export function load(t) {
           expr(f.ifNone.where, at + '.ifNone.where', sheet); Object.keys(f.ifNone.fields || {}).forEach((c) => { if (!HEADERS[sheet].includes(c)) bad(at + '.ifNone.fields: "' + c + '" is not a column of ' + sheet); expr(f.ifNone.fields[c], at + '.ifNone.' + c, sheet); });
           rec(f.ifNone.prov, at + '.ifNone.prov', sheet); }
       } else bad(at + ': "from" is missing');
-      expr(b.where, at + '.where', sheet);
-      (b.refuse || []).forEach((r, j) => { if (typeof r.why !== 'string') bad(at + '.refuse[' + j + ']: a refusal states its "why"'); expr(r.when, at + '.refuse[' + j + ']', sheet); });
-      Object.keys(b.fields || {}).forEach((c) => { if (!HEADERS[sheet].includes(c)) bad(at + '.fields: "' + c + '" is not a column of ' + sheet); expr(b.fields[c], at + '.' + c, sheet); });
+      expr(b.where, at + '.where', sheet); expr(b.once, at + '.once', sheet); expr(b.sort, at + '.sort', sheet);
+      if (b.tag != null && typeof b.tag !== 'string' && typeof b.tag !== 'number') bad(at + '.tag: a string or a number');
+      (b.refuse || []).forEach((r, j) => { if (r.silent != null && typeof r.silent !== 'string') bad(at + '.refuse[' + j + '].silent names a counter'); Object.keys(r).forEach((k) => { if (!['when', 'why', 'silent'].includes(k)) bad(at + '.refuse[' + j + ']: unknown key "' + k + '"'); }); });
+      if (b.rename) { const r = b.rename; Object.keys(r).forEach((k) => { if (!['col', 'label', 'to', 'src', 'why'].includes(k)) bad(at + '.rename: unknown key "' + k + '"'); });
+        if (!HEADERS[sheet].includes(r.col)) bad(at + '.rename.col: "' + r.col + '" is not a column of ' + sheet); ['label', 'to', 'src', 'why'].forEach((k) => expr(r[k], at + '.rename.' + k, sheet)); }
+      (b.refuse || []).forEach((r, j) => { if (typeof r.why !== 'string' && r.silent == null) bad(at + '.refuse[' + j + ']: a refusal states its "why"'); expr(r.when, at + '.refuse[' + j + ']', sheet); });
+      Object.keys(b.fields || {}).forEach((c) => { if (!HEADERS[sheet].includes(c) && c[0] !== '_') bad(at + '.fields: "' + c + '" is not a column of ' + sheet); expr(b.fields[c], at + '.' + c, sheet); });
       if (b.unique != null && !HEADERS[sheet].includes(b.unique)) bad(at + '.unique: "' + b.unique + '" is not a column of ' + sheet);
-      if (b.group) { const g = b.group; Object.keys(g).forEach((k) => { if (!['by', 'sort', 'sum'].includes(k)) bad(at + '.group: unknown key "' + k + '"'); });
+      if (b.group) { const g = b.group; Object.keys(g).forEach((k) => { if (!['by', 'sort', 'sum', 'having'].includes(k)) bad(at + '.group: unknown key "' + k + '"'); });
+        if (g.having != null && !(g.sum && g.having in g.sum)) bad(at + '.group.having: "' + g.having + '" is not one of its sums');
         if (!Array.isArray(g.by) || !g.by.length) bad(at + '.group.by: a list of key expressions'); expr(g.by, at + '.group.by', sheet);
         Object.keys(g.sum || {}).forEach((c) => { if (!HEADERS[sheet].includes(c)) bad(at + '.group.sum: "' + c + '" is not a column of ' + sheet); expr(g.sum[c].of, at + '.group.sum.' + c, sheet); }); }
       rec(b.prov, at + '.prov', sheet);
@@ -98,16 +113,19 @@ export function run(t, conn, variables) {
   const V = Object.assign({}, t.variables || {}, variables || {}), maps = t.valueMaps || {}, defs = t.defs || {}, letE = t.let || {}, letV = {}, seqs = {};
   const sheets = {}, prov = {}, accepted = {}; ORDER.forEach((k) => { sheets[k] = []; prov[k] = []; accepted[k] = []; });
   const patches = [], renamed = [], refused = [], notes = (conn.notes || []).slice(), problems = (conn.problems || []).slice();
-  const truthy = (v) => !!v;
+  const truthy = (v) => !!v, counters = {}, onceSeen = {}, renameUsed = {}, lookIdx = new Map(), treeIdx = new Map();
   const letGet = (n) => { if (!(n in letV)) letV[n] = ev(letE[n], {}); return letV[n]; };
   function ev(e, cx) {
     if (e == null || typeof e === 'number' || typeof e === 'boolean') return e;
     if (typeof e === 'string') {
       const c = e[0];
-      if (c === '$') { if (e[1] === '{') return V[e.slice(2, -1)]; return cx.row ? cx.row[e.slice(1)] : undefined; }
+      if (c === '$') { if (e === '$') return cx.row; if (e[1] === '{') return V[e.slice(2, -1)]; return cx.row ? cx.row[e.slice(1)] : undefined; }
       if (c === '^') return cx.parent ? cx.parent[e.slice(1)] : undefined;
       if (c === '@') return conn.scalar(e.slice(1));
-      if (c === '%') { const [n, f] = e.slice(1).split('.'); const v = letGet(n); return f == null ? v : (v == null ? undefined : v[f]); }
+      if (c === '%') { const [n, f] = fld(e.slice(1)); const v = letGet(n); return f == null ? v : (v == null ? undefined : v[f]); }
+      if (c === '#') return cx[e.slice(1)];
+      if (c === '&') return cx.src ? cx.src[e.slice(1)] : undefined;      // the produced row of the source a block iterates with "of" (the parent's, for "each")
+      if (c === '!') return cx.out ? cx.out[e.slice(1)] : undefined;      // this entry's own produced row (countWhere / collect / lookup)
       return e;
     }
     if (Array.isArray(e)) return e.map((x) => ev(x, cx));
@@ -143,6 +161,27 @@ export function run(t, conn, variables) {
       case 'def': return ev(defs[A[0]], cx);
       case 'pick': { const p = a, rows = conn.rows(p.from).slice(); if (p.sortBy != null) rows.sort((r1, r2) => ev(p.sortBy, { row: r1 }) - ev(p.sortBy, { row: r2 }));
         return (p.prefer != null && rows.find((r) => ev(p.prefer, { row: r }))) || rows[0]; }
+      case 'enum': return conn.enumName(x(0), A[1], x(2));
+      case 'caption': return conn.caption(x(0));
+      case 're': { const m = new RegExp(A[0], A[1] || '').exec(s(x(2))); return m ? m[A[3]] : undefined; }
+      case 'replace': return s(x(0)).replace(new RegExp(A[1], A[2] || ''), s(x(3)));
+      case 'trim': return s(x(0)).trim();
+      case 'gt': return x(0) > x(1);
+      case 'lt': return x(0) < x(1);
+      case 'len': return (x(0) || []).length;
+      case 'take': return (x(0) || []).slice(0, Number(x(1)));
+      case 'any': return conn.rows(A[0]).some((r) => ev(A[1], { row: r }));
+      case 'obj': { const o = {}; Object.keys(a).forEach((k) => { o[k] = ev(a[k], cx); }); return o; }
+      case 'with': return ev(A[1], Object.assign({}, cx, { row: x(0) }));
+      case 'lookup': { // [sheet, key of an accepted entry, the value looked for, what to answer from that entry] — the LAST entry with the key wins (a JS object map)
+        let ix = lookIdx.get(e); const acc = accepted[A[0]]; if (!ix || ix.n !== acc.length) { const m = new Map(); acc.forEach((r) => m.set(s(ev(A[1], r)), r)); lookIdx.set(e, ix = { n: acc.length, m }); }
+        const hit = ix.m.get(s(x(2))); return hit ? ev(A[3], hit) : undefined; }
+      case 'treeDepth': { // [set, key field, parent field, max] — how many parents above the row (the BC converter's depth(), parents sorted first)
+        const k = A[0] + '|' + A[1]; let by = treeIdx.get(k); if (!by) { by = new Map(); conn.rows(A[0]).forEach((r) => by.set(String(r[A[1]]), r)); treeIdx.set(k, by); }
+        let d = 0, r = cx.row; while (r && r[A[2]] && by.get(String(r[A[2]])) && d < A[3]) { r = by.get(String(r[A[2]])); d++; } return d; }
+      case 'row': return conn.rows(A[0])[A[1]];
+      case 'hasSet': return conn.hasSet(A[0]);
+      case 'counter': return counters[A[0]] || 0;
     }
     throw new TemplateError('unknown operator ' + op);
   }
@@ -158,27 +197,36 @@ export function run(t, conn, variables) {
     if (typeof f === 'string') { conn.rows(f).forEach((r) => out.push({ row: r })); return out; }
     if (f.let != null) { const v = letGet(f.let); if (v != null) out.push({ row: v }); return out; }
     accepted[f.of].forEach((p) => {
-      if (!f.each) { out.push({ row: p.row, parent: p.parent }); return; }
+      if (!f.each) { out.push({ row: p.row, parent: p.parent, tag: p.tag, src: p.out }); return; }
       let kids = Array.isArray(p.row[f.each]) ? p.row[f.each] : [];
       if (f.match != null) kids = kids.filter((k) => ev(f.match, { row: k, parent: p.row }));
       if (f.first) kids = kids.slice(0, 1);
-      kids.forEach((k) => out.push({ row: k, parent: p.row }));
-      if (!kids.length && f.ifNone && (!f.ifNone.where || ev(f.ifNone.where, { row: p.row }))) out.push({ row: p.row, parent: p.parent, none: true });
+      kids.forEach((k) => out.push({ row: k, parent: p.row, tag: p.tag, src: p.out }));
+      if (!kids.length && f.ifNone && (!f.ifNone.where || ev(f.ifNone.where, { row: p.row }))) out.push({ row: p.row, parent: p.parent, none: true, tag: p.tag, src: p.out });
     });
     return out;
   };
   Object.keys(t.entities).forEach((sheet) => {
     const blocks = Array.isArray(t.entities[sheet]) ? t.entities[sheet] : [t.entities[sheet]];
     blocks.forEach((b) => {
-      const ref = (b.refuse || []).map((r) => ({ why: r.why, when: r.when, n: 0 })), seen = new Set(sheets[sheet].map((r) => b.unique && r[b.unique]));
-      const taken = [];
-      sources(b).forEach((cx) => {
+      const ref = (b.refuse || []).map((r) => ({ why: r.why, when: r.when, silent: r.silent, n: 0 })), seen = new Set(sheets[sheet].map((r) => b.unique && r[b.unique]));
+      const once = onceSeen[sheet] = onceSeen[sheet] || new Set(), used = renameUsed[sheet] = renameUsed[sheet] || new Map();
+      const taken = [], src = sources(b);
+      if (b.tag != null) src.forEach((cx) => { cx.tag = b.tag; });
+      if (b.sort != null) { const k = new Map(src.map((cx) => [cx, Number(ev(b.sort, cx))])); src.sort((p, q) => k.get(p) - k.get(q)); }   // stable, ascending
+      src.forEach((cx) => {
         if (b.where != null && !cx.none && !truthy(ev(b.where, cx))) return;
-        const hit = cx.none ? null : ref.find((r) => truthy(ev(r.when, cx))); if (hit) { hit.n++; return; }
+        if (b.once != null) { const k = s(ev(b.once, cx)); if (once.has(k)) return; once.add(k); }      // the same key a second time: not taken (before any refusal, as the converters do)
+        const hit = cx.none ? null : ref.find((r) => truthy(ev(r.when, cx))); if (hit) { if (hit.silent) counters[hit.silent] = (counters[hit.silent] || 0) + 1; else hit.n++; return; }
         taken.push(cx);
       });
-      const put = (cx, row, pv) => { if (b.unique) { if (seen.has(row[b.unique])) return; seen.add(row[b.unique]); } sheets[sheet].push(row); prov[sheet].push(pv); accepted[sheet].push(cx); };
-      const build = (cx, fields) => { const row = {}; Object.keys(fields || {}).forEach((c) => { row[c] = s(ev(fields[c], cx)); }); return row; };
+      const put = (cx, row, pv) => { if (b.unique) { if (seen.has(row[b.unique])) return; seen.add(row[b.unique]); } cx.out = row; sheets[sheet].push(row); prov[sheet].push(pv); accepted[sheet].push(cx); };
+      const build = (cx, fields) => { const row = {}; Object.keys(fields || {}).forEach((c) => { row[c] = s(ev(fields[c], cx)); });
+        if (b.rename && fields === b.fields) { const R = b.rename, v = row[R.col], label = s(ev(R.label, cx));   // one key per sheet: a value already taken gets a suffix, named in manifest.renamed
+          if (used.has(v)) { const c2 = Object.assign({}, cx, { v, prev: used.get(v), label }), v2 = s(ev(R.to, c2));
+            renamed.push({ table: sheet, column: R.col, [t.srcKey || 'src']: s(ev(R.src, c2)), erp: v2, why: s(ev(R.why, c2)) }); row[R.col] = v2; }
+          used.set(row[R.col], label); }
+        return row; };
       if (b.group) {
         const G = new Map();
         taken.forEach((cx) => { const k = b.group.by.map((e) => s(ev(e, cx))).join('|'); let g = G.get(k); if (!g) G.set(k, g = { cx, sums: {} });
@@ -186,10 +234,12 @@ export function run(t, conn, variables) {
             g.sums[c] = Math.round(((g.sums[c] || 0) + q) * f) / f; });
           (g.members = g.members || []).push(cx); });
         const keys = Array.from(G.keys()); if (b.group.sort) keys.sort();
-        keys.forEach((k) => { const g = G.get(k), cx = Object.assign({}, g.cx, { key: k }), row = build(cx, b.fields); Object.keys(g.sums).forEach((c) => { row[c] = String(g.sums[c]); });
+        keys.forEach((k) => { const g = G.get(k);
+          if (b.group.having != null && !g.sums[b.group.having]) { g.members.forEach((m) => accepted[sheet].push(m)); return; }   // the group is not a row, its members stay readable (e.g. the header per warehouse)
+          const cx = Object.assign({}, g.cx, { key: k }), row = build(cx, b.fields); Object.keys(g.sums).forEach((c) => { row[c] = String(g.sums[c]); });
           put(cx, row, recEv(b.prov, cx)); g.members.slice(1).forEach((m) => accepted[sheet].push(m)); });
       } else taken.forEach((cx) => { const f = cx.none ? b.from.ifNone.fields : b.fields, pv = cx.none ? b.from.ifNone.prov : b.prov; put(cx, build(cx, f), recEv(pv, cx)); });
-      ref.forEach((r) => { if (r.n) refused.push({ sheet, why: r.why, n: r.n }); });
+      ref.forEach((r) => { if (!r.n) return; const same = refused.find((x) => x.sheet === sheet && x.why === r.why); if (same) same.n += r.n; else refused.push({ sheet, why: r.why, n: r.n }); });   // ONE line per sheet + reason, over all its blocks
       emitAfter(b, sheet);
     });
   });
@@ -204,7 +254,10 @@ export function run(t, conn, variables) {
 
 // the field check (§ENGINE-SPEC §2): every "$Field" a block reads from a TOP-LEVEL source set, against the connector's model — a field the source lacks is NAMED, never guessed
 export function fieldCheck(t, model) {
-  const used = {}, add = (set, e) => { const walk = (x) => { if (typeof x === 'string' && /^\$[A-Za-z_]/.test(x)) (used[set] = used[set] || new Set()).add(x.slice(1)); else if (x && typeof x === 'object') Object.values(x).forEach(walk); }; walk(e); };
+  // a lookup's key and answer (args 1 and 3) are read on ANOTHER sheet's rows, a with's expression on the row it names: not this set's fields
+  const used = {}, add = (set, e) => { const walk = (x) => { if (typeof x === 'string' && /^\$[A-Za-z_]/.test(x)) (used[set] = used[set] || new Set()).add(x.slice(1));
+    else if (x && typeof x === 'object' && !Array.isArray(x) && x.lookup) walk(x.lookup[2]); else if (x && typeof x === 'object' && !Array.isArray(x) && x.with) walk(x.with[0]);
+    else if (x && typeof x === 'object') Object.values(x).forEach(walk); }; walk(e); };
   Object.keys(t.entities).forEach((sheet) => (Array.isArray(t.entities[sheet]) ? t.entities[sheet] : [t.entities[sheet]]).forEach((b) => {
     if (typeof b.from === 'string') add(b.from, [b.where, b.refuse, b.fields, b.prov]); }));
   const out = [];
