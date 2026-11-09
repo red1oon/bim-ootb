@@ -13,7 +13,7 @@ const path = require('path');
 const vm = require('vm');
 
 const viewer = path.resolve(__dirname, '..', 'viewer');
-const src = fs.readFileSync(path.join(viewer, 'settings_editor.js'), 'utf8');
+const src = fs.readFileSync(path.join(viewer, '..', 'common', 'settings_editor.js'), 'utf8');
 
 // Load the IIFE in a sandbox with a fake window; pull out the exports.
 const sandbox = { window: {}, console: console, fetch: undefined, localStorage: undefined };
