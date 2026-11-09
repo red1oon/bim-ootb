@@ -35,7 +35,8 @@ var ERP = path.join(__dirname, '..');
 // the instruction the app already prints CORRECT. `prefix` stays per-bundle so the shape is stated data,
 // never an assumption baked into the writer.
 var BUNDLES = [{ dir: 'idempiere_agent', zip: 'idempiere_agent.zip', prefix: 'idempiere_agent/' },
-                { dir: 'odoo_agent', zip: 'odoo_agent.zip', prefix: 'odoo_agent/' }];
+                { dir: 'odoo_agent', zip: 'odoo_agent.zip', prefix: 'odoo_agent/' },
+                { dir: 'sap_agent', zip: 'sap_agent.zip', prefix: 'sap_agent/' }];   // SAP Business One, ALPHA (bim-compiler MIGRATE_INSTALL_TENANT.md §SAP-SPEC)
 // A FIXED DOS timestamp (1980-01-01 00:00), so the bytes depend on CONTENT only. A real mtime would make
 // every rebuild a different file and turn the drift check into noise.
 var DOS_TIME = 0, DOS_DATE = 0x0021;
@@ -148,5 +149,5 @@ if (require.main === module) {
     console.log('🔴 a shipped agent zip does not match the directory it duplicates — run this without --check');
     process.exit(1);
   }
-  console.log('🟢 ' + (check ? 'both agent zips match their source directories' : 'both agent zips built from source'));
+  console.log('🟢 ' + (check ? 'every agent zip matches its source directory' : 'every agent zip built from source ('+BUNDLES.length+')'));
 }

@@ -146,6 +146,17 @@ export const DESC = {
   }
 };
 
+// withSourceRows(rows, manifest) — a source converter (bc_/sap_migrate_convert.mjs) refuses some rows BEFORE the load (a bin without its location, a warehouse without a
+//   country): the summary must still say so. Each manifest.refused entry is added to its sheet's row (refused + reason, 'not in the file'), and each manifest note becomes a
+//   locked info row. Shared by every converter-backed form (one implementation).
+export function withSourceRows(rows, manifest) {
+  const m = manifest || {};
+  (m.refused || []).forEach((r) => { const row = rows.find((x) => x.key > 100 && x.key < 900 && x.item === r.sheet); if (!row) return;
+    row.refused = (Number(row.refused) || 0) + r.n; const why = 'not in the file: ' + r.n + ' — ' + r.why; row.reason = row.reason && row.reason !== 'unticked' ? row.reason + ' · ' + why : why; });
+  const notes = (m.notes || []).slice(0, 40).map((t, i) => ({ key: 910 + i, item: 'ℹ ' + t, selected: false, locked: true }));
+  return rows.concat(notes);
+}
+
 // bindProcess(ap) — the process engine plan/load run the Ninja loader through; a bundle that reuses plan/load (bc_migrate_form.mjs) binds it from its own ctx
 export function bindProcess(ap) { AP = ap; }
 export function activate(ctx) {

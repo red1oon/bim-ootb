@@ -1,0 +1,21 @@
+{
+ "source": "SAP SE, \"Working with SAP Business One Service Layer\", User Guide, Document Version 1.26 - 2024-02-02 (PUBLIC). Every row below is an example record printed in that guide, cited by section and page; nothing is typed in. Tiny by design: the guide holds almost no master data (MIGRATE_INSTALL_TENANT.md §SAP-SPEC).",
+ "sets": {
+  "BusinessPartners": [
+   { "CardCode": "c1", "CardName": "customer c1", "CardType": "cCustomer", "_src": "§3.5.1 Creating Entities, p.20 — POST /BusinessPartners {CardCode c1, CardName customer c1, CardType cCustomer}" }
+  ],
+  "Items": [
+   { "ItemCode": "i001", "ItemName": "i001 name", "_src": "§3.7.11.1 Single Entity, p.46 — the expanded Item of a service call" },
+   { "ItemCode": "i002", "ItemName": null, "_src": "§5.2.1 ETag in Entity Creation, p.157 — 201 Created {ItemCode i002, ItemName null}" },
+   { "ItemCode": "i011", "_src": "§3.5.5 Create Entity with No Content, p.24 — POST /b1s/v1/Items {ItemCode i011}" }
+  ],
+  "Warehouses": [
+   { "WarehouseCode": "01", "_src": "§3.6 Actions, p.27 — a sales order line's WarehouseCode 01" }
+  ],
+  "ChartOfAccounts": [
+   { "Code": "_SYS00000000081", "_src": "§3.6 Actions, p.27 — the same order line's AccountCode" }
+  ]
+ },
+ "keys": { "UnitOfMeasurements": "AbsEntry", "PaymentTermsTypes": "GroupNumber", "ItemGroups": "Number", "ChartOfAccounts": "Code", "BusinessPartners": "CardCode", "Items": "ItemCode", "PriceLists": "PriceListNo", "Warehouses": "WarehouseCode", "BinLocations": "AbsEntry" },
+ "keys_src": "the <Key> of each entity type in the Service Layer $metadata (guide §3.3 shows BusinessPartner's: CardCode)"
+}
