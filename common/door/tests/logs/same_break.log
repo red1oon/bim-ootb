@@ -1,0 +1,11 @@
+§W-DOOR-SAME request 1 modeller.lines: terminal exit=0 status=ok; connector status=ok; bay gx5-gx6=11.176 move=1.824
+  ✅ S1a modeller.lines: terminal envelope = connector envelope (apart from request/actor/ms)  bytes=2785/2785
+  ✅ S2a modeller.lines: the envelope's answer = edit_cli --lines, byte for byte but ms
+  ✅ S3a the connector's reply text = edit_cli --lines
+§W-DOOR-SAME request 2 modeller.try_shift gx6 1.824: terminal exit=3 status=refused why=stopped: Beam spans over limit: 91 -> 92 (limit 12 m, RC); bay gx5-gx6 newly over the limit: 13 m; connector status=refused; direct exit=3
+  ❌ S1b try_shift: terminal envelope = connector envelope (apart from request/actor/ms)  bytes=3347/3361
+  ❌ S2b try_shift: the envelope's answer = edit_cli --shift, byte for byte but ms; status refused (the stop), exit 3  bytes=2768
+  ❌ S3b the connector's reply text = edit_cli --shift
+  ✅ S4 not vacuous: the actors differ (human/ai), the request ids differ, notChecked is carried  actors=human/ai notChecked=11
+§W-DOOR-SAME envelope keys: request,verb,actor,status,answer,why,notChecked,ops,next,ms
+§WITNESS_DOOR_SAME pass=4 fail=3 inconclusive=0 verdict=FAIL (MCP_BREAK=1)

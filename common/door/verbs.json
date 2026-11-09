@@ -1,0 +1,351 @@
+{
+ "vocabulary": "bim-ootb one-door vocabulary",
+ "version": 1,
+ "spec": "bim-compiler prompts/NEURO_SYMBOLIC_ORDER_CONTRACT.md §0.4, §0.7",
+ "verbs": [
+  {
+   "verb": "modeller.lines",
+   "app": "modeller",
+   "mcp_name": "bim_lines",
+   "title": "Read the grid",
+   "description": "Read a building's grid: every grid line's id (gx0, gx1, … along x; gy0, gy1, … along y) and its position in metres in the building's own frame, plus the structural system, the material, the number of girders and the building's rotation in degrees. Opens a fresh copy of the building; takes about 10 to 40 seconds. Changes nothing.",
+   "inputs": [
+    {
+     "name": "building",
+     "description": "The building name, e.g. \"Hospital\" or \"HospitalGarage\".",
+     "required": true,
+     "type": "building",
+     "example": "HospitalGarage"
+    }
+   ],
+   "harm": "read",
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "calls": {
+    "cli": "edit_cli",
+    "who": "the app",
+    "argv": [
+     "--building",
+     "{building}",
+     "--lines",
+     "--own-grid",
+     "--lattice-boxes"
+    ]
+   },
+   "returns": {
+    "shape": "edit_cli --lines JSON {ok,building,model:{grid_source,system,material,mixed,girders,rotation_deg,frame,lines:[{id,axis,pos,world}]},ms}",
+    "fields": [
+     {
+      "path": "ok",
+      "type": "boolean"
+     },
+     {
+      "path": "model.rotation_deg",
+      "type": "number",
+      "unit": "deg"
+     },
+     {
+      "path": "model.lines[*].pos",
+      "type": "number",
+      "unit": "m"
+     },
+     {
+      "path": "model.lines[*].axis",
+      "type": "string"
+     }
+    ]
+   },
+   "witness": "modeller/tests/witness_bim_mcp.js#M2a"
+  },
+  {
+   "verb": "modeller.try_shift",
+   "app": "modeller",
+   "mcp_name": "bim_try_shift",
+   "title": "Try shifting a grid line",
+   "description": "Shift one grid line, and every later line on the same axis, by a distance in metres (positive = towards higher positions). Only the bay just before that line changes width; the rest of the building travels with it. The app makes the change, checks it (overlaps, beam spans against their limit, doors and windows against their walls) and returns its report: what changed, each check before and after, and what was not checked. If the change adds new problems the app undoes it and returns stopped_by_gate with the reason. Opens a fresh copy each time; nothing is saved.",
+   "inputs": [
+    {
+     "name": "building",
+     "description": "The building name, as in bim_lines.",
+     "required": true,
+     "type": "building",
+     "example": "HospitalGarage"
+    },
+    {
+     "name": "line",
+     "description": "The grid line to shift, e.g. \"gx6\".",
+     "required": true,
+     "type": "grid_line",
+     "example": "gx6"
+    },
+    {
+     "name": "move",
+     "description": "The distance in metres, e.g. 1.824. Negative moves towards lower positions.",
+     "required": true,
+     "type": "number",
+     "unit": "m",
+     "example": "1.824"
+    }
+   ],
+   "harm": "trial",
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "calls": {
+    "cli": "edit_cli",
+    "who": "the app",
+    "argv": [
+     "--building",
+     "{building}",
+     "--shift",
+     "{line}",
+     "--move",
+     "{move}",
+     "--own-grid",
+     "--lattice-boxes"
+    ]
+   },
+   "returns": {
+    "shape": "EDIT_REPORT v1 inside edit_cli JSON {ok,building,edits:[report|{refused,stopped_by_gate,reason,report}],gate,ms}",
+    "fields": [
+     {
+      "path": "ok",
+      "type": "boolean"
+     }
+    ]
+   },
+   "witness": "modeller/tests/witness_bim_mcp.js#M2b"
+  },
+  {
+   "verb": "viewer.counts",
+   "app": "viewer",
+   "mcp_name": "viewer_counts",
+   "title": "Count elements",
+   "description": "Open a building in the Viewer and count its elements, the same answer the Viewer's Find panel gives for \"Find element count by discipline\" (or by storey). Returns the total and the count per group, plus the Viewer's own log line for the same answer. Opens a fresh headless copy of the Viewer on the CPU; takes about 20 to 90 seconds. Changes and saves nothing.",
+   "inputs": [
+    {
+     "name": "building",
+     "description": "The building name, e.g. \"Duplex\" or \"Clinic\". An unknown name is an error.",
+     "required": true,
+     "type": "building",
+     "example": "Duplex"
+    },
+    {
+     "name": "by",
+     "description": "What to count by: \"discipline\" (the default, e.g. ARC, MEP) or \"storey\" (floor level).",
+     "required": false,
+     "type": "string",
+     "enum": [
+      "discipline",
+      "storey"
+     ],
+     "example": "storey"
+    }
+   ],
+   "harm": "read",
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "calls": {
+    "cli": "viewer_verbs",
+    "who": "the Viewer",
+    "argv": [
+     "counts",
+     "--building",
+     "{building}",
+     {
+      "if": "by",
+      "args": [
+       "--by",
+       "{by}"
+      ]
+     }
+    ]
+   },
+   "returns": {
+    "shape": "viewer_verbs JSON {verb,building,verdict,question,summary,value,viewerLine,viewerLog,source}",
+    "fields": [
+     {
+      "path": "verdict",
+      "type": "string"
+     },
+     {
+      "path": "value.total",
+      "type": "number"
+     }
+    ]
+   },
+   "witness": "viewer/tests/witness_viewer_verbs.js"
+  },
+  {
+   "verb": "viewer.clashes",
+   "app": "viewer",
+   "mcp_name": "viewer_clashes",
+   "title": "List clashes between two disciplines",
+   "description": "Open a building in the Viewer and list the clashes between two disciplines, the same answer the Viewer's Find panel gives for \"Find clashes between A and B\": how many element boxes overlap at the rule's tolerance (in metres), how many of those are true clashes after the shape tests, and the first 20 rows with the overlap in metres. A pair with no clash rule is an error, not zero. Opens a fresh headless copy of the Viewer on the CPU; takes about 20 to 120 seconds. Changes and saves nothing.",
+   "inputs": [
+    {
+     "name": "building",
+     "description": "The building name, e.g. \"Clinic\". An unknown name is an error.",
+     "required": true,
+     "type": "building",
+     "example": "Clinic"
+    },
+    {
+     "name": "discA",
+     "description": "First discipline code, e.g. \"ARC\" (architecture), \"STR\", \"MEP\".",
+     "required": true,
+     "type": "discipline",
+     "example": "ARC"
+    },
+    {
+     "name": "discB",
+     "description": "Second discipline code, e.g. \"MEP\". Order does not matter.",
+     "required": true,
+     "type": "discipline",
+     "example": "MEP"
+    }
+   ],
+   "harm": "read",
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "calls": {
+    "cli": "viewer_verbs",
+    "who": "the Viewer",
+    "argv": [
+     "clashes",
+     "--building",
+     "{building}",
+     "--a",
+     "{discA}",
+     "--b",
+     "{discB}"
+    ]
+   },
+   "returns": {
+    "shape": "viewer_verbs JSON as viewer.counts, plus cols, rowsTotal, rows",
+    "fields": [
+     {
+      "path": "verdict",
+      "type": "string"
+     },
+     {
+      "path": "value.bboxOverlaps",
+      "type": "number"
+     }
+    ]
+   },
+   "witness": "viewer/tests/witness_viewer_verbs.js"
+  },
+  {
+   "verb": "viewer.film_path",
+   "app": "viewer",
+   "title": "Film path visibility",
+   "description": "For a Viewer database that holds drawn services, report per film-camera band how many drawn lines and markers fall inside the film camera's view. Opens a headless copy of the Viewer on the CPU. Reads only: no bake, no GPU, nothing written. A database with no drawn services, or a path no sample of which lies on a band, is inconclusive, not zero.",
+   "inputs": [
+    {
+     "name": "db",
+     "type": "file",
+     "required": true,
+     "example": "buildings/Duplex_extracted.db",
+     "description": "Path to the Viewer database (.db) to judge."
+    },
+    {
+     "name": "path",
+     "type": "file",
+     "required": false,
+     "example": "path.json",
+     "description": "Optional override file with the cinema_path bands to judge instead of the database's own."
+    }
+   ],
+   "harm": "read",
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "calls": {
+    "cli": "film_path_vis",
+    "who": "the Viewer",
+    "argv": [
+     "--db",
+     "{db}",
+     {
+      "if": "path",
+      "args": [
+       "--path",
+       "{path}"
+      ]
+     },
+     "--json"
+    ]
+   },
+   "returns": {
+    "shape": "film_path_vis --json {verdict SEES|BLIND|INCONCLUSIVE, per, totalLines, totalMarkers, log}",
+    "fields": [
+     {
+      "path": "verdict",
+      "type": "string"
+     }
+    ]
+   },
+   "witness": "viewer/tests/witness_film_path_vis.js"
+  },
+  {
+   "verb": "modeller.widen_bay",
+   "app": "modeller",
+   "title": "Widen a bay to a target width",
+   "description": "Composed verb: read the grid, compute how far the line \"to\" must move so the bay from \"from\" to \"to\" has the target width (in metres), and try that shift, with the same checks and the same stop as modeller.try_shift. Nothing is saved.",
+   "inputs": [
+    {
+     "name": "building",
+     "type": "building",
+     "required": true,
+     "example": "HospitalGarage",
+     "description": "The building name."
+    },
+    {
+     "name": "from",
+     "type": "grid_line",
+     "required": true,
+     "example": "gx5",
+     "description": "The grid line at the start of the bay."
+    },
+    {
+     "name": "to",
+     "type": "grid_line",
+     "required": true,
+     "example": "gx6",
+     "description": "The grid line at the end of the bay; this line and every later one on its axis moves."
+    },
+    {
+     "name": "target",
+     "type": "number",
+     "unit": "m",
+     "required": true,
+     "example": "13",
+     "description": "The bay width wanted, in metres."
+    }
+   ],
+   "harm": "trial",
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "body": [
+    "lines = modeller.lines building={building}",
+    "modeller.try_shift building={building} line={to} move={target - (lines.model.lines[to].pos - lines.model.lines[from].pos)}"
+   ],
+   "returns": {
+    "shape": "the envelopes of its lines, in answer.lines; the last is modeller.try_shift's",
+    "fields": []
+   },
+   "witness": "common/door/tests/witness_door_dsl.js"
+  }
+ ]
+}
