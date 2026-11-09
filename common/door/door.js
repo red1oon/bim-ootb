@@ -88,7 +88,12 @@ function validate(entry, args) {
   const names = entry.inputs.map(i => i.name), miss = entry.inputs.filter(i => i.required && (args[i.name] === undefined || args[i.name] === null || args[i.name] === '')).map(i => i.name);
   if (miss.length) return 'missing input: ' + miss.join(', ');
   const extra = Object.keys(args).filter(k => names.indexOf(k) < 0);
+  // §0.13: a verb that declares calls.rest takes further column=value inputs; the ENGINE checks each column against the dictionary (reflection). The door only checks the shape.
+  if (extra.length && entry.calls && entry.calls.rest) { const bad = extra.filter(k => typeof args[k] !== 'string' || !TYPES.string.re.test(args[k]) || !/^[A-Za-z_]\w{0,63}$/.test(k)); return bad.length ? 'input ' + bad[0] + ' must be ' + TYPES.string.what : shapeOf(entry, args); }
   if (extra.length) return 'unknown input: ' + extra.join(', ') + ' (the verb ' + entry.verb + ' takes: ' + names.join(', ') + ')';
+  return shapeOf(entry, args);
+}
+function shapeOf(entry, args) {
   if (BREAK() === 'shape') return null;
   for (const i of entry.inputs) {
     const v = args[i.name]; if (v === undefined) continue;
@@ -115,6 +120,7 @@ function buildArgv(entry, args) {   // the argv template: strings with {input} h
   const sub = (s) => s.replace(/\{(\w+)\}/g, (m, k) => { const i = entry.inputs.filter(x => x.name === k)[0], v = args[k]; return i && i.type === 'number' ? decStr(v) : String(v); });
   const out = [];
   for (const t of entry.calls.argv) { if (typeof t === 'string') out.push(sub(t)); else if (args[t.if] !== undefined) t.args.forEach(a => out.push(sub(a))); }
+  if (entry.calls.rest) Object.keys(args).filter(k => !entry.inputs.some(i => i.name === k)).forEach(k => out.push(entry.calls.rest.flag, k + '=' + args[k]));
   return out;
 }
 function mcpTools(vocab) {   // the connector's tools/list, generated: legacy names, descriptions and schemas byte for byte (W-VOCAB-FRESH)
@@ -244,7 +250,7 @@ function createDoor(opts) {
       e.body.forEach((ln, n) => {
         const pl = parseLine(ln); if (pl.question || pl.blank) throw new Error('verbs.json: ' + e.verb + ' line ' + (n + 1) + ' is not a command');
         const t = vocab.byVerb.get(pl.verb); if (!t) throw new Error('verbs.json: ' + e.verb + ' line ' + (n + 1) + ' calls unknown verb ' + pl.verb);
-        pl.kv.forEach(x => { if (!t.inputs.some(i => i.name === x.k)) throw new Error('verbs.json: ' + e.verb + ' line ' + (n + 1) + ' gives ' + pl.verb + ' an unknown input ' + x.k); });
+        pl.kv.forEach(x => { if (!t.inputs.some(i => i.name === x.k) && !(t.calls && t.calls.rest)) throw new Error('verbs.json: ' + e.verb + ' line ' + (n + 1) + ' gives ' + pl.verb + ' an unknown input ' + x.k); });
         visit(t, chain.concat(e.verb));
         top = Math.max(top, HARM.indexOf(t.harm)); allowed = allowed.filter(a => t.actors.indexOf(a) >= 0);
       });
@@ -308,7 +314,7 @@ function createDoor(opts) {
     }
     if (entry.calls.cli === 'object_cli') {   // exit 0 answered · 3 refused (a dictionary rule or a missing record: an answer) · 1 failed (unknown kind, no dictionary) · 2 usage
       const a = parse();
-      if ((r.code === 0 || r.code === 3) && a !== undefined) return r.code === 3 ? envelope(base, 'refused', { answer: a, raw: r.out, why: a.reason || 'refused' }) : envelope(base, 'ok', { answer: a, raw: r.out, ops: a.ops || [] });
+      if ((r.code === 0 || r.code === 3) && a !== undefined) return r.code === 3 ? envelope(base, 'refused', { answer: a, raw: r.out, why: a.reason || 'refused' }) : a.verdict === 'VACUOUS' ? envelope(base, 'inconclusive', { answer: a, raw: r.out, why: a.summary }) : envelope(base, 'ok', { answer: a, raw: r.out, ops: a.ops || [] });
       return fail('the object engine could not answer (exit ' + r.code + '): ' + (r.err.split('\n').filter(l => /§OBJECT FAIL/.test(l)).pop() || r.err || r.out || 'no output').replace(/^§OBJECT FAIL /, ''));
     }
     if (entry.calls.cli === 'erp_cli') {   // exit 0 answered · 3 refused (not found, not offered, the engine said no: an answer) · 1 failed · 2 usage. `next` = the legal actions the engine reports (verbs(ctx))

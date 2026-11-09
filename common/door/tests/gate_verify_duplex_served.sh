@@ -11,4 +11,5 @@ GOT=$(openssl md5 -binary "$D/raw" | base64)
 if [ "$(head -c2 "$D/raw" | xxd -p)" = "1f8b" ]; then gunzip -c "$D/raw" > "$D/served.db"; else cp "$D/raw" "$D/served.db"; fi
 echo "§VERIFY_RAW served bytes md5=$GOT (= gate's served_db) elements=$(sqlite3 -readonly "$D/served.db" 'select count(*) from elements_meta') dictionary_tables=$(sqlite3 -readonly "$D/served.db" "select count(*) from sqlite_master where name='ad_table'")"
 FIXTURE_DB="$D/served.db" node common/door/tests/witness_object_rung1.js
+FIXTURE_DB="$D/served.db" node common/door/tests/witness_object_count.js
 FIXTURE_DB="$D/served.db" node common/door/tests/witness_object_viewer.js

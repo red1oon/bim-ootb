@@ -19,7 +19,11 @@ const OBJECTS = [
   { kind: 'Building', table: 'project_metadata', window: 'Building', desc: 'The building: its project facts (name, source file, import date)', keyFrom: 'key', hv: 'N', cols: { key: 'Fact', value: 'Value' } },
   { kind: 'Storey and Space', table: 'spatial_structure', window: 'Storey and Space', desc: 'A storey or a space of the building', keyFrom: 'guid', hv: 'N' },
   { kind: 'Element', table: 'elements_meta', window: 'Element', desc: 'A building element', keyFrom: 'guid', hv: 'Y', lists: { discipline: 'Model Discipline', ifc_class: 'Model IFC Class' } },
-  { kind: 'Element Transform', table: 'element_transforms', window: 'Element', desc: 'Where an element is: centre, rotation and box (0..1 per element)', keyFrom: 'guid', hv: 'Y', parent: { table: 'elements_meta' }, tabLevel: 1 }
+  { kind: 'Element Transform', table: 'element_transforms', window: 'Element', desc: 'Where an element is: centre, rotation and box (0..1 per element)', keyFrom: 'guid', hv: 'Y', parent: { table: 'elements_meta' }, tabLevel: 1 },
+  // §0.13: a kind that is a SUBSET of another kind's rows is a read-only VIEW registered with IsView='Y' (as legacy registers views). `late` objects take their ids AFTER every earlier id, so the
+  // existing rows of the section never change when a kind is added.
+  { kind: 'Room', table: 'model_room', window: 'Room', desc: 'A room of the building: a space (read-only view of Storey and Space where the class is IfcSpace)', keyFrom: 'guid', hv: 'N', late: true,
+    view: { from: 'spatial_structure', alias: 's', where: "s.type = 'IfcSpace'", derived: [['storey', 'TEXT', '(SELECT p.name FROM spatial_structure p WHERE p.guid = s.parent_guid)']] } }
 ];
 // spatial_structure is created by the patch itself (DROP+CREATE earlier in the same file), so its columns are fixed here from that statement
 const SPATIAL_COLS = [['guid', 'TEXT'], ['type', 'TEXT'], ['name', 'TEXT'], ['parent_guid', 'TEXT'], ['object_type', 'TEXT'], ['predefined_type', 'TEXT'], ['center_x', 'REAL'], ['center_y', 'REAL'], ['center_z', 'REAL'],
@@ -39,6 +43,7 @@ const ins = (table, row) => { const k = Object.keys(row); return 'INSERT OR IGNO
   // physical columns of an object: from the first source that has the table, else (spatial_structure) the patch's own statement
   function physCols(o) {
     for (const db of dbs) { const r = rows(db, 'PRAGMA table_info(' + o.table + ')'); if (r.length) return r.map((c) => ({ name: c[1], type: c[2], notnull: c[3], pk: c[5] })).filter((c) => !/_uu$/i.test(c.name)); }
+    if (o.view) { if (o.view.from !== 'spatial_structure') throw new Error('a view over ' + o.view.from + ' is not supported yet'); return SPATIAL_COLS.map(([n, t]) => ({ name: n, type: t, notnull: 0, pk: 0 })).concat(o.view.derived.map(([n, t]) => ({ name: n, type: t, notnull: 0, pk: 0, derived: true }))); }
     if (o.table === 'spatial_structure') return SPATIAL_COLS.map(([n, t]) => ({ name: n, type: t, notnull: 0, pk: 0 }));
     throw new Error('no source has table ' + o.table);
   }
@@ -46,25 +51,31 @@ const ins = (table, row) => { const k = Object.keys(row); return 'INSERT OR IGNO
   // ── ids in the band ──
   let nextId = BAND0; const take = () => { const v = nextId++; if (v > BAND1) throw new Error('model band exhausted'); return v; };
   const out = [], T = [], C = [], R = [], L = [], W = [], TB = [], F = [];
-  const alters = [];
+  const alters = [], views = [];
   const winIds = {}, tabIds = {}, tblIds = {}, colIds = {};
   // seed DDL of the dictionary tables themselves (exact statements of the ERP seed: one schema, never hand-copied)
   const seed = new SQL.Database(fs.readFileSync(path.join(__dirname, '..', 'erp', 'ad_seed.db')));
   const ddl = ['AD_Table', 'AD_Column', 'AD_Reference', 'AD_Ref_List', 'AD_Window', 'AD_Tab', 'AD_Field', 'ad_attachment'].map((n) => { const r = rows(seed, "SELECT sql FROM sqlite_master WHERE type='table' AND lower(name)=lower('" + n + "')"); if (!r.length) throw new Error('seed has no ' + n); return r[0][0].replace(/^CREATE TABLE (IF NOT EXISTS )?/, 'CREATE TABLE IF NOT EXISTS ').replace(/\n/g, ' ') + ';'; });
   const listRefs = {};
-  OBJECTS.forEach((o) => {
+  let seqT = 0;
+  const build = (OBJS) => {
+  const newWins = [];
+  OBJS.forEach((o) => {
     o.id = take(); tblIds[o.table] = o.id;
-    if (!winIds[o.window]) winIds[o.window] = take();
+    if (!winIds[o.window]) { winIds[o.window] = take(); newWins.push(o.window); }
   });
-  OBJECTS.forEach((o) => {
+  OBJS.forEach((o) => {
     o.phys = physCols(o); o.uuCol = o.table + '_uu';
     // generated columns: the key (always), and for a child the link to its parent's key
-    alters.push('ALTER TABLE ' + o.table + ' ADD COLUMN ' + o.uuCol + ' TEXT GENERATED ALWAYS AS (' + o.keyFrom + ') VIRTUAL;');
+    if (o.view) {
+      const A = o.view.alias, sel = [A + '.' + o.keyFrom + ' AS ' + o.uuCol].concat(o.phys.filter((c) => !c.derived).map((c) => A + '.' + c.name), o.view.derived.map(([n, t, sql]) => sql + ' AS ' + n));
+      views.push('DROP VIEW IF EXISTS ' + o.table + ';', 'CREATE VIEW ' + o.table + ' AS SELECT ' + sel.join(', ') + ' FROM ' + o.view.from + ' ' + A + ' WHERE ' + o.view.where + ';');
+    } else alters.push('ALTER TABLE ' + o.table + ' ADD COLUMN ' + o.uuCol + ' TEXT GENERATED ALWAYS AS (' + o.keyFrom + ') VIRTUAL;');
     if (o.parent) alters.push('ALTER TABLE ' + o.table + ' ADD COLUMN ' + o.parent.table + '_uu TEXT GENERATED ALWAYS AS (' + o.keyFrom + ') VIRTUAL;');
-    T.push(Object.assign({ ad_table_id: o.id, name: o.kind, description: o.desc, tablename: o.table, isview: 'N', accesslevel: '3', ad_window_id: winIds[o.window], isdeleteable: 'N', ishighvolume: o.hv,
-      ischangelog: 'Y', replicationtype: 'L', iscentrallymaintained: 'Y', ad_table_uu: uu('ad_table:' + o.table) }, STD));
+    T.push(Object.assign({ ad_table_id: o.id, name: o.kind, description: o.desc, tablename: o.table, isview: o.view ? 'Y' : 'N', accesslevel: '3', ad_window_id: winIds[o.window], isdeleteable: 'N', ishighvolume: o.hv,
+      ischangelog: o.view ? 'N' : 'Y', replicationtype: 'L', iscentrallymaintained: 'Y', ad_table_uu: uu('ad_table:' + o.table) }, STD));
     const cols = [];
-    o.phys.forEach((c) => cols.push({ name: c.name, type: c.type, mandatory: c.notnull || c.pk ? 'Y' : 'N', key: false, parent: false, ro: c.name === o.keyFrom }));
+    o.phys.forEach((c) => cols.push({ name: c.name, type: c.type, mandatory: c.notnull || c.pk ? 'Y' : 'N', key: false, parent: false, ro: !!o.view || c.name === o.keyFrom }));
     cols.push({ name: o.uuCol, type: 'TEXT', mandatory: 'N', key: true, parent: false, ro: true, gen: true });
     if (o.parent) cols.push({ name: o.parent.table + '_uu', type: 'TEXT', mandatory: 'N', key: false, parent: true, ro: true, gen: true });
     o.cols2 = cols;
@@ -83,18 +94,17 @@ const ins = (table, row) => { const k = Object.keys(row); return 'INSERT OR IGNO
       }
       const lbl = (o.cols && o.cols[c.name]) || label(c.name);
       c.id = id; c.ref = ref; c.refVal = refVal; c.label = lbl;
-      C.push(Object.assign({ ad_column_id: id, ad_table_id: o.id, columnname: c.name, name: lbl, description: c.gen ? 'Generated key ' + c.name + ' = ' + o.keyFrom + ' (legacy <Table>_UU rule)' : null, ad_reference_id: ref, ad_reference_value_id: refVal,
+      C.push(Object.assign({ ad_column_id: id, ad_table_id: o.id, columnname: c.name, name: lbl, description: c.gen ? (o.view ? 'Key ' + c.name + ' = ' + o.keyFrom + ' of ' + o.view.from : 'Generated key ' + c.name + ' = ' + o.keyFrom + ' (legacy <Table>_UU rule)') : null, ad_reference_id: ref, ad_reference_value_id: refVal,
         fieldlength: ref === 22 ? 22 : 255, iskey: c.key ? 'Y' : 'N', isparent: c.parent ? 'Y' : 'N', ismandatory: c.mandatory, isupdateable: c.ro ? 'N' : 'Y', isidentifier: (c.name === 'name' || c.name === 'element_name' || c.key) ? 'Y' : 'N',
         seqno: c.name === 'name' || c.name === 'element_name' ? 1 : 0, istranslated: 'N', isencrypted: 'N', isselectioncolumn: 'N', issyncdatabase: 'N', isalwaysupdateable: 'N', isallowlogging: c.gen ? 'N' : 'Y', isallowcopy: 'N',
         ad_column_uu: uu('ad_column:' + o.table + '.' + c.name), version: 0 }, STD));
     });
   });
-  Object.keys(winIds).forEach((w) => {
-    const first = OBJECTS.filter((o) => o.window === w)[0];
+  newWins.forEach((w) => {
+    const first = OBJS.filter((o) => o.window === w)[0];
     W.push(Object.assign({ ad_window_id: winIds[w], name: w, description: first.desc, windowtype: 'M', issotrx: 'N', isdefault: 'N', ad_window_uu: uu('ad_window:' + w) }, STD));
   });
-  let seqT = 0;
-  OBJECTS.forEach((o) => {
+  OBJS.forEach((o) => {
     const tid = take(); tabIds[o.table] = tid;
     const parentTab = o.parent ? tabIds[o.parent.table] : null;
     TB.push(Object.assign({ ad_tab_id: tid, ad_window_id: winIds[o.window], name: o.kind, description: o.desc, ad_table_id: o.id, seqno: (seqT += 10), tablevel: o.tabLevel || 0, issinglerow: o.parent ? 'Y' : 'N', isinfotab: 'N', istranslationtab: 'N',
@@ -105,11 +115,13 @@ const ins = (table, row) => { const k = Object.keys(row); return 'INSERT OR IGNO
         issameline: 'N', isheading: 'N', isfieldonly: 'N', isencrypted: 'N', ad_field_uu: uu('ad_field:' + o.table + '.' + c.name) }, STD));
     });
   });
+  };
+  build(OBJECTS.filter((o) => !o.late)); build(OBJECTS.filter((o) => o.late));
   const cnt = { ad_table: T.length, ad_column: C.length, ad_reference: R.length, ad_ref_list: L.length, ad_window: W.length, ad_tab: TB.length, ad_field: F.length };
   const body = [BEGIN + ' (generated by scripts/gen_model_dictionary_patch.js; band ' + BAND0 + '-' + BAND1 + '; spec prompts/NEURO_SYMBOLIC_ORDER_CONTRACT.md §0.8) ═══',
     '-- The model carries its own dictionary: the generated <table>_uu keys (legacy MTable.isUUIDKeyTable / PO.getUUIDColumnName) and the AD rows of its own tables. Dictionary rows only; no model data row is touched.',
     '-- A repeated ALTER ... ADD COLUMN raises "duplicate column name"; the shared chunker (viewer/scene.js A._runSqlChunked) skips exactly that error, so the section is idempotent.',
-    ...ddl, ...alters,
+    ...ddl, ...alters, ...views,
     ...R.map((r) => ins('ad_reference', r)), ...L.map((r) => ins('ad_ref_list', r)), ...T.map((r) => ins('ad_table', r)), ...C.map((r) => ins('ad_column', r)),
     ...W.map((r) => ins('ad_window', r)), ...TB.map((r) => ins('ad_tab', r)), ...F.map((r) => ins('ad_field', r)),
     END + ' ═══', ''].join('\n');
@@ -118,5 +130,5 @@ const ins = (table, row) => { const k = Object.keys(row); return 'INSERT OR IGNO
   if (b >= 0 && e > b) cur = cur.slice(0, b) + body + cur.slice(cur.indexOf('\n', e) + 1);
   else cur = cur.replace(/\n*$/, '\n') + '\n' + body;
   fs.writeFileSync(patch, cur);
-  console.log('§OBJ_DICT_GEN patch=' + patch + ' band=' + BAND0 + '..' + (nextId - 1) + ' ' + Object.keys(cnt).map((k) => k + '=' + cnt[k]).join(' ') + ' alters=' + alters.length + ' sources=' + srcs.length + ' bytes=' + body.length);
+  console.log('§OBJ_DICT_GEN patch=' + patch + ' band=' + BAND0 + '..' + (nextId - 1) + ' ' + Object.keys(cnt).map((k) => k + '=' + cnt[k]).join(' ') + ' alters=' + alters.length + ' views=' + views.length / 2 + ' sources=' + srcs.length + ' bytes=' + body.length);
 })().catch((e) => { console.error('§OBJ_DICT_GEN FAILED ' + e.stack); process.exit(1); });

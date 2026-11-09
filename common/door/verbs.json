@@ -823,6 +823,71 @@
    "witness": "common/door/tests/witness_object_rung1.js"
   },
   {
+   "verb": "object.count",
+   "title": "Count the records of a kind",
+   "description": "How many records of a kind a model holds, as its own dictionary names the kind, e.g. how many rooms. Further column=value inputs narrow the count; each column is checked against the kind's properties, and an unknown column is an error that names it. The answer also gives the population (the kind's records with no filter). A kind with no record at all is inconclusive, not zero. Nothing is changed.",
+   "inputs": [
+    {
+     "name": "building",
+     "description": "The building name, e.g. \"Duplex\". Its model must carry its own dictionary (a patch with the object layer).",
+     "required": true,
+     "type": "building",
+     "example": "Duplex"
+    },
+    {
+     "name": "kind",
+     "description": "The kind of object, as the model's dictionary names it, e.g. \"Room\" or \"Element\". An unknown kind is an error that lists the kinds the model registers.",
+     "required": true,
+     "type": "string",
+     "example": "Room"
+    }
+   ],
+   "harm": "read",
+   "calls": {
+    "cli": "object_cli",
+    "who": "the object engine",
+    "argv": [
+     "count",
+     "--building",
+     "{building}",
+     "--kind",
+     "{kind}"
+    ],
+    "rest": {
+     "flag": "--where",
+     "what": "column=value, a property of the kind and the value it must equal"
+    }
+   },
+   "returns": {
+    "shape": "object_cli JSON {kind,table,filters:[{column,value}],count,population,verdict OK|VACUOUS,summary}",
+    "fields": [
+     {
+      "path": "count",
+      "type": "number"
+     },
+     {
+      "path": "population",
+      "type": "number"
+     },
+     {
+      "path": "verdict",
+      "type": "string"
+     },
+     {
+      "path": "kind",
+      "type": "string"
+     }
+    ]
+   },
+   "app": "object",
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "measure": true,
+   "witness": "common/door/tests/witness_object_count.js"
+  },
+  {
    "verb": "erp.find",
    "app": "erp",
    "title": "Find a document",
