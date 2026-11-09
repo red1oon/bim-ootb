@@ -54,6 +54,8 @@ export function plan(trx, params, current) {
   const uom = book.find((b) => tableOfSheet(b.name).toUpperCase() === 'C_UOM'), used = {};
   book.forEach((b) => { const i = b.rows[0].findIndex((h) => String(h).split('>')[0] === 'C_UOM_ID'); if (i >= 0) b.rows.slice(1).forEach((r) => { if (r[i] !== '') used[r[i]] = (used[r[i]] || 0) + 1; }); });
   const answers = {};
+  // H7 (§HARDEN-SPEC): the answer is picked from the units this tenant has (System + own, active) — the generic renderer draws them as a pick list (G-e)
+  const pick = trx.q("SELECT name FROM c_uom WHERE ad_client_id IN (0,?) AND isactive='Y' ORDER BY name", [trx.env.client || 0]).map((r) => r.name);
   Object.keys(used).sort().forEach((u, i) => {
     const key = i + 1, given = cur[key] && cur[key].erpunit != null ? String(cur[key].erpunit).trim() : null;
     const exact = trx.q("SELECT name FROM c_uom WHERE name=? AND ad_client_id IN (0,?) AND isactive='Y'", [u, trx.env.client || 0]);
@@ -62,7 +64,7 @@ export function plan(trx, params, current) {
     if (ans) { const hit = trx.q("SELECT count(*) AS n FROM c_uom WHERE name=? AND ad_client_id IN (0,?) AND isactive='Y'", [ans, trx.env.client || 0])[0].n;
       if (hit === 1) answers[u] = { to: ans }; else note = hit ? 'more than one ERP unit is called "' + ans + '"' : 'no ERP unit is called "' + ans + '"'; }
     else note = 'answer which ERP unit this is';
-    out.units.push({ key, item: 'Unit: ' + u, infile: used[u] + ' product(s)', erpunit: ans, reason: note, selected: true, locked: true, lockedBy: 'a unit is answered, not unticked' });
+    out.units.push({ key, item: 'Unit: ' + u, infile: used[u] + ' product(s)', erpunit: ans, reason: note, selected: true, locked: true, lockedBy: 'a unit is answered, not unticked', options: { erpunit: pick } });
   });
 
   // selection + dependencies (mandatory lookups lock their parent; optional ones are dropped when the parent is unticked)

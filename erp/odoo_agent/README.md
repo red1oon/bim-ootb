@@ -75,3 +75,21 @@ rule the ERP's import uses; every such cell is listed in `manifest.json` → `pa
 many rows Odoo has of each, so the ERP can prove nothing was dropped or made up, and lists under `held` your own
 company and your Odoo users' contact cards — you choose on the summary screen whether to bring them in.
 `provenance.json` maps every sheet row back to its Odoo record. `xlsx.mini.min.js` (SheetJS) is the one helper file it uses.
+
+### Real Odoo data — what the export does for you (§HARDEN-SPEC)
+
+- **Odoo.sh, Odoo Online or any server on https:** `node export.js --url https://mycompany.odoo.com --db mycompany --login me@mycompany.com`.
+  If your Odoo asks for a 2-step code at login, create an **API key** (Odoo: your profile → Account Security → New API Key) and type it when the
+  password is asked. (`agent.js`, the one-order check, still speaks plain http only.)
+- **Several companies:** the export moves ONE Odoo company — the one your login opens on. It ends by naming the others with the exact command
+  for each (`--company <id>`); each one becomes its own ERP company.
+- **Archived records come along INACTIVE** (Odoo's archive = the ERP's Active unticked): an archived customer keeps its contacts, an archived
+  product keeps its stock and vendor prices.
+- **Addresses** are matched by a fixed id made from the Odoo record (the ERP's `C_Location_UU`), so a customer with no street, or two customers
+  on the same street, are fine. An address with no country gets your Odoo company's country (listed in `manifest.json` → `patches`).
+- **Codes the ERP needs unique** (customer reference, product internal reference): if two Odoo records share one, the older keeps it and the
+  other becomes `<code>-<odoo id>`; a code longer than the ERP field is cut and keeps `~<odoo id>`. Every one is listed in `manifest.json` →
+  `renamed`. Other text longer than the ERP field is cut the way iDempiere cuts it (listed under `patches`).
+- **Your Odoo version:** the export reads Odoo 17's field names and checks they exist BEFORE reading anything. On another version it stops,
+  names the missing field, and writes nothing.
+- Needs **Node.js 16 or newer**.

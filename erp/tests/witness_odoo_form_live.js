@@ -68,11 +68,13 @@ var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms);
     // 3 — pick the two files (G-a), see the units as text cells (G-b) and the locked parents (G-c)
     await pg.setInputFiles('[data-gform-param="Files"]', [path.join(FIXD, 'odoo_migration.xlsx'), path.join(FIXD, 'manifest.json')]);
     await pg.waitForFunction(function () { return document.querySelectorAll('[data-gform-row]').length > 10; }, null, { timeout: 60000 }).catch(function () {});
-    var g1 = await pg.evaluate(function () { return { rows: document.querySelectorAll('[data-gform-row]').length, text: document.querySelectorAll('[data-gform-cell-type="string"]').length, locked: document.querySelectorAll('[data-gform-locked] [data-gform-sel]:disabled').length,
+    var g1 = await pg.evaluate(function () { return { rows: document.querySelectorAll('[data-gform-row]').length, text: document.querySelectorAll('[data-gform-cell-type="string"]').length,
+      picks: Array.prototype.map.call(document.querySelectorAll('[data-gform-cell="erpunit"]'), function (i) { var dl = i.list; return dl ? Array.prototype.map.call(dl.options, function (o) { return o.value; }) : null; }), locked: document.querySelectorAll('[data-gform-locked] [data-gform-sel]:disabled').length,
       warn: Array.prototype.map.call(document.querySelectorAll('[data-gform-row]'), function (t) { return t.innerText; }).filter(function (t) { return /⚠/.test(t); }) }; });
     console.log('§OFL grid1 ' + J(g1));
     check('files', logs.some(function (l) { return /§AD-FORM-GENERIC file class=org\.kernel\.odoo\.MigrateFromOdoo param=Files files=\["odoo_migration\.xlsx/.test(l); }), 'the picked files are read on the page (G-a: .xlsx through the vendored SheetJS, .json parsed)', logs.filter(function (l) { return /§AD-FORM-GENERIC file/.test(l); }));
     check('units', g1.text === 3 && g1.warn.some(function (w) { return /Answer the unit/.test(w); }), 'the 3 units are text cells to answer (G-b) and the form says they must be answered', g1);
+    check('picklist', g1.picks.length === 3 && g1.picks.every(function (p) { return p && ['Each', 'Day', 'Hour'].every(function (n) { return p.indexOf(n) >= 0; }); }), '§HARDEN-SPEC H7 / G-e: each unit cell is wired to a pick list of the tenant\'s units (input.list = a datalist holding Each, Day, Hour …)', { picks: (g1.picks || []).map(function (p) { return p && p.length; }) });
     check('locks', g1.locked >= 5, 'parents a ticked sheet needs are drawn locked (G-c)', g1);
     // 4 — answer the units, Refresh (G-d: the typed answers survive the recompute) -> the summary predicts
     await pg.evaluate(function () { var A = { 'Unit: Units': 'Each', 'Unit: Days': 'Day', 'Unit: Hours': 'Hour' };
