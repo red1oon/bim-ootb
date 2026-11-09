@@ -1,0 +1,18 @@
+§W-PROPOSER-GUIDE edit_cli.js from the live site, 12746 bytes, run from /tmp/proposer_guide_80NBqn
+  ✅ G1 the Hospital: its lines, where they came from, no readable material  exit=0 ms=40616
+  ✅ G2 refused: the shift of gx38  exit=3 ms=39091
+  ✅ G3 stopped: the single move of gx38, red, undone, its report inside  exit=3 ms=76570
+  ✅ G4 no red: gx0 outward, and the JSON the guide quotes  exit=0 ms=73644
+  ✅ G5 left behind: the shift of gx67  exit=0 ms=47335
+  ✅ G6 stopped: the shift of gx39, red and left behind  exit=3 ms=54035
+  ✅ G7 stopped: the limit and the bay, the Garage  exit=3 ms=14564
+  ✅ G8 the stop can be turned off, and then the edit stands and is reported  exit=0 ms=68331
+  ✅ P G1 the page prints its command and its numbers
+  ✅ P G2 the page prints its command and its numbers
+  ✅ P G3 the page prints its command and its numbers
+  ✅ P G4 the page prints its command and its numbers
+  ✅ P G5 the page prints its command and its numbers
+  ✅ P G6 the page prints its command and its numbers
+  ✅ P G7 the page prints its command and its numbers
+  ✅ P G8 the page prints its command and its numbers
+§WITNESS_PROPOSER_GUIDE pass=16 fail=0 verdict=PASS
