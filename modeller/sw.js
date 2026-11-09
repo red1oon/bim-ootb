@@ -25,7 +25,7 @@
 // v254 (2026-11-09) §11a on-roof surface = the highest roof-classified element on the deck (disc_walker.js?v=18)
 // v255 (2026-11-09) drawn services reach the film: viewer_db_export.js?v=3 writes drawn_walk_line / drawn_walk_marker
 // v257 (2026-11-09) §NARROW_BUILD the overlap row's real-shape check: common/lib/three-mesh-bvh.module.js + viewer/clash_narrow.js stored for offline; modeller.html?, edit_report.js?v=4, edit_report_panel.js?v=3, edit_shapes.js
-const CACHE_VERSION = 'v261';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v262';   // bump on each deploy; per-change detail is the git commit message.
 const CACHE_PREFIX = 'bim-modeller-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 

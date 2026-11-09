@@ -721,6 +721,7 @@
   // does not have, the row is re-anchored by ORDER: source storey k above ground -> this building's storey group k above ground, keeping its height above
   // its own floor. Groups: this building's stated storey elevations, neighbours closer than half the source's smallest floor-to-floor height are one level
   // (data-derived). Ground: the source's lowest floor; the target group nearest elevation 0.000 (the project datum). Null = rule off, today's path.
+  function window12aOff() { return !!((typeof globalThis !== 'undefined' && globalThis.__dw12aOff) || (ROOT && ROOT.__dw12aOff)); }   // §12a red control for W-BAND-REANCHOR R6 only (pre-§12a target ladder)
   function _reanchorCtx(disc, db, bdb, rows) {
     if (!_hasTable(db, 'rule_storey_floor')) { console.log(TAG + ' §BAND-REANCHOR ' + disc + ' off reason=no-source-floors (no rule_storey_floor in the rules DB)'); return null; }
     var base = function (s) { return String(s || '').split(' (')[0].trim(); };
@@ -739,10 +740,17 @@
     var tol = f2f.length ? Math.min.apply(null, f2f) / 2 : 0;   // single source floor: no grouping (each stated storey its own level), logged as tol=0
     var es = elev.map(function (r) { return { name: r.name, z: +r.z }; }).sort(function (a, b) { return a.z - b.z; }), groups = [];
     es.forEach(function (e) { var g = groups[groups.length - 1]; if (g && e.z - g.zHi < tol) { g.names.push(e.name); g.zHi = e.z; } else groups.push({ names: [e.name], z: e.z, zHi: e.z }); });
+    // §12a (owner 2026-11-09 "Contains a slab"): a target level is a FLOOR only if one of its storeys contains an IfcSlab (the IFC's
+    // own containment, no number). Declared reference levels (top of wall / parapet / a tall element) are dropped, logged notFloor.
+    var slabSt = {}; _rows(bdb, "SELECT DISTINCT storey s FROM elements_meta WHERE ifc_class='IfcSlab' AND storey IS NOT NULL").forEach(function (r) { slabSt[r.s] = 1; });
+    var notFloor = groups.filter(function (g) { return !g.names.some(function (n) { return slabSt[n]; }); });
+    if (window12aOff()) notFloor = [];
+    groups = groups.filter(function (g) { return notFloor.indexOf(g) < 0; });
     var g0 = 0, best = Infinity; groups.forEach(function (g, k) { var d = (g.z <= 0 && g.zHi >= 0) ? 0 : Math.min(Math.abs(g.z), Math.abs(g.zHi)); if (d < best) { best = d; g0 = k; } });
     var map = {}; src.forEach(function (s, k) { var g = groups[g0 + k]; map[s.name] = g ? { tgt: g.names[0], tgtFloor: g.z, names: g.names } : null; });
     console.log(TAG + ' §BAND-REANCHOR ' + disc + ' rulesDb=' + (db._dwFile || '?') + ' foreignRows=' + foreign.length + ' tol=' + tol.toFixed(3) + ' sourceFloors=[' + src.map(function (s) { return s.name + ':' + s.z; }).join(', ') +
-      '] targetGroups=[' + groups.map(function (g, k) { return (k === g0 ? 'GROUND ' : '') + g.z + '..' + g.zHi + ':' + g.names.join('/'); }).join(' | ') + '] map={' + src.map(function (s) { return s.name + '->' + (map[s.name] ? map[s.name].tgt + '@' + map[s.name].tgtFloor : 'none'); }).join(', ') + '}');
+      '] targetGroups=[' + groups.map(function (g, k) { return (k === g0 ? 'GROUND ' : '') + g.z + '..' + g.zHi + ':' + g.names.join('/'); }).join(' | ') + '] notFloor=[' +
+      notFloor.map(function (g) { return g.z + '..' + g.zHi + ':' + g.names.join('/'); }).join(' | ') + '] map={' + src.map(function (s) { return s.name + '->' + (map[s.name] ? map[s.name].tgt + '@' + map[s.name].tgtFloor : 'none'); }).join(', ') + '}');
     return { tol: tol, map: map, forRow: function (r) {
       var b = base(r.storey_scope), ps = parts(b);
       if (!ps.every(function (n) { return !mine[n]; })) return null;   // names a storey of this building: today's path
