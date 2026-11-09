@@ -69,6 +69,7 @@ function verdict(cs) { var c = CASES[cs] || { judged: 0, failed: 0 }, v = !c.jud
   // ═══ LOAD: the SAP form on a born tenant — summary == result, refusals named ═══
   var K = require(path.join(ERP, 'ws_kernel.js')), k = await K.load(), db = k.db, ML = k.ML, AP = require(path.join(ERP, 'ad_process.js'));
   (fs.readFileSync(path.join(ERP, 'idempiere.html'), 'utf8').match(/<script src="(model_[a-z_]+\.js)/g) || []).forEach(function (m) { try { require(path.join(ERP, m.replace('<script src="', ''))); } catch (e) {} });
+  try { require(path.join(ERP, 'processes', 'ImportInventory.js')); } catch (e) { say('§E1-STOCK ImportInventory.js not loadable: ' + e.message); }
   var G = require(path.join(ERP, 'genesis.js')), PR = require(path.join(ERP, 'plugin_registry.js')), AF = require(path.join(ERP, 'ad_form_generic.js'));
   function q(sql, p) { return k.q(sql, p || []); }
   var shim = { prepare: function (sql) { return { all: function () { return q(sql); },
@@ -95,6 +96,8 @@ function verdict(cs) { var c = CASES[cs] || { judged: 0, failed: 0 }, v = !c.jud
   r2.filter(function (r) { return /^⚠|^ALPHA/.test(r.item); }).forEach(function (p) { say('§SAPM-ROW ' + p.item.slice(0, 200)); });
   var res = AF.execute(withT, 'org.kernel.sap.MigrateFromB1', P, cur);
   if (res.ok && res.ops && res.ops.length) k.commit(S, res.ops, { ws: 'sap_migrate' });
+  if (res.ok) { var STK = require(path.join(__dirname, 'opening_stock_check.js'))(q, CID, byT.M_InventoryLine[0], byT.M_InventoryLine.slice(1), say, 'SAP'); STK.judged ? [] : say('§SAPM-STOCK verdict=INCONCLUSIVE nothing judged');
+    STK.judged && check('STOCK', 'opening-stock', 'the opening stock is completed: DocStatus CO, on-hand == QtyCount, m_transaction present (' + STK.judged + ' rules judged, ' + STK.failed + ' failed)', STK.judged > 0 && STK.failed === 0, STK); }
   var C1 = counts(), gain = {}; TABLES.forEach(function (t) { gain[t] = C1[t] - C0[t]; });
   say('§SAPM-RUN ok=' + res.ok + ' ops=' + (res.ops || []).length + ' msg=' + String(res.msg).slice(0, 400) + ' gain=' + J(gain));
   check('LOAD', 'summary==result', 'Process gains exactly what the summary predicted, on every one of the 17 tables (refusals included in the prediction)', res.ok && TABLES.every(function (t) { return gain[t] === predicted[t]; }), { gain: gain, predicted: predicted, msg: String(res.msg).slice(0, 300) });
@@ -103,7 +106,16 @@ function verdict(cs) { var c = CASES[cs] || { judged: 0, failed: 0 }, v = !c.jud
   check('LOAD', 'reasons', 'every refusal in the summary names its reason', sh.every(function (s) { return !s.refused || s.reason; }), sh.filter(function (s) { return s.refused && !s.reason; }));
   var c1 = q("SELECT value, name, iscustomer FROM c_bpartner WHERE ad_client_id=? AND value='c1'", [CID]), its = q("SELECT value FROM m_product WHERE ad_client_id=? AND value IN ('i001','i002','i011') ORDER BY value", [CID]);
   check('LOAD', 'records', "SAP's example customer c1 and items i001 / i002 / i011 are records of the tenant", c1.length === 1 && c1[0].name === 'customer c1' && c1[0].iscustomer === 'Y' && its.length === 3, { c1: c1, its: its });
-  verdict('LOAD');
+  verdict('LOAD'); verdict('STOCK');
+  // SHAPE: the guide's records carry no stock (INCONCLUSIVE above, said so). So the SAP converter's own opening-stock sheets are fed (a test-supplied InStock on ONE item, NOT a guide value) to the
+  //   shared loader's rewrite: they must become the same I_Inventory sheet the BC / Odoo witnesses load and complete - no SAP special case in the loader.
+  var FORM = await import(url.pathToFileURL(path.join(ERP, 'plugins', 'odoo_migrate_form.mjs')).href), exp3 = JSON.parse(JSON.stringify(exp)), wh0 = (exp3.sets.Warehouses || [])[0];
+  if (wh0 && exp3.sets.Items[0]) { exp3.sets.Items[0].ItemWarehouseInfoCollection = [{ WarehouseCode: wh0.WarehouseCode, InStock: 7 }]; wh0.Country = 'MY'; }
+  var c3 = CV.convert(exp3, { cutover: CUT }), st3 = FORM.openingStockSheets(c3.book);
+  say('§SAPM-SHAPE warehouse=' + (wh0 && wh0.WarehouseCode) + ' converter M_InventoryLine rows=' + (c3.book.filter(function (b) { return /M_InventoryLine$/.test(b.name); })[0] || { rows: [] }).rows.length + ' refused=' + J(c3.manifest.refused.filter(function (r) { return /Inventory/.test(r.sheet); })));
+  if (!st3) say('§SAPM-SHAPE verdict=INCONCLUSIVE the converter produced no opening-stock rows for this fixture (warehouse refused?) - nothing judged');
+  else check('SHAPE', 'same-sheet', 'the SAP converter\'s M_Inventory + M_InventoryLine become ONE I_Inventory sheet through the shared rewrite (' + st3.lines + ' line(s), header row ' + J(st3.book.filter(function (b) { return /I_Inventory$/.test(b.name); })[0].rows[0]) + ')', st3.lines === 1 && st3.book.length === c3.book.length - 1, { lines: st3.lines });
+  verdict('SHAPE');
 
   // ═══ ALPHA: the report a tester pastes back holds counts and schema, no customer value ═══
   var rep = CV.alphaReport(c.manifest, res.msg).join('\n'), vals = {};
