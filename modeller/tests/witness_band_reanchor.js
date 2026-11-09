@@ -11,6 +11,7 @@
 //      target's levels map to none (RED: patch off -> absolute bands, nothing re-anchored)
 //   R4 re-anchored + no host -> refused (reanchorNoHost); the SAME devices without the mark keep §10 (unhosted, kept); bound ones take the host's storey
 //   R5 accounting per class: input = bound + unhosted + notJudged + refused
+//   R6 §12a: a declared reference level with walls but no slab is not a floor (notFloor), RED control on the pre-§12a ladder
 // A claim prints INCONCLUSIVE, never PASS, when nothing was judged. Node only, no browser. Usage: node modeller/tests/witness_band_reanchor.js > log 2>&1
 'use strict';
 const fs = require('fs'), path = require('path'), os = require('os'), cp = require('child_process');
@@ -24,7 +25,7 @@ const capture = fn => { const o = console.log; const buf = []; console.log = (..
 const RULES = path.join(M, 'terminal_rules.db'), PATCH = path.join(M, 'patches', 'terminal_rules.db.sql');
 const TERM_X = [path.join(M, '..', 'buildings', 'Terminal_extracted.db'), path.join(os.homedir(), 'bim-ootb', 'buildings', 'Terminal_extracted.db')].find(f => fs.existsSync(f) && fs.statSync(f).size > 1e6);
 
-function fixture(SQL, names) {   // 2 levels, floors 0 and 3.5 m, 20 x 20 m; walls, slabs; ceiling L0 covers x<10 only, ceiling L1 covers all
+function fixture(SQL, names, ref) {   // ref = [name, z]: a declared reference level holding walls but NO slab (§12a R6)   // 2 levels, floors 0 and 3.5 m, 20 x 20 m; walls, slabs; ceiling L0 covers x<10 only, ceiling L1 covers all
   const db = new SQL.Database();
   db.run('CREATE TABLE elements_meta(guid TEXT PRIMARY KEY, ifc_class TEXT, storey TEXT, discipline TEXT, element_name TEXT, material_name TEXT, material_rgba TEXT, building TEXT)');
   db.run('CREATE TABLE element_transforms(guid TEXT PRIMARY KEY, center_x REAL, center_y REAL, center_z REAL, rotation_x REAL, rotation_y REAL, rotation_z REAL, bbox_x REAL, bbox_y REAL, bbox_z REAL, transform_source TEXT)');
@@ -37,6 +38,7 @@ function fixture(SQL, names) {   // 2 levels, floors 0 and 3.5 m, 20 x 20 m; wal
   });
   add('IfcCovering', names[0], [5, 10, 3.0], [10, 20, 0.05]);    // L0 ceiling, half the plan
   add('IfcCovering', names[1], [10, 10, 6.6], [20, 20, 0.05]);   // L1 ceiling, the whole plan
+  if (ref) { add('IfcWall', ref[0], [10, 0, ref[1] + 0.5], [20, 0.2, 1.0]); db.run('INSERT INTO storey_elevation VALUES(?,?)', [ref[0], ref[1]]); }
   return db;
 }
 (async () => {
@@ -68,6 +70,20 @@ function fixture(SQL, names) {   // 2 levels, floors 0 and 3.5 m, 20 x 20 m; wal
     const multi = raRows.filter(l => /reason=multi-storey/.test(l)).length, none = raRows.filter(l => /reason=no storey of this building/.test(l)).length;
     ok('R3b a multi-storey scope is not placed; storeys past the target\'s two levels map to none', multi >= 1 && none >= 1 && /Aras 02->none/.test(map), 'multi=' + multi + ' noTarget=' + none);
     ok('R3c RED: patch off -> rule off, logged, nothing re-anchored', /§BAND-REANCHOR FP off reason=no-source-floors/.test(off.log.join('\n')) && !(off.r.placements || []).some(p => p.reanchor), 'off placements=' + (off.r.placements || []).length);
+  }
+  // ── R6 (§12a, owner "Contains a slab"): a declared reference level with walls but no slab is not a floor
+  {
+    const runRef = (off12a) => { globalThis.__dw12aOff = off12a; try { DW.dwOpen(openRules(true)); DW.dwBorrow('FP', null); const bdb = fixture(SQL, ['L0', 'L1'], ['REF', 7.0]);
+      return capture(() => DW.__test.placeMeasured('FP', bdb, {})); } finally { globalThis.__dw12aOff = false; } };
+    const a = runRef(false), b = runRef(true);
+    const ma = a.log.find(l => /§BAND-REANCHOR FP /.test(l)) || '', mb = b.log.find(l => /§BAND-REANCHOR FP /.test(l)) || '';
+    const raA = (a.r.placements || []).filter(p => p.reanchor && p.storey === 'REF').length, raB = (b.r.placements || []).filter(p => p.reanchor && p.storey === 'REF').length;
+    console.log('  R6 on : ' + ma.slice(ma.indexOf('targetGroups'), ma.indexOf('targetGroups') + 300));
+    console.log('  R6 red: ' + mb.slice(mb.indexOf('targetGroups'), mb.indexOf('targetGroups') + 300));
+    ok('R6a a reference level with no slab is logged notFloor and receives nothing; the third source floor maps to none', /notFloor=\[7\.\.7:REF\]/.test(ma) && /->none/.test(ma) && raA === 0, 'placed on REF=' + raA);
+    const rowsB = b.log.filter(l => /§BAND-REANCHOR-ROW FP/.test(l) && /target=REF@/.test(l)).length, rowsA = a.log.filter(l => /§BAND-REANCHOR-ROW FP/.test(l) && /target=REF@/.test(l)).length;
+    ok('R6b RED: the pre-§12a ladder maps a source floor onto the reference level (the walk\'s own map; rows targeting it on/red=' + rowsA + '/' + rowsB + ')', /->REF@7/.test(mb) && !/->REF@/.test(ma) && rowsA === 0, 'placed on REF on/red=' + raA + '/' + raB + ' (this fixture\'s FP rows at that source floor: ' + rowsB + ')');
+    ok('R6c the slab-holding levels stay targets (L0 ground, L1 next)', /GROUND 0\.\.0:L0/.test(ma) && /3\.5\.\.3\.5:L1/.test(ma), ma.slice(ma.indexOf('map='), ma.indexOf('map=') + 160));
   }
   // ── R4 + R5: the host pass on the same devices
   DW.dwOpen(openRules(true)); DW.dwBorrow('FP', null);
