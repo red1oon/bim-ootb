@@ -10,10 +10,10 @@ The ERP's DocActions and processes from the application dictionary (`erp/ad_seed
 | **N** (N_doc + N_proc) | 1156 |
 | N_doc = 54 document tables × 13 DocActions + 1 plugin table(s) × their family's offered actions | 704 |
 | N_proc = active AD_Process rows (25 inactive, not in N) | 452 |
-| (b) doc pairs with a registered handler | 65 |
-| (b) processes whose resolved class name has a handler | 37 |
+| (b) doc pairs with a registered handler | 67 |
+| (b) processes whose resolved class name has a handler | 38 |
 | of which from built-in plugins (doc pairs / processes) | 2 / 1 |
-| NOT IMPLEMENTED (doc / process) | 639 / 415 |
+| NOT IMPLEMENTED (doc / process) | 637 / 414 |
 | handlers without a dictionary row (doc / process) | 1 / 0 |
 | **(c) X offered to actors** | 0 |
 
@@ -23,7 +23,7 @@ Basis for X: erp/actor_verbs.json does not exist: no verb list is offered to act
 
 ## Built-in plugins counted (source column below)
 
-The dictionary rows each BUILT-IN plugin (`erp/plugin_overlay.js` BUILTINS) stages at activation are staged into the in-memory dictionary by the host's own registry (`stageManifestDictionary` → `ctx.dict.insert`) before counting. ColumnSQL (virtual) columns are properties of a record, not actions: not counted. A plugin's DocAction class and process class are registered through the plugin context (`registerDocAction`, `defineProcess`), not `K.register` / `registerHandler('…')`, so rule (b) does not see them: its rows read NOT IMPLEMENTED until (b) is widened. A plugin document table with a DocAction family counts the family's OFFERED actions only (union of `FAMILY.allow`; owner ruling 2026-11-09: RE is set by a newer revision, never offered), not the 13 of reference 135; a seed table counts all 13.
+The dictionary rows each BUILT-IN plugin (`erp/plugin_overlay.js` BUILTINS) stages at activation are staged into the in-memory dictionary by the host's own registry (`stageManifestDictionary` → `ctx.dict.insert`) before counting. ColumnSQL (virtual) columns are properties of a record, not actions: not counted. A plugin's DocAction class and process class are registered through the plugin context (`registerDocAction`, `defineProcess`), not `K.register` / `registerHandler('…')`; rule (b) also reads those two calls in the staged plugin files (a DocAction class implements an action when it has the action's method; a process class by its class name), evidence file:line. A plugin document table with a DocAction family counts the family's OFFERED actions only (union of `FAMILY.allow`; owner ruling 2026-11-09: RE is set by a newer revision, never offered), not the 13 of reference 135; a seed table counts all 13.
 
 | plugin | file | rows staged | new processes | new document tables | doc pairs | family offers | ColumnSQL properties (not counted) |
 |---|---|---:|---|---|---:|---|---:|
@@ -48,10 +48,10 @@ The dictionary rows each BUILT-IN plugin (`erp/plugin_overlay.js` BUILTINS) stag
 |---|---|---|---|---|---:|
 | `AP` | Approve | writes | changes DocStatus/DocAction/Processed only (erp/ad_docfsm.js TRANSITION) | yes | 5 |
 | `CL` | Close | writes | changes DocStatus/DocAction/Processed only (erp/ad_docfsm.js TRANSITION) | yes | 5 |
-| `CO` | Complete | posts | Complete posts the document to the books (DocumentEngine ACTION_Complete → Doc.post) | yes | 5 |
+| `CO` | Complete | posts | Complete posts the document to the books (DocumentEngine ACTION_Complete → Doc.post) | yes | 6 |
 | `IN` | Invalidate | writes | changes DocStatus/DocAction/Processed only (erp/ad_docfsm.js TRANSITION) | yes | 5 |
 | `PO` | Post | posts | Post writes Fact_Acct (DocumentEngine ACTION_Post) | yes | 5 |
-| `PR` | Prepare | writes | changes DocStatus/DocAction/Processed only (erp/ad_docfsm.js TRANSITION) | yes | 5 |
+| `PR` | Prepare | writes | changes DocStatus/DocAction/Processed only (erp/ad_docfsm.js TRANSITION) | yes | 6 |
 | `RA` | Reverse - Accrual | posts | Reverse-Accrual posts a reversing document (DocumentEngine ACTION_Reverse_Accrual) | yes | 5 |
 | `RC` | Reverse - Correct | posts | Reverse-Correct posts a reversing document (DocumentEngine ACTION_Reverse_Correct) | yes | 5 |
 | `RE` | Re-activate | writes | changes DocStatus/DocAction/Processed only (erp/ad_docfsm.js TRANSITION) | yes | 5 |
@@ -70,7 +70,7 @@ The dictionary rows each BUILT-IN plugin (`erp/plugin_overlay.js` BUILTINS) stag
 | `A_Asset_Reval` | seed | **NOT IMPLEMENTED** | — |
 | `A_Asset_Transfer` | seed | **NOT IMPLEMENTED** | — |
 | `A_Depreciation_Entry` | seed | **NOT IMPLEMENTED** | — |
-| `BIM_Document` | plugin bim_document | **NOT IMPLEMENTED** | — |
+| `BIM_Document` | plugin bim_document | CO PR | `erp/plugins/bim_document.mjs:253 (plugin bim_document)` |
 | `C_AllocationHdr` | seed | **NOT IMPLEMENTED** | — |
 | `C_BankStatement` | seed | **NOT IMPLEMENTED** | — |
 | `C_BankTransfer` | seed | **NOT IMPLEMENTED** | — |
@@ -128,7 +128,7 @@ The dictionary rows each BUILT-IN plugin (`erp/plugin_overlay.js` BUILTINS) stag
 
 Class rules (first match wins): **sends** ← class/name says it mails or notifies (`mail|notice|\brequest\b|mailing|\bsms\b|broadcast`); **posts** ← class/name says it posts, allocates, costs or generates documents (`fact_?acct|\bposting\b|\bpost\b|doc\.?post|invoicegenerate|allocat|bankstatementpayment|paymentgenerate|payselect|paymentprint|costing|inventorycount|imputation|storageclean|periodclose|openclose|reval`); IsReport=Y → **read**; else **writes**, basis "no rule matched, assumed writes".
 
-Classes: read 110, writes 312, posts 21, sends 9. Implemented 37 of 452.
+Classes: read 110, writes 312, posts 21, sends 9. Implemented 38 of 452.
 
 | id | source | value | name | class name → resolved | handler | class | basis |
 |---:|---|---|---|---|---|---|---|
@@ -583,7 +583,7 @@ Classes: read 110, writes 312, posts 21, sends 9. Implemented 37 of 452.
 | 200157 | seed | AD_Table CreatePartition | Create/Update Table Partition | `org.idempiere.tablepartition.process.CreatePartition` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 200158 | seed | DetachOrReAttachPartition | Detach/re-attach Table Partition | `org.idempiere.tablepartition.process.ChangePartitionStatus` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 200162 | seed | CustomizeGridViewWindowCustomization | Customize Grid View | — | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
-| 9541001 | plugin bim_document | BIM_Document_Open | Open in Modeller / Viewer | `org.kernel.bim.process.BIMDocumentOpen` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
+| 9541001 | plugin bim_document | BIM_Document_Open | Open in Modeller / Viewer | `org.kernel.bim.process.BIMDocumentOpen` | `erp/plugins/bim_document.mjs:259 (plugin bim_document)` | writes | no rule matched, assumed writes |
 
 ## DYNAMIC process registrations (NOT COUNTED)
 
