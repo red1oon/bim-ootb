@@ -10,6 +10,7 @@
  * Falsifier: --drop bim_mcp.js-less list is not needed; D3 is the falsifier (a connector that starts without its file fails D3).
  */
 'use strict';
+require('dns').setDefaultResultOrder('ipv4first');   // a machine with no IPv6 route made Node's fetch time out on github.io's AAAA record (curl falls back, Node does not): a false INCONCLUSIVE, 2026-11-09
 const fs = require('fs'), os = require('os'), path = require('path'), http = require('http'), https = require('https'), { spawn } = require('child_process');
 const { kit, ROOT } = require('./_kit');
 const k = kit('W-MCP-DOWNLOAD'), LOCAL = process.argv.indexOf('--local') >= 0;

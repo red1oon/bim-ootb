@@ -22,7 +22,7 @@ const ROOT = path.join(__dirname, '..', '..');
 const LIVE = 'https://red1oon.github.io/bim-ootb/';
 const FILES = {   // name -> [repo path from the repo root, name beside door.js]
   'door.js': ['common/door/door.js'], 'verbs.json': ['common/door/verbs.json'], 'edit_cli.js': ['modeller/tools/edit_cli.js'],
-  'bim_mcp.js': ['modeller/tools/bim_mcp.js'], 'viewer_verbs.js': ['viewer/tools/viewer_verbs.js'], 'film_path_vis.js': ['viewer/tools/film_path_vis.js']
+  'bim_mcp.js': ['modeller/tools/bim_mcp.js'], 'viewer_verbs.js': ['viewer/tools/viewer_verbs.js'], 'film_path_vis.js': ['viewer/tools/film_path_vis.js'], 'object_cli.js': ['common/door/object_cli.js']
 };
 function locate(name) {
   const beside = path.join(__dirname, name), repo = path.join(ROOT, FILES[name][0]);
@@ -31,7 +31,7 @@ function locate(name) {
 const curlFor = (names) => names.map(n => 'curl -O ' + LIVE + FILES[n][0]).join('\n');
 function missingFiles(names) { return names.filter(n => !fs.existsSync(locate(n))); }
 // The ONLY programs a verb may call. A vocabulary entry names one of these keys; it never names a path or a program (W-VOCAB-NOESCAPE).
-const CLI_TABLE = { edit_cli: locate('edit_cli.js'), viewer_verbs: locate('viewer_verbs.js'), film_path_vis: locate('film_path_vis.js') };
+const CLI_TABLE = { edit_cli: locate('edit_cli.js'), viewer_verbs: locate('viewer_verbs.js'), film_path_vis: locate('film_path_vis.js'), object_cli: locate('object_cli.js') };
 const HARM = ['read', 'trial', 'writes', 'posts', 'sends'];
 const STATUS = ['ok', 'refused', 'claim', 'error', 'inconclusive'];
 // §0.6 detail 4. Only the local actors are wired; any other name (email, mobile, device, an outside system) has no proof here: read only, the rest is a claim.
@@ -259,7 +259,7 @@ function createDoor(opts) {
   const newId = () => 'd-' + Date.now().toString(36) + '-' + process.pid + '-' + (++seq);
 
   function envelope(base, status, o) {
-    const e = { request: base.request, verb: base.verb, actor: base.actor, status, answer: o.answer === undefined ? null : o.answer, why: o.why || null, notChecked: o.notChecked || [], ops: [], next: [], ms: Date.now() - base.t0 };
+    const e = { request: base.request, verb: base.verb, actor: base.actor, status, answer: o.answer === undefined ? null : o.answer, why: o.why || null, notChecked: o.notChecked || [], ops: o.ops || [], next: [], ms: Date.now() - base.t0 };
     Object.defineProperty(e, '_raw', { value: o.raw === undefined ? null : o.raw, enumerable: false });
     return e;
   }
@@ -297,6 +297,11 @@ function createDoor(opts) {
         return envelope(base, inc ? 'inconclusive' : 'ok', { answer: a, raw: r.out, why: inc ? ((a.log || []).filter(l => /verdict=INCONCLUSIVE/.test(l))[0] || 'nothing was judged') : null, notChecked: nc });
       }
       return fail('the Viewer could not answer (exit ' + r.code + '): ' + (r.err || r.out || 'no output').split('\n').slice(-3).join(' '));
+    }
+    if (entry.calls.cli === 'object_cli') {   // exit 0 answered · 3 refused (a dictionary rule or a missing record: an answer) · 1 failed (unknown kind, no dictionary) · 2 usage
+      const a = parse();
+      if ((r.code === 0 || r.code === 3) && a !== undefined) return r.code === 3 ? envelope(base, 'refused', { answer: a, raw: r.out, why: a.reason || 'refused' }) : envelope(base, 'ok', { answer: a, raw: r.out, ops: a.ops || [] });
+      return fail('the object engine could not answer (exit ' + r.code + '): ' + (r.err.split('\n').filter(l => /§OBJECT FAIL/.test(l)).pop() || r.err || r.out || 'no output').replace(/^§OBJECT FAIL /, ''));
     }
     return fail('no result mapping for ' + entry.calls.cli);
   }
