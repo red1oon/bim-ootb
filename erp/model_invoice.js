@@ -734,6 +734,42 @@
   };
   // new MInvoice(ctx, 0, trx) :438-465 — setInitialDefaults via MODEL.c_invoice.initialDefaults; DateInvoiced/DateAcct = today (the recorded clock)
   S.MInvoice_new = function (trx) { var inv = MLo.newRecord(trx, 'c_invoice', {}); inv.set('dateinvoiced', trx.env.date).set('dateacct', trx.env.date); return inv; };
+  // MInvoice.beforeSave (new record) :1144-1283 - the steps that change a record built like ImportInvoice builds it (new MInvoice(ctx,0,trx) + plain setters + saveEx). The twin's model layer registers only the
+  //   doc-type-0 step for c_invoice (above) and the older AD_ModelValidator bridge hooks (ad_modelval.js installMInvoiceSaveHooks) run on the CRUD path, not on ML.save, so a process that saves a header gets
+  //   no currency / price list / payment term unless it calls this (the MOrder twin of this is model_order.js MOrder_beforeSaveNew). NOT ported here (named): :1211-1217 cash plan line (no table in the seed),
+  //   :1219-1239 / :1242-1254 are update-only (not a new record).
+  S.MInvoice_beforeSaveNew = function (trx, inv, ctx) {
+    var Env = A().Env, C = CT();
+    if (!nz(inv.get('c_bpartner_location_id'))) { var bp = trx.get('c_bpartner', inv.get('c_bpartner_id')); if (bp) C.invSetBPartner(trx, inv, bp); }      // :1147-1149 setBPartner(new MBPartner(...))
+    if (!nz(inv.get('m_pricelist_id'))) {                                                                                                                    // :1151-1169 default price list
+      var ii = Env.getContextAsInt(ctx, '#M_PriceList_ID');
+      if (ii !== 0) { var pl = trx.get('m_pricelist', ii); if (pl && Y(inv.get('issotrx')) === Y(pl.issopricelist)) inv.set('m_pricelist_id', ii); }
+      if (!nz(inv.get('m_pricelist_id'))) {
+        var r = trx.q("SELECT m_pricelist_id AS p FROM m_pricelist WHERE ad_client_id=? AND issopricelist=? AND isactive='Y' ORDER BY isdefault DESC, m_pricelist_id", [inv.get('ad_client_id'), Y(inv.get('issotrx')) ? 'Y' : 'N'])[0];
+        if (r && r.p) inv.set('m_pricelist_id', r.p);
+      }
+    }
+    if (!nz(inv.get('c_currency_id'))) {                                                                                                                     // :1171-1180 currency of the price list, else the context's
+      var cr = nz(inv.get('m_pricelist_id')) ? trx.q('SELECT c_currency_id AS c FROM m_pricelist WHERE m_pricelist_id=?', [inv.get('m_pricelist_id')])[0] : null;
+      if (cr && cr.c) inv.set('c_currency_id', cr.c); else inv.set('c_currency_id', Env.getContextAsInt(ctx, '$C_Currency_ID'));
+    }
+    if (!nz(inv.get('salesrep_id'))) { var sr = Env.getContextAsInt(ctx, '#SalesRep_ID'); if (sr !== 0) inv.set('salesrep_id', sr); }                         // :1183-1188
+    if (!nz(inv.get('c_doctype_id'))) inv.set('c_doctype_id', 0);                                                                                            // :1190-1191
+    if (!nz(inv.get('c_doctypetarget_id'))) C.invSetDocTypeTargetBase(trx, inv, Y(inv.get('issotrx')) ? 'ARI' : 'API');                                      // :1192-1193
+    if (!nz(inv.get('c_paymentterm_id'))) {                                                                                                                  // :1196-1209 default payment term
+      var pt = Env.getContextAsInt(ctx, '#C_PaymentTerm_ID');
+      if (pt === 0) { var d = trx.q("SELECT c_paymentterm_id AS p FROM c_paymentterm WHERE ad_client_id=? AND isdefault='Y' AND isactive='Y'", [inv.get('ad_client_id')])[0]; pt = d && d.p ? Number(d.p) : 0; }
+      if (pt !== 0) inv.set('c_paymentterm_id', pt);
+    }
+    if (!Y(inv.get('processed'))) {                                                                                                                          // :1256-1283 primary-schema FX override gate
+      var s1 = trx.q('SELECT c_acctschema1_id AS s FROM ad_clientinfo WHERE ad_client_id=?', [inv.get('ad_client_id')])[0];
+      var sc = s1 ? trx.q('SELECT c_currency_id AS c FROM c_acctschema WHERE c_acctschema_id=?', [s1.s])[0] : null;
+      if (sc && Number(sc.c) !== nz(inv.get('c_currency_id'))) {
+        if (Y(inv.get('isoverridecurrencyrate'))) { if (!(Number(inv.get('currencyrate')) > 0)) throw new Error('FillMandatory CurrencyRate'); }
+        else inv.set('currencyrate', null);
+      } else inv.set('currencyrate', null);
+    }
+  };
   // MInvoiceLine.setTax(): the ONE port is ilSetTax above (:499-528); the process helper form
   S.MInvoiceLine_setTax = function (trx, ctx, line, inv) { return ilSetTax(trx, ctx, line, inv); };
   // MInvoiceLine.beforeSave :928-934 default UOM (MUOM.getDefault_UOM_ID :90-97) — the shared line hook only derives the UOM from a product
