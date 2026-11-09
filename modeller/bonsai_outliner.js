@@ -341,19 +341,21 @@
       const cat = this._categories.find(c => c.key === catKey);
       if (!cat || !(window.Bonsai && window.Bonsai.selectMany)) return;
       const fidByGuid = (typeof window !== 'undefined' && window.__arcFidByGuid) || {};
-      const ids = [], seen = new Set();
+      const ids = [], seen = new Set(), inst = [];
       const push = id => {
         let num = +id;
         if (isNaN(num) && fidByGuid[id] != null) num = +fidByGuid[id];
         if (!isNaN(num) && !seen.has(num)) { seen.add(num); ids.push(num); }
       };
       if (cat.tree) {
-        const walk = n => { if (n.kind === 'element') push(n.id); (n.children || []).forEach(walk); };
+        const walk = n => { if (n.kind === 'element') { if (n.dwp) inst.push(n.dwp); else push(n.id); } (n.children || []).forEach(walk); };
         (this._lastRoots[cat.key] || []).forEach(walk);
       } else {
         const ops = (window.Bonsai.oplog && window.Bonsai.oplog.db) ? window.Bonsai.oplog._geomOps() : [];
         ops.filter(cat.match).map(cat.node).forEach(n => push(n.id));
       }
+      // §TYPESET: a walked-instance set (no featureIds) selects + frames through selectInstanceSet
+      if (!ids.length && inst.length && window.Bonsai.selectInstanceSet) { window.Bonsai.selectInstanceSet(inst, 'cat:' + catKey); console.log(TAG + ' §OLGROUPSELECT cat=' + catKey + ' inst=' + inst.length); return; }
       if (!ids.length) { console.log(TAG + ' §OLGROUPSELECT cat=' + catKey + ' n=0 (no selectable leaves — no-op)'); return; }
       window.Bonsai.selectMany(ids);
       console.log(TAG + ' §OLGROUPSELECT cat=' + catKey + ' n=' + ids.length);
@@ -380,14 +382,16 @@
       const node = this._findNode(catKey, nodeId);
       if (!node || !(window.Bonsai && window.Bonsai.selectMany)) return;
       const fidByGuid = (typeof window !== 'undefined' && window.__arcFidByGuid) || {};
-      const ids = [], seen = new Set();
+      const ids = [], seen = new Set(), inst = [];
       const push = id => {
         let num = +id;
         if (isNaN(num) && fidByGuid[id] != null) num = +fidByGuid[id];
         if (!isNaN(num) && !seen.has(num)) { seen.add(num); ids.push(num); }
       };
-      const walk = n => { if (n.kind === 'element') push(n.id); (n.children || []).forEach(walk); };
+      const walk = n => { if (n.kind === 'element') { if (n.dwp) inst.push(n.dwp); else push(n.id); } (n.children || []).forEach(walk); };
       walk(node);
+      // §TYPESET (MODELLER_ZOOM_TO_SELECTION.md §TYPESET): a walked TYPE row (dwc|/dwg|…) selects + frames its instance set
+      if (!ids.length && inst.length && window.Bonsai.selectInstanceSet) { window.Bonsai.selectInstanceSet(inst, nodeId); console.log(TAG + ' §OLSUBTREE-SELECT node=' + String(nodeId).slice(0, 40) + ' inst=' + inst.length); return; }
       if (!ids.length) { console.log(TAG + ' §OLSUBTREE-SELECT node=' + nodeId + ' n=0 (no selectable leaves — no-op)'); return; }
       window.Bonsai.selectMany(ids);
       console.log(TAG + ' §OLSUBTREE-SELECT node=' + nodeId + ' n=' + ids.length);
@@ -456,10 +460,13 @@
 
       // ── SEEDED TREE section (ARC LEADS, W-UX-3) — re-rendered only when its HTML actually changes ──────────
       let treesHtml = '';
+      const grown = [];   // §TYPESET GAP 2: revealOnGrow categories whose leaf count rose this paint
+      this._grow = this._grow || {};
       treeCats.forEach(cat => {
         // §I5: a hideWhenEmpty category with an empty fold contributes NOTHING (no dead header pre-walk)
-        if (cat.hideWhenEmpty && !(this._lastRoots[cat.key] || []).length) return;
+        if (cat.hideWhenEmpty && !(this._lastRoots[cat.key] || []).length) { this._grow[cat.key] = 0; return; }
         const r = this._treeHtml(cat, match); treesHtml += r.html; total += r.total; shown += r.shown;
+        if (cat.revealOnGrow) { if (r.total > (this._grow[cat.key] || 0)) grown.push(cat.key); this._grow[cat.key] = r.total; }
       });
       let treeBuilt = false;
       if (treesHtml !== this._treesCache) {
@@ -519,6 +526,12 @@
 
       // selection highlight (over whichever DOM survived) + footer
       this.setActive(window.Bonsai._selId);
+      // §TYPESET GAP 2 (MODELLER_ZOOM_TO_SELECTION.md §TYPESET): a walk that adds rows scrolls their header into
+      // view, so the user sees the category populate (measured on main: header at y=8159 px, view 84-822 px).
+      grown.forEach(k => {
+        const h = tree.querySelector('#bo-trees [data-tcat="' + k + '"]:not([data-bnode])');
+        if (h && h.scrollIntoView) { h.scrollIntoView({ block: 'start' }); console.log(TAG + ' §OL-REVEAL cat=' + k + ' leaves=' + this._grow[k]); }
+      });
       const foot = this._el.querySelector('#bo-foot');
       const tip = (window.Bonsai.oplog && window.Bonsai.oplog._lastTip) || '';
       let lens = '';
