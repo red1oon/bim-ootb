@@ -25,6 +25,7 @@ function verdict(cs) { var c = CASES[cs] || { judged: 0, failed: 0 }, v = !c.jud
 (async function main() {
   var K = require(path.join(ERP, 'ws_kernel.js')), k = await K.load(), db = k.db, ML = k.ML, AP = require(path.join(ERP, 'ad_process.js'));
   (fs.readFileSync(path.join(ERP, 'idempiere.html'), 'utf8').match(/<script src="(model_[a-z_]+\.js)/g) || []).forEach(function (m) { try { require(path.join(ERP, m.replace('<script src="', ''))); } catch (e) {} });
+  try { require(path.join(ERP, 'processes', 'ImportInventory.js')); } catch (e) { say('§E1-STOCK ImportInventory.js not loadable: ' + e.message); }
   var G = require(path.join(ERP, 'genesis.js')), PR = require(path.join(ERP, 'plugin_registry.js')), AF = require(path.join(ERP, 'ad_form_generic.js')), XLSX = require(path.join(ERP, 'xlsx.mini.min.js'));
   function q(sql, p) { return k.q(sql, p || []); }
   var shim = { prepare: function (sql) { return { all: function () { return q(sql); },
@@ -108,6 +109,12 @@ function verdict(cs) { var c = CASES[cs] || { judged: 0, failed: 0 }, v = !c.jud
   var res = AF.execute(withT, 'org.kernel.odoo.MigrateFromOdoo', files(), cur4);
   say('§OF-RUN ok=' + res.ok + ' ops=' + (res.ops || []).length + ' msg=' + String(res.msg).slice(0, 300));
   if (res.ok && res.ops && res.ops.length) k.commit(S, res.ops, { ws: 'odoo_form' });
+  var r2 = res.ok ? AF.executeAfter(withT, 'org.kernel.odoo.MigrateFromOdoo', files(), cur4) : { ok: false, ops: [], msg: 'stage 1 refused' };
+  if (r2.ok && r2.ops && r2.ops.length) k.commit(S, r2.ops, { ws: 'odoo_form' });
+  say('§OF-AFTER ok=' + r2.ok + ' ops=' + (r2.ops || []).length + ' msg=' + String(r2.msg).slice(0, 300));
+  var wbS = XLSX.read(wbuf), lnName = wbS.SheetNames.filter(function (n) { return /M_InventoryLine$/.test(n); })[0], lnRows = lnName ? XLSX.utils.sheet_to_json(wbS.Sheets[lnName], { header: 1, raw: false, defval: '' }) : [];
+  if (res.ok) { var STK = require(path.join(__dirname, 'opening_stock_check.js'))(q, CID, lnRows[0] || [], lnRows.slice(1), say, 'ODOO'); if (!STK.judged) say('§OF-STOCK verdict=INCONCLUSIVE nothing judged');
+    STK.judged && check('STOCK', 'opening-stock', 'the opening stock is completed: DocStatus CO, on-hand == QtyCount, m_transaction present (' + STK.judged + ' rules judged, ' + STK.failed + ' failed)', STK.judged > 0 && STK.failed === 0, STK); }
   var C1 = counts(), gain = {}; TABLES.forEach(function (t) { gain[t] = C1[t] - C0[t]; });
   var off = TABLES.filter(function (t) { return gain[t] !== predicted[t]; });
   say('§OF-RUN gain ' + J(gain) + ' predicted ' + J(predicted));
@@ -115,7 +122,7 @@ function verdict(cs) { var c = CASES[cs] || { judged: 0, failed: 0 }, v = !c.jud
   check('RUN', 'summary==result', 'W-MIGRATE-SUMMARY: for every one of the 17 tables the tenant gained exactly what the summary predicted (vendor prices 0, unticked)', res.ok && off.length === 0, { off: off.map(function (t) { return t + ' gain ' + gain[t] + ' predicted ' + predicted[t]; }) });
   var r5 = rows(files(), cur4), now = {}; r5.filter(function (r) { return r.key > 100 && r.key < 900; }).forEach(function (s) { now[s.item] = s.intenant; });
   check('RUN', 'after', 'after Process the summary\'s "in this tenant now" shows the new counts (the result screen)', TABLES.every(function (t) { return now[t] === C1[t]; }), { now: now, C1: C1 });
-  verdict('RUN');
+  verdict('RUN'); verdict('STOCK');
 
   // ═══ RERUN: the same files again are refused whole; nothing changes ═══
   var res2 = AF.execute(withT, 'org.kernel.odoo.MigrateFromOdoo', files(), cur4);

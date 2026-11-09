@@ -538,7 +538,7 @@
 <script src="ad_evaluator.js?v=24"></script>
 <script src="ad_docfsm.js?v=1"></script>
 <script src="layered_registry.js?v=1"></script>   <!-- Host work H1: the ONE layering/undo primitive; must load before ad_process / doc_poster / model_layer / ad_callout (they register at load time) -->
-<script src="ad_form_generic.js?v=1"></script>
+<script src="ad_form_generic.js?v=2"></script>
 <script src="ad_lens.js?v=2"></script>
 <script src="ad_modelval.js?v=7"></script>
 <script src="ad_rule.js?v=2"></script><!-- TEAM_REPLICATION_PLUGIN_STUDY §10.8 — stage 3 of the model-validation bus: AD_Table_ScriptValidator rows -> AD_Rule twin:<name> / twin:process:<ref>; attaches to AdModelVal (must load after it) -->
@@ -3892,7 +3892,14 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       if (res.ops && res.ops.length && crud && typeof crud.applyOpGroup === 'function') {
         crud.applyOpGroup(res.ops, function (cr) {
           console.log('§AD-FORM-GENERIC commit class=' + cls + ' ops=' + res.ops.length + ' committed=' + !!(cr && cr.committed) + ' gid=' + (cr && cr.gid) + ' verifyChain=' + (cr && cr.verifyOk ? 'ok' : 'FAIL'));
-          msg.className = 'msg ok'; msg.textContent = res.msg; loadParams(0); loadRows();
+          msg.className = 'msg ok'; msg.textContent = res.msg;
+          // stage 2 (descriptor.after): its own transaction, once stage 1 is committed (AdFormGeneric.executeAfter; e.g. the migration's opening stock = Import Inventory, DocAction CO)
+          var r2 = (cr && cr.committed) ? AF.executeAfter(withT, cls, params, rows) : { ok: true, ops: [], none: true };
+          if (r2 && r2.log) r2.log.forEach(function (l) { console.log(l); });
+          if (r2 && !r2.none) console.log('§AD-FORM-GENERIC after class=' + cls + ' ok=' + !!r2.ok + ' ops=' + (r2.ops || []).length + ' msg=' + JSON.stringify(r2.msg));
+          if (r2 && !r2.ok) { msg.className = 'msg err'; msg.textContent = res.msg + ' ' + (r2.msg || ''); loadParams(0); loadRows(); return; }
+          if (r2 && r2.ops && r2.ops.length) { crud.applyOpGroup(r2.ops, function (cr2) { console.log('§AD-FORM-GENERIC commit-after class=' + cls + ' ops=' + r2.ops.length + ' committed=' + !!(cr2 && cr2.committed)); msg.textContent = res.msg + (r2.msg ? ' ' + r2.msg : ''); loadParams(0); loadRows(); }, r2.observed); return; }
+          loadParams(0); loadRows();
         }, res.observed);
       } else { msg.className = 'msg ok'; msg.textContent = res.msg; }
     });
