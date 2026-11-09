@@ -1,0 +1,10 @@
+§W-VIEWER-ACTIONS PASS VA5 — populations shortcuts=30 direct=20 pills=44 scan_keys=30 scan_pills=44
+§W-VIEWER-ACTIONS PASS VA1 — _shortcuts keys: generator 30, line scan 30 (scene.js:2622-2853)
+§W-VIEWER-ACTIONS PASS VA2 — _actions ids: generator 44, line scan 44 (panels.js:1329-1575)
+§W-VIEWER-ACTIONS PASS VA3a — 19 modifier-key lines in 5 scanned files, uncovered 0
+§W-VIEWER-ACTIONS PASS VA3b — keydown listener files: grep 17, generator 17, unaccounted 0, direct anchors missing 0
+§W-VIEWER-ACTIONS PASS VA4 — two runs identical=true, committed internal/VIEWER_ACTIONS.md current=true
+§W-VIEWER-ACTIONS PASS VA6 — planted key listed=true, PHANTOM A.__vaPlantedNoSuchFn=true, line scan sees it=true
+§W-VIEWER-ACTIONS PASS VA1-RED — VA_BREAK=1 generator lists 29 keys vs line scan 30 → VA1 would FAIL (caught)
+§VIEWER_ACTIONS N_entry=96 N_actions=64 X=1 verbs=2 shortcuts=30 direct=20 pills=46 phantom=0 conflicts=5 listeners=17 unaccounted=0 direct_missing=0
+§W-VIEWER-ACTIONS verdict=PASS fail=0 inconclusive=0

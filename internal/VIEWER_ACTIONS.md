@@ -40,51 +40,51 @@ The pill shows a key that fires nothing, or fires a different action.
 
 | # | source | key | pill | label (the app's own words) | calls → defined at | class | basis | verb |
 |---:|---|---|---|---|---|---|---|---|
-| 1 | `viewer/scene.js:2616` | `+` |  | Zoom In | `_zoomStep` `viewer/scene.js:2437` | view | no gpu/writes/leaves callee found |  |
-| 2 | `viewer/scene.js:2617` | `-` |  | Zoom Out | `_zoomStep` `viewer/scene.js:2437` | view | no gpu/writes/leaves callee found |  |
-| 3 | `viewer/scene.js:2618` | `2` |  |  | `open2DPlans` `viewer/main.js:376` | view | no gpu/writes/leaves callee found |  |
-| 4 | `viewer/scene.js:2624` | `x` |  | Section Cut *(pill section)* | `A.toggleSection` `viewer/tools.js:499` | view | no gpu/writes/leaves callee found |  |
-| 5 | `viewer/scene.js:2635` | `4` |  | 4D / 5D *(pill report)* | `A.export4D5D` `viewer/tools.js:596` | leaves | A.export4D5D: opens boq_charts.html in a new tab (tools.js A.export4D5D, window.open) |  |
-| 6 | `viewer/scene.js:2636` | `f` |  | Find / Navigate *(pill find)* | `A.openFindPanel` `viewer/main.js:290`<br>`A.loadNavigate` `viewer/main.js:155` | view | no gpu/writes/leaves callee found | viewer_counts, viewer_clashes |
-| 7 | `viewer/scene.js:2637` | `j` |  | Road standards *(pill roadstd)* | `A.toggleRoadStandards` `viewer/road_standards.js:127` | view | no gpu/writes/leaves callee found |  |
-| 8 | `viewer/scene.js:2638` | `p` |  | Palette *(pill palette)* | `toggleSunglass` `viewer/tools.js:680` | view | no gpu/writes/leaves callee found |  |
-| 9 | `viewer/scene.js:2639` | `t` |  | Time Machine *(pill tm)* | `toggleTimeMachine` `viewer/tm_lifecycle_api.js:764` | view | no gpu/writes/leaves callee found |  |
-| 10 | `viewer/scene.js:2640` | `z` |  | Page History *(pill docHist)* | `UniversalHistory.toggleOpen` `viewer/universal_history.js:445` | view | no gpu/writes/leaves callee found |  |
-| 11 | `viewer/scene.js:2641` | `w` |  | World History *(pill worldhist)* | `WholeHistory.toggleOpen` `common/whole_history.js:424` | view | no gpu/writes/leaves callee found |  |
-| 12 | `viewer/scene.js:2642` | `l` |  | Fly Tour *(pill fly)* | `toggleFlyAround` `viewer/tour.js:8` | view | no gpu/writes/leaves callee found |  |
-| 13 | `viewer/scene.js:2643` | `o` |  | Nav LOD (large bldgs) *(pill dlodnav)* | `toggleDlodNav` `viewer/dlod_nav.js:2000` | view | no gpu/writes/leaves callee found |  |
-| 14 | `viewer/scene.js:2644` | `v` |  | Sound FX *(pill audio)* | `toggleSfx` `viewer/sfx.js:529` | view | no gpu/writes/leaves callee found |  |
-| 15 | `viewer/scene.js:2645` | `s` |  |  | `A.screenshot` `viewer/tools.js:613` | writes | A.screenshot: downloads a PNG to the user's disk (tools.js A.screenshot, link.download) |  |
-| 16 | `viewer/scene.js:2646` | `n` |  | Night *(pill night)* | `toggleNightMode` `viewer/tools.js:2112` | view | no gpu/writes/leaves callee found |  |
-| 17 | `viewer/scene.js:2647` | `b` |  | Background *(pill background)* | `toggleBackground` `viewer/tools.js:1189` | view | no gpu/writes/leaves callee found |  |
-| 18 | `viewer/scene.js:2648` | `i` |  | Issues *(pill issues)* | `toggleIssues` `viewer/issues.js:243` | view | no gpu/writes/leaves callee found |  |
-| 19 | `viewer/scene.js:2649` | `h` |  | Shadow + Ground *(pill shadow)* | `toggleShadow` `viewer/tools.js:1033` | view | no gpu/writes/leaves callee found |  |
-| 20 | `viewer/scene.js:2650` | `c` |  | Clash Matrix *(pill clash)* | `_blurPanel` `viewer/scene.js:3564`<br>`A._loadClashRules` `viewer/measure.js:76` | view | no gpu/writes/leaves callee found |  |
-| 21 | `viewer/scene.js:2813` | `m` |  | Measure *(pill measure)* | `A.toggleMeasure` `viewer/measure.js:1233` | view | no gpu/writes/leaves callee found |  |
-| 22 | `viewer/scene.js:2827` | `r` |  | Road report *(pill roadreport)* | `A.isCivilModel` `viewer/streaming.js:323`<br>`A.toggleRoadReport` `viewer/road_report.js:153`<br>`_cycleRoom` `viewer/scene.js:2545` | view | no gpu/writes/leaves callee found |  |
-| 23 | `viewer/scene.js:2828` | `a` |  | Reset Camera *(pill cam-reset)* | `resetCamOrbit` `viewer/precision_cam.js:286` | view | no gpu/writes/leaves callee found |  |
-| 24 | `viewer/scene.js:2829` | `q` |  | Auto-Pivot *(pill cam-pivot)* | `toggleCamPivot` `viewer/precision_cam.js:344` | view | no gpu/writes/leaves callee found |  |
-| 25 | `viewer/scene.js:2830` | `Ctrl+S` |  | Save Building *(pill save)* | `A.saveModelDb` `viewer/scene.js:1031` | writes | A.saveModelDb: writes a .db file (pill save: "Save the open building to a .db file") |  |
-| 26 | `viewer/scene.js:2831` | `Ctrl+O` |  | Open Building *(pill open)* | `A.openModelDb` `viewer/scene.js:1637` | leaves | A.openModelDb: native Open dialog, replaces the current scene (pill open) |  |
-| 27 | `viewer/scene.js:2832` | `=` |  | Settings *(pill settings)* | `_openSettingsPanel` `viewer/panels.js:1850` | view | no gpu/writes/leaves callee found |  |
-| 28 | `viewer/scene.js:2837` | `/` |  | Share *(pill share)* | `A.quickShare` `viewer/share.js:636` | leaves | A.quickShare: native share sheet / clipboard (share.js A.quickShare) |  |
-| 29 | `viewer/scene.js:2841` | `'` |  | Hover Name | `A.toggleHoverName` `viewer/hover_name.js:198` | view | no gpu/writes/leaves callee found |  |
-| 30 | `viewer/scene.js:2842` | `.` |  | §S281 P2: ⋯ toggle — prefer the live mobile pill, fall back to legacy overflow | `toggleMobilePill` `viewer/panels.js:2457`<br>`toggleOverflow` `viewer/panels.js:984` | view | no gpu/writes/leaves callee found |  |
-| 31 | `viewer/scene.js:3613` | `Alt+Z` |  | X-Ray / Bbox *(pill xray)* | `A.cycleXrayBboxMode` `viewer/tools.js:454`<br>`S` `common/history_tap.js:190` | view | no gpu/writes/leaves callee found |  |
-| 32 | `viewer/scene.js:3616` | `Alt+S` |  |  | `A.toggleStillRefineUI` `viewer/fx_still_refine.js:1359`<br>`A.toggleStillRefine` `viewer/fx_still_refine.js:1279` | gpu | A.toggleStillRefineUI: Alt+S still: progressive TAA supersample (scene.js Alt+S comment); §19.0 item 4; A.toggleStillRefine: Alt+S still fallback, same pass |  |
-| 33 | `viewer/scene.js:3618` | `Alt+G` |  | GI Preview (AO) *(pill gi-preview)* | `A.toggleGIPreview` `viewer/effects_gi_poc.js:15` | gpu | A.toggleGIPreview: panels.js gi-preview: extra full-res GPU render targets |  |
-| 34 | `viewer/scene.js:3619` | `Alt+J` |  |  | `A.toggleSSGIPreview` `viewer/effects_gi_poc.js:487` | gpu | A.toggleSSGIPreview: Alt+J SSGI spike, same GPU class as Alt+G |  |
-| 35 | `viewer/scene.js:3624` | `Alt+C` |  | MaxQ Movie | `A.startMaxQualityOrbit` `viewer/maxq_start.js:2685`<br>`A.startCinemaOrbit` `viewer/fx_cinema_orbit.js:339` | gpu | A.startMaxQualityOrbit: Alt+C MaxQ movie bake; §19.0 item 4; A.startCinemaOrbit: Alt+C fallback, same bake |  |
-| 36 | `viewer/scene.js:3627` | `Alt+P` |  | Populate (people + trees) | `A.togglePopulate` `viewer/fx_props_staffage.js:1624` | view | no gpu/writes/leaves callee found |  |
-| 37 | `viewer/scene.js:3628` | `F1` |  | Help *(pill help)* | `showCommandPalette` `viewer/scene.js:2900` | view | no gpu/writes/leaves callee found |  |
-| 38 | `viewer/scene.js:3629` | `F11` |  | Fullscreen *(pill fullscreen)* | `A.toggleFullscreen` `viewer/tools.js:635` | leaves | A.toggleFullscreen: needs a user gesture (tools.js §FULLSCREEN) |  |
-| 39 | `viewer/scene.js:3632` | `Ctrl+S` |  | Save Building *(pill save)* | `A.saveModelDb` `viewer/scene.js:1031` | writes | A.saveModelDb: writes a .db file (pill save: "Save the open building to a .db file") |  |
-| 40 | `viewer/scene.js:3633` | `Ctrl+O` |  | Open Building *(pill open)* | `A.openModelDb` `viewer/scene.js:1637` | leaves | A.openModelDb: native Open dialog, replaces the current scene (pill open) |  |
-| 41 | `viewer/scene.js:3640` | `Backspace` |  |  | `UniversalHistory.open` `viewer/universal_history.js:445`<br>`UniversalHistory.undo` `viewer/universal_history.js:445`<br>`_doSceneUndo` `viewer/scene.js:3812` | writes | UniversalHistory.undo: steps the model's edit history back; _doSceneUndo: legacy scene undo |  |
-| 42 | `viewer/scene.js:3646` | `\` |  |  | `UniversalHistory.open` `viewer/universal_history.js:445`<br>`UniversalHistory.redo` `viewer/universal_history.js:445`<br>`_doSceneRedo` `viewer/scene.js:3824` | writes | UniversalHistory.redo: steps the model's edit history forward; _doSceneRedo: legacy scene redo |  |
-| 43 | `viewer/scene.js:3702` | `Home` |  |  | `_homeResetAndFrame` `viewer/scene.js:2609` | view | no gpu/writes/leaves callee found |  |
-| 44 | `viewer/scene.js:3727` | `?` |  |  | `showCommandPalette` `viewer/scene.js:2900` | view | no gpu/writes/leaves callee found |  |
-| 45 | `viewer/scene.js:3728` | `Escape` |  |  | `toggleMobilePill` `viewer/panels.js:2457` | view | no gpu/writes/leaves callee found |  |
+| 1 | `viewer/scene.js:2623` | `+` |  | Zoom In | `_zoomStep` `viewer/scene.js:2444` | view | no gpu/writes/leaves callee found |  |
+| 2 | `viewer/scene.js:2624` | `-` |  | Zoom Out | `_zoomStep` `viewer/scene.js:2444` | view | no gpu/writes/leaves callee found |  |
+| 3 | `viewer/scene.js:2625` | `2` |  |  | `open2DPlans` `viewer/main.js:376` | view | no gpu/writes/leaves callee found |  |
+| 4 | `viewer/scene.js:2631` | `x` |  | Section Cut *(pill section)* | `A.toggleSection` `viewer/tools.js:499` | view | no gpu/writes/leaves callee found |  |
+| 5 | `viewer/scene.js:2642` | `4` |  | 4D / 5D *(pill report)* | `A.export4D5D` `viewer/tools.js:596` | leaves | A.export4D5D: opens boq_charts.html in a new tab (tools.js A.export4D5D, window.open) |  |
+| 6 | `viewer/scene.js:2643` | `f` |  | Find / Navigate *(pill find)* | `A.openFindPanel` `viewer/main.js:290`<br>`A.loadNavigate` `viewer/main.js:155` | view | no gpu/writes/leaves callee found | viewer_counts, viewer_clashes |
+| 7 | `viewer/scene.js:2644` | `j` |  | Road standards *(pill roadstd)* | `A.toggleRoadStandards` `viewer/road_standards.js:127` | view | no gpu/writes/leaves callee found |  |
+| 8 | `viewer/scene.js:2645` | `p` |  | Palette *(pill palette)* | `toggleSunglass` `viewer/tools.js:680` | view | no gpu/writes/leaves callee found |  |
+| 9 | `viewer/scene.js:2646` | `t` |  | Time Machine *(pill tm)* | `toggleTimeMachine` `viewer/tm_lifecycle_api.js:764` | view | no gpu/writes/leaves callee found |  |
+| 10 | `viewer/scene.js:2647` | `z` |  | Page History *(pill docHist)* | `UniversalHistory.toggleOpen` `viewer/universal_history.js:445` | view | no gpu/writes/leaves callee found |  |
+| 11 | `viewer/scene.js:2648` | `w` |  | World History *(pill worldhist)* | `WholeHistory.toggleOpen` `common/whole_history.js:424` | view | no gpu/writes/leaves callee found |  |
+| 12 | `viewer/scene.js:2649` | `l` |  | Fly Tour *(pill fly)* | `toggleFlyAround` `viewer/tour.js:8` | view | no gpu/writes/leaves callee found |  |
+| 13 | `viewer/scene.js:2650` | `o` |  | Nav LOD (large bldgs) *(pill dlodnav)* | `toggleDlodNav` `viewer/dlod_nav.js:2000` | view | no gpu/writes/leaves callee found |  |
+| 14 | `viewer/scene.js:2651` | `v` |  | Sound FX *(pill audio)* | `toggleSfx` `viewer/sfx.js:529` | view | no gpu/writes/leaves callee found |  |
+| 15 | `viewer/scene.js:2652` | `s` |  |  | `A.screenshot` `viewer/tools.js:613` | writes | A.screenshot: downloads a PNG to the user's disk (tools.js A.screenshot, link.download) |  |
+| 16 | `viewer/scene.js:2653` | `n` |  | Night *(pill night)* | `toggleNightMode` `viewer/tools.js:2112` | view | no gpu/writes/leaves callee found |  |
+| 17 | `viewer/scene.js:2654` | `b` |  | Background *(pill background)* | `toggleBackground` `viewer/tools.js:1189` | view | no gpu/writes/leaves callee found |  |
+| 18 | `viewer/scene.js:2655` | `i` |  | Issues *(pill issues)* | `toggleIssues` `viewer/issues.js:243` | view | no gpu/writes/leaves callee found |  |
+| 19 | `viewer/scene.js:2656` | `h` |  | Shadow + Ground *(pill shadow)* | `toggleShadow` `viewer/tools.js:1033` | view | no gpu/writes/leaves callee found |  |
+| 20 | `viewer/scene.js:2657` | `c` |  | Clash Matrix *(pill clash)* | `_blurPanel` `viewer/scene.js:3571`<br>`A._loadClashRules` `viewer/measure.js:76` | view | no gpu/writes/leaves callee found |  |
+| 21 | `viewer/scene.js:2820` | `m` |  | Measure *(pill measure)* | `A.toggleMeasure` `viewer/measure.js:1233` | view | no gpu/writes/leaves callee found |  |
+| 22 | `viewer/scene.js:2834` | `r` |  | Road report *(pill roadreport)* | `A.isCivilModel` `viewer/streaming.js:323`<br>`A.toggleRoadReport` `viewer/road_report.js:153`<br>`_cycleRoom` `viewer/scene.js:2552` | view | no gpu/writes/leaves callee found |  |
+| 23 | `viewer/scene.js:2835` | `a` |  | Reset Camera *(pill cam-reset)* | `resetCamOrbit` `viewer/precision_cam.js:286` | view | no gpu/writes/leaves callee found |  |
+| 24 | `viewer/scene.js:2836` | `q` |  | Auto-Pivot *(pill cam-pivot)* | `toggleCamPivot` `viewer/precision_cam.js:344` | view | no gpu/writes/leaves callee found |  |
+| 25 | `viewer/scene.js:2837` | `Ctrl+S` |  | Save Building *(pill save)* | `A.saveModelDb` `viewer/scene.js:1031` | writes | A.saveModelDb: writes a .db file (pill save: "Save the open building to a .db file") |  |
+| 26 | `viewer/scene.js:2838` | `Ctrl+O` |  | Open Building *(pill open)* | `A.openModelDb` `viewer/scene.js:1637` | leaves | A.openModelDb: native Open dialog, replaces the current scene (pill open) |  |
+| 27 | `viewer/scene.js:2839` | `=` |  | Settings *(pill settings)* | `_openSettingsPanel` `viewer/panels.js:1850` | view | no gpu/writes/leaves callee found |  |
+| 28 | `viewer/scene.js:2844` | `/` |  | Share *(pill share)* | `A.quickShare` `viewer/share.js:636` | leaves | A.quickShare: native share sheet / clipboard (share.js A.quickShare) |  |
+| 29 | `viewer/scene.js:2848` | `'` |  | Hover Name | `A.toggleHoverName` `viewer/hover_name.js:198` | view | no gpu/writes/leaves callee found |  |
+| 30 | `viewer/scene.js:2849` | `.` |  | §S281 P2: ⋯ toggle — prefer the live mobile pill, fall back to legacy overflow | `toggleMobilePill` `viewer/panels.js:2457`<br>`toggleOverflow` `viewer/panels.js:984` | view | no gpu/writes/leaves callee found |  |
+| 31 | `viewer/scene.js:3620` | `Alt+Z` |  | X-Ray / Bbox *(pill xray)* | `A.cycleXrayBboxMode` `viewer/tools.js:454`<br>`S` `common/history_tap.js:190` | view | no gpu/writes/leaves callee found |  |
+| 32 | `viewer/scene.js:3623` | `Alt+S` |  |  | `A.toggleStillRefineUI` `viewer/fx_still_refine.js:1359`<br>`A.toggleStillRefine` `viewer/fx_still_refine.js:1279` | gpu | A.toggleStillRefineUI: Alt+S still: progressive TAA supersample (scene.js Alt+S comment); §19.0 item 4; A.toggleStillRefine: Alt+S still fallback, same pass |  |
+| 33 | `viewer/scene.js:3625` | `Alt+G` |  | GI Preview (AO) *(pill gi-preview)* | `A.toggleGIPreview` `viewer/effects_gi_poc.js:15` | gpu | A.toggleGIPreview: panels.js gi-preview: extra full-res GPU render targets |  |
+| 34 | `viewer/scene.js:3626` | `Alt+J` |  |  | `A.toggleSSGIPreview` `viewer/effects_gi_poc.js:487` | gpu | A.toggleSSGIPreview: Alt+J SSGI spike, same GPU class as Alt+G |  |
+| 35 | `viewer/scene.js:3631` | `Alt+C` |  | MaxQ Movie | `A.startMaxQualityOrbit` `viewer/maxq_start.js:2685`<br>`A.startCinemaOrbit` `viewer/fx_cinema_orbit.js:339` | gpu | A.startMaxQualityOrbit: Alt+C MaxQ movie bake; §19.0 item 4; A.startCinemaOrbit: Alt+C fallback, same bake |  |
+| 36 | `viewer/scene.js:3634` | `Alt+P` |  | Populate (people + trees) | `A.togglePopulate` `viewer/fx_props_staffage.js:1624` | view | no gpu/writes/leaves callee found |  |
+| 37 | `viewer/scene.js:3635` | `F1` |  | Help *(pill help)* | `showCommandPalette` `viewer/scene.js:2907` | view | no gpu/writes/leaves callee found |  |
+| 38 | `viewer/scene.js:3636` | `F11` |  | Fullscreen *(pill fullscreen)* | `A.toggleFullscreen` `viewer/tools.js:635` | leaves | A.toggleFullscreen: needs a user gesture (tools.js §FULLSCREEN) |  |
+| 39 | `viewer/scene.js:3639` | `Ctrl+S` |  | Save Building *(pill save)* | `A.saveModelDb` `viewer/scene.js:1031` | writes | A.saveModelDb: writes a .db file (pill save: "Save the open building to a .db file") |  |
+| 40 | `viewer/scene.js:3640` | `Ctrl+O` |  | Open Building *(pill open)* | `A.openModelDb` `viewer/scene.js:1637` | leaves | A.openModelDb: native Open dialog, replaces the current scene (pill open) |  |
+| 41 | `viewer/scene.js:3647` | `Backspace` |  |  | `UniversalHistory.open` `viewer/universal_history.js:445`<br>`UniversalHistory.undo` `viewer/universal_history.js:445`<br>`_doSceneUndo` `viewer/scene.js:3819` | writes | UniversalHistory.undo: steps the model's edit history back; _doSceneUndo: legacy scene undo |  |
+| 42 | `viewer/scene.js:3653` | `\` |  |  | `UniversalHistory.open` `viewer/universal_history.js:445`<br>`UniversalHistory.redo` `viewer/universal_history.js:445`<br>`_doSceneRedo` `viewer/scene.js:3831` | writes | UniversalHistory.redo: steps the model's edit history forward; _doSceneRedo: legacy scene redo |  |
+| 43 | `viewer/scene.js:3709` | `Home` |  |  | `_homeResetAndFrame` `viewer/scene.js:2616` | view | no gpu/writes/leaves callee found |  |
+| 44 | `viewer/scene.js:3734` | `?` |  |  | `showCommandPalette` `viewer/scene.js:2907` | view | no gpu/writes/leaves callee found |  |
+| 45 | `viewer/scene.js:3735` | `Escape` |  |  | `toggleMobilePill` `viewer/panels.js:2457` | view | no gpu/writes/leaves callee found |  |
 | 46 | `viewer/gi_still.js:1227` | `Alt+S` |  |  | `giSupported` `viewer/gi_still.js:1217`<br>`plainStill` `viewer/gi_still.js:1423` | gpu | giSupported: gi_still.js Alt+S: gates the WebGPU light-bounce pass rendered after the still (§GI_LIVE) |  |
 | 47 | `viewer/gi_still.js:1243` | `Alt+Shift+S` |  |  | `release` `viewer/gi_still.js:180`<br>`toast` `viewer/gi_still.js:64` | view | no gpu/writes/leaves callee found |  |
 | 48 | `viewer/precision_cam.js:182` | `CapsLock` |  | Precision (Fine) *(pill precision)* | `toggleFine` `viewer/precision_cam.js:50` | view | no gpu/writes/leaves callee found |  |
@@ -95,7 +95,7 @@ The pill shows a key that fires nothing, or fires a different action.
 | 53 | `viewer/panels.js:1338` | `Ctrl+O` | `open` | Open Building — Open a saved .db file · Native Open… dialog · Replaces the current scene | `A.openModelDb` `viewer/scene.js:1637` | leaves | A.openModelDb: native Open dialog, replaces the current scene (pill open) |  |
 | 54 | `viewer/panels.js:1344` | `f` | `find` | Find / Navigate — Search by name/class · Filter by storey/type · Voice search (mic) · Navigate to element | `A.openFindPanel` `viewer/main.js:290` | view | no gpu/writes/leaves callee found | viewer_counts, viewer_clashes |
 | 55 | `viewer/panels.js:1350` | `r` | `roleFilter` | Role View — Cycle a profession preset (Plumber/Electrician/ACMV/Structural/Cleaner) · Filters the 3D scene + Outliner to that role's disciplines · Convenience filter only — not access control | `A.cycleRoleFilter` `viewer/panels.js:822` | view | no gpu/writes/leaves callee found |  |
-| 56 | `viewer/panels.js:1355` | `F1` | `help` | Help | `showCommandPalette` `viewer/scene.js:2900` | view | no gpu/writes/leaves callee found |  |
+| 56 | `viewer/panels.js:1355` | `F1` | `help` | Help | `showCommandPalette` `viewer/scene.js:2907` | view | no gpu/writes/leaves callee found |  |
 | 57 | `viewer/panels.js:1361` | `w` | `worldhist` | World History — History across ALL pages — viewer, iDempiere, Gravity · Whole \| This page toggle · Day strip — step back/forward by day · Tap a card to jump to that building/doc · Long-press → clear (bomb), warns first | `WholeHistory.toggleOpen` `common/whole_history.js:424` | view | no gpu/writes/leaves callee found |  |
 | 58 | `viewer/panels.js:1363` |  | `worldhist (long-press)` | World History — long-press | `_worldHistDrawer` `viewer/panels.js:154` | writes | _worldHistDrawer: long-press = the bomb, clear history (pill worldhist comment) |  |
 | 59 | `viewer/panels.js:1372` | `z` | `docHist` | Page History — This page's own dot timeline · Step back/forward through your edits | `UniversalHistory.toggleOpen` `viewer/universal_history.js:445` | view | no gpu/writes/leaves callee found |  |
@@ -161,8 +161,8 @@ The pill shows a key that fires nothing, or fires a different action.
 
 Ignored modifier lines inside a scanned file (panel navigation, not app actions):
 
-- `viewer/scene.js:3665` panel navigation: Ctrl+Space inside a focused panel
-- `viewer/scene.js:3669` panel navigation: Ctrl+A select-all inside a focused panel
+- `viewer/scene.js:3672` panel navigation: Ctrl+Space inside a focused panel
+- `viewer/scene.js:3676` panel navigation: Ctrl+A select-all inside a focused panel
 - `viewer/panels.js:588` list navigation (makeListKeyNav): Ctrl+A selects every row of a focused list
 - `viewer/panels.js:602` list navigation (makeListKeyNav): Ctrl+Space toggles one row of a focused list
 

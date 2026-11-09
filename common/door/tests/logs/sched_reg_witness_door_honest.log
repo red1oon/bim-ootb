@@ -1,0 +1,13 @@
+§DOOR request=d-mw9cgiha-1201368-1 actor=ai verb=viewer.clashes status=inconclusive ms=13654 why="the Viewer could not answer (exit 1): the Viewer says INCONCLUSIVE: no rule for ARC/ZZZ in clash_rules.json"
+§DOOR request=d-mw9cgihn-1201368-2 actor=ai verb=viewer.film_path status=inconclusive ms=14038 why="nothing was judged"
+§DOOR request=d-mw9cgihs-1201368-3 actor=ai verb=viewer.counts status=ok ms=14177
+  ✅ H1 no clash rule for the pair: inconclusive, never ok; the Viewer's reason is in why; no answer invented  status=inconclusive why=the Viewer could not answer (exit 1): the Viewer says INCONCLUSIVE: no rule for ARC/ZZZ in clash_rules.json
+  ✅ H2 film path with nothing to judge: inconclusive, the tool's own JSON (verdict INCONCLUSIVE) inside  status=inconclusive verdict=INCONCLUSIVE notChecked=1
+  ✅ H3 control: viewer.counts on the same building is ok with a total  status=ok total=1193
+§DOOR request=d-mw9cgtfm-1201368-4 actor=email verb=modeller.try_shift status=claim ms=1
+  ✅ H4a an actor with no proof (email) asking for a trial verb: claim, not run  status=claim
+§DOOR request=d-mw9cgtfn-1201368-5 actor=email verb=viewer.counts status=refused ms=1 why="actor email is not allowed to use viewer.counts (allowed: human, ai)"
+  ✅ H4b the same actor on a read verb is not a claim (it is refused only because verbs.json does not list email as an actor)  status=refused
+  ✅ H1' falsifier: an engine that answers OK is passed through as ok (so H1 above came from the Viewer's own INCONCLUSIVE)
+§W-REPLY-HONEST honest: viewer.clashes=inconclusive viewer.film_path=inconclusive viewer.counts=ok modeller.try_shift=claim viewer.counts=refused
+§WITNESS_REPLY_HONEST pass=6 fail=0 inconclusive=0 verdict=PASS

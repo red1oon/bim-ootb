@@ -1,0 +1,85 @@
+§W-SCHED start break=none only=all base=cdcec7e8
+§DOOR request=d-mw9crqf1-1217738-1 actor=ai verb=viewer.schedule_at status=ok ms=240
+§W-SCHED SV Duplex run=2b46745cdc59_d80644dbc314_extracted n=1119 tasks=19 endDay=12 dStar=4 days=-1,0,4,6,11,12,17
+  ✅ SV-Duplex-a total = the cache's playStats.total = the §TM_PLAYED_LAYER total in its witness.log  verb=1119 playMap=1119 playStats=1119 log=1119
+  ✅ SV-Duplex-b engineLines = the cache's witness.log § lines, verbatim (50)  verb=50
+§DOOR request=d-mw9crqmm-1217738-2 actor=ai verb=viewer.schedule_at status=ok ms=285
+  ✅ SV-Duplex-d before the start (day -1) every element is future  {"placed":0,"frontier":0,"future":1119}
+§DOOR request=d-mw9crqul-1217738-3 actor=ai verb=viewer.schedule_at status=ok ms=199
+§DOOR request=d-mw9crr05-1217738-4 actor=ai verb=viewer.schedule_at status=ok ms=208
+  ✅ SV-Duplex-f at day 4: every element of a done task (8) is placed, none of a pending task (8) is placed or on the frontier  bad=0
+§DOOR request=d-mw9crr5z-1217738-5 actor=ai verb=viewer.schedule_at status=ok ms=205
+§DOOR request=d-mw9crrbp-1217738-6 actor=ai verb=viewer.schedule_at status=ok ms=239
+§DOOR request=d-mw9crrid-1217738-7 actor=ai verb=viewer.schedule_at status=ok ms=231
+§DOOR request=d-mw9crrot-1217738-8 actor=ai verb=viewer.schedule_at status=ok ms=200
+  ✅ SV-Duplex-e past the end (day 17) every element is placed  {"placed":1119,"frontier":0,"future":0}
+  ✅ SV-Duplex-g the verb's placed/frontier/future equal an independent count over run.json at every day (7 days) and sum to total  placed/frontier/future by day: -1:0/0/1119 0:0/1/1118 4:349/3/767 6:516/1/602 11:1083/1/35 12:1119/0/0 17:1119/0/0
+§DOOR request=d-mw9crruf-1217738-9 actor=ai verb=viewer.schedule_at status=ok ms=263
+  ✅ SV-Duplex-h the task grid (id, sDays, eDays) = run.tasks  19 tasks
+§DOOR request=d-mw9crs1r-1217738-10 actor=ai verb=viewer.schedule_at status=ok ms=211
+  ✅ SV-Duplex-i the answer at day 4 equals the cache's numbers for day 4 (a one-day shift would give placed 418, not 349)  verb placed=349
+§DOOR request=d-mw9crs7n-1217738-11 actor=ai verb=viewer.schedule_at status=ok ms=1031
+§W-SCHED SV Hospital run=2b46745cdc59_c13c87addcea_meta n=63182 tasks=36 endDay=339 dStar=113 days=-1,0,113,169,338,339,344
+  ✅ SV-Hospital-a total = the cache's playStats.total = the §TM_PLAYED_LAYER total in its witness.log  verb=63182 playMap=63182 playStats=63182 log=63182
+  ✅ SV-Hospital-b engineLines = the cache's witness.log § lines, verbatim (60)  verb=60
+§DOOR request=d-mw9crtgp-1217738-12 actor=ai verb=viewer.schedule_at status=ok ms=963
+  ✅ SV-Hospital-d before the start (day -1) every element is future  {"placed":0,"frontier":0,"future":63182}
+§DOOR request=d-mw9cru8m-1217738-13 actor=ai verb=viewer.schedule_at status=ok ms=1078
+§DOOR request=d-mw9crv3p-1217738-14 actor=ai verb=viewer.schedule_at status=ok ms=1099
+  ✅ SV-Hospital-f at day 113: every element of a done task (11) is placed, none of a pending task (23) is placed or on the frontier  bad=0
+§DOOR request=d-mw9crvze-1217738-15 actor=ai verb=viewer.schedule_at status=ok ms=1014
+§DOOR request=d-mw9crwsr-1217738-16 actor=ai verb=viewer.schedule_at status=ok ms=1061
+§DOOR request=d-mw9crxnf-1217738-17 actor=ai verb=viewer.schedule_at status=ok ms=1099
+§DOOR request=d-mw9cryj4-1217738-18 actor=ai verb=viewer.schedule_at status=ok ms=1141
+  ✅ SV-Hospital-e past the end (day 344) every element is placed  {"placed":63182,"frontier":0,"future":0}
+  ✅ SV-Hospital-g the verb's placed/frontier/future equal an independent count over run.json at every day (7 days) and sum to total  placed/frontier/future by day: -1:0/0/63182 0:0/1/63181 113:20501/2/42679 169:33377/2/29803 338:63075/1/106 339:63182/0/0 344:63182/0/0
+§DOOR request=d-mw9crzfx-1217738-19 actor=ai verb=viewer.schedule_at status=ok ms=1001
+  ✅ SV-Hospital-h the task grid (id, sDays, eDays) = run.tasks  36 tasks
+§DOOR request=d-mw9cs07s-1217738-20 actor=ai verb=viewer.schedule_at status=ok ms=1162
+  ✅ SV-Hospital-i the answer at day 113 equals the cache's numbers for day 113 (a one-day shift would give placed 20710, not 20501)  verb placed=20501
+§DOOR request=d-mw9cs1zy-1217738-21 actor=ai verb=viewer.schedule_compare status=ok ms=1130
+§W-SCHED SC Duplex base(exit 0): §CPM_ENGINE_REACHABILITY Duplex_extracted ScheduleEngine=true computeSchedule=true cpmScheduleRun=true | §SE_DIFF Duplex_extracted refItems=1119 modelElements=1119 checked=1119 mismatches=0 missingInModel=0 maxDeltaMs=0.0 deps=2596 milestones=17 tasks=27 PASS | §SE_FLOATING Duplex_extracted midair=0 structural=0 orphans=0 PASS
+§W-SCHED SC Duplex verb(ok):  §CPM_ENGINE_REACHABILITY Duplex_extracted ScheduleEngine=true computeSchedule=true cpmScheduleRun=true | §SE_DIFF Duplex_extracted refItems=1119 modelElements=1119 checked=1119 mismatches=0 missingInModel=0 maxDeltaMs=0.0 deps=2596 milestones=17 tasks=27 PASS | §SE_FLOATING Duplex_extracted midair=0 structural=0 orphans=0 PASS
+  ✅ SC-Duplex-a the base script printed its three rows (3)  n=3
+  ✅ SC-Duplex-b the verb's §SE_DIFF / §SE_FLOATING / §CPM_ENGINE_REACHABILITY lines equal the base script's, character for character
+  ✅ SC-Duplex-c the verb's row data equals the numbers the base printed (checked, mismatches, missing)  {"checked":1119,"mismatches":0,"missing":0}
+§DOOR request=d-mw9csgmw-1217738-22 actor=ai verb=viewer.schedule_compare status=ok ms=15782
+§W-SCHED SC Hospital base(exit 0): §CPM_ENGINE_REACHABILITY Hospital_extracted ScheduleEngine=true computeSchedule=true cpmScheduleRun=true | §SE_DIFF Hospital_extracted refItems=63182 modelElements=63182 checked=63182 mismatches=0 missingInModel=0 maxDeltaMs=0.0 deps=167299 milestones=46 tasks=105 PASS | §SE_FLOATING Hospital_extracted midair=0 structural=0 orphans=69 PASS
+§W-SCHED SC Hospital verb(ok):  §CPM_ENGINE_REACHABILITY Hospital_extracted ScheduleEngine=true computeSchedule=true cpmScheduleRun=true | §SE_DIFF Hospital_extracted refItems=63182 modelElements=63182 checked=63182 mismatches=0 missingInModel=0 maxDeltaMs=0.0 deps=167299 milestones=46 tasks=105 PASS | §SE_FLOATING Hospital_extracted midair=0 structural=0 orphans=69 PASS
+  ✅ SC-Hospital-a the base script printed its three rows (3)  n=3
+  ✅ SC-Hospital-b the verb's §SE_DIFF / §SE_FLOATING / §CPM_ENGINE_REACHABILITY lines equal the base script's, character for character
+  ✅ SC-Hospital-c the verb's row data equals the numbers the base printed (checked, mismatches, missing)  {"checked":63182,"mismatches":0,"missing":0}
+  ✅ SR-a both verbs are in verbs.json, harm read, calling the schedule_verbs CLI, witness file present  viewer.schedule_at,viewer.schedule_compare
+  ✅ SR-b scripts/probe_schedule_engine.js is gone from the working tree
+  ✅ SR-c scripts/probe_schedule_engine.js existed at the pinned base cdcec7e8 (so this is a retirement, not a typo)
+§W-SCHED SR scripts/probe_schedule_engine.js mentions=9 requiring=0 [common/door/tests/witness_schedule_verbs.js:23 common/door/tests/witness_schedule_verbs.js:79 common/door/tests/witness_schedule_verbs.js:80 common/door/tests/witness_schedule_verbs.js:81 common/door/tests/witness_schedule_verbs.js:82 common/door/tests/witness_schedule_verbs.js:101 common/door/tests/witness_schedule_verbs.js:109 viewer/tools/schedule_verbs.js:15 viewer/tools/schedule_verbs.js:113]
+  ✅ SR-d no live file requires, spawns or lists scripts/probe_schedule_engine.js (mentions in comments are not callers)
+  ✅ SR-e its former question is answered by viewer.schedule_compare: the entry returns the rows the script printed (SE_DIFF checked/mismatches/missingInModel/maxDeltaMs, SE_FLOATING midair/structural/orphans)
+  ✅ SR-f kept script still exists: scripts/probe_kernel_ops_vs_engine.js
+  ✅ SR-f kept script still exists: scripts/probe_cpm_schedule.js
+  ✅ SR-f kept script still exists: scripts/probe_cpm_display_path.js
+  ✅ SR-f kept script still exists: scripts/probe_e5_resolution.js
+  ✅ SR-f kept script still exists: scripts/cache_4d_run.js
+  ✅ SR-f kept script still exists: viewer/tools/schedule_verbs.js
+§DOOR request=d-mw9cst2k-1217738-23 actor=ai verb=viewer.schedule_at status=ok ms=1796
+§DOOR request=d-mw9csugi-1217738-24 actor=ai verb=viewer.schedule_at status=ok ms=221
+§DOOR request=d-mw9csump-1217738-25 actor=ai verb=viewer.schedule_at status=ok ms=217
+§W-SCHED SK first: cache=BUILT preload-spawns=1 | second: cache=HIT spawns=1 | third (another day): spawns=1
+  ✅ SK-a the first call with an empty private cache builds once: the verb says BUILT spawned=1, the preload saw one cache_4d_run.js  spawns=1
+  ✅ SK-b a second call with the same key spawns nothing (HIT, preload still 1) and returns the same counts and the same run  spawns=1
+  ✅ SK-c a different day on the same key also spawns nothing  spawns=1
+§DOOR request=d-mw9csusr-1217738-26 actor=ai verb=viewer.schedule_at status=ok ms=1875
+  ✅ SK-d a changed key (the DB's mtime) runs the pipeline once more: BUILT, preload 2, a new cache directory, same counts (same data)  spawns=2
+§DOOR request=d-mw9csw8u-1217738-27 actor=ai verb=viewer.schedule_at status=ok ms=235
+  ✅ SK-e and that new key is then a HIT (still 2 spawns)  spawns=2
+§W-SCHED SH fixture: Duplex with elements_meta emptied (rows left 0)
+§DOOR request=d-mw9cswj1-1217738-28 actor=ai verb=viewer.schedule_at status=inconclusive ms=706 why="no schedule for Emptied: §CACHE_FAIL Emptied no displaySchedule"
+§DOOR request=d-mw9csx2o-1217738-29 actor=ai verb=viewer.schedule_compare status=inconclusive ms=546 why="nothing judged: no schedulable element in Emptied_extracted.db (refItems=0, checked=0)"
+§DOOR request=d-mw9csxhu-1217738-30 actor=ai verb=viewer.schedule_at status=error ms=299 why="the Viewer could not answer (exit 1): unknown building \"NoSuchBuilding\": no usable db: NoSuchBuilding_extracted.db missi"
+  ✅ SH-a a database with no elements: schedule_at is inconclusive (never ok, never "0 placed")  status=inconclusive why=no schedule for Emptied: §CACHE_FAIL Emptied no displaySchedule
+  ✅ SH-b the same database: schedule_compare is inconclusive (the base script printed FAIL error=no elements; neither a pass nor a fail is a judgment of nothing)  status=inconclusive why=nothing judged: no schedulable element in Emptied_extracted.db (refItems=0, checked=0)
+  ✅ SH-c an unknown building is an error, not an answer  status=error
+  ✅ SH-d stateAt on an empty played layer and on a run with no layer: INCONCLUSIVE both  INCONCLUSIVE/INCONCLUSIVE
+§DOOR request=d-mw9csxqd-1217738-31 actor=ai verb=viewer.schedule_at status=error ms=317 why="the Viewer could not answer (exit 2): day must be a whole number of days from the project start (day 0 = 2026-01-01), go"
+  ✅ SH-e a fractional day is refused, not rounded  status=error
+§WITNESS_SCHED pass=43 fail=0 inconclusive=0 verdict=PASS
