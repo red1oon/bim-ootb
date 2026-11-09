@@ -78,6 +78,9 @@ function verdict(cs) { var c = CASES[cs] || { judged: 0, failed: 0 }, v = !c.jud
   say('§OF-UNITS ' + J(units.map(function (u) { return u.item + '=' + J(u.erpunit) + ' ' + u.infile + ' ' + u.reason; })));
   check('UNITS', 'listed', 'one row per unit a product uses (3: Units, Days, Hours), none suggested (no exact ERP name), each saying to answer', units.length === 3 && units.every(function (u) { return u.erpunit === '' && /answer/.test(u.reason); }), { units: units });
   check('UNITS', 'blocked', 'unanswered units are a problem row and no sheet is predicted to import', r1.some(function (r) { return /^⚠ Answer the unit\(s\)/.test(r.item); }) && r1.filter(function (r) { return r.key > 100 && r.key < 900; }).every(function (r) { return !r.will; }), {});
+  var tenantUnits = q("SELECT name FROM c_uom WHERE ad_client_id IN (0,?) AND isactive='Y' ORDER BY name", [CID]).map(function (r) { return r.name; });
+  check('UNITS', 'picklist', '§HARDEN-SPEC H7: each unit row offers the tenant\'s active units as its pick list (' + tenantUnits.length + ', incl. Each/Day/Hour)', units.length === 3 && units.every(function (u) { return u.options && J(u.options.erpunit) === J(tenantUnits); }) &&
+    ['Each', 'Day', 'Hour'].every(function (n) { return tenantUnits.indexOf(n) >= 0; }), { opts: units.map(function (u) { return u.options; }), tenantUnits: tenantUnits });
   verdict('UNITS');
 
   // ═══ SUMMARY: answered ⇒ the dry run predicts every sheet, refuses nothing; the tenant is untouched by it ═══

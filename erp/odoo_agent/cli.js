@@ -3,6 +3,7 @@
 //
 // cli.js — where the agent finds YOUR Odoo. Shared by agent.js and export.js.
 //   Flags work in every shell (Windows cmd included):  --host 10.0.0.5 --port 8069 --db mydb --login me --so S00042|latest --cutover 2026-12-31
+//   §HARDEN-SPEC H5: --url https://mycompany.odoo.com (Odoo.sh / Odoo Online / any https server; --host may carry the scheme too) · H4: --company <id> (several companies)
 //   Environment variables still work (ODOO_HOST ODOO_PORT ODOO_DB ODOO_LOGIN ODOO_PASSWORD ODOO_SO CUTOVER); a flag wins.
 //   No flag and no variable = the demo Odoo (odoodemo @ localhost:8069, admin/admin), so the demo needs no typing.
 //   The PASSWORD is never a flag (it would sit in the shell history) and never in the browser: for any Odoo other than
@@ -40,11 +41,22 @@ function askHidden(question) {
   });
 }
 
+// H5: "https://x.odoo.com", "x.odoo.com:8443", "http://10.0.0.5:8069" → { https, host, port }. No scheme = http (the self-hosted default).
+function parseUrl(u, port) {
+  var m = /^(?:(https?):\/\/)?([^\/:]+)(?::(\d+))?\/?$/i.exec(String(u).trim());
+  if (!m) throw new Error('--url/--host not understood: "' + u + '" (example: https://mycompany.odoo.com or 10.0.0.5)');
+  var https = (m[1] || '').toLowerCase() === 'https';
+  return { https: https, host: m[2], port: Number(m[3] || port || (https ? 443 : 8069)) };
+}
+
 async function config(argv) {
+  if (Number(process.versions.node.split('.')[0]) < 16) { console.log('§ODOO-AGENT FAIL node: this needs Node.js 16 or newer (you have ' + process.versions.node + '). Install a current Node.js from nodejs.org and run it again.'); process.exit(1); }
   var f = flags(argv || process.argv.slice(2)), e = process.env;
+  var where = parseUrl(f.url || f.host || e.ODOO_URL || e.ODOO_HOST || 'localhost', f.port || e.ODOO_PORT);
   var c = {
-    HOST: f.host || e.ODOO_HOST || 'localhost',
-    PORT: Number(f.port || e.ODOO_PORT || 8069),
+    HOST: where.host, HTTPS: where.https,
+    PORT: where.port,
+    COMPANY: f.company || e.ODOO_COMPANY || '',
     DB: f.db || e.ODOO_DB || 'odoodemo',
     LOGIN: f.login || e.ODOO_LOGIN || 'admin',
     SO: f.so || e.ODOO_SO || '',
@@ -53,9 +65,9 @@ async function config(argv) {
   c.demo = c.DB === 'odoodemo' && c.LOGIN === 'admin';
   c.PASSWORD = e.ODOO_PASSWORD !== undefined ? e.ODOO_PASSWORD
     : c.demo ? 'admin'
-    : await askHidden('Odoo password for ' + c.LOGIN + ' @ ' + c.DB + ' (' + c.HOST + ':' + c.PORT + '): ');
+    : await askHidden('Odoo password (or API key, if your Odoo asks for a 2-step code) for ' + c.LOGIN + ' @ ' + c.DB + ' (' + (c.HTTPS ? 'https://' : '') + c.HOST + ':' + c.PORT + '): ');
   c.passwordFrom = e.ODOO_PASSWORD !== undefined ? 'env' : c.demo ? 'demo-default' : 'prompt';
   return c;
 }
 
-module.exports = { config: config, flags: flags };
+module.exports = { config: config, flags: flags, parseUrl: parseUrl };

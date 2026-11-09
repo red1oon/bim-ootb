@@ -661,7 +661,7 @@
 <script src="model_match.js?v=1"></script>
 <script src="model_order.js?v=7"></script>
 <script src="model_invoice.js?v=6"></script>
-<script src="model_master.js?v=2"></script>
+<script src="model_master.js?v=3"></script>
 <script src="model_rma.js?v=2"></script>
 <script src="model_project.js?v=1"></script>
 <script src="model_asi.js?v=2"></script>
@@ -744,6 +744,7 @@
 <script src="processes/PaySelectionCreateFrom.js?v=1"></script>
 <script src="processes/PaymentOnline.js?v=1"></script>
 <script src="processes/PeriodControlStatus.js?v=1"></script>
+<script src="processes/RoleAccessUpdate.js?v=1"></script>
 <script src="processes/PeriodStatus.js?v=1"></script>
 <script src="processes/ProductionCreate.js?v=1"></script>
 <script src="processes/ReplenishReportProduction.js?v=2"></script>
@@ -3828,7 +3829,12 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
           var td = document.createElement('td');
           if (c.editable && !(c.type === 'string' && r[c.key] === undefined)) {   // G-b: a string column is a text cell; a row without that field shows nothing there
             var inp = document.createElement('input'); if (c.type === 'string') inp.type = 'text'; else { inp.type = 'number'; inp.step = 'any'; }
-            inp.value = r[c.key] == null ? '' : r[c.key]; inp.setAttribute('data-gform-cell', c.key); if (c.type === 'string') inp.setAttribute('data-gform-cell-type', 'string'); td.appendChild(inp); }
+            inp.value = r[c.key] == null ? '' : r[c.key]; inp.setAttribute('data-gform-cell', c.key); if (c.type === 'string') inp.setAttribute('data-gform-cell-type', 'string'); td.appendChild(inp);
+            // G-e (§HARDEN-SPEC H7): a string cell may offer its choices — the row's options[key] or the column's options — as a pick list (legacy: a List/Table reference
+            //   editor is a combobox); typing stays allowed and the descriptor still checks what was typed
+            var opts = (r.options && r.options[c.key]) || c.options;
+            if (c.type === 'string' && Array.isArray(opts) && opts.length) { var dl = document.createElement('datalist'), did = 'gform-dl-' + r.key + '-' + c.key; dl.id = did;
+              opts.forEach(function (o) { var op = document.createElement('option'); op.value = o; dl.appendChild(op); }); inp.setAttribute('list', did); inp.setAttribute('data-gform-options', String(opts.length)); td.appendChild(dl); } }
           else td.textContent = r[c.key] == null ? '' : r[c.key];
           tr.appendChild(td);
         });
