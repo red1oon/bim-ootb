@@ -1,0 +1,50 @@
+§W-SCHED start break=day only=SV base=cdcec7e8
+§DOOR request=d-mw9cf55w-1199610-1 actor=ai verb=viewer.schedule_at status=ok ms=296
+§W-SCHED SV Duplex run=2b46745cdc59_d80644dbc314_extracted n=1119 tasks=19 endDay=12 dStar=4 days=-1,0,4,6,11,12,17
+  ✅ SV-Duplex-a total = the cache's playStats.total = the §TM_PLAYED_LAYER total in its witness.log  verb=1119 playMap=1119 playStats=1119 log=1119
+  ✅ SV-Duplex-b engineLines = the cache's witness.log § lines, verbatim (50)  verb=50
+§DOOR request=d-mw9cf5f7-1199610-2 actor=ai verb=viewer.schedule_at status=ok ms=253
+§W-SCHED SV Duplex day=-1 MISMATCH verb={"placed":0,"frontier":1,"future":1118} run.json={"placed":0,"frontier":0,"future":1119} status=ok
+  ❌ SV-Duplex-d before the start (day -1) every element is future  {"placed":0,"frontier":1,"future":1118}
+§DOOR request=d-mw9cf5m9-1199610-3 actor=ai verb=viewer.schedule_at status=ok ms=205
+§W-SCHED SV Duplex day=0 MISMATCH verb={"placed":18,"frontier":2,"future":1099} run.json={"placed":0,"frontier":1,"future":1118} status=ok
+§DOOR request=d-mw9cf5rz-1199610-4 actor=ai verb=viewer.schedule_at status=ok ms=224
+§W-SCHED SV Duplex day=4 MISMATCH verb={"placed":418,"frontier":1,"future":700} run.json={"placed":349,"frontier":3,"future":767} status=ok
+  ✅ SV-Duplex-f at day 4: every element of a done task (10) is placed, none of a pending task (8) is placed or on the frontier  bad=0
+§DOOR request=d-mw9cf5y9-1199610-5 actor=ai verb=viewer.schedule_at status=ok ms=225
+§W-SCHED SV Duplex day=6 MISMATCH verb={"placed":632,"frontier":2,"future":485} run.json={"placed":516,"frontier":1,"future":602} status=ok
+§DOOR request=d-mw9cf64j-1199610-6 actor=ai verb=viewer.schedule_at status=ok ms=193
+§W-SCHED SV Duplex day=11 MISMATCH verb={"placed":1119,"frontier":0,"future":0} run.json={"placed":1083,"frontier":1,"future":35} status=ok
+§DOOR request=d-mw9cf69y-1199610-7 actor=ai verb=viewer.schedule_at status=ok ms=290
+§DOOR request=d-mw9cf6i3-1199610-8 actor=ai verb=viewer.schedule_at status=ok ms=215
+  ✅ SV-Duplex-e past the end (day 17) every element is placed  {"placed":1119,"frontier":0,"future":0}
+  ❌ SV-Duplex-g the verb's placed/frontier/future equal an independent count over run.json at every day (7 days) and sum to total  placed/frontier/future by day: -1:0/0/1119 0:0/1/1118 4:349/3/767 6:516/1/602 11:1083/1/35 12:1119/0/0 17:1119/0/0
+§DOOR request=d-mw9cf6o4-1199610-9 actor=ai verb=viewer.schedule_at status=ok ms=249
+  ✅ SV-Duplex-h the task grid (id, sDays, eDays) = run.tasks  19 tasks
+§DOOR request=d-mw9cf6v2-1199610-10 actor=ai verb=viewer.schedule_at status=ok ms=183
+  ❌ SV-Duplex-i the answer at day 4 equals the cache's numbers for day 4 (a one-day shift would give placed 418, not 349)  verb placed=418
+§DOOR request=d-mw9cf706-1199610-11 actor=ai verb=viewer.schedule_at status=ok ms=996
+§W-SCHED SV Hospital run=2b46745cdc59_c13c87addcea_meta n=63182 tasks=36 endDay=339 dStar=113 days=-1,0,113,169,338,339,344
+  ✅ SV-Hospital-a total = the cache's playStats.total = the §TM_PLAYED_LAYER total in its witness.log  verb=63182 playMap=63182 playStats=63182 log=63182
+  ✅ SV-Hospital-b engineLines = the cache's witness.log § lines, verbatim (60)  verb=60
+§DOOR request=d-mw9cf89q-1199610-12 actor=ai verb=viewer.schedule_at status=ok ms=875
+§W-SCHED SV Hospital day=-1 MISMATCH verb={"placed":0,"frontier":1,"future":63181} run.json={"placed":0,"frontier":0,"future":63182} status=ok
+  ❌ SV-Hospital-d before the start (day -1) every element is future  {"placed":0,"frontier":1,"future":63181}
+§DOOR request=d-mw9cf8yw-1199610-13 actor=ai verb=viewer.schedule_at status=ok ms=998
+§W-SCHED SV Hospital day=0 MISMATCH verb={"placed":127,"frontier":1,"future":63054} run.json={"placed":0,"frontier":1,"future":63181} status=ok
+§DOOR request=d-mw9cf9rm-1199610-14 actor=ai verb=viewer.schedule_at status=ok ms=1031
+§W-SCHED SV Hospital day=113 MISMATCH verb={"placed":20710,"frontier":2,"future":42470} run.json={"placed":20501,"frontier":2,"future":42679} status=ok
+  ✅ SV-Hospital-f at day 113: every element of a done task (11) is placed, none of a pending task (23) is placed or on the frontier  bad=0
+§DOOR request=d-mw9cfala-1199610-15 actor=ai verb=viewer.schedule_at status=ok ms=971
+§W-SCHED SV Hospital day=169 MISMATCH verb={"placed":33550,"frontier":2,"future":29630} run.json={"placed":33377,"frontier":2,"future":29803} status=ok
+§DOOR request=d-mw9cfbdd-1199610-16 actor=ai verb=viewer.schedule_at status=ok ms=986
+§W-SCHED SV Hospital day=338 MISMATCH verb={"placed":63182,"frontier":0,"future":0} run.json={"placed":63075,"frontier":1,"future":106} status=ok
+§DOOR request=d-mw9cfc5u-1199610-17 actor=ai verb=viewer.schedule_at status=ok ms=959
+§DOOR request=d-mw9cfcxb-1199610-18 actor=ai verb=viewer.schedule_at status=ok ms=980
+  ✅ SV-Hospital-e past the end (day 344) every element is placed  {"placed":63182,"frontier":0,"future":0}
+  ❌ SV-Hospital-g the verb's placed/frontier/future equal an independent count over run.json at every day (7 days) and sum to total  placed/frontier/future by day: -1:0/0/63182 0:0/1/63181 113:20501/2/42679 169:33377/2/29803 338:63075/1/106 339:63182/0/0 344:63182/0/0
+§DOOR request=d-mw9cfdpj-1199610-19 actor=ai verb=viewer.schedule_at status=ok ms=949
+  ✅ SV-Hospital-h the task grid (id, sDays, eDays) = run.tasks  36 tasks
+§DOOR request=d-mw9cfefx-1199610-20 actor=ai verb=viewer.schedule_at status=ok ms=996
+  ❌ SV-Hospital-i the answer at day 113 equals the cache's numbers for day 113 (a one-day shift would give placed 20710, not 20501)  verb placed=20710
+§WITNESS_SCHED pass=10 fail=6 inconclusive=0 verdict=FAIL

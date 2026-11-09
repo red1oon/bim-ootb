@@ -297,6 +297,133 @@
    "witness": "viewer/tests/witness_film_path_vis.js"
   },
   {
+   "verb": "viewer.schedule_at",
+   "app": "viewer",
+   "title": "Schedule state at a day",
+   "description": "The 4D state of a building at one day: how many elements are placed, being installed (frontier) or not yet built, which tasks are done, active or pending, the count per phase, and the schedule run's own log. Read from the persisted run of the shipped 4D pipeline (about 1 second); when no run matches the current schedule code and building database, the pipeline is run once and persisted, which takes up to a few minutes for a large building. Judged on the played layer, the one the film and the Time Machine scrubber reveal. A building with no schedule is inconclusive, not zero. Changes and saves nothing.",
+   "inputs": [
+    {
+     "name": "building",
+     "description": "The building name, e.g. \"Duplex\" or \"Hospital\". An unknown name is an error.",
+     "required": true,
+     "type": "building",
+     "example": "Duplex"
+    },
+    {
+     "name": "day",
+     "description": "Whole days from the project start (day 0 is 2026-01-01); the state is taken at the start of that day. A day past the end shows everything placed.",
+     "required": true,
+     "type": "number",
+     "unit": "day",
+     "example": "5"
+    }
+   ],
+   "harm": "read",
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "calls": {
+    "cli": "schedule_verbs",
+    "who": "the Viewer",
+    "argv": [
+     "at",
+     "--building",
+     "{building}",
+     "--day",
+     "{day}"
+    ]
+   },
+   "returns": {
+    "shape": "schedule_verbs JSON {verb,building,day,unit,layer,verdict OK|INCONCLUSIVE,summary,cursorISO,total,counts:{placed,frontier,future},tasksCounts,tasks[],byPhase,cache,engineLines[]}",
+    "fields": [
+     {
+      "path": "verdict",
+      "type": "string"
+     },
+     {
+      "path": "total",
+      "type": "number"
+     },
+     {
+      "path": "counts.placed",
+      "type": "number"
+     },
+     {
+      "path": "counts.frontier",
+      "type": "number"
+     },
+     {
+      "path": "counts.future",
+      "type": "number"
+     }
+    ]
+   },
+   "witness": "common/door/tests/witness_schedule_verbs.js"
+  },
+  {
+   "verb": "viewer.schedule_compare",
+   "app": "viewer",
+   "title": "Schedule engine against its reference",
+   "description": "Run the schedule engine on a building's real elements and compare it, element by element, with the reference calculation (the gate's schedule followed by the critical-path solve) on the same data; then check that no element floats in mid-air on the solved times. Returns each row of the comparison (elements checked, mismatches, missing, largest difference in milliseconds, floating counts) and the engines' own log. A comparison that judged no element is inconclusive, never a pass. Takes under a minute for a small building and a few minutes for a large one. Changes and saves nothing.",
+   "inputs": [
+    {
+     "name": "building",
+     "description": "The building name, e.g. \"Duplex\" or \"Hospital\". An unknown name is an error.",
+     "required": true,
+     "type": "building",
+     "example": "Duplex"
+    },
+    {
+     "name": "shift_hours",
+     "description": "Hours in a working shift for the schedule (default 24, the comparison's own default).",
+     "required": false,
+     "type": "number",
+     "unit": "h",
+     "example": "24"
+    }
+   ],
+   "harm": "read",
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "calls": {
+    "cli": "schedule_verbs",
+    "who": "the Viewer",
+    "argv": [
+     "compare",
+     "--building",
+     "{building}",
+     {
+      "if": "shift_hours",
+      "args": [
+       "--shift-hours",
+       "{shift_hours}"
+      ]
+     }
+    ]
+   },
+   "returns": {
+    "shape": "schedule_verbs JSON {verb,building,db,shiftHours,reachability,verdict PASS|FAIL|INCONCLUSIVE,summary,rows:[{row:SE_DIFF,refItems,modelElements,checked,mismatches,missingInModel,maxDeltaMs,deps,milestones,tasks,verdict},{row:SE_FLOATING,midair,structural,orphans,verdict}],lines[]}",
+    "fields": [
+     {
+      "path": "verdict",
+      "type": "string"
+     },
+     {
+      "path": "rows[*].verdict",
+      "type": "string"
+     },
+     {
+      "path": "rows[*].mismatches",
+      "type": "number"
+     }
+    ]
+   },
+   "witness": "common/door/tests/witness_schedule_verbs.js"
+  },
+  {
    "verb": "modeller.widen_bay",
    "app": "modeller",
    "title": "Widen a bay to a target width",

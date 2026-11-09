@@ -1,0 +1,18 @@
+§W_CDK_FLEET BakeFilm_material      meta=missing    geo=missing    -> kind=extracted file=BakeFilm_material_extracted.db | no split pair -> BakeFilm_material_extracted.db
+§W_CDK_FLEET Clinic                 meta=ok         geo=ok         -> kind=meta file=Clinic_meta.db | split pair present (Clinic_meta.db + Clinic_geo.db) — what streaming.js §DB_SPLIT_DETECT loads
+§W_CDK_FLEET Duplex                 meta=0 bytes    geo=missing    -> kind=extracted file=Duplex_extracted.db | Duplex_meta.db 0 bytes — skipped, not loaded -> Duplex_extracted.db
+§W_CDK_FLEET HHS_Office_Federated   meta=missing    geo=missing    -> kind=extracted file=HHS_Office_Federated_extracted.db | no split pair -> HHS_Office_Federated_extracted.db
+§W_CDK_FLEET Hospital               meta=ok         geo=ok         -> kind=meta file=Hospital_meta.db | split pair present (Hospital_meta.db + Hospital_geo.db) — what streaming.js §DB_SPLIT_DETECT loads
+§W_CDK_FLEET JKR                    meta=missing    geo=missing    -> kind=extracted file=JKR_extracted.db | no split pair -> JKR_extracted.db
+§W_CDK_FLEET LTU_AHouse             meta=ok         geo=ok         -> kind=meta file=LTU_AHouse_meta.db | split pair present (LTU_AHouse_meta.db + LTU_AHouse_geo.db) — what streaming.js §DB_SPLIT_DETECT loads
+§W_CDK_FLEET SampleCastle           meta=missing    geo=missing    -> kind=null file=null | no usable db: SampleCastle_extracted.db 0 bytes
+§W_CDK_FLEET TermRooms              meta=missing    geo=ok         -> kind=extracted file=TermRooms_extracted.db | no split pair -> TermRooms_extracted.db
+§W_CDK_FLEET Terminal               meta=ok         geo=ok         -> kind=meta file=Terminal_meta.db | split pair present (Terminal_meta.db + Terminal_geo.db) — what streaming.js §DB_SPLIT_DETECT loads
+§W_CDK C1_PAIR_TO_META PASS         judged=4    bad=0    Clinic=meta Hospital=meta LTU_AHouse=meta Terminal=meta
+§W_CDK C2_EMPTY_SKIPPEDPASS         judged=1    bad=0    Duplex meta 0 bytes -> extracted
+§W_CDK C3_FORCED       PASS         judged=4    bad=0    Clinic:extracted Hospital:extracted LTU_AHouse:extracted Terminal:extracted — forced kind reaches the whole-db run under its own dir
+§W_CDK C4_DIR_NAMES_KINDPASS         judged=9    bad=0    2b46745cdc59_1b78b1b9d2a6_extracted 2b46745cdc59_c06e8f9fba6b_meta 2b46745cdc59_d80644dbc314_extracted 2b46745cdc59_6b9b9adb85d0_extracted 2b46745cdc59_c13c87addcea_meta 2b46745cdc59_6119b1c06f76_extracted 2b46745cdc59_4c8212a3a98b_meta 2b46745cdc59_77e9c2b9badc_extracted 2b46745cdc59_ad188544c5e7_meta
+§W_CDK C5_ONE_OWNER    PASS         judged=1    bad=0    probe: ownDecl=0 callsOwner=1 · cache_4d_run ownDecl=1
+§W_CDK C6_RED          PASS         judged=5    bad=0    Z:extracted old=meta | Y:extracted old=meta | X:extracted old=meta | W:meta old=meta | V:null old=meta — old existsSync(meta) rule walks into 4 traps; shipped resolver into 0
+§W_CDK C7_END_TO_END   PASS         judged=3    bad=0    build:ok §CACHE_DB Duplex kind=extracted file=Duplex_extracted.db reason=Duplex_meta.db 0 bytes — skipped, not loaded - | DB_KIND=meta:refused-with-reason | probe:exit0 §TM_REVEAL_SHIPPED_RESOLVE Duplex kind=extracted file=Duplex_extracted.db reason=Duplex_me
+§WITNESS_CACHE_DB_KIND pass=7 fail=0 inconclusive=0 codeKey=2b46745cdc59
