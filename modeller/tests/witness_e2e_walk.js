@@ -67,9 +67,13 @@ const server = http.createServer((q, r) => { let p = decodeURIComponent(q.url.sp
   const t0 = Date.now();
   await pg.evaluate(() => window.discWalk('ELEC', { building: 'Duplex' }));
   const completed = await pg.waitForFunction(() => window.__dwLastCommitDisc === 'ELEC', { timeout: 25000, polling: 250 }).then(() => true).catch(() => false);
-  // §D64 (DXF2BIM_FOUNDATION_LANE.md): a fresh walk BUILDS UP in placement order (<= 7 s); W2 / W7 judge the drawn state once the reveal is done
-  await pg.waitForFunction(() => !window.__dwRevealMeta || !window.__dwRevealMeta.ELEC, { timeout: 15000, polling: 250 }).catch(() => {});
+  // W1 is what its claim says: time to COMMIT done. §REVEAL-FRAME-CLOCK (bim-compiler MODELLER_MASTER.md, 2026-11-09): the build-up
+  // now plays on rendered time, so a commit that blocks the page no longer eats it; it plays in full AFTER the commit. Timing to the
+  // reveal's end (as this did since §D64) would charge the build-up the user is now meant to see to the walk's speed.
   const walkMs = Date.now() - t0;
+  // §D64: a fresh walk BUILDS UP in placement order (dur <= 7 s rendered); W2 / W7 judge the drawn state once the reveal is done
+  const revealEnd = await pg.waitForFunction(() => !window.__dwRevealMeta || !window.__dwRevealMeta.ELEC, { timeout: 60000, polling: 250 }).then(() => Date.now() - t0).catch(() => -1);
+  console.log('  §WALK reveal-end ms=' + revealEnd + ' (commit done at ' + walkMs + ' ms)');
   await sleep(300);
 
   const after = await pg.evaluate(() => {

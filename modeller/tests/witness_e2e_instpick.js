@@ -171,7 +171,13 @@ runE2E('W-E2E-INSTPICK', async (t) => {
   });
   if (!row) { t.assert('P4 ROW-FRAMES', false, 'no walked leaf row with a transform row found'); }
   else {
-    await t.pg.click(row.sel); await t.sleep(1500);   // 1.1s camera lerp + margin
+    await t.pg.click(row.sel);
+    // the 1.1 s camera lerp is wall-clock but steps per rendered frame: under swiftshader with a build-up still drawing, its last
+    // step can land after a fixed 1.5 s sleep (§REVEAL-FRAME-CLOCK, 2026-11-09). Wait until the target stops moving (≤ 8 s), log it.
+    { const t1 = Date.now(); let prev = null, still = 0;
+      while (Date.now() - t1 < 8000 && still < 2) { await t.sleep(300); const tg = await t.pg.evaluate(() => window.A.controls.target.toArray());
+        still = (prev && Math.hypot(tg[0] - prev[0], tg[1] - prev[1], tg[2] - prev[2]) < 1e-6) ? still + 1 : 0; prev = tg; }
+      console.log('  §INSTPICK-P4 settled after ' + (Date.now() - t1) + ' ms'); }
     const fr = await t.pg.evaluate(() => ({
       last: window.__lastGuidFrame || null,
       target: [window.A.controls.target.x, window.A.controls.target.y, window.A.controls.target.z] }));
