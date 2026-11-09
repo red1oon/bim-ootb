@@ -73,7 +73,12 @@ async function openResidentAndSeed(page, key) {
 
   logs.length = 0;
   await page.click('#bo-tree [data-disc="STR"]');
-  await page.waitForTimeout(250);
+  // §WALK-AFTER-SEED: a disc click now waits for the ARC seed to settle before it walks (window.discWalk →
+  // _awaitArcSeed, up to 300 s), so the old fixed 250 ms read the log before any §DISC-WALK line existed
+  // (B3/B4/B6 red on main 16b3c205, instrument timing, not the walker). Wait for the line itself.
+  async function waitLog(re, ms) { var t0 = Date.now(); while (Date.now() - t0 < ms) { if (logs.some(function (l) { return re.test(l); })) return Date.now() - t0; await page.waitForTimeout(200); } return -1; }
+  var strMs = await waitLog(/§DISC-WALK STR /, 120000);
+  console.log('  §UXDISC-WAIT STR ms=' + strMs + ' afterSeed="' + (logs.filter(function (l) { return /§WALK-AFTER-SEED/.test(l); })[0] || 'none') + '"');
   var strSurfaced = logs.some(function (l) { return /§DISC-WALK STR surfaced/.test(l); });
   chk('B3 click STR → §DISC-WALK STR surfaced (real walk, not faked)', strSurfaced, logs.filter(function (l) { return /DISC-WALK/.test(l); })[0] || '');
   var strTabOpen = await page.evaluate(function () { return window.Bonsai.outliner._collapsed['tcat|strwalk'] === false; });
@@ -99,8 +104,10 @@ async function openResidentAndSeed(page, key) {
   } else {
     logs.push('HARNESS no [data-disc="MEP"] node — click skipped, B6 will tally as FAIL');
   }
-  // discWalk MEP is async (rwInit + route); wait for its honest-refusal (or routed) log to land
-  await page.waitForTimeout(900);
+  // discWalk MEP is async (seed wait + rwInit + route); wait for its honest-refusal (or routed) log to land
+  var mepMs = await waitLog(/§DISC-WALK MEP /, 120000);
+  console.log('  §UXDISC-WAIT MEP ms=' + mepMs);
+  await page.waitForTimeout(300);
   var sweepsAfter = await page.evaluate(function () { return (window.Bonsai.oplog && window.Bonsai.oplog.db) ? window.Bonsai.oplog._geomOps().filter(function (o) { return o.op_type === 'GEOM_SWEEP'; }).length : 0; });
   // DiscWalker (terminal_rules.db) now backs the MEP-family disc click. The generic 'MEP' disc has NO
   // measured rule in terminal_rules.db → honest REFUSE (the named PLB/ACMV/FP/ELEC DO walk — see
