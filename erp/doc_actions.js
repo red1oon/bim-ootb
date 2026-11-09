@@ -5,7 +5,7 @@
 // WHAT: DocumentEngine.getValidActions (ad_docfsm.js legalActionsOrder / legalActionsFor) and then MRole.checkActionAccess (ad_access.js, the step WDocActionPanel.java:185-205 runs right after),
 //   joined for one record. The join used to live only inside erp/idempiere.html _fsmCtx (:3417, browser). This module is the SAME join for any host (the seam's verbs(ctx), the door's erp.actions); it
 //   adds no rule: the legality is ad_docfsm's, the role filter is ad_access's. NO table is named here (AD-LAYER LAW): the table is an AD_Table id, the walked set is ad_docfsm's DOC_FAMILY.
-// DELETION BUDGET (stated, not claimed): idempiere.html still carries its own copy of the period probe (_periodOpen :3379) and the join (_fsmCtx); folding the page onto this module is a follow-up.
+// DELETION DONE (2026-11-10, NEURO lane B follow-up 1): idempiere.html's _fsmCtx and _periodOpen now CALL this module (their inline copies of the join and the period probe are deleted; lines +/- in the PR); erp_seam.js verbs(ctx) answers a record's offered actions through it too.
 // b = a better-sqlite3-style handle: prepare(sql).get(...args) / .all(...args), lower-case column names (idempiere.html _b3w is one; common/door/erp_cli.js builds one over sql.js).
 (function (root, factory) {
   if (typeof module !== 'undefined' && module.exports) module.exports = factory(require('./ad_docfsm'), require('./ad_access'));
@@ -26,7 +26,8 @@
       return { open: !!(pc && pc.periodstatus === 'O'), why: 'period=' + p.c_period_id + ' ' + dbt.docbasetype + '=' + (pc ? pc.periodstatus : 'absent') };
     } catch (e) { return { open: true, why: 'probe-error(' + e.message + ')→assume-open' }; }
   }
-  // rec = the record's row (lower-case columns). opts = { roleId, clientId }. Returns { walked, status, doctypeId, accessDoctypeId, period, legal, offered, role }.
+  // rec = the record's row (lower-case columns). opts = { roleId, clientId, rc } (rc = a role context, or a function(roleId) returning one, so a host that caches one per role keeps its cache and builds it only when the check is reached; built here from roleId otherwise).
+//   Returns { walked, status, doctypeId, accessDoctypeId, period (text), po ({open, why}), legal, offered, role }.
   //   legal = DocumentEngine.getValidActions; offered = legal after the role's Document Action Access (equal to legal when no role is given or the role walk finds no access table).
   function legal(b, adTableId, rec, opts) {
     opts = opts || {};
@@ -36,14 +37,14 @@
     if (tid !== ORDER_TABLE_ID && !(FSM.DOC_FAMILY && FSM.DOC_FAMILY[tid])) { out.why = 'ad_table_id ' + tid + ' is not a walked DocAction table (ad_docfsm DOC_FAMILY)'; return out; }
     var doctypeId = Number(rec.c_doctype_id) || Number(rec.c_doctypetarget_id) || null, po = periodOpen(b, rec.dateacct, doctypeId);
     var fsmRec = { docStatus: status, doctypeId: doctypeId, processing: rec.processing === 'Y' ? 'Y' : 'N', periodOpen: po.open, isBackDateTrxAllowed: true, isSOTrx: rec.issotrx || 'N' };
-    out.walked = true; out.doctypeId = doctypeId; out.period = po.why;
+    out.walked = true; out.doctypeId = doctypeId; out.period = po.why; out.po = po;
     out.legal = tid === ORDER_TABLE_ID ? FSM.legalActionsOrder(b, fsmRec) : FSM.legalActionsFor(b, tid, fsmRec);
     out.offered = out.legal.slice();
     if (opts.roleId != null) {
       var accDt = Number(rec.c_doctypetarget_id) || Number(rec.c_doctype_id) || null;   // WDocActionPanel: C_DocTypeTarget_ID first, then C_DocType_ID; no doctype = no access check (:197)
       out.accessDoctypeId = accDt; out.role = Number(opts.roleId);
       if (accDt) {
-        var rc = ACC.buildRole(b, Number(opts.roleId));
+        var rc = typeof opts.rc === 'function' ? opts.rc(Number(opts.roleId)) : (opts.rc || ACC.buildRole(b, Number(opts.roleId)));
         if (rc && typeof rc.checkActionAccess === 'function') out.offered = rc.checkActionAccess(Number(opts.clientId != null ? opts.clientId : rec.ad_client_id), accDt, out.legal);
       }
     }

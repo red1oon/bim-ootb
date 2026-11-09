@@ -1,0 +1,13 @@
+§A5 start ooTB=/tmp/wt-erp-door2 base=http://localhost:8088 day=2026-11-10 break=0 tmp=/tmp/a5-vWnYup
+§A5_LEGACY SO-STD-137x2-CL order=50933 id=1009826 {"docstatus":"CL","docaction":"--","total_lines":600,"grand_total":600,"order_desc":"","line_desc":"Close (2)","lines":"137:0:300:600","ol_qty":"137:0/0/0/0","shipments":"0:","invoices":"0:","tax":"104:600:0","books_order_p":"none","books_order_s2":"none","books_ship_p":"none","books_ship_s2":"none","books_inv_p":"none","books_inv_s2":"none"}
+§OBJECT open db=ad_seed.db dictionary=present
+§ERP patch statements=3911 failed=3 ms=2431
+§ERP boot db=ad_seed.db replayed_ops=0 oplog=/tmp/a5-vWnYup/twin.ops.jsonl sql_functions=61
+§A5_TWIN SO-STD-137x2-CL REFUSED(refused) Close was not done: DocAction CL not implemented by the c_order class (named, not faked) (DocStatus stays CO)
+§A5_SCN SO-STD-137x2-CL DIFF legacy completed but the twin refused: Close was not done: DocAction CL not implemented by the c_order class (named, not faked) (DocStatus stays CO)
+§A5_LEGACY SO-POS-137x1-CL order=81492 id=1009827 {"docstatus":"CL","docaction":"--","total_lines":300,"grand_total":300,"order_desc":"","line_desc":"","lines":"137:1:300:300","ol_qty":"137:1/0/1/1","shipments":"1:CO","invoices":"1:CO","tax":"104:300:0","books_order_p":"none","books_order_s2":"none","books_ship_p":"CO=430:270/0|742:0/270","books_ship_s2":"CO=430:230/0|742:0/230","books_inv_p":"CO=518:300/0|758:0/300","books_inv_s2":"CO=518:255/0|758:0/255"}
+§OBJECT open db=ad_seed.db dictionary=present
+§ERP patch statements=3911 failed=3 ms=1724
+§ERP boot db=ad_seed.db replayed_ops=17 oplog=/tmp/a5-vWnYup/twin.ops.jsonl sql_functions=61
+§A5_TWIN SO-POS-137x1-CL REFUSED(refused) Close was not done: DocAction CL not implemented by the c_order class (named, not faked) (DocStatus stays CO)
+§A5_SCN SO-POS-137x1-CL DIFF legacy completed but the twin refused: Close was not done: DocAction CL not implemented by the c_order class (named, not faked) (DocStatus stays CO)
