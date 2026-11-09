@@ -16,6 +16,9 @@
 //   EV7 plugin dictionary invisible — BIM_Document_Open (source plugin bim_document) is in N and BIM_Document is a counted
 //                                     document table; N equals an independent recount that staged the same plugin rows by plain SQL
 //   EV8 falsifier                    — EV_NO_PLUGINS=1 (generator skips plugin staging) must make EV7 FAIL
+//   EV9 plugin handler invisible    — BIM_Document PR and CO and BIM_Document_Open are IMPLEMENTED, each citing the registration
+//                                     site (file:line) that an independent line grep of the plugin file finds
+//   EV10 falsifier                   — EV_NO_PLUGIN_REGS=1 (generator ignores plugin-context registrations) must make EV9 FAIL
 //   EV6 X is invented                — X = 0 while erp/actor_verbs.json does not exist
 // Run: node tests/witness_erp_verbs.js — exit 0 = pass.
 'use strict';
@@ -124,6 +127,21 @@ else ok('EV7', hasOpen(J) && sqlOpen && J.N === (((iTables - plugTabs) * iAction
 if (process.env.EV_NO_PLUGINS !== '1' && stagedSql) {
   const P = genJson({ EV_NO_PLUGINS: '1' });
   ok('EV8', !hasOpen(P) && P.N !== ((iTables - plugTabs) * iActions + plugPairs) + iProcAct, `EV_NO_PLUGINS=1 generator N=${P.N} (SQL ${((iTables - plugTabs) * iActions + plugPairs) + iProcAct}); BIM_Document_Open present=${hasOpen(P)} → EV7 would ${hasOpen(P) ? 'PASS (witness blind)' : 'FAIL (caught)'}`);
+}
+// ── EV9: plugin-context registrations count as handlers ──
+const PF = 'erp/plugins/bim_document.mjs', pfLines = fs.readFileSync(path.join(ROOT, PF), 'utf8').split('\n');
+const lineOfRe = re => pfLines.findIndex(l => !/^\s*\/\//.test(l) && re.test(l)) + 1;
+const gDoc = lineOfRe(/ctx\.docAction\.registerDocAction\(/), gProc = lineOfRe(/ctx\.process\.defineProcess\(/);
+const implOk = j => {
+  const pd = Object.fromEntries(j.pluginDoc || []);
+  const openRow = (j.procRows || []).find(r => r.value === 'BIM_Document_Open');
+  return !!(pd['bim_document:PR'] && pd['bim_document:CO'] && pd['bim_document:PR'][0].startsWith(PF + ':' + gDoc) && pd['bim_document:CO'][0].startsWith(PF + ':' + gDoc) && openRow && openRow.at.startsWith(PF + ':' + gProc));
+};
+if (!gDoc || !gProc) inc('EV9', 'registration lines not found by grep in ' + PF + ': nothing judged');
+else ok('EV9', implOk(J), `BIM_Document PR/CO implemented at ${PF}:${gDoc} (grep) and BIM_Document_Open at ${PF}:${gProc} (grep); generator cites ${JSON.stringify((J.pluginDoc || []).map(x => x[0] + '@' + x[1][0]))} and "${((J.procRows || []).find(r => r.value === 'BIM_Document_Open') || {}).at}"`);
+if (process.env.EV_NO_PLUGIN_REGS !== '1' && gDoc && gProc) {
+  const Q = genJson({ EV_NO_PLUGIN_REGS: '1' });
+  ok('EV10', !implOk(Q) && Q.implDoc < J.implDoc && Q.implProc < J.implProc, `EV_NO_PLUGIN_REGS=1 generator impl doc=${Q.implDoc} proc=${Q.implProc} (normal ${J.implDoc}/${J.implProc}) → EV9 would ${implOk(Q) ? 'PASS (witness blind)' : 'FAIL (caught)'}`);
 }
 // ── EV6: X ──
 const av = path.join(ROOT, 'erp/actor_verbs.json');

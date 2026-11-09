@@ -21,6 +21,11 @@
 //        are staged into the in-memory copy of ad_seed.db by the host's own registry (erp/plugin_registry.js
 //        stageManifestDictionary -> ctx.dict.insert) before counting; rows carry their source (seed / plugin <name>).
 //        ColumnSQL (virtual) columns are properties of a record, not actions: not counted. Install-only bundles are not counted.
+// PLUGIN HANDLERS (rule (b) widened): a built-in plugin registers through its context, not K.register / registerHandler('…'):
+//        ctx.docAction.registerDocAction(table, impl) -> (table, action) implemented when impl has the action's method
+//        (action -> method as erp/model_layer.js processIt:595-616); ctx.process.defineProcess(classname, factory[, opts]) -> classname
+//        implemented. Table/class name = a literal or a same-file string const; anything else is DYNAMIC, not counted. Evidence = file:line of the call.
+//        Harm of a plugin process: opts.harm (read|writes|posts|sends) when the definition declares one; else the rules below; "assumed" only when nothing matched.
 // Run: node scripts/gen_erp_verbs.js [--root DIR] [--db FILE] [--out FILE] [--json]
 'use strict';
 const fs = require('fs'), path = require('path');
@@ -32,6 +37,7 @@ const DB = path.resolve(opt('--db') || path.join(ROOT, 'erp/ad_seed.db'));
 const OUT = opt('--out') || path.join(ROOT, 'internal/ERP_VERBS.md');
 const JSON_OUT = argv.includes('--json');
 const NO_PLUGINS = process.env.EV_NO_PLUGINS === '1';   // falsifier: skip built-in plugin staging (must fail W-ERP-VERBS EV7)
+const NO_PLUGIN_REGS = process.env.EV_NO_PLUGIN_REGS === '1';   // falsifier: ignore plugin-context registrations (must fail W-ERP-VERBS EV9)
 const BREAK = process.env.EV_BREAK === '1';   // falsifier: drop one DocAction value (must fail EV1)
 
 // ── harm class tables (R5): every rule cites its source ──────────────────────────────────────────
@@ -51,7 +57,8 @@ const PROC_RULES = [
   ['sends', /mail|notice|\brequest\b|mailing|\bsms\b|broadcast/, 'class/name says it mails or notifies'],
   ['posts', /fact_?acct|\bposting\b|\bpost\b|doc\.?post|invoicegenerate|allocat|bankstatementpayment|paymentgenerate|payselect|paymentprint|costing|inventorycount|imputation|storageclean|periodclose|openclose|reval/, 'class/name says it posts, allocates, costs or generates documents'],
 ];
-const procClass = (p, cn) => {
+const procClass = (p, cn, declared) => {
+  if (declared) return [declared, 'declared by the process definition (defineProcess opts.harm)'];
   if (p.isreport === 'Y') return ['read', 'IsReport=Y (a report process)'];
   const hay = [cn, p.value, p.name].join(' ').toLowerCase();
   for (const [c, re, why] of PROC_RULES) if (re.test(hay)) return [c, why];
@@ -81,9 +88,47 @@ async function stagePlugins(db) {
     const dict = (mod.manifest && mod.manifest.dictionary) || [];
     const n = reg.stageManifestDictionary(mod.manifest);
     const rowsFor = t => dict.filter(d => d.table.toLowerCase() === t).flatMap(d => d.rows);
-    out.push({ name, procIds: new Set(rowsFor('ad_process').map(r => r.ad_process_id)), docTables: rowsFor('ad_table').map(r => r.tablename), file: 'erp/' + rel_, staged: n, tables: dict.map(d => d.table.toLowerCase()), manifestRows: dict.reduce((a, d) => a + d.rows.length, 0),
+    out.push({ regs: NO_PLUGIN_REGS ? { doc: [], proc: [], dynamic: [] } : scanPluginRegs(file, mod, 'erp/' + rel_), name, procIds: new Set(rowsFor('ad_process').map(r => r.ad_process_id)), docTables: rowsFor('ad_table').map(r => r.tablename), file: 'erp/' + rel_, staged: n, tables: dict.map(d => d.table.toLowerCase()), manifestRows: dict.reduce((a, d) => a + d.rows.length, 0),
       family: mod.FAMILY && mod.FAMILY.allow ? [...new Set(Object.values(mod.FAMILY.allow).flat())].sort() : null,
       virtualCols: dict.filter(d => d.table.toLowerCase() === 'ad_column').flatMap(d => d.rows).filter(r => r.columnsql).length });
+  }
+  return out;
+}
+// ── plugin-context registrations (rule (b) for built-in plugins) ──
+const ACTION_METHOD = { PR: 'prepareIt', CO: 'completeIt', AP: 'approveIt', RJ: 'rejectIt', VO: 'voidIt', CL: 'closeIt', RC: 'reverseCorrectIt', RA: 'reverseAccrualIt', RE: 'reActivateIt' };
+function callArgs(src, openIdx) {   // balanced scan from the '(' at openIdx -> top-level argument strings
+  let d = 0, q = null, cur = '', out = [];
+  for (let i = openIdx; i < src.length; i++) {
+    const c = src[i];
+    if (q) { cur += c; if (c === '\\') { cur += src[++i]; } else if (c === q) q = null; continue; }
+    if (c === "'" || c === '"' || c === '`') { q = c; cur += c; continue; }
+    if ('([{'.includes(c)) { d++; if (d > 1) cur += c; continue; }
+    if (')]}'.includes(c)) { d--; if (d === 0) { out.push(cur.trim()); return out; } cur += c; continue; }
+    if (c === ',' && d === 1) { out.push(cur.trim()); cur = ''; continue; }
+    cur += c;
+  }
+  return out;
+}
+function resolveName(arg, src) {   // 'lit' | lc(CONST) | CONST | CONST.toLowerCase() -> string or null
+  const a = (arg || '').replace(/^\w+\(\s*(\w+)\s*\)$/, '$1').replace(/\.toLowerCase\(\)$/, '').trim();
+  const lit = /^'([^']*)'$|^"([^"]*)"$/.exec(a); if (lit) return lit[1] != null ? lit[1] : lit[2];
+  if (!/^[A-Za-z_$][\w$]*$/.test(a)) return null;
+  const m = new RegExp('\\b' + a + "\\s*=\\s*'([^']+)'").exec(src); return m ? m[1] : null;
+}
+function scanPluginRegs(file, mod, relFile) {
+  const raw = fs.readFileSync(file, 'utf8'), src = stripComments(raw), out = { doc: [], proc: [], dynamic: [] };
+  for (const m of src.matchAll(/\bregisterDocAction\s*\(/g)) {
+    const at = relFile + ':' + lineOf(src, m.index), a = callArgs(src, m.index + m[0].length - 1);
+    const table = resolveName(a[0], src), impl = /^[A-Za-z_$][\w$]*$/.test(a[1] || '') ? mod[a[1]] : null;
+    if (!table || !impl) { out.dynamic.push(at + ' registerDocAction(' + (a[0] || '') + ', ' + (a[1] || '') + ') table or class not a literal/const'); continue; }
+    out.doc.push({ at, table, actions: Object.keys(ACTION_METHOD).filter(k => typeof impl[ACTION_METHOD[k]] === 'function') });
+  }
+  for (const m of src.matchAll(/\bdefineProcess\s*\(/g)) {
+    const at = relFile + ':' + lineOf(src, m.index), a = callArgs(src, m.index + m[0].length - 1);
+    const cn = resolveName(a[0], src);
+    if (!cn) { out.dynamic.push(at + ' defineProcess(' + (a[0] || '') + ', …) class name not a literal/const'); continue; }
+    const hm = a[2] ? /\bharm\s*:\s*['"](read|writes|posts|sends)['"]/.exec(a[2]) : null;
+    out.proc.push({ at, classname: cn, harm: hm ? hm[1] : null });
   }
   return out;
 }
@@ -177,6 +222,7 @@ async function main() {
   const counted = sites.filter(s => s.kind === 'LOOP' || s.kind === 'LITERAL');
   const handlerPairs = new Map();   // 'table:action' → [site descr]
   for (const s of counted) for (const [t, a] of s.pairs) { const k = t.toLowerCase() + ':' + a; if (!handlerPairs.has(k)) handlerPairs.set(k, []); handlerPairs.get(k).push(`${s.file}:${s.line}`); }
+  for (const pl of plugins) for (const r of pl.regs.doc) for (const act of r.actions) { const k = r.table.toLowerCase() + ':' + act; if (!handlerPairs.has(k)) handlerPairs.set(k, []); handlerPairs.get(k).push(r.at + ' (plugin ' + pl.name + ')'); }
   const dictPair = new Set(); for (const t of docTables) for (const a of pairsOf(t)) dictPair.add(t.toLowerCase() + ':' + a.value);
   const implDoc = [...dictPair].filter(k => handlerPairs.has(k)).length;
   const noDict = [...handlerPairs.keys()].filter(k => !dictPair.has(k)).sort();
@@ -198,15 +244,18 @@ async function main() {
     }
   }
   const AP = require(path.join(ROOT, 'erp/ad_process.js'));
+  const plugProc = new Map();   // classname -> { at, harm } from defineProcess in the staged built-in plugins
+  for (const pl of plugins) for (const r of pl.regs.proc) if (!plugProc.has(r.classname)) plugProc.set(r.classname, { at: r.at + ' (plugin ' + pl.name + ')', harm: r.harm });
   const procRows = procActive.map(p => {
     const cn = AP.resolveClassname({ classname: p.classname || '', isReport: p.isreport === 'Y', value: p.value, name: p.name });
-    const at = cn && procLits.get(cn);
-    const [cls, basis] = procClass(p, cn || p.classname || '');
-    return { src: procSrc(p.id), id: p.id, value: p.value, name: p.name, classname: p.classname || '', resolved: cn || '', at: at || '', cls, basis };
+    const pp = cn && plugProc.get(cn);
+    const at = cn && (procLits.get(cn) || (pp && pp.at));
+    const [cls, basis] = procClass(p, cn || p.classname || '', !seedProcIds.has(p.id) && pp ? pp.harm : null);
+    return { at0: at || '', src: procSrc(p.id), id: p.id, value: p.value, name: p.name, classname: p.classname || '', resolved: cn || '', at: at || '', cls, basis };
   });
   const implProc = procRows.filter(r => r.at).length;
   const procWithHandler = new Set(procRows.filter(r => r.at).map(r => r.resolved));
-  const procHandlerNoRow = [...procLits.keys()].filter(k => !procWithHandler.has(k)).sort();
+  const procHandlerNoRow = [...procLits.keys(), ...[...plugProc.keys()].filter(k => !procLits.has(k))].filter(k => !procWithHandler.has(k)).sort();
 
   // (c) offered to actors
   const avFile = path.join(ROOT, 'erp/actor_verbs.json');
@@ -222,7 +271,7 @@ async function main() {
     return { name: pl.name, file: pl.file, staged: pl.staged, manifestRows: pl.manifestRows, procs: procs.map(r => r.value), docTables: tabs, pairs: tabs.reduce((a, t) => a + pairsOf(t).length, 0), family: pl.family, virtualCols: pl.virtualCols };
   });
   const pluginLines = pluginRows.map(pl => `§ERP_VERBS_PLUGINS plugin=${pl.name} staged_rows=${pl.staged}/${pl.manifestRows} new_processes=${pl.procs.length} [${pl.procs.join(',')}] new_doc_tables=${pl.docTables.length} [${pl.docTables.join(',')}] doc_pairs=${pl.pairs} (rule: family offered actions) family_offers=[${(pl.family || []).join(',')}] columnsql_properties=${pl.virtualCols} (not counted)`);
-  const J = { plugins: pluginRows, procRows: procRows.map(r => ({ id: r.id, value: r.value, src: r.src })), N, N_doc, N_proc, tables: docTables, actions: actions.map(a => a.value), procActive: N_proc, procInactive, implDoc, implProc, X, noDict, procHandlerNoRow,
+  const J = { plugins: pluginRows, procRows: procRows.map(r => ({ id: r.id, value: r.value, src: r.src, at: r.at })), pluginDoc: [...handlerPairs.entries()].filter(([, v]) => v.some(x => /\(plugin /.test(x))).map(([k, v]) => [k, v.filter(x => /\(plugin /.test(x))]), pluginDynamic: plugins.flatMap(pl => pl.regs.dynamic), N, N_doc, N_proc, tables: docTables, actions: actions.map(a => a.value), procActive: N_proc, procInactive, implDoc, implProc, X, noDict, procHandlerNoRow,
     sites: sites.map(s => ({ file: s.file, line: s.line, kind: s.kind, pairs: s.pairs.length })), unresolved: unresolved.map(s => s.file + ':' + s.line), dynamic, empty, summary,
     handlerSites: sites.map(s => s.file + ':' + s.line), procLits: [...procLits.entries()], dynProc };
   if (JSON_OUT) { process.stdout.write(JSON.stringify(J, null, 1)); process.exit(0); }
@@ -249,7 +298,7 @@ async function main() {
   L.push(`Basis for X: ${xBasis}.`, '');
   L.push('**What "handler" means here:** a function registered under (table, action) in the kernel handler registry. The generic Kanban handler (`erp/kanban_host.js:73`) returns one `SET_STATUS` op and posts nothing, so a doc pair marked implemented by it is a status change, not the legacy Complete with its accounting; the twin check for that is §21.5 A5, not this file. Tables whose name ends `_v` are dictionary views that carry a DocAction column; they are counted because the dictionary says so.', '');
   L.push('## Built-in plugins counted (source column below)', '');
-  L.push('The dictionary rows each BUILT-IN plugin (`erp/plugin_overlay.js` BUILTINS) stages at activation are staged into the in-memory dictionary by the host\'s own registry (`stageManifestDictionary` → `ctx.dict.insert`) before counting. ColumnSQL (virtual) columns are properties of a record, not actions: not counted. A plugin\'s DocAction class and process class are registered through the plugin context (`registerDocAction`, `defineProcess`), not `K.register` / `registerHandler(\'…\')`, so rule (b) does not see them: its rows read NOT IMPLEMENTED until (b) is widened. A plugin document table with a DocAction family counts the family\'s OFFERED actions only (union of `FAMILY.allow`; owner ruling 2026-11-09: RE is set by a newer revision, never offered), not the 13 of reference 135; a seed table counts all 13.', '');
+  L.push('The dictionary rows each BUILT-IN plugin (`erp/plugin_overlay.js` BUILTINS) stages at activation are staged into the in-memory dictionary by the host\'s own registry (`stageManifestDictionary` → `ctx.dict.insert`) before counting. ColumnSQL (virtual) columns are properties of a record, not actions: not counted. A plugin\'s DocAction class and process class are registered through the plugin context (`registerDocAction`, `defineProcess`), not `K.register` / `registerHandler(\'…\')`; rule (b) also reads those two calls in the staged plugin files (a DocAction class implements an action when it has the action\'s method; a process class by its class name), evidence file:line. A plugin document table with a DocAction family counts the family\'s OFFERED actions only (union of `FAMILY.allow`; owner ruling 2026-11-09: RE is set by a newer revision, never offered), not the 13 of reference 135; a seed table counts all 13.', '');
   L.push('| plugin | file | rows staged | new processes | new document tables | doc pairs | family offers | ColumnSQL properties (not counted) |', '|---|---|---:|---|---|---:|---|---:|');
   for (const pl of pluginRows) L.push(`| ${pl.name} | ${md(pl.file)} | ${pl.staged} of ${pl.manifestRows} | ${pl.procs.map(md).join(' ') || '—'} | ${pl.docTables.map(md).join(' ') || '—'} | ${pl.pairs} | ${(pl.family || []).join(' ') || '—'} | ${pl.virtualCols} |`);
   if (!pluginRows.length) L.push('| (none staged) | | | | | | | |');
@@ -282,8 +331,10 @@ async function main() {
   L.push('| id | source | value | name | class name → resolved | handler | class | basis |', '|---:|---|---|---|---|---|---|---|');
   for (const r of procRows) L.push(`| ${r.id} | ${r.src} | ${esc(r.value)} | ${esc(r.name)} | ${r.classname ? md(r.classname) : '—'}${r.resolved && r.resolved !== r.classname ? ' → ' + md(r.resolved) : ''} | ${r.at ? md(r.at) : '**NOT IMPLEMENTED**'} | ${r.cls} | ${esc(r.basis)} |`);
   L.push('');
-  if (procHandlerNoRow.length) { L.push('## HANDLER WITHOUT DICTIONARY ROW (process)', '', 'Registered by `registerHandler`, no active AD_Process row resolves to it.', ''); for (const k of procHandlerNoRow) L.push(`- ${md(k)} at ${md(procLits.get(k))}`); L.push(''); }
+  if (procHandlerNoRow.length) { L.push('## HANDLER WITHOUT DICTIONARY ROW (process)', '', 'Registered by `registerHandler`, no active AD_Process row resolves to it.', ''); for (const k of procHandlerNoRow) L.push(`- ${md(k)} at ${md(procLits.get(k) || plugProc.get(k).at)}`); L.push(''); }
   if (dynProc.length) { L.push('## DYNAMIC process registrations (NOT COUNTED)', ''); for (const d of dynProc) L.push('- ' + md(d)); L.push(''); }
+  const plugDyn = plugins.flatMap(pl => pl.regs.dynamic);
+  if (plugDyn.length) { L.push('## DYNAMIC plugin registrations (NOT COUNTED)', ''); for (const d of plugDyn) L.push('- ' + md(d)); L.push(''); }
   fs.mkdirSync(path.dirname(OUT), { recursive: true });
   fs.writeFileSync(OUT, L.join('\n') + '\n');
   console.log(summary);
