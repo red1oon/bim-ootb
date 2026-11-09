@@ -28,8 +28,8 @@ async function start(o) {
   const server = http.createServer((req, res) => {
     try {
       const u = decodeURIComponent(req.url.split('?')[0]);
-      const fp = u === '/__fpv/model.db' ? dbFile : path.join(ROOT, u.replace(/^\/+/, ''));
-      if (!fp.startsWith(ROOT) && fp !== dbFile) { res.writeHead(403); res.end(); return; }
+      const fp = u === '/__fpv/model.db' ? dbFile : (u === '/__fpv/patches/model.db.sql' && o.patch) ? path.resolve(o.patch) : path.join(ROOT, u.replace(/^\/+/, ''));   // o.patch (optional): the self-heal patch the loader looks for beside the db (patches/<dbfile>.sql)
+      if (!fp.startsWith(ROOT) && fp !== dbFile && !(o.patch && fp === path.resolve(o.patch))) { res.writeHead(403); res.end(); return; }
       if (!fs.existsSync(fp) || fs.statSync(fp).isDirectory()) { res.writeHead(404); res.end('404'); return; }
       res.writeHead(200, { 'Content-Type': MIME[path.extname(fp).toLowerCase()] || 'application/octet-stream', 'Cache-Control': 'no-store' });
       fs.createReadStream(fp).pipe(res);

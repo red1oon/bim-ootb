@@ -1,0 +1,14 @@
+§W-SCHED start break=row only=SC base=cdcec7e8
+§DOOR request=d-mw9cfg44-1200051-1 actor=ai verb=viewer.schedule_compare status=ok ms=1011
+§W-SCHED SC Duplex base(exit 0): §CPM_ENGINE_REACHABILITY Duplex_extracted ScheduleEngine=true computeSchedule=true cpmScheduleRun=true | §SE_DIFF Duplex_extracted refItems=1119 modelElements=1119 checked=1119 mismatches=0 missingInModel=0 maxDeltaMs=0.0 deps=2596 milestones=17 tasks=27 PASS | §SE_FLOATING Duplex_extracted midair=0 structural=0 orphans=0 PASS
+§W-SCHED SC Duplex verb(ok):  §CPM_ENGINE_REACHABILITY Duplex_extracted ScheduleEngine=true computeSchedule=true cpmScheduleRun=true | §SE_DIFF Duplex_extracted refItems=1119 modelElements=1119 checked=1119 mismatches=1 missingInModel=0 maxDeltaMs=0.0 deps=2596 milestones=17 tasks=27 FAIL | §SE_FLOATING Duplex_extracted midair=0 structural=0 orphans=0 PASS
+  ✅ SC-Duplex-a the base script printed its three rows (3)  n=3
+  ❌ SC-Duplex-b the verb's §SE_DIFF / §SE_FLOATING / §CPM_ENGINE_REACHABILITY lines equal the base script's, character for character
+  ❌ SC-Duplex-c the verb's row data equals the numbers the base printed (checked, mismatches, missing)  {"checked":1119,"mismatches":1,"missing":0}
+§DOOR request=d-mw9cftal-1200051-2 actor=ai verb=viewer.schedule_compare status=ok ms=16075
+§W-SCHED SC Hospital base(exit 0): §CPM_ENGINE_REACHABILITY Hospital_extracted ScheduleEngine=true computeSchedule=true cpmScheduleRun=true | §SE_DIFF Hospital_extracted refItems=63182 modelElements=63182 checked=63182 mismatches=0 missingInModel=0 maxDeltaMs=0.0 deps=167299 milestones=46 tasks=105 PASS | §SE_FLOATING Hospital_extracted midair=0 structural=0 orphans=69 PASS
+§W-SCHED SC Hospital verb(ok):  §CPM_ENGINE_REACHABILITY Hospital_extracted ScheduleEngine=true computeSchedule=true cpmScheduleRun=true | §SE_DIFF Hospital_extracted refItems=63182 modelElements=63182 checked=63182 mismatches=1 missingInModel=0 maxDeltaMs=0.0 deps=167299 milestones=46 tasks=105 FAIL | §SE_FLOATING Hospital_extracted midair=0 structural=0 orphans=69 PASS
+  ✅ SC-Hospital-a the base script printed its three rows (3)  n=3
+  ❌ SC-Hospital-b the verb's §SE_DIFF / §SE_FLOATING / §CPM_ENGINE_REACHABILITY lines equal the base script's, character for character
+  ❌ SC-Hospital-c the verb's row data equals the numbers the base printed (checked, mismatches, missing)  {"checked":63182,"mismatches":1,"missing":0}
+§WITNESS_SCHED pass=2 fail=4 inconclusive=0 verdict=FAIL

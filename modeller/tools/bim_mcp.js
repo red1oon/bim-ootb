@@ -3,17 +3,14 @@
 // Witness: modeller/tests/witness_bim_mcp.js (W-BIM-MCP). READ THE §-LOG on stderr after every run; stdout carries the protocol only.
 //
 // An AI app (Claude Desktop, Claude Code, any MCP client) starts this program, asks for its tools, and reads each verb's name, plain description
-// and inputs: that menu is the API the AI reads. Each verb runs edit_cli.js (this folder) and returns its JSON unchanged, so the app does the work
-// and the checks: one engine, no copy. No dependency beyond what edit_cli.js needs (puppeteer 24). MCP stdio = newline-delimited JSON-RPC 2.0.
+// and inputs: that menu is the API the AI reads. Each verb runs through the door (common/door/) to the app's own CLI and returns its JSON unchanged, so the app
+// does the work and the checks: one engine, no copy. No dependency beyond what edit_cli.js needs (puppeteer 24). MCP stdio = newline-delimited JSON-RPC 2.0.
 //
 //   Claude Code:     claude mcp add bim -- node /path/to/bim_mcp.js
 //   Claude Desktop:  "mcpServers": { "bim": { "command": "node", "args": ["/path/to/bim_mcp.js"] } }
 //   BIM_MCP_LOG=<file>  optional: append every tools/call (the AI's request, verbatim) and the answer returned, one JSON line each. Off unless set.
 'use strict';
-const path = require('path'), fs = require('fs'), { spawn } = require('child_process');
-const CLI = path.join(__dirname, 'edit_cli.js');
-const VCLI = path.join(__dirname, '..', '..', 'viewer', 'tools', 'viewer_verbs.js');   // §19.4: the Viewer verbs run in their own process (a headless Viewer page)
-const INSTRUMENT = ['--own-grid', '--lattice-boxes'];   // the proposer test's instrument (§13.2, §13.6): the building's own grid; lattice boxes, no effect at theta 0
+const fs = require('fs'), path = require('path');
 const VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05'];
 const say = (s) => process.stderr.write('§BIM_MCP ' + s + '\n');
 const LOGF = process.env.BIM_MCP_LOG || null;
@@ -29,66 +26,31 @@ const INSTRUCTIONS = [
   'Always tell the user what the report lists under notChecked. Load capacity is never checked; a structural engineer has the last word.'
 ].join('\n');
 
-const TOOLS = [
-  { name: 'bim_lines',
-    description: 'Read a building\'s grid: every grid line\'s id (gx0, gx1, … along x; gy0, gy1, … along y) and its position in metres in the building\'s own frame, plus the structural system, the material, the number of girders and the building\'s rotation in degrees. Opens a fresh copy of the building; takes about 10 to 40 seconds. Changes nothing.',
-    inputSchema: { type: 'object', properties: { building: { type: 'string', description: 'The building name, e.g. "Hospital" or "HospitalGarage".' } }, required: ['building'] },
-    args: (a) => ['--building', a.building, '--lines'] },
-  { name: 'bim_try_shift',
-    description: 'Shift one grid line, and every later line on the same axis, by a distance in metres (positive = towards higher positions). Only the bay just before that line changes width; the rest of the building travels with it. The app makes the change, checks it (overlaps, beam spans against their limit, doors and windows against their walls) and returns its report: what changed, each check before and after, and what was not checked. If the change adds new problems the app undoes it and returns stopped_by_gate with the reason. Opens a fresh copy each time; nothing is saved.',
-    inputSchema: { type: 'object', properties: {
-      building: { type: 'string', description: 'The building name, as in bim_lines.' },
-      line: { type: 'string', description: 'The grid line to shift, e.g. "gx6".' },
-      move: { type: 'number', description: 'The distance in metres, e.g. 1.824. Negative moves towards lower positions.' } }, required: ['building', 'line', 'move'] },
-    args: (a) => ['--building', a.building, '--shift', a.line, '--move', String(process.env.MCP_BREAK === '1' ? a.move / 2 : a.move)] },   // MCP_BREAK = the witness's falsifier
-  // ── Viewer verbs (§19.4): the Viewer's own Find ▸ Ask answers, read only, headless, no GPU ──
-  { name: 'viewer_counts', viewer: true,
-    description: 'Open a building in the Viewer and count its elements, the same answer the Viewer\'s Find panel gives for "Find element count by discipline" (or by storey). Returns the total and the count per group, plus the Viewer\'s own log line for the same answer. Opens a fresh headless copy of the Viewer on the CPU; takes about 20 to 90 seconds. Changes and saves nothing.',
-    inputSchema: { type: 'object', properties: {
-      building: { type: 'string', description: 'The building name, e.g. "Duplex" or "Clinic". An unknown name is an error.' },
-      by: { type: 'string', description: 'What to count by: "discipline" (the default, e.g. ARC, MEP) or "storey" (floor level).' } }, required: ['building'] },
-    vargs: (a) => ['counts', '--building', a.building].concat(a.by !== undefined ? ['--by', a.by] : []) },
-  { name: 'viewer_clashes', viewer: true,
-    description: 'Open a building in the Viewer and list the clashes between two disciplines, the same answer the Viewer\'s Find panel gives for "Find clashes between A and B": how many element boxes overlap at the rule\'s tolerance (in metres), how many of those are true clashes after the shape tests, and the first 20 rows with the overlap in metres. A pair with no clash rule is an error, not zero. Opens a fresh headless copy of the Viewer on the CPU; takes about 20 to 120 seconds. Changes and saves nothing.',
-    inputSchema: { type: 'object', properties: {
-      building: { type: 'string', description: 'The building name, e.g. "Clinic". An unknown name is an error.' },
-      discA: { type: 'string', description: 'First discipline code, e.g. "ARC" (architecture), "STR", "MEP".' },
-      discB: { type: 'string', description: 'Second discipline code, e.g. "MEP". Order does not matter.' } }, required: ['building', 'discA', 'discB'] },
-    vargs: (a) => ['clashes', '--building', a.building, '--a', a.discA, '--b', a.discB] }
-];
+// ── The verb list is common/door/verbs.json (D1): tools/list is generated from it, and every call goes through the door (common/door/door.js, D4),
+// the same path a person's terminal takes. Names, descriptions and schemas are the published ones, byte for byte (W-VOCAB-FRESH). Spec §0.7.
+let DOOR = null, TOOLS = [];
+const LIVE_DL = 'https://red1oon.github.io/bim-ootb/', DL = ['modeller/tools/edit_cli.js', 'common/door/door.js', 'common/door/verbs.json'];
+const failStart = (why, files) => { say('FAIL ' + why + '. Put these files in one folder with bim_mcp.js (or use a bim-ootb checkout):\n' + files.map(f => '  curl -O ' + LIVE_DL + f).join('\n')); process.exit(1); };
+try {
+  const beside = path.join(__dirname, 'door.js'), doorFile = fs.existsSync(beside) ? beside : path.join(__dirname, '..', '..', 'common', 'door', 'door.js');   // beside first, then the repo layout
+  if (!fs.existsSync(doorFile)) failStart('door.js is not beside bim_mcp.js', DL);
+  const D = require(doorFile), miss = D.missingFiles(['verbs.json', 'edit_cli.js']);
+  if (miss.length) failStart('missing beside bim_mcp.js: ' + miss.join(', '), DL.filter(f => miss.indexOf(path.basename(f)) >= 0));
+  DOOR = D.createDoor(); TOOLS = DOOR.mcpTools();
+} catch (e) { failStart('the door is not available (' + (e && e.message || e) + ')', DL); }
+const MCP2VERB = {}; DOOR.vocab.verbs.forEach(v => { if (v.mcp_name) MCP2VERB[v.mcp_name] = v.verb; });
 
-function runCli(argv, cli) {
-  cli = cli || CLI;
-  return new Promise((res) => {
-    if (cli === VCLI && !fs.existsSync(VCLI)) return res({ code: 1, out: '', err: 'viewer/tools/viewer_verbs.js is not at ../../viewer/tools from bim_mcp.js. Use a bim-ootb checkout.' });
-    if (!fs.existsSync(cli)) return res({ code: 1, out: '', err: 'edit_cli.js is not beside bim_mcp.js. Download it: curl -O https://red1oon.github.io/bim-ootb/modeller/tools/edit_cli.js' });
-    let out = '', err = '';
-    const p = spawn(process.execPath, [cli].concat(argv), { env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
-    p.stdout.on('data', d => { out += d; }); p.stderr.on('data', d => { err += d; });
-    p.on('close', code => res({ code, out: out.trim(), err: err.trim() }));
-  });
-}
-function bad(a, t) {   // input check before any run: every required input present, and of its type
-  const miss = t.inputSchema.required.filter(k => a[k] === undefined || a[k] === null || a[k] === '');
-  if (miss.length) return 'missing input: ' + miss.join(', ');
-  for (const k of Object.keys(t.inputSchema.properties)) if (a[k] !== undefined && (t.inputSchema.properties[k].type === 'number' ? typeof a[k] !== 'number' || !isFinite(a[k]) : typeof a[k] !== 'string')) return 'input ' + k + ' must be a ' + t.inputSchema.properties[k].type;
-  return null;
-}
 async function call(name, a) {
   const t = TOOLS.filter(x => x.name === name)[0];
   if (!t) return { content: [{ type: 'text', text: 'unknown tool: ' + name + '. Tools: ' + TOOLS.map(x => x.name).join(', ') }], isError: true };
-  const b = bad(a || {}, t); if (b) return { content: [{ type: 'text', text: b }], isError: true };
-  if (t.viewer) {   // Viewer verbs: exit 0 = the Viewer answered (stdout is one JSON line); 1 = an error with the reason on stderr; 2 = usage
-    const t1 = Date.now(), v = await runCli(t.vargs(a), VCLI);
-    say('call ' + name + ' ' + JSON.stringify(a) + ' -> exit=' + v.code + ' ms=' + (Date.now() - t1));
-    if (v.code === 0 && v.out) return { content: [{ type: 'text', text: v.out }], isError: false };
-    return { content: [{ type: 'text', text: 'the Viewer could not answer (exit ' + v.code + '): ' + (v.err.split('\n').filter(l => /VIEWER_VERB FAIL|viewer/.test(l)).pop() || v.err || v.out || 'no output').replace(/^§VIEWER_VERB FAIL /, '') }], isError: true };
-  }
-  const argv = t.args(a).concat(INSTRUMENT), t0 = Date.now(), r = await runCli(argv);
-  say('call ' + name + ' ' + JSON.stringify(a) + ' -> exit=' + r.code + ' ms=' + (Date.now() - t0));
-  // edit_cli: exit 0 every edit reported · 3 refused or stopped (an answer, not an error) · 2 usage · 1 failed
-  if ((r.code === 0 || r.code === 3) && r.out) return { content: [{ type: 'text', text: r.out }], isError: false };
-  return { content: [{ type: 'text', text: 'the app could not answer (exit ' + r.code + '): ' + (r.err || r.out || 'no output').split('\n').slice(-3).join(' ') }], isError: true };
+  a = a || {};
+  if (process.env.MCP_BREAK === '1' && name === 'bim_try_shift' && typeof a.move === 'number') a = Object.assign({}, a, { move: a.move / 2 });   // MCP_BREAK = the witness's falsifier
+  const t0 = Date.now(), env = await DOOR.execArgs({ verb: MCP2VERB[name], args: a, actor: 'ai' });
+  say('call ' + name + ' ' + JSON.stringify(a) + ' -> status=' + env.status + ' request=' + env.request + ' ms=' + (Date.now() - t0));
+  // The reply text is the engine's own JSON, unchanged (an ok answer, or a refusal/stop, which is an answer). The envelope goes to the call log and the door journal.
+  const answered = (env.status === 'ok' || env.status === 'refused') && env.answer !== null && env._raw;
+  const r = answered ? { content: [{ type: 'text', text: env._raw }], isError: false } : { content: [{ type: 'text', text: env.why || env.status }], isError: true };
+  r.envelope = env; return r;
 }
 
 const send = (m) => process.stdout.write(JSON.stringify(m) + '\n');
@@ -99,8 +61,8 @@ async function handle(m) {
   if (m.method === 'initialize') { const v = VERSIONS.indexOf(p.protocolVersion) >= 0 ? p.protocolVersion : VERSIONS[0]; say('initialize client=' + JSON.stringify(p.clientInfo || null) + ' version=' + v); record({ initialize: p.clientInfo || null, version: v });
     return ok({ protocolVersion: v, capabilities: { tools: {} }, serverInfo: { name: 'bim', version: '0.1.0' }, instructions: INSTRUCTIONS }); }
   if (m.method === 'ping') return ok({});
-  if (m.method === 'tools/list') return ok({ tools: TOOLS.map(t => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })) });
-  if (m.method === 'tools/call') { const r = await call(p.name, p.arguments); record({ tool: p.name, arguments: p.arguments, isError: r.isError, result: r.content[0].text }); return ok(r); }
+  if (m.method === 'tools/list') return ok({ tools: TOOLS });
+  if (m.method === 'tools/call') { const r = await call(p.name, p.arguments), env = r.envelope; delete r.envelope; record({ tool: p.name, arguments: p.arguments, isError: r.isError, result: r.content[0].text, status: env && env.status, request: env && env.request, envelope: env }); return ok(r); }
   send({ jsonrpc: '2.0', id: m.id, error: { code: -32601, message: 'method not found: ' + m.method } });
 }
 let buf = '';

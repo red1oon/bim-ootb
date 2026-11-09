@@ -532,7 +532,7 @@
 <script src="vfs_detect.js?v=1"></script>
 <script src="seed_key.js?v=1"></script><!-- SEAM F10 — the ONE seed IDB key owner (window.ERP_SEED_KEY); before first idb use + system_monitor -->
 <script src="erp_i18n.js?v=2"></script><!-- UI locales (bim-compiler prompts/ERP_UI_LOCALES.md) — W-ERP-I18N -->
-<script src="ad_parser.js?v=25"></script>
+<script src="ad_parser.js?v=26"></script>
 <!-- UI_UNPARK_RESUME.md — proven AD engines (source of truth: bim-compiler build/erp/): logic evaluator
      (W-LOGIC-EVAL 3044/3044) · DocAction FSM (W-*-FSM, 22 tables) · beforeSave hooks (W-*-SAVE, 12 installers). -->
 <script src="ad_evaluator.js?v=24"></script>
@@ -653,7 +653,7 @@
      ModelLayer.run; every write lands in the same signed op-group. Needs bigdecimal.js + ad_modelval.js (loaded above). -->
 <script src="ad_workflow.js?v=1"></script>
 <script src="fk_rules.js?v=1"></script>
-<script src="model_layer.js?v=10"></script>
+<script src="model_layer.js?v=11"></script>
 <script src="model_initial_defaults.js?v=1"></script><!-- GENERATED setInitialDefaults of every model class (bim-compiler MIGRATE_INSTALL_TENANT.md §G1-SPEC, W-GENESIS-COMPLETE) -->
 <script src="model_trade.js?v=5"></script>
 <script src="model_ctor.js?v=1"></script>
@@ -795,7 +795,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
 <script src="tip_fold.js?v=2"></script>
 <script src="erp_shard.js?v=1"></script>
 <!-- §S60 physical split: the pure CORE (window.CrudCore) — MUST load before crud_overlay.js -->
-<script src="crud_core.js?v=10"></script>
+<script src="crud_core.js?v=11"></script>
 <script src="crud_overlay.js?v=42"></script>
 <!-- TEAMWORK_FRAMEWORK.md §13.1 (W1, W-TEAM-SO): the local comm layer + erp/team_sync.js — written ONLY when the page is opened with ?team=1
      (otherwise no script tag, no DOM, no global: the page is byte-for-byte what it was). Parser-blocking so TeamSync exists before the first commit. -->
@@ -1880,7 +1880,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   var _attP = null, _attLogged = {};
   function _attMod() {
     if (window.AdAttachment) return window.AdAttachment;
-    if (!_attP) _attP = new Promise(function (res) { var s = document.createElement('script'); s.src = 'ad_attachment.js?v=1';
+    if (!_attP) _attP = new Promise(function (res) { var s = document.createElement('script'); s.src = 'ad_attachment.js?v=2';
       s.onload = function () { console.log('§ATT ad_attachment.js loaded on first use'); res(true); renderToolbar(); }; s.onerror = function () { _attP = null; res(false); }; document.head.appendChild(s); });
     return null;
   }
@@ -1892,11 +1892,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     return { rows: _sqlRows, msg: _findMsg, std: (App.actor != null || App.clientId != null) ? { actor: App.actor, clientId: App.clientId, orgId: App.orgId != null ? App.orgId : 0 } : null,
       commit: function (ops) { return new Promise(function (res) { if (!window.__crud || !window.__crud.applyOpGroup) { res(false); return; } window.__crud.applyOpGroup(ops, function (cr) { res(!!(cr && cr.committed)); }); }); } };
   }
-  function _attCtx(AT, tab, rec) {   // AbstractADWindowContent.onAttachment: Record_ID = the key value (-1 for a _UU key), Record_UU = the <Table>_UU column value
-    var kc = AT.keyColumn(tab), kv = recVal(rec, kc), uu = recVal(rec, String(tab.tableName) + '_UU');
-    var rid = /_ID$/.test(kc) && kv !== '' && kv != null ? Number(kv) : null, ruu = uu != null && uu !== '' ? String(uu) : (/_UU$/.test(kc) && kv ? String(kv) : null);
-    return (rid == null && !ruu) ? null : { tableId: tab.tableId, tableName: tab.tableName, recordId: rid, recordUU: ruu };
-  }
+  window.__idmpAttach = { load: _attLoad, host: _attHost };   // §BIMDOC-ADPASS: a record process reaches the generic attachment module through the same seams the lens API hands out (no table named)
+  function _attCtx(AT, tab, rec) { return AT.ctxFor(tab, rec); }   // AbstractADWindowContent.onAttachment: the rule lives in ad_attachment.js ctxFor (the object layer's attach uses the same one)
   function _attOpen() {
     var AT = window.AdAttachment, tab = _curTab(), rec = _records[_recIdx]; if (!AT || !tab || !rec) return;
     var cx = _attCtx(AT, tab, rec); if (!cx) return;
@@ -2733,6 +2730,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       _records = _so.rows; console.log('§UDP-ORDER table=' + tab.tableName + ' orderBy=' + orderBy + ' applied=' + _so.applied + (_so.reason ? ' (' + _so.reason + ': SQLite order kept)' : ''));
     }
     if (_records.length > 200) _records = _records.slice(0, 200); // cap display in I1
+    _fillVirtual(tab, _records);     // §BIMDOC-ADPASS: (ColumnSQL) AS ColumnName, as GridTable.createSelectSql
     _overlayListTip(tab, _records);  // S2/J4 — fold the op-log over the bundle: signed CRUD_CREATE rows APPEAR, edits overlay, deletes hide, then DocStatus reads-the-tip (S1/J5). Bundle immutable; op-log is truth.
     _recIdx = _keepIdx(tab); _gridSel = Object.create(null); _setSel(tab);   // §GT keep the current record by key (else row 0); fresh set → clear multi-select
     // §AD-GATE — re-evaluate the accounting pills: surface them only on a posting document (carries `Posted`).
@@ -3274,6 +3272,28 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   //   (their stdDefaults carry AD_Client_ID/AD_Org_ID) — a created order shows ONLY in its own tenant.
   //   crud_ops creatable tables are header-level (tabLevel 0) this leg; a created CHILD row's parent-FK scope is
   //   the next generalization (§-noted), not silently dropped.
+  // §BIMDOC-ADPASS (bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md) - virtual columns: GridTable.createSelectSql puts "(ColumnSQL) AS ColumnName" in the grid's SELECT; the twin read
+  //   SELECT * and never computed one. Each displayed virtual field is computed over THE tip reader (session rows included), one SELECT per column per page; a ColumnSQL this SQLite
+  //   cannot run is logged once and left empty. Read-only by GridField.isEditable (crud_core isVirtual), never written.
+  var _virtFail = {};
+  function _fillVirtual(tab, rows) {
+    if (!tab || !rows || !rows.length || !tab.tableName) return;
+    var vf = (tab.fields || []).filter(function (f) { return f.columnSQL && f.isDisplayed; }); if (!vf.length) return;
+    var kc = _keyCol(tab); if (!kc) return;
+    var keys = rows.map(function (r) { return recVal(r, kc); }).filter(function (k) { return k != null && k !== ''; }); if (!keys.length) return;
+    var inList = keys.map(_lit).join(',');
+    vf.forEach(function (f) {
+      var fk = tab.tableName + '.' + f.columnName;
+      if (_virtFail[fk]) return;
+      var res = null, err = null;
+      try { if (window.__idmpDb) window.__idmpDb.exec('SELECT ' + kc + ', (' + f.columnSQL + ') FROM ' + tab.tableName + ' WHERE 1=0'); } catch (e) { err = e && e.message; }   // dialect check on the bundle (the tip reader swallows errors)
+      if (!err) res = _sqlRows('SELECT ' + kc + ' AS k, (' + f.columnSQL + ') AS v FROM ' + tab.tableName + ' WHERE ' + kc + ' IN (' + inList + ')');
+      if (err) { _virtFail[fk] = 1; console.log('§AD-VIRTUAL tab=' + tab.id + ' table=' + tab.tableName + ' col=' + f.columnName + ' failed=' + String(err).slice(0, 160)); return; }
+      var by = {}; res.forEach(function (r) { by[String(r.k)] = r.v; });
+      rows.forEach(function (r) { var k = recVal(r, kc); r[f.columnName] = by[String(k)] != null ? by[String(k)] : null; });
+      console.log('§AD-VIRTUAL tab=' + tab.id + ' table=' + tab.tableName + ' col=' + f.columnName + ' rows=' + rows.length + ' values=[' + rows.map(function (r) { return recVal(r, kc) + ':' + r[f.columnName]; }).join(',') + ']');
+    });
+  }
   function _overlayListTip(tab, recs) {
     if (!recs || !tab || !window.__crud) { return; }
     var c = window.__crud;
@@ -3303,6 +3323,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       }
       var nStatus = _applyDocTip(tab, rows, sdb, br);          // a created-then-processed row reads its signed CO
       if (created.length || hidden.length || updated.length || nStatus || rows.length !== recs.length) {
+        _fillVirtual(tab, rows);   // §BIMDOC-ADPASS: the folded page (session rows) gets its virtual columns too
         _records = rows;
         var _ki = window.AdGridTab ? AdGridTab.indexOfKey(rows, pkCol, _curKeyByTab[_activeTabIdx]) : -1;   // §GT keep-by-key
         _recIdx = _ki >= 0 ? _ki : (_curKeyByTab[_activeTabIdx] == null ? 0 : Math.min(_recIdx, Math.max(0, rows.length - 1)));   // no current key on THIS tab yet (child tab just entered) → row 0 (GridTab.query → setCurrentRow(0)); never the previous tab's row index

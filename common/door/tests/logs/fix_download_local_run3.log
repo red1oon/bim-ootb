@@ -1,0 +1,8 @@
+§W-MCP-DOWNLOAD source http://localhost:43409/ (local static copy of this tree)
+§W-MCP-DOWNLOAD empty folder /tmp/mcp_dl_u9zUBF holds bim_mcp.js,door.js,edit_cli.js,verbs.json
+  ✅ D1 flat download: initialize + tools/list give the 4 published tools  tools=bim_lines,bim_try_shift,viewer_counts,viewer_clashes exit=0
+  ✅ D2 flat download: bim_lines answers from the live Modeller (ok, grid lines)  lines=46
+  ✅ D3 without door.js: exit 1, names it and prints its curl line  exit=1 §BIM_MCP FAIL door.js is not beside bim_mcp.js. Put these files in one folder with bim_mcp.js (or us
+  ✅ D3 without verbs.json: exit 1, names it and prints its curl line  exit=1 §BIM_MCP FAIL missing beside bim_mcp.js: verbs.json. Put these files in one folder with bim_mcp.js (
+  ✅ D3 without edit_cli.js: exit 1, names it and prints its curl line  exit=1 §BIM_MCP FAIL missing beside bim_mcp.js: edit_cli.js. Put these files in one folder with bim_mcp.js 
+§WITNESS_MCP_DOWNLOAD pass=5 fail=0 inconclusive=0 verdict=PASS

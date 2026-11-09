@@ -71,6 +71,8 @@ const __readSrc = require('../viewer/tests/_split_families.js').readSource;   //
 const fs = require('fs'), path = require('path'), vm = require('vm'), os = require('os'), crypto = require('crypto');
 const HOME = os.homedir();
 const V = path.join(__dirname, '..', 'viewer');
+// The schedule's day 0. The run's task grid (sDays/eDays) and every played instant count from here; viewer/tools/schedule_verbs.js reads it from here (one owner).
+const PROJECT_START = '2026-01-01';
 const BLD = process.env.BLD_DIR || path.join(HOME, 'bim-ootb', 'buildings');
 const ROOT = process.env.CACHE_4D_DIR || path.join(HOME, '.cache', 'bim4d');
 const TMP = require(path.join(__dirname, 'lib', 'tm_played_layer.js'));
@@ -230,7 +232,7 @@ function build(bld, force, want, hooks) {   // hooks.onDb(db, res) — READ-ONLY
         // §CACHE_PLAYED_LAYER — the live time_machine.js functions, sliced (never re-typed).
         const tmsb = TMP.buildSandbox({ tmSrc: tmSrc, SA: SA, SG: SG, CP: CP, GM: GM, SS: SS,
           LABOR_RATES: sb.LABOR_RATES, console: console });
-        const base = { start: '2026-01-01', laborRates: sb.LABOR_RATES, rates: sb.RATES,
+        const base = { start: PROJECT_START, laborRates: sb.LABOR_RATES, rates: sb.RATES,
           nameOverrides: sb.SEQUENCE_NAME_OVERRIDES, defaultRule: sb.SEQUENCE_DEFAULT,
           scheduleGate: SG, shiftHours: T.calendar.hours_per_shift, template: T, db: db,
           // §ZONE_DISPLAY_AUTHORING — the hook every real UI call site passes. Without it this run
@@ -328,7 +330,7 @@ function build(bld, force, want, hooks) {   // hooks.onDb(db, res) — READ-ONLY
     });
 }
 
-module.exports = { read: read, build: build, dirFor: dirFor, codeKey: codeKey,
+module.exports = { read: read, build: build, dirFor: dirFor, codeKey: codeKey, PROJECT_START: PROJECT_START,
   layerOf: layerOf, LAYERS: LAYERS,
   resolveDbFile: resolveDbFile, sqliteProblem: sqliteProblem, DB_KINDS: DB_KINDS };
 

@@ -6,7 +6,7 @@
 //   locks, the units, the dry run and Process are that form's; this one adds the alpha report (§BC-ALPHA, values masked) to the summary and to the result.
 import MODEL from './bc_model.mjs';
 import { readPackage, convert, alphaReport, WORKBOOK } from './bc_migrate_convert.mjs';
-import { DESC as ODOO, bindProcess } from './odoo_migrate_form.mjs';
+import { DESC as ODOO, bindProcess, withSourceRows } from './odoo_migrate_form.mjs';
 import { bookToWorkbook } from './ninja_migrate_process.mjs';
 export const CLASSNAME = 'org.kernel.bc.MigrateFromBC';
 function say(trx, line) { if (trx && trx.say) trx.say(line); console.log(line); }
@@ -39,7 +39,7 @@ export const DESC = {
     if (x.problems.length) { say(trx, '§BC-FORM summary problems=' + x.problems.length); return probRows; }
     const rs = ODOO.rows(trx, x.params, current);
     const alpha = { key: 990, item: 'ALPHA — not yet proven against a live Business Central. Alpha report: ' + x.report.length + ' lines in the browser console (§BC-ALPHA, no customer values).', selected: false, locked: true };
-    return [alpha].concat(rs);
+    return [alpha].concat(withSourceRows(rs, x.manifest));
   },
   run(trx, params, rows) {
     const x = toOdooParams(trx, params);
