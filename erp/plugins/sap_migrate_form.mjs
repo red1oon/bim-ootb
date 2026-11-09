@@ -38,6 +38,7 @@ export const DESC = {
     const alpha = { key: 990, item: 'ALPHA (a proof of concept) — not yet run against a live SAP Business One. Alpha report: ' + x.report.length + ' lines in the browser console (§SAP-ALPHA, no customer values).', selected: false, locked: true };
     return [alpha].concat(withSourceRows(rs, x.manifest));
   },
+  after: ODOO.after,   // §E1 stage 2: the shared opening-stock completion (Import Inventory, DocAction CO) - one implementation, odoo_migrate_form.mjs
   run(trx, params, rows) {
     const x = toOdooParams(trx, params);
     if (x.problems.length) throw new Error('Not migrated: ' + x.problems.join(' '));
