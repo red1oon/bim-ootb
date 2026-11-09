@@ -67,6 +67,7 @@ function verdict(cs) { var c = CASES[cs] || { judged: 0, failed: 0 }, v = !c.jud
   // ═══ LOAD: the BC form on a born tenant — suggested units, summary == result, refusals named ═══
   var K = require(path.join(ERP, 'ws_kernel.js')), k = await K.load(), db = k.db, ML = k.ML, AP = require(path.join(ERP, 'ad_process.js'));
   (fs.readFileSync(path.join(ERP, 'idempiere.html'), 'utf8').match(/<script src="(model_[a-z_]+\.js)/g) || []).forEach(function (m) { try { require(path.join(ERP, m.replace('<script src="', ''))); } catch (e) {} });
+  try { require(path.join(ERP, 'processes', 'ImportInventory.js')); } catch (e) { say('§E1-STOCK ImportInventory.js not loadable: ' + e.message); }
   var G = require(path.join(ERP, 'genesis.js')), PR = require(path.join(ERP, 'plugin_registry.js')), AF = require(path.join(ERP, 'ad_form_generic.js'));
   function q(sql, p) { return k.q(sql, p || []); }
   var shim = { prepare: function (sql) { return { all: function () { return q(sql); },
@@ -99,6 +100,11 @@ function verdict(cs) { var c = CASES[cs] || { judged: 0, failed: 0 }, v = !c.jud
   (r2.filter(function (r) { return /^⚠/.test(r.item); })).forEach(function (p) { say('§BCM-PROBLEM ' + p.item); });
   var res = AF.execute(withT, 'org.kernel.bc.MigrateFromBC', P, cur);
   if (res.ok && res.ops && res.ops.length) k.commit(S, res.ops, { ws: 'bc_migrate' });
+  var r2 = res.ok ? AF.executeAfter(withT, 'org.kernel.bc.MigrateFromBC', P, cur) : { ok: false, ops: [], msg: 'stage 1 refused' };
+  if (r2.ok && r2.ops && r2.ops.length) k.commit(S, r2.ops, { ws: 'bc_migrate' });
+  say('§BCM-AFTER ok=' + r2.ok + ' ops=' + (r2.ops || []).length + ' msg=' + String(r2.msg).slice(0, 300));
+  if (res.ok) { var STK = require(path.join(__dirname, 'opening_stock_check.js'))(q, CID, byT.M_InventoryLine[0], byT.M_InventoryLine.slice(1), say, 'BC'); STK.judged ? [] : say('§BCM-STOCK verdict=INCONCLUSIVE nothing judged');
+    STK.judged && check('STOCK', 'opening-stock', 'the opening stock is completed: DocStatus CO, on-hand == QtyCount, m_transaction present (' + STK.judged + ' rules judged, ' + STK.failed + ' failed)', STK.judged > 0 && STK.failed === 0, STK); }
   var C1 = counts(), gain = {}; TABLES.forEach(function (t) { gain[t] = C1[t] - C0[t]; });
   say('§BCM-RUN ok=' + res.ok + ' ops=' + (res.ops || []).length + ' msg=' + String(res.msg).slice(0, 400) + ' gain=' + J(gain));
   check('LOAD', 'summary==result', 'Process gains exactly what the summary predicted, on every one of the 17 tables (refusals included in the prediction)', res.ok && TABLES.every(function (t) { return gain[t] === predicted[t]; }), { gain: gain, predicted: predicted, msg: String(res.msg).slice(0, 300) });
@@ -108,7 +114,7 @@ function verdict(cs) { var c = CASES[cs] || { judged: 0, failed: 0 }, v = !c.jud
   var ship10000 = pkg.tables[222].rows.filter(function (r) { return r['Customer No.'] === '10000'; }).length;
   check('LOAD', 'record', "Microsoft's demo customer 10000 Adatum Corporation arrives with its own address (Station Road, 21 · CB1 2FB · GB) and its " + ship10000 + ' ship-to addresses as further locations',
     adatum.length === 1 + ship10000 && adatum.some(function (a) { return a.address1 === 'Station Road, 21' && a.postal === 'CB1 2FB' && a.countrycode === 'GB'; }), adatum);
-  verdict('LOAD');
+  verdict('LOAD'); verdict('STOCK');
 
   // ═══ ALPHA: the report a tester pastes back holds counts and schema, no customer value ═══
   var rep = CV.alphaReport(c.manifest, res.msg).join('\n'), vals = {}, SCHEMA = {};   // schema words (table/field captions and names, option and enum values) are not customer data

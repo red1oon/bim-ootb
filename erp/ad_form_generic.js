@@ -32,5 +32,16 @@
       return ML.run(query, env, { table: 'ad_form', timing: 'PROCESS', fn: function (trx) { var msg = d.run(trx, params || {}, rows || []); return { ok: true, msg: msg == null ? '' : String(msg) }; } });
     }) || { ok: false, ops: [], msg: 'no transaction available' };
   }
-  return { register: register, unregister: unregister, removeOwner: removeOwner, get: get, describe: describe, read: read, execute: execute };
+  // executeAfter(withTrx, classname, params, rows) -> { ok, ops, msg, none? } - OPTIONAL second stage of a form: descriptor.after(trx, params, rows), in its OWN transaction, to be run by the host
+  //   once the ops of execute() are COMMITTED. For work that reads what stage 1 wrote through SQL (a legacy Import* process looks its masters up by SQL and completes documents; rows still
+  //   pending in stage 1 are invisible to it). A descriptor without `after` answers { ok: true, ops: [], none: true }. A thrown refusal rolls stage 2 back (no ops); stage 1 stays.
+  function executeAfter(withTrx, classname, params, rows) {
+    var d = get(classname), ML = getML();
+    if (!d) return { ok: false, ops: [], msg: 'no form descriptor registered for ' + classname };
+    if (typeof d.after !== 'function') return { ok: true, ops: [], msg: '', none: true };
+    return withTrx(function (query, env) {
+      return ML.run(query, env, { table: 'ad_form', timing: 'PROCESS', fn: function (trx) { var msg = d.after(trx, params || {}, rows || []); return { ok: true, msg: msg == null ? '' : String(msg) }; } });
+    }) || { ok: false, ops: [], msg: 'no transaction available' };
+  }
+  return { executeAfter: executeAfter, register: register, unregister: unregister, removeOwner: removeOwner, get: get, describe: describe, read: read, execute: execute };
 });
