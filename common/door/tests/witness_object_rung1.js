@@ -64,10 +64,11 @@ const MODEL_TABLES = ['elements_meta', 'element_transforms', 'spatial_structure'
   let res2, err2 = null; try { res2 = chunk(B, patchText); } catch (x) { err2 = x; } console.log = lg;
   k.chk('REG applying the patch a second time raises nothing and changes no row count', !err2 && JSON.stringify(counts(B)) === before2, 'err=' + (err2 && err2.message) + ' skipLog=' + logs.filter(l => /PATCH_ADDCOL_SKIP/.test(l)).join('|'));
   k.chk('REG the second apply reported 4 skipped ALTERs (the 5th, on the table the patch drops and recreates itself, is legitimately added again)', logs.some(l => /§PATCH_ADDCOL_SKIP 4 /.test(l)), logs.join('|'));
-  // the OLD chunker (origin/main) cannot do it
+  // the OLD chunker cannot do it. Pinned to 4f9f8203^, the commit before this rung's chunker change (bim-ootb #2772): 'origin/main' held the old
+  // chunker only until #2772 merged; after that this falsifier compared the new chunker with itself and failed on every DB (found 2026-11-10 by the OCI patch gate).
   let oldErr = null;
   try {
-    const old = cp.execSync('git -C ' + JSON.stringify(ROOT) + ' show origin/main:viewer/scene.js', { maxBuffer: 1 << 28 }).toString(), a0 = old.indexOf('A._runSqlChunked = function(db, sql) {'), b0 = old.indexOf('\n  };', a0), AA = {};
+    const old = cp.execSync('git -C ' + JSON.stringify(ROOT) + ' show 4f9f8203^:viewer/scene.js', { maxBuffer: 1 << 28 }).toString(), a0 = old.indexOf('A._runSqlChunked = function(db, sql) {'), b0 = old.indexOf('\n  };', a0), AA = {};
     new Function('A', old.slice(a0, b0 + 5))(AA); AA._runSqlChunked(open(HOME_DB), patchText + '\n' + patchText.slice(b, e));   // dictionary section twice = the second ALTERs repeat
   } catch (x) { oldErr = x; }
   k.chk('REG falsifier: the pre-change chunker throws "duplicate column name" on a repeated patch', !!oldErr && /duplicate column name/i.test(oldErr.message), 'err=' + (oldErr && oldErr.message));
