@@ -668,6 +668,7 @@
 <script src="model_dd.js?v=1"></script>
 <script src="model_movement.js?v=3"></script>
 <script src="model_inventory.js?v=2"></script>
+<script src="model_journal.js?v=1"></script><!-- MJournal / MJournalBatch DocAction (Prepare, Complete, Close), W-IMPORT-GLJOURNAL -->
 <script src="invoice_open.js?v=1"></script><script src="goal_engine.js?v=1"></script><script src="model_pa.js?v=1"></script><!-- CAPEX_DASHBOARD.md §5.24: the PA engine is CORE (MGoal); model_pa.js = the PA_Goal model class (MGoal.afterSave), W-PA-EDITOR -->
 <script src="model_post.js?v=9"></script>
 <!-- §CP-SCRIPTS (bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md §CP) — the callout runtime + verbatim callout/process ports.
@@ -722,7 +723,9 @@
 <script src="processes/InOutGenerate.js?v=2"></script>
 <script src="processes/ImportOrder.js?v=1"></script>
 <script src="processes/ImportPayment.js?v=1"></script><!-- verbatim ImportPayment.java (AD_Process 343), W-IMPORT-PAYMENT -->
+<script src="processes/ImportInvoice.js?v=1"></script><!-- verbatim ImportInvoice.java (AD_Process 207), W-IMPORT-INVOICE -->
 <script src="processes/ImportInventory.js?v=1"></script><!-- verbatim ImportInventory.java (AD_Process 219), W-IMPORT-INVENTORY -->
+<script src="processes/ImportGLJournal.js?v=1"></script><!-- verbatim ImportGLJournal.java (AD_Process 220), W-IMPORT-GLJOURNAL -->
 <script src="processes/ImportProduct.js?v=1"></script><!-- verbatim ImportProduct.java (AD_Process 196), W-IMPORT-PRODUCT -->
 <script src="processes/Recurring.js?v=1"></script><!-- verbatim Recurring.java (AD_Process 213) + the MRecurring model it runs, W-RECURRING -->
 <script src="processes/RecurringRun.js?v=1"></script><!-- verbatim RecurringRun.java (AD_Process 200074), W-RECURRING -->
