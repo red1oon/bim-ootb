@@ -35,6 +35,14 @@ runE2E('W-E2E-INSTPICK', async (t) => {
     const g = window.Bonsai.group(); const root = g && g.children.find(o => o.userData && o.userData.dwRoot);
     return !!(root && root.children.some(o => o.isInstancedMesh && o.userData.dwDisc === 'ELEC'));
   }, { timeout: 30000 }).catch(() => {});
+  // §TYPESET (2026-11-09): the §D64 build-up reveal grows im.count to dwSub.length over ~9 s after discWalk returns
+  // (measured 18/102 at 1.7 s, 102/102 at 9 s), so P1 read mid-reveal counts (3,7,16,22,3,4) and failed on main.
+  // Wait for the reveal to end; P1 then judges the stamped identity, not the animation.
+  await t.pg.waitForFunction(() => {
+    const g = window.Bonsai.group(); const root = g && g.children.find(o => o.userData && o.userData.dwRoot);
+    const ims = root ? root.children.filter(o => o.isInstancedMesh && o.userData.dwDisc === 'ELEC') : [];
+    return ims.length && ims.every(im => Array.isArray(im.userData.dwSub) && im.count === im.userData.dwSub.length);
+  }, { timeout: 60000 }).catch(() => {});
   await t.sleep(2500);   // batched commitSeedGroup settles
 
   // P1 — identity stamped on every ELEC bucket
