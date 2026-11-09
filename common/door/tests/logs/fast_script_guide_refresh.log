@@ -1,0 +1,22 @@
+§FAST_GUIDE_GEN verb table written: 13 verbs
+§FAST_GUIDE_GEN flat folder /tmp/fast_script_flat_nPByrp, 19 run blocks
+§FAST_GUIDE_GEN run lines exit=0 stdout=2856 bytes
+§FAST_GUIDE_GEN run widen exit=0 stdout=6 bytes
+§FAST_GUIDE_GEN run widen_steps exit=0 stdout=282 bytes
+§FAST_GUIDE_GEN run widen_read exit=0 stdout=71 bytes
+§FAST_GUIDE_GEN run widen_move exit=0 stdout=12 bytes
+§FAST_GUIDE_GEN run widen_why exit=0 stdout=134 bytes
+§FAST_GUIDE_GEN run widen_bay exit=0 stdout=60 bytes
+§FAST_GUIDE_GEN run script exit=0 stdout=6 bytes
+§FAST_GUIDE_GEN run script_move exit=0 stdout=85 bytes
+§FAST_GUIDE_GEN run script_status exit=0 stdout=177 bytes
+§FAST_GUIDE_GEN run script_span exit=0 stdout=131 bytes
+§FAST_GUIDE_GEN run question exit=3 stdout=537 bytes
+§FAST_GUIDE_GEN run error exit=1 stdout=179 bytes
+§FAST_GUIDE_GEN run claim exit=3 stdout=268 bytes
+§FAST_GUIDE_GEN run inconclusive exit=3 stdout=274 bytes
+§FAST_GUIDE_GEN run claim_email exit=3 stdout=271 bytes
+§FAST_GUIDE_GEN run describe exit=0 stdout=2056 bytes
+§FAST_GUIDE_GEN run describe_methods exit=0 stdout=46 bytes
+§FAST_GUIDE_GEN run notchecked exit=0 stdout=406 bytes
+§FAST_GUIDE_GEN wrote /tmp/wt-docs-stage/FastScriptGuide.md

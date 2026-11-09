@@ -1,0 +1,15 @@
+§W-FAST-SCRIPT-GUIDE page /tmp/wt-fastscript/docs/FastScriptGuide.md: 19 run blocks, 1 file blocks, vocabulary 13 verbs
+  ✅ T1 the verb table on the page equals the table generated from verbs.json (cell for cell)  page rows=13 vocabulary=13
+  ✅ T2 the table names equal the vocabulary names, in order  13 names
+  ✅ F1 no `door.js` command sits in a code block that is not a run block
+  ✅ F2 the page's curl lines name exactly the 4 downloaded files  4 lines
+  ✅ F3 the page links the Proposer Guide for the AI connection (not duplicated)
+  ✅ K1 "N verbs" on the page = verbs.json  page=13 vocabulary=13
+  ✅ K2 "N Viewer verbs" on the page = verbs.json viewer.*  page=5 vocabulary=5
+  ✅ K3 "N actions a person can press" = internal/VIEWER_ACTIONS.md N_actions  page=64 report=64
+  ✅ K4 "N documents and processes" = internal/ERP_VERBS.md N  page=1156 report=1156
+  ✅ K5 the page says no ERP verb is offered, and verbs.json has none  erp verbs in vocabulary=0
+§W-FAST-SCRIPT-GUIDE INCONCLUSIVE R — the commands were NOT run (--no-run); a pass here would judge only the table and the counts
+§W-FAST-SCRIPT-GUIDE N: no run happened, so the decimals cannot be matched to a run (NOT checked)
+§W-FAST-SCRIPT-GUIDE the published page was NOT checked (no --live)
+§WITNESS_FAST_SCRIPT_GUIDE pass=10 fail=0 inconclusive=1 verdict=INCONCLUSIVE
