@@ -23,6 +23,14 @@ runE2E('W-E2E-RULES-EDIT', async (t) => {
   await t.open('Duplex');
   const hasBtn = await t.pg.evaluate(() => !!document.getElementById('b-rules'));
   if (!hasBtn) { t.assert('E1 OPEN (Rules button exists)', false, 'no #b-rules on this tree'); return; }
+  // E0 — Rules clicked BEFORE the rules are loaded (a fresh open on a real building: the lazy fetch had not finished; refused on
+  // the first build). RED control on Duplex: unload the walker's rules (dwOpen(null)) right before the click.
+  await t.pg.evaluate(() => window.DiscWalker.dwOpen(null));
+  const n0 = t.slog.length; await clickRules(t);
+  const e0 = await t.pg.evaluate(() => !!document.getElementById('rules-ed'));
+  t.assert('E0 OPENS-BEFORE-LOAD (Rules clicked with no rules loaded → the open path loads them and the editor opens)', e0 && !t.slog.slice(n0).some(l => /§RULES-EDIT open refused/.test(l)),
+    'open=' + e0 + ' "' + (t.slog.slice(n0).filter(l => /§RULES-EDIT open/.test(l)).pop() || '').slice(0, 110) + '"');
+  await t.pg.evaluate(() => window.RulesEditor && window.RulesEditor.close());
   const w0 = await walkElec(t);
   // the one schedule row behind a placed device: (disc, device_id, placement_rule) matching exactly one row
   const pick = await t.pg.evaluate((w) => { const db = window.DiscWalker.rulesDb(), q = s => { const r = db.exec(s); return r.length ? r[0].values : []; };
