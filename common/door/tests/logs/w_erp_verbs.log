@@ -1,0 +1,14 @@
+§W-ERP-VERBS PASS EV1 — SQL tables=55 actions=13 active procs=452 (inactive 25) → N=1156; generator tables=55 actions=13 procs=452 N=1156
+§W-ERP-VERBS PASS EV2 — K.register sites grep 6 generator 6; registerHandler classnames grep 18 generator 18; unresolved 0
+§W-ERP-VERBS PASS EV3 — two runs identical=true, committed internal/ERP_VERBS.md current=true
+§W-ERP-VERBS PASS EV4 — empty dictionary → exit 2, output "§ERP_VERBS N=0 N_doc=0 (tables=0 actions=0 plugin_family_pairs=0) N_proc=0 (inactive=0) im"
+§W-ERP-VERBS PASS EV5 — EV_BREAK=1 generator lists 12 DocActions (SQL 13), N=1102 (SQL 1156) → EV1 would FAIL (caught)
+§W-ERP-VERBS PASS EV7 — BIM_Document_Open in N with source "plugin bim_document" (generator) and in the independently staged SQL; plugin rows staged by SQL=92; N=1156 equals SQL recount 1156; seed-only N would be 1153
+§W-ERP-VERBS PASS EV8 — EV_NO_PLUGINS=1 generator N=1153 (SQL 1156); BIM_Document_Open present=false → EV7 would FAIL (caught)
+§W-ERP-VERBS PASS EV9 — BIM_Document PR/CO implemented at erp/plugins/bim_document.mjs:253 (grep) and BIM_Document_Open at erp/plugins/bim_document.mjs:259 (grep); generator cites ["bim_document:PR@erp/plugins/bim_document.mjs:253 (plugin bim_document)","bim_document:CO@erp/plugins/bim_document.mjs:253 (plugin bim_document)"] and "erp/plugins/bim_document.mjs:259 (plugin bim_document)"
+§W-ERP-VERBS PASS EV10 — EV_NO_PLUGIN_REGS=1 generator impl doc=65 proc=37 (normal 67/38) → EV9 would FAIL (caught)
+§W-ERP-VERBS PASS EV11 — independent recount of witnessed+implemented pairs = 1; generator X=1; rows ["C_Order:CO=counted"]
+§W-ERP-VERBS PASS EV12 — EV_NO_EVIDENCE=1 generator X=0 (independent count 1) → EV11 would FAIL (caught)
+§W-ERP-VERBS PASS EV6 — erp/actor_verbs.json exists; X=1
+§ERP_VERBS N=1156 N_doc=704 (tables=55 actions=13 plugin_family_pairs=2) N_proc=452 (inactive=25) impl=105 (doc=67 proc=38) not_impl=1051 X=1 handler_no_dict=1 dynamic=4 unresolved=0
+§W-ERP-VERBS verdict=PASS fail=0 inconclusive=0

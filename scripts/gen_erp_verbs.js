@@ -38,6 +38,7 @@ const OUT = opt('--out') || path.join(ROOT, 'internal/ERP_VERBS.md');
 const JSON_OUT = argv.includes('--json');
 const NO_PLUGINS = process.env.EV_NO_PLUGINS === '1';   // falsifier: skip built-in plugin staging (must fail W-ERP-VERBS EV7)
 const NO_PLUGIN_REGS = process.env.EV_NO_PLUGIN_REGS === '1';   // falsifier: ignore plugin-context registrations (must fail W-ERP-VERBS EV9)
+const NO_EVIDENCE = process.env.EV_NO_EVIDENCE === '1';   // falsifier: ignore every pair's parity evidence (X must drop; W-ERP-VERBS EV12)
 const BREAK = process.env.EV_BREAK === '1';   // falsifier: drop one DocAction value (must fail EV1)
 
 // ── harm class tables (R5): every rule cites its source ──────────────────────────────────────────
@@ -257,10 +258,29 @@ async function main() {
   const procWithHandler = new Set(procRows.filter(r => r.at).map(r => r.resolved));
   const procHandlerNoRow = [...procLits.keys(), ...[...plugProc.keys()].filter(k => !procLits.has(k))].filter(k => !procWithHandler.has(k)).sort();
 
-  // (c) offered to actors
+  // (c) offered to actors = X. A (table, action) pair counts ONLY when all three hold (lane B, NEURO §0.4 detail 2: "counts only for the tables where it is implemented and witnessed against legacy"):
+  //   (1) it is a dictionary pair (the table is a document table above, the action is a value of reference 135);
+  //   (2) the DocAction class is registered by a literal ModelLayer.registerDocAction('<table>', ...) in erp/model_*.js (file:line printed) -- the engine path erp_cli.js runs;
+  //   (3) the pair's evidence file exists and carries the line `§A5_PAIR table=<T> action=<A> verdict=MATCH` (the parallel-run witness compared it to legacy iDempiere).
+  // A row failing any test is listed with the reason and does NOT count.
   const avFile = path.join(ROOT, 'erp/actor_verbs.json');
   let X = 0, xBasis = 'erp/actor_verbs.json does not exist: no verb list is offered to actors';
-  if (fs.existsSync(avFile)) { const j = JSON.parse(fs.readFileSync(avFile, 'utf8')); X = (Array.isArray(j) ? j : j.verbs || []).length; xBasis = `rows of erp/actor_verbs.json`; }
+  const xRows = [];
+  if (fs.existsSync(avFile)) {
+    const j = JSON.parse(fs.readFileSync(avFile, 'utf8')); xBasis = 'pairs of erp/actor_verbs.json that are dictionary pairs AND have a registerDocAction site AND a MATCH line in their evidence file';
+    const regs = new Map();
+    for (const f of fs.readdirSync(path.join(ROOT, 'erp')).filter(f => /^model_.*\.js$/.test(f))) fs.readFileSync(path.join(ROOT, 'erp', f), 'utf8').split('\n').forEach((ln, i) => { const m = /registerDocAction\(\s*'([a-z0-9_]+)'/.exec(ln); if (m && !regs.has(m[1])) regs.set(m[1], 'erp/' + f + ':' + (i + 1)); });
+    for (const v of j.verbs || []) {
+      const T = String(v.table).toLowerCase(), why = [];
+      if (!docTables.some(t => String(t).toLowerCase() === T)) why.push('not a document table in the dictionary');
+      if (!actions.some(a => (a.value || a) === v.action)) why.push('action not in reference 135');
+      if (!regs.has(T)) why.push('no registerDocAction site');
+      const ev = !NO_EVIDENCE && v.evidence && fs.existsSync(path.join(ROOT, v.evidence)) ? fs.readFileSync(path.join(ROOT, v.evidence), 'utf8') : null;
+      if (ev == null) why.push('evidence file missing'); else if (ev.indexOf('§A5_PAIR table=' + v.table + ' action=' + v.action + ' verdict=MATCH') < 0) why.push('evidence has no MATCH line for the pair');
+      xRows.push({ verb: v.verb, table: v.table, action: v.action, site: regs.get(T) || null, counted: why.length === 0, why: why.join('; ') });
+    }
+    X = xRows.filter(r => r.counted).length;
+  }
 
   const notImplDoc = N_doc - implDoc, notImplProc = N_proc - implProc;
   const dynamic = sites.filter(s => s.kind === 'DYNAMIC' || s.kind === 'SPIKE').length + dynProc.length;
@@ -272,6 +292,7 @@ async function main() {
   });
   const pluginLines = pluginRows.map(pl => `§ERP_VERBS_PLUGINS plugin=${pl.name} staged_rows=${pl.staged}/${pl.manifestRows} new_processes=${pl.procs.length} [${pl.procs.join(',')}] new_doc_tables=${pl.docTables.length} [${pl.docTables.join(',')}] doc_pairs=${pl.pairs} (rule: family offered actions) family_offers=[${(pl.family || []).join(',')}] columnsql_properties=${pl.virtualCols} (not counted)`);
   const J = { plugins: pluginRows, procRows: procRows.map(r => ({ id: r.id, value: r.value, src: r.src, at: r.at })), pluginDoc: [...handlerPairs.entries()].filter(([, v]) => v.some(x => /\(plugin /.test(x))).map(([k, v]) => [k, v.filter(x => /\(plugin /.test(x))]), pluginDynamic: plugins.flatMap(pl => pl.regs.dynamic), N, N_doc, N_proc, tables: docTables, actions: actions.map(a => a.value), procActive: N_proc, procInactive, implDoc, implProc, X, noDict, procHandlerNoRow,
+    xRows,
     sites: sites.map(s => ({ file: s.file, line: s.line, kind: s.kind, pairs: s.pairs.length })), unresolved: unresolved.map(s => s.file + ':' + s.line), dynamic, empty, summary,
     handlerSites: sites.map(s => s.file + ':' + s.line), procLits: [...procLits.entries()], dynProc };
   if (JSON_OUT) { process.stdout.write(JSON.stringify(J, null, 1)); process.exit(0); }
@@ -339,6 +360,8 @@ async function main() {
   fs.writeFileSync(OUT, L.join('\n') + '\n');
   console.log(summary);
   for (const l of pluginLines) console.log(l);
+  for (const r of xRows) console.log(`§ERP_VERBS_X verb=${r.verb} table=${r.table} action=${r.action} counted=${r.counted ? 'Y' : 'N'} registerDocAction=${r.site || 'none'}${r.why ? ' why=' + r.why : ''}`);
+  console.log(`§ERP_VERBS_X_BASIS ${xBasis}`);
   if (!NO_PLUGINS && !seedEmpty && !plugins.length) console.log('§ERP_VERBS_PLUGINS INCONCLUSIVE no built-in plugin found in erp/plugin_overlay.js BUILTINS');
   for (const s of unresolved) console.log(`§ERP_VERBS_UNRESOLVED ${s.file}:${s.line} register site not classified`);
   if (empty) process.exit(2);

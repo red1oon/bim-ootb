@@ -1,0 +1,6 @@
+{
+ "spec": "bim-compiler prompts/NEURO_SYMBOLIC_ORDER_CONTRACT.md lane B (§0.4 detail 2): the ERP verbs offered to actors. One verb per DocAction, taking the document; a pair (table, action) is listed here only with its legacy-parity evidence. scripts/gen_erp_door_verbs.js turns this file plus the dictionary into the erp.* entries of common/door/verbs.json; scripts/gen_erp_verbs.js counts X from it and refuses a row with no evidence.",
+ "verbs": [
+  { "verb": "erp.complete", "action": "CO", "table": "C_Order", "evidence": "common/door/tests/logs/a5_erp_complete_parity.log" }
+ ]
+}

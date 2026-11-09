@@ -1,0 +1,72 @@
+§A5 start ooTB=/tmp/wt-erp-verbs base=http://localhost:8088 day=2026-11-10 break=0 tmp=/tmp/a5-NlA5T5
+§A5_LEGACY SO-STD-137x2 order=50924 id=1009813 {"docstatus":"CO","total_lines":600,"grand_total":600,"lines":"137:2:300:600","ol_qty":"137:2/2/0/0","shipments":"0:0","invoices":"0:0","tax":"104:600:0","books_order_p":"none","books_order_s2":"none","books_ship_p":"none","books_ship_s2":"none","books_inv_p":"none","books_inv_s2":"none"}
+§OBJECT open db=ad_seed.db dictionary=present
+§ERP patch statements=3911 failed=3 ms=2038
+§ERP boot db=ad_seed.db replayed_ops=0 oplog=/tmp/a5-NlA5T5/twin.ops.jsonl sql_functions=61
+§OBJECT open db=ad_seed.db dictionary=present
+§ERP patch statements=3911 failed=3 ms=1707
+§ERP boot db=ad_seed.db replayed_ops=17 oplog=/tmp/a5-NlA5T5/twin.ops.jsonl sql_functions=61
+§A5_TWIN SO-STD-137x2 order=50000 id=1500004 door_status=ok actor=human {"docstatus":"CO","total_lines":600,"grand_total":600,"lines":"137:2:300:600","ol_qty":"137:2/2/0/0","shipments":"0:0","invoices":"0:0","tax":"104:600:0","books_order_p":"none","books_order_s2":"none","books_ship_p":"none","books_ship_s2":"none","books_inv_p":"none","books_inv_s2":"none"}
+§A5_CMP SO-STD-137x2 docstatus MATCH legacy=CO twin=CO
+§A5_CMP SO-STD-137x2 total_lines MATCH legacy=600 twin=600
+§A5_CMP SO-STD-137x2 grand_total MATCH legacy=600 twin=600
+§A5_CMP SO-STD-137x2 lines MATCH legacy=137:2:300:600 twin=137:2:300:600
+§A5_CMP SO-STD-137x2 ol_qty MATCH legacy=137:2/2/0/0 twin=137:2/2/0/0
+§A5_CMP SO-STD-137x2 shipments MATCH legacy=0:0 twin=0:0
+§A5_CMP SO-STD-137x2 invoices MATCH legacy=0:0 twin=0:0
+§A5_CMP SO-STD-137x2 tax MATCH legacy=104:600:0 twin=104:600:0
+§A5_CMP SO-STD-137x2 books_order_p MATCH legacy=none twin=none
+§A5_CMP SO-STD-137x2 books_order_s2 MATCH legacy=none twin=none
+§A5_CMP SO-STD-137x2 books_ship_p MATCH legacy=none twin=none
+§A5_CMP SO-STD-137x2 books_ship_s2 MATCH legacy=none twin=none
+§A5_CMP SO-STD-137x2 books_inv_p MATCH legacy=none twin=none
+§A5_CMP SO-STD-137x2 books_inv_s2 MATCH legacy=none twin=none
+§A5_SCN SO-STD-137x2 MATCH compared=14 diffs=0 nonEmptyBooks=0 (this document class books nothing on either side: books compared as none==none, not as proof of posting)
+§A5_LEGACY SO-STD-136x3 order=50925 id=1009814 {"docstatus":"CO","total_lines":6000,"grand_total":6000,"lines":"136:3:2000:6000","ol_qty":"136:3/3/0/0","shipments":"0:0","invoices":"0:0","tax":"104:6000:0","books_order_p":"none","books_order_s2":"none","books_ship_p":"none","books_ship_s2":"none","books_inv_p":"none","books_inv_s2":"none"}
+§OBJECT open db=ad_seed.db dictionary=present
+§ERP patch statements=3911 failed=3 ms=2164
+§ERP boot db=ad_seed.db replayed_ops=17 oplog=/tmp/a5-NlA5T5/twin.ops.jsonl sql_functions=61
+§OBJECT open db=ad_seed.db dictionary=present
+§ERP patch statements=3911 failed=3 ms=2257
+§ERP boot db=ad_seed.db replayed_ops=33 oplog=/tmp/a5-NlA5T5/twin.ops.jsonl sql_functions=61
+§A5_TWIN SO-STD-136x3 order=50001 id=1500005 door_status=ok actor=human {"docstatus":"CO","total_lines":6000,"grand_total":6000,"lines":"136:3:2000:6000","ol_qty":"136:3/3/0/0","shipments":"0:0","invoices":"0:0","tax":"104:6000:0","books_order_p":"none","books_order_s2":"none","books_ship_p":"none","books_ship_s2":"none","books_inv_p":"none","books_inv_s2":"none"}
+§A5_CMP SO-STD-136x3 docstatus MATCH legacy=CO twin=CO
+§A5_CMP SO-STD-136x3 total_lines MATCH legacy=6000 twin=6000
+§A5_CMP SO-STD-136x3 grand_total MATCH legacy=6000 twin=6000
+§A5_CMP SO-STD-136x3 lines MATCH legacy=136:3:2000:6000 twin=136:3:2000:6000
+§A5_CMP SO-STD-136x3 ol_qty MATCH legacy=136:3/3/0/0 twin=136:3/3/0/0
+§A5_CMP SO-STD-136x3 shipments MATCH legacy=0:0 twin=0:0
+§A5_CMP SO-STD-136x3 invoices MATCH legacy=0:0 twin=0:0
+§A5_CMP SO-STD-136x3 tax MATCH legacy=104:6000:0 twin=104:6000:0
+§A5_CMP SO-STD-136x3 books_order_p MATCH legacy=none twin=none
+§A5_CMP SO-STD-136x3 books_order_s2 MATCH legacy=none twin=none
+§A5_CMP SO-STD-136x3 books_ship_p MATCH legacy=none twin=none
+§A5_CMP SO-STD-136x3 books_ship_s2 MATCH legacy=none twin=none
+§A5_CMP SO-STD-136x3 books_inv_p MATCH legacy=none twin=none
+§A5_CMP SO-STD-136x3 books_inv_s2 MATCH legacy=none twin=none
+§A5_SCN SO-STD-136x3 MATCH compared=14 diffs=0 nonEmptyBooks=0 (this document class books nothing on either side: books compared as none==none, not as proof of posting)
+§A5_LEGACY SO-POS-137x1 order=81488 id=1009815 {"docstatus":"CO","total_lines":300,"grand_total":300,"lines":"137:1:300:300","ol_qty":"137:1/0/1/1","shipments":"1:1","invoices":"1:1","tax":"104:300:0","books_order_p":"none","books_order_s2":"none","books_ship_p":"430:270/0|742:0/270","books_ship_s2":"430:230/0|742:0/230","books_inv_p":"518:300/0|758:0/300","books_inv_s2":"518:255/0|758:0/255"}
+§OBJECT open db=ad_seed.db dictionary=present
+§ERP patch statements=3911 failed=3 ms=2148
+§ERP boot db=ad_seed.db replayed_ops=33 oplog=/tmp/a5-NlA5T5/twin.ops.jsonl sql_functions=61
+§OBJECT open db=ad_seed.db dictionary=present
+§ERP patch statements=3911 failed=3 ms=1987
+§ERP boot db=ad_seed.db replayed_ops=92 oplog=/tmp/a5-NlA5T5/twin.ops.jsonl sql_functions=61
+§A5_TWIN SO-POS-137x1 order=80003 id=1500006 door_status=ok actor=human {"docstatus":"CO","total_lines":300,"grand_total":300,"lines":"137:1:300:300","ol_qty":"137:1/0/1/1","shipments":"1:1","invoices":"1:1","tax":"104:300:0","books_order_p":"none","books_order_s2":"none","books_ship_p":"430:270/0|742:0/270","books_ship_s2":"430:230/0|742:0/230","books_inv_p":"518:300/0|758:0/300","books_inv_s2":"518:255/0|758:0/255"}
+§A5_CMP SO-POS-137x1 docstatus MATCH legacy=CO twin=CO
+§A5_CMP SO-POS-137x1 total_lines MATCH legacy=300 twin=300
+§A5_CMP SO-POS-137x1 grand_total MATCH legacy=300 twin=300
+§A5_CMP SO-POS-137x1 lines MATCH legacy=137:1:300:300 twin=137:1:300:300
+§A5_CMP SO-POS-137x1 ol_qty MATCH legacy=137:1/0/1/1 twin=137:1/0/1/1
+§A5_CMP SO-POS-137x1 shipments MATCH legacy=1:1 twin=1:1
+§A5_CMP SO-POS-137x1 invoices MATCH legacy=1:1 twin=1:1
+§A5_CMP SO-POS-137x1 tax MATCH legacy=104:300:0 twin=104:300:0
+§A5_CMP SO-POS-137x1 books_order_p MATCH legacy=none twin=none
+§A5_CMP SO-POS-137x1 books_order_s2 MATCH legacy=none twin=none
+§A5_CMP SO-POS-137x1 books_ship_p MATCH legacy=430:270/0|742:0/270 twin=430:270/0|742:0/270
+§A5_CMP SO-POS-137x1 books_ship_s2 MATCH legacy=430:230/0|742:0/230 twin=430:230/0|742:0/230
+§A5_CMP SO-POS-137x1 books_inv_p MATCH legacy=518:300/0|758:0/300 twin=518:300/0|758:0/300
+§A5_CMP SO-POS-137x1 books_inv_s2 MATCH legacy=518:255/0|758:0/255 twin=518:255/0|758:0/255
+§A5_SCN SO-POS-137x1 MATCH compared=14 diffs=0 nonEmptyBooks=4
+§A5_PAIR table=C_Order action=CO verdict=MATCH scenarios={"SO-STD-137x2":"MATCH","SO-STD-136x3":"MATCH","SO-POS-137x1":"MATCH"}
+§A5_VERDICT PASS judged=3 match=3 diff=0 inconclusive=0
