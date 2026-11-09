@@ -26,6 +26,9 @@
   var DDL_INVOICE = { i_invoice: 'CREATE TABLE IF NOT EXISTS "i_invoice" ("i_invoice_id" NUMERIC, "ad_client_id" NUMERIC, "ad_org_id" NUMERIC, "ad_orgtrx_id" NUMERIC, "isactive" TEXT, "created" TEXT, "createdby" NUMERIC, "updated" TEXT, "updatedby" NUMERIC, "i_isimported" TEXT, "i_errormsg" TEXT, "processing" TEXT, "processed" TEXT, "m_pricelist_id" NUMERIC, "c_currency_id" NUMERIC, "salesrep_id" NUMERIC, "issotrx" TEXT, "c_bpartner_id" NUMERIC, "c_bpartner_location_id" NUMERIC, "bpartnervalue" TEXT, "name" TEXT, "c_location_id" NUMERIC, "address1" TEXT, "address2" TEXT, "postal" TEXT, "city" TEXT, "c_region_id" NUMERIC, "regionname" TEXT, "ad_user_id" NUMERIC, "email" TEXT, "contactname" TEXT, "phone" TEXT, "c_country_id" NUMERIC, "countrycode" TEXT, "c_doctype_id" NUMERIC, "doctypename" TEXT, "c_paymentterm_id" NUMERIC, "paymenttermvalue" TEXT, "c_project_id" NUMERIC, "c_campaign_id" NUMERIC, "c_activity_id" NUMERIC, "c_invoice_id" NUMERIC, "documentno" TEXT, "dateinvoiced" TEXT, "dateacct" TEXT, "description" TEXT, "m_product_id" NUMERIC, "productvalue" TEXT, "upc" TEXT, "sku" TEXT, "c_tax_id" NUMERIC, "taxindicator" TEXT, "taxamt" NUMERIC, "c_invoiceline_id" NUMERIC, "linedescription" TEXT, "qtyordered" NUMERIC, "priceactual" NUMERIC, "projectvalue" TEXT, "activityvalue" TEXT, "chargename" TEXT, "c_charge_id" NUMERIC, "i_invoice_uu" TEXT, "c_1099box_id" NUMERIC, "c_1099box_value" TEXT, "iso_code" TEXT);' };
   // RECURRING overlay (F1, prompts/TEAMWORK_FRAMEWORK.md section 41; Witness: W-RECURRING, erp/tests/witness_recurring.js): AD_Table 573 C_Recurring_Run and 200143 C_RecurringGroup are in the seed dictionary WITHOUT a physical
   //   table (C_Recurring 574 has one); DDL verbatim from build/erp/ad_full.db (sqlite3 .schema c_recurring_run / c_recurringgroup). Kept apart from DDL so ensure() still reports the import tables only.
+  // i_gljournal: AD_Table 599, 70 AD_Column rows in the seed, no physical table (W-IMPORT-GLJOURNAL, bim-compiler prompts/MIGRATE_INSTALL_TENANT.md section ENGINE-SPEC E3a; Import Journal AD_Process 220). Kept apart like DDL_INV so ensure() still
+  //   reports the three older import tables; ensure() calls ensureGLJournal(). DDL verbatim from build/erp/ad_full.db (sqlite3 .schema i_gljournal).
+  var DDL_GLJ = { i_gljournal: 'CREATE TABLE IF NOT EXISTS "i_gljournal" ("i_gljournal_id" NUMERIC, "ad_client_id" NUMERIC, "clientvalue" TEXT, "ad_orgdoc_id" NUMERIC, "isactive" TEXT, "created" TEXT, "createdby" NUMERIC, "updated" TEXT, "updatedby" NUMERIC, "i_isimported" TEXT, "i_errormsg" TEXT, "processing" TEXT, "processed" TEXT, "gl_journalbatch_id" NUMERIC, "batchdocumentno" TEXT, "batchdescription" TEXT, "gl_journal_id" NUMERIC, "journaldocumentno" TEXT, "postingtype" TEXT, "c_acctschema_id" NUMERIC, "acctschemaname" TEXT, "c_doctype_id" NUMERIC, "doctypename" TEXT, "gl_category_id" NUMERIC, "categoryname" TEXT, "c_period_id" NUMERIC, "gl_budget_id" NUMERIC, "gl_journalline_id" NUMERIC, "line" NUMERIC, "dateacct" TEXT, "description" TEXT, "amtsourcedr" NUMERIC, "amtacctdr" NUMERIC, "amtsourcecr" NUMERIC, "amtacctcr" NUMERIC, "c_currency_id" NUMERIC, "iso_code" TEXT, "conversiontypevalue" TEXT, "c_conversiontype_id" NUMERIC, "currencyrate" NUMERIC, "c_uom_id" NUMERIC, "qty" NUMERIC, "c_validcombination_id" NUMERIC, "orgvalue" TEXT, "ad_org_id" NUMERIC, "account_id" NUMERIC, "accountvalue" TEXT, "ad_orgtrx_id" NUMERIC, "orgtrxvalue" TEXT, "m_product_id" NUMERIC, "productvalue" TEXT, "upc" TEXT, "sku" TEXT, "c_bpartner_id" NUMERIC, "bpartnervalue" TEXT, "c_project_id" NUMERIC, "projectvalue" TEXT, "c_locto_id" NUMERIC, "c_locfrom_id" NUMERIC, "c_salesregion_id" NUMERIC, "c_activity_id" NUMERIC, "c_campaign_id" NUMERIC, "user1_id" NUMERIC, "user2_id" NUMERIC, "iscreatenewbatch" TEXT, "iscreatenewjournal" TEXT, "i_gljournal_uu" TEXT, "activityvalue" TEXT, "campaignvalue" TEXT, "salesregionvalue" TEXT)' };
   var DDL_RECURRING = {
     c_recurring_run: 'CREATE TABLE IF NOT EXISTS "c_recurring_run" ("c_recurring_run_id" NUMERIC, "ad_client_id" NUMERIC, "ad_org_id" NUMERIC, "isactive" TEXT, "created" TEXT, "createdby" NUMERIC, "updated" TEXT, "updatedby" NUMERIC, "c_payment_id" NUMERIC, "c_order_id" NUMERIC, "c_invoice_id" NUMERIC, "c_project_id" NUMERIC, "gl_journalbatch_id" NUMERIC, "c_recurring_id" NUMERIC, "datedoc" TEXT, "c_recurring_run_uu" TEXT)',
     c_recurringgroup: 'CREATE TABLE IF NOT EXISTS "c_recurringgroup" ("ad_client_id" NUMERIC, "ad_org_id" NUMERIC, "created" TEXT, "createdby" NUMERIC, "c_recurringgroup_id" NUMERIC, "c_recurringgroup_uu" TEXT, "description" TEXT, "help" TEXT, "isactive" TEXT, "name" TEXT, "updated" TEXT, "updatedby" NUMERIC, "value" TEXT)'
@@ -67,6 +70,7 @@
     log('§IMPORT_TABLES ensure created=' + made + ' (' + Object.keys(DDL).join(', ') + '; boot overlay, outside the team base hash)');
     ensureRecurring(db);
     ensureInventory(db);
+    ensureGLJournal(db);
     ensureInvoice(db);
     return made;
   }
@@ -89,6 +93,13 @@
     return made;
   }
 
+  function ensureGLJournal(db) {
+    var made = 0;
+    Object.keys(DDL_GLJ).forEach(function (t) { var r = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='" + t + "'"); if (r.length && r[0].values.length) return; db.run(DDL_GLJ[t]); made++; });
+    log('§IMPORT_GLJ_TABLES ensure created=' + made + ' (' + Object.keys(DDL_GLJ).join(', ') + '; boot overlay, outside the team base hash)');
+    return made;
+  }
+
   function ensureInvoice(db) {
     var made = 0;
     Object.keys(DDL_INVOICE).forEach(function (t) { var r = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='" + t + "'"); if (r.length && r[0].values.length) return; db.run(DDL_INVOICE[t]); made++; });
@@ -96,7 +107,7 @@
     return made;
   }
 
-  var API = { DDL: DDL, DDL_RECURRING: DDL_RECURRING, DDL_POS: DDL_POS, DDL_INV: DDL_INV, ensureInventory: ensureInventory, DDL_INVOICE: DDL_INVOICE, ensureInvoice: ensureInvoice, ensure: ensure, ensureRecurring: ensureRecurring, ensurePos: ensurePos };
+  var API = { DDL: DDL, DDL_RECURRING: DDL_RECURRING, DDL_POS: DDL_POS, DDL_INV: DDL_INV, ensureInventory: ensureInventory, DDL_INVOICE: DDL_INVOICE, ensureInvoice: ensureInvoice, DDL_GLJ: DDL_GLJ, ensureGLJournal: ensureGLJournal, ensure: ensure, ensureRecurring: ensureRecurring, ensurePos: ensurePos };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;   // node witness / ws host
   if (typeof window !== 'undefined') window.AdImportTables = API;              // browser
   else if (global) global.AdImportTables = API;
