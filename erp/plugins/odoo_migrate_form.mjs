@@ -105,17 +105,65 @@ export function plan(trx, params, current) {
   return out;
 }
 
-// load(trx, book) -> { ok, summary, perTable{T: n}, refusals{sheet: [reasons]} } — the Ninja loader in THIS transaction
+// §E1 opening stock (bim-compiler prompts/MIGRATE_INSTALL_TENANT.md §ENGINE-SPEC §3 "Opening stock", §5 E1) — Witness: W-BC-MIGRATE / W-SAP-MIGRATE / W-ODOO-FORM case STOCK.
+// The 17-sheet Ninja workbook (the owner's format, loaded faithfully by MigrateExcelData: no DocAction) carries the opening stock as M_Inventory + M_InventoryLine; saved as is it stays
+//   a DRAFTED physical inventory (no storage, no M_Transaction, no Fact_Acct - measured, BC demo). Legacy's route for rows that must become documents is I_Inventory + ImportInventory
+//   with DocAction CO (ImportInventory.java:122, :383/:461; the twin's port is processes/ImportInventory.js, AD_Process 219). So THIS loader - the one shared by every source
+//   (Odoo, Business Central, SAP Business One) - rewrites the two sheets into ONE I_Inventory sheet (product Value + LocatorValue + QtyCount + MovementDate + DocSubTypeInv PI),
+//   loads it with the same Ninja loader, then runs process 219 with DocAction CO. The summary still speaks of M_Inventory / M_InventoryLine (headers made / lines made).
+//   COST: no source sheet carries a unit cost, so no cost adjustment is made (ImportInventory.java:546-564 IsUpdateCosting stays a named refusal in the twin) - named in the log, never invented.
+const STOCK_PROCESS = 219;
+export function openingStockSheets(book) {
+  const iH = book.findIndex((b) => tableOfSheet(b.name) === 'M_Inventory'), iL = book.findIndex((b) => tableOfSheet(b.name) === 'M_InventoryLine');
+  if (iH < 0 || iL < 0) return null;
+  const H = book[iH].rows, L = book[iL].rows; if (H.length < 2 || L.length < 2) return null;
+  const hx = (n) => H[0].indexOf(n), lx = (n) => L[0].indexOf(n);
+  const cDoc = hx('DocumentNo'), cDate = hx('MovementDate'), cType = hx('C_DocType_ID>DocSubTypeInv'), cDesc = hx('Description');
+  const lDoc = lx('M_Inventory_ID'), lLoc = lx('M_Locator_ID>Value'), lProd = lx('M_Product_ID>Value'), lQty = lx('QtyCount');
+  if ([cDoc, cDate, lDoc, lLoc, lProd, lQty].some((i) => i < 0)) return null;
+  const hdr = {}; H.slice(1).forEach((r) => { hdr[r[cDoc]] = r; });
+  const out = [['Value', 'LocatorValue', 'QtyCount', 'MovementDate', 'C_DocType_ID>DocSubTypeInv', 'Description', 'I_IsImported']];   // I_IsImported = N: the importer's own "not yet" flag (mandatory column)
+  for (const r of L.slice(1)) { const h = hdr[r[lDoc]]; if (!h) return null;       // a line whose header is not there: leave both sheets to the loader's own refusal
+    out.push([r[lProd], r[lLoc], r[lQty], h[cDate], cType < 0 ? '' : h[cType], cDesc < 0 ? '' : h[cDesc], 'N']); }
+  const ioSheet = book[iH].name.replace(/M_Inventory$/, 'I_Inventory');
+  const nb = book.map((b, i) => i === iH ? { ...b, name: ioSheet, rows: out } : b).filter((b, i) => i !== iL);
+  return { book: nb, lineSheet: book[iL].name, headSheet: book[iH].name, headers: H.length - 1, lines: L.length - 1, ioSheet };
+}
+
+// load(trx, book) -> { ok, summary, perTable{T: n}, refusals{sheet: [reasons]} } — the Ninja loader in THIS transaction (stage 1: masters + the I_Inventory rows, §E1)
 export function load(trx, book) {
-  putFile(FILE, bookToWorkbook(book));
+  const st = openingStockSheets(book), loadBook = st ? st.book : book;
+  putFile(FILE, bookToWorkbook(loadBook));
   const mark = trx.log.length;
   let r;
   try { r = AP.runInTrx(trx, NINJA_PROCESS, { params: { File_Directory: FILE, Processed: 'Y' } }); } finally { dropFile(FILE); }
   const lines = trx.log.slice(mark), refusals = {}, perTable = {};
-  lines.forEach((l) => { const m = /^§NINJA-ERR (\d\d[A-Za-z_]+) row (\d+)(.*)$/.exec(l); if (m) (refusals[m[1]] = refusals[m[1]] || []).push('row ' + m[2] + m[3]); });
+  lines.forEach((l) => { const m = /^§NINJA-ERR (\d\d[A-Za-z_]+) row (\d+)(.*)$/.exec(l); if (m) { const sh = st && m[1] === st.ioSheet ? st.lineSheet : m[1]; (refusals[sh] = refusals[sh] || []).push('row ' + m[2] + m[3]); } });
   const shown = {};
   String(r && r.summary || '').replace(/\(([A-Za-z_]+) = (\d+) records\)/g, (x, t, n) => { perTable[t.toUpperCase()] = Number(n); shown[t] = Number(n); return x; });
+  if (st) {   // the summary speaks of the documents stage 2 will make: one inventory per source header, one line per I_Inventory row
+    const n = perTable.I_INVENTORY || 0; delete perTable.I_INVENTORY; delete shown.I_Inventory;
+    perTable.M_INVENTORY = st.headers; shown.M_Inventory = st.headers; perTable.M_INVENTORYLINE = n; shown.M_InventoryLine = n;
+    say(trx, '§E1-STOCK stage=1 I_Inventory rows=' + n + ' (source headers=' + st.headers + '); stage 2 (Import Inventory, DocAction CO) runs after these masters are committed');
+  }
   return { ok: !!(r && r.ok), summary: r && r.summary, perTable, shown, refusals };
+}
+
+// stage 2 (§E1): ImportInventory with DocAction CO over the I_Inventory rows stage 1 left. It must run AFTER stage 1 is committed: the process looks products / locators / warehouses up
+//   by SQL (ImportInventory.java:221-298) and completes the documents, and neither sees rows that are still pending in the stage-1 transaction. A refusal is legacy's own: the row keeps
+//   I_IsImported=N and I_ErrorMsg, the masters stay, and the same process can be run again from the window (Import Inventory).
+export function completeOpeningStock(trx) {
+  const C = Number(trx.env.client || 0), pend = trx.find('i_inventory', { ad_client_id: C }).filter((x) => String(x.i_isimported) !== 'Y').map((x) => x.i_inventory_id);
+  if (!pend.length) { say(trx, '§E1-STOCK stage=2 nothing to import (no pending I_Inventory row): not judged'); return ''; }
+  if (!AP.JAVA || !AP.JAVA['org.compiere.process.ImportInventory']) throw new Error('Opening stock needs Import Inventory (AD_Process ' + STOCK_PROCESS + '), which this host has not loaded.');
+  const ri = AP.runInTrx(trx, STOCK_PROCESS, { params: { AD_Client_ID: C, AD_Org_ID: Number(trx.env.org || 0), DocAction: 'CO', DeleteOldImported: 'N' } });
+  const done = pend.map((id) => trx.get('i_inventory', id)).filter(Boolean), good = done.filter((x) => String(x.i_isimported) === 'Y'), bad = done.filter((x) => String(x.i_isimported) !== 'Y');
+  const heads = new Set(good.map((x) => x.m_inventory_id)), notCO = Array.from(heads).filter((id) => String((trx.get('m_inventory', id) || {}).docstatus) !== 'CO');
+  say(trx, '§E1-STOCK stage=2 rows=' + pend.length + ' imported=' + good.length + ' errors=' + bad.length + ' headers=' + heads.size + ' completed=' + (heads.size - notCO.length) + ' process_ok=' + !!(ri && ri.ok)
+    + ' cost=none-in-sheet (no cost adjustment; ImportInventory.java:546-564 not applicable, nothing invented)');
+  if (!(ri && ri.ok) || bad.length || notCO.length)
+    throw new Error('Opening stock was not completed: ' + (bad.length ? bad.length + ' row(s) refused by Import Inventory (' + String(bad[0].i_errormsg || '').trim() + ')' : (ri && ri.summary) || (notCO.length + ' inventory document(s) not Completed')) + '. The masters are loaded; fix the rows and run Import Inventory again.');
+  return 'Opening stock completed: ' + heads.size + ' inventory document(s), ' + good.length + ' line(s).';
 }
 
 export const DESC = {
@@ -136,6 +184,7 @@ export const DESC = {
     say(trx, '§ODOO-FORM summary ok=' + dry.ok + ' will=' + JSON.stringify(p.sheets.map((s) => s.table + ':' + s.will)) + ' refused=' + p.sheets.reduce((n, s) => n + s.refused, 0));
     return p.units.concat(p.sheets);
   },
+  after(trx) { return completeOpeningStock(trx); },   // stage 2, run by the host after stage 1 is committed (AdFormGeneric.executeAfter)
   run(trx, params, rows) {
     const p = plan(trx, params, rows);
     if (p.problems.length) throw new Error('Not migrated: ' + p.problems.join(' '));
