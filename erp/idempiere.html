@@ -3755,7 +3755,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     if (pinfo) { pane.setAttribute('data-gform-from', (pinfo.tableName || '') + ':' + pinfo.recordId); console.log('§AD-FORM-GENERIC open class=' + cls + ' from window table=' + pinfo.tableName + ' record=' + pinfo.recordId + ' process=' + pinfo.processId + ' (ProcessInfo handed to the form, as ADForm.openForm)'); }
     pane.appendChild(el('h3', null, desc.title || row.name));
     pane.appendChild(el('div', 'sub', 'AD_Form ' + row.ad_form_id + ' · ' + cls + ' · generic form (described by its module, no host code)'));
-    var fields = el('div', 'fld'), ctl = {}, opts = {}, vals = {}, fileVals = {};
+    var fields = el('div', 'fld'), ctl = {}, opts = {}, vals = {}, fileVals = {}, touched = {};   // touched: a parameter the user set keeps its value (G-f)
     desc.params.forEach(function (p) {
       fields.appendChild(el('label', null, p.label + (p.mandatory ? ' *' : '')));
       var c;
@@ -3809,8 +3809,13 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
           opts[p.name] = os; var c = ctl[p.name]; c.innerHTML = '';
           os.forEach(function (o) { var op = el('option', null, o.label); c.appendChild(op); });
         }
-        var d = typeof p.default === 'function' ? AF.read(withT, function (trx) { return p.default(trx, cur); }) : p.default;
-        paint(p, d); cur[p.name] = readParam(p);
+        // G-f (bim-compiler MIGRATE_INSTALL_TENANT.md §BC-SPEC, found by W-BC-MIGRATE-LIVE): a DEFAULT fills a parameter the user has not set — Refresh, or a change of an earlier
+        //   parameter, used to repaint every default over what the user typed (legacy ProcessParameterPanel applies a default only to an empty field). A list keeps the user's
+        //   choice while it is still one of the recomputed options.
+        var keep = touched[p.name] && (p.type !== 'list' || (opts[p.name] || []).some(function (o) { return String(o.value) === String(vals[p.name]); }));
+        if (keep) { if (p.type === 'list') paint(p, vals[p.name]); }
+        else { var d = typeof p.default === 'function' ? AF.read(withT, function (trx) { return p.default(trx, cur); }) : p.default; paint(p, d); }
+        cur[p.name] = readParam(p);
       });
     }
     function loadRows() {
@@ -3853,6 +3858,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     }
     desc.params.forEach(function (p, i) {
       ctl[p.name].addEventListener('change', function () {
+        touched[p.name] = true; vals[p.name] = readParam(p);
         if (p.type === 'file') { readFiles(p).then(function () { loadParams(i + 1); loadRows(); }, function (e) { msg.className = 'msg err'; msg.textContent = 'Could not read the file: ' + (e && e.message || e); }); return; }
         loadParams(i + 1); loadRows(); });
     });

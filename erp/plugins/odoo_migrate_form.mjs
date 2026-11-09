@@ -59,7 +59,12 @@ export function plan(trx, params, current) {
   Object.keys(used).sort().forEach((u, i) => {
     const key = i + 1, given = cur[key] && cur[key].erpunit != null ? String(cur[key].erpunit).trim() : null;
     const exact = trx.q("SELECT name FROM c_uom WHERE name=? AND ad_client_id IN (0,?) AND isactive='Y'", [u, trx.env.client || 0]);
-    const ans = given != null ? given : exact.length === 1 ? exact[0].name : '';
+    // §BC-SPEC: no exact name, but the source names the unit's international code (Business Central's UN/ECE code in the C_UOM sheet's X12DE355) and exactly ONE ERP unit has
+    //   that code → suggested (the user still sees and can change it); Odoo leaves the code blank, so nothing changes there
+    let byCode = [];
+    if (exact.length !== 1 && uom) { const ni = uom.rows[0].indexOf('Name'), xi = uom.rows[0].indexOf('X12DE355'), ur = uom.rows.slice(1).find((r) => r[ni] === u);
+      if (ur && xi >= 0 && ur[xi]) byCode = trx.q("SELECT name FROM c_uom WHERE x12de355=? AND ad_client_id IN (0,?) AND isactive='Y'", [ur[xi], trx.env.client || 0]); }
+    const ans = given != null ? given : exact.length === 1 ? exact[0].name : byCode.length === 1 ? byCode[0].name : '';
     let note = '';
     if (ans) { const hit = trx.q("SELECT count(*) AS n FROM c_uom WHERE name=? AND ad_client_id IN (0,?) AND isactive='Y'", [ans, trx.env.client || 0])[0].n;
       if (hit === 1) answers[u] = { to: ans }; else note = hit ? 'more than one ERP unit is called "' + ans + '"' : 'no ERP unit is called "' + ans + '"'; }
@@ -141,6 +146,8 @@ export const DESC = {
   }
 };
 
+// bindProcess(ap) — the process engine plan/load run the Ninja loader through; a bundle that reuses plan/load (bc_migrate_form.mjs) binds it from its own ctx
+export function bindProcess(ap) { AP = ap; }
 export function activate(ctx) {
   AP = ctx.process;
   if (!ctx.form) throw new Error('odoo-migrate: the host injected no form engine (ctx.form)');
