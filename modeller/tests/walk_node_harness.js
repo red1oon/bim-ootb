@@ -28,9 +28,12 @@ async function loadStack(SQL) {
 }
 
 /** @param {Object} SQL @param {string} file - rules DB basename under modeller/ @returns {Object} an open sql.js DB. */
-function openRules(SQL, file) {
+function openRules(SQL, file, DW) {
   const db = new SQL.Database(new Uint8Array(fs.readFileSync(path.join(MODELLER, file))));
   db._dwFile = file;
+  // §12 rule 1: the page's self-heal rules patch, applied the same way here (DW.applyRulesPatch is the one applier)
+  const pf = path.join(MODELLER, 'patches', file + '.sql');
+  if (DW && DW.applyRulesPatch && !process.env.DW_NO_RULES_PATCH) DW.applyRulesPatch(db, file, fs.existsSync(pf) ? fs.readFileSync(pf, 'utf8') : null);
   return db;
 }
 
@@ -42,10 +45,10 @@ function openRules(SQL, file) {
 function openBuildingRules(SQL, stack, name) {
   const { DW, WalkRules } = stack;
   const rules = WalkRules.rulesDb(name), schedule = WalkRules.scheduleDb(name);
-  DW.dwOpen(openRules(SQL, rules));
-  DW.dwScheduleSource(schedule ? openRules(SQL, schedule) : null);
+  DW.dwOpen(openRules(SQL, rules, DW));
+  DW.dwScheduleSource(schedule ? openRules(SQL, schedule, DW) : null);
   if (rules === 'terminal_rules.db' || (DW.hasRules && DW.hasRules('FP'))) DW.dwBorrow('FP', null);   // _dwEnsureBorrow
-  else DW.dwBorrow('FP', openRules(SQL, 'terminal_rules.db'));
+  else DW.dwBorrow('FP', openRules(SQL, 'terminal_rules.db', DW));
   console.log('§WALKNODE rules=' + rules + ' schedule=' + schedule + ' building=' + name);
   return { rules, schedule };
 }

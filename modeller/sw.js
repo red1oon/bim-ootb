@@ -25,7 +25,7 @@
 // v254 (2026-11-09) §11a on-roof surface = the highest roof-classified element on the deck (disc_walker.js?v=18)
 // v255 (2026-11-09) drawn services reach the film: viewer_db_export.js?v=3 writes drawn_walk_line / drawn_walk_marker
 // v257 (2026-11-09) §NARROW_BUILD the overlap row's real-shape check: common/lib/three-mesh-bvh.module.js + viewer/clash_narrow.js stored for offline; modeller.html?, edit_report.js?v=4, edit_report_panel.js?v=3, edit_shapes.js
-const CACHE_VERSION = 'v257';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v258';   // bump on each deploy; per-change detail is the git commit message.
 const CACHE_PREFIX = 'bim-modeller-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -66,6 +66,7 @@ const PRECACHE_ASSETS = [
   'open_building_db.js',   // U7 the one reader of the open building's DB (Properties panel, edit deltas, project order)
   'ifc_open_worker.js',
   '../common/file_store.js',   // §FILESTORE-OPEN: loaded on ?open=store: only (BIMDOC_OPEN_FILE_STORE.md)
+  'patches/terminal_rules.db.sql',   // §12 (DISC_WALK_BAND_NO_HOST.md): borrowed-band source floors, self-heal rules patch
   '../common/georef_frame.js',   // §ONE-FRAME the one rebase rule + site facts (open worker, dxf export; shared with the Viewer import)
   '../common/ifc_grid_read.js',   // §4.2a the one IFC grid reader (open worker + Viewer import)   // P-X a raw .ifc opened: the shared extractor in a worker
   'ifc_open_db.js',   // P-X the residents' rule over the extractor's DB (the one owner of IFC -> building DB)

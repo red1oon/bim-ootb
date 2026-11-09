@@ -71,6 +71,7 @@
     var buf = await _loadDbBuf(url);
     var db = new SQL.Database(new Uint8Array(buf));
     db._dwFile = file; _borrow[disc] = db;
+    await _patchRulesFromUrl(db, file, baseUrl);   // §12 rule 1: self-heal rules patch
     console.log(TAG + ' §DW-BORROW ' + disc + ' ← ' + file);
     return db;
   }
@@ -181,6 +182,20 @@
   }
   // §SEAM-W3C (F18): the ONE rules-DB cache/fetch key builder — read, write AND the modeller's stale-cache bust use it.
   function dwRulesKey(file, baseUrl) { return (baseUrl || '../modeller/') + file; }
+  // §12 rule 1 (prompts/DISC_WALK_BAND_NO_HOST.md): a rules DB's content fix ships as `patches/<rulesFile>.sql`, applied on EVERY load (the
+  // DB CHANGES = MIGRATION SCRIPT + SELF-HEAL LOADER architecture; never a binary). One applier for the page and the node harness.
+  function applyRulesPatch(db, file, sqlText) {
+    if (!db || !sqlText) { console.log(TAG + ' §DW-RULES-PATCH file=' + file + ' none'); return false; }
+    try { db.run(sqlText); var n = _rows(db, "SELECT 1 FROM sqlite_master WHERE type='table' AND name='rule_storey_floor'").length ? _rows(db, 'SELECT COUNT(*) n FROM rule_storey_floor')[0].n : 0;
+      console.log(TAG + ' §DW-RULES-PATCH file=' + file + ' rows=' + n + ' ok'); return true; }
+    catch (e) { console.warn(TAG + ' §DW-RULES-PATCH file=' + file + ' error ' + (e && e.message)); return false; }
+  }
+  async function _patchRulesFromUrl(db, file, baseUrl) {
+    if (typeof fetch !== 'function') return false;
+    var url = (baseUrl || './').replace(/\/?$/, '/') + 'patches/' + file + '.sql', txt = null;
+    try { var r = await fetch(url); if (r.ok) txt = await r.text(); } catch (e) { txt = null; }
+    return applyRulesPatch(db, file, txt);
+  }
   async function dwInit(SQL, baseUrl, rulesFile) {
     var file = rulesFile || 'terminal_rules.db';
     // Building-class select: reload only when the requested standard CHANGES (open a house
@@ -190,6 +205,7 @@
     var buf = await _loadDbBuf(url);                          // §DW_IDB: IDB-cached, network only on first open
     _db = new SQL.Database(new Uint8Array(buf));
     _ready = true; _loadedFile = file;
+    await _patchRulesFromUrl(_db, file, baseUrl);   // §12 rule 1: self-heal rules patch (prompts/DISC_WALK_BAND_NO_HOST.md)
     var n = function (t) { var r = _db.exec('SELECT COUNT(*) FROM ' + t); return r.length ? r[0].values[0][0] : 0; };
     console.log(TAG + ' dwInit ' + file + ' placement=' + n('rule_placement') + ' routing=' + n('rule_routing') +
       ' place_order=' + n('rule_place_order') + ' avoidance=' + n('rule_avoidance'));
@@ -696,6 +712,42 @@
   // panels, cv 0.32/1.25) or absent → REFUSE, never the fill: "represent as one surface, never fabricate a fake array"
   // (red1 2026-06-27). Returns null for a non-tessellating row (caller keeps its byte-identical path).
   var TESS_FILL = 0.5;
+  // ── §12 (prompts/DISC_WALK_BAND_NO_HOST.md, owner 2026-11-09 "Re-anchor + host"): a band row borrowed from ANOTHER building keeps that building's
+  // storey ladder. When the rules DB states its source floors (rule_storey_floor, from the self-heal patch) and a row's scope names a storey this building
+  // does not have, the row is re-anchored by ORDER: source storey k above ground -> this building's storey group k above ground, keeping its height above
+  // its own floor. Groups: this building's stated storey elevations, neighbours closer than half the source's smallest floor-to-floor height are one level
+  // (data-derived). Ground: the source's lowest floor; the target group nearest elevation 0.000 (the project datum). Null = rule off, today's path.
+  function _reanchorCtx(disc, db, bdb, rows) {
+    if (!_hasTable(db, 'rule_storey_floor')) { console.log(TAG + ' §BAND-REANCHOR ' + disc + ' off reason=no-source-floors (no rule_storey_floor in the rules DB)'); return null; }
+    var base = function (s) { return String(s || '').split(' (')[0].trim(); };
+    var parts = function (b) { var a = b.split(/\s*[\/+]\s*/); return a.map(function (n, i) { return i === 0 ? n : (/^\d+$/.test(n) ? a[0].replace(/\d+$/, n) : n); }).filter(Boolean); };
+    var mine = {}; _rows(bdb, 'SELECT DISTINCT storey s FROM elements_meta WHERE storey IS NOT NULL').forEach(function (r) { mine[r.s] = 1; });
+    var elev = _hasTable(bdb, 'storey_elevation') ? _rows(bdb, 'SELECT name, placement_z_m z FROM storey_elevation WHERE placement_z_m IS NOT NULL') : [];
+    elev.forEach(function (r) { mine[r.name] = 1; });
+    var foreign = rows.filter(function (r) { return parts(base(r.storey_scope)).every(function (n) { return !mine[n]; }); });
+    if (!foreign.length) { console.log(TAG + ' §BAND-REANCHOR ' + disc + ' off reason=own-storeys (every row names a storey of this building)'); return null; }
+    if (!elev.length) { console.log(TAG + ' §BAND-REANCHOR ' + disc + ' off reason=no-target-elevations (no storey_elevation rows)'); return null; }
+    var floors = {}; _rows(db, 'SELECT storey, floor_z FROM rule_storey_floor').forEach(function (r) { floors[r.storey] = +r.floor_z; });
+    var named = {}; foreign.forEach(function (r) { parts(base(r.storey_scope)).forEach(function (n) { if (floors[n] != null) named[n] = floors[n]; }); });
+    var src = Object.keys(named).map(function (n) { return { name: n, z: named[n] }; }).sort(function (a, b) { return a.z - b.z; });
+    if (!src.length) { console.log(TAG + ' §BAND-REANCHOR ' + disc + ' off reason=no-source-floor-for-these-rows'); return null; }
+    var f2f = []; for (var i = 1; i < src.length; i++) if (src[i].z - src[i - 1].z > 0) f2f.push(src[i].z - src[i - 1].z);
+    var tol = f2f.length ? Math.min.apply(null, f2f) / 2 : 0;   // single source floor: no grouping (each stated storey its own level), logged as tol=0
+    var es = elev.map(function (r) { return { name: r.name, z: +r.z }; }).sort(function (a, b) { return a.z - b.z; }), groups = [];
+    es.forEach(function (e) { var g = groups[groups.length - 1]; if (g && e.z - g.zHi < tol) { g.names.push(e.name); g.zHi = e.z; } else groups.push({ names: [e.name], z: e.z, zHi: e.z }); });
+    var g0 = 0, best = Infinity; groups.forEach(function (g, k) { var d = (g.z <= 0 && g.zHi >= 0) ? 0 : Math.min(Math.abs(g.z), Math.abs(g.zHi)); if (d < best) { best = d; g0 = k; } });
+    var map = {}; src.forEach(function (s, k) { var g = groups[g0 + k]; map[s.name] = g ? { tgt: g.names[0], tgtFloor: g.z, names: g.names } : null; });
+    console.log(TAG + ' §BAND-REANCHOR ' + disc + ' rulesDb=' + (db._dwFile || '?') + ' foreignRows=' + foreign.length + ' tol=' + tol.toFixed(3) + ' sourceFloors=[' + src.map(function (s) { return s.name + ':' + s.z; }).join(', ') +
+      '] targetGroups=[' + groups.map(function (g, k) { return (k === g0 ? 'GROUND ' : '') + g.z + '..' + g.zHi + ':' + g.names.join('/'); }).join(' | ') + '] map={' + src.map(function (s) { return s.name + '->' + (map[s.name] ? map[s.name].tgt + '@' + map[s.name].tgtFloor : 'none'); }).join(', ') + '}');
+    return { tol: tol, map: map, forRow: function (r) {
+      var b = base(r.storey_scope), ps = parts(b);
+      if (!ps.every(function (n) { return !mine[n]; })) return null;   // names a storey of this building: today's path
+      if (ps.length > 1) return { skip: 'multi', why: 'multi-storey scope: no single floor to re-anchor to' };
+      if (named[b] == null) return { skip: 'noFloor', why: 'no source floor stated: today\'s path', passthrough: true };
+      var m = map[b]; if (!m) return { skip: 'noTarget', why: 'no storey of this building at that order' };
+      return { src: b, srcFloor: named[b], tgt: m.tgt, tgtFloor: m.tgtFloor, to: [m.tgtFloor + (r.z_band_lo - named[b]), m.tgtFloor + (r.z_band_hi - named[b])] };
+    } };
+  }
   function _arrayMeasure(els, cell) {
     var hist = {}; els.forEach(function (e) { var k = (+e.bx).toFixed(2) + 'x' + (+e.by_).toFixed(2) + 'x' + (+e.bz).toFixed(2); hist[k] = (hist[k] || 0) + 1; });
     var mk = Object.keys(hist).sort(function (a, b) { return hist[b] - hist[a]; })[0], mu = mk.split('x').map(Number);
@@ -804,9 +856,16 @@
       }
     }
     var out = [], refused = {}, zones = 0;
+    var RA = _reanchorCtx(disc, db, bdb, rows), raNot = { multi: 0, noTarget: 0, noFloor: 0, done: 0 };
     rows.forEach(function (r) {
       r = Object.assign({}, r);
-      r.z_band_lo += zOff; r.z_band_hi += zOff;               // site-frame band from here on
+      var ra = RA ? RA.forRow(r) : null;
+      if (ra && ra.passthrough) { raNot.noFloor++; ra = null; }
+      if (ra && ra.skip) { raNot[ra.skip]++; console.log(TAG + ' §BAND-REANCHOR-ROW ' + disc + '/' + r.ifc_class + ' scope="' + r.storey_scope + '" from=[' + r.z_band_lo + ',' + r.z_band_hi + '] to=none reason=' + ra.why); return; }
+      if (ra && ra.to) {                                        // §12 rule 4: target floor + (band - source floor); zOff is not applied to this row
+        console.log(TAG + ' §BAND-REANCHOR-ROW ' + disc + '/' + r.ifc_class + ' scope="' + r.storey_scope + '" from=[' + r.z_band_lo + ',' + r.z_band_hi + '] to=[' + ra.to[0].toFixed(4) + ',' + ra.to[1].toFixed(4) + '] src=' + ra.src + '@' + ra.srcFloor + ' target=' + ra.tgt + '@' + ra.tgtFloor);
+        r.z_band_lo = ra.to[0]; r.z_band_hi = ra.to[1]; r._reanchor = ra; raNot.done++;
+      } else { r.z_band_lo += zOff; r.z_band_hi += zOff; }   // site-frame band from here on (today's path)
       var ghash = bind[r.ifc_class] || null;
       if (!ghash) {                                           // LOD400 REFUSE — no mined real mesh
         refused[r.ifc_class] = (refused[r.ifc_class] || 0) + r.n_measured;
@@ -885,7 +944,7 @@
       for (var c = 0; c < placeN; c++) {
         var cell = cells[Math.floor(c * stride)];
         out.push({ disc: disc, ifc_class: r.ifc_class, x: cell.x, y: cell.y, z: z,
-          storey: r.storey_scope, band: [r.z_band_lo, r.z_band_hi],
+          storey: r._reanchor ? r._reanchor.tgt : r.storey_scope, band: [r.z_band_lo, r.z_band_hi], reanchor: r._reanchor ? { from: r.storey_scope, src: r._reanchor.src, tgt: r._reanchor.tgt } : undefined,
           bx: r.bbox_dx || null, by: r.bbox_dy || null, bz: r.bbox_dz || null,
           geometry_hash: ghash, prim: _primFor(r.ifc_class),
           prov: 'placed:measured-band', src: r.provenance || '' });
@@ -897,7 +956,8 @@
     var bandMidN = Object.keys(bandMid).length;
     if (bandMidN) console.log(TAG + ' §BAND-MIDPOINT disc=' + disc + ' elements=' + bandMidN + ' corrected>0.5m=' + bandMidMoved +
       ' (band envelope + cells on mesh-recovered midpoints, not raw placement origins)');
-    return { placements: out, zones: zones, refused: refused, verdicts: verdicts };
+    if (RA) console.log(TAG + ' §BAND-REANCHOR-SUM ' + disc + ' reanchored=' + raNot.done + ' notPlaced: multiStorey=' + raNot.multi + ' noTargetStorey=' + raNot.noTarget + ' (no source floor -> today\'s path: ' + raNot.noFloor + ')');
+    return { placements: out, zones: zones, refused: refused, verdicts: verdicts, reanchor: RA ? raNot : null };
   }
 
   // Reduce a discipline's rule_placement rows to ONE representative per ifc_class
@@ -1393,7 +1453,7 @@
       if (bh.ez > depthMax) depthMax = bh.ez;
       (usedHost[bh.g] = usedHost[bh.g] || { h: bh, n: 0 }).n++;
       zMoves.push(best);
-      bound.push({ disc: p.disc, ifc_class: p.ifc_class, x: p.x, y: p.y, z: bh.tz + sign * faceHalf * (bh.ez / 2) + sign * off, yaw: bh.ex >= bh.ey ? 0 : Math.PI / 2,
+      bound.push({ reanchor: p.reanchor, disc: p.disc, ifc_class: p.ifc_class, x: p.x, y: p.y, z: bh.tz + sign * faceHalf * (bh.ez / 2) + sign * off, yaw: bh.ex >= bh.ey ? 0 : Math.PI / 2,
         storey: p.storey, host: bh.g, mount: mount, prov: 'shim:host-' + hostClass + '-' + mount.toLowerCase(),
         bx: p.bx, by: p.by, bz: p.bz, prim: p.prim, src: p.src, snapDist: 0, midVerified: bh.midVerified, band: p.band, geometry_hash: p.geometry_hash });
     });
@@ -1502,7 +1562,7 @@
           ' host=' + bl.w.g + ' hostStorey="' + bl.w.st + '" hostZ=[' + (bl.w.tz - bl.w.bz / 2).toFixed(2) + ',' +
           (bl.w.tz + bl.w.bz / 2).toFixed(2) + '] pz=' + ((shim.height_m != null && p.storeyZ != null)
             ? ('storeyZ(' + (+p.storeyZ).toFixed(2) + ')+height_m(' + shim.height_m + ')=') : 'rule-z p.z=') + pz.toFixed(2));
-        bound.push({ disc: p.disc, ifc_class: p.ifc_class, x: fx, y: fy, z: pz, yaw: bl.horiz === 0 ? 0 : Math.PI / 2,
+        bound.push({ reanchor: p.reanchor, disc: p.disc, ifc_class: p.ifc_class, x: fx, y: fy, z: pz, yaw: bl.horiz === 0 ? 0 : Math.PI / 2,
           storey: p.storey, host: bl.w.g, mount: 'SIDE', prov: 'shim:host-' + hostClass + '-side',
           bx: p.bx, by: p.by, bz: p.bz, prim: p.prim, src: p.src, snapDist: +best.toFixed(4), midVerified: bl.w.midVerified,
           band: p.band, geometry_hash: p.geometry_hash });      // §NOSPACES carry-through (undefined on legacy walks)
@@ -1554,7 +1614,7 @@
         ' host=' + bh.g + ' hostStorey="' + bh.st + '" pz=hostTz(' + bh.tz.toFixed(2) + ')' +
         (faceHalf ? (sign > 0 ? '+' : '-') + 'bz/2(' + (bh.bz / 2).toFixed(2) + ')' : '') +
         (off ? (sign > 0 ? '+' : '-') + 'off(' + off + ')' : '') + '=' + pz.toFixed(2));
-      bound.push({ disc: p.disc, ifc_class: p.ifc_class, x: bh.x, y: bh.y, z: pz, yaw: horiz === 0 ? 0 : Math.PI / 2,
+      bound.push({ reanchor: p.reanchor, disc: p.disc, ifc_class: p.ifc_class, x: bh.x, y: bh.y, z: pz, yaw: horiz === 0 ? 0 : Math.PI / 2,
         storey: p.storey, host: bh.g, mount: mount, prov: 'shim:host-' + hostClass + '-' + mount.toLowerCase(),
         bx: p.bx, by: p.by, bz: p.bz, prim: p.prim, src: p.src, snapDist: +best.toFixed(4), midVerified: bh.midVerified,
         band: p.band, geometry_hash: p.geometry_hash });        // §NOSPACES carry-through (undefined on legacy walks)
@@ -2641,6 +2701,12 @@
     var noMains = _mainsDrawnOnly(disc, opts);   // §WALK-MAINS §9.2: a band duct or pipe piece with no main is not placed
     function noHost(c, shim, list, why) {       // a device with a host rule and no host: the row says which
       var a = _AREA_HOST[shim.host_ifc_class], un = !!(a && a.noHost === 'unhosted');
+      // §12 rule 5 (owner 2026-11-09 "Re-anchor + host"): a RE-ANCHORED borrowed device is placed only on a host of this building. With no host it is
+      // refused, not 'unhosted' (amends §10 rule 2 for this case only); counted apart so input = bound + unhosted + notJudged + refused stays exact.
+      var ra = list.filter(function (p) { return p.reanchor; });
+      if (ra.length) { list = list.filter(function (p) { return !p.reanchor; }); c[why] += ra.length; c.refused += ra.length; c.reanchorNoHost = (c.reanchorNoHost || 0) + ra.length;
+        acct.refused += ra.length; acct.total += ra.length; acct.reanchorNoHost = (acct.reanchorNoHost || 0) + ra.length; if (opts && opts.keepUnhosted) out = out.concat(ra); }
+      if (!list.length) return;
       c[why] += list.length;
       if (un) { list.forEach(function (p) { p.hostState = 'unhosted'; p.provisional = true; }); out = out.concat(list); c.unhosted += list.length; acct.unhosted += list.length; }
       else { c.refused += list.length; acct.refused += list.length; acct.total += list.length; if (opts && opts.keepUnhosted) out = out.concat(list); }
@@ -2652,6 +2718,10 @@
       var hb = hostBind(grp, bdb, shim, geoDb, spaceBBox);
       if (hb.noHost) { noHost(c, shim, grp, 'host-absent'); info.push({ ifc_class: cls, percept: shim.product_value, host: shim.host_ifc_class, mount: shim.mount, bound: 0, refused: c.refused, unhosted: c.unhosted, noHost: true }); return; }
       hb.bound.forEach(function (p) { p.hostState = 'bound'; p.provisional = true; });   // binding to a real host does not make a borrowed position known (§11)
+      // §12: a re-anchored device's storey is its HOST's storey in this building (the host is this building's element); the level group's first name was only the map key
+      var raB = hb.bound.filter(function (p) { return p.reanchor && p.host; });
+      if (raB.length) { var hs = {}; _rows(bdb, "SELECT guid g, storey s FROM elements_meta WHERE guid IN ('" + raB.map(function (p) { return _esc(p.host); }).join("','") + "')").forEach(function (r) { hs[r.g] = r.s; });
+        raB.forEach(function (p) { if (hs[p.host] != null) p.storey = hs[p.host]; }); }
       out = out.concat(hb.bound); c.bound = hb.bound.length; acct.bound += hb.bound.length;
       if (hb.refusedList && hb.refusedList.length) noHost(c, shim, hb.refusedList, 'no-host-here');
       if (hb.bound.length) { hosts[shim.host_ifc_class] = 1; percepts[shim.product_value] = 1; mounts[shim.mount] = 1; }
@@ -2659,7 +2729,7 @@
     });
     var classes = Object.keys(acct.byClass).map(function (k) { var r = acct.byClass[k]; return k + ': input=' + r.input + ' bound=' + r.bound + ' unhosted=' + r.unhosted + ' notJudged=' + r.notJudged + ' refused=' + r.refused + (r.unhosted + r.refused ? ' (host-absent=' + r['host-absent'] + ' no-host-here=' + r['no-host-here'] + ' no-main=' + r['no-main'] + ')' : ''); });
     acct.provisional = acct.bound + acct.unhosted + acct.notJudged;
-    console.log(TAG + ' §WALK-BAND-NOHOST disc=' + disc + ' bldg=' + (buildingName || '') + (band.length ? ' input=' + band.length + ' provisional=' + acct.provisional + ' bound=' + acct.bound + ' unhosted=' + acct.unhosted + ' notJudged=' + acct.notJudged + ' refused=' + acct.refused + ' noMain=' + acct.noMain : ' input=0 VACUOUS') + (opts && opts.keepUnhosted ? ' keepUnhosted(refused kept floating, witness only)' : '') + (classes.length ? ' [' + classes.join(' | ') + ']' : ''));
+    console.log(TAG + ' §WALK-BAND-NOHOST disc=' + disc + ' bldg=' + (buildingName || '') + (band.length ? ' input=' + band.length + ' provisional=' + acct.provisional + ' bound=' + acct.bound + ' unhosted=' + acct.unhosted + ' notJudged=' + acct.notJudged + ' refused=' + acct.refused + ' noMain=' + acct.noMain + ' reanchorNoHost=' + (acct.reanchorNoHost || 0) : ' input=0 VACUOUS') + (opts && opts.keepUnhosted ? ' keepUnhosted(refused kept floating, witness only)' : '') + (classes.length ? ' [' + classes.join(' | ') + ']' : ''));
     return { placements: out, bound: acct.bound, refusedNoHost: acct, input: band.length, byClassInfo: info, hostsSeen: hosts, perceptsSeen: percepts, mountsSeen: mounts };
   }
   function _noHostReason(r) { return r.total + ' band device(s) refused, not placed (' + (r.noMain ? r.noMain + ' duct or pipe pieces with no main; ' : '') + Object.keys(r.byClass).filter(function (c) { return r.byClass[c].refused; }).join(', ') + ')'; }
@@ -3298,7 +3368,7 @@
     return ds.filter(function (d) { return d && d !== 'ARC'; });
   }
 
-  var API = { setDrawnOnlyView: setDrawnOnlyView, drawnOps: drawnOps, rulesMeta: function () { return _rulesMeta; }, hasRules: function (disc) { try { var r = _db && _db.exec("SELECT COUNT(*) FROM rule_placement WHERE disc='" + String(disc).replace(/'/g, "''") + "'"); return !!(r && r.length && r[0].values[0][0] > 0); } catch (e) { return false; } }, dwInit: dwInit, dwRulesKey: dwRulesKey, dwOpen: dwOpen, dwBorrow: dwBorrow, dwBorrowFile: dwBorrowFile, dwWalk: dwWalk, assemble: assemble, connectorFor: connectorFor, connectorEnrich: connectorEnrich, substrate: substrate, place: place, hostBind: hostBind, dwTraceZ: dwTraceZ,
+  var API = { __test: { placeMeasured: placeMeasured, bandHostPass: _bandHostPass }, applyRulesPatch: applyRulesPatch, setDrawnOnlyView: setDrawnOnlyView, drawnOps: drawnOps, rulesMeta: function () { return _rulesMeta; }, hasRules: function (disc) { try { var r = _db && _db.exec("SELECT COUNT(*) FROM rule_placement WHERE disc='" + String(disc).replace(/'/g, "''") + "'"); return !!(r && r.length && r[0].values[0][0] > 0); } catch (e) { return false; } }, dwInit: dwInit, dwRulesKey: dwRulesKey, dwOpen: dwOpen, dwBorrow: dwBorrow, dwBorrowFile: dwBorrowFile, dwWalk: dwWalk, assemble: assemble, connectorFor: connectorFor, connectorEnrich: connectorEnrich, substrate: substrate, place: place, hostBind: hostBind, dwTraceZ: dwTraceZ,
     route: route, routeChains: routeChains, routePattern: routePattern,
     // §MEP-ROUTE-DISC: the disciplines the pattern bridge covers (modeller.html gates its mep_rw.db load on this)
     patternDiscs: function () { return Object.keys(_RW_PATTERN_DISC); },

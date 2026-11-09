@@ -199,3 +199,54 @@ Asked: should borrowed-density devices be provisional and left out of the placed
 **Not swapped, with the reason (the witness lists these; an unlisted site fails it):** presence tests and load plumbing (a count only compared to 0 or used to pick the largest building or a cache key: `streaming.js` 327/3848-3866/4087, `tools.js` 27/2175, `helpers.js` 253, `main.js` 1059, `scene.js` 1218, `tour.js` 189, `nf_highlight_cost.js` 304, `nf_tree_lens.js`, `fx_props_staffage.js`, `cpe_road_panels.js`, `wh_walk.js`, `doc_canvas.js`, `cpe_linear_beat.js`, `location_axis.js`, `boq_charts.html` 1144/1476/2233, `mep_report.html` 248) · geometry the user still sees (clash discipline counts `measure.js` 246/310/313/1743, `clash_matrix.js`, `clash_report.js`; reveal bands `cpe_storey_reveal.js`, `fx_cpe_reveal_bands.js`; `grid_overlay.js`; `tools.js` 112) · diagnostics (`wizard.js` 191/204, `rule_report.js` 472-476 on transforms). **For the owner, not changed:** `rule_report.js`'s sufficiency probes (they count the population the rule evaluators judge, and the evaluators judge every row; swapping only the denominator would split the two; today they count footings, columns, beams, doors, spaces, which no MEP walk adds) · the 4D schedule (`schedule_author.js`, `tm_lifecycle_api.js`) still schedules provisional devices; `egress_sanity.js` 143/145 counts provisional sprinklers as FP present; the node tool `mep_qto_populate.js` (offline `qto_cache`) counts them.
 **Witness W-PROV-TOTALS (`viewer/tests/witness_prov_totals.js`), P7.** Fixture: a copy of a resident Viewer DB plus K added device rows (a copy of real rows with new guids in every guid table), K_T marked `Provisional=TRUE`, K_F marked `FALSE` (the FALSE rows must stay counted: the predicate tests the value, not the presence of the set), one class all provisional. P7a census: every `COUNT(`/`SUM(` on `elements_meta` in the files above is either a swap or in the reason list; an unlisted site FAILS. P7b node: `count()` is `COUNT(*)` on the resident (no table) and on the fixture with the switch on; the swapped SQL gives resident + K_F on the fixture. P7c real page on the fixture: HUD total, discipline counts, Find Type dropdown (the all-provisional class present with `(0)`), the `n found` line for that class, an NL count answer, print-sheet class counts, room/storey drill counts equal node truth without the K_T rows; the result list still shows the K_T rows labelled. RED: same page with `__vwCountProvisional=true` gives the K_T rows back in every total. P7d: the resident DB on the page gives the same totals as main's code (the swap returned `COUNT(*)`, `ProvTotals.sites` empty). Nothing provisional in the fixture = INCONCLUSIVE.
 **§11 P7 RESULT 2026-11-08 (W-PROV-TOTALS 15 of 15, `viewer/tests/witness_prov_totals.js`, real Viewer page, software GL).** Fixture: public Duplex Viewer DB (1,193 rows) + 10 IfcAirTerminal all provisional + 20 IfcFlowTerminal provisional + 5 flagged FALSE, in every guid table, flag rows in the exporter's shape. HUD total 1,198 (raw 1,228), ACMV 0, ELEC 86; Find accordion `Air Terminal (0)`, `Flow Terminal (110)`; that class's result line `0 found` with 10 rows listed, all labelled `· provisional`; identify `IfcAirTerminal · provisional`; NL "how many electrical elements" 86. RED (`__vwCountProvisional=true`): 1,228, ACMV 10, Air Terminal 10, NL 106, no labels. Resident Duplex untouched: 1,193, no site swapped, `§PROV-TOTALS provisional=0 totals unchanged`. Census: 74 swaps in 17 files, every other count line listed with its reason; the same census on `c5ddd579` fails (18 files). Judged on the page: HUD, Find dropdown/accordion, result line, labels, identify, NL; the other swap sites are proven by the census and the same helper, not each driven on the page. Regression, branch = main: find_ask_answers 23/1, exact_lookup p2 3/0, p4 5/0, json_4d5d 5/0, hud_layout 1/0; find_close_no_leak, find_panel_hidden_onload crash and find_row_clipped fails on both. Viewer sw v1699. Not run on a Modeller-exported DB in this run; the shape is the one P4e wrote.
+
+## §12 Borrowed bands on another building's floors: re-anchor + host (owner 2026-11-09, *"Re-anchor + host"*). SPEC, written before the code
+**Issue, measured** (walk report card, private Revit-exported set, sprinklers on, FP borrowed from `terminal_rules.db` per WalkerDoctrine §2):
+- Every band row keeps the SOURCE building's storey (`storey_scope`, e.g. `Aras 02`) and its absolute z-band.
+- The only height correction is §NOSPACES `zOff`: one translation, the median class-height difference (§DW-DATUM). Between two different buildings it is not ground to ground.
+- Box test on the walked set: of 1,772 band sprinkler heads, 939 sit more than 3 m above the highest slab/roof top at their plan point, 365 are outside every slab/roof box, and 263 are within the stack. ACMV band: 308 of 392 floating.
+**Rule (owner's choice of three):**
+1. **Source floors are data.** The patch `modeller/patches/terminal_rules.db.sql` (self-heal, applied on every load; no binary change) adds `rule_storey_floor(storey TEXT PRIMARY KEY, floor_z REAL, provenance TEXT)`. `floor_z` is in the BAND frame: the lowest `IfcSlab` top (`center_z + bbox_z/2`) of that storey in `buildings/Terminal_extracted.db`, minus `rules_meta.z_datum_offset`. Mined by `modeller/tools/mine_storey_floor.js`; every row states its provenance.
+2. **When it applies:** a band row whose scope's base storey (text before ` (`) is NOT a storey of the walked building, and whose rules DB has `rule_storey_floor`. Otherwise today's path, unchanged: Terminal on its own rules must stay byte-identical.
+3. **Same-order mapping.**
+   - Source ladder: the `rule_storey_floor` rows, sorted by `floor_z`.
+   - Target ladder: this building's `storey_elevation` rows, grouped where neighbours are closer than HALF the source's smallest floor-to-floor height (data-derived, logged). Each group's floor is its lowest stated elevation.
+   - Ground on both sides: the source's lowest floor, and the target group nearest elevation 0.000 (the project datum).
+   - Source storey k above ground maps to target group k above ground. A source storey with no target group of that order maps to nothing.
+4. **Re-anchored band:** `z_lo/z_hi = target floor + (band − source floor)`, and `zOff` is not applied to that row.
+   - A multi-storey scope (`/` or `+` in the base name) has no single floor, so it is not placed.
+   - Not placed rows are counted, never silent.
+5. **Host (amends §10 rule 2 for this case only):** a re-anchored placement is placed only when `hostBind` binds it to a host of this building. A re-anchored device with no host is REFUSED, not `unhosted`: the owner's words, *"place a head only where this building has a ceiling or slab there"*. Every other band row keeps §10. Accounting per class stays exact: input = bound + unhosted + not judged + refused; a new sub-count `reanchorNoHost` sits inside refused.
+6. **§11 still holds:** a re-anchored device is provisional, bound or not.
+**Logs:** `§BAND-REANCHOR disc= rulesDb= sourceFloors=[name:z…] targetGroups=[z0..z1:names…] tol= map={src→target|none}`; per row `§BAND-REANCHOR-ROW scope= from=[lo,hi] to=[lo,hi]|none reason=`; `§DW-RULES-PATCH file= rows= ok|none|error`; `§WALK-BAND-NOHOST … reanchorNoHost=<n>`.
+**Witness W-BAND-REANCHOR (`modeller/tests/witness_band_reanchor.js`, public data):**
+- **R1:** the patch applies, and `rule_storey_floor` equals a fresh mine of `buildings/Terminal_extracted.db` (per-row floor equality). RED: no patch → no table → re-anchor off, logged.
+- **R2:** Terminal walking its own rules → placements byte-identical to main (names match; the rule does not fire).
+- **R3:** a hand-built two-storey building (floors 0 and 3.5 m) borrowing FP from terminal_rules.
+  - Every re-anchored band sits at `target floor + (band − source floor)`, to 1e-6.
+  - Multi-storey scopes are not placed.
+  - Source storeys beyond the target's 2 groups map to none.
+  - RED: rule off → today's absolute bands.
+- **R4:** re-anchored and unhosted → refused, counted in `reanchorNoHost`; a non-re-anchored `IfcCovering` row stays `unhosted` (§10 unchanged).
+- **R5:** accounting per class: input = bound + unhosted + notJudged + refused.
+- Fleet: W-BAND-NO-HOST, W-BORROW-FP, W-TERM-NOSPACES before/after. Then the private walk report run: counts floating/outside/inside before → after (numbers kept out of this file).
+**§12 RESULT (2026-11-09).** Logs read (session scratchpad `ra/`).
+- **W-BAND-REANCHOR 9/0:**
+  - R1: the patch equals a fresh mine (7 rows).
+  - R3a: 71 re-anchored devices at target floor + (band − source floor), worst 8.9e-16.
+  - R3b: 1 multi-storey scope not placed, 5 storeys past the target's levels map to none.
+  - R3c RED: patch off → `off reason=no-source-floors`, nothing re-anchored.
+  - R4a: re-anchored + no host → refused, `reanchorNoHost=4`, 0 unhosted. R4b: the same devices without the mark keep §10 (3 unhosted kept, 1 wall-hosted refused as before).
+  - R4c: 67 bound devices take their host's storey. R5: accounting exact both ways.
+  - R2: Terminal on its own rules gives 1,091 FP placements, byte-identical with and without the patch (`off reason=own-storeys`).
+- **Private set (node harness, FP, sprinklers on), before → after:**
+  - Band heads 1,880 (939 more than 3 m above any slab/roof box, 365 outside every box, 371 inside) → 96, all inside.
+  - Bound devices 204, each named by its host's storey: 5 distinct storeys of this building, none borrowed. `reanchorNoHost=1812`.
+  - ACMV: the multi-storey "typical upper floors" rows are not placed; the one re-anchored lobby row found no host, so 0 band ACMV terminals.
+- **Public residents unchanged:** the FP walk on Duplex, SampleHouse, SampleCastle, Clinic, HHS, Garage, Hospital and Terminal ARC DBs gives identical totals with and without the patch. They state no `storey_elevation`, so the rule logs `off reason=no-target-elevations` (Terminal: `own-storeys`). **Limit, stated:** the rule fires only where the building states its storey elevations; every IFC opened through the Modeller does (`extract_ifc2db.js`), the shipped ARC residents do not.
+- **Regression, base `267fd980` vs fix:**
+  - W-WALK-MAINS 6/0 = 6/0.
+  - W-BAND-NO-HOST 43/1 = 43/1 (P3 fails on main too).
+  - W-DRAWN-WALK 87/0 → 86/1 → 87/0. The one change is X2 RED's pinned Duplex count, 51 → 10: §12 re-anchors that fixture's Terminal-borrowed heads (its IFC states storey elevations). The pin now reads 10, and `DW_NO_RULES_PATCH=1` gives back 51; both runs 87/0.
+- Modeller sw v258 precaches the patch. ESLint clean.
+- **Not done:** the IFC export abort with sprinklers on (web-ifc `CloseModel`, measured in the walk report); a re-walk + re-shoot of the private report on merged main.
