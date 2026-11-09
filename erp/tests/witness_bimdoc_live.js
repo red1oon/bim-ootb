@@ -8,7 +8,12 @@
 //                IP: Issue-for-construction; Issued/Superseded: nothing), through the common AdDocFsm (no second engine)?
 //   B-2 UI       the transitions DRIVEN through the document-action bar (button click -> signed op -> reload): Draft -> Issued for review -> Issued for construction persist; the bar at each state offers exactly the legal set.
 //   C-1 SUPERSEDE completing a newer revision of the same deliverable sets the older row to Superseded (RE), linked by Reversal_ID, persisted; a deliverable with one revision is untouched.
-//   D-1 PROGRESS computed progress per task and per phase (issued/total, pct, budget, earned hours) equals a HAND COUNT of the fixture, through the module AND through the UI action; nothing is stored (no progress column).
+//   D-1 PROGRESS computed progress per task and per phase (issued/total, pct, budget, earned hours) equals a HAND COUNT of the fixture, through the module AND through the task/phase GRIDS
+//                (virtual ColumnSQL columns, §BIMDOC-ADPASS: G-2); nothing is stored (every BIM_ column on C_ProjectTask/C_ProjectPhase carries ColumnSQL, no physical column).
+//   G-1 GEAR    "Open in Modeller / Viewer" is an AD_Process under the gear (Button column, IsToolbarButton Y): the gear lists it, the click logs §AD-TBB ... via=gear and the process result is OK.
+//   G-3 GRID    the BIM Document grid draws X of N columns, N = the dictionary's IsDisplayedGrid='Y' fields of that tab (own window and the Project sub-tab); the first row's cells are not blank.
+//   G-4 NOLENS  no lens named bimdoc is registered and no [data-lens-action^="bimdoc:"] is on screen (the side door is deleted).
+//   G-5 VIRTUAL a task edited and saved commits an op whose columns carry no virtual (BIM_) column.
 //   E-1 SUBTAB  the Project window shows the project's deliverables under the task (sub-tab rows == hand count) and a document created THERE takes project, phase and task from its parent.
 //   F-1 ATTACH  the original file goes on the row through the generic Attachment dialog (sha256 logged == node's).
 //   R-1 RED     an illegal transition is refused (Superseded -> Issue-for-construction): the bar offers nothing AND the FSM says no; the judge fed the opposite says FAIL.
@@ -19,7 +24,7 @@
 //   R-4 RED     the file-kind DATA row (AD_Ref_List 'BIM File Kind' DXF) removed -> the Open action is refused (no popup, §BIMDOC-OPEN REFUSED); restored -> it opens again.
 //   R-5 RED     a store entry altered in OPFS -> the app refuses it (§FILESTORE-OPEN REFUSED reason=mismatch), no success line.
 //   R-6 RED     two rows share one hash: deleting one attachment keeps the bytes (sweep kept>=1 removed=0), deleting the last one removes them (so the first keep is not vacuous).
-//   H-1 HOURS   time lines booked on the task: §BIMDOC-HOURS lines/qty/total equal the hand count.   X-1 CHAIN  issuing a deliverable moves the project's issued count by one (§BIMDOC-CHAIN before/after, hand count).
+//   H-1 HOURS   time lines booked on the task: the task grid's BIM_HoursBooked (§AD-VIRTUAL) equals the hand-counted total.   X-1 CHAIN  issuing a deliverable moves the project's issued count by one (§BIMDOC-CHAIN before/after, hand count).
 //   FILM        the §BIMDOC-FILM evidence lines in order; beats 1 and 9 are NOT BUILT in the kernel (named with file:line), never faked.
 // Verdict per arm: PASS | FAIL | INCONCLUSIVE(reason). INCONCLUSIVE when N is 0 (nothing judged). Overall exit 0 only if no FAIL and no INCONCLUSIVE among the built arms.
 // Run: NODE_PATH=~/bim-ootb/node_modules node erp/tests/witness_bimdoc_live.js
@@ -76,6 +81,25 @@ const DXF = Buffer.from('0\nSECTION\n2\nENTITIES\n0\nLINE\n8\nWALLS\n10\n0.0\n20
   const snap = () => page.evaluate(() => window.IdmpGridTab.snapshot());
   const setv = (col, v) => page.evaluate(([c, v]) => { const e = document.querySelector('#idmp-inline-mount select[data-col="' + c + '"], #idmp-inline-mount input[data-col="' + c + '"]'); if (!e) return 'nofield';
     e.value = String(v); if (e.tagName !== 'SELECT') { e.dispatchEvent(new Event('change', { bubbles: true })); e.dispatchEvent(new Event('input', { bubbles: true })); } return e.value; }, [col, v]);   // no change event on a picker: its dependents refilter and empty a key the picker does not list yet
+
+  const tabClick = async name => { await page.evaluate(n => { const t = [...document.querySelectorAll('#idmp-tabstrip .idmp-adtab')].find(x => x.textContent.trim() === n); if (t) t.click(); }, name); await sleep(1500); };
+  // the gear (ProcessButtonPopup): open it, list its items, click one by its component (the Button column name)
+  async function gearRun(comp, waitPopup) {
+    const on = await page.$eval('#idmp-toolbar [data-tb="process"]', e => !e.disabled).catch(() => false);
+    if (!on) return { on: false, items: [] };
+    await page.click('#idmp-toolbar [data-tb="process"]'); await page.waitForSelector('#idmp-proc-ov', { timeout: 8000 }).catch(() => {});
+    const items = await page.evaluate(() => [...document.querySelectorAll('#idmp-proc-ov [data-tbb]')].map(b => ({ comp: b.getAttribute('data-tbb'), pid: b.getAttribute('data-tbb-process'), label: b.textContent.trim(), disabled: b.disabled })));
+    const it = items.find(x => x.comp === comp);
+    if (!it || it.disabled) { await page.evaluate(() => { const o = document.getElementById('idmp-proc-ov'); if (o) o.remove(); }); return { on: true, items, item: it || null }; }
+    const [popup] = await Promise.all([waitPopup ? page.waitForEvent('popup', { timeout: waitPopup }).catch(() => null) : Promise.resolve(null), page.click('#idmp-proc-ov [data-tbb="' + comp + '"]')]);
+    for (let i = 0; i < 60 && !(await page.$('#idmp-procdlg .idmp-procresult')); i++) await sleep(250);
+    const res = await page.evaluate(() => { const r = document.querySelector('#idmp-procdlg .idmp-procresult'); return r ? { chip: (r.querySelector('.ok-chip') || {}).textContent, msg: (r.querySelector('.msg') || {}).textContent } : null; });
+    await page.click('[data-procdlg-ok]').catch(() => {}); await sleep(500);
+    return { on: true, items, item: it, popup, res };
+  }
+  // the virtual column values a tab load computed (§AD-VIRTUAL, idempiere.html _fillVirtual): { key: value } of the LAST such line since n0
+  const virt = (n0, table, col) => { const l = since(n0, new RegExp('^§AD-VIRTUAL tab=\\d+ table=' + table + ' col=' + col + ' rows=')).pop(); if (!l) return null;
+    const m = / values=\[(.*)\]$/.exec(l), o = {}; (m ? m[1] : '').split(',').filter(Boolean).forEach(kv => { const i = kv.lastIndexOf(':'); o[kv.slice(0, i)] = kv.slice(i + 1); }); return o; };
 
   // ════════ population N, from the page's own dictionary ════════
   await boot();
@@ -212,18 +236,37 @@ const DXF = Buffer.from('0\nSECTION\n2\nENTITIES\n0\nLINE\n8\nWALLS\n10\n0.0\n20
   for (const d of FIX.docs.slice(1)) await createDoc(d);
   say('§W-BIMDOC fixture-docs ids=' + JSON.stringify(ID));
 
-  // D-0 / beat 2: the register (row count per task) through the lens action, before anything is issued
-  async function lensProgress(winId, tabName, recKey, expectText) {
-    await boot('&window=' + winId + (recKey != null && recKey > 0 ? '&record=' + recKey : '')); await sleep(1500); if (recKey != null && recKey < 0) await selectRow(recKey);
-    if (tabName) { await page.evaluate(n => { const t = [...document.querySelectorAll('#idmp-tabstrip .idmp-adtab')].find(x => x.textContent.trim() === n); if (t) t.click(); }, tabName); await sleep(1500); }
-    const n0 = mark(); const has = await page.$('[data-lens-action="bimdoc:progress"]');
-    if (!has) return { lines: [], panel: null, has: false };
-    await page.click('[data-lens-action="bimdoc:progress"]'); await sleep(1200);
-    const panel = await page.evaluate(() => [...document.querySelectorAll('#bimdoc-progress [data-bimdoc-line]')].map(e => e.textContent));
-    return { lines: since(n0, /^§BIMDOC-(PROGRESS|REGISTER)/), panel, has: true };
+  // D-0 / beat 2: the register (deliverables per task) is the Task grid's virtual BIM_Deliverables column, before anything is issued; the register itself is the BIM Document grid (G-3)
+  {
+    const n0 = mark(); await boot('&window=' + PROJ_WIN); await selectRow(PRJ.c_project_id); await tabClick('Phase'); await selectRow(PH[FIX.phases[0]]); await tabClick('Task');
+    const v = virt(n0, 'C_ProjectTask', 'BIM_Deliverables') || {};
+    say('§W-BIMDOC register task-grid BIM_Deliverables=' + JSON.stringify(v) + ' (hand: Plans 3, Sections 1)');
+    const fail = []; if (String(v[TK.Plans.id]) !== '3') fail.push('Plans ' + v[TK.Plans.id] + ' want 3'); if (String(v[TK.Sections.id]) !== '1') fail.push('Sections ' + v[TK.Sections.id] + ' want 1');
+    verdict('D-0 register per task (grid)', Object.keys(v).length === 0 ? 'INCONCLUSIVE' : (fail.length ? 'FAIL' : 'PASS'), fail.length ? fail.join(' ; ') : 'task grid BIM_Deliverables Plans=3 Sections=1 equal to the hand count');
   }
-  const reg = await lensProgress(W_ID, null, ID['A-101/1']);
-  say('§W-BIMDOC register-lines ' + JSON.stringify(reg.lines));
+  // G-3: the register grid draws the dictionary's IsDisplayedGrid fields, and a row's cells are not blank (FB2)
+  {
+    const fail = [], notes = [];
+    for (const [tabRow, win, nav] of [[OWN_TAB, W_ID, null], [PRJ_TAB, PROJ_WIN, 'sub']]) {
+      const want = (await dq("SELECT c.ColumnName FROM AD_Field f JOIN AD_Column c ON c.AD_Column_ID=f.AD_Column_ID WHERE f.AD_Tab_ID=" + tabRow[0] + " AND f.IsActive='Y' AND f.IsDisplayed='Y' AND f.IsDisplayedGrid='Y' ORDER BY f.SeqNoGrid")).map(r => r[0]);
+      if (nav) { await boot('&window=' + win); await selectRow(PRJ.c_project_id); await tabClick('Phase'); await selectRow(PH[FIX.phases[0]]); await tabClick('Task'); await selectRow(TK.Plans.id); await tabClick('BIM Document'); }
+      else await boot('&window=' + win);
+      for (let k = 0; k < 2 && !(await page.$('#idmp-content table thead th[data-ad-col]')); k++) { await page.click('#idmp-toolbar button[data-tb="toggle"]').catch(() => {}); await sleep(900); }
+      const th = await page.evaluate(() => [...document.querySelectorAll('#idmp-content table thead th[data-ad-col]')].map(e => e.getAttribute('data-ad-col')));
+      const cells = await page.evaluate(() => { const tr = document.querySelector('#idmp-content table tbody tr[data-ad-record]'); return tr ? [...tr.querySelectorAll('td')].map(td => td.textContent.trim()) : []; });
+      const X = want.filter(c => th.indexOf(c) >= 0).length, filled = cells.filter(c => c !== '').length, nm = nav ? 'sub-tab' : 'own';
+      notes.push(nm + ' X=' + X + ' of N=' + want.length + ' th=[' + th + '] filled=' + filled);
+      if (want.length === 0) fail.push(nm + ': no IsDisplayedGrid field in the dictionary');
+      if (X !== want.length || th.length !== want.length) fail.push(nm + ' grid columns [' + th + '] vs dictionary [' + want + ']');
+      if (filled < 3) fail.push(nm + ' first row cells blank: ' + JSON.stringify(cells));
+    }
+    say('§W-BIMDOC-GRID ' + notes.join(' | '));
+    verdict('G-3 register grid from the plugin AD model', fail.length ? 'FAIL' : 'PASS', fail.length ? fail.join(' ; ') : notes.join(' ; '));
+  }
+  // G-4: the side door is deleted
+  { const d = await page.evaluate(() => ({ reg: window.AdLens ? window.AdLens.describe() : null, dom: document.querySelectorAll('[data-lens-action^="bimdoc:"]').length }));
+    await openDoc('A-101/1'); const dom2 = await page.evaluate(() => document.querySelectorAll('[data-lens-action^="bimdoc:"]').length);
+    verdict('G-4 no bimdoc lens', d.reg && !('bimdoc' in d.reg) && d.dom === 0 && dom2 === 0 ? 'PASS' : (d.reg ? 'FAIL' : 'INCONCLUSIVE'), 'lenses=' + JSON.stringify(d.reg) + ' bimdoc buttons on screen=' + (d.dom + dom2)); }
 
   // F-1 attach the original file to the first deliverable (the generic Attachment dialog)
   {
@@ -275,14 +318,20 @@ const DXF = Buffer.from('0\nSECTION\n2\nENTITIES\n0\nLINE\n8\nWALLS\n10\n0.0\n20
     const fail = [];
     // O-1: the action opens the app its file kind names; the app's own log shows the same sha256
     await openDoc('A-101/1'); const n0 = mark(), a0 = APPLOG.length;
-    const SEL = '[data-lens-action="bimdoc:open"]';
-    const has = await page.$(SEL); if (!has) fail.push('no "Open in Modeller / Viewer" action on the BIM Document');
-    let popup = null, urlLine = null;
+    const PID = Number((await dq("SELECT AD_Process_ID FROM AD_Column WHERE AD_Table_ID=" + T_ID + " AND ColumnName='OpenInApp'"))[0]?.[0] || 0);
+    const g = await gearRun('OpenInApp', 30000), has = !!(g.item && !g.item.disabled);
+    if (!has) fail.push('the gear does not offer "Open in Modeller / Viewer": items=' + JSON.stringify(g.items));
+    let popup = g.popup || null, urlLine = null;
     if (has) {
-      [popup] = await Promise.all([page.waitForEvent('popup', { timeout: 30000 }).catch(() => null), page.click(SEL)]);
       for (let i = 0; i < 40 && !since(n0, /^§BIMDOC-OPEN id=/).length; i++) await sleep(250);
       urlLine = since(n0, /^§BIMDOC-OPEN id=/)[0] || null;
     }
+    const gfail = [];   // G-1: the action is an AD_Process under the gear
+    if (!PID) gfail.push('no OpenInApp Button column with an AD_Process_ID in the dictionary');
+    if (!has || String(g.item.pid) !== String(PID) || g.item.label !== 'Open in Modeller / Viewer') gfail.push('gear item ' + JSON.stringify(g.item) + ' want process ' + PID);
+    if (!since(n0, new RegExp('^§AD-TBB click comp=OpenInApp process=' + PID + ' table=BIM_Document .*via=gear')).length) gfail.push('no §AD-TBB click ... via=gear line');
+    if (!since(n0, new RegExp('^§AD-PROC-LIVE proc=' + PID + ' .*dispatched=Y ok=Y')).length) gfail.push('process result not ok: ' + JSON.stringify(g.res) + ' ' + JSON.stringify(since(n0, /^§AD-PROC-LIVE proc=/).slice(-1)));
+    verdict('G-1 Open is an AD process under the gear', gfail.length ? 'FAIL' : 'PASS', gfail.length ? gfail.join(' ; ') : 'gear item OpenInApp -> AD_Process ' + PID + ', clicked via=gear, result "' + (g.res && g.res.msg) + '"');
     const want = ORIGIN + '/modeller/modeller.html?open=store:' + DXF_SHA + '&name=duplex_ground_floor.dxf';
     const gotUrl = urlLine ? (/ url=(\S+)$/.exec(urlLine) || [])[1] : null;
     if (gotUrl !== want) fail.push('action URL ' + gotUrl + ' != expected ' + want);
@@ -305,13 +354,14 @@ const DXF = Buffer.from('0\nSECTION\n2\nENTITIES\n0\nLINE\n8\nWALLS\n10\n0.0\n20
     else {
       await openDoc('A-101/1'); await page.evaluate(r => window.__idmpDb.exec("DELETE FROM ad_ref_list WHERE ad_reference_id=" + r + " AND value='DXF'"), kindRef);   // no reload after the delete: the dictionary is in memory
       const m1 = mark();
-      const pp = await Promise.all([page.waitForEvent('popup', { timeout: 5000 }).catch(() => null), page.click(SEL)]); await sleep(1500);
+      const gr = await gearRun('OpenInApp', 5000), pp = [gr.popup]; await sleep(1500);
+      if (!gr.res || !/no-app-for-kind/.test(gr.res.msg || '')) rf.push('the process result does not carry the refusal: ' + JSON.stringify(gr.res));
       const refusal = since(m1, /^§BIMDOC-OPEN REFUSED .*reason=no-app-for-kind/);
       if (pp[0]) { rf.push('a popup opened although the file-kind row was removed'); await pp[0].close().catch(() => {}); }
       if (!refusal.length) rf.push('no §BIMDOC-OPEN REFUSED reason=no-app-for-kind line');
       await page.evaluate(([c, v]) => window.__idmpDb.run('INSERT INTO ad_ref_list (' + c.join(',') + ') VALUES (' + c.map(() => '?').join(',') + ')', v), [saved.cols, saved.vals]);
       const m2 = mark();
-      const pp2 = await Promise.all([page.waitForEvent('popup', { timeout: 20000 }).catch(() => null), page.click(SEL)]); await sleep(800);
+      const pp2 = [(await gearRun('OpenInApp', 20000)).popup]; await sleep(800);
       if (!pp2[0]) rf.push('after restoring the row the action still did not open'); else await pp2[0].close().catch(() => {});
       say('§W-BIMDOC-REDKIND removed=' + JSON.stringify(refusal.slice(0, 1)) + ' restoredOpened=' + !!pp2[0]);
     }
@@ -441,7 +491,6 @@ const DXF = Buffer.from('0\nSECTION\n2\nENTITIES\n0\nLINE\n8\nWALLS\n10\n0.0\n20
   }
 
   // E-1 the sub-tab under Project Task: navigate Project -> Phase -> Task -> BIM Document the way a user does
-  const tabClick = async name => { await page.evaluate(n => { const t = [...document.querySelectorAll('#idmp-tabstrip .idmp-adtab')].find(x => x.textContent.trim() === n); if (t) t.click(); }, name); await sleep(1500); };
   async function toTask(phaseName, taskName) {
     await boot('&window=' + PROJ_WIN); await selectRow(PRJ.c_project_id);
     await tabClick('Phase'); await selectRow(PH[phaseName]);
@@ -481,39 +530,46 @@ const DXF = Buffer.from('0\nSECTION\n2\nENTITIES\n0\nLINE\n8\nWALLS\n10\n0.0\n20
       window.__crud.applyOpGroup(ops, rr => res(rr)); }), [PRJ.c_project_id, TK.Plans.ph, TK.Plans.id, HAND_H]);
     await sleep(1500);
     const lines = await rd("SELECT qty FROM s_timeexpenseline WHERE c_projecttask_id=" + TK.Plans.id + " AND isactive<>'N'");
-    await toTask(FIX.phases[0], 'Plans'); const n0 = mark(); const has = await page.$('[data-lens-action="bimdoc:progress"]'); if (has) { await page.click('[data-lens-action="bimdoc:progress"]'); await sleep(1200); }
-    const hl = since(n0, /^§BIMDOC-HOURS /)[0] || null, judgeH = (line, w) => (line && line.includes('lines=' + w.lines + ' ') && line.includes('qty=[' + w.qty.slice().sort((x, y) => x - y).join(',') + ']')   /* the log lists lines by id, synthetic ids run downward: compare as a set */ && line.includes('total=' + w.total)) ? 'PASS' : 'FAIL';
-    say('§W-BIMDOC-HOURS committed=' + (r && r.committed) + ' rows-read-back=' + lines.length + ' line: ' + hl);
-    const v = judgeH(hl, HAND_H), ctl = judgeH(hl, Object.assign({}, HAND_H, { total: HAND_H.total + 1 }));
-    verdict('H-1 hours on the task', lines.length === 0 ? 'INCONCLUSIVE' : (v === 'PASS' && ctl === 'FAIL' ? 'PASS' : 'FAIL'), 'line "' + hl + '" vs hand count ' + JSON.stringify(HAND_H) + '; judge fed total+1 says ' + ctl + (r && r.committed ? '' : ' (booking not committed: ' + JSON.stringify(r).slice(0, 160) + ')'));
+    const n0 = mark(); await toTask(FIX.phases[0], 'Plans');
+    const hv = virt(n0, 'C_ProjectTask', 'BIM_HoursBooked') || {}, got = hv[TK.Plans.id], judgeH = (g, w) => (g != null && Number(g) === w.total) ? 'PASS' : 'FAIL';
+    say('§W-BIMDOC-HOURS committed=' + (r && r.committed) + ' rows-read-back=' + lines.length + ' task-grid BIM_HoursBooked=' + JSON.stringify(hv));
+    const v = judgeH(got, HAND_H), ctl = judgeH(got, Object.assign({}, HAND_H, { total: HAND_H.total + 1 }));
+    verdict('H-1 hours on the task', lines.length === 0 ? 'INCONCLUSIVE' : (v === 'PASS' && ctl === 'FAIL' ? 'PASS' : 'FAIL'), 'task grid BIM_HoursBooked=' + got + ' vs hand count total ' + HAND_H.total + ' (' + HAND_H.qty.join('+') + '); judge fed total+1 says ' + ctl + (r && r.committed ? '' : ' (booking not committed: ' + JSON.stringify(r).slice(0, 160) + ')'));
+    // G-5: a task edited in its form and saved carries no virtual column in its op
+    { const g5 = [], m5 = mark();   // toTask leaves the task's form open (selectRow); open it again only if it is not
+      if (!(await page.$('#idmp-inline-mount [data-col="description"]'))) { await selectRow(TK.Plans.id); await sleep(800); }
+      if ((await setv('description', 'Duplex plans (edited)')) === 'nofield') g5.push('no Description field on the task form');
+      else { await sleep(400); await page.click('#idmp-toolbar button[data-tb="save"]'); for (let i = 0; i < 40 && !since(m5, /^§CRUD-PERSIST key=c_projecttask /).length; i++) await sleep(250); await sleep(800); }
+      const pl = since(m5, /^§CRUD-PERSIST key=c_projecttask /)[0] || null;
+      if (!pl) g5.push('no §CRUD-PERSIST for the task edit: ' + JSON.stringify(since(m5, /REJECT|ERR|SEVERE|no such column/i).slice(0, 3)));
+      else if (/bim_/i.test((/ cols=(\S+)/.exec(pl) || [])[1] || '')) g5.push('the op carries a virtual column: ' + pl);
+      verdict('G-5 a saved task carries no virtual column', g5.length ? 'FAIL' : 'PASS', g5.length ? g5.join(' ; ') : (pl || '').slice(0, 160)); }
   }
 
   // D-1 progress: the module and the UI action against the HAND COUNT
   {
     const P = await page.evaluate(() => window.BimDocProgress.compute(window.__tipRead.rows('SELECT * FROM bim_document')));
-    const storedCol = (await dq("SELECT count(*) FROM AD_Column c JOIN AD_Table t ON t.AD_Table_ID=c.AD_Table_ID WHERE lower(c.ColumnName) LIKE '%progress%' AND t.TableName IN ('BIM_Document','C_ProjectTask','C_ProjectPhase')"))[0][0];
+    const storedCol = (await dq("SELECT count(*) FROM AD_Column c JOIN AD_Table t ON t.AD_Table_ID=c.AD_Table_ID WHERE (lower(c.ColumnName) LIKE '%progress%' OR c.ColumnName LIKE 'BIM\\_%' ESCAPE '\\') AND COALESCE(c.ColumnSQL,'')='' AND t.TableName IN ('C_ProjectTask','C_ProjectPhase')"))[0][0];
     let X = 0, N = 0; const bad = [];
     Object.entries(HAND.task).forEach(([k, w]) => { N++; const v = judgeCount(P.byTask[TK[k].id], w); if (v === 'PASS') X++; else bad.push('task ' + k + ' got ' + JSON.stringify(P.byTask[TK[k].id]) + ' want ' + JSON.stringify(w)); });
     Object.entries(HAND.phase).forEach(([k, w]) => { N++; const v = judgeCount(P.byPhase[PH[k]], w); if (v === 'PASS') X++; else bad.push('phase ' + k + ' got ' + JSON.stringify(P.byPhase[PH[k]]) + ' want ' + JSON.stringify(w)); });
     say('§W-BIMDOC-PROGRESS-MODULE X=' + X + ' of N=' + N + ' hand-counted task/phase figures equal; wrong=' + JSON.stringify(bad) + ' storedProgressColumns=' + storedCol);
-    // through the UI: the lens action on a task, then on a phase
+    // G-2 through the UI: the task and phase GRIDS show the virtual progress columns (total, issued, earned hours) equal to the hand count
     const uiFail = [];
-    async function uiProgress(level, name, want, label) {
-      await toTask(FIX.phases[0], 'Plans'); if (level === 'phase') await tabClick('Phase'), await selectRow(PH[name]);
-      const n1 = mark(); const has = await page.$('[data-lens-action="bimdoc:progress"]');
-      if (!has) { uiFail.push(level + ': no BIM progress action on the toolbar'); return; }
-      await page.click('[data-lens-action="bimdoc:progress"]'); await sleep(1000);
-      const panel = await page.evaluate(() => [...document.querySelectorAll('#bimdoc-progress [data-bimdoc-line]')].map(e => e.textContent));
-      const txt = want.issued + ' of ' + want.total + ' issued for construction (' + want.pct + '%), earned hours ' + want.earned + ' of ' + want.budget;
-      const logged = since(n1, /^§BIMDOC-PROGRESS /).some(l => l.includes('issued=' + want.issued + ' total=' + want.total + ' pct=' + want.pct + ' budget=' + want.budget + ' earned=' + want.earned));
-      say('§W-BIMDOC-PROGRESS-UI ' + level + ' ' + name + ' panel=' + JSON.stringify(panel));
-      if (!panel.some(l => l.includes(txt)) || !logged) uiFail.push(level + ' ' + name + ': panel/log lack "' + txt + '"');
-      await page.evaluate(() => { const o = document.getElementById('bimdoc-progress'); if (o) o.remove(); });
+    async function uiProgress(level, name, want) {
+      const n1 = mark(); await toTask(FIX.phases[0], 'Plans'); if (level === 'phase') { await tabClick('Phase'); }
+      const tn = level === 'phase' ? 'C_ProjectPhase' : 'C_ProjectTask', key = level === 'phase' ? PH[name] : TK[name].id;
+      const got = { total: (virt(n1, tn, 'BIM_Deliverables') || {})[key], issued: (virt(n1, tn, 'BIM_Issued') || {})[key], earned: (virt(n1, tn, 'BIM_EarnedHours') || {})[key] };
+      for (let k = 0; k < 2 && !(await page.$('#idmp-content table thead th[data-ad-col]')); k++) { await page.click('#idmp-toolbar button[data-tb="toggle"]').catch(() => {}); await sleep(900); }
+      const th = await page.evaluate(() => [...document.querySelectorAll('#idmp-content table thead th[data-ad-col]')].map(e => e.getAttribute('data-ad-col')).filter(c => /^BIM_/.test(c)));
+      say('§W-BIMDOC-PROGRESS-UI ' + level + ' ' + name + ' grid=' + JSON.stringify(got) + ' gridColumns=[' + th + ']');
+      if (['total', 'issued', 'earned'].some(k => got[k] == null || Number(got[k]) !== want[k])) uiFail.push(level + ' ' + name + ': grid ' + JSON.stringify(got) + ' want total=' + want.total + ' issued=' + want.issued + ' earned=' + want.earned);
+      if (th.indexOf('BIM_Issued') < 0) uiFail.push(level + ' ' + name + ': no BIM_Issued column in the grid header [' + th + ']');
     }
     await uiProgress('task', 'Plans', HAND.task.Plans);
     await uiProgress('phase', FIX.phases[0], HAND.phase.Concept);
     const bad2 = bad.concat(uiFail);
-    verdict('D-1 progress', N === 0 ? 'INCONCLUSIVE' : (bad2.length === 0 && Number(storedCol) === 0 ? 'PASS' : 'FAIL'), 'X=' + X + ' of N=' + N + ' equal to the hand count; UI task+phase panels ' + (uiFail.length ? 'WRONG ' + uiFail : 'equal') + '; stored progress columns=' + storedCol);
+    verdict('D-1 progress', N === 0 ? 'INCONCLUSIVE' : (bad2.length === 0 && Number(storedCol) === 0 ? 'PASS' : 'FAIL'), 'X=' + X + ' of N=' + N + ' equal to the hand count; G-2 task+phase grids ' + (uiFail.length ? 'WRONG ' + uiFail : 'equal') + '; physical (non-virtual) progress columns=' + storedCol);
     // R-3 red: a wrong hand count must be judged FAIL
     const wrong = Object.assign({}, HAND.task.Plans, { issued: HAND.task.Plans.issued + 1 });
     verdict('R-3 red progress judge', judgeCount(P.byTask[TK.Plans.id], wrong) === 'FAIL' ? 'PASS' : 'FAIL', 'judge fed a wrong count (issued+1) says ' + judgeCount(P.byTask[TK.Plans.id], wrong));
@@ -597,8 +653,8 @@ const DXF = Buffer.from('0\nSECTION\n2\nENTITIES\n0\nLINE\n8\nWALLS\n10\n0.0\n20
     // ── the ten evidence lines of §BIMDOC-FILM, in order, as far as items 1-4 cover them ──
     let last = -1, orderOk = true; const rows = [];
     const findAfter = (re, after) => { for (let i = after + 1; i < PAGELOG.length; i++) if (re.test(PAGELOG[i])) return i; return -1; };
-    const EV = [[1, 'project from its type (copy-phases log)', /^§PROJECT-SETTYPE .*phases=[1-9]/], [2, 'sheet register (row count per task)', /^§BIMDOC-REGISTER /], [3, 'drawing attached', /^§ATT hash name=duplex_ground_floor/], [4, 'open in the app', /^§BIMDOC-OPEN id=/],
-      [5, 'issued (signed transition lines)', /^§CRUD process committed key=bim_document .*to=(IP|CO)/], [6, 'revised (supersede link)', /^§BIMDOC-SUPERSEDE /], [7, 'hours booked on the task', /^§BIMDOC-HOURS task=-?\d+ lines=[1-9]/], [8, 'progress, computed', /^§BIMDOC-PROGRESS /], [9, 'billed (phase order + invoice)', /^§ORDER-CREATEINVOICE-LINE /], [10, 'the measure moves (sheet chain)', /^§BIMDOC-CHAIN .*delta=1 /]];
+    const EV = [[1, 'project from its type (copy-phases log)', /^§PROJECT-SETTYPE .*phases=[1-9]/], [2, 'sheet register (deliverables per task, task grid)', /^§AD-VIRTUAL tab=\d+ table=C_ProjectTask col=BIM_Deliverables rows=\d+ values=\[.*:[1-9]/], [3, 'drawing attached', /^§ATT hash name=duplex_ground_floor/], [4, 'open in the app', /^§BIMDOC-OPEN id=/],
+      [5, 'issued (signed transition lines)', /^§CRUD process committed key=bim_document .*to=(IP|CO)/], [6, 'revised (supersede link)', /^§BIMDOC-SUPERSEDE /], [7, 'hours booked on the task (task grid)', /^§AD-VIRTUAL tab=\d+ table=C_ProjectTask col=BIM_HoursBooked rows=\d+ values=\[.*:[1-9]/], [8, 'progress, computed (task/phase grids)', /^§AD-VIRTUAL tab=\d+ table=C_Project(Task|Phase) col=BIM_Issued rows=\d+ values=\[.*:[1-9]/], [9, 'billed (phase order + invoice)', /^§ORDER-CREATEINVOICE-LINE /], [10, 'the measure moves (sheet chain)', /^§BIMDOC-CHAIN .*delta=1 /]];
     EV.forEach(([n, what, re]) => { const i = re ? findAfter(re, last) : -1; if (!re) rows.push('§BIMDOC-FILM-EVIDENCE ' + n + ' ABSENT ' + what + ' (' + (n === 1 ? '⛔ the kernel has no MProject.setProjectType/copyPhasesFrom twin: erp/model_project.js registers only c_projectline (:49), AD_Process 215 ProjectSetType has no handler in erp/ad_process.js' : '⛔ the kernel has no ProjectPhaseGenOrder (AD_Process 216): erp/ad_process.js registers only ProjectGenOrder (:462, project level, refuses category S :217)') + ')');
       else if (i < 0) { rows.push('§BIMDOC-FILM-EVIDENCE ' + n + ' MISSING-IN-ORDER ' + what); orderOk = false; }
       else { rows.push('§BIMDOC-FILM-EVIDENCE ' + n + ' PRESENT line#' + i + ' ' + what + ' :: ' + PAGELOG[i].slice(0, 150)); last = i; } });
