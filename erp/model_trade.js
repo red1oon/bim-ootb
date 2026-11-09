@@ -574,6 +574,7 @@
     return count + lineCount;
   };
   S._jBeforeSave = jBeforeSave;
+  S._jlBeforeSave = jlBeforeSave; S._updateJournalTotal = updateJournalTotal; S._jUpdateBatch = jUpdateBatch; S._jSetDateAcct = jSetDateAcct;   // ImportGLJournal.js (:439-446, :470-500) + model_journal.js reuse the ONE port of MJournal/MJournalLine hooks
 
   // ══ MBankStatementLine (MBankStatementLine.java) ═════════════════════════════════════════════════════════════
   // new MBankStatementLine(statement) :100-107 (+ setStatementLineDate :135-140)
@@ -884,5 +885,5 @@
   return Object.assign({}, PXT, PXS, { rate: rate, currencyBase: currencyBase, msgText: msgText, addDescription: addDescription, D: D, N: N, Y: Y, id: id, nz: nz, one: one, msg: msg, dt: dt, product: product, isItem: isItem, isStocked: isStocked,
     precisionOf: precisionOf, tax: tax, calcTax: calcTax, taxGet: taxGet, periodOpen: periodOpen, nextDocNo: nextDocNo, getDocumentNoByDocType: getDocumentNoByDocType, getDocumentNoByTable: getDocumentNoByTable, getDocumentNoFromSeq: getDocumentNoFromSeq, parseVariable: parseVariable, decimalFormat: decimalFormat, storageAdd: storageAdd,
     reservationAdd: reservationAdd, invoiceOpen: invoiceOpen, paymentAvailable: paymentAvailable, bpOpenBalance: bpOpenBalance,
-    creditStatus: creditStatus, toBase: toBase, setTotalOpenBalance: setTotalOpenBalance, HU: HU, Z: Z });
+    creditStatus: creditStatus, toBase: toBase, setTotalOpenBalance: setTotalOpenBalance, HU: HU, Z: Z, periodOf: periodOf });
 });
