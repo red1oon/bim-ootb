@@ -293,6 +293,22 @@
     var dtAriId = doctypes['AR Invoice'];
     group('G5 doctypes', g5);
 
+    // ── G5b PERIOD CONTROLS — MSetup.createAccounting runs org.compiere.process.DocumentTypeVerify as its last step
+    //    (MSetup.java:853-858) → createPeriodControls (DocumentTypeVerify.java:130-197): one C_PeriodControl per
+    //    period × DISTINCT DocBaseType of the client's doc types. The periods (G2, MSetup.java:486) exist BEFORE the doc
+    //    types (:710), so MPeriod.afterSave (MPeriod.java:849-871) finds none; this pass is what gives a born tenant its
+    //    controls. Row = MPeriodControl(period, DocBaseType) (MPeriodControl.java:71-77) + initial defaults PeriodAction
+    //    'N', PeriodStatus 'N' (:67-70; filled by the merge from model_initial_defaults). Witness: W-PERIOD-CONTROL. ──
+    var g5b = [], seenBase = {}, baseTypes = [];
+    g5.forEach(function (op) { if (op.table === 'c_doctype' && !seenBase[op.row.docbasetype]) { seenBase[op.row.docbasetype] = 1; baseTypes.push(op.row.docbasetype); } });
+    g2.forEach(function (op) {
+      if (op.table !== 'c_period') return;
+      baseTypes.forEach(function (b) {
+        g5b.push(create('c_periodcontrol', { c_periodcontrol_id: id.next(), c_period_id: op.row.c_period_id, ad_client_id: clientId, docbasetype: b, periodaction: 'N', periodstatus: 'N' }));
+      });
+    });
+    group('G5b period controls', g5b);
+
     // ── G6 BASE OPS + default masters (each master emits its acct-mapping row from the schema default) ────────
     var whId = id.next(), locId = id.next(), plId = id.next(), plvId = id.next();
     var bpGroupId = id.next(), bpId = id.next(), pcatId = id.next(), prodId = id.next(), taxId = id.next();
