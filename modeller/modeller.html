@@ -4458,7 +4458,7 @@ function _discWalkNow(disc, ctx) {
   var MH = window.ModellerHistory;
   if (MH && MH.beginWalk) MH.beginWalk(disc);
   window.__dwLastDoneDisc = null;
-  _discWalkOne(disc, ctx, {}).finally(function () { window.__dwLastDoneDisc = disc;   // sentinel for witnesses (set on refusal too)
+  _discWalkOne(disc, ctx, {}).finally(function () { _dwRevealRelease(disc, 'walk-end'); window.__dwLastDoneDisc = disc;   // sentinel for witnesses (set on refusal too)
     if (MH && MH.endWalk) { MH.endWalk(); syncHistory(); } if (window.__dwChains[disc] && window.__dwChains[disc].length) _dwStampRouteSig(disc); });
 };
 // §DISCWALK-ALL refactor: the single-discipline walk steps used to live inline as an anonymous async IIFE
@@ -4596,7 +4596,7 @@ async function _discWalkOneBody(disc, ctx, opts) {
     // set through the measured clearances (current disc yields against the ones already present,
     // not only the next walk). Re-render every walked disc so fresh gated/clash flags show.
     window.__dwWalks[disc] = w.placements;
-    window.__dwRevealMeta[disc] = { start: performance.now(), dur: Math.max(2000, Math.min(7000, 120 * w.placements.length)) };   // §D64 a fresh walk builds up in front of you (drawing only)
+    window.__dwRevealMeta[disc] = { start: performance.now(), hold: true, dur: Math.max(2000, Math.min(7000, 120 * w.placements.length)) };   // §D64 a fresh walk builds up in front of you (drawing only); §REVEAL-FRAME-CLOCK held until its commit is done
     window.__dwAsmFresh[disc] = true; delete window.__dwChainShown[disc]; window.__dwWalkInFlight[disc] = true;   // §D66.1 this walk's joint parts build up when they land; its pipe network reveals once (a later redraw is instant)
     var gateRes = _discGate();
     _redrawAllDiscWalks();
@@ -4614,6 +4614,7 @@ async function _discWalkOneBody(disc, ctx, opts) {
     // Tack placements into the signed op-log as GEOM_INSERT — undoable + enterprise-foldable (W-DW-OPLOG)
     await _commitDiscWalk(disc, w.placements);
     if (w.drawn) await _commitDrawnMains(disc, w.drawn); else if (window.__dwDrawn) delete window.__dwDrawn[disc];   // §DRAWN-WALK: the sheet-drawn runs, as line ops
+    _dwRevealRelease(disc, 'commit-done');
     // ROUTER LIVE (§ROUTER-NNCHAIN): real nn-chain network → render ALL as 3D lines, fold a bounded sample to op-log
     if (nSeg) { _renderDiscChains(disc, w.chainSegs, { patternBridge: w.patternBridge ? { seed: w.patternBridge.seed, riser: w.patternBridge.riser } : null }); await _commitDiscChains(disc, w.chainSegs); }
     // §CAMPAIGN M5: bend/tee FITTING placement at real bends in the M1 pattern-bridge network (routePattern's
@@ -4751,8 +4752,14 @@ function _revealK(R) {
   var stall = gap > Math.max(_REVEAL_STALL_MIN_MS, _REVEAL_STALL_X * med) && (G.length > 0 || gap > 2 * _REVEAL_STALL_MIN_MS);
   if (stall) R.stalls = (R.stalls || 0) + 1;
   if (gap > 0) { G.push(gap); if (G.length > 8) G.shift(); }   // every gap joins the history, so a steadily slow page re-baselines; a lone block still stands out
+  if (R.hold) { R.last = now; R.held = (R.held || 0) + gap; return Math.min(1, R.t / R.dur); }   // held while the walk commits: draw nothing, spend nothing
   R.t += stall ? _REVEAL_STEP_MS : gap; R.last = now; R.ticks++;
   return Math.min(1, R.t / R.dur);
+}
+function _dwRevealRelease(disc, why) {   // §REVEAL-FRAME-CLOCK: start the held build-up (idempotent; every exit path calls it)
+  var R = window.__dwRevealMeta && window.__dwRevealMeta[disc]; if (!R || !R.hold) return;
+  R.hold = false; R.last = performance.now();
+  console.log('§DW-REVEAL-RELEASE disc=' + disc + ' heldMs=' + Math.round(R.held || 0) + ' why=' + why);
 }
 function _dwRevealTick(disc) {
   var R = window.__dwRevealMeta[disc]; if (!R) return;
@@ -4762,7 +4769,7 @@ function _dwRevealTick(disc) {
     if (im === ims[0] && c > 0) { var p = im.userData.dwSub[c - 1]; window.__dwReveal[disc] = { i: c, n: n, x: p.x, y: p.y, z: p.z, done: k >= 1 }; } });
   if (window.A && window.A.requestRender) window.A.requestRender();
   if (k < 1) { R.raf = requestAnimationFrame(function () { _dwRevealTick(disc); }); }
-  else { window.__dwReveal[disc] = Object.assign({}, window.__dwReveal[disc] || {}, { done: true }); delete window.__dwRevealMeta[disc]; console.log('§DW-REVEAL disc=' + disc + ' done n=' + (ims[0] ? ims[0].userData.dwSub.length : 0) + ' ms=' + Math.round(R.t) + ' wallMs=' + Math.round(performance.now() - R.start) + ' ticks=' + R.ticks + ' stalls=' + (R.stalls || 0) + ' dur=' + Math.round(R.dur)); }
+  else { window.__dwReveal[disc] = Object.assign({}, window.__dwReveal[disc] || {}, { done: true }); delete window.__dwRevealMeta[disc]; console.log('§DW-REVEAL disc=' + disc + ' done n=' + (ims[0] ? ims[0].userData.dwSub.length : 0) + ' ms=' + Math.round(R.t) + ' wallMs=' + Math.round(performance.now() - R.start) + ' ticks=' + R.ticks + ' stalls=' + (R.stalls || 0) + ' heldMs=' + Math.round(R.held || 0) + ' dur=' + Math.round(R.dur)); }
 }
 // §D66.1 a fresh walk's joint parts build up when they land: each bucket (ordered by its head's placement order) in step, so a head's drop, transition and tee appear together, never before
 // their head is drawn (a part's head = the placement under its tee node, plan position 1 mm). Done = all, once the heads' own build-up is done too.
@@ -5098,7 +5105,7 @@ window.discWalkAll = async function (ctx) {
   try {
     for (var i = 0; i < ds.length; i++) {
       var disc = ds[i];
-      var r = await _discWalkOne(disc, ctx, { flash: true });
+      var r = await _discWalkOne(disc, ctx, { flash: true }); _dwRevealRelease(disc, 'walk-all-end');
       if (r && r.refused) { refused.push({ disc: disc, reason: r.reason }); console.log('§DISCWALK-ALL ' + disc + ' REFUSED honestly — ' + r.reason); }
       else if (r) { walked.push({ disc: disc, placed: r.placed, provisional: r.provisional || 0 }); console.log('§DISCWALK-ALL ' + disc + ' walked placed=' + r.placed + ' provisional=' + (r.provisional || 0)); }
       // _commitDiscWalk's per-disc commitSeedGroup does a FULL authoritative re-fold (clears + rebuilds every
