@@ -39,7 +39,7 @@
     var kids = order.map(function (cls) {
       var short = String(cls).replace(/^Ifc/, '');
       return {
-        id: (asm ? 'dwac|' : 'dwc|') + disc + '|' + cls, label: short, kind: 'class',
+        id: (asm ? 'dwac|' : 'dwc|') + disc + '|' + cls, label: short + ' (' + byCls[cls].length + ')', kind: 'class',   // §TYPESET: count per the header spec (line 15)
         children: byCls[cls].map(function (e) {
           // gate flags surfaced 1:1 (⛔ clash / ⚠ gated) — same semantics as the 3-material render split
           return { id: pre + disc + '|' + e.idx, kind: 'element',
@@ -69,7 +69,7 @@
   window.DWInstancesOutliner = {
     register: function () {
       if (window.Bonsai && window.Bonsai.outliner)
-        window.Bonsai.outliner.addCategory({ key: 'dwinst', label: 'Walked Fixtures', tree: tree, hideWhenEmpty: true });
+        window.Bonsai.outliner.addCategory({ key: 'dwinst', label: 'Walked Fixtures', tree: tree, hideWhenEmpty: true, revealOnGrow: true });
       console.log(TAG + ' registered — per-instance rows for walked InstancedMesh buckets (eye = §I5 instance hide)');
     },
     _tree: tree

@@ -1217,15 +1217,17 @@ function _fitDistForBox(size) {
 // bbox source = selBox() (hoisted below): the union Box3 across selMeshes() — the Modeller-native mirror of
 // the Viewer's _bboxOfGuids union, already group-aware. Empty selection → null → silent no-op (guard shape
 // mirrors the Viewer's `if (!bb || !A.camera) return false`).
-function zoomToSelection() {
-  const box = selBox(); if (!box || !camera) return false;
+// §TYPESET: the ONE framing tail — zoomToSelection (feature meshes) and selectInstanceSet (walked instances) both call it.
+function _zoomToBox(box, tag) {
+  if (!box || !camera || !isFinite(box.min.x)) return false;
   const center = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3());
   const dist = _fitDistForBox(size);
   _lerpCam(center, dist);
   console.log('§ZOOM-SEL fill dist=' + dist.toFixed(2) + ' size=' + size.x.toFixed(1) + 'x' + size.y.toFixed(1) + 'x' + size.z.toFixed(1) +
-    ' center=' + center.x.toFixed(2) + ',' + center.y.toFixed(2) + ',' + center.z.toFixed(2));
+    ' center=' + center.x.toFixed(2) + ',' + center.y.toFixed(2) + ',' + center.z.toFixed(2) + (tag ? ' src=' + tag : ''));
   return true;
 }
+function zoomToSelection() { return _zoomToBox(selBox()); }
 function setSelectionIds(ids, primary) {
   selectedIds = new Set((ids || []).filter(x => x != null)); window.Bonsai._selSet = selectedIds;
   const g = window.Bonsai.group && window.Bonsai.group();
@@ -1702,7 +1704,14 @@ window.Bonsai.hoverFeature = (fid) => {
 // entire batch); the previous per-instance colour is saved/restored so it composes with _flashSettleDisc.
 let _instPick = null, _instHover = null;   // {im, i, prev:[r,g,b]}
 function _instTint(ref, hex) {
-  if (!ref.im.instanceColor) ref.im.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(ref.im.count * 3).fill(1), 3);
+  // §TYPESET: size the colour buffer to the bucket's CAPACITY (instanceMatrix.count), not the live im.count — the
+  // §D64 build-up reveal grows im.count over seconds, so a buffer made mid-reveal dropped every later instance's
+  // tint (measured: a type-row click mid-reveal tinted 62 of 102). A short existing buffer is grown, values kept.
+  const cap = ref.im.instanceMatrix.count, cur = ref.im.instanceColor;
+  if (!cur || cur.count < cap) {
+    const arr = new Float32Array(cap * 3).fill(1); if (cur) arr.set(cur.array.subarray(0, Math.min(cur.array.length, cap * 3)));
+    ref.im.instanceColor = new THREE.InstancedBufferAttribute(arr, 3);
+  }
   const a = ref.im.instanceColor;
   ref.prev = [a.getX(ref.i), a.getY(ref.i), a.getZ(ref.i)];
   ref.im.setColorAt(ref.i, new THREE.Color(hex)); a.needsUpdate = true;
@@ -1714,7 +1723,42 @@ function _instUntint(ref) {
   ref.im.instanceColor.needsUpdate = true;
   if (window.A && A.requestRender) A.requestRender();
 }
-function clearInstPick() { if (_instPick) { _instUntint(_instPick); _instPick = null; window.__instPickActive = null; } }
+function clearInstPick() {
+  if (_instPick) { _instUntint(_instPick); _instPick = null; window.__instPickActive = null; }
+  if (_instSet) { for (let k = _instSet.length - 1; k >= 0; k--) _instUntint(_instSet[k]); _instSet = null; window.__instSetActive = null; }   // §TYPESET
+}
+// §TYPESET (MODELLER_ZOOM_TO_SELECTION.md §TYPESET — Witness: W-E2E-TYPESET-ZOOM): a Walked Fixtures TYPE row
+// (class / disc group / category) selects its whole instance set. leaves = [{disc, idx, asm}] (the rows' n.dwp).
+// Replace-select: clears the feature selection + any single pick; tints refs[0] of each record (the same twin
+// frameInstanceRow picks) with the pick tint; an eye-hidden instance is neither tinted nor framed. The union of the
+// shown instances' world boxes is framed by _zoomToBox — the same owner zoomToSelection uses, no second zoom.
+let _instSet = null;   // [{im, i, prev}] — tinted set refs, untinted by clearInstPick
+const _isM4 = new THREE.Matrix4();
+function selectInstanceSet(leaves, key) {
+  if (selectedIds.size) setSelectionIds([], null);
+  clearInstPick();
+  const map = _instRefMap(), box = new THREE.Box3(), set = [];
+  let hidden = 0, unresolved = 0;
+  (leaves || []).forEach(l => {
+    const rec = (l.asm ? ((window.__dwAssembly && window.__dwAssembly[l.disc]) || [])
+                       : ((window.__dwWalks && window.__dwWalks[l.disc]) || []))[+l.idx];
+    const refs = rec ? map.get(rec) : null;
+    if (!refs || !refs.length) { unresolved++; return; }
+    const r = refs[0];
+    if (r.im.userData.dwHidden && r.im.userData.dwHidden.has(r.i)) { hidden++; return; }
+    const ref = { im: r.im, i: r.i }; _instTint(ref, 0x4fc3f7); set.push(ref);
+    if (!r.im.geometry.boundingBox) r.im.geometry.computeBoundingBox();
+    r.im.getMatrixAt(r.i, _isM4);
+    box.union(r.im.geometry.boundingBox.clone().applyMatrix4(_isM4.premultiply(r.im.matrixWorld)));
+  });
+  _instSet = set.length ? set : null;
+  window.__instSetActive = set.length ? { key: key || null, n: set.length } : null;
+  console.log('§INSTSET-SELECT key=' + String(key || '?').slice(0, 40) + ' n=' + (leaves || []).length + ' tinted=' + set.length +
+    ' hidden=' + hidden + ' unresolved=' + unresolved);
+  if (set.length) { setStat('walked set · ' + set.length + ' instance' + (set.length > 1 ? 's' : '') + (hidden ? ' (' + hidden + ' hidden)' : '') + '  (generated — identify only)'); _zoomToBox(box, 'instset'); }
+  return set.length;
+}
+window.Bonsai.selectInstanceSet = selectInstanceSet;
 function setHoverInstance(im, i) {
   if (im && _instHover && _instHover.im === im && _instHover.i === i) return;
   if (_instHover) { _instUntint(_instHover); _instHover = null; }
