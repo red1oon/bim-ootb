@@ -719,7 +719,7 @@ function _xrayReapply(src) {
 window.Bonsai.decor.register('xray', () => { _xrayReapply('refold'); return _xrayOn ? 'on' : 'off'; });   // §B1-ROW1 (was its own listener)
 // prompts/MODELLER_RULES_EDITOR.md (W-E2E-RULES-EDIT): the walker's rules as JSON in the project's ONE JSON editor; loaded on first click
 { const bR = document.getElementById('b-rules'); let _rl = null;
-  if (bR) bR.onclick = async () => { try { if (!window.RulesEditor) { _rl = _rl || new Promise((ok, no) => { const sc = document.createElement('script'); sc.src = 'rules_editor.js?v=1'; sc.onload = ok; sc.onerror = () => no(new Error('rules_editor.js failed to load')); document.head.appendChild(sc); }); await _rl; }
+  if (bR) bR.onclick = async () => { try { if (!window.RulesEditor) { _rl = _rl || new Promise((ok, no) => { const sc = document.createElement('script'); sc.src = 'rules_editor.js?v=2'; sc.onload = ok; sc.onerror = () => no(new Error('rules_editor.js failed to load')); document.head.appendChild(sc); }); await _rl; }
     if (document.getElementById('rules-ed')) window.RulesEditor.close(); else await window.RulesEditor.open(); } catch (e) { _rl = null; console.warn('§RULES-EDIT load failed ' + (e && e.message)); } }; }
 const bXray = document.getElementById('b-xray');
 function paintXray() { if (bXray) bXray.classList.toggle('on', _xrayOn); }

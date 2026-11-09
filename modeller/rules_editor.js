@@ -73,6 +73,9 @@
   function close() { var el = document.getElementById('rules-ed'); if (el) el.remove(); state = null; }
   async function open() {
     var DW = window.DiscWalker;
+    // the rules load lazily after an open (measured on a real building: the Rules click came before the fetch finished and was
+    // refused) — ask the open path's own loader first; it is a no-op when this building's rules are already loaded
+    if (window.__dwBuf && typeof window.__ensureDiscWalker === 'function') { try { await window.__ensureDiscWalker(); } catch (e) { console.warn(TAG + ' ensure failed ' + (e && e.message)); } }
     if (!DW || !DW.rulesDb || !DW.rulesDb()) { if (window.setStat) window.setStat('Open a building first: the rules follow its type'); console.log(TAG + ' open refused (no rules loaded)'); return false; }
     await loadEditor();
     var file = DW.loadedFile ? DW.loadedFile() : '?';
