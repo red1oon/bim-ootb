@@ -7,7 +7,7 @@
 // A template is DATA: a closed set of block keys and expression operators, evaluated here by ONE evaluator (no eval, no JS in a template). Anything outside the closed sets,
 //   a reference to a sheet not produced yet, or a ${VAR} / %let / def / valueMap that is not declared = the template is REFUSED at load, the reason named.
 // Pure: no I/O, no clock, no random. Browser + node.
-import { HEADERS, ORDER, uuid5, finishBook } from '../plugins/bc_migrate_convert.mjs';
+import { HEADERS, ORDER, uuid5, finishBook } from './workbook.mjs';
 
 const s = (v) => (v == null ? '' : String(v));
 const BLOCK_KEYS = ['from', 'where', 'refuse', 'fields', 'unique', 'group', 'prov', 'patches', 'notes', 'problems'];
