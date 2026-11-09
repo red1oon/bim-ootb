@@ -332,13 +332,24 @@
   // AD_Workflow is not in the slim seed (named). Pilot counts for ' CO' (331 / 383 / 41 / 40 / 840 / 15) equal the same predicates evaluated on the pilot (nc9_legacy.js predicateEqualsMeasured).
   function roleAfterNew(trx, r) {
     if (r.ismasterrole === 'Y') return;
+    var u = { ad_org_id: 0, ad_user_id: 100, ad_role_id: r.ad_role_id, ad_client_id: r.ad_client_id, isactive: 'Y' }; if (trx.env.uuid) u.ad_user_roles_uu = trx.env.uuid(); trx.insert('ad_user_roles', u);
+    updateAccessRecords(trx, r, false);
+  }
+  // MRole.updateAccessRecords(reset) :529-640 — shared by a new role (afterSave, reset=false) and the Role Access Update process (processes/RoleAccessUpdate.js, §HARDEN-SPEC H8):
+  //   a manual role gets nothing ("-", :531-532); reset deletes the role's access rows first (deleteAccessRecords :682-698); then the INSERT … WHERE NOT EXISTS of the six SELECTs.
+  //   Returns the Java's message "@AD_Window_ID@ #n -  @AD_Process_ID@ #n -  @AD_Form_ID@ #n -  @AD_Workflow_ID@ #n -  @DocAction@ #n -  @AD_InfoWindow_ID@ #n" (untranslated).
+  var ACCESS_TABLES = ['ad_window_access', 'ad_process_access', 'ad_form_access', 'ad_workflow_access', 'ad_document_action_access', 'ad_infowindow_access'];
+  function updateAccessRecords(trx, r, reset) {
+    if (r.ismanual === 'Y') return '-';
     function ins(t, f) { if (trx.env.uuid) f[t + '_uu'] = trx.env.uuid(); f.ad_client_id = r.ad_client_id; f.isactive = 'Y'; trx.insert(t, f); }
-    ins('ad_user_roles', { ad_org_id: 0, ad_user_id: 100, ad_role_id: r.ad_role_id });
-    if (r.ismanual === 'Y') return;
+    function tab0(t) { try { return trx.q('SELECT 1 AS x FROM ' + t + ' LIMIT 1') && true; } catch (e) { return false; } }
+    var del = {};
+    if (reset) ACCESS_TABLES.forEach(function (t) { if (!tab0(t)) return; var rows = trx.find(t, { ad_role_id: r.ad_role_id }); rows.forEach(function (x) { trx.del(t, x); }); del[t] = rows.length; });
     var lv = r.userlevel, al = lv === 'S  ' ? "('4','7','6')" : lv === ' C ' ? "('7','6','3','2')" : lv === ' CO' ? "('7','6','3','2','1')" : "('3','1','7')";
     var alw = (lv !== 'S  ' && lv !== ' C ' && lv !== ' CO') ? al + " AND w.name NOT LIKE '%(all)%'" : al, n = {};
     function tab(t) { try { return trx.q('SELECT 1 AS x FROM ' + t + ' LIMIT 1') && true; } catch (e) { return false; } }
-    function has(t, rid) { return trx.q('SELECT 1 AS x FROM ' + t + ' WHERE ad_role_id=? AND ' + rid.col + '=?', [r.ad_role_id, rid.id]).length > 0; }
+    // after a reset the role's rows of that table are deleted IN THIS Trx (pending, the read still sees them): nothing of the role exists there any more
+    function has(t, rid) { if (del[t] !== undefined) return false; return trx.q('SELECT 1 AS x FROM ' + t + ' WHERE ad_role_id=? AND ' + rid.col + '=?', [r.ad_role_id, rid.id]).length > 0; }
     if (tab('ad_window_access')) { n.window = 0; trx.q("SELECT DISTINCT w.ad_window_id AS id FROM ad_window w JOIN ad_tab t ON w.ad_window_id=t.ad_window_id JOIN ad_table tt ON t.ad_table_id=tt.ad_table_id WHERE w.isactive='Y' AND t.seqno=(SELECT MIN(seqno) FROM ad_tab xt WHERE xt.ad_window_id=w.ad_window_id) AND tt.accesslevel IN " + alw + ' ORDER BY w.ad_window_id')
       .forEach(function (x) { if (!has('ad_window_access', { col: 'ad_window_id', id: x.id })) { ins('ad_window_access', { ad_org_id: r.ad_org_id, ad_window_id: x.id, ad_role_id: r.ad_role_id, isreadwrite: 'Y' }); n.window++; } }); }
     if (tab('ad_process_access')) { n.process = 0; trx.q("SELECT DISTINCT p.ad_process_id AS id FROM ad_process p WHERE p.isactive='Y' AND accesslevel IN " + al + ' ORDER BY p.ad_process_id')
@@ -347,10 +358,11 @@
       .forEach(function (x) { if (!has('ad_form_access', { col: 'ad_form_id', id: x.id })) { ins('ad_form_access', { ad_org_id: r.ad_org_id, ad_form_id: x.id, ad_role_id: r.ad_role_id, isreadwrite: 'Y' }); n.form++; } }); }
     if (tab('ad_document_action_access')) { n.docaction = 0;
       trx.q("SELECT d.c_doctype_id AS dt, a.ad_ref_list_id AS act FROM c_doctype d JOIN ad_ref_list a ON a.ad_reference_id=135 WHERE d.isactive='Y' AND d.ad_client_id=? ORDER BY d.c_doctype_id, a.ad_ref_list_id", [r.ad_client_id])
-        .forEach(function (x) { if (!trx.q('SELECT 1 AS x FROM ad_document_action_access WHERE ad_role_id=? AND c_doctype_id=? AND ad_ref_list_id=?', [r.ad_role_id, x.dt, x.act]).length) { ins('ad_document_action_access', { ad_org_id: 0, c_doctype_id: x.dt, ad_ref_list_id: x.act, ad_role_id: r.ad_role_id }); n.docaction++; } }); }
+        .forEach(function (x) { if (del.ad_document_action_access !== undefined || !trx.q('SELECT 1 AS x FROM ad_document_action_access WHERE ad_role_id=? AND c_doctype_id=? AND ad_ref_list_id=?', [r.ad_role_id, x.dt, x.act]).length) { ins('ad_document_action_access', { ad_org_id: 0, c_doctype_id: x.dt, ad_ref_list_id: x.act, ad_role_id: r.ad_role_id }); n.docaction++; } }); }
     if (tab('ad_infowindow_access')) { n.info = 0; trx.q("SELECT i.ad_infowindow_id AS id FROM ad_infowindow i JOIN ad_table tt ON i.ad_table_id=tt.ad_table_id WHERE i.isactive='Y' AND i.ad_client_id IN (0,?) AND tt.accesslevel IN " + al + ' ORDER BY i.ad_infowindow_id', [r.ad_client_id])
       .forEach(function (x) { if (!has('ad_infowindow_access', { col: 'ad_infowindow_id', id: x.id })) { ins('ad_infowindow_access', { ad_org_id: r.ad_org_id, ad_infowindow_id: x.id, ad_role_id: r.ad_role_id }); n.info++; } }); }
-    trx.say('§MASTER-ROLE-ACCESS role=' + r.ad_role_id + ' level=' + lv + ' ' + JSON.stringify(n) + ' (AD_Workflow_Access not in this bundle)');
+    trx.say('§MASTER-ROLE-ACCESS role=' + r.ad_role_id + ' level=' + lv + (reset ? ' reset=' + JSON.stringify(del) : '') + ' ' + JSON.stringify(n) + ' (AD_Workflow_Access not in this bundle)');
+    return '@AD_Window_ID@ #' + (n.window || 0) + ' -  @AD_Process_ID@ #' + (n.process || 0) + ' -  @AD_Form_ID@ #' + (n.form || 0) + ' -  @AD_Workflow_ID@ #0 -  @DocAction@ #' + (n.docaction || 0) + ' -  @AD_InfoWindow_ID@ #' + (n.info || 0);
   }
 
   function install(registry) {
@@ -369,5 +381,5 @@
   }
   var installed = install(MASTER);
 
-  return { MASTER: MASTER, install: install, installed: installed, insertAccounting: insertAccounting, insertTree: insertTree, mcostCreate: mcostCreate, clientAcctSchemas: clientAcctSchemas };
+  return { MASTER: MASTER, install: install, installed: installed, updateAccessRecords: updateAccessRecords, insertAccounting: insertAccounting, insertTree: insertTree, mcostCreate: mcostCreate, clientAcctSchemas: clientAcctSchemas };
 });
