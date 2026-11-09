@@ -1,0 +1,50 @@
+═══ W-EDIT-CLI-PAGE — real-user, maths-asserted (headless swiftshader) ═══
+  §OPEN-SETTLE candidates=38 waitedMs=4
+  ✅ the page produced a report
+  ✅ NO-ERROR (no pageerror / no fatal)   
+§NET-FAILLOG W-EDIT-CLI-PAGE n=1 kinds=1
+§NET-FAILLOG-KIND W-EDIT-CLI-PAGE x1 http404: /modeller/patches/duplex_rules.db.sql
+W-EDIT-CLI-PAGE: 2 PASS / 0 FAIL
+═══ W-EDIT-CLI-PAGE-G — real-user, maths-asserted (headless swiftshader) ═══
+  §OPEN-SETTLE candidates=40 waitedMs=18
+  ✅ the page produced a report
+  ✅ NO-ERROR (no pageerror / no fatal)   
+§NET-FAILLOG W-EDIT-CLI-PAGE-G n=0 kinds=0
+W-EDIT-CLI-PAGE-G: 2 PASS / 0 FAIL
+═══ W-EDIT-CLI-PAGE-SHIFT — real-user, maths-asserted (headless swiftshader) ═══
+  §OPEN-SETTLE candidates=40 waitedMs=14
+  ✅ the page produced a shift report
+  ✅ NO-ERROR (no pageerror / no fatal)   
+§NET-FAILLOG W-EDIT-CLI-PAGE-SHIFT n=0 kinds=0
+W-EDIT-CLI-PAGE-SHIFT: 2 PASS / 0 FAIL
+  ✅ C5 stdout parses whole as JSON, exit 0
+  ✅ C1a SampleHouse through the CLI = the page, byte for byte  bytes=2497
+  ✅ C1b Garage through the CLI = the page, byte for byte  bytes=3180
+  ✅ C2 the same call twice: identical edits
+  ✅ C3 four at once, under load: same bytes as the quiet runs  ms=9868,10019,16040,15281
+  ✅ C4 control: a different move gives a different report
+  ✅ C6a unknown line: refused, the reason, exit 3  {"refused":true,"grid":"nope","move":1,"reason":"no grid line nope in this building (7 lines)"}
+  ✅ C6b engine refusal: refused, its reason, exit 3  §DAGEVU refused: opening #109 would leave wall #107 on y (wall 108.36..112.64 vs opening 1
+  ✅ C6c usage error: exit 2, nothing on stdout
+  ✅ C8a a shift through the CLI = the page, byte for byte  bytes=14919
+  ✅ C8b the same shift twice: identical edits
+  ✅ C9a without --own-grid a wall-bearing building says its lines are the app default  app-default
+  ✅ C9b --own-grid lays the lines derived from the walls and says so  [{"id":"gx0","axis":"x","pos":1.62},{"id":"gx1","axis":"x","pos":6.265},{"id":"gy0","axis":"y","pos":-1.246},{"id":"gy1","axis":"y","pos":0.899},{"id":"gy2","axis":"y","pos":4.554}]
+  ✅ C9c a column-framed building is already on its own grid
+  ✅ C9d --own-grid changes the answer, and the default-grid answer stays as C1a pinned it
+  ✅ C10a the switch has no effect at theta 0
+  ✅ C10b the switch has an effect on the rotated Garage, and C1b shows it is off unless asked
+  ✅ C11 a refused shift: refused, the reason, exit 3  #5 IfcWallStandardCase crosses the line and carries a GEOM_CUT: it cannot follow a shift
+  ✅ C12 one copied file, run from an empty folder against --url = the repo run, byte for byte  exit=0
+  ✅ C13 a red edit is stopped: exit 3, the reason, and the page's own report inside  stopped: New or deeper overlap (shapes checked): 1 (1 clash, 0 not judged (box verdict kep
+  ✅ C14 after a stop the next edit starts from Before: it equals that edit made alone  [{"edit":0,"stopped":true,"not_judged":["span_red","span_orange"]},{"edit":1,"stopped":true,"not_judged":["span_red","span_orange"]}]
+  ✅ C15 an edit with no red passes the stop byte for byte  [{"edit":0,"stopped":false,"not_judged":[]}]
+  ✅ C16 a not-judged row is listed as not judged, never as passed
+§W-EDIT-CLI §17 Garage --lines bay gx5-gx6=11.176 rotation_deg=-2 frame=building | span check before=11.176 after=13 for --move 1.824
+  ✅ C17 on the rotated Garage the --lines bay is the span check's own bay, and the rotation is stated  bay=11.176 check=11.176
+  ✅ C18 a move computed from --lines lands on its target: 13 m asked, 13 m measured  after=13
+  ✅ C19 a building that is not rotated keeps its positions: every pos equals world, rotation 0  lines=124 rot=0
+§W-EDIT-CLI time quiet SampleHouse ms=36558,8016 Garage ms=13940 | four at once ms=9868,10019,16040,15281
+  ✅ C7 a time is reported per run
+§WITNESS_EDIT_CLI pass=27 fail=0 verdict=PASS
+exit=0
