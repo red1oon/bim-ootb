@@ -832,8 +832,9 @@
       trx.find('c_invoicetax', { c_invoice_id: inv.c_invoice_id }).forEach(function (t) {
         F.line(ACCT.taxDue(trx, t.c_tax_id, as.c_acctschema_id), cur, cm ? t.taxamt : null, cm ? null : t.taxamt, Object.assign({ c_tax_id: t.c_tax_id, qty: 0 }, base)); });
       trx.find('c_invoiceline', { c_invoice_id: inv.c_invoice_id }, ['line']).forEach(function (l) {
-        if (!nz(l.m_product_id)) { F.err = 'charge/description invoice line posting not ported — named'; return; }
-        F.line(ACCT.revenue(trx, l.m_product_id, as.c_acctschema_id), cur, cm ? l.linenetamt : null, cm ? null : l.linenetamt, Object.assign({}, base, { line_id: l.c_invoiceline_id, m_product_id: l.m_product_id,
+        if (!nz(l.m_product_id) && !nz(l.c_charge_id)) { F.err = 'description invoice line (no product, no charge) posting not ported — named'; return; }
+        // DocLine.getAccount(P_Revenue) DocLine.java:447-461: a line with NO product and a charge posts to MCharge.getAccount (C_Charge_Acct.Ch_Expense_Acct), both SO and PO (W-IMPORT-INVOICE: the open-AR Opening Charge)
+        F.line(nz(l.m_product_id) ? ACCT.revenue(trx, l.m_product_id, as.c_acctschema_id) : ACCT.chargeExpense(trx, l.c_charge_id, as.c_acctschema_id), cur, cm ? l.linenetamt : null, cm ? null : l.linenetamt, Object.assign({}, base, { line_id: l.c_invoiceline_id, m_product_id: l.m_product_id,
           c_uom_id: l.c_uom_id, c_tax_id: l.c_tax_id, qty: N(cm ? D(l.qtyinvoiced) : D(l.qtyinvoiced).negate()), description: inv.documentno + ' #' + l.line + (hasDesc(l.description) ? ' (' + l.description + ')' : hasDesc(inv.description) ? ' (' + inv.description + ')' : '') })); });
       return !F.err;
     },
