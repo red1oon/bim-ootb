@@ -102,7 +102,9 @@ const verdict = (id, v, info) => { if (v === 'PASS') pass++; else if (v === 'FAI
     const tabL = since(m0, /^§IDEMPIERE tab=.* rows=\d+/)[0], ini = since(m0, new RegExp('^§UDP4-INITIAL window=' + w.id + ' '))[0];
     if (!tabL || !ini) { notOpened++; say('F2 window=' + w.id + ' "' + w.name + '" not opened (no tab line)'); continue; }
     const tbl = (/ table=(\S+)/.exec(tabL) || [])[1], baseN = Number((/ rows=(\d+)/.exec(tabL) || [])[1]);
-    const fold = since(m0, new RegExp('^§LIST-TIP overlay table=' + String(tbl).toLowerCase() + ' '))[0], rows = fold ? Number((/ folded=(\d+)/.exec(fold) || [])[1]) : baseN, created = fold ? Number((/ created=(\d+)/.exec(fold) || [])[1]) : 0;
+    const foldRe = new RegExp('^§LIST-TIP overlay table=' + String(tbl).toLowerCase() + ' ');
+    if (w.sess > 0) for (let i = 0; i < 40 && !since(m0, foldRe).length; i++) await sleep(250);   // a window that must show session rows gets up to 10 s more for its fold to land (the fold is async)
+    const fold = since(m0, foldRe).pop(), rows = fold ? Number((/ folded=(\d+)/.exec(fold) || [])[1]) : baseN, created = fold ? Number((/ created=(\d+)/.exec(fold) || [])[1]) : 0;
     const isNew = await newOpen(), s = await snap(), canIns = !!(s && s.canInsert);
     const must = Math.max(rows, baseN + (w.sess || 0));   // the fold line when the window printed one, else the pre-measure: a dropped fold cannot hide a row
     judged++; if (created > 0 || w.sess > 0) withSession++;
