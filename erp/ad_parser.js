@@ -341,6 +341,7 @@
         isKey: o.IsKey === 'Y',
         isIdentifier: o.IsIdentifier === 'Y',
         isAlwaysUpdateable: o.AlwaysUpd === 'Y',
+        columnSQL: o.ColSQL != null && String(o.ColSQL).trim() !== '' ? String(o.ColSQL) : null,   // §BIMDOC-ADPASS: the reader computes it (GridTable.createSelectSql "(ColumnSQL) AS ColumnName")
         isVirtual: o.ColSQL != null && String(o.ColSQL).trim() !== '',   // §GT.7 AD_Column.ColumnSQL → never editable (GridField.isEditable:445)             // §GT.7 AD_Column.IsAlwaysUpdateable (GridField.isEditable:462)
         isUpdateable: o.IsUpdateable !== 'N',                // S2B: AD_Column.IsUpdateable (null/Y → updateable; 'N' → display-only on Edit)
         isDisplayedGrid: o.DispGrid === undefined ? undefined : o.DispGrid === 'Y',   // §GRID-COLS (undefined = legacy-shape bundle)
