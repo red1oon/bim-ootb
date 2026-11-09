@@ -749,6 +749,8 @@
 <script src="processes/ProductionCreate.js?v=1"></script>
 <script src="processes/ReplenishReportProduction.js?v=2"></script>
 <script src="processes/RMACreateOrder.js?v=1"></script>
+<script src="processes/ProjectSetType.js?v=1"></script>
+<script src="processes/ProjectPhaseGenOrder.js?v=1"></script>
 <script src="processes/SalesOrderRateInquiryProcess.js?v=1"></script>
 <script src="processes/YearCreatePeriods.js?v=1"></script>
 <script src="processes/support_docgen.js?v=1"></script>
@@ -1883,6 +1885,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     return null;
   }
   function _attLoad() { _attMod(); return window.AdAttachment ? Promise.resolve(window.AdAttachment) : _attP.then(function (ok) { return ok ? window.AdAttachment : null; }); }   // for a lens: the module, loaded on first use
+  // PO.delete :4508-4512: the record's attachment rows are cascaded away (fkOnDelete, the dictionary's ModelCascade on AD_Attachment.Record_ID); what legacy's file-system provider does with the files, the file store does with its bytes: sweep what no row references
+  function _attAfterDelete() { _attLoad().then(function (AT) { if (AT && AT.sweep) return AT.sweep(_attHost()); }).catch(function (e) { console.log('§ATT-STORE sweep after delete failed ' + e); }); }
   function _attHost() {
     var App = window.APP || {};
     return { rows: _sqlRows, msg: _findMsg, std: (App.actor != null || App.clientId != null) ? { actor: App.actor, clientId: App.clientId, orgId: App.orgId != null ? App.orgId : 0 } : null,
@@ -2418,6 +2422,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         window.__crud.deleteNow(t.tn, t.id, function (r) {
           if (!r.ok) { status(String(r.error)); return; }
           _newMode = null; renderToolbar();   // onDeleteCallback stays in the current view; overlay:committed refolds the rows
+          _attAfterDelete();
         });
       });
     });
@@ -5056,7 +5061,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       onCopy: function () { _startInlineNew(_curRecPk()); },
       afterSaveCreate: function () { _newMode = null; _viewMode = _openModeFor(_activeTabIdx); renderActiveTab(); renderToolbar(); },   // saved New → show the new row in the grid
       afterDiscardNew: function () { _newMode = null; _viewMode = _openModeFor(_activeTabIdx); renderActiveTab(); renderToolbar(); },   // Ignore on a New → back to grid
-      afterDelete: function () { _newMode = null; _viewMode = _openModeFor(_activeTabIdx); renderToolbar(); },                          // tombstone → grid (overlay:committed refolds)
+      afterDelete: function () { _newMode = null; _viewMode = _openModeFor(_activeTabIdx); renderToolbar(); _attAfterDelete(); },                          // tombstone → grid (overlay:committed refolds)
       // §CP (bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md §CP — W-CP-CALLOUT-LIVE): the GridTab context the callout
       //   engine needs — this AD_Tab, its TabNo (GridWindow index), the window IsSOTrx (AbstractADWindowContent sets it in the
       //   window ctx) and each parent tab's CURRENT row (GridTab.setCurrentRow pushed those into the window ctx).

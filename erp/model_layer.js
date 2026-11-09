@@ -506,13 +506,12 @@
     var refs = function (p) { var w = {}; w[p.column] = p.uu ? uuv : id; if ((p.uu ? uuv : id) == null) return []; return trx.find(p.table, w).filter(function (c) { return !(p.table === table && String(c[trx.idCol(p.table)]) === String(id)); }); };
     plan.forEach(function (p) { if (err || p.rule !== 'M') return; refs(p).forEach(function (c) { if (err) return; var r = remove(trx, p.table, c, { fk: true, force: true }); n.model++; if (!r.ok) err = r.error; }); });
     if (!err) {
-      var tid = null; try { tid = tableIdOf(q, table); } catch (e) {}
+      var tid = null; try { tid = tableIdOf(trx, table); } catch (e) {}   // was tableIdOf(q, ...): a function has no .q, the throw was swallowed and the PO_Record cascade (AD_Attachment.Record_ID) never ran
       if (tid != null) _fkRecord.forEach(function (p) { if (err || (p.uu ? uuv : id) == null) return;
         var w = { ad_table_id: tid }; w[p.column] = p.uu ? uuv : id;
         var rs = trx.find(p.table, w); if (!rs.length) return;
         if (p.rule === 'M') rs.forEach(function (c) { if (err) return; var r = remove(trx, p.table, c, { fk: true, force: true }); n.model++; if (!r.ok) err = r.error; });
-        else if (p.rule === 'N') { err = MSG_DEPENDENT + ' -> ' + p.table; n.refused++; }
-        else if (p.rule === 'O') rs.forEach(function (c) { var ch = {}; ch[p.column] = null; trx.update(p.table, c, ch); n.nulled++; });
+        else trx.say('§DEL-RECORD-RULE-NOT-APPLIED table=' + p.table + '.' + p.column + ' rule=' + p.rule + ' rows=' + rs.length + ' (PO_Record.exists / setRecordNull :253-281, :213; this path never ran before the tableIdOf fix, and its first run refused a draft-order delete over ad_changelog rows (W-DELETE-PO C8b): ModelCascade only is applied until the N/O rules are measured against legacy)');
       });
     }
     if (!err) plan.forEach(function (p) { if (err || p.rule === 'M') return; var rs = refs(p); if (!rs.length) return;

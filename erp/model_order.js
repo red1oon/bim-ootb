@@ -939,6 +939,26 @@
       if (pt > 0) o.set('c_paymentterm_id', pt);
     }
   };
+  // new MOrder(MProject project, boolean IsSOTrx, String DocSubTypeSO) :487-522 (+ MProject.getM_PriceList_ID MProject.java:168-178: the price list of the project's version).
+  //   SO: setC_DocTypeTarget_ID(DocSubTypeSO) :662-682 (default 'WI' On Credit). The PO branch (setC_DocTypeTarget_ID() :688-) is MOrder_setDocTypeTargetDefault.
+  S.MOrder_fromProject = function (trx, project, isSOTrx, docSubTypeSO) {
+    var o = S.MOrder_new(trx);
+    o.set('ad_client_id', project.ad_client_id).set('ad_org_id', project.ad_org_id).set('c_campaign_id', project.c_campaign_id).set('salesrep_id', project.salesrep_id)
+      .set('c_project_id', project.c_project_id).set('description', project.name);
+    if (project.datecontract != null) o.set('dateordered', project.datecontract);
+    if (project.datefinish != null) o.set('datepromised', project.datefinish);
+    o.set('c_bpartner_id', project.c_bpartner_id).set('c_bpartner_location_id', project.c_bpartner_location_id).set('ad_user_id', project.ad_user_id)
+      .set('m_warehouse_id', project.m_warehouse_id).set('c_paymentterm_id', project.c_paymentterm_id);
+    var pl = nz(project.m_pricelist_version_id) ? sqlInt(trx, 'SELECT M_PriceList_ID FROM M_PriceList_Version WHERE M_PriceList_Version_ID=?', [project.m_pricelist_version_id]) : 0;
+    o.set('m_pricelist_id', pl > 0 ? pl : 0);
+    o.set('issotrx', isSOTrx ? 'Y' : 'N');
+    if (isSOTrx) {
+      var sub = docSubTypeSO || 'WI';
+      var d = sqlInt(trx, 'SELECT C_DocType_ID FROM C_DocType WHERE AD_Client_ID=? AND AD_Org_ID IN (0,' + nz(project.ad_org_id) + ') AND DocSubTypeSO=? AND IsSOTrx=? AND IsActive=\'Y\' ORDER BY AD_Org_ID DESC, IsDefault DESC', [project.ad_client_id, sub, 'Y']);
+      if (d > 0) { o.set('c_doctypetarget_id', d); o.set('issotrx', 'Y'); } else say(trx, '§MODEL-SEVERE MOrder.setC_DocTypeTarget_ID Not found for AD_Client_ID=' + project.ad_client_id + ', SubType=' + sub);
+    } else S.MOrder_setDocTypeTargetDefault(trx, o);
+    return o;
+  };
   // MOrder.setBPartner(MBPartner) :712-786 - defaults from the partner (SO or PO side by the order's CURRENT IsSOTrx), ship-to / bill-to locations, the single contact
   S.MOrder_setBPartner = function (trx, o, bp) {
     if (!bp) return;

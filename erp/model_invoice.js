@@ -101,6 +101,8 @@
     var inv = trx.get('c_invoice', invoice.id());
     trx.update('c_order', trx.get('c_order', o.c_order_id), { c_cashline_id: nz(inv.c_cashline_id) ? inv.c_cashline_id : null });   // :2582 setC_CashLine_ID
     if (inv.docstatus !== 'CO') { T.msg(trx, '@C_Invoice_ID@: ' + (res.msg || '')); return null; }
+    trx.say('§ORDER-CREATEINVOICE order=' + o.c_order_id + ' orderno=' + (trx.get('c_order', o.c_order_id) || {}).documentno + ' invoiceno=' + inv.documentno + ' docstatus=' + inv.docstatus + ' totallines=' + inv.totallines + ' grandtotal=' + inv.grandtotal);   // the invoice an On-Credit order raises on Complete (MOrder.completeIt -> createInvoice)
+    trx.find('c_invoiceline', { c_invoice_id: invoice.id() }, ['line']).forEach(function (l) { trx.say('§ORDER-CREATEINVOICE-LINE invoiceno=' + inv.documentno + ' line=' + l.line + ' product=' + l.m_product_id + ' qty=' + l.qtyinvoiced + ' price=' + l.priceactual + ' amount=' + l.linenetamt); });
     return inv;
   }
   MO.MOrder._createInvoice = createInvoice;
