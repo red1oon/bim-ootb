@@ -1177,11 +1177,11 @@ controls.addEventListener('start', () => { _flyId++; _flyYield = true; });
   window.addEventListener('pointermove', e => { if (_dn && e.buttons && (Math.abs(e.clientX - _dn.x) + Math.abs(e.clientY - _dn.y)) > 4) { _flyId++; _flyYield = true; _dn = null; } });
   window.addEventListener('pointerup', () => { _dn = null; });
 }
-function _lerpCam(center, dist) {
+function _lerpCam(center, dist, dir) {                    // dir: optional unit approach direction (§SINGLE-FRAME); default the iso dir
   if (!camera || !controls) return;
   const myId = ++_flyId; _flyYield = false;
   window.__flyLive = myId;                                 // witness oracle: nonzero = a fly is in flight
-  const end = center.clone().addScaledVector(ZOOM_ISO_DIR, dist);
+  const end = center.clone().addScaledVector(dir || ZOOM_ISO_DIR, dist);
   const start = camera.position.clone();
   let t = 0;
   (function anim() {
@@ -1399,10 +1399,29 @@ window.Bonsai.frameInstanceRow = (rowId) => {
   if (!rec) return false;
   const refs = _instRefMap().get(rec) || []; if (!refs.length) return false;
   pickInstance(refs[0].im, refs[0].i);
-  const x = rec.x != null ? rec.x : (rec.pos ? rec.pos[0] : 0),
-        y = rec.y != null ? rec.y : (rec.pos ? rec.pos[1] : 0),
-        z = rec.z != null ? rec.z : (rec.pos ? rec.pos[2] : 0);
-  return _frameTo(new THREE.Vector3(x, y, z), 1.5, m[1] + '=' + m[2] + '/' + m[3]);
+  // §SINGLE-FRAME (MODELLER_ZOOM_TO_SELECTION.md §SINGLE-FRAME — Witness: W-E2E-SINGLE-FRAME): frame the instance AS DRAWN
+  // (its box, not the record point), at a distance from its size (the frustum-fit rule × CONTEXT, so the room stays in view),
+  // and from BELOW when it hangs under a ceiling (mount BOTTOM). Was _frameTo(point, 1.5): 3.6 m from above for any size.
+  const im = refs[0].im, i = refs[0].i;
+  if (!im.geometry.boundingBox) im.geometry.computeBoundingBox();
+  const mm = new THREE.Matrix4(); im.getMatrixAt(i, mm);
+  const box = im.geometry.boundingBox.clone().applyMatrix4(mm.premultiply(im.matrixWorld));
+  const c = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3());
+  const CONTEXT = 8;                                       // presentation: the element ≈ 1/8 of the frame height
+  const dist = Math.max(_fitDistForBox(size) * CONTEXT, (camera.near || 0.05) * 4);
+  // Side: from below first when it hangs under a ceiling (mount BOTTOM), else from above; a ray from that camera spot to the
+  // centre must hit THIS instance first, otherwise the other side is tried (a pendant with no stated mount under a slab).
+  const below = new THREE.Vector3(ZOOM_ISO_DIR.x, ZOOM_ISO_DIR.y, -ZOOM_ISO_DIR.z);
+  const order = rec.mount === 'BOTTOM' ? [['up', below], ['down', ZOOM_ISO_DIR]] : [['down', ZOOM_ISO_DIR], ['up', below]];
+  const rc = new THREE.Raycaster(), seen = (d) => { const from = c.clone().addScaledVector(d, dist); rc.set(from, c.clone().sub(from).normalize());
+    const h = rc.intersectObjects(scene.children, true).find(x => x.object.visible !== false && x.object.isMesh && !(x.object.material && x.object.material.visible === false));
+    return !!(h && h.object === im && h.instanceId === i); };
+  let pick = order.find(o => seen(o[1])), occl = !pick; if (!pick) pick = order[0];
+  const up = pick[0] === 'up';
+  _lerpCam(c, dist, pick[1]);
+  console.log('§FRAME-LEAF ' + m[1] + '=' + m[2] + '/' + m[3] + ' mount=' + (rec.mount || '-') + ' dist=' + dist.toFixed(3) + ' dir=' + (up ? 'up' : 'down') + (occl ? ' occluded=both' : '') +
+    ' size=' + size.x.toFixed(3) + 'x' + size.y.toFixed(3) + 'x' + size.z.toFixed(3) + ' centre=[' + c.toArray().map(v => v.toFixed(2)).join(',') + ']');
+  return true;
 };
 window.Bonsai.setAllVisible = () => {                     // reset before deterministically re-applying every hidden subtree
   const g = window.Bonsai.group && window.Bonsai.group(); if (!g) return;
