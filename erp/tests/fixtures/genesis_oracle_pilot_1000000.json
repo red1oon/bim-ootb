@@ -36,6 +36,10 @@
  "legacyEmpty": {
   "ad_orginfo": [
    "receiptfootermsg"
+  ],
+  "c_acctschema_element": [
+   "c_element_id",
+   "org_id"
   ]
  },
  "source": "docker postgres idempiere_pilot, AD_Client_ID=1000000 (created by Initial Client Setup 2026-10-12), mandatory List/Yes-No columns, distinct values",
@@ -299,6 +303,25 @@
    ]
   },
   "c_acctschema": {},
+  "c_acctschema_element": {
+   "isbalanced": [
+    "N",
+    "Y"
+   ],
+   "ismandatory": [
+    "N",
+    "Y"
+   ],
+   "elementtype": [
+    "AC",
+    "BP",
+    "OO",
+    "PR"
+   ],
+   "isactive": [
+    "Y"
+   ]
+  },
   "c_validcombination": {
    "isfullyqualified": [
     "Y"
@@ -439,6 +462,48 @@
    ],
    "isalwaysposted": [
     "N"
+   ]
+  },
+  "c_periodcontrol": {
+   "periodaction": [
+    "N"
+   ],
+   "isactive": [
+    "Y"
+   ],
+   "docbasetype": [
+    "APC",
+    "API",
+    "APP",
+    "ARC",
+    "ARF",
+    "ARI",
+    "ARR",
+    "CMA",
+    "CMB",
+    "CMC",
+    "DOO",
+    "FAA",
+    "FAD",
+    "FDP",
+    "GLD",
+    "GLJ",
+    "HRP",
+    "MCC",
+    "MMI",
+    "MMM",
+    "MMP",
+    "MMR",
+    "MMS",
+    "MOF",
+    "MOP",
+    "MQO",
+    "MXI",
+    "MXP",
+    "PJI",
+    "POO",
+    "POR",
+    "SOO"
    ]
   },
   "m_warehouse": {

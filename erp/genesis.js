@@ -179,6 +179,18 @@
     var asId = id.next();
     var asRow = { c_acctschema_id: asId, ad_client_id: clientId, name: clientName + ' US/' + ccyIso, c_currency_id: ccyId, c_element_id: elementId };   // m_costtype_id set in G7
     var g4 = [create('c_acctschema', asRow)];
+    // MSetup.java:556-660 "Create AccountingSchema Elements (Structure)" — one C_AcctSchema_Element per AD_Ref_List 181 value the setup enables: OO (mandatory, balanced, SeqNo 10,
+    //   Org_ID = the born org :649-655), AC (mandatory, SeqNo 20, C_Element_ID + C_ElementValue_ID = the chart's DEFAULT_ACCT account :656-664), PR (30) and BP (40) optional.
+    //   Legacy pilot oracle (idempiere_pilot, AD_Client_ID=1000000, Initial Client Setup 2026-10-12): exactly OO, AC, PR, BP — Project / Campaign / Sales Region / Activity not enabled.
+    //   Names = AD_Ref_List 181 (base language). Without these rows nothing can resolve an account THROUGH the schema: ImportGLJournal.java:398-408 joins
+    //   C_AcctSchema_Element (ElementType AC) and answered "Invalid Account" for every row of a born tenant (bim-compiler prompts/MIGRATE_INSTALL_TENANT.md §E3C-SPEC, W-SCHEMA-ELEMENTS).
+    var defAcctValue = customCoa ? customCoa.keyToValue.DEFAULT_ACCT : (SEED.coa.filter(function (a) { return a.name === 'Default account'; })[0] || {}).value;   // AccountingUS.csv: DEFAULT_ACCT = 79100
+    [['OO', 'Organization', 10, 'Y', 'Y'], ['AC', 'Account', 20, 'Y', 'N'], ['PR', 'Product', 30, 'N', 'N'], ['BP', 'BPartner', 40, 'N', 'N']].forEach(function (e) {
+      var row = { c_acctschema_element_id: id.next(), ad_client_id: clientId, c_acctschema_id: asId, elementtype: e[0], name: e[1], seqno: e[2], ismandatory: e[3], isbalanced: e[4] };
+      if (e[0] === 'OO') row.org_id = orgId;
+      if (e[0] === 'AC') { row.c_element_id = elementId; if (evByValue[defAcctValue] != null) row.c_elementvalue_id = evByValue[defAcctValue]; }
+      g4.push(create('c_acctschema_element', row));
+    });
     var GLMAP = SEED.acctMapGL || {};                                       // FS-18: C_AcctSchema_GL's account columns
     var map = {}, vcByColumn = {};
     Object.keys(SEED.acctMap).forEach(function (c) { map[c] = SEED.acctMap[c]; });
