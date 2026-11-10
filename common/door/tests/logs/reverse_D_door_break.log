@@ -1,0 +1,72 @@
+§OBJECT open db=ad_seed-11c985a8c15ba51073a444a9900468a6.db dictionary=present
+§ERP snapshot=hit key=11c985a8c15ba51073a444a9900468a6 ms=173
+§ERP boot db=ad_seed.db replayed_ops=0 oplog=/tmp/erp_KdYrKS/twin.ops.jsonl sql_functions=61
+§OBJECT open db=ad_seed-11c985a8c15ba51073a444a9900468a6.db dictionary=present
+§ERP snapshot=hit key=11c985a8c15ba51073a444a9900468a6 ms=72
+§ERP boot db=ad_seed.db replayed_ops=4 oplog=/tmp/erp_KdYrKS/twin.ops.jsonl sql_functions=61
+§W-ERP-VERBS-DOOR drafts D1=50000 D2=50001 status=DR/DR oplog_ops=8
+  ✅ A1a find: ok for human and ai (read verbs need no proof; the vocabulary lists human and ai as the actors of these verbs, an unlisted actor is refused by name)  human=ok ai=ok
+  ✅ A1b find: the same envelope for every actor (apart from request/actor/ms)  matches=1 id=1500004
+  ✅ A1c actions: ok for every actor and the same envelope, bytes and `next` included  actions=["CO","PR","VO"] next=["CO","PR","VO"]
+  ✅ A1d actions: the engine's own legal set for a Drafted order is offered, Complete first (DocumentEngine.getValidActions)
+  ✅ A1e complete by an ai is HELD as a claim (§0.6 detail 4), not run  status=claim why=actor ai has proof "local-user", which allows read/trial verbs; erp.complete is posts. Hel
+  ✅ A1f ...and so is the unproven actor's (email, not built: proof none): a claim, nothing run
+  ✅ A1f2 an actor the vocabulary does not list reads nothing: refused by name (the email actor is a later rung)  actor email is not allowed to use erp.find (allowed: human, ai)
+  ✅ A1g a claim reaches no engine: op-log unchanged, the document is still Drafted  ops 8 -> 8
+  ✅ A1h the same line by the person runs: ok, Drafted -> Completed, ops written  ops=13 next=["CL","VO","RE"]
+  ✅ A1i completing a Completed order is refused by the engine's own rule (nothing written)  Complete was not done: Status=CO - Invalid Actions: Process=CO, Doc=CO (DocStatus stays CO)
+  ✅ A2a role 50004 (no Document Action Access rows): Complete is not offered, identically for human and ai  offered=[] removed=["CO","PR","VO"]
+  ✅ A2b control: role 102 (granted) is offered Complete  offered=["CO","PR","VO"]
+  ✅ A2c complete with the ungranted role is REFUSED by the engine with the rule named, nothing written  why=Complete is not offered to role 50004 for this Order (status DR; offered: nothing)
+  ✅ A2d the same line by an ai gets no way round: held as a claim, nothing written (the person's confirmation would get A2c's refusal)
+  ✅ A2e control: the granted role completes the same document  status=ok
+§OBJECT open db=ad_seed-11c985a8c15ba51073a444a9900468a6.db dictionary=present
+§ERP snapshot=hit key=11c985a8c15ba51073a444a9900468a6 ms=76
+§ERP boot db=ad_seed.db replayed_ops=33 oplog=/tmp/erp_KdYrKS/twin.ops.jsonl sql_functions=61
+  ✅ R0 setup: a Completed order  50002
+  ✅ R1 a Completed order is offered Void by the engine (DocumentEngine.getValidActions)  actions=["CL","VO","RE"]
+§OBJECT open db=ad_seed-11c985a8c15ba51073a444a9900468a6.db dictionary=present
+§ERP snapshot=hit key=11c985a8c15ba51073a444a9900468a6 ms=75
+§ERP boot db=ad_seed.db replayed_ops=49 oplog=/tmp/erp_KdYrKS/twin.ops.jsonl sql_functions=61
+  ✅ R2 void by an ai is HELD as claims (the engine is not reached: op-log unchanged, order still Completed)  claim ops 49->49
+§OBJECT open db=ad_seed-11c985a8c15ba51073a444a9900468a6.db dictionary=present
+§ERP snapshot=hit key=11c985a8c15ba51073a444a9900468a6 ms=79
+§ERP boot db=ad_seed.db replayed_ops=59 oplog=/tmp/erp_KdYrKS/twin.ops.jsonl sql_functions=61
+§OBJECT open db=ad_seed-11c985a8c15ba51073a444a9900468a6.db dictionary=present
+§ERP snapshot=hit key=11c985a8c15ba51073a444a9900468a6 ms=75
+§ERP boot db=ad_seed.db replayed_ops=59 oplog=/tmp/erp_KdYrKS/twin.ops.jsonl sql_functions=61
+  ✅ R3 void by the person: CO -> VO; total and grand total 0; every line qty 0, net 0 and described "Voided (old qty)" (MOrder.voidIt); Processed Y, DocAction --  order={"docstatus":"VO","docaction":"--","totallines":0,"grandtotal":0,"processed":"Y"} line0={"qtyordered":0,"linenetamt":0,"description":"** Voided (2)"}
+  ✅ R4 voiding a Voided order is refused by the engine's rule, naming the action (nothing written)  Void was not done: Status=VO - Invalid Actions: Process=VO, Doc=VO (DocStatus stays VO)
+§OBJECT open db=ad_seed-11c985a8c15ba51073a444a9900468a6.db dictionary=present
+§ERP snapshot=hit key=11c985a8c15ba51073a444a9900468a6 ms=72
+§ERP boot db=ad_seed.db replayed_ops=59 oplog=/tmp/erp_KdYrKS/twin.ops.jsonl sql_functions=61
+§OBJECT open db=ad_seed-11c985a8c15ba51073a444a9900468a6.db dictionary=present
+§ERP snapshot=hit key=11c985a8c15ba51073a444a9900468a6 ms=68
+§ERP boot db=ad_seed.db replayed_ops=85 oplog=/tmp/erp_KdYrKS/twin.ops.jsonl sql_functions=61
+§OBJECT open db=ad_seed-11c985a8c15ba51073a444a9900468a6.db dictionary=present
+§ERP snapshot=hit key=11c985a8c15ba51073a444a9900468a6 ms=73
+§ERP boot db=ad_seed.db replayed_ops=85 oplog=/tmp/erp_KdYrKS/twin.ops.jsonl sql_functions=61
+  ❌ R5 close: an ai's call is a claim; the person's runs CO -> CL; the not-delivered quantity is cancelled: QtyLostSales = ordered - delivered (2), QtyOrdered := QtyDelivered (0), described "Close (2)", Processed Y, DocAction -- (MOrder.closeIt)  order={"docstatus":"VO","docaction":"--","processed":"Y"} line0={"qtyordered":0,"qtydelivered":0,"qtylostsales":0,"description":"** Voided (2)"} why=null
+§OBJECT open db=ad_seed-11c985a8c15ba51073a444a9900468a6.db dictionary=present
+§ERP snapshot=hit key=11c985a8c15ba51073a444a9900468a6 ms=66
+§ERP boot db=ad_seed.db replayed_ops=85 oplog=/tmp/erp_KdYrKS/twin.ops.jsonl sql_functions=61
+§OBJECT open db=ad_seed-11c985a8c15ba51073a444a9900468a6.db dictionary=present
+§ERP snapshot=hit key=11c985a8c15ba51073a444a9900468a6 ms=85
+§ERP boot db=ad_seed.db replayed_ops=111 oplog=/tmp/erp_KdYrKS/twin.ops.jsonl sql_functions=61
+  ❌ R6 reverse: an ai's call is a claim; the person's runs CO -> RE (Reversed), amounts 0, DocAction -- (MOrder.reverseCorrectIt = voidIt, then status RE; DocumentEngine ACTION_Reverse_Correct)  {"docstatus":"VO","docaction":"--","totallines":0} why=null
+§OBJECT open db=ad_seed-11c985a8c15ba51073a444a9900468a6.db dictionary=present
+§ERP snapshot=hit key=11c985a8c15ba51073a444a9900468a6 ms=77
+§ERP boot db=ad_seed.db replayed_ops=111 oplog=/tmp/erp_KdYrKS/twin.ops.jsonl sql_functions=61
+  ✅ R9 a Drafted order can be voided (DocumentEngine options for DR include Void): DR -> VO  status=ok null
+  ✅ Fa find: a number that does not exist is a refusal that says so, not an empty ok
+  ✅ Fb find: a table that is not a document is refused by name (the dictionary decides what a document is)  kind Currency is not a document (its table has no DocAction column)
+  ✅ O1 erp.describe: reflection lists exactly the dictionary's active AD_Column rows of the kind (independent SQL count)  properties=93 sql=93
+  ✅ O2 the same verb serves other tables with no code of theirs (C_BPartner, M_Product), and a non-table is an error that names the kinds  C_BPartner M_Product
+  ✅ O3 erp.read shows the record as the op-log left it (D1 was completed above: DocStatus CO), the same state erp.find reports  docstatus=CO
+  ✅ V1 the erp.* entries are what the generator writes from the dictionary + actor_verbs.json (not hand-kept)  §ERP_DOOR_VERBS CURRENT
+  ✅ V2 harm: find/actions/describe/read are read, erp.complete is posts (the generator's rule, DocumentEngine ACTION_Complete -> Doc.post)  erp.find:read erp.actions:read erp.describe:read erp.read:read erp.complete:posts erp.void:writes erp.close:writes erp.reverse:posts
+  ✅ V3 the connector (tools/list) offers no erp verb: they have no mcp_name, so the published tool bytes are unchanged
+  ✅ V4 no erp entry names code, SQL or a shell: every one calls erp_cli with a fixed subcommand  offences=0
+  ✅ V5 AD-LAYER LAW: no document table is named in erp_cli.js or doc_actions.js  hits=0
+§W-ERP-VERBS-DOOR journal lines=70 dir=/tmp/erp_KdYrKS
+§WITNESS_ERP_VERBS_DOOR pass=31 fail=2 inconclusive=0 verdict=FAIL

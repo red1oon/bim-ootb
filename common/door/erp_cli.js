@@ -178,7 +178,7 @@ function factsOf(O, K, id) {
   return O.rows('SELECT c_acctschema_id AS s, account_id AS acct, amtacctdr AS dr, amtacctcr AS cr FROM fact_acct WHERE ad_table_id=? AND record_id=? ORDER BY fact_acct_id', [K.id, id]);
 }
 function act(O, a, code) {
-  if (BREAK === 'wrongcode' && code === 'CL') code = 'VO';
+  if (BREAK === 'wrongcode' && (code === 'CL' || code === 'RC')) code = 'VO';
   if (!a.kind) refuse('--kind is required');
   const aname = (O.rows('SELECT name FROM ad_ref_list WHERE ad_reference_id=135 AND value=?', [code])[0] || { name: code }).name;
   const K = docKind(O, a.kind), r = recordOf(O, K, a), id = r[K.key], before = r.docstatus;
