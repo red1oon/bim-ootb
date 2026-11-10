@@ -1,0 +1,16 @@
+{
+  "_doc": "Data rows for element_pset_native (prompts/DISC_WALK_DRAWN_INTEGRATION.md 12b). unit_map: an UNTYPED number of an authoring tool's own property set gets value_si = value * factor ONLY through a row here; no row = unit unknown. pset and name are LIKE patterns (% = any run). Every row states its measured evidence. Nothing here is a guess: add a row only with a measurement.",
+  "unit_map": [
+    { "tool": "Revit", "pset": "PSet_Revit_%Electrical%", "name": "%Voltage%", "factor": 0.09290304, "unit": "VOLT",
+      "source": "measured 2026-11-10 Ifc2x3_Duplex_MEP.ifc: Switch Voltage 1291.669250 = 120 V, Voltage 2238.893 = 208 V; factor = (0.3048 m/ft)^2, Revit internal units (V = kg.m2/(s3.A), length in feet)" },
+    { "tool": "Revit", "pset": "PSet_Revit_%Electrical - Loads", "name": "% Connected", "factor": 0.09290304, "unit": "VOLT_AMPERE",
+      "source": "measured 2026-11-10 Ifc2x3_Duplex_MEP.ifc: HVAC Connected 5166.677 = 480 VA, Lighting - Dwelling Unit Connected = 900 VA, Receptacle Connected = 4140 / 4320 VA (round values only under this factor)" },
+    { "tool": "Revit", "pset": "PSet_Revit_%Electrical - Loads", "name": "% Estimated Demand", "factor": 0.09290304, "unit": "VOLT_AMPERE",
+      "source": "measured 2026-11-10 Ifc2x3_Duplex_MEP.ifc: equal to the Connected value at demand factor 1.0 on every panel" },
+    { "tool": "Revit", "pset": "PSet_Revit_%Electrical - Loads", "name": "Apparent Load%", "factor": 0.09290304, "unit": "VOLT_AMPERE",
+      "source": "measured 2026-11-10 Ifc2x3_Duplex_MEP.ifc: type Apparent Load = 100 / 150 / 480 / 542 / 146000 VA; panel phase A 51977.333 VA = Current Phase A 433.144 A x 120 V" },
+    { "tool": "Revit", "pset": "PSet_Revit_Type_Electrical", "name": "Load", "factor": 0.09290304, "unit": "VOLT_AMPERE",
+      "source": "measured 2026-11-10 Ifc2x3_Duplex_MEP.ifc: Load 1937.50 = 180 VA, the value its own label states (Electrical Data ' 120 V/1-180 VA')" }
+  ],
+  "prop_map": []
+}

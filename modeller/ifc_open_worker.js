@@ -13,8 +13,10 @@ self.onmessage = async function (e) {
     var api = new self.WebIFC.IfcAPI();
     await api.Init(function (p) { return new URL((p === 'web-ifc.wasm' ? '../common/lib/' : 'lib/') + p, base).href; });
     var SQL = await self.initSqlJs({ locateFile: function (f) { return new URL((f === 'sql-wasm.wasm' ? '../common/lib/' : 'lib/') + f, base).href; } });
-    var out = await self.IfcOpenDb.open({ WebIFC: self.WebIFC, ifcApi: api, SQL: SQL, Core: self.IfcExtractCore, bytes: new Uint8Array(d.bytes), name: d.name, forceGeorefOffset: d.forceGeorefOffset || null,
-      log: function (l) { l = String(l); if (/^§(SUMMARY|PSET_COMMON|GEOM_EMPTY|REL_FILLS_HOST|IFC-OPEN-X|GEOREF)|\[S220\] §GEOREF|FAIL/.test(l)) logs.push(l); } });
+    var nativeMaps = null;   // §12b: the unit / meaning data rows for the authoring tool's own property sets; absent = no untyped value gets an SI value
+    try { var rm = await fetch(new URL('dxf2bim/native_maps.json', base).href); if (rm.ok) nativeMaps = await rm.json(); else logs.push('§PSET_NATIVE maps unavailable (' + rm.status + ')'); } catch (eM) { logs.push('§PSET_NATIVE maps unavailable ' + eM.message); }
+    var out = await self.IfcOpenDb.open({ nativeMaps: nativeMaps, WebIFC: self.WebIFC, ifcApi: api, SQL: SQL, Core: self.IfcExtractCore, bytes: new Uint8Array(d.bytes), name: d.name, forceGeorefOffset: d.forceGeorefOffset || null,
+      log: function (l) { l = String(l); if (/^§(SUMMARY|PSET_COMMON|PSET_NATIVE|GEOM_EMPTY|REL_FILLS_HOST|IFC-OPEN-X|GEOREF)|\[S220\] §GEOREF|FAIL/.test(l)) logs.push(l); } });
     var bytes = out.db.export(); out.db.close();
     self.postMessage({ type: 'done', bytes: bytes, logs: logs, georefOffset: out.georefOffset, total: out.total, kept: out.kept, ms: out.ms }, [bytes.buffer]);
   } catch (err) {
