@@ -8,7 +8,7 @@
 // Usage: node modeller/tools/project_inputs.js <building.db> [--register=<json>|@file] <sheet.dxf>... [--sheet-meta=<json>|@file]
 //   register: [{no, rev, status, discipline, filekind, sha256, name}] (the BIM Document register export). sheet meta: as mains_to_db.js.
 'use strict';
-const fs = require('fs'), path = require('path'), cp = require('child_process'), crypto = require('crypto');
+const fs = require('fs'), path = require('path'), cp = require('child_process'), crypto = require('crypto'), { Buffer } = require('buffer');
 const M = path.join(__dirname, '..');
 const initSqlJs = require(require.resolve('sql.js', { paths: [process.cwd(), path.join(process.env.HOME || '', 'bim-compiler', 'node_modules'), M] }));
 const log = s => console.log(s);
