@@ -11,6 +11,7 @@
 //   node ops_cli.js column       --kind Order --column C_ConversionType_ID     who fills a column, twin vs legacy dictionary
 //   node ops_cli.js compare      --kind Order --number 50000 [--legacy 50981]   one record on both sides, cell for cell
 //   node ops_cli.js where        --symbol InvoiceRule [--in callout]            file:line in the legacy iDempiere source
+//   node ops_cli.js pack         --book model.xlsx --version 1.0.0 [--out dir] [--java dir --package p]   the metadata-only 2Pack zip (wraps erp/tools/xlsx_pack.js)
 // Exit: 0 answered · 3 refused (answer.refused) or INCONCLUSIVE (answer.verdict) · 1 failed · 2 usage. JSON answer on stdout, §OPS lines on stderr.
 // Nothing here takes SQL, a shell string or a path from the caller: names are checked against the dictionaries / the repo, values are quoted literals, programs run by argv.
 'use strict';
@@ -199,14 +200,45 @@ function where(a) {
   out({ symbol: sym, hits: hits.slice(0, cap), shown: Math.min(total, cap), total, files, verdict: 'OK', summary: sym + ': ' + total + ' lines in ' + files + ' files (showing ' + Math.min(total, cap) + ')' }); return 0;
 }
 
+// ---- erp.pack: a Ninja workbook -> the metadata-only 2Pack zip (the one engine, erp/tools/xlsx_pack.js; this wraps it, never re-implements it) ----
+function safeRel(p, what) {   // a path the caller names must stay inside the working folder or this tree; no absolute path, no ..
+  if (!p || /[\u0000-\u001f]/.test(p) || path.isAbsolute(p) || p.split(/[\\/]/).indexOf('..') >= 0) return { err: what + ' must be a relative path without ..' };
+  const cwdP = path.resolve(process.cwd(), p), rootP = path.resolve(ROOT, p); return { cwd: cwdP, root: rootP };
+}
+function packVerb(a) {
+  const b = safeRel(a.book, 'book'); if (b.err) return refused(b.err);
+  if (!/\.xlsx$/i.test(a.book)) return refused('book is a .xlsx workbook (the Ninja data model)');
+  const book = [b.cwd, b.root].find(f => fs.existsSync(f)); if (!book) return refused('no workbook ' + a.book + ' here or in this tree');
+  if (!/^\d+\.\d+\.\d+$/.test(a.version || '')) return refused('version is x.y.z (Incremental2PackActivator applies a version once)');
+  const outRel = a.out || null; let outDir = path.join(CACHE, 'pack');
+  if (outRel) { const o = safeRel(outRel, 'out'); if (o.err) return refused(o.err); outDir = o.cwd; }
+  const argv = [path.join(ROOT, 'erp', 'tools', 'xlsx_pack.js'), book, '--version', a.version, '--out', outDir];
+  if (a.java) { const j = safeRel(a.java, 'java'); if (j.err) return refused(j.err); argv.push('--java', j.cwd); if (a.package) { if (!/^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*$/.test(a.package)) return refused('package is a Java package name such as org.kernel.bim.model'); argv.push('--package', a.package); } }
+  const t0 = Date.now(), r = spawnSync(process.execPath, argv, { encoding: 'utf8', maxBuffer: 1 << 26, timeout: 300000, env: process.env, cwd: ROOT });
+  const text = (r.stdout || '') + (r.stderr || '');
+  const failed = /§XLSX-PACK FAILED (.*)/.exec(text);
+  if (failed) { say('pack FAILED ' + failed[1]); const rel = (t) => t.split(ROOT + path.sep).join('').split(os.homedir()).join('~');   // no machine path in a public answer
+    return /refused: .*released pack/.test(failed[1]) ? refused(rel(failed[1].replace(/^Error: /, ''))) : (/^(sheet |unknown|.*not allowed|.*unknown column|.*must be)/i.test(failed[1]) ? refused(failed[1]) : (say('FAIL ' + failed[1]), 1)); }
+  const z = /§XLSX-PACK zip (\S+) (written|unchanged) elements=(\d+) records=(\d+)/.exec(text);
+  if (!z) { say('FAIL xlsx_pack printed no zip line (exit ' + r.status + '): ' + text.slice(-300)); return 1; }
+  const zip = path.resolve(ROOT, z[1]), zipFile = fs.existsSync(zip) ? zip : path.resolve(process.cwd(), z[1]);
+  const xml = spawnSync('unzip', ['-p', zipFile, '*dict/PackOut.xml'], { encoding: 'utf8', maxBuffer: 1 << 28 }).stdout || '', kinds = {};
+  (xml.match(/<AD_[A-Za-z_]+(?=[\s>\/])/g) || []).forEach(t => { const k = t.slice(1); if (!/_(ID|UU)$/.test(k)) kinds[k] = (kinds[k] || 0) + 1; });   // element tags only, not column attributes
+  const cl = /§XLSX-PACK classes (\[.*\])/.exec(text), classes = (cl ? JSON.parse(cl[1]) : []).filter(c => /\.[A-Z]\w*$/.test(c)), java = text.split('\n').filter(l => /§XLSX-PACK java /.test(l)).length;
+  const sha = require('crypto').createHash('sha256').update(BREAK === 'badsha' ? xml : fs.readFileSync(zipFile)).digest('hex');
+  say('pack zip=' + path.basename(zipFile) + ' ' + z[2] + ' elements=' + z[3] + ' records=' + z[4] + ' sha256=' + sha.slice(0, 12));
+  out({ book: a.book, version: a.version, zip: path.basename(zipFile), path: zipFile, status: z[2], elements: +z[3], records: +z[4], rows: kinds, classes: classes, javaFiles: java, sha256: sha, verdict: 'OK', ms: Date.now() - t0, summary: 'pack ' + a.version + ' ' + z[2] + ': ' + z[3] + ' elements, ' + z[4] + ' records, ' + classes.length + ' process classes named' });
+  return 0;
+}
+
 async function main(argv) {
   const cmd = argv[0], a = {}, whereList = [];
   for (let i = 1; i < argv.length; i++) { const m = /^--(\w+)$/.exec(argv[i]); if (!m || i + 1 >= argv.length) { say('FAIL usage: ' + argv[i]); return 2; } if (m[1] === 'where') whereList.push(argv[++i]); else a[m[1]] = argv[++i]; }
   try {
     switch (cmd) {
       case 'witness-run': return witnessRun(a); case 'witness-last': return witnessLast(a); case 'legacy-status': return await legacyStatus();
-      case 'legacy-query': return legacyQuery(a, whereList); case 'column': return await column(a); case 'compare': return await compare(a); case 'where': return where(a);
-      default: say('FAIL usage: ops_cli.js witness-run|witness-last|legacy-status|legacy-query|column|compare|where'); return 2;
+      case 'legacy-query': return legacyQuery(a, whereList); case 'column': return await column(a); case 'compare': return await compare(a); case 'where': return where(a); case 'pack': return packVerb(a);
+      default: say('FAIL usage: ops_cli.js witness-run|witness-last|legacy-status|legacy-query|column|compare|where|pack'); return 2;
     }
   } catch (e) { say('FAIL ' + (e && e.message)); return 1; }
 }
