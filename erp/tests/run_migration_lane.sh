@@ -16,7 +16,7 @@ for w in $W; do
   v=$(grep -E "VERDICT|RESULT|verdict=|-SUMMARY|-ALL" "$log" | tail -1 | cut -c1-110)
   j=$(echo "$v" | grep -oE 'judged=[0-9]+' | head -1)
   st=PASS
-  if [ $rc -ne 0 ] || echo "$v" | grep -qiE 'FAIL' && ! echo "$v" | grep -qE 'failed=0'; then st=FAIL
+  if [ $rc -ne 0 ] || echo "$v" | grep -qE 'verdict=FAIL|VERDICT FAIL|fail(ed)?=[1-9]'; then st=FAIL
   elif [ -z "$v" ] || [ "$j" = "judged=0" ] || ! echo "$v" | grep -q PASS; then st=NOJUDGE; fi
   [ $st = PASS ] || bad=1
   printf '%-24s %-8s rc=%s %3ss %s\n' "$w" "$st" "$rc" "$dt" "$v"
