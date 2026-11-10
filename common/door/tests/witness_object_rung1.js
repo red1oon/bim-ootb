@@ -55,7 +55,7 @@ const MODEL_TABLES = ['elements_meta', 'element_transforms', 'spatial_structure'
   k.L('REG dictionary rows ' + JSON.stringify(dictRows));
   if (!j.n || !j.rows) k.incon('REG', 'no data rows were judged');
   else k.chk('REG every data table has the same rows with and without the dictionary; only dictionary tables are new', j.ok, 'changed=' + j.changed.join(',') + ' new=' + newTables.join(','));
-  k.chk('REG the dictionary rows are present (4 tables, window/tab/field rows)', cB.ad_table === 4 && cB.ad_window === 3 && cB.ad_tab === 4 && cB.ad_column > 20 && cB.ad_field === cB.ad_column, JSON.stringify(dictRows));
+  k.chk('REG the dictionary rows are present (5 kinds: 4 tables + the Room view, window/tab/field rows)', cB.ad_table === 5 && cB.ad_window === 4 && cB.ad_tab === 5 && cB.ad_column > 20 && cB.ad_field === cB.ad_column, JSON.stringify(dictRows));
   // plant: a patch that adds a data row must be seen
   const P = open(HOME_DB); chunk(P, patchText); P.run("INSERT INTO elements_meta (guid, ifc_class) VALUES ('PLANT','IfcWall')");
   const jp = judgeReg(cA, counts(P), newTables); k.chk('REG falsifier: a plant that adds an element row makes the judge say FAIL', !jp.ok && jp.changed.indexOf('elements_meta') >= 0, 'changed=' + jp.changed.join(','));
@@ -74,7 +74,7 @@ const MODEL_TABLES = ['elements_meta', 'element_transforms', 'spatial_structure'
   k.chk('REG falsifier: the pre-change chunker throws "duplicate column name" on a repeated patch', !!oldErr && /duplicate column name/i.test(oldErr.message), 'err=' + (oldErr && oldErr.message));
   // a second Duplex version: the patch must apply to it too (it has its own spatial_structure)
   if (OTHER_DB) { const C = open(OTHER_DB); const cC = counts(C); let e3 = null; try { chunk(C, patchText); } catch (x) { e3 = x; } const cD = counts(C);
-    k.chk('REG the patch also applies to the older 1,122-element Duplex; its element rows are unchanged', !e3 && cD.elements_meta === cC.elements_meta && cD.ad_table === 4, 'elements=' + cC.elements_meta + '->' + cD.elements_meta + ' err=' + (e3 && e3.message)); }
+    k.chk('REG the patch also applies to the older 1,122-element Duplex; its element rows are unchanged', !e3 && cD.elements_meta === cC.elements_meta && cD.ad_table === 5, 'elements=' + cC.elements_meta + '->' + cD.elements_meta + ' err=' + (e3 && e3.message)); }
   else k.incon('REG-B', 'no second Duplex version on this machine');
   // generated columns: sql.js accepted them and they equal the key
   const gen = rowsOf(B, 'SELECT count(*), sum(elements_meta_uu = guid) FROM elements_meta')[0];

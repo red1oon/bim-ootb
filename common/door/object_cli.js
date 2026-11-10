@@ -10,6 +10,7 @@
 //     update   --kind K --uu U --column C --value V    one column, checked against the dictionary, written as a CRUD_UPDATE op
 //     attach   --kind K --uu U --file F | --name N --text T     an attachment on the record (Record_UU = its UU), through ad_attachment.js
 //     history  --kind K --uu U            the legacy change-log rows the op-log implies (crud_core.js changeLog)
+//     count    --kind K [--where column=value]...   how many records of the kind (after the op-log), each filter column checked against the dictionary (§0.13). An empty kind is VACUOUS, never a plain 0.
 //   Writes never touch the .db: each op is appended to an op-log (JSONL; --oplog, else $BIM_OBJECT_OPLOG, else ~/.cache/bim_object/<db>.ops.jsonl) and replayed into memory on every run.
 // Exit: 0 ok · 3 refused (a shape check or a missing record: an answer) · 1 error (unknown kind, no dictionary) · 2 usage.
 // Run: node common/door/object_cli.js describe --building Duplex --kind Element
@@ -186,6 +187,28 @@ async function attach(O, a) {
   say('attach kind=' + r.t.name + ' uu=' + a.uu + ' record_uu=' + (cx.recordUU || '') + ' record_id=' + (cx.recordId == null ? '' : cx.recordId) + ' op=' + res.op + ' bytes=' + res.bytes + ' entries=' + merged.length);
   return { kind: r.t.name, uu: a.uu, ops: got.map(o => ({ op_type: o.op_type, table: o.table, record_uu: o.fields && o.fields.record_uu })), attachment: after ? { id: after.ad_attachment_id, record_uu: after.record_uu, title: after.title } : null, entries: merged.map(e => ({ name: e.name, size: e.size })) };
 }
+// §0.13 the first MEASURE: a count of a kind. The kind's table and every filter column come from the dictionary (reflection: an unknown column is an error that names it). population = the kind's
+// rows with no filter; when that is 0 nothing was judged, so the verdict is VACUOUS (the door replies inconclusive), never 0-as-an-answer.
+const CB = () => process.env.COUNT_BREAK || '';   // W-OBJ-COUNT falsifiers: plus1 | nofilter | zero_ok
+function count(O, a) {
+  const t = kindOf(O.rows, a.kind), cols = columnsOf(O.rows, t), filters = [], where = [], params = [];
+  (a.where || []).forEach(w => {
+    const m = /^([A-Za-z_]\w*)=([\s\S]*)$/.exec(w); if (!m) refuse('a filter is column=value, got "' + w + '"');
+    const c = cols.filter(x => x.columnname.toLowerCase() === m[1].toLowerCase())[0];
+    if (!c) throw new Error('kind ' + t.name + ' has no property "' + m[1] + '" (its properties: ' + cols.map(x => x.columnname).join(', ') + ')');
+    if (filters.some(f => f.column === c.columnname)) refuse('filter ' + c.columnname + ' given twice');
+    const type = REF[c.ad_reference_id], num = type === 'number' || type === 'integer' || type === 'amount' || type === 'quantity';
+    if (num && !/^[+-]?\d+(\.\d+)?$/.test(m[2].trim())) refuse(c.columnname + ' is a number; "' + m[2] + '" is not');
+    filters.push({ column: c.columnname, value: m[2] }); where.push(c.columnname + (num ? ' = CAST(? AS NUMERIC)' : ' = ?')); params.push(m[2]);
+  });
+  const population = Number(O.rows('SELECT count(*) AS n FROM ' + t.tablename)[0].n);
+  let n = filters.length && CB() !== 'nofilter' ? Number(O.rows('SELECT count(*) AS n FROM ' + t.tablename + ' WHERE ' + where.join(' AND '), params)[0].n) : population;
+  if (CB() === 'plus1') n += 1;
+  const verdict = population === 0 && CB() !== 'zero_ok' ? 'VACUOUS' : 'OK';
+  const summary = verdict === 'VACUOUS' ? 'this model holds no ' + t.name + ' record, so nothing was counted' : n + ' ' + t.name + (filters.length ? ' where ' + filters.map(f => f.column + ' = ' + f.value).join(' and ') + ' (of ' + population + ')' : '');
+  say('count kind=' + t.name + ' table=' + t.tablename + ' filters=' + JSON.stringify(filters) + ' count=' + n + ' population=' + population + ' verdict=' + verdict + (CB() ? ' COUNT_BREAK=' + CB() : ''));
+  return { kind: t.name, table: t.tablename, filters, count: n, population, verdict, summary };
+}
 function history(O, a) {
   const r = record(O, a), CC = require('../../erp/crud_core.js');
   // the record's row BEFORE the first op: today's row with every logged change reverted (the op-log keeps each change's old value)
@@ -200,11 +223,11 @@ function history(O, a) {
 
 async function main(argv) {
   const cmd = argv[0], a = {};
-  for (let i = 1; i < argv.length; i++) { const m = /^--(\w+)$/.exec(argv[i]); if (!m || i + 1 >= argv.length) { say('FAIL usage: ' + argv[i]); return 2; } a[m[1]] = argv[++i]; }
-  if (['describe', 'read', 'update', 'attach', 'history'].indexOf(cmd) < 0) { say('FAIL usage: object_cli.js describe|read|update|attach|history --building B --kind K [--uu U] ...'); return 2; }
+  for (let i = 1; i < argv.length; i++) { const m = /^--(\w+)$/.exec(argv[i]); if (!m || i + 1 >= argv.length) { say('FAIL usage: ' + argv[i]); return 2; } if (m[1] === 'where') (a.where = a.where || []).push(argv[++i]); else a[m[1]] = argv[++i]; }
+  if (['describe', 'read', 'update', 'attach', 'history', 'count'].indexOf(cmd) < 0) { say('FAIL usage: object_cli.js describe|read|update|attach|history|count --building B --kind K [--uu U] ...'); return 2; }
   if (!a.kind) { say('FAIL usage: --kind is required'); return 2; }
   try {
-    const O = await boot(a), out = cmd === 'describe' ? describe(O, a) : cmd === 'read' ? read(O, a) : cmd === 'update' ? update(O, a) : cmd === 'attach' ? await attach(O, a) : history(O, a);
+    const O = await boot(a), out = cmd === 'describe' ? describe(O, a) : cmd === 'read' ? read(O, a) : cmd === 'update' ? update(O, a) : cmd === 'attach' ? await attach(O, a) : cmd === 'count' ? count(O, a) : history(O, a);
     process.stdout.write(JSON.stringify(out) + '\n'); return 0;
   } catch (e) {
     if (e instanceof Refused) { say('REFUSED ' + e.message); process.stdout.write(JSON.stringify({ refused: true, reason: e.message }) + '\n'); return 3; }
@@ -212,4 +235,4 @@ async function main(argv) {
   }
 }
 if (require.main === module) main(process.argv.slice(2)).then(c => process.exit(c));
-module.exports = { main, describe, read, update, attach, history, boot, open, kindOf, columnsOf, childTabs, applyOp, loadChunker, Refused, oplogFile, readOps };
+module.exports = { main, describe, read, update, attach, history, count, boot, open, kindOf, columnsOf, childTabs, applyOp, loadChunker, Refused, oplogFile, readOps };
