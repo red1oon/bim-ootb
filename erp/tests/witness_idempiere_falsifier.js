@@ -24,8 +24,9 @@
 // THE LEAD'S RULING, 2026-11-10 (adjudicated after the first run; evidence file:lines as reported with it):
 //   The falsification claim proper: "on every row that loads, every column the 17-sheet contract carries equals the source". No engine defect and no loader defect was found.
 //   contract-default-only      C_BPartner.C_BP_Group_ID>IsDefault (workbook.mjs:16; ninja_migrate_process.mjs:214 F6; model_master.js:122-129) and a product whose tax category is not the default (workbook.mjs:19; F8 :226). The sheet can only say "the tenant's default". The generator's Y-or-blank choice is ACCEPTED.
-//   unit-not-carried           the form maps a source unit to an existing unit and cannot keep a tenant's own (ninja_migrate_process.mjs:54-59, odoo_migrate_form.mjs:88,111). A FORM GAP, named, not fixed here.
-//   key-already-in-tenant      the unique index (model_layer.js:358-371) refuses a key the born tenant already holds: correct; that a real migration then loses the file is a named UX gap.
+//   unit-not-carried           (re-pinned after bim-ootb #2822) now only a source unit NO product uses, which the form drops (ninja_migrate_process.mjs:59); a used unit is mapped, or kept as a new unit under its own X12DE355.
+//   already-there              (was key-already-in-tenant) the LOADER skips a row whose key the tenant holds (odoo_migrate_form.mjs load(): `already`); the witness cross-checks the loader's count per sheet with its own rule (§IDF-ALREADY).
+//   already-there      the unique index (model_layer.js:358-371) refuses a key the born tenant already holds: correct; that a real migration then loses the file is a named UX gap.
 //   import-inventory-renumbers Import Inventory numbers the document and writes its own Description (ImportInventory.java:392-398, processes/ImportInventory.js:157): M_Inventory.DocumentNo / Description and M_InventoryLine.M_Inventory_ID differ by rule.
 //   header-without-lines       a header with no line is not carried by the I_Inventory rewrite (odoo_migrate_form.mjs:147).
 //   cascade:<class>            a row refused because its parent row was not carried, for <class>.
@@ -41,8 +42,11 @@ if (!global.window) global.window = {};
 if (!global.crypto || !global.crypto.subtle) global.crypto = require('crypto').webcrypto;
 var ERP = path.join(__dirname, '..'), FIX = path.join(__dirname, 'fixtures');
 // PINNED expected totals per tenant and class (rows not loaded) - measured 2026-11-10, adjudicated by the lead.
-var PIN = { GardenWorld: { 'cascade:unit-not-carried': 8, 'header-without-lines': 2, 'key-already-in-tenant': 315, 'unit-not-carried': 12 },
-  Pilot: { 'cascade:contract-default-only': 13, 'contract-default-only': 4, 'key-already-in-tenant': 6 } };
+var PIN = { GardenWorld: { 'already-there': 315, 'header-without-lines': 2, 'unit-not-carried': 2 },
+  Pilot: { 'cascade:contract-default-only': 13, 'contract-default-only': 4, 'already-there': 6 } };
+// the pin before PR #2822 (the loader skipped nothing and could not keep a unit; the harness removed the colliding rows and the products of unanswerable units) - for the §IDF-REPIN line
+var OLD_PIN = { GardenWorld: { 'cascade:unit-not-carried': 8, 'header-without-lines': 2, 'already-there': 315, 'unit-not-carried': 12 },
+  Pilot: { 'cascade:contract-default-only': 13, 'contract-default-only': 4, 'already-there': 6 } };
 // columns allowed to differ, by class (sheet|header) - the ruling above
 var EXC = { 'C_BPartner|C_BP_Group_ID>IsDefault': 'contract-default-only', 'M_Inventory|DocumentNo': 'import-inventory-renumbers', 'M_Inventory|Description': 'import-inventory-renumbers', 'M_InventoryLine|M_Inventory_ID': 'import-inventory-renumbers' };
 var _log = console.log, SHIPPED = [];
@@ -94,11 +98,14 @@ var KEYTXT = { M_ProductPrice: 'price list Name + version Name + product Value',
   }
   // the units: a source unit that exists by exact name in the twin maps to it (the form already suggests exactly that); anything else stays unanswered and the form says so
   //   No exact name: the harness answers with the ONE twin unit whose name differs only in letter case (a user would pick it from the list), and says so (§IDF-UNIT); none -> unanswered, the form refuses.
-  var UNITSAID = {};
+  var UNITSAID = {}, CURFX = null, CURC = 0;
+  function unitCodeRaw(u) { var r = (CURFX.tables.c_uom.rows || []).filter(function (x) { return x.name === u; })[0]; return r ? r.x12de355 : null; }
+  function unitCode(u) { var c = unitCodeRaw(u); if (!c || String(c).length > 4) return null; return q("SELECT 1 AS x FROM c_uom WHERE x12de355=? AND ad_client_id IN (0,?)", [c, CURC]).length ? null : String(c); }
   function answer(rs, tag) { return rs.map(function (r) { var o = { key: r.key, selected: r.selected };
     if (r.erpunit !== undefined) { o.erpunit = r.erpunit; var u = String(r.item).replace(/^Unit: /, '');
       if (!o.erpunit) { var opts = (r.options && r.options.erpunit || []).filter(function (n) { return n.toLowerCase() === u.toLowerCase(); }); if (opts.length === 1) o.erpunit = opts[0]; }
-      var kk = tag + '|' + u; if (!UNITSAID[kk]) { UNITSAID[kk] = 1; say('§IDF-UNIT tenant=' + tag + ' source_unit=' + J(u) + ' answered=' + J(o.erpunit || '') + ' how=' + (r.erpunit ? 'exact name (the form\'s own suggestion)' : o.erpunit ? 'case-insensitive name match (harness answer)' : 'NO ANSWER POSSIBLE') + ' used_by=' + r.infile); } }
+      if (!o.erpunit) { var uc = unitCode(u); if (uc) o.newcode = uc; }   // no twin unit: keep the source unit as a NEW unit under its own X12DE355 (fixture), when that is <= 4 characters and free
+      var kk = tag + '|' + u; if (!UNITSAID[kk]) { UNITSAID[kk] = 1; say('§IDF-UNIT tenant=' + tag + ' source_unit=' + J(u) + ' answered=' + J(o.erpunit || '') + ' how=' + (r.erpunit ? 'exact name (the form\'s own suggestion)' : o.erpunit ? 'case-insensitive name match (harness answer)' : o.newcode ? 'NEW UNIT, code ' + o.newcode + ' (the source\'s own X12DE355)' : 'NO ANSWER POSSIBLE: the source unit has no usable X12DE355 (' + J(unitCodeRaw(u)) + ')') + ' used_by=' + r.infile); } }
     return o; }); }
 
   // ═══ GEN ═══
@@ -124,7 +131,7 @@ var KEYTXT = { M_ProductPrice: 'price list Name + version Name + product Value',
     opt = opt || {};
     // the twin's calendar year is the year of the source's opening-stock date (a tenant whose stock was counted in 2004 has a 2004 calendar; the period rule itself is not touched)
     var invDates = fxCompare.tables.m_inventory.rows.filter(function (h) { return String(h.ad_client_id) === String(fxCompare.source.client) && fxCompare.tables.m_inventoryline.rows.some(function (l) { return l.m_inventory_id === h.m_inventory_id; }); }).map(function (h) { return String(h.movementdate).slice(0, 10); }).sort();
-    var T = birth(tag.replace(/\W/g, ' ') + ' Co', invDates[0]), C = T.clientId, S = session(T), CLIENT = fxCompare.source.client;
+    var T = birth(tag.replace(/\W/g, ' ') + ' Co', invDates[0]), C = T.clientId, _s = (CURFX = fxCompare, CURC = T.clientId), S = session(T), CLIENT = fxCompare.source.client;
     say('§IDF-TENANT tenant=' + tag + ' source=' + fxCompare.source.db + '/' + CLIENT + ' twin_client=' + C + ' twin_calendar_date=' + (invDates[0] || '2026-11-10 (default)'));
     var eng = E.run(template, CN.tenantRows(fxEngine), {}), book = eng.book.map(function (b) { return { name: b.name, rows: b.rows.map(function (r) { return r.slice(); }) }; });
     var man = JSON.parse(JSON.stringify(eng.manifest)), droppedBook = null;
@@ -133,7 +140,7 @@ var KEYTXT = { M_ProductPrice: 'price list Name + version Name + product Value',
     var before = {}; function idOf(sh, r) { return sh === 'M_Product_PO' ? r.m_product_id + '|' + r.c_bpartner_id : r[A.sheets[sh].key]; }
     A.order.forEach(function (sh) { before[sh] = {}; q('SELECT * FROM ' + A.sheets[sh].table + ' WHERE ad_client_id=?', [C]).forEach(function (r) { before[sh][idOf(sh, r)] = 1; }); });
     // run, with refusals taken out and reported (the loader is all-or-nothing)
-    var unitNo = {}, refused = {}, blocked = null, cur = null, files, rounds = 0, excluded = {};
+    var lastRows = null, unitNo = {}, refused = {}, blocked = null, cur = null, files, rounds = 0, excluded = {};
     function mk() {
       var b2 = book.map(function (b) { return { name: b.name, rows: b.rows.filter(function (r, i) { return i === 0 || !excluded[b.name + '|' + i]; }) }; });
       var m2 = JSON.parse(JSON.stringify(man)); m2.sheets.forEach(function (s) { var b = b2.find(function (x) { return x.name === s.sheet; }); s.rows = b.rows.length - 1; });
@@ -142,7 +149,7 @@ var KEYTXT = { M_ProductPrice: 'price list Name + version Name + product Value',
     for (; rounds < 12; rounds++) {
       files = mk(); var r1 = S.rows(files, null); cur = answer(r1, tag);
       // a source unit with no ERP unit to answer with: the form refuses the whole file until answered, so the products using it are taken out and reported (the form has no way to keep a unit of its own)
-      var noAns = r1.filter(function (r, i) { return r.erpunit !== undefined && !cur[i].erpunit; }).map(function (r) { return String(r.item).replace(/^Unit: /, ''); }), pb = book.find(function (b) { return /M_Product$/.test(b.name); });
+      var noAns = r1.filter(function (r, i) { return r.erpunit !== undefined && !cur[i].erpunit && !cur[i].newcode; }).map(function (r) { return String(r.item).replace(/^Unit: /, ''); }), pb = book.find(function (b) { return /M_Product$/.test(b.name); });
       noAns.forEach(function (u) { unitNo[u] = 1; });
       if (noAns.length && pb) { var ui = pb.rows[0].indexOf('C_UOM_ID'), cu = 0; pb.rows.forEach(function (r, i) { if (i && noAns.indexOf(r[ui]) >= 0 && !excluded[pb.name + '|' + i]) { excluded[pb.name + '|' + i] = 1; cu++;
           (refused[tb(pb.name)] = refused[tb(pb.name)] || []).push({ row: i, cells: pb.rows[0].map(function (h, j) { return h + '=' + r[j]; }).filter(function (x) { return !/=$/.test(x); }).slice(0, 5).join('; '), why: 'unit "' + r[ui] + '" has no ERP unit to answer with (the form refuses the file until every used unit is answered)' }); } });
@@ -150,7 +157,8 @@ var KEYTXT = { M_ProductPrice: 'price list Name + version Name + product Value',
       var r2 = S.rows(files, cur);
       var probs = r2.filter(function (r) { return /^⚠/.test(r.item); }).map(function (r) { return r.item; });
       if (probs.length) { blocked = probs; break; }
-      var errs = r2.log.filter(function (l) { return /^§NINJA-ERR /.test(l); });
+      lastRows = r2;
+      var errs = r2.log.filter(function (l) { return /^§NINJA-ERR /.test(l) && !/duplicate key value/.test(l); });   // a key the tenant already holds is the LOADER's to skip (already-there), not the harness's
       if (!errs.length) break;
       var fresh = 0;
       errs.forEach(function (l) { var m = /^§NINJA-ERR (\S+) row (\d+)([\s\S]*)$/.exec(l); if (!m) return; var sh = m[1], ri = Number(m[2]) - 1, tgt = sh, idx = ri;   // spreadsheet row n = rows[n-1]
@@ -207,15 +215,15 @@ var KEYTXT = { M_ProductPrice: 'price list Name + version Name + product Value',
       if (sh === 'M_InventoryLine') { var h = SIDE[side]('m_inventory', row.m_inventory_id); parts[0] = h ? keyOf('M_Inventory', h, side) : '#NOHEADER'; }
       return parts.join('␟');
     }
-    var out = {}, tenantFail = [], clsOf = {}, cov = {}, unattr = [];
+    var out = {}, tenantFail = [], clsOf = {}, cov = {}, unattr = [], alreadyBy = {};
     function classify(sh, r, cm, bornHit) {
-      if (bornHit) return 'key-already-in-tenant';
-      if (sh === 'C_UOM') return 'unit-not-carried';
+      if (bornHit) return 'already-there';
+      if (sh === 'C_UOM') return srcT.m_product.rows.some(function (p) { return p.c_uom_id === r.c_uom_id; }) ? 'unattributed' : 'unit-not-carried';   // a unit no product uses is dropped by the form (ninja_migrate_process.mjs:59); a used one is answered (mapped or kept)
       if (sh === 'M_Product') { if (unitNo[cm['C_UOM_ID']]) return 'unit-not-carried'; if (cm['C_TaxCategory_ID>IsDefault'] !== 'Y') return 'contract-default-only'; }
       if (sh === 'M_Inventory' && !(srcT.m_inventoryline.rows.some(function (l) { return l.m_inventory_id === r.m_inventory_id; }))) return 'header-without-lines';
       var cols = A.sheets[sh].cols;
       for (var i = 0; i < cols.length; i++) { var c = cols[i]; if (c.kind !== 'lookup' || r[c.col] == null) continue; var pc = clsOf[c.target] && clsOf[c.target][r[c.col]];
-        if (pc && pc !== 'key-already-in-tenant') return pc === 'unattributed' ? 'unattributed' : 'cascade:' + pc.replace(/^cascade:/, ''); }   // a parent the born tenant already holds is present: it explains nothing about this row
+        if (pc && pc !== 'already-there') return pc === 'unattributed' ? 'unattributed' : 'cascade:' + pc.replace(/^cascade:/, ''); }   // a parent the born tenant already holds is present: it explains nothing about this row
       return 'unattributed';
     }
     var oneLine = [];
@@ -232,7 +240,7 @@ var KEYTXT = { M_ProductPrice: 'price list Name + version Name + product Value',
         var kk = keyOf(sh, r, 'source'), list = L[kk]; used[kk] = used[kk] || 0;
         if (list && list.length > 1 && used[kk] === 0) st.dupKeys++;
         var lr = list && list[used[kk]]; if (!lr) { st.unmatchedSource++;
-          var cls = classify(sh, r, cmpRow(sh, r, 'source'), !!bornByKey[kk]); (clsOf[S0.table] = clsOf[S0.table] || {})[r[S0.key]] = cls; var cv = cov[cls] = cov[cls] || { rows: 0, sheets: {} }; cv.rows++; cv.sheets[sh] = 1; if (cls === 'unattributed') unattr.push({ sheet: sh, key: kk.replace(/␟/g, ' | ') }); (st.examples.__unmatched = st.examples.__unmatched || []).push(kk.replace(/␟/g, ' | '));
+          var cls = classify(sh, r, cmpRow(sh, r, 'source'), !!bornByKey[kk]); (clsOf[S0.table] = clsOf[S0.table] || {})[r[S0.key]] = cls; var cv = cov[cls] = cov[cls] || { rows: 0, sheets: {} }; cv.rows++; cv.sheets[sh] = 1; if (cls === 'already-there') alreadyBy[sh] = (alreadyBy[sh] || 0) + 1; if (cls === 'unattributed') unattr.push({ sheet: sh, key: kk.replace(/␟/g, ' | ') }); (st.examples.__unmatched = st.examples.__unmatched || []).push(kk.replace(/␟/g, ' | '));
           var pre = bornByKey[kk]; if (pre) { st.preExisting++; var sc0 = cmpRow(sh, r, 'source'), pc0 = cmpRow(sh, pre, 'loaded'); cols.forEach(function (c) { if (sc0[c.header] !== pc0[c.header]) st.preDiff[c.header] = (st.preDiff[c.header] || 0) + 1; }); } return; }
         used[kk]++; st.matched++;
         var sc = cmpRow(sh, r, 'source'), lc = cmpRow(sh, lr, 'loaded');
@@ -250,9 +258,13 @@ var KEYTXT = { M_ProductPrice: 'price list Name + version Name + product Value',
       if (st.preExisting) say('§IDF-PREEXIST tenant=' + tag + ' sheet=' + sh + ' unmatched_source_rows_already_in_the_born_tenant=' + st.preExisting + ' of_unmatched=' + st.unmatchedSource + ' differing_columns_vs_the_born_row=' + J(st.preDiff));
       if (st.examples.__unmatched) say('§IDF-UNMATCHED tenant=' + tag + ' sheet=' + sh + ' count=' + st.unmatchedSource + ' examples=' + J(st.examples.__unmatched.slice(0, 3)));
     });
+    // what the LOADER says it skipped (the form's own summary rows: `already`), against what the witness computes from the data ("the born tenant held this key")
+    var aform = {}, alMis = []; (lastRows || []).forEach(function (r) { if (r.key > 100 && r.key < 900 && r.already) aform[tb(r.sheet)] = r.already; });
+    A.order.forEach(function (sh) { if ((aform[sh] || 0) !== (alreadyBy[sh] || 0)) alMis.push(sh + ' loader=' + (aform[sh] || 0) + ' witness_rule=' + (alreadyBy[sh] || 0)); });
+    say('§IDF-ALREADY tenant=' + tag + ' loader_summary=' + J(aform) + ' witness_rule=' + J(alreadyBy) + (alMis.length ? ' MISMATCH ' + J(alMis) : ' equal'));
     Object.keys(cov).sort().forEach(function (c) { say('§IDF-COVERAGE tenant=' + tag + ' class=' + c + ' rows=' + cov[c].rows + ' sheets=' + J(Object.keys(cov[c].sheets))); });
     unattr.forEach(function (u) { say('§IDF-UNATTRIBUTED tenant=' + tag + ' sheet=' + u.sheet + ' key=' + J(u.key) + ' fits no adjudicated class'); });
-    return { cov: cov, unattr: unattr, droppedBook: droppedBook, out: out, refused: refused, blocked: blocked, res: res, aft: aft, eng: eng, tenant: C };
+    return { alMis: alMis, cov: cov, unattr: unattr, droppedBook: droppedBook, out: out, refused: refused, blocked: blocked, res: res, aft: aft, eng: eng, tenant: C };
   }
 
   function covVerdict(cov, pin, unattr) {
@@ -321,7 +333,10 @@ var KEYTXT = { M_ProductPrice: 'price list Name + version Name + product Value',
   // ═══ COVERAGE ═══
   var covFail = [];
   Object.keys(summary).forEach(function (tag) { var s = summary[tag]; if (s.blocked) return; var cv = covVerdict(s.cov, PIN[tag], s.unattr); if (!cv.ok) cv.why.forEach(function (w) { covFail.push(tag + ': ' + w); });
+    s.alMis.forEach(function (m) { covFail.push(tag + ': loader\'s already-there count differs from the rule: ' + m); });
     var extra = Object.keys(s.out).filter(function (sh) { return s.out[sh].extraLoaded; }); if (extra.length) covFail.push(tag + ': loaded rows with no source row in ' + J(extra)); });
+  Object.keys(PIN).forEach(function (tg) { var all = {}; Object.keys(OLD_PIN[tg]).concat(Object.keys(PIN[tg])).forEach(function (c) { all[c] = 1; });
+    say('§IDF-REPIN tenant=' + tg + ' ' + Object.keys(all).sort().map(function (c) { return c + ' ' + (OLD_PIN[tg][c] || 0) + '->' + (PIN[tg][c] || 0); }).join(' · ')); });
   say('§IDF-COVERAGE-VERDICT ' + (covFail.length ? 'FAIL ' + J(covFail) : 'PASS') + ' pinned=' + J(PIN));
   say('§IDF-INCONCLUSIVE sheets (no source row, nothing judged)=' + J(inconc));
   say('§IDF-FALSIFIERS-AND-GEN checks judged=' + ALL.judged + ' failed=' + ALL.failed);
