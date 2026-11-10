@@ -1,0 +1,41 @@
+§A5 start ooTB=/tmp/wt-erp-door3 base=http://localhost:8088 day=2026-11-10 break=0 tmp=/tmp/a5-js2zBo
+§A5_LEGACY SHIP-STD-137x2 ship=500143 id=1005311 {"docstatus":"CO","docaction":"CL","processed":"Y","lines":"137:2","ol_qty":"137:2/0/2/0","books_p":"430:540/0|742:0/540","books_s2":"430:460/0|742:0/460"}
+§OBJECT open db=ad_seed-11c985a8c15ba51073a444a9900468a6.db dictionary=present
+§ERP snapshot=hit key=11c985a8c15ba51073a444a9900468a6 ms=113
+§ERP boot db=ad_seed.db replayed_ops=0 oplog=/tmp/a5-js2zBo/twin.ops.jsonl sql_functions=61
+§OBJECT open db=ad_seed-11c985a8c15ba51073a444a9900468a6.db dictionary=present
+§ERP snapshot=hit key=11c985a8c15ba51073a444a9900468a6 ms=70
+§ERP boot db=ad_seed.db replayed_ops=17 oplog=/tmp/a5-js2zBo/twin.ops.jsonl sql_functions=61
+§OBJECT open db=ad_seed-11c985a8c15ba51073a444a9900468a6.db dictionary=present
+§ERP snapshot=hit key=11c985a8c15ba51073a444a9900468a6 ms=66
+§ERP boot db=ad_seed.db replayed_ops=55 oplog=/tmp/a5-js2zBo/twin.ops.jsonl sql_functions=61
+§A5_TWIN SHIP-STD-137x2 ship=500000 id=109 {"docstatus":"CO","docaction":"CL","processed":"Y","lines":"137:2","ol_qty":"137:2/0/2/0","books_p":"430:540/0|742:0/540","books_s2":"430:459/0|742:0/459"}
+§A5_CMP SHIP-STD-137x2 docstatus MATCH legacy=CO twin=CO
+§A5_CMP SHIP-STD-137x2 docaction MATCH legacy=CL twin=CL
+§A5_CMP SHIP-STD-137x2 processed MATCH legacy=Y twin=Y
+§A5_CMP SHIP-STD-137x2 lines MATCH legacy=137:2 twin=137:2
+§A5_CMP SHIP-STD-137x2 ol_qty MATCH legacy=137:2/0/2/0 twin=137:2/0/2/0
+§A5_CMP SHIP-STD-137x2 books_p MATCH legacy=430:540/0|742:0/540 twin=430:540/0|742:0/540
+§A5_CMP SHIP-STD-137x2 books_s2 DIFF legacy=430:460/0|742:0/460 twin=430:459/0|742:0/459
+§A5_SCN SHIP-STD-137x2 DIFF compared=7 diffs=1 nonEmptyBooks=2
+§A5_LEGACY SHIP-STD-136x3 ship=500144 id=1005312 {"docstatus":"CO","docaction":"CL","processed":"Y","lines":"136:3","ol_qty":"136:3/0/3/0","books_p":"NO_FACT_ACCT_ROWS","books_s2":"NO_FACT_ACCT_ROWS"}
+§OBJECT open db=ad_seed-11c985a8c15ba51073a444a9900468a6.db dictionary=present
+§ERP snapshot=hit key=11c985a8c15ba51073a444a9900468a6 ms=62
+§ERP boot db=ad_seed.db replayed_ops=55 oplog=/tmp/a5-js2zBo/twin.ops.jsonl sql_functions=61
+§OBJECT open db=ad_seed-11c985a8c15ba51073a444a9900468a6.db dictionary=present
+§ERP snapshot=hit key=11c985a8c15ba51073a444a9900468a6 ms=63
+§ERP boot db=ad_seed.db replayed_ops=71 oplog=/tmp/a5-js2zBo/twin.ops.jsonl sql_functions=61
+§OBJECT open db=ad_seed-11c985a8c15ba51073a444a9900468a6.db dictionary=present
+§ERP snapshot=hit key=11c985a8c15ba51073a444a9900468a6 ms=67
+§ERP boot db=ad_seed.db replayed_ops=109 oplog=/tmp/a5-js2zBo/twin.ops.jsonl sql_functions=61
+§A5_TWIN SHIP-STD-136x3 ship=500001 id=110 {"docstatus":"CO","docaction":"CL","processed":"Y","lines":"136:3","ol_qty":"136:3/0/3/0","books_p":"430:5400/0|742:0/5400","books_s2":"430:4590/0|742:0/4590"}
+§A5_CMP SHIP-STD-136x3 docstatus MATCH legacy=CO twin=CO
+§A5_CMP SHIP-STD-136x3 docaction MATCH legacy=CL twin=CL
+§A5_CMP SHIP-STD-136x3 processed MATCH legacy=Y twin=Y
+§A5_CMP SHIP-STD-136x3 lines MATCH legacy=136:3 twin=136:3
+§A5_CMP SHIP-STD-136x3 ol_qty MATCH legacy=136:3/0/3/0 twin=136:3/0/3/0
+§A5_CMP SHIP-STD-136x3 books_p DIFF legacy=NO_FACT_ACCT_ROWS twin=430:5400/0|742:0/5400
+§A5_CMP SHIP-STD-136x3 books_s2 DIFF legacy=NO_FACT_ACCT_ROWS twin=430:4590/0|742:0/4590
+§A5_SCN SHIP-STD-136x3 DIFF compared=7 diffs=2 nonEmptyBooks=2
+§A5_PAIR table=M_InOut action=CO verdict=DIFF scenarios={"SHIP-STD-137x2":"DIFF","SHIP-STD-136x3":"DIFF"}
+§A5_VERDICT INCONCLUSIVE judged=2 match=0 diff=2 inconclusive=0
