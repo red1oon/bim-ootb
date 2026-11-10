@@ -66,7 +66,7 @@ const decimals = (s) => (String(s).match(/\d+\.\d+/g) || []);
   k.chk('K3 "N actions a person can press" = internal/VIEWER_ACTIONS.md N_actions', nAct !== null && said(/has (\d+) actions a person can press/) === nAct, 'page=' + said(/has (\d+) actions a person can press/) + ' report=' + nAct);
   k.chk('K4 "N documents and processes" = internal/ERP_VERBS.md N', nErp !== null && said(/ERP has (\d+) documents and processes/) === nErp, 'page=' + said(/ERP has (\d+) documents and processes/) + ' report=' + nErp);
   const erpOffered = vocab.verbs.filter(v => /^erp\./.test(v.verb)).length;
-  k.chk('K5 the page says no ERP verb is offered, and verbs.json has none', erpOffered === 0 && /offers no ERP verb yet/.test(md), 'erp verbs in vocabulary=' + erpOffered);
+  k.chk('K5 "N ERP verbs" on the page = verbs.json erp.*', said(/door offers (\d+) ERP verbs/) === erpOffered, 'page=' + said(/door offers (\d+) ERP verbs/) + ' vocabulary=' + erpOffered);
 
   // R: run every block
   const got = {};
