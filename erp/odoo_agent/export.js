@@ -128,7 +128,7 @@ function prodType(t) { return t === 'service' ? 'S' : (t === 'consu' || t === 'p
 
   var company = (await ex('res.company', 'search_read', [CTX.allowed_company_ids ? [['id', 'in', CTX.allowed_company_ids]] : []], { fields: ['id', 'name', 'partner_id', 'currency_id', 'country_id'], order: 'id' }));
   var iso = company.length ? (await ex('res.currency', 'read', [[m2o(company[0].currency_id)]], { fields: ['name'] }))[0].name : '';
-  var heldCo = await ex('res.company', 'search_read', [[]], { fields: ['partner_id'], context: { active_test: false } });   // every company's own partner is held (H4: the others too)
+  var heldCo = await ex('res.company', 'search_read', [[]], { fields: ['id', 'name', 'partner_id', 'currency_id', 'country_id'], order: 'id', context: { active_test: false } });   // every company's own partner is held (H4: the others too)
 
   // 01 C_UOM. X12DE355 (mandatory, 4 chars) has no Odoo source → left blank for the ERP form's UoM-mapping step.
   var uoms = await slice('uom.uom', [], ['id', 'name', 'category_id', 'uom_type', 'factor', 'rounding']);
@@ -153,6 +153,7 @@ function prodType(t) { return t === 'service' ? 'S' : (t === 'consu' || t === 'p
   // 03 M_Product_Category, parent by Value (Odoo complete_name is unique; Name is not — two "Saleable"), parents first.
   var cats = await slice('product.category', [], ['id', 'name', 'complete_name', 'parent_id']);
   var catById = {}; cats.forEach(function (c) { catById[c.id] = c; });
+  var catsRaw = cats.slice();   // as Odoo returned them (the raw door below); the sort is the mapping's
   cats.sort(function (a, b) { return a.complete_name.split(' / ').length - b.complete_name.split(' / ').length || a.id - b.id; });
   var catKey = keys('M_Product_Category', 'Value', cats, function (c) { return c.complete_name; });
   sheet('M_Product_Category', ['Value', 'Name', 'M_Product_Category_Parent_ID>Value'], cats.map(function (c) { return { Value: catKey[c.id], Name: c.name,
@@ -177,9 +178,9 @@ function prodType(t) { return t === 'service' ? 'S' : (t === 'consu' || t === 'p
   var internal = {}; heldCo.forEach(function (c) { internal[m2o(c.partner_id)] = 'company'; }); users.forEach(function (u) { internal[m2o(u.partner_id)] = internal[m2o(u.partner_id)] || 'user'; });
   var countryIds = [], stateIds = [];
   partners.forEach(function (p) { if (p.country_id) countryIds.push(m2o(p.country_id)); if (p.state_id) stateIds.push(m2o(p.state_id)); });
-  var cc = {}, st = {};
-  if (countryIds.length) (await ex('res.country', 'read', [Array.from(new Set(countryIds))], { fields: ['code'] })).forEach(function (c) { cc[c.id] = c.code; });
-  if (stateIds.length) (await ex('res.country.state', 'read', [Array.from(new Set(stateIds))], { fields: ['name'] })).forEach(function (s) { st[s.id] = s.name; });
+  var cc = {}, st = {}, ccRows = [], stRows = [];
+  if (countryIds.length) (await ex('res.country', 'read', [Array.from(new Set(countryIds))], { fields: ['code'] })).forEach(function (c) { cc[c.id] = c.code; ccRows.push(c); });
+  if (stateIds.length) (await ex('res.country.state', 'read', [Array.from(new Set(stateIds))], { fields: ['name'] })).forEach(function (s) { st[s.id] = s.name; stRows.push(s); });
   var byId = {}; partners.forEach(function (p) { byId[p.id] = p; });
   // a contact belongs to its COMMERCIAL partner (Odoo's commercial_partner_id: the top company, also for an address under a person under a company)
   function top(p) { return byId[m2o(p.commercial_partner_id)] || p; }
@@ -187,7 +188,7 @@ function prodType(t) { return t === 'service' ? 'S' : (t === 'consu' || t === 'p
   var bpKey = keys('C_BPartner', 'Value', partners.filter(function (p) { return !isHeld(p) && top(p).id === p.id; }), function (p) { return p.ref || String(p.id); });
   function val(p) { return bpKey[p.id]; }
   function hasAddr(p) { return !!(p.street || p.street2 || p.city || p.zip || p.country_id); }
-  var coCountry = company.length && company[0].country_id ? (await ex('res.country', 'read', [[m2o(company[0].country_id)]], { fields: ['code'] }))[0].code : '';
+  var coCountryRow = company.length && company[0].country_id ? (await ex('res.country', 'read', [[m2o(company[0].country_id)]], { fields: ['code'] }))[0] : null, coCountry = coCountryRow ? coCountryRow.code : '';
   var locRows = [], bplRows = [], userRows = [], bpRows = [], noCountry = [];
   function addLoc(p, bpValue) {   // one C_Location per Odoo address, identified by C_Location_UU (H1)
     var country = p.country_id ? cc[m2o(p.country_id)] : coCountry;
@@ -229,9 +230,10 @@ function prodType(t) { return t === 'service' ? 'S' : (t === 'consu' || t === 'p
   sheet('AD_User', ['Name', 'EMail', 'Phone', 'Phone2', 'C_BPartner_ID>Value', 'IsActive'], userRows, 'res.partner [] (contacts)');
 
   // 09 M_Product, 10 M_Product_PO (one row per product.supplierinfo)
-  var prods = await slice('product.product', [], ['id', 'default_code', 'name', 'categ_id', 'uom_id', 'detailed_type', 'barcode', 'weight', 'volume', 'description', 'list_price', 'standard_price', 'active'], 'id', { active_test: false });
+  var prF = ['id', 'default_code', 'name', 'categ_id', 'uom_id', 'detailed_type', 'barcode', 'weight', 'volume', 'description', 'list_price', 'standard_price', 'product_tmpl_id', 'active'];
+  var prods = await slice('product.product', [], prF, 'id', { active_test: false });
   var sellers = await slice('product.supplierinfo', [], ['id', 'partner_id', 'product_id', 'product_tmpl_id', 'price', 'product_code', 'min_qty', 'delay']);
-  var tmplOf = {}; (await ex('product.product', 'read', [prods.map(function (p) { return p.id; })], { fields: ['product_tmpl_id'], context: { active_test: false } })).forEach(function (p) { tmplOf[p.id] = m2o(p.product_tmpl_id); });
+  var tmplOf = {}; prods.forEach(function (p) { tmplOf[p.id] = m2o(p.product_tmpl_id); });
   var prodKey = keys('M_Product', 'Value', prods, function (p) { return p.default_code || String(p.id); });
   function pval(p) { return prodKey[p.id]; }
   sheet('M_Product', ['Value', 'Name', 'Description', 'M_Product_Category_ID>Value', 'C_UOM_ID', 'ProductType', 'UPC', 'Weight', 'Volume', 'C_TaxCategory_ID>IsDefault', 'IsActive'],
@@ -330,8 +332,8 @@ function prodType(t) { return t === 'service' ? 'S' : (t === 'consu' || t === 'p
     RAWMAN[name] = { model: model, count: count, fields_read: read, fields_missing: [], domain: JSON.stringify(domain) };
     console.log('§ODOO-EXPORT raw set=' + name + ' model=' + model + ' rows=' + rows.length + ' count=' + count); }
   var curRow = company.length ? (await ex('res.currency', 'read', [[m2o(company[0].currency_id)]], { fields: ['name', 'decimal_places'] }))[0] : null;
-  rawSet('account.account', 'account.account', ['id', 'code', 'name', 'account_type', 'reconcile'], [],
-    flat('account.account', await ex('account.account', 'search_read', [[]], { fields: ['id', 'code', 'name', 'account_type', 'reconcile'], order: 'id' })), await ex('account.account', 'search_count', [[]]));
+  rawSet('account.account', 'account.account', ['id', 'code', 'name', 'account_type', 'group_id', 'reconcile'], [],
+    flat('account.account', await ex('account.account', 'search_read', [[]], { fields: ['id', 'code', 'name', 'account_type', 'group_id', 'reconcile'], order: 'id' })), await ex('account.account', 'search_count', [[]]));
   var tbDom = [['parent_state', '=', 'posted'], ['date', '<=', CUTOVER]];
   var tbRows = flat('account.move.line', await ex('account.move.line', 'read_group', [tbDom, ['balance:sum', 'debit:sum', 'credit:sum'], ['account_id']], { lazy: false, orderby: 'account_id' }));
   var tbCount = await ex('account.move.line', 'search_count', [tbDom]);
@@ -347,6 +349,25 @@ function prodType(t) { return t === 'service' ? 'S' : (t === 'consu' || t === 'p
   rawSet('open_moves', 'account.move', omF, [['id', 'in', '(the moves of open_lines)']], omIds.length ? flat('account.move', await ex('account.move', 'read', [omIds], { fields: omF })) : [], omIds.length);
   // BRIDGE (deleted when the masters run on the engine): the business partner Value this export's workbook gave each partner's commercial partner, and who is held
   rawSet('partner_keys', 'res.partner', ['id', 'commercial', 'value', 'held'], [], partners.map(function (p) { return { id: p.id, commercial: top(p).id, value: val(top(p)) || '', held: isHeld(p) ? String(isHeld(p)) : '' }; }), partners.length);
+  // ── §ODOO-ENGINE-SPEC O1: the MASTER sets, RAW (one set per read the mapping above makes; the mapping reads them back through erp/tests/fixtures/odoo_convert_reference.mjs). ──
+  function cnt(model, domain, archived) { return counts[model + ' ' + JSON.stringify(domain) + (archived ? ' (archived too)' : '')]; }
+  function mset(model, fields, domain, rows, count, archived) { rawSet(model, model, fields, domain, flat(model, rows), count); if (archived) RAWMAN[model].archived_too = true; }
+  mset('uom.uom', ['id', 'name', 'category_id', 'uom_type', 'factor', 'rounding'], [], uoms, cnt('uom.uom', []));
+  mset('account.payment.term', ['id', 'name', 'line_ids'], [], terms, cnt('account.payment.term', []));
+  mset('account.payment.term.line', ['id', 'payment_id', 'value', 'value_amount', 'nb_days'], [], tlines, await ex('account.payment.term.line', 'search_count', [[]]));
+  mset('product.category', ['id', 'name', 'complete_name', 'parent_id'], [], catsRaw, cnt('product.category', []));
+  rawSet('account.group', 'account.group', [], [], [], groups);   // count only: the mapping needs to know whether the source has account groups
+  mset('res.partner', pf, [], partners, cnt('res.partner', [], true), true);
+  mset('res.users', ['id', 'partner_id'], [], users, await ex('res.users', 'search_count', [[]], { context: { active_test: false } }), true);
+  mset('res.company', ['id', 'name', 'partner_id', 'currency_id', 'country_id'], [], heldCo, await ex('res.company', 'search_count', [[]], { context: { active_test: false } }), true);
+  var ccAll = ccRows.slice(); if (coCountryRow && !ccAll.some(function (c) { return c.id === coCountryRow.id; })) ccAll.push(coCountryRow);
+  mset('res.country', ['id', 'code'], [['id', 'in', '(the countries of res.partner and of the company)']], ccAll, ccAll.length);
+  mset('res.country.state', ['id', 'name'], [['id', 'in', '(the states of res.partner)']], stRows, stRows.length);
+  mset('stock.warehouse', ['id', 'name', 'code', 'lot_stock_id', 'partner_id'], [], whs, cnt('stock.warehouse', []));
+  mset('product.product', prF, [], prods, cnt('product.product', [], true), true);
+  mset('product.supplierinfo', ['id', 'partner_id', 'product_id', 'product_tmpl_id', 'price', 'product_code', 'min_qty', 'delay'], [], sellers, cnt('product.supplierinfo', []));
+  mset('stock.location', ['id', 'complete_name', 'warehouse_id', 'posx', 'posy', 'posz', 'active'], [['usage', '=', 'internal']], locs, cnt('stock.location', [['usage', '=', 'internal']], true), true);
+  mset('stock.quant', ['id', 'product_id', 'location_id', 'quantity', 'lot_id'], [['location_id.usage', '=', 'internal']], quants, cnt('stock.quant', [['location_id.usage', '=', 'internal']]));
   var tbSum = tbRows.reduce(function (n, r) { return n + r.balance; }, 0), tbLines = tbRows.reduce(function (n, r) { return n + r.__count; }, 0);
   console.log('§ODOO-EXPORT tb accounts=' + tbRows.length + ' lines=' + tbLines + ' count=' + tbCount + ' sum=' + tbSum.toFixed(curRow ? curRow.decimal_places : 2) + ' open_lines=' + openLines.length + ' open_moves=' + omIds.length);
   ok(tbLines === tbCount, 'every posted account.move.line up to the cut-over is in exactly one trial-balance row', tbLines + '==' + tbCount);
@@ -404,7 +425,8 @@ function prodType(t) { return t === 'service' ? 'S' : (t === 'consu' || t === 'p
   fs.writeFileSync(path.join(OUT, 'manifest.json'), JSON.stringify(manifest, null, 1));
   fs.writeFileSync(path.join(OUT, 'provenance.json'), JSON.stringify(provenance));
   fs.writeFileSync(path.join(OUT, 'odoo_export.json'), JSON.stringify({ manifest: { tool: 'odoo_agent/export.js', format: 'odoo-export-json-v1', odoo_version: version, db: DB, cutover: CUTOVER,
-    currency: iso, currency_places: curRow ? curRow.decimal_places : null, company_id: coId, sets: RAWMAN }, sets: RAW }, null, 1));
+    currency: iso, currency_places: curRow ? curRow.decimal_places : null, company_id: coId, company_name: company[0].name, company_country_code: coCountry,
+    other_companies: others.map(function (c) { return { id: c.id, name: c.name }; }), other_company_commands: otherCmd, sets: RAWMAN }, sets: RAW }, null, 1));
   notes.forEach(function (n) { console.log('§ODOO-EXPORT note ' + n); });
   if (!fails) { fs.rmSync(FINAL, { recursive: true, force: true }); fs.renameSync(OUT, FINAL); }
   console.log('\n' + (fails ? '🔴 ODOO-EXPORT FAIL (' + fails + ') — nothing published; the incomplete files are in ' + OUT : '🟢 ODOO-EXPORT PASS — odoo_migration.xlsx (' + sheets.length + ' sheets) + manifest.json + provenance.json + odoo_export.json (open balances) written to ' + FINAL));

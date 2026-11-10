@@ -363,7 +363,48 @@ var ALL_BRANCHES = ['refuse:lead', 'refuse:fixed-asset', 'refuse:po-no-supplier'
     check('ODOO-OPEN-MUTANT', mu[0], 'the template with "' + mu[0] + '" breaks a claim on the recorded export or on a variant (the open-balance checks can fail)', !!found, 'no case found a difference'); if (found) say('  §MIGE-MUTANT odoo:' + mu[0] + ' caught at ' + found); });
   verdict('ODOO-OPEN-MUTANT');
 
-  var V = ['LOAD', 'FIELD', 'GUIDE', 'DIFF', 'MUTANT', 'BC-LOAD', 'BC-GUIDE', 'BC-DIFF', 'BC-MUTANT', 'ODOO-OPEN', 'ODOO-OPEN-GEN', 'ODOO-OPEN-MUTANT'].map(function (k) { var c = CASES[k] || {}; return !c.judged ? 'INCONCLUSIVE' : c.failed ? 'FAIL' : 'PASS'; });
+  // ═══ ODOO-REF (§ODOO-ENGINE-SPEC O1): the agent's RAW master sets + the frozen oracle (fixtures/odoo_convert_reference.mjs = the mapping half of export.js, moved verbatim) ═══
+  // Issue proven: the mapping was moved out of the agent WITHOUT changing a cell — convert(raw odoo_export.json) == the workbook, manifest.json and provenance.json the agent wrote in the
+  // same run. The oracle is never edited to pass; template work (O2) is judged against it. ODOO-REF = the live demo (odoodemo); ODOO-REF-MESSY = the messy copy, only if it was recorded.
+  var CONV = await import(url.pathToFileURL(path.join(__dirname, 'fixtures', 'odoo_convert_reference.mjs')).href);
+  function refBook(file) { var wb = XLSX.read(fs.readFileSync(file)); return wb.SheetNames.map(function (n) { return { name: n, rows: XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, defval: '', raw: true }) }; }); }
+  function refDiff(book, ref) {   // every differing cell: sheet, row, column, both values (as the workbook shows them: strings)
+    var d = [], n = Math.max(book.length, ref.length);
+    for (var si = 0; si < n; si++) { var a = book[si], b = ref[si]; if (!a || !b || a.name !== b.name) { d.push({ sheet: (a || {}).name + ' vs ' + (b || {}).name, why: 'sheet missing or renamed' }); continue; }
+      var rn = Math.max(a.rows.length, b.rows.length); for (var ri = 0; ri < rn; ri++) { var ra = a.rows[ri] || [], rb = b.rows[ri] || [], cn = Math.max(ra.length, rb.length);
+        for (var ci = 0; ci < cn; ci++) { var va = ra[ci] === undefined || ra[ci] === null ? '' : String(ra[ci]), vb = rb[ci] === undefined || rb[ci] === null ? '' : String(rb[ci]);
+          if (va !== vb) d.push({ sheet: a.name, row: ri + 1, col: ci + 1, header: (a.rows[0] || [])[ci], oracle: va, workbook: vb }); } } }
+    return d;
+  }
+  var jr = function (x) { return canon(JSON.parse(JSON.stringify(x))); };
+  function refJudge(dir, exp, r) {   // -> { book: [differences], manifest: [differing keys], provenance: [differing sheets] }
+    var refM = JSON.parse(fs.readFileSync(path.join(dir, 'manifest.json'), 'utf8')), refP = JSON.parse(fs.readFileSync(path.join(dir, 'provenance.json'), 'utf8')), mk = [];
+    Object.keys(Object.assign({}, refM, r.manifest)).forEach(function (k) { if (k !== 'tool' && !same(jr(r.manifest[k]), refM[k])) mk.push(k); });
+    var pv = Object.keys(Object.assign({}, refP, r.provenance)).filter(function (k) { return !same(jr(r.provenance[k]), refP[k]); });
+    return { book: refDiff(r.book, refBook(path.join(dir, 'odoo_migration.xlsx'))), manifest: mk, provenance: pv, refM: refM };
+  }
+  function refCase(cs, dir) {
+    var exp = JSON.parse(fs.readFileSync(path.join(dir, 'odoo_export.json'), 'utf8')), r = CONV.convert(exp), j = refJudge(dir, exp, r);
+    say('§MIGE-' + cs + ' dir=' + path.basename(dir) + ' sheets=' + r.book.length + ' rows=' + r.book.reduce(function (n, s) { return n + s.rows.length - 1; }, 0) + ' book_diffs=' + j.book.length + ' manifest_diffs=' + j.manifest.length + ' provenance_diffs=' + j.provenance.length);
+    j.book.slice(0, 40).forEach(function (x) { say('  §MIGE-' + cs + '-CELL ' + J(x)); });
+    check(cs, 'book', 'convert(odoo_export.json) equals the recorded odoo_migration.xlsx, all 17 sheets, cell for cell (cells compared as the strings the workbook shows)', r.book.length === 17 && j.book.length === 0, j.book.slice(0, 5));
+    check(cs, 'manifest', 'convert(...).manifest equals manifest.json on every key except "tool" (format, workbook, odoo_version, db, cutover, currency, company, company_id, other_companies, sheets, source_counts, patches, renamed, held, notes, self_check_fails)', j.manifest.length === 0, j.manifest);
+    check(cs, 'provenance', 'convert(...).provenance equals provenance.json (every sheet row -> its Odoo record)', j.provenance.length === 0, j.provenance);
+    var filled = r.book.filter(function (s) { return s.rows.length > 1; }).length;
+    check(cs, 'non-vacuous', 'the recording really carries what is judged: rows in >= 15 of the 17 sheets, >= 1 patch, >= 1 held partner, >= 1 note', filled >= 15 && j.refM.patches.length >= 1 && j.refM.held.length >= 1 && j.refM.notes.length >= 1, { filled: filled, patches: j.refM.patches.length, held: j.refM.held.length, notes: j.refM.notes.length });
+    var muts = [['every partner\'s VAT number changed', function (e) { e.sets['res.partner'].forEach(function (x) { x.vat = 'CHANGED'; }); }],
+      ['a product archived', function (e) { e.sets['product.product'].filter(function (x) { return x.active; })[0].active = false; }],
+      ['a payment term renamed', function (e) { e.sets['account.payment.term'][0].name = e.sets['account.payment.term'][0].name + ' (changed)'; }]];
+    muts.forEach(function (m) { var e2 = JSON.parse(JSON.stringify(exp)); m[1](e2); var j2 = refJudge(dir, e2, CONV.convert(e2)), n = j2.book.length + j2.manifest.length + j2.provenance.length;
+      check(cs, 'falsifier', 'with one mapping input changed (' + m[0] + ') the equality check FAILS (a check that cannot fail is not a witness)', n > 0, { book: j2.book.length, manifest: j2.manifest, provenance: j2.provenance.length }); });
+    verdict(cs);
+  }
+  refCase('ODOO-REF', path.join(__dirname, 'fixtures', 'odoo_export_2026-11-10'));
+  var MESSY = path.join(__dirname, 'fixtures', 'odoo_export_messy_2026-11-10');
+  if (fs.existsSync(path.join(MESSY, 'odoo_export.json'))) refCase('ODOO-REF-MESSY', MESSY);
+  else say('§MIGE-ODOO-REF-MESSY verdict=INCONCLUSIVE (database not on this Odoo)');
+
+  var V = ['LOAD', 'FIELD', 'GUIDE', 'DIFF', 'MUTANT', 'BC-LOAD', 'BC-GUIDE', 'BC-DIFF', 'BC-MUTANT', 'ODOO-OPEN', 'ODOO-OPEN-GEN', 'ODOO-OPEN-MUTANT', 'ODOO-REF'].map(function (k) { var c = CASES[k] || {}; return !c.judged ? 'INCONCLUSIVE' : c.failed ? 'FAIL' : 'PASS'; });
   var overall = V.indexOf('FAIL') >= 0 ? 'FAIL' : (V.indexOf('INCONCLUSIVE') >= 0 || missed.length) ? 'INCONCLUSIVE' : 'PASS';
   say('§MIGE verdict=' + overall + ' judged=' + ALL.judged + ' failed=' + ALL.failed + (missed.length ? ' (DIFF coverage gaps: ' + missed.length + ')' : ''));
   process.exit(overall === 'FAIL' ? 1 : 0);
