@@ -2,12 +2,12 @@
 # ⚠ DO NOT REMOVE — R9 (prompts/MIGRATE_INSTALL_TENANT.md): ONE command, one line per migration-lane witness.
 # Logs: /tmp/count_logs/mig_<name>.log . READ THE LOG — the exit code is not evidence.
 # Per witness: exit code + last verdict line + judged count. A witness whose log has no verdict line, judged=0,
-# or only INCONCLUSIVE is shown as NOJUDGE (never PASS). SLOW=1 adds the 2.5-min iDempiere falsifier.
+# or only INCONCLUSIVE is shown as NOJUDGE (never PASS). SLOW=1 adds the 2.5-min iDempiere falsifier and the ~5-min live-page migration_journey.
 cd "$(dirname "$0")"; mkdir -p /tmp/count_logs
 W="migrate_engine open_balances already_there plugin_role_access sap_migrate bc_migrate odoo_form odoo_messy
    import_product import_invoice import_payment import_order import_gljournal import_inventory import_bankstatement
-   bankstatement post_bankstatement sapbc_open idempiere_open"
-[ "${SLOW:-0}" = 1 ] && W="$W idempiere_falsifier"
+   bankstatement post_bankstatement sapbc_open seed_patch_idempotent idempiere_open"
+[ "${SLOW:-0}" = 1 ] && W="$W idempiere_falsifier migration_journey"   # migration_journey: live page, headless Chromium, ~5 min (R1/R2)
 bad=0
 for w in $W; do
   f=witness_$w.js; log=/tmp/count_logs/mig_$w.log
