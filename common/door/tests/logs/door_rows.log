@@ -1,0 +1,13 @@
+  ✅ R1 erp.list docstatus=CO: total = independent count (14), shown = min(5,total), every row CO  total=14 shown=5
+  ✅ R2 default cap: shown=50, total > 50 and equals the kind's own count (not the whole table read out)  shown=50 total=1193 independent=1193
+  ✅ R3 two pages of 5 = the first 10 rows of the independent sort, in order, no overlap  got=["Basic Roof:Live Roof over Wood Joist Flat Roof:184483","Basic Roof:Live Roof over Wood Joist Flat Roof:184483","Basic Roof:Live Roof over Wood Joist Flat Roof:184483:2"]…
+  ✅ R4a an unknown column in a filter, in columns and in sort each fail naming it, with no rows  error,error,error
+  ✅ R4b a value with a quote is bound, not run (matches 0 rows)  total=0
+  ✅ R5a erp.sum GrandTotal (CO) = independent scaled-integer sum 19505.9  sum=19505.9 n=14
+  ✅ R5b the exact adder: 0.1+0.2+0.3 = 0.6 (floats: 0.6000000000000001)  0.6
+  ✅ R6 summing a text column is refused, naming why  refused DocumentNo is not a number column (string), so it cannot be summed
+  ✅ R7 erp.group by DocStatus: each count = independent count(*) per value; counts add to the kind (44)  groups=4 records=44
+  ✅ R7b a filter narrows the groups (only CO, 14)  [{"DocStatus":"CO","count":14}]
+  ✅ R8 empty kind "Payroll Employee Attribute": list and group answer inconclusive, not ok  inconclusive,inconclusive
+  ✅ R9 an AI actor may run the read verbs  ok
+§WITNESS_DOOR_ROWS pass=12 fail=0 inconclusive=0 verdict=PASS

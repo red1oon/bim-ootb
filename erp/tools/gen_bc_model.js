@@ -12,7 +12,7 @@ var fs = require('fs'), path = require('path'), cp = require('child_process');
 var REPO = process.argv[2] || path.join(process.env.HOME, '.cache', 'bcapps', 'repo'), BASE = path.join(REPO, 'src', 'Layers', 'W1', 'BaseApp');
 var OUT = path.join(__dirname, '..', 'plugins', 'bc_model.mjs');   // an ES module (export default …): the plugin imports it; node tools read it with readModel()
 // the tables the converter reads (BC table id → why) — the mapping lives in plugins/bc_migrate_convert.mjs, this is only the extract list
-var TABLES = { 3: 'Payment Terms', 9: 'Country/Region', 14: 'Location', 15: 'G/L Account', 18: 'Customer', 23: 'Vendor', 27: 'Item', 32: 'Item Ledger Entry',
+var TABLES = { 3: 'Payment Terms', 9: 'Country/Region', 14: 'Location', 15: 'G/L Account', 17: 'G/L Entry', 18: 'Customer', 21: 'Cust. Ledger Entry', 23: 'Vendor', 25: 'Vendor Ledger Entry', 27: 'Item', 32: 'Item Ledger Entry', 92: 'Customer Posting Group', 93: 'Vendor Posting Group', 270: 'Bank Account', 271: 'Bank Account Ledger Entry', 277: 'Bank Account Posting Group', 379: 'Detailed Cust. Ledg. Entry', 380: 'Detailed Vendor Ledg. Entry',
   79: 'Company Information', 98: 'General Ledger Setup', 99: 'Item Vendor', 204: 'Unit of Measure', 222: 'Ship-to Address', 5722: 'Item Category', 7354: 'Bin' };
 function log(s) { console.log(s); }
 function walk(d, out) { fs.readdirSync(d, { withFileTypes: true }).forEach(function (e) { var p = path.join(d, e.name); if (e.isDirectory()) walk(p, out); else if (/\.al$/.test(e.name)) out.push(p); }); return out; }
