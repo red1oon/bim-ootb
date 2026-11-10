@@ -22,7 +22,7 @@ const ROOT = path.join(__dirname, '..', '..');
 const LIVE = 'https://red1oon.github.io/bim-ootb/';
 const FILES = {   // name -> [repo path from the repo root, name beside door.js]
   'door.js': ['common/door/door.js'], 'verbs.json': ['common/door/verbs.json'], 'edit_cli.js': ['modeller/tools/edit_cli.js'],
-  'bim_mcp.js': ['modeller/tools/bim_mcp.js'], 'viewer_verbs.js': ['viewer/tools/viewer_verbs.js'], 'film_path_vis.js': ['viewer/tools/film_path_vis.js'], 'schedule_verbs.js': ['viewer/tools/schedule_verbs.js'], 'object_cli.js': ['common/door/object_cli.js'], 'erp_cli.js': ['common/door/erp_cli.js']
+  'bim_mcp.js': ['modeller/tools/bim_mcp.js'], 'viewer_verbs.js': ['viewer/tools/viewer_verbs.js'], 'film_path_vis.js': ['viewer/tools/film_path_vis.js'], 'schedule_verbs.js': ['viewer/tools/schedule_verbs.js'], 'object_cli.js': ['common/door/object_cli.js'], 'erp_cli.js': ['common/door/erp_cli.js'], 'walk_cli.js': ['modeller/tools/walk_cli.js']
 };
 function locate(name) {
   const beside = path.join(__dirname, name), repo = path.join(ROOT, FILES[name][0]);
@@ -31,7 +31,7 @@ function locate(name) {
 const curlFor = (names) => names.map(n => 'curl -O ' + LIVE + FILES[n][0]).join('\n');
 function missingFiles(names) { return names.filter(n => !fs.existsSync(locate(n))); }
 // The ONLY programs a verb may call. A vocabulary entry names one of these keys; it never names a path or a program (W-VOCAB-NOESCAPE).
-const CLI_TABLE = { edit_cli: locate('edit_cli.js'), viewer_verbs: locate('viewer_verbs.js'), film_path_vis: locate('film_path_vis.js'), schedule_verbs: locate('schedule_verbs.js'), object_cli: locate('object_cli.js'), erp_cli: locate('erp_cli.js') };
+const CLI_TABLE = { edit_cli: locate('edit_cli.js'), viewer_verbs: locate('viewer_verbs.js'), film_path_vis: locate('film_path_vis.js'), schedule_verbs: locate('schedule_verbs.js'), object_cli: locate('object_cli.js'), erp_cli: locate('erp_cli.js'), walk_cli: locate('walk_cli.js') };
 const HARM = ['read', 'trial', 'writes', 'posts', 'sends'];
 const STATUS = ['ok', 'refused', 'claim', 'error', 'inconclusive'];
 // §0.6 detail 4. Only the local actors are wired; any other name (email, mobile, device, an outside system) has no proof here: read only, the rest is a claim.
@@ -88,7 +88,12 @@ function validate(entry, args) {
   const names = entry.inputs.map(i => i.name), miss = entry.inputs.filter(i => i.required && (args[i.name] === undefined || args[i.name] === null || args[i.name] === '')).map(i => i.name);
   if (miss.length) return 'missing input: ' + miss.join(', ');
   const extra = Object.keys(args).filter(k => names.indexOf(k) < 0);
+  // §0.13: a verb that declares calls.rest takes further column=value inputs; the ENGINE checks each column against the dictionary (reflection). The door only checks the shape.
+  if (extra.length && entry.calls && entry.calls.rest) { const bad = extra.filter(k => typeof args[k] !== 'string' || !TYPES.string.re.test(args[k]) || !/^[A-Za-z_]\w{0,63}$/.test(k)); return bad.length ? 'input ' + bad[0] + ' must be ' + TYPES.string.what : shapeOf(entry, args); }
   if (extra.length) return 'unknown input: ' + extra.join(', ') + ' (the verb ' + entry.verb + ' takes: ' + names.join(', ') + ')';
+  return shapeOf(entry, args);
+}
+function shapeOf(entry, args) {
   if (BREAK() === 'shape') return null;
   for (const i of entry.inputs) {
     const v = args[i.name]; if (v === undefined) continue;
@@ -115,6 +120,7 @@ function buildArgv(entry, args) {   // the argv template: strings with {input} h
   const sub = (s) => s.replace(/\{(\w+)\}/g, (m, k) => { const i = entry.inputs.filter(x => x.name === k)[0], v = args[k]; return i && i.type === 'number' ? decStr(v) : String(v); });
   const out = [];
   for (const t of entry.calls.argv) { if (typeof t === 'string') out.push(sub(t)); else if (args[t.if] !== undefined) t.args.forEach(a => out.push(sub(a))); }
+  if (entry.calls.rest) Object.keys(args).filter(k => !entry.inputs.some(i => i.name === k)).forEach(k => out.push(entry.calls.rest.flag, k + '=' + args[k]));
   return out;
 }
 function mcpTools(vocab) {   // the connector's tools/list, generated: legacy names, descriptions and schemas byte for byte (W-VOCAB-FRESH)
@@ -244,7 +250,7 @@ function createDoor(opts) {
       e.body.forEach((ln, n) => {
         const pl = parseLine(ln); if (pl.question || pl.blank) throw new Error('verbs.json: ' + e.verb + ' line ' + (n + 1) + ' is not a command');
         const t = vocab.byVerb.get(pl.verb); if (!t) throw new Error('verbs.json: ' + e.verb + ' line ' + (n + 1) + ' calls unknown verb ' + pl.verb);
-        pl.kv.forEach(x => { if (!t.inputs.some(i => i.name === x.k)) throw new Error('verbs.json: ' + e.verb + ' line ' + (n + 1) + ' gives ' + pl.verb + ' an unknown input ' + x.k); });
+        pl.kv.forEach(x => { if (!t.inputs.some(i => i.name === x.k) && !(t.calls && t.calls.rest)) throw new Error('verbs.json: ' + e.verb + ' line ' + (n + 1) + ' gives ' + pl.verb + ' an unknown input ' + x.k); });
         visit(t, chain.concat(e.verb));
         top = Math.max(top, HARM.indexOf(t.harm)); allowed = allowed.filter(a => t.actors.indexOf(a) >= 0);
       });
@@ -308,7 +314,7 @@ function createDoor(opts) {
     }
     if (entry.calls.cli === 'object_cli') {   // exit 0 answered · 3 refused (a dictionary rule or a missing record: an answer) · 1 failed (unknown kind, no dictionary) · 2 usage
       const a = parse();
-      if ((r.code === 0 || r.code === 3) && a !== undefined) return r.code === 3 ? envelope(base, 'refused', { answer: a, raw: r.out, why: a.reason || 'refused' }) : envelope(base, 'ok', { answer: a, raw: r.out, ops: a.ops || [] });
+      if ((r.code === 0 || r.code === 3) && a !== undefined) return r.code === 3 ? envelope(base, 'refused', { answer: a, raw: r.out, why: a.reason || 'refused' }) : a.verdict === 'VACUOUS' ? envelope(base, 'inconclusive', { answer: a, raw: r.out, why: a.summary }) : envelope(base, 'ok', { answer: a, raw: r.out, ops: a.ops || [] });
       return fail('the object engine could not answer (exit ' + r.code + '): ' + (r.err.split('\n').filter(l => /§OBJECT FAIL/.test(l)).pop() || r.err || r.out || 'no output').replace(/^§OBJECT FAIL /, ''));
     }
     if (entry.calls.cli === 'erp_cli') {   // exit 0 answered · 3 refused (not found, not offered, the engine said no: an answer) · 1 failed · 2 usage. `next` = the legal actions the engine reports (verbs(ctx))
@@ -319,6 +325,11 @@ function createDoor(opts) {
         return e;
       }
       return fail('the ERP engine could not answer (exit ' + r.code + '): ' + (r.err.split('\n').filter(l => /§ERP FAIL/.test(l)).pop() || r.err || r.out || 'no output').replace(/^§ERP FAIL /, ''));
+    }
+    if (entry.calls.cli === 'walk_cli') {   // exit 0 answered (verdict OK; VACUOUS = the walk placed nothing, so nothing was counted) · 1 failed (unknown building or discipline, named) · 2 usage
+      const a = parse();
+      if (r.code === 0 && a !== undefined) return envelope(base, a.verdict === 'OK' ? 'ok' : 'inconclusive', { answer: a, raw: r.out, why: a.verdict === 'OK' ? null : a.summary, notChecked: a.notChecked || [] });
+      return fail('the Modeller\'s walker could not answer (exit ' + r.code + '): ' + (r.err.split('\n').filter(l => /§WALK (FAIL|USAGE)/.test(l)).pop() || r.err || r.out || 'no output').replace(/^§WALK (FAIL|USAGE) /, ''));
     }
     return fail('no result mapping for ' + entry.calls.cli);
   }

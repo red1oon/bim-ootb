@@ -2,7 +2,7 @@
 /**
  * # ⚠ DO NOT REMOVE — W-OBJ-VIEWER-OPEN (bim-compiler prompts/NEURO_SYMBOLIC_ORDER_CONTRACT.md §0.8). READ THE §-LOG after every run. Headless Viewer on SwiftShader (CPU); no GPU, no screenshot.
  * ISSUE: a patch that adds the model's dictionary breaking the Viewer's open. The Viewer opens the public Duplex WITH buildings/patches/Duplex_extracted.db.sql served beside it (the loader's own convention),
- *   and the Viewer's own log says the patch applied and no §PATCH_APPLY_FAIL; the Viewer's live database then holds the dictionary (4 kinds) and the generated key, and its element count equals the file's.
+ *   and the Viewer's own log says the patch applied and no §PATCH_APPLY_FAIL; the Viewer's live database then holds the dictionary (5 kinds) and the generated key, and its element count equals the file's.
  *   Falsifier: the same open WITHOUT the patch shows no dictionary (so the dictionary seen above came from the patch, not from the file).
  */
 'use strict';
@@ -30,7 +30,7 @@ async function openOnce(patch) {
   applyLines.forEach(l => k.L('viewer says: ' + l.slice(0, 200)));
   k.L('with patch: ' + JSON.stringify(a.st) + ' pageErrors=' + a.errs.length);
   k.chk('VIEWER-OPEN the Viewer applied the patch (§PATCH_APPLY) and logged no §PATCH_APPLY_FAIL', a.log.some(l => /§PATCH_APPLY model\.db applied/.test(l)) && !a.log.some(l => /PATCH_APPLY_FAIL/.test(l)), applyLines.join(' | ').slice(0, 160));
-  k.chk('VIEWER-OPEN the live database holds the dictionary: 4 kinds, their columns, and the generated key equals guid on every element', Array.isArray(a.st.tables) && a.st.tables[0][0] === 4 && a.st.cols[0][0] > 20 && a.st.gen[0][0] > 0 && a.st.gen[0][0] === a.st.gen[0][1], JSON.stringify(a.st.kinds));
+  k.chk('VIEWER-OPEN the live database holds the dictionary: 5 kinds, their columns, and the generated key equals guid on every element', Array.isArray(a.st.tables) && a.st.tables[0][0] === 5 && a.st.cols[0][0] > 20 && a.st.gen[0][0] > 0 && a.st.gen[0][0] === a.st.gen[0][1], JSON.stringify(a.st.kinds));
   k.chk('VIEWER-OPEN the element count in the Viewer equals the file\'s', nFile > 0 && a.st.elems[0][0] === nFile, 'file=' + nFile + ' viewer=' + a.st.elems[0][0]);
   const b = await openOnce(null);
   k.L('without patch: ' + JSON.stringify(b.st).slice(0, 200));

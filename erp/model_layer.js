@@ -216,7 +216,7 @@
       if (typeof v === 'string' && v.indexOf(NEW) > 0) return v.replace(/#new:(\d+)/g, function (m, d) { return map[Number(d)] == null ? m : '{{opref:' + map[Number(d)] + '}}'; });
       return v; }
     this._opMap = map;                       // Trx op index -> final group index: the observers' key resolution after commit (MV.deliverObserved)
-    var tail = [];
+    var tail = [], self = this;
     var res = out.map(function (o, oi) {
       var c = JSON.parse(JSON.stringify(o));
       // a CREATE whose FK points at a row created LATER in the group (invoice.C_Payment_ID ← the payment its own
@@ -224,7 +224,8 @@
       if (c.fields) Object.keys(c.fields).forEach(function (k) {
         var f = fix(c.fields[k]);
         if (f && typeof f === 'object' && f.__opRef === oi) { delete c.fields[k]; return; }   // its own key: the host assigns it (listTip -opId)
-        if (f && typeof f === 'object' && f.__opRef != null && f.__opRef > oi) { delete c.fields[k]; tail.push({ op_type: 'CRUD_UPDATE', key: c.table, table: c.table, verb: 'update', id: { __opRef: oi }, changes: (function () { var ch = {}; ch[k] = { old: null, new: f }; return ch; })() }); }
+        if (f && typeof f === 'object' && f.__opRef != null && f.__opRef > oi) { delete c.fields[k]; var tic = self.idCol(c.table);   // a table without a single key column is addressed by its <table>_uu, as every other UPDATE of it (Trx.update): without idCol the applier wrote WHERE <table>_id=? (W-GROUPOPS-COMPOSITE)
+          tail.push({ op_type: 'CRUD_UPDATE', key: c.table, table: c.table, verb: 'update', id: { __opRef: oi }, idCol: tic === c.table + '_id' ? undefined : tic, changes: (function () { var ch = {}; ch[k] = { old: null, new: f }; return ch; })() }); }
         else c.fields[k] = f;
       });
       if (c.changes) Object.keys(c.changes).forEach(function (k) {
