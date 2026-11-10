@@ -328,7 +328,7 @@ function prodType(t) { return t === 'service' ? 'S' : (t === 'consu' || t === 'p
       else if (v === false && t !== 'boolean') o[k] = null; else o[k] = v; }); return o; });
   }
   function rawSet(name, model, fields, domain, rows, count) { RAW[name] = rows;
-    var read = fields.slice(); fields.forEach(function (f) { var t = TYPES[model] && TYPES[model][f] && TYPES[model][f].type; if (t === 'many2one' && name !== 'partner_keys') read.push(f + '__name'); });   // the name half of a many2one
+    var read = fields.slice(); fields.forEach(function (f) { var t = TYPES[model] && TYPES[model][f] && TYPES[model][f].type; if (t === 'many2one') read.push(f + '__name'); });   // the name half of a many2one
     RAWMAN[name] = { model: model, count: count, fields_read: read, fields_missing: [], domain: JSON.stringify(domain) };
     console.log('§ODOO-EXPORT raw set=' + name + ' model=' + model + ' rows=' + rows.length + ' count=' + count); }
   var curRow = company.length ? (await ex('res.currency', 'read', [[m2o(company[0].currency_id)]], { fields: ['name', 'decimal_places'] }))[0] : null;
@@ -347,8 +347,6 @@ function prodType(t) { return t === 'service' ? 'S' : (t === 'consu' || t === 'p
     'amount_residual', 'ref', 'payment_state'];
   var omIds = Array.from(new Set(openLines.map(function (l) { return l.move_id; }))).sort(function (a, b) { return a - b; });
   rawSet('open_moves', 'account.move', omF, [['id', 'in', '(the moves of open_lines)']], omIds.length ? flat('account.move', await ex('account.move', 'read', [omIds], { fields: omF })) : [], omIds.length);
-  // BRIDGE (deleted when the masters run on the engine): the business partner Value this export's workbook gave each partner's commercial partner, and who is held
-  rawSet('partner_keys', 'res.partner', ['id', 'commercial', 'value', 'held'], [], partners.map(function (p) { return { id: p.id, commercial: top(p).id, value: val(top(p)) || '', held: isHeld(p) ? String(isHeld(p)) : '' }; }), partners.length);
   // ── §ODOO-ENGINE-SPEC O1: the MASTER sets, RAW (one set per read the mapping above makes; the mapping reads them back through erp/tests/fixtures/odoo_convert_reference.mjs). ──
   function cnt(model, domain, archived) { return counts[model + ' ' + JSON.stringify(domain) + (archived ? ' (archived too)' : '')]; }
   function mset(model, fields, domain, rows, count, archived) { rawSet(model, model, fields, domain, flat(model, rows), count); if (archived) RAWMAN[model].archived_too = true; }
