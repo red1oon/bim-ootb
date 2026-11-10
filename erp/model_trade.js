@@ -599,10 +599,10 @@
     return hp != null && lp != null && hp.getC_Period_ID() === lp.getC_Period_ID();
   }
   // beforeSave :166-260
-  function bslBeforeSave(trx, ctx, line, isNew) {
+  function bslBeforeSave(trx, ctx, line, isNew, dateChanged) {
     var stmt = trx.get('c_bankstatement', line.get('c_bankstatement_id'));
     if (isNew && stmt && Y(stmt.processed)) return 'ParentComplete';                               // :168-171
-    if (isNew && !bslDateConsistent(trx, ctx, line, stmt)) return 'SaveError BankStatementLinePeriodNotSameAsHeader';   // :174-179
+    if ((isNew || dateChanged) && !bslDateConsistent(trx, ctx, line, stmt)) return 'SaveError BankStatementLinePeriodNotSameAsHeader';   // :174-179 (newRecord || is_ValueChanged(DateAcct))
     if (nz(line.get('c_payment_id')) !== 0 && nz(line.get('c_depositbatch_id')) !== 0) return 'SaveError EitherPaymentOrDepositBatch';   // :181-184
     if (nz(line.get('c_depositbatch_id')) !== 0) { var db = trx.get('c_depositbatch', line.get('c_depositbatch_id')); if (!db || !Y(db.processed)) return 'SaveError DepositBatchIsNotProcessed'; }   // :186-189
     var amt = bd(line.get('stmtamt')).subtract(bd(line.get('trxamt'))).subtract(bd(line.get('interestamt')));   // :192-196
@@ -630,10 +630,12 @@
   }
   // saveEx of a bank statement line: beforeSave → insert → afterSave(updateHeader)
   S.MBankStatementLine_saveEx = function (trx, ctx, line) {
+    if (S._bslHooks) { line.saveEx(); return; }      // model_bankstatement.js registered beforeSave/afterSave on c_bankstatementline: the model layer runs them ONCE (no second explicit run)
     var err = bslBeforeSave(trx, ctx, line, true);
     if (err) throw new Error('SaveError c_bankstatementline: ' + err);
     line.saveEx(); bslUpdateHeader(trx, line.get('c_bankstatement_id'));
   };
+  S._bslBeforeSave = bslBeforeSave; S._bslUpdateHeader = bslUpdateHeader; S._bslDateConsistent = bslDateConsistent; S._loginCtx = loginCtx;   // model_bankstatement.js reuses the ONE port of the MBankStatementLine hooks
 
   // ══ MProductPrice.setPrices (MProductPrice.java:setPrices) ═══════════════════════════════════════════════════
   S.MProductPrice_setPrices = function (trx, pp, list, std, limit) {
