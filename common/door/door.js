@@ -22,7 +22,7 @@ const ROOT = path.join(__dirname, '..', '..');
 const LIVE = 'https://red1oon.github.io/bim-ootb/';
 const FILES = {   // name -> [repo path from the repo root, name beside door.js]
   'door.js': ['common/door/door.js'], 'render.js': ['common/door/render.js'], 'verbs.json': ['common/door/verbs.json'], 'edit_cli.js': ['modeller/tools/edit_cli.js'],
-  'bim_mcp.js': ['modeller/tools/bim_mcp.js'], 'viewer_verbs.js': ['viewer/tools/viewer_verbs.js'], 'viewer_driver.js': ['viewer/tools/viewer_driver.js'], 'film_path_vis.js': ['viewer/tools/film_path_vis.js'], 'schedule_verbs.js': ['viewer/tools/schedule_verbs.js'], 'object_cli.js': ['common/door/object_cli.js'], 'erp_cli.js': ['common/door/erp_cli.js'], 'walk_cli.js': ['modeller/tools/walk_cli.js']
+  'bim_mcp.js': ['modeller/tools/bim_mcp.js'], 'viewer_verbs.js': ['viewer/tools/viewer_verbs.js'], 'viewer_driver.js': ['viewer/tools/viewer_driver.js'], 'film_path_vis.js': ['viewer/tools/film_path_vis.js'], 'schedule_verbs.js': ['viewer/tools/schedule_verbs.js'], 'object_cli.js': ['common/door/object_cli.js'], 'erp_cli.js': ['common/door/erp_cli.js'], 'walk_cli.js': ['modeller/tools/walk_cli.js'], 'ops_cli.js': ['common/door/ops_cli.js']
 };
 function locate(name) {
   const beside = path.join(__dirname, name), repo = path.join(ROOT, FILES[name][0]);
@@ -31,7 +31,7 @@ function locate(name) {
 const curlFor = (names) => names.map(n => 'curl -O ' + LIVE + FILES[n][0]).join('\n');
 function missingFiles(names) { return names.filter(n => !fs.existsSync(locate(n))); }
 // The ONLY programs a verb may call. A vocabulary entry names one of these keys; it never names a path or a program (W-VOCAB-NOESCAPE).
-const CLI_TABLE = { edit_cli: locate('edit_cli.js'), viewer_verbs: locate('viewer_verbs.js'), film_path_vis: locate('film_path_vis.js'), schedule_verbs: locate('schedule_verbs.js'), object_cli: locate('object_cli.js'), erp_cli: locate('erp_cli.js'), walk_cli: locate('walk_cli.js') };
+const CLI_TABLE = { edit_cli: locate('edit_cli.js'), viewer_verbs: locate('viewer_verbs.js'), film_path_vis: locate('film_path_vis.js'), schedule_verbs: locate('schedule_verbs.js'), object_cli: locate('object_cli.js'), erp_cli: locate('erp_cli.js'), walk_cli: locate('walk_cli.js'), ops_cli: locate('ops_cli.js') };
 const HARM = ['read', 'trial', 'writes', 'posts', 'sends'];
 const STATUS = ['ok', 'refused', 'claim', 'error', 'inconclusive'];
 // §0.6 detail 4. Only the local actors are wired; any other name (email, mobile, device, an outside system) has no proof here: read only, the rest is a claim.
@@ -325,6 +325,15 @@ function createDoor(opts) {
         return e;
       }
       return fail('the ERP engine could not answer (exit ' + r.code + '): ' + (r.err.split('\n').filter(l => /§ERP FAIL/.test(l)).pop() || r.err || r.out || 'no output').replace(/^§ERP FAIL /, ''));
+    }
+    if (entry.calls.cli === 'ops_cli') {   // exit 0 answered (a FAIL witness or a DIFFERENT comparison is an answer) · 3 refused (answer.refused) or INCONCLUSIVE (answer.verdict) · 1 failed · 2 usage
+      const a = parse();
+      if ((r.code === 0 || r.code === 3) && a !== undefined) {
+        if (r.code === 3 && a.refused) return envelope(base, 'refused', { answer: a, raw: r.out, why: a.reason || 'refused' });
+        if (r.code === 3 || a.verdict === 'INCONCLUSIVE' || a.verdict === 'VACUOUS') return envelope(base, 'inconclusive', { answer: a, raw: r.out, why: a.summary });
+        return envelope(base, 'ok', { answer: a, raw: r.out, notChecked: a.notChecked || [] });
+      }
+      return fail('the ops program could not answer (exit ' + r.code + '): ' + (r.err.split('\n').filter(l => /§OPS FAIL/.test(l)).pop() || r.err || r.out || 'no output').replace(/^§OPS FAIL /, ''));
     }
     if (entry.calls.cli === 'walk_cli') {   // exit 0 answered (verdict OK; VACUOUS = the walk placed nothing, so nothing was counted) · 1 failed (unknown building or discipline, named) · 2 usage
       const a = parse();

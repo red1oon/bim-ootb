@@ -2043,6 +2043,415 @@
     "ai"
    ],
    "witness": "common/door/tests/witness_erp_verbs.js"
+  },
+  {
+   "verb": "witness.run",
+   "app": "witness",
+   "title": "Run a witness and read its verdict",
+   "description": "Runs the witness named witness_<name>.js from this tree, keeps its whole log under the cache, and answers the witness's own verdict line (PASS, FAIL or INCONCLUSIVE) with the pass, fail and inconclusive counts and the lines that failed. A witness that prints no verdict line is an error: an exit code is not evidence. The log path is in the answer.",
+   "inputs": [
+    {
+     "name": "name",
+     "description": "The witness name without witness_ and .js, e.g. \"erp_new\". More than one match is refused naming both.",
+     "required": true,
+     "type": "string",
+     "example": "erp_new"
+    }
+   ],
+   "harm": "trial",
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "calls": {
+    "cli": "ops_cli",
+    "who": "the witness runner",
+    "argv": [
+     "witness-run",
+     "--name",
+     "{name}"
+    ]
+   },
+   "returns": {
+    "shape": "ops_cli JSON {name,file,log,verdict,pass,fail,inconclusive,failed,ms}",
+    "fields": [
+     {
+      "path": "verdict",
+      "type": "string"
+     },
+     {
+      "path": "pass",
+      "type": "number"
+     },
+     {
+      "path": "fail",
+      "type": "number"
+     },
+     {
+      "path": "log",
+      "type": "string"
+     }
+    ]
+   },
+   "witness": "common/door/tests/witness_ops_verbs.js"
+  },
+  {
+   "verb": "witness.last",
+   "app": "witness",
+   "title": "Read the last recorded witness run",
+   "description": "Answers the last run of a witness that witness.run recorded, without running it again. Nothing recorded is refused with the instruction to run it first.",
+   "inputs": [
+    {
+     "name": "name",
+     "description": "The witness name without witness_ and .js.",
+     "required": true,
+     "type": "string",
+     "example": "erp_new"
+    }
+   ],
+   "harm": "read",
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "calls": {
+    "cli": "ops_cli",
+    "who": "the witness runner",
+    "argv": [
+     "witness-last",
+     "--name",
+     "{name}"
+    ]
+   },
+   "returns": {
+    "shape": "ops_cli JSON as witness.run, plus recorded:true",
+    "fields": [
+     {
+      "path": "verdict",
+      "type": "string"
+     },
+     {
+      "path": "log",
+      "type": "string"
+     }
+    ]
+   },
+   "witness": "common/door/tests/witness_ops_verbs.js"
+  },
+  {
+   "verb": "legacy.status",
+   "app": "legacy",
+   "title": "Is the legacy test stack up",
+   "description": "Checks the legacy iDempiere test stack the twin is compared against: the docker Postgres container and the pilot web UI. Answers UP, PARTIAL or DOWN with each part's state, and the commands that start it when it is not up. Reads only; it starts nothing.",
+   "inputs": [],
+   "harm": "read",
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "calls": {
+    "cli": "ops_cli",
+    "who": "the legacy stack check",
+    "argv": [
+     "legacy-status"
+    ]
+   },
+   "returns": {
+    "shape": "ops_cli JSON {verdict,postgres,pilot,summary,next}",
+    "fields": [
+     {
+      "path": "verdict",
+      "type": "string"
+     },
+     {
+      "path": "summary",
+      "type": "string"
+     }
+    ]
+   },
+   "witness": "common/door/tests/witness_ops_verbs.js"
+  },
+  {
+   "verb": "legacy.query",
+   "app": "legacy",
+   "title": "Read rows of a legacy table",
+   "description": "Reads rows from a table of the legacy iDempiere database (read only). The table and every column are checked against the legacy dictionary, so a wrong name is refused and the real columns are listed. Give column=value to narrow. At most 50 rows unless limit says otherwise (up to 1000); total is always given. Legacy not reachable answers inconclusive.",
+   "inputs": [
+    {
+     "name": "table",
+     "description": "The legacy table, e.g. \"c_order\".",
+     "required": true,
+     "type": "string",
+     "example": "c_order"
+    },
+    {
+     "name": "columns",
+     "description": "Comma-separated columns to show (default: the identifying ones).",
+     "required": false,
+     "type": "string",
+     "example": "documentno,docstatus,grandtotal"
+    },
+    {
+     "name": "sort",
+     "description": "A column to sort by; a leading - sorts descending.",
+     "required": false,
+     "type": "string",
+     "example": "-documentno"
+    },
+    {
+     "name": "limit",
+     "description": "How many rows to show, 1 to 1000 (default 50).",
+     "required": false,
+     "type": "number",
+     "example": "5"
+    }
+   ],
+   "harm": "read",
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "calls": {
+    "cli": "ops_cli",
+    "who": "the legacy database",
+    "argv": [
+     "legacy-query",
+     "--table",
+     "{table}",
+     {
+      "if": "columns",
+      "args": [
+       "--columns",
+       "{columns}"
+      ]
+     },
+     {
+      "if": "sort",
+      "args": [
+       "--sort",
+       "{sort}"
+      ]
+     },
+     {
+      "if": "limit",
+      "args": [
+       "--limit",
+       "{limit}"
+      ]
+     }
+    ],
+    "rest": {
+     "flag": "--where",
+     "what": "column=value, a column of the table and the value it must have (give as many as you like)"
+    }
+   },
+   "returns": {
+    "shape": "ops_cli JSON {table,columns,rows,shown,total,population,verdict,summary}",
+    "fields": [
+     {
+      "path": "rows",
+      "type": "array"
+     },
+     {
+      "path": "total",
+      "type": "number"
+     }
+    ]
+   },
+   "witness": "common/door/tests/witness_ops_verbs.js"
+  },
+  {
+   "verb": "erp.column",
+   "app": "erp",
+   "title": "Who fills a column: twin and legacy side by side",
+   "description": "Looks a column up in the twin's dictionary and the legacy dictionary and answers, for each: the column default, the validation rule, the field default, and the login default (the row of the referenced table with IsDefault=Y, which iDempiere puts in the context at login). Says what fills it and whether the two sides agree. Legacy not reachable gives the twin side only, marked not checked.",
+   "inputs": [
+    {
+     "name": "kind",
+     "description": "The table or window kind, e.g. \"Order\" or \"C_Order\".",
+     "required": true,
+     "type": "string",
+     "example": "Order"
+    },
+    {
+     "name": "column",
+     "description": "The column, e.g. \"C_ConversionType_ID\".",
+     "required": true,
+     "type": "string",
+     "example": "C_ConversionType_ID"
+    }
+   ],
+   "harm": "read",
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "calls": {
+    "cli": "ops_cli",
+    "who": "the two dictionaries",
+    "argv": [
+     "column",
+     "--kind",
+     "{kind}",
+     "--column",
+     "{column}"
+    ]
+   },
+   "returns": {
+    "shape": "ops_cli JSON {table,column,twin,legacy,differs,verdict,summary}",
+    "fields": [
+     {
+      "path": "verdict",
+      "type": "string"
+     },
+     {
+      "path": "summary",
+      "type": "string"
+     }
+    ]
+   },
+   "witness": "common/door/tests/witness_ops_verbs.js"
+  },
+  {
+   "verb": "erp.compare",
+   "app": "erp",
+   "title": "Compare one record on the twin and on legacy",
+   "description": "Reads one record by its Document No on the twin and the matching record on legacy and compares them cell for cell. Each differing cell is classed DIFF, ONLY-TWIN, ONLY-LEGACY, or NULL-VS-DEFAULT (legacy empty where the twin holds 0, N or empty: say nothing about the cause). Ids, audit stamps and dates are skipped and counted. An ambiguous legacy number is refused naming the ids; legacy=<number> picks it.",
+   "inputs": [
+    {
+     "name": "kind",
+     "description": "The kind of record, e.g. \"Order\".",
+     "required": true,
+     "type": "string",
+     "example": "Order"
+    },
+    {
+     "name": "number",
+     "description": "The Document No on the twin.",
+     "required": true,
+     "type": "string",
+     "example": "50000"
+    },
+    {
+     "name": "legacy",
+     "description": "The Document No on legacy when it differs from the twin's.",
+     "required": false,
+     "type": "string",
+     "example": "50981"
+    }
+   ],
+   "harm": "read",
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "calls": {
+    "cli": "ops_cli",
+    "who": "the twin and the legacy database",
+    "argv": [
+     "compare",
+     "--kind",
+     "{kind}",
+     "--number",
+     "{number}",
+     {
+      "if": "legacy",
+      "args": [
+       "--legacy",
+       "{legacy}"
+      ]
+     }
+    ]
+   },
+   "returns": {
+    "shape": "ops_cli JSON {kind,table,twin,legacy,cells,diffs,verdict,summary}",
+    "fields": [
+     {
+      "path": "verdict",
+      "type": "string"
+     },
+     {
+      "path": "cells",
+      "type": "object"
+     },
+     {
+      "path": "diffs",
+      "type": "array"
+     }
+    ]
+   },
+   "witness": "common/door/tests/witness_ops_verbs.js"
+  },
+  {
+   "verb": "idempiere.where",
+   "app": "idempiere",
+   "title": "Find a name in the iDempiere source",
+   "description": "Finds the lines of the legacy iDempiere Java source that contain a name (a column, a class, a method) and answers file, line and the line's text, so a claim about legacy behaviour can cite its source. in=<text> keeps only files whose path contains it (e.g. callout). At most 25 lines unless limit says otherwise; the total is always given. No match is inconclusive, not zero.",
+   "inputs": [
+    {
+     "name": "symbol",
+     "description": "A name: letters, digits, _ and . (e.g. InvoiceRule or CalloutOrder.docType).",
+     "required": true,
+     "type": "string",
+     "example": "InvoiceRule"
+    },
+    {
+     "name": "in",
+     "description": "Keep only files whose path contains this text.",
+     "required": false,
+     "type": "string",
+     "example": "callout"
+    },
+    {
+     "name": "limit",
+     "description": "How many lines to show, 1 to 200 (default 25).",
+     "required": false,
+     "type": "number",
+     "example": "10"
+    }
+   ],
+   "harm": "read",
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "calls": {
+    "cli": "ops_cli",
+    "who": "the iDempiere source",
+    "argv": [
+     "where",
+     "--symbol",
+     "{symbol}",
+     {
+      "if": "in",
+      "args": [
+       "--in",
+       "{in}"
+      ]
+     },
+     {
+      "if": "limit",
+      "args": [
+       "--limit",
+       "{limit}"
+      ]
+     }
+    ]
+   },
+   "returns": {
+    "shape": "ops_cli JSON {symbol,hits,shown,total,files,verdict,summary}",
+    "fields": [
+     {
+      "path": "hits",
+      "type": "array"
+     },
+     {
+      "path": "total",
+      "type": "number"
+     }
+    ]
+   },
+   "witness": "common/door/tests/witness_ops_verbs.js"
   }
  ]
 }
