@@ -1,0 +1,38 @@
+§GATE_ENGINE {"worktree":"/tmp/wt-erp-door2","sha":"529c69e5dc4c5474c3b63319f469cd9a4c4a74f8","behind_origin_main":0,"ahead_origin_main":0,"clean":true,"dirty_paths":[]}
+§GATE_SERVED_DB {"object":"buildings/Duplex_extracted.db","etag":"9d85d487-99bf-4083-9603-05a61b39248e","content-md5":"sHANmqrU2zgwa11XfgP44A==","size":"14958592","last-modified":"Fri, 05 Jun 2026 00:40:48 GMT","content-encoding":null}
+§GATE_ARTIFACT {"file":"buildings/patches/Duplex_extracted.db.sql","bytes":88717,"md5":"112d0f355587dd94d36383931a5cdf17","md5_b64":"ES0PNVWH3ZTTY4OTGlzfFw==","object":"buildings/patches/Duplex_extracted.db.sql","content_type":"application/sql"}
+§GATE_TARGET {"exists":true,"etag":"308e6520-2352-494c-9b21-39fa69295955","size":"69791","last-modified":"Mon, 09 Nov 2026 19:33:25 GMT"}  (OVERWRITE — diff it before proceeding)
+Downloading object
+§GATE_FETCH served DB downloaded + patch applied -> $GATE_DB=/tmp/patch-gate-7IsRZN/served.db
+§OBJECT open db=Duplex_extracted.db dictionary=applied
+§OBJECT replay ops=0 oplog=/tmp/obj1_JPOfYN/ops.jsonl
+§OBJECT read kind=Element uu=2O2Fr$t4X7Zf8NOew3FKau key=elements_meta_uu children=Element Transform:1
+§OBJECT update kind=Element uu=2O2Fr$t4X7Zf8NOew3FKau element_name "Basic Wall:Party Wall - CMU Residential Unit Dimising Wall:143239" -> "OBJ1 2O2Fr$" ops=1 keyUnchanged=1
+§OBJECT attach kind=Element uu=2O2Fr$t4X7Zf8NOew3FKau record_uu=2O2Fr$t4X7Zf8NOew3FKau record_id= op=create bytes=0 entries=0
+§OBJECT read kind=Element uu=3UaUDVsHnAEe2eiB_c_KI$ key=elements_meta_uu children=Element Transform:1
+§OBJECT update kind=Element uu=3UaUDVsHnAEe2eiB_c_KI$ element_name "Pipe Types:Mechanical Pipe:593706" -> "OBJ1 3UaUDV" ops=1 keyUnchanged=1
+§OBJECT attach kind=Element uu=3UaUDVsHnAEe2eiB_c_KI$ record_uu=3UaUDVsHnAEe2eiB_c_KI$ record_id= op=create bytes=0 entries=0
+§OBJECT read kind=Element uu=1l2cgO2D5FS9t6u8i4Cvhw key=elements_meta_uu children=Element Transform:1
+§OBJECT update kind=Element uu=1l2cgO2D5FS9t6u8i4Cvhw element_name "M_Smoke Detector:Smoke Detector:Smoke Detector:610550" -> "OBJ1 1l2cgO" ops=1 keyUnchanged=1
+§OBJECT attach kind=Element uu=1l2cgO2D5FS9t6u8i4Cvhw record_uu=1l2cgO2D5FS9t6u8i4Cvhw record_id= op=create bytes=0 entries=0
+§OBJECT attach kind=Element uu=2O2Fr$t4X7Zf8NOew3FKau record_uu=2O2Fr$t4X7Zf8NOew3FKau record_id= op=update bytes=156 entries=1
+§OBJECT history kind=Element uu=3UaUDVsHnAEe2eiB_c_KI$ entries=1 ops=7
+§OBJECT history kind=Element uu=2O2Fr$t4X7Zf8NOew3FNtn entries=0 ops=7
+§OBJECT history kind=Element uu=2O2Fr$t4X7Zf8NOew3FNtn entries=0 ops=7
+§OBJECT update kind=Element uu=2O2Fr$t4X7Zf8NOew3FNtn storey "Level 1" -> "Level OBJ1" ops=1 keyUnchanged=1
+§OBJECT attach kind=Element uu=2O2Fr$t4X7Zf8NOew3FNtn record_uu=2O2Fr$t4X7Zf8NOew3FNtn record_id= op=create bytes=0 entries=0
+§OBJECT history kind=Element uu=2O2Fr$t4X7Zf8NOew3FNtn entries=1 ops=9
+§OBJECT history kind=Storey and Space uu=STC_Level_1 entries=0 ops=9
+§OBJECT update kind=Storey and Space uu=STC_Level_1 name "Level 1" -> "Storey OBJ1" ops=1 keyUnchanged=1
+§OBJECT attach kind=Storey and Space uu=STC_Level_1 record_uu=STC_Level_1 record_id= op=create bytes=0 entries=0
+§OBJECT history kind=Storey and Space uu=STC_Level_1 entries=1 ops=11
+§OBJECT history kind=Building uu=building_name entries=0 ops=11
+§OBJECT update kind=Building uu=building_name value "Ifc2x3_Duplex_Federated" -> "Duplex OBJ1" ops=1 keyUnchanged=1
+§OBJECT attach kind=Building uu=building_name record_uu=building_name record_id= op=create bytes=0 entries=0
+§OBJECT history kind=Building uu=building_name entries=1 ops=13
+§GATE_VERIFY {"cmd":"bash common/door/tests/gate_verify_duplex_served.sh","exit":0,"tail":["  ✅ VIEWER-OPEN the live database holds the dictionary: 5 kinds, their columns, and the generated key equals guid on every element  [[\"Building\"],[\"Storey and Space\"],[\"Element\"],[\"Element Transform\"],[\"Room\"]]","  ✅ VIEWER-OPEN the element count in the Viewer equals the file's  file=1119 viewer=1119","§W-OBJ-VIEWER-OPEN without patch: {\"tables\":\"ERR no such table: ad_table\",\"cols\":\"ERR no such table: ad_column\",\"gen\":\"ERR no such column: elements_meta_uu\",\"elems\":[[1119]],\"kinds\":\"ERR no such table: ad_table\"}","  ✅ VIEWER-OPEN falsifier: with no patch served, the Viewer has no dictionary (it came from the patch)  ERR no such table: ad_table","  ✅ VIEWER-OPEN same element count with and without the patch  1119 vs 1119","§WITNESS_OBJ_VIEWER_OPEN pass=5 fail=0 inconclusive=0 verdict=PASS"]}
+§GATE_MANIFEST wrote buildings/patches/Duplex_extracted.db.sql.manifest.json
+§GATE_VERDICT PASS
+Uploading object
+§GATE_UPLOADED size=88717 type=application/sql md5=ES0PNVWH3ZTTY4OTGlzfFw==
+§GATE_VERDICT UPLOAD_VERIFIED
