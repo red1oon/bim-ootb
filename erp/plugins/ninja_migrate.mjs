@@ -9,7 +9,7 @@
 // Id band 9540001-9540999 (no seed row, no other bundle).
 const NOW = '2026-11-09 00:00:00';
 const STD = { ad_client_id: 0, ad_org_id: 0, isactive: 'Y', created: NOW, createdby: 100, updated: NOW, updatedby: 100, entitytype: 'U' };
-const P_ID = 9540001, M_PROC = 9540001, TREE = 10, PARENT = 163, ROLES = [[0, 0], [102, 11]];   // [role, client of the access row]
+const P_ID = 9540001, M_PROC = 9540001, TREE = 10, PARENT = 163, ROLES = [[0, 0]];   // the LOGIN role's row (MForm / MProcess afterSave: the System Administrator starts the plugin); every tenant's roles get theirs from the host (§PLUGIN-ROLE-ACCESS, plugin_registry.js)   // [role, client of the access row]
 
 const proc = Object.assign({ ad_process_id: P_ID, value: 'Ninja_MigrateExcelData', name: 'Migrate Excel Data',
   description: 'Load a workbook into this tenant: one sheet per table (sheet name = table name), row 1 = column names, every row saved as a record - all or nothing',

@@ -9,7 +9,7 @@
 // Id band 9544001-9544999 (no seed row, no other bundle).
 const NOW = '2026-11-09 00:00:00';
 const STD = { ad_client_id: 0, ad_org_id: 0, isactive: 'Y', created: NOW, createdby: 100, updated: NOW, updatedby: 100, entitytype: 'U' };
-const F_ID = 9544001, M_ID = 9544001, TREE = 10, PARENT = 163, ROLES = [[0, 0], [102, 11]];
+const F_ID = 9544001, M_ID = 9544001, TREE = 10, PARENT = 163, ROLES = [[0, 0]];   // the LOGIN role's row (MForm / MProcess afterSave: the System Administrator starts the plugin); every tenant's roles get theirs from the host (§PLUGIN-ROLE-ACCESS, plugin_registry.js)
 const form = Object.assign({ ad_form_id: F_ID, name: 'Migrate from SAP Business One (alpha)', description: 'Load the master data the SAP Business One agent read from your Service Layer into this tenant',
   help: 'Run the SAP Business One agent (sap_agent.zip: node agent.js --url https://<server>:50000 --company <CompanyDB> --user <user>) on a machine that reaches your Service Layer. Pick the sap_export.json it wrote, set the cut-over date, answer the units, read the summary, Process. ALPHA, a proof of concept: the field names are checked against your own server; the alpha report says what your export held.',
   accesslevel: '3', classname: 'org.kernel.sap.MigrateFromB1', isbetafunctionality: 'Y' }, STD);
