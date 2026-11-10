@@ -1,0 +1,456 @@
+§W_DM FIXTURES Std2dDxf writes LINE/LWPOLYLINE/TEXT only: INSERT entities (fittings, terminals) and the block table are built directly in the parsed-entity shape; everything else goes through Std2dDxf -> DxfParser.
+§MAINS-FIT sheet=m1 grid=G1 tags=8 median_mm=0 PASS
+§MAINS-READ sheet=m1 fit=rot:0deg,dx:0m,dy:0m,med:0mm,tags:8,grid:G1 pieces=2 length=16m components=2 over5m=2 width_share=0 terminals=0 no_run=0 mirrored=0 fittings=0 fittings_unjoined=0 fittings_unjoined_nomirror=0 missingBlocks=0
+§MAINS-POINTS sheet=m1 role=terminal n=0 fromGeometry=0 atInsertPoint=0 (position = centre of the transformed block geometry; the insert point only when the block holds none)
+§MAINS-MIRROR sheet=m1 fired=no n=0 of fittings=0 extents=0,-3,10,3
+§MAINS-COST sheet=m1 ms=11 heap_mb=4.2
+§PASS M1 two crossing runs with no fitting stay 2 components components=2 pieces=2
+§MAINS-FIT sheet=m1-touch grid=G1 tags=8 median_mm=0 PASS
+§MAINS-READ sheet=m1-touch fit=rot:0deg,dx:0m,dy:0m,med:0mm,tags:8,grid:G1 pieces=2 length=16m components=1 over5m=1 width_share=0 terminals=0 no_run=0 mirrored=0 fittings=0 fittings_unjoined=0 fittings_unjoined_nomirror=0 missingBlocks=0
+§MAINS-POINTS sheet=m1-touch role=terminal n=0 fromGeometry=0 atInsertPoint=0 (position = centre of the transformed block geometry; the insert point only when the block holds none)
+§MAINS-MIRROR sheet=m1-touch fired=no n=0 of fittings=0 extents=0,-3,10,3
+§MAINS-COST sheet=m1-touch ms=2 heap_mb=4.3
+§PASS M1 RED: a touch-join variant reads 1 component, so it fails M1 components=1
+§MAINS-FIT sheet=m2 grid=G1 tags=8 median_mm=0 PASS
+§MAINS-READ sheet=m2 fit=rot:0deg,dx:0m,dy:0m,med:0mm,tags:8,grid:G1 pieces=2 length=8m components=1 over5m=1 width_share=0 terminals=0 no_run=0 mirrored=0 fittings=1 fittings_unjoined=0 fittings_unjoined_nomirror=0 missingBlocks=0
+§MAINS-POINTS sheet=m2 role=terminal n=0 fromGeometry=0 atInsertPoint=0 (position = centre of the transformed block geometry; the insert point only when the block holds none)
+§MAINS-MIRROR sheet=m2 fired=no n=0 of fittings=1 extents=0,0,10,0
+§MAINS-COST sheet=m2 ms=2 heap_mb=4.8
+§PASS M2 two pieces through one fitting box become 1 component components=1
+§MAINS-FIT sheet=m2-nofit grid=G1 tags=8 median_mm=0 PASS
+§MAINS-READ sheet=m2-nofit fit=rot:0deg,dx:0m,dy:0m,med:0mm,tags:8,grid:G1 pieces=2 length=8m components=2 over5m=0 width_share=0 terminals=0 no_run=0 mirrored=0 fittings=0 fittings_unjoined=0 fittings_unjoined_nomirror=0 missingBlocks=0
+§MAINS-POINTS sheet=m2-nofit role=terminal n=0 fromGeometry=0 atInsertPoint=0 (position = centre of the transformed block geometry; the insert point only when the block holds none)
+§MAINS-MIRROR sheet=m2-nofit fired=no n=0 of fittings=0 extents=0,0,10,0
+§MAINS-COST sheet=m2-nofit ms=1 heap_mb=4.9
+§PASS M2 RED: the same two pieces with no fitting stay 2 components components=2
+§MAINS-FIT sheet=e1 grid=G1 tags=8 median_mm=0 PASS
+§MAINS-READ sheet=e1 fit=rot:0deg,dx:0m,dy:0m,med:0mm,tags:8,grid:G1 pieces=2 length=7.96m components=1 over5m=1 width_share=0 terminals=0 no_run=0 mirrored=0 fittings=0 fittings_unjoined=0 fittings_unjoined_nomirror=0 missingBlocks=0
+§MAINS-POINTS sheet=e1 role=terminal n=0 fromGeometry=0 atInsertPoint=0 (position = centre of the transformed block geometry; the insert point only when the block holds none)
+§MAINS-MIRROR sheet=e1 fired=no n=0 of fittings=0 extents=0,0,8,0
+§MAINS-COST sheet=e1 ms=2 heap_mb=5.4
+§MAINS-FIT sheet=e2 grid=G1 tags=8 median_mm=0 PASS
+§MAINS-READ sheet=e2 fit=rot:0deg,dx:0m,dy:0m,med:0mm,tags:8,grid:G1 pieces=2 length=7.93m components=2 over5m=0 width_share=0 terminals=0 no_run=0 mirrored=0 fittings=0 fittings_unjoined=0 fittings_unjoined_nomirror=0 missingBlocks=0
+§MAINS-POINTS sheet=e2 role=terminal n=0 fromGeometry=0 atInsertPoint=0 (position = centre of the transformed block geometry; the insert point only when the block holds none)
+§MAINS-MIRROR sheet=e2 fired=no n=0 of fittings=0 extents=0,0,8,0
+§MAINS-COST sheet=e2 ms=3 heap_mb=5.4
+§PASS M2b end to end 40 mm apart joins, 70 mm apart does not 
+§MAINS-FIT sheet=m3 grid=G1 tags=8 median_mm=0 PASS
+§MAINS-READ sheet=m3 fit=rot:0deg,dx:0m,dy:0m,med:0mm,tags:8,grid:G1 pieces=4 length=13.5m components=3 over5m=1 width_share=0 terminals=0 no_run=0 mirrored=0 fittings=0 fittings_unjoined=0 fittings_unjoined_nomirror=0 missingBlocks=0
+§MAINS-POINTS sheet=m3 role=terminal n=0 fromGeometry=0 atInsertPoint=0 (position = centre of the transformed block geometry; the insert point only when the block holds none)
+§MAINS-MIRROR sheet=m3 fired=no n=0 of fittings=0 extents=0,0,4,10
+§MAINS-COST sheet=m3 ms=2 heap_mb=5.8
+§PASS M3 input length = recorded length = rows length (hand 13.5 m) sheet=13.500000 rows=13.500000 n=4 hand=13.5
+§PASS M3 RED: a record with a piece dropped no longer equals the input length rows=10.500000
+§MAINS-INCONCLUSIVE sheet=m4 reason=no centreline layer
+§MAINS-COST sheet=m4 ms=0 heap_mb=5.1
+§PASS M4 a sheet with no centreline layer prints INCONCLUSIVE, adds no row, never reads PASS rows=0
+§MAINS-FIT sheet=m5-rot30 grid=G1 tags=8 median_mm=0 PASS
+§MAINS-READ sheet=m5-rot30 fit=rot:30deg,dx:123.4m,dy:-56.7m,med:0mm,tags:8,grid:G1 pieces=2 length=22.5m components=1 over5m=1 width_share=0 terminals=0 no_run=0 mirrored=0 fittings=0 fittings_unjoined=0 fittings_unjoined_nomirror=0 missingBlocks=0
+§MAINS-POINTS sheet=m5-rot30 role=terminal n=0 fromGeometry=0 atInsertPoint=0 (position = centre of the transformed block geometry; the insert point only when the block holds none)
+§MAINS-MIRROR sheet=m5-rot30 fired=no n=0 of fittings=0 extents=-74.919,105.036,-59.277,114.129
+§MAINS-COST sheet=m5-rot30 ms=2 heap_mb=5.5
+§PASS M5a sheet rotated 30 deg and offset [123.4,-56.7] lands on the building to 1 mm worst=0.0000 mm tags=8 rot=30.0000 median=7.11e-12 mm
+§MAINS-FIT sheet=m5-rot-150 grid=G1 tags=8 median_mm=0 PASS
+§MAINS-READ sheet=m5-rot-150 fit=rot:210deg,dx:-40.25m,dy:77.125m,med:0mm,tags:8,grid:G1 pieces=2 length=22.5m components=1 over5m=1 width_share=0 terminals=0 no_run=0 mirrored=0 fittings=0 fittings_unjoined=0 fittings_unjoined_nomirror=0 missingBlocks=0
+§MAINS-POINTS sheet=m5-rot-150 role=terminal n=0 fromGeometry=0 atInsertPoint=0 (position = centre of the transformed block geometry; the insert point only when the block holds none)
+§MAINS-MIRROR sheet=m5-rot-150 fired=no n=0 of fittings=0 extents=-15.535,83.592,0.107,92.685
+§MAINS-COST sheet=m5-rot-150 ms=1 heap_mb=5.8
+§PASS M5a sheet rotated -150 deg and offset [-40.25,77.125] lands on the building to 1 mm worst=0.0000 mm tags=8 rot=210.0000 median=0.00e+0 mm
+§MAINS-FIT sheet=m5-rot0 grid=G1 tags=8 median_mm=0 PASS
+§MAINS-READ sheet=m5-rot0 fit=rot:0deg,dx:0m,dy:0m,med:0mm,tags:8,grid:G1 pieces=2 length=22.5m components=1 over5m=1 width_share=0 terminals=0 no_run=0 mirrored=0 fittings=0 fittings_unjoined=0 fittings_unjoined_nomirror=0 missingBlocks=0
+§MAINS-POINTS sheet=m5-rot0 role=terminal n=0 fromGeometry=0 atInsertPoint=0 (position = centre of the transformed block geometry; the insert point only when the block holds none)
+§MAINS-MIRROR sheet=m5-rot0 fired=no n=0 of fittings=0 extents=3,2,15,12.5
+§MAINS-COST sheet=m5-rot0 ms=1 heap_mb=6.1
+§PASS M5a sheet rotated 0 deg and offset [0,0] lands on the building to 1 mm worst=0.0000 mm tags=8 rot=0.0000 median=0.00e+0 mm
+§MAINS-FIT sheet=m5-rot89.5 grid=G1 tags=8 median_mm=0 PASS
+§MAINS-READ sheet=m5-rot89.5 fit=rot:89.5deg,dx:5m,dy:5m,med:0mm,tags:8,grid:G1 pieces=2 length=22.5m components=1 over5m=1 width_share=0 terminals=0 no_run=0 mirrored=0 fittings=0 fittings_unjoined=0 fittings_unjoined_nomirror=0 missingBlocks=0
+§MAINS-POINTS sheet=m5-rot89.5 role=terminal n=0 fromGeometry=0 atInsertPoint=0 (position = centre of the transformed block geometry; the insert point only when the block holds none)
+§MAINS-MIRROR sheet=m5-rot89.5 fired=no n=0 of fittings=0 extents=-3.017,-10.026,7.587,1.974
+§MAINS-COST sheet=m5-rot89.5 ms=2 heap_mb=4.8
+§PASS M5a sheet rotated 89.5 deg and offset [5,5] lands on the building to 1 mm worst=0.0000 mm tags=8 rot=89.5000 median=0.00e+0 mm
+§MAINS-FIT sheet=m5-wrongtags grid=G1 tags=8 median_mm=5000 FAIL median residual 5000 mm (need < 50)
+§MAINS-REFUSE sheet=m5-wrongtags reason=frame fit failed: best grid G1 median residual 5000 mm (need < 50); sheet tags=8
+§MAINS-COST sheet=m5-wrongtags ms=1 heap_mb=5.1
+§PASS M5b wrong grid tags make the sheet REFUSE, with the numbers, and write no piece frame fit failed: best grid G1 median residual 5000 mm (need < 50); sheet tags=8
+§MAINS-FIT sheet=m5-4tags grid=G1 tags=4 median_mm=0 FAIL only 4 tags matched (need 5)
+§MAINS-REFUSE sheet=m5-4tags reason=frame fit failed: best grid G1 only 4 tags matched (need 5); sheet tags=8
+§MAINS-COST sheet=m5-4tags ms=0 heap_mb=5.4
+§PASS M5b2 only 4 tags matched: REFUSE (needs 5) frame fit failed: best grid G1 only 4 tags matched (need 5); sheet tags=8
+§MAINS-FIT sheet=m5-onewrong grid=G1 tags=8 median_mm=0 PASS
+§MAINS-READ sheet=m5-onewrong fit=rot:30deg,dx:123.4m,dy:-56.7m,med:0mm,tags:8,grid:G1 pieces=2 length=22.5m components=1 over5m=1 width_share=0 terminals=0 no_run=0 mirrored=0 fittings=0 fittings_unjoined=0 fittings_unjoined_nomirror=0 missingBlocks=0
+§MAINS-POINTS sheet=m5-onewrong role=terminal n=0 fromGeometry=0 atInsertPoint=0 (position = centre of the transformed block geometry; the insert point only when the block holds none)
+§MAINS-MIRROR sheet=m5-onewrong fired=no n=0 of fittings=0 extents=-74.919,105.036,-59.277,114.129
+§MAINS-COST sheet=m5-onewrong ms=1 heap_mb=5.7
+§W_DM M5b3 INFO two swapped tags among 8: fit passes, median=0.000 mm tags=8 (the median test is by design robust to a minority; not asserted)
+§MAINS-REFUSE sheet=m5-nogrid-undefined reason=no named grid held on this route
+§MAINS-COST sheet=m5-nogrid-undefined ms=0 heap_mb=5.9
+§MAINS-REFUSE sheet=m5-nogrid-empty reason=no named grid held on this route
+§MAINS-COST sheet=m5-nogrid-empty ms=0 heap_mb=5.9
+§PASS M5c no grid given (absent or empty) REFUSES with the §4.2a reason and writes no row undefined:true empty:true
+§MAINS-FIT sheet=m5-two-G1-first grid=G1 tags=8 median_mm=0 PASS
+§MAINS-FIT sheet=m5-two-G1-first grid=G2 tags=8 median_mm=892.5 FAIL median residual 892.5 mm (need < 50)
+§MAINS-READ sheet=m5-two-G1-first fit=rot:30deg,dx:123.4m,dy:-56.7m,med:0mm,tags:8,grid:G1 pieces=2 length=22.5m components=1 over5m=1 width_share=0 terminals=0 no_run=0 mirrored=0 fittings=0 fittings_unjoined=0 fittings_unjoined_nomirror=0 missingBlocks=0
+§MAINS-POINTS sheet=m5-two-G1-first role=terminal n=0 fromGeometry=0 atInsertPoint=0 (position = centre of the transformed block geometry; the insert point only when the block holds none)
+§MAINS-MIRROR sheet=m5-two-G1-first fired=no n=0 of fittings=0 extents=-74.919,105.036,-59.277,114.129
+§MAINS-COST sheet=m5-two-G1-first ms=1 heap_mb=6.2
+§PASS M5d two grids, only G1's tags fit (G1 first): the fit names grid_guid G1, and G2 is logged as failed grid_guid=G1 off=0.0000 mm
+§MAINS-FIT sheet=m5-two-G2-first grid=G2 tags=8 median_mm=892.5 FAIL median residual 892.5 mm (need < 50)
+§MAINS-FIT sheet=m5-two-G2-first grid=G1 tags=8 median_mm=0 PASS
+§MAINS-READ sheet=m5-two-G2-first fit=rot:30deg,dx:123.4m,dy:-56.7m,med:0mm,tags:8,grid:G1 pieces=2 length=22.5m components=1 over5m=1 width_share=0 terminals=0 no_run=0 mirrored=0 fittings=0 fittings_unjoined=0 fittings_unjoined_nomirror=0 missingBlocks=0
+§MAINS-POINTS sheet=m5-two-G2-first role=terminal n=0 fromGeometry=0 atInsertPoint=0 (position = centre of the transformed block geometry; the insert point only when the block holds none)
+§MAINS-MIRROR sheet=m5-two-G2-first fired=no n=0 of fittings=0 extents=-74.919,105.036,-59.277,114.129
+§MAINS-COST sheet=m5-two-G2-first ms=1 heap_mb=6.3
+§PASS M5d two grids, only G1's tags fit (G2 first): the fit names grid_guid G1, and G2 is logged as failed grid_guid=G1 off=0.0000 mm
+§MAINS-FIT sheet=m5-g2only grid=G2 tags=8 median_mm=892.5 FAIL median residual 892.5 mm (need < 50)
+§MAINS-REFUSE sheet=m5-g2only reason=frame fit failed: best grid G2 median residual 892.5 mm (need < 50); sheet tags=8
+§MAINS-COST sheet=m5-g2only ms=0 heap_mb=6.4
+§PASS M5d RED: offered only G2, the sheet REFUSES (no other grid is borrowed) frame fit failed: best grid G2 median residual 892.5 mm (need < 50); sheet tags=8
+§MAINS-FIT sheet=m5f-G5-first grid=G5 tags=5 median_mm=0 PASS
+§MAINS-FIT sheet=m5f-G5-first grid=G1 tags=8 median_mm=0 PASS
+§MAINS-FIT-CHOICE sheet=m5f-G5-first grid=G1 tags=8 median_mm=0 of passing=2 rule=lowest median, within 1 mm the most tags, then the sheet storey (none given)
+§MAINS-READ sheet=m5f-G5-first fit=rot:30deg,dx:123.4m,dy:-56.7m,med:0mm,tags:8,grid:G1 pieces=2 length=22.5m components=1 over5m=1 width_share=0 terminals=0 no_run=0 mirrored=0 fittings=0 fittings_unjoined=0 fittings_unjoined_nomirror=0 missingBlocks=0
+§MAINS-POINTS sheet=m5f-G5-first role=terminal n=0 fromGeometry=0 atInsertPoint=0 (position = centre of the transformed block geometry; the insert point only when the block holds none)
+§MAINS-MIRROR sheet=m5f-G5-first fired=no n=0 of fittings=0 extents=-74.919,105.036,-59.277,114.129
+§MAINS-COST sheet=m5f-G5-first ms=0 heap_mb=6.5
+§PASS M5f two grids fit at 0 mm, G5 first: the grid with more matched tags wins (G1, 8 tags, not G5, 5) grid=G1 tags=8
+§MAINS-FIT sheet=m5f-G1-first grid=G1 tags=8 median_mm=0 PASS
+§MAINS-FIT sheet=m5f-G1-first grid=G5 tags=5 median_mm=0 PASS
+§MAINS-FIT-CHOICE sheet=m5f-G1-first grid=G1 tags=8 median_mm=0 of passing=2 rule=lowest median, within 1 mm the most tags, then the sheet storey (none given)
+§MAINS-READ sheet=m5f-G1-first fit=rot:30deg,dx:123.4m,dy:-56.7m,med:0mm,tags:8,grid:G1 pieces=2 length=22.5m components=1 over5m=1 width_share=0 terminals=0 no_run=0 mirrored=0 fittings=0 fittings_unjoined=0 fittings_unjoined_nomirror=0 missingBlocks=0
+§MAINS-POINTS sheet=m5f-G1-first role=terminal n=0 fromGeometry=0 atInsertPoint=0 (position = centre of the transformed block geometry; the insert point only when the block holds none)
+§MAINS-MIRROR sheet=m5f-G1-first fired=no n=0 of fittings=0 extents=-74.919,105.036,-59.277,114.129
+§MAINS-COST sheet=m5f-G1-first ms=1 heap_mb=4.9
+§PASS M5f two grids fit at 0 mm, G1 first: the grid with more matched tags wins (G1, 8 tags, not G5, 5) grid=G1 tags=8
+§MAINS-FIT sheet=m5g grid=GL1 tags=8 median_mm=0 PASS
+§MAINS-FIT sheet=m5g grid=GL2 tags=8 median_mm=0 PASS
+§MAINS-FIT-CHOICE sheet=m5g grid=GL2 tags=8 median_mm=0 of passing=2 rule=lowest median, within 1 mm the most tags, then the sheet storey (L2)
+§MAINS-READ sheet=m5g fit=rot:30deg,dx:123.4m,dy:-56.7m,med:0mm,tags:8,grid:GL2 pieces=2 length=22.5m components=1 over5m=1 width_share=0 terminals=0 no_run=0 mirrored=0 fittings=0 fittings_unjoined=0 fittings_unjoined_nomirror=0 missingBlocks=0
+§MAINS-POINTS sheet=m5g role=terminal n=0 fromGeometry=0 atInsertPoint=0 (position = centre of the transformed block geometry; the insert point only when the block holds none)
+§MAINS-MIRROR sheet=m5g fired=no n=0 of fittings=0 extents=-74.919,105.036,-59.277,114.129
+§MAINS-COST sheet=m5g ms=3 heap_mb=5.0
+§PASS M5g equal grids, L1 grid first, sheet on L2: the L2 grid is chosen; no row carries a level grid=GL2 rowKeys=sheet,piece,x0,y0,x1,y1,component,system,width_drawn_mm,provenance
+§MAINS-FIT sheet=m5g grid=GL2 tags=8 median_mm=0 PASS
+§MAINS-FIT sheet=m5g grid=GL1 tags=8 median_mm=0 PASS
+§MAINS-FIT-CHOICE sheet=m5g grid=GL2 tags=8 median_mm=0 of passing=2 rule=lowest median, within 1 mm the most tags, then the sheet storey (L2)
+§MAINS-READ sheet=m5g fit=rot:30deg,dx:123.4m,dy:-56.7m,med:0mm,tags:8,grid:GL2 pieces=2 length=22.5m components=1 over5m=1 width_share=0 terminals=0 no_run=0 mirrored=0 fittings=0 fittings_unjoined=0 fittings_unjoined_nomirror=0 missingBlocks=0
+§MAINS-POINTS sheet=m5g role=terminal n=0 fromGeometry=0 atInsertPoint=0 (position = centre of the transformed block geometry; the insert point only when the block holds none)
+§MAINS-MIRROR sheet=m5g fired=no n=0 of fittings=0 extents=-74.919,105.036,-59.277,114.129
+§MAINS-COST sheet=m5g ms=0 heap_mb=5.1
+§PASS M5g equal grids, L2 grid first, sheet on L2: the L2 grid is chosen; no row carries a level grid=GL2 rowKeys=sheet,piece,x0,y0,x1,y1,component,system,width_drawn_mm,provenance
+§MAINS-FIT sheet=m6a grid=G1 tags=8 median_mm=0 PASS
+§MAINS-READ sheet=m6a fit=rot:0deg,dx:0m,dy:0m,med:0mm,tags:8,grid:G1 pieces=2 length=8m components=1 over5m=1 width_share=0 terminals=0 no_run=0 mirrored=1 fittings=1 fittings_unjoined=0 fittings_unjoined_nomirror=1 missingBlocks=0
+§MAINS-POINTS sheet=m6a role=terminal n=0 fromGeometry=0 atInsertPoint=0 (position = centre of the transformed block geometry; the insert point only when the block holds none)
+§MAINS-MIRROR sheet=m6a fired=yes n=1 of fittings=1 extents=6,0,15,0
+§MAINS-COST sheet=m6a ms=1 heap_mb=5.4
+§PASS M6a an insert at negated X, box outside the drawn extents and its reflection inside: corrected, joins (1 component), mirrored=1, fired=yes components=1 | §MAINS-MIRROR sheet=m6a fired=yes n=1 of fittings=1 extents=6,0,15,0
+§MAINS-FIT sheet=m6b grid=G1 tags=8 median_mm=0 PASS
+§MAINS-READ sheet=m6b fit=rot:0deg,dx:0m,dy:0m,med:0mm,tags:8,grid:G1 pieces=2 length=8m components=2 over5m=0 width_share=0 terminals=0 no_run=0 mirrored=0 fittings=1 fittings_unjoined=1 fittings_unjoined_nomirror=1 missingBlocks=0
+§MAINS-POINTS sheet=m6b role=terminal n=0 fromGeometry=0 atInsertPoint=0 (position = centre of the transformed block geometry; the insert point only when the block holds none)
+§MAINS-MIRROR sheet=m6b fired=no n=0 of fittings=1 extents=6,0,15,0
+§MAINS-COST sheet=m6b ms=1 heap_mb=5.5
+§PASS M6b RED: correction off, the same set does not join (2 components) components=2
+§MAINS-FIT sheet=m6f grid=G1 tags=8 median_mm=0 PASS
+§MAINS-READ sheet=m6f fit=rot:0deg,dx:0m,dy:0m,med:0mm,tags:8,grid:G1 pieces=2 length=8m components=1 over5m=1 width_share=0 terminals=0 no_run=0 mirrored=1 fittings=1 fittings_unjoined=0 fittings_unjoined_nomirror=1 missingBlocks=0
+§MAINS-POINTS sheet=m6f role=terminal n=0 fromGeometry=0 atInsertPoint=0 (position = centre of the transformed block geometry; the insert point only when the block holds none)
+§MAINS-MIRROR sheet=m6f fired=yes n=1 of fittings=1 extents=6,0,15,0
+§MAINS-COST sheet=m6f ms=1 heap_mb=5.6
+§PASS M6f fittings_unjoined: 0 with the correction, 1 with it off, both in the §MAINS-READ line fittings=1 fittings_unjoined=0 fittings_unjoined_nomirror=1
+§MAINS-FIT sheet=m6f-off grid=G1 tags=8 median_mm=0 PASS
+§MAINS-READ sheet=m6f-off fit=rot:0deg,dx:0m,dy:0m,med:0mm,tags:8,grid:G1 pieces=2 length=8m components=2 over5m=0 width_share=0 terminals=0 no_run=0 mirrored=0 fittings=1 fittings_unjoined=1 fittings_unjoined_nomirror=1 missingBlocks=0
+§MAINS-POINTS sheet=m6f-off role=terminal n=0 fromGeometry=0 atInsertPoint=0 (position = centre of the transformed block geometry; the insert point only when the block holds none)
+§MAINS-MIRROR sheet=m6f-off fired=no n=0 of fittings=1 extents=6,0,15,0
+§MAINS-COST sheet=m6f-off ms=1 heap_mb=5.7
+§PASS M6f RED: correction off, fittings_unjoined reads 1 (the count follows the boxes actually used) fittings_unjoined=1
+§MAINS-FIT sheet=m6c grid=G1 tags=8 median_mm=0 PASS
+§MAINS-READ sheet=m6c fit=rot:0deg,dx:0m,dy:0m,med:0mm,tags:8,grid:G1 pieces=2 length=8m components=1 over5m=1 width_share=0 terminals=0 no_run=0 mirrored=0 fittings=1 fittings_unjoined=0 fittings_unjoined_nomirror=0 missingBlocks=0
+§MAINS-POINTS sheet=m6c role=terminal n=0 fromGeometry=0 atInsertPoint=0 (position = centre of the transformed block geometry; the insert point only when the block holds none)
+§MAINS-MIRROR sheet=m6c fired=no n=0 of fittings=1 extents=-15,0,-6,0
+§MAINS-COST sheet=m6c ms=0 heap_mb=6.0
+§PASS M6c a sheet drawn at negative X with its inserts at negative X: mirrored=0, fired=no, the fitting joins where it stands components=1 | §MAINS-MIRROR sheet=m6c fired=no n=0 of fittings=1 extents=-15,0,-6,0
+§PASS M6d a set with no mirrored insert logs mirrored=0 and fired=no §MAINS-MIRROR sheet=m2 fired=no n=0 of fittings=1 extents=0,0,10,0
+§MAINS-FIT sheet=m6e grid=G1 tags=8 median_mm=0 PASS
+§MAINS-READ sheet=m6e fit=rot:0deg,dx:0m,dy:0m,med:0mm,tags:8,grid:G1 pieces=2 length=8m components=1 over5m=1 width_share=0 terminals=0 no_run=0 mirrored=0 fittings=1 fittings_unjoined=0 fittings_unjoined_nomirror=0 missingBlocks=0
+§MAINS-POINTS sheet=m6e role=terminal n=0 fromGeometry=0 atInsertPoint=0 (position = centre of the transformed block geometry; the insert point only when the block holds none)
+§MAINS-MIRROR sheet=m6e fired=no n=0 of fittings=1 extents=6,0,15,0
+§MAINS-COST sheet=m6e ms=0 heap_mb=6.3
+§PASS M6e a real negative X scale is applied as drawn (box 10..11): joins with mirrored=0 components=1
+§MAINS-FIT sheet=m14 grid=G1 tags=8 median_mm=0 PASS
+§MAINS-READ sheet=m14 fit=rot:0deg,dx:0m,dy:0m,med:0mm,tags:8,grid:G1 pieces=1 length=10m components=1 over5m=1 width_share=0 terminals=0 no_run=0 mirrored=0 fittings=0 fittings_unjoined=0 fittings_unjoined_nomirror=0 missingBlocks=1
+§MAINS-POINTS sheet=m14 role=terminal n=0 fromGeometry=0 atInsertPoint=0 (position = centre of the transformed block geometry; the insert point only when the block holds none)
+§MAINS-MIRROR sheet=m14 fired=no n=0 of fittings=0 extents=0,0,10,0
+§MAINS-MISSING-BLOCKS sheet=m14 n=1 names=STRUCTURE_LINK_ABSENT
+§MAINS-COST sheet=m14 ms=1 heap_mb=6.6
+§PASS M14 an insert naming a block with no definition reads without throwing and counts missingBlocks=1, naming it missingBlocks=1
+§PASS M14 RED: a set whose blocks all exist logs missingBlocks=0 
+§MAINS-FIT sheet=m5-mtext grid=G1 tags=8 median_mm=0 PASS
+§MAINS-READ sheet=m5-mtext fit=rot:30deg,dx:123.4m,dy:-56.7m,med:0mm,tags:8,grid:G1 pieces=2 length=22.5m components=1 over5m=1 width_share=0 terminals=0 no_run=0 mirrored=0 fittings=0 fittings_unjoined=0 fittings_unjoined_nomirror=0 missingBlocks=0
+§MAINS-POINTS sheet=m5-mtext role=terminal n=0 fromGeometry=0 atInsertPoint=0 (position = centre of the transformed block geometry; the insert point only when the block holds none)
+§MAINS-MIRROR sheet=m5-mtext fired=no n=0 of fittings=0 extents=-74.919,105.036,-59.277,114.129
+§MAINS-COST sheet=m5-mtext ms=1 heap_mb=5.0
+§PASS M5e MTEXT tags with formatting codes ({\f..;\H..;A}\P) read as plain tags: fit passes on 8 tags with 8 bubble inserts beside them, none read as a tag tags=8 bubbles=8
+§PASS M5e the MTEXT code stripper leaves the tag: -> A,B1,C-2,D 
+§MAINS-FIT sheet=m7 grid=G1 tags=8 median_mm=0 PASS
+§MAINS-READ sheet=m7 fit=rot:0deg,dx:0m,dy:0m,med:0mm,tags:8,grid:G1 pieces=4 length=40m components=4 over5m=4 width_share=0 terminals=4 no_run=1 mirrored=0 fittings=0 fittings_unjoined=0 fittings_unjoined_nomirror=0 missingBlocks=2
+§MAINS-POINTS sheet=m7 role=terminal n=4 fromGeometry=0 atInsertPoint=4 (position = centre of the transformed block geometry; the insert point only when the block holds none)
+§MAINS-MIRROR sheet=m7 fired=no n=0 of fittings=0 extents=0,0,10,15
+§MAINS-MISSING-BLOCKS sheet=m7 n=2 names=SUPPLY_DIFFUSER,RETURN_GRILLE
+§MAINS-COST sheet=m7 ms=1 heap_mb=5.4
+§PASS M7 supply+return on one component = mixed; one kind = that kind; none in 1 m = unknown {"1":"mixed","2":"supply","3":"unknown","4":"unknown"} terminals=4 no_run=1
+§MAINS-FIT sheet=m7-nearest grid=G1 tags=8 median_mm=0 PASS
+§MAINS-READ sheet=m7-nearest fit=rot:0deg,dx:0m,dy:0m,med:0mm,tags:8,grid:G1 pieces=4 length=40m components=4 over5m=4 width_share=0 terminals=4 no_run=1 mirrored=0 fittings=0 fittings_unjoined=0 fittings_unjoined_nomirror=0 missingBlocks=2
+§MAINS-POINTS sheet=m7-nearest role=terminal n=4 fromGeometry=0 atInsertPoint=4 (position = centre of the transformed block geometry; the insert point only when the block holds none)
+§MAINS-MIRROR sheet=m7-nearest fired=no n=0 of fittings=0 extents=0,0,10,15
+§MAINS-MISSING-BLOCKS sheet=m7-nearest n=2 names=SUPPLY_DIFFUSER,RETURN_GRILLE
+§MAINS-COST sheet=m7-nearest ms=1 heap_mb=5.5
+§PASS M7 RED: a nearest-terminal variant calls the mixed component by one kind, so it fails M7 piece1=supply
+§MAINS-FIT sheet=m7-none grid=G1 tags=8 median_mm=0 PASS
+§MAINS-READ sheet=m7-none fit=rot:0deg,dx:0m,dy:0m,med:0mm,tags:8,grid:G1 pieces=1 length=10m components=1 over5m=1 width_share=0 terminals=0 no_run=0 mirrored=0 fittings=0 fittings_unjoined=0 fittings_unjoined_nomirror=0 missingBlocks=0
+§MAINS-POINTS sheet=m7-none role=terminal n=0 fromGeometry=0 atInsertPoint=0 (position = centre of the transformed block geometry; the insert point only when the block holds none)
+§MAINS-MIRROR sheet=m7-none fired=no n=0 of fittings=0 extents=0,0,10,0
+§MAINS-COST sheet=m7-none ms=0 heap_mb=5.8
+§PASS M7 a sheet with no terminals reads unknown (terminals=0) system=unknown
+§MAINS-FIT sheet=w1 grid=G1 tags=8 median_mm=0 PASS
+§MAINS-READ sheet=w1 fit=rot:0deg,dx:0m,dy:0m,med:0mm,tags:8,grid:G1 pieces=5 length=50m components=5 over5m=5 width_share=0.4 terminals=0 no_run=0 mirrored=0 fittings=0 fittings_unjoined=0 fittings_unjoined_nomirror=0 missingBlocks=0
+§MAINS-POINTS sheet=w1 role=terminal n=0 fromGeometry=0 atInsertPoint=0 (position = centre of the transformed block geometry; the insert point only when the block holds none)
+§MAINS-MIRROR sheet=w1 fired=no n=0 of fittings=0 extents=0,-0.2,10,12.3
+§MAINS-COST sheet=w1 ms=1 heap_mb=6.2
+§PASS W1 width only where an outline sits each side at equal offset (<=10 mm), else null, never a default [400,null,null,null,595] width_share=0.400
+§MAINS-FIT sheet=m8 grid=G1 tags=8 median_mm=0 PASS
+§MAINS-READ sheet=m8 fit=rot:0deg,dx:0m,dy:0m,med:0mm,tags:8,grid:G1 pieces=4 length=14m components=3 over5m=1 width_share=0 terminals=0 no_run=0 mirrored=0 fittings=0 fittings_unjoined=0 fittings_unjoined_nomirror=0 missingBlocks=0
+§MAINS-POINTS sheet=m8 role=terminal n=0 fromGeometry=0 atInsertPoint=0 (position = centre of the transformed block geometry; the insert point only when the block holds none)
+§MAINS-MIRROR sheet=m8 fired=no n=0 of fittings=0 extents=0,0,10,8
+§MAINS-COST sheet=m8 ms=0 heap_mb=6.6
+§PASS M8 no z/depth/height column, every row is a segment of the sheet (hand list), none bridges the 2 m gap cols=28 rows=4 absent=0 bad=
+§PASS M8 RED: a record with a bridge across the gap is caught (piece absent from the sheet) absent=1
+§PASS M8 RED: a record with a z column is caught bad=z
+§MAINS-FIT sheet=m1 grid=G1 tags=8 median_mm=0 PASS
+§MAINS-READ sheet=m1 fit=rot:0deg,dx:0m,dy:0m,med:0mm,tags:8,grid:G1 pieces=2 length=16m components=2 over5m=2 width_share=0 terminals=0 no_run=0 mirrored=0 fittings=0 fittings_unjoined=0 fittings_unjoined_nomirror=0 missingBlocks=0
+§MAINS-POINTS sheet=m1 role=terminal n=0 fromGeometry=0 atInsertPoint=0 (position = centre of the transformed block geometry; the insert point only when the block holds none)
+§MAINS-MIRROR sheet=m1 fired=no n=0 of fittings=0 extents=0,-3,10,3
+§MAINS-COST sheet=m1 ms=1 heap_mb=7.7
+§PASS M8w re-reading a sheet replaces its rows (no duplicates), keeps other sheets, and creates only the two tables m8=4 m1=2 tables=drawn_route,drawn_route_sheet
+§MAINS-FIT sheet=m13-nest0 grid=G1 tags=8 median_mm=0 PASS
+§MAINS-READ sheet=m13-nest0 fit=rot:30deg,dx:123.4m,dy:-56.7m,med:0mm,tags:8,grid:G1 pieces=2 length=22.5m components=1 over5m=1 width_share=0 terminals=0 no_run=0 mirrored=0 fittings=0 fittings_unjoined=0 fittings_unjoined_nomirror=0 missingBlocks=0
+§MAINS-POINTS sheet=m13-nest0 role=terminal n=0 fromGeometry=0 atInsertPoint=0 (position = centre of the transformed block geometry; the insert point only when the block holds none)
+§MAINS-MIRROR sheet=m13-nest0 fired=no n=0 of fittings=0 extents=-74.919,105.036,-59.277,114.129
+§MAINS-COST sheet=m13-nest0 ms=1 heap_mb=8.0
+§PASS M13a grid inside an offset 37 deg block insert (top-level grid texts/lines: 0) fits to 1 mm worst=0.0000 mm tags=8 nested=24
+§MAINS-FIT sheet=m13-toplevel0 grid=G1 tags=0 median_mm=n/a FAIL no tag in common
+§MAINS-REFUSE sheet=m13-toplevel0 reason=frame fit failed: best grid G1 no tag in common; sheet tags=0
+§MAINS-COST sheet=m13-toplevel0 ms=0 heap_mb=8.0
+§PASS M13a RED: the same sheet read top-level only REFUSES (no grid lines or tags seen) frame fit failed: best grid G1 no tag in common; sheet tags=0
+§MAINS-FIT sheet=m13-nest1 grid=G1 tags=8 median_mm=0 PASS
+§MAINS-READ sheet=m13-nest1 fit=rot:30deg,dx:123.4m,dy:-56.7m,med:0mm,tags:8,grid:G1 pieces=2 length=22.5m components=1 over5m=1 width_share=0 terminals=0 no_run=0 mirrored=0 fittings=0 fittings_unjoined=0 fittings_unjoined_nomirror=0 missingBlocks=0
+§MAINS-POINTS sheet=m13-nest1 role=terminal n=0 fromGeometry=0 atInsertPoint=0 (position = centre of the transformed block geometry; the insert point only when the block holds none)
+§MAINS-MIRROR sheet=m13-nest1 fired=no n=0 of fittings=0 extents=-74.919,105.036,-59.277,114.129
+§MAINS-COST sheet=m13-nest1 ms=1 heap_mb=8.3
+§PASS M13a grid inside an offset 211 deg block insert with mirrored X scale (top-level grid texts/lines: 0) fits to 1 mm worst=0.0000 mm tags=8 nested=24
+§MAINS-FIT sheet=m13-toplevel1 grid=G1 tags=0 median_mm=n/a FAIL no tag in common
+§MAINS-REFUSE sheet=m13-toplevel1 reason=frame fit failed: best grid G1 no tag in common; sheet tags=0
+§MAINS-COST sheet=m13-toplevel1 ms=0 heap_mb=8.3
+§PASS M13a RED: the same sheet read top-level only REFUSES (no grid lines or tags seen) frame fit failed: best grid G1 no tag in common; sheet tags=0
+§MAINS-FIT sheet=S-101 grid=G1 tags=8 median_mm=0 PASS
+§MAINS-READ sheet=S-101 fit=rot:0deg,dx:0m,dy:0m,med:0mm,tags:8,grid:G1 pieces=2 length=8m components=2 over5m=0 width_share=0 terminals=0 no_run=0 mirrored=0 fittings=0 fittings_unjoined=0 fittings_unjoined_nomirror=0 missingBlocks=0
+§MAINS-POINTS sheet=S-101 role=terminal n=0 fromGeometry=0 atInsertPoint=0 (position = centre of the transformed block geometry; the insert point only when the block holds none)
+§MAINS-MIRROR sheet=S-101 fired=no n=0 of fittings=0 extents=0,0,4,1
+§MAINS-COST sheet=S-101 ms=1 heap_mb=8.8
+§MAINS-FIT sheet=S-101 grid=G1 tags=8 median_mm=0 PASS
+§MAINS-READ sheet=S-101 fit=rot:0deg,dx:0m,dy:0m,med:0mm,tags:8,grid:G1 pieces=4 length=16m components=4 over5m=0 width_share=0 terminals=0 no_run=0 mirrored=0 fittings=0 fittings_unjoined=0 fittings_unjoined_nomirror=0 missingBlocks=0
+§MAINS-POINTS sheet=S-101 role=terminal n=0 fromGeometry=0 atInsertPoint=0 (position = centre of the transformed block geometry; the insert point only when the block holds none)
+§MAINS-MIRROR sheet=S-101 fired=no n=0 of fittings=0 extents=0,0,4,3
+§MAINS-COST sheet=S-101 ms=2 heap_mb=5.3
+§PASS M11a a newer revision (B -> C) replaces the rows of that sheet number rows 2 -> 4 revision=C
+§MAINS-FIT sheet=S-101 grid=G1 tags=8 median_mm=0 PASS
+§MAINS-READ sheet=S-101 fit=rot:0deg,dx:0m,dy:0m,med:0mm,tags:8,grid:G1 pieces=2 length=8m components=2 over5m=0 width_share=0 terminals=0 no_run=0 mirrored=0 fittings=0 fittings_unjoined=0 fittings_unjoined_nomirror=0 missingBlocks=0
+§MAINS-POINTS sheet=S-101 role=terminal n=0 fromGeometry=0 atInsertPoint=0 (position = centre of the transformed block geometry; the insert point only when the block holds none)
+§MAINS-MIRROR sheet=S-101 fired=no n=0 of fittings=0 extents=0,0,4,1
+§MAINS-COST sheet=S-101 ms=1 heap_mb=5.6
+§MAINS-REFUSE sheet=S-101 reason=older revision held (C > A)
+§PASS M11b an older revision (A < C) is refused with the held revision named, and the held rows are unchanged older revision held (C > A)
+§MAINS-FIT sheet=S-101 grid=G1 tags=8 median_mm=0 PASS
+§MAINS-READ sheet=S-101 fit=rot:0deg,dx:0m,dy:0m,med:0mm,tags:8,grid:G1 pieces=4 length=16m components=4 over5m=0 width_share=0 terminals=0 no_run=0 mirrored=0 fittings=0 fittings_unjoined=0 fittings_unjoined_nomirror=0 missingBlocks=0
+§MAINS-POINTS sheet=S-101 role=terminal n=0 fromGeometry=0 atInsertPoint=0 (position = centre of the transformed block geometry; the insert point only when the block holds none)
+§MAINS-MIRROR sheet=S-101 fired=no n=0 of fittings=0 extents=0,0,4,3
+§MAINS-COST sheet=S-101 ms=0 heap_mb=5.8
+§MAINS-FIT sheet=S-101 grid=G1 tags=8 median_mm=0 PASS
+§MAINS-READ sheet=S-101 fit=rot:0deg,dx:0m,dy:0m,med:0mm,tags:8,grid:G1 pieces=2 length=8m components=2 over5m=0 width_share=0 terminals=0 no_run=0 mirrored=0 fittings=0 fittings_unjoined=0 fittings_unjoined_nomirror=0 missingBlocks=0
+§MAINS-POINTS sheet=S-101 role=terminal n=0 fromGeometry=0 atInsertPoint=0 (position = centre of the transformed block geometry; the insert point only when the block holds none)
+§MAINS-MIRROR sheet=S-101 fired=no n=0 of fittings=0 extents=0,0,4,1
+§MAINS-COST sheet=S-101 ms=1 heap_mb=6.0
+§MAINS-REFUSE sheet=S-101 reason=older revision held (C > A)
+§MAINS-FIT sheet=S-101 grid=G1 tags=8 median_mm=0 PASS
+§MAINS-READ sheet=S-101 fit=rot:0deg,dx:0m,dy:0m,med:0mm,tags:8,grid:G1 pieces=2 length=8m components=2 over5m=0 width_share=0 terminals=0 no_run=0 mirrored=0 fittings=0 fittings_unjoined=0 fittings_unjoined_nomirror=0 missingBlocks=0
+§MAINS-POINTS sheet=S-101 role=terminal n=0 fromGeometry=0 atInsertPoint=0 (position = centre of the transformed block geometry; the insert point only when the block holds none)
+§MAINS-MIRROR sheet=S-101 fired=no n=0 of fittings=0 extents=0,0,4,1
+§MAINS-COST sheet=S-101 ms=0 heap_mb=6.1
+§MAINS-FIT sheet=S-102 grid=G1 tags=8 median_mm=0 PASS
+§MAINS-READ sheet=S-102 fit=rot:0deg,dx:0m,dy:0m,med:0mm,tags:8,grid:G1 pieces=4 length=16m components=4 over5m=0 width_share=0 terminals=0 no_run=0 mirrored=0 fittings=0 fittings_unjoined=0 fittings_unjoined_nomirror=0 missingBlocks=0
+§MAINS-POINTS sheet=S-102 role=terminal n=0 fromGeometry=0 atInsertPoint=0 (position = centre of the transformed block geometry; the insert point only when the block holds none)
+§MAINS-MIRROR sheet=S-102 fired=no n=0 of fittings=0 extents=0,0,4,3
+§MAINS-COST sheet=S-102 ms=1 heap_mb=6.3
+§PASS M11c the same revision (C -> C) replaces; a different sheet number is its own key 
+§MAINS-FIT sheet=S-101 grid=G1 tags=8 median_mm=0 PASS
+§MAINS-READ sheet=S-101 fit=rot:0deg,dx:0m,dy:0m,med:0mm,tags:8,grid:G1 pieces=4 length=16m components=4 over5m=0 width_share=0 terminals=0 no_run=0 mirrored=0 fittings=0 fittings_unjoined=0 fittings_unjoined_nomirror=0 missingBlocks=0
+§MAINS-POINTS sheet=S-101 role=terminal n=0 fromGeometry=0 atInsertPoint=0 (position = centre of the transformed block geometry; the insert point only when the block holds none)
+§MAINS-MIRROR sheet=S-101 fired=no n=0 of fittings=0 extents=0,0,4,3
+§MAINS-COST sheet=S-101 ms=1 heap_mb=6.6
+§PASS M11 RED: a writer that ignored revisions would have replaced the held rows (the dump differs), so the check can fail 
+§PASS M11d revision order: A<B<Z<AA, 2<10 (numeric), equal is same 
+§MAINS-FIT sheet=S-201 grid=G1 tags=8 median_mm=0 PASS
+§MAINS-READ sheet=S-201 fit=rot:30deg,dx:123.4m,dy:-56.7m,med:0mm,tags:8,grid:G1 pieces=2 length=22.5m components=1 over5m=1 width_share=0 terminals=0 no_run=0 mirrored=0 fittings=0 fittings_unjoined=0 fittings_unjoined_nomirror=0 missingBlocks=0
+§MAINS-POINTS sheet=S-201 role=terminal n=0 fromGeometry=0 atInsertPoint=0 (position = centre of the transformed block geometry; the insert point only when the block holds none)
+§MAINS-MIRROR sheet=S-201 fired=no n=0 of fittings=0 extents=-74.919,105.036,-59.277,114.129
+§MAINS-COST sheet=S-201 ms=1 heap_mb=7.2
+§PASS M12 export -> reopen reads back the same rows (counts and coordinates identical); no other table changed rows=2 before={"elements_meta":2,"other":3} after={"elements_meta":2,"other":3,"drawn_route":2,"drawn_route_sheet":1}
+§PASS M12 RED: one coordinate off by 1e-9 is caught by the same comparison 
+§MAINS-FIT sheet=qe1 grid=G1 tags=8 median_mm=0 PASS
+§MAINS-INCONCLUSIVE sheet=qe1 reason=no centreline layer (runs only; equipment read)
+§MAINS-POINTS sheet=qe1 role=terminal n=0 fromGeometry=0 atInsertPoint=0 (position = centre of the transformed block geometry; the insert point only when the block holds none)
+§MAINS-MIRROR sheet=qe1 role=equipment fired=no n=0 of inserts=16
+§MAINS-EQUIP sheet=qe1 fit=rot:0deg,dx:0m,dy:0m,med:0mm,tags:8,grid:G1 items=11 stacked=5 unknownKind=0 byKind={"cabinet":3,"blanket":4,"extinguisher":4} mirrored=0 missingBlocks=4 height=none (not stated)
+§MAINS-POINTS sheet=qe1 role=equipment n=11 atInsertPoint=16 (position = centre of the transformed block geometry)
+§MAINS-MISSING-BLOCKS sheet=qe1 n=4 names=FIRE CABINET 1,Fire_Blanket,EXTINGUISHER FOAM 9L,EXTINGUISHER DRY POWDER 4KG
+§MAINS-COST sheet=qe1 ms=2 heap_mb=7.7
+§PASS E1 16 inserts with 3 stacked at one spot give 11 items; the stacked spot gives 1 inserts=16 items=11 spot0=1 | §MAINS-EQUIP sheet=qe1 fit=rot:0deg,dx:0m,dy:0m,med:0mm,tags:8,grid:G1 items=11 stacked=5 unknownKind=0 byKind={"cabinet":3,"blanket":4,"extinguisher":4} mirrored=0 missingBlocks=4 height=none (not stated)
+§MAINS-FIT sheet=qe1-red grid=G1 tags=8 median_mm=0 PASS
+§MAINS-INCONCLUSIVE sheet=qe1-red reason=no centreline layer (runs only; equipment read)
+§MAINS-POINTS sheet=qe1-red role=terminal n=0 fromGeometry=0 atInsertPoint=0 (position = centre of the transformed block geometry; the insert point only when the block holds none)
+§MAINS-MIRROR sheet=qe1-red role=equipment fired=no n=0 of inserts=16
+§MAINS-EQUIP sheet=qe1-red fit=rot:0deg,dx:0m,dy:0m,med:0mm,tags:8,grid:G1 items=16 stacked=0 unknownKind=0 byKind={"cabinet":5,"blanket":6,"extinguisher":5} mirrored=0 missingBlocks=4 height=none (not stated)
+§MAINS-POINTS sheet=qe1-red role=equipment n=16 atInsertPoint=16 (position = centre of the transformed block geometry)
+§MAINS-MISSING-BLOCKS sheet=qe1-red n=4 names=FIRE CABINET 1,Fire_Blanket,EXTINGUISHER FOAM 9L,EXTINGUISHER DRY POWDER 4KG
+§MAINS-COST sheet=qe1-red ms=1 heap_mb=7.8
+§PASS E1 RED: with the collapse off the stacked spot gives 3 (and 16 items) spot0=3 items=16
+§MAINS-FIT sheet=e2 grid=G1 tags=8 median_mm=0 PASS
+§MAINS-INCONCLUSIVE sheet=e2 reason=no centreline layer (runs only; equipment read)
+§MAINS-POINTS sheet=e2 role=terminal n=0 fromGeometry=0 atInsertPoint=0 (position = centre of the transformed block geometry; the insert point only when the block holds none)
+§MAINS-MIRROR sheet=e2 role=equipment fired=no n=0 of inserts=5
+§MAINS-EQUIP-UNKNOWN sheet=e2 block=FB1 n=1 not placed
+§MAINS-EQUIP sheet=e2 fit=rot:0deg,dx:0m,dy:0m,med:0mm,tags:8,grid:G1 items=4 stacked=0 unknownKind=1 byKind={"extinguisher":2,"cabinet":1,"blanket":1} mirrored=0 missingBlocks=4 height=none (not stated)
+§MAINS-POINTS sheet=e2 role=equipment n=4 atInsertPoint=4 (position = centre of the transformed block geometry)
+§MAINS-MISSING-BLOCKS sheet=e2 n=4 names=EXTINGUISHER FOAM 9L,FIRE CABINET 2,FB,FB1
+§MAINS-COST sheet=e2 ms=1 heap_mb=8.1
+§PASS E2 kind comes from the word, not the layer (extinguisher on P-SANR-FIXT; FB whole word only: FB1 is unknown) extinguisher:FIREEXTINGUISHER,extinguisher:FIREEXTINGUISHER,cabinet:FIRECABINET,blanket:FIREBLANKET 1
+§MAINS-FIT sheet=e3 grid=G1 tags=8 median_mm=0 PASS
+§MAINS-INCONCLUSIVE sheet=e3 reason=no centreline layer (runs only; equipment read)
+§MAINS-POINTS sheet=e3 role=terminal n=0 fromGeometry=0 atInsertPoint=0 (position = centre of the transformed block geometry; the insert point only when the block holds none)
+§MAINS-MIRROR sheet=e3 role=equipment fired=no n=0 of inserts=2
+§MAINS-EQUIP-UNKNOWN sheet=e3 block=AHU-3 PLAN n=1 not placed
+§MAINS-EQUIP sheet=e3 fit=rot:0deg,dx:0m,dy:0m,med:0mm,tags:8,grid:G1 items=1 stacked=0 unknownKind=1 byKind={"cabinet":1} mirrored=0 missingBlocks=2 height=none (not stated)
+§MAINS-POINTS sheet=e3 role=equipment n=1 atInsertPoint=1 (position = centre of the transformed block geometry)
+§MAINS-MISSING-BLOCKS sheet=e3 n=2 names=AHU-3 PLAN,FIRE CABINET 1
+§MAINS-COST sheet=e3 ms=0 heap_mb=8.4
+§PASS E3 an unknown block name on M-EQPM is not placed; unknownKind=1 is logged §MAINS-EQUIP sheet=e3 fit=rot:0deg,dx:0m,dy:0m,med:0mm,tags:8,grid:G1 items=1 stacked=0 unknownKind=1 byKind={"cabinet":1} mirrored=0 missingBlocks=2 height=none (not stated)
+§MAINS-FIT sheet=qe4 grid=G1 tags=8 median_mm=0 PASS
+§MAINS-INCONCLUSIVE sheet=qe4 reason=no centreline layer (runs only; equipment read)
+§MAINS-POINTS sheet=qe4 role=terminal n=0 fromGeometry=0 atInsertPoint=0 (position = centre of the transformed block geometry; the insert point only when the block holds none)
+§MAINS-MIRROR sheet=qe4 role=equipment fired=no n=0 of inserts=1
+§MAINS-EQUIP sheet=qe4 fit=rot:30deg,dx:123.4m,dy:-56.7m,med:0mm,tags:8,grid:G1 items=1 stacked=0 unknownKind=0 byKind={"cabinet":1} mirrored=0 missingBlocks=3 height=none (not stated)
+§MAINS-POINTS sheet=qe4 role=equipment n=1 atInsertPoint=1 (position = centre of the transformed block geometry)
+§MAINS-MISSING-BLOCKS sheet=qe4 n=3 names=FIRE CABINET 9,EXTINGUISHER X,FIRE CABINET 1
+§MAINS-COST sheet=qe4 ms=1 heap_mb=8.6
+§PASS E4 equipment inside the linked-model block is ignored (1 top-level item, 2 hidden inside) items=1 nested=26 fit_tags=8
+§MAINS-FIT sheet=e5-30 grid=G1 tags=8 median_mm=0 PASS
+§MAINS-INCONCLUSIVE sheet=e5-30 reason=no centreline layer (runs only; equipment read)
+§MAINS-POINTS sheet=e5-30 role=terminal n=0 fromGeometry=0 atInsertPoint=0 (position = centre of the transformed block geometry; the insert point only when the block holds none)
+§MAINS-MIRROR sheet=e5-30 role=equipment fired=no n=0 of inserts=4
+§MAINS-EQUIP sheet=e5-30 fit=rot:30deg,dx:123.4m,dy:-56.7m,med:0mm,tags:8,grid:G1 items=4 stacked=0 unknownKind=0 byKind={"cabinet":4} mirrored=0 missingBlocks=4 height=none (not stated)
+§MAINS-POINTS sheet=e5-30 role=equipment n=4 atInsertPoint=4 (position = centre of the transformed block geometry)
+§MAINS-MISSING-BLOCKS sheet=e5-30 n=4 names=FIRE CABINET 0,FIRE CABINET 1,FIRE CABINET 2,FIRE CABINET 3
+§MAINS-COST sheet=e5-30 ms=1 heap_mb=5.3
+§PASS E5 sheet rotated 30 deg, offset [123.4,-56.7]: items land on the building to 1 mm worst=0.0000 mm tags=8
+§MAINS-FIT sheet=e5--150 grid=G1 tags=8 median_mm=0 PASS
+§MAINS-INCONCLUSIVE sheet=e5--150 reason=no centreline layer (runs only; equipment read)
+§MAINS-POINTS sheet=e5--150 role=terminal n=0 fromGeometry=0 atInsertPoint=0 (position = centre of the transformed block geometry; the insert point only when the block holds none)
+§MAINS-MIRROR sheet=e5--150 role=equipment fired=no n=0 of inserts=4
+§MAINS-EQUIP sheet=e5--150 fit=rot:210deg,dx:-40.25m,dy:77.125m,med:0mm,tags:8,grid:G1 items=4 stacked=0 unknownKind=0 byKind={"cabinet":4} mirrored=0 missingBlocks=4 height=none (not stated)
+§MAINS-POINTS sheet=e5--150 role=equipment n=4 atInsertPoint=4 (position = centre of the transformed block geometry)
+§MAINS-MISSING-BLOCKS sheet=e5--150 n=4 names=FIRE CABINET 0,FIRE CABINET 1,FIRE CABINET 2,FIRE CABINET 3
+§MAINS-COST sheet=e5--150 ms=0 heap_mb=5.5
+§PASS E5 sheet rotated -150 deg, offset [-40.25,77.125]: items land on the building to 1 mm worst=0.0000 mm tags=8
+§MAINS-FIT sheet=e6 grid=G1 tags=8 median_mm=0 PASS
+§MAINS-INCONCLUSIVE sheet=e6 reason=no centreline layer (runs only; equipment read)
+§MAINS-POINTS sheet=e6 role=terminal n=0 fromGeometry=0 atInsertPoint=0 (position = centre of the transformed block geometry; the insert point only when the block holds none)
+§MAINS-MIRROR sheet=e6 role=equipment fired=no n=0 of inserts=2
+§MAINS-EQUIP sheet=e6 fit=rot:0deg,dx:0m,dy:0m,med:0mm,tags:8,grid:G1 items=2 stacked=0 unknownKind=0 byKind={"cabinet":1,"extinguisher":1} mirrored=0 missingBlocks=2 height=none (not stated)
+§MAINS-POINTS sheet=e6 role=equipment n=2 atInsertPoint=2 (position = centre of the transformed block geometry)
+§MAINS-MISSING-BLOCKS sheet=e6 n=2 names=FIRE CABINET 1,EXTINGUISHER FOAM 9L
+§MAINS-COST sheet=e6 ms=1 heap_mb=5.8
+§PASS E6 the mirror guard logs fired=no on an equipment-only sheet whose inserts sit inside the extents §MAINS-MIRROR sheet=e6 role=equipment fired=no n=0 of inserts=2
+§MAINS-FIT sheet=e6-ctl grid=G1 tags=8 median_mm=0 PASS
+§MAINS-INCONCLUSIVE sheet=e6-ctl reason=no centreline layer (runs only; equipment read)
+§MAINS-POINTS sheet=e6-ctl role=terminal n=0 fromGeometry=0 atInsertPoint=0 (position = centre of the transformed block geometry; the insert point only when the block holds none)
+§MAINS-MIRROR sheet=e6-ctl role=equipment fired=yes n=1 of inserts=1
+§MAINS-EQUIP sheet=e6-ctl fit=rot:0deg,dx:0m,dy:0m,med:0mm,tags:8,grid:G1 items=1 stacked=0 unknownKind=0 byKind={"cabinet":1} mirrored=1 missingBlocks=1 height=none (not stated)
+§MAINS-POINTS sheet=e6-ctl role=equipment n=1 atInsertPoint=1 (position = centre of the transformed block geometry)
+§MAINS-MISSING-BLOCKS sheet=e6-ctl n=1 names=FIRE CABINET 1
+§MAINS-COST sheet=e6-ctl ms=0 heap_mb=6.1
+§PASS E6 CONTROL: a point outside the extents whose reflection lands inside fires the guard (fired=yes) and is placed reflected §MAINS-MIRROR sheet=e6-ctl role=equipment fired=yes n=1 of inserts=1
+§MAINS-FIT sheet=qe7 grid=G1 tags=8 median_mm=0 PASS
+§MAINS-INCONCLUSIVE sheet=qe7 reason=no centreline layer (runs only; equipment read)
+§MAINS-POINTS sheet=qe7 role=terminal n=0 fromGeometry=0 atInsertPoint=0 (position = centre of the transformed block geometry; the insert point only when the block holds none)
+§MAINS-MIRROR sheet=qe7 role=equipment fired=no n=0 of inserts=2
+§MAINS-EQUIP sheet=qe7 fit=rot:0deg,dx:0m,dy:0m,med:0mm,tags:8,grid:G1 items=2 stacked=0 unknownKind=0 byKind={"cabinet":2} mirrored=0 missingBlocks=1 height=none (not stated)
+§MAINS-POINTS sheet=qe7 role=equipment n=2 atInsertPoint=2 (position = centre of the transformed block geometry)
+§MAINS-MISSING-BLOCKS sheet=qe7 n=1 names=FIRE CABINET 1
+§MAINS-COST sheet=qe7 ms=0 heap_mb=6.3
+§PASS E7 an equipment-only sheet (no centreline layer) still reads its equipment; runs are INCONCLUSIVE §MAINS-EQUIP sheet=qe7 fit=rot:0deg,dx:0m,dy:0m,med:0mm,tags:8,grid:G1 items=2 stacked=0 unknownKind=0 byKind={"cabinet":2} mirrored=0 missingBlocks=1 height=none (not stated)
+§MAINS-FIT sheet=FP-1 grid=G1 tags=8 median_mm=0 PASS
+§MAINS-READ sheet=FP-1 fit=rot:30deg,dx:123.4m,dy:-56.7m,med:0mm,tags:8,grid:G1 pieces=1 length=12m components=1 over5m=1 width_share=0 terminals=0 no_run=0 mirrored=0 fittings=0 fittings_unjoined=0 fittings_unjoined_nomirror=0 missingBlocks=4
+§MAINS-POINTS sheet=FP-1 role=terminal n=0 fromGeometry=0 atInsertPoint=0 (position = centre of the transformed block geometry; the insert point only when the block holds none)
+§MAINS-MIRROR sheet=FP-1 fired=no n=0 of fittings=0 extents=-74.919,105.036,-64.527,111.036
+§MAINS-MIRROR sheet=FP-1 role=equipment fired=no n=0 of inserts=4
+§MAINS-EQUIP sheet=FP-1 fit=rot:30deg,dx:123.4m,dy:-56.7m,med:0mm,tags:8,grid:G1 items=4 stacked=0 unknownKind=0 byKind={"cabinet":4} mirrored=0 missingBlocks=4 height=none (not stated)
+§MAINS-POINTS sheet=FP-1 role=equipment n=4 atInsertPoint=4 (position = centre of the transformed block geometry)
+§MAINS-MISSING-BLOCKS sheet=FP-1 n=4 names=FIRE CABINET 0,FIRE CABINET 1,FIRE CABINET 2,FIRE CABINET 3
+§MAINS-COST sheet=FP-1 ms=0 heap_mb=6.7
+§PASS E8 write() round trip: drawn_equipment rows identical after export/reopen, written twice = 4 rows, no z column, no other table changed rows=4 cols=sheet,item,kind,block,x,y,ifc_class,predefined,object_type,provenance tables=drawn_equipment,drawn_route,drawn_route_sheet
+§PASS E8 RED: one coordinate off by 1e-9 is caught by the same comparison 
+§MAINS-FIT sheet=e9 grid=G1 tags=8 median_mm=0 PASS
+§MAINS-INCONCLUSIVE sheet=e9 reason=no centreline layer (runs only; equipment read)
+§MAINS-POINTS sheet=e9 role=terminal n=0 fromGeometry=0 atInsertPoint=0 (position = centre of the transformed block geometry; the insert point only when the block holds none)
+§MAINS-MIRROR sheet=e9 role=equipment fired=no n=0 of inserts=2
+§MAINS-EQUIP sheet=e9 fit=rot:0deg,dx:0m,dy:0m,med:0mm,tags:8,grid:G1 items=2 stacked=0 unknownKind=0 byKind={"cabinet":1,"extinguisher":1} mirrored=0 missingBlocks=2 height=none (not stated)
+§MAINS-POINTS sheet=e9 role=equipment n=2 atInsertPoint=2 (position = centre of the transformed block geometry)
+§MAINS-MISSING-BLOCKS sheet=e9 n=2 names=FIRE CABINET 1,EXTINGUISHER FOAM 9L
+§MAINS-COST sheet=e9 ms=0 heap_mb=7.4
+§PASS E9 the mount_height row (fp-mount-owner-1p2) is read from the rules and exposed with its citation: mount_m 1.2 for all three kinds, none borrowed, basis owner, the NFPA 10 text only as a note; no item gets a z from the reader rule={"id":"fp-mount-owner-1p2","mount_m":1.2,"basis":"owner"} z=,
+§MAINS-FIT sheet=e9n grid=G1 tags=8 median_mm=0 PASS
+§MAINS-INCONCLUSIVE sheet=e9n reason=no centreline layer (runs only; equipment read)
+§MAINS-POINTS sheet=e9n role=terminal n=0 fromGeometry=0 atInsertPoint=0 (position = centre of the transformed block geometry; the insert point only when the block holds none)
+§MAINS-MIRROR sheet=e9n role=equipment fired=no n=0 of inserts=1
+§MAINS-EQUIP sheet=e9n fit=rot:0deg,dx:0m,dy:0m,med:0mm,tags:8,grid:G1 items=1 stacked=0 unknownKind=0 byKind={"cabinet":1} mirrored=0 missingBlocks=1 height=none (not stated)
+§MAINS-POINTS sheet=e9n role=equipment n=1 atInsertPoint=1 (position = centre of the transformed block geometry)
+§MAINS-MISSING-BLOCKS sheet=e9n n=1 names=FIRE CABINET 1
+§MAINS-COST sheet=e9n ms=1 heap_mb=7.7
+§PASS E9 RED: with the row removed from the rules, nothing is exposed (the rule is data, not hard-coded) rule=null
+§MAINS-FIT sheet=t1 grid=G1 tags=8 median_mm=0 PASS
+§MAINS-READ sheet=t1 fit=rot:0deg,dx:0m,dy:0m,med:0mm,tags:8,grid:G1 pieces=1 length=3m components=1 over5m=0 width_share=0 terminals=1 no_run=0 mirrored=0 fittings=0 fittings_unjoined=0 fittings_unjoined_nomirror=0 missingBlocks=0
+§MAINS-POINTS sheet=t1 role=terminal n=1 fromGeometry=1 atInsertPoint=0 (position = centre of the transformed block geometry; the insert point only when the block holds none)
+§MAINS-MIRROR sheet=t1 fired=no n=0 of fittings=0 extents=9,0,12,0
+§MAINS-MIRROR sheet=t1 role=equipment fired=no n=0 of inserts=1
+§MAINS-EQUIP sheet=t1 fit=rot:0deg,dx:0m,dy:0m,med:0mm,tags:8,grid:G1 items=1 stacked=0 unknownKind=0 byKind={"cabinet":1} mirrored=0 missingBlocks=0 height=none (not stated)
+§MAINS-POINTS sheet=t1 role=equipment n=1 atInsertPoint=0 (position = centre of the transformed block geometry)
+§MAINS-COST sheet=t1 ms=0 heap_mb=8.0
+§PASS T1 a terminal inserted at the origin with its geometry 10 m away is placed at the geometry: it meets the run there (system supply, no_run 0) system=supply no_run=0 | §MAINS-POINTS sheet=t1 role=terminal n=1 fromGeometry=1 atInsertPoint=0 (position = centre of the transformed block geometry; the insert point only when the block holds none) | §MAINS-POINTS sheet=t1 role=equipment n=1 atInsertPoint=0 (position = centre of the transformed block geometry)
+§PASS T1 equipment inserted at the origin with its geometry 10 m away lands at the geometry centre (10.2, 0.0) to 1 mm x=10.2 y=0
+§MAINS-FIT sheet=t1red grid=G1 tags=8 median_mm=0 PASS
+§MAINS-READ sheet=t1red fit=rot:0deg,dx:0m,dy:0m,med:0mm,tags:8,grid:G1 pieces=1 length=3m components=1 over5m=0 width_share=0 terminals=1 no_run=1 mirrored=0 fittings=0 fittings_unjoined=0 fittings_unjoined_nomirror=0 missingBlocks=0
+§MAINS-POINTS sheet=t1red role=terminal n=1 fromGeometry=0 atInsertPoint=1 (position = centre of the transformed block geometry; the insert point only when the block holds none)
+§MAINS-MIRROR sheet=t1red fired=no n=0 of fittings=0 extents=9,0,12,0
+§MAINS-MIRROR sheet=t1red role=equipment fired=no n=0 of inserts=1
+§MAINS-EQUIP sheet=t1red fit=rot:0deg,dx:0m,dy:0m,med:0mm,tags:8,grid:G1 items=1 stacked=0 unknownKind=0 byKind={"cabinet":1} mirrored=0 missingBlocks=0 height=none (not stated)
+§MAINS-POINTS sheet=t1red role=equipment n=1 atInsertPoint=1 (position = centre of the transformed block geometry)
+§MAINS-COST sheet=t1red ms=0 heap_mb=8.3
+§PASS T1 RED: the insert point (main before this fix) puts both at the origin, 10 m off: the terminal meets no run, the equipment sits at (0,0) no_run=1 eq=0,0
+§PASS T1 a block with no geometry falls back to the insert point and says so (fromGeometry=false) {"x":3,"y":4,"fromGeometry":false}
+§DW module loaded
+§WALKNODE fetch mep_rw.db?v=5 -> modeller/mep_rw.db
+§RW_INIT mep_rw.db loaded bom=188 patterns=19 anchors=5479 offsets=15 shims=11 arc_env=1
+§DW §DW-RULES-PATCH file=terminal_rules.db rows=7 ok
+§DW §DW-RULES-PATCH file=duplex_rules.db none
+§WALKNODE rules=terminal_rules.db schedule=duplex_rules.db borrowFP=null building=Clinic
+§W_DM M9 walker line: §WALK-MAINS disc=ACMV bldg=Clinic none reason=no sheet held | runs=0 mains={"none":"no sheet held"} | withStubs=359
+§PASS M9 no sheet held (the reader is not wired into the walker): `none reason=no sheet held`, 0 runs, no drawn= field; RED: keepPatternStubs routes 359 runs=0
+§W_DM VERDICT pass=71 fail=0 inconclusive=0
+§W_DM VERDICT PASS

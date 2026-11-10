@@ -1,0 +1,238 @@
+§W_DW FIXTURES public only: Duplex_ARC.ifc (real), STR_A / ARC_B / STR_B written by the witness (IFC/ holds no STR file; Duplex states no IfcGrid, so the grid is written into STR_A) tmp=/tmp/wdrawn_p6j2Nw
+  tool federate: §MERGE classes=* merged=3 {"meta":3,"transforms":3,"instances":3,"geometries":3,"bbox":3,"psets":0,"types":0,"parts":0,"fills":0} || §FEDERATE-STOREYS paired=1 of 1 unpaired=[] added=0 sameNameKept=1 tol=0.05m source=storey_elevation.placement_z_m (metres, shared frame) || §FEDERATE second=STR_A.ifc merged=3 classes=2 byDisc={"STR":3} grid_axes=7 spaces=0 offset=(0,0,0) georef_offset_rows=0 || §DB_WRITTEN /tmp/wdrawn_p6j2Nw/fed_A.db size=1.2MB
+  tool also(main behaviour): §MERGE classes=IfcColumn merged=0 || §DB_WRITTEN /tmp/wdrawn_p6j2Nw/also_A.db size=1.2MB
+  tool federate-no-disc: §MERGE classes=* merged=3 {"meta":3,"transforms":3,"instances":3,"geometries":3,"bbox":3,"psets":0,"types":0,"parts":0,"fills":0} || §FEDERATE-STOREYS paired=1 of 1 unpaired=[] added=0 sameNameKept=1 tol=0.05m source=storey_elevation.placement_z_m (metres, shared frame) || §FEDERATE second=STR_A.ifc merged=3 classes=2 byDisc={"ARC":2,"STR":1} grid_axes=7 spaces=0 offset=(0,0,0) georef_offset_rows=0 || §DB_WRITTEN /tmp/wdrawn_p6j2Nw/fed_A_nodisc.db size=1.2MB
+  tool federate mapped: §MERGE classes=* merged=2 {"meta":2,"transforms":2,"instances":2,"geometries":2,"bbox":2,"psets":0,"types":0,"parts":0,"fills":0} || §FEDERATE-STOREYS paired=1 of 1 unpaired=[] added=0 sameNameKept=1 tol=0.05m source=storey_elevation.placement_z_m (metres, shared frame) || §FEDERATE second=STR_B.ifc merged=2 classes=2 byDisc={"STR":2} grid_axes=4 spaces=0 offset=(500128,2750461,0) georef_offset_rows=3 || §DB_WRITTEN /tmp/wdrawn_p6j2Nw/fed_B.db size=0.2MB
+§PASS F1 federated element count per discipline equals the two single opens added (Duplex ARC + STR_A) | single ARC+STR={"ARC":270,"STR":22} federated={"ARC":270,"STR":22}
+§PASS F1b same on the mapped pair | single={"ARC":3,"STR":2} federated={"ARC":3,"STR":2}
+§PASS F2 STR IfcSlab and IfcBeam are present with bodies and discipline STR | [["IfcSlab","STR",1],["IfcBeam","STR",1]]
+§PASS F3 the federated offset equals the ARC single open's (mapped pair, 500 km out) | single=georef_offset_x=500128,georef_offset_y=2750461,georef_offset_z=0 federated=georef_offset_x=500128,georef_offset_y=2750461,georef_offset_z=0
+§PASS F3b the STR slab sits in the ARC frame (centre = world centre minus the ARC offset, < 1 mm) | federated=(0.2500,-0.2500) expected=(0.2500,-0.2500)
+§PASS F4 ifc_grid_axis rows equal the single opens' (Duplex has none, STR_A has 7) | single=0+7 federated=7
+§PASS F4b ifc_grid_axis on the mapped pair keeps both grids' guids | rows=10 grids=2
+§PASS F4c ifc_spaces rows equal the single opens' (Duplex 21, mapped 1) | duplex 21 mapped 1
+§PASS F5 RED: main's behaviour (--also, columns only) holds 0 of the STR slab and beam, so F2 would FAIL there | STR_A slab+beam present via --also=0 (via --federate=2)
+§PASS F6 without --federate-disc the STR file keeps the class map: the slab reads ARC, the beam STR | [["IfcSlab","ARC"],["IfcBeam","STR"]]
+§PASS F7 the --also path is untouched: no ifc_grid_axis table (reader not handed in), as before | tables=ifc_spaces
+  tool §MAINS-TO-DB db=drawn_A.db grid_axes=7 sheets_given=1
+  tool §MAINS-FIT sheet=M-101 grid=3000000000000000000050 tags=7 median_mm=0 PASS
+  tool §MAINS-READ sheet=M-101 fit=rot:0deg,dx:-100m,dy:-200m,med:0mm,tags:7,grid:3000000000000000000050 pieces=5 length=14.65m components=3 over5m=1 width_share=0 terminals=3 no_run=1 mirrored=0 fittings=0 fittings_unjoined=0 fittings_unjoined_nomirror=0 missingBloc
+  tool §MAINS-TERMINALS sheet=M-101 stored=3 reader_count=3 agree storeys=["Level 1"]
+  tool §MAINS-TO-DB sheets=1 pieces=5 length=14.650 refused=0 noCentreline=0 terminals=3
+§W_DW tool result: drawn_route rows=5 length=14.6500 sheet row=[5,14.650000000000006,0,null] terminals stored=3
+§DW module loaded
+§WALKNODE fetch mep_rw.db?v=5 -> modeller/mep_rw.db
+§RW_INIT mep_rw.db loaded bom=188 patterns=19 anchors=5479 offsets=15 shims=11 arc_env=1
+§DW §DW-RULES-PATCH file=duplex_rules.db none
+§DW §DW-RULES-PATCH file=terminal_rules.db rows=7 ok
+§WALKNODE rules=duplex_rules.db schedule=null borrowFP=terminal_rules.db building=Duplex
+  walk: §DW §WALK-MAINS disc=ACMV drawn=5/14.650 placed=4 planOnly=1
+        §DW §WALK-MAINS-HEIGHT sheets=1 structure=11 ceilingsUsed=2 byStorey={"Level 1":4} noStoreySet=0 noCeiling=0 ambiguous=0 noStructure=0 noVoid=0 steppedComponents=1 sloped=0 slopedCeilings=0 (sloped = ceiling bbox_z > 0.3 m; a non-horizontal ceiling mesh is refused as a host by hostBind, so it holds none) rule=middle of the void between the ceiling top and the lowest STR lower face (provisional)
+        §DW §WALK-MAINS-PLANONLY n=1 length=4.000 [M-101#5: no floor slab (by outline) under the item on any storey: a plan states no z]
+        §DW §WALK-TERMINALS storey=Level 1 drawn=3 borrowedDropped=0 schedDropped=11
+        §DW §WALK-TERMINALS-DETAIL storey=Level 1 placed=3 noKind=1 noMesh=0 (a terminal of no kind is placed and counted, and gives no system)
+        §DW §WALK-TERMINALS-ELSEWHERE borrowedKept=0 schedKept=8 drawnNoCeiling=0 drawnAmbiguous=0 (provisional or schedule terminals on storeys no held sheet covers stay; drawn terminals no single ceiling holds are listed, not placed)
+        §DW §WALK-MAINS-EXPOSED pieces=0 terminals=0 floorBelowSet=0 noFloorAnyStorey=1 rule=exposed-under-structure (underside of the lowest structure above; exposed, height provisional) outlineTests=12 boxFallback=0
+        §DW §WALK-MAINS-ONROOF pieces=0 terminals=0 rule=on-roof-surface notRoofNoStructure=0 (top face of the roof surface under the run; on roof, height provisional; roof = class ["IfcRoof"] | PredefinedType ["ROOF"] | name or type name word ["roof","roofing","tpo"])
+        §DW §WALK-DRAWN disc=ACMV bldg=Duplex placed=15 provisional=0 drawnPieces=5 heapDeltaMB=-3.2
+§PASS D1 the ACMV runs equal the drawn_route pieces (count and length), none from the band | walk pieces=5 length=14.6500 record rows=5 length=14.6500 line=§DW §WALK-MAINS disc=ACMV drawn=5/14.650 placed=4 planOnly=1
+§PASS D1 RED: the same building with no drawn_route walks as §9 did: no drawn pieces, "none reason=no sheet held" | mains={"none":"no sheet held"}
+§PASS D2 a piece under a ceiling with STR structure above takes the void middle, labelled with its ceiling and structure (P1, P2: the STR slab; P3: the lower STR beam; P5: the lowest STR element the file holds there) | P1 z=2.7785 oracle=2.7785 (ceiling top 2.657, IfcSlab lower 2.900) | P2 z=2.7785 oracle=2.7785 (ceiling top 2.657, IfcSlab lower 2.900) | P3 z=2.7035 oracle=2.7035 (ceiling top 2.657, IfcBeam lower 2.750) | P5 z=2.7270 oracle=2.7270 (ceiling top 2.657, IfcBeam lower 2.797)
+§PASS D2b a piece under no ceiling is plan only: no z, counted, listed with its reason (P4) | P4 why=no floor slab (by outline) under the item on any storey: a plan states no z
+§PASS D2c a component whose pieces sit at different heights is counted, not bridged (P1+P5+P3) | stepped=1
+§PASS D2 RED: with no STR the pieces are plan only (placed=0, planOnly=5) and none gets a z | known=0 why(P1)=no STR slab, beam or roof in the file
+§PASS D3 an ARC finish slab above is never taken as structure (the STR-less building has one at Level 2, lower face 2.795 m): no height from it, and every structure cited in the federated walk is STR | ARC-only known=0; federated structures cited: ["STR:IfcSlab","STR:IfcBeam"]
+§PASS D3 RED: the witness-only switch that takes any discipline finds a z from the ARC slab, so D3 can see it | P1 z with the switch=2.7260 (ARC slab lower 2.795 gives 2.7260; STR gives 2.7785)
+§PASS D4 drawn pieces carry no Provisional=TRUE, and per-attribute strength: position drawn, height provisional with HeightBasis void-middle | ops=4 provisional=0 widthBasis=["none"]
+§PROV-TOTALS provisional=0 totals unchanged
+§PROV-TOTALS provisional=1 rule=leave-out
+§PASS D4b the Viewer totals (ProvTotals) count the drawn pieces: 4 drawn count 4; a borrowed row flagged TRUE is left out (still 4 of 5) | drawn=4 with one provisional borrowed row added=4
+§PASS D4c the IFC walk set writes HeightBasis (export) and the extract reads it back (core) | bonsai_ifc.js writes it, ifc_extract_core.js walkWant reads it (source check: the export is a page path; no page run here)
+§PASS D6 "no sheet held" and "no routing rule pairs them" do not fire once drawn_route exists | matches of the §9 wording in the drawn walk: 0
+§PASS D7 the look: committed runs are line ops (invisible anchor inserts carrying a line), plan-only pieces are not committed, and the page draws LineSegments only | ops=4 of 5 pieces; renderer source: LineSegments only
+§PASS D5a (Duplex) §7.5: 3 drawn terminals on the covered storey, the schedule terminals there dropped and counted apart, those on other storeys kept | {"drawn":3,"placed":3,"noKind":1,"noMesh":0,"borrowedDropped":0,"schedDropped":11} | independent: base walk schedule terminals on Level 1=11, kept=8 of 19 | §DW §WALK-TERMINALS storey=Level 1 drawn=3 borrowedDropped=0 schedDropped=11
+  tool §MAINS-TO-DB db=drawn_set.db grid_axes=7 sheets_given=1
+  tool §MAINS-STOREYS sheet=M-102 source=argument storeys=["Level 1","Level 2"]
+  tool §MAINS-TO-DB sheets=1 pieces=4 length=8.800 refused=0 noCentreline=0 terminals=0
+§PASS D8 a 2-storey set places pieces on BOTH storeys by the ceiling that holds them (independent: world boxes of the coverings): Q1 on Level 1, Q2 on Level 2 | Q1 storey=Level 1 z=2.727 (coverings L1/L2 1/0) Q2 storey=Level 2 z=5.928 (0/1) | §DW §WALK-MAINS disc=ACMV drawn=4/8.800 placed=2 planOnly=2
+§PASS D8b a piece held by the ceilings of both storeys is ambiguous: plan only, counted, never picked (P1); a piece under none is plan only (Q3) | P1 why=the ceilings of 2 storeys of the set hold the midpoint: a plan states no z | §DW §WALK-MAINS-HEIGHT sheets=1 structure=11 ceilingsUsed=2 byStorey={"Level 1":1,"Level 2":1} noStoreySet=0 noCeiling=0 ambiguous=1 noStructure=0 noVoid=0 steppedComponents=0 sloped=0 slopedCeilings=0 (sloped = ceiling bbox_z > 0
+  tool §MAINS-STOREYS sheet=M-103 source=title storeys=["Level 2"] title-words=first|1st|\b1/?F\b title(argument, not read from the DXF)="FIRST FLOOR CEILING PLAN"
+  tool §MAINS-STOREYS sheet=M-104 source=title none: no storey word in the title "BASEMENT SERVICES PLAN" matches an alias row (the sheet is plan only) title(argument, not read from the DXF)="BASEMENT SERVICES PLAN"
+§PASS D9 a title word matched by the alias row gives the set ("first floor" = the first storey above ground = Level 2 here), and its pieces are placed on it | §MAINS-STOREYS sheet=M-103 source=title storeys=["Level 2"] title-words=first|1st|\b1/?F\b title(argument, not read from the DXF)="FIRST FLOOR CEILING PLAN" | placed storeys=["Level 2"]
+§PASS D9b a title word that matches no storey and has no argument gives plan only, logged (tool and walker) | §MAINS-STOREYS sheet=M-104 source=title none: no storey word in the title "BASEMENT SERVICES PLAN" matches an alias row (the sheet is plan only) title(argument, not read from the DXF)="BASEMENT SERVIC | §DW §WALK-MAINS disc=ACMV drawn=4/8.800 placed=0 planOnly=4
+§PASS D4d §7.4 the log states the sloped rule: sloped=<n> with the 0.3 m threshold | §DW §WALK-MAINS-HEIGHT sheets=1 structure=11 ceilingsUsed=2 byStorey={"Level 1":4} noStoreySet=0 noCeiling=0 ambiguous=0 noStructure=0 noVoid=0 steppedComponents=1 sloped=0 slopedCeilings=0 (sloped = ceiling bbox_z > 0.3 m; a non-horizontal ceiling mesh is refused as a host by hostBind, so it holds 
+  tool §MAINS-TO-DB db=clinic_drawn.db grid_axes=8 sheets_given=1
+  tool §MAINS-READ sheet=M-201 fit=rot:0deg,dx:-50m,dy:-70m,med:0.295mm,tags:6,grid:G-FIX pieces=1 length=43.81m components=1 over5m=1 width_share=0 terminals=3 no_run=1 mirrored=0 fittings=0 fittings_unjoined=0 fittings_unjoin
+  tool §MAINS-TERMINALS sheet=M-201 stored=3 reader_count=3 agree storeys=["First Floor"]
+  tool §MAINS-TO-DB sheets=1 pieces=1 length=43.810 refused=0 noCentreline=0 terminals=3
+§DW §DW-RULES-PATCH file=terminal_rules.db rows=7 ok
+§DW §DW-RULES-PATCH file=duplex_rules.db none
+§WALKNODE rules=terminal_rules.db schedule=duplex_rules.db borrowFP=null building=Clinic
+  clinic walk: §DW §WALK-MAINS disc=ACMV drawn=1/43.810 placed=1 planOnly=0
+               §DW §WALK-MAINS-HEIGHT sheets=1 structure=756 ceilingsUsed=1 byStorey={"First Floor":1} noStoreySet=0 noCeiling=0 ambiguous=0 noStructure=0 noVoid=0 steppedComponents=0 sloped=0 slopedCeilings=0 (slop
+               §DW §WALK-TERMINALS storey=First Floor drawn=3 borrowedDropped=49 schedDropped=46
+               §DW §WALK-TERMINALS-DETAIL storey=First Floor placed=3 noKind=1 noMesh=0 (a terminal of no kind is placed and counted, and gives no system)
+               §DW §WALK-TERMINALS-ELSEWHERE borrowedKept=229 schedKept=41 drawnNoCeiling=0 drawnAmbiguous=0 (provisional or schedule terminals on storeys no held sheet covers stay; drawn terminals no single ceiling
+               §DW §WALK-MAINS-EXPOSED pieces=0 terminals=0 floorBelowSet=0 noFloorAnyStorey=0 rule=exposed-under-structure (underside of the lowest structure above; exposed, height provisional) outlineTests=7 boxFa
+               §DW §WALK-MAINS-ONROOF pieces=0 terminals=0 rule=on-roof-surface notRoofNoStructure=0 (top face of the roof surface under the run; on roof, height provisional; roof = class ["IfcRoof"] | PredefinedTyp
+               §DW §WALK-DRAWN disc=ACMV bldg=Clinic placed=45 provisional=229 drawnPieces=1 heapDeltaMB=2.7
+§PASS D5 covered storey: the drawn terminals are placed and the borrowed band ones dropped, both counted | log: §DW §WALK-TERMINALS storey=First Floor drawn=3 borrowedDropped=49 schedDropped=46 | independent: borrowed on First Floor=49 of 278, drawn placed=3, borrowed kept=229 (expected 229)
+§PASS D5b uncovered storeys keep their borrowed terminals provisional | kept=229 provisional=229
+§PASS D5c a drawn terminal keeps its drawn x,y (< 1 mm), takes its height from the ceiling that holds it (host, bottom face), and a terminal of no kind is placed and gives no system | positions match=true noKind=1 kinds=["supply","supply",null]
+  tool §MAINS-TO-DB db=fp_C.db grid_axes=6 sheets_given=1
+  tool §MAINS-STOREYS sheet=FP-101 source=argument storeys=["Level 1"]
+  tool §MAINS-INCONCLUSIVE sheet=FP-101 reason=no centreline layer (runs only; equipment read)
+  tool §MAINS-EQUIP sheet=FP-101 fit=rot:0deg,dx:-100m,dy:-200m,med:0mm,tags:6,grid:G-C items=6 stacked=0 unknownKind=0 byKind={"extinguisher":3,"cabinet":2,"blanket":1} mirrored=0 missingBlocks=3 height=none (not stated)
+  tool §MAINS-EQUIP-TO-DB sheet=FP-101 items=6 blocksWithSize=1 rule=fp-mount-owner-1p2 mount_m=1.2 basis=owner storeys=["Level 1"]
+  tool §MAINS-TO-DB sheets=1 pieces=0 length=0.000 refused=0 noCentreline=1 terminals=0
+§W_DW P tool result: drawn_equipment=6 rule=["fp-mount-owner-1p2",1.2,"owner"] sizes=[["FIRE CABINET TALL",1.6]] storeys=[["FP-101","Level 1"]]
+§DW §DW-RULES-PATCH file=duplex_rules.db none
+§DW §DW-RULES-PATCH file=terminal_rules.db rows=7 ok
+§WALKNODE rules=duplex_rules.db schedule=null borrowFP=terminal_rules.db building=Duplex
+  walk: §DW §FP-EQUIP placed=6 heightRule=fp-mount-owner-1p2 mount_m=1.2 basis=owner datum=anchor borrowedKinds=0 noFloor=0 floorFromStoreyElev=1 noMesh=6 bandDropped=0 outlineTests=5
+        §DW §FP-EQUIP-DETAIL bldg=Duplex items=6 noRule=0 ambiguousFloor=0 byKind={"extinguisher":3,"cabinet":2,"blanket":1} bandKept=0 coveredStoreys=["Level 1"] objectTypeKeyedMesh=no heapDeltaMB=0.2 rule=owner 2026-11-08: wall mounted at 1.2 m
+§PASS P1 equipment-only sheet through mains_to_db, walk FP: every item (extinguisher, cabinet, blanket) is anchored at floor + 1.2 m (owner: wall mounted at 1.2 m; oracle: the floor element's own world box); the log states mount_m and basis=owner | floors A=0.000 B=0.300 anchors=1.2000,1.5000,1.2000,1.5000 ops=6 | §DW §FP-EQUIP placed=6 heightRule=fp-mount-owner-1p2 mount_m=1.2 basis=owner datum=anchor borrowedKinds=0 noFloor=0 floorFromStoreyElev=1 noMesh=6 bandDropped=0 outlineTests=5
+§PASS P1 RED: with the height row removed nothing is placed: placed=0, heightRule=none, all 6 counted noRule, no op and so no z (never a guessed one) | §DW §FP-EQUIP placed=0 heightRule=none borrowedKinds=0 noFloor=0 floorFromStoreyElev=0 noMesh=0 bandDropped=0 outlineTests=0 | §DW §FP-EQUIP-DETAIL bldg=Duplex items=6 noRule=6 ambiguousFloor=0 byKind={} bandKept=0 coveredStoreys=["Level 1"] objec
+§PASS P2 a floor step (two slabs in one storey, tops 0.00 and 0.30) puts each item on its own floor: items 1,3 on slab A, items 2,4 on slab B, floorZ and host recorded | 1:901@0 2:902@0.3 3:901@0 4:902@0.3
+§PASS P3 no size logic in the active path: the 1.6 m block (item 5) is anchored at floor + 1.2 like every other item; no bottom clamp, no bottomClamped on the log or the op | anchor=1.2000 §DW §FP-EQUIP placed=6 heightRule=fp-mount-owner-1p2 mount_m=1.2 basis=owner datum=anchor borrowedKinds=0 noFloor=0 floorFromStoreyElev=1 noMesh=6 bandDropped=0
+§PASS P5 no slab under an item (item 6, 8 m past the last slab): the floor is the set storey's STATED elevation, labelled "floor = storey elevation, no slab under", floorFromStoreyElev=1, noFloor=0 (§9 item 5) | item6 floorBasis=storey-elevation anchor=1.2000 §DW §FP-EQUIP placed=6 heightRule=fp-mount-owner-1p2 mount_m=1.2 basis=owner datum=anchor borrowedKinds=0 noFloor=0 floorFromStoreyElev=1 noMesh=6 bandDropped=0 outlineTests=5
+§PASS P5 RED: with no stated storey elevation there is no floor to state: item 6 is not placed, noFloor=1, floorFromStoreyElev=0 (never a guessed z) | §DW §FP-EQUIP placed=5 heightRule=fp-mount-owner-1p2 mount_m=1.2 basis=owner datum=anchor borrowedKinds=0 noFloor=1 floorFromStoreyElev=0 noMesh=5 bandDropped=0 outlineTests=5
+§PASS P6 all three kinds take the one owner row and none is borrowed (borrowedKinds=0, heightRuleUse=rule); every op carries HeightBasis=owner-stated and Source = the row's citation; strength: position drawn, height owner-stated; no Provisional flag | borrowedKinds=0 uses=rule,rule,rule,rule,rule,rule basis=owner-stated source=owner 2026-11-08: wall mounted at 1.2 m
+§PASS P6b the IFC class comes from the row: IfcFireSuppressionTerminal, USERDEFINED, ObjectType by kind; discipline FP | FIREEXTINGUISHER,FIREEXTINGUISHER,FIRECABINET,FIREBLANKET,FIRECABINET,FIREEXTINGUISHER
+§PASS P7 no box and no borrowed mesh: every op is anchorOnly with no geometry hash, no prim, a marker bbox only; noMesh counts every placed item; the mined FP mesh row is not keyed on ObjectType, so none may be used | noMesh=6 §DW §FP-EQUIP-DETAIL bldg=Duplex items=6 noRule=0 ambiguousFloor=0 byKind={"extinguisher":3,"cabinet":2,"blanket":1} bandKept=0 coveredStoreys=["Level 1"] objectTypeKeyedMesh=no heapDeltaMB=0.2 rule=owner 2026-11-08: wal
+§DW §DW-RULES-PATCH file=duplex_rules.db none
+§DW §DW-RULES-PATCH file=terminal_rules.db rows=7 ok
+§WALKNODE rules=duplex_rules.db schedule=null borrowFP=terminal_rules.db building=Duplex
+  duplex base FP heads=10 on Level 1=2 elsewhere=8 | drawn walk: §DW §FP-EQUIP placed=2 heightRule=fp-mount-owner-1p2 mount_m=1.2 basis=owner datum=anchor borrowedKinds=0 noFloor=0 floorFromStoreyElev=0 noMesh=2 bandDropped=2 outlineTests=8 || §DW §FP-EQUIP-DETAIL bldg=Duplex items=2 noRule=0 ambiguousFloor=0 byKind={"extinguisher":1,"cabinet":1} bandKept=8 coveredStoreys=["Level 1"] objectTypeKeyedMesh=no heapDeltaMB=1.2 rule=owner 2026-11-08: wall mounted at 1.2 m
+§PASS P4 band sprinkler heads on the covered storey are dropped and counted (bandDropped = the base walk's Level 1 heads); on the uncovered storey they are unchanged and still provisional | base heads=10 L1=2 elsewhere=8 | drawn walk bandDropped=2 kept=8 | §DW §FP-EQUIP placed=2 heightRule=fp-mount-owner-1p2 mount_m=1.2 basis=owner datum=anchor borrowedKinds=0 noFloor=0 floorFromStoreyElev=0 noMesh=2 bandDropped=2 outlineTe
+§PASS P4b RED: the base walk (no drawn_equipment) is untouched: no §FP-EQUIP line, no drawn record, every head kept | lines=0
+  X tool: §FEDERATE-STOREYS paired=1 of 2 unpaired=["STR LEVEL 01"] added=2 sameNameKept=0 tol=0.05m source=storey_elevation.placement_z_m (metres, shared frame)
+§PASS X4 the federation merges the second (millimetre) file's storeys in METRES: STR LEVEL 01 = 4 (not 4000) in storey_elevation and spatial_structure, STR GROUND = 0, file 1's Level 1 untouched; elements keep the second file's storey names | storey_elevation=[["Level 1",0],["STR GROUND",0],["STR LEVEL 01",4]] spatial=[["Level 1",0],["STR GROUND",0],["STR LEVEL 01",4]]
+§PASS X4b the pairing is by ELEVATION within 0.05 m and logged: STR GROUND pairs with Level 1 under a different name, STR LEVEL 01 has no partner and stays its own storey | §FEDERATE-STOREYS paired=1 of 2 unpaired=["STR LEVEL 01"] added=2 sameNameKept=0 tol=0.05m source=storey_elevation.placement_z_m (metres, shared frame)
+§PASS X4 RED: before the merge fix the federated DB holds 0 storeys from file 2 (only Level 1), though the STR elements carry their own storey names | pre-change tool storey_elevation=["Level 1"]
+§PASS X4c a millimetre file that declares metres (undeclared unit): storey_elevation takes the geometry's factor, so STR UND UP = 4 m and not 4000 | [{"name":"STR UND","z":0,"a":0},{"name":"STR UND UP","z":4,"a":4}] §STOREY_ELEVATION_UNITS declared=1 geometryAutoScale=0.001 used=0.001 (undeclared millimetre file)
+  tool §MAINS-TO-DB db=x_acmv.db grid_axes=6 sheets_given=1
+  tool §MAINS-FIT sheet=XM-101 grid=3000000000000000001150 tags=6 median_mm=0 PASS
+  tool §MAINS-READ sheet=XM-101 fit=rot:0deg,dx:-100m,dy:-200m,med:0mm,tags:6,grid:3000000000000000001150 pieces=5 length=16m components=5 over5m=0 width_share=0 terminals=2 no_run=0 mirrored=0 fittings=0 fittings_unjoined=0 fittings_unjoined_nomirror=0 missingBlocks
+  tool §MAINS-TERMINALS sheet=XM-101 stored=2 reader_count=2 agree storeys=["Level 1"]
+  tool §MAINS-HEIGHT-RULE no_void_height=exposed-under-structure roof_surface_height=on-roof-surface
+  tool §MAINS-TO-DB sheets=1 pieces=5 length=16.000 refused=0 noCentreline=0 terminals=2
+§DW §DW-RULES-PATCH file=duplex_rules.db none
+§DW §DW-RULES-PATCH file=terminal_rules.db rows=7 ok
+§WALKNODE rules=duplex_rules.db schedule=null borrowFP=terminal_rules.db building=Duplex
+  X walk: §DW §STOREY-ELEV-MATCH set=Level 1 stated=0.000 m matched=["STR GROUND@0.000[STR:1]"] tol=0.05 m source=storey_elevation.placement_z_m
+          §DW §WALK-MAINS disc=ACMV drawn=5/16.000 placed=3 planOnly=2
+          §DW §WALK-MAINS-HEIGHT sheets=1 structure=5 ceilingsUsed=2 byStorey={"Level 1":3} noStoreySet=0 noCeiling=1 ambiguous=0 noStructure=0 noVoid=0 steppedComponents=0 sloped=0 slopedCeilings=0 (sloped = ceiling bbox_z > 0.3 m; a non-horizontal ceiling mesh is refused as a host by hostBind, so it holds none) rule=middle of the void b
+          §DW §WALK-MAINS-PLANONLY n=2 length=6.000 [XM-101#4: no floor slab (by outline) under the item on any storey: a plan states no z | XM-101#5: no modelled ceiling of the sheet's storeys holds the midpoint and no structure above the storey floor here]
+          §DW §WALK-MAINS-EXPOSED pieces=2 terminals=1 floorBelowSet=0 noFloorAnyStorey=1 rule=exposed-under-structure (underside of the lowest structure above; exposed, height provisional) outlineTests=12 boxFallback=0
+          §DW §WALK-MAINS-ONROOF pieces=0 terminals=0 rule=on-roof-surface notRoofNoStructure=1 (top face of the roof surface under the run; on roof, height provisional; roof = class ["IfcRoof"] | PredefinedType ["ROOF"] | name or type name word ["roof","roofing","tpo"])
+§PASS X1 a run with NO ceiling (E1) takes the underside of the lowest structure above (STR slab S1 soffit 3.400), labelled exposed with HeightBasis = exposed-under-structure; a run with structure within 20 mm of its ceiling (E3) takes that soffit (2.710); both counted | E1 z=3.4000 E3 z=2.7100 | §DW §WALK-MAINS-EXPOSED pieces=2 terminals=1 floorBelowSet=0 noFloorAnyStorey=1 rule=exposed-under-structure (underside of the lowest structure above; exposed, height provisional) outlineTests=12 boxF
+§PASS X1b controls: E2 under ceiling A keeps the void middle ((ceiling top 2.700 + S1 soffit 3.400)/2); E4 (no ceiling, no structure above the storey floor) stays plan only; placed/planOnly follow | known=3 planOnly=2 §DW §WALK-MAINS disc=ACMV drawn=5/16.000 placed=3 planOnly=2
+§PASS X1c the op of an exposed run carries the label and strength: HeightBasis exposed-under-structure, exposed=true, strength.height provisional, no Provisional flag, the structure it hangs from | {"disc":"ACMV","kind":"drawn-main","sheet":"XM-101","piece":1,"component":1,"system":"supply","widthMm":null,"provisional":false,"prov":"drawn:route","hostState":null,"positionBasis":"drawn","widthBasis":"none","heightBa
+§PASS X1d a drawn terminal with no ceiling (8, 2) hangs from the structure underside: counted in the log (terminals=1); when a device mesh exists it is placed at the soffit with the label, otherwise it is listed noMesh | terminals(exposed)=1 placedExposed=0 drawnTerminalsPlaced=0 §DW §WALK-TERMINALS-DETAIL storey=Level 1 placed=0 noKind=0 noMesh=2 (a terminal of no kind is placed and counted, and gives no system)
+§PASS X1e a drawn terminal past the last ceiling (5,2) is PLACED at the underside of the STR slab (2.900), labelled exposed; the terminal under a ceiling (1.5,-2) still hangs from the ceiling lower face | placed drawn terminals=2 exposed=1 z=2.900(exposed),2.600 | §DW §WALK-MAINS-EXPOSED pieces=0 terminals=1 floorBelowSet=0 noFloorAnyStorey=0 rule=exposed-under-structure (underside 
+§PASS X1 RED: with the row removed, the same pieces stay plan only (E1 no ceiling, E3 no void): pieces=0 terminals=0 rule=none, placed=1 planOnly=4 | known=1 planOnly=4 §DW §WALK-MAINS-EXPOSED pieces=0 terminals=0 floorBelowSet=0 noFloorAnyStorey=0 rule=none (no row: pieces with no void s
+§PASS X3 structure-above uses the OUTLINE: E5 midpoint (27.0,6.0) is inside the L roof's box but outside its outline (independent polygon test), so it is not "under" it: plan only | inBox=true inPolygon=false E5 z=null why=no modelled ceiling of the sheet's storeys holds the midpoint and no structure above the storey floor here
+§PASS X3 RED: a box-only test (witness control) would say E5 is under the L roof and give it the soffit 3.400 | box-only E5 z=3.399999999254943
+  tool §MAINS-TO-DB db=x_fp.db grid_axes=6 sheets_given=1
+  tool §MAINS-STOREYS sheet=XF-201 source=argument storeys=["Level 1"]
+  tool §MAINS-NO-CENTRELINE sheet=XF-201 no centreline layer for this discipline (not refused; equipment, if any, is kept)
+  tool §MAINS-EQUIP-TO-DB sheet=XF-201 items=3 blocksWithSize=0 rule=fp-mount-owner-1p2 mount_m=1.2 basis=owner storeys=["Level 1"]
+  tool §MAINS-TO-DB sheets=1 pieces=0 length=0.000 refused=0 noCentreline=1 terminals=0
+  X FP walk: §DW §WALK-AREAHOST host=IfcCovering mount=BOTTOM hosts=2 boxFromMesh=2 boxFromRow=0 flatness=1 shapeRejected=0 input=24 bound=4 noHostHere=20 multiCandidate=0 boundOnDeepHost=0 maxHostDepth=0.10 noHeightTest=0 zMoveP50=0.58 zMoveMax=0.58 hostsUsed=2 uprightRejected=0 noNormals=0 heapDeltaMB=0.0
+             §DW §STOREY-ELEV-MATCH set=Level 1 stated=0.000 m matched=["STR GROUND@0.000[STR:1]"] tol=0.05 m source=storey_elevation.placement_z_m
+             §DW §WALK-AREAHOST host=IfcSlab mount=TOP hosts=7 boxFromMesh=7 boxFromRow=0 flatness=undefined shapeRejected=0 input=3 bound=2 noHostHere=1 multiCandidate=0 boundOnDeepHost=2 maxHostDepth=0.20 noHeightTest=0 zMoveP50=0.15 zMoveMax=0.15 hostsUsed=2 uprightRejected=0 noNormals=0 outlineRejected=1 heapDeltaMB=0.1
+             §DW §FP-EQUIP placed=3 heightRule=fp-mount-owner-1p2 mount_m=1.2 basis=owner datum=anchor borrowedKinds=0 noFloor=0 floorFromStoreyElev=1 noMesh=3 bandDropped=4 outlineTests=3
+             §DW §FP-EQUIP-DETAIL bldg=Duplex items=3 noRule=0 ambiguousFloor=0 byKind={"extinguisher":3} bandKept=0 coveredStoreys=["Level 1"] objectTypeKeyedMesh=no heapDeltaMB=0.3 rule=owner 2026-11-08: wall mounted at 1.2 m
+§PASS X3 FP floor uses the OUTLINE: Q1 (7,6) is inside the L slab's box but outside its outline (independent polygon test), so no slab is under it; Q2 (2,2) on the slab takes it | Q1 inBox=true inPolygon=false floor=null | Q2 floor=3000000000000000001105
+§PASS X5 the item with no slab outline under it (Q1) takes the set storey's STATED elevation as its floor (0), labelled "floor = storey elevation, no slab under", anchor = floor + 1.2; counted floorFromStoreyElev=1 | §DW §FP-EQUIP placed=3 heightRule=fp-mount-owner-1p2 mount_m=1.2 basis=owner datum=anchor borrowedKinds=0 noFloor=0 floorFromStoreyElev=1 noMesh=3 bandDropped=4 outlineTests=3
+§PASS X4d storey match by ELEVATION: Q3 (16,4) sits on the STR GROUND slab F (top 0.150), a floor of the second file's differently named storey at Level 1's elevation; it is found, and the log names the matched STR storey | Q3 floor=3000000000000000001103 floorZ=0.15 | §DW §STOREY-ELEV-MATCH set=Level 1 stated=0.000 m matched=["STR GROUND@0.000[STR:1]"] tol=0.05 m source=storey_elevation.placement_z_m
+§PASS X4d RED: with STR GROUND 0.30 m off Level 1 (outside +/-0.05 m) it is not matched, as a name-only filter would: Q3 does not see slab F and falls back to the storey elevation | Q3 floor=null §DW §FP-EQUIP placed=3 heightRule=fp-mount-owner-1p2 mount_m=1.2 basis=owner datum=anchor borrowedKinds=0 noFloor=0 floorFromStoreyElev=2 noMesh=3 bandDropped=4 outlineTests=2
+§PASS X3 RED: a box-only test (witness control) would say Q1 is under the L slab and give it that slab as its floor | box-only Q1 floor=3000000000000000001105
+§PASS X6 a sheet with no centreline layer for the discipline is counted noCentreline, not refused: "refused=0 noCentreline=1" and the line says "no centreline layer for this discipline" | §MAINS-TO-DB sheets=1 pieces=0 length=0.000 refused=0 noCentreline=1 terminals=0 | §MAINS-NO-CENTRELINE sheet=FP-E6 no centreline layer for this discipline (not refused; equipment, if any, is kept)
+§PASS X6 RED: a real refusal (a run sheet with no grid to fit) is still "refused": refused=1 noCentreline=0 | §MAINS-TO-DB sheets=1 pieces=0 length=0.000 refused=1 noCentreline=0 terminals=0
+§DW §DW-RULES-PATCH file=duplex_rules.db none
+§DW §DW-RULES-PATCH file=terminal_rules.db rows=7 ok
+§WALKNODE rules=duplex_rules.db schedule=null borrowFP=terminal_rules.db building=Duplex
+§PASS X2 sprinklered=unknown turns every band sprinkler head off (base walk 10 heads on all storeys -> 0), logged value=unknown bandHeadsOff=10; the totals follow (placed+provisional drops by exactly the heads) | base heads=10 unknown heads=0 | §DW §FP-SPRINKLERED value=unknown bandHeadsOff=10 (pending the author)
+§PASS X2b sprinklered=no does the same; sprinklered=yes is today's band behaviour (all 10 heads kept, bandHeadsOff=0) | no heads=0 yes heads=10
+§PASS X2 RED: with no row set nothing changes (resident non-regression): same head count and totals as the base walk, no §FP-SPRINKLERED line | base heads=10 (Duplex; 51 before DISC_WALK_BAND_NO_HOST.md §12, 10 with it: its Terminal-borrowed heads are re-anchored to this fixture's floors and placed only on a host, W-BAND-REANCHOR; DW_NO_RULES_PATCH=1 gives back 51)
+§PASS X2c drawn equipment is present AND sprinklered=unknown: heads are off on EVERY storey (not only the covered one) and the drawn items are still placed; the answer is a stored fact, never inferred from the equipment | §DW §FP-EQUIP placed=2 heightRule=fp-mount-owner-1p2 mount_m=1.2 basis=owner datum=anchor borrowedKinds=0 noFloor=0 floorFromStoreyElev=0 noMesh=2 bandDropped=0 | §DW §FP-SPRINKLERED value=unknown bandHeadsOff=10 (pending the author)
+§PASS X2d the answer is stored as project_metadata fp_sprinklered (the table that already holds per-building facts), set by mains_to_db --sprinklered, logged | §MAINS-SPRINKLERED fp_sprinklered=unknown (pending the author: band sprinkler heads off)
+§DW §DW-RULES-PATCH file=terminal_rules.db rows=7 ok
+§DW §DW-RULES-PATCH file=duplex_rules.db none
+§WALKNODE rules=terminal_rules.db schedule=duplex_rules.db borrowFP=null building=Clinic
+  X2 Clinic: base heads=730 unknown heads=0 | §DW §FP-SPRINKLERED value=unknown bandHeadsOff=730 (pending the author)
+§PASS X2e Clinic resident: no row = base heads (730), none of its FP lines mention sprinklered; unknown = 0 heads | base=730 unknown=0
+§DW §DW-RULES-PATCH file=duplex_rules.db none
+§DW §DW-RULES-PATCH file=terminal_rules.db rows=7 ok
+§WALKNODE rules=duplex_rules.db schedule=null borrowFP=terminal_rules.db building=Duplex
+§DW §DW-RULES-PATCH file=duplex_rules.db none
+§DW §DW-RULES-PATCH file=terminal_rules.db rows=7 ok
+§WALKNODE rules=duplex_rules.db schedule=null borrowFP=terminal_rules.db building=Duplex
+§PASS X7 the drawn-only view hides exactly the non-drawn walk devices (8) and shows what the drawings state (3 drawn terminals + 4 drawn runs); logged | §DW §VIEW-DRAWN-ONLY on=true hidden=8 shown=7 toggled=8 (display only: no data change, no count change)
+§PASS X7b display only: the op-log ops, placed/provisional totals and every list are identical before and after (op-log string equal, 11 placements, placed 15) | ops equal=true
+§PASS X7c turning it off restores every device (all visible again) and still changes no count | §DW §VIEW-DRAWN-ONLY on=false hidden=0 shown=7 toggled=8 (display only: no data change, no count change)
+§DW §DW-RULES-PATCH file=duplex_rules.db none
+§DW §DW-RULES-PATCH file=terminal_rules.db rows=7 ok
+§WALKNODE rules=duplex_rules.db schedule=null borrowFP=terminal_rules.db building=Duplex
+  Y walks:
+          §DW §WALK-EXPOSED-ITEM sheet=Y1-101#p1 floor=Level A@0.000 floorSource=set structure=IfcSlab/STR@3.000 height=3.000
+          §DW §WALK-EXPOSED-ITEM sheet=Y1-101#p2 floor=Level B@-0.300 floorSource=set structure=IfcSlab/STR@3.000 height=3.000
+          §DW §WALK-MAINS-EXPOSED pieces=2 terminals=0 floorBelowSet=0 noFloorAnyStorey=0 rule=exposed-under-structure (underside of the lowest structure above; exposed, height provisional) outlineTests=4 boxFallback=0
+          §DW §WALK-EXPOSED-ITEM sheet=Y2-101#p1 floor=Level 1@4.000 floorSource=set structure=IfcSlab/STR@8.000 height=8.000
+          §DW §WALK-EXPOSED-ITEM sheet=Y2-101#p2 floor=STR G@0.000 floorSource=below structure=IfcSlab/STR@8.000 height=8.000
+          §DW §WALK-MAINS-EXPOSED pieces=2 terminals=0 floorBelowSet=1 noFloorAnyStorey=0 rule=exposed-under-structure (underside of the lowest structure above; exposed, height provisional) outlineTests=4 boxFallback=0
+          §DW §WALK-EXPOSED-ITEM sheet=Y3-101#p1 floor=Level A@0.000 floorSource=set structure=IfcSlab/STR@3.000 height=3.000
+          §DW §WALK-EXPOSED-ITEM sheet=Y3-101#p2 floor=none floorSource=none structure=none height=none
+          §DW §WALK-MAINS-PLANONLY n=1 length=2.000 [Y3-101#2: no floor slab (by outline) under the item on any storey: a plan states no z]
+          §DW §WALK-MAINS-EXPOSED pieces=1 terminals=0 floorBelowSet=0 noFloorAnyStorey=1 rule=exposed-under-structure (underside of the lowest structure above; exposed, height provisional) outlineTests=2 boxFallback=0
+§PASS Y1 self-hit: set {Level A 0.0, Level B -0.3}, A's STR floor overlapping B's in plan: the piece over both (5,3) takes the roof soffit (3.000), floor A (top 0.000), and never A's slab (lower -0.200) as structure; the piece over B's floor only (5,6) takes the same soffit from floor B (top -0.300) | z=3.000,3.000 structure=roof,roof | §DW §WALK-MAINS-EXPOSED pieces=2 terminals=0 floorBelowSet=0 noFloorAnyStorey=0 rule=exposed-under-structure (underside of the lowest structure above; exposed, 
+§PASS Y2 floor below: set {Level 1 @4.0}: the piece over the gallery (5,1.5) stands on the Level 1 slab (top 4.000, set) and takes the hall roof (8.000); the piece over the double-height hall (5,6), no Level 1 floor there, stands on the ground slab (top 0.000, below the set) and takes the same roof: floorBelowSet=1 | z=8.000,8.000 | §DW §WALK-MAINS-EXPOSED pieces=2 terminals=0 floorBelowSet=1 noFloorAnyStorey=0 rule=exposed-under-structure (underside of the lowest structure above; exposed, 
+§PASS Y3 no floor under the item on any storey: the piece at (18,4) is under the wide roof (soffit 3.000) but over no slab: plan only with a reason, noFloorAnyStorey=1; the piece over A's floor (5,2) still takes the roof | z=3.000, why=no floor slab (by outline) under the item on any storey: a plan states no z | §DW §WALK-MAINS-EXPOSED pieces=1 terminals=0 floorBelowSet=0 noFloorAnyStorey=1 rule=exposed-under-structure (underside of the lowest structure above; exposed, 
+§PASS Y4 the per-item detail line, one per no-ceiling item, carries floor@top, floorSource, structure class/discipline@lower and height, each equal to the oracle from element_world_bbox (Y1: floor A@0.000 set, floor B@-0.300 set; Y2: floor Level 1@4.000 set, floor STR G (the slab's own storey)@0.000 below; Y3: floor Level A@0.000 set, none) | sheet=Y1-101#p1 floor=Level A@0.000 floorSource=set structure=IfcSlab/STR@3.000 height=3.000 || sheet=Y1-101#p2 floor=Level B@-0.300 floorSource=set structure=IfcSlab/STR@3.000 height=3.000 || sheet=Y2-101#p1 floor=Level 1@4.000 floorSource=set structure=IfcSlab/STR@8.000 height=8.000 || sheet=Y2-101#p2 floor=STR G@0.000 floorSource=below structure=IfcSlab/STR@8.000 height=8.000 || sheet=Y3-101#p1 floor=Level A@0.000 floorSource=set structure=IfcSlab/STR@3.000 height=3.000 || sheet=Y3-101#p2 floor=none floorSource=none structure=none height=none
+§DW module loaded
+§WALKNODE rules=duplex_rules.db schedule=null borrowFP=terminal_rules.db building=Duplex
+§PASS Y1 RED: the pre-change rule (9ea689c6) leaves the self-hit piece (5,3) plan only as "structure above in 2 storeys of the set" while the piece over B's floor only (5,6) is fine | pre-change z=,2.9999999940395354 why=no ceiling, and structure above in 2 storeys of the set: a plan states no z
+§PASS Y3 RED: the pre-change rule gives the floorless piece (18,4) the roof soffit (3.000) anyway | pre-change z=,2.9999999940395354
+§DW §DW-RULES-PATCH file=duplex_rules.db none
+§DW §DW-RULES-PATCH file=terminal_rules.db rows=7 ok
+§WALKNODE rules=duplex_rules.db schedule=null borrowFP=terminal_rules.db building=Duplex
+§PASS Y5 items under a ceiling keep their heights byte-identical to the pre-change walker (z === and HeightBasis, per piece; ceiling terminals z and host): fixture X 2/2 pieces 0/0 terminals, Duplex drawn walk 4/4 pieces 3/3 terminals | {"X":{"n":2,"same":2,"tn":0,"tsame":0},"D":{"n":4,"same":4,"tn":3,"tsame":3}}
+§DW §DW-RULES-PATCH file=duplex_rules.db none
+§DW §DW-RULES-PATCH file=terminal_rules.db rows=7 ok
+§WALKNODE rules=duplex_rules.db schedule=null borrowFP=terminal_rules.db building=Duplex
+§DW §DW-RULES-PATCH file=duplex_rules.db none
+§DW §DW-RULES-PATCH file=terminal_rules.db rows=7 ok
+§WALKNODE rules=duplex_rules.db schedule=null borrowFP=terminal_rules.db building=Duplex
+  R walks:
+          §DW §WALK-EXPOSED-ITEM sheet=R1-101#p1 floor=Roof L@3.400 floorSource=set structure=none surface=IfcSlab:roof@3.400 height=3.400 basis=on-roof-surface
+          §DW §WALK-EXPOSED-ITEM sheet=R1-101#t0 floor=Roof L@3.400 floorSource=set structure=none surface=IfcSlab:roof@3.400 height=3.400 basis=on-roof-surface
+          §DW §WALK-MAINS-ONROOF pieces=1 terminals=1 rule=on-roof-surface notRoofNoStructure=0 (top face of the roof surface under the run; on roof, height provisional; roof = class ["IfcRoof"] | PredefinedType ["ROOF"] | name or type name word ["roof","roofing","tpo"])
+          §DW §WALK-EXPOSED-ITEM sheet=R2-101#p1 floor=Roof L@3.200 floorSource=set structure=none height=none
+          §DW §WALK-MAINS-PLANONLY n=1 length=4.000 [R2-101#1: no modelled ceiling of the sheet's storeys holds the midpoint and no structure above the storey floor here]
+          §DW §WALK-MAINS-ONROOF pieces=0 terminals=0 rule=on-roof-surface notRoofNoStructure=1 (top face of the roof surface under the run; on roof, height provisional; roof = class ["IfcRoof"] | PredefinedType ["ROOF"] | name or type name word ["roof","roofing","tpo"])
+          §DW §WALK-EXPOSED-ITEM sheet=R2-101#p1 floor=Roof L@3.200 floorSource=set structure=none height=none
+          §DW §WALK-MAINS-PLANONLY n=1 length=4.000 [R2-101#1: no modelled ceiling of the sheet's storeys holds the midpoint and no structure above the storey floor here]
+          §DW §WALK-MAINS-ONROOF pieces=0 terminals=0 rule=on-roof-surface notRoofNoStructure=1 (top face of the roof surface under the run; on roof, height provisional; roof = class ["IfcRoof"] | PredefinedType ["ROOF"] | name or type name word ["roof","roofing","tpo"])
+          §DW §WALK-EXPOSED-ITEM sheet=R3-101#p1 floor=Roof L@3.400 floorSource=set structure=none surface=IfcRoof:class@3.400 height=3.400 basis=on-roof-surface
+          §DW §WALK-MAINS-ONROOF pieces=1 terminals=0 rule=on-roof-surface notRoofNoStructure=0 (top face of the roof surface under the run; on roof, height provisional; roof = class ["IfcRoof"] | PredefinedType ["ROOF"] | name or type name word ["roof","roofing","tpo"])
+          §DW §WALK-EXPOSED-ITEM sheet=R4-101#p1 floor=Roof L@3.400 floorSource=set structure=IfcSlab/STR@6.000 height=6.000
+          §DW §WALK-MAINS-ONROOF pieces=0 terminals=0 rule=on-roof-surface notRoofNoStructure=0 (top face of the roof surface under the run; on roof, height provisional; roof = class ["IfcRoof"] | PredefinedType ["ROOF"] | name or type name word ["roof","roofing","tpo"])
+§PASS R1 a run over a slab NAMED "Roofing membrane TPO" (class IfcSlab, PredefinedType FLOOR), nothing above, sits on the slab top (3.400): HeightBasis on-roof-surface, label "on roof, height provisional"; the drawn terminal over it too (terminals=1); the item line names structure=none surface=IfcSlab:roof@top height basis=on-roof-surface | z=3.4000000029802333 | §DW §WALK-MAINS-ONROOF pieces=1 terminals=1 rule=on-roof-surface notRoofNoStructure=0 (top face of the roof surface under the run; on roof, height pro | EXPOSED-ITEM sheet=R1-101#p1 floor=Roof L@3.400 floorSource=set structure=none surface=IfcSlab:roof@3.400 height=3.400 basis=on-roof-surface | terminal placements=0
+§PASS R1 RED: with the row removed from drawn_height_rule the same run is plan only (no height), no §WALK-MAINS-ONROOF line | z=null no modelled ceiling of the sheet's storeys holds the midpoint and no structure above the storey floor here
+§PASS R2 guard: a slab that is NOT a roof by class, PredefinedType or name ("Floor finish"), nothing above, stays plan only; notRoofNoStructure=1; never a duct on an indoor floor (a walk that places nothing is run twice by the harness, so its lines repeat) | §DW §WALK-MAINS-ONROOF pieces=0 terminals=0 rule=on-roof-surface notRoofNoStructure=1 (top face of the roof surface under the run; on roof, height pro | EXPOSED-ITEM sheet=R2-101#p1 floor=Roof L@3.200 floorSource=set structure=none height=none
+§PASS R3 an IfcRoof element ("Cover", no roof word in its name, no slab under the run) under the run qualifies by class: z = its top (3.400), surface=IfcRoof:class | z=3.4000000029802333 | -101#p1 floor=Roof L@3.400 floorSource=set structure=none surface=IfcRoof:class@3.400 height=3.400 basis=on-roof-surface
+§PASS R4 order: the same run under STR structure above (deck lower face 6.000) over a slab named "Roofing membrane" takes exposed-under-structure at the deck soffit, not on-roof; no surface= on its line; ONROOF pieces=0 | z=5.999999994039538 | §WALK-EXPOSED-ITEM sheet=R4-101#p1 floor=Roof L@3.400 floorSource=set structure=IfcSlab/STR@6.000 height=6.000
+§PASS R6 (§11a) a non-roof STR deck "Floor:SLAB 200" (top 3.050) with a roof-named ARC build-up "Basic Roof:COMBO ROOFING_150mm" on top (top 3.800), nothing above: the run sits on the BUILD-UP top, not the deck top; the item line names the roofing surface | z=3.7999999999999985 | 6-101#p1 floor=Roof L@3.050 floorSource=set structure=none surface=IfcSlab:roof@3.800 height=3.800 basis=on-roof-surface
+§PASS R6 RED: with the row removed the same run is plan only | row removed
+§DW module loaded
+§WALKNODE rules=duplex_rules.db schedule=null borrowFP=terminal_rules.db building=Duplex
+§DW §DW-RULES-PATCH file=duplex_rules.db none
+§DW §DW-RULES-PATCH file=terminal_rules.db rows=7 ok
+§WALKNODE rules=duplex_rules.db schedule=null borrowFP=terminal_rules.db building=Duplex
+§PASS R5 items under a ceiling keep z, HeightBasis and host byte-identical (===) to the 37130e8e walker: fixture X 2/2 pieces 0/0 terminals, Duplex drawn walk 4/4 pieces 3/3 terminals | {"X":{"n":2,"same":2,"tn":0,"tsame":0},"D":{"n":4,"same":4,"tn":3,"tsame":3}}
+§DW §DW-RULES-PATCH file=duplex_rules.db none
+§DW §DW-RULES-PATCH file=terminal_rules.db rows=7 ok
+§WALKNODE rules=duplex_rules.db schedule=null borrowFP=terminal_rules.db building=Duplex
+§VERDICT CLAIM MET pass=87 fail=0 inconclusive=0
