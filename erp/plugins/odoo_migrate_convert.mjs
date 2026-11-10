@@ -19,3 +19,14 @@ export function openBalances(exp, variables) {
   const sheets = r.book.filter((b) => OPEN_ORDER.includes(b.name.slice(2)) && b.rows.length > 1).map((b) => ({ table: b.name.slice(2), rows: b.rows }));
   return { sheets, manifest: r.manifest, provenance: r.provenance };
 }
+
+// §ODOO-ENGINE-SPEC O3: the WHOLE book from the agent's raw rows — the 17 master sheets (always, as the agent's workbook had them) + the open sheets that have rows.
+export const hasMasters = (data) => isExport(data) && !!(data.sets && data.sets['res.partner'] && data.sets['product.product']);
+export function convert(exp, variables) {
+  const conn = exportJson(exp, TEMPLATE.connector), r = run(TEMPLATE, conn, variables || {});
+  const book = r.book.filter((b) => !OPEN_ORDER.includes(b.name.slice(2)) || b.rows.length > 1);
+  // the non-invent proof on this path: every set the agent read holds exactly the rows Odoo counted (count == rows), said per set when it does not
+  const short = conn.report().filter((x) => x.count != null && x.rows !== x.count && !/^(tb|open_moves|account\.group|res\.country|res\.country\.state|res\.company)$/.test(x.set)).map((x) => x.set + ' (Odoo counted ' + x.count + ', the file holds ' + x.rows + ')');
+  return { book, manifest: r.manifest, provenance: r.provenance, short };
+}
+
