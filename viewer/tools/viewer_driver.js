@@ -21,7 +21,7 @@ const LIVE_SITE = 'https://red1oon.github.io/bim-ootb/', HERE = path.join(ROOT, 
 const isLive = () => process.env.VIEWER_LIVE === '1' || !fs.existsSync(HERE);
 // one small https helper (IPv4: this class of machine may have no IPv6 route). method GET returns the body text; HEAD returns only the status.
 function fetchLive(url, method) {
-  return new Promise((res, rej) => { const rq = require('https').request(url, { method: method || 'GET', family: 4, timeout: 20000 }, (r) => { if (method === 'HEAD') { r.resume(); return res({ status: r.statusCode }); } const c = []; r.on('data', d => c.push(d)); r.on('end', () => res({ status: r.statusCode, text: Buffer.concat(c).toString('utf8') })); }); rq.on('timeout', () => rq.destroy(new Error('timeout ' + url))); rq.on('error', rej); rq.end(); });
+  return new Promise((res, rej) => { const rq = require('https').request(url, { method: method || 'GET', family: 4, timeout: 20000 }, (r) => { if (method === 'HEAD') { r.resume(); return res({ status: r.statusCode }); } let t = ''; r.setEncoding('utf8'); r.on('data', d => { t += d; }); r.on('end', () => res({ status: r.statusCode, text: t })); }); rq.on('timeout', () => rq.destroy(new Error('timeout ' + url))); rq.on('error', rej); rq.end(); });
 }
 // the production building base, from the page's own config (viewer/config.js `A.PROD_BASE = '…'`)
 async function liveBase() {
