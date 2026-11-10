@@ -2558,6 +2558,209 @@
     ]
    },
    "witness": "common/door/tests/witness_ops_verbs.js"
+  },
+  {
+   "verb": "legacy.up",
+   "app": "legacy",
+   "title": "Start the shared docker Postgres for the legacy test stack",
+   "description": "Starts the shared docker Postgres container the legacy test instance and the pilot read their databases from, when it is not running, and waits until it accepts connections. When it is already running it says so and starts nothing. It never starts or stops the instance or the pilot. Docker not reachable is inconclusive; a missing container is refused naming it. A person runs it; an AI's call is held as a claim until a person confirms.",
+   "inputs": [],
+   "harm": "writes",
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "calls": {
+    "cli": "legacy_cli",
+    "who": "the docker Postgres",
+    "argv": [
+     "up"
+    ]
+   },
+   "returns": {
+    "shape": "legacy_cli JSON {container,verdict,summary}",
+    "fields": [
+     {
+      "path": "verdict",
+      "type": "string"
+     }
+    ]
+   },
+   "witness": "common/door/tests/witness_legacy_plugin.js"
+  },
+  {
+   "verb": "legacy.refresh",
+   "app": "legacy",
+   "title": "Refresh the legacy test instance from the base seed",
+   "description": "Rebuilds the local legacy iDempiere TEST instance (database idempiere_bimdoc, ports 8108 and 8464) from the base seed so every state traces from base: stops it, drops and recreates the database, imports the seed, applies the migration scripts newer than the seed, installs the plugin bundle, starts it, waits for the 2Pack to be installed and reads the rows back. About two minutes. It names the database it writes and refuses the pilot's databases; the instance, the database and the scripts are fixed, nothing is taken from the caller. A person runs it; an AI's call is held as a claim until a person confirms.",
+   "inputs": [],
+   "harm": "writes",
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "calls": {
+    "cli": "legacy_cli",
+    "who": "the legacy test instance",
+    "argv": [
+     "refresh"
+    ]
+   },
+   "returns": {
+    "shape": "legacy_cli JSON {instance,steps,installed,log,ms,verdict,summary}",
+    "fields": [
+     {
+      "path": "verdict",
+      "type": "string"
+     },
+     {
+      "path": "installed",
+      "type": "boolean"
+     },
+     {
+      "path": "steps",
+      "type": "array"
+     }
+    ]
+   },
+   "witness": "common/door/tests/witness_legacy_plugin.js"
+  },
+  {
+   "verb": "legacy.witness",
+   "app": "legacy",
+   "title": "Run the in-server witness on the legacy test instance",
+   "description": "Sends the witness command to the running legacy test instance over its OSGi console. The witness creates its rows in one transaction and rolls it back. Answers PASS or FAIL with the counts and the failing lines, or INCONCLUSIVE when the instance is not running. The log is kept.",
+   "inputs": [],
+   "harm": "trial",
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "calls": {
+    "cli": "legacy_cli",
+    "who": "the legacy test instance",
+    "argv": [
+     "witness"
+    ]
+   },
+   "returns": {
+    "shape": "legacy_cli JSON {verdict,pass,fail,failed,log,ms,summary}",
+    "fields": [
+     {
+      "path": "verdict",
+      "type": "string"
+     },
+     {
+      "path": "pass",
+      "type": "number"
+     },
+     {
+      "path": "fail",
+      "type": "number"
+     }
+    ]
+   },
+   "witness": "common/door/tests/witness_legacy_plugin.js"
+  },
+  {
+   "verb": "legacy.check",
+   "app": "legacy",
+   "title": "Check a workbook's rows in the legacy test database",
+   "description": "Reads every row of a data-model workbook back from the legacy test database by SQL (tables, physical tables, columns, windows, tabs, menu, processes with their class names, references) and answers how many of each were found. With version=<x.y.z> it also compares the installed plugin's 2Pack with the pack made from the workbook (build/legacy_plugin) and says plainly when they differ. Database not reachable is inconclusive.",
+   "inputs": [
+    {
+     "name": "book",
+     "description": "The workbook, a .xlsx path inside this tree.",
+     "required": true,
+     "type": "string",
+     "example": "erp/plugins/models/BIM_Document.xlsx"
+    },
+    {
+     "name": "version",
+     "description": "The pack version to compare, x.y.z.",
+     "required": false,
+     "type": "string",
+     "example": "1.0.0"
+    }
+   ],
+   "harm": "read",
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "calls": {
+    "cli": "legacy_cli",
+    "who": "the legacy test database",
+    "argv": [
+     "check",
+     "--book",
+     "{book}",
+     {
+      "if": "version",
+      "args": [
+       "--version",
+       "{version}"
+      ]
+     }
+    ]
+   },
+   "returns": {
+    "shape": "legacy_cli JSON {database,checks,pack,missing,verdict,summary}",
+    "fields": [
+     {
+      "path": "verdict",
+      "type": "string"
+     },
+     {
+      "path": "checks",
+      "type": "array"
+     },
+     {
+      "path": "pack",
+      "type": "object"
+     }
+    ]
+   },
+   "witness": "common/door/tests/witness_legacy_plugin.js"
+  },
+  {
+   "verb": "erp.legacy_plugin",
+   "app": "erp",
+   "title": "Put a data-model plugin on the legacy test instance and check it there",
+   "description": "The whole route for a plugin on a real legacy iDempiere, one line: start the docker Postgres if it is not running, make the 2Pack from the workbook, refresh the local legacy test instance from the base seed with the plugin bundle installed, read every row of the workbook back from the test database, and run the in-server witness. Each step is its own line and the first line that is not ok stops it. The refresh installs the plugin bundle as committed, so the check says when the installed pack is not the one just made from the workbook. About three minutes. A person runs it; an AI's call is held as a claim until a person confirms.",
+   "inputs": [
+    {
+     "name": "book",
+     "description": "The workbook, a .xlsx path inside this tree.",
+     "required": true,
+     "type": "string",
+     "example": "erp/plugins/models/BIM_Document.xlsx"
+    },
+    {
+     "name": "version",
+     "description": "The pack version, x.y.z.",
+     "required": true,
+     "type": "string",
+     "example": "1.0.0"
+    }
+   ],
+   "harm": "writes",
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "body": [
+    "legacy.up",
+    "erp.pack book={book} version={version} out=build/legacy_plugin",
+    "legacy.refresh",
+    "legacy.check book={book} version={version}",
+    "legacy.witness"
+   ],
+   "returns": {
+    "shape": "the envelopes of its lines, in answer.lines; the last is legacy.witness's",
+    "fields": []
+   },
+   "witness": "common/door/tests/witness_legacy_plugin.js"
   }
  ]
 }
