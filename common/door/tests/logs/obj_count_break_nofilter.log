@@ -1,0 +1,28 @@
+§W-OBJ-COUNT C1 independent SQL {"Room":5,"Element":1193,"Storey and Space":12,"Building":4,"Element Transform":1190}
+  ✅ C1 object.count kind=Room = SQL count  door=5 sql=5
+  ✅ C1 object.count kind=Element = SQL count  door=1193 sql=1193
+  ✅ C1 object.count kind=Storey and Space = SQL count  door=12 sql=12
+  ✅ C1 object.count kind=Building = SQL count  door=4 sql=4
+  ✅ C1 object.count kind=Element Transform = SQL count  door=1190 sql=1190
+  ✅ C1 Room is fewer than Storey and Space and more than 0 (the view really narrows)  5 of 12
+  ❌ C2 Room storey="Level 1" = SQL (a strict subset of the rooms)  door=5 sql=2 of 5
+  ❌ C2 Element discipline=MEP = SQL  door=1193 sql=809 of 1193
+  ❌ C2 two filters (discipline and ifc_class=IfcFlowSegment) = SQL  door=1193 sql=427
+  ❌ C2 a filter that matches nothing in a non-empty kind is a real 0 with the population (ok, not inconclusive)  {"kind":"Room","table":"model_room","filters":[{"column":"storey","value":"NoSuchStorey"}],"count":5,"population":5,"verdict":"OK","summary":"5 Room where storey = NoSuchStorey (of 5)"}
+  ❌ C2 a number column compares as a number (center_z=1.6224438773874126)  door=5 sql=2
+  ✅ C3 an unknown column is an error naming it and listing the kind's properties  the object engine could not answer (exit 1): kind Room has no property "floor" (its properties: guid, type, name, parent_guid, object_type, predefined_type, center_x, center_y, center_z, size_x, size_y, size_z, room_guid, elevation, storey, model_room_uu)
+  ✅ C3 an unknown kind is an error naming it and listing the kinds (Room among them)  the object engine could not answer (exit 1): unknown kind "Rum" (this model registers: Building, Storey and Space, Element, Element Transform, Room)
+  ✅ C3 text given to a number column is refused with the reason  center_x is a number; "abc" is not
+  ✅ C3 a verb WITHOUT calls.rest still refuses an unknown input at the door (nothing run)  unknown input: floor (the verb object.describe takes: building, kind, uu)
+  ✅ C4 human and ai get the same envelope apart from request, actor and ms  ok
+  ✅ C5 a model with no room answers inconclusive with VACUOUS (not ok, not 0-as-an-answer)  inconclusive {"kind":"Room","table":"model_room","filters":[],"count":0,"population":0,"verdict":"VACUOUS","summary":"this model holds no Room record, so nothing was counted"}
+§W-OBJ-COUNT C5 emptied model: status=inconclusive why=this model holds no Room record, so nothing was counted
+  ✅ C6 describe Room lists exactly its ad_column rows (16) and Room is registered as a view  describe=16 sql=16 isview=Y
+  ✅ C6 Room offers no update and no history (read-only view), and no property is updateable  read,attach
+  ✅ C6 a room is read by its key through the same engine; its storey is its parent's name  ok {"model_room_uu":"RM_Level_1_1","guid":"RM_Level_1_1","type":"IfcSpace","name":"≈ Level 1 R1","parent_guid":"STC_Level_1","object_type":"COMPILED","predefined_t
+  ✅ C6 an update of a room is refused (not updateable); nothing is written  refused name is not updateable
+  ✅ C7 every line of the patch before Room is still in the patch (add-only)  missing=0
+  ✅ C7 the four model tables are identical with and without the Room kind  identical=elements_meta,element_transforms,spatial_structure,project_metadata
+  ✅ C7 the earlier dictionary rows (4 kinds, their columns, lists) are identical  identical=ad_table,ad_column,ad_ref_list,ad_reference
+§W-OBJ-COUNT fixture=Duplex_extracted.db bytes=9691136 rooms=5 elements=1193 COUNT_BREAK=nofilter
+§WITNESS_OBJ_COUNT pass=19 fail=5 inconclusive=0 verdict=FAIL

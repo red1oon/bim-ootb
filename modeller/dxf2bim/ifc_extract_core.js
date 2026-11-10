@@ -858,6 +858,7 @@ async function extractToDb(ctx) {
   const aggRows = [];    // P-X2 { parent, child, parentClass }: element-level IfcRelAggregates (both ends extracted elements)
   const relFills = [];   // { opening, host, filling, hostClass, fillingClass }
   const psetRows = [];   // { guid, pset, name, value, source }
+  const nativeRows = [];   // §12b element_pset_native
   {
     const ref = v => (v && typeof v === 'object' && 'value' in v) ? v.value : v;
     const info = {};     // expressID -> { guid, cls }
@@ -916,6 +917,7 @@ async function extractToDb(ctx) {
       const readPset = (psetId, guid, source, into) => {
         const ps = ifcApi.GetLine(modelID, psetId);
         const isWalk = !!(ps && ps.Name && ps.Name.value === WALK_SET);
+        if (ps && ps.type === WebIFC.IFCPROPERTYSET && ps.Name && natWanted(ps.Name.value)) { readNative(ps, guid, source, into); return; }
         if (!ps || ps.type !== WebIFC.IFCPROPERTYSET || !ps.Name || !(isWalk || /^Pset_.*Common$/.test(ps.Name.value))) return;
         for (const ph of ps.HasProperties || []) {
           const p = ifcApi.GetLine(modelID, ref(ph));
@@ -923,6 +925,40 @@ async function extractToDb(ctx) {
           let v = p.NominalValue.value;
           if (v === true || v === 'T' || v === '.T.') v = 'TRUE'; else if (v === false || v === 'F' || v === '.F.') v = 'FALSE'; else if (v === 'U' || v === '.U.') v = 'UNKNOWN';
           into.set(ps.Name.value + '|' + p.Name.value, { guid, pset: ps.Name.value, name: p.Name.value, value: String(v), source });
+        }
+      };
+      // §12b (prompts/DISC_WALK_DRAWN_INTEGRATION.md): every other property set (the authoring tool's own + standard non-Common ones), kept in element_pset_native.
+      //   value_si/unit only from evidence: a typed measure through the file's IfcUnitAssignment, an untyped number through a ctx.nativeMaps.unit_map data row; else NULL.
+      const natWanted = n => !ctx.noNativePsets && !/^Pset_.*Common$/.test(n) && !/^(BIMOOTB_|Dxf2Bim_)/.test(n) && n !== 'Pset_Dxf2Bim';
+      const N_PREFIX = { EXA: 1e18, PETA: 1e15, TERA: 1e12, GIGA: 1e9, MEGA: 1e6, KILO: 1e3, HECTO: 1e2, DECA: 1e1, DECI: 1e-1, CENTI: 1e-2, MILLI: 1e-3, MICRO: 1e-6, NANO: 1e-9, PICO: 1e-12, FEMTO: 1e-15, ATTO: 1e-18 };
+      const MEASURE_UNIT = { IFCLENGTHMEASURE: 'LENGTHUNIT', IFCPOSITIVELENGTHMEASURE: 'LENGTHUNIT', IFCAREAMEASURE: 'AREAUNIT', IFCVOLUMEMEASURE: 'VOLUMEUNIT', IFCPLANEANGLEMEASURE: 'PLANEANGLEUNIT', IFCPOSITIVEPLANEANGLEMEASURE: 'PLANEANGLEUNIT',
+        IFCTIMEMEASURE: 'TIMEUNIT', IFCMASSMEASURE: 'MASSUNIT', IFCTHERMODYNAMICTEMPERATUREMEASURE: 'THERMODYNAMICTEMPERATUREUNIT', IFCELECTRICCURRENTMEASURE: 'ELECTRICCURRENTUNIT', IFCELECTRICVOLTAGEMEASURE: 'ELECTRICVOLTAGEUNIT',
+        IFCPOWERMEASURE: 'POWERUNIT', IFCFREQUENCYMEASURE: 'FREQUENCYUNIT', IFCPRESSUREMEASURE: 'PRESSUREUNIT', IFCFORCEMEASURE: 'FORCEUNIT', IFCILLUMINANCEMEASURE: 'ILLUMINANCEUNIT', IFCLUMINOUSFLUXMEASURE: 'LUMINOUSFLUXUNIT', IFCENERGYMEASURE: 'ENERGYUNIT' };   // IFC schema: measure type -> the unit type that states its unit
+      const fileUnit = {};   // unit type -> { scale, unit } as the file's own IfcUnitAssignment states it
+      try {
+        const rv = v => (v && typeof v === 'object' && 'value' in v) ? v.value : v;
+        const siOf = u => { const nm = rv(u.Name); if (!nm) return null; const pf = u.Prefix ? N_PREFIX[rv(u.Prefix)] : 1; if (pf == null) return null; const pw = /^SQUARE_/.test(nm) ? 2 : /^CUBIC_/.test(nm) ? 3 : 1; return { scale: Math.pow(pf, pw), unit: String(nm) }; };
+        const pj = ifcApi.GetLineIDsWithType(modelID, WebIFC.IFCPROJECT), prj = pj.size() ? ifcApi.GetLine(modelID, pj.get(0)) : null, ua = prj && prj.UnitsInContext ? ifcApi.GetLine(modelID, ref(prj.UnitsInContext)) : null;
+        for (const uh of (ua && ua.Units) || []) {
+          const u = ifcApi.GetLine(modelID, ref(uh)); if (!u || !u.UnitType) continue; const ut = rv(u.UnitType);
+          if (u.type === WebIFC.IFCSIUNIT) { const x = siOf(u); if (x) fileUnit[ut] = x; }
+          else if (u.type === WebIFC.IFCCONVERSIONBASEDUNIT && u.ConversionFactor) { const mwu = ifcApi.GetLine(modelID, ref(u.ConversionFactor)), base = mwu && mwu.UnitComponent ? ifcApi.GetLine(modelID, ref(mwu.UnitComponent)) : null;
+            const bx = base && base.type === WebIFC.IFCSIUNIT ? siOf(base) : null, f = mwu && mwu.ValueComponent ? Number(rv(mwu.ValueComponent)) : NaN; if (bx && isFinite(f)) fileUnit[ut] = { scale: f * bx.scale, unit: bx.unit }; }
+        }
+      } catch (e) { log(`§PSET_NATIVE_UNITS_FAIL ${e.message}`); }
+      const likeRe = pat => new RegExp('^' + String(pat).replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/%/g, '.*') + '$', 'i');
+      const unitMap = ((ctx.nativeMaps && ctx.nativeMaps.unit_map) || []).map(r => ({ pset: likeRe(r.pset), name: likeRe(r.name), factor: Number(r.factor), unit: r.unit }));
+      const readNative = (ps, guid, source, into) => {
+        for (const ph of ps.HasProperties || []) {
+          const p = ifcApi.GetLine(modelID, ref(ph));
+          if (!p || p.type !== WebIFC.IFCPROPERTYSINGLEVALUE || !p.Name || !p.NominalValue) continue;
+          const nv = p.NominalValue, mt = nv.name ? String(nv.name).toUpperCase() : null; let v = nv.value;
+          if (v === undefined || v === null) continue;
+          if (v === true || v === 'T' || v === '.T.') v = 'TRUE'; else if (v === false || v === 'F' || v === '.F.') v = 'FALSE'; else if (v === 'U' || v === '.U.') v = 'UNKNOWN';
+          let si = null, unit = null; const numeric = typeof v === 'number' && isFinite(v);
+          if (numeric && mt && MEASURE_UNIT[mt]) { const fu = fileUnit[MEASURE_UNIT[mt]]; if (fu) { si = v * fu.scale; unit = fu.unit; } }
+          else if (numeric && (mt === 'IFCREAL' || mt === 'IFCINTEGER' || mt === 'IFCNUMERICMEASURE')) { const m = unitMap.find(r => r.pset.test(ps.Name.value) && r.name.test(p.Name.value)); if (m && isFinite(m.factor)) { si = v * m.factor; unit = m.unit; } }
+          into.set('N|' + ps.Name.value + '|' + p.Name.value, { native: true, guid, pset: ps.Name.value, name: p.Name.value, value: String(v), value_si: si, unit, source, numeric });
         }
       };
       const occ = new Map(), typ = new Map();   // expressID -> Map(key -> row)
@@ -953,8 +989,8 @@ async function extractToDb(ctx) {
       }
       for (const el of elements) {
         const o = occ.get(el.expressID) || new Map(), t = typ.get(el.expressID) || new Map();
-        for (const [k, row] of t) if (!o.has(k)) psetRows.push(row);   // occurrence overrides type
-        for (const row of o.values()) psetRows.push(row);
+        for (const [k, row] of t) if (!o.has(k)) (row.native ? nativeRows : psetRows).push(row);   // occurrence overrides type
+        for (const row of o.values()) (row.native ? nativeRows : psetRows).push(row);
       }
     } catch (e) { log(`§PSET_COMMON_FAIL ${e.message}`); }
   }
@@ -1114,7 +1150,13 @@ async function extractToDb(ctx) {
     for (const w of worldBbox) if (roomGuid.has(w.guid)) roomBox.run((w.b[0] + w.b[1]) / 2, (w.b[2] + w.b[3]) / 2, (w.b[4] + w.b[5]) / 2, w.b[1] - w.b[0], w.b[3] - w.b[2], w.b[5] - w.b[4], w.guid);
     log(`§OPEN_SPACES rows=${roomEls.length}`);
   }
-
+  if (nativeRows.length) {   // §12b: only when the file carries such sets (other DBs are unchanged); additive, after every existing table
+    db.exec(`CREATE TABLE element_pset_native (guid TEXT, pset TEXT, name TEXT, value TEXT, value_si REAL, unit TEXT, source TEXT, PRIMARY KEY (guid, pset, name))`);
+    const nvStmt = db.prepare('INSERT OR IGNORE INTO element_pset_native VALUES (?,?,?,?,?,?,?)');
+    let bytes = 0, si = 0, unk = 0; const sets = new Set(), els = new Set();
+    for (const r of nativeRows) { nvStmt.run(r.guid, r.pset, r.name, r.value, r.value_si, r.unit, r.source); bytes += r.guid.length + r.pset.length + r.name.length + r.value.length + 8; sets.add(r.pset); els.add(r.guid); if (r.value_si != null) si++; else if (r.numeric) unk++; }
+    log(`§PSET_NATIVE rows=${nativeRows.length} psets=${sets.size} elements=${els.size} si=${si} unitUnknown=${unk} bytes=${bytes} unitMapRows=${((ctx.nativeMaps && ctx.nativeMaps.unit_map) || []).length}`);
+  }
 
   db.exec('COMMIT');
   log(`§SUMMARY elements=${elements.length} geometries=${geometries.length} uniqueHashes=${seenHashes.size} 4D_tasks=${tasks.length}`);

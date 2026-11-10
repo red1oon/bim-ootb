@@ -1,0 +1,28 @@
+§DW module loaded
+§WALKNODE fetch mep_rw.db?v=5 -> modeller/mep_rw.db
+§RW_INIT mep_rw.db loaded bom=188 patterns=19 anchors=5479 offsets=15 shims=11 arc_env=1
+§W-MODELLER-WALK Duplex model=Duplex_ARC.db rules(owner)=duplex_rules.db disciplines=ACMV,ELEC,PLB,FP geo=none
+§WALKNODE fetch mep_rw.db?v=5 -> modeller/mep_rw.db
+§RW_INIT mep_rw.db loaded bom=188 patterns=19 anchors=5479 offsets=15 shims=11 arc_env=1
+  ❌ Duplex ACMV: the verb's count and counts by class = the direct walk  door=37 direct=19 classes=[["IfcFlowTerminal",19]]
+  ❌ Duplex ACMV: the answer names the rules the owner selects (duplex_rules.db) and the labels add up  rules=terminal_rules.db hostState={"none":19,"bound":1,"unhosted":17} prov={"sched":19,"shim":1,"placed":17}
+§WALKNODE fetch mep_rw.db?v=5 -> modeller/mep_rw.db
+§RW_INIT mep_rw.db loaded bom=188 patterns=19 anchors=5479 offsets=15 shims=11 arc_env=1
+  ❌ Duplex ELEC: the verb's count and counts by class = the direct walk  door=139 direct=102 classes=[["IfcFlowTerminal",102]]
+  ❌ Duplex ELEC: the answer names the rules the owner selects (duplex_rules.db) and the labels add up  rules=terminal_rules.db hostState={"none":102,"unhosted":36,"bound":1} prov={"sched":102,"placed":36,"shim":1}
+§WALKNODE fetch mep_rw.db?v=5 -> modeller/mep_rw.db
+§RW_INIT mep_rw.db loaded bom=188 patterns=19 anchors=5479 offsets=15 shims=11 arc_env=1
+  ❌ Duplex PLB: the verb's count and counts by class = the direct walk  door=26 direct=18 classes=[["IfcFlowTerminal",18]]
+  ❌ Duplex PLB: the answer names the rules the owner selects (duplex_rules.db) and the labels add up  rules=terminal_rules.db hostState={"none":18,"not_judged":8} prov={"sched":18,"placed":8}
+§WALKNODE fetch mep_rw.db?v=5 -> modeller/mep_rw.db
+§RW_INIT mep_rw.db loaded bom=188 patterns=19 anchors=5479 offsets=15 shims=11 arc_env=1
+  ❌ Duplex FP: the verb's count and counts by class = the direct walk  door=71 direct=46 classes=[["IfcAlarm",1],["IfcFireSuppressionTerminal",45]]
+  ❌ Duplex FP: the answer names the rules the owner selects (duplex_rules.db) and the labels add up  rules=terminal_rules.db hostState={"none":25,"bound":9,"unhosted":37} prov={"sched":25,"shim":9,"placed":37}
+  ✅ Duplex: the model file is byte-identical after every walk (sha256)  8410b1703c9de1b3
+  ✅ DOCTRINE the owner sends Duplex to duplex_rules.db and Hospital to terminal_rules.db  duplex_rules.db / terminal_rules.db
+  ✅ NAMES an unknown discipline is an error naming it and listing the disciplines the rules hold  the Modeller's walker could not answer (exit 1): unknown discipline "XX" (the rules of Duplex, terminal_rules.db, hold: ACMV, ELEC, FP, PLB, STR, roof)
+  ✅ NAMES an unknown building is an error naming it and listing the Open list  the Modeller's walker could not answer (exit 1): unknown building "NoSuchBuilding" (the Modeller's Open list holds: SampleHouse, Duplex, SampleCastle, HHS, Clinic, Hospital, HospitalGarage, Terminal)
+  ❌ ACTOR a person and an AI get the same envelope apart from request, actor, ms and the heap figure in the walker's own log line (a read: both run)  ok
+  ✅ READ-ONLY the verb's two files hold no file write, no export, no INSERT or UPDATE  hits=
+§W-MODELLER-WALK walks=4 placedSomething=4 WALK_BREAK=terminal
+§WITNESS_MODELLER_WALK pass=5 fail=9 inconclusive=0 verdict=FAIL

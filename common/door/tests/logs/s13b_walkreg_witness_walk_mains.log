@@ -1,0 +1,67 @@
+§DW module loaded
+§WALKNODE fetch mep_rw.db?v=5 -> modeller/mep_rw.db
+§RW_INIT mep_rw.db loaded bom=188 patterns=19 anchors=5479 offsets=15 shims=11 arc_env=1
+§W_MAINS before=none, N3 and N4 unrun
+§W_MAINS N7 Clinic/ACMV pieces kept by the switch=629 left=0 noMain=629 placed=0 of 0
+§W_MAINS N1 Clinic/ACMV runs=0 withStubs=331 placed=0 mains={"none":"no sheet held"} | §WALK-MAINS disc=ACMV bldg=Clinic none reason=no sheet held
+§W_MAINS N7 Clinic/FP pieces kept by the switch=0 left=0 noMain=0 placed=0 of 0
+§W_MAINS N1 Clinic/FP runs=0 withStubs=431 placed=0 mains={"none":"no sheet held"} | §WALK-MAINS disc=FP bldg=Clinic none reason=no sheet held
+§W_MAINS N7 Clinic/PLB pieces kept by the switch=498 left=0 noMain=498 placed=0 of 0
+§W_MAINS N1 Clinic/PLB runs=0 withStubs=1869 placed=0 mains={"none":"no sheet held"} | §WALK-MAINS disc=PLB bldg=Clinic none reason=no sheet held
+§W_MAINS N7 Duplex/ACMV pieces kept by the switch=0 left=0 noMain=0 placed=19 of 19
+§W_MAINS N1 Duplex/ACMV runs=0 withStubs=8 placed=19 mains={"none":"no sheet held"} | §WALK-MAINS disc=ACMV bldg=Duplex none reason=no sheet held
+§W_MAINS N7 Duplex/FP pieces kept by the switch=0 left=0 noMain=0 placed=0 of 0
+§W_MAINS N1 Duplex/FP runs=0 withStubs=11 placed=0 mains={"none":"no sheet held"} | §WALK-MAINS disc=FP bldg=Duplex none reason=no sheet held
+§W_MAINS N7 Duplex/PLB pieces kept by the switch=0 left=0 noMain=0 placed=18 of 18
+§W_MAINS N1 Duplex/PLB runs=0 withStubs=22 placed=18 mains={"none":"no sheet held"} | §WALK-MAINS disc=PLB bldg=Duplex none reason=no sheet held
+§W_MAINS N7 Garage/ACMV pieces kept by the switch=2943 left=0 noMain=2943 placed=0 of 0
+§W_MAINS N1 Garage/ACMV runs=0 withStubs=260 placed=0 mains={"none":"no sheet held"} | §WALK-MAINS disc=ACMV bldg=Garage none reason=no sheet held
+§W_MAINS N7 Garage/FP pieces kept by the switch=0 left=0 noMain=0 placed=0 of 0
+§W_MAINS N1 Garage/FP runs=0 withStubs=30 placed=0 mains={"none":"no sheet held"} | §WALK-MAINS disc=FP bldg=Garage none reason=no sheet held
+§W_MAINS N7 Garage/PLB pieces kept by the switch=2960 left=0 noMain=2960 placed=0 of 0
+§W_MAINS N1 Garage/PLB runs=0 withStubs=666 placed=0 mains={"none":"no sheet held"} | §WALK-MAINS disc=PLB bldg=Garage none reason=no sheet held
+§W_MAINS N7 HHS/ACMV pieces kept by the switch=989 left=0 noMain=989 placed=0 of 0
+§W_MAINS N1 HHS/ACMV runs=0 withStubs=76 placed=0 mains={"none":"no sheet held"} | §WALK-MAINS disc=ACMV bldg=HHS none reason=no sheet held
+§W_MAINS N7 HHS/FP pieces kept by the switch=0 left=0 noMain=0 placed=0 of 0
+§W_MAINS N1 HHS/FP runs=0 withStubs=171 placed=0 mains={"none":"no sheet held"} | §WALK-MAINS disc=FP bldg=HHS none reason=no sheet held
+§W_MAINS N7 HHS/PLB pieces kept by the switch=312 left=0 noMain=312 placed=0 of 0
+§W_MAINS N1 HHS/PLB runs=0 withStubs=178 placed=0 mains={"none":"no sheet held"} | §WALK-MAINS disc=PLB bldg=HHS none reason=no sheet held
+§W_MAINS N7 Hospital/ACMV pieces kept by the switch=3664 left=0 noMain=3664 placed=0 of 0
+§W_MAINS N1 Hospital/ACMV runs=0 withStubs=3047 placed=0 mains={"none":"no sheet held"} | §WALK-MAINS disc=ACMV bldg=Hospital none reason=no sheet held
+§W_MAINS N7 Hospital/FP pieces kept by the switch=0 left=0 noMain=0 placed=0 of 0
+§W_MAINS N1 Hospital/FP runs=0 withStubs=2908 placed=0 mains={"none":"no sheet held"} | §WALK-MAINS disc=FP bldg=Hospital none reason=no sheet held
+§W_MAINS N7 Hospital/PLB pieces kept by the switch=3634 left=0 noMain=3634 placed=0 of 0
+§W_MAINS N1 Hospital/PLB runs=0 withStubs=19457 placed=0 mains={"none":"no sheet held"} | §WALK-MAINS disc=PLB bldg=Hospital none reason=no sheet held
+§W_MAINS N7 JKR/ACMV pieces kept by the switch=882 left=0 noMain=882 placed=0 of 0
+§W_MAINS N1 JKR/ACMV runs=0 withStubs=488 placed=0 mains={"none":"no sheet held"} | §WALK-MAINS disc=ACMV bldg=JKR none reason=no sheet held
+§W_MAINS N7 JKR/FP pieces kept by the switch=0 left=0 noMain=0 placed=0 of 0
+§W_MAINS N1 JKR/FP runs=0 withStubs=93 placed=0 mains={"none":"no sheet held"} | §WALK-MAINS disc=FP bldg=JKR none reason=no sheet held
+§W_MAINS N7 JKR/PLB pieces kept by the switch=396 left=0 noMain=396 placed=0 of 0
+§W_MAINS N1 JKR/PLB runs=0 withStubs=913 placed=0 mains={"none":"no sheet held"} | §WALK-MAINS disc=PLB bldg=JKR none reason=no sheet held
+§W_MAINS N7 Terminal/ACMV pieces kept by the switch=976 left=0 noMain=976 placed=0 of 0
+§W_MAINS N1 Terminal/ACMV runs=0 withStubs=630 placed=0 mains={"none":"no sheet held"} | §WALK-MAINS disc=ACMV bldg=Terminal none reason=no sheet held
+§W_MAINS N7 Terminal/FP pieces kept by the switch=0 left=0 noMain=0 placed=0 of 0
+§W_MAINS N1 Terminal/FP runs=0 withStubs=568 placed=0 mains={"none":"no sheet held"} | §WALK-MAINS disc=FP bldg=Terminal none reason=no sheet held
+§W_MAINS N7 Terminal/PLB pieces kept by the switch=824 left=0 noMain=824 placed=0 of 0
+§W_MAINS N1 Terminal/PLB runs=0 withStubs=2759 placed=0 mains={"none":"no sheet held"} | §WALK-MAINS disc=PLB bldg=Terminal none reason=no sheet held
+§W_MAINS N7 SampleCastle/ACMV pieces kept by the switch=12 left=0 noMain=12 placed=0 of 0
+§W_MAINS N1 SampleCastle/ACMV not judged, the bridge routes nothing here either (placed=0)
+§W_MAINS N7 SampleCastle/FP pieces kept by the switch=0 left=0 noMain=0 placed=0 of 0
+§W_MAINS N1 SampleCastle/FP runs=0 withStubs=2 placed=0 mains={"none":"no sheet held"} | §WALK-MAINS disc=FP bldg=SampleCastle none reason=no sheet held
+§W_MAINS N7 SampleCastle/PLB pieces kept by the switch=12 left=0 noMain=12 placed=0 of 0
+§W_MAINS N1 SampleCastle/PLB runs=0 withStubs=26 placed=0 mains={"none":"no sheet held"} | §WALK-MAINS disc=PLB bldg=SampleCastle none reason=no sheet held
+§W_MAINS N7 SampleHouse/ACMV pieces kept by the switch=4 left=0 noMain=4 placed=0 of 0
+§W_MAINS N1 SampleHouse/ACMV not judged, the bridge routes nothing here either (placed=0)
+§W_MAINS N7 SampleHouse/FP pieces kept by the switch=0 left=0 noMain=0 placed=5 of 5
+§W_MAINS N1 SampleHouse/FP not judged, the bridge routes nothing here either (placed=5)
+§W_MAINS N7 SampleHouse/PLB pieces kept by the switch=4 left=0 noMain=4 placed=0 of 0
+§W_MAINS N1 SampleHouse/PLB not judged, the bridge routes nothing here either (placed=0)
+§W_MAINS N1a no ruled discipline makes a run with no source PASS walks=23 stillRouting=0
+§W_MAINS N1b every one of those walks says so in the log PASS said=23 of 23
+§W_MAINS N1 RED: keepPatternStubs routes, so the gate is what removed them PASS stubRuns=34944
+§W_MAINS N7 no band duct or pipe piece is placed, and each is counted as no-main PASS walks=16 left=0 
+§W_MAINS N7 RED: the switch keeps them, so the rule is what removed them PASS pieces=18739
+§W_MAINS N8 every other placement identical with and without the rule, to 1e-3 m PASS differing=0
+§W_MAINS ZERO walks that placed devices and now place none: 0 
+§W_MAINS N3 UNRUN no old walker · N4 UNRUN no old walker
+§W_MAINS VERDICT pass=6 fail=0

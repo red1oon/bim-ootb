@@ -1,0 +1,56 @@
+§DW module loaded
+§WALKNODE fetch mep_rw.db?v=5 -> modeller/mep_rw.db
+§RW_INIT mep_rw.db loaded bom=188 patterns=19 anchors=5479 offsets=15 shims=11 arc_env=1
+§W-MODELLER-WALK Duplex model=Duplex_ARC.db rules(owner)=duplex_rules.db disciplines=ACMV,ELEC,PLB,FP geo=none
+§WALKNODE fetch mep_rw.db?v=5 -> modeller/mep_rw.db
+§RW_INIT mep_rw.db loaded bom=188 patterns=19 anchors=5479 offsets=15 shims=11 arc_env=1
+  ✅ Duplex ACMV: the verb's count and counts by class = the direct walk  door=19 direct=19 classes=[["IfcFlowTerminal",19]]
+  ✅ Duplex ACMV: the answer names the rules the owner selects (duplex_rules.db) and the labels add up  rules=duplex_rules.db hostState={"none":19} prov={"sched":19}
+§WALKNODE fetch mep_rw.db?v=5 -> modeller/mep_rw.db
+§RW_INIT mep_rw.db loaded bom=188 patterns=19 anchors=5479 offsets=15 shims=11 arc_env=1
+  ✅ Duplex ELEC: the verb's count and counts by class = the direct walk  door=102 direct=102 classes=[["IfcFlowTerminal",102]]
+  ✅ Duplex ELEC: the answer names the rules the owner selects (duplex_rules.db) and the labels add up  rules=duplex_rules.db hostState={"none":102} prov={"sched":102}
+§WALKNODE fetch mep_rw.db?v=5 -> modeller/mep_rw.db
+§RW_INIT mep_rw.db loaded bom=188 patterns=19 anchors=5479 offsets=15 shims=11 arc_env=1
+  ✅ Duplex PLB: the verb's count and counts by class = the direct walk  door=18 direct=18 classes=[["IfcFlowTerminal",18]]
+  ✅ Duplex PLB: the answer names the rules the owner selects (duplex_rules.db) and the labels add up  rules=duplex_rules.db hostState={"none":18} prov={"sched":18}
+§WALKNODE fetch mep_rw.db?v=5 -> modeller/mep_rw.db
+§RW_INIT mep_rw.db loaded bom=188 patterns=19 anchors=5479 offsets=15 shims=11 arc_env=1
+  ✅ Duplex FP: the verb's count and counts by class = the direct walk  door=46 direct=46 classes=[["IfcAlarm",1],["IfcFireSuppressionTerminal",45]]
+  ✅ Duplex FP: the answer names the rules the owner selects (duplex_rules.db) and the labels add up  rules=duplex_rules.db hostState={"bound":9,"unhosted":37} prov={"shim":9,"placed":37}
+  ✅ Duplex: the model file is byte-identical after every walk (sha256)  8410b1703c9de1b3
+§WALKNODE fetch mep_rw.db?v=5 -> modeller/mep_rw.db
+§RW_INIT mep_rw.db loaded bom=188 patterns=19 anchors=5479 offsets=15 shims=11 arc_env=1
+§W-MODELLER-WALK Hospital model=Hospital_ARC.db rules(owner)=terminal_rules.db disciplines=ACMV,ELEC,FP,PLB,STR,roof geo=Hospital_geo.db
+§WALKNODE fetch mep_rw.db?v=5 -> modeller/mep_rw.db
+§RW_INIT mep_rw.db loaded bom=188 patterns=19 anchors=5479 offsets=15 shims=11 arc_env=1
+  ✅ Hospital ACMV: the verb's count and counts by class = the direct walk  door=1341 direct=1341 classes=[["IfcAirTerminal",1341]]
+  ✅ Hospital ACMV: the answer names the rules the owner selects (terminal_rules.db) and the labels add up  rules=terminal_rules.db hostState={"bound":483,"unhosted":858} prov={"shim":483,"placed":858}
+§WALKNODE fetch mep_rw.db?v=5 -> modeller/mep_rw.db
+§RW_INIT mep_rw.db loaded bom=188 patterns=19 anchors=5479 offsets=15 shims=11 arc_env=1
+  ✅ Hospital ELEC: the verb's count and counts by class = the direct walk  door=3114 direct=3114 classes=[["IfcElectricAppliance",79],["IfcLightFixture",3035]]
+  ✅ Hospital ELEC: the answer names the rules the owner selects (terminal_rules.db) and the labels add up  rules=terminal_rules.db hostState={"bound":266,"unhosted":2848} prov={"shim":266,"placed":2848}
+§WALKNODE fetch mep_rw.db?v=5 -> modeller/mep_rw.db
+§RW_INIT mep_rw.db loaded bom=188 patterns=19 anchors=5479 offsets=15 shims=11 arc_env=1
+  ✅ Hospital FP: the verb's count and counts by class = the direct walk  door=4313 direct=4313 classes=[["IfcAlarm",190],["IfcFireSuppressionTerminal",4123]]
+  ✅ Hospital FP: the answer names the rules the owner selects (terminal_rules.db) and the labels add up  rules=terminal_rules.db hostState={"bound":991,"unhosted":3322} prov={"shim":991,"placed":3322}
+§WALKNODE fetch mep_rw.db?v=5 -> modeller/mep_rw.db
+§RW_INIT mep_rw.db loaded bom=188 patterns=19 anchors=5479 offsets=15 shims=11 arc_env=1
+  ✅ Hospital PLB: the verb's count and counts by class = the direct walk  door=357 direct=357 classes=[["IfcValve",357]]
+  ✅ Hospital PLB: the answer names the rules the owner selects (terminal_rules.db) and the labels add up  rules=terminal_rules.db hostState={"not_judged":357} prov={"placed":357}
+§WALKNODE fetch mep_rw.db?v=5 -> modeller/mep_rw.db
+§RW_INIT mep_rw.db loaded bom=188 patterns=19 anchors=5479 offsets=15 shims=11 arc_env=1
+  ✅ Hospital STR: the verb's count and counts by class = the direct walk  door=2272 direct=2272 classes=[["IfcBeam",1193],["IfcColumn",637],["IfcMember",442]]
+  ✅ Hospital STR: the answer names the rules the owner selects (terminal_rules.db) and the labels add up  rules=terminal_rules.db hostState={"not_judged":2272} prov={"placed":2272}
+§WALKNODE fetch mep_rw.db?v=5 -> modeller/mep_rw.db
+§RW_INIT mep_rw.db loaded bom=188 patterns=19 anchors=5479 offsets=15 shims=11 arc_env=1
+  ✅ Hospital roof: a walk that places nothing is inconclusive with the walker's reason, never ok with 0  inconclusive the roof walk of Hospital placed nothing: not an array of the rule unit directReason=not an array of the rule unit
+  ✅ Hospital roof: the answer names the rules the owner selects (terminal_rules.db) and the labels add up  rules=terminal_rules.db hostState={} prov={}
+  ✅ Hospital: the model file is byte-identical after every walk (sha256)  3aae8c3ea00be741
+  ✅ DOCTRINE the owner sends Duplex to duplex_rules.db and Hospital to terminal_rules.db  duplex_rules.db / terminal_rules.db
+  ✅ NAMES an unknown discipline is an error naming it and listing the disciplines the rules hold  the Modeller's walker could not answer (exit 1): unknown discipline "XX" (the rules of Duplex, duplex_rules.db, hold: ACMV, ELEC, PLB, FP)
+  ✅ NAMES an unknown building is an error naming it and listing the Open list  the Modeller's walker could not answer (exit 1): unknown building "NoSuchBuilding" (the Modeller's Open list holds: SampleHouse, Duplex, SampleCastle, HHS, Clinic, Hospital, HospitalGarage, Terminal)
+  ✅ ACTOR a person and an AI get the same envelope apart from request, actor, ms and the heap figure in the walker's own log line (a read: both run)  ok
+  ✅ READ-ONLY the verb's two files hold no file write, no export, no INSERT or UPDATE  hits=
+§W-MODELLER-WALK walks=10 placedSomething=9
+§WITNESS_MODELLER_WALK pass=27 fail=0 inconclusive=0 verdict=PASS

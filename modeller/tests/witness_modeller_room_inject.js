@@ -8,7 +8,7 @@
  * Real user path: the Open panel row for each resident (e2e_harness t.open), then numbers off the live BOM-graph tree.
  * CLAIMS per resident:
  *   R1 LOGGED   — exactly one §MODELLER-ROOM-INJECT line for this open, with the expected source
- *                 (walker for the 6 room-less residents; present for Duplex = 21 real, Terminal = curated RM_).
+ *                 (walker for the 5 room-less residents; present for Duplex = 21 real, SampleHouse = 4 real (§SH-ROOMS), Terminal = curated RM_).
  *   R2 ROOMS    — the Outliner BOM-graph tree has room nodes > 0 (was 0 on the 6 before the fix).
  *   R3 REAL-KEPT (Duplex) — its 21 real IfcSpace guids are still the ones in the open buffer (none RM_, none dropped).
  * Must be RED with the hook disabled (6 × R1/R2 fail). Env: shared e2e_harness (puppeteer, headless swiftshader).
@@ -17,7 +17,7 @@
 const { runE2E } = require('./e2e_harness');
 
 const RES = [
-  { key: 'SampleHouse', want: 'walker' }, { key: 'Duplex', want: 'present' }, { key: 'SampleCastle', want: 'walker' },
+  { key: 'SampleHouse', want: 'present' }, { key: 'Duplex', want: 'present' }, { key: 'SampleCastle', want: 'walker' },
   { key: 'HHS', want: 'walker' }, { key: 'Clinic', want: 'walker' }, { key: 'Hospital', want: 'walker' },
   { key: 'HospitalGarage', want: 'walker' }, { key: 'Terminal', want: 'present' }
 ];

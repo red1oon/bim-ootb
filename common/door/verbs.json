@@ -475,6 +475,73 @@
    "witness": "common/door/tests/witness_door_dsl.js"
   },
   {
+   "verb": "modeller.walk",
+   "app": "modeller",
+   "title": "What the walker would place",
+   "description": "A dry run of the Modeller's discipline walker on a building: what it would place for one discipline, as counts (total, by class, by host state, by how each position was derived, provisional, plan-only), with the walker's own log lines. The model is the one the Modeller's Open list names for the building; the rules are the ones the building's class uses (a residential building walks the residential rules). Nothing is placed, committed or saved: the model file is byte-identical afterwards. A walk that places nothing is inconclusive with the walker's reason, not zero. An unknown building or discipline is an error naming the legal ones.",
+   "inputs": [
+    {
+     "name": "building",
+     "description": "The building name as the Modeller's Open list names it, e.g. \"Duplex\" or \"Hospital\". An unknown name is an error that lists the names.",
+     "required": true,
+     "type": "building",
+     "example": "Duplex"
+    },
+    {
+     "name": "discipline",
+     "description": "The discipline to walk, e.g. \"FP\" (fire protection), \"ELEC\", \"PLB\", \"ACMV\". Must be one the building's rules hold; otherwise an error lists them.",
+     "required": true,
+     "type": "discipline",
+     "example": "FP"
+    }
+   ],
+   "harm": "read",
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "calls": {
+    "cli": "walk_cli",
+    "who": "the Modeller's walker",
+    "argv": [
+     "--building",
+     "{building}",
+     "--discipline",
+     "{discipline}"
+    ]
+   },
+   "returns": {
+    "shape": "walk_cli JSON {verb,building,model,rules,schedule,borrowFP,discipline,geo,verdict OK|VACUOUS,summary,count,placed,provisional,byClass,byHostState,byProv,planOnly,mode,refused,reason,modelSha256,modelUnchanged,notChecked[],engineLines[]}",
+    "fields": [
+     {
+      "path": "count",
+      "type": "number"
+     },
+     {
+      "path": "placed",
+      "type": "number"
+     },
+     {
+      "path": "provisional",
+      "type": "number"
+     },
+     {
+      "path": "planOnly",
+      "type": "number"
+     },
+     {
+      "path": "rules",
+      "type": "string"
+     },
+     {
+      "path": "verdict",
+      "type": "string"
+     }
+    ]
+   },
+   "witness": "modeller/tests/witness_modeller_walk.js"
+  },
+  {
    "verb": "object.describe",
    "title": "Describe an object kind",
    "description": "Reflection. Given a kind (and optionally one record), return what the model's own dictionary says about it: each property (name, type, mandatory, updateable, key, list values, min and max), the child tabs below it, and the generic methods that are legal for it (read, update, attach, history). Reads only dictionary rows; no data row is opened. An unknown kind is an error naming it. Nothing is changed.",
@@ -821,6 +888,71 @@
     "ai"
    ],
    "witness": "common/door/tests/witness_object_rung1.js"
+  },
+  {
+   "verb": "object.count",
+   "title": "Count the records of a kind",
+   "description": "How many records of a kind a model holds, as its own dictionary names the kind, e.g. how many rooms. Further column=value inputs narrow the count; each column is checked against the kind's properties, and an unknown column is an error that names it. The answer also gives the population (the kind's records with no filter). A kind with no record at all is inconclusive, not zero. Nothing is changed.",
+   "inputs": [
+    {
+     "name": "building",
+     "description": "The building name, e.g. \"Duplex\". Its model must carry its own dictionary (a patch with the object layer).",
+     "required": true,
+     "type": "building",
+     "example": "Duplex"
+    },
+    {
+     "name": "kind",
+     "description": "The kind of object, as the model's dictionary names it, e.g. \"Room\" or \"Element\". An unknown kind is an error that lists the kinds the model registers.",
+     "required": true,
+     "type": "string",
+     "example": "Room"
+    }
+   ],
+   "harm": "read",
+   "calls": {
+    "cli": "object_cli",
+    "who": "the object engine",
+    "argv": [
+     "count",
+     "--building",
+     "{building}",
+     "--kind",
+     "{kind}"
+    ],
+    "rest": {
+     "flag": "--where",
+     "what": "column=value, a property of the kind and the value it must equal"
+    }
+   },
+   "returns": {
+    "shape": "object_cli JSON {kind,table,filters:[{column,value}],count,population,verdict OK|VACUOUS,summary}",
+    "fields": [
+     {
+      "path": "count",
+      "type": "number"
+     },
+     {
+      "path": "population",
+      "type": "number"
+     },
+     {
+      "path": "verdict",
+      "type": "string"
+     },
+     {
+      "path": "kind",
+      "type": "string"
+     }
+    ]
+   },
+   "app": "object",
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "measure": true,
+   "witness": "common/door/tests/witness_object_count.js"
   },
   {
    "verb": "erp.find",

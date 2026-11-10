@@ -252,7 +252,19 @@
     console.log(TAG + ' dwInit ' + file + ' placement=' + n('rule_placement') + ' routing=' + n('rule_routing') +
       ' place_order=' + n('rule_place_order') + ' avoidance=' + n('rule_avoidance'));
     _logProvenance(file);
+    // §12b slice 2 (prompts/DISC_WALK_DRAWN_INTEGRATION.md): the meaning rows for the authoring tool's own properties, read once; absent = nothing is reported
+    if (!_nativeMaps && typeof fetch === 'function') { try { var rm = await fetch((baseUrl || '../modeller/') + 'dxf2bim/native_maps.json'); if (rm.ok) _nativeMaps = await rm.json(); } catch (eNm) { console.log(TAG + ' §WALK-ELEC-CIRCUITS maps unavailable ' + eNm.message); } }
     return _ready;
+  }
+  var _nativeMaps = null;
+  function setNativeMaps(m) { _nativeMaps = m || null; }
+  // read only: what the opened model itself states about panels and circuits (element_pset_native by meaning). Changes no placement.
+  function elecCircuits(bdb) {
+    var NP = ROOT.NativeProps || (typeof require === 'function' ? (function () { try { return require('./native_props.js'); } catch (e) { return null; } })() : null);
+    if (!NP || !_nativeMaps) return null;
+    var c = null; try { c = NP.circuits(bdb, _nativeMaps); } catch (e) { console.log(TAG + ' §WALK-ELEC-CIRCUITS failed ' + e.message); return null; }
+    if (c) console.log(TAG + ' ' + NP.line(c));
+    return c;
   }
   function loadedFile() { return _loadedFile; }
 
@@ -3217,6 +3229,7 @@
     return { on: on, hidden: hidden, shown: shown, toggled: flip };
   }
   function dwWalk(disc, bdb, buildingName, opts) {
+    if (disc === 'ELEC') elecCircuits(bdb);
     var w = _dwWalkBase(disc, bdb, buildingName, opts);
     return _drawnIntegrate(disc, bdb, buildingName, opts, w);
   }
@@ -3422,7 +3435,7 @@
     return ds.filter(function (d) { return d && d !== 'ARC'; });
   }
 
-  var API = { __test: { placeMeasured: placeMeasured, bandHostPass: _bandHostPass }, applyRulesPatch: applyRulesPatch, rulesDb: function () { return _db; }, userRulesKey: userRulesKey, userRules: userRules, applyCells: applyCells, applyUserRules: applyUserRules, fileHasRules: fileHasRules, sideDbs: function () { return { schedule: _schedSource, borrow: Object.assign({}, _borrow) }; }, reloadRules: reloadRules, setDrawnOnlyView: setDrawnOnlyView, drawnOps: drawnOps, rulesMeta: function () { return _rulesMeta; }, hasRules: function (disc) { try { var r = _db && _db.exec("SELECT COUNT(*) FROM rule_placement WHERE disc='" + String(disc).replace(/'/g, "''") + "'"); return !!(r && r.length && r[0].values[0][0] > 0); } catch (e) { return false; } }, dwInit: dwInit, dwRulesKey: dwRulesKey, dwOpen: dwOpen, dwBorrow: dwBorrow, dwBorrowFile: dwBorrowFile, dwWalk: dwWalk, assemble: assemble, connectorFor: connectorFor, connectorEnrich: connectorEnrich, substrate: substrate, place: place, hostBind: hostBind, dwTraceZ: dwTraceZ,
+  var API = { __test: { placeMeasured: placeMeasured, bandHostPass: _bandHostPass }, applyRulesPatch: applyRulesPatch, rulesDb: function () { return _db; }, elecCircuits: elecCircuits, setNativeMaps: setNativeMaps, userRulesKey: userRulesKey, userRules: userRules, applyCells: applyCells, applyUserRules: applyUserRules, fileHasRules: fileHasRules, sideDbs: function () { return { schedule: _schedSource, borrow: Object.assign({}, _borrow) }; }, reloadRules: reloadRules, setDrawnOnlyView: setDrawnOnlyView, drawnOps: drawnOps, rulesMeta: function () { return _rulesMeta; }, hasRules: function (disc) { try { var r = _db && _db.exec("SELECT COUNT(*) FROM rule_placement WHERE disc='" + String(disc).replace(/'/g, "''") + "'"); return !!(r && r.length && r[0].values[0][0] > 0); } catch (e) { return false; } }, dwInit: dwInit, dwRulesKey: dwRulesKey, dwOpen: dwOpen, dwBorrow: dwBorrow, dwBorrowFile: dwBorrowFile, dwWalk: dwWalk, assemble: assemble, connectorFor: connectorFor, connectorEnrich: connectorEnrich, substrate: substrate, place: place, hostBind: hostBind, dwTraceZ: dwTraceZ,
     route: route, routeChains: routeChains, routePattern: routePattern,
     // §MEP-ROUTE-DISC: the disciplines the pattern bridge covers (modeller.html gates its mep_rw.db load on this)
     patternDiscs: function () { return Object.keys(_RW_PATTERN_DISC); },
