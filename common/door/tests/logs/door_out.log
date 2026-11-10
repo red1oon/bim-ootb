@@ -1,0 +1,11 @@
+  ✅ O1 CSV parsed back = envelope rows, cell for cell (comma, quote, newline, empty, number)  rows=3 of 3
+  ✅ O2 the list ends "shown 3 of 3" and every cell is in it  lines=6
+  ✅ O3 real run: --csv = --json matches, cell for cell (2 rows)  cols=kind|id|number|docStatus|docAction|doctypeId|doctypeTargetId|org
+  ✅ O4 --out f.csv writes the file, equal to --csv stdout  bytes=143
+  ✅ O5 a refused line writes no file  folder empty
+  ✅ O6a `> a.csv` then `>> a.csv`: file holds the CSV twice (appended)  bytes=286 want=286
+  ✅ O6b `> ../escape.csv` is refused and writes nothing  §DOOR out ../escape.csv refused: leaves the folder /tmp/outs_wvxvaG
+  ✅ O7a a single record renders as field: value lines  "ok: true\nbuilding: Duplex\nn: 3\n"
+  ✅ O7b CSV of a record is null (no rows), not an empty file
+  ✅ O8 empty rows: header only and "shown 0 of 0"  "a  b\nshown 0 of 0\n"
+§WITNESS_DOOR_OUT pass=10 fail=0 inconclusive=0 verdict=PASS

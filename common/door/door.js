@@ -21,7 +21,7 @@ const ROOT = path.join(__dirname, '..', '..');
 // door.js, verbs.json in one folder), then at its place in the repo layout. Missing files are reported with the exact curl line from the live site.
 const LIVE = 'https://red1oon.github.io/bim-ootb/';
 const FILES = {   // name -> [repo path from the repo root, name beside door.js]
-  'door.js': ['common/door/door.js'], 'verbs.json': ['common/door/verbs.json'], 'edit_cli.js': ['modeller/tools/edit_cli.js'],
+  'door.js': ['common/door/door.js'], 'render.js': ['common/door/render.js'], 'verbs.json': ['common/door/verbs.json'], 'edit_cli.js': ['modeller/tools/edit_cli.js'],
   'bim_mcp.js': ['modeller/tools/bim_mcp.js'], 'viewer_verbs.js': ['viewer/tools/viewer_verbs.js'], 'viewer_driver.js': ['viewer/tools/viewer_driver.js'], 'film_path_vis.js': ['viewer/tools/film_path_vis.js'], 'schedule_verbs.js': ['viewer/tools/schedule_verbs.js'], 'object_cli.js': ['common/door/object_cli.js'], 'erp_cli.js': ['common/door/erp_cli.js'], 'walk_cli.js': ['modeller/tools/walk_cli.js']
 };
 function locate(name) {
@@ -378,7 +378,7 @@ function createDoor(opts) {
     let pl;
     try { pl = parseLine(text); } catch (e) { return journalled(base, text, envelope(base, 'error', { why: 'cannot read the line: ' + e.message })); }
     if (pl.blank) return null;
-    if (pl.question) return journalled(base, text, envelope(base, 'refused', { why: 'not a command: "' + pl.text.slice(0, 80) + '"', answer: { question: 'I could not read that as a command. A command is app.verb key=value … Which one do you mean?', verbs: vocab.verbs.map(v => v.verb) } }));
+    if (pl.question) return journalled(base, text, envelope(base, 'refused', { why: 'not a command: "' + pl.text.slice(0, 80) + '"', answer: { question: 'I could not read that as a command. A command is app.verb key=value … Which one do you mean? Type !help.', verbs: vocab.verbs.map(v => v.verb) } }));
     const entry = vocab.byVerb.get(pl.verb); base.verb = pl.verb;
     if (!entry) return journalled(base, text, envelope(base, 'error', { why: 'unknown verb: ' + pl.verb + '. Verbs: ' + vocab.verbs.map(v => v.verb).join(', ') }));
     const scope = ctx.scope || new Map(), args = {};
@@ -430,17 +430,47 @@ module.exports = { locate, missingFiles, curlFor, createDoor, loadVocab, validat
 
 if (require.main === module) {
   (async () => {
-    const a = process.argv.slice(2), o = { actor: 'human' }; let script = null; const rest = [];
+    const a = process.argv.slice(2), o = { actor: 'human' }; let script = null, form = 'json', outFile = null; const rest = [];
     for (let i = 0; i < a.length; i++) {
       if (a[i] === '--actor') o.actor = a[++i]; else if (a[i] === '--request') o.request = a[++i]; else if (a[i] === '--journal') o.journal = a[++i];
-      else if (a[i] === '--script') script = a[++i]; else if (a[i] === '--confirm') o.confirm = a[++i]; else if (a[i] === '--claims') o.claims = true; else rest.push(a[i]);
+      else if (a[i] === '--script') script = a[++i]; else if (a[i] === '--confirm') o.confirm = a[++i]; else if (a[i] === '--claims') o.claims = true;
+      else if (a[i] === '--list') form = 'list'; else if (a[i] === '--csv') form = 'csv'; else if (a[i] === '--json') form = 'json'; else if (a[i] === '--out') outFile = a[++i]; else rest.push(a[i]);
     }
-    if (!script && !o.confirm && !o.claims && rest.length !== 1) { console.error('usage: node common/door/door.js [--actor human|ai] [--request ID] [--journal FILE] \'app.verb key=value …\'   |   --script FILE|-   |   --claims   |   --confirm REQUEST_ID'); process.exit(2); }
+    // the readable forms live in render.js (beside this file in a download, else in the repo); a missing one is named with its curl line
+    const needRender = form !== 'json' || outFile || script || (rest.length === 1 && /^\s*(!help|help|\?)(\s|$)/.test(rest[0]));
+    let R = null; if (needRender) { if (missingFiles(['render.js']).length) { console.error('§DOOR FAIL render.js is not beside door.js. Fetch it:\n' + curlFor(['render.js'])); process.exit(1); } R = require(locate('render.js')); }
+    if (rest.length === 1 && R && R.isHelp(rest[0])) {   // reads nothing, runs nothing, not journalled; the same text for every actor
+      let vocab; try { vocab = loadVocab(); } catch (e) { console.error('§DOOR FAIL ' + e.message); process.exit(1); }
+      const h = R.help(vocab, rest[0]); (h.ok ? process.stdout : process.stderr).write(h.text); console.error('§DOOR help topic=' + JSON.stringify(rest[0].replace(/^\s*(!help|help|\?)/, '').trim()) + ' ok=' + h.ok); process.exit(h.ok ? 0 : 1);
+    }
+    if (!script && !o.confirm && !o.claims && rest.length !== 1) { console.error('usage: node common/door/door.js [--actor human|ai] [--request ID] [--journal FILE] [--json|--list|--csv] [--out FILE] \'app.verb key=value …\'   |   --script FILE|-   |   --claims   |   --confirm REQUEST_ID   |   \'!help\''); process.exit(2); }
     let door; try { door = createDoor({ journal: o.journal }); } catch (e) { console.error('§DOOR FAIL ' + e.message); process.exit(1); }
     if (o.claims) { const c = door.claims(); console.error('§DOOR claims held=' + c.length + ' journal=' + door.journalFile); console.log(JSON.stringify({ claims: c })); process.exit(0); }
     if (o.confirm) { const e = await door.confirm(o.confirm, o); console.log(JSON.stringify(e)); process.exit(e.status === 'ok' ? 0 : (e.status === 'error' ? 1 : 3)); }
-    const envs = script ? await door.runScript(script === '-' ? fs.readFileSync(0, 'utf8') : fs.readFileSync(script, 'utf8'), o) : [await door.runLine(rest[0], o)].filter(Boolean);
-    envs.forEach(e => console.log(JSON.stringify(e)));
+    // one line's output: stdout in the chosen form; a line that is not ok, or has no rows for the form, writes no file (and says so)
+    const folder = script && script !== '-' ? path.dirname(path.resolve(script)) : process.cwd();
+    const emit = (e, f, file, append) => {
+      const txt = R ? R.render(e, f) : JSON.stringify(e) + '\n';
+      if (txt == null) { console.error('§DOOR out form=' + f + ' no rows in this answer' + (file ? '; ' + file + ' not written' : '')); if (!file) console.log(JSON.stringify(e)); return; }
+      if (!file) { process.stdout.write(txt); return; }
+      if (e.status !== 'ok') { console.error('§DOOR out ' + file + ' not written: status=' + e.status); process.stdout.write(JSON.stringify(e) + '\n'); return; }
+      const p = R.inside(folder, file); if (!p) { console.error('§DOOR out ' + file + ' refused: leaves the folder ' + folder); process.stdout.write(JSON.stringify(e) + '\n'); return; }
+      fs.mkdirSync(path.dirname(p), { recursive: true }); (append ? fs.appendFileSync : fs.writeFileSync)(p, txt); console.error('§DOOR out ' + p + ' form=' + f + ' bytes=' + Buffer.byteLength(txt) + (append ? ' appended' : ''));
+    };
+    let envs;
+    if (script) {   // a line may end `> file` or `>> file`: that line's rendering goes to the file (form follows the name); the run itself is unchanged
+      const text = script === '-' ? fs.readFileSync(0, 'utf8') : fs.readFileSync(script, 'utf8'); envs = [];
+      const scope = new Map(); let n = 0, worstStatus = null;
+      for (const raw of text.split('\n')) {
+        const m = /^(.*?)\s+(>>?)\s*(\S+)\s*$/.exec(raw), line = m ? m[1] : raw, c = Object.assign({}, o, { scope, request: o.request ? o.request + '.' + (++n) : undefined });
+        const e = await door.runLine(line, c); if (!e) continue; envs.push(e); worstStatus = e.status;
+        if (m) emit(e, R.formOf(m[3]), m[3], m[2] === '>>'); else emit(e, form, outFile, false);
+        if (e.status !== 'ok') break;
+      }
+      process.exit(!envs.length || worstStatus === 'error' ? 1 : (worstStatus === 'ok' ? 0 : 3));
+    }
+    envs = [await door.runLine(rest[0], o)].filter(Boolean);
+    envs.forEach(e => emit(e, form, outFile, false));
     const worst = envs.length ? envs[envs.length - 1].status : 'error';
     process.exit(worst === 'ok' ? 0 : (worst === 'error' ? 1 : 3));
   })().catch(e => { console.error('§DOOR FAIL ' + (e && e.stack || e)); process.exit(1); });
