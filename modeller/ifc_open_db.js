@@ -13,7 +13,7 @@
   'use strict';
   var DROP = ['IfcSpace', 'IfcOpeningElement'];
   // the extractor's tables keyed by an ELEMENT guid (elements_meta last: the others are matched against it)
-  var ELEMENT_TABLES = ['element_transforms', 'element_instances', 'element_world_bbox', 'element_pset_common', 'element_type', 'door_operation', 'element_dxf2bim', 'elements_meta'];
+  var ELEMENT_TABLES = ['element_transforms', 'element_instances', 'element_world_bbox', 'element_pset_common', 'element_pset_native', 'element_type', 'door_operation', 'element_dxf2bim', 'elements_meta'];
   function has(db, t) { try { return db.exec("SELECT 1 FROM sqlite_master WHERE type='table' AND name='" + t + "'").length > 0; } catch (e) { return false; } }
   function one(db, sql) { var r = db.exec(sql); return r.length ? r[0].values[0][0] : 0; }
   // residentRule(db, drop): in place on a sql.js Database the extractor wrote. drop defaults to DROP (a witness passes [] as its falsifier).
@@ -42,7 +42,7 @@
   // → { georefOffset, georef, db (sql.js Database, the building DB), total, kept, dropped, meshesDropped, psetRows, ms, line }
   async function open(ctx) {
     var t0 = Date.now(), log = ctx.log || function () {}, db = new ctx.SQL.Database();
-    var ex = await ctx.Core.extractToDb({ GridRead: ctx.GridRead, GeorefFrame: ctx.GeorefFrame, forceGeorefOffset: ctx.forceGeorefOffset, WebIFC: ctx.WebIFC, ifcApi: ctx.ifcApi, ifcData: ctx.bytes, db: ctx.Core.sqljsDb(db), Buf: ctx.Core.browserBuf,
+    var ex = await ctx.Core.extractToDb({ nativeMaps: ctx.nativeMaps || null, GridRead: ctx.GridRead, GeorefFrame: ctx.GeorefFrame, forceGeorefOffset: ctx.forceGeorefOffset, WebIFC: ctx.WebIFC, ifcApi: ctx.ifcApi, ifcData: ctx.bytes, db: ctx.Core.sqljsDb(db), Buf: ctx.Core.browserBuf,
       buildingName: ctx.name, sourceName: ctx.name + '.ifc', log: log, progress: ctx.progress || function () {} });
     var total = one(db, 'SELECT count(*) FROM elements_meta'), r = residentRule(db, ctx.drop);
     var kept = one(db, 'SELECT count(*) FROM elements_meta'), psetRows = has(db, 'element_pset_common') ? one(db, 'SELECT count(*) FROM element_pset_common') : 0;
