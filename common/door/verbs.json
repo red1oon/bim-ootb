@@ -2452,6 +2452,112 @@
     ]
    },
    "witness": "common/door/tests/witness_ops_verbs.js"
+  },
+  {
+   "verb": "erp.pack",
+   "app": "erp",
+   "title": "Make the 2Pack zip from a data-model workbook",
+   "description": "Reads an ERP data-model workbook (one sheet per dictionary table: table, columns, reference lists, window, tabs, menu, process rows with class names only, plus a Plugin sheet) and writes the metadata-only 2Pack zip a legacy iDempiere applies. Written once per version: the same version with the same rows answers unchanged, the same version with different rows is refused (a released pack is immutable; bump the version). The answer gives the zip's path, its sha256, the rows per dictionary table and the process class names the pack points at. With java= the Java model classes of the tables the workbook creates are written too; the rules (document actions, process bodies) stay hand-written. A person runs it; an AI's call is held as a claim until a person confirms.",
+   "inputs": [
+    {
+     "name": "book",
+     "description": "The workbook, a .xlsx path inside this tree or the working folder (no .. and no absolute path).",
+     "required": true,
+     "type": "string",
+     "example": "erp/plugins/models/BIM_Document.xlsx"
+    },
+    {
+     "name": "version",
+     "description": "The pack version, x.y.z.",
+     "required": true,
+     "type": "string",
+     "example": "1.0.0"
+    },
+    {
+     "name": "out",
+     "description": "Folder to write META-INF/2Pack_<version>.zip under (default: the door's cache).",
+     "required": false,
+     "type": "string",
+     "example": "build/pack"
+    },
+    {
+     "name": "java",
+     "description": "Folder to write the generated Java model classes under (optional).",
+     "required": false,
+     "type": "string",
+     "example": "build/java"
+    },
+    {
+     "name": "package",
+     "description": "Java package of those classes (default org.kernel.bim.model).",
+     "required": false,
+     "type": "string",
+     "example": "org.kernel.bim.model"
+    }
+   ],
+   "harm": "writes",
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "calls": {
+    "cli": "ops_cli",
+    "who": "the pack engine",
+    "argv": [
+     "pack",
+     "--book",
+     "{book}",
+     "--version",
+     "{version}",
+     {
+      "if": "out",
+      "args": [
+       "--out",
+       "{out}"
+      ]
+     },
+     {
+      "if": "java",
+      "args": [
+       "--java",
+       "{java}"
+      ]
+     },
+     {
+      "if": "package",
+      "args": [
+       "--package",
+       "{package}"
+      ]
+     }
+    ]
+   },
+   "returns": {
+    "shape": "ops_cli JSON {book,version,zip,path,status,elements,records,rows,classes,javaFiles,sha256,verdict,summary}",
+    "fields": [
+     {
+      "path": "zip",
+      "type": "string"
+     },
+     {
+      "path": "status",
+      "type": "string"
+     },
+     {
+      "path": "sha256",
+      "type": "string"
+     },
+     {
+      "path": "rows",
+      "type": "object"
+     },
+     {
+      "path": "classes",
+      "type": "array"
+     }
+    ]
+   },
+   "witness": "common/door/tests/witness_ops_verbs.js"
   }
  ]
 }

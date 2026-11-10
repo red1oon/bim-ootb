@@ -11,7 +11,8 @@
  *   O5 idempiere.where: total = an independent grep count, including lines of files with Windows line endings; a bad symbol is refused; no match is INCONCLUSIVE, not zero
  *   O6 witness.run: a PASS stub, a FAIL stub and an INCONCLUSIVE stub keep their own verdicts; a stub with no verdict line is an ERROR; the log file holds the stub's output; witness.last returns the recorded run without re-running
  *   O7 an AI may call these read/trial verbs (they run, they are not held as claims)
- * Falsifiers (each must make this witness FAIL): OPS_BREAK=nocap (O2) · OPS_BREAK=cr (O5).
+ *   O8 erp.pack (wraps erp/tools/xlsx_pack.js): the sample workbook gives a zip whose sha256 and per-table row counts equal independent sha256sum / unzip reads; the same call again is `unchanged`; the same version with an edited workbook is refused (immutable); an absolute path, .., a non-.xlsx, a missing file and a bad version are refused and write nothing; an AI's call is a held claim that writes nothing
+ * Falsifiers (each must make this witness FAIL): OPS_BREAK=nocap (O2) · OPS_BREAK=cr (O5) · OPS_BREAK=badsha (O8).
  */
 'use strict';
 const fs = require('fs'), path = require('path'), os = require('os');
@@ -101,5 +102,32 @@ const SRC = process.env.IDEMPIERE_SRC || path.join(os.homedir(), 'idempiere-dev-
   // O7
   const ai = await door('witness.last name=stub_pass', E, 'ai'), ai2 = await door('idempiere.where symbol=InvoiceRule limit=1', {}, 'ai');
   k.chk('O7 an AI\'s call to a read verb runs (not held as a claim)', !!ai.j && ai.j.status === 'ok' && !!ai2.j && ai2.j.status === 'ok', (ai.j && ai.j.status) + ' / ' + (ai2.j && ai2.j.status));
+  // O8: erp.pack (paths are relative to this tree by rule, so the scratch files live under it and are removed at the end)
+  const SAMPLE = 'erp/plugins/models/BIM_Document.xlsx', stamp = 'opsverbs_' + process.pid, OUTD = 'build/' + stamp, EDIT = 'build/' + stamp + '.xlsx';
+  const cleanup = () => { fs.rmSync(path.join(ROOT, OUTD), { recursive: true, force: true }); fs.rmSync(path.join(ROOT, EDIT), { force: true }); fs.rmSync(path.join(ROOT, 'build', stamp + '_ai'), { recursive: true, force: true }); };
+  try {
+    fs.mkdirSync(path.join(ROOT, 'build'), { recursive: true });
+    const p1 = await door('erp.pack book=' + SAMPLE + ' version=1.0.0 out=' + OUTD), pa = p1.j && p1.j.answer;
+    const zf = pa && pa.path, shaInd = zf && fs.existsSync(zf) ? spawnSync('sha256sum', [zf], { encoding: 'utf8' }).stdout.split(' ')[0] : null;
+    const xml = zf && fs.existsSync(zf) ? spawnSync('unzip', ['-p', zf, '*dict/PackOut.xml'], { encoding: 'utf8', maxBuffer: 1 << 28 }).stdout : '';
+    const cnt = (t) => (xml.match(new RegExp('<' + t + '(?=[\\s>/])', 'g')) || []).length;
+    k.chk('O8a erp.pack: zip written; sha256 = an independent sha256sum; AD_Table / AD_Column / AD_Process counts = independent unzip counts', !!pa && pa.status === 'written' && pa.sha256 === shaInd && pa.rows.AD_Table === cnt('AD_Table') && pa.rows.AD_Column === cnt('AD_Column') && pa.rows.AD_Process === cnt('AD_Process') && pa.rows.AD_Table >= 1, pa ? pa.status + ' sha=' + String(pa.sha256).slice(0, 10) + ' ind=' + String(shaInd).slice(0, 10) + ' table/col/proc=' + pa.rows.AD_Table + '/' + pa.rows.AD_Column + '/' + pa.rows.AD_Process : (p1.j ? p1.j.status + ' ' + p1.j.why : p1.r.err.slice(-200)));
+    const p2 = await door('erp.pack book=' + SAMPLE + ' version=1.0.0 out=' + OUTD);
+    k.chk('O8b the same call again is `unchanged` with the same sha256', !!p2.j && p2.j.status === 'ok' && p2.j.answer.status === 'unchanged' && !!pa && p2.j.answer.sha256 === pa.sha256, p2.j ? p2.j.status + ' ' + (p2.j.answer && p2.j.answer.status) : '');
+    // an edited workbook, same version: refused (a released pack is immutable)
+    const XL = require(path.join(ROOT, 'erp', 'xlsx.mini.min.js')), wb = XL.read(fs.readFileSync(path.join(ROOT, SAMPLE)), { type: 'buffer', raw: true }), ws = wb.Sheets.AD_Window;
+    let edited = false; if (ws) { const a = XL.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' }), ci = a[0].map(x => String(x).toLowerCase()).indexOf('name'); if (ci > 0 && a[1]) { a[1][ci] = String(a[1][ci]) + ' (edited)'; wb.Sheets.AD_Window = XL.utils.aoa_to_sheet(a); edited = true; } }
+    if (!edited) k.incon('O8c', 'the sample workbook has no AD_Window name cell to edit');
+    else {
+      fs.writeFileSync(path.join(ROOT, EDIT), Buffer.from(XL.write(wb, { type: 'buffer', bookType: 'xlsx' })));
+      const p3 = await door('erp.pack book=' + EDIT + ' version=1.0.0 out=' + OUTD);
+      k.chk('O8c the same version with an edited workbook is refused (released pack is immutable), the zip is untouched', !!p3.j && p3.j.status === 'refused' && /released pack|bump/.test(String(p3.j.why)) && spawnSync('sha256sum', [zf], { encoding: 'utf8' }).stdout.split(' ')[0] === shaInd, p3.j ? p3.j.status + ' ' + String(p3.j.why).slice(0, 90) : p3.r.err.slice(-160));
+    }
+    const before = fs.readdirSync(path.join(ROOT, OUTD)).length, bad = ['book=/etc/passwd.xlsx version=1.0.0', 'book=../x.xlsx version=1.0.0', 'book=erp/tools/xlsx_pack.js version=1.0.0', 'book=erp/plugins/models/NoSuch.xlsx version=1.0.0', 'book=' + SAMPLE + ' version=1.0'];
+    const rs = []; for (const b of bad) rs.push((await door('erp.pack ' + b + ' out=' + OUTD)).j);
+    k.chk('O8d an absolute path, .., a non-.xlsx, a missing file and a bad version are each refused and write nothing', rs.every(j => j && j.status === 'refused') && fs.readdirSync(path.join(ROOT, OUTD)).length === before, rs.map(j => j && j.status).join(','));
+    const ai = await door('erp.pack book=' + SAMPLE + ' version=1.0.1 out=build/' + stamp + '_ai', {}, 'ai');
+    k.chk('O8e an AI\'s erp.pack is a held claim and writes nothing', !!ai.j && ai.j.status === 'claim' && !fs.existsSync(path.join(ROOT, 'build', stamp + '_ai')), ai.j ? ai.j.status : ai.r.err.slice(-120));
+  } finally { cleanup(); }
   k.end();
 })();

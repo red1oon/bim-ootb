@@ -18,4 +18,9 @@
   ✅ O6d no verdict line is an ERROR, whatever the exit code was  error the ops program could not answer (exit 1): stub_none printed no verdict line (exit 0 is no
   ✅ O6e witness.last returns the recorded run without re-running; a never-run witness is refused  ok
   ✅ O7 an AI's call to a read verb runs (not held as a claim)  ok / ok
-§WITNESS_OPS_VERBS pass=20 fail=0 inconclusive=0 verdict=PASS
+  ✅ O8a erp.pack: zip written; sha256 = an independent sha256sum; AD_Table / AD_Column / AD_Process counts = independent unzip counts  written sha=934854c83e ind=934854c83e table/col/proc=1/32/2
+  ✅ O8b the same call again is `unchanged` with the same sha256  ok unchanged
+  ✅ O8c the same version with an edited workbook is refused (released pack is immutable), the zip is untouched  refused refused: build/opsverbs_2376812/2Pack_1.0.0.zip is a released pack with different content 
+  ✅ O8d an absolute path, .., a non-.xlsx, a missing file and a bad version are each refused and write nothing  refused,refused,refused,refused,refused
+  ✅ O8e an AI's erp.pack is a held claim and writes nothing  claim
+§WITNESS_OPS_VERBS pass=25 fail=0 inconclusive=0 verdict=PASS
