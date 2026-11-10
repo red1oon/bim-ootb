@@ -24,7 +24,7 @@ const walk = (d, b, name) => { lines = []; console.log = (...x) => { const t = x
   const hasT = term.exec("SELECT 1 FROM sqlite_master WHERE name='rule_space_schedule'").length; eq('primary has schedule tables', hasT, 0);
   const T = hold('Terminal_extracted.db'); if (!T) { inconclusive('no building without spaces held'); process.exit(1); }
   const base = {}; DISC.forEach(d => { base[d] = walk(d, T, 'Terminal'); say('  ' + d + ' mode=' + base[d].mode + ' placed=' + base[d].placed + ' refused=' + !!base[d].refused); });
-  eq('ELEC measured', base.ELEC.mode, 'measured-band'); eq('walk judged something', base.ELEC.placed > 0, true);
+  eq('ELEC measured', base.ELEC.mode, 'measured-band'); eq('walk judged something (placed + provisional; §BAND-MIX devices are committed, only left out of the placed total)', (base.ELEC.placed || 0) + (base.ELEC.provisional || 0) > 0, true);
   say('S2 source set, building with no spaces: identical');
   DW.dwScheduleSource(dup); DISC.forEach(d => { const r = walk(d, T, 'Terminal'); eq(d + ' identical, ' + (r.placed || 0), sig(r) === sig(base[d]), true); });
   say('S3 source set, spaces present but none typed: identical');
