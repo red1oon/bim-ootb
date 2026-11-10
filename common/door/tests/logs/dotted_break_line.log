@@ -1,0 +1,34 @@
+  ❌ EX rooms: `viewer(Duplex).Room.count` compiles to exactly `object.count building=Duplex kind=Room` and prints it  ["object.count building=DuplexX kind=Room"]
+  ❌ EX rooms: the dotted envelope = the door line's envelope byte for byte apart from request and ms  status=ok
+  ❌ EX rooms: the value shown is the field count of that envelope  value=null envelope=5
+§W-DOTTED EX rooms viewer(Duplex).Room.count -> object.count building=Duplex kind=Room -> count=null
+  ❌ EX rooms-on-a-storey: `viewer(Duplex).Room[storey="Level 1"].count` compiles to exactly `object.count building=Duplex kind=Room storey="Level 1"` and prints it  ["object.count building=DuplexX kind=Room storey=\"Level 1\""]
+  ❌ EX rooms-on-a-storey: the dotted envelope = the door line's envelope byte for byte apart from request and ms  status=ok
+  ❌ EX rooms-on-a-storey: the value shown is the field count of that envelope  value=null envelope=2
+§W-DOTTED EX rooms-on-a-storey viewer(Duplex).Room[storey="Level 1"].count -> object.count building=Duplex kind=Room storey="Level 1" -> count=null
+  ❌ EX walk: `modeller(Duplex).walk(FP).count` compiles to exactly `modeller.walk building=Duplex discipline=FP` and prints it  ["modeller.walk building=DuplexX discipline=FP"]
+  ❌ EX walk: the dotted envelope = the door line's envelope byte for byte apart from request and ms  status=ok (timing and heap figures in the engine's own log lines masked)
+  ❌ EX walk: the value shown is the field count of that envelope  value=null envelope=46
+§W-DOTTED EX walk modeller(Duplex).walk(FP).count -> modeller.walk building=Duplex discipline=FP -> count=null
+  ❌ EX 4D-at-a-day: `viewer(Duplex).schedule_at(day=5).counts.placed` compiles to exactly `viewer.schedule_at building=Duplex day=5` and prints it  ["viewer.schedule_at building=DuplexX day=5"]
+  ❌ EX 4D-at-a-day: the dotted envelope = the door line's envelope byte for byte apart from request and ms  status=ok
+  ❌ EX 4D-at-a-day: the value shown is the field counts.placed of that envelope  value=null envelope=418
+§W-DOTTED EX 4D-at-a-day viewer(Duplex).schedule_at(day=5).counts.placed -> viewer.schedule_at building=Duplex day=5 -> counts.placed=null
+§W-DOTTED INCONCLUSIVE EX-clash-pair — left out by DOTTED_SKIP_VIEWER (needs a headless Viewer)
+  ✅ DOOR a dotted string sent raw to the door is refused as not a command; nothing ran  refused not a command: "viewer(Duplex).Room.count"
+  ❌ JOURNAL every request the dotted tool made is recorded as its door line (no chain text)  recorded=4 withParen=0
+  ✅ NAMES an unknown app is an error naming it  unknown app "revit" (apps: modeller, viewer, object, erp)
+  ❌ NAMES an unknown kind (by the engine) is an error naming it  the object engine could not answer (exit 1): unknown building "DuplexX": no DuplexX_extracted.db in /tmp/wt-objsurface/buildings, /home/red1/bim-ootb/buildings
+  ❌ NAMES an unknown column (by the engine) is an error naming it  the object engine could not answer (exit 1): unknown building "DuplexX": no DuplexX_extracted.db in /tmp/wt-objsurface/buildings, /home/red1/bim-ootb/buildings
+  ✅ NAMES an unknown measure is an error naming it  unknown measure "sum" (measures: count)
+  ✅ NAMES an unknown method is an error naming it  unknown method "fly" of modeller (methods: lines, try_shift, widen_bay, walk)
+  ✅ NAMES an unknown field is an error naming it  unknown field "nope" of modeller.walk (fields: count, placed, provisional, planOnly, rules, verdict)
+  ✅ NAMES an unknown argument is an error naming it  unknown argument "colour" of modeller.walk (it takes: discipline)
+  ✅ NAMES a second step after the measure is an error naming it  unexpected "." after the chain (one verb call per chain)
+  ✅ NAMES an expression inside a chain is an error naming it  a chain takes no expression ({ }); arithmetic belongs on door lines
+  ✅ NAMES a chain that does not compile reaches no door (the journal does not grow)  exit=2
+  ✅ ACTOR --actor ai is refused: the dotted form is not offered to an AI; nothing ran  the dotted form is for people; actor ai sends door lines
+  ✅ ACTOR the AI connector does not know the dotted tool, and no verb in the vocabulary is the dotted form
+  ✅ ONE-DOOR the tool calls only door.runLine (no CLI, no SQL, no eval, no child process of its own)
+§W-DOTTED examples judged=4 of 5 DOTTED_BREAK=line
+§WITNESS_DOTTED pass=12 fail=15 inconclusive=1 verdict=FAIL

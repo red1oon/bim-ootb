@@ -1,0 +1,32 @@
+§PASS R1 the shipped patch equals a fresh mine of Terminal_extracted.db (per-row floor) | 7 rows: Aras 01=8.075, Aras 02=12.075, Aras 03=16.175, Aras 04=20.175, Aras Bumbung=24.5477, Aras Tanah=0.075, GROUND FLOOR LEVEL=-0.575
+§DW module loaded
+§WALKNODE fetch mep_rw.db?v=5 -> modeller/mep_rw.db
+§RW_INIT mep_rw.db loaded bom=188 patterns=19 anchors=5479 offsets=15 shims=11 arc_env=1
+  §DW §BAND-REANCHOR FP rulesDb=terminal_rules.db foreignRows=11 tol=2.000 sourceFloors=[Aras Tanah:0.075, Aras 01:8.075, Aras 02:12.075, Aras 03:16.175, Aras 04:20.175, Aras Bumbung:24.5477] targetGroups=[GROUND 0..0:L0 | 3.5..3.5:L1] notFloor=[] map={Aras Tanah->L0@0, Aras 01->L1@3.5, Aras 02->none, Aras 03->none, Aras 04->none, Aras Bumbung->none}
+  §DW §BAND-REANCHOR-ROW FP/IfcFireSuppressionTerminal scope="Aras Tanah (upper ceiling)" from=[6.5,7.55] to=[6.4250,7.4750] src=Aras Tanah@0.075 target=L0@0
+  §DW §BAND-REANCHOR-ROW FP/IfcFireSuppressionTerminal scope="Aras Tanah (lower/mezzanine ceiling)" from=[2.5,4] to=[2.4250,3.9250] src=Aras Tanah@0.075 target=L0@0
+  §DW §BAND-REANCHOR-ROW FP/IfcFireSuppressionTerminal scope="Aras 01" from=[9.1,11.25] to=[4.5250,6.6750] src=Aras 01@8.075 target=L1@3.5
+  §DW §BAND-REANCHOR-ROW FP/IfcFireSuppressionTerminal scope="Aras 02" from=[13.1,15.25] to=none reason=no storey of this building at that order
+  §DW §BAND-REANCHOR-ROW FP/IfcFireSuppressionTerminal scope="Aras 03" from=[17.1,21.8] to=none reason=no storey of this building at that order
+  §DW §BAND-REANCHOR-ROW FP/IfcFireSuppressionTerminal scope="Aras 04" from=[20.3,26.04] to=none reason=no storey of this building at that order
+  §DW §BAND-REANCHOR-ROW FP/IfcFireSuppressionTerminal scope="Aras Bumbung (roof plant)" from=[22.88,26.04] to=none reason=no storey of this building at that order
+  §DW §BAND-REANCHOR-ROW FP/IfcAlarm scope="Aras Tanah" from=[1.33,2.89] to=[1.2550,2.8150] src=Aras Tanah@0.075 target=L0@0
+  §DW §BAND-REANCHOR-ROW FP/IfcAlarm scope="Aras 01" from=[9.33,11.59] to=[4.7550,7.0150] src=Aras 01@8.075 target=L1@3.5
+  §DW §BAND-REANCHOR-ROW FP/IfcAlarm scope="Aras 02" from=[13.33,15.59] to=none reason=no storey of this building at that order
+  §DW §BAND-REANCHOR-ROW FP/IfcAlarm scope="Aras 03 + Aras 04" from=[17.33,22.41] to=none reason=multi-storey scope: no single floor to re-anchor to
+§PASS R3a every re-anchored device sits at target floor + (band mid - source floor) | 71 devices, worst |dz|=8.88e-16, unmatched=0
+§PASS R3b a multi-storey scope is not placed; storeys past the target's two levels map to none | multi=1 noTarget=5
+§PASS R3c RED: patch off -> rule off, logged, nothing re-anchored | off placements=0
+  R6 on : targetGroups=[GROUND 0..0:L0 | 3.5..3.5:L1] notFloor=[7..7:REF] map={Aras Tanah->L0@0, Aras 01->L1@3.5, Aras 02->none, Aras 03->none, Aras 04->none, Aras Bumbung->none}
+  R6 red: targetGroups=[GROUND 0..0:L0 | 3.5..3.5:L1 | 7..7:REF] notFloor=[] map={Aras Tanah->L0@0, Aras 01->L1@3.5, Aras 02->REF@7, Aras 03->none, Aras 04->none, Aras Bumbung->none}
+§PASS R6a a reference level with no slab is logged notFloor and receives nothing; the third source floor maps to none | placed on REF=0
+§PASS R6b RED: the pre-§12a ladder maps a source floor onto the reference level (the walk's own map; rows targeting it on/red=0/2) | placed on REF on/red=0/0 (this fixture's FP rows at that source floor: 2)
+§PASS R6c the slab-holding levels stay targets (L0 ground, L1 next) | map={Aras Tanah->L0@0, Aras 01->L1@3.5, Aras 02->none, Aras 03->none, Aras 04->none, Aras Bumbung->none}
+  §DW §WALK-BAND-NOHOST disc=FP bldg=fixture input=71 provisional=67 bound=67 unhosted=0 notJudged=0 refused=4 noMain=0 reanchorNoHost=4 [IfcFireSuppressionTerminal: input=63 bound=60 unhosted=0 notJudged=0 refused=3 (host-absent=0 no-host-here=3 no-main=0) | IfcAlarm: input=8 bound=7 unhosted=0 notJudged=0 refused=1 (host-absent=0 no-host-here=1 no-main=0)]
+  §DW §WALK-BAND-NOHOST disc=FP bldg=fixture input=71 provisional=70 bound=67 unhosted=3 notJudged=0 refused=1 noMain=0 reanchorNoHost=0 [IfcFireSuppressionTerminal: input=63 bound=60 unhosted=3 notJudged=0 refused=0 (host-absent=0 no-host-here=3 no-main=0) | IfcAlarm: input=8 bound=7 unhosted=0 notJudged=0 refused=1 (host-absent=0 no-host-here=1 no-main=0)]
+§PASS R4a re-anchored + no host -> refused, counted as reanchorNoHost; none left unhosted | reanchorNoHost=4 unhosted=0 bound=67
+§PASS R4b the same devices WITHOUT the mark keep §10: ceiling ones unhosted and kept, wall ones refused as before | unhosted=3 refused=1 (with mark: reanchorNoHost=4) bound=67
+§PASS R4c a bound re-anchored device takes its host's storey (this building's) | 67 bound, storeys=["L1","L0"]
+§PASS R5 accounting: input = bound + unhosted + notJudged + refused (both runs) | with=71=71 without=71=71
+§PASS R2 Terminal on its own rules: rule off (own storeys), FP placements byte-identical with and without the patch | 1091 placements; §DW §BAND-REANCHOR FP off reason=own-storeys (every row names a storey of this building)
+§W-BAND-REANCHOR PASS pass=12 fail=0 inconclusive=0

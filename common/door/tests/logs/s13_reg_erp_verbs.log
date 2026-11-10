@@ -1,0 +1,34 @@
+§OBJECT open db=ad_seed.db dictionary=present
+§ERP patch statements=3911 failed=3 ms=2937
+§ERP boot db=ad_seed.db replayed_ops=0 oplog=/tmp/erp_fCOafO/twin.ops.jsonl sql_functions=61
+§OBJECT open db=ad_seed.db dictionary=present
+§ERP patch statements=3911 failed=3 ms=2707
+§ERP boot db=ad_seed.db replayed_ops=4 oplog=/tmp/erp_fCOafO/twin.ops.jsonl sql_functions=61
+§W-ERP-VERBS-DOOR drafts D1=50000 D2=50001 status=DR/DR oplog_ops=8
+  ✅ A1a find: ok for human and ai (read verbs need no proof; the vocabulary lists human and ai as the actors of these verbs, an unlisted actor is refused by name)  human=ok ai=ok
+  ✅ A1b find: the same envelope for every actor (apart from request/actor/ms)  matches=1 id=1500004
+  ✅ A1c actions: ok for every actor and the same envelope, bytes and `next` included  actions=["CO","PR","VO"] next=["CO","PR","VO"]
+  ✅ A1d actions: the engine's own legal set for a Drafted order is offered, Complete first (DocumentEngine.getValidActions)
+  ✅ A1e complete by an ai is HELD as a claim (§0.6 detail 4), not run  status=claim why=actor ai has proof "local-user", which allows read/trial verbs; erp.complete is posts. Hel
+  ✅ A1f ...and so is the unproven actor's (email, not built: proof none): a claim, nothing run
+  ✅ A1f2 an actor the vocabulary does not list reads nothing: refused by name (the email actor is a later rung)  actor email is not allowed to use erp.find (allowed: human, ai)
+  ✅ A1g a claim reaches no engine: op-log unchanged, the document is still Drafted  ops 8 -> 8
+  ✅ A1h the same line by the person runs: ok, Drafted -> Completed, ops written  ops=13 next=["CL","VO","RE"]
+  ✅ A1i completing a Completed order is refused by the engine's own rule (nothing written)  Complete was not done: Status=CO - Invalid Actions: Process=CO, Doc=CO (DocStatus stays CO)
+  ✅ A2a role 50004 (no Document Action Access rows): Complete is not offered, identically for human and ai  offered=[] removed=["CO","PR","VO"]
+  ✅ A2b control: role 102 (granted) is offered Complete  offered=["CO","PR","VO"]
+  ✅ A2c complete with the ungranted role is REFUSED by the engine with the rule named, nothing written  why=Complete is not offered to role 50004 for this Order (status DR; offered: nothing)
+  ✅ A2d the same line by an ai gets no way round: held as a claim, nothing written (the person's confirmation would get A2c's refusal)
+  ✅ A2e control: the granted role completes the same document  status=ok
+  ✅ Fa find: a number that does not exist is a refusal that says so, not an empty ok
+  ✅ Fb find: a table that is not a document is refused by name (the dictionary decides what a document is)  kind Currency is not a document (its table has no DocAction column)
+  ✅ O1 erp.describe: reflection lists exactly the dictionary's active AD_Column rows of the kind (independent SQL count)  properties=93 sql=93
+  ✅ O2 the same verb serves other tables with no code of theirs (C_BPartner, M_Product), and a non-table is an error that names the kinds  C_BPartner M_Product
+  ✅ O3 erp.read shows the record as the op-log left it (D1 was completed above: DocStatus CO), the same state erp.find reports  docstatus=CO
+  ✅ V1 the erp.* entries are what the generator writes from the dictionary + actor_verbs.json (not hand-kept)  §ERP_DOOR_VERBS CURRENT
+  ✅ V2 harm: find/actions/describe/read are read, erp.complete is posts (the generator's rule, DocumentEngine ACTION_Complete -> Doc.post)  erp.find:read erp.actions:read erp.describe:read erp.read:read erp.complete:posts
+  ✅ V3 the connector (tools/list) offers no erp verb: they have no mcp_name, so the published tool bytes are unchanged
+  ✅ V4 no erp entry names code, SQL or a shell: every one calls erp_cli with a fixed subcommand  offences=0
+  ✅ V5 AD-LAYER LAW: no document table is named in erp_cli.js or doc_actions.js  hits=0
+§W-ERP-VERBS-DOOR journal lines=46 dir=/tmp/erp_fCOafO
+§WITNESS_ERP_VERBS_DOOR pass=25 fail=0 inconclusive=0 verdict=PASS

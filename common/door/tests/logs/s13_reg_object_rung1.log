@@ -1,0 +1,91 @@
+  ✅ PATCH has exactly one §OBJ_DICT section  bytes=80872
+§W-OBJ REG data tables=11 data rows=4385 changed=[] new tables=[ad_column,ad_field,ad_ref_list,ad_reference,ad_tab,ad_table,ad_window,ad_attachment] statements=189
+§W-OBJ REG size without=9703424 B, with=9805824 B, delta=102400 B (1.06% of the file; sql.js holds the whole file in memory, so this is the heap proxy)
+§W-OBJ REG dictionary rows {"ad_table":5,"ad_column":53,"ad_reference":2,"ad_ref_list":25,"ad_window":4,"ad_tab":5,"ad_field":53,"ad_attachment":0}
+  ✅ REG every data table has the same rows with and without the dictionary; only dictionary tables are new  changed= new=ad_column,ad_field,ad_ref_list,ad_reference,ad_tab,ad_table,ad_window,ad_attachment
+  ✅ REG the dictionary rows are present (5 kinds: 4 tables + the Room view, window/tab/field rows)  {"ad_table":5,"ad_column":53,"ad_reference":2,"ad_ref_list":25,"ad_window":4,"ad_tab":5,"ad_field":53,"ad_attachment":0}
+  ✅ REG falsifier: a plant that adds an element row makes the judge say FAIL  changed=elements_meta
+  ✅ REG applying the patch a second time raises nothing and changes no row count  err=null skipLog=§PATCH_ADDCOL_SKIP 4 ALTER .. ADD COLUMN already applied (idempotent re-apply)
+  ✅ REG the second apply reported 4 skipped ALTERs (the 5th, on the table the patch drops and recreates itself, is legitimately added again)  §PATCH_ADDCOL_SKIP 4 ALTER .. ADD COLUMN already applied (idempotent re-apply)
+  ✅ REG falsifier: the pre-change chunker throws "duplicate column name" on a repeated patch  err=duplicate column name: project_metadata_uu
+  ✅ REG the patch also applies to the older 1,122-element Duplex; its element rows are unchanged  elements=1122->1122 err=null
+  ✅ REG the generated key column equals guid on every element row  rows=1193 equal=1193
+  ✅ REG the transform table carries its own key and the link to its element  rows=1190
+  ✅ DESCRIBE Building lists exactly its AD_Column rows (independent SQL count + names)  exit=0 props=3 table=project_metadata
+  ✅ DESCRIBE Storey and Space lists exactly its AD_Column rows (independent SQL count + names)  exit=0 props=13 table=spatial_structure
+  ✅ DESCRIBE Element lists exactly its AD_Column rows (independent SQL count + names)  exit=0 props=9 table=elements_meta
+  ✅ DESCRIBE Element Transform lists exactly its AD_Column rows (independent SQL count + names)  exit=0 props=12 table=element_transforms
+  ✅ DESCRIBE Room lists exactly its AD_Column rows (independent SQL count + names)  exit=0 props=16 table=model_room
+  ✅ DESCRIBE the discipline list values equal the AD_Ref_List rows  values=ARC,ELEC,MEP,PLB,STR
+  ✅ DESCRIBE the element carries its transform as a single-row child tab linked by the _uu key  [{"kind":"Element Transform","table":"element_transforms","tab":"Element Transform","single":true,"readonly":false,"link":"elements_meta_uu"}]
+  ✅ DESCRIBE the legal methods follow the dictionary (key + updateable columns + _UU key + IsChangeLog)  read,update,attach,history
+  ✅ DESCRIBE the child kind has no child tab of its own and a read-only-by-key shape  children=0
+  ✅ DESCRIBE an unknown kind is an error that names it and lists the registered kinds  exit=1
+  ✅ DESCRIBE a physical column with no dictionary row is NOT listed (reflection reads the dictionary, not the table)  props=9
+  ✅ DESCRIBE falsifier: an answer missing a property is judged FAIL
+  ✅ DESCRIBE with a record names the link and opens no data row (a nonexistent guid still answers)  exit=0
+§OBJECT open db=Duplex_extracted.db dictionary=applied
+§OBJECT replay ops=0 oplog=/tmp/obj1_RXfUvt/ops.jsonl
+§OBJECT read kind=Element uu=2O2Fr$t4X7Zf8NOew3FKau key=elements_meta_uu children=Element Transform:1
+  ✅ UU read by the _uu key returns that element; the key column equals guid  guid=2O2Fr$t4X7Zf8NOew3FKau
+§OBJECT update kind=Element uu=2O2Fr$t4X7Zf8NOew3FKau element_name "Basic Wall:Party Wall - CMU Residential Unit Dimising Wall:143239" -> "OBJ1 2O2Fr$" ops=1 keyUnchanged=1
+  ✅ UU update by the _uu key keeps the guid unchanged and writes the new name; one op addresses the record by that key  op={"id":"2O2Fr$t4X7Zf8NOew3FKau","idCol":"elements_meta_uu"}
+§OBJECT attach kind=Element uu=2O2Fr$t4X7Zf8NOew3FKau record_uu=2O2Fr$t4X7Zf8NOew3FKau record_id= op=create bytes=0 entries=0
+  ✅ UU attach writes Record_UU = the key, no numeric Record_ID, under the Element table id  rows=1 record_id=0 (0 = the attachment module's existing value for a UU-keyed record)
+§OBJECT read kind=Element uu=0w7dmnzoX3We9JxBx2tEoX key=elements_meta_uu children=Element Transform:1
+  ✅ UU read by the _uu key returns that element; the key column equals guid  guid=0w7dmnzoX3We9JxBx2tEoX
+§OBJECT update kind=Element uu=0w7dmnzoX3We9JxBx2tEoX element_name "Pipe Types:Mechanical Pipe:600783" -> "OBJ1 0w7dmn" ops=1 keyUnchanged=1
+  ✅ UU update by the _uu key keeps the guid unchanged and writes the new name; one op addresses the record by that key  op={"id":"0w7dmnzoX3We9JxBx2tEoX","idCol":"elements_meta_uu"}
+§OBJECT attach kind=Element uu=0w7dmnzoX3We9JxBx2tEoX record_uu=0w7dmnzoX3We9JxBx2tEoX record_id= op=create bytes=0 entries=0
+  ✅ UU attach writes Record_UU = the key, no numeric Record_ID, under the Element table id  rows=1 record_id=0 (0 = the attachment module's existing value for a UU-keyed record)
+§OBJECT read kind=Element uu=1xS3BCk291UvhgP2dvNdad key=elements_meta_uu children=Element Transform:1
+  ✅ UU read by the _uu key returns that element; the key column equals guid  guid=1xS3BCk291UvhgP2dvNdad
+§OBJECT update kind=Element uu=1xS3BCk291UvhgP2dvNdad element_name "M_Single-Flush:0762 x 2032mm:0762 x 2032mm:204034:1" -> "OBJ1 1xS3BC" ops=1 keyUnchanged=1
+  ✅ UU update by the _uu key keeps the guid unchanged and writes the new name; one op addresses the record by that key  op={"id":"1xS3BCk291UvhgP2dvNdad","idCol":"elements_meta_uu"}
+§OBJECT attach kind=Element uu=1xS3BCk291UvhgP2dvNdad record_uu=1xS3BCk291UvhgP2dvNdad record_id= op=create bytes=0 entries=0
+  ✅ UU attach writes Record_UU = the key, no numeric Record_ID, under the Element table id  rows=1 record_id=0 (0 = the attachment module's existing value for a UU-keyed record)
+§OBJECT read kind=Element uu=0jf0rYHfX3RAB3bSIRjmxl key=elements_meta_uu children=Element Transform:0
+  ✅ UU read by the _uu key returns that element; the key column equals guid  guid=0jf0rYHfX3RAB3bSIRjmxl
+§OBJECT update kind=Element uu=0jf0rYHfX3RAB3bSIRjmxl element_name "Basic Roof:Live Roof over Wood Joist Flat Roof:184483" -> "OBJ1 0jf0rY" ops=1 keyUnchanged=1
+  ✅ UU update by the _uu key keeps the guid unchanged and writes the new name; one op addresses the record by that key  op={"id":"0jf0rYHfX3RAB3bSIRjmxl","idCol":"elements_meta_uu"}
+§OBJECT attach kind=Element uu=0jf0rYHfX3RAB3bSIRjmxl record_uu=0jf0rYHfX3RAB3bSIRjmxl record_id= op=create bytes=0 entries=0
+  ✅ UU attach writes Record_UU = the key, no numeric Record_ID, under the Element table id  rows=1 record_id=0 (0 = the attachment module's existing value for a UU-keyed record)
+§OBJECT attach kind=Element uu=2O2Fr$t4X7Zf8NOew3FKau record_uu=2O2Fr$t4X7Zf8NOew3FKau record_id= op=update bytes=156 entries=1
+  ✅ UU a file attached to the element reads back from its Record_UU with the same bytes  entries=1 rows=1
+  ✅ UU no element was added or removed by any of it
+  ✅ UU a key that does not exist is refused naming it  no Element with elements_meta_uu NO-SUCH
+  ✅ UU falsifier setup: the _uu rule line was found and stripped
+  ✅ UU falsifier: with the _uu rule stripped, attach refuses "No Key"  No Key: Element 2O2Fr$t4X7Zf8NOew3FKau has neither a numeric id nor a UU, so nothing can b
+§OBJECT history kind=Element uu=0w7dmnzoX3We9JxBx2tEoX entries=1 ops=9
+§OBJECT history kind=Element uu=2O2Fr$t4X7Zf8NOew3FNtn entries=0 ops=9
+  ✅ GENERIC history is not vacuous: an edited element has entries, an untouched one has 0  edited=1
+§OBJECT history kind=Element uu=2O2Fr$t4X7Zf8NOew3FNtn entries=0 ops=9
+§OBJECT update kind=Element uu=2O2Fr$t4X7Zf8NOew3FNtn storey "Level 1" -> "Level OBJ1" ops=1 keyUnchanged=1
+§OBJECT attach kind=Element uu=2O2Fr$t4X7Zf8NOew3FNtn record_uu=2O2Fr$t4X7Zf8NOew3FNtn record_id= op=create bytes=0 entries=0
+§OBJECT history kind=Element uu=2O2Fr$t4X7Zf8NOew3FNtn entries=1 ops=11
+  ✅ GENERIC element: update + attach + history through the one engine
+§OBJECT history kind=Storey and Space uu=STC_Level_1 entries=0 ops=11
+§OBJECT update kind=Storey and Space uu=STC_Level_1 name "Level 1" -> "Storey OBJ1" ops=1 keyUnchanged=1
+§OBJECT attach kind=Storey and Space uu=STC_Level_1 record_uu=STC_Level_1 record_id= op=create bytes=0 entries=0
+§OBJECT history kind=Storey and Space uu=STC_Level_1 entries=1 ops=13
+  ✅ GENERIC storey/space: the same three operations, no new code  uu=STC_Level_1
+§OBJECT history kind=Building uu=building_name entries=0 ops=13
+§OBJECT update kind=Building uu=building_name value "Ifc2x3_Duplex_Federated" -> "Duplex OBJ1" ops=1 keyUnchanged=1
+§OBJECT attach kind=Building uu=building_name record_uu=building_name record_id= op=create bytes=0 entries=0
+§OBJECT history kind=Building uu=building_name entries=1 ops=15
+  ✅ GENERIC building: the same three operations, key is a text key, no new code  uu=building_name
+§W-OBJ GENERIC kinds exercised=Element, Storey and Space, Building through erp/model_layer.js Trx + ad_attachment.js + crud_core.js changeLog
+  ✅ GENERIC the engine files name none of the model's tables (grep over 6 files)  hits=
+  ✅ GENERIC falsifier: an engine file with a model table named in it is caught
+§W-OBJ SHADOW erp key=C_UOM_ID (table c_uom); the model registers the same name keyed by c_uom_uu
+  ✅ SHADOW erp-first: each database gives c_uom its own key  {"erp":"c_uom_id","model":"c_uom_uu"}
+  ✅ SHADOW model-first: each database gives c_uom its own key  {"model":"c_uom_uu","erp":"c_uom_id"}
+  ✅ SHADOW falsifier: without a database id the model table IS shadowed by the ERP table (the case the key prevents)  erp=c_uom_id model=c_uom_id
+  ✅ DOOR object.describe through the door: ok, the engine's own JSON inside  status=ok 
+  ✅ DOOR object.read as an AI (a read verb) is allowed  status=ok 
+  ✅ DOOR object.attach as an AI is held as a claim and writes nothing  status=claim
+  ✅ DOOR object.attach as a human is ok and returns its op in the envelope  status=ok 
+  ✅ DOOR object.update with a value off the list is refused with the rule, no op  status=refused why=discipline must be one of: ARC, ELEC, MEP, PLB, STR
+  ✅ DOOR an unknown kind comes back as an error naming it  why=the object engine could not answer (exit 1): unknown kind "Nope" (this model registers: Building, Storey and Space, Element, Element Transform, Room)
+  ✅ DOOR object.history answers (no entry yet for an element only attached to)  status=ok
+§WITNESS_OBJ pass=56 fail=0 inconclusive=0 verdict=PASS
