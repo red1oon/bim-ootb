@@ -5,6 +5,7 @@
 //        held as a claim, the engine is not reached (op-log unchanged, the document still Drafted), and the same line by the person then runs. Falsifier ERP_BREAK=actor (+ERP_ACTOR=ai on the ai run).
 //   A2 ISSUE (a role without the grant gets round the gate): for a role whose Document Action Access lacks Complete, erp.actions omits CO for every actor alike and erp.complete is refused with the
 //        same reason, writing nothing; the granted role completes. Falsifier ERP_BREAK=norole must FAIL it.
+//   N  ISSUE (a record named by its number is not the record named by its id; NEURO §R.V.1): N1-N7 below, each line names its own issue. Falsifiers ERP_BREAK=firstmatch (must fail N4), ERP_BREAK=neighbour (must fail N1, N2, N7).
 //   V  ISSUE (a vocabulary that decays): the erp.* entries equal what scripts/gen_erp_door_verbs.js writes from the dictionary (generated, not hand-kept), erp.complete is harm posts, the connector
 //        lists no erp verb, and no erp entry names code, SQL or a shell.
 'use strict';
@@ -83,6 +84,38 @@ const k = kit('W-ERP-VERBS-DOOR');
   const dd = await DR.draftOrder({ oplog }, {}), vd = await door('erp.void kind=Order number=' + dd.number, 'human');
   k.chk('R9 a Drafted order can be voided (DocumentEngine options for DR include Void): DR -> VO', vd.j && vd.j.status === 'ok' && vd.j.answer.after.docStatus === 'VO', 'status=' + (vd.j && vd.j.status) + ' ' + (vd.j && vd.j.why));
 
+  // ── N: a record by its number, one resolver (NEURO §R.V.1) ──
+  const ans = (r) => JSON.stringify(r.j && r.j.answer);
+  const DN = await DR.draftOrder({ oplog }, {});
+  const rI = await door('erp.read kind=Order id=' + DN.id), rN = await door('erp.read kind=Order number=' + DN.number);
+  k.chk('N1 erp.read by number = by id, the whole answer (a number must not read another record)', rI.j && rN.j && rI.j.status === 'ok' && rN.j.status === 'ok' && ans(rI) === ans(rN) && String(rN.j.answer.record.documentno) === String(DN.number), 'status=' + (rN.j && rN.j.status) + ' ' + String(rN.j && rN.j.why || '').slice(0, 90) + ' bytes=' + ans(rI).length + '/' + ans(rN).length);
+  const aI = await door('erp.actions kind=Order id=' + DN.id), aN = await door('erp.actions kind=Order number=' + DN.number);
+  k.chk('N2 erp.actions by id = by number, the whole answer', aI.j && aN.j && aI.j.status === 'ok' && ans(aI) === ans(aN), 'actions=' + JSON.stringify(aN.j && aN.j.answer && aN.j.answer.actions));
+  const sig = (r) => JSON.stringify(r.j && r.j.answer && { before: r.j.answer.before, after: r.j.answer.after, opSummary: r.j.answer.opSummary, facts: r.j.answer.facts, actions: r.j.answer.actions });
+  const pair = async (verb, completed) => { const out = []; for (const how of ['id', 'number']) { const d = completed ? await mk() : await DR.draftOrder({ oplog }, {}); const r = await door('erp.' + verb + ' kind=Order ' + how + '=' + (how === 'id' ? d.id : d.number), 'human'); out.push(Object.assign(r, { d })); } return out; };
+  const n3 = []; for (const [verb, completed, to] of [['complete', false, 'CO'], ['void', true, 'VO'], ['close', true, 'CL'], ['reverse', true, 'RE']]) {
+    const [bi, bn] = await pair(verb, completed), ok = bi.j && bn.j && bi.j.status === 'ok' && bn.j.status === 'ok' && bi.j.answer.after.docStatus === to && sig(bi) === sig(bn) && String(bi.j.answer.document.id) === String(bi.d.id) && String(bn.j.answer.document.id) === String(bn.d.id);
+    n3.push(verb + ':' + (ok ? 'same' : 'DIFF(' + (bi.j && bi.j.status) + '/' + (bn.j && bn.j.status) + ')') + '->' + (bn.j && bn.j.answer && bn.j.answer.after && bn.j.answer.after.docStatus));
+  }
+  k.chk('N3 each action by id and by number (twin documents, same facts) gives the same before, after, op summary, books and offered actions, on the document named', n3.every(x => /:same/.test(x)), n3.join(' '));
+  const dupSql = spawnSync('sqlite3', ['-readonly', path.join(ROOT, 'erp/ad_seed.db'), "SELECT group_concat(c_order_id, ', ') FROM (SELECT c_order_id FROM c_order WHERE documentno='60000' ORDER BY c_order_id)"], { encoding: 'utf8' }).stdout.trim();
+  if (dupSql.split(', ').length < 2) k.incon('N4', 'the seed no longer holds two Orders numbered 60000 (' + dupSql + '): ambiguity cannot be judged');
+  else {
+    const b4 = nops(), amb = []; for (const l of ['erp.read kind=Order number=60000', 'erp.actions kind=Order number=60000', 'erp.complete kind=Order number=60000']) amb.push(await door(l, 'human'));
+    k.chk('N4 a number two records carry (the seed\'s own Order 60000) is refused by read, actions and complete, naming every id, and nothing is written', amb.every(r => r.j && r.j.status === 'refused' && r.j.why.indexOf('(ids ' + dupSql + ')') >= 0) && nops() === b4, amb.map(r => r.j && r.j.status).join('/') + ' ids=' + dupSql + ' why=' + String(amb[0].j && amb[0].j.why).slice(0, 90) + ' ops ' + b4 + '->' + nops());
+    const one = await door('erp.read kind=Order id=' + dupSql.split(', ')[1]);
+    k.chk('N4b ...and each of them is still readable by its id', one.j && one.j.status === 'ok' && String(one.j.answer.record.documentno) === '60000');
+  }
+  const rMiss = await door('erp.read kind=Order number=NO-SUCH-NUMBER');
+  k.chk('N5 erp.read of a number that does not exist is a refusal naming it, not an empty ok', rMiss.j && rMiss.j.status === 'refused' && /no Order with number NO-SUCH-NUMBER/.test(rMiss.j.why), String(rMiss.j && rMiss.j.why).slice(0, 80));
+  const two = await door('erp.read kind=Order id=' + DN.id + ' number=' + D1.number), same = await door('erp.read kind=Order id=' + DN.id + ' number=' + DN.number);
+  k.chk('N6 an id of one document with the number of another is refused naming both; the id with its own number reads', two.j && two.j.status === 'refused' && /two different records/.test(two.j.why) && two.j.why.indexOf(String(DN.number)) >= 0 && two.j.why.indexOf(String(D1.number)) >= 0 && same.j && same.j.status === 'ok' && ans(same) === ans(rI), String(two.j && two.j.why).slice(0, 110));
+  const pSql = spawnSync('sqlite3', ['-readonly', path.join(ROOT, 'erp/ad_seed.db'), "SELECT group_concat(m_warehouse_id) FROM m_warehouse WHERE name='HQ Warehouse'"], { encoding: 'utf8' }).stdout.trim();
+  if (!/^\d+$/.test(pSql)) k.incon('N7', 'the seed does not hold exactly one Warehouse named "HQ Warehouse" (' + pSql + ')');
+  else {
+    const pI = await door('erp.read kind=M_Warehouse id=' + pSql), pN = await door('erp.read kind=M_Warehouse number="HQ Warehouse"'), cN = await door('erp.read kind=Currency number=USD');
+    k.chk('N7 a master record reads by its number too (Warehouse by its Name, quoted, = by its id); a kind with no DocumentNo, Name or Value column refuses a number, saying why', pI.j && pN.j && pI.j.status === 'ok' && ans(pI) === ans(pN) && pN.j.answer.record.name === 'HQ Warehouse' && cN.j && cN.j.status === 'refused' && /no DocumentNo, Name or Value column/.test(cN.j.why), 'warehouse id=' + pSql + ' ' + (pN.j && pN.j.status) + ' ' + String(pN.j && pN.j.why || '').slice(0, 60) + ' currency=' + String(cN.j && cN.j.why).slice(0, 70));
+  }
   // ── find ──
   const nf = await door('erp.find kind=Order number=NO-SUCH-NUMBER');
   k.chk('Fa find: a number that does not exist is a refusal that says so, not an empty ok', nf.j && nf.j.status === 'refused' && /no Order with documentno NO-SUCH-NUMBER/.test(nf.j.why));
@@ -103,6 +136,9 @@ const k = kit('W-ERP-VERBS-DOOR');
   k.chk('V3 the connector (tools/list) offers no erp verb: they have no mcp_name, so the published tool bytes are unchanged', V.every(v => !v.mcp_name));
   const bad = V.filter(v => !/^(find|actions|complete|void|close|reverse|describe|read)$/.test(v.calls.argv[0]) || v.calls.cli !== 'erp_cli' || JSON.stringify(v.calls.argv).match(/"(-e|--eval|sh|bash|sql|exec)"/));
   k.chk('V4 no erp entry names code, SQL or a shell: every one calls erp_cli with a fixed subcommand', bad.length === 0, 'offences=' + bad.length);
+  const refNames = {}; (spawnSync('sqlite3', ['-readonly', path.join(ROOT, 'erp/ad_seed.db'), "SELECT value || '|' || name FROM ad_ref_list WHERE ad_reference_id=135"], { encoding: 'utf8' }).stdout || '').trim().split('\n').forEach(l => { const [c, n] = l.split('|'); refNames[c] = n; });
+  const actV = V.filter(v => EC.ACT[v.verb.split('.')[1]]), undef = V.filter(v => /undefined/.test(v.title + ' ' + v.description));
+  k.chk('V6 the menu a person reads never says "undefined": every action verb\'s title is its dictionary name (AD_Ref_List 135) + " a document"', actV.length === 4 && undef.length === 0 && actV.every(v => v.title === refNames[EC.ACT[v.verb.split('.')[1]]] + ' a document'), actV.map(v => v.verb + '="' + v.title + '"').join(' ') + ' undefined_in=' + undef.length);
   // dictionary-driven, not table-named: erp_cli.js and doc_actions.js carry no document table name
   const src = fs.readFileSync(path.join(ROOT, 'common/door/erp_cli.js'), 'utf8') + fs.readFileSync(path.join(ROOT, 'erp/doc_actions.js'), 'utf8');
   const named = (src.match(/\b(c_order|c_invoice|m_inout|c_payment|C_Order|C_Invoice|M_InOut|C_Payment)\b/g) || []);

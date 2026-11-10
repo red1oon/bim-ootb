@@ -8,7 +8,7 @@
 //     find     --kind K --number N        the window's Find by document number (else Name/Value): key, number, DocStatus, DocAction, doctype
 //     actions  --kind K --id I [--role R] the legal actions of that record's state (DocumentEngine.getValidActions), then the role's Document Action Access when --role is given (erp/doc_actions.js)
 //     describe --kind K                   reflection over the dictionary: properties, child tabs (object_cli's describe, over the ERP's AD rows; any AD table, document or not)
-//     read     --kind K --id I            one record by its key, with its single-row child tabs (object_cli's read)
+//     read     --kind K (--id I | --number N)   one record by its key or its number (the one resolver, recordOf), with its single-row child tabs (object_cli's read)
 //     complete|void|close|reverse --kind K --id I [--role R]   DocAction CO|VO|CL|RC (DocumentEngine constants) through ModelLayer.run (DocumentEngine.processIt) = the twin of legacy's action; --role refuses what that role is not offered
 //   Writes never touch the .db: each op is appended to the op-log (JSONL; --oplog, else $BIM_OBJECT_OPLOG, else ~/.cache/bim_object/<db>.ops.jsonl, the object layer's own log) and replayed on every run.
 //   The .db is the shipped erp/ad_seed.db (--db to name another); it is opened into memory, never written.
@@ -19,7 +19,7 @@ const fs = require('fs'), path = require('path');
 const ROOT = path.join(__dirname, '..', '..');
 const OC = require('./object_cli.js');
 const say = (s) => process.stderr.write('§ERP ' + s + '\n');
-const BREAK = process.env.ERP_BREAK || '';   // witness falsifiers: 'actor' (the answer depends on who asks) · 'norole' (the role filter is skipped) · 'wrongcode' (close runs the void action)
+const BREAK = process.env.ERP_BREAK || '';   // witness falsifiers: 'actor' (the answer depends on who asks) · 'norole' (the role filter is skipped) · 'wrongcode' (close runs the void action) · 'firstmatch' (an ambiguous number takes the first) · 'neighbour' (a number resolves to the next record)
 class Refused extends Error {}
 const refuse = (m) => { throw new Refused(m); };
 
@@ -86,22 +86,38 @@ async function boot(a) {
 }
 
 // ── the dictionary, read as rows ──
-function docKind(O, kind) {
+function kindRef(O, kind) {   // any AD table: its key and its number column (DocumentNo, else Name, else Value: the window's Find)
   const t = O.rows("SELECT ad_table_id, name, tablename FROM ad_table WHERE isactive='Y' AND (lower(name)=lower(?) OR lower(tablename)=lower(?)) ORDER BY ad_table_id", [kind, kind])[0];
   if (!t) refuse('unknown kind "' + kind + '"' );
   const cols = O.rows("SELECT columnname, iskey FROM ad_column WHERE ad_table_id=? AND isactive='Y'", [t.ad_table_id]);
   const has = (c) => cols.some(x => x.columnname.toLowerCase() === c);
-  if (!has('docaction')) refuse('kind ' + t.name + ' is not a document (its table has no DocAction column)');
   const key = cols.filter(x => x.iskey === 'Y')[0];
   if (!key) refuse('kind ' + t.name + ' has no key column in the dictionary');
   const numCol = ['documentno', 'name', 'value'].filter(has)[0] || null;
   return { id: t.ad_table_id, name: t.name, table: t.tablename.toLowerCase(), key: key.columnname.toLowerCase(), numCol, has };
 }
+function docKind(O, kind) {   // a document = an AD table with a DocAction column
+  const K = kindRef(O, kind);
+  if (!K.has('docaction')) refuse('kind ' + K.name + ' is not a document (its table has no DocAction column)');
+  return K;
+}
+// THE resolver (NEURO §R.V.1): "the record a line means". Every verb that takes --id or --number comes through here; find lists the same rows.
+function byNumber(O, K, number) {
+  if (!K.numCol) refuse('kind ' + K.name + ' has no DocumentNo, Name or Value column to find by; name the record with --id');
+  return O.rows('SELECT * FROM ' + K.table + ' WHERE ' + K.numCol + '=? ORDER BY ' + K.key, [String(number)]);
+}
 function recordOf(O, K, a) {
-  if (a.id == null && a.number == null) refuse('a document is named by --id or --number');
+  if (a.id == null && a.number == null) refuse('a record is named by --id or --number');
   let r;
-  if (a.id != null) r = O.rows('SELECT * FROM ' + K.table + ' WHERE ' + K.key + '=?', [Number(a.id)])[0];
-  else { const rs = O.rows('SELECT * FROM ' + K.table + ' WHERE ' + K.numCol + '=?', [a.number]); if (rs.length > 1) refuse(rs.length + ' ' + K.name + ' documents carry number ' + a.number + ' (ids ' + rs.map(x => x[K.key]).join(', ') + '); name one with --id'); r = rs[0]; }
+  if (a.id != null) {
+    r = O.rows('SELECT * FROM ' + K.table + ' WHERE ' + K.key + '=?', [/^-?\d+$/.test(String(a.id)) ? Number(a.id) : a.id])[0];
+    if (r && a.number != null && K.numCol && String(r[K.numCol]) !== String(a.number)) refuse(K.key + ' ' + a.id + ' is ' + K.name + ' ' + r[K.numCol] + ', not number ' + a.number + ': the line names two different records');
+  } else {
+    const rs = byNumber(O, K, a.number);
+    if (rs.length > 1 && BREAK !== 'firstmatch') refuse(rs.length + ' ' + K.name + ' records carry number ' + a.number + ' (ids ' + rs.map(x => x[K.key]).join(', ') + '); name one with --id');
+    r = rs[0];
+    if (r && BREAK === 'neighbour') r = O.rows('SELECT * FROM ' + K.table + ' WHERE ' + K.key + '<? ORDER BY ' + K.key + ' DESC LIMIT 1', [r[K.key]])[0] || O.rows('SELECT * FROM ' + K.table + ' WHERE ' + K.key + '>? ORDER BY ' + K.key + ' LIMIT 1', [r[K.key]])[0] || r;   // falsifier: the number resolves to a neighbouring record (the one before; the newest record has none after it, which made the first form of this falsifier blind to N1/N2)
+  }
   if (!r) refuse('no ' + K.name + ' with ' + (a.id != null ? K.key + ' ' + a.id : 'number ' + a.number));
   return r;
 }
@@ -112,8 +128,7 @@ function find(O, a) {
   if (!a.kind) refuse('--kind is required');
   const K = docKind(O, a.kind);
   if (a.number == null) refuse('--number is required');
-  if (!K.numCol) refuse('kind ' + K.name + ' has no DocumentNo, Name or Value column to find by');
-  const rs = O.rows('SELECT * FROM ' + K.table + ' WHERE ' + K.numCol + '=? ORDER BY ' + K.key, [String(a.number)]);
+  const rs = byNumber(O, K, a.number);
   say('find kind=' + K.name + ' by=' + K.numCol + ' number=' + a.number + ' matches=' + rs.length);
   if (!rs.length) refuse('no ' + K.name + ' with ' + K.numCol + ' ' + a.number);
   return { kind: K.name, by: K.numCol, matches: rs.map(r => brief(K, r)) };
@@ -201,7 +216,13 @@ function act(O, a, code) {
 const complete = (O, a) => act(O, a, ACT.complete);
 // the generic object layer over ERP tables = object_cli's own describe/read run over the ERP's booted handle (no per-table code; the same AD rows)
 function describe(O, a) { if (!a.kind) refuse('--kind is required'); return OC.describe(O, { kind: a.kind, uu: a.id }); }
-function read(O, a) { if (!a.kind) refuse('--kind is required'); if (a.id == null) refuse('--id is required'); return OC.read(O, { kind: a.kind, uu: a.id }); }
+function read(O, a) {   // by --id: unchanged. By --number: the resolver names the record, then the same read by its key
+  if (!a.kind) refuse('--kind is required');
+  if (a.number == null) { if (a.id == null) refuse('a record is named by --id or --number'); return OC.read(O, { kind: a.kind, uu: a.id }); }
+  const K = kindRef(O, a.kind), r = recordOf(O, K, a);
+  say('read-by-number kind=' + K.name + ' by=' + K.numCol + ' number=' + a.number + ' -> ' + K.key + '=' + r[K.key]);
+  return OC.read(O, { kind: a.kind, uu: String(r[K.key]) });
+}
 
 async function main(argv) {
   const cmd = argv[0], a = {};
@@ -216,4 +237,4 @@ async function main(argv) {
   }
 }
 if (require.main === module) main(process.argv.slice(2)).then(c => process.exit(c));
-module.exports = { main, boot, find, actions, complete, act, ACT, describe, read, persistGroup, resolveOne, docKind, recordOf, loadEngine, b3 };
+module.exports = { main, boot, find, actions, complete, act, ACT, describe, read, persistGroup, resolveOne, docKind, kindRef, byNumber, recordOf, loadEngine, b3 };
