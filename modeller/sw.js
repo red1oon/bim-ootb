@@ -87,6 +87,7 @@ const PRECACHE_ASSETS = [
   'proj_order_ui.js',   // §S9 ERP Project Order panel (lazy-loads the Viewer-side ERP owners on first click)
   'edit_delta_ui.js',   // §S8 hover/click Δ display (lazy-loads the Viewer-side owners on first use)
   'disc_walker.js',
+  'native_props.js',
   '../common/walk_rules.js',   // §SEAM-W3C: the one building-class -> rules-DB owner
   'dw_instances_outliner.js',   // §I5 Walked Fixtures per-instance rows (W-E2E-INSTHIDE)
   'teams_embed.js',   // §TEAMS-EMBED — gated Teams overlay (off by default = inert; lazy-loads teams/ when ON)
