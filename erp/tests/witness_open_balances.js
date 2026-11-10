@@ -77,7 +77,10 @@ var cents = function (v) { return Math.round(Number(v || 0) * 100); }, money = f
 
   // ── the ORACLE, from the raw rows only ──
   var acct = {}; EXP.sets['account.account'].forEach(function (a) { acct[a.id] = a; });
-  var pkey = {}; EXP.sets.partner_keys.forEach(function (p) { pkey[p.id] = p; });
+  var OCONV = await import(url.pathToFileURL(path.join(__dirname, 'fixtures', 'odoo_convert_reference.mjs')).href), exp = EXP;
+  var pkey = (function () { var c = OCONV.convert(exp), pv = c.provenance[c.book[4].name] || [], held = {}, val = {}, by = {}, o = {};   // the partner's business-partner Value and "held", from the FROZEN hand mapping (never from the template)
+      pv.forEach(function (x, i) { val[x.id] = c.book[4].rows[i + 1][0]; }); (c.manifest.held || []).forEach(function (h) { held[h.id] = h.why; }); exp.sets['res.partner'].forEach(function (p) { by[p.id] = p; });
+      exp.sets['res.partner'].forEach(function (p) { var top = by[p.commercial_partner_id] || p; o[p.id] = { id: p.id, value: val[top.id] || '', held: held[p.id] || '' }; }); return o; })();
   var KCLS = { asset_receivable: 'AR', liability_payable: 'AP', asset_cash: 'BANK' }, SRC = { plain: {}, cls: { AR: 0, AP: 0, BANK: 0 } };
   EXP.sets.tb.forEach(function (r) { var c = cents(r.balance), kc = KCLS[acct[r.account_id].account_type]; if (!c) return; if (kc) SRC.cls[kc] += c; else SRC.plain[acct[r.account_id].code] = c; });
   var INVT = { out_invoice: 'ARI', out_refund: 'ARC', in_invoice: 'API', in_refund: 'APC' }, SRCOPEN = {}, SRCDOC = {}, srcEntry = 0;
