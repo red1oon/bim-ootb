@@ -257,7 +257,7 @@
 // v1705 (2026-11-09) §FILESTORE-OPEN (prompts/BIMDOC_OPEN_FILE_STORE.md): ?open=store:<sha256>&name= opens a BIM Document attachment from the shared OPFS store; common/file_store.js precached
 // v1706 (2026-11-09) §NARROW_BUILD loader.js imports the vendored common/lib/three-mesh-bvh.module.js (no CDN); the file is in PRECACHE_ASSETS
 // v1708 (2026-11-09) §OBJ_DICT scene.js?v=80: _runSqlChunked skips "duplicate column name" on ALTER .. ADD COLUMN (idempotent column patches); Duplex patch carries the model's own dictionary (NEURO_SYMBOLIC_ORDER_CONTRACT.md §0.8).
-const CACHE_VERSION = 'v1708';
+const CACHE_VERSION = 'v1709';
 // v1637 (rebase of PR #1191/#1196) §CLASS_UNMATCHED_INHERITED + §EXACT_LOOKUP_BLINDSPOT: rates/ifc_schema_hierarchy.json added to PRECACHE_ASSETS; schedule_author.js/proj_fold.js/boq_charts.html/schedule_read_4d.js/tm_sched_xray.js classify via the schema hierarchy.
 // v1636 (rebase of PR #1317) §ARCH_AREA_WEIGHT/§VOL_WEIGHT/§FOOTING_M3: schedule_author.js, time_machine parts, rates.js and rates/*.json changed install DURATIONS (area/volume weighting, IfcFooting priced M3); all precached cache-first, so a client holding the old cache would keep the flat times forever.
 // v1635 (rebase of PR #676, BCF half only) §BCF_EXPORT: bcf_export.js added to PRECACHE_ASSETS; viewer.html loads it + Export BCF button in the Issues toolbar; main.js wires setupBcfExport/exportIssuesBcf. The Open-button IFC half of #676 was superseded by main's A._openIfcFiles.

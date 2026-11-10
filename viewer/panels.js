@@ -2294,7 +2294,7 @@ function setupPanels(A) {
       { id: 'clash_rules', label: 'Clash Rules',          url: 'clash_rules.json', storageKey: 'json_clash_rules' },
       { id: 'std_values',  label: 'Road Standards (ATJ sign table)', url: 'std_values.json', storageKey: 'json_std_values' },
       { id: 'civil_labels', label: 'Civil Labels (road route / stops)', url: 'civil_labels.json', storageKey: 'json_civil_labels' },
-      { id: 'initbubble',  label: 'ERP Globe Bubbles',    url: 'initbubble.json',  storageKey: 'json_initbubble',
+      { id: 'initbubble',  label: 'ERP Globe Bubbles',    url: '../erp/initbubble.json',  storageKey: 'json_initbubble',
         overrides: { color: { type: 'color' } } },
       { id: 'sfx',         label: 'Sound Effects',        url: 'sfx.json',         storageKey: 'json_sfx' },
       // 4D / 5D references a user edits to their own (the loaders read these keys: rates.js loadRateTemplate json_rates_<pack>,
