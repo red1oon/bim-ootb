@@ -841,7 +841,9 @@
     c_payment: function (trx, p, as, F) {                                                    // Doc_Payment.createFacts — receipt: DR BankInTransit / CR UnallocatedCash
       var base = { ad_org_id: p.ad_org_id, c_bpartner_id: p.c_bpartner_id, qty: 0, description: p.documentno };
       if (nz(p.c_charge_id)) { F.err = 'charge payment posting not ported — named'; return false; }
-      var it = ACCT.inTransit(trx, p.c_bankaccount_id, as.c_acctschema_id), un = ACCT.unallocated(trx, p.c_bankaccount_id, as.c_acctschema_id);
+      // Doc_Payment.java:121-166 - the AP leg is Doc.ACCTTYPE_PaymentSelect (B_PaymentSelect_Acct), NOT UnallocatedCash: Doc_AllocationHdr.getPaymentAcct :731-757 clears an APP payment through PaymentSelect, so
+      //   with UnallocatedCash here an allocated vendor payment left Dr Unallocated / Cr PaymentSelect standing (W-MIGRATION-TRADE APPAY; invisible where both accounts are one combination, as GardenWorld's).
+      var it = ACCT.inTransit(trx, p.c_bankaccount_id, as.c_acctschema_id), un = Y(p.isreceipt) ? ACCT.unallocated(trx, p.c_bankaccount_id, as.c_acctschema_id) : ACCT.paymentSelect(trx, p.c_bankaccount_id, as.c_acctschema_id);
       if (Y(p.isreceipt)) { F.line(it, p.c_currency_id, p.payamt, null, base); F.line(un, p.c_currency_id, null, p.payamt, base); }
       else { F.line(un, p.c_currency_id, p.payamt, null, base); F.line(it, p.c_currency_id, null, p.payamt, base); }
       return true;
