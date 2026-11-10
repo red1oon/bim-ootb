@@ -73,7 +73,7 @@ var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms);
       warn: Array.prototype.map.call(document.querySelectorAll('[data-gform-row]'), function (t) { return t.innerText; }).filter(function (t) { return /⚠/.test(t); }) }; });
     console.log('§OFL grid1 ' + J(g1));
     check('files', logs.some(function (l) { return /§AD-FORM-GENERIC file class=org\.kernel\.odoo\.MigrateFromOdoo param=Files files=\["odoo_migration\.xlsx/.test(l); }), 'the picked files are read on the page (G-a: .xlsx through the vendored SheetJS, .json parsed)', logs.filter(function (l) { return /§AD-FORM-GENERIC file/.test(l); }));
-    check('units', g1.text === 3 && g1.warn.some(function (w) { return /Answer the unit/.test(w); }), 'the 3 units are text cells to answer (G-b) and the form says they must be answered', g1);
+    check('units', g1.text === 6 && g1.picks.length === 3 && g1.warn.some(function (w) { return /Answer the unit/.test(w); }), 'the 3 units each have two text cells to answer — the ERP unit (a pick list, G-b) or a new unit code (§KEEP-UNIT-SPEC) — and the form says they must be answered', g1);
     check('picklist', g1.picks.length === 3 && g1.picks.every(function (p) { return p && ['Each', 'Day', 'Hour'].every(function (n) { return p.indexOf(n) >= 0; }); }), '§HARDEN-SPEC H7 / G-e: each unit cell is wired to a pick list of the tenant\'s units (input.list = a datalist holding Each, Day, Hour …)', { picks: (g1.picks || []).map(function (p) { return p && p.length; }) });
     check('locks', g1.locked >= 5, 'parents a ticked sheet needs are drawn locked (G-c)', g1);
     // 4 — answer the units, Refresh (G-d: the typed answers survive the recompute) -> the summary predicts
