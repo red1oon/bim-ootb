@@ -56,6 +56,27 @@ const k = kit('W-ERP-VERBS-DOOR');
   k.chk('A2d the same line by an ai gets no way round: held as a claim, nothing written (the person\'s confirmation would get A2c\'s refusal)', cnoAi.j && cnoAi.j.status === 'claim' && nops() === b2);
   const cok = await door('erp.complete kind=Order number=' + D + ' role=' + ROLE_OK, 'human');
   k.chk('A2e control: the granted role completes the same document', cok.j && cok.j.status === 'ok' && cok.j.answer.after.docStatus === 'CO', 'status=' + (cok.j && cok.j.status));
+
+  // ── R: void, close, reverse (follow-up 2). Legacy facts: DocumentEngine ACTION_Void VO / ACTION_Close CL / ACTION_Reverse_Correct RC; MOrder.voidIt :2680 (qty and net 0, "Voided (old)", Processed Y, DocAction --),
+  //    MOrder.closeIt :2881 (QtyLostSales = ordered - delivered, QtyOrdered := delivered, "Close (old)"), MOrder.reverseCorrectIt :3003 (= voidIt, status Reversed). Their equality with legacy is A5's job (pilot); this
+  //    file proves the door side: the right action runs, the gates hold, nothing else is done. ──
+  const rows = async (sql, p) => { const O = await EC.boot({ oplog }); return O.rows(sql, p); };
+  const mk = async () => { const d = await DR.draftOrder({ oplog }, {}); const c = await door('erp.complete kind=Order number=' + d.number, 'human'); return Object.assign(d, { completed: c.j && c.j.status === 'ok' && c.j.answer.after.docStatus === 'CO' }); };
+  const D3 = await mk();
+  k.chk('R0 setup: a Completed order', D3.completed, D3.number);
+  const acR = await door('erp.actions kind=Order number=' + D3.number);
+  k.chk('R1 a Completed order is offered Void by the engine (DocumentEngine.getValidActions)', acR.j.answer.actions.indexOf('VO') >= 0, 'actions=' + JSON.stringify(acR.j.answer.actions));
+  const b3 = nops();
+  const vAi = await door('erp.void kind=Order number=' + D3.number, 'ai', AIENV);
+  k.chk('R2 void by an ai is HELD as claims (the engine is not reached: op-log unchanged, order still Completed)', vAi.j && vAi.j.status === 'claim' && nops() === b3 && (await rows('SELECT docstatus FROM c_order WHERE c_order_id=?', [D3.id]))[0].docstatus === 'CO', vAi.j && vAi.j.status + ' ops ' + b3 + '->' + nops());
+  const vH = await door('erp.void kind=Order number=' + D3.number, 'human');
+  const o3 = (await rows('SELECT docstatus, docaction, totallines, grandtotal, processed FROM c_order WHERE c_order_id=?', [D3.id]))[0], l3 = await rows('SELECT qtyordered, linenetamt, description FROM c_orderline WHERE c_order_id=?', [D3.id]);
+  k.chk('R3 void by the person: CO -> VO; total and grand total 0; every line qty 0, net 0 and described "Voided (old qty)" (MOrder.voidIt); Processed Y, DocAction --', vH.j && vH.j.status === 'ok' && vH.j.answer.after.docStatus === 'VO' && o3.docstatus === 'VO' && Number(o3.totallines) === 0 && Number(o3.grandtotal) === 0 && o3.docaction === '--' && o3.processed === 'Y' && l3.every(l => Number(l.qtyordered) === 0 && Number(l.linenetamt) === 0 && /Voided \(2\)/.test(l.description || '')), 'order=' + JSON.stringify(o3) + ' line0=' + JSON.stringify(l3[0]));
+  const vAgain = await door('erp.void kind=Order number=' + D3.number, 'human');
+  k.chk('R4 voiding a Voided order is refused by the engine\'s rule, naming the action (nothing written)', vAgain.j && vAgain.j.status === 'refused' && /Void was not done|not offered/.test(vAgain.j.why || ''), String(vAgain.j && vAgain.j.why).slice(0, 120));
+  const dd = await DR.draftOrder({ oplog }, {}), vd = await door('erp.void kind=Order number=' + dd.number, 'human');
+  k.chk('R9 a Drafted order can be voided (DocumentEngine options for DR include Void): DR -> VO', vd.j && vd.j.status === 'ok' && vd.j.answer.after.docStatus === 'VO', 'status=' + (vd.j && vd.j.status) + ' ' + (vd.j && vd.j.why));
+
   // ── find ──
   const nf = await door('erp.find kind=Order number=NO-SUCH-NUMBER');
   k.chk('Fa find: a number that does not exist is a refusal that says so, not an empty ok', nf.j && nf.j.status === 'refused' && /no Order with documentno NO-SUCH-NUMBER/.test(nf.j.why));
@@ -72,9 +93,9 @@ const k = kit('W-ERP-VERBS-DOOR');
   const g = spawnSync(process.execPath, [path.join(ROOT, 'scripts/gen_erp_door_verbs.js'), '--check'], { encoding: 'utf8' });
   k.chk('V1 the erp.* entries are what the generator writes from the dictionary + actor_verbs.json (not hand-kept)', g.status === 0 && /CURRENT/.test(g.stdout), (g.stdout || '').split('\n').filter(Boolean).slice(-1)[0]);
   const V = JSON.parse(fs.readFileSync(path.join(ROOT, 'common/door/verbs.json'), 'utf8')).verbs.filter(v => v.app === 'erp');
-  k.chk('V2 harm: find/actions/describe/read are read, erp.complete is posts (the generator\'s rule, DocumentEngine ACTION_Complete -> Doc.post)', V.length === 5 && V.every(v => ({ 'erp.find': 'read', 'erp.actions': 'read', 'erp.describe': 'read', 'erp.read': 'read', 'erp.complete': 'posts' })[v.verb] === v.harm), V.map(v => v.verb + ':' + v.harm).join(' '));
+  k.chk('V2 harm: find/actions/describe/read are read, erp.complete is posts (the generator\'s rule, DocumentEngine ACTION_Complete -> Doc.post)', V.length === 6 && V.every(v => ({ 'erp.find': 'read', 'erp.actions': 'read', 'erp.describe': 'read', 'erp.read': 'read', 'erp.complete': 'posts', 'erp.void': 'writes' })[v.verb] === v.harm), V.map(v => v.verb + ':' + v.harm).join(' '));
   k.chk('V3 the connector (tools/list) offers no erp verb: they have no mcp_name, so the published tool bytes are unchanged', V.every(v => !v.mcp_name));
-  const bad = V.filter(v => !/^(find|actions|complete|describe|read)$/.test(v.calls.argv[0]) || v.calls.cli !== 'erp_cli' || JSON.stringify(v.calls.argv).match(/"(-e|--eval|sh|bash|sql|exec)"/));
+  const bad = V.filter(v => !/^(find|actions|complete|void|describe|read)$/.test(v.calls.argv[0]) || v.calls.cli !== 'erp_cli' || JSON.stringify(v.calls.argv).match(/"(-e|--eval|sh|bash|sql|exec)"/));
   k.chk('V4 no erp entry names code, SQL or a shell: every one calls erp_cli with a fixed subcommand', bad.length === 0, 'offences=' + bad.length);
   // dictionary-driven, not table-named: erp_cli.js and doc_actions.js carry no document table name
   const src = fs.readFileSync(path.join(ROOT, 'common/door/erp_cli.js'), 'utf8') + fs.readFileSync(path.join(ROOT, 'erp/doc_actions.js'), 'utf8');
