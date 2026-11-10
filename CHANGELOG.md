@@ -4,6 +4,24 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.88.0](https://github.com/red1oon/bim-ootb/compare/v1.87.0...v1.88.0) (2026-11-10)
+
+
+### ✨ Features
+
+* **erp-migrate:** "Migrate from Business Central (alpha)" — BC's own Excel export, read with Microsoft's published table definitions (W-BC-MIGRATE 17/0, W-BC-MIGRATE-LIVE 11/0) ([#2765](https://github.com/red1oon/bim-ootb/issues/2765)) ([0a3f1b0](https://github.com/red1oon/bim-ootb/commit/0a3f1b0c9a17c9cd1cbb7c809ca40a000f54a498))
+* **modeller-rules:** a rules edit applies wherever its file is read (room-schedule source, FP borrow) + header names those readers (W-RULES-CLASS C1/C5-C7 9/0) ([#2779](https://github.com/red1oon/bim-ootb/issues/2779)) ([d6054ce](https://github.com/red1oon/bim-ootb/commit/d6054ce06322c8679920740f60f24a99f108a09b))
+* **modeller-rules:** rules editor names the building TYPE it edits + checkedOn + fleet check (W-RULES-CLASS, W-RULES-FLEET 4/0) ([#2776](https://github.com/red1oon/bim-ootb/issues/2776)) ([a751e45](https://github.com/red1oon/bim-ootb/commit/a751e458ce849d2ce81f3a0c910c5e2aa538ea23))
+
+
+### 🐛 Fixes
+
+* **erp-bimdoc:** BIM Document actions into the AD — Open = AD_Process under the gear, progress = virtual ColumnSQL columns in the Task/Phase grids, register grid from the plugin's AD_Field; lens deleted (W-BIMDOC 32/0, W-PLUGIN-AD-ACTIONS PASS) ([#2769](https://github.com/red1oon/bim-ootb/issues/2769)) ([25572d8](https://github.com/red1oon/bim-ootb/commit/25572d84dfd98bd823d299196766f9583db53a0b))
+* **mcp:** published connector works from a flat download again ([#2766](https://github.com/red1oon/bim-ootb/issues/2766) regression): door.js/verbs.json/edit_cli.js resolved beside bim_mcp.js first, then the repo layout; missing files print their curl line; W-MCP-DOWNLOAD ([#2767](https://github.com/red1oon/bim-ootb/issues/2767)) ([f57e963](https://github.com/red1oon/bim-ootb/commit/f57e963155d544fcebfdb6896b1ad08b227a1b7a))
+* **modeller:** the Rules editor loads the building's rules first when they are not loaded yet (W-E2E-RULES-EDIT 7/0) ([#2764](https://github.com/red1oon/bim-ootb/issues/2764)) ([2ae402f](https://github.com/red1oon/bim-ootb/commit/2ae402f7eb9c1c4ba551c83ee7c28a0eca1f5542))
+* **modeller:** the walk build-up is held while the walk commits, then plays (W-E2E-REVEAL-CLOCK 5/0) ([#2762](https://github.com/red1oon/bim-ootb/issues/2762)) ([c070ab6](https://github.com/red1oon/bim-ootb/commit/c070ab699f81a17cce315fa7297492aa5a3b3097))
+* **modeller:** the walk build-up runs on rendered time, so a commit that blocks the page cannot finish it unseen (W-E2E-REVEAL-CLOCK 4/0) ([#2760](https://github.com/red1oon/bim-ootb/issues/2760)) ([33467f5](https://github.com/red1oon/bim-ootb/commit/33467f5ce561b69bd5b33b46c857a50f6e7e54e3))
+
 ## [1.87.0](https://github.com/red1oon/bim-ootb/compare/v1.86.0...v1.87.0) (2026-11-09)
 
 
