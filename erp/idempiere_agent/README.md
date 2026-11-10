@@ -64,3 +64,9 @@ iDempiere row; nothing is invented.
 
 ---
 © 2026 Redhuan D. Oon · MIT License
+
+## Open balances of a legacy iDempiere (`open_reader.js`)
+Read-only reader for the cut-over: trial balance (Fact_Acct), open AR/AP items (invoiceOpen), bank balances (CurrentBalance), for one client and its primary accounting schema.
+`PGPASSWORD=... node open_reader.js --cutover 2026-12-31 --db idempiere --client 11 [--container postgres | --host H --port P]` writes `idempiere_open.json`;
+`erp/migrate/templates/idempiere-open.json` (via `erp/plugins/idempiere_open_convert.mjs`) turns it into the open-balance sheets the neutral loader reads. The password is never a flag.
+Spec: bim-compiler `prompts/MIGRATE_INSTALL_TENANT.md` §IDEMPIERE-OPEN-SPEC. Witness: `erp/tests/witness_idempiere_open.js`.

@@ -6,7 +6,7 @@
 cd "$(dirname "$0")"; mkdir -p /tmp/count_logs
 W="migrate_engine open_balances already_there plugin_role_access sap_migrate bc_migrate odoo_form odoo_messy
    import_product import_invoice import_payment import_order import_gljournal import_inventory import_bankstatement
-   bankstatement post_bankstatement"
+   bankstatement post_bankstatement idempiere_open"
 [ "${SLOW:-0}" = 1 ] && W="$W idempiere_falsifier"
 bad=0
 for w in $W; do
