@@ -338,6 +338,43 @@
       var dict = (rec.manifest && rec.manifest.dictionary) || []; if (!dict.length) return 0;
       var c = buildCtx(rec.manifest, scope), n = 0;
       dict.forEach(function (d) { n += c.dict.insert(d.table, d.idCol, d.rows) || 0; });
+      n += stageRoleAccess(rec, dict, c);
+      return n;
+    }
+    // §PLUGIN-ROLE-ACCESS (bim-compiler prompts/MIGRATE_INSTALL_TENANT.md §PLUGIN-ROLE-ACCESS-SPEC — Witness: W-PLUGIN-ROLE-ACCESS). Legacy: a pack-in that brought a Form / Process /
+    //   Window / Workflow / InfoWindow sets requireRoleAccessUpdate (FormElementHandler.java:75, ProcessElementHandler.java:89, WindowElementHandler.java:98 ...) and at its end
+    //   PackInHandler.updateRoleAccess (PackInHandler.java:522-536) runs MRole.updateAccessRecords(false) for every ACTIVE role with IsManual='N'. The level rule lives ONCE, in the
+    //   port model_master.js updateAccessRecords: it is run here against a collecting transaction, and only the access rows of THIS bundle's own records are staged (refcounted, so
+    //   Stop removes them); rows it would add for other records are not the bundle's to stage (counted, not written). No per-plugin role list.
+    var ACCESS_OF = { ad_form: ['ad_form_access', 'ad_form_id'], ad_process: ['ad_process_access', 'ad_process_id'], ad_window: ['ad_window_access', 'ad_window_id'],
+      ad_workflow: ['ad_workflow_access', 'ad_workflow_id'], ad_infowindow: ['ad_infowindow_access', 'ad_infowindow_id'] };
+    function modelMaster() { if (host.modelMaster) return host.modelMaster; try { return (typeof module !== 'undefined' && module.exports) ? require('./model_master.js') : (typeof window !== 'undefined' ? window : globalThis).ModelMaster; } catch (e) { return null; } }
+    function stageRoleAccess(rec, dict, c) {
+      if (host.roleAccess === false) return 0;   // a host may switch the pass off (the witness's falsifier)
+      var own = {}, stamp = {}, any = false;
+      dict.forEach(function (d) { var a = ACCESS_OF[String(d.table).toLowerCase()]; if (!a) return; (d.rows || []).forEach(function (r) { var idv = r[a[1]]; if (idv == null) return;
+        (own[a[0]] = own[a[0]] || { col: a[1], ids: {} }).ids[String(idv)] = 1; stamp[a[0] + '|' + idv] = r; any = true; }); });
+      // a bundle that SHIPS access rows for a record beyond the login role (role 0) manages that record's access itself - its explicit list wins and the host adds nothing
+      //   (e.g. the head-office POS integration: exactly the clerk's role, W-POS-SALES). The pass covers the records whose only shipped access is the login role's, or none.
+      var explicit = 0;
+      dict.forEach(function (d) { var t = String(d.table).toLowerCase(), w = own[t]; if (!w) return; (d.rows || []).forEach(function (r) { if (r[w.col] != null && r.ad_role_id != null && Number(r.ad_role_id) !== 0 && w.ids[String(r[w.col])]) { delete w.ids[String(r[w.col])]; explicit++; } }); });
+      if (!Object.keys(own).some(function (t) { return Object.keys(own[t].ids).length; })) { if (explicit) console.log('§PLUGIN-ROLE-ACCESS bundle=' + rec.manifest.id + ' explicit access list kept (' + explicit + ' shipped row(s) beyond the login role): nothing added'); return 0; }
+      if (!any) return 0;
+      var MM = modelMaster(), d = host.db;
+      if (!MM || typeof MM.updateAccessRecords !== 'function' || !d || typeof d.query !== 'function') { console.log('§PLUGIN-ROLE-ACCESS bundle=' + rec.manifest.id + ' SKIPPED (no model_master / db on this host): only the rows the bundle carries'); return 0; }
+      var roles; try { roles = d.query("SELECT * FROM ad_role WHERE ismanual='N' AND isactive='Y' ORDER BY ad_client_id, name"); } catch (e) { console.log('§PLUGIN-ROLE-ACCESS bundle=' + rec.manifest.id + ' SKIPPED (' + e.message + ')'); return 0; }
+      var mine = {}, other = 0, n = 0;
+      roles.forEach(function (role) {
+        var out = [], trx = { env: {}, q: function (sql, p) { return d.query(sql, p || []); }, find: function () { return []; }, del: function () {}, insert: function (t, f) { out.push([t, f]); }, say: function () {} };
+        try { MM.updateAccessRecords(trx, role, false); } catch (e) { console.log('§PLUGIN-ROLE-ACCESS role=' + role.ad_role_id + ' not judged: ' + e.message); return; }
+        out.forEach(function (o) { var t = o[0], f = o[1], w = own[t]; if (!w || !w.ids[String(f[w.col])]) { other++; return; }
+          var src = stamp[t + '|' + f[w.col]] || {}, row = {}; Object.keys(f).forEach(function (k) { if (SAFE_ID.test(k)) row[k] = f[k]; });
+          row[t + '_uu'] = rec.manifest.id + ':' + w.col + ':' + f[w.col] + ':role:' + role.ad_role_id;
+          ['created', 'createdby', 'updated', 'updatedby'].forEach(function (k) { if (src[k] != null && row[k] == null) row[k] = src[k]; });
+          (mine[t] = mine[t] || []).push(row); });
+      });
+      Object.keys(mine).forEach(function (t) { n += c.dict.insert(t, t + '_uu', mine[t]) || 0; });
+      console.log('§PLUGIN-ROLE-ACCESS bundle=' + rec.manifest.id + ' roles=' + roles.length + ' rows=+' + n + ' other=' + other + ' (PackInHandler.updateRoleAccess: every active non-manual role, MRole.updateAccessRecords)');
       return n;
     }
     // manifest.packs = ['dir/2Pack_<x.y.z>.zip', ...] relative to the bundle (ERP_FRIENDLY_OPS_LENS.md §22 B1); manifest.sqlFunctions = './x.mjs' exporting functions(R) -> { name: { arity, fn } } (§24). The host applies them (fetch + PipoPackIn.incremental on the dictionary DB) and keeps them;

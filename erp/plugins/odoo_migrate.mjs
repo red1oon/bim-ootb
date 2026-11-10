@@ -9,7 +9,7 @@
 // Id band 9542001-9542999 (no seed row, no other bundle).
 const NOW = '2026-11-09 00:00:00';
 const STD = { ad_client_id: 0, ad_org_id: 0, isactive: 'Y', created: NOW, createdby: 100, updated: NOW, updatedby: 100, entitytype: 'U' };
-const F_ID = 9542001, M_ID = 9542001, TREE = 10, PARENT = 163, ROLES = [[0, 0], [102, 11]];
+const F_ID = 9542001, M_ID = 9542001, TREE = 10, PARENT = 163, ROLES = [[0, 0]];   // the LOGIN role's row (MForm / MProcess afterSave: the System Administrator starts the plugin); every tenant's roles get theirs from the host (§PLUGIN-ROLE-ACCESS, plugin_registry.js)
 const form = Object.assign({ ad_form_id: F_ID, name: 'Migrate from Odoo', description: 'Load the export of your Odoo (odoo_migration.xlsx + manifest.json) into this tenant',
   help: 'Pick the files the Odoo agent wrote (export.js). Answer which ERP unit each Odoo unit is. Read the summary: every sheet says how many rows will import and why any would be refused. Untick what you do not want (a sheet another one needs stays ticked). Process loads everything in one go, or nothing.',
   accesslevel: '3', classname: 'org.kernel.odoo.MigrateFromOdoo', isbetafunctionality: 'N' }, STD);
