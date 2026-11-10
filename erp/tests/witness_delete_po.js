@@ -183,18 +183,38 @@ const P = 990001, PH = 990101, PH2 = 990102, T = 990201, T2 = 990202, L1 = 99030
 
     // C9 the FK plan against the legacy database, both ways: every constraint is planned with its rule, and nothing is planned the database does not enforce (a false refusal)
     let pg = null; try { pg = cp.execSync(`docker exec postgres psql -U adempiere -d idempiere -tA -F'|' -c "select lower(c.conrelid::regclass::text), lower(a.attname), lower(c.confrelid::regclass::text), c.confdeltype from pg_constraint c join pg_attribute a on a.attrelid=c.conrelid and a.attnum=c.conkey[1] where c.contype='f' and c.connamespace='adempiere'::regnamespace and array_length(c.conkey,1)=1"`, { maxBuffer: 1 << 26, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim().split('\n').map(l => l.split('|').map(s => s.replace(/^adempiere\./, ''))); } catch (e) { pg = null; }
+    let pgTables = null; try { pgTables = cp.execSync(`docker exec postgres psql -U adempiere -d idempiere -tA -c "select lower(tablename) from pg_tables where schemaname='adempiere'"`, { maxBuffer: 1 << 26, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim().split('\n'); } catch (e) { pgTables = null; }
     if (!pg || !pg.length) inconclusive('C9', 'legacy DB unreachable, FK plan unjudged');
     else {
-      const r = await page.evaluate((pg) => { const ML = window.ModelLayer; if (!ML || !ML.fkPlan) return { missing: true };
+      const r = await page.evaluate(([pg, pgTables]) => { const ML = window.ModelLayer, legacyHas = pgTables ? new Set(pgTables) : null; let notInLegacy = 0; if (!ML || !ML.fkPlan) return { missing: true };
         const q = (sql, p) => { const s = window.__idmpDb.prepare(sql); if (p) s.bind(p); const o = []; while (s.step()) { const g = s.getAsObject(), l = {}; for (const k in g) l[k.toLowerCase()] = g[k]; o.push(l); } s.free(); return o; };
         const has = q("SELECT lower(name) n FROM sqlite_master WHERE type='table'").map(x => x.n), hs = new Set(has), want = { a: 'N', c: 'C', n: 'S' }, plan = new Map(), pm = new Map();
         has.forEach(t => ML.fkPlan(q, t).forEach(p => plan.set(p.table + '.' + p.column + '.' + t, p.rule)));
         let same = 0, noTbl = 0; const miss = [], wrong = [], extra = [];
         pg.forEach(c => { const k = c[0] + '.' + c[1] + '.' + c[2], got = plan.get(k); pm.set(k, c[3]); if (!hs.has(c[0]) || !hs.has(c[2])) { noTbl++; return; } if (got == null) miss.push(k); else if (got === want[c[3]] || (c[3] === 'a' && got === 'M')) same++; else wrong.push(k + ' pg=' + c[3] + ' plan=' + got); });
-        plan.forEach((v, k) => { if (!pm.has(k)) extra.push(k); });
-        return { same, noTbl, miss: miss.slice(0, 10), nMiss: miss.length, wrong: wrong.slice(0, 10), nWrong: wrong.length, extra: extra.slice(0, 10), nExtra: extra.length }; }, pg);
-      verdict('C9', 'FK plan == pg_constraint: ' + (r.missing ? 'fkPlan absent' : r.same + ' agree, ' + r.nMiss + ' unplanned, ' + r.nWrong + ' wrong rule, ' + r.nExtra + ' planned but not in the database (' + r.noTbl + ' constraints on tables the seed lacks)'), !r.missing && r.same > 0 && !r.nMiss && !r.nWrong && !r.nExtra, r);
+        plan.forEach((v, k) => { if (pm.has(k)) return; const t = k.split('.')[0]; if (legacyHas && !legacyHas.has(t)) { notInLegacy++; return; } extra.push(k); });   // a table legacy does not have (a plugin's own): its plan is the dictionary's, the oracle cannot judge it - counted apart
+        return { same, noTbl, miss: miss.slice(0, 10), nMiss: miss.length, wrong: wrong.slice(0, 10), nWrong: wrong.length, extra: extra.slice(0, 10), nExtra: extra.length, notInLegacy: notInLegacy }; }, [pg, pgTables]);
+      verdict('C9', 'FK plan == pg_constraint: ' + (r.missing ? 'fkPlan absent' : r.same + ' agree, ' + r.nMiss + ' unplanned, ' + r.nWrong + ' wrong rule, ' + r.nExtra + ' planned but not in the database (' + r.noTbl + ' constraints on tables the seed lacks; ' + r.notInLegacy + ' planned on tables legacy does not have, not judged)'), !r.missing && r.same > 0 && !r.nMiss && !r.nWrong && !r.nExtra, r);
     }
+    // C15 §FB4 the toolbar Delete on TICKED grid rows = legacy onDeleteSelected (AbstractADWindowContent :3216-3262): one question "<window> - N Selected" / DeleteSelection, each ticked row deleted by the
+    //   same delete as a single record, "Deleted: N", the rows still gone after a reload. ISSUE: ticked rows were ignored, only the current record was deleted.
+    { await open(130, P); await tab('Phase'); await tab('Task'); await tab('Task Line'); await toGrid(); await page.waitForTimeout(600);
+      const b15 = await rows();
+      if (b15.length < 3) inconclusive('C15', 'fewer than 3 Task Lines left on the grid: two ticked + one kept cannot be judged', { b15 });
+      else { const pick = b15.slice(1, 3), keep = b15[0];   // the current row (first) is NOT ticked: on main it alone would be deleted
+        await selectRow(keep);
+        for (const k of pick) { await page.evaluate((k) => { const c = document.querySelector('.idmp-grid tbody tr[data-ad-record="' + k + '"] input[type="checkbox"]'); if (c && !c.checked) c.click(); }, k); await page.waitForTimeout(250); }
+        const n15 = logs.length; await page.click('#idmp-toolbar [data-tb="delete"]'); await page.waitForTimeout(500);
+        const q15 = await page.evaluate(() => ({ title: (document.querySelector('#idmp-delete-ov [data-del-title]') || {}).textContent || null, msg: (document.querySelector('#idmp-delete-ov [data-del-msg]') || {}).textContent || null }));
+        const ok15 = page.locator('#idmp-delete-ov [data-del-ok]'); if (await ok15.count()) await ok15.click();
+        for (let i = 0; i < 40 && !logs.slice(n15).some(x => /§DEL-SELECTED /.test(x)); i++) await page.waitForTimeout(250);
+        await page.waitForTimeout(1500);
+        const line15 = logs.slice(n15).filter(x => /§DEL-SELECTED /.test(x))[0] || null, a15 = await rows(), st15 = await page.evaluate(() => (document.getElementById('idmp-status') || {}).textContent || '');
+        await open(130, P); await tab('Phase'); await tab('Task'); await tab('Task Line'); await toGrid(); await page.waitForTimeout(600); const r15 = await rows();
+        const tip15 = await tip('SELECT count(*) n FROM C_ProjectLine WHERE C_ProjectLine_ID IN (' + pick.join(',') + ')');
+        say('C15 question=' + JSON.stringify(q15) + ' line=' + line15 + ' status="' + st15.slice(0, 60) + '" rows ' + b15.length + ' -> ' + a15.length + ' reloaded=' + r15.length);
+        verdict('C15', 'two ticked Task Lines deleted by one toolbar Delete (the unticked current row kept): rows ' + b15.length + ' -> ' + a15.length + ', after reload ' + r15.length + ', tip count ' + tip15[0].n,
+          /2 Selected$/.test(String(q15.title || '').trim()) && !!q15.msg && !!line15 && /selected=2 deleted=2 refused=\[\]/.test(line15) && a15.length === b15.length - 2 && a15.indexOf(keep) >= 0 && pick.every(k => a15.indexOf(k) < 0 && r15.indexOf(k) < 0) && r15.indexOf(keep) >= 0 && tip15[0].n === 0, { q15, line15, a15, r15, tip15 }); } }
   } catch (e) { if (!/no fixture/.test(e.message)) { fails++; console.log('§WDEL ERROR ' + (e.stack || e)); } }
   console.log('§WDEL page errors ' + errs.length + (errs.length ? ' ' + JSON.stringify(errs.slice(0, 3)) : ''));
   if (errs.length) fails++;

@@ -2416,6 +2416,33 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   // §DEL AbstractADWindowContent.onDeleteCallback: Dialog.ask "DeleteRecord?" (AD_Message), then GridTable.dataDelete. The confirm strip this replaces sat in .ic-bar, hidden since #366: Delete did nothing a user could see.
   function _openDelete() {
     var t = _selectedPkFor('delete'); if (!t) return;
+    // §FB4 AbstractADWindowContent.onDeleteCallback :3140-3149 -> onDeleteSelected :3216-3262: grid view with ticked rows = Dialog.ask "<window> - N Selected" / DeleteSelection, then
+    //   GridTab.dataDelete on each ticked row in row order (the SAME delete as one record: gate, model hooks, FK rules; a refused row is skipped), status "Deleted: <count>".
+    var tabS = _curTab(), selS = (_viewMode !== 'form' && tabS) ? _selectedRecs(tabS) : [];
+    if (selS.length) {
+      var winName = (_curWin() && _curWin().name) || '';
+      _askDelete(function (yes) {
+        console.log('§DEL-ASK table=' + t.tn + ' selected=' + selS.length + ' answer=' + (yes ? 'ok' : 'cancel'));
+        if (!yes) return;
+        _withFoldedEntry(t.tn, 'update', function () {
+          var gm = _gtFor(tabS), ids = selS.map(function (r) { return { id: recVal(r, _keyCol(tabS)), rec: r }; }), done = 0, refused = [], i = 0;
+          _gridSel = Object.create(null);   // clearSelection() before the loop, as legacy
+          var next = function () {
+            if (i >= ids.length) {
+              console.log('§DEL-SELECTED table=' + t.tn + ' selected=' + ids.length + ' deleted=' + done + ' refused=[' + refused.join(',') + ']');
+              _newMode = null; renderToolbar(); status(_findMsg('Deleted', 'Deleted') + ': ' + done);
+              if (done) _attAfterDelete();   // ONE sweep for the whole selection
+              return;
+            }
+            var it = ids[i++];
+            if (window.AdGridTab && gm && !AdGridTab.canDelete(gm, it.rec)) { refused.push(it.id + ':not deletable (read-only, not deleteable or processed)'); next(); return; }
+            window.__crud.deleteNow(t.tn, it.id, function (r) { if (r && r.ok) done++; else refused.push(it.id + ':' + String(r && r.error)); next(); });
+          };
+          next();
+        });
+      }, _findMsg('DeleteSelection', 'Delete Selected Items'), winName + ' - ' + selS.length + ' ' + _findMsg('Selected', 'Selected'));
+      return;
+    }
     _askDelete(function (yes) {
       console.log('§DEL-ASK table=' + t.tn + ' id=' + t.id + ' answer=' + (yes ? 'ok' : 'cancel'));
       if (!yes) return;
@@ -2428,13 +2455,14 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       });
     });
   }
-  function _askDelete(cb) {
+  function _askDelete(cb, msgText, titleText) {
     var old = document.getElementById('idmp-delete-ov'); if (old) old.remove();
     var ov = el('div', null); ov.id = 'idmp-delete-ov';
     ov.style.cssText = 'position:fixed;inset:0;z-index:120;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center';
     var box = el('div', null);
     box.style.cssText = 'background:var(--idmp-panel,#fff);color:var(--idmp-fg,#1c1c1c);border:1px solid var(--idmp-border,#c9c9c9);border-radius:8px;padding:18px 20px;width:min(380px,92vw);box-shadow:0 10px 32px rgba(0,0,0,.4);font:14px system-ui';
-    var msg = el('div', null, _findMsg('DeleteRecord?', 'Do you want to delete the record?')); msg.style.cssText = 'margin:0 0 16px;line-height:1.5';
+    if (titleText) { var ttl = el('div', null, titleText); ttl.setAttribute('data-del-title', '1'); ttl.style.cssText = 'margin:0 0 8px;font-weight:600'; box.appendChild(ttl); }
+    var msg = el('div', null, msgText || _findMsg('DeleteRecord?', 'Do you want to delete the record?')); msg.setAttribute('data-del-msg', '1'); msg.style.cssText = 'margin:0 0 16px;line-height:1.5';
     var row = el('div', null); row.style.cssText = 'display:flex;justify-content:flex-end;gap:8px';
     var btn = function (label, attr, primary) { var b = el('button', null, label); b.setAttribute(attr, '1'); b.style.cssText = primary ? 'padding:6px 14px;border:none;border-radius:5px;background:var(--idmp-blue,#1c5fa8);color:#fff;cursor:pointer;font:inherit' : 'padding:6px 14px;border:1px solid var(--idmp-border,#bbb);border-radius:5px;background:#fff;cursor:pointer;font:inherit'; return b; };
     var cancel = btn(_findMsg('Cancel', 'Cancel'), 'data-del-cancel', false), ok = btn(_findMsg('OK', 'OK'), 'data-del-ok', true);
