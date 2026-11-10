@@ -9,13 +9,15 @@
   function list() { return global.AD_DOCVALUE_WF || (typeof module !== 'undefined' && module.exports ? require('./ad_docvalue_wf.js') : []); }
   // ensure(db) - a sql.js Database. Returns { applied, skipped, ms }.
   function ensure(db) {
-    var t0 = Date.now(), ok = 0, skip = 0, have = {};
+    var t0 = Date.now(), ok = 0, skip = 0, have = {}, touched = {};
     (list() || []).forEach(function (st) {
       var t = (/INTO (\w+)/.exec(st) || [])[1];
       if (!(t in have)) { try { have[t] = !!db.exec('PRAGMA table_info("' + t + '")').length; } catch (e) { have[t] = false; } }
       if (!have[t]) { skip++; return; }
-      try { db.run(st); ok++; } catch (e) { skip++; }
+      try { db.run(st); ok++; touched[t] = 1; } catch (e) { skip++; }
     });
+    // F1: ad_workflow / ad_wf_node have no key, so INSERT OR IGNORE re-added the rows on every reload of a persisted db: heal whole-row duplicates (seed_patch.js)
+    var SP = global.SeedPatch || (typeof module !== 'undefined' && module.exports ? require('./seed_patch.js') : null); if (SP) SP.dedupe(db, touched);
     var out = { applied: ok, skipped: skip, ms: Date.now() - t0 };
     log('§DOCVALUE_OVERLAY ensure applied=' + ok + ' skipped=' + skip + ' ms=' + out.ms + ' (document-value workflows, DocWorkflowManager; boot overlay, outside the team base hash)');
     return out;

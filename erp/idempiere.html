@@ -542,7 +542,7 @@
 <script src="ad_lens.js?v=2"></script>
 <script src="ad_modelval.js?v=7"></script>
 <script src="ad_rule.js?v=2"></script><!-- TEAM_REPLICATION_PLUGIN_STUDY §10.8 — stage 3 of the model-validation bus: AD_Table_ScriptValidator rows -> AD_Rule twin:<name> / twin:process:<ref>; attaches to AdModelVal (must load after it) -->
-<script src="ad_official_indexes.js?v=1"></script><script src="ad_index_overlay.js?v=1"></script><script src="ad_docvalue_wf.js?v=1"></script><script src="ad_docvalue_overlay.js?v=1"></script><script src="ad_taxcat_overlay.js?v=1"></script><script src="ad_import_tables.js?v=2"></script><!-- TEAM_REPLICATION_PLUGIN_STUDY §13.2 B1 — the I_Order physical table as a boot overlay (window.AdImportTables), W-IMPORT-ORDER -->
+<script src="ad_official_indexes.js?v=1"></script><script src="ad_index_overlay.js?v=1"></script><script src="ad_docvalue_wf.js?v=1"></script><script src="ad_docvalue_overlay.js?v=2"></script><script src="ad_taxcat_overlay.js?v=1"></script><script src="seed_patch.js?v=1"></script><script src="ad_import_tables.js?v=2"></script><!-- TEAM_REPLICATION_PLUGIN_STUDY §13.2 B1 — the I_Order physical table as a boot overlay (window.AdImportTables), W-IMPORT-ORDER -->
 <!-- B-5/C-5 process dispatch (MULTI_LANE_LAUNCH Lane A) — AD_Process spine (W-PROC). Its report handlers
      resolve to report_overlay's PURE CORE folds, loaded below AFTER bigdecimal.js (the folds are BigDecimal-exact
      and BD must exist at parse time — glassbowl.html load-order parity). -->
@@ -1168,10 +1168,9 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       try {
         var pr = await fetch('patches/' + pf, { cache: 'no-cache' });
         if (pr.ok) {
-          var ptxt = await pr.text(), pOk = 0, pFail = 0, pChg = 0; _fpAdd('|' + pf + '|' + ptxt);
-          ptxt.split(/;\s*\n/).forEach(function (st) { st = st.replace(/^\s*--[^\n]*\n?/gm, '').trim(); if (!st) return;
-            try { db.run(st); pOk++; pChg += db.getRowsModified(); } catch (eP) { pFail++; } });
-          console.log('§AD-SEED-PATCH file=patches/' + pf + ' statements=' + pOk + ' changed=' + pChg + ' failed=' + pFail + ' (self-heal, idempotent)');
+          var ptxt = await pr.text(); _fpAdd('|' + pf + '|' + ptxt);
+          var pRes = window.SeedPatch.apply(db, ptxt), pOk = pRes.ok, pFail = pRes.fail, pChg = pRes.chg;   // seed_patch.js: per-statement + heals whole-row duplicates (F1)
+          console.log('§AD-SEED-PATCH file=patches/' + pf + ' statements=' + pOk + ' changed=' + pChg + ' failed=' + pFail + ' duplicate_rows_removed=' + pRes.dup + ' (self-heal, idempotent)');
         } else console.log('§AD-SEED-PATCH none for ' + pf + ' (HTTP ' + pr.status + ')');
       } catch (ePatch) { console.log('§AD-SEED-PATCH skipped ' + pf + ' (' + ePatch.message + ')'); }
     }
