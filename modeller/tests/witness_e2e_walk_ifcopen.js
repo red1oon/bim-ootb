@@ -25,7 +25,7 @@
  *                     which residents happen to lack them).
  *   G4 WALK-ALL-OK  — the real click on the Outliner's "▶▶ Walk ALL Disciplines" row (`[data-bnode="dw-all"]`)
  *                     completes, places > 0 fixtures OR honestly refuses every discipline (never throws/hangs).
- *   G5 COMMITTED    — op-log grows by exactly the placed count PLUS the walk's own routed-network rows (signed
+ *   G5 COMMITTED    — op-log grows by exactly the placed count PLUS the provisional count PLUS the walk's own routed-network rows (signed
  *                     runs + bend fittings, read from the op-log); verifyChain stays true.
  *   G6 NO-ERROR     — zero pageerror across the whole open+walk sequence for that resident.
  * Read the §-log after every run — exit code alone is not evidence (CLAUDE.md Log Mandate).
@@ -117,10 +117,12 @@ const CASES = [
     console.log('  §CHAIN verifyChain=' + chain);
 
     const placedTotal = (after && after.result && after.result.placedTotal) || 0;
+    // a provisional device is drawn and committed like any walked device; it is only left out of the PLACED total (the walk result states both). The arm counted placed alone and went red when provisional devices arrived (2026-11-09).
+    const provisionalTotal = (after && after.result && after.result.provisionalTotal) || 0;
     const refusedAll = (after && after.result && after.result.refused) || [];
     const walkedAll = (after && after.result && after.result.walked) || [];
     chk('G4 WALK-ALL-OK (completes; every disc walked or honestly refused)', rowUp && walkOk && (walkedAll.length + refusedAll.length) > 0, 'walked=' + walkedAll.length + ' refused=' + refusedAll.length);
-    chk('G5 COMMITTED (oplog += placedTotal + routed-network rows, chain OK)', after && after.oplogLen === before.oplogLen + placedTotal + after.routeRows && chain === true, 'oplog ' + before.oplogLen + '→' + (after && after.oplogLen) + ' (+' + placedTotal + ' placed +' + (after && after.routeRows) + ' runs/fittings) chain=' + chain);
+    chk('G5 COMMITTED (oplog += placed + provisional + routed-network rows, chain OK)', after && after.oplogLen === before.oplogLen + placedTotal + provisionalTotal + after.routeRows && chain === true, 'oplog ' + before.oplogLen + '→' + (after && after.oplogLen) + ' (+' + placedTotal + ' placed +' + provisionalTotal + ' provisional +' + (after && after.routeRows) + ' runs/fittings) chain=' + chain);
     chk('G6 NO-ERROR', errs.length === 0, errs.slice(0, 3).join(' | '));
     // G7 — the issue M-1 names: the gate waited for a _geo.db an IFC open never has (measured 60087 ms x 4 disciplines before the fix). INCONCLUSIVE if no discipline refused (nothing waited).
     if (c.mode === 'ifc') {
