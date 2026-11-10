@@ -270,23 +270,28 @@ var ALL_BRANCHES = ['refuse:lead', 'refuse:fixed-asset', 'refuse:po-no-supplier'
   // There is no hand converter to equal here (the mapping was never hand code), so the oracle is this witness's own plain reading of §E3C-SPEC 1(c), computed straight from the raw
   // rows — never through the engine. OPEN = the recorded export of the live demo (fixtures/odoo_export_2026-11-10); OPEN-GEN = seeded variants of those rows (a currency changed,
   // a partner held or unknown, a move split in two lines, a long number, a zero balance) so the branches the demo never shows are judged too; OPEN-MUTANT = the template damaged.
+  var OCONV = await import(url.pathToFileURL(path.join(__dirname, 'fixtures', 'odoo_convert_reference.mjs')).href);   // the frozen hand mapping: the partner keys of the open-balance oracle come from it
   var OTPL = JSON.parse(fs.readFileSync(path.join(ERP, 'migrate', 'templates', 'odoo-17.json'), 'utf8')), OEXP = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'odoo_export_2026-11-10', 'odoo_export.json'), 'utf8'));
   var oengine = function (tpl, exp) { return EN.run(tpl, CN.exportJson(exp, tpl.connector), {}); };
   var cents = function (v) { return Math.round(Number(v) * 100); };
   function oracle(exp) {
-    var V0 = OTPL.variables, acct = {}, pk = {}, mv = {}; exp.sets['account.account'].forEach(function (a) { acct[a.id] = a; }); exp.sets.partner_keys.forEach(function (k) { pk[k.id] = k; }); exp.sets.open_moves.forEach(function (m) { mv[m.id] = m; });
+    var V0 = OTPL.variables, acct = {}, mv = {}; exp.sets['account.account'].forEach(function (a) { acct[a.id] = a; });
+    var pk = (function () { var c = OCONV.convert(exp), pv = c.provenance[c.book[4].name] || [], held = {}, val = {}, by = {}, o = {};   // the partner's business-partner Value and "held", from the FROZEN hand mapping (never from the template)
+      pv.forEach(function (x, i) { val[x.id] = c.book[4].rows[i + 1][0]; }); (c.manifest.held || []).forEach(function (h) { held[h.id] = h.why; }); exp.sets['res.partner'].forEach(function (p) { by[p.id] = p; });
+      exp.sets['res.partner'].forEach(function (p) { var top = by[p.commercial_partner_id] || p; o[p.id] = { id: p.id, value: val[top.id] || '', held: held[p.id] || '' }; }); return o; })(); exp.sets.open_moves.forEach(function (m) { mv[m.id] = m; });
     var CLS = { asset_receivable: 'AR', liability_payable: 'AP', asset_cash: 'BANK' }, CLEAR = { AR: V0.AR_CLEARING, AP: V0.AP_CLEARING, BANK: V0.BANK_CLEARING }, cls = { AR: 0, AP: 0, BANK: 0 };
     var journal = []; exp.sets.tb.forEach(function (r) { var c = cents(r.balance); if (!c) return; var k = CLS[acct[r.account_id].account_type]; if (k) cls[k] += c;
       journal.push([k ? CLEAR[k] : acct[r.account_id].code, c > 0 ? c : 0, c < 0 ? -c : 0]); });
     var KIND = { out_invoice: ['AR Invoice', 'Y', 1], out_refund: ['AR Credit Memo', 'Y', -1], in_invoice: ['AP Invoice', 'N', -1], in_refund: ['AP CreditMemo', 'N', 1] };
-    var byMove = {}, order = [], refused = 0, left = { AR: 0, AP: 0 };
+    var byMove = {}, order = [], refused = 0, refusedHeld = 0, left = { AR: 0, AP: 0 };
     exp.sets.open_lines.forEach(function (l) { var K = KIND[l.move_type], p = pk[l.partner_id], k = CLS[acct[l.account_id].account_type];
-      if (!K || String(l.currency_id) !== String(l.company_currency_id) || !p || p.held || !p.value || String(l.move_name).length > 30) { refused++; left[k] += cents(l.amount_residual); return; }
+      if (!K || String(l.currency_id) !== String(l.company_currency_id) || !p || p.held || !p.value || String(l.move_name).length > 30) { refused++; if (K && String(l.currency_id) === String(l.company_currency_id) && p && p.held) refusedHeld++; left[k] += cents(l.amount_residual); return; }
       if (!byMove[l.move_id]) { byMove[l.move_id] = { no: l.move_name, type: K[0], so: K[1], bp: p.value, date: l.invoice_date || l.date, term: String((mv[l.move_id] || {}).invoice_payment_term_id__name || '').slice(0, 40),
         charge: K[1] === 'Y' ? V0.CHARGE_AR : V0.CHARGE_AP, amt: 0, cls: k, sign: K[2] }; order.push(l.move_id); }
       byMove[l.move_id].amt += cents(l.amount_residual) * K[2]; });
-    return { journal: journal, cls: cls, invoices: order.map(function (id) { return byMove[id]; }), refused: refused, left: left };
+    return { journal: journal, cls: cls, invoices: order.map(function (id) { return byMove[id]; }), refused: refused, refusedHeld: refusedHeld, left: left };
   }
+  var mastersOf = function (exp) { return J(oengine(OTPL, exp).book.slice(0, 17)); };
   function judgeOpen(tpl, exp) {   // -> the list of claims that do NOT hold (empty = the template maps this export exactly)
     var bad = [], r; try { r = oengine(tpl, exp); } catch (e) { return ['threw: ' + e.message]; }
     var O = oracle(exp), sh = function (t) { return r.book.filter(function (b) { return b.name.slice(2) === t; })[0]; }, G = sh('I_GLJournal'), I = sh('I_Invoice');
@@ -304,13 +309,15 @@ var ALL_BRANCHES = ['refuse:lead', 'refuse:fixed-asset', 'refuse:po-no-supplier'
     if (ir.some(function (x) { return x[ix('DateAcct')] !== cut || x[ix('QtyOrdered')] !== '1' || x[ix('TaxIndicator')] !== tpl.variables.TAX_NONE || x[ix('I_IsImported')] !== 'N'; })) bad.push('invoice-line');
     var refN = (r.manifest.refused || []).filter(function (x) { return x.sheet === 'I_Invoice'; }).reduce(function (n, x) { return n + x.n; }, 0);
     if (refN !== O.refused) bad.push('refused n=' + refN + ' oracle=' + O.refused);
+    var heldN = (r.manifest.refused || []).filter(function (x) { return x.sheet === 'I_Invoice' && /held/.test(x.why); }).reduce(function (n, x) { return n + x.n; }, 0);   // the REASON too: a held partner is named as held, not as "no business partner"
+    if (heldN !== O.refusedHeld) bad.push('refused-held n=' + heldN + ' oracle=' + O.refusedHeld);
     // the arithmetic that makes the clearing accounts end at zero: journal(class) == Σ documents of the class (signed) + what was refused
     ['AR', 'AP'].forEach(function (k) { var docs = O.invoices.filter(function (v) { return v.cls === k; }).reduce(function (n, v) { return n + v.amt * v.sign; }, 0);
       var jr = gr.filter(function (x) { return x[gx('AccountValue')] === tpl.variables[k + '_CLEARING']; }).reduce(function (n, x) { return n + cents(x[gx('AmtSourceDr')]) - cents(x[gx('AmtSourceCr')]); }, 0);
       if (jr !== O.cls[k]) bad.push('class-' + k + ' journal=' + jr + ' source=' + O.cls[k]);
       var lines = exp.sets.open_lines.filter(function (l) { return ({ asset_receivable: 'AR', liability_payable: 'AP' })[(exp.sets['account.account'].filter(function (a) { return a.id === l.account_id; })[0] || {}).account_type] === k; }).reduce(function (n, l) { return n + cents(l.amount_residual); }, 0);
       if (docs + O.left[k] !== lines) bad.push('open-' + k + ' docs=' + docs + ' left=' + O.left[k] + ' lines=' + lines); });
-    if (r.book.slice(0, 17).some(function (b) { return b.rows.length !== 1; })) bad.push('masters-touched');
+    if (tpl !== OTPL && J(r.book.slice(0, 17)) !== mastersOf(exp)) bad.push('masters-touched');   // the open-balance variants and mutants never move a master sheet (the masters are judged against the oracle in ODOO-GUIDE / ODOO-DIFF)
     return bad;
   }
   var ol = true, olw = ''; try { EN.load(OTPL); } catch (e) { ol = false; olw = e.message; }
@@ -326,7 +333,7 @@ var ALL_BRANCHES = ['refuse:lead', 'refuse:fixed-asset', 'refuse:po-no-supplier'
   var or0 = oengine(OTPL, OEXP), oo = oracle(OEXP), ob = judgeOpen(OTPL, OEXP);
   say('§MIGE-ODOO-OPEN recorded: tb_rows=' + OEXP.sets.tb.length + ' journal_lines=' + oo.journal.length + ' AR=' + (oo.cls.AR / 100).toFixed(2) + ' AP=' + (oo.cls.AP / 100).toFixed(2) + ' BANK=' + (oo.cls.BANK / 100).toFixed(2) +
     ' open_lines=' + OEXP.sets.open_lines.length + ' documents=' + oo.invoices.length + ' refused=' + oo.refused + ' left_AR=' + (oo.left.AR / 100).toFixed(2) + ' left_AP=' + (oo.left.AP / 100).toFixed(2) + ' sheets=' + or0.book.slice(17).map(function (b) { return b.name + ':' + (b.rows.length - 1); }).join(','));
-  check('ODOO-OPEN', 'recorded', 'on the recorded export every claim of §E3C-SPEC 1(c) holds against the oracle computed from the raw rows: journal balanced, per account, one batch at the cut-over; one document per open invoice / credit note with its own number, date, partner, kind, charge and unpaid amount; refused lines counted; journal(AR/AP) == documents + refused (the clearing arithmetic); the 17 master sheets untouched', ob.length === 0, ob);
+  check('ODOO-OPEN', 'recorded', 'on the recorded export every claim of §E3C-SPEC 1(c) holds against the oracle computed from the raw rows: journal balanced, per account, one batch at the cut-over; one document per open invoice / credit note with its own number, date, partner, kind, charge and unpaid amount; refused lines counted; journal(AR/AP) == documents + refused (the clearing arithmetic); the 17 master sheets untouched by the open entities (as on the recorded export)', ob.length === 0, ob);
   check('ODOO-OPEN', 'non-vacuous', 'the recorded export really carries what is judged: >= 1 journal line per class AR / AP / BANK, >= 1 document of each of the 4 kinds, >= 1 refused line', !!oo.cls.AR && !!oo.cls.AP && !!oo.cls.BANK && ['AR Invoice', 'AR Credit Memo', 'AP Invoice', 'AP CreditMemo'].every(function (k) { return oo.invoices.some(function (v) { return v.type === k; }); }) && oo.refused > 0, { cls: oo.cls, refused: oo.refused });
   check('ODOO-OPEN', 'manifest', 'the manifest lists the two open sheets with their tables and row counts, names the refusal and says in a note what stays on the clearing accounts', or0.manifest.sheets.length === 19 && or0.manifest.sheets[17].table === 'I_GLJournal' && or0.manifest.sheets[17].rows === oo.journal.length && or0.manifest.sheets[18].table === 'I_Invoice' && or0.manifest.sheets[18].rows === oo.invoices.length && (or0.manifest.refused || []).length === 1 && (or0.manifest.notes || []).some(function (n) { return /NOT brought in/.test(n); }), { sheets: or0.manifest.sheets.slice(17), refused: or0.manifest.refused, notes: or0.manifest.notes });
   check('ODOO-OPEN', 'masters-only-templates', 'a template without open entities still returns exactly 17 sheets (SAP guide run above: ' + b.book.length + ')', b.book.length === 17, b.book.length);
@@ -334,7 +341,7 @@ var ALL_BRANCHES = ['refuse:lead', 'refuse:fixed-asset', 'refuse:po-no-supplier'
   // OPEN-GEN: seeded variants of the recorded rows
   function ogen(seed) { var R = mulberry32(seed), e = JSON.parse(JSON.stringify(OEXP)), hit = {}, L = e.sets.open_lines, pick = function (a) { return a[Math.floor(R() * a.length)]; };
     if (R() < 0.5) { pick(L).currency_id = 999; hit.foreign = 1; }
-    if (R() < 0.5) { var l1 = pick(L); e.sets.partner_keys.filter(function (k) { return k.id === l1.partner_id; })[0].held = 'internal-user'; hit.held = 1; }
+    if (R() < 0.5) { var l1 = pick(L); e.sets['res.users'].push({ id: 900000 + seed, partner_id: l1.partner_id }); hit.held = 1; }   // the partner becomes an internal user's: held (the masters lose it too, in oracle and engine alike)
     if (R() < 0.4) { var l2 = pick(L); l2.partner_id = 987654; hit.noPartner = 1; }
     if (R() < 0.4) { var l3 = pick(L); var nm = l3.move_name + '/A-VERY-LONG-DOCUMENT-NUMBER-SUFFIX'; L.forEach(function (x) { if (x.move_id === l3.move_id) x.move_name = nm; }); hit.longNo = 1; }
     if (R() < 0.7) { var l4 = pick(L.filter(function (x) { return x.move_type !== 'entry'; })), half = Math.round(l4.amount_residual * 50) / 100, c = Object.assign({}, l4, { id: 100000 + seed, amount_residual: Math.round((l4.amount_residual - half) * 100) / 100 }); l4.amount_residual = half; L.push(c); hit.twoLines = 1; }
@@ -404,7 +411,240 @@ var ALL_BRANCHES = ['refuse:lead', 'refuse:fixed-asset', 'refuse:po-no-supplier'
   if (fs.existsSync(path.join(MESSY, 'odoo_export.json'))) refCase('ODOO-REF-MESSY', MESSY);
   else say('§MIGE-ODOO-REF-MESSY verdict=INCONCLUSIVE (database not on this Odoo)');
 
-  var V = ['LOAD', 'FIELD', 'GUIDE', 'DIFF', 'MUTANT', 'BC-LOAD', 'BC-GUIDE', 'BC-DIFF', 'BC-MUTANT', 'ODOO-OPEN', 'ODOO-OPEN-GEN', 'ODOO-OPEN-MUTANT', 'ODOO-REF'].map(function (k) { var c = CASES[k] || {}; return !c.judged ? 'INCONCLUSIVE' : c.failed ? 'FAIL' : 'PASS'; });
+  // ═══ ODOO-GUIDE / ODOO-DIFF / ODOO-MUTANT (§ODOO-ENGINE-SPEC step O2): templates/odoo-17.json (the 17 master entities) == the frozen hand mapping, convert() in fixtures/odoo_convert_reference.mjs ═══
+  // Issue proven: the Odoo agent's mapping, re-expressed as DATA, changes no cell the user loads. "Equal" (decided by the lead, 2026-11-10):
+  //   BOOK        per sheet (17): same name, same row count and order; every ORACLE column is in the engine sheet and every cell under it equal as the string the workbook shows;
+  //               every engine-only column (M_Product has two more >IsDefault columns than the Odoo agent ever wrote) is blank on every row.
+  //   MANIFEST    equal on: sheets (name, table, rows; header by the book rule), source_counts, patches, renamed, held, notes, self_check_fails, odoo_version, db, cutover, currency,
+  //               company, company_id, other_companies, format, workbook ("tool" excluded). Lists are compared IN ORDER (no list needed the multiset fallback). Two engine-only facts
+  //               are not part of the oracle: the open-balance note "Open lines NOT brought in ..." (E3C, emitted by the I_Invoice entity) is taken out of notes before comparing;
+  //               "refused" is judged on the 17 master sheets only (the I_Invoice refusals are E3C's) and "problems" must be empty. "source" of each sheet is not compared (the engine
+  //               names the template's srcKey there).
+  //   PROVENANCE  per sheet, row by row (the engine keys it by table, the oracle by sheet name).
+  var ODOO_MANIFEST_KEYS = ['odoo_version', 'db', 'cutover', 'currency', 'company', 'company_id', 'other_companies', 'source_counts', 'format', 'workbook', 'held', 'self_check_fails', 'patches', 'renamed'];
+  function odooCmp(ora, eng) {
+    var d = [], put = function (x) { if (d.length < 60) d.push(x); }, str = function (v) { return v == null ? '' : String(v); }, ES = eng.manifest;
+    for (var si = 0; si < 17; si++) {
+      var a = ora.book[si], b = eng.book[si]; if (!b || a.name !== b.name) { put({ where: 'sheet ' + si, oracle: a.name, engine: b && b.name }); continue; }
+      if (a.rows.length !== b.rows.length) put({ where: a.name + ' rows', oracle: a.rows.length - 1, engine: b.rows.length - 1 });
+      var idx = a.rows[0].map(function (h) { return b.rows[0].indexOf(h); }), extra = [];
+      a.rows[0].forEach(function (h, ci) { if (idx[ci] < 0) put({ where: a.name + ' header', oracle: h, engine: '(column missing)' }); });
+      b.rows[0].forEach(function (h, ci) { if (a.rows[0].indexOf(h) < 0) extra.push(ci); });
+      for (var ri = 1; ri < Math.min(a.rows.length, b.rows.length); ri++) {
+        a.rows[0].forEach(function (h, ci) { var x = str(a.rows[ri][ci]), y = idx[ci] < 0 ? '(missing)' : str(b.rows[ri][idx[ci]]); if (x !== y) put({ where: a.name, row: ri + 1, col: h, oracle: x, engine: y }); });
+        extra.forEach(function (ci) { if (str(b.rows[ri][ci]) !== '') put({ where: a.name, row: ri + 1, col: b.rows[0][ci], oracle: '(no such column)', engine: str(b.rows[ri][ci]) }); });
+      }
+    }
+    var om = ora.manifest;
+    ODOO_MANIFEST_KEYS.forEach(function (k) { if (!same(jr(om[k]), jr(ES[k]))) put({ where: 'manifest.' + k, oracle: jr(om[k]), engine: jr(ES[k]) }); });
+    var en = (ES.notes || []).filter(function (n) { return !/^Open lines NOT brought in/.test(n); });
+    if (!same(jr(om.notes), jr(en))) put({ where: 'manifest.notes', oracle: jr(om.notes), engine: jr(en) });
+    om.sheets.forEach(function (s, i) { var e = ES.sheets[i] || {}; if (s.sheet !== e.sheet || s.table !== e.table || s.rows !== e.rows || !s.header.every(function (h) { return (e.header || []).indexOf(h) >= 0; })) put({ where: 'manifest.sheets[' + i + ']', oracle: [s.sheet, s.table, s.rows], engine: [e.sheet, e.table, e.rows] }); });
+    var rf = (ES.refused || []).filter(function (x) { return !/^I_/.test(x.sheet); });
+    if (rf.length) put({ where: 'manifest.refused (masters)', oracle: [], engine: rf });
+    if ((ES.problems || []).length) put({ where: 'manifest.problems', oracle: [], engine: ES.problems });
+    ora.book.forEach(function (sh) { var t = sh.name.slice(2), pa = jr(ora.provenance[sh.name]), pb = jr(eng.provenance[t]); if (!same(pa, pb)) { var i = 0, A = pa || [], B = pb || []; while (i < Math.max(A.length, B.length) && same(A[i], B[i])) i++; put({ where: 'provenance.' + sh.name + '[' + i + ']', oracle: A[i], engine: B[i] }); } });
+    return d;
+  }
+  function odooRun(tpl, exp) { var o, e; try { o = CONV.convert(exp); } catch (er) { return { threw: 'oracle: ' + er.message }; } try { e = oengine(tpl, exp); } catch (er2) { return { threw: 'engine: ' + er2.message, oracle: o }; } return { oracle: o, engine: e, diffs: odooCmp(o, e) }; }
+  var G0 = odooRun(OTPL, OEXP);
+  say('§MIGE-ODOO-GUIDE sheets=' + G0.engine.book.slice(0, 17).length + ' rows=' + G0.engine.book.slice(0, 17).reduce(function (n, x) { return n + x.rows.length - 1; }, 0) + ' diffs=' + G0.diffs.length + ' self_check_fails=' + G0.engine.manifest.self_check_fails +
+    ' patches=' + G0.engine.manifest.patches.length + ' notes=' + G0.oracle.manifest.notes.length + ' renamed=' + G0.engine.manifest.renamed.length + ' held=' + G0.engine.manifest.held.length);
+  G0.diffs.slice(0, 40).forEach(function (x) { say('  §MIGE-ODOO-GUIDE-DIFF ' + J(x).slice(0, 600)); });
+  check('ODOO-GUIDE', 'book', 'engine(odoo-17.json, recorded export) == convert(recorded export): 17 sheets, same rows in the same order, every oracle cell equal, engine-only columns blank', G0.diffs.filter(function (x) { return !/^manifest|^provenance/.test(x.where); }).length === 0, G0.diffs.slice(0, 5));
+  check('ODOO-GUIDE', 'manifest', 'the manifest equals the oracle\'s on sheets, source_counts, patches, renamed, held, notes, self_check_fails, odoo_version, db, cutover, currency, company, company_id, other_companies, format, workbook (lists in order; the open-balance note and the I_ refusals are E3C\'s, taken out); refused (masters) and problems empty', G0.diffs.filter(function (x) { return /^manifest/.test(x.where); }).length === 0, G0.diffs.filter(function (x) { return /^manifest/.test(x.where); }).slice(0, 4));
+  check('ODOO-GUIDE', 'provenance', 'provenance equals the oracle\'s on all 17 sheets, row by row', G0.diffs.filter(function (x) { return /^provenance/.test(x.where); }).length === 0, G0.diffs.filter(function (x) { return /^provenance/.test(x.where); }).slice(0, 4));
+  check('ODOO-GUIDE', 'non-vacuous', 'the recorded export really carries what is judged: rows in >= 15 sheets, >= 1 patch, >= 1 held partner, >= 1 note, >= 1 renamed key, >= 1 stock line with several quants', G0.engine.book.slice(0, 17).filter(function (x) { return x.rows.length > 1; }).length >= 15 && G0.oracle.manifest.patches.length >= 1 && G0.oracle.manifest.held.length >= 1 && G0.oracle.manifest.notes.length >= 1 && G0.oracle.manifest.renamed.length >= 1 && /sum several/.test(G0.oracle.manifest.notes.join('|')), { filled: G0.engine.book.slice(0, 17).filter(function (x) { return x.rows.length > 1; }).length });
+  var ofc2 = EN.fieldCheck(OTPL, ocn.model).filter(function (f) { return !f.ok || !f.known; });
+  check('ODOO-GUIDE', 'fields', 'every $Field the master entities read from their top-level set is one the agent said it read (manifest.sets[].fields_read) - nothing guessed', ofc2.length === 0, ofc2);
+  verdict('ODOO-GUIDE');
+
+  // ── DIFF: N seeded variants of the RECORDED rows (a field blanked, a code repeated, a key made too long, a parent broken, a flag flipped, a quant split by lot ...). Test input only: no row is invented
+  //    business data, every value is a recorded value, a token of the oracle's own branch conditions, or a counted filler. ──
+  var ODOO_BRANCHES = [   // [name, does the ORACLE's output (or the export) show that this branch of convert() ran]
+    ['uom-precision-blank', function (e, o) { return e.sets['uom.uom'].some(function (u) { return !(u.rounding > 0); }); }],
+    ['uom-precision-clamped-to-0', function (e, o) { return e.sets['uom.uom'].some(function (u) { return u.rounding > 1; }); }],
+    ['uom-no-category', function (e, o) { return o.provenance['01C_UOM'].some(function (p) { return p.category === false; }); }],
+    ['uom-symbol-cut', function (e, o) { return e.sets['uom.uom'].some(function (u) { return u.name.length > 10; }); }],
+    ['payment-term-several-installments', function (e, o) { return /several installments/.test(o.manifest.notes.join('|')); }],
+    ['payment-term-no-line', function (e, o) { return o.book[1].rows.slice(1).some(function (r) { return r[2] === ''; }); }],
+    ['payment-term-one-line', function (e, o) { return o.book[1].rows.slice(1).some(function (r) { return r[2] !== ''; }); }],
+    ['category-key-repeats', function (e, o) { return o.manifest.renamed.some(function (r) { return r.table === 'M_Product_Category' && /^repeats/.test(r.why); }); }],
+    ['category-key-cut', function (e, o) { return o.manifest.renamed.some(function (r) { return r.table === 'M_Product_Category' && /^longer/.test(r.why); }); }],
+    ['category-parent-unknown', function (e, o) { return e.sets['product.category'].some(function (c) { return c.parent_id && !e.sets['product.category'].some(function (q) { return q.id === c.parent_id; }); }); }],
+    ['account-type-asset-liability-equity', function (e, o) { var t = o.book[3].rows.slice(1).map(function (r) { return r[2]; }); return ['A', 'L', 'O'].every(function (k) { return t.indexOf(k) >= 0; }); }],
+    ['account-type-income-expense-memo', function (e, o) { var t = o.book[3].rows.slice(1).map(function (r) { return r[2]; }); return ['R', 'E', 'M'].every(function (k) { return t.indexOf(k) >= 0; }); }],
+    ['account-type-unknown', function (e, o) { return o.book[3].rows.slice(1).some(function (r) { return r[2] === ''; }); }],
+    ['account-cut', function (e, o) { return o.manifest.patches.some(function (p) { return p.table === 'C_ElementValue' && /^cut to/.test(p.cell); }); }],
+    ['account-groups-none', function (e, o) { return /account.group has 0 rows/.test(o.manifest.notes.join('|')); }],
+    ['account-groups-some', function (e, o) { return !/account.group has 0 rows/.test(o.manifest.notes.join('|')); }],
+    ['partner-key-repeats', function (e, o) { return o.manifest.renamed.some(function (r) { return r.table === 'C_BPartner' && /^repeats/.test(r.why); }); }],
+    ['partner-key-cut', function (e, o) { return o.manifest.renamed.some(function (r) { return r.table === 'C_BPartner' && /^longer/.test(r.why); }); }],
+    ['partner-archived', function (e, o) { return /partner\(s\)\/contact\(s\) are archived/.test(o.manifest.notes.join('|')); }],
+    ['partner-held-company', function (e, o) { return o.manifest.held.some(function (h) { return h.why === 'internal-company'; }); }],
+    ['partner-held-user', function (e, o) { return o.manifest.held.some(function (h) { return h.why === 'internal-user'; }); }],
+    ['partner-held-contact-of-company', function (e, o) { return o.manifest.held.some(function (h) { return h.why === 'contact of internal-company'; }); }],
+    ['partner-held-contact-of-user', function (e, o) { return o.manifest.held.some(function (h) { return h.why === 'contact of internal-user'; }); }],
+    ['contact-with-own-address', function (e, o) { return o.provenance['07C_BPartner_Location'].some(function (p) { return p.type !== 'contact'; }); }],
+    ['partner-address-no-country', function (e, o) { return o.manifest.patches.some(function (p) { return p.table === 'C_Location' && p.column === 'C_Country_ID'; }); }],
+    ['partner-state-unknown', function (e, o) { return e.sets['res.partner'].some(function (p) { return p.state_id && !e.sets['res.country.state'].some(function (s) { return s.id === p.state_id; }); }); }],
+    ['partner-commercial-unknown', function (e, o) { return e.sets['res.partner'].some(function (p) { return !e.sets['res.partner'].some(function (q) { return q.id === p.commercial_partner_id; }); }); }],
+    ['partner-without-address', function (e, o) { return o.book[4].rows.length - 1 > o.book[6].rows.length - 1; }],
+    ['partner-field-cut', function (e, o) { return o.manifest.patches.some(function (p) { return p.table === 'C_BPartner' && /^cut to/.test(p.cell); }); }],
+    ['contact-field-cut', function (e, o) { return o.manifest.patches.some(function (p) { return p.table === 'AD_User' && /^cut to/.test(p.cell); }); }],
+    ['location-field-cut', function (e, o) { return o.manifest.patches.some(function (p) { return p.table === 'C_Location' && /^cut to/.test(p.cell); }); }],
+    ['product-key-repeats', function (e, o) { return o.manifest.renamed.some(function (r) { return r.table === 'M_Product' && /^repeats/.test(r.why); }); }],
+    ['product-key-cut', function (e, o) { return o.manifest.renamed.some(function (r) { return r.table === 'M_Product' && /^longer/.test(r.why); }); }],
+    ['product-archived', function (e, o) { return /product\(s\) are archived/.test(o.manifest.notes.join('|')); }],
+    ['product-type-service', function (e, o) { return o.book[8].rows.slice(1).some(function (r) { return r[5] === 'S'; }); }],
+    ['product-type-item', function (e, o) { return o.book[8].rows.slice(1).some(function (r) { return r[5] === 'I'; }); }],
+    ['product-type-other', function (e, o) { return o.book[8].rows.slice(1).some(function (r) { return r[5] === ''; }); }],
+    ['product-category-unknown', function (e, o) { return o.book[8].rows.slice(1).some(function (r) { return r[3] === ''; }); }],
+    ['product-no-uom', function (e, o) { return o.book[8].rows.slice(1).some(function (r) { return r[4] === ''; }); }],
+    ['product-field-cut', function (e, o) { return o.manifest.patches.some(function (p) { return p.table === 'M_Product' && /^cut to/.test(p.cell); }); }],
+    ['vendor-price-breaks', function (e, o) { return /price breaks/.test(o.manifest.notes.join('|')); }],
+    ['vendor-product-code-missing', function (e, o) { return o.manifest.patches.some(function (p) { return p.table === 'M_Product_PO' && p.column === 'VendorProductNo' && !/^cut/.test(p.cell); }); }],
+    ['vendor-for-one-variant', function (e, o) { return e.sets['product.supplierinfo'].some(function (s) { return s.product_id; }); }],
+    ['vendor-for-template', function (e, o) { return e.sets['product.supplierinfo'].some(function (s) { return !s.product_id; }); }],
+    ['vendor-unknown-or-held', function (e, o) { return o.book[9].rows.slice(1).some(function (r) { return r[1] === ''; }); }],
+    ['vendor-code-cut', function (e, o) { return o.manifest.patches.some(function (p) { return p.table === 'M_Product_PO' && /^cut to/.test(p.cell); }); }],
+    ['warehouse-no-address', function (e, o) { return o.book[13].rows.slice(1).some(function (r) { return r[2] === ''; }); }],
+    ['warehouse-address-shared-with-partner', function (e, o) { return e.sets['stock.warehouse'].some(function (w) { return o.provenance['06C_Location'].filter(function (p) { return p.id === w.partner_id; }).length === 1 && o.provenance['07C_BPartner_Location'].some(function (p) { return p.id === w.partner_id; }); }); }],
+    ['warehouse-address-own', function (e, o) { return e.sets['stock.warehouse'].some(function (w) { return o.provenance['06C_Location'].some(function (p) { return p.id === w.partner_id; }) && !o.provenance['07C_BPartner_Location'].some(function (p) { return p.id === w.partner_id; }); }); }],
+    ['warehouse-field-cut', function (e, o) { return o.manifest.patches.some(function (p) { return p.table === 'M_Warehouse' && /^cut to/.test(p.cell); }); }],
+    ['locator-position-repeats', function (e, o) { return o.manifest.patches.some(function (p) { return p.table === 'M_Locator' && p.column === 'Z'; }); }],
+    ['locator-position-all-unique', function (e, o) { return !o.manifest.patches.some(function (p) { return p.table === 'M_Locator' && p.column === 'Z'; }); }],
+    ['locator-key-repeats', function (e, o) { return o.manifest.renamed.some(function (r) { return r.table === 'M_Locator' && /^repeats/.test(r.why); }); }],
+    ['locator-key-cut', function (e, o) { return o.manifest.renamed.some(function (r) { return r.table === 'M_Locator' && /^longer/.test(r.why); }); }],
+    ['locator-no-warehouse', function (e, o) { return o.book[14].rows.slice(1).some(function (r) { return r[0] === ''; }); }],
+    ['locator-inactive', function (e, o) { return o.book[14].rows.slice(1).some(function (r) { return r[5] === 'N'; }); }],
+    ['stock-none', function (e, o) { return o.book[15].rows.length === 1; }],
+    ['stock-header-per-warehouse', function (e, o) { return o.book[15].rows.length > 1; }],
+    ['stock-lot-quants-summed', function (e, o) { return /sum several Odoo quants/.test(o.manifest.notes.join('|')); }],
+    ['stock-lots', function (e, o) { return /carry an Odoo lot/.test(o.manifest.notes.join('|')); }],
+    ['stock-negative', function (e, o) { return /NEGATIVE in Odoo/.test(o.manifest.notes.join('|')); }],
+    ['stock-unknown-product-or-location', function (e, o) { return o.book[16].rows.slice(1).some(function (r) { return r[1] === '' || r[2] === ''; }); }],
+    ['stock-outside-a-warehouse', function (e, o) { return o.book[16].rows.slice(1).some(function (r) { return r[0] === ''; }); }],
+    ['stock-doc-number-cut', function (e, o) { return o.manifest.patches.some(function (p) { return p.table === 'M_Inventory' && p.column === 'DocumentNo' && /^cut to/.test(p.cell); }); }],
+    ['trial-balance-unbalanced', function (e, o) { return /does not sum to zero/.test(o.manifest.notes.join('|')); }],
+    ['trial-balance-count-mismatch', function (e, o) { return e.sets.tb.reduce(function (n, r) { return n + r.__count; }, 0) !== e.manifest.sets.tb.count; }],
+    ['self-check-lookup-fails', function (e, o) { return o.manifest.self_check_fails > 0 && e.sets.tb.reduce(function (n, r) { return n + r.__count; }, 0) === e.manifest.sets.tb.count; }],
+    ['other-companies', function (e, o) { return /This Odoo has/.test(o.manifest.notes.join('|')); }],
+    ['single-company', function (e, o) { return !/This Odoo has/.test(o.manifest.notes.join('|')); }]
+  ];
+  function ogen2(seed) {
+    var R = mulberry32(seed * 7919 + 13), e = JSON.parse(JSON.stringify(OEXP)), S = e.sets, P = function (a) { return a[Math.floor(R() * a.length)]; }, K = function (p) { return R() < p; };
+    var top = function () { return S['res.partner'].filter(function (p) { return p.commercial_partner_id === p.id; }); }, contacts = function () { return S['res.partner'].filter(function (p) { return p.commercial_partner_id !== p.id; }); };
+    var maxId = function (a) { return a.reduce(function (n, x) { return Math.max(n, x.id); }, 0); }, fill = function (n, c) { return new Array(n + 1).join(c); };
+    if (K(0.35)) { P(S['uom.uom']).rounding = P([0, null, 10, 100, 0.015, 0.5, 1, 0.001]); }
+    if (K(0.3)) { var u = P(S['uom.uom']); u.category_id = null; u.category_id__name = null; }
+    if (K(0.3)) { P(S['uom.uom']).name = 'U' + fill(P([11, 25, 70]), 'x'); }
+    if (K(0.4)) { var t = P(S['account.payment.term']), ch = P([0, 1, 2]);
+      if (ch === 0) S['account.payment.term.line'].push({ id: maxId(S['account.payment.term.line']) + 1, payment_id: t.id, payment_id__name: t.name, value: 'balance', value_amount: 0, nb_days: 15 });
+      else if (ch === 1) S['account.payment.term.line'] = S['account.payment.term.line'].filter(function (l) { return l.payment_id !== t.id; });
+      else t.name = t.name + fill(P([10, 30, 70]), 'T'); }
+    if (K(0.3)) { var c0 = P(S['product.category']); S['product.category'].push(Object.assign({}, c0, { id: maxId(S['product.category']) + 1 })); }
+    if (K(0.3)) { var c1 = P(S['product.category']); c1.complete_name = c1.complete_name + ' / ' + fill(45, 'L'); }
+    if (K(0.25)) { var c2 = P(S['product.category'].filter(function (c) { return c.parent_id; })); if (c2) { c2.parent_id = 99999; c2.parent_id__name = null; } }
+    if (K(0.4)) { P(S['account.account'].slice(1)).account_type = P(['asset_cash', 'liability_current', 'equity_unaffected', 'income_other', 'expense_depreciation', 'off_balance', 'weird', null]); }
+    if (K(0.3)) { var a1 = P(S['account.account']); a1.code = P(['C' + fill(45, '9'), a1.code]); a1.name = P(['N' + fill(130, 'n'), a1.name]); }
+    if (K(0.3)) e.manifest.sets['account.group'].count = P([0, 2, 5]);
+    if (K(0.4)) { var tp = top().filter(function (p) { return p.active; }); if (tp.length > 1) { var p1 = P(tp), p2 = P(tp.filter(function (x) { return x !== p1; })); p1.ref = p1.ref || 'DUPREF'; p2.ref = p1.ref; } }
+    if (K(0.25)) { P(top()).ref = 'R' + fill(45, '7'); }
+    if (K(0.25)) { P(top()).ref = null; }
+    if (K(0.35)) { var pa = P(S['res.partner']); pa.active = !pa.active; }
+    if (K(0.35)) { var ct = P(contacts()); if (ct) { ct.type = P(['invoice', 'delivery', 'other', 'contact']); ct.street = ct.street || 'S ' + ct.id; ct.city = ct.city || 'C'; ct.zip = ct.zip || '12345'; ct.country_id = ct.country_id || 233; } }
+    if (K(0.3)) { var pn = P(S['res.partner'].filter(function (p) { return p.country_id; })); pn.country_id = null; pn.country_id__name = null; }
+    if (K(0.25)) { var ps = P(S['res.partner'].filter(function (p) { return p.state_id; })); if (ps) ps.state_id = 99999; }
+    if (K(0.3)) { var hu = P(top().filter(function (p) { return p.active; })); S['res.users'].push({ id: 900 + seed, partner_id: hu.id, partner_id__name: hu.name }); }
+    if (K(0.2)) { var hc = P(top().filter(function (p) { return p.active; })); S['res.company'].push({ id: 700 + seed, name: 'Co' + seed, partner_id: hc.id, partner_id__name: hc.name, currency_id: 1, currency_id__name: 'USD', country_id: 233, country_id__name: 'x' }); }
+    if (K(0.25)) { var cb = P(contacts()); if (cb) cb.commercial_partner_id = P([88888, cb.id]); }
+    if (K(0.25)) { var pw = P(S['res.partner']); pw.street = pw.street2 = pw.city = pw.zip = null; pw.country_id = null; pw.country_id__name = null; }
+    if (K(0.4)) { var pl = P(S['res.partner']); pl.vat = P([pl.vat, 'V' + fill(25, '1')]); pl.name = P([pl.name, 'P' + fill(130, 'p')]); pl.email = P([pl.email, fill(70, 'e') + '@x']); pl.phone = P([pl.phone, fill(50, '5')]); pl.mobile = P([pl.mobile, fill(50, '6')]);
+      pl.street = P([pl.street, fill(70, 's')]); pl.street2 = P([pl.street2, fill(70, 't')]); pl.zip = P([pl.zip, fill(15, '9')]); pl.city = P([pl.city, fill(70, 'c')]); }
+    if (K(0.3)) { var pr = P(S['res.partner']); pr.customer_rank = P([0, 3, null]); pr.supplier_rank = P([0, 2, null]); }
+    if (K(0.4)) { var p3 = P(S['product.product']), p4 = P(S['product.product'].filter(function (x) { return x !== p3; })); p3.default_code = p3.default_code || 'DUPCODE'; p4.default_code = p3.default_code; }
+    if (K(0.25)) { P(S['product.product']).default_code = null; }
+    if (K(0.25)) { P(S['product.product']).default_code = 'K' + fill(P([520, 600]), 'k'); }
+    if (K(0.35)) { var pq = P(S['product.product']); pq.active = !pq.active; }
+    if (K(0.35)) { P(S['product.product']).detailed_type = P(['service', 'consu', 'product', 'combo', null]); }
+    if (K(0.25)) { P(S['product.product']).categ_id = P([99999, null]); }
+    if (K(0.25)) { var pu = P(S['product.product']); pu.uom_id = null; pu.uom_id__name = null; }
+    if (K(0.35)) { var px = P(S['product.product']); px.description = P([px.description, 'D' + fill(260, 'd')]); px.barcode = P([px.barcode, fill(35, '4')]); px.name = P([px.name, 'N' + fill(260, 'n')]); }
+    if (K(0.45)) { var s1 = P(S['product.supplierinfo']); S['product.supplierinfo'].push(Object.assign({}, s1, { id: maxId(S['product.supplierinfo']) + 1, min_qty: P([s1.min_qty + 5, 0, s1.min_qty]), price: s1.price + 1 })); }
+    if (K(0.3)) { P(S['product.supplierinfo']).product_code = P([null, 'PC' + fill(50, 'q'), 'CODE1']); }
+    if (K(0.3)) { var s2 = P(S['product.supplierinfo']); s2.product_id = P(S['product.product']).id; s2.product_tmpl_id = P([s2.product_tmpl_id, null]); }
+    if (K(0.25)) { P(S['product.supplierinfo']).partner_id = P([99999, null, S['res.partner'][0].id]); }
+    if (K(0.3)) { var wh = S['stock.warehouse'][0], ch2 = P([0, 1, 2, 3, 4]);
+      if (ch2 === 0) wh.partner_id = null; else if (ch2 === 1) { wh.partner_id = P(S['res.partner'].filter(function (p) { return !p.street && !p.city; }).concat([{ id: 99999 }])).id; }
+      else if (ch2 === 2) wh.partner_id = P(top().filter(function (p) { return p.street; })).id; else if (ch2 === 3) { wh.code = 'W' + fill(45, 'H'); wh.name = 'N' + fill(70, 'h'); }
+      else S['stock.warehouse'].push(Object.assign({}, wh, { id: maxId(S['stock.warehouse']) + 1, code: 'WH2', name: 'Second' })); }
+    if (K(0.4)) { S['stock.location'].forEach(function (l) { if (K(0.4)) { l.posx = P([0, 1, 2]); l.posy = P([0, 1]); l.posz = P([0, 0, 3]); } }); }
+    if (K(0.15)) { S['stock.location'].forEach(function (l, i) { l.posx = i; l.posy = 0; l.posz = 0; }); }
+    if (K(0.3)) { P(S['stock.location']).warehouse_id = null; }
+    if (K(0.25)) { P(S['stock.location']).active = false; }
+    if (K(0.3)) { var l1 = P(S['stock.location']), l2 = P(S['stock.location']); l1.complete_name = l2.complete_name; }
+    if (K(0.25)) { P(S['stock.location']).complete_name = 'Z' + fill(50, 'z'); }
+    if (K(0.45)) { var q1 = P(S['stock.quant']); S['stock.quant'].push(Object.assign({}, q1, { id: maxId(S['stock.quant']) + 1, lot_id: 500 + seed, lot_id__name: 'LOT-' + seed, quantity: P([1, 2.5, 0.1, 0.2, 0.123456, 0.333333, 0.000001]) })); }
+    if (K(0.3)) { P(S['stock.quant']).quantity = -P([1, 3, 0.5]); }
+    if (K(0.2)) { P(S['stock.quant']).product_id = 99999; }
+    if (K(0.2)) { P(S['stock.quant']).location_id = 99999; }
+    if (K(0.12)) { S['stock.quant'] = []; }
+    if (K(0.12)) { S['stock.warehouse'][0].code = 'W' + fill(40, 'D'); }
+    if (K(0.25)) { S.tb[0].balance = S.tb[0].balance + P([5, 0.004, -3]); }
+    if (K(0.15)) { e.manifest.sets.tb.count = e.manifest.sets.tb.count + 1; }
+    if (K(0.3)) { e.manifest.other_companies = []; e.manifest.other_company_commands = []; }
+    if (K(0.1)) { e.manifest.company_id = 2; }
+    return e;
+  }
+  var DN = Math.min(N, 300), dbad = 0, dfirst = null, dcover = {}, dthrew = 0, dcells = 0;
+  for (var di = 1; di <= DN; di++) {
+    var dg = ogen2(di), dr = odooRun(OTPL, dg);
+    if (dr.threw) { dthrew++; dbad++; if (!dfirst) dfirst = { seed: di, threw: dr.threw }; continue; }
+    dcells += dr.oracle.book.reduce(function (n, x) { return n + x.rows.length * (x.rows[0] || []).length; }, 0);
+    ODOO_BRANCHES.forEach(function (b) { try { if (b[1](dg, dr.oracle)) dcover[b[0]] = (dcover[b[0]] || 0) + 1; } catch (er) { /* the predicate cannot judge this case */ } });
+    if (dr.diffs.length) { dbad++; if (!dfirst) dfirst = { seed: di, diffs: dr.diffs.slice(0, 6) }; }
+  }
+  // the recorded export itself counts for the branches it already shows
+  ODOO_BRANCHES.forEach(function (b) { try { if (b[1](OEXP, G0.oracle)) dcover[b[0]] = (dcover[b[0]] || 0) + 1; } catch (er) { /* not judged */ } });
+  ODOO_BRANCHES.forEach(function (b) { say('  §MIGE-ODOO-COVER branch=' + b[0] + ' cases=' + (dcover[b[0]] || 0)); });
+  var dmissed = ODOO_BRANCHES.filter(function (b) { return !dcover[b[0]]; }).map(function (b) { return b[0]; }); missed = missed.concat(dmissed.map(function (k) { return 'odoo-masters:' + k; }));
+  say('§MIGE-ODOO-DIFF cases=' + DN + ' cells=' + dcells + ' differing_cases=' + dbad + ' threw=' + dthrew);
+  say('§MIGE-ODOO-COVER hit=' + (ODOO_BRANCHES.length - dmissed.length) + '/' + ODOO_BRANCHES.length + (dmissed.length ? ' INCONCLUSIVE=' + dmissed.join(',') : ''));
+  if (dfirst) say('  §MIGE-ODOO-DIFF first=' + J(dfirst).slice(0, 1800));
+  check('ODOO-DIFF', 'variants', DN + ' seeded variants of the recorded rows: the engine equals the oracle on every one (book, manifest, provenance by the rules above)', dbad === 0, dfirst);
+  verdict('ODOO-DIFF');
+
+  // ── MUTANT: one rule of the template changed in a COPY -> the comparison must find a difference on the recorded export or on some variant ──
+  var MT = function (f) { return function (t) { f(t.entities, t.defs, t); }; };
+  var ODOO_MUT = [
+    ['uom-symbol-not-cut', MT(function (E) { E.C_UOM.fields.UOMSymbol = '$name'; })],
+    ['precision-never-clamped', MT(function (E, D) { D.prec = { round: [{ mul: [-1, { log10: '$rounding' }] }, 0] }; })],
+    ['category-sort-removed', MT(function (E) { delete E.M_Product_Category.sort; })],
+    ['partner-key-room-for-30', MT(function (E) { E.C_BPartner.keys.max = 30; })],
+    ['key-repeat-keeps-last', MT(function (E) { E.M_Product.keys.id = { mul: [-1, '$id'] }; })],
+    ['contact-held-rule-dropped', MT(function (E, D) { D.pHeld = D.pSelfInt; })],
+    ['top-partner-is-self-only', MT(function (E, D) { D.pTopRow = '$'; })],
+    ['price-breaks-keep-last', MT(function (E) { E.M_Product_PO.from.list.sortBy[1] = [{ mul: [-1, '$min_qty'] }, '$id']; })],
+    ['vendor-groups-across-products', MT(function (E) { delete E.M_Product_PO.group.within; })],
+    ['warehouse-address-not-appended', MT(function (E, D, T) { T.let.LOCP = { filter: [{ all: 'res.partner' }, { def: 'pLocOk' }] }; })],
+    ['locator-position-repeat-ignored', MT(function (E) { E.M_Locator.fields.Z = { str: '$posz' }; })],
+    ['stock-sum-to-2-places', MT(function (E) { E.M_InventoryLine.group.sum.QtyCount.places = 2; })],
+    ['stock-header-for-every-warehouse', MT(function (E) { delete E.M_Inventory.where; })],
+    ['zero-row-patch-dropped', MT(function (E) { delete E.M_Inventory.patches[0].zero; delete E.M_Inventory.patches[1].zero; })],
+    ['text-never-cut', MT(function (E) { delete E.C_BPartner.limit; })],
+    ['payment-days-from-first-line', MT(function (E, D) { E.C_PaymentTerm.fields.NetDays = { find: ['account.payment.term.line', 'payment_id', '$id', 'nb_days'] }; })],
+    ['self-check-trial-balance-removed', MT(function (E, D, T) { T.manifest.self_check_fails.add.shift(); })],
+    ['company-note-removed', MT(function (E) { E.M_InventoryLine.notes.pop(); })]
+  ];
+  ODOO_MUT.forEach(function (mu) {
+    var t = JSON.parse(JSON.stringify(OTPL)), found = 0; try { mu[1](t); EN.load(t); } catch (er) { check('ODOO-MUTANT', mu[0], 'the mutant template must still load (it is a changed rule, not a broken file)', false, er.message); return; }
+    var r0 = odooRun(t, OEXP); if (r0.threw || r0.diffs.length) found = 'recorded';
+    for (var i = 1; i <= DN && !found; i++) { var rr = odooRun(t, ogen2(i)); if (rr.threw || rr.diffs.length) found = 'seed=' + i; }
+    check('ODOO-MUTANT', mu[0], 'the template with "' + mu[0] + '" differs from the hand mapping on the recorded export or on some variant (the Odoo comparison can fail)', !!found, 'no case found a difference'); if (found) say('  §MIGE-MUTANT odoo-masters:' + mu[0] + ' caught at ' + found); });
+  verdict('ODOO-MUTANT');
+
+  var V = ['LOAD', 'FIELD', 'GUIDE', 'DIFF', 'MUTANT', 'BC-LOAD', 'BC-GUIDE', 'BC-DIFF', 'BC-MUTANT', 'ODOO-OPEN', 'ODOO-OPEN-GEN', 'ODOO-OPEN-MUTANT', 'ODOO-REF', 'ODOO-GUIDE', 'ODOO-DIFF', 'ODOO-MUTANT'].map(function (k) { var c = CASES[k] || {}; return !c.judged ? 'INCONCLUSIVE' : c.failed ? 'FAIL' : 'PASS'; });
   var overall = V.indexOf('FAIL') >= 0 ? 'FAIL' : (V.indexOf('INCONCLUSIVE') >= 0 || missed.length) ? 'INCONCLUSIVE' : 'PASS';
   say('§MIGE verdict=' + overall + ' judged=' + ALL.judged + ' failed=' + ALL.failed + (missed.length ? ' (DIFF coverage gaps: ' + missed.length + ')' : ''));
   process.exit(overall === 'FAIL' ? 1 : 0);

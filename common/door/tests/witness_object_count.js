@@ -91,7 +91,8 @@ const PATCH = SJ('buildings/patches/Duplex_extracted.db.sql');
   k.chk('C6 an update of a room is refused (not updateable); nothing is written', up.j && up.j.status === 'refused' && /not updateable/.test(up.j.why) && !fs.existsSync(env.BIM_OBJECT_OPLOG), up.j && up.j.status + ' ' + up.j.why);
 
   // ════ C7 adding the kind changed no earlier dictionary row and no data row ════
-  let base = null; try { base = cp.execFileSync('git', ['-C', ROOT, 'show', 'origin/main~0:buildings/patches/Duplex_extracted.db.sql'], { encoding: 'utf8', maxBuffer: 1 << 26 }); } catch (e) { /* judged below */ }
+  // the patch as it was just before the Room kind: the parent of the commit that first added the view (found in git, so the gate needs no extra file)
+  let base = null; try { const REL = 'buildings/patches/Duplex_extracted.db.sql', first = cp.execFileSync('git', ['-C', ROOT, 'log', '--format=%H', '-S', 'CREATE VIEW model_room', '--', REL], { encoding: 'utf8' }).trim().split('\n').pop(); if (first) base = cp.execFileSync('git', ['-C', ROOT, 'show', first + '~1:' + REL], { encoding: 'utf8', maxBuffer: 1 << 26 }); } catch (e) { /* judged below */ }
   const prior = process.env.PATCH_BEFORE ? fs.readFileSync(process.env.PATCH_BEFORE, 'utf8') : base;
   if (!prior || /model_room/.test(prior)) k.incon('C7', 'no pre-Room patch to compare with (set PATCH_BEFORE to the patch before this change)');
   else {

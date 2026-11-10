@@ -2898,6 +2898,14 @@
     rows.forEach(function (h) { var b = realBox(bdb, h, geoDb); h.tx = b.x; h.ty = b.y; h.tz = b.z; h.ex = b.ex; h.ey = b.ey; h.ez = b.ez; h.top = b.z + b.ez / 2; h.lower = b.z - b.ez / 2; });
     return rows;
   }
+  // §12a (prompts/DISC_WALK_DRAWN_INTEGRATION.md): the pre-processor's verdict per sheet (tools/project_inputs.js). A review / not-stated sheet's rows are provisional with its own provenance.
+  //   No table (a DB written by mains_to_db alone): {} and nothing changes.
+  function _sheetStatus(bdb) {
+    var m = {}; if (!bdb || !_hasTable(bdb, 'drawn_sheet_status')) return null;
+    _rows(bdb, 'SELECT sheet_number sn, revision rv, status st, provenance pv FROM drawn_sheet_status').forEach(function (r) { if (r.st !== 'refused') m[r.sn] = { status: r.st, review: (r.st === 'review' || r.st === 'not-stated') ? (r.pv || 'drawn-unstated:' + r.sn + '/' + (r.rv || '')) : null }; else if (!m[r.sn]) m[r.sn] = { status: 'refused', review: null }; });
+    return m;
+  }
+  function _sheetReview(st, sheet) { return st && st[sheet] && st[sheet].review ? st[sheet].review : null; }
   function _drawnLoad(bdb) {
     var sheets = _rows(bdb, "SELECT s.sheet_number sn, s.revision rv, s.refused rf, s.pieces np, s.length_m len FROM drawn_route_sheet s");
     var sets = {}; if (_hasTable(bdb, 'drawn_sheet_meta')) _rows(bdb, 'SELECT sheet_number sn, storey st FROM drawn_sheet_meta').forEach(function (r) { (sets[r.sn] = sets[r.sn] || []); if (r.st != null && sets[r.sn].indexOf(r.st) < 0) sets[r.sn].push(r.st); });   // §7.3 the storey SET of a sheet
@@ -2906,7 +2914,8 @@
     pcs.forEach(function (p) { p.set = sets[p.sh] || []; });
     var terms = _hasTable(bdb, 'drawn_terminal') ? _rows(bdb, 'SELECT sheet_number sh, x, y, kind FROM drawn_terminal') : [];
     terms.forEach(function (t) { t.set = sets[t.sh] || []; });
-    return { sheets: sheets, pieces: pcs, terminals: terms };
+    var sst = _sheetStatus(bdb); pcs.forEach(function (p) { p.review = _sheetReview(sst, p.sh); }); terms.forEach(function (t) { t.review = _sheetReview(sst, t.sh); });
+    return { sheets: sheets, pieces: pcs, terminals: terms, status: sst };
   }
   // The ceiling for a list of points, by the existing host search (one hostBind call per storey). mount 'TOP' gives the ceiling's upper face (the void starts there), 'BOTTOM' its lower face (a terminal hangs there).
   // Returns an array parallel to pts: { z, host } or null.
@@ -3082,9 +3091,12 @@
     w.verdict = false; w.refused = false;
     if (tInfo.placements.length || tInfo.dropIds.size) w.placements = w.placements.filter(function (p) { return !tInfo.dropIds.has(p); }).concat(tInfo.placements);
     var sp = _countSplit(w.placements, opts);
-    w.placed = sp.placed + known.length; w.provisional = sp.provisional;   // §7.2: only a piece committed with geometry is placed; a plan-only piece is a record
+    var knownReview = known.filter(function (p) { return p.review; }).length;   // §12a: a piece of a review / not-stated sheet is provisional, out of the totals
+    w.placed = sp.placed + known.length - knownReview; w.provisional = sp.provisional + knownReview;   // §7.2: only a piece committed with geometry is placed; a plan-only piece is a record
+    if (D.status) { var _ss = Object.keys(D.status).map(function (k) { return D.status[k].status; }), _n = function (x) { return _ss.filter(function (v) { return v === x; }).length; };
+      console.log(TAG + ' §WALK-INPUTS sheets=' + _ss.length + ' issued=' + _n('issued') + ' review=' + _n('review') + ' notStated=' + _n('not-stated') + ' refused=' + _n('refused') + ' piecesProvisional=' + knownReview + ' terminalsProvisional=' + tInfo.placements.filter(function (p) { return p.provisional; }).length); }
     if (!w.placed && !w.provisional) w.reason = pcs.length + ' drawn runs held, all plan only (' + planOnly[0].why + '); listed and counted, nothing to place';
-    w.mains = { drawn: totalLen, pieces: pcs.length, placed: known.length, heightKnown: known.length, planOnly: planOnly.length, real: w.mains && w.mains.real };
+    w.mains = { drawn: totalLen, pieces: pcs.length, placed: known.length, heightKnown: known.length, planOnly: planOnly.length, review: knownReview, real: w.mains && w.mains.real };
     w.drawn = { pieces: pcs, known: known, planOnly: planOnly, terminals: tInfo, length: totalLen, stepped: stepped, sheets: D.sheets };
     console.log(TAG + ' §WALK-DRAWN disc=ACMV bldg=' + name + ' placed=' + w.placed + ' provisional=' + w.provisional + ' drawnPieces=' + pcs.length + ' heapDeltaMB=' + (_heapMB() - heap0).toFixed(1));
     return w;
@@ -3124,7 +3136,7 @@
         if (!t.kind) noKind++;
         if (!tmpl) { noMesh++; return; }   // no rule-mined device mesh to seat it on: listed, never boxed
         placed++;
-        out.placements.push({ disc: 'ACMV', ifc_class: tmpl.ifc_class, x: t.x, y: t.y, z: t.c.z, yaw: 0, storey: sk, host: t.c.host, mount: 'BOTTOM', face: [0, 0, -1], prov: 'drawn:terminal', hostState: 'bound', provisional: false,
+        out.placements.push({ disc: 'ACMV', ifc_class: tmpl.ifc_class, x: t.x, y: t.y, z: t.c.z, yaw: 0, storey: sk, host: t.c.host, mount: 'BOTTOM', face: [0, 0, -1], prov: t.review || 'drawn:terminal', hostState: 'bound', provisional: !!t.review,
           bx: tmpl.bx, by: tmpl.by, bz: tmpl.bz, prim: tmpl.prim, geometry_hash: tmpl.geometry_hash, system: t.kind || null, positionBasis: 'drawn', heightBasis: t.roof ? X.roof.id : t.exposed ? X.rule.id : 'ceiling:' + t.c.host, exposed: !!t.exposed, heightLabel: t.roof ? X.roof.label : t.exposed ? X.rule.label : null });
       });
       out.byStorey[sk] = { drawn: dt.length, placed: placed, noKind: noKind, noMesh: noMesh, borrowedDropped: dropB.length, schedDropped: dropS.length };
@@ -3142,7 +3154,7 @@
     var sets = {}; if (_hasTable(bdb, 'drawn_sheet_meta')) _rows(bdb, 'SELECT sheet_number sn, storey st FROM drawn_sheet_meta').forEach(function (r) { (sets[r.sn] = sets[r.sn] || []); if (r.st != null && sets[r.sn].indexOf(r.st) < 0) sets[r.sn].push(r.st); });
     var rule = null; if (_hasTable(bdb, 'drawn_equipment_rule')) { var r0 = null; try { r0 = _rows(bdb, 'SELECT id, mount_m mm, datum, basis, applies_to ap, borrowed_for bf, standard std, source src, note FROM drawn_equipment_rule')[0]; } catch (e) { r0 = null; }   // an older table (top/bottom columns) states no mount point: no rule, nothing placed
       if (r0 && r0.mm != null) { try { rule = { id: r0.id, mount: +r0.mm, datum: r0.datum, basis: r0.basis, applies: JSON.parse(r0.ap || '[]'), borrowed: JSON.parse(r0.bf || '[]'), standard: r0.std, source: r0.src, note: r0.note }; } catch (e) { rule = null; } } }
-    items.forEach(function (q) { q.set = sets[q.sh] || []; });
+    var sst = _sheetStatus(bdb); items.forEach(function (q) { q.set = sets[q.sh] || []; q.review = _sheetReview(sst, q.sh); });
     return { items: items, rule: rule };
   }
   // A rule mesh seats an item only if the rule_mesh_binding row is keyed on its ObjectType. Measured: the table is keyed (disc, ifc_class) alone, and its one FP IfcFireSuppressionTerminal row is the mode of the sprinkler heads, so it is no mesh of a cabinet or an extinguisher.
@@ -3171,7 +3183,7 @@
         if (q.use === 'borrowed') borrowedKinds++;
         noMesh++;   // no ObjectType-keyed rule mesh (see _equipMeshKeyed): an anchor-only op with its label, never a box
         byKind[q.kind] = (byKind[q.kind] || 0) + 1;
-        placed.push({ sh: q.sh, it: q.it, kind: q.kind, block: q.block, x: q.x, y: q.y, storey: r.c.storey, floorHost: r.c.host, floorZ: f, anchor: anchor, floorBasis: fromElev ? 'storey-elevation' : 'slab', rule: rule, use: q.use, cls: q.cls, pre: q.pre, ot: q.ot, ruleId: rule.id, source: rule.source || rule.standard || null });
+        placed.push({ review: q.review || null, sh: q.sh, it: q.it, kind: q.kind, block: q.block, x: q.x, y: q.y, storey: r.c.storey, floorHost: r.c.host, floorZ: f, anchor: anchor, floorBasis: fromElev ? 'storey-elevation' : 'slab', rule: rule, use: q.use, cls: q.cls, pre: q.pre, ot: q.ot, ruleId: rule.id, source: rule.source || rule.standard || null });
       });
     });
     // band sprinkler heads on a covered storey are not placed: dropped and counted. Elsewhere unchanged.
@@ -3182,7 +3194,8 @@
     w.verdict = false; w.refused = false;
     if (dropIds.size) w.placements = w.placements.filter(function (p) { return !dropIds.has(p); });
     var sp = _countSplit(w.placements, opts);
-    w.placed = sp.placed + placed.length; w.provisional = sp.provisional;
+    var eqReview = placed.filter(function (e) { return e.review; }).length;   // §12a
+    w.placed = sp.placed + placed.length - eqReview; w.provisional = sp.provisional + eqReview;
     if (!w.placed && !w.provisional) w.reason = L.items.length + ' drawn equipment items held, none placed (noRule=' + noRule + ' noFloor=' + noFloor + '); listed and counted';
     w.drawn = { known: [], planOnly: [], pieces: [], terminals: null, length: 0, stepped: 0, sheets: [], equip: { placed: placed, items: L.items.length, noFloor: noFloor, noRule: noRule, noMesh: noMesh, bandDropped: dropIds.size } };
     console.log(TAG + ' §FP-EQUIP placed=' + placed.length + ' heightRule=' + (rule ? rule.id : 'none') + (rule ? ' mount_m=' + rule.mount + ' basis=' + (rule.basis || 'none') + ' datum=' + (rule.datum || 'none') : '') + ' borrowedKinds=' + borrowedKinds + ' noFloor=' + noFloor + ' floorFromStoreyElev=' + floorFromElev + ' noMesh=' + noMesh + ' bandDropped=' + dropIds.size + ' outlineTests=' + (_outlineStats.mesh - os0.mesh));
@@ -3194,7 +3207,7 @@
     return ((drawn && drawn.equip && drawn.equip.placed) || []).map(function (e) {
       var owner = e.rule && e.rule.basis === 'owner', hb = owner ? 'owner-stated' : 'code-default', hh = 0.01;   // the anchor is the owner's mount point: a tick of 1 cm up from it, never a solid
       return { op_type: 'GEOM_INSERT', params: { bbox: [-0.05, 0.05, -0.05, 0.05, 0, hh], anchorOnly: true, lod: '200', placement: { x: +e.x.toFixed(4), y: +e.y.toFixed(4), z: +e.anchor.toFixed(4), rot: 0 }, label: e.ot || e.kind,
-        _dw: { disc: 'FP', kind: 'drawn-equipment', itemKind: e.kind, label: e.ot || e.kind, ifcClass: e.cls, predefined: e.pre, objectType: e.ot, sheet: e.sh, item: e.it, block: e.block, provisional: false, prov: 'drawn:equipment', hostState: null,
+        _dw: { disc: 'FP', kind: 'drawn-equipment', itemKind: e.kind, label: e.ot || e.kind, ifcClass: e.cls, predefined: e.pre, objectType: e.ot, sheet: e.sh, item: e.it, block: e.block, provisional: !!e.review, prov: e.review || 'drawn:equipment', hostState: null,
           positionBasis: 'drawn', heightBasis: hb, source: e.source, heightRule: e.ruleId, heightRuleUse: e.use, mountM: e.rule.mount, heightDatum: e.rule.datum || null, meshState: 'noMesh',
           strength: { position: 'drawn', height: owner ? 'owner-stated' : 'provisional' }, floor: e.floorHost, floorBasis: e.floorBasis, floorLabel: e.floorBasis === 'storey-elevation' ? 'floor = storey elevation, no slab under' : null, floorZ: +e.floorZ.toFixed(4), anchorZ: +e.anchor.toFixed(4), storey: e.storey } } };
     });
@@ -3206,7 +3219,7 @@
       var L = p.len, yaw = Math.atan2(p.y1 - p.y0, p.x1 - p.x0) * 180 / Math.PI, h = 0.005;
       return { op_type: 'GEOM_INSERT', params: { bbox: [-L / 2, L / 2, -h, h, -h, h], anchorOnly: true, lod: '200', placement: { x: +p.mx.toFixed(4), y: +p.my.toFixed(4), z: +(p.z - h).toFixed(4), rot: +yaw.toFixed(4) },
         line: { from: [+p.x0.toFixed(4), +p.y0.toFixed(4), +p.z.toFixed(4)], to: [+p.x1.toFixed(4), +p.y1.toFixed(4), +p.z.toFixed(4)] },
-        _dw: { disc: 'ACMV', kind: 'drawn-main', sheet: p.sh, piece: p.pc, component: p.cmp, system: p.sys, widthMm: p.w == null ? null : p.w, provisional: false, prov: 'drawn:route', hostState: null,
+        _dw: { disc: 'ACMV', kind: 'drawn-main', sheet: p.sh, piece: p.pc, component: p.cmp, system: p.sys, widthMm: p.w == null ? null : p.w, provisional: !!p.review, prov: p.review || 'drawn:route', hostState: null,
           positionBasis: 'drawn', widthBasis: p.w == null ? 'none' : 'drawn', heightBasis: p.heightBasis, strength: { position: 'drawn', width: p.w == null ? 'none' : 'drawn', height: (p.heightBasis === 'void-middle' || p.exposed) ? 'provisional' : 'none' },
           exposed: !!p.exposed, heightLabel: p.heightLabel || null, ceiling: p.ceiling || null, structure: p.structure || null, structureClass: p.structureClass || null } } };
     }));

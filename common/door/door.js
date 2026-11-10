@@ -37,7 +37,7 @@ const STATUS = ['ok', 'refused', 'claim', 'error', 'inconclusive'];
 // §0.6 detail 4. Only the local actors are wired; any other name (email, mobile, device, an outside system) has no proof here: read only, the rest is a claim.
 const ACTORS = { human: { proof: 'local-session', allow: HARM }, ai: { proof: 'local-user', allow: ['read', 'trial'] } };
 const NO_PROOF = { proof: 'none', allow: ['read'] };
-const BREAK = () => process.env.DOOR_BREAK || '';   // the witnesses' falsifiers: shape | float | halve
+const BREAK = () => process.env.DOOR_BREAK || '';   // the witnesses' falsifiers: shape | float | halve | confirm_ai | confirm_twice
 
 // ───────────────────────── exact decimal (BigInt coefficient + scale; no floating point) ─────────────────────────
 const DIV_DIGITS = 30;   // division carries 30 fractional digits, rounded half up
@@ -355,7 +355,7 @@ function createDoor(opts) {
     if (!entry) return envelope(base, 'error', { why: 'unknown verb: ' + base.verb + '. Verbs: ' + vocab.verbs.map(v => v.verb).join(', ') });
     const bad = validate(entry, o.args); if (bad) return envelope(base, 'error', { why: bad });
     const A = ACTORS[base.actor] || NO_PROOF;
-    if (A.allow.indexOf(entry.harm) < 0) return envelope(base, 'claim', { why: 'actor ' + base.actor + ' has proof "' + A.proof + '", which allows ' + A.allow.join('/') + ' verbs; ' + entry.verb + ' is ' + entry.harm + '. Held as a claim, not run.' });
+    if (A.allow.indexOf(entry.harm) < 0) return envelope(base, 'claim', { why: 'actor ' + base.actor + ' has proof "' + A.proof + '", which allows ' + A.allow.join('/') + ' verbs; ' + entry.verb + ' is ' + entry.harm + '. Held as a claim, not run. A person confirms it with: door.js --confirm ' + base.request });
     if (entry.actors.indexOf(base.actor) < 0) return envelope(base, 'refused', { why: 'actor ' + base.actor + ' is not allowed to use ' + entry.verb + ' (allowed: ' + entry.actors.join(', ') + ')' });
     if (prior && HARM.indexOf(entry.harm) > 1) return envelope(base, 'refused', { why: 'request ' + base.request + ' started earlier and no result was recorded; a ' + entry.harm + ' verb is not re-run on a guess' });
     if (entry.body) return composed(entry, base, o);
@@ -405,6 +405,23 @@ function createDoor(opts) {
     for (const ln of String(text).split('\n')) { const c = Object.assign({}, ctx, { request: base ? base + '.' + (++n) : undefined }); const e = await runLine(ln, c); if (!e) continue; out.push(e); if (e.status !== 'ok') break; }
     return out;
   };
+  // ── §0.14 the confirm channel: a person lets a held claim through by its request id. The recorded line runs byte for byte, as the person, once. ──
+  const CONF = '#confirmed';
+  door.claims = () => {
+    const all = jread(), confirmed = new Set(all.filter(x => x.state === 'done' && String(x.request).indexOf(CONF) > 0).map(x => String(x.request).split(CONF)[0]));
+    return all.filter(x => x.state === 'done' && x.envelope && x.envelope.status === 'claim' && !confirmed.has(x.request)).map(d => { const st = all.filter(x => x.request === d.request && x.state === 'started')[0] || {}, e = vocab.byVerb.get(st.verb); return { request: d.request, t: st.t || d.t, actor: st.actor || null, line: st.line || null, verb: st.verb || null, harm: e ? e.harm : null }; });
+  };
+  door.confirm = async (id, ctx) => {
+    ctx = ctx || {}; const actor = ctx.actor || 'human', base = { request: id + CONF, verb: null, actor, t0: Date.now() }, all = jread();
+    const st = all.filter(x => x.request === id && x.state === 'started')[0], dn = all.filter(x => x.request === id && x.state === 'done')[0];
+    const out = (status, why) => { const e = envelope(base, status, { why }); e.confirms = id; say('confirm=' + id + ' actor=' + actor + ' status=' + status + ' why=' + JSON.stringify(why.slice(0, 120))); return e; };
+    if (!st || !dn) return out('error', 'no request "' + id + '" in the journal ' + journalFile + ' (held claims: ' + (door.claims().map(c => c.request).join(', ') || 'none') + ')');
+    base.verb = st.verb || null;
+    if (!dn.envelope || dn.envelope.status !== 'claim') return out('refused', 'request ' + id + ' was ' + (dn.envelope ? dn.envelope.status : 'never answered') + '; only a held claim is confirmed');
+    if (actor !== 'human' && BREAK() !== 'confirm_ai') return out('refused', 'a claim is confirmed by a person at a local session; actor ' + actor + ' cannot confirm. The claim stays held.');
+    const env = await runLine(st.line, { actor: 'human', request: id + CONF + (BREAK() === 'confirm_twice' ? '-' + Date.now() : '') });
+    env.confirms = id; return env;
+  };
   door.parseLine = parseLine; door.coerce = coerce;
   return door;
 }
@@ -416,10 +433,12 @@ if (require.main === module) {
     const a = process.argv.slice(2), o = { actor: 'human' }; let script = null; const rest = [];
     for (let i = 0; i < a.length; i++) {
       if (a[i] === '--actor') o.actor = a[++i]; else if (a[i] === '--request') o.request = a[++i]; else if (a[i] === '--journal') o.journal = a[++i];
-      else if (a[i] === '--script') script = a[++i]; else rest.push(a[i]);
+      else if (a[i] === '--script') script = a[++i]; else if (a[i] === '--confirm') o.confirm = a[++i]; else if (a[i] === '--claims') o.claims = true; else rest.push(a[i]);
     }
-    if (!script && rest.length !== 1) { console.error('usage: node common/door/door.js [--actor human|ai] [--request ID] [--journal FILE] \'app.verb key=value …\'   |   --script FILE|-'); process.exit(2); }
+    if (!script && !o.confirm && !o.claims && rest.length !== 1) { console.error('usage: node common/door/door.js [--actor human|ai] [--request ID] [--journal FILE] \'app.verb key=value …\'   |   --script FILE|-   |   --claims   |   --confirm REQUEST_ID'); process.exit(2); }
     let door; try { door = createDoor({ journal: o.journal }); } catch (e) { console.error('§DOOR FAIL ' + e.message); process.exit(1); }
+    if (o.claims) { const c = door.claims(); console.error('§DOOR claims held=' + c.length + ' journal=' + door.journalFile); console.log(JSON.stringify({ claims: c })); process.exit(0); }
+    if (o.confirm) { const e = await door.confirm(o.confirm, o); console.log(JSON.stringify(e)); process.exit(e.status === 'ok' ? 0 : (e.status === 'error' ? 1 : 3)); }
     const envs = script ? await door.runScript(script === '-' ? fs.readFileSync(0, 'utf8') : fs.readFileSync(script, 'utf8'), o) : [await door.runLine(rest[0], o)].filter(Boolean);
     envs.forEach(e => console.log(JSON.stringify(e)));
     const worst = envs.length ? envs[envs.length - 1].status : 'error';

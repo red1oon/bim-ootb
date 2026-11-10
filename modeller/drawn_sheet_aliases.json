@@ -1,10 +1,57 @@
 {
   "_note": "Storey-word alias rows for a drawn sheet's view title (prompts/DISC_WALK_DRAWN_INTEGRATION.md section 7.3). A row maps words in a title to a storey by its INDEX counted up from ground (0 = the lowest storey at or above zero elevation). Never guessed: a title that matches no row gives no set unless the caller names the storeys. Data row, so it can become a DB table.",
   "rows": [
-    { "pattern": "ground|\\bG/?F\\b|level 0", "index": 0, "source": "design lane 2026-11-08, generic words" },
-    { "pattern": "first|1st|\\b1/?F\\b", "index": 1, "source": "design lane 2026-11-08, generic words" },
-    { "pattern": "second|2nd|\\b2/?F\\b", "index": 2, "source": "design lane 2026-11-08, generic words" },
-    { "pattern": "third|3rd|\\b3/?F\\b", "index": 3, "source": "design lane 2026-11-08, generic words" },
-    { "pattern": "fourth|4th|\\b4/?F\\b", "index": 4, "source": "design lane 2026-11-08, generic words" }
-  ]
+    {
+      "pattern": "ground|\\bG/?F\\b|level 0",
+      "index": 0,
+      "source": "design lane 2026-11-08, generic words"
+    },
+    {
+      "pattern": "first|1st|\\b1/?F\\b",
+      "index": 1,
+      "source": "design lane 2026-11-08, generic words"
+    },
+    {
+      "pattern": "second|2nd|\\b2/?F\\b",
+      "index": 2,
+      "source": "design lane 2026-11-08, generic words"
+    },
+    {
+      "pattern": "third|3rd|\\b3/?F\\b",
+      "index": 3,
+      "source": "design lane 2026-11-08, generic words"
+    },
+    {
+      "pattern": "fourth|4th|\\b4/?F\\b",
+      "index": 4,
+      "source": "design lane 2026-11-08, generic words"
+    }
+  ],
+  "discipline_rows": [
+    {
+      "code": "MEP",
+      "disciplines": [
+        "ACMV",
+        "PLB",
+        "ELEC",
+        "FP"
+      ],
+      "source": "definition: mechanical, electrical and plumbing services, the umbrella code of the BIM Document register (erp/plugins/bim_document.mjs Discipline list)"
+    },
+    {
+      "code": "ELE",
+      "disciplines": [
+        "ELEC"
+      ],
+      "source": "definition: electrical"
+    },
+    {
+      "code": "FPR",
+      "disciplines": [
+        "FP"
+      ],
+      "source": "definition: fire protection"
+    }
+  ],
+  "_note_discipline": "discipline_rows (prompts/DISC_WALK_DRAWN_INTEGRATION.md 12a): a BIM Document register discipline code -> the walk disciplines a sheet of that code can serve. A code with no row (ARC, STR, CIV) serves none: its sheets are not read, and the tool says so. Data, never code."
 }

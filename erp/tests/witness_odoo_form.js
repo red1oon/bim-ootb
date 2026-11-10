@@ -68,7 +68,7 @@ function verdict(cs) { var c = CASES[cs] || { judged: 0, failed: 0 }, v = !c.jud
 
   // ═══ EMPTY + PROBLEMS: nothing picked; a manifest that disagrees ═══
   var r0 = rows({ Files: null }, null);
-  check('PICK', 'empty', 'with no files the form says what to pick (no run, no rows of data)', r0.length >= 2 && r0.every(function (r) { return /^⚠/.test(r.item); }), { r0: r0.map(function (r) { return r.item; }) });
+  check('PICK', 'empty', 'with no files the form says what to pick (no run, no rows of data)', r0.length >= 1 && r0.every(function (r) { return /^⚠/.test(r.item); }) && r0.some(function (r) { return /odoo_export\.json/.test(r.item) && /manifest\.json/.test(r.item); })   /* O3: ONE line now names both ways (the raw export, or an older workbook + manifest) */, { r0: r0.map(function (r) { return r.item; }) });
   var bad = JSON.parse(JSON.stringify(man)); bad.sheets[4].rows = bad.sheets[4].rows + 1;
   var rBad = rows(files(bad), null);
   check('PICK', 'manifest', 'a manifest whose count differs from the sheet is refused BEFORE any dry run (falsifier: one count edited)', rBad.some(function (r) { return /^⚠ Sheet 05C_BPartner has 7 rows; the manifest says 8/.test(r.item); }), { items: rBad.filter(function (r) { return /^⚠/.test(r.item); }).map(function (r) { return r.item; }) });

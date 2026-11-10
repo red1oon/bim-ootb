@@ -1,0 +1,67 @@
+§DW module loaded
+§WALKNODE fetch mep_rw.db?v=5 -> modeller/mep_rw.db
+§RW_INIT mep_rw.db loaded bom=188 patterns=19 anchors=5479 offsets=15 shims=11 arc_env=1
+§DW module loaded
+§W_BAND trees new=/tmp/wt-objsurface/modeller before=pinned 0295309a
+§W_BAND F1 device under a big ceiling binds and keeps X,Y (hand: x=11 y=2 z=3-0.01-0.005=2.985) PASS [11,2,2.9850000000000003]
+§W_BAND F2 device 1 m past a ceiling edge finds no host PASS bound=0
+§W_BAND F3a wall layer stored as a covering is rejected PASS shapeRejected=1
+§W_BAND F3b height equal to narrower side is rejected (flatness < 1, strict) PASS shapeRejected=1
+§W_BAND F3c a small ceiling is still a host PASS bound=1
+§W_BAND F4a a band selects the ceiling at its height PASS host=HIGH
+§W_BAND F4b no band: nearest face in height, and counted as ambiguous PASS host=HIGH multi=1
+§W_BAND F4c a band that meets no ceiling finds no host PASS bound=0
+§W_BAND F5 a window stays a point host: device takes its centre PASS [5,5]
+§W_BAND F6a ceiling centred outside the room binds a device inside it, position unchanged PASS bound=1
+§W_BAND F6b a point host centred outside the room stays filtered out PASS noHost=true
+§W_BAND F7a a mesh box wins over the stored row, and the source is logged PASS §DW §WALK-AREAHOST host=IfcCovering mount=BOTTOM hosts=1 boxFromMesh=1 boxFromRow=0 flatness=1 shapeRejected=0
+§W_BAND F7b a diagonal upright host passes the box test and is rejected by the mesh, named in the log PASS hostsUsed=0 uprightRejected=1 noNormals=0 upright=[F hz=0.00] heapDeltaMB=0.0
+§W_BAND F7c RED: a flat mesh is kept, so F7b is the mesh and not the box PASS bound=1
+§W_BAND F7d no mesh: not judged by the normal test, still bound, counted PASS bound=1
+§DW §DW-RULES-PATCH file=terminal_rules.db rows=7 ok
+§DW §DW-RULES-PATCH file=duplex_rules.db none
+§WALKNODE rules=terminal_rules.db schedule=duplex_rules.db borrowFP=null building=Clinic
+§W_BAND run Clinic/ELEC mode=schedule+measured rawInput=663 placed=467 bound=168 unhosted=495 notJudged=0 refused=0
+§W_BAND B2a no host rule: not judged, present, labelled, not refused PASS notJudged=663 labelled=663
+§W_BAND B2b ceiling row, no ceiling at the spot: unhosted, present, labelled, not refused PASS unhosted=519 labelled=519 bound=144
+§W_BAND B2c wall row out of reach: refused, gone, never labelled unhosted PASS refused=663 reason=-
+§W_BAND B2d host class absent on a non-ceiling row: refused, gone PASS refused=663
+§W_BAND B2e slab row with no slab at the spot: refused, not unhosted PASS bound=19 refused=644 floating=0
+§W_BAND B1 hosts in reach: all bound, none unhosted or refused PASS bound=663 refused=0
+§W_BAND B3 real: input = bound + unhosted + not judged + refused, per class, output matches PASS classes=2 input=663 
+§W_BAND B3 noRule: input = bound + unhosted + not judged + refused, per class, output matches PASS classes=2 input=663 
+§W_BAND B3 noCeil: input = bound + unhosted + not judged + refused, per class, output matches PASS classes=2 input=663 
+§W_BAND B3 wallFar: input = bound + unhosted + not judged + refused, per class, output matches PASS classes=2 input=663 
+§W_BAND B5 no band device reads as bound without a host PASS misread=0 of 1130
+§W_BAND B5 RED: a forged bound label with no host fails that check PASS misread=1
+§W_BAND B5b RED: keepUnhosted puts refused devices back, so the refusal above is what removed them PASS floating=663
+§W_BAND B4 wall-bound, point-host and schedule devices identical to the old walker, to 1e-3 m PASS old=492 new=492 differing=0
+§W_BAND B8 Clinic IfcFlowTerminal, not judged: devices=2742 new bound=2561 old bound=2742
+§W_BAND B8 Clinic UNRUN no real devices of IfcLightFixture/IfcAirTerminal/IfcFireSuppressionTerminal
+§W_BAND B8 Duplex IfcFlowTerminal, not judged: devices=105 new bound=84 old bound=105
+§W_BAND B8 Duplex UNRUN no real devices of IfcLightFixture/IfcAirTerminal/IfcFireSuppressionTerminal
+§W_BAND B8 HHS IfcFlowTerminal, not judged: devices=725 new bound=598 old bound=641
+§W_BAND B8 HHS UNRUN no real devices of IfcLightFixture/IfcAirTerminal/IfcFireSuppressionTerminal
+§W_BAND B8 Hospital devices=2626 distinctInput=2025 | new bound=2620 spots=2019 movedXY=0 | old bound=2473 spots=428 | hosts=602 boxFromMesh=602 boxFromRow=0 flatness=1 shapeRejected=0 input=2626 bound=2620 noHostHere=6 multiCandidate=2407 boundOnDeepHost=9 maxHostDepth=0.20 noHeightTest=2620 zMoveP50=0.10 zMoveMax=19.62 hostsUsed=541 uprightRejected=0 noNormals=0 heapDeltaMB=-3.0
+§W_BAND B8 JKR IfcFlowTerminal, not judged: devices=293 new bound=257 old bound=292
+§W_BAND B8 JKR devices=215 distinctInput=196 | new bound=215 spots=196 movedXY=0 | old bound=215 spots=33 | hosts=35 boxFromMesh=35 boxFromRow=0 flatness=1 shapeRejected=6 input=215 bound=215 noHostHere=0 multiCandidate=180 boundOnDeepHost=0 maxHostDepth=0.05 noHeightTest=215 zMoveP50=0.02 zMoveMax=3.56 hostsUsed=21 uprightRejected=1 noNormals=0 upright=[1yn3uSI$P6wuqSjE7C5XT2 hz=0.06] heapDeltaMB=1.6
+§W_BAND B8 Terminal IfcFlowTerminal, not judged: devices=256 new bound=239 old bound=250
+§W_BAND B8 Terminal devices=2012 distinctInput=1914 | new bound=1860 spots=1762 movedXY=0 | old bound=1574 spots=71 | hosts=82 boxFromMesh=82 boxFromRow=0 flatness=1 shapeRejected=0 input=2012 bound=1860 noHostHere=152 multiCandidate=1528 boundOnDeepHost=0 maxHostDepth=0.02 noHeightTest=1860 zMoveP50=0.06 zMoveMax=20.51 hostsUsed=63 uprightRejected=0 noNormals=0 heapDeltaMB=2.5
+§W_BAND B8a every bound device keeps X,Y to 1e-3 m PASS bound=4695 moved=0
+§W_BAND B8b no two devices share a spot they did not already share in the source PASS newStacked=0 oldStacked=3730
+§W_BAND B8c bound count at least today's, per building PASS new=4695 old=4262 
+§W_BAND B8 RED: the old centre snap fails B8b PASS oldStacked=3730 newStacked=0
+§W_BAND P1 every band row is provisional: bound, unhosted and not judged PASS rows=1326 notProvisional=0
+§W_BAND P2 real: placed + provisional = rows out, provisional = bound + unhosted + not judged, refused apart PASS placed=467 provisional=663 refused=0 rows=1130 (bound 168 unhosted 495 notJudged 0)
+§W_BAND P2 noRule: placed + provisional = rows out, provisional = bound + unhosted + not judged, refused apart PASS placed=467 provisional=663 refused=0 rows=1130 (bound 0 unhosted 0 notJudged 663)
+§W_BAND P2 wallFar: placed + provisional = rows out, provisional = bound + unhosted + not judged, refused apart PASS placed=467 provisional=0 refused=663 rows=467 (bound 0 unhosted 0 notJudged 0)
+§DW module loaded
+§W_BAND P3 positions identical to main's walker, to 1e-3 m; only the count changed FAIL differing=0 main placed=467 now placed=467 + provisional=663
+§W_BAND P4 the walk total leaves provisional rows out PASS placed=467 of 1130
+§W_BAND P4 RED: the switch that counts them puts them back PASS counted placed=1130 vs 467
+§W_BAND P5 a walk of only not-judged band rows takes no fallback and is not refused PASS mode=measured-band placed=0 provisional=93
+§W_BAND P5 RED: the old test, !w.placed, would have sent it to the fallback PASS placed=0
+§W_BAND B6 a walk with no band devices prints VACUOUS PASS §DW §WALK-BAND-NOHOST disc=ACMV bldg=Duplex input=0 VACUOUS
+§W_BAND P6 a walk with no band rows has nothing provisional and says VACUOUS PASS placed=19 provisional=0
+§W_BAND B3-fleet INCONCLUSIVE no fleet JSONs named
+§W_BAND VERDICT pass=43 fail=1
