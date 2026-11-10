@@ -12,9 +12,8 @@ const path = require('path');
 function tableOf(env) {
   const a = env && env.answer;
   if (!a || typeof a !== 'object') return { record: null, rows: null };
-  if (Array.isArray(a.rows)) return shape(a.rows, a.columns, a.total);
-  const k = Object.keys(a).filter(x => Array.isArray(a[x]) && a[x].length && a[x].every(r => r && typeof r === 'object' && !Array.isArray(r)))[0];
-  if (k) return shape(a[k], null, null);
+  const k = ['rows', 'matches', 'entries'].filter(x => Array.isArray(a[x]) && a[x].every(r => r && typeof r === 'object' && !Array.isArray(r)))[0];   // the answer's row sets; any other array stays inside a record's cell
+  if (k) return shape(a[k], k === 'rows' ? a.columns : null, k === 'rows' ? a.total : null);
   return { record: a, rows: null };
 }
 function shape(rows, columns, total) {

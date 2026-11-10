@@ -190,8 +190,8 @@ async function attach(O, a) {
 // §0.13 the first MEASURE: a count of a kind. The kind's table and every filter column come from the dictionary (reflection: an unknown column is an error that names it). population = the kind's
 // rows with no filter; when that is 0 nothing was judged, so the verdict is VACUOUS (the door replies inconclusive), never 0-as-an-answer.
 const CB = () => process.env.COUNT_BREAK || '';   // W-OBJ-COUNT falsifiers: plus1 | nofilter | zero_ok
-function count(O, a) {
-  const t = kindOf(O.rows, a.kind), cols = columnsOf(O.rows, t), filters = [], where = [], params = [];
+function filtersOf(t, cols, a) {   // the shared filter reader: --where column=value, each column checked against the dictionary (reflection), a number column takes a number
+  const filters = [], where = [], params = [];
   (a.where || []).forEach(w => {
     const m = /^([A-Za-z_]\w*)=([\s\S]*)$/.exec(w); if (!m) refuse('a filter is column=value, got "' + w + '"');
     const c = cols.filter(x => x.columnname.toLowerCase() === m[1].toLowerCase())[0];
@@ -201,6 +201,10 @@ function count(O, a) {
     if (num && !/^[+-]?\d+(\.\d+)?$/.test(m[2].trim())) refuse(c.columnname + ' is a number; "' + m[2] + '" is not');
     filters.push({ column: c.columnname, value: m[2] }); where.push(c.columnname + (num ? ' = CAST(? AS NUMERIC)' : ' = ?')); params.push(m[2]);
   });
+  return process.env.ROWS_BREAK === 'nofilter' ? { filters, where: [], params: [] } : { filters, where, params };   // the break: the filters are named in the answer but not applied
+}
+function count(O, a) {
+  const t = kindOf(O.rows, a.kind), cols = columnsOf(O.rows, t), { filters, where, params } = filtersOf(t, cols, a);
   const population = Number(O.rows('SELECT count(*) AS n FROM ' + t.tablename)[0].n);
   let n = filters.length && CB() !== 'nofilter' ? Number(O.rows('SELECT count(*) AS n FROM ' + t.tablename + ' WHERE ' + where.join(' AND '), params)[0].n) : population;
   if (CB() === 'plus1') n += 1;
@@ -208,6 +212,59 @@ function count(O, a) {
   const summary = verdict === 'VACUOUS' ? 'this model holds no ' + t.name + ' record, so nothing was counted' : n + ' ' + t.name + (filters.length ? ' where ' + filters.map(f => f.column + ' = ' + f.value).join(' and ') + ' (of ' + population + ')' : '');
   say('count kind=' + t.name + ' table=' + t.tablename + ' filters=' + JSON.stringify(filters) + ' count=' + n + ' population=' + population + ' verdict=' + verdict + (CB() ? ' COUNT_BREAK=' + CB() : ''));
   return { kind: t.name, table: t.tablename, filters, count: n, population, verdict, summary };
+}
+// ── §R.V item 5: rows, a sum and group counts. Every column comes from the dictionary (reflection); values are bound, never spliced into SQL. ──
+const LIST_MAX = 1000, LIST_DEFAULT = 50, RB = () => process.env.ROWS_BREAK || '';   // W-DOOR-ROWS falsifiers: nofilter | floatsum | capoff
+function colOf(t, cols, name, what) {
+  const c = cols.filter(x => x.columnname.toLowerCase() === String(name).toLowerCase())[0];
+  if (!c) throw new Error('kind ' + t.name + ' has no property "' + name + '" for ' + what + ' (its properties: ' + cols.map(x => x.columnname).join(', ') + ')');
+  return c;
+}
+const isNum = (c) => ['number', 'integer', 'amount', 'quantity'].indexOf(REF[c.ad_reference_id]) >= 0;
+function whereSql(w) { return w.where.length ? ' WHERE ' + w.where.join(' AND ') : ''; }
+const popOf = (O, t) => Number(O.rows('SELECT count(*) AS n FROM ' + t.tablename)[0].n);
+function list(O, a) {
+  const t0 = Date.now(), t = kindOf(O.rows, a.kind), cols = columnsOf(O.rows, t), w = filtersOf(t, cols, a);
+  const has = (n) => cols.filter(x => x.columnname.toLowerCase() === n)[0];
+  const key = cols.filter(x => x.iskey === 'Y')[0];
+  const names = a.columns ? String(a.columns).split(',').map(x => colOf(t, cols, x.trim(), 'columns').columnname)
+    : [key && key.columnname].concat(['documentno', 'name', 'value', 'docstatus'].map(has).filter(Boolean).map(x => x.columnname)).filter(Boolean).filter((x, i, arr) => arr.indexOf(x) === i);
+  if (!names.length) refuse('kind ' + t.name + ' has no column to show');
+  let order = ''; if (a.sort) { const desc = /^-/.test(a.sort), c = colOf(t, cols, String(a.sort).replace(/^-/, ''), 'sort'); order = ' ORDER BY ' + c.columnname + (desc ? ' DESC' : ''); } else if (key) order = ' ORDER BY ' + key.columnname;
+  const limit = RB() === 'capoff' ? 1000000 : a.limit == null ? LIST_DEFAULT : Number(a.limit), offset = a.offset == null ? 0 : Number(a.offset);
+  if (!Number.isInteger(limit) || limit < 1 || (limit > LIST_MAX && RB() !== 'capoff')) refuse('limit must be a whole number from 1 to ' + LIST_MAX + ', got "' + a.limit + '"');
+  if (!Number.isInteger(offset) || offset < 0) refuse('offset must be a whole number, 0 or more, got "' + a.offset + '"');
+  const population = popOf(O, t), total = w.where.length ? Number(O.rows('SELECT count(*) AS n FROM ' + t.tablename + whereSql(w), w.params)[0].n) : population;
+  const raw = O.rows('SELECT ' + names.map(n => n + ' AS "' + n + '"').join(', ') + ' FROM ' + t.tablename + whereSql(w) + order + ' LIMIT ' + limit + ' OFFSET ' + offset, w.params);
+  const rows = raw.map(r => { const o = {}; names.forEach(n => { o[n] = r[n] !== undefined ? r[n] : r[n.toLowerCase()]; }); return o; });
+  const verdict = population === 0 ? 'VACUOUS' : 'OK';
+  say('list kind=' + t.name + ' table=' + t.tablename + ' filters=' + JSON.stringify(w.filters) + ' rows=' + rows.length + ' total=' + total + ' population=' + population + ' offset=' + offset + ' limit=' + limit + ' ms=' + (Date.now() - t0) + ' verdict=' + verdict);
+  return { kind: t.name, table: t.tablename, filters: w.filters, columns: names, rows, shown: rows.length, total, population, offset, verdict, summary: verdict === 'VACUOUS' ? 'this model holds no ' + t.name + ' record, so nothing was listed' : 'shown ' + rows.length + ' of ' + total + ' ' + t.name };
+}
+function decSum(texts) {   // exact: BigInt coefficient over a common scale (no floating point)
+  const parts = texts.map(s => { const m = /^([+-]?)(\d+)(?:\.(\d+))?(?:[eE]([+-]?\d+))?$/.exec(String(s).trim()); if (!m) throw new Error('"' + s + '" is not a number the sum can add exactly'); let sc = (m[3] || '').length - (m[4] ? +m[4] : 0), big = BigInt(m[2] + (m[3] || '')); if (sc < 0) { big *= 10n ** BigInt(-sc); sc = 0; } return [m[1] === '-' ? -big : big, sc]; });
+  const sc = parts.reduce((x, p) => Math.max(x, p[1]), 0), tot = parts.reduce((x, p) => x + p[0] * 10n ** BigInt(sc - p[1]), 0n), neg = tot < 0n, d = (neg ? -tot : tot).toString().padStart(sc + 1, '0');
+  const out = (sc ? d.slice(0, -sc) + '.' + d.slice(-sc) : d).replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '');
+  return (neg && /[1-9]/.test(out) ? '-' : '') + out;
+}
+function sum(O, a) {
+  const t0 = Date.now(), t = kindOf(O.rows, a.kind), cols = columnsOf(O.rows, t), w = filtersOf(t, cols, a);
+  if (!a.column) refuse('sum needs --column');
+  const c = colOf(t, cols, a.column, 'sum'); if (!isNum(c)) refuse(c.columnname + ' is not a number column (' + (REF[c.ad_reference_id] || 'reference ' + c.ad_reference_id) + '), so it cannot be summed');
+  const population = popOf(O, t);
+  const vals = O.rows('SELECT CAST(' + c.columnname + ' AS TEXT) AS v FROM ' + t.tablename + whereSql(w) + (w.where.length ? ' AND ' : ' WHERE ') + c.columnname + ' IS NOT NULL', w.params).map(r => r.v);
+  const total = RB() === 'floatsum' ? String(vals.reduce((x, v) => x + Number(v), 0)) : decSum(vals), verdict = population === 0 ? 'VACUOUS' : 'OK';
+  say('sum kind=' + t.name + ' column=' + c.columnname + ' filters=' + JSON.stringify(w.filters) + ' n=' + vals.length + ' sum=' + total + ' population=' + population + ' ms=' + (Date.now() - t0) + ' verdict=' + verdict);
+  return { kind: t.name, table: t.tablename, column: c.columnname, filters: w.filters, n: vals.length, sum: total, population, verdict, summary: verdict === 'VACUOUS' ? 'this model holds no ' + t.name + ' record, so nothing was summed' : total + ' = sum of ' + c.columnname + ' over ' + vals.length + ' ' + t.name };
+}
+function group(O, a) {
+  const t0 = Date.now(), t = kindOf(O.rows, a.kind), cols = columnsOf(O.rows, t), w = filtersOf(t, cols, a);
+  if (!a.by) refuse('group needs --by');
+  const c = colOf(t, cols, a.by, 'by'), population = popOf(O, t);
+  const raw = O.rows('SELECT ' + c.columnname + ' AS g, count(*) AS n FROM ' + t.tablename + whereSql(w) + ' GROUP BY ' + c.columnname + ' ORDER BY n DESC, g', w.params);
+  const rows = raw.map(r => ({ [c.columnname]: r.g, count: Number(r.n) })), records = rows.reduce((x, r) => x + r.count, 0), verdict = population === 0 ? 'VACUOUS' : 'OK';
+  say('group kind=' + t.name + ' by=' + c.columnname + ' filters=' + JSON.stringify(w.filters) + ' groups=' + rows.length + ' records=' + records + ' population=' + population + ' ms=' + (Date.now() - t0) + ' verdict=' + verdict);
+  return { kind: t.name, table: t.tablename, by: c.columnname, filters: w.filters, columns: [c.columnname, 'count'], rows, shown: rows.length, total: rows.length, records, population, verdict, summary: verdict === 'VACUOUS' ? 'this model holds no ' + t.name + ' record, so nothing was counted' : rows.length + ' groups over ' + records + ' ' + t.name };
 }
 function history(O, a) {
   const r = record(O, a), CC = require('../../erp/crud_core.js');
@@ -224,10 +281,10 @@ function history(O, a) {
 async function main(argv) {
   const cmd = argv[0], a = {};
   for (let i = 1; i < argv.length; i++) { const m = /^--(\w+)$/.exec(argv[i]); if (!m || i + 1 >= argv.length) { say('FAIL usage: ' + argv[i]); return 2; } if (m[1] === 'where') (a.where = a.where || []).push(argv[++i]); else a[m[1]] = argv[++i]; }
-  if (['describe', 'read', 'update', 'attach', 'history', 'count'].indexOf(cmd) < 0) { say('FAIL usage: object_cli.js describe|read|update|attach|history|count --building B --kind K [--uu U] ...'); return 2; }
+  if (['describe', 'read', 'update', 'attach', 'history', 'count', 'list', 'sum', 'group'].indexOf(cmd) < 0) { say('FAIL usage: object_cli.js describe|read|update|attach|history|count|list|sum|group --building B --kind K [--uu U] ...'); return 2; }
   if (!a.kind) { say('FAIL usage: --kind is required'); return 2; }
   try {
-    const O = await boot(a), out = cmd === 'describe' ? describe(O, a) : cmd === 'read' ? read(O, a) : cmd === 'update' ? update(O, a) : cmd === 'attach' ? await attach(O, a) : cmd === 'count' ? count(O, a) : history(O, a);
+    const O = await boot(a), out = cmd === 'describe' ? describe(O, a) : cmd === 'read' ? read(O, a) : cmd === 'update' ? update(O, a) : cmd === 'attach' ? await attach(O, a) : cmd === 'count' ? count(O, a) : cmd === 'list' ? list(O, a) : cmd === 'sum' ? sum(O, a) : cmd === 'group' ? group(O, a) : history(O, a);
     process.stdout.write(JSON.stringify(out) + '\n'); return 0;
   } catch (e) {
     if (e instanceof Refused) { say('REFUSED ' + e.message); process.stdout.write(JSON.stringify({ refused: true, reason: e.message }) + '\n'); return 3; }
@@ -235,4 +292,4 @@ async function main(argv) {
   }
 }
 if (require.main === module) main(process.argv.slice(2)).then(c => process.exit(c));
-module.exports = { main, describe, read, update, attach, history, count, boot, open, kindOf, columnsOf, childTabs, applyOp, loadChunker, Refused, oplogFile, readOps };
+module.exports = { main, describe, read, update, attach, history, count, list, sum, group, decSum, boot, open, kindOf, columnsOf, childTabs, applyOp, loadChunker, Refused, oplogFile, readOps };
