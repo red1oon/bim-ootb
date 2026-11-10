@@ -75,6 +75,7 @@ export function plan(trx, params, current) {
   const pick = trx.q("SELECT name FROM c_uom WHERE ad_client_id IN (0,?) AND isactive='Y' ORDER BY name", [trx.env.client || 0]).map((r) => r.name);
   Object.keys(used).sort().forEach((u, i) => {
     const key = i + 1, given = cur[key] && cur[key].erpunit != null ? String(cur[key].erpunit).trim() : null;
+    const code = cur[key] && cur[key].newcode != null ? String(cur[key].newcode).trim() : '';   // §KEEP-UNIT-SPEC: no ERP unit chosen + a code = the unit is kept as a NEW unit with that X12DE355 code
     const exact = trx.q("SELECT name FROM c_uom WHERE name=? AND ad_client_id IN (0,?) AND isactive='Y'", [u, trx.env.client || 0]);
     // §BC-SPEC: no exact name, but the source names the unit's international code (Business Central's UN/ECE code in the C_UOM sheet's X12DE355) and exactly ONE ERP unit has
     //   that code → suggested (the user still sees and can change it); Odoo leaves the code blank, so nothing changes there
@@ -85,8 +86,11 @@ export function plan(trx, params, current) {
     let note = '';
     if (ans) { const hit = trx.q("SELECT count(*) AS n FROM c_uom WHERE name=? AND ad_client_id IN (0,?) AND isactive='Y'", [ans, trx.env.client || 0])[0].n;
       if (hit === 1) answers[u] = { to: ans }; else note = hit ? 'more than one ERP unit is called "' + ans + '"' : 'no ERP unit is called "' + ans + '"'; }
-    else note = 'answer which ERP unit this is';
-    out.units.push({ key, item: 'Unit: ' + u, infile: used[u] + ' product(s)', erpunit: ans, reason: note, selected: true, locked: true, lockedBy: 'a unit is answered, not unticked', options: { erpunit: pick } });
+    else if (code) { const taken = trx.q('SELECT count(*) AS n FROM c_uom WHERE x12de355=? AND ad_client_id IN (0,?)', [code, trx.env.client || 0])[0].n;
+      if (code.length > 4) note = 'a unit code has at most 4 characters'; else if (taken) note = 'the code ' + code + ' is already a unit of this ERP: choose that unit instead';
+      else { answers[u] = { x12de355: code }; note = 'kept as a new unit with the code ' + code; } }
+    else note = 'answer which ERP unit this is, or give a code to keep it as a new unit';
+    out.units.push({ key, item: 'Unit: ' + u, infile: used[u] + ' product(s)', erpunit: ans, newcode: ans ? '' : code, reason: note, selected: true, locked: true, lockedBy: 'a unit is answered, not unticked', options: { erpunit: pick } });
   });
 
   // selection + dependencies (mandatory lookups lock their parent; optional ones are dropped when the parent is unticked)
@@ -152,14 +156,14 @@ export function openingStockSheets(book) {
 }
 
 // load(trx, book) -> { ok, summary, perTable{T: n}, refusals{sheet: [reasons]} } — the Ninja loader in THIS transaction (stage 1: masters + the I_Inventory rows, §E1)
-export function load(trx, book, open) {
+function loadOnce(trx, book, open) {
   const st = openingStockSheets(book), loadBook = st ? st.book : book;
   putFile(FILE, bookToWorkbook(loadBook));
   const mark = trx.log.length;
   let r;
   try { r = AP.runInTrx(trx, NINJA_PROCESS, { params: { File_Directory: FILE, Processed: 'Y' } }); } finally { dropFile(FILE); }
   const lines = trx.log.slice(mark), refusals = {}, perTable = {};
-  lines.forEach((l) => { const m = /^§NINJA-ERR (\d\d[A-Za-z_]+) row (\d+)(.*)$/.exec(l); if (m) { const sh = st && m[1] === st.ioSheet ? st.lineSheet : m[1]; (refusals[sh] = refusals[sh] || []).push('row ' + m[2] + m[3]); } });
+  lines.forEach((l) => { const m = /^§NINJA-ERR (\d\d[A-Za-z_]+) row (\d+)([\s\S]*)$/.exec(l); /* [\s\S]: a refusal may have two lines (the unique error's Detail line) */ if (m) { const sh = st && m[1] === st.ioSheet ? st.lineSheet : m[1]; (refusals[sh] = refusals[sh] || []).push('row ' + m[2] + m[3]); } });
   const shown = {};
   String(r && r.summary || '').replace(/\(([A-Za-z_]+) = (\d+) records\)/g, (x, t, n) => { perTable[t.toUpperCase()] = Number(n); shown[t] = Number(n); return x; });
   if (st) {   // the summary speaks of the documents stage 2 will make: one inventory per source header, one line per I_Inventory row
@@ -170,6 +174,24 @@ export function load(trx, book, open) {
   // §E3C-SPEC 1(d) stage 1: what the open balances need and the tenant lacks (clearing accounts, the no-tax tax, the Opening Charges), through the model, each named
   const created = r && r.ok && open ? OB.prerequisites(trx, open) : [];
   return { ok: !!(r && r.ok), summary: r && r.summary, perTable, shown, refusals, created };
+}
+
+// §ALREADY-THERE-SPEC: load(trx, book, open) - a source row whose key the TENANT already holds (the born client's own "Standard" / "Immediate" rows, an account it already has)
+//   is refused by the unique index, rightly; it must not refuse the whole migration. The model says who holds the key (§MODEL-UNIQUE ... held_by=tenant|this-load, model_layer.js
+//   uniqueError); rows refused ONLY for a key held by the tenant are taken out and the load runs again from the savepoint. A key repeated inside the file is still a refusal.
+export function load(trx, book, open) {
+  const sp = trx.setSavepoint(), mark = trx.log.length, r1 = loadOnce(trx, book, open);
+  const held = new Set(trx.log.slice(mark).filter((l) => /^§MODEL-UNIQUE .* held_by=tenant$/.test(l)).map((l) => /key=(\(.*\)=\(.*\)) held_by=tenant$/.exec(l)[1]));
+  const drop = {}; let n = 0;
+  Object.keys(r1.refusals).forEach((sh) => r1.refusals[sh].forEach((t) => { const m = /^row (\d+)[\s\S]*duplicate key value[\s\S]*Key (\(.*\)=\(.*\)) already exists\./.exec(t);
+    if (m && held.has(m[2])) { (drop[sh] = drop[sh] || new Set()).add(Number(m[1])); n++; } }));
+  if (r1.ok || !n) return Object.assign(r1, { already: {} });
+  trx.rollbackTo(sp);
+  const st = openingStockSheets(book), names = {}; if (st) names[st.lineSheet] = 1;   // a stock line is never "already there" (rows of the rewritten I_Inventory sheet are not judged by a tenant key)
+  const b2 = book.map((b) => (drop[b.name] && !names[b.name] ? { name: b.name, rows: b.rows.filter((row, i) => i === 0 || !drop[b.name].has(i + 1)) } : b));
+  const r2 = loadOnce(trx, b2, open), already = {}; Object.keys(drop).forEach((sh) => { already[sh] = drop[sh].size; });
+  say(trx, '§ODOO-FORM already-there rows=' + n + ' ' + JSON.stringify(already) + ' (their key is a row of this tenant: not loaded, the tenant\'s row is used) second load ok=' + r2.ok);
+  return Object.assign(r2, { already });
 }
 
 // stage 2 (§E1): ImportInventory with DocAction CO over the I_Inventory rows stage 1 left. It must run AFTER stage 1 is committed: the process looks products / locators / warehouses up
@@ -193,8 +215,8 @@ export const DESC = {
   title: 'Migrate from Odoo',
   emptyText: 'Pick odoo_export.json from the folder the Odoo agent wrote (node export.js). An older export: odoo_migration.xlsx + manifest.json.',
   params: [{ name: 'Files', label: 'Export file (odoo_export.json; an older export: odoo_migration.xlsx + manifest.json)', type: 'file', multiple: true, accept: '.xlsx,.json', mandatory: true }],
-  columns: [{ key: 'item', label: 'Item' }, { key: 'odoo', label: 'Odoo rows' }, { key: 'infile', label: 'In file' }, { key: 'erpunit', label: 'ERP unit', type: 'string', editable: true },
-    { key: 'will', label: 'Will import' }, { key: 'refused', label: 'Refused' }, { key: 'reason', label: 'Why / effect' }, { key: 'needs', label: 'Needs' },
+  columns: [{ key: 'item', label: 'Item' }, { key: 'odoo', label: 'Odoo rows' }, { key: 'infile', label: 'In file' }, { key: 'erpunit', label: 'ERP unit', type: 'string', editable: true }, { key: 'newcode', label: 'New unit code', type: 'string', editable: true },
+    { key: 'will', label: 'Will import' }, { key: 'already', label: 'Already there' }, { key: 'refused', label: 'Refused' }, { key: 'reason', label: 'Why / effect' }, { key: 'needs', label: 'Needs' },
     { key: 'neededby', label: 'Needed by' }, { key: 'intenant', label: 'In this tenant now' }],
   rows(trx, params, current) {
     const p = plan(trx, params, current);
@@ -203,8 +225,9 @@ export const DESC = {
     const will = p.open ? OB.willCreate(trx, p.open) : [];
     const dry = load(trx, p.book, p.open);   // the READ transaction: thrown away by the engine
     p.sheets.forEach((s) => { const inBook = p.book.some((b) => b.name === s.sheet), ref = dry.refusals[s.sheet] || [];
-      s.will = !inBook ? 0 : dry.ok ? (dry.perTable[s.table.toUpperCase()] || 0) : 0; s.refused = ref.length;
-      if (ref.length) s.reason = ref[0] + (ref.length > 1 ? ' (+' + (ref.length - 1) + ' more)' : ''); else if (!inBook && !s.reason) s.reason = s.table === 'C_UOM' ? 'every unit maps to an ERP unit' : 'unticked'; });
+      s.will = !inBook ? 0 : dry.ok ? (dry.perTable[s.table.toUpperCase()] || 0) : 0; s.refused = ref.length; s.already = (dry.already || {})[s.sheet] || 0;
+      if (s.already) s.reason = s.already + ' already in this tenant — kept as they are, not loaded' + (s.reason ? ' · ' + s.reason : '');
+      if (ref.length) s.reason = (s.already ? s.reason + ' · ' : '') + ref[0] + (ref.length > 1 ? ' (+' + (ref.length - 1) + ' more)' : ''); else if (!inBook && !s.reason) s.reason = s.table === 'C_UOM' ? 'every unit maps to an ERP unit' : 'unticked'; });
     say(trx, '§ODOO-FORM summary ok=' + dry.ok + ' will=' + JSON.stringify(p.sheets.map((s) => s.table + ':' + s.will)) + ' refused=' + p.sheets.reduce((n, s) => n + s.refused, 0));
     const rs = p.units.concat(p.sheets);
     if (!p.source) return rs;
