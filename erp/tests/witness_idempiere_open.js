@@ -120,7 +120,7 @@ var SCH = "(SELECT c_acctschema1_id FROM ad_clientinfo WHERE ad_client_id=" + CL
     cents(CV.manifest.left.AR) === WANT_LEFT.AR && cents(CV.manifest.left.AP) === WANT_LEFT.AP && cents(CV.manifest.left.BANK) === WANT_LEFT.BANK, { got: CV.manifest.left, want: WANT_LEFT });
   var stmNos = Object.keys(O.bank).filter(function (a) { return O.bank[a] !== 0; }).sort();
   check('SHEETS', 'statements', 'one opening bank statement per bank account with a CurrentBalance (' + J(stmNos) + '), amount == the oracle', J(stm.map(function (r) { return r.BankAccountNo; }).sort()) === J(stmNos) && stm.every(function (r) { return cents(r.StmtAmt) === O.bank[r.BankAccountNo]; }), stm);
-  check('SHEETS', 'sources-untouched', 'the Odoo / SAP / BC templates are byte-identical to origin/main (this lane adds a source; it changes no other)', cp.spawnSync('git', ['-C', ERP, 'diff', '--quiet', 'origin/main', '--', 'migrate/templates/odoo-17.json', 'migrate/templates/sap-b1-10.json', 'migrate/templates/bc-w1.json', 'migrate/engine.mjs', 'plugins/open_balances.mjs', 'migrate/workbook.mjs']).status === 0, null);
+  check('SHEETS', 'sources-untouched', 'the Odoo / SAP / BC templates are byte-identical to origin/main (this lane adds a source; it changes no other)', cp.spawnSync('git', ['-C', ERP, 'diff', '--quiet', 'origin/main', '--', 'migrate/templates/odoo-17.json', 'migrate/templates/sap-b1-10.json', 'migrate/templates/bc-w1.json', 'migrate/engine.mjs', 'migrate/workbook.mjs']).status === 0, null);   // open_balances.mjs left out 2026-11-10: migrate-recover changes it on purpose (witness_migration_recover.js)
   verdict('SHEETS');
 
   // ═══ the twin (born tenants, the neutral loader) ═══
@@ -146,7 +146,7 @@ var SCH = "(SELECT c_acctschema1_id FROM ad_clientinfo WHERE ad_client_id=" + CL
   var CLS = 'org.test.IdempiereOpen', PLAN = function (trx, params) { var cv = IC.convert(params.Files[0].data), open = OB.openOf(cv.book, cv.manifest); return { cv: cv, open: open, problems: cv.manifest.problems.concat(OB.problems(trx, open)) }; };
   AF.register(CLS, { title: 'Test: migrate open balances of a legacy iDempiere', params: [{ name: 'Files', label: 'idempiere_open.json', type: 'file', multiple: true, mandatory: true }], columns: [{ key: 'item', label: 'Item' }],
     rows: function () { return []; },
-    run: function (trx, params) { var p = PLAN(trx, params); if (p.problems.length) throw new Error('Not migrated: ' + p.problems.join(' ')); var r = FORM.load(trx, p.cv.book, p.open); if (!r.ok) throw new Error(String(r.summary || 'The load was refused.') + ' ' + J(r.refusals).slice(0, 400)); return 'loaded ' + J(r.perTable); },
+    run: function (trx, params) { var p = PLAN(trx, params); if (p.problems.length) throw new Error('Not migrated: ' + p.problems.join(' ')); var r = FORM.load(trx, p.cv.book, p.open, true); if (!r.ok) throw new Error(String(r.summary || 'The load was refused.') + ' ' + J(r.refusals).slice(0, 400)); return 'loaded ' + J(r.perTable); },
     after: function (trx, params) { var p = PLAN(trx, params); return OB.complete(trx, AP, p.open); } });
   function session(S, loginDate) {
     var withT = function (fn) { return fn(k.q, Object.assign(k.env(S), { date: loginDate + ' 00:00:00' })); };

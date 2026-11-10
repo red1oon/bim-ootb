@@ -125,7 +125,8 @@ function verdict(cs) { var c = CASES[cs] || { judged: 0, failed: 0 }, v = !c.jud
     check('LEN', 'cut-' + r.odoo_id, r.table + ' ' + J(r.odoo) + ' (' + r.odoo.length + ' chars) arrives as ' + J(r.erp) + ' within the ERP length', got.n === 1 && got.len <= 40, got); });
   verdict('LEN');
   // ═══ UU: every address carries the export's id (the identity survives into the ERP) ═══
-  var uus = sheetRows('C_Location').slice(1).map(function (r) { return r[uc]; }), have = q('SELECT c_location_uu AS u FROM c_location WHERE ad_client_id=?', [CID]).map(function (r) { return r.u; });
+  var SALT = (await import(url.pathToFileURL(path.join(ERP, 'plugins', 'odoo_migrate_form.mjs')).href)).saltUUValue;   // the loader salts the export's UUs with the target tenant (legacy's <table>_uu_idx is global): identity = the salted UU
+  var uus = sheetRows('C_Location').slice(1).map(function (r) { return SALT(CID, r[uc]); }), have = q('SELECT c_location_uu AS u FROM c_location WHERE ad_client_id=?', [CID]).map(function (r) { return r.u; });
   check('UU', 'carried', 'all ' + uus.length + ' C_Location_UU of the export are in the tenant', uus.length > 0 && uus.every(function (u) { return have.indexOf(u) >= 0; }), { missing: uus.filter(function (u) { return have.indexOf(u) < 0; }).slice(0, 3) });
   verdict('UU');
 

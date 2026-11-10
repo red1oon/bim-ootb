@@ -3901,9 +3901,9 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       if (res && res.log) res.log.forEach(function (l) { console.log(l); });   // the model transaction's own lines (§EVENT_SEQ, §MODEL-*), as crud_overlay modelRun prints them
       console.log('§AD-FORM-GENERIC run class=' + cls + ' ok=' + !!(res && res.ok) + ' ops=' + ((res && res.ops) || []).length + ' msg=' + JSON.stringify(res && res.msg));
       if (!res || !res.ok) { msg.className = 'msg err'; msg.textContent = (res && res.msg) || 'Failed'; return; }
-      if (res.ops && res.ops.length && crud && typeof crud.applyOpGroup === 'function') {
-        crud.applyOpGroup(res.ops, function (cr) {
-          console.log('§AD-FORM-GENERIC commit class=' + cls + ' ops=' + res.ops.length + ' committed=' + !!(cr && cr.committed) + ' gid=' + (cr && cr.gid) + ' verifyChain=' + (cr && cr.verifyOk ? 'ok' : 'FAIL'));
+      // stage 2 runs after stage 1 whether or not stage 1 wrote anything (migrate-recover F2: a repeated Process loads nothing - "Nothing to do" - and still re-checks the books)
+      var afterCommit = function (cr) {
+          console.log('§AD-FORM-GENERIC commit class=' + cls + ' ops=' + ((res.ops || []).length) + ' committed=' + !!(cr && cr.committed) + ' gid=' + (cr && cr.gid) + ' verifyChain=' + (cr && cr.verifyOk ? 'ok' : 'FAIL'));
           msg.className = 'msg ok'; msg.textContent = res.msg;
           // stage 2 (descriptor.after): its own transaction, once stage 1 is committed (AdFormGeneric.executeAfter; e.g. the migration's opening stock = Import Inventory, DocAction CO)
           var r2 = (cr && cr.committed) ? AF.executeAfter(withT, cls, params, rows) : { ok: true, ops: [], none: true };
@@ -3912,8 +3912,10 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
           if (r2 && !r2.ok) { msg.className = 'msg err'; msg.textContent = res.msg + ' ' + (r2.msg || ''); loadParams(0); loadRows(); return; }
           if (r2 && r2.ops && r2.ops.length) { crud.applyOpGroup(r2.ops, function (cr2) { console.log('§AD-FORM-GENERIC commit-after class=' + cls + ' ops=' + r2.ops.length + ' committed=' + !!(cr2 && cr2.committed)); msg.textContent = res.msg + (r2.msg ? ' ' + r2.msg : ''); loadParams(0); loadRows(); }, r2.observed); return; }
           loadParams(0); loadRows();
-        }, res.observed);
-      } else { msg.className = 'msg ok'; msg.textContent = res.msg; }
+        };
+      if (res.ops && res.ops.length && crud && typeof crud.applyOpGroup === 'function') { crud.applyOpGroup(res.ops, afterCommit, res.observed); }
+      else if (!(res.ops && res.ops.length) && typeof AF.executeAfter === 'function') { afterCommit({ committed: true, none: true }); }
+      else { msg.className = 'msg ok'; msg.textContent = res.msg; }
     });
     loadParams(0);
     // §OPS-LENS preset (ERP_FRIENDLY_OPS_LENS.md §15.4): a parameter handed in by the caller is applied as if the user picked it - paint, then the same reload a change does
@@ -4595,15 +4597,9 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       catch (e) { out.textContent = 'Genesis failed: ' + e.message; out.setAttribute('data-genesis-error', '1'); run.disabled = false; run.textContent = 'Create tenant';
         console.log('§W-GENESIS-SYSADMIN-LIVE create FAIL ' + e.message); return; }
       console.log('§W-GENESIS-SYSADMIN-LIVE born client=' + input.clientName + ' groups=' + born.groups.length + ' head=' + born.tip.slice(0, 12));
-      // Append a G7 sample invoice (named cols → mergeGenesisInto column-intersects it) — same shape genesis.html
-      // stashes, so the born tenant has a viewable, postable invoice. *_id > base so reband bands it automatically.
-      var invId = 9000001;
-      var bundle = { input: born.input, tip: born.tip, refs: born.refs, groups: born.groups.concat([{
-        seq: born.groups.length + 1, label: 'G7 sample invoice', ops: [
-          { op: 'CREATE', table: 'c_invoice', row: { c_invoice_id: invId, c_bpartner_id: born.refs.bpartnerId, ad_client_id: born.refs.clientId, grandtotal: 109.00, issotrx: 'Y', ispaid: 'N', dateinvoiced: input.dateAcct, docstatus: 'CO' } },
-          { op: 'CREATE', table: 'c_invoiceline', row: { c_invoice_id: invId, m_product_id: born.refs.productId, ad_client_id: born.refs.clientId, linenetamt: 100.00 } },
-          { op: 'CREATE', table: 'c_invoicetax', row: { c_invoice_id: invId, c_tax_id: born.refs.taxId, ad_client_id: born.refs.clientId, taxamt: 9.00 } }
-        ] }]) };
+      // NO sample invoice (migrate-recover F4): legacy Initial Client Setup (MSetup.java createClient/createAccounting/createDocType... - the C_Invoice table is not touched) leaves the new
+      //   company with no document. The bundle is the birth's own groups, nothing appended.
+      var bundle = { input: born.input, tip: born.tip, refs: born.refs, groups: born.groups };
       Promise.resolve(window.idmpInstallGenesis(bundle)).then(function (res) {
         if (!res || !res.ok) { out.textContent = 'Install failed.'; run.disabled = false; run.textContent = 'Create tenant';
           console.log('§W-GENESIS-SYSADMIN-LIVE install FAIL'); return; }

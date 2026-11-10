@@ -74,6 +74,7 @@ var KEYTXT = { M_ProductPrice: 'price list Name + version Name + product Value',
   var PR = require(path.join(ERP, 'plugin_registry.js')), AF = require(path.join(ERP, 'ad_form_generic.js'));
   var GEN = require('./gen_idempiere_identity.js'), E = await import(url.pathToFileURL(path.join(ERP, 'migrate', 'engine.mjs')).href), CN = await import(url.pathToFileURL(path.join(ERP, 'migrate', 'connectors', 'tenant_rows.mjs')).href);
   var NP = await import(url.pathToFileURL(path.join(ERP, 'plugins', 'ninja_migrate_process.mjs')).href);
+  var SALT = (await import(url.pathToFileURL(path.join(ERP, 'plugins', 'odoo_migrate_form.mjs')).href)).saltUUValue;
   function q(sql, p) { return k.q(sql, p || []); }
   var shim = { prepare: function (sql) { return { all: function () { return q(sql); },
     run: function (row) { var b = {}; Object.keys(row || {}).forEach(function (x) { b['@' + x] = row[x] == null ? null : row[x]; }); var s = db.prepare(sql); try { s.bind(b); s.step(); } finally { s.free(); } } }; } };
@@ -201,12 +202,14 @@ var KEYTXT = { M_ProductPrice: 'price list Name + version Name + product Value',
     var twinCache = {}; function twinRow(table, id) { var kk = table + '|' + id; if (!(kk in twinCache)) twinCache[kk] = q('SELECT * FROM ' + table + ' WHERE ' + table + '_id=?', [id])[0] || null; return twinCache[kk]; }
     var SIDE = { source: srcRow, loaded: twinRow };
     // the compared value of one header of one row on one side
+    // the loader salts every *_UU value of a file with the target tenant (legacy's <table>_uu_idx is GLOBAL; MIGRATE_INSTALL_TENANT §RECOVER): the SOURCE side is mapped the same way before it is compared
+    function uuS(side, col, v) { return side === 'source' && /_uu$/i.test(col) && v != null && v !== '' ? SALT(C, v) : v; }
     function cell(sh, c, row, side) {
       var raw = row[c.col];
-      if (c.kind === 'plain') return norm(refOf(sh, c.col), raw);
+      if (c.kind === 'plain') return norm(refOf(sh, c.col), uuS(side, c.col, raw));
       if (raw == null || raw === '') return '';
       var t = SIDE[side](c.target, raw); if (!t) return '#NOROW(' + c.target + ' ' + raw + ')';
-      return norm(refOf(c.target, c.alt), t[c.alt]);
+      return norm(refOf(c.target, c.alt), uuS(side, c.alt, t[c.alt]));
     }
     function cmpRow(sh, row, side) { var o = {}; A.sheets[sh].cols.forEach(function (c) { o[c.header] = cell(sh, c, row, side); }); return o; }
     function keyOf(sh, row, side) {
@@ -316,7 +319,7 @@ var KEYTXT = { M_ProductPrice: 'price list Name + version Name + product Value',
 
   // (iii) a row lost after the engine ran, which no class can explain
   var lostSheet = 'C_Location', f3 = await pipeline('GardenWorld-lost', gw, TEMPLATE, gw, { dropBook: lostSheet });
-  var uuLost = f3.droppedBook ? f3.droppedBook[A.headers[lostSheet].indexOf('C_Location_UU')] : null;
+  var uuLost = f3.droppedBook ? f3.droppedBook[A.headers[lostSheet].indexOf('C_Location_UU')] : null; if (uuLost) uuLost = SALT(f3.tenant, uuLost);   // reported salted, as the loader sees it
   var cvf = covVerdict(f3.cov, PIN.GardenWorld, f3.unattr);
   say('§IDF-FALSIFY-UNATTRIBUTED dropped from the book after the engine: ' + lostSheet + ' C_Location_UU=' + J(uuLost) + ' -> coverage ok=' + cvf.ok + ' unattributed=' + J(f3.unattr));
   check('FALSIFY-UNATTRIBUTED', 'named', 'COVERAGE FAILs and names the lost ' + lostSheet + ' row (UU ' + uuLost + ') as fitting no class', !cvf.ok && f3.unattr.some(function (u) { return u.sheet === lostSheet && u.key === uuLost; }), { cvf: cvf, unattr: f3.unattr });

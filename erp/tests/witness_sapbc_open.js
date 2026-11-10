@@ -192,7 +192,8 @@ function mk(O) { return {
   verdict('SAP-SHEETS'); verdict('BC-SHEETS');
 
   // ═══ UNTOUCHED / MODEL ═══
-  var diffFiles = ['migrate/templates/odoo-17.json', 'migrate/templates/sap-b1-10.json', 'migrate/templates/bc-w1.json', 'migrate/templates/idempiere-identity.json', 'plugins/sap_migrate_convert.mjs', 'plugins/bc_migrate_convert.mjs', 'plugins/odoo_migrate_convert.mjs', 'plugins/open_balances.mjs', 'migrate/engine.mjs', 'migrate/workbook.mjs', 'idempiere_agent', 'odoo_agent'];
+  var diffFiles = ['migrate/templates/odoo-17.json', 'migrate/templates/sap-b1-10.json', 'migrate/templates/bc-w1.json', 'migrate/templates/idempiere-identity.json', 'plugins/sap_migrate_convert.mjs', 'plugins/bc_migrate_convert.mjs', 'plugins/odoo_migrate_convert.mjs', 'migrate/engine.mjs', 'migrate/workbook.mjs', 'idempiere_agent', 'odoo_agent'];
+  // plugins/open_balances.mjs left out 2026-11-10: migrate-recover (witness_migration_recover.js) changes the shared loader on purpose (resume / repeat); this guard was a PR-time guard of the SAP/BC lane
   var gd = cp.spawnSync('git', ['-C', ERP, 'diff', '--quiet', 'origin/main', '--'].concat(diffFiles), { encoding: 'utf8' });
   check('UNTOUCHED', 'other-sources', 'the Odoo / iDempiere files, the SAP + BC masters templates and converters (so the masked alpha reports), the engine, the workbook contract and the loader are byte-identical to origin/main (' + diffFiles.length + ' paths)', gd.status === 0, gd.stderr || 'diff exit ' + gd.status);
   var AGS = fs.readFileSync(path.join(ERP, 'sap_agent', 'agent.js'), 'utf8');
@@ -224,7 +225,7 @@ function mk(O) { return {
   function formFor(cls, plan) {   // a test-side form over the SAME shared pieces the shipped forms use (convert -> OB.openOf/problems -> FORM.load -> OB.complete): no mapping, no verifier of its own
     if (regd[cls]) return; regd[cls] = 1;
     AF.register(cls, { title: 'Test: migrate open balances', params: [{ name: 'Files', label: 'open balances', type: 'file', multiple: true, mandatory: true }], columns: [{ key: 'item', label: 'Item' }], rows: function () { return []; },
-      run: function (trx, params) { var p = plan(trx, params); if (p.problems.length) throw new Error('Not migrated: ' + p.problems.join(' ')); var r = FORM.load(trx, p.cv.book, p.open); if (!r.ok) throw new Error(String(r.summary || 'The load was refused.') + ' ' + J(r.refusals).slice(0, 400)); return 'loaded ' + J(r.perTable); },
+      run: function (trx, params) { var p = plan(trx, params); if (p.problems.length) throw new Error('Not migrated: ' + p.problems.join(' ')); var r = FORM.load(trx, p.cv.book, p.open, true); if (!r.ok) throw new Error(String(r.summary || 'The load was refused.') + ' ' + J(r.refusals).slice(0, 400)); return 'loaded ' + J(r.perTable); },
       after: function (trx, params) { var p = plan(trx, params); return OB.complete(trx, AP, p.open); } });
   }
   function session(S, loginDate, cls) {

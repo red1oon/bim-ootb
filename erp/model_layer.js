@@ -357,7 +357,13 @@
   function uniqueError(trx, table, row, selfId, changed) {
     table = String(table).toLowerCase();
     var ix; try { ix = trx.q('SELECT indexname, columns FROM ad_ddl_unique WHERE tablename=?', [table]); } catch (e) { return null; }   // a database without the index list (a scratch db): nothing to enforce
-    if (!ix || !ix.length) return null;
+    ix = ix || [];
+    // <table>_uu_idx (migrate-recover F3): legacy has a UNIQUE (GLOBAL) index on <table>_uu for 901 tables (pg_indexes, idempiere_test) but the list above is a hashed base file (team base hash) and carries none.
+    //   The index is derived here from the column, so a supplied UU already held is refused like the DB would. Global, as legacy: the migration loader salts the deterministic UUs of a file with the target
+    //   tenant (odoo_migrate_form.mjs saltUU), so one export loaded into two companies never collides (prompts/MIGRATE_INSTALL_TENANT.md §RECOVER).
+    var uuc = table + '_uu';
+    if (row[uuc] != null && row[uuc] !== '' && !ix.some(function (x) { return String(x.columns) === uuc; })) ix = ix.concat([{ indexname: uuc + '_idx', columns: uuc }]);
+    if (!ix.length) return null;
     var idc = trx.idCol(table), dd = ddlDefaults(trx, table);
     for (var i = 0; i < ix.length; i++) {
       var cs = String(ix[i].columns).split(',').map(function (c) { return c.trim().toLowerCase(); }), vals = [], where = {}, skip = false;
