@@ -358,11 +358,11 @@
     table = String(table).toLowerCase();
     var ix; try { ix = trx.q('SELECT indexname, columns FROM ad_ddl_unique WHERE tablename=?', [table]); } catch (e) { return null; }   // a database without the index list (a scratch db): nothing to enforce
     ix = ix || [];
-    // <table>_uu_idx (migrate-recover F3): legacy has a UNIQUE index on <table>_uu for 901 tables (pg_indexes, idempiere_test) but the list above is a hashed base file (team base hash) and carries none.
-    //   The index is derived here from the column, so a supplied UU already held is refused like the DB would. Scope = the row's client (legacy: global; the twin hosts one export loaded into several
-    //   companies, whose deterministic UUs would otherwise collide across tenants - see prompts/MIGRATE_INSTALL_TENANT.md §RECOVER).
+    // <table>_uu_idx (migrate-recover F3): legacy has a UNIQUE (GLOBAL) index on <table>_uu for 901 tables (pg_indexes, idempiere_test) but the list above is a hashed base file (team base hash) and carries none.
+    //   The index is derived here from the column, so a supplied UU already held is refused like the DB would. Global, as legacy: the migration loader salts the deterministic UUs of a file with the target
+    //   tenant (odoo_migrate_form.mjs saltUU), so one export loaded into two companies never collides (prompts/MIGRATE_INSTALL_TENANT.md §RECOVER).
     var uuc = table + '_uu';
-    if (row[uuc] != null && row[uuc] !== '' && !ix.some(function (x) { return String(x.columns) === uuc; })) ix = ix.concat([{ indexname: uuc + '_idx', columns: uuc, scope: true }]);
+    if (row[uuc] != null && row[uuc] !== '' && !ix.some(function (x) { return String(x.columns) === uuc; })) ix = ix.concat([{ indexname: uuc + '_idx', columns: uuc }]);
     if (!ix.length) return null;
     var idc = trx.idCol(table), dd = ddlDefaults(trx, table);
     for (var i = 0; i < ix.length; i++) {
@@ -371,7 +371,6 @@
       cs.forEach(function (c) { var v = row[c]; if (v == null && dd[c] != null) v = dd[c]; if (v == null && c === 'ad_client_id' && trx.env.client != null) v = trx.env.client; if (v == null) skip = true; vals.push(v); where[c] = v; });   // Trx.insert stamps AD_Client_ID from the session when the row has none
       if (skip) continue;                                                                                                // NULLs never collide
       if (cs.length === 1 && cs[0] === idc && isNewId(vals[0])) continue;                                                // a key still to be assigned (placeholder) cannot be taken
-      if (ix[i].scope) where.ad_client_id = row.ad_client_id != null ? row.ad_client_id : trx.env.client;   // the <table>_uu_idx derived above: held by this client's own row (error text stays PG's one-column Key)
       var hit = trx.find(table, where).filter(function (r) { return selfId == null || String(r[idc]) !== String(selfId); })[0];
       // who holds the key: a row of the tenant, or a row this same transaction made (isNewId) - said in the log only; the legacy error text below is unchanged
       if (hit) trx.say('§MODEL-UNIQUE table=' + table + ' key=(' + cs.join(', ') + ')=(' + vals.join(', ') + ') held_by=' + (isNewId(hit[idc]) ? 'this-load' : 'tenant'));

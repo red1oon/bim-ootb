@@ -92,6 +92,15 @@ var cents = function (v) { return Math.round(Number(v || 0) * 100); }, money = f
   check('REPEAT', 'books', 'the books are identical (Fact_Acct per account) and the stage-2 re-check says §MIG-VERIFY PASS judged>0', J(books(CA)) === J(bA) && /verdict=PASS judged=[1-9]/.test(ver(m0)), { ver: ver(m0) });
   verdict('REPEAT');
 
+  // ═══ MULTI: ONE export into a second company of the same twin (legacy's <table>_uu_idx is GLOBAL; the loader salts the file's UUs per tenant) ═══
+  var TM = mk('Second Co'), CM = TM.clientId, MA = full(TM), sM = snapAll(CM);
+  check('MULTI', 'no-collision', 'the same export loaded into a second company completes (stage 2 "Open balances completed", §MIG-VERIFY PASS) with no unique-key refusal and the same row counts as company 1', MA.r.ok && MA.a.ok && /Open balances completed/.test(MA.a.msg) && !/duplicate key|ambiguous/i.test(MA.r.msg + MA.a.msg) && J(sM) === J(sA), { r: MA.r.msg, a: MA.a.msg, sM: sM, sA: sA });
+  var uuA = q("SELECT count(*) AS n FROM c_location WHERE ad_client_id=? AND c_location_uu IN (SELECT c_location_uu FROM c_location WHERE ad_client_id=?)", [CA, CM])[0].n;
+  check('MULTI', 'distinct-uu', 'the two companies hold NO C_Location_UU in common (global unique index, distinct per tenant)', uuA === 0 && q('SELECT count(*) AS n FROM c_location WHERE ad_client_id IN (?,?) AND c_location_uu IS NOT NULL', [CA, CM])[0].n >= 16, uuA);
+  var MR = full(TA);
+  check('MULTI', 'repeat-still-nothing', 'after company 2 exists, the repeat in company 1 still says "Nothing to do" and loads nothing', MR.r.ok && /Nothing to do/.test(MR.r.msg) && J(snapAll(CA)) === J(sA), { r: MR.r.msg });
+  verdict('MULTI');
+
   // ═══ SECOND file for the company that holds one ═══
   var E2 = JSON.parse(JSON.stringify(EXP)); E2.manifest.company_id = 2; E2.manifest.company_name = 'My Company (Chicago)';
   E2.sets['res.partner'].forEach(function (p) { p.name = p.name + ' CHI'; if (p.ref) p.ref = p.ref + 'C'; });
@@ -132,7 +141,7 @@ var cents = function (v) { return Math.round(Number(v || 0) * 100); }, money = f
   check('HANDFIN', 'clearing-zero', 'AR / AP / Bank Clearing end at 0.00 and the books sum to 0.00 (reported, no longer silent)', ['AR', 'AP', 'BANK'].every(function (kk) { return !bD1[CLRV[kk]]; }) && Object.keys(bD1).reduce(function (x, a) { return x + bD1[a]; }, 0) === 0, bD1);
   verdict('HANDFIN');
 
-  var ALLV = ['NOSAMPLE', 'REPEAT', 'SECOND', 'RESUME', 'HANDFIN'].map(function (c) { return CASES[c] ? (CASES[c].failed ? 'FAIL' : 'PASS') : 'INCONCLUSIVE'; });
+  var ALLV = ['NOSAMPLE', 'REPEAT', 'MULTI', 'SECOND', 'RESUME', 'HANDFIN'].map(function (c) { return CASES[c] ? (CASES[c].failed ? 'FAIL' : 'PASS') : 'INCONCLUSIVE'; });
   say('§REC-VERDICT ' + (!ALL.judged ? 'INCONCLUSIVE' : ALL.failed ? 'FAIL' : 'PASS') + ' judged=' + ALL.judged + ' failed=' + ALL.failed + ' cases=' + J(ALLV));
   process.exit(!ALL.judged ? 3 : ALL.failed ? 1 : 0);
 })();
