@@ -1,0 +1,17 @@
+  ✅ M1 the menu: both verbs, each described, every input described; move says metres; the instructions come with initialize  tools=bim_lines,bim_try_shift,viewer_counts,viewer_clashes version=2025-06-18
+§W-BIM-MCP loop bay gx5-gx6=11.176 move=1.824 -> stopped=true after=13 reason=stopped: Beam spans over limit: 91 -> 92 (limit 12 m, RC); bay gx5-gx6 newly over the limit: 13 m
+  ✅ M2a bim_lines = edit_cli --lines (all but ms)  bytes=2701/2701
+  ✅ M2b bim_try_shift = edit_cli --shift (all but ms)  bytes=2768/2768 exit=3
+  ✅ M3 the loop closes with no person: grid read, move computed, stopped with the reason, the span check measures 13 m  after=13
+  ✅ M4 an unknown verb and a missing input are errors, not results
+  ✅ M5 the call log holds each call verbatim: arguments as sent, answer as returned  calls=4
+§W-BIM-MCP server §BIM_MCP ready tools=bim_lines,bim_try_shift,viewer_counts,viewer_clashes
+§W-BIM-MCP server §BIM_MCP initialize client={"name":"witness_bim_mcp","version":"1"} version=2025-06-18
+§W-BIM-MCP server §DOOR request=d-mwa2mqqz-1602194-1 actor=ai verb=modeller.lines status=ok ms=42155
+§W-BIM-MCP server §BIM_MCP call bim_lines {"building":"HospitalGarage"} -> status=ok request=d-mwa2mqqz-1602194-1 ms=42157
+§W-BIM-MCP server §DOOR request=d-mwa2nna1-1602194-2 actor=ai verb=modeller.try_shift status=refused ms=18443 why="stopped: Beam spans over limit: 91 -> 92 (limit 12 m, RC); bay gx5-gx6 newly over the limit: 13 m"
+§W-BIM-MCP server §BIM_MCP call bim_try_shift {"building":"HospitalGarage","line":"gx6","move":1.824} -> status=refused request=d-mwa2nna1-1602194-2 ms=18443
+§W-BIM-MCP server §DOOR request=d-mwa2q4d1-1602194-3 actor=ai verb=modeller.try_shift status=error ms=2 why="missing input: move"
+§W-BIM-MCP server §BIM_MCP call bim_try_shift {"building":"HospitalGarage","line":"gx6"} -> status=error request=d-mwa2q4d1-1602194-3 ms=3
+§W-BIM-MCP server §BIM_MCP stdin closed
+§WITNESS_BIM_MCP pass=6 fail=0 verdict=PASS

@@ -1,0 +1,14 @@
+  ✅ CLAIM an AI object.update is held as a claim and writes nothing  claim ops=0
+  ✅ CLAIMS --claims lists it: request, actor ai, the exact line, harm writes  {"request":"claim-1","t":"2026-11-10T02:26:32.994Z","actor":"ai","line":"object.update building=Duplex kind=Element uu=\"0$LNoCntTAthq5oMj33Z8K\" column=element_name value=\"confirmed by a person\"","
+  ✅ PERSON --confirm by actor ai is refused; nothing is written; the claim stays held  refused ops=0
+  ✅ CONFIRM the person's --confirm runs it: ok, one op written, the envelope names what it confirms  ok  ops=1
+  ✅ CONFIRM the value changed to the claimed one (it was "Pipe Types:Waste:582956")  "confirmed by a person"
+  ✅ SAME-LINE the line the door ran for the person is the claimed line byte for byte  ran=1 claim-1#confirmed
+  ✅ ONCE a second --confirm answers from the record: the same envelope, still one run and one op  runs=1 ops=1
+  ✅ ONCE a confirmed claim is gone from --claims
+  ✅ IDS an unknown request id is an error naming it  no request "no-such-request" in the journal /tmp/confirm_ldC870/journal.jsonl (held claims: none)
+  ✅ IDS confirming a request that was ok (not a claim) is refused; nothing runs  request r0 was ok; only a held claim is confirmed
+  ✅ ENGINE a claim the engine refuses at confirm time is refused with the engine's reason; nothing is written  refused discipline must be one of: ARC, ELEC, MEP, PLB, STR
+  ✅ AI the AI connector has no confirm call (door.confirm is not referenced in bim_mcp.js)
+§W-DOOR-CONFIRM element=0$LNoCntTAthq5oMj33Z8K before="Pipe Types:Waste:582956" ops=1 journal lines=12
+§WITNESS_DOOR_CONFIRM pass=12 fail=0 inconclusive=0 verdict=PASS
