@@ -22,7 +22,7 @@ const ROOT = path.join(__dirname, '..', '..');
 const LIVE = 'https://red1oon.github.io/bim-ootb/';
 const FILES = {   // name -> [repo path from the repo root, name beside door.js]
   'door.js': ['common/door/door.js'], 'verbs.json': ['common/door/verbs.json'], 'edit_cli.js': ['modeller/tools/edit_cli.js'],
-  'bim_mcp.js': ['modeller/tools/bim_mcp.js'], 'viewer_verbs.js': ['viewer/tools/viewer_verbs.js'], 'film_path_vis.js': ['viewer/tools/film_path_vis.js'], 'schedule_verbs.js': ['viewer/tools/schedule_verbs.js'], 'object_cli.js': ['common/door/object_cli.js'], 'erp_cli.js': ['common/door/erp_cli.js'], 'walk_cli.js': ['modeller/tools/walk_cli.js']
+  'bim_mcp.js': ['modeller/tools/bim_mcp.js'], 'viewer_verbs.js': ['viewer/tools/viewer_verbs.js'], 'viewer_driver.js': ['viewer/tools/viewer_driver.js'], 'film_path_vis.js': ['viewer/tools/film_path_vis.js'], 'schedule_verbs.js': ['viewer/tools/schedule_verbs.js'], 'object_cli.js': ['common/door/object_cli.js'], 'erp_cli.js': ['common/door/erp_cli.js'], 'walk_cli.js': ['modeller/tools/walk_cli.js']
 };
 function locate(name) {
   const beside = path.join(__dirname, name), repo = path.join(ROOT, FILES[name][0]);
@@ -272,7 +272,7 @@ function createDoor(opts) {
   function spawnCli(key, argv) {
     return new Promise((res) => {
       const file = cli[key];
-      if (!file || !fs.existsSync(file)) return res({ code: 1, out: '', err: key + ' is not at ' + file + '. ' + (key === 'edit_cli' ? 'Download it beside door.js: ' + curlFor(['edit_cli.js']) : 'The Viewer tools need a bim-ootb checkout (the Viewer page tree).') });
+      if (!file || !fs.existsSync(file)) return res({ code: 1, out: '', err: key + ' is not at ' + file + '. ' + (key === 'edit_cli' ? 'Download it beside door.js: ' + curlFor(['edit_cli.js']) : key === 'viewer_verbs' ? 'Download the two Viewer files beside door.js: ' + curlFor(['viewer_verbs.js', 'viewer_driver.js']) : 'This verb needs a bim-ootb checkout.') });
       door.spawned++;
       let out = '', err = '';
       const p = spawn(process.execPath, [file].concat(argv), { env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });

@@ -16,7 +16,7 @@
 const fs = require('fs'), os = require('os'), path = require('path'), https = require('https'), { spawn } = require('child_process');
 const ROOT = path.join(__dirname, '..', '..', '..');
 const LIVE = 'https://red1oon.github.io/bim-ootb/';
-const FLAT = ['modeller/tools/edit_cli.js', 'modeller/tools/bim_mcp.js', 'common/door/door.js', 'common/door/verbs.json'];   // the 4-file download
+const FLAT = ['modeller/tools/edit_cli.js', 'modeller/tools/bim_mcp.js', 'common/door/door.js', 'common/door/verbs.json', 'viewer/tools/viewer_verbs.js', 'viewer/tools/viewer_driver.js'];   // the 4-file download + the 2 Viewer files (NEURO §0.15)
 
 const loadVocab = (file) => JSON.parse(fs.readFileSync(file || path.join(ROOT, 'common', 'door', 'verbs.json'), 'utf8'));
 
@@ -28,7 +28,7 @@ function needs(entry, vocab) {
     return [e.calls.cli];
   };
   const all = clis(entry, [entry.verb]);
-  return all.length && all.every(c => c === 'edit_cli') ? 'the 4-file download' : 'a bim-ootb checkout';
+  return all.length && all.every(c => c === 'edit_cli') ? 'the 4-file download' : all.length && all.every(c => c === 'edit_cli' || c === 'viewer_verbs') ? 'the 4 files + the 2 Viewer files' : 'a bim-ootb checkout';
 }
 const UNIT = { m: 'metres', h: 'hours', day: 'day number' };
 const inputText = (i) => '`' + i.name + '`' + (i.unit ? ' (' + (UNIT[i.unit] || i.unit) + ')' : '') + (i.required ? '' : ' (optional)');
