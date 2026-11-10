@@ -647,6 +647,28 @@ const DXF = Buffer.from('0\nSECTION\n2\nENTITIES\n0\nLINE\n8\nWALLS\n10\n0.0\n20
     say('§W-BIMDOC-CHAIN-LINE ' + ln + ' status=' + JSON.stringify(st));
     verdict('X-1 the measure moves one link', !ln ? 'INCONCLUSIVE' : (judgeC(ln, hand) === 'PASS' && judgeC(ln, { before: 2, after: 4 }) === 'FAIL' && st && st.docstatus === 'CO' ? 'PASS' : 'FAIL'), 'line "' + ln + '" vs hand count 2 -> 3; judge fed 2 -> 4 says ' + judgeC(ln, { before: 2, after: 4 }));
   }
+  // ════════ FB7 (bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md, FABLE STINT item 4): an IFC attached to a BIM Document opens in the VIEWER from the gear, by the same sha256.
+  //   ISSUE: the IFC -> Viewer mapping was data only; it was never opened in a browser from a BIM Document (O-1 covers DXF -> Modeller).
+  {
+    const IFCF = path.join(REPO, 'IFC', 'SampleHouse_ARC.ifc'), key = ['A-201/2', 'A-201/1'].find(k => ID[k]);
+    if (!fs.existsSync(IFCF) || !key) verdict('O-2 IFC opens in the Viewer', 'INCONCLUSIVE', 'no public IFC (' + fs.existsSync(IFCF) + ') or no IFC-kind document in the fixture (' + key + ')');
+    else {
+      const buf = fs.readFileSync(IFCF), want = sha(buf), f = [];
+      const at = await dialogAttach(key, 'sample_house.ifc', buf); await sleep(1200);
+      await openDoc(key); const n0 = mark(), a0 = APPLOG.length, g = await gearRun('OpenInApp', 30000);
+      for (let i = 0; i < 40 && !since(n0, /^§BIMDOC-OPEN (id=|REFUSED)/).length; i++) await sleep(250);
+      const line = since(n0, /^§BIMDOC-OPEN (id=|REFUSED)/)[0] || null, url = line ? (/ url=(\S+)$/.exec(line) || [])[1] : null, wantUrl = ORIGIN + '/viewer/viewer.html?open=store:' + want + '&name=sample_house.ifc';
+      if (!g.item || g.item.disabled) f.push('the gear does not offer Open: ' + JSON.stringify(g.items));
+      if (url !== wantUrl) f.push('action URL ' + url + ' != ' + wantUrl + ' (' + (line || 'no line').slice(0, 160) + ')');
+      if (g.popup) { await g.popup.waitForLoadState('domcontentloaded').catch(() => {}); if (g.popup.url() !== wantUrl) f.push('popup URL ' + g.popup.url()); } else f.push('no popup opened');
+      for (let i = 0; i < 480 && !appSince(a0, /^§FILESTORE-OPEN sha=|^§FILESTORE-OPEN REFUSED/).length; i++) await sleep(250);
+      const appOpen = appSince(a0, /^§FILESTORE-OPEN /)[0] || null;
+      if (!appOpen || !appOpen.includes('sha=' + want.slice(0, 12)) || !/name=sample_house\.ifc/.test(appOpen) || /REFUSED/.test(appOpen)) f.push('the Viewer did not log the same sha256 opened: ' + appOpen);
+      say('§W-BIMDOC-OPEN-IFC key=' + key + ' attach=' + JSON.stringify(at).slice(0, 120) + ' url=' + url + ' | viewer-log: ' + appOpen + ' | node sha256=' + want.slice(0, 16) + ' bytes=' + buf.length);
+      verdict('O-2 an IFC document opens in the Viewer by its sha256', f.length ? 'FAIL' : 'PASS', f.length ? f.join(' ; ') : 'viewer/viewer.html opened by store:' + want.slice(0, 12) + ', Viewer logged §FILESTORE-OPEN with the same digest (' + buf.length + ' bytes)');
+      if (g.popup) await g.popup.close().catch(() => {});
+    }
+  }
   // ════════ §REGISTER-EXPORT (bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md): the register as JSON, an AD_Process under the gear; the file comes back through IProcessUI.download ════════
   //   ISSUE: the walker's register gate needs the BIM Document rows as a file; nothing produced it. EX-1 the gear item, the file = a hand count over the tip; EX-2 red judge; EX-3 another project's rows stay out.
   {
