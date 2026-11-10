@@ -57,6 +57,10 @@ async function main() {
     rowv('erp.group', 'Count by a column', 'How many records of a kind carry each value of one column, most common first (all records, or those matching column=value filters). The total is always given. An empty kind is inconclusive. Nothing is changed.',
       [rkind, inp('by', 'The column to group by.', true, 'DocStatus')], ['group', '--kind', '{kind}', '--by', '{by}'],
       'object_cli JSON {kind,table,by,filters,columns,rows:[{column:value,count}],shown,total (groups),records,population,verdict OK|VACUOUS,summary}', [{ path: 'total', type: 'number' }, { path: 'rows', type: 'array' }]));
+  out.push({ verb: 'erp.new', app: 'erp', title: 'Create a record', description: 'Create a record of any kind the way its window does: the window\'s own defaults and callouts fill what you leave out (location, price list, warehouse, payment term, price, tax, line amount), your columns are set one by one as edits, mandatory columns are checked, and the Document No comes from the sequence. Give a column as column=value. A column that holds another record may be given by its number or name (a partner by name, a product by name); two matches are refused naming both. A line names its document by number: order=50000. A Sales or Purchase document needs issotrx=Y or issotrx=N. The answer starts with the new record\'s number. A person runs it; an AI\'s call is held as a claim until a person confirms. A refusal says which column is missing.',
+    inputs: [rkind], harm: 'writes', calls: { cli: 'erp_cli', who: 'the ERP engine', argv: ['new', '--kind', '{kind}'], rest: { flag: '--where', what: 'column=value, a property of the kind and the value it takes (give as many as you like)' } },
+    returns: { shape: 'erp_cli JSON {number,kind,table,id,docStatus,given:[columns],defaulted,record,ops} or {refused,reason}', fields: [{ path: 'number', type: 'string' }, { path: 'id', type: 'number' }, { path: 'docStatus', type: 'string' }] },
+    actors: ['human', 'ai'], witness: 'common/door/tests/witness_erp_new.js' });
   const seen = new Set();
   for (const a of av) {
     if (seen.has(a.verb)) continue; seen.add(a.verb);
