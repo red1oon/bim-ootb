@@ -224,12 +224,83 @@ function read(O, a) {   // by --id: unchanged. By --number: the resolver names t
   return OC.read(O, { kind: a.kind, uu: String(r[K.key]) });
 }
 
+// ── new (NEURO §R.V item 2): a record created the way the window creates it. GridTab.dataNew defaults + the callout fan (ad_callout.js, the same engine the window runs), the user's columns set one
+//    by one as edits (so the callouts fire as they do on screen), mandatory columns checked, then the model layer's own save (Document No from the sequence). No per-table code. ──
+const DEC_ID = /^-?\d+$/, NEW_BREAK = process.env.NEW_BREAK || '';   // W-ERP-NEW falsifiers: nocallouts | nomandatory
+function tabFor(O, K) {   // the table's own tab: the lowest tab level in its window (the window the user would open)
+  const t = O.rows("SELECT t.ad_tab_id AS id, t.ad_window_id AS win, t.tablevel AS lvl, t.seqno AS seq FROM ad_tab t WHERE t.ad_table_id=? AND t.isactive='Y' ORDER BY t.tablevel, t.seqno, t.ad_tab_id", [K.id])[0];
+  if (!t) refuse('kind ' + K.name + ' has no tab in the dictionary, so there is no window to create it in');
+  return t;
+}
+function identOf(O, table) {   // the columns a person types to name a record of this table: DocumentNo, else Value, else Name (the lookup's identifier columns)
+  const cols = O.rows("SELECT lower(c.columnname) AS c FROM ad_column c JOIN ad_table t ON t.ad_table_id=c.ad_table_id WHERE lower(t.tablename)=? AND c.isactive='Y'", [table.toLowerCase()]).map(r => r.c);
+  return ['documentno', 'value', 'name'].filter(x => cols.indexOf(x) >= 0);
+}
+function lookupByName(O, field, text, client) {   // a column that holds a record's id may be given as that record's number or name: resolved as the lookup does; none or several is refused naming them
+  const vo = field.vo, table = vo.refTable, key = vo.refKey; if (!table || !key) refuse(vo.ColumnName + ' takes a number, "' + text + '" is not one');
+  const idc = identOf(O, table); if (!idc.length) refuse(vo.ColumnName + ' takes the key of a ' + table + ' record; "' + text + '" is not a number');
+  const scoped = O.rows("SELECT 1 AS x FROM ad_column c JOIN ad_table t ON t.ad_table_id=c.ad_table_id WHERE lower(t.tablename)=? AND lower(c.columnname)='ad_client_id' AND c.isactive='Y'", [table.toLowerCase()]).length > 0;   // a lookup shows the session client's records and the system's (AD_Client_ID 0)
+  const rs = O.rows('SELECT ' + key + ' AS k, ' + idc.map(c => c).join(', ') + ' FROM ' + table + ' WHERE (' + idc.map(c => 'lower(' + c + ')=lower(?)').join(' OR ') + ')' + (scoped ? ' AND ad_client_id IN (0, ' + Number(client) + ')' : ''), idc.map(() => String(text)));
+  if (!rs.length) refuse('no ' + table + ' record is named "' + text + '" (looked in ' + idc.join(', ') + ')');
+  if (rs.length > 1) refuse(rs.length + ' ' + table + ' records are named "' + text + '" (' + key + ' ' + rs.map(r => r.k).join(', ') + '); give the key');
+  return rs[0].k;
+}
+function createRecord(O, a) {
+  if (!a.kind) refuse('--kind is required');
+  const t0 = Date.now(), K = kindRef(O, a.kind), tab = tabFor(O, K), A = require(path.join(ROOT, 'erp', 'ad_callout.js'));
+  const given = {}; (Array.isArray(a.where) ? a.where : (a.where ? [a.where] : [])).forEach(w => { const m = /^([A-Za-z_]\w*)=([\s\S]*)$/.exec(w); if (!m) refuse('a column is column=value, got "' + w + '"'); if (m[1].toLowerCase() in given) refuse('column ' + m[1] + ' given twice'); given[m[1].toLowerCase()] = m[2]; });
+  const log = console.log; console.log = () => {};   // the engine prints its own § lines to stdout; stdout here carries only the answer
+  try {
+    A.bind((sql, p) => O.rows(sql, p));
+    const day = (a.date || new Date().toISOString().slice(0, 10)), client = 11, org = Number(given.ad_org_id || 11), holder = {};
+    const ctx = A.sessionContext({ client, org, role: Number(a.role || 102), user: Number(a.user || 101), wh: 103, date: day, session: holder });
+    const W = 1; let parent = null;
+    const field0 = A.openTab(tab.id, { ctx, windowNo: W, tabNo: 0 });   // the target tab, to know its columns before choosing parents
+    const link = field0.fields.filter(f => f.vo.IsParent).map(f => f.vo.ColumnName);
+    // the parent record (a line names its document): given as the column (C_Order_ID=...) or as the kind's short name (order=...), by key or by number/name
+    let parentRow = null, parentTab = null;
+    for (const lc of link) {
+      const bare = lc.replace(/_ID$/i, '').toLowerCase(), alias = bare.replace(/^[a-z]{1,2}_/, ''), key = Object.keys(given).filter(k => k === lc.toLowerCase() || k === bare || k === alias)[0];   // a parent link column may be said in full (c_xxx_id), without _id, or without its module prefix
+      const pk = key ? kindRef(O, lc.replace(/_ID$/i, '')) : null; if (!key) continue;
+      const asId = key === lc.toLowerCase();   // c_xxx_id=<key> names the key; xxx=<number> names the document number
+      const pr = asId ? O.rows('SELECT * FROM ' + pk.table + ' WHERE ' + pk.key + '=?', [Number(given[key])])[0] : (byNumber(O, pk, given[key]).length === 1 ? byNumber(O, pk, given[key])[0] : null);
+      if (!pr) { const n = asId ? 0 : byNumber(O, pk, given[key]).length; refuse(n > 1 ? n + ' ' + pk.name + ' records carry number ' + given[key] + '; give the key' : 'no ' + pk.name + ' ' + given[key]); }
+      given[lc.toLowerCase()] = String(pr[pk.key]); if (key !== lc.toLowerCase()) delete given[key];
+      const ptab = tabFor(O, pk); parentRow = pr; parentTab = A.openTab(ptab.id, { ctx, windowNo: W, tabNo: 0 });
+      if (parentTab) { parentTab.load(pr, false); parentTab.updateWindowContext = false; parent = parentTab; }
+    }
+    const st = A.openTab(tab.id, { ctx, windowNo: W, tabNo: parent ? 1 : 0, parentTab: parent });
+    const bycol = {}; st.fields.forEach(f => { bycol[f.vo.ColumnName.toLowerCase()] = f; });
+    const unknown = Object.keys(given).filter(k => !bycol[k]);
+    if (unknown.length) refuse('kind ' + K.name + ' has no property "' + unknown[0] + '" (its properties: ' + st.fields.map(f => f.vo.ColumnName).join(', ') + ')');
+    // a window that opens as Sales or Purchase takes IsSOTrx from the menu; "Order" alone does not say which
+    const iso = bycol.issotrx; if (iso && /@IsSOTrx@/i.test(iso.vo.DefaultValue || '') && !('issotrx' in given)) refuse('kind ' + K.name + ' is a Sales or a Purchase document: say issotrx=Y or issotrx=N');
+    if ('issotrx' in given) A.Env.setContext(ctx, W, 'IsSOTrx', given.issotrx);
+    st.load({}, true); if (NEW_BREAK !== 'nocallouts') st.dataNewCallouts();
+    const set = [];
+    Object.keys(given).forEach(k => {   // each given column is an edit, in the order given: its callouts fire as on screen
+      const f = bycol[k]; let v = given[k];
+      if (f.vo.refTable && !DEC_ID.test(String(v).trim())) v = lookupByName(O, f, v, client);
+      if (NEW_BREAK === 'nocallouts') f.setValue(A.typed(f.getDisplayType(), v), true); else st.setValue(f.vo.ColumnName, v);   // the break: an edit that fires no callout
+      set.push(f.vo.ColumnName);
+    });
+    const snap = st.snapshot(), empty = st.fields.filter(f => f.isMandatory() && !f.isKey() && (snap[f.vo.ColumnName] == null || snap[f.vo.ColumnName] === '') && !/^(Created|Updated|CreatedBy|UpdatedBy)$/.test(f.vo.ColumnName)).map(f => f.vo.ColumnName);
+    if (empty.length && NEW_BREAK !== 'nomandatory') refuse('mandatory and still empty after the defaults and callouts: ' + empty.join(', ') + ' (give them as column=value)');
+    const row = {}; st.fields.forEach(f => { const c = f.vo.ColumnName, v = snap[c]; if (f.isKey() || v == null || v === '') return; row[c.toLowerCase()] = (A.DisplayType.isNumeric(f.getDisplayType()) && !A.DisplayType.isID(f.getDisplayType()) && DEC_ID.test(String(v).replace('.', '')) ) ? Number(v) : v; });
+    const tx = O.trx(); Object.assign(tx.env, { client, org, date: day + ' 00:00:00' });
+    const r = O.ML.save(tx, K.table, null, row); if (!r.ok) refuse('the model layer refused the save: ' + r.error);
+    const res = persistGroup(O, tx.groupOps()), main = res.filter(o => o.table === K.table)[0] || res[res.length - 1], id = main.fields ? main.fields[K.key] : main.id;
+    const saved = O.rows('SELECT * FROM ' + K.table + ' WHERE ' + K.key + '=?', [id])[0] || {};
+    console.log = log; say('new kind=' + K.name + ' tab=' + tab.id + ' given=' + set.join(',') + ' fields=' + Object.keys(row).length + ' id=' + id + ' number=' + (K.numCol ? saved[K.numCol] : '') + ' ms=' + (Date.now() - t0));
+    return { number: K.numCol ? saved[K.numCol] : null, kind: K.name, table: K.table, id, docStatus: saved.docstatus == null ? null : saved.docstatus, given: set, defaulted: Object.keys(row).length - set.length, record: saved, ops: res.map(o => ({ op_type: o.op_type, table: o.table })) };
+  } finally { console.log = log; }
+}
 async function main(argv) {
   const cmd = argv[0], a = {};
   for (let i = 1; i < argv.length; i++) { const m = /^--(\w+)$/.exec(argv[i]); if (!m || i + 1 >= argv.length) { say('FAIL usage: ' + argv[i]); return 2; } if (m[1] === 'where') (a.where = a.where || []).push(argv[++i]); else a[m[1]] = argv[++i]; }
-  if (['find', 'actions', 'describe', 'read', 'list', 'sum', 'group'].concat(Object.keys(ACT)).indexOf(cmd) < 0) { say('FAIL usage: erp_cli.js find|actions|complete|void|close|reverse|describe|read|list|sum|group --kind K (--number N | --id I) [--role R]'); return 2; }
+  if (['find', 'actions', 'describe', 'read', 'list', 'sum', 'group', 'new'].concat(Object.keys(ACT)).indexOf(cmd) < 0) { say('FAIL usage: erp_cli.js find|actions|complete|void|close|reverse|describe|read|list|sum|group --kind K (--number N | --id I) [--role R]'); return 2; }
   try {
-    const O = await boot(a), out = ACT[cmd] ? act(O, a, ACT[cmd]) : ({ find, actions, describe, read, list: OC.list, sum: OC.sum, group: OC.group })[cmd](O, a);
+    const O = await boot(a), out = ACT[cmd] ? act(O, a, ACT[cmd]) : ({ find, actions, describe, read, list: OC.list, sum: OC.sum, group: OC.group, new: createRecord })[cmd](O, a);
     process.stdout.write(JSON.stringify(out) + '\n'); return 0;
   } catch (e) {
     if (e instanceof Refused || e instanceof OC.Refused) { say('REFUSED ' + e.message); process.stdout.write(JSON.stringify({ refused: true, reason: e.message }) + '\n'); return 3; }
