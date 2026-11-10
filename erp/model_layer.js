@@ -366,6 +366,8 @@
       if (skip) continue;                                                                                                // NULLs never collide
       if (cs.length === 1 && cs[0] === idc && isNewId(vals[0])) continue;                                                // a key still to be assigned (placeholder) cannot be taken
       var hit = trx.find(table, where).filter(function (r) { return selfId == null || String(r[idc]) !== String(selfId); })[0];
+      // who holds the key: a row of the tenant, or a row this same transaction made (isNewId) - said in the log only; the legacy error text below is unchanged
+      if (hit) trx.say('§MODEL-UNIQUE table=' + table + ' key=(' + cs.join(', ') + ')=(' + vals.join(', ') + ') held_by=' + (isNewId(hit[idc]) ? 'this-load' : 'tenant'));
       if (hit) return 'ERROR: duplicate key value violates unique constraint "' + ix[i].indexname + '"\n  Detail: Key (' + cs.join(', ') + ')=(' + vals.join(', ') + ') already exists.';   // PG's own Detail line
     }
     return null;
