@@ -309,6 +309,30 @@
       trx.update('c_order', trx.get('c_order', o.c_order_id), { docstatus: 'RE' });
       return true;
     },
+    // MOrder.closeIt :2881-2935 - Close = cancel the not-delivered quantity. DocumentEngine.closeIt :618-636: an order can be closed in any status (no isValidAction), then STATUS_Closed.
+    //   refused while a shipment of this order is In Progress (:2889-2905); QtyLostSales = ordered - delivered, QtyOrdered := QtyDelivered, description "Close (old)" (literal, :2927); reservations cleared;
+    //   Processed, DocAction -- ; calculateTaxTotal (IDEMPIERE-966) rebuilds the tax rows from the lines.
+    closeIt: function (trx, o) {
+      var m = fire(trx, 'BEFORE_CLOSE', 'c_order', o); if (m) { T.msg(trx, m); return false; }
+      var ip = trx.q("SELECT DISTINCT io.documentno AS dn FROM m_inout io JOIN m_inoutline iol ON io.m_inout_id=iol.m_inout_id JOIN c_orderline ol ON iol.c_orderline_id=ol.c_orderline_id " +
+        "WHERE io.docstatus='IP' AND ol.qtyordered<>0 AND (ol.m_product_id>0 OR ol.c_charge_id>0) AND ol.isactive='Y' AND iol.isactive='Y' AND ol.c_order_id=?", [o.c_order_id]);
+      if (ip.length) { T.msg(trx, T.msgText(trx, 'MInOutInProgress') + ' (' + ip.map(function (r) { return r.dn; }).join(', ') + ')'); return false; }
+      lines(trx, o, ['m_product_id']).forEach(function (l) {
+        var old = D(l.qtyordered);
+        if (old.compareTo(D(l.qtydelivered)) !== 0) {
+          var ch = {};
+          if (old.compareTo(D(l.qtydelivered)) > 0) { ch.qtylostsales = N(old.subtract(D(l.qtydelivered))); ch.qtyordered = N(D(l.qtydelivered)); } else ch.qtylostsales = 0;
+          trx.update('c_orderline', l, ch); T.addDescription(trx, 'c_orderline', trx.get('c_orderline', l.c_orderline_id), 'Close (' + old.toString() + ')');
+        }
+      });
+      o = trx.get('c_order', o.c_order_id);
+      if (!reserveStock(trx, o, T.dt(trx, o.c_doctype_id), lines(trx, o, ['m_product_id']))) { T.msg(trx, 'Cannot unreserve Stock (close)'); return false; }
+      setProcessed(trx, o, 'Y'); trx.update('c_order', trx.get('c_order', o.c_order_id), { docaction: '--' });
+      calculateOrderTaxTotal(trx, trx.get('c_order', o.c_order_id));
+      m = fire(trx, 'AFTER_CLOSE', 'c_order', trx.get('c_order', o.c_order_id)); if (m) { T.msg(trx, m); return false; }
+      trx.update('c_order', trx.get('c_order', o.c_order_id), { docstatus: 'CL' });           // DocumentEngine.closeIt :629-631
+      return true;
+    },
     approveIt: function (trx, o) { trx.update('c_order', o, { isapproved: 'Y' }); return true; },
     rejectIt: function (trx, o) { trx.update('c_order', o, { isapproved: 'N' }); return true; },
     getSummary: function (trx, o) { return (o.documentno || '') + ': Grand Total=' + o.grandtotal + (o.description ? ' - ' + o.description : ''); }   // :3099-3112
