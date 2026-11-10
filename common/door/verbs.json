@@ -958,6 +958,252 @@
    "witness": "common/door/tests/witness_object_count.js"
   },
   {
+   "verb": "object.list",
+   "app": "object",
+   "title": "List records of a kind",
+   "description": "List the records of a kind as rows. Columns, filters and the sort are checked against the dictionary: an unknown column is an error that names the kind's properties. Shows at most 50 rows unless limit says otherwise (up to 1000); the answer always carries the total, so a short list is never mistaken for the whole. Nothing is changed. Add column=value to filter (several allowed).",
+   "inputs": [
+    {
+     "name": "building",
+     "description": "The building name, e.g. \"Duplex\". Its model must carry its own dictionary (a patch with the object layer).",
+     "required": true,
+     "type": "building",
+     "example": "Duplex"
+    },
+    {
+     "name": "kind",
+     "description": "The kind of object, as the model's dictionary names it, e.g. \"Room\" or \"Element\". An unknown kind is an error that lists the kinds the model registers.",
+     "required": true,
+     "type": "string",
+     "example": "Room"
+    },
+    {
+     "name": "columns",
+     "description": "Optional: the columns to show, comma separated, e.g. DocumentNo,DocStatus. Default: the key, the number or name, and DocStatus where the kind has one.",
+     "required": false,
+     "type": "string",
+     "example": "DocumentNo,DocStatus"
+    },
+    {
+     "name": "sort",
+     "description": "Optional: a column to sort by; a leading - sorts descending.",
+     "required": false,
+     "type": "string",
+     "example": "-DocumentNo"
+    },
+    {
+     "name": "limit",
+     "description": "Optional: how many rows to show (1 to 1000, default 50).",
+     "required": false,
+     "type": "string",
+     "example": "20"
+    },
+    {
+     "name": "offset",
+     "description": "Optional: skip this many rows (to page through a long kind).",
+     "required": false,
+     "type": "string",
+     "example": "0"
+    }
+   ],
+   "harm": "read",
+   "calls": {
+    "cli": "object_cli",
+    "who": "the object engine",
+    "argv": [
+     "list",
+     "--building",
+     "{building}",
+     "--kind",
+     "{kind}",
+     {
+      "if": "columns",
+      "args": [
+       "--columns",
+       "{columns}"
+      ]
+     },
+     {
+      "if": "sort",
+      "args": [
+       "--sort",
+       "{sort}"
+      ]
+     },
+     {
+      "if": "limit",
+      "args": [
+       "--limit",
+       "{limit}"
+      ]
+     },
+     {
+      "if": "offset",
+      "args": [
+       "--offset",
+       "{offset}"
+      ]
+     }
+    ],
+    "rest": {
+     "flag": "--where",
+     "what": "column=value, a property of the kind and the value it must equal (give as many as you like)"
+    }
+   },
+   "returns": {
+    "shape": "object_cli JSON {kind,table,filters,columns,rows:[{column:value}],shown,total,population,offset,verdict OK|VACUOUS,summary}",
+    "fields": [
+     {
+      "path": "total",
+      "type": "number"
+     },
+     {
+      "path": "shown",
+      "type": "number"
+     },
+     {
+      "path": "rows",
+      "type": "array"
+     }
+    ]
+   },
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "witness": "common/door/tests/witness_door_rows.js"
+  },
+  {
+   "verb": "object.sum",
+   "app": "object",
+   "title": "Add up a column",
+   "description": "The exact sum of one number column over the records of a kind (all of them, or those matching column=value filters). Decimals are added exactly, never as floating point. An empty kind is inconclusive, never a plain 0. Nothing is changed.",
+   "inputs": [
+    {
+     "name": "building",
+     "description": "The building name, e.g. \"Duplex\". Its model must carry its own dictionary (a patch with the object layer).",
+     "required": true,
+     "type": "building",
+     "example": "Duplex"
+    },
+    {
+     "name": "kind",
+     "description": "The kind of object, as the model's dictionary names it, e.g. \"Room\" or \"Element\". An unknown kind is an error that lists the kinds the model registers.",
+     "required": true,
+     "type": "string",
+     "example": "Room"
+    },
+    {
+     "name": "column",
+     "description": "The number column to add up (an amount, quantity, number or whole-number property).",
+     "required": true,
+     "type": "string",
+     "example": "Quantity"
+    }
+   ],
+   "harm": "read",
+   "calls": {
+    "cli": "object_cli",
+    "who": "the object engine",
+    "argv": [
+     "sum",
+     "--building",
+     "{building}",
+     "--kind",
+     "{kind}",
+     "--column",
+     "{column}"
+    ],
+    "rest": {
+     "flag": "--where",
+     "what": "column=value, a property of the kind and the value it must equal (give as many as you like)"
+    }
+   },
+   "returns": {
+    "shape": "object_cli JSON {kind,table,column,filters,n,sum (exact decimal text),population,verdict OK|VACUOUS,summary}",
+    "fields": [
+     {
+      "path": "sum",
+      "type": "string"
+     },
+     {
+      "path": "n",
+      "type": "number"
+     }
+    ]
+   },
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "witness": "common/door/tests/witness_door_rows.js"
+  },
+  {
+   "verb": "object.group",
+   "app": "object",
+   "title": "Count by a column",
+   "description": "How many records of a kind carry each value of one column, most common first (all records, or those matching column=value filters). The total is always given. An empty kind is inconclusive. Nothing is changed.",
+   "inputs": [
+    {
+     "name": "building",
+     "description": "The building name, e.g. \"Duplex\". Its model must carry its own dictionary (a patch with the object layer).",
+     "required": true,
+     "type": "building",
+     "example": "Duplex"
+    },
+    {
+     "name": "kind",
+     "description": "The kind of object, as the model's dictionary names it, e.g. \"Room\" or \"Element\". An unknown kind is an error that lists the kinds the model registers.",
+     "required": true,
+     "type": "string",
+     "example": "Room"
+    },
+    {
+     "name": "by",
+     "description": "The column to group by.",
+     "required": true,
+     "type": "string",
+     "example": "Discipline"
+    }
+   ],
+   "harm": "read",
+   "calls": {
+    "cli": "object_cli",
+    "who": "the object engine",
+    "argv": [
+     "group",
+     "--building",
+     "{building}",
+     "--kind",
+     "{kind}",
+     "--by",
+     "{by}"
+    ],
+    "rest": {
+     "flag": "--where",
+     "what": "column=value, a property of the kind and the value it must equal (give as many as you like)"
+    }
+   },
+   "returns": {
+    "shape": "object_cli JSON {kind,table,by,filters,columns,rows:[{column:value,count}],shown,total (groups),records,population,verdict OK|VACUOUS,summary}",
+    "fields": [
+     {
+      "path": "total",
+      "type": "number"
+     },
+     {
+      "path": "rows",
+      "type": "array"
+     }
+    ]
+   },
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "witness": "common/door/tests/witness_door_rows.js"
+  },
+  {
    "verb": "erp.find",
    "app": "erp",
    "title": "Find a document",
@@ -1203,6 +1449,225 @@
     "ai"
    ],
    "witness": "common/door/tests/witness_erp_verbs.js"
+  },
+  {
+   "verb": "erp.list",
+   "app": "erp",
+   "title": "List records",
+   "description": "List the records of a kind as rows. Columns, filters and the sort are checked against the dictionary: an unknown column is an error that names the kind's properties. Shows at most 50 rows unless limit says otherwise (up to 1000); the answer always carries the total, so a short list is never mistaken for the whole. Nothing is changed. Add column=value to filter (several allowed).",
+   "inputs": [
+    {
+     "name": "kind",
+     "description": "The kind of record, as the dictionary names it (any AD table), e.g. \"Order\". An unknown kind is refused naming the reason.",
+     "required": true,
+     "type": "string",
+     "example": "Order"
+    },
+    {
+     "name": "columns",
+     "description": "Optional: the columns to show, comma separated, e.g. DocumentNo,DocStatus. Default: the key, the number or name, and DocStatus where the kind has one.",
+     "required": false,
+     "type": "string",
+     "example": "DocumentNo,DocStatus"
+    },
+    {
+     "name": "sort",
+     "description": "Optional: a column to sort by; a leading - sorts descending.",
+     "required": false,
+     "type": "string",
+     "example": "-DocumentNo"
+    },
+    {
+     "name": "limit",
+     "description": "Optional: how many rows to show (1 to 1000, default 50).",
+     "required": false,
+     "type": "string",
+     "example": "20"
+    },
+    {
+     "name": "offset",
+     "description": "Optional: skip this many rows (to page through a long kind).",
+     "required": false,
+     "type": "string",
+     "example": "0"
+    }
+   ],
+   "harm": "read",
+   "calls": {
+    "cli": "erp_cli",
+    "who": "the ERP engine",
+    "argv": [
+     "list",
+     "--kind",
+     "{kind}",
+     {
+      "if": "columns",
+      "args": [
+       "--columns",
+       "{columns}"
+      ]
+     },
+     {
+      "if": "sort",
+      "args": [
+       "--sort",
+       "{sort}"
+      ]
+     },
+     {
+      "if": "limit",
+      "args": [
+       "--limit",
+       "{limit}"
+      ]
+     },
+     {
+      "if": "offset",
+      "args": [
+       "--offset",
+       "{offset}"
+      ]
+     }
+    ],
+    "rest": {
+     "flag": "--where",
+     "what": "column=value, a property of the kind and the value it must equal (give as many as you like)"
+    }
+   },
+   "returns": {
+    "shape": "object_cli JSON {kind,table,filters,columns,rows:[{column:value}],shown,total,population,offset,verdict OK|VACUOUS,summary}",
+    "fields": [
+     {
+      "path": "total",
+      "type": "number"
+     },
+     {
+      "path": "shown",
+      "type": "number"
+     },
+     {
+      "path": "rows",
+      "type": "array"
+     }
+    ]
+   },
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "witness": "common/door/tests/witness_door_rows.js"
+  },
+  {
+   "verb": "erp.sum",
+   "app": "erp",
+   "title": "Add up a column",
+   "description": "The exact sum of one number column over the records of a kind (all of them, or those matching column=value filters). Decimals are added exactly, never as floating point. An empty kind is inconclusive, never a plain 0. Nothing is changed.",
+   "inputs": [
+    {
+     "name": "kind",
+     "description": "The kind of record, as the dictionary names it (any AD table), e.g. \"Order\". An unknown kind is refused naming the reason.",
+     "required": true,
+     "type": "string",
+     "example": "Order"
+    },
+    {
+     "name": "column",
+     "description": "The number column to add up (an amount, quantity, number or whole-number property).",
+     "required": true,
+     "type": "string",
+     "example": "GrandTotal"
+    }
+   ],
+   "harm": "read",
+   "calls": {
+    "cli": "erp_cli",
+    "who": "the ERP engine",
+    "argv": [
+     "sum",
+     "--kind",
+     "{kind}",
+     "--column",
+     "{column}"
+    ],
+    "rest": {
+     "flag": "--where",
+     "what": "column=value, a property of the kind and the value it must equal (give as many as you like)"
+    }
+   },
+   "returns": {
+    "shape": "object_cli JSON {kind,table,column,filters,n,sum (exact decimal text),population,verdict OK|VACUOUS,summary}",
+    "fields": [
+     {
+      "path": "sum",
+      "type": "string"
+     },
+     {
+      "path": "n",
+      "type": "number"
+     }
+    ]
+   },
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "witness": "common/door/tests/witness_door_rows.js"
+  },
+  {
+   "verb": "erp.group",
+   "app": "erp",
+   "title": "Count by a column",
+   "description": "How many records of a kind carry each value of one column, most common first (all records, or those matching column=value filters). The total is always given. An empty kind is inconclusive. Nothing is changed.",
+   "inputs": [
+    {
+     "name": "kind",
+     "description": "The kind of record, as the dictionary names it (any AD table), e.g. \"Order\". An unknown kind is refused naming the reason.",
+     "required": true,
+     "type": "string",
+     "example": "Order"
+    },
+    {
+     "name": "by",
+     "description": "The column to group by.",
+     "required": true,
+     "type": "string",
+     "example": "DocStatus"
+    }
+   ],
+   "harm": "read",
+   "calls": {
+    "cli": "erp_cli",
+    "who": "the ERP engine",
+    "argv": [
+     "group",
+     "--kind",
+     "{kind}",
+     "--by",
+     "{by}"
+    ],
+    "rest": {
+     "flag": "--where",
+     "what": "column=value, a property of the kind and the value it must equal (give as many as you like)"
+    }
+   },
+   "returns": {
+    "shape": "object_cli JSON {kind,table,by,filters,columns,rows:[{column:value,count}],shown,total (groups),records,population,verdict OK|VACUOUS,summary}",
+    "fields": [
+     {
+      "path": "total",
+      "type": "number"
+     },
+     {
+      "path": "rows",
+      "type": "array"
+     }
+    ]
+   },
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "witness": "common/door/tests/witness_door_rows.js"
   },
   {
    "verb": "erp.complete",

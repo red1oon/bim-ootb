@@ -40,6 +40,23 @@ async function main() {
       [{ name: 'kind', description: kindIn.description.split('. ')[0].replace('document', 'record').replace('(an AD_Table with a DocAction column)', '(an AD table)') + '.', required: true, type: 'string', example: exKind }, { name: 'id', description: 'The record\'s key value (its _ID). Give this or number.', required: false, type: 'string', example: '1500004' }, { name: 'number', description: 'The record\'s number as the window shows it (DocumentNo, else Name or Value); if several records carry it, name one with id.', required: false, type: 'string', example: '50000' }], 'read', ['read', '--kind', '{kind}', { if: 'id', args: ['--id', '{id}'] }, { if: 'number', args: ['--number', '{number}'] }],
       'object_cli JSON {kind,uu,record,children:[{kind,rows}]} or {refused,reason}', [{ path: 'kind', type: 'string' }])
   ];
+  // the row verbs (NEURO §R.V item 5): the generic object layer's list / sum / group over the ERP's own AD tables; columns and filters are checked by the engine against the dictionary
+  const REST = { flag: '--where', what: 'column=value, a property of the kind and the value it must equal (give as many as you like)' };
+  const inp = (name, description, required, example) => ({ name, description, required, type: 'string', example });
+  const rkind = inp('kind', 'The kind of record, as the dictionary names it (any AD table), e.g. "' + exKind + '". An unknown kind is refused naming the reason.', true, exKind);
+  const cap = 'Shows at most 50 rows unless limit says otherwise (up to 1000); the answer always carries the total, so a short list is never mistaken for the whole. ';
+  const rowv = (verb, title, description, inputs, argv, shape, fields) => ({ verb, app: 'erp', title, description, inputs, harm: 'read', calls: { cli: 'erp_cli', who: 'the ERP engine', argv, rest: REST }, returns: { shape, fields }, actors: ['human', 'ai'], witness: 'common/door/tests/witness_door_rows.js' });
+  out.push(
+    rowv('erp.list', 'List records', 'List the records of a kind as rows. Columns, filters and the sort are checked against the dictionary: an unknown column is an error that names the kind\'s properties. ' + cap + 'Nothing is changed. Add column=value to filter (several allowed).',
+      [rkind, inp('columns', 'Optional: the columns to show, comma separated, e.g. DocumentNo,DocStatus. Default: the key, the number or name, and DocStatus where the kind has one.', false, 'DocumentNo,DocStatus'), inp('sort', 'Optional: a column to sort by; a leading - sorts descending.', false, '-DocumentNo'), inp('limit', 'Optional: how many rows to show (1 to 1000, default 50).', false, '20'), inp('offset', 'Optional: skip this many rows (to page through a long kind).', false, '0')],
+      ['list', '--kind', '{kind}', { if: 'columns', args: ['--columns', '{columns}'] }, { if: 'sort', args: ['--sort', '{sort}'] }, { if: 'limit', args: ['--limit', '{limit}'] }, { if: 'offset', args: ['--offset', '{offset}'] }],
+      'object_cli JSON {kind,table,filters,columns,rows:[{column:value}],shown,total,population,offset,verdict OK|VACUOUS,summary}', [{ path: 'total', type: 'number' }, { path: 'shown', type: 'number' }, { path: 'rows', type: 'array' }]),
+    rowv('erp.sum', 'Add up a column', 'The exact sum of one number column over the records of a kind (all of them, or those matching column=value filters). Decimals are added exactly, never as floating point. An empty kind is inconclusive, never a plain 0. Nothing is changed.',
+      [rkind, inp('column', 'The number column to add up (an amount, quantity, number or whole-number property).', true, 'GrandTotal')], ['sum', '--kind', '{kind}', '--column', '{column}'],
+      'object_cli JSON {kind,table,column,filters,n,sum (exact decimal text),population,verdict OK|VACUOUS,summary}', [{ path: 'sum', type: 'string' }, { path: 'n', type: 'number' }]),
+    rowv('erp.group', 'Count by a column', 'How many records of a kind carry each value of one column, most common first (all records, or those matching column=value filters). The total is always given. An empty kind is inconclusive. Nothing is changed.',
+      [rkind, inp('by', 'The column to group by.', true, 'DocStatus')], ['group', '--kind', '{kind}', '--by', '{by}'],
+      'object_cli JSON {kind,table,by,filters,columns,rows:[{column:value,count}],shown,total (groups),records,population,verdict OK|VACUOUS,summary}', [{ path: 'total', type: 'number' }, { path: 'rows', type: 'array' }]));
   const seen = new Set();
   for (const a of av) {
     if (seen.has(a.verb)) continue; seen.add(a.verb);
