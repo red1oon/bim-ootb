@@ -225,7 +225,7 @@ function mk(O) { return {
   function formFor(cls, plan) {   // a test-side form over the SAME shared pieces the shipped forms use (convert -> OB.openOf/problems -> FORM.load -> OB.complete): no mapping, no verifier of its own
     if (regd[cls]) return; regd[cls] = 1;
     AF.register(cls, { title: 'Test: migrate open balances', params: [{ name: 'Files', label: 'open balances', type: 'file', multiple: true, mandatory: true }], columns: [{ key: 'item', label: 'Item' }], rows: function () { return []; },
-      run: function (trx, params) { var p = plan(trx, params); if (p.problems.length) throw new Error('Not migrated: ' + p.problems.join(' ')); var r = FORM.load(trx, p.cv.book, p.open); if (!r.ok) throw new Error(String(r.summary || 'The load was refused.') + ' ' + J(r.refusals).slice(0, 400)); return 'loaded ' + J(r.perTable); },
+      run: function (trx, params) { var p = plan(trx, params); if (p.problems.length) throw new Error('Not migrated: ' + p.problems.join(' ')); var r = FORM.load(trx, p.cv.book, p.open, true); if (!r.ok) throw new Error(String(r.summary || 'The load was refused.') + ' ' + J(r.refusals).slice(0, 400)); return 'loaded ' + J(r.perTable); },
       after: function (trx, params) { var p = plan(trx, params); return OB.complete(trx, AP, p.open); } });
   }
   function session(S, loginDate, cls) {

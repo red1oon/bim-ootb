@@ -146,7 +146,7 @@ var SCH = "(SELECT c_acctschema1_id FROM ad_clientinfo WHERE ad_client_id=" + CL
   var CLS = 'org.test.IdempiereOpen', PLAN = function (trx, params) { var cv = IC.convert(params.Files[0].data), open = OB.openOf(cv.book, cv.manifest); return { cv: cv, open: open, problems: cv.manifest.problems.concat(OB.problems(trx, open)) }; };
   AF.register(CLS, { title: 'Test: migrate open balances of a legacy iDempiere', params: [{ name: 'Files', label: 'idempiere_open.json', type: 'file', multiple: true, mandatory: true }], columns: [{ key: 'item', label: 'Item' }],
     rows: function () { return []; },
-    run: function (trx, params) { var p = PLAN(trx, params); if (p.problems.length) throw new Error('Not migrated: ' + p.problems.join(' ')); var r = FORM.load(trx, p.cv.book, p.open); if (!r.ok) throw new Error(String(r.summary || 'The load was refused.') + ' ' + J(r.refusals).slice(0, 400)); return 'loaded ' + J(r.perTable); },
+    run: function (trx, params) { var p = PLAN(trx, params); if (p.problems.length) throw new Error('Not migrated: ' + p.problems.join(' ')); var r = FORM.load(trx, p.cv.book, p.open, true); if (!r.ok) throw new Error(String(r.summary || 'The load was refused.') + ' ' + J(r.refusals).slice(0, 400)); return 'loaded ' + J(r.perTable); },
     after: function (trx, params) { var p = PLAN(trx, params); return OB.complete(trx, AP, p.open); } });
   function session(S, loginDate) {
     var withT = function (fn) { return fn(k.q, Object.assign(k.env(S), { date: loginDate + ' 00:00:00' })); };

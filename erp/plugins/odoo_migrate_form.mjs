@@ -219,15 +219,19 @@ function heldByIdentifier(trx, book) {
 
 // saltUU(book, client): the converters mint deterministic UUs (uuid5 of the source id) so a sheet can find its own rows (C_Location_ID>C_Location_UU). Legacy's <table>_uu_idx is GLOBAL, so the same export loaded
 //   into a second company would collide: every *_UU value of the file is mapped, with the target client, to another deterministic UUID. Same file + same tenant = same UUs (a repeat finds its rows); another tenant = distinct.
-function saltUU(book, client) {
+export function saltUUValue(client, v) {
   const h = (str, seed) => { let a = 0x811c9dc5 ^ seed, b = 0x9e3779b9 ^ seed; for (let i = 0; i < str.length; i++) { const c = str.charCodeAt(i); a = Math.imul(a ^ c, 16777619); b = Math.imul(b ^ c, 2246822519); b ^= b >>> 13; } return ((a >>> 0).toString(16).padStart(8, '0') + (b >>> 0).toString(16).padStart(8, '0')); };
-  const cache = {}, mapUU = (v) => { const k = String(v); return cache[k] || (cache[k] = (() => { const x = h(client + '|' + k, 1) + h(client + '|' + k, 2) + h(k + '|' + client, 3) + h(k, client); return x.slice(0, 8) + '-' + x.slice(8, 12) + '-5' + x.slice(13, 16) + '-a' + x.slice(17, 20) + '-' + x.slice(20, 32); })()); };
+  const k = String(v), x = h(client + '|' + k, 1) + h(client + '|' + k, 2) + h(k + '|' + client, 3) + h(k, client);
+  return x.slice(0, 8) + '-' + x.slice(8, 12) + '-5' + x.slice(13, 16) + '-a' + x.slice(17, 20) + '-' + x.slice(20, 32);
+}
+function saltUU(book, client) {
+  const mapUU = (v) => saltUUValue(client, v);
   return book.map((b) => { const idx = (b.rows[0] || []).map((hd, i) => (/(^|>)[A-Za-z_]*_UU$/.test(String(hd)) ? i : -1)).filter((i) => i >= 0);
     return idx.length ? { name: b.name, rows: b.rows.map((r, ri) => (ri && r ? r.map((v, i) => (idx.indexOf(i) >= 0 && v !== '' && v != null ? mapUU(v) : v)) : r)) } : b; });
 }
 
-export function load(trx, book, open) {
-  book = saltUU(book, Number(trx.env.client || 0));
+export function load(trx, book, open, salt) {   // salt: the form's own calls (every source: the UUs of a file are salted with the target tenant, legacy's <table>_uu_idx being global)
+  if (salt) book = saltUU(book, Number(trx.env.client || 0));
   const rs = OB.resume(trx, book, open), stk = openingStockSheets(rs.book);
   if (stk) {   // the opening stock (I_Inventory rows stage 2 imports): imported rows equal to the file's lines = already there; pending rows = an earlier refused run's staging, replaced
     const C = Number(trx.env.client || 0), rows = trx.find('i_inventory', { ad_client_id: C }), imp = rows.filter((x) => String(x.i_isimported) === 'Y'), pen = rows.filter((x) => String(x.i_isimported) !== 'Y');
@@ -284,7 +288,7 @@ export const DESC = {
     const probRows = p.problems.map((t, i) => ({ key: 900 + i, item: '⚠ ' + t, selected: false, locked: true }));
     if (!p.book || p.problems.length) { say(trx, '§ODOO-FORM summary problems=' + p.problems.length + ' ' + JSON.stringify(p.problems)); return probRows.concat(p.units, p.sheets); }
     const will = p.open ? OB.willCreate(trx, p.open) : [];
-    const dry = load(trx, p.book, p.open);   // the READ transaction: thrown away by the engine
+    const dry = load(trx, p.book, p.open, true);   // the READ transaction: thrown away by the engine
     p.sheets.forEach((s) => { const inBook = p.book.some((b) => b.name === s.sheet), ref = dry.refusals[s.sheet] || [];
       s.will = !inBook ? 0 : dry.ok ? (dry.perTable[s.table.toUpperCase()] || 0) : 0; s.refused = ref.length; s.already = (dry.already || {})[s.sheet] || 0;
       if (s.already) s.reason = s.already + ' already in this tenant — kept as they are, not loaded' + (s.reason ? ' · ' + s.reason : '');
@@ -304,7 +308,7 @@ export const DESC = {
   run(trx, params, rows) {
     const p = plan(trx, params, rows);
     if (p.problems.length) throw new Error('Not migrated: ' + p.problems.join(' '));
-    const r = load(trx, p.book, p.open);
+    const r = load(trx, p.book, p.open, true);
     say(trx, '§ODOO-FORM run ok=' + r.ok + ' perTable=' + JSON.stringify(r.perTable));
     if (!r.ok) throw new Error(String(r.summary || 'The load was refused.'));
     const nAlready = Object.keys(r.already || {}).reduce((n, k) => n + (r.already[k] || 0), 0), nNew = Object.keys(r.shown).reduce((n, t) => n + (r.shown[t] > 0 ? r.shown[t] : 0), 0);
