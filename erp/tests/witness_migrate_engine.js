@@ -289,7 +289,22 @@ var ALL_BRANCHES = ['refuse:lead', 'refuse:fixed-asset', 'refuse:po-no-supplier'
       if (!byMove[l.move_id]) { byMove[l.move_id] = { no: l.move_name, type: K[0], so: K[1], bp: p.value, date: l.invoice_date || l.date, term: String((mv[l.move_id] || {}).invoice_payment_term_id__name || '').slice(0, 40),
         charge: K[1] === 'Y' ? V0.CHARGE_AR : V0.CHARGE_AP, amt: 0, cls: k, sign: K[2] }; order.push(l.move_id); }
       byMove[l.move_id].amt += cents(l.amount_residual) * K[2]; });
-    return { journal: journal, cls: cls, invoices: order.map(function (id) { return byMove[id]; }), refused: refused, refusedHeld: refusedHeld, left: left };
+    // §E3D-SPEC - the BANK, straight from the raw rows (tb, account.account, account.journal, res.partner.bank, res.bank); the rule written here is the lead's plan (§2026-11-10s), not the template's text:
+    //   one C_BankAccount per bank / cash journal (AccountNo = the res.partner.bank number else the journal code, cut to 20; bank = the one the journal names else ONE named after the company; the journal's
+    //   currency else the company's; Checking for a bank journal, Cash for a cash one); one opening statement per journal whose default account is a cash account with a non-zero trial-balance amount (the
+    //   FIRST journal when two share the account), StmtAmt = ChargeAmt = that amount; a cash account that no journal names stays on Bank Clearing -> left.BANK.
+    var pbk = {}, bnk = {}, tbf = {}, js = exp.sets['account.journal'] || []; (exp.sets['res.partner.bank'] || []).forEach(function (b) { pbk[b.id] = b; }); (exp.sets['res.bank'] || []).forEach(function (b) { bnk[b.id] = b; });
+    exp.sets.tb.forEach(function (r) { if (!(r.account_id in tbf)) tbf[r.account_id] = cents(r.balance); });
+    var banks = [], accounts = [], stmts = [], seenA = {}, coBank = false, cutA = exp.manifest.cutover;
+    (exp.sets['res.bank'] || []).forEach(function (b) { if (banks.indexOf(b.name.slice(0, 60)) < 0) banks.push(b.name.slice(0, 60)); });
+    js.forEach(function (j) { var pb = pbk[j.bank_account_id], no = String((pb && pb.acc_number) || j.code).slice(0, 20), bk = j.bank_id || (pb && pb.bank_id), bn = bk && bnk[bk] ? bnk[bk].name : null;
+      if (!bn) coBank = true; var bname = String(bn || exp.manifest.company_name).slice(0, 60);
+      accounts.push([String(j.code).slice(0, 40), String(j.name).slice(0, 60), bname, no, j.type === 'cash' ? 'B' : 'C', j.currency_id__name || exp.manifest.currency]);
+      var amt = tbf[j.default_account_id] || 0, a = acct[j.default_account_id];
+      if (a && CLS[a.account_type] === 'BANK' && amt !== 0 && !seenA[j.default_account_id]) stmts.push([String('OPEN-BANK-' + j.code + '-' + cutA).slice(0, 60), no, cutA, amt]); seenA[j.default_account_id] = 1; });
+    if (coBank && banks.indexOf(String(exp.manifest.company_name).slice(0, 60)) < 0) banks.push(String(exp.manifest.company_name).slice(0, 60));
+    var leftBank = exp.sets.tb.reduce(function (n, r) { var a = acct[r.account_id]; return a && CLS[a.account_type] === 'BANK' && !js.some(function (j) { return j.default_account_id === r.account_id; }) ? n + cents(r.balance) : n; }, 0);
+    return { journal: journal, cls: cls, invoices: order.map(function (id) { return byMove[id]; }), refused: refused, refusedHeld: refusedHeld, left: left, bank: { banks: banks, accounts: accounts, stmts: stmts, left: leftBank } };
   }
   var mastersOf = function (exp) { return J(oengine(OTPL, exp).book.slice(0, 17)); };
   function judgeOpen(tpl, exp) {   // -> the list of claims that do NOT hold (empty = the template maps this export exactly)
@@ -317,11 +332,22 @@ var ALL_BRANCHES = ['refuse:lead', 'refuse:fixed-asset', 'refuse:po-no-supplier'
       if (jr !== O.cls[k]) bad.push('class-' + k + ' journal=' + jr + ' source=' + O.cls[k]);
       var lines = exp.sets.open_lines.filter(function (l) { return ({ asset_receivable: 'AR', liability_payable: 'AP' })[(exp.sets['account.account'].filter(function (a) { return a.id === l.account_id; })[0] || {}).account_type] === k; }).reduce(function (n, l) { return n + cents(l.amount_residual); }, 0);
       if (docs + O.left[k] !== lines) bad.push('open-' + k + ' docs=' + docs + ' left=' + O.left[k] + ' lines=' + lines); });
+    // BANK (§E3D-SPEC): the three optional bank sheets == the oracle, the clearing arithmetic, the charge, left.BANK
+    var CB = sh('C_Bank'), CA = sh('C_BankAccount'), IB = sh('I_BankStatement'), hx = function (S, h) { return S ? S.rows[0].indexOf(h) : -1; }, rowsOf = function (S) { return S ? S.rows.slice(1) : []; };
+    if (J(rowsOf(CB).map(function (x) { return [x[hx(CB, 'Name')], x[hx(CB, 'RoutingNo')], x[hx(CB, 'IsOwnBank')]]; })) !== J(O.bank.banks.map(function (n) { return [n, OTPL.variables.BANK_ROUTING, 'Y']; }))) bad.push('bank-masters');
+    if (J(rowsOf(CA).map(function (x) { return [x[hx(CA, 'Value')], x[hx(CA, 'Name')], x[hx(CA, 'C_Bank_ID>Name')], x[hx(CA, 'AccountNo')], x[hx(CA, 'BankAccountType')], x[hx(CA, 'C_Currency_ID>ISO_Code')]]; })) !== J(O.bank.accounts)) bad.push('bank-accounts');
+    if (J(rowsOf(IB).map(function (x) { return [x[hx(IB, 'Name')], x[hx(IB, 'BankAccountNo')], x[hx(IB, 'StatementDate')], cents(x[hx(IB, 'StmtAmt')])]; })) !== J(O.bank.stmts)) bad.push('bank-statements');
+    if (rowsOf(IB).some(function (x) { return x[hx(IB, 'StatementLineDate')] !== cut || cents(x[hx(IB, 'ChargeAmt')]) !== cents(x[hx(IB, 'StmtAmt')]) || x[hx(IB, 'C_Charge_ID>Name')] !== OTPL.variables.CHARGE_BANK || x[hx(IB, 'I_IsImported')] !== 'N' || x[hx(IB, 'RoutingNo')] !== OTPL.variables.BANK_ROUTING; })) bad.push('bank-statement-line');
+    if (cents((r.manifest.left || {}).BANK) !== O.bank.left || (r.manifest.left || {}).BANK === undefined) bad.push('left-BANK=' + (r.manifest.left || {}).BANK + ' oracle=' + O.bank.left / 100);
+    if ((r.manifest.charges || {}).BANK !== OTPL.variables.CHARGE_BANK) bad.push('charge-BANK');
+    var jb = gr.filter(function (x) { return x[gx('AccountValue')] === tpl.variables.BANK_CLEARING; }).reduce(function (n, x) { return n + cents(x[gx('AmtSourceDr')]) - cents(x[gx('AmtSourceCr')]); }, 0);
+    if (jb !== O.cls.BANK) bad.push('class-BANK journal=' + jb + ' source=' + O.cls.BANK);
+    if (jb - O.bank.stmts.reduce(function (n, x) { return n + x[3]; }, 0) !== O.bank.left) bad.push('clearing-BANK journal-statements=' + (jb - O.bank.stmts.reduce(function (n, x) { return n + x[3]; }, 0)) + ' left=' + O.bank.left);
     if (tpl !== OTPL && J(r.book.slice(0, 17)) !== mastersOf(exp)) bad.push('masters-touched');   // the open-balance variants and mutants never move a master sheet (the masters are judged against the oracle in ODOO-GUIDE / ODOO-DIFF)
     return bad;
   }
   var ol = true, olw = ''; try { EN.load(OTPL); } catch (e) { ol = false; olw = e.message; }
-  check('ODOO-OPEN', 'template', 'odoo-17.json loads (find / round / abs / sumSet and the two open sheets are in the closed sets)', ol, olw);
+  check('ODOO-OPEN', 'template', 'odoo-17.json loads (find / round / abs / sumSet and the five optional sheets - I_GLJournal, I_Invoice, C_Bank, C_BankAccount, I_BankStatement - are in the closed sets)', ol, olw);
   var OC = function () { return JSON.parse(JSON.stringify(OTPL)); };
   [['find-arity', function (t) { t.defs.bpValue = { find: ['partner_keys', 'id', '$partner_id'] }; }, /find takes 4 argument/],
    ['unknown-open-sheet', function (t) { t.entities.I_Payment = { from: 'open_lines', fields: {} }; }, /"I_Payment" is not a target sheet/],
@@ -332,10 +358,10 @@ var ALL_BRANCHES = ['refuse:lead', 'refuse:fixed-asset', 'refuse:po-no-supplier'
   check('ODOO-OPEN', 'fields', 'every $Field the template reads is a field the agent said it read (manifest.sets[].fields_read) — nothing guessed', ofc.length === 0 && ocn.problems.length === 0, { outside: ofc, problems: ocn.problems });
   var or0 = oengine(OTPL, OEXP), oo = oracle(OEXP), ob = judgeOpen(OTPL, OEXP);
   say('§MIGE-ODOO-OPEN recorded: tb_rows=' + OEXP.sets.tb.length + ' journal_lines=' + oo.journal.length + ' AR=' + (oo.cls.AR / 100).toFixed(2) + ' AP=' + (oo.cls.AP / 100).toFixed(2) + ' BANK=' + (oo.cls.BANK / 100).toFixed(2) +
-    ' open_lines=' + OEXP.sets.open_lines.length + ' documents=' + oo.invoices.length + ' refused=' + oo.refused + ' left_AR=' + (oo.left.AR / 100).toFixed(2) + ' left_AP=' + (oo.left.AP / 100).toFixed(2) + ' sheets=' + or0.book.slice(17).map(function (b) { return b.name + ':' + (b.rows.length - 1); }).join(','));
+    ' open_lines=' + OEXP.sets.open_lines.length + ' documents=' + oo.invoices.length + ' refused=' + oo.refused + ' left_AR=' + (oo.left.AR / 100).toFixed(2) + ' left_AP=' + (oo.left.AP / 100).toFixed(2) + ' banks=' + oo.bank.banks.length + ' bank_accounts=' + oo.bank.accounts.length + ' statements=' + oo.bank.stmts.length + ' statement_total=' + (oo.bank.stmts.reduce(function (n, x) { return n + x[3]; }, 0) / 100).toFixed(2) + ' left_BANK=' + (oo.bank.left / 100).toFixed(2) + ' sheets=' + or0.book.slice(17).map(function (b) { return b.name + ':' + (b.rows.length - 1); }).join(','));
   check('ODOO-OPEN', 'recorded', 'on the recorded export every claim of §E3C-SPEC 1(c) holds against the oracle computed from the raw rows: journal balanced, per account, one batch at the cut-over; one document per open invoice / credit note with its own number, date, partner, kind, charge and unpaid amount; refused lines counted; journal(AR/AP) == documents + refused (the clearing arithmetic); the 17 master sheets untouched by the open entities (as on the recorded export)', ob.length === 0, ob);
-  check('ODOO-OPEN', 'non-vacuous', 'the recorded export really carries what is judged: >= 1 journal line per class AR / AP / BANK, >= 1 document of each of the 4 kinds, >= 1 refused line', !!oo.cls.AR && !!oo.cls.AP && !!oo.cls.BANK && ['AR Invoice', 'AR Credit Memo', 'AP Invoice', 'AP CreditMemo'].every(function (k) { return oo.invoices.some(function (v) { return v.type === k; }); }) && oo.refused > 0, { cls: oo.cls, refused: oo.refused });
-  check('ODOO-OPEN', 'manifest', 'the manifest lists the two open sheets with their tables and row counts, names the refusal and says in a note what stays on the clearing accounts', or0.manifest.sheets.length === 19 && or0.manifest.sheets[17].table === 'I_GLJournal' && or0.manifest.sheets[17].rows === oo.journal.length && or0.manifest.sheets[18].table === 'I_Invoice' && or0.manifest.sheets[18].rows === oo.invoices.length && (or0.manifest.refused || []).length === 1 && (or0.manifest.notes || []).some(function (n) { return /NOT brought in/.test(n); }), { sheets: or0.manifest.sheets.slice(17), refused: or0.manifest.refused, notes: or0.manifest.notes });
+  check('ODOO-OPEN', 'non-vacuous', 'the recorded export really carries what is judged: >= 1 journal line per class AR / AP / BANK, >= 1 document of each of the 4 kinds, >= 1 refused line, >= 1 opening bank statement, >= 2 bank / cash journals', !!oo.cls.AR && !!oo.cls.AP && !!oo.cls.BANK && oo.bank.stmts.length >= 1 && oo.bank.accounts.length >= 2 && ['AR Invoice', 'AR Credit Memo', 'AP Invoice', 'AP CreditMemo'].every(function (k) { return oo.invoices.some(function (v) { return v.type === k; }); }) && oo.refused > 0, { cls: oo.cls, refused: oo.refused });
+  check('ODOO-OPEN', 'manifest', 'RESTATED (was 19 sheets, the two open ones): the manifest lists the five optional sheets - I_GLJournal, I_Invoice, then C_Bank, C_BankAccount, I_BankStatement (after the two documents, so their numbers did not move) - with their tables and row counts, names the refusal and says in a note what stays on the clearing accounts', or0.manifest.sheets.length === 22 && or0.manifest.sheets[17].table === 'I_GLJournal' && or0.manifest.sheets[17].rows === oo.journal.length && or0.manifest.sheets[18].table === 'I_Invoice' && or0.manifest.sheets[18].rows === oo.invoices.length && J(or0.manifest.sheets.slice(19).map(function (x) { return [x.table, x.rows]; })) === J([['C_Bank', oo.bank.banks.length], ['C_BankAccount', oo.bank.accounts.length], ['I_BankStatement', oo.bank.stmts.length]]) && (or0.manifest.refused || []).length === 1 && (or0.manifest.notes || []).some(function (n) { return /NOT brought in/.test(n); }), { sheets: or0.manifest.sheets.slice(17), refused: or0.manifest.refused, notes: or0.manifest.notes });
   check('ODOO-OPEN', 'masters-only-templates', 'a template without open entities still returns exactly 17 sheets (SAP guide run above: ' + b.book.length + ')', b.book.length === 17, b.book.length);
   verdict('ODOO-OPEN');
   // OPEN-GEN: seeded variants of the recorded rows
@@ -348,13 +374,23 @@ var ALL_BRANCHES = ['refuse:lead', 'refuse:fixed-asset', 'refuse:po-no-supplier'
     if (R() < 0.5) { var t = pick(e.sets.tb), u = pick(e.sets.tb.filter(function (x) { return x !== t; })); u.balance = Math.round((u.balance + t.balance) * 100) / 100; t.balance = 0; hit.zeroBalance = 1; }
     if (R() < 0.5) { var t2 = pick(e.sets.tb); t2.balance = t2.balance + 1e-9; hit.floatNoise = 1; }
     if (R() < 0.3) { L.forEach(function (x) { if (x.move_type === 'entry') x.move_type = 'out_invoice'; }); hit.noEntry = 1; }
+    // §E3D-SPEC bank variants (new accounts / journals use ids far from the recorded ones; the books stay balanced against an existing plain account)
+    var acc0 = e.sets['account.account'], tbS = e.sets.tb, jS = e.sets['account.journal'], tbOf = function (id) { return tbS.filter(function (x) { return x.account_id === id; })[0]; };
+    var newAcct = function (id, code, type) { acc0.push({ id: id, code: code, name: code + ' extra', account_type: type, group_id: null, reconcile: false }); }, newTb = function (id, code, bal) { tbS.push({ account_id: id, account_id__name: code + ' extra', balance: bal, debit: bal > 0 ? bal : 0, credit: bal < 0 ? -bal : 0, __count: 1 }); var o = tbS.filter(function (x) { return acc0.some(function (a) { return a.id === x.account_id && a.account_type === 'income'; }); })[0]; if (o) o.balance = Math.round((o.balance - bal) * 100) / 100; };
+    var newJ = function (id, code, type, acct) { jS.push({ id: id, name: code + ' journal', code: code, type: type, default_account_id: acct, default_account_id__name: code, bank_account_id: null, bank_id: null, currency_id: null }); };
+    if (R() < 0.5) { newAcct(990001, '101490', 'asset_cash'); newTb(990001, '101490', 2500.55); newJ(91, 'BNK2', 'bank', 990001); hit.bank2 = 1; }                       // a second bank journal with a balance
+    if (R() < 0.4) { newAcct(990002, '101491', 'asset_cash'); newTb(990002, '101491', -310.2); newJ(92, 'CSH2', 'cash', 990002); hit.bankNeg = 1; }                     // a journal with a negative balance (overdraft)
+    if (R() < 0.4) { newAcct(990003, '101492', 'asset_cash'); newTb(990003, '101492', 77.7); hit.cashNoJournal = 1; }                                                 // a cash account no journal names: its balance stays on Bank Clearing (left.BANK)
+    if (R() < 0.4) { newAcct(990004, '101493', 'asset_cash'); newJ(93, 'BNK3', 'bank', 990004); hit.journalNoBalance = 1; }                                            // a journal whose account has no balance: a bank account, no statement
+    if (R() < 0.5) { e.sets['res.bank'].push({ id: 901, name: 'Some Bank with a name', bic: 'ABCDEFGH' }); e.sets['res.partner.bank'].push({ id: 900, acc_number: 'GB82 WEST 1234 5698 7654 32 EXTRA', bank_id: 901 });
+      var jb = jS.filter(function (x) { return x.code === 'BNK1'; })[0]; jb.bank_account_id = 900; jb.bank_id = 901; hit.partnerBank = 1; }                                  // a journal with a res.partner.bank (number > 20 characters, a named bank)
     return { exp: e, hit: hit }; }
-  var ON = Math.min(N, 300), obad = 0, ofirst = null, ocover = {}, OALL = ['foreign', 'held', 'noPartner', 'longNo', 'twoLines', 'zeroBalance', 'floatNoise', 'noEntry'];
+  var ON = Math.min(N, 300), obad = 0, ofirst = null, ocover = {}, OALL = ['foreign', 'held', 'noPartner', 'longNo', 'twoLines', 'zeroBalance', 'floatNoise', 'noEntry', 'bank2', 'bankNeg', 'cashNoJournal', 'journalNoBalance', 'partnerBank'];
   for (var oi = 1; oi <= ON; oi++) { var og = ogen(oi), oj = judgeOpen(OTPL, og.exp); Object.keys(og.hit).forEach(function (k) { ocover[k] = (ocover[k] || 0) + 1; }); if (oj.length) { obad++; if (!ofirst) ofirst = { seed: oi, hit: og.hit, bad: oj }; } }
   OALL.forEach(function (k) { say('  §MIGE-ODOO-COVER branch=' + k + ' cases=' + (ocover[k] || 0)); });
   var omissed = OALL.filter(function (k) { return !ocover[k]; }); missed = missed.concat(omissed.map(function (k) { return 'odoo:' + k; }));
   say('§MIGE-ODOO-GEN cases=' + ON + ' differing_cases=' + obad + ' cover=' + (OALL.length - omissed.length) + '/' + OALL.length);
-  check('ODOO-OPEN-GEN', 'variants', ON + ' seeded variants of the recorded rows (foreign currency, held / unknown partner, long number, a move in two lines, a zero balance, float noise, no manual entry): the template equals the oracle on every one', obad === 0, ofirst);
+  check('ODOO-OPEN-GEN', 'variants', ON + ' seeded variants of the recorded rows (foreign currency, held / unknown partner, long number, a move in two lines, a zero balance, float noise, no manual entry; §E3D: a second bank journal, a negative bank balance, a cash account no journal names, a journal whose account has no balance, a journal with a res.partner.bank): the template equals the oracle on every one', obad === 0, ofirst);
   verdict('ODOO-OPEN-GEN');
   [['class-map-entry-removed', function (t) { delete t.valueMaps.acctClass.asset_receivable; }],
    ['credit-note-sign-flipped', function (t) { t.valueMaps.sign.out_refund = 1; }],
@@ -365,7 +401,14 @@ var ALL_BRANCHES = ['refuse:lead', 'refuse:fixed-asset', 'refuse:po-no-supplier'
    ['round-removed', function (t) { t.defs.bal = '$balance'; }],
    ['zero-balance-kept', function (t) { delete t.entities.I_GLJournal.where; }],
    ['dateacct-is-the-invoice-date', function (t) { t.entities.I_Invoice.fields.DateAcct = '$date'; }],
-   ['credit-side-dropped', function (t) { t.entities.I_GLJournal.fields.AmtSourceCr = 0; }]].forEach(function (mu) { var t = OC(); mu[1](t); var found = judgeOpen(t, OEXP).length ? 'recorded' : 0;
+   ['credit-side-dropped', function (t) { t.entities.I_GLJournal.fields.AmtSourceCr = 0; }],
+   ['bank-amount-sign-flipped', function (t) { t.entities.I_BankStatement.fields.StmtAmt = { mul: [-1, { def: 'jBal' }] }; t.entities.I_BankStatement.fields.ChargeAmt = { mul: [-1, { def: 'jBal' }] }; }],
+   ['bank-no-balance-filter-removed', function (t) { t.entities.I_BankStatement.where = { and: [{ eq: [{ def: 'jClass' }, 'BANK'] }, { def: 'jFirst' }] }; }],
+   ['bank-accountno-rule-changed', function (t) { t.defs.jNo = { str: '$name' }; }],
+   ['bank-charge-variable-swapped', function (t) { t.variables.CHARGE_BANK = t.variables.CHARGE_AR; }],
+   ['left-BANK-dropped', function (t) { delete t.manifest.left.obj.BANK; }],
+   ['company-bank-removed', function (t) { t.entities.C_Bank.pop(); }],
+   ['bank-account-type-ignored', function (t) { t.entities.C_BankAccount.fields.BankAccountType = 'C'; }]].forEach(function (mu) { var t = OC(); mu[1](t); var found = judgeOpen(t, OEXP).length ? 'recorded' : 0;
     for (var i = 1; i <= ON && !found; i++) { if (judgeOpen(t, ogen(i).exp).length) found = 'seed=' + i; }
     check('ODOO-OPEN-MUTANT', mu[0], 'the template with "' + mu[0] + '" breaks a claim on the recorded export or on a variant (the open-balance checks can fail)', !!found, 'no case found a difference'); if (found) say('  §MIGE-MUTANT odoo:' + mu[0] + ' caught at ' + found); });
   verdict('ODOO-OPEN-MUTANT');
@@ -417,7 +460,7 @@ var ALL_BRANCHES = ['refuse:lead', 'refuse:fixed-asset', 'refuse:po-no-supplier'
   //               every engine-only column (M_Product has two more >IsDefault columns than the Odoo agent ever wrote) is blank on every row.
   //   MANIFEST    equal on: sheets (name, table, rows; header by the book rule), source_counts, patches, renamed, held, notes, self_check_fails, odoo_version, db, cutover, currency,
   //               company, company_id, other_companies, format, workbook ("tool" excluded). Lists are compared IN ORDER (no list needed the multiset fallback). Two engine-only facts
-  //               are not part of the oracle: the open-balance note "Open lines NOT brought in ..." (E3C, emitted by the I_Invoice entity) is taken out of notes before comparing;
+  //               are not part of the oracle: the open-balance note "Open lines NOT brought in ..." (E3C, emitted by the I_Invoice entity) and the bank note "Cash / bank accounts with no ..." (E3D) are taken out of notes before comparing, and so are the patches of the three bank sheets (C_Bank, C_BankAccount, I_BankStatement are extra to the 17: judged in ODOO-OPEN);
   //               "refused" is judged on the 17 master sheets only (the I_Invoice refusals are E3C's) and "problems" must be empty. "source" of each sheet is not compared (the engine
   //               names the template's srcKey there).
   //   PROVENANCE  per sheet, row by row (the engine keys it by table, the oracle by sheet name).
@@ -436,8 +479,9 @@ var ALL_BRANCHES = ['refuse:lead', 'refuse:fixed-asset', 'refuse:po-no-supplier'
       }
     }
     var om = ora.manifest;
-    ODOO_MANIFEST_KEYS.forEach(function (k) { if (!same(jr(om[k]), jr(ES[k]))) put({ where: 'manifest.' + k, oracle: jr(om[k]), engine: jr(ES[k]) }); });
-    var en = (ES.notes || []).filter(function (n) { return !/^Open lines NOT brought in/.test(n); });
+    ODOO_MANIFEST_KEYS.forEach(function (k) { var ev = k === 'patches' ? (ES.patches || []).filter(function (x) { return !/^(C_Bank|C_BankAccount|I_BankStatement)$/.test(x.table); }) : ES[k];   // the bank sheets are extra to this comparison: judged in ODOO-OPEN (their patches too)
+      if (!same(jr(om[k]), jr(ev))) put({ where: 'manifest.' + k, oracle: jr(om[k]), engine: jr(ev) }); });
+    var en = (ES.notes || []).filter(function (n) { return !/^(Open lines NOT brought in|Cash \/ bank accounts with no)/.test(n); });
     if (!same(jr(om.notes), jr(en))) put({ where: 'manifest.notes', oracle: jr(om.notes), engine: jr(en) });
     om.sheets.forEach(function (s, i) { var e = ES.sheets[i] || {}; if (s.sheet !== e.sheet || s.table !== e.table || s.rows !== e.rows || !s.header.every(function (h) { return (e.header || []).indexOf(h) >= 0; })) put({ where: 'manifest.sheets[' + i + ']', oracle: [s.sheet, s.table, s.rows], engine: [e.sheet, e.table, e.rows] }); });
     var rf = (ES.refused || []).filter(function (x) { return !/^I_/.test(x.sheet); });

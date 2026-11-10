@@ -40,7 +40,8 @@ var NEEDS = { 'res.company': ['name', 'partner_id', 'currency_id', 'country_id']
   'account.move.line': ['move_id', 'move_name', 'move_type', 'partner_id', 'account_id', 'date', 'invoice_date', 'date_maturity', 'balance', 'debit', 'credit', 'amount_residual',
     'amount_residual_currency', 'currency_id', 'company_currency_id', 'payment_id', 'ref', 'name', 'parent_state'],
   'account.move': ['name', 'move_type', 'partner_id', 'commercial_partner_id', 'invoice_date', 'date', 'invoice_date_due', 'invoice_payment_term_id', 'currency_id', 'amount_total',
-    'amount_residual', 'ref', 'payment_state'] };
+    'amount_residual', 'ref', 'payment_state'],
+  'account.journal': ['name', 'code', 'type', 'default_account_id', 'bank_account_id', 'bank_id', 'currency_id'], 'res.partner.bank': ['acc_number', 'bank_id'], 'res.bank': ['name', 'bic'] };
 
 (async function () {
   var cfg = await require('./cli').config();
@@ -149,6 +150,16 @@ var NEEDS = { 'res.company': ['name', 'partner_id', 'currency_id', 'country_id']
   mset('product.supplierinfo', ['id', 'partner_id', 'product_id', 'product_tmpl_id', 'price', 'product_code', 'min_qty', 'delay'], [], sellers, cnt('product.supplierinfo', []));
   mset('stock.location', ['id', 'complete_name', 'warehouse_id', 'posx', 'posy', 'posz', 'active'], [['usage', '=', 'internal']], locs, cnt('stock.location', [['usage', '=', 'internal']], true), true);
   mset('stock.quant', ['id', 'product_id', 'location_id', 'quantity', 'lot_id'], [['location_id.usage', '=', 'internal']], quants, cnt('stock.quant', [['location_id.usage', '=', 'internal']]));
+  // §E3D-SPEC: the bank and cash journals (their account is where the bank balance lives), the bank account numbers they name and the banks those name. Raw rows, nothing mapped.
+  var jrF = ['id', 'name', 'code', 'type', 'default_account_id', 'bank_account_id', 'bank_id', 'currency_id'], jrDom = [['type', 'in', ['bank', 'cash']]];
+  var jrnls = await slice('account.journal', jrDom, jrF);
+  mset('account.journal', jrF, jrDom, jrnls, cnt('account.journal', jrDom));
+  var pbIds = Array.from(new Set(jrnls.map(function (j) { return m2o(j.bank_account_id); }).filter(Boolean))).sort(function (a, b) { return a - b; });
+  var pbF = ['id', 'acc_number', 'bank_id'], pbRows = pbIds.length ? await ex('res.partner.bank', 'read', [pbIds], { fields: pbF }) : [];
+  mset('res.partner.bank', pbF, [['id', 'in', '(the bank accounts of account.journal)']], pbRows, pbIds.length);
+  var bkIds = Array.from(new Set(jrnls.map(function (j) { return m2o(j.bank_id); }).concat(pbRows.map(function (b) { return m2o(b.bank_id); })).filter(Boolean))).sort(function (a, b) { return a - b; });
+  var bkF = ['id', 'name', 'bic'], bkRows = bkIds.length ? await ex('res.bank', 'read', [bkIds], { fields: bkF }) : [];
+  mset('res.bank', bkF, [['id', 'in', '(the banks of account.journal and res.partner.bank)']], bkRows, bkIds.length);
   var tbSum = tbRows.reduce(function (n, r) { return n + r.balance; }, 0), tbLines = tbRows.reduce(function (n, r) { return n + r.__count; }, 0);
   console.log('§ODOO-EXPORT tb accounts=' + tbRows.length + ' lines=' + tbLines + ' count=' + tbCount + ' sum=' + tbSum.toFixed(curRow ? curRow.decimal_places : 2) + ' open_lines=' + openLines.length + ' open_moves=' + omIds.length);
   ok(tbLines === tbCount, 'every posted account.move.line up to the cut-over is in exactly one trial-balance row', tbLines + '==' + tbCount);

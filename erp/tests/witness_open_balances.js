@@ -15,9 +15,14 @@
 //            §MIG-VERIFY says PASS.
 //   PREREQ   the clearing accounts, the no-tax tax and the two Opening Charges exist once, and each charge's account IS its clearing account (the link the proof rests on).
 //   TB       the tenant's books (ALL Fact_Acct of the tenant) == the source trial balance, account by account, for every account that is not receivable / payable / bank;
-//            the source's receivable and payable totals sit on the tenant's own control accounts; the bank total waits on Bank Clearing (state OPEN, an asserted amount); sum == 0.
+//            the source's receivable and payable totals sit on the tenant's own control accounts; the bank total sits on the tenant's bank asset account and Bank Clearing is back at 0.00 (§E3D; it waited there, state OPEN, before); sum == 0.
 //   CLEAR    AR Clearing == 0 and AP Clearing == 0.
 //   OPEN     per partner and side, the open amount of the tenant's documents == the source's open lines; each document keeps its number, its date, its kind; one charge line, no tax.
+//   BANK     (§E3D-SPEC) the bank balance comes across as an OPENING BANK STATEMENT per bank / cash journal: the bank and bank account exist (the bank the journal names, else one named after
+//            the company; AccountNo = the Odoo account number, else the journal's code), ImportBankStatement 221 made ONE Drafted statement per account, Completed and Posted; Bank Clearing == 0.00
+//            (it was 12,444.87, state OPEN); the tenant's bank asset account carries the source balance per bank account; the loader's §MIG-CLEAR BANK / §MIG-BANK / §MIG-VERIFY say PASS.
+//            ORACLE = the raw tb + account.journal + res.partner.bank rows. Falsifier: a second trial-balance row of 100.00 on the bank account (balanced elsewhere) that only the journal takes
+//            -> the statement is 100.00 short -> stage 2 is refused naming the 100.00 left on Bank Clearing.
 //   RERUN    a second Process is refused whole; nothing changes.
 //   PERIOD-OPEN (a third tenant, login 2026-12-20, weeks after the cut-over) the user does what legacy asks — unticks Automatic Period Control on the Accounting Schema and opens the
 //            cut-over period with Period Status (AD_Process 167); the form still refuses until TODAY's period is open too (legacy dates the journal batch today); then the same
@@ -105,7 +110,9 @@ var cents = function (v) { return Math.round(Number(v || 0) * 100); }, money = f
   check('SUMMARY', 'journal', 'the opening journal is a sheet of the summary: ' + EXP.sets.tb.length + ' lines in the file, all predicted to import', !!gj && gj.infile === EXP.sets.tb.length && gj.will === gj.infile && !gj.refused, gj);
   check('SUMMARY', 'invoices', 'the open documents are a sheet: ' + Object.keys(SRCDOC).length + ' predicted; the ' + srcEntry + ' open lines that are not invoices are shown as refused with the reason; the sheet is locked to the journal', !!iv && iv.infile === Object.keys(SRCDOC).length && iv.will === iv.infile && iv.refused === srcEntry && /not an invoice/.test(iv.reason || '') && iv.locked, iv);
   var info = r2.filter(function (r) { return /^ℹ Will create/.test(r.item); }).map(function (r) { return r.item; });
-  check('SUMMARY', 'will-create', 'the summary names what it will create: 3 clearing accounts (AR, AP, bank), the no-tax tax, the 2 Opening Charges', info.length === 6 && info.filter(function (t) { return /account /.test(t); }).length === 3 && info.filter(function (t) { return /charge /.test(t); }).length === 2 && info.filter(function (t) { return /tax /.test(t); }).length === 1, info);
+  check('SUMMARY', 'will-create', 'the summary names what it will create: 3 clearing accounts (AR, AP, bank), the no-tax tax, the 3 Opening Charges (AR, AP, bank — §E3D-SPEC added the bank one)', info.length === 7 && info.filter(function (t) { return /account /.test(t); }).length === 3 && info.filter(function (t) { return /charge /.test(t); }).length === 3 && info.filter(function (t) { return /tax /.test(t); }).length === 1, info);
+  var bnkS = ['C_Bank', 'C_BankAccount', 'I_BankStatement'].map(function (t) { return item(r2, t); });
+  check('SUMMARY', 'bank-sheets', 'the bank is a sheet of the summary: C_Bank, C_BankAccount, I_BankStatement, every row predicted to import, the statement sheet locked to the journal', bnkS.every(function (x) { return x && x.infile >= 1 && x.will === x.infile && !x.refused; }) && bnkS[2].locked, bnkS);
   check('SUMMARY', 'readonly', 'the summary wrote nothing (same counts before and after)', J(snap(C)) === J(C0), { before: C0, after: snap(C) });
   verdict('SUMMARY');
 
@@ -135,12 +142,13 @@ var cents = function (v) { return Math.round(Number(v || 0) * 100); }, money = f
   var chg = q('SELECT ch.name AS name, ev.value AS acct FROM c_charge ch JOIN c_charge_acct ca ON ca.c_charge_id=ch.c_charge_id JOIN c_validcombination vc ON vc.c_validcombination_id=ca.ch_expense_acct JOIN c_elementvalue ev ON ev.c_elementvalue_id=vc.account_id WHERE ch.ad_client_id=? ORDER BY ch.name', [C]);
   check('PREREQ', 'accounts', 'the three clearing accounts exist exactly once each', evs.length === 3, evs);
   check('PREREQ', 'tax', 'ONE tax with TaxIndicator ' + VARS.TAX_NONE + ': rate 0, exempt, in its own tax category', tx.length === 1 && Number(tx[0].rate) === 0 && tx[0].ex === 'Y' && /Opening Balance/.test(tx[0].cat), tx);
-  check('PREREQ', 'charge-link', 'the two Opening Charges exist and each charge\'s account IS its clearing account (AP → ' + CLR.AP + ', AR → ' + CLR.AR + ') — the link the zero-proof rests on', J(chg) === J([{ name: VARS.CHARGE_AP, acct: CLR.AP }, { name: VARS.CHARGE_AR, acct: CLR.AR }]), chg);
+  check('PREREQ', 'charge-link', 'the three Opening Charges exist and each charge\'s account IS its clearing account (AP → ' + CLR.AP + ', AR → ' + CLR.AR + ', Bank → ' + CLR.BANK + ') — the link the zero-proof rests on [was two charges before §E3D]', J(chg) === J([{ name: VARS.CHARGE_AP, acct: CLR.AP }, { name: VARS.CHARGE_AR, acct: CLR.AR }, { name: VARS.CHARGE_BANK, acct: CLR.BANK }]), chg);
   verdict('PREREQ');
 
   // ═══ TB + CLEAR: ALL the tenant's Fact_Acct against the source ═══
   var books = {}; q('SELECT ev.value AS v, SUM(f.amtacctdr) AS dr, SUM(f.amtacctcr) AS cr, COUNT(*) AS n FROM fact_acct f JOIN c_elementvalue ev ON ev.c_elementvalue_id=f.account_id WHERE f.ad_client_id=? GROUP BY ev.value', [C]).forEach(function (r) { books[r.v] = cents(r.dr) - cents(r.cr); });
   var srcCodes = Object.keys(SRC.plain), offPlain = srcCodes.filter(function (a) { return books[a] !== SRC.plain[a]; });
+  var bankAsset = (q('SELECT ev.value AS v FROM c_acctschema_default d JOIN c_acctschema a ON a.c_acctschema_id=d.c_acctschema_id JOIN c_validcombination vc ON vc.c_validcombination_id=d.b_asset_acct JOIN c_elementvalue ev ON ev.c_elementvalue_id=vc.account_id WHERE d.ad_client_id=?', [C])[0] || {}).v;   // the tenant's bank asset account (accounting schema default B_Asset_Acct): where a bank statement posts the bank balance
   var clearing = [CLR.AR, CLR.AP, CLR.BANK], control = Object.keys(books).filter(function (a) { return srcCodes.indexOf(a) < 0 && clearing.indexOf(a) < 0; });
   var ctl = {}; q('SELECT ev.value AS v, dt.docbasetype AS b, SUM(f.amtacctdr) AS dr, SUM(f.amtacctcr) AS cr FROM fact_acct f JOIN c_elementvalue ev ON ev.c_elementvalue_id=f.account_id JOIN c_invoice i ON i.c_invoice_id=f.record_id JOIN c_doctype dt ON dt.c_doctype_id=i.c_doctype_id WHERE f.ad_client_id=? AND f.ad_table_id=318 GROUP BY ev.value, dt.docbasetype', [C])
     .forEach(function (r) { if (clearing.indexOf(r.v) >= 0) return; var side = r.b[1] === 'R' ? 'AR' : 'AP'; ctl[side] = (ctl[side] || 0) + cents(r.dr) - cents(r.cr); (ctl[side + '_accounts'] = ctl[side + '_accounts'] || {})[r.v] = 1; });
@@ -150,8 +158,8 @@ var cents = function (v) { return Math.round(Number(v || 0) * 100); }, money = f
   check('TB', 'per-account', 'every source account that is not receivable / payable / bank has the same balance in the tenant\'s books (' + srcCodes.length + ' accounts)', srcCodes.length > 0 && offPlain.length === 0, offPlain.map(function (a) { return a + ' books ' + money(books[a] || 0) + ' source ' + money(SRC.plain[a]); }));
   check('TB', 'receivable', 'the source receivable total ' + money(SRC.cls.AR) + ' sits on the tenant\'s receivable control account(s) ' + J(Object.keys(ctl.AR_accounts || {})), SRC.cls.AR !== 0 && (ctl.AR || 0) === SRC.cls.AR, ctl);
   check('TB', 'payable', 'the source payable total ' + money(SRC.cls.AP) + ' sits on the tenant\'s payable control account(s) ' + J(Object.keys(ctl.AP_accounts || {})), SRC.cls.AP !== 0 && (ctl.AP || 0) === SRC.cls.AP, ctl);
-  check('TB', 'nothing-else', 'no account other than the source\'s, the control accounts and the clearing accounts was posted to; the books sum to zero', control.every(function (a) { return (ctl.AR_accounts || {})[a] || (ctl.AP_accounts || {})[a]; }) && total === 0, { control: control, total: total });
-  check('TB', 'bank-open', 'the bank total ' + money(SRC.cls.BANK) + ' waits on ' + CLR.BANK + ' (state OPEN — the opening bank statement is not built; asserted, not passed over)', SRC.cls.BANK !== 0 && books[CLR.BANK] === SRC.cls.BANK, books[CLR.BANK]);
+  check('TB', 'nothing-else', 'no account other than the source\'s, the control accounts, the clearing accounts and the tenant\'s bank asset account (' + bankAsset + ', where the opening bank statement posts — §E3D-SPEC, was: none) was posted to; the books sum to zero', control.every(function (a) { return (ctl.AR_accounts || {})[a] || (ctl.AP_accounts || {})[a] || a === bankAsset; }) && total === 0, { control: control, total: total });
+  check('TB', 'bank-moved', 'RESTATED (was bank-open: the bank total waited on ' + CLR.BANK + ', state OPEN): the bank total ' + money(SRC.cls.BANK) + ' sits on the tenant\'s bank asset account ' + bankAsset + ' and ' + CLR.BANK + ' is back at 0.00', SRC.cls.BANK !== 0 && books[bankAsset] === SRC.cls.BANK && books[CLR.BANK] === 0, { asset: books[bankAsset], clearing: books[CLR.BANK] });
   verdict('TB');
   check('CLEAR', 'AR', 'AR Clearing (' + CLR.AR + ') == 0.00 after the journal and every open customer document (it was posted to: ' + (CLR.AR in books) + ')', (CLR.AR in books) && books[CLR.AR] === 0, books[CLR.AR]);
   check('CLEAR', 'AP', 'AP Clearing (' + CLR.AP + ') == 0.00 after the journal and every open vendor document', (CLR.AP in books) && books[CLR.AP] === 0, books[CLR.AP]);
@@ -165,6 +173,38 @@ var cents = function (v) { return Math.round(Number(v || 0) * 100); }, money = f
   var offD = invs.filter(function (i) { var d = SRCDOC[i.no]; return !d || d.base !== i.b || d.bp !== i.bp || d.date !== i.d || d.amt !== cents(i.total) || i.da !== CUT || i.nl !== 1 || i.nc !== 1 || cents(i.tax) !== 0 || cents(i.net) !== cents(i.total); });
   check('OPEN', 'per-document', 'each document keeps its Odoo number, kind (ARI / ARC / API / APC), partner and own date; DateAcct = the cut-over; ONE charge line, no product, no tax; total = the unpaid amount', invs.length > 0 && offD.length === 0, offD.slice(0, 3));
   verdict('OPEN');
+
+  // ═══ BANK (§E3D-SPEC): ORACLE = the raw rows (tb, account.account, account.journal, res.partner.bank, res.bank) ═══
+  var jr0 = EXP.sets['account.journal'], pbk = {}, bnk = {}, tbc = {}; (EXP.sets['res.partner.bank'] || []).forEach(function (b) { pbk[b.id] = b; }); (EXP.sets['res.bank'] || []).forEach(function (b) { bnk[b.id] = b; });
+  EXP.sets.tb.forEach(function (r) { tbc[r.account_id] = (tbc[r.account_id] || 0) + cents(r.balance); });
+  var seenAcc = {}, WANT = {}, WACC = [], bankNames = {};
+  jr0.forEach(function (j) { var pb = pbk[j.bank_account_id], no = (pb && pb.acc_number) || j.code, bkid = j.bank_id || (pb && pb.bank_id), bkn = (bkid && bnk[bkid] ? bnk[bkid].name : EXP.manifest.company_name);
+    bankNames[bkn] = 1; WACC.push({ no: no, name: j.name, bank: bkn, type: j.type === 'cash' ? 'B' : 'C', cur: j.currency_id__name || EXP.manifest.currency });
+    var amt = tbc[j.default_account_id] || 0;
+    if (acct[j.default_account_id].account_type === 'asset_cash' && amt !== 0 && !seenAcc[j.default_account_id]) { WANT[no] = amt; } seenAcc[j.default_account_id] = 1; });
+  var LEFTB = EXP.sets.tb.reduce(function (n, r) { return n + (acct[r.account_id].account_type === 'asset_cash' && !jr0.some(function (j) { return j.default_account_id === r.account_id; }) ? cents(r.balance) : 0); }, 0);
+  var bAcc = q('SELECT ba.accountno AS no, ba.name AS name, b.name AS bank, ba.bankaccounttype AS t, cu.iso_code AS iso, ba.currentbalance AS cb, ba.c_bankaccount_id AS id FROM c_bankaccount ba JOIN c_bank b ON b.c_bank_id=ba.c_bank_id JOIN c_currency cu ON cu.c_currency_id=ba.c_currency_id WHERE ba.ad_client_id=? ORDER BY ba.accountno', [C]);
+  var bStm = q('SELECT s.c_bankstatement_id AS id, s.docstatus AS s, s.posted AS p, ba.accountno AS no, s.statementdifference AS diff, s.c_doctype_id AS dt FROM c_bankstatement s JOIN c_bankaccount ba ON ba.c_bankaccount_id=s.c_bankaccount_id WHERE s.ad_client_id=?', [C]);
+  var bPost = {}; bStm.forEach(function (st) { q('SELECT ev.value AS v, f.amtacctdr AS dr, f.amtacctcr AS cr FROM fact_acct f JOIN c_elementvalue ev ON ev.c_elementvalue_id=f.account_id WHERE f.ad_table_id=392 AND f.record_id=?', [st.id]).forEach(function (f) { if (f.v === bankAsset) bPost[st.no] = (bPost[st.no] || 0) + cents(f.dr) - cents(f.cr); }); });
+  var bLines = q('SELECT count(*) AS n, SUM(l.stmtamt) AS a FROM c_bankstatementline l JOIN c_bankstatement s ON s.c_bankstatement_id=l.c_bankstatement_id WHERE s.ad_client_id=? AND l.c_charge_id IS NOT NULL AND l.c_payment_id IS NULL', [C])[0];
+  var wantNos = Object.keys(WANT).sort();
+  say('§OB-BANK source journals=' + jr0.length + ' accounts=' + J(WACC.map(function (a) { return a.no + '@' + a.bank; })) + ' statements_expected=' + J(wantNos.map(function (n) { return n + '=' + money(WANT[n]); })) + ' left_on_clearing=' + money(LEFTB) + ' tenant_bank_asset=' + bankAsset + ' tenant_accounts=' + J(bAcc.map(function (a) { return a.no + '=' + money(cents(a.cb)); })) + ' posted=' + J(bPost));
+  check('BANK', 'masters', 'a bank account exists per bank / cash journal (' + WACC.length + ') under the bank the journal names (else one named after the company), AccountNo = the Odoo account number else the journal code, its own currency, type Checking / Cash by the journal\'s type', J(bAcc.map(function (a) { return [a.no, a.name, a.bank, a.t, a.iso]; })) === J(WACC.slice().sort(function (x, y) { return x.no < y.no ? -1 : x.no > y.no ? 1 : 0; }).map(function (a) { return [a.no, a.name, a.bank, a.type, a.cur]; })) && q('SELECT count(*) AS n FROM c_bank WHERE ad_client_id=? AND isownbank=\'Y\'', [C])[0].n === Object.keys(bankNames).length, { bAcc: bAcc, want: WACC });
+  check('BANK', 'statements', 'ONE statement per bank account that had a balance (' + wantNos.length + '), Completed and Posted, with ONE charge line (no payment) = the source balance', wantNos.length > 0 && bStm.length === wantNos.length && bStm.every(function (x) { return x.s === 'CO' && x.p === 'Y' && !!x.dt; }) && bLines.n === wantNos.length && cents(bLines.a) === wantNos.reduce(function (n, x) { return n + WANT[x]; }, 0), { bStm: bStm, bLines: bLines });
+  check('BANK', 'clearing', CLR.BANK + ' == ' + money(LEFTB) + ' (the cash accounts that had no bank / cash journal; 0.00 when every one had) — was 12444.87, state OPEN before §E3D', (CLR.BANK in books) && books[CLR.BANK] === LEFTB, books[CLR.BANK]);
+  check('BANK', 'asset-per-account', 'the tenant\'s bank asset account ' + bankAsset + ' carries, per bank account, the source bank balance (' + J(wantNos.map(function (n) { return n + '=' + money(WANT[n]); })) + ') and the bank account\'s CurrentBalance is the same', wantNos.length > 0 && wantNos.every(function (n) { var a = bAcc.filter(function (x) { return x.no === n; })[0]; return bPost[n] === WANT[n] && a && cents(a.cb) === WANT[n]; }) && Object.keys(bPost).length === wantNos.length, { bPost: bPost, bAcc: bAcc });
+  var bsh = SHIPPED.slice(mark).filter(function (l) { return /^§MIG-(CLEAR BANK|BANK |VERIFY)/.test(l); }), bv = bsh.filter(function (l) { return /^§MIG-VERIFY/.test(l); }).pop() || '';
+  say('  shipped> ' + bsh.join('\n  shipped> '));
+  check('BANK', 'shipped-lines', 'the loader\'s own lines: §MIG-CLEAR BANK balance=' + money(LEFTB) + ' verdict=PASS (a judged line, no longer state=OPEN), §MIG-BANK verdict=PASS, §MIG-VERIFY verdict=PASS with the two new judged lines (judged=9)', bsh.some(function (l) { return l.indexOf('§MIG-CLEAR BANK') === 0 && l.indexOf('balance=' + money(LEFTB)) > 0 && /verdict=PASS$/.test(l) && !/state=OPEN/.test(l); }) && bsh.some(function (l) { return /^§MIG-BANK statements=\d+\/\d+ .* verdict=PASS$/.test(l); }) && /verdict=PASS judged=9 /.test(bv), bsh);
+  // falsifier: a SECOND trial-balance row of 100.00 on the bank account, balanced against the income account, that only the journal takes (the statement reads the first row)
+  var T5 = birth('Bank Falsify Co'), C5 = T5.clientId, s5 = session(T5, '2026-11-11'), EXP5 = JSON.parse(JSON.stringify(EXP)), bj = jr0.filter(function (j) { return WANT[(pbk[j.bank_account_id] && pbk[j.bank_account_id].acc_number) || j.code] != null; })[0];
+  var tb1 = EXP5.sets.tb.filter(function (r) { return r.account_id === bj.default_account_id; })[0], tb2 = EXP5.sets.tb.filter(function (r) { return acct[r.account_id].account_type === 'income'; })[0];
+  EXP5.sets.tb.push(Object.assign({}, tb1, { balance: 100, debit: 100, credit: 0, __count: 1 })); EXP5.sets.tb.push(Object.assign({}, tb2, { balance: -100, debit: 0, credit: 100, __count: 1 }));
+  var b1 = s5.rows(files(EXP5), null), bcur = answer(b1), br = s5.execute(files(EXP5), bcur), mark5 = SHIPPED.length, ba5 = br.ok ? s5.after(files(EXP5), bcur) : { ok: false, msg: 'stage 1 refused: ' + br.msg };
+  say('§OB-BANK-FALSIFY extra_row=100.00 on ' + tb1.account_id__name + ' stage1=' + br.ok + ' stage2=' + ba5.ok + ' msg=' + String(ba5.msg).slice(0, 300));
+  SHIPPED.slice(mark5).filter(function (l) { return /^§MIG-(CLEAR BANK|VERIFY)/.test(l); }).forEach(function (l) { say('  shipped> ' + l.slice(0, 300)); });
+  check('BANK', 'falsifier', 'with a bank trial-balance row the statement does not take (100.00), stage 2 is refused and names the 100.00 left on Bank Clearing; nothing stays posted', br.ok && !ba5.ok && /BANK clearing/.test(String(ba5.msg)) && String(ba5.msg).indexOf('is 100.00, expected 0.00') >= 0 && n(C5, 'gl_journal') === 0 && n(C5, 'c_bankstatement') === 0 && n(C5, 'fact_acct') === 0, ba5.msg);
+  verdict('BANK');
 
   // ═══ RERUN ═══
   var C1 = snap(C), res2 = ses.execute(files(), cur);
@@ -212,7 +252,7 @@ var cents = function (v) { return Math.round(Number(v || 0) * 100); }, money = f
   var jShort = s4.rows(only(shortExp), null).filter(function (r) { return /^⚠ odoo_export\.json is not complete/.test(r.item); }).map(function (r) { return r.item; });
   check('JSON-ONLY', 'short-file', 'a file whose product.product set holds one row less than Odoo counted is refused before anything runs, naming the set and both numbers', jShort.length === 1 && /product\.product \(Odoo counted \d+, the file holds \d+\)/.test(jShort[0]), jShort);
   var j1 = s4.rows(only(), null), jcur = answer(j1), j2 = s4.rows(only(), jcur), jprob = j2.filter(function (r) { return /^⚠/.test(r.item); }).map(function (r) { return r.item; }), jsheets = j2.filter(function (r) { return r.key > 100 && r.key < 900; });
-  check('JSON-ONLY', 'summary', 'with odoo_export.json alone the summary shows the 17 master sheets + the 2 open sheets and no problem row', jprob.length === 0 && jsheets.length === 19, { jprob: jprob, sheets: jsheets.map(function (x) { return x.item; }) });
+  check('JSON-ONLY', 'summary', 'with odoo_export.json alone the summary shows the 17 master sheets + the 5 optional sheets (2 open documents, C_Bank, C_BankAccount, I_BankStatement — was 2 before §E3D) and no problem row', jprob.length === 0 && jsheets.length === 22, { jprob: jprob, sheets: jsheets.map(function (x) { return x.item; }) });
   var mark4 = SHIPPED.length, j3 = s4.execute(only(), jcur), j4 = j3.ok ? s4.after(only(), jcur) : { ok: false, msg: 'stage 1 refused: ' + j3.msg }, ver4 = SHIPPED.slice(mark4).filter(function (l) { return /^§MIG-VERIFY/.test(l); }).pop() || '';
   say('§OB-JSON-ONLY client=' + C4 + ' stage1=' + j3.ok + ' stage2=' + j4.ok + ' ' + ver4 + ' msg=' + String(j3.ok ? j4.msg : j3.msg).slice(0, 260));
   check('JSON-ONLY', 'loads', 'Process + stage 2 complete and the loader\'s own §MIG-VERIFY says PASS', j3.ok && j4.ok && /verdict=PASS judged=[1-9]/.test(ver4), { j3: j3.msg, j4: j4.msg });
@@ -222,7 +262,7 @@ var cents = function (v) { return Math.round(Number(v || 0) * 100); }, money = f
   check('JSON-ONLY', 'same-books', 'the books are the same account by account (' + Object.keys(factOf(C)).length + ' accounts) and the open amount per partner and document kind is the same', J(factOf(C)) === J(factOf(C4)) && Object.keys(factOf(C)).length > 0 && J(openOf(C)) === J(openOf(C4)) && openOf(C).length > 0, { a: factOf(C), b: factOf(C4) });
   verdict('JSON-ONLY');
 
-  var v = ['PERIOD', 'SUMMARY', 'RUN', 'PREREQ', 'TB', 'CLEAR', 'OPEN', 'RERUN', 'FALSIFY', 'PERIOD-OPEN', 'JSON-ONLY'].map(function (c) { var x = CASES[c] || {}; return !x.judged ? 'INCONCLUSIVE' : x.failed ? 'FAIL' : 'PASS'; });
+  var v = ['PERIOD', 'SUMMARY', 'RUN', 'PREREQ', 'TB', 'CLEAR', 'OPEN', 'BANK', 'RERUN', 'FALSIFY', 'PERIOD-OPEN', 'JSON-ONLY'].map(function (c) { var x = CASES[c] || {}; return !x.judged ? 'INCONCLUSIVE' : x.failed ? 'FAIL' : 'PASS'; });
   var all = v.indexOf('FAIL') >= 0 ? 'FAIL' : v.indexOf('INCONCLUSIVE') >= 0 ? 'INCONCLUSIVE' : 'PASS';
   say('§OB-VERDICT ' + all + ' judged=' + ALL.judged + ' failed=' + ALL.failed + ' cases=' + J(v));
   process.exit(all === 'PASS' ? 0 : all === 'INCONCLUSIVE' ? 3 : 1);

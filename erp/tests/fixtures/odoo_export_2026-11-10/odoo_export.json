@@ -340,6 +340,49 @@
     ],
     "fields_missing": [],
     "domain": "[[\"location_id.usage\",\"=\",\"internal\"]]"
+   },
+   "account.journal": {
+    "model": "account.journal",
+    "count": 2,
+    "fields_read": [
+     "id",
+     "name",
+     "code",
+     "type",
+     "default_account_id",
+     "bank_account_id",
+     "bank_id",
+     "currency_id",
+     "default_account_id__name",
+     "bank_account_id__name",
+     "bank_id__name",
+     "currency_id__name"
+    ],
+    "fields_missing": [],
+    "domain": "[[\"type\",\"in\",[\"bank\",\"cash\"]]]"
+   },
+   "res.partner.bank": {
+    "model": "res.partner.bank",
+    "count": 0,
+    "fields_read": [
+     "id",
+     "acc_number",
+     "bank_id",
+     "bank_id__name"
+    ],
+    "fields_missing": [],
+    "domain": "[[\"id\",\"in\",\"(the bank accounts of account.journal)\"]]"
+   },
+   "res.bank": {
+    "model": "res.bank",
+    "count": 0,
+    "fields_read": [
+     "id",
+     "name",
+     "bic"
+    ],
+    "fields_missing": [],
+    "domain": "[[\"id\",\"in\",\"(the banks of account.journal and res.partner.bank)\"]]"
    }
   }
  },
@@ -5131,6 +5174,32 @@
     "lot_id": 17,
     "lot_id__name": "0000003"
    }
-  ]
+  ],
+  "account.journal": [
+   {
+    "id": 6,
+    "name": "Bank",
+    "code": "BNK1",
+    "type": "bank",
+    "default_account_id": 41,
+    "default_account_id__name": "101401 Bank",
+    "bank_account_id": null,
+    "bank_id": null,
+    "currency_id": null
+   },
+   {
+    "id": 7,
+    "name": "Cash",
+    "code": "CSH1",
+    "type": "cash",
+    "default_account_id": 42,
+    "default_account_id__name": "101501 Cash",
+    "bank_account_id": null,
+    "bank_id": null,
+    "currency_id": null
+   }
+  ],
+  "res.partner.bank": [],
+  "res.bank": []
  }
 }

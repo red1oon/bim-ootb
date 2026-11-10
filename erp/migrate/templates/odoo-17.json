@@ -11,13 +11,16 @@
     "BANK_CLEARING": "BANK-CLEAR",
     "CHARGE_AR": "Opening Charge AR",
     "CHARGE_AP": "Opening Charge AP",
-    "TAX_NONE": "OPEN-0"
+    "TAX_NONE": "OPEN-0",
+    "CHARGE_BANK": "Opening Charge Bank",
+    "BANK_ROUTING": "-"
   },
   "valueMaps": {
     "acctClass": {"asset_receivable": "AR", "liability_payable": "AP", "asset_cash": "BANK"},
     "docType": {"out_invoice": "AR Invoice", "out_refund": "AR Credit Memo", "in_invoice": "AP Invoice", "in_refund": "AP CreditMemo"},
     "isSO": {"out_invoice": "Y", "out_refund": "Y", "in_invoice": "N", "in_refund": "N"},
-    "sign": {"out_invoice": 1, "out_refund": -1, "in_invoice": -1, "in_refund": 1}
+    "sign": {"out_invoice": 1, "out_refund": -1, "in_invoice": -1, "in_refund": 1},
+    "bankType": {"bank": "C", "cash": "B"}
   },
   "defs": {
     "bal": {"round": ["$balance", "@manifest.currency_places"]},
@@ -54,7 +57,17 @@
     "locWh": {"if": ["$warehouse_id", {"or": [{"find": ["stock.warehouse", "id", "$warehouse_id", "code"]}, ""]}, ""]},
     "locXyz": {"concat": [{"def": "locWh"}, "|", "$posx", "|", "$posy", "|", "$posz"]},
     "tbSum": {"sumSet": ["tb", true, "$balance"]},
-    "negQ": {"filter": [{"all": "stock.quant"}, {"lt": ["$quantity", 0]}]}
+    "negQ": {"filter": [{"all": "stock.quant"}, {"lt": ["$quantity", 0]}]},
+    "jAcctType": {"find": ["account.account", "id", "$default_account_id", "account_type"]},
+    "jClass": {"str": {"map": ["acctClass", {"def": "jAcctType"}]}},
+    "jBal": {"round": [{"or": [{"find": ["tb", "account_id", "$default_account_id", "balance"]}, 0]}, "@manifest.currency_places"]},
+    "jFirst": {"eq": [{"find": ["account.journal", "default_account_id", "$default_account_id", "id"]}, "$id"]},
+    "jBankId": {"or": ["$bank_id", {"find": ["res.partner.bank", "id", "$bank_account_id", "bank_id"]}]},
+    "jBankName": {"str": {"find": ["res.bank", "id", {"def": "jBankId"}, "name"]}},
+    "jBankOf": {"first": [{"def": "jBankName"}, "@manifest.company_name"]},
+    "jAccNo": {"str": {"find": ["res.partner.bank", "id", "$bank_account_id", "acc_number"]}},
+    "bankLeft": {"round": [{"sumSet": ["tb", {"and": [{"eq": [{"def": "class"}, "BANK"]}, {"not": {"in": ["$account_id", "%BANKACCTS"]}}]}, "$balance"]}, "@manifest.currency_places"]},
+    "jNo": {"first": [{"def": "jAccNo"}, "$code"]}
   },
   "entities": {
     "C_UOM": { "from": "uom.uom",
@@ -160,6 +173,30 @@
       "fields": {"DocumentNo": {"str": "$move_name"}, "DocTypeName": {"map": ["docType", "$move_type"]}, "IsSOTrx": {"map": ["isSO", "$move_type"]}, "BPartnerValue": {"def": "bpValue"}, "DateInvoiced": {"first": ["$invoice_date", "$date"]}, "DateAcct": "@manifest.cutover", "ISO_Code": "@manifest.currency", "PaymentTermValue": {"cut": [{"str": {"find": ["open_moves", "id", "$move_id", "invoice_payment_term_id__name"]}}, 40]}, "ChargeName": {"if": [{"eq": [{"map": ["isSO", "$move_type"]}, "Y"]}, "${CHARGE_AR}", "${CHARGE_AP}"]}, "QtyOrdered": 1, "TaxIndicator": "${TAX_NONE}", "Description": {"cut": [{"concat": ["Open item from Odoo: ", "$move_name"]}, 255]}, "I_IsImported": "N"},
       "prov": {"odoo": "account.move", "id": "$move_id", "name": "$move_name"},
       "notes": [{"when": {"any": ["open_lines", {"def": "notBroughtIn"}]}, "text": {"concat": ["Open lines NOT brought in — receivable ", {"round": [{"sumSet": ["open_lines", {"and": [{"def": "notBroughtIn"}, {"eq": [{"def": "class"}, "AR"]}]}, "$amount_residual"]}, "@manifest.currency_places"]}, ", payable ", {"round": [{"sumSet": ["open_lines", {"and": [{"def": "notBroughtIn"}, {"eq": [{"def": "class"}, "AP"]}]}, "$amount_residual"]}, "@manifest.currency_places"]}, " ", "@manifest.currency", " (debit +, credit −). Those amounts stay on the AR / AP clearing accounts until the lines are entered by hand."]}}] }
+,
+    "C_Bank": [
+      { "from": "res.bank", "unique": "Name",
+        "fields": {"Name": "$name", "RoutingNo": "${BANK_ROUTING}", "SwiftCode": {"cut": [{"str": "$bic"}, 20]}, "IsOwnBank": "Y"},
+        "limit": {"id": "$id", "cell": {"def": "cutCell"}, "rule": {"def": "cutRule"}, "cols": {"Name": 60}},
+        "prov": {"model": "res.bank", "id": "$id"} },
+      { "from": {"let": "ONE"}, "unique": "Name", "where": {"any": ["account.journal", {"not": {"def": "jBankName"}}]},
+        "fields": {"Name": "@manifest.company_name", "RoutingNo": "${BANK_ROUTING}", "SwiftCode": "", "IsOwnBank": "Y"},
+        "limit": {"id": 0, "cell": {"def": "cutCell"}, "rule": {"def": "cutRule"}, "cols": {"Name": 60}},
+        "prov": {"model": "account.journal", "why": "a bank / cash journal without a bank"},
+        "patches": [{"column": "Name", "cell": "@manifest.company_name", "rule": "a bank / cash journal in Odoo may name no bank, the ERP's bank account needs one: one bank named after the company holds those accounts", "rows": {"sumSet": ["account.journal", {"not": {"def": "jBankName"}}, 1]}},
+                    {"column": "RoutingNo", "cell": "${BANK_ROUTING}", "rule": "the ERP requires a routing number on every bank (C_Bank.RoutingNo is mandatory) and Odoo's bank has none (its BIC goes to SwiftCode): a dash", "rows": {"count": "C_Bank"}}] }
+    ],
+    "C_BankAccount": { "from": "account.journal",
+      "fields": {"Value": "$code", "Name": "$name", "C_Bank_ID>Name": {"cut": [{"def": "jBankOf"}, 60]}, "AccountNo": {"def": "jNo"}, "BankAccountType": {"map": ["bankType", "$type"]}, "C_Currency_ID>ISO_Code": {"first": ["$currency_id__name", "@manifest.currency"]}},
+      "limit": {"id": "$id", "cell": {"def": "cutCell"}, "rule": {"def": "cutRule"}, "cols": {"Value": 40, "Name": 60, "AccountNo": 20}},
+      "prov": {"model": "account.journal", "id": "$id", "account": "$default_account_id", "type": "$type"},
+      "patches": [{"column": "AccountNo", "cell": "(the journal's code)", "rule": "the journal has no bank account number (res.partner.bank): the ERP requires one, the journal's short code stands in", "rows": {"sumSet": ["account.journal", {"not": {"def": "jAccNo"}}, 1]}}] },
+    "I_BankStatement": { "from": "account.journal",
+      "where": {"and": [{"eq": [{"def": "jClass"}, "BANK"]}, {"ne": [{"def": "jBal"}, 0]}, {"def": "jFirst"}]},
+      "fields": {"Name": {"cut": [{"concat": ["OPEN-BANK-", "$code", "-", "@manifest.cutover"]}, 60]}, "BankAccountNo": {"cut": [{"def": "jNo"}, 20]}, "RoutingNo": "${BANK_ROUTING}", "StatementDate": "@manifest.cutover", "StatementLineDate": "@manifest.cutover",
+        "StmtAmt": {"def": "jBal"}, "ChargeAmt": {"def": "jBal"}, "C_Charge_ID>Name": "${CHARGE_BANK}", "LineDescription": {"cut": [{"concat": ["Opening balance of ", "$name", " from Odoo ", "@manifest.db", " at ", "@manifest.cutover"]}, 1000]}, "I_IsImported": "N"},
+      "prov": {"odoo": "account.journal + account.move.line (read_group by account)", "journal": "$id", "account": "$default_account_id"},
+      "notes": [{"when": {"ne": [{"def": "bankLeft"}, 0]}, "text": {"concat": ["Cash / bank accounts with no bank or cash journal hold ", {"def": "bankLeft"}, " ", "@manifest.currency", " (debit +, credit \u2212) at the cut-over. That amount stays on the Bank Clearing account until it is entered by hand."]}}] }
   },
   "manifest": {
     "tool": "migrate/templates/odoo-17.json",
@@ -177,12 +214,13 @@
     "self_check_fails": {"add": [{"if": [{"eq": [{"sumSet": ["tb", true, "$__count"]}, {"meta": ["tb", "count"]}]}, 0, 1]}, {"if": [{"eq": [{"add": [{"count": "C_BPartner"}, {"count": "AD_User"}, {"len": "%HELD"}]}, {"size": "res.partner"}]}, 0, 1]}, {"if": [{"eq": [{"count": "M_Product"}, {"size": "product.product"}]}, 0, 1]}, {"if": [{"eq": [{"countWhere": ["M_InventoryLine", true]}, {"size": "stock.quant"}]}, 0, 1]}, {"if": [{"eq": [{"add": [{"countWhere": ["M_Product_Category", {"and": [{"ne": ["!M_Product_Category_Parent_ID>Value", ""]}, {"ne": [{"tally": ["M_Product_Category", "Value", "!M_Product_Category_Parent_ID>Value"]}, 1]}]}]}, {"countWhere": ["C_BPartner_Location", {"or": [{"eq": ["!C_BPartner_ID>Value", ""]}, {"ne": [{"tally": ["C_BPartner", "Value", "!C_BPartner_ID>Value"]}, 1]}]}]}, {"countWhere": ["C_BPartner_Location", {"or": [{"eq": ["!C_Location_ID>C_Location_UU", ""]}, {"ne": [{"tally": ["C_Location", "C_Location_UU", "!C_Location_ID>C_Location_UU"]}, 1]}]}]}, {"countWhere": ["AD_User", {"or": [{"eq": ["!C_BPartner_ID>Value", ""]}, {"ne": [{"tally": ["C_BPartner", "Value", "!C_BPartner_ID>Value"]}, 1]}]}]}, {"countWhere": ["M_Product", {"or": [{"eq": ["!M_Product_Category_ID>Value", ""]}, {"ne": [{"tally": ["M_Product_Category", "Value", "!M_Product_Category_ID>Value"]}, 1]}]}]}, {"countWhere": ["M_Product", {"or": [{"eq": ["!C_UOM_ID", ""]}, {"ne": [{"tally": ["C_UOM", "Name", "!C_UOM_ID"]}, 1]}]}]}, {"countWhere": ["M_Product_PO", {"and": [{"has": "!M_Product_ID>Value"}, {"or": [{"eq": ["!M_Product_ID>Value", ""]}, {"ne": [{"tally": ["M_Product", "Value", "!M_Product_ID>Value"]}, 1]}]}]}]}, {"countWhere": ["M_Product_PO", {"and": [{"has": "!C_BPartner_ID>Value"}, {"or": [{"eq": ["!C_BPartner_ID>Value", ""]}, {"ne": [{"tally": ["C_BPartner", "Value", "!C_BPartner_ID>Value"]}, 1]}]}]}]}, {"countWhere": ["M_PriceList_Version", {"or": [{"eq": ["!M_PriceList_ID", ""]}, {"ne": [{"tally": ["M_PriceList", "Name", "!M_PriceList_ID"]}, 1]}]}]}, {"countWhere": ["M_ProductPrice", {"or": [{"eq": ["!M_PriceList_Version_ID", ""]}, {"ne": [{"tally": ["M_PriceList_Version", "Name", "!M_PriceList_Version_ID"]}, 1]}]}]}, {"countWhere": ["M_ProductPrice", {"or": [{"eq": ["!M_Product_ID>Value", ""]}, {"ne": [{"tally": ["M_Product", "Value", "!M_Product_ID>Value"]}, 1]}]}]}, {"countWhere": ["M_Warehouse", {"or": [{"eq": ["!C_Location_ID>C_Location_UU", ""]}, {"ne": [{"tally": ["C_Location", "C_Location_UU", "!C_Location_ID>C_Location_UU"]}, 1]}]}]}, {"countWhere": ["M_Locator", {"or": [{"eq": ["!M_Warehouse_ID>Value", ""]}, {"ne": [{"tally": ["M_Warehouse", "Value", "!M_Warehouse_ID>Value"]}, 1]}]}]}, {"countWhere": ["M_Inventory", {"or": [{"eq": ["!M_Warehouse_ID>Value", ""]}, {"ne": [{"tally": ["M_Warehouse", "Value", "!M_Warehouse_ID>Value"]}, 1]}]}]}, {"countWhere": ["M_InventoryLine", {"and": [{"has": "!M_Inventory_ID"}, {"or": [{"eq": ["!M_Inventory_ID", ""]}, {"ne": [{"tally": ["M_Inventory", "DocumentNo", "!M_Inventory_ID"]}, 1]}]}]}]}, {"countWhere": ["M_InventoryLine", {"and": [{"has": "!M_Locator_ID>Value"}, {"or": [{"eq": ["!M_Locator_ID>Value", ""]}, {"ne": [{"tally": ["M_Locator", "Value", "!M_Locator_ID>Value"]}, 1]}]}]}]}, {"countWhere": ["M_InventoryLine", {"and": [{"has": "!M_Product_ID>Value"}, {"or": [{"eq": ["!M_Product_ID>Value", ""]}, {"ne": [{"tally": ["M_Product", "Value", "!M_Product_ID>Value"]}, 1]}]}]}]}]}, 0]}, 0, 1]}]},
     "currency_places": "@manifest.currency_places",
     "clearing": {"obj": {"AR": "${AR_CLEARING}", "AP": "${AP_CLEARING}", "BANK": "${BANK_CLEARING}"}},
-    "charges": {"obj": {"AR": "${CHARGE_AR}", "AP": "${CHARGE_AP}"}},
+    "charges": {"obj": {"AR": "${CHARGE_AR}", "AP": "${CHARGE_AP}", "BANK": "${CHARGE_BANK}"}},
     "tax": "${TAX_NONE}",
-    "left": {"obj": {"AR": {"round": [{"sumSet": ["open_lines", {"and": [{"def": "notBroughtIn"}, {"eq": [{"def": "class"}, "AR"]}]}, "$amount_residual"]}, "@manifest.currency_places"]}, "AP": {"round": [{"sumSet": ["open_lines", {"and": [{"def": "notBroughtIn"}, {"eq": [{"def": "class"}, "AP"]}]}, "$amount_residual"]}, "@manifest.currency_places"]}}}
+    "left": {"obj": {"BANK": {"def": "bankLeft"}, "AR": {"round": [{"sumSet": ["open_lines", {"and": [{"def": "notBroughtIn"}, {"eq": [{"def": "class"}, "AR"]}]}, "$amount_residual"]}, "@manifest.currency_places"]}, "AP": {"round": [{"sumSet": ["open_lines", {"and": [{"def": "notBroughtIn"}, {"eq": [{"def": "class"}, "AP"]}]}, "$amount_residual"]}, "@manifest.currency_places"]}}}
   },
   "let": {
     "ONE": {"obj": {}},
+    "BANKACCTS": {"each": [{"all": "account.journal"}, "$default_account_id"]},
     "HELD": {"each": [{"filter": [{"all": "res.partner"}, {"def": "pHeld"}]}, {"obj": {"model": "res.partner", "id": "$id", "name": "$name", "why": {"def": "pHeldWhy"}}}]},
     "LOCP": {"cat": [{"filter": [{"all": "res.partner"}, {"def": "pLocOk"}]}, {"filter": [{"each": [{"all": "stock.warehouse"}, {"at": [{"findAll": ["res.partner", "id", "$partner_id"]}, 0]}]}, {"and": ["$", {"def": "pHasAddr"}]}]}]},
     "HS": {"each": [{"all": "stock.quant"}, {"def": "whOfQ"}]}
