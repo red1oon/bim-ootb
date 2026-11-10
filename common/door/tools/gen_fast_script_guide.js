@@ -16,7 +16,7 @@
 const fs = require('fs'), os = require('os'), path = require('path'), https = require('https'), { spawn } = require('child_process');
 const ROOT = path.join(__dirname, '..', '..', '..');
 const LIVE = 'https://red1oon.github.io/bim-ootb/';
-const FLAT = ['modeller/tools/edit_cli.js', 'modeller/tools/bim_mcp.js', 'common/door/door.js', 'common/door/verbs.json', 'viewer/tools/viewer_verbs.js', 'viewer/tools/viewer_driver.js'];   // the 4-file download + the 2 Viewer files (NEURO §0.15)
+const FLAT = ['modeller/tools/edit_cli.js', 'modeller/tools/bim_mcp.js', 'common/door/door.js', 'common/door/verbs.json', 'common/door/render.js', 'viewer/tools/viewer_verbs.js', 'viewer/tools/viewer_driver.js'];   // the 4-file download + the 2 Viewer files (NEURO §0.15)
 
 const loadVocab = (file) => JSON.parse(fs.readFileSync(file || path.join(ROOT, 'common', 'door', 'verbs.json'), 'utf8'));
 
