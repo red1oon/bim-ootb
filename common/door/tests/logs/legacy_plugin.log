@@ -1,0 +1,12 @@
+  ✅ P0 legacy.status UP  legacy UP: postgres ready, pilot up
+  ✅ P1 an AI's erp.legacy_plugin is a held claim and nothing ran (the marker table is still there)  claim
+  ✅ P2a legacy.up on a running Postgres is ALREADY-UP and starts nothing (StartedAt unchanged); a missing container is refused naming it (starting a stopped one is not exercised)  ALREADY-UP / refused
+  ✅ P2 an absolute path and a non-.xlsx are refused; legacy down is inconclusive (never "all found")  refused,refused,inconclusive
+§W-LEGACY-PLUGIN erp.legacy_plugin ok in 258 s lines=legacy.up:ok erp.pack:ok legacy.refresh:ok legacy.check:ok legacy.witness:ok
+  ✅ P3 every line of the route is ok, the marker table is GONE (rebuilt from base) and the seed's migration scripts are in (independent count)  ok,ok,ok,ok,ok markerGone=true migrationscripts=1300
+  ✅ P4 legacy.check: window / table / physical table / process counts equal independent SQL counts; the physical table has every non-virtual workbook column  verdict=ALL-FOUND indep={"AD_Window rows":1,"AD_Table rows":1,"physical tables":1,"AD_Process rows with the same class name":2} physicalCols=25 workbookNonVirtual=25
+  ✅ P5a the in-server witness verdict and counts = the §W-BIMDOC-LEGACY line in the log the verb kept (the verb reports what the script said)  verb=PASS 8/0 log=PASS 8/0
+  ✅ P5b the plugin installed is HEALTHY: the in-server witness is PASS with 8 pass, 0 fail (LP_BREAK=nosupersede must turn this red)  PASS 8/0
+  ✅ P6 the pack comparison says what is true (same / not the same) as an independent compare of the two PackOut.xml  verb same=true independent same=true | the installed pack has the same rows as the one just made
+  ✅ P7 the pilot is untouched: its row counts and http :8088 before = after  {"ad_table":"1076","c_order":"2887","http":"200"} -> {"ad_table":"1076","c_order":"2887","http":"200"}
+§WITNESS_LEGACY_PLUGIN pass=10 fail=0 inconclusive=0 verdict=PASS

@@ -2043,6 +2043,724 @@
     "ai"
    ],
    "witness": "common/door/tests/witness_erp_verbs.js"
+  },
+  {
+   "verb": "witness.run",
+   "app": "witness",
+   "title": "Run a witness and read its verdict",
+   "description": "Runs the witness named witness_<name>.js from this tree, keeps its whole log under the cache, and answers the witness's own verdict line (PASS, FAIL or INCONCLUSIVE) with the pass, fail and inconclusive counts and the lines that failed. A witness that prints no verdict line is an error: an exit code is not evidence. The log path is in the answer.",
+   "inputs": [
+    {
+     "name": "name",
+     "description": "The witness name without witness_ and .js, e.g. \"erp_new\". More than one match is refused naming both.",
+     "required": true,
+     "type": "string",
+     "example": "erp_new"
+    }
+   ],
+   "harm": "trial",
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "calls": {
+    "cli": "ops_cli",
+    "who": "the witness runner",
+    "argv": [
+     "witness-run",
+     "--name",
+     "{name}"
+    ]
+   },
+   "returns": {
+    "shape": "ops_cli JSON {name,file,log,verdict,pass,fail,inconclusive,failed,ms}",
+    "fields": [
+     {
+      "path": "verdict",
+      "type": "string"
+     },
+     {
+      "path": "pass",
+      "type": "number"
+     },
+     {
+      "path": "fail",
+      "type": "number"
+     },
+     {
+      "path": "log",
+      "type": "string"
+     }
+    ]
+   },
+   "witness": "common/door/tests/witness_ops_verbs.js"
+  },
+  {
+   "verb": "witness.last",
+   "app": "witness",
+   "title": "Read the last recorded witness run",
+   "description": "Answers the last run of a witness that witness.run recorded, without running it again. Nothing recorded is refused with the instruction to run it first.",
+   "inputs": [
+    {
+     "name": "name",
+     "description": "The witness name without witness_ and .js.",
+     "required": true,
+     "type": "string",
+     "example": "erp_new"
+    }
+   ],
+   "harm": "read",
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "calls": {
+    "cli": "ops_cli",
+    "who": "the witness runner",
+    "argv": [
+     "witness-last",
+     "--name",
+     "{name}"
+    ]
+   },
+   "returns": {
+    "shape": "ops_cli JSON as witness.run, plus recorded:true",
+    "fields": [
+     {
+      "path": "verdict",
+      "type": "string"
+     },
+     {
+      "path": "log",
+      "type": "string"
+     }
+    ]
+   },
+   "witness": "common/door/tests/witness_ops_verbs.js"
+  },
+  {
+   "verb": "legacy.status",
+   "app": "legacy",
+   "title": "Is the legacy test stack up",
+   "description": "Checks the legacy iDempiere test stack the twin is compared against: the docker Postgres container and the pilot web UI. Answers UP, PARTIAL or DOWN with each part's state, and the commands that start it when it is not up. Reads only; it starts nothing.",
+   "inputs": [],
+   "harm": "read",
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "calls": {
+    "cli": "ops_cli",
+    "who": "the legacy stack check",
+    "argv": [
+     "legacy-status"
+    ]
+   },
+   "returns": {
+    "shape": "ops_cli JSON {verdict,postgres,pilot,summary,next}",
+    "fields": [
+     {
+      "path": "verdict",
+      "type": "string"
+     },
+     {
+      "path": "summary",
+      "type": "string"
+     }
+    ]
+   },
+   "witness": "common/door/tests/witness_ops_verbs.js"
+  },
+  {
+   "verb": "legacy.query",
+   "app": "legacy",
+   "title": "Read rows of a legacy table",
+   "description": "Reads rows from a table of the legacy iDempiere database (read only). The table and every column are checked against the legacy dictionary, so a wrong name is refused and the real columns are listed. Give column=value to narrow. At most 50 rows unless limit says otherwise (up to 1000); total is always given. Legacy not reachable answers inconclusive.",
+   "inputs": [
+    {
+     "name": "table",
+     "description": "The legacy table, e.g. \"c_order\".",
+     "required": true,
+     "type": "string",
+     "example": "c_order"
+    },
+    {
+     "name": "columns",
+     "description": "Comma-separated columns to show (default: the identifying ones).",
+     "required": false,
+     "type": "string",
+     "example": "documentno,docstatus,grandtotal"
+    },
+    {
+     "name": "sort",
+     "description": "A column to sort by; a leading - sorts descending.",
+     "required": false,
+     "type": "string",
+     "example": "-documentno"
+    },
+    {
+     "name": "limit",
+     "description": "How many rows to show, 1 to 1000 (default 50).",
+     "required": false,
+     "type": "number",
+     "example": "5"
+    }
+   ],
+   "harm": "read",
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "calls": {
+    "cli": "ops_cli",
+    "who": "the legacy database",
+    "argv": [
+     "legacy-query",
+     "--table",
+     "{table}",
+     {
+      "if": "columns",
+      "args": [
+       "--columns",
+       "{columns}"
+      ]
+     },
+     {
+      "if": "sort",
+      "args": [
+       "--sort",
+       "{sort}"
+      ]
+     },
+     {
+      "if": "limit",
+      "args": [
+       "--limit",
+       "{limit}"
+      ]
+     }
+    ],
+    "rest": {
+     "flag": "--where",
+     "what": "column=value, a column of the table and the value it must have (give as many as you like)"
+    }
+   },
+   "returns": {
+    "shape": "ops_cli JSON {table,columns,rows,shown,total,population,verdict,summary}",
+    "fields": [
+     {
+      "path": "rows",
+      "type": "array"
+     },
+     {
+      "path": "total",
+      "type": "number"
+     }
+    ]
+   },
+   "witness": "common/door/tests/witness_ops_verbs.js"
+  },
+  {
+   "verb": "erp.column",
+   "app": "erp",
+   "title": "Who fills a column: twin and legacy side by side",
+   "description": "Looks a column up in the twin's dictionary and the legacy dictionary and answers, for each: the column default, the validation rule, the field default, and the login default (the row of the referenced table with IsDefault=Y, which iDempiere puts in the context at login). Says what fills it and whether the two sides agree. Legacy not reachable gives the twin side only, marked not checked.",
+   "inputs": [
+    {
+     "name": "kind",
+     "description": "The table or window kind, e.g. \"Order\" or \"C_Order\".",
+     "required": true,
+     "type": "string",
+     "example": "Order"
+    },
+    {
+     "name": "column",
+     "description": "The column, e.g. \"C_ConversionType_ID\".",
+     "required": true,
+     "type": "string",
+     "example": "C_ConversionType_ID"
+    }
+   ],
+   "harm": "read",
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "calls": {
+    "cli": "ops_cli",
+    "who": "the two dictionaries",
+    "argv": [
+     "column",
+     "--kind",
+     "{kind}",
+     "--column",
+     "{column}"
+    ]
+   },
+   "returns": {
+    "shape": "ops_cli JSON {table,column,twin,legacy,differs,verdict,summary}",
+    "fields": [
+     {
+      "path": "verdict",
+      "type": "string"
+     },
+     {
+      "path": "summary",
+      "type": "string"
+     }
+    ]
+   },
+   "witness": "common/door/tests/witness_ops_verbs.js"
+  },
+  {
+   "verb": "erp.compare",
+   "app": "erp",
+   "title": "Compare one record on the twin and on legacy",
+   "description": "Reads one record by its Document No on the twin and the matching record on legacy and compares them cell for cell. Each differing cell is classed DIFF, ONLY-TWIN, ONLY-LEGACY, or NULL-VS-DEFAULT (legacy empty where the twin holds 0, N or empty: say nothing about the cause). Ids, audit stamps and dates are skipped and counted. An ambiguous legacy number is refused naming the ids; legacy=<number> picks it.",
+   "inputs": [
+    {
+     "name": "kind",
+     "description": "The kind of record, e.g. \"Order\".",
+     "required": true,
+     "type": "string",
+     "example": "Order"
+    },
+    {
+     "name": "number",
+     "description": "The Document No on the twin.",
+     "required": true,
+     "type": "string",
+     "example": "50000"
+    },
+    {
+     "name": "legacy",
+     "description": "The Document No on legacy when it differs from the twin's.",
+     "required": false,
+     "type": "string",
+     "example": "50981"
+    }
+   ],
+   "harm": "read",
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "calls": {
+    "cli": "ops_cli",
+    "who": "the twin and the legacy database",
+    "argv": [
+     "compare",
+     "--kind",
+     "{kind}",
+     "--number",
+     "{number}",
+     {
+      "if": "legacy",
+      "args": [
+       "--legacy",
+       "{legacy}"
+      ]
+     }
+    ]
+   },
+   "returns": {
+    "shape": "ops_cli JSON {kind,table,twin,legacy,cells,diffs,verdict,summary}",
+    "fields": [
+     {
+      "path": "verdict",
+      "type": "string"
+     },
+     {
+      "path": "cells",
+      "type": "object"
+     },
+     {
+      "path": "diffs",
+      "type": "array"
+     }
+    ]
+   },
+   "witness": "common/door/tests/witness_ops_verbs.js"
+  },
+  {
+   "verb": "idempiere.where",
+   "app": "idempiere",
+   "title": "Find a name in the iDempiere source",
+   "description": "Finds the lines of the legacy iDempiere Java source that contain a name (a column, a class, a method) and answers file, line and the line's text, so a claim about legacy behaviour can cite its source. in=<text> keeps only files whose path contains it (e.g. callout). At most 25 lines unless limit says otherwise; the total is always given. No match is inconclusive, not zero.",
+   "inputs": [
+    {
+     "name": "symbol",
+     "description": "A name: letters, digits, _ and . (e.g. InvoiceRule or CalloutOrder.docType).",
+     "required": true,
+     "type": "string",
+     "example": "InvoiceRule"
+    },
+    {
+     "name": "in",
+     "description": "Keep only files whose path contains this text.",
+     "required": false,
+     "type": "string",
+     "example": "callout"
+    },
+    {
+     "name": "limit",
+     "description": "How many lines to show, 1 to 200 (default 25).",
+     "required": false,
+     "type": "number",
+     "example": "10"
+    }
+   ],
+   "harm": "read",
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "calls": {
+    "cli": "ops_cli",
+    "who": "the iDempiere source",
+    "argv": [
+     "where",
+     "--symbol",
+     "{symbol}",
+     {
+      "if": "in",
+      "args": [
+       "--in",
+       "{in}"
+      ]
+     },
+     {
+      "if": "limit",
+      "args": [
+       "--limit",
+       "{limit}"
+      ]
+     }
+    ]
+   },
+   "returns": {
+    "shape": "ops_cli JSON {symbol,hits,shown,total,files,verdict,summary}",
+    "fields": [
+     {
+      "path": "hits",
+      "type": "array"
+     },
+     {
+      "path": "total",
+      "type": "number"
+     }
+    ]
+   },
+   "witness": "common/door/tests/witness_ops_verbs.js"
+  },
+  {
+   "verb": "erp.pack",
+   "app": "erp",
+   "title": "Make the 2Pack zip from a data-model workbook",
+   "description": "Reads an ERP data-model workbook (one sheet per dictionary table: table, columns, reference lists, window, tabs, menu, process rows with class names only, plus a Plugin sheet) and writes the metadata-only 2Pack zip a legacy iDempiere applies. Written once per version: the same version with the same rows answers unchanged, the same version with different rows is refused (a released pack is immutable; bump the version). The answer gives the zip's path, its sha256, the rows per dictionary table and the process class names the pack points at. With java= the Java model classes of the tables the workbook creates are written too; the rules (document actions, process bodies) stay hand-written. A person runs it; an AI's call is held as a claim until a person confirms.",
+   "inputs": [
+    {
+     "name": "book",
+     "description": "The workbook, a .xlsx path inside this tree or the working folder (no .. and no absolute path).",
+     "required": true,
+     "type": "string",
+     "example": "erp/plugins/models/BIM_Document.xlsx"
+    },
+    {
+     "name": "version",
+     "description": "The pack version, x.y.z.",
+     "required": true,
+     "type": "string",
+     "example": "1.0.0"
+    },
+    {
+     "name": "out",
+     "description": "Folder to write META-INF/2Pack_<version>.zip under (default: the door's cache).",
+     "required": false,
+     "type": "string",
+     "example": "build/pack"
+    },
+    {
+     "name": "java",
+     "description": "Folder to write the generated Java model classes under (optional).",
+     "required": false,
+     "type": "string",
+     "example": "build/java"
+    },
+    {
+     "name": "package",
+     "description": "Java package of those classes (default org.kernel.bim.model).",
+     "required": false,
+     "type": "string",
+     "example": "org.kernel.bim.model"
+    }
+   ],
+   "harm": "writes",
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "calls": {
+    "cli": "ops_cli",
+    "who": "the pack engine",
+    "argv": [
+     "pack",
+     "--book",
+     "{book}",
+     "--version",
+     "{version}",
+     {
+      "if": "out",
+      "args": [
+       "--out",
+       "{out}"
+      ]
+     },
+     {
+      "if": "java",
+      "args": [
+       "--java",
+       "{java}"
+      ]
+     },
+     {
+      "if": "package",
+      "args": [
+       "--package",
+       "{package}"
+      ]
+     }
+    ]
+   },
+   "returns": {
+    "shape": "ops_cli JSON {book,version,zip,path,status,elements,records,rows,classes,javaFiles,sha256,verdict,summary}",
+    "fields": [
+     {
+      "path": "zip",
+      "type": "string"
+     },
+     {
+      "path": "status",
+      "type": "string"
+     },
+     {
+      "path": "sha256",
+      "type": "string"
+     },
+     {
+      "path": "rows",
+      "type": "object"
+     },
+     {
+      "path": "classes",
+      "type": "array"
+     }
+    ]
+   },
+   "witness": "common/door/tests/witness_ops_verbs.js"
+  },
+  {
+   "verb": "legacy.up",
+   "app": "legacy",
+   "title": "Start the shared docker Postgres for the legacy test stack",
+   "description": "Starts the shared docker Postgres container the legacy test instance and the pilot read their databases from, when it is not running, and waits until it accepts connections. When it is already running it says so and starts nothing. It never starts or stops the instance or the pilot. Docker not reachable is inconclusive; a missing container is refused naming it. A person runs it; an AI's call is held as a claim until a person confirms.",
+   "inputs": [],
+   "harm": "writes",
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "calls": {
+    "cli": "legacy_cli",
+    "who": "the docker Postgres",
+    "argv": [
+     "up"
+    ]
+   },
+   "returns": {
+    "shape": "legacy_cli JSON {container,verdict,summary}",
+    "fields": [
+     {
+      "path": "verdict",
+      "type": "string"
+     }
+    ]
+   },
+   "witness": "common/door/tests/witness_legacy_plugin.js"
+  },
+  {
+   "verb": "legacy.refresh",
+   "app": "legacy",
+   "title": "Refresh the legacy test instance from the base seed",
+   "description": "Rebuilds the local legacy iDempiere TEST instance (database idempiere_bimdoc, ports 8108 and 8464) from the base seed so every state traces from base: stops it, drops and recreates the database, imports the seed, applies the migration scripts newer than the seed, installs the plugin bundle, starts it, waits for the 2Pack to be installed and reads the rows back. About two minutes. It names the database it writes and refuses the pilot's databases; the instance, the database and the scripts are fixed, nothing is taken from the caller. A person runs it; an AI's call is held as a claim until a person confirms.",
+   "inputs": [],
+   "harm": "writes",
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "calls": {
+    "cli": "legacy_cli",
+    "who": "the legacy test instance",
+    "argv": [
+     "refresh"
+    ]
+   },
+   "returns": {
+    "shape": "legacy_cli JSON {instance,steps,installed,log,ms,verdict,summary}",
+    "fields": [
+     {
+      "path": "verdict",
+      "type": "string"
+     },
+     {
+      "path": "installed",
+      "type": "boolean"
+     },
+     {
+      "path": "steps",
+      "type": "array"
+     }
+    ]
+   },
+   "witness": "common/door/tests/witness_legacy_plugin.js"
+  },
+  {
+   "verb": "legacy.witness",
+   "app": "legacy",
+   "title": "Run the in-server witness on the legacy test instance",
+   "description": "Sends the witness command to the running legacy test instance over its OSGi console. The witness creates its rows in one transaction and rolls it back. Answers PASS or FAIL with the counts and the failing lines, or INCONCLUSIVE when the instance is not running. The log is kept.",
+   "inputs": [],
+   "harm": "trial",
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "calls": {
+    "cli": "legacy_cli",
+    "who": "the legacy test instance",
+    "argv": [
+     "witness"
+    ]
+   },
+   "returns": {
+    "shape": "legacy_cli JSON {verdict,pass,fail,failed,log,ms,summary}",
+    "fields": [
+     {
+      "path": "verdict",
+      "type": "string"
+     },
+     {
+      "path": "pass",
+      "type": "number"
+     },
+     {
+      "path": "fail",
+      "type": "number"
+     }
+    ]
+   },
+   "witness": "common/door/tests/witness_legacy_plugin.js"
+  },
+  {
+   "verb": "legacy.check",
+   "app": "legacy",
+   "title": "Check a workbook's rows in the legacy test database",
+   "description": "Reads every row of a data-model workbook back from the legacy test database by SQL (tables, physical tables, columns, windows, tabs, menu, processes with their class names, references) and answers how many of each were found. With version=<x.y.z> it also compares the installed plugin's 2Pack with the pack made from the workbook (build/legacy_plugin) and says plainly when they differ. Database not reachable is inconclusive.",
+   "inputs": [
+    {
+     "name": "book",
+     "description": "The workbook, a .xlsx path inside this tree.",
+     "required": true,
+     "type": "string",
+     "example": "erp/plugins/models/BIM_Document.xlsx"
+    },
+    {
+     "name": "version",
+     "description": "The pack version to compare, x.y.z.",
+     "required": false,
+     "type": "string",
+     "example": "1.0.0"
+    }
+   ],
+   "harm": "read",
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "calls": {
+    "cli": "legacy_cli",
+    "who": "the legacy test database",
+    "argv": [
+     "check",
+     "--book",
+     "{book}",
+     {
+      "if": "version",
+      "args": [
+       "--version",
+       "{version}"
+      ]
+     }
+    ]
+   },
+   "returns": {
+    "shape": "legacy_cli JSON {database,checks,pack,missing,verdict,summary}",
+    "fields": [
+     {
+      "path": "verdict",
+      "type": "string"
+     },
+     {
+      "path": "checks",
+      "type": "array"
+     },
+     {
+      "path": "pack",
+      "type": "object"
+     }
+    ]
+   },
+   "witness": "common/door/tests/witness_legacy_plugin.js"
+  },
+  {
+   "verb": "erp.legacy_plugin",
+   "app": "erp",
+   "title": "Put a data-model plugin on the legacy test instance and check it there",
+   "description": "The whole route for a plugin on a real legacy iDempiere, one line: start the docker Postgres if it is not running, make the 2Pack from the workbook, refresh the local legacy test instance from the base seed with the plugin bundle installed, read every row of the workbook back from the test database, and run the in-server witness. Each step is its own line and the first line that is not ok stops it. The refresh installs the plugin bundle as committed, so the check says when the installed pack is not the one just made from the workbook. About three minutes. A person runs it; an AI's call is held as a claim until a person confirms.",
+   "inputs": [
+    {
+     "name": "book",
+     "description": "The workbook, a .xlsx path inside this tree.",
+     "required": true,
+     "type": "string",
+     "example": "erp/plugins/models/BIM_Document.xlsx"
+    },
+    {
+     "name": "version",
+     "description": "The pack version, x.y.z.",
+     "required": true,
+     "type": "string",
+     "example": "1.0.0"
+    }
+   ],
+   "harm": "writes",
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "body": [
+    "legacy.up",
+    "erp.pack book={book} version={version} out=build/legacy_plugin",
+    "legacy.refresh",
+    "legacy.check book={book} version={version}",
+    "legacy.witness"
+   ],
+   "returns": {
+    "shape": "the envelopes of its lines, in answer.lines; the last is legacy.witness's",
+    "fields": []
+   },
+   "witness": "common/door/tests/witness_legacy_plugin.js"
   }
  ]
 }
