@@ -21,4 +21,27 @@ async function draftOrder(a, f) {
     return { id, number: row.documentno, docStatus: row.docstatus, totalLines: row.totallines, grandTotal: row.grandtotal, facts: f, lines: q('SELECT m_product_id, qtyordered, priceactual, linenetamt, c_tax_id FROM c_orderline WHERE c_order_id=?', [id]) };
   } finally { console.log = log; }
 }
-module.exports = { draftOrder };
+
+// Witness helper: key a DRAFT customer Shipment for a COMPLETED order into the op-log (header + one line per order line), the way the Shipment window is keyed. INPUT of the witnesses, not a verb.
+// f = { orderId, doctype (the order's shipment doctype, default 120), locator, warehouse, client, org, day }
+async function draftShipment(a, f) {
+  f = Object.assign({ doctype: 120, locator: 101, warehouse: 103, client: 11, org: 11, day: new Date().toISOString().slice(0, 10) + ' 00:00:00' }, f || {});
+  const O = await EC.boot(a), ML = O.ML, q = (s, p) => O.rows(s, p), env = { client: f.client, org: f.org, date: f.day };
+  const o = q('SELECT * FROM c_order WHERE c_order_id=?', [f.orderId])[0], ols = q('SELECT * FROM c_orderline WHERE c_order_id=? ORDER BY line', [f.orderId]);
+  const log = console.log; console.log = () => {};
+  try {
+    let tx = O.trx(); Object.assign(tx.env, env);
+    const h = ML.save(tx, 'm_inout', null, { ad_client_id: f.client, ad_org_id: f.org, issotrx: 'Y', movementtype: 'C-', c_doctype_id: f.doctype, c_order_id: f.orderId, c_bpartner_id: o.c_bpartner_id, c_bpartner_location_id: o.c_bpartner_location_id, m_warehouse_id: f.warehouse, movementdate: f.day, dateacct: f.day, docstatus: 'DR', docaction: 'CO', processed: 'N', deliveryrule: 'A', freightcostrule: 'I', deliveryviarule: 'P', priorityrule: '5' });
+    if (!h.ok) throw new Error('shipment header: ' + h.error);
+    const g1 = EC.persistGroup(O, tx.groupOps()), id = g1[g1.length - 1].fields.m_inout_id;
+    for (const ol of ols) {
+      tx = O.trx(); Object.assign(tx.env, env);
+      const l = ML.save(tx, 'm_inoutline', null, { ad_client_id: f.client, ad_org_id: f.org, m_inout_id: id, line: ol.line, c_orderline_id: ol.c_orderline_id, m_product_id: ol.m_product_id, m_locator_id: f.locator, movementqty: ol.qtyordered, qtyentered: ol.qtyordered, c_uom_id: ol.c_uom_id });
+      if (!l.ok) throw new Error('shipment line: ' + l.error);
+      EC.persistGroup(O, tx.groupOps());
+    }
+    const row = q('SELECT m_inout_id, documentno, docstatus FROM m_inout WHERE m_inout_id=?', [id])[0];
+    return { id, number: row.documentno, docStatus: row.docstatus, lines: q('SELECT m_product_id, movementqty FROM m_inoutline WHERE m_inout_id=?', [id]) };
+  } finally { console.log = log; }
+}
+module.exports = { draftOrder, draftShipment };
