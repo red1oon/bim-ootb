@@ -1,0 +1,17 @@
+§OBJECT open db=ad_seed.db dictionary=present
+§ERP patch statements=3911 failed=3 ms=1759
+§ERP boot db=ad_seed.db replayed_ops=0 oplog=/tmp/da_3nrwm2/o.jsonl sql_functions=61
+§W-DOC-ACTIONS-SHARED DIFF table=gl_journalbatch id=100 role=50004 old=[] shared=["CL","RC","RE","RA"]
+§W-DOC-ACTIONS-SHARED DIFF table=m_requisition id=100 role=50004 old=[] shared=["CL"]
+§W-DOC-ACTIONS-SHARED DIFF table=m_inout id=108 role=50004 old=[] shared=["CL","RC","RA"]
+§W-DOC-ACTIONS-SHARED DIFF table=m_inout id=100 role=50004 old=[] shared=["CL","RC","RA"]
+§W-DOC-ACTIONS-SHARED DIFF table=m_inout id=101 role=50004 old=[] shared=["CL","RC","RA"]
+§DOCACT_POP tables_with_rows=14 of 25 walked; triples(table,record,role)=276 nonEmptyOffer=201 roleNarrowed=0 [c_cash:9 s_timeexpense:3 gl_journalbatch:3(1diff) m_requisition:3(1diff) m_inout:27(9diff) c_payment:6(2diff) m_rma:3(1diff) c_invoice:60(24diff) gl_journal:6(2diff) m_inventory:9(3diff) c_allocationhdr:6(2diff) c_order:132(21diff) m_movement:3(1diff) c_bankstatement:6(2diff)]
+  ❌ S1a shared module == the old page path, every record x {no role, 102, 50004}  judged=276 diffs=69
+  ❌ S1a2 the seam verbs(ctx.doc) == the shared module on the same population  seamDiffs=69
+  ❌ S1a3 the population is not vacuous: some record has an offered action, and some role narrowed a list (so the role step was exercised)  nonEmptyOffer=201 roleNarrowed=0
+  ✅ S1b _fsmCtx exists and is non-trivial (the instrument finds it); the old _periodOpen is gone only in the new page (DA_BREAK=oldpage still has it)  fsmCtx=3302 periodOpen=0
+  ✅ S1b the page holds no copy of the join or the period probe (no legalActionsOrder / legalActionsFor / c_period SQL in _fsmCtx or _periodOpen)  offences=0
+  ✅ S1b the page loads doc_actions.js and calls DocActions.legal after it  script@44702 use@287333
+  ✅ S1c verbs(ctx) with no ctx.doc is still the kernel handler registry, role-filtered (unchanged)  registry=[{"action":"CO","label":"CO","docType":"WDAS_DOC"}] filtered=0
+§WITNESS_DOC_ACTIONS_SHARED pass=4 fail=3 inconclusive=0 verdict=FAIL

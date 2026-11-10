@@ -1,0 +1,13 @@
+§FOPS preview (shipped seam, plain order): §SAVE-PREVIEW table=pp_order op=CRUD_CREATE ok=Y ops=10 tables={"pp_order_bom":1,"pp_order_bomline":2,"pp_mrp":3,"ad_sequence":1,"pp_order_workflow":2,"pp_order_node":1} (nothing committed)
+§FOPS F7 PASS Preview commits nothing: kernel_ops 6->6, pp_order 18->18, AD_Sequence sum 778572652->778572652
+§FOPS F6 PASS Preview == Save: the 10 rows the preview showed are the rows Save then wrote (tables {"pp_order_bom":1,"pp_order_bomline":2,"pp_mrp":3,"ad_sequence":1,"pp_order_workflow":2,"pp_order_node":1})
+§FOPS F1 PASS lens not installed: no lens bar while editing a new order and on the saved order (the toolbar is the twin's)
+§FOPS plain order={"id":-7,"documentno":"80000","docstatus":"CO"} saveComplete.gestures={"click":2,"select":0,"type":0} events=183 backflush.gestures={"click":2,"select":1,"type":0} events=100 collectors=[["100",50007,100,"CO"],["110",50008,7000,"CO"],["110",50014,100,"CO"]] stockDelta=[[50007,100],[50008,-7000],[50014,-100]]
+§FOPS lens installed: {"lenses":{"friendly-ops":["org.kernel.friendly-ops@1"]},"state":"ACTIVE"}
+§FOPS lens bar while editing: ["friendly-ops:preview"]
+§FOPS lens preview panel: {"state":"ok","tables":["pp_order_bom:Manufacturing Order BOM · 1 new","pp_order_bomline:Manufacturing Order BOM Line · 2 new","pp_mrp:Material Requirement Planning · 3 new","ad_sequence:Sequence · 0 new, 1 updated","pp_order_workflow:Manufacturing Order Workflow · 1 new, 1 updated","pp_order_node:Manufacturing Order Activity · 1 new"],"text":"Save will writeManufacturing Order BOM · 1 new• Fertilizer #70Manufacturing Order BOM Line · 2 new• Fertilizer Lawn Fertilizer · qtybom 70 · qtyrequiered 7070.71 · qtyreserved 7070.71• Bag70 Bag 70 Kg · qtybom 1 · qtyrequiered 100 · qtyreserved 100Material Requirement Planning · 3 new• 80001 · qty 7070.71• 80001 · qty 100• 80001 · qty 100Sequence · 0 new, 1 updatedManufacturing Order Workflow · 1 new, 1 updated• Fertilizer Packing Process · qtybatchsize 200Manufacturing Order Activity · 1 new• P"}
+§FOPS F6b PASS the lens Preview button draws the same tables as the seam preview
+§FOPS refusal preview={"state":"refused","text":"Save would be refused: BOMExpired: PP_Product_BOM 50005 not valid at 2007-01-01 00:00:00 (from=2007-09-22 00:00:00 to=)"} save="§MODEL-SAVE-ROLLBACK table=pp_order op=CRUD_CREATE nothing sealed: BOMExpired: PP_Product_BOM 50005 not valid at 2007-01-01 00:00:00 (from=2007-09-22 00:00:00 to=)"
+§FOPS F9 PASS Preview shows the refusal Save gives ("BOMExpired: PP_Product_BOM 50005 not valid at 2007-01-01 00:00:00 (from=2007-09-22 00:00:0"), and neither writes
+§FOPS F0 PASS no page errors
+§FOPS_VERDICT GREEN judged=6 failed=0 pagelog=/tmp/witness_friendly_ops.page.log

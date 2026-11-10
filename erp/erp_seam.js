@@ -160,6 +160,11 @@ function makeSeam(cfg) {
 
   // ── verbs(ctx) — the legal actions from the handler registry, capability-filtered ────────────────
   function verbs(ctx, docType) {
+    if (ctx && ctx.doc) {   // the legal actions of ONE record: DocumentEngine.getValidActions then the role's Document Action Access, the shared join in doc_actions.js (also the page's and the door's)
+      var DA = (typeof require !== 'undefined' && typeof module !== 'undefined') ? require('./doc_actions') : (typeof window !== 'undefined' ? window.DocActions : null);
+      var d = ctx.doc, r = DA.legal(d.b, d.adTableId, d.rec, { roleId: d.roleId, clientId: d.clientId });
+      return r.offered.map(function (a) { return { action: a, label: a, docType: String(d.adTableId) }; });
+    }
     var hs = K.handlers(docType);
     if (ctx && ctx.role && ctx.role.actions) {
       hs = hs.filter(function (h) { return ctx.role.actions.indexOf(h.docType + ':' + h.action) >= 0; });
