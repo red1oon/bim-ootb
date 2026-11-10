@@ -13,9 +13,9 @@ const M = path.join(__dirname, '..');
 const initSqlJs = require(require.resolve('sql.js', { paths: [process.cwd(), path.join(process.env.HOME || '', 'bim-compiler', 'node_modules'), M] }));
 const log = s => console.log(s);
 const args = process.argv.slice(2), files = [], pass = [];
-let dbPath = null, regArg = null, metaArg = null;
+let dbPath = null, regArg = null, metaArg = null, walkRules = null;
 for (const a of args) {
-  if (a.startsWith('--register=')) regArg = a.slice(11); else if (a.startsWith('--sheet-meta=')) { metaArg = a.slice(13); } else if (a.startsWith('--')) pass.push(a);
+  if (a.startsWith('--register=')) regArg = a.slice(11); else if (a.startsWith('--walk-rules=')) walkRules = a.slice(13); else if (a.startsWith('--sheet-meta=')) { metaArg = a.slice(13); } else if (a.startsWith('--')) pass.push(a);
   else if (!dbPath) dbPath = a; else files.push(a);
 }
 if (!dbPath) { console.error('Usage: node modeller/tools/project_inputs.js <building.db> [--register=<json>|@file] <sheet.dxf>... [--sheet-meta=<json>|@file]'); process.exit(1); }
@@ -78,6 +78,26 @@ function decide(meta, file) {
   db.run('CREATE TABLE IF NOT EXISTS drawn_sheet_status(sheet_number TEXT, revision TEXT, status TEXT, basis TEXT, provenance TEXT, PRIMARY KEY (sheet_number, revision))');
   verdicts.forEach(v => { if (v.d.read) db.run('DELETE FROM drawn_sheet_status WHERE sheet_number=?', [v.meta.number]);
     db.run('INSERT OR REPLACE INTO drawn_sheet_status VALUES(?,?,?,?,?)', [v.meta.number, v.meta.revision, v.d.status, v.d.basis, v.d.status === 'issued' ? 'drawn:' + v.meta.number + '/' + v.meta.revision : v.d.status === 'review' ? 'drawn-review:' + v.meta.number + '/' + v.meta.revision : v.d.status === 'not-stated' ? 'drawn-unstated:' + v.meta.number + '/' + v.meta.revision : null]); });
+  // §12c slice 1: the gaps this run can see before a walk. Its own table, rewritten whole (a report of now).
+  { const rowsOf = (d, sql) => { const r = d.exec(sql); return r.length ? r[0].values : []; }, gaps = [];
+    verdicts.filter(v => v.d.status !== 'issued').forEach(v => gaps.push(['sheet', null, null, null, 'no issued sheet', v.meta.number + '/' + (v.meta.revision || '(none)') + ' ' + v.d.status + ': ' + v.d.basis]));
+    if (has(db, 'element_pset_native')) { let maps = null; try { maps = JSON.parse(fs.readFileSync(path.join(M, 'dxf2bim', 'native_maps.json'), 'utf8')); } catch (e) { log('§INPUTS-GAP native_maps.json unreadable: unit gaps not judged'); }
+      ((maps && maps.prop_map) || []).forEach(pm => { const q = x => "'" + String(x).replace(/'/g, "''") + "'";
+        rowsOf(db, 'SELECT n.guid, n.pset, n.name, n.value, (SELECT discipline FROM elements_meta m WHERE m.guid=n.guid), (SELECT storey FROM elements_meta m WHERE m.guid=n.guid) FROM element_pset_native n WHERE n.pset LIKE ' + q(pm.pset) + ' AND n.name LIKE ' + q(pm.name) + ' AND n.value_si IS NULL AND n.unit IS NULL')
+          .filter(r => /^-?\d+(\.\d+)?([eE][-+]?\d+)?$/.test(String(r[3])) && Number(r[3]) !== 0)   // a number that is not zero
+          .filter(() => /_va$|_v$|_a$|_w$/.test(pm.meaning))   // a meaning that names a unit; a count (poles) or a label has none to miss
+          .forEach(r => gaps.push([pm.meaning, r[0], r[4], r[5], 'unit unknown', r[1] + ' / ' + r[2] + ' = ' + r[3]])); }); }
+    const spaces = (has(db, 'ifc_spaces') ? one(db, 'SELECT count(*) FROM ifc_spaces') : 0) + one(db, "SELECT count(*) FROM elements_meta WHERE ifc_class='IfcSpace'") + (has(db, 'spatial_structure') ? (() => { try { return one(db, "SELECT count(*) FROM spatial_structure WHERE type='IfcSpace' AND COALESCE(size_x,0)>0.1"); } catch (e) { return 0; } })() : 0);   // an older spatial_structure has no box columns: then it states no room box
+    if (!spaces) gaps.push(['rooms', null, null, null, 'no rooms in model', 'no IfcSpace in ifc_spaces, elements_meta or spatial_structure']);
+    if (walkRules) { const rdb = new SQL.Database(new Uint8Array(fs.readFileSync(walkRules))), bound = {};
+      if (has(rdb, 'rule_mesh_binding')) rowsOf(rdb, 'SELECT disc, ifc_class FROM rule_mesh_binding').forEach(r => { bound[r[0] + '|' + r[1]] = 1; });
+      rowsOf(rdb, 'SELECT DISTINCT disc, ifc_class FROM rule_placement WHERE n_measured > 0 ORDER BY 1, 2').filter(r => !bound[r[0] + '|' + r[1]]).forEach(r => gaps.push(['mesh:' + r[1], null, r[0], null, 'no real mesh for class', path.basename(walkRules) + ' has no rule_mesh_binding row for ' + r[0] + '/' + r[1]]));
+      rdb.close(); }
+    db.run('DROP TABLE IF EXISTS input_gap'); db.run('CREATE TABLE input_gap(fact TEXT, element_guid TEXT, discipline TEXT, storey TEXT, why TEXT, detail TEXT)');
+    gaps.forEach(g => db.run('INSERT INTO input_gap VALUES(?,?,?,?,?,?)', g));
+    const tally = {}; gaps.forEach(g => { const k = g[0] + '\u0001' + g[4]; tally[k] = (tally[k] || 0) + 1; });
+    Object.keys(tally).sort().forEach(k => { const [f, w] = k.split('\u0001'); log('§INPUTS-GAP fact=' + f + ' n=' + tally[k] + ' why=' + w); });
+    log('§INPUTS-GAP rows=' + gaps.length + (walkRules ? '' : ' (no --walk-rules: mesh gaps not judged)') + (has(db, 'element_pset_native') ? '' : ' (no element_pset_native: unit gaps not judged)')); }
   fs.writeFileSync(dbPath, Buffer.from(db.export())); db.close();
   const n = s => verdicts.filter(v => v.d.status === s).length;
   log('§INPUTS sheets=' + verdicts.length + ' issued=' + n('issued') + ' review=' + n('review') + ' notStated=' + n('not-stated') + ' refused=' + n('refused') + ' read=' + go.length);
