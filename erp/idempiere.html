@@ -555,6 +555,7 @@
      build/erp/ad_access.js. Loaded BEFORE idmp_session.js, which now delegates its access
      decisions to window.AdAccess instead of computing them independently. -->
 <script src="ad_access.js?v=4"></script>
+<script src="doc_actions.js?v=1"></script><!-- the ONE getValidActions + checkActionAccess join (page, seam, door) -->
 <script src="idmp_session.js?v=25"></script>
 <!-- DESCRIPTOR SEAM (IDEMPIERE_2.md §pivot, renderer #2) — one chrome, N dictionaries. AD = first descriptor
      (facets ARE ADParser/ADData/IdmpSession above, verbatim). MUST load after those three. -->
@@ -3382,21 +3383,6 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       all: function () { return run(sql, Array.prototype.slice.call(arguments), true); }
     }; } };
   }
-  // MPeriod.isOpen port — the standard period containing DateAcct + its c_periodcontrol row for the doc's
-  // docbasetype must be 'O' (real c_period 360 rows + c_periodcontrol 10464 rows in ad_seed.db, verified).
-  function _periodOpen(dateacct, doctypeId) {
-    try {
-      var b = _b3(window.__idmpDb);
-      var d = String(dateacct || '').slice(0, 10);
-      if (!d) return { open: true, why: 'no-dateacct→assume-open' };
-      var p = b.prepare("SELECT c_period_id FROM c_period WHERE periodtype='S' AND date(?)>=date(startdate) AND date(?)<=date(enddate) ORDER BY c_period_id").get(d, d);
-      if (!p) return { open: false, why: 'no-period(' + d + ')' };
-      var dbt = doctypeId ? b.prepare('SELECT docbasetype FROM c_doctype WHERE c_doctype_id=?').get(Number(doctypeId)) : null;
-      if (!dbt) return { open: true, why: 'no-doctype→assume-open' };
-      var pc = b.prepare('SELECT periodstatus FROM c_periodcontrol WHERE c_period_id=? AND docbasetype=?').get(Number(p.c_period_id), dbt.docbasetype);
-      return { open: !!(pc && pc.periodstatus === 'O'), why: 'period=' + p.c_period_id + ' ' + dbt.docbasetype + '=' + (pc ? pc.periodstatus : 'absent') };
-    } catch (e) { return { open: true, why: 'probe-error(' + e.message + ')→assume-open' }; }
-  }
   function _recKey(rec, col) {   // the record's REAL key for an AD column name (db rows are lowercase)
     if (col in rec) return col;
     var lc = col.toLowerCase();
@@ -3415,33 +3401,22 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   var _daRc = null;
   window.addEventListener('overlay:committed', function () { _daRc = null; });
   window.addEventListener('ad:access-changed', function () { _daRc = null; });
-  function _docActionAccess(tab, recId, legal, accDt) {
-    if (!legal || !legal.length) return legal;
-    var out = legal, rid = window.APP && window.APP.roleId != null ? Number(window.APP.roleId) : null;
-    if (accDt && rid != null && SES && SES.roleContextFor) {        // legacy: no doctype -> no access check (WDocActionPanel.java:197)
-      if (!_daRc || _daRc.id !== rid) _daRc = { id: rid, rc: SES.roleContextFor(window.__idmpDb, rid) };
-      if (_daRc.rc && typeof _daRc.rc.checkActionAccess === 'function') out = _daRc.rc.checkActionAccess(Number(window.APP.clientId), accDt, legal);
-    }
-    if (out.length !== legal.length) console.log('§DOCACTION_ACCESS table=' + tab.tableName + ' rec=' + recId + ' role=' + rid + ' doctype=' + accDt + ' offered=[' + legal + '] -> [' + out + ']');
-    return out;
+  function _roleCtxFor(rid) {   // the page's per-role cache of the MRole context (dropped on commit / ad:access-changed); DocActions.legal asks for it only when the doctype check is reached
+    if (!SES || !SES.roleContextFor) return null;
+    if (!_daRc || _daRc.id !== rid) _daRc = { id: rid, rc: SES.roleContextFor(window.__idmpDb, rid) };
+    return _daRc.rc;
   }
   function _fsmCtx(tab, rec) {
-    if (!window.AdDocFsm || !rec) return null;
-    var tid = Number(tab.tableId);
-    if (tid !== 259 && !window.AdDocFsm.DOC_FAMILY[tid]) return null;   // not a walked DocAction table
-    var ds = recVal(rec, 'DocStatus'); if (ds == null || ds === '') return null;
-    var b = _b3(window.__idmpDb);
-    var doctypeId = Number(recVal(rec, 'C_DocType_ID')) || Number(recVal(rec, 'C_DocTypeTarget_ID')) || null;
-    var po = _periodOpen(recVal(rec, 'DateAcct'), doctypeId);
-    var fsmRec = { docStatus: ds, doctypeId: doctypeId,
-      processing: recVal(rec, 'Processing') === 'Y' ? 'Y' : 'N',
-      periodOpen: po.open, isBackDateTrxAllowed: true,                  // backDate=true: named default (B-2 card)
-      isSOTrx: recVal(rec, 'IsSOTrx') || 'N' };
-    var legal;
-    try { legal = (tid === 259) ? window.AdDocFsm.legalActionsOrder(b, fsmRec) : window.AdDocFsm.legalActionsFor(b, tid, fsmRec); }
+    if (!window.AdDocFsm || !window.DocActions || !rec) return null;
+    var tid = Number(tab.tableId), b = _b3(window.__idmpDb), lc = {};
+    for (var kk in rec) lc[kk.toLowerCase()] = rec[kk];
+    var rid = window.APP && window.APP.roleId != null ? Number(window.APP.roleId) : null, res;
+    try { res = window.DocActions.legal(b, tid, lc, { roleId: rid, rc: _roleCtxFor, clientId: window.APP ? Number(window.APP.clientId) : null }); }   // = getValidActions then checkActionAccess (WDocActionPanel.java:185-205), erp/doc_actions.js
     catch (e) { console.log('§AD-DOCFSM-LIVE table=' + tid + ' err=' + e.message); return null; }
-    var theRecId = recVal(rec, _keyCol(tab));
-    legal = _docActionAccess(tab, theRecId, legal, Number(recVal(rec, 'C_DocTypeTarget_ID')) || Number(recVal(rec, 'C_DocType_ID')) || null);
+    if (!res.walked) return null;                                      // not a walked DocAction table, or no DocStatus
+    var ds = res.status, doctypeId = res.doctypeId, po = res.po, fsmRec = { docStatus: ds, doctypeId: doctypeId, processing: lc.processing === 'Y' ? 'Y' : 'N', periodOpen: po.open, isBackDateTrxAllowed: true, isSOTrx: lc.issotrx || 'N' };   // backDate=true: named default (B-2 card)
+    var theRecId = recVal(rec, _keyCol(tab)), legal = res.offered;
+    if (res.legal.length !== legal.length) console.log('§DOCACTION_ACCESS table=' + tab.tableName + ' rec=' + theRecId + ' role=' + rid + ' doctype=' + res.accessDoctypeId + ' offered=[' + res.legal + '] -> [' + legal + ']');
     return {
       tid: tid, doctypeId: doctypeId, ds: ds, po: po, legal: legal, recId: theRecId,
       // dispatch(act) — S1/J5: the FSM decides legality + the transition (synchronous, the same grain the form bar,

@@ -765,6 +765,55 @@ const logsOf = f => { const lines = [], orig = console.log; console.log = s => {
       xdb.close();
     }
   }
+  // ── I: §12a the register gate (prompts/DISC_WALK_DRAWN_INTEGRATION.md §12a BUILD). The same sheet M-101 on the same federated DB, through tools/project_inputs.js under a register that says
+  //    CO / IP / DR / RE / nothing. ISSUE: a sheet was read and placed whatever its document state; a draft or superseded sheet must not be read, a review or unstated one must be provisional.
+  {
+    const INPUTS = path.join(M, 'tools', 'project_inputs.js'), sha = require('crypto').createHash('sha256').update(fs.readFileSync(dxfA)).digest('hex');
+    const reg = (status, extra) => JSON.stringify([Object.assign({ no: 'M-101', rev: 'A', status, discipline: 'MEP', filekind: 'DXF', sha256: sha, name: 'duct sheet' }, extra || {})]);
+    const run = (tag, regJson, metaJ, file) => { const db = path.join(TMP, 'inputs_' + tag + '.db'); fs.copyFileSync(fedA, db);
+      const out = sh([INPUTS, db].concat(regJson ? ['--register=' + regJson] : [], [file || dxfA, '--sheet-meta=' + (metaJ || meta)]));
+      const d = new SQL.Database(new Uint8Array(fs.readFileSync(db))), has = t => q(d, "SELECT count(*) FROM sqlite_master WHERE name='" + t + "'")[0][0] > 0;
+      const st = has('drawn_sheet_status') ? q(d, 'SELECT status, basis FROM drawn_sheet_status')[0] : null, rows = has('drawn_route') ? q(d, 'SELECT count(*) FROM drawn_route')[0][0] : 0, terms = has('drawn_terminal') ? q(d, 'SELECT count(*) FROM drawn_terminal')[0][0] : 0;
+      d.close(); const W2 = walk(db); return { db, out, st, rows, terms, w: W2.r, lines: W2.lines }; };
+    const tprov = r => ((r.w && r.w.placements) || []).filter(p => /^drawn/.test(p.prov || ''));
+    const base = { placed: w.placed, prov: w.provisional, known: drawn.known.length, terms: (w.placements || []).filter(p => p.prov === 'drawn:terminal').length };
+    const CO = run('co', reg('CO')), IP = run('ip', reg('IP')), DR = run('dr', reg('DR')), RE = run('re', reg('RE')), NONE = run('none', JSON.stringify([]));
+    log('§W_DW I: base placed=' + base.placed + ' provisional=' + base.prov + ' knownPieces=' + base.known + ' drawnTerminals=' + base.terms);
+    [['CO', CO], ['IP', IP], ['DR', DR], ['RE', RE], ['none', NONE]].forEach(([k, r]) => log('  I ' + k + ': status=' + JSON.stringify(r.st) + ' routeRows=' + r.rows + ' walk placed=' + (r.w && r.w.placed) + ' provisional=' + (r.w && r.w.provisional) + ' | ' + (r.lines.filter(l => /§WALK-INPUTS/.test(l))[0] || 'no §WALK-INPUTS').slice(0, 200) + ' | ' + (r.out.split('\n').filter(l => /§INPUTS-SHEET/.test(l))[0] || '').slice(0, 160)));
+    if (!base.known) incon('I*', 'the base walk placed no drawn piece: the gate has nothing to judge');
+    else {
+      ok('I-1 CO: read, issued, the walk equals the ungated one (placed and provisional)', CO.st && CO.st[0] === 'issued' && CO.rows === routeN[0] && CO.w.placed === base.placed && CO.w.provisional === base.prov && tprov(CO).every(p => !p.provisional), 'placed=' + CO.w.placed + '/' + base.placed + ' provisional=' + CO.w.provisional + '/' + base.prov);
+      const ipT = tprov(IP), ipOps = DW.drawnOps(IP.w.drawn);
+      ok('I-1 IP: read, review: every drawn piece and terminal provisional with prov drawn-review:M-101/A, out of placed', IP.st && IP.st[0] === 'review' && IP.rows === routeN[0] && IP.w.drawn.known.length === base.known && IP.w.drawn.known.every(p => p.review === 'drawn-review:M-101/A') &&
+        ipT.length === base.terms && ipT.every(p => p.provisional && p.prov === 'drawn-review:M-101/A') && ipOps.length === base.known && ipOps.every(o => o.params._dw.provisional === true && o.params._dw.prov === 'drawn-review:M-101/A') && IP.w.placed === base.placed - base.known - base.terms && IP.w.provisional === base.prov + base.known + base.terms,
+        'placed=' + IP.w.placed + ' (base ' + base.placed + ' - ' + base.known + ' pieces - ' + base.terms + ' terminals) provisional=' + IP.w.provisional + ' terminalsProv=' + ipT.filter(p => p.provisional).length + '/' + ipT.length);
+      ok('I-1 DR: not read: no drawn row enters the DB, the walk holds no drawn piece', DR.st && DR.st[0] === 'refused' && /status=DR/.test(DR.st[1]) && DR.rows === 0 && DR.terms === 0 && !(DR.w && DR.w.drawn && DR.w.drawn.pieces.length) && /§INPUTS-SHEET refused no=M-101 rev=A status=refused basis=status=DR/.test(DR.out), 'rows=' + DR.rows + ' status=' + JSON.stringify(DR.st));
+      ok('I-1 RE: not read (superseded)', RE.st && RE.st[0] === 'refused' && /status=RE/.test(RE.st[1]) && RE.rows === 0 && !(RE.w && RE.w.drawn && RE.w.drawn.pieces.length), 'rows=' + RE.rows + ' status=' + JSON.stringify(RE.st));
+      ok('I-1 no register row: read, not stated: provisional with prov drawn-unstated:M-101/A', NONE.st && NONE.st[0] === 'not-stated' && NONE.rows === routeN[0] && NONE.w.drawn.known.every(p => p.review === 'drawn-unstated:M-101/A') && NONE.w.placed === base.placed - base.known - base.terms, 'placed=' + NONE.w.placed + ' status=' + JSON.stringify(NONE.st));
+      // RED: the DR sheet through the old path (mains_to_db directly) is placed: the gate is what refuses
+      const dbOld = path.join(TMP, 'inputs_oldpath.db'); fs.copyFileSync(fedA, dbOld); sh([MAINS, dbOld, dxfA, '--sheet-meta=' + meta]); const OLD = walk(dbOld);
+      ok('I-1 RED: the same sheet through mains_to_db alone (no gate) is placed as before', OLD.r.placed === base.placed && OLD.r.drawn.known.length === base.known && !OLD.lines.some(l => /§WALK-INPUTS/.test(l)), 'placed=' + OLD.r.placed + ' (no status table, no §WALK-INPUTS line)');
+      // I-2 supersede: A is held (issued); B arrives issued
+      const dbS = path.join(TMP, 'inputs_super.db'); fs.copyFileSync(CO.db, dbS);
+      const dS0 = new SQL.Database(new Uint8Array(fs.readFileSync(dbS))), hand = q(dS0, "SELECT (SELECT count(*) FROM drawn_route WHERE sheet='M-101') + (SELECT count(*) FROM drawn_terminal WHERE sheet_number='M-101')")[0][0]; dS0.close();
+      const dxfA2 = path.join(TMP, 'M-101_revB.dxf'); fs.writeFileSync(dxfA2, sheetDxf({ off: [100, 200], grid: GRIDSHEET, pieces: [Object.values(PCS)[0]], terminals: [] }));
+      const shaB = require('crypto').createHash('sha256').update(fs.readFileSync(dxfA2)).digest('hex');
+      const regB = JSON.stringify([{ no: 'M-101', rev: 'A', status: 'RE', discipline: 'MEP', filekind: 'DXF', sha256: sha }, { no: 'M-101', rev: 'B', status: 'CO', discipline: 'MEP', filekind: 'DXF', sha256: shaB }]);
+      const outS = sh([INPUTS, dbS, '--register=' + regB, dxfA2, '--sheet-meta=' + JSON.stringify({ number: 'M-101', revision: 'B', storeys: ['Level 1'] })]);
+      const dS = new SQL.Database(new Uint8Array(fs.readFileSync(dbS))), after = q(dS, "SELECT (SELECT count(*) FROM drawn_route WHERE sheet='M-101'), (SELECT revision FROM drawn_route_sheet WHERE sheet_number='M-101'), (SELECT group_concat(revision || ':' || status) FROM drawn_sheet_status WHERE sheet_number='M-101')")[0]; dS.close();
+      const supL = outS.split('\n').filter(l => /§INPUTS-SUPERSEDED/.test(l))[0] || '';
+      ok('I-2 supersede: revision B issued after A: the log counts A\'s rows (hand count), only B\'s rows remain', supL === '§INPUTS-SUPERSEDED no=M-101 rev A -> B placements=' + hand && after[0] === 1 && after[1] === 'B' && after[2] === 'B:issued', 'log="' + supL + '" hand=' + hand + ' rowsAfter=' + after[0] + ' rev=' + after[1] + ' status=' + after[2]);
+      // I-3 a different file than the registered one
+      const SH = run('sha', reg('CO', { sha256: 'f'.repeat(64) }));
+      ok('I-3 a file whose sha256 is not the registered one is not the issued document: not stated, provisional', SH.st && SH.st[0] === 'not-stated' && /sha256 differs/.test(SH.st[1]) && SH.w.placed === base.placed - base.known - base.terms, 'status=' + JSON.stringify(SH.st) + ' placed=' + SH.w.placed);
+      // I-4 unmapped discipline, and a non-DXF row
+      const UM = run('unmapped', reg('CO', { discipline: 'ARC' })), PDF = run('pdf', reg('CO', { filekind: 'PDF' }));
+      ok('I-4 a code with no discipline row (ARC) and a PDF row are not read, both said', UM.rows === 0 && /unmapped discipline=ARC/.test(UM.out) && PDF.rows === 0 && /§INPUTS-LISTED no=M-101 rev=A filekind=PDF/.test(PDF.out), 'unmapped rows=' + UM.rows + ' pdf rows=' + PDF.rows);
+      // I-5 no register given at all: the pre-processor still says "not stated" (a sheet is never treated as issued without evidence)
+      const NR = run('noreg', null);
+      ok('I-5 no register given: read, not stated, provisional (basis says no register)', NR.st && NR.st[0] === 'not-stated' && /no register given/.test(NR.st[1]) && NR.w.provisional === base.prov + base.known + base.terms, 'status=' + JSON.stringify(NR.st) + ' provisional=' + NR.w.provisional);
+    }
+  }
   log('§VERDICT ' + (fail ? 'CLAIM NOT MET' : inc ? 'INCONCLUSIVE' : 'CLAIM MET') + ' pass=' + pass + ' fail=' + fail + ' inconclusive=' + inc);
   process.exit(fail ? 1 : 0);
 })().catch(e => { console.log('§ERROR ' + (e && e.stack || e)); process.exit(1); });
