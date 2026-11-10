@@ -1138,7 +1138,7 @@
    "verb": "erp.read",
    "app": "erp",
    "title": "Read an ERP record",
-   "description": "Read one record of any AD table by its key, with the rows of its single-row child tabs. Nothing is changed. The record shown includes what earlier verbs (erp.complete) wrote to the ERP op-log.",
+   "description": "Read one record of any AD table by its key or by its number (DocumentNo, else Name or Value, as erp.find), with the rows of its single-row child tabs. Nothing is changed. The record shown includes what earlier verbs (erp.complete) wrote to the ERP op-log. A number that several records carry is refused naming their ids.",
    "inputs": [
     {
      "name": "kind",
@@ -1149,10 +1149,17 @@
     },
     {
      "name": "id",
-     "description": "The record's key value (its _ID).",
-     "required": true,
+     "description": "The record's key value (its _ID). Give this or number.",
+     "required": false,
      "type": "string",
      "example": "1500004"
+    },
+    {
+     "name": "number",
+     "description": "The record's number as the window shows it (DocumentNo, else Name or Value); if several records carry it, name one with id.",
+     "required": false,
+     "type": "string",
+     "example": "50000"
     }
    ],
    "harm": "read",
@@ -1163,8 +1170,20 @@
      "read",
      "--kind",
      "{kind}",
-     "--id",
-     "{id}"
+     {
+      "if": "id",
+      "args": [
+       "--id",
+       "{id}"
+      ]
+     },
+     {
+      "if": "number",
+      "args": [
+       "--number",
+       "{number}"
+      ]
+     }
     ]
    },
    "returns": {
@@ -1185,8 +1204,8 @@
   {
    "verb": "erp.complete",
    "app": "erp",
-   "title": "undefined a document",
-   "description": "undefined. Runs DocAction CO through the ERP engine (DocumentEngine.processIt) on the named document, with the books it posts. Offered for: Order (C_Order) (each compared with legacy iDempiere in the parallel run, evidence common/door/tests/logs/a5_erp_complete_parity.log). A person at the terminal runs it; an AI's call is held as a claim until a person confirms. A refusal says which rule.",
+   "title": "Complete a document",
+   "description": "Generate documents and complete transaction. Runs DocAction CO through the ERP engine (DocumentEngine.processIt) on the named document, with the books it posts. Offered for: Order (C_Order) (each compared with legacy iDempiere in the parallel run, evidence common/door/tests/logs/a5_erp_complete_parity.log). A person at the terminal runs it; an AI's call is held as a claim until a person confirms. A refusal says which rule.",
    "inputs": [
     {
      "name": "kind",
@@ -1266,8 +1285,8 @@
   {
    "verb": "erp.void",
    "app": "erp",
-   "title": "undefined a document",
-   "description": "undefined. Runs DocAction VO through the ERP engine (DocumentEngine.processIt) on the named document, with the books it posts. Offered for: Order (C_Order) (each compared with legacy iDempiere in the parallel run, evidence common/door/tests/logs/a5_erp_complete_parity.log). A person at the terminal runs it; an AI's call is held as a claim until a person confirms. A refusal says which rule.",
+   "title": "Void a document",
+   "description": "Set all quantities to zero and complete transaction. Runs DocAction VO through the ERP engine (DocumentEngine.processIt) on the named document, with the books it posts. Offered for: Order (C_Order) (each compared with legacy iDempiere in the parallel run, evidence common/door/tests/logs/a5_erp_complete_parity.log). A person at the terminal runs it; an AI's call is held as a claim until a person confirms. A refusal says which rule.",
    "inputs": [
     {
      "name": "kind",
@@ -1347,8 +1366,8 @@
   {
    "verb": "erp.close",
    "app": "erp",
-   "title": "undefined a document",
-   "description": "undefined. Runs DocAction CL through the ERP engine (DocumentEngine.processIt) on the named document, with the books it posts. Offered for: Order (C_Order) (each compared with legacy iDempiere in the parallel run, evidence common/door/tests/logs/a5_erp_complete_parity.log). A person at the terminal runs it; an AI's call is held as a claim until a person confirms. A refusal says which rule.",
+   "title": "Close a document",
+   "description": "Finally close this transaction. It cannot be re-activated.. Runs DocAction CL through the ERP engine (DocumentEngine.processIt) on the named document, with the books it posts. Offered for: Order (C_Order) (each compared with legacy iDempiere in the parallel run, evidence common/door/tests/logs/a5_erp_complete_parity.log). A person at the terminal runs it; an AI's call is held as a claim until a person confirms. A refusal says which rule.",
    "inputs": [
     {
      "name": "kind",
@@ -1428,8 +1447,8 @@
   {
    "verb": "erp.reverse",
    "app": "erp",
-   "title": "undefined a document",
-   "description": "undefined. Runs DocAction RC through the ERP engine (DocumentEngine.processIt) on the named document, with the books it posts. Offered for: Order (C_Order) (each compared with legacy iDempiere in the parallel run, evidence common/door/tests/logs/a5_erp_complete_parity.log). A person at the terminal runs it; an AI's call is held as a claim until a person confirms. A refusal says which rule.",
+   "title": "Reverse - Correct a document",
+   "description": "Reverse Transaction (correction) by reversing sign with same date. Runs DocAction RC through the ERP engine (DocumentEngine.processIt) on the named document, with the books it posts. Offered for: Order (C_Order) (each compared with legacy iDempiere in the parallel run, evidence common/door/tests/logs/a5_erp_complete_parity.log). A person at the terminal runs it; an AI's call is held as a claim until a person confirms. A refusal says which rule.",
    "inputs": [
     {
      "name": "kind",

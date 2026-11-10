@@ -18,7 +18,7 @@ async function main() {
   const kinds = rows("SELECT DISTINCT t.name AS name, t.tablename AS tn FROM AD_Column c JOIN AD_Table t ON t.AD_Table_ID=c.AD_Table_ID WHERE lower(c.columnname)='docaction' AND t.isactive='Y' AND t.isview<>'Y' ORDER BY t.tablename");
   const kindOf = (tn) => (kinds.filter(k => k.tn.toLowerCase() === String(tn).toLowerCase())[0] || {}).name;
   const exKind = (kindOf('C_Order') || 'Order');
-  const ref = (a) => rows("SELECT name, description FROM AD_Ref_List WHERE AD_Reference_ID=135 AND value=?", [a])[0];
+  const ref = (a) => rows("SELECT Name AS name, Description AS description FROM AD_Ref_List WHERE AD_Reference_ID=135 AND value=?", [a])[0];
   const kindIn = { name: 'kind', description: 'The kind of document, as the dictionary names it (an AD_Table with a DocAction column), e.g. "' + exKind + '". ' + kinds.length + ' kinds exist; an unknown kind or a table that is not a document is refused naming the reason.', required: true, type: 'string', example: exKind };
   const idIn = { name: 'id', description: 'The document\'s key (its _ID), as erp.find returns it.', required: false, type: 'string', example: '1500004' };
   const numIn = { name: 'number', description: 'The document number (DocumentNo) as shown in the window; if two documents carry it, name one with id.', required: false, type: 'string', example: '50000' };
@@ -36,14 +36,14 @@ async function main() {
     mk('erp.describe', 'Describe a kind of ERP record', 'Reflection over the application dictionary: the properties of a kind (name, type, mandatory, updateable, list values), its child tabs and the generic methods it supports, read only from the AD rows. Works for any AD table, a document or not. Nothing is changed.',
       [{ name: 'kind', description: 'An AD table, by its name or table name, e.g. "' + exKind + '" or "C_BPartner". An unknown kind is an error that lists the kinds the dictionary registers.', required: true, type: 'string', example: exKind }], 'read', ['describe', '--kind', '{kind}'],
       'object_cli JSON {kind,table,key,properties:[{name,type,mandatory,updateable,...}],childTabs,methods}', [{ path: 'kind', type: 'string' }, { path: 'table', type: 'string' }]),
-    mk('erp.read', 'Read an ERP record', 'Read one record of any AD table by its key, with the rows of its single-row child tabs. Nothing is changed. The record shown includes what earlier verbs (erp.complete) wrote to the ERP op-log.',
-      [{ name: 'kind', description: kindIn.description.split('. ')[0].replace('document', 'record').replace('(an AD_Table with a DocAction column)', '(an AD table)') + '.', required: true, type: 'string', example: exKind }, { name: 'id', description: 'The record\'s key value (its _ID).', required: true, type: 'string', example: '1500004' }], 'read', ['read', '--kind', '{kind}', '--id', '{id}'],
+    mk('erp.read', 'Read an ERP record', 'Read one record of any AD table by its key or by its number (DocumentNo, else Name or Value, as erp.find), with the rows of its single-row child tabs. Nothing is changed. The record shown includes what earlier verbs (erp.complete) wrote to the ERP op-log. A number that several records carry is refused naming their ids.',
+      [{ name: 'kind', description: kindIn.description.split('. ')[0].replace('document', 'record').replace('(an AD_Table with a DocAction column)', '(an AD table)') + '.', required: true, type: 'string', example: exKind }, { name: 'id', description: 'The record\'s key value (its _ID). Give this or number.', required: false, type: 'string', example: '1500004' }, { name: 'number', description: 'The record\'s number as the window shows it (DocumentNo, else Name or Value); if several records carry it, name one with id.', required: false, type: 'string', example: '50000' }], 'read', ['read', '--kind', '{kind}', { if: 'id', args: ['--id', '{id}'] }, { if: 'number', args: ['--number', '{number}'] }],
       'object_cli JSON {kind,uu,record,children:[{kind,rows}]} or {refused,reason}', [{ path: 'kind', type: 'string' }])
   ];
   const seen = new Set();
   for (const a of av) {
     if (seen.has(a.verb)) continue; seen.add(a.verb);
-    const r = ref(a.action); if (!r) throw new Error('actor_verbs.json: action ' + a.action + ' is not in reference 135');
+    const r = ref(a.action); if (!r || !r.name) throw new Error('actor_verbs.json: action ' + a.action + ' is not in reference 135 (or has no name)');
     const tabs = av.filter(x => x.verb === a.verb).map(x => x.table), names = tabs.map(t => (kindOf(t) || t) + ' (' + t + ')');
     out.push(mk(a.verb, r.name + ' a document', r.description + '. Runs DocAction ' + a.action + ' through the ERP engine (DocumentEngine.processIt) on the named document, with the books it posts. Offered for: ' + names.join(', ') + ' (each compared with legacy iDempiere in the parallel run, evidence common/door/tests/logs/a5_erp_complete_parity.log). A person at the terminal runs it; an AI\'s call is held as a claim until a person confirms. A refusal says which rule.',
       [kindIn, idIn, numIn, roleIn], HARM[a.action] || 'writes', [a.verb.split('.')[1], '--kind', '{kind}', { if: 'id', args: ['--id', '{id}'] }, { if: 'number', args: ['--number', '{number}'] }, { if: 'role', args: ['--role', '{role}'] }],
