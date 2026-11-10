@@ -83,6 +83,8 @@ async function stagePlugins(db) {
   const wdb = { run: (q, p) => { db.run(q, p || []); }, query: (q, p) => { const st = db.prepare(q); st.bind(p || []); const o = []; while (st.step()) o.push(st.getAsObject()); st.free(); return o; } };
   const reg = REG.create({ db: wdb });
   const out = [];
+  const _log = console.log; console.log = (...a) => console.error(...a);   // the host registry prints its own § lines (PLUGIN-ROLE-ACCESS); stdout of --json must stay JSON, the lines go to stderr unchanged
+  try {
   for (const rel_ of builtinPlugins()) {
     const file = path.join(ROOT, 'erp', rel_), name = path.basename(rel_).replace(/\.[^.]+$/, '');
     const mod = await import(require('url').pathToFileURL(file).href);
@@ -93,6 +95,7 @@ async function stagePlugins(db) {
       family: mod.FAMILY && mod.FAMILY.allow ? [...new Set(Object.values(mod.FAMILY.allow).flat())].sort() : null,
       virtualCols: dict.filter(d => d.table.toLowerCase() === 'ad_column').flatMap(d => d.rows).filter(r => r.columnsql).length });
   }
+  } finally { console.log = _log; }
   return out;
 }
 // ── plugin-context registrations (rule (b) for built-in plugins) ──

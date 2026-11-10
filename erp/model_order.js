@@ -103,6 +103,7 @@
 
   // ══ MOrder.reserveStock :1925-2024 ════════════════════════════════════════════════════════════════════════════
   function reserveStock(trx, o, d, ls) {
+    d = d || {};   // a draft's C_DocType_ID is 0: legacy reads a blank MDocType there, never null
     var binding = !(d.docsubtypeso === 'ON');                                                  // !dt.isProposal()
     if (o.docaction === 'VO' || (d.docsubtypeso === 'OB' && o.docaction === 'CL')) binding = false;
     var so = Y(o.issotrx), hdrWh = o.m_warehouse_id;

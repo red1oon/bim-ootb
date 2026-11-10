@@ -1,6 +1,0 @@
-  ❌ HARNESS page.waitForSelector: Timeout 30000ms exceeded.
-Call log:
-[2m  - waiting for locator('[data-doc-action="CO"]') to be visible[22m
-
-    at /tmp/wt-erp-door2/erp/tests/witness_movementconfirm_ui.js:56:90
-§MCU-SUMMARY FAIL judged=0 fails=1 inconclusive=0

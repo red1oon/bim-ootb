@@ -1,4 +1,0 @@
-witness_team_executors exit=1
-witness_bimdoc_live exit=124
-witness_friendly_ops exit=0
-witness_movementconfirm_ui exit=1
