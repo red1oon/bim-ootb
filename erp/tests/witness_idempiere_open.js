@@ -103,8 +103,8 @@ var SCH = "(SELECT c_acctschema1_id FROM ad_clientinfo WHERE ad_client_id=" + CL
   verdict('FROZEN');
 
   // ═══ SHEETS ═══
-  var IC = await import(url.pathToFileURL(path.join(ERP, 'plugins', 'idempiere_open_convert.mjs')).href), OB = await import(url.pathToFileURL(path.join(ERP, 'plugins', 'open_balances.mjs')).href);
-  var CV = IC.convert(EXP), VARS = IC.TEMPLATE.variables, sheet = function (cv, t) { var b = cv.book.filter(function (x) { return x.name.replace(/^\d\d/, '') === t; })[0]; if (!b) return []; var H = b.rows[0]; return b.rows.slice(1).map(function (r) { var o = {}; H.forEach(function (h, i) { o[h] = r[i]; }); return o; }); };
+  var OSRC = await import(url.pathToFileURL(path.join(ERP, 'plugins', 'open_sources.mjs')).href), OB = await import(url.pathToFileURL(path.join(ERP, 'plugins', 'open_balances.mjs')).href);
+  var CV = OSRC.convert(EXP), VARS = CV.template.variables, sheet = function (cv, t) { var b = cv.book.filter(function (x) { return x.name.replace(/^\d\d/, '') === t; })[0]; if (!b) return []; var H = b.rows[0]; return b.rows.slice(1).map(function (r) { var o = {}; H.forEach(function (h, i) { o[h] = r[i]; }); return o; }); };
   var gl = sheet(CV, 'I_GLJournal'), inv = sheet(CV, 'I_Invoice'), stm = sheet(CV, 'I_BankStatement'), glDr = gl.reduce(function (n, r) { return n + cents(r.AmtSourceDr); }, 0), glCr = gl.reduce(function (n, r) { return n + cents(r.AmtSourceCr); }, 0);
   var CLR = { AR: VARS.AR_CLEARING, AP: VARS.AP_CLEARING, BANK: VARS.BANK_CLEARING }, glBy = {}; gl.forEach(function (r) { glBy[r.AccountValue] = (glBy[r.AccountValue] || 0) + cents(r.AmtSourceDr) - cents(r.AmtSourceCr); });
   var plain = Object.keys(O.tb).filter(function (a) { return !O.cls[a] && O.tb[a] !== 0; });
@@ -140,14 +140,9 @@ var SCH = "(SELECT c_acctschema1_id FROM ad_clientinfo WHERE ad_client_id=" + CL
   var host = { engineVersion: '1.0.0', db: hostDb, ops: { append: function () { return 1; } }, process: AP, docAction: ML, form: AF, import: function (u) { return import(url.pathToFileURL(path.resolve(path.join(ERP, 'plugins'), u)).href); } };
   var reg = PR.create(host);
   await reg.installBundle(await import(url.pathToFileURL(path.join(ERP, 'plugins', 'ninja_migrate.mjs')).href)); await reg.startBundle('org.idempiere.ninja.migrate');
-  await reg.installBundle(await import(url.pathToFileURL(path.join(ERP, 'plugins', 'odoo_migrate.mjs')).href)); await reg.startBundle('org.kernel.odoo.migrate');   // binds the process engine the shared loader runs through
-  var FORM = await import(url.pathToFileURL(path.join(ERP, 'plugins', 'odoo_migrate_form.mjs')).href); FORM.bindProcess(AP);
-  // a test-side form over the SAME shared pieces the shipped forms use (convert -> OB.openOf/problems -> FORM.load -> OB.complete): no mapping, no verifier of its own
-  var CLS = 'org.test.IdempiereOpen', PLAN = function (trx, params) { var cv = IC.convert(params.Files[0].data), open = OB.openOf(cv.book, cv.manifest); return { cv: cv, open: open, problems: cv.manifest.problems.concat(OB.problems(trx, open)) }; };
-  AF.register(CLS, { title: 'Test: migrate open balances of a legacy iDempiere', params: [{ name: 'Files', label: 'idempiere_open.json', type: 'file', multiple: true, mandatory: true }], columns: [{ key: 'item', label: 'Item' }],
-    rows: function () { return []; },
-    run: function (trx, params) { var p = PLAN(trx, params); if (p.problems.length) throw new Error('Not migrated: ' + p.problems.join(' ')); var r = FORM.load(trx, p.cv.book, p.open, true); if (!r.ok) throw new Error(String(r.summary || 'The load was refused.') + ' ' + J(r.refusals).slice(0, 400)); return 'loaded ' + J(r.perTable); },
-    after: function (trx, params) { var p = PLAN(trx, params); return OB.complete(trx, AP, p.open); } });
+  // §WIRE-SPEC: the REAL bundle + form of 'Migrate from iDempiere (opening balances)' (plugins/idempiere_migrate.mjs + idempiere_migrate_form.mjs), driven through the generic form engine exactly as the page does
+  var CLS = 'org.kernel.idempiere.MigrateFromIdempiere', MENU = 'Migrate from iDempiere (opening balances)', W = require(path.join(__dirname, 'wire_kit.js'))({ AF: AF, k: k, q: q, say: say, check: check, ERP: ERP });
+  await W.plug(reg, 'PLUG', 'idempiere_migrate.mjs', 'org.kernel.idempiere.migrate', 9545001, CLS, MENU); verdict('PLUG');
   function session(S, loginDate) {
     var withT = function (fn) { return fn(k.q, Object.assign(k.env(S), { date: loginDate + ' 00:00:00' })); };
     return { execute: function (params) { var r = AF.execute(withT, CLS, params, []); if (r.ok && r.ops && r.ops.length) k.commit(S, r.ops, { ws: 'idempiere_open' }); return r; },
@@ -155,8 +150,8 @@ var SCH = "(SELECT c_acctschema1_id FROM ad_clientinfo WHERE ad_client_id=" + CL
   }
   function n(C, t) { return q('SELECT count(*) AS n FROM ' + t + ' WHERE ad_client_id=?', [C])[0].n; }
   function files(exp) { return { Files: [{ name: 'idempiere_open.json', size: 1, data: exp }] }; }
-  function loadInto(name, exp) {
-    var T = birth(name), C = T.clientId, ses = session(T, '2026-11-11'), mark = SHIPPED.length, r1 = ses.execute(files(exp)), r2 = r1.ok ? ses.after(files(exp)) : { ok: false, msg: 'stage 1 refused: ' + r1.msg };
+  function loadInto(name, exp, T0) {
+    var T = T0 || birth(name), C = T.clientId, ses = session(T, '2026-11-11'), mark = SHIPPED.length, r1 = ses.execute(files(exp)), r2 = r1.ok ? ses.after(files(exp)) : { ok: false, msg: 'stage 1 refused: ' + r1.msg };
     return { C: C, r1: r1, r2: r2, ship: SHIPPED.slice(mark).filter(function (l) { return /^§(MIG-|PROC-UNPORTED|PROC-SQL)/.test(l); }) };
   }
   // the twin's books and documents, read from its OWN tables
@@ -185,8 +180,32 @@ var SCH = "(SELECT c_acctschema1_id FROM ad_clientinfo WHERE ad_client_id=" + CL
     return d;
   }
 
+  // ═══ PICK / SUMMARY / PROBLEM: the form's own screens, before anything is written (AF.read = the READ transaction the engine throws away) ═══
+  var T0 = birth('Legacy Open Co'), LD = '2026-11-11', st = {}, snap = function (C) { return J(['c_invoice', 'gl_journal', 'fact_acct', 'c_elementvalue', 'c_bpartner', 'i_gljournal', 'i_invoice', 'i_bankstatement'].map(function (t) { return n(C, t); })); };
+  var r0 = W.read(T0, LD, CLS, { Files: null }, null);
+  check('PICK', 'empty', 'with nothing picked the form says what to pick (idempiere_open.json, written by open_reader.js --cutover) and offers no sheet', r0.length >= 1 && r0.every(function (r) { return /^⚠/.test(r.item); }) && /idempiere_open\.json/.test(r0[0].item) && /--cutover/.test(r0[0].item), r0.map(function (r) { return r.item; }));
+  var wrongF = { Files: [{ name: 'sap_open.json', size: 1, data: { manifest: { format: 'sap-b1-open-json-v1' }, sets: {} } }] }, rW = W.read(T0, LD, CLS, wrongF, null), c0 = snap(T0.clientId);
+  var xW = AF.execute(W.withT(T0, LD), CLS, wrongF, []);
+  check('PICK', 'wrong-source', 'the open file of ANOTHER source (SAP) is ONE named problem row, no sheet, and Process refuses ("Not migrated") with the tenant unchanged', W.problems(rW).length === 1 && /sap-b1-open-json-v1/.test(rW[0].item) && W.sheetRows(rW).length === 0 && xW.ok === false && /Not migrated/.test(String(xW.msg)) && snap(T0.clientId) === c0, { rW: rW.map(function (r) { return r.item; }), xW: xW.msg });
+  verdict('PICK');
+  var c1 = snap(T0.clientId), rs = W.read(T0, LD, CLS, files(EXP), null), sh = W.sheetRows(rs), shBy = {}; sh.forEach(function (x) { shBy[x.table] = x; });
+  var glLines = Object.keys(O.tb).filter(function (a) { return O.tb[a] !== 0; }).length;   // oracle: ONE journal line per account with a balance - a plain account under its own value, each control account (P1: 12110, 21100, 21101, the bank asset) routed to its clearing account
+  say('§IDO-SUMMARY ' + J(sh.map(function (x) { return x.table + ' file=' + x.infile + ' will=' + x.will + ' refused=' + x.refused + ' ' + String(x.reason).slice(0, 90); })));
+  check('SUMMARY', 'no-problem', 'the cut-over file of the legacy iDempiere (client ' + CLIENT + ', ' + CUT + ') is accepted by the form: no problem row', W.problems(rs).length === 0, W.problems(rs));
+  check('SUMMARY', 'counts', 'each sheet says what will come across, from the ORACLE: I_GLJournal ' + glLines + ' lines (one per account with a balance), I_Invoice ' + broughtNos.length + ' brought-in open documents, I_BankStatement ' + stmNos.length + ' statements; every sheet: will + already-there == in the file (a master the new company already has is kept, not loaded twice)',
+    !!shBy.I_GLJournal && shBy.I_GLJournal.infile === glLines && shBy.I_GLJournal.will === glLines && !!shBy.I_Invoice && shBy.I_Invoice.infile === broughtNos.length && shBy.I_Invoice.will === broughtNos.length && !!shBy.I_BankStatement && shBy.I_BankStatement.infile === stmNos.length && shBy.I_BankStatement.will === stmNos.length && sh.every(function (x) { return x.will + (x.already || 0) === x.infile; }), { sh: sh.map(function (x) { return x.table + ' ' + x.infile + '/' + x.will; }), glLines: glLines });
+  check('SUMMARY', 'foreign-refused', 'the foreign-currency invoice(s) ' + J(fgn) + ' show on the I_Invoice row as refused (' + fgn.length + '), the reason says the amount stays on the clearing account', !!shBy.I_Invoice && shBy.I_Invoice.refused === fgn.length && /foreign currency/.test(shBy.I_Invoice.reason) && /clearing/.test(shBy.I_Invoice.reason), shBy.I_Invoice);
+  var willInfo = W.infos(rs).join(' | ');
+  check('SUMMARY', 'will-create', 'the summary names what the cut-over creates that the new company lacks - the three clearing accounts ' + J(CLR) + ' and the opening charges', [CLR.AR, CLR.AP, CLR.BANK].every(function (a) { return willInfo.indexOf(a) >= 0; }) && /Will create/.test(willInfo), willInfo);
+  check('SUMMARY', 'read-only', 'reading the summary wrote nothing: the tenant\'s invoices / journals / postings / accounts / partners / staging rows are unchanged', snap(T0.clientId) === c1, { before: c1, after: snap(T0.clientId) });
+  verdict('SUMMARY');
+  // a source that is NOT frozen (cut-over 2003-01-01, before later postings) and whose period this company does not have: the form says so in plain words and Process refuses
+  var T1 = birth('Early Cutover Co'), rE = W.read(T1, LD, CLS, files(EARLY), null), cE = snap(T1.clientId), xE = AF.execute(W.withT(T1, LD), CLS, files(EARLY), []);
+  check('PROBLEM', 'not-frozen', 'an earlier cut-over (2003-01-01) is shown as problem rows - the reader\'s source-not-frozen naming the oracle\'s counts (' + O.after.join('/') + ') and the closed period - and Process refuses ("Not migrated") with the new company unchanged', W.problems(rE).some(function (x) { return /source-not-frozen/.test(x) && x.indexOf('fact_acct ' + O.after[0]) > 0; }) && W.problems(rE).some(function (x) { return /period of the cut-over date 2003-01-01 is not open/.test(x); }) && xE.ok === false && /Not migrated/.test(String(xE.msg)) && snap(T1.clientId) === cE, { rE: W.problems(rE), xE: xE.msg });
+  verdict('PROBLEM');
+
   // ═══ LOAD ═══
-  var L = loadInto('Legacy Open Co', EXP), ver = L.ship.filter(function (l) { return /^§MIG-VERIFY/.test(l); }).pop() || '';
+  var L = loadInto('Legacy Open Co', EXP, T0), ver = L.ship.filter(function (l) { return /^§MIG-VERIFY/.test(l); }).pop() || '';
   say('§IDO-LOAD client=' + L.C + ' stage1=' + L.r1.ok + ' stage2=' + L.r2.ok + ' msg=' + String(L.r2.msg).slice(0, 300));
   L.ship.forEach(function (l) { say('  shipped> ' + l.slice(0, 330)); });
   check('LOAD', 'stages', 'stage 1 (masters + import rows + prerequisites) and stage 2 (Import GL Journal 220 -> Complete, Import Invoice 207 CO, Import Bank Statement 221 -> Complete, verifier) end without a refusal', L.r1.ok && L.r2.ok && /Open balances completed/.test(String(L.r2.msg)), { r1: L.r1.msg, r2: L.r2.msg });
@@ -196,6 +215,16 @@ var SCH = "(SELECT c_acctschema1_id FROM ad_clientinfo WHERE ad_client_id=" + CL
   var t0 = L.r2.ok ? twin(L.C) : { books: {} };
   check('LOAD', 'clearing-values', 'AR Clearing holds exactly ' + money(WANT_LEFT.AR) + ' (the foreign invoice, named refusal P3), AP Clearing 0.00, Bank Clearing 0.00 - read from Fact_Acct of the twin', (t0.books[CLR.AR] || 0) === WANT_LEFT.AR && (CLR.AP in t0.books) && t0.books[CLR.AP] === 0 && (CLR.BANK in t0.books) && t0.books[CLR.BANK] === 0, { AR: t0.books[CLR.AR], AP: t0.books[CLR.AP], BANK: t0.books[CLR.BANK] });
   verdict('LOAD');
+
+  check('LOAD', 'summary==result', 'W-MIGRATE-SUMMARY: what the summary predicted is what the company got - ' + shBy.I_Invoice.will + ' invoices, ' + shBy.I_BankStatement.will + ' bank statement(s), ' + shBy.C_BankAccount.will + ' bank accounts, ' + shBy.C_BPartner.will + ' partners (counted in the company\'s own tables)',
+    n(L.C, 'c_invoice') === shBy.I_Invoice.will && n(L.C, 'c_bankstatement') === shBy.I_BankStatement.will && n(L.C, 'c_bankaccount') === shBy.C_BankAccount.will && n(L.C, 'c_bpartner') - n(T1.clientId, 'c_bpartner') === shBy.C_BPartner.will, { inv: n(L.C, 'c_invoice'), stm: n(L.C, 'c_bankstatement'), ba: n(L.C, 'c_bankaccount'), bp: n(L.C, 'c_bpartner'), bp0: n(T1.clientId, 'c_bpartner') });
+  // ═══ REPEAT: the same file Processed again on the same company: nothing is loaded twice, the cut-over already in the books is re-checked against the source (migrate-recover) ═══
+  var cR = snap(L.C), mark8 = SHIPPED.length, x1 = W.execute(T0, '2026-11-11', CLS, files(EXP)), x2 = W.after(T0, '2026-11-11', CLS, files(EXP)), v8 = SHIPPED.slice(mark8).filter(function (l) { return /^§MIG-VERIFY/.test(l); }).pop() || '';
+  say('§IDO-REPEAT stage1=' + x1.ok + ' "' + String(x1.msg).slice(0, 160) + '" stage2=' + x2.ok + ' "' + String(x2.msg).slice(0, 200) + '" ' + v8.slice(0, 80));
+  check('REPEAT', 'nothing-twice', 'a second Process of the same file says "Nothing to do" and writes nothing (invoices / journals / postings / accounts / partners / staging rows unchanged), stage 2 says the cut-over is already in the books and checks it against the source', x1.ok && /Nothing to do/.test(String(x1.msg)) && x2.ok && /Already migrated/.test(String(x2.msg)) && snap(L.C) === cR && /verdict=PASS judged=[1-9]/.test(v8), { x1: x1.msg, x2: x2.msg, v8: v8 });
+  check('REPEAT', 'still-the-source', 'after the repeat the twin\'s books are still the oracle\'s (same comparator as LOAD)', cmpTwin(L.C, WANT_LEFT).length === 0, cmpTwin(L.C, WANT_LEFT));
+  verdict('REPEAT');
+
 
   // ═══ MUTANTS: each must make a comparator FAIL (a witness that cannot fail is no witness) ═══
   var clone = function (x) { return JSON.parse(JSON.stringify(x)); };
@@ -223,6 +252,23 @@ var SCH = "(SELECT c_acctschema1_id FROM ad_clientinfo WHERE ad_client_id=" + CL
   check('MUTANT', 'flip-amount-through-load', 'with ' + oi.documentno + ' flipped by 7.00 the loader completes, but the twin\'s open amount / clearing differ from the oracle', dd7.length > 0 && dd7.some(function (x) { return /^OPEN|^CLEAR/.test(x); }), dd7);
   verdict('MUTANT');
 
+  // ═══ the guide's steps for this source, each WITNESSED (a case above asserted it) or printed UNWITNESSED ═══
+  var okc = function (cs) { return !!CASES[cs] && CASES[cs].judged > 0 && CASES[cs].failed === 0; };
+  var STP = W.steps('IDMP', [
+    ['run open_reader.js --cutover on the machine that has iDempiere (read only, password from the environment)', 'cases SOURCE / READER / FROZEN against the live legacy DB', okc('SOURCE') && okc('READER') && okc('FROZEN')],
+    ['start the plugins (Ninja data migration, Migrate from iDempiere)', 'case PLUG: real bundle starts ACTIVE', okc('PLUG')],
+    ['open Data Import > Migrate from iDempiere (opening balances)', 'case PLUG: dictionary + menu leaf + role access', okc('PLUG')],
+    ['pick idempiere_open.json (nothing picked / another source\'s file is named, not loaded)', 'case PICK', okc('PICK')],
+    ['read the summary: sheets, what is refused and why, what is created, nothing written', 'case SUMMARY', okc('SUMMARY')],
+    ['an unfrozen source / a closed period is stopped in plain words, nothing written', 'case PROBLEM', okc('PROBLEM')],
+    ['Process: masters + import rows + clearing accounts (stage 1)', 'case LOAD stages', okc('LOAD')],
+    ['stage 2: Import GL Journal > Complete, Import Invoice CO, Import Bank Statement > Complete', 'case LOAD stages', okc('LOAD')],
+    ['the books are checked against the source (§MIG-VERIFY, clearing = the named leftover)', 'case LOAD verifier + oracle', okc('LOAD')],
+    ['Process the same file again: nothing is loaded twice', 'case REPEAT', okc('REPEAT')],
+    ['a changed / dropped source figure is caught by the books-vs-source check', 'case MUTANT (through the real form)', okc('MUTANT')],
+    ['click through the form in the real page (idempiere.html, a browser)', 'no browser drive of this form exists; witness_migration_journey drives Odoo only', null]
+  ]);
+  check('STEPS', 'none-failed', 'every guide step that a case asserts is asserted green (' + STP.witnessed + ' of ' + STP.n + ' witnessed, ' + STP.unwitnessed + ' printed UNWITNESSED, never counted as a pass)', STP.failed === 0 && STP.witnessed > 0, STP); verdict('STEPS');
   var vs = Object.keys(CASES).map(function (c) { return c + '=' + (CASES[c].failed ? 'FAIL' : 'PASS'); }).join(' ');
   var final = !ALL.judged ? 'INCONCLUSIVE' : ALL.failed ? 'FAIL' : 'PASS';
   say('§IDO-VERDICT ' + final + ' judged=' + ALL.judged + ' failed=' + ALL.failed + ' (' + vs + ')');

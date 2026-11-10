@@ -52,3 +52,8 @@ balances, read with GET only (same session, same password rules). `PaidToDate` i
 without an address and payments on account are not brought in; the amount stays on the clearing account and is named
 (bim-compiler prompts/MIGRATE_INSTALL_TENANT.md section SAP-BC-OPEN-SPEC, S1-S15). Nothing here is validated on a real
 Business One: the witness uses a mock Service Layer with test-supplied rows.
+
+In the browser, **Data Import > Migrate from SAP Business One (alpha)**: pick `sap_open.json` (the balances; alone it brings the balances and the accounts, partners and
+price list they need) and, for the master data, `sap_export.json` too, set the cut-over date (it must be the date the agent was given), read the summary (counts, what is
+refused and why, what stays on the clearing accounts), press Process. Stage 2 completes the journal, invoices and bank statements and checks the books against the file
+(`§MIG-VERIFY`). A different cut-over date, or another source's file, is named as one problem and nothing is loaded.
