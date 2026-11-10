@@ -1,0 +1,37 @@
+§FAST_GUIDE_GEN verb table written: 22 verbs
+§FAST_GUIDE_GEN flat folder /tmp/fast_script_flat_qxgr4s, 34 run blocks
+§FAST_GUIDE_GEN run lines exit=0 stdout=2856 bytes
+§FAST_GUIDE_GEN run widen exit=0 stdout=6 bytes
+§FAST_GUIDE_GEN run widen_steps exit=0 stdout=282 bytes
+§FAST_GUIDE_GEN run widen_read exit=0 stdout=71 bytes
+§FAST_GUIDE_GEN run widen_move exit=0 stdout=12 bytes
+§FAST_GUIDE_GEN run widen_why exit=0 stdout=134 bytes
+§FAST_GUIDE_GEN run widen_bay exit=0 stdout=60 bytes
+§FAST_GUIDE_GEN run script exit=0 stdout=6 bytes
+§FAST_GUIDE_GEN run script_move exit=0 stdout=85 bytes
+§FAST_GUIDE_GEN run script_status exit=0 stdout=177 bytes
+§FAST_GUIDE_GEN run script_span exit=0 stdout=131 bytes
+§FAST_GUIDE_GEN run question exit=3 stdout=657 bytes
+§FAST_GUIDE_GEN run error exit=1 stdout=179 bytes
+§FAST_GUIDE_GEN run claim exit=3 stdout=302 bytes
+§FAST_GUIDE_GEN run inconclusive exit=3 stdout=274 bytes
+§FAST_GUIDE_GEN run claim_email exit=3 stdout=309 bytes
+§FAST_GUIDE_GEN run confirm_claim exit=3 stdout=309 bytes
+§FAST_GUIDE_GEN run confirm_list exit=0 stdout=130 bytes
+§FAST_GUIDE_GEN run confirm_run exit=0 stdout=2682 bytes
+§FAST_GUIDE_GEN run confirm_again exit=0 stdout=19 bytes
+§FAST_GUIDE_GEN run describe exit=0 stdout=2056 bytes
+§FAST_GUIDE_GEN run describe_methods exit=0 stdout=46 bytes
+§FAST_GUIDE_GEN run count_rooms exit=0 stdout=259 bytes
+§FAST_GUIDE_GEN run count_storey exit=0 stdout=326 bytes
+§FAST_GUIDE_GEN run count_badcol exit=1 stdout=413 bytes
+§FAST_GUIDE_GEN run walk_fp exit=0 stdout=143 bytes
+§FAST_GUIDE_GEN run dotted_compile exit=0 stdout=105 bytes
+§FAST_GUIDE_GEN run dotted_value exit=0 stdout=9 bytes
+§FAST_GUIDE_GEN run dotted_filter exit=0 stdout=144 bytes
+§FAST_GUIDE_GEN run dotted_walk exit=0 stdout=116 bytes
+§FAST_GUIDE_GEN run dotted_sched exit=0 stdout=137 bytes
+§FAST_GUIDE_GEN run dotted_bad exit=2 stdout=88 bytes
+§FAST_GUIDE_GEN run dotted_raw exit=3 stdout=662 bytes
+§FAST_GUIDE_GEN run notchecked exit=0 stdout=406 bytes
+§FAST_GUIDE_GEN wrote /tmp/wt-bc-neuro/docs/FastScriptGuide.md

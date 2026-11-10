@@ -1,0 +1,65 @@
+§W-FAST-SCRIPT-GUIDE page /tmp/wt-bc-neuro/docs/FastScriptGuide.md: 34 run blocks, 1 file blocks, vocabulary 22 verbs
+  ✅ T1 the verb table on the page equals the table generated from verbs.json (cell for cell)  page rows=22 vocabulary=22
+  ✅ T2 the table names equal the vocabulary names, in order  22 names
+  ✅ F1 no `door.js` command sits in a code block that is not a run block
+  ✅ F2 the page's curl lines name exactly the 4 downloaded files  4 lines
+  ✅ F3 the page links the Proposer Guide for the AI connection (not duplicated)
+  ✅ K1 "N verbs" on the page = verbs.json  page=22 vocabulary=22
+  ✅ K2 "N Viewer verbs" on the page = verbs.json viewer.*  page=5 vocabulary=5
+  ✅ K3 "N actions a person can press" = internal/VIEWER_ACTIONS.md N_actions  page=64 report=64
+  ✅ K4 "N documents and processes" = internal/ERP_VERBS.md N  page=1156 report=1156
+  ✅ K5 "N ERP verbs" on the page = verbs.json erp.*  page=7 vocabulary=7
+§W-FAST-SCRIPT-GUIDE 4-file download (live site) in an empty folder /tmp/fast_script_flat_NLIiLw: bim_mcp.js,door.js,edit_cli.js,verbs.json
+  ✅ R lines: the real stdout equals the page's block  exit=0 bytes=2856
+  ✅ R widen: the real stdout equals the page's block  exit=0 bytes=6
+  ✅ R widen_steps: the real stdout equals the page's block  exit=0 bytes=282
+  ✅ R widen_read: the real stdout equals the page's block  exit=0 bytes=71
+  ✅ R widen_move: the real stdout equals the page's block  exit=0 bytes=12
+  ✅ R widen_why: the real stdout equals the page's block  exit=0 bytes=134
+  ✅ R widen_bay: the real stdout equals the page's block  exit=0 bytes=60
+  ✅ R script: the real stdout equals the page's block  exit=0 bytes=6
+  ✅ R script_move: the real stdout equals the page's block  exit=0 bytes=85
+  ✅ R script_status: the real stdout equals the page's block  exit=0 bytes=177
+  ✅ R script_span: the real stdout equals the page's block  exit=0 bytes=131
+  ✅ R question: the real stdout equals the page's block  exit=3 bytes=657
+  ✅ R error: the real stdout equals the page's block  exit=1 bytes=179
+  ✅ R claim: the real stdout equals the page's block  exit=3 bytes=302
+  ✅ R inconclusive: the real stdout equals the page's block  exit=3 bytes=274
+  ✅ R claim_email: the real stdout equals the page's block  exit=3 bytes=309
+  ✅ R confirm_claim: the real stdout equals the page's block  exit=3 bytes=309
+  ✅ R confirm_list: the real stdout equals the page's block  exit=0 bytes=130
+  ✅ R confirm_run: the real stdout equals the page's block  exit=0 bytes=2682
+  ✅ R confirm_again: the real stdout equals the page's block  exit=0 bytes=19
+  ✅ R describe: the real stdout equals the page's block  exit=0 bytes=2056
+  ✅ R describe_methods: the real stdout equals the page's block  exit=0 bytes=46
+  ✅ R count_rooms: the real stdout equals the page's block  exit=0 bytes=259
+  ✅ R count_storey: the real stdout equals the page's block  exit=0 bytes=326
+  ✅ R count_badcol: the real stdout equals the page's block  exit=1 bytes=413
+  ✅ R walk_fp: the real stdout equals the page's block  exit=0 bytes=143
+  ✅ R dotted_compile: the real stdout equals the page's block  exit=0 bytes=105
+  ✅ R dotted_value: the real stdout equals the page's block  exit=0 bytes=9
+  ✅ R dotted_filter: the real stdout equals the page's block  exit=0 bytes=144
+  ✅ R dotted_walk: the real stdout equals the page's block  exit=0 bytes=116
+  ✅ R dotted_sched: the real stdout equals the page's block  exit=0 bytes=137
+  ✅ R dotted_bad: the real stdout equals the page's block  exit=2 bytes=88
+  ✅ R dotted_raw: the real stdout equals the page's block  exit=3 bytes=662
+  ✅ R notchecked: the real stdout equals the page's block  exit=0 bytes=406
+  ✅ C1 the bay between gx5 and gx6 is 11.176 m (157.163 - 145.987, exact)  computed=11.176
+  ✅ C2 the move to reach 13 m is 1.824, computed exactly, equals what the door passed on  computed=1.824 door=1.824
+  ✅ C3 the 13 m request is stopped, with the app's reason, and exit 3  "why":"line 2 (modeller.try_shift): stopped: Beam spans over limit: 91 -> 92 (limit 12 m, RC); bay gx5-gx6 newly over the limit: 13 m" | exit 3
+  ✅ C4 the report row: gx5-gx6 went 11.176 to 13, newly over the limit  11.176 -> 13
+  ✅ C5 the widen_bay envelopes in order: the whole request refused, the grid read ok, the shift refused  refused,ok,refused
+  ✅ C6 the script computes 12 - 11.176 = 0.824 exactly, equals the door's delta  computed=0.824 door=0.824
+  ✅ C7 the page's floating-point figure is what floating point gives (0.8239999999999998) and differs from the door's  js=0.8239999999999998
+  ✅ C8 both lines of the script answer ok, and the page says so; the span count stays 91 -> 91  ok,ok | building)","state":"JUDGED","before":91,"after":91,"delta":0
+§W-FAST-SCRIPT-GUIDE script outcome: ok,ok
+  ✅ C9 lines answers status ok  got=ok
+  ✅ C9 question answers status refused  got=refused
+  ✅ C9 error answers status error  got=error
+  ✅ C9 claim answers status claim  got=claim
+  ✅ C9 claim_email answers status claim  got=claim
+  ✅ C9 inconclusive answers status inconclusive  got=inconclusive
+  ✅ C10 object.describe lists the generic methods for Element  "methods":["read","update","attach","history"]
+  ✅ N1 every decimal number on the page appears in a real run's output, is computed from one, or is the Node version  20 decimals on the page
+§W-FAST-SCRIPT-GUIDE the published page was NOT checked (no --live)
+§WITNESS_FAST_SCRIPT_GUIDE pass=60 fail=0 inconclusive=0 verdict=PASS
