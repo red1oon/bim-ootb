@@ -41,4 +41,14 @@ server does not have is listed as missing, never guessed.
   table, and reading it is the next step.)
 - Stock is the stock **now** (the Service Layer gives no stock at a date).
 - One sale price list (the lowest number, or the one you name on the form).
-- No open documents, balances or history yet.
+- History is not read. Open balances are an opt-in second file (below).
+
+## Open balances at the cut-over (opt-in, alpha, never run on a real company)
+
+`node agent.js --url ... --company ... --user ... --cutover 2026-12-31` also writes `sap_open.json` (name it with `--openfile`):
+the trial balance (journal lines up to that date), the open invoices / credit notes (`DocTotal - PaidToDate`), and the house-bank
+balances, read with GET only (same session, same password rules). `PaidToDate` is as of today, so the agent raises a
+`source-not-frozen` problem when the books hold postings after the cut-over date. Documents in a foreign currency, partners
+without an address and payments on account are not brought in; the amount stays on the clearing account and is named
+(bim-compiler prompts/MIGRATE_INSTALL_TENANT.md section SAP-BC-OPEN-SPEC, S1-S15). Nothing here is validated on a real
+Business One: the witness uses a mock Service Layer with test-supplied rows.
