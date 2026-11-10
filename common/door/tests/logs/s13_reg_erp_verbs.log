@@ -19,3 +19,16 @@
   ✅ A2b control: role 102 (granted) is offered Complete  offered=["CO","PR","VO"]
   ✅ A2c complete with the ungranted role is REFUSED by the engine with the rule named, nothing written  why=Complete is not offered to role 50004 for this Order (status DR; offered: nothing)
   ✅ A2d the same line by an ai gets no way round: held as a claim, nothing written (the person's confirmation would get A2c's refusal)
+  ✅ A2e control: the granted role completes the same document  status=ok
+  ✅ Fa find: a number that does not exist is a refusal that says so, not an empty ok
+  ✅ Fb find: a table that is not a document is refused by name (the dictionary decides what a document is)  kind Currency is not a document (its table has no DocAction column)
+  ✅ O1 erp.describe: reflection lists exactly the dictionary's active AD_Column rows of the kind (independent SQL count)  properties=93 sql=93
+  ✅ O2 the same verb serves other tables with no code of theirs (C_BPartner, M_Product), and a non-table is an error that names the kinds  C_BPartner M_Product
+  ✅ O3 erp.read shows the record as the op-log left it (D1 was completed above: DocStatus CO), the same state erp.find reports  docstatus=CO
+  ✅ V1 the erp.* entries are what the generator writes from the dictionary + actor_verbs.json (not hand-kept)  §ERP_DOOR_VERBS CURRENT
+  ✅ V2 harm: find/actions/describe/read are read, erp.complete is posts (the generator's rule, DocumentEngine ACTION_Complete -> Doc.post)  erp.find:read erp.actions:read erp.describe:read erp.read:read erp.complete:posts
+  ✅ V3 the connector (tools/list) offers no erp verb: they have no mcp_name, so the published tool bytes are unchanged
+  ✅ V4 no erp entry names code, SQL or a shell: every one calls erp_cli with a fixed subcommand  offences=0
+  ✅ V5 AD-LAYER LAW: no document table is named in erp_cli.js or doc_actions.js  hits=0
+§W-ERP-VERBS-DOOR journal lines=46 dir=/tmp/erp_fCOafO
+§WITNESS_ERP_VERBS_DOOR pass=25 fail=0 inconclusive=0 verdict=PASS

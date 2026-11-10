@@ -18,6 +18,13 @@ const say = (s) => process.stderr.write('§WALK ' + s + '\n');
 const BREAK = () => process.env.WALK_BREAK || '';   // W-MODELLER-WALK falsifiers: plus1 | terminal
 const sha = (f) => crypto.createHash('sha256').update(fs.readFileSync(f)).digest('hex');
 
+// the walker's own § lines, verbatim; at most 3 of each tag (a tag such as §DW-UNVERIFIED-MIDPOINT repeats per host), the rest counted
+function engineLines(lines) {
+  const seen = {}, out = [];
+  lines.filter(l => /§/.test(l)).forEach(l => { const tag = (/§[A-Z][A-Z0-9_-]+(?= |$)(?!.*§[A-Z])/.exec(l) || /§[A-Za-z0-9_-]+/.exec(l))[0]; seen[tag] = (seen[tag] || 0) + 1; if (seen[tag] <= 3) out.push(l); });
+  Object.keys(seen).filter(t => seen[t] > 3).forEach(t => out.push('(' + (seen[t] - 3) + ' more ' + t + ' lines)'));
+  return out.slice(0, 80);
+}
 async function main(argv) {
   const a = {};
   for (let i = 0; i < argv.length; i++) { const m = /^--(\w+)$/.exec(argv[i]); if (!m || i + 1 >= argv.length) { say('USAGE walk_cli.js --building B --discipline D'); return 2; } a[m[1]] = argv[++i]; }
@@ -46,7 +53,7 @@ async function main(argv) {
     if (!geoF) notChecked.push('no geometry file (' + ent.key + '_geo.db) is held here; the walk ran on the model file alone');
     const out = { verb: 'walk', building: ent.key, model: ent.db, rules: sel.rules, schedule: sel.schedule, borrowFP: sel.borrowFP, discipline: disc, geo: geoF ? path.basename(geoF) : null, verdict, summary,
       count: S.count, placed: S.placed, provisional: S.provisional, byClass: S.byClass, byHostState: S.byHostState, byProv: S.byProv, planOnly: S.planOnly, mode: S.mode, refused: S.refused, reason: S.reason,
-      modelSha256: before, modelUnchanged: before === after, notChecked, engineLines: lines.filter(l => /§/.test(l)).slice(0, 80) };
+      modelSha256: before, modelUnchanged: before === after, notChecked, engineLines: engineLines(lines) };
     say('building=' + ent.key + ' model=' + ent.db + ' rules=' + sel.rules + ' discipline=' + disc + ' geo=' + (out.geo || 'none') + ' mode=' + S.mode + ' count=' + S.count + ' placed=' + S.placed + ' provisional=' + S.provisional + ' byClass=' + JSON.stringify(S.byClass) + ' verdict=' + verdict + ' ms=' + (Date.now() - t0) + (BREAK() ? ' WALK_BREAK=' + BREAK() : ''));
     say('model sha256 before=' + before.slice(0, 16) + ' after=' + after.slice(0, 16) + ' unchanged=' + (before === after));
     if (before !== after) { say('FAIL the model file changed during a dry walk'); return 1; }

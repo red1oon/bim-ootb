@@ -54,8 +54,8 @@ const BUILDINGS = (process.env.WALK_BUILDINGS || 'Duplex,Hospital').split(',');
   k.chk('NAMES an unknown building is an error naming it and listing the Open list', ub.j && ub.j.status === 'error' && /unknown building "NoSuchBuilding"/.test(ub.j.why) && /Duplex/.test(ub.j.why), ub.j && ub.j.why);
   // one line, two actors
   const h = await door('modeller.walk building=Duplex discipline=FP', 'human'), ai = await door('modeller.walk building=Duplex discipline=FP', 'ai');
-  const norm = (j) => { const o = JSON.parse(stripMs(j)); delete o.request; delete o.actor; return JSON.stringify(o); };
-  k.chk('ACTOR a person and an AI get the same envelope (a read: both run)', h.j && ai.j && ai.j.status === 'ok' && norm(h.j) === norm(ai.j), ai.j && ai.j.status);
+  const norm = (j) => { const o = JSON.parse(stripMs(j)); delete o.request; delete o.actor; return JSON.stringify(o).replace(/heapDeltaMB=-?[\d.]+/g, 'heapDeltaMB=*'); };   // the walker's own line carries the process heap delta, which is not the walk's result
+  k.chk('ACTOR a person and an AI get the same envelope apart from request, actor, ms and the heap figure in the walker\'s own log line (a read: both run)', h.j && ai.j && ai.j.status === 'ok' && norm(h.j) === norm(ai.j), ai.j && ai.j.status);
   // the CLI source holds no write path
   const src = fs.readFileSync(path.join(MOD, 'tools', 'walk_cli.js'), 'utf8') + fs.readFileSync(path.join(MOD, 'tools', 'walk_node.js'), 'utf8');
   const writes = (src.match(/writeFileSync|appendFileSync|\.export\(\)|INSERT INTO|UPDATE [a-z_]+ SET/g) || []);
