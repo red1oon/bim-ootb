@@ -70,7 +70,7 @@
 (function () {
   'use strict';
   var $ = function (id) { return document.getElementById(id); };
-  var _installBundle = null;   // the last birth's install bundle (G1..G7), set on a successful birth
+  var _installBundle = null;   // the last birth's install bundle (born.groups, no invoice), set on a successful birth
 
   // ── idb handoff (shares 'erp_cache'/'blobs' with idempiere.html) — write the install bundle, then redirect ──
   function idbPut(key, val) {
@@ -121,15 +121,10 @@
 
       var invId = 9000001;
 
-      // INSTALL BUNDLE — G1..G6 + a G7 carrying THIS sample invoice (named columns so mergeGenesisInto can
-      // column-intersect into the resident schema). The same op-log, just one group longer; reband bands its
-      // *_id (invId > base) automatically. Stashed for the "Install as resident tenant" button (B3 handoff).
-      _installBundle = { input: born.input, tip: born.tip, refs: born.refs, groups: born.groups.concat([{
-        seq: born.groups.length + 1, label: 'G7 sample invoice', ops: [
-          { op: 'CREATE', table: 'c_invoice', row: { c_invoice_id: invId, c_bpartner_id: born.refs.bpartnerId, ad_client_id: born.refs.clientId, grandtotal: 109.00, issotrx: 'Y', ispaid: 'N', dateinvoiced: '2024-01-15', docstatus: 'CO' } },
-          { op: 'CREATE', table: 'c_invoiceline', row: { c_invoice_id: invId, m_product_id: born.refs.productId, ad_client_id: born.refs.clientId, linenetamt: 100.00 } },
-          { op: 'CREATE', table: 'c_invoicetax', row: { c_invoice_id: invId, c_tax_id: born.refs.taxId, ad_client_id: born.refs.clientId, taxamt: 9.00 } }
-        ] }]) };
+      // INSTALL BUNDLE - exactly what the birth made (born.groups). Legacy Initial Client Setup makes NO invoice (MSetup.java has no MInvoice; it creates
+      // doc types, GL categories, defaults, the accounting schema), so none is appended (migrate-closeout F4). The invoice below is only a POSTING PREVIEW
+      // on a scratch posting db, never part of the bundle. Stashed for the "Install as resident tenant" button (B3 handoff).
+      _installBundle = { input: born.input, tip: born.tip, refs: born.refs, groups: born.groups };
 
       // POST through the REAL poster (§POSTING-PARITY 5g): a posting db = the generated dictionary subset + the born tenant, the sample invoice with the
       //   dictionary's columns, ModelPost.previewFacts on a never-committed Trx (the seam the Posting-Preview uses). One code path: Genesis.postSampleInvoice.
