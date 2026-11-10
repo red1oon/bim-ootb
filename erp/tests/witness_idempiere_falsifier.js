@@ -21,12 +21,30 @@
 //   FALSIFY-COLUMN  one template field swapped for another source column (in a copy) -> that column is named as differing and was NOT differing before; else the witness is blind.
 //   FALSIFY-ROW     one source row dropped from the fixture copy the engine reads (the comparison still reads the full fixture) -> the count check names that sheet.
 //   VERDICT   PASS only if every judged column of every sheet is equal and every count matches; otherwise FAIL with the list; INCONCLUSIVE if nothing was judged.
-// Command: node erp/tests/witness_idempiere_falsifier.js 2>&1 | tee /tmp/count_logs/idf_run.log          (export NODE_PATH=/home/red1/bim-ootb/tests/node_modules)
+// THE LEAD'S RULING, 2026-11-10 (adjudicated after the first run; evidence file:lines as reported with it):
+//   The falsification claim proper: "on every row that loads, every column the 17-sheet contract carries equals the source". No engine defect and no loader defect was found.
+//   contract-default-only      C_BPartner.C_BP_Group_ID>IsDefault (workbook.mjs:16; ninja_migrate_process.mjs:214 F6; model_master.js:122-129) and a product whose tax category is not the default (workbook.mjs:19; F8 :226). The sheet can only say "the tenant's default". The generator's Y-or-blank choice is ACCEPTED.
+//   unit-not-carried           the form maps a source unit to an existing unit and cannot keep a tenant's own (ninja_migrate_process.mjs:54-59, odoo_migrate_form.mjs:88,111). A FORM GAP, named, not fixed here.
+//   key-already-in-tenant      the unique index (model_layer.js:358-371) refuses a key the born tenant already holds: correct; that a real migration then loses the file is a named UX gap.
+//   import-inventory-renumbers Import Inventory numbers the document and writes its own Description (ImportInventory.java:392-398, processes/ImportInventory.js:157): M_Inventory.DocumentNo / Description and M_InventoryLine.M_Inventory_ID differ by rule.
+//   header-without-lines       a header with no line is not carried by the I_Inventory rewrite (odoo_migrate_form.mjs:147).
+//   cascade:<class>            a row refused because its parent row was not carried, for <class>.
+//   §IDF-COLUMNS = every judged column on every loaded row equals the source EXCEPT columns of class contract-default-only / import-inventory-renumbers, listed by name with row counts.
+//   §IDF-COVERAGE = every source row that did not load is attributed to exactly one class above BY A RULE computed from the data (the born tenant held the key; the row's unit has no twin unit; tax
+//   category is not the default; the header has no line; the parent row was not carried), never by a hand list; the per-tenant, per-class totals are PINNED below - a row fitting no class, or a total
+//   that differs from the pin, is a FAIL naming it (a later engine / loader change that loses or gains a row is caught).
+//   FALSIFY-UNATTRIBUTED  a C_Location row dropped from the BOOK after the engine ran -> COVERAGE must FAIL naming that row as fitting no class.
+// Command: node erp/tests/witness_idempiere_falsifier.js 2>&1 | tee /tmp/count_logs/idf_final.log          (export NODE_PATH=/home/red1/bim-ootb/tests/node_modules)
 'use strict';
 var fs = require('fs'), path = require('path'), url = require('url');
 if (!global.window) global.window = {};
 if (!global.crypto || !global.crypto.subtle) global.crypto = require('crypto').webcrypto;
 var ERP = path.join(__dirname, '..'), FIX = path.join(__dirname, 'fixtures');
+// PINNED expected totals per tenant and class (rows not loaded) - measured 2026-11-10, adjudicated by the lead.
+var PIN = { GardenWorld: { 'cascade:unit-not-carried': 8, 'header-without-lines': 2, 'key-already-in-tenant': 315, 'unit-not-carried': 12 },
+  Pilot: { 'cascade:contract-default-only': 13, 'contract-default-only': 4, 'key-already-in-tenant': 6 } };
+// columns allowed to differ, by class (sheet|header) - the ruling above
+var EXC = { 'C_BPartner|C_BP_Group_ID>IsDefault': 'contract-default-only', 'M_Inventory|DocumentNo': 'import-inventory-renumbers', 'M_Inventory|Description': 'import-inventory-renumbers', 'M_InventoryLine|M_Inventory_ID': 'import-inventory-renumbers' };
 var _log = console.log, SHIPPED = [];
 console.log = function () { var l = Array.prototype.join.call(arguments, ' '); if (/^§(NINJA|MIG-|E1-STOCK|ODOO-FORM run|IMPORT_|PROC-)/.test(l)) SHIPPED.push(l); };   // captured, then printed by shipped() - the shipped § log is primary evidence
 function say(s) { _log(s); }
@@ -109,12 +127,13 @@ var KEYTXT = { M_ProductPrice: 'price list Name + version Name + product Value',
     var T = birth(tag.replace(/\W/g, ' ') + ' Co', invDates[0]), C = T.clientId, S = session(T), CLIENT = fxCompare.source.client;
     say('§IDF-TENANT tenant=' + tag + ' source=' + fxCompare.source.db + '/' + CLIENT + ' twin_client=' + C + ' twin_calendar_date=' + (invDates[0] || '2026-11-10 (default)'));
     var eng = E.run(template, CN.tenantRows(fxEngine), {}), book = eng.book.map(function (b) { return { name: b.name, rows: b.rows.map(function (r) { return r.slice(); }) }; });
-    var man = JSON.parse(JSON.stringify(eng.manifest));
+    var man = JSON.parse(JSON.stringify(eng.manifest)), droppedBook = null;
+    if (opt.dropBook) { var db0 = book.find(function (b) { return tb(b.name) === opt.dropBook; }); droppedBook = db0.rows.pop(); db0.rows.length; }   // a row lost AFTER the engine ran, which no class can explain
     // what the twin tenant held before the load (born rows are not "loaded")
     var before = {}; function idOf(sh, r) { return sh === 'M_Product_PO' ? r.m_product_id + '|' + r.c_bpartner_id : r[A.sheets[sh].key]; }
     A.order.forEach(function (sh) { before[sh] = {}; q('SELECT * FROM ' + A.sheets[sh].table + ' WHERE ad_client_id=?', [C]).forEach(function (r) { before[sh][idOf(sh, r)] = 1; }); });
     // run, with refusals taken out and reported (the loader is all-or-nothing)
-    var refused = {}, blocked = null, cur = null, files, rounds = 0, excluded = {};
+    var unitNo = {}, refused = {}, blocked = null, cur = null, files, rounds = 0, excluded = {};
     function mk() {
       var b2 = book.map(function (b) { return { name: b.name, rows: b.rows.filter(function (r, i) { return i === 0 || !excluded[b.name + '|' + i]; }) }; });
       var m2 = JSON.parse(JSON.stringify(man)); m2.sheets.forEach(function (s) { var b = b2.find(function (x) { return x.name === s.sheet; }); s.rows = b.rows.length - 1; });
@@ -124,6 +143,7 @@ var KEYTXT = { M_ProductPrice: 'price list Name + version Name + product Value',
       files = mk(); var r1 = S.rows(files, null); cur = answer(r1, tag);
       // a source unit with no ERP unit to answer with: the form refuses the whole file until answered, so the products using it are taken out and reported (the form has no way to keep a unit of its own)
       var noAns = r1.filter(function (r, i) { return r.erpunit !== undefined && !cur[i].erpunit; }).map(function (r) { return String(r.item).replace(/^Unit: /, ''); }), pb = book.find(function (b) { return /M_Product$/.test(b.name); });
+      noAns.forEach(function (u) { unitNo[u] = 1; });
       if (noAns.length && pb) { var ui = pb.rows[0].indexOf('C_UOM_ID'), cu = 0; pb.rows.forEach(function (r, i) { if (i && noAns.indexOf(r[ui]) >= 0 && !excluded[pb.name + '|' + i]) { excluded[pb.name + '|' + i] = 1; cu++;
           (refused[tb(pb.name)] = refused[tb(pb.name)] || []).push({ row: i, cells: pb.rows[0].map(function (h, j) { return h + '=' + r[j]; }).filter(function (x) { return !/=$/.test(x); }).slice(0, 5).join('; '), why: 'unit "' + r[ui] + '" has no ERP unit to answer with (the form refuses the file until every used unit is answered)' }); } });
         if (cu) { files = mk(); r1 = S.rows(files, null); cur = answer(r1, tag); } }
@@ -187,7 +207,17 @@ var KEYTXT = { M_ProductPrice: 'price list Name + version Name + product Value',
       if (sh === 'M_InventoryLine') { var h = SIDE[side]('m_inventory', row.m_inventory_id); parts[0] = h ? keyOf('M_Inventory', h, side) : '#NOHEADER'; }
       return parts.join('␟');
     }
-    var out = {}, tenantFail = [];
+    var out = {}, tenantFail = [], clsOf = {}, cov = {}, unattr = [];
+    function classify(sh, r, cm, bornHit) {
+      if (bornHit) return 'key-already-in-tenant';
+      if (sh === 'C_UOM') return 'unit-not-carried';
+      if (sh === 'M_Product') { if (unitNo[cm['C_UOM_ID']]) return 'unit-not-carried'; if (cm['C_TaxCategory_ID>IsDefault'] !== 'Y') return 'contract-default-only'; }
+      if (sh === 'M_Inventory' && !(srcT.m_inventoryline.rows.some(function (l) { return l.m_inventory_id === r.m_inventory_id; }))) return 'header-without-lines';
+      var cols = A.sheets[sh].cols;
+      for (var i = 0; i < cols.length; i++) { var c = cols[i]; if (c.kind !== 'lookup' || r[c.col] == null) continue; var pc = clsOf[c.target] && clsOf[c.target][r[c.col]];
+        if (pc && pc !== 'key-already-in-tenant') return pc === 'unattributed' ? 'unattributed' : 'cascade:' + pc.replace(/^cascade:/, ''); }   // a parent the born tenant already holds is present: it explains nothing about this row
+      return 'unattributed';
+    }
     var oneLine = [];
     A.order.forEach(function (sh) {
       var S0 = A.sheets[sh], N = A.headers[sh].length, own = (srcT[S0.table] ? srcT[S0.table].rows : []).filter(function (r) { return String(r.ad_client_id) === String(CLIENT); });
@@ -201,7 +231,8 @@ var KEYTXT = { M_ProductPrice: 'price list Name + version Name + product Value',
       own.forEach(function (r) {
         var kk = keyOf(sh, r, 'source'), list = L[kk]; used[kk] = used[kk] || 0;
         if (list && list.length > 1 && used[kk] === 0) st.dupKeys++;
-        var lr = list && list[used[kk]]; if (!lr) { st.unmatchedSource++; (st.examples.__unmatched = st.examples.__unmatched || []).push(kk.replace(/␟/g, ' | '));
+        var lr = list && list[used[kk]]; if (!lr) { st.unmatchedSource++;
+          var cls = classify(sh, r, cmpRow(sh, r, 'source'), !!bornByKey[kk]); (clsOf[S0.table] = clsOf[S0.table] || {})[r[S0.key]] = cls; var cv = cov[cls] = cov[cls] || { rows: 0, sheets: {} }; cv.rows++; cv.sheets[sh] = 1; if (cls === 'unattributed') unattr.push({ sheet: sh, key: kk.replace(/␟/g, ' | ') }); (st.examples.__unmatched = st.examples.__unmatched || []).push(kk.replace(/␟/g, ' | '));
           var pre = bornByKey[kk]; if (pre) { st.preExisting++; var sc0 = cmpRow(sh, r, 'source'), pc0 = cmpRow(sh, pre, 'loaded'); cols.forEach(function (c) { if (sc0[c.header] !== pc0[c.header]) st.preDiff[c.header] = (st.preDiff[c.header] || 0) + 1; }); } return; }
         used[kk]++; st.matched++;
         var sc = cmpRow(sh, r, 'source'), lc = cmpRow(sh, lr, 'loaded');
@@ -219,9 +250,17 @@ var KEYTXT = { M_ProductPrice: 'price list Name + version Name + product Value',
       if (st.preExisting) say('§IDF-PREEXIST tenant=' + tag + ' sheet=' + sh + ' unmatched_source_rows_already_in_the_born_tenant=' + st.preExisting + ' of_unmatched=' + st.unmatchedSource + ' differing_columns_vs_the_born_row=' + J(st.preDiff));
       if (st.examples.__unmatched) say('§IDF-UNMATCHED tenant=' + tag + ' sheet=' + sh + ' count=' + st.unmatchedSource + ' examples=' + J(st.examples.__unmatched.slice(0, 3)));
     });
-    return { out: out, refused: refused, blocked: blocked, res: res, aft: aft, eng: eng, tenant: C };
+    Object.keys(cov).sort().forEach(function (c) { say('§IDF-COVERAGE tenant=' + tag + ' class=' + c + ' rows=' + cov[c].rows + ' sheets=' + J(Object.keys(cov[c].sheets))); });
+    unattr.forEach(function (u) { say('§IDF-UNATTRIBUTED tenant=' + tag + ' sheet=' + u.sheet + ' key=' + J(u.key) + ' fits no adjudicated class'); });
+    return { cov: cov, unattr: unattr, droppedBook: droppedBook, out: out, refused: refused, blocked: blocked, res: res, aft: aft, eng: eng, tenant: C };
   }
 
+  function covVerdict(cov, pin, unattr) {
+    var why = [], names = {}; Object.keys(cov).forEach(function (c) { names[c] = 1; }); Object.keys(pin || {}).forEach(function (c) { names[c] = 1; });
+    (unattr || []).forEach(function (u) { why.push('row fits no class: ' + u.sheet + ' ' + J(u.key)); });
+    Object.keys(names).sort().forEach(function (c) { if (c === 'unattributed') return; var got = cov[c] ? cov[c].rows : 0, want = pin && pin[c] != null ? pin[c] : 0; if (got !== want) why.push('class ' + c + ' rows=' + got + ' pinned=' + want); });
+    return { ok: !why.length, why: why };
+  }
   var summary = {};
   var SRC = [['gardenworld', 'GardenWorld'], ['pilot', 'Pilot']];
   var FXS = {};
@@ -263,15 +302,30 @@ var KEYTXT = { M_ProductPrice: 'price list Name + version Name + product Value',
   check('FALSIFY-ROW', 'only-that-sheet', 'no other sheet changed its loaded count or unmatched count', o2.length === 0, o2);
   verdict('FALSIFY-ROW');
 
-  // ═══ VERDICT ═══
-  var fails = [], judged = 0, passes = 0, inconc = [];
-  Object.keys(summary).forEach(function (tag) { var s = summary[tag]; if (s.blocked) { fails.push(tag + ': BLOCKED ' + J(s.blocked)); return; }
-    Object.keys(s.out).forEach(function (sh) { var o = s.out[sh]; if (o.verdict === 'INCONCLUSIVE') { inconc.push(tag + '/' + sh); return; } judged++; if (o.verdict === 'PASS') passes++; else fails.push(tag + '/' + sh + ' ' + (o.matched ? 'columns=' + J(o.diffCols) : 'nothing matched') + (o.loaded !== o.source ? ' count ' + o.loaded + '/' + o.source : '')); }); });
+  // (iii) a row lost after the engine ran, which no class can explain
+  var lostSheet = 'C_Location', f3 = await pipeline('GardenWorld-lost', gw, TEMPLATE, gw, { dropBook: lostSheet });
+  var uuLost = f3.droppedBook ? f3.droppedBook[A.headers[lostSheet].indexOf('C_Location_UU')] : null;
+  var cvf = covVerdict(f3.cov, PIN.GardenWorld, f3.unattr);
+  say('§IDF-FALSIFY-UNATTRIBUTED dropped from the book after the engine: ' + lostSheet + ' C_Location_UU=' + J(uuLost) + ' -> coverage ok=' + cvf.ok + ' unattributed=' + J(f3.unattr));
+  check('FALSIFY-UNATTRIBUTED', 'named', 'COVERAGE FAILs and names the lost ' + lostSheet + ' row (UU ' + uuLost + ') as fitting no class', !cvf.ok && f3.unattr.some(function (u) { return u.sheet === lostSheet && u.key === uuLost; }), { cvf: cvf, unattr: f3.unattr });
+  verdict('FALSIFY-UNATTRIBUTED');
+
+  // ═══ COLUMNS ═══
+  var colFail = [], nSheets = 0, nCols = 0, nRows = 0, allowed = {}, inconc = [], sheetPass = 0;
+  Object.keys(summary).forEach(function (tag) { var s = summary[tag]; if (s.blocked) { colFail.push(tag + ': BLOCKED ' + J(s.blocked)); return; }
+    Object.keys(s.out).forEach(function (sh) { var o = s.out[sh]; if (o.verdict === 'INCONCLUSIVE') { inconc.push(tag + '/' + sh); return; } if (!o.matched) return;
+      nSheets++; nCols += o.N; nRows += o.matched;
+      o.diffCols.forEach(function (h) { var c = EXC[sh + '|' + h]; if (c) { var kk = tag + ' ' + c + ' ' + sh + '.' + h; allowed[kk] = (allowed[kk] || 0) + o.nDiff[h]; } else colFail.push(tag + '/' + sh + '.' + h + ' rows=' + o.nDiff[h]); }); }); });
+  Object.keys(allowed).sort().forEach(function (k) { say('§IDF-COLUMNS-ALLOWED ' + k + ' rows=' + allowed[k]); });
+  say('§IDF-COLUMNS ' + (nSheets && !colFail.length ? 'PASS' : !nSheets ? 'INCONCLUSIVE' : 'FAIL') + ' sheets_judged=' + nSheets + ' columns_judged=' + nCols + ' rows_compared=' + nRows + ' allowed_by_class=' + J(allowed) + (colFail.length ? ' other_differences=' + J(colFail) : ''));
+  // ═══ COVERAGE ═══
+  var covFail = [];
+  Object.keys(summary).forEach(function (tag) { var s = summary[tag]; if (s.blocked) return; var cv = covVerdict(s.cov, PIN[tag], s.unattr); if (!cv.ok) cv.why.forEach(function (w) { covFail.push(tag + ': ' + w); });
+    var extra = Object.keys(s.out).filter(function (sh) { return s.out[sh].extraLoaded; }); if (extra.length) covFail.push(tag + ': loaded rows with no source row in ' + J(extra)); });
+  say('§IDF-COVERAGE-VERDICT ' + (covFail.length ? 'FAIL ' + J(covFail) : 'PASS') + ' pinned=' + J(PIN));
   say('§IDF-INCONCLUSIVE sheets (no source row, nothing judged)=' + J(inconc));
-  var harness = ALL.failed === 0;
-  var v = !judged ? 'INCONCLUSIVE' : (fails.length || !harness) ? 'FAIL' : 'PASS';
   say('§IDF-FALSIFIERS-AND-GEN checks judged=' + ALL.judged + ' failed=' + ALL.failed);
-  say('§IDF-VERDICT ' + v + ' sheets_judged=' + judged + ' sheets_pass=' + passes + ' sheets_fail=' + fails.length + ' sheets_inconclusive=' + inconc.length);
-  fails.forEach(function (f) { say('§IDF-FAILED ' + f); });
+  var v = (!nSheets) ? 'INCONCLUSIVE' : (colFail.length || covFail.length || ALL.failed) ? 'FAIL' : 'PASS';
+  say('§IDF-VERDICT ' + v + ' columns=' + (colFail.length ? 'FAIL' : 'PASS') + ' coverage=' + (covFail.length ? 'FAIL' : 'PASS') + ' gen_count_falsifiers_failed=' + ALL.failed);
   process.exit(v === 'PASS' ? 0 : v === 'FAIL' ? 1 : 3);
 })().catch(function (e) { _log('§IDF-CRASH ' + (e && e.stack || e)); process.exit(2); });
