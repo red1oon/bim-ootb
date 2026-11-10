@@ -161,7 +161,13 @@
           if (!isPackOutElement(table, row)) return;
           var keyId = row[table.toLowerCase() + '_id'];
           if (!single && keyId != null && HANDLED_TABLE[table.toLowerCase()]) { H[HANDLED_TABLE[table.toLowerCase()]](keyId); return; }
-          verifyRequirement(table, row); open(table, 'table'); exportRow(table, row, excludes, false); close(table); count(table);
+          verifyRequirement(table, row); open(table, 'table'); exportRow(table, row, excludes, false);
+          if (table.toLowerCase() === 'ad_menu' && keyId != null) {   // MenuElementHandler.createMenuBinding: the menu's place in the tree travels as Parent_ID + SeqNo inside the AD_Menu element
+            var tn = null; try { tn = q('SELECT parent_id AS p, seqno AS s FROM ad_treenodemm WHERE node_id=? ORDER BY ad_tree_id LIMIT 1', [keyId])[0]; } catch (e) { tn = null; }
+            if (tn && Number(tn.p) > 0) { var pr = reference('AD_Menu', tn.p); el('Parent_ID', pr.v, pr.a); }
+            if (tn) el('SeqNo', String(Number(tn.s) || 0), {});
+          }
+          close(table); count(table);
         });
       };
     }
