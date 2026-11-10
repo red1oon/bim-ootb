@@ -48,8 +48,8 @@ function verdict(cs) { var c = CASES[cs] || { judged: 0, failed: 0 }, v = !c.jud
   } catch (e) { err = e && (e.stack || e.message); }
   check('PLUG', 'starts', 'both bundles start ACTIVE (Ninja loader + the form)', !!s1 && s1.state === 'ACTIVE' && !!s2 && s2.state === 'ACTIVE', { s1: s1, s2: s2, err: err });
   var F = q("SELECT ad_form_id AS id, classname AS c FROM ad_form WHERE ad_form_id=9542001")[0], M = q("SELECT action AS a, ad_form_id AS f FROM ad_menu WHERE ad_menu_id=9542001")[0];
-  var acc = q('SELECT count(*) AS n FROM ad_form_access WHERE ad_form_id=9542001')[0].n;
-  check('PLUG', 'dictionary', 'AD_Form 9542001 names the class the form engine has; the menu leaf opens it (action X); access rows for roles 0 and 102', !!F && F.c === 'org.kernel.odoo.MigrateFromOdoo' && !!AF.get(F.c) && !!M && M.a === 'X' && M.f === 9542001 && acc === 2, { F: F, M: M, acc: acc });
+  var acc = q('SELECT count(*) AS n FROM ad_form_access WHERE ad_form_id=9542001 AND ad_role_id IN (0,102)')[0].n;   // every other non-manual role gets its row from the host (W-PLUGIN-ROLE-ACCESS); the count follows the roles
+  check('PLUG', 'dictionary', 'AD_Form 9542001 names the class the form engine has; the menu leaf opens it (action X); roles 0 and 102 have access', !!F && F.c === 'org.kernel.odoo.MigrateFromOdoo' && !!AF.get(F.c) && !!M && M.a === 'X' && M.f === 9542001 && acc === 2, { F: F, M: M, acc: acc });
   var rd = function (f) { try { return fs.readFileSync(path.join(ERP, f), 'utf8'); } catch (e) { return ''; } };
   check('PLUG', 'wiring', 'sw.js precaches both files and plugin_overlay installs the bundle stopped (file names only); the renderer has the generic file / text-cell / locked / current extensions',
     /'plugins\/odoo_migrate\.mjs'/.test(rd('sw.js')) && /'plugins\/odoo_migrate_form\.mjs'/.test(rd('sw.js')) && /INSTALL_ONLY = \[[^\]]*'plugins\/odoo_migrate\.mjs'/.test(rd('plugin_overlay.js')) &&
