@@ -1001,6 +1001,22 @@
   };
   SvrProcess.prototype.addBufferLog = SvrProcess.prototype.addLog;
   SvrProcess.prototype.statusUpdate = function (m) { if (this.m_trx && this.m_trx.say) this.m_trx.say('§PROC-STATUS ' + m); };
+  // IProcessUI.download(File) (AbstractProcessDialog.download :1235-1237, shown when the process ends :1129-1130): the ONE way a process hands a file to the user.
+  //   Browser: a Blob + a clicked anchor (a witness switches the click off with window.__procNoDownload); node: kept only. The last file is kept (lastDownload) and logged.
+  var _lastDownload = null;
+  function download(name, bytes, mime, processName) {
+    var g = (typeof window !== 'undefined') ? window : null, data = (typeof bytes === 'string') ? new TextEncoder().encode(bytes) : bytes;
+    if (g && typeof document !== 'undefined' && typeof Blob !== 'undefined' && !g.__procNoDownload) {
+      var a = document.createElement('a'), u = URL.createObjectURL(new Blob([data], { type: mime || 'application/octet-stream' })); a.href = u; a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(u); }, 5000);
+    }
+    var sub = (typeof crypto !== 'undefined' && crypto.subtle) ? crypto.subtle : null;
+    _lastDownload = (sub ? sub.digest('SHA-256', data).then(function (h) { return Array.prototype.map.call(new Uint8Array(h), function (x) { return ('0' + x.toString(16)).slice(-2); }).join(''); }) : Promise.resolve(null)).then(function (sha) {
+      console.log('§PROC-DOWNLOAD process=' + (processName || '-') + ' file=' + name + ' bytes=' + data.length + ' sha256=' + sha);
+      return { file: name, bytes: data, mime: mime || null, sha256: sha };
+    });
+    return _lastDownload;
+  }
+  SvrProcess.prototype.processUI = { download: function (name, bytes, mime) { return download(name, bytes, mime); } };
   SvrProcess.prototype.commitEx = function () {};     // one Trx = one signed group: the host commits at the end
   SvrProcess.prototype.commit = function () {};
   SvrProcess.prototype.rollback = function () { if (this.m_trx) { this.m_trx.ops = []; this.m_trx.pend = {}; } };
@@ -1309,6 +1325,7 @@
     pickUsedProcesses: pickUsedProcesses,
     refType: refType, typeOk: typeOk, REF_TYPE: REF_TYPE,
     openItems: openItems, agingFold: agingFold, AGING_BUCKETS: AGING_BUCKETS, importBPartner: importBPartner,
+    download: download, lastDownload: function () { return _lastDownload; },
     SvrProcess: SvrProcess, ProcessInfoParameter: ProcessInfoParameter, defineProcess: defineProcess, undefineProcess: undefineProcess, unregisterHandler: unregisterHandler, removeOwner: removeOwner, describe: describe, runJava: runJava, runInTrx: runInTrx, JAVA: JAVA, typedParam: typedParam, processDB: processDB
   };
 

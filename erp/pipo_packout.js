@@ -228,9 +228,8 @@
   function deliver(res) {
     last = packageZip(res).then(function (bytes) {
       var file = res.name + '.zip';
-      if (typeof document !== 'undefined' && typeof Blob !== 'undefined' && !(typeof window !== 'undefined' && window.__packOutNoDownload)) {
-        var a = document.createElement('a'), u = URL.createObjectURL(new Blob([bytes], { type: 'application/zip' })); a.href = u; a.download = file; document.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(u); }, 5000);
-      }
+      var AP = (typeof window !== 'undefined' && window.AdProcess) || null;   // the one hand-off (AdProcess.download = IProcessUI.download); the witness switch __packOutNoDownload still holds
+      if (AP && AP.download && !(typeof window !== 'undefined' && window.__packOutNoDownload)) AP.download(file, bytes, 'application/zip', 'PackOut');
       if (typeof console !== 'undefined') console.log('§PACKOUT-DOWNLOAD file=' + file + ' bytes=' + bytes.length + ' records=' + res.stat.records + ' items=' + res.count);
       return { file: file, bytes: bytes, xml: res.xml, stat: res.stat };
     });

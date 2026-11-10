@@ -33,7 +33,7 @@ function needs(entry, vocab) {
 const UNIT = { m: 'metres', h: 'hours', day: 'day number' };
 const inputText = (i) => '`' + i.name + '`' + (i.unit ? ' (' + (UNIT[i.unit] || i.unit) + ')' : '') + (i.required ? '' : ' (optional)');
 function verbTable(vocab) {
-  const rows = vocab.verbs.map(e => '| `' + e.verb + '` | ' + e.title + ' | ' + (e.inputs.map(inputText).join(', ') || 'none') + ' | ' + e.harm + ' | ' + e.actors.join(', ') + ' | ' + needs(e, vocab) + ' |');
+  const rows = vocab.verbs.map(e => '| `' + e.verb + '` | ' + e.title + ' | ' + (e.inputs.map(inputText).concat(e.calls && e.calls.rest ? ['further `column=value` filters (optional)'] : []).join(', ') || 'none') + ' | ' + e.harm + ' | ' + e.actors.join(', ') + ' | ' + needs(e, vocab) + ' |');
   return ['| Verb | What it does | Inputs | Harm | Who may use it | Needs |', '|---|---|---|---|---|---|'].concat(rows).join('\n');
 }
 const GEN = (md) => { const a = md.indexOf('<!-- GEN:verbs -->'), b = md.indexOf('<!-- /GEN:verbs -->'); return a < 0 || b < a ? null : { a: a + '<!-- GEN:verbs -->'.length, b }; };
@@ -61,10 +61,10 @@ async function makeFlatFolder(local) {   // an empty folder holding only the 4 f
   for (const rel of FLAT) fs.writeFileSync(path.join(dir, path.basename(rel)), local ? fs.readFileSync(path.join(ROOT, rel)) : await get(rel));
   return dir;
 }
-// Run one command text as the page prints it. `node common/door/door.js` runs in the checkout; every other command in the flat folder.
+// Run one command text as the page prints it. a command that names `common/door/` (door.js, dotted.js) runs in the checkout; every other command in the flat folder.
 function runBlock(run, ctx) {   // ctx {flat, root, files:[{name,text}]}
   return new Promise((res) => {
-    const cwd = run.cmd.indexOf('common/door/door.js') >= 0 ? ctx.root : ctx.flat;   // a checkout command runs in the checkout; everything else in the 4-file folder
+    const cwd = run.cmd.indexOf('common/door/') >= 0 ? ctx.root : ctx.flat;   // a checkout command runs in the checkout; everything else in the 4-file folder
     (ctx.files || []).forEach(f => { if (run.cmd.indexOf(f.name) >= 0) fs.writeFileSync(path.join(cwd, f.name), f.text + '\n'); });
     const env = Object.assign({}, process.env, { BIM_DOOR_JOURNAL: path.join(ctx.flat, 'journal_' + run.id + '.jsonl') });
     const p = spawn('bash', ['-c', run.cmd], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] }); let o = '', e = '';
@@ -81,7 +81,12 @@ if (require.main === module) (async () => {
   if (!g) { L('FAIL no <!-- GEN:verbs --> markers in ' + page); process.exit(1); }
   const table = '\n' + verbTable(vocab) + '\n';
   if (a.indexOf('--check') >= 0) { const same = md.slice(g.a, g.b) === table; L('verb table ' + (same ? 'equals' : 'DIFFERS from') + ' verbs.json (' + vocab.verbs.length + ' verbs)'); process.exit(same ? 0 : 1); }
-  if (a.indexOf('--write') >= 0 || a.indexOf('--refresh') >= 0) { md = md.slice(0, g.a) + table + md.slice(g.b); L('verb table written: ' + vocab.verbs.length + ' verbs'); }
+  if (a.indexOf('--write') >= 0 || a.indexOf('--refresh') >= 0) {
+    md = md.slice(0, g.a) + table + md.slice(g.b); L('verb table written: ' + vocab.verbs.length + ' verbs');
+    // the coverage sentence's counts come from the vocabulary too (the witness's K1, K2, K5 read them back)
+    const n = (app) => vocab.verbs.filter(v => v.verb.indexOf(app + '.') === 0).length;
+    md = md.replace(/\d+ verbs cover/, vocab.verbs.length + ' verbs cover').replace(/door offers \d+ Viewer verbs/, 'door offers ' + n('viewer') + ' Viewer verbs').replace(/door offers \d+ ERP verbs/, 'door offers ' + n('erp') + ' ERP verbs');
+  }
   if (a.indexOf('--refresh') >= 0) {
     const flat = await makeFlatFolder(a.indexOf('--local') >= 0), { runs, files } = parsePage(md); L('flat folder ' + flat + ', ' + runs.length + ' run blocks');
     const edits = [];

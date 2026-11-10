@@ -1,10 +1,10 @@
 {
   "schema": "oci-patch-provenance/1",
-  "generated_at": "2026-11-09T19:33:24.669Z",
+  "generated_at": "2026-11-10T03:44:44.935Z",
   "bucket": "bim-ootb",
   "engine": {
-    "worktree": "/tmp/wt-upl2",
-    "sha": "f7ee5fa49d15f9dfa32089c8b7f6beb640377160",
+    "worktree": "/tmp/wt-erp-door2",
+    "sha": "529c69e5dc4c5474c3b63319f469cd9a4c4a74f8",
     "behind_origin_main": 0,
     "ahead_origin_main": 0,
     "clean": true,
@@ -20,23 +20,23 @@
   },
   "artifact": {
     "file": "buildings/patches/Duplex_extracted.db.sql",
-    "bytes": 69791,
-    "md5": "0e2cae99c7b2c838c93efb70a896476c",
-    "md5_b64": "DiyumceyyDjJPvtwqJZHbA==",
+    "bytes": 88717,
+    "md5": "112d0f355587dd94d36383931a5cdf17",
+    "md5_b64": "ES0PNVWH3ZTTY4OTGlzfFw==",
     "object": "buildings/patches/Duplex_extracted.db.sql",
     "content_type": "application/sql"
   },
   "target": {
     "exists": true,
-    "etag": "d780fe1c-c21f-4175-ad03-f1cd0e4a798a",
-    "size": "7792",
-    "last-modified": "Thu, 27 Aug 2026 01:13:59 GMT"
+    "etag": "308e6520-2352-494c-9b21-39fa69295955",
+    "size": "69791",
+    "last-modified": "Mon, 09 Nov 2026 19:33:25 GMT"
   },
   "verification": {
-    "cmd": "/tmp/claude-1000/-home-red1-bim-compiler/814199bd-8700-4941-adb3-d07c0050c034/scratchpad/upl/verify_raw.sh",
+    "cmd": "bash common/door/tests/gate_verify_duplex_served.sh",
     "exit": 0,
     "tail": [
-      "  ✅ VIEWER-OPEN the live database holds the dictionary: 4 kinds, their columns, and the generated key equals guid on every element  [[\"Building\"],[\"Storey and Space\"],[\"Element\"],[\"Element Transform\"]]",
+      "  ✅ VIEWER-OPEN the live database holds the dictionary: 5 kinds, their columns, and the generated key equals guid on every element  [[\"Building\"],[\"Storey and Space\"],[\"Element\"],[\"Element Transform\"],[\"Room\"]]",
       "  ✅ VIEWER-OPEN the element count in the Viewer equals the file's  file=1119 viewer=1119",
       "§W-OBJ-VIEWER-OPEN without patch: {\"tables\":\"ERR no such table: ad_table\",\"cols\":\"ERR no such table: ad_column\",\"gen\":\"ERR no such column: elements_meta_uu\",\"elems\":[[1119]],\"kinds\":\"ERR no such table: ad_table\"}",
       "  ✅ VIEWER-OPEN falsifier: with no patch served, the Viewer has no dictionary (it came from the patch)  ERR no such table: ad_table",
@@ -47,8 +47,8 @@
   "verdict": "PASS",
   "failures": [],
   "uploaded": {
-    "at": "2026-11-09T19:33:27.406Z",
-    "etag": "308e6520-2352-494c-9b21-39fa69295955",
+    "at": "2026-11-10T03:44:49.055Z",
+    "etag": "4cb0d90d-2fb7-4ebd-8948-6fbce923e57e",
     "verified": true
   }
 }
