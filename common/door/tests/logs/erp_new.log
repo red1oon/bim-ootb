@@ -1,0 +1,13 @@
+§OBJECT open db=ad_seed-11c985a8c15ba51073a444a9900468a6.db dictionary=present
+§ERP snapshot=hit key=11c985a8c15ba51073a444a9900468a6 ms=157
+§ERP boot db=ad_seed.db replayed_ops=0 oplog=/tmp/erpnew_IgF7aa/draft.ops.jsonl sql_functions=61
+  ✅ N1 header created: the answer starts with number, status DR, number = the stored Document No  number=50000 first=number
+  ✅ N2 callout-filled columns equal the hand-keyed draft's (9 columns)  location=108 pricelist=101 warehouse=103 term=105
+  ✅ N3 line by the document number: Line 10, price, tax, amount = the draft's; header totals follow  line=10 price=3 tax=104 net=6 | header total=6/6 draft=6/6
+  ✅ N4 the created order completes: DR -> CO  ok 
+  ✅ N5a a partner given by NAME ("Standard") resolves to key 112 and the same defaults  bp=112
+  ✅ N5b an unknown name and an ambiguous parent number (60000) are refused with a reason and write nothing  refused: no C_BPartner record is named "No Such Partner 9z" (looked in value, name) | refused: 2 Order records carry number 60000; give the key
+  ✅ N6 mandatory SalesRep_ID left empty: refused naming it, nothing written  refused: mandatory and still empty after the defaults and callouts: SalesRep_ID (give them as column=value)
+  ✅ N7 an unknown column and a missing issotrx are refused, nothing written  refused,refused
+  ✅ N8 an AI's erp.new is a held claim (nothing written); a person's confirm creates it once, a second confirm creates nothing  claim=claim confirmed=ok ops 19->21->21
+§WITNESS_ERP_NEW pass=9 fail=0 inconclusive=0 verdict=PASS
