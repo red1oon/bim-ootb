@@ -814,6 +814,39 @@ const logsOf = f => { const lines = [], orig = console.log; console.log = s => {
       ok('I-5 no register given: read, not stated, provisional (basis says no register)', NR.st && NR.st[0] === 'not-stated' && /no register given/.test(NR.st[1]) && NR.w.provisional === base.prov + base.known + base.terms, 'status=' + JSON.stringify(NR.st) + ' provisional=' + NR.w.provisional);
     }
   }
+  // ── G: §12c slice 1, the gap report of the pre-processor (input_gap). ISSUE: what the walker needed and nobody stated was nowhere listed; a refused sheet, a load with no unit, a class with no real mesh, a model with no rooms must each be a row.
+  {
+    const INPUTS = path.join(M, 'tools', 'project_inputs.js'), shaG = require('crypto').createHash('sha256').update(fs.readFileSync(dxfA)).digest('hex');
+    const regG = st => JSON.stringify([{ no: 'M-101', rev: 'A', status: st, discipline: 'MEP', filekind: 'DXF', sha256: shaG }]);
+    const gapsOf = (file) => { const d = new SQL.Database(new Uint8Array(fs.readFileSync(file))); const r = q(d, 'SELECT fact, element_guid, discipline, why, detail FROM input_gap ORDER BY 1,2,3'); d.close(); return r; };
+    const runG = (tag, st, extra, prep) => { const db = path.join(TMP, 'gap_' + tag + '.db'); fs.copyFileSync(fedA, db); if (prep) prep(db); const out = sh([INPUTS, db, '--register=' + regG(st), dxfA, '--sheet-meta=' + meta].concat(extra || [])); return { out, rows: gapsOf(db), db }; };
+    const gDR = runG('dr', 'DR'), gCO = runG('co', 'CO'), sheetRows = r => r.rows.filter(x => x[0] === 'sheet');
+    ok('G-1 a refused sheet is one "no issued sheet" row; an issued one is none', sheetRows(gDR).length === 1 && sheetRows(gDR)[0][3] === 'no issued sheet' && /M-101\/A refused: status=DR/.test(sheetRows(gDR)[0][4]) && sheetRows(gCO).length === 0 && /§INPUTS-GAP fact=sheet n=1 why=no issued sheet/.test(gDR.out), 'DR rows=' + JSON.stringify(sheetRows(gDR)) + ' CO rows=' + sheetRows(gCO).length);
+    // G-2 mesh: the residential rules ship no binding table
+    const RULES = path.join(M, 'duplex_rules.db'), rd0 = new SQL.Database(new Uint8Array(fs.readFileSync(RULES)));
+    const pairs = q(rd0, 'SELECT DISTINCT disc, ifc_class FROM rule_placement WHERE n_measured > 0'), hadBind = q(rd0, "SELECT count(*) FROM sqlite_master WHERE name='rule_mesh_binding'")[0][0];
+    const boundN = hadBind ? q(rd0, 'SELECT count(*) FROM rule_mesh_binding b WHERE EXISTS (SELECT 1 FROM rule_placement p WHERE p.disc=b.disc AND p.ifc_class=b.ifc_class AND p.n_measured>0)')[0][0] : 0;
+    rd0.run('CREATE TABLE IF NOT EXISTS rule_mesh_binding(disc TEXT, ifc_class TEXT, geometry_hash TEXT, n_of INTEGER, n_total INTEGER, provenance TEXT, src_guids TEXT, PRIMARY KEY (disc, ifc_class))');
+    const one0 = pairs.filter(p => !q(rd0, "SELECT count(*) FROM rule_mesh_binding WHERE disc='" + p[0] + "' AND ifc_class='" + p[1] + "'")[0][0])[0];
+    if (one0) rd0.run("INSERT INTO rule_mesh_binding VALUES(?,?,?,?,?,?,?)", [one0[0], one0[1], 'feedfacefeedface', 1, 1, 'witness fixture', '']);
+    const rulesPlus = path.join(TMP, 'rules_plus_one.db'); fs.writeFileSync(rulesPlus, Buffer.from(rd0.export())); rd0.close();
+    const gM = runG('mesh', 'CO', ['--walk-rules=' + RULES]), gM1 = runG('mesh1', 'CO', ['--walk-rules=' + rulesPlus]), meshRows = r => r.rows.filter(x => /^mesh:/.test(x[0]));
+    if (!pairs.length || !one0) incon('G-2', 'the rules DB has no placeable pair without a binding: nothing to judge');
+    else ok('G-2 every placeable (discipline, class) with no real mesh is a row (hand count from rule_placement); one binding added, one row fewer', meshRows(gM).length === pairs.length - boundN && meshRows(gM1).length === pairs.length - boundN - 1 && !meshRows(gM1).some(x => x[0] === 'mesh:' + one0[1] && x[2] === one0[0]) && meshRows(gCO).length === 0,
+      'pairs=' + pairs.length + ' bound=' + boundN + ' rows=' + meshRows(gM).length + ' afterOneBinding=' + meshRows(gM1).length + ' noWalkRules=' + meshRows(gCO).length);
+    // G-3 unit unknown: one untyped load row with no SI value, written here
+    const anyGuid = (() => { const d = new SQL.Database(new Uint8Array(fs.readFileSync(fedA))); const g = q(d, 'SELECT guid FROM elements_meta LIMIT 1')[0][0]; d.close(); return g; })();
+    const withRow = (si) => (db) => { const d = new SQL.Database(new Uint8Array(fs.readFileSync(db))); d.run('CREATE TABLE IF NOT EXISTS element_pset_native (guid TEXT, pset TEXT, name TEXT, value TEXT, value_si REAL, unit TEXT, source TEXT, PRIMARY KEY (guid, pset, name))');
+      d.run('INSERT OR REPLACE INTO element_pset_native VALUES(?,?,?,?,?,?,?)', [anyGuid, 'PSet_Revit_Type_Electrical - Loads', 'Apparent Load', '1937.5', si, si == null ? null : 'VOLT_AMPERE', 'type']); fs.writeFileSync(db, Buffer.from(d.export())); d.close(); };
+    const gU = runG('unit', 'CO', [], withRow(null)), gU1 = runG('unit1', 'CO', [], withRow(180)), unitRows = r => r.rows.filter(x => x[3] === 'unit unknown');
+    ok('G-3 a load with no unit is a "unit unknown" row naming its element and meaning; with an SI value there is none', unitRows(gU).length === 1 && unitRows(gU)[0][0] === 'load.apparent_va' && unitRows(gU)[0][1] === anyGuid && unitRows(gU1).length === 0, 'rows=' + JSON.stringify(unitRows(gU)) + ' withSI=' + unitRows(gU1).length);
+    // G-4 rooms: decided by the fixture's own space count
+    const dR = new SQL.Database(new Uint8Array(fs.readFileSync(gCO.db))), has = t => q(dR, "SELECT count(*) FROM sqlite_master WHERE name='" + t + "'")[0][0] > 0;
+    const spaces = (has('ifc_spaces') ? q(dR, 'SELECT count(*) FROM ifc_spaces')[0][0] : 0) + q(dR, "SELECT count(*) FROM elements_meta WHERE ifc_class='IfcSpace'")[0][0] + (has('spatial_structure') ? (() => { try { return q(dR, "SELECT count(*) FROM spatial_structure WHERE type='IfcSpace' AND COALESCE(size_x,0)>0.1")[0][0]; } catch (e) { return 0; } })() : 0); dR.close();
+    const roomRows = gCO.rows.filter(x => x[0] === 'rooms');
+    ok('G-4 rooms: the fixture states ' + spaces + ' space(s), so ' + (spaces ? 'no' : 'one') + ' "no rooms in model" row', roomRows.length === (spaces ? 0 : 1), 'spaces=' + spaces + ' rows=' + roomRows.length);
+    log('  G lines: ' + gM.out.split('\n').filter(l => /§INPUTS-GAP/.test(l)).join(' | ').slice(0, 600));
+  }
   log('§VERDICT ' + (fail ? 'CLAIM NOT MET' : inc ? 'INCONCLUSIVE' : 'CLAIM MET') + ' pass=' + pass + ' fail=' + fail + ' inconclusive=' + inc);
   process.exit(fail ? 1 : 0);
 })().catch(e => { console.log('§ERROR ' + (e && e.stack || e)); process.exit(1); });
