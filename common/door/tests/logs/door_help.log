@@ -1,0 +1,9 @@
+  ✅ H1 `!help all` lists exactly the vocabulary (23 verbs)  listed=23
+  ✅ H2 every printed example parses, names real inputs, has all required ones and validates
+  ✅ H3 `!help nosuch` exits 1 and names it  exit=1
+  ✅ H4 help wrote no journal line and exited 0  journal exists=false
+  ✅ H5a `!help erp` lists every erp verb  erp=8
+  ✅ H5b `!help erp.find` has title, each input, harm, who, example
+  ✅ H5c the not-a-command refusal says "Type !help"  {"request":"d-mwafrukv-2008225-1","verb":null,"actor":"human
+  ✅ H6 `!help` shows exactly the verbs flagged common (3)  common=modeller.lines,modeller.try_shift,object.update
+§WITNESS_DOOR_HELP pass=8 fail=0 inconclusive=0 verdict=PASS

@@ -57,7 +57,8 @@
      }
     ]
    },
-   "witness": "modeller/tests/witness_bim_mcp.js#M2a"
+   "witness": "modeller/tests/witness_bim_mcp.js#M2a",
+   "common": true
   },
   {
    "verb": "modeller.try_shift",
@@ -117,7 +118,8 @@
      }
     ]
    },
-   "witness": "modeller/tests/witness_bim_mcp.js#M2b"
+   "witness": "modeller/tests/witness_bim_mcp.js#M2b",
+   "common": true
   },
   {
    "verb": "viewer.counts",
@@ -802,7 +804,8 @@
     "human",
     "ai"
    ],
-   "witness": "common/door/tests/witness_object_rung1.js"
+   "witness": "common/door/tests/witness_object_rung1.js",
+   "common": true
   },
   {
    "verb": "object.attach",
