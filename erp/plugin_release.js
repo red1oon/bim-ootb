@@ -64,7 +64,9 @@
     '#pr-root .pr-dim{color:#8a95a3;font-size:11.5px;padding:6px 0}';   // (the old .pr-row/.pr-badge rules remain for the Release group's own rows)
   function ensureCss() { if (document.getElementById('pr-css')) return; var s = document.createElement('style'); s.id = 'pr-css'; s.textContent = CSS; document.head.appendChild(s); }
 
-  function close() { var r = document.getElementById('pr-root'); if (r) r.remove(); }
+  // A modal belongs to the screen that opened it: Escape closes it (x and backdrop already do); the host closes it on login / logout (idempiere.html doLogin, header Log out).
+  function onKey(e) { if (e.key === 'Escape') close(); }
+  function close() { var r = document.getElementById('pr-root'); if (r) r.remove(); document.removeEventListener('keydown', onKey); }
 
   function renderRelease(host, cur, waitingVer) {
     var el = host.querySelector('#pr-release'); if (!el) return;
@@ -126,6 +128,7 @@
       + '<div class="pr-grp">Bundles (OSGi console)</div><div id="pr-osgi"></div>'
       + '</div></div><div class="pr-backdrop" data-pr-close></div>';
     document.body.appendChild(root);
+    document.addEventListener('keydown', onKey);
     root.querySelectorAll('[data-pr-close]').forEach(function (e) { e.addEventListener('click', close); });
     console.log('§PLUGIN-RELEASE open');
     workerVersion(navigator.serviceWorker && navigator.serviceWorker.controller).then(function (cur) {

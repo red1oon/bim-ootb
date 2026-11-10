@@ -8,9 +8,13 @@ var http = require('http'), fs = require('fs'), path = require('path');
 var { chromium } = require('/home/red1/bim-ootb/tests/node_modules/playwright');
 
 var ROOT = path.join(__dirname, '..');
+// Cross-leak baseline: GardenWorld's BPartners in the shipped seed. Legacy idempiere_test has 18; the seed carries 24 (6 HBA rows, #645) - a seed divergence reported as INFO, NOT a leak.
+var GW_SEED = Number(require('child_process').execFileSync('sqlite3', [path.join(ROOT, 'ad_seed.db'), 'SELECT COUNT(*) FROM c_bpartner WHERE ad_client_id=11'], { encoding: 'utf8' }).trim()), GW_LEGACY = 18;
 var MIME = { '.html': 'text/html', '.js': 'text/javascript', '.wasm': 'application/wasm', '.json': 'application/json', '.css': 'text/css', '.db': 'application/octet-stream' };
 var server = http.createServer(function (req, res) {
-  var f = path.join(ROOT, decodeURIComponent(req.url.split('?')[0]));
+  var rel = decodeURIComponent(req.url.split('?')[0]), f = path.join(ROOT, rel);
+  // idempiere.html loads ../common/comm/semver_strict.js: the browser resolves it to /common/..., which lives at the REPO root, not under erp/ (cause of the plugin_registry page error)
+  if (!fs.existsSync(f) && /^\/common\//.test(rel)) f = path.join(ROOT, '..', rel);
   fs.readFile(f, function (e, buf) {
     if (e) { res.writeHead(404); return res.end('404'); }
     res.writeHead(200, { 'Content-Type': MIME[path.extname(f)] || 'application/octet-stream' });
@@ -31,11 +35,10 @@ function probe() {
     clients: clients,
     acmeId: acmeId,
     windowAccess: one("SELECT COUNT(*) FROM AD_Window_Access WHERE AD_Role_ID=" + roleId),
-    invGrand: one("SELECT grandtotal FROM C_Invoice WHERE AD_Client_ID=" + acmeId),
     invClientScoped: one("SELECT COUNT(*) FROM C_Invoice WHERE AD_Client_ID=" + acmeId),
-    receivableValue: one("SELECT ev.Value FROM C_Invoice i JOIN C_BP_Customer_Acct ba ON ba.C_BPartner_ID=i.C_BPartner_ID " +
-      "JOIN C_ValidCombination vc ON vc.C_ValidCombination_ID=ba.C_Receivable_Acct " +
-      "JOIN C_ElementValue ev ON ev.C_ElementValue_ID=vc.Account_ID WHERE i.AD_Client_ID=" + acmeId),
+    receivableValue: one("SELECT ev.Value FROM C_BP_Customer_Acct ba JOIN C_ValidCombination vc ON vc.C_ValidCombination_ID=ba.C_Receivable_Acct " +
+      "JOIN C_ElementValue ev ON ev.C_ElementValue_ID=vc.Account_ID WHERE ba.AD_Client_ID=" + acmeId + " LIMIT 1"),
+    invLines: one("SELECT COUNT(*) FROM C_InvoiceLine WHERE AD_Client_ID=" + acmeId),
     gwBp: one("SELECT COUNT(*) FROM C_BPartner WHERE AD_Client_ID=11"),
     acmeChart: one("SELECT COUNT(*) FROM C_ElementValue WHERE AD_Client_ID=" + acmeId)
   };
@@ -85,21 +88,25 @@ function probe() {
   console.log('═══ W-GENESIS-RESIDENT-LIVE — a born tenant becomes a RESIDENT, login-able client in a REAL browser ═══\n');
   logs.filter(function (l) { return /GENESIS-RESIDENT-LIVE|CRITIC-FRONTDOOR|login-step0/.test(l); }).forEach(function (l) { console.log('  ' + l); });
   console.log('  probe → clients=[' + p.clients.join(',') + '] acme=' + p.acmeId + ' winAccess=' + p.windowAccess
-    + ' inv$=' + p.invGrand + ' receivable=' + p.receivableValue + ' chart=' + p.acmeChart + ' gwBp=' + p.gwBp);
+    + ' inv=' + p.invClientScoped + ' receivable=' + p.receivableValue + ' chart=' + p.acmeChart + ' gwBp=' + p.gwBp);
   console.log('  step0 DOM names=[' + step0Names.join(',') + ']  enteredUser=' + enterUser + '  reloadAcme=' + pReload + '\n');
 
   var L = logs.join('\n'), pass = 0, fail = 0;
   function ck(ok, msg) { (ok ? pass++ : fail++); console.log((ok ? '  ✓ ' : '  ✗ FAIL ') + msg); }
-  ck(/§W-GENESIS-RESIDENT-LIVE handoff client=AcmeCo groups=7/.test(L), 'genesis.html births + hands off the bundle (G1..G7)');
+  // The count is not a legacy fact (it grew with #2791/#2792: born groups=8); the claim is the handoff carries exactly what the birth made, nothing appended (the old 7/9 assertion was satisfied by the appended invoice group).
+  var hm = /§W-GENESIS-RESIDENT-LIVE handoff client=AcmeCo groups=(\d+)/.exec(L), bm = /§W-GENESIS-WIZARD-LIVE born client=AcmeCo groups=(\d+)/.exec(L);
+  ck(!!hm && !!bm && hm[1] === bm[1], 'genesis.html hands off exactly the groups the birth made (handoff ' + (hm && hm[1]) + ' == born ' + (bm && bm[1]) + ', no appended group)');
   ck(/§GENESIS-RESIDENT-LIVE install name=AcmeCo client=17 rows=\d+ grants=\d+/.test(L), 'boot installs the born tenant (reband+merge+grant) at client 17');
   ck(/§GENESIS-RESIDENT-LIVE persist .* resident=Y/.test(L), 'merged tenant persisted to the resident cache');
   ck(Number(p.acmeId) === 17, 'born tenant is resident as AD_Client 17');
   ck(p.clients.indexOf('AcmeCo') >= 0 && p.clients.indexOf('GardenWorld') >= 0, 'login switcher lists BOTH AcmeCo and GardenWorld (0 leak)');
   ck(step0Names.indexOf('AcmeCo') >= 0, 'the born tenant appears in the step-0 switcher DOM');
   ck(Number(p.windowAccess) > 300, 'born admin role has a workable menu (full dictionary window access) — ' + p.windowAccess);
-  ck(Number(p.invClientScoped) >= 1 && Number(p.invGrand) === 109, 'the invoice window renders ITS data ($109 invoice scoped to client 17)');
-  ck(String(p.receivableValue) === '12110', 'the invoice account chain resolves to the oracle receivable (12110) — posts to the cent');
-  ck(Number(p.gwBp) === 18, 'GardenWorld data untouched (18 BPartners) — 0 cross-leak');
+  // Legacy Initial Client Setup creates no invoice (MSetup.java: 0 MInvoice) - the born company starts with 0 invoices (F4)
+  ck(Number(p.invClientScoped) === 0 && Number(p.invLines) === 0, 'the born company has 0 invoices / 0 invoice lines, as legacy MSetup makes none (' + p.invClientScoped + '/' + p.invLines + ')');
+  ck(String(p.receivableValue) === '12110', 'the default customer receivable account chain resolves to the oracle receivable (12110)');
+  console.log('  §GW-SEED-INFO seed=' + GW_SEED + ' legacy=' + GW_LEGACY + (GW_SEED !== GW_LEGACY ? ' DIVERGENCE ' + (GW_SEED - GW_LEGACY) + ' non-legacy rows (HBA seed, see MIGRATE_INSTALL_TENANT §CLOSEOUT)' : ''));
+  ck(Number(p.gwBp) === GW_SEED, 'GardenWorld data untouched by the birth (' + p.gwBp + ' BPartners == shipped seed ' + GW_SEED + ') — 0 cross-leak');
   ck(entered, 'the born tenant ENTERS — its user list shows (' + enterUser + ')');
   ck(Number(pReload) === 17, 'the born tenant STICKS — still resident after a plain reload (no param)');
   ck(pageErrors.length === 0, 'zero page errors' + (pageErrors.length ? ' — ' + pageErrors[0] : ''));

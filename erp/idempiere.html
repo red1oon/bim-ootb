@@ -583,7 +583,7 @@
 <script src="field_health.js?v=1"></script><!-- SYSTEM_MONITOR_WIDGETS §H — 4 field-health widgets engine (ERP.FieldHealth.fold); folded into the System Monitor panel below -->
 <script src="system_monitor.js?v=4"></script><!-- SYSTEM_ADMIN_LANE §6 — iDempiere System Monitor, serverless reframe (window.SystemMonitor) + §H field-health widgets -->
 <script src="osgi_console.js?v=3"></script>
-<script src="plugin_release.js?v=3"></script><!-- SYSTEM_ADMIN_LANE §6 — Plugin Management + gated Release/Update surface (window.PluginRelease) -->
+<script src="plugin_release.js?v=4"></script><!-- SYSTEM_ADMIN_LANE §6 — Plugin Management + gated Release/Update surface (window.PluginRelease) -->
 <script src="erp_preview.js?v=3"></script>
 <!-- CONSISTENCY_FINISH.md §K-1/§K-2 — icons.js (verbatim glyph DATA) + the shared overlay kit load BEFORE
      the import overlays (migrate_showme builds its STEPS at module load and renders Lucide icons). -->
@@ -1463,6 +1463,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     _session = SES.buildContext(db, _loginUser.id, { roleId: rid, orgId: oid });
     if (!_session) { $('idmp-login-note').textContent = 'That user has no roles — cannot log in.'; return; }
     $('idmp-login').style.display = 'none';
+    if (window.PluginRelease) window.PluginRelease.close();   // F5: the Plugins & Releases modal was opened from the sign-in page; it must not float over the next screen
     applySession();
   }
   // §UDP-8 — AD_Session (bim-compiler prompts/ERP_DEPTH_FILM.md §UDP-8; Witness: W-UDP8-LIVE). Legacy writes one row per login
@@ -7859,7 +7860,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     (function () { var lsb = $('idmp-switch-btn'); if (!lsb) return;
       if (window.ICONS && window.ICONS.logOut) lsb.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + window.ICONS.logOut.svg + '</svg>';
       lsb.title = 'Log out';
-      lsb.addEventListener('click', function () { _sessionClose(); showLogin('user'); });   // §UDP-8 MSession.logout (:314-320)
+      lsb.addEventListener('click', function () { _sessionClose(); if (window.PluginRelease) window.PluginRelease.close(); showLogin('user'); });   // §UDP-8 MSession.logout (:314-320)
     })();
     $('idmp-login').addEventListener('click', function (e) { if (e.target === $('idmp-login') && _session) $('idmp-login').style.display = 'none'; });
     boot().catch(function (e) { console.error('§IDEMPIERE boot error: ' + e.message); $('idmp-load-msg').textContent = 'Boot error: ' + e.message; });
