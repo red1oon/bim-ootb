@@ -647,6 +647,46 @@ const DXF = Buffer.from('0\nSECTION\n2\nENTITIES\n0\nLINE\n8\nWALLS\n10\n0.0\n20
     say('§W-BIMDOC-CHAIN-LINE ' + ln + ' status=' + JSON.stringify(st));
     verdict('X-1 the measure moves one link', !ln ? 'INCONCLUSIVE' : (judgeC(ln, hand) === 'PASS' && judgeC(ln, { before: 2, after: 4 }) === 'FAIL' && st && st.docstatus === 'CO' ? 'PASS' : 'FAIL'), 'line "' + ln + '" vs hand count 2 -> 3; judge fed 2 -> 4 says ' + judgeC(ln, { before: 2, after: 4 }));
   }
+  // ════════ §REGISTER-EXPORT (bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md): the register as JSON, an AD_Process under the gear; the file comes back through IProcessUI.download ════════
+  //   ISSUE: the walker's register gate needs the BIM Document rows as a file; nothing produced it. EX-1 the gear item, the file = a hand count over the tip; EX-2 red judge; EX-3 another project's rows stay out.
+  {
+    const docs = await rd("SELECT bim_document_id AS id, deliverableno AS no, revision AS rev, docstatus AS st, discipline AS di, filekind AS fk, name AS nm, c_project_id AS p FROM bim_document WHERE COALESCE(isactive,'Y')<>'N'");
+    const mine = docs.filter(d => Number(d.p) === Number(PRJ.c_project_id)), other = docs.filter(d => Number(d.p) !== Number(PRJ.c_project_id));
+    const latest = r => !mine.some(n => String(n.no) === String(r.no) && (Number(n.rev) > Number(r.rev) || (Number(n.rev) === Number(r.rev) && Number(n.id) > Number(r.id))));
+    const hand = mine.filter(r => latest(r) || r.st === 'RE').map(r => ({ id: Number(r.id), no: r.no, rev: Number(r.rev), status: r.st, discipline: r.di || null, filekind: r.fk || null, name: r.nm || null }))
+      .sort((a, b) => String(a.no).localeCompare(String(b.no)) || a.rev - b.rev || a.id - b.id);
+    const attached = new Set((await rd('SELECT record_id AS r FROM ad_attachment WHERE ad_table_id=' + T_ID)).map(r => Number(r.r)));
+    if (!hand.length) verdict('EX-1 register export', 'INCONCLUSIVE', 'the fixture project holds no document at this point');
+    else {
+      await openDoc2(hand[0].id); await page.evaluate(() => { window.__procNoDownload = true; });
+      const n0 = mark(), g = await gearRun('ExportRegister', 0);
+      for (let i = 0; i < 80 && !since(n0, /^§BIMDOC-REGISTER-EXPORT /).length; i++) await sleep(250);
+      const line = since(n0, /^§BIMDOC-REGISTER-EXPORT /)[0] || null, dl = since(n0, /^§PROC-DOWNLOAD /)[0] || null;
+      const file = await page.evaluate(async () => { const p = window.AdProcess && window.AdProcess.lastDownload && window.AdProcess.lastDownload(); if (!p) return null; const d = await p; return d ? { file: d.file, text: new TextDecoder().decode(d.bytes), sha: d.sha256 } : null; });
+      let rows = null; try { rows = file ? JSON.parse(file.text) : null; } catch (e) { rows = null; }
+      const KEYS = ['no', 'rev', 'status', 'discipline', 'filekind', 'sha256', 'name'];
+      const judge = (got) => { const f = [];
+        if (!Array.isArray(got) || got.length !== hand.length) return ['rows ' + (got && got.length) + ' vs hand ' + hand.length];
+        got.forEach((r, i) => { const h = hand[i]; if (JSON.stringify(Object.keys(r)) !== JSON.stringify(KEYS)) f.push('keys of row ' + i + ' ' + Object.keys(r));
+          ['no', 'rev', 'status', 'discipline', 'filekind', 'name'].forEach(k => { if (String(r[k]) !== String(h[k]) || (k === 'rev' && typeof r[k] !== 'number')) f.push(h.no + '/' + h.rev + ' ' + k + '=' + r[k] + ' hand=' + h[k]); });
+          const hasFile = attached.has(h.id) && !!h.filekind; if (r.sha256 != null && !/^[0-9a-f]{64}$/.test(r.sha256)) f.push(h.no + ' sha256 not a digest'); if (r.sha256 != null && !hasFile) f.push(h.no + '/' + h.rev + ' has a sha256 but no attachment'); });
+        return f; };
+      const f1 = [];
+      if (!g.item) f1.push('the gear does not list ExportRegister: ' + JSON.stringify((g.items || []).map(x => x.comp)));
+      if (!g.res || !new RegExp('^Exported=' + hand.length + ' File=bim_register_').test((g.res.msg || '').trim())) f1.push('result ' + JSON.stringify(g.res));
+      if (!line || !dl || !file) f1.push('no file handed back (line=' + !!line + ' download=' + !!dl + ')');
+      const jf = rows ? judge(rows) : ['file not JSON']; jf.forEach(x => f1.push(x));
+      const known = rows ? rows.filter(r => r.sha256 === sha(DXF) || r.sha256 === BIG_SHA).length : 0, withSha = rows ? rows.filter(r => r.sha256).length : 0, sup = hand.filter(h => h.status === 'RE').length;
+      say('§W-BIMDOC-REGISTER ' + line + ' | ' + dl + ' | ui=' + JSON.stringify(g.res) + ' | hand rows=' + hand.length + ' superseded=' + sup + ' attachedRows=' + hand.filter(h => attached.has(h.id)).length + ' withSha=' + withSha + ' shaOfKnownFixtureBytes=' + known);
+      verdict('EX-1 the gear exports the register: the file equals the hand count over the tip', f1.length ? 'FAIL' : 'PASS', f1.length ? f1.slice(0, 5).join(' ; ') : hand.length + ' rows (' + sup + ' superseded), 7 keys each, ' + withSha + ' with a file digest (' + known + ' equal to the fixture bytes\' own sha256)');
+      if (rows && !jf.length) { const bad = JSON.parse(JSON.stringify(rows)); bad[0].rev = bad[0].rev + 1;
+        verdict('EX-2 red: the judge fed a register with one revision altered says FAIL', judge(bad).length ? 'PASS' : 'FAIL', 'altered ' + bad[0].no + ' rev -> ' + bad[0].rev + ': ' + (judge(bad)[0] || 'not caught')); }
+      else verdict('EX-2 red judge', 'INCONCLUSIVE', 'no clean export to alter');
+      if (!other.length) say('§W-BIMDOC-REGISTER EX-3 NOT JUDGED: no document of another project exists in this run');
+      else verdict('EX-3 a document of another project is not in the file', rows && !rows.some(r => other.some(o => String(o.no) === String(r.no) && Number(o.rev) === Number(r.rev) && !mine.some(m => String(m.no) === String(o.no)))) ? 'PASS' : 'FAIL', 'otherProjectDocs=' + other.length);
+      await page.evaluate(() => { window.__procNoDownload = false; });
+    }
+  }
   return finish();
 
   function finish() {

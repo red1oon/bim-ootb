@@ -22,6 +22,7 @@ const STD = { ad_client_id: 0, ad_org_id: 0, isactive: 'Y', created: NOW, create
 const T_ID = 9541001, W_ID = 9541001, TAB_OWN = 9541001, TAB_PRJ = 9541002, MENU_ID = 9541001, TREE = 10, MENU_PARENT = 160, PRJ_WIN = 130, PRJ_AFTER_TAB = 796;
 const R_STATUS = 9541001, R_DISC = 9541002, R_KIND = 9541003, R_REV = 9541004;
 const COL0 = 9541201, FLD_OWN0 = 9541301, FLD_PRJ0 = 9541401, LIST0 = 9541101, DT0 = 9541500;
+const P_EXPORT = 9541002, P_EXPORT_CLASS = 'org.kernel.bim.process.BIMDocumentRegisterExport';   // §REGISTER-EXPORT (bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md)
 const P_OPEN = 9541001, P_OPEN_CLASS = 'org.kernel.bim.process.BIMDocumentOpen', VCOL0 = 9541251, VFLD0 = 9541451, T_TASK = 584, T_PHASE = 576, TAB_TASK = 490, TAB_PHASE = 478;
 export const TABLE = 'BIM_Document';
 
@@ -63,8 +64,10 @@ const COLS = [
   C('DocAction', 'Document Action', 28, 135, 2, 'Y', 'CO', '', true, true),
   C('Processed', 'Processed', 20, null, 1, 'Y', 'N', 'R', true, false),
   C('Reversal_ID', 'Superseded By', 30, R_REV, 22, 'N', null, 'R', true, true),
-  C('OpenInApp', 'Open in Modeller / Viewer', 28, null, 1, 'N', null, 'B', true, true)
+  C('OpenInApp', 'Open in Modeller / Viewer', 28, null, 1, 'N', null, 'B', true, true),
+  C('ExportRegister', 'Export Register (JSON)', 28, null, 1, 'N', null, 'B', true, true)
 ];
+const BTN_PROCESS = { OpenInApp: P_OPEN, ExportRegister: P_EXPORT };   // a Button column -> its AD_Process (gear only: IsToolbarButton Y)
 const colId = (n) => COL0 + COLS.findIndex((c) => c.n === n);
 const NUMERIC_REFS = { 11: 1, 12: 1, 13: 1, 18: 1, 19: 1, 29: 1, 30: 1 };
 const lc = (s) => s.toLowerCase();
@@ -83,7 +86,7 @@ const columns = COLS.map((c, i) => Object.assign({ ad_column_id: COL0 + i, ad_ta
   defaultvalue: c.def, iskey: c.fl.indexOf('K') >= 0 ? 'Y' : 'N', isparent: c.fl.indexOf('P') >= 0 ? 'Y' : 'N', ismandatory: c.m, isupdateable: c.fl.indexOf('K') >= 0 ? 'N' : 'Y',
   isidentifier: c.fl.indexOf('I') >= 0 || c.fl.indexOf('K') >= 0 ? 'Y' : 'N', seqno: c.fl.indexOf('I') >= 0 ? 1 : 0, istranslated: 'N', isencrypted: 'N', isselectioncolumn: c.n === 'DeliverableNo' || c.n === 'Name' ? 'Y' : 'N',
   issyncdatabase: 'N', isalwaysupdateable: 'N', isallowlogging: 'Y', isallowcopy: 'Y', ad_column_uu: 'bimdoc-col-' + (COL0 + i), version: 0,
-  ad_process_id: c.fl.indexOf('B') >= 0 ? P_OPEN : null, istoolbarbutton: c.fl.indexOf('B') >= 0 ? 'Y' : 'N' }, STD));
+  ad_process_id: c.fl.indexOf('B') >= 0 ? (BTN_PROCESS[c.n] || null) : null, istoolbarbutton: c.fl.indexOf('B') >= 0 ? 'Y' : 'N' }, STD));
 const window_ = Object.assign({ ad_window_id: W_ID, name: 'BIM Document', description: 'The deliverables of a project: sheets and model files, issued in the firm\'s own states', windowtype: 'M', issotrx: 'Y', isdefault: 'N', ad_window_uu: 'bimdoc-window-' + W_ID }, STD);
 const tabOwn = Object.assign({ ad_tab_id: TAB_OWN, ad_window_id: W_ID, name: 'BIM Document', description: 'BIM Document', ad_table_id: T_ID, seqno: 10, tablevel: 0, issinglerow: 'Y', isinfotab: 'N', istranslationtab: 'N', isreadonly: 'N',
   hastree: 'N', issorttab: 'N', isinsertrecord: 'Y', isadvancedtab: 'N', ad_tab_uu: 'bimdoc-tab-' + TAB_OWN, orderbyclause: 'DeliverableNo, Revision' }, STD);
@@ -116,6 +119,9 @@ const procOpen = Object.assign({ ad_process_id: P_OPEN, value: 'BIM_Document_Ope
   help: 'The file kind of the document names the app (the Description of its BIM File Kind list row). The attached file of that kind is put in the browser file store and the app opens it by its sha256.',
   accesslevel: '3', isreport: 'N', isdirectprint: 'N', classname: P_OPEN_CLASS, statistic_count: 0, statistic_seconds: 0, isbetafunctionality: 'N', isserverprocess: 'N', showhelp: 'N', allowmultipleexecution: 'N',
   ad_process_uu: 'bimdoc-process-' + P_OPEN }, STD);
+const procExport = Object.assign({}, procOpen, { ad_process_id: P_EXPORT, value: 'BIM_Document_Register_Export', name: 'Export Register (JSON)', description: 'The BIM Document register of this document\'s project as a JSON file',
+  help: 'Every deliverable of the project at its latest revision, plus the superseded revisions: no, rev, status, discipline, filekind, sha256 of the attached file, name. Read only.',
+  classname: P_EXPORT_CLASS, ad_process_uu: 'bimdoc-process-' + P_EXPORT });
 const menu = Object.assign({ ad_menu_id: MENU_ID, name: 'BIM Document', description: 'The deliverables of a project', issummary: 'N', issotrx: 'Y', isreadonly: 'N', action: 'W', ad_window_id: W_ID, iscentrallymaintained: 'Y', ad_menu_uu: 'bimdoc-menu-' + MENU_ID }, STD);
 const node = { ad_tree_id: TREE, node_id: MENU_ID, parent_id: MENU_PARENT, seqno: 4, ad_client_id: 0, ad_org_id: 0, isactive: 'Y', created: NOW, createdby: 100, updated: NOW, updatedby: 100 };
 
@@ -129,7 +135,7 @@ export const manifest = {
     { table: 'ad_reference', idCol: 'ad_reference_id', rows: refRows },
     { table: 'ad_ref_list', idCol: 'ad_ref_list_id', rows: lists },
     { table: 'ad_ref_table', idCol: 'ad_ref_table_uu', rows: [refTable] },
-    { table: 'ad_process', idCol: 'ad_process_id', rows: [procOpen] },
+    { table: 'ad_process', idCol: 'ad_process_id', rows: [procOpen, procExport] },
     { table: 'ad_table', idCol: 'ad_table_id', rows: [table] },
     { table: 'ad_column', idCol: 'ad_column_id', rows: columns.concat(vcolumns) },
     { table: 'ad_window', idCol: 'ad_window_id', rows: [window_] },
@@ -203,6 +209,32 @@ function openChecks(q, id) {   // q(sql) -> rows; everything here is a dictionar
   const cx = { tableId: T_ID, tableName: TABLE, recordId: Number(id), recordUU: row.bim_document_uu ? String(row.bim_document_uu) : null };
   return { row, kind, app: app.d, cx };
 }
+// §REGISTER-EXPORT: the register of the document's project, read through the caller's reader (the process transaction = the tip). Latest revision of each deliverable
+//   (the LATEST rule of the progress columns) plus every superseded row (DocStatus RE). Order: no, then rev.
+export function registerRows(q, id) {
+  const doc = q('SELECT c_project_id AS p FROM bim_document WHERE bim_document_id=' + Number(id))[0];
+  if (!doc || doc.p == null) throw new Error('Export Register: the document has no project');
+  const pv = q('SELECT value AS v FROM c_project WHERE c_project_id=' + Number(doc.p))[0];
+  const all = q("SELECT bim_document_id AS id, deliverableno AS no, revision AS rev, docstatus AS status, discipline, filekind, name, bim_document_uu AS uu FROM bim_document d WHERE d.c_project_id=" + Number(doc.p) + " AND COALESCE(d.isactive,'Y')<>'N'");
+  const latestOf = (r) => !all.some((n) => String(n.no) === String(r.no) && (Number(n.rev) > Number(r.rev) || (Number(n.rev) === Number(r.rev) && Number(n.id) > Number(r.id))));
+  const rows = all.filter((r) => latestOf(r) || r.status === 'RE').map((r) => ({ id: Number(r.id), uu: r.uu || null, no: r.no, rev: Number(r.rev), status: r.status, discipline: r.discipline || null, filekind: r.filekind || null, sha256: null, name: r.name || null, latest: latestOf(r) }));
+  rows.sort((a, b) => String(a.no).localeCompare(String(b.no)) || a.rev - b.rev || a.id - b.id);
+  return { projectId: Number(doc.p), projectValue: pv ? pv.v : null, rows, latest: rows.filter((r) => r.latest).length, superseded: rows.filter((r) => r.status === 'RE').length };
+}
+// the attached file's own digest, per row: the stored entry's sha256, else the SHA-256 of the entry's bytes; nothing attached (or no entry of the row's kind) -> null, never invented. Read only: nothing is promoted.
+async function registerDigests(rows) {
+  const A = globalThis.__idmpAttach, AT = A ? await A.load() : null, host = A ? A.host() : null;
+  if (!AT) return rows;
+  const hex = async (bytes) => Array.prototype.map.call(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), (x) => ('0' + x.toString(16)).slice(-2)).join('');
+  for (const r of rows) {
+    if (!r.filekind) continue;
+    const att = AT.lookup(host, { tableId: T_ID, tableName: TABLE, recordId: r.id, recordUU: r.uu ? String(r.uu) : null }); if (!att) continue;
+    let st; try { st = await AT.load(att); } catch (e) { console.log('§BIMDOC-REGISTER-EXPORT attachment unreadable id=' + r.id + ' ' + (e && e.message)); continue; }
+    const ent = st.entries.filter((e) => e.name.toLowerCase().endsWith('.' + String(r.filekind).toLowerCase()))[0]; if (!ent) continue;
+    r.sha256 = ent.sha256 ? String(ent.sha256) : (ent.data ? await hex(ent.data) : null);
+  }
+  return rows;
+}
 async function openInApp(id, chk) {
   const A = globalThis.__idmpAttach, refuse = (why) => { console.log('§BIMDOC-OPEN REFUSED id=' + id + ' reason=' + why); return null; };
   if (!A) return refuse('no-attachment-module');
@@ -236,8 +268,8 @@ export async function activate(ctx) {
   const dtN = dts.length ? ctx.dict.insert('c_doctype', 'c_doctype_id', dts) : 0;
   // the roles that can open the Project window can open this one (and its sub-tab rides the Project window)
   const acc = q('SELECT ad_role_id AS r, ad_client_id AS c, isreadwrite AS rw FROM ad_window_access WHERE ad_window_id=? AND isactive=\'Y\'', [PRJ_WIN]);
-  const accRows = acc.map((a) => ({ ad_window_id: W_ID, ad_role_id: a.r, ad_client_id: a.c, ad_org_id: 0, isactive: 'Y', created: NOW, createdby: 100, updated: NOW, updatedby: 100, isreadwrite: a.rw || 'Y', ad_window_access_uu: 'bimdoc-access-' + a.r }));
-  const accN = accRows.length ? ctx.dict.insert('ad_window_access', 'ad_window_access_uu', accRows) : 0;
+  // Window and process access are the HOST's (plugin_registry.js §PLUGIN-ROLE-ACCESS = PackInHandler.updateRoleAccess: every active non-manual role by access level). This bundle used to copy the
+  //   Project window's roles itself; with the host pass both wrote AD_Window_Access and the bundle failed to start (UNIQUE ad_window_id, ad_role_id). One implementation: the host's.
   // AD_Document_Action_Access: legacy's DocumentTypeVerify gives a new document type every action for every role; the FSM family then narrows what is offered (checkActionAccess filters the offer by these rows)
   const acts = q('SELECT ad_ref_list_id AS id FROM ad_ref_list WHERE ad_reference_id=135 AND isactive=\'Y\' ORDER BY 1').map((r) => Number(r.id));
   const roles = Array.from(new Set(acc.map((a) => Number(a.r)))), daa = [];
@@ -254,8 +286,6 @@ export async function activate(ctx) {
   if (ctx.docFsm) ctx.docFsm.register(T_ID, FAMILY);
   globalThis.BimDocProgress = { compute: computeProgress, table: lc(TABLE), tableId: T_ID, states: STATES, virtual: VIRTUAL };
   // the Open process: the roles that open the Project window may run it (AD_Process_Access, as the window access above), and its class (owner-scoped, removed on Stop)
-  const pacc = acc.map((a) => ({ ad_process_id: P_OPEN, ad_role_id: a.r, ad_client_id: a.c, ad_org_id: 0, isactive: 'Y', created: NOW, createdby: 100, updated: NOW, updatedby: 100, isreadwrite: 'Y', ad_process_access_uu: 'bimdoc-process-access-' + a.r }));
-  const paccN = pacc.length ? ctx.dict.insert('ad_process_access', 'ad_process_access_uu', pacc) : 0;
   if (ctx.process && ctx.process.defineProcess) ctx.process.defineProcess(P_OPEN_CLASS, function (SvrProcess) {
     function BIMDocumentOpen() { SvrProcess.call(this); }
     BIMDocumentOpen.prototype = Object.create(SvrProcess.prototype);
@@ -269,7 +299,25 @@ export async function activate(ctx) {
       return 'Opening ' + chk.row.deliverableno + ' (' + chk.kind + ') in ' + chk.app;
     };
     return BIMDocumentOpen;
-  });
-  console.log('§BIMDOC-PLUGIN start table=' + T_ID + ' cols=' + COLS.length + ' window=' + W_ID + ' doctypes=' + dtN + ' clients=[' + clients.join(',') + '] windowAccess=' + accN + ' family=' + FAMILY.name + ' (dictionary staged by the host, refcounted)');
+  }, { harm: 'writes' });   // promote rewrites the attachment row and fills the file store
+  // the register export (§REGISTER-EXPORT): read only; the file goes back through IProcessUI.download (AdProcess.download)
+  if (ctx.process && ctx.process.defineProcess) ctx.process.defineProcess(P_EXPORT_CLASS, function (SvrProcess) {
+    function BIMDocumentRegisterExport() { SvrProcess.call(this); }
+    BIMDocumentRegisterExport.prototype = Object.create(SvrProcess.prototype);
+    BIMDocumentRegisterExport.prototype.prepare = function () { /* no parameters */ };
+    BIMDocumentRegisterExport.prototype.doIt = function () {
+      const trx = this.get_TrxName(), id = this.getRecord_ID(), ui = this.processUI;
+      if (!id) throw new Error('Export Register: no document');
+      const reg = registerRows((sql) => trx.q(sql), id);
+      const file = 'bim_register_' + String(reg.projectValue || reg.projectId).replace(/[^A-Za-z0-9_.-]+/g, '_') + '.json';
+      registerDigests(reg.rows).then((rows) => {
+        const text = JSON.stringify(rows.map(({ no, rev, status, discipline, filekind, sha256, name }) => ({ no, rev, status, discipline, filekind, sha256, name })), null, 2);
+        return ui.download(file, text, 'application/json').then((d) => console.log('§BIMDOC-REGISTER-EXPORT project=' + reg.projectId + ' rows=' + rows.length + ' latest=' + reg.latest + ' superseded=' + reg.superseded + ' withFile=' + rows.filter((r) => r.sha256).length + ' sha256Of=' + (d && d.sha256)));
+      }).catch((e) => console.log('§BIMDOC-REGISTER-EXPORT FAILED ' + (e && e.message)));
+      return 'Exported=' + reg.rows.length + ' File=' + file;
+    };
+    return BIMDocumentRegisterExport;
+  }, { harm: 'read' });
+  console.log('§BIMDOC-PLUGIN start table=' + T_ID + ' cols=' + COLS.length + ' window=' + W_ID + ' doctypes=' + dtN + ' clients=[' + clients.join(',') + '] windowAccess=host family=' + FAMILY.name + ' (dictionary staged by the host, refcounted)');
 }
 export async function deactivate() { console.log('§BIMDOC-PLUGIN stop table=' + T_ID); }   // the scope removes the DocAction class, the process class and the staged rows by owner
