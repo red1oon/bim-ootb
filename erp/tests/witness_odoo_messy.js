@@ -69,6 +69,10 @@ function verdict(cs) { var c = CASES[cs] || { judged: 0, failed: 0 }, v = !c.jud
   say('§OM-SUMMARY ' + J(sh.map(function (s) { return s.item + ' file=' + s.infile + ' will=' + s.will + ' refused=' + s.refused + (s.refused ? ' (' + s.reason + ')' : ''); })));
   var res = AF.execute(withT, 'org.kernel.odoo.MigrateFromOdoo', files(), cur);
   if (res.ok && res.ops && res.ops.length) k.commit(S, res.ops, { ws: 'odoo_messy' });
+  // stage 2 (since §E1, bim-ootb #2787): the opening stock is completed by the form's `after` (Import Inventory, DocAction CO) in its own transaction — without it no M_Inventory exists
+  var res2 = res.ok ? AF.executeAfter(withT, 'org.kernel.odoo.MigrateFromOdoo', files(), cur) : { ok: false, ops: [], msg: 'stage 1 refused' };
+  if (res2.ok && res2.ops && res2.ops.length) k.commit(S, res2.ops, { ws: 'odoo_messy' });
+  say('§OM-AFTER ok=' + res2.ok + ' ops=' + (res2.ops || []).length + ' msg=' + String(res2.msg).slice(0, 200));
   var C1 = counts(), gain = {}; TABLES.forEach(function (t) { gain[t] = C1[t] - C0[t]; });
   say('§OM-LOAD ok=' + res.ok + ' ops=' + (res.ops || []).length + ' gain=' + J(gain));
   check('LOAD', 'clean', 'the summary refuses no row of the messy export', !r2.some(function (r) { return /^⚠/.test(r.item); }) && refused.length === 0, refused);
