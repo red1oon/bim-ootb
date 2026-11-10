@@ -1,0 +1,15 @@
+  §RULES-FLEET done file=duplex_rules.db cells=0 readers=8 (SampleHouse,Duplex,SampleCastle,HHS,Clinic,Hospital,HospitalGarage,Terminal) notReaders= walks=42 moved=0 out=/tmp/wrfleet-m4JS0u/empty_duplex_rules.checked.json
+§W-RULES-FLEET F1 duplex_rules.db readers=SampleHouse,Duplex,SampleCastle,HHS,Clinic,Hospital,HospitalGarage,Terminal roles=["SampleHouse:own","Duplex:own","SampleCastle:own","HHS:schedule","Clinic:schedule","Hospital:schedule","HospitalGarage:schedule","Terminal:schedule"] walks=42 placed=27937
+§PASS F1 EMPTY-EDIT duplex_rules.db (every reader walked, nothing moved)  readers=8 walks=42 moved=0
+  §RULES-FLEET done file=terminal_rules.db cells=0 readers=8 (SampleHouse,Duplex,SampleCastle,HHS,Clinic,Hospital,HospitalGarage,Terminal) notReaders= walks=42 moved=0 out=/tmp/wrfleet-m4JS0u/empty_terminal_rules.checked.json
+§W-RULES-FLEET F1 terminal_rules.db readers=SampleHouse,Duplex,SampleCastle,HHS,Clinic,Hospital,HospitalGarage,Terminal roles=["SampleHouse:borrowFP","Duplex:borrowFP","SampleCastle:borrowFP","HHS:own","Clinic:own","Hospital:own","HospitalGarage:own","Terminal:own"] walks=42 placed=27937
+§PASS F1 EMPTY-EDIT terminal_rules.db (every reader walked, nothing moved)  readers=8 walks=42 moved=0
+§DW module loaded
+§WALKNODE fetch mep_rw.db?v=5 -> modeller/mep_rw.db
+§RW_INIT mep_rw.db loaded bom=188 patterns=19 anchors=5479 offsets=15 shims=11 arc_env=1
+§W-RULES-FLEET F2 pick {"rowid":78,"z0":0.85,"device":"OUTLET_20A","rule":"COUNTER_BACK"} expectMoved=6 stale=rule_space_schedule:1188
+  §RULES-FLEET done file=duplex_rules.db cells=2 readers=8 (SampleHouse,Duplex,SampleCastle,HHS,Clinic,Hospital,HospitalGarage,Terminal) notReaders= walks=42 moved=6 out=/tmp/wrfleet-m4JS0u/one_cell.checked.json
+§W-RULES-FLEET F2 moved building=Duplex role=own disc=ELEC moved=6 of 102
+§PASS F2 ONE-CELL (Duplex ELEC moves exactly the devices of that row, its other services none; checkedOn = the readers walked)  ELEC moved=6 expect=6 readers=SampleHouse,Duplex,SampleCastle,HHS,Clinic,Hospital,HospitalGarage,Terminal movedRows=1
+§PASS F3 STALE-CELL (the row that does not exist is counted skipped; applied = 1 on every reader)  skipped=[1] applied=[1]
+§W-RULES-FLEET SUMMARY fail=0 judged=4
