@@ -1,0 +1,11 @@
+§W-VIEWER-VERBS fixture /home/red1/bim-ootb/buildings/Duplex_extracted.db sha256=9f9ab0a9cafc…
+§W-VIEWER-VERBS PASS VV1 — verb total=1193 DB total=1193 groups={"MEP":809,"ARC":270,"ELEC":81,"STR":19,"PLB":14} DB groups={"ARC":270,"ELEC":81,"MEP":809,"PLB":14,"STR":19} | Viewer line: §ASK_ANSWER id=counts verdict=OK value={"total":1193,"by":"discipline","groups":{"MEP":809,"ARC":270,"ELEC":81,"STR":19,"PLB":14}}
+§W-VIEWER-VERBS PASS VV2 — by=storey groups={"Unknown":1026,"Level 2":83,"Level 1":62,"T/FDN":14,"Roof":8} DB={"Level 1":62,"Level 2":83,"Roof":8,"T/FDN":14,"Unknown":1026}
+§W-VIEWER-VERBS PASS VV3 — verb bboxOverlaps=393 Viewer §CLASH_QUERY_RTREE hits=393 rowsTotal=393 rows=20 tol=0.025
+§W-VIEWER-VERBS OBSERVED Viewer answer: bboxOverlaps=393 meshClashes=291 (contained=156) cleared=102 unknown=0 sum=393 independent-uncapped-SQL-count=393 pageSizeWas200=false
+§W-VIEWER-VERBS PASS VV3b — meshClashes 291 + cleared 102 + unknown 0 = 393 vs bboxOverlaps 393; independent uncapped count 393; contained 156 is a breakdown of meshClashes
+§W-VIEWER-VERBS PASS VV5 — tools=bim_lines,bim_try_shift,viewer_counts,viewer_clashes described=true connector counts total=1193 clashes bboxOverlaps=393
+§W-VIEWER-VERBS PASS VV4 — errors: [missing input: building | the Viewer could not answer (exit 1): unknown building "NoSuchBuilding | input by must be one of discipline, storey, got "floor" | the Viewer could not answer (exit 1): the Viewer says INCONCLUSIVE: no] first two in 393 ms
+§W-VIEWER-VERBS PASS VV-RED — VIEWER_VERB_BREAK=1: counts total=1192 vs DB 1193 (VV1 would FAIL: true); clashes bboxOverlaps=394 vs Viewer line (VV3 would FAIL: true)
+§W-VIEWER-VERBS PASS VV6 — DB sha256 before=9f9ab0a9cafc after=9f9ab0a9cafc
+§W-VIEWER-VERBS verdict=PASS pass=8 fail=0 inconclusive=0

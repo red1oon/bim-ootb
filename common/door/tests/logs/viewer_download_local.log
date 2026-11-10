@@ -1,0 +1,11 @@
+§W-VIEWER-DOWNLOAD flat folder /tmp/viewer_dl_dkM4NS holds door.js, verbs.json, viewer_driver.js, viewer_verbs.js (this tree's files)
+  ✅ FLAT the folder holds only the 4 files and no page tree (no viewer.html anywhere in it)  door.js,verbs.json,viewer_driver.js,viewer_verbs.js
+§W-VIEWER-DOWNLOAD served Duplex bytes=14958592 elements=1119 by discipline={"ARC":196,"MEP":904,"STR":19} patch HTTP 200
+  ✅ COUNT the total = SQL count on the served bytes  door=1119 sql=1119
+  ✅ COUNT the per-discipline numbers = SQL on the served bytes  door={"MEP":904,"ARC":196,"STR":19} sql={"ARC":196,"MEP":904,"STR":19}
+  ✅ LIVE the answer says the live Viewer page was opened (page=live), not a local page tree  page=live
+  ✅ COUNT by=storey sums to the same total  total=1119 storeys=5
+  ✅ ACTOR an AI gets the same envelope apart from request, actor and timing figures  ok
+  ✅ NAMES an unknown building is an error naming it, with no browser started (under 10 s)  the Viewer could not answer (exit 1): unknown building "NoSuchBuilding": the live site serves no NoSuchBuilding_extracted.db (HTTP 404) ms=1007
+§W-VIEWER-DOWNLOAD door ms: counts=40059
+§WITNESS_VIEWER_DOWNLOAD pass=7 fail=0 inconclusive=0 verdict=PASS

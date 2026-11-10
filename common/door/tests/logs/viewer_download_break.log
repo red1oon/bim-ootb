@@ -1,0 +1,7 @@
+§W-VIEWER-DOWNLOAD flat folder /tmp/viewer_dl_aCXVOH holds door.js, verbs.json, viewer_driver.js, viewer_verbs.js (this tree's files)
+  ✅ FLAT the folder holds only the 4 files and no page tree (no viewer.html anywhere in it)  door.js,verbs.json,viewer_driver.js,viewer_verbs.js
+§W-VIEWER-DOWNLOAD served Duplex bytes=14958592 elements=1119 by discipline={"ARC":196,"MEP":904,"STR":19} patch HTTP 200
+  ❌ COUNT the total = SQL count on the served bytes  door=16071 sql=1119
+  ❌ COUNT the per-discipline numbers = SQL on the served bytes  door={"PLB":6587,"ACMV":3704,"ARC":2586,"ELEC":2116,"STR":1078} sql={"ARC":196,"MEP":904,"STR":19}
+  ✅ LIVE the answer says the live Viewer page was opened (page=live), not a local page tree  page=live
+  ❌ COUNT by=storey sums to the same total  total=16071 storeys=8

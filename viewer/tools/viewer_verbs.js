@@ -29,9 +29,20 @@ function resolveDb(building) {
 
 // Opens the building, waits for it as the Viewer's own load does, mounts Find (A.loadNavigate), then runs one Ask template. Returns the Viewer's answer
 // and the Viewer's own §ASK_ANSWER line from the page console (the same line a person's console shows).
+// LIVE MODE (NEURO §0.15; viewer_driver.isLive: a plain download, or VIEWER_LIVE=1): the building is the one the live bucket serves under that name. A name it does not serve is an error
+// before any browser starts.
+async function resolveLive(building) {
+  if (typeof building !== 'string' || !NAME.test(building)) throw new Error('building must be a name such as "Duplex" (letters, digits, _ and - only)');
+  const other = process.env.VIEWER_DL_BREAK;   // W-VIEWER-DOWNLOAD falsifier: open another building than the one asked
+  const base = await VD.liveBase(), url = base + 'buildings/' + (other || building) + '_extracted.db', h = await VD.fetchLive(url, 'HEAD');
+  if (h.status !== 200) throw new Error('unknown building "' + building + '": the live site serves no ' + building + '_extracted.db (HTTP ' + h.status + ')');
+  return url;
+}
+const target = async (building) => (VD.isLive() ? { dbUrl: await resolveLive(building) } : { db: resolveDb(building) });
 async function ask(building, tpl, slots, text) {
-  const db = resolveDb(building), pageLog = [], t0 = Date.now();
-  const d = await VD.start({ db, pageLog });
+  const tg = await target(building), db = tg.db || tg.dbUrl, pageLog = [], t0 = Date.now();
+  const d = await VD.start(Object.assign({ pageLog }, tg));
+  say('page=' + d.pageUrl + ' mode=' + (d.live ? 'live' : 'checkout'));
   try {
     await d.open(); await d.waitLoaded();
     await d.page.evaluate(() => window.APP.loadNavigate());
@@ -40,7 +51,7 @@ async function ask(building, tpl, slots, text) {
     const line = pageLog.filter(l => l.indexOf('§ASK_ANSWER id=' + tpl + ' ') === 0).pop() || null;
     const lines = pageLog.filter(l => /^§(ASK_|CLASH_QUERY|CLASH_NARROW)/.test(l)).map(l => l.slice(0, 300));
     say(tpl + ' building=' + building + ' verdict=' + ans.verdict + ' ms=' + (Date.now() - t0));
-    return { ans, line, lines, pageErrors: d.pageErrors.slice(), db };
+    return { ans, line, lines, pageErrors: d.pageErrors.slice(), db, page: d.live ? 'live' : 'checkout' };
   } finally { await d.close(); }
 }
 
@@ -54,7 +65,7 @@ async function viewerCounts(a) {
 }
 async function viewerClashes(a) {
   for (const k of ['discA', 'discB']) if (typeof a[k] !== 'string' || !DISC.test(a[k])) throw new Error(k + ' must be a discipline code such as "ARC" or "MEP"');
-  resolveDb(a.building);   // unknown building: error before the browser starts
+  await target(a.building);   // unknown building: error before the browser starts
   const r = await ask(a.building, 'clash_pair', { a: a.discA, b: a.discB }, 'Find clashes between ' + a.discA + ' and ' + a.discB);
   if (r.ans.verdict !== 'OK') throw new Error('the Viewer says ' + r.ans.verdict + ': ' + r.ans.summary);
   return pack('viewer_clashes', a.building, r, 20);
@@ -67,7 +78,7 @@ function pack(verb, building, r, rowCap) {
   if (process.env.VIEWER_VERB_OLDSUM === '1' && typeof value.meshClashes === 'number') {   // falsifier: restore the old double count (meshTrue + contained)
     value.meshClashes += value.contained || 0; value.cleared = value.bboxOverlaps - value.meshClashes - value.unknown;
   }
-  const out = { verb, building, verdict: a.verdict, question: a.question, summary: a.summary, value, viewerLine: r.line, viewerLog: r.lines, source: a.sources };
+  const out = { verb, building, verdict: a.verdict, question: a.question, summary: a.summary, value, viewerLine: r.line, viewerLog: r.lines, source: a.sources, page: r.page };   // page: 'live' (the live Viewer page, a plain download) or 'checkout' (this tree's page)
   if (a.cols) { out.cols = a.cols; out.rowsTotal = (a.rows || []).length; out.rows = rowCap ? (a.rows || []).slice(0, rowCap) : a.rows; }
   if (r.pageErrors.length) out.pageErrors = r.pageErrors;
   return out;
