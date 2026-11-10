@@ -2734,7 +2734,15 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     }
     if (_records.length > 200) _records = _records.slice(0, 200); // cap display in I1
     _fillVirtual(tab, _records);     // §BIMDOC-ADPASS: (ColumnSQL) AS ColumnName, as GridTable.createSelectSql
-    _overlayListTip(tab, _records);  // S2/J4 — fold the op-log over the bundle: signed CRUD_CREATE rows APPEAR, edits overlay, deletes hide, then DocStatus reads-the-tip (S1/J5). Bundle immutable; op-log is truth.
+    // §FB3 (ERP_IDEMPIERE_UX_PARITY.md) initQueryOnNew (:721-740) judges curTab.getRowCount(): the rows of the query, session rows included -> decided once the fold has landed
+    var _autoNew = function () {
+      if (!(level === 0 && _ow && _ow.autoNewCheck) || !_curQ || _activeWin !== _curQ.win || _activeTabIdx !== _curQ.tabIdx) return;
+      _ow.autoNewCheck = false;
+      var _canNew = !(_curQ.tm && window.AdGridTab) || AdGridTab.canInsert(_curQ.tm, _curQ.q);
+      if (!_records.length && _canNew && !_findByTab[_findKey()]) { console.log('§UDP4-AUTONEW window=' + _activeWin + ' table=' + tab.tableName + ' rows=0 -> New'); setTimeout(function () { _openCreate(); }, 0); }
+      else console.log('§UDP4-AUTONEW-STAY window=' + _activeWin + ' table=' + tab.tableName + ' rows=' + _records.length + ' (after the fold)');
+    };
+    _overlayListTip(tab, _records, _autoNew);  // S2/J4 — fold the op-log over the bundle: signed CRUD_CREATE rows APPEAR, edits overlay, deletes hide, then DocStatus reads-the-tip (S1/J5). Bundle immutable; op-log is truth.
     _recIdx = _keepIdx(tab); _gridSel = Object.create(null); _setSel(tab);   // §GT keep the current record by key (else row 0); fresh set → clear multi-select
     // §AD-GATE — re-evaluate the accounting pills: surface them only on a posting document (carries `Posted`).
     _curPostingDoc = _isPostingDoc(tab.tableName);
@@ -2744,12 +2752,6 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     // The toolbar was rendered (by openWindow) BEFORE these records loaded, so its record-dependent enable states
     //   (Copy / Delete / Process / Zoom) were stale (computed against 0 rows). Re-render now that _records is live.
     renderToolbar();
-    // §UDP-4 initQueryOnNew (:719-737): no query result + 0 rows + AutoNew (a transaction window) -> a New record is opened
-    if (level === 0 && _ow && _ow.autoNewCheck) {
-      _ow.autoNewCheck = false;
-      var _canNew = !(_curQ && _curQ.tm && window.AdGridTab) || AdGridTab.canInsert(_curQ.tm, _curQ.q);
-      if (!_records.length && _canNew && !_findByTab[_findKey()]) { console.log('§UDP4-AUTONEW window=' + _activeWin + ' table=' + tab.tableName + ' rows=0 -> New'); setTimeout(function () { _openCreate(); }, 0); }
-    }
   }
   // ── §UDP-3 — the Find window (ZK FindWindow.java; bim-compiler prompts/ERP_DEPTH_FILM.md §UDP-3; Witnesses: W-UDP3-ENGINE, W-UDP3-LIVE).
   //   Simple tab (initFind :983-1170 / cmd_saveSimple :2951-3080), Advanced tab (cmd_saveAdvanced :2507-2840, this tab's columns),
@@ -3297,13 +3299,15 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       console.log('§AD-VIRTUAL tab=' + tab.id + ' table=' + tab.tableName + ' col=' + f.columnName + ' rows=' + rows.length + ' values=[' + rows.map(function (r) { return recVal(r, kc) + ':' + r[f.columnName]; }).join(',') + ']');
     });
   }
-  function _overlayListTip(tab, recs) {
-    if (!recs || !tab || !window.__crud) { return; }
+  function _overlayListTip(tab, recs, done) {   // done(): the tab's row set is final (the fold landed, or there is nothing to fold); not called for a stale pass
+    done = done || function () {};
+    if (!recs || !tab || !window.__crud) { done(); return; }
     var c = window.__crud;
-    var tn = tab.tableName ? String(tab.tableName).toLowerCase() : null; if (!tn) return;
-    if (typeof c.withSidecar !== 'function' || !c.core || typeof c.core.listTip !== 'function') { _overlayDocTip(tab, recs); return; }
+    var tn = tab.tableName ? String(tab.tableName).toLowerCase() : null; if (!tn) { done(); return; }
+    if (typeof c.withSidecar !== 'function' || !c.core || typeof c.core.listTip !== 'function') { _overlayDocTip(tab, recs); done(); return; }
     c.withSidecar(function (sdb) {
-      if (!sdb || recs !== _records) return;                  // a navigation happened meanwhile → drop this stale pass
+      if (recs !== _records) return;                          // a navigation happened meanwhile → drop this stale pass
+      if (!sdb) { done(); return; }
       var br = _readBr(), pkCol = _keyCol(tab), folded = null;
       try { folded = c.core.listTip(sdb, tn, pkCol, recs, br); } catch (e) { folded = null; }
       var rows = (folded && folded.rows) || recs;
@@ -3334,6 +3338,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         console.log('§LIST-TIP overlay table=' + tn + ' base=' + recs.length + ' folded=' + rows.length + ' created=' + created.length + ' updated=' + updated.length + ' hidden=' + hidden.length + ' statusAdv=' + nStatus + (br ? ' branch=' + br : ''));
         if (_viewMode === 'form') { if (!_newMode && !_formNeedsSave()) refreshForm(); } else renderBody();   // §GT: a late fold never wipes an open New / typed edit
       }
+      done();
     });
   }
   // _statusChip(ds) — coloured dot (KanbanLens.statusColor) + human label (DOCSTATUS_LABEL). EXTRACT: every
