@@ -10,9 +10,13 @@ var http = require('http'), fs = require('fs'), path = require('path');
 var { chromium } = require('/home/red1/bim-ootb/tests/node_modules/playwright');
 
 var ROOT = path.join(__dirname, '..');
+// Cross-leak baseline: GardenWorld's BPartners in the shipped seed. Legacy idempiere_test has 18; the seed carries 24 (6 HBA rows, #645) - a seed divergence reported as INFO, NOT a leak.
+var GW_SEED = Number(require('child_process').execFileSync('sqlite3', [path.join(ROOT, 'ad_seed.db'), 'SELECT COUNT(*) FROM c_bpartner WHERE ad_client_id=11'], { encoding: 'utf8' }).trim()), GW_LEGACY = 18;
 var MIME = { '.html': 'text/html', '.js': 'text/javascript', '.wasm': 'application/wasm', '.json': 'application/json', '.css': 'text/css', '.db': 'application/octet-stream' };
 var server = http.createServer(function (req, res) {
-  var f = path.join(ROOT, decodeURIComponent(req.url.split('?')[0]));
+  var rel = decodeURIComponent(req.url.split('?')[0]), f = path.join(ROOT, rel);
+  // idempiere.html loads ../common/comm/semver_strict.js: the browser resolves it to /common/..., which lives at the REPO root, not under erp/ (cause of the plugin_registry page error)
+  if (!fs.existsSync(f) && /^\/common\//.test(rel)) f = path.join(ROOT, '..', rel);
   fs.readFile(f, function (e, buf) {
     if (e) { res.writeHead(404); return res.end('404'); }
     res.writeHead(200, { 'Content-Type': MIME[path.extname(f)] || 'application/octet-stream' });
@@ -31,6 +35,7 @@ function probe() {
     sysProcAccess: one("SELECT COUNT(*) FROM AD_Process_Access WHERE AD_Process_ID=53161 AND AD_Role_ID=0 AND IsActive='Y'"),
     // SECURITY — the genesis process must NOT be granted to any GardenWorld role (client 11)
     gwProcAccess: one("SELECT COUNT(*) FROM AD_Process_Access pa JOIN AD_Role r ON r.AD_Role_ID=pa.AD_Role_ID WHERE pa.AD_Process_ID=53161 AND r.AD_Client_ID=11"),
+    sysClient: one("SELECT COUNT(*) FROM AD_Client WHERE AD_Client_ID=0"), sysRole: one("SELECT COUNT(*) FROM AD_Role WHERE AD_Role_ID=0"), sysUserRoles: one("SELECT COUNT(*) FROM AD_User_Roles WHERE AD_Role_ID=0"),
     gwBp: one("SELECT COUNT(*) FROM C_BPartner WHERE AD_Client_ID=11")
   };
 }
@@ -99,10 +104,13 @@ function probe() {
 
   var L = logs.join('\n'), pass = 0, fail = 0;
   function ck(ok, msg) { (ok ? pass++ : fail++); console.log((ok ? '  ✓ ' : '  ✗ FAIL ') + msg); }
-  ck(/§SYSTEM-TENANT ensure rows=7/.test(L), 'boot overlay installs the System(0) login surface (7 oracle rows)');
+  // was /ensure rows=7/ - an insert COUNT; the seed now already holds the System tenant (log: insert-fail UNIQUE x6, ensure rows=1), so the ensure is idempotent. The claim is that the System(0) surface EXISTS.
+  ck(/§SYSTEM-TENANT ensure /.test(L) && Number(p.sysClient) === 1 && Number(p.sysRole) === 1 && Number(p.sysUserRoles) >= 1, 'the System(0) login surface exists after boot: AD_Client 0 / AD_Role 0 / AD_User_Roles of role 0 = ' + p.sysClient + '/' + p.sysRole + '/' + p.sysUserRoles);
   ck(residentNames.indexOf('System') >= 0, 'the System tenant appears at the front door (step-0 switcher)');
   ck(residentNames.indexOf('GardenWorld') >= 0, 'GardenWorld still lists (gating — System added, nothing lost)');
-  ck(demoNames.length >= 5, 'the 5 demo tenants still present at the front door (' + demoNames.length + ')');
+  // the 5 demo tenants (Odoo, iDempiere, SAP Flights, Oracle Scott, Dynamics Cronus) are resident clients 12-16 now (log: login-step0 tenants=7 demos=0), not .idmp-login-demo tiles
+  var DEMOS = ['Odoo', 'iDempiere', 'SAP Flights', 'Oracle Scott', 'Dynamics Cronus'], atDoor = residentNames.concat(demoNames);
+  ck(DEMOS.every(function (d) { return atDoor.indexOf(d) >= 0; }), 'the 5 demo tenants are all at the front door (resident ' + residentNames.length + ' + demo tiles ' + demoNames.length + ')');
   ck(/§IDEMPIERE-LOGIN user=System .*client=System\(0\)/.test(L), 'logs in as System Administrator, client 0');
   ck(menuLeaves.indexOf('Initial Tenant Setup') >= 0, 'the System menu carries "Initial Tenant Setup"');
   ck(/§W-GENESIS-SYSADMIN-LIVE wizard-mount proc=53161 in-chrome=Y/.test(L) && wizardMounted, 'clicking it mounts the wizard EMBEDDED in the chrome (no redirect to genesis.html)');
@@ -112,7 +120,8 @@ function probe() {
   ck(p.clients.some(function (c) { return /:System$/.test(c); }) && p.clients.some(function (c) { return /:GardenWorld$/.test(c); }) && p.clients.some(function (c) { return /:SysAcme$/.test(c); }), 'login switcher now lists System + GardenWorld + SysAcme (0 leak)');
   ck(Number(p.sysProcAccess) === 1, 'the genesis process is granted to the System role (53161 → role 0)');
   ck(Number(p.gwProcAccess) === 0, 'SECURITY — the genesis process is NOT granted to any GardenWorld role (client admin cannot create a company)');
-  ck(Number(p.gwBp) === 18, 'GardenWorld data untouched (18 BPartners) — 0 cross-leak');
+  console.log('  §GW-SEED-INFO seed=' + GW_SEED + ' legacy=' + GW_LEGACY + (GW_SEED !== GW_LEGACY ? ' DIVERGENCE ' + (GW_SEED - GW_LEGACY) + ' non-legacy rows (HBA seed, see MIGRATE_INSTALL_TENANT §CLOSEOUT)' : ''));
+  ck(Number(p.gwBp) === GW_SEED, 'GardenWorld data untouched by the birth (' + p.gwBp + ' BPartners == shipped seed ' + GW_SEED + ') — 0 cross-leak');
   ck(enterOk, 'the new tenant ENTERS — its user list shows');
   ck(pageErrors.length === 0, 'zero page errors' + (pageErrors.length ? ' — ' + pageErrors[0] : ''));
 
