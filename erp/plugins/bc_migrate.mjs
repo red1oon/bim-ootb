@@ -9,7 +9,7 @@
 // Id band 9543001-9543999 (no seed row, no other bundle).
 const NOW = '2026-11-09 00:00:00';
 const STD = { ad_client_id: 0, ad_org_id: 0, isactive: 'Y', created: NOW, createdby: 100, updated: NOW, updatedby: 100, entitytype: 'U' };
-const F_ID = 9543001, M_ID = 9543001, TREE = 10, PARENT = 163, ROLES = [[0, 0], [102, 11]];
+const F_ID = 9543001, M_ID = 9543001, TREE = 10, PARENT = 163, ROLES = [[0, 0]];   // the LOGIN role's row (MForm / MProcess afterSave: the System Administrator starts the plugin); every tenant's roles get theirs from the host (§PLUGIN-ROLE-ACCESS, plugin_registry.js)
 const form = Object.assign({ ad_form_id: F_ID, name: 'Migrate from Business Central (alpha)', description: "Load a Dynamics 365 Business Central configuration package (BC's Export to Excel) into this tenant",
   help: 'In Business Central: Configuration Packages → a package with the tables listed in the guide → Export to Excel. Pick that file here, set the cut-over date, answer the units, read the summary, Process. ALPHA: built from Microsoft\'s published table definitions; the alpha report says what your file held.',
   accesslevel: '3', classname: 'org.kernel.bc.MigrateFromBC', isbetafunctionality: 'Y' }, STD);
