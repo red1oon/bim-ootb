@@ -82,7 +82,7 @@ async function main(bundle, out) {
   ORDER.forEach((t) => {
     const d = tables[t]; if (!d) return;
     idKey[t] = {};
-    const first = d.rows[0], cols = Object.keys(first).concat(t === 'ad_column' && !('ad_element_id' in first) ? ['ad_element_id'] : []).filter((c) => !SKIP.has(c) && (c !== d.idCol || t === 'ad_treenodemm') && !/_uu$/.test(c) && !(t === 'ad_ref_table' && c === 'ad_reference_id' && false));
+    const first = d.rows.reduce((u, r) => Object.assign(u, Object.keys(r).reduce((o, k) => { if (!(k in u)) o[k] = 1; return o; }, {})), {}), cols = Object.keys(first).concat(t === 'ad_column' && !('ad_element_id' in first) ? ['ad_element_id'] : []).filter((c) => !SKIP.has(c) && (c !== d.idCol || t === 'ad_treenodemm') && !/_uu$/.test(c) && !(t === 'ad_ref_table' && c === 'ad_reference_id' && false));
     const aoa = [['Key'].concat(cols)];
     d.rows.forEach((row) => {
       const r = Object.assign({}, row);
@@ -98,6 +98,8 @@ async function main(bundle, out) {
       });
       Object.assign(r, text);
       if (t === 'ad_column') r.ad_element_id = elemOf[r.columnname];
+      // a pack creates a physical column only when the column says IsSyncDatabase=Y (ColumnElementHandler): the columns of a table this workbook CREATES, with no ColumnSQL, are physical
+      if (t === 'ad_column' && typeof r.ad_table_id === 'string' && /^ref:/.test(r.ad_table_id) && !(r.columnsql && String(r.columnsql).trim())) r.issyncdatabase = 'Y';
       // a key made from the text of the rows it points at
       const kr = Object.assign({}, r); ['ad_reference_id', 'ad_window_id', 'ad_table_id', 'ad_tab_id', 'ad_column_id'].forEach((c) => { if (typeof kr[c] === 'string') kr[c] = kr[c].replace(/^ref:/, '').replace(/^existing:[A-Za-z_]+:(uu=)?/, ''); });
       let k = keyOf(t, kr); if (k == null) throw new Error('no key for ' + t);
