@@ -187,7 +187,11 @@
   // DB CHANGES = MIGRATION SCRIPT + SELF-HEAL LOADER architecture; never a binary). One applier for the page and the node harness.
   function applyRulesPatch(db, file, sqlText) {
     if (!db || !sqlText) { console.log(TAG + ' §DW-RULES-PATCH file=' + file + ' none'); return false; }
-    try { db.run(sqlText); var n = _rows(db, "SELECT 1 FROM sqlite_master WHERE type='table' AND name='rule_storey_floor'").length ? _rows(db, 'SELECT COUNT(*) n FROM rule_storey_floor')[0].n : 0;
+    // §PATCH_CHUNK (as str_walker_outliner.js _applyPendingPatch): the browser's sql.js fails with "memory access out of bounds" on one very large SQL string (measured 2026-11-10 on a
+    //   1.9 MB rules patch carrying mesh rows). Statement-aware: lines are joined until one ends in ';', then each statement runs on its own.
+    try { var _st = [], _buf = []; String(sqlText).split('\n').forEach(function (ln) { if (!ln.trim().length) return; _buf.push(ln); if (/;\s*$/.test(ln)) { _st.push(_buf.join('\n')); _buf = []; } });
+      if (_buf.length) _st.push(_buf.join('\n'));
+      _st.forEach(function (one) { db.run(one); }); var n = _rows(db, "SELECT 1 FROM sqlite_master WHERE type='table' AND name='rule_storey_floor'").length ? _rows(db, 'SELECT COUNT(*) n FROM rule_storey_floor')[0].n : 0;
       console.log(TAG + ' §DW-RULES-PATCH file=' + file + ' rows=' + n + ' ok'); return true; }
     catch (e) { console.warn(TAG + ' §DW-RULES-PATCH file=' + file + ' error ' + (e && e.message)); return false; }
   }
@@ -887,6 +891,12 @@
     if (_rows(db, "SELECT 1 FROM sqlite_master WHERE type='table' AND name='rule_mesh_binding'").length)
       _rows(db, "SELECT ifc_class, geometry_hash FROM rule_mesh_binding WHERE disc='" + _esc(disc) + "'")
         .forEach(function (b) { bind[b.ifc_class] = b.geometry_hash; });
+    // §BAND-MIX (bim-compiler prompts/MODELLER_MASTER.md, the Q9 ruling): the mesh mix of a row's own recorded source elements (rule_placement_mix, mined by
+    //   build/project_rule_placement_mix.py, shipped as patches/<rules>.sql). Used only for a DEVICE row with no rule_mesh_binding mesh; always provisional.
+    var mixOf = {};
+    if (_rows(db, "SELECT 1 FROM sqlite_master WHERE type='table' AND name='rule_placement_mix'").length)
+      _rows(db, "SELECT ifc_class, storey_scope, geometry_hash, k, n, src_guid, bbox_dx, bbox_dy, bbox_dz FROM rule_placement_mix WHERE disc='" + _esc(disc) + "' ORDER BY ifc_class, storey_scope, k DESC, geometry_hash")
+        .forEach(function (m) { var key = m.ifc_class + '|' + m.storey_scope; (mixOf[key] = mixOf[key] || []).push(m); });
     var genCls = _rows(db, 'SELECT DISTINCT ifc_class FROM rule_placement')
       .map(function (r) { return "'" + _esc(r.ifc_class) + "'"; }).join(',');
     // §NOSPACES frame reconciliation: the bands were baked in the 2026-06-28 building-datum frame;
@@ -933,6 +943,8 @@
         r.z_band_lo = ra.to[0]; r.z_band_hi = ra.to[1]; r._reanchor = ra; raNot.done++;
       } else { r.z_band_lo += zOff; r.z_band_hi += zOff; }   // site-frame band from here on (today's path)
       var ghash = bind[r.ifc_class] || null;
+      var mix = (!ghash && _MAIN_PIECE_CLASSES.indexOf(r.ifc_class) < 0) ? (mixOf[r.ifc_class + '|' + r.storey_scope] || null) : null;   // §BAND-MIX: a device row only; a run piece is not a device
+      if (mix) ghash = mix[0].geometry_hash;                   // the tessellating test below needs a mesh; the per-device mesh is allocated at placement
       if (!ghash) {                                           // LOD400 REFUSE — no mined real mesh
         refused[r.ifc_class] = (refused[r.ifc_class] || 0) + r.n_measured;
         console.log(TAG + ' §LOD400-REFUSE ' + disc + '/' + r.ifc_class + ' ×' + r.n_measured +
@@ -1007,8 +1019,17 @@
       var placeN = Math.min(count, cells.length), stride = cells.length / Math.max(1, placeN);
       if (count > cells.length) console.log(TAG + ' §DW-CAP ' + disc + '/' + r.ifc_class + ' band=[' + r.z_band_lo + ',' + r.z_band_hi + '] placed=' + placeN + ' of ' + count + ' (envelope is the ceiling)');
       var z = (r.z_band_lo + r.z_band_hi) / 2;
+      var alloc = mix ? _mixAllocate(mix, placeN) : null;      // §BAND-MIX: [mix row per device], largest remainder, stable order
+      if (alloc) console.log(TAG + ' §BAND-MIX ' + disc + '/' + r.ifc_class + ' scope="' + r.storey_scope + '" placed=' + placeN + ' of=' + mix[0].n + ' meshes=[' + mix.map(function (m) { return String(m.geometry_hash).slice(0, 8) + ':' + alloc.filter(function (a) { return a === m; }).length + '(' + m.k + ' of ' + m.n + ')'; }).join(',') + '] provisional');
       for (var c = 0; c < placeN; c++) {
         var cell = cells[Math.floor(c * stride)];
+        if (alloc) { var mm = alloc[c];
+          out.push({ disc: disc, ifc_class: r.ifc_class, x: cell.x, y: cell.y, z: z,
+            storey: r._reanchor ? r._reanchor.tgt : r.storey_scope, band: [r.z_band_lo, r.z_band_hi], reanchor: r._reanchor ? { from: r.storey_scope, src: r._reanchor.src, tgt: r._reanchor.tgt } : undefined,
+            bx: mm.bbox_dx || r.bbox_dx || null, by: mm.bbox_dy || r.bbox_dy || null, bz: mm.bbox_dz || r.bbox_dz || null,
+            geometry_hash: mm.geometry_hash, prim: _primFor(r.ifc_class), provisional: true, bandMix: true, meshFrom: mm.src_guid, mix: mm.k + ' of ' + mm.n,
+            prov: 'placed:measured-band-mix', src: r.provenance || '' });
+          continue; }
         out.push({ disc: disc, ifc_class: r.ifc_class, x: cell.x, y: cell.y, z: z,
           storey: r._reanchor ? r._reanchor.tgt : r.storey_scope, band: [r.z_band_lo, r.z_band_hi], reanchor: r._reanchor ? { from: r.storey_scope, src: r._reanchor.src, tgt: r._reanchor.tgt } : undefined,
           bx: r.bbox_dx || null, by: r.bbox_dy || null, bz: r.bbox_dz || null,
@@ -1024,6 +1045,16 @@
       ' (band envelope + cells on mesh-recovered midpoints, not raw placement origins)');
     if (RA) console.log(TAG + ' §BAND-REANCHOR-SUM ' + disc + ' reanchored=' + raNot.done + ' notPlaced: multiStorey=' + raNot.multi + ' noTargetStorey=' + raNot.noTarget + ' (no source floor -> today\'s path: ' + raNot.noFloor + ')');
     return { placements: out, zones: zones, refused: refused, verdicts: verdicts, reanchor: RA ? raNot : null };
+  }
+
+  // §BAND-MIX: n devices over a row's mix [{k, n, ...}] by the largest-remainder method. Quota = n * k / sum(k); floors first, then the largest fractions (ties: the mix's own stable
+  //   order, k descending then hash). Returns one mix row per device, grouped in that order. Deterministic: no clock, no randomness.
+  function _mixAllocate(mix, n) {
+    var tot = mix.reduce(function (a, m) { return a + (+m.k || 0); }, 0) || 1, q = mix.map(function (m, i) { var e = n * (+m.k || 0) / tot; return { i: i, f: Math.floor(e), r: e - Math.floor(e) }; });
+    var left = n - q.reduce(function (a, x) { return a + x.f; }, 0);
+    q.slice().sort(function (a, b) { return b.r - a.r || a.i - b.i; }).slice(0, left).forEach(function (x) { q[x.i].f++; });
+    var out = []; q.forEach(function (x) { for (var j = 0; j < x.f; j++) out.push(mix[x.i]); });
+    return out;
   }
 
   // Reduce a discipline's rule_placement rows to ONE representative per ifc_class
@@ -1521,7 +1552,7 @@
       zMoves.push(best);
       bound.push({ reanchor: p.reanchor, disc: p.disc, ifc_class: p.ifc_class, x: p.x, y: p.y, z: bh.tz + sign * faceHalf * (bh.ez / 2) + sign * off, yaw: bh.ex >= bh.ey ? 0 : Math.PI / 2,
         storey: p.storey, host: bh.g, mount: mount, face: _faceFor(mount), prov: 'shim:host-' + hostClass + '-' + mount.toLowerCase(),
-        bx: p.bx, by: p.by, bz: p.bz, prim: p.prim, src: p.src, snapDist: 0, midVerified: bh.midVerified, band: p.band, geometry_hash: p.geometry_hash });
+        bx: p.bx, by: p.by, bz: p.bz, prim: p.prim, src: p.src, snapDist: 0, midVerified: bh.midVerified, band: p.band, geometry_hash: p.geometry_hash, bandMix: p.bandMix, meshFrom: p.meshFrom, mix: p.mix });
     });
     console.log(TAG + ' §WALK-AREAHOST host=' + hostClass + ' mount=' + mount + ' hosts=' + hosts.length + ' boxFromMesh=' + boxMesh + ' boxFromRow=' + boxRow + ' flatness=' + area.flatness + ' shapeRejected=' + shapeRejected + ' input=' + placements.length + ' bound=' + bound.length +
       ' noHostHere=' + refusedList.length + ' multiCandidate=' + multi + ' boundOnDeepHost=' + deep + ' maxHostDepth=' + depthMax.toFixed(2) + ' noHeightTest=' + noHeightTest + ' zMoveP50=' + (zMoves.length ? zMoves.sort(function (a, b) { return a - b; })[zMoves.length >> 1] : 0).toFixed(2) + ' zMoveMax=' + (zMoves.length ? zMoves[zMoves.length - 1] : 0).toFixed(2) + ' hostsUsed=' + Object.keys(usedHost).length + ' uprightRejected=' + upright.length + ' noNormals=' + noNormals + (shim.outline ? ' outlineRejected=' + outlineRejected + (shim.boxOnly ? ' (box only: witness control)' : '') : '') +
@@ -1631,7 +1662,7 @@
         bound.push({ reanchor: p.reanchor, disc: p.disc, ifc_class: p.ifc_class, x: fx, y: fy, z: pz, yaw: bl.horiz === 0 ? 0 : Math.PI / 2,
           storey: p.storey, host: bl.w.g, mount: 'SIDE', face: [perpx / pl, perpy / pl, 0], prov: 'shim:host-' + hostClass + '-side',
           bx: p.bx, by: p.by, bz: p.bz, prim: p.prim, src: p.src, snapDist: +best.toFixed(4), midVerified: bl.w.midVerified,
-          band: p.band, geometry_hash: p.geometry_hash });      // §NOSPACES carry-through (undefined on legacy walks)
+          band: p.band, geometry_hash: p.geometry_hash, bandMix: p.bandMix, meshFrom: p.meshFrom, mix: p.mix });      // §NOSPACES + §BAND-MIX carry-through (undefined on legacy walks)
       });
       return { bound: bound, refused: refused, refusedList: refusedList, hostCount: hosts.length, hostClass: hostClass, mount: mount, unverifiedHosts: unverifiedHosts };
     }
@@ -1683,7 +1714,7 @@
       bound.push({ reanchor: p.reanchor, disc: p.disc, ifc_class: p.ifc_class, x: bh.x, y: bh.y, z: pz, yaw: horiz === 0 ? 0 : Math.PI / 2,
         storey: p.storey, host: bh.g, mount: mount, face: _faceFor(mount), prov: 'shim:host-' + hostClass + '-' + mount.toLowerCase(),
         bx: p.bx, by: p.by, bz: p.bz, prim: p.prim, src: p.src, snapDist: +best.toFixed(4), midVerified: bh.midVerified,
-        band: p.band, geometry_hash: p.geometry_hash });        // §NOSPACES carry-through (undefined on legacy walks)
+        band: p.band, geometry_hash: p.geometry_hash, bandMix: p.bandMix, meshFrom: p.meshFrom, mix: p.mix });        // §NOSPACES + §BAND-MIX carry-through (undefined on legacy walks)
     });
     return { bound: bound, refused: refused, refusedList: refusedList, hostCount: hosts.length, hostClass: hostClass, mount: mount, unverifiedHosts: unverifiedHosts };
   }
@@ -3448,7 +3479,7 @@
     return ds.filter(function (d) { return d && d !== 'ARC'; });
   }
 
-  var API = { __test: { placeMeasured: placeMeasured, bandHostPass: _bandHostPass }, applyRulesPatch: applyRulesPatch, rulesDb: function () { return _db; }, elecCircuits: elecCircuits, setNativeMaps: setNativeMaps, userRulesKey: userRulesKey, userRules: userRules, applyCells: applyCells, applyUserRules: applyUserRules, fileHasRules: fileHasRules, sideDbs: function () { return { schedule: _schedSource, borrow: Object.assign({}, _borrow) }; }, reloadRules: reloadRules, setDrawnOnlyView: setDrawnOnlyView, drawnOps: drawnOps, rulesMeta: function () { return _rulesMeta; }, hasRules: function (disc) { try { var r = _db && _db.exec("SELECT COUNT(*) FROM rule_placement WHERE disc='" + String(disc).replace(/'/g, "''") + "'"); return !!(r && r.length && r[0].values[0][0] > 0); } catch (e) { return false; } }, dwInit: dwInit, dwRulesKey: dwRulesKey, dwOpen: dwOpen, dwBorrow: dwBorrow, dwBorrowFile: dwBorrowFile, dwWalk: dwWalk, assemble: assemble, connectorFor: connectorFor, connectorEnrich: connectorEnrich, substrate: substrate, place: place, hostBind: hostBind, dwTraceZ: dwTraceZ,
+  var API = { __test: { placeMeasured: placeMeasured, bandHostPass: _bandHostPass }, applyRulesPatch: applyRulesPatch, rulesDb: function () { return _db; }, mixAllocate: _mixAllocate, elecCircuits: elecCircuits, setNativeMaps: setNativeMaps, userRulesKey: userRulesKey, userRules: userRules, applyCells: applyCells, applyUserRules: applyUserRules, fileHasRules: fileHasRules, sideDbs: function () { return { schedule: _schedSource, borrow: Object.assign({}, _borrow) }; }, reloadRules: reloadRules, setDrawnOnlyView: setDrawnOnlyView, drawnOps: drawnOps, rulesMeta: function () { return _rulesMeta; }, hasRules: function (disc) { try { var r = _db && _db.exec("SELECT COUNT(*) FROM rule_placement WHERE disc='" + String(disc).replace(/'/g, "''") + "'"); return !!(r && r.length && r[0].values[0][0] > 0); } catch (e) { return false; } }, dwInit: dwInit, dwRulesKey: dwRulesKey, dwOpen: dwOpen, dwBorrow: dwBorrow, dwBorrowFile: dwBorrowFile, dwWalk: dwWalk, assemble: assemble, connectorFor: connectorFor, connectorEnrich: connectorEnrich, substrate: substrate, place: place, hostBind: hostBind, dwTraceZ: dwTraceZ,
     route: route, routeChains: routeChains, routePattern: routePattern,
     // §MEP-ROUTE-DISC: the disciplines the pattern bridge covers (modeller.html gates its mep_rw.db load on this)
     patternDiscs: function () { return Object.keys(_RW_PATTERN_DISC); },
