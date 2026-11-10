@@ -100,7 +100,8 @@
     var tb = '<table data-tile="' + head + '"><thead><tr>' + cols.map(function (c) { return '<th>' + c + '</th>'; }).join('') + '</tr></thead><tbody>' + P.map(rowFn).join('') + '</tbody></table>';
     v.innerHTML = tb;
   }
-  function passes(p) { var f = filters(); return (!f.org || String(p.AD_Org_ID) === f.org) && (!f.category || p.ProjectCategory === f.category) && (!f.project || p.Value === f.project) && ({ all: 1, active: p.IsActive === 'Y' && p.Processed !== 'Y', closed: p.Processed === 'Y', inactive: p.IsActive !== 'Y' }[f.status]); }
+  function passesBase(p) { var f = filters(); return (!f.org || String(p.AD_Org_ID) === f.org) && (!f.category || p.ProjectCategory === f.category) && ({ all: 1, active: p.IsActive === 'Y' && p.Processed !== 'Y', closed: p.Processed === 'Y', inactive: p.IsActive !== 'Y' }[f.status]); }
+  function passes(p) { var f = filters(); return passesBase(p) && (!f.project || p.Value === f.project); }
   function orgName(id) { var o = (data().orgs || []).filter(function (r) { return String(r.AD_Org_ID) === String(id); })[0]; return o ? o.Name : 'Org #' + id; }
   function amt(p, k) { return p[k] == null ? '<span class="nodata">—</span>' : (+p[k]).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
   function bimLink(p) { var b = S.bim[p.Value]; return b ? '<a class="bim" href="' + esc(CFG.viewerUrl + '?db=' + encodeURIComponent(b) + '&record=' + p.C_Project_ID) + '">BIM</a>' : ''; }
@@ -117,8 +118,21 @@
   }
   function simple(title, body, k) { var v = $('view'); v.innerHTML = ''; v.appendChild(card(title, body, k)); fillFlat(v); }
 
-  var PROJECT = Q.get('project') || '';   // ?project=<C_Project.Value> — one project, same filter for both sources (prompts/CAPEX_DASHBOARD.md §15.1); shown in the filter bar
-  function filters() { return { org: $('fOrg').value, category: $('fCat').value, status: $('fStatus').value, project: PROJECT, today: TODAY }; }
+  var PROJECT_URL = Q.get('project') || '';   // ?project=<C_Project.Value> pre-selects the Project filter (§15.1, §5.36A); the drop-down is the one place the choice lives
+  function filters() { var fp = $('fProject'); return { org: $('fOrg').value, category: $('fCat').value, status: $('fStatus').value, project: fp ? fp.value : '', today: TODAY }; }
+  // §5.36A: the Project filter. Blank = All Projects; the options are the projects that pass Org / Category / Status (never one the other filters hide); a selected project that falls out resets to blank.
+  //   At the first fill the URL's project is always offered (the old ?project= link keeps working whatever Status says). Both sources apply the same filter through T.compute.
+  var _projFirst = true;
+  function fillProjects() {
+    var d = data(), P = d ? d.projects : [], sel = $('fProject'), want = _projFirst ? PROJECT_URL : sel.value, f0 = $('fProject').value;
+    var rows = P.filter(function (p) { var keep = p.Value && passesBase(p); return keep || (_projFirst && PROJECT_URL && p.Value === PROJECT_URL); });
+    rows.sort(function (a, b) { return String(a.Value).localeCompare(String(b.Value)); });
+    sel.innerHTML = '<option value="">All Projects</option>' + rows.map(function (p) { return '<option value="' + esc(p.Value) + '">' + esc(p.Value) + (p.Name && p.Name !== p.Value ? ' — ' + esc(p.Name) : '') + '</option>'; }).join('');
+    var has = rows.some(function (p) { return p.Value === want; }), reset = !!want && !has;
+    sel.value = has ? want : '';
+    _projFirst = false;
+    log('§DASH_PROJSEL source=' + S.cur + ' options=' + rows.length + ' selected=' + (sel.value || '') + ' reset=' + (reset ? 1 : 0) + ' (all projects=' + P.length + ')');
+  }
   function render() {
     var d = data(); if (!d) { $('view').innerHTML = '<div class="card"><span class="nodata">no data source loaded</span></div>'; $('foot').textContent = '§DASH_NODATA no source'; return; }
     var f = filters(); S.res = T.compute(d, f); S.flat = T.flatten(S.res.tiles);
@@ -171,11 +185,11 @@
     catch (e) { log('§DASH_SOURCE legacy none (' + CFG.legacySnapshot + ')'); }
     S.cur = (Q.get('source') === 'legacy' && S.sources.legacy) ? 'legacy' : S.sources.sqlite ? 'sqlite' : (S.sources.legacy ? 'legacy' : 'none');   // ?source=legacy opens the snapshot (§5.27)
     $('src').innerHTML = Object.keys(S.sources).map(function (k) { return '<option value="' + k + '">' + (k === 'sqlite' ? 'A · SQLite ERP DB' : 'B · Legacy iDempiere') + '</option>'; }).join('');
-    if (PROJECT) { var fp = $('fProject'); fp.hidden = false; fp.textContent = 'Project: ' + PROJECT; }
     $('src').value = S.cur; $('srcInfo').textContent = S.sources.legacy ? '' : 'Source B (legacy) not loaded';
-    fillSelects(); await probeBim(); runTwin(); render();
-    $('src').onchange = function () { S.cur = this.value; fillSelects(); probeBim().then(render); };
-    ['fOrg', 'fCat', 'fStatus'].forEach(function (id) { $(id).onchange = function () { runTwin(); render(); }; });
+    fillSelects(); fillProjects(); await probeBim(); runTwin(); render();
+    $('src').onchange = function () { S.cur = this.value; fillSelects(); fillProjects(); probeBim().then(render); };
+    ['fOrg', 'fCat', 'fStatus'].forEach(function (id) { $(id).onchange = function () { fillProjects(); runTwin(); render(); }; });
+    $('fProject').onchange = function () { runTwin(); render(); };
     window.onhashchange = nav; nav();
   }
   function nav() {
