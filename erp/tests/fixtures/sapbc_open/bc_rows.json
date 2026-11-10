@@ -1,0 +1,1165 @@
+{
+ "generator": "erp/tools/gen_sapbc_open_fixture.js",
+ "note": "TEST-SUPPLIED values, BC table shape (field names from microsoft/BCApps via bc_model.mjs); not Microsoft demo data",
+ "today": "2026-11-10",
+ "rows": {
+  "9": [
+   {
+    "Code": "US",
+    "Name": "United States",
+    "ISO Code": "US"
+   },
+   {
+    "Code": "DE",
+    "Name": "Germany",
+    "ISO Code": "DE"
+   }
+  ],
+  "15": [
+   {
+    "No.": "1000",
+    "Name": "Cash at Bank",
+    "Account Type": "Posting",
+    "Account Category": "Assets"
+   },
+   {
+    "No.": "1010",
+    "Name": "Bank EUR",
+    "Account Type": "Posting",
+    "Account Category": "Assets"
+   },
+   {
+    "No.": "1100",
+    "Name": "Trade Receivables",
+    "Account Type": "Posting",
+    "Account Category": "Assets"
+   },
+   {
+    "No.": "1200",
+    "Name": "Inventory",
+    "Account Type": "Posting",
+    "Account Category": "Assets"
+   },
+   {
+    "No.": "2000",
+    "Name": "Trade Payables",
+    "Account Type": "Posting",
+    "Account Category": "Liabilities"
+   },
+   {
+    "No.": "3000",
+    "Name": "Share Capital",
+    "Account Type": "Posting",
+    "Account Category": "Equity"
+   },
+   {
+    "No.": "4000",
+    "Name": "Sales Revenue",
+    "Account Type": "Posting",
+    "Account Category": "Income"
+   },
+   {
+    "No.": "5000",
+    "Name": "Cost of Purchases",
+    "Account Type": "Posting",
+    "Account Category": "CostofGoodsSold"
+   }
+  ],
+  "17": [
+   {
+    "Entry No.": 1,
+    "G/L Account No.": "1000",
+    "Posting Date": "2026-01-02",
+    "Document No.": "Capital",
+    "Amount": 5000,
+    "Debit Amount": 5000,
+    "Credit Amount": 0,
+    "Transaction No.": 1
+   },
+   {
+    "Entry No.": 2,
+    "G/L Account No.": "1200",
+    "Posting Date": "2026-01-02",
+    "Document No.": "Capital",
+    "Amount": 4000,
+    "Debit Amount": 4000,
+    "Credit Amount": 0,
+    "Transaction No.": 1
+   },
+   {
+    "Entry No.": 3,
+    "G/L Account No.": "3000",
+    "Posting Date": "2026-01-02",
+    "Document No.": "Capital",
+    "Amount": -9000,
+    "Debit Amount": 0,
+    "Credit Amount": 9000,
+    "Transaction No.": 1
+   },
+   {
+    "Entry No.": 4,
+    "G/L Account No.": "1010",
+    "Posting Date": "2026-01-03",
+    "Document No.": "EUR bank opening",
+    "Amount": 320,
+    "Debit Amount": 320,
+    "Credit Amount": 0,
+    "Transaction No.": 2
+   },
+   {
+    "Entry No.": 5,
+    "G/L Account No.": "3000",
+    "Posting Date": "2026-01-03",
+    "Document No.": "EUR bank opening",
+    "Amount": -320,
+    "Debit Amount": 0,
+    "Credit Amount": 320,
+    "Transaction No.": 2
+   },
+   {
+    "Entry No.": 6,
+    "G/L Account No.": "1100",
+    "Posting Date": "2026-02-15",
+    "Document No.": "SI-097",
+    "Amount": 60,
+    "Debit Amount": 60,
+    "Credit Amount": 0,
+    "Transaction No.": 3
+   },
+   {
+    "Entry No.": 7,
+    "G/L Account No.": "4000",
+    "Posting Date": "2026-02-15",
+    "Document No.": "SI-097",
+    "Amount": -60,
+    "Debit Amount": 0,
+    "Credit Amount": 60,
+    "Transaction No.": 3
+   },
+   {
+    "Entry No.": 8,
+    "G/L Account No.": "4000",
+    "Posting Date": "2026-02-15",
+    "Document No.": "SI-097 cancelled",
+    "Amount": 60,
+    "Debit Amount": 60,
+    "Credit Amount": 0,
+    "Transaction No.": 4
+   },
+   {
+    "Entry No.": 9,
+    "G/L Account No.": "1100",
+    "Posting Date": "2026-02-15",
+    "Document No.": "SI-097 cancelled",
+    "Amount": -60,
+    "Debit Amount": 0,
+    "Credit Amount": 60,
+    "Transaction No.": 4
+   },
+   {
+    "Entry No.": 10,
+    "G/L Account No.": "1100",
+    "Posting Date": "2026-01-20",
+    "Document No.": "SI-099",
+    "Amount": 250,
+    "Debit Amount": 250,
+    "Credit Amount": 0,
+    "Transaction No.": 5
+   },
+   {
+    "Entry No.": 11,
+    "G/L Account No.": "4000",
+    "Posting Date": "2026-01-20",
+    "Document No.": "SI-099",
+    "Amount": -250,
+    "Debit Amount": 0,
+    "Credit Amount": 250,
+    "Transaction No.": 5
+   },
+   {
+    "Entry No.": 12,
+    "G/L Account No.": "1000",
+    "Posting Date": "2026-02-01",
+    "Document No.": "Receipt SI-099",
+    "Amount": 250,
+    "Debit Amount": 250,
+    "Credit Amount": 0,
+    "Transaction No.": 6
+   },
+   {
+    "Entry No.": 13,
+    "G/L Account No.": "1100",
+    "Posting Date": "2026-02-01",
+    "Document No.": "Receipt SI-099",
+    "Amount": -250,
+    "Debit Amount": 0,
+    "Credit Amount": 250,
+    "Transaction No.": 6
+   },
+   {
+    "Entry No.": 14,
+    "G/L Account No.": "1100",
+    "Posting Date": "2026-02-01",
+    "Document No.": "SI-101",
+    "Amount": 1000,
+    "Debit Amount": 1000,
+    "Credit Amount": 0,
+    "Transaction No.": 7
+   },
+   {
+    "Entry No.": 15,
+    "G/L Account No.": "4000",
+    "Posting Date": "2026-02-01",
+    "Document No.": "SI-101",
+    "Amount": -1000,
+    "Debit Amount": 0,
+    "Credit Amount": 1000,
+    "Transaction No.": 7
+   },
+   {
+    "Entry No.": 16,
+    "G/L Account No.": "1100",
+    "Posting Date": "2026-02-10",
+    "Document No.": "SI-102",
+    "Amount": 500,
+    "Debit Amount": 500,
+    "Credit Amount": 0,
+    "Transaction No.": 8
+   },
+   {
+    "Entry No.": 17,
+    "G/L Account No.": "4000",
+    "Posting Date": "2026-02-10",
+    "Document No.": "SI-102",
+    "Amount": -500,
+    "Debit Amount": 0,
+    "Credit Amount": 500,
+    "Transaction No.": 8
+   },
+   {
+    "Entry No.": 18,
+    "G/L Account No.": "1000",
+    "Posting Date": "2026-03-01",
+    "Document No.": "Receipt SI-102",
+    "Amount": 200,
+    "Debit Amount": 200,
+    "Credit Amount": 0,
+    "Transaction No.": 9
+   },
+   {
+    "Entry No.": 19,
+    "G/L Account No.": "1100",
+    "Posting Date": "2026-03-01",
+    "Document No.": "Receipt SI-102",
+    "Amount": -200,
+    "Debit Amount": 0,
+    "Credit Amount": 200,
+    "Transaction No.": 9
+   },
+   {
+    "Entry No.": 20,
+    "G/L Account No.": "1100",
+    "Posting Date": "2026-03-05",
+    "Document No.": "SI-103 EUR",
+    "Amount": 270,
+    "Debit Amount": 270,
+    "Credit Amount": 0,
+    "Transaction No.": 10
+   },
+   {
+    "Entry No.": 21,
+    "G/L Account No.": "4000",
+    "Posting Date": "2026-03-05",
+    "Document No.": "SI-103 EUR",
+    "Amount": -270,
+    "Debit Amount": 0,
+    "Credit Amount": 270,
+    "Transaction No.": 10
+   },
+   {
+    "Entry No.": 22,
+    "G/L Account No.": "1100",
+    "Posting Date": "2026-03-10",
+    "Document No.": "SI-104",
+    "Amount": 80,
+    "Debit Amount": 80,
+    "Credit Amount": 0,
+    "Transaction No.": 11
+   },
+   {
+    "Entry No.": 23,
+    "G/L Account No.": "4000",
+    "Posting Date": "2026-03-10",
+    "Document No.": "SI-104",
+    "Amount": -80,
+    "Debit Amount": 0,
+    "Credit Amount": 80,
+    "Transaction No.": 11
+   },
+   {
+    "Entry No.": 24,
+    "G/L Account No.": "4000",
+    "Posting Date": "2026-04-01",
+    "Document No.": "SCN-101",
+    "Amount": 100,
+    "Debit Amount": 100,
+    "Credit Amount": 0,
+    "Transaction No.": 12
+   },
+   {
+    "Entry No.": 25,
+    "G/L Account No.": "1100",
+    "Posting Date": "2026-04-01",
+    "Document No.": "SCN-101",
+    "Amount": -100,
+    "Debit Amount": 0,
+    "Credit Amount": 100,
+    "Transaction No.": 12
+   },
+   {
+    "Entry No.": 26,
+    "G/L Account No.": "1000",
+    "Posting Date": "2026-04-15",
+    "Document No.": "On-account receipt C1",
+    "Amount": 150,
+    "Debit Amount": 150,
+    "Credit Amount": 0,
+    "Transaction No.": 13
+   },
+   {
+    "Entry No.": 27,
+    "G/L Account No.": "1100",
+    "Posting Date": "2026-04-15",
+    "Document No.": "On-account receipt C1",
+    "Amount": -150,
+    "Debit Amount": 0,
+    "Credit Amount": 150,
+    "Transaction No.": 13
+   },
+   {
+    "Entry No.": 28,
+    "G/L Account No.": "5000",
+    "Posting Date": "2026-02-05",
+    "Document No.": "PI-201",
+    "Amount": 800,
+    "Debit Amount": 800,
+    "Credit Amount": 0,
+    "Transaction No.": 14
+   },
+   {
+    "Entry No.": 29,
+    "G/L Account No.": "2000",
+    "Posting Date": "2026-02-05",
+    "Document No.": "PI-201",
+    "Amount": -800,
+    "Debit Amount": 0,
+    "Credit Amount": 800,
+    "Transaction No.": 14
+   },
+   {
+    "Entry No.": 30,
+    "G/L Account No.": "5000",
+    "Posting Date": "2026-02-20",
+    "Document No.": "PI-202",
+    "Amount": 600,
+    "Debit Amount": 600,
+    "Credit Amount": 0,
+    "Transaction No.": 15
+   },
+   {
+    "Entry No.": 31,
+    "G/L Account No.": "2000",
+    "Posting Date": "2026-02-20",
+    "Document No.": "PI-202",
+    "Amount": -600,
+    "Debit Amount": 0,
+    "Credit Amount": 600,
+    "Transaction No.": 15
+   },
+   {
+    "Entry No.": 32,
+    "G/L Account No.": "2000",
+    "Posting Date": "2026-03-20",
+    "Document No.": "Payment PI-202",
+    "Amount": 100,
+    "Debit Amount": 100,
+    "Credit Amount": 0,
+    "Transaction No.": 16
+   },
+   {
+    "Entry No.": 33,
+    "G/L Account No.": "1000",
+    "Posting Date": "2026-03-20",
+    "Document No.": "Payment PI-202",
+    "Amount": -100,
+    "Debit Amount": 0,
+    "Credit Amount": 100,
+    "Transaction No.": 16
+   },
+   {
+    "Entry No.": 34,
+    "G/L Account No.": "2000",
+    "Posting Date": "2026-04-05",
+    "Document No.": "PCN-301",
+    "Amount": 50,
+    "Debit Amount": 50,
+    "Credit Amount": 0,
+    "Transaction No.": 17
+   },
+   {
+    "Entry No.": 35,
+    "G/L Account No.": "5000",
+    "Posting Date": "2026-04-05",
+    "Document No.": "PCN-301",
+    "Amount": -50,
+    "Debit Amount": 0,
+    "Credit Amount": 50,
+    "Transaction No.": 17
+   },
+   {
+    "Entry No.": 36,
+    "G/L Account No.": "1100",
+    "Posting Date": "2026-07-15",
+    "Document No.": "SI-105",
+    "Amount": 40,
+    "Debit Amount": 40,
+    "Credit Amount": 0,
+    "Transaction No.": 18
+   },
+   {
+    "Entry No.": 37,
+    "G/L Account No.": "4000",
+    "Posting Date": "2026-07-15",
+    "Document No.": "SI-105",
+    "Amount": -40,
+    "Debit Amount": 0,
+    "Credit Amount": 40,
+    "Transaction No.": 18
+   },
+   {
+    "Entry No.": 38,
+    "G/L Account No.": "1000",
+    "Posting Date": "2026-07-20",
+    "Document No.": "Receipt SI-101 part",
+    "Amount": 400,
+    "Debit Amount": 400,
+    "Credit Amount": 0,
+    "Transaction No.": 19
+   },
+   {
+    "Entry No.": 39,
+    "G/L Account No.": "1100",
+    "Posting Date": "2026-07-20",
+    "Document No.": "Receipt SI-101 part",
+    "Amount": -400,
+    "Debit Amount": 0,
+    "Credit Amount": 400,
+    "Transaction No.": 19
+   }
+  ],
+  "18": [
+   {
+    "No.": "C1",
+    "Name": "Alpha Customer One",
+    "VAT Registration No.": "TAX-C1",
+    "Address": "1 Main Street",
+    "City": "Springfield",
+    "Post Code": "10001",
+    "Country/Region Code": "US",
+    "Customer Posting Group": "CUST-DOM"
+   },
+   {
+    "No.": "C2",
+    "Name": "Beta Customer Two",
+    "VAT Registration No.": "TAX-C2",
+    "Address": "2 Euro Lane",
+    "City": "Berlin",
+    "Post Code": "20002",
+    "Country/Region Code": "DE",
+    "Customer Posting Group": "CUST-DOM"
+   },
+   {
+    "No.": "C3",
+    "Name": "Gamma Customer Three",
+    "VAT Registration No.": "TAX-C3",
+    "Customer Posting Group": "CUST-DOM"
+   }
+  ],
+  "21": [
+   {
+    "Entry No.": 1,
+    "Posting Date": "2026-02-15",
+    "Document Type": "Invoice",
+    "Document No.": "SI-097",
+    "Currency Code": "",
+    "Open": false,
+    "Customer No.": "C1",
+    "Customer Posting Group": "CUST-DOM"
+   },
+   {
+    "Entry No.": 2,
+    "Posting Date": "2026-02-15",
+    "Document Type": "Credit Memo",
+    "Document No.": "SCN-097",
+    "Currency Code": "",
+    "Open": false,
+    "Customer No.": "C1",
+    "Customer Posting Group": "CUST-DOM"
+   },
+   {
+    "Entry No.": 3,
+    "Posting Date": "2026-01-20",
+    "Document Type": "Invoice",
+    "Document No.": "SI-099",
+    "Currency Code": "",
+    "Open": false,
+    "Customer No.": "C1",
+    "Customer Posting Group": "CUST-DOM"
+   },
+   {
+    "Entry No.": 4,
+    "Posting Date": "2026-02-01",
+    "Document Type": "Payment",
+    "Document No.": "RC-099",
+    "Currency Code": "",
+    "Open": false,
+    "Customer No.": "C1",
+    "Customer Posting Group": "CUST-DOM"
+   },
+   {
+    "Entry No.": 5,
+    "Posting Date": "2026-02-01",
+    "Document Type": "Invoice",
+    "Document No.": "SI-101",
+    "Currency Code": "",
+    "Open": true,
+    "Customer No.": "C1",
+    "Customer Posting Group": "CUST-DOM"
+   },
+   {
+    "Entry No.": 6,
+    "Posting Date": "2026-07-20",
+    "Document Type": "Payment",
+    "Document No.": "RC-101",
+    "Currency Code": "",
+    "Open": false,
+    "Customer No.": "C1",
+    "Customer Posting Group": "CUST-DOM"
+   },
+   {
+    "Entry No.": 7,
+    "Posting Date": "2026-02-10",
+    "Document Type": "Invoice",
+    "Document No.": "SI-102",
+    "Currency Code": "",
+    "Open": true,
+    "Customer No.": "C1",
+    "Customer Posting Group": "CUST-DOM"
+   },
+   {
+    "Entry No.": 8,
+    "Posting Date": "2026-03-01",
+    "Document Type": "Payment",
+    "Document No.": "RC-102",
+    "Currency Code": "",
+    "Open": false,
+    "Customer No.": "C1",
+    "Customer Posting Group": "CUST-DOM"
+   },
+   {
+    "Entry No.": 9,
+    "Posting Date": "2026-03-05",
+    "Document Type": "Invoice",
+    "Document No.": "SI-103",
+    "Currency Code": "EUR",
+    "Open": true,
+    "Customer No.": "C2",
+    "Customer Posting Group": "CUST-DOM"
+   },
+   {
+    "Entry No.": 10,
+    "Posting Date": "2026-03-10",
+    "Document Type": "Invoice",
+    "Document No.": "SI-104",
+    "Currency Code": "",
+    "Open": true,
+    "Customer No.": "C3",
+    "Customer Posting Group": "CUST-DOM"
+   },
+   {
+    "Entry No.": 11,
+    "Posting Date": "2026-04-01",
+    "Document Type": "Credit Memo",
+    "Document No.": "SCN-101",
+    "Currency Code": "",
+    "Open": true,
+    "Customer No.": "C1",
+    "Customer Posting Group": "CUST-DOM"
+   },
+   {
+    "Entry No.": 12,
+    "Posting Date": "2026-04-15",
+    "Document Type": "Payment",
+    "Document No.": "RC-ACCT",
+    "Currency Code": "",
+    "Open": true,
+    "Customer No.": "C1",
+    "Customer Posting Group": "CUST-DOM"
+   },
+   {
+    "Entry No.": 13,
+    "Posting Date": "2026-07-15",
+    "Document Type": "Invoice",
+    "Document No.": "SI-105",
+    "Currency Code": "",
+    "Open": true,
+    "Customer No.": "C1",
+    "Customer Posting Group": "CUST-DOM"
+   }
+  ],
+  "23": [
+   {
+    "No.": "V1",
+    "Name": "Delta Vendor One",
+    "VAT Registration No.": "TAX-V1",
+    "Address": "3 Supply Road",
+    "City": "Dayton",
+    "Post Code": "30003",
+    "Country/Region Code": "US",
+    "Vendor Posting Group": "VEND-DOM"
+   },
+   {
+    "No.": "V2",
+    "Name": "Epsilon Vendor Two",
+    "VAT Registration No.": "TAX-V2",
+    "Address": "4 Depot Avenue",
+    "City": "Dayton",
+    "Post Code": "30004",
+    "Country/Region Code": "US",
+    "Vendor Posting Group": "VEND-DOM"
+   }
+  ],
+  "25": [
+   {
+    "Entry No.": 1,
+    "Posting Date": "2026-02-05",
+    "Document Type": "Invoice",
+    "Document No.": "PI-201",
+    "Currency Code": "",
+    "Open": true,
+    "Vendor No.": "V1",
+    "Vendor Posting Group": "VEND-DOM"
+   },
+   {
+    "Entry No.": 2,
+    "Posting Date": "2026-02-20",
+    "Document Type": "Invoice",
+    "Document No.": "PI-202",
+    "Currency Code": "",
+    "Open": true,
+    "Vendor No.": "V2",
+    "Vendor Posting Group": "VEND-DOM"
+   },
+   {
+    "Entry No.": 3,
+    "Posting Date": "2026-03-20",
+    "Document Type": "Payment",
+    "Document No.": "PM-202",
+    "Currency Code": "",
+    "Open": false,
+    "Vendor No.": "V2",
+    "Vendor Posting Group": "VEND-DOM"
+   },
+   {
+    "Entry No.": 4,
+    "Posting Date": "2026-04-05",
+    "Document Type": "Credit Memo",
+    "Document No.": "PCN-301",
+    "Currency Code": "",
+    "Open": true,
+    "Vendor No.": "V1",
+    "Vendor Posting Group": "VEND-DOM"
+   }
+  ],
+  "79": [
+   {
+    "Name": "Test Co BC",
+    "Country/Region Code": "US"
+   }
+  ],
+  "92": [
+   {
+    "Code": "CUST-DOM",
+    "Receivables Account": "1100"
+   }
+  ],
+  "93": [
+   {
+    "Code": "VEND-DOM",
+    "Payables Account": "2000"
+   }
+  ],
+  "98": [
+   {
+    "LCY Code": "USD",
+    "Amount Rounding Precision": 0.01
+   }
+  ],
+  "270": [
+   {
+    "No.": "BANK1",
+    "Name": "First Test Bank",
+    "Bank Account No.": "ACC-1000",
+    "Bank Acc. Posting Group": "BANK-USD",
+    "Transit No.": "BR-001",
+    "SWIFT Code": "FTBKUS33"
+   },
+   {
+    "No.": "BANK2",
+    "Name": "Euro Test Bank",
+    "Bank Account No.": "ACC-1010-EUR",
+    "Bank Acc. Posting Group": "BANK-EUR",
+    "Currency Code": "EUR",
+    "Transit No.": "BR-002",
+    "SWIFT Code": "ETBKDEFF"
+   }
+  ],
+  "271": [
+   {
+    "Entry No.": 1,
+    "Bank Account No.": "BANK1",
+    "Posting Date": "2026-01-02",
+    "Document No.": "Capital",
+    "Amount": 5000,
+    "Amount (LCY)": 5000,
+    "Currency Code": "",
+    "Open": true
+   },
+   {
+    "Entry No.": 2,
+    "Bank Account No.": "BANK2",
+    "Posting Date": "2026-01-03",
+    "Document No.": "EUR bank opening",
+    "Amount": 290,
+    "Amount (LCY)": 320,
+    "Currency Code": "EUR",
+    "Open": true
+   },
+   {
+    "Entry No.": 3,
+    "Bank Account No.": "BANK1",
+    "Posting Date": "2026-02-01",
+    "Document No.": "Receipt SI-099",
+    "Amount": 250,
+    "Amount (LCY)": 250,
+    "Currency Code": "",
+    "Open": true
+   },
+   {
+    "Entry No.": 4,
+    "Bank Account No.": "BANK1",
+    "Posting Date": "2026-03-01",
+    "Document No.": "Receipt SI-102",
+    "Amount": 200,
+    "Amount (LCY)": 200,
+    "Currency Code": "",
+    "Open": true
+   },
+   {
+    "Entry No.": 5,
+    "Bank Account No.": "BANK1",
+    "Posting Date": "2026-04-15",
+    "Document No.": "On-account receipt C1",
+    "Amount": 150,
+    "Amount (LCY)": 150,
+    "Currency Code": "",
+    "Open": true
+   },
+   {
+    "Entry No.": 6,
+    "Bank Account No.": "BANK1",
+    "Posting Date": "2026-03-20",
+    "Document No.": "Payment PI-202",
+    "Amount": -100,
+    "Amount (LCY)": -100,
+    "Currency Code": "",
+    "Open": true
+   },
+   {
+    "Entry No.": 7,
+    "Bank Account No.": "BANK1",
+    "Posting Date": "2026-07-20",
+    "Document No.": "Receipt SI-101 part",
+    "Amount": 400,
+    "Amount (LCY)": 400,
+    "Currency Code": "",
+    "Open": true
+   }
+  ],
+  "277": [
+   {
+    "Code": "BANK-USD",
+    "G/L Account No.": "1000"
+   },
+   {
+    "Code": "BANK-EUR",
+    "G/L Account No.": "1010"
+   }
+  ],
+  "379": [
+   {
+    "Entry No.": 1,
+    "Entry Type": "Initial Entry",
+    "Posting Date": "2026-02-15",
+    "Document Type": "Invoice",
+    "Document No.": "SI-097",
+    "Amount": 60,
+    "Amount (LCY)": 60,
+    "Currency Code": "",
+    "Excluded from calculation": false,
+    "Cust. Ledger Entry No.": 1,
+    "Customer No.": "C1"
+   },
+   {
+    "Entry No.": 2,
+    "Entry Type": "Application",
+    "Posting Date": "2026-02-15",
+    "Document Type": "Invoice",
+    "Document No.": "SI-097",
+    "Amount": -60,
+    "Amount (LCY)": -60,
+    "Currency Code": "",
+    "Excluded from calculation": false,
+    "Cust. Ledger Entry No.": 1,
+    "Customer No.": "C1"
+   },
+   {
+    "Entry No.": 3,
+    "Entry Type": "Initial Entry",
+    "Posting Date": "2026-02-15",
+    "Document Type": "Credit Memo",
+    "Document No.": "SCN-097",
+    "Amount": -60,
+    "Amount (LCY)": -60,
+    "Currency Code": "",
+    "Excluded from calculation": false,
+    "Cust. Ledger Entry No.": 2,
+    "Customer No.": "C1"
+   },
+   {
+    "Entry No.": 4,
+    "Entry Type": "Application",
+    "Posting Date": "2026-02-15",
+    "Document Type": "Credit Memo",
+    "Document No.": "SCN-097",
+    "Amount": 60,
+    "Amount (LCY)": 60,
+    "Currency Code": "",
+    "Excluded from calculation": false,
+    "Cust. Ledger Entry No.": 2,
+    "Customer No.": "C1"
+   },
+   {
+    "Entry No.": 5,
+    "Entry Type": "Initial Entry",
+    "Posting Date": "2026-01-20",
+    "Document Type": "Invoice",
+    "Document No.": "SI-099",
+    "Amount": 250,
+    "Amount (LCY)": 250,
+    "Currency Code": "",
+    "Excluded from calculation": false,
+    "Cust. Ledger Entry No.": 3,
+    "Customer No.": "C1"
+   },
+   {
+    "Entry No.": 6,
+    "Entry Type": "Application",
+    "Posting Date": "2026-02-01",
+    "Document Type": "Invoice",
+    "Document No.": "SI-099",
+    "Amount": -250,
+    "Amount (LCY)": -250,
+    "Currency Code": "",
+    "Excluded from calculation": false,
+    "Cust. Ledger Entry No.": 3,
+    "Customer No.": "C1"
+   },
+   {
+    "Entry No.": 7,
+    "Entry Type": "Initial Entry",
+    "Posting Date": "2026-02-01",
+    "Document Type": "Payment",
+    "Document No.": "RC-099",
+    "Amount": -250,
+    "Amount (LCY)": -250,
+    "Currency Code": "",
+    "Excluded from calculation": false,
+    "Cust. Ledger Entry No.": 4,
+    "Customer No.": "C1"
+   },
+   {
+    "Entry No.": 8,
+    "Entry Type": "Application",
+    "Posting Date": "2026-02-01",
+    "Document Type": "Payment",
+    "Document No.": "RC-099",
+    "Amount": 250,
+    "Amount (LCY)": 250,
+    "Currency Code": "",
+    "Excluded from calculation": false,
+    "Cust. Ledger Entry No.": 4,
+    "Customer No.": "C1"
+   },
+   {
+    "Entry No.": 9,
+    "Entry Type": "Initial Entry",
+    "Posting Date": "2026-02-01",
+    "Document Type": "Invoice",
+    "Document No.": "SI-101",
+    "Amount": 1000,
+    "Amount (LCY)": 1000,
+    "Currency Code": "",
+    "Excluded from calculation": false,
+    "Cust. Ledger Entry No.": 5,
+    "Customer No.": "C1"
+   },
+   {
+    "Entry No.": 10,
+    "Entry Type": "Application",
+    "Posting Date": "2026-07-20",
+    "Document Type": "Invoice",
+    "Document No.": "SI-101",
+    "Amount": -400,
+    "Amount (LCY)": -400,
+    "Currency Code": "",
+    "Excluded from calculation": false,
+    "Cust. Ledger Entry No.": 5,
+    "Customer No.": "C1"
+   },
+   {
+    "Entry No.": 11,
+    "Entry Type": "Initial Entry",
+    "Posting Date": "2026-07-20",
+    "Document Type": "Payment",
+    "Document No.": "RC-101",
+    "Amount": -400,
+    "Amount (LCY)": -400,
+    "Currency Code": "",
+    "Excluded from calculation": false,
+    "Cust. Ledger Entry No.": 6,
+    "Customer No.": "C1"
+   },
+   {
+    "Entry No.": 12,
+    "Entry Type": "Application",
+    "Posting Date": "2026-07-20",
+    "Document Type": "Payment",
+    "Document No.": "RC-101",
+    "Amount": 400,
+    "Amount (LCY)": 400,
+    "Currency Code": "",
+    "Excluded from calculation": false,
+    "Cust. Ledger Entry No.": 6,
+    "Customer No.": "C1"
+   },
+   {
+    "Entry No.": 13,
+    "Entry Type": "Initial Entry",
+    "Posting Date": "2026-02-10",
+    "Document Type": "Invoice",
+    "Document No.": "SI-102",
+    "Amount": 500,
+    "Amount (LCY)": 500,
+    "Currency Code": "",
+    "Excluded from calculation": false,
+    "Cust. Ledger Entry No.": 7,
+    "Customer No.": "C1"
+   },
+   {
+    "Entry No.": 14,
+    "Entry Type": "Application",
+    "Posting Date": "2026-03-01",
+    "Document Type": "Invoice",
+    "Document No.": "SI-102",
+    "Amount": -200,
+    "Amount (LCY)": -200,
+    "Currency Code": "",
+    "Excluded from calculation": false,
+    "Cust. Ledger Entry No.": 7,
+    "Customer No.": "C1"
+   },
+   {
+    "Entry No.": 15,
+    "Entry Type": "Initial Entry",
+    "Posting Date": "2026-03-01",
+    "Document Type": "Payment",
+    "Document No.": "RC-102",
+    "Amount": -200,
+    "Amount (LCY)": -200,
+    "Currency Code": "",
+    "Excluded from calculation": false,
+    "Cust. Ledger Entry No.": 8,
+    "Customer No.": "C1"
+   },
+   {
+    "Entry No.": 16,
+    "Entry Type": "Application",
+    "Posting Date": "2026-03-01",
+    "Document Type": "Payment",
+    "Document No.": "RC-102",
+    "Amount": 200,
+    "Amount (LCY)": 200,
+    "Currency Code": "",
+    "Excluded from calculation": false,
+    "Cust. Ledger Entry No.": 8,
+    "Customer No.": "C1"
+   },
+   {
+    "Entry No.": 17,
+    "Entry Type": "Initial Entry",
+    "Posting Date": "2026-03-05",
+    "Document Type": "Invoice",
+    "Document No.": "SI-103",
+    "Amount": 250,
+    "Amount (LCY)": 270,
+    "Currency Code": "EUR",
+    "Excluded from calculation": false,
+    "Cust. Ledger Entry No.": 9,
+    "Customer No.": "C2"
+   },
+   {
+    "Entry No.": 18,
+    "Entry Type": "Initial Entry",
+    "Posting Date": "2026-03-10",
+    "Document Type": "Invoice",
+    "Document No.": "SI-104",
+    "Amount": 80,
+    "Amount (LCY)": 80,
+    "Currency Code": "",
+    "Excluded from calculation": false,
+    "Cust. Ledger Entry No.": 10,
+    "Customer No.": "C3"
+   },
+   {
+    "Entry No.": 19,
+    "Entry Type": "Initial Entry",
+    "Posting Date": "2026-04-01",
+    "Document Type": "Credit Memo",
+    "Document No.": "SCN-101",
+    "Amount": -100,
+    "Amount (LCY)": -100,
+    "Currency Code": "",
+    "Excluded from calculation": false,
+    "Cust. Ledger Entry No.": 11,
+    "Customer No.": "C1"
+   },
+   {
+    "Entry No.": 20,
+    "Entry Type": "Initial Entry",
+    "Posting Date": "2026-04-15",
+    "Document Type": "Payment",
+    "Document No.": "RC-ACCT",
+    "Amount": -150,
+    "Amount (LCY)": -150,
+    "Currency Code": "",
+    "Excluded from calculation": false,
+    "Cust. Ledger Entry No.": 12,
+    "Customer No.": "C1"
+   },
+   {
+    "Entry No.": 21,
+    "Entry Type": "Initial Entry",
+    "Posting Date": "2026-07-15",
+    "Document Type": "Invoice",
+    "Document No.": "SI-105",
+    "Amount": 40,
+    "Amount (LCY)": 40,
+    "Currency Code": "",
+    "Excluded from calculation": false,
+    "Cust. Ledger Entry No.": 13,
+    "Customer No.": "C1"
+   }
+  ],
+  "380": [
+   {
+    "Entry No.": 22,
+    "Entry Type": "Initial Entry",
+    "Posting Date": "2026-02-05",
+    "Document Type": "Invoice",
+    "Document No.": "PI-201",
+    "Amount": -800,
+    "Amount (LCY)": -800,
+    "Currency Code": "",
+    "Excluded from calculation": false,
+    "Vendor Ledger Entry No.": 1,
+    "Vendor No.": "V1"
+   },
+   {
+    "Entry No.": 23,
+    "Entry Type": "Initial Entry",
+    "Posting Date": "2026-02-20",
+    "Document Type": "Invoice",
+    "Document No.": "PI-202",
+    "Amount": -600,
+    "Amount (LCY)": -600,
+    "Currency Code": "",
+    "Excluded from calculation": false,
+    "Vendor Ledger Entry No.": 2,
+    "Vendor No.": "V2"
+   },
+   {
+    "Entry No.": 24,
+    "Entry Type": "Application",
+    "Posting Date": "2026-03-20",
+    "Document Type": "Invoice",
+    "Document No.": "PI-202",
+    "Amount": 100,
+    "Amount (LCY)": 100,
+    "Currency Code": "",
+    "Excluded from calculation": false,
+    "Vendor Ledger Entry No.": 2,
+    "Vendor No.": "V2"
+   },
+   {
+    "Entry No.": 25,
+    "Entry Type": "Initial Entry",
+    "Posting Date": "2026-03-20",
+    "Document Type": "Payment",
+    "Document No.": "PM-202",
+    "Amount": 100,
+    "Amount (LCY)": 100,
+    "Currency Code": "",
+    "Excluded from calculation": false,
+    "Vendor Ledger Entry No.": 3,
+    "Vendor No.": "V2"
+   },
+   {
+    "Entry No.": 26,
+    "Entry Type": "Application",
+    "Posting Date": "2026-03-20",
+    "Document Type": "Payment",
+    "Document No.": "PM-202",
+    "Amount": -100,
+    "Amount (LCY)": -100,
+    "Currency Code": "",
+    "Excluded from calculation": false,
+    "Vendor Ledger Entry No.": 3,
+    "Vendor No.": "V2"
+   },
+   {
+    "Entry No.": 27,
+    "Entry Type": "Initial Entry",
+    "Posting Date": "2026-04-05",
+    "Document Type": "Credit Memo",
+    "Document No.": "PCN-301",
+    "Amount": 50,
+    "Amount (LCY)": 50,
+    "Currency Code": "",
+    "Excluded from calculation": false,
+    "Vendor Ledger Entry No.": 4,
+    "Vendor No.": "V1"
+   }
+  ]
+ }
+}
