@@ -6,8 +6,8 @@
 cd "$(dirname "$0")"; mkdir -p /tmp/count_logs
 W="migrate_engine open_balances already_there plugin_role_access sap_migrate bc_migrate odoo_form odoo_messy
    import_product import_invoice import_payment import_order import_gljournal import_inventory import_bankstatement
-   bankstatement post_bankstatement seed_patch_idempotent"
-[ "${SLOW:-0}" = 1 ] && W="$W idempiere_falsifier migration_journey"   # migration_journey: the live page, headless Chromium, ~5 min (R1/R2)
+   bankstatement post_bankstatement sapbc_open seed_patch_idempotent"
+[ "${SLOW:-0}" = 1 ] && W="$W idempiere_falsifier migration_journey"   # migration_journey: live page, headless Chromium, ~5 min (R1/R2)
 bad=0
 for w in $W; do
   f=witness_$w.js; log=/tmp/count_logs/mig_$w.log

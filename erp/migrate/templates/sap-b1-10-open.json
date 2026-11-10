@@ -1,0 +1,987 @@
+{
+ "template": "sap-b1-10-open",
+ "version": 1,
+ "source": "SAP Business One Service Layer (ALPHA)",
+ "description": "The OPEN BALANCES of SAP Business One at the cut-over, ALPHA, never run on a real company (bim-compiler prompts/MIGRATE_INSTALL_TENANT.md §SAP-BC-OPEN-SPEC, W-SAPBC-OPEN): the trial balance as ONE opening GL journal with the receivable / payable / bank control accounts routed to clearing accounts, every open invoice and credit note as a ONE-line document on an Opening Charge, and one opening bank statement per bank account. SAME target sheets, variables and arithmetic as odoo-17.json and idempiere-open.json; the reader (erp/sap_agent/open_reader.js) writes the neutral sets tb / open_items / partner_locations / banks, so this file holds no vendor field names. Each peculiarity S1-S15 is carried or a named refusal with the amount left on its clearing account.",
+ "connector": {
+  "kind": "export-json",
+  "format": "sap-b1-open-json-v1",
+  "reportAs": "sap_open_sets",
+  "notThisFile": "This is not a file the SAP Business One open-balances reader wrote (sap_open.json, format sap-b1-open-json-v1). Run the current agent again with --cutover."
+ },
+ "srcKey": "sap-open",
+ "variables": {
+  "AR_CLEARING": "AR-CLEAR",
+  "AP_CLEARING": "AP-CLEAR",
+  "BANK_CLEARING": "BANK-CLEAR",
+  "CHARGE_AR": "Opening Charge AR",
+  "CHARGE_AP": "Opening Charge AP",
+  "TAX_NONE": "OPEN-0",
+  "CHARGE_BANK": "Opening Charge Bank",
+  "BANK_ROUTING": "-",
+  "PL_SALES": "Opening Sales",
+  "PL_PURCHASE": "Opening Purchase"
+ },
+ "valueMaps": {
+  "docType": {
+   "ARI": "AR Invoice",
+   "ARC": "AR Credit Memo",
+   "API": "AP Invoice",
+   "APC": "AP CreditMemo"
+  },
+  "bankType": {
+   "C": "C",
+   "B": "B"
+  }
+ },
+ "defs": {
+  "bal": {
+   "round": [
+    "$balance",
+    "@manifest.currency_places"
+   ]
+  },
+  "clearing": {
+   "if": [
+    {
+     "eq": [
+      "$class",
+      "AR"
+     ]
+    },
+    "${AR_CLEARING}",
+    {
+     "if": [
+      {
+       "eq": [
+        "$class",
+        "AP"
+       ]
+      },
+      "${AP_CLEARING}",
+      {
+       "if": [
+        {
+         "eq": [
+          "$class",
+          "BANK"
+         ]
+        },
+        "${BANK_CLEARING}",
+        ""
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "foreign": {
+   "ne": [
+    {
+     "str": "$iso"
+    },
+    {
+     "str": "@manifest.currency"
+    }
+   ]
+  },
+  "notPosted": {
+   "ne": [
+    {
+     "str": "$posted"
+    },
+    "Y"
+   ]
+  },
+  "signBad": {
+   "if": [
+    {
+     "in": [
+      "$base",
+      [
+       "ARI",
+       "API"
+      ]
+     ]
+    },
+    {
+     "lt": [
+      "$open_amount",
+      0
+     ]
+    },
+    {
+     "gt": [
+      "$open_amount",
+      0
+     ]
+    }
+   ]
+  },
+  "badBase": {
+   "not": {
+    "in": [
+     "$base",
+     [
+      "ARI",
+      "ARC",
+      "API",
+      "APC"
+     ]
+    ]
+   }
+  },
+  "longNo": {
+   "gt": [
+    {
+     "len": {
+      "str": "$documentno"
+     }
+    },
+    30
+   ]
+  },
+  "notBroughtIn": {
+   "or": [
+    {
+     "def": "badBase"
+    },
+    {
+     "def": "foreign"
+    },
+    {
+     "def": "notPosted"
+    },
+    {
+     "def": "signBad"
+    },
+    {
+     "def": "longNo"
+    },
+    {
+     "def": "noLoc"
+    }
+   ]
+  },
+  "bankBrought": {
+   "and": [
+    {
+     "not": {
+      "def": "foreign"
+     }
+    },
+    {
+     "ne": [
+      "$currentbalance",
+      0
+     ]
+    }
+   ]
+  },
+  "sumBrought": {
+   "sumSet": [
+    "open_items",
+    {
+     "and": [
+      {
+       "not": {
+        "def": "notBroughtIn"
+       }
+      },
+      {
+       "eq": [
+        "$issotrx",
+        "Y"
+       ]
+      }
+     ]
+    },
+    "$open_amount"
+   ]
+  },
+  "noLoc": {
+   "eq": [
+    "$has_location",
+    "N"
+   ]
+  }
+ },
+ "entities": {
+  "C_ElementValue": {
+   "from": "tb",
+   "fields": {
+    "Value": {
+     "cut": [
+      "$code",
+      40
+     ]
+    },
+    "Name": {
+     "cut": [
+      "$name",
+      120
+     ]
+    },
+    "AccountType": "$account_type",
+    "AccountSign": "N",
+    "IsSummary": "N",
+    "C_Element_ID>ElementType": "A"
+   },
+   "prov": {
+    "rule": "from the neutral set"
+   }
+  },
+  "C_PaymentTerm": {
+   "from": "open_items",
+   "once": {
+    "str": "$term_value"
+   },
+   "where": {
+    "ne": [
+     {
+      "str": "$term_value"
+     },
+     ""
+    ]
+   },
+   "fields": {
+    "Value": {
+     "cut": [
+      "$term_value",
+      40
+     ]
+    },
+    "Name": {
+     "cut": [
+      {
+       "first": [
+        "$term_name",
+        "$term_value"
+       ]
+      },
+      60
+     ]
+    },
+    "NetDays": {
+     "if": [
+      "$term_days",
+      "$term_days",
+      ""
+     ]
+    }
+   },
+   "prov": {
+    "rule": "from the neutral set"
+   }
+  },
+  "C_BPartner": {
+   "from": "open_items",
+   "once": {
+    "str": "$bp_value"
+   },
+   "fields": {
+    "Value": {
+     "cut": [
+      "$bp_value",
+      40
+     ]
+    },
+    "Name": {
+     "cut": [
+      {
+       "first": [
+        "$bp_name",
+        "$bp_value"
+       ]
+      },
+      120
+     ]
+    },
+    "TaxID": {
+     "cut": [
+      {
+       "str": "$bp_taxid"
+      },
+      20
+     ]
+    },
+    "IsCustomer": {
+     "if": [
+      {
+       "eq": [
+        "$iscustomer",
+        "Y"
+       ]
+      },
+      "Y",
+      "N"
+     ]
+    },
+    "IsVendor": {
+     "if": [
+      {
+       "eq": [
+        "$isvendor",
+        "Y"
+       ]
+      },
+      "Y",
+      "N"
+     ]
+    },
+    "C_BP_Group_ID>IsDefault": "Y",
+    "IsActive": "Y"
+   },
+   "prov": {
+    "rule": "from the neutral set"
+   }
+  },
+  "C_Location": {
+   "from": "partner_locations",
+   "once": {
+    "str": "$location_id"
+   },
+   "fields": {
+    "Address1": {
+     "cut": [
+      {
+       "str": "$address1"
+      },
+      60
+     ]
+    },
+    "Address2": {
+     "cut": [
+      {
+       "str": "$address2"
+      },
+      60
+     ]
+    },
+    "City": {
+     "cut": [
+      {
+       "str": "$city"
+      },
+      60
+     ]
+    },
+    "Postal": {
+     "cut": [
+      {
+       "str": "$postal"
+      },
+      10
+     ]
+    },
+    "RegionName": {
+     "cut": [
+      {
+       "str": "$region"
+      },
+      40
+     ]
+    },
+    "C_Country_ID>CountryCode": "$country",
+    "C_Location_UU": {
+     "uuid5": {
+      "concat": [
+       "@manifest.db",
+       "/c_location/",
+       "$location_id"
+      ]
+     }
+    }
+   },
+   "prov": {
+    "rule": "from the neutral set"
+   }
+  },
+  "C_BPartner_Location": {
+   "from": "partner_locations",
+   "once": {
+    "str": "$bploc_id"
+   },
+   "fields": {
+    "C_BPartner_ID>Value": {
+     "cut": [
+      "$bp_value",
+      40
+     ]
+    },
+    "C_Location_ID>C_Location_UU": {
+     "uuid5": {
+      "concat": [
+       "@manifest.db",
+       "/c_location/",
+       "$location_id"
+      ]
+     }
+    },
+    "Name": {
+     "cut": [
+      {
+       "first": [
+        "$loc_name",
+        "$city"
+       ]
+      },
+      60
+     ]
+    }
+   },
+   "prov": {
+    "rule": "from the neutral set"
+   }
+  },
+  "M_PriceList": {
+   "from": "open_items",
+   "once": {
+    "str": "$issotrx"
+   },
+   "fields": {
+    "Name": {
+     "if": [
+      {
+       "eq": [
+        "$issotrx",
+        "Y"
+       ]
+      },
+      "${PL_SALES}",
+      "${PL_PURCHASE}"
+     ]
+    },
+    "IsSOPriceList": "$issotrx",
+    "C_Currency_ID>ISO_Code": "@manifest.currency"
+   },
+   "prov": {
+    "rule": "structural: the target contract needs a price list for Import Invoice; the source documents carry none to copy"
+   }
+  },
+  "M_PriceList_Version": {
+   "from": "open_items",
+   "once": {
+    "str": "$issotrx"
+   },
+   "fields": {
+    "M_PriceList_ID": {
+     "if": [
+      {
+       "eq": [
+        "$issotrx",
+        "Y"
+       ]
+      },
+      "${PL_SALES}",
+      "${PL_PURCHASE}"
+     ]
+    },
+    "Name": "@manifest.cutover",
+    "ValidFrom": "@manifest.cutover",
+    "M_DiscountSchema_ID>DiscountType": "P"
+   },
+   "prov": {
+    "cutover": "@manifest.cutover"
+   }
+  },
+  "I_GLJournal": {
+   "from": "tb",
+   "where": {
+    "ne": [
+     {
+      "def": "bal"
+     },
+     0
+    ]
+   },
+   "fields": {
+    "BatchDocumentNo": {
+     "concat": [
+      "OPEN-TB-",
+      "@manifest.cutover"
+     ]
+    },
+    "BatchDescription": {
+     "cut": [
+      {
+       "concat": [
+        "Opening balances from SAP Business One ",
+        "@manifest.db",
+        " ",
+        "@manifest.client_name",
+        " at ",
+        "@manifest.cutover"
+       ]
+      },
+      255
+     ]
+    },
+    "JournalDocumentNo": {
+     "concat": [
+      "OPEN-TB-",
+      "@manifest.cutover"
+     ]
+    },
+    "DocTypeName": "GL Journal",
+    "CategoryName": "Manual",
+    "PostingType": "A",
+    "DateAcct": "@manifest.cutover",
+    "ISO_Code": "@manifest.currency",
+    "AccountValue": {
+     "first": [
+      {
+       "def": "clearing"
+      },
+      "$code"
+     ]
+    },
+    "AmtSourceDr": {
+     "if": [
+      {
+       "gt": [
+        {
+         "def": "bal"
+        },
+        0
+       ]
+      },
+      {
+       "def": "bal"
+      },
+      0
+     ]
+    },
+    "AmtSourceCr": {
+     "if": [
+      {
+       "lt": [
+        {
+         "def": "bal"
+        },
+        0
+       ]
+      },
+      {
+       "abs": {
+        "def": "bal"
+       }
+      },
+      0
+     ]
+    },
+    "Description": {
+     "cut": [
+      {
+       "concat": [
+        "Opening balance of ",
+        "$code",
+        " ",
+        "$name"
+       ]
+      },
+      255
+     ]
+    },
+    "I_IsImported": "N"
+   },
+   "prov": {
+    "source": "JournalEntries lines, ReferenceDate <= cutover",
+    "account": "$account_id",
+    "lines": "$lines",
+    "class": "$class"
+   }
+  },
+  "I_Invoice": {
+   "from": "open_items",
+   "refuse": [
+    {
+     "when": {
+      "def": "badBase"
+     },
+     "why": "an open document whose kind is not an invoice or credit note: not brought in; its amount stays on the AR / AP clearing account"
+    },
+    {
+     "when": {
+      "def": "foreign"
+     },
+     "why": "an open item in a foreign currency (S3): not brought in; its converted amount stays on the AR / AP clearing account"
+    },
+    {
+     "when": {
+      "def": "notPosted"
+     },
+     "why": "a document that is not posted (no journal, S4): its amount is not in the trial balance, so it is neither in the journal nor taken off the clearing account"
+    },
+    {
+     "when": {
+      "def": "signBad"
+     },
+     "why": "an open amount with the wrong sign for its document kind (S5): not brought in; its amount stays on the clearing account"
+    },
+    {
+     "when": {
+      "def": "longNo"
+     },
+     "why": "the document number is longer than 30 characters"
+    },
+    {
+     "when": {
+      "def": "noLoc"
+     },
+     "why": "the partner has no address in SAP Business One (S6): legacy Import Invoice needs a business partner location (\"No BP Location\") and none is made up; the amount stays on the AR / AP clearing account"
+    }
+   ],
+   "fields": {
+    "DocumentNo": {
+     "str": "$documentno"
+    },
+    "DocTypeName": {
+     "map": [
+      "docType",
+      "$base"
+     ]
+    },
+    "IsSOTrx": "$issotrx",
+    "BPartnerValue": {
+     "cut": [
+      "$bp_value",
+      40
+     ]
+    },
+    "DateInvoiced": "$dateinvoiced",
+    "DateAcct": "@manifest.cutover",
+    "ISO_Code": "@manifest.currency",
+    "PaymentTermValue": {
+     "cut": [
+      {
+       "str": "$term_value"
+      },
+      40
+     ]
+    },
+    "ChargeName": {
+     "if": [
+      {
+       "eq": [
+        "$issotrx",
+        "Y"
+       ]
+      },
+      "${CHARGE_AR}",
+      "${CHARGE_AP}"
+     ]
+    },
+    "QtyOrdered": 1,
+    "PriceActual": {
+     "round": [
+      {
+       "abs": "$open_amount"
+      },
+      "@manifest.currency_places"
+     ]
+    },
+    "TaxIndicator": "${TAX_NONE}",
+    "Description": {
+     "cut": [
+      {
+       "concat": [
+        "Open item from SAP Business One: ",
+        "$documentno"
+       ]
+      },
+      255
+     ]
+    },
+    "I_IsImported": "N"
+   },
+   "prov": {
+    "table": "SAP DocEntry",
+    "id": "$invoice_id",
+    "documentno": "$documentno"
+   }
+  },
+  "C_Bank": {
+   "from": "banks",
+   "unique": "Name",
+   "fields": {
+    "Name": {
+     "cut": [
+      "$bank_name",
+      60
+     ]
+    },
+    "RoutingNo": {
+     "first": [
+      "$routingno",
+      "${BANK_ROUTING}"
+     ]
+    },
+    "SwiftCode": {
+     "cut": [
+      {
+       "str": "$swiftcode"
+      },
+      20
+     ]
+    },
+    "IsOwnBank": "Y"
+   },
+   "prov": {
+    "bank": "$bank_name"
+   }
+  },
+  "C_BankAccount": {
+   "from": "banks",
+   "fields": {
+    "Value": {
+     "cut": [
+      {
+       "first": [
+        "$value",
+        "$accountno"
+       ]
+      },
+      40
+     ]
+    },
+    "Name": {
+     "cut": [
+      {
+       "first": [
+        "$name",
+        "$accountno"
+       ]
+      },
+      60
+     ]
+    },
+    "C_Bank_ID>Name": {
+     "cut": [
+      "$bank_name",
+      60
+     ]
+    },
+    "AccountNo": {
+     "cut": [
+      "$accountno",
+      20
+     ]
+    },
+    "BankAccountType": {
+     "first": [
+      {
+       "map": [
+        "bankType",
+        "$bankaccounttype"
+       ]
+      },
+      "C"
+     ]
+    },
+    "C_Currency_ID>ISO_Code": "$iso"
+   },
+   "prov": {
+    "id": "$bankaccount_id",
+    "asset_account": "$asset_code"
+   }
+  },
+  "I_BankStatement": {
+   "from": "banks",
+   "where": {
+    "def": "bankBrought"
+   },
+   "fields": {
+    "Name": {
+     "cut": [
+      {
+       "concat": [
+        "OPEN-BANK-",
+        "$accountno",
+        "-",
+        "@manifest.cutover"
+       ]
+      },
+      60
+     ]
+    },
+    "BankAccountNo": {
+     "cut": [
+      "$accountno",
+      20
+     ]
+    },
+    "RoutingNo": {
+     "first": [
+      "$routingno",
+      "${BANK_ROUTING}"
+     ]
+    },
+    "StatementDate": "@manifest.cutover",
+    "StatementLineDate": "@manifest.cutover",
+    "StmtAmt": {
+     "round": [
+      "$currentbalance",
+      "@manifest.currency_places"
+     ]
+    },
+    "ChargeAmt": {
+     "round": [
+      "$currentbalance",
+      "@manifest.currency_places"
+     ]
+    },
+    "C_Charge_ID>Name": "${CHARGE_BANK}",
+    "LineDescription": {
+     "cut": [
+      {
+       "concat": [
+        "Opening balance of bank account ",
+        "$accountno",
+        " from SAP Business One ",
+        "@manifest.db",
+        " at ",
+        "@manifest.cutover"
+       ]
+      },
+      1000
+     ]
+    },
+    "I_IsImported": "N"
+   },
+   "prov": {
+    "id": "$bankaccount_id",
+    "rule": "GL balance of the house bank's account at the cut-over (S8: no statement-reconciled balance in the Service Layer)"
+   }
+  }
+ },
+ "manifest": {
+  "tool": "migrate/templates/sap-b1-10-open.json",
+  "format": "ninja-workbook-v3",
+  "workbook": "sap_open.xlsx",
+  "db": "@manifest.db",
+  "cutover": "@manifest.cutover",
+  "currency": "@manifest.currency",
+  "currency_places": "@manifest.currency_places",
+  "client_name": "@manifest.client_name",
+  "clearing": {
+   "obj": {
+    "AR": "${AR_CLEARING}",
+    "AP": "${AP_CLEARING}",
+    "BANK": "${BANK_CLEARING}"
+   }
+  },
+  "charges": {
+   "obj": {
+    "AR": "${CHARGE_AR}",
+    "AP": "${CHARGE_AP}",
+    "BANK": "${CHARGE_BANK}"
+   }
+  },
+  "tax": "${TAX_NONE}",
+  "other_schemas": "@manifest.other_schemas",
+  "after_cutover": "@manifest.after_cutover",
+  "anomalies": "@manifest.anomalies",
+  "source_problems": "@manifest.problems",
+  "left": {
+   "obj": {
+    "AR": {
+     "round": [
+      {
+       "sub": [
+        {
+         "sumSet": [
+          "tb",
+          {
+           "eq": [
+            "$class",
+            "AR"
+           ]
+          },
+          "$balance"
+         ]
+        },
+        {
+         "def": "sumBrought"
+        }
+       ]
+      },
+      "@manifest.currency_places"
+     ]
+    },
+    "AP": {
+     "round": [
+      {
+       "add": [
+        {
+         "sumSet": [
+          "tb",
+          {
+           "eq": [
+            "$class",
+            "AP"
+           ]
+          },
+          "$balance"
+         ]
+        },
+        {
+         "sumSet": [
+          "open_items",
+          {
+           "and": [
+            {
+             "not": {
+              "def": "notBroughtIn"
+             }
+            },
+            {
+             "eq": [
+              "$issotrx",
+              "N"
+             ]
+            }
+           ]
+          },
+          "$open_amount"
+         ]
+        }
+       ]
+      },
+      "@manifest.currency_places"
+     ]
+    },
+    "BANK": {
+     "round": [
+      {
+       "sub": [
+        {
+         "sumSet": [
+          "tb",
+          {
+           "eq": [
+            "$class",
+            "BANK"
+           ]
+          },
+          "$balance"
+         ]
+        },
+        {
+         "sumSet": [
+          "banks",
+          {
+           "def": "bankBrought"
+          },
+          "$currentbalance"
+         ]
+        }
+       ]
+      },
+      "@manifest.currency_places"
+     ]
+    }
+   }
+  }
+ }
+}

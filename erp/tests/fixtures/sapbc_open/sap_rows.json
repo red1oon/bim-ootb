@@ -1,0 +1,819 @@
+{
+ "generator": "erp/tools/gen_sapbc_open_fixture.js",
+ "note": "TEST-SUPPLIED values, SAP Service Layer shape; not vendor examples",
+ "admin": {
+  "LocalCurrency": "USD",
+  "Country": "US",
+  "CompanyName": "Test Co SAP"
+ },
+ "keys": {
+  "ChartOfAccounts": "Code",
+  "BusinessPartners": "CardCode",
+  "Invoices": "DocEntry",
+  "CreditNotes": "DocEntry",
+  "PurchaseInvoices": "DocEntry",
+  "PurchaseCreditNotes": "DocEntry",
+  "HouseBankAccounts": "AbsoluteEntry",
+  "Banks": "BankCode",
+  "JournalEntries": "JdtNum"
+ },
+ "sets": {
+  "ChartOfAccounts": [
+   {
+    "Code": "1000",
+    "Name": "Cash at Bank",
+    "AccountType": "at_Other",
+    "AcctCurrency": "USD",
+    "ActiveAccount": "tYES",
+    "Balance": 5900
+   },
+   {
+    "Code": "1010",
+    "Name": "Bank EUR",
+    "AccountType": "at_Other",
+    "AcctCurrency": "EUR",
+    "ActiveAccount": "tYES",
+    "Balance": 320
+   },
+   {
+    "Code": "1100",
+    "Name": "Trade Receivables",
+    "AccountType": "at_Other",
+    "AcctCurrency": "USD",
+    "ActiveAccount": "tYES",
+    "Balance": 1040
+   },
+   {
+    "Code": "1200",
+    "Name": "Inventory",
+    "AccountType": "at_Other",
+    "AcctCurrency": "USD",
+    "ActiveAccount": "tYES",
+    "Balance": 4000
+   },
+   {
+    "Code": "2000",
+    "Name": "Trade Payables",
+    "AccountType": "at_Other",
+    "AcctCurrency": "USD",
+    "ActiveAccount": "tYES",
+    "Balance": -1250
+   },
+   {
+    "Code": "3000",
+    "Name": "Share Capital",
+    "AccountType": "at_Other",
+    "AcctCurrency": "USD",
+    "ActiveAccount": "tYES",
+    "Balance": -9320
+   },
+   {
+    "Code": "4000",
+    "Name": "Sales Revenue",
+    "AccountType": "at_Revenues",
+    "AcctCurrency": "USD",
+    "ActiveAccount": "tYES",
+    "Balance": -2040
+   },
+   {
+    "Code": "5000",
+    "Name": "Cost of Purchases",
+    "AccountType": "at_Expenses",
+    "AcctCurrency": "USD",
+    "ActiveAccount": "tYES",
+    "Balance": 1350
+   }
+  ],
+  "BusinessPartners": [
+   {
+    "CardCode": "C1",
+    "CardName": "Alpha Customer One",
+    "CardType": "cCustomer",
+    "FederalTaxID": "TAX-C1",
+    "DebitorAccount": "1100",
+    "Currency": "##",
+    "CurrentAccountBalance": 690,
+    "BPAddresses": [
+     {
+      "AddressName": "Main",
+      "AddressType": "bo_BillTo",
+      "Street": "1 Main Street",
+      "City": "Springfield",
+      "ZipCode": "10001",
+      "Country": "US",
+      "State": "",
+      "Block": ""
+     }
+    ]
+   },
+   {
+    "CardCode": "C2",
+    "CardName": "Beta Customer Two",
+    "CardType": "cCustomer",
+    "FederalTaxID": "TAX-C2",
+    "DebitorAccount": "1100",
+    "Currency": "##",
+    "CurrentAccountBalance": 270,
+    "BPAddresses": [
+     {
+      "AddressName": "Main",
+      "AddressType": "bo_BillTo",
+      "Street": "2 Euro Lane",
+      "City": "Berlin",
+      "ZipCode": "20002",
+      "Country": "DE",
+      "State": "",
+      "Block": ""
+     }
+    ]
+   },
+   {
+    "CardCode": "C3",
+    "CardName": "Gamma Customer Three",
+    "CardType": "cCustomer",
+    "FederalTaxID": "TAX-C3",
+    "DebitorAccount": "1100",
+    "Currency": "##",
+    "CurrentAccountBalance": 80,
+    "BPAddresses": []
+   },
+   {
+    "CardCode": "V1",
+    "CardName": "Delta Vendor One",
+    "CardType": "cSupplier",
+    "FederalTaxID": "TAX-V1",
+    "DebitorAccount": "2000",
+    "Currency": "##",
+    "CurrentAccountBalance": -750,
+    "BPAddresses": [
+     {
+      "AddressName": "Main",
+      "AddressType": "bo_BillTo",
+      "Street": "3 Supply Road",
+      "City": "Dayton",
+      "ZipCode": "30003",
+      "Country": "US",
+      "State": "",
+      "Block": ""
+     }
+    ]
+   },
+   {
+    "CardCode": "V2",
+    "CardName": "Epsilon Vendor Two",
+    "CardType": "cSupplier",
+    "FederalTaxID": "TAX-V2",
+    "DebitorAccount": "2000",
+    "Currency": "##",
+    "CurrentAccountBalance": -500,
+    "BPAddresses": [
+     {
+      "AddressName": "Main",
+      "AddressType": "bo_BillTo",
+      "Street": "4 Depot Avenue",
+      "City": "Dayton",
+      "ZipCode": "30004",
+      "Country": "US",
+      "State": "",
+      "Block": ""
+     }
+    ]
+   }
+  ],
+  "Invoices": [
+   {
+    "DocEntry": 1001,
+    "DocNum": 97,
+    "CardCode": "C1",
+    "CardName": "Alpha Customer One",
+    "DocDate": "2026-02-15",
+    "DocDueDate": "2026-02-15",
+    "DocTotal": 60,
+    "PaidToDate": 0,
+    "DocTotalFc": 0,
+    "PaidToDateFC": 0,
+    "DocCurrency": "USD",
+    "DocumentStatus": "bost_Open",
+    "Cancelled": "tYES",
+    "CancelStatus": "csYes",
+    "TransNum": 3
+   },
+   {
+    "DocEntry": 1002,
+    "DocNum": 99,
+    "CardCode": "C1",
+    "CardName": "Alpha Customer One",
+    "DocDate": "2026-01-20",
+    "DocDueDate": "2026-01-20",
+    "DocTotal": 250,
+    "PaidToDate": 250,
+    "DocTotalFc": 0,
+    "PaidToDateFC": 0,
+    "DocCurrency": "USD",
+    "DocumentStatus": "bost_Close",
+    "Cancelled": "tNO",
+    "CancelStatus": "csNo",
+    "TransNum": 5
+   },
+   {
+    "DocEntry": 1003,
+    "DocNum": 101,
+    "CardCode": "C1",
+    "CardName": "Alpha Customer One",
+    "DocDate": "2026-02-01",
+    "DocDueDate": "2026-02-01",
+    "DocTotal": 1000,
+    "PaidToDate": 400,
+    "DocTotalFc": 0,
+    "PaidToDateFC": 0,
+    "DocCurrency": "USD",
+    "DocumentStatus": "bost_Open",
+    "Cancelled": "tNO",
+    "CancelStatus": "csNo",
+    "TransNum": 7
+   },
+   {
+    "DocEntry": 1004,
+    "DocNum": 102,
+    "CardCode": "C1",
+    "CardName": "Alpha Customer One",
+    "DocDate": "2026-02-10",
+    "DocDueDate": "2026-02-10",
+    "DocTotal": 500,
+    "PaidToDate": 200,
+    "DocTotalFc": 0,
+    "PaidToDateFC": 0,
+    "DocCurrency": "USD",
+    "DocumentStatus": "bost_Open",
+    "Cancelled": "tNO",
+    "CancelStatus": "csNo",
+    "TransNum": 8
+   },
+   {
+    "DocEntry": 1005,
+    "DocNum": 103,
+    "CardCode": "C2",
+    "CardName": "Beta Customer Two",
+    "DocDate": "2026-03-05",
+    "DocDueDate": "2026-03-05",
+    "DocTotal": 270,
+    "PaidToDate": 0,
+    "DocTotalFc": 250,
+    "PaidToDateFC": 0,
+    "DocCurrency": "EUR",
+    "DocumentStatus": "bost_Open",
+    "Cancelled": "tNO",
+    "CancelStatus": "csNo",
+    "TransNum": 10
+   },
+   {
+    "DocEntry": 1006,
+    "DocNum": 104,
+    "CardCode": "C3",
+    "CardName": "Gamma Customer Three",
+    "DocDate": "2026-03-10",
+    "DocDueDate": "2026-03-10",
+    "DocTotal": 80,
+    "PaidToDate": 0,
+    "DocTotalFc": 0,
+    "PaidToDateFC": 0,
+    "DocCurrency": "USD",
+    "DocumentStatus": "bost_Open",
+    "Cancelled": "tNO",
+    "CancelStatus": "csNo",
+    "TransNum": 11
+   },
+   {
+    "DocEntry": 1007,
+    "DocNum": 105,
+    "CardCode": "C1",
+    "CardName": "Alpha Customer One",
+    "DocDate": "2026-07-15",
+    "DocDueDate": "2026-07-15",
+    "DocTotal": 40,
+    "PaidToDate": 0,
+    "DocTotalFc": 0,
+    "PaidToDateFC": 0,
+    "DocCurrency": "USD",
+    "DocumentStatus": "bost_Open",
+    "Cancelled": "tNO",
+    "CancelStatus": "csNo",
+    "TransNum": 18
+   }
+  ],
+  "CreditNotes": [
+   {
+    "DocEntry": 2001,
+    "DocNum": 111,
+    "CardCode": "C1",
+    "CardName": "Alpha Customer One",
+    "DocDate": "2026-04-01",
+    "DocDueDate": "2026-04-01",
+    "DocTotal": 100,
+    "PaidToDate": 0,
+    "DocTotalFc": 0,
+    "PaidToDateFC": 0,
+    "DocCurrency": "USD",
+    "DocumentStatus": "bost_Open",
+    "Cancelled": "tNO",
+    "CancelStatus": "csNo",
+    "TransNum": 12
+   }
+  ],
+  "PurchaseInvoices": [
+   {
+    "DocEntry": 3001,
+    "DocNum": 201,
+    "CardCode": "V1",
+    "CardName": "Delta Vendor One",
+    "DocDate": "2026-02-05",
+    "DocDueDate": "2026-02-05",
+    "DocTotal": 800,
+    "PaidToDate": 0,
+    "DocTotalFc": 0,
+    "PaidToDateFC": 0,
+    "DocCurrency": "USD",
+    "DocumentStatus": "bost_Open",
+    "Cancelled": "tNO",
+    "CancelStatus": "csNo",
+    "TransNum": 14
+   },
+   {
+    "DocEntry": 3002,
+    "DocNum": 202,
+    "CardCode": "V2",
+    "CardName": "Epsilon Vendor Two",
+    "DocDate": "2026-02-20",
+    "DocDueDate": "2026-02-20",
+    "DocTotal": 600,
+    "PaidToDate": 100,
+    "DocTotalFc": 0,
+    "PaidToDateFC": 0,
+    "DocCurrency": "USD",
+    "DocumentStatus": "bost_Open",
+    "Cancelled": "tNO",
+    "CancelStatus": "csNo",
+    "TransNum": 15
+   }
+  ],
+  "PurchaseCreditNotes": [
+   {
+    "DocEntry": 4001,
+    "DocNum": 301,
+    "CardCode": "V1",
+    "CardName": "Delta Vendor One",
+    "DocDate": "2026-04-05",
+    "DocDueDate": "2026-04-05",
+    "DocTotal": 50,
+    "PaidToDate": 0,
+    "DocTotalFc": 0,
+    "PaidToDateFC": 0,
+    "DocCurrency": "USD",
+    "DocumentStatus": "bost_Open",
+    "Cancelled": "tNO",
+    "CancelStatus": "csNo",
+    "TransNum": 17
+   }
+  ],
+  "HouseBankAccounts": [
+   {
+    "BankCode": "BK1",
+    "AccNo": "ACC-1000",
+    "Branch": "BR-001",
+    "GLAccount": "1000"
+   },
+   {
+    "BankCode": "BK2",
+    "AccNo": "ACC-1010-EUR",
+    "Branch": "BR-002",
+    "GLAccount": "1010"
+   }
+  ],
+  "Banks": [
+   {
+    "BankCode": "BK1",
+    "BankName": "First Test Bank",
+    "SwiftNo": "FTBKUS33"
+   },
+   {
+    "BankCode": "BK2",
+    "BankName": "Euro Test Bank",
+    "SwiftNo": "ETBKDEFF"
+   }
+  ],
+  "JournalEntries": [
+   {
+    "JdtNum": 1,
+    "ReferenceDate": "2026-01-02",
+    "Memo": "Capital",
+    "JournalEntryLines": [
+     {
+      "Line_ID": 0,
+      "AccountCode": "1000",
+      "Debit": 5000,
+      "Credit": 0,
+      "ShortName": "1000"
+     },
+     {
+      "Line_ID": 1,
+      "AccountCode": "1200",
+      "Debit": 4000,
+      "Credit": 0,
+      "ShortName": "1200"
+     },
+     {
+      "Line_ID": 2,
+      "AccountCode": "3000",
+      "Debit": 0,
+      "Credit": 9000,
+      "ShortName": "3000"
+     }
+    ]
+   },
+   {
+    "JdtNum": 2,
+    "ReferenceDate": "2026-01-03",
+    "Memo": "EUR bank opening",
+    "JournalEntryLines": [
+     {
+      "Line_ID": 0,
+      "AccountCode": "1010",
+      "Debit": 320,
+      "Credit": 0,
+      "ShortName": "1010",
+      "FCDebit": 290,
+      "FCCredit": 0,
+      "FCCurrency": "EUR"
+     },
+     {
+      "Line_ID": 1,
+      "AccountCode": "3000",
+      "Debit": 0,
+      "Credit": 320,
+      "ShortName": "3000"
+     }
+    ]
+   },
+   {
+    "JdtNum": 3,
+    "ReferenceDate": "2026-02-15",
+    "Memo": "SI-097",
+    "JournalEntryLines": [
+     {
+      "Line_ID": 0,
+      "AccountCode": "1100",
+      "Debit": 60,
+      "Credit": 0,
+      "ShortName": "C1"
+     },
+     {
+      "Line_ID": 1,
+      "AccountCode": "4000",
+      "Debit": 0,
+      "Credit": 60,
+      "ShortName": "4000"
+     }
+    ]
+   },
+   {
+    "JdtNum": 4,
+    "ReferenceDate": "2026-02-15",
+    "Memo": "SI-097 cancelled",
+    "JournalEntryLines": [
+     {
+      "Line_ID": 0,
+      "AccountCode": "4000",
+      "Debit": 60,
+      "Credit": 0,
+      "ShortName": "4000"
+     },
+     {
+      "Line_ID": 1,
+      "AccountCode": "1100",
+      "Debit": 0,
+      "Credit": 60,
+      "ShortName": "C1"
+     }
+    ]
+   },
+   {
+    "JdtNum": 5,
+    "ReferenceDate": "2026-01-20",
+    "Memo": "SI-099",
+    "JournalEntryLines": [
+     {
+      "Line_ID": 0,
+      "AccountCode": "1100",
+      "Debit": 250,
+      "Credit": 0,
+      "ShortName": "C1"
+     },
+     {
+      "Line_ID": 1,
+      "AccountCode": "4000",
+      "Debit": 0,
+      "Credit": 250,
+      "ShortName": "4000"
+     }
+    ]
+   },
+   {
+    "JdtNum": 6,
+    "ReferenceDate": "2026-02-01",
+    "Memo": "Receipt SI-099",
+    "JournalEntryLines": [
+     {
+      "Line_ID": 0,
+      "AccountCode": "1000",
+      "Debit": 250,
+      "Credit": 0,
+      "ShortName": "1000"
+     },
+     {
+      "Line_ID": 1,
+      "AccountCode": "1100",
+      "Debit": 0,
+      "Credit": 250,
+      "ShortName": "C1"
+     }
+    ]
+   },
+   {
+    "JdtNum": 7,
+    "ReferenceDate": "2026-02-01",
+    "Memo": "SI-101",
+    "JournalEntryLines": [
+     {
+      "Line_ID": 0,
+      "AccountCode": "1100",
+      "Debit": 1000,
+      "Credit": 0,
+      "ShortName": "C1"
+     },
+     {
+      "Line_ID": 1,
+      "AccountCode": "4000",
+      "Debit": 0,
+      "Credit": 1000,
+      "ShortName": "4000"
+     }
+    ]
+   },
+   {
+    "JdtNum": 8,
+    "ReferenceDate": "2026-02-10",
+    "Memo": "SI-102",
+    "JournalEntryLines": [
+     {
+      "Line_ID": 0,
+      "AccountCode": "1100",
+      "Debit": 500,
+      "Credit": 0,
+      "ShortName": "C1"
+     },
+     {
+      "Line_ID": 1,
+      "AccountCode": "4000",
+      "Debit": 0,
+      "Credit": 500,
+      "ShortName": "4000"
+     }
+    ]
+   },
+   {
+    "JdtNum": 9,
+    "ReferenceDate": "2026-03-01",
+    "Memo": "Receipt SI-102",
+    "JournalEntryLines": [
+     {
+      "Line_ID": 0,
+      "AccountCode": "1000",
+      "Debit": 200,
+      "Credit": 0,
+      "ShortName": "1000"
+     },
+     {
+      "Line_ID": 1,
+      "AccountCode": "1100",
+      "Debit": 0,
+      "Credit": 200,
+      "ShortName": "C1"
+     }
+    ]
+   },
+   {
+    "JdtNum": 10,
+    "ReferenceDate": "2026-03-05",
+    "Memo": "SI-103 EUR",
+    "JournalEntryLines": [
+     {
+      "Line_ID": 0,
+      "AccountCode": "1100",
+      "Debit": 270,
+      "Credit": 0,
+      "ShortName": "C2",
+      "FCDebit": 250,
+      "FCCredit": 0,
+      "FCCurrency": "EUR"
+     },
+     {
+      "Line_ID": 1,
+      "AccountCode": "4000",
+      "Debit": 0,
+      "Credit": 270,
+      "ShortName": "4000"
+     }
+    ]
+   },
+   {
+    "JdtNum": 11,
+    "ReferenceDate": "2026-03-10",
+    "Memo": "SI-104",
+    "JournalEntryLines": [
+     {
+      "Line_ID": 0,
+      "AccountCode": "1100",
+      "Debit": 80,
+      "Credit": 0,
+      "ShortName": "C3"
+     },
+     {
+      "Line_ID": 1,
+      "AccountCode": "4000",
+      "Debit": 0,
+      "Credit": 80,
+      "ShortName": "4000"
+     }
+    ]
+   },
+   {
+    "JdtNum": 12,
+    "ReferenceDate": "2026-04-01",
+    "Memo": "SCN-101",
+    "JournalEntryLines": [
+     {
+      "Line_ID": 0,
+      "AccountCode": "4000",
+      "Debit": 100,
+      "Credit": 0,
+      "ShortName": "4000"
+     },
+     {
+      "Line_ID": 1,
+      "AccountCode": "1100",
+      "Debit": 0,
+      "Credit": 100,
+      "ShortName": "C1"
+     }
+    ]
+   },
+   {
+    "JdtNum": 13,
+    "ReferenceDate": "2026-04-15",
+    "Memo": "On-account receipt C1",
+    "JournalEntryLines": [
+     {
+      "Line_ID": 0,
+      "AccountCode": "1000",
+      "Debit": 150,
+      "Credit": 0,
+      "ShortName": "1000"
+     },
+     {
+      "Line_ID": 1,
+      "AccountCode": "1100",
+      "Debit": 0,
+      "Credit": 150,
+      "ShortName": "C1"
+     }
+    ]
+   },
+   {
+    "JdtNum": 14,
+    "ReferenceDate": "2026-02-05",
+    "Memo": "PI-201",
+    "JournalEntryLines": [
+     {
+      "Line_ID": 0,
+      "AccountCode": "5000",
+      "Debit": 800,
+      "Credit": 0,
+      "ShortName": "5000"
+     },
+     {
+      "Line_ID": 1,
+      "AccountCode": "2000",
+      "Debit": 0,
+      "Credit": 800,
+      "ShortName": "V1"
+     }
+    ]
+   },
+   {
+    "JdtNum": 15,
+    "ReferenceDate": "2026-02-20",
+    "Memo": "PI-202",
+    "JournalEntryLines": [
+     {
+      "Line_ID": 0,
+      "AccountCode": "5000",
+      "Debit": 600,
+      "Credit": 0,
+      "ShortName": "5000"
+     },
+     {
+      "Line_ID": 1,
+      "AccountCode": "2000",
+      "Debit": 0,
+      "Credit": 600,
+      "ShortName": "V2"
+     }
+    ]
+   },
+   {
+    "JdtNum": 16,
+    "ReferenceDate": "2026-03-20",
+    "Memo": "Payment PI-202",
+    "JournalEntryLines": [
+     {
+      "Line_ID": 0,
+      "AccountCode": "2000",
+      "Debit": 100,
+      "Credit": 0,
+      "ShortName": "V2"
+     },
+     {
+      "Line_ID": 1,
+      "AccountCode": "1000",
+      "Debit": 0,
+      "Credit": 100,
+      "ShortName": "1000"
+     }
+    ]
+   },
+   {
+    "JdtNum": 17,
+    "ReferenceDate": "2026-04-05",
+    "Memo": "PCN-301",
+    "JournalEntryLines": [
+     {
+      "Line_ID": 0,
+      "AccountCode": "2000",
+      "Debit": 50,
+      "Credit": 0,
+      "ShortName": "V1"
+     },
+     {
+      "Line_ID": 1,
+      "AccountCode": "5000",
+      "Debit": 0,
+      "Credit": 50,
+      "ShortName": "5000"
+     }
+    ]
+   },
+   {
+    "JdtNum": 18,
+    "ReferenceDate": "2026-07-15",
+    "Memo": "SI-105",
+    "JournalEntryLines": [
+     {
+      "Line_ID": 0,
+      "AccountCode": "1100",
+      "Debit": 40,
+      "Credit": 0,
+      "ShortName": "C1"
+     },
+     {
+      "Line_ID": 1,
+      "AccountCode": "4000",
+      "Debit": 0,
+      "Credit": 40,
+      "ShortName": "4000"
+     }
+    ]
+   },
+   {
+    "JdtNum": 19,
+    "ReferenceDate": "2026-07-20",
+    "Memo": "Receipt SI-101 part",
+    "JournalEntryLines": [
+     {
+      "Line_ID": 0,
+      "AccountCode": "1000",
+      "Debit": 400,
+      "Credit": 0,
+      "ShortName": "1000"
+     },
+     {
+      "Line_ID": 1,
+      "AccountCode": "1100",
+      "Debit": 0,
+      "Credit": 400,
+      "ShortName": "C1"
+     }
+    ]
+   }
+  ]
+ }
+}

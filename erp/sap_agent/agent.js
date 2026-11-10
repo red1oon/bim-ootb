@@ -9,7 +9,7 @@
 // WHERE THE FIELD NAMES COME FROM: SAP's guide "Working with SAP Business One Service Layer" (v1.26) — and every one is checked against YOUR server's $metadata before it is
 //   asked for. A field your server does not have is listed as missing in the manifest (§SAP-FIELD), never guessed.
 // No npm dependencies: Node 18+ (built-in fetch).
-//   node agent.js --url https://<server>:50000 --company <CompanyDB> --user <user> [--insecure] [--out sap_export.json] [--page 100]
+//   node agent.js --url https://<server>:50000 --company <CompanyDB> --user <user> [--insecure] [--out sap_export.json] [--page 100] [--cutover YYYY-MM-DD [--openfile sap_open.json]]
 //   password: SAP_PASSWORD, else asked here (hidden). --insecure accepts B1's self-signed certificate.
 'use strict';
 var fs = require('fs'), crypto = require('crypto');
@@ -112,10 +112,14 @@ module.exports = { run: run, readMetadata: readMetadata, SETS: SETS };
 
 if (require.main === module) (async function () {
   var f = flags(process.argv.slice(2));
-  if (!f.url || !f.company || !f.user) { console.error('usage: node agent.js --url https://<server>:50000 --company <CompanyDB> --user <user> [--insecure] [--out sap_export.json]'); process.exit(2); }
+  if (!f.url || !f.company || !f.user) { console.error('usage: node agent.js --url https://<server>:50000 --company <CompanyDB> --user <user> [--insecure] [--out sap_export.json] [--cutover YYYY-MM-DD [--openfile sap_open.json]]'); process.exit(2); }
   if (f.insecure !== undefined) process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
   var pw = process.env.SAP_PASSWORD || await askHidden('Password for ' + f.user + '@' + f.company + ': ');
   var out = await run({ url: f.url, company: f.company, user: f.user, password: pw, page: Number(f.page) || 100 });
   var file = f.out || 'sap_export.json'; fs.writeFileSync(file, JSON.stringify(out, null, 1));
   console.log('§SAP-AGENT wrote ' + file + ' — drop it on "Migrate from SAP Business One (alpha)" in the browser. ALPHA: please send the §SAP lines above back (they hold counts and field names, no data).');
+  if (f.cutover) {   // open balances at the cut-over (bim-compiler prompts/MIGRATE_INSTALL_TENANT.md §SAP-BC-OPEN-SPEC): a second, separate file; the masters file above is unchanged
+    var op = await require('./open_reader.js').run({ url: f.url, company: f.company, user: f.user, password: pw, page: Number(f.page) || 100, cutover: f.cutover });
+    var ofile = f.openfile || 'sap_open.json'; fs.writeFileSync(ofile, JSON.stringify(op, null, 1)); console.log('§SAP-OPEN wrote ' + ofile + ' (ALPHA: read only, never run on a real company by its author).');
+  }
 })().catch(function (e) { console.error('§SAP-AGENT ERROR ' + (e && e.message)); process.exit(1); });
