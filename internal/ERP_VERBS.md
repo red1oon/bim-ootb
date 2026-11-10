@@ -15,7 +15,7 @@ The ERP's DocActions and processes from the application dictionary (`erp/ad_seed
 | of which from built-in plugins (doc pairs / processes) | 2 / 2 |
 | NOT IMPLEMENTED (doc / process) | 637 / 414 |
 | handlers without a dictionary row (doc / process) | 1 / 0 |
-| **(c) X offered to actors** | 3 |
+| **(c) X offered to actors** | 4 |
 
 Basis for X: pairs of erp/actor_verbs.json that are dictionary pairs AND have a registerDocAction site AND a MATCH line in their evidence file.
 

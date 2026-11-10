@@ -1,0 +1,29 @@
+§A5 start ooTB=/tmp/wt-erp-door3 base=http://localhost:8088 day=2026-11-10 break=1 tmp=/tmp/a5-pYckbB
+§A5_LEGACY SO-STD-136x3-RC order=50968 id=1009882 {"docstatus":"RE","docaction":"--","total_lines":0,"grand_total":0,"order_desc":"** Voided","line_desc":"** Voided (3)","lines":"136:0:2000:0","ol_qty":"136:0/0/0/0","shipments":"0:","invoices":"0:","tax":"104:0:0","books_order_p":"none","books_order_s2":"none","books_ship_p":"none","books_ship_s2":"none","books_inv_p":"none","books_inv_s2":"none"}
+§OBJECT open db=ad_seed-11c985a8c15ba51073a444a9900468a6.db dictionary=present
+§ERP snapshot=hit key=11c985a8c15ba51073a444a9900468a6 ms=142
+§ERP boot db=ad_seed.db replayed_ops=0 oplog=/tmp/a5-pYckbB/twin.ops.jsonl sql_functions=61
+§OBJECT open db=ad_seed-11c985a8c15ba51073a444a9900468a6.db dictionary=present
+§ERP snapshot=hit key=11c985a8c15ba51073a444a9900468a6 ms=74
+§ERP boot db=ad_seed.db replayed_ops=27 oplog=/tmp/a5-pYckbB/twin.ops.jsonl sql_functions=61
+§A5_TWIN SO-STD-136x3-RC order=50000 id=1500004 door_status=ok actor=human {"docstatus":"RE","docaction":"--","total_lines":0,"grand_total":0,"order_desc":"** Voided","line_desc":"** Voided (4)","lines":"136:0:2000:0","ol_qty":"136:0/0/0/0","shipments":"0:","invoices":"0:","tax":"104:0:0","books_order_p":"none","books_order_s2":"none","books_ship_p":"none","books_ship_s2":"none","books_inv_p":"none","books_inv_s2":"none"}
+§A5_CMP SO-STD-136x3-RC docstatus MATCH legacy=RE twin=RE
+§A5_CMP SO-STD-136x3-RC docaction MATCH legacy=-- twin=--
+§A5_CMP SO-STD-136x3-RC total_lines MATCH legacy=0 twin=0
+§A5_CMP SO-STD-136x3-RC grand_total MATCH legacy=0 twin=0
+§A5_CMP SO-STD-136x3-RC order_desc MATCH legacy=** Voided twin=** Voided
+§A5_CMP SO-STD-136x3-RC line_desc DIFF legacy=** Voided (3) twin=** Voided (4)
+§A5_CMP SO-STD-136x3-RC lines MATCH legacy=136:0:2000:0 twin=136:0:2000:0
+§A5_CMP SO-STD-136x3-RC ol_qty MATCH legacy=136:0/0/0/0 twin=136:0/0/0/0
+§A5_CMP SO-STD-136x3-RC shipments MATCH legacy=0: twin=0:
+§A5_CMP SO-STD-136x3-RC invoices MATCH legacy=0: twin=0:
+§A5_CMP SO-STD-136x3-RC tax MATCH legacy=104:0:0 twin=104:0:0
+§A5_CMP SO-STD-136x3-RC books_order_p MATCH legacy=none twin=none
+§A5_CMP SO-STD-136x3-RC books_order_s2 MATCH legacy=none twin=none
+§A5_CMP SO-STD-136x3-RC books_ship_p MATCH legacy=none twin=none
+§A5_CMP SO-STD-136x3-RC books_ship_s2 MATCH legacy=none twin=none
+§A5_CMP SO-STD-136x3-RC books_inv_p MATCH legacy=none twin=none
+§A5_CMP SO-STD-136x3-RC books_inv_s2 MATCH legacy=none twin=none
+§A5_SCN SO-STD-136x3-RC DIFF compared=17 diffs=1 nonEmptyBooks=0 (this document class books nothing on either side: books compared as none==none, not as proof of posting)
+§A5_PAIR table=C_Order action=RC verdict=DIFF scenarios={"SO-STD-136x3-RC":"DIFF"}
+§A5_VERDICT FAIL judged=1 match=0 diff=1 inconclusive=0 (A5_BREAK=1 falsifier: a DIFF is the expected result)

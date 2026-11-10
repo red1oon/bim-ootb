@@ -1424,6 +1424,87 @@
     "ai"
    ],
    "witness": "common/door/tests/witness_erp_verbs.js"
+  },
+  {
+   "verb": "erp.reverse",
+   "app": "erp",
+   "title": "undefined a document",
+   "description": "undefined. Runs DocAction RC through the ERP engine (DocumentEngine.processIt) on the named document, with the books it posts. Offered for: Order (C_Order) (each compared with legacy iDempiere in the parallel run, evidence common/door/tests/logs/a5_erp_complete_parity.log). A person at the terminal runs it; an AI's call is held as a claim until a person confirms. A refusal says which rule.",
+   "inputs": [
+    {
+     "name": "kind",
+     "description": "The kind of document, as the dictionary names it (an AD_Table with a DocAction column), e.g. \"Order\". 34 kinds exist; an unknown kind or a table that is not a document is refused naming the reason.",
+     "required": true,
+     "type": "string",
+     "example": "Order"
+    },
+    {
+     "name": "id",
+     "description": "The document's key (its _ID), as erp.find returns it.",
+     "required": false,
+     "type": "string",
+     "example": "1500004"
+    },
+    {
+     "name": "number",
+     "description": "The document number (DocumentNo) as shown in the window; if two documents carry it, name one with id.",
+     "required": false,
+     "type": "string",
+     "example": "50000"
+    },
+    {
+     "name": "role",
+     "description": "Optional: an AD_Role id. The answer is what that role is OFFERED (Document Action Access, as the window's action list does); without it, the engine's own legal set.",
+     "required": false,
+     "type": "string",
+     "example": "102"
+    }
+   ],
+   "harm": "posts",
+   "calls": {
+    "cli": "erp_cli",
+    "who": "the ERP engine",
+    "argv": [
+     "reverse",
+     "--kind",
+     "{kind}",
+     {
+      "if": "id",
+      "args": [
+       "--id",
+       "{id}"
+      ]
+     },
+     {
+      "if": "number",
+      "args": [
+       "--number",
+       "{number}"
+      ]
+     },
+     {
+      "if": "role",
+      "args": [
+       "--role",
+       "{role}"
+      ]
+     }
+    ]
+   },
+   "returns": {
+    "shape": "erp_cli JSON {document,before,after,ops,opSummary,related,facts,engine,actions} or {refused,reason}",
+    "fields": [
+     {
+      "path": "after.docStatus",
+      "type": "string"
+     }
+    ]
+   },
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "witness": "common/door/tests/witness_erp_verbs.js"
   }
  ]
 }

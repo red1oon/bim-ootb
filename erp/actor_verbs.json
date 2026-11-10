@@ -3,6 +3,7 @@
  "verbs": [
  { "verb": "erp.complete", "action": "CO", "table": "C_Order", "evidence": "common/door/tests/logs/a5_erp_complete_parity.log" },
  { "verb": "erp.void", "action": "VO", "table": "C_Order", "evidence": "common/door/tests/logs/a5_erp_complete_parity.log" },
- { "verb": "erp.close", "action": "CL", "table": "C_Order", "evidence": "common/door/tests/logs/a5_erp_complete_parity.log" }
+ { "verb": "erp.close", "action": "CL", "table": "C_Order", "evidence": "common/door/tests/logs/a5_erp_complete_parity.log" },
+ { "verb": "erp.reverse", "action": "RC", "table": "C_Order", "evidence": "common/door/tests/logs/a5_erp_complete_parity.log" }
  ]
 }
