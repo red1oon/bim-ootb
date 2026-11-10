@@ -47,7 +47,7 @@ var cents = function (v) { return Math.round(Number(v || 0) * 100); }, money = f
   await reg.installBundle(await import(url.pathToFileURL(path.join(ERP, 'plugins', 'odoo_migrate.mjs')).href)); await reg.startBundle('org.kernel.odoo.migrate');
   var CLS = 'org.kernel.odoo.MigrateFromOdoo', D = AF.get(CLS);
   var wbuf = fs.readFileSync(path.join(FIXD, 'odoo_migration.xlsx')), man = JSON.parse(fs.readFileSync(path.join(FIXD, 'manifest.json'), 'utf8')), EXP = JSON.parse(fs.readFileSync(path.join(FIXD, 'odoo_export.json'), 'utf8'));
-  function files(exp) { return { Files: [{ name: 'odoo_migration.xlsx', size: wbuf.length, data: XLSX.read(wbuf) }, { name: 'manifest.json', size: 1, data: man }, { name: 'odoo_export.json', size: 1, data: exp || EXP }] }; }
+  function files(exp) { return { Files: [{ name: 'odoo_export.json', size: 1, data: exp || EXP }] }; }   // the CURRENT flow: odoo_export.json alone (the whole book from the engine, stock cost included); the older workbook path carries no cost
   var CUT = EXP.manifest.cutover, ANS = { Units: 'Each', Days: 'Day', Hours: 'Hour' };
   function session(S, loginDate) {
     var withT = function (fn) { return fn(k.q, Object.assign(k.env(S), { date: loginDate + ' 00:00:00' })); };
@@ -119,6 +119,7 @@ var cents = function (v) { return Math.round(Number(v || 0) * 100); }, money = f
 
   if (process.env.DBG) { say('§DBGX acct rows grp=' + n(C, 'c_bp_group_acct') + ' cust=' + n(C, 'c_bp_customer_acct') + ' vend=' + n(C, 'c_bp_vendor_acct') + ' bp=' + n(C, 'c_bpartner')); say('§DBGX ' + J(q("SELECT s.m_product_id, s.m_locator_id, s.qtyonhand, l.m_warehouse_id FROM m_storageonhand s JOIN m_locator l ON l.m_locator_id=s.m_locator_id WHERE s.ad_client_id=? AND s.m_product_id IN (SELECT m_product_id FROM m_product WHERE value='E-COM08')", [C]))); }
   if (process.env.DBG) { say('§DBGX cost ' + J(q('SELECT m_costelement_id,name,costingmethod,costelementtype FROM m_costelement WHERE ad_client_id=?', [C])) + ' ' + J(q('SELECT count(*) n FROM m_cost WHERE ad_client_id=?', [C])) + ' ' + J(q('SELECT costingmethod,costinglevel,m_costtype_id FROM c_acctschema WHERE ad_client_id=?', [C])) + ' ' + J(q('SELECT * FROM m_costtype WHERE ad_client_id=?', [C]))); }
+  say('§TRD-COSTSETUP ' + SHIPPED.filter(function (l) { return /E1-STOCK stage=2/.test(l); }).join(' | ').slice(0, 500) + ' m_cost>0=' + q('SELECT count(*) n FROM m_cost WHERE ad_client_id=? AND currentcostprice>0', [C])[0].n + ' CA docs=' + q("SELECT docstatus, count(*) n FROM m_inventory WHERE ad_client_id=? GROUP BY docstatus", [C]).map(function (r) { return r.docstatus + ':' + r.n; }).join(','));
   var tb0 = tb(); say('§TRD-TB before trading ' + J(tb0));
   check('SETUP', 'tb-start', 'control: the migrated books sum to 0.00 per accounting schema before trading (judged on ' + tb0.length + ' schema(s), >0 facts)', tbOk(), tb0);
 
@@ -181,8 +182,11 @@ var cents = function (v) { return Math.round(Number(v || 0) * 100); }, money = f
   // COST: the shipment of a migrated stocked item (legacy Doc_InOut MMS: Dr COGS / Cr Inventory at the product cost; no cost = "No Costs for <product>", Posted E)
   var sh1 = ios && ios[0], cogsWant = QTY * cents(ITEM.standard_price), shf = sh1 ? q('SELECT account_id AS a, SUM(amtacctdr)-SUM(amtacctcr) AS b FROM fact_acct WHERE ad_table_id=319 AND record_id=? GROUP BY account_id', [sh1.m_inout_id]) : [];
   say('§TRD-COST shipment posted=' + (sh1 && sh1.posted) + ' facts=' + J(shf) + ' raw standard_price=' + money(cents(ITEM.standard_price)) + ' m_cost rows=' + n(C, 'm_cost') + ' m_costelement rows=' + n(C, 'm_costelement'));
-  known('COST', 'shipment-posts', 'the shipment posts (Posted Y) with COGS = 3 x raw standard_price ' + money(cents(ITEM.standard_price)) + ' = ' + money(cogsWant) + ' (Dr COGS / Cr Inventory, Doc_InOut MMS): the migration must carry the stock VALUE', sh1 && sh1.posted === 'Y' && shf.some(function (r) { return cents(r.b) === cogsWant; }), { posted: sh1 && sh1.posted, facts: shf },
-    'Odoo standard_price is in the raw rows but the cut-over loads no M_Cost / cost element (born tenant has none; ImportInventory IsUpdateCosting is named not-ported): may the migration create the Standard-costing M_Cost rows from standard_price (a Costing Inventory document, ImportInventory.java:524-572), or is stock value out of scope for R5?');
+  var COGSA = acctOf(DEF.p_cogs_acct), ASSETA = acctOf(DEF.p_asset_acct), shm = {}; shf.forEach(function (r) { shm[r.a] = cents(r.b); });
+  check('COST', 'shipment-posts', 'the shipment posts (Posted Y) Dr COGS ' + money(cogsWant) + ' / Cr Inventory asset ' + money(cogsWant) + ' = 3 x raw standard_price ' + money(cents(ITEM.standard_price)) + ' (Doc_InOut MMS): the migration carried the stock VALUE', sh1 && sh1.posted === 'Y' && shm[COGSA] === cogsWant && shm[ASSETA] === -cogsWant && Object.keys(shm).length === 2, { posted: sh1 && sh1.posted, facts: shm, cogs: COGSA, asset: ASSETA });
+  var rawCost = {}; EXP.sets['product.product'].forEach(function (p) { if (cents(p.standard_price) > 0 && EXP.sets['stock.quant'].some(function (x) { return String(x.product_id__name).indexOf('[' + p.default_code + ']') === 0; })) rawCost[p.default_code] = cents(p.standard_price); });
+  var mcs = q("SELECT p.value AS v, c.currentcostprice AS c FROM m_cost c JOIN m_product p ON p.m_product_id=c.m_product_id WHERE c.ad_client_id=?", [C]), bad = Object.keys(rawCost).filter(function (v) { return !mcs.some(function (r) { return r.v === v && cents(r.c) === rawCost[v]; }); });
+  check('COST', 'every-costed-product', 'every stocked product with a raw standard_price > 0 (' + Object.keys(rawCost).length + ') has an M_Cost whose CurrentCostPrice equals it exactly (made by a Cost Adjustment document, not by hand)', Object.keys(rawCost).length > 0 && bad.length === 0, bad);
   verdict('COST');
   var PN = nv && pay('salepay', { receipt: true, bp: gem.c_bpartner_id, inv: nv.c_invoice_id, amt: grand / 100 });
   check('SALES', 'paid', 'a receipt of ' + money(grand) + ' against the new invoice Completes and allocates it: IsPaid Y, open 0.00, Gemini open back to ' + money(wantBal), PN && PN.ok && inv(nv.documentno).ispaid === 'Y' && invOpen(nv.c_invoice_id) === 0 && cents(bp('Gemini Furniture').totalopenbalance) === wantBal, { err: PN && PN.error, open: nv && invOpen(nv.c_invoice_id), bp: bp('Gemini Furniture').totalopenbalance });
@@ -203,7 +207,18 @@ var cents = function (v) { return Math.round(Number(v || 0) * 100); }, money = f
   check('APPAY', 'tb', 'books sum to 0.00 per accounting schema after the AP payment', tbOk(), tb());
   verdict('APPAY');
 
-  var CS = ['SETUP', 'ARPAY', 'SALES', 'APPAY'], ALLV = CS.map(function (c) { return CASES[c] ? (CASES[c].failed ? 'FAIL' : 'PASS') : 'INCONCLUSIVE'; });
+  // ═══ ONETRX: a receipt saved AND completed in ONE transaction (legacy's post reads on the completing connection, so it sees the new payment) ═══
+  var b7 = bal(), i7b = inv('INV/2026/00007'), want7 = cents(RAW['INV/2026/00007'].amount_residual);
+  var P7 = tx('onetrx', function (trx) {
+    var p = ML.newPO(trx, 'c_payment', { ad_org_id: T.orgId, c_doctype_id: ARR, c_bankaccount_id: 1000001, c_bpartner_id: gem.c_bpartner_id, c_invoice_id: i7b.c_invoice_id, payamt: want7 / 100, isreceipt: 'Y', c_currency_id: 100, datetrx: TODAY, dateacct: TODAY, docstatus: 'DR', docaction: 'CO' });
+    var sv = ML.save(trx, 'c_payment', null, p); if (!sv.ok) return { ok: false, error: sv.error }; var r = ML.processIt(trx, 'c_payment', sv.row.c_payment_id, 'CO'); return { ok: !!r.ok, error: r.msg || null };
+  });
+  var ah = q('SELECT docstatus, posted FROM c_allocationhdr WHERE ad_client_id=? ORDER BY c_allocationhdr_id DESC', [C])[0], d7 = delta(b7, bal()), w7 = {}; w7[ACC.REC] = -want7; w7[ACC.INTR] = want7;
+  say('§TRD-ONETRX ok=' + P7.ok + ' err=' + P7.error + ' alloc=' + J(ah) + ' delta=' + J(d7));
+  check('ONETRX', 'allocation-posts', 'payment + Complete in ONE Trx: the allocation posts (Posted Y, not E "account not resolvable"), Receivable -' + money(want7) + ' / BankInTransit +' + money(want7) + ', INV/2026/00007 Paid, books 0.00', P7.ok && ah.docstatus === 'CO' && ah.posted === 'Y' && J(d7) === J(w7) && inv('INV/2026/00007').ispaid === 'Y' && tbOk(), { err: P7.error, ah: ah, d7: d7 });
+  verdict('ONETRX');
+
+  var CS = ['SETUP', 'ARPAY', 'SALES', 'APPAY', 'COST', 'ONETRX'], ALLV = CS.map(function (c) { return CASES[c] ? (CASES[c].failed ? 'FAIL' : 'PASS') : 'INCONCLUSIVE'; });
   say('§TRD-VERDICT ' + (!ALL.judged ? 'INCONCLUSIVE' : ALL.failed ? 'FAIL' : 'PASS') + ' judged=' + ALL.judged + ' failed=' + ALL.failed + ' blocked=' + ALL.blocked + ' cases=' + J(ALLV));
   process.exit(!ALL.judged ? 3 : ALL.failed ? 1 : 0);
 })();

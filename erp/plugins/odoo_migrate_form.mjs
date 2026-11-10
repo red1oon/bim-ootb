@@ -140,7 +140,7 @@ export function plan(trx, params, current) {
 //   with DocAction CO (ImportInventory.java:122, :383/:461; the twin's port is processes/ImportInventory.js, AD_Process 219). So THIS loader - the one shared by every source
 //   (Odoo, Business Central, SAP Business One) - rewrites the two sheets into ONE I_Inventory sheet (product Value + LocatorValue + QtyCount + MovementDate + DocSubTypeInv PI),
 //   loads it with the same Ninja loader, then runs process 219 with DocAction CO. The summary still speaks of M_Inventory / M_InventoryLine (headers made / lines made).
-//   COST: no source sheet carries a unit cost, so no cost adjustment is made (ImportInventory.java:546-564 IsUpdateCosting stays a named refusal in the twin) - named in the log, never invented.
+//   COST: a source sheet that carries a unit cost (M_InventoryLine.CurrentCostPrice, Odoo standard_price) puts it on the I_Inventory row and stage 2 runs IsUpdateCosting (ImportInventory.java:524-572); a sheet without one makes no cost adjustment - never invented.
 const STOCK_PROCESS = 219;
 export function openingStockSheets(book) {
   const iH = book.findIndex((b) => tableOfSheet(b.name) === 'M_Inventory'), iL = book.findIndex((b) => tableOfSheet(b.name) === 'M_InventoryLine');
@@ -148,12 +148,12 @@ export function openingStockSheets(book) {
   const H = book[iH].rows, L = book[iL].rows; if (H.length < 2 || L.length < 2) return null;
   const hx = (n) => H[0].indexOf(n), lx = (n) => L[0].indexOf(n);
   const cDoc = hx('DocumentNo'), cDate = hx('MovementDate'), cType = hx('C_DocType_ID>DocSubTypeInv'), cDesc = hx('Description');
-  const lDoc = lx('M_Inventory_ID'), lLoc = lx('M_Locator_ID>Value'), lProd = lx('M_Product_ID>Value'), lQty = lx('QtyCount');
+  const lDoc = lx('M_Inventory_ID'), lLoc = lx('M_Locator_ID>Value'), lProd = lx('M_Product_ID>Value'), lQty = lx('QtyCount'), lCost = lx('CurrentCostPrice');   // CurrentCostPrice = the source's unit cost (Odoo standard_price), when the template carries one
   if ([cDoc, cDate, lDoc, lLoc, lProd, lQty].some((i) => i < 0)) return null;
   const hdr = {}; H.slice(1).forEach((r) => { hdr[r[cDoc]] = r; });
-  const out = [['Value', 'LocatorValue', 'QtyCount', 'MovementDate', 'C_DocType_ID>DocSubTypeInv', 'Description', 'I_IsImported']];   // I_IsImported = N: the importer's own "not yet" flag (mandatory column)
+  const out = [['Value', 'LocatorValue', 'QtyCount', 'MovementDate', 'C_DocType_ID>DocSubTypeInv', 'Description', 'I_IsImported'].concat(lCost < 0 ? [] : ['CurrentCostPrice'])];   // I_IsImported = N: the importer's own "not yet" flag (mandatory column)
   for (const r of L.slice(1)) { const h = hdr[r[lDoc]]; if (!h) return null;       // a line whose header is not there: leave both sheets to the loader's own refusal
-    out.push([r[lProd], r[lLoc], r[lQty], h[cDate], cType < 0 ? '' : h[cType], cDesc < 0 ? '' : h[cDesc], 'N']); }
+    out.push([r[lProd], r[lLoc], r[lQty], h[cDate], cType < 0 ? '' : h[cType], cDesc < 0 ? '' : h[cDesc], 'N'].concat(lCost < 0 ? [] : [r[lCost] == null ? '' : r[lCost]])); }
   const ioSheet = book[iH].name.replace(/M_Inventory$/, 'I_Inventory');
   const nb = book.map((b, i) => i === iH ? { ...b, name: ioSheet, rows: out } : b).filter((b, i) => i !== iL);
   return { book: nb, lineSheet: book[iL].name, headSheet: book[iH].name, headers: H.length - 1, lines: L.length - 1, ioSheet };
@@ -266,11 +266,20 @@ export function completeOpeningStock(trx) {
   const C = Number(trx.env.client || 0), pend = trx.find('i_inventory', { ad_client_id: C }).filter((x) => String(x.i_isimported) !== 'Y').map((x) => x.i_inventory_id);
   if (!pend.length) { say(trx, '§E1-STOCK stage=2 nothing to import (no pending I_Inventory row): not judged'); return ''; }
   if (!AP.JAVA || !AP.JAVA['org.compiere.process.ImportInventory']) throw new Error('Opening stock needs Import Inventory (AD_Process ' + STOCK_PROCESS + '), which this host has not loaded.');
-  const ri = AP.runInTrx(trx, STOCK_PROCESS, { params: { AD_Client_ID: C, AD_Org_ID: Number(trx.env.org || 0), DocAction: 'CO', DeleteOldImported: 'N' } });
+  // COST (W-MIGRATION-TRADE COST): rows that carry a unit cost (I_Inventory.CurrentCostPrice, the source's standard cost) ask Import Inventory for IsUpdateCosting - legacy's own route, a Cost Adjustment document
+  //   (ImportInventory.java:524-572): never an M_Cost insert. Its parameters are the tenant's own: primary schema + its cost type, the schema's Material cost element, the Cost Adjustment document type.
+  const costed = pend.map((id) => trx.get('i_inventory', id)).filter((x) => x && Number(x.currentcostprice || 0) !== 0).length, para = { AD_Client_ID: C, AD_Org_ID: Number(trx.env.org || 0), DocAction: 'CO', DeleteOldImported: 'N' };
+  if (costed) {
+    const ci = trx.q('SELECT c_acctschema1_id AS a FROM ad_clientinfo WHERE ad_client_id=?', [C])[0], as = ci && trx.get('c_acctschema', ci.a), ce = as && trx.q("SELECT m_costelement_id AS e FROM m_costelement WHERE ad_client_id=? AND costelementtype='M' AND costingmethod=? AND isactive='Y' ORDER BY ad_org_id", [C, as.costingmethod])[0],
+      dt = trx.q("SELECT c_doctype_id AS d FROM c_doctype WHERE ad_client_id=? AND docbasetype='MMI' AND docsubtypeinv='CA' AND isactive='Y' ORDER BY isdefault DESC", [C])[0];
+    if (!as || !ce || !dt) throw new Error('The stock lines carry a unit cost, but this company has no ' + (!as ? 'accounting schema' : !ce ? 'Standard Costing cost element' : 'Cost Adjustment document type') + ' to put it on. Nothing was changed for the cost; add it and Process the file again.');
+    Object.assign(para, { IsUpdateCosting: 'Y', C_AcctSchema_ID: as.c_acctschema_id, M_CostType_ID: as.m_costtype_id, M_CostElement_ID: ce.e, C_DocType_ID: dt.d });
+  }
+  const ri = AP.runInTrx(trx, STOCK_PROCESS, { params: para });
   const done = pend.map((id) => trx.get('i_inventory', id)).filter(Boolean), good = done.filter((x) => String(x.i_isimported) === 'Y'), bad = done.filter((x) => String(x.i_isimported) !== 'Y');
   const heads = new Set(good.map((x) => x.m_inventory_id)), notCO = Array.from(heads).filter((id) => String((trx.get('m_inventory', id) || {}).docstatus) !== 'CO');
   say(trx, '§E1-STOCK stage=2 rows=' + pend.length + ' imported=' + good.length + ' errors=' + bad.length + ' headers=' + heads.size + ' completed=' + (heads.size - notCO.length) + ' process_ok=' + !!(ri && ri.ok)
-    + ' cost=none-in-sheet (no cost adjustment; ImportInventory.java:546-564 not applicable, nothing invented)');
+    + ' cost=' + (costed ? 'Cost Adjustment from ' + costed + ' row(s) with a unit cost (ImportInventory.java:524-572)' : 'none-in-sheet (no cost adjustment, nothing invented)'));
   if (!(ri && ri.ok) || bad.length || notCO.length)
     throw new Error('Opening stock was not completed: ' + (bad.length ? bad.length + ' row(s) refused by Import Inventory (' + String(bad[0].i_errormsg || '').trim() + ')' : (ri && ri.summary) || (notCO.length + ' inventory document(s) not Completed')) + '. The masters are loaded; fix the rows and run Import Inventory again.');
   return 'Opening stock completed: ' + heads.size + ' inventory document(s), ' + good.length + ' line(s).';
