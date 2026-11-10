@@ -67,6 +67,14 @@ iDempiere row; nothing is invented.
 
 ## Open balances of a legacy iDempiere (`open_reader.js`)
 Read-only reader for the cut-over: trial balance (Fact_Acct), open AR/AP items (invoiceOpen), bank balances (CurrentBalance), for one client and its primary accounting schema.
-`PGPASSWORD=... node open_reader.js --cutover 2026-12-31 --db idempiere --client 11 [--container postgres | --host H --port P]` writes `idempiere_open.json`;
-`erp/migrate/templates/idempiere-open.json` (via `erp/plugins/idempiere_open_convert.mjs`) turns it into the open-balance sheets the neutral loader reads. The password is never a flag.
-Spec: bim-compiler `prompts/MIGRATE_INSTALL_TENANT.md` §IDEMPIERE-OPEN-SPEC. Witness: `erp/tests/witness_idempiere_open.js`.
+```bash
+PGPASSWORD=... node open_reader.js --cutover 2026-12-31 --db idempiere --client 11 [--container postgres | --host H --port P]
+```
+The password is never a flag. It writes **`idempiere_open.json`** (the one file the browser picks; `--out FILE` renames it). Freeze the books at the cut-over date first: `invoiceOpen` has no date
+parameter, so the reader raises `source-not-frozen` (and the form shows it) when the books hold postings after the date.
+
+Then in the browser: **Data Import > Migrate from iDempiere (opening balances)** (start the plugins "Ninja data migration" and "Migrate from iDempiere (opening balances)" first, in Plugins & Releases).
+Pick `idempiere_open.json`, read the summary (what comes across, what is refused and why, what stays on the clearing accounts, what the company will create), press Process. Stage 2 imports and
+Completes the opening journal, the open invoices and the opening bank statements, then checks the books against the source (`§MIG-VERIFY`). Pressing Process again says "Nothing to do".
+The mapping is `erp/migrate/templates/idempiere-open.json` (data, read by the one migration engine through `erp/plugins/open_sources.mjs`).
+Spec: bim-compiler `prompts/MIGRATE_INSTALL_TENANT.md` §IDEMPIERE-OPEN-SPEC + §WIRE-SPEC. Witness: `erp/tests/witness_idempiere_open.js`.

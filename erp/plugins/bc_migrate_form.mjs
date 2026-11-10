@@ -8,7 +8,9 @@ import MODEL from './bc_model.mjs';
 import { readPackage, convert, alphaReport, WORKBOOK } from './bc_migrate_convert.mjs';
 import { DESC as ODOO, bindProcess, withSourceRows } from './odoo_migrate_form.mjs';
 import { bookToWorkbook } from './ninja_migrate_process.mjs';
+import { readOpen } from '../migrate/connectors/bc_open.mjs';
 export const CLASSNAME = 'org.kernel.bc.MigrateFromBC';
+const LEDGER = [17, 21, 25, 271];   // G/L Entry, Cust. / Vendor Ledger Entry, Bank Account Ledger Entry: any of them present = the package carries the books
 function say(trx, line) { if (trx && trx.say) trx.say(line); console.log(line); }
 
 // the BC file + cutover → the Odoo form's params (a workbook + its manifest), plus the conversion's own problems and the alpha report
@@ -24,6 +26,9 @@ export function toOdooParams(trx, params) {
   out.manifest = c.manifest; out.report = alphaReport(c.manifest);
   out.report.forEach((l) => say(trx, l));
   out.params = { Files: [{ name: WORKBOOK, size: 0, data: bookToWorkbook(c.book) }, { name: 'manifest.json', size: 0, data: c.manifest }] };
+  // §WIRE-SPEC: a package that carries the ledger tables also holds the open balances: the SAME package, read by connectors/bc_open.mjs, is handed to the shared planner as an open file
+  //   (its format names the template). A masters-only package (no ledger table) brings no balances and no problem - the reader's own "missing table" problems apply once a ledger is there.
+  if (LEDGER.some((id) => pkg.tables[id])) out.params.Files.push({ name: 'bc_open.json', size: 0, data: readOpen(pkg, MODEL, { cutover: cut }) });
   return out;
 }
 
@@ -41,7 +46,13 @@ export const DESC = {
     const alpha = { key: 990, item: 'ALPHA — not yet proven against a live Business Central. Alpha report: ' + x.report.length + ' lines in the browser console (§BC-ALPHA, no customer values).', selected: false, locked: true };
     return [alpha].concat(withSourceRows(rs, x.manifest));
   },
-  after: ODOO.after,   // §E1 stage 2: the shared opening-stock completion (Import Inventory, DocAction CO) - one implementation, odoo_migrate_form.mjs
+  // §E1 stage 2 + §WIRE-SPEC: the shared stage 2 (opening stock, the open balances, the books checked against the source) must plan from the CONVERTED params, as rows() and run() do - planning from the raw
+  //   pick left `open` empty, so the books were never verified against the source (found by W-SAPBC-OPEN BC-LOAD shipped-verifier)
+  after(trx, params, rows) {
+    const x = toOdooParams(trx, params);
+    if (x.problems.length) throw new Error('Not migrated: ' + x.problems.join(' '));
+    return ODOO.after(trx, x.params, rows);
+  },
   run(trx, params, rows) {
     const x = toOdooParams(trx, params);
     if (x.problems.length) throw new Error('Not migrated: ' + x.problems.join(' '));

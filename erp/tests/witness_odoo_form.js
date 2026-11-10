@@ -127,11 +127,27 @@ function verdict(cs) { var c = CASES[cs] || { judged: 0, failed: 0 }, v = !c.jud
   // ═══ RERUN: the same files again are refused whole; nothing changes ═══
   var res2 = AF.execute(withT, 'org.kernel.odoo.MigrateFromOdoo', files(), cur4);
   if (res2.ok && res2.ops && res2.ops.length) k.commit(S, res2.ops, { ws: 'odoo_form' });
-  // 2026-11-10 migrate-recover (F3): a repeat is "already there", not a refusal (witness_migration_recover.js REPEAT, one-file path: nothing loaded twice). On THIS two-file (workbook + manifest) harness the stored C_Location_UU is
-  //   not the sheet's, so the C_Location rows have no identity and are re-loaded (§OF-GAP, open - see MIGRATE_INSTALL_TENANT §RECOVER "Remaining"); every other table is unchanged.
+  // §OF-GAP (closed 2026-11-11, prompts/MIGRATE_INSTALL_TENANT.md §WIRE-SPEC). CAUSE, measured: this two-file harness has no C_Location_UU in its sheet, so a C_Location row's identity is the dictionary's
+  //   identifier columns - AD_Column.IsIdentifier='Y' for C_Location is City ONLY - and two of the nine file rows share the city "Tracy". heldByIdentifier took a row as "already there" only when exactly ONE
+  //   tenant row matched; "Tracy" matched TWO (after the first Process) so those two file rows were loaded again (12 -> 14). Fix: the tenant holds as many rows as the file has with that signature = all already there.
   var C2 = counts(), moved = Object.keys(C2).filter(function (t) { return C2[t] !== C1[t]; });
-  say('§OF-GAP repeat moved=' + J(moved.map(function (t) { return t + ' ' + C1[t] + '->' + C2[t]; })));
-  check('RERUN', 'refused', 'a second Process of the same two files loads no master row twice (every table but C_Location unchanged) and is not an "ambiguous" refusal', moved.every(function (t) { return t === 'C_Location'; }) && !/ambiguous/i.test(String(res2.msg)), { ok: res2.ok, msg: String(res2.msg).slice(0, 200), moved: moved });
+  var idCols = q("SELECT c.columnname AS c FROM ad_column c JOIN ad_table t ON t.ad_table_id=c.ad_table_id WHERE t.tablename='C_Location' AND c.isidentifier='Y' AND c.isactive='Y'").map(function (r) { return r.c; });
+  var wbL = XLSX.read(wbuf), locName = wbL.SheetNames.filter(function (n) { return /C_Location$/.test(n); })[0], locRows = XLSX.utils.sheet_to_json(wbL.Sheets[locName], { header: 1, raw: false, defval: '' }), cityI = locRows[0].indexOf('City'), cities = {};
+  locRows.slice(1).forEach(function (r) { cities[r[cityI]] = (cities[r[cityI]] || 0) + 1; });
+  var shared = Object.keys(cities).filter(function (c) { return cities[c] > 1; });
+  say('§OF-GAP cause identifier(C_Location)=' + J(idCols) + ' file rows=' + (locRows.length - 1) + ' cities shared by >1 file row=' + J(shared) + ' (the repeat used to move C_Location 12->14)');
+  check('RERUN', 'gap-cause', 'the cause is present in this harness: C_Location\'s only identifier is City and >= 2 file rows share a city (else the number below would prove nothing)', J(idCols) === '["City"]' && shared.length >= 1, { idCols: idCols, shared: shared });
+  say('§OF-GAP repeat moved=' + moved.length + ' ' + J(moved.map(function (t) { return t + ' ' + C1[t] + '->' + C2[t]; })) + ' C_Location ' + C1.C_Location + '->' + C2.C_Location);
+  check('RERUN', 'refused', 'a second Process of the same two files loads NO master row twice (§OF-GAP: moved = 0 tables, C_Location included) and is not an "ambiguous" refusal', moved.length === 0 && !/ambiguous/i.test(String(res2.msg)), { ok: res2.ok, msg: String(res2.msg).slice(0, 200), moved: moved });
+  check('RERUN', 'nothing-to-do', 'the repeat says so in words ("Nothing to do" / already there), not a silent success', /nothing to do|already/i.test(String(res2.msg)), { msg: String(res2.msg).slice(0, 200) });
+  // MUTANT (a fix that over-matches must FAIL here): the tenant now holds ONE of the two "Tracy" rows while the file has two. Nothing may be guessed: those two file rows are left to the loader (C_Location +2),
+  //   every other C_Location row (1 and 1) is still "already there".
+  var tracy = q("SELECT c_location_id AS id FROM c_location WHERE ad_client_id=? AND city='Tracy' ORDER BY 1", [CID]);
+  db.run('DELETE FROM c_location WHERE c_location_id=?', [tracy[1].id]); var C3 = counts();
+  var res3 = AF.execute(withT, 'org.kernel.odoo.MigrateFromOdoo', files(), cur4); if (res3.ok && res3.ops && res3.ops.length) k.commit(S, res3.ops, { ws: 'odoo_form' });
+  var C4 = counts(), moved3 = Object.keys(C4).filter(function (t) { return C4[t] !== C3[t]; });
+  say('§OF-GAP mutant tenant holds 1 of 2 Tracy rows: C_Location ' + C3.C_Location + '->' + C4.C_Location + ' other tables moved=' + J(moved3.filter(function (t) { return t !== 'C_Location'; })));
+  check('RERUN', 'no-guess', 'with the tenant holding 1 of the 2 "Tracy" rows the file\'s 2 are NOT taken as already there (C_Location +2, not +0 and not +1): a count that does not match is left to the loader', C4.C_Location - C3.C_Location === 2, { C3: C3.C_Location, C4: C4.C_Location });
   verdict('RERUN');
 
   var v = ['PLUG', 'PICK', 'UNITS', 'SUMMARY', 'SELECT', 'RUN', 'RERUN'].map(verdict), all = !ALL.judged ? 'INCONCLUSIVE' : ALL.failed ? 'FAIL' : 'PASS';

@@ -94,7 +94,7 @@ function mk(O) { return {
 
 (async function main() {
   var OB = await import(url.pathToFileURL(path.join(ERP, 'plugins', 'open_balances.mjs')).href);
-  var SC = await import(url.pathToFileURL(path.join(ERP, 'plugins', 'sap_open_convert.mjs')).href), BO = await import(url.pathToFileURL(path.join(ERP, 'plugins', 'bc_open_convert.mjs')).href);
+  var OSRC = await import(url.pathToFileURL(path.join(ERP, 'plugins', 'open_sources.mjs')).href), BO = await import(url.pathToFileURL(path.join(ERP, 'migrate', 'connectors', 'bc_open.mjs')).href);
   var BCM = await import(url.pathToFileURL(path.join(ERP, 'plugins', 'bc_migrate_convert.mjs')).href), MODEL = (await import(url.pathToFileURL(path.join(ERP, 'plugins', 'bc_model.mjs')).href)).default;
   var XLSX = require(path.join(ERP, 'xlsx.mini.min.js')), SR = require(path.join(ERP, 'sap_agent', 'open_reader.js')), MOCK = require(path.join(__dirname, 'sap_sl_open_mock.js'));
   var OS = oracleSap(CUT), OBC = oracleBc(CUT), CS = mk(OS), CB = mk(OBC);
@@ -187,12 +187,13 @@ function mk(O) { return {
     check(tag, 'no-vendor-words', 'the sheets carry no iDempiere / Odoo wording: the description fields name ' + sidePrefix, inv.concat(stm).every(function (r) { return !/iDempiere|Odoo/.test(J(r)); }), null);
     return { plain: plain, stmNos: stmNos, VARS: VARS, CLR: CLR };
   }
-  var CVS = SC.convert(SEXP), CVB = BO.convert(PKG, MODEL, { cutover: CUT });
-  var SHS = sheetsCase('SAP-SHEETS', Object.assign({ TEMPLATE: SC.TEMPLATE }, CVS), OS, CS, SEXP, SEXP, 'SAP Business One'), SHB = sheetsCase('BC-SHEETS', Object.assign({ TEMPLATE: BO.TEMPLATE }, CVB), OBC, CB, BEXP, BEXP, 'Business Central');
+  var CVS = OSRC.convert(SEXP), CVB = OSRC.convert(BEXP);   // the file of each source through the ONE engine (BEXP = the BC reader's neutral output for this package)
+  var SHS = sheetsCase('SAP-SHEETS', Object.assign({ TEMPLATE: CVS.template }, CVS), OS, CS, SEXP, SEXP, 'SAP Business One'), SHB = sheetsCase('BC-SHEETS', Object.assign({ TEMPLATE: CVB.template }, CVB), OBC, CB, BEXP, BEXP, 'Business Central');
   verdict('SAP-SHEETS'); verdict('BC-SHEETS');
 
   // ═══ UNTOUCHED / MODEL ═══
-  var diffFiles = ['migrate/templates/odoo-17.json', 'migrate/templates/sap-b1-10.json', 'migrate/templates/bc-w1.json', 'migrate/templates/idempiere-identity.json', 'plugins/sap_migrate_convert.mjs', 'plugins/bc_migrate_convert.mjs', 'plugins/odoo_migrate_convert.mjs', 'migrate/engine.mjs', 'migrate/workbook.mjs', 'idempiere_agent', 'odoo_agent'];
+  var diffFiles = ['migrate/templates/odoo-17.json', 'migrate/templates/sap-b1-10.json', 'migrate/templates/bc-w1.json', 'migrate/templates/idempiere-identity.json', 'plugins/sap_migrate_convert.mjs', 'plugins/bc_migrate_convert.mjs', 'migrate/engine.mjs', 'migrate/workbook.mjs', 'odoo_agent'];   // idempiere_agent left out 2026-11-11: §WIRE-SPEC updates its README (the form to drop idempiere_open.json on)
+  // plugins/odoo_migrate_convert.mjs left out 2026-11-11: §WIRE-SPEC moves the open-balance reading of every source into plugins/open_sources.mjs (its Odoo-only isExport/openBalances are deleted); the Odoo masters-path behaviour is witnessed by MIGE 89 / OB 43 / OF.
   // plugins/open_balances.mjs left out 2026-11-10: migrate-recover (witness_migration_recover.js) changes the shared loader on purpose (resume / repeat); this guard was a PR-time guard of the SAP/BC lane
   var gd = cp.spawnSync('git', ['-C', ERP, 'diff', '--quiet', 'origin/main', '--'].concat(diffFiles), { encoding: 'utf8' });
   check('UNTOUCHED', 'other-sources', 'the Odoo / iDempiere files, the SAP + BC masters templates and converters (so the masked alpha reports), the engine, the workbook contract and the loader are byte-identical to origin/main (' + diffFiles.length + ' paths)', gd.status === 0, gd.stderr || 'diff exit ' + gd.status);
@@ -220,14 +221,11 @@ function mk(O) { return {
   var reg = PR.create(host);
   await reg.installBundle(await import(url.pathToFileURL(path.join(ERP, 'plugins', 'ninja_migrate.mjs')).href)); await reg.startBundle('org.idempiere.ninja.migrate');
   await reg.installBundle(await import(url.pathToFileURL(path.join(ERP, 'plugins', 'odoo_migrate.mjs')).href)); await reg.startBundle('org.kernel.odoo.migrate');   // binds the process engine the shared loader runs through
-  var FORM = await import(url.pathToFileURL(path.join(ERP, 'plugins', 'odoo_migrate_form.mjs')).href); FORM.bindProcess(AP);
-  var regd = {};
-  function formFor(cls, plan) {   // a test-side form over the SAME shared pieces the shipped forms use (convert -> OB.openOf/problems -> FORM.load -> OB.complete): no mapping, no verifier of its own
-    if (regd[cls]) return; regd[cls] = 1;
-    AF.register(cls, { title: 'Test: migrate open balances', params: [{ name: 'Files', label: 'open balances', type: 'file', multiple: true, mandatory: true }], columns: [{ key: 'item', label: 'Item' }], rows: function () { return []; },
-      run: function (trx, params) { var p = plan(trx, params); if (p.problems.length) throw new Error('Not migrated: ' + p.problems.join(' ')); var r = FORM.load(trx, p.cv.book, p.open, true); if (!r.ok) throw new Error(String(r.summary || 'The load was refused.') + ' ' + J(r.refusals).slice(0, 400)); return 'loaded ' + J(r.perTable); },
-      after: function (trx, params) { var p = plan(trx, params); return OB.complete(trx, AP, p.open); } });
-  }
+  // §WIRE-SPEC: the REAL bundles + forms of 'Migrate from SAP Business One (alpha)' and 'Migrate from Business Central (alpha)' (plugins/{sap,bc}_migrate.mjs + their form chunks), driven through the generic form engine as the page does
+  var SAPCLS = 'org.kernel.sap.MigrateFromB1', BCCLS = 'org.kernel.bc.MigrateFromBC', SAPMENU = 'Migrate from SAP Business One (alpha)', BCMENU = 'Migrate from Business Central (alpha)';
+  var W = require(path.join(__dirname, 'wire_kit.js'))({ AF: AF, k: k, q: q, say: say, check: check, ERP: ERP });
+  await W.plug(reg, 'SAP-PLUG', 'sap_migrate.mjs', 'org.kernel.sap.migrate', 9544001, SAPCLS, SAPMENU); await W.plug(reg, 'BC-PLUG', 'bc_migrate.mjs', 'org.kernel.bc.migrate', 9543001, BCCLS, BCMENU);
+  verdict('SAP-PLUG'); verdict('BC-PLUG');
   function session(S, loginDate, cls) {
     var withT = function (fn) { return fn(k.q, Object.assign(k.env(S), { date: loginDate + ' 00:00:00' })); };
     return { execute: function (params) { var r = AF.execute(withT, cls, params, []); if (r.ok && r.ops && r.ops.length) k.commit(S, r.ops, { ws: 'sapbc_open' }); return r; },
@@ -257,28 +255,81 @@ function mk(O) { return {
     SH.stmNos.forEach(function (no) { var a = t.bAcc.filter(function (x) { return x.no === no; })[0]; if (!a || cents(a.cb) !== O.bank[no]) d.push('BANK ' + no + ' twin ' + (a ? money(cents(a.cb)) : 'absent') + ' source ' + money(O.bank[no])); });
     return d;
   }
-  function loadInto(name, cls, files, params) {
-    var T = birth(name), ses = session(T, '2026-11-11', cls), mark = SHIPPED.length, r1 = ses.execute(files), r2 = r1.ok ? ses.after(files) : { ok: false, msg: 'stage 1 refused: ' + r1.msg };
+  function loadInto(name, cls, files, T0) {
+    var T = T0 || birth(name), ses = session(T, '2026-11-11', cls), mark = SHIPPED.length, r1 = ses.execute(files), r2 = r1.ok ? ses.after(files) : { ok: false, msg: 'stage 1 refused: ' + r1.msg };
     return { C: T.clientId, r1: r1, r2: r2, ship: SHIPPED.slice(mark).filter(function (l) { return /^§(MIG-|PROC-UNPORTED|PROC-SQL)/.test(l); }) };
   }
-  var ES = clone(SEXP);
-  formFor('org.test.SapOpen', function (trx, params) { var cv = SC.convert(params.Files[0].data), open = OB.openOf(cv.book, cv.manifest); return { cv: cv, open: open, problems: cv.manifest.problems.concat(OB.problems(trx, open)) }; });
-  formFor('org.test.BcOpen', function (trx, params) { var cv = BO.convert(params.Files[0].data, MODEL, { cutover: CUT }); var open = OB.openOf(cv.book, cv.manifest); return { cv: cv, open: open, problems: cv.manifest.problems.concat(OB.problems(trx, open)) }; });
-  var sapFiles = function (exp) { return { Files: [{ name: 'sap_open.json', size: 1, data: exp }] }; }, bcFiles = function (pkg) { return { Files: [{ name: 'package.xlsx', size: 1, data: pkg }] }; };
-
-  function loadCase(tag, who, cls, files, O, SH) {
-    var L = loadInto(who + ' Open Co', cls, files), ver = L.ship.filter(function (l) { return /^§MIG-VERIFY/.test(l); }).pop() || '';
+  var SUMM = {}, PKGWB = XLSX.read(buf), LD = '2026-11-11', BCW = require(path.join(__dirname, 'bc_package_writer.js'));
+  var sapFiles = function (exp) { return { Files: [{ name: 'sap_open.json', size: 1, data: exp }] }; }, bcFiles = function (wb) { return { Files: [{ name: 'package.xlsx', size: 1, data: wb }], Cutover: CUT }; };
+  // the BC mutants are made on the RAW ledger rows and the package is written again (the form takes a package, never the neutral sets): drop = the entry's detailed rows removed (remaining 0, TB untouched), flip = +7.00 magnitude on its Initial Entry
+  function bcMutant(mu, rows) {
+    var X = clone(BCX); [['21', '379', 'Cust. Ledger Entry No.', 7], ['25', '380', 'Vendor Ledger Entry No.', -7]].forEach(function (t) {
+      X.rows[t[0]].filter(function (e) { return e['Document No.'] === mu.docno; }).forEach(function (e) {
+        if (mu.kind === 'drop') X.rows[t[1]] = X.rows[t[1]].filter(function (d) { return d[t[2]] !== e['Entry No.']; });
+        else { var d0 = X.rows[t[1]].filter(function (d) { return d[t[2]] === e['Entry No.'] && d['Entry Type'] === 'Initial Entry'; })[0]; d0.Amount += t[3]; d0['Amount (LCY)'] += t[3]; } }); });
+    if (rows) rows(X);
+    return XLSX.read(BCW.write(XLSX, MODEL, X, 'TEST-BC'));
+  }
+  var bcMutFiles = function (neutral, mu) { return bcFiles(bcMutant(mu)); };
+  var snap = function (C) { return J(['c_invoice', 'gl_journal', 'fact_acct', 'c_elementvalue', 'c_bpartner', 'i_gljournal', 'i_invoice', 'i_bankstatement'].map(function (t) { return q('SELECT count(*) AS n FROM ' + t + ' WHERE ad_client_id=?', [C])[0].n; })); };
+  // the form's own screens before anything is written: PICK (nothing / another source's file), SUMMARY (oracle counts, named refusals, nothing written), PROBLEM (a source the form must stop)
+  function formScreens(P) {
+    var T = P.T, C = T.clientId, O = P.O, SH = P.SH, tg = P.tag, nz = Object.keys(O.tb).filter(function (a) { return O.tb[a] !== 0; }).length, nbN = Object.keys(O.open).filter(function (x) { return !O.open[x].brought; }).length, brN = Object.keys(O.open).length - nbN;
+    var r0 = W.read(T, LD, P.cls, { Files: null }, null);
+    check(tg + '-PICK', 'empty', 'with nothing picked the form says what to pick and offers no sheet', r0.length >= 1 && r0.every(function (r) { return /^⚠/.test(r.item); }) && P.emptyRe.test(r0[0].item), r0.map(function (r) { return r.item; }));
+    var c0 = snap(C), rW = W.read(T, LD, P.cls, P.wrong, null), xW = AF.execute(W.withT(T, LD), P.cls, P.wrong, []);
+    check(tg + '-PICK', 'wrong-file', P.wrongRule, W.problems(rW).length >= 1 && W.problems(rW).some(function (x) { return P.wrongRe.test(x); }) && W.sheetRows(rW).length === 0 && xW.ok === false && /Not migrated/.test(String(xW.msg)) && snap(C) === c0, { rW: rW.map(function (r) { return r.item; }), xW: xW.msg });
+    if (P.extraPick) P.extraPick();
+    var c1 = snap(C), rs = W.read(T, LD, P.cls, P.files, null), sh = W.sheetRows(rs), by = {}; sh.forEach(function (x) { by[x.table] = x; });
+    var willInfo = W.infos(rs).join(' | '), fgnYes = Object.keys(O.open).some(function (x) { return O.open[x].iso !== O.cur; });
+    say('§SBO-SUMMARY ' + tg + ' ' + J(sh.map(function (x) { return x.table + ' file=' + x.infile + ' will=' + x.will + ' refused=' + x.refused; })) + ' problems=' + J(W.problems(rs)));
+    check(tg + '-SUMMARY', 'no-problem', 'the cut-over file is accepted by the form: no problem row', W.problems(rs).length === 0, W.problems(rs));
+    check(tg + '-SUMMARY', 'counts', 'the open sheets say what comes across, from the ORACLE: I_GLJournal ' + nz + ' lines (one per account with a balance), I_Invoice ' + brN + ' brought-in documents, I_BankStatement ' + SH.stmNos.length + '; will + already-there == in the file',
+      !!by.I_GLJournal && by.I_GLJournal.infile === nz && !!by.I_Invoice && by.I_Invoice.infile === brN && !!by.I_BankStatement && by.I_BankStatement.infile === SH.stmNos.length && ['I_GLJournal', 'I_Invoice', 'I_BankStatement'].every(function (t) { return by[t].will + (by[t].already || 0) === by[t].infile; }), sh.map(function (x) { return x.table + ' ' + x.infile + '/' + x.will; }));
+    check(tg + '-SUMMARY', 'refusals-named', 'the ' + nbN + ' documents NOT brought in show on the I_Invoice row as refused (' + nbN + ')' + (fgnYes ? ' and the reason names the foreign currency' : '') + ' and says the amount stays on the clearing account', !!by.I_Invoice && by.I_Invoice.refused === nbN && /clearing/.test(by.I_Invoice.reason) && (!fgnYes || /foreign currency/.test(by.I_Invoice.reason)), by.I_Invoice);
+    check(tg + '-SUMMARY', 'will-create', 'the summary names what the cut-over creates that the new company lacks - the clearing accounts ' + J(SH.CLR), [SH.CLR.AR, SH.CLR.AP, SH.CLR.BANK].every(function (a) { return willInfo.indexOf(a) >= 0; }) && /Will create/.test(willInfo), willInfo);
+    check(tg + '-SUMMARY', 'read-only', 'reading the summary wrote nothing (invoices / journals / postings / accounts / partners / staging rows unchanged)', snap(C) === c1, { before: c1, after: snap(C) });
+    SUMM[tg] = by;
+    var T1 = birth(tg + ' Problem Co'), cP = snap(T1.clientId), rP = W.read(T1, LD, P.cls, P.problem.files, null), xP = AF.execute(W.withT(T1, LD), P.cls, P.problem.files, []);
+    check(tg + '-PROBLEM', 'stopped', P.problem.rule, P.problem.test(W.problems(rP)) && xP.ok === false && /Not migrated/.test(String(xP.msg)) && snap(T1.clientId) === cP, { rP: W.problems(rP), xP: xP.msg });
+  }
+  function repeatCase(tag, T, cls, files, O, SH, L) {
+    var cR = snap(L.C), mark = SHIPPED.length, x1 = W.execute(T, LD, cls, files), x2 = W.after(T, LD, cls, files), v = SHIPPED.slice(mark).filter(function (l) { return /^§MIG-VERIFY/.test(l); }).pop() || '';
+    say('§SBO-REPEAT ' + tag + ' stage1=' + x1.ok + ' "' + String(x1.msg).slice(0, 140) + '" stage2=' + x2.ok + ' "' + String(x2.msg).slice(0, 160) + '" ' + v.slice(0, 70));
+    check(tag + '-REPEAT', 'nothing-twice', 'a second Process of the same file says "Nothing to do" and writes nothing; stage 2 says the cut-over is already in the books and checks it against the source', x1.ok && /Nothing to do/.test(String(x1.msg)) && x2.ok && /Already migrated/.test(String(x2.msg)) && snap(L.C) === cR && /verdict=PASS judged=[1-9]/.test(v), { x1: x1.msg, x2: x2.msg, v: v });
+    check(tag + '-REPEAT', 'still-the-source', 'after the repeat the twin\'s books are still the oracle\'s', cmpTwin(L.C, O, SH).length === 0, cmpTwin(L.C, O, SH));
+  }
+  function loadCase(tag, who, cls, files, O, SH, T0) {
+    var L = loadInto(who + ' Open Co', cls, files, T0), ver = L.ship.filter(function (l) { return /^§MIG-VERIFY/.test(l); }).pop() || '';
     say('§SBO-LOAD ' + tag + ' client=' + L.C + ' stage1=' + L.r1.ok + ' stage2=' + L.r2.ok + ' msg=' + String(L.r2.msg).slice(0, 300)); L.ship.forEach(function (l) { say('  shipped> ' + l.slice(0, 330)); });
     check(tag, 'stages', 'stage 1 (masters + import rows + prerequisites) and stage 2 (Import GL Journal 220 -> Complete, Import Invoice 207 CO, Import Bank Statement 221 -> Complete, verifier) end without a refusal', L.r1.ok && L.r2.ok && /Open balances completed/.test(String(L.r2.msg)), { r1: L.r1.msg, r2: L.r2.msg });
     check(tag, 'shipped-verifier', 'the loader\'s own verifier printed §MIG-VERIFY verdict=PASS with > 0 checks judged', /verdict=PASS judged=[1-9]/.test(ver), ver);
     var dif = L.r2.ok ? cmpTwin(L.C, O, SH) : ['load did not complete'];
     check(tag, 'books-are-the-source', 'the twin\'s own tables vs the oracle: plain accounts exact (' + SH.plain.length + '), AR / AP / BANK control + clearing == the source class total, each clearing == the leftover the source implies (AR ' + money(O.left.AR) + ', AP ' + money(O.left.AP) + ', BANK ' + money(O.left.BANK) + '), open amount per partner, every brought document CO/posted/unpaid with its number and own date, bank balance per account', dif.length === 0, dif);
+    var sm = SUMM[tag.split('-')[0]], cnt = function (t) { return q('SELECT count(*) AS n FROM ' + t + ' WHERE ad_client_id=?', [L.C])[0].n; };
+    check(tag, 'summary==result', 'W-MIGRATE-SUMMARY: what the summary predicted is what the company got - ' + sm.I_Invoice.will + ' invoices, ' + sm.I_BankStatement.will + ' bank statement(s) (counted in the company\'s own tables)', cnt('c_invoice') === sm.I_Invoice.will && cnt('c_bankstatement') === sm.I_BankStatement.will, { inv: cnt('c_invoice'), stm: cnt('c_bankstatement'), sm: sm.I_Invoice.will + '/' + sm.I_BankStatement.will });
     var t0 = L.r2.ok ? twin(L.C, O, SH.CLR) : { books: {} };
     check(tag, 'clearing-values', 'AR Clearing holds exactly ' + money(O.left.AR) + ' (read from the twin\'s Fact_Acct), AP Clearing 0.00, Bank Clearing ' + money(O.left.BANK) + ' (the foreign bank)', (t0.books[SH.CLR.AR] || 0) === O.left.AR && t0.books[SH.CLR.AP] === 0 && (t0.books[SH.CLR.BANK] || 0) === O.left.BANK, { ar: t0.books[SH.CLR.AR], ap: t0.books[SH.CLR.AP], bank: t0.books[SH.CLR.BANK] });
     return L;
   }
-  loadCase('SAP-LOAD', 'SAP', 'org.test.SapOpen', sapFiles(SEXP), OS, SHS); verdict('SAP-LOAD');
-  loadCase('BC-LOAD', 'BC', 'org.test.BcOpen', bcFiles(PKG), OBC, SHB); verdict('BC-LOAD');
+  var TS = birth('SAP Open Co'), TBC = birth('BC Open Co');
+  formScreens({ tag: 'SAP', T: TS, cls: SAPCLS, files: sapFiles(SEXP), O: OS, SH: SHS, emptyRe: /sap_export\.json.*sap_open\.json/, wrong: { Files: [{ name: 'idempiere_open.json', size: 1, data: { manifest: { format: 'idempiere-open-json-v1' }, sets: {} } }] }, wrongRe: /idempiere-open-json-v1/,
+    wrongRule: 'the open file of ANOTHER source (iDempiere) is a named problem row, no sheet, and Process refuses ("Not migrated") with the company unchanged',
+    extraPick: function () { var rc = W.read(TS, LD, SAPCLS, { Files: sapFiles(SEXP).Files, Cutover: EARLY }, null);
+      check('SAP-PICK', 'cutover-mismatch', 'a cut-over date on the form that is not the date the file is cut at (' + CUT + ') is ONE named problem, never a silent pick', W.problems(rc).length === 1 && W.problems(rc)[0].indexOf('cut at ' + CUT) > 0 && W.problems(rc)[0].indexOf(EARLY) > 0, W.problems(rc)); },
+    problem: { files: sapFiles(SEARLY), rule: 'a source that is not frozen (cut-over ' + EARLY + ', postings after it) is shown as the reader\'s source-not-frozen problem naming the oracle\'s counts (journal lines ' + OSE.after.journal_lines + ', documents ' + OSE.after.documents + '), and Process refuses ("Not migrated") with the company unchanged',
+      test: function (ps) { return ps.some(function (x) { return /source-not-frozen/.test(x) && x.indexOf(String(OSE.after.journal_lines)) > 0; }); } } });
+  verdict('SAP-PICK'); verdict('SAP-SUMMARY'); verdict('SAP-PROBLEM');
+  formScreens({ tag: 'BC', T: TBC, cls: BCCLS, files: bcFiles(PKGWB), O: OBC, SH: SHB, emptyRe: /Excel file Business Central wrote/, wrong: { Files: [{ name: 'idempiere_open.json', size: 1, data: { manifest: { format: 'idempiere-open-json-v1' }, sets: {} } }], Cutover: CUT }, wrongRe: /Pick the Excel file/,
+    wrongRule: 'a file that is not a Business Central package (an iDempiere json) is one named problem ("Pick the Excel file"), no sheet, and Process refuses ("Not migrated") with the company unchanged',
+    problem: { files: bcFiles(bcMutant({ kind: 'none' }, function (X) { delete X.rows['271']; })), rule: 'a package that lacks the Bank Account Ledger Entry table (271) is shown as the reader\'s table-missing problem naming it, and Process refuses ("Not migrated") with the company unchanged',
+      test: function (ps) { return ps.some(function (x) { return /table-missing:.*271 Bank Account Ledger Entry/.test(x); }); } } });
+  verdict('BC-PICK'); verdict('BC-SUMMARY'); verdict('BC-PROBLEM');
+  var LS = loadCase('SAP-LOAD', 'SAP', SAPCLS, sapFiles(SEXP), OS, SHS, TS); verdict('SAP-LOAD');
+  var LB = loadCase('BC-LOAD', 'BC', BCCLS, bcFiles(PKGWB), OBC, SHB, TBC);
+  verdict('BC-LOAD');
+  repeatCase('SAP', TS, SAPCLS, sapFiles(SEXP), OS, SHS, LS); verdict('SAP-REPEAT');
+  repeatCase('BC', TBC, BCCLS, bcFiles(PKGWB), OBC, SHB, LB); verdict('BC-REPEAT');
 
   // ═══ MUTANTS: each must make a comparator FAIL (a witness that cannot fail is no witness) ═══
   function mutants(tag, C, O, SH, EXP, mkFiles, cls, mutateSets) {
@@ -293,18 +344,45 @@ function mk(O) { return {
     var m5 = clone(EXP), ca = m5.sets.tb.filter(function (r) { return r.class === 'AR'; })[0]; ca.class = '';
     var d5 = C.cls(m5.sets); check(tag, 'wrong-class', 'a control account read as plain (' + ca.code + ') is caught by the class comparator', d5.length === 1 && d5[0].indexOf(ca.code) === 0, d5);
     // through a REAL load: the loader checks the sheets against themselves, so a dropped / flipped item passes the loader and MUST be caught by the oracle comparator on the twin's tables
-    var L6 = loadInto(tag + ' Mutant Drop Co', cls, mkFiles(m3)), dd6 = L6.r2.ok ? cmpTwin(L6.C, O, SH) : ['(load refused) ' + L6.r2.msg];
+    var L6 = loadInto(tag + ' Mutant Drop Co', cls, mkFiles(m3, { kind: 'drop', docno: dropped.documentno })), dd6 = L6.r2.ok ? cmpTwin(L6.C, O, SH) : ['(load refused) ' + L6.r2.msg];
     say('§SBO-MUTANT ' + tag + ' drop-open-item-load stage2=' + L6.r2.ok + ' oracle_differences=' + J(dd6).slice(0, 420));
     check(tag, 'drop-item-through-load', 'with ' + dropped.documentno + ' removed from the file the loader (self-consistent) completes, but the twin\'s books differ from the oracle: clearing and OPEN per partner FAIL', dd6.length > 0 && dd6.some(function (x) { return /^CLEAR|^OPEN|^TB/.test(x); }), dd6);
-    var L7 = loadInto(tag + ' Mutant Flip Co', cls, mkFiles(m2)), dd7 = L7.r2.ok ? cmpTwin(L7.C, O, SH) : ['(load refused) ' + L7.r2.msg];
+    var L7 = loadInto(tag + ' Mutant Flip Co', cls, mkFiles(m2, { kind: 'flip', docno: oi.documentno })), dd7 = L7.r2.ok ? cmpTwin(L7.C, O, SH) : ['(load refused) ' + L7.r2.msg];
     say('§SBO-MUTANT ' + tag + ' flip-open-amount-load stage2=' + L7.r2.ok + ' oracle_differences=' + J(dd7).slice(0, 420));
     check(tag, 'flip-amount-through-load', 'with ' + oi.documentno + ' flipped by 7.00 the loader completes, but the twin\'s open amount / clearing differ from the oracle', dd7.length > 0 && dd7.some(function (x) { return /^OPEN|^CLEAR/.test(x); }), dd7);
   }
-  mutants('SAP-MUTANT', CS, OS, SHS, SEXP, sapFiles, 'org.test.SapOpen');
-  formFor('org.test.BcOpenSets', function (trx, params) { var cv = BO.fromOpen(params.Files[0].data), open = OB.openOf(cv.book, cv.manifest); return { cv: cv, open: open, problems: cv.manifest.problems.concat(OB.problems(trx, open)) }; });
-  mutants('BC-MUTANT', CB, OBC, SHB, BEXP, sapFiles, 'org.test.BcOpenSets');   // the mutated NEUTRAL sets go through the BC template (a package cannot be flipped cell by cell without re-writing it)
+  mutants('SAP-MUTANT', CS, OS, SHS, SEXP, sapFiles, SAPCLS);
+  mutants('BC-MUTANT', CB, OBC, SHB, BEXP, bcMutFiles, BCCLS);   // reader-level mutants on the neutral sets; the two through-load mutants rewrite the PACKAGE from mutated raw ledger rows and go through the real BC form
   verdict('SAP-MUTANT'); verdict('BC-MUTANT');
 
+  // ═══ the guide's steps per source, each WITNESSED (a case above asserted it) or printed UNWITNESSED ═══
+  var okc = function () { return Array.prototype.every.call(arguments, function (cs) { return !!CASES[cs] && CASES[cs].judged > 0 && CASES[cs].failed === 0; }); };
+  var STS = W.steps('SAP', [
+    ['run the SAP agent with --cutover (GET only, password from the environment) -> sap_open.json', 'cases SAP-READER / SAP-FROZEN against the mock Service Layer', okc('SAP-READER', 'SAP-FROZEN')],
+    ['start the plugins and open Data Import > Migrate from SAP Business One (alpha)', 'case SAP-PLUG: real bundle, dictionary, menu leaf, access', okc('SAP-PLUG')],
+    ['pick sap_open.json (nothing / another source\'s file / a different cut-over date are named, not loaded)', 'case SAP-PICK', okc('SAP-PICK')],
+    ['read the summary: counts, refusals named, what is created, nothing written', 'case SAP-SUMMARY', okc('SAP-SUMMARY')],
+    ['a source that is not frozen is stopped in plain words, nothing written', 'case SAP-PROBLEM', okc('SAP-PROBLEM')],
+    ['Process (stage 1) and stage 2, the books checked against the source (§MIG-VERIFY)', 'case SAP-LOAD', okc('SAP-LOAD')],
+    ['Process the same file again: nothing is loaded twice', 'case SAP-REPEAT', okc('SAP-REPEAT')],
+    ['a changed / dropped source figure is caught by the books-vs-source check', 'case SAP-MUTANT (through the real form)', okc('SAP-MUTANT')],
+    ['pick sap_export.json (masters) and sap_open.json together in one run', 'both files are wired in the form (sap_migrate_form.toOdooParams) but no consistent masters+ledger fixture exists, so the combined load is not run here', null],
+    ['click through the form in the real page (a browser)', 'no browser drive of this form; witness_migration_journey drives Odoo only', null],
+    ['a real SAP Business One Service Layer', '§SBO-CONN is INCONCLUSIVE by construction (no SAP here)', null]
+  ]);
+  var STB = W.steps('BC', [
+    ['export the ledger tables from Business Central (Configuration Packages > Export to Excel)', 'the package is written by tests/bc_package_writer.js from test-supplied rows, not exported by a real BC', null],
+    ['start the plugins and open Data Import > Migrate from Business Central (alpha)', 'case BC-PLUG: real bundle, dictionary, menu leaf, access', okc('BC-PLUG')],
+    ['pick the package (nothing / a file that is not a package are named, not loaded)', 'case BC-PICK', okc('BC-PICK')],
+    ['read the summary: counts, refusals named, what is created, nothing written', 'case BC-SUMMARY', okc('BC-SUMMARY')],
+    ['a package missing a ledger table is stopped, naming the table, nothing written', 'case BC-PROBLEM', okc('BC-PROBLEM')],
+    ['Process (stage 1) and stage 2, the books checked against the source (§MIG-VERIFY)', 'case BC-LOAD', okc('BC-LOAD')],
+    ['Process the same package again: nothing is loaded twice', 'case BC-REPEAT', okc('BC-REPEAT')],
+    ['a changed / dropped ledger figure in the package is caught by the books-vs-source check', 'case BC-MUTANT (package rewritten from mutated rows, through the real form)', okc('BC-MUTANT')],
+    ['click through the form in the real page (a browser)', 'no browser drive of this form; witness_migration_journey drives Odoo only', null],
+    ['a real Business Central package', '§SBO-CONN is INCONCLUSIVE by construction (no BC here)', null]
+  ]);
+  check('STEPS', 'none-failed', 'every guide step a case asserts is asserted green (SAP ' + STS.witnessed + '/' + STS.n + ', BC ' + STB.witnessed + '/' + STB.n + ' witnessed; the rest printed UNWITNESSED, never counted as a pass)', STS.failed === 0 && STB.failed === 0 && STS.witnessed > 0 && STB.witnessed > 0, [STS, STB]); verdict('STEPS');
   say('§SBO-COVERAGE witnessed: credit note, partly paid, foreign invoice, no address, on-account payment, cancelled invoice (SAP), fully paid, foreign bank, earlier cut-over (frozen SAP / date-exact BC), missing field, missing table. NOT witnessed: documents numbered alike across kinds (docno-reused note), bank-gl-shared, control-account-unknown, unknown-account, an unposted document (TransNum empty), a wrong-signed open amount, Currency-Code spelling (S13), and every UNCLEAR row of §SAP-BC-OPEN-SPEC');
   say('§SBO-CONN verdict=INCONCLUSIVE - no live SAP Business One and no live Business Central here: the oracle is test-supplied rows in the vendors\' field names. A tester\'s run on a real company closes this; nothing here claims real-company validation.');
   var vs = Object.keys(CASES).map(function (c) { return c + '=' + (CASES[c].failed ? 'FAIL' : 'PASS'); }).join(' ');
