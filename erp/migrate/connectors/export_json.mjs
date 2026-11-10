@@ -18,6 +18,7 @@ export function exportJson(exp, cfg) {
   return {
     kind: 'export-json', notes, problems, model, setsReportAs: cfg.reportAs || null,
     rows: (set) => X[set] || [],
+    meta: (set) => (M.sets || {})[set],   // what the agent said about a set: model, count, domain, archived_too, fields_read ...
     scalar: (path) => String(path).split('.').reduce((o, k) => (o == null ? undefined : o[k]), exp),
     report: () => Object.keys(M.sets || {}).map((k) => ({ set: k, count: M.sets[k].count, rows: (X[k] || []).length, read: (M.sets[k].fields_read || []).length,
       missing: M.sets[k].fields_missing || (M.sets[k].missing_set ? ['(set)'] : []) }))
