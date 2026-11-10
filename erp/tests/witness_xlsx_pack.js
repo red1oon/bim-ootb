@@ -22,6 +22,10 @@ let fail = 0, pass = 0; const chk = (n, ok, m) => { console.log('  ' + (ok ? 'PA
   const same = Object.keys(want).filter((k) => k !== 'AD_TreeNodeMM').every((k) => got[k] === want[k]) && Object.keys(got).every((k) => want[k] === got[k]);
   chk('X1 every sheet\'s rows are records of the pack, no others', same, 'pack ' + JSON.stringify(got));
   chk('X1b the menu carries its tree place (Parent_ID + SeqNo)', /<Parent_ID reference="id" reference-key="AD_Menu">\d+<\/Parent_ID>\s*<SeqNo>\d+<\/SeqNo>/.test(r.xml), '');
+  // found on a real server 2026-11-11: the pack handler creates a physical column ONLY when the AD_Column element says IsSyncDatabase=Y (ColumnElementHandler.java), so a pack of N:s created the dictionary and no table
+  const colEls = r.xml.split('<AD_Column type="table">').slice(1), sync = (e) => (/<IsSyncDatabase>([YN])<\/IsSyncDatabase>/.exec(e) || [])[1], virt = (e) => /<ColumnSQL>[^<]+<\/ColumnSQL>/.test(e);
+  const phys = colEls.filter((e) => !virt(e)), ownPhys = phys.filter((e) => /BIM_Document_ID|<ColumnName>(Revision|DeliverableNo|DocStatus)<\/ColumnName>/.test(e));
+  chk('X1c every physical column of the new table says IsSyncDatabase=Y; a virtual column never does', colEls.length === 32 && phys.every((e) => sync(e) === 'Y') && colEls.filter(virt).every((e) => sync(e) !== 'Y') && ownPhys.length >= 4, 'columns=' + colEls.length + ' physical=' + phys.length + ' virtual=' + colEls.filter(virt).length);
   const classes = (r.xml.match(/org\.kernel\.[\w.]+/g) || []).filter((v, i, s) => s.indexOf(v) === i).filter((c) => /process\./.test(c));
   chk('X3 the pack names the 2 process classes and holds no Java', classes.length === 2 && !/\.class|\.java|public class/.test(r.xml), JSON.stringify(classes));
   console.log('X2 immutable version');
