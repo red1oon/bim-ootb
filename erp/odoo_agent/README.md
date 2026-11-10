@@ -62,24 +62,17 @@ SPDX-License-Identifier: MIT — Copyright (c) 2025-2026 Redhuan D. Oon.
 ## Export your master data (`export.js`, no `npm install` needed)
 
 ```bash
-node export.js                      # → ./odoo_export/odoo_migration.xlsx + manifest.json + provenance.json + odoo_export.json
+node export.js                      # → ./odoo_export/odoo_export.json
 CUTOVER=2026-12-31 node export.js   # the date your opening stock is counted at (default: today)
 ```
 
 Same `ODOO_HOST / ODOO_PORT / ODOO_DB / ODOO_LOGIN / ODOO_PASSWORD` variables as above. It reads (never writes)
 your units of measure, payment terms, product categories, chart of accounts, partners + contacts + addresses, products
-+ vendor prices, sale prices, warehouses, locations and on-hand stock, and writes ONE workbook: one sheet per ERP table,
-in the order they must load, row 1 = the ERP column names (the Ninja migration sheet shape). Where the ERP needs a value
-Odoo has no field for (the partner group, the tax category, …), the cell asks the ERP for its own default by the same
-rule the ERP's import uses; every such cell is listed in `manifest.json` → `patches`. `manifest.json` also records how
-many rows Odoo has of each, so the ERP can prove nothing was dropped or made up, and lists under `held` your own
-company and your Odoo users' contact cards — you choose on the summary screen whether to bring them in.
-`provenance.json` maps every sheet row back to its Odoo record.
-`odoo_export.json` holds your OPEN BALANCES at the cut-over date, as Odoo returned them (read only, nothing converted): the trial balance per account
-(posted journal items up to the date) and every open receivable / payable line. Pick it together with the workbook and `manifest.json` in
-"Migrate from Odoo": the ERP then brings in one opening journal and your open invoices and credit notes, and checks its books against these rows.
-Leave it out and only the master data and the opening stock move.
- `xlsx.mini.min.js` (SheetJS) is the one helper file it uses.
++ vendor prices, warehouses, locations and on-hand stock, and your OPEN BALANCES at the cut-over date (the trial balance
+per account, every open receivable / payable line), and writes ONE file: `odoo_export.json` — the rows exactly as Odoo
+returned them, plus how many rows Odoo has of each (so the ERP can prove nothing was dropped or made up). Nothing is
+converted here: the mapping to the ERP's tables happens in the browser. In "Migrate from Odoo" you pick that one file.
+(An export made by an older agent — a workbook + `manifest.json` — still loads.)
 
 ### Real Odoo data — what the export does for you (§HARDEN-SPEC)
 
@@ -91,10 +84,9 @@ Leave it out and only the master data and the opening stock move.
 - **Archived records come along INACTIVE** (Odoo's archive = the ERP's Active unticked): an archived customer keeps its contacts, an archived
   product keeps its stock and vendor prices.
 - **Addresses** are matched by a fixed id made from the Odoo record (the ERP's `C_Location_UU`), so a customer with no street, or two customers
-  on the same street, are fine. An address with no country gets your Odoo company's country (listed in `manifest.json` → `patches`).
+  on the same street, are fine. An address with no country gets your Odoo company's country (listed in the migration summary).
 - **Codes the ERP needs unique** (customer reference, product internal reference): if two Odoo records share one, the older keeps it and the
-  other becomes `<code>-<odoo id>`; a code longer than the ERP field is cut and keeps `~<odoo id>`. Every one is listed in `manifest.json` →
-  `renamed`. Other text longer than the ERP field is cut the way iDempiere cuts it (listed under `patches`).
+  other becomes `<code>-<odoo id>`; a code longer than the ERP field is cut and keeps `~<odoo id>`. The browser lists every one on the summary screen. Other text longer than the ERP field is cut the way iDempiere cuts it (listed on the summary screen).
 - **Your Odoo version:** the export reads Odoo 17's field names and checks they exist BEFORE reading anything. On another version it stops,
   names the missing field, and writes nothing.
 - Needs **Node.js 16 or newer**.

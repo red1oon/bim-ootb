@@ -1,0 +1,27 @@
+§DEPTH before onhand(137)=50 m_transaction=28
+  ✅ D1 a New order saved with the preview number ("<80003>") is NOT rejected by the numeric pin — §CRUD validate key=c_order verb=create ok
+  ✅ D1b the sequence number is allocated at save (PO.saveNew) — §DOCNO table=c_order docno=80003 seqOps=ad_sequence:CRUD_UPDATE via=ModelTrade.MSequence bump=in-group
+  ✅ D2 Complete on an order typed this session reaches the model layer and succeeds (not "no lines") — §MODEL-DOCACTION table=c_order id=-6 action=CO ok=true status=CO ops=56 tables={"ad_wf_process:CREATE":1,"ad_wf_activity:CREATE":3,"ad_wf_eventaudit:CREATE":3,"
+  ✅ D3 ONE group wrote shipment + invoice + stock + transaction + postings — {"ad_wf_process:CREATE":1,"ad_wf_activity:CREATE":3,"ad_wf_eventaudit:CREATE":3,"c_acctschema:UPDATE":1,"c_order:UPDATE":1,"c_ordertax:CREATE":1,"ad_sequence:UPDATE":4,"m_inout:CREATE":1,"m_inoutline:CREATE":1,"m_inoutli
+  ✅ D3b the group is signed and chain-verified
+  ✅ D4 Zoom Across lists the generated Shipment (Customer) and Sales Invoice — §ZOOM-ACROSS table=C_Order key=C_Order_ID=-6 destinations=2 ["Sales Invoice and Credit/Debit Note(1)","Shipment (Customer)(1)"]
+  ✅ D5 the Shipment window opens filtered to this order: 1 record, Completed, Posted button — Shipment (Customer) › Shipment · Record 1 of 1 |  HQ -6 2026-11-10 600004 MM Shipment Indirect 2026-11-10 2026-11-10 Joe Block Hartford HQ 
+  ✅ D7 Posted on the generated Shipment: COGS Dr 2.70 / Inventory asset Cr 2.70, Balanced, coverage complete — {"lines":["14120 · Product asset 0.00 2.70","51100 · Product CoGs 2.70 0.00"],"bal":"Balanced","cov":"complete"}
+§DEPTH after onhand(137)=49 newTransactions=[{"movementtype":"C-","movementqty":-1}]
+  ✅ D6a StorageOnHand moved by exactly −1 — before=50 after=49
+  ✅ D6b an M_Transaction C- of −1 exists for the product — [{"movementtype":"C-","movementqty":-1}]
+  ✅ D6c every generated document balances in every schema (ΣDR = ΣCR) and there is at least one — [{"ad_table_id":318,"record_id":-49,"c_acctschema_id":101,"dr":3,"cr":3},{"ad_table_id":318,"record_id":-49,"c_acctschema_id":200000,"dr":2.55,"cr":2.55},{"ad_table_id":319,"record_id":-22,"c_acctschema_id":101,"dr":2.7,"cr":2.7},{"ad_table_id":319,"record_id"
+  ✅ D7b after Last record, Zoom Across zooms THAT record (-6), not the first one — §ZOOM-ACROSS table=C_Order key=C_Order_ID=-6 destinations=2 ["Sales Invoice and Credit/Debit Note(1)","Shipment (Customer)(1)"]
+  ✅ D8a on-credit POS sale completes — §MODEL-DOCACTION table=c_order id=-69 action=CO ok=true status=CO ops=39 tables={"ad_wf_pr
+  ✅ D8b legacy parity: no payment is created for PaymentRule P, the invoice is unpaid — [[{"n":0}],[{"ispaid":"N","paymentrule":"P"}]]
+  ✅ D8c Zoom Across = legacy GenericZoomProvider list: Invoice Payment Schedule(1), Sales Invoice and Credit/Debit Note(1), Shipment (Customer)(1) — §ZOOM-ACROSS table=C_Order key=C_Order_ID=-69 destinations=3 ["Invoice Payment Schedule(1)","Sales Invoice and Credit/Debit Note(1)","Shipment (Customer)(1)"]
+  ✅ D9a Void succeeds through the model layer — §MODEL-DOCACTION table=c_order id=-69 action=VO ok=true status=VO ops=57 tables={"c_order:UPDATE":1,
+  ✅ D9b both invoices RE (original +3, reversal −3, linked back to each other) — [{"id":-105,"docstatus":"RE","gt":3,"reversal_id":-152},{"id":-152,"docstatus":"RE","gt":-3,"reversal_id":-105}]
+  ✅ D9c both shipments RE, movement type C-, linked back to each other — [{"id":-84,"docstatus":"RE","movementtype":"C-","reversal_id":-121},{"id":-121,"docstatus":"RE","movementtype":"C-","reversal_id":-84}]
+  ✅ D9d the two shipment lines are −1 (the sale) and +1 (the reversal) — [{"movementqty":-1},{"movementqty":1}]
+  ✅ D9e stock restored by the void: on-hand rose by exactly +1 — before-void=48 after-void=49
+  ✅ D9f reversal invoice books (schema 101): 12110 DR −3 / 41000 CR −3 — negative amounts, as legacy — [{"v":"41000","dr":0,"cr":-3},{"v":"12110","dr":-3,"cr":0}]
+  ✅ D9g reversal shipment books (schema 101): 14120 DR 2.70 / 51100 CR 2.70 — swapped, as legacy — [{"v":"14120","dr":2.7,"cr":0},{"v":"51100","dr":0,"cr":2.7}]
+  ✅ D0 0 page errors
+
+§DEPTH-CYCLE PASS pass=23 fail=0 inconclusive=0

@@ -22,6 +22,9 @@
 //   PERIOD-OPEN (a third tenant, login 2026-12-20, weeks after the cut-over) the user does what legacy asks — unticks Automatic Period Control on the Accounting Schema and opens the
 //            cut-over period with Period Status (AD_Process 167); the form still refuses until TODAY's period is open too (legacy dates the journal batch today); then the same
 //            files load: stage 2 completes, §MIG-VERIFY says PASS.
+//   JSON-ONLY (§ODOO-ENGINE-SPEC O3; a fourth tenant) the SAME export picked as odoo_export.json ALONE — no workbook, no manifest.json: the form builds the whole book from the
+//            agent's raw rows through the engine (templates/odoo-17.json). The tenant must end exactly as the workbook tenant did: every one of the 17 master tables the same
+//            row count, the same books account by account, the same open amount per partner, §MIG-VERIFY PASS; a file whose set is short of Odoo's own count is refused first.
 //   FALSIFY  (a second tenant) one open line removed from the export -> stage 2 is refused and NAMES that exact amount on the clearing account; no journal, no invoice stays.
 // Command: node erp/tests/witness_open_balances.js 2>&1 | tee /tmp/count_logs/open_balances.log
 'use strict';
@@ -74,7 +77,10 @@ var cents = function (v) { return Math.round(Number(v || 0) * 100); }, money = f
 
   // ── the ORACLE, from the raw rows only ──
   var acct = {}; EXP.sets['account.account'].forEach(function (a) { acct[a.id] = a; });
-  var pkey = {}; EXP.sets.partner_keys.forEach(function (p) { pkey[p.id] = p; });
+  var OCONV = await import(url.pathToFileURL(path.join(__dirname, 'fixtures', 'odoo_convert_reference.mjs')).href), exp = EXP;
+  var pkey = (function () { var c = OCONV.convert(exp), pv = c.provenance[c.book[4].name] || [], held = {}, val = {}, by = {}, o = {};   // the partner's business-partner Value and "held", from the FROZEN hand mapping (never from the template)
+      pv.forEach(function (x, i) { val[x.id] = c.book[4].rows[i + 1][0]; }); (c.manifest.held || []).forEach(function (h) { held[h.id] = h.why; }); exp.sets['res.partner'].forEach(function (p) { by[p.id] = p; });
+      exp.sets['res.partner'].forEach(function (p) { var top = by[p.commercial_partner_id] || p; o[p.id] = { id: p.id, value: val[top.id] || '', held: held[p.id] || '' }; }); return o; })();
   var KCLS = { asset_receivable: 'AR', liability_payable: 'AP', asset_cash: 'BANK' }, SRC = { plain: {}, cls: { AR: 0, AP: 0, BANK: 0 } };
   EXP.sets.tb.forEach(function (r) { var c = cents(r.balance), kc = KCLS[acct[r.account_id].account_type]; if (!c) return; if (kc) SRC.cls[kc] += c; else SRC.plain[acct[r.account_id].code] = c; });
   var INVT = { out_invoice: 'ARI', out_refund: 'ARC', in_invoice: 'API', in_refund: 'APC' }, SRCOPEN = {}, SRCDOC = {}, srcEntry = 0;
@@ -197,7 +203,26 @@ var cents = function (v) { return Math.round(Number(v || 0) * 100); }, money = f
   check('PERIOD-OPEN', 'loads', 'the same files then load on that login: stage 2 completes and the loader\'s own §MIG-VERIFY says PASS', g3.ok && g4.ok && /verdict=PASS judged=[1-9]/.test(ver3) && n(C3, 'c_invoice') === Object.keys(SRCDOC).length, { g3: g3.msg, g4: g4.msg, ver3: ver3 });
   verdict('PERIOD-OPEN');
 
-  var v = ['PERIOD', 'SUMMARY', 'RUN', 'PREREQ', 'TB', 'CLEAR', 'OPEN', 'RERUN', 'FALSIFY', 'PERIOD-OPEN'].map(function (c) { var x = CASES[c] || {}; return !x.judged ? 'INCONCLUSIVE' : x.failed ? 'FAIL' : 'PASS'; });
+  // ═══ JSON-ONLY: the whole book from odoo_export.json through the engine ═══
+  var T4 = birth('Json Co'), C4 = T4.clientId, s4 = session(T4, '2026-11-11'), only = function (exp) { return { Files: [{ name: 'odoo_export.json', size: 1, data: exp || EXP }] }; };
+  var MT17 = man.sheets.map(function (x) { return x.table; }), cnt = function (Cx) { var o = {}; MT17.forEach(function (t) { o[t] = n(Cx, t.toLowerCase()); }); return o; };
+  var factOf = function (Cx) { var o = {}; q('SELECT ev.value AS v, SUM(f.amtacctdr) AS dr, SUM(f.amtacctcr) AS cr FROM fact_acct f JOIN c_elementvalue ev ON ev.c_elementvalue_id=f.account_id WHERE f.ad_client_id=? GROUP BY ev.value ORDER BY ev.value', [Cx]).forEach(function (r) { o[r.v] = cents(r.dr) - cents(r.cr); }); return o; };
+  var openOf = function (Cx) { var o = {}; q('SELECT bp.value AS bp, dt.docbasetype AS b, i.grandtotal AS t FROM c_invoice i JOIN c_bpartner bp ON bp.c_bpartner_id=i.c_bpartner_id JOIN c_doctype dt ON dt.c_doctype_id=i.c_doctype_id WHERE i.ad_client_id=?', [Cx]).forEach(function (r) { var kk = r.b + '|' + r.bp; o[kk] = (o[kk] || 0) + cents(r.t); }); return Object.keys(o).sort().map(function (kk) { return kk + '=' + o[kk]; }); };
+  var shortExp = JSON.parse(JSON.stringify(EXP)); shortExp.sets['product.product'].pop();
+  var jShort = s4.rows(only(shortExp), null).filter(function (r) { return /^⚠ odoo_export\.json is not complete/.test(r.item); }).map(function (r) { return r.item; });
+  check('JSON-ONLY', 'short-file', 'a file whose product.product set holds one row less than Odoo counted is refused before anything runs, naming the set and both numbers', jShort.length === 1 && /product\.product \(Odoo counted \d+, the file holds \d+\)/.test(jShort[0]), jShort);
+  var j1 = s4.rows(only(), null), jcur = answer(j1), j2 = s4.rows(only(), jcur), jprob = j2.filter(function (r) { return /^⚠/.test(r.item); }).map(function (r) { return r.item; }), jsheets = j2.filter(function (r) { return r.key > 100 && r.key < 900; });
+  check('JSON-ONLY', 'summary', 'with odoo_export.json alone the summary shows the 17 master sheets + the 2 open sheets and no problem row', jprob.length === 0 && jsheets.length === 19, { jprob: jprob, sheets: jsheets.map(function (x) { return x.item; }) });
+  var mark4 = SHIPPED.length, j3 = s4.execute(only(), jcur), j4 = j3.ok ? s4.after(only(), jcur) : { ok: false, msg: 'stage 1 refused: ' + j3.msg }, ver4 = SHIPPED.slice(mark4).filter(function (l) { return /^§MIG-VERIFY/.test(l); }).pop() || '';
+  say('§OB-JSON-ONLY client=' + C4 + ' stage1=' + j3.ok + ' stage2=' + j4.ok + ' ' + ver4 + ' msg=' + String(j3.ok ? j4.msg : j3.msg).slice(0, 260));
+  check('JSON-ONLY', 'loads', 'Process + stage 2 complete and the loader\'s own §MIG-VERIFY says PASS', j3.ok && j4.ok && /verdict=PASS judged=[1-9]/.test(ver4), { j3: j3.msg, j4: j4.msg });
+  var cA = cnt(C), cB = cnt(C4), offT = MT17.filter(function (t) { return cA[t] !== cB[t]; });
+  say('§OB-JSON-ONLY tables workbook_path=' + J(cA) + ' engine_path=' + J(cB));
+  check('JSON-ONLY', 'same-masters', 'X of N: each of the 17 master tables has the same row count in the tenant loaded from odoo_export.json alone as in the tenant loaded from the agent\'s workbook (X=' + (MT17.length - offT.length) + ' of N=' + MT17.length + ')', MT17.length === 17 && offT.length === 0, offT.map(function (t) { return t + ' workbook ' + cA[t] + ' engine ' + cB[t]; }));
+  check('JSON-ONLY', 'same-books', 'the books are the same account by account (' + Object.keys(factOf(C)).length + ' accounts) and the open amount per partner and document kind is the same', J(factOf(C)) === J(factOf(C4)) && Object.keys(factOf(C)).length > 0 && J(openOf(C)) === J(openOf(C4)) && openOf(C).length > 0, { a: factOf(C), b: factOf(C4) });
+  verdict('JSON-ONLY');
+
+  var v = ['PERIOD', 'SUMMARY', 'RUN', 'PREREQ', 'TB', 'CLEAR', 'OPEN', 'RERUN', 'FALSIFY', 'PERIOD-OPEN', 'JSON-ONLY'].map(function (c) { var x = CASES[c] || {}; return !x.judged ? 'INCONCLUSIVE' : x.failed ? 'FAIL' : 'PASS'; });
   var all = v.indexOf('FAIL') >= 0 ? 'FAIL' : v.indexOf('INCONCLUSIVE') >= 0 ? 'INCONCLUSIVE' : 'PASS';
   say('§OB-VERDICT ' + all + ' judged=' + ALL.judged + ' failed=' + ALL.failed + ' cases=' + J(v));
   process.exit(all === 'PASS' ? 0 : all === 'INCONCLUSIVE' ? 3 : 1);

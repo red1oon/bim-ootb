@@ -1,0 +1,12 @@
+§OBJECT open db=ad_seed.db dictionary=present
+§ERP patch statements=3911 failed=3 ms=1829
+§ERP boot db=ad_seed.db replayed_ops=0 oplog=/tmp/da_ZpDvcU/o.jsonl sql_functions=61
+§DOCACT_POP tables_with_rows=14 of 25 walked; triples(table,record,role)=276 nonEmptyOffer=201 roleNarrowed=69 [c_cash:9 s_timeexpense:3 gl_journalbatch:3 m_requisition:3 m_inout:27 c_payment:6 m_rma:3 c_invoice:60 gl_journal:6 m_inventory:9 c_allocationhdr:6 c_order:132 m_movement:3 c_bankstatement:6]
+  ✅ S1a shared module == the old page path, every record x {no role, 102, 50004}  judged=276 diffs=0
+  ✅ S1a2 the seam verbs(ctx.doc) == the shared module on the same population  seamDiffs=0
+  ✅ S1a3 the population is not vacuous: some record has an offered action, and some role narrowed a list (so the role step was exercised)  nonEmptyOffer=201 roleNarrowed=69
+  ✅ S1b _fsmCtx exists and is non-trivial (the instrument finds it); the old _periodOpen is gone only in the new page (DA_BREAK=oldpage still has it)  fsmCtx=3162 periodOpen=1006
+  ❌ S1b the page holds no copy of the join or the period probe (no legalActionsOrder / legalActionsFor / c_period SQL in _fsmCtx or _periodOpen)  offences=4
+  ❌ S1b the page loads doc_actions.js and calls DocActions.legal after it  script@-1 use@-1
+  ✅ S1c verbs(ctx) with no ctx.doc is still the kernel handler registry, role-filtered (unchanged)  registry=[{"action":"CO","label":"CO","docType":"WDAS_DOC"}] filtered=0
+§WITNESS_DOC_ACTIONS_SHARED pass=5 fail=2 inconclusive=0 verdict=FAIL

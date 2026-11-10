@@ -10,7 +10,7 @@
 // Deterministic: no clock, no random.
 import { putFile, dropFile, mapUom, sheetRows, bookToWorkbook } from './ninja_migrate_process.mjs';
 import * as OB from './open_balances.mjs';                    // §E3C-SPEC 1(d)+(e): the open balances of ANY source (prerequisites, the two import processes, the verifier)
-import { isExport, openBalances } from './odoo_migrate_convert.mjs';   // §E3C-SPEC 1(c): the agent's raw odoo_export.json → the open sheets, by the engine on templates/odoo-17.json
+import { isExport, openBalances, hasMasters, convert } from './odoo_migrate_convert.mjs';   // §E3C-SPEC 1(c): the agent's raw odoo_export.json → the open sheets, by the engine on templates/odoo-17.json
 export const CLASSNAME = 'org.kernel.odoo.MigrateFromOdoo';
 const NINJA_PROCESS = 9540001, FILE = 'odoo_migration.from-form.xlsx';
 let AP = null;
@@ -36,22 +36,28 @@ export function plan(trx, params, current) {
   const out = { problems: [], units: [], sheets: [], book: null, open: null, source: null };
   const files = (params && params.Files) || [];
   const wbf = files.find((f) => /\.xlsx?$/i.test(f.name)), mf = files.find((f) => /manifest\.json$/i.test(f.name));
-  if (!wbf) out.problems.push('Pick the workbook odoo_migration.xlsx from your export folder.');
-  if (!mf) out.problems.push('Pick manifest.json from the same folder (it proves nothing was dropped or made up).');
+  // §ODOO-ENGINE-SPEC O3: odoo_export.json with the master sets and NO workbook = the whole book comes from the agent's raw rows through the ONE engine (templates/odoo-17.json).
+  //   A workbook (an older download: workbook + manifest.json, with or without odoo_export.json for the open balances) loads exactly as before.
+  const xe = !wbf ? files.find((f) => hasMasters(f.data)) : null, eng = xe ? convert(xe.data) : null;
+  if (!eng) {
+    if (!wbf) out.problems.push('Pick odoo_export.json from your export folder (or, from an older export, the workbook odoo_migration.xlsx + manifest.json).');
+    else if (!mf) out.problems.push('Pick manifest.json from the same folder (it proves nothing was dropped or made up).');
+  } else if (eng.short.length) out.problems.push('odoo_export.json is not complete: ' + eng.short.join('; ') + '. Run the export again.');
   if (!AP || !AP.JAVA || !AP.JAVA['org.idempiere.ninja.process.MigrateExcelData'] || !trx.q("SELECT 1 AS x FROM ad_process WHERE ad_process_id=? AND isactive='Y'", [NINJA_PROCESS]).length)
     out.problems.push('Start the plugin "Ninja data migration" first (Plugins & Releases): this form loads through it.');
-  if (!wbf || !mf) return out;
-  const wb = wbf.data, man = mf.data;
-  let book = wb.SheetNames.map((n) => ({ name: n, rows: sheetRows(wb.Sheets[n]) }));
+  if (!eng && (!wbf || !mf)) return out;
+  const man = eng ? eng.manifest : mf.data;
+  let book = eng ? eng.book.map((b) => ({ name: b.name, rows: b.rows })) : wbf.data.SheetNames.map((n) => ({ name: n, rows: sheetRows(wbf.data.Sheets[n]) }));
   // manifest == what was picked (the export's own count of every sheet)
-  if (man.workbook && man.workbook !== wbf.name) out.problems.push('The manifest is for ' + man.workbook + ', not ' + wbf.name + '.');
+  if (!eng && man.workbook && man.workbook !== wbf.name) out.problems.push('The manifest is for ' + man.workbook + ', not ' + wbf.name + '.');
   const mSheets = (man.sheets || []).slice();
   mSheets.forEach((m) => { const s = book.find((b) => b.name === m.sheet);
     if (!s) out.problems.push('Sheet ' + m.sheet + ' is in the manifest but not in the workbook.');
     else if (s.rows.length - 1 !== m.rows) out.problems.push('Sheet ' + m.sheet + ' has ' + (s.rows.length - 1) + ' rows; the manifest says ' + m.rows + '.'); });
   book.forEach((b) => { if (!mSheets.some((m) => m.sheet === b.name)) out.problems.push('Sheet ' + b.name + ' is not in the manifest.'); });
   // §E3C-SPEC: the optional third file, the agent's RAW rows (odoo_export.json) → the open-balance sheets, appended after the masters (their own manifest counts them)
-  const xf = files.find((f) => isExport(f.data)); let openCfg = null; const openNames = [];
+  const xf = eng ? null : files.find((f) => isExport(f.data)); let openCfg = null; const openNames = [];
+  if (eng) { (man.problems || []).forEach((p) => out.problems.push(p)); book.forEach((b) => { if (/^I_(GLJournal|Invoice)$/.test(tableOfSheet(b.name))) openNames.push(b.name); }); if (openNames.length) openCfg = man; out.source = man; }
   if (xf) {
     const xm = xf.data.manifest, c = openBalances(xf.data);
     ['db', 'cutover', 'company_id'].forEach((k) => { if (man[k] != null && String(man[k]) !== String(xm[k])) out.problems.push(xf.name + ' is not from the same export as ' + wbf.name + ' (' + k + ': ' + xm[k] + ' / ' + man[k] + ').'); });
@@ -185,8 +191,8 @@ export function completeOpeningStock(trx) {
 
 export const DESC = {
   title: 'Migrate from Odoo',
-  emptyText: 'Pick odoo_migration.xlsx and manifest.json from the folder the Odoo agent wrote (node export.js).',
-  params: [{ name: 'Files', label: 'Export files (odoo_migration.xlsx + manifest.json; add odoo_export.json for the open balances)', type: 'file', multiple: true, accept: '.xlsx,.json', mandatory: true }],
+  emptyText: 'Pick odoo_export.json from the folder the Odoo agent wrote (node export.js). An older export: odoo_migration.xlsx + manifest.json.',
+  params: [{ name: 'Files', label: 'Export file (odoo_export.json; an older export: odoo_migration.xlsx + manifest.json)', type: 'file', multiple: true, accept: '.xlsx,.json', mandatory: true }],
   columns: [{ key: 'item', label: 'Item' }, { key: 'odoo', label: 'Odoo rows' }, { key: 'infile', label: 'In file' }, { key: 'erpunit', label: 'ERP unit', type: 'string', editable: true },
     { key: 'will', label: 'Will import' }, { key: 'refused', label: 'Refused' }, { key: 'reason', label: 'Why / effect' }, { key: 'needs', label: 'Needs' },
     { key: 'neededby', label: 'Needed by' }, { key: 'intenant', label: 'In this tenant now' }],
@@ -201,7 +207,7 @@ export const DESC = {
       if (ref.length) s.reason = ref[0] + (ref.length > 1 ? ' (+' + (ref.length - 1) + ' more)' : ''); else if (!inBook && !s.reason) s.reason = s.table === 'C_UOM' ? 'every unit maps to an ERP unit' : 'unticked'; });
     say(trx, '§ODOO-FORM summary ok=' + dry.ok + ' will=' + JSON.stringify(p.sheets.map((s) => s.table + ':' + s.will)) + ' refused=' + p.sheets.reduce((n, s) => n + s.refused, 0));
     const rs = p.units.concat(p.sheets);
-    if (!p.open) return rs;
+    if (!p.source) return rs;
     const info = will.map((t, i) => ({ key: 930 + i, item: 'ℹ Will create (open balances need it): ' + t, selected: false, locked: true }));
     return withSourceRows(rs, p.source).concat(info);
   },

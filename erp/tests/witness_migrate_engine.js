@@ -270,24 +270,28 @@ var ALL_BRANCHES = ['refuse:lead', 'refuse:fixed-asset', 'refuse:po-no-supplier'
   // There is no hand converter to equal here (the mapping was never hand code), so the oracle is this witness's own plain reading of §E3C-SPEC 1(c), computed straight from the raw
   // rows — never through the engine. OPEN = the recorded export of the live demo (fixtures/odoo_export_2026-11-10); OPEN-GEN = seeded variants of those rows (a currency changed,
   // a partner held or unknown, a move split in two lines, a long number, a zero balance) so the branches the demo never shows are judged too; OPEN-MUTANT = the template damaged.
+  var OCONV = await import(url.pathToFileURL(path.join(__dirname, 'fixtures', 'odoo_convert_reference.mjs')).href);   // the frozen hand mapping: the partner keys of the open-balance oracle come from it
   var OTPL = JSON.parse(fs.readFileSync(path.join(ERP, 'migrate', 'templates', 'odoo-17.json'), 'utf8')), OEXP = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'odoo_export_2026-11-10', 'odoo_export.json'), 'utf8'));
   var oengine = function (tpl, exp) { return EN.run(tpl, CN.exportJson(exp, tpl.connector), {}); };
   var cents = function (v) { return Math.round(Number(v) * 100); };
   function oracle(exp) {
-    var V0 = OTPL.variables, acct = {}, pk = {}, mv = {}; exp.sets['account.account'].forEach(function (a) { acct[a.id] = a; }); exp.sets.partner_keys.forEach(function (k) { pk[k.id] = k; }); exp.sets.open_moves.forEach(function (m) { mv[m.id] = m; });
+    var V0 = OTPL.variables, acct = {}, mv = {}; exp.sets['account.account'].forEach(function (a) { acct[a.id] = a; });
+    var pk = (function () { var c = OCONV.convert(exp), pv = c.provenance[c.book[4].name] || [], held = {}, val = {}, by = {}, o = {};   // the partner's business-partner Value and "held", from the FROZEN hand mapping (never from the template)
+      pv.forEach(function (x, i) { val[x.id] = c.book[4].rows[i + 1][0]; }); (c.manifest.held || []).forEach(function (h) { held[h.id] = h.why; }); exp.sets['res.partner'].forEach(function (p) { by[p.id] = p; });
+      exp.sets['res.partner'].forEach(function (p) { var top = by[p.commercial_partner_id] || p; o[p.id] = { id: p.id, value: val[top.id] || '', held: held[p.id] || '' }; }); return o; })(); exp.sets.open_moves.forEach(function (m) { mv[m.id] = m; });
     var CLS = { asset_receivable: 'AR', liability_payable: 'AP', asset_cash: 'BANK' }, CLEAR = { AR: V0.AR_CLEARING, AP: V0.AP_CLEARING, BANK: V0.BANK_CLEARING }, cls = { AR: 0, AP: 0, BANK: 0 };
     var journal = []; exp.sets.tb.forEach(function (r) { var c = cents(r.balance); if (!c) return; var k = CLS[acct[r.account_id].account_type]; if (k) cls[k] += c;
       journal.push([k ? CLEAR[k] : acct[r.account_id].code, c > 0 ? c : 0, c < 0 ? -c : 0]); });
     var KIND = { out_invoice: ['AR Invoice', 'Y', 1], out_refund: ['AR Credit Memo', 'Y', -1], in_invoice: ['AP Invoice', 'N', -1], in_refund: ['AP CreditMemo', 'N', 1] };
-    var byMove = {}, order = [], refused = 0, left = { AR: 0, AP: 0 };
+    var byMove = {}, order = [], refused = 0, refusedHeld = 0, left = { AR: 0, AP: 0 };
     exp.sets.open_lines.forEach(function (l) { var K = KIND[l.move_type], p = pk[l.partner_id], k = CLS[acct[l.account_id].account_type];
-      if (!K || String(l.currency_id) !== String(l.company_currency_id) || !p || p.held || !p.value || String(l.move_name).length > 30) { refused++; left[k] += cents(l.amount_residual); return; }
+      if (!K || String(l.currency_id) !== String(l.company_currency_id) || !p || p.held || !p.value || String(l.move_name).length > 30) { refused++; if (K && String(l.currency_id) === String(l.company_currency_id) && p && p.held) refusedHeld++; left[k] += cents(l.amount_residual); return; }
       if (!byMove[l.move_id]) { byMove[l.move_id] = { no: l.move_name, type: K[0], so: K[1], bp: p.value, date: l.invoice_date || l.date, term: String((mv[l.move_id] || {}).invoice_payment_term_id__name || '').slice(0, 40),
         charge: K[1] === 'Y' ? V0.CHARGE_AR : V0.CHARGE_AP, amt: 0, cls: k, sign: K[2] }; order.push(l.move_id); }
       byMove[l.move_id].amt += cents(l.amount_residual) * K[2]; });
-    return { journal: journal, cls: cls, invoices: order.map(function (id) { return byMove[id]; }), refused: refused, left: left };
+    return { journal: journal, cls: cls, invoices: order.map(function (id) { return byMove[id]; }), refused: refused, refusedHeld: refusedHeld, left: left };
   }
-  var OMASTERS = J(oengine(OTPL, OEXP).book.slice(0, 17));
+  var mastersOf = function (exp) { return J(oengine(OTPL, exp).book.slice(0, 17)); };
   function judgeOpen(tpl, exp) {   // -> the list of claims that do NOT hold (empty = the template maps this export exactly)
     var bad = [], r; try { r = oengine(tpl, exp); } catch (e) { return ['threw: ' + e.message]; }
     var O = oracle(exp), sh = function (t) { return r.book.filter(function (b) { return b.name.slice(2) === t; })[0]; }, G = sh('I_GLJournal'), I = sh('I_Invoice');
@@ -305,13 +309,15 @@ var ALL_BRANCHES = ['refuse:lead', 'refuse:fixed-asset', 'refuse:po-no-supplier'
     if (ir.some(function (x) { return x[ix('DateAcct')] !== cut || x[ix('QtyOrdered')] !== '1' || x[ix('TaxIndicator')] !== tpl.variables.TAX_NONE || x[ix('I_IsImported')] !== 'N'; })) bad.push('invoice-line');
     var refN = (r.manifest.refused || []).filter(function (x) { return x.sheet === 'I_Invoice'; }).reduce(function (n, x) { return n + x.n; }, 0);
     if (refN !== O.refused) bad.push('refused n=' + refN + ' oracle=' + O.refused);
+    var heldN = (r.manifest.refused || []).filter(function (x) { return x.sheet === 'I_Invoice' && /held/.test(x.why); }).reduce(function (n, x) { return n + x.n; }, 0);   // the REASON too: a held partner is named as held, not as "no business partner"
+    if (heldN !== O.refusedHeld) bad.push('refused-held n=' + heldN + ' oracle=' + O.refusedHeld);
     // the arithmetic that makes the clearing accounts end at zero: journal(class) == Σ documents of the class (signed) + what was refused
     ['AR', 'AP'].forEach(function (k) { var docs = O.invoices.filter(function (v) { return v.cls === k; }).reduce(function (n, v) { return n + v.amt * v.sign; }, 0);
       var jr = gr.filter(function (x) { return x[gx('AccountValue')] === tpl.variables[k + '_CLEARING']; }).reduce(function (n, x) { return n + cents(x[gx('AmtSourceDr')]) - cents(x[gx('AmtSourceCr')]); }, 0);
       if (jr !== O.cls[k]) bad.push('class-' + k + ' journal=' + jr + ' source=' + O.cls[k]);
       var lines = exp.sets.open_lines.filter(function (l) { return ({ asset_receivable: 'AR', liability_payable: 'AP' })[(exp.sets['account.account'].filter(function (a) { return a.id === l.account_id; })[0] || {}).account_type] === k; }).reduce(function (n, l) { return n + cents(l.amount_residual); }, 0);
       if (docs + O.left[k] !== lines) bad.push('open-' + k + ' docs=' + docs + ' left=' + O.left[k] + ' lines=' + lines); });
-    if (J(r.book.slice(0, 17)) !== OMASTERS) bad.push('masters-touched');   // the open-balance variants and mutants never move a master sheet (the masters are judged against the oracle in ODOO-GUIDE / ODOO-DIFF)
+    if (tpl !== OTPL && J(r.book.slice(0, 17)) !== mastersOf(exp)) bad.push('masters-touched');   // the open-balance variants and mutants never move a master sheet (the masters are judged against the oracle in ODOO-GUIDE / ODOO-DIFF)
     return bad;
   }
   var ol = true, olw = ''; try { EN.load(OTPL); } catch (e) { ol = false; olw = e.message; }
@@ -335,7 +341,7 @@ var ALL_BRANCHES = ['refuse:lead', 'refuse:fixed-asset', 'refuse:po-no-supplier'
   // OPEN-GEN: seeded variants of the recorded rows
   function ogen(seed) { var R = mulberry32(seed), e = JSON.parse(JSON.stringify(OEXP)), hit = {}, L = e.sets.open_lines, pick = function (a) { return a[Math.floor(R() * a.length)]; };
     if (R() < 0.5) { pick(L).currency_id = 999; hit.foreign = 1; }
-    if (R() < 0.5) { var l1 = pick(L); e.sets.partner_keys.filter(function (k) { return k.id === l1.partner_id; })[0].held = 'internal-user'; hit.held = 1; }
+    if (R() < 0.5) { var l1 = pick(L); e.sets['res.users'].push({ id: 900000 + seed, partner_id: l1.partner_id }); hit.held = 1; }   // the partner becomes an internal user's: held (the masters lose it too, in oracle and engine alike)
     if (R() < 0.4) { var l2 = pick(L); l2.partner_id = 987654; hit.noPartner = 1; }
     if (R() < 0.4) { var l3 = pick(L); var nm = l3.move_name + '/A-VERY-LONG-DOCUMENT-NUMBER-SUFFIX'; L.forEach(function (x) { if (x.move_id === l3.move_id) x.move_name = nm; }); hit.longNo = 1; }
     if (R() < 0.7) { var l4 = pick(L.filter(function (x) { return x.move_type !== 'entry'; })), half = Math.round(l4.amount_residual * 50) / 100, c = Object.assign({}, l4, { id: 100000 + seed, amount_residual: Math.round((l4.amount_residual - half) * 100) / 100 }); l4.amount_residual = half; L.push(c); hit.twoLines = 1; }
