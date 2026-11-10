@@ -196,7 +196,7 @@ function where(a) {
   const total = hits.length, files = new Set(hits.map(h => h.file)).size, cap = Math.min(Math.max(+a.limit || 25, 1), 200);
   say('where symbol=' + sym + ' hits=' + total + ' files=' + files);
   if (!total) { out({ verdict: 'INCONCLUSIVE', summary: 'no line of the iDempiere source contains ' + sym + (a.in ? ' under "' + a.in + '"' : '') }); return 3; }
-  out({ symbol: sym, root: SRC, hits: hits.slice(0, cap), shown: Math.min(total, cap), total, files, verdict: 'OK', summary: sym + ': ' + total + ' lines in ' + files + ' files (showing ' + Math.min(total, cap) + ')' }); return 0;
+  out({ symbol: sym, hits: hits.slice(0, cap), shown: Math.min(total, cap), total, files, verdict: 'OK', summary: sym + ': ' + total + ' lines in ' + files + ' files (showing ' + Math.min(total, cap) + ')' }); return 0;
 }
 
 async function main(argv) {
