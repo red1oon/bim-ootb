@@ -57,7 +57,7 @@ function readJson(f) { return JSON.parse(fs.readFileSync(path.join(viewer, f), '
 
 // ── initbubble.json: {nodes:[...]} -> reorderable section, color/number cols ─
 (function() {
-  const raw = readJson('initbubble.json');
+  const raw = JSON.parse(fs.readFileSync(path.join(viewer, '..', 'erp', 'initbubble.json'), 'utf8'));
   const schema = SE.jsonToSchema(raw);
   const sec = schema.find(s => s._key === 'nodes');
   check('initbubble: reorderable nodes section', !!sec && sec.reorderable === true);
