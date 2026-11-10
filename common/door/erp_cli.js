@@ -48,14 +48,34 @@ function b3(O) {
     all: (...a) => { const st = O.db.prepare(sql), out = []; try { if (a.length) st.bind(a); while (st.step()) out.push(lc(st.getAsObject())); return out; } finally { st.free(); } }
   }) };
 }
+// §0.16 the patched image (seed + the page's self-heal patch) is the same for every call until the seed or a patch file changes: it is computed once and kept under a key of their bytes.
+// ERP_SNAPSHOT=off restores the per-call patch. The op-log replay and everything after it are unchanged. Witness: common/door/tests/witness_erp_snapshot.js (W-ERP-SNAPSHOT).
+const SNAP_VERSION = 'erp-snapshot/1 split=;\\s*\\n strip=--line run=one-by-one failing=skipped';   // the apply loop's contract; change it when the loop below changes
+function patchFiles(seed) { return [path.basename(seed) + '.sql', 'mfg.sql'].map(f => path.join(path.dirname(seed), 'patches', f)).filter(f => fs.existsSync(f)); }
+function snapshotKey(seed) {
+  const h = require('crypto').createHash('sha256'); h.update(SNAP_VERSION); h.update(fs.readFileSync(seed));
+  if ((process.env.ERP_BREAK || '') !== 'stalesnap') patchFiles(seed).forEach(f => { h.update('\n' + path.basename(f) + '\n'); h.update(fs.readFileSync(f)); });   // falsifier: a key blind to the patch
+  return h.digest('hex').slice(0, 32);
+}
+function applyPatch(O, seed) {   // same loop as idempiere.html :1160-1169: statements one by one, a failing one never blocks (the bundled wasm cannot take the file in one run)
+  let pOk = 0, pFail = 0;
+  patchFiles(seed).forEach(pf => { fs.readFileSync(pf, 'utf8').split(/;\s*\n/).forEach(st => { st = st.replace(/^\s*--[^\n]*\n?/gm, '').trim(); if (!st) return; try { O.db.run(st); pOk++; } catch (e) { pFail++; } }); });
+  return { pOk, pFail };
+}
 async function boot(a) {
-  const O = await OC.open({ db: a.db || path.join(ROOT, 'erp', 'ad_seed.db') });
-  // the page's self-heal patch comes BEFORE the op-log replay (an op may write a table only the patch creates, e.g. m_storagereservationlog); same loop as idempiere.html :1160-1169:
-  //   statements one by one, a failing one never blocks (the bundled wasm cannot take the file in one run)
-  const t0 = Date.now(); let pOk = 0, pFail = 0;
-  [path.basename(O.file) + '.sql', 'mfg.sql'].forEach(f => { const pf = path.join(path.dirname(O.file), 'patches', f); if (!fs.existsSync(pf)) return;
-    fs.readFileSync(pf, 'utf8').split(/;\s*\n/).forEach(st => { st = st.replace(/^\s*--[^\n]*\n?/gm, '').trim(); if (!st) return; try { O.db.run(st); pOk++; } catch (e) { pFail++; } }); });
-  say('patch statements=' + pOk + ' failed=' + pFail + ' ms=' + (Date.now() - t0));
+  const seed = a.db || path.join(ROOT, 'erp', 'ad_seed.db'), t0 = Date.now(), off = process.env.ERP_SNAPSHOT === 'off';
+  // the page's self-heal patch comes BEFORE the op-log replay (an op may write a table only the patch creates, e.g. m_storagereservationlog)
+  let O, how = 'off', key = '-';
+  if (!off) {
+    key = snapshotKey(seed); const dir = process.env.ERP_SNAPSHOT_DIR || path.join(require('os').homedir(), '.cache', 'bim_erp'), snap = path.join(dir, path.basename(seed).replace(/\.db$/, '') + '-' + key + '.db');
+    if (fs.existsSync(snap)) { O = await OC.open({ db: snap }); O.file = seed; how = 'hit'; }
+    else {
+      O = await OC.open({ db: seed }); const r = applyPatch(O, seed); how = 'miss';
+      try { fs.mkdirSync(dir, { recursive: true }); const tmp = snap + '.' + process.pid + '.tmp'; fs.writeFileSync(tmp, Buffer.from(O.db.export())); fs.renameSync(tmp, snap); } catch (e) { how = 'miss-unsaved:' + e.message; }
+      say('patch statements=' + r.pOk + ' failed=' + r.pFail);
+    }
+  } else { O = await OC.open({ db: seed }); const r = applyPatch(O, seed); say('patch statements=' + r.pOk + ' failed=' + r.pFail); }
+  say('snapshot=' + how + ' key=' + key + ' ms=' + (Date.now() - t0));
   O.opfile = OC.oplogFile({ oplog: a.oplog }, O.file); O.ops = OC.readOps(O.opfile);
   O.ops.forEach(o => OC.applyOp(O.db, O.rows, o));
   O.ML = require(path.join(ROOT, 'erp', 'model_layer.js')); O.dbId = 'model:' + path.basename(O.file);

@@ -1,0 +1,13 @@
+  ✅ CACHE the first call is a miss and writes exactly one image; the second is a hit  snapshot=miss key=953f8a0c7aa97a4a78b702e8a553ed20 ms=1718 | snapshot=hit key=953f8a0c7aa97a4a78b702e8a553ed20 ms=63
+§W-ERP-SNAPSHOT tables hit=484 fresh=484 rows(fresh)=103614
+  ✅ IMAGE every table and its row count are identical, hit vs freshly patched (484 tables, 103614 rows)  tables 484/484
+  ✅ IMAGE the full contents of 12 dictionary and document tables hash the same, hit vs fresh  differing= tables=ad_table,ad_column,ad_tab,ad_field,ad_window,ad_ref_list,ad_process,c_doctype,c_order,c_orderline,c_invoice,m_inout
+  ✅ IMAGE the schema (every table, index, view, trigger statement) is identical  73eff3b225472e1b / 73eff3b225472e1b
+  ✅ DOOR `erp.find kind=Order number=80000` gives the same envelope from the kept image and from a fresh patch  bytes=408 equal
+  ✅ DOOR `erp.actions kind=Order id=100` gives the same envelope from the kept image and from a fresh patch  bytes=355 equal
+  ✅ DOOR `erp.describe kind=Order` gives the same envelope from the kept image and from a fresh patch  bytes=13892 equal
+  ❌ STALE after the patch gains a statement the next call is a miss and sees the new row; the call after that is a hit that still sees it  before=-1 after=-1 | snapshot=hit key=953f8a0c7aa97a4a78b702e8a553ed20 ms=54
+§W-ERP-SNAPSHOT boot ms: kept image=78 fresh patch=1545 (this machine, this load)
+  ✅ COST a boot from the kept image is faster than a fresh patch  78 ms vs 1545 ms
+  ✅ SAFE nothing was written beside the shipped seed (no new file in erp/), and the image sits only in the cache folder
+§WITNESS_ERP_SNAPSHOT pass=9 fail=1 inconclusive=0 verdict=FAIL

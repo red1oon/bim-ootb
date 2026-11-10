@@ -7,12 +7,12 @@ The ERP's DocActions and processes from the application dictionary (`erp/ad_seed
 
 | | |
 |---|---:|
-| **N** (N_doc + N_proc) | 1156 |
+| **N** (N_doc + N_proc) | 1157 |
 | N_doc = 54 document tables × 13 DocActions + 1 plugin table(s) × their family's offered actions | 704 |
-| N_proc = active AD_Process rows (25 inactive, not in N) | 452 |
+| N_proc = active AD_Process rows (25 inactive, not in N) | 453 |
 | (b) doc pairs with a registered handler | 67 |
-| (b) processes whose resolved class name has a handler | 38 |
-| of which from built-in plugins (doc pairs / processes) | 2 / 1 |
+| (b) processes whose resolved class name has a handler | 39 |
+| of which from built-in plugins (doc pairs / processes) | 2 / 2 |
 | NOT IMPLEMENTED (doc / process) | 637 / 414 |
 | handlers without a dictionary row (doc / process) | 1 / 0 |
 | **(c) X offered to actors** | 3 |
@@ -29,14 +29,14 @@ The dictionary rows each BUILT-IN plugin (`erp/plugin_overlay.js` BUILTINS) stag
 |---|---|---:|---|---|---:|---|---:|
 | ninja_excel | `erp/plugins/ninja_excel.mjs` | 0 of 0 | — | — | 0 | — | 0 |
 | ninja_create | `erp/plugins/ninja_create.mjs` | 0 of 0 | — | — | 0 | — | 0 |
-| bim_document | `erp/plugins/bim_document.mjs` | 112 of 92 | `BIM_Document_Open` | `BIM_Document` | 2 | CO PR | 7 |
+| bim_document | `erp/plugins/bim_document.mjs` | 126 of 96 | `BIM_Document_Open` `BIM_Document_Register_Export` | `BIM_Document` | 2 | CO PR | 7 |
 
 ## Handler registration sites (`K.register`, outside tests/)
 
 | site | kind | pairs | how resolved |
 |---|---|---:|---|
 | `erp/erp_picker.js:396` | DYNAMIC (NOT COUNTED) | 0 | docType/action come from the events of a chain file loaded at run time (ev.d) |
-| `erp/kanban_host.js:73` | LOOP | 52 | tables ← erp/idempiere.html:6258 KDOC_TABLES; actions ← erp/manifest.json wfmc.transitions (13) |
+| `erp/kanban_host.js:73` | LOOP | 52 | tables ← erp/idempiere.html:6286 KDOC_TABLES; actions ← erp/manifest.json wfmc.transitions (13) |
 | `erp/kanban_lens.html:254` | LOOP | 52 | tables ← erp/kanban_lens.html:249 tables; actions ← erp/manifest.json wfmc.transitions (13) |
 | `erp/mfg_snapshot.js:100` | LITERAL | 1 | literal arguments |
 | `erp/odoo_agent/agent.js:89` | DYNAMIC (NOT COUNTED) | 0 | docType/action come from the events of a chain file loaded at run time (ev.d) |
@@ -70,7 +70,7 @@ The dictionary rows each BUILT-IN plugin (`erp/plugin_overlay.js` BUILTINS) stag
 | `A_Asset_Reval` | seed | **NOT IMPLEMENTED** | — |
 | `A_Asset_Transfer` | seed | **NOT IMPLEMENTED** | — |
 | `A_Depreciation_Entry` | seed | **NOT IMPLEMENTED** | — |
-| `BIM_Document` | plugin bim_document | CO PR | `erp/plugins/bim_document.mjs:253 (plugin bim_document)` |
+| `BIM_Document` | plugin bim_document | CO PR | `erp/plugins/bim_document.mjs:285 (plugin bim_document)` |
 | `C_AllocationHdr` | seed | **NOT IMPLEMENTED** | — |
 | `C_BankStatement` | seed | **NOT IMPLEMENTED** | — |
 | `C_BankTransfer` | seed | **NOT IMPLEMENTED** | — |
@@ -128,7 +128,7 @@ The dictionary rows each BUILT-IN plugin (`erp/plugin_overlay.js` BUILTINS) stag
 
 Class rules (first match wins): **sends** ← class/name says it mails or notifies (`mail|notice|\brequest\b|mailing|\bsms\b|broadcast`); **posts** ← class/name says it posts, allocates, costs or generates documents (`fact_?acct|\bposting\b|\bpost\b|doc\.?post|invoicegenerate|allocat|bankstatementpayment|paymentgenerate|payselect|paymentprint|costing|inventorycount|imputation|storageclean|periodclose|openclose|reval`); IsReport=Y → **read**; else **writes**, basis "no rule matched, assumed writes".
 
-Classes: read 110, writes 312, posts 21, sends 9. Implemented 38 of 452.
+Classes: read 111, writes 312, posts 21, sends 9. Implemented 39 of 453.
 
 | id | source | value | name | class name → resolved | handler | class | basis |
 |---:|---|---|---|---|---|---|---|
@@ -583,7 +583,8 @@ Classes: read 110, writes 312, posts 21, sends 9. Implemented 38 of 452.
 | 200157 | seed | AD_Table CreatePartition | Create/Update Table Partition | `org.idempiere.tablepartition.process.CreatePartition` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 200158 | seed | DetachOrReAttachPartition | Detach/re-attach Table Partition | `org.idempiere.tablepartition.process.ChangePartitionStatus` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 200162 | seed | CustomizeGridViewWindowCustomization | Customize Grid View | — | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
-| 9541001 | plugin bim_document | BIM_Document_Open | Open in Modeller / Viewer | `org.kernel.bim.process.BIMDocumentOpen` | `erp/plugins/bim_document.mjs:259 (plugin bim_document)` | writes | no rule matched, assumed writes |
+| 9541001 | plugin bim_document | BIM_Document_Open | Open in Modeller / Viewer | `org.kernel.bim.process.BIMDocumentOpen` | `erp/plugins/bim_document.mjs:289 (plugin bim_document)` | writes | declared by the process definition (defineProcess opts.harm) |
+| 9541002 | plugin bim_document | BIM_Document_Register_Export | Export Register (JSON) | `org.kernel.bim.process.BIMDocumentRegisterExport` | `erp/plugins/bim_document.mjs:304 (plugin bim_document)` | read | declared by the process definition (defineProcess opts.harm) |
 
 ## DYNAMIC process registrations (NOT COUNTED)
 

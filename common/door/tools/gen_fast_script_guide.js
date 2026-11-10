@@ -85,6 +85,11 @@ if (require.main === module) (async () => {
     md = md.slice(0, g.a) + table + md.slice(g.b); L('verb table written: ' + vocab.verbs.length + ' verbs');
     // the coverage sentence's counts come from the vocabulary too (the witness's K1, K2, K5 read them back)
     const n = (app) => vocab.verbs.filter(v => v.verb.indexOf(app + '.') === 0).length;
+    // the two totals the page quotes from the committed inventory reports (the witness's K3, K4 read them back)
+    const rd = (f, re) => { try { const m = re.exec(fs.readFileSync(path.join(ROOT, 'internal', f), 'utf8')); return m ? m[1] : null; } catch (e) { return null; } };
+    const nAct = rd('VIEWER_ACTIONS.md', /\(N_actions\) \| (\d+) \|/), nErp = rd('ERP_VERBS.md', /\*\*N\*\* \(N_doc \+ N_proc\) \| (\d+) \|/);
+    if (nAct) md = md.replace(/has \d+ actions a person can press/, 'has ' + nAct + ' actions a person can press');
+    if (nErp) md = md.replace(/ERP has \d+ documents and processes/, 'ERP has ' + nErp + ' documents and processes');
     md = md.replace(/\d+ verbs cover/, vocab.verbs.length + ' verbs cover').replace(/door offers \d+ Viewer verbs/, 'door offers ' + n('viewer') + ' Viewer verbs').replace(/door offers \d+ ERP verbs/, 'door offers ' + n('erp') + ' ERP verbs');
   }
   if (a.indexOf('--refresh') >= 0) {
