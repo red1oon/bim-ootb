@@ -184,7 +184,53 @@ function loadOnce(trx, book, open) {
 // §ALREADY-THERE-SPEC: load(trx, book, open) - a source row whose key the TENANT already holds (the born client's own "Standard" / "Immediate" rows, an account it already has)
 //   is refused by the unique index, rightly; it must not refuse the whole migration. The model says who holds the key (§MODEL-UNIQUE ... held_by=tenant|this-load, model_layer.js
 //   uniqueError); rows refused ONLY for a key held by the tenant are taken out and the load runs again from the savepoint. A key repeated inside the file is still a refusal.
+// heldByIdentifier(trx, book) -> { book, already{sheet: n} } (migrate-recover F3). A master table without a unique index (C_Bank, C_BankAccount) cannot say "already there" through the DB's refusal. The dictionary
+//   says what identifies a record (AD_Column.IsIdentifier = 'Y': what legacy shows as the record's name in every lookup); a file row whose identifier columns the sheet supplies as plain values (no ">") are ALL
+//   equal to exactly ONE row of this tenant is that row, so it is not loaded again. No identifier supplied, or no / several matching rows: the row is left to the loader (nothing guessed). Staging (I_*) sheets are not masters.
+function heldByIdentifier(trx, book) {
+  const C = Number(trx.env.client || 0), already = {};
+  const tblId = (name) => trx.q('SELECT ad_table_id AS i, tablename AS t FROM ad_table WHERE upper(tablename)=upper(?)', [name])[0];
+  const out = book.map((b) => {
+    const t = tableOfSheet(b.name); if (/^I_/i.test(t) || !b.rows.length) return b;
+    const idc = trx.q("SELECT lower(c.columnname) AS c FROM ad_column c JOIN ad_table t ON t.ad_table_id=c.ad_table_id WHERE upper(t.tablename)=upper(?) AND c.isidentifier='Y' AND c.isactive='Y' AND c.ad_reference_id NOT IN (18,19,30,28)", [t]).map((r) => r.c);
+    const H = b.rows[0].map((h) => String(h)), plain = idc.map((c) => H.findIndex((h) => h.toLowerCase() === c)).filter((i) => i >= 0);
+    if (!idc.length || !plain.length) return b;
+    // the lookups of the sheet (X_ID>Alt, Alt a plain column) are part of the row's identity: resolved to the tenant's ids; one that cannot be resolved leaves the row to the loader
+    const looks = H.map((h, i) => ({ h, i })).filter((x) => x.h.includes('>')).map((x) => { const [col, alt] = x.h.split('>'); return { i: x.i, col: col.trim().toLowerCase(), alt: alt.trim(), tbl: col.trim().replace(/_ID$/i, '') }; });
+    if (looks.some((l) => /_ID$/i.test(l.alt))) return b;
+    const lc = t.toLowerCase(); let rowsT; try { rowsT = trx.find(lc, { ad_client_id: C }); } catch (e) { return b; }
+    const memo = {}, resolve = (l, v) => { const k = l.tbl + '|' + l.alt + '|' + v; if (k in memo) return memo[k]; let rs = [];
+      try { const tb = tblId(l.tbl); for (const c of [C, 0]) { const w = {}; w[l.alt.toLowerCase()] = String(v); w.ad_client_id = c; rs = tb ? trx.find(l.tbl.toLowerCase(), w) : []; if (rs.length) break; } } catch (e) { rs = []; }   // tenant first, then System (the Ninja loader's own tiers)
+      return (memo[k] = rs.length === 1 ? String(rs[0][l.tbl.toLowerCase() + '_id']) : null); };
+    const idOf = (x) => (x == null ? '' : String(x).trim()), tenantBy = {};
+    // a blank identifier cell is not compared (legacy fills a blank Name with "." - MBPartnerLocation); the other identifier cells and every lookup must be equal
+    const sigOf = (r) => plain.filter((i) => idOf(r[i]) !== '');
+    const countOf = (cols, lk) => { const sk = cols.join(','); const m = tenantBy[sk] = tenantBy[sk] || (() => { const o = {}; rowsT.forEach((x) => { const k = cols.map((i) => idOf(x[H[i].toLowerCase()])).concat(looks.map((l) => idOf(x[l.col]))).join('\u0001'); o[k] = (o[k] || 0) + 1; }); return o; })();
+      return m[cols.map((i) => idOf(r0[i])).concat(lk).join('\u0001')]; };
+    let r0 = null;
+    const kept = b.rows.filter((r, i) => { if (i === 0 || r.every((v) => v === '')) return true; const cols = sigOf(r); if (!cols.length && !looks.length) return true;
+      const lk = looks.map((l) => (r[l.i] === '' || r[l.i] == null ? '' : resolve(l, r[l.i])));
+      if (lk.some((v) => v == null) || (!cols.length && lk.every((v) => v === ''))) return true; r0 = r; return countOf(cols, lk) !== 1; });
+    if (kept.length === b.rows.length) return b;
+    already[b.name] = b.rows.length - kept.length; return { name: b.name, rows: kept };
+  });
+  return { book: out, already };
+}
+
 export function load(trx, book, open) {
+  const rs = OB.resume(trx, book, open), stk = openingStockSheets(rs.book);
+  if (stk) {   // the opening stock (I_Inventory rows stage 2 imports): imported rows equal to the file's lines = already there; pending rows = an earlier refused run's staging, replaced
+    const C = Number(trx.env.client || 0), rows = trx.find('i_inventory', { ad_client_id: C }), imp = rows.filter((x) => String(x.i_isimported) === 'Y'), pen = rows.filter((x) => String(x.i_isimported) !== 'Y');
+    if (imp.length && imp.length === stk.lines) { rs.book = rs.book.filter((b) => b.name !== stk.headSheet && b.name !== stk.lineSheet); rs.dropped[stk.lineSheet] = imp.length; }
+    else if (!imp.length && pen.length) { pen.forEach((x) => trx.del('i_inventory', x)); rs.superseded[stk.lineSheet] = pen.length; }
+  }
+  const hb = heldByIdentifier(trx, rs.book);
+  const pre = {}; Object.keys(hb.already).forEach((k) => { pre[k] = hb.already[k]; }); Object.keys(rs.dropped).forEach((k) => { pre[k] = (pre[k] || 0) + rs.dropped[k]; });
+  if (Object.keys(hb.already).length) say(trx, '§MIG-HELD identifier rows already in this tenant ' + JSON.stringify(hb.already));
+  const r0 = load2(trx, hb.book, open), already = Object.assign({}, pre, r0.already || {}); Object.keys(r0.already || {}).forEach((k) => { already[k] = (pre[k] || 0) + r0.already[k]; });
+  return Object.assign(r0, { already, resumed: rs });
+}
+function load2(trx, book, open) {
   const sp = trx.setSavepoint(), mark = trx.log.length, r1 = loadOnce(trx, book, open);
   const held = new Set(trx.log.slice(mark).filter((l) => /^§MODEL-UNIQUE .* held_by=tenant$/.test(l)).map((l) => /key=(\(.*\)=\(.*\)) held_by=tenant$/.exec(l)[1]));
   const drop = {}; let n = 0;
@@ -251,6 +297,9 @@ export const DESC = {
     const r = load(trx, p.book, p.open);
     say(trx, '§ODOO-FORM run ok=' + r.ok + ' perTable=' + JSON.stringify(r.perTable));
     if (!r.ok) throw new Error(String(r.summary || 'The load was refused.'));
+    const nAlready = Object.keys(r.already || {}).reduce((n, k) => n + (r.already[k] || 0), 0), nNew = Object.keys(r.shown).reduce((n, t) => n + (r.shown[t] > 0 ? r.shown[t] : 0), 0);
+    if (!nNew && nAlready) { say(trx, '§MIG-NOTHING-TO-DO already=' + nAlready); return 'Nothing to do: all ' + nAlready + ' rows of this file are already in this company, so none was loaded again.'; }
+    if (Object.keys(r.resumed && r.resumed.superseded || {}).length) say(trx, '§MIG-RESUME the pending staging rows of the earlier refused run were replaced by this file: ' + JSON.stringify(r.resumed.superseded));
     return 'Migrated from Odoo: ' + Object.keys(r.shown).filter((t) => r.shown[t] > 0).map((t) => t + ' ' + r.shown[t]).join(', ') + '.';
   }
 };

@@ -208,7 +208,8 @@ var cents = function (v) { return Math.round(Number(v || 0) * 100); }, money = f
 
   // ═══ RERUN ═══
   var C1 = snap(C), res2 = ses.execute(files(), cur);
-  check('RERUN', 'refused', 'a second Process is refused whole and nothing changes', !res2.ok && J(snap(C)) === J(C1), { ok: res2.ok, msg: String(res2.msg).slice(0, 200) });
+  // 2026-11-10 migrate-recover (F3): legacy never creates a record twice (unique <table>_uu_idx) and Import* act only on I_IsImported='N'; the repeat is "Nothing to do", not an "ambiguous" refusal (witness_migration_recover.js REPEAT).
+  check('RERUN', 'nothing-to-do', 'a second Process of the same file loads nothing: it says "Nothing to do" and the counts do not change', res2.ok && /Nothing to do/.test(String(res2.msg)) && J(snap(C)) === J(C1), { ok: res2.ok, msg: String(res2.msg).slice(0, 200) });
   verdict('RERUN');
 
   // ═══ FALSIFY: a second tenant, one open line removed from the export ═══

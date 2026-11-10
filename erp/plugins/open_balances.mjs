@@ -39,6 +39,41 @@ export function openOf(book, cfg) {
     baseTypes: (journal.length ? ['GLJ'] : []).concat(types, statements.length ? ['CMB'] : []) };
 }
 
+
+// ── RESUME / REPEAT (migrate-recover F2+F3, prompts/MIGRATE_INSTALL_TENANT.md §RECOVER) ─────────────────────────────────────────────────────────────────────────────────────────────
+// Legacy's Import* processes act ONLY on I_IsImported='N' rows (ImportInvoice.java / ImportGLJournal.java: "WHERE I_IsImported<>'Y'"). So a cut-over that stage 2 refused is resumed from its pending rows, and a
+// row already imported is never imported again. The staging tables have no natural key, so the twin reads the tenant's own state (generic over the three open-balance import tables):
+//   pending rows (N)  = an earlier run's staging that was refused -> replaced by the file now being processed (supersede, logged §MIG-RESUME)
+//   imported rows (Y) = the cut-over is in the books -> the same file is "already there" (its staging rows are not loaded again; stage 2 only re-checks the books), a DIFFERENT file is refused in plain words
+const STAGING = [['I_GLJournal', 'i_gljournal', 'journal'], ['I_Invoice', 'i_invoice', 'invoices'], ['I_BankStatement', 'i_bankstatement', 'statements']];
+export function heldState(trx, open) {
+  const C = Number(trx.env.client || 0), st = {};
+  STAGING.forEach(([name, lc, key]) => { const rows = trx.find(lc, { ad_client_id: C }); st[key] = { name, lc, file: open ? (open[key] || []).length : 0, imported: rows.filter((x) => String(x.i_isimported) === 'Y'), pending: rows.filter((x) => String(x.i_isimported) !== 'Y') }; });
+  return st;
+}
+// is this file the cut-over already in the books (or the rest of it)? journal / statements: the same row count; open documents: every imported document number is a document of the file
+//   (the file may hold MORE: the corrected file of a run that was finished by hand without the document it was missing).
+function sameCutover(st, open) {
+  return STAGING.every(([, , key]) => { const s = st[key]; if (!s.imported.length) return true;
+    if (key !== 'invoices') return s.imported.length === s.file;
+    const mine = new Set((open.invoices || []).map((r) => String(r.DocumentNo))); return s.imported.every((x) => mine.has(String(x.documentno))); });
+}
+// supersede(trx, book) -> book without the sheets already in the books; deletes the earlier refused run's pending staging rows. Returns { book, dropped{sheet: n}, superseded{sheet: n} }
+export function resume(trx, book, open) {
+  const out = { book, dropped: {}, superseded: {} }, drop = {};
+  if (!open) return out;
+  const st = heldState(trx, open), same = sameCutover(st, open);
+  STAGING.forEach(([name, lc, key]) => { const s = st[key];
+    if (s.imported.length && same && key === 'invoices') { const have = new Set(s.imported.map((x) => String(x.documentno))), left = open.invoices.filter((r) => !have.has(String(r.DocumentNo))).length;
+      out.dropped[name] = s.file - left; if (!left) drop[name] = 1; else { out.keep = out.keep || {}; out.keep[name] = have; } if (s.pending.length) { s.pending.forEach((x) => trx.del(lc, x)); out.superseded[name] = s.pending.length; } }
+    else if (s.imported.length && same) { drop[name] = 1; out.dropped[name] = s.file; }
+    else if (!s.imported.length && s.pending.length) { s.pending.forEach((x) => trx.del(lc, x)); out.superseded[name] = s.pending.length; } });
+  out.book = book.filter((b) => !drop[tableOf(b.name)]).map((b) => { const have = out.keep && out.keep[tableOf(b.name)]; if (!have) return b; const ci = b.rows[0].indexOf('DocumentNo');
+    return { name: b.name, rows: b.rows.filter((r, i) => i === 0 || !have.has(String(r[ci]))) }; });
+  if (Object.keys(out.dropped).length || Object.keys(out.superseded).length) say(trx, '§MIG-RESUME already_imported=' + JSON.stringify(out.dropped) + ' pending_replaced=' + JSON.stringify(out.superseded));
+  return out;
+}
+
 export function problems(trx, open) {
   const out = [], C = Number(trx.env.client || 0), O = Number(trx.env.org || 0);
   if (!open) return out;
@@ -54,6 +89,9 @@ export function problems(trx, open) {
   const today = String(trx.env.date || '').slice(0, 10);
   if (open.journal.length && today && today !== open.cutover && !MT.periodOpen(trx, today, 'GLJ', O)) out.push('Open balances: the period of today (' + today + ') is not open for GLJ — the journal batch is dated today. ' +
     'Open that period too (create the calendar year first if today has no period).');
+  const hs = heldState(trx, open), held = STAGING.filter(([, , k]) => hs[k].imported.length);
+  if (held.length && !sameCutover(hs, open)) out.push('Open balances: this company already has an opening balance in its books (' + held.map(([n, , k]) => hs[k].imported.length + ' ' + n + ' row(s) imported').join(', ') + ') and this file is a different cut-over (' +
+    STAGING.map(([n, , k]) => hs[k].file + ' ' + n).join(', ') + '). A second cut-over into one company is not supported: migrate this file into a new company (Initial Tenant Setup).');
   const bad = open.invoices.filter((r) => !BASE[r.DocTypeName]).length; if (bad) out.push('Open balances: ' + bad + ' open document(s) name a document type this loader does not know.');
   return out;
 }
@@ -178,7 +216,19 @@ export function complete(trx, AP, open) {
   const C = Number(trx.env.client || 0), O = Number(trx.env.org || 0);
   const pend = (t, id) => trx.find(t, { ad_client_id: C }).filter((x) => String(x.i_isimported) !== 'Y').map((x) => x[id]);
   const pj = pend('i_gljournal', 'i_gljournal_id'), pi = pend('i_invoice', 'i_invoice_id'), pb = pend('i_bankstatement', 'i_bankstatement_id');
-  if (!pj.length && !pi.length && !pb.length) { say(trx, '§MIG-OPENBAL stage=2 nothing to import (no pending I_GLJournal / I_Invoice row): not judged'); return ''; }
+  if (!pj.length && !pi.length && !pb.length) {
+    // migrate-recover F2/F3: nothing pending but the cut-over may already be in the books (a run repeated, or finished by hand with Import GL Journal / Import Invoice): re-check it instead of staying silent.
+    const hs = open ? heldState(trx, open) : null;
+    if (!hs || !(hs.journal.imported.length || hs.invoices.imported.length || hs.statements.imported.length)) { say(trx, '§MIG-OPENBAL stage=2 nothing to import (no pending I_GLJournal / I_Invoice / I_BankStatement row): not judged'); return ''; }
+    const dn = { journals: Array.from(new Set(hs.journal.imported.map((x) => x.gl_journal_id))), invoices: Array.from(new Set(hs.invoices.imported.map((x) => x.c_invoice_id))), statements: Array.from(new Set(hs.statements.imported.map((x) => x.c_bankstatement_id))) };
+    const bt = Array.from(new Set(hs.journal.imported.map((x) => x.gl_journalbatch_id))), drafted = bt.filter((b) => String((trx.get('gl_journalbatch', b) || {}).docstatus) !== 'CO');
+    drafted.forEach((b) => { const p = ML.processIt(trx, 'gl_journalbatch', b, 'CO'), st = String((trx.get('gl_journalbatch', b) || {}).docstatus);
+      if (!(p && p.ok) || st !== 'CO') throw new Error('The opening journal is in the books but not Completed (' + ((p && p.msg) || st) + '). Open GL Journal, fix it and Complete it, then Process this file again to check the books.'); });
+    say(trx, '§MIG-RESUME stage=2 imported journals=' + dn.journals.length + ' invoices=' + dn.invoices.length + ' statements=' + dn.statements.length + ' drafted_batches_completed=' + drafted.length);
+    const v = verify(trx, open, dn);
+    if (v.failed.length) throw new Error('The open balances are in the books but do not match the source: ' + v.failed.join(' · ') + '. Fix the source and Process the corrected file again, or correct the documents by hand.');
+    return 'Already migrated: the cut-over is in the books' + (drafted.length ? ' (' + drafted.length + ' opening journal(s) Completed now)' : '') + ', checked against the source (' + v.judged + ' checks). Nothing more to do.';
+  }
   const need = (cls, id) => { if (!AP.JAVA || !AP.JAVA[cls]) throw new Error('Open balances need ' + cls.split('.').pop() + ' (AD_Process ' + id + '), which this host has not loaded.'); };
   const firstErr = (t, ids, idc) => { const b = ids.map((id) => trx.get(t, id)).filter((x) => x && String(x.i_isimported) !== 'Y'); return b.length ? b.length + ' row(s) refused (' + String(b[0].i_errormsg || '').trim() + ')' : ''; };
   const done = { journals: [], invoices: [], statements: [] }, msg = [];
@@ -212,6 +262,11 @@ export function complete(trx, AP, open) {
     say(trx, '§MIG-OPENBAL statements rows=' + pb.length + ' statements=' + done.statements.length + ' completed=' + done.statements.length);
     msg.push(done.statements.length + ' opening bank statement(s)');
   }
-  if (open) { const v = verify(trx, open, done); if (v.failed.length) throw new Error('The open balances were loaded but the books do not match the source: ' + v.failed.join(' · ')); msg.push(v.judged ? 'books checked against the source (' + v.judged + ' checks)' : 'books not checked'); }
+  if (open) {   // the books against the source = everything imported in this company (earlier hand-finished rows included), not only this run's rows
+    const hs = heldState(trx, open), allB = Array.from(new Set(hs.journal.imported.map((x) => x.gl_journalbatch_id)));
+    allB.filter((b) => String((trx.get('gl_journalbatch', b) || {}).docstatus) !== 'CO').forEach((b) => { const p = ML.processIt(trx, 'gl_journalbatch', b, 'CO'), st = String((trx.get('gl_journalbatch', b) || {}).docstatus);
+      if (!(p && p.ok) || st !== 'CO') throw new Error('The opening journal was imported but not Completed (' + ((p && p.msg) || st) + '). Open GL Journal, fix it and Complete it.'); });
+    done.journals = Array.from(new Set(hs.journal.imported.map((x) => x.gl_journal_id))); done.invoices = Array.from(new Set(hs.invoices.imported.map((x) => x.c_invoice_id))); done.statements = Array.from(new Set(hs.statements.imported.map((x) => x.c_bankstatement_id)));
+    const v = verify(trx, open, done); if (v.failed.length) throw new Error('The open balances were loaded but the books do not match the source: ' + v.failed.join(' · ') + '. The masters are loaded and nothing is posted. Fix the source and Process the corrected file again (the pending import rows are replaced), or finish the rows by hand in Import GL Journal / Import Invoice and Process this file again to re-check the books.'); msg.push(v.judged ? 'books checked against the source (' + v.judged + ' checks)' : 'books not checked'); }
   return 'Open balances completed: ' + msg.join(', ') + '.';
 }

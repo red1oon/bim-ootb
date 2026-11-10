@@ -120,7 +120,7 @@ var SCH = "(SELECT c_acctschema1_id FROM ad_clientinfo WHERE ad_client_id=" + CL
     cents(CV.manifest.left.AR) === WANT_LEFT.AR && cents(CV.manifest.left.AP) === WANT_LEFT.AP && cents(CV.manifest.left.BANK) === WANT_LEFT.BANK, { got: CV.manifest.left, want: WANT_LEFT });
   var stmNos = Object.keys(O.bank).filter(function (a) { return O.bank[a] !== 0; }).sort();
   check('SHEETS', 'statements', 'one opening bank statement per bank account with a CurrentBalance (' + J(stmNos) + '), amount == the oracle', J(stm.map(function (r) { return r.BankAccountNo; }).sort()) === J(stmNos) && stm.every(function (r) { return cents(r.StmtAmt) === O.bank[r.BankAccountNo]; }), stm);
-  check('SHEETS', 'sources-untouched', 'the Odoo / SAP / BC templates are byte-identical to origin/main (this lane adds a source; it changes no other)', cp.spawnSync('git', ['-C', ERP, 'diff', '--quiet', 'origin/main', '--', 'migrate/templates/odoo-17.json', 'migrate/templates/sap-b1-10.json', 'migrate/templates/bc-w1.json', 'migrate/engine.mjs', 'plugins/open_balances.mjs', 'migrate/workbook.mjs']).status === 0, null);
+  check('SHEETS', 'sources-untouched', 'the Odoo / SAP / BC templates are byte-identical to origin/main (this lane adds a source; it changes no other)', cp.spawnSync('git', ['-C', ERP, 'diff', '--quiet', 'origin/main', '--', 'migrate/templates/odoo-17.json', 'migrate/templates/sap-b1-10.json', 'migrate/templates/bc-w1.json', 'migrate/engine.mjs', 'migrate/workbook.mjs']).status === 0, null);   // open_balances.mjs left out 2026-11-10: migrate-recover changes it on purpose (witness_migration_recover.js)
   verdict('SHEETS');
 
   // ═══ the twin (born tenants, the neutral loader) ═══
