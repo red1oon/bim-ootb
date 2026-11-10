@@ -16,8 +16,8 @@
 //   (e) MBankStatement.setStatementDate(new Timestamp(now)) / setName(getStatementDate().toString()) (MBankStatement.java:122-125) use the recorded clock (env.now / env.nowMillis), formatted as java.sql.Timestamp.toString.
 //   (f) the line beforeSave / afterSave (charge, line number, header totals) is
 //       model_trade.js MBankStatementLine_saveEx - the ONE port, called around the PO save. The bank statement DocAction is NOT part of this process (legacy has no DocAction parameter): statements are created Drafted.
-//   (g) MBankStatement.beforeSave :258-273 (doc type CMB, ending balance) is done inline before the statement save: ad_modelval.js has a port (installMBankStatementSaveHooks) that NO kernel path calls (measured: a statement saved through the PO layer had C_DocType_ID NULL).
-//       Lane BS may register a shared beforeSave; the values are the same either way.
+//   (g) MBankStatement.beforeSave :258-273 (doc type CMB, ending balance) is NOT done here: model_bankstatement.js registers that hook on c_bankstatement (the ONE port, lane BS) and the statement save below runs it.
+//       (Until lane E3d the process carried an inline copy because no hook was registered; the copy is removed - one implementation per responsibility.)
 (function (global) {
   'use strict';
   var P = (typeof module !== 'undefined' && module.exports) ? require('../ad_process.js') : global.AdProcess;
@@ -189,8 +189,6 @@
             if (imp.name != null) spo.set('name', imp.name);                                                      // :439-441
             if (imp.statementdate != null) spo.set('statementdate', imp.statementdate);                           // :442-444
             if (imp.dateacct != null) spo.set('dateacct', imp.dateacct); else spo.set('dateacct', spo.get('statementdate'));   // :445-449
-            if (nz(spo.get('c_doctype_id')) <= 0) { var dt = trx.q("SELECT c_doctype_id FROM c_doctype WHERE docbasetype='CMB' AND isactive='Y' AND ad_client_id IN (0,?) ORDER BY ad_client_id DESC, isdefault DESC, c_doctype_id", [account.ad_client_id])[0]; if (dt) spo.set('c_doctype_id', dt.c_doctype_id); }   // MBankStatement.beforeSave :260-262 (named (g): no active hook for c_bankstatement in the twin kernel)
-            spo.set('endingbalance', nz(spo.get('beginningbalance')) + nz(spo.get('statementdifference')));   // :271 Ending = Beginning + StatementDifference (:264-269 Beginning from the account is already set by the constructor :124)
             spo.set('description', imp.description).set('eftstatementreference', imp.eftstatementreference).set('eftstatementdate', imp.eftstatementdate);   // :450-452
             if (spo.save()) { noInsert++; statement = spo.row; } else { trx.say('§IMPORT_BANKSTATEMENT_SEVERE statement not saved :: ' + spo.error); statement = Object.assign({}, spo.row || {}, { c_bankstatement_id: 0 }); }   // :453-456
             lineNo = 10;                                                                                          // :457

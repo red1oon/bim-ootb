@@ -57,7 +57,7 @@ export function plan(trx, params, current) {
   book.forEach((b) => { if (!mSheets.some((m) => m.sheet === b.name)) out.problems.push('Sheet ' + b.name + ' is not in the manifest.'); });
   // §E3C-SPEC: the optional third file, the agent's RAW rows (odoo_export.json) → the open-balance sheets, appended after the masters (their own manifest counts them)
   const xf = eng ? null : files.find((f) => isExport(f.data)); let openCfg = null; const openNames = [];
-  if (eng) { (man.problems || []).forEach((p) => out.problems.push(p)); book.forEach((b) => { if (/^I_(GLJournal|Invoice)$/.test(tableOfSheet(b.name))) openNames.push(b.name); }); if (openNames.length) openCfg = man; out.source = man; }
+  if (eng) { (man.problems || []).forEach((p) => out.problems.push(p)); book.forEach((b) => { if (/^(I_GLJournal|I_Invoice|C_Bank|C_BankAccount|I_BankStatement)$/.test(tableOfSheet(b.name))) openNames.push(b.name); }); if (openNames.length) openCfg = man; out.source = man; }
   if (xf) {
     const xm = xf.data.manifest, c = openBalances(xf.data);
     ['db', 'cutover', 'company_id'].forEach((k) => { if (man[k] != null && String(man[k]) !== String(xm[k])) out.problems.push(xf.name + ' is not from the same export as ' + wbf.name + ' (' + k + ': ' + xm[k] + ' / ' + man[k] + ').'); });
@@ -104,6 +104,10 @@ export function plan(trx, params, current) {
   // the opening journal and the open documents go together: the journal puts the receivable / payable balance on the clearing accounts, the documents take it off again
   const jn = openNames.find((n) => tableOfSheet(n) === 'I_GLJournal'), inn = openNames.find((n) => tableOfSheet(n) === 'I_Invoice');
   if (jn && inn) { if (sel[jn]) lockedBy[inn] = ['I_GLJournal (its clearing accounts)']; else sel[inn] = false; }
+  // the opening bank statement goes with the journal too (it takes the bank balance off Bank Clearing) and needs its bank account (found by number) - which needs its bank (the mandatory lookup below)
+  const bsn = openNames.find((n) => tableOfSheet(n) === 'I_BankStatement'), ban = book.map((b) => b.name).find((n) => tableOfSheet(n) === 'C_BankAccount');
+  if (jn && bsn) { if (sel[jn]) lockedBy[bsn] = (lockedBy[bsn] || []).concat('I_GLJournal (its clearing accounts)'); else sel[bsn] = false; }
+  if (bsn && ban && (sel[bsn] || lockedBy[bsn])) lockedBy[ban] = (lockedBy[ban] || []).concat('I_BankStatement');
   edges.forEach((e) => { if (e.mandatory && sel[e.child]) (lockedBy[e.parent] = lockedBy[e.parent] || []).push(tableOfSheet(e.child)); });
   Object.keys(lockedBy).forEach((p) => { if (!sel[p]) say(trx, '§ODOO-FORM relock ' + p + ' (needed by ' + lockedBy[p].join(',') + ')'); sel[p] = true; });
   const drops = {};
@@ -158,6 +162,9 @@ export function openingStockSheets(book) {
 // load(trx, book) -> { ok, summary, perTable{T: n}, refusals{sheet: [reasons]} } — the Ninja loader in THIS transaction (stage 1: masters + the I_Inventory rows, §E1)
 function loadOnce(trx, book, open) {
   const st = openingStockSheets(book), loadBook = st ? st.book : book;
+  // §E3C-SPEC 1(d) stage 1: what the open balances need and the tenant lacks (clearing accounts, the no-tax tax, the Opening Charges), through the model, each named.
+  //   §E3D-SPEC: BEFORE the Ninja load - the I_BankStatement sheet looks its charge up BY NAME while it loads (C_Charge_ID>Name).
+  const created = open ? OB.prerequisites(trx, open) : [];
   putFile(FILE, bookToWorkbook(loadBook));
   const mark = trx.log.length;
   let r;
@@ -171,8 +178,6 @@ function loadOnce(trx, book, open) {
     perTable.M_INVENTORY = st.headers; shown.M_Inventory = st.headers; perTable.M_INVENTORYLINE = n; shown.M_InventoryLine = n;
     say(trx, '§E1-STOCK stage=1 I_Inventory rows=' + n + ' (source headers=' + st.headers + '); stage 2 (Import Inventory, DocAction CO) runs after these masters are committed');
   }
-  // §E3C-SPEC 1(d) stage 1: what the open balances need and the tenant lacks (clearing accounts, the no-tax tax, the Opening Charges), through the model, each named
-  const created = r && r.ok && open ? OB.prerequisites(trx, open) : [];
   return { ok: !!(r && r.ok), summary: r && r.summary, perTable, shown, refusals, created };
 }
 

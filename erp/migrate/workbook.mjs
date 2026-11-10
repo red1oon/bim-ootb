@@ -23,12 +23,18 @@ export const HEADERS = {
   M_Inventory: ['DocumentNo', 'M_Warehouse_ID>Value', 'MovementDate', 'C_DocType_ID>DocSubTypeInv', 'Description'], M_InventoryLine: ['M_Inventory_ID', 'M_Locator_ID>Value', 'M_Product_ID>Value', 'QtyCount'] };
 export const ORDER = Object.keys(HEADERS);
 
-// §E3C-SPEC (b) — the OPEN-BALANCE sheets of the cut-over method (bim-compiler prompts/MIGRATE_INSTALL_TENANT.md §B3-SCOUT, §ENGINE-SPEC §3): legacy IMPORT tables, loaded as rows and
+// §E3C-SPEC (b) — the OPEN-BALANCE sheets (and, §E3D-SPEC, the bank sheets that go with them) of the cut-over method (bim-compiler prompts/MIGRATE_INSTALL_TENANT.md §B3-SCOUT, §ENGINE-SPEC §3): legacy IMPORT tables, loaded as rows and
 //   then turned into documents by the legacy import processes (ImportGLJournal 220 -> Complete; ImportInvoice 207 DocAction CO). OPTIONAL: the engine emits one, numbered after the
 //   17 masters, only when a template has an entity for it - a source without open balances keeps its 17-sheet book byte for byte. Columns = AD_Column names of the I_ table.
 export const OPEN_HEADERS = {
   I_GLJournal: ['BatchDocumentNo', 'BatchDescription', 'JournalDocumentNo', 'DocTypeName', 'CategoryName', 'PostingType', 'DateAcct', 'ISO_Code', 'AccountValue', 'AmtSourceDr', 'AmtSourceCr', 'Description', 'I_IsImported'],
-  I_Invoice: ['DocumentNo', 'DocTypeName', 'IsSOTrx', 'BPartnerValue', 'DateInvoiced', 'DateAcct', 'ISO_Code', 'PaymentTermValue', 'ChargeName', 'QtyOrdered', 'PriceActual', 'TaxIndicator', 'Description', 'I_IsImported'] };
+  I_Invoice: ['DocumentNo', 'DocTypeName', 'IsSOTrx', 'BPartnerValue', 'DateInvoiced', 'DateAcct', 'ISO_Code', 'PaymentTermValue', 'ChargeName', 'QtyOrdered', 'PriceActual', 'TaxIndicator', 'Description', 'I_IsImported'],
+  // §E3D-SPEC: the BANK. C_Bank / C_BankAccount are two optional MASTER sheets (rows of the tables themselves; AD_Column names, the lookup C_Bank_ID>Name is the dictionary's own identifier), listed here - after
+  //   the two documents, so I_GLJournal / I_Invoice keep their sheet numbers - and BEFORE I_BankStatement, which the Ninja loader walks last: the statement row names its account by number (BankAccountNo, the
+  //   AccountNo of a C_BankAccount row) and its charge by name (C_Charge_ID>Name, made by the open-balances prerequisites step). Mandatory per the dictionary: C_Bank Name + RoutingNo (IsOwnBank = Y is the dictionary default; the twin does not apply a dictionary default, and ImportBankStatement finds an account only on an OWN bank, :106); C_BankAccount Value +
+  //   Name + AccountNo + BankAccountType + C_Currency_ID + C_Bank_ID (CurrentBalance / CreditLimit / IsDefault come from the legacy defaults, MBankAccount.java:120). A source with no bank keeps its book byte for byte.
+  C_Bank: ['Name', 'RoutingNo', 'SwiftCode', 'IsOwnBank'], C_BankAccount: ['Value', 'Name', 'C_Bank_ID>Name', 'AccountNo', 'BankAccountType', 'C_Currency_ID>ISO_Code'],
+  I_BankStatement: ['Name', 'BankAccountNo', 'RoutingNo', 'StatementDate', 'StatementLineDate', 'StmtAmt', 'ChargeAmt', 'C_Charge_ID>Name', 'LineDescription', 'I_IsImported'] };
 export const OPEN_ORDER = Object.keys(OPEN_HEADERS);
 
 // ── SHA-1 (sync; crypto.subtle is async and the form engine's rows() is not) for UUID v5 ──

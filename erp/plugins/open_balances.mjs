@@ -18,7 +18,7 @@ const GL = typeof window !== 'undefined' ? window : globalThis;
 const REQ = GL.ModelTrade && GL.ModelLayer ? null : (await import('node:module')).createRequire(import.meta.url);
 const MT = GL.ModelTrade || REQ('../model_trade.js');   // MAccount.get + the period gate (model_trade.js), the twin's ONE copy
 const ML = GL.ModelLayer || REQ('../model_layer.js');   // save / newPO / processIt
-const JOURNAL_PROCESS = 220, INVOICE_PROCESS = 207;
+const JOURNAL_PROCESS = 220, INVOICE_PROCESS = 207, BANKSTMT_PROCESS = 221;   // 221 = ImportBankStatement (§E3D-SPEC)
 const BASE = { 'AR Invoice': 'ARI', 'AR Credit Memo': 'ARC', 'AP Invoice': 'API', 'AP CreditMemo': 'APC' };
 const SIGN = { ARI: 1, ARC: -1, API: -1, APC: 1 };   // the document's effect on its control account, debit +
 
@@ -31,12 +31,12 @@ function objs(sheet) { if (!sheet) return []; const H = sheet.rows[0]; return sh
 // openOf(book, cfg) -> null (the book carries no open balances) | { journal[], invoices[], cfg, cutover, currency, baseTypes[] }
 //   cfg = the converter's manifest: { clearing: { AR, AP, BANK }, charges: { AR, AP }, tax, cutover, currency }
 export function openOf(book, cfg) {
-  const j = (book || []).find((b) => tableOf(b.name) === 'I_GLJournal'), i = (book || []).find((b) => tableOf(b.name) === 'I_Invoice');
-  const journal = objs(j), invoices = objs(i);
-  if (!journal.length && !invoices.length) return null;
+  const find = (t) => (book || []).find((b) => tableOf(b.name) === t), j = find('I_GLJournal'), i = find('I_Invoice');
+  const journal = objs(j), invoices = objs(i), statements = objs(find('I_BankStatement')), bankAccounts = objs(find('C_BankAccount'));   // §E3D-SPEC: the opening bank statements + the bank accounts they name
+  if (!journal.length && !invoices.length && !statements.length) return null;
   const types = Array.from(new Set(invoices.map((r) => BASE[r.DocTypeName]).filter(Boolean)));
-  return { journal, invoices, cfg: cfg || {}, cutover: String((cfg && cfg.cutover) || (journal[0] && journal[0].DateAcct) || '').slice(0, 10), currency: (cfg && cfg.currency) || (journal[0] && journal[0].ISO_Code) || '',
-    baseTypes: (journal.length ? ['GLJ'] : []).concat(types) };
+  return { journal, invoices, statements, bankAccounts, cfg: cfg || {}, cutover: String((cfg && cfg.cutover) || (journal[0] && journal[0].DateAcct) || (statements[0] && statements[0].StatementDate) || '').slice(0, 10), currency: (cfg && cfg.currency) || (journal[0] && journal[0].ISO_Code) || '',
+    baseTypes: (journal.length ? ['GLJ'] : []).concat(types, statements.length ? ['CMB'] : []) };
 }
 
 export function problems(trx, open) {
@@ -62,8 +62,10 @@ export function problems(trx, open) {
 function missing(trx, open) {
   const C = Number(trx.env.client || 0), cfg = open.cfg, need = [];
   const used = new Set(open.journal.map((r) => r.AccountValue)), clr = cfg.clearing || {};
-  Object.keys(clr).forEach((k) => { const v = clr[k]; if (!v) return; const wanted = used.has(v) || ((k === 'AR' || k === 'AP') && open.invoices.length);
+  Object.keys(clr).forEach((k) => { const v = clr[k]; if (!v) return; const wanted = used.has(v) || ((k === 'AR' || k === 'AP') && open.invoices.length) || (k === 'BANK' && (open.statements || []).length);
     if (wanted && !trx.q('SELECT 1 AS x FROM c_elementvalue WHERE ad_client_id=? AND value=?', [C, v]).length) need.push({ kind: 'account', key: k, value: v }); });
+  const bn = (cfg.charges || {}).BANK;   // §E3D-SPEC: the Opening Charge of the opening bank statements, on Bank Clearing
+  if (bn && (open.statements || []).some((r) => r['C_Charge_ID>Name'] === bn) && !trx.q('SELECT 1 AS x FROM c_charge WHERE ad_client_id=? AND name=?', [C, bn]).length) need.push({ kind: 'charge', key: 'BANK', value: bn });
   if (open.invoices.length) {
     if (!trx.q('SELECT 1 AS x FROM c_tax WHERE ad_client_id=? AND taxindicator=?', [C, cfg.tax]).length) need.push({ kind: 'tax', value: cfg.tax });
     ['AR', 'AP'].forEach((k) => { const n = (cfg.charges || {})[k]; if (n && open.invoices.some((r) => r.ChargeName === n) && !trx.q('SELECT 1 AS x FROM c_charge WHERE ad_client_id=? AND name=?', [C, n]).length) need.push({ kind: 'charge', key: k, value: n }); });
@@ -101,7 +103,7 @@ export function prerequisites(trx, open) {
     const vc = MT.MAccount_get(trx, C, as.id, { AD_Org_ID: 0, Account_ID: ev, C_SubAcct_ID: 0, M_Product_ID: 0, C_BPartner_ID: 0, AD_OrgTrx_ID: 0, C_LocFrom_ID: 0, C_LocTo_ID: 0, C_SalesRegion_ID: 0, C_Project_ID: 0, C_Campaign_ID: 0,
       C_Activity_ID: 0, User1_ID: 0, User2_ID: 0, UserElement1_ID: 0, UserElement2_ID: 0 });
     const ch = save('c_charge', { ad_org_id: 0, name: n.value, chargeamt: 0, issametax: 'N', issamecurrency: 'N', istaxincluded: 'N', c_taxcategory_id: taxCat.c_taxcategory_id,
-      description: 'Open ' + (n.key === 'AR' ? 'customer' : 'vendor') + ' items brought in at the cut-over; its account is the ' + n.key + ' clearing account.' });
+      description: n.key === 'BANK' ? 'Opening bank balances brought in at the cut-over; its account is the BANK clearing account.' : 'Open ' + (n.key === 'AR' ? 'customer' : 'vendor') + ' items brought in at the cut-over; its account is the ' + n.key + ' clearing account.' });
     const ca = trx.find('c_charge_acct', { c_charge_id: ch.c_charge_id, c_acctschema_id: as.id })[0];
     if (!vc || !ca) throw new Error('Open balances: the charge "' + n.value + '" got no accounting row (C_Charge_Acct) or no valid combination.');
     trx.update('c_charge_acct', ca, { ch_expense_acct: vc.c_validcombination_id });
@@ -126,11 +128,35 @@ export function verify(trx, open, done) {
     line('§MIG-TB accounts=' + accts.length + ' differing=' + off.length + ' sum=' + money(accts.reduce((n, a) => n + (got[a] || 0), 0)) + ' verdict=' + (off.length ? 'FAIL' : 'PASS')); }
   else line('§MIG-TB verdict=INCONCLUSIVE (no opening journal in the book)');
   // CLEAR: journal + open documents together on each clearing account; AR / AP must equal what the converter said it could not bring in (cfg.left, 0 when everything came)
-  const inv = fact(318, done.invoices), bal = (a) => (got[a] || 0) + (inv[a] || 0), left = cfg.left || {};
+  const inv = fact(318, done.invoices), stm = fact(392, done.statements || []), bal = (a) => (got[a] || 0) + (inv[a] || 0) + (stm[a] || 0), left = cfg.left || {};   // 392 = C_BankStatement
   ['AR', 'AP'].forEach((k) => { if (!clr[k] || !(clr[k] in want)) { line('§MIG-CLEAR ' + k + ' verdict=INCONCLUSIVE (no ' + k + ' balance in the journal)'); return; }
     const b = bal(clr[k]), exp = cents(left[k] || 0); judge(b === exp, k + ' clearing ' + clr[k] + ' is ' + money(b) + ', expected ' + money(exp));
     line('§MIG-CLEAR ' + k + ' account=' + clr[k] + ' balance=' + money(b) + ' expected=' + money(exp) + ' verdict=' + (b === exp ? 'PASS' : 'FAIL')); });
-  if (clr.BANK && clr.BANK in want) line('§MIG-CLEAR BANK account=' + clr.BANK + ' balance=' + money(bal(clr.BANK)) + ' state=OPEN (the opening bank statement is not built yet: the bank balance waits on this account)');
+  // BANK (§E3D-SPEC): a book with opening bank statements is judged like AR / AP - Bank Clearing, journal + statements together, ends at what the converter could not bring in (cfg.left.BANK, 0.00 when every
+  //   cash account had a bank / cash journal); a book without any (other sources) keeps the old statement of fact
+  if ((open.statements || []).length && clr.BANK) {
+    if (!(clr.BANK in want)) line('§MIG-CLEAR BANK verdict=INCONCLUSIVE (no bank balance in the journal)');
+    else { const b = bal(clr.BANK), exp = cents(left.BANK || 0); judge(b === exp, 'BANK clearing ' + clr.BANK + ' is ' + money(b) + ', expected ' + money(exp));
+      line('§MIG-CLEAR BANK account=' + clr.BANK + ' balance=' + money(b) + ' expected=' + money(exp) + ' verdict=' + (b === exp ? 'PASS' : 'FAIL')); }
+  } else if (clr.BANK && clr.BANK in want) line('§MIG-CLEAR BANK account=' + clr.BANK + ' balance=' + money(bal(clr.BANK)) + ' state=OPEN (this book carries no opening bank statement: the bank balance waits on this account)');
+  // BANK per bank account: the statement is Completed and Posted, the bank account exists with its bank, and the statement's posted amount on the TENANT's bank asset account == the sheet row
+  if ((open.statements || []).length) {
+    const as = trx.q('SELECT c_acctschema1_id AS id FROM ad_clientinfo WHERE ad_client_id=?', [C])[0] || {}, wantB = {}, gotB = {}, bad = [], bankOf = {}, ba = {};
+    open.bankAccounts.forEach((r) => { bankOf[r.AccountNo] = r['C_Bank_ID>Name']; });
+    open.statements.forEach((r) => { wantB[r.BankAccountNo] = (wantB[r.BankAccountNo] || 0) + cents(r.StmtAmt); });
+    (done.statements || []).forEach((id) => { const st = trx.get('c_bankstatement', id) || {}, acc = trx.get('c_bankaccount', st.c_bankaccount_id) || {}, no = acc.accountno;
+      const ac = trx.find('c_bankaccount_acct', { c_bankaccount_id: st.c_bankaccount_id, c_acctschema_id: as.id })[0] || {}, vc = trx.get('c_validcombination', ac.b_asset_acct) || {}, asset = valOf(vc.account_id);
+      let net = 0; trx.find('fact_acct', { ad_table_id: 392, record_id: id }).forEach((f) => { if (valOf(f.account_id) === asset && String(f.c_acctschema_id) === String(as.id)) net += cents(f.amtacctdr) - cents(f.amtacctcr); });
+      gotB[no] = (gotB[no] || 0) + net; ba[no] = { asset, bal: cents(acc.currentbalance), bank: (trx.get('c_bank', acc.c_bank_id) || {}).name };
+      if (st.docstatus !== 'CO' || st.posted !== 'Y') bad.push(String(st.name || id) + ' ' + st.docstatus + ' posted=' + st.posted); });
+    const nos = Array.from(new Set(Object.keys(wantB).concat(Object.keys(gotB)))).sort(), off = nos.filter((n) => (wantB[n] || 0) !== (gotB[n] || 0));
+    const noBank = nos.filter((n) => !ba[n] || !ba[n].bank || (bankOf[n] != null && ba[n].bank !== String(bankOf[n]).slice(0, 60))), balOff = nos.filter((n) => ba[n] && ba[n].bal !== (wantB[n] || 0));
+    judge(off.length === 0, 'bank asset account: ' + off.slice(0, 5).map((n) => n + ' books ' + money(gotB[n] || 0) + ' sheet ' + money(wantB[n] || 0)).join('; '));
+    judge(bad.length === 0 && (done.statements || []).length === open.statements.length, 'bank statements: ' + (done.statements || []).length + ' of ' + open.statements.length + ' made; not Completed / unposted: ' + bad.slice(0, 5).join('; '));
+    judge(noBank.length === 0 && balOff.length === 0, 'bank accounts: ' + noBank.concat(balOff).slice(0, 5).join('; ') + ' (no bank, or CurrentBalance not the sheet amount)');
+    line('§MIG-BANK statements=' + (done.statements || []).length + '/' + open.statements.length + ' accounts=' + nos.length + ' differing=' + off.length + ' not_ok=' + bad.length + ' bank_missing=' + noBank.length + ' balance_off=' + balOff.length +
+      ' ' + nos.map((n) => n + '@' + ((ba[n] || {}).asset || '?') + '=' + money(gotB[n] || 0)).join(',') + ' verdict=' + (off.length || bad.length || noBank.length || balOff.length || (done.statements || []).length !== open.statements.length ? 'FAIL' : 'PASS'));
+  }
   // OPEN: per business partner, the documents' open amount == the sheet (signed: invoice +, credit memo -; per side)
   const wantP = {}; open.invoices.forEach((r) => { const b = BASE[r.DocTypeName], k = (b[1] === 'R' ? 'AR' : 'AP') + '|' + r.BPartnerValue; wantP[k] = (wantP[k] || 0) + cents(r.PriceActual) * cents(r.QtyOrdered) / 100 * SIGN[b]; });
   const gotP = {}, bad = [];
@@ -151,11 +177,11 @@ export function verify(trx, open, done) {
 export function complete(trx, AP, open) {
   const C = Number(trx.env.client || 0), O = Number(trx.env.org || 0);
   const pend = (t, id) => trx.find(t, { ad_client_id: C }).filter((x) => String(x.i_isimported) !== 'Y').map((x) => x[id]);
-  const pj = pend('i_gljournal', 'i_gljournal_id'), pi = pend('i_invoice', 'i_invoice_id');
-  if (!pj.length && !pi.length) { say(trx, '§MIG-OPENBAL stage=2 nothing to import (no pending I_GLJournal / I_Invoice row): not judged'); return ''; }
+  const pj = pend('i_gljournal', 'i_gljournal_id'), pi = pend('i_invoice', 'i_invoice_id'), pb = pend('i_bankstatement', 'i_bankstatement_id');
+  if (!pj.length && !pi.length && !pb.length) { say(trx, '§MIG-OPENBAL stage=2 nothing to import (no pending I_GLJournal / I_Invoice row): not judged'); return ''; }
   const need = (cls, id) => { if (!AP.JAVA || !AP.JAVA[cls]) throw new Error('Open balances need ' + cls.split('.').pop() + ' (AD_Process ' + id + '), which this host has not loaded.'); };
   const firstErr = (t, ids, idc) => { const b = ids.map((id) => trx.get(t, id)).filter((x) => x && String(x.i_isimported) !== 'Y'); return b.length ? b.length + ' row(s) refused (' + String(b[0].i_errormsg || '').trim() + ')' : ''; };
-  const done = { journals: [], invoices: [] }, msg = [];
+  const done = { journals: [], invoices: [], statements: [] }, msg = [];
   if (pj.length) {
     need('org.compiere.process.ImportGLJournal', JOURNAL_PROCESS);
     const as = trx.q('SELECT c_acctschema1_id AS id FROM ad_clientinfo WHERE ad_client_id=?', [C])[0];
@@ -175,6 +201,16 @@ export function complete(trx, AP, open) {
     done.invoices = Array.from(new Set(pi.map((id) => trx.get('i_invoice', id).c_invoice_id)));
     say(trx, '§MIG-OPENBAL invoices rows=' + pi.length + ' documents=' + done.invoices.length);
     msg.push(done.invoices.length + ' open document(s)');
+  }
+  if (pb.length) {   // §E3D-SPEC: the opening bank balance as ONE statement per bank account (ImportBankStatement 221 makes it Drafted; Complete is the user's step, as for the journal)
+    need('org.compiere.process.ImportBankStatement', BANKSTMT_PROCESS);
+    const r = AP.runInTrx(trx, BANKSTMT_PROCESS, { params: { AD_Client_ID: C, AD_Org_ID: O, C_BankAccount_ID: 0, DeleteOldImported: 'N' } });
+    const e = firstErr('i_bankstatement', pb); if (!(r && r.ok) || e) throw new Error('The opening bank statements were not imported: ' + (e || (r && r.summary) || 'Import Bank Statement refused') + '. Fix the rows and run Import Bank Statement again.');
+    done.statements = Array.from(new Set(pb.map((id) => trx.get('i_bankstatement', id).c_bankstatement_id)));
+    done.statements.forEach((id) => { const p = ML.processIt(trx, 'c_bankstatement', id, 'CO'), st = String((trx.get('c_bankstatement', id) || {}).docstatus);
+      if (!(p && p.ok) || st !== 'CO') throw new Error('The opening bank statement was imported but not Completed (' + ((p && p.msg) || st) + '). Open Bank Statement, fix it and Complete it.'); });
+    say(trx, '§MIG-OPENBAL statements rows=' + pb.length + ' statements=' + done.statements.length + ' completed=' + done.statements.length);
+    msg.push(done.statements.length + ' opening bank statement(s)');
   }
   if (open) { const v = verify(trx, open, done); if (v.failed.length) throw new Error('The open balances were loaded but the books do not match the source: ' + v.failed.join(' · ')); msg.push(v.judged ? 'books checked against the source (' + v.judged + ' checks)' : 'books not checked'); }
   return 'Open balances completed: ' + msg.join(', ') + '.';
