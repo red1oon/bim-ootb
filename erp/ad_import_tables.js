@@ -29,6 +29,9 @@
   // i_gljournal: AD_Table 599, 70 AD_Column rows in the seed, no physical table (W-IMPORT-GLJOURNAL, bim-compiler prompts/MIGRATE_INSTALL_TENANT.md section ENGINE-SPEC E3a; Import Journal AD_Process 220). Kept apart like DDL_INV so ensure() still
   //   reports the three older import tables; ensure() calls ensureGLJournal(). DDL verbatim from build/erp/ad_full.db (sqlite3 .schema i_gljournal).
   var DDL_GLJ = { i_gljournal: 'CREATE TABLE IF NOT EXISTS "i_gljournal" ("i_gljournal_id" NUMERIC, "ad_client_id" NUMERIC, "clientvalue" TEXT, "ad_orgdoc_id" NUMERIC, "isactive" TEXT, "created" TEXT, "createdby" NUMERIC, "updated" TEXT, "updatedby" NUMERIC, "i_isimported" TEXT, "i_errormsg" TEXT, "processing" TEXT, "processed" TEXT, "gl_journalbatch_id" NUMERIC, "batchdocumentno" TEXT, "batchdescription" TEXT, "gl_journal_id" NUMERIC, "journaldocumentno" TEXT, "postingtype" TEXT, "c_acctschema_id" NUMERIC, "acctschemaname" TEXT, "c_doctype_id" NUMERIC, "doctypename" TEXT, "gl_category_id" NUMERIC, "categoryname" TEXT, "c_period_id" NUMERIC, "gl_budget_id" NUMERIC, "gl_journalline_id" NUMERIC, "line" NUMERIC, "dateacct" TEXT, "description" TEXT, "amtsourcedr" NUMERIC, "amtacctdr" NUMERIC, "amtsourcecr" NUMERIC, "amtacctcr" NUMERIC, "c_currency_id" NUMERIC, "iso_code" TEXT, "conversiontypevalue" TEXT, "c_conversiontype_id" NUMERIC, "currencyrate" NUMERIC, "c_uom_id" NUMERIC, "qty" NUMERIC, "c_validcombination_id" NUMERIC, "orgvalue" TEXT, "ad_org_id" NUMERIC, "account_id" NUMERIC, "accountvalue" TEXT, "ad_orgtrx_id" NUMERIC, "orgtrxvalue" TEXT, "m_product_id" NUMERIC, "productvalue" TEXT, "upc" TEXT, "sku" TEXT, "c_bpartner_id" NUMERIC, "bpartnervalue" TEXT, "c_project_id" NUMERIC, "projectvalue" TEXT, "c_locto_id" NUMERIC, "c_locfrom_id" NUMERIC, "c_salesregion_id" NUMERIC, "c_activity_id" NUMERIC, "c_campaign_id" NUMERIC, "user1_id" NUMERIC, "user2_id" NUMERIC, "iscreatenewbatch" TEXT, "iscreatenewjournal" TEXT, "i_gljournal_uu" TEXT, "activityvalue" TEXT, "campaignvalue" TEXT, "salesregionvalue" TEXT)' };
+  // I_BankStatement (AD_Table 600, 60 AD_Column rows in the seed, no physical table) for Import Bank Statement, AD_Process 221 - Witness: W-IMPORT-BANKSTATEMENT (erp/tests/witness_import_bankstatement.js), bim-compiler prompts/MIGRATE_INSTALL_TENANT.md section E3D-SPEC lane IB;
+  //   DDL verbatim from build/erp/ad_full.db (sqlite3 .schema i_bankstatement). Kept apart from DDL (as Inventory / GLJournal / Invoice) so ensure() still reports the three older import tables; ensure() calls ensureBankStatement().
+  var DDL_IBS = { i_bankstatement: 'CREATE TABLE IF NOT EXISTS "i_bankstatement" ("i_bankstatement_id" NUMERIC, "ad_client_id" NUMERIC, "ad_org_id" NUMERIC, "isactive" TEXT, "created" TEXT, "createdby" NUMERIC, "updated" TEXT, "updatedby" NUMERIC, "i_isimported" TEXT, "i_errormsg" TEXT, "processed" TEXT, "c_bankstatement_id" NUMERIC, "statementdate" TEXT, "description" TEXT, "c_bankaccount_id" NUMERIC, "routingno" TEXT, "bankaccountno" TEXT, "c_payment_id" NUMERIC, "paymentdocumentno" TEXT, "c_currency_id" NUMERIC, "iso_code" TEXT, "c_bpartner_id" NUMERIC, "name" TEXT, "bpartnervalue" TEXT, "c_invoice_id" NUMERIC, "invoicedocumentno" TEXT, "c_charge_id" NUMERIC, "chargename" TEXT, "chargeamt" NUMERIC, "c_bankstatementline_id" NUMERIC, "line" NUMERIC, "dateacct" TEXT, "valutadate" TEXT, "statementlinedate" TEXT, "trxtype" TEXT, "referenceno" TEXT, "memo" TEXT, "isreversal" TEXT, "interestamt" NUMERIC, "trxamt" NUMERIC, "linedescription" TEXT, "stmtamt" NUMERIC, "eftstatementdate" TEXT, "eftstatementreference" TEXT, "eftstatementlinedate" TEXT, "eftvalutadate" TEXT, "eftreference" TEXT, "eftcheckno" TEXT, "efttrxid" TEXT, "efttrxtype" TEXT, "eftmemo" TEXT, "eftpayee" TEXT, "eftpayeeaccount" TEXT, "eftamt" NUMERIC, "eftcurrency" TEXT, "createpayment" TEXT, "processing" TEXT, "matchstatement" TEXT, "i_bankstatement_uu" TEXT, "iban" TEXT);' };
   var DDL_RECURRING = {
     c_recurring_run: 'CREATE TABLE IF NOT EXISTS "c_recurring_run" ("c_recurring_run_id" NUMERIC, "ad_client_id" NUMERIC, "ad_org_id" NUMERIC, "isactive" TEXT, "created" TEXT, "createdby" NUMERIC, "updated" TEXT, "updatedby" NUMERIC, "c_payment_id" NUMERIC, "c_order_id" NUMERIC, "c_invoice_id" NUMERIC, "c_project_id" NUMERIC, "gl_journalbatch_id" NUMERIC, "c_recurring_id" NUMERIC, "datedoc" TEXT, "c_recurring_run_uu" TEXT)',
     c_recurringgroup: 'CREATE TABLE IF NOT EXISTS "c_recurringgroup" ("ad_client_id" NUMERIC, "ad_org_id" NUMERIC, "created" TEXT, "createdby" NUMERIC, "c_recurringgroup_id" NUMERIC, "c_recurringgroup_uu" TEXT, "description" TEXT, "help" TEXT, "isactive" TEXT, "name" TEXT, "updated" TEXT, "updatedby" NUMERIC, "value" TEXT)'
@@ -71,6 +74,7 @@
     ensureRecurring(db);
     ensureInventory(db);
     ensureGLJournal(db);
+    ensureBankStatement(db);
     ensureInvoice(db);
     return made;
   }
@@ -107,7 +111,14 @@
     return made;
   }
 
-  var API = { DDL: DDL, DDL_RECURRING: DDL_RECURRING, DDL_POS: DDL_POS, DDL_INV: DDL_INV, ensureInventory: ensureInventory, DDL_INVOICE: DDL_INVOICE, ensureInvoice: ensureInvoice, DDL_GLJ: DDL_GLJ, ensureGLJournal: ensureGLJournal, ensure: ensure, ensureRecurring: ensureRecurring, ensurePos: ensurePos };
+  function ensureBankStatement(db) {
+    var made = 0;
+    Object.keys(DDL_IBS).forEach(function (t) { var r = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='" + t + "'"); if (r.length && r[0].values.length) return; db.run(DDL_IBS[t]); made++; });
+    log('§IMPORT_IBS_TABLES ensure created=' + made + ' (' + Object.keys(DDL_IBS).join(', ') + '; boot overlay, outside the team base hash)');
+    return made;
+  }
+
+  var API = { DDL_IBS: DDL_IBS, ensureBankStatement: ensureBankStatement, DDL: DDL, DDL_RECURRING: DDL_RECURRING, DDL_POS: DDL_POS, DDL_INV: DDL_INV, ensureInventory: ensureInventory, DDL_INVOICE: DDL_INVOICE, ensureInvoice: ensureInvoice, DDL_GLJ: DDL_GLJ, ensureGLJournal: ensureGLJournal, ensure: ensure, ensureRecurring: ensureRecurring, ensurePos: ensurePos };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;   // node witness / ws host
   if (typeof window !== 'undefined') window.AdImportTables = API;              // browser
   else if (global) global.AdImportTables = API;
