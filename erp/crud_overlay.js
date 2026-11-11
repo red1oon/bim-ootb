@@ -426,7 +426,10 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
   function _coBindUdf(db) {
     var A = global.AdCallout; if (!A || !A.bind) return;
     A.bind(_modelQuery(db));   // no clock of its own: RUNTIME.now is the local wall clock (§5.33 CAPEX_DASHBOARD.md: a Date.now() here undid it, SQL SYSDATE was the UTC day)
-    if (_coUdfDb !== db && A.RUNTIME.registerSqlFunctions) { _coUdfDb = db; try { A.RUNTIME.registerSqlFunctions(function (n, f) { db.create_function(n, f); }); } catch (eu) { console.log('§CALLOUT-UDF failed ' + (eu && eu.message)); } }
+    // sql.js db.export() (every persist: tenant birth, op-group sealing) closes and reopens the connection and DROPS every create_function registration while the JS handle stays the same, so "already bound to this handle" is not
+    //   proof: re-register whenever the handle carries none (found: bomPriceStd missing after a tenant was born -> MProductPricing 'no such function' -> every line save ProductNotOnPriceList; W-LOOKUP-IDLAW)
+    var _udfLost = !db.functions || Object.keys(db.functions).length === 0;
+    if ((_coUdfDb !== db || _udfLost) && A.RUNTIME.registerSqlFunctions) { _coUdfDb = db; try { A.RUNTIME.registerSqlFunctions(function (n, f) { db.create_function(n, f); }); } catch (eu) { console.log('§CALLOUT-UDF failed ' + (eu && eu.message)); } }
   }
   function _coDb(fn) {
     var A = global.AdCallout;
@@ -1104,6 +1107,7 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
           return;
         }
         withBundle(function (db) {
+          var _shadows = [];
           try {
             // §P8 P8.4 (W-PARITY-REFTABLE): the pk is the AD_Ref_Table AD_Key when there is one
             // (MLookupFactory.getLookup_Table), else the TableDIR convention.
@@ -1132,6 +1136,7 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
               } catch (eRw) { refWhereState = 'error'; }
               if (!refWhere && String(f.refwhere).indexOf('@') < 0) { refWhere = String(f.refwhere); refWhereState = 'applied'; }
             }
+            _shadows = _fkShadows(db, [vr && vr.sql, refWhere], t);   // §LOOKUP-IDLAW: sub-selects of the rule see the op-log rows too
             var andRef = function (clause) {
               if (!refWhere) return clause;
               return clause ? '(' + clause + ') AND (' + refWhere + ')' : refWhere;
@@ -1221,7 +1226,7 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
             }
             if (!rows.length && !noRows) return;              // no data at all → leave the raw-value option as-is
             el.innerHTML = blankFk + rows.map(function (r) { return '<option value="' + esc(r[0]) + '"' + (String(r[0]) === String(keep) ? ' selected' : '') + '>' + esc(r[1] + ' (' + r[0] + ')') + '</option>'; }).join('');
-          } catch (er) {}
+          } catch (er) {} finally { _tipShadowOff(db, _shadows); }
         });
       }
     });
@@ -1252,6 +1257,18 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
                        " AND lower(parameters) LIKE '%\"table\":\"" + String(t).toLowerCase() + "\"%' LIMIT 1");
       return !!(r.length && r[0].values.length);
     } catch (e) { return false; }
+  }
+  // §LOOKUP-IDLAW (MIGRATE_INSTALL_TENANT §LOOKUP-SPEC): an AD_Val_Rule / AD_Ref_Table.WhereClause is real SQL and routinely reads OTHER tables (rule 271: `... AND (SELECT COUNT(*) FROM
+  //   M_PriceList_Version WHERE ...)>0`). Legacy runs it over the whole database; here only the picker's own table was folded (_fkFoldSource), so a sub-select could not see a row made
+  //   through the op log (synthetic negative pk) and the rule admitted nothing: the Price List of a migrated tenant offered 0 rows. The tables the SQL names in FROM/JOIN are shadowed by
+  //   their folded rows for the length of the lookup with the ONE existing tip-shadow (_tipShadowOn: temp tables + views, dropped by _tipShadowOff). No table list.
+  function _fkShadows(db, sqls, t) {
+    if (global.__fkNoShadow) return [];   // witness mutant only (witness_lookup_idlaw): the old lookup, only the picker's own table folded
+    var names = [], seen = {}; seen[String(t).toLowerCase()] = 1;
+    (sqls || []).forEach(function (q) { if (q) String(q).replace(/\b(?:FROM|JOIN)\s+([A-Za-z_][A-Za-z0-9_]*)/gi, function (m, nm) { var k = nm.toLowerCase(); if (!seen[k]) { seen[k] = 1; names.push(k); } return m; }); });
+    var done = names.length ? _tipShadowOn(db, names) : [];
+    if (done.length) console.log('§FKSHADOW lookup of ' + t + ' reads [' + done.join(',') + '] folded with the op log');
+    return done;
   }
   function _fkFoldSource(db, t, pk) {
     var sdb = SIDE;                                   // sync handle; null before hydration → degrade to raw
@@ -1927,6 +1944,7 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
     // lands before the first commit/hydration used to see the raw bundle (a saved tax edit read back as the seed 0%).
     // Wait for the sidecar (cb(null) if absent -> raw bundle, as before) so every model read folds the op log.
     withSidecar(function () { withBundle(function (db) {
+      if (typeof _coBindUdf === "function") _coBindUdf(db);   // the stored-function UDFs (bomPriceStd, invoiceOpen ...) are on THIS db before any model transaction reads it (MProductPricing: 'no such function: bomPriceStd' rejected every line save as ProductNotOnPriceList)
       var sh = SIDE ? _tipShadowOn(db, _sideTables(SIDE)) : [], r = null;
       try { r = ML.run(_modelQuery(db), _modelEnv(), spec); }
       catch (e) { console.log('§MODEL-ERR ' + (e && e.message)); r = null; }
@@ -1944,6 +1962,7 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
   function _fireBeforeSaveNow(e, vals, orig, cb, MV) {
     withBundle(function (db) {
       var out = null;
+      if (typeof _coBindUdf === "function") _coBindUdf(db);   // same: the model beforeSave (MOrderLine pricing) calls the stored-function UDFs
       try {
         var b = _mvB3(db);
         if (!_mvAllInstalled) { _mvAllInstalled = true; var ins = _installAllModelVal(b, db); console.log('§AD-MODELVAL-LIVE installed-all registry=' + ins.length + ' [' + ins.join(',') + ']'); }
@@ -1965,7 +1984,7 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
           var ML = global.ModelLayer;
           if (v.ok && ML && typeof ML.run === 'function') {
             var mr = ML.run(_modelQuery(db), _modelEnv(), { table: e.key, timing: 'BEFORE_SAVE', record: Object.assign({}, rec, info.derived || {}), old: orig || null, isNew: !orig });
-            if (!mr.ok) v = { ok: false, fired: v.fired, blocked: 'model.beforeSave', error: mr.error || mr.msg };
+            if (!mr.ok) { v = { ok: false, fired: v.fired, blocked: 'model.beforeSave', error: mr.error || mr.msg }; (mr.log || []).forEach(function (l) { console.log(l); }); }   // the model's own §MODEL-SEVERE lines say WHY (primary evidence)
             else if (mr.derived && Object.keys(mr.derived).length) { info.derived = Object.assign(info.derived || {}, mr.derived); console.log('§MODEL-BEFORE-SAVE table=' + e.key + ' derived=' + JSON.stringify(mr.derived)); }
           }
         } finally { _tipShadowOff(db, shadowed); }

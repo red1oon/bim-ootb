@@ -13,6 +13,7 @@
 // Callout bodies dispatch by the AD_Column.Callout string ("a.b.Class.method;…", M/GridTab.java:3003-3006 tokenizer).
 // Types cross the API as Java does: ID/Integer → JS int, Amount/Number/Qty/CostPrice → BigDecimal, Date → Timestamp,
 // YesNo → boolean, else string. PURE: the host injects query(sql,params)->rows (lower-case keys, column order kept).
+function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() > 0` for the twin's id law: a row made through the op log has a NEGATIVE synthetic pk (crud_core listTip -opId), so "an id is set" = non-zero (same rule as ModelLayer.idSet; MIGRATE_INSTALL_TENANT §IDLAW-SPEC)
 (function (global) {
   'use strict';
   var BD = (typeof module !== 'undefined' && module.exports) ? require('./bigdecimal') : global.BigDecimal;
@@ -444,13 +445,13 @@
     if (mTab.getValue('C_DocTypeTarget_ID') != null) doctypeID = mTab.getValue('C_DocTypeTarget_ID');
     else if (mTab.getValue('C_DocType_ID') != null) doctypeID = mTab.getValue('C_DocType_ID');
     var docBase = null;
-    if (doctypeID <= 0) {
+    if (!idSet(doctypeID)) {
       if ('M_Inventory' === mTab.getTableName()) docBase = 'MMI';            // Doc.DOCTYPE_MatInventory
       else if ('M_Movement' === mTab.getTableName()) docBase = 'MMM';        // Doc.DOCTYPE_MatMovement
       else if ('M_Requisition' === mTab.getTableName()) docBase = 'POR';     // Doc.DOCTYPE_PurchaseRequisition
     }
     var MPeriod = RUNTIME.M.MPeriod;
-    if (doctypeID > 0) MPeriod.testPeriodOpen(ctx, value, doctypeID, orgID);
+    if (idSet(doctypeID)) MPeriod.testPeriodOpen(ctx, value, doctypeID, orgID);
     else if (docBase != null) MPeriod.testPeriodOpen(ctx, value, docBase, orgID);
     return CalloutEngine.NO_ERROR;
   };

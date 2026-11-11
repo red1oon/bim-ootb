@@ -35,7 +35,7 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
   M.MDocType = M.MDocType || {};
   if (!M.MDocType.getShipmentReceiptDocType) M.MDocType.getShipmentReceiptDocType = function (docTypeId, ctx) {   // ctx = Env.getCtx()
     var relatedDocTypeId = 0;
-    if (docTypeId > 0) {
+    if (idSet(docTypeId)) {
       var docType = PO().get('C_DocType', docTypeId);
       var docBaseType = docType.getDocBaseType(), docSubTypeSO = docType.getDocSubTypeSO();
       var relatedDocBaseType = null, isSOTrx = null;

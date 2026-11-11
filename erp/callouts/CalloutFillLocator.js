@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 // callouts/CalloutFillLocator.js — org.idempiere.model.CalloutFillLocator.fillLocator, ported verbatim
 // (org.adempiere.base/src/org/idempiere/model/CalloutFillLocator.java:37-52). §CP — Witness: W-CP-CALLOUT-ORACLE.
+function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() > 0` for the twin's id law: a row made through the op log has a NEGATIVE synthetic pk (crud_core listTip -opId), so "an id is set" = non-zero (same rule as ModelLayer.idSet; MIGRATE_INSTALL_TENANT §IDLAW-SPEC)
 (function (global) {
   'use strict';
   var A = (typeof module !== 'undefined' && module.exports) ? require('../ad_callout.js') : global.AdCallout;
@@ -14,7 +15,7 @@
       var locatorID = value;
       if (locatorID == null || locatorID === 0) {
         var warehouseID = Env.getContextAsInt(ctx, WindowNo, 'M_Warehouse_ID', true);
-        if (warehouseID > 0) {
+        if (idSet(warehouseID)) {
           var wh = M.MWarehouse.get(ctx, warehouseID);
           var defaultLocator = M.MWarehouse.getDefaultLocator(wh);
           if (defaultLocator != null) mTab.setValue(mField, defaultLocator.getM_Locator_ID());

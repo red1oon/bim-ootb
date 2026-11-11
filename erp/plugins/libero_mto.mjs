@@ -148,10 +148,10 @@ export function create(ctx) {
   function createMOMakeTo(trx, mrp, ol, qty, ferry) {
     const product = trx.get('m_product', ol.m_product_id); if (product.isbom !== 'Y') return 0;
     let bom = trx.q("SELECT * FROM pp_product_bom WHERE bomtype IN ('O','K') AND bomuse='M' AND value=? AND ad_client_id=? ORDER BY pp_product_bom_id", [product.value, trx.env.client])[0] || null;   // :97-110 setClient_ID, firstOnly
-    const wfId = workflowSearchKey(trx, product); let wf = wfId > 0 ? trx.get('ad_workflow', wfId) : null;
+    const wfId = workflowSearchKey(trx, product); let wf = idSet(wfId) ? trx.get('ad_workflow', wfId) : null;
     const plantId = plantForWarehouse(trx, ol.m_warehouse_id); let pp = null;
     if (!bom || !wf) {
-      if (plantId <= 0) throw new Error('NoPlantForWarehouseException: M_Warehouse_ID=' + ol.m_warehouse_id);
+      if (!idSet(plantId)) throw new Error('NoPlantForWarehouseException: M_Warehouse_ID=' + ol.m_warehouse_id);
       pp = planningFind(trx, ol.ad_org_id, ol.m_warehouse_id, plantId, ol.m_product_id); if (!pp) throw new Error('@NotFound@ @PP_Product_Planning_ID@');
     }
     if (!bom && pp) { bom = pp.pp_product_bom_id ? trx.get('pp_product_bom', pp.pp_product_bom_id) : null;
@@ -159,7 +159,7 @@ export function create(ctx) {
     let order = trx.find('pp_order', { c_orderline_id: ol.c_orderline_id, m_product_id: ol.m_product_id })[0] || null;      // MPPOrder.forC_OrderLine_ID :82-88
     if (!wf && pp) { wf = pp.ad_workflow_id ? trx.get('ad_workflow', pp.ad_workflow_id) : null; if (!wf) throw new Error('@NotFound@ @AD_Workflow_ID@'); }
     if (!order) {
-      if (plantId > 0 && wf) {
+      if (idSet(plantId) && wf) {
         const so = trx.get('c_order', ol.c_order_id), bomTypeName = tr(trx, listName(trx, 'pp_order_bom', 'bomtype', bom.bomtype));
         const desc = bomTypeName + ' ' + tr(trx, 'C_Order_ID') + ' : ' + so.documentno;
         const plan = { ad_org_id: ol.ad_org_id, m_product_id: product.m_product_id, planner_id: so.salesrep_id, pp_product_bom_id: bom.pp_product_bom_id, ad_workflow_id: wf.ad_workflow_id, m_warehouse_id: ol.m_warehouse_id, s_resource_id: plantId };   // a NEW MPPProductPlanning, never saved

@@ -82,7 +82,7 @@ export function create(ctx) {
     let size = dec(rec.qtybatchsize);
     if (size.signum() === 0 || override) {
       const wfId = Number(rec.ad_workflow_id || 0);
-      if (wfId <= 0) return;
+      if (!idSet(wfId)) return;
       const wf = trx.get('ad_workflow', wfId);
       size = dec(wf && wf.qtybatchsize).setScale(0, RM_UP); rec.qtybatchsize = num(size);
     }

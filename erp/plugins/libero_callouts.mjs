@@ -6,6 +6,7 @@
 //   whose start() dispatches on the column to org.libero.callouts.CalloutOrder / CalloutCostCollector). Registered the same way here (bim-compiler ERP_FRIENDLY_OPS_LENS.md §22 L1).
 //   Without them a New Manufacturing Order keeps QtyOrdered=1 whatever QtyEntered says and the Product does not fill the routing / BOM.
 //   plugin.xml entries for classes the twin never ported (Callout_PP_Product_BOM(Line), Callout_PP_Order_BOMLine, Callout_DD_OrderLine) are NOT registered (named, not invented).
+function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() > 0` for the twin's id law: a row made through the op log has a NEGATIVE synthetic pk (crud_core listTip -opId), so "an id is set" = non-zero (same rule as ModelLayer.idSet; MIGRATE_INSTALL_TENANT §IDLAW-SPEC)
 export async function activate(ctx) {
   const A = globalThis.AdCallout;
   const def = (fqcn, factory) => ctx.callout.defineCallout(fqcn, factory);
@@ -19,7 +20,7 @@ export async function activate(ctx) {
     function updateQtyBatchs(mTab, override) {
       let size = BD(mTab.getValue('QtyBatchSize'));
       if (size.signum() === 0 || override) {
-        const wfId = Number(mTab.getValue('AD_Workflow_ID') || 0); if (wfId <= 0) return;
+        const wfId = Number(mTab.getValue('AD_Workflow_ID') || 0); if (!idSet(wfId)) return;
         const wf = R.DB.query('SELECT qtybatchsize FROM ad_workflow WHERE ad_workflow_id=?', [wfId])[0];
         size = BD(wf && wf.qtybatchsize != null ? R.toBD ? R.toBD(String(wf.qtybatchsize)) : Env.ZERO.add(String(wf.qtybatchsize)) : null).setScale(0, RM.UP);
         mTab.setValue('QtyBatchSize', size);
@@ -54,9 +55,9 @@ export async function activate(ctx) {
       const pp = R.DB.query("SELECT * FROM pp_product_planning WHERE ad_client_id=? AND m_product_id=? AND (ad_org_id IN (0,?) OR ad_org_id IS NULL) AND (m_warehouse_id IN (0,?) OR m_warehouse_id IS NULL) AND (s_resource_id IN (0,?) OR s_resource_id IS NULL) AND isactive='Y' ORDER BY COALESCE(ad_org_id,0) DESC, COALESCE(m_warehouse_id,0) DESC, COALESCE(s_resource_id,0) DESC", [cl, pid, org, wh, res])[0] || {};
       let wf = Number(pp.ad_workflow_id || 0), bomId = Number(pp.pp_product_bom_id || 0);
       if (wf <= 0) { const w = R.DB.query('SELECT ad_workflow_id FROM ad_workflow WHERE value=? AND ad_client_id=?', [product.getValue(), cl])[0]; wf = w ? Number(w.ad_workflow_id) : 0; }          // MWorkflow.getWorkflowSearchKey :946-952
-      if (bomId <= 0) { const b = R.DB.query("SELECT pp_product_bom_id FROM pp_product_bom WHERE m_product_id=? AND bomuse='A' AND bomtype='A' AND isactive='Y'", [pid]); bomId = b.length === 1 ? Number(b[0].pp_product_bom_id) : 0; }   // MPPProductBOM.getDefault
-      mTab.setValue('AD_Workflow_ID', wf > 0 ? wf : null); mTab.setValue('PP_Product_BOM_ID', bomId > 0 ? bomId : null);
-      if (bomId > 0) { const bom = R.DB.query('SELECT c_uom_id FROM pp_product_bom WHERE pp_product_bom_id=?', [bomId])[0]; if (bom && bom.c_uom_id) mTab.setValue('C_UOM_ID', Number(bom.c_uom_id)); }
+      if (!idSet(bomId)) { const b = R.DB.query("SELECT pp_product_bom_id FROM pp_product_bom WHERE m_product_id=? AND bomuse='A' AND bomtype='A' AND isactive='Y'", [pid]); bomId = b.length === 1 ? Number(b[0].pp_product_bom_id) : 0; }   // MPPProductBOM.getDefault
+      mTab.setValue('AD_Workflow_ID', wf > 0 ? wf : null); mTab.setValue('PP_Product_BOM_ID', idSet(bomId) ? bomId : null);
+      if (idSet(bomId)) { const bom = R.DB.query('SELECT c_uom_id FROM pp_product_bom WHERE pp_product_bom_id=?', [bomId])[0]; if (bom && bom.c_uom_id) mTab.setValue('C_UOM_ID', Number(bom.c_uom_id)); }
       updateQtyBatchs(mTab, true); return '';
     };
     return CalloutOrder;

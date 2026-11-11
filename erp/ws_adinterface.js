@@ -79,7 +79,7 @@
       if (!orgs.some(function (o) { return Number(o.id) === l.orgId; })) return { error: 'Error logging in - org not allowed for this role' };                          // :172-173
       var whs = q("SELECT m_warehouse_id AS id FROM m_warehouse WHERE isactive='Y' AND ad_org_id=?", [l.orgId]);
       if (whs.length) { if (!whs.some(function (w) { return Number(w.id) === l.warehouseId; })) return { error: 'Error logging in - warehouse not allowed for this org' }; }   // :185-186
-      else if (l.warehouseId > 0) return { error: 'Error logging in - warehouse not allowed for this org' };                                                          // :188-189
+      else if ((Number(l.warehouseId) || 0) !== 0) return { error: 'Error logging in - warehouse not allowed for this org' };                                                          // :188-189
       var va = invokeLoginV(l, null, TIMING.AFTER_LOGIN); if (va) return { error: va };
       return { session: curSession = { actor: 'ws:' + l.user + '/client:' + l.clientId + '/role:' + l.roleId, userId: Number(user.ad_user_id), roleId: l.roleId, clientId: l.clientId, orgId: l.orgId, warehouseId: l.warehouseId, allOrgs: role.allorgs === 'Y' } };
     }

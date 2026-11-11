@@ -3,6 +3,7 @@
 // processes/RMACreateOrder.js — org.adempiere.process.RMACreateOrder, verbatim
 // (org.adempiere.base.process/src/org/adempiere/process/RMACreateOrder.java). §CP-PROC-CORE family B — Witness: W-CP-PROC-ORACLE.
 // The M-class code (MOrder ctor/beforeSave, MOrderLine ctor/setOrder/setHeaderInfo/setPrice) moved to model_order.js (§CP-OPEN 4b).
+function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() > 0` for the twin's id law: a row made through the op log has a NEGATIVE synthetic pk (crud_core listTip -opId), so "an id is set" = non-zero (same rule as ModelLayer.idSet; MIGRATE_INSTALL_TENANT §IDLAW-SPEC)
 (function (global) {
   'use strict';
   var P = (typeof module !== 'undefined' && module.exports) ? require('../ad_process.js') : global.AdProcess;
@@ -45,7 +46,7 @@
       var originalInvoice = null;                                                      // :87 rma.getOriginalInvoice() (MRMA.java:174-200)
       if (shipment) {
         var invId = T.nz(shipment.c_invoice_id) ? Number(shipment.c_invoice_id) : MO().sqlInt(trx, 'SELECT C_Invoice_ID FROM C_Invoice WHERE C_Order_ID=?', [shipment.c_order_id]);
-        if (invId > 0) originalInvoice = trx.get('c_invoice', invId);
+        if (idSet(invId)) originalInvoice = trx.get('c_invoice', invId);
       }
       var lines = g.lines(trx, 'm_rmaline', 'm_rma_id', rma.m_rma_id);                 // :89 getLines(true) ORDER BY Line, M_RMALine_ID
       lines.sort(function (a, b) { return (Number(a.line) - Number(b.line)) || (Number(a.m_rmaline_id) - Number(b.m_rmaline_id)); });

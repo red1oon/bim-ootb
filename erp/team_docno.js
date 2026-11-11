@@ -8,6 +8,7 @@
 //                   prefix set on that sequence by an op IN THE LOG; the station is the AD_User the author's roster person is bound to (§38.15 approve with AD_User_UU).
 //   Twin rule: Team lane only; a solo device never calls either (its numbers come from one counter, legacy as shipped).
 'use strict';
+function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() > 0` for the twin's id law: a row made through the op log has a NEGATIVE synthetic pk (crud_core listTip -opId), so "an id is set" = non-zero (same rule as ModelLayer.idSet; MIGRATE_INSTALL_TENANT §IDLAW-SPEC)
 (function (root, factory) {
   if (typeof module !== 'undefined' && module.exports) module.exports = factory(require('./model_trade.js'));
   else root.TeamDocNo = factory(root.ModelTrade);
@@ -45,7 +46,7 @@
     else if (b.op_type === 'CRUD_UPDATE' && /^[a-z][a-z0-9_]*$/.test(t)) { try { doc = (await bq('SELECT * FROM "' + t + '" WHERE lower("' + t + '_uu")=?', [String(o.uu).toLowerCase()]))[0] || {}; } catch (e) { doc = {}; } }
     Object.assign(doc, b.op_type === 'CRUD_CREATE' ? (p.fields || {}) : (p.changes || {}));
     var dtId = Number(doc.c_doctypetarget_id || doc.c_doctype_id || 0);
-    if (!(dtId > 0)) return { unjudged: 'no-doctype' };
+    if (!(idSet(dtId))) return { unjudged: 'no-doctype' };
     var dt = (await bq('SELECT DocNoSequence_ID AS s, IsDocNoControlled AS c FROM C_DocType WHERE C_DocType_ID=?', [dtId]))[0];
     if (!dt || !(Number(dt.s) > 0)) return { unjudged: 'doctype-not-in-base' };
     var seq = (await bq('SELECT * FROM AD_Sequence WHERE AD_Sequence_ID=?', [Number(dt.s)]))[0];

@@ -209,7 +209,7 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
           var loc = Env.getContext(ctx, WindowNo, TAB_INFO, 'C_BPartner_Location_ID');
           var locationId = 0;
           if (loc.length > 0) locationId = parseInt(loc, 10);
-          if (locationId > 0) {
+          if (idSet(locationId)) {
             var bpLocation = R.PO.get('C_BPartner_Location', locationId);
             if (bpLocation && bpLocation.isBillTo()) bill_Location_ID = locationId;
             if (bpLocation && bpLocation.isShipTo()) shipTo_ID = locationId;
@@ -283,7 +283,7 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
         if (String(bill_BPartner_ID) === Env.getContext(ctx, WindowNo, TAB_INFO, 'C_BPartner_ID')) {
           var locationId = 0, loc = Env.getContext(ctx, WindowNo, TAB_INFO, 'C_BPartner_Location_ID');
           if (loc.length > 0) locationId = parseInt(loc, 10);
-          if (locationId > 0) { var bpLocation = R.PO.get('C_BPartner_Location', locationId); if (bpLocation && bpLocation.isBillTo()) bill_Location_ID = locationId; }
+          if (idSet(locationId)) { var bpLocation = R.PO.get('C_BPartner_Location', locationId); if (bpLocation && bpLocation.isBillTo()) bill_Location_ID = locationId; }
         }
         if (bill_Location_ID === 0) mTab.setValue('Bill_Location_ID', null);
         else mTab.setValue('Bill_Location_ID', bill_Location_ID);

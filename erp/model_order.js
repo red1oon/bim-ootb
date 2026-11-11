@@ -138,11 +138,11 @@
   // ══ MPPProductBOM.getDefault :155-186 + getLines(false) :340-355 — the ONE BOM reader on the twin tables (processes/BOMVerify.js calls these; no second copy) ═══
   function bomGetDefault(trx, productId, orgId, clientId) {                                 // BOMUse 'A' (Master), BOMType 'A' (Current Active); org filter from the login org
     var sql = 'SELECT * FROM PP_Product_BOM WHERE M_Product_ID=? AND BOMUse=? AND BOMType=? ', args = [productId, 'A', 'A'];
-    if (orgId > 0) sql += 'AND AD_Org_ID IN (0, ' + orgId + ') ';
+    if (ML.idSet(orgId)) sql += 'AND AD_Org_ID IN (0, ' + orgId + ') ';
     sql += 'AND IsActive=? AND AD_Client_ID IN (0,?)'; args.push('Y', clientId);
-    if (orgId > 0) sql += ' ORDER BY AD_Org_ID Desc';
+    if (ML.idSet(orgId)) sql += ' ORDER BY AD_Org_ID Desc';
     var list = trx.q(sql, args);
-    return list.length > 0 && (orgId > 0 || list.length === 1) ? list[0] : null;              // :174-178
+    return list.length > 0 && (ML.idSet(orgId) || list.length === 1) ? list[0] : null;              // :174-178
   }
   function bomLines(trx, bomId, clientId) { return trx.q('SELECT * FROM PP_Product_BOMLine WHERE PP_Product_BOM_ID=? AND AD_Client_ID IN (0,?) AND IsActive=? ORDER BY Line', [bomId, clientId, 'Y']); }   // :340-355
 
