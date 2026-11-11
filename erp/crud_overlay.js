@@ -2669,6 +2669,9 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
       return (controlled && seqId != null) ? Number(seqId) : null;
     } catch (e) { return null; }
   }
+  // the session client's own table sequence only (MSequence.get :864-890: `WHERE UPPER(Name)=? AND IsTableID=? AND AD_Client_ID=?`). Without the client term every tenant read the FIRST DocumentNo_<table> row of the
+  //   bundle - GardenWorld's (C_Payment 10000007) - so two payments of a migrated tenant both showed, kept and saved 10000007 (W-DOCNO).
+  function _seqClientTerm() { if (global.__docnoNoClient) return ''; var c = global.APP && global.APP.clientId; return (c != null && c !== '' && isFinite(Number(c))) ? ' AND AD_Client_ID=' + Number(c) : ' AND 0'; }
   function _previewDocNo(table, fields) {
     var mdb = (typeof globalThis !== 'undefined' && globalThis.__idmpDb) || null; if (!mdb) return null;
     var cols = _getTableCols(table); if (!cols['documentno']) return null;
@@ -2676,8 +2679,11 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
       var dtSeq = _docTypeSeqId(mdb, fields);
       var r = dtSeq != null
         ? mdb.exec("SELECT CurrentNext, Prefix, Suffix FROM AD_Sequence WHERE AD_Sequence_ID=" + dtSeq + " AND IsActive='Y' LIMIT 1")
-        : mdb.exec("SELECT CurrentNext, Prefix, Suffix FROM AD_Sequence WHERE UPPER(Name)=UPPER(?) AND IsActive='Y' LIMIT 1", ['DocumentNo_' + table]);
-      if (!r.length || !r[0].values.length) return null;
+        : mdb.exec("SELECT CurrentNext, Prefix, Suffix FROM AD_Sequence WHERE UPPER(Name)=UPPER(?) AND IsActive='Y' AND IsTableID='N'" + _seqClientTerm() + " LIMIT 1", ['DocumentNo_' + table]);
+      if (!r.length || !r[0].values.length) {   // the tenant has no DocumentNo_<table> yet: the save makes it (MSequence.createTableSequence), so the first number is its initial CurrentNext (MSequence.setInitialDefaults)
+        var idf = global.ModelLayer && global.ModelLayer.initialDefaultsOf && global.ModelLayer.initialDefaultsOf('ad_sequence'), first = idf && idf.currentnext;
+        if (first == null) return null; r = [{ values: [[first, null, null]] }];
+      }
       var v = r[0].values[0], cn = _seqTipNext(dtSeq != null ? dtSeq : null, dtSeq != null ? null : 'DocumentNo_' + table, v[0]);
       // iDempiere shows the not-yet-allocated number as "<80003>" and PO.saveNew :3571-3572 treats that as EMPTY → the number
       // is allocated from the record's doctype at save time. Our field keeps the bare number (the docno val-rule is numeric),
@@ -2690,7 +2696,7 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
   function _seqTipNext(seqId, seqName, base) {
     try {
       var mdb = globalThis.__idmpDb;
-      if (seqId == null && seqName) { var r = mdb.exec("SELECT AD_Sequence_ID FROM AD_Sequence WHERE UPPER(Name)=UPPER('" + String(seqName).replace(/'/g, "''") + "') AND IsActive='Y' LIMIT 1"); seqId = r.length ? r[0].values[0][0] : null; }
+      if (seqId == null && seqName) { var r = mdb.exec("SELECT AD_Sequence_ID FROM AD_Sequence WHERE UPPER(Name)=UPPER('" + String(seqName).replace(/'/g, "''") + "') AND IsActive='Y' AND IsTableID='N'" + _seqClientTerm() + " LIMIT 1"); seqId = r.length ? r[0].values[0][0] : null; }
       if (seqId == null || !SIDE) return base;
       var tv = CORE.tipValues(SIDE, 'ad_sequence', seqId, _readBranch());
       return (tv && tv.currentnext != null) ? Number(tv.currentnext) : base;
@@ -2729,7 +2735,7 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
       var dtSeq = _docTypeSeqId(mdb, fields), seqName = 'DocumentNo_' + table;
       var r = dtSeq != null
         ? mdb.exec("SELECT AD_Sequence_ID, CurrentNext, IncrementNo, Prefix, Suffix FROM AD_Sequence WHERE AD_Sequence_ID=" + dtSeq + " AND IsActive='Y' LIMIT 1")
-        : mdb.exec("SELECT AD_Sequence_ID, CurrentNext, IncrementNo, Prefix, Suffix FROM AD_Sequence WHERE UPPER(Name)=UPPER(?) AND IsActive='Y' LIMIT 1", [seqName]);
+        : mdb.exec("SELECT AD_Sequence_ID, CurrentNext, IncrementNo, Prefix, Suffix FROM AD_Sequence WHERE UPPER(Name)=UPPER(?) AND IsActive='Y' AND IsTableID='N'" + _seqClientTerm() + " LIMIT 1", [seqName]);
       if (!r.length || !r[0].values.length) { console.log('§DOCNO no-sequence table=' + table + (dtSeq != null ? ' doctypeSeq=' + dtSeq : ' seq=' + seqName) + ' (named, not faked)'); return null; }
       var v = r[0].values[0], seqId = v[0], next = _seqTipNext(v[0], null, v[1]), incr = v[2] || 1, prefix = v[3] || '', suffix = v[4] || '';
       var docNo = (prefix || '') + next + (suffix || '');
