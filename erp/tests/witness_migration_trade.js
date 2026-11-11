@@ -98,18 +98,19 @@ var cents = function (v) { return Math.round(Number(v || 0) * 100); }, money = f
     var a = q("SELECT COALESCE(SUM(al.amount+al.discountamt+al.writeoffamt),0) AS s FROM c_allocationline al JOIN c_allocationhdr h ON h.c_allocationhdr_id=al.c_allocationhdr_id WHERE al.c_invoice_id=? AND h.docstatus IN ('CO','CL')", [id])[0].s;
     return cents(i.grandtotal) - Math.abs(cents(a)); }
   function acctOf(vc) { return q('SELECT account_id FROM c_validcombination WHERE c_validcombination_id=?', [vc])[0].account_id; }
-  var DEF = q('SELECT * FROM c_acctschema_default WHERE ad_client_id=?', [C])[0], BA = q('SELECT * FROM c_bankaccount_acct WHERE ad_client_id=? AND c_bankaccount_id=1000001', [C])[0];
+  var BAID = q("SELECT c_bankaccount_id AS b FROM c_bankaccount WHERE ad_client_id=? AND accountno='BNK1'", [C])[0].b;   // the migrated bank account by its number (its id is positive headless, NEGATIVE under WS_ID_LAW=synthetic)
+  var DEF = q('SELECT * FROM c_acctschema_default WHERE ad_client_id=?', [C])[0], BA = q('SELECT * FROM c_bankaccount_acct WHERE ad_client_id=? AND c_bankaccount_id=?', [C, BAID])[0];
   var ACC = { REC: acctOf(DEF.c_receivable_acct), LIAB: acctOf(DEF.v_liability_acct), INTR: acctOf(BA.b_intransit_acct), UNAL: acctOf(BA.b_unallocatedcash_acct), PSEL: acctOf(BA.b_paymentselect_acct) };
   var bal = function () { var o = {}; q('SELECT account_id AS a, SUM(amtacctdr)-SUM(amtacctcr) AS b FROM fact_acct WHERE ad_client_id=? GROUP BY account_id', [C]).forEach(function (r) { o[r.a] = cents(r.b); }); return o; };
   var tb = function () { return q('SELECT c_acctschema_id AS s, SUM(amtacctdr)-SUM(amtacctcr) AS b, count(*) AS n FROM fact_acct WHERE ad_client_id=? GROUP BY c_acctschema_id', [C]).map(function (r) { return { s: r.s, c: cents(r.b), n: r.n }; }); };
   var delta = function (b0, b1) { var d = {}; Object.keys(b1).concat(Object.keys(b0)).forEach(function (a) { var x = (b1[a] || 0) - (b0[a] || 0); if (x) d[a] = x; }); return d; };
   var tbOk = function () { var t = tb(); return t.length > 0 && t.every(function (x) { return x.c === 0 && x.n > 0; }); };
   var ARR = q("SELECT c_doctype_id AS d FROM c_doctype WHERE ad_client_id=? AND docbasetype='ARR' ORDER BY isdefault DESC", [C])[0].d, APP = q("SELECT c_doctype_id AS d FROM c_doctype WHERE ad_client_id=? AND docbasetype='APP' ORDER BY isdefault DESC", [C])[0].d;
-  var lastId = function (t) { return q('SELECT MAX(' + t + '_id) AS m FROM ' + t + ' WHERE ad_client_id=?', [C])[0].m; };   // ids made inside a Trx are provisional: the committed one is the newest row
+  var lastId = function (t) { return q('SELECT ' + t + '_id AS m FROM ' + t + ' WHERE ad_client_id=? ORDER BY ABS(' + t + '_id) DESC LIMIT 1', [C])[0].m; };   // newest = largest |id| (positive law: max; synthetic law: most negative)   // ids made inside a Trx are provisional: the committed one is the newest row
   function pay(label, o) { return pay0(label, o); }
   function pay0(label, o) {   // MPayment saved as a Draft (one commit, as the window's Save), then the DocAction CO (a second commit, as the Complete button): the poster reads the payment by SQL, so it must be a stored row
     var s1 = tx(label + '-save', function (trx) {
-      var p = ML.newPO(trx, 'c_payment', { ad_org_id: T.orgId, c_doctype_id: o.receipt ? ARR : APP, c_bankaccount_id: 1000001, c_bpartner_id: o.bp, c_invoice_id: o.inv, payamt: o.amt, isreceipt: o.receipt ? 'Y' : 'N', c_currency_id: 100, datetrx: TODAY, dateacct: TODAY, docstatus: 'DR', docaction: 'CO' });
+      var p = ML.newPO(trx, 'c_payment', { ad_org_id: T.orgId, c_doctype_id: o.receipt ? ARR : APP, c_bankaccount_id: BAID, c_bpartner_id: o.bp, c_invoice_id: o.inv, payamt: o.amt, isreceipt: o.receipt ? 'Y' : 'N', c_currency_id: 100, datetrx: TODAY, dateacct: TODAY, docstatus: 'DR', docaction: 'CO' });
       var sv = ML.save(trx, 'c_payment', null, p); return sv.ok ? { ok: true } : { ok: false, error: 'save c_payment: ' + sv.error }; });
     if (!s1.ok) return s1; var id = lastId('c_payment');
     var s2 = tx(label, function (trx) { var r = ML.processIt(trx, 'c_payment', id, 'CO'); return { ok: !!r.ok, error: r.ok ? null : (r.msg || r.status), status: r.status }; });
@@ -210,7 +211,7 @@ var cents = function (v) { return Math.round(Number(v || 0) * 100); }, money = f
   // ═══ ONETRX: a receipt saved AND completed in ONE transaction (legacy's post reads on the completing connection, so it sees the new payment) ═══
   var b7 = bal(), i7b = inv('INV/2026/00007'), want7 = cents(RAW['INV/2026/00007'].amount_residual);
   var P7 = tx('onetrx', function (trx) {
-    var p = ML.newPO(trx, 'c_payment', { ad_org_id: T.orgId, c_doctype_id: ARR, c_bankaccount_id: 1000001, c_bpartner_id: gem.c_bpartner_id, c_invoice_id: i7b.c_invoice_id, payamt: want7 / 100, isreceipt: 'Y', c_currency_id: 100, datetrx: TODAY, dateacct: TODAY, docstatus: 'DR', docaction: 'CO' });
+    var p = ML.newPO(trx, 'c_payment', { ad_org_id: T.orgId, c_doctype_id: ARR, c_bankaccount_id: BAID, c_bpartner_id: gem.c_bpartner_id, c_invoice_id: i7b.c_invoice_id, payamt: want7 / 100, isreceipt: 'Y', c_currency_id: 100, datetrx: TODAY, dateacct: TODAY, docstatus: 'DR', docaction: 'CO' });
     var sv = ML.save(trx, 'c_payment', null, p); if (!sv.ok) return { ok: false, error: sv.error }; var r = ML.processIt(trx, 'c_payment', sv.row.c_payment_id, 'CO'); return { ok: !!r.ok, error: r.msg || null };
   });
   var ah = q('SELECT docstatus, posted FROM c_allocationhdr WHERE ad_client_id=? ORDER BY c_allocationhdr_id DESC', [C])[0], d7 = delta(b7, bal()), w7 = {}; w7[ACC.REC] = -want7; w7[ACC.INTR] = want7;

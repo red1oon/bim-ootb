@@ -481,7 +481,7 @@
     var vc = trx.get('c_validcombination', line.get('c_validcombination_id'));                  // :303 fillDimensionsFromCombination
     if (vc) {
       DIM_COLS.forEach(function (c) { line.set(c, nz(vc[c]) > 0 ? vc[c] : null); });
-      if (nz(vc.ad_org_id) > 0) line.set('ad_org_id', vc.ad_org_id);
+      if (ML().idSet(vc.ad_org_id)) line.set('ad_org_id', vc.ad_org_id);
     }
     var prec = 2, rate = bd(line.get('currencyrate')), amt = rate.multiply(bd(line.get('amtsourcedr')));   // :304-312 (m_precision stays 2 unless setC_Currency_ID ran)
     if (amt.scale() > prec) amt = amt.setScale(prec, HU());

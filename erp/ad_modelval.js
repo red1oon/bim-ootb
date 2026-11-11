@@ -367,7 +367,7 @@
         // from window.APP.actor (crud_overlay.js _docCtx). Never overrides a set value (Java defaults ONLY a zero column).
         var r = info.record, dd = d(info);
         var srNow = (dd.salesrep_id !== undefined && dd.salesrep_id !== null) ? dd.salesrep_id : r.salesrep_id;
-        if (!(Number(srNow) > 0) && ctx && Number(ctx.salesrep_id) > 0) dd.salesrep_id = Number(ctx.salesrep_id);
+        if (!((Number(srNow) || 0) !== 0) && ctx && Number(ctx.salesrep_id) > 0) dd.salesrep_id = Number(ctx.salesrep_id);
         return null;
       }],
       ['MOrder.docTypeTargetDefault', function (ctx, info) { // :1311-1312  default = the Standard SO doctype ('SO')
@@ -425,7 +425,7 @@
       }],
       ['MOrder.priceListImmutable', function (ctx, info) {   // :1352-1359  IDEMPIERE-1597 CannotChangePl when product lines exist
         if (!info.recordOld || !chg(info, 'm_pricelist_id')) return null;
-        var n = db.prepare('SELECT count(*) n FROM c_orderline WHERE c_order_id=? AND m_product_id>0').get(Number(info.record.c_order_id)).n;
+        var n = db.prepare('SELECT count(*) n FROM c_orderline WHERE c_order_id=? AND m_product_id<>0').get(Number(info.record.c_order_id)).n;
         return n > 0 ? 'CannotChangePl' : null;
         // the :1361-1369 DateOrdered/price-list-VERSION twin needs m_pricelist_version (not in capture) — named-deferred
       }]
@@ -591,7 +591,7 @@
       }],
       ['MInvoice.priceListImmutable', function (ctx, info) { // :1219-1239 IDEMPIERE-1597 CannotChangePlIn when product lines exist
         if (!info.recordOld || !chg(info, 'm_pricelist_id')) return null;
-        var n = db.prepare('SELECT count(*) n FROM c_invoiceline WHERE c_invoice_id=? AND m_product_id>0').get(Number(info.record.c_invoice_id)).n;
+        var n = db.prepare('SELECT count(*) n FROM c_invoiceline WHERE c_invoice_id=? AND m_product_id<>0').get(Number(info.record.c_invoice_id)).n;
         return n > 0 ? 'CannotChangePlIn' : null;
         // the :1230-1237 DateInvoiced/price-list-VERSION twin needs m_pricelist_version (not in capture) — named-deferred (H-1 pattern)
       }],
@@ -653,7 +653,7 @@
       ['MPayment.prepaymentDerive', function (ctx, info) {   // :732-749 IsPrepayment from charge/BP/order/project (reversal leg n/a in seed)
         var r = info.record;
         if (info.recordOld && !(chg(info, 'c_charge_id') || chg(info, 'c_invoice_id') || chg(info, 'c_order_id') || chg(info, 'c_project_id'))) return null;
-        if (Number(r.reversal_id) > 0) return null;          // :737-741 copies the reversal's flag — no reversal in seed, named
+        if ((Number(r.reversal_id) || 0) !== 0) return null;          // :737-741 copies the reversal's flag — no reversal in seed, named
         var pre = !(idSet(db, 'c_charge_id', r.c_charge_id)) && idSet(db, 'c_bpartner_id', r.c_bpartner_id) &&
                   (idSet(db, 'c_order_id', r.c_order_id) || (idSet(db, 'c_project_id', r.c_project_id) && !(idSet(db, 'c_invoice_id', r.c_invoice_id))));
         d(info).isprepayment = pre ? 'Y' : 'N';

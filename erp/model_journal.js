@@ -139,7 +139,7 @@
       js.forEach(function (j0) {                                                                                                           // Bug 1353695: currency rate and conversion type copied from journal to lines
         var j = trx.get('gl_journal', j0.gl_journal_id);
         if (j.currencyrate != null && Number(j.currencyrate) !== 0) jLines(trx, j).forEach(function (l) { var r = ML.save(trx, 'gl_journalline', l, { currencyrate: j.currencyrate }); if (!r.ok) throw new Error('SaveError gl_journalline: ' + r.error); });
-        if (nz(j.c_conversiontype_id) > 0) jLines(trx, j).forEach(function (l) { var r = ML.save(trx, 'gl_journalline', l, { c_conversiontype_id: j.c_conversiontype_id }); if (!r.ok) throw new Error('SaveError gl_journalline: ' + r.error); });
+        if (ML.idSet(j.c_conversiontype_id)) jLines(trx, j).forEach(function (l) { var r = ML.save(trx, 'gl_journalline', l, { c_conversiontype_id: j.c_conversiontype_id }); if (!r.ok) throw new Error('SaveError gl_journalline: ' + r.error); });
       });
       m = fire(trx, 'AFTER_PREPARE', 'gl_journalbatch', trx.get('gl_journalbatch', jb.gl_journalbatch_id)); if (m) { T.msg(trx, m); return 'IN'; }
       trx._justPrepared = 'gl_journalbatch:' + jb.gl_journalbatch_id;

@@ -5,6 +5,7 @@
 // bim-compiler prompts/ERP_FRIENDLY_OPS_LENS.md §43 P2 - Witness: W-CREATEFROM-INOUT. The Info Window IS the selection: the rows the user picked are T_Selection / T_Selection_InfoWindow
 // rows of this AD_PInstance_ID (written by the generic info-window engine), read here exactly as the Java reads them. NAMED, not faked: the M_RMALine branch of createLineFrom and the
 // RMA leg of updateFrom (MRMA.getShipment) are not ported (this corpus has one RMA row); a selection that names an RMA line is refused loudly.
+function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() > 0` for the twin's id law: a row made through the op log has a NEGATIVE synthetic pk (crud_core listTip -opId), so "an id is set" = non-zero (same rule as ModelLayer.idSet; MIGRATE_INSTALL_TENANT §IDLAW-SPEC)
 (function (global) {
   'use strict';
   var P = (typeof module !== 'undefined' && module.exports) ? require('../ad_process.js') : global.AdProcess;
@@ -82,7 +83,7 @@
         iol.set('m_attributesetinstance_id', ol.m_attributesetinstance_id || 0).set('description', ol.description == null ? null : ol.description);
         DIMS.forEach(function (c) { iol.set(c, nul(ol[c])); });
       } else if (il) {
-        if (id0(il.c_orderline_id) > 0) iol.set('c_orderline_id', il.c_orderline_id);
+        if (idSet(il.c_orderline_id)) iol.set('c_orderline_id', il.c_orderline_id);
         var ie = A.toBD(String(il.qtyentered)), ii = A.toBD(String(il.qtyinvoiced));
         if (ie.compareTo(ii) !== 0) { C.ioSetMovementQty(trx, iol, Qty.multiply(ii).divide(ie, 12, A.RoundingMode.HALF_UP)); iol.set('c_uom_id', il.c_uom_id); }
         iol.set('description', il.description == null ? null : il.description);
@@ -107,7 +108,7 @@
         if (order.isdropship === 'Y') {
           ch.m_warehouse_id = order.m_warehouse_id; ch.isdropship = order.isdropship; ch.dropship_bpartner_id = nul(order.dropship_bpartner_id);
           ch.dropship_location_id = nul(order.dropship_location_id); ch.dropship_user_id = nul(order.dropship_user_id);
-          if (order.deliveryviarule === 'S' && id0(order.m_shipper_id) > 0) { ch.deliveryviarule = order.deliveryviarule; ch.m_shipper_id = order.m_shipper_id; }
+          if (order.deliveryviarule === 'S' && idSet(order.m_shipper_id)) { ch.deliveryviarule = order.deliveryviarule; ch.m_shipper_id = order.m_shipper_id; }
         }
       }
       if (invoice != null && id0(invoice.c_invoice_id) !== 0) {

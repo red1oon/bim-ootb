@@ -3,6 +3,7 @@
 // ⚠ DO NOT REMOVE — libero_cost.mjs: HOT chunk of the Libero bundle, slice 3 (prompts/mfg/LIBERO_COST_SLICE3_SPEC.md; Witness W-LIBERO-COST). The PP_Cost_Collector model + DocAction for Component Issue (110) and Material
 //   Receipt (100), StorageEngine.createTransaction, CostEngine.createCostDetail / createRateVariances. Core ports are REUSED (ModelTrade storage, ModelCost MCostDetail, ModelMaster acct schemas). Pure: no clock, no random.
 //   Every type it does not port is REFUSED by name (never a silent no-op).
+function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() > 0` for the twin's id law: a row made through the op log has a NEGATIVE synthetic pk (crud_core listTip -opId), so "an id is set" = non-zero (same rule as ModelLayer.idSet; MIGRATE_INSTALL_TENANT §IDLAW-SPEC)
 export const DEFERRED = [
   'Mix variance (150) completion beyond the bomline update',
   'MPPOrder.closeIt (order Close) - backflush with isCloseDocument is REFUSED by name',
@@ -339,7 +340,7 @@ export function create(ctx) {
       if (libMethod(trx, product, as) !== method) throw new Error('Costing method not supported - ' + method);
       for (const el of elements(trx)) {
         if (['R', 'O', 'B'].indexOf(el.costelementtype) < 0) continue;      // isActivityControlElement :350-356
-        const price = Number(cc.s_resource_id) > 0 ? actualPrice(trx, cc, product, as, el) : ZERO, costs = roundCost(trx, price.multiply(qty), as);
+        const price = idSet(cc.s_resource_id) ? actualPrice(trx, cc, product, as, el) : ZERO, costs = roundCost(trx, price.multiply(qty), as);
         const h = M.cdNew(trx, as, cc.ad_org_id, product.m_product_id, product.m_attributesetinstance_id || 0, el.m_costelement_id, costs.negate(), qty.negate(), '', null, 0);
         h.row.pp_cost_collector_id = cc.pp_cost_collector_id; M.cdSave(trx, h); if (h.row.processed !== 'Y') M.cdProcess(trx, h);
       }

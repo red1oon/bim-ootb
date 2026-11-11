@@ -8,6 +8,7 @@
 // and never edits the renderer. E2 is DRY-RUN: it logs the op it WOULD apply; E3 swaps applyOp() for the
 // signed kernel (commitOp/sealChain/verifyChain). Reuses page globals: N/idx/project/px/py/k/radius +
 // withBundle/curChain/fname (best-effort, all typeof-guarded).
+function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() > 0` for the twin's id law: a row made through the op log has a NEGATIVE synthetic pk (crud_core listTip -opId), so "an id is set" = non-zero (same rule as ModelLayer.idSet; MIGRATE_INSTALL_TENANT §IDLAW-SPEC)
 (function (global) {
   'use strict';
 
@@ -877,7 +878,7 @@
       var fm = MA.form(r, pid, productWindow);
       if (!fm.ok) { panel.innerHTML = '<span class=cfdim>' + esc(fm.reason) + '</span>'; panel.style.display = 'flex'; console.log('§ASI-EDITOR open col=' + col + ' product=' + pid + ' ' + fm.reason); return; }
       var today = new Date().toISOString().slice(0, 10), h = '';
-      var ex = r.q('SELECT m_attributesetinstance_id AS id, description FROM m_attributesetinstance WHERE m_attributeset_id=? AND m_attributesetinstance_id>0 ORDER BY m_attributesetinstance_id DESC LIMIT 200', [fm.setId]);
+      var ex = r.q('SELECT m_attributesetinstance_id AS id, description FROM m_attributesetinstance WHERE m_attributeset_id=? AND m_attributesetinstance_id<>0 ORDER BY m_attributesetinstance_id DESC LIMIT 200', [fm.setId]);
       h += _asiRow('Existing', '<select class=cfi data-asi="existing"><option value="">(new instance)</option>' + ex.map(function (x) { return '<option value="' + esc(x.id) + '">' + esc((x.description || '') + ' (' + x.id + ')') + '</option>'; }).join('') + '</select>');
       if (fm.lot) h += _asiRow('Lot', '<input class=cfi type="text" data-asi="lot">' + (fm.lotCounter ? ' <button type=button class=cfb data-asi-new="lot">New</button>' : ''));
       if (fm.serno) h += _asiRow('Serial No', '<input class=cfi type="text" data-asi="serno">' + (fm.sernoCounter ? ' <button type=button class=cfb data-asi-new="serno">New</button>' : ''));
@@ -2362,8 +2363,8 @@
           var lines = lineRows.map(lcRow).filter(function (r) { return String(r.c_order_id) === String(op.id); })
             .map(function (r) { return { c_orderline_id: r.c_orderline_id, m_product_id: r.m_product_id, qtyordered: r.qtyordered }; });
           // MOrder.prepareIt copies C_DocTypeTarget_ID into C_DocType_ID (MOrder.java:1619,1624; 0 = not yet set)
-          var tgt = Number(order.c_doctypetarget_id) > 0 ? order.c_doctypetarget_id : null;
-          var dtId = (tgt != null && (/^(DR|IP|IN)$/.test(String(op.from || 'DR')) || !(Number(order.c_doctype_id) > 0))) ? tgt : order.c_doctype_id;
+          var tgt = idSet(order.c_doctypetarget_id) ? order.c_doctypetarget_id : null;
+          var dtId = (tgt != null && (/^(DR|IP|IN)$/.test(String(op.from || 'DR')) || !(idSet(order.c_doctype_id)))) ? tgt : order.c_doctype_id;
           var policy = CORE.docPolicyFor(STORE, dtId), psrc = 'docPolicy';
           if (!policy) {
             // A doc type minted at run time (a born tenant's, FS-1) cannot be in the static table: read the SAME

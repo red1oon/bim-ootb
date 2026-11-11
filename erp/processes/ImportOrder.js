@@ -318,7 +318,7 @@
             if (imp.dateordered != null) o.set('dateordered', imp.dateordered);                                                                                                      // :726-727
             if (imp.dateacct != null) o.set('dateacct', imp.dateacct);                                                                                                               // :728-729
             // Set Order Source
-            if (nz(imp.c_ordersource_id) > 0) o.set('c_ordersource_id', imp.c_ordersource_id);                                                                                       // :731-733
+            if (ML().idSet(imp.c_ordersource_id)) o.set('c_ordersource_id', imp.c_ordersource_id);                                                                                       // :731-733
             //
             MO.MOrder_beforeSaveNew(trx, o, ctx);                                                                                                                                    // MOrder.beforeSave defaults (new record) - model_order.js
             try { MO.saveEx(o); }                                                                                                                                                    // order.saveEx() :735

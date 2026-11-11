@@ -3,6 +3,7 @@
 // callouts/CalloutInvoice.js — org.compiere.model.CalloutInvoice, ported verbatim (every method).
 // Source: org.adempiere.base.callout/src/org/compiere/model/CalloutInvoice.java (iDempiere @87968daa73).
 // bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md §CP — Witness: W-CP-CALLOUT-ORACLE (scenarios/cp/CalloutInvoice.json).
+function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() > 0` for the twin's id law: a row made through the op log has a NEGATIVE synthetic pk (crud_core listTip -opId), so "an id is set" = non-zero (same rule as ModelLayer.idSet; MIGRATE_INSTALL_TENANT §IDLAW-SPEC)
 (function (global) {
   'use strict';
   var A = (typeof module !== 'undefined' && module.exports) ? require('../ad_callout.js') : global.AdCallout;
@@ -139,7 +140,7 @@
         }
         var BillTo_User_ID = rs.getInt('BillTo_User_ID');
         if (contID === 0) mTab.setValue('AD_User_ID', null);
-        else mTab.setValue('AD_User_ID', BillTo_User_ID > 0 ? BillTo_User_ID : contID);
+        else mTab.setValue('AD_User_ID', idSet(BillTo_User_ID) ? BillTo_User_ID : contID);
         if (IsSOTrx) {                                                              // :222-233 CreditAvailable
           var CreditLimit = Number(rs.getObject('SO_CreditLimit') || 0);
           if (CreditLimit !== 0) {
@@ -190,14 +191,14 @@
       var M_PriceList_ID = Env.getContextAsInt(ctx, WindowNo, 'M_PriceList_ID');   // :342-343
       pp.setM_PriceList_ID(M_PriceList_ID);
       var M_PriceList_Version_ID = Env.getContextAsInt(ctx, WindowNo, 'M_PriceList_Version_ID');   // :346-359
-      if (M_PriceList_Version_ID === 0 && M_PriceList_ID > 0) {
+      if (M_PriceList_Version_ID === 0 && idSet(M_PriceList_ID)) {
         var sql = 'SELECT plv.M_PriceList_Version_ID ' +
           'FROM M_PriceList_Version plv ' +
           'WHERE plv.M_PriceList_ID=? ' +
           ' AND plv.ValidFrom <= ? ' +
           'ORDER BY plv.ValidFrom DESC';
         M_PriceList_Version_ID = R.DB.getSQLValueEx(null, sql, M_PriceList_ID, invoiceDate);
-        if (M_PriceList_Version_ID > 0) Env.setContext(ctx, WindowNo, 'M_PriceList_Version_ID', M_PriceList_Version_ID);
+        if (idSet(M_PriceList_Version_ID)) Env.setContext(ctx, WindowNo, 'M_PriceList_Version_ID', M_PriceList_Version_ID);
       }
       pp.setM_PriceList_Version_ID(M_PriceList_Version_ID);                          // :361
       mTab.setValue('PriceList', pp.getPriceList());                                 // :363-370
@@ -267,7 +268,7 @@
     function getLineDeliveryViaRule(ctx, windowNo, mTab) {
       if (mTab.getValue('C_OrderLine_ID') != null) {
         var C_OrderLine_ID = mTab.getValue('C_OrderLine_ID');
-        if (C_OrderLine_ID > 0) {
+        if (idSet(C_OrderLine_ID)) {
           var ol = R.PO.get('C_OrderLine', C_OrderLine_ID);
           var o = ol ? R.PO.get('C_Order', ol.getC_Order_ID()) : null;
           return o ? o.getDeliveryViaRule() : null;
@@ -275,28 +276,28 @@
       }
       if (mTab.getValue('M_InOutLine_ID') != null) {
         var M_InOutLine_ID = mTab.getValue('M_InOutLine_ID');
-        if (M_InOutLine_ID > 0) {
+        if (idSet(M_InOutLine_ID)) {
           var iol = R.PO.get('M_InOutLine', M_InOutLine_ID);
           var io = iol ? R.PO.get('M_InOut', iol.getM_InOut_ID()) : null;
           return io ? io.getDeliveryViaRule() : null;
         }
       }
       var C_Order_ID = Env.getContextAsInt(ctx, windowNo, 'C_Order_ID', true);
-      if (C_Order_ID > 0) { var ord = R.PO.get('C_Order', C_Order_ID); return ord ? ord.getDeliveryViaRule() : null; }
+      if (idSet(C_Order_ID)) { var ord = R.PO.get('C_Order', C_Order_ID); return ord ? ord.getDeliveryViaRule() : null; }
       return null;
     }
     // getDropShipLocationId :542-556
     function getDropShipLocationId(ctx, windowNo, mTab) {
       if (mTab.getValue('C_OrderLine_ID') != null) {
         var C_OrderLine_ID = mTab.getValue('C_OrderLine_ID');
-        if (C_OrderLine_ID > 0) {
+        if (idSet(C_OrderLine_ID)) {
           var ol = R.PO.get('C_OrderLine', C_OrderLine_ID);
           var o = ol ? R.PO.get('C_Order', ol.getC_Order_ID()) : null;
           return o ? (o.getDropShip_Location_ID() || 0) : 0;
         }
       }
       var C_Order_ID = Env.getContextAsInt(ctx, windowNo, 'C_Order_ID', true);
-      if (C_Order_ID > 0) { var ord = R.PO.get('C_Order', C_Order_ID); return ord ? (ord.getDropShip_Location_ID() || 0) : 0; }
+      if (idSet(C_Order_ID)) { var ord = R.PO.get('C_Order', C_Order_ID); return ord ? (ord.getDropShip_Location_ID() || 0) : 0; }
       return -1;
     }
 
@@ -468,14 +469,14 @@
       var M_PriceList_ID = Env.getContextAsInt(ctx, WindowNo, 'M_PriceList_ID');     // :886-903
       pp.setM_PriceList_ID(M_PriceList_ID);
       var M_PriceList_Version_ID = Env.getContextAsInt(ctx, WindowNo, 'M_PriceList_Version_ID');
-      if (M_PriceList_Version_ID === 0 && M_PriceList_ID > 0) {
+      if (M_PriceList_Version_ID === 0 && idSet(M_PriceList_ID)) {
         var sql = 'SELECT plv.M_PriceList_Version_ID ' +
           'FROM M_PriceList_Version plv ' +
           'WHERE plv.M_PriceList_ID=? ' +
           ' AND plv.ValidFrom <= ? ' +
           'ORDER BY plv.ValidFrom DESC';
         M_PriceList_Version_ID = R.DB.getSQLValueEx(null, sql, M_PriceList_ID, orderDate);
-        if (M_PriceList_Version_ID > 0) Env.setContext(ctx, WindowNo, 'M_PriceList_Version_ID', M_PriceList_Version_ID);
+        if (idSet(M_PriceList_Version_ID)) Env.setContext(ctx, WindowNo, 'M_PriceList_Version_ID', M_PriceList_Version_ID);
       }
       pp.setM_PriceList_Version_ID(M_PriceList_Version_ID);
       Env.setContext(ctx, WindowNo, 'EnforcePriceLimit', pp.isEnforcePriceLimit() ? 'Y' : 'N');   // :905-906

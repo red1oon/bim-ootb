@@ -3,6 +3,7 @@
 // callouts/CalloutInvoiceBatch.js — org.compiere.model.CalloutInvoiceBatch, ported verbatim (every method).
 // Source: org.adempiere.base.callout/src/org/compiere/model/CalloutInvoiceBatch.java (iDempiere @87968daa73).
 // bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md §CP — Witness: W-CP-CALLOUT-ORACLE (scenarios/cp/CalloutInvoiceBatch.json).
+function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() > 0` for the twin's id law: a row made through the op log has a NEGATIVE synthetic pk (crud_core listTip -opId), so "an id is set" = non-zero (same rule as ModelLayer.idSet; MIGRATE_INSTALL_TENANT §IDLAW-SPEC)
 (function (global) {
   'use strict';
   var A = (typeof module !== 'undefined' && module.exports) ? require('../ad_callout.js') : global.AdCallout;
@@ -139,17 +140,17 @@
     function getLineDeliveryViaRule(ctx, windowNo, mTab) {
       if (mTab.getValue('C_InvoiceLine_ID') != null) {
         var C_InvoiceLine_ID = mTab.getValue('C_InvoiceLine_ID');
-        if (C_InvoiceLine_ID > 0) {
+        if (idSet(C_InvoiceLine_ID)) {
           var il = R.PO.get('C_InvoiceLine', C_InvoiceLine_ID);
           var C_OrderLine_ID = il ? (il.getC_OrderLine_ID() || 0) : 0;
-          if (C_OrderLine_ID > 0) { var ol = R.PO.get('C_OrderLine', C_OrderLine_ID); var o = ol ? R.PO.get('C_Order', ol.getC_Order_ID()) : null; return o ? o.getDeliveryViaRule() : null; }
+          if (idSet(C_OrderLine_ID)) { var ol = R.PO.get('C_OrderLine', C_OrderLine_ID); var o = ol ? R.PO.get('C_Order', ol.getC_Order_ID()) : null; return o ? o.getDeliveryViaRule() : null; }
           var M_InOutLine_ID = il ? (il.getM_InOutLine_ID() || 0) : 0;
-          if (M_InOutLine_ID > 0) { var iol = R.PO.get('M_InOutLine', M_InOutLine_ID); var io = iol ? R.PO.get('M_InOut', iol.getM_InOut_ID()) : null; return io ? io.getDeliveryViaRule() : null; }
+          if (idSet(M_InOutLine_ID)) { var iol = R.PO.get('M_InOutLine', M_InOutLine_ID); var io = iol ? R.PO.get('M_InOut', iol.getM_InOut_ID()) : null; return io ? io.getDeliveryViaRule() : null; }
         }
       }
       if (mTab.getValue('C_Invoice_ID') != null) {
         var C_Invoice_ID = mTab.getValue('C_Invoice_ID');
-        if (C_Invoice_ID > 0) {
+        if (idSet(C_Invoice_ID)) {
           var inv = R.PO.get('C_Invoice', C_Invoice_ID);
           if (inv && (inv.getC_Order_ID() || 0) > 0) { var ord = R.PO.get('C_Order', inv.getC_Order_ID()); return ord ? ord.getDeliveryViaRule() : null; }
         }
@@ -160,15 +161,15 @@
     function getDropShipLocationId(ctx, windowNo, mTab) {
       if (mTab.getValue('C_InvoiceLine_ID') != null) {
         var C_InvoiceLine_ID = mTab.getValue('C_InvoiceLine_ID');
-        if (C_InvoiceLine_ID > 0) {
+        if (idSet(C_InvoiceLine_ID)) {
           var il = R.PO.get('C_InvoiceLine', C_InvoiceLine_ID);
           var C_OrderLine_ID = il ? (il.getC_OrderLine_ID() || 0) : 0;
-          if (C_OrderLine_ID > 0) { var ol = R.PO.get('C_OrderLine', C_OrderLine_ID); var o = ol ? R.PO.get('C_Order', ol.getC_Order_ID()) : null; return o ? (o.getDropShip_Location_ID() || 0) : 0; }
+          if (idSet(C_OrderLine_ID)) { var ol = R.PO.get('C_OrderLine', C_OrderLine_ID); var o = ol ? R.PO.get('C_Order', ol.getC_Order_ID()) : null; return o ? (o.getDropShip_Location_ID() || 0) : 0; }
         }
       }
       if (mTab.getValue('C_Invoice_ID') != null) {
         var C_Invoice_ID = mTab.getValue('C_Invoice_ID');
-        if (C_Invoice_ID > 0) {
+        if (idSet(C_Invoice_ID)) {
           var inv = R.PO.get('C_Invoice', C_Invoice_ID);
           if (inv && (inv.getC_Order_ID() || 0) > 0) { var ord = R.PO.get('C_Order', inv.getC_Order_ID()); return ord ? (ord.getDropShip_Location_ID() || 0) : 0; }
         }

@@ -192,8 +192,8 @@
   // new MInvoice(MOrder order, int C_DocTypeTarget_ID, Timestamp invoiceDate) :484-510
   function MInvoiceFromOrder(trx, order, C_DocTypeTarget_ID, invoiceDate) {
     var r = MInvoiceNew(trx); clientOrg(r, order); invSetOrder(trx, r, order);
-    if (!(Number(C_DocTypeTarget_ID) > 0)) { var odt = T.dt(trx, V(order, 'c_doctype_id'));
-      if (odt) { C_DocTypeTarget_ID = odt.c_doctypeinvoice_id; if (!(Number(C_DocTypeTarget_ID) > 0)) throw new Error('@NotFound@ @C_DocTypeInvoice_ID@ - @C_DocType_ID@:' + odt.name); } }
+    if (!(ML.idSet(C_DocTypeTarget_ID))) { var odt = T.dt(trx, V(order, 'c_doctype_id'));
+      if (odt) { C_DocTypeTarget_ID = odt.c_doctypeinvoice_id; if (!(ML.idSet(C_DocTypeTarget_ID))) throw new Error('@NotFound@ @C_DocTypeInvoice_ID@ - @C_DocType_ID@:' + odt.name); } }
     r.set('c_doctypetarget_id', C_DocTypeTarget_ID);
     if (invoiceDate != null) r.set('dateinvoiced', invoiceDate);
     r.set('dateacct', r.get('dateinvoiced'));

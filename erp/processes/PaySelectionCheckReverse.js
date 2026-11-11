@@ -17,7 +17,7 @@
       var list = trx.find('c_payselectioncheck', { c_payselection_id: ps.c_payselection_id }, ['c_payselectioncheck_id']);   // Query ... setOrderBy(C_PaySelectionCheck_ID)
       for (var i = 0; i < list.length; i++) {
         var psc = list[i];
-        if (psc.c_payment_id != null && Number(psc.c_payment_id) > 0) return '@Error@ @C_PaySelectionCheck_ID@ @Processed@';
+        if (psc.c_payment_id != null && ML.idSet(psc.c_payment_id)) return '@Error@ @C_PaySelectionCheck_ID@ @Processed@';
         trx.find('c_payselectionline', { c_payselectioncheck_id: psc.c_payselectioncheck_id }, ['line']).forEach(function (psl) {   // getPaySelectionLines(false) — ORDER BY Line
           PAY.saveRow(trx, 'c_payselectionline', psl, { c_payselectioncheck_id: null, processed: 'N' });    // setC_PaySelectionCheck_ID(0); setProcessed(false); saveEx()
         });

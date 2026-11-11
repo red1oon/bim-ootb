@@ -13,6 +13,7 @@
 // Not ported (named): W/F/IW/REF/V/PFT/R/S/IMP/B/MV/T and file/script types (refused like an unknown type); translations (CommonTranslationHandler); AD_TableAttribute; a process's
 //   ReportView / PrintFormat / Workflow and a parameter's Reference / Val_Rule dependencies are NOT emitted - counted as dependencies (none arise when they are official records and
 //   the pack does not export the dictionary entity, which is legacy's own outcome).
+function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() > 0` for the twin's id law: a row made through the op log has a NEGATIVE synthetic pk (crud_core listTip -opId), so "an id is set" = non-zero (same rule as ModelLayer.idSet; MIGRATE_INSTALL_TENANT §IDLAW-SPEC)
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
   else root.PipoPackOut = factory();
@@ -120,9 +121,9 @@
     H.P = function (id) {
       if (!once('AD_Process_ID|' + id)) return;
       var p = rowOf('AD_Process', id);
-      if (p.isreport === 'Y' && Number(p.ad_reportview_id) > 0) stat.dependencies.push('AD_ReportView ' + p.ad_reportview_id);
-      if (p.isreport === 'Y' && Number(p.ad_printformat_id) > 0) stat.dependencies.push('AD_PrintFormat ' + p.ad_printformat_id);
-      if (Number(p.ad_workflow_id) > 0) stat.dependencies.push('AD_Workflow ' + p.ad_workflow_id);
+      if (p.isreport === 'Y' && idSet(p.ad_reportview_id)) stat.dependencies.push('AD_ReportView ' + p.ad_reportview_id);
+      if (p.isreport === 'Y' && idSet(p.ad_printformat_id)) stat.dependencies.push('AD_PrintFormat ' + p.ad_printformat_id);
+      if (idSet(p.ad_workflow_id)) stat.dependencies.push('AD_Workflow ' + p.ad_workflow_id);
       var create = isPackOutElement('AD_Process', p);
       if (create) { verifyRequirement('AD_Process', p); open('AD_Process', 'table'); exportRow('AD_Process', p, [], true); count('AD_Process'); }
       q('SELECT * FROM AD_Process_Para WHERE AD_Process_ID=? ORDER BY AD_Process_Para_ID', [id]).forEach(function (pp) {

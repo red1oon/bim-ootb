@@ -59,7 +59,7 @@
       trx.say('§IMPORT_INVENTORY_START M_Locator_ID=' + this.p_M_Locator_ID + ' MovementDate=' + this.p_MovementDate + ' docAction=' + this.m_docAction);   // :139-140
       var acctSchema = null, costingDoc = null;
       if (this.p_UpdateCosting) {                                                                                 // :142-157 the three mandatory parameters, then the schema
-        if (!(this.p_C_AcctSchema_ID > 0)) throw new Error('Accounting Schema required!'); if (!(this.p_M_CostType_ID > 0)) throw new Error('Cost Type required!'); if (!(this.p_M_CostElement_ID > 0)) throw new Error('Cost Element required!');
+        if (!(ML().idSet(this.p_C_AcctSchema_ID))) throw new Error('Accounting Schema required!'); if (!(ML().idSet(this.p_M_CostType_ID))) throw new Error('Cost Type required!'); if (!(ML().idSet(this.p_M_CostElement_ID))) throw new Error('Cost Element required!');
         acctSchema = trx.get('c_acctschema', this.p_C_AcctSchema_ID); if (!acctSchema) throw new Error('Accounting Schema required!');
       }
       var nowTs = trx.env.now || (trx.env.nowMillis != null ? new Date(trx.env.nowMillis).toISOString().slice(0, 19).replace('T', ' ') : new Date().toISOString().slice(0, 19).replace('T', ' '));
@@ -155,7 +155,7 @@
       //   (:535-547): the existing M_Cost of the costing level, else a new one saved; the doc takes the cost element's CostingMethod. NOT bare inserts of cost: the CA document's completeIt sets the cost.
       function updateCosting(imp, product) {
         var costingLevel = null;
-        if (nz(product.m_product_category_id) > 0) { var pca = trx.find('m_product_category_acct', { m_product_category_id: product.m_product_category_id, c_acctschema_id: self.p_C_AcctSchema_ID })[0]; costingLevel = pca && pca.costinglevel; if (costingLevel == null) costingLevel = acctSchema.costinglevel; }
+        if (ML().idSet(product.m_product_category_id)) { var pca = trx.find('m_product_category_acct', { m_product_category_id: product.m_product_category_id, c_acctschema_id: self.p_C_AcctSchema_ID })[0]; costingLevel = pca && pca.costinglevel; if (costingLevel == null) costingLevel = acctSchema.costinglevel; }
         var costOrg = self.p_AD_OrgTrx_ID, costAsi = 0;                                                           // line.getM_AttributeSetInstance_ID() = 0 here (generateASI only on Lot/SerNo)
         if (costingLevel === 'C') { costOrg = 0; costAsi = 0; } else if (costingLevel === 'O') costAsi = 0; else if (costingLevel === 'B') costOrg = 0;
         var key = { ad_client_id: product.ad_client_id, ad_org_id: costOrg, m_product_id: product.m_product_id, m_costtype_id: self.p_M_CostType_ID, c_acctschema_id: self.p_C_AcctSchema_ID, m_costelement_id: self.p_M_CostElement_ID, m_attributesetinstance_id: costAsi };
@@ -180,7 +180,7 @@
         if (inventory == null || nz(imp.m_warehouse_id) !== xWh || nz(imp.c_doctype_id) !== xDt || mdate !== xDay || iu !== xIu) {      // :373-377
           if (inventory != null) complete(inventory);
           var hf = { ad_client_id: imp.ad_client_id, ad_org_id: imp.ad_org_id, description: 'I ' + imp.m_warehouse_id + ' ' + mdate + ' 00:00:00.0', m_warehouse_id: imp.m_warehouse_id, movementdate: mdate + ' 00:00:00' };   // :392-398
-          if (nz(imp.c_doctype_id) > 0) hf.c_doctype_id = imp.c_doctype_id;                                       // :393-394
+          if (ML().idSet(imp.c_doctype_id)) hf.c_doctype_id = imp.c_doctype_id;                                       // :393-394
           var hs = ML().save(trx, 'm_inventory', null, ML().newPO(trx, 'm_inventory', hf));                       // inventory.save() :402
           if (!hs.ok) { var li = trx.get('i_inventory', imp.i_inventory_id); ML().save(trx, 'i_inventory', li, { i_errormsg: String(hs.error) }); trx.say('§IMPORT_INVENTORY_HEADER_REFUSED row=' + imp.i_inventory_id + ' :: ' + String(hs.error).replace(/\s+/g, ' ').slice(0, 200)); break; }   // :404-410
           inventory = hs.row; xWh = nz(imp.m_warehouse_id); xDt = nz(imp.c_doctype_id); xDay = mdate; xIu = iu; noInsert++;                  // :412-416
@@ -190,7 +190,7 @@
           if (String(product.isinstanceattribute) === 'Y') throw new Error('Import Inventory Lot/SerNo -> attribute set instance (generateASI :503-522) not ported - named');
         }
         var lf = { ad_client_id: inventory.ad_client_id, ad_org_id: inventory.ad_org_id, m_inventory_id: inventory.m_inventory_id, m_locator_id: imp.m_locator_id, m_product_id: imp.m_product_id, m_attributesetinstance_id: 0,
-          qtybook: nz(imp.qtybook), description: imp.description, c_charge_id: imp.c_charge_id, inventorytype: nz(imp.c_charge_id) > 0 ? 'C' : 'D' };                                  // :422-430
+          qtybook: nz(imp.qtybook), description: imp.description, c_charge_id: imp.c_charge_id, inventorytype: ML().idSet(imp.c_charge_id) ? 'C' : 'D' };                                  // :422-430
         if (nz(imp.qtycount) !== 0) lf.qtycount = nz(imp.qtycount);                                               // MInventoryLine ctor :150-151
         if (nz(imp.qtyinternaluse) !== 0) lf.qtyinternaluse = nz(imp.qtyinternaluse);                             // :152-153
         var ls = ML().save(trx, 'm_inventoryline', null, ML().newPO(trx, 'm_inventoryline', lf));                  // line.save() :434
