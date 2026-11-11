@@ -11,7 +11,7 @@
     approved_budget: 'SUM(C_Project.PlannedAmt) per C_Currency_ID',
     actual_cost: 'SUM(C_Project.ProjectBalanceAmt); % of plan = Actual / SUM(PlannedAmt)',
     committed_cost: 'SUM(C_Project.CommittedAmt); invoiced = SUM(C_Project.InvoicedAmt)',
-    forecast_cost: 'definition pending (client)',
+    forecast_cost: 'PROPOSED (awaiting the client, §6 Q3): per ACTIVE project EAC = Spent + (Budget - Done) / CPI, CPI = Done / Spent; Spent = ProjectBalanceAmt, Budget = PlannedAmt, Done = SUM(C_ProjectPhase.PlannedAmt WHERE IsComplete=\'Y\'); a project with Spent or Done at 0 gives no value; summed per C_Currency_ID',
     completed_year: 'COUNT(C_Project WHERE Processed=\'Y\' AND year(DateFinish)=year(today))',
     health: 'per project: PV=SUM(C_ProjectPhase.PlannedAmt WHERE EndDate<=today), EV=SUM(PlannedAmt WHERE IsComplete=\'Y\'), AC=ProjectBalanceAmt; SPI=EV/PV, CPI=EV/AC (AC>0). No EVM data = PV is 0. Green = every index >=0.9, Red = every index <0.9, Amber = mixed. PROVISIONAL: only 0.9 is the client\'s',
     stage: 'COUNT(C_Project) GROUP BY C_Project.C_Phase_ID -> C_Phase.Name (client stage mapping pending)',
@@ -22,7 +22,7 @@
     last_updated: 'MAX(C_Project.Updated)',
     bim_documents: 'issued = COUNT(deliverables whose latest revision has DocStatus=\'CO\'); deliverables = COUNT(DISTINCT C_Project_ID, DeliverableNo) over active BIM_Document rows of the filtered projects; latest = highest Revision'
   };
-  var NEEDS = { active_projects_sub: ['phaseRef'], health: ['phases'], stage: ['phaseRef'], physical_spent: ['phases'], schedule: ['phases'], approvals: ['wf'], bim_documents: ['bimdocs'] };
+  var NEEDS = { active_projects_sub: ['phaseRef'], health: ['phases'], forecast_cost: ['phases'], stage: ['phaseRef'], physical_spent: ['phases'], schedule: ['phases'], approvals: ['wf'], bim_documents: ['bimdocs'] };
 
   function cents(v) { return v == null || v === '' ? null : Math.round(Number(v) * 100); }
   function day(s) { return s ? String(s).slice(0, 10) : null; }
@@ -81,7 +81,13 @@
     T.actual_cost = { cur: sumBy(S, function (p) { return p.ProjectBalanceAmt; }) };
     T.actual_cost.pctOfPlan = ratioBy(T.actual_cost.cur, sumBy(S.filter(function (p) { return p.PlannedAmt != null; }), function (p) { return p.PlannedAmt; }));
     T.committed_cost = { cur: sumBy(S, function (p) { return p.CommittedAmt; }), invoiced: sumBy(S, function (p) { return p.InvoicedAmt; }) };
-    T.forecast_cost = { pending: true };
+    // §5.38 Q3 (PROPOSED): EAC = Spent + (Budget - Done) / CPI, CPI = Done / Spent, over ACTIVE projects that have Spent > 0 and Done > 0; one SUM per currency, rounded once (the PA measure's own shape)
+    var fb = blocked('forecast_cost');
+    T.forecast_cost = fb ? { inconclusive: fb } : { cur: {} };
+    if (!fb) { var fsum = {}; act.forEach(function (p) {
+      var spent = cents(p.ProjectBalanceAmt), bud = cents(p.PlannedAmt) || 0, done = (byProj[p.C_Project_ID] || []).reduce(function (a, ph) { return a + (yes(ph.IsComplete) ? (cents(ph.PlannedAmt) || 0) : 0); }, 0);
+      if (!(spent > 0) || !(done > 0)) return; fsum[cur(p)] = (fsum[cur(p)] || 0) + spent + (bud - done) * spent / done; });
+      Object.keys(fsum).forEach(function (k) { T.forecast_cost.cur[k] = Math.round(fsum[k]); }); }
     T.completed_year = { vacuous: none, n: tn == null ? null : P.filter(function (p) { return yes(p.Processed) && p.DateFinish && day(p.DateFinish).slice(0, 4) === today.slice(0, 4); }).length };
 
     // classification tiles — population A
@@ -166,7 +172,7 @@
     o.approved_budget = m2s(T.approved_budget.cur);
     o.actual_cost = m2s(T.actual_cost.cur); o.actual_cost_pct_of_plan = r2s(T.actual_cost.pctOfPlan);
     o.committed_cost = m2s(T.committed_cost.cur); o.committed_invoiced = m2s(T.committed_cost.invoiced);
-    o.forecast_cost = 'PENDING';
+    o.forecast_cost = T.forecast_cost.inconclusive ? 'INCONCLUSIVE' : m2s(T.forecast_cost.cur);
     o.completed_year = T.completed_year.vacuous || T.completed_year.n == null ? 'no data' : T.completed_year.n;
     o.health = st(T.health, function (x) { return 'green=' + x.green + ' amber=' + x.amber + ' red=' + x.red + ' none=' + x.none; });
     o.stage = st(T.stage, function (x) { return Object.keys(x.stages).sort().map(function (k) { return k + '=' + x.stages[k]; }).join(';'); });

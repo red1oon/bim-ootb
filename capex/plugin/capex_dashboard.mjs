@@ -14,7 +14,7 @@ export const manifest = {
   version: '1.0.3',
   engineVersion: '>=0.9.0',
   requires: {},
-  packs: ['capex_2pack/2Pack_1.0.0.zip', 'capex_2pack/2Pack_1.0.1.zip', 'capex_2pack/2Pack_1.0.2.zip']   // 1.0.0 = R0 + G2 + G3; 1.0.1 = G4 (the bucket tiles, §5.20); 1.0.2 = G7 (targets, §5.27)
+  packs: ['capex_2pack/2Pack_1.0.0.zip', 'capex_2pack/2Pack_1.0.1.zip', 'capex_2pack/2Pack_1.0.2.zip', 'capex_2pack/2Pack_1.0.3.zip']   // 1.0.0 = R0 + G2 + G3; 1.0.1 = G4 (the bucket tiles, §5.20); 1.0.2 = G7 (targets, §5.27); 1.0.3 = Q2 stages + the proposed Q3/Q4 measures (§5.38)
 };
 export async function activate(ctx) {
   console.log('§CAPEX-PLUGIN start (the 2Pack rows are applied by the host Pack In before this runs)');
