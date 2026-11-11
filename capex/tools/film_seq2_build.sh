@@ -13,7 +13,7 @@ card c0 "SEQUEL" "From a walked building" "to the CFO's screen" "quantities, rat
 card c1 "THE BIG PICTURE" "The same figure," "everywhere" "ledger first, dashboard next"
 card c2 "EVERYTHING IS A TABLE" "Rates and documents" "make the dashboard" "change a row, the numbers follow"
 card c9 "THE END" "Real quantities," "example rates" "give us your rates and it becomes an estimate"
-fit f_a "$FB/fb_a.png"; fit f_b "$FB/fb_b.png"; fit e_1 "$ES/e1_window.png"; fit e_3 "$ES/e3_phase.png"; fit d_full "$DS/s0_dashboard.png"
+fit f_a "$FB/fb_a.png"; fit f_b "$FB/fb_b.png"; fit e_1 "$ES/e5_project_grid.png"; fit e_3 "$ES/e6_phase_grid.png"; fit d_full "$DS/s0_dashboard.png"
 for n in s2_budget s3_actual s4_committed s5_forecast s6_budget_status s7_health s8_schedule s9_physical; do zoom "z_$n" "$DS/$n.png"; done
 SEGS="c0:3.6 f_a:10 f_b:9 e_1:10 e_3:9 c1:3.6 d_full:15 z_s2_budget:9 z_s3_actual:9 z_s4_committed:12 z_s5_forecast:12 z_s6_budget_status:9 z_s7_health:9 z_s8_schedule:9 z_s9_physical:12 c2:3.6 d_full:14 c9:10"
 : > "$OUT/list.txt"; t=0; i=0

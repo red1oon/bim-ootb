@@ -39,6 +39,10 @@ ck('F1b every number in the other sources is on a log line of this run', miss.fi
 const spoken = [];
 rows.forEach(r => { const text = BREAK ? (r.id === 'walked' ? r.detail.replace('207', '208') : r.detail) : r.detail; const src = r.src.replace(/,/g, ''); (text.replace(/,/g, '').match(/\d+(?:\.\d+)?/g) || []).forEach(n => { if (src.indexOf(n) < 0 && !/^(1|2|3|5|7)$/.test(n)) spoken.push(r.id + ':' + n); }); });
 ck('F1c every digit-number spoken in a dialogue is in that row\'s source column', spoken.length === 0, spoken.slice(0, 6));
+// F1d magnitude words: a money value of a row must not be spoken at the wrong scale (the v2 film said 'seven and a half million' for 7,459.45)
+const mag = [];
+rows.forEach(r => { const text = BREAK ? r.detail : r.detail; (r.src.match(/\d+:(\d+(?:\.\d+)?)/g) || []).forEach(m => { const v = Number(m.split(':')[1]); if (v < 1) return; const says = /million/i.test(text) ? 'million' : /thousand/i.test(text) ? 'thousand' : null; if (!says) return; const ok = says === 'million' ? v >= 1e6 : (v >= 1e3 && v < 1e6); if (!ok) mag.push(r.id + ': says ' + says + ' for ' + v); }); });
+ck('F1d a spoken magnitude (million, thousand) matches the row\'s money value', mag.length === 0, mag.slice(0, 4));
 // F2 privacy
 const PGF = process.env.FILM_PRIVATE_GREP_FILE || path.join(process.env.HOME, '.cache/capex_film/private_grep.txt');   // the names live OUTSIDE the repo (privacy rule: a public diff never holds them)
 const PRIV = fs.existsSync(PGF) ? new RegExp(fs.readFileSync(PGF, 'utf8').trim(), 'i') : null;
