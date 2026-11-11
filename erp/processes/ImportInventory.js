@@ -6,7 +6,7 @@
 //   the row is marked imported :436-440; DocAction, when given, completes each header :379-390, :460-468), (3) the closing "not imported" reset and the answer logs :491-499.
 // QtyBook is NOT computed here (legacy: the importer supplies it). Who supplies it in the branch stocktake is HQ's Day Close step (section 37.2 point 5a), never this process.
 // NAMED twin decisions: (a) a parameter not sent reaches the process as NULL: AD_Client_ID takes the session client (Java reads it from the dialog, always sent), AD_Org_ID 0, DeleteOldImported its AD_Process_Para default.
-//   (b) NOT PORTED, refused by name (never silent): IsUpdateCosting=Y (updateCosting :524-572, MCost) and a row with Lot/SerNo on an instance-attribute product (generateASI :503-522). (c) an exception of the loop fails the process (:486-489 AdempiereException): the
+//   (b) IsUpdateCosting=Y is ported (updateCosting :524-572, W-MIGRATION-TRADE COST); NOT PORTED, refused by name (never silent): a row with Lot/SerNo on an instance-attribute product (generateASI :503-522). (c) an exception of the loop fails the process (:486-489 AdempiereException): the
 //   caller's Trx rolls back, as legacy's.
 (function (global) {
   'use strict';
@@ -57,7 +57,11 @@
       var self = this, trx = this.get_TrxName(), A = X.A, C = this.p_AD_Client_ID, O = this.p_AD_Org_ID;
       try { trx.q('SELECT 1 AS x FROM i_inventory LIMIT 1'); } catch (e) { throw new Error('I_Inventory has no physical table on this host (AdImportTables.ensure, POS_PLUGIN_LOCAL_FIRST section 37)'); }
       trx.say('§IMPORT_INVENTORY_START M_Locator_ID=' + this.p_M_Locator_ID + ' MovementDate=' + this.p_MovementDate + ' docAction=' + this.m_docAction);   // :139-140
-      if (this.p_UpdateCosting) throw new Error('Import Inventory IsUpdateCosting=Y (updateCosting :524-572, MCost) not ported - named');                 // (b)
+      var acctSchema = null, costingDoc = null;
+      if (this.p_UpdateCosting) {                                                                                 // :142-157 the three mandatory parameters, then the schema
+        if (!(this.p_C_AcctSchema_ID > 0)) throw new Error('Accounting Schema required!'); if (!(this.p_M_CostType_ID > 0)) throw new Error('Cost Type required!'); if (!(this.p_M_CostElement_ID > 0)) throw new Error('Cost Element required!');
+        acctSchema = trx.get('c_acctschema', this.p_C_AcctSchema_ID); if (!acctSchema) throw new Error('Accounting Schema required!');
+      }
       var nowTs = trx.env.now || (trx.env.nowMillis != null ? new Date(trx.env.nowMillis).toISOString().slice(0, 19).replace('T', ' ') : new Date().toISOString().slice(0, 19).replace('T', ' '));
       var today = String(trx.env.date || nowTs).slice(0, 10);
       var R = [];
@@ -146,7 +150,28 @@
         var pr = ML().processIt(trx, 'm_inventory', inv.m_inventory_id, this_docAction);
         if (!pr || !pr.ok) throw new Error('Inventory Process Failed: ' + inv.m_inventory_id + ' - ' + (pr && pr.msg));                                                                   // :386 IllegalStateException
       }
-      var this_docAction = this.m_docAction;
+      var this_docAction = this.m_docAction, self = this;
+      // updateCosting(imp, product, line) :524-572 - a Costing (Cost Adjustment) document: one line per row that carries I_Inventory.CurrentCostPrice (NewCostPrice), completed at the end (:471-485). The cost record is MCost.get
+      //   (:535-547): the existing M_Cost of the costing level, else a new one saved; the doc takes the cost element's CostingMethod. NOT bare inserts of cost: the CA document's completeIt sets the cost.
+      function updateCosting(imp, product) {
+        var costingLevel = null;
+        if (nz(product.m_product_category_id) > 0) { var pca = trx.find('m_product_category_acct', { m_product_category_id: product.m_product_category_id, c_acctschema_id: self.p_C_AcctSchema_ID })[0]; costingLevel = pca && pca.costinglevel; if (costingLevel == null) costingLevel = acctSchema.costinglevel; }
+        var costOrg = self.p_AD_OrgTrx_ID, costAsi = 0;                                                           // line.getM_AttributeSetInstance_ID() = 0 here (generateASI only on Lot/SerNo)
+        if (costingLevel === 'C') { costOrg = 0; costAsi = 0; } else if (costingLevel === 'O') costAsi = 0; else if (costingLevel === 'B') costOrg = 0;
+        var key = { ad_client_id: product.ad_client_id, ad_org_id: costOrg, m_product_id: product.m_product_id, m_costtype_id: self.p_M_CostType_ID, c_acctschema_id: self.p_C_AcctSchema_ID, m_costelement_id: self.p_M_CostElement_ID, m_attributesetinstance_id: costAsi };
+        var cost = trx.find('m_cost', key)[0];
+        if (!cost) { var cs = ML().save(trx, 'm_cost', null, ML().newPO(trx, 'm_cost', key)); if (!cs.ok) throw new Error('SaveError m_cost: ' + cs.error); cost = cs.row; }   // MCost.get + cost.saveEx() :547-548
+        if (costingDoc == null) {
+          var ce = trx.get('m_costelement', self.p_M_CostElement_ID) || {};
+          var cf = { c_doctype_id: self.p_C_DocType_ID, costingmethod: ce.costingmethod, ad_org_id: imp.ad_org_id, docaction: 'CO' };   // :549-556
+          var ds = ML().save(trx, 'm_inventory', null, ML().newPO(trx, 'm_inventory', cf)); if (!ds.ok) throw new Error('SaveError m_inventory (costing): ' + ds.error); costingDoc = ds.row;
+        }
+        var ln = ML().save(trx, 'm_inventoryline', null, ML().newPO(trx, 'm_inventoryline', { ad_client_id: product.ad_client_id, m_inventory_id: costingDoc.m_inventory_id, m_product_id: cost.m_product_id, currentcostprice: cost.currentcostprice, newcostprice: imp.currentcostprice,
+          m_locator_id: 0, ad_org_id: imp.ad_org_id, m_attributesetinstance_id: costAsi }));                      // :558-566
+        if (!ln.ok) throw new Error('SaveError m_inventoryline (costing): ' + ln.error);
+        var li2 = trx.get('i_inventory', imp.i_inventory_id); var us = ML().save(trx, 'i_inventory', li2, { m_costingline_id: ln.row.m_inventoryline_id }); if (!us.ok) throw new Error('SaveError i_inventory: ' + us.error);   // :568-569
+        trx.say('§IMPORT_INVENTORY_COSTING product=' + product.m_product_id + ' newcost=' + imp.currentcostprice);
+      }
       var todo = trx.find('i_inventory', {}).filter(function (r) { return String(r.i_isimported) === 'N' && eq(r.ad_client_id, C); })   // :354-356 ORDER BY M_Warehouse_ID, TRUNC(MovementDate), I_Inventory_ID
         .sort(function (a, b) { return nz(a.m_warehouse_id) - nz(b.m_warehouse_id) || (day(a.movementdate) < day(b.movementdate) ? -1 : day(a.movementdate) > day(b.movementdate) ? 1 : 0) || nz(a.i_inventory_id) - nz(b.i_inventory_id); });
       trx.say('§IMPORT_INVENTORY_LOOP rows=' + todo.length);
@@ -173,12 +198,14 @@
           var live = trx.get('i_inventory', imp.i_inventory_id), s2 = ML().save(trx, 'i_inventory', live, { i_isimported: 'Y', m_inventory_id: ls.row.m_inventory_id, m_inventoryline_id: ls.row.m_inventoryline_id, processed: 'Y' });   // :436-440
           if (!s2.ok) throw new Error('SaveError i_inventory: ' + s2.error);
           noInsertLine++;                                                                                         // :441
+          if (this.p_UpdateCosting) updateCosting(trx.get('i_inventory', imp.i_inventory_id), product);          // :442-444 "@Trifon update Product cost record if Update costing is enabled"
         } else {
           var lv = trx.get('i_inventory', imp.i_inventory_id); ML().save(trx, 'i_inventory', lv, { i_errormsg: String(ls.error) });                                               // :447-454
           trx.say('§IMPORT_INVENTORY_LINE_REFUSED row=' + imp.i_inventory_id + ' :: ' + String(ls.error).replace(/\s+/g, ' ').slice(0, 200)); break;
         }
       }
       if (inventory != null) complete(inventory);                                                                 // :460-468
+      if (costingDoc != null) { var cr = ML().processIt(trx, 'm_inventory', costingDoc.m_inventory_id, 'CO'); if (!cr || !cr.ok) throw new Error('Process Failed: Cost Adjustment - ' + (cr && cr.msg)); }   // :471-485
 
       //	Set Error to indicator to not imported (:491-496)
       load();

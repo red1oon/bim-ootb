@@ -841,7 +841,9 @@
     c_payment: function (trx, p, as, F) {                                                    // Doc_Payment.createFacts — receipt: DR BankInTransit / CR UnallocatedCash
       var base = { ad_org_id: p.ad_org_id, c_bpartner_id: p.c_bpartner_id, qty: 0, description: p.documentno };
       if (nz(p.c_charge_id)) { F.err = 'charge payment posting not ported — named'; return false; }
-      var it = ACCT.inTransit(trx, p.c_bankaccount_id, as.c_acctschema_id), un = ACCT.unallocated(trx, p.c_bankaccount_id, as.c_acctschema_id);
+      // Doc_Payment.java:121-166 - the AP leg is Doc.ACCTTYPE_PaymentSelect (B_PaymentSelect_Acct), NOT UnallocatedCash: Doc_AllocationHdr.getPaymentAcct :731-757 clears an APP payment through PaymentSelect, so
+      //   with UnallocatedCash here an allocated vendor payment left Dr Unallocated / Cr PaymentSelect standing (W-MIGRATION-TRADE APPAY; invisible where both accounts are one combination, as GardenWorld's).
+      var it = ACCT.inTransit(trx, p.c_bankaccount_id, as.c_acctschema_id), un = Y(p.isreceipt) ? ACCT.unallocated(trx, p.c_bankaccount_id, as.c_acctschema_id) : ACCT.paymentSelect(trx, p.c_bankaccount_id, as.c_acctschema_id);
       if (Y(p.isreceipt)) { F.line(it, p.c_currency_id, p.payamt, null, base); F.line(un, p.c_currency_id, null, p.payamt, base); }
       else { F.line(un, p.c_currency_id, p.payamt, null, base); F.line(it, p.c_currency_id, null, p.payamt, base); }
       return true;
@@ -860,7 +862,9 @@
       var oo = trx.q("SELECT isbalanced AS b FROM c_acctschema_element WHERE c_acctschema_id=? AND elementtype='OO'", [sch])[0], interOrg = false;   // isInterOrg :564-620
       if (oo && Y(oo.b) && rows.length) { var so = rows[0].org; rows.forEach(function (r) { var op = r.pay ? Number(r.pay.ad_org_id) : so, oi = r.inv ? Number(r.inv.ad_org_id) : so, oc = r.cl ? Number(r.cl.ad_org_id) : so, od = nz(r.l.c_order_id) ? Number((trx.get('c_order', r.l.c_order_id) || {}).ad_org_id) : so; if (r.org !== so || op !== so || oi !== so || oc !== so || od !== so) interOrg = true; }); }
       // getPaymentAcct :728-783 / getCashAcct :791-804 — the account a payment / cash line clears through (null = NONE: no bank account / no cash book)
-      function payAcct(r) { var pr = trx.q('SELECT p.c_bankaccount_id AS b, d.docbasetype AS t, p.isreceipt AS rc, p.isprepayment AS pp, p.c_charge_id AS ch FROM c_payment p JOIN c_doctype d ON d.c_doctype_id=p.c_doctype_id WHERE p.c_payment_id=?', [r.pay.c_payment_id])[0];
+      // read through trx.get (sees the Trx's own pending rows): legacy's SQL runs on the SAME connection as the completing transaction, so a payment saved and completed in ONE Trx (MPayment.completeIt -> allocateIt -> the allocation's
+      //   post) is visible to it; a plain SQL join here read the stored rows only and answered "account not resolvable" (W-MIGRATION-TRADE ONETRX)
+      function payAcct(r) { var pp0 = trx.get('c_payment', r.pay.c_payment_id), pd0 = pp0 && trx.get('c_doctype', pp0.c_doctype_id), pr = pp0 && pd0 ? { b: pp0.c_bankaccount_id, t: pd0.docbasetype, rc: pp0.isreceipt, pp: pp0.isprepayment, ch: pp0.c_charge_id } : null;
         if (!pr || !nz(pr.b)) return null; if (nz(pr.ch)) return ACCT.chargeExpense(trx, pr.ch, sch);
         if (Y(pr.pp)) return Y(pr.rc) ? ACCT.prepaymentC(trx, r.l.c_bpartner_id, sch) : ACCT.prepaymentV(trx, r.l.c_bpartner_id, sch);
         return pr.t === 'APP' ? ACCT.paymentSelect(trx, pr.b, sch) : ACCT.unallocated(trx, pr.b, sch); }

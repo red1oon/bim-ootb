@@ -98,9 +98,9 @@ var J = JSON.stringify;
   guard('RERUN', 'nothing-new', 'a second run makes nothing new', function () {
     var h0 = one('SELECT count(*) AS n FROM m_inventory').n, l0 = one('SELECT count(*) AS n FROM m_inventoryline').n, s0 = onhand(137), r = run(BASE, 'R');
     check('RERUN', 'nothing-new', 'headers, lines and storage unchanged; the answer logs 0 headers and 0 lines of new rows (the draft row N1 is Y)', one('SELECT count(*) AS n FROM m_inventory').n === h0 && one('SELECT count(*) AS n FROM m_inventoryline').n === l0 && onhand(137) === s0 && Number(r.inv) === 0 && Number(r.lines) === 0, { h: [h0, one('SELECT count(*) AS n FROM m_inventory').n], inv: r.inv }); }); verdict('RERUN');
-  guard('REFUSE', 'costing', 'IsUpdateCosting=Y is refused by name, nothing imported', function () {
+  guard('REFUSE', 'costing', 'IsUpdateCosting=Y without the schema / cost type / cost element is refused as legacy does (ImportInventory.java:142-157), nothing imported', function () {
     declare([row('IINV-C1', { value: P1.value, qtycount: 1 })]); var r = run(Object.assign({ IsUpdateCosting: 'Y' }, BASE), 'C1');
-    check('REFUSE', 'costing', 'the run fails with "not ported - named" and the row is untouched (N)', !r.res.ok && /not ported - named/.test(String(r.summary)) && (irow('IINV-C1')[0] || {}).i_isimported === 'N', { ok: r.res.ok, sum: r.summary }); }); verdict('REFUSE');
+    check('REFUSE', 'costing', 'the run fails with legacy\'s "Accounting Schema required!" (IsUpdateCosting is ported, W-MIGRATION-TRADE COST) and the row is untouched (N)', !r.res.ok && /Accounting Schema required/.test(String(r.summary)) && (irow('IINV-C1')[0] || {}).i_isimported === 'N', { ok: r.res.ok, sum: r.summary }); }); verdict('REFUSE');
   var unk = SEEN.filter(function (l) { return /PROC-UNKNOWN-PARA ImportInventory/.test(l); });
   check('P0', 'no-unknown-para', 'no run printed §PROC-UNKNOWN-PARA', unk.length === 0, unk);
   SHIPPED.slice(0, 12).forEach(function (l) { say('  ' + l.slice(0, 220)); });

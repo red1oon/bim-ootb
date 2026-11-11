@@ -6,7 +6,7 @@
 cd "$(dirname "$0")"; mkdir -p /tmp/count_logs; export NODE_PATH="${NODE_PATH:-$HOME/bim-ootb/node_modules}"   # the falsifier needs it in a worktree
 W="migrate_engine open_balances already_there plugin_role_access sap_migrate bc_migrate odoo_form odoo_messy
    import_product import_invoice import_payment import_order import_gljournal import_inventory import_bankstatement
-   bankstatement post_bankstatement sapbc_open seed_patch_idempotent idempiere_open migration_recover release_pane_dismiss hba_seed_plugin"
+   bankstatement post_bankstatement sapbc_open seed_patch_idempotent idempiere_open migration_recover release_pane_dismiss hba_seed_plugin migration_trade"
 [ "${SLOW:-0}" = 1 ] && W="$W idempiere_falsifier migration_journey"   # migration_journey: live page, headless Chromium, ~5 min (R1/R2)
 bad=0
 for w in $W; do

@@ -17,6 +17,11 @@ export const hasMasters = (data) => isExport(data) && !!(data.sets && data.sets[
 export function convert(exp, variables) {
   const conn = exportJson(exp, TEMPLATE.connector), r = run(TEMPLATE, conn, variables || {});
   const book = r.book.filter((b) => !OPEN_ORDER.includes(b.name.slice(2)) || b.rows.length > 1);
+  // STOCK VALUE (W-MIGRATION-TRADE COST): the template's M_InventoryLine provenance already holds each line's product cost (Odoo standard_price). The 17-sheet format has no cost column, so it rides as an
+  //   extra CurrentCostPrice column on the stock-line sheet; the stage-2 stock import turns it into a Cost Adjustment (ImportInventory.java:524-572). A zero / unknown cost stays blank - never invented.
+  const il = book.findIndex((b) => /M_InventoryLine$/.test(b.name)), pv = r.provenance && r.provenance.M_InventoryLine;
+  if (il >= 0 && pv && pv.length === book[il].rows.length - 1 && pv.some((x) => x && Number(x.cost) > 0))
+    book[il] = { ...book[il], rows: book[il].rows.map((row, i) => row.concat([i === 0 ? 'CurrentCostPrice' : (pv[i - 1] && Number(pv[i - 1].cost) > 0 ? Number(pv[i - 1].cost) : '')])) };
   // the non-invent proof on this path: every set the agent read holds exactly the rows Odoo counted (count == rows), said per set when it does not
   const short = conn.report().filter((x) => x.count != null && x.rows !== x.count && !/^(tb|open_moves|account\.group|res\.country|res\.country\.state|res\.company)$/.test(x.set)).map((x) => x.set + ' (Odoo counted ' + x.count + ', the file holds ' + x.rows + ')');
   return { book, manifest: r.manifest, provenance: r.provenance, short };

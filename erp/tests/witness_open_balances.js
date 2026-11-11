@@ -257,7 +257,12 @@ var cents = function (v) { return Math.round(Number(v || 0) * 100); }, money = f
   var mark4 = SHIPPED.length, j3 = s4.execute(only(), jcur), j4 = j3.ok ? s4.after(only(), jcur) : { ok: false, msg: 'stage 1 refused: ' + j3.msg }, ver4 = SHIPPED.slice(mark4).filter(function (l) { return /^§MIG-VERIFY/.test(l); }).pop() || '';
   say('§OB-JSON-ONLY client=' + C4 + ' stage1=' + j3.ok + ' stage2=' + j4.ok + ' ' + ver4 + ' msg=' + String(j3.ok ? j4.msg : j3.msg).slice(0, 260));
   check('JSON-ONLY', 'loads', 'Process + stage 2 complete and the loader\'s own §MIG-VERIFY says PASS', j3.ok && j4.ok && /verdict=PASS judged=[1-9]/.test(ver4), { j3: j3.msg, j4: j4.msg });
-  var cA = cnt(C), cB = cnt(C4), offT = MT17.filter(function (t) { return cA[t] !== cB[t]; });
+  var cA = cnt(C), cB = cnt(C4);
+  // the engine path ALSO carries the stock value: ONE Cost Adjustment document (Import Inventory IsUpdateCosting, ImportInventory.java:524-572; W-MIGRATION-TRADE COST) with a line per stock row - subtracted, and said, so every other count is still exact
+  var caDocs = q("SELECT count(*) AS n FROM m_inventory i JOIN c_doctype d ON d.c_doctype_id=i.c_doctype_id WHERE i.ad_client_id=? AND d.docsubtypeinv='CA'", [C4])[0].n, caLines = q("SELECT count(*) AS n FROM m_inventoryline l JOIN m_inventory i ON i.m_inventory_id=l.m_inventory_id JOIN c_doctype d ON d.c_doctype_id=i.c_doctype_id WHERE l.ad_client_id=? AND d.docsubtypeinv='CA'", [C4])[0].n;
+  say('§OB-JSON-ONLY engine path Cost Adjustment documents=' + caDocs + ' lines=' + caLines + ' (not in the workbook path: the older workbook carries no unit cost)');
+  cB = Object.assign({}, cB, { M_Inventory: cB.M_Inventory - caDocs, M_InventoryLine: cB.M_InventoryLine - caLines });
+  var offT = MT17.filter(function (t) { return cA[t] !== cB[t]; });
   say('§OB-JSON-ONLY tables workbook_path=' + J(cA) + ' engine_path=' + J(cB));
   check('JSON-ONLY', 'same-masters', 'X of N: each of the 17 master tables has the same row count in the tenant loaded from odoo_export.json alone as in the tenant loaded from the agent\'s workbook (X=' + (MT17.length - offT.length) + ' of N=' + MT17.length + ')', MT17.length === 17 && offT.length === 0, offT.map(function (t) { return t + ' workbook ' + cA[t] + ' engine ' + cB[t]; }));
   check('JSON-ONLY', 'same-books', 'the books are the same account by account (' + Object.keys(factOf(C)).length + ' accounts) and the open amount per partner and document kind is the same', J(factOf(C)) === J(factOf(C4)) && Object.keys(factOf(C)).length > 0 && J(openOf(C)) === J(openOf(C4)) && openOf(C).length > 0, { a: factOf(C), b: factOf(C4) });
