@@ -71,6 +71,7 @@
         cols.forEach(function (c) { if (c.m === 'Y' && !(c.s && String(c.s).trim()) && phys.indexOf(c.c) >= 0 && row[c.c] == null) throw new Error('mandatory ' + T + '.' + c.c + ' has no value'); });   // PO.save: FillMandatory
         var ks = Object.keys(row); db.run('INSERT INTO ' + t + ' (' + ks.join(',') + ') VALUES (' + ks.map(function () { return '?'; }).join(',') + ')', ks.map(function (k) { return row[k]; }));
         staged[e.key] = { t: t, id: id, row: row }; stat.elements++;
+        if (t === 'ad_treenodemm') return;   // STAGED ONLY: the menu's place in the tree. It is not a pack record; the AD_Menu element reads it as Parent_ID + SeqNo (MenuElementHandler)
         var type = TYPE[t] || 'D';
         if (t === 'ad_process_para' && pv.elements.some(function (p) { return String(p.table).toLowerCase() === 'ad_process' && staged[p.key] && staged[p.key].id === row.ad_process_id; })) return;   // inside its process (P handler)
         var line = { type: type };

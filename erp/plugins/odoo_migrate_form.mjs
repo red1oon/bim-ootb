@@ -10,7 +10,8 @@
 // Deterministic: no clock, no random.
 import { putFile, dropFile, mapUom, sheetRows, bookToWorkbook } from './ninja_migrate_process.mjs';
 import * as OB from './open_balances.mjs';                    // §E3C-SPEC 1(d)+(e): the open balances of ANY source (prerequisites, the two import processes, the verifier)
-import { isExport, openBalances, hasMasters, convert } from './odoo_migrate_convert.mjs';   // §E3C-SPEC 1(c): the agent's raw odoo_export.json → the open sheets, by the engine on templates/odoo-17.json
+import { hasMasters, convert } from './odoo_migrate_convert.mjs';   // §E3C-SPEC 1(c): the agent's raw odoo_export.json → the whole book, by the engine on templates/odoo-17.json
+import * as OS from './open_sources.mjs';                            // §WIRE-SPEC: the open-balances file of ANY source (Odoo, iDempiere, SAP B1, BC), one mechanism
 export const CLASSNAME = 'org.kernel.odoo.MigrateFromOdoo';
 const NINJA_PROCESS = 9540001, FILE = 'odoo_migration.from-form.xlsx';
 let AP = null;
@@ -40,14 +41,16 @@ export function plan(trx, params, current) {
   //   A workbook (an older download: workbook + manifest.json, with or without odoo_export.json for the open balances) loads exactly as before.
   const xe = !wbf ? files.find((f) => hasMasters(f.data)) : null, eng = xe ? convert(xe.data) : null;
   if (!eng) {
-    if (!wbf) out.problems.push('Pick odoo_export.json from your export folder (or, from an older export, the workbook odoo_migration.xlsx + manifest.json).');
-    else if (!mf) out.problems.push('Pick manifest.json from the same folder (it proves nothing was dropped or made up).');
+    if (!wbf && !OS.detect(files)) out.problems.push('Pick odoo_export.json from your export folder (or, from an older export, the workbook odoo_migration.xlsx + manifest.json).');
+    else if (wbf && !mf) out.problems.push('Pick manifest.json from the same folder (it proves nothing was dropped or made up).');
   } else if (eng.short.length) out.problems.push('odoo_export.json is not complete: ' + eng.short.join('; ') + '. Run the export again.');
   if (!AP || !AP.JAVA || !AP.JAVA['org.idempiere.ninja.process.MigrateExcelData'] || !trx.q("SELECT 1 AS x FROM ad_process WHERE ad_process_id=? AND isactive='Y'", [NINJA_PROCESS]).length)
     out.problems.push('Start the plugin "Ninja data migration" first (Plugins & Releases): this form loads through it.');
-  if (!eng && (!wbf || !mf)) return out;
-  const man = eng ? eng.manifest : mf.data;
-  let book = eng ? eng.book.map((b) => ({ name: b.name, rows: b.rows })) : wbf.data.SheetNames.map((n) => ({ name: n, rows: sheetRows(wbf.data.Sheets[n]) }));
+  // §WIRE-SPEC: an open-balances file (any source) with NO workbook and NO masters is the whole book (open-only: the template's own accounts / partners / locations / price list)
+  const xf = eng ? null : OS.detect(files), openOnly = !eng && !wbf && !!xf;
+  if (!eng && !openOnly && (!wbf || !mf)) return out;
+  const man = eng ? eng.manifest : openOnly ? { sheets: [] } : mf.data;
+  let book = eng ? eng.book.map((b) => ({ name: b.name, rows: b.rows })) : openOnly ? [] : wbf.data.SheetNames.map((n) => ({ name: n, rows: sheetRows(wbf.data.Sheets[n]) }));
   // manifest == what was picked (the export's own count of every sheet)
   if (!eng && man.workbook && man.workbook !== wbf.name) out.problems.push('The manifest is for ' + man.workbook + ', not ' + wbf.name + '.');
   const mSheets = (man.sheets || []).slice();
@@ -56,13 +59,13 @@ export function plan(trx, params, current) {
     else if (s.rows.length - 1 !== m.rows) out.problems.push('Sheet ' + m.sheet + ' has ' + (s.rows.length - 1) + ' rows; the manifest says ' + m.rows + '.'); });
   book.forEach((b) => { if (!mSheets.some((m) => m.sheet === b.name)) out.problems.push('Sheet ' + b.name + ' is not in the manifest.'); });
   // §E3C-SPEC: the optional third file, the agent's RAW rows (odoo_export.json) → the open-balance sheets, appended after the masters (their own manifest counts them)
-  const xf = eng ? null : files.find((f) => isExport(f.data)); let openCfg = null; const openNames = [];
+  let openCfg = null; const openNames = [];
   if (eng) { (man.problems || []).forEach((p) => out.problems.push(p)); book.forEach((b) => { if (/^(I_GLJournal|I_Invoice|C_Bank|C_BankAccount|I_BankStatement)$/.test(tableOfSheet(b.name))) openNames.push(b.name); }); if (openNames.length) openCfg = man; out.source = man; }
   if (xf) {
-    const xm = xf.data.manifest, c = openBalances(xf.data);
+    const xm = xf.data.manifest, cv = OS.convert(xf.data), c = { sheets: OS.sheets(cv, book.filter((b) => b.rows.length > 1).map((b) => tableOfSheet(b.name))), manifest: cv.manifest };   // a base sheet with no data row does not hold the table
     ['db', 'cutover', 'company_id'].forEach((k) => { if (man[k] != null && String(man[k]) !== String(xm[k])) out.problems.push(xf.name + ' is not from the same export as ' + wbf.name + ' (' + k + ': ' + xm[k] + ' / ' + man[k] + ').'); });
     (c.manifest.problems || []).forEach((p) => out.problems.push(p));
-    c.sheets.forEach((sh) => { const name = String(book.length + 1).padStart(2, '0') + sh.table; book.push({ name, rows: sh.rows }); mSheets.push({ sheet: name, rows: sh.rows.length - 1 }); openNames.push(name); });
+    c.sheets.forEach((sh) => { book = book.filter((b) => !(tableOfSheet(b.name) === sh.table && b.rows.length < 2)); const name = String(book.length + 1).padStart(2, '0') + sh.table; book.push({ name, rows: sh.rows }); mSheets.push({ sheet: name, rows: sh.rows.length - 1 }); openNames.push(name); });
     openCfg = c.manifest; out.source = c.manifest;
   }
   const cur = {}; (current || []).forEach((r) => { cur[r.key] = r; });
@@ -186,7 +189,7 @@ function loadOnce(trx, book, open) {
 //   uniqueError); rows refused ONLY for a key held by the tenant are taken out and the load runs again from the savepoint. A key repeated inside the file is still a refusal.
 // heldByIdentifier(trx, book) -> { book, already{sheet: n} } (migrate-recover F3). A master table without a unique index (C_Bank, C_BankAccount) cannot say "already there" through the DB's refusal. The dictionary
 //   says what identifies a record (AD_Column.IsIdentifier = 'Y': what legacy shows as the record's name in every lookup); a file row whose identifier columns the sheet supplies as plain values (no ">") are ALL
-//   equal to exactly ONE row of this tenant is that row, so it is not loaded again. No identifier supplied, or no / several matching rows: the row is left to the loader (nothing guessed). Staging (I_*) sheets are not masters.
+//   equal to exactly as many rows of this tenant as the file has such rows (1 and 1 is the usual case; a shared identifier, C_Location's City, gives n and n) are those rows, so they are not loaded again. No identifier supplied, or no / several matching rows: the row is left to the loader (nothing guessed). Staging (I_*) sheets are not masters.
 function heldByIdentifier(trx, book) {
   const C = Number(trx.env.client || 0), already = {};
   const tblId = (name) => trx.q('SELECT ad_table_id AS i, tablename AS t FROM ad_table WHERE upper(tablename)=upper(?)', [name])[0];
@@ -205,12 +208,17 @@ function heldByIdentifier(trx, book) {
     const idOf = (x) => (x == null ? '' : String(x).trim()), tenantBy = {};
     // a blank identifier cell is not compared (legacy fills a blank Name with "." - MBPartnerLocation); the other identifier cells and every lookup must be equal
     const sigOf = (r) => plain.filter((i) => idOf(r[i]) !== '');
-    const countOf = (cols, lk) => { const sk = cols.join(','); const m = tenantBy[sk] = tenantBy[sk] || (() => { const o = {}; rowsT.forEach((x) => { const k = cols.map((i) => idOf(x[H[i].toLowerCase()])).concat(looks.map((l) => idOf(x[l.col]))).join('\u0001'); o[k] = (o[k] || 0) + 1; }); return o; })();
-      return m[cols.map((i) => idOf(r0[i])).concat(lk).join('\u0001')]; };
-    let r0 = null;
-    const kept = b.rows.filter((r, i) => { if (i === 0 || r.every((v) => v === '')) return true; const cols = sigOf(r); if (!cols.length && !looks.length) return true;
+    const tenantCount = (cols, key) => { const sk = cols.join(','); const m = tenantBy[sk] = tenantBy[sk] || (() => { const o = {}; rowsT.forEach((x) => { const k = cols.map((i) => idOf(x[H[i].toLowerCase()])).concat(looks.map((l) => idOf(x[l.col]))).join('\u0001'); o[k] = (o[k] || 0) + 1; }); return o; })();
+      return m[key] || 0; };
+    // §OF-GAP (prompts/MIGRATE_INSTALL_TENANT.md §WIRE-SPEC): the identifier can be shared (C_Location's only IsIdentifier column is City: two addresses in "Tracy" are two file rows with ONE signature).
+    //   "Exactly ONE tenant row equals this file row" was too strict for them: the tenant holds the same number of rows as the file has with that signature = each one is already there (a bijection by
+    //   count, nothing guessed); a different count (the tenant holds more or fewer than the file) is still left to the loader.
+    const keyed = b.rows.map((r, i) => { if (i === 0 || r.every((v) => v === '')) return null; const cols = sigOf(r); if (!cols.length && !looks.length) return null;
       const lk = looks.map((l) => (r[l.i] === '' || r[l.i] == null ? '' : resolve(l, r[l.i])));
-      if (lk.some((v) => v == null) || (!cols.length && lk.every((v) => v === ''))) return true; r0 = r; return countOf(cols, lk) !== 1; });
+      if (lk.some((v) => v == null) || (!cols.length && lk.every((v) => v === ''))) return null;
+      const key = cols.map((c) => idOf(r[c])).concat(lk).join('\u0001'); return { cols, key, sig: cols.join(',') + '\u0002' + key }; });
+    const inFile = {}; keyed.forEach((x) => { if (x) inFile[x.sig] = (inFile[x.sig] || 0) + 1; });
+    const kept = b.rows.filter((r, i) => !keyed[i] || tenantCount(keyed[i].cols, keyed[i].key) !== inFile[keyed[i].sig]);
     if (kept.length === b.rows.length) return b;
     already[b.name] = b.rows.length - kept.length; return { name: b.name, rows: kept };
   });

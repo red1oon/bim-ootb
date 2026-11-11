@@ -8,8 +8,7 @@ var http = require('http'), fs = require('fs'), path = require('path');
 var { chromium } = require('/home/red1/bim-ootb/tests/node_modules/playwright');
 
 var ROOT = path.join(__dirname, '..');
-// Cross-leak baseline: GardenWorld's BPartners in the shipped seed. Legacy idempiere_test has 18; the seed carries 24 (6 HBA rows, #645) - a seed divergence reported as INFO, NOT a leak.
-var GW_SEED = Number(require('child_process').execFileSync('sqlite3', [path.join(ROOT, 'ad_seed.db'), 'SELECT COUNT(*) FROM c_bpartner WHERE ad_client_id=11'], { encoding: 'utf8' }).trim()), GW_LEGACY = 18;
+var GW_LEGACY = 18;   // legacy idempiere_test: GardenWorld (client 11) C_BPartner = 18 (read with psql); the HBA demo's 6 extra partners are plugin org.kernel.hba.demo, not base seed
 var MIME = { '.html': 'text/html', '.js': 'text/javascript', '.wasm': 'application/wasm', '.json': 'application/json', '.css': 'text/css', '.db': 'application/octet-stream' };
 var server = http.createServer(function (req, res) {
   var rel = decodeURIComponent(req.url.split('?')[0]), f = path.join(ROOT, rel);
@@ -105,8 +104,7 @@ function probe() {
   // Legacy Initial Client Setup creates no invoice (MSetup.java: 0 MInvoice) - the born company starts with 0 invoices (F4)
   ck(Number(p.invClientScoped) === 0 && Number(p.invLines) === 0, 'the born company has 0 invoices / 0 invoice lines, as legacy MSetup makes none (' + p.invClientScoped + '/' + p.invLines + ')');
   ck(String(p.receivableValue) === '12110', 'the default customer receivable account chain resolves to the oracle receivable (12110)');
-  console.log('  §GW-SEED-INFO seed=' + GW_SEED + ' legacy=' + GW_LEGACY + (GW_SEED !== GW_LEGACY ? ' DIVERGENCE ' + (GW_SEED - GW_LEGACY) + ' non-legacy rows (HBA seed, see MIGRATE_INSTALL_TENANT §CLOSEOUT)' : ''));
-  ck(Number(p.gwBp) === GW_SEED, 'GardenWorld data untouched by the birth (' + p.gwBp + ' BPartners == shipped seed ' + GW_SEED + ') — 0 cross-leak');
+  ck(Number(p.gwBp) === GW_LEGACY, 'GardenWorld data untouched (' + p.gwBp + ' BPartners == legacy ' + GW_LEGACY + ') — 0 cross-leak');
   ck(entered, 'the born tenant ENTERS — its user list shows (' + enterUser + ')');
   ck(Number(pReload) === 17, 'the born tenant STICKS — still resident after a plain reload (no param)');
   ck(pageErrors.length === 0, 'zero page errors' + (pageErrors.length ? ' — ' + pageErrors[0] : ''));

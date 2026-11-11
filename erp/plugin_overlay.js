@@ -190,7 +190,7 @@
   //   remembered (kv 'builtins_seen'); from then on the user's Install/Start/Stop/Uninstall decide - a stopped or uninstalled builtin is never brought back.
   var BUILTINS = ['plugins/ninja_excel.mjs', 'plugins/ninja_create.mjs', 'plugins/bim_document.mjs'];   // + the BIM Document core plugin (ERP_IDEMPIERE_UX_PARITY §BIMDOC): window, tab under Project Task, DocAction family, computed progress
   // INSTALLED BUT NOT STARTED: legacy ships these bundles in the stack with nothing reachable until an admin switches them on (Plugins & Releases -> Enable). Web Services = ERP_WS_API.md S6.
-  var INSTALL_ONLY = ['plugins/webservices.mjs', 'plugins/pos_integration.mjs', 'plugins/mf_lens.mjs', 'plugins/ninja_migrate.mjs', 'plugins/odoo_migrate.mjs', 'plugins/bc_migrate.mjs', 'plugins/sap_migrate.mjs'];   // + the head-office POS integration (POS_PLUGIN_LOCAL_FIRST.md §11): installed, stopped; the System Administrator enables it; + Ninja data migration (bim-compiler MIGRATE_INSTALL_TENANT.md §NINJA-LOADER-SPEC)
+  var INSTALL_ONLY = ['plugins/webservices.mjs', 'plugins/pos_integration.mjs', 'plugins/mf_lens.mjs', 'plugins/ninja_migrate.mjs', 'plugins/odoo_migrate.mjs', 'plugins/bc_migrate.mjs', 'plugins/sap_migrate.mjs', 'plugins/idempiere_migrate.mjs', 'plugins/hba_demo.mjs'];   // + the head-office POS integration (POS_PLUGIN_LOCAL_FIRST.md §11): installed, stopped; the System Administrator enables it; + Ninja data migration (bim-compiler MIGRATE_INSTALL_TENANT.md §NINJA-LOADER-SPEC)
   function _builtins() {
     if (typeof location === 'undefined') return Promise.resolve();
     return _kvGet('builtins_seen', []).then(function (seen) {

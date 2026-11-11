@@ -10,8 +10,7 @@ var http = require('http'), fs = require('fs'), path = require('path');
 var { chromium } = require('/home/red1/bim-ootb/tests/node_modules/playwright');
 
 var ROOT = path.join(__dirname, '..');
-// Cross-leak baseline: GardenWorld's BPartners in the shipped seed. Legacy idempiere_test has 18; the seed carries 24 (6 HBA rows, #645) - a seed divergence reported as INFO, NOT a leak.
-var GW_SEED = Number(require('child_process').execFileSync('sqlite3', [path.join(ROOT, 'ad_seed.db'), 'SELECT COUNT(*) FROM c_bpartner WHERE ad_client_id=11'], { encoding: 'utf8' }).trim()), GW_LEGACY = 18;
+var GW_LEGACY = 18;   // legacy idempiere_test: GardenWorld (client 11) C_BPartner = 18 (read with psql); the HBA demo's 6 extra partners are plugin org.kernel.hba.demo, not base seed
 var MIME = { '.html': 'text/html', '.js': 'text/javascript', '.wasm': 'application/wasm', '.json': 'application/json', '.css': 'text/css', '.db': 'application/octet-stream' };
 var server = http.createServer(function (req, res) {
   var rel = decodeURIComponent(req.url.split('?')[0]), f = path.join(ROOT, rel);
@@ -120,8 +119,7 @@ function probe() {
   ck(p.clients.some(function (c) { return /:System$/.test(c); }) && p.clients.some(function (c) { return /:GardenWorld$/.test(c); }) && p.clients.some(function (c) { return /:SysAcme$/.test(c); }), 'login switcher now lists System + GardenWorld + SysAcme (0 leak)');
   ck(Number(p.sysProcAccess) === 1, 'the genesis process is granted to the System role (53161 → role 0)');
   ck(Number(p.gwProcAccess) === 0, 'SECURITY — the genesis process is NOT granted to any GardenWorld role (client admin cannot create a company)');
-  console.log('  §GW-SEED-INFO seed=' + GW_SEED + ' legacy=' + GW_LEGACY + (GW_SEED !== GW_LEGACY ? ' DIVERGENCE ' + (GW_SEED - GW_LEGACY) + ' non-legacy rows (HBA seed, see MIGRATE_INSTALL_TENANT §CLOSEOUT)' : ''));
-  ck(Number(p.gwBp) === GW_SEED, 'GardenWorld data untouched by the birth (' + p.gwBp + ' BPartners == shipped seed ' + GW_SEED + ') — 0 cross-leak');
+  ck(Number(p.gwBp) === GW_LEGACY, 'GardenWorld data untouched (' + p.gwBp + ' BPartners == legacy ' + GW_LEGACY + ') — 0 cross-leak');
   ck(enterOk, 'the new tenant ENTERS — its user list shows');
   ck(pageErrors.length === 0, 'zero page errors' + (pageErrors.length ? ' — ' + pageErrors[0] : ''));
 

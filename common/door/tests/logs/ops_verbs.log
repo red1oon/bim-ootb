@@ -1,0 +1,26 @@
+  ✅ O1 legacy.status = docker + curl read here; a missing container is not UP  verdict=UP expected=UP http=200 | no-container=PARTIAL
+  ✅ O2a legacy.query total = an independent count(*); limit caps the rows, total stays whole  total=2877 want=2877 rows=3
+  ✅ O2b an unknown column is refused naming the real ones  refused table c_order has no column "nosuchcolumn"
+  ✅ O2c legacy down = inconclusive, not an empty list  inconclusive
+  ✅ O3a C_Order.DocAction: default CO on both sides, verdict SAME  twin=CO legacy=CO SAME
+  ✅ O3b C_ConversionType_ID: legacy login default id = an independent IsDefault read; the twin side says what its slice lacks  legacy=114 independent=114 twinNote=table C_ConversionType is not in this dictionary slice
+  ✅ O3c legacy down = twin side only, marked not checked (never SAME)  TWIN-ONLY notChecked=1
+  ✅ O3d an unknown column is refused naming the table's columns  refused
+  ✅ O4a erp.compare: the differing cells equal those recorded by the 2026-11-10 hand twin check  got=11 recorded=11 match=70
+  ✅ O4b a legacy number that does not exist is refused (nothing compared); the ambiguous-number path is NOT exercised here (no duplicate Document No known in this pilot)  refused legacy has no c_order with Document No 99999999 in client 11
+  ✅ O4c legacy down = inconclusive  inconclusive
+  ✅ O5a idempiere.where total = an independent grep count (files with CRLF line endings included)  total=129 grep=129
+  ✅ O5b the CalloutOrder line that sets the Standard Order invoice rule is found, with its text  hits=20
+  ✅ O5c no match is INCONCLUSIVE (not 0 hits); a symbol with shell characters is refused  inconclusive / refused
+  ✅ O6a PASS keeps PASS with its counts; the log file holds the witness output  ok PASS
+  ✅ O6b FAIL keeps FAIL (an answer) and lists the failing line  ok FAIL
+  ✅ O6c INCONCLUSIVE stays inconclusive  inconclusive
+  ✅ O6d no verdict line is an ERROR, whatever the exit code was  error the ops program could not answer (exit 1): stub_none printed no verdict line (exit 0 is no
+  ✅ O6e witness.last returns the recorded run without re-running; a never-run witness is refused  ok
+  ✅ O7 an AI's call to a read verb runs (not held as a claim)  ok / ok
+  ✅ O8a erp.pack: zip written; sha256 = an independent sha256sum; AD_Table / AD_Column / AD_Process counts = independent unzip counts  written sha=934854c83e ind=934854c83e table/col/proc=1/32/2
+  ✅ O8b the same call again is `unchanged` with the same sha256  ok unchanged
+  ✅ O8c the same version with an edited workbook is refused (released pack is immutable), the zip is untouched  refused refused: build/opsverbs_2376812/2Pack_1.0.0.zip is a released pack with different content 
+  ✅ O8d an absolute path, .., a non-.xlsx, a missing file and a bad version are each refused and write nothing  refused,refused,refused,refused,refused
+  ✅ O8e an AI's erp.pack is a held claim and writes nothing  claim
+§WITNESS_OPS_VERBS pass=25 fail=0 inconclusive=0 verdict=PASS
