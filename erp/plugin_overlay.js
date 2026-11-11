@@ -76,7 +76,8 @@
     if (!url) return Promise.resolve([]);
     var R = global.AdCallout && global.AdCallout.RUNTIME; if (!R || !R.bindSqlFunctions) return Promise.reject(new Error('AdCallout.RUNTIME.bindSqlFunctions missing'));
     return import(/* @vite-ignore */ url).then(function (m) {
-      var names = R.bindSqlFunctions(function (n, f) { db.create_function(n, f); }, (m.functions || (m.default && m.default.functions))(R));
+      var fns = (m.functions || (m.default && m.default.functions))(R), names = [];
+      global.ErpExportSafe.register(db, 'pack-fn:' + bundleId, function (d) { names = R.bindSqlFunctions(function (n, f) { d.create_function(n, f); }, fns); });   // §EXPORTSAFE: re-bound after every db.export()
       console.log('§PACKIN-FN bundle=' + bundleId + ' bound=[' + names.join(',') + '] from=' + String(url).split('/').pop());
       return names;
     });
@@ -604,5 +605,5 @@
   function hasPending(trig) { return !!(_reg && _reg.hasPending && _reg.hasPending(trig)); }
   function noteTouched(tables) { return _reg && _reg.noteTouched ? _reg.noteTouched(tables) : []; }
 
-  global.PluginEngine = { open: open, ensure: ensure, boot: boot, need: need, hasPending: hasPending, noteTouched: noteTouched, persist: function () { return _persist(); }, _reg: function () { return _reg; } };
+  global.PluginEngine = { open: open, ensure: ensure, boot: boot, need: need, hasPending: hasPending, noteTouched: noteTouched, persist: function () { return _persist(); }, _bindFunctions: _bindFunctions, _reg: function () { return _reg; } };
 })(typeof window !== 'undefined' ? window : this);

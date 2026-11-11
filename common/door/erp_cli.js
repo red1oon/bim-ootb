@@ -34,7 +34,7 @@ function loadEngine(O) {
     const A = require(path.join(E, 'ad_callout.js'));
     ['support', 'support_stock', 'views', 'currency', 'uom', 'pricing', 'tax', 'sqlfn'].forEach(m => { try { require(path.join(E, 'callouts', m + '.js')); } catch (e) { say('LOAD-SKIP callouts/' + m + ': ' + e.message); } });
     fs.readdirSync(path.join(E, 'callouts')).filter(f => /^(Callout|CostAdj|InOutFreight)/.test(f)).forEach(f => { try { require(path.join(E, 'callouts', f)); } catch (e) { say('LOAD-SKIP callouts/' + f + ': ' + e.message); } });
-    let udf = 0; A.RUNTIME.registerSqlFunctions((nm, f) => { O.db.create_function(nm, f); udf++; });   // the page does the same (idempiere.html :1175); sql.js takes the arity from f.length
+    let udf = 0; require(path.join(E, 'db_export_safe.js')).register(O.db, 'core-udf', d => A.RUNTIME.registerSqlFunctions((nm, f) => { d.create_function(nm, f); udf++; }));   // §EXPORTSAFE: re-bound after every db.export() (the snapshot below)   // the page does the same (idempiere.html :1175); sql.js takes the arity from f.length
     A.bind((s, p) => O.rows(s, p), { log: () => {} });
     O.udf = udf;
   } finally { console.log = log; }

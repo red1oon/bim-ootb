@@ -24,7 +24,7 @@ function load(extraSql) {
 function build(db) {
   const A = require('./ad_callout.js');
   ['support', 'support_stock', 'views', 'currency', 'uom', 'pricing', 'tax', 'sqlfn'].forEach(function (m) { require('./callouts/' + m + '.js'); });
-  A.RUNTIME.registerSqlFunctions(function (n, f) { db.create_function(n, f); });
+  require('./db_export_safe.js').registerCoreUdfs(db, A);   // §EXPORTSAFE: re-bound after every db.export()
   const ML = require('./model_layer.js');
   fs.readdirSync(path.join(__dirname, 'processes')).filter(function (f) { return /\.js$/.test(f); }).forEach(function (f) { try { require('./processes/' + f); } catch (e) { /* a port needing a browser-only global stays unregistered, named by the process answer */ } });
   ['model_trade', 'model_ctor', 'model_cost', 'model_match', 'model_order', 'model_invoice', 'model_post', 'model_master', 'model_bankstatement'].forEach(function (m) { require('./' + m + '.js'); });

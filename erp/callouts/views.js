@@ -10,7 +10,6 @@
   'use strict';
   var A = (typeof module !== 'undefined' && module.exports) ? require('../ad_callout.js') : global.AdCallout;
   var R = A.RUNTIME, M = R.M;
-  var done = {};
   function cols(t) { try { return R.DB.query('PRAGMA table_info(' + t + ')').map(function (r) { return String(r.name).toLowerCase(); }); } catch (e) { return []; } }
   function neg(col, cond) { return 'CASE WHEN ' + cond + ' THEN ' + col + ' * -1 ELSE ' + col + ' END'; }
   var DEF = {
@@ -43,12 +42,11 @@
       return 'CREATE TEMP VIEW IF NOT EXISTS c_invoice_v AS ' + a + ' UNION ' + b;
     }
   };
-  // ensureView(name) — create the TEMP view once per bound DB; true when it exists afterwards
+  // ensureView(name) — create the TEMP view when the connection lacks it; true when it exists afterwards. A LIVE probe of main + temp schema, never a remembered flag:
+  //   db.export() drops every TEMP view while the handle stays (§EXPORTSAFE-SPEC), so a "done" cache goes stale-true.
   M.ensureView = function (name) {
     name = String(name).toLowerCase();
-    var key = name + '@' + (R.DB ? R.DB.__id || (R.DB.__id = Math.random()) : 0);
-    if (done[key]) return true;
-    try { if (R.DB.query("SELECT name FROM sqlite_master WHERE type IN ('table','view') AND lower(name)=?", [name]).length) return (done[key] = true); } catch (e) {}
+    try { if (R.DB.query("SELECT name FROM sqlite_master WHERE type IN ('table','view') AND lower(name)=? UNION SELECT name FROM sqlite_temp_master WHERE type='view' AND lower(name)=?", [name, name]).length) return true; } catch (e) {}
     var f = DEF[name]; if (!f) return false;
     try {
       R.DB.query(f(true));
@@ -59,7 +57,7 @@
           R.unportedDep('C_Invoice_v.DueDate', 'SQL function paymentTermDueDate (column left NULL; no core callout reads it)');
         }
       }
-      return (done[key] = true);
+      return true;
     } catch (e) { R.unportedDep('view ' + name, (e && e.message) || String(e)); return false; }
   };
 
