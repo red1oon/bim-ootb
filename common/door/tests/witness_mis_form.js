@@ -1,7 +1,8 @@
 // ⚠ DO NOT REMOVE — W-MIS-FORM (bim-compiler prompts/CLI_ERP_IVR.md §15: mis.new dry=Y, the New and Edit forms in mis_core.js). READ THE LOG; an exit code is not evidence. Keys in, door lines and screen text out.
 //   F1 ISSUE (a dry run that writes, or asks for the wrong fields) · F2 ISSUE (the New form shows more or fewer fields than the engine needs) · F3 ISSUE (a write after Esc) · F4 ISSUE (the Edit form differs from the dictionary)
 //   F5 ISSUE (an edit sends columns the person did not change) · F6 ISSUE (a refusal throws the typed values away) · F7 ISSUE (a core that grew a Node dependency).
-//   Falsifiers: MIS_SCREEN_BREAK=extrafields (must FAIL F4) · sendall (must FAIL F5). Each claim can say VACUOUS/INCONCLUSIVE.
+//   N1 ISSUE (a lookup shown as a number) · T5 ISSUE (the engine fills columns it does not report) · C1 ISSUE (Copy copies what the dictionary forbids, or shows the wrong values) · C2 ISSUE (a copy that changes the source or loses columns) · C3 ISSUE (a duplicate copy saved)
+//   Falsifiers: MIS_SCREEN_BREAK=extrafields (must FAIL F4) · sendall (must FAIL F5) · copyall (must FAIL C1). Each claim can say VACUOUS/INCONCLUSIVE.
 'use strict';
 const fs = require('fs'), path = require('path');
 const { kit, tmp, ROOT } = require('./_kit');
@@ -18,7 +19,7 @@ const k = kit('W-MIS-FORM');
   const doorRun = async (line) => { process.env.BIM_DOOR_JOURNAL = path.join(dir, 'jx' + (++jn) + '.jsonl'); return createDoor({}).runLine(line, { actor: 'human' }); };
   const sqj = (q) => { const o = require('child_process').spawnSync('sqlite3', ['-readonly', '-json', path.join(ROOT, 'erp/ad_seed.db'), q], { encoding: 'utf8' }).stdout.trim(); return o ? JSON.parse(o) : []; };
   const screens = (r) => r.outs.filter(s => !/^-> /.test(s) && !/^key /.test(s));
-  const formScreen = (r) => screens(r).filter(s => /^(New|Edit) /.test(s)).slice(-1)[0] || '';
+  const formScreen = (r) => screens(r).filter(s => /^(New|Edit|Copy) /.test(s)).slice(-1)[0] || '';
   const fieldLines = (scr) => scr.split('\n').filter(l => /^( > |   )[* ] \S/.test(l));
   const POL = { kind: 'C_BPartner' };
   // F1
@@ -52,5 +53,27 @@ const k = kit('W-MIS-FORM');
   // F6: a refusal keeps the form and its values
   const n6 = nops(), r6 = await drive(Object.assign({ filters: [{ col: 'value', value: 'ZZ400' }] }, POL), ['+', { text: 'ZZ400' }, 'Tab', { text: 'Dup Four' }, 'Enter', 'y']), last = screens(r6).slice(-1)[0] || '';
   k.chk('F6 a refusal keeps the form with the typed values and writes nothing (a duplicate Value)', /refused:/.test(last) && /\[ZZ400\]/.test(last) && /\[Dup Four/.test(last) && nops() === n6 && (await doorRun('mis.list kind=C_BPartner value=ZZ400')).answer.total === 1, String((last.match(/refused:[^\n]*/) || [''])[0]).slice(0, 110) + ' ops+' + (nops() - n6));
+  // N1: lookups in the Edit form are names (an independent SQL names them), and Enter through all fields is still a NO-OP
+  const DRs = require('./erp_draft.js'), D1 = await DRs.draftOrder({ oplog }, {}), oq = sqj("SELECT p.name AS partner, l.name AS pricelist FROM c_order o JOIN c_bpartner p ON p.c_bpartner_id=o.c_bpartner_id JOIN m_pricelist l ON l.m_pricelist_id=o.m_pricelist_id WHERE o.c_order_id=" + D1.id)[0];
+  let oq2 = oq; if (!oq2) { const rr = (await doorRun('mis.read kind=Order id=' + D1.id)).answer.record; oq2 = { partner: Object.values(sqj('SELECT name FROM c_bpartner WHERE c_bpartner_id=' + rr.c_bpartner_id)[0] || {})[0], pricelist: Object.values(sqj('SELECT name FROM m_pricelist WHERE m_pricelist_id=' + rr.m_pricelist_id)[0] || {})[0] }; }
+  const ro = await drive({ kind: 'Order', filters: [{ col: 'documentno', value: D1.number }] }, ['Enter']), of = ro.state.form ? ro.state.form.fields : [], fb = (n) => (of.find(f => f.name === n) || {}).value;
+  const noo = await drive({ kind: 'Order', filters: [{ col: 'documentno', value: D1.number }] }, ['Enter'].concat(new Array(of.length).fill('Enter')));
+  k.chk('N1 lookups are names: the Edit form of a draft order shows the partner and the price list as the names an independent SQL gives, and Enter through every field still sends nothing', !!oq2 && fb('C_BPartner_ID') === oq2.partner && (oq2.pricelist == null || fb('M_PriceList_ID') === oq2.pricelist) && !noo.lines.some(l => /^mis\.update/.test(l)), 'partner=' + fb('C_BPartner_ID') + ' (sql ' + (oq2 && oq2.partner) + ') pricelist=' + fb('M_PriceList_ID') + ' (sql ' + (oq2 && oq2.pricelist) + ') fields=' + of.length);
+  // T5: the engine's filled list
+  const nw = await doorRun('mis.new kind=C_BPartner Value=ZZ402 Name="Filled Check"'), fa = (nw.answer && nw.answer.filled) || [], recK = Object.keys((nw.answer && nw.answer.record) || {}), noteM = /columns filled by the engine \(([^)]*)\)/.exec(r2.outs.join('\n'));
+  k.chk('T5 the engine says what it filled: every listed column is on the stored record, none was given, the count equals defaulted, and the form note names the first six', fa.length > 3 && fa.every(c => recK.includes(c)) && !fa.includes('value') && !fa.includes('name') && fa.length === nw.answer.defaulted && !!noteM && noteM[1].split(',').filter(x => !/more/.test(x)).length >= 6, 'filled=' + fa.length + ' defaulted=' + (nw.answer && nw.answer.defaulted) + ' note=' + (noteM && noteM[1]));
+  // C1..C3: Copy
+  const CTAB = "(SELECT tb.ad_tab_id FROM ad_tab tb JOIN ad_table t ON t.ad_table_id=tb.ad_table_id WHERE t.tablename='C_BPartner' AND tb.isactive='Y' ORDER BY tb.tablevel, tb.seqno LIMIT 1)";
+  const cdict = sqj("SELECT c.name AS n, c.ad_reference_id AS r, lower(c.columnname) AS cn FROM ad_field f JOIN ad_column c ON c.ad_column_id=f.ad_column_id WHERE f.ad_tab_id=" + CTAB + " AND f.isactive='Y' AND c.isactive='Y' AND f.isdisplayed='Y' AND c.iskey<>'Y' AND COALESCE(c.isallowcopy,'Y')<>'N' AND COALESCE(f.isreadonly,'N')<>'Y' AND COALESCE(NULLIF(c.readonlylogic,''), NULLIF(f.readonlylogic,'')) IS NULL AND c.ad_reference_id IN (10,14,11,22,12,29,17,20,15,16,19,18,30)");
+  await doorRun('mis.update kind=C_BPartner id=' + id4 + ' description="copy me"');   // a column the source has and the copy must carry
+  const src = (await doorRun('mis.read kind=C_BPartner id=' + id4)).answer.record, CF = { kind: 'C_BPartner', filters: [{ col: 'value', value: 'ZZ400' }] };
+  const rc = await drive(CF, ['C']), cf = rc.state.form ? rc.state.form.fields : [];
+  const plainSame = cf.filter(f => !['tabledirect', 'table', 'search'].includes(f.type)).every(f => f.value === (src[f.name.toLowerCase()] == null ? '' : String(src[f.name.toLowerCase()])));
+  k.chk('C1 the Copy form = an independent dictionary read (displayed, not the key, IsAllowCopy not N, not read-only), each plain value prefilled from the source record, lookups as names', cdict.length > 0 && JSON.stringify(cf.map(f => f.label).sort()) === JSON.stringify(cdict.map(d => d.n).sort()) && plainSame && /^Copy /.test(formScreen(rc)), 'form=' + cf.length + ' dictionary=' + cdict.length + (JSON.stringify(cf.map(f => f.label).sort()) === JSON.stringify(cdict.map(d => d.n).sort()) ? '' : ' extra=' + cf.map(f => f.label).filter(x => !cdict.map(d => d.n).includes(x)).join('|')));
+  const nC = cf.length, n8 = nops(), rcp = await drive(CF, ['C', { text: 'ZZ403' }, 'Tab', { text: 'Copy Four' }].concat(new Array(Math.max(0, nC - 1)).fill('Enter'), ['y', 'Esc'])), cl = rcp.lines.filter(l => /^mis\.new /.test(l) && !/ dry=Y/.test(l));
+  const cn = (await doorRun('mis.list kind=C_BPartner value=ZZ403 columns=C_BPartner_ID,Name,Description,C_BP_Group_ID names=Y')).answer, srcAfter = (await doorRun('mis.read kind=C_BPartner id=' + id4)).answer.record, srcGroup = (await doorRun('mis.list kind=C_BPartner value=ZZ400 columns=C_BP_Group_ID names=Y')).answer.rows[0].C_BP_Group_ID;
+  k.chk('C2 Copy with Value and Name changed sends ONE mis.new carrying the copied columns, creates the record with the source\'s Description, and leaves the source unchanged', cl.length === 1 && /Value=ZZ403/.test(cl[0]) && /Name="Copy Four"/.test(cl[0]) && cl[0].includes('Description="copy me"') && cn.total === 1 && cn.rows[0].Description === 'copy me' && cn.rows[0].C_BP_Group_ID === srcGroup && srcAfter.name === src.name && String(srcAfter.updated) === String(src.updated), 'conds=' + [cl.length === 1, /Value=ZZ403/.test(cl[0] || ''), /Name="Copy Four"/.test(cl[0] || ''), (cl[0] || '').includes('Description="copy me"'), cn.total === 1, cn.rows[0] && cn.rows[0].C_BP_Group_ID === srcGroup, srcAfter.name === src.name, String(srcAfter.updated) === String(src.updated)].join(',') + ' line=' + (cl[0] || '').slice(0, 90) + ' new_group=' + (cn.rows[0] && cn.rows[0].C_BP_Group_ID) + ' source_group=' + srcGroup + ' ops+' + (nops() - n8));
+  const n9 = nops(), rd = await drive(CF, ['C'].concat(new Array(nC).fill('Enter'), ['y'])), lastC = screens(rd).slice(-1)[0] || '';
+  k.chk('C3 a copy that keeps the source\'s own Value is refused by the engine, nothing written, and the form keeps the values', /refused:/.test(lastC) && !!rd.state.form && rd.state.form.fields[0].value === 'ZZ400' && nops() === n9 && (await doorRun('mis.list kind=C_BPartner value=ZZ400')).answer.total === 1, String((lastC.match(/refused:[^\n]*/) || [''])[0]).slice(0, 100) + ' ops+' + (nops() - n9));
   return k.end();
 })().catch(e => { console.log('§W-MIS-FORM ERROR ' + e.stack); process.exit(2); });

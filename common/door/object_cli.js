@@ -85,7 +85,7 @@ function edit(rows, t, cols) {
   const have = (tb, c) => rows("SELECT 1 FROM pragma_table_info('" + tb + "') WHERE lower(name)=?", [c]).length > 0, tbl = (n) => rows("SELECT name FROM sqlite_master WHERE type='table' AND lower(name)=?", [n]).length > 0;
   const tab = tbl('ad_tab') && tbl('ad_field') ? rows('SELECT ad_tab_id FROM ad_tab WHERE ad_table_id=? AND isactive=\'Y\' ORDER BY tablevel, seqno', [t.ad_table_id])[0] : null;
   const F = {}; if (tab) rows('SELECT * FROM ad_field WHERE ad_tab_id=? AND isactive=\'Y\'', [tab.ad_tab_id]).forEach(f => { F[f.ad_column_id] = f; });
-  const C = {}; const cc = ['help', 'readonlylogic', 'isalwaysupdateable', 'ad_val_rule_id'].filter(c => have('ad_column', c));
+  const C = {}; const cc = ['help', 'readonlylogic', 'isalwaysupdateable', 'ad_val_rule_id', 'isallowcopy'].filter(c => have('ad_column', c));
   if (cc.length) rows('SELECT ad_column_id, ' + cc.join(', ') + ' FROM ad_column WHERE ad_table_id=? AND isactive=\'Y\'', [t.ad_table_id]).forEach(r => { C[r.ad_column_id] = r; });
   const VR = {}; if (tbl('ad_val_rule')) rows('SELECT ad_val_rule_id, code FROM ad_val_rule').forEach(r => { VR[r.ad_val_rule_id] = r.code; });
   const RT = {}; if (tbl('ad_ref_table')) rows('SELECT r.ad_reference_id, t.tablename, k.columnname AS kc, d.columnname AS dc FROM ad_ref_table r JOIN ad_table t ON t.ad_table_id=r.ad_table_id JOIN ad_column k ON k.ad_column_id=r.ad_key JOIN ad_column d ON d.ad_column_id=r.ad_display WHERE r.isactive=\'Y\'').forEach(r => { RT[r.ad_reference_id] = r; });
@@ -97,6 +97,7 @@ function edit(rows, t, cols) {
     const rol = nz(k.readonlylogic) ? k.readonlylogic : (f && nz(f.readonlylogic) ? f.readonlylogic : null); if (rol) o.readOnlyLogic = rol;
     if (f && f.isreadonly === 'Y') o.fieldReadOnly = true;
     if (k.isalwaysupdateable === 'Y') o.alwaysUpdateable = true;
+    if (k.isallowcopy === 'N') o.allowCopy = false;   // GridTab.dataNew(copy) leaves this column out (CLI_ERP_IVR §16)
     const h = nz(k.help) ? k.help : (f && nz(f.help) ? f.help : null); if (h) o.help = h;
     const vr = k.ad_val_rule_id != null ? k.ad_val_rule_id : (f && f.ad_val_rule_id); if (nz(vr) && VR[vr] != null) o.valRule = { id: vr, code: VR[vr] };
     const rid = c.ad_reference_value_id; if ((c.ad_reference_id === 18 || c.ad_reference_id === 30) && RT[rid]) o.lookup = { table: RT[rid].tablename, key: RT[rid].kc, display: RT[rid].dc };
@@ -258,6 +259,7 @@ function lookupNames(O, t, cols, names, rows) {
     const c = cols.filter(x => x.columnname === n)[0]; if (!c || [18, 19, 30].indexOf(Number(c.ad_reference_id)) < 0) return;
     let tb = null, key = null;
     if (Number(c.ad_reference_id) === 19) { tb = n.replace(/_ID$/i, ''); key = n; }
+    else if (c.ad_reference_value_id == null && /_ID$/i.test(n)) { tb = n.replace(/_ID$/i, ''); key = n; }   // a search or table reference with no AD_Ref_Table row names its table by its column, as table direct does
     else { const r = O.rows('SELECT x.tablename AS tb, k.columnname AS kc FROM ad_ref_table r JOIN ad_table x ON x.ad_table_id=r.ad_table_id JOIN ad_column k ON k.ad_column_id=r.ad_key WHERE r.ad_reference_id=?', [c.ad_reference_value_id])[0]; if (r) { tb = r.tb; key = r.kc; } }
     if (!tb || !tbl(tb) || !hasCol(tb, 'name') || !hasCol(tb, key.toLowerCase())) return;
     rows.forEach(r => { const v = r[n]; if (v == null || v === '') return; const mk = tb + '.' + v; if (!(mk in memo)) { const x = O.rows('SELECT name FROM ' + tb + ' WHERE ' + key + '=?', [v])[0]; memo[mk] = x && x.name != null ? x.name : v; } r[n] = memo[mk]; });
