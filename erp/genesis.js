@@ -356,7 +356,12 @@
       create('c_location', { c_location_id: locBpId, ad_client_id: clientId, c_country_id: countryId, c_region_id: regionId, city: city }),
       create('c_bpartner_location', { c_bpartner_location_id: bpLocId, c_bpartner_id: bpId, c_location_id: locBpId, ad_client_id: clientId,
         name: '.', isbillto: 'Y', isshipto: 'Y', ispayfrom: 'Y', isremitto: 'Y' }),
+      // MSetup.java:1167-1176 saves the BP group through PO.save -> MBPGroup.afterSave (new) insert_Accounting("C_BP_Group_Acct", "C_AcctSchema_Default"); the Standard BP (:1184-1190) -> MBPartner.afterSave (new)
+      //   insert_Accounting("C_BP_Customer_Acct"/"C_BP_Vendor_Acct", "C_BP_Group_Acct") (MBPartner.java:989-990). Without the group row no partner added later got a receivable / liability account
+      //   (model_master.js c_bpartner afterNew copies FROM c_bp_group_acct). poFill copies the Account columns from C_AcctSchema_Default. (W-MIGRATION-TRADE; bim-compiler MIGRATE_INSTALL_TENANT.md §TRADE-SPEC)
+      create('c_bp_group_acct', { c_bp_group_id: bpGroupId, c_acctschema_id: asId, ad_client_id: clientId }),
       create('c_bp_customer_acct', { c_bpartner_id: bpId, c_acctschema_id: asId, ad_client_id: clientId, c_receivable_acct: vcByColumn['c_receivable_acct'] }),
+      create('c_bp_vendor_acct', { c_bpartner_id: bpId, c_acctschema_id: asId, ad_client_id: clientId }),
       // MSetup.java:1215-1218 pc.setValue(defaultName); pc.setName(defaultName); pc.setIsDefault(true)
       create('m_product_category', { m_product_category_id: pcatId, ad_client_id: clientId, value: 'Standard', name: 'Standard', isdefault: 'Y' }),
       create('m_product_category_acct', { m_product_category_id: pcatId, c_acctschema_id: asId, ad_client_id: clientId, p_revenue_acct: vcByColumn['p_revenue_acct'] }),
@@ -397,6 +402,9 @@
     var costTypeId = id.next();
     g7.push(create('m_costtype', { m_costtype_id: costTypeId, ad_client_id: clientId, name: asRow.name }));
     asRow.m_costtype_id = costTypeId;
+    // MAcctSchema.beforeSave -> checkCosting :577-600 -> MCostElement.getMaterialCostElement(po, CostingMethod) :56-85 get-or-create: the schema (MSetup.java:556-) makes the Material cost element of its
+    //   CostingMethod ('S' Standard Costing). Without it MProduct.afterSave -> MCost.create (MCost.java:783-787) finds none, a product has no M_Cost and a shipment posts "No Costs" (W-MIGRATION-TRADE COST).
+    g7.push(create('m_costelement', { m_costelement_id: id.next(), ad_client_id: clientId, ad_org_id: 0, name: 'Standard Costing', costelementtype: 'M', costingmethod: 'S' }));
     // IsDiscountLineAmt: the ctor's setIsDiscountLineAmt(false) wins over the column DEFAULT 'Y'
     g7.push(create('ad_clientinfo', { ad_client_id: clientId, isdiscountlineamt: 'N', ad_tree_menu_id: 10, ad_tree_org_id: treeIds.OO, ad_tree_bpartner_id: treeIds.BP, ad_tree_project_id: treeIds.PJ,
       ad_tree_salesregion_id: treeIds.SR, ad_tree_product_id: treeIds.PR, ad_tree_campaign_id: treeIds.MC, ad_tree_activity_id: treeIds.AY,
