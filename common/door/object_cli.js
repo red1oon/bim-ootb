@@ -250,6 +250,19 @@ function colOf(t, cols, name, what) {
 const isNum = (c) => ['number', 'integer', 'amount', 'quantity'].indexOf(REF[c.ad_reference_id]) >= 0;
 function whereSql(w) { return w.where.length ? ' WHERE ' + w.where.join(' AND ') : ''; }
 const popOf = (O, t) => Number(O.rows('SELECT count(*) AS n FROM ' + t.tablename)[0].n);
+// names=Y (CLI_ERP_IVR §13 L5): each lookup column (reference 18 table, 19 table direct, 30 search) is written as the NAME of the record it points at, resolved from the dictionary (AD_Ref_Table, or the
+// column name minus _ID), never a table named here. A target with no Name column, or a value that points at nothing, stays as the key (as the loader reads a lookup table with no Name column).
+function lookupNames(O, t, cols, names, rows) {
+  const tbl = (n) => O.rows("SELECT name FROM sqlite_master WHERE type='table' AND lower(name)=?", [n.toLowerCase()]).length > 0, hasCol = (tb, c) => O.rows("SELECT 1 FROM pragma_table_info('" + tb.replace(/[^A-Za-z0-9_]/g, '') + "') WHERE lower(name)=?", [c]).length > 0, memo = {};
+  names.forEach(n => {
+    const c = cols.filter(x => x.columnname === n)[0]; if (!c || [18, 19, 30].indexOf(Number(c.ad_reference_id)) < 0) return;
+    let tb = null, key = null;
+    if (Number(c.ad_reference_id) === 19) { tb = n.replace(/_ID$/i, ''); key = n; }
+    else { const r = O.rows('SELECT x.tablename AS tb, k.columnname AS kc FROM ad_ref_table r JOIN ad_table x ON x.ad_table_id=r.ad_table_id JOIN ad_column k ON k.ad_column_id=r.ad_key WHERE r.ad_reference_id=?', [c.ad_reference_value_id])[0]; if (r) { tb = r.tb; key = r.kc; } }
+    if (!tb || !tbl(tb) || !hasCol(tb, 'name') || !hasCol(tb, key.toLowerCase())) return;
+    rows.forEach(r => { const v = r[n]; if (v == null || v === '') return; const mk = tb + '.' + v; if (!(mk in memo)) { const x = O.rows('SELECT name FROM ' + tb + ' WHERE ' + key + '=?', [v])[0]; memo[mk] = x && x.name != null ? x.name : v; } r[n] = memo[mk]; });
+  });
+}
 function list(O, a) {
   const t0 = Date.now(), t = kindOf(O.rows, a.kind), cols = columnsOf(O.rows, t), w = filtersOf(t, cols, a);
   const has = (n) => cols.filter(x => x.columnname.toLowerCase() === n)[0];
@@ -264,6 +277,7 @@ function list(O, a) {
   const population = popOf(O, t), total = w.where.length ? Number(O.rows('SELECT count(*) AS n FROM ' + t.tablename + whereSql(w), w.params)[0].n) : population;
   const raw = O.rows('SELECT ' + names.map(n => n + ' AS "' + n + '"').join(', ') + ' FROM ' + t.tablename + whereSql(w) + order + ' LIMIT ' + limit + ' OFFSET ' + offset, w.params);
   const rows = raw.map(r => { const o = {}; names.forEach(n => { o[n] = r[n] !== undefined ? r[n] : r[n.toLowerCase()]; }); return o; });
+  if (String(a.names || '').toUpperCase() === 'Y') lookupNames(O, t, cols, names, rows);   // a lookup column as the name of the record it points at: what the window's grid shows and what mis.load reads
   const verdict = population === 0 ? 'VACUOUS' : 'OK';
   say('list kind=' + t.name + ' table=' + t.tablename + ' filters=' + JSON.stringify(w.filters) + ' rows=' + rows.length + ' total=' + total + ' population=' + population + ' offset=' + offset + ' limit=' + limit + ' ms=' + (Date.now() - t0) + ' verdict=' + verdict);
   return { kind: t.name, table: t.tablename, filters: w.filters, columns: names, rows, shown: rows.length, total, population, offset, verdict, summary: verdict === 'VACUOUS' ? 'this model holds no ' + t.name + ' record, so nothing was listed' : 'shown ' + rows.length + ' of ' + total + ' ' + t.name };
