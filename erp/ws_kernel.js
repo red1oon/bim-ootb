@@ -24,7 +24,7 @@ function load(extraSql) {
 function build(db) {
   const A = require('./ad_callout.js');
   ['support', 'support_stock', 'views', 'currency', 'uom', 'pricing', 'tax', 'sqlfn'].forEach(function (m) { require('./callouts/' + m + '.js'); });
-  A.RUNTIME.registerSqlFunctions(function (n, f) { db.create_function(n, f); });
+  require('./db_export_safe.js').registerCoreUdfs(db, A);   // §EXPORTSAFE: re-bound after every db.export()
   const ML = require('./model_layer.js');
   fs.readdirSync(path.join(__dirname, 'processes')).filter(function (f) { return /\.js$/.test(f); }).forEach(function (f) { try { require('./processes/' + f); } catch (e) { /* a port needing a browser-only global stays unregistered, named by the process answer */ } });
   ['model_trade', 'model_ctor', 'model_cost', 'model_match', 'model_order', 'model_invoice', 'model_post', 'model_master', 'model_bankstatement'].forEach(function (m) { require('./' + m + '.js'); });
@@ -41,7 +41,10 @@ function build(db) {
   if (typeof MV.installDefaultHooks === 'function') { try { MV.installDefaultHooks(); } catch (e) { /* none */ } }
   const cols = {}, nextId = {};
   const colsOf = (t) => cols[t] || (cols[t] = q('PRAGMA table_info(' + t + ')').map(function (c) { return c.name.toLowerCase(); }));
-  function newId(t) { if (nextId[t] == null) { const m = one('SELECT MAX(' + t + '_id) AS m FROM ' + t); nextId[t] = Math.max(Number(m.m || 0), 1000000); } return ++nextId[t]; }
+  // WS_ID_LAW=synthetic: the PAGE's id law (crud_core.listTip pk = -opId; crud_overlay._resolveOpRefs) - every row made through the op log is NEGATIVE and unique. Default = legacy-like positive ids
+  //   (max, 1000001...). The page-law switch is what lets a headless witness judge the paths the live page runs (PAYSAVE-SPEC, bim-compiler prompts/MIGRATE_INSTALL_TENANT.md).
+  let synSeq = 0;
+  function newId(t) { if (typeof process !== 'undefined' && process.env && process.env.WS_ID_LAW === 'synthetic') return -(++synSeq); if (nextId[t] == null) { const m = one('SELECT MAX(' + t + '_id) AS m FROM ' + t); nextId[t] = Math.max(Number(m.m || 0), 1000000); } return ++nextId[t]; }
   // apply an op group the way commitGroup + the listTip fold do (CREATE gets a fresh key, {__opRef}/{{opref:n}} resolved, UPDATE/DELETE by key)
   let comp = null;   // composite transaction (CompositeServiceImpl): ops apply at once (later operations must see them) with an undo log; the journal waits for the commit
   function undoOf(o, cs, t) {

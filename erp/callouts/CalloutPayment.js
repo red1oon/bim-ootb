@@ -3,6 +3,7 @@
 // callouts/CalloutPayment.js — VERBATIM port of org.adempiere.base.callout/src/org/compiere/model/CalloutPayment.java
 // (bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md §CP — Witness: W-CP-CALLOUT-ORACLE scenarios/cp/CalloutPayment.json).
 // Methods 5/5: invoice :57, order :142, charge :211, docType :239, amounts :292.
+function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() > 0` for the twin's id law: a row made through the op log has a NEGATIVE synthetic pk (crud_core listTip -opId), so "an id is set" = non-zero (same rule as ModelLayer.idSet; MIGRATE_INSTALL_TENANT §IDLAW-SPEC)
 (function (global) {
   'use strict';
   var A = (typeof module !== 'undefined' && module.exports) ? require('../ad_callout.js') : global.AdCallout;
@@ -215,7 +216,7 @@
 
       var ConvDate = mTab.getValue('DateTrx');                                                      // :454
       var CurrencyRate = Env.ONE;                                                                   // :456-478
-      if ((C_Currency_ID > 0 && C_Currency_Invoice_ID > 0 && C_Currency_ID !== C_Currency_Invoice_ID)
+      if ((idSet(C_Currency_ID) && idSet(C_Currency_Invoice_ID) && C_Currency_ID !== C_Currency_Invoice_ID)
         || colName === 'C_Currency_ID' || colName === 'C_ConversionType_ID') {
         CurrencyRate = M().MConversionRate.getRate(C_Currency_Invoice_ID, C_Currency_ID, ConvDate, C_ConversionType_ID, AD_Client_ID, AD_Org_ID);
         if (CurrencyRate == null || CurrencyRate.compareTo(Env.ZERO) === 0) {
@@ -228,9 +229,9 @@
         if (oldValue != null && typeof oldValue === 'number' && Number.isInteger(oldValue)) {
           var conversionRate = null;
           var oldId = oldValue;
-          if (oldId > 0 && oldId === C_Currency_Invoice_ID) {
+          if (idSet(oldId) && oldId === C_Currency_Invoice_ID) {
             conversionRate = CurrencyRate;
-          } else if (oldId > 0) {
+          } else if (idSet(oldId)) {
             conversionRate = M().MConversionRate.getRate(oldId, C_Currency_ID, ConvDate, C_ConversionType_ID, AD_Client_ID, AD_Org_ID);
             if (conversionRate == null) {
               conversionRate = M().MConversionRate.getRate(C_Currency_ID, oldId, ConvDate, C_ConversionType_ID, AD_Client_ID, AD_Org_ID);

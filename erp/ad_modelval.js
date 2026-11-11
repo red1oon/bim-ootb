@@ -120,6 +120,22 @@
     var r = info.record || {}, v = r.ad_client_id != null ? r.ad_client_id : (info.recordOld && info.recordOld.ad_client_id != null ? info.recordOld.ad_client_id : (ctx && ctx.client != null ? ctx.client : (ctx && ctx.trx && ctx.trx.env ? ctx.trx.env.client : null)));
     return v == null ? null : Number(v);
   }
+
+  // §DEFSCOPE (bim-compiler prompts/FINANCIALS_GROUNDING.md §DEFSCOPE-SPEC) - ONE owner for "the client's default row" (AD-LAYER LAW: no per-window / per-doctype copy).
+  //   Legacy resolves every default in the SESSION client: MDocType.getOfDocBaseType :70 (AD_Client_ID=? AND DocBaseType=?), MPriceList.getDefault :111-131, MOrder.java:1322 (payment term),
+  //   MConversionType.getDefault :53-72 and MUOM.getDefault_UOM_ID :90-97 (AD_Client_ID IN (0,?)). The twin's inline `ORDER BY id LIMIT 1` took GardenWorld's (or a migrated tenant's synthetic) row.
+  //   Client = the po's (_clientOf), else the session's (window.APP.clientId, the same source crud_overlay._docCtx reads). Unresolvable client => NO default (never an unscoped scan).
+  function _sessionClient(info, ctx) {
+    var c = _clientOf(info, ctx);
+    if (c == null && typeof window !== 'undefined' && window.APP && window.APP.clientId != null) c = Number(window.APP.clientId);
+    return c == null || isNaN(c) ? null : c;
+  }
+  // sys=true: the legacy query is `AD_Client_ID IN (0,?)` (rows of System are visible); else strictly the client's own rows.
+  function clientDefault(db, info, ctx, table, cols, where, params, order, sys) {
+    var c = _sessionClient(info, ctx); if (c == null) return undefined;
+    var st = db.prepare('SELECT ' + cols + ' FROM ' + table + ' WHERE ' + (sys ? 'ad_client_id IN (0,?)' : 'ad_client_id=?') + (where ? ' AND ' + where : '') + ' ORDER BY ' + order);
+    return st.get.apply(st, [c].concat(params || []));
+  }
   function _run(timing, topic, info, ctx, withTopic) {
     ctx = ctx || {};
     var t = (info.table || '').toLowerCase(), all = (REGISTRY[t] && REGISTRY[t][timing]) || [], fired = 0, i, err, h, unported = null;
@@ -223,6 +239,19 @@
     return db.prepare('SELECT ad_modelvalidator_id,name,modelvalidationclass,entitytype FROM ad_modelvalidator ORDER BY ad_modelvalidator_id').all();
   }
 
+  // idSet(db, col, v) - legacy "get<Col>_ID() > 0" (MPayment.java:696 `<= 0`, MOrder, MInvoice ...: a legacy id is never negative, <= 0 = no value).
+  //   The twin's page gives every row made through the op log the SYNTHETIC pk -opId (crud_core.listTip, crud_overlay._resolveOpRefs), so a migrated / session-created
+  //   FK is negative and IS a value. Rule (one owner, no per-table branch; the same one as ad_callout sessionRow and FS-13): positive = set; negative = set ONLY when
+  //   it is a row of the table the column references (read through `db`, the tip-shadowed reader); 0, null and a negative that is no row = not set (still Mandatory).
+  //   PAYSAVE-SPEC (bim-compiler prompts/MIGRATE_INSTALL_TENANT.md): migrated C_BankAccount ids are negative in the page and every one failed "Mandatory: C_BankAccount_ID".
+  var IDSET_TABLE = { salesrep_id: 'ad_user', bill_location_id: 'c_bpartner_location', bill_bpartner_id: 'c_bpartner', c_doctypetarget_id: 'c_doctype', inout_id: 'm_inout' };
+  function idSet(db, col, v) {
+    var n = Number(v); if (!n) return false; if (n > 0) return true;
+    if (typeof process !== 'undefined' && process.env && process.env.PAYSAVE_MUT === 'oldcheck') return false;   // witness mutant only (witness_migration_paysave MUT=oldcheck): the plain `> 0`
+    var t = IDSET_TABLE[col] || String(col).replace(/_id$/, '');
+    try { return !!(db && db.prepare('SELECT 1 AS x FROM ' + t + ' WHERE ' + t + '_id=?').get(n)); } catch (e) { return false; }
+  }
+
   // installDefaultHooks - NONE. The twin-only 'MOrder.hasLines' BEFORE_COMPLETE hook (refusal 'Cannot complete an order with no lines') is DELETED: legacy has no such validator, the
   //   no-line refusal is MOrder.prepareIt's @NoLines@ (model_order.js:141 -> AD_Message "No Document Lines found"). W-VOID case NOLINES. Kept as an empty function so callers (crud_overlay.js:1493) are unchanged.
   function installDefaultHooks() { }
@@ -270,7 +299,7 @@
         return Number(info.record.ad_client_id) === 0 ? 'AD_Client_ID = 0' : null;
       }],
       ['MOrder.warehouseMandatory', function (ctx, info) {   // :1206-1215  ctx fallback else FillMandatoryException
-        if (Number(info.record.m_warehouse_id) > 0) return null;
+        if (idSet(db, 'm_warehouse_id', info.record.m_warehouse_id)) return null;
         if (ctx && Number(ctx.m_warehouse_id) > 0) { d(info).m_warehouse_id = Number(ctx.m_warehouse_id); return null; }
         return 'FillMandatory M_Warehouse_ID';
       }],
@@ -286,7 +315,7 @@
           var loc = db.prepare('SELECT c_bpartner_id FROM c_bpartner_location WHERE c_bpartner_location_id=?').get(Number(r.c_bpartner_location_id));
           if (!loc || Number(loc.c_bpartner_id) !== Number(r.c_bpartner_id)) d(info).c_bpartner_location_id = null;
         }
-        if (Number(r.ad_user_id) > 0) {
+        if (idSet(db, 'ad_user_id', r.ad_user_id)) {
           var u = db.prepare('SELECT c_bpartner_id FROM ad_user WHERE ad_user_id=?').get(Number(r.ad_user_id));
           if (!u || Number(u.c_bpartner_id) !== Number(r.c_bpartner_id)) d(info).ad_user_id = null;
         }
@@ -306,7 +335,7 @@
         if (!Number(r.c_bpartner_id)) return 'Business Partner has no Ship To Address - null_null';   // :1269-1270 `new MBPartner(ctx, 0)` has no location -> :772-774 throws (BPartnerNoShipToAddress, args = the blank partner's Value_Name)
         var bp = null;   // a slimmed bundle without c_bpartner.salesrep_id (bim-compiler's glassbowl_data.db fixture) → no BP sales rep: conservative, never invented
         try { bp = db.prepare('SELECT salesrep_id FROM c_bpartner WHERE c_bpartner_id=?').get(Number(r.c_bpartner_id)); } catch (eGap) { bp = null; }
-        if (bp && Number(bp.salesrep_id) > 0 && !(Number(r.salesrep_id) > 0)) dd.salesrep_id = Number(bp.salesrep_id);
+        if (bp && idSet(db, 'salesrep_id', bp.salesrep_id) && !(idSet(db, 'salesrep_id', r.salesrep_id))) dd.salesrep_id = Number(bp.salesrep_id);
         var locs = db.prepare("SELECT c_bpartner_location_id, isshipto, isbillto FROM c_bpartner_location WHERE c_bpartner_id=? AND isactive='Y' ORDER BY c_bpartner_location_id").all(Number(r.c_bpartner_id)) || [];
         if (!locs.length) return 'BPartnerNoShipToAddress';
         var ship = null, bill = null;
@@ -316,7 +345,7 @@
         });
         dd.c_bpartner_location_id = ship != null ? ship : Number(locs[0].c_bpartner_location_id);
         if (bill != null) dd.bill_location_id = bill;
-        else if (!(Number(r.bill_location_id) > 0)) dd.bill_location_id = Number(locs[0].c_bpartner_location_id);
+        else if (!(idSet(db, 'bill_location_id', r.bill_location_id))) dd.bill_location_id = Number(locs[0].c_bpartner_location_id);
         return null;
       }],
       ['MOrder.billDefaults', function (ctx, info) {         // :1272-1279  Bill_* default to the BP/location
@@ -333,7 +362,7 @@
         if (!Number(r.m_pricelist_id)) {
           // FS-12 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2j): MOrder.java:1285-1286 is CLIENT-scoped
           // (WHERE AD_Client_ID=? AND IsSOPriceList=? AND IsActive=?) — without it a tenant with no SO list borrowed another's.
-          var pl = Number(r.ad_client_id) > 0
+          var pl = idSet(db, 'ad_client_id', r.ad_client_id)
             ? db.prepare("SELECT m_pricelist_id FROM m_pricelist WHERE ad_client_id=? AND issopricelist=? AND isactive='Y' ORDER BY isdefault DESC, m_pricelist_id").get(Number(r.ad_client_id), ((info.derived && info.derived.issotrx) || r.issotrx) === 'Y' ? 'Y' : 'N')   // FS-12: the EFFECTIVE IsSOTrx (MOrder.java:1283 reads the field the hook above just derived)
             : null;
           if (pl) d(info).m_pricelist_id = pl.m_pricelist_id;
@@ -354,7 +383,7 @@
         // from window.APP.actor (crud_overlay.js _docCtx). Never overrides a set value (Java defaults ONLY a zero column).
         var r = info.record, dd = d(info);
         var srNow = (dd.salesrep_id !== undefined && dd.salesrep_id !== null) ? dd.salesrep_id : r.salesrep_id;
-        if (!(Number(srNow) > 0) && ctx && Number(ctx.salesrep_id) > 0) dd.salesrep_id = Number(ctx.salesrep_id);
+        if (!((Number(srNow) || 0) !== 0) && ctx && Number(ctx.salesrep_id) > 0) dd.salesrep_id = Number(ctx.salesrep_id);
         return null;
       }],
       ['MOrder.docTypeTargetDefault', function (ctx, info) { // :1311-1312  default = the Standard SO doctype ('SO')
@@ -367,9 +396,9 @@
         // Standard-Sales fallback (never a behavior change for a caller that supplies no hint).
         var r = info.record;
         if (!Number(r.c_doctypetarget_id)) {
-          var dt = (ctx && ctx.issotrx === 'N')
-            ? db.prepare("SELECT c_doctype_id, issotrx FROM c_doctype WHERE docbasetype='POO' AND docsubtypeso IS NULL AND isactive='Y' ORDER BY c_doctype_id").get()
-            : db.prepare("SELECT c_doctype_id, issotrx FROM c_doctype WHERE docbasetype='SOO' AND docsubtypeso='SO' AND isactive='Y' ORDER BY c_doctype_id").get();
+          var dt = (ctx && ctx.issotrx === 'N')   // MDocType.getOfDocBaseType :70 - the session client's own doctype (§DEFSCOPE)
+            ? clientDefault(db, info, ctx, 'c_doctype', 'c_doctype_id, issotrx', "docbasetype='POO' AND docsubtypeso IS NULL AND isactive='Y'", [], 'c_doctype_id')
+            : clientDefault(db, info, ctx, 'c_doctype', 'c_doctype_id, issotrx', "docbasetype='SOO' AND docsubtypeso='SO' AND isactive='Y'", [], 'c_doctype_id');
           if (dt) {
             d(info).c_doctypetarget_id = dt.c_doctype_id;
             // IsSOTrx has no form field anywhere in this UI (crud_ops.json's c_order entry never declares it) —
@@ -399,7 +428,7 @@
       ['MOrder.paymentTermDefault', function (ctx, info) {   // :1315-1327  IsDefault='Y' payment term
         var r = info.record;
         if (!Number(r.c_paymentterm_id)) {
-          var pt = db.prepare("SELECT c_paymentterm_id FROM c_paymentterm WHERE isdefault='Y' AND isactive='Y' ORDER BY c_paymentterm_id").get();
+          var pt = clientDefault(db, info, ctx, 'c_paymentterm', 'c_paymentterm_id', "isdefault='Y' AND isactive='Y'", [], 'c_paymentterm_id');   // MOrder.java:1322 AD_Client_ID=? (§DEFSCOPE)
           if (pt) d(info).c_paymentterm_id = pt.c_paymentterm_id;
         }
         return null;
@@ -412,7 +441,7 @@
       }],
       ['MOrder.priceListImmutable', function (ctx, info) {   // :1352-1359  IDEMPIERE-1597 CannotChangePl when product lines exist
         if (!info.recordOld || !chg(info, 'm_pricelist_id')) return null;
-        var n = db.prepare('SELECT count(*) n FROM c_orderline WHERE c_order_id=? AND m_product_id>0').get(Number(info.record.c_order_id)).n;
+        var n = db.prepare('SELECT count(*) n FROM c_orderline WHERE c_order_id=? AND m_product_id<>0').get(Number(info.record.c_order_id)).n;
         return n > 0 ? 'CannotChangePl' : null;
         // the :1361-1369 DateOrdered/price-list-VERSION twin needs m_pricelist_version (not in capture) — named-deferred
       }]
@@ -455,7 +484,7 @@
       ['MInOut.movementTypeDerive', function (ctx, info) {   // :1306-1308 ∘ getMovementType:1275-1287
         var r = info.record;
         if (info.recordOld && !chg(info, 'c_doctype_id')) return null;   // fires on new record or doctype change
-        if (!(Number(r.c_doctype_id) > 0)) { w(info).push('FillMandatory C_DocType_ID'); return null; }  // :1294-1297 logs, does not abort
+        if (!(idSet(db, 'c_doctype_id', r.c_doctype_id))) { w(info).push('FillMandatory C_DocType_ID'); return null; }  // :1294-1297 logs, does not abort
         var dt = db.prepare('SELECT docbasetype,issotrx FROM c_doctype WHERE c_doctype_id=?').get(Number(r.c_doctype_id));
         var mt = null;
         if (dt && dt.docbasetype === 'MMS') mt = dt.issotrx === 'Y' ? 'C-' : 'V-';        // :1281-1282 Delivery → CustomerShipment/VendorReturns
@@ -477,13 +506,13 @@
       }],
       ['MInOut.orderXorRMA', function (ctx, info) {          // :1326-1331 Order and RMA are mutually exclusive
         var r = info.record;
-        return (Number(r.c_order_id) > 0 && Number(r.m_rma_id) > 0) ? 'OrderOrRMA' : null;
+        return (idSet(db, 'c_order_id', r.c_order_id) && idSet(db, 'm_rma_id', r.m_rma_id)) ? 'OrderOrRMA' : null;
       }],
       ['MInOut.salesRepFromOrder', function (ctx, info) {    // :1356-1366 SalesRep defaults from the order (RMA leg n/a in seed, named)
         var r = info.record;
-        if (Number(r.salesrep_id) > 0 || !(Number(r.c_order_id) > 0)) return null;
+        if (idSet(db, 'salesrep_id', r.salesrep_id) || !(idSet(db, 'c_order_id', r.c_order_id))) return null;
         var o = db.prepare('SELECT salesrep_id FROM c_order WHERE c_order_id=?').get(Number(r.c_order_id));
-        if (o && Number(o.salesrep_id) > 0) d(info).salesrep_id = Number(o.salesrep_id);
+        if (o && idSet(db, 'salesrep_id', o.salesrep_id)) d(info).salesrep_id = Number(o.salesrep_id);
         return null;
       }]
       // :1333-1338 RMA→shipment-doctype derive + :1340-1355 shipper-account/freight = data-absent in seed (no m_rma,
@@ -514,7 +543,7 @@
       }],
       ['MInvoice.bpDefaults', function (ctx, info) {         // :1147-1149 ∘ setBPartner:631-673 — location + term/pricelist/rule from the BP
         var r = info.record;
-        if (Number(r.c_bpartner_location_id) > 0) return null;
+        if (idSet(db, 'c_bpartner_location_id', r.c_bpartner_location_id)) return null;
         // Implementing ERP_P2P_INVOICE_MATCH.md §Fix 4 — pick() (not bare r.issotrx) sees issotrxFromWindow's
         // derived value too, same-pass (hooks share one `info`, only `info.record` itself stays the static
         // pre-hook snapshot — this is the existing derived-fallback convention priceListDefault already uses).
@@ -540,13 +569,13 @@
           var cpl = db.prepare('SELECT issopricelist FROM m_pricelist WHERE m_pricelist_id=?').get(Number(ctx.m_pricelist_id));
           if (cpl && (cpl.issopricelist === 'Y') === (r.issotrx === 'Y')) { d(info).m_pricelist_id = Number(ctx.m_pricelist_id); return null; }
         }
-        var pl = db.prepare("SELECT m_pricelist_id FROM m_pricelist WHERE issopricelist=? AND isactive='Y' ORDER BY isdefault DESC, m_pricelist_id").get(r.issotrx === 'Y' ? 'Y' : 'N');
+        var pl = clientDefault(db, info, ctx, 'm_pricelist', 'm_pricelist_id', "issopricelist=? AND isactive='Y'", [r.issotrx === 'Y' ? 'Y' : 'N'], 'isdefault DESC, m_pricelist_id');   // MPriceList.getDefault :111-131 AD_Client_ID=? (§DEFSCOPE)
         if (pl) d(info).m_pricelist_id = pl.m_pricelist_id;            // tie past IsDefault unspecified in Java; pk-ordered (H-1 convention)
         return null;
       }],
       ['MInvoice.currencyFromPriceList', function (ctx, info) {  // :1171-1180 currency follows the price list, else ctx
         var r = info.record;
-        if (Number(r.c_currency_id) > 0) return null;
+        if (idSet(db, 'c_currency_id', r.c_currency_id)) return null;
         var plId = pick(r, info, 'm_pricelist_id');
         var pl = db.prepare('SELECT c_currency_id FROM m_pricelist WHERE m_pricelist_id=?').get(Number(plId));
         if (pl && pl.c_currency_id) d(info).c_currency_id = pl.c_currency_id;
@@ -555,16 +584,16 @@
       }],
       ['MInvoice.salesRepFromCtx', function (ctx, info) {    // :1183-1188 ctx fallback only
         var r = info.record;
-        if (!(Number(r.salesrep_id) > 0) && ctx && Number(ctx.salesrep_id) > 0) d(info).salesrep_id = Number(ctx.salesrep_id);
+        if (!(idSet(db, 'salesrep_id', r.salesrep_id)) && ctx && Number(ctx.salesrep_id) > 0) d(info).salesrep_id = Number(ctx.salesrep_id);
         return null;
       }],
       ['MInvoice.docTypeTargetDefault', function (ctx, info) {  // :1190-1194 ∘ setC_DocTypeTarget_ID:804-822 — ARI/API by SO flag
         var r = info.record;
-        if (Number(r.c_doctypetarget_id) > 0) return null;
+        if (idSet(db, 'c_doctypetarget_id', r.c_doctypetarget_id)) return null;
         // Implementing ERP_P2P_INVOICE_MATCH.md §Fix 4 — pick() sees issotrxFromWindow's derived value (same
         // convention as bpDefaults above); without it a manually-created Purchase invoice always fell through
         // to the bare r.issotrx (undefined) branch, which is truthy-false too but for the WRONG reason.
-        var dt = db.prepare("SELECT c_doctype_id FROM c_doctype WHERE docbasetype=? AND ad_org_id IN (0,?) AND isactive='Y' ORDER BY isdefault DESC, ad_org_id DESC, c_doctype_id").get(pick(r, info, 'issotrx') === 'Y' ? 'ARI' : 'API', Number(r.ad_org_id));
+        var dt = clientDefault(db, info, ctx, 'c_doctype', 'c_doctype_id', "docbasetype=? AND ad_org_id IN (0,?) AND isactive='Y'", [pick(r, info, 'issotrx') === 'Y' ? 'ARI' : 'API', Number(r.ad_org_id)], 'isdefault DESC, ad_org_id DESC, c_doctype_id');   // MDocType.getOfDocBaseType :70 (§DEFSCOPE)
         if (dt) d(info).c_doctypetarget_id = dt.c_doctype_id;
         return null;
       }],
@@ -572,13 +601,13 @@
         var r = info.record;
         if (Number(pick(r, info, 'c_paymentterm_id')) > 0) return null;
         if (ctx && Number(ctx.c_paymentterm_id) > 0) { d(info).c_paymentterm_id = Number(ctx.c_paymentterm_id); return null; }
-        var pt = db.prepare("SELECT c_paymentterm_id FROM c_paymentterm WHERE isdefault='Y' AND isactive='Y' ORDER BY c_paymentterm_id").get();
+        var pt = clientDefault(db, info, ctx, 'c_paymentterm', 'c_paymentterm_id', "isdefault='Y' AND isactive='Y'", [], 'c_paymentterm_id');   // MOrder.java:1322 AD_Client_ID=? (§DEFSCOPE)
         if (pt) d(info).c_paymentterm_id = pt.c_paymentterm_id;
         return null;
       }],
       ['MInvoice.priceListImmutable', function (ctx, info) { // :1219-1239 IDEMPIERE-1597 CannotChangePlIn when product lines exist
         if (!info.recordOld || !chg(info, 'm_pricelist_id')) return null;
-        var n = db.prepare('SELECT count(*) n FROM c_invoiceline WHERE c_invoice_id=? AND m_product_id>0').get(Number(info.record.c_invoice_id)).n;
+        var n = db.prepare('SELECT count(*) n FROM c_invoiceline WHERE c_invoice_id=? AND m_product_id<>0').get(Number(info.record.c_invoice_id)).n;
         return n > 0 ? 'CannotChangePlIn' : null;
         // the :1230-1237 DateInvoiced/price-list-VERSION twin needs m_pricelist_version (not in capture) — named-deferred (H-1 pattern)
       }],
@@ -622,34 +651,34 @@
       }],
       ['MPayment.bankOrCashbookMandatory', function (ctx, info) {  // :689-701 cashbook XOR bank account
         var r = info.record;
-        if (isCashbookTrx(r)) return Number(r.c_cashbook_id) > 0 ? null : 'Mandatory: C_CashBook_ID';
-        return Number(r.c_bankaccount_id) > 0 ? null : 'Mandatory: C_BankAccount_ID';
+        if (isCashbookTrx(r)) return idSet(db, 'c_cashbook_id', r.c_cashbook_id) ? null : 'Mandatory: C_CashBook_ID';
+        return idSet(db, 'c_bankaccount_id', r.c_bankaccount_id) ? null : 'Mandatory: C_BankAccount_ID';
       }],
       ['MPayment.chargeResets', function (ctx, info) {       // :705-717 charge payment resets order/invoice/amount flags
         var r = info.record;
-        if (!(Number(r.c_charge_id) > 0) || (info.recordOld && !chg(info, 'c_charge_id'))) return null;
+        if (!(idSet(db, 'c_charge_id', r.c_charge_id)) || (info.recordOld && !chg(info, 'c_charge_id'))) return null;
         d(info).c_order_id = 0; d(info).c_invoice_id = 0; d(info).writeoffamt = 0; d(info).discountamt = 0;
         d(info).isoverunderpayment = 'N'; d(info).overunderamt = 0; d(info).isprepayment = 'N';
         return null;
       }],
       ['MPayment.bpartnerRequired', function (ctx, info) {   // :719-730 BP or invoice/order required (non-cash)
         var r = info.record;
-        if (Number(r.c_charge_id) > 0 || Number(r.c_bpartner_id) > 0 || isCashTrx(r)) return null;
-        return (Number(r.c_invoice_id) > 0 || Number(r.c_order_id) > 0) ? null : 'NotFound: C_BPartner_ID';
+        if (idSet(db, 'c_charge_id', r.c_charge_id) || idSet(db, 'c_bpartner_id', r.c_bpartner_id) || isCashTrx(r)) return null;
+        return (idSet(db, 'c_invoice_id', r.c_invoice_id) || idSet(db, 'c_order_id', r.c_order_id)) ? null : 'NotFound: C_BPartner_ID';
       }],
       ['MPayment.prepaymentDerive', function (ctx, info) {   // :732-749 IsPrepayment from charge/BP/order/project (reversal leg n/a in seed)
         var r = info.record;
         if (info.recordOld && !(chg(info, 'c_charge_id') || chg(info, 'c_invoice_id') || chg(info, 'c_order_id') || chg(info, 'c_project_id'))) return null;
-        if (Number(r.reversal_id) > 0) return null;          // :737-741 copies the reversal's flag — no reversal in seed, named
-        var pre = !(Number(r.c_charge_id) > 0) && Number(r.c_bpartner_id) > 0 &&
-                  (Number(r.c_order_id) > 0 || (Number(r.c_project_id) > 0 && !(Number(r.c_invoice_id) > 0)));
+        if ((Number(r.reversal_id) || 0) !== 0) return null;          // :737-741 copies the reversal's flag — no reversal in seed, named
+        var pre = !(idSet(db, 'c_charge_id', r.c_charge_id)) && idSet(db, 'c_bpartner_id', r.c_bpartner_id) &&
+                  (idSet(db, 'c_order_id', r.c_order_id) || (idSet(db, 'c_project_id', r.c_project_id) && !(idSet(db, 'c_invoice_id', r.c_invoice_id))));
         d(info).isprepayment = pre ? 'Y' : 'N';
         return null;
       }],
       ['MPayment.docTypeReceipt', function (ctx, info) {     // :763-770 ∘ setC_DocType_ID(boolean):1545-1563
         var r = info.record;
-        if (!(Number(r.c_doctype_id) > 0)) {
-          var dt = db.prepare("SELECT c_doctype_id FROM c_doctype WHERE isactive='Y' AND docbasetype=? ORDER BY isdefault DESC, c_doctype_id").get(r.isreceipt === 'Y' ? 'ARR' : 'APP');
+        if (!(idSet(db, 'c_doctype_id', r.c_doctype_id))) {
+          var dt = clientDefault(db, info, ctx, 'c_doctype', 'c_doctype_id', "isactive='Y' AND docbasetype=?", [r.isreceipt === 'Y' ? 'ARR' : 'APP'], 'isdefault DESC, c_doctype_id');   // MDocType.getOfDocBaseType :70 (§DEFSCOPE)
           if (dt) d(info).c_doctype_id = dt.c_doctype_id;
         } else {
           var dt2 = db.prepare('SELECT issotrx FROM c_doctype WHERE c_doctype_id=?').get(Number(r.c_doctype_id));
@@ -669,19 +698,19 @@
       }],
       ['MPayment.orgFromBankAccount', function (ctx, info) { // :780-787 payment org follows the bank account's org (when set)
         var r = info.record;
-        if (Number(r.c_charge_id) > 0 || (info.recordOld && !chg(info, 'c_bankaccount_id'))) return null;
+        if (idSet(db, 'c_charge_id', r.c_charge_id) || (info.recordOld && !chg(info, 'c_bankaccount_id'))) return null;
         var ba = db.prepare('SELECT ad_org_id FROM c_bankaccount WHERE c_bankaccount_id=?').get(Number(r.c_bankaccount_id));
         if (ba && Number(ba.ad_org_id) !== 0) d(info).ad_org_id = Number(ba.ad_org_id);
         return null;
       }],
       ['MPayment.bpMatchesInvoiceOrder', function (ctx, info) {  // :790-806 BP must equal the invoice's / order's BP
         var r = info.record;
-        if (!(Number(r.c_bpartner_id) > 0)) return null;
-        if (Number(r.c_invoice_id) > 0) {
+        if (!(idSet(db, 'c_bpartner_id', r.c_bpartner_id))) return null;
+        if (idSet(db, 'c_invoice_id', r.c_invoice_id)) {
           var inv = db.prepare('SELECT c_bpartner_id FROM c_invoice WHERE c_invoice_id=?').get(Number(r.c_invoice_id));
           if (inv && Number(inv.c_bpartner_id) !== Number(r.c_bpartner_id)) return 'BPDifferentFromBPInvoice';
         }
-        if (Number(r.c_order_id) > 0) {
+        if (idSet(db, 'c_order_id', r.c_order_id)) {
           var ord = db.prepare('SELECT c_bpartner_id FROM c_order WHERE c_order_id=?').get(Number(r.c_order_id));
           if (ord && Number(ord.c_bpartner_id) !== Number(r.c_bpartner_id)) return 'BPDifferentFromBPOrder';
         }
@@ -700,8 +729,8 @@
     var H = [
       ['MMovement.docTypeDefault', function (ctx, info) {    // :212-222 ∘ MDocType.getOfDocBaseType:68-77 — first MMM doctype
         var r = info.record;
-        if (Number(r.c_doctype_id) > 0) return null;
-        var dt = db.prepare("SELECT c_doctype_id FROM c_doctype WHERE docbasetype='MMM' AND isactive='Y' ORDER BY isdefault DESC, c_doctype_id").get();
+        if (idSet(db, 'c_doctype_id', r.c_doctype_id)) return null;
+        var dt = clientDefault(db, info, ctx, 'c_doctype', 'c_doctype_id', "docbasetype='MMM' AND isactive='Y'", [], 'isdefault DESC, c_doctype_id');   // MDocType.getOfDocBaseType :70 (§DEFSCOPE)
         if (!dt) return 'NotFound C_DocType_ID';             // :218-221 (unreachable in this seed — MMM exists)
         d(info).c_doctype_id = dt.c_doctype_id;
         return null;
@@ -733,7 +762,7 @@
     var H = [
       ['MJournal.parentNotProcessed', function (ctx, info) { // :300-306 new journal in a Processed batch → reject
         var r = info.record;
-        if (info.recordOld || !(Number(r.gl_journalbatch_id) > 0)) return null;
+        if (info.recordOld || !(idSet(db, 'gl_journalbatch_id', r.gl_journalbatch_id))) return null;
         var b = db.prepare('SELECT processed FROM gl_journalbatch WHERE gl_journalbatch_id=?').get(Number(r.gl_journalbatch_id));
         return (b && b.processed === 'Y') ? 'ParentComplete GL_JournalBatch_ID' : null;
       }],
@@ -761,22 +790,22 @@
       }],
       ['MJournal.glCategoryDefault', function (ctx, info) {  // :340-342 GL_Category ← doctype's
         var r = info.record;
-        if (Number(r.gl_category_id) > 0 || !(Number(r.c_doctype_id) > 0)) return null;
+        if (idSet(db, 'gl_category_id', r.gl_category_id) || !(idSet(db, 'c_doctype_id', r.c_doctype_id))) return null;
         var dt = db.prepare('SELECT gl_category_id FROM c_doctype WHERE c_doctype_id=?').get(Number(r.c_doctype_id));
-        if (dt && Number(dt.gl_category_id) > 0) d(info).gl_category_id = Number(dt.gl_category_id);
+        if (dt && idSet(db, 'gl_category_id', dt.gl_category_id)) d(info).gl_category_id = Number(dt.gl_category_id);
         return null;
       }],
       ['MJournal.acctSchemaDefault', function (ctx, info) {  // :343-345 C_AcctSchema ← client's primary
         var r = info.record;
-        if (Number(r.c_acctschema_id) > 0) return null;
+        if (idSet(db, 'c_acctschema_id', r.c_acctschema_id)) return null;
         var ci = db.prepare('SELECT c_acctschema1_id FROM ad_clientinfo WHERE ad_client_id=?').get(Number(r.ad_client_id));
         if (ci) d(info).c_acctschema_id = Number(ci.c_acctschema1_id);
         return null;
       }],
       ['MJournal.conversionTypeDefault', function (ctx, info) {  // :346-348 ∘ MConversionType.getDefault — IsDefault row
         var r = info.record;
-        if (Number(r.c_conversiontype_id) > 0) return null;
-        var ct = db.prepare("SELECT c_conversiontype_id FROM c_conversiontype WHERE isdefault='Y' ORDER BY c_conversiontype_id").get();
+        if (idSet(db, 'c_conversiontype_id', r.c_conversiontype_id)) return null;
+        var ct = clientDefault(db, info, ctx, 'c_conversiontype', 'c_conversiontype_id', "isactive='Y'", [], 'isdefault DESC, ad_client_id DESC', true);   // MConversionType.getDefault :53-72 AD_Client_ID IN (0,?) (§DEFSCOPE)
         if (ct) d(info).c_conversiontype_id = Number(ct.c_conversiontype_id);
         return null;
       }],
@@ -868,8 +897,8 @@
     var H = [
       ['MBankStatement.docTypeDefault', function (ctx, info) {  // :260-262 ∘ MDocType.getDocType(CMB)
         var r = info.record;
-        if (Number(r.c_doctype_id) > 0) return null;
-        var dt = db.prepare("SELECT c_doctype_id FROM c_doctype WHERE docbasetype='CMB' AND isactive='Y' ORDER BY isdefault DESC, c_doctype_id").get();
+        if (idSet(db, 'c_doctype_id', r.c_doctype_id)) return null;
+        var dt = clientDefault(db, info, ctx, 'c_doctype', 'c_doctype_id', "docbasetype='CMB' AND isactive='Y'", [], 'isdefault DESC, c_doctype_id');   // MDocType.getOfDocBaseType :70 (§DEFSCOPE)
         if (dt) d(info).c_doctype_id = Number(dt.c_doctype_id);
         return null;
       }],
@@ -896,7 +925,7 @@
   // (m_rma.inout_id → m_inout, captured FULL) is the derive source for BP/currency/salesrep.
   function installMRMASaveHooks(db) {
     function d(info) { return (info.derived = info.derived || {}); }
-    function shipment(r) { return Number(r.inout_id) > 0 ? db.prepare('SELECT c_bpartner_id,c_order_id,c_invoice_id,issotrx,salesrep_id FROM m_inout WHERE m_inout_id=?').get(Number(r.inout_id)) : null; }
+    function shipment(r) { return idSet(db, 'inout_id', r.inout_id) ? db.prepare('SELECT c_bpartner_id,c_order_id,c_invoice_id,issotrx,salesrep_id FROM m_inout WHERE m_inout_id=?').get(Number(r.inout_id)) : null; }
     var H = [
       ['MRMA.orderCleared', function (ctx, info) {           // :258-259 a NEW RMA never carries C_Order_ID
         if (!info.recordOld && Number(info.record.c_order_id) !== 0) d(info).c_order_id = 0;
@@ -904,16 +933,16 @@
       }],
       ['MRMA.bpFromShipment', function (ctx, info) {         // :262-266 BP ← shipment's
         var r = info.record, io = shipment(r);
-        if (!(Number(r.c_bpartner_id) > 0) && io && Number(io.c_bpartner_id) > 0) d(info).c_bpartner_id = Number(io.c_bpartner_id);
+        if (!(idSet(db, 'c_bpartner_id', r.c_bpartner_id)) && io && idSet(db, 'c_bpartner_id', io.c_bpartner_id)) d(info).c_bpartner_id = Number(io.c_bpartner_id);
         return null;
       }],
       ['MRMA.currencyFromShipment', function (ctx, info) {   // :268-283 currency ← order else invoice (through the shipment)
         var r = info.record, io = shipment(r);
-        if (Number(r.c_currency_id) > 0 || !io) return null;
-        if (Number(io.c_order_id) > 0) {
+        if (idSet(db, 'c_currency_id', r.c_currency_id) || !io) return null;
+        if (idSet(db, 'c_order_id', io.c_order_id)) {
           var o = db.prepare('SELECT c_currency_id FROM c_order WHERE c_order_id=?').get(Number(io.c_order_id));
           if (o) d(info).c_currency_id = Number(o.c_currency_id);
-        } else if (Number(io.c_invoice_id) > 0) {
+        } else if (idSet(db, 'c_invoice_id', io.c_invoice_id)) {
           var inv = db.prepare('SELECT c_currency_id FROM c_invoice WHERE c_invoice_id=?').get(Number(io.c_invoice_id));
           if (inv) d(info).c_currency_id = Number(inv.c_currency_id);
         }
@@ -925,7 +954,7 @@
       }],
       ['MRMA.salesRepFromShipment', function (ctx, info) {   // :292-295 SalesRep ← shipment's (when set there)
         var r = info.record, io = shipment(r);
-        if (!(Number(r.salesrep_id) > 0) && io && Number(io.salesrep_id) > 0) d(info).salesrep_id = Number(io.salesrep_id);
+        if (!(idSet(db, 'salesrep_id', r.salesrep_id)) && io && idSet(db, 'salesrep_id', io.salesrep_id)) d(info).salesrep_id = Number(io.salesrep_id);
         return null;
       }]
     ];
@@ -941,9 +970,9 @@
     var H = [
       ['MRequisition.priceListDefault', function (ctx, info) {
         var r = info.record;
-        if (Number(r.m_pricelist_id) > 0) return null;
-        var pl = db.prepare("SELECT m_pricelist_id FROM m_pricelist WHERE isdefault='Y' AND issopricelist='N' AND isactive='Y' ORDER BY m_pricelist_id").get()
-              || db.prepare("SELECT m_pricelist_id FROM m_pricelist WHERE isdefault='Y' AND issopricelist='Y' AND isactive='Y' ORDER BY m_pricelist_id").get();
+        if (idSet(db, 'm_pricelist_id', r.m_pricelist_id)) return null;
+        var pl = clientDefault(db, info, ctx, 'm_pricelist', 'm_pricelist_id', "isdefault='Y' AND issopricelist='N' AND isactive='Y'", [], 'm_pricelist_id')   // MPriceList.getDefault :111-131 AD_Client_ID=? (§DEFSCOPE)
+              || clientDefault(db, info, ctx, 'm_pricelist', 'm_pricelist_id', "isdefault='Y' AND issopricelist='Y' AND isactive='Y'", [], 'm_pricelist_id');
         if (pl) d(info).m_pricelist_id = Number(pl.m_pricelist_id);
         return null;
       }]

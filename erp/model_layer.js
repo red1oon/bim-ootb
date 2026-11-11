@@ -30,6 +30,10 @@
 })(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this), function (BigDecimal, MV, WF, LR) {
 
   var NEW = '#new:';
+  // idSet(v) - legacy `get<Col>_ID() > 0` (a legacy id is never negative; <= 0 = no value). The twin's page gives every row made through the op log a NEGATIVE synthetic pk
+  //   (crud_core.listTip -opId), so "an id is set" = non-zero. ONE rule for every model / process / poster key test (MIGRATE_INSTALL_TENANT §IDLAW-SPEC); the window-entry
+  //   validators (ad_modelval) add a row-exists check on top. A quantity / amount test is NOT an id test and stays `> 0`.
+  function idSet(v) { return (Number(v) || 0) !== 0; }
   function isNewId(v) { return typeof v === 'string' && v.indexOf(NEW) === 0; }
   function lc(r) { var o = {}; for (var k in r) if (Object.prototype.hasOwnProperty.call(r, k)) o[String(k).toLowerCase()] = r[k]; return o; }
   function same(a, b) { return String(a == null ? '' : a) === String(b == null ? '' : b); }
@@ -677,15 +681,15 @@
     });
   }
   function wfRespRow(trx, id) { return id == null ? null : (trx.q('SELECT * FROM ad_wf_responsible WHERE ad_wf_responsible_id=?', [id])[0] || null); }
-  function wfIsInvoker(r) { return !!r && !(Number(r.ad_user_id) > 0) && !(Number(r.ad_role_id) > 0) && r.ismanual !== 'Y'; }   // MWFResponsible.isInvoker :195-198
+  function wfIsInvoker(r) { return !!r && !(idSet(r.ad_user_id)) && !(idSet(r.ad_role_id)) && r.ismanual !== 'Y'; }   // MWFResponsible.isInvoker :195-198
   // MWFProcess ctor :138-142 (+ setAD_WF_Responsible_ID() :487-496: the Human responsible with no user, client rows first) and setUser_ID :508-545 (responsible user → invoker: doc owner,
   //   SalesRep_ID, UpdatedBy → the process invoker = the session user)
   function wfStartResp(trx, wf, doc) {
-    var rid = Number(wf.ad_wf_responsible_id) > 0 ? wf.ad_wf_responsible_id
+    var rid = idSet(wf.ad_wf_responsible_id) ? wf.ad_wf_responsible_id
       : ((trx.q("SELECT ad_wf_responsible_id AS id FROM ad_wf_responsible WHERE responsibletype='H' AND COALESCE(ad_user_id,0)=0 AND ad_client_id IN (0,?) ORDER BY ad_client_id DESC", [trx.env.client])[0] || {}).id || null);
-    var r = wfRespRow(trx, rid), u = r && Number(r.ad_user_id) > 0 ? Number(r.ad_user_id) : 0;
+    var r = wfRespRow(trx, rid), u = r && idSet(r.ad_user_id) ? Number(r.ad_user_id) : 0;
     if (!u && wfIsInvoker(r)) {
-      if (doc.salesrep_id != null && Number(doc.salesrep_id) > 0) u = Number(doc.salesrep_id);
+      if (doc.salesrep_id != null && idSet(doc.salesrep_id)) u = Number(doc.salesrep_id);
       if (!u && Number(doc.updatedby) > 0) u = Number(doc.updatedby);
     }
     if (!u && trx.env.user != null) u = Number(trx.env.user);
@@ -694,10 +698,10 @@
   // MWFActivity.setResponsible (the node's responsible, the client override MWFResponsible.getClientWFResp = AD_Client_ID=session AND Override_ID=it, else the process's; user = the
   //   responsible's user, an invoker takes the process user)
   function wfNodeResp(trx, node, pr) {
-    var rid = Number(node.ad_wf_responsible_id) > 0 ? node.ad_wf_responsible_id : 0;
+    var rid = idSet(node.ad_wf_responsible_id) ? node.ad_wf_responsible_id : 0;
     if (rid) { var ov = null; try { ov = trx.q("SELECT ad_wf_responsible_id AS id FROM ad_wf_responsible WHERE ad_client_id=? AND override_id=? AND isactive='Y'", [trx.env.client, rid])[0]; } catch (e) { ov = null; } if (ov) rid = ov.id; }
     if (!rid) rid = pr.resp;
-    var r = wfRespRow(trx, rid), u = r && Number(r.ad_user_id) > 0 ? Number(r.ad_user_id) : 0;
+    var r = wfRespRow(trx, rid), u = r && idSet(r.ad_user_id) ? Number(r.ad_user_id) : 0;
     if (!u && wfIsInvoker(r)) u = pr.user;
     return { resp: rid, user: u || null };
   }
@@ -813,7 +817,7 @@
   //   {observe:true} subscriptions of every save/delete in the group, once. resolve(finalOpIndex, table) -> the committed key of a row created in the group (omit: placeholders stay, info.unresolved).
   function deliverObserved(res, ctx, resolve) { return MV.deliverObserved(res && res.observed !== undefined ? res.observed : res, ctx || {}, resolve); }
 
-  return { setGeneratedDefaults: setGeneratedDefaults, initialDefaultsOf: initialDefaultsOf, generatedDefaults: function () { return GEN_DEFAULTS; }, PO: PO, po: po, newRecord: newRecord, setDocNoAllocator: setDocNoAllocator, columnsOf: columnsOf, setPoster: setPoster, getPoster: function () { return _poster; }, clientAccounting: clientAccounting, MV: MV, Trx: Trx, D: D, N: N, isNewId: isNewId, keyColsOf: keyColsOf, newPO: newPO, copyValues: copyValues, saveEx: saveEx, registerModel: registerModel, unregisterModel: unregisterModel, saveReplica: saveReplica, fireReplica: fireReplica, saveReplicaEx: saveReplicaEx, removeReplica: removeReplica, deliverObserved: deliverObserved, unregisterDocAction: unregisterDocAction, removeOwner: removeOwner, describe: describe, MODEL: MODEL, fire: fire,
+  return { idSet: idSet, setGeneratedDefaults: setGeneratedDefaults, initialDefaultsOf: initialDefaultsOf, generatedDefaults: function () { return GEN_DEFAULTS; }, PO: PO, po: po, newRecord: newRecord, setDocNoAllocator: setDocNoAllocator, columnsOf: columnsOf, setPoster: setPoster, getPoster: function () { return _poster; }, clientAccounting: clientAccounting, MV: MV, Trx: Trx, D: D, N: N, isNewId: isNewId, keyColsOf: keyColsOf, newPO: newPO, copyValues: copyValues, saveEx: saveEx, registerModel: registerModel, unregisterModel: unregisterModel, saveReplica: saveReplica, fireReplica: fireReplica, saveReplicaEx: saveReplicaEx, removeReplica: removeReplica, deliverObserved: deliverObserved, unregisterDocAction: unregisterDocAction, removeOwner: removeOwner, describe: describe, MODEL: MODEL, fire: fire,
            save: save, remove: remove, fkPlan: fkPlan, registerDocAction: registerDocAction, docActionFor: docActionFor, DOCS: DOCS,
            uniqueError: uniqueError,   // B0: the legacy unique-index refusal, ONE implementation (ws_adinterface.js no longer has its own)
            eventSeq: function (trx) { return (trx && trx._events || []).map(function (e) { return e.event + '@' + e.table; }); }, processIt: processIt, runWorkflow: runWorkflow, workflowOf: workflowOf, tableIdOf: tableIdOf, run: run };

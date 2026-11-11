@@ -10,10 +10,9 @@
   'use strict';
   var ML = root.ModelLayer, GE = root.GoalEngine, A = root.AdCallout;
   if (!ML || !GE || typeof GE.installModel !== 'function') { if (root.console) console.log('§MODEL-PA not registered (ModelLayer=' + !!ML + ' GoalEngine=' + !!GE + ')'); return; }
-  var installed = false;
   function ctxFor(trx) {
     var e = (trx && trx.env) || {}, day = String(e.date || e.now || '').slice(0, 10);
-    if (!installed && root.__idmpDb) { try { GE.install(root.__idmpDb); installed = true; } catch (x) {} }   // the stock measures' views / UDFs (invoiceopen, currencybase, the invoice views), once
+    if (root.__idmpDb) { try { GE.install(root.__idmpDb); } catch (x) {} }   // the stock measures' views / UDFs (invoiceopen, currencybase, the invoice views): idempotent, re-bound after any export (§EXPORTSAFE)
     return { client: e.client, user: e.user, role: e.role, today: day, now: e.now || (day + ' 00:00:00'), convertSql: A && A.convertSql };
   }
   GE.installModel(ML, ctxFor);

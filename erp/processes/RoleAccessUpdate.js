@@ -4,6 +4,7 @@
 // (org.adempiere.base.process/src/org/compiere/process/RoleAccessUpdate.java). Implementing bim-compiler prompts/MIGRATE_INSTALL_TENANT.md §HARDEN-SPEC H8 — Witness: W-ROLE-ACCESS-UPDATE.
 // Why: a plugin started AFTER a company was born adds windows / processes / forms its roles cannot see; legacy's answer is this process (System runs it after installing a plugin).
 //   The access logic is MRole.updateAccessRecords, ported once in model_master.js (also run by a new role's afterSave).
+function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() > 0` for the twin's id law: a row made through the op log has a NEGATIVE synthetic pk (crud_core listTip -opId), so "an id is set" = non-zero (same rule as ModelLayer.idSet; MIGRATE_INSTALL_TENANT §IDLAW-SPEC)
 (function (global) {
   'use strict';
   var P = (typeof module !== 'undefined' && module.exports) ? require('../ad_process.js') : global.AdProcess;
@@ -24,7 +25,7 @@
     // doIt :75-104
     RoleAccessUpdate.prototype.doIt = function () {
       var trx = this.get_TrxName(), self = this;
-      if (this.p_AD_Role_ID > 0) this.updateRole(trx.get('ad_role', this.p_AD_Role_ID));
+      if (idSet(this.p_AD_Role_ID)) this.updateRole(trx.get('ad_role', this.p_AD_Role_ID));
       else {
         var sql = "SELECT * FROM ad_role WHERE isactive='Y'", params = [];
         if (this.p_AD_Role_ID === 0) { sql += ' AND ad_role_id=?'; params.push(this.p_AD_Role_ID); }   // :86-90 SystemIDs.ROLE_SYSTEM

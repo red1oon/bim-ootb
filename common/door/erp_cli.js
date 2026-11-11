@@ -34,7 +34,7 @@ function loadEngine(O) {
     const A = require(path.join(E, 'ad_callout.js'));
     ['support', 'support_stock', 'views', 'currency', 'uom', 'pricing', 'tax', 'sqlfn'].forEach(m => { try { require(path.join(E, 'callouts', m + '.js')); } catch (e) { say('LOAD-SKIP callouts/' + m + ': ' + e.message); } });
     fs.readdirSync(path.join(E, 'callouts')).filter(f => /^(Callout|CostAdj|InOutFreight)/.test(f)).forEach(f => { try { require(path.join(E, 'callouts', f)); } catch (e) { say('LOAD-SKIP callouts/' + f + ': ' + e.message); } });
-    let udf = 0; A.RUNTIME.registerSqlFunctions((nm, f) => { O.db.create_function(nm, f); udf++; });   // the page does the same (idempiere.html :1175); sql.js takes the arity from f.length
+    let udf = 0; require(path.join(E, 'db_export_safe.js')).register(O.db, 'core-udf', d => A.RUNTIME.registerSqlFunctions((nm, f) => { d.create_function(nm, f); udf++; }));   // §EXPORTSAFE: re-bound after every db.export() (the snapshot below)   // the page does the same (idempiere.html :1175); sql.js takes the arity from f.length
     A.bind((s, p) => O.rows(s, p), { log: () => {} });
     O.udf = udf;
   } finally { console.log = log; }
@@ -278,7 +278,8 @@ function createRecord(O, a) {
     const unknown = Object.keys(given).filter(k => !bycol[k]);
     if (unknown.length) refuse('kind ' + K.name + ' has no property "' + unknown[0] + '" (its properties: ' + st.fields.map(f => f.vo.ColumnName).join(', ') + ')');
     // a window that opens as Sales or Purchase takes IsSOTrx from the menu; "Order" alone does not say which
-    const iso = bycol.issotrx; if (iso && /@IsSOTrx@/i.test(iso.vo.DefaultValue || '') && !('issotrx' in given)) refuse('kind ' + K.name + ' is a Sales or a Purchase document: say issotrx=Y or issotrx=N');
+    const dry = String(a.dry || '').toUpperCase() === 'Y', needs = [];   // dry=Y (CLI_ERP_IVR §15): everything but the save; what the engine cannot fill is REPORTED instead of refused
+    const iso = bycol.issotrx; if (iso && /@IsSOTrx@/i.test(iso.vo.DefaultValue || '') && !('issotrx' in given)) { if (!dry) refuse('kind ' + K.name + ' is a Sales or a Purchase document: say issotrx=Y or issotrx=N'); needs.push({ name: 'IsSOTrx', why: 'Sales (Y) or Purchase (N): the menu entry decides in the window' }); given.issotrx = 'Y'; }
     if ('issotrx' in given) A.Env.setContext(ctx, W, 'IsSOTrx', given.issotrx);
     st.load({}, true); if (NEW_BREAK !== 'nocallouts') st.dataNewCallouts();
     const set = [];
@@ -289,14 +290,16 @@ function createRecord(O, a) {
       set.push(f.vo.ColumnName);
     });
     const snap = st.snapshot(), empty = st.fields.filter(f => f.isMandatory() && !f.isKey() && (snap[f.vo.ColumnName] == null || snap[f.vo.ColumnName] === '') && !/^(Created|Updated|CreatedBy|UpdatedBy)$/.test(f.vo.ColumnName)).map(f => f.vo.ColumnName);
-    if (empty.length && NEW_BREAK !== 'nomandatory') refuse('mandatory and still empty after the defaults and callouts: ' + empty.join(', ') + ' (give them as column=value)');
+    if (empty.length && NEW_BREAK !== 'nomandatory' && !dry) refuse('mandatory and still empty after the defaults and callouts: ' + empty.join(', ') + ' (give them as column=value)');
     const row = {}; st.fields.forEach(f => { const c = f.vo.ColumnName, v = snap[c]; if (f.isKey() || v == null || v === '') return; row[c.toLowerCase()] = (A.DisplayType.isNumeric(f.getDisplayType()) && !A.DisplayType.isID(f.getDisplayType()) && DEC_ID.test(String(v).replace('.', '')) ) ? Number(v) : v; });
+    if (dry) { console.log = log; say('new DRY kind=' + K.name + ' given=' + set.join(',') + ' mandatory_empty=' + empty.join(',') + ' needs=' + needs.map(n => n.name).join(',') + ' defaulted=' + (Object.keys(row).length - set.length) + ' ms=' + (Date.now() - t0));
+      return { dry: true, kind: K.name, table: K.table, mandatory: empty.filter(c => !needs.some(n => n.name.toLowerCase() === c.toLowerCase())), needs, given: set.filter(c => !(c.toLowerCase() === 'issotrx' && needs.length)), defaulted: Object.keys(row).length - set.length, filled: Object.keys(row).filter(c => set.map(x => x.toLowerCase()).indexOf(c) < 0), ops: [] }; }
     const tx = O.trx(); Object.assign(tx.env, { client, org, date: day + ' 00:00:00' });
     const r = O.ML.save(tx, K.table, null, row); if (!r.ok) refuse('the model layer refused the save: ' + r.error);
     const res = persistGroup(O, tx.groupOps()), main = res.filter(o => o.table === K.table)[0] || res[res.length - 1], id = main.fields ? main.fields[K.key] : main.id;
     const saved = O.rows('SELECT * FROM ' + K.table + ' WHERE ' + K.key + '=?', [id])[0] || {};
     console.log = log; say('new kind=' + K.name + ' tab=' + tab.id + ' given=' + set.join(',') + ' fields=' + Object.keys(row).length + ' id=' + id + ' number=' + (K.numCol ? saved[K.numCol] : '') + ' ms=' + (Date.now() - t0));
-    return { number: K.numCol ? saved[K.numCol] : null, kind: K.name, table: K.table, id, docStatus: saved.docstatus == null ? null : saved.docstatus, given: set, defaulted: Object.keys(row).length - set.length, record: saved, ops: res.map(o => ({ op_type: o.op_type, table: o.table })) };
+    return { number: K.numCol ? saved[K.numCol] : null, kind: K.name, table: K.table, id, docStatus: saved.docstatus == null ? null : saved.docstatus, given: set, defaulted: Object.keys(row).length - set.length, filled: Object.keys(row).filter(c => set.map(x => x.toLowerCase()).indexOf(c) < 0), record: saved, ops: res.map(o => ({ op_type: o.op_type, table: o.table })) };
   } finally { console.log = log; }
 }
 // ── mis.update / mis.delete (bim-compiler prompts/CLI_ERP_IVR.md §12): the WINDOW's edit and delete, never a raw UPDATE/DELETE ──
@@ -369,12 +372,51 @@ function deleteRecord(O, a) {
   const res = persistGroup(O, run.ops);
   return { deleted: { kind: K.name, table: K.table, id, number: K.numCol ? r[K.numCol] : null }, gone: O.rows('SELECT 1 AS x FROM ' + K.table + ' WHERE ' + K.key + '=?', [id]).length === 0, ops: res.map(o => ({ op_type: o.op_type, table: o.table, id: o.id })), opSummary: sum(res), ms: Date.now() - t0 };
 }
+// ── mis.load (bim-compiler prompts/CLI_ERP_IVR.md §13): a CSV of one kind through the Migrate Excel Data process (ERP's own loader, class org.idempiere.ninja.process.MigrateExcelData, run as it is) ──
+// The CSV is read by the same SheetJS the host ships (raw: true, so 007 stays 007); one CSV = one sheet named after the kind's table. The loader is ALL OR NOTHING (its F7), so
+// the preview names every bad row and writes <file>.rejected.csv / <file>.ok.csv, and a commit with any bad row is refused. Updates are not offered (the loader's update mode is a raw UPDATE
+// with no model events: use mis.update, which runs the window's save).
+const LOAD_BREAK = process.env.LOAD_BREAK || '';   // W-MIS-LOAD falsifiers: dryrunwrites | skiprejects
+async function loadRecords(O, a) {
+  if (!a.kind) refuse('--kind is required');
+  if (!a.file) refuse('--file is required (a .csv)');
+  if (!/\.csv$/i.test(String(a.file))) refuse('the file must be a .csv: ' + a.file);
+  const K = kindRef(O, a.kind), dry = String(a.dry == null ? 'Y' : a.dry).toUpperCase() !== 'N', t0 = Date.now();
+  let text; try { text = fs.readFileSync(a.file, 'utf8'); } catch (e) { refuse('cannot read ' + a.file + ': ' + (e.code || e.message)); }
+  const XL = require(path.join(ROOT, 'erp', 'xlsx.mini.min.js')), wb0 = XL.read(text, { type: 'string', raw: true });
+  const grid = XL.utils.sheet_to_json(wb0.Sheets[wb0.SheetNames[0]], { header: 1, raw: true, defval: '' }).map(r => r.map(c => String(c)));
+  if (grid.length < 2) refuse('the file has no rows: ' + a.file + ' (a header line and at least one data line)');
+  const url = require('url'), chunk = await import(url.pathToFileURL(path.join(ROOT, 'erp', 'plugins', 'ninja_migrate_process.mjs')).href), AP = require(path.join(ROOT, 'erp', 'ad_process.js'));
+  if (!AP.JAVA || !AP.JAVA[chunk.CLASSNAME]) chunk.activate({ process: AP });
+  const book = [{ name: K.table, rows: grid }], file = 'mis_load_' + process.pid + '.xlsx';
+  chunk.putFile(file, chunk.bookToWorkbook(book));
+  const log = console.log; console.log = () => {};
+  const tx = O.trx(); Object.assign(tx.env, { client: 11, org: 11, user: 101, date: new Date().toISOString().slice(0, 10) + ' 00:00:00', now: new Date().toISOString().replace('T', ' ').slice(0, 19) });
+  let r; try { r = AP.runJava((s2, p2) => O.rows(s2, p2), tx.env, { trx: tx, AD_Process_ID: 9540001, className: chunk.CLASSNAME, title: 'Migrate Excel Data', params: { File_Directory: file, Processed: 'N' } }); }
+  catch (e) { r = { ok: false, summary: 'threw: ' + e.message, log: tx.log }; } finally { console.log = log; chunk.dropFile(file); }
+  const errs = (tx.log || []).filter(l => /^§NINJA-ERR/.test(l)).map(l => String(l).replace(/^§NINJA-ERR\s*/, '')), bad = {};
+  errs.forEach(e => { const m = /row (\d+)\b/.exec(e), n = m ? Number(m[1]) - 1 : 0; (bad[n] = bad[n] || []).push(e.replace(/^.*?row \d+:?\s*/, '')); });   // the loader counts sheet rows (the header is row 1): n = the data row
+  const rows = grid.length - 1, badRows = Object.keys(bad).map(Number).filter(n => n > 0), unplaced = bad[0] || [], ok = rows - badRows.length;
+  const base = String(a.file).replace(/\.csv$/i, ''), csv = (rs) => XL.utils.sheet_to_csv(XL.utils.aoa_to_sheet(rs), { FS: ',', RS: '\n' }) + '\n';   // a row number is the data row (1 = the first line after the header)
+  const outFiles = {};
+  if (dry && badRows.length && LOAD_BREAK !== 'skiprejects') {
+    fs.writeFileSync(base + '.rejected.csv', csv([grid[0].concat(['rejected_because'])].concat(badRows.sort((x, y) => x - y).map(n => grid[n].concat([bad[n].join(' | ')]))))); outFiles.rejected = base + '.rejected.csv';
+    fs.writeFileSync(base + '.ok.csv', csv([grid[0]].concat(grid.slice(1).filter((_, i) => badRows.indexOf(i + 1) < 0)))); outFiles.ok = base + '.ok.csv';
+  }
+  if (!(r && r.ok) && !badRows.length && !unplaced.length) refuse('the loader stopped: ' + String(r && r.summary || 'no answer') + '; nothing was loaded');   // e.g. a header that is not a column of the table
+  say('load kind=' + K.name + ' rows=' + rows + ' rejected=' + badRows.length + ' unplaced=' + unplaced.length + ' dry=' + dry + ' loader_ok=' + !!(r && r.ok) + ' ms=' + (Date.now() - t0));
+  const out = { kind: K.name, table: K.table, file: a.file, rows, ok, rejected: badRows.sort((x, y) => x - y).map(n => ({ row: n, why: bad[n] })), unplaced, dry, loaded: false, files: outFiles, summary: r && r.summary };
+  if (dry) { if (LOAD_BREAK === 'dryrunwrites' && r && r.ok) { persistGroup(O, tx.groupOps()); out.loaded = true; } return out; }
+  if (!r || !r.ok) refuse('nothing was loaded: ' + (badRows.length ? badRows.length + ' of ' + rows + ' rows are rejected (the loader is all or nothing); run with dry=Y for the list and ' + path.basename(base) + '.ok.csv' : String(r && r.summary)));
+  const res = persistGroup(O, tx.groupOps()); out.loaded = true; out.ops = res.length; out.opSummary = sum(res); out.keys = res.filter(o => o.table === K.table && o.op_type === 'CRUD_CREATE').map(o => (o.fields || {})[K.key] != null ? o.fields[K.key] : o.id);
+  return out;
+}
 async function main(argv) {
   const cmd = argv[0], a = {};
   for (let i = 1; i < argv.length; i++) { const m = /^--(\w+)$/.exec(argv[i]); if (!m || i + 1 >= argv.length) { say('FAIL usage: ' + argv[i]); return 2; } if (m[1] === 'where') (a.where = a.where || []).push(argv[++i]); else a[m[1]] = argv[++i]; }
-  if (['find', 'actions', 'describe', 'read', 'list', 'sum', 'group', 'new', 'update', 'delete'].concat(Object.keys(ACT)).indexOf(cmd) < 0) { say('FAIL usage: erp_cli.js find|actions|complete|void|close|reverse|describe|read|list|sum|group --kind K (--number N | --id I) [--role R]'); return 2; }
+  if (['find', 'actions', 'describe', 'read', 'list', 'sum', 'group', 'new', 'update', 'delete', 'load'].concat(Object.keys(ACT)).indexOf(cmd) < 0) { say('FAIL usage: erp_cli.js find|actions|complete|void|close|reverse|describe|read|list|sum|group --kind K (--number N | --id I) [--role R]'); return 2; }
   try {
-    const O = await boot(a), out = ACT[cmd] ? act(O, a, ACT[cmd]) : ({ find, actions, describe, read, list: OC.list, sum: OC.sum, group: OC.group, new: createRecord, update: updateRecord, delete: deleteRecord })[cmd](O, a);
+    const O = await boot(a), out = await (ACT[cmd] ? act(O, a, ACT[cmd]) : ({ find, actions, describe, read, list: OC.list, sum: OC.sum, group: OC.group, new: createRecord, update: updateRecord, delete: deleteRecord, load: loadRecords })[cmd](O, a));
     process.stdout.write(JSON.stringify(out) + '\n'); return 0;
   } catch (e) {
     if (e instanceof Refused || e instanceof OC.Refused) { say('REFUSED ' + e.message); process.stdout.write(JSON.stringify({ refused: true, reason: e.message }) + '\n'); return 3; }
@@ -382,4 +424,4 @@ async function main(argv) {
   }
 }
 if (require.main === module) main(process.argv.slice(2)).then(c => process.exit(c));
-module.exports = { main, boot, find, actions, complete, act, ACT, describe, read, persistGroup, resolveOne, docKind, kindRef, byNumber, recordOf, loadEngine, b3 };
+module.exports = { main, boot, loadRecords, find, actions, complete, act, ACT, describe, read, persistGroup, resolveOne, docKind, kindRef, byNumber, recordOf, loadEngine, b3 };

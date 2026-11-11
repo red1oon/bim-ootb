@@ -36,7 +36,11 @@
     "CASE WHEN substr(d.docbasetype,3,1)='C' THEN i.grandtotal*-1 ELSE i.grandtotal END AS grandtotal, d.docbasetype FROM c_invoice i LEFT JOIN c_doctype d ON i.c_doctype_id=d.c_doctype_id"
   ];
   function mkq(db) { return function (sql, p) { var st = db.prepare(sql), out = []; try { if (p) st.bind(p); while (st.step()) { var o = st.getAsObject(), k = {}; Object.keys(o).forEach(function (x) { k[x.toLowerCase()] = o[x]; }); out.push(k); } } finally { st.free(); } return out; }; }
-  function install(db) {
+  function install(db0) {
+    var ES = (typeof module !== 'undefined' && module.exports) ? require('./db_export_safe.js') : global.ErpExportSafe;   // §EXPORTSAFE: re-bound after every db.export()
+    if (!ES.has(db0, 'goal_engine')) ES.register(db0, 'goal_engine', bind); return db0;
+  }
+  function bind(db) {
     var q = mkq(db), AP = (typeof module !== 'undefined' && module.exports) ? require('./invoice_open.js') : global.OverlayInvoiceOpen;
     db.create_function('trunc', function (v, f) { return trunc(v, f); });
     db.create_function('invoiceopen', function (id, ips) {                      // adempiere.invoiceopen(C_Invoice_ID, C_InvoicePaySchedule_ID) over the SHARED transcription in ad_process

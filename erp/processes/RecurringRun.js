@@ -13,6 +13,7 @@
 //   (date columns shown in the column's display format inside a Description) is not modelled: a date is shown as stored. (c) MJournalBatch lines (journals of a GL batch) are never reached because the
 //   GL Journal Batch copy (RecurringType G) is not ported in Recurring.js and fails there first. (d) the SELECT of due recurrings reads committed rows (a raw query); one process run touches each recurring once,
 //   so the pending writes of the same run never matter. (e) Msg.parseTranslation of the log message: the twin's A.Msg.parseTranslation.
+function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() > 0` for the twin's id law: a row made through the op log has a NEGATIVE synthetic pk (crud_core listTip -opId), so "an id is set" = non-zero (same rule as ModelLayer.idSet; MIGRATE_INSTALL_TENANT §IDLAW-SPEC)
 (function (global) {
   'use strict';
   var NODE = typeof module !== 'undefined' && module.exports;
@@ -71,7 +72,7 @@
       var trx = this.get_TrxName(), A = X.A, R = RECUR(), self = this;
       trx.say('§PROC-INFO RecurringRun C_RecurringGroup_ID=' + this.p_C_RecurringGroup_ID + ', Cut_Date=' + this.p_Cut_Date + ', DocAction=' + this.p_DocAction);
       var sql = 'SELECT * FROM c_recurring WHERE runsmax>(SELECT COUNT(*) FROM c_recurring_run WHERE c_recurring_run.c_recurring_id=c_recurring.c_recurring_id)', prm = [];
-      if (this.p_C_RecurringGroup_ID > 0) { sql += ' AND c_recurringgroup_id=?'; prm.push(this.p_C_RecurringGroup_ID); }
+      if (idSet(this.p_C_RecurringGroup_ID)) { sql += ' AND c_recurringgroup_id=?'; prm.push(this.p_C_RecurringGroup_ID); }
       if (this.p_Cut_Date != null) { sql += ' AND datenextrun<=?'; prm.push(String(this.p_Cut_Date.toString ? this.p_Cut_Date.toString() : this.p_Cut_Date).slice(0, 19)); }
       sql += " AND isactive='Y' AND ad_client_id=? ORDER BY name, c_recurring_id"; prm.push(this.getAD_Client_ID());                // setOnlyActiveRecords + setClient_ID + setOrderBy
       var recs = trx.q(sql, prm), cnt = 0;

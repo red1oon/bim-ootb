@@ -260,7 +260,7 @@
           } else costs = lineProductCosts(trx, F, ctx, line, true, true);
           if (costs == null || costs.signum() === 0) {
             if (T.isStocked(p)) {
-              var cnt = trx.q("SELECT COUNT(*) AS n FROM m_costdetail WHERE m_product_id=? AND processed='Y' AND amt=0 AND qty>0 AND (c_orderline_id>0 OR c_invoiceline_id>0)", [p.m_product_id])[0];
+              var cnt = trx.q("SELECT COUNT(*) AS n FROM m_costdetail WHERE m_product_id=? AND processed='Y' AND amt=0 AND qty>0 AND (c_orderline_id<>0 OR c_invoiceline_id<>0)", [p.m_product_id])[0];
               if (cnt && Number(cnt.n) > 0) costs = Z; else { F.err = 'No Costs for ' + p.name; return false; }
             } else continue;
           }
@@ -271,7 +271,7 @@
         var dr = createLine(F, ctx, line, productAcct(trx, line.m_product_id, 'p_cogs_acct', as), as.c_currency_id, costs, null);
         if (!dr) { F.err = 'FactLine DR not created: ' + line.id; return false; }
         dr.m_locator_id = line.m_locator_id; locFromLocator(trx, dr, line.m_locator_id, true); locFromBPartner(trx, dr, io.c_bpartner_location_id, false);
-        var ool = nz(line.c_orderline_id) ? trx.get('c_orderline', line.c_orderline_id) : null; dr.ad_org_id = ool && Number(ool.ad_org_id) > 0 ? ool.ad_org_id : line.ad_org_id;   // getOrder_Org_ID
+        var ool = nz(line.c_orderline_id) ? trx.get('c_orderline', line.c_orderline_id) : null; dr.ad_org_id = ool && ML.idSet(ool.ad_org_id) ? ool.ad_org_id : line.ad_org_id;   // getOrder_Org_ID
         dr.qty = N(line.qty.negate());
         if (rev && !updateReverseLine(F, dr, TABLE_ID.m_inout, revId, line.reversalLine_ID, 1)) {   // :288-301 Set AmtAcctDr from Original Shipment/Receipt
           if (!T.isStocked(p)) { removeLine(F, dr); continue; }                                 // ignore service
@@ -388,7 +388,7 @@
         var rcr = createLine(F, ctx, rl, productAcct(trx, rl.m_product_id, MMR_SWAP ? 'p_asset_acct' : 'p_cogs_acct', as), as.c_currency_id, null, rcosts);   // :642-644 CR P_Cogs
         if (!rcr) { F.err = 'FactLine CR not created: ' + rl.id; return false; }
         rcr.m_locator_id = rl.m_locator_id; locFromLocator(trx, rcr, rl.m_locator_id, true); locFromBPartner(trx, rcr, io.c_bpartner_location_id, false);
-        var rool = nz(rl.c_orderline_id) ? trx.get('c_orderline', rl.c_orderline_id) : null; rcr.ad_org_id = rool && Number(rool.ad_org_id) > 0 ? rool.ad_org_id : rl.ad_org_id;   // :654 Revenue X-Org (getOrder_Org_ID)
+        var rool = nz(rl.c_orderline_id) ? trx.get('c_orderline', rl.c_orderline_id) : null; rcr.ad_org_id = rool && ML.idSet(rool.ad_org_id) ? rool.ad_org_id : rl.ad_org_id;   // :654 Revenue X-Org (getOrder_Org_ID)
         rcr.qty = N(rl.qty.negate());                                                          // :655
         if (rrev && !updateReverseLine(F, rcr, TABLE_ID.m_inout, revId, rl.reversalLine_ID, 1, rdr)) { F.err = 'Original Shipment/Receipt not posted yet'; return false; }   // :656-664
       }
@@ -655,7 +655,7 @@
       }
       if (String(dr.ad_org_id) !== String(cr.ad_org_id)) {                                                                 // :241 only for between-org movements
         if (M.costingLevel(trx, p, as) !== 'O') continue;
-        var desc = line.description == null ? '' : line.description, refFrom = 0, refTo = 0, later = nz(line.reversalLine_ID) && Number(line.reversalLine_ID) > 0 && (ML.isNewId(line.id) || Number(line.id) > Number(line.reversalLine_ID));
+        var desc = line.description == null ? '' : line.description, refFrom = 0, refTo = 0, later = nz(line.reversalLine_ID) && ML.idSet(line.reversalLine_ID) && (ML.isNewId(line.id) || Number(line.id) > Number(line.reversalLine_ID));
         if (later) { var cf = M.getMovement(trx, as, line.m_product_id, line.m_attributesetinstance_id || 0, line.reversalLine_ID, 0, true); if (cf) refFrom = cf.m_costdetail_id; }
         if (!M.createMovement(trx, as, dr.ad_org_id, line.m_product_id, line.m_attributesetinstance_id || 0, line.id, 0, costs.negate(), line.qty.negate(), true, desc + '(|->)', ctx.dateAcct, refFrom)) { F.err = 'Failed to create cost detail record'; return false; }
         if (later) { var ct = M.getMovement(trx, as, line.m_product_id, line.m_attributesetinstance_id || 0, line.reversalLine_ID, 0, false); if (ct) refTo = ct.m_costdetail_id; }
@@ -711,7 +711,7 @@
         } else costs = lineProductCosts(trx, F, ctx, line, true, true);                                                                                      // :307-320 MZ Goodwill: the line's cost detail, else the current cost
         if (costs == null || costs.signum() === 0) {                                                                                                         // :322-345
           if (T.isStocked(p)) {
-            var cnt = trx.q("SELECT COUNT(*) AS n FROM m_costdetail WHERE m_product_id=? AND processed='Y' AND amt=0 AND qty>0 AND (c_orderline_id>0 OR c_invoiceline_id>0)", [p.m_product_id])[0];
+            var cnt = trx.q("SELECT COUNT(*) AS n FROM m_costdetail WHERE m_product_id=? AND processed='Y' AND amt=0 AND qty>0 AND (c_orderline_id<>0 OR c_invoiceline_id<>0)", [p.m_product_id])[0];
             if (cnt && Number(cnt.n) > 0) costs = Z; else { F.err = 'No Costs for ' + p.name; return false; }
           } else continue;                                                                                                                                   // ignore service
         }
@@ -737,7 +737,7 @@
       }
       var amt = CA ? adjustmentDiff : costs;                                                                                                                 // :417-424 costDetailAmt
       if (CA && String(docCur) !== String(as.c_currency_id)) { amt = convertCosting(trx, M, amt, docCur, as.c_currency_id, ctx.dateAcct); if (amt == null) { F.err = 'No conversion from ' + docCur + ' to ' + as.c_currency_id; return false; } }   // :418-424
-      var refFor = function (asi) { var ref = 0; if (nz(line.reversalLine_ID) && Number(line.reversalLine_ID) > 0 && (ML.isNewId(line.id) || Number(line.id) > Number(line.reversalLine_ID))) { var ocd = M.getInventory(trx, as, line.m_product_id, asi, line.reversalLine_ID, 0); if (ocd) ref = ocd.m_costdetail_id; } return ref; };   // :437-446 / :462-471 / :486-495
+      var refFor = function (asi) { var ref = 0; if (nz(line.reversalLine_ID) && ML.idSet(line.reversalLine_ID) && (ML.isNewId(line.id) || Number(line.id) > Number(line.reversalLine_ID))) { var ocd = M.getInventory(trx, as, line.m_product_id, asi, line.reversalLine_ID, 0); if (ocd) ref = ocd.m_costdetail_id; } return ref; };   // :437-446 / :462-471 / :486-495
       if (batch && !nz(line.m_attributesetinstance_id)) {                                                                                                    // :425-459 one cost detail per MA
         trx.find('m_inventorylinema', { m_inventoryline_id: line.id }).forEach(function (ma) {
           var q = D(ma.movementqty), maCost = costMap[line.id + '_' + ma.m_attributesetinstance_id]; if (q.signum() !== line.qty.signum()) q = q.negate(); if (maCost == null) return; if (maCost.signum() !== amt.signum()) maCost = maCost.negate();
@@ -832,6 +832,7 @@
       trx.find('c_invoicetax', { c_invoice_id: inv.c_invoice_id }).forEach(function (t) {
         F.line(ACCT.taxDue(trx, t.c_tax_id, as.c_acctschema_id), cur, cm ? t.taxamt : null, cm ? null : t.taxamt, Object.assign({ c_tax_id: t.c_tax_id, qty: 0 }, base)); });
       trx.find('c_invoiceline', { c_invoice_id: inv.c_invoice_id }, ['line']).forEach(function (l) {
+        if (Y(l.isdescription)) return;   // Doc_Invoice.loadLines :197 `if (line.isDescription()) continue;` - Generate Invoices adds description lines (InvoiceGenerate); they never post
         if (!nz(l.m_product_id) && !nz(l.c_charge_id)) { F.err = 'description invoice line (no product, no charge) posting not ported — named'; return; }
         // DocLine.getAccount(P_Revenue) DocLine.java:447-461: a line with NO product and a charge posts to MCharge.getAccount (C_Charge_Acct.Ch_Expense_Acct), both SO and PO (W-IMPORT-INVOICE: the open-AR Opening Charge)
         F.line(nz(l.m_product_id) ? ACCT.revenue(trx, l.m_product_id, as.c_acctschema_id) : ACCT.chargeExpense(trx, l.c_charge_id, as.c_acctschema_id), cur, cm ? l.linenetamt : null, cm ? null : l.linenetamt, Object.assign({}, base, { line_id: l.c_invoiceline_id, m_product_id: l.m_product_id,
@@ -851,7 +852,7 @@
     c_allocationhdr: function (trx, h, as, F) {                                              // Doc_AllocationHdr.createFacts :193-555 — SO / PO invoice branches, discount, write-off, payment + cash-line legs, VAT tax correction
       var ls = trx.find('c_allocationline', { c_allocationhdr_id: h.c_allocationhdr_id }, ['c_allocationline_id']), sch = as.c_acctschema_id, cur = h.c_currency_id, named = function (m) { F.err = m + ' not ported - named'; return false; };
       if (ls.length === 2) {                                                                 // :199-213 "Do not create fact lines for reversal of invoice"
-        var l1 = ls[0], l2 = ls[1], only = function (l) { return !nz(l.c_payment_id) && !nz(l.c_order_id) && !nz(l.c_cashline_id) && nz(l.c_invoice_id) > 0; };
+        var l1 = ls[0], l2 = ls[1], only = function (l) { return !nz(l.c_payment_id) && !nz(l.c_order_id) && !nz(l.c_cashline_id) && ML.idSet(l.c_invoice_id); };
         if (only(l1) && only(l2)) { var i1 = trx.get('c_invoice', l1.c_invoice_id), i2 = trx.get('c_invoice', l2.c_invoice_id);
           if (i1 && i2 && D(i1.grandtotal).compareTo(D(i2.grandtotal).negate()) === 0 && String(i2.reversal_id) === String(i1.c_invoice_id)) return true; }   // (BigDecimal.equals: same value; the scale of a stored REAL is not observable here — named)
       }

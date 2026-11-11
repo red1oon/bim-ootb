@@ -38,7 +38,7 @@
       if (!inv.save()) throw new Error('CommissionAPInvoice - cannot save Invoice');
       // Create Invoice Line
       var iLine = C.MInvoiceLine(trx, inv);
-      if (com.getC_Charge_ID() > 0) iLine.set('c_charge_id', com.getC_Charge_ID()); else iLine.set('m_product_id', com.getM_Product_ID());
+      if (ML.idSet(com.getC_Charge_ID())) iLine.set('c_charge_id', com.getC_Charge_ID()); else iLine.set('m_product_id', com.getM_Product_ID());
       C.ilSetQty(trx, iLine, A.BigDecimal.of(1));                                         // setQty(1)
       iLine.set('priceentered', comRun.getGrandTotal()).set('priceactual', comRun.getGrandTotal());   // setPrice(BigDecimal)
       if (!MI.MInvoiceLine_setTax(trx, this.getCtx(), iLine, trx.get('c_invoice', inv.id()) || inv.values())) throw new Error('CommissionAPInvoice - cannot save Invoice Line');   // setTax() :499-528 (false → "No Tax found"; the Java ignores it, the save then fails on mandatory C_Tax_ID)

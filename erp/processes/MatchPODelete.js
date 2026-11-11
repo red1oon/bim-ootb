@@ -3,6 +3,7 @@
 // processes/MatchPODelete.js — org.compiere.process.MatchPODelete, verbatim
 // (org.adempiere.base.process/src/org/compiere/process/MatchPODelete.java). §CP-PROC-CORE — Witness: W-CP-PROC-ORACLE.
 // MMatchPO.beforeDelete/afterDelete (:1215-1250: posted → Fact_Acct; order line QtyDelivered/QtyInvoiced) live in model_match.js.
+function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() > 0` for the twin's id law: a row made through the op log has a NEGATIVE synthetic pk (crud_core listTip -opId), so "an id is set" = non-zero (same rule as ModelLayer.idSet; MIGRATE_INSTALL_TENANT §IDLAW-SPEC)
 (function (global) {
   'use strict';
   var P = (typeof module !== 'undefined' && module.exports) ? require('../ad_process.js') : global.AdProcess;
@@ -18,7 +19,7 @@
       var reversalId = po.reversal_id || 0;
       if (!this.deleteMatchPO(po)) return '@Error@';
       msg += '@Deleted@';
-      if (reversalId > 0) {
+      if (idSet(reversalId)) {
         var porev = trx.get('m_matchpo', reversalId);
         if (porev == null) throw A.AdempiereException('@NotFound@ @M_MatchPO_ID@ ' + reversalId);
         if (!this.deleteMatchPO(porev)) return '@Error@ @Reversal_ID@';

@@ -8,6 +8,7 @@
 // and never edits the renderer. E2 is DRY-RUN: it logs the op it WOULD apply; E3 swaps applyOp() for the
 // signed kernel (commitOp/sealChain/verifyChain). Reuses page globals: N/idx/project/px/py/k/radius +
 // withBundle/curChain/fname (best-effort, all typeof-guarded).
+function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() > 0` for the twin's id law: a row made through the op log has a NEGATIVE synthetic pk (crud_core listTip -opId), so "an id is set" = non-zero (same rule as ModelLayer.idSet; MIGRATE_INSTALL_TENANT §IDLAW-SPEC)
 (function (global) {
   'use strict';
 
@@ -425,7 +426,10 @@
   function _coBindUdf(db) {
     var A = global.AdCallout; if (!A || !A.bind) return;
     A.bind(_modelQuery(db));   // no clock of its own: RUNTIME.now is the local wall clock (§5.33 CAPEX_DASHBOARD.md: a Date.now() here undid it, SQL SYSDATE was the UTC day)
-    if (_coUdfDb !== db && A.RUNTIME.registerSqlFunctions) { _coUdfDb = db; try { A.RUNTIME.registerSqlFunctions(function (n, f) { db.create_function(n, f); }); } catch (eu) { console.log('§CALLOUT-UDF failed ' + (eu && eu.message)); } }
+    // sql.js db.export() (every persist: tenant birth, op-group sealing) closes and reopens the connection and DROPS every create_function registration while the JS handle stays the same, so "already bound to this handle" is not
+    //   proof: re-register whenever the handle carries none (found: bomPriceStd missing after a tenant was born -> MProductPricing 'no such function' -> every line save ProductNotOnPriceList; W-LOOKUP-IDLAW)
+    var _udfLost = !db.functions || Object.keys(db.functions).length === 0;
+    if ((_coUdfDb !== db || _udfLost) && A.RUNTIME.registerSqlFunctions) { _coUdfDb = db; try { A.RUNTIME.registerSqlFunctions(function (n, f) { db.create_function(n, f); }); } catch (eu) { console.log('§CALLOUT-UDF failed ' + (eu && eu.message)); } }
   }
   function _coDb(fn) {
     var A = global.AdCallout;
@@ -877,7 +881,7 @@
       var fm = MA.form(r, pid, productWindow);
       if (!fm.ok) { panel.innerHTML = '<span class=cfdim>' + esc(fm.reason) + '</span>'; panel.style.display = 'flex'; console.log('§ASI-EDITOR open col=' + col + ' product=' + pid + ' ' + fm.reason); return; }
       var today = new Date().toISOString().slice(0, 10), h = '';
-      var ex = r.q('SELECT m_attributesetinstance_id AS id, description FROM m_attributesetinstance WHERE m_attributeset_id=? AND m_attributesetinstance_id>0 ORDER BY m_attributesetinstance_id DESC LIMIT 200', [fm.setId]);
+      var ex = r.q('SELECT m_attributesetinstance_id AS id, description FROM m_attributesetinstance WHERE m_attributeset_id=? AND m_attributesetinstance_id<>0 ORDER BY m_attributesetinstance_id DESC LIMIT 200', [fm.setId]);
       h += _asiRow('Existing', '<select class=cfi data-asi="existing"><option value="">(new instance)</option>' + ex.map(function (x) { return '<option value="' + esc(x.id) + '">' + esc((x.description || '') + ' (' + x.id + ')') + '</option>'; }).join('') + '</select>');
       if (fm.lot) h += _asiRow('Lot', '<input class=cfi type="text" data-asi="lot">' + (fm.lotCounter ? ' <button type=button class=cfb data-asi-new="lot">New</button>' : ''));
       if (fm.serno) h += _asiRow('Serial No', '<input class=cfi type="text" data-asi="serno">' + (fm.sernoCounter ? ' <button type=button class=cfb data-asi-new="serno">New</button>' : ''));
@@ -1103,6 +1107,7 @@
           return;
         }
         withBundle(function (db) {
+          var _shadows = [];
           try {
             // §P8 P8.4 (W-PARITY-REFTABLE): the pk is the AD_Ref_Table AD_Key when there is one
             // (MLookupFactory.getLookup_Table), else the TableDIR convention.
@@ -1131,6 +1136,7 @@
               } catch (eRw) { refWhereState = 'error'; }
               if (!refWhere && String(f.refwhere).indexOf('@') < 0) { refWhere = String(f.refwhere); refWhereState = 'applied'; }
             }
+            _shadows = _fkShadows(db, [vr && vr.sql, refWhere], t);   // §LOOKUP-IDLAW: sub-selects of the rule see the op-log rows too
             var andRef = function (clause) {
               if (!refWhere) return clause;
               return clause ? '(' + clause + ') AND (' + refWhere + ')' : refWhere;
@@ -1220,7 +1226,7 @@
             }
             if (!rows.length && !noRows) return;              // no data at all → leave the raw-value option as-is
             el.innerHTML = blankFk + rows.map(function (r) { return '<option value="' + esc(r[0]) + '"' + (String(r[0]) === String(keep) ? ' selected' : '') + '>' + esc(r[1] + ' (' + r[0] + ')') + '</option>'; }).join('');
-          } catch (er) {}
+          } catch (er) {} finally { _tipShadowOff(db, _shadows); }
         });
       }
     });
@@ -1251,6 +1257,18 @@
                        " AND lower(parameters) LIKE '%\"table\":\"" + String(t).toLowerCase() + "\"%' LIMIT 1");
       return !!(r.length && r[0].values.length);
     } catch (e) { return false; }
+  }
+  // §LOOKUP-IDLAW (MIGRATE_INSTALL_TENANT §LOOKUP-SPEC): an AD_Val_Rule / AD_Ref_Table.WhereClause is real SQL and routinely reads OTHER tables (rule 271: `... AND (SELECT COUNT(*) FROM
+  //   M_PriceList_Version WHERE ...)>0`). Legacy runs it over the whole database; here only the picker's own table was folded (_fkFoldSource), so a sub-select could not see a row made
+  //   through the op log (synthetic negative pk) and the rule admitted nothing: the Price List of a migrated tenant offered 0 rows. The tables the SQL names in FROM/JOIN are shadowed by
+  //   their folded rows for the length of the lookup with the ONE existing tip-shadow (_tipShadowOn: temp tables + views, dropped by _tipShadowOff). No table list.
+  function _fkShadows(db, sqls, t) {
+    if (global.__fkNoShadow) return [];   // witness mutant only (witness_lookup_idlaw): the old lookup, only the picker's own table folded
+    var names = [], seen = {}; seen[String(t).toLowerCase()] = 1;
+    (sqls || []).forEach(function (q) { if (q) String(q).replace(/\b(?:FROM|JOIN)\s+([A-Za-z_][A-Za-z0-9_]*)/gi, function (m, nm) { var k = nm.toLowerCase(); if (!seen[k]) { seen[k] = 1; names.push(k); } return m; }); });
+    var done = names.length ? _tipShadowOn(db, names) : [];
+    if (done.length) console.log('§FKSHADOW lookup of ' + t + ' reads [' + done.join(',') + '] folded with the op log');
+    return done;
   }
   function _fkFoldSource(db, t, pk) {
     var sdb = SIDE;                                   // sync handle; null before hydration → degrade to raw
@@ -1926,6 +1944,7 @@
     // lands before the first commit/hydration used to see the raw bundle (a saved tax edit read back as the seed 0%).
     // Wait for the sidecar (cb(null) if absent -> raw bundle, as before) so every model read folds the op log.
     withSidecar(function () { withBundle(function (db) {
+      if (typeof _coBindUdf === "function") _coBindUdf(db);   // the stored-function UDFs (bomPriceStd, invoiceOpen ...) are on THIS db before any model transaction reads it (MProductPricing: 'no such function: bomPriceStd' rejected every line save as ProductNotOnPriceList)
       var sh = SIDE ? _tipShadowOn(db, _sideTables(SIDE)) : [], r = null;
       try { r = ML.run(_modelQuery(db), _modelEnv(), spec); }
       catch (e) { console.log('§MODEL-ERR ' + (e && e.message)); r = null; }
@@ -1943,6 +1962,7 @@
   function _fireBeforeSaveNow(e, vals, orig, cb, MV) {
     withBundle(function (db) {
       var out = null;
+      if (typeof _coBindUdf === "function") _coBindUdf(db);   // same: the model beforeSave (MOrderLine pricing) calls the stored-function UDFs
       try {
         var b = _mvB3(db);
         if (!_mvAllInstalled) { _mvAllInstalled = true; var ins = _installAllModelVal(b, db); console.log('§AD-MODELVAL-LIVE installed-all registry=' + ins.length + ' [' + ins.join(',') + ']'); }
@@ -1964,7 +1984,7 @@
           var ML = global.ModelLayer;
           if (v.ok && ML && typeof ML.run === 'function') {
             var mr = ML.run(_modelQuery(db), _modelEnv(), { table: e.key, timing: 'BEFORE_SAVE', record: Object.assign({}, rec, info.derived || {}), old: orig || null, isNew: !orig });
-            if (!mr.ok) v = { ok: false, fired: v.fired, blocked: 'model.beforeSave', error: mr.error || mr.msg };
+            if (!mr.ok) { v = { ok: false, fired: v.fired, blocked: 'model.beforeSave', error: mr.error || mr.msg }; (mr.log || []).forEach(function (l) { console.log(l); }); }   // the model's own §MODEL-SEVERE lines say WHY (primary evidence)
             else if (mr.derived && Object.keys(mr.derived).length) { info.derived = Object.assign(info.derived || {}, mr.derived); console.log('§MODEL-BEFORE-SAVE table=' + e.key + ' derived=' + JSON.stringify(mr.derived)); }
           }
         } finally { _tipShadowOff(db, shadowed); }
@@ -2362,8 +2382,8 @@
           var lines = lineRows.map(lcRow).filter(function (r) { return String(r.c_order_id) === String(op.id); })
             .map(function (r) { return { c_orderline_id: r.c_orderline_id, m_product_id: r.m_product_id, qtyordered: r.qtyordered }; });
           // MOrder.prepareIt copies C_DocTypeTarget_ID into C_DocType_ID (MOrder.java:1619,1624; 0 = not yet set)
-          var tgt = Number(order.c_doctypetarget_id) > 0 ? order.c_doctypetarget_id : null;
-          var dtId = (tgt != null && (/^(DR|IP|IN)$/.test(String(op.from || 'DR')) || !(Number(order.c_doctype_id) > 0))) ? tgt : order.c_doctype_id;
+          var tgt = idSet(order.c_doctypetarget_id) ? order.c_doctypetarget_id : null;
+          var dtId = (tgt != null && (/^(DR|IP|IN)$/.test(String(op.from || 'DR')) || !(idSet(order.c_doctype_id)))) ? tgt : order.c_doctype_id;
           var policy = CORE.docPolicyFor(STORE, dtId), psrc = 'docPolicy';
           if (!policy) {
             // A doc type minted at run time (a born tenant's, FS-1) cannot be in the static table: read the SAME
@@ -2649,15 +2669,36 @@
       return (controlled && seqId != null) ? Number(seqId) : null;
     } catch (e) { return null; }
   }
+  // the session client's own table sequence only (MSequence.get :864-890: `WHERE UPPER(Name)=? AND IsTableID=? AND AD_Client_ID=?`). Without the client term every tenant read the FIRST DocumentNo_<table> row of the
+  //   bundle - GardenWorld's (C_Payment 10000007) - so two payments of a migrated tenant both showed, kept and saved 10000007 (W-DOCNO).
+  function _seqClientTerm() { var c = global.APP && global.APP.clientId; return (c != null && c !== '' && isFinite(Number(c))) ? ' AND AD_Client_ID=' + Number(c) : ' AND 0'; }
   function _previewDocNo(table, fields) {
     var mdb = (typeof globalThis !== 'undefined' && globalThis.__idmpDb) || null; if (!mdb) return null;
     var cols = _getTableCols(table); if (!cols['documentno']) return null;
+    // the number the SAVE will assign, from the SAME MSequence port the save runs (model_trade getDocumentNoByDocType / ByTable, over the tip-shadowed bundle), its ops thrown away:
+    //   sequences made or bumped by earlier saves of this session live only in the op log, so reading the bundle row showed 1000000 again for the 2nd..Nth document (W-DOCNO preview == saved)
+    var ML0 = global.ModelLayer, MT0 = global.ModelTrade;
+    if (ML0 && MT0 && MT0.getDocumentNoByDocType && !global.__docnoOldPreview) {   // __docnoOldPreview: witness mutant only (witness_docno_page DOCNO_PAGE_MUT=preview)
+      var sh0 = SIDE ? _tipShadowOn(mdb, ['ad_sequence', 'ad_sequence_no']) : [], pv = null;
+      try {
+        var trx0 = new ML0.Trx(_modelQuery(mdb), _modelEnv()), rec0 = {};
+        Object.keys(fields || {}).forEach(function (k) { rec0[k.toLowerCase()] = fields[k]; });
+        var mc0 = ML0.columnsOf(trx0, table), dtc0 = mc0.c_doctypetarget_id ? 'c_doctypetarget_id' : mc0.c_doctype_id ? 'c_doctype_id' : null;
+        if (dtc0) pv = MT0.getDocumentNoByDocType(trx0, Number(rec0[dtc0] || 0), false, rec0);
+        if (pv == null) pv = MT0.getDocumentNoByTable(trx0, mc0.__tableName || table, rec0);
+      } catch (e0) { pv = null; }
+      finally { _tipShadowOff(mdb, sh0); }
+      if (pv != null) { _previewIssued[String(pv)] = 1; return String(pv); }
+    }
     try {
       var dtSeq = _docTypeSeqId(mdb, fields);
       var r = dtSeq != null
         ? mdb.exec("SELECT CurrentNext, Prefix, Suffix FROM AD_Sequence WHERE AD_Sequence_ID=" + dtSeq + " AND IsActive='Y' LIMIT 1")
-        : mdb.exec("SELECT CurrentNext, Prefix, Suffix FROM AD_Sequence WHERE UPPER(Name)=UPPER(?) AND IsActive='Y' LIMIT 1", ['DocumentNo_' + table]);
-      if (!r.length || !r[0].values.length) return null;
+        : mdb.exec("SELECT CurrentNext, Prefix, Suffix FROM AD_Sequence WHERE UPPER(Name)=UPPER(?) AND IsActive='Y' AND IsTableID='N'" + _seqClientTerm() + " LIMIT 1", ['DocumentNo_' + table]);
+      if (!r.length || !r[0].values.length) {   // the tenant has no DocumentNo_<table> yet: the save makes it (MSequence.createTableSequence), so the first number is its initial CurrentNext (MSequence.setInitialDefaults)
+        var idf = global.ModelLayer && global.ModelLayer.initialDefaultsOf && global.ModelLayer.initialDefaultsOf('ad_sequence'), first = idf && idf.currentnext;
+        if (first == null) return null; r = [{ values: [[first, null, null]] }];
+      }
       var v = r[0].values[0], cn = _seqTipNext(dtSeq != null ? dtSeq : null, dtSeq != null ? null : 'DocumentNo_' + table, v[0]);
       // iDempiere shows the not-yet-allocated number as "<80003>" and PO.saveNew :3571-3572 treats that as EMPTY → the number
       // is allocated from the record's doctype at save time. Our field keeps the bare number (the docno val-rule is numeric),
@@ -2670,7 +2711,7 @@
   function _seqTipNext(seqId, seqName, base) {
     try {
       var mdb = globalThis.__idmpDb;
-      if (seqId == null && seqName) { var r = mdb.exec("SELECT AD_Sequence_ID FROM AD_Sequence WHERE UPPER(Name)=UPPER('" + String(seqName).replace(/'/g, "''") + "') AND IsActive='Y' LIMIT 1"); seqId = r.length ? r[0].values[0][0] : null; }
+      if (seqId == null && seqName) { var r = mdb.exec("SELECT AD_Sequence_ID FROM AD_Sequence WHERE UPPER(Name)=UPPER('" + String(seqName).replace(/'/g, "''") + "') AND IsActive='Y' AND IsTableID='N'" + _seqClientTerm() + " LIMIT 1"); seqId = r.length ? r[0].values[0][0] : null; }
       if (seqId == null || !SIDE) return base;
       var tv = CORE.tipValues(SIDE, 'ad_sequence', seqId, _readBranch());
       return (tv && tv.currentnext != null) ? Number(tv.currentnext) : base;
@@ -2709,7 +2750,7 @@
       var dtSeq = _docTypeSeqId(mdb, fields), seqName = 'DocumentNo_' + table;
       var r = dtSeq != null
         ? mdb.exec("SELECT AD_Sequence_ID, CurrentNext, IncrementNo, Prefix, Suffix FROM AD_Sequence WHERE AD_Sequence_ID=" + dtSeq + " AND IsActive='Y' LIMIT 1")
-        : mdb.exec("SELECT AD_Sequence_ID, CurrentNext, IncrementNo, Prefix, Suffix FROM AD_Sequence WHERE UPPER(Name)=UPPER(?) AND IsActive='Y' LIMIT 1", [seqName]);
+        : mdb.exec("SELECT AD_Sequence_ID, CurrentNext, IncrementNo, Prefix, Suffix FROM AD_Sequence WHERE UPPER(Name)=UPPER(?) AND IsActive='Y' AND IsTableID='N'" + _seqClientTerm() + " LIMIT 1", [seqName]);
       if (!r.length || !r[0].values.length) { console.log('§DOCNO no-sequence table=' + table + (dtSeq != null ? ' doctypeSeq=' + dtSeq : ' seq=' + seqName) + ' (named, not faked)'); return null; }
       var v = r[0].values[0], seqId = v[0], next = _seqTipNext(v[0], null, v[1]), incr = v[2] || 1, prefix = v[3] || '', suffix = v[4] || '';
       var docNo = (prefix || '') + next + (suffix || '');

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 // callouts/CalloutRMA.js — org.adempiere.model.CalloutRMA, ported verbatim, all 5 methods
 // (org.adempiere.base.callout/src/org/adempiere/model/CalloutRMA.java). §CP — Witness: W-CP-CALLOUT-ORACLE.
+function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() > 0` for the twin's id law: a row made through the op log has a NEGATIVE synthetic pk (crud_core listTip -opId), so "an id is set" = non-zero (same rule as ModelLayer.idSet; MIGRATE_INSTALL_TENANT §IDLAW-SPEC)
 (function (global) {
   'use strict';
   var A = (typeof module !== 'undefined' && module.exports) ? require('../ad_callout.js') : global.AdCallout;
@@ -19,7 +20,7 @@
       var invId = 0;
       if (I(s.getC_Invoice_ID()) !== 0) invId = s.getC_Invoice_ID();
       else invId = R.DB.getSQLValue(null, 'SELECT C_Invoice_ID FROM C_Invoice WHERE C_Order_ID=?', I(s.getC_Order_ID()));
-      if (invId <= 0) return null;
+      if (!idSet(invId)) return null;
       return PO('C_Invoice', invId);
     }
     // MInvoice.getOriginalOrder :3042-3062

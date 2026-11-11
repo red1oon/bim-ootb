@@ -32,6 +32,7 @@
 //      17=List, 18/19=Table[Direct], 13=ID, 20=Yes-No, 28=Button).
 // ════════════════════════════════════════════════════════════════════════════════════════════════════════
 
+function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() > 0` for the twin's id law: a row made through the op log has a NEGATIVE synthetic pk (crud_core listTip -opId), so "an id is set" = non-zero (same rule as ModelLayer.idSet; MIGRATE_INSTALL_TENANT §IDLAW-SPEC)
 (function (global) {
   'use strict';
 
@@ -101,7 +102,7 @@
     registerHandler('org.compiere.report.FinReport', function (ctx, info) {
       var p = (info && info.params) || {}, rid = Number(info && info.Record_ID);
       if (!(rid > 0) || typeof ctx.finReport !== 'function') return { ok: false, message: rid > 0 ? 'FinReport: no report fold available' : '@FillMandatory@ PA_Report_ID', rows: 0 };
-      var res = ctx.finReport(rid, { periodId: Number(p.C_Period_ID) > 0 ? Number(p.C_Period_ID) : 0, today: ctx.today });
+      var res = ctx.finReport(rid, { periodId: idSet(p.C_Period_ID) ? Number(p.C_Period_ID) : 0, today: ctx.today });
       if (!res) return { ok: false, message: 'FinReport: report ' + rid + ' not in the bundle', rows: 0 };
       return { ok: true, message: '@OK@', rows: res.lines.length, result: { statement: res } };
     }, { kind: 'report' });
@@ -730,13 +731,13 @@
       var p = (info && info.params) || {}, q = ctx.query;
       if (typeof q !== 'function') return { ok: false, message: 'Aging: no data accessor', rows: 0 };
       if (String(p.DateAcct || 'N') === 'Y') return { ok: false, message: 'Aging DateAcct=Y (RV_OpenItemToDate / invoiceOpenToDate) is not ported — run without it', rows: 0 };
-      if (Number(p.ConvertAmountsInCurrency_ID) > 0) return { ok: false, message: 'Aging ConvertAmountsInCurrency_ID (currencyConvertInvoice) is not ported — run without it', rows: 0 };
+      if (idSet(p.ConvertAmountsInCurrency_ID)) return { ok: false, message: 'Aging ConvertAmountsInCurrency_ID (currencyConvertInvoice) is not ported — run without it', rows: 0 };
       var today = ctx.today || _CC().localDay();   // §LOCAL-TIME
       var stmt = p.StatementDate ? String(p.StatementDate).slice(0, 10) : today;
       var offset = _agDay(stmt) - _agDay(today);                         // Aging.prepare :96-99 getDaysBetween(now, StatementDate)
       var so = String(p.IsSOTrx == null ? 'Y' : p.IsSOTrx) === 'Y' ? 'Y' : 'N';
-      var bp = Number(p.C_BPartner_ID) > 0 ? Number(p.C_BPartner_ID) : 0, grp = Number(p.C_BP_Group_ID) > 0 ? Number(p.C_BP_Group_ID) : 0;
-      var org = Number(p.AD_Org_ID) > 0 ? Number(p.AD_Org_ID) : 0;
+      var bp = idSet(p.C_BPartner_ID) ? Number(p.C_BPartner_ID) : 0, grp = idSet(p.C_BP_Group_ID) ? Number(p.C_BP_Group_ID) : 0;
+      var org = idSet(p.AD_Org_ID) ? Number(p.AD_Org_ID) : 0;
       var items = openItems(q, { today: today, clientId: ctx.clientId });
       var groups = {};
       items = items.filter(function (oi) {

@@ -226,7 +226,17 @@
   function getDocumentNoByTable(trx, tableName, po) {
     var seq = trx.q("SELECT * FROM ad_sequence WHERE UPPER(name)=UPPER(?) AND istableid='N' AND ad_client_id=? ORDER BY ad_sequence_id", ['DocumentNo_' + tableName, trx.env.client])[0] || null;
     if (seq) seq = trx.get('ad_sequence', seq.ad_sequence_id);
-    if (!seq) { trx.say('§MODEL-UNPORTED-DEP MSequence.createTableSequence (MSequence.java:314) — no DocumentNo_' + tableName + ' sequence for client ' + trx.env.client); return null; }
+    // a sequence made earlier in THIS transaction or by an earlier op group (not yet in the SQL read above): read-your-writes lookup by the exact name
+    if (!seq) seq = trx.find('ad_sequence', { ad_client_id: trx.env.client, name: 'DocumentNo_' + tableName })[0] || null;
+    if (!seq && typeof process !== 'undefined' && process.env && process.env.DOCNO_MUT === 'nocreate') { trx.say('§MODEL-UNPORTED-DEP MSequence.createTableSequence (MUTANT nocreate)'); return null; }   // witness mutant only (witness_docno): the old behaviour
+    if (!seq) {                                                                                // MSequence.getDocumentNo :312-319 -> createTableSequence :792-833 (tableID=false): the client's own DocumentNo_<Table> sequence is made on first use
+      var np = ML.newPO(trx, 'ad_sequence', { ad_client_id: trx.env.client, ad_org_id: 0, name: 'DocumentNo_' + tableName, description: 'DocumentNo/Value for Table ' + tableName, istableid: 'N' });   // MSequence(ctx,0) setInitialDefaults: StartNo/CurrentNext 1000000, IncrementNo 1 (model_initial_defaults)
+      var sv = ML.save(trx, 'ad_sequence', null, np);
+      if (!sv.ok) throw new Error('Could not create table sequence: ' + sv.error);              // :314-315
+      seq = sv.row || trx.find('ad_sequence', { ad_client_id: trx.env.client, name: 'DocumentNo_' + tableName })[0] || null;
+      trx.say('§MODEL-SEQ created DocumentNo_' + tableName + ' for client ' + trx.env.client + ' (MSequence.createTableSequence :792-833)');
+      if (!seq) throw new Error('Could not find table sequence');                              // :318-319
+    }
     return getDocumentNoFromSeq(trx, seq, po);
   }
   // PO.saveNew :3563-3583 — the DocumentNo of a new row: from C_DocTypeTarget_ID (when the table has it) else C_DocType_ID, else the table sequence
@@ -442,7 +452,7 @@
     var sql = pre + "SELECT 1 FROM rv_unposted up WHERE up.DocStatus IN('CO', 'CL', 'RE', 'VO') AND up.AD_Client_ID=? AND datetime(up.DateAcct) BETWEEN datetime(?) AND datetime(?) " +
       ' AND AD_Org_ID IN (SELECT AD_Org_ID FROM AD_OrgInfo WHERE AD_Client_ID=? AND (C_Calendar_ID=?' + (cal === clientCal ? ' OR C_Calendar_ID IS NULL' : '') + ')) ';
     var args = [Env.getAD_Client_ID(ctx), period.getStartDate(), period.getEndDate(), Env.getAD_Client_ID(ctx), cal];
-    if (periodControlID > 0) { sql += ' AND up.DocBaseType = ? '; args.push(R().PO.get('C_PeriodControl', periodControlID).getDocBaseType()); }
+    if (ML().idSet(periodControlID)) { sql += ' AND up.DocBaseType = ? '; args.push(R().PO.get('C_PeriodControl', periodControlID).getDocBaseType()); }
     sql += ' LIMIT 1';
     return DB.query(sql, args).length > 0;
   };
@@ -481,7 +491,7 @@
     var vc = trx.get('c_validcombination', line.get('c_validcombination_id'));                  // :303 fillDimensionsFromCombination
     if (vc) {
       DIM_COLS.forEach(function (c) { line.set(c, nz(vc[c]) > 0 ? vc[c] : null); });
-      if (nz(vc.ad_org_id) > 0) line.set('ad_org_id', vc.ad_org_id);
+      if (ML().idSet(vc.ad_org_id)) line.set('ad_org_id', vc.ad_org_id);
     }
     var prec = 2, rate = bd(line.get('currencyrate')), amt = rate.multiply(bd(line.get('amtsourcedr')));   // :304-312 (m_precision stays 2 unless setC_Currency_ID ran)
     if (amt.scale() > prec) amt = amt.setScale(prec, HU());

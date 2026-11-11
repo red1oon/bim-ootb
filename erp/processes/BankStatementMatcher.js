@@ -7,6 +7,7 @@
 // (only org.idempiere.test fakes), so a C_BankStatementMatcher row can only name a plugin class. A JS plugin registers one with
 // AdProcess.BANK_MATCHERS[classname] = { findMatch: function (trx, row, table) → {matched, C_Payment_ID, C_Invoice_ID, C_BPartner_ID, C_DepositBatch_ID} };
 // a row whose Classname has no registered implementation is an invalid matcher (MBankStatementMatcher.isMatcherValid false) — skipped as in Java.
+function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() > 0` for the twin's id law: a row made through the op log has a NEGATIVE synthetic pk (crud_core listTip -opId), so "an id is set" = non-zero (same rule as ModelLayer.idSet; MIGRATE_INSTALL_TENANT §IDLAW-SPEC)
 (function (global) {
   'use strict';
   var P = (typeof module !== 'undefined' && module.exports) ? require('../ad_process.js') : global.AdProcess;
@@ -41,10 +42,10 @@
         var info = impl.findMatch(trx, row, table);
         if (info != null && info.matched) {
           var ch = {};
-          if (info.C_Payment_ID > 0) ch.c_payment_id = info.C_Payment_ID;
-          if (info.C_Invoice_ID > 0) ch.c_invoice_id = info.C_Invoice_ID;
-          if (info.C_BPartner_ID > 0) ch.c_bpartner_id = info.C_BPartner_ID;
-          if (withBatch && info.C_DepositBatch_ID > 0) ch.c_depositbatch_id = info.C_DepositBatch_ID;
+          if (idSet(info.C_Payment_ID)) ch.c_payment_id = info.C_Payment_ID;
+          if (idSet(info.C_Invoice_ID)) ch.c_invoice_id = info.C_Invoice_ID;
+          if (idSet(info.C_BPartner_ID)) ch.c_bpartner_id = info.C_BPartner_ID;
+          if (withBatch && idSet(info.C_DepositBatch_ID)) ch.c_depositbatch_id = info.C_DepositBatch_ID;
           var r = X.ML.save(trx, table, row, ch); if (!r.ok) throw new Error('SaveError ' + table + ': ' + r.error);
           return 'OK';
         }

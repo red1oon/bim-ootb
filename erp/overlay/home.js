@@ -9,9 +9,10 @@
 //   (DashboardController.onEvent :1150-1158) = the click on that role's own menu leaf. LINKS INSIDE THE HTML: legacy puts the HTML into the page untouched (a plain browser link), and reaches the application through its own URL
 //   (AEnv.getZoomUrl :920-940 -> AdempiereWebUI.processParameters :402-430); the twin's application URL carries `?window=<AD_Window_ID>` / `?process=<AD_Process_ID>`, so a click on such a link is resolved against the DICTIONARY (resolveLink) and opened
 //   through the same menu leaf; any other link is left to the browser, as legacy leaves it. Goal / Chart / ZUL / StatusLine stay "Not ported yet" and are named. Everything is read at render time from the dictionary: no item is listed here.
+function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() > 0` for the twin's id law: a row made through the op log has a NEGATIVE synthetic pk (crud_core listTip -opId), so "an id is set" = non-zero (same rule as ModelLayer.idSet; MIGRATE_INSTALL_TENANT §IDLAW-SPEC)
 (function () {
   'use strict';
-  var engineOn = false, dsOn = false, busy = false;
+  var busy = false;
   function q(sql, p) { var st = window.__idmpDb.prepare(sql), out = []; try { if (p) st.bind(p); while (st.step()) { var o = st.getAsObject(), k = {}; Object.keys(o).forEach(function (x) { k[x.toLowerCase()] = o[x]; }); out.push(k); } } finally { st.free(); } return out; }
   function el(tag, cls, txt) { var e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; }
   function css() {
@@ -107,11 +108,11 @@
     if (c.html != null && String(c.html) !== '') {                                                                      // HTML
       var pa = el('div', 'idmp-pa'), ct = el('div', 'content'); ct.innerHTML = stripHtml(c.html) + '<br>\n'; pa.appendChild(ct); body.appendChild(pa); n++;
     }
-    if (Number(c.ad_window_id) > 0) {                                                                                   // Window
+    if (idSet(c.ad_window_id)) {                                                                                   // Window
       var wm = q("SELECT AD_Menu_ID AS m, Name AS n FROM AD_Menu WHERE AD_Window_ID=? AND IsActive='Y' ORDER BY AD_Menu_ID DESC", [c.ad_window_id])[0];
       if (wm) { body.appendChild(menuButton(wm.m, wm.n)); n++; } else console.log('§DASH-UNPORTED id=' + g.id + ' name="' + g.name + '" kind=window reason=no-menu-for-window-' + c.ad_window_id);
     }
-    if (Number(c.ad_process_id) > 0) {                                                                                  // Process / Report
+    if (idSet(c.ad_process_id)) {                                                                                  // Process / Report
       var pr = q('SELECT accesslevel AS a FROM AD_Process WHERE AD_Process_ID=?', [c.ad_process_id])[0], sys = pr && ['7', '4', '6'].indexOf(String(pr.a)) >= 0;
       if (S.client !== 0 || sys) {                                                                                      // :792-798 (client 0 needs a System-level process)
         var pm = q('SELECT AD_Menu_ID AS m, Name AS n FROM AD_Menu WHERE AD_Process_ID=? ORDER BY AD_Menu_ID', [c.ad_process_id])[0];
@@ -178,7 +179,7 @@
       var sel = window.DashboardHome.select(q, { client: S.client, role: S.role, user: S.user });
       if (!sel.ok) { console.log('§DASH-HOME INCONCLUSIVE ' + sel.reason); return; }
       css();
-      if (!engineOn) { window.GoalEngine.install(window.__idmpDb); engineOn = true; }
+      window.GoalEngine.install(window.__idmpDb);
       var home = el('div'); home.id = 'idmp-home'; var cols = [], rendered = 0, unported = 0;
       sel.main.forEach(function (g) {
         var box = el('div', 'idmp-gadget'); box.setAttribute('data-gadget-id', g.id); box.setAttribute('data-gadget-kind', g.kind); box.setAttribute('data-gadget-name', g.name);
@@ -189,7 +190,7 @@
           box.setAttribute('data-perf', '1'); body.appendChild(grid); rendered++;
           console.log('§DASH-GADGET performance goals=' + items.length + ' titles=' + JSON.stringify(items.map(function (i) { return i.title; })));
         } else if (g.kind === 'docstatus' && window.DashboardDocStatus) {
-          if (!dsOn) { window.DashboardDocStatus.install(window.__idmpDb, q); dsOn = true; }
+          window.DashboardDocStatus.install(window.__idmpDb, q);
           var inds = dsItems(S), dg = dsGrid(inds);
           box.setAttribute('data-ds', '1');
           body.appendChild(dg); rendered++;

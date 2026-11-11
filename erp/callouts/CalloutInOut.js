@@ -3,6 +3,7 @@
 // callouts/CalloutInOut.js — org.compiere.model.CalloutInOut, ported verbatim, all 11 methods
 // (org.adempiere.base.callout/src/org/compiere/model/CalloutInOut.java). bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md §CP
 // — Witness: W-CP-CALLOUT-ORACLE (scripts/pilot/scenarios/cp/CalloutInOut.json).
+function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() > 0` for the twin's id law: a row made through the op log has a NEGATIVE synthetic pk (crud_core listTip -opId), so "an id is set" = non-zero (same rule as ModelLayer.idSet; MIGRATE_INSTALL_TENANT §IDLAW-SPEC)
 (function (global) {
   'use strict';
   var A = (typeof module !== 'undefined' && module.exports) ? require('../ad_callout.js') : global.AdCallout;
@@ -90,7 +91,7 @@
         else mTab.setValue('AD_User_ID', null);
         var docTypeId = I(rma.getC_DocType_ID());                  // :170-174 Set corresponding document type
         var relatedDocTypeId = M.MDocType.getShipmentReceiptDocType(docTypeId, ctx);
-        if (relatedDocTypeId > 0) mTab.setValue('C_DocType_ID', relatedDocTypeId);
+        if (idSet(relatedDocTypeId)) mTab.setValue('C_DocType_ID', relatedDocTypeId);
       }
       return '';
     };
@@ -144,7 +145,7 @@
           if (rs.wasNull()) mTab.setValue('AD_User_ID', null);
           else {
             var ShipTo_User_ID = rs.getInt('ShipTo_User_ID');
-            mTab.setValue('AD_User_ID', ShipTo_User_ID > 0 ? ShipTo_User_ID : ii);
+            mTab.setValue('AD_User_ID', idSet(ShipTo_User_ID) ? ShipTo_User_ID : ii);
           }
         }
         if (IsSOTrx) {                                              // :309-316 CreditAvailable

@@ -4,6 +4,7 @@
 //   The core models (MDDOrder / MDDOrderLine / MMovement, erp/model_dd.js + erp/model_movement.js) live in the base like in legacy; what THIS chunk adds is Libero's reaction to them:
 //   MFG_Validator.initialize :70-115 registers PO_AFTER_NEW / PO_AFTER_CHANGE / PO_BEFORE_DELETE on DD_Order and DD_OrderLine and DOC_AFTER_COMPLETE on M_Movement; doHandleEvent :118-358 routes them to
 //   MPPMRP.DD_Order / DD_OrderLine / deleteMRP and to the movement block :322-358. Pure: no clock (env.now), no random. Anything not ported is named (DEFERRED below), never silent.
+function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() > 0` for the twin's id law: a row made through the op log has a NEGATIVE synthetic pk (crud_core listTip -opId), so "an id is set" = non-zero (same rule as ModelLayer.idSet; MIGRATE_INSTALL_TENANT §IDLAW-SPEC)
 export const DEFERRED = [
   'MPPMRP static C_Order_ID leak into the MRP ctor (MPPMRP :635-652) for DD rows - the order chunk keeps that state privately; §57 item 3 removes the leak, so DD rows are written without it (named, declared deviation)',
   'MFG_Validator PO_BEFORE_NEW on M_Movement is registered upstream (:73) but has no handler (doHandleEvent) - nothing to port (witnessed H9)',
@@ -84,7 +85,7 @@ export function create(ctx) {
     const trx = c && c.trx, mv = info && info.record; if (!trx || !mv) return null;
     const lines = trx.find('m_movementline', { m_movement_id: mv.m_movement_id }, ['line', 'm_movementline_id']);   // move.getLines(false): ORDER BY Line, M_MovementLine_ID
     for (const line of lines) {
-      if (!(Number(line.dd_orderline_id) > 0)) continue;                                                                                  // :328
+      if (!(idSet(line.dd_orderline_id))) continue;                                                                                  // :328
       const oline = trx.get('dd_orderline', line.dd_orderline_id); if (!oline) return 'DD_OrderLine ' + line.dd_orderline_id + ' not found (MFG_Validator :330)';
       const locTo = trx.get('m_locator', line.m_locatorto_id), wh = locTo ? trx.get('m_warehouse', locTo.m_warehouse_id) : null;          // :331-332
       let ch;
@@ -93,7 +94,7 @@ export function create(ctx) {
       const r = ML.save(trx, 'dd_orderline', oline, ch); if (!r.ok) throw new Error(r.error);                                              // :343 oline.saveEx -> the DD_OrderLine hook re-fires (QtyDelivered is a source column)
       trx.say('§LDD-MOVE line=' + oline.dd_orderline_id + ' movement=' + mv.m_movement_id + ' qty=' + line.movementqty + ' toTransit=' + (wh && wh.isintransit === 'Y') + ' -> ' + JSON.stringify(ch));
     }
-    if (Number(mv.dd_order_id) > 0) {                                                                                                     // :346-352
+    if (idSet(mv.dd_order_id)) {                                                                                                     // :346-352
       const order = trx.get('dd_order', mv.dd_order_id); if (!order) return 'DD_Order ' + mv.dd_order_id + ' not found (MFG_Validator :347)';
       const ls = trx.find('dd_orderline', { dd_order_id: order.dd_order_id }, ['line']);
       const inTransit = ls.some((l) => dec(l.qtyintransit).signum() !== 0);                                                              // isInTransit(order) :362-371

@@ -99,7 +99,7 @@
       if (!nz(l.m_product_id)) l.m_attributesetinstance_id = 0;                                                                          // :553-555
       if (!nz(l.c_uom_id) && (nz(l.m_product_id) || nz(l.c_charge_id))) {                                                                // :557-564 MUOM.getDefault_UOM_ID (MUOM.java:90-96)
         var du = trx.q('SELECT c_uom_id FROM c_uom WHERE ad_client_id IN (0,?) ORDER BY isdefault DESC, ad_client_id DESC, c_uom_id', [nz(l.ad_client_id) ? l.ad_client_id : trx.env.client])[0];
-        if (du && Number(du.c_uom_id) > 0) l.c_uom_id = du.c_uom_id;
+        if (du && ML.idSet(du.c_uom_id)) l.c_uom_id = du.c_uom_id;
       }
       var p = nz(l.m_product_id) ? T.product(trx, l.m_product_id) : null;
       if ((isNew || !same(l.qtyentered, old && old.qtyentered)) && nz(l.c_uom_id) && l.qtyentered != null) l.qtyentered = N(D(l.qtyentered).setScale(uomPrecision(trx, l.c_uom_id), HU));   // :566-568 setQtyEntered :506-514

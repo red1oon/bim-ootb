@@ -123,7 +123,7 @@
         if (qtyDiff.signum() > 0) {
           var ci = trx.q('SELECT c_acctschema1_id AS a FROM ad_clientinfo WHERE ad_client_id=?', [inv.ad_client_id])[0], acct = ci ? trx.get('c_acctschema', ci.a) : null, M = require_cost();
           if (acct && M.costingLevel(trx, p, acct) === 'B') {                                                                                                  // BatchLot costing: a zero-qty ASI row of the locator, else the latest non-zero cost row's ASI
-            var st = trx.find('m_storageonhand', { m_product_id: line.m_product_id, m_locator_id: line.m_locator_id }).filter(function (s) { return D(s.qtyonhand).signum() === 0 && Number(s.m_attributesetinstance_id) > 0; })
+            var st = trx.find('m_storageonhand', { m_product_id: line.m_product_id, m_locator_id: line.m_locator_id }).filter(function (s) { return D(s.qtyonhand).signum() === 0 && ML.idSet(s.m_attributesetinstance_id); })
               .sort(function (a, b) { return String(a.datematerialpolicy) < String(b.datematerialpolicy) ? -1 : String(a.datematerialpolicy) > String(b.datematerialpolicy) ? 1 : Number(a.m_attributesetinstance_id) - Number(b.m_attributesetinstance_id); })[0];
             if (st) maAddOrCreate(trx, line, st.m_attributesetinstance_id, qtyDiff.negate(), inv.movementdate, true);
             else {

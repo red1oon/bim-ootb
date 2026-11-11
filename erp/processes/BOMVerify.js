@@ -3,6 +3,7 @@
 // processes/BOMVerify.js — org.compiere.process.BOMVerify, verbatim
 // (org.adempiere.base.process/src/org/compiere/process/BOMVerify.java) + MPPProductBOM.getProductBOMs :78-87, getDefault :155-185,
 // getLines(false) :340-352 (org.adempiere.base/src/org/eevolution/model/MPPProductBOM.java). §CP-PROC-CORE — Witness: W-CP-PROC-ORACLE.
+function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() > 0` for the twin's id law: a row made through the op log has a NEGATIVE synthetic pk (crud_core listTip -opId), so "an id is set" = non-zero (same rule as ModelLayer.idSet; MIGRATE_INSTALL_TENANT §IDLAW-SPEC)
 (function (global) {
   'use strict';
   var P = (typeof module !== 'undefined' && module.exports) ? require('../ad_process.js') : global.AdProcess;
@@ -24,7 +25,7 @@
         else X.A.RUNTIME.log('§PROC-UNKNOWN-PARA BOMVerify ' + name);
       }
       if (this.p_M_Product_ID === 0) this.p_M_Product_ID = this.getRecord_ID();
-      this.p_fromButton = this.getRecord_ID() > 0;
+      this.p_fromButton = idSet(this.getRecord_ID());
     };
     BOMVerify.prototype.doIt = function () {                                         // :87-134
       var A = X.A, trx = this.get_TrxName(), self = this;

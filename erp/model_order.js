@@ -138,11 +138,11 @@
   // ══ MPPProductBOM.getDefault :155-186 + getLines(false) :340-355 — the ONE BOM reader on the twin tables (processes/BOMVerify.js calls these; no second copy) ═══
   function bomGetDefault(trx, productId, orgId, clientId) {                                 // BOMUse 'A' (Master), BOMType 'A' (Current Active); org filter from the login org
     var sql = 'SELECT * FROM PP_Product_BOM WHERE M_Product_ID=? AND BOMUse=? AND BOMType=? ', args = [productId, 'A', 'A'];
-    if (orgId > 0) sql += 'AND AD_Org_ID IN (0, ' + orgId + ') ';
+    if (ML.idSet(orgId)) sql += 'AND AD_Org_ID IN (0, ' + orgId + ') ';
     sql += 'AND IsActive=? AND AD_Client_ID IN (0,?)'; args.push('Y', clientId);
-    if (orgId > 0) sql += ' ORDER BY AD_Org_ID Desc';
+    if (ML.idSet(orgId)) sql += ' ORDER BY AD_Org_ID Desc';
     var list = trx.q(sql, args);
-    return list.length > 0 && (orgId > 0 || list.length === 1) ? list[0] : null;              // :174-178
+    return list.length > 0 && (ML.idSet(orgId) || list.length === 1) ? list[0] : null;              // :174-178
   }
   function bomLines(trx, bomId, clientId) { return trx.q('SELECT * FROM PP_Product_BOMLine WHERE PP_Product_BOM_ID=? AND AD_Client_ID IN (0,?) AND IsActive=? ORDER BY Line', [bomId, clientId, 'Y']); }   // :340-355
 
@@ -315,7 +315,7 @@
     closeIt: function (trx, o) {
       var m = fire(trx, 'BEFORE_CLOSE', 'c_order', o); if (m) { T.msg(trx, m); return false; }
       var ip = trx.q("SELECT DISTINCT io.documentno AS dn FROM m_inout io JOIN m_inoutline iol ON io.m_inout_id=iol.m_inout_id JOIN c_orderline ol ON iol.c_orderline_id=ol.c_orderline_id " +
-        "WHERE io.docstatus='IP' AND ol.qtyordered<>0 AND (ol.m_product_id>0 OR ol.c_charge_id>0) AND ol.isactive='Y' AND iol.isactive='Y' AND ol.c_order_id=?", [o.c_order_id]);
+        "WHERE io.docstatus='IP' AND ol.qtyordered<>0 AND (ol.m_product_id<>0 OR ol.c_charge_id<>0) AND ol.isactive='Y' AND iol.isactive='Y' AND ol.c_order_id=?", [o.c_order_id]);
       if (ip.length) { T.msg(trx, T.msgText(trx, 'MInOutInProgress') + ' (' + ip.map(function (r) { return r.dn; }).join(', ') + ')'); return false; }
       lines(trx, o, ['m_product_id']).forEach(function (l) {
         var old = D(l.qtyordered);
@@ -747,7 +747,7 @@
       if (!nz(l.m_locator_id)) return 'FillMandatory M_Locator_ID';
     }
     if (!Number(l.line)) { var mx = 0; trx.find('m_inoutline', { m_inout_id: l.m_inout_id }).forEach(function (x) { mx = Math.max(mx, Number(x.line) || 0); }); l.line = mx + 10; /* DB.getSQLValueEx in the same Trx: sees lines saved earlier in this run */ }
-    if (!nz(l.c_uom_id)) { var u = trx.q("SELECT c_uom_id FROM c_uom WHERE isactive='Y' AND isdefault='Y' ORDER BY c_uom_id")[0]; if (u) l.c_uom_id = u.c_uom_id; }
+    if (!nz(l.c_uom_id)) { var u = trx.q("SELECT c_uom_id FROM c_uom WHERE isactive='Y' AND isdefault='Y' AND ad_client_id IN (0,?) ORDER BY ad_client_id DESC, c_uom_id", [nz(io.ad_client_id) ? io.ad_client_id : trx.env.client])[0];   /* MUOM.getDefault_UOM_ID :90-97 AD_Client_ID IN (0,?) ORDER BY IsDefault DESC, AD_Client_ID DESC (§DEFSCOPE: the session client's default, was any client's) */ if (u) l.c_uom_id = u.c_uom_id; }
     if (!nz(l.c_orderline_id) && !nz(l.m_rmaline_id) && Y(io.issotrx)) return 'FillMandatory C_OrderLine_ID';
     if (nz(l.m_locator_id)) { var loc = trx.get('m_locator', l.m_locator_id); if (loc && String(loc.m_warehouse_id) !== String(io.m_warehouse_id)) return 'WarehouseLocatorConflict'; }
     if (nz(l.c_orderline_id)) { var ol = trx.get('c_orderline', l.c_orderline_id); if (ol && Number(ol.m_product_id || 0) !== Number(l.m_product_id || 0)) return 'MInOutLineAndOrderLineProductDifferent'; }

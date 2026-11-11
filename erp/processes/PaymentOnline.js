@@ -6,6 +6,7 @@
 // NAMED DEPENDENCY (§PROC-UNPORTED-DEP): the external payment processor (PaymentProcessor.create(...).processCC() — MPayment.java:540-560)
 // and the C_PaymentTransaction / C_OnlineTrxHistory bookkeeping that follows a processor call (:576-635) are not in the bundle. Every
 // branch before the processor call (already voided / delayed / approved, no BankAccountProcessor → "PaymentNoProcessorModel") is ported.
+function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() > 0` for the twin's id law: a row made through the op log has a NEGATIVE synthetic pk (crud_core listTip -opId), so "an id is set" = non-zero (same rule as ModelLayer.idSet; MIGRATE_INSTALL_TENANT §IDLAW-SPEC)
 (function (global) {
   'use strict';
   var P = (typeof module !== 'undefined' && module.exports) ? require('../ad_process.js') : global.AdProcess;
@@ -58,7 +59,7 @@
         (procs || []).forEach(function (b) { if (bap == null && (!row.c_paymentprocessor_id || Number(row.c_paymentprocessor_id) === 0 || Number(b.c_paymentprocessor_id) === Number(row.c_paymentprocessor_id))) bap = b; });
         if (bap == null) {                                                                                    // :520-537
           err = Msg.getMsg(ctx, 'PaymentNoProcessorModel');
-          if (row.c_paymentprocessor_id && Number(row.c_paymentprocessor_id) > 0) {
+          if (row.c_paymentprocessor_id && idSet(row.c_paymentprocessor_id)) {
             var pp = trx.get('c_paymentprocessor', row.c_paymentprocessor_id);
             err += ': MPaymentProcessor[' + row.c_paymentprocessor_id + ',' + (pp ? pp.name : '') + ']';
           }

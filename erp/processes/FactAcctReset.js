@@ -3,6 +3,7 @@
 // processes/FactAcctReset.js — org.compiere.process.FactAcctReset, verbatim
 // (org.adempiere.base.process/src/org/compiere/process/FactAcctReset.java). §CP — Witness: W-CP-PROC-ORACLE.
 // The X_*.Table_ID constants are resolved from AD_Table by name (same ids the generated classes carry).
+function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() > 0` for the twin's id law: a row made through the op log has a NEGATIVE synthetic pk (crud_core listTip -opId), so "an id is set" = non-zero (same rule as ModelLayer.idSet; MIGRATE_INSTALL_TENANT §IDLAW-SPEC)
 (function (global) {
   'use strict';
   var P = (typeof module !== 'undefined' && module.exports) ? require('../ad_process.js') : global.AdProcess;
@@ -28,7 +29,7 @@
     FactAcctReset.prototype.doIt = function () {
       var R = X.A.RUNTIME, self = this;
       var sql = "SELECT AD_Table_ID, TableName FROM AD_Table t WHERE t.IsView='N'";
-      if (this.p_AD_Table_ID > 0) sql += ' AND t.AD_Table_ID=' + this.p_AD_Table_ID;
+      if (idSet(this.p_AD_Table_ID)) sql += ' AND t.AD_Table_ID=' + this.p_AD_Table_ID;
       sql += " AND EXISTS (SELECT * FROM AD_Column c WHERE t.AD_Table_ID=c.AD_Table_ID AND c.ColumnName='Posted' AND c.IsActive='Y')";
       try {
         var rs = R.DB.prepareStatement(sql).executeQuery();
