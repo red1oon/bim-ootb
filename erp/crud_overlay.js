@@ -2671,10 +2671,25 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
   }
   // the session client's own table sequence only (MSequence.get :864-890: `WHERE UPPER(Name)=? AND IsTableID=? AND AD_Client_ID=?`). Without the client term every tenant read the FIRST DocumentNo_<table> row of the
   //   bundle - GardenWorld's (C_Payment 10000007) - so two payments of a migrated tenant both showed, kept and saved 10000007 (W-DOCNO).
-  function _seqClientTerm() { if (global.__docnoNoClient) return ''; var c = global.APP && global.APP.clientId; return (c != null && c !== '' && isFinite(Number(c))) ? ' AND AD_Client_ID=' + Number(c) : ' AND 0'; }
+  function _seqClientTerm() { var c = global.APP && global.APP.clientId; return (c != null && c !== '' && isFinite(Number(c))) ? ' AND AD_Client_ID=' + Number(c) : ' AND 0'; }
   function _previewDocNo(table, fields) {
     var mdb = (typeof globalThis !== 'undefined' && globalThis.__idmpDb) || null; if (!mdb) return null;
     var cols = _getTableCols(table); if (!cols['documentno']) return null;
+    // the number the SAVE will assign, from the SAME MSequence port the save runs (model_trade getDocumentNoByDocType / ByTable, over the tip-shadowed bundle), its ops thrown away:
+    //   sequences made or bumped by earlier saves of this session live only in the op log, so reading the bundle row showed 1000000 again for the 2nd..Nth document (W-DOCNO preview == saved)
+    var ML0 = global.ModelLayer, MT0 = global.ModelTrade;
+    if (ML0 && MT0 && MT0.getDocumentNoByDocType && !global.__docnoOldPreview) {   // __docnoOldPreview: witness mutant only (witness_docno_page DOCNO_PAGE_MUT=preview)
+      var sh0 = SIDE ? _tipShadowOn(mdb, ['ad_sequence', 'ad_sequence_no']) : [], pv = null;
+      try {
+        var trx0 = new ML0.Trx(_modelQuery(mdb), _modelEnv()), rec0 = {};
+        Object.keys(fields || {}).forEach(function (k) { rec0[k.toLowerCase()] = fields[k]; });
+        var mc0 = ML0.columnsOf(trx0, table), dtc0 = mc0.c_doctypetarget_id ? 'c_doctypetarget_id' : mc0.c_doctype_id ? 'c_doctype_id' : null;
+        if (dtc0) pv = MT0.getDocumentNoByDocType(trx0, Number(rec0[dtc0] || 0), false, rec0);
+        if (pv == null) pv = MT0.getDocumentNoByTable(trx0, mc0.__tableName || table, rec0);
+      } catch (e0) { pv = null; }
+      finally { _tipShadowOff(mdb, sh0); }
+      if (pv != null) { _previewIssued[String(pv)] = 1; return String(pv); }
+    }
     try {
       var dtSeq = _docTypeSeqId(mdb, fields);
       var r = dtSeq != null

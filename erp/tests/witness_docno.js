@@ -158,6 +158,22 @@ var cents = function (v) { return Math.round(Number(v || 0) * 100); }, money = f
   // the two payment types share ONE table sequence (legacy: DocumentNo_C_Payment per client): the AP run continued where the AR run stopped
   var arrNos = q("SELECT documentno AS no FROM c_payment WHERE ad_client_id=?", [C]).map(function (r) { return r.no; });
   check('MIGRATED', 'payments-one-series', 'all ' + arrNos.length + ' payments of the tenant (receipts + payments) are distinct: they draw from ONE client sequence', arrNos.length === 4 * N && new Set(arrNos).size === arrNos.length, arrNos);
+  // INVOICES generated from orders (DocumentNo from the invoice DocType's sequence, MSequence.getDocumentNo(C_DocTypeTarget_ID) via InvoiceGenerate): two orders -> Generate Shipments -> Generate Invoices
+  T = MIG; C = MIG.clientId;
+  var prodI = q("SELECT * FROM m_product WHERE ad_client_id=? AND value='E-COM08'", [C])[0], whI = q("SELECT m_warehouse_id AS id FROM m_locator WHERE m_locator_id IN (SELECT m_locator_id FROM m_storageonhand WHERE ad_client_id=? AND m_product_id=?)", [C, prodI.m_product_id])[0].id,
+      invDt = q('SELECT c_doctypeinvoice_id AS d FROM c_doctype WHERE c_doctype_id=?', [SO])[0].d, exI = expectedSeq(null, invDt, 'c_invoice'), invNos = [];
+  var runP = function (label, pid, params) { return tx(label, function (trx) { var r = AP.runInTrx(trx, pid, { params: Object.assign({ AD_Client_ID: C, AD_Org_ID: T.orgId }, params) }); return { ok: !!(r && r.ok), error: r && r.ok ? null : (r && (r.msg || r.error)) }; }); };
+  for (var oi = 0; oi < 2; oi++) {
+    var ordI = tx('inv-order' + oi, function (trx) { var o = ML.newPO(trx, 'c_order', orderF(SO, gem.c_bpartner_id, locG, plS, whI, ptM, MIG.orgId)()); var sv = ML.save(trx, 'c_order', null, o); if (!sv.ok) return { ok: false, error: sv.error };
+      var l = ML.newPO(trx, 'c_orderline', { c_order_id: sv.row.c_order_id, ad_org_id: T.orgId, line: 10, m_product_id: prodI.m_product_id, c_uom_id: prodI.c_uom_id, qtyentered: 1, qtyordered: 1, m_warehouse_id: whI, c_currency_id: 100 }); var sl = ML.save(trx, 'c_orderline', null, l); if (!sl.ok) return { ok: false, error: sl.error };
+      var r = ML.processIt(trx, 'c_order', sv.row.c_order_id, 'CO'); return { ok: !!r.ok, error: r.ok ? null : (r.msg || r.status) }; });
+    var sh = runP('inv-ship' + oi, 118, { M_Warehouse_ID: whI, DocAction: 'CO', ConsolidateDocument: 'Y' }), iv = runP('inv-inv' + oi, 119, { DocAction: 'CO', ConsolidateDocument: 'Y', DateInvoiced: TODAY });
+    var last = q('SELECT documentno AS no FROM c_invoice WHERE ad_client_id=? ORDER BY ABS(c_invoice_id) DESC LIMIT 1', [C])[0]; invNos.push(last && last.no);
+    if (!ordI.ok || !sh.ok || !iv.ok) say('§DOCNO-INV step failed order=' + J([ordI.ok, ordI.error]) + ' ship=' + J([sh.ok, sh.error]) + ' inv=' + J([iv.ok, iv.error]));
+  }
+  var wantI = [fmt(exI, 0), fmt(exI, 1)];
+  say('§DOCNO-DOCS inv-from-order how=' + exI.how + ' start=' + exI.start + ' got=' + J(invNos) + ' want=' + J(wantI));
+  check('MIGRATED', 'invoice-from-order', 'two invoices generated from orders (DocumentNo_C_Invoice via the AR Invoice DocType sequence) are distinct and == the sequence run from its start: ' + J(wantI), J(invNos) === J(wantI), { got: invNos, want: wantI });
   // BORN tenant (Initial Tenant Setup): no sales price list by legacy MSetup, so the order takes the setup list
   var BORN = mk('Born Co'); T = BORN; C = BORN.clientId;
   var bgem = q("SELECT c_bpartner_id AS id FROM c_bpartner WHERE ad_client_id=? ORDER BY c_bpartner_id", [C])[0], bloc = q('SELECT c_bpartner_location_id AS l FROM c_bpartner_location WHERE c_bpartner_id=?', [bgem.id])[0],
@@ -170,14 +186,16 @@ var cents = function (v) { return Math.round(Number(v || 0) * 100); }, money = f
   check('MIGRATED', 'premise-ids', 'control: under the page law the tenant\'s rows are NEGATIVE (the law the defect lived under)', LAW !== 'synthetic' || q('SELECT c_bpartner_id AS i FROM c_bpartner WHERE ad_client_id=?', [MIG.clientId]).some(function (r) { return r.i < 0; }), LAW);
   // children: the page path (must PASS) and the two mutants (must FAIL): the old no-create model and the old no-client page lookup
   var cp = require('child_process');
-  function child(file, env) { var r = cp.spawnSync(process.execPath, [path.join(__dirname, file)], { env: Object.assign({}, process.env, env || {}), encoding: 'utf8', timeout: 900000, maxBuffer: 1 << 26 }), out = (r.stdout || '') + (r.stderr || ''),
-    v = out.match(/§(?:DOCNOPG|DOCNO)-VERDICT (\w+) judged=(\d+) failed=(\d+)/) || []; fs.writeFileSync('/tmp/count_logs/docno_child_' + file.replace(/\W/g, '_') + (env ? '_mut' : '') + '.log', out); return { verdict: v[1] || 'NONE', judged: Number(v[2] || 0), failed: Number(v[3] || 0) }; }
-  if (!process.env.DOCNO_NO_CHILDREN && !process.env.DOCNO_MUT) {
-    var PG = child('witness_docno_page.js'), MM = child('witness_docno.js', { DOCNO_MUT: 'nocreate' }), MP = child('witness_docno_page.js', { DOCNO_PAGE_MUT: '1' });
-    say('§DOCNO-CHILDREN page=' + J(PG) + ' mutant-model=' + J(MM) + ' mutant-page=' + J(MP));
-    check('PAGE', 'payment-window', 'the Payment window on the migrated tenant: two saves, DocumentNo 1000000 then 1000001, GardenWorld untouched (witness_docno_page PASS, judged>0)', PG.verdict === 'PASS' && PG.judged > 0 && PG.failed === 0, PG);
+  function child(file, env) { return new Promise(function (resolve) { var out = '', c = cp.spawn(process.execPath, [path.join(__dirname, file)], { env: Object.assign({}, process.env, env || {}) });
+    c.stdout.on('data', function (d) { out += d; }); c.stderr.on('data', function (d) { out += d; });
+    var done = function () { var v = out.match(/§(?:DOCNOPG|DOCNO)-VERDICT (\w+) judged=(\d+) failed=(\d+)/) || []; fs.writeFileSync('/tmp/count_logs/docno_child_' + file.replace(/\W/g, '_') + (env ? '_' + Object.keys(env)[0] + env[Object.keys(env)[0]] : '') + '.log', out); resolve({ verdict: v[1] || 'NONE', judged: Number(v[2] || 0), failed: Number(v[3] || 0) }); };
+    var t = setTimeout(function () { try { c.kill('SIGKILL'); } catch (e) {} }, 900000); c.on('close', function () { clearTimeout(t); done(); }); }); }
+  if (!process.env.DOCNO_NO_CHILDREN && !process.env.DOCNO_MUT) {   // the page child and the three mutants run CONCURRENTLY (three headless processes): the lane gives a witness 600 s
+    var KIDS = await Promise.all([child('witness_docno_page.js'), child('witness_docno.js', { DOCNO_MUT: 'nocreate' }), child('witness_docno_page.js', { DOCNO_PAGE_MUT: 'preview' })]), PG = KIDS[0], MM = KIDS[1], MV = KIDS[2];
+    say('§DOCNO-CHILDREN page=' + J(PG) + ' mutant-model=' + J(MM) + ' mutant-preview=' + J(MV));
+    check('PAGE', 'payment-window', 'the Payment/Order windows on the migrated + born tenants: 3 payments (preview == saved, after a reload too), 3 orders, GardenWorld untouched (witness_docno_page PASS, judged>0)', PG.verdict === 'PASS' && PG.judged > 0 && PG.failed === 0, PG);
     check('MUTANT', 'model-nocreate', 'MUTANT: the old "no table sequence -> no number" model makes the numbering witness FAIL', MM.verdict === 'FAIL' && MM.failed > 0, MM);
-    check('MUTANT', 'page-no-client', 'MUTANT: the old by-name sequence lookup without AD_Client_ID makes the page witness FAIL', MP.verdict === 'FAIL' && MP.failed > 0, MP);
+    check('MUTANT', 'page-old-preview', 'MUTANT: the old preview (bundle row, not the tip) makes the page witness FAIL (the 2nd..Nth payment previewed 1000000)', MV.verdict === 'FAIL' && MV.failed > 0, MV);
   }
   Object.keys(CASES).forEach(verdict);
   var V = !ALL.judged ? 'INCONCLUSIVE' : ALL.failed ? 'FAIL' : 'PASS';

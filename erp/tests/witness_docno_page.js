@@ -30,7 +30,7 @@ var clone = function (o) { return JSON.parse(JSON.stringify(o)); };
   var base = 'http://127.0.0.1:' + server.address().port, browser = await reqPw().chromium.launch({ args: ['--disable-gpu'] });
   var ctx = await browser.newContext({ viewport: { width: 1500, height: 950 } }), logs = [], errs = [];
   try { await ctx.clock.setFixedTime(new Date(CUT + 'T09:00:00')); } catch (e) { say('§JRN-CLOCK not fixed: ' + e.message); }   // the page's "today" = the cut-over day, so the witness does not age
-  if (process.env.DOCNO_PAGE_MUT) await ctx.addInitScript(function () { window.__docnoNoClient = true; });   // MUTANT: the old by-name lookup without AD_Client_ID
+  if (process.env.DOCNO_PAGE_MUT === 'preview') await ctx.addInitScript(function () { window.__docnoOldPreview = true; });   // MUTANT: the old preview (bundle row, not the tip)   // MUTANT: the old by-name lookup without AD_Client_ID
   async function open() {
     var pg = await ctx.newPage(); pg.on('console', function (m) { logs.push(m.text()); }); pg.on('pageerror', function (e) { errs.push(e.message); });
     await pg.goto(base + '/erp/idempiere.html?lang=en_US', { waitUntil: 'load' });
@@ -104,7 +104,8 @@ var clone = function (o) { return JSON.parse(JSON.stringify(o)); };
   try {
     var pg = await open(); await login(pg, 'System', 'System', 0);
     var TM = await pg.evaluate(async function (a) { var b = window.Genesis.birthTenant({ clientName: a[0], currencyId: 100, currencyIso: 'USD', currencyPrecision: 2, adminUser: a[1], dateAcct: a[2], countryId: 100 }); var r = await window.idmpInstallGenesis(b); return { ok: r && r.ok, clientId: r && r.clientId }; }, ['Mig Co', 'migAdmin', CUT]);
-    var rr = await Q(pg, "SELECT ad_role_id AS r FROM ad_role WHERE ad_client_id=? AND name LIKE '%Admin'", [TM.clientId]), role = rr[0].r;
+    var TB = await pg.evaluate(async function (a) { var b = window.Genesis.birthTenant({ clientName: a[0], currencyId: 100, currencyIso: 'USD', currencyPrecision: 2, adminUser: a[1], dateAcct: a[2], countryId: 100 }); var r = await window.idmpInstallGenesis(b); return { ok: r && r.ok, clientId: r && r.clientId }; }, ['Born Co', 'bornAdmin', CUT]);
+    var rr = await Q(pg, "SELECT ad_role_id AS r FROM ad_role WHERE ad_client_id=? AND name LIKE '%Admin'", [TM.clientId]), role = rr[0].r, rb = await Q(pg, "SELECT ad_role_id AS r FROM ad_role WHERE ad_client_id=? AND name LIKE '%Admin'", [TB.clientId]), roleB = rb[0].r;
     await pg.evaluate(function () { window.PluginRelease.open(); }); await pg.waitForSelector('#pr-osgi table.oc-t', { timeout: 15000 }); await sleep(800);
     for (var id of ['org.idempiere.ninja.migrate', 'org.kernel.odoo.migrate']) { if (await pg.$('[data-oc-start="' + id + '"]')) { await pg.click('[data-oc-start="' + id + '"]'); await sleep(2500); } }
     await pg.evaluate(function () { var x = document.querySelector('[data-pr-close]'); if (x) x.click(); }); await sleep(500);
@@ -114,7 +115,7 @@ var clone = function (o) { return JSON.parse(JSON.stringify(o)); };
     check('migrated', 'control: the Odoo fixture is migrated on the page', /Open balances completed/.test(R.msg) && /PASS/.test(R.ver), { msg: R.msg.slice(0, 160), ver: R.ver });
     check('premise', 'control: the tenant has NO DocumentNo_C_Payment of its own and GardenWorld has one at 10000007 (the setup that produced the duplicate)', (await Q(pg, "SELECT count(*) AS n FROM ad_sequence WHERE ad_client_id=? AND name='DocumentNo_C_Payment'", [TM.clientId]))[0].n === 0 && Array.isArray(gw0) && gw0[0] && Number(gw0[0].n) === 10000007, { gw0: gw0 });
     var nos = [], prev = [];
-    for (var k = 0; k < 2; k++) {
+    for (var k = 0; k < 3; k++) {
       var opn = await pg.evaluate(function () { var lf = Array.prototype.slice.call(document.querySelectorAll('#idmp-tree .idmp-row.leaf')).filter(function (r) { var nm = r.querySelector('.nm'); return nm && nm.textContent.trim() === 'Payment and Receipt'; })[0]; if (!lf) return false; var n = lf.parentElement; while (n && n.id !== 'idmp-tree') { if (n.style) n.style.display = ''; n = n.parentElement; } lf.click(); return true; });
       await sleep(5000); say('§DOCNOPG-OPEN payment window=' + opn); await tb('New'); await sleep(2500);
       say('§DOCNOPG-SET ' + J([await setCol('c_doctype_id', 'AR Receipt'), await setCol('c_bpartner_id', 'Gemini Furniture'), await setCol('c_bankaccount_id', '', 'first'), await setCol('payamt', String(10 + k))]));
@@ -124,13 +125,43 @@ var clone = function (o) { return JSON.parse(JSON.stringify(o)); };
     }
     say('§DOCNOPG-NOS previews=' + J(prev) + ' stored=' + J(nos));
     var gw1 = await Q(pg, "SELECT currentnext AS n FROM ad_sequence WHERE ad_client_id=11 AND name='DocumentNo_C_Payment'");
-    check('saved-two', 'two payments are SAVED in the Payment window on the migrated tenant', Array.isArray(nos) && nos.length === 2, nos);
-    check('distinct', 'the two payments carry DISTINCT DocumentNos', Array.isArray(nos) && nos.length === 2 && nos[0] != null && nos[0] !== nos[1], nos);
-    check('legacy', 'they are the legacy first numbers of a client\'s new DocumentNo_C_Payment: 1000000 then 1000001 (MSequence.createTableSequence initial CurrentNext 1000000, +IncrementNo)', J(nos) === J(['1000000', '1000001']), nos);
-    check('not-gardenworld', 'neither is GardenWorld\'s 10000007 and the previews were not either', nos.indexOf('10000007') < 0 && prev.indexOf('10000007') < 0, { nos: nos, prev: prev });
+    check('saved-three', 'three payments are SAVED in the Payment window on the migrated tenant', Array.isArray(nos) && nos.length === 3, nos);
+    check('distinct', 'the payments carry DISTINCT DocumentNos', Array.isArray(nos) && nos.length === 3 && new Set(nos).size === 3 && nos[0] != null, nos);
+    check('legacy', 'they are the legacy first numbers of a client\'s new DocumentNo_C_Payment: 1000000, 1000001, 1000002 (MSequence.createTableSequence initial CurrentNext 1000000, +IncrementNo)', J(nos) === J(['1000000', '1000001', '1000002']), nos);
+    check('preview-eq-saved', 'the Document No field SHOWS the number the save assigns, for the 1st, 2nd and 3rd payment of the session (preview == saved)', J(prev) === J(nos), { prev: prev, nos: nos });
+    check('not-gardenworld', 'none is GardenWorld\'s 10000007 (previews either)', nos.indexOf('10000007') < 0 && prev.indexOf('10000007') < 0, { nos: nos, prev: prev });
     check('gw-untouched', 'GardenWorld\'s DocumentNo_C_Payment did not move (10000007)', Array.isArray(gw1) && gw1[0] && Number(gw1[0].n) === 10000007, gw1);
     var tseq = await Q(pg, "SELECT currentnext AS n FROM ad_sequence WHERE ad_client_id=? AND name='DocumentNo_C_Payment'", [TM.clientId]);
-    check('tenant-seq', 'the tenant\'s own DocumentNo_C_Payment now exists and stands at 1000002', Array.isArray(tseq) && tseq.length === 1 && Number(tseq[0].n) === 1000002, tseq);
+    check('tenant-seq', 'the tenant\'s own DocumentNo_C_Payment stands at 1000003', Array.isArray(tseq) && tseq.length === 1 && Number(tseq[0].n) === 1000003, tseq);
+    // after a RELOAD: the preview of the next payment is the sequence's next number (1000003), then it saves as 1000003
+    await pg.close(); pg = await open(); await login(pg, 'Mig Co', 'migAdmin', role); await sleep(2000);
+    var opn2 = await pg.evaluate(function () { var lf = Array.prototype.slice.call(document.querySelectorAll('#idmp-tree .idmp-row.leaf')).filter(function (r) { var nm = r.querySelector('.nm'); return nm && nm.textContent.trim() === 'Payment and Receipt'; })[0]; if (!lf) return false; var n = lf.parentElement; while (n && n.id !== 'idmp-tree') { if (n.style) n.style.display = ''; n = n.parentElement; } lf.click(); return true; });
+    await sleep(5000); await tb('New'); await sleep(2500);
+    say('§DOCNOPG-SET ' + J([await setCol('c_doctype_id', 'AR Receipt'), await setCol('c_bpartner_id', 'Gemini Furniture'), await setCol('c_bankaccount_id', '', 'first'), await setCol('payamt', '14')]));
+    var prevR = await pg.evaluate(function () { var e = document.querySelector('#idmp-content [data-col="documentno"]:not(span)'); return e ? e.value : null; }); say('§DOCNOPG-SAVE ' + await tb('Save'));
+    var rowsR = await Q(pg, "SELECT documentno AS no FROM c_payment WHERE ad_client_id=? ORDER BY ABS(c_payment_id)", [TM.clientId]);
+    check('reload', 'after a page reload the next payment previews 1000003 and saves as 1000003 (opened=' + opn2 + ')', prevR === '1000003' && Array.isArray(rowsR) && rowsR.length === 4 && rowsR[3].no === '1000003', { prevR: prevR, rows: rowsR });
+    // sales orders: the number comes from the order DocType's sequence; preview (after the DocType is chosen) == saved, twice
+    var op = await pg.evaluate(function () { var lf = Array.prototype.slice.call(document.querySelectorAll('#idmp-tree .idmp-row.leaf')).filter(function (r) { var nm = r.querySelector('.nm'); return nm && nm.textContent.trim() === 'Sales Order'; })[0]; if (!lf) return false; var n = lf.parentElement; while (n && n.id !== 'idmp-tree') { if (n.style) n.style.display = ''; n = n.parentElement; } lf.click(); return true; });
+    var soSeq = await Q(pg, "SELECT s.currentnext AS n FROM c_doctype d JOIN ad_sequence s ON s.ad_sequence_id=d.docnosequence_id WHERE d.ad_client_id=? AND d.docbasetype='SOO' AND d.docsubtypeso='SO'", [TM.clientId]);
+    var oprev = [], onos = [];
+    for (var j = 0; j < 3; j++) {
+      await sleep(j ? 1500 : 5000); await tb('New'); await sleep(2500);
+      say('§DOCNOPG-SET ' + J([await setCol('c_doctypetarget_id', 'Standard Order'), await setCol('c_bpartner_id', 'Gemini Furniture')])); await sleep(1500);
+      say('§DOCNOPG-SET ' + J([await setCol('c_bpartner_location_id', '', 'first'), await setCol('m_warehouse_id', '', 'first'), await setCol('m_pricelist_id', '', 'first')]));
+      oprev.push(await pg.evaluate(function () { var e = document.querySelector('#idmp-content [data-col="documentno"]:not(span)'); return e ? e.value : null; }));
+      say('§DOCNOPG-SAVE order ' + await tb('Save'));
+      var orr = await Q(pg, "SELECT documentno AS no FROM c_order WHERE ad_client_id=? ORDER BY ABS(c_order_id)", [TM.clientId]); onos = Array.isArray(orr) ? orr.map(function (r) { return r.no; }) : orr;
+    }
+    var start = Array.isArray(soSeq) && soSeq[0] ? Number(soSeq[0].n) : NaN;
+    say('§DOCNOPG-ORDERS start=' + start + ' previews=' + J(oprev) + ' stored=' + J(onos));
+    check('orders', 'three sales orders: stored DocumentNo = the order DocType sequence from its start (' + start + '..' + (start + 2) + ') and the field showed exactly that (as legacy\'s <n> preview) before Save', J(onos) === J([String(start), String(start + 1), String(start + 2)]) && J(oprev.map(function (x) { return String(x).replace(/^<|>$/g, ''); })) === J(onos), { start: start, oprev: oprev, onos: onos });
+    // BORN tenant: the order window previews its DocType sequence's next number
+    await sw(pg, 'Born Co', 'bornAdmin', roleB); await sleep(1500);
+    await pg.evaluate(function () { var lf = Array.prototype.slice.call(document.querySelectorAll('#idmp-tree .idmp-row.leaf')).filter(function (r) { var nm = r.querySelector('.nm'); return nm && nm.textContent.trim() === 'Sales Order'; })[0]; if (lf) { var n = lf.parentElement; while (n && n.id !== 'idmp-tree') { if (n.style) n.style.display = ''; n = n.parentElement; } lf.click(); } });
+    await sleep(5000); await tb('New'); await sleep(2500); await setCol('c_doctypetarget_id', 'Standard Order'); await sleep(1500);
+    var bprev = await pg.evaluate(function () { var e = document.querySelector('#idmp-content [data-col="documentno"]:not(span)'); return e ? e.value : null; }), bseq = await Q(pg, "SELECT s.currentnext AS n FROM c_doctype d JOIN ad_sequence s ON s.ad_sequence_id=d.docnosequence_id WHERE d.ad_client_id=? AND d.docbasetype='SOO' AND d.docsubtypeso='SO'", [TB.clientId]);
+    check('born-order-preview', 'born tenant: the Sales Order window previews its DocType sequence\'s next number (' + (bseq[0] && bseq[0].n) + ')', String(bprev).replace(/^<|>$/g, '') === String(bseq[0] && bseq[0].n), { bprev: bprev, bseq: bseq });
     var V = !ALL.judged ? 'INCONCLUSIVE' : ALL.failed ? 'FAIL' : 'PASS';
     say('§DOCNOPG-VERDICT ' + V + ' judged=' + ALL.judged + ' failed=' + ALL.failed); process.exitCode = V === 'PASS' ? 0 : 1;
   } catch (e) { say('§DOCNOPG-CRASH ' + (e && e.stack || e)); say('§DOCNOPG-VERDICT FAIL judged=' + ALL.judged + ' failed=' + (ALL.failed + 1) + ' crashed'); process.exitCode = 1; }
