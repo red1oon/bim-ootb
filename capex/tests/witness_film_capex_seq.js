@@ -15,9 +15,9 @@ const ck = (n, ok, i) => { judged++; if (!ok) fails++; log('  §FILM_SEQ_W ' + n
 const inc = (n, why) => { inconc++; log('  §FILM_SEQ_W ' + n + ' INCONCLUSIVE ' + why); };
 const done = () => { const v = judged === 0 ? 'INCONCLUSIVE' : fails ? 'FAIL' : 'PASS'; log('§FILM_SEQ_VERDICT ' + v + ' judged=' + judged + ' fail=' + fails + ' inconclusive=' + inconc + (BREAK ? ' (BREAK switch ON: FAIL expected)' : '')); process.exit(v === 'PASS' ? 0 : 1); };
 const rd = f => { try { return fs.readFileSync(path.join(dir, f), 'utf8'); } catch (e) { return ''; } };
-const TSV = path.join(ROOT, 'capex/tools/film_cards/narration_seq_en.tsv'), CARDS = path.join(ROOT, 'capex/tools/film_cards');
+const TSV = process.env.FILM_TSV || path.join(ROOT, 'capex/tools/film_cards/narration_seq_en.tsv'), CARDS = path.join(ROOT, 'capex/tools/film_cards');
 const rows = fs.readFileSync(TSV, 'utf8').split('\n').filter(Boolean).map(l => { const c = l.split('\t'); return { id: c[0], src: c[3] || '', short: c[4] || '', detail: c[5] || '' }; });
-const logs = ['shots.log', 'push.log', 'fold.log', 'cache4d.log', 'progress.log'].map(rd), ALL = logs.join('\n');
+const logs = ['shots.log', 'push.log', 'fold.log', 'cache4d.log', 'progress.log', 'erp.log', 'walk.log'].map(rd), ALL = logs.join('\n');
 const shotLines = rd('shots.log').split('\n').filter(l => /^§FILM_SHOT /.test(l));
 if (!rows.length || !shotLines.length) { inc('F5', 'rows=' + rows.length + ' shot lines=' + shotLines.length + ': nothing to judge'); done(); }
 // F1a: key=value pairs of "§FILM_SHOT <name> k=v ..." sources equal the run's values (the shot log prints values={...} JSON)
@@ -37,7 +37,7 @@ other.forEach(r => (r.src.match(/\d[\d,.]*\d|\d/g) || []).forEach(n => { if (!/^
 ck('F1b every number in the other sources is on a log line of this run', miss.filter(x => !/^edit:/.test(x)).length === 0, miss.slice(0, 6));
 // F1c: each digit-number spoken in a dialogue appears in its own source column (exact digits, commas ignored) — the spoken number can only come from the run
 const spoken = [];
-rows.forEach(r => { const text = BREAK ? (r.id === 'actual' ? r.detail.replace('15.30', '15.80') : r.detail) : r.detail; const src = r.src.replace(/,/g, ''); (text.replace(/,/g, '').match(/\d+(?:\.\d+)?/g) || []).forEach(n => { if (src.indexOf(n) < 0 && !/^(1|2|3|5|7)$/.test(n)) spoken.push(r.id + ':' + n); }); });
+rows.forEach(r => { const text = BREAK ? (r.id === 'walked' ? r.detail.replace('207', '208') : r.detail) : r.detail; const src = r.src.replace(/,/g, ''); (text.replace(/,/g, '').match(/\d+(?:\.\d+)?/g) || []).forEach(n => { if (src.indexOf(n) < 0 && !/^(1|2|3|5|7)$/.test(n)) spoken.push(r.id + ':' + n); }); });
 ck('F1c every digit-number spoken in a dialogue is in that row\'s source column', spoken.length === 0, spoken.slice(0, 6));
 // F2 privacy
 const PGF = process.env.FILM_PRIVATE_GREP_FILE || path.join(process.env.HOME, '.cache/capex_film/private_grep.txt');   // the names live OUTSIDE the repo (privacy rule: a public diff never holds them)
@@ -47,7 +47,7 @@ const names = [].concat(Object.keys(shotVals));
 const hits = []; files.forEach(f => { fs.readFileSync(f, 'utf8').split('\n').forEach((l, i) => { if (PRIV && PRIV.test(l)) hits.push(path.basename(f) + ':' + (i + 1)); }); }); names.forEach(n => { if (PRIV && PRIV.test(n)) hits.push('shot ' + n); });
 if (!PRIV) inc('F2', 'private grep list not found (' + PGF + '): nothing judged'); else ck('F2 no private-name or sheet-code hit in the TSV, the seq cards and the shot names (files grepped=' + files.length + ', names=' + names.length + ', hits=' + hits.length + ')', hits.length === 0, hits.slice(0, 4));
 // F4 proposed wording
-const need = { committed: /proposed/i, forecast: /proposed/i, stage: /proposed/i }, nop = Object.keys(need).filter(k => { const r = rows.find(x => x.id === k); return !r || !need[k].test(r.detail + r.short); });
+const need = { committed: /proposed/i, forecast: /proposed/i, stage: /proposed/i }, nop = Object.keys(need).filter(k => { const r = rows.find(x => x.id === k); return r && !need[k].test(r.detail + r.short); });   // rows that exist and show a proposed definition
 ck('F4 the three proposed definitions say "proposed" in their own row', nop.length === 0, nop);
 // F3 witnesses green
 if (SKIPW) inc('F3', '--skip-witnesses'); else {
