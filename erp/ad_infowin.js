@@ -42,7 +42,7 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
     }
     log('§INFOWIN tip=UNAVAILABLE (bundle-only read — figures from this session would be MISSING)');
     var A = g.AdCallout, db = g.__idmpDb;
-    if (A && A.RUNTIME && A.RUNTIME.registerSqlFunctions && db && !db.__udfBound) { try { A.RUNTIME.registerSqlFunctions(function (n, f) { db.create_function(n, f); }); db.__udfBound = true; } catch (e) { log('§INFOWIN udf-register failed ' + e); } }
+    if (g.ErpExportSafe && db && !g.ErpExportSafe.has(db, 'core-udf')) { try { g.ErpExportSafe.registerCoreUdfs(db, A); } catch (e) { log('§INFOWIN udf-register failed ' + e); } }   // §EXPORTSAFE: re-bound after every db.export()
     var d = db.exec(sql, params || []); if (!d.length) return [];
     return d[0].values.map(function (v) { var o = {}; d[0].columns.forEach(function (c, i) { o[c.toLowerCase()] = v[i]; }); return o; });
   }
@@ -341,5 +341,5 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
     ]
   };
 
-  g.AdInfoWindow = { open: open, register: function (table, hook) { HOOKS[String(table).toUpperCase()] = hook; }, parseContextForSql: parseContextForSql, buildInfoSql: buildInfoSql, hook: function (t) { return HOOKS[String(t).toUpperCase()] || {}; }, stockSql: stockSql, atpSql: atpSql, atpOrdersSql: atpOrdersSql, priceSql: priceSql, substRelSql: substRelSql, definition: definition };
+  g.AdInfoWindow = { open: open, query: tipQ, register: function (table, hook) { HOOKS[String(table).toUpperCase()] = hook; }, parseContextForSql: parseContextForSql, buildInfoSql: buildInfoSql, hook: function (t) { return HOOKS[String(t).toUpperCase()] || {}; }, stockSql: stockSql, atpSql: atpSql, atpOrdersSql: atpOrdersSql, priceSql: priceSql, substRelSql: substRelSql, definition: definition };
 })(typeof window !== 'undefined' ? window : globalThis);

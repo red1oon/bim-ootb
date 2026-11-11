@@ -12,7 +12,7 @@
 function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() > 0` for the twin's id law: a row made through the op log has a NEGATIVE synthetic pk (crud_core listTip -opId), so "an id is set" = non-zero (same rule as ModelLayer.idSet; MIGRATE_INSTALL_TENANT §IDLAW-SPEC)
 (function () {
   'use strict';
-  var engineOn = false, dsOn = false, busy = false;
+  var busy = false;
   function q(sql, p) { var st = window.__idmpDb.prepare(sql), out = []; try { if (p) st.bind(p); while (st.step()) { var o = st.getAsObject(), k = {}; Object.keys(o).forEach(function (x) { k[x.toLowerCase()] = o[x]; }); out.push(k); } } finally { st.free(); } return out; }
   function el(tag, cls, txt) { var e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; }
   function css() {
@@ -179,7 +179,7 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
       var sel = window.DashboardHome.select(q, { client: S.client, role: S.role, user: S.user });
       if (!sel.ok) { console.log('§DASH-HOME INCONCLUSIVE ' + sel.reason); return; }
       css();
-      if (!engineOn) { window.GoalEngine.install(window.__idmpDb); engineOn = true; }
+      window.GoalEngine.install(window.__idmpDb);
       var home = el('div'); home.id = 'idmp-home'; var cols = [], rendered = 0, unported = 0;
       sel.main.forEach(function (g) {
         var box = el('div', 'idmp-gadget'); box.setAttribute('data-gadget-id', g.id); box.setAttribute('data-gadget-kind', g.kind); box.setAttribute('data-gadget-name', g.name);
@@ -190,7 +190,7 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
           box.setAttribute('data-perf', '1'); body.appendChild(grid); rendered++;
           console.log('§DASH-GADGET performance goals=' + items.length + ' titles=' + JSON.stringify(items.map(function (i) { return i.title; })));
         } else if (g.kind === 'docstatus' && window.DashboardDocStatus) {
-          if (!dsOn) { window.DashboardDocStatus.install(window.__idmpDb, q); dsOn = true; }
+          window.DashboardDocStatus.install(window.__idmpDb, q);
           var inds = dsItems(S), dg = dsGrid(inds);
           box.setAttribute('data-ds', '1');
           body.appendChild(dg); rendered++;
