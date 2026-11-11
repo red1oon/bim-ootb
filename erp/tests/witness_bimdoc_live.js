@@ -106,7 +106,7 @@ const DXF = Buffer.from('0\nSECTION\n2\nENTITIES\n0\nLINE\n8\nWALLS\n10\n0.0\n20
   const T_ID = Number((await dq("SELECT AD_Table_ID FROM AD_Table WHERE TableName='BIM_Document' AND IsActive='Y'"))[0]?.[0] || 0);
   const W_ID = Number((await dq("SELECT AD_Window_ID FROM AD_Table WHERE AD_Table_ID=" + T_ID))[0]?.[0] || 0);
   const TABS = await dq("SELECT t.AD_Tab_ID, t.AD_Window_ID, t.Name, t.TabLevel FROM AD_Tab t WHERE t.AD_Table_ID=" + T_ID + " AND t.IsActive='Y' ORDER BY t.AD_Window_ID");
-  const OWN_TAB = TABS.find(t => Number(t[1]) === W_ID), PRJ_TAB = TABS.find(t => Number(t[1]) !== W_ID);
+  const OWN_TAB = TABS.find(t => Number(t[1]) === W_ID), PRJ_TAB = TABS.find(t => Number(t[1]) !== W_ID && Number(t[3]) === 3), PRJ1_TAB = TABS.find(t => Number(t[1]) !== W_ID && Number(t[3]) === 1);
   const FIELDS = OWN_TAB ? await dq("SELECT c.ColumnName, f.IsReadOnly, c.AD_Reference_ID FROM AD_Field f JOIN AD_Column c ON c.AD_Column_ID=f.AD_Column_ID WHERE f.AD_Tab_ID=" + OWN_TAB[0] + " AND f.IsActive='Y' AND f.IsDisplayed='Y' ORDER BY f.SeqNo") : [];
   const STATUSES = (await dq("SELECT l.Value FROM AD_Ref_List l JOIN AD_Column c ON c.AD_Reference_Value_ID=l.AD_Reference_ID WHERE c.AD_Table_ID=" + T_ID + " AND c.ColumnName='DocStatus' AND l.IsActive='Y' ORDER BY l.AD_Ref_List_ID")).map(r => r[0]);
   const ACTIONS = (await dq("SELECT Value FROM AD_Ref_List WHERE AD_Reference_ID=135 AND IsActive='Y' ORDER BY AD_Ref_List_ID")).map(r => r[0]);
@@ -230,7 +230,7 @@ const DXF = Buffer.from('0\nSECTION\n2\nENTITIES\n0\nLINE\n8\nWALLS\n10\n0.0\n20
   verdict('A-2 roundtrip', rtN === 0 || !idA ? 'INCONCLUSIVE' : (rtBad.length === 0 && Number(row.c_doctype_id) > 0 ? 'PASS' : 'FAIL'), 'X=' + (rtN - rtBad.length) + ' of N=' + rtN + (idA ? '' : ' (no id)'));
 
   { const bar = await barActs(); const nBtn = BTN.filter(Boolean).length, X = FIELDS.length - missing.length - (bar.length ? 0 : nBtn);
-    verdict('A-1 render', FIELDS.length === 0 ? 'INCONCLUSIVE' : (missing.length === 0 && bar.length > 0 && TABS.length === 2 && tabStrip === 3 ? 'PASS' : 'FAIL'),
+    verdict('A-1 render', FIELDS.length === 0 ? 'INCONCLUSIVE' : (missing.length === 0 && bar.length > 0 && TABS.length === 3 && tabStrip === 3 ? 'PASS' : 'FAIL'),
       'X=' + X + ' of N=' + FIELDS.length + ' displayed fields drawn (' + nBtn + ' Button field = document-action bar offering [' + bar + ']); missing=[' + missing + ']; sub-tab level ' + tabStrip + ' in window ' + PROJ_WIN); }
   // the rest of the fixture, all in Draft
   for (const d of FIX.docs.slice(1)) await createDoc(d);
@@ -709,6 +709,48 @@ const DXF = Buffer.from('0\nSECTION\n2\nENTITIES\n0\nLINE\n8\nWALLS\n10\n0.0\n20
       await page.evaluate(() => { window.__procNoDownload = false; });
     }
   }
+  // §BIMDOC-PROJTAB (bim-compiler ERP_IDEMPIERE_UX_PARITY.md): the level-1 Project tab. P1 rows == hand SQL; P2 every Task-tab row is in it; P3 a row made there carries the parent project; P4 Stop removes the tab, the window is
+  //   unchanged otherwise; P5 an empty project is INCONCLUSIVE; P6 RED the judge fed count+1 says FAIL.
+  {
+    const fail = [], notes = []; const PT1 = 'BIM Document (Project)';
+    const judgeP = (got, want) => (got === want ? 'PASS' : 'FAIL');
+    if (!PRJ1_TAB) verdict('P1 project tab', 'INCONCLUSIVE', 'no level-1 BIM Document tab in the dictionary (AD_Tab TabLevel 1)');
+    else {
+      const want = Number((await rd("SELECT COUNT(*) AS n FROM bim_document WHERE c_project_id=" + PRJ.c_project_id))[0].n);
+      await boot('&window=' + PROJ_WIN); await selectRow(PRJ.c_project_id); await tabClick(PT1);
+      const sn = await snap(); const ids = sn.rows.map(r => String(r.bim_document_id || r.id));
+      notes.push('rows=' + sn.rows.length + ' want=' + want + ' link=' + sn.linkColumn + '=' + sn.linkValue);
+      if (want === 0) verdict('P5 vacuous guard', 'INCONCLUSIVE', 'the fixture project holds 0 deliverables');
+      if (sn.table.toLowerCase() !== 'bim_document' || String(sn.linkColumn).toLowerCase() !== 'c_project_id' || String(sn.linkValue) !== String(PRJ.c_project_id)) fail.push('link ' + JSON.stringify({ t: sn.table, l: sn.linkColumn, v: sn.linkValue }));
+      if (sn.rows.length !== want) fail.push('P1 rows ' + sn.rows.length + ' != hand SQL ' + want);
+      // P2: the Task-tab rows of Plans are a subset of the project tab
+      await toTask(FIX.phases[0], 'Plans'); await tabClick('BIM Document'); const st = await snap(); const tids = st.rows.map(r => String(r.bim_document_id || r.id));
+      const miss = tids.filter(i => !ids.includes(i)); notes.push('task-tab ' + tids.length + ' missing from project tab ' + miss.length);
+      if (!tids.length) verdict('P2 subset', 'INCONCLUSIVE', 'the Plans task tab is empty'); else if (miss.length) fail.push('P2 task rows not in project tab: ' + miss);
+      // P3: a document created in the project tab carries the parent project; the task is chosen there
+      await boot('&window=' + PROJ_WIN); await selectRow(PRJ.c_project_id); await tabClick(PT1);
+      const n0 = mark(); await page.click('#idmp-toolbar button[data-tb="new"]'); await sleep(2200);
+      for (const [c, v] of [['c_projecttask_id', TK.Details.id], ['deliverableno', 'A-302'], ['revision', 1], ['name', 'Duplex stair details'], ['discipline', 'ARC'], ['filekind', 'PDF'], ['hoursbudget', 3]]) { const g = await setv(c, v); if (g === 'nofield') fail.push('P3 field ' + c + ' not on the project-tab form'); await sleep(250); }
+      await sleep(500); await page.click('#idmp-toolbar button[data-tb="save"]');
+      for (let i = 0; i < 40 && !since(n0, /^§CRUD-GROUP-PERSIST|committed key=bim_document/).length; i++) await sleep(250); await sleep(1200);
+      const r = (await rd("SELECT bim_document_id AS id, c_project_id AS p, c_projecttask_id AS t FROM bim_document WHERE deliverableno='A-302'"))[0];
+      if (!r) fail.push('P3 A-302 not saved: ' + JSON.stringify(since(n0, /REJECT|ERR/).slice(0, 3))); else { ID['A-302/1'] = r.id; if (String(r.p) !== String(PRJ.c_project_id)) fail.push('P3 parent project not inherited ' + JSON.stringify(r)); }
+      notes.push('created=' + JSON.stringify(r));
+      // P6 red judge
+      const red = judgeP(sn.rows.length + 1, want);
+      if (red !== 'FAIL') fail.push('P6 judge fed count+1 did not say FAIL');
+      verdict('P1-P3,P6 project tab (level 1)', want === 0 ? 'INCONCLUSIVE' : (fail.length ? 'FAIL' : 'PASS'), fail.length ? fail.join(' ; ') : notes.join(' ; ') + '; judge fed count+1 says ' + red);
+      // P4 Stop removes the tab (and only that tab); Start brings it back
+      const cnt = () => dq("SELECT COUNT(*) FROM AD_Tab WHERE AD_Window_ID=" + PROJ_WIN + " AND IsActive='Y'").then(r => Number(r[0][0]));
+      const base = await page.evaluate(async () => { const R = window.PluginEngine._reg().system; await R.stopBundle('org.kernel.bim-document'); return true; }); await sleep(800);
+      const afterStop = await cnt(); const left = await dq("SELECT COUNT(*) FROM AD_Tab WHERE AD_Table_ID=" + T_ID);
+      await page.evaluate(async () => { await window.PluginEngine._reg().system.startBundle('org.kernel.bim-document'); }); await sleep(800);
+      const afterStart = await cnt();
+      const f4 = []; if (!(afterStart - afterStop === 2)) f4.push('Project window tabs stopped=' + afterStop + ' started=' + afterStart + ' (want +2: the task-level and the project-level BIM Document tabs)'); if (Number(left[0][0]) !== 0) f4.push('tabs of BIM_Document left after Stop: ' + left[0][0]);
+      verdict('P4 Stop removes the Project tab, Start restores it', base ? (f4.length ? 'FAIL' : 'PASS') : 'INCONCLUSIVE', f4.length ? f4.join(' ; ') : 'window ' + PROJ_WIN + ' tabs ' + afterStop + ' -> ' + afterStart + '; BIM_Document tabs 0 while stopped');
+    }
+  }
+
   return finish();
 
   function finish() {

@@ -19,9 +19,9 @@
 // Id band 9541001-9541999 (no seed row, no other bundle).
 const NOW = '2026-11-09 00:00:00';
 const STD = { ad_client_id: 0, ad_org_id: 0, isactive: 'Y', created: NOW, createdby: 100, updated: NOW, updatedby: 100, entitytype: 'U' };
-const T_ID = 9541001, W_ID = 9541001, TAB_OWN = 9541001, TAB_PRJ = 9541002, MENU_ID = 9541001, TREE = 10, MENU_PARENT = 160, PRJ_WIN = 130, PRJ_AFTER_TAB = 796;
+const T_ID = 9541001, W_ID = 9541001, TAB_OWN = 9541001, TAB_PRJ = 9541002, TAB_PRJ1 = 9541003, MENU_ID = 9541001, TREE = 10, MENU_PARENT = 160, PRJ_WIN = 130, PRJ_AFTER_TAB = 796;
 const R_STATUS = 9541001, R_DISC = 9541002, R_KIND = 9541003, R_REV = 9541004;
-const COL0 = 9541201, FLD_OWN0 = 9541301, FLD_PRJ0 = 9541401, LIST0 = 9541101, DT0 = 9541500;
+const COL0 = 9541201, FLD_OWN0 = 9541301, FLD_PRJ0 = 9541401, FLD_PRJ1_0 = 9541601, LIST0 = 9541101, DT0 = 9541500;
 const P_EXPORT = 9541002, P_EXPORT_CLASS = 'org.kernel.bim.process.BIMDocumentRegisterExport';   // §REGISTER-EXPORT (bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md)
 const P_OPEN = 9541001, P_OPEN_CLASS = 'org.kernel.bim.process.BIMDocumentOpen', VCOL0 = 9541251, VFLD0 = 9541451, T_TASK = 584, T_PHASE = 576, TAB_TASK = 490, TAB_PHASE = 478;
 export const TABLE = 'BIM_Document';
@@ -51,7 +51,7 @@ const COLS = [
   C('UpdatedBy', 'Updated By', 30, 110, 22, 'Y', null, '', false, false),
   C('BIM_Document_UU', 'BIM_Document_UU', 10, null, 36, 'N', null, '', false, false),
   C('C_DocType_ID', 'Document Type', 18, 170, 22, 'Y', "@SQL=SELECT C_DocType_ID FROM C_DocType WHERE DocBaseType='BIM' AND AD_Client_ID=@#AD_Client_ID@ AND IsActive='Y' ORDER BY C_DocType_ID", 'R', true, false),
-  C('C_Project_ID', 'Project', 19, null, 22, 'Y', null, '', true, false),
+  C('C_Project_ID', 'Project', 19, null, 22, 'Y', null, 'P', true, false),
   C('C_ProjectPhase_ID', 'Project Phase', 19, null, 22, 'N', null, '', true, false),
   C('C_ProjectTask_ID', 'Project Task', 19, null, 22, 'Y', null, 'P', true, false, 80, 0),
   C('DeliverableNo', 'Deliverable No', 10, null, 30, 'Y', null, '', true, true, 10, 10),
@@ -91,6 +91,13 @@ const window_ = Object.assign({ ad_window_id: W_ID, name: 'BIM Document', descri
 const tabOwn = Object.assign({ ad_tab_id: TAB_OWN, ad_window_id: W_ID, name: 'BIM Document', description: 'BIM Document', ad_table_id: T_ID, seqno: 10, tablevel: 0, issinglerow: 'Y', isinfotab: 'N', istranslationtab: 'N', isreadonly: 'N',
   hastree: 'N', issorttab: 'N', isinsertrecord: 'Y', isadvancedtab: 'N', ad_tab_uu: 'bimdoc-tab-' + TAB_OWN, orderbyclause: 'DeliverableNo, Revision' }, STD);
 const tabPrj = Object.assign({}, tabOwn, { ad_tab_id: TAB_PRJ, ad_window_id: PRJ_WIN, seqno: 45, tablevel: 3, issinglerow: 'N', ad_tab_uu: 'bimdoc-tab-' + TAB_PRJ });
+// §BIMDOC-PROJTAB: the level-1 Project tab (parent link C_Project_ID, seq 17) shows every deliverable of the project at every revision; unlike the Task-level tab it must OFFER the
+//   phase and task (C_ProjectTask_ID stays mandatory: the DocAction refuses a deliverable with no task), so those two columns are displayed here, first in the grid.
+const tabPrj1 = Object.assign({}, tabOwn, { ad_tab_id: TAB_PRJ1, ad_window_id: PRJ_WIN, name: 'BIM Document (Project)', seqno: 17, tablevel: 1, issinglerow: 'N', ad_tab_uu: 'bimdoc-tab-' + TAB_PRJ1 });
+const PRJ1_SHOW = { C_ProjectPhase_ID: 5, C_ProjectTask_ID: 8 };
+const fieldRowsPrj1 = () => COLS.map((c, i) => ({ c, i })).filter(({ c }) => c.fl.indexOf('K') >= 0 || c.sp || PRJ1_SHOW[c.n]).map(({ c, i }, k) => Object.assign({ ad_field_id: FLD_PRJ1_0 + i, ad_tab_id: TAB_PRJ1, ad_column_id: COL0 + i,
+  name: c.l, iscentrallymaintained: 'Y', isdisplayed: c.fl.indexOf('K') >= 0 ? 'N' : 'Y', isreadonly: c.fl.indexOf('R') >= 0 ? 'Y' : 'N', seqno: (k + 1) * 10, issameline: 'N', isheading: 'N', isfieldonly: 'N', isencrypted: 'N', ad_field_uu: 'bimdoc-fld-' + (FLD_PRJ1_0 + i),
+  isdisplayedgrid: (c.gp || PRJ1_SHOW[c.n]) ? 'Y' : 'N', seqnogrid: PRJ1_SHOW[c.n] || c.gp }, STD));
 const fieldRows = (tabId, f0, own) => COLS.map((c, i) => ({ c, i })).filter(({ c }) => c.fl.indexOf('K') >= 0 || (own ? c.so : c.sp)).map(({ c, i }, k) => Object.assign({ ad_field_id: f0 + i, ad_tab_id: tabId, ad_column_id: COL0 + i,
   name: c.l, iscentrallymaintained: 'Y', isdisplayed: c.fl.indexOf('K') >= 0 ? 'N' : 'Y', isreadonly: c.fl.indexOf('R') >= 0 ? 'Y' : 'N', seqno: (k + 1) * 10, issameline: 'N', isheading: 'N', isfieldonly: 'N', isencrypted: 'N', ad_field_uu: 'bimdoc-fld-' + (f0 + i),
   isdisplayedgrid: (own ? c.go : c.gp) ? 'Y' : 'N', seqnogrid: own ? c.go : c.gp }, STD));
@@ -139,8 +146,8 @@ export const manifest = {
     { table: 'ad_table', idCol: 'ad_table_id', rows: [table] },
     { table: 'ad_column', idCol: 'ad_column_id', rows: columns.concat(vcolumns) },
     { table: 'ad_window', idCol: 'ad_window_id', rows: [window_] },
-    { table: 'ad_tab', idCol: 'ad_tab_id', rows: [tabOwn, tabPrj] },
-    { table: 'ad_field', idCol: 'ad_field_id', rows: fieldRows(TAB_OWN, FLD_OWN0, true).concat(fieldRows(TAB_PRJ, FLD_PRJ0, false), vfields) },
+    { table: 'ad_tab', idCol: 'ad_tab_id', rows: [tabOwn, tabPrj, tabPrj1] },
+    { table: 'ad_field', idCol: 'ad_field_id', rows: fieldRows(TAB_OWN, FLD_OWN0, true).concat(fieldRows(TAB_PRJ, FLD_PRJ0, false), fieldRowsPrj1(), vfields) },
     { table: 'ad_menu', idCol: 'ad_menu_id', rows: [menu] },
     { table: 'ad_treenodemm', idCol: 'node_id', rows: [node] }
   ]
