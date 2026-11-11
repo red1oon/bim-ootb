@@ -33,7 +33,7 @@ const finish = () => { const v = judged === 0 ? 'INCONCLUSIVE' : fails ? 'FAIL' 
   ck('J1 the job read the pilot and wrote the file', job() && fs.existsSync(COPY));
   const txt = fs.readFileSync(COPY, 'utf8'), snap = JSON.parse(txt);
   ck('J2 the file carries no password and no login', txt.indexOf(PASSWORD + '"') < 0 && !/"pass"/.test(txt) && !snap.meta.login, { meta: Object.keys(snap.meta) });
-  ck('J3 the file keeps every whitelisted column (the PK + UU + client the mirror needs)', snap.projects[0].C_Project_UU != null && snap.projects[0].AD_Client_ID != null && snap.meta.client === 11 && !snap.unavailable.length, { unavailable: snap.unavailable });
+  ck('J3 the file keeps every whitelisted column (the PK + UU + client the mirror needs)', snap.projects[0].C_Project_UU != null && snap.projects[0].AD_Client_ID != null && snap.meta.client === 11 && !snap.unavailable.filter(u => u !== 'bimdocs').length, { unavailable: snap.unavailable });   // bimdocs = the optional BIM Document entity (§5.36B), absent on the pilot
 
   // ── N: the mirror, in node, on the seed + patch ──
   const { applyCopy } = await import(pathToFileURL(path.join(ROOT, 'capex/plugin/legacy_copy.mjs')).href), SQL = await initSqlJs();

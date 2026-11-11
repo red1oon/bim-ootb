@@ -92,7 +92,7 @@ function rowChecks() {
   check('R4 the named exception "QueryADOrg Filter is Free on the pilot, Constant 1=1 in the script" is seen, 1 row', filterSeen === 1, { filterSeen });
 }
 function separationChecks() {
-  const siteScripts = fs.readdirSync(SITE), wanted = Object.values(A.LEGACY_TYPES).sort();
+  const siteScripts = fs.readdirSync(SITE), wanted = Object.keys(A.LEGACY_TYPES).filter(e => !A.OPTIONAL.includes(e)).map(e => A.LEGACY_TYPES[e]).sort();   // the OPTIONAL entity (BIM Document, §5.36B) has its own script under capex/legacy/ws/bimdoc
   check('S1 the site folder holds one script, its types == capex/adapters.js LEGACY_TYPES, ' + wanted.length + ' of ' + wanted.length, siteScripts.length === 1 && JSON.stringify(SITE_TYPES.slice().sort()) === JSON.stringify(wanted), { siteScripts, SITE_TYPES });
   const r = rows(DB, 'SELECT t.value, m.value AS method, a.isreadwrite AS rw, a.ad_role_id AS role FROM adempiere.ws_webservicetype t JOIN adempiere.ws_webservicemethod m USING (ws_webservicemethod_id) JOIN adempiere.ws_webservicetypeaccess a USING (ws_webservicetype_id) WHERE t.value IN (' + sqlList(SITE_TYPES) + ')');
   check('S2 every site type is queryData with isreadwrite=N (' + r.length + ' access rows)', r.length === SITE_TYPES.length && r.every(x => x.method === 'queryData' && x.rw === 'N'), r.filter(x => x.method !== 'queryData' || x.rw !== 'N'));
@@ -144,7 +144,7 @@ async function endOfChain(tmp) {
     return JSON.parse(fs.readFileSync(file, 'utf8'));
   };
   const s0 = snapshot('before_writes');
-  check('E0 legacy_snapshot.js (the dashboard job) reads 8 of 8 with no entity unavailable, on rows the scripts alone set up', s0.unavailable.length === 0, s0.unavailable);
+  check('E0 legacy_snapshot.js (the dashboard job) reads 8 of 8 with no entity unavailable, on rows the scripts alone set up', s0.unavailable.filter(u => !A.OPTIONAL.includes(u)).length === 0, s0.unavailable);   // bimdocs is optional: this server has no BIM Document plugin
 
   const stock = rows(DB, "SELECT projinvoicerule, projectlinelevel, c_currency_id, value FROM adempiere.c_project WHERE ad_client_id=11 ORDER BY c_project_id LIMIT 1")[0];
   const found = await Push.queryRows(BASE, xmlLogin, 'QueryCProject', 'C_Project', [{ column: 'Value', val: stock.value }]);
@@ -200,7 +200,7 @@ async function endOfChain(tmp) {
 
   // the 8 read types, now with rows behind every entity the writes can give them
   const s1 = snapshot('after_writes');
-  Object.keys(A.LEGACY_TYPES).forEach(e => {
+  Object.keys(A.LEGACY_TYPES).filter(e => !A.OPTIONAL.includes(e)).forEach(e => {
     const t = A.LEGACY_TYPES[e], n = (s1[e] || []).length;
     if (s1.unavailable.includes(e)) check('E ' + t, false, { entity: e, unavailable: true });
     else if (!n) inc('E ' + t, 'read ok but 0 rows: nothing judged');

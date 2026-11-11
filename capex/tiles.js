@@ -11,7 +11,7 @@
     approved_budget: 'SUM(C_Project.PlannedAmt) per C_Currency_ID',
     actual_cost: 'SUM(C_Project.ProjectBalanceAmt); % of plan = Actual / SUM(PlannedAmt)',
     committed_cost: 'SUM(C_Project.CommittedAmt); invoiced = SUM(C_Project.InvoicedAmt)',
-    forecast_cost: 'definition pending (client)',
+    forecast_cost: 'PROPOSED (awaiting the client, §6 Q3): per ACTIVE project EAC = Spent + (Budget - Done) / CPI, CPI = Done / Spent; Spent = ProjectBalanceAmt, Budget = PlannedAmt, Done = SUM(C_ProjectPhase.PlannedAmt WHERE IsComplete=\'Y\'); a project with Spent or Done at 0 gives no value; summed per C_Currency_ID',
     completed_year: 'COUNT(C_Project WHERE Processed=\'Y\' AND year(DateFinish)=year(today))',
     health: 'per project: PV=SUM(C_ProjectPhase.PlannedAmt WHERE EndDate<=today), EV=SUM(PlannedAmt WHERE IsComplete=\'Y\'), AC=ProjectBalanceAmt; SPI=EV/PV, CPI=EV/AC (AC>0). No EVM data = PV is 0. Green = every index >=0.9, Red = every index <0.9, Amber = mixed. PROVISIONAL: only 0.9 is the client\'s',
     stage: 'COUNT(C_Project) GROUP BY C_Project.C_Phase_ID -> C_Phase.Name (client stage mapping pending)',
@@ -19,9 +19,10 @@
     schedule: 'per project: No schedule data = no phase with StartDate and EndDate; At Risk = SPI<0.9; Delayed = a phase with IsComplete=\'N\' AND EndDate<today; else On Time. Average Delay = mean of max(today-EndDate) over Delayed + At Risk',
     budget_status: 'per project: Not started = ProjectBalanceAmt NULL/0; Over = ProjectBalanceAmt > COALESCE(PlannedAmt,0); else Within. Overrun = SUM(ProjectBalanceAmt-PlannedAmt) over Over',
     approvals: 'COUNT(AD_WF_Activity WHERE WFState=\'OS\' AND Processed=\'N\')',
-    last_updated: 'MAX(C_Project.Updated)'
+    last_updated: 'MAX(C_Project.Updated)',
+    bim_documents: 'issued = COUNT(deliverables whose latest revision has DocStatus=\'CO\'); deliverables = COUNT(DISTINCT C_Project_ID, DeliverableNo) over active BIM_Document rows of the filtered projects; latest = highest Revision'
   };
-  var NEEDS = { active_projects_sub: ['phaseRef'], health: ['phases'], stage: ['phaseRef'], physical_spent: ['phases'], schedule: ['phases'], approvals: ['wf'] };
+  var NEEDS = { active_projects_sub: ['phaseRef'], health: ['phases'], forecast_cost: ['phases'], stage: ['phaseRef'], physical_spent: ['phases'], schedule: ['phases'], approvals: ['wf'], bim_documents: ['bimdocs'] };
 
   function cents(v) { return v == null || v === '' ? null : Math.round(Number(v) * 100); }
   function day(s) { return s ? String(s).slice(0, 10) : null; }
@@ -80,7 +81,13 @@
     T.actual_cost = { cur: sumBy(S, function (p) { return p.ProjectBalanceAmt; }) };
     T.actual_cost.pctOfPlan = ratioBy(T.actual_cost.cur, sumBy(S.filter(function (p) { return p.PlannedAmt != null; }), function (p) { return p.PlannedAmt; }));
     T.committed_cost = { cur: sumBy(S, function (p) { return p.CommittedAmt; }), invoiced: sumBy(S, function (p) { return p.InvoicedAmt; }) };
-    T.forecast_cost = { pending: true };
+    // §5.38 Q3 (PROPOSED): EAC = Spent + (Budget - Done) / CPI, CPI = Done / Spent, over ACTIVE projects that have Spent > 0 and Done > 0; one SUM per currency, rounded once (the PA measure's own shape)
+    var fb = blocked('forecast_cost');
+    T.forecast_cost = fb ? { inconclusive: fb } : { cur: {} };
+    if (!fb) { var fsum = {}; act.forEach(function (p) {
+      var spent = cents(p.ProjectBalanceAmt), bud = cents(p.PlannedAmt) || 0, done = (byProj[p.C_Project_ID] || []).reduce(function (a, ph) { return a + (yes(ph.IsComplete) ? (cents(ph.PlannedAmt) || 0) : 0); }, 0);
+      if (!(spent > 0) || !(done > 0)) return; fsum[cur(p)] = (fsum[cur(p)] || 0) + spent + (bud - done) * spent / done; });
+      Object.keys(fsum).forEach(function (k) { T.forecast_cost.cur[k] = Math.round(fsum[k]); }); }
     T.completed_year = { vacuous: none, n: tn == null ? null : P.filter(function (p) { return yes(p.Processed) && p.DateFinish && day(p.DateFinish).slice(0, 4) === today.slice(0, 4); }).length };
 
     // classification tiles — population A
@@ -136,6 +143,19 @@
     });
     var w = blocked('approvals');
     T.approvals = w ? { inconclusive: w } : { n: (data.wf || []).filter(function (a) { return a.WFState === 'OS' && !yes(a.Processed); }).length };
+    // §5.36B: BIM documents issued for construction / deliverables (the plugin's rule, erp/plugins/bim_document.mjs computeProgress): one deliverable = (project, deliverable no) at its LATEST revision.
+    var bd = data.bimdocs;
+    if (blocked('bim_documents') || bd == null) T.bim_documents = { notinstalled: true };
+    else {
+      var ids = {}; S.forEach(function (p) { ids[String(p.C_Project_ID)] = 1; });
+      var latest = {};
+      bd.forEach(function (r) {
+        if (r.IsActive === 'N' || !ids[String(r.C_Project_ID)]) return;
+        var k = r.C_Project_ID + '|' + r.DeliverableNo, c = latest[k], rv = Number(r.Revision) || 0, id = Number(r.BIM_Document_ID) || 0;
+        if (!c || rv > c.rv || (rv === c.rv && id > c.id)) latest[k] = { rv: rv, id: id, st: r.DocStatus };
+      });
+      var lk = Object.keys(latest); T.bim_documents = lk.length ? { total: lk.length, issued: lk.filter(function (k) { return latest[k].st === 'CO'; }).length } : { vacuous: true };
+    }
     var up = P.map(function (p) { return p.Updated; }).filter(Boolean).sort();
     T.last_updated = up.length ? { v: up[up.length - 1] } : { vacuous: true };
     return { tiles: T, pop: { P: P.length, S: S.length, A: A.length }, formula: FORMULA, caveat: CAVEAT };
@@ -152,7 +172,7 @@
     o.approved_budget = m2s(T.approved_budget.cur);
     o.actual_cost = m2s(T.actual_cost.cur); o.actual_cost_pct_of_plan = r2s(T.actual_cost.pctOfPlan);
     o.committed_cost = m2s(T.committed_cost.cur); o.committed_invoiced = m2s(T.committed_cost.invoiced);
-    o.forecast_cost = 'PENDING';
+    o.forecast_cost = T.forecast_cost.inconclusive ? 'INCONCLUSIVE' : m2s(T.forecast_cost.cur);
     o.completed_year = T.completed_year.vacuous || T.completed_year.n == null ? 'no data' : T.completed_year.n;
     o.health = st(T.health, function (x) { return 'green=' + x.green + ' amber=' + x.amber + ' red=' + x.red + ' none=' + x.none; });
     o.stage = st(T.stage, function (x) { return Object.keys(x.stages).sort().map(function (k) { return k + '=' + x.stages[k]; }).join(';'); });
@@ -163,6 +183,7 @@
     o.budget_status = st(T.budget_status, function (x) { return 'within=' + x.within + ' over=' + x.over + ' notstarted=' + x.notstarted; });
     o.actual_overrun = st(T.budget_status, function (x) { return m2s(x.overrun); });
     o.approvals = st(T.approvals, function (x) { return x.n; });
+    t = T.bim_documents; o.bim_documents = t.notinstalled ? 'no data (not installed)' : t.vacuous ? 'no data' : t.issued + '/' + t.total;
     o.last_updated = T.last_updated.vacuous ? 'no data' : T.last_updated.v;
     Object.keys(o).forEach(function (k) { o[k] = String(o[k]); });
     return o;
@@ -175,7 +196,7 @@
     Object.keys(a).forEach(function (k) {
       var va = a[k], vb = b[k], v;
       if (PER_SOURCE.indexOf(k) >= 0) v = 'PER_SOURCE';
-      else if (va === 'INCONCLUSIVE' || vb === 'INCONCLUSIVE' || vb === undefined || (va === 'PENDING' && vb === 'PENDING')) v = 'INCONCLUSIVE';   // pending/unreadable: nothing was judged
+      else if (va === 'INCONCLUSIVE' || vb === 'INCONCLUSIVE' || vb === undefined || va === 'no data (not installed)' || vb === 'no data (not installed)' || (va === 'PENDING' && vb === 'PENDING')) v = 'INCONCLUSIVE';   // pending/unreadable: nothing was judged
       else if (va === 'no data' && vb === 'no data') v = 'INCONCLUSIVE';          // both empty: nothing was judged
       else v = va === vb ? 'MATCH' : 'DIFF';
       if (v === 'MATCH') match++; else if (v === 'DIFF') diff++; else if (v === 'PER_SOURCE') per++; else inc++;
