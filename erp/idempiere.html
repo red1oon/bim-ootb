@@ -4994,6 +4994,13 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       pane.appendChild(at);
       pane.appendChild(el('div', 'msg', 'Statement date ' + r.statementDate + ' · ' + r.items + ' open item(s)'));
     }
+    // AD_ReportView face (§OPENITEMS-SPEC): any report-view process returns { view: { table, cols, rows } } - one generic table, no per-view branch.
+    if (!absent && r && r.view && r.view.cols) {
+      var vw = document.createElement('table'); vw.setAttribute('data-reportview', r.view.table); var vwr = el('tr');
+      r.view.cols.forEach(function (c) { vwr.appendChild(el('th', null, c)); }); vw.appendChild(vwr);
+      r.view.rows.forEach(function (row) { vwr = el('tr'); r.view.cols.forEach(function (c) { var td = el('td', null, row[c] == null ? '' : String(row[c])); td.setAttribute('data-k', c); vwr.appendChild(td); }); vw.appendChild(vwr); });
+      pane.appendChild(vw);
+    }
     // §AD-PROC-LIVE — a HEADER-ONLY voucher (report:c_payment, AD_PROCESS_FOLD_LANE §P2-tail-leg5): a payment has NO
     // lines, so it renders an Amount→Value breakdown (PayAmt/Discount/Write-off/…) instead of a line-item table.
     // r.headerOnly is set ONLY by foldVoucher; r has no `.lines` key so the receipt branch above never fires for it.
