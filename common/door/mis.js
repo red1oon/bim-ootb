@@ -30,7 +30,7 @@ async function session(o, nextKey, out, door) {
   for (;;) {
     if (st.phase === 'quit' || st.phase === 'dead') break;
     const k = await nextKey(); if (k == null) break;
-    out('key ' + k); screen = await apply({ key: k }); out(Core.plain(screen).join('\n'));
+    const inp = typeof k === 'object' ? k : { key: k }; out('key ' + (inp.text != null ? '=' + inp.text : inp.key)); screen = await apply(inp); out(Core.plain(screen).join('\n'));
   }
   return { lines, state: st };
 }
@@ -43,12 +43,13 @@ async function main(argv) {
   const tty = process.stdin.isTTY && !o.plain;
   if (tty) {
     process.stdin.setRawMode(true); process.stdin.resume(); process.stdin.setEncoding('utf8');
-    const SEQ = { '\x1b[A': 'Up', '\x1b[B': 'Down', '\x1b[C': 'Right', '\x1b[D': 'Left', '\x1b[6~': 'PageDown', '\x1b[5~': 'PageUp', '\t': 'Tab', '\r': 'Enter', '\x1b': 'Esc', '\x03': 'Esc' };
+    const SEQ = { '\x1b[A': 'Up', '\x1b[B': 'Down', '\x1b[C': 'Right', '\x1b[D': 'Left', '\x1b[6~': 'PageDown', '\x1b[5~': 'PageUp', '\t': 'Tab', '\r': 'Enter', '\x1b': 'Esc', '\x03': 'Esc', '\x7f': 'Backspace', '\b': 'Backspace' };
     process.stdin.on('data', d => { const s = String(d); if (SEQ[s]) feed(SEQ[s]); else for (const ch of s) feed(ch); });
   } else {
-    let buf = ''; process.stdin.setEncoding('utf8');
-    process.stdin.on('data', d => { buf += d; const parts = buf.split(/\s+/); buf = parts.pop(); parts.filter(Boolean).forEach(feed); });
-    process.stdin.on('end', () => { buf.split(/\s+/).filter(Boolean).forEach(feed); ended = true; if (resolveNext) { const r = resolveNext; resolveNext = null; r(null); } });
+    let buf = ''; process.stdin.setEncoding('utf8');   // a line starting with = is TYPED TEXT for the current field; any other line holds key names separated by spaces
+    const eat = (line) => { if (line.charAt(0) === '=') feed({ text: line.slice(1) }); else line.split(/\s+/).filter(Boolean).forEach(feed); };
+    process.stdin.on('data', d => { buf += d; const parts = buf.split('\n'); buf = parts.pop(); parts.forEach(eat); });
+    process.stdin.on('end', () => { if (buf) eat(buf); ended = true; if (resolveNext) { const r = resolveNext; resolveNext = null; r(null); } });
   }
   const out = (s) => process.stdout.write((tty ? s.replace(/^key .*\n?/, '') : s) + '\n');
   const sf = process.env.MIS_SESSION_FILE;   // a terminal draws screens only; the door lines it ran go to MIS_SESSION_FILE (a replayable door script), one per line

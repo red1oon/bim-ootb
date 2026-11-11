@@ -33,11 +33,11 @@
     take('Edit', 'U'); take('Delete', 'D');
     var processed = r && r.Processed === 'Y';
     if (st.doc) {
-      out.push({ l: 'U', w: 'Edit', inert: true });
+      out.push({ l: 'U', w: 'Edit', edit: true, line: idLine(st, 'mis.read', r) });
       (actions || []).forEach(function (code) { var v = st.opts.actionVerbs[code]; if (v) { var w = v.split('.')[1]; w = w.charAt(0).toUpperCase() + w.slice(1); out.push({ l: take(w), w: w, line: idLine(st, v, r), act: true }); } });
       if (!processed) out.push({ l: 'D', w: 'Delete', line: idLine(st, 'mis.delete', r), del: true });
     } else {
-      out.push({ l: 'U', w: 'Edit', inert: true }, { l: 'D', w: 'Delete', line: idLine(st, 'mis.delete', r), del: true }, { l: 'C', w: 'Copy', inert: true });
+      out.push({ l: 'U', w: 'Edit', edit: true, line: idLine(st, 'mis.read', r) }, { l: 'D', w: 'Delete', line: idLine(st, 'mis.delete', r), del: true }, { l: 'C', w: 'Copy', inert: true });
     }
     return out;
   }
@@ -49,17 +49,97 @@
   }
   function runChip(st, c, effects) {
     if (!c) return;
-    if (c.inert) { st.note = c.w + ' is a form: it arrives in V3 (nothing written)'; return; }
+    if (c.inert) { st.note = c.w + ' is not built yet (nothing written)'; return; }
+    if (c.edit) { st.phase = 'busy'; st.note = ''; effects.push({ line: c.line, purpose: 'readrec' }); return; }
     if (c.del && st.opts.brk !== 'skipconfirm') { st.phase = 'confirm'; st.confirm = { line: c.line, what: 'Delete ' + st.opts.kind + ' ' + numOf(st, rowAt(st)) + '?' }; st.note = ''; return; }
     st.phase = 'busy'; st.note = ''; effects.push({ line: c.line, purpose: 'write' });
+  }
+
+  var KNOWN = { string: 1, text: 1, integer: 1, number: 1, amount: 1, quantity: 1, list: 1, yesno: 1, date: 1, datetime: 1, tabledirect: 1, table: 1, search: 1 };
+  function propOf(st, n) { return (st.props || []).filter(function (p) { return up(p.name) === up(n); })[0] || { name: n, label: n, mandatory: true, help: '' }; }
+  function mkField(p, value) { return { name: p.name, label: p.label || p.name, mandatory: !!p.mandatory, help: p.help || '', type: p.type || '', value: value == null ? '' : String(value), orig: value == null ? '' : String(value) }; }
+  function editable(st, rec) {   // the columns the window lets a person edit: GridField.isEditable's rules as the dictionary states them (CLI_ERP_IVR §15)
+    var loose = st.opts.brk === 'extrafields', proc = rec && (rec.processed === 'Y');
+    return (st.props || []).filter(function (p) {
+      if (!p.displayed || p.key || p.parent || !KNOWN[p.type]) return false;
+      if (loose) return true;
+      if (p.fieldReadOnly || p.readOnlyLogic) return false;
+      if (!p.updateable && !p.alwaysUpdateable) return false;
+      if (proc && !p.alwaysUpdateable) return false;
+      return true;
+    }).sort(function (a, b) { return a.seq - b.seq; });
+  }
+  function formLine(st) {
+    var f = st.form, parts = [];
+    f.fields.forEach(function (x) { if (f.mode === 'new') { if (x.value !== '') parts.push(x.name + '=' + q(x.value)); } else if (st.opts.brk === 'sendall' || x.value !== x.orig) parts.push(x.name + '=' + (x.value === '' ? '<null>' : q(x.value))); });
+    if (f.mode === 'new') return 'mis.new kind=' + q(st.opts.kind) + (parts.length ? ' ' + parts.join(' ') : '');
+    return parts.length ? 'mis.update kind=' + q(st.opts.kind) + ' id=' + f.id + ' ' + parts.join(' ') : null;
+  }
+  function openForm(st, mode, fields, id) { st.form = { mode: mode, fields: fields, idx: 0, id: id, line: null }; st.phase = fields.length ? 'form' : 'formConfirm'; if (!fields.length) st.form.line = formLine(st); st.note = ''; }
+  function formKey(st, k, effects) {
+    var f = st.form, cur = f.fields[f.idx];
+    if (k === 'Esc') { st.phase = 'ready'; st.form = null; st.note = 'cancelled: nothing was written'; return; }
+    if (st.phase === 'formConfirm') {
+      if (k === 'y' || k === 'Y') { st.phase = 'busy'; effects.push({ line: f.line, purpose: 'formwrite' }); }
+      else { st.phase = f.fields.length ? 'form' : 'ready'; if (!f.fields.length) st.form = null; st.note = 'not saved: nothing was written'; }
+      return;
+    }
+    if (k === 'Tab' || k === 'Down' || k === 'Enter') {
+      if (k === 'Enter' && f.idx === f.fields.length - 1) {
+        var line = formLine(st);
+        if (!line) { st.phase = 'ready'; st.form = null; st.note = 'no changes: nothing was written (NO-OP)'; return; }
+        f.line = line; st.phase = 'formConfirm'; st.note = ''; return;
+      }
+      f.idx = (f.idx + 1) % f.fields.length; st.note = '';
+    } else if (k === 'Up') f.idx = (f.idx + f.fields.length - 1) % f.fields.length;
+    else if (k === 'Backspace') cur.value = cur.value.slice(0, -1);
+    else if (k.length === 1) cur.value += k;
+  }
+  function formResult(st, p, env, effects) {
+    if (p === 'newdry') {
+      if (env.status !== 'ok') { st.phase = 'ready'; st.note = 'cannot start a new record: ' + (env.why || env.status); return true; }
+      var a = env.answer, names = (a.needs || []).map(function (n) { return n.name; }).concat(a.mandatory || []);
+      var fields = names.map(function (n) { var fl = mkField(propOf(st, n), n === 'IsSOTrx' ? 'Y' : ''); fl.mandatory = true; if (n === 'IsSOTrx') fl.help = ((a.needs || [])[0] || {}).why || fl.help; return fl; });
+      st.engineFills = a.defaulted; openForm(st, 'new', fields, null); return true;
+    }
+    if (p === 'readrec') {
+      if (env.status !== 'ok') { st.phase = 'ready'; st.note = 'cannot read the record: ' + (env.why || env.status); return true; }
+      var rec = env.answer.record, fl = editable(st, rec).map(function (pp) { return mkField(pp, rec[pp.name.toLowerCase()]); });
+      if (!fl.length) { st.phase = 'ready'; st.note = 'nothing in this record can be edited here'; return true; }
+      openForm(st, 'edit', fl, rowId(st, rowAt(st))); return true;
+    }
+    if (p === 'formwrite') {
+      var f = st.form;
+      if (env.status === 'ok') {
+        st.note = f.mode === 'new' ? 'created ' + (env.answer.number || env.answer.id) + (st.engineFills ? ': ' + st.engineFills + ' columns filled by the engine' : '') : (env.answer.noop ? 'saved: NO-OP (nothing changed)' : 'saved: changed ' + env.answer.changed.join(', '));
+        st.form = null; st.phase = 'listing'; effects.push({ line: listLine(st), purpose: 'list' });
+      } else if (env.status === 'claim') { st.note = 'held as a claim (a person must confirm it)'; st.form = null; st.phase = 'listing'; effects.push({ line: listLine(st), purpose: 'list' }); }
+      else { st.phase = 'form'; f.idx = Math.max(0, f.fields.length - 1); st.note = 'refused: ' + (env.why || env.status) + ' (your values are kept; Esc cancels)'; }
+      return true;
+    }
+    return false;
+  }
+  function renderForm(st) {
+    var f = st.form, L = [], seg = function (t, s) { return { t: String(t), s: s }; };
+    L.push([seg((f.mode === 'new' ? 'New ' : 'Edit ') + st.opts.kind + (f.mode === 'edit' ? ' ' + numOf(st, rowAt(st)) : '') + '   (Esc cancels everything, nothing is written)', 'head')]);
+    var lo = Math.max(0, Math.min(f.idx - 6, f.fields.length - 14)), hi = Math.min(f.fields.length, lo + 14), lw = 0;
+    f.fields.forEach(function (x) { lw = Math.max(lw, x.label.length); });
+    for (var i = lo; i < hi; i++) { var x = f.fields[i], cur = i === f.idx; L.push([seg((cur ? ' > ' : '   ') + (x.mandatory ? '* ' : '  ') + x.label + new Array(lw - x.label.length + 2).join(' ') + '[' + x.value + (cur && st.phase === 'form' ? '_' : '') + ']', cur ? 'cursor' : 'row')]); }
+    if (f.fields.length > hi) L.push([seg('   ... ' + (f.fields.length - hi) + ' more', 'dim')]);
+    var c = f.fields[f.idx]; if (c && c.help && st.phase === 'form') L.push([seg('help: ' + c.help.replace(/\s+/g, ' ').slice(0, 120), 'dim')]);
+    if (st.phase === 'formConfirm') { L.push([seg('the line it will run: ' + f.line, 'dim')]); L.push([seg('Save? [y/N]', 'note')]); }
+    if (st.note) L.push([seg(st.note, 'note')]);
+    L.push([seg(st.phase === 'form' ? ' type to fill   Tab/Enter next field   Enter on the last field saves   Esc cancel' : ' y saves   any other key goes back   Esc cancel', 'dim')]);
+    return L;
   }
   function step(st0, input) {
     var st = JSON.parse(JSON.stringify(st0)), effects = [];
     if (input.result) {
       var p = input.result.purpose, env = input.result.envelope || {};
+      if (formResult(st, p, env, effects)) return { state: st, effects: effects, screen: render(st) };
       if (p === 'describe') {
         if (env.status !== 'ok') { st.phase = 'dead'; st.note = 'cannot open ' + st.opts.kind + ': ' + (env.why || env.status); }
-        else { var c = pickColumns(env.answer.properties); st.cols = c.cols; st.keyCol = c.keyCol; st.doc = c.doc; st.hasProc = c.hasProc; st.phase = 'listing'; effects.push({ line: listLine(st), purpose: 'list' }); }
+        else { var c = pickColumns(env.answer.properties); st.cols = c.cols; st.keyCol = c.keyCol; st.doc = c.doc; st.hasProc = c.hasProc; st.props = env.answer.properties.map(function (p) { return { name: p.name, label: p.label, type: p.type, mandatory: !!p.mandatory, updateable: p.updateable !== false, key: !!p.key, parent: !!p.parent, displayed: !!p.displayed, seq: p.seq || 0, fieldReadOnly: !!p.fieldReadOnly, readOnlyLogic: p.readOnlyLogic || '', alwaysUpdateable: !!p.alwaysUpdateable, help: p.help || '' }; }); st.phase = 'listing'; effects.push({ line: listLine(st), purpose: 'list' }); }
       } else if (p === 'list') {
         if (env.status !== 'ok') { st.phase = 'dead'; st.note = 'cannot list ' + st.opts.kind + ': ' + (env.why || env.status); }
         else { st.rows = env.answer.rows; st.total = env.answer.total; st.phase = 'ready'; if (st.cursor >= st.rows.length) st.cursor = Math.max(0, st.rows.length - 1); settle(st, effects); }
@@ -72,8 +152,10 @@
       }
       return { state: st, effects: effects, screen: render(st) };
     }
+    if (input.text != null) { if (st.phase === 'form') st.form.fields[st.form.idx].value = String(input.text); return { state: st, effects: effects, screen: render(st) }; }   // a typed line answers the prompt: it REPLACES the value
     var k = String(input.key);
     if (k === '__start') { st.phase = 'describing'; effects.push({ line: 'mis.describe kind=' + q(st.opts.kind), purpose: 'describe' }); return { state: st, effects: effects, screen: render(st) }; }
+    if (st.phase === 'form' || st.phase === 'formConfirm') { formKey(st, k, effects); return { state: st, effects: effects, screen: render(st) }; }
     if (st.phase === 'confirm') {
       if (k === 'y' || k === 'Y') { st.phase = 'busy'; effects.push({ line: st.confirm.line, purpose: 'write' }); st.confirm = null; }
       else { st.phase = 'ready'; st.confirm = null; st.note = 'cancelled: nothing was written'; }
@@ -88,13 +170,15 @@
     else if (k === 'Enter') runChip(st, st.chips[st.chip], effects);
     else if (k === 'PageDown') { if (st.offset + st.opts.limit < st.total) { st.offset += st.opts.limit; st.cursor = 0; st.phase = 'listing'; effects.push({ line: listLine(st), purpose: 'list' }); } else st.note = 'last page'; }
     else if (k === 'PageUp') { if (st.offset > 0) { st.offset = Math.max(0, st.offset - st.opts.limit); st.cursor = 0; st.phase = 'listing'; effects.push({ line: listLine(st), purpose: 'list' }); } else st.note = 'first page'; }
+    else if (k === '+' || k === 'n') { st.phase = 'busy'; st.note = ''; effects.push({ line: 'mis.new kind=' + q(st.opts.kind) + ' dry=Y', purpose: 'newdry' }); }
     else if (k.length === 1) { var ci = -1; st.chips.forEach(function (c, i) { if (c.l === k.toUpperCase()) ci = i; }); if (ci >= 0) { st.chip = ci; runChip(st, st.chips[ci], effects); } }
     return { state: st, effects: effects, screen: render(st) };
   }
   function render(st) {
+    if ((st.phase === 'form' || st.phase === 'formConfirm') && st.form) return renderForm(st);
     var L = [], seg = function (t, s) { return { t: String(t), s: s }; };
     var from = st.rows.length ? st.offset + 1 : 0, to = st.offset + st.rows.length;
-    L.push([seg(st.opts.kind + (st.opts.filters.length ? ' (' + st.opts.filters.map(function (f) { return f.col + '=' + f.value; }).join(', ') + ')' : '') + '   shown ' + from + '-' + to + ' of ' + st.total, 'head')]);
+    L.push([seg(st.opts.kind + (st.opts.filters.length ? ' (' + st.opts.filters.map(function (f) { return f.col + '=' + f.value; }).join(', ') + ')' : '') + '   shown ' + from + '-' + to + ' of ' + st.total + '   [+ New]', 'head')]);
     if (st.phase === 'dead') { L.push([seg(st.note, 'note')]); return L; }
     var w = st.cols.map(function (c) { var m = c.length; st.rows.forEach(function (r) { m = Math.max(m, String(r[c] == null ? '' : r[c]).length); }); return Math.min(m, 22); });
     var cell = function (v, i) { var s = String(v == null ? '' : v); if (s.length > w[i]) s = s.slice(0, w[i] - 1) + '~'; return s + new Array(w[i] - s.length + 1).join(' '); };
@@ -107,7 +191,7 @@
     if (st.phase === 'confirm') L.push([seg(st.confirm.what + ' [y/N]', 'note')]);
     else { var c = st.chips[st.chip]; if (c && c.line) L.push([seg('the line it will run: ' + c.line, 'dim')]); }
     if (st.note) L.push([seg(st.note, 'note')]);
-    L.push([seg(' Up/Down row   Left/Right chip   Enter run   PageDown next   Esc quit', 'dim')]);
+    L.push([seg(' Up/Down row   Left/Right chip   Enter run   + new   PageDown next   Esc quit', 'dim')]);
     return L;
   }
   function plain(screen) { return screen.map(function (l) { return l.map(function (g) { return g.s === 'chipHi' ? '>' + g.t + '<' : g.t; }).join(''); }); }
