@@ -20,9 +20,11 @@
     budget_status: 'per project: Not started = ProjectBalanceAmt NULL/0; Over = ProjectBalanceAmt > COALESCE(PlannedAmt,0); else Within. Overrun = SUM(ProjectBalanceAmt-PlannedAmt) over Over',
     approvals: 'COUNT(AD_WF_Activity WHERE WFState=\'OS\' AND Processed=\'N\')',
     last_updated: 'MAX(C_Project.Updated)',
+    committed_contract: 'PROPOSED (§6 Q4): SUM(C_Order.GrandTotal) of completed purchase orders (IsSOTrx=\'N\', DocStatus=\'CO\') on the filtered projects, per currency',
+    committed_verified: 'PROPOSED (§6 Q4): SUM(ProjectBalanceAmt) of the filtered projects that have a processed C_ProjectIssue, per currency; overlaps Actual Cost (iDempiere adds an issue\'s cost to it)',
     bim_documents: 'issued = COUNT(deliverables whose latest revision has DocStatus=\'CO\'); deliverables = COUNT(DISTINCT C_Project_ID, DeliverableNo) over active BIM_Document rows of the filtered projects; latest = highest Revision'
   };
-  var NEEDS = { active_projects_sub: ['phaseRef'], health: ['phases'], forecast_cost: ['phases'], stage: ['phaseRef'], physical_spent: ['phases'], schedule: ['phases'], approvals: ['wf'], bim_documents: ['bimdocs'] };
+  var NEEDS = { active_projects_sub: ['phaseRef'], health: ['phases'], forecast_cost: ['phases'], stage: ['phaseRef'], physical_spent: ['phases'], schedule: ['phases'], approvals: ['wf'], bim_documents: ['bimdocs'], committed_contract: ['orders'], committed_verified: ['issues'] };
 
   function cents(v) { return v == null || v === '' ? null : Math.round(Number(v) * 100); }
   function day(s) { return s ? String(s).slice(0, 10) : null; }
@@ -156,6 +158,13 @@
       });
       var lk = Object.keys(latest); T.bim_documents = lk.length ? { total: lk.length, issued: lk.filter(function (k) { return latest[k].st === 'CO'; }).length } : { vacuous: true };
     }
+    // §5.38 Q4 (PROPOSED), the page side of measures 1000040/1000041: unavailable entity = not installed / no read type, never 0
+    var sid = {}; S.forEach(function (p) { sid[String(p.C_Project_ID)] = p; });
+    if (blocked('committed_contract') || data.orders == null) T.committed_contract = { notinstalled: true };
+    else { var oc = (data.orders || []).filter(function (o) { return o.IsSOTrx === 'N' && o.DocStatus === 'CO' && sid[String(o.C_Project_ID)]; }); T.committed_contract = { cur: sumBy(oc, function (o) { return o.GrandTotal; }), n: oc.length }; if (!oc.length) T.committed_contract.vacuous = true; }
+    if (blocked('committed_verified') || data.issues == null) T.committed_verified = { notinstalled: true };
+    else { var has = {}; (data.issues || []).forEach(function (i) { if (yes(i.Processed)) has[String(i.C_Project_ID)] = 1; });
+      var vp = S.filter(function (p) { return has[String(p.C_Project_ID)]; }); T.committed_verified = { cur: sumBy(vp, function (p) { return p.ProjectBalanceAmt; }), n: vp.length }; if (!vp.length) T.committed_verified.vacuous = true; }
     var up = P.map(function (p) { return p.Updated; }).filter(Boolean).sort();
     T.last_updated = up.length ? { v: up[up.length - 1] } : { vacuous: true };
     return { tiles: T, pop: { P: P.length, S: S.length, A: A.length }, formula: FORMULA, caveat: CAVEAT };
@@ -183,6 +192,8 @@
     o.budget_status = st(T.budget_status, function (x) { return 'within=' + x.within + ' over=' + x.over + ' notstarted=' + x.notstarted; });
     o.actual_overrun = st(T.budget_status, function (x) { return m2s(x.overrun); });
     o.approvals = st(T.approvals, function (x) { return x.n; });
+    t = T.committed_contract; o.committed_contract = t.notinstalled ? 'no data (not installed)' : t.vacuous ? 'no data' : m2s(t.cur);
+    t = T.committed_verified; o.committed_verified = t.notinstalled ? 'no data (not installed)' : t.vacuous ? 'no data' : m2s(t.cur);
     t = T.bim_documents; o.bim_documents = t.notinstalled ? 'no data (not installed)' : t.vacuous ? 'no data' : t.issued + '/' + t.total;
     o.last_updated = T.last_updated.vacuous ? 'no data' : T.last_updated.v;
     Object.keys(o).forEach(function (k) { o[k] = String(o[k]); });
