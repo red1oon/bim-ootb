@@ -2737,6 +2737,13 @@
      "required": true,
      "type": "string",
      "example": "Order"
+    },
+    {
+     "name": "dry",
+     "description": "Optional: Y runs everything but the save (the defaults, the callouts, your columns) and writes NOTHING; the answer lists the mandatory columns that are still empty and anything only a person can say (a Sales or Purchase document's IsSOTrx). This is what a form asks for.",
+     "required": false,
+     "type": "string",
+     "example": "Y"
     }
    ],
    "harm": "writes",
@@ -2746,7 +2753,14 @@
     "argv": [
      "new",
      "--kind",
-     "{kind}"
+     "{kind}",
+     {
+      "if": "dry",
+      "args": [
+       "--dry",
+       "{dry}"
+      ]
+     }
     ],
     "rest": {
      "flag": "--where",
@@ -3636,6 +3650,13 @@
      "required": true,
      "type": "string",
      "example": "Order"
+    },
+    {
+     "name": "dry",
+     "description": "Optional: Y runs everything but the save (the defaults, the callouts, your columns) and writes NOTHING; the answer lists the mandatory columns that are still empty and anything only a person can say (a Sales or Purchase document's IsSOTrx). This is what a form asks for.",
+     "required": false,
+     "type": "string",
+     "example": "Y"
     }
    ],
    "harm": "writes",
@@ -3645,7 +3666,14 @@
     "argv": [
      "new",
      "--kind",
-     "{kind}"
+     "{kind}",
+     {
+      "if": "dry",
+      "args": [
+       "--dry",
+       "{dry}"
+      ]
+     }
     ],
     "rest": {
      "flag": "--where",
