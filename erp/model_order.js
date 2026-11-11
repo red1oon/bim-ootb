@@ -747,7 +747,7 @@
       if (!nz(l.m_locator_id)) return 'FillMandatory M_Locator_ID';
     }
     if (!Number(l.line)) { var mx = 0; trx.find('m_inoutline', { m_inout_id: l.m_inout_id }).forEach(function (x) { mx = Math.max(mx, Number(x.line) || 0); }); l.line = mx + 10; /* DB.getSQLValueEx in the same Trx: sees lines saved earlier in this run */ }
-    if (!nz(l.c_uom_id)) { var u = trx.q("SELECT c_uom_id FROM c_uom WHERE isactive='Y' AND isdefault='Y' ORDER BY c_uom_id")[0]; if (u) l.c_uom_id = u.c_uom_id; }
+    if (!nz(l.c_uom_id)) { var u = trx.q("SELECT c_uom_id FROM c_uom WHERE isactive='Y' AND isdefault='Y' AND ad_client_id IN (0,?) ORDER BY ad_client_id DESC, c_uom_id", [nz(io.ad_client_id) ? io.ad_client_id : trx.env.client])[0];   /* MUOM.getDefault_UOM_ID :90-97 AD_Client_ID IN (0,?) ORDER BY IsDefault DESC, AD_Client_ID DESC (§DEFSCOPE: the session client's default, was any client's) */ if (u) l.c_uom_id = u.c_uom_id; }
     if (!nz(l.c_orderline_id) && !nz(l.m_rmaline_id) && Y(io.issotrx)) return 'FillMandatory C_OrderLine_ID';
     if (nz(l.m_locator_id)) { var loc = trx.get('m_locator', l.m_locator_id); if (loc && String(loc.m_warehouse_id) !== String(io.m_warehouse_id)) return 'WarehouseLocatorConflict'; }
     if (nz(l.c_orderline_id)) { var ol = trx.get('c_orderline', l.c_orderline_id); if (ol && Number(ol.m_product_id || 0) !== Number(l.m_product_id || 0)) return 'MInOutLineAndOrderLineProductDifferent'; }

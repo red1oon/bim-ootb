@@ -120,6 +120,22 @@
     var r = info.record || {}, v = r.ad_client_id != null ? r.ad_client_id : (info.recordOld && info.recordOld.ad_client_id != null ? info.recordOld.ad_client_id : (ctx && ctx.client != null ? ctx.client : (ctx && ctx.trx && ctx.trx.env ? ctx.trx.env.client : null)));
     return v == null ? null : Number(v);
   }
+
+  // §DEFSCOPE (bim-compiler prompts/FINANCIALS_GROUNDING.md §DEFSCOPE-SPEC) - ONE owner for "the client's default row" (AD-LAYER LAW: no per-window / per-doctype copy).
+  //   Legacy resolves every default in the SESSION client: MDocType.getOfDocBaseType :70 (AD_Client_ID=? AND DocBaseType=?), MPriceList.getDefault :111-131, MOrder.java:1322 (payment term),
+  //   MConversionType.getDefault :53-72 and MUOM.getDefault_UOM_ID :90-97 (AD_Client_ID IN (0,?)). The twin's inline `ORDER BY id LIMIT 1` took GardenWorld's (or a migrated tenant's synthetic) row.
+  //   Client = the po's (_clientOf), else the session's (window.APP.clientId, the same source crud_overlay._docCtx reads). Unresolvable client => NO default (never an unscoped scan).
+  function _sessionClient(info, ctx) {
+    var c = _clientOf(info, ctx);
+    if (c == null && typeof window !== 'undefined' && window.APP && window.APP.clientId != null) c = Number(window.APP.clientId);
+    return c == null || isNaN(c) ? null : c;
+  }
+  // sys=true: the legacy query is `AD_Client_ID IN (0,?)` (rows of System are visible); else strictly the client's own rows.
+  function clientDefault(db, info, ctx, table, cols, where, params, order, sys) {
+    var c = _sessionClient(info, ctx); if (c == null) return undefined;
+    var st = db.prepare('SELECT ' + cols + ' FROM ' + table + ' WHERE ' + (sys ? 'ad_client_id IN (0,?)' : 'ad_client_id=?') + (where ? ' AND ' + where : '') + ' ORDER BY ' + order);
+    return st.get.apply(st, [c].concat(params || []));
+  }
   function _run(timing, topic, info, ctx, withTopic) {
     ctx = ctx || {};
     var t = (info.table || '').toLowerCase(), all = (REGISTRY[t] && REGISTRY[t][timing]) || [], fired = 0, i, err, h, unported = null;
@@ -380,9 +396,9 @@
         // Standard-Sales fallback (never a behavior change for a caller that supplies no hint).
         var r = info.record;
         if (!Number(r.c_doctypetarget_id)) {
-          var dt = (ctx && ctx.issotrx === 'N')
-            ? db.prepare("SELECT c_doctype_id, issotrx FROM c_doctype WHERE docbasetype='POO' AND docsubtypeso IS NULL AND isactive='Y' ORDER BY c_doctype_id").get()
-            : db.prepare("SELECT c_doctype_id, issotrx FROM c_doctype WHERE docbasetype='SOO' AND docsubtypeso='SO' AND isactive='Y' ORDER BY c_doctype_id").get();
+          var dt = (ctx && ctx.issotrx === 'N')   // MDocType.getOfDocBaseType :70 - the session client's own doctype (§DEFSCOPE)
+            ? clientDefault(db, info, ctx, 'c_doctype', 'c_doctype_id, issotrx', "docbasetype='POO' AND docsubtypeso IS NULL AND isactive='Y'", [], 'c_doctype_id')
+            : clientDefault(db, info, ctx, 'c_doctype', 'c_doctype_id, issotrx', "docbasetype='SOO' AND docsubtypeso='SO' AND isactive='Y'", [], 'c_doctype_id');
           if (dt) {
             d(info).c_doctypetarget_id = dt.c_doctype_id;
             // IsSOTrx has no form field anywhere in this UI (crud_ops.json's c_order entry never declares it) —
@@ -412,7 +428,7 @@
       ['MOrder.paymentTermDefault', function (ctx, info) {   // :1315-1327  IsDefault='Y' payment term
         var r = info.record;
         if (!Number(r.c_paymentterm_id)) {
-          var pt = db.prepare("SELECT c_paymentterm_id FROM c_paymentterm WHERE isdefault='Y' AND isactive='Y' ORDER BY c_paymentterm_id").get();
+          var pt = clientDefault(db, info, ctx, 'c_paymentterm', 'c_paymentterm_id', "isdefault='Y' AND isactive='Y'", [], 'c_paymentterm_id');   // MOrder.java:1322 AD_Client_ID=? (§DEFSCOPE)
           if (pt) d(info).c_paymentterm_id = pt.c_paymentterm_id;
         }
         return null;
@@ -553,7 +569,7 @@
           var cpl = db.prepare('SELECT issopricelist FROM m_pricelist WHERE m_pricelist_id=?').get(Number(ctx.m_pricelist_id));
           if (cpl && (cpl.issopricelist === 'Y') === (r.issotrx === 'Y')) { d(info).m_pricelist_id = Number(ctx.m_pricelist_id); return null; }
         }
-        var pl = db.prepare("SELECT m_pricelist_id FROM m_pricelist WHERE issopricelist=? AND isactive='Y' ORDER BY isdefault DESC, m_pricelist_id").get(r.issotrx === 'Y' ? 'Y' : 'N');
+        var pl = clientDefault(db, info, ctx, 'm_pricelist', 'm_pricelist_id', "issopricelist=? AND isactive='Y'", [r.issotrx === 'Y' ? 'Y' : 'N'], 'isdefault DESC, m_pricelist_id');   // MPriceList.getDefault :111-131 AD_Client_ID=? (§DEFSCOPE)
         if (pl) d(info).m_pricelist_id = pl.m_pricelist_id;            // tie past IsDefault unspecified in Java; pk-ordered (H-1 convention)
         return null;
       }],
@@ -577,7 +593,7 @@
         // Implementing ERP_P2P_INVOICE_MATCH.md §Fix 4 — pick() sees issotrxFromWindow's derived value (same
         // convention as bpDefaults above); without it a manually-created Purchase invoice always fell through
         // to the bare r.issotrx (undefined) branch, which is truthy-false too but for the WRONG reason.
-        var dt = db.prepare("SELECT c_doctype_id FROM c_doctype WHERE docbasetype=? AND ad_org_id IN (0,?) AND isactive='Y' ORDER BY isdefault DESC, ad_org_id DESC, c_doctype_id").get(pick(r, info, 'issotrx') === 'Y' ? 'ARI' : 'API', Number(r.ad_org_id));
+        var dt = clientDefault(db, info, ctx, 'c_doctype', 'c_doctype_id', "docbasetype=? AND ad_org_id IN (0,?) AND isactive='Y'", [pick(r, info, 'issotrx') === 'Y' ? 'ARI' : 'API', Number(r.ad_org_id)], 'isdefault DESC, ad_org_id DESC, c_doctype_id');   // MDocType.getOfDocBaseType :70 (§DEFSCOPE)
         if (dt) d(info).c_doctypetarget_id = dt.c_doctype_id;
         return null;
       }],
@@ -585,7 +601,7 @@
         var r = info.record;
         if (Number(pick(r, info, 'c_paymentterm_id')) > 0) return null;
         if (ctx && Number(ctx.c_paymentterm_id) > 0) { d(info).c_paymentterm_id = Number(ctx.c_paymentterm_id); return null; }
-        var pt = db.prepare("SELECT c_paymentterm_id FROM c_paymentterm WHERE isdefault='Y' AND isactive='Y' ORDER BY c_paymentterm_id").get();
+        var pt = clientDefault(db, info, ctx, 'c_paymentterm', 'c_paymentterm_id', "isdefault='Y' AND isactive='Y'", [], 'c_paymentterm_id');   // MOrder.java:1322 AD_Client_ID=? (§DEFSCOPE)
         if (pt) d(info).c_paymentterm_id = pt.c_paymentterm_id;
         return null;
       }],
@@ -662,7 +678,7 @@
       ['MPayment.docTypeReceipt', function (ctx, info) {     // :763-770 ∘ setC_DocType_ID(boolean):1545-1563
         var r = info.record;
         if (!(idSet(db, 'c_doctype_id', r.c_doctype_id))) {
-          var dt = db.prepare("SELECT c_doctype_id FROM c_doctype WHERE isactive='Y' AND docbasetype=? ORDER BY isdefault DESC, c_doctype_id").get(r.isreceipt === 'Y' ? 'ARR' : 'APP');
+          var dt = clientDefault(db, info, ctx, 'c_doctype', 'c_doctype_id', "isactive='Y' AND docbasetype=?", [r.isreceipt === 'Y' ? 'ARR' : 'APP'], 'isdefault DESC, c_doctype_id');   // MDocType.getOfDocBaseType :70 (§DEFSCOPE)
           if (dt) d(info).c_doctype_id = dt.c_doctype_id;
         } else {
           var dt2 = db.prepare('SELECT issotrx FROM c_doctype WHERE c_doctype_id=?').get(Number(r.c_doctype_id));
@@ -714,7 +730,7 @@
       ['MMovement.docTypeDefault', function (ctx, info) {    // :212-222 ∘ MDocType.getOfDocBaseType:68-77 — first MMM doctype
         var r = info.record;
         if (idSet(db, 'c_doctype_id', r.c_doctype_id)) return null;
-        var dt = db.prepare("SELECT c_doctype_id FROM c_doctype WHERE docbasetype='MMM' AND isactive='Y' ORDER BY isdefault DESC, c_doctype_id").get();
+        var dt = clientDefault(db, info, ctx, 'c_doctype', 'c_doctype_id', "docbasetype='MMM' AND isactive='Y'", [], 'isdefault DESC, c_doctype_id');   // MDocType.getOfDocBaseType :70 (§DEFSCOPE)
         if (!dt) return 'NotFound C_DocType_ID';             // :218-221 (unreachable in this seed — MMM exists)
         d(info).c_doctype_id = dt.c_doctype_id;
         return null;
@@ -789,7 +805,7 @@
       ['MJournal.conversionTypeDefault', function (ctx, info) {  // :346-348 ∘ MConversionType.getDefault — IsDefault row
         var r = info.record;
         if (idSet(db, 'c_conversiontype_id', r.c_conversiontype_id)) return null;
-        var ct = db.prepare("SELECT c_conversiontype_id FROM c_conversiontype WHERE isdefault='Y' ORDER BY c_conversiontype_id").get();
+        var ct = clientDefault(db, info, ctx, 'c_conversiontype', 'c_conversiontype_id', "isactive='Y'", [], 'isdefault DESC, ad_client_id DESC', true);   // MConversionType.getDefault :53-72 AD_Client_ID IN (0,?) (§DEFSCOPE)
         if (ct) d(info).c_conversiontype_id = Number(ct.c_conversiontype_id);
         return null;
       }],
@@ -882,7 +898,7 @@
       ['MBankStatement.docTypeDefault', function (ctx, info) {  // :260-262 ∘ MDocType.getDocType(CMB)
         var r = info.record;
         if (idSet(db, 'c_doctype_id', r.c_doctype_id)) return null;
-        var dt = db.prepare("SELECT c_doctype_id FROM c_doctype WHERE docbasetype='CMB' AND isactive='Y' ORDER BY isdefault DESC, c_doctype_id").get();
+        var dt = clientDefault(db, info, ctx, 'c_doctype', 'c_doctype_id', "docbasetype='CMB' AND isactive='Y'", [], 'isdefault DESC, c_doctype_id');   // MDocType.getOfDocBaseType :70 (§DEFSCOPE)
         if (dt) d(info).c_doctype_id = Number(dt.c_doctype_id);
         return null;
       }],
@@ -955,8 +971,8 @@
       ['MRequisition.priceListDefault', function (ctx, info) {
         var r = info.record;
         if (idSet(db, 'm_pricelist_id', r.m_pricelist_id)) return null;
-        var pl = db.prepare("SELECT m_pricelist_id FROM m_pricelist WHERE isdefault='Y' AND issopricelist='N' AND isactive='Y' ORDER BY m_pricelist_id").get()
-              || db.prepare("SELECT m_pricelist_id FROM m_pricelist WHERE isdefault='Y' AND issopricelist='Y' AND isactive='Y' ORDER BY m_pricelist_id").get();
+        var pl = clientDefault(db, info, ctx, 'm_pricelist', 'm_pricelist_id', "isdefault='Y' AND issopricelist='N' AND isactive='Y'", [], 'm_pricelist_id')   // MPriceList.getDefault :111-131 AD_Client_ID=? (§DEFSCOPE)
+              || clientDefault(db, info, ctx, 'm_pricelist', 'm_pricelist_id', "isdefault='Y' AND issopricelist='Y' AND isactive='Y'", [], 'm_pricelist_id');
         if (pl) d(info).m_pricelist_id = Number(pl.m_pricelist_id);
         return null;
       }]

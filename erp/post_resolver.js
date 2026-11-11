@@ -88,7 +88,8 @@ function resolve(db, token, masterId, acctschema) {
 
   // §13.5 fallback: exact (master, acctschema) pair absent -> the schema's default acctschema row.
   if (!row) {
-    var def = one(db, 'SELECT c_acctschema_id AS s FROM c_acctschema_default LIMIT 1');
+    // §DEFSCOPE (FINANCIALS_GROUNDING.md): the fallback default is the SAME client's schema default (MAcctSchema.getClientAcctSchema :150-153 AD_Client_ID=?), never another tenant's first row
+    var def = one(db, 'SELECT d.c_acctschema_id AS s FROM c_acctschema_default d JOIN c_acctschema a ON a.c_acctschema_id=d.c_acctschema_id WHERE a.ad_client_id=(SELECT ad_client_id FROM c_acctschema WHERE c_acctschema_id=@s0) ORDER BY d.c_acctschema_id LIMIT 1', { s0: acctschema });
     if (def && def.s !== acctschema) {
       row = one(db, sql, { k: lookupId, s: def.s });
       fallback = !!row;
