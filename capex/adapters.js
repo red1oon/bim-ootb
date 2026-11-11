@@ -11,9 +11,10 @@
     orgs:       { table: 'AD_Org',         cols: ['AD_Org_ID', 'Name'] },
     phaseRef:   { table: 'C_Phase',        cols: ['C_Phase_ID', 'Name'] },
     currencies: { table: 'C_Currency',     cols: ['C_Currency_ID', 'ISO_Code', 'CurSymbol', 'StdPrecision'] },
-    wf:         { table: 'AD_WF_Activity', cols: ['AD_WF_Activity_ID', 'WFState', 'Processed'] }
+    wf:         { table: 'AD_WF_Activity', cols: ['AD_WF_Activity_ID', 'WFState', 'Processed'] },
+    bimdocs:    { table: 'BIM_Document',   cols: ['BIM_Document_ID', 'C_Project_ID', 'C_ProjectPhase_ID', 'C_ProjectTask_ID', 'DeliverableNo', 'Revision', 'DocStatus', 'IsActive', 'Name', 'Discipline', 'HoursBudget'] }   // §5.36B: the BIM Document plugin's table; absent = unavailable = "not installed"
   };
-  var ENTITIES = Object.keys(COLS);
+  var ENTITIES = Object.keys(COLS), OPTIONAL = ['bimdocs'];   // OPTIONAL: an entity a server may legitimately lack (a plugin's table): unavailable there is the honest state, not a defect
 
   // ── Source A ──
   function fromSqlite(db, meta) {
@@ -35,7 +36,7 @@
 
   // ── Source B ──
   var PATH = '/ADInterface/services/rest/model_adservice/query_data';
-  var LEGACY_TYPES = { projects: 'QueryCProject', orgs: 'QueryADOrg', phases: 'QueryCProjectPhase', tasks: 'QueryCProjectTask', lines: 'QueryCProjectLine', phaseRef: 'QueryCPhase', currencies: 'QueryCCurrency', wf: 'QueryADWFActivity' };
+  var LEGACY_TYPES = { projects: 'QueryCProject', orgs: 'QueryADOrg', phases: 'QueryCProjectPhase', tasks: 'QueryCProjectTask', lines: 'QueryCProjectLine', phaseRef: 'QueryCPhase', currencies: 'QueryCCurrency', wf: 'QueryADWFActivity', bimdocs: 'QueryBIMDocument' };
   function parseRows(j) {                    // identical wire handling to scripts/bridge/ad_client.js rows()/query()
     var w = j.WindowTabData; if (!w) return [];
     if (w.Error) throw new Error('§AD_ERROR ' + w.Error);
@@ -62,12 +63,15 @@
         var msg = j.message || (sr && sr.Error) || ''; out.unavailable.push(e); out.meta['err_' + e] = String(msg).slice(0, 160); out[e] = []; continue;
       }
       var cols = COLS[e].cols;
-      out[e] = parseRows(j).map(function (r) { if (all) return r; var o = {}; cols.forEach(function (c) { o[c] = r[c] === undefined ? null : r[c]; }); return o; });
+      var rows;
+      try { rows = parseRows(j); }
+      catch (x) { if (/Service type .* not configured/.test(x.message)) { out.unavailable.push(e); out.meta['err_' + e] = x.message.slice(0, 160); out[e] = []; continue; } throw x; }   // a type this server never registered (e.g. QueryBIMDocument where the plugin is not installed) = UNAVAILABLE, not a crash
+      out[e] = rows.map(function (r) { if (all) return r; var o = {}; cols.forEach(function (c) { o[c] = r[c] === undefined ? null : r[c]; }); return o; });
     }
     return out;
   }
   async function loadSnapshot(url) { var j = await (await fetch(url)).json(); j.source = 'legacy'; return j; }
 
-  var API = { fromSqlite: fromSqlite, loadSqlite: loadSqlite, loadLegacy: loadLegacy, loadSnapshot: loadSnapshot, parseRows: parseRows, ENTITIES: ENTITIES, LEGACY_TYPES: LEGACY_TYPES };
+  var API = { fromSqlite: fromSqlite, loadSqlite: loadSqlite, loadLegacy: loadLegacy, loadSnapshot: loadSnapshot, parseRows: parseRows, ENTITIES: ENTITIES, OPTIONAL: OPTIONAL, LEGACY_TYPES: LEGACY_TYPES };
   if (typeof module !== 'undefined' && module.exports) module.exports = API; else root.CapexAdapters = API;
 })(typeof window !== 'undefined' ? window : this);

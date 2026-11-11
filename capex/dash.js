@@ -56,6 +56,7 @@
     k.appendChild(card('Actual Cost', fl('actual_cost', money(t.actual_cost.cur), 'div') + '<div class="subv">% of plan: ' + fl('actual_cost_pct_of_plan', pctMap(t.actual_cost.pctOfPlan)) + '</div>', 'actual_cost'));
     k.appendChild(card('Committed Cost', fl('committed_cost', money(t.committed_cost.cur), 'div') + '<div class="subv">invoiced: ' + fl('committed_invoiced', Object.keys(t.committed_cost.invoiced).length ? Object.keys(t.committed_cost.invoiced).sort().map(function (c) { return esc(curInfo(c).ISO_Code) + ' ' + (t.committed_cost.invoiced[c] / 100).toFixed(2); }).join(' · ') : 'no data') + '</div>', 'committed_cost'));
     k.appendChild(card('Forecast Cost at Completion', fl('forecast_cost', '<span class="pending">definition pending (client)</span>', 'div'), 'forecast_cost'));
+    k.appendChild(card('BIM Documents issued for construction', '<div class="big">' + fl('bim_documents', t.bim_documents.notinstalled ? '<span class="nodata">no data (BIM Document not installed on this server)</span>' : t.bim_documents.vacuous ? '<span class="nodata">no data</span>' : t.bim_documents.issued + ' / ' + t.bim_documents.total) + '</div><div class="subv">issued / deliverables</div>', 'bim_documents'));
     k.appendChild(card('Projects Completed this year', '<div class="big">' + fl('completed_year', S.flat.completed_year) + '</div><div class="subv">year ' + esc(TODAY.slice(0, 4)) + '</div>', 'completed_year'));
     v.appendChild(k);
 

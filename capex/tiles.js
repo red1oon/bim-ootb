@@ -19,9 +19,10 @@
     schedule: 'per project: No schedule data = no phase with StartDate and EndDate; At Risk = SPI<0.9; Delayed = a phase with IsComplete=\'N\' AND EndDate<today; else On Time. Average Delay = mean of max(today-EndDate) over Delayed + At Risk',
     budget_status: 'per project: Not started = ProjectBalanceAmt NULL/0; Over = ProjectBalanceAmt > COALESCE(PlannedAmt,0); else Within. Overrun = SUM(ProjectBalanceAmt-PlannedAmt) over Over',
     approvals: 'COUNT(AD_WF_Activity WHERE WFState=\'OS\' AND Processed=\'N\')',
-    last_updated: 'MAX(C_Project.Updated)'
+    last_updated: 'MAX(C_Project.Updated)',
+    bim_documents: 'issued = COUNT(deliverables whose latest revision has DocStatus=\'CO\'); deliverables = COUNT(DISTINCT C_Project_ID, DeliverableNo) over active BIM_Document rows of the filtered projects; latest = highest Revision'
   };
-  var NEEDS = { active_projects_sub: ['phaseRef'], health: ['phases'], stage: ['phaseRef'], physical_spent: ['phases'], schedule: ['phases'], approvals: ['wf'] };
+  var NEEDS = { active_projects_sub: ['phaseRef'], health: ['phases'], stage: ['phaseRef'], physical_spent: ['phases'], schedule: ['phases'], approvals: ['wf'], bim_documents: ['bimdocs'] };
 
   function cents(v) { return v == null || v === '' ? null : Math.round(Number(v) * 100); }
   function day(s) { return s ? String(s).slice(0, 10) : null; }
@@ -136,6 +137,19 @@
     });
     var w = blocked('approvals');
     T.approvals = w ? { inconclusive: w } : { n: (data.wf || []).filter(function (a) { return a.WFState === 'OS' && !yes(a.Processed); }).length };
+    // §5.36B: BIM documents issued for construction / deliverables (the plugin's rule, erp/plugins/bim_document.mjs computeProgress): one deliverable = (project, deliverable no) at its LATEST revision.
+    var bd = data.bimdocs;
+    if (blocked('bim_documents') || bd == null) T.bim_documents = { notinstalled: true };
+    else {
+      var ids = {}; S.forEach(function (p) { ids[String(p.C_Project_ID)] = 1; });
+      var latest = {};
+      bd.forEach(function (r) {
+        if (r.IsActive === 'N' || !ids[String(r.C_Project_ID)]) return;
+        var k = r.C_Project_ID + '|' + r.DeliverableNo, c = latest[k], rv = Number(r.Revision) || 0, id = Number(r.BIM_Document_ID) || 0;
+        if (!c || rv > c.rv || (rv === c.rv && id > c.id)) latest[k] = { rv: rv, id: id, st: r.DocStatus };
+      });
+      var lk = Object.keys(latest); T.bim_documents = lk.length ? { total: lk.length, issued: lk.filter(function (k) { return latest[k].st === 'CO'; }).length } : { vacuous: true };
+    }
     var up = P.map(function (p) { return p.Updated; }).filter(Boolean).sort();
     T.last_updated = up.length ? { v: up[up.length - 1] } : { vacuous: true };
     return { tiles: T, pop: { P: P.length, S: S.length, A: A.length }, formula: FORMULA, caveat: CAVEAT };
@@ -163,6 +177,7 @@
     o.budget_status = st(T.budget_status, function (x) { return 'within=' + x.within + ' over=' + x.over + ' notstarted=' + x.notstarted; });
     o.actual_overrun = st(T.budget_status, function (x) { return m2s(x.overrun); });
     o.approvals = st(T.approvals, function (x) { return x.n; });
+    t = T.bim_documents; o.bim_documents = t.notinstalled ? 'no data (not installed)' : t.vacuous ? 'no data' : t.issued + '/' + t.total;
     o.last_updated = T.last_updated.vacuous ? 'no data' : T.last_updated.v;
     Object.keys(o).forEach(function (k) { o[k] = String(o[k]); });
     return o;
@@ -175,7 +190,7 @@
     Object.keys(a).forEach(function (k) {
       var va = a[k], vb = b[k], v;
       if (PER_SOURCE.indexOf(k) >= 0) v = 'PER_SOURCE';
-      else if (va === 'INCONCLUSIVE' || vb === 'INCONCLUSIVE' || vb === undefined || (va === 'PENDING' && vb === 'PENDING')) v = 'INCONCLUSIVE';   // pending/unreadable: nothing was judged
+      else if (va === 'INCONCLUSIVE' || vb === 'INCONCLUSIVE' || vb === undefined || va === 'no data (not installed)' || vb === 'no data (not installed)' || (va === 'PENDING' && vb === 'PENDING')) v = 'INCONCLUSIVE';   // pending/unreadable: nothing was judged
       else if (va === 'no data' && vb === 'no data') v = 'INCONCLUSIVE';          // both empty: nothing was judged
       else v = va === vb ? 'MATCH' : 'DIFF';
       if (v === 'MATCH') match++; else if (v === 'DIFF') diff++; else if (v === 'PER_SOURCE') per++; else inc++;
