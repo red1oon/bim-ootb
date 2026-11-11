@@ -125,7 +125,7 @@ function costingMethodOf(db, productId, schema) {
 function currentCost(db, productId, schema, dateAcct) {
   var cm = costingMethodOf(db, productId, schema), as = schemaRow(db, schema);
   if (!cm || !as) return { price: null, why: 'no-costing-method' };
-  var el = getRow(db, 'SELECT m_costelement_id FROM m_costelement WHERE costingmethod=? ORDER BY m_costelement_id LIMIT 1', cm);
+  var el = getRow(db, 'SELECT m_costelement_id FROM m_costelement WHERE ad_client_id=? AND costingmethod=? ORDER BY m_costelement_id LIMIT 1', [num(as.ad_client_id), cm]);   // MCostElement.java:64 AD_Client_ID=? - the schema's client (§DEFSCOPE)
   if (!el) return { price: null, why: 'no-cost-element-for-' + cm };
   var c = getRow(db, 'SELECT currentcostprice FROM m_cost WHERE m_product_id=? AND c_acctschema_id=? AND m_costtype_id=? AND m_costelement_id=?', [num(productId), num(schema), num(as.m_costtype_id), num(el.m_costelement_id)]);
   if (!c) return { price: null, why: 'no-m_cost-row' };
@@ -290,28 +290,30 @@ function _fmtDec(n, k) { var neg = n < 0n, a = neg ? -n : n, t = a.toString().pa
 // The schemas legacy costs and posts in — MAcctSchema.getClientAcctSchema (MAcctSchema.java:150-153): ACTIVE and with BOTH a C_AcctSchema_GL and a
 //   C_AcctSchema_Default row (the model layer ports the whole rule: model_master.js:70 clientAcctSchemas). Without this a half-made schema (the pilot's
 //   NC4 test schemas: active, no GL row) made the twin refuse a shipment legacy posted (BIMCompiler prompts/SQLiteIDEMPIERE.md §S-SCHEMASET). Table-guarded;
-//   callers pass no client, so the client filter / primary-first order of the legacy method are not applied here.
-function _activeSchemas(db, withCur) {
-  var w = [], hasT = function (t) { return !!getRow(db, "SELECT 1 AS x FROM sqlite_master WHERE type='table' AND name=?", t); };
+//   §DEFSCOPE (FINANCIALS_GROUNDING.md): `client` = the DOCUMENT's AD_Client_ID, the `AND AD_Client_ID=?` of MAcctSchema.java:150-153 - another tenant's schemas are never walked; no client = no schemas.
+function _activeSchemas(db, withCur, client) {
+  if (client == null || !isFinite(Number(client))) return [];
+  var w = ['s.ad_client_id=?'], hasT = function (t) { return !!getRow(db, "SELECT 1 AS x FROM sqlite_master WHERE type='table' AND name=?", t); };
   if (_hasCol(db, 'c_acctschema', 'isactive')) w.push("s.isactive='Y'");
   if (hasT('c_acctschema_gl')) w.push('EXISTS (SELECT 1 FROM c_acctschema_gl gl WHERE gl.c_acctschema_id=s.c_acctschema_id)');
   if (hasT('c_acctschema_default')) w.push('EXISTS (SELECT 1 FROM c_acctschema_default d WHERE d.c_acctschema_id=s.c_acctschema_id)');
-  return allRows(db, 'SELECT s.c_acctschema_id AS id, s.m_costtype_id AS ct' + (withCur ? ', s.c_currency_id AS cur' : '') + ' FROM c_acctschema s' + (w.length ? ' WHERE ' + w.join(' AND ') : '') + ' ORDER BY s.c_acctschema_id', []);
+  return allRows(db, 'SELECT s.c_acctschema_id AS id, s.m_costtype_id AS ct' + (withCur ? ', s.c_currency_id AS cur' : '') + ' FROM c_acctschema s WHERE ' + w.join(' AND ') + ' ORDER BY s.c_acctschema_id', [num(client)]);
 }
 function costUpdatesForMatchPO(db, matchPOId) {   // → { updates:[new m_cost values], absent:[names] } — ONE shape (§REVIEW2 R6): a caller loops .updates, never meets a {absent} pseudo-record
   var mp = getRow(db, 'SELECT * FROM m_matchpo WHERE m_matchpo_id=?', num(matchPOId)); if (!mp || !num(mp.m_inoutline_id)) return { updates: [], absent: [] };
   var ol = getRow(db, 'SELECT ol.*, o.c_currency_id AS ocur, o.ad_client_id AS oclient, o.ad_org_id AS oorg FROM c_orderline ol LEFT JOIN c_order o ON o.c_order_id=ol.c_order_id WHERE ol.c_orderline_id=?', num(mp.c_orderline_id)); if (!ol) return { updates: [], absent: [] };
   var io = getRow(db, 'SELECT h.dateacct, h.ad_client_id, h.ad_org_id FROM m_inoutline l JOIN m_inout h ON h.m_inout_id=l.m_inout_id WHERE l.m_inoutline_id=?', num(mp.m_inoutline_id));
   var out = [], absent = [], poPrice, poPriceDone = false;   // _poLineCost does not depend on the schema: once per order line
-  _activeSchemas(db, true).forEach(function (sc) {
+  var dClient = io && io.ad_client_id != null ? num(io.ad_client_id) : num(ol.oclient);   // §DEFSCOPE: the receipt's client (the document), else the order's
+  _activeSchemas(db, true, dClient).forEach(function (sc) {
     if (costingMethodOf(db, mp.m_product_id, sc.id) !== 'A') return;
-    var el = getRow(db, "SELECT m_costelement_id FROM m_costelement WHERE costingmethod='A' ORDER BY m_costelement_id LIMIT 1", []); if (!el) return;
+    var el = getRow(db, "SELECT m_costelement_id FROM m_costelement WHERE ad_client_id=? AND costingmethod='A' ORDER BY m_costelement_id LIMIT 1", [dClient]); if (!el) return;   // MCostElement.java:64 AD_Client_ID=? (§DEFSCOPE)
     var cp = getRow(db, 'SELECT ' + (_hasCol(db, 'c_currency', 'costingprecision') ? 'costingprecision' : 'NULL') + ' AS p FROM c_currency WHERE c_currency_id=?', num(sc.cur));
     if (!cp || cp.p == null) { absent.push('currency costing precision'); return; }
     var prec = num(cp.p); if (!poPriceDone) { poPrice = _poLineCost(db, ol, absent); poPriceDone = true; } var price = poPrice; if (price == null) return;
     var po = _decStr(price), cur = ol.c_currency_id != null ? ol.c_currency_id : ol.ocur;
     if (num(cur) !== num(sc.cur)) {   // Doc_MatchPO.java:391-408
-      var rate = fxRate(db, cur, sc.cur, io && io.dateacct, ol.oclient || 11, ol.oorg || 0); if (rate == null) { absent.push('PurchaseOrderNotConvertible'); return; }
+      var rate = fxRate(db, cur, sc.cur, io && io.dateacct, dClient, ol.oorg || 0); if (rate == null) { absent.push('PurchaseOrderNotConvertible'); return; }
       var r = _decStr(rate), n = po.n * r.n, k = po.k + r.k; po = k > prec ? { n: _rhuB(n, 10n ** BigInt(k - prec)), k: prec } : { n: n, k: k };
     }
     var qd = _decStr(mp.qty), amtN = po.n * qd.n, amtK = po.k + qd.k;   // poCost × qty (other same-day MatchPOs of the line: none in scope ⇒ named below)
@@ -345,9 +347,10 @@ function costUpdatesForMatchPO(db, matchPOId) {   // → { updates:[new m_cost v
 }
 
 // ── §38 (F6) costed quantity — MCostDetail.process (MCostDetail.java:1327-1400) + MCostElement.getCostingMethods (MCostElement.java:148-159) + MCost.setCurrentQty (:1919-1930)
-function _costingElements(db) {
+function _costingElements(db, client) {   // §DEFSCOPE: the document client's material cost elements (MCostElement.getMaterialCostElement :64 AD_Client_ID=?)
+  if (client == null || !isFinite(Number(client))) return [];
   var act = _hasCol(db, 'm_costelement', 'isactive') ? " AND isactive='Y'" : '';
-  return allRows(db, "SELECT m_costelement_id AS id, costingmethod AS cm FROM m_costelement WHERE costelementtype='M' AND costingmethod IS NOT NULL AND costingmethod<>''" + act, []);
+  return allRows(db, "SELECT m_costelement_id AS id, costingmethod AS cm FROM m_costelement WHERE ad_client_id=? AND costelementtype='M' AND costingmethod IS NOT NULL AND costingmethod<>''" + act, [num(client)]);
 }
 function _isStocked(db, pid) {
   if (!_hasCol(db, 'm_product', 'isstocked')) return true;
@@ -404,17 +407,18 @@ function costAt(db, productId, qty, schema, dateAcct) {   // dateAcct optional: 
   var pd = _bigDec(cc.price), qd = _bigDec(qty);
   return _fmtDec(_rhuB(pd.n * qd.n * 10n ** BigInt(prec), 10n ** BigInt(pd.k + qd.k)), prec);
 }
+function invClientOf(db, id) { var r = getRow(db, 'SELECT ad_client_id FROM m_inventory WHERE m_inventory_id=?', num(id)); return r ? r.ad_client_id : null; }
 function costQtyUpdatesFor(db, table, id) {
   if (table === 'M_InOut') return costQtyUpdates(db, id);
   if (table === 'C_ProjectIssue' && _hasCol(db, 'm_cost', 'currentqty')) {   // §71 (F35): MCostDetail.createProjectIssue, qty −MovementQty ⇒ a decrease changes only CurrentQty (MCostDetail.process)
-    var els0 = _costingElements(db), sch0 = _activeSchemas(db), out0 = [], st0 = {};
-    var pi = getRow(db, 'SELECT m_product_id, movementqty FROM c_projectissue WHERE c_projectissue_id=?', num(id));
+    var pi = getRow(db, 'SELECT m_product_id, movementqty, ad_client_id FROM c_projectissue WHERE c_projectissue_id=?', num(id));
+    var els0 = _costingElements(db, pi && pi.ad_client_id), sch0 = _activeSchemas(db, false, pi && pi.ad_client_id), out0 = [], st0 = {};   // §DEFSCOPE: the document's client
     if (pi && Number(pi.movementqty) && _isStocked(db, pi.m_product_id)) sch0.forEach(function (sc) { els0.forEach(function (e) { _avgUpdate(db, st0, out0, pi.m_product_id, sc, e, -Number(pi.movementqty), function () { return null; }); }); });
     return out0;
   }
   if (table !== 'M_Inventory' || !_hasCol(db, 'm_cost', 'currentqty')) return [];
   if (inventoryPostRefused(db, id)) return [];   // §SHOPDAY-RUN-2 R2.1: posting refused ("No Costs", Posted=E) => no cost detail, cost state unchanged
-  var els = _costingElements(db), schemas = _activeSchemas(db), out = [], state = {};
+  var invC = invClientOf(db, id), els = _costingElements(db, invC), schemas = _activeSchemas(db, false, invC), out = [], state = {};   // §DEFSCOPE: the Physical Inventory's client
   allRows(db, 'SELECT m_product_id, qtybook, qtycount FROM m_inventoryline WHERE m_inventory_id=?', num(id)).forEach(function (l) {
     var d = Number(l.qtycount) - Number(l.qtybook); if (!d || !_isStocked(db, l.m_product_id)) return;
     // inventory gain: the cost detail amount = qty × current cost, HALF_UP at the costing precision (pilot history: 2 × 2.29763318 ⇒ 4.5953)
@@ -433,13 +437,13 @@ function _costQtySign(movementtype) {
 function costQtyUpdates(db, ioId) {
   if (!_hasCol(db, 'm_cost', 'currentqty')) return [];
   var lines = allRows(db, 'SELECT m_product_id, movementqty' + (_hasCol(db, 'm_inoutline', 'reversalline_id') ? ', reversalline_id' : '') + ' FROM m_inoutline WHERE m_inout_id=?', num(ioId));
-  var hcols = ['movementtype', 'reversal_id', 'dateacct'].filter(function (c) { return _hasCol(db, 'm_inout', c); });
+  var hcols = ['movementtype', 'reversal_id', 'dateacct', 'ad_client_id'].filter(function (c) { return _hasCol(db, 'm_inout', c); });
   var hdr = hcols.length ? getRow(db, 'SELECT ' + hcols.join(', ') + ' FROM m_inout WHERE m_inout_id=?', num(ioId)) : null, origIo = hdr && num(hdr.reversal_id) ? num(hdr.reversal_id) : null;
   var sign = _costQtySign(hdr && hdr.movementtype);
   if (!sign) return [];
   // §SD16 (finding 10): a customer-return REVERSAL (C+ with Reversal_ID) has no books (the retired doc_poster return fold named it absent, gap G-SD10 — the REAL poster now books it from the original, §POSTING-PARITY 5e), so it must move no cost either -- books and cost detail agree.
   if (sign > 0 && origIo) return [];
-  var els = _costingElements(db), schemas = _activeSchemas(db), out = [], state = {};
+  var els = _costingElements(db, hdr && hdr.ad_client_id), schemas = _activeSchemas(db, false, hdr && hdr.ad_client_id), out = [], state = {};   // §DEFSCOPE: the shipment's client
   // neither the posted facts (per schema) nor the current cost (per product, schema) depend on the costing element or the line count: read once per call (§REVIEW2 R7)
   var pfCache = {}, ccCache = {};
   function posted(schId) { if (!(schId in pfCache)) pfCache[schId] = _postedFacts(db, 319, origIo, schId); return pfCache[schId]; }
@@ -838,7 +842,7 @@ function _inventoryNoCosts(db, l, schema) {
 // §SHOPDAY-RUN-2 R2.1: Doc.post rolls the whole document back when ANY active schema's createFacts fails, and the MCostDetail (cost qty/amt) is created at the END of
 // Doc_Inventory.createFacts (never reached on "No Costs") => a refused Physical Inventory changes NO cost state. true when any line is refused in any active schema.
 function inventoryPostRefused(db, id) {
-  var lines = allRows(db, 'SELECT * FROM m_inventoryline WHERE m_inventory_id=? AND isactive=\'Y\'', num(id)), sch = _activeSchemas(db);
+  var lines = allRows(db, 'SELECT * FROM m_inventoryline WHERE m_inventory_id=? AND isactive=\'Y\'', num(id)), sch = _activeSchemas(db, false, invClientOf(db, id));   // §DEFSCOPE: the document's client
   return lines.some(function (l) { return sch.some(function (sc) { return _inventoryNoCosts(db, l, sc.id); }); });
 }
 
