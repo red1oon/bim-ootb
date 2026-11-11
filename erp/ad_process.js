@@ -161,6 +161,7 @@
     }
     registerHandler('report:c_payment', voucherHandler('c_payment'), { kind: 'report', reportKey: 'c_payment' });
     registerAging();                                                   // FS-14 (§FS2l)
+    registerOpenItemsView();                                           // §OPENITEMS-SPEC: AD_Process 145 (report view RV_OpenItem)
     registerImportBPartner();                                          // FS-16 (§FS2n)
 
     // org.compiere.report.TrialBalance -> report_overlay.foldTrialBalance over the posted journal.
@@ -518,6 +519,8 @@
     if (proc.classname) return proc.classname;
     if (proc.isReport) {
       var hay = ((proc.value || '') + ' ' + (proc.name || '')).toLowerCase();
+      // A report-VIEW process (blank classname, AD_ReportView -> view table): AD_Process 145 'RV_Open Items' (AD_ReportView 117 = RV_OpenItem) -> reportview:rv_openitem (§OPENITEMS-SPEC).
+      if (String(proc.value || '').toLowerCase() === 'rv_open items') return 'reportview:rv_openitem';
       // map known report procs to the report_overlay header tables (extracted, not invented)
       if (/c_order\b|order print|rpt c_order/.test(hay) && !/invoice/.test(hay)) return 'report:c_order';
       if (/c_invoice|invoice print|rpt c_invoice/.test(hay)) return 'report:c_invoice';
@@ -631,7 +634,8 @@
       var doc = _agDay(inv.dateinvoiced), cm = String(inv.docbasetype || '').charAt(2) === 'C' ? -1 : 1;
       var common = { ad_org_id: inv.ad_org_id, ad_client_id: inv.ad_client_id, c_invoice_id: inv.c_invoice_id, c_bpartner_id: inv.c_bpartner_id,
         issotrx: inv.issotrx, dateinvoiced: inv.dateinvoiced, c_currency_id: inv.c_currency_id, c_activity_id: inv.c_activity_id,
-        c_campaign_id: inv.c_campaign_id, c_project_id: inv.c_project_id };
+        c_campaign_id: inv.c_campaign_id, c_project_id: inv.c_project_id,
+        documentno: inv.documentno, dateacct: inv.dateacct, c_paymentterm_id: inv.c_paymentterm_id, invoicecollectiontype: inv.invoicecollectiontype, ispayschedulevalid: inv.ispayschedulevalid, docstatus: inv.docstatus };
       if (String(inv.ispayschedulevalid || 'N') !== 'Y') {        // branch 1 — JOIN C_PaymentTerm (inner)
         var pt = q('SELECT * FROM c_paymentterm WHERE c_paymentterm_id=' + Number(inv.c_paymentterm_id || 0))[0];
         if (!pt) return;
@@ -695,6 +699,31 @@
     });
     rows.forEach(function (r) { delete r._n; delete r._sum; ['invoicedamt', 'openamt'].concat(AGING_BUCKETS).forEach(function (k) { r[k] = _agRound(r[k], 2); }); });
     return rows;
+  }
+  // AD_Process 145 "Open Items (Aging)" = AD_ReportView 117 over the view RV_OpenItem (§OPENITEMS-SPEC). The rows ARE openItems() — the ONE RV_OpenItem
+  // transcription Aging (238) reads. Parameters = the process's own AD_Process_Para columns applied to view columns, exactly as a report view's where clause:
+  // C_BPartner_ID, IsSOTrx, InvoiceCollectionType = equality; DaysDue = the range (-99999..99999, either bound optional). An absent parameter filters nothing.
+  var OPENITEM_COLS = ['documentno', 'c_invoice_id', 'c_invoicepayschedule_id', 'c_bpartner_id', 'issotrx', 'dateinvoiced', 'dateacct', 'netdays', 'duedate', 'daysdue', 'grandtotal', 'openamt',
+    'c_currency_id', 'c_paymentterm_id', 'invoicecollectiontype', 'ad_org_id'];
+  function _pv(p, k) { var v = p[k]; return (v && typeof v === 'object' && !Array.isArray(v)) ? v : { v: v, vTo: null }; }
+  function registerOpenItemsView() {
+    registerHandler('reportview:rv_openitem', function (ctx, info) {
+      var p = (info && info.params) || {}, q = ctx.query;
+      if (typeof q !== 'function') return { ok: false, message: 'RV_OpenItem: no data accessor', rows: 0 };
+      var today = ctx.today || _CC().localDay();
+      var has = function (x) { return x != null && x !== ''; };
+      var bp = _pv(p, 'C_BPartner_ID').v, so = _pv(p, 'IsSOTrx').v, ict = _pv(p, 'InvoiceCollectionType').v, dd = _pv(p, 'DaysDue');
+      var rows = openItems(q, { today: today, clientId: ctx.clientId }).filter(function (oi) {
+        if (has(bp) && Number(bp) > 0 && Number(oi.c_bpartner_id) !== Number(bp)) return false;
+        if (has(so) && String(oi.issotrx) !== String(so)) return false;
+        if (has(ict) && String(oi.invoicecollectiontype) !== String(ict)) return false;
+        if (has(dd.v) && Number(oi.daysdue) < Number(dd.v)) return false;
+        if (has(dd.vTo) && Number(oi.daysdue) > Number(dd.vTo)) return false;
+        return true;
+      }).map(function (oi) { var o = {}; OPENITEM_COLS.forEach(function (c) { o[c] = oi[c]; }); return o; });
+      if (typeof console !== 'undefined') console.log('§OPENITEMS-VIEW today=' + today + ' bp=' + (has(bp) ? bp : '-') + ' isSOTrx=' + (has(so) ? so : '-') + ' collection=' + (has(ict) ? ict : '-') + ' daysDue=' + (has(dd.v) ? dd.v : '') + '..' + (has(dd.vTo) ? dd.vTo : '') + ' rows=' + rows.length + ' (RV_OpenItem view over openItems())');
+      return { ok: true, message: 'RV_OpenItem: ' + rows.length + ' open item(s)', rows: rows.length, result: { view: { table: 'RV_OpenItem', cols: OPENITEM_COLS, rows: rows } } };
+    }, { kind: 'report' });
   }
   function registerAging() {
     registerHandler('org.compiere.process.Aging', function (ctx, info) {
@@ -1324,7 +1353,7 @@
     validateParams: validateParams, dispatch: dispatch,
     pickUsedProcesses: pickUsedProcesses,
     refType: refType, typeOk: typeOk, REF_TYPE: REF_TYPE,
-    openItems: openItems, agingFold: agingFold, AGING_BUCKETS: AGING_BUCKETS, importBPartner: importBPartner,
+    openItems: openItems, agingFold: agingFold, OPENITEM_COLS: OPENITEM_COLS, AGING_BUCKETS: AGING_BUCKETS, importBPartner: importBPartner,
     download: download, lastDownload: function () { return _lastDownload; },
     SvrProcess: SvrProcess, ProcessInfoParameter: ProcessInfoParameter, defineProcess: defineProcess, undefineProcess: undefineProcess, unregisterHandler: unregisterHandler, removeOwner: removeOwner, describe: describe, runJava: runJava, runInTrx: runInTrx, JAVA: JAVA, typedParam: typedParam, processDB: processDB
   };
