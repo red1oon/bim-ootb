@@ -79,12 +79,39 @@ function childTabs(rows, t) {
 }
 function listValues(rows, refId) { return rows("SELECT value, name FROM ad_ref_list WHERE ad_reference_id=? AND isactive='Y' ORDER BY value", [refId]); }
 
+// CLI_ERP_IVR §9 (V1-a): what the edit screen and type assist need, read from the dictionary rows ONLY; a cell the dictionary leaves empty gives NO key (never a default).
+// The field is the one the kind's FIRST tab shows (lowest tablevel, seqno: the same pick as childTabs). A model whose patch lacks a table or column here simply omits those keys.
+function edit(rows, t, cols) {
+  const have = (tb, c) => rows("SELECT 1 FROM pragma_table_info('" + tb + "') WHERE lower(name)=?", [c]).length > 0, tbl = (n) => rows("SELECT name FROM sqlite_master WHERE type='table' AND lower(name)=?", [n]).length > 0;
+  const tab = tbl('ad_tab') && tbl('ad_field') ? rows('SELECT ad_tab_id FROM ad_tab WHERE ad_table_id=? AND isactive=\'Y\' ORDER BY tablevel, seqno', [t.ad_table_id])[0] : null;
+  const F = {}; if (tab) rows('SELECT * FROM ad_field WHERE ad_tab_id=? AND isactive=\'Y\'', [tab.ad_tab_id]).forEach(f => { F[f.ad_column_id] = f; });
+  const C = {}; const cc = ['help', 'readonlylogic', 'isalwaysupdateable', 'ad_val_rule_id'].filter(c => have('ad_column', c));
+  if (cc.length) rows('SELECT ad_column_id, ' + cc.join(', ') + ' FROM ad_column WHERE ad_table_id=? AND isactive=\'Y\'', [t.ad_table_id]).forEach(r => { C[r.ad_column_id] = r; });
+  const VR = {}; if (tbl('ad_val_rule')) rows('SELECT ad_val_rule_id, code FROM ad_val_rule').forEach(r => { VR[r.ad_val_rule_id] = r.code; });
+  const RT = {}; if (tbl('ad_ref_table')) rows('SELECT r.ad_reference_id, t.tablename, k.columnname AS kc, d.columnname AS dc FROM ad_ref_table r JOIN ad_table t ON t.ad_table_id=r.ad_table_id JOIN ad_column k ON k.ad_column_id=r.ad_key JOIN ad_column d ON d.ad_column_id=r.ad_display WHERE r.isactive=\'Y\'').forEach(r => { RT[r.ad_reference_id] = r; });
+  const nz = (v) => v != null && v !== '';
+  return (c) => {
+    const o = {}, f = F[c.ad_column_id], k = C[c.ad_column_id] || {};
+    if (tab) { o.displayed = !!f && f.isdisplayed === 'Y'; if (f && f.seqno != null) o.seq = f.seqno; }
+    if (f && nz(f.displaylogic)) o.displayLogic = f.displaylogic;
+    const rol = nz(k.readonlylogic) ? k.readonlylogic : (f && nz(f.readonlylogic) ? f.readonlylogic : null); if (rol) o.readOnlyLogic = rol;
+    if (f && f.isreadonly === 'Y') o.fieldReadOnly = true;
+    if (k.isalwaysupdateable === 'Y') o.alwaysUpdateable = true;
+    const h = nz(k.help) ? k.help : (f && nz(f.help) ? f.help : null); if (h) o.help = h;
+    const vr = k.ad_val_rule_id != null ? k.ad_val_rule_id : (f && f.ad_val_rule_id); if (nz(vr) && VR[vr] != null) o.valRule = { id: vr, code: VR[vr] };
+    const rid = c.ad_reference_value_id; if ((c.ad_reference_id === 18 || c.ad_reference_id === 30) && RT[rid]) o.lookup = { table: RT[rid].tablename, key: RT[rid].kc, display: RT[rid].dc };
+    else if (c.ad_reference_id === 19 && /_ID$/i.test(c.columnname)) o.lookup = { table: c.columnname.slice(0, -3) };
+    return o;
+  };
+}
 function describe(O, a) {
   const t = kindOf(O.rows, a.kind), cols = columnsOf(O.rows, t), tabs = childTabs(O.rows, t);
+  const X = edit(O.rows, t, cols);
   const props = cols.map(c => {
     const p = { name: c.columnname, label: c.name, type: REF[c.ad_reference_id] || 'ref:' + c.ad_reference_id, mandatory: c.ismandatory === 'Y', updateable: c.isupdateable === 'Y', key: c.iskey === 'Y', parent: c.isparent === 'Y', length: c.fieldlength };
     if (c.valuemin != null) p.min = c.valuemin; if (c.valuemax != null) p.max = c.valuemax;
     if (c.ad_reference_id === 17 && c.ad_reference_value_id != null) p.values = listValues(O.rows, c.ad_reference_value_id).map(v => v.value);
+    if (!process.env.ERP_BREAK_DESCFIELD) Object.assign(p, X(c)); else Object.assign(p, { displayed: false, seq: 0, displayLogic: '', readOnlyLogic: '', help: '' });   // ERP_BREAK_DESCFIELD: the falsifier of W-ERP-VERBS-DOOR D4 (empty cells filled with defaults)
     return p;
   });
   const key = cols.filter(c => c.iskey === 'Y')[0], AT = require('../../erp/ad_attachment.js');
