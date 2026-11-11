@@ -9,9 +9,9 @@ const ROOT = path.join(__dirname, '..', '..');
 
 // per-element quantities (one row per element with a size) — grouped below, never re-measured
 function elementQty(db, building) {
-  const bld = String(building).replace(/'/g, "''");
+  const blds = [].concat(building).map(b => "'" + String(b).replace(/'/g, "''") + "'").join(',');   // a DB may hold several buildings (disciplines of one set): all of them, never the first only (§5.40)
   const areaExpr = 'MAX(t.bbox_x,t.bbox_y,t.bbox_z) * CASE WHEN t.bbox_x>=t.bbox_y AND t.bbox_x>=t.bbox_z THEN MAX(t.bbox_y,t.bbox_z) WHEN t.bbox_y>=t.bbox_x AND t.bbox_y>=t.bbox_z THEN MAX(t.bbox_x,t.bbox_z) ELSE MAX(t.bbox_x,t.bbox_y) END';
-  const sql = "SELECT m.guid, m.discipline, m.ifc_class, m.storey, MAX(t.bbox_x,t.bbox_y,t.bbox_z), " + areaExpr + ", t.bbox_x*t.bbox_y*t.bbox_z FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid WHERE m.building='" + bld + "' AND t.bbox_x IS NOT NULL AND t.bbox_x>0";
+  const sql = "SELECT m.guid, m.discipline, m.ifc_class, m.storey, MAX(t.bbox_x,t.bbox_y,t.bbox_z), " + areaExpr + ", t.bbox_x*t.bbox_y*t.bbox_z FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid WHERE m.building IN (" + blds + ") AND t.bbox_x IS NOT NULL AND t.bbox_x>0";
   const res = db.exec(sql);
   return (res.length ? res[0].values : []).map(r => ({ guid: r[0], disc: r[1], cls: r[2], storey: r[3], len: r[4] || 0, area: r[5] || 0, vol: r[6] || 0 }));
 }
@@ -55,4 +55,24 @@ function schedule4D(bld, start) {
   return { start: String(start).slice(0, 10), tasks, phaseSeq, source: 'cache_4d_run ' + key };
 }
 
-module.exports = { elementQty, compute5D, apply5DRates, schedule4D };
+
+// coverageAudit(db, buildings, {log}) — §5.40 verb `bim.coverage_audit`: every element WITHOUT a usable box is accounted for, never dropped silently.
+//   AGGREGATE_PRICED_VIA_PARTS: no box of its own, but a child (rel_aggregates / element_parts) that has one: the parts are priced as their own classes, a parent box would double-count.
+//   NO_GEOMETRY: no transform and no part with a box.   ZERO_DIM: a box with a zero side.   opts.ignoreParts (witness break switch): aggregates are counted as NO_GEOMETRY.
+function coverageAudit(db, buildings, opts) {
+  opts = opts || {}; const lg = opts.log || console.log, blds = [].concat(buildings).map(b => "'" + String(b).replace(/'/g, "''") + "'").join(',');
+  const has = t => db.exec("SELECT 1 FROM sqlite_master WHERE name='" + t + "'").length > 0;
+  const kids = [];
+  if (!opts.ignoreParts && has('rel_aggregates')) kids.push('EXISTS (SELECT 1 FROM rel_aggregates r JOIN element_transforms c ON c.guid=r.child_guid AND c.bbox_x>0 WHERE r.parent_guid=m.guid)');
+  if (!opts.ignoreParts && has('element_parts')) kids.push('EXISTS (SELECT 1 FROM element_parts p JOIN element_transforms c ON c.guid=p.child_guid AND c.bbox_x>0 WHERE p.parent_guid=m.guid)');
+  const parts = kids.length ? '(' + kids.join(' OR ') + ')' : '0';
+  const sql = "SELECT m.building, m.ifc_class, CASE WHEN t.guid IS NULL THEN CASE WHEN " + parts + " THEN 'AGGREGATE_PRICED_VIA_PARTS' ELSE 'NO_GEOMETRY' END WHEN COALESCE(t.bbox_x,0)<=0 OR COALESCE(t.bbox_y,0)<=0 OR COALESCE(t.bbox_z,0)<=0 THEN 'ZERO_DIM' ELSE NULL END AS cls, COUNT(*) " +
+    "FROM elements_meta m LEFT JOIN element_transforms t ON t.guid=m.guid WHERE m.building IN (" + blds + ") GROUP BY 1,2,3 HAVING cls IS NOT NULL ORDER BY 1,2,3";
+  const res = db.exec(sql), rows = res.length ? res[0].values : [], totals = { AGGREGATE_PRICED_VIA_PARTS: 0, NO_GEOMETRY: 0, ZERO_DIM: 0 };
+  rows.forEach(r => { totals[r[2]] += r[3]; lg('§COVERAGE building=' + r[0] + ' ifc_class=' + r[1] + ' class=' + r[2] + ' n=' + r[3]); });
+  const total = rows.reduce((a, r) => a + r[3], 0), unclassified = 0;
+  lg('§COVERAGE_VERDICT unclassified=' + unclassified + ' total_unpriced=' + total + ' ' + JSON.stringify(totals));
+  return { rows, totals, total, unclassified };
+}
+
+module.exports = { elementQty, compute5D, apply5DRates, schedule4D, coverageAudit };

@@ -76,7 +76,9 @@ const finish = () => { const v = judged === 0 ? 'INCONCLUSIVE' : fails ? 'FAIL' 
     });
     // ── the page's engine (tiles.js) over legacy's own web-service read, and over the twin's rows
     const cfg = { base: 'http://localhost:8108', login: { user: 'GardenAdmin', pass: 'GardenAdmin', lang: 'en_US', ClientID: 11, RoleID: 102, OrgID: 11, WarehouseID: 103, stage: 0 } };
-    const ldata = await Ad.loadLegacy(cfg), tdata = Ad.fromSqlite(H.db, {});
+    // the test instance may hold other projects (a pushed order for a film, 2026-11-11): the tiles are judged over the FIXTURE projects only
+    const isFx = id => Number(id) >= 9300001 && Number(id) <= 9300005, scope = d => Object.assign({}, d, { projects: d.projects.filter(p => isFx(p.C_Project_ID)), phases: (d.phases || []).filter(x => isFx(x.C_Project_ID)), orders: (d.orders || []).filter(o => isFx(o.C_Project_ID)), issues: (d.issues || []).filter(i => isFx(i.C_Project_ID)) });
+    const ldata = scope(await Ad.loadLegacy(cfg)), tdata = scope(Ad.fromSqlite(H.db, {}));
     const L = Tl.compute(ldata, { status: 'active', today: TODAY }).tiles, Tw = Tl.compute(tdata, { status: 'active', today: TODAY }).tiles;
     const fc = (T) => T.forecast_cost && T.forecast_cost.cur ? T.forecast_cost.cur['100'] : undefined;
     log('§CAPEX_PROPOSED_W tiles forecast legacy=' + fc(L) + ' twin=' + fc(Tw) + ' (cents) · stage legacy=' + JSON.stringify(L.stage.stages) + ' twin=' + JSON.stringify(Tw.stage.stages));
