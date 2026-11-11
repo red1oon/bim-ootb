@@ -2768,7 +2768,7 @@
     }
    },
    "returns": {
-    "shape": "erp_cli JSON {number,kind,table,id,docStatus,given:[columns],defaulted,record,ops} or {refused,reason}",
+    "shape": "erp_cli JSON {number,kind,table,id,docStatus,given:[columns],defaulted,filled:[columns the engine set],record,ops} or {refused,reason}",
     "fields": [
      {
       "path": "number",
@@ -3681,7 +3681,7 @@
     }
    },
    "returns": {
-    "shape": "erp_cli JSON {number,kind,table,id,docStatus,given:[columns],defaulted,record,ops} or {refused,reason}",
+    "shape": "erp_cli JSON {number,kind,table,id,docStatus,given:[columns],defaulted,filled:[columns the engine set],record,ops} or {refused,reason}",
     "fields": [
      {
       "path": "number",
