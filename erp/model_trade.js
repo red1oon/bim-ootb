@@ -442,7 +442,7 @@
     var sql = pre + "SELECT 1 FROM rv_unposted up WHERE up.DocStatus IN('CO', 'CL', 'RE', 'VO') AND up.AD_Client_ID=? AND datetime(up.DateAcct) BETWEEN datetime(?) AND datetime(?) " +
       ' AND AD_Org_ID IN (SELECT AD_Org_ID FROM AD_OrgInfo WHERE AD_Client_ID=? AND (C_Calendar_ID=?' + (cal === clientCal ? ' OR C_Calendar_ID IS NULL' : '') + ')) ';
     var args = [Env.getAD_Client_ID(ctx), period.getStartDate(), period.getEndDate(), Env.getAD_Client_ID(ctx), cal];
-    if (periodControlID > 0) { sql += ' AND up.DocBaseType = ? '; args.push(R().PO.get('C_PeriodControl', periodControlID).getDocBaseType()); }
+    if (ML().idSet(periodControlID)) { sql += ' AND up.DocBaseType = ? '; args.push(R().PO.get('C_PeriodControl', periodControlID).getDocBaseType()); }
     sql += ' LIMIT 1';
     return DB.query(sql, args).length > 0;
   };

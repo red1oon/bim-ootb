@@ -892,7 +892,7 @@ function glCategoryFor(db, table, id) {
   //   (Found by the regression run: an unguarded read threw `no such table: c_doctype` and took four witnesses
   //   down with it — a posting must not break because a fixture is narrow.)
   var docBaseType = null;
-  if (dtId > 0) {
+  if (idSet(dtId)) {
     var dt = null;
     try { dt = getRow(db, 'SELECT docbasetype, gl_category_id FROM c_doctype WHERE c_doctype_id=?', dtId); }
     catch (e) { return { id: 0, stage: 'no-doctype-table', doctype: dtId }; }

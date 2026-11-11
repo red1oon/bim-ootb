@@ -19,7 +19,7 @@ function check(cs, key, rule, ok, info) { var c = CASES[cs] = CASES[cs] || { jud
 function walk(d, out) { fs.readdirSync(d, { withFileTypes: true }).forEach(function (e) { var p = path.join(d, e.name);
   if (e.isDirectory()) { if (!/^(tests|node_modules|fixtures|patches|\.git)$/.test(e.name)) walk(p, out); }
   else if (/\.(js|mjs)$/.test(e.name) && !/(_dict|\.min)\.|dict\.js$/.test(e.name)) out.push(p); }); return out; }
-var KEY = [ /\b(?:Number|nz|id0)\(\s*[\w.\[\]']*_id\s*\)\s*>\s*0/i, /\.get(?!AD_Client|Record)\w*_ID\(\)\s*>\s*0/, /\b\w*_id\s*>\s*0\b(?!\.)/i ];
+var KEY = [ /\b(?:Number|nz|id0)\(\s*[\w.\[\]']*_id\s*\)\s*>\s*0/i, /\.get(?!AD_Client|Record)\w*_ID\(\)\s*>\s*0/, /\b\w*_id\s*>\s*0\b(?!\.)/i, /(?<![\w])[\w.]*[a-z](?:ID|Id)\s*(?:<=|>)\s*0\b(?![.\d])/ ];   // the last: camelCase locals and members (doctypeID, refId, l.warehouseId)
 // LEAVE list (named in §IDLAW-SPEC): file -> substring identifying the line that legitimately stays
 var LEAVE = [ ['model_layer.js', 'keepKey'], ['model_layer.js', 'PO.saveNew'], ['model_cost.js', 'reversalline_id'] ];
 function scan(name, src) { var hits = [], left = 0;

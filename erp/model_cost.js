@@ -123,7 +123,7 @@
       return { h: h, cd: cd, ref: ref, ce: ce };
     }).filter(function (x) {
       return x && (String(x.h.m_attributesetinstance_id) === String(asi) || Number(x.h.m_attributesetinstance_id) === 0) && String(x.cd.c_acctschema_id) === String(asId)
-        && (!x.ce || x.ce.costingmethod == null || x.ce.costingmethod === method) && (!(ceId > 0) || String(x.h.m_costelement_id) === String(ceId)) && (!extra || extra(x));
+        && (!x.ce || x.ce.costingmethod == null || x.ce.costingmethod === method) && (!(ML.idSet(ceId)) || String(x.h.m_costelement_id) === String(ceId)) && (!extra || extra(x));
     });
   }
   function refKey(x) { return (x.ref ? day(x.ref.dateacct) : day(x.cd.dateacct)) === day(x.cd.dateacct) ? (nz(x.cd.ref_costdetail_id) ? x.cd.ref_costdetail_id : x.h.m_costdetail_id) : x.h.m_costdetail_id; }
@@ -342,7 +342,7 @@
     var r = { ad_client_id: trx.env.client, ad_org_id: org, c_acctschema_id: as.c_acctschema_id, m_product_id: productId, m_attributesetinstance_id: asi || 0,
       processed: 'N', amt: N(amt == null ? Z : amt), qty: N(qty == null ? Z : qty), issotrx: 'N', deltaamt: 0, deltaqty: 0, description: desc == null ? null : desc, dateacct: dateAcct };
     r.m_costelement_id = ceId;                                                                // setM_CostElement_ID(0) → 0 stored as given
-    if (refId > 0) r.ref_costdetail_id = refId;
+    if (ML.idSet(refId)) r.ref_costdetail_id = refId;
     return { row: r, isNew: true };
   }
   // MCostDetail.beforeSave :1243-1278 + save
@@ -377,7 +377,7 @@
     var row = kind === 'order' ? getOrder(trx, as, productId, asi, lineId, ceId, dateAcct) : kind === 'invoice' ? getInvoice(trx, as, productId, asi, lineId, ceId, dateAcct)
       : kind === 'shipment' ? getShipment(trx, as, productId, asi, lineId, ceId) : kind === 'movement' ? getMovement(trx, as, productId, asi, lineId, ceId, isSO) : kind === 'inventory' ? getInventory(trx, as, productId, asi, lineId, ceId) : getMatchInvoice(trx, as, productId, asi, lineId, ceId);
     var h = row ? { row: row, isNew: false, changes: {} } : null;
-    if (h && (kind === 'order' || kind === 'invoice') && !isDelta(h.row) && refId > 0) cdSet(h, 'isbackdate', 'Y');
+    if (h && (kind === 'order' || kind === 'invoice') && !isDelta(h.row) && ML.idSet(refId)) cdSet(h, 'isbackdate', 'Y');
     if (!h) {
       h = cdNew(trx, as, org, productId, asi, ceId, amt, qty, desc, dateAcct, refId);
       h.row[col] = lineId; if (kind === 'shipment' || kind === 'movement') h.row.issotrx = isSO ? 'Y' : 'N';   // movement: setIsSOTrx(from) :498-505

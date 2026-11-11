@@ -229,9 +229,9 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
         if (oldValue != null && typeof oldValue === 'number' && Number.isInteger(oldValue)) {
           var conversionRate = null;
           var oldId = oldValue;
-          if (oldId > 0 && oldId === C_Currency_Invoice_ID) {
+          if (idSet(oldId) && oldId === C_Currency_Invoice_ID) {
             conversionRate = CurrencyRate;
-          } else if (oldId > 0) {
+          } else if (idSet(oldId)) {
             conversionRate = M().MConversionRate.getRate(oldId, C_Currency_ID, ConvDate, C_ConversionType_ID, AD_Client_ID, AD_Org_ID);
             if (conversionRate == null) {
               conversionRate = M().MConversionRate.getRate(C_Currency_ID, oldId, ConvDate, C_ConversionType_ID, AD_Client_ID, AD_Org_ID);

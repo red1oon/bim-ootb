@@ -451,7 +451,7 @@ export function create(ctx) {
       let bpId = Number(activity.c_bpartner_id || 0), ppo = null;
       const ppos = trx.find('m_product_po', { m_product_id: product.m_product_id }).filter(active).sort((a, b) => (b.iscurrentvendor === 'Y') - (a.iscurrentvendor === 'Y'));
       for (const p of ppos) { if (bpId === Number(p.c_bpartner_id)) { ppo = p; break; } if (p.iscurrentvendor === 'Y' && Number(p.c_bpartner_id || 0) !== 0) { bpId = Number(p.c_bpartner_id); ppo = p; break; } }
-      if (bpId <= 0 || !ppo) throw new Error('NoVendorForProductException: ' + product.name);
+      if (!idSet(bpId) || !ppo) throw new Error('NoVendorForProductException: ' + product.name);
       const today = String(trx.env.date || '').slice(0, 10), dp = new Date(today + 'T00:00:00Z'); dp.setUTCDate(dp.getUTCDate() + Number(ppo.deliverytime_promised || 0));
       const datePromised = dp.toISOString().slice(0, 10) + ' 00:00:00';
       let order = orders[bpId];

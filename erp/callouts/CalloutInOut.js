@@ -91,7 +91,7 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
         else mTab.setValue('AD_User_ID', null);
         var docTypeId = I(rma.getC_DocType_ID());                  // :170-174 Set corresponding document type
         var relatedDocTypeId = M.MDocType.getShipmentReceiptDocType(docTypeId, ctx);
-        if (relatedDocTypeId > 0) mTab.setValue('C_DocType_ID', relatedDocTypeId);
+        if (idSet(relatedDocTypeId)) mTab.setValue('C_DocType_ID', relatedDocTypeId);
       }
       return '';
     };
