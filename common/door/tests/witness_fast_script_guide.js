@@ -57,7 +57,7 @@ const decimals = (s) => (String(s).match(/\d+\.\d+/g) || []);
   k.chk('F3 the page links the Proposer Guide for the AI connection (not duplicated)', proposerLink);
 
   // K: counts the page states
-  const vcount = vocab.verbs.length, vv = vocab.verbs.filter(v => /^viewer\./.test(v.verb)).length;
+  const real = vocab.verbs.filter(v => !v.alias_of), vcount = real.length, vv = real.filter(v => /^viewer\./.test(v.verb)).length;   // distinct verbs; the old names kept as aliases are K7
   const rd = (f, re) => { try { const m = re.exec(fs.readFileSync(path.join(ROOT, 'internal', f), 'utf8')); return m ? +m[1] : null; } catch (e) { return null; } };
   const nAct = rd('VIEWER_ACTIONS.md', /\(N_actions\) \| (\d+) \|/), nErp = rd('ERP_VERBS.md', /\*\*N\*\* \(N_doc \+ N_proc\) \| (\d+) \|/);
   const said = (re) => { const m = re.exec(md); return m ? +m[1] : null; };
@@ -65,8 +65,10 @@ const decimals = (s) => (String(s).match(/\d+\.\d+/g) || []);
   k.chk('K2 "N Viewer verbs" on the page = verbs.json viewer.*', said(/door offers (\d+) Viewer verbs/) === vv, 'page=' + said(/door offers (\d+) Viewer verbs/) + ' vocabulary=' + vv);
   k.chk('K3 "N actions a person can press" = internal/VIEWER_ACTIONS.md N_actions', nAct !== null && said(/has (\d+) actions a person can press/) === nAct, 'page=' + said(/has (\d+) actions a person can press/) + ' report=' + nAct);
   k.chk('K4 "N documents and processes" = internal/ERP_VERBS.md N', nErp !== null && said(/ERP has (\d+) documents and processes/) === nErp, 'page=' + said(/ERP has (\d+) documents and processes/) + ' report=' + nErp);
-  const erpOffered = vocab.verbs.filter(v => /^erp\./.test(v.verb)).length;
+  const erpOffered = real.filter(v => /^erp\./.test(v.verb)).length, misOffered = real.filter(v => /^mis\./.test(v.verb)).length, nAlias = vocab.verbs.length - real.length;
   k.chk('K5 "N ERP verbs" on the page = verbs.json erp.*', said(/door offers (\d+) ERP verbs/) === erpOffered, 'page=' + said(/door offers (\d+) ERP verbs/) + ' vocabulary=' + erpOffered);
+  k.chk('K6 "N MIS verbs" on the page = verbs.json mis.* (not aliases)', said(/(\d+) MIS verbs/) === misOffered && misOffered > 0, 'page=' + said(/(\d+) MIS verbs/) + ' vocabulary=' + misOffered);
+  k.chk('K7 "N old names" on the page = the aliases in verbs.json', said(/(\d+) old names/) === nAlias && nAlias > 0, 'page=' + said(/(\d+) old names/) + ' vocabulary=' + nAlias);
 
   // R: run every block
   const got = {};

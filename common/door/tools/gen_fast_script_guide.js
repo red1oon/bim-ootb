@@ -68,8 +68,7 @@ function runBlock(run, ctx) {   // ctx {flat, root, files:[{name,text}]}
     (ctx.files || []).forEach(f => { if (run.cmd.indexOf(f.name) >= 0) fs.writeFileSync(path.join(cwd, f.name), f.text + '\n'); });
     const env = Object.assign({}, process.env, { BIM_DOOR_JOURNAL: path.join(ctx.flat, 'journal_' + run.id + '.jsonl') });
     const p = spawn('bash', ['-c', run.cmd], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] }); let o = '', e = '';
-    p.stdout.on('data', d => { o += d; }); p.stderr.on('data', d => { e += d; }); p.on('close', code => res({ code, out: o.trim(), err: e.trim() }));
-    setTimeout(() => p.kill(), 420000);
+    p.stdout.on('data', d => { o += d; }); p.stderr.on('data', d => { e += d; }); const t = setTimeout(() => p.kill(), 420000); p.on('close', code => { clearTimeout(t); res({ code, out: o.trim(), err: e.trim() }); });   // the timer is cleared when the command ends (it kept every --refresh alive for 7 minutes)
   });
 }
 module.exports = { parsePage, verbTable, needs, normalise, cutLines, runBlock, makeFlatFolder, loadVocab, GEN, FLAT };
@@ -84,13 +83,13 @@ if (require.main === module) (async () => {
   if (a.indexOf('--write') >= 0 || a.indexOf('--refresh') >= 0) {
     md = md.slice(0, g.a) + table + md.slice(g.b); L('verb table written: ' + vocab.verbs.length + ' verbs');
     // the coverage sentence's counts come from the vocabulary too (the witness's K1, K2, K5 read them back)
-    const n = (app) => vocab.verbs.filter(v => v.verb.indexOf(app + '.') === 0).length;
+    const real = vocab.verbs.filter(v => !v.alias_of), n = (app) => real.filter(v => v.verb.indexOf(app + '.') === 0).length, nAlias = vocab.verbs.length - real.length;   // distinct verbs: an old name kept as an alias is counted on its own (CLI_ERP_IVR §11)
     // the two totals the page quotes from the committed inventory reports (the witness's K3, K4 read them back)
     const rd = (f, re) => { try { const m = re.exec(fs.readFileSync(path.join(ROOT, 'internal', f), 'utf8')); return m ? m[1] : null; } catch (e) { return null; } };
     const nAct = rd('VIEWER_ACTIONS.md', /\(N_actions\) \| (\d+) \|/), nErp = rd('ERP_VERBS.md', /\*\*N\*\* \(N_doc \+ N_proc\) \| (\d+) \|/);
     if (nAct) md = md.replace(/has \d+ actions a person can press/, 'has ' + nAct + ' actions a person can press');
     if (nErp) md = md.replace(/ERP has \d+ documents and processes/, 'ERP has ' + nErp + ' documents and processes');
-    md = md.replace(/\d+ verbs cover/, vocab.verbs.length + ' verbs cover').replace(/door offers \d+ Viewer verbs/, 'door offers ' + n('viewer') + ' Viewer verbs').replace(/door offers \d+ ERP verbs/, 'door offers ' + n('erp') + ' ERP verbs');
+    md = md.replace(/\d+ verbs cover/, real.length + ' verbs cover').replace(/\d+ MIS verbs/, n('mis') + ' MIS verbs').replace(/\d+ old names/, nAlias + ' old names').replace(/door offers \d+ Viewer verbs/, 'door offers ' + n('viewer') + ' Viewer verbs').replace(/door offers \d+ ERP verbs/, 'door offers ' + n('erp') + ' ERP verbs');
   }
   if (a.indexOf('--refresh') >= 0) {
     const flat = await makeFlatFolder(a.indexOf('--local') >= 0), { runs, files } = parsePage(md); L('flat folder ' + flat + ', ' + runs.length + ' run blocks');
