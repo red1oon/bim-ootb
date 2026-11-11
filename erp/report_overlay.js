@@ -567,7 +567,21 @@
              coverage: coverage, scopeFacts: countFacts(windows), totalFacts: totalFacts };
   }
 
-  var CORE = { REPORT_MAP: REPORT_MAP, foldReceipt: foldReceipt, foldVoucher: foldVoucher, foldTrialBalance: foldTrialBalance, foldPnL: foldPnL,
+  // scopeClient — REPSCOPE (prompts/FINANCIALS_GROUNDING.md §REPSCOPE-SPEC): the pure client filter for rows that are handed in
+  // (the opts.factRows seam). MRole.addAccessSQL rule: a row is visible iff AD_Client_ID IN (0, session client). Rows that do not
+  // carry ad_client_id cannot be judged and are kept but COUNTED (unkeyed) so a caller/witness can see the filter was blind to them.
+  function scopeClient(rows, cid) {
+    rows = rows || [];
+    if (cid == null) return { rows: rows, dropped: 0, unkeyed: 0, scoped: false };
+    var out = [], dropped = 0, unkeyed = 0;
+    rows.forEach(function (r) {
+      var c = r && r.ad_client_id;
+      if (c == null || c === '') { unkeyed++; out.push(r); return; }
+      if (Number(c) === 0 || Number(c) === Number(cid)) out.push(r); else dropped++;
+    });
+    return { rows: out, dropped: dropped, unkeyed: unkeyed, scoped: true };
+  }
+  var CORE = { REPORT_MAP: REPORT_MAP, scopeClient: scopeClient, foldReceipt: foldReceipt, foldVoucher: foldVoucher, foldTrialBalance: foldTrialBalance, foldPnL: foldPnL,
                foldStatement: foldStatement, foldPrint: foldPrint, resolveScope: resolveScope,
                amtExpr: amtExpr, signedBalance: signedBalance, round2: round2 };
   if (typeof module !== 'undefined' && module.exports) { module.exports = CORE; return; }
@@ -588,6 +602,21 @@
     if (!res || !res.length) return [];
     return res[0].values.map(function (v) { var o = {}; res[0].columns.forEach(function (c, i) { o[c] = v[i]; }); return o; });
   }
+  // ── REPSCOPE: THE one client-scope seam every report reader below goes through (legacy TrialBalance.java:400,454
+  // `FROM Fact_Acct WHERE AD_Client_ID=getAD_Client_ID()`; dictionary rows under MRole.addAccessSQL `AD_Client_ID IN (0,session)`).
+  // sessionClient = the login client (window.APP.clientId, same source as crud_core.sessionClientId). No session = unscoped, logged.
+  function sessionClient() {
+    try { var a = global.APP; if (a && a.clientId != null && a.clientId !== '' && isFinite(Number(a.clientId))) return Number(a.clientId); } catch (e) {}
+    return null;
+  }
+  // clientPred — '<alias.>ad_client_id IN (0,cid)' for a client-owned table, '' when there is no session or the table has no such column.
+  function clientPred(db, table, alias) {
+    var cid = sessionClient(); if (cid == null) return '';
+    if (!hasCol(db, table, 'ad_client_id')) return '';
+    return (alias ? alias + '.' : '') + 'ad_client_id IN (0,' + cid + ')';
+  }
+  function andPred(db, table, alias) { var p = clientPred(db, table, alias); return p ? ' AND ' + p : ''; }
+  function wherePred(db, table, alias) { var p = clientPred(db, table, alias); return p ? ' WHERE ' + p : ''; }
   // lowercase-alias every column key (NON-INVENT, ADDITIVE) — the browser bundle stores DOCUMENT tables in
   // canonical CamelCase (DocumentNo/GrandTotal/LineNetAmt), but REPORT_MAP keys + foldReceipt read lowercase
   // (the verb is proven headless on all-lowercase ad_full.db). Without this the in-browser receipt read 0.00 /
@@ -663,10 +692,10 @@
   }
   // EV chart + leaf-expansion over the account tree (== MReportTree.getWhereClause: SUMMARY node -> non-summary leaves).
   function evModel(db) {
-    var EV = {}; rowsOf(db.exec('SELECT c_elementvalue_id AS c_elementvalue_id, value AS value, accounttype AS accounttype, accountsign AS accountsign, issummary AS issummary FROM c_elementvalue'))   // aliased: the bundle's c_elementvalue carries CamelCase column names, an unaliased SELECT returns them as declared (EV was empty -> every Balance Sheet line 0.00)
+    var EV = {}; rowsOf(db.exec('SELECT c_elementvalue_id AS c_elementvalue_id, value AS value, accounttype AS accounttype, accountsign AS accountsign, issummary AS issummary FROM c_elementvalue' + wherePred(db, 'c_elementvalue')))   // aliased: the bundle's c_elementvalue carries CamelCase column names, an unaliased SELECT returns them as declared (EV was empty -> every Balance Sheet line 0.00)
       .forEach(function (r) { EV[r.c_elementvalue_id] = r; });
     var kids = {};
-    rowsOf(db.exec('SELECT node_id, parent_id FROM ad_treenode WHERE ad_tree_id=' + STMT_TREE))
+    rowsOf(db.exec('SELECT node_id, parent_id FROM ad_treenode WHERE ad_tree_id=' + STMT_TREE + andPred(db, 'ad_treenode')))
       .forEach(function (n) { (kids[n.parent_id] = kids[n.parent_id] || []).push(n.node_id); });
     function leaves(id) {
       var e = EV[id]; if (!e || e.issummary !== 'Y') return [id];
@@ -682,25 +711,27 @@
     return rowsOf(db.exec(
       "SELECT p.c_period_id id, p.name, p.startdate sd, p.enddate ed, p.c_year_id yr FROM c_period p " +
       "JOIN c_year y ON p.c_year_id=y.c_year_id WHERE y.c_calendar_id=" + STMT_CAL +
-      " AND p.isactive='Y' AND p.periodtype='S' ORDER BY p.startdate"));
+      "  AND p.isactive='Y' AND p.periodtype='S'" + andPred(db, 'c_period', 'p') + andPred(db, 'c_year', 'y') + " ORDER BY p.startdate"));
   }
   // assemble the foldStatement inputs for one pa_report, reading ONLY the bundle (the browser path).
   function statementInputs(db, reportId, opts) {
-    var report = rowsOf(db.exec('SELECT pa_report_id, name, pa_reportlineset_id, pa_reportcolumnset_id, c_acctschema_id, c_calendar_id FROM pa_report WHERE pa_report_id=' + (reportId | 0)))[0];
+    var report = rowsOf(db.exec('SELECT pa_report_id, name, pa_reportlineset_id, pa_reportcolumnset_id, c_acctschema_id, c_calendar_id FROM pa_report WHERE pa_report_id=' + (reportId | 0) + andPred(db, 'pa_report')))[0];
     if (!report) return null;
-    var lines = rowsOf(db.exec("SELECT pa_reportline_id, seqno, name, linetype, calculationtype, oper_1_id, oper_2_id, paamounttype, paperiodtype FROM pa_reportline WHERE pa_reportlineset_id=" + report.pa_reportlineset_id + " AND isactive='Y' ORDER BY seqno"));
-    var cols = rowsOf(db.exec("SELECT pa_reportcolumn_id, seqno, name, columntype, calculationtype, oper_1_id, oper_2_id, paamounttype, paperiodtype, relativeperiod, postingtype FROM pa_reportcolumn WHERE pa_reportcolumnset_id=" + report.pa_reportcolumnset_id + " AND isactive='Y' ORDER BY seqno"));
+    var lines = rowsOf(db.exec("SELECT pa_reportline_id, seqno, name, linetype, calculationtype, oper_1_id, oper_2_id, paamounttype, paperiodtype FROM pa_reportline WHERE pa_reportlineset_id=" + report.pa_reportlineset_id + " AND isactive='Y'" + andPred(db, 'pa_reportline') + " ORDER BY seqno"));
+    var cols = rowsOf(db.exec("SELECT pa_reportcolumn_id, seqno, name, columntype, calculationtype, oper_1_id, oper_2_id, paamounttype, paperiodtype, relativeperiod, postingtype FROM pa_reportcolumn WHERE pa_reportcolumnset_id=" + report.pa_reportcolumnset_id + " AND isactive='Y'" + andPred(db, 'pa_reportcolumn') + " ORDER BY seqno"));
     var ev = evModel(db);
     var sourcesByLine = {};
     lines.forEach(function (l) {
-      var srcs = rowsOf(db.exec("SELECT c_elementvalue_id ev FROM pa_reportsource WHERE pa_reportline_id=" + l.pa_reportline_id + " AND isactive='Y'"));
+      var srcs = rowsOf(db.exec("SELECT c_elementvalue_id ev FROM pa_reportsource WHERE pa_reportline_id=" + l.pa_reportline_id + " AND isactive='Y'" + andPred(db, 'pa_reportsource')));
       sourcesByLine[l.pa_reportline_id] = srcs.map(function (s) { return { account_ids: ev.leaves(s.ev) }; });
     });
     // Fact_Acct = the bundle's rows PLUS those posted this session (the model layer writes them into the signed sidecar). The tip-shadowed reader
     // returns both; reading the bare bundle left every financial statement blind to a document completed a moment ago (§ERP-DEPTH-FILM reporting clip).
-    var factSql = 'SELECT account_id, amtacctdr, amtacctcr, qty, c_period_id, c_acctschema_id, postingtype FROM fact_acct';
+    var factSql = 'SELECT account_id, amtacctdr, amtacctcr, qty, c_period_id, c_acctschema_id, postingtype FROM fact_acct' + wherePred(db, 'fact_acct');   // REPSCOPE: the tip-shadowed reader AND the bare-bundle reader both run this one string
     var tipFacts = (typeof window !== 'undefined' && window.__crud && typeof window.__crud.withModelTrx === 'function') ? window.__crud.withModelTrx(function (q) { return q(factSql); }) : null;
-    var factRows = (opts && opts.factRows) ? opts.factRows : ((tipFacts && tipFacts.length) ? tipFacts : rowsOf(db.exec(factSql)));   // opts.factRows = the witness seam: fold ANOTHER system's journal (the legacy pilot's) through the same code
+    var seam = (opts && opts.factRows) ? CORE.scopeClient(opts.factRows, sessionClient()) : null;   // REPSCOPE: the witness seam is scoped by the same rule (rows with no ad_client_id are kept, counted)
+    if (seam) console.log('§REPSCOPE seam client=' + sessionClient() + ' in=' + opts.factRows.length + ' kept=' + seam.rows.length + ' dropped=' + seam.dropped + ' unkeyed=' + seam.unkeyed);
+    var factRows = seam ? seam.rows : ((tipFacts && tipFacts.length) ? tipFacts : rowsOf(db.exec(factSql)));   // opts.factRows = the witness seam: fold ANOTHER system's journal (the legacy pilot's) through the same code
     // R-T2 default + history fall-through is the PURE CORE.resolveScope — the browser path and the headless
     // witness run the SAME code (REPORTING_UI_DEFAULT_FALLTHROUGH.md). No user period yet -> coverage=default→history.
     var sc = CORE.resolveScope(periodsOf(db), factRows, cols, opts);
@@ -786,7 +817,7 @@
   var STMT_LIST = null;                                            // cached [{id,name}] per bundle
   function statementList(db) {
     if (STMT_LIST) return STMT_LIST;
-    try { STMT_LIST = bundleHasStatements(db) ? rowsOf(db.exec('SELECT pa_report_id id, name FROM pa_report ORDER BY pa_report_id')) : []; }
+    try { STMT_LIST = bundleHasStatements(db) ? rowsOf(db.exec('SELECT pa_report_id id, name FROM pa_report' + wherePred(db, 'pa_report') + ' ORDER BY pa_report_id')) : []; }
     catch (e) { STMT_LIST = []; }
     return STMT_LIST;
   }
@@ -941,8 +972,9 @@
       try {
         if (!hasTable(db, 'fact_acct')) { renderUnsupported(db, 'fact_acct'); return; }
         var accounts = {};
-        rowsOf(db.exec('SELECT c_elementvalue_id id, value, name, accounttype FROM c_elementvalue')).forEach(function (r) { accounts[r.id] = r; });
-        var factRows = rowsOf(db.exec('SELECT account_id, amtacctdr, amtacctcr FROM fact_acct'));
+        rowsOf(db.exec('SELECT c_elementvalue_id AS id, value AS value, name AS name, accounttype AS accounttype FROM c_elementvalue' + wherePred(db, 'c_elementvalue'))).forEach(function (r) { accounts[r.id] = r; });   // aliased: the bundle's c_elementvalue has CamelCase columns, an unaliased SELECT returned Value/Name so every TB row showed '#<id>' with no account name
+        var factRows = rowsOf(db.exec('SELECT account_id, amtacctdr, amtacctcr FROM fact_acct' + wherePred(db, 'fact_acct')));
+        console.log('§REPSCOPE tb client=' + (sessionClient() == null ? 'none(unscoped)' : sessionClient()) + ' facts=' + factRows.length + ' accounts=' + Object.keys(accounts).length);
         var tb = CORE.foldTrialBalance(factRows, accounts);
         var h = '<span class=rpx title=close>✕</span><div class=rph><span class=rpglyph>▤</span> Trial Balance</div>' +
           pickerHtml(db, null) +
