@@ -15,14 +15,18 @@ const FI = require(path.join(ROOT, 'capex', 'tools', 'fold_inputs.js'));   // ON
   const bdb = new SQL.Database(fs.readFileSync(bldPath));
   // the ONE store opener (viewer/proj_order_state.js: seed + self-heal patch + the ERP's boot overlays, §5.25 D1). INTO=1 folds into the existing output, as the viewer's OPFS store accumulates.
   const edb = process.env.INTO === '1' && fs.existsSync(outPath) ? new SQL.Database(fs.readFileSync(outPath)) : (await PS.openStore(SQL, () => Promise.resolve(fs.readFileSync(path.join(ROOT, 'erp', 'ad_seed.db'))))).db;
-  const building = bdb.exec('SELECT DISTINCT building FROM elements_meta LIMIT 1')[0].values[0][0];
+  // §5.40: ALL buildings of the DB (the disciplines of one set), folded into ONE project named FOLD_LABEL (default: the first building). Was: the first building only (half of a two-file set).
+  const buildings = bdb.exec('SELECT DISTINCT building FROM elements_meta ORDER BY 1')[0].values.map(r => r[0]), building = process.env.FOLD_LABEL || buildings[0];
+  console.log('§FOLD_DEMO_SCOPE buildings=' + JSON.stringify(buildings) + ' label=' + building);
+  const audit = FI.coverageAudit(bdb, buildings);
+  if (audit.unclassified) { console.error('§FOLD_DEMO REFUSED: ' + audit.unclassified + ' elements without a box are not accounted for'); process.exit(3); }
   const pack = JSON.parse(fs.readFileSync(path.join(ROOT, 'viewer', 'rates', packFile), 'utf8'));
   const sr = JSON.parse(fs.readFileSync(path.join(ROOT, 'viewer', 'rates', 'sequence_rules.json'), 'utf8'));
   const hier = JSON.parse(fs.readFileSync(path.join(ROOT, 'viewer', 'rates', 'ifc_schema_hierarchy.json'), 'utf8'));
   const d = new Date(), start = startArg || process.env.START || (d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'));
   const bldName = path.basename(bldPath).replace(/_(extracted|meta)\.db$/, '').replace(/\.db$/, '');
   const sched = FI.schedule4D(bldName, start);
-  const priced = FI.apply5DRates(FI.compute5D(bdb, building, sched), pack.materials || {});
+  const priced = FI.apply5DRates(FI.compute5D(bdb, buildings, sched), pack.materials || {});
   const golden = priced.reduce((a, r) => a + r.cost, 0);
   const cnt = () => ['C_Project', 'C_ProjectPhase', 'C_ProjectTask', 'C_ProjectLine', 'M_Product'].map(t => t + '=' + edb.exec('SELECT COUNT(*) FROM ' + t)[0].values[0][0]).join(' ');
   console.log('§FOLD_DEMO before ' + cnt());
