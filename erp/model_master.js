@@ -65,6 +65,21 @@
     return n > 0;
   }
 
+
+  // PO.delete_Tree(treeType) PO.java:5237-5265 -- the counterpart of insert_Tree, called from afterDelete (MBPartner :1005-1011, MProduct :956-962, MOrg :269-275): a node that is a PARENT of other nodes
+  // refuses the delete (IDEMPIERE-2453, Msg NoParentDelete), else its node row is removed from every tree of that TreeType. Without it a deleted record leaves a tree node that the next record with the
+  // same key collides with (found by the Fast Script guide's own run, 2026-11-11: UNIQUE ad_treenodebp).
+  function deleteTree(trx, table, row, treeType) {
+    var node = NODE_TABLE[treeType], id = row[trx.idCol(table)];
+    if (!node) { trx.say('§MASTER-TREE-DEL treeType=' + treeType + ' has no node table in this port'); return null; }
+    var trees = trx.find('ad_tree', { treetype: treeType }, ['ad_tree_id']), kids = 0, gone = 0;
+    trees.forEach(function (t) { kids += trx.find(node, { ad_tree_id: t.ad_tree_id, parent_id: id }).length; });
+    if (kids > 0) { var m; try { m = (trx.q("SELECT msgtext FROM ad_message WHERE value='NoParentDelete'")[0] || {}).msgtext; } catch (e) { m = null; } return (m || 'NoParentDelete: the node is the parent of {0} other nodes') .replace('{0}', kids); }
+    trees.forEach(function (t) { trx.find(node, { ad_tree_id: t.ad_tree_id, node_id: id }).forEach(function (n) { trx.del(node, n); gone++; }); });
+    trx.say('§MASTER-TREE-DEL ' + node + ' for ' + table + ' ' + id + ' rows=' + gone);
+    return null;
+  }
+
   // MAcctSchema.getClientAcctSchema(ctx, AD_Client_ID) MAcctSchema.java:132-186: the AD_ClientInfo.C_AcctSchema1 schema FIRST (added when it exists, unfiltered :152-154),
   // then every ACTIVE schema of the client that has BOTH a C_AcctSchema_GL and a C_AcctSchema_Default row (:156-162), ORDER BY C_AcctSchema_ID, skipping the primary (:172-179).
   function clientAcctSchemas(trx, client) {
@@ -145,6 +160,7 @@
         function (trx, r) { insertTree(trx, 'c_bpartner', r, 'BP'); np1(trx, r, 'BP'); },
         function (trx, r) { insertAccounting(trx, 'c_bpartner', r, 'c_bp_customer_acct', 'c_bp_group_acct', { c_bp_group_id: r.c_bp_group_id }); },
         function (trx, r) { insertAccounting(trx, 'c_bpartner', r, 'c_bp_vendor_acct', 'c_bp_group_acct', { c_bp_group_id: r.c_bp_group_id }); } ],
+      afterDelete: [function (trx, r) { return deleteTree(trx, 'c_bpartner', r, 'BP'); }],   // MBPartner.afterDelete :1005-1011
       afterChange: [function (trx, r, old) {   // :992-1000 (Value changed: update_Tree; Value or Name changed: MAccount.updateValueDescription)
         if (changed(old, r, 'value')) np1(trx, r, 'BP');
         if (changed(old, r, 'value') || changed(old, r, 'name')) notPorted(trx, 'NP-2', 'MAccount.updateValueDescription C_BPartner_ID', 'c_validcombination', 'c_bpartner_id=?', [r.c_bpartner_id]); }] },
@@ -170,12 +186,13 @@
     c_uom_conversion: { before: function (trx, r) { return uomConversionBefore(trx, r); } },                                                                                         // MUOMConversion.beforeSave
     c_year: { before: function (trx, r) { return yearBefore(r); } },                                                                                                                  // MYear.beforeSave
     ad_role: { before: function (trx, r) { return roleBefore(r); }, afterNew: [function (trx, r) { roleAfterNew(trx, r); }] },                                                          // MRole.beforeSave / afterSave (new role)
-    ad_org: { afterNew: [function (trx, r) { orgAfterNew(trx, r); }] },                                                                                                               // MOrg.afterSave (new org block)
+    ad_org: { afterDelete: [function (trx, r) { return deleteTree(trx, 'ad_org', r, 'OO'); }], afterNew: [function (trx, r) { orgAfterNew(trx, r); }] },                                                                                                               // MOrg.afterSave (new org block)
     ad_sequence: { before: function (trx, r) { if (r.startnewmonth === 'Y' && r.startnewyear !== 'Y') r.startnewmonth = 'N'; return null; } },                                       // MSequence.beforeSave
     m_costelement: { before: function (trx, r) { r.ad_org_id = 0; } },                                                                                                 // MCostElement.beforeSave :360-361
     c_bankaccount: { afterNew: [bankAcct] },                                                                                                                            // MBankAccount.afterSave :220-226
     c_tax: { afterNew: [function (trx, r) { insertAccounting(trx, 'c_tax', r, 'c_tax_acct', 'c_acctschema_default', null); }] },                                       // MTax.afterSave :400-407 (result ignored in Java)
     m_product: {
+      afterDelete: [function (trx, r) { return deleteTree(trx, 'm_product', r, 'PR'); }],   // MProduct.afterDelete :956-962
       afterNew: [   // MProduct.afterSave :866-905: accounting + tree for a new product, update_Tree, then MCost.create (new, or category changed)
         function (trx, r) { insertAccounting(trx, 'm_product', r, 'm_product_acct', 'm_product_category_acct', { m_product_category_id: r.m_product_category_id }); },
         function (trx, r) { insertTree(trx, 'm_product', r, 'PR'); np1(trx, r, 'PR'); },
@@ -373,6 +390,10 @@
       if (spec.afterNew || spec.afterChange) impl.afterSave = function (trx, row, isNew, old) {
         var steps = isNew ? spec.afterNew || [] : spec.afterChange || [];
         for (var i = 0; i < steps.length; i++) { var e = steps[i](trx, row, old); if (typeof e === 'string') return e; }
+        return null;
+      };
+      if (spec.afterDelete) impl.afterDelete = function (trx, row) {
+        for (var j = 0; j < spec.afterDelete.length; j++) { var e = spec.afterDelete[j](trx, row); if (typeof e === 'string') return e; }
         return null;
       };
       ML.registerModel(table, impl);

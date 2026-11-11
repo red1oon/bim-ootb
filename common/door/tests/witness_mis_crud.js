@@ -2,6 +2,7 @@
 //   U1 ISSUE (an edit touches other columns) · U2 ISSUE (callouts do not fire: a partner change leaves the old partner's location) · U3 ISSUE (a column the window would not let a person edit is changed)
 //   U4 ISSUE (a mandatory column left empty is saved) · U5 ISSUE (a no-change edit writes, or is not said to be NO-OP)
 //   D1 ISSUE (a draft's lines are left behind) · D2 ISSUE (a completed document is deleted) · D3 ISSUE (a referenced master is deleted) · D4 ISSUE (an ai writes without the gate)
+//   D5 ISSUE (a delete leaves the record's tree node behind, so the next record with that key collides: found by the Fast Script guide's own run, 2026-11-11; PO.delete_Tree, MBPartner.afterDelete)
 //   Falsifiers: MIS_BREAK=nocallouts (must FAIL U2) · noeditcheck (must FAIL U3) · noprocessed (must FAIL D2). Each claim can say VACUOUS/INCONCLUSIVE.
 'use strict';
 const fs = require('fs'), path = require('path');
@@ -46,6 +47,9 @@ const k = kit('W-MIS-CRUD');
   // D3
   const n7 = nops(), d3 = await door('mis.delete kind=C_BPartner id=112');
   k.chk('D3 a referenced master is refused with the reason, nothing written', d3 && d3.status === 'refused' && /dependent record/.test(d3.why) && nops() === n7, String(d3 && d3.why).slice(0, 90) + ' ops+' + (nops() - n7));
+  // D5: a delete takes the tree node with it, and the key can be used again
+  const t1 = await door('mis.new kind=C_BPartner Value=TREE1 Name="Tree Check"'), nid = t1 && t1.answer && t1.answer.id, dt = await door('mis.delete kind=C_BPartner id=' + nid), t2 = await door('mis.new kind=C_BPartner Value=TREE2 Name="Tree Check Again"');
+  k.chk('D5 a deleted partner takes its tree node with it (delete:ad_treenodebp = 1) and the next partner can be created on the same key (PO.delete_Tree)', !!nid && dt && dt.status === 'ok' && (dt.answer.opSummary['delete:ad_treenodebp'] || 0) === 1 && t2 && t2.status === 'ok' && String(t2.answer.id) === String(nid), 'id ' + nid + ' -> ' + (t2 && t2.answer && t2.answer.id) + ' ops=' + JSON.stringify(dt && dt.answer && dt.answer.opSummary) + (t2 && t2.status !== 'ok' ? ' reuse=' + String(t2.why).slice(0, 90) : ''));
   // D4
   const V = JSON.parse(fs.readFileSync(path.join(ROOT, 'common/door/verbs.json'), 'utf8')).verbs, mu = V.find(v => v.verb === 'mis.update'), md = V.find(v => v.verb === 'mis.delete');
   const n8 = nops(), ai = await door('mis.update kind=Order id=' + D1.id + ' description="by an ai"', 'ai'), aid = await door('mis.delete kind=Order id=' + D1.id, 'ai');
