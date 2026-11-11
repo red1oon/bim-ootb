@@ -47,6 +47,10 @@
   }
   function fl(k, inner, tag) { return '<' + (tag || 'span') + ' data-flat="' + k + '">' + inner + '</' + (tag || 'span') + '>'; }
 
+  function split(key, label, x) {   // §5.38 Q4: the proposed committed split, one line each; unavailable entity = not installed, never 0
+    var v = x.notinstalled ? 'no data (not installed)' : x.vacuous ? 'no data' : Object.keys(x.cur).sort().map(function (c) { return esc(curInfo(c).ISO_Code) + ' ' + (x.cur[c] / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }).join(' · ');
+    return '<div class="subv">' + label + ': ' + fl(key, v) + '</div>';
+  }
   function dashboard() {
     var t = S.res.tiles, v = $('view'); v.innerHTML = '';
     var k = h('div', 'grid kpis');
@@ -54,7 +58,7 @@
     k.appendChild(card('Active Projects', '<div class="big">' + fl('active_projects', S.flat.active_projects) + '</div><div class="subv">' + (S.flat.active_projects_closing === 'INCONCLUSIVE' ? 'in closing phase: n/a (INCONCLUSIVE)' : fl('active_projects_closing', S.flat.active_projects_closing) + ' in phase “Closed”') + '</div>', 'active_projects'));
     k.appendChild(card('Approved Budget', fl('approved_budget', money(t.approved_budget.cur), 'div') + '<div class="subv">planned amount</div>', 'approved_budget'));
     k.appendChild(card('Actual Cost', fl('actual_cost', money(t.actual_cost.cur), 'div') + '<div class="subv">% of plan: ' + fl('actual_cost_pct_of_plan', pctMap(t.actual_cost.pctOfPlan)) + '</div>', 'actual_cost'));
-    k.appendChild(card('Committed Cost', fl('committed_cost', money(t.committed_cost.cur), 'div') + '<div class="subv">invoiced: ' + fl('committed_invoiced', Object.keys(t.committed_cost.invoiced).length ? Object.keys(t.committed_cost.invoiced).sort().map(function (c) { return esc(curInfo(c).ISO_Code) + ' ' + (t.committed_cost.invoiced[c] / 100).toFixed(2); }).join(' · ') : 'no data') + '</div>', 'committed_cost'));
+    k.appendChild(card('Committed Cost', fl('committed_cost', money(t.committed_cost.cur), 'div') + '<div class="subv">invoiced: ' + fl('committed_invoiced', Object.keys(t.committed_cost.invoiced).length ? Object.keys(t.committed_cost.invoiced).sort().map(function (c) { return esc(curInfo(c).ISO_Code) + ' ' + (t.committed_cost.invoiced[c] / 100).toFixed(2); }).join(' · ') : 'no data') + '</div>' + split('committed_contract', 'contract (proposed)', t.committed_contract) + split('committed_verified', 'verified (proposed; overlaps Actual Cost)', t.committed_verified), 'committed_cost'));
     k.appendChild(card('Forecast Cost at Completion (proposed)', t.forecast_cost.inconclusive ? '<span class="nodata">n/a — ' + esc(t.forecast_cost.inconclusive) + ' (INCONCLUSIVE)</span>' : fl('forecast_cost', money(t.forecast_cost.cur), 'div') + '<div class="subv">EAC = Spent + (Budget − Done) ÷ CPI · proposed, awaiting the client</div>', 'forecast_cost'));
     k.appendChild(card('BIM Documents issued for construction', '<div class="big">' + fl('bim_documents', t.bim_documents.notinstalled ? '<span class="nodata">no data (BIM Document not installed on this server)</span>' : t.bim_documents.vacuous ? '<span class="nodata">no data</span>' : t.bim_documents.issued + ' / ' + t.bim_documents.total) + '</div><div class="subv">issued / deliverables</div>', 'bim_documents'));
     k.appendChild(card('Projects Completed this year', '<div class="big">' + fl('completed_year', S.flat.completed_year) + '</div><div class="subv">year ' + esc(TODAY.slice(0, 4)) + '</div>', 'completed_year'));

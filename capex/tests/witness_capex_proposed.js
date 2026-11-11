@@ -83,6 +83,14 @@ const finish = () => { const v = judged === 0 ? 'INCONCLUSIVE' : fails ? 'FAIL' 
     ck('Q3 the page tile (tiles.js over the legacy web-service read) == the hand-computed EAC 260.00 and == the measure', fc(L) === 26000 && cents(legacyVal[1000042]) === 26000, { tile: fc(L), measure: legacyVal[1000042] });
     ck('Q3 the page tile on the twin rows == the same', fc(Tw) === 26000, { tile: fc(Tw) });
     ck('Q3 the tile says it is proposed (formula line)', /proposed/i.test(Tl.FORMULA.forecast_cost), Tl.FORMULA.forecast_cost);
+    // Q4 page tiles (status all: P5 is closed but counts in the measure): contract 6553.05, verified 60.00, on the legacy WS read and on the twin rows
+    const tl = (d) => Tl.flatten(Tl.compute(d, { status: 'all', today: TODAY }).tiles);
+    const FL = tl(ldata), FT = tl(tdata);
+    log('§CAPEX_PROPOSED_W Q4 tiles legacy contract=' + FL.committed_contract + ' verified=' + FL.committed_verified + ' · twin contract=' + FT.committed_contract + ' verified=' + FT.committed_verified);
+    ck('Q4 page tile contract == the measure 6553.05 (legacy read), and the twin rows agree', FL.committed_contract === '100:6553.05' && FT.committed_contract === '100:6553.05', { legacy: FL.committed_contract, twin: FT.committed_contract });
+    ck('Q4 page tile verified == the measure 60.00 (legacy read), and the twin rows agree', FL.committed_verified === '100:60.00' && FT.committed_verified === '100:60.00', { legacy: FL.committed_verified, twin: FT.committed_verified });
+    const nolt = tl({ projects: ldata.projects, phases: [], unavailable: ['orders', 'issues'] });
+    ck('Q4 a server with no read type prints "no data (not installed)", not 0', nolt.committed_contract === 'no data (not installed)' && nolt.committed_verified === 'no data (not installed)', { contract: nolt.committed_contract });
     // S2 stage on the page engine: P1 = Planning, P2 = Execution
     const stL = L.stage.stages || {}, stT = Tw.stage.stages || {};
     ck('S2 a project at stage "Planning" shows it: Stage Planning=1 and Execution=1 on legacy rows, and the same on the twin rows', stL.Planning === 1 && stL.Execution === 1 && stT.Planning === 1 && stT.Execution === 1, { legacy: stL, twin: stT });
