@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
 // SPDX-License-Identifier: MIT
-// # ⚠ DO NOT REMOVE — gen_erp_door_verbs.js (lane B, bim-compiler prompts/NEURO_SYMBOLIC_ORDER_CONTRACT.md §0.4 detail 2). Read the §ERP_DOOR_VERBS line after every run.
+// # ⚠ DO NOT REMOVE — gen_erp_door_verbs.js (a SOURCE of the composer since CLI_ERP_IVR §11: it returns entries, it no longer writes verbs.json) (lane B, bim-compiler prompts/NEURO_SYMBOLIC_ORDER_CONTRACT.md §0.4 detail 2). Read the §ERP_DOOR_VERBS line after every run.
 // The erp.* entries of common/door/verbs.json are GENERATED, not hand-kept (AD-LAYER LAW, W-VOCAB-FRESH): from the application dictionary (erp/ad_seed.db: AD_Ref_List of reference 135 gives each
 // action's name and description, AD_Table the document kinds) and erp/actor_verbs.json (which (table, action) pairs are offered, each with its legacy-parity evidence). Two read verbs (find,
 // actions) are generic over every document table; one verb per offered DocAction takes the document. The harm class of an action is gen_erp_verbs.js's own rule (CO posts).
@@ -10,7 +10,7 @@
 const fs = require('fs'), path = require('path');
 const ROOT = path.join(__dirname, '..');
 const HARM = { CO: 'posts', PO: 'posts', RC: 'posts', RA: 'posts' };   // gen_erp_verbs.js DOC_CLASS; every other DocAction changes status only
-async function main() {
+async function generate() {   // the dictionary-derived entries only; scripts/compose_door_verbs.js is the one writer of verbs.json (CLI_ERP_IVR §11)
   const SQL = await require(path.join(ROOT, 'modeller/lib/sql-wasm.js'))({ wasmBinary: fs.readFileSync(path.join(ROOT, 'modeller/lib/sql-wasm.wasm')) });
   const db = new SQL.Database(new Uint8Array(fs.readFileSync(path.join(ROOT, 'erp/ad_seed.db'))));
   const rows = (sql, p) => { const st = db.prepare(sql), o = []; try { if (p) st.bind(p); while (st.step()) o.push(st.getAsObject()); } finally { st.free(); } return o; };
@@ -61,6 +61,16 @@ async function main() {
     inputs: [rkind], harm: 'writes', calls: { cli: 'erp_cli', who: 'the ERP engine', argv: ['new', '--kind', '{kind}'], rest: { flag: '--where', what: 'column=value, a property of the kind and the value it takes (give as many as you like)' } },
     returns: { shape: 'erp_cli JSON {number,kind,table,id,docStatus,given:[columns],defaulted,record,ops} or {refused,reason}', fields: [{ path: 'number', type: 'string' }, { path: 'id', type: 'number' }, { path: 'docStatus', type: 'string' }] },
     actors: ['human', 'ai'], witness: 'common/door/tests/witness_erp_new.js' });
+  // mis.update / mis.delete (CLI_ERP_IVR §12): born under the MIS prefix (no erp.* name to alias); the window's own edit and delete, any AD table
+  const recIn = [rkind, { name: 'id', description: 'The record\'s key (its _ID).', required: false, type: 'string', example: '1500004' }, { name: 'number', description: 'The record\'s number (DocumentNo, else Value, else Name), as mis.read finds it; if two carry it, name one with id.', required: false, type: 'string', example: '50000' }];
+  out.push({ verb: 'mis.update', app: 'mis', title: 'Change a record', description: 'Change columns of one record the way its window does: each column=value is an edit in the order given, its callouts fire (a partner change moves location, price list, terms), a column the window would not let a person edit is refused naming the rule (read-only, not updateable, the link column, a processed record), a mandatory column left empty is refused, and the model layer saves the changed columns as one group. Nothing is written when anything is refused. Giving the current values changes nothing and says NO-OP. A column that holds a record may be given as its number or name; the value <null> clears a column.',
+    inputs: recIn, harm: 'writes', calls: { cli: 'erp_cli', who: 'the ERP engine', argv: ['update', '--kind', '{kind}', { if: 'id', args: ['--id', '{id}'] }, { if: 'number', args: ['--number', '{number}'] }], rest: { flag: '--where', what: 'column=value, a property of the kind and the value it takes (give as many as you like)' } },
+    returns: { shape: 'erp_cli JSON {number,kind,table,id,noop,given:[columns],changed:[columns],derived:[columns],record,ops} or {refused,reason}', fields: [{ path: 'noop', type: 'boolean' }, { path: 'changed', type: 'array' }, { path: 'id', type: 'number' }] },
+    actors: ['human', 'ai'], witness: 'common/door/tests/witness_mis_crud.js' });
+  out.push({ verb: 'mis.delete', app: 'mis', title: 'Delete a record', description: 'Delete one record the way the window\'s Delete does: refused when the tab is read-only or the table not deleteable, when the record is Processed (completed documents are voided or reversed instead), when a model or validator vetoes, or when other records depend on it; the rows its dictionary rule cascades to go with it. The refusal carries the engine\'s own reason and writes nothing.',
+    inputs: recIn, harm: 'writes', calls: { cli: 'erp_cli', who: 'the ERP engine', argv: ['delete', '--kind', '{kind}', { if: 'id', args: ['--id', '{id}'] }, { if: 'number', args: ['--number', '{number}'] }] },
+    returns: { shape: 'erp_cli JSON {deleted:{kind,table,id,number},gone,ops,opSummary} or {refused,reason}', fields: [{ path: 'gone', type: 'boolean' }, { path: 'deleted.id', type: 'number' }] },
+    actors: ['human', 'ai'], witness: 'common/door/tests/witness_mis_crud.js' });
   const seen = new Set();
   for (const a of av) {
     if (seen.has(a.verb)) continue; seen.add(a.verb);
@@ -70,11 +80,8 @@ async function main() {
       [kindIn, idIn, numIn, roleIn], HARM[a.action] || 'writes', [a.verb.split('.')[1], '--kind', '{kind}', { if: 'id', args: ['--id', '{id}'] }, { if: 'number', args: ['--number', '{number}'] }, { if: 'role', args: ['--role', '{role}'] }],
       'erp_cli JSON {document,before,after,ops,opSummary,related,facts,engine,actions} or {refused,reason}', [{ path: 'after.docStatus', type: 'string' }]));
   }
-  const vf = path.join(ROOT, 'common/door/verbs.json'), j = JSON.parse(fs.readFileSync(vf, 'utf8'));
-  j.verbs = j.verbs.filter(v => v.app !== 'erp').concat(out);
-  const text = JSON.stringify(j, null, 1) + '\n', cur = fs.readFileSync(vf, 'utf8');
-  console.log('§ERP_DOOR_VERBS erp_entries=' + out.length + ' [' + out.map(o => o.verb + ':' + o.harm).join(', ') + '] kinds_in_dictionary=' + kinds.length + ' source=erp/ad_seed.db+erp/actor_verbs.json');
-  if (process.argv.includes('--check')) { console.log('§ERP_DOOR_VERBS ' + (text === cur ? 'CURRENT' : 'STALE')); process.exit(text === cur ? 0 : 1); }
-  fs.writeFileSync(vf, text); console.log('§ERP_DOOR_VERBS written ' + vf);
+  console.log('§ERP_DOOR_VERBS generated=' + out.length + ' [' + out.map(o => o.verb + ':' + o.harm).join(', ') + '] kinds_in_dictionary=' + kinds.length + ' source=erp/ad_seed.db+erp/actor_verbs.json');
+  return out;
 }
-main().catch(e => { console.error(e); process.exit(1); });
+module.exports = { generate };
+if (require.main === module) require('./compose_door_verbs.js').main(process.argv.slice(2)).catch(e => { console.error(e); process.exit(1); });   // the old entry point, kept: --check / write now go through the composer

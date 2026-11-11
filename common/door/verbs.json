@@ -1204,6 +1204,724 @@
    "witness": "common/door/tests/witness_door_rows.js"
   },
   {
+   "verb": "witness.run",
+   "app": "witness",
+   "title": "Run a witness and read its verdict",
+   "description": "Runs the witness named witness_<name>.js from this tree, keeps its whole log under the cache, and answers the witness's own verdict line (PASS, FAIL or INCONCLUSIVE) with the pass, fail and inconclusive counts and the lines that failed. A witness that prints no verdict line is an error: an exit code is not evidence. The log path is in the answer.",
+   "inputs": [
+    {
+     "name": "name",
+     "description": "The witness name without witness_ and .js, e.g. \"erp_new\". More than one match is refused naming both.",
+     "required": true,
+     "type": "string",
+     "example": "erp_new"
+    }
+   ],
+   "harm": "trial",
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "calls": {
+    "cli": "ops_cli",
+    "who": "the witness runner",
+    "argv": [
+     "witness-run",
+     "--name",
+     "{name}"
+    ]
+   },
+   "returns": {
+    "shape": "ops_cli JSON {name,file,log,verdict,pass,fail,inconclusive,failed,ms}",
+    "fields": [
+     {
+      "path": "verdict",
+      "type": "string"
+     },
+     {
+      "path": "pass",
+      "type": "number"
+     },
+     {
+      "path": "fail",
+      "type": "number"
+     },
+     {
+      "path": "log",
+      "type": "string"
+     }
+    ]
+   },
+   "witness": "common/door/tests/witness_ops_verbs.js"
+  },
+  {
+   "verb": "witness.last",
+   "app": "witness",
+   "title": "Read the last recorded witness run",
+   "description": "Answers the last run of a witness that witness.run recorded, without running it again. Nothing recorded is refused with the instruction to run it first.",
+   "inputs": [
+    {
+     "name": "name",
+     "description": "The witness name without witness_ and .js.",
+     "required": true,
+     "type": "string",
+     "example": "erp_new"
+    }
+   ],
+   "harm": "read",
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "calls": {
+    "cli": "ops_cli",
+    "who": "the witness runner",
+    "argv": [
+     "witness-last",
+     "--name",
+     "{name}"
+    ]
+   },
+   "returns": {
+    "shape": "ops_cli JSON as witness.run, plus recorded:true",
+    "fields": [
+     {
+      "path": "verdict",
+      "type": "string"
+     },
+     {
+      "path": "log",
+      "type": "string"
+     }
+    ]
+   },
+   "witness": "common/door/tests/witness_ops_verbs.js"
+  },
+  {
+   "verb": "legacy.status",
+   "app": "legacy",
+   "title": "Is the legacy test stack up",
+   "description": "Checks the legacy iDempiere test stack the twin is compared against: the docker Postgres container and the pilot web UI. Answers UP, PARTIAL or DOWN with each part's state, and the commands that start it when it is not up. Reads only; it starts nothing.",
+   "inputs": [],
+   "harm": "read",
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "calls": {
+    "cli": "ops_cli",
+    "who": "the legacy stack check",
+    "argv": [
+     "legacy-status"
+    ]
+   },
+   "returns": {
+    "shape": "ops_cli JSON {verdict,postgres,pilot,summary,next}",
+    "fields": [
+     {
+      "path": "verdict",
+      "type": "string"
+     },
+     {
+      "path": "summary",
+      "type": "string"
+     }
+    ]
+   },
+   "witness": "common/door/tests/witness_ops_verbs.js"
+  },
+  {
+   "verb": "legacy.query",
+   "app": "legacy",
+   "title": "Read rows of a legacy table",
+   "description": "Reads rows from a table of the legacy iDempiere database (read only). The table and every column are checked against the legacy dictionary, so a wrong name is refused and the real columns are listed. Give column=value to narrow. At most 50 rows unless limit says otherwise (up to 1000); total is always given. Legacy not reachable answers inconclusive.",
+   "inputs": [
+    {
+     "name": "table",
+     "description": "The legacy table, e.g. \"c_order\".",
+     "required": true,
+     "type": "string",
+     "example": "c_order"
+    },
+    {
+     "name": "columns",
+     "description": "Comma-separated columns to show (default: the identifying ones).",
+     "required": false,
+     "type": "string",
+     "example": "documentno,docstatus,grandtotal"
+    },
+    {
+     "name": "sort",
+     "description": "A column to sort by; a leading - sorts descending.",
+     "required": false,
+     "type": "string",
+     "example": "-documentno"
+    },
+    {
+     "name": "limit",
+     "description": "How many rows to show, 1 to 1000 (default 50).",
+     "required": false,
+     "type": "number",
+     "example": "5"
+    }
+   ],
+   "harm": "read",
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "calls": {
+    "cli": "ops_cli",
+    "who": "the legacy database",
+    "argv": [
+     "legacy-query",
+     "--table",
+     "{table}",
+     {
+      "if": "columns",
+      "args": [
+       "--columns",
+       "{columns}"
+      ]
+     },
+     {
+      "if": "sort",
+      "args": [
+       "--sort",
+       "{sort}"
+      ]
+     },
+     {
+      "if": "limit",
+      "args": [
+       "--limit",
+       "{limit}"
+      ]
+     }
+    ],
+    "rest": {
+     "flag": "--where",
+     "what": "column=value, a column of the table and the value it must have (give as many as you like)"
+    }
+   },
+   "returns": {
+    "shape": "ops_cli JSON {table,columns,rows,shown,total,population,verdict,summary}",
+    "fields": [
+     {
+      "path": "rows",
+      "type": "array"
+     },
+     {
+      "path": "total",
+      "type": "number"
+     }
+    ]
+   },
+   "witness": "common/door/tests/witness_ops_verbs.js"
+  },
+  {
+   "verb": "mis.column",
+   "app": "mis",
+   "title": "Who fills a column: twin and legacy side by side",
+   "description": "Looks a column up in the twin's dictionary and the legacy dictionary and answers, for each: the column default, the validation rule, the field default, and the login default (the row of the referenced table with IsDefault=Y, which iDempiere puts in the context at login). Says what fills it and whether the two sides agree. Legacy not reachable gives the twin side only, marked not checked.",
+   "inputs": [
+    {
+     "name": "kind",
+     "description": "The table or window kind, e.g. \"Order\" or \"C_Order\".",
+     "required": true,
+     "type": "string",
+     "example": "Order"
+    },
+    {
+     "name": "column",
+     "description": "The column, e.g. \"C_ConversionType_ID\".",
+     "required": true,
+     "type": "string",
+     "example": "C_ConversionType_ID"
+    }
+   ],
+   "harm": "read",
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "calls": {
+    "cli": "ops_cli",
+    "who": "the two dictionaries",
+    "argv": [
+     "column",
+     "--kind",
+     "{kind}",
+     "--column",
+     "{column}"
+    ]
+   },
+   "returns": {
+    "shape": "ops_cli JSON {table,column,twin,legacy,differs,verdict,summary}",
+    "fields": [
+     {
+      "path": "verdict",
+      "type": "string"
+     },
+     {
+      "path": "summary",
+      "type": "string"
+     }
+    ]
+   },
+   "witness": "common/door/tests/witness_ops_verbs.js"
+  },
+  {
+   "verb": "legacy.compare",
+   "app": "legacy",
+   "title": "Compare one record on the twin and on legacy",
+   "description": "Reads one record by its Document No on the twin and the matching record on legacy and compares them cell for cell. Each differing cell is classed DIFF, ONLY-TWIN, ONLY-LEGACY, or NULL-VS-DEFAULT (legacy empty where the twin holds 0, N or empty: say nothing about the cause). Ids, audit stamps and dates are skipped and counted. An ambiguous legacy number is refused naming the ids; legacy=<number> picks it.",
+   "inputs": [
+    {
+     "name": "kind",
+     "description": "The kind of record, e.g. \"Order\".",
+     "required": true,
+     "type": "string",
+     "example": "Order"
+    },
+    {
+     "name": "number",
+     "description": "The Document No on the twin.",
+     "required": true,
+     "type": "string",
+     "example": "50000"
+    },
+    {
+     "name": "legacy",
+     "description": "The Document No on legacy when it differs from the twin's.",
+     "required": false,
+     "type": "string",
+     "example": "50981"
+    }
+   ],
+   "harm": "read",
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "calls": {
+    "cli": "ops_cli",
+    "who": "the twin and the legacy database",
+    "argv": [
+     "compare",
+     "--kind",
+     "{kind}",
+     "--number",
+     "{number}",
+     {
+      "if": "legacy",
+      "args": [
+       "--legacy",
+       "{legacy}"
+      ]
+     }
+    ]
+   },
+   "returns": {
+    "shape": "ops_cli JSON {kind,table,twin,legacy,cells,diffs,verdict,summary}",
+    "fields": [
+     {
+      "path": "verdict",
+      "type": "string"
+     },
+     {
+      "path": "cells",
+      "type": "object"
+     },
+     {
+      "path": "diffs",
+      "type": "array"
+     }
+    ]
+   },
+   "witness": "common/door/tests/witness_ops_verbs.js"
+  },
+  {
+   "verb": "idempiere.where",
+   "app": "idempiere",
+   "title": "Find a name in the iDempiere source",
+   "description": "Finds the lines of the legacy iDempiere Java source that contain a name (a column, a class, a method) and answers file, line and the line's text, so a claim about legacy behaviour can cite its source. in=<text> keeps only files whose path contains it (e.g. callout). At most 25 lines unless limit says otherwise; the total is always given. No match is inconclusive, not zero.",
+   "inputs": [
+    {
+     "name": "symbol",
+     "description": "A name: letters, digits, _ and . (e.g. InvoiceRule or CalloutOrder.docType).",
+     "required": true,
+     "type": "string",
+     "example": "InvoiceRule"
+    },
+    {
+     "name": "in",
+     "description": "Keep only files whose path contains this text.",
+     "required": false,
+     "type": "string",
+     "example": "callout"
+    },
+    {
+     "name": "limit",
+     "description": "How many lines to show, 1 to 200 (default 25).",
+     "required": false,
+     "type": "number",
+     "example": "10"
+    }
+   ],
+   "harm": "read",
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "calls": {
+    "cli": "ops_cli",
+    "who": "the iDempiere source",
+    "argv": [
+     "where",
+     "--symbol",
+     "{symbol}",
+     {
+      "if": "in",
+      "args": [
+       "--in",
+       "{in}"
+      ]
+     },
+     {
+      "if": "limit",
+      "args": [
+       "--limit",
+       "{limit}"
+      ]
+     }
+    ]
+   },
+   "returns": {
+    "shape": "ops_cli JSON {symbol,hits,shown,total,files,verdict,summary}",
+    "fields": [
+     {
+      "path": "hits",
+      "type": "array"
+     },
+     {
+      "path": "total",
+      "type": "number"
+     }
+    ]
+   },
+   "witness": "common/door/tests/witness_ops_verbs.js"
+  },
+  {
+   "verb": "mis.pack",
+   "app": "mis",
+   "title": "Make the 2Pack zip from a data-model workbook",
+   "description": "Reads an ERP data-model workbook (one sheet per dictionary table: table, columns, reference lists, window, tabs, menu, process rows with class names only, plus a Plugin sheet) and writes the metadata-only 2Pack zip a legacy iDempiere applies. Written once per version: the same version with the same rows answers unchanged, the same version with different rows is refused (a released pack is immutable; bump the version). The answer gives the zip's path, its sha256, the rows per dictionary table and the process class names the pack points at. With java= the Java model classes of the tables the workbook creates are written too; the rules (document actions, process bodies) stay hand-written. A person runs it; an AI's call is held as a claim until a person confirms.",
+   "inputs": [
+    {
+     "name": "book",
+     "description": "The workbook, a .xlsx path inside this tree or the working folder (no .. and no absolute path).",
+     "required": true,
+     "type": "string",
+     "example": "erp/plugins/models/BIM_Document.xlsx"
+    },
+    {
+     "name": "version",
+     "description": "The pack version, x.y.z.",
+     "required": true,
+     "type": "string",
+     "example": "1.0.0"
+    },
+    {
+     "name": "out",
+     "description": "Folder to write META-INF/2Pack_<version>.zip under (default: the door's cache).",
+     "required": false,
+     "type": "string",
+     "example": "build/pack"
+    },
+    {
+     "name": "java",
+     "description": "Folder to write the generated Java model classes under (optional).",
+     "required": false,
+     "type": "string",
+     "example": "build/java"
+    },
+    {
+     "name": "package",
+     "description": "Java package of those classes (default org.kernel.bim.model).",
+     "required": false,
+     "type": "string",
+     "example": "org.kernel.bim.model"
+    }
+   ],
+   "harm": "writes",
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "calls": {
+    "cli": "ops_cli",
+    "who": "the pack engine",
+    "argv": [
+     "pack",
+     "--book",
+     "{book}",
+     "--version",
+     "{version}",
+     {
+      "if": "out",
+      "args": [
+       "--out",
+       "{out}"
+      ]
+     },
+     {
+      "if": "java",
+      "args": [
+       "--java",
+       "{java}"
+      ]
+     },
+     {
+      "if": "package",
+      "args": [
+       "--package",
+       "{package}"
+      ]
+     }
+    ]
+   },
+   "returns": {
+    "shape": "ops_cli JSON {book,version,zip,path,status,elements,records,rows,classes,javaFiles,sha256,verdict,summary}",
+    "fields": [
+     {
+      "path": "zip",
+      "type": "string"
+     },
+     {
+      "path": "status",
+      "type": "string"
+     },
+     {
+      "path": "sha256",
+      "type": "string"
+     },
+     {
+      "path": "rows",
+      "type": "object"
+     },
+     {
+      "path": "classes",
+      "type": "array"
+     }
+    ]
+   },
+   "witness": "common/door/tests/witness_ops_verbs.js"
+  },
+  {
+   "verb": "legacy.up",
+   "app": "legacy",
+   "title": "Start the shared docker Postgres for the legacy test stack",
+   "description": "Starts the shared docker Postgres container the legacy test instance and the pilot read their databases from, when it is not running, and waits until it accepts connections. When it is already running it says so and starts nothing. It never starts or stops the instance or the pilot. Docker not reachable is inconclusive; a missing container is refused naming it. A person runs it; an AI's call is held as a claim until a person confirms.",
+   "inputs": [],
+   "harm": "writes",
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "calls": {
+    "cli": "legacy_cli",
+    "who": "the docker Postgres",
+    "argv": [
+     "up"
+    ]
+   },
+   "returns": {
+    "shape": "legacy_cli JSON {container,verdict,summary}",
+    "fields": [
+     {
+      "path": "verdict",
+      "type": "string"
+     }
+    ]
+   },
+   "witness": "common/door/tests/witness_legacy_plugin.js"
+  },
+  {
+   "verb": "legacy.refresh",
+   "app": "legacy",
+   "title": "Refresh the legacy test instance from the base seed",
+   "description": "Rebuilds the local legacy iDempiere TEST instance (database idempiere_bimdoc, ports 8108 and 8464) from the base seed so every state traces from base: stops it, drops and recreates the database, imports the seed, applies the migration scripts newer than the seed, installs the plugin bundle, starts it, waits for the 2Pack to be installed and reads the rows back. About two minutes. It names the database it writes and refuses the pilot's databases; the instance, the database and the scripts are fixed, nothing is taken from the caller. A person runs it; an AI's call is held as a claim until a person confirms.",
+   "inputs": [],
+   "harm": "writes",
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "calls": {
+    "cli": "legacy_cli",
+    "who": "the legacy test instance",
+    "argv": [
+     "refresh"
+    ]
+   },
+   "returns": {
+    "shape": "legacy_cli JSON {instance,steps,installed,log,ms,verdict,summary}",
+    "fields": [
+     {
+      "path": "verdict",
+      "type": "string"
+     },
+     {
+      "path": "installed",
+      "type": "boolean"
+     },
+     {
+      "path": "steps",
+      "type": "array"
+     }
+    ]
+   },
+   "witness": "common/door/tests/witness_legacy_plugin.js"
+  },
+  {
+   "verb": "legacy.witness",
+   "app": "legacy",
+   "title": "Run the in-server witness on the legacy test instance",
+   "description": "Sends the witness command to the running legacy test instance over its OSGi console. The witness creates its rows in one transaction and rolls it back. Answers PASS or FAIL with the counts and the failing lines, or INCONCLUSIVE when the instance is not running. The log is kept.",
+   "inputs": [],
+   "harm": "trial",
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "calls": {
+    "cli": "legacy_cli",
+    "who": "the legacy test instance",
+    "argv": [
+     "witness"
+    ]
+   },
+   "returns": {
+    "shape": "legacy_cli JSON {verdict,pass,fail,failed,log,ms,summary}",
+    "fields": [
+     {
+      "path": "verdict",
+      "type": "string"
+     },
+     {
+      "path": "pass",
+      "type": "number"
+     },
+     {
+      "path": "fail",
+      "type": "number"
+     }
+    ]
+   },
+   "witness": "common/door/tests/witness_legacy_plugin.js"
+  },
+  {
+   "verb": "legacy.check",
+   "app": "legacy",
+   "title": "Check a workbook's rows in the legacy test database",
+   "description": "Reads every row of a data-model workbook back from the legacy test database by SQL (tables, physical tables, columns, windows, tabs, menu, processes with their class names, references) and answers how many of each were found. With version=<x.y.z> it also compares the installed plugin's 2Pack with the pack made from the workbook (build/legacy_plugin) and says plainly when they differ. Database not reachable is inconclusive.",
+   "inputs": [
+    {
+     "name": "book",
+     "description": "The workbook, a .xlsx path inside this tree.",
+     "required": true,
+     "type": "string",
+     "example": "erp/plugins/models/BIM_Document.xlsx"
+    },
+    {
+     "name": "version",
+     "description": "The pack version to compare, x.y.z.",
+     "required": false,
+     "type": "string",
+     "example": "1.0.0"
+    }
+   ],
+   "harm": "read",
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "calls": {
+    "cli": "legacy_cli",
+    "who": "the legacy test database",
+    "argv": [
+     "check",
+     "--book",
+     "{book}",
+     {
+      "if": "version",
+      "args": [
+       "--version",
+       "{version}"
+      ]
+     }
+    ]
+   },
+   "returns": {
+    "shape": "legacy_cli JSON {database,checks,pack,missing,verdict,summary}",
+    "fields": [
+     {
+      "path": "verdict",
+      "type": "string"
+     },
+     {
+      "path": "checks",
+      "type": "array"
+     },
+     {
+      "path": "pack",
+      "type": "object"
+     }
+    ]
+   },
+   "witness": "common/door/tests/witness_legacy_plugin.js"
+  },
+  {
+   "verb": "legacy.plugin",
+   "app": "legacy",
+   "title": "Put a data-model plugin on the legacy test instance and check it there",
+   "description": "The whole route for a plugin on a real legacy iDempiere, one line: start the docker Postgres if it is not running, make the 2Pack from the workbook, refresh the local legacy test instance from the base seed with the plugin bundle installed, read every row of the workbook back from the test database, and run the in-server witness. Each step is its own line and the first line that is not ok stops it. The refresh installs the plugin bundle as committed, so the check says when the installed pack is not the one just made from the workbook. About three minutes. A person runs it; an AI's call is held as a claim until a person confirms.",
+   "inputs": [
+    {
+     "name": "book",
+     "description": "The workbook, a .xlsx path inside this tree.",
+     "required": true,
+     "type": "string",
+     "example": "erp/plugins/models/BIM_Document.xlsx"
+    },
+    {
+     "name": "version",
+     "description": "The pack version, x.y.z.",
+     "required": true,
+     "type": "string",
+     "example": "1.0.0"
+    }
+   ],
+   "harm": "writes",
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "body": [
+    "legacy.up",
+    "mis.pack book={book} version={version} out=build/legacy_plugin",
+    "legacy.refresh",
+    "legacy.check book={book} version={version}",
+    "legacy.witness"
+   ],
+   "returns": {
+    "shape": "the envelopes of its lines, in answer.lines; the last is legacy.witness's",
+    "fields": []
+   },
+   "witness": "common/door/tests/witness_legacy_plugin.js"
+  },
+  {
    "verb": "erp.find",
    "app": "erp",
    "title": "Find a document",
@@ -1339,386 +2057,6 @@
     "ai"
    ],
    "witness": "common/door/tests/witness_erp_verbs.js"
-  },
-  {
-   "verb": "erp.describe",
-   "app": "erp",
-   "title": "Describe a kind of ERP record",
-   "description": "Reflection over the application dictionary: the properties of a kind (name, type, mandatory, updateable, list values), its child tabs and the generic methods it supports, read only from the AD rows. Works for any AD table, a document or not. Nothing is changed.",
-   "inputs": [
-    {
-     "name": "kind",
-     "description": "An AD table, by its name or table name, e.g. \"Order\" or \"C_BPartner\". An unknown kind is an error that lists the kinds the dictionary registers.",
-     "required": true,
-     "type": "string",
-     "example": "Order"
-    }
-   ],
-   "harm": "read",
-   "calls": {
-    "cli": "erp_cli",
-    "who": "the ERP engine",
-    "argv": [
-     "describe",
-     "--kind",
-     "{kind}"
-    ]
-   },
-   "returns": {
-    "shape": "object_cli JSON {kind,table,key,properties:[{name,type,mandatory,updateable,...}],childTabs,methods}",
-    "fields": [
-     {
-      "path": "kind",
-      "type": "string"
-     },
-     {
-      "path": "table",
-      "type": "string"
-     }
-    ]
-   },
-   "actors": [
-    "human",
-    "ai"
-   ],
-   "witness": "common/door/tests/witness_erp_verbs.js"
-  },
-  {
-   "verb": "erp.read",
-   "app": "erp",
-   "title": "Read an ERP record",
-   "description": "Read one record of any AD table by its key or by its number (DocumentNo, else Name or Value, as erp.find), with the rows of its single-row child tabs. Nothing is changed. The record shown includes what earlier verbs (erp.complete) wrote to the ERP op-log. A number that several records carry is refused naming their ids.",
-   "inputs": [
-    {
-     "name": "kind",
-     "description": "The kind of record, as the dictionary names it (an AD table), e.g.",
-     "required": true,
-     "type": "string",
-     "example": "Order"
-    },
-    {
-     "name": "id",
-     "description": "The record's key value (its _ID). Give this or number.",
-     "required": false,
-     "type": "string",
-     "example": "1500004"
-    },
-    {
-     "name": "number",
-     "description": "The record's number as the window shows it (DocumentNo, else Name or Value); if several records carry it, name one with id.",
-     "required": false,
-     "type": "string",
-     "example": "50000"
-    }
-   ],
-   "harm": "read",
-   "calls": {
-    "cli": "erp_cli",
-    "who": "the ERP engine",
-    "argv": [
-     "read",
-     "--kind",
-     "{kind}",
-     {
-      "if": "id",
-      "args": [
-       "--id",
-       "{id}"
-      ]
-     },
-     {
-      "if": "number",
-      "args": [
-       "--number",
-       "{number}"
-      ]
-     }
-    ]
-   },
-   "returns": {
-    "shape": "object_cli JSON {kind,uu,record,children:[{kind,rows}]} or {refused,reason}",
-    "fields": [
-     {
-      "path": "kind",
-      "type": "string"
-     }
-    ]
-   },
-   "actors": [
-    "human",
-    "ai"
-   ],
-   "witness": "common/door/tests/witness_erp_verbs.js"
-  },
-  {
-   "verb": "erp.list",
-   "app": "erp",
-   "title": "List records",
-   "description": "List the records of a kind as rows. Columns, filters and the sort are checked against the dictionary: an unknown column is an error that names the kind's properties. Shows at most 50 rows unless limit says otherwise (up to 1000); the answer always carries the total, so a short list is never mistaken for the whole. Nothing is changed. Add column=value to filter (several allowed).",
-   "inputs": [
-    {
-     "name": "kind",
-     "description": "The kind of record, as the dictionary names it (any AD table), e.g. \"Order\". An unknown kind is refused naming the reason.",
-     "required": true,
-     "type": "string",
-     "example": "Order"
-    },
-    {
-     "name": "columns",
-     "description": "Optional: the columns to show, comma separated, e.g. DocumentNo,DocStatus. Default: the key, the number or name, and DocStatus where the kind has one.",
-     "required": false,
-     "type": "string",
-     "example": "DocumentNo,DocStatus"
-    },
-    {
-     "name": "sort",
-     "description": "Optional: a column to sort by; a leading - sorts descending.",
-     "required": false,
-     "type": "string",
-     "example": "-DocumentNo"
-    },
-    {
-     "name": "limit",
-     "description": "Optional: how many rows to show (1 to 1000, default 50).",
-     "required": false,
-     "type": "string",
-     "example": "20"
-    },
-    {
-     "name": "offset",
-     "description": "Optional: skip this many rows (to page through a long kind).",
-     "required": false,
-     "type": "string",
-     "example": "0"
-    }
-   ],
-   "harm": "read",
-   "calls": {
-    "cli": "erp_cli",
-    "who": "the ERP engine",
-    "argv": [
-     "list",
-     "--kind",
-     "{kind}",
-     {
-      "if": "columns",
-      "args": [
-       "--columns",
-       "{columns}"
-      ]
-     },
-     {
-      "if": "sort",
-      "args": [
-       "--sort",
-       "{sort}"
-      ]
-     },
-     {
-      "if": "limit",
-      "args": [
-       "--limit",
-       "{limit}"
-      ]
-     },
-     {
-      "if": "offset",
-      "args": [
-       "--offset",
-       "{offset}"
-      ]
-     }
-    ],
-    "rest": {
-     "flag": "--where",
-     "what": "column=value, a property of the kind and the value it must equal (give as many as you like)"
-    }
-   },
-   "returns": {
-    "shape": "object_cli JSON {kind,table,filters,columns,rows:[{column:value}],shown,total,population,offset,verdict OK|VACUOUS,summary}",
-    "fields": [
-     {
-      "path": "total",
-      "type": "number"
-     },
-     {
-      "path": "shown",
-      "type": "number"
-     },
-     {
-      "path": "rows",
-      "type": "array"
-     }
-    ]
-   },
-   "actors": [
-    "human",
-    "ai"
-   ],
-   "witness": "common/door/tests/witness_door_rows.js"
-  },
-  {
-   "verb": "erp.sum",
-   "app": "erp",
-   "title": "Add up a column",
-   "description": "The exact sum of one number column over the records of a kind (all of them, or those matching column=value filters). Decimals are added exactly, never as floating point. An empty kind is inconclusive, never a plain 0. Nothing is changed.",
-   "inputs": [
-    {
-     "name": "kind",
-     "description": "The kind of record, as the dictionary names it (any AD table), e.g. \"Order\". An unknown kind is refused naming the reason.",
-     "required": true,
-     "type": "string",
-     "example": "Order"
-    },
-    {
-     "name": "column",
-     "description": "The number column to add up (an amount, quantity, number or whole-number property).",
-     "required": true,
-     "type": "string",
-     "example": "GrandTotal"
-    }
-   ],
-   "harm": "read",
-   "calls": {
-    "cli": "erp_cli",
-    "who": "the ERP engine",
-    "argv": [
-     "sum",
-     "--kind",
-     "{kind}",
-     "--column",
-     "{column}"
-    ],
-    "rest": {
-     "flag": "--where",
-     "what": "column=value, a property of the kind and the value it must equal (give as many as you like)"
-    }
-   },
-   "returns": {
-    "shape": "object_cli JSON {kind,table,column,filters,n,sum (exact decimal text),population,verdict OK|VACUOUS,summary}",
-    "fields": [
-     {
-      "path": "sum",
-      "type": "string"
-     },
-     {
-      "path": "n",
-      "type": "number"
-     }
-    ]
-   },
-   "actors": [
-    "human",
-    "ai"
-   ],
-   "witness": "common/door/tests/witness_door_rows.js"
-  },
-  {
-   "verb": "erp.group",
-   "app": "erp",
-   "title": "Count by a column",
-   "description": "How many records of a kind carry each value of one column, most common first (all records, or those matching column=value filters). The total is always given. An empty kind is inconclusive. Nothing is changed.",
-   "inputs": [
-    {
-     "name": "kind",
-     "description": "The kind of record, as the dictionary names it (any AD table), e.g. \"Order\". An unknown kind is refused naming the reason.",
-     "required": true,
-     "type": "string",
-     "example": "Order"
-    },
-    {
-     "name": "by",
-     "description": "The column to group by.",
-     "required": true,
-     "type": "string",
-     "example": "DocStatus"
-    }
-   ],
-   "harm": "read",
-   "calls": {
-    "cli": "erp_cli",
-    "who": "the ERP engine",
-    "argv": [
-     "group",
-     "--kind",
-     "{kind}",
-     "--by",
-     "{by}"
-    ],
-    "rest": {
-     "flag": "--where",
-     "what": "column=value, a property of the kind and the value it must equal (give as many as you like)"
-    }
-   },
-   "returns": {
-    "shape": "object_cli JSON {kind,table,by,filters,columns,rows:[{column:value,count}],shown,total (groups),records,population,verdict OK|VACUOUS,summary}",
-    "fields": [
-     {
-      "path": "total",
-      "type": "number"
-     },
-     {
-      "path": "rows",
-      "type": "array"
-     }
-    ]
-   },
-   "actors": [
-    "human",
-    "ai"
-   ],
-   "witness": "common/door/tests/witness_door_rows.js"
-  },
-  {
-   "verb": "erp.new",
-   "app": "erp",
-   "title": "Create a record",
-   "description": "Create a record of any kind the way its window does: the window's own defaults and callouts fill what you leave out (location, price list, warehouse, payment term, price, tax, line amount), your columns are set one by one as edits, mandatory columns are checked, and the Document No comes from the sequence. Give a column as column=value. A column that holds another record may be given by its number or name (a partner by name, a product by name); two matches are refused naming both. A line names its document by number: order=50000. A Sales or Purchase document needs issotrx=Y or issotrx=N. The answer starts with the new record's number. A person runs it; an AI's call is held as a claim until a person confirms. A refusal says which column is missing.",
-   "inputs": [
-    {
-     "name": "kind",
-     "description": "The kind of record, as the dictionary names it (any AD table), e.g. \"Order\". An unknown kind is refused naming the reason.",
-     "required": true,
-     "type": "string",
-     "example": "Order"
-    }
-   ],
-   "harm": "writes",
-   "calls": {
-    "cli": "erp_cli",
-    "who": "the ERP engine",
-    "argv": [
-     "new",
-     "--kind",
-     "{kind}"
-    ],
-    "rest": {
-     "flag": "--where",
-     "what": "column=value, a property of the kind and the value it takes (give as many as you like)"
-    }
-   },
-   "returns": {
-    "shape": "erp_cli JSON {number,kind,table,id,docStatus,given:[columns],defaulted,record,ops} or {refused,reason}",
-    "fields": [
-     {
-      "path": "number",
-      "type": "string"
-     },
-     {
-      "path": "id",
-      "type": "number"
-     },
-     {
-      "path": "docStatus",
-      "type": "string"
-     }
-    ]
-   },
-   "actors": [
-    "human",
-    "ai"
-   ],
-   "witness": "common/door/tests/witness_erp_new.js"
   },
   {
    "verb": "erp.complete",
@@ -2045,179 +2383,165 @@
    "witness": "common/door/tests/witness_erp_verbs.js"
   },
   {
-   "verb": "witness.run",
-   "app": "witness",
-   "title": "Run a witness and read its verdict",
-   "description": "Runs the witness named witness_<name>.js from this tree, keeps its whole log under the cache, and answers the witness's own verdict line (PASS, FAIL or INCONCLUSIVE) with the pass, fail and inconclusive counts and the lines that failed. A witness that prints no verdict line is an error: an exit code is not evidence. The log path is in the answer.",
+   "verb": "mis.describe",
+   "app": "mis",
+   "title": "Describe a kind of ERP record",
+   "description": "Reflection over the application dictionary: the properties of a kind (name, type, mandatory, updateable, list values), its child tabs and the generic methods it supports, read only from the AD rows. Works for any AD table, a document or not. Nothing is changed.",
    "inputs": [
     {
-     "name": "name",
-     "description": "The witness name without witness_ and .js, e.g. \"erp_new\". More than one match is refused naming both.",
+     "name": "kind",
+     "description": "An AD table, by its name or table name, e.g. \"Order\" or \"C_BPartner\". An unknown kind is an error that lists the kinds the dictionary registers.",
      "required": true,
      "type": "string",
-     "example": "erp_new"
-    }
-   ],
-   "harm": "trial",
-   "actors": [
-    "human",
-    "ai"
-   ],
-   "calls": {
-    "cli": "ops_cli",
-    "who": "the witness runner",
-    "argv": [
-     "witness-run",
-     "--name",
-     "{name}"
-    ]
-   },
-   "returns": {
-    "shape": "ops_cli JSON {name,file,log,verdict,pass,fail,inconclusive,failed,ms}",
-    "fields": [
-     {
-      "path": "verdict",
-      "type": "string"
-     },
-     {
-      "path": "pass",
-      "type": "number"
-     },
-     {
-      "path": "fail",
-      "type": "number"
-     },
-     {
-      "path": "log",
-      "type": "string"
-     }
-    ]
-   },
-   "witness": "common/door/tests/witness_ops_verbs.js"
-  },
-  {
-   "verb": "witness.last",
-   "app": "witness",
-   "title": "Read the last recorded witness run",
-   "description": "Answers the last run of a witness that witness.run recorded, without running it again. Nothing recorded is refused with the instruction to run it first.",
-   "inputs": [
-    {
-     "name": "name",
-     "description": "The witness name without witness_ and .js.",
-     "required": true,
-     "type": "string",
-     "example": "erp_new"
+     "example": "Order"
     }
    ],
    "harm": "read",
-   "actors": [
-    "human",
-    "ai"
-   ],
    "calls": {
-    "cli": "ops_cli",
-    "who": "the witness runner",
+    "cli": "erp_cli",
+    "who": "the ERP engine",
     "argv": [
-     "witness-last",
-     "--name",
-     "{name}"
+     "describe",
+     "--kind",
+     "{kind}"
     ]
    },
    "returns": {
-    "shape": "ops_cli JSON as witness.run, plus recorded:true",
+    "shape": "object_cli JSON {kind,table,key,properties:[{name,type,mandatory,updateable,...}],childTabs,methods}",
     "fields": [
      {
-      "path": "verdict",
+      "path": "kind",
       "type": "string"
      },
      {
-      "path": "log",
+      "path": "table",
       "type": "string"
      }
     ]
    },
-   "witness": "common/door/tests/witness_ops_verbs.js"
-  },
-  {
-   "verb": "legacy.status",
-   "app": "legacy",
-   "title": "Is the legacy test stack up",
-   "description": "Checks the legacy iDempiere test stack the twin is compared against: the docker Postgres container and the pilot web UI. Answers UP, PARTIAL or DOWN with each part's state, and the commands that start it when it is not up. Reads only; it starts nothing.",
-   "inputs": [],
-   "harm": "read",
    "actors": [
     "human",
     "ai"
    ],
-   "calls": {
-    "cli": "ops_cli",
-    "who": "the legacy stack check",
-    "argv": [
-     "legacy-status"
-    ]
-   },
-   "returns": {
-    "shape": "ops_cli JSON {verdict,postgres,pilot,summary,next}",
-    "fields": [
-     {
-      "path": "verdict",
-      "type": "string"
-     },
-     {
-      "path": "summary",
-      "type": "string"
-     }
-    ]
-   },
-   "witness": "common/door/tests/witness_ops_verbs.js"
+   "witness": "common/door/tests/witness_erp_verbs.js"
   },
   {
-   "verb": "legacy.query",
-   "app": "legacy",
-   "title": "Read rows of a legacy table",
-   "description": "Reads rows from a table of the legacy iDempiere database (read only). The table and every column are checked against the legacy dictionary, so a wrong name is refused and the real columns are listed. Give column=value to narrow. At most 50 rows unless limit says otherwise (up to 1000); total is always given. Legacy not reachable answers inconclusive.",
+   "verb": "mis.read",
+   "app": "mis",
+   "title": "Read an ERP record",
+   "description": "Read one record of any AD table by its key or by its number (DocumentNo, else Name or Value, as erp.find), with the rows of its single-row child tabs. Nothing is changed. The record shown includes what earlier verbs (erp.complete) wrote to the ERP op-log. A number that several records carry is refused naming their ids.",
    "inputs": [
     {
-     "name": "table",
-     "description": "The legacy table, e.g. \"c_order\".",
+     "name": "kind",
+     "description": "The kind of record, as the dictionary names it (an AD table), e.g.",
      "required": true,
      "type": "string",
-     "example": "c_order"
+     "example": "Order"
+    },
+    {
+     "name": "id",
+     "description": "The record's key value (its _ID). Give this or number.",
+     "required": false,
+     "type": "string",
+     "example": "1500004"
+    },
+    {
+     "name": "number",
+     "description": "The record's number as the window shows it (DocumentNo, else Name or Value); if several records carry it, name one with id.",
+     "required": false,
+     "type": "string",
+     "example": "50000"
+    }
+   ],
+   "harm": "read",
+   "calls": {
+    "cli": "erp_cli",
+    "who": "the ERP engine",
+    "argv": [
+     "read",
+     "--kind",
+     "{kind}",
+     {
+      "if": "id",
+      "args": [
+       "--id",
+       "{id}"
+      ]
+     },
+     {
+      "if": "number",
+      "args": [
+       "--number",
+       "{number}"
+      ]
+     }
+    ]
+   },
+   "returns": {
+    "shape": "object_cli JSON {kind,uu,record,children:[{kind,rows}]} or {refused,reason}",
+    "fields": [
+     {
+      "path": "kind",
+      "type": "string"
+     }
+    ]
+   },
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "witness": "common/door/tests/witness_erp_verbs.js"
+  },
+  {
+   "verb": "mis.list",
+   "app": "mis",
+   "title": "List records",
+   "description": "List the records of a kind as rows. Columns, filters and the sort are checked against the dictionary: an unknown column is an error that names the kind's properties. Shows at most 50 rows unless limit says otherwise (up to 1000); the answer always carries the total, so a short list is never mistaken for the whole. Nothing is changed. Add column=value to filter (several allowed).",
+   "inputs": [
+    {
+     "name": "kind",
+     "description": "The kind of record, as the dictionary names it (any AD table), e.g. \"Order\". An unknown kind is refused naming the reason.",
+     "required": true,
+     "type": "string",
+     "example": "Order"
     },
     {
      "name": "columns",
-     "description": "Comma-separated columns to show (default: the identifying ones).",
+     "description": "Optional: the columns to show, comma separated, e.g. DocumentNo,DocStatus. Default: the key, the number or name, and DocStatus where the kind has one.",
      "required": false,
      "type": "string",
-     "example": "documentno,docstatus,grandtotal"
+     "example": "DocumentNo,DocStatus"
     },
     {
      "name": "sort",
-     "description": "A column to sort by; a leading - sorts descending.",
+     "description": "Optional: a column to sort by; a leading - sorts descending.",
      "required": false,
      "type": "string",
-     "example": "-documentno"
+     "example": "-DocumentNo"
     },
     {
      "name": "limit",
-     "description": "How many rows to show, 1 to 1000 (default 50).",
+     "description": "Optional: how many rows to show (1 to 1000, default 50).",
      "required": false,
-     "type": "number",
-     "example": "5"
+     "type": "string",
+     "example": "20"
+    },
+    {
+     "name": "offset",
+     "description": "Optional: skip this many rows (to page through a long kind).",
+     "required": false,
+     "type": "string",
+     "example": "0"
     }
    ],
    "harm": "read",
-   "actors": [
-    "human",
-    "ai"
-   ],
    "calls": {
-    "cli": "ops_cli",
-    "who": "the legacy database",
+    "cli": "erp_cli",
+    "who": "the ERP engine",
     "argv": [
-     "legacy-query",
-     "--table",
-     "{table}",
+     "list",
+     "--kind",
+     "{kind}",
      {
       "if": "columns",
       "args": [
@@ -2238,32 +2562,360 @@
        "--limit",
        "{limit}"
       ]
+     },
+     {
+      "if": "offset",
+      "args": [
+       "--offset",
+       "{offset}"
+      ]
      }
     ],
     "rest": {
      "flag": "--where",
-     "what": "column=value, a column of the table and the value it must have (give as many as you like)"
+     "what": "column=value, a property of the kind and the value it must equal (give as many as you like)"
     }
    },
    "returns": {
-    "shape": "ops_cli JSON {table,columns,rows,shown,total,population,verdict,summary}",
+    "shape": "object_cli JSON {kind,table,filters,columns,rows:[{column:value}],shown,total,population,offset,verdict OK|VACUOUS,summary}",
     "fields": [
+     {
+      "path": "total",
+      "type": "number"
+     },
+     {
+      "path": "shown",
+      "type": "number"
+     },
      {
       "path": "rows",
       "type": "array"
+     }
+    ]
+   },
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "witness": "common/door/tests/witness_door_rows.js"
+  },
+  {
+   "verb": "mis.sum",
+   "app": "mis",
+   "title": "Add up a column",
+   "description": "The exact sum of one number column over the records of a kind (all of them, or those matching column=value filters). Decimals are added exactly, never as floating point. An empty kind is inconclusive, never a plain 0. Nothing is changed.",
+   "inputs": [
+    {
+     "name": "kind",
+     "description": "The kind of record, as the dictionary names it (any AD table), e.g. \"Order\". An unknown kind is refused naming the reason.",
+     "required": true,
+     "type": "string",
+     "example": "Order"
+    },
+    {
+     "name": "column",
+     "description": "The number column to add up (an amount, quantity, number or whole-number property).",
+     "required": true,
+     "type": "string",
+     "example": "GrandTotal"
+    }
+   ],
+   "harm": "read",
+   "calls": {
+    "cli": "erp_cli",
+    "who": "the ERP engine",
+    "argv": [
+     "sum",
+     "--kind",
+     "{kind}",
+     "--column",
+     "{column}"
+    ],
+    "rest": {
+     "flag": "--where",
+     "what": "column=value, a property of the kind and the value it must equal (give as many as you like)"
+    }
+   },
+   "returns": {
+    "shape": "object_cli JSON {kind,table,column,filters,n,sum (exact decimal text),population,verdict OK|VACUOUS,summary}",
+    "fields": [
+     {
+      "path": "sum",
+      "type": "string"
      },
      {
-      "path": "total",
+      "path": "n",
       "type": "number"
      }
     ]
    },
-   "witness": "common/door/tests/witness_ops_verbs.js"
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "witness": "common/door/tests/witness_door_rows.js"
+  },
+  {
+   "verb": "mis.group",
+   "app": "mis",
+   "title": "Count by a column",
+   "description": "How many records of a kind carry each value of one column, most common first (all records, or those matching column=value filters). The total is always given. An empty kind is inconclusive. Nothing is changed.",
+   "inputs": [
+    {
+     "name": "kind",
+     "description": "The kind of record, as the dictionary names it (any AD table), e.g. \"Order\". An unknown kind is refused naming the reason.",
+     "required": true,
+     "type": "string",
+     "example": "Order"
+    },
+    {
+     "name": "by",
+     "description": "The column to group by.",
+     "required": true,
+     "type": "string",
+     "example": "DocStatus"
+    }
+   ],
+   "harm": "read",
+   "calls": {
+    "cli": "erp_cli",
+    "who": "the ERP engine",
+    "argv": [
+     "group",
+     "--kind",
+     "{kind}",
+     "--by",
+     "{by}"
+    ],
+    "rest": {
+     "flag": "--where",
+     "what": "column=value, a property of the kind and the value it must equal (give as many as you like)"
+    }
+   },
+   "returns": {
+    "shape": "object_cli JSON {kind,table,by,filters,columns,rows:[{column:value,count}],shown,total (groups),records,population,verdict OK|VACUOUS,summary}",
+    "fields": [
+     {
+      "path": "total",
+      "type": "number"
+     },
+     {
+      "path": "rows",
+      "type": "array"
+     }
+    ]
+   },
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "witness": "common/door/tests/witness_door_rows.js"
+  },
+  {
+   "verb": "mis.new",
+   "app": "mis",
+   "title": "Create a record",
+   "description": "Create a record of any kind the way its window does: the window's own defaults and callouts fill what you leave out (location, price list, warehouse, payment term, price, tax, line amount), your columns are set one by one as edits, mandatory columns are checked, and the Document No comes from the sequence. Give a column as column=value. A column that holds another record may be given by its number or name (a partner by name, a product by name); two matches are refused naming both. A line names its document by number: order=50000. A Sales or Purchase document needs issotrx=Y or issotrx=N. The answer starts with the new record's number. A person runs it; an AI's call is held as a claim until a person confirms. A refusal says which column is missing.",
+   "inputs": [
+    {
+     "name": "kind",
+     "description": "The kind of record, as the dictionary names it (any AD table), e.g. \"Order\". An unknown kind is refused naming the reason.",
+     "required": true,
+     "type": "string",
+     "example": "Order"
+    }
+   ],
+   "harm": "writes",
+   "calls": {
+    "cli": "erp_cli",
+    "who": "the ERP engine",
+    "argv": [
+     "new",
+     "--kind",
+     "{kind}"
+    ],
+    "rest": {
+     "flag": "--where",
+     "what": "column=value, a property of the kind and the value it takes (give as many as you like)"
+    }
+   },
+   "returns": {
+    "shape": "erp_cli JSON {number,kind,table,id,docStatus,given:[columns],defaulted,record,ops} or {refused,reason}",
+    "fields": [
+     {
+      "path": "number",
+      "type": "string"
+     },
+     {
+      "path": "id",
+      "type": "number"
+     },
+     {
+      "path": "docStatus",
+      "type": "string"
+     }
+    ]
+   },
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "witness": "common/door/tests/witness_erp_new.js"
+  },
+  {
+   "verb": "mis.update",
+   "app": "mis",
+   "title": "Change a record",
+   "description": "Change columns of one record the way its window does: each column=value is an edit in the order given, its callouts fire (a partner change moves location, price list, terms), a column the window would not let a person edit is refused naming the rule (read-only, not updateable, the link column, a processed record), a mandatory column left empty is refused, and the model layer saves the changed columns as one group. Nothing is written when anything is refused. Giving the current values changes nothing and says NO-OP. A column that holds a record may be given as its number or name; the value <null> clears a column.",
+   "inputs": [
+    {
+     "name": "kind",
+     "description": "The kind of record, as the dictionary names it (any AD table), e.g. \"Order\". An unknown kind is refused naming the reason.",
+     "required": true,
+     "type": "string",
+     "example": "Order"
+    },
+    {
+     "name": "id",
+     "description": "The record's key (its _ID).",
+     "required": false,
+     "type": "string",
+     "example": "1500004"
+    },
+    {
+     "name": "number",
+     "description": "The record's number (DocumentNo, else Value, else Name), as mis.read finds it; if two carry it, name one with id.",
+     "required": false,
+     "type": "string",
+     "example": "50000"
+    }
+   ],
+   "harm": "writes",
+   "calls": {
+    "cli": "erp_cli",
+    "who": "the ERP engine",
+    "argv": [
+     "update",
+     "--kind",
+     "{kind}",
+     {
+      "if": "id",
+      "args": [
+       "--id",
+       "{id}"
+      ]
+     },
+     {
+      "if": "number",
+      "args": [
+       "--number",
+       "{number}"
+      ]
+     }
+    ],
+    "rest": {
+     "flag": "--where",
+     "what": "column=value, a property of the kind and the value it takes (give as many as you like)"
+    }
+   },
+   "returns": {
+    "shape": "erp_cli JSON {number,kind,table,id,noop,given:[columns],changed:[columns],derived:[columns],record,ops} or {refused,reason}",
+    "fields": [
+     {
+      "path": "noop",
+      "type": "boolean"
+     },
+     {
+      "path": "changed",
+      "type": "array"
+     },
+     {
+      "path": "id",
+      "type": "number"
+     }
+    ]
+   },
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "witness": "common/door/tests/witness_mis_crud.js"
+  },
+  {
+   "verb": "mis.delete",
+   "app": "mis",
+   "title": "Delete a record",
+   "description": "Delete one record the way the window's Delete does: refused when the tab is read-only or the table not deleteable, when the record is Processed (completed documents are voided or reversed instead), when a model or validator vetoes, or when other records depend on it; the rows its dictionary rule cascades to go with it. The refusal carries the engine's own reason and writes nothing.",
+   "inputs": [
+    {
+     "name": "kind",
+     "description": "The kind of record, as the dictionary names it (any AD table), e.g. \"Order\". An unknown kind is refused naming the reason.",
+     "required": true,
+     "type": "string",
+     "example": "Order"
+    },
+    {
+     "name": "id",
+     "description": "The record's key (its _ID).",
+     "required": false,
+     "type": "string",
+     "example": "1500004"
+    },
+    {
+     "name": "number",
+     "description": "The record's number (DocumentNo, else Value, else Name), as mis.read finds it; if two carry it, name one with id.",
+     "required": false,
+     "type": "string",
+     "example": "50000"
+    }
+   ],
+   "harm": "writes",
+   "calls": {
+    "cli": "erp_cli",
+    "who": "the ERP engine",
+    "argv": [
+     "delete",
+     "--kind",
+     "{kind}",
+     {
+      "if": "id",
+      "args": [
+       "--id",
+       "{id}"
+      ]
+     },
+     {
+      "if": "number",
+      "args": [
+       "--number",
+       "{number}"
+      ]
+     }
+    ]
+   },
+   "returns": {
+    "shape": "erp_cli JSON {deleted:{kind,table,id,number},gone,ops,opSummary} or {refused,reason}",
+    "fields": [
+     {
+      "path": "gone",
+      "type": "boolean"
+     },
+     {
+      "path": "deleted.id",
+      "type": "number"
+     }
+    ]
+   },
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "witness": "common/door/tests/witness_mis_crud.js"
   },
   {
    "verb": "erp.column",
    "app": "erp",
-   "title": "Who fills a column: twin and legacy side by side",
+   "title": "Who fills a column: twin and legacy side by side (old name of mis.column)",
    "description": "Looks a column up in the twin's dictionary and the legacy dictionary and answers, for each: the column default, the validation rule, the field default, and the login default (the row of the referenced table with IsDefault=Y, which iDempiere puts in the context at login). Says what fills it and whether the two sides agree. Legacy not reachable gives the twin side only, marked not checked.",
    "inputs": [
     {
@@ -2310,12 +2962,14 @@
      }
     ]
    },
-   "witness": "common/door/tests/witness_ops_verbs.js"
+   "witness": "common/door/tests/witness_ops_verbs.js",
+   "alias_of": "mis.column",
+   "deprecated": true
   },
   {
    "verb": "erp.compare",
    "app": "erp",
-   "title": "Compare one record on the twin and on legacy",
+   "title": "Compare one record on the twin and on legacy (old name of legacy.compare)",
    "description": "Reads one record by its Document No on the twin and the matching record on legacy and compares them cell for cell. Each differing cell is classed DIFF, ONLY-TWIN, ONLY-LEGACY, or NULL-VS-DEFAULT (legacy empty where the twin holds 0, N or empty: say nothing about the cause). Ids, audit stamps and dates are skipped and counted. An ambiguous legacy number is refused naming the ids; legacy=<number> picks it.",
    "inputs": [
     {
@@ -2380,83 +3034,14 @@
      }
     ]
    },
-   "witness": "common/door/tests/witness_ops_verbs.js"
-  },
-  {
-   "verb": "idempiere.where",
-   "app": "idempiere",
-   "title": "Find a name in the iDempiere source",
-   "description": "Finds the lines of the legacy iDempiere Java source that contain a name (a column, a class, a method) and answers file, line and the line's text, so a claim about legacy behaviour can cite its source. in=<text> keeps only files whose path contains it (e.g. callout). At most 25 lines unless limit says otherwise; the total is always given. No match is inconclusive, not zero.",
-   "inputs": [
-    {
-     "name": "symbol",
-     "description": "A name: letters, digits, _ and . (e.g. InvoiceRule or CalloutOrder.docType).",
-     "required": true,
-     "type": "string",
-     "example": "InvoiceRule"
-    },
-    {
-     "name": "in",
-     "description": "Keep only files whose path contains this text.",
-     "required": false,
-     "type": "string",
-     "example": "callout"
-    },
-    {
-     "name": "limit",
-     "description": "How many lines to show, 1 to 200 (default 25).",
-     "required": false,
-     "type": "number",
-     "example": "10"
-    }
-   ],
-   "harm": "read",
-   "actors": [
-    "human",
-    "ai"
-   ],
-   "calls": {
-    "cli": "ops_cli",
-    "who": "the iDempiere source",
-    "argv": [
-     "where",
-     "--symbol",
-     "{symbol}",
-     {
-      "if": "in",
-      "args": [
-       "--in",
-       "{in}"
-      ]
-     },
-     {
-      "if": "limit",
-      "args": [
-       "--limit",
-       "{limit}"
-      ]
-     }
-    ]
-   },
-   "returns": {
-    "shape": "ops_cli JSON {symbol,hits,shown,total,files,verdict,summary}",
-    "fields": [
-     {
-      "path": "hits",
-      "type": "array"
-     },
-     {
-      "path": "total",
-      "type": "number"
-     }
-    ]
-   },
-   "witness": "common/door/tests/witness_ops_verbs.js"
+   "witness": "common/door/tests/witness_ops_verbs.js",
+   "alias_of": "legacy.compare",
+   "deprecated": true
   },
   {
    "verb": "erp.pack",
    "app": "erp",
-   "title": "Make the 2Pack zip from a data-model workbook",
+   "title": "Make the 2Pack zip from a data-model workbook (old name of mis.pack)",
    "description": "Reads an ERP data-model workbook (one sheet per dictionary table: table, columns, reference lists, window, tabs, menu, process rows with class names only, plus a Plugin sheet) and writes the metadata-only 2Pack zip a legacy iDempiere applies. Written once per version: the same version with the same rows answers unchanged, the same version with different rows is refused (a released pack is immutable; bump the version). The answer gives the zip's path, its sha256, the rows per dictionary table and the process class names the pack points at. With java= the Java model classes of the tables the workbook creates are written too; the rules (document actions, process bodies) stay hand-written. A person runs it; an AI's call is held as a claim until a person confirms.",
    "inputs": [
     {
@@ -2557,176 +3142,14 @@
      }
     ]
    },
-   "witness": "common/door/tests/witness_ops_verbs.js"
-  },
-  {
-   "verb": "legacy.up",
-   "app": "legacy",
-   "title": "Start the shared docker Postgres for the legacy test stack",
-   "description": "Starts the shared docker Postgres container the legacy test instance and the pilot read their databases from, when it is not running, and waits until it accepts connections. When it is already running it says so and starts nothing. It never starts or stops the instance or the pilot. Docker not reachable is inconclusive; a missing container is refused naming it. A person runs it; an AI's call is held as a claim until a person confirms.",
-   "inputs": [],
-   "harm": "writes",
-   "actors": [
-    "human",
-    "ai"
-   ],
-   "calls": {
-    "cli": "legacy_cli",
-    "who": "the docker Postgres",
-    "argv": [
-     "up"
-    ]
-   },
-   "returns": {
-    "shape": "legacy_cli JSON {container,verdict,summary}",
-    "fields": [
-     {
-      "path": "verdict",
-      "type": "string"
-     }
-    ]
-   },
-   "witness": "common/door/tests/witness_legacy_plugin.js"
-  },
-  {
-   "verb": "legacy.refresh",
-   "app": "legacy",
-   "title": "Refresh the legacy test instance from the base seed",
-   "description": "Rebuilds the local legacy iDempiere TEST instance (database idempiere_bimdoc, ports 8108 and 8464) from the base seed so every state traces from base: stops it, drops and recreates the database, imports the seed, applies the migration scripts newer than the seed, installs the plugin bundle, starts it, waits for the 2Pack to be installed and reads the rows back. About two minutes. It names the database it writes and refuses the pilot's databases; the instance, the database and the scripts are fixed, nothing is taken from the caller. A person runs it; an AI's call is held as a claim until a person confirms.",
-   "inputs": [],
-   "harm": "writes",
-   "actors": [
-    "human",
-    "ai"
-   ],
-   "calls": {
-    "cli": "legacy_cli",
-    "who": "the legacy test instance",
-    "argv": [
-     "refresh"
-    ]
-   },
-   "returns": {
-    "shape": "legacy_cli JSON {instance,steps,installed,log,ms,verdict,summary}",
-    "fields": [
-     {
-      "path": "verdict",
-      "type": "string"
-     },
-     {
-      "path": "installed",
-      "type": "boolean"
-     },
-     {
-      "path": "steps",
-      "type": "array"
-     }
-    ]
-   },
-   "witness": "common/door/tests/witness_legacy_plugin.js"
-  },
-  {
-   "verb": "legacy.witness",
-   "app": "legacy",
-   "title": "Run the in-server witness on the legacy test instance",
-   "description": "Sends the witness command to the running legacy test instance over its OSGi console. The witness creates its rows in one transaction and rolls it back. Answers PASS or FAIL with the counts and the failing lines, or INCONCLUSIVE when the instance is not running. The log is kept.",
-   "inputs": [],
-   "harm": "trial",
-   "actors": [
-    "human",
-    "ai"
-   ],
-   "calls": {
-    "cli": "legacy_cli",
-    "who": "the legacy test instance",
-    "argv": [
-     "witness"
-    ]
-   },
-   "returns": {
-    "shape": "legacy_cli JSON {verdict,pass,fail,failed,log,ms,summary}",
-    "fields": [
-     {
-      "path": "verdict",
-      "type": "string"
-     },
-     {
-      "path": "pass",
-      "type": "number"
-     },
-     {
-      "path": "fail",
-      "type": "number"
-     }
-    ]
-   },
-   "witness": "common/door/tests/witness_legacy_plugin.js"
-  },
-  {
-   "verb": "legacy.check",
-   "app": "legacy",
-   "title": "Check a workbook's rows in the legacy test database",
-   "description": "Reads every row of a data-model workbook back from the legacy test database by SQL (tables, physical tables, columns, windows, tabs, menu, processes with their class names, references) and answers how many of each were found. With version=<x.y.z> it also compares the installed plugin's 2Pack with the pack made from the workbook (build/legacy_plugin) and says plainly when they differ. Database not reachable is inconclusive.",
-   "inputs": [
-    {
-     "name": "book",
-     "description": "The workbook, a .xlsx path inside this tree.",
-     "required": true,
-     "type": "string",
-     "example": "erp/plugins/models/BIM_Document.xlsx"
-    },
-    {
-     "name": "version",
-     "description": "The pack version to compare, x.y.z.",
-     "required": false,
-     "type": "string",
-     "example": "1.0.0"
-    }
-   ],
-   "harm": "read",
-   "actors": [
-    "human",
-    "ai"
-   ],
-   "calls": {
-    "cli": "legacy_cli",
-    "who": "the legacy test database",
-    "argv": [
-     "check",
-     "--book",
-     "{book}",
-     {
-      "if": "version",
-      "args": [
-       "--version",
-       "{version}"
-      ]
-     }
-    ]
-   },
-   "returns": {
-    "shape": "legacy_cli JSON {database,checks,pack,missing,verdict,summary}",
-    "fields": [
-     {
-      "path": "verdict",
-      "type": "string"
-     },
-     {
-      "path": "checks",
-      "type": "array"
-     },
-     {
-      "path": "pack",
-      "type": "object"
-     }
-    ]
-   },
-   "witness": "common/door/tests/witness_legacy_plugin.js"
+   "witness": "common/door/tests/witness_ops_verbs.js",
+   "alias_of": "mis.pack",
+   "deprecated": true
   },
   {
    "verb": "erp.legacy_plugin",
    "app": "erp",
-   "title": "Put a data-model plugin on the legacy test instance and check it there",
+   "title": "Put a data-model plugin on the legacy test instance and check it there (old name of legacy.plugin)",
    "description": "The whole route for a plugin on a real legacy iDempiere, one line: start the docker Postgres if it is not running, make the 2Pack from the workbook, refresh the local legacy test instance from the base seed with the plugin bundle installed, read every row of the workbook back from the test database, and run the in-server witness. Each step is its own line and the first line that is not ok stops it. The refresh installs the plugin bundle as committed, so the check says when the installed pack is not the one just made from the workbook. About three minutes. A person runs it; an AI's call is held as a claim until a person confirms.",
    "inputs": [
     {
@@ -2751,7 +3174,7 @@
    ],
    "body": [
     "legacy.up",
-    "erp.pack book={book} version={version} out=build/legacy_plugin",
+    "mis.pack book={book} version={version} out=build/legacy_plugin",
     "legacy.refresh",
     "legacy.check book={book} version={version}",
     "legacy.witness"
@@ -2760,7 +3183,401 @@
     "shape": "the envelopes of its lines, in answer.lines; the last is legacy.witness's",
     "fields": []
    },
-   "witness": "common/door/tests/witness_legacy_plugin.js"
+   "witness": "common/door/tests/witness_legacy_plugin.js",
+   "alias_of": "legacy.plugin",
+   "deprecated": true
+  },
+  {
+   "verb": "erp.describe",
+   "app": "erp",
+   "title": "Describe a kind of ERP record (old name of mis.describe)",
+   "description": "Reflection over the application dictionary: the properties of a kind (name, type, mandatory, updateable, list values), its child tabs and the generic methods it supports, read only from the AD rows. Works for any AD table, a document or not. Nothing is changed.",
+   "inputs": [
+    {
+     "name": "kind",
+     "description": "An AD table, by its name or table name, e.g. \"Order\" or \"C_BPartner\". An unknown kind is an error that lists the kinds the dictionary registers.",
+     "required": true,
+     "type": "string",
+     "example": "Order"
+    }
+   ],
+   "harm": "read",
+   "calls": {
+    "cli": "erp_cli",
+    "who": "the ERP engine",
+    "argv": [
+     "describe",
+     "--kind",
+     "{kind}"
+    ]
+   },
+   "returns": {
+    "shape": "object_cli JSON {kind,table,key,properties:[{name,type,mandatory,updateable,...}],childTabs,methods}",
+    "fields": [
+     {
+      "path": "kind",
+      "type": "string"
+     },
+     {
+      "path": "table",
+      "type": "string"
+     }
+    ]
+   },
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "witness": "common/door/tests/witness_erp_verbs.js",
+   "alias_of": "mis.describe",
+   "deprecated": true
+  },
+  {
+   "verb": "erp.read",
+   "app": "erp",
+   "title": "Read an ERP record (old name of mis.read)",
+   "description": "Read one record of any AD table by its key or by its number (DocumentNo, else Name or Value, as erp.find), with the rows of its single-row child tabs. Nothing is changed. The record shown includes what earlier verbs (erp.complete) wrote to the ERP op-log. A number that several records carry is refused naming their ids.",
+   "inputs": [
+    {
+     "name": "kind",
+     "description": "The kind of record, as the dictionary names it (an AD table), e.g.",
+     "required": true,
+     "type": "string",
+     "example": "Order"
+    },
+    {
+     "name": "id",
+     "description": "The record's key value (its _ID). Give this or number.",
+     "required": false,
+     "type": "string",
+     "example": "1500004"
+    },
+    {
+     "name": "number",
+     "description": "The record's number as the window shows it (DocumentNo, else Name or Value); if several records carry it, name one with id.",
+     "required": false,
+     "type": "string",
+     "example": "50000"
+    }
+   ],
+   "harm": "read",
+   "calls": {
+    "cli": "erp_cli",
+    "who": "the ERP engine",
+    "argv": [
+     "read",
+     "--kind",
+     "{kind}",
+     {
+      "if": "id",
+      "args": [
+       "--id",
+       "{id}"
+      ]
+     },
+     {
+      "if": "number",
+      "args": [
+       "--number",
+       "{number}"
+      ]
+     }
+    ]
+   },
+   "returns": {
+    "shape": "object_cli JSON {kind,uu,record,children:[{kind,rows}]} or {refused,reason}",
+    "fields": [
+     {
+      "path": "kind",
+      "type": "string"
+     }
+    ]
+   },
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "witness": "common/door/tests/witness_erp_verbs.js",
+   "alias_of": "mis.read",
+   "deprecated": true
+  },
+  {
+   "verb": "erp.list",
+   "app": "erp",
+   "title": "List records (old name of mis.list)",
+   "description": "List the records of a kind as rows. Columns, filters and the sort are checked against the dictionary: an unknown column is an error that names the kind's properties. Shows at most 50 rows unless limit says otherwise (up to 1000); the answer always carries the total, so a short list is never mistaken for the whole. Nothing is changed. Add column=value to filter (several allowed).",
+   "inputs": [
+    {
+     "name": "kind",
+     "description": "The kind of record, as the dictionary names it (any AD table), e.g. \"Order\". An unknown kind is refused naming the reason.",
+     "required": true,
+     "type": "string",
+     "example": "Order"
+    },
+    {
+     "name": "columns",
+     "description": "Optional: the columns to show, comma separated, e.g. DocumentNo,DocStatus. Default: the key, the number or name, and DocStatus where the kind has one.",
+     "required": false,
+     "type": "string",
+     "example": "DocumentNo,DocStatus"
+    },
+    {
+     "name": "sort",
+     "description": "Optional: a column to sort by; a leading - sorts descending.",
+     "required": false,
+     "type": "string",
+     "example": "-DocumentNo"
+    },
+    {
+     "name": "limit",
+     "description": "Optional: how many rows to show (1 to 1000, default 50).",
+     "required": false,
+     "type": "string",
+     "example": "20"
+    },
+    {
+     "name": "offset",
+     "description": "Optional: skip this many rows (to page through a long kind).",
+     "required": false,
+     "type": "string",
+     "example": "0"
+    }
+   ],
+   "harm": "read",
+   "calls": {
+    "cli": "erp_cli",
+    "who": "the ERP engine",
+    "argv": [
+     "list",
+     "--kind",
+     "{kind}",
+     {
+      "if": "columns",
+      "args": [
+       "--columns",
+       "{columns}"
+      ]
+     },
+     {
+      "if": "sort",
+      "args": [
+       "--sort",
+       "{sort}"
+      ]
+     },
+     {
+      "if": "limit",
+      "args": [
+       "--limit",
+       "{limit}"
+      ]
+     },
+     {
+      "if": "offset",
+      "args": [
+       "--offset",
+       "{offset}"
+      ]
+     }
+    ],
+    "rest": {
+     "flag": "--where",
+     "what": "column=value, a property of the kind and the value it must equal (give as many as you like)"
+    }
+   },
+   "returns": {
+    "shape": "object_cli JSON {kind,table,filters,columns,rows:[{column:value}],shown,total,population,offset,verdict OK|VACUOUS,summary}",
+    "fields": [
+     {
+      "path": "total",
+      "type": "number"
+     },
+     {
+      "path": "shown",
+      "type": "number"
+     },
+     {
+      "path": "rows",
+      "type": "array"
+     }
+    ]
+   },
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "witness": "common/door/tests/witness_door_rows.js",
+   "alias_of": "mis.list",
+   "deprecated": true
+  },
+  {
+   "verb": "erp.sum",
+   "app": "erp",
+   "title": "Add up a column (old name of mis.sum)",
+   "description": "The exact sum of one number column over the records of a kind (all of them, or those matching column=value filters). Decimals are added exactly, never as floating point. An empty kind is inconclusive, never a plain 0. Nothing is changed.",
+   "inputs": [
+    {
+     "name": "kind",
+     "description": "The kind of record, as the dictionary names it (any AD table), e.g. \"Order\". An unknown kind is refused naming the reason.",
+     "required": true,
+     "type": "string",
+     "example": "Order"
+    },
+    {
+     "name": "column",
+     "description": "The number column to add up (an amount, quantity, number or whole-number property).",
+     "required": true,
+     "type": "string",
+     "example": "GrandTotal"
+    }
+   ],
+   "harm": "read",
+   "calls": {
+    "cli": "erp_cli",
+    "who": "the ERP engine",
+    "argv": [
+     "sum",
+     "--kind",
+     "{kind}",
+     "--column",
+     "{column}"
+    ],
+    "rest": {
+     "flag": "--where",
+     "what": "column=value, a property of the kind and the value it must equal (give as many as you like)"
+    }
+   },
+   "returns": {
+    "shape": "object_cli JSON {kind,table,column,filters,n,sum (exact decimal text),population,verdict OK|VACUOUS,summary}",
+    "fields": [
+     {
+      "path": "sum",
+      "type": "string"
+     },
+     {
+      "path": "n",
+      "type": "number"
+     }
+    ]
+   },
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "witness": "common/door/tests/witness_door_rows.js",
+   "alias_of": "mis.sum",
+   "deprecated": true
+  },
+  {
+   "verb": "erp.group",
+   "app": "erp",
+   "title": "Count by a column (old name of mis.group)",
+   "description": "How many records of a kind carry each value of one column, most common first (all records, or those matching column=value filters). The total is always given. An empty kind is inconclusive. Nothing is changed.",
+   "inputs": [
+    {
+     "name": "kind",
+     "description": "The kind of record, as the dictionary names it (any AD table), e.g. \"Order\". An unknown kind is refused naming the reason.",
+     "required": true,
+     "type": "string",
+     "example": "Order"
+    },
+    {
+     "name": "by",
+     "description": "The column to group by.",
+     "required": true,
+     "type": "string",
+     "example": "DocStatus"
+    }
+   ],
+   "harm": "read",
+   "calls": {
+    "cli": "erp_cli",
+    "who": "the ERP engine",
+    "argv": [
+     "group",
+     "--kind",
+     "{kind}",
+     "--by",
+     "{by}"
+    ],
+    "rest": {
+     "flag": "--where",
+     "what": "column=value, a property of the kind and the value it must equal (give as many as you like)"
+    }
+   },
+   "returns": {
+    "shape": "object_cli JSON {kind,table,by,filters,columns,rows:[{column:value,count}],shown,total (groups),records,population,verdict OK|VACUOUS,summary}",
+    "fields": [
+     {
+      "path": "total",
+      "type": "number"
+     },
+     {
+      "path": "rows",
+      "type": "array"
+     }
+    ]
+   },
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "witness": "common/door/tests/witness_door_rows.js",
+   "alias_of": "mis.group",
+   "deprecated": true
+  },
+  {
+   "verb": "erp.new",
+   "app": "erp",
+   "title": "Create a record (old name of mis.new)",
+   "description": "Create a record of any kind the way its window does: the window's own defaults and callouts fill what you leave out (location, price list, warehouse, payment term, price, tax, line amount), your columns are set one by one as edits, mandatory columns are checked, and the Document No comes from the sequence. Give a column as column=value. A column that holds another record may be given by its number or name (a partner by name, a product by name); two matches are refused naming both. A line names its document by number: order=50000. A Sales or Purchase document needs issotrx=Y or issotrx=N. The answer starts with the new record's number. A person runs it; an AI's call is held as a claim until a person confirms. A refusal says which column is missing.",
+   "inputs": [
+    {
+     "name": "kind",
+     "description": "The kind of record, as the dictionary names it (any AD table), e.g. \"Order\". An unknown kind is refused naming the reason.",
+     "required": true,
+     "type": "string",
+     "example": "Order"
+    }
+   ],
+   "harm": "writes",
+   "calls": {
+    "cli": "erp_cli",
+    "who": "the ERP engine",
+    "argv": [
+     "new",
+     "--kind",
+     "{kind}"
+    ],
+    "rest": {
+     "flag": "--where",
+     "what": "column=value, a property of the kind and the value it takes (give as many as you like)"
+    }
+   },
+   "returns": {
+    "shape": "erp_cli JSON {number,kind,table,id,docStatus,given:[columns],defaulted,record,ops} or {refused,reason}",
+    "fields": [
+     {
+      "path": "number",
+      "type": "string"
+     },
+     {
+      "path": "id",
+      "type": "number"
+     },
+     {
+      "path": "docStatus",
+      "type": "string"
+     }
+    ]
+   },
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "witness": "common/door/tests/witness_erp_new.js",
+   "alias_of": "mis.new",
+   "deprecated": true
   }
  ]
 }

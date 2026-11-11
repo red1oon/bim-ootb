@@ -245,10 +245,14 @@ function lookupByName(O, field, text, client) {   // a column that holds a recor
   if (rs.length > 1) refuse(rs.length + ' ' + table + ' records are named "' + text + '" (' + key + ' ' + rs.map(r => r.k).join(', ') + '); give the key');
   return rs[0].k;
 }
+function parseGiven(a) {   // the column=value pairs of a line (--where, repeated): shared by new and update
+  const given = {}; (Array.isArray(a.where) ? a.where : (a.where ? [a.where] : [])).forEach(w => { const m = /^([A-Za-z_]\w*)=([\s\S]*)$/.exec(w); if (!m) refuse('a column is column=value, got "' + w + '"'); if (m[1].toLowerCase() in given) refuse('column ' + m[1] + ' given twice'); given[m[1].toLowerCase()] = m[2]; });
+  return given;
+}
 function createRecord(O, a) {
   if (!a.kind) refuse('--kind is required');
   const t0 = Date.now(), K = kindRef(O, a.kind), tab = tabFor(O, K), A = require(path.join(ROOT, 'erp', 'ad_callout.js'));
-  const given = {}; (Array.isArray(a.where) ? a.where : (a.where ? [a.where] : [])).forEach(w => { const m = /^([A-Za-z_]\w*)=([\s\S]*)$/.exec(w); if (!m) refuse('a column is column=value, got "' + w + '"'); if (m[1].toLowerCase() in given) refuse('column ' + m[1] + ' given twice'); given[m[1].toLowerCase()] = m[2]; });
+  const given = parseGiven(a);
   const log = console.log; console.log = () => {};   // the engine prints its own § lines to stdout; stdout here carries only the answer
   try {
     A.bind((sql, p) => O.rows(sql, p));
@@ -295,12 +299,82 @@ function createRecord(O, a) {
     return { number: K.numCol ? saved[K.numCol] : null, kind: K.name, table: K.table, id, docStatus: saved.docstatus == null ? null : saved.docstatus, given: set, defaulted: Object.keys(row).length - set.length, record: saved, ops: res.map(o => ({ op_type: o.op_type, table: o.table })) };
   } finally { console.log = log; }
 }
+// ── mis.update / mis.delete (bim-compiler prompts/CLI_ERP_IVR.md §12): the WINDOW's edit and delete, never a raw UPDATE/DELETE ──
+const MIS_BREAK = process.env.MIS_BREAK || '';   // W-MIS-CRUD falsifiers: nocallouts | noeditcheck | noprocessed
+// GridField.isEditable (iDempiere GridField.java:443-585), in its order, for a SAVED record: tab or field read-only; always-updateable; not IsUpdateable; the tab's link column; ReadOnlyLogic;
+// a Processed/Processing record; an inactive record (IsActive itself stays editable). Returns the reason a person would be refused, or null.
+function notEditable(O, tabId, f, rec) {
+  const c = f.vo, col = c.ColumnName, EV = require(path.join(ROOT, 'erp', 'ad_evaluator.js'));
+  const q = O.rows('SELECT t.isreadonly AS tro, fl.isreadonly AS fro, cl.isupdateable AS cu, fl.isupdateable AS fu FROM ad_tab t LEFT JOIN ad_column cl ON cl.ad_column_id=? LEFT JOIN ad_field fl ON fl.ad_tab_id=t.ad_tab_id AND fl.ad_column_id=cl.ad_column_id WHERE t.ad_tab_id=?', [c.AD_Column_ID, tabId])[0] || {};
+  if (q.tro === 'Y') return 'the tab is read-only (GridField.isEditable L455)';
+  if (q.fro === 'Y') return 'the field is read-only (GridField.isEditable L455)';
+  if (c.IsAlwaysUpdateable) return null;
+  if (q.cu === 'N' || q.fu === 'N') return 'the column is not updateable on a saved record (IsUpdateable=N, GridField.isEditable L494)';
+  if (c.IsParent) return 'it is the tab\'s link column (GridField.isEditable L501)';
+  if (c.ReadOnlyLogic) { let ro = false; try { ro = EV.evaluate(c.ReadOnlyLogic, rec, rec) === true; } catch (e) { ro = false; } if (ro) return 'its ReadOnlyLogic is true for this record (' + c.ReadOnlyLogic + ', GridField.isEditable L545)'; }
+  if (rec.processed === 'Y' || rec.processing === 'Y') return 'the record is Processed (GridField.isEditable L572)';
+  if (col !== 'IsActive' && rec.isactive === 'N') return 'the record is not Active (GridField.isEditable L580)';
+  return null;
+}
+function updateRecord(O, a) {
+  if (!a.kind) refuse('--kind is required');
+  const t0 = Date.now(), K = kindRef(O, a.kind), r = recordOf(O, K, a), tab = tabFor(O, K), A = require(path.join(ROOT, 'erp', 'ad_callout.js')), given = parseGiven(a);
+  if (!Object.keys(given).length) refuse('nothing to change: give column=value');
+  const log = console.log; console.log = () => {};
+  try {
+    A.bind((sql, p) => O.rows(sql, p));
+    const day = new Date().toISOString().slice(0, 10), client = r.ad_client_id == null ? 11 : r.ad_client_id, org = r.ad_org_id == null ? 11 : r.ad_org_id, holder = {};
+    const ctx = A.sessionContext({ client, org, role: Number(a.role || 102), user: Number(a.user || 101), wh: 103, date: day, session: holder });
+    const W = 1, probe = A.openTab(tab.id, { ctx, windowNo: W, tabNo: 0 });
+    let parent = null;   // a line's callouts read its document: the parent record, by the tab's own link column
+    probe.fields.filter(f => f.vo.IsParent).forEach(f => {
+      const lc = f.vo.ColumnName; if (r[lc.toLowerCase()] == null) return;
+      const pk = kindRef(O, lc.replace(/_ID$/i, '')), pr = O.rows('SELECT * FROM ' + pk.table + ' WHERE ' + pk.key + '=?', [r[lc.toLowerCase()]])[0]; if (!pr) return;
+      const pt = A.openTab(tabFor(O, pk).id, { ctx, windowNo: W, tabNo: 0 }); if (pt) { pt.load(pr, false); pt.updateWindowContext = false; parent = pt; }
+    });
+    const st = A.openTab(tab.id, { ctx, windowNo: W, tabNo: parent ? 1 : 0, parentTab: parent }), bycol = {}; st.fields.forEach(f => { bycol[f.vo.ColumnName.toLowerCase()] = f; });
+    const unknown = Object.keys(given).filter(k => !bycol[k]);
+    if (unknown.length) refuse('kind ' + K.name + ' has no property "' + unknown[0] + '" (its properties: ' + st.fields.map(f => f.vo.ColumnName).join(', ') + ')');
+    st.load(r, false); const before = st.snapshot(), set = [];
+    Object.keys(given).forEach(k => {
+      const f = bycol[k]; let v = given[k] === '<null>' ? '' : given[k];   // <null> clears a column (a door line cannot carry an empty value)
+      const why = MIS_BREAK === 'noeditcheck' ? null : notEditable(O, tab.id, f, r); if (why) refuse(f.vo.ColumnName + ' cannot be edited here: ' + why + '; nothing was written');
+      if (v !== '' && f.vo.refTable && !DEC_ID.test(String(v).trim())) v = lookupByName(O, f, v, client);
+      if (MIS_BREAK === 'nocallouts') f.setValue(A.typed(f.getDisplayType(), v), false); else st.setValue(f.vo.ColumnName, v);   // an edit: its callouts fire as on screen (the break: none)
+      set.push(f.vo.ColumnName);
+    });
+    const after = st.snapshot(), changes = {}, num = (f, v) => (A.DisplayType.isNumeric(f.getDisplayType()) && !A.DisplayType.isID(f.getDisplayType()) && DEC_ID.test(String(v).replace('.', ''))) ? Number(v) : v;
+    st.fields.forEach(f => { const c = f.vo.ColumnName; if (f.isKey() || String(after[c]) === String(before[c])) return; changes[c.toLowerCase()] = after[c] === '' ? null : num(f, after[c]); });
+    const empty = st.fields.filter(f => f.isMandatory() && !f.isKey() && (after[f.vo.ColumnName] == null || after[f.vo.ColumnName] === '') && Object.prototype.hasOwnProperty.call(changes, f.vo.ColumnName.toLowerCase())).map(f => f.vo.ColumnName);
+    if (empty.length) refuse('mandatory and left empty: ' + empty.join(', ') + '; nothing was written');
+    const tx = O.trx(); Object.assign(tx.env, { client, org, date: day + ' 00:00:00', now: new Date().toISOString().replace('T', ' ').slice(0, 19), user: Number(a.user || 101) });
+    const live = tx.get(K.table, r[K.key]), sv = O.ML.save(tx, K.table, live, changes); if (!sv.ok) refuse('the model layer refused the save: ' + sv.error + '; nothing was written');
+    const res = persistGroup(O, tx.groupOps()), saved = O.rows('SELECT * FROM ' + K.table + ' WHERE ' + K.key + '=?', [r[K.key]])[0] || {};
+    console.log = log; const changed = Object.keys(changes), derived = changed.filter(c => set.map(x => x.toLowerCase()).indexOf(c) < 0);
+    say('update kind=' + K.name + ' id=' + r[K.key] + ' given=' + set.join(',') + ' changed=' + changed.join(',') + ' derived=' + derived.join(',') + (res.length ? '' : ' NO-OP') + ' ms=' + (Date.now() - t0));
+    return { number: K.numCol ? saved[K.numCol] : null, kind: K.name, table: K.table, id: r[K.key], noop: res.length === 0, given: set, changed, derived, record: saved, ops: res.map(o => ({ op_type: o.op_type, table: o.table })) };
+  } finally { console.log = log; }
+}
+function deleteRecord(O, a) {
+  if (!a.kind) refuse('--kind is required');
+  const t0 = Date.now(), K = kindRef(O, a.kind), r = recordOf(O, K, a), tab = tabFor(O, K), id = r[K.key];
+  const tq = O.rows('SELECT t.isreadonly AS tro, x.isdeleteable AS del FROM ad_tab t JOIN ad_table x ON x.ad_table_id=t.ad_table_id WHERE t.ad_tab_id=?', [tab.id])[0] || {};
+  if (tq.tro === 'Y') refuse(K.name + ' is not deleted: the tab is read-only (GridTable.dataDelete L2170: AccessCannotDelete)');
+  if (tq.del === 'N') refuse(K.name + ' is not deleted: the table is not deleteable (GridTable.dataDelete L2177: AccessNotDeleteable)');
+  const env = { db: O.dbId, client: r.ad_client_id, org: r.ad_org_id, date: String(new Date().toISOString()).slice(0, 10) + ' 00:00:00', now: new Date().toISOString().replace('T', ' ').slice(0, 19), uuid: () => require('crypto').randomUUID() };
+  const log = console.log; console.log = () => {};
+  let run; try { run = O.ML.run((s, p) => O.rows(s, p), env, { table: K.table, timing: 'DELETE', id, force: MIS_BREAK === 'noprocessed' }); } finally { console.log = log; }
+  say('delete kind=' + K.name + ' id=' + id + ' ok=' + run.ok + (run.error || run.msg ? ' why=' + JSON.stringify(String(run.error || run.msg).slice(0, 120)) : '') + ' ops=' + (run.ops || []).length);
+  if (!run.ok) refuse(K.name + ' ' + (K.numCol ? r[K.numCol] : id) + ' is not deleted: ' + (run.error || run.msg) + '; nothing was written');
+  const res = persistGroup(O, run.ops);
+  return { deleted: { kind: K.name, table: K.table, id, number: K.numCol ? r[K.numCol] : null }, gone: O.rows('SELECT 1 AS x FROM ' + K.table + ' WHERE ' + K.key + '=?', [id]).length === 0, ops: res.map(o => ({ op_type: o.op_type, table: o.table, id: o.id })), opSummary: sum(res), ms: Date.now() - t0 };
+}
 async function main(argv) {
   const cmd = argv[0], a = {};
   for (let i = 1; i < argv.length; i++) { const m = /^--(\w+)$/.exec(argv[i]); if (!m || i + 1 >= argv.length) { say('FAIL usage: ' + argv[i]); return 2; } if (m[1] === 'where') (a.where = a.where || []).push(argv[++i]); else a[m[1]] = argv[++i]; }
-  if (['find', 'actions', 'describe', 'read', 'list', 'sum', 'group', 'new'].concat(Object.keys(ACT)).indexOf(cmd) < 0) { say('FAIL usage: erp_cli.js find|actions|complete|void|close|reverse|describe|read|list|sum|group --kind K (--number N | --id I) [--role R]'); return 2; }
+  if (['find', 'actions', 'describe', 'read', 'list', 'sum', 'group', 'new', 'update', 'delete'].concat(Object.keys(ACT)).indexOf(cmd) < 0) { say('FAIL usage: erp_cli.js find|actions|complete|void|close|reverse|describe|read|list|sum|group --kind K (--number N | --id I) [--role R]'); return 2; }
   try {
-    const O = await boot(a), out = ACT[cmd] ? act(O, a, ACT[cmd]) : ({ find, actions, describe, read, list: OC.list, sum: OC.sum, group: OC.group, new: createRecord })[cmd](O, a);
+    const O = await boot(a), out = ACT[cmd] ? act(O, a, ACT[cmd]) : ({ find, actions, describe, read, list: OC.list, sum: OC.sum, group: OC.group, new: createRecord, update: updateRecord, delete: deleteRecord })[cmd](O, a);
     process.stdout.write(JSON.stringify(out) + '\n'); return 0;
   } catch (e) {
     if (e instanceof Refused || e instanceof OC.Refused) { say('REFUSED ' + e.message); process.stdout.write(JSON.stringify({ refused: true, reason: e.message }) + '\n'); return 3; }

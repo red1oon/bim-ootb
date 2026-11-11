@@ -80,6 +80,9 @@ const jsType = (t) => (t === 'number' ? 'number' : 'string');
 function loadVocab(file) {
   const j = JSON.parse(fs.readFileSync(file || locate('verbs.json'), 'utf8')), byVerb = new Map();
   for (const e of j.verbs) { if (byVerb.has(e.verb)) throw new Error('verbs.json: duplicate verb ' + e.verb); byVerb.set(e.verb, e); }
+  // an ALIAS (CLI_ERP_IVR §11) is the canonical entry under an old name: it may not differ in harm, inputs, calls, actors, returns or witness (W-VOCAB-COMPOSE C4)
+  const AL = ['verb', 'app', 'title', 'alias_of', 'deprecated', 'mcp_name'], sig = (e) => JSON.stringify(Object.keys(e).filter(k => AL.indexOf(k) < 0).sort().map(k => [k, e[k]]));
+  for (const e of j.verbs) if (e.alias_of) { const c = byVerb.get(e.alias_of); if (!c) throw new Error('verbs.json: alias ' + e.verb + ' names no verb ' + e.alias_of); if (!process.env.DOOR_BREAK && sig(e) !== sig(c)) throw new Error('verbs.json: alias ' + e.verb + ' differs from ' + e.alias_of + ' (an alias may not change harm, inputs, calls, actors or witness)'); }
   return { verbs: j.verbs, byVerb, raw: j };
 }
 // The one validator. `args` is typed: a number input is a finite JS number or a Dec; every other input a string. Returns null (fine) or the reason.
