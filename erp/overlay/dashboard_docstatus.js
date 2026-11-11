@@ -26,6 +26,11 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
   function has(q, t) { try { return q("SELECT 1 AS x FROM sqlite_master WHERE type IN ('table','view') AND lower(name)=?", [t]).length > 0; } catch (e) { return false; } }
   // install(db, q): (re)create the rv_unprocessed view from the branches whose base table exists. -> { included:[tables], omitted:[tables] }
   function install(db, q) {
+    var ES = (typeof module !== 'undefined' && module.exports) ? require('../db_export_safe.js') : window.ErpExportSafe;   // §EXPORTSAFE: the TEMP view is re-created after every db.export()
+    if (ES.has(db, 'dashboard_docstatus')) return db.__dsInstall;
+    return (db.__dsInstall = ES.register(db, 'dashboard_docstatus', function (d) { return build(d, q); }));
+  }
+  function build(db, q) {
     var inc = [], omit = [], parts = [];
     RVU.forEach(function (b) { if (has(q, b[0])) { inc.push(b[0]); parts.push(b[1]); } else omit.push(b[0]); });
     // TEMP view (never in db.export()); a rv_unprocessed the core itself ships in the main schema is used as-is.

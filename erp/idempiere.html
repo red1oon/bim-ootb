@@ -597,7 +597,7 @@
      header tabs carry an AD_Val_Rule_ID. -->
 <script src="ad_valrule.js?v=1"></script>
 <script src="ad_gridtab.js?v=6"></script>
-<script src="ad_infowin.js?v=1"></script>
+<script src="db_export_safe.js?v=1"></script><script src="ad_infowin.js?v=1"></script>
 <script src="../common/comm/semver_strict.js?v=1"></script>
 <script src="plugin_registry.js?v=8"></script>
 <!-- NINJA_MODE_PILL.md — the Plugin Engine "Create" (PackOut) face: Excel model sheet → AD model → live install.
@@ -1177,7 +1177,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     window.__adSeedFingerprint = _fpH.toString(16); console.log('§AD-SEED-FINGERPRINT ' + window.__adSeedFingerprint);
     // The stored-function UDFs (sqlfn.js: trunc, round, currencyRate, ...) belong to the DATABASE, like PL/pgSQL functions in legacy: bind them once the handle is ready, not lazily on the first model transaction.
     //   A window on a legacy VIEW (Accounting Fact Balances, trunc(date,'DD')) opened FIRST hit SQLite's 1-argument built-in trunc() and showed 0 records (W-VIEW-WINDOW-FIRST).
-    try { if (window.AdCallout && window.AdCallout.RUNTIME && window.AdCallout.RUNTIME.registerSqlFunctions && !db.__udfBound) { window.AdCallout.RUNTIME.registerSqlFunctions(function (n, f) { db.create_function(n, f); }); db.__udfBound = true; console.log('§UDF-BOUND at load'); }
+    try { if (window.AdCallout && window.AdCallout.RUNTIME && window.AdCallout.RUNTIME.registerSqlFunctions && window.ErpExportSafe && !window.ErpExportSafe.has(db, 'core-udf')) { window.ErpExportSafe.registerCoreUdfs(db, window.AdCallout); console.log('§UDF-BOUND at load'); }
       // ...and their DATA ACCESS: a UDF that queries (bomqtyonhand, currencyrate, a plugin's bomqty*asi) reads through AdCallout.RUNTIME.DB, which was bound only on the first model
       //   transaction - a view window opened before any save errored. Bound here on the same handle by the page's one binder (crud_overlay _coBindUdf).
       if (window.__crud && window.__crud.bindUdf) { window.__crud.bindUdf(db); console.log('§UDF-DATA bound at load db=' + !!(window.AdCallout.RUNTIME && window.AdCallout.RUNTIME.DB)); } } catch (eUdf) { console.log('§UDF-BOUND failed ' + eUdf.message); }
@@ -2792,7 +2792,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   var _findByTab = {}, _findBase = {};
   function _findKey() { return _activeWin + ':' + _activeTabIdx; }
   function _findMsg(v, en) { var r = _sqlRows("SELECT msgtext FROM ad_message WHERE value='" + String(v).replace(/'/g, "''") + "'")[0]; return r && r.msgtext ? String(r.msgtext).trim() : en; }
-  function _findUdf() { try { if (window.__idmpDb && window.AdFind && !window.__idmpDb.__pgcollate) { window.__idmpDb.create_function('pgcollate', AdFind.collate); window.__idmpDb.__pgcollate = true; } } catch (e) { console.log('§UDP3-FIND udf failed ' + e); } }
+  function _findUdf() { try { if (window.__idmpDb && window.AdFind && window.ErpExportSafe && !window.ErpExportSafe.has(window.__idmpDb, 'pgcollate')) { window.ErpExportSafe.register(window.__idmpDb, 'pgcollate', function (d) { d.create_function('pgcollate', AdFind.collate); }); } } catch (e) { console.log('§UDP3-FIND udf failed ' + e); } }
   function _findFieldMeta(tab) {   // the tab's fields in GridTab order: AD_Field_v ORDER BY IsDisplayed DESC, SeqNo (GridFieldVO.getSQL :68-75) then a stable sort by SeqNo (GridTabVO.createFields :463)
     return _sqlRows("SELECT c.ColumnName AS cn, f.Name AS nm, COALESCE(f.AD_Reference_ID, c.AD_Reference_ID) AS dt, COALESCE(f.AD_Reference_Value_ID, c.AD_Reference_Value_ID) AS rv, " +
       "COALESCE(f.IsSelectionColumn, c.IsSelectionColumn) AS sc, c.SeqNoSelection AS ss, f.IsDisplayed AS d, COALESCE(f.ColumnSQL, c.ColumnSQL) AS csql, " +
