@@ -315,7 +315,7 @@
     closeIt: function (trx, o) {
       var m = fire(trx, 'BEFORE_CLOSE', 'c_order', o); if (m) { T.msg(trx, m); return false; }
       var ip = trx.q("SELECT DISTINCT io.documentno AS dn FROM m_inout io JOIN m_inoutline iol ON io.m_inout_id=iol.m_inout_id JOIN c_orderline ol ON iol.c_orderline_id=ol.c_orderline_id " +
-        "WHERE io.docstatus='IP' AND ol.qtyordered<>0 AND (ol.m_product_id>0 OR ol.c_charge_id>0) AND ol.isactive='Y' AND iol.isactive='Y' AND ol.c_order_id=?", [o.c_order_id]);
+        "WHERE io.docstatus='IP' AND ol.qtyordered<>0 AND (ol.m_product_id<>0 OR ol.c_charge_id<>0) AND ol.isactive='Y' AND iol.isactive='Y' AND ol.c_order_id=?", [o.c_order_id]);
       if (ip.length) { T.msg(trx, T.msgText(trx, 'MInOutInProgress') + ' (' + ip.map(function (r) { return r.dn; }).join(', ') + ')'); return false; }
       lines(trx, o, ['m_product_id']).forEach(function (l) {
         var old = D(l.qtyordered);

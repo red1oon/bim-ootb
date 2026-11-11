@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 // processes/PeriodStatus.js — org.compiere.process.PeriodStatus, verbatim (org.adempiere.base.process/src/org/compiere/process/
 // PeriodStatus.java). bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md §CP — Witness: W-CP-PROC-ORACLE.
+function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() > 0` for the twin's id law: a row made through the op log has a NEGATIVE synthetic pk (crud_core listTip -opId), so "an id is set" = non-zero (same rule as ModelLayer.idSet; MIGRATE_INSTALL_TENANT §IDLAW-SPEC)
 (function (global) {
   'use strict';
   var P = (typeof module !== 'undefined' && module.exports) ? require('../ad_process.js') : global.AdProcess;
@@ -53,7 +54,7 @@
       if (this.p_C_Period_IDs != null && this.p_C_Period_IDs.length > 0) wherepc += 'C_Period_ID IN (' + this.p_C_Period_IDs.join(',');
       else if (this.p_C_PeriodControl_IDs != null && this.p_C_PeriodControl_IDs.length > 0) wherepc += 'C_PeriodControl_ID IN (' + this.p_C_PeriodControl_IDs.join(',');
       wherepc += ") AND PeriodStatus<>'P' AND PeriodStatus<>?";
-      if (this.p_C_DocBaseGroup_ID > 0) wherepc += ' AND DocBaseType IN ( SELECT gl.DocBaseType FROM C_DocBaseGroupLine gl WHERE gl.C_DocBaseGroup_ID = ' + this.p_C_DocBaseGroup_ID + ')';
+      if (idSet(this.p_C_DocBaseGroup_ID)) wherepc += ' AND DocBaseType IN ( SELECT gl.DocBaseType FROM C_DocBaseGroupLine gl WHERE gl.C_DocBaseGroup_ID = ' + this.p_C_DocBaseGroup_ID + ')';
       sql += wherepc;
       R.DB.getIDsEx(this.get_TrxName(), 'SELECT DISTINCT C_Period_ID FROM C_PeriodControl WHERE ' + wherepc, this.p_PeriodAction);
       no += R.DB.executeUpdateEx(sql, [this.p_PeriodAction, this.getAD_User_ID(), this.p_PeriodAction], this.get_TrxName());

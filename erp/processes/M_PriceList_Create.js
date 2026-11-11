@@ -7,6 +7,7 @@
 //    Java run (:230 clear, :334 clear) — the selection of one discount line is held in a JS list; the SELECT DISTINCT that fills it is unchanged.
 //  - INSERT…SELECT with currencyConvert/nextidfunc/generate_uuid (:236-292) runs as the same SELECT (currencyConvert is the registered SQL function)
 //    + trx.insert per row; the key and *_UU are assigned by the host.
+function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() > 0` for the twin's id law: a row made through the op log has a NEGATIVE synthetic pk (crud_core listTip -opId), so "an id is set" = non-zero (same rule as ModelLayer.idSet; MIGRATE_INSTALL_TENANT §IDLAW-SPEC)
 (function (global) {
   'use strict';
   var P = (typeof module !== 'undefined' && module.exports) ? require('../ad_process.js') : global.AdProcess;
@@ -122,7 +123,7 @@
             ' AND ((dl.C_BPartner_ID IS NULL AND dl.VendorCategory IS NULL) OR EXISTS (SELECT * FROM M_Product_PO po WHERE po.M_Product_ID=p.M_Product_ID AND (dl.C_BPartner_ID IS NULL OR po.C_BPartner_ID=dl.C_BPartner_ID) AND (dl.VendorCategory IS NULL OR po.VendorCategory=dl.VendorCategory)))' +
             ' AND (dl.M_Product_ID IS NULL OR p.M_Product_ID=dl.M_Product_ID)';
         }
-        if (dsLine.getM_Product_Category_ID() > 0) sqlb += ' AND p.M_Product_Category_ID IN (' + self.getSubCategoryWhereClause(dsLine.getM_Product_Category_ID()) + ')';
+        if (idSet(dsLine.getM_Product_Category_ID())) sqlb += ' AND p.M_Product_Category_ID IN (' + self.getSubCategoryWhereClause(dsLine.getM_Product_Category_ID()) + ')';
         sel = trx.q(sqlb, [dlId, p2]).map(function (r) { return Number(Object.keys(r).map(function (k) { return r[k]; })[0]); });     // the T_Selection rows
         var selSet = {}; sel.forEach(function (id) { selSet[id] = 1; });
         message += ': @Selected@=' + sel.length;

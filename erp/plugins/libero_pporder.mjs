@@ -3,6 +3,7 @@
 // ⚠ DO NOT REMOVE — libero_pporder.mjs: HOT chunk of the Libero bundle, slice 1 (prompts/mfg/LIBERO_BUNDLE_SLICE1_SPEC.md; Witness W-LIBERO-BUNDLE).
 //   Model classes written THROUGH Trx (real tables pp_order_bom, pp_order_bomline, pp_mrp) - NOT the 5-table kernel path. Every rule below is a verbatim port with its Java cite; anything NOT ported is listed in DEFERRED
 //   and printed by the witness (§LIBERO-DEFERRED) so no omission is silent. Pure: no clock (env.now), no random.
+function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() > 0` for the twin's id law: a row made through the op log has a NEGATIVE synthetic pk (crud_core listTip -opId), so "an id is set" = non-zero (same rule as ModelLayer.idSet; MIGRATE_INSTALL_TENANT §IDLAW-SPEC)
 const RM_UP = 'UP', RM_HALF_UP = 'HALF_UP';
 export const DEFERRED = [
   'RoutingService variants other than DefaultRoutingServiceImpl (estimateWorkingTime for cost collectors) - cost side',
@@ -622,7 +623,7 @@ export function create(ctx) {
       orderLines(trx, order.pp_order_id).forEach((l) => add(l.m_product_id, l.ad_org_id, l.m_attributesetinstance_id));
       const wf = trx.find('pp_order_workflow', { pp_order_id: order.pp_order_id })[0];
       if (wf) trx.find('pp_order_node', { pp_order_workflow_id: wf.pp_order_workflow_id }).filter(active).sort((a, b) => Number(a.pp_order_node_id) - Number(b.pp_order_node_id)).forEach((n) => {
-        if (!(Number(n.s_resource_id) > 0)) return;
+        if (!(idSet(n.s_resource_id))) return;
         const rp = trx.find('m_product', { s_resource_id: n.s_resource_id })[0]; if (!rp) throw new Error('no product for resource ' + n.s_resource_id + ' (MProduct.forS_Resource_ID)');
         add(rp.m_product_id, n.ad_org_id, 0);
       });

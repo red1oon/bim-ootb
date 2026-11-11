@@ -9,6 +9,7 @@
 // Dates are wall-clock 'YYYY-MM-DD HH:MM:SS' strings (the twin's store); arithmetic is done on them as UTC so no timezone shift enters (Java Calendar works in the server zone).
 // NAMED, not ported: createWFActivity (:626-660, the MRP dashboard workflow thread - upstream swallows its failure, nothing else reads it); unavailability in getAvailableDate (the upstream loop
 //   recomputes from the ORIGINAL date at the end, so S_ResourceUnAvailable never moves the date - the port keeps that result).
+function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() > 0` for the twin's id law: a row made through the op log has a NEGATIVE synthetic pk (crud_core listTip -opId), so "an id is set" = non-zero (same rule as ModelLayer.idSet; MIGRATE_INSTALL_TENANT §IDLAW-SPEC)
 export const SOURCE = { kit: true };
 
 export function create(ctx) {
@@ -129,7 +130,7 @@ export function create(ctx) {
   // MPPMRP.createMO :330-381
   function createMO(trx, mrp, pp, olId, asiId, qty, dateOrdered, datePromised, description) {
     const bom = pp.pp_product_bom_id ? trx.get('pp_product_bom', pp.pp_product_bom_id) : null, wf = pp.ad_workflow_id ? trx.get('ad_workflow', pp.ad_workflow_id) : null;
-    if (!(Number(pp.s_resource_id) > 0 && bom && wf)) return null;
+    if (!(idSet(pp.s_resource_id) && bom && wf)) return null;
     const plant = trx.get('s_resource', pp.s_resource_id), duration = calculateDuration(trx, mrp, wf, plant, qty, datePromised), start = startAssignTime;
     const prod = trx.get('m_product', pp.m_product_id);
     const o = ML.newRecord(trx, 'pp_order', { ad_org_id: pp.ad_org_id, description, c_orderline_id: olId, s_resource_id: pp.s_resource_id, m_warehouse_id: pp.m_warehouse_id, m_product_id: pp.m_product_id,

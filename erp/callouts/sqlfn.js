@@ -7,6 +7,7 @@
 // paymenttermdiscount, paymenttermduedate, paymenttermduedays (incl. IsDueFixed), invoicewriteoff, nextbusinessday, getdate, trunc(date[,fmt]). NUMERIC math goes through BigDecimal and returns
 // TEXT (exact) — SQLite coerces it when SQL arithmetic touches it. Registered by the host on its sql.js db:
 //   AdCallout.RUNTIME.registerSqlFunctions(function (name, fn) { db.create_function(name, fn); })
+function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() > 0` for the twin's id law: a row made through the op log has a NEGATIVE synthetic pk (crud_core listTip -opId), so "an id is set" = non-zero (same rule as ModelLayer.idSet; MIGRATE_INSTALL_TENANT §IDLAW-SPEC)
 (function (global) {
   'use strict';
   var A = (typeof module !== 'undefined' && module.exports) ? require('../ad_callout.js') : global.AdCallout;
@@ -125,7 +126,7 @@
       var conv = F.currencyconvert(v_MultiplierAP == null ? null : v_Temp.multiply(v_MultiplierAP), ar.cur, v_Currency_ID, ar.dt, null, ar.cl, ar.org);
       v_PaidAmt = (v_PaidAmt == null || conv == null) ? null : v_PaidAmt.add(D(conv));                // NUMERIC + NULL = NULL
     });
-    if (p_C_InvoicePaySchedule_ID != null && Number(p_C_InvoicePaySchedule_ID) > 0) {                // Do we have a Payment Schedule ?
+    if (p_C_InvoicePaySchedule_ID != null && idSet(p_C_InvoicePaySchedule_ID)) {                // Do we have a Payment Schedule ?
       var v_Remaining = v_PaidAmt;
       q('invoiceOpen', "SELECT C_InvoicePaySchedule_ID AS id, DueAmt AS a FROM C_InvoicePaySchedule WHERE C_Invoice_ID = ? AND IsValid='Y' ORDER BY DueDate", [p_C_Invoice_ID]).forEach(function (s) {
         var due = D(s.a);
@@ -199,7 +200,7 @@
       } else v_Amount = D(i.gt);
       if (v_Amount != null && v_Amount.signum() === 0) return BD.ZERO;                              // Anything to discount?
       var v_PayDate = p_PayDate != null ? Timestamp.of(p_PayDate) : nowTs();
-      if (i.psv === 'Y' && p_C_InvoicePaySchedule_ID != null && Number(p_C_InvoicePaySchedule_ID) > 0) {
+      if (i.psv === 'Y' && p_C_InvoicePaySchedule_ID != null && idSet(p_C_InvoicePaySchedule_ID)) {
         var ps = q('invoiceDiscount', 'SELECT COALESCE(MAX(DiscountAmt),0) AS v FROM C_InvoicePaySchedule WHERE C_InvoicePaySchedule_ID=? AND DiscountDate >= ?', [p_C_InvoicePaySchedule_ID, v_PayDate.toString()])[0];
         return D(ps ? ps.v : 0);
       }
@@ -320,7 +321,7 @@
   // paymentAllocated(C_Payment_ID, C_Currency_ID) — Charge payments return PayAmt (nothing available), else the allocated amount in the payment currency
   F.paymentallocated = function (p_C_Payment_ID, p_C_Currency_ID) {
     var v_Precision = prec(p_C_Currency_ID), v_Min = v_Precision == null ? null : new BD(1n, v_Precision), v_Alloc = BD.ZERO;
-    var ch = q('paymentAllocated', 'SELECT MAX(PayAmt) AS v FROM C_Payment WHERE C_Payment_ID=? AND C_Charge_ID > 0', [p_C_Payment_ID])[0];
+    var ch = q('paymentAllocated', 'SELECT MAX(PayAmt) AS v FROM C_Payment WHERE C_Payment_ID=? AND C_Charge_ID <> 0', [p_C_Payment_ID])[0];
     if (ch && ch.v != null) return D(ch.v);
     q('paymentAllocated', "SELECT a.AD_Client_ID AS cl, a.AD_Org_ID AS org, al.Amount AS amt, a.C_Currency_ID AS cur, a.DateTrx AS dt FROM C_AllocationLine al INNER JOIN C_AllocationHdr a ON (al.C_AllocationHdr_ID=a.C_AllocationHdr_ID) WHERE al.C_Payment_ID=? AND a.IsActive='Y'", [p_C_Payment_ID]).forEach(function (r) {
       var conv = F.currencyconvert(D(r.amt), r.cur, p_C_Currency_ID, r.dt, null, r.cl, r.org);
@@ -522,7 +523,7 @@
 
   // ── stage 3e: paymentAvailable / invoiceOpenToDate / acctBalance (pg_get_functiondef on the pilot) ──
   F.paymentavailable = function (p_C_Payment_ID) {
-    var ch = q('paymentAvailable', 'SELECT MAX(PayAmt) AS v FROM C_Payment WHERE C_Payment_ID=? AND C_Charge_ID > 0', [p_C_Payment_ID])[0];
+    var ch = q('paymentAvailable', 'SELECT MAX(PayAmt) AS v FROM C_Payment WHERE C_Payment_ID=? AND C_Charge_ID <> 0', [p_C_Payment_ID])[0];
     if (ch && ch.v != null) return BD.ZERO;                                                           // a Charge payment has nothing available
     var pv = q('paymentAvailable', 'SELECT C_Currency_ID AS cur, PayAmt AS pay, IsReceipt AS rc FROM C_Payment WHERE C_Payment_ID=?', [p_C_Payment_ID])[0] || {};
     var cur = pv.cur == null ? null : pv.cur, v_Precision = prec(cur), v_Min = v_Precision == null ? null : new BD(1n, v_Precision);
@@ -546,7 +547,7 @@
       var t = D(ar.amt).add(D(ar.dis)).add(D(ar.wo)), conv = F.currencyconvert(v_MultAP == null ? null : t.multiply(v_MultAP), ar.cur, v_Currency_ID, ar.dt, null, ar.cl, ar.org);
       v_Paid = (v_Paid == null || conv == null) ? null : v_Paid.add(D(conv));
     });
-    if (p_C_InvoicePaySchedule_ID != null && Number(p_C_InvoicePaySchedule_ID) > 0) {
+    if (p_C_InvoicePaySchedule_ID != null && idSet(p_C_InvoicePaySchedule_ID)) {
       var rem = v_Paid;
       q('invoiceOpenToDate', "SELECT C_InvoicePaySchedule_ID AS id, DueAmt AS a FROM C_InvoicePaySchedule WHERE C_Invoice_ID=? AND IsValid='Y' ORDER BY DueDate", [p_C_Invoice_ID]).forEach(function (sc) {
         var due = D(sc.a);
@@ -561,7 +562,7 @@
   F.acctbalance = function (p_Account_ID, p_AmtDr, p_AmtCr) {
     if (p_AmtDr == null || p_AmtCr == null) return null;
     var bal = D(p_AmtDr).subtract(D(p_AmtCr));
-    if (p_Account_ID != null && Number(p_Account_ID) > 0) {
+    if (p_Account_ID != null && idSet(p_Account_ID)) {
       var ev = q('acctBalance', 'SELECT AccountType AS t, AccountSign AS s FROM C_ElementValue WHERE C_ElementValue_ID=?', [p_Account_ID])[0] || {}, sign = ev.s;
       if (sign === 'N') sign = (ev.t === 'A' || ev.t === 'E') ? 'D' : 'C';
       if (sign === 'C') bal = D(p_AmtCr).subtract(D(p_AmtDr));

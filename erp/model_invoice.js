@@ -639,7 +639,7 @@
     if (nz(line.get('c_orderline_id')) > 0) { var ol = trx.get('c_orderline', line.get('c_orderline_id')), od = ol ? trx.get('c_order', ol.c_order_id) : null;
       if (od) { rule = od.deliveryviarule == null ? null : od.deliveryviarule; drop = nz(od.dropship_location_id); } }
     else if (nz(line.get('m_inoutline_id')) > 0) { var iol = trx.get('m_inoutline', line.get('m_inoutline_id')), io = iol ? trx.get('m_inout', iol.m_inout_id) : null; if (io) rule = io.deliveryviarule == null ? null : io.deliveryviarule; }
-    else if (nz(inv.c_order_id) > 0) { var o2 = trx.get('c_order', inv.c_order_id); if (o2) rule = o2.deliveryviarule == null ? null : o2.deliveryviarule; }
+    else if (ML().idSet(inv.c_order_id)) { var o2 = trx.get('c_order', inv.c_order_id); if (o2) rule = o2.deliveryviarule == null ? null : o2.deliveryviarule; }
     var dt = dayTS(inv.dateinvoiced), loc = nz(inv.c_bpartner_location_id);
     var id = T.taxGet(ctx, nz(line.get('m_product_id')), nz(line.get('c_charge_id')), dt, dt, nz(line.get('ad_org_id')), wh, loc, loc, drop, Y(inv.issotrx), rule);   // :517-520
     if (id === 0) { say(trx, '§MODEL-SEVERE MInvoiceLine.setTax No Tax found'); return false; }

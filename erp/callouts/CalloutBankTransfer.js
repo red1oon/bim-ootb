@@ -4,6 +4,7 @@
 // (@Callout IColumnCallout on C_BankTransfer — prompts/ERP_IDEMPIERE_UX_PARITY.md §CP — Witness: W-CP-CALLOUT-ORACLE
 // scenarios/cp/CalloutBankTransfer.json). Methods 11/11 (calloutMap :59-82): toAmt, conversionType, fromCurrency, toCurrency,
 // fromTenderType, fromCharge, payDate, fromBankAccount, toBankAccount, rate, fromAmt.
+function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() > 0` for the twin's id law: a row made through the op log has a NEGATIVE synthetic pk (crud_core listTip -opId), so "an id is set" = non-zero (same rule as ModelLayer.idSet; MIGRATE_INSTALL_TENANT §IDLAW-SPEC)
 (function (global) {
   'use strict';
   var A = (typeof module !== 'undefined' && module.exports) ? require('../ad_callout.js') : global.AdCallout;
@@ -18,7 +19,7 @@
     var fromAmt_ = mTab.getValue('From_Amt'), toAmt_ = mTab.getValue('To_Amt');
     if (fromAmt_ == null || toAmt_ == null) return '';
     var From_C_Currency_ID = mTab.getValue('From_C_Currency_ID'), To_C_Currency_ID = mTab.getValue('To_C_Currency_ID');
-    if (From_C_Currency_ID != null && From_C_Currency_ID > 0 && To_C_Currency_ID != null && To_C_Currency_ID > 0) {
+    if (From_C_Currency_ID != null && idSet(From_C_Currency_ID) && To_C_Currency_ID != null && idSet(To_C_Currency_ID)) {
       if (!refEq(From_C_Currency_ID, To_C_Currency_ID)) {
         if (bool(mTab.getValue('IsOverrideCurrencyRate'))) {
           if (fromAmt_.compareTo(BD.ZERO) !== 0) {
@@ -84,12 +85,12 @@
     if (From_C_BankAccount_ID == null || From_C_BankAccount_ID === 0) return '';
     var ba = npe(R.PO.get('C_BankAccount', From_C_BankAccount_ID));
     var AD_Org_ID = ba.getAD_Org_ID() || 0;
-    if (AD_Org_ID > 0) mTab.setValue('From_AD_Org_ID', AD_Org_ID);
-    else { AD_Org_ID = Env.getAD_Org_ID(ctx); if (AD_Org_ID > 0) mTab.setValue('From_AD_Org_ID', AD_Org_ID); }
+    if (idSet(AD_Org_ID)) mTab.setValue('From_AD_Org_ID', AD_Org_ID);
+    else { AD_Org_ID = Env.getAD_Org_ID(ctx); if (idSet(AD_Org_ID)) mTab.setValue('From_AD_Org_ID', AD_Org_ID); }
     if ((ba.getC_Currency_ID() || 0) > 0) mTab.setValue('From_C_Currency_ID', ba.getC_Currency_ID());
     var C_BPartner_ID = 0;
-    if (AD_Org_ID > 0) C_BPartner_ID = R.DB.getSQLValue(null, "SELECT bp.C_BPartner_ID FROM C_BPartner bp WHERE bp.AD_OrgBP_ID = ? AND bp.IsActive = 'Y' ", AD_Org_ID);
-    if (C_BPartner_ID > 0) mTab.setValue('From_C_BPartner_ID', C_BPartner_ID);
+    if (idSet(AD_Org_ID)) C_BPartner_ID = R.DB.getSQLValue(null, "SELECT bp.C_BPartner_ID FROM C_BPartner bp WHERE bp.AD_OrgBP_ID = ? AND bp.IsActive = 'Y' ", AD_Org_ID);
+    if (idSet(C_BPartner_ID)) mTab.setValue('From_C_BPartner_ID', C_BPartner_ID);
     else mTab.setValue('From_C_BPartner_ID', null);
     return '';
   }
@@ -98,12 +99,12 @@
     if (To_C_BankAccount_ID == null || To_C_BankAccount_ID === 0) return '';
     var ba = npe(R.PO.get('C_BankAccount', To_C_BankAccount_ID));
     var AD_Org_ID = ba.getAD_Org_ID() || 0;
-    if (AD_Org_ID > 0) mTab.setValue('To_AD_Org_ID', ba.getAD_Org_ID());
-    else { AD_Org_ID = Env.getAD_Org_ID(ctx); if (AD_Org_ID > 0) mTab.setValue('To_AD_Org_ID', AD_Org_ID); }
+    if (idSet(AD_Org_ID)) mTab.setValue('To_AD_Org_ID', ba.getAD_Org_ID());
+    else { AD_Org_ID = Env.getAD_Org_ID(ctx); if (idSet(AD_Org_ID)) mTab.setValue('To_AD_Org_ID', AD_Org_ID); }
     if ((ba.getC_Currency_ID() || 0) > 0) mTab.setValue('To_C_Currency_ID', ba.getC_Currency_ID());
     var C_BPartner_ID = 0;
-    if (AD_Org_ID > 0) C_BPartner_ID = R.DB.getSQLValue(null, "SELECT bp.C_BPartner_ID FROM C_BPartner bp WHERE bp.AD_OrgBP_ID = ? AND bp.IsActive = 'Y' ", AD_Org_ID);
-    if (C_BPartner_ID > 0) mTab.setValue('To_C_BPartner_ID', C_BPartner_ID);
+    if (idSet(AD_Org_ID)) C_BPartner_ID = R.DB.getSQLValue(null, "SELECT bp.C_BPartner_ID FROM C_BPartner bp WHERE bp.AD_OrgBP_ID = ? AND bp.IsActive = 'Y' ", AD_Org_ID);
+    if (idSet(C_BPartner_ID)) mTab.setValue('To_C_BPartner_ID', C_BPartner_ID);
     else {
       if (mTab.getValue('From_AD_Org_ID') != null && AD_Org_ID === mTab.getValue('From_AD_Org_ID') &&
         mTab.getValue('From_C_BPartner_ID') != null && mTab.getValue('From_C_BPartner_ID') > 0)
@@ -112,7 +113,7 @@
     }
     var From_C_Currency_ID = mTab.getValue('From_C_Currency_ID'), To_C_Currency_ID = mTab.getValue('To_C_Currency_ID');   // :290-309
     var PayDate = mTab.getValue('PayDate'), AD_Client_ID = mTab.getValue('AD_Client_ID');
-    if (From_C_Currency_ID != null && From_C_Currency_ID > 0 && To_C_Currency_ID != null && To_C_Currency_ID > 0) {
+    if (From_C_Currency_ID != null && idSet(From_C_Currency_ID) && To_C_Currency_ID != null && idSet(To_C_Currency_ID)) {
       if (refEq(From_C_Currency_ID, To_C_Currency_ID)) {
         mTab.setValue('Rate', BD.ONE);
         return fromAmt(ctx, windowNo, mTab, mField);
@@ -130,7 +131,7 @@
     var fromAmt_ = mTab.getValue('From_Amt');
     if (fromAmt_ == null) return '';
     var From_C_Currency_ID = mTab.getValue('From_C_Currency_ID'), To_C_Currency_ID = mTab.getValue('To_C_Currency_ID');
-    if (From_C_Currency_ID != null && From_C_Currency_ID > 0 && To_C_Currency_ID != null && To_C_Currency_ID > 0) {
+    if (From_C_Currency_ID != null && idSet(From_C_Currency_ID) && To_C_Currency_ID != null && idSet(To_C_Currency_ID)) {
       if (refEq(From_C_Currency_ID, To_C_Currency_ID)) { mTab.setValue('Rate', BD.ONE); return fromAmt(ctx, windowNo, mTab, mField); }
       else { if (fromAmt_.signum() !== 0) return fromAmt(ctx, windowNo, mTab, mField); }
     }
@@ -141,7 +142,7 @@
     if (fromAmt_ == null || rate_ == null) return '';
     var toAmt_ = rate_.multiply(fromAmt_);
     var To_C_Currency_ID = mTab.getValue('To_C_Currency_ID');
-    if (To_C_Currency_ID != null && To_C_Currency_ID > 0) {
+    if (To_C_Currency_ID != null && idSet(To_C_Currency_ID)) {
       var cur = R.PO.get('C_Currency', To_C_Currency_ID);                                             // MCurrency.get
       if (cur != null) toAmt_ = toAmt_.setScale(cur.getStdPrecision(), RM.HALF_UP);
     }

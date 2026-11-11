@@ -3,6 +3,7 @@
 // callouts/CalloutOrder.js — org.compiere.model.CalloutOrder, ported verbatim (bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md §CP —
 // Witness: W-CP-CALLOUT-ORACLE, scenarios/cp/CalloutOrder.json). Java: org.adempiere.base.callout/src/org/compiere/model/CalloutOrder.java.
 // Every method body keeps the Java branches and order; a branch needing an unported dependency logs §CALLOUT-UNPORTED-DEP.
+function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() > 0` for the twin's id law: a row made through the op log has a NEGATIVE synthetic pk (crud_core listTip -opId), so "an id is set" = non-zero (same rule as ModelLayer.idSet; MIGRATE_INSTALL_TENANT §IDLAW-SPEC)
 (function (global) {
   'use strict';
   var A = (typeof module !== 'undefined' && module.exports) ? require('../ad_callout.js') : global.AdCallout;
@@ -74,7 +75,7 @@
     // MSequence.getPreliminaryNo :1298-1353
     function getPreliminaryNo(tab, AD_Sequence_ID) {
       var prelim = null;
-      if (AD_Sequence_ID > 0) {
+      if (idSet(AD_Sequence_ID)) {
         var seq = R.PO.get('AD_Sequence', AD_Sequence_ID);
         var currentNext = seq ? seq.get_ValueAsInt('CurrentNext') : 0;
         if (seq && seq.isSequenceNoLevel()) {
@@ -228,8 +229,8 @@
         var BillTo_User_ID = rs.getInt('BillTo_User_ID'), ShipTo_User_ID = rs.getInt('ShipTo_User_ID');   // :357-368
         if (contID === 0) { mTab.setValue('AD_User_ID', null); mTab.setValue('Bill_User_ID', null); }
         else {
-          mTab.setValue('AD_User_ID', ShipTo_User_ID > 0 ? ShipTo_User_ID : contID);
-          mTab.setValue('Bill_User_ID', BillTo_User_ID > 0 ? BillTo_User_ID : contID);
+          mTab.setValue('AD_User_ID', idSet(ShipTo_User_ID) ? ShipTo_User_ID : contID);
+          mTab.setValue('Bill_User_ID', idSet(BillTo_User_ID) ? BillTo_User_ID : contID);
         }
         creditCheck(mTab, rs, IsSOTrx);                                               // :371-382 CreditAvailable
         var s = rs.getString('POReference');                                          // :385-387 PO Reference
@@ -292,7 +293,7 @@
           if (cont.length > 0) contID = parseInt(cont, 10);
         }
         if (contID === 0) mTab.setValue('Bill_User_ID', null);
-        else mTab.setValue('Bill_User_ID', BillTo_User_ID > 0 ? BillTo_User_ID : contID);
+        else mTab.setValue('Bill_User_ID', idSet(BillTo_User_ID) ? BillTo_User_ID : contID);
         creditCheck(mTab, rs, IsSOTrx);                                               // :548-559
         var s = rs.getString('POReference'); if (s != null && s.length !== 0) mTab.setValue('POReference', s);   // :562-564
         s = rs.getString('SO_Description'); if (s != null && s.trim().length !== 0) mTab.setValue('Description', s);   // :566-568
@@ -405,11 +406,11 @@
       var M_PriceList_ID = Env.getContextAsInt(ctx, WindowNo, 'M_PriceList_ID');
       pp.setM_PriceList_ID(M_PriceList_ID);
       var M_PriceList_Version_ID = Env.getContextAsInt(ctx, WindowNo, 'M_PriceList_Version_ID');
-      if (M_PriceList_Version_ID === 0 && M_PriceList_ID > 0) {
+      if (M_PriceList_Version_ID === 0 && idSet(M_PriceList_ID)) {
         var sql = 'SELECT plv.M_PriceList_Version_ID ' + 'FROM M_PriceList_Version plv ' + 'WHERE plv.M_PriceList_ID=? ' +
           ' AND plv.ValidFrom <= ? ' + 'ORDER BY plv.ValidFrom DESC';               // Use newest price list - may not be future
         M_PriceList_Version_ID = R.DB.getSQLValueEx(null, sql, M_PriceList_ID, orderDate);
-        if (M_PriceList_Version_ID > 0) Env.setContext(ctx, WindowNo, 'M_PriceList_Version_ID', M_PriceList_Version_ID);
+        if (idSet(M_PriceList_Version_ID)) Env.setContext(ctx, WindowNo, 'M_PriceList_Version_ID', M_PriceList_Version_ID);
       }
       pp.setM_PriceList_Version_ID(M_PriceList_Version_ID);
       return pp;

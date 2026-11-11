@@ -7,6 +7,7 @@
 // ONE QtyToOrder calc: ERPEngine.replenishQtyToOrder (erp_engine.js) - pos_core.js replenishSuggest calls the same function.
 // Create paths go through the model layer: MOrder/MOrderLine (POO), MRequisition/MRequisitionLine (POR, model_order.js), MMovement/MMovementLine (MMM, model_movement.js), MDDOrder/MDDOrderLine (DOO, model_dd.js).
 // NAMED refusal: PRD (MProduction.createLines - manufacturing is not core, AD-LAYER LAW rule 6; see ProductionCreate.js); a custom ReplenishInterface class must be registered via ReplenishReportProduction.registerReplenishInterface.
+function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() > 0` for the twin's id law: a row made through the op log has a NEGATIVE synthetic pk (crud_core listTip -opId), so "an id is set" = non-zero (same rule as ModelLayer.idSet; MIGRATE_INSTALL_TENANT §IDLAW-SPEC)
 (function (global) {
   'use strict';
   var NODE = (typeof module !== 'undefined' && module.exports);
@@ -159,7 +160,7 @@
     function created(self, label) { return X.A.Msg.parseTranslation(self.getCtx(), label); }
     ReplenishReportProduction.prototype.createPO = function (trx, M) {                  // :443-488
       var A = X.A, MO = M.MO, noOrders = 0, info = '', order = null, wh = null, orderId = null, self = this, stop = false;
-      var reps = this.getReplenish(function (t) { return t.m_warehousesource_id == null && Number(t.c_bpartner_id) > 0; });   // :450
+      var reps = this.getReplenish(function (t) { return t.m_warehousesource_id == null && idSet(t.c_bpartner_id); });   // :450
       reps.forEach(function (rep) {
         if (stop) return;
         if (wh == null || Number(wh.m_warehouse_id) !== Number(rep.m_warehouse_id)) wh = trx.get('m_warehouse', rep.m_warehouse_id);   // :454-455
@@ -188,7 +189,7 @@
     };
     ReplenishReportProduction.prototype.createRequisition = function (trx, M) {         // :494-538
       var MLo = M.ML, MO = M.MO, noReqs = 0, info = '', wh = null, reqId = null, self = this, stop = false;
-      var reps = this.getReplenish(function (t) { return t.m_warehousesource_id == null && Number(t.c_bpartner_id) > 0; });   // :501
+      var reps = this.getReplenish(function (t) { return t.m_warehousesource_id == null && idSet(t.c_bpartner_id); });   // :501
       reps.forEach(function (rep) {
         if (stop) return;
         if (wh == null || Number(wh.m_warehouse_id) !== Number(rep.m_warehouse_id)) wh = trx.get('m_warehouse', rep.m_warehouse_id);
@@ -215,7 +216,7 @@
     // MStorageOnHand.getWarehouse(ctx, whId, product, 0, null, FiFo, false, 0, trx) :398-520 = the ONE port, ModelAsi.storages (AS-8: this file's own copy read a product column that does not exist, isuseguaranteedateformpolicy)
     ReplenishReportProduction.prototype.createMovements = function (trx, M) {          // :543-644
       var MLo = M.ML, MT = M.MT, D = MT.D, noMoves = 0, info = '', moveId = null, curSrc = 0, curWh = 0, self = this, stop = false;
-      var reps = this.getReplenish(function (t) { return t.m_warehousesource_id != null && Number(t.c_bpartner_id) > 0; });   // :554
+      var reps = this.getReplenish(function (t) { return t.m_warehousesource_id != null && idSet(t.c_bpartner_id); });   // :554
       reps.forEach(function (rep) {
         if (stop) return;
         var whSource = trx.get('m_warehouse', rep.m_warehousesource_id), wh = trx.get('m_warehouse', rep.m_warehouse_id);   // :558-563 (the Java compares whSource's OWN source id - always unequal - and reloads; same row)

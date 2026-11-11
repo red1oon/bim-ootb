@@ -6,6 +6,7 @@
 //   registered hook (the Java subclass), exactly as DefaultInfoFactory.java:109 maps M_Product → InfoProductWindow.
 // ONE stock truth: every figure is read through the tip-shadowed reader (window.__crud.withModelTrx) — records created THIS session live
 //   in the signed sidecar, not the bundle (ERP_DEPTH_FILM.md §6). No second stock calculator.
+function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() > 0` for the twin's id law: a row made through the op log has a NEGATIVE synthetic pk (crud_core listTip -opId), so "an id is set" = non-zero (same rule as ModelLayer.idSet; MIGRATE_INSTALL_TENANT §IDLAW-SPEC)
 (function (g) {
   'use strict';
   var HOOKS = {};   // upper(TableName) → { tabs:[{id,label,load(ctx,key,detail)->{cols,rows,totals?}}] , baseFilter(ctx)->sql|'' , defaultOrder(ctx)->str }
@@ -270,7 +271,7 @@
       : 'SELECT SUM(s.QtyOnHand) AS oh, SUM(s.QtyReserved) AS rs, SUM(s.QtyOrdered) AS od, productAttribute(s.M_AttributeSetInstance_ID) AS pa, 0 AS asi,', params = [M_Product_ID];
     sql += ' w.Name AS wn, l.Value AS lv FROM M_Storage s INNER JOIN M_Locator l ON (s.M_Locator_ID=l.M_Locator_ID) LEFT JOIN M_LocatorType lt ON (l.M_LocatorType_ID=lt.M_LocatorType_ID) INNER JOIN M_Warehouse w ON (l.M_Warehouse_ID=w.M_Warehouse_ID) WHERE M_Product_ID=?';
     if (M_Warehouse_ID) { sql += ' AND l.M_Warehouse_ID=?'; params.push(M_Warehouse_ID); }
-    if (M_AttributeSetInstance_ID > 0) { sql += ' AND s.M_AttributeSetInstance_ID=?'; params.push(M_AttributeSetInstance_ID); }
+    if (idSet(M_AttributeSetInstance_ID)) { sql += ' AND s.M_AttributeSetInstance_ID=?'; params.push(M_AttributeSetInstance_ID); }
     sql += " AND (s.QtyOnHand<>0 OR s.QtyReserved<>0 OR s.QtyOrdered<>0) AND COALESCE(lt.IsAvailableForReservation,'Y')='Y'";
     if (!showDetail) sql += ' GROUP BY productAttribute(s.M_AttributeSetInstance_ID), w.Name, l.Value';
     return { sql: sql + ' ORDER BY l.Value', params: params };
@@ -281,7 +282,7 @@
       "dt.PrintName || ' ' || o.DocumentNo AS dn, w.Name AS wn FROM C_Order o INNER JOIN C_OrderLine ol ON (o.C_Order_ID=ol.C_Order_ID) INNER JOIN C_DocType dt ON (o.C_DocType_ID=dt.C_DocType_ID) " +
       'INNER JOIN M_Warehouse w ON (ol.M_Warehouse_ID=w.M_Warehouse_ID) INNER JOIN C_BPartner bp ON (o.C_BPartner_ID=bp.C_BPartner_ID) WHERE ol.QtyReserved<>0 AND ol.M_Product_ID=?', params = [M_Product_ID];
     if (M_Warehouse_ID) { sql += ' AND ol.M_Warehouse_ID=?'; params.push(M_Warehouse_ID); }
-    if (M_AttributeSetInstance_ID > 0) { sql += ' AND ol.M_AttributeSetInstance_ID=?'; params.push(M_AttributeSetInstance_ID); }
+    if (idSet(M_AttributeSetInstance_ID)) { sql += ' AND ol.M_AttributeSetInstance_ID=?'; params.push(M_AttributeSetInstance_ID); }
     return { sql: sql + ' ORDER BY o.DatePromised', params: params };
   }
   // m_sqlProductprice (java:382-399): bomPrice* are the DB functions; Margin = Std - Limit
@@ -310,10 +311,10 @@
       if (r.length && r[0].w) ctx.M_Warehouse_ID = r[0].w;
     },
     // InfoProductWindow.getSQLFilter: warehouse selected ⇒ p.IsSummary='N'
-    baseFilter: function (c) { return Number(c.M_Warehouse_ID) > 0 ? "p.IsSummary='N'" : ''; },
+    baseFilter: function (c) { return idSet(c.M_Warehouse_ID) ? "p.IsSummary='N'" : ''; },
     // InfoProductWindow.prepareTable: empty OrderBy && warehouse selected ⇒ "QtyAvailable DESC"
     defaultOrder: function (c, def, disp) {
-      if (!(Number(c.M_Warehouse_ID) > 0)) return '';
+      if (!(idSet(c.M_Warehouse_ID))) return '';
       var i = disp.findIndex(function (d) { return d.columnname === 'QtyAvailable'; }); return i >= 0 ? 'c' + i + ' DESC' : '';
     },
     tabs: [

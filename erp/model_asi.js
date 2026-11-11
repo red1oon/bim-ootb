@@ -34,8 +34,8 @@
     if (!s) return { ok: false, reason: 'Attribute Set ' + p.m_attributeset_id + ' not found' };
     var f = { ok: true, setId: s.m_attributeset_id, setName: s.name, productWindow: !!productWindow, lot: false, serno: false, guaranteedate: false, attributes: [] };
     if (!productWindow) {
-      f.lot = s.islot === 'Y'; f.lotCounter = f.lot && Number(s.m_lotctl_id) > 0; f.lotMandatory = s.islotmandatory === 'Y';
-      f.serno = s.isserno === 'Y'; f.sernoCounter = f.serno && Number(s.m_sernoctl_id) > 0; f.sernoMandatory = s.issernomandatory === 'Y';
+      f.lot = s.islot === 'Y'; f.lotCounter = f.lot && ML.idSet(s.m_lotctl_id); f.lotMandatory = s.islotmandatory === 'Y';
+      f.serno = s.isserno === 'Y'; f.sernoCounter = f.serno && ML.idSet(s.m_sernoctl_id); f.sernoMandatory = s.issernomandatory === 'Y';
       f.guaranteedate = s.isguaranteedate === 'Y'; f.guaranteeMandatory = s.isguaranteedatemandatory === 'Y'; f.guaranteeDays = Number(s.guaranteedays || 0);
     }
     f.attributes = attributesOf(r, s.m_attributeset_id, productWindow).map(function (a) {
@@ -71,7 +71,7 @@
     var autoNew = mode !== 'dialog';
     if (!o.productWindow) {
       if (s.islot === 'Y' || autoNew) {   // getLot(true) / generateLot create from the lot control whatever IsLot says (MAttributeSetInstance.java:294-318, :444-459)
-        if ((vin.newLot || (autoNew && !vin.lot)) && Number(s.m_lotctl_id) > 0) {                    // getLot(true) -> createLot :306-318
+        if ((vin.newLot || (autoNew && !vin.lot)) && ML.idSet(s.m_lotctl_id)) {                    // getLot(true) -> createLot :306-318
           var lc = one(r, 'SELECT * FROM m_lotctl WHERE m_lotctl_id=?', [s.m_lotctl_id]);
           if (!lc) { out.errors.push('M_LotCtl ' + s.m_lotctl_id + ' not found'); return out; }
           var c = counter(lc); v.lot = c.name; lotCtlUpd = { key: 'm_lotctl', id: lc.m_lotctl_id, fields: { currentnext: c.next } };
@@ -83,7 +83,7 @@
         }
       }
       if (s.isserno === 'Y' || mode === 'create') {   // generateLot makes the LOT only; create also takes Serial No and Guarantee Date (:419-437)
-        if ((vin.newSerNo || (mode === 'create' && !vin.serno)) && Number(s.m_sernoctl_id) > 0) {              // getSerNo(true) :354-367
+        if ((vin.newSerNo || (mode === 'create' && !vin.serno)) && ML.idSet(s.m_sernoctl_id)) {              // getSerNo(true) :354-367
           var sc = one(r, 'SELECT * FROM m_sernoctl WHERE m_sernoctl_id=?', [s.m_sernoctl_id]);
           if (!sc) { out.errors.push('M_SerNoCtl ' + s.m_sernoctl_id + ' not found'); return out; }
           var c2 = counter(sc); v.serno = c2.name; snCtlUpd = { key: 'm_sernoctl', id: sc.m_sernoctl_id, fields: { currentnext: c2.next } };

@@ -153,7 +153,7 @@
 
       step('Set Home CurrencyRate', function (r) {                                                                // :280-287
         return trx.q('SELECT 1 AS x FROM c_acctschema a WHERE a.c_acctschema_id=? AND a.c_currency_id=?', [r.c_acctschema_id, r.c_currency_id]).length > 0 && r.c_currency_id != null && notY(r) && cc(r); }, function () { return { currencyrate: 1 }; });
-      function rateWhere(r) { return r.currencyrate == null || (Number(r.currencyrate) === 0 && nz(r.c_currency_id) > 0 && notY(r) && cc(r)); }   // "CurrencyRate IS NULL OR CurrencyRate=0 AND C_Currency_ID>0 AND I_IsImported<>'Y' AND client" - AND binds tighter than OR
+      function rateWhere(r) { return r.currencyrate == null || (Number(r.currencyrate) === 0 && ML().idSet(r.c_currency_id) && notY(r) && cc(r)); }   // "CurrencyRate IS NULL OR CurrencyRate=0 AND C_Currency_ID>0 AND I_IsImported<>'Y' AND client" - AND binds tighter than OR
       step('Set Org Rate', rateWhere, function (r) {                                                              // :288-300
         return { currencyrate: scalar('SELECT MAX(r.multiplyrate) FROM c_conversion_rate r, c_acctschema s WHERE s.c_acctschema_id=? AND s.ad_client_id=? AND r.c_currency_id=? AND r.c_currency_id_to=s.c_currency_id AND r.ad_client_id=? AND r.ad_org_id=? AND r.c_conversiontype_id=? AND datetime(?) BETWEEN datetime(r.validfrom) AND datetime(r.validto)',
           [r.c_acctschema_id, r.ad_client_id, r.c_currency_id, r.ad_client_id, r.ad_orgdoc_id, r.c_conversiontype_id, r.dateacct]) }; });

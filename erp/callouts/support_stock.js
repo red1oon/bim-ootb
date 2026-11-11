@@ -4,6 +4,7 @@
 // prompts/ERP_IDEMPIERE_UX_PARITY.md §CP — Witness: W-CP-CALLOUT-ORACLE). Each is guarded so a sibling file that
 // ports the same static (callouts/uom.js etc.) keeps ONE implementation: whichever defines it first owns it.
 // M = org.adempiere.base/src/org/compiere/model.
+function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() > 0` for the twin's id law: a row made through the op log has a NEGATIVE synthetic pk (crud_core listTip -opId), so "an id is set" = non-zero (same rule as ModelLayer.idSet; MIGRATE_INSTALL_TENANT §IDLAW-SPEC)
 (function (global) {
   'use strict';
   var A = (typeof module !== 'undefined' && module.exports) ? require('../ad_callout.js') : global.AdCallout;
@@ -73,7 +74,7 @@
   M.MSequence = M.MSequence || {};
   if (!M.MSequence.getPreliminaryNo) M.MSequence.getPreliminaryNo = function (tab, AD_Sequence_ID) {
     var prelim = null;
-    if (AD_Sequence_ID > 0) {
+    if (idSet(AD_Sequence_ID)) {
       var seq = PO().get('AD_Sequence', AD_Sequence_ID);
       var currentNext = I(seq.getCurrentNext());
       if (seq.isSequenceNoLevel()) {
@@ -167,8 +168,8 @@
     var head = 'SELECT c.* FROM M_CostHistory c JOIN M_CostDetail cd ON (cd.M_CostDetail_ID = c.M_CostDetail_ID AND cd.Processed=\'Y\') ' +
       'LEFT JOIN M_CostDetail refcd ON (refcd.M_CostDetail_ID=cd.Ref_CostDetail_ID) LEFT OUTER JOIN M_CostElement ce ON (c.M_CostElement_ID=ce.M_CostElement_ID) ' +
       'WHERE c.AD_Client_ID=? AND c.AD_Org_ID=?  AND c.M_Product_ID=?  AND (c.M_AttributeSetInstance_ID=? OR c.M_AttributeSetInstance_ID=0) ' +
-      ' AND c.M_CostType_ID=? AND cd.C_AcctSchema_ID=?  AND (ce.CostingMethod IS NULL OR ce.CostingMethod=?) ' + (M_CostElement_ID > 0 ? ' AND c.M_CostElement_ID=? ' : '');
-    var p1 = [AD_Client_ID, AD_Org_ID, M_Product_ID, M_ASI_ID, M_CostType_ID, C_AcctSchema_ID, costingMethod]; if (M_CostElement_ID > 0) p1.push(M_CostElement_ID);
+      ' AND c.M_CostType_ID=? AND cd.C_AcctSchema_ID=?  AND (ce.CostingMethod IS NULL OR ce.CostingMethod=?) ' + (idSet(M_CostElement_ID) ? ' AND c.M_CostElement_ID=? ' : '');
+    var p1 = [AD_Client_ID, AD_Org_ID, M_Product_ID, M_ASI_ID, M_CostType_ID, C_AcctSchema_ID, costingMethod]; if (idSet(M_CostElement_ID)) p1.push(M_CostElement_ID);
     var sql = 'SELECT * FROM (' + head + ' AND c.DateAcct<=? ORDER BY c.M_CostHistory_ID DESC LIMIT 1) UNION ALL SELECT * FROM (' + head +
       'ORDER BY c.DateAcct ASC, CASE WHEN COALESCE(refcd.DateAcct,cd.DateAcct) = cd.DateAcct THEN COALESCE(cd.Ref_CostDetail_ID, c.M_CostDetail_ID) ELSE c.M_CostDetail_ID END ASC, c.M_CostHistory_ID ASC LIMIT 1)';
     var rows;

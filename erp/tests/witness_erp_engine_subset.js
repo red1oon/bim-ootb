@@ -120,8 +120,8 @@ const shipped = git(['ls-files']).split('\n').filter(f => /\.(js|html|mjs)$/.tes
 }
 // ---------- S3 ----------
 {
-  const bad = [];
-  for (const n of Object.keys(T.texts)) { if (!(n in B.texts)) bad.push('new:' + n); else if (T.texts[n] !== B.texts[n]) bad.push('changed:' + n); }
+  const bad = [], INTENDED = { orderPriceListDefault: 'IDLAW: the key test `> 0` became non-zero (the page gives session-created rows negative ids; MIGRATE_INSTALL_TENANT §IDLAW-SPEC)' };   // the ONE declaration changed on purpose since the baseline commit
+  for (const n of Object.keys(T.texts)) { if (!(n in B.texts)) bad.push('new:' + n); else if (T.texts[n] !== B.texts[n] && !INTENDED[n]) bad.push('changed:' + n); }
   if (T.wrapper !== B.wrapper) bad.push('umd-wrapper');
   for (const n of Object.keys(T.props)) if (T.props[n] !== B.props[n]) bad.push('export-value:' + n);
   const kept = Object.keys(T.texts).length;

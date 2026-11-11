@@ -6,6 +6,7 @@
 // Tables absent from the bundle (M_PackageMPS, M_ShipperLabels/Packaging/PickupTypes, X_PackageLineWeight, C_BP_ShippingAcct) log
 // §PROC-UNPORTED-DEP: a SELECT over one reads as the empty result Java gets from an empty table; an INSERT into one throws.
 // §CP-PROC-CORE family B — Witness: W-CP-PROC-ORACLE.
+function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() > 0` for the twin's id law: a row made through the op log has a NEGATIVE synthetic pk (crud_core listTip -opId), so "an id is set" = non-zero (same rule as ModelLayer.idSet; MIGRATE_INSTALL_TENANT §IDLAW-SPEC)
 (function (global) {
   'use strict';
   var P = (typeof module !== 'undefined' && module.exports) ? require('../ad_process.js') : global.AdProcess;
@@ -108,7 +109,7 @@
           ') AND bps.C_BPartner_Location_ID = bpl.C_BPartner_Location_ID AND bpl.C_Location_ID = l.C_Location_ID AND l.Postal IS NOT NULL', [shipment.c_bpartner_id]);
         if (r && r.length) id = r[0].i;
       }
-      if (!(id > 0) && shipment.m_inout_id > 0) {
+      if (!idSet(id) && idSet(shipment.m_inout_id)) {
         r = trx.q('SELECT bpl.C_BPartner_Location_ID AS i FROM M_InOut io, C_Order o, C_BPartner_Location bpl, C_Location l WHERE io.M_InOut_ID = ? AND io.C_Order_ID = o.C_Order_ID AND o.Bill_Location_ID = bpl.C_BPartner_Location_ID AND bpl.C_Location_ID = l.C_Location_ID AND l.Postal IS NOT NULL', [shipment.m_inout_id]);
         if (r.length) id = r[0].i;
         if (!(id > 0)) {
@@ -137,7 +138,7 @@
       var lines = g.lines(trx, 'm_inoutline', 'm_inout_id', shipment.m_inout_id);      // :74
       for (var i = 0; i < lines.length; i++) {
         var sLine = lines[i];
-        if (Number(sLine.m_product_id) > 0 && Number(sLine.m_product_id) !== Number(ci.m_productfreight_id)) {   // :79
+        if (idSet(sLine.m_product_id) && Number(sLine.m_product_id) !== Number(ci.m_productfreight_id)) {   // :79
           var product = trx.get('m_product', sLine.m_product_id);
           if (T.Y(product.isbom) && T.Y(product.isverified) && T.Y(product.ispicklistprintdetails)) {   // :82
             throw new Error('PROC-UNPORTED-DEP MPPProductBOM.getDefault/getLines (MPackage.create :84-96) — BOM pick-list expansion');

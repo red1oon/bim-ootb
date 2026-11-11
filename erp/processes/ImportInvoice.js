@@ -367,7 +367,7 @@
           }
           var ta = imp.taxamt == null ? null : A.toBD(String(imp.taxamt));
           if (ta != null && ta.compareTo(A.Env.ZERO) !== 0) line.set('taxamt', ta);                                                                                                  // :771-772
-          line.set('c_1099box_id', nz(imp.c_1099box_id) > 0 ? imp.c_1099box_id : null);                                                                                             // :773 setC_1099Box_ID(int): < 1 = NULL
+          line.set('c_1099box_id', ML().idSet(imp.c_1099box_id) ? imp.c_1099box_id : null);                                                                                             // :773 setC_1099Box_ID(int): < 1 = NULL
           MI.MInvoiceLine_defaultUOM(trx, ctx, line);                                                                                                                                // twin decision (f): MInvoiceLine.beforeSave :928-934
           G().saveEx(line);                                                                                                                                                          // line.saveEx() :774
           ch.c_invoiceline_id = line.id(); ch.i_isimported = 'Y'; ch.processed = 'Y';                                                                                                // :776-778

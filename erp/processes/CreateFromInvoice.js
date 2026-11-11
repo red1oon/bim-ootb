@@ -5,6 +5,7 @@
 // bim-compiler prompts/ERP_FRIENDLY_OPS_LENS.md §52 - Witness: W-CREATEFROM-INVOICE-IW. The Info Window (AD_InfoWindow 200024, the C_Invoice.CreateLinesFrom Button) IS the selection: the picked
 // rows are T_Selection / T_Selection_InfoWindow rows of this AD_PInstance_ID, written by the generic info-window engine (ad_infowin.js), read here exactly as the Java reads them.
 // NAMED, not faked: the M_RMALine branch (setRMALine / getOfRMALine), a line with neither receipt nor order line (setPrice/setTax), a product UOM that needs MUOMConversion - each refuses loudly.
+function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() > 0` for the twin's id law: a row made through the op log has a NEGATIVE synthetic pk (crud_core listTip -opId), so "an id is set" = non-zero (same rule as ModelLayer.idSet; MIGRATE_INSTALL_TENANT §IDLAW-SPEC)
 (function (global) {
   'use strict';
   var P = (typeof module !== 'undefined' && module.exports) ? require('../ad_process.js') : global.AdProcess;
@@ -25,7 +26,7 @@
       if ((this.getProcessInfo().AD_InfoWindow_ID || 0) > 0) return this.createLines();
       throw new Error('@NotSupported@');
     };
-    // Java's `X_ID > 0` reads `!== 0` here: a record made in this session carries a NEGATIVE tip id until commit (same as CreateFromInOut.js)
+    // Java's `idSet(X_ID)` reads `!== 0` here: a record made in this session carries a NEGATIVE tip id until commit (same as CreateFromInOut.js)
     function MO() { return (typeof module !== 'undefined' && module.exports) ? require('../model_order.js') : global.ModelOrder; }
     function id0(v) { return v == null || v === '' ? 0 : Number(v); }
     CreateFromInvoice.prototype.createLines = function () {
@@ -72,7 +73,7 @@
       var A = X.A, invoice = trx.get('c_invoice', this.p_C_Invoice_ID), il = C.MInvoiceLine(trx, invoice);
       il.set('m_product_id', M_Product_ID || null).set('c_uom_id', C_UOM_ID || null).set('m_attributesetinstance_id', 0);   // setM_Product_ID(pid, uom) MInvoiceLine.java:676-681
       C.ilSetQty(trx, il, Qty);
-      var prod = M_Product_ID > 0 ? T.product(trx, M_Product_ID) : null;
+      var prod = idSet(M_Product_ID) ? T.product(trx, M_Product_ID) : null;
       if (M_Product_ID !== 0 && prod && Number(prod.c_uom_id) !== C_UOM_ID) throw new Error('CreateFromInvoice: MUOMConversion.convertProductFrom (product UOM != line UOM) is not ported');
       C.ilSetQtyInvoiced(trx, il, Qty);
       var orderLine = C_OrderLine_ID !== 0 ? trx.get('c_orderline', C_OrderLine_ID) : null, inoutLine = null;

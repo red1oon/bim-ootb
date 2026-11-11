@@ -1,6 +1,7 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
 // SPDX-License-Identifier: MIT
 'use strict';
+function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() > 0` for the twin's id law: a row made through the op log has a NEGATIVE synthetic pk (crud_core listTip -opId), so "an id is set" = non-zero (same rule as ModelLayer.idSet; MIGRATE_INSTALL_TENANT §IDLAW-SPEC)
 /**
  * doc_poster.js — reusable per-document GL derivation (W-DOC-POSTER).
  *
@@ -831,7 +832,7 @@ function _inventoryNoCosts(db, l, schema) {
   if (!_legacyStocked(db, l.m_product_id)) return false;     // service / non-stocked: ignored, never refused
   var bless = getRow(db,
     "SELECT COUNT(*) AS n FROM m_costdetail WHERE m_product_id=? AND processed='Y' AND amt=0.00 AND qty>0" +
-    " AND (c_orderline_id>0 OR c_invoiceline_id>0)", num(l.m_product_id));
+    " AND (c_orderline_id<>0 OR c_invoiceline_id<>0)", num(l.m_product_id));
   return !bless || Number(bless.n) === 0;
 }
 // §SHOPDAY-RUN-2 R2.1: Doc.post rolls the whole document back when ANY active schema's createFacts fails, and the MCostDetail (cost qty/amt) is created at the END of
@@ -879,10 +880,10 @@ function glCategoryFor(db, table, id) {
   try { hdr = getRow(db, 'SELECT * FROM ' + t + ' WHERE ' + pk + '=?', num(id)); } catch (e) { return { id: 0, stage: 'no-doc-table' }; }
   if (!hdr) return out;
   // 0 — the document's own column (Doc.getGL_Category_ID:1787-1793)
-  if (_hasCol(db, t, 'gl_category_id') && Number(hdr.gl_category_id) > 0) return { id: Number(hdr.gl_category_id), stage: 'own-column' };
+  if (_hasCol(db, t, 'gl_category_id') && idSet(hdr.gl_category_id)) return { id: Number(hdr.gl_category_id), stage: 'own-column' };
   var clientId = Number(hdr.ad_client_id);
-  var dtId = Number(hdr.c_doctype_id) > 0 ? Number(hdr.c_doctype_id)
-           : (Number(hdr.c_doctypetarget_id) > 0 ? Number(hdr.c_doctypetarget_id) : 0);
+  var dtId = idSet(hdr.c_doctype_id) ? Number(hdr.c_doctype_id)
+           : (idSet(hdr.c_doctypetarget_id) ? Number(hdr.c_doctypetarget_id) : 0);
   // a — by C_DocType_ID. EVERY read below is guarded: this resolver runs against NARROW seeds too (the B-3 and
   //   W-POST-TAIL fixtures build a minimal db with no c_doctype at all, and some carry c_doctype without
   //   docbasetype). iDempiere's own behaviour when it cannot resolve a category is to log and POST ANYWAY with
@@ -897,20 +898,20 @@ function glCategoryFor(db, table, id) {
     catch (e) { return { id: 0, stage: 'no-doctype-table', doctype: dtId }; }
     if (dt) {
       docBaseType = dt.docbasetype;
-      if (Number(dt.gl_category_id) > 0) return { id: Number(dt.gl_category_id), stage: 'doctype', docBaseType: docBaseType, doctype: dtId };
+      if (idSet(dt.gl_category_id)) return { id: Number(dt.gl_category_id), stage: 'doctype', docBaseType: docBaseType, doctype: dtId };
     }
   }
   // b — by (client, DocBaseType)
   if (docBaseType) {
     var byBase = null;
-    try { byBase = getRow(db, 'SELECT gl_category_id FROM c_doctype WHERE ad_client_id=? AND docbasetype=? AND gl_category_id>0 ORDER BY c_doctype_id LIMIT 1',
+    try { byBase = getRow(db, 'SELECT gl_category_id FROM c_doctype WHERE ad_client_id=? AND docbasetype=? AND gl_category_id<>0 ORDER BY c_doctype_id LIMIT 1',
                           [clientId, docBaseType]); } catch (e) { byBase = null; }
-    if (byBase && Number(byBase.gl_category_id) > 0) return { id: Number(byBase.gl_category_id), stage: 'docbasetype', docBaseType: docBaseType };
+    if (byBase && idSet(byBase.gl_category_id)) return { id: Number(byBase.gl_category_id), stage: 'docbasetype', docBaseType: docBaseType };
   }
   // c — the client's default GL_Category
   try {
     var def = getRow(db, 'SELECT gl_category_id FROM gl_category WHERE ad_client_id=? ORDER BY isdefault DESC, gl_category_id LIMIT 1', clientId);
-    if (def && Number(def.gl_category_id) > 0) return { id: Number(def.gl_category_id), stage: 'client-default', docBaseType: docBaseType };
+    if (def && idSet(def.gl_category_id)) return { id: Number(def.gl_category_id), stage: 'client-default', docBaseType: docBaseType };
   } catch (e) { /* a seed without gl_category — fall through to the 0 sentinel, as the Java does */ }
   return { id: 0, stage: 'none-severe', docBaseType: docBaseType };   // Doc.java:1085-1086 — log and post with 0
 }

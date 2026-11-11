@@ -5,6 +5,7 @@
 // (createShippingTransaction :200-, MShippingTransaction.processOnline = a call to the shipper's carrier web service) is a NAMED DEP
 // (§PROC-UNPORTED-DEP) and takes the Java's own failure path (:176-184: process error + "@Error@").
 // §CP-PROC-CORE — Witness: W-CP-PROC-ORACLE (INCONCLUSIVE by nature: a successful run needs the external carrier).
+function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() > 0` for the twin's id law: a row made through the op log has a NEGATIVE synthetic pk (crud_core listTip -opId), so "an id is set" = non-zero (same rule as ModelLayer.idSet; MIGRATE_INSTALL_TENANT §IDLAW-SPEC)
 (function (global) {
   'use strict';
   var P = (typeof module !== 'undefined' && module.exports) ? require('../ad_process.js') : global.AdProcess;
@@ -35,8 +36,8 @@
       if (ols.length === 0) throw A.AdempiereException(A.Msg.parseTranslation(this.getCtx(), '@NoLines@'));
       for (var i = 0; i < ols.length; i++) {
         var ol = ols[i];
-        if ((nz(ol.m_product_id) > 0 && nz(ol.m_product_id) === nz(ci.m_productfreight_id)) || (nz(ol.c_charge_id) > 0 && nz(ol.c_charge_id) === nz(ci.c_chargefreight_id))) continue;
-        else if (nz(ol.m_product_id) > 0) {
+        if ((idSet(ol.m_product_id) && nz(ol.m_product_id) === nz(ci.m_productfreight_id)) || (idSet(ol.c_charge_id) && nz(ol.c_charge_id) === nz(ci.c_chargefreight_id))) continue;
+        else if (idSet(ol.m_product_id)) {
           var product = trx.get('m_product', ol.m_product_id);
           if (product && product.producttype === 'S') continue;                       // isService
           if (!product || product.weight == null || Number(product.weight) === 0) throw A.AdempiereException('No weight defined for product ' + (product ? 'MProduct[' + product.m_product_id + '-' + product.name + ']' : ol.m_product_id));

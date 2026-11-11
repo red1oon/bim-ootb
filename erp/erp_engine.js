@@ -227,7 +227,7 @@ function orderTaxes(lines, taxById, included, children, prec) {   // prec (optio
 // => the save is refused. So "no such list" is a REFUSAL (legacy's text is a Java NPE; the reason here is the clear one). An explicit price list is kept as is.
 // order = { m_pricelist_id, issotrx ('Y'|'N'), ad_client_id }, lists = [{ m_pricelist_id, issopricelist, isactive, isdefault, ad_client_id }] -> { ok, m_pricelist_id } | { ok:false, reason, msg }
 function orderPriceListDefault(order, lists) {
-  if (Number(order.m_pricelist_id) > 0) return { ok: true, m_pricelist_id: Number(order.m_pricelist_id), explicit: true };
+  if ((Number(order.m_pricelist_id) || 0) !== 0) return { ok: true, m_pricelist_id: Number(order.m_pricelist_id), explicit: true };
   var want = String(order.issotrx) === 'Y' ? 'Y' : 'N';
   var c = (lists || []).filter(function (l) { return String(l.isactive) === 'Y' && String(l.issopricelist) === want && (order.ad_client_id == null || Number(l.ad_client_id) === Number(order.ad_client_id)); })
     .sort(function (a, b) { return (String(b.isdefault) === 'Y' ? 1 : 0) - (String(a.isdefault) === 'Y' ? 1 : 0) || Number(a.m_pricelist_id) - Number(b.m_pricelist_id); });

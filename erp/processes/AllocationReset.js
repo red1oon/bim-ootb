@@ -24,7 +24,7 @@
         else if (name === 'AllAllocations') this.p_AllAllocations = 'Y' === para[i].getParameter();
         else R.log('§PROC-UNKNOWN-PARA AllocationReset ' + name);                          // MProcessPara.validateUnknownParameter
       }
-      if (!this.p_AllAllocations && this.getTable_ID() === tableId('C_AllocationHdr') && this.getRecord_ID() > 0) this.p_C_AllocationHdr_ID = this.getRecord_ID();
+      if (!this.p_AllAllocations && this.getTable_ID() === tableId('C_AllocationHdr') && ML.idSet(this.getRecord_ID())) this.p_C_AllocationHdr_ID = this.getRecord_ID();
     };
     function tableId(n) { return R.DB.getSQLValue(null, 'SELECT AD_Table_ID FROM AD_Table WHERE TableName=?', n); }
     function ts(v) { return v == null ? null : String(v.toString()).slice(0, 10); }

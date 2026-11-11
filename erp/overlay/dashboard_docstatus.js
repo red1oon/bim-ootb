@@ -7,6 +7,7 @@
 // evaluate (:192-202) + getSQLFilter (:234-258): SELECT COUNT(*) FROM <table> WHERE <table>.AD_Client_ID=<client> [AND C_Project_ID] [AND AD_Org_ID] AND ( <WhereClause> ) with @#AD_Client_ID@ / @#AD_User_ID@ /
 // @#AD_Role_ID@ / @#AD_Org_ID@ substituted and SysDate = the session's now, then MRole.addAccessSQL's client / org where. The SQL is BUILT FROM THE DICTIONARY - a new PA_DocumentStatus row works with zero code.
 // Postgres-isms in the stored WhereClauses (SysDate, TRUNC(x)) are rewritten for SQLite; rv_unprocessed is created over the base tables the bundle HAS (the omitted ones are returned by name).
+function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() > 0` for the twin's id law: a row made through the op log has a NEGATIVE synthetic pk (crud_core listTip -opId), so "an id is set" = non-zero (same rule as ModelLayer.idSet; MIGRATE_INSTALL_TENANT §IDLAW-SPEC)
 (function (global) {
   'use strict';
   var RVU = [   // adempiere.rv_unprocessed (pg_get_viewdef, 11 UNION branches): casts removed, <> ALL(ARRAY[..]) -> NOT IN, the *_UU column dropped (no indicator reads it)
@@ -54,8 +55,8 @@
     return rows.some(function (a) { var r = Number(a.ad_role_id || 0), u = Number(a.ad_user_id || 0); return (r === s.role && u === s.user) || (r === s.role && u === 0) || (r === 0 && u === s.user); });
   }
   function roleOpens(q, ds, s) {          // MRole.getWindowAccess / getFormAccess non-null (the role holds an active access row)
-    if (Number(ds.ad_window_id) > 0) return has(q, 'ad_window_access') && q("SELECT 1 AS x FROM ad_window_access WHERE ad_role_id=? AND ad_window_id=? AND isactive='Y'", [s.role, ds.ad_window_id]).length > 0;
-    if (Number(ds.ad_form_id) > 0) return has(q, 'ad_form_access') && q("SELECT 1 AS x FROM ad_form_access WHERE ad_role_id=? AND ad_form_id=? AND isactive='Y'", [s.role, ds.ad_form_id]).length > 0;
+    if (idSet(ds.ad_window_id)) return has(q, 'ad_window_access') && q("SELECT 1 AS x FROM ad_window_access WHERE ad_role_id=? AND ad_window_id=? AND isactive='Y'", [s.role, ds.ad_window_id]).length > 0;
+    if (idSet(ds.ad_form_id)) return has(q, 'ad_form_access') && q("SELECT 1 AS x FROM ad_form_access WHERE ad_role_id=? AND ad_form_id=? AND isactive='Y'", [s.role, ds.ad_form_id]).length > 0;
     return false;
   }
   // s = { client, user, role, now, access:{clientIds, orgIds} } -> [{id, name, count, windowId, formId, table, sql}]
@@ -66,7 +67,7 @@
       if (!canAccess(q, ds, s) || !roleOpens(q, ds, s)) return;
       var tn = (q('SELECT tablename FROM ad_table WHERE ad_table_id=?', [ds.ad_table_id])[0] || {}).tablename;
       if (!tn) { out.push({ id: Number(ds.pa_documentstatus_id), name: ds.name, count: null, error: 'AD_Table ' + ds.ad_table_id + ' not in this bundle' }); return; }
-      var where = ' ' + tn + '.AD_Client_ID=' + s.client + (Number(ds.c_project_id) > 0 ? ' AND ' + tn + '.C_Project_ID=' + ds.c_project_id : '') + (Number(ds.ad_org_id) > 0 ? ' AND ' + tn + '.AD_Org_ID=' + ds.ad_org_id : '');
+      var where = ' ' + tn + '.AD_Client_ID=' + s.client + (idSet(ds.c_project_id) ? ' AND ' + tn + '.C_Project_ID=' + ds.c_project_id : '') + (idSet(ds.ad_org_id) ? ' AND ' + tn + '.AD_Org_ID=' + ds.ad_org_id : '');
       var extra = String(ds.whereclause || '').trim(); if (extra) where += ' AND ( ' + extra + ' ) ';
       where = where.replace(/@#AD_Client_ID@/g, s.client).replace(/@#AD_User_ID@/g, s.user).replace(/@#AD_Role_ID@/g, s.role).replace(/@#AD_Org_ID@/g, 0);
       var sql = dialect('SELECT COUNT(*) AS n FROM ' + tn + ' WHERE ' + where + accessWhere(s.access), s.now), n = null, err = null;
