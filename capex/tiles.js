@@ -262,6 +262,44 @@
     log('§DASH_TWIN_VERDICT ' + verdict + ' match=' + match + ' diff=' + diff + ' inconclusive=' + inc + ' per_source=' + per);
     return { verdict: verdict, match: match, diff: diff, inconclusive: inc, per_source: per };
   }
-  var API = { _sumBy: sumBy, compute: compute, flatten: flatten, twin: twin, PER_SOURCE: PER_SOURCE, FORMULA: FORMULA, CAVEAT: CAVEAT };
+
+  // §5.54 the project page: everything one project's tabs draw, from the same rows and buckets as compute(). Pure: no DOM, no fetch, no clock (today comes in f.today).
+  function projectDetail(data, f, id) {
+    var p = (data.projects || []).filter(function (x) { return String(x.C_Project_ID) === String(id); })[0]; if (!p) return null;
+    f = f || {}; var today = f.today, tn = dnum(today), un = {}; (data.unavailable || []).forEach(function (u) { un[u] = 1; });
+    var R = compute(data, { today: today, status: 'all', org: '', category: '', project: p.Value }), row = ((R.drill || {}).total_projects || [])[0] || {};
+    var phases = (data.phases || []).filter(function (x) { return String(x.C_Project_ID) === String(id); }).sort(function (a, b) { return (a.SeqNo || 0) - (b.SeqNo || 0) || String(a.C_ProjectPhase_ID) - String(b.C_ProjectPhase_ID); });
+    var tasksBy = {}; (data.tasks || []).forEach(function (k) { tasksBy[k.C_ProjectPhase_ID] = (tasksBy[k.C_ProjectPhase_ID] || 0) + 1; });
+    var out = { id: p.C_Project_ID, Value: p.Value, Name: p.Name, cur: p.C_Currency_ID == null ? 'none' : String(p.C_Currency_ID), health: row.health || null, schedule: row.schedule || null, budget: row.budget || null, late: row.late || 0, phases: [], why: [] };
+    var due = 0, done = 0, pl = 0, cm = 0;
+    phases.forEach(function (x) {
+      var complete = yes(x.IsComplete), end = x.EndDate ? day(x.EndDate) : null, start = x.StartDate ? day(x.StartDate) : null, late = 0, st;
+      if (complete) st = 'complete'; else if (end && end < today) { st = 'overdue'; late = Math.round(tn - dnum(end)); } else if (start && end && start <= today && today <= end) st = 'inprogress'; else st = 'tocome';
+      var a = Number(x.PlannedAmt) || 0, c = Number(x.CommittedAmt) || 0; pl += a; cm += c; if (end && end <= today) due += a; if (complete) done += a;
+      out.phases.push({ id: x.C_ProjectPhase_ID, name: x.Name, seq: x.SeqNo, start: start, end: end, planned: a, committed: c, status: st, lateDays: late, tasks: tasksBy[x.C_ProjectPhase_ID] || 0, early: complete && end && end > today });
+    });
+    var ln = (data.lines || []).filter(function (l) { return String(l.C_Project_ID) === String(id); });
+    var sumL = function (k) { return ln.reduce(function (a, l) { return a + (Number(l[k]) || 0); }, 0); };
+    out.money = { planned: p.PlannedAmt == null ? null : Number(p.PlannedAmt), spent: p.ProjectBalanceAmt == null ? null : Number(p.ProjectBalanceAmt), due: due, done: done, committed: p.CommittedAmt == null ? null : Number(p.CommittedAmt), invoiced: p.InvoicedAmt == null ? null : Number(p.InvoicedAmt), lineCommitted: sumL('CommittedAmt'), lineInvoiced: sumL('InvoicedAmt'), lines: ln.length };
+    out.totals = { phasePlanned: pl, phaseCommitted: cm };
+    var cpi = out.money.spent > 0 && done > 0 ? done / out.money.spent : null; out.forecast = { basisDiffers: cpi != null && (cpi < 0.5 || cpi > 2) };
+    out.orders = (un.orders || data.orders == null) ? null : { rows: (data.orders || []).filter(function (o) { return String(o.C_Project_ID) === String(id) && o.IsSOTrx === 'N'; }).map(function (o) { return { id: o.C_Order_ID, status: o.DocStatus, total: Number(o.GrandTotal), cur: o.C_Currency_ID, open: !{ CO: 1, CL: 1, VO: 1, RE: 1 }[o.DocStatus] }; }) };
+    if (out.orders) out.orders.open = out.orders.rows.filter(function (r) { return r.open; }).length;
+    if (un.bimdocs || data.bimdocs == null) out.docs = null;
+    else { var latest = {}; (data.bimdocs || []).forEach(function (r) { if (r.IsActive === 'N' || String(r.C_Project_ID) !== String(id)) return; var k = r.DeliverableNo, rv = Number(r.Revision) || 0, i = Number(r.BIM_Document_ID) || 0, c = latest[k]; if (!c || rv > c.rev || (rv === c.rev && i > c.i)) latest[k] = { no: k, rev: rv, i: i, status: r.DocStatus, name: r.Name }; });
+      var lr = Object.keys(latest).sort().map(function (k) { return latest[k]; }); out.docs = { rows: lr, total: lr.length, issued: lr.filter(function (r) { return r.status === 'CO'; }).length }; }
+    // plain-words statements, each naming the rows it came from (never typed text about a number the rows do not hold)
+    out.phases.forEach(function (x) {
+      if (x.status === 'overdue') out.why.push({ kind: 'overdue', src: { phase: x.name }, text: x.name + ' is overdue: it ended ' + x.end + ' and is not ticked complete' });
+      if (x.early) out.why.push({ kind: 'early', src: { phase: x.name }, text: x.name + ' is ticked complete before its end date (' + x.end + ')' });
+    });
+    if (out.budget === 'within' && out.money.planned > 0) out.why.push({ kind: 'budget', src: { budget: 'within' }, text: 'Budget is within plan: ' + (100 * (out.money.spent || 0) / out.money.planned).toFixed(2) + '% spent' });
+    else if (out.budget === 'over') out.why.push({ kind: 'budget', src: { budget: 'over' }, text: 'Spent is above plan' });
+    else if (out.budget === 'notstarted') out.why.push({ kind: 'budget', src: { budget: 'notstarted' }, text: 'No cost has been booked yet' });
+    if (out.forecast.basisDiffers) out.why.push({ kind: 'basis', src: { cpi: cpi }, text: 'Spent and Done are not measured on one basis, so the forecast is an alarm, not a result' });
+    return out;
+  }
+
+  var API = { projectDetail: projectDetail, _sumBy: sumBy, compute: compute, flatten: flatten, twin: twin, PER_SOURCE: PER_SOURCE, FORMULA: FORMULA, CAVEAT: CAVEAT };
   if (typeof module !== 'undefined' && module.exports) module.exports = API; else root.CapexTiles = API;
 })(typeof window !== 'undefined' ? window : this);
