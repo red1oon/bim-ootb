@@ -34,7 +34,7 @@
       //   would compute now (bim-ootb prompts/CAPEX_DASHBOARD.md §5.24 — the gadget drew a live value where legacy draws the stored one, e.g. right after a target edit). This model only reads: home.js stores
       //   the due goals after the draw (ModelPA.storeDue, §5.32), with the same value this draws.
       var due = GE.refreshDue ? GE.refreshDue(q, g, { client: session.client, now: session.now }).due : true;
-      var r = due ? GE.evaluate(q, g.pa_goal_id, { today: session.today, access: session.access })
+      var r = due ? GE.evaluate(q, g.pa_goal_id, { today: session.today, access: session.access, env: session.env })   // env: the login context, as MMeasure reads getCtx() (@$C_Currency_ID@, CAPEX_DASHBOARD.md §5.68)
         : { ok: true, actual: Number(g.measureactual || 0), percent: Math.trunc(Number(g.goalperformance || 0) * 100), stored: true };
       if (global.console) console.log('§DASH-GOAL id=' + g.pa_goal_id + ' source=' + (due ? 'live' : 'stored') + ' actual=' + r.actual + ' percent=' + r.percent);
       if (!r.ok) return { id: Number(g.pa_goal_id), name: g.name, error: r.reason, title: g.name + ': ?', tooltip: r.reason, percent: 0, color: '#000000' };
