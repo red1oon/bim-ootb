@@ -1332,3 +1332,19 @@ Same video timing as the English cut frame for frame (5694 frames, 227.78 s); on
 - **The shipped zip was regenerated with the fix** (14,144 bytes).
 - W-PACK-COVERS 3/0. W-PACKOUT has the pre-existing O6 (libero form) only.
 - The twin half (G1, G2, client-admin Pack In) is still open: the resume list.
+### 5.68 SPEC + RESULT — the fixed USD/BDT rows retired; Home goals in the login currency (2026-11-13; owner: *"the USD/BDT currency is if the user sets so"* … retire them: *"yes"*. The spec was written together with the code in this pass, not ahead of it: named.)
+**What:** `202611131500_CAPEX-RETIRE-FIXED-CURRENCY.sql` (pack 1.0.7).
+- **Deactivated, not deleted:** the 10 USD/BDT Home goals (1000034-1000041, 1000056-57) and the 13 fixed-currency measure rows (1000000, 1000014-20, 1000035-36, 1000040-42).
+- **Added:** 5 Home goals on the login-currency rows of §5.66 (1000060-64: Approved, Actual, Committed, Invoiced, Overrun). Each is copied from the USD goal (SeqNo, colour schema, chart, scope, role). Its target is copied from the old goal in the client's accounting-schema currency (USD → the USD goal, BDT → the BDT goal, else 0).
+- Applied to the pilot and the test instance (`setup_test_instance.sh` lists it); both restarted.
+
+**Defects found and fixed on the way:**
+- (1) The twin's Home read goals with no login context: `home.js session()` now carries `AdCallout.sessionContext` (cached per session), and `dashboard_gadgets.performance` passes it.
+- (2) `model_pa.js` captured `AdCallout` at load, but `idempiere.html` loads it BEFORE `ad_callout.js`, so the model-save path never had the context. It now resolves at call time. `model_pa.js?v=3`, CACHE_VERSION v1065.
+- (3) The witnesses' own oracles ran the SQL without legacy's context parse: `capex/tools/legacy_goal_sql.js parseCtx` (the `$C_Currency_ID` of `Login.java:569`), and W-PA-RENDER / W-PA-EDITOR / W-DASH-SYNC pass the session context.
+- (4) W-PA-TILES' cleanup now removes only the goals it created (not the shipped fixed-UU goals).
+
+**Witnesses:**
+- PASS: W-PA-RENDER 27/0 (B3 now 22 active goals, with the arithmetic), W-PA-EDITOR 7/0 (edits the login-currency goal), W-GOAL-STORE 10/0, W-HOME-TIP 9/0, W-PA-ENGINE 23/0, W-GOAL-ENGINE 5/0.
+- W-PA-TILES (pilot) `PASS 101/0`, cleanup 13.
+- W-DASH-SYNC `judged=144 fail=1`: only E2, the expired premise explained above. Z: the pilot's real Home == the twin's, 22 of 22.

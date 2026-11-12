@@ -142,7 +142,7 @@ const dt = v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.
   }
   H.A.RUNTIME.now = () => Date.now();
   const verdict = judged === 0 ? 'INCONCLUSIVE' : fails ? 'FAIL' : 'PASS';
-  if (createdPage.length) { const n = psql('DELETE FROM PA_Goal WHERE AD_Client_ID=11 AND PA_Measure_ID BETWEEN 1000070 AND 1000099 RETURNING 1;').split('\n').filter(Boolean).length; log('§PA_TILES_CLEANUP page-measure goals removed from the pilot=' + n + ' (created this run=' + createdPage.length + ')'); }
+  if (createdPage.length) { const n = psql("DELETE FROM PA_Goal WHERE AD_Client_ID=11 AND PA_Measure_ID BETWEEN 1000070 AND 1000099 AND PA_Goal_UU::text NOT LIKE '5a0c3e1e-0b7d-4c1e-9f3a-cafe%' RETURNING 1;").split('\n').filter(Boolean).length; log('§PA_TILES_CLEANUP page-measure goals removed from the pilot=' + n + ' (created this run=' + createdPage.length + ')'); }   // only the goals this witness made (the shipped Home goals carry the fixed UU prefix, §5.68)
   log('§PA_TILES_VERDICT ' + verdict + ' judged=' + judged + ' fail=' + fails + ' inconclusive=' + inconc + (BREAK ? ' (BREAK=1: FAIL expected)' : ''));
   process.exit(verdict === 'PASS' ? 0 : 1);
 })().catch(e => { log('§PA_TILES_VERDICT FAIL harness ' + (e && e.stack || e)); process.exit(1); });

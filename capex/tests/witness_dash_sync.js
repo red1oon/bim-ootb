@@ -61,7 +61,7 @@ const finish = () => { const v = judged === 0 ? 'INCONCLUSIVE' : fails ? 'FAIL' 
   const readHome = async () => { await pg.waitForSelector('#idmp-home .pi', { timeout: 20000 }).catch(() => {}); await pg.waitForTimeout(800);
     return pg.evaluate(() => { const db = window.__idmpDb, q = (sql, p) => { const st = db.prepare(sql), o = []; try { if (p) st.bind(p); while (st.step()) { const a = st.getAsObject(), k = {}; Object.keys(a).forEach(x => { k[x.toLowerCase()] = a[x]; }); o.push(k); } } finally { st.free(); } return o; };
       const A = window.APP || {}, access = window.GoalEngine.accessOf(q, A.roleId, A.clientId), d = new Date(), p2 = n => ('0' + n).slice(-2), today = d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate()), out = {}, cnt = {};
-      [].forEach.call(document.querySelectorAll('#idmp-home .pi'), p => { const id = p.getAttribute('data-goal-id'), g = q('SELECT name FROM pa_goal WHERE pa_goal_id=?', [Number(id)])[0]; if (g && /^CAPEX /.test(g.name)) { const r = window.GoalEngine.evaluate(q, Number(id), { today, access }); out[g.name] = { title: p.querySelector('.pt').textContent, engine: r.ok ? r.actual : null, err: r.ok ? null : r.reason }; } });
+      [].forEach.call(document.querySelectorAll('#idmp-home .pi'), p => { const id = p.getAttribute('data-goal-id'), g = q('SELECT name FROM pa_goal WHERE pa_goal_id=?', [Number(id)])[0]; if (g && /^CAPEX /.test(g.name)) { const r = window.GoalEngine.evaluate(q, Number(id), { today, access, env: window.AdCallout.sessionContext({ session: window.APP, client: window.APP.clientId, role: window.APP.roleId, user: window.APP.actor }) }); out[g.name] = { title: p.querySelector('.pt').textContent, engine: r.ok ? r.actual : null, err: r.ok ? null : r.reason }; } });
       ['C_Project', 'C_ProjectPhase', 'C_ProjectTask', 'C_ProjectLine', 'AD_WF_Activity'].forEach(t => { cnt[t] = q('SELECT COUNT(*) AS n FROM ' + t + ' WHERE ad_client_id=11')[0].n; });
       return { goals: out, counts: cnt }; }); };
   const judge = async (tag, home, want) => { let exercised = 0; for (const g of goals) {
@@ -104,9 +104,9 @@ const finish = () => { const v = judged === 0 ? 'INCONCLUSIVE' : fails ? 'FAIL' 
     const zk = await zkHomeTitles(browser), twinT = Object.keys(H.goals).map(k => H.goals[k].title).sort();
     log('§DASH_SYNC_W zk titles=' + zk.length + ' twin titles=' + twinT.length);
     const want = BREAK ? zk.map(t => t + ' ') : zk, dz = want.filter(t => !twinT.includes(t)).concat(twinT.filter(t => !want.includes(t)));
-    ck('Z the pilot\'s real Home captions == the twin\'s Home captions, all 27', zk.length === 27 && twinT.length === 27 && dz.length === 0, dz.slice(0, 8));
+    ck('Z the pilot\'s real Home captions == the twin\'s Home captions, all 22 (27 shipped, 10 fixed-currency retired and 5 login-currency added, §5.68)', zk.length === 22 && twinT.length === 22 && dz.length === 0, dz.slice(0, 8));
     const grp = goals.reduce((m, g) => { const k = (Number(g.target) !== 0 ? 'target' : 'none') + ':' + g.schema; m[k] = (m[k] || 0) + 1; return m; }, {});
-    ck('Z2 targets as §5.27: 6 lower-is-better on 101, 3 higher-is-better on 100, 18 none on the gray schema', grp['target:101'] === 6 && grp['target:100'] === 3 && grp['none:1000000'] === 18, grp);
+    ck('Z2 targets as §5.27 after §5.68: 3 lower-is-better on 101 (actual, committed, invoiced, one per tile now), 3 higher-is-better on 100, 16 none on the gray schema', grp['target:101'] === 3 && grp['target:100'] === 3 && grp['none:1000000'] === 16, grp);
     if (!nH) ck('H3 at least one goal judged', false);
 
     if (BREAK) { log('§DASH_SYNC_W break run: the pilot edit is skipped (it proves nothing more here, and the pilot is shared)'); await browser.close(); server.close(); finish(); }
