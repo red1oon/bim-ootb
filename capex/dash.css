@@ -37,3 +37,4 @@ a.bim{background:var(--acc);color:#fff;padding:2px 9px;border-radius:6px;text-de
 #drill table{width:100%;border-collapse:collapse;font-size:13px}#drill th,#drill td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)}#drill td small{display:block;color:var(--mut)}#drill a.open{color:var(--acc);font-weight:600}
 /* §5.50 glance: formula notes collapsed behind a marker; a short warning chip */
 details.note{border-top:0;padding-top:0}details.note summary{cursor:pointer;color:var(--mut);list-style:none;font-size:10.5px}details.note summary::-webkit-details-marker{display:none}details.note[open] summary{margin-bottom:4px}.subv.warn{color:var(--warn);font-weight:600}
+.lead{margin:0 0 14px;color:var(--mut);font-size:14px}

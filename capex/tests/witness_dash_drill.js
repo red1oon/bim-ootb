@@ -19,6 +19,8 @@ for (const status of ['active', 'all', 'closed']) {
   ['ontime', 'delayed', 'atrisk', 'nosched'].forEach(b => { if (t.schedule && t.schedule.n != null) count['schedule:' + b] = t.schedule[b]; });
   ['within', 'over', 'notstarted'].forEach(b => { if (t.budget_status && t.budget_status.n != null) count['budget:' + b] = t.budget_status[b]; });
   if (t.stage && t.stage.stages) Object.keys(t.stage.stages).forEach(k => { count['stage:' + k] = t.stage.stages[k]; });
+  if (t.procurement) { count['proc:overcommitted'] = t.procurement.overcommitted.n; if (!t.procurement.nopo.notinstalled) count['proc:nopo'] = t.procurement.nopo.n; if (!t.procurement.openpo.notinstalled) count['proc:openpo'] = t.procurement.openpo.projects; }
+  if (t.handover && !t.handover.vacuous) { count['handover:ready'] = t.handover.ready; count['handover:done'] = t.handover.done; }
   Object.keys(count).forEach(k => { const rows = D[k]; if (count[k] === 0 && (!rows || rows.length === 0)) { inc(tag + 'K1 ' + k, 'bucket is 0 on both sides: nothing judged'); return; } ck(tag + 'K1 ' + k + ' list == tile (' + count[k] + ')', !!rows && rows.length === count[k], rows ? rows.length : 'no key'); });
   // K2 money
   // the tile sums the decimals then rounds ONCE (§5.9): use its own summing function over the listed rows, so only the ROW SELECTION is under test
@@ -58,6 +60,12 @@ for (const status of ['active', 'all', 'closed']) {
     }
     ck('K5b each click opens the panel with exactly the node-computed rows (' + keys.length + ' keys, ' + nonEmpty + ' non-empty)', bad.length === 0 && nonEmpty > 0, bad.slice(0, 3));
     ck('K5c every row links to its own record in the source system (legacy: WebUI Action=Zoom on C_Project)', linkBad.length === 0 && nonEmpty > 0, linkBad.slice(0, 2));
+    for (const hv of ['procurement', 'handover']) {
+      await pg.evaluate(h => { location.hash = '#' + h; }, hv); await pg.waitForTimeout(600);
+      const vk = await pg.$$eval('#view [data-drill]', els => els.map(e => e.getAttribute('data-drill')));
+      let vb = []; for (const k of vk) { await pg.evaluate(k => document.querySelector('#view [data-drill="' + k + '"]').dispatchEvent(new MouseEvent('click', { bubbles: true })), k); const n = await pg.$eval('#drill', d => d.hidden ? -1 : d.querySelectorAll('tbody tr').length); if (n !== (want[k] || []).length && !(n === 0 && !(want[k] || []).length)) vb.push(k + ' page=' + n + ' node=' + (want[k] || []).length); }
+      ck('K5e the ' + hv + ' view: ' + vk.length + ' clickable rows, each opens exactly its node-computed projects', vk.length >= 2 && vb.length === 0, vb.slice(0, 3));
+    }
     ck('K5d no page error', errs.length === 0, errs.slice(0, 2));
   } catch (e) { ck('K5 page run', false, String(e).slice(0, 200)); }
   await br.close(); server.close(); finish();
