@@ -36,12 +36,12 @@ async function complete(serviceType, tableName, recordID) {
       await complete('BridgeCompleteProjectIssue', 'C_ProjectIssue', s.recordId);
       log('§FILM_PROGRESS issue C_ProjectIssue=' + s.recordId + ' product=' + prod + ' qty=' + qty + ' CO, balance now=' + psql('SELECT projectbalanceamt FROM c_project WHERE c_project_id=' + pid));
     }
-    if (poArg) {
-      step = 'purchase order'; const [pl, pr] = poArg.split('@'), [prod, qty] = pl.split('x').map(Number), price = Number(pr);
+    for (const one of poArg.split(',').filter(Boolean)) {   // ','-joined purchase orders; a 'd:' prefix leaves that one a DRAFT (an open order), without it the order is completed
+      step = 'purchase order'; const draft = /^d:/.test(one), [pl, pr] = one.replace(/^d:/, '').split('@'), [prod, qty] = pl.split('x').map(Number), price = Number(pr);
       const o = await crud('create_data', { serviceType: 'BridgeCreateOrder', tableName: 'C_Order', action: 'Create', fields: fields({ C_DocTypeTarget_ID: 126, C_BPartner_ID: 120, C_BPartner_Location_ID: 114, Bill_BPartner_ID: 120, Bill_Location_ID: 114, M_PriceList_ID: 102, M_Warehouse_ID: 103, DateOrdered: TS, DateAcct: TS }) });
       await crud('update_data', { serviceType: 'Pilot_updateData_C_Order', tableName: 'C_Order', action: 'Update', recordId: o.recordId, fields: fields({ C_Project_ID: pid, IsSOTrx: 'N' }) });
       await crud('create_data', { serviceType: 'BridgeCreateOrderLine', tableName: 'C_OrderLine', action: 'Create', fields: fields({ AD_Client_ID: 11, AD_Org_ID: 11, C_Order_ID: o.recordId, C_Tax_ID: 106, Line: 10, M_Product_ID: prod, PriceActual: price, PriceEntered: price, QtyEntered: qty, QtyOrdered: qty }) });
-      await complete('BridgeDocActionCOrder', 'C_Order', o.recordId);
+      if (!draft) await complete('BridgeDocActionCOrder', 'C_Order', o.recordId);
       log('§FILM_PROGRESS purchase order C_Order=' + o.recordId + ' product=' + prod + ' qty=' + qty + ' price=' + price + ' ' + psql('SELECT docstatus||\' grandtotal=\'||grandtotal||\' project=\'||c_project_id FROM c_order WHERE c_order_id=' + o.recordId));
     }
   } catch (e) { log('§FILM_PROGRESS STOPPED at step=' + step + ': ' + e.message); process.exit(1); }
