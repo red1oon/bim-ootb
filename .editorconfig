@@ -1,0 +1,16 @@
+# Editor settings for JetBrains and other editors that read .editorconfig natively (VS Code: the same rules are in
+# .vscode/settings.json, so no extension is needed). Spec: bim-compiler prompts/EDITOR_MAINTAINABILITY_STUDY.md §14 N3.
+# Describes the code AS IT IS — measured 2026-11-13, nothing reformatted:
+#   JS: 2,819 files step by 2 spaces, 115 by 4 (indent size is NOT forced; editors detect it per file)
+#   Python: 42 of 43 files 4 spaces · line endings LF (1 CRLF file of 3,072) · every file ends with a newline
+#   trailing spaces are NOT trimmed on save (19 files carry some; trimming would add noise to every diff)
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+indent_style = space
+
+[*.py]
+indent_size = 4

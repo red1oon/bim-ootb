@@ -11,13 +11,14 @@
 // A hit = the definition lands in one of the files that publish NAME. Prints:
 //   §ED_TYPES globals=N sampled=S resolved_before=B resolved_after=A verdict=PASS|FAIL|INCONCLUSIVE
 // PASS needs S>0 and A>B. sampled=0 -> INCONCLUSIVE (nothing judged). Read the log; the misses are listed.
-// Needs TypeScript as a parser-only dep: `npm i --no-save typescript@5.6.3` or TSLIB=<path to typescript>.
+// TypeScript: scripts/lib/find_ts.js ($TSLIB, a local package, or VS Code's own bundled copy) — nothing to install.
 'use strict';
 const fs = require('fs');
 const path = require('path');
 const cp = require('child_process');
-let ts; try { ts = require(process.env.TSLIB || 'typescript'); }
-catch (e) { console.error('§ED_TYPES_NEED_TS npm i --no-save typescript@5.6.3  (or set TSLIB)'); process.exit(3); }
+const found = require('../lib/find_ts').findTs();   // VS Code's bundled TypeScript is enough — nothing to install
+if (!found) { console.error('§ED_TYPES_NEED_TS no TypeScript found: install VS Code, or set TSLIB=<path to typescript.js>'); process.exit(3); }
+const ts = found.ts; console.log('§ED_TYPES_TS ' + found.from);
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const REF = process.argv[2] || 'origin/main';

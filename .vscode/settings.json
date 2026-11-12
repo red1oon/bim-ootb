@@ -19,6 +19,15 @@
     "erp/ad_official_indexes.js": true,
     "erp/SW_VERSION_HISTORY.md": true
   },
+  // Editing style = the code as it is (§14 N3, measured): 2-space default, but each file's own indent is detected and kept
+  // (115 JS files use 4). LF, final newline. Trailing spaces are not trimmed (that would add noise to diffs).
+  "editor.detectIndentation": true,
+  "editor.tabSize": 2,
+  "editor.insertSpaces": true,
+  "files.eol": "\n",
+  "files.insertFinalNewline": true,
+  "files.trimTrailingWhitespace": false,
+  "[python]": { "editor.tabSize": 4 },
   // Generated / extracted data: edit the generator named on line 1 of each file, never the file itself.
   "files.readonlyInclude": {
     "erp/genesis_dict.js": true,

@@ -1,0 +1,14 @@
+{
+  // Breakpoint debugging from VS Code (built-in JavaScript debugger, nothing to install). Spec: bim-compiler
+  // prompts/EDITOR_MAINTAINABILITY_STUDY.md §14 N4. Start the "Serve repo (http://localhost:8000)" task first.
+  // ⚠ The service worker serves precached files cache-first, so after an edit either run `node scripts/bump.js <file> --write`
+  //   or tick DevTools ▸ Application ▸ Service workers ▸ "Update on reload". A launch that bypasses the SW is DEV_TOOLKIT spike S0.
+  // Lazy-loaded parts (Find/navigate, viewer/main.js modules[]) appear in the debugger the first time they load.
+  "version": "0.2.0",
+  "configurations": [
+    { "name": "Viewer in Chrome (localhost:8000)", "type": "chrome", "request": "launch", "url": "http://localhost:8000/viewer/viewer.html", "webRoot": "${workspaceFolder}" },
+    { "name": "ERP (iDempiere client) in Chrome", "type": "chrome", "request": "launch", "url": "http://localhost:8000/erp/idempiere.html", "webRoot": "${workspaceFolder}" },
+    { "name": "Modeller in Chrome", "type": "chrome", "request": "launch", "url": "http://localhost:8000/modeller/modeller.html", "webRoot": "${workspaceFolder}" },
+    { "name": "Node: this witness / script", "type": "node", "request": "launch", "program": "${file}", "cwd": "${workspaceFolder}", "console": "integratedTerminal", "skipFiles": ["<node_internals>/**"] }
+  ]
+}
