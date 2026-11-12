@@ -53,7 +53,7 @@
     var v = x.notinstalled ? 'no data (not installed)' : x.vacuous ? 'no data' : Object.keys(x.cur).sort().map(function (c) { return esc(curInfo(c).ISO_Code) + ' ' + (x.cur[c] / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }).join(' · ');
     return '<div class="subv"' + (key === 'committed_verified' ? ' title="Overlaps Actual Cost: iDempiere adds an issue\'s cost to the project balance"' : '') + '>' + label + ': ' + fl(key, v) + '</div>';
   }
-  function dashboard() {
+  function dashboardClassic() {
     var t = S.res.tiles, v = $('view'); v.innerHTML = '';
     var k = h('div', 'grid kpis');
     k.appendChild(card('Total Projects (All)', '<div class="big">' + fl('total_projects', S.flat.total_projects) + '</div><div class="subv">Closed: ' + fl('total_projects_closed', S.flat.total_projects_closed) + '</div>', 'total_projects'));
@@ -99,6 +99,97 @@
     g.appendChild(card('Budget Status', bb, 'budget_status'));
     v.appendChild(g); fillFlat(v);
   }
+
+
+  // ── §5.53 themes: skin (colour tokens) and layout (which shared pieces are drawn). Nothing here computes: every number comes from S.res (tiles.js) and S.res.drill.
+  var THEMES = { classic: 'Classic', executive: 'Executive' }, SKINS = { light: 'Light', dark: 'Dark' };
+  function pref(name, allowed, dflt) {
+    var v = Q.get(name), ok = function (x) { return x && allowed[x]; };
+    if (ok(v)) { try { localStorage.setItem('capex.' + name, v); } catch (e) {} return v; }   // an explicit choice is remembered; storage that throws changes nothing
+    try { v = localStorage.getItem('capex.' + name); } catch (e) { v = null; }
+    return ok(v) ? v : dflt;
+  }
+  S.theme = pref('theme', THEMES, 'classic'); S.skin = pref('skin', SKINS, 'light');
+  function applySkin() { document.body.setAttribute('data-skin', S.skin); }
+  function remember(name, v) { try { localStorage.setItem('capex.' + name, v); } catch (e) {} }
+  var HCOL = { green: 'var(--ok)', amber: 'var(--warn)', red: 'var(--bad)', none: 'var(--none)' }, HNAME = { green: 'Green', amber: 'Amber', red: 'Red', none: 'No data' };
+  function num(v) { return v == null || v === '' ? null : Number(v); }
+  function meter(parts) { return '<div class="meter">' + parts.map(function (p) { return '<i style="width:' + Math.max(0, Math.min(100, p[0])).toFixed(1) + '%;background:' + p[1] + (p[2] ? ';opacity:' + p[2] : '') + '"></i>'; }).join('') + '</div>'; }
+  function oneCur(m) { var k = Object.keys(m || {}); return k.length === 1 ? k[0] : null; }
+  function segBar(x) {   // health as ONE segmented bar; every segment is a drill target and its label is a word + count, never colour alone
+    var items = [['green', x.green], ['amber', x.amber], ['red', x.red], ['none', x.none]];
+    return '<div class="xseg">' + items.map(function (i) { return '<div class="seg-' + i[0] + '" data-drill="health:' + i[0] + '" style="flex:' + Math.max(i[1], .6) + '" title="' + HNAME[i[0]] + ': ' + i[1] + '" tabindex="0">' + i[1] + '</div>'; }).join('') + '</div>' +
+      '<div class="leg">' + items.map(function (i) { return '<span><i class="dot" style="background:' + HCOL[i[0]] + '"></i>' + HNAME[i[0]] + '</span>'; }).join('') + '</div>' + fl('health', '', 'span');
+  }
+  function reasonOf(r) { var a = []; if ((r.schedule === 'delayed' || r.schedule === 'atrisk') && r.late > 0) a.push(r.late + ' days behind'); if (r.budget === 'over') a.push('spent above plan'); return a.join(' · '); }
+  var TIP = null;
+  function tipEl() { if (!TIP) { TIP = h('div', 'tip', ''); TIP.id = 'tip'; TIP.hidden = true; document.body.appendChild(TIP); } return TIP; }
+  function showTip(r, ev, anchor) {
+    var t = tipEl(), why = reasonOf(r), box = anchor.getBoundingClientRect();
+    t.innerHTML = '<b>' + esc(r.Value) + '</b> <span class="chip" style="background:' + HCOL[r.health || 'none'] + '">' + HNAME[r.health || 'none'] + '</span>' +
+      '<div class="r"><span>Planned</span><span>' + esc(curInfo(r.cur).ISO_Code) + ' ' + (+r.planned).toLocaleString('en-US', { maximumFractionDigits: 0 }) + '</span></div>' +
+      '<div class="r"><span>Spent</span><span>' + (r.planned > 0 ? (100 * (r.spent || 0) / r.planned).toFixed(1) + '%' : '—') + '</span></div>' +
+      '<div class="r"><span>Behind schedule</span><span>' + r.late + ' days</span></div>' + (why ? '<div class="why">' + esc(why) + '</div>' : '') + '<div class="hint">click to open the project</div>';
+    t.setAttribute('data-planned', r.planned); t.setAttribute('data-spent', r.spent || 0); t.setAttribute('data-late', r.late);
+    t.hidden = false; var th = t.offsetHeight, tw = t.offsetWidth;   // placed beside the bubble, flipped left/above when it would leave the viewport
+    var lx = box.left + box.width / 2 + 16; if (lx + tw > window.innerWidth - 8) lx = box.left + box.width / 2 - 16 - tw;
+    t.style.left = Math.max(8, lx) + 'px'; t.style.top = Math.max(8, Math.min(window.innerHeight - th - 8, box.top + box.height / 2 - th / 2)) + 'px';
+  }
+  function hideTip() { if (TIP) TIP.hidden = true; }
+  function bubbleMap(rows) {
+    var plotted = rows.filter(function (r) { return num(r.planned) > 0; }), np = rows.length - plotted.length;
+    var curs = {}; plotted.forEach(function (r) { curs[r.cur] = 1; }); var same = Object.keys(curs).length <= 1, maxPl = Math.max.apply(null, plotted.map(function (r) { return +r.planned; }).concat([1]));
+    var W = 760, H = 330, L = 56, B = 40, Tp = 14, R = 14, maxLate = Math.max.apply(null, plotted.map(function (r) { return r.late; }).concat([0])), maxPct = Math.max.apply(null, plotted.map(function (r) { return 100 * (r.spent || 0) / r.planned; }).concat([100]));
+    var xmax = Math.max(14, Math.ceil(maxLate / 14) * 14), ymax = Math.max(100, Math.ceil(maxPct / 20) * 20);
+    var X = function (d) { return L + (W - L - R) * d / xmax; }, Y = function (s) { return Tp + (H - Tp - B) * (1 - s / ymax); };
+    var svg = '<svg class="bubmap" width="100%" viewBox="0 0 ' + W + ' ' + H + '" role="group" aria-label="Portfolio map: days behind schedule against budget spent">';
+    svg += '<rect x="' + X(Math.min(18, xmax * .3)) + '" y="' + Tp + '" width="' + (W - R - X(Math.min(18, xmax * .3))) + '" height="' + (Y(80) - Tp) + '" fill="var(--bad)" opacity=".07"/><rect x="' + L + '" y="' + Y(80) + '" width="' + (X(Math.min(18, xmax * .3)) - L) + '" height="' + (H - B - Y(80)) + '" fill="var(--ok)" opacity=".06"/>';
+    for (var v = 0; v <= ymax; v += 20) svg += '<line class="xgrid" data-v="' + v + '" x1="' + L + '" x2="' + (W - R) + '" y1="' + Y(v) + '" y2="' + Y(v) + '" stroke="var(--line)"/><text x="' + (L - 8) + '" y="' + (Y(v) + 4) + '" text-anchor="end" fill="var(--mut)" font-size="11">' + v + '%</text>';
+    for (var d = 0; d <= xmax; d += xmax / 5) svg += '<text x="' + X(d) + '" y="' + (H - B + 16) + '" text-anchor="middle" fill="var(--mut)" font-size="11">' + Math.round(d) + '</text>';
+    svg += '<text x="' + ((W + L) / 2) + '" y="' + (H - 6) + '" text-anchor="middle" fill="var(--mut)" font-size="12">days behind schedule →</text><text transform="translate(14 ' + ((H - B) / 2) + ') rotate(-90)" text-anchor="middle" fill="var(--mut)" font-size="12">budget spent →</text>';
+    svg += '<text x="' + (L + 10) + '" y="' + (Y(80) + 22) + '" fill="var(--ok)" font-size="12" font-weight="700">ON TRACK</text><text x="' + (W - R - 10) + '" y="' + (Tp + 20) + '" text-anchor="end" fill="var(--bad)" font-size="12" font-weight="700">LATE AND OVER BUDGET</text>';
+    var placed = [];
+    plotted.slice().sort(function (a, b) { return b.planned - a.planned; }).forEach(function (r) {
+      var pct = 100 * (r.spent || 0) / r.planned, rad = same ? 7 + Math.sqrt(r.planned / maxPl) * 22 : 11, cx = X(r.late), cy = Y(pct), nud = 0;
+      placed.forEach(function (q) { if (Math.abs(q.cx - cx) < 9 && Math.abs(q.cy - cy) < 9) nud++; }); if (nud) cx += nud * 12;
+      placed.push({ cx: cx, cy: cy });
+      svg += '<circle class="bub" tabindex="0" role="img" data-open-project="' + esc(r.id) + '" data-late="' + r.late + '" data-spentpct="' + pct.toFixed(1) + '" data-nudged="' + (nud ? 1 : 0) + '" cx="' + cx + '" cy="' + cy + '" r="' + rad + '" fill="' + HCOL[r.health || 'none'] + '" fill-opacity=".74" stroke="var(--card)" stroke-width="2" aria-label="' + esc(r.Value) + ': ' + HNAME[r.health || 'none'] + ', ' + r.late + ' days behind, ' + pct.toFixed(0) + ' percent spent"/>';
+      if (rad >= 20) svg += '<text x="' + cx + '" y="' + (cy + 4) + '" text-anchor="middle" fill="#fff" font-size="10.5" font-weight="700" pointer-events="none">' + esc(String(r.Value).slice(0, 9)) + '</text>';
+    });
+    svg += '</svg>';
+    var tbl = '<table id="mapTable" style="display:none"><thead><tr><th>Project</th><th>Health</th><th>Days behind</th><th>Spent</th><th>Planned</th></tr></thead><tbody>' + plotted.map(function (r) { return '<tr data-open-project="' + esc(r.id) + '"><td>' + esc(r.Value) + '</td><td>' + HNAME[r.health || 'none'] + '</td><td>' + r.late + '</td><td>' + (100 * (r.spent || 0) / r.planned).toFixed(1) + '%</td><td>' + esc(curInfo(r.cur).ISO_Code) + ' ' + (+r.planned).toLocaleString('en-US', { maximumFractionDigits: 0 }) + '</td></tr>'; }).join('') + '</tbody></table>';
+    return '<button type="button" id="mapTableBtn" class="tag btn">Table view</button><div id="mapWrap">' + svg + tbl + '</div><div class="subv notplotted" data-n="' + np + '">' + (np ? 'not plotted: ' + np + ' (no planned amount)' : 'every active project is plotted') + (same ? ' · bubble size = planned amount' : ' · size not shown: several currencies') + '</div>';
+  }
+  function dashboardExecutive() {
+    var t = S.res.tiles, v = $('view'), D = S.res.drill || {}, rows = D.active_projects || [];
+    v.innerHTML = '';
+    var hero = h('div', 'grid xhero');
+    var ap = oneCur(t.approved_budget.cur), pctA = ap ? (t.actual_cost.pctOfPlan || {})[ap] : null, cm = ap ? t.committed_cost.cur[ap] : null;
+    hero.appendChild(card('Approved budget', fl('approved_budget', money(t.approved_budget.cur), 'div') + '<div class="subv">' + S.res.pop.S + ' projects · ' + S.res.pop.A + ' active</div>' + (pctA != null ? meter([[100 * pctA, 'var(--acc)']]) + '<div class="subv">' + fl('actual_cost_pct_of_plan', pctMap(t.actual_cost.pctOfPlan)) + ' spent</div>' : '<div class="subv">' + fl('actual_cost_pct_of_plan', pctMap(t.actual_cost.pctOfPlan)) + ' spent</div>'), 'approved_budget'));
+    hero.appendChild(card('Spent so far', fl('actual_cost', money(t.actual_cost.cur), 'div') + '<div class="subv">committed ' + fl('committed_cost', moneyTxt(t.committed_cost.cur)) + '</div>' + (ap && pctA != null && t.approved_budget.cur[ap] ? meter([[100 * pctA, 'var(--acc)'], [100 * Math.max(0, (cm || 0) - t.actual_cost.cur[ap]) / t.approved_budget.cur[ap], 'var(--acc)', .4]]) + '<div class="subv">solid = spent, light = committed beyond spent</div>' : ''), 'actual_cost'));
+    hero.appendChild(card('Forecast at completion · proposed', t.forecast_cost.inconclusive ? '<span class="nodata">n/a — ' + esc(t.forecast_cost.inconclusive) + '</span>' : fl('forecast_cost', money(t.forecast_cost.cur), 'div') + '<div class="subv" title="EAC = Spent + (Budget − Done) ÷ CPI. Proposed, awaiting the client.">proposed formula</div>' + (t.forecast_cost.basisDiffers ? '<div class="subv warn" data-basis="differs" title="CPI is outside 0.5–2 on ' + t.forecast_cost.basisDiffers + ' project(s): Spent and Done are not on one basis, so read this forecast as an alarm, not a result">⚠ basis differs</div>' : ''), 'forecast_cost'));
+    var hb = state(t.health); hero.appendChild(card('Project health (active)', hb || '<div class="big">' + t.health.n + '<span class="cur" style="margin-left:6px">active projects</span></div>' + segBar(t.health), 'health'));
+    v.appendChild(hero);
+    var mid = h('div', 'grid xmid');
+    var mc = card('Portfolio map · where every project stands', bubbleMap(rows), null); mc.setAttribute('data-tile', 'portfolio_map'); mid.appendChild(mc);
+    var att = (D['health:red'] || []).concat(D['health:amber'] || []).slice(0, 6);
+    var ac = card('Needs attention', att.length ? att.map(function (r) { return '<div class="att-row" data-open-project="' + esc(r.id) + '" tabindex="0"><div><b>' + esc(r.Value) + '</b><small>' + esc(reasonOf(r) || 'see the project') + '</small></div><span class="chip" style="background:' + HCOL[r.health] + '">' + HNAME[r.health] + '</span></div>'; }).join('') + '<div class="subv" style="margin-top:8px">click a row to open the project</div>' : '<span class="nodata">no project is red or amber</span>', null); ac.setAttribute('data-tile', 'attention');
+    var st = t.stage, sb = state(st), col = h('div', 'xcol'); col.appendChild(ac);
+    if (!sb) { var mx = Math.max.apply(null, Object.keys(st.stages).map(function (k) { return st.stages[k]; })); sb = Object.keys(st.stages).sort().map(function (k) { return '<div class="row" data-drill="stage:' + esc(k) + '"><span>' + esc(k) + '</span><b>' + st.stages[k] + '</b></div>' + meter([[100 * st.stages[k] / mx, 'var(--acc)']]); }).join('') + fl('stage', '', 'span'); }
+    col.appendChild(card('Project stage', sb, 'stage')); mid.appendChild(col); v.appendChild(mid); fillFlat(v);
+    v.querySelectorAll('circle.bub, .att-row').forEach(function (e) { e.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); e.dispatchEvent(new MouseEvent('click', { bubbles: true })); } }); });
+    v.querySelectorAll('circle.bub').forEach(function (e) {
+      var r = rows.filter(function (x) { return String(x.id) === e.getAttribute('data-open-project'); })[0];
+      ['mouseover', 'focus'].forEach(function (n) { e.addEventListener(n, function (ev) { showTip(r, ev, e); e.setAttribute('stroke', 'var(--ink)'); e.setAttribute('stroke-width', '3'); }); });
+      ['mouseout', 'blur'].forEach(function (n) { e.addEventListener(n, function () { hideTip(); e.setAttribute('stroke', 'var(--card)'); e.setAttribute('stroke-width', '2'); }); });
+    });
+    var tb = $('mapTableBtn'); if (tb) tb.onclick = function () { var T2 = $('mapTable'), on = T2.style.display === 'none'; T2.style.display = on ? '' : 'none'; document.querySelector('#mapWrap svg').style.display = on ? 'none' : ''; tb.textContent = on ? 'Chart view' : 'Table view'; };
+  }
+  function dashboard() { var v = $('view'); v.setAttribute('data-theme', S.theme); ({ classic: dashboardClassic, executive: dashboardExecutive })[S.theme](); }
+  document.addEventListener('click', function (ev) {   // a bubble, an attention row or a table row opens ONE project in the drill panel
+    var el = ev.target.closest && ev.target.closest('#view [data-open-project]'); if (!el) return;
+    var rs = ((S.res.drill || {}).active_projects || []).filter(function (r) { return String(r.id) === el.getAttribute('data-open-project'); }); if (rs.length) openDrillRows(rs, rs[0].Value, 'project:' + rs[0].id);
+  });
 
   function projectsTable(cols, rowFn, head) {
     var P = data().projects.filter(function (p) { return passes(p); });
@@ -162,8 +253,9 @@
     log('§DASH_PROJSEL source=' + S.cur + ' options=' + rows.length + ' selected=' + (sel.value || '') + ' reset=' + (reset ? 1 : 0) + ' (all projects=' + P.length + ')');
   }
   // §5.49 drill-down: a number on the page opens the projects behind it in a side panel; a project opens the ERP Project window (window 130) on that record
-  function openDrill(key, label) {
-    var rows = (S.res.drill || {})[key] || [], d = $('drill'), f = function (v) { return v == null || v === '' ? '<span class="nodata">—</span>' : (+v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
+  function openDrill(key, label) { openDrillRows((S.res.drill || {})[key] || [], label, key); }
+  function openDrillRows(rows, label, key) {
+    var d = $('drill'), f = function (v) { return v == null || v === '' ? '<span class="nodata">—</span>' : (+v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
     // the row opens the record in the system the numbers came from: legacy -> its WebUI zoom (AdempiereWebUI.processParameters: Action=Zoom&TableName&Record_ID); twin -> the ERP Project window (130)
     var link = function (r) { return esc(S.cur === 'legacy' ? CFG.legacyUi + '?Action=Zoom&TableName=C_Project&Record_ID=' + r.id : CFG.erpUrl + '?window=130&record=' + r.id); };
     d.innerHTML = '<div class="dhead"><b>' + esc(label) + '</b> <span class="dn" data-drill-n="' + rows.length + '">' + rows.length + ' project' + (rows.length === 1 ? '' : 's') + '</span><button type="button" id="drillClose" aria-label="Close">×</button></div>' +
@@ -235,6 +327,8 @@
     fillSelects(); fillProjects(); await probeBim(); runTwin(); render();
     $('src').onchange = function () { S.cur = this.value; fillSelects(); fillProjects(); probeBim().then(render); };
     ['fOrg', 'fCat', 'fStatus'].forEach(function (id) { $(id).onchange = function () { fillProjects(); runTwin(); render(); }; });
+    applySkin(); $('fTheme').innerHTML = Object.keys(THEMES).map(function (k) { return '<option value="' + k + '">' + THEMES[k] + '</option>'; }).join(''); $('fSkin').innerHTML = Object.keys(SKINS).map(function (k) { return '<option value="' + k + '">' + SKINS[k] + '</option>'; }).join(''); $('fTheme').value = S.theme; $('fSkin').value = S.skin;
+    $('fTheme').onchange = function () { S.theme = $('fTheme').value; remember('theme', S.theme); render(); }; $('fSkin').onchange = function () { S.skin = $('fSkin').value; remember('skin', S.skin); applySkin(); };
     $('fProject').onchange = function () { runTwin(); render(); };
     window.onhashchange = nav; nav();
   }
