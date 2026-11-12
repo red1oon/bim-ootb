@@ -286,6 +286,24 @@
     var cpi = out.money.spent > 0 && done > 0 ? done / out.money.spent : null; out.forecast = { basisDiffers: cpi != null && (cpi < 0.5 || cpi > 2) };
     out.orders = (un.orders || data.orders == null) ? null : { rows: (data.orders || []).filter(function (o) { return String(o.C_Project_ID) === String(id) && o.IsSOTrx === 'N'; }).map(function (o) { return { id: o.C_Order_ID, status: o.DocStatus, total: Number(o.GrandTotal), cur: o.C_Currency_ID, open: !{ CO: 1, CL: 1, VO: 1, RE: 1 }[o.DocStatus] }; }) };
     if (out.orders) out.orders.open = out.orders.rows.filter(function (r) { return r.open; }).length;
+    // §5.59 the supply chain after the PO, a DRILL (never a tile): per purchase order its receipts, vendor invoices and payments; null when the server lacks any of the three entities
+    out.chain = null;
+    if (!(un.receipts || un.vinvoices || un.payments) && data.receipts != null && data.vinvoices != null && data.payments != null && out.orders) {
+      var dn2 = function (st) { return st === 'CO' || st === 'CL'; }, mine = function (a) { return (a || []).filter(function (x) { return String(x.C_Project_ID) === String(id); }); };
+      var rc = mine(data.receipts).filter(function (x) { return x.IsSOTrx === 'N' && dn2(x.DocStatus); }), iv = mine(data.vinvoices).filter(function (x) { return x.IsSOTrx === 'N' && dn2(x.DocStatus); }), py = mine(data.payments).filter(function (x) { return x.IsReceipt === 'N' && dn2(x.DocStatus); });
+      var poRows = (data.orders || []).filter(function (o) { return String(o.C_Project_ID) === String(id) && o.IsSOTrx === 'N'; }), poSet = {}, invSet = {};
+      var rows = poRows.map(function (o) {
+        poSet[o.C_Order_ID] = 1; var mi = iv.filter(function (x) { return String(x.C_Order_ID) === String(o.C_Order_ID); }), si = mi.filter(function (x) { return String(x.C_Currency_ID) === String(o.C_Currency_ID); }), ids = {};
+        mi.forEach(function (x) { ids[x.C_Invoice_ID] = 1; invSet[x.C_Invoice_ID] = 1; });
+        var mp = py.filter(function (x) { return String(x.C_Order_ID) === String(o.C_Order_ID) || (x.C_Invoice_ID != null && ids[x.C_Invoice_ID]); }), sp = mp.filter(function (x) { return String(x.C_Currency_ID) === String(o.C_Currency_ID); }), mr = rc.filter(function (x) { return String(x.C_Order_ID) === String(o.C_Order_ID); });
+        var invoiced = si.reduce(function (a, x) { return a + (Number(x.GrandTotal) || 0); }, 0), paid = sp.reduce(function (a, x) { return a + (Number(x.PayAmt) || 0); }, 0), stage = !dn2(o.DocStatus) ? 'unfinished' : invoiced > 0 ? (paid >= invoiced ? 'paid' : 'invoiced') : mr.length ? 'received' : 'ordered';
+        return { order: o.C_Order_ID, status: o.DocStatus, total: Number(o.GrandTotal), cur: o.C_Currency_ID, received: mr.length, invoiced: invoiced, paid: paid, stage: stage, otherCur: (mi.length - si.length) + (mp.length - sp.length),
+          docs: { receipts: mr.map(function (x) { return x.M_InOut_ID; }), invoices: mi.map(function (x) { return x.C_Invoice_ID; }), payments: mp.map(function (x) { return x.C_Payment_ID; }) } };
+      });
+      var strip = { ordered: 0, received: 0, invoiced: 0, paid: 0 }; rows.forEach(function (r) { if (strip[r.stage] != null) strip[r.stage]++; });
+      out.chain = { rows: rows, strip: strip, unlinked: { receipts: rc.filter(function (x) { return !poSet[x.C_Order_ID]; }).length, invoices: iv.filter(function (x) { return !poSet[x.C_Order_ID]; }).length,
+        payments: py.filter(function (x) { return !poSet[x.C_Order_ID] && !(x.C_Invoice_ID != null && invSet[x.C_Invoice_ID]); }).length } };
+    }
     if (un.bimdocs || data.bimdocs == null) out.docs = null;
     else { var latest = {}; (data.bimdocs || []).forEach(function (r) { if (r.IsActive === 'N' || String(r.C_Project_ID) !== String(id)) return; var k = r.DeliverableNo, rv = Number(r.Revision) || 0, i = Number(r.BIM_Document_ID) || 0, c = latest[k]; if (!c || rv > c.rev || (rv === c.rev && i > c.i)) latest[k] = { no: k, rev: rv, i: i, status: r.DocStatus, name: r.Name }; });
       var lr = Object.keys(latest).sort().map(function (k) { return latest[k]; }); out.docs = { rows: lr, total: lr.length, issued: lr.filter(function (r) { return r.status === 'CO'; }).length }; }
