@@ -1,4 +1,4 @@
-// capex/dash.js — the page. Every number comes from CapexTiles.compute(data, filters); this file only draws. Spec: prompts/CAPEX_DASHBOARD.md
+// capex/dash.js — the page. Every number comes from the source's PA rows via CapexPaTiles.compute (§5.66; the not-moved ones from CapexTiles); this file only draws. Spec: prompts/CAPEX_DASHBOARD.md
 // Rendered numbers carry data-flat="<tile key>" + data-value="<canonical string>" so a witness can compare them with an independent SQL result.
 (function () {
   'use strict';
@@ -345,9 +345,16 @@
     openDrill(el.getAttribute('data-drill'), lbl);
   });
   document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape' && $('drill')) $('drill').hidden = true; });
+  // §5.66: every moved number is a PA row of the source, run by the kernel engine (capex/pa_tiles.js); without the engine scripts the page says so and falls back to tiles.js
+  function compute(d, f) {
+    var PT = window.CapexPaTiles, ok = PT && S.SQL && window.GoalEngine && window.AdCallout && window.AdCallout.RUNTIME && window.AdCallout.RUNTIME.registerSqlFunctions;
+    if (!ok) { log('§DASH_PA unavailable (engine scripts not loaded): tiles.js'); return T.compute(d, f); }
+    return PT.compute({ SQL: S.SQL, GE: window.GoalEngine, AC: window.AdCallout, T: T, A: AD, log: log }, d, f);
+  }
   function render() {
     var d = data(); if (!d) { $('view').innerHTML = '<div class="card"><span class="nodata">no data source loaded</span></div>'; $('foot').textContent = '§DASH_NODATA no source'; return; }
-    var f = filters(); S.res = T.compute(d, f); S.flat = T.flatten(S.res.tiles);
+    var f = filters(); S.res = compute(d, f); S.flat = T.flatten(S.res.tiles);
+    if (S.res.pa) log('§DASH_PA source=' + S.cur + ' judged=' + S.res.pa.judged + ' errors=' + S.res.pa.errors.length + (S.res.pa.errors.length ? ' first=' + JSON.stringify(S.res.pa.errors[0]) : ''));
     log('§DASH_RENDER source=' + S.cur + ' today=' + TODAY + ' filters=' + JSON.stringify({ org: f.org, category: f.category, status: f.status, project: f.project }) + ' pop=' + JSON.stringify(S.res.pop));
     Object.keys(S.flat).forEach(function (k) { log('§DASH_TILE source=' + S.cur + ' tile=' + k + ' value=' + S.flat[k]); });
     $('lastUpdated').textContent = S.flat.last_updated; $('lastUpdated').setAttribute('data-value', S.flat.last_updated);
@@ -356,7 +363,7 @@
        procurement: procurement, handover: handover,
        project: projectPage, approvals: function () { var a = S.res.tiles.approvals; simple('Approval Pending', a.inconclusive ? state(a) : '<div class="big">' + fl('approvals', a.n) + '</div>', 'approvals'); } })[S.view](); addLead();
     $('foot').textContent = 'Source: ' + S.cur + (d.meta && d.meta.url ? ' (' + d.meta.url + ')' : '') + (d.unavailable && d.unavailable.length ? ' · unavailable entities: ' + d.unavailable.join(', ') : '') + ' · date used: ' + TODAY;
-    window.__capex = { flat: S.flat, source: S.cur, rendered: true, twin: S.twin || null };
+    window.__capex = { flat: S.flat, source: S.cur, rendered: true, twin: S.twin || null, pa: S.res.pa ? { judged: S.res.pa.judged, errors: S.res.pa.errors.slice(0, 5) } : null };   // pa: did the numbers come from PA rows (§5.66)
   }
 
   function fillSelects() {
@@ -378,7 +385,7 @@
   }
   function runTwin() {
     if (!S.sources.sqlite || !S.sources.legacy) { log('§DASH_TWIN skipped reason=' + (S.sources.legacy ? 'no sqlite source' : 'no legacy snapshot (' + CFG.legacySnapshot + ' not present — run tools/legacy_snapshot.js while the legacy server is up)')); return; }
-    var f = filters(), a = T.flatten(T.compute(S.sources.sqlite, f).tiles), b = T.flatten(T.compute(S.sources.legacy, f).tiles);
+    var f = filters(), a = T.flatten(compute(S.sources.sqlite, f).tiles), b = T.flatten(compute(S.sources.legacy, f).tiles);
     S.twin = T.twin(a, b, log);
   }
   async function loadScript(src) { return new Promise(function (ok, no) { var s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = function () { no(new Error('script ' + src)); }; document.head.appendChild(s); }); }
@@ -389,6 +396,7 @@
     try {
       await loadScript(CFG.sqlJs);
       var SQL = await initSqlJs({ locateFile: function () { return CFG.sqlWasm; } });
+      S.SQL = SQL;   // §5.66: the page DB of pa_tiles.js
       S.sources.sqlite = await AD.loadSqlite(SQL, CFG.erpDb);
       var d = S.sources.sqlite; log('§DASH_SOURCE sqlite url=' + CFG.erpDb + ' projects=' + d.projects.length + ' phases=' + d.phases.length + ' tasks=' + d.tasks.length + ' lines=' + d.lines.length + ' unavailable=[' + d.unavailable.join(',') + ']');
     } catch (e) { log('§DASH_SOURCE sqlite FAIL ' + e.message); }

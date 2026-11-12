@@ -23,6 +23,6 @@ for f in ws/migration/iD13/$P/202611042300_CAPEX-WS-READ.sql migration/iD13/$P/2
 for f in 202611042301_CAPEX-WS-PUSH.sql 202611042303_CAPEX-WS-PA.sql; do echo "== remapped $f"; run < "$HERE/$f"; done
 echo "== copied pilot types"; python3 "$HERE/copytypes.py" | run
 seqs
-for f in ws/bimdoc/migration/iD13/$P/202611111200_CAPEX-WS-BIMDOC.sql ws/q4/migration/iD13/$P/202611111400_CAPEX-WS-Q4.sql ws/bimdoc/migration/iD13/$P/202611121600_CAPEX-WS-TASKDATES.sql ws/chain/migration/iD13/$P/202611121700_CAPEX-WS-CHAIN.sql; do echo "== $f"; run < "$L/$f"; done
+for f in ws/bimdoc/migration/iD13/$P/202611111200_CAPEX-WS-BIMDOC.sql ws/q4/migration/iD13/$P/202611111400_CAPEX-WS-Q4.sql ws/bimdoc/migration/iD13/$P/202611121600_CAPEX-WS-TASKDATES.sql ws/chain/migration/iD13/$P/202611121700_CAPEX-WS-CHAIN.sql ws/pacalc/migration/iD13/$P/202611131400_CAPEX-WS-PACALC.sql; do echo "== $f"; run < "$L/$f"; done
 seqs
 verdict

@@ -53,9 +53,10 @@ const dt = v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.
   log('§PA_TILES_DOWN c_project=' + copied.c_project + ' c_projectphase=' + copied.c_projectphase + ' ad_wf_activity=' + copied.ad_wf_activity + ' c_order=' + copied.c_order + ' c_projectissue=' + copied.c_projectissue + ' c_phase=' + copied.c_phase + ' (clients 0+11, read-only psql)');
 
   // ── legacy: one goal per measure, computed by legacy's own model save ──
-  const legacy = {};
+  const legacy = {}, createdPage = [];
   for (const m of measures) {
     let g = (await queryGoal([{ column: 'Name', val: m.name }]))[0];
+    if (!g && m.pa_measure_id >= 1000070) createdPage.push(m.name);   // §5.66 page measures are not Home goals: the goal made here to let legacy compute is removed at the end (the pilot's Home stays as users see it; W-DASH-SYNC)
     if (!g) { const r = await createGoal(m.name, m.pa_measure_id, scopeOf(m)); log('§PA_TILES legacy create goal ' + JSON.stringify(m.name) + ' → ' + (r.isError ? 'ERROR ' + r.error : 'RecordID=' + r.recordId)); g = (await queryGoal([{ column: 'Name', val: m.name }]))[0]; }
     if (!g) { legacy[m.pa_measure_id] = { err: 'no goal' }; continue; }
     const t0 = Number(g.MeasureTarget || 0), a = await saveTarget(g.PA_Goal_ID, String(t0 + 1)), b = await saveTarget(g.PA_Goal_ID, String(t0));   // §5.27: the goal keeps its target
@@ -141,6 +142,7 @@ const dt = v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.
   }
   H.A.RUNTIME.now = () => Date.now();
   const verdict = judged === 0 ? 'INCONCLUSIVE' : fails ? 'FAIL' : 'PASS';
+  if (createdPage.length) { const n = psql('DELETE FROM PA_Goal WHERE AD_Client_ID=11 AND PA_Measure_ID BETWEEN 1000070 AND 1000099 RETURNING 1;').split('\n').filter(Boolean).length; log('§PA_TILES_CLEANUP page-measure goals removed from the pilot=' + n + ' (created this run=' + createdPage.length + ')'); }
   log('§PA_TILES_VERDICT ' + verdict + ' judged=' + judged + ' fail=' + fails + ' inconclusive=' + inconc + (BREAK ? ' (BREAK=1: FAIL expected)' : ''));
   process.exit(verdict === 'PASS' ? 0 : 1);
 })().catch(e => { log('§PA_TILES_VERDICT FAIL harness ' + (e && e.stack || e)); process.exit(1); });
