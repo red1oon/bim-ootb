@@ -35,4 +35,5 @@ a.bim{background:var(--acc);color:#fff;padding:2px 9px;border-radius:6px;text-de
 #drill{position:fixed;top:0;right:0;bottom:0;width:min(760px,96vw);background:var(--card);border-left:1px solid var(--line);box-shadow:-8px 0 24px rgba(0,0,0,.12);padding:16px;overflow:auto;z-index:20}
 #drill[hidden]{display:none}.dhead{display:flex;gap:10px;align-items:center;margin-bottom:10px}.dhead .dn{color:var(--mut)}#drillClose{margin-left:auto;border:0;background:none;font-size:22px;cursor:pointer;color:var(--mut)}
 #drill table{width:100%;border-collapse:collapse;font-size:13px}#drill th,#drill td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)}#drill td small{display:block;color:var(--mut)}#drill a.open{color:var(--acc);font-weight:600}
-
+/* §5.50 glance: formula notes collapsed behind a marker; a short warning chip */
+details.note{border-top:0;padding-top:0}details.note summary{cursor:pointer;color:var(--mut);list-style:none;font-size:10.5px}details.note summary::-webkit-details-marker{display:none}details.note[open] summary{margin-bottom:4px}.subv.warn{color:var(--warn);font-weight:600}
