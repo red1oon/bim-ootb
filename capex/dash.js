@@ -128,7 +128,7 @@
   function drow(key, label, flatKey, inner) { return '<div class="row" data-drill="' + key + '"><span>' + label + '</span><b>' + (flatKey ? fl(flatKey, inner) : inner) + '</b></div>'; }
   function procurement() {
     var p = S.res.tiles.procurement, ni = '<span class="nodata" title="Purchase orders are not readable on this server">no data (not installed)</span>';
-    var body = drow('proc:openpo', 'Open purchase orders', 'proc_openpo', p.openpo.notinstalled ? ni : p.openpo.n + ' · ' + moneyTxt(p.openpo.cur)) +
+    var body = drow('proc:openpo', 'Open purchase orders', 'proc_openpo', p.openpo.notinstalled ? ni : (p.openpo.n ? p.openpo.n + ' · ' + moneyTxt(p.openpo.cur) : '0')) +
       drow('proc:overcommitted', 'Over-committed projects', 'proc_overcommitted', p.overcommitted.n) +
       drow('proc:nopo', 'Budget, nothing ordered', 'proc_nopo', p.nopo.notinstalled ? ni : p.nopo.n);
     var v = $('view'); v.innerHTML = ''; var c = card('Procurement Risks (proposed)', body, null); c.setAttribute('data-tile', 'procurement'); c.insertAdjacentHTML('beforeend', ['proc_openpo', 'proc_overcommitted', 'proc_nopo'].map(note).join('')); v.appendChild(c); fillFlat(v);

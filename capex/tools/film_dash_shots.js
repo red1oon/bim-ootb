@@ -32,6 +32,11 @@ fs.mkdirSync(out, { recursive: true });
   }
   await p.evaluate(() => { document.querySelectorAll('#view details.note').forEach((d, i) => { if (i === 2) d.open = true; }); }); await p.waitForTimeout(250);
   await shot('d4_formula', ['approved_budget']);
+  // the left menu, one still per item (each view carries its own one-line lead)
+  for (const [name, hash, keys] of [['m1_projects', 'projects', []], ['m2_budget', 'budget', []], ['m3_procurement', 'procurement', ['proc_openpo', 'proc_overcommitted', 'proc_nopo']], ['m4_approvals', 'approvals', ['approvals']], ['m5_handover', 'handover', ['handover_ready', 'handover_done', 'bim_documents']]]) {
+    await p.evaluate(h => { location.hash = '#' + h; }, hash); await p.waitForTimeout(700); await shot(name, keys, 'view=' + hash + ' lead=' + JSON.stringify(await p.$eval('#view .lead', e => e.textContent)));
+  }
+  await p.evaluate(() => { location.hash = '#proc'; });
   log('§FILM_DASH_SHOT_ERRORS ' + errs.length + (errs.length ? ' ' + errs[0].slice(0, 120) : ''));
   await br.close(); server.close();
 })();
