@@ -94,8 +94,10 @@
     T.forecast_cost = fb ? { inconclusive: fb } : { cur: {} };
     if (!fb) { var fsum = {}, basis = 0; act.forEach(function (p) {
       var spent = cents(p.ProjectBalanceAmt), bud = cents(p.PlannedAmt) || 0, done = (byProj[p.C_Project_ID] || []).reduce(function (a, ph) { return a + (yes(ph.IsComplete) ? (cents(ph.PlannedAmt) || 0) : 0); }, 0);
-      if (!(spent > 0) || !(done > 0)) return; if (done / spent < 0.5 || done / spent > 2) basis++; fsum[cur(p)] = (fsum[cur(p)] || 0) + spent + (bud - done) * spent / done; });
-      Object.keys(fsum).forEach(function (k) { T.forecast_cost.cur[k] = Math.round(fsum[k]); }); T.forecast_cost.basisDiffers = basis; }   // §5.45: CPI outside 0.5..2 = Spent and Done are not on one basis (proposed bound)
+      if (!(spent > 0) || !(done > 0)) return; if (done / spent < 0.5 || done / spent > 2) basis++;
+      var rs = Number(p.ProjectBalanceAmt), rd = (byProj[p.C_Project_ID] || []).reduce(function (a, ph) { return a + (yes(ph.IsComplete) ? (Number(ph.PlannedAmt) || 0) : 0); }, 0);   // §5.66: the value from the row's own amounts, rounded ONCE after the sum (§5.9); per-project cents drifted 338.27 vs exact 338.275 -> 338.28
+      fsum[cur(p)] = (fsum[cur(p)] || 0) + rs + ((Number(p.PlannedAmt) || 0) - rd) * rs / rd; });
+      Object.keys(fsum).forEach(function (k) { T.forecast_cost.cur[k] = Math.round(fsum[k] * 100); }); T.forecast_cost.basisDiffers = basis; }   // §5.45: CPI outside 0.5..2 = Spent and Done are not on one basis (proposed bound)
     T.completed_year = { vacuous: none, n: tn == null ? null : P.filter(function (p) { return yes(p.Processed) && p.DateFinish && day(p.DateFinish).slice(0, 4) === today.slice(0, 4); }).length };
 
     // classification tiles — population A
@@ -150,8 +152,8 @@
       var r = { within: 0, over: 0, notstarted: 0, overrun: {} };
       A.forEach(function (p) {
         var ac = cents(p.ProjectBalanceAmt) || 0, pl = cents(p.PlannedAmt) || 0;
-        if (ac === 0) { r.notstarted++; BK.budget[p.C_Project_ID] = 'notstarted'; } else if (ac > pl) { r.over++; BK.budget[p.C_Project_ID] = 'over'; r.overrun[cur(p)] = (r.overrun[cur(p)] || 0) + (ac - pl); } else { r.within++; BK.budget[p.C_Project_ID] = 'within'; }
-      }); r.n = A.length; return r;
+        if (ac === 0) { r.notstarted++; BK.budget[p.C_Project_ID] = 'notstarted'; } else if (ac > pl) { r.over++; BK.budget[p.C_Project_ID] = 'over'; r.overrun[cur(p)] = (r.overrun[cur(p)] || 0) + ((Number(p.ProjectBalanceAmt) || 0) - (Number(p.PlannedAmt) || 0)); } else { r.within++; BK.budget[p.C_Project_ID] = 'within'; }
+      }); Object.keys(r.overrun).forEach(function (k) { r.overrun[k] = Math.round(r.overrun[k] * 100); }); r.n = A.length; return r;   // §5.66: summed from the amounts, rounded once (§5.9)
     });
     var w = blocked('approvals');
     T.approvals = w ? { inconclusive: w } : { n: (data.wf || []).filter(function (a) { return a.WFState === 'OS' && !yes(a.Processed); }).length };

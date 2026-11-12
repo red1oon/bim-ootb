@@ -47,7 +47,7 @@ const inc = (n, why) => { inconc++; log('  §PA_CTX ' + n + ' INCONCLUSIVE ' + w
   // (b) unparsable
   const b = GE.evaluateCalc(q, 9990002, Object.assign({ env: {} }, ctxBase));
   log('    §PA_CTX_B ok=' + b.ok + ' actual=' + b.actual + ' state=' + b.state + ' reason=' + JSON.stringify(b.reason));
-  ck('B1 an unparsable tag empties the SQL: ok=false, value 0, state ERROR', !BREAK ? (b.ok === false && b.actual === 0 && b.state === 'ERROR') : (b.ok === false && b.actual === 0), b.reason);
+  ck('B1 an unparsable tag empties the SQL: ok=false (SQL failed), value 0, state ERROR', !BREAK ? (b.ok === false && b.actual === 0 && b.state === 'ERROR') : (b.ok === false && b.actual === 0), b.reason);
   // (c) drill == count, every CAPEX COUNT(*) measure
   const counts = q("SELECT pa_measurecalc_id AS id, name FROM pa_measurecalc WHERE name LIKE 'CAPEX%' AND upper(selectclause) LIKE 'SELECT COUNT(*)%' ORDER BY 1"); let nonzero = 0;
   counts.forEach(c => {

@@ -97,11 +97,12 @@
   }
   function convert(sql, ctx) { var cv = (ctx || {}).convertSql || (global && global.AdCallout && global.AdCallout.convertSql); return typeof cv === 'function' ? cv(sql) : sql; }
   // ── evaluateCalc: one PA_MeasureCalc without a goal (Total scope, no restriction rows): the same builder, the same null → 0 rule (MMeasure :530-535) plus state for the reader (EMPTY = no row / null, ERROR = SQL failed)
-  function evaluateCalc(q, calcId, ctx) {
+  //   timeScope: a MeasureScope ('1' Year, '3' Quarter, '5' Month, '7' Week, '8' Day) for a QtyAmountInTime measure judged in time (the caller knows the measure's data type); null = Total
+  function evaluateCalc(q, calcId, ctx, timeScope) {
     var c = q('SELECT * FROM pa_measurecalc WHERE pa_measurecalc_id=?', [calcId])[0];
     if (!c) return { ok: false, reason: 'Not found PA_MeasureCalc_ID=' + calcId, actual: 0, state: 'ERROR' };
-    var b = calcSql(q, c, null, null, day((ctx || {}).today), ctx); if (b.reason) return { ok: false, reason: b.reason, actual: 0, state: 'ERROR' };
-    if (!b.sql) return { ok: false, reason: 'SQL empty after context parse (an unparsable @tag@, MMeasureCalc.getSqlPI :183-184)', actual: 0, state: 'ERROR' };
+    var b = calcSql(q, c, null, timeScope == null ? null : String(timeScope), day((ctx || {}).today), ctx); if (b.reason) return { ok: false, reason: b.reason, actual: 0, state: 'ERROR' };
+    if (!b.sql) return { ok: false, reason: 'SQL failed: empty after context parse (an unparsable @tag@, MMeasureCalc.getSqlPI :183-184; legacy DB.getSQLValueBD errors, the goal stores 0)', actual: 0, state: 'ERROR' };
     var sql = convert(b.sql, ctx), rows; try { rows = q(sql); } catch (e) { return { ok: false, reason: 'SQL failed: ' + String(e.message).slice(0, 120), sql: sql, actual: 0, state: 'ERROR' }; }
     var raw = rows.length ? rows[0][Object.keys(rows[0])[0]] : null;
     return { ok: true, calcId: Number(calcId), actual: raw == null ? 0 : Math.round(Number(raw) * 1e6) / 1e6, raw: raw, state: raw == null ? 'EMPTY' : 'OK', sql: sql };
@@ -114,7 +115,7 @@
     var from = String(c.selectclause), i = from.indexOf('FROM '); if (i < 0) return { ok: false, reason: 'Cannot find FROM ' + from };
     var sql = 'SELECT ' + c.keycolumn + ' ' + from.substring(i) + ' ' + String(c.whereclause), alias = aliasOf(sql);
     var rs = goalId == null ? { sql: '' } : restrictionSql(q, goalId, c.orgcolumn || 'AD_Org_ID'); if (rs.unported) return { ok: false, reason: 'INCONCLUSIVE ' + rs.unported + ' not ported' };
-    sql = parseCtx(sql + rs.sql + accessSql(alias, (ctx || {}).access), ctx); if (!sql) return { ok: false, reason: 'SQL empty after context parse' };
+    sql = parseCtx(sql + rs.sql + accessSql(alias, (ctx || {}).access), ctx); if (!sql) return { ok: false, reason: 'SQL failed: empty after context parse' };
     sql = convert(sql, ctx); var rows; try { rows = q(sql); } catch (e) { return { ok: false, reason: 'SQL failed: ' + String(e.message).slice(0, 120), sql: sql }; }
     return { ok: true, ids: rows.map(function (r) { return Number(r[Object.keys(r)[0]]); }), sql: sql };
   }
@@ -138,7 +139,7 @@
     } else return { ok: false, reason: 'MeasureType ' + m.measuretype + ' not ported (INCONCLUSIVE)' };
     // legacy runs the measure SQL through its statement converter (CPreparedStatement → Convert_PostgreSQL: SYSDATE, DUAL, …); the twin's ONE converter is ad_callout.js convertSql
     //   (CAPEX_DASHBOARD.md §5.20: the bucket measures read SYSDATE). ctx.convertSql in node, window.AdCallout.convertSql in the page; no converter → the SQL runs as built (unchanged behaviour).
-    if (!sql) return { ok: false, reason: 'SQL empty after context parse (an unparsable @tag@, MMeasureCalc.getSqlPI :183-184)', actual: 0 };
+    if (!sql) return { ok: false, reason: 'SQL failed: empty after context parse (an unparsable @tag@, MMeasureCalc.getSqlPI :183-184; legacy DB.getSQLValueBD errors, the goal stores 0)', actual: 0 };
     sql = convert(sql, ctx);
     var rows; try { rows = q(sql); } catch (e) { return { ok: false, reason: 'SQL failed: ' + String(e.message).slice(0, 120), sql: sql }; }
     var raw = rows.length ? rows[0][Object.keys(rows[0])[0]] : null, actual = raw == null ? 0 : Math.round(Number(raw) * 1e6) / 1e6;   // MMeasure: SQL may return no rows or null -> ZERO
@@ -160,7 +161,7 @@
     var goals = q("SELECT * FROM pa_goal WHERE isactive='Y' AND pa_measure_id=? ORDER BY seqno", [measureId]), out = [];
     goals.forEach(function (g) {
       if (!Number(g.ad_role_id) && Number(g.ad_user_id)) { out.push({ goalId: Number(g.pa_goal_id), written: false, reason: 'INCONCLUSIVE goal role via AD_User not ported' }); return; }
-      var role = Number(g.ad_role_id) || ctx.role, r = evaluate(q, g.pa_goal_id, { today: ctx.today, access: accessOf(q, role, ctx.client), convertSql: ctx.convertSql });
+      var role = Number(g.ad_role_id) || ctx.role, r = evaluate(q, g.pa_goal_id, { today: ctx.today, access: accessOf(q, role, ctx.client), convertSql: ctx.convertSql, env: ctx.env });   // env = the session's login context (MMeasure runs in getCtx(): @$C_Currency_ID@ etc.)
       var failed = !r.ok && /^SQL failed/.test(r.reason || '');
       if (!r.ok && !failed) { out.push({ goalId: Number(g.pa_goal_id), written: false, reason: r.reason }); return; }
       var actual = r.ok ? r.actual : 0, perf = r.ok ? r.performance : div6(0, g.measuretarget), ch = { measureactual: actual, goalperformance: Number(perf), datelastrun: ctx.now };

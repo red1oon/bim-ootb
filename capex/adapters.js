@@ -17,9 +17,10 @@
     receipts:   { table: 'M_InOut',        cols: ['M_InOut_ID', 'C_Project_ID', 'C_Order_ID', 'IsSOTrx', 'DocStatus', 'MovementDate'] },   // §5.59 supply-chain drill (optional entities)
     vinvoices:  { table: 'C_Invoice',      cols: ['C_Invoice_ID', 'C_Project_ID', 'C_Order_ID', 'GrandTotal', 'C_Currency_ID', 'IsSOTrx', 'DocStatus'] },
     payments:   { table: 'C_Payment',      cols: ['C_Payment_ID', 'C_Project_ID', 'C_Order_ID', 'C_Invoice_ID', 'PayAmt', 'C_Currency_ID', 'IsReceipt', 'DocStatus'] },
+    pacalc:     { table: 'PA_MeasureCalc', cols: ['PA_MeasureCalc_ID', 'PA_MeasureCalc_UU', 'Name', 'Description', 'SelectClause', 'WhereClause', 'DateColumn', 'OrgColumn', 'KeyColumn', 'IsActive'] },   // §5.66: the tile definitions themselves (read from the source, as every other row)
     bimdocs:    { table: 'BIM_Document',   cols: ['BIM_Document_ID', 'C_Project_ID', 'C_ProjectPhase_ID', 'C_ProjectTask_ID', 'DeliverableNo', 'Revision', 'DocStatus', 'IsActive', 'Name', 'Discipline', 'HoursBudget'] }   // §5.36B: the BIM Document plugin's table; absent = unavailable = "not installed"
   };
-  var ENTITIES = Object.keys(COLS), OPTIONAL = ['bimdocs', 'orders', 'issues', 'receipts', 'vinvoices', 'payments'];   // OPTIONAL: an entity a server may legitimately lack (a plugin's table): unavailable there is the honest state, not a defect
+  var ENTITIES = Object.keys(COLS), OPTIONAL = ['bimdocs', 'orders', 'issues', 'receipts', 'vinvoices', 'payments', 'pacalc'];   // OPTIONAL: an entity a server may legitimately lack (a plugin's table): unavailable there is the honest state, not a defect
 
   // ── Source A ──
   function fromSqlite(db, meta) {
@@ -41,7 +42,7 @@
 
   // ── Source B ──
   var PATH = '/ADInterface/services/rest/model_adservice/query_data';
-  var LEGACY_TYPES = { projects: 'QueryCProject', orgs: 'QueryADOrg', phases: 'QueryCProjectPhase', tasks: 'QueryCProjectTask', lines: 'QueryCProjectLine', phaseRef: 'QueryCPhase', currencies: 'QueryCCurrency', wf: 'QueryADWFActivity', bimdocs: 'QueryBIMDocument', orders: 'QueryCOrder', issues: 'QueryCProjectIssue', receipts: 'QueryMInOut', vinvoices: 'QueryCInvoice', payments: 'QueryCPayment' };
+  var LEGACY_TYPES = { projects: 'QueryCProject', orgs: 'QueryADOrg', phases: 'QueryCProjectPhase', tasks: 'QueryCProjectTask', lines: 'QueryCProjectLine', phaseRef: 'QueryCPhase', currencies: 'QueryCCurrency', wf: 'QueryADWFActivity', bimdocs: 'QueryBIMDocument', orders: 'QueryCOrder', issues: 'QueryCProjectIssue', receipts: 'QueryMInOut', vinvoices: 'QueryCInvoice', payments: 'QueryCPayment', pacalc: 'QueryPAMeasureCalc' };
   function parseRows(j) {                    // identical wire handling to scripts/bridge/ad_client.js rows()/query()
     var w = j.WindowTabData; if (!w) return [];
     if (w.Error) throw new Error('§AD_ERROR ' + w.Error);
@@ -77,6 +78,6 @@
   }
   async function loadSnapshot(url) { var j = await (await fetch(url)).json(); j.source = 'legacy'; return j; }
 
-  var API = { fromSqlite: fromSqlite, loadSqlite: loadSqlite, loadLegacy: loadLegacy, loadSnapshot: loadSnapshot, parseRows: parseRows, ENTITIES: ENTITIES, OPTIONAL: OPTIONAL, LEGACY_TYPES: LEGACY_TYPES };
+  var API = { fromSqlite: fromSqlite, loadSqlite: loadSqlite, loadLegacy: loadLegacy, loadSnapshot: loadSnapshot, parseRows: parseRows, ENTITIES: ENTITIES, COLS: COLS, OPTIONAL: OPTIONAL, LEGACY_TYPES: LEGACY_TYPES };
   if (typeof module !== 'undefined' && module.exports) module.exports = API; else root.CapexAdapters = API;
 })(typeof window !== 'undefined' ? window : this);
