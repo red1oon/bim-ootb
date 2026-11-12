@@ -18,7 +18,7 @@
 // CHAIN (film beat 10): completing a deliverable logs the project's issued count before and after (§BIMDOC-CHAIN).
 // Id band 9541001-9541999 (no seed row, no other bundle).
 const NOW = '2026-11-09 00:00:00';
-const STD = { ad_client_id: 0, ad_org_id: 0, isactive: 'Y', created: NOW, createdby: 100, updated: NOW, updatedby: 100, entitytype: 'U' };
+const STD = { ad_client_id: 0, ad_org_id: 0, isactive: 'Y', created: NOW, createdby: 100, updated: NOW, updatedby: 100, entitytype: 'A' };
 const T_ID = 9541001, W_ID = 9541001, TAB_OWN = 9541001, TAB_PRJ = 9541002, TAB_PRJ1 = 9541003, MENU_ID = 9541001, TREE = 10, MENU_PARENT = 160, PRJ_WIN = 130, PRJ_AFTER_TAB = 796;
 const R_STATUS = 9541001, R_DISC = 9541002, R_KIND = 9541003, R_REV = 9541004;
 const COL0 = 9541201, FLD_OWN0 = 9541301, FLD_PRJ0 = 9541401, FLD_PRJ1_0 = 9541601, LIST0 = 9541101, DT0 = 9541500;
