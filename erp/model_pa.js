@@ -13,7 +13,8 @@
   function ctxFor(trx) {
     var e = (trx && trx.env) || {}, day = String(e.date || e.now || '').slice(0, 10);
     if (root.__idmpDb) { try { GE.install(root.__idmpDb); } catch (x) {} }   // the stock measures' views / UDFs (invoiceopen, currencybase, the invoice views): idempotent, re-bound after any export (§EXPORTSAFE)
-    return { client: e.client, user: e.user, role: e.role, today: day, now: e.now || (day + ' 00:00:00'), convertSql: A && A.convertSql };
+    var env = null; try { env = A && A.sessionContext && e.client != null ? A.sessionContext(e) : null; } catch (x) { env = null; }   // the session's login context ($C_Currency_ID, #AD_Client_ID, ...), as MMeasure reads getCtx() (CAPEX_DASHBOARD.md §5.66)
+    return { client: e.client, user: e.user, role: e.role, today: day, now: e.now || (day + ' 00:00:00'), convertSql: A && A.convertSql, env: env };
   }
   GE.installModel(ML, ctxFor);
   // storeDue: the render's half of MGoal.getUserGoals (bim-ootb prompts/CAPEX_DASHBOARD.md §5.32, Witness W-GOAL-STORE): the user's due goals stored in ONE signed group. No role check on the write, as legacy's model save.

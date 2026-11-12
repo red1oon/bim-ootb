@@ -11,10 +11,10 @@ import { applyCopy } from './legacy_copy.mjs';
 export const manifest = {
   id: 'org.bimootb.capex',
   name: 'CAPEX Dashboard',
-  version: '1.0.5',
+  version: '1.0.6',
   engineVersion: '>=0.9.0',
   requires: {},
-  packs: ['capex_2pack/2Pack_1.0.0.zip', 'capex_2pack/2Pack_1.0.1.zip', 'capex_2pack/2Pack_1.0.2.zip', 'capex_2pack/2Pack_1.0.3.zip', 'capex_2pack/2Pack_1.0.4.zip', 'capex_2pack/2Pack_1.0.5.zip']   // 1.0.0 = R0 + G2 + G3; 1.0.1 = G4 (the bucket tiles, §5.20); 1.0.2 = G7 (targets, §5.27); 1.0.3 = Q2 stages + the proposed Q3/Q4 measures (§5.38); 1.0.4 = S2 Health + Q3 EAC float division (§5.44, §5.56); 1.0.5 = EntityType 'A' label (§5.57)
+  packs: ['capex_2pack/2Pack_1.0.0.zip', 'capex_2pack/2Pack_1.0.1.zip', 'capex_2pack/2Pack_1.0.2.zip', 'capex_2pack/2Pack_1.0.3.zip', 'capex_2pack/2Pack_1.0.4.zip', 'capex_2pack/2Pack_1.0.5.zip', 'capex_2pack/2Pack_1.0.6.zip']   // 1.0.0 = R0 + G2 + G3; 1.0.1 = G4 (the bucket tiles, §5.20); 1.0.2 = G7 (targets, §5.27); 1.0.3 = Q2 stages + the proposed Q3/Q4 measures (§5.38); 1.0.4 = S2 Health + Q3 EAC float division (§5.44, §5.56); 1.0.5 = EntityType 'A' label (§5.57); 1.0.6 = the page measures the dashboard computed in tiles.js (§5.66)
 };
 export async function activate(ctx) {
   console.log('§CAPEX-PLUGIN start (the 2Pack rows are applied by the host Pack In before this runs)');
