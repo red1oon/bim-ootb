@@ -76,7 +76,16 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
       var t = table.toLowerCase(), ex = EXCLUDE.concat(excludes || []);
       if (leadOfficialKey) { var kid = row[t + '_id']; if (kid != null && Number(kid) > 0 && Number(kid) <= MAX_OFFICIAL_ID) el(table + '_ID', jstr(kid), {}); }
       if (Number(row.ad_client_id) === 0) { el('AD_Client_ID', '0', {}); if (ex.indexOf('ad_org_id') < 0) el('AD_Org_ID', '0', {}); }
-      else if (ex.indexOf('ad_org_id') < 0) el('AD_Org_ID', Number(row.ad_org_id) === 0 ? '0' : (opts.includeOrganizationId ? String(row.ad_org_id) : '@AD_Org_ID@'), {});
+      else if (ex.indexOf('ad_org_id') < 0) {
+        if (Number(row.ad_org_id) === 0) el('AD_Org_ID', '0', {});
+        else if (!opts.includeOrganizationId) el('AD_Org_ID', '@AD_Org_ID@', {});
+        else {   // PoExporter.export :240-247 preservedOrg: AD_Client_ID AND AD_Org_ID as TABLE REFERENCES (addTableReference -> ReferenceUtils.getTableReference), never plain text;
+          //   legacy's PoFiller.autoFill :339-340 resolves both through setTableReference, and a plain value there fails Pack In ("Unknown column reference type=null", found by a real
+          //   Pack In of the CAPEX test-data pack, bim-ootb prompts/CAPEX_DASHBOARD.md §5.67)
+          var rc = reference('AD_Client', row.ad_client_id); el('AD_Client_ID', rc.v, rc.a);
+          if (t !== 'ad_org') { var ro = reference('AD_Org', row.ad_org_id); el('AD_Org_ID', ro.v, ro.a); }
+        }
+      }
       columnsOf(table).forEach(function (c) {
         var n = c.n, ln = n.toLowerCase(), v = row[ln], r = Number(c.r);
         if (n === 'AD_Language' || n === 'EntityType') r = 10; else if (n === 'Record_ID') r = DT.ID;   // POInfoColumn:76-90: these two are Strings, Record_ID is an ID, whatever AD_Column says
