@@ -1,0 +1,84 @@
+-- CAPEX-WS-PA (bim-ootb prompts/CAPEX_DASHBOARD.md §5.29, LEGACY CONVENTION): TEST SERVER ONLY, write access. Creates a PA goal, reads it back, saves a target: a model save with a changed target is what makes legacy run the measure SQL (MGoal.afterSave -> updateGoal(true)).
+-- Rows extracted from the local pilot by capex/tools/ws_types_to_migration.js. Hard-coded for now: client 11, role 102 (GardenWorld Admin), these ids. Run update_sequences() after applying, then restart the server: WS types and access are cached.
+-- Restore: DELETE FROM WS_WebServiceFieldOutput, WS_WebServiceFieldInput, WS_WebService_Para, WS_WebServiceTypeAccess, then WS_WebServiceType WHERE WS_WebServiceType_ID IN (4200021,4200022,4200023); restart.
+SELECT register_migration_script('202611042303_CAPEX-WS-PA.sql') FROM dual;
+
+-- Nov 4, 2026 — BridgeCreatePAGoal
+INSERT INTO WS_WebServiceType (AD_Client_ID,AD_Org_ID,AD_Table_ID,Created,CreatedBy,Description,IsActive,Name,Updated,UpdatedBy,Value,WS_WebService_ID,WS_WebServiceMethod_ID,WS_WebServiceType_ID,WS_WebServiceType_UU) VALUES (11,0,440,TO_TIMESTAMP('2026-11-02 21:58:31','YYYY-MM-DD HH24:MI:SS'),100,'CAPEX R0: create a PA goal (pilot POC)','Y','BridgeCreatePAGoal',TO_TIMESTAMP('2026-11-02 21:58:31','YYYY-MM-DD HH24:MI:SS'),100,'BridgeCreatePAGoal',50001,50024,4200021,'1c622833-a3a9-4b11-86a5-b6383a72568e')
+;
+INSERT INTO WS_WebServiceTypeAccess (AD_Client_ID,AD_Org_ID,AD_Role_ID,Created,CreatedBy,IsActive,IsReadWrite,Updated,UpdatedBy,WS_WebServiceType_ID,WS_WebServiceTypeAccess_UU) VALUES (11,0,102,TO_TIMESTAMP('2026-11-02 21:58:31','YYYY-MM-DD HH24:MI:SS'),100,'Y','Y',TO_TIMESTAMP('2026-11-02 21:58:31','YYYY-MM-DD HH24:MI:SS'),100,4200021,'5f69478b-b3eb-4c0f-abb2-ab7e05aa58b5')
+;
+INSERT INTO WS_WebService_Para (AD_Client_ID,AD_Org_ID,ConstantValue,Created,CreatedBy,IsActive,ParameterName,ParameterType,Updated,UpdatedBy,WS_WebService_Para_ID,WS_WebServiceType_ID,WS_WebService_Para_UU) VALUES (11,0,'PA_Goal',TO_TIMESTAMP('2026-11-02 21:58:31','YYYY-MM-DD HH24:MI:SS'),100,'Y','TableName','C',TO_TIMESTAMP('2026-11-02 21:58:31','YYYY-MM-DD HH24:MI:SS'),100,4200024,4200021,'70aca775-c31b-45c2-bcb9-9de7198436d9')
+;
+INSERT INTO WS_WebService_Para (AD_Client_ID,AD_Org_ID,Created,CreatedBy,IsActive,ParameterName,ParameterType,Updated,UpdatedBy,WS_WebService_Para_ID,WS_WebServiceType_ID,WS_WebService_Para_UU) VALUES (11,0,TO_TIMESTAMP('2026-11-02 21:58:31','YYYY-MM-DD HH24:MI:SS'),100,'Y','RecordID','F',TO_TIMESTAMP('2026-11-02 21:58:31','YYYY-MM-DD HH24:MI:SS'),100,4200025,4200021,'7c40dd95-5bf7-43b1-8e8a-557bdfea5bb9')
+;
+INSERT INTO WS_WebService_Para (AD_Client_ID,AD_Org_ID,ConstantValue,Created,CreatedBy,IsActive,ParameterName,ParameterType,Updated,UpdatedBy,WS_WebService_Para_ID,WS_WebServiceType_ID,WS_WebService_Para_UU) VALUES (11,0,'Create',TO_TIMESTAMP('2026-11-02 21:58:31','YYYY-MM-DD HH24:MI:SS'),100,'Y','Action','C',TO_TIMESTAMP('2026-11-02 21:58:31','YYYY-MM-DD HH24:MI:SS'),100,4200026,4200021,'67bd5092-87d4-4170-8679-c5a85c3680de')
+;
+INSERT INTO WS_WebServiceFieldInput (AD_Client_ID,AD_Column_ID,AD_Org_ID,Created,CreatedBy,IsActive,Updated,UpdatedBy,WS_WebServiceFieldInput_ID,WS_WebServiceType_ID,IsIdentifier,IsNullIdentifier,WS_WebServiceFieldInput_UU) VALUES (11,5898,0,TO_TIMESTAMP('2026-11-02 21:58:31','YYYY-MM-DD HH24:MI:SS'),100,'Y',TO_TIMESTAMP('2026-11-02 21:58:31','YYYY-MM-DD HH24:MI:SS'),100,4001687,4200021,'N','N','6c6bf3a1-d8c9-4945-9e60-389168fd5821')
+;
+INSERT INTO WS_WebServiceFieldInput (AD_Client_ID,AD_Column_ID,AD_Org_ID,Created,CreatedBy,IsActive,Updated,UpdatedBy,WS_WebServiceFieldInput_ID,WS_WebServiceType_ID,IsIdentifier,IsNullIdentifier,WS_WebServiceFieldInput_UU) VALUES (11,14757,0,TO_TIMESTAMP('2026-11-02 21:58:31','YYYY-MM-DD HH24:MI:SS'),100,'Y',TO_TIMESTAMP('2026-11-02 21:58:31','YYYY-MM-DD HH24:MI:SS'),100,4001688,4200021,'N','N','ee194058-4520-4c6c-8ded-fa861d12d3f6')
+;
+INSERT INTO WS_WebServiceFieldInput (AD_Client_ID,AD_Column_ID,AD_Org_ID,Created,CreatedBy,IsActive,Updated,UpdatedBy,WS_WebServiceFieldInput_ID,WS_WebServiceType_ID,IsIdentifier,IsNullIdentifier,WS_WebServiceFieldInput_UU) VALUES (11,5896,0,TO_TIMESTAMP('2026-11-02 21:58:31','YYYY-MM-DD HH24:MI:SS'),100,'Y',TO_TIMESTAMP('2026-11-02 21:58:31','YYYY-MM-DD HH24:MI:SS'),100,4001689,4200021,'N','N','45c24a29-a952-48e0-947e-b9b92ef9ce90')
+;
+INSERT INTO WS_WebServiceFieldInput (AD_Client_ID,AD_Column_ID,AD_Org_ID,Created,CreatedBy,IsActive,Updated,UpdatedBy,WS_WebServiceFieldInput_ID,WS_WebServiceType_ID,IsIdentifier,IsNullIdentifier,WS_WebServiceFieldInput_UU) VALUES (11,5893,0,TO_TIMESTAMP('2026-11-02 21:58:31','YYYY-MM-DD HH24:MI:SS'),100,'Y',TO_TIMESTAMP('2026-11-02 21:58:31','YYYY-MM-DD HH24:MI:SS'),100,4001690,4200021,'N','N','5252a518-229c-4c0e-9d41-438b67590318')
+;
+INSERT INTO WS_WebServiceFieldInput (AD_Client_ID,AD_Column_ID,AD_Org_ID,Created,CreatedBy,IsActive,Updated,UpdatedBy,WS_WebServiceFieldInput_ID,WS_WebServiceType_ID,IsIdentifier,IsNullIdentifier,WS_WebServiceFieldInput_UU) VALUES (11,5892,0,TO_TIMESTAMP('2026-11-02 21:58:31','YYYY-MM-DD HH24:MI:SS'),100,'Y',TO_TIMESTAMP('2026-11-02 21:58:31','YYYY-MM-DD HH24:MI:SS'),100,4001691,4200021,'N','N','24850dda-501e-492a-8d61-3ffdb061834f')
+;
+INSERT INTO WS_WebServiceFieldInput (AD_Client_ID,AD_Column_ID,AD_Org_ID,Created,CreatedBy,IsActive,Updated,UpdatedBy,WS_WebServiceFieldInput_ID,WS_WebServiceType_ID,IsIdentifier,IsNullIdentifier,WS_WebServiceFieldInput_UU) VALUES (11,5899,0,TO_TIMESTAMP('2026-11-02 21:58:31','YYYY-MM-DD HH24:MI:SS'),100,'Y',TO_TIMESTAMP('2026-11-02 21:58:31','YYYY-MM-DD HH24:MI:SS'),100,4001692,4200021,'N','N','4f36c37a-e64b-4f05-8919-75c16623551c')
+;
+INSERT INTO WS_WebServiceFieldInput (AD_Client_ID,AD_Column_ID,AD_Org_ID,Created,CreatedBy,IsActive,Updated,UpdatedBy,WS_WebServiceFieldInput_ID,WS_WebServiceType_ID,IsIdentifier,IsNullIdentifier,WS_WebServiceFieldInput_UU) VALUES (11,5895,0,TO_TIMESTAMP('2026-11-02 21:58:31','YYYY-MM-DD HH24:MI:SS'),100,'Y',TO_TIMESTAMP('2026-11-02 21:58:31','YYYY-MM-DD HH24:MI:SS'),100,4001693,4200021,'N','N','78f22d9a-510b-4c00-9085-21bb10f5560d')
+;
+INSERT INTO WS_WebServiceFieldInput (AD_Client_ID,AD_Column_ID,AD_Org_ID,Created,CreatedBy,IsActive,Updated,UpdatedBy,WS_WebServiceFieldInput_ID,WS_WebServiceType_ID,IsIdentifier,IsNullIdentifier,WS_WebServiceFieldInput_UU) VALUES (11,5900,0,TO_TIMESTAMP('2026-11-02 21:58:31','YYYY-MM-DD HH24:MI:SS'),100,'Y',TO_TIMESTAMP('2026-11-02 21:58:31','YYYY-MM-DD HH24:MI:SS'),100,4001694,4200021,'N','N','033ffdd1-df7b-4ed3-8258-67363fd67563')
+;
+INSERT INTO WS_WebServiceFieldInput (AD_Client_ID,AD_Column_ID,AD_Org_ID,Created,CreatedBy,IsActive,Updated,UpdatedBy,WS_WebServiceFieldInput_ID,WS_WebServiceType_ID,IsIdentifier,IsNullIdentifier,WS_WebServiceFieldInput_UU) VALUES (11,57921,0,TO_TIMESTAMP('2026-11-02 21:58:31','YYYY-MM-DD HH24:MI:SS'),100,'Y',TO_TIMESTAMP('2026-11-02 21:58:31','YYYY-MM-DD HH24:MI:SS'),100,4001695,4200021,'N','N','39ec6fce-b4f6-475d-96f6-29ef35d909e0')
+;
+INSERT INTO WS_WebServiceFieldInput (AD_Client_ID,AD_Column_ID,AD_Org_ID,Created,CreatedBy,IsActive,Updated,UpdatedBy,WS_WebServiceFieldInput_ID,WS_WebServiceType_ID,IsIdentifier,IsNullIdentifier,WS_WebServiceFieldInput_UU) VALUES (11,14755,0,TO_TIMESTAMP('2026-11-02 21:58:31','YYYY-MM-DD HH24:MI:SS'),100,'Y',TO_TIMESTAMP('2026-11-02 21:58:31','YYYY-MM-DD HH24:MI:SS'),100,4001696,4200021,'N','N','44140270-20e7-4e32-b348-9b8a9f18d62d')
+;
+
+-- Nov 4, 2026 — QueryPAGoal
+INSERT INTO WS_WebServiceType (AD_Client_ID,AD_Org_ID,AD_Table_ID,Created,CreatedBy,Description,IsActive,Name,Updated,UpdatedBy,Value,WS_WebService_ID,WS_WebServiceMethod_ID,WS_WebServiceType_ID,WS_WebServiceType_UU) VALUES (11,0,440,TO_TIMESTAMP('2026-11-02 21:58:31','YYYY-MM-DD HH24:MI:SS'),100,'CAPEX R0: read PA goals (pilot POC)','Y','QueryPAGoal',TO_TIMESTAMP('2026-11-02 21:58:31','YYYY-MM-DD HH24:MI:SS'),100,'QueryPAGoal',50001,50028,4200022,'8fcb67da-f535-4a17-a2ee-5be19adccec0')
+;
+INSERT INTO WS_WebServiceTypeAccess (AD_Client_ID,AD_Org_ID,AD_Role_ID,Created,CreatedBy,IsActive,IsReadWrite,Updated,UpdatedBy,WS_WebServiceType_ID,WS_WebServiceTypeAccess_UU) VALUES (11,0,102,TO_TIMESTAMP('2026-11-02 21:58:31','YYYY-MM-DD HH24:MI:SS'),100,'Y','N',TO_TIMESTAMP('2026-11-02 21:58:31','YYYY-MM-DD HH24:MI:SS'),100,4200022,'07617de7-b93e-4cad-b5eb-11a36b3b810c')
+;
+INSERT INTO WS_WebService_Para (AD_Client_ID,AD_Org_ID,ConstantValue,Created,CreatedBy,IsActive,ParameterName,ParameterType,Updated,UpdatedBy,WS_WebService_Para_ID,WS_WebServiceType_ID,WS_WebService_Para_UU) VALUES (11,0,'PA_Goal',TO_TIMESTAMP('2026-11-02 21:58:31','YYYY-MM-DD HH24:MI:SS'),100,'Y','TableName','C',TO_TIMESTAMP('2026-11-02 21:58:31','YYYY-MM-DD HH24:MI:SS'),100,4200027,4200022,'81a57d8a-ed62-4aae-9cdf-8a048337934a')
+;
+INSERT INTO WS_WebService_Para (AD_Client_ID,AD_Org_ID,ConstantValue,Created,CreatedBy,IsActive,ParameterName,ParameterType,Updated,UpdatedBy,WS_WebService_Para_ID,WS_WebServiceType_ID,WS_WebService_Para_UU) VALUES (11,0,'Read',TO_TIMESTAMP('2026-11-02 21:58:31','YYYY-MM-DD HH24:MI:SS'),100,'Y','Action','C',TO_TIMESTAMP('2026-11-02 21:58:31','YYYY-MM-DD HH24:MI:SS'),100,4200028,4200022,'4e89189e-f639-4afe-8c34-92be1fc9231d')
+;
+INSERT INTO WS_WebService_Para (AD_Client_ID,AD_Org_ID,Created,CreatedBy,IsActive,ParameterName,ParameterType,Updated,UpdatedBy,WS_WebService_Para_ID,WS_WebServiceType_ID,WS_WebService_Para_UU) VALUES (11,0,TO_TIMESTAMP('2026-11-02 21:58:31','YYYY-MM-DD HH24:MI:SS'),100,'Y','RecordID','F',TO_TIMESTAMP('2026-11-02 21:58:31','YYYY-MM-DD HH24:MI:SS'),100,4200029,4200022,'0aed8e1c-c87d-45f7-9c78-4294144f0be3')
+;
+INSERT INTO WS_WebService_Para (AD_Client_ID,AD_Org_ID,ConstantValue,Created,CreatedBy,IsActive,ParameterName,ParameterType,Updated,UpdatedBy,WS_WebService_Para_ID,WS_WebServiceType_ID,WS_WebService_Para_UU) VALUES (11,0,'1=1',TO_TIMESTAMP('2026-11-02 21:58:31','YYYY-MM-DD HH24:MI:SS'),100,'Y','Filter','C',TO_TIMESTAMP('2026-11-03 03:57:48','YYYY-MM-DD HH24:MI:SS'),100,4200030,4200022,'60712c97-25e8-424d-b552-11750b315e9b')
+;
+INSERT INTO WS_WebServiceFieldInput (AD_Client_ID,AD_Column_ID,AD_Org_ID,Created,CreatedBy,IsActive,Updated,UpdatedBy,WS_WebServiceFieldInput_ID,WS_WebServiceType_ID,IsIdentifier,IsNullIdentifier,WS_WebServiceFieldInput_UU) VALUES (11,5884,0,TO_TIMESTAMP('2026-11-03 03:57:48','YYYY-MM-DD HH24:MI:SS'),100,'Y',TO_TIMESTAMP('2026-11-03 03:57:48','YYYY-MM-DD HH24:MI:SS'),100,4001846,4200022,'N','N','216d6693-f278-4eb1-a7ba-920fbefc1694')
+;
+INSERT INTO WS_WebServiceFieldInput (AD_Client_ID,AD_Column_ID,AD_Org_ID,Created,CreatedBy,IsActive,Updated,UpdatedBy,WS_WebServiceFieldInput_ID,WS_WebServiceType_ID,IsIdentifier,IsNullIdentifier,WS_WebServiceFieldInput_UU) VALUES (11,5892,0,TO_TIMESTAMP('2026-11-03 03:57:48','YYYY-MM-DD HH24:MI:SS'),100,'Y',TO_TIMESTAMP('2026-11-03 03:57:48','YYYY-MM-DD HH24:MI:SS'),100,4001847,4200022,'N','N','63cb0c88-5a1e-44df-97c7-781b8760e50d')
+;
+INSERT INTO WS_WebServiceFieldOutput (AD_Client_ID,AD_Column_ID,AD_Org_ID,Created,CreatedBy,IsActive,Updated,UpdatedBy,WS_WebServiceFieldOutput_ID,WS_WebServiceType_ID,WS_WebServiceFieldOutput_UU) VALUES (11,5884,0,TO_TIMESTAMP('2026-11-02 21:58:31','YYYY-MM-DD HH24:MI:SS'),100,'Y',TO_TIMESTAMP('2026-11-02 21:58:31','YYYY-MM-DD HH24:MI:SS'),100,4003922,4200022,'5bc799a4-d32e-4c5e-aae4-fd41fbe7c5b0')
+;
+INSERT INTO WS_WebServiceFieldOutput (AD_Client_ID,AD_Column_ID,AD_Org_ID,Created,CreatedBy,IsActive,Updated,UpdatedBy,WS_WebServiceFieldOutput_ID,WS_WebServiceType_ID,WS_WebServiceFieldOutput_UU) VALUES (11,5902,0,TO_TIMESTAMP('2026-11-02 21:58:31','YYYY-MM-DD HH24:MI:SS'),100,'Y',TO_TIMESTAMP('2026-11-02 21:58:31','YYYY-MM-DD HH24:MI:SS'),100,4003923,4200022,'74862b91-3f02-4936-94b6-c03478aab7ef')
+;
+INSERT INTO WS_WebServiceFieldOutput (AD_Client_ID,AD_Column_ID,AD_Org_ID,Created,CreatedBy,IsActive,Updated,UpdatedBy,WS_WebServiceFieldOutput_ID,WS_WebServiceType_ID,WS_WebServiceFieldOutput_UU) VALUES (11,14757,0,TO_TIMESTAMP('2026-11-02 21:58:31','YYYY-MM-DD HH24:MI:SS'),100,'Y',TO_TIMESTAMP('2026-11-02 21:58:31','YYYY-MM-DD HH24:MI:SS'),100,4003924,4200022,'c39c6547-621f-4489-8965-4f7fff7a8fea')
+;
+INSERT INTO WS_WebServiceFieldOutput (AD_Client_ID,AD_Column_ID,AD_Org_ID,Created,CreatedBy,IsActive,Updated,UpdatedBy,WS_WebServiceFieldOutput_ID,WS_WebServiceType_ID,WS_WebServiceFieldOutput_UU) VALUES (11,5892,0,TO_TIMESTAMP('2026-11-02 21:58:31','YYYY-MM-DD HH24:MI:SS'),100,'Y',TO_TIMESTAMP('2026-11-02 21:58:31','YYYY-MM-DD HH24:MI:SS'),100,4003925,4200022,'e9f95dac-7ec3-4443-a55d-e63208dd6f37')
+;
+INSERT INTO WS_WebServiceFieldOutput (AD_Client_ID,AD_Column_ID,AD_Org_ID,Created,CreatedBy,IsActive,Updated,UpdatedBy,WS_WebServiceFieldOutput_ID,WS_WebServiceType_ID,WS_WebServiceFieldOutput_UU) VALUES (11,5899,0,TO_TIMESTAMP('2026-11-02 21:58:31','YYYY-MM-DD HH24:MI:SS'),100,'Y',TO_TIMESTAMP('2026-11-02 21:58:31','YYYY-MM-DD HH24:MI:SS'),100,4003926,4200022,'656e57bc-14b7-4caf-8465-354e47638d82')
+;
+INSERT INTO WS_WebServiceFieldOutput (AD_Client_ID,AD_Column_ID,AD_Org_ID,Created,CreatedBy,IsActive,Updated,UpdatedBy,WS_WebServiceFieldOutput_ID,WS_WebServiceType_ID,WS_WebServiceFieldOutput_UU) VALUES (11,5901,0,TO_TIMESTAMP('2026-11-02 21:58:31','YYYY-MM-DD HH24:MI:SS'),100,'Y',TO_TIMESTAMP('2026-11-02 21:58:31','YYYY-MM-DD HH24:MI:SS'),100,4003927,4200022,'41b879c9-c912-4dce-8e14-7312be670fa1')
+;
+INSERT INTO WS_WebServiceFieldOutput (AD_Client_ID,AD_Column_ID,AD_Org_ID,Created,CreatedBy,IsActive,Updated,UpdatedBy,WS_WebServiceFieldOutput_ID,WS_WebServiceType_ID,WS_WebServiceFieldOutput_UU) VALUES (11,5900,0,TO_TIMESTAMP('2026-11-02 21:58:31','YYYY-MM-DD HH24:MI:SS'),100,'Y',TO_TIMESTAMP('2026-11-02 21:58:31','YYYY-MM-DD HH24:MI:SS'),100,4003928,4200022,'96fe730e-974c-422b-b667-01e01cf7e58f')
+;
+INSERT INTO WS_WebServiceFieldOutput (AD_Client_ID,AD_Column_ID,AD_Org_ID,Created,CreatedBy,IsActive,Updated,UpdatedBy,WS_WebServiceFieldOutput_ID,WS_WebServiceType_ID,WS_WebServiceFieldOutput_UU) VALUES (11,5903,0,TO_TIMESTAMP('2026-11-02 21:58:31','YYYY-MM-DD HH24:MI:SS'),100,'Y',TO_TIMESTAMP('2026-11-02 21:58:31','YYYY-MM-DD HH24:MI:SS'),100,4003929,4200022,'76046d9e-f5e6-4c71-a634-8800fa71e2ff')
+;
+
+-- Nov 4, 2026 — BridgeUpdatePAGoal
+INSERT INTO WS_WebServiceType (AD_Client_ID,AD_Org_ID,AD_Table_ID,Created,CreatedBy,Description,IsActive,Name,Updated,UpdatedBy,Value,WS_WebService_ID,WS_WebServiceMethod_ID,WS_WebServiceType_ID,WS_WebServiceType_UU) VALUES (11,0,440,TO_TIMESTAMP('2026-11-02 22:01:17','YYYY-MM-DD HH24:MI:SS'),100,'CAPEX R0: save a PA goal target (pilot POC)','Y','BridgeUpdatePAGoal',TO_TIMESTAMP('2026-11-02 22:01:17','YYYY-MM-DD HH24:MI:SS'),100,'BridgeUpdatePAGoal',50001,50025,4200023,'6858c723-1e7f-4587-98c7-9a203a8a51d9')
+;
+INSERT INTO WS_WebServiceTypeAccess (AD_Client_ID,AD_Org_ID,AD_Role_ID,Created,CreatedBy,IsActive,IsReadWrite,Updated,UpdatedBy,WS_WebServiceType_ID,WS_WebServiceTypeAccess_UU) VALUES (11,0,102,TO_TIMESTAMP('2026-11-02 22:01:17','YYYY-MM-DD HH24:MI:SS'),100,'Y','Y',TO_TIMESTAMP('2026-11-02 22:01:17','YYYY-MM-DD HH24:MI:SS'),100,4200023,'51cef14f-2a79-4279-8dc0-f185b66d6854')
+;
+INSERT INTO WS_WebService_Para (AD_Client_ID,AD_Org_ID,ConstantValue,Created,CreatedBy,IsActive,ParameterName,ParameterType,Updated,UpdatedBy,WS_WebService_Para_ID,WS_WebServiceType_ID,WS_WebService_Para_UU) VALUES (11,0,'PA_Goal',TO_TIMESTAMP('2026-11-02 22:01:17','YYYY-MM-DD HH24:MI:SS'),100,'Y','TableName','C',TO_TIMESTAMP('2026-11-02 22:01:17','YYYY-MM-DD HH24:MI:SS'),100,4200031,4200023,'c59a463e-8298-41e2-a2fe-18708d0fe2fa')
+;
+INSERT INTO WS_WebService_Para (AD_Client_ID,AD_Org_ID,Created,CreatedBy,IsActive,ParameterName,ParameterType,Updated,UpdatedBy,WS_WebService_Para_ID,WS_WebServiceType_ID,WS_WebService_Para_UU) VALUES (11,0,TO_TIMESTAMP('2026-11-02 22:01:17','YYYY-MM-DD HH24:MI:SS'),100,'Y','RecordID','F',TO_TIMESTAMP('2026-11-02 22:01:17','YYYY-MM-DD HH24:MI:SS'),100,4200032,4200023,'26c78db4-3e2a-41a7-b209-2de41c3dc8e2')
+;
+INSERT INTO WS_WebService_Para (AD_Client_ID,AD_Org_ID,ConstantValue,Created,CreatedBy,IsActive,ParameterName,ParameterType,Updated,UpdatedBy,WS_WebService_Para_ID,WS_WebServiceType_ID,WS_WebService_Para_UU) VALUES (11,0,'Update',TO_TIMESTAMP('2026-11-02 22:01:17','YYYY-MM-DD HH24:MI:SS'),100,'Y','Action','C',TO_TIMESTAMP('2026-11-02 22:01:17','YYYY-MM-DD HH24:MI:SS'),100,4200033,4200023,'640afff6-81db-42cc-b9f1-7961506d7081')
+;
+INSERT INTO WS_WebServiceFieldInput (AD_Client_ID,AD_Column_ID,AD_Org_ID,Created,CreatedBy,IsActive,Updated,UpdatedBy,WS_WebServiceFieldInput_ID,WS_WebServiceType_ID,IsIdentifier,IsNullIdentifier,WS_WebServiceFieldInput_UU) VALUES (11,5900,0,TO_TIMESTAMP('2026-11-02 22:01:17','YYYY-MM-DD HH24:MI:SS'),100,'Y',TO_TIMESTAMP('2026-11-02 22:01:17','YYYY-MM-DD HH24:MI:SS'),100,4001697,4200023,'N','N','efb07a13-6586-4436-b071-fef0770018de')
+;

@@ -23,6 +23,10 @@ fs.mkdirSync(out, { recursive: true });
     const f = path.join(out, name + '.png'), el = sel ? await p.$(sel) : null;
     if (sel && !el) { log('§FILM_SHOT ' + name + ' MISSING selector ' + sel); return; }
     await (el ? el.screenshot({ path: f }) : p.screenshot({ path: f }));
+    // §5.47 F14: the pixels are the page's text; grep that text with the private list (kept outside the repo). Text drawn into a canvas/image is NOT covered (named limit).
+    const PGF = process.env.FILM_PRIVATE_GREP_FILE || path.join(process.env.HOME, '.cache/capex_film/private_grep.txt');
+    if (!fs.existsSync(PGF)) log('§FILM_PIXEL_PRIVACY ' + name + ' INCONCLUSIVE no private list');
+    else { const txt = await p.evaluate(() => document.body.innerText), re = new RegExp(fs.readFileSync(PGF, 'utf8').trim(), 'i'); log('§FILM_PIXEL_PRIVACY ' + name + ' chars=' + txt.length + ' hits=' + (re.test(txt) ? 1 : 0)); }
     const vals = {}; for (const k of keys || []) vals[k] = await val(k);
     log('§FILM_SHOT ' + name + ' -> ' + f + ' values=' + JSON.stringify(vals));
   };

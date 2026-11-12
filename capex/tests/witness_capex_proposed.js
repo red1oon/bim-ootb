@@ -11,6 +11,7 @@
 // A measure whose population is empty prints INCONCLUSIVE, never PASS. Breaks: PROPOSED_BREAK=1 adds 1 to the twin value → FAIL; STAGES_BREAK=1 deletes one phase on the twin → S1 FAIL.
 // Usage: NODE_PATH=<bim-ootb>/node_modules node capex/tests/witness_capex_proposed.js
 'use strict';
+require('./_setup_gate.js')('§CAPEX_PROPOSED_VERDICT');
 const fs = require('fs'), path = require('path'), { execFileSync } = require('child_process');
 const ROOT = path.join(__dirname, '..', '..'), MIGDIR = path.join(ROOT, 'capex/legacy/migration/iD13/postgresql'), DB = 'idempiere_bimdoc';
 const C = require(path.join(ROOT, 'erp/tests/dd_common.js')), GE = require(path.join(ROOT, 'erp/goal_engine.js')), MA = require(path.join(ROOT, 'capex/tools/migration_apply.js'));

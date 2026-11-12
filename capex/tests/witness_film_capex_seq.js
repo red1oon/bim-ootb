@@ -50,6 +50,10 @@ const files = [TSV].concat(fs.readdirSync(CARDS).filter(f => /seq|^s\d|film_seq/
 const names = [].concat(Object.keys(shotVals));
 const hits = []; files.forEach(f => { fs.readFileSync(f, 'utf8').split('\n').forEach((l, i) => { if (PRIV && PRIV.test(l)) hits.push(path.basename(f) + ':' + (i + 1)); }); }); names.forEach(n => { if (PRIV && PRIV.test(n)) hits.push('shot ' + n); });
 if (!PRIV) inc('F2', 'private grep list not found (' + PGF + '): nothing judged'); else ck('F2 no private-name or sheet-code hit in the TSV, the seq cards and the shot names (files grepped=' + files.length + ', names=' + names.length + ', hits=' + hits.length + ')', hits.length === 0, hits.slice(0, 4));
+// F14 (§5.47) pixel privacy: every shot has a text-privacy line from the run; none has a hit (canvas/image text is a named limit, not covered)
+const pp = rd('shots.log').split('\n').filter(l => /^§FILM_PIXEL_PRIVACY /.test(l));
+if (!pp.length || pp.some(l => /INCONCLUSIVE/.test(l))) inc('F14', 'no pixel-privacy lines in shots.log or no private list: re-run film_seq_shots.js (nothing judged)');
+else ck('F14 every shot (' + shotLines.length + ') has a page-text privacy check and none hit', pp.length >= shotLines.length && pp.every(l => /hits=0$/.test(l.trim())), pp.filter(l => !/hits=0$/.test(l.trim())).slice(0, 3));
 // F4 proposed wording
 const need = { committed: /proposed/i, forecast: /proposed/i, stage: /proposed/i }, nop = Object.keys(need).filter(k => { const r = rows.find(x => x.id === k); return r && !need[k].test(r.detail + r.short); });   // rows that exist and show a proposed definition
 ck('F4 the three proposed definitions say "proposed" in their own row', nop.length === 0, nop);

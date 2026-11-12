@@ -159,6 +159,18 @@
   //   tasks:[{id, phase, storey, sDays, eDays, guids}] (= schedule_author.js materializeZones(...).tasks), phaseSeq:{phase→template sequence} }.
   //   The fold computes NO schedule: phases, their dates, the task grid and each line's phase all come from it; priced rows carry `guids`.
   //   Absent → phases grouped by classify() with NO dates + note NO_4D_SCHEDULE (never a fallback estimate).
+  // T6 (CAPEX_DASHBOARD.md ▶ RESUME; bim-compiler docs/BIMtoProject.md §F, owner 2026-11-11 "new documents version tagged, old simply replaced"): the MODEL VERSION TAG is a fingerprint of exactly what the fold
+  //   writes from: the priced rows (class, discipline, storey, count, unit, quantity, rate, task, guids) and the programme (task id, phase, storey, day range, start). Same inputs -> same tag -> the fold adds nothing;
+  //   a changed model -> a new tag -> the project's old phases/tasks/lines are REPLACED (alpha: no baseline kept). opts.modelVersion overrides it (e.g. a source-file hash once the extraction stores one).
+  function _fnv(str, seed) { var h = BigInt(seed), P = BigInt('1099511628211'), M = (BigInt(1) << BigInt(64)) - BigInt(1); for (var i = 0; i < str.length; i++) { h = ((h ^ BigInt(str.charCodeAt(i))) * P) & M; } return h.toString(16).padStart(16, '0'); }
+  function _modelTag(priced, SCH) {
+    var rows = (priced || []).map(function (r) { return [r.cls, r.disc || '', r.storey || '', r.count || 0, r.unit || '', Math.round((r.qty || 0) * 1000), r.rate, r.taskId == null ? '' : r.taskId, (r.guids || []).slice().sort().join(',')].join('|'); }).sort();
+    var tasks = SCH ? SCH.tasks.map(function (t) { return [t.id, t.phase, t.storey, t.sDays, t.eDays].join('|'); }).sort() : [];
+    var canon = JSON.stringify([rows, tasks, SCH ? SCH.start : null]);
+    return _fnv(canon, '14695981039346656037').slice(0, 12);
+  }
+  var VPFX = 'BIM model version ';
+
   function foldProjectOrder(db, building, priced, opts) {
     opts = opts || {};
     var SR = opts.seqRules || {};
@@ -218,14 +230,45 @@
 
     // ── C_Project (find-or-create by Value) ──
     var projId = _scalar(db, "SELECT C_Project_ID FROM C_Project WHERE Value=?", [building]);
+    var tag = opts.modelVersion != null ? String(opts.modelVersion) : _modelTag(priced, SCH), version = { tag: tag, state: 'new', previous: null, replaced: null };
     if (projId == null) {
       projId = id('C_Project', 'C_Project_ID');
       db.run("INSERT INTO C_Project (C_Project_ID,AD_Client_ID,AD_Org_ID,IsActive,Created,CreatedBy,Updated,UpdatedBy," +
-        "Value,Name,IsSummary,C_Currency_ID,PlannedAmt,PlannedQty,IsCommitment,ProjInvoiceRule,ProjectLineLevel,Processed,Processing,C_Project_UU) " +
-        "VALUES (?,?,?,'Y',?,?,?,?,?,?,'N',?,0,0,'N','-','P','N','N',?)",
-        [projId, CL, OG, now, U, now, U, building, 'BIM: ' + building, curId, _uu()]);
+        "Value,Name,Description,IsSummary,C_Currency_ID,PlannedAmt,PlannedQty,IsCommitment,ProjInvoiceRule,ProjectLineLevel,Processed,Processing,C_Project_UU) " +
+        "VALUES (?,?,?,'Y',?,?,?,?,?,?,?,'N',?,0,0,'N','-','P','N','N',?)",
+        [projId, CL, OG, now, U, now, U, building, 'BIM: ' + building, VPFX + tag, curId, _uu()]);
       created.projects = 1;
+    } else {
+      var cur = _scalar(db, "SELECT Description FROM C_Project WHERE C_Project_ID=?", [projId]);
+      if (cur != null && String(cur).indexOf(VPFX) === 0) {
+        version.previous = String(cur).slice(VPFX.length);
+        if (version.previous === tag) version.state = 'same';
+        else {
+          var actuals = 0; try { actuals = Number(_scalar(db, "SELECT COUNT(*) FROM C_ProjectIssue WHERE C_Project_ID=?", [projId]) || 0); } catch (e) { actuals = 0; }
+          if (actuals > 0) { version.state = 'refused'; notes.push('VERSION_REPLACE_REFUSED project=' + building + ' has ' + actuals + ' Project Issue(s) (actuals): the old rows stay, nothing is replaced'); }
+          else {
+            // burn one id per table first, so a re-created row never reuses the id of one just deleted (a signed tombstone would hide it)
+            id('C_ProjectPhase', 'C_ProjectPhase_ID'); id('C_ProjectTask', 'C_ProjectTask_ID'); id('C_ProjectLine', 'c_projectline_id');
+            var cnt = function (sql) { return Number(_scalar(db, sql, [projId]) || 0); };
+            var rep = { lines: cnt("SELECT COUNT(*) FROM C_ProjectLine WHERE C_Project_ID=?"), tasks: cnt("SELECT COUNT(*) FROM C_ProjectTask WHERE C_ProjectPhase_ID IN (SELECT C_ProjectPhase_ID FROM C_ProjectPhase WHERE C_Project_ID=?)"), phases: cnt("SELECT COUNT(*) FROM C_ProjectPhase WHERE C_Project_ID=?"), order: 0 };
+            db.run("DELETE FROM C_ProjectLine WHERE C_Project_ID=?", [projId]);
+            db.run("DELETE FROM C_ProjectTask WHERE C_ProjectPhase_ID IN (SELECT C_ProjectPhase_ID FROM C_ProjectPhase WHERE C_Project_ID=?)", [projId]);
+            db.run("DELETE FROM C_ProjectPhase WHERE C_Project_ID=?", [projId]);
+            var po = _scalar(db, "SELECT C_Order_ID FROM C_Order WHERE Description=? AND DocStatus='DR'", ['BIM PO: ' + building]);
+            if (po != null) { db.run("DELETE FROM C_OrderLine WHERE C_Order_ID=?", [po]); db.run("DELETE FROM C_Order WHERE C_Order_ID=?", [po]); rep.order = 1; }
+            else if (_scalar(db, "SELECT C_Order_ID FROM C_Order WHERE Description=?", ['BIM PO: ' + building]) != null) notes.push('VERSION_PO_KEPT the purchase order is no longer a draft: it is not replaced');
+            db.run("UPDATE C_Project SET Description=?,PlannedAmt=0,PlannedQty=0 WHERE C_Project_ID=?", [VPFX + tag, projId]);
+            version.state = 'replaced'; version.replaced = rep;
+          }
+        }
+      } else if (cur == null || String(cur) === '') { db.run("UPDATE C_Project SET Description=? WHERE C_Project_ID=?", [VPFX + tag, projId]); version.state = 'adopted'; }
+      else { version.state = 'untagged'; notes.push('VERSION_UNTAGGED project=' + building + ' has its own description: no tag stored, no replacement (find-or-create as before)'); }
     }
+    if (version.state === 'refused') {   // actuals exist: the old order stands whole; folding the new model beside it would mix two models
+      return { projectId: projId, version: version, created: created, plannedAmt: String(_scalar(db, "SELECT PlannedAmt FROM C_Project WHERE C_Project_ID=?", [projId]) || '0'), plannedQty: Number(_scalar(db, "SELECT PlannedQty FROM C_Project WHERE C_Project_ID=?", [projId]) || 0),
+        orderId: null, seqLog: [], notes: notes, currencyId: curId, acctCurrencyId: conv.acctCurId, convRateToAcct: conv.rate, glMap: _glMap(db, opts.bpartnerId) };
+    }
+    notes.push('§PROJ_VERSION project=' + building + ' tag=' + tag + ' state=' + version.state + (version.previous ? ' previous=' + version.previous : '') + (version.replaced ? ' replaced=' + JSON.stringify(version.replaced) : ''));
 
     // canonical phase→seqno from the FULL sequence_rules (min sequence over ALL classes of a phase) —
     // stable across buildings, NOT dependent on which classes a given selection happens to contain.
@@ -400,7 +443,7 @@
     } else { notes.push('PLAN_ONLY no supplier → no C_Order PO'); }
 
     return {
-      projectId: projId, created: created, plannedAmt: projAmt.toString(), plannedQty: projQty,
+      projectId: projId, version: version, created: created, plannedAmt: projAmt.toString(), plannedQty: projQty,
       orderId: orderId, seqLog: seqLog, notes: notes, currencyId: curId,
       acctCurrencyId: conv.acctCurId, convRateToAcct: conv.rate, glMap: _glMap(db, opts.bpartnerId)
     };
@@ -511,7 +554,7 @@
     return { rows: out, elements: elements, parts: order.length };
   }
 
-  var API = { _allocator: _allocator, foldProjectOrder: foldProjectOrder, foldAuthoredPhases: foldAuthoredPhases, scheduleFromDb: scheduleFromDb, pricedPerTask: pricedPerTask, BIM_BASE: BIM_BASE };
+  var API = { _modelTag: _modelTag, _allocator: _allocator, foldProjectOrder: foldProjectOrder, foldAuthoredPhases: foldAuthoredPhases, scheduleFromDb: scheduleFromDb, pricedPerTask: pricedPerTask, BIM_BASE: BIM_BASE };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   else global.ProjFold = API;
 })(typeof self !== 'undefined' ? self : this);

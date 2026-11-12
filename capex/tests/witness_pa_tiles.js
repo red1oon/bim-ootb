@@ -18,7 +18,7 @@ const base = process.env.BRIDGE_BASE || 'http://localhost:8088', BREAK = process
 if (!/^https?:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(base)) { console.log('§PA_TILES_VERDICT INCONCLUSIVE local pilot only'); process.exit(2); }
 const L = { user: 'GardenAdmin', pass: 'GardenAdmin', lang: 'en_US', ClientID: 11, RoleID: 102, OrgID: 11, WarehouseID: 103, stage: 0 };
 const login = { user: L.user, pass: L.pass, lang: 'en_US', clientId: 11, roleId: 102, orgId: 11, warehouseId: 103, stage: 0 };
-const SCRIPTS = ['202611031900_CAPEX-R0.sql', '202611032000_CAPEX-G2.sql', '202611032200_CAPEX-G4.sql'];   // G3, G7 = goals only (the twin makes its own below); G4 = the bucket measures, §5.20
+const SCRIPTS = ['202611031900_CAPEX-R0.sql', '202611032000_CAPEX-G2.sql', '202611032200_CAPEX-G4.sql', '202611121000_CAPEX-S2-HEALTH-OVERDUE.sql'];   // G3, G7 = goals only (the twin makes its own below); G4 = the bucket measures, §5.20
 const log = console.log; let judged = 0, fails = 0, inconc = 0;
 function check(n, ok, info) { judged++; if (!ok) fails++; log('  §PA_TILES ' + n + ' ' + (ok ? 'PASS' : 'FAIL') + (info ? ' ' + info : '')); }
 function inc(n, why) { inconc++; log('  §PA_TILES ' + n + ' INCONCLUSIVE ' + why); }

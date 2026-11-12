@@ -13,7 +13,7 @@
     committed_cost: 'SUM(C_Project.CommittedAmt); invoiced = SUM(C_Project.InvoicedAmt)',
     forecast_cost: 'PROPOSED (awaiting the client, §6 Q3): per ACTIVE project EAC = Spent + (Budget - Done) / CPI, CPI = Done / Spent; Spent = ProjectBalanceAmt, Budget = PlannedAmt, Done = SUM(C_ProjectPhase.PlannedAmt WHERE IsComplete=\'Y\'); a project with Spent or Done at 0 gives no value; summed per C_Currency_ID',
     completed_year: 'COUNT(C_Project WHERE Processed=\'Y\' AND year(DateFinish)=year(today))',
-    health: 'per project: PV=SUM(C_ProjectPhase.PlannedAmt WHERE EndDate<=today), EV=SUM(PlannedAmt WHERE IsComplete=\'Y\'), AC=ProjectBalanceAmt; SPI=EV/PV, CPI=EV/AC (AC>0). No EVM data = PV is 0. Green = every index >=0.9, Red = every index <0.9, Amber = mixed. PROVISIONAL: only 0.9 is the client\'s',
+    health: 'per project: PV=SUM(C_ProjectPhase.PlannedAmt WHERE EndDate<=today), EV=SUM(PlannedAmt WHERE IsComplete=\'Y\'), AC=ProjectBalanceAmt; SPI=EV/PV, CPI=EV/AC (AC>0). No EVM data = PV is 0. Green = every index >=0.9 AND no phase overdue (IsComplete=\'N\' AND EndDate<today; else Amber, §5.44), Red = every index <0.9, Amber = mixed. PROVISIONAL: only 0.9 is the client\'s',
     stage: 'COUNT(C_Project) GROUP BY C_Project.C_Phase_ID -> C_Phase.Name (client stage mapping pending)',
     physical_spent: 'Physical = SUM(phase.PlannedAmt WHERE IsComplete=\'Y\') / SUM(phase.PlannedAmt); Spent = SUM(ProjectBalanceAmt) / SUM(PlannedAmt)',
     schedule: 'per project: No schedule data = no phase with StartDate and EndDate; At Risk = SPI<0.9; Delayed = a phase with IsComplete=\'N\' AND EndDate<today; else On Time. Average Delay = mean of max(today-EndDate) over Delayed + At Risk',
@@ -26,6 +26,7 @@
   };
   var NEEDS = { active_projects_sub: ['phaseRef'], health: ['phases'], forecast_cost: ['phases'], stage: ['phaseRef'], physical_spent: ['phases'], schedule: ['phases'], approvals: ['wf'], bim_documents: ['bimdocs'], committed_contract: ['orders'], committed_verified: ['issues'] };
 
+  function process_s2() { return !(typeof process !== 'undefined' && process.env && process.env.HEALTH_BREAK === '1'); }   // witness falsifier only (HEALTH_BREAK=1 restores the pre-§5.44 rule)
   function cents(v) { return v == null || v === '' ? null : Math.round(Number(v) * 100); }
   function day(s) { return s ? String(s).slice(0, 10) : null; }
   function dnum(s) { var d = day(s); return d ? Date.UTC(+d.slice(0, 4), +d.slice(5, 7) - 1, +d.slice(8, 10)) / 86400000 : null; }
@@ -86,10 +87,10 @@
     // §5.38 Q3 (PROPOSED): EAC = Spent + (Budget - Done) / CPI, CPI = Done / Spent, over ACTIVE projects that have Spent > 0 and Done > 0; one SUM per currency, rounded once (the PA measure's own shape)
     var fb = blocked('forecast_cost');
     T.forecast_cost = fb ? { inconclusive: fb } : { cur: {} };
-    if (!fb) { var fsum = {}; act.forEach(function (p) {
+    if (!fb) { var fsum = {}, basis = 0; act.forEach(function (p) {
       var spent = cents(p.ProjectBalanceAmt), bud = cents(p.PlannedAmt) || 0, done = (byProj[p.C_Project_ID] || []).reduce(function (a, ph) { return a + (yes(ph.IsComplete) ? (cents(ph.PlannedAmt) || 0) : 0); }, 0);
-      if (!(spent > 0) || !(done > 0)) return; fsum[cur(p)] = (fsum[cur(p)] || 0) + spent + (bud - done) * spent / done; });
-      Object.keys(fsum).forEach(function (k) { T.forecast_cost.cur[k] = Math.round(fsum[k]); }); }
+      if (!(spent > 0) || !(done > 0)) return; if (done / spent < 0.5 || done / spent > 2) basis++; fsum[cur(p)] = (fsum[cur(p)] || 0) + spent + (bud - done) * spent / done; });
+      Object.keys(fsum).forEach(function (k) { T.forecast_cost.cur[k] = Math.round(fsum[k]); }); T.forecast_cost.basisDiffers = basis; }   // §5.45: CPI outside 0.5..2 = Spent and Done are not on one basis (proposed bound)
     T.completed_year = { vacuous: none, n: tn == null ? null : P.filter(function (p) { return yes(p.Processed) && p.DateFinish && day(p.DateFinish).slice(0, 4) === today.slice(0, 4); }).length };
 
     // classification tiles — population A
@@ -114,7 +115,9 @@
         if (!(x.e.pv > 0)) { r.none++; return; }
         var idx = [x.e.spi]; if (x.e.cpi != null) idx.push(x.e.cpi);
         var ok = idx.filter(function (v) { return v >= 0.9; }).length;
-        r[ok === idx.length ? 'green' : ok === 0 ? 'red' : 'amber']++;
+        var cls = ok === idx.length ? 'green' : ok === 0 ? 'red' : 'amber';
+        if (cls === 'green' && x.e.overdue > 0 && process_s2()) cls = 'amber';   // §5.44: never Green while a phase is overdue
+        r[cls]++;
       }); r.n = A.length; return r;
     });
     T.stage = classTile('stage', function () {
