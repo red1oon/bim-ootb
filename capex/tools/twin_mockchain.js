@@ -66,6 +66,11 @@ async function build(o) {
       ['c_projectissue', 'c_projectline', 'c_projectphase', 'c_order', 'c_project'].forEach(t => H.db.run('DELETE FROM ' + t + ' WHERE c_project_id IN (' + L + ')'));
       log('§TWIN_MOCK seed demo projects removed from the export ids=' + L + ' rows=' + JSON.stringify(before)); }
   }
+  // §5.66: the CAPEX dashboard plugin's dictionary rows (PA_MeasureCalc / PA_Measure / PA_Goal ...), as a twin that has the plugin started holds them: the SAME migration scripts its 2Pack carries,
+  //   applied by the twin's migration runner. --no-capex-pack leaves them out (then the dashboard falls back and says so, §DASH_PA).
+  if (!(o.noCapexPack || process.argv.includes('--no-capex-pack'))) { const MA = require('./migration_apply.js'), MD = path.join(ROOT, 'capex/legacy/migration/iD13/postgresql'); let ok = 0, bad = 0;
+    fs.readdirSync(MD).filter(f => /\.sql$/.test(f)).sort().forEach(f => { const x = MA.apply(fs.readFileSync(path.join(MD, f), 'utf8'), { file: f, run: st => H.db.run(st), convertSql: H.A.convertSql, has: () => false }); ok += x.ok; bad += x.failed; });
+    log('§TWIN_MOCK_CAPEX_PACK statements ok=' + ok + ' failed=' + bad + ' pa_measurecalc=' + q("select count(*) as n from pa_measurecalc where name like 'CAPEX%'")[0].n); if (bad) errs.push('CAPEX pack: ' + bad + ' failed statements'); }
   fs.mkdirSync(path.dirname(OUT), { recursive: true }); fs.writeFileSync(OUT, Buffer.from(H.db.export()));
   log('§TWIN_MOCK_BUILT file=' + OUT + ' bytes=' + fs.statSync(OUT).size + ' projects=' + made.length + '/' + (ONLY ? 1 : SC_.SC.length) + ' errors=' + errs.length + ' today=' + TODAY);
   return { made, errs };

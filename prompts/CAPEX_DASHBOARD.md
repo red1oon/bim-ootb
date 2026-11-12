@@ -1259,3 +1259,16 @@ Same video timing as the English cut frame for frame (5694 frames, 227.78 s); on
 - W-CAPEX-PROPOSED was not run: the test instance holds the TD film data, which makes its hand totals FAIL by design (hand-off).
 
 **PR C needs:** the `QueryPAMeasureCalc` WS script, `dash.js` → `pa_tiles`, and the drill from `queryKeys`. Under D2, the drill must follow the PA population.
+**D2 REVISED (2026-11-13, before PR C; reason measured):** the page's DEFAULT Status is "Active" (`dash.js fillSelects`), so the first D2 would have changed numbers users read today in the default view (Total Projects would show the active count). Now each slot's binding states its population (`pa_tiles.js POP`: 'P' = Org/Category/Project only, as today for Total/Closed/Active/Closing/Completed-this-year/Forecast/Over-committed/No-PO; others also apply Status). This is still data, still no formula rewritten. W-PA-FLAT now allows **no** difference under any filter.
+
+**PR C1 RESULT (2026-11-13) — the page reads PA rows; logs read:**
+- **Legacy read type.** `capex/legacy/ws/pacalc/.../202611131400_CAPEX-WS-PACALC.sql` adds `QueryPAMeasureCalc`. It is applied to the pilot and the test instance (`setup_test_instance.sh` lists it; `§SETUP_VERDICT PASS`; both restarted). The pilot serves 51 rows.
+- **Page.** `capex/index.html` loads the kernel's `layered_registry`, `bigdecimal`, `db_export_safe`, `ad_callout`, `callouts/sqlfn`, `goal_engine` and `pa_tiles`. `dash.js compute()` → `CapexPaTiles.compute`; `window.__capex.pa` shows judged/errors. A source without the CAPEX rows falls back to `tiles.js` and says so (`§PA_TILES_PAGE fallback`).
+- **Twin scenario.** The builder (`twin_mockchain.js`) now installs the plugin's rows, as a twin with the plugin started holds them (`§TWIN_MOCK_CAPEX_PACK ok=139 failed=0`).
+- **Witnesses:**
+  - W-DASH-TWIN `PASS 8/0`; new **D8**: the numbers came from the store's PA rows (`judged=37 errors=[]`). Break `DASH_TWIN_PA_BREAK=1` (store without the rows) → D8 FAIL.
+  - W-DASH-BIMDOC 8/0: the live test instance, `§DASH_PA source=legacy judged=35 errors=0`.
+  - Also PASS: W-PA-FLAT 15/0, W-PA-CTX 27/0, W-TWIN-CHAIN 5/0, W-CAPEX-SAMPLE 8/0, W-DASH-DRILL 59/0, W-TASKDATES 9/0, W-DASH-PROJSEL 8/0, W-CHAIN 11/0, W-THEME 11/0, W-PROJECT-PAGE 16/0, W-SITE-MIG 30/0, and W-PA-TILES 101/0.
+- **W-PA-TILES now removes the page-measure goals it creates on the pilot** (`§PA_TILES_CLEANUP 18`). Page measures are not Home goals. Left behind, they made W-DASH-SYNC FAIL 20 ("absent from the Home"), because legacy's Home showed goals the twin's did not. That was a look-and-feel change made by a witness.
+- **W-DASH-SYNC** `judged=168 fail=1`. **E2 is open, not explained:** after the pilot edit (SHED Substructure IsComplete=Y) legacy's own Health Green stayed 0 → 0. It is legacy computing its unchanged row 1000023 (W-PA-TILES legacy == twin on it). To investigate before C2: is it the date window of SHED's phases on 2026-11-13?
+**PR C2 (next):** delete the moved formulas from `tiles.js` compute (the drill buckets come from `GoalEngine.queryKeys` of the bound slot); `tiles.js` keeps Stage, BIM documents, Last updated, the drill row view, `projectDetail`, availability and formatting. Deletion budget stated in the PR.

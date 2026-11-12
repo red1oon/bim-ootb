@@ -9,7 +9,7 @@ let judged = 0, fails = 0, inc = 0; const ck = (n, ok, i) => { judged++; if (!ok
 const incon = (n, w) => { inc++; log('  §DASH_TWIN_W ' + n + ' INCONCLUSIVE ' + w); };
 (async () => {
   const out = path.join(os.tmpdir(), 'dash_twin_' + process.pid + '.db'), { build } = require(path.join(ROOT, 'capex/tools/twin_mockchain.js')), _l = console.log, held = []; console.log = (...a) => held.push(a.join(' '));
-  let r; try { r = await build({ today: TODAY, out }); } finally { console.log = _l; } held.filter(l => /TWIN_MOCK_BUILT|removed from the export/.test(l)).forEach(l => log(l.slice(0, 200)));
+  let r; try { r = await build({ today: TODAY, out, noCapexPack: process.env.DASH_TWIN_PA_BREAK === '1' });} finally { console.log = _l; } held.filter(l => /TWIN_MOCK_BUILT|removed from the export/.test(l)).forEach(l => log(l.slice(0, 200)));   // DASH_TWIN_PA_BREAK=1: a store without the CAPEX rows: D8 MUST FAIL (the page falls back)
   if (r.errs.length) { ck('D0 the store was built', false, r.errs); return done(out); }
   const SQL = await initSqlJs(), db = new SQL.Database(fs.readFileSync(out)), q = (s, p) => { const x = db.exec(s, p || []); return x.length ? x[0].values.map(v => { const o = {}; x[0].columns.forEach((c, i) => { o[c] = v[i]; }); return o; }) : []; };
   const prj = q("select c_project_id as id, value as val, plannedamt as pa, projectbalanceamt as bal from c_project where value like 'TD\\_%' escape '\\' order by c_project_id"), n = prj.length, sumPA = prj.reduce((a, x) => a + Number(x.pa || 0), 0), sumBal = prj.reduce((a, x) => a + Number(x.bal || 0), 0);
@@ -40,6 +40,8 @@ const incon = (n, w) => { inc++; log('  §DASH_TWIN_W ' + n + ' INCONCLUSIVE ' +
     const bars = await pg.$$eval('#view rect.tbar', e => e.map(x => [x.getAttribute('data-phase'), x.getAttribute('data-task'), x.getAttribute('data-start'), x.getAttribute('data-end')].join('|'))),
       want = q("select p.name as pn, k.name as kn, k.bim_startdate as s, k.bim_enddate as e from c_projecttask k join c_projectphase p on p.c_projectphase_id=k.c_projectphase_id where p.c_project_id=?", [bridge.id]).map(x => [x.pn, x.kn, String(x.s).slice(0, 10), String(x.e).slice(0, 10)].join('|'));
     ck('D7 the BRIDGE Schedule tab draws ' + bars.length + ' task bars == the ' + want.length + ' dated task rows of the store (two per phase)', want.length === 2 * Number(q('select count(*) as n from c_projectphase where c_project_id=?', [bridge.id])[0].n) && want.length > 0 && bars.slice().sort().join(';') === want.slice().sort().join(';'), { bars: bars.length, want: want.length });
+    const paRun = await pg.evaluate(() => window.__capex && window.__capex.pa);   // §5.66: a page that fell back to tiles.js would still match the store: scope-blind without this
+    ck('D8 the dashboard numbers came from the store\'s PA rows (pa judged > 0, no PA error)', !!(paRun && paRun.judged > 0 && !paRun.errors.length), paRun);
     ck('D6 no page error', errs.length === 0, errs);
   } finally { await br.close(); srv.close(); }
   done(out);

@@ -26,7 +26,8 @@ const inc = (n, why) => { inconc++; log('  §PA_CTX ' + n + ' INCONCLUSIVE ' + w
   ['support', 'support_stock', 'views', 'currency', 'uom', 'pricing', 'tax', 'sqlfn'].forEach(m => require(path.join(ROOT, 'erp/callouts', m + '.js'))); AC.RUNTIME.registerSqlFunctions((n, f) => db.create_function(n, f));   // the host's PL/pgSQL ports (TO_TIMESTAMP, …), as dd_common boot()
   const q = (s, p) => { const st = db.prepare(s), o = []; try { if (p) st.bind(p); while (st.step()) { const x = st.getAsObject(), k = {}; Object.keys(x).forEach(c => { k[c.toLowerCase()] = x[c]; }); o.push(k); } } finally { st.free(); } return o; };
   const files = fs.readdirSync(MIGDIR).filter(f => /\.sql$/.test(f)).sort();
-  files.forEach(f => MA.apply(fs.readFileSync(path.join(MIGDIR, f), 'utf8'), { file: f, run: s => db.run(s), convertSql: AC.convertSql, log: m => { if (/MIG_APPLY|MIG_STMT_FAIL/.test(m)) log('    ' + m.slice(0, 260)); }, has: t => q("SELECT 1 AS x FROM sqlite_master WHERE lower(name)=?", [t]).length > 0 }));
+  const have = q("SELECT COUNT(*) AS n FROM pa_measurecalc WHERE name LIKE 'CAPEX%'")[0].n;   // the builder installs the plugin's rows (§TWIN_MOCK_CAPEX_PACK)
+  if (!have) files.forEach(f => MA.apply(fs.readFileSync(path.join(MIGDIR, f), 'utf8'), { file: f, run: s => db.run(s), convertSql: AC.convertSql, log: m => { if (/MIG_APPLY|MIG_STMT_FAIL/.test(m)) log('    ' + m.slice(0, 260)); }, has: t => q("SELECT 1 AS x FROM sqlite_master WHERE lower(name)=?", [t]).length > 0 }));
   const ctxBase = { today: TODAY, convertSql: AC.convertSql };
   log('§PA_CTX_DATA scripts=' + files.length + ' capex_calcs=' + q("SELECT COUNT(*) AS n FROM pa_measurecalc WHERE name LIKE 'CAPEX%'")[0].n + ' projects=' + q('SELECT COUNT(*) AS n FROM c_project')[0].n + (BREAK ? ' (PA_CTX_BREAK=1: FAIL expected)' : ''));
 
