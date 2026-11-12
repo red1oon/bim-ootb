@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // ⚠ DO NOT REMOVE — W-DASH-TWIN (spec prompts/CAPEX_DASHBOARD.md §5.61). READ THE LOG: verdict = §DASH_TWIN_W_VERDICT; a spread-less health tile or an empty store is INCONCLUSIVE, never PASS.
 // ISSUE it proves/disproves: "the film's dashboard shows numbers the twin's own rows do not hold (or the seed's demo projects), or the chain drill changed the glance". Reads the page's SHIPPED §DASH_TILE log lines; expected values come from SQL on the same store.
-// D1 total projects == TD projects == drop-down · D2 approved budget and actual cost == SUM by SQL · D3 open POs == non-completed POs by SQL · D4 health sums to the project count with more than one colour · D5 the project page Procurement tab shows the Supply chain card for the BRIDGE project (declared stage partpaid -> invoiced) · D6 no page error.
+// D1 total projects == TD projects == drop-down · D2 approved budget and actual cost == SUM by SQL · D3 open POs == non-completed POs by SQL · D4 health sums to the project count with more than one colour · D5 the project page Procurement tab shows the Supply chain card for the BRIDGE project (declared stage partpaid -> invoiced) · D7 the Schedule tab draws the store's dated task rows · D6 no page error.
 // DASHTWIN_BREAK=1 raises one project's PlannedAmt by 1000 in the SERVED copy only: D2 must FAIL. Usage: NODE_PATH=<bim-ootb>/node_modules node capex/tests/witness_dash_twin.js
 'use strict';
 const fs = require('fs'), os = require('os'), path = require('path'), http = require('http'), initSqlJs = require('sql.js'), ROOT = path.join(__dirname, '..', '..'), SC_ = require(path.join(ROOT, 'capex/tools/td_scenario.js')), BREAK = process.env.DASHTWIN_BREAK === '1', log = console.log, TODAY = '2026-11-12';
@@ -36,6 +36,10 @@ const incon = (n, w) => { inc++; log('  §DASH_TWIN_W ' + n + ' INCONCLUSIVE ' +
     await pg.goto(base + '#project/' + bridge.id + '/procurement', { waitUntil: 'load' }); await pg.waitForFunction(() => window.__capex && window.__capex.rendered, null, { timeout: 30000 }); await pg.waitForTimeout(500);
     const rows = await pg.$$eval('#view [data-chain] tr[data-order]', e => e.map(x => x.getAttribute('data-stage'))), strip = await pg.$$eval('#view [data-chain] [data-strip]', e => e.map(x => x.getAttribute('data-strip') + '=' + x.getAttribute('data-count')));
     ck('D5 the BRIDGE project page shows the Supply chain card: ' + JSON.stringify(rows) + ' strip ' + strip.join(','), rows.indexOf('invoiced') >= 0 && rows.indexOf('unfinished') >= 0 && strip.indexOf('invoiced=1') >= 0, { rows, strip });
+    await pg.evaluate(h => { location.hash = h; }, '#project/' + bridge.id + '/schedule'); await pg.waitForTimeout(500);
+    const bars = await pg.$$eval('#view rect.tbar', e => e.map(x => [x.getAttribute('data-phase'), x.getAttribute('data-task'), x.getAttribute('data-start'), x.getAttribute('data-end')].join('|'))),
+      want = q("select p.name as pn, k.name as kn, k.bim_startdate as s, k.bim_enddate as e from c_projecttask k join c_projectphase p on p.c_projectphase_id=k.c_projectphase_id where p.c_project_id=?", [bridge.id]).map(x => [x.pn, x.kn, String(x.s).slice(0, 10), String(x.e).slice(0, 10)].join('|'));
+    ck('D7 the BRIDGE Schedule tab draws ' + bars.length + ' task bars == the ' + want.length + ' dated task rows of the store (two per phase)', want.length === 2 * Number(q('select count(*) as n from c_projectphase where c_project_id=?', [bridge.id])[0].n) && want.length > 0 && bars.slice().sort().join(';') === want.slice().sort().join(';'), { bars: bars.length, want: want.length });
     ck('D6 no page error', errs.length === 0, errs);
   } finally { await br.close(); srv.close(); }
   done(out);
