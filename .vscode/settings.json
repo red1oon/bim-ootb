@@ -1,0 +1,32 @@
+{
+  // Editor-only (never loaded by a page). Spec: bim-compiler prompts/EDITOR_MAINTAINABILITY_STUDY.md §8 S2.
+  // Search hides vendored libraries and generated one-line data files, so results show project code.
+  // To search them anyway, click the "Use Exclude Settings" toggle in the Search panel.
+  "search.exclude": {
+    "viewer/lib/**": true,
+    "erp/lib/**": true,
+    "modeller/lib/**": true,
+    "common/lib/**": true,
+    "erp/sqljs/**": true,
+    "**/*.min.js": true,
+    "out/**": true,
+    "logs/**": true,
+    "erp/genesis_dict.js": true,
+    "erp/fk_rules.js": true,
+    "erp/team_plan.js": true,
+    "erp/team_plan_pos.js": true,
+    "erp/genesis_seed.js": true,
+    "erp/ad_official_indexes.js": true,
+    "erp/SW_VERSION_HISTORY.md": true
+  },
+  // Generated / extracted data: edit the generator named on line 1 of each file, never the file itself.
+  "files.readonlyInclude": {
+    "erp/genesis_dict.js": true,
+    "erp/fk_rules.js": true,
+    "erp/team_plan.js": true,
+    "erp/team_plan_pos.js": true,
+    "erp/genesis_seed.js": true,
+    "erp/ad_official_indexes.js": true,
+    "internal/APP_SURFACE.md": true
+  }
+}

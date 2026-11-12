@@ -33,3 +33,14 @@
 # re-committed as a regular blob.
 modeller/mesh.db export-ignore
 modeller/*_geo.db export-ignore
+
+# ── GENERATED DATA (2026-11-13, bim-compiler prompts/EDITOR_MAINTAINABILITY_STUDY.md §8 S2) ─────────────
+# One-line data files written by a generator (named on line 1 of each). Collapsed in GitHub diffs and
+# left out of language stats. Edit the generator, not the file.
+erp/genesis_dict.js linguist-generated
+erp/fk_rules.js linguist-generated
+erp/team_plan.js linguist-generated
+erp/team_plan_pos.js linguist-generated
+erp/genesis_seed.js linguist-generated
+erp/ad_official_indexes.js linguist-generated
+internal/APP_SURFACE.md linguist-generated

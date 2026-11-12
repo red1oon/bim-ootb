@@ -1,7 +1,30 @@
 {
   "version": "2.0.0",
+  // Witness tasks added 2026-11-13 (bim-compiler prompts/EDITOR_MAINTAINABILITY_STUDY.md §8 S4): run a witness by hand,
+  // keep its full output in logs/<name>.log (gitignored by *.log), and show only the verdict tail. Read the log, not the tail.
   "tasks": [
     { "label": "Serve repo (http://localhost:8000)", "type": "shell", "command": "python3 -m http.server 8000", "isBackground": true, "problemMatcher": [] },
-    { "label": "Lint viewer (no-undef gate)", "type": "shell", "command": "npx eslint viewer", "problemMatcher": ["$eslint-stylish"] }
+    { "label": "Lint viewer (no-undef gate)", "type": "shell", "command": "npx eslint viewer", "problemMatcher": ["$eslint-stylish"] },
+    { "label": "Lint as CI does (viewer + modeller)", "type": "shell", "command": "npx eslint viewer modeller", "problemMatcher": ["$eslint-stylish"] },
+    {
+      "label": "Run this witness (full log -> logs/)",
+      "type": "shell",
+      "command": "mkdir -p logs && node '${relativeFile}' > 'logs/${fileBasenameNoExtension}.log' 2>&1; ec=$?; tail -n 20 'logs/${fileBasenameNoExtension}.log'; echo \"exit=$ec  full log: logs/${fileBasenameNoExtension}.log\"; exit $ec",
+      "options": { "shell": { "executable": "bash", "args": ["-c"] } },
+      "problemMatcher": []
+    },
+    {
+      "label": "Run viewer witness suite (full log -> logs/)",
+      "type": "shell",
+      "command": "mkdir -p logs && node tests/run_witness_suite.js > logs/witness_suite.log 2>&1; ec=$?; tail -n 20 logs/witness_suite.log; echo \"exit=$ec  full log: logs/witness_suite.log\"; exit $ec",
+      "options": { "shell": { "executable": "bash", "args": ["-c"] } },
+      "problemMatcher": []
+    },
+    {
+      "label": "Regenerate editor indexes (APP_SURFACE + global types)",
+      "type": "shell",
+      "command": "node scripts/gen_app_surface.js && node scripts/gen_global_types.js",
+      "problemMatcher": []
+    }
   ]
 }
