@@ -18,7 +18,7 @@ const base = process.env.BRIDGE_BASE || 'http://localhost:8088', BREAK = process
 if (!/^https?:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(base)) { console.log('§PA_TILES_VERDICT INCONCLUSIVE local pilot only'); process.exit(2); }
 const L = { user: 'GardenAdmin', pass: 'GardenAdmin', lang: 'en_US', ClientID: 11, RoleID: 102, OrgID: 11, WarehouseID: 103, stage: 0 };
 const login = { user: L.user, pass: L.pass, lang: 'en_US', clientId: 11, roleId: 102, orgId: 11, warehouseId: 103, stage: 0 };
-const SCRIPTS = ['202611031900_CAPEX-R0.sql', '202611032000_CAPEX-G2.sql', '202611032200_CAPEX-G4.sql', '202611121000_CAPEX-S2-HEALTH-OVERDUE.sql'];   // G3, G7 = goals only (the twin makes its own below); G4 = the bucket measures, §5.20
+const SCRIPTS = ['202611031900_CAPEX-R0.sql', '202611032000_CAPEX-G2.sql', '202611032200_CAPEX-G4.sql', '202611121000_CAPEX-S2-HEALTH-OVERDUE.sql', '202611131300_CAPEX-PAGE-MEASURES.sql'];   // §5.66: the page measures (money rows carry @$C_Currency_ID@: legacy's login currency, USD 100 for client 11's schema)   // G3, G7 = goals only (the twin makes its own below); G4 = the bucket measures, §5.20
 const log = console.log; let judged = 0, fails = 0, inconc = 0;
 function check(n, ok, info) { judged++; if (!ok) fails++; log('  §PA_TILES ' + n + ' ' + (ok ? 'PASS' : 'FAIL') + (info ? ' ' + info : '')); }
 function inc(n, why) { inconc++; log('  §PA_TILES ' + n + ' INCONCLUSIVE ' + why); }
@@ -43,14 +43,14 @@ const dt = v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.
 
   // ── DOWN copy (read-only) of the rows the measures read ──
   const copied = {};
-  ['c_project', 'c_projectphase', 'ad_wf_activity'].forEach(t => {
+  ['c_project', 'c_projectphase', 'ad_wf_activity', 'c_order', 'c_projectissue', 'c_phase'].forEach(t => {   // §5.66: the page measures also read purchase orders, project issues and C_Phase
     const rows = JSON.parse(psql('SELECT COALESCE(json_agg(x), \'[]\') FROM ' + t + ' x WHERE ad_client_id IN (0,11);') || '[]');
     const cols = H.q('PRAGMA table_info(' + t + ')').map(c => c.name.toLowerCase());
     H.db.run('DELETE FROM ' + t);
     rows.forEach(r => { const ks = Object.keys(r).filter(k => cols.includes(k)); H.db.run('INSERT INTO ' + t + ' (' + ks.join(',') + ') VALUES (' + ks.map(() => '?').join(',') + ')', ks.map(k => { const v = r[k]; return v == null ? null : typeof v === 'object' ? JSON.stringify(v) : typeof v === 'boolean' ? (v ? 'Y' : 'N') : typeof v === 'number' ? String(v) : dt(v); })); });
     copied[t] = rows.length;
   });
-  log('§PA_TILES_DOWN c_project=' + copied.c_project + ' c_projectphase=' + copied.c_projectphase + ' ad_wf_activity=' + copied.ad_wf_activity + ' (clients 0+11, read-only psql)');
+  log('§PA_TILES_DOWN c_project=' + copied.c_project + ' c_projectphase=' + copied.c_projectphase + ' ad_wf_activity=' + copied.ad_wf_activity + ' c_order=' + copied.c_order + ' c_projectissue=' + copied.c_projectissue + ' c_phase=' + copied.c_phase + ' (clients 0+11, read-only psql)');
 
   // ── legacy: one goal per measure, computed by legacy's own model save ──
   const legacy = {};
@@ -66,7 +66,7 @@ const dt = v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.
 
   // ── twin: the same goals through the model layer, computed by the engine ──
   GE.install(H.db);   // the twin's ONE PA owner (erp/goal_engine.js, §5.18/§5.24): its SQLite ports of trunc / invoiceopen / currencybase / the invoice views
-  const CTX = { client: 11, role: 102, today, now: today + ' 12:00:00', convertSql: H.A.convertSql }, run = (s, p) => H.db.run(s, p || []), twin = {};
+  const CTX = { client: 11, role: 102, today, now: today + ' 12:00:00', convertSql: H.A.convertSql, env: { '$C_Currency_ID': psql('SELECT s.C_Currency_ID FROM AD_ClientInfo ci JOIN C_AcctSchema s ON s.C_AcctSchema_ID=ci.C_AcctSchema1_ID WHERE ci.AD_Client_ID=11;') } }, run = (s, p) => H.db.run(s, p || []), twin = {};   // env: Login.java:569, $C_Currency_ID = the client's accounting-schema currency
   measures.forEach(m => {
     H.save('pa_goal', { ad_client_id: 11, ad_org_id: 0, isactive: 'Y', name: m.name, pa_measure_id: m.pa_measure_id, pa_colorschema_id: 100, measuretarget: 0, measurescope: scopeOf(m), seqno: 0, issummary: 'N', relativeweight: 1, charttype: 'BC' });
     const gid = H.lastId('pa_goal'), u = GE.updateGoal(H.q, run, gid, CTX, { force: true });
@@ -111,7 +111,12 @@ const dt = v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.
       if (lg0 && lg0.err) { check(m.pa_measure_id + ' ' + bk[0] + ' legacy goal computed', false, lg0.err); return; }
       judgeBucket('A ' + m.pa_measure_id + ' ' + bk[0], bk[1], BREAK && e0 ? e0.add(BD.of(1)) : e0, bk[2], lgv, lg0 && lg0.goal ? (String(lg0.goal.MeasureActual).split('.')[1] || '').length : 0); return; }
     const t = TILE[m.pa_measure_id], tag = m.pa_measure_id + ' ' + (t ? t[0] : m.name), lg = legacy[m.pa_measure_id];
-    if (!t) { inc(tag, 'no tiles.js mapping'); return; }
+    if (!t) {   // §5.66 page measures: tiles.js is judged against them by W-PA-FLAT; here the CARDINAL part, legacy == twin engine, over the same rows
+      const lv0 = lg && lg.goal ? bd(lg.goal.MeasureActual) : null, e1 = twin[m.pa_measure_id] && BREAK ? twin[m.pa_measure_id].add(BD.of(1)) : twin[m.pa_measure_id], sc0 = lg && lg.goal ? (String(lg.goal.MeasureActual).split('.')[1] || '').length : 0;
+      const info0 = 'legacy=' + (lg && lg.goal ? lg.goal.MeasureActual : 'ERR ' + (lg && lg.err)) + ' engine=' + (e1 && e1.toString());
+      if (lg && lg.err) { check(tag + ' legacy goal computed', false, info0); return; }
+      if (lv0 && e1 && lv0.signum && lv0.signum() === 0 && e1.signum() === 0) { inc(tag, 'both 0 (' + info0 + ') — a 0 here judges nothing'); return; }
+      check(tag + ' legacy == engine (page measure)', !!(e1 && lv0 && e1.setScale(sc0, BD.RoundingMode.HALF_UP).eq(lv0)), info0); return; }
     const pop = Number(H.one('SELECT COUNT(*) AS n FROM ' + (t[4] || 'c_project') + ' WHERE ad_client_id=11 AND ' + t[3]).n);
     const money = t[1] === 'm', colPop = money ? Number(H.one('SELECT COUNT(*) AS n FROM c_project WHERE ad_client_id=11 AND ' + t[3] + ' AND ' + ({ 1000000: 'plannedamt', 1000014: 'plannedamt', 1000015: 'projectbalanceamt', 1000016: 'projectbalanceamt', 1000017: 'committedamt', 1000018: 'committedamt', 1000019: 'invoicedamt', 1000020: 'invoicedamt' }[m.pa_measure_id]) + ' IS NOT NULL').n) : pop;
     let eng = twin[m.pa_measure_id]; if (BREAK && eng) eng = eng.add(BD.of(1));
