@@ -22,9 +22,14 @@
     last_updated: 'MAX(C_Project.Updated)',
     committed_contract: 'PROPOSED (§6 Q4): SUM(C_Order.GrandTotal) of completed purchase orders (IsSOTrx=\'N\', DocStatus=\'CO\') on the filtered projects, per currency',
     committed_verified: 'PROPOSED (§6 Q4): SUM(ProjectBalanceAmt) of the filtered projects that have a processed C_ProjectIssue, per currency; overlaps Actual Cost (iDempiere adds an issue\'s cost to it)',
+    proc_openpo: 'PROPOSED (§5.51): COUNT and SUM(GrandTotal) per currency of C_Order WHERE IsSOTrx=\'N\' AND DocStatus NOT IN (CO, CL, VO, RE) on the filtered projects',
+    proc_overcommitted: 'PROPOSED (§5.51): active projects with CommittedAmt > PlannedAmt (PlannedAmt > 0)',
+    proc_nopo: 'PROPOSED (§5.51): active projects with PlannedAmt > 0 and no purchase order (C_Order IsSOTrx=\'N\') at all',
+    handover_ready: 'PROPOSED (§5.51): active projects with at least one C_ProjectPhase and every phase IsComplete=\'Y\'',
+    handover_done: 'PROPOSED (§5.51): COUNT(C_Project WHERE Processed=\'Y\') on the filtered projects',
     bim_documents: 'issued = COUNT(deliverables whose latest revision has DocStatus=\'CO\'); deliverables = COUNT(DISTINCT C_Project_ID, DeliverableNo) over active BIM_Document rows of the filtered projects; latest = highest Revision'
   };
-  var NEEDS = { active_projects_sub: ['phaseRef'], health: ['phases'], forecast_cost: ['phases'], stage: ['phaseRef'], physical_spent: ['phases'], schedule: ['phases'], approvals: ['wf'], bim_documents: ['bimdocs'], committed_contract: ['orders'], committed_verified: ['issues'] };
+  var NEEDS = { active_projects_sub: ['phaseRef'], health: ['phases'], forecast_cost: ['phases'], stage: ['phaseRef'], physical_spent: ['phases'], schedule: ['phases'], approvals: ['wf'], bim_documents: ['bimdocs'], committed_contract: ['orders'], committed_verified: ['issues'], proc_openpo: ['orders'], proc_nopo: ['orders'] };
 
   function process_s2() { return !(typeof process !== 'undefined' && process.env && process.env.HEALTH_BREAK === '1'); }   // witness falsifier only (HEALTH_BREAK=1 restores the pre-§5.44 rule)
   function cents(v) { return v == null || v === '' ? null : Math.round(Number(v) * 100); }
@@ -170,6 +175,24 @@
     if (blocked('committed_verified') || data.issues == null) T.committed_verified = { notinstalled: true };
     else { var has = {}; (data.issues || []).forEach(function (i) { if (yes(i.Processed)) has[String(i.C_Project_ID)] = 1; });
       var vp = S.filter(function (p) { return has[String(p.C_Project_ID)]; }); T.committed_verified = { cur: sumBy(vp, function (p) { return p.ProjectBalanceAmt; }), n: vp.length }; if (!vp.length) T.committed_verified.vacuous = true; }
+    // §5.51 (PROPOSED): Procurement Risks and Handover, same populations as the tiles above; project lists kept for the drill
+    var PRL = { openpo: [], overcommitted: [], nopo: [] }, HOL = { ready: [], done: [] }, procNeeds = blocked('proc_openpo') || data.orders == null;
+    T.procurement = { overcommitted: { n: 0 } };
+    act.forEach(function (p) { var pl = cents(p.PlannedAmt), cm = cents(p.CommittedAmt); if (pl > 0 && cm != null && cm > pl) PRL.overcommitted.push(p); });
+    T.procurement.overcommitted.n = PRL.overcommitted.length;
+    if (procNeeds) { T.procurement.openpo = { notinstalled: true }; T.procurement.nopo = { notinstalled: true }; }
+    else {
+      var OPENX = { CO: 1, CL: 1, VO: 1, RE: 1 }, po = (data.orders || []).filter(function (o) { return o.IsSOTrx === 'N' && sid[String(o.C_Project_ID)]; }), openO = po.filter(function (o) { return !OPENX[o.DocStatus]; });
+      if (typeof process !== 'undefined' && process.env && process.env.PH_BREAK === '1') openO = po.filter(function (o) { return !{ CO: 1, CL: 1, RE: 1 }[o.DocStatus]; });   // witness falsifier: a voided PO counted as open
+      var withOpen = {}, withAny = {}; openO.forEach(function (o) { withOpen[String(o.C_Project_ID)] = 1; }); po.forEach(function (o) { withAny[String(o.C_Project_ID)] = 1; });
+      PRL.openpo = S.filter(function (p) { return withOpen[String(p.C_Project_ID)]; });
+      PRL.nopo = act.filter(function (p) { return cents(p.PlannedAmt) > 0 && !withAny[String(p.C_Project_ID)]; });
+      T.procurement.openpo = { n: openO.length, projects: PRL.openpo.length, cur: sumBy(openO.map(function (o) { return { C_Currency_ID: o.C_Currency_ID, v: o.GrandTotal }; }), function (x) { return x.v; }) };
+      T.procurement.nopo = { n: PRL.nopo.length };
+    }
+    A.forEach(function (p) { var ph = byProj[p.C_Project_ID] || []; if (ph.length && ph.every(function (x) { return yes(x.IsComplete); })) HOL.ready.push(p); });
+    S.forEach(function (p) { if (yes(p.Processed)) HOL.done.push(p); });
+    T.handover = S.length === 0 ? { vacuous: true } : { ready: HOL.ready.length, done: HOL.done.length };
     var up = P.map(function (p) { return p.Updated; }).filter(Boolean).sort();
     T.last_updated = up.length ? { v: up[up.length - 1] } : { vacuous: true };
     // §5.49 drill: key -> the project rows behind each number (same populations and same buckets as the tiles above)
@@ -184,6 +207,8 @@
       ['health', 'schedule', 'budget'].forEach(function (t) { if (BK[t][p.C_Project_ID]) put(t + ':' + BK[t][p.C_Project_ID], p); });
       put('stage:' + (p.C_Phase_ID == null ? '(no phase)' : (phName[p.C_Phase_ID] || ('C_Phase#' + p.C_Phase_ID))), p);
     });
+    PRL.openpo.forEach(function (p) { put('proc:openpo', p); }); PRL.overcommitted.forEach(function (p) { put('proc:overcommitted', p); }); PRL.nopo.forEach(function (p) { put('proc:nopo', p); }); HOL.ready.forEach(function (p) { put('handover:ready', p); }); HOL.done.forEach(function (p) { put('handover:done', p); });
+    ['proc:openpo', 'proc:overcommitted', 'proc:nopo', 'handover:ready', 'handover:done'].forEach(function (k) { if (!D[k]) D[k] = []; });
     Object.keys(BK).forEach(function (t) { var names = { health: ['green', 'amber', 'red', 'none'], schedule: ['ontime', 'delayed', 'atrisk', 'nosched'], budget: ['within', 'over', 'notstarted'] }[t]; names.forEach(function (b) { if (!D[t + ':' + b]) D[t + ':' + b] = []; }); });
     return { tiles: T, drill: D, pop: { P: P.length, S: S.length, A: A.length }, formula: FORMULA, caveat: CAVEAT };
   }
@@ -213,6 +238,8 @@
     t = T.committed_contract; o.committed_contract = t.notinstalled ? 'no data (not installed)' : t.vacuous ? 'no data' : m2s(t.cur);
     t = T.committed_verified; o.committed_verified = t.notinstalled ? 'no data (not installed)' : t.vacuous ? 'no data' : m2s(t.cur);
     t = T.bim_documents; o.bim_documents = t.notinstalled ? 'no data (not installed)' : t.vacuous ? 'no data' : t.issued + '/' + t.total;
+    t = T.procurement; o.proc_openpo = t.openpo.notinstalled ? 'no data (not installed)' : t.openpo.n + ' / ' + m2s(t.openpo.cur); o.proc_overcommitted = t.overcommitted.n; o.proc_nopo = t.nopo.notinstalled ? 'no data (not installed)' : t.nopo.n;
+    t = T.handover; o.handover_ready = t.vacuous ? 'no data' : t.ready; o.handover_done = t.vacuous ? 'no data' : t.done;
     o.last_updated = T.last_updated.vacuous ? 'no data' : T.last_updated.v;
     Object.keys(o).forEach(function (k) { o[k] = String(o[k]); });
     return o;

@@ -123,6 +123,27 @@
       return '<tr data-project="' + p.C_Project_ID + '"><td>' + esc(p.Value) + '</td><td>' + esc(curInfo(p.C_Currency_ID).ISO_Code) + '</td><td class="n">' + amt(p, 'PlannedAmt') + '</td><td class="n">' + amt(p, 'CommittedAmt') + '</td><td class="n">' + amt(p, 'InvoicedAmt') + '</td><td class="n">' + amt(p, 'ProjectBalanceAmt') + '</td></tr>';
     }, 'budget');
   }
+  // §5.51 (PROPOSED defaults, labelled): Procurement Risks and Handover. Every count opens the projects behind it (§5.49 keys).
+  function moneyTxt(m) { var ks = Object.keys(m || {}).sort(); return ks.length ? ks.map(function (k) { return esc(curInfo(k).ISO_Code) + ' ' + (m[k] / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }).join(' · ') : 'no data'; }
+  function drow(key, label, flatKey, inner) { return '<div class="row" data-drill="' + key + '"><span>' + label + '</span><b>' + (flatKey ? fl(flatKey, inner) : inner) + '</b></div>'; }
+  function procurement() {
+    var p = S.res.tiles.procurement, ni = '<span class="nodata" title="Purchase orders are not readable on this server">no data (not installed)</span>';
+    var body = drow('proc:openpo', 'Open purchase orders', 'proc_openpo', p.openpo.notinstalled ? ni : p.openpo.n + ' · ' + moneyTxt(p.openpo.cur)) +
+      drow('proc:overcommitted', 'Over-committed projects', 'proc_overcommitted', p.overcommitted.n) +
+      drow('proc:nopo', 'Budget, nothing ordered', 'proc_nopo', p.nopo.notinstalled ? ni : p.nopo.n);
+    var v = $('view'); v.innerHTML = ''; var c = card('Procurement Risks (proposed)', body, null); c.setAttribute('data-tile', 'procurement'); c.insertAdjacentHTML('beforeend', ['proc_openpo', 'proc_overcommitted', 'proc_nopo'].map(note).join('')); v.appendChild(c); fillFlat(v);
+  }
+  function handover() {
+    var h = S.res.tiles.handover, d = S.res.tiles.bim_documents;
+    var body = h.vacuous ? '<span class="nodata">no data</span>' : drow('handover:ready', 'Ready for handover (every phase complete)', 'handover_ready', h.ready) + drow('handover:done', 'Handed over (closed)', 'handover_done', h.done) +
+      '<div class="row"><span>Documents issued for construction</span><b>' + fl('bim_documents', d.notinstalled ? '<span class="nodata">no data (not installed)</span>' : d.vacuous ? '<span class="nodata">no data</span>' : d.issued + ' / ' + d.total) + '</b></div>';
+    var v = $('view'); v.innerHTML = ''; var c = card('Handover (proposed)', body, null); c.setAttribute('data-tile', 'handover'); c.insertAdjacentHTML('beforeend', ['handover_ready', 'handover_done'].map(note).join('')); v.appendChild(c); fillFlat(v);
+  }
+  // one plain sentence under every menu item's page: what this view is for (the film and the guide say the same)
+  var LEAD = { dashboard: 'The whole portfolio on one screen. Click any number to see the projects behind it.', projects: 'Every project that passes the filters, with its planned, actual and committed amounts and a link to its BIM model.',
+    budget: 'Money per project: planned, committed, invoiced and actual cost, in the project\'s own currency.', procurement: 'Where buying may go wrong (proposed definitions, awaiting the client): open purchase orders, projects committed above budget, budget with nothing ordered.',
+    approvals: 'How many workflow approvals are waiting for someone to act (the badge on the menu is this number).', handover: 'How close projects are to being handed over (proposed definitions, awaiting the client): all phases complete, closed, and drawings issued.' };
+  function addLead() { var v = $('view'); if (!v || !LEAD[S.view]) return; var p = h('p', 'lead', esc(LEAD[S.view])); p.setAttribute('data-lead', S.view); v.insertBefore(p, v.firstChild); }
   function simple(title, body, k) { var v = $('view'); v.innerHTML = ''; v.appendChild(card(title, body, k)); fillFlat(v); }
 
   var PROJECT_URL = Q.get('project') || '';   // ?project=<C_Project.Value> pre-selects the Project filter (§15.1, §5.36A); the drop-down is the one place the choice lives
@@ -167,9 +188,8 @@
     $('lastUpdated').textContent = S.flat.last_updated; $('lastUpdated').setAttribute('data-value', S.flat.last_updated);
     var b = $('badgeApprovals'); b.textContent = S.res.tiles.approvals.n != null ? S.res.tiles.approvals.n : ''; b.setAttribute('data-value', S.flat.approvals);
     ({ dashboard: dashboard, projects: projects, budget: budget,
-       procurement: function () { simple('Procurement Risks', '<span class="pending">definition pending (client)</span>', null); },
-       handover: function () { simple('Handover', '<span class="pending">definition pending (client)</span>', null); },
-       approvals: function () { var a = S.res.tiles.approvals; simple('Approval Pending', a.inconclusive ? state(a) : '<div class="big">' + fl('approvals', a.n) + '</div>', 'approvals'); } })[S.view]();
+       procurement: procurement, handover: handover,
+       approvals: function () { var a = S.res.tiles.approvals; simple('Approval Pending', a.inconclusive ? state(a) : '<div class="big">' + fl('approvals', a.n) + '</div>', 'approvals'); } })[S.view](); addLead();
     $('foot').textContent = 'Source: ' + S.cur + (d.meta && d.meta.url ? ' (' + d.meta.url + ')' : '') + (d.unavailable && d.unavailable.length ? ' · unavailable entities: ' + d.unavailable.join(', ') : '') + ' · date used: ' + TODAY;
     window.__capex = { flat: S.flat, source: S.cur, rendered: true, twin: S.twin || null };
   }

@@ -43,7 +43,7 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.wasm': 'applica
       const rows = await p.evaluate(() => document.querySelectorAll('#view tbody tr').length);
       if (n != null) ck('S3 #' + hash + ' lists every active project of the sample', rows === n, { rows, want: n });
       if (OUT) await p.screenshot({ path: OUT + '/capex_page_' + hash + '.png', fullPage: true });
-      if (hash === 'procurement' || hash === 'handover') { const t = await p.evaluate(() => document.querySelector('#view').innerText); ck('S4 #' + hash + ' says pending, never invents a number', /pending/.test(t), t.slice(0, 60)); }
+      if (hash === 'procurement' || hash === 'handover') { const t = await p.evaluate(() => document.querySelector('#view').innerText); ck('S4 #' + hash + ' is labelled proposed, and every number on it is on a [data-flat] element (§5.51; was: pending)', /proposed/i.test(t) && (await p.$$eval('#view [data-flat]', e => e.length)) >= 2, t.slice(0, 60)); }
     }
     ck('S5 no page errors, nothing the page needs is missing', !errs.length && !nf.filter(u => !/favicon/.test(u)).length, { errs: errs.slice(0, 3), notFound: nf.slice(0, 4) });
   } catch (e) { ck('flow', false, String(e && e.message || e)); }
