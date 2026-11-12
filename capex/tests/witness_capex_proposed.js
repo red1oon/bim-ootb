@@ -16,7 +16,7 @@ const fs = require('fs'), path = require('path'), { execFileSync } = require('ch
 const ROOT = path.join(__dirname, '..', '..'), MIGDIR = path.join(ROOT, 'capex/legacy/migration/iD13/postgresql'), DB = 'idempiere_bimdoc';
 const C = require(path.join(ROOT, 'erp/tests/dd_common.js')), GE = require(path.join(ROOT, 'erp/goal_engine.js')), MA = require(path.join(ROOT, 'capex/tools/migration_apply.js'));
 const Ad = require('../adapters.js'), Tl = require('../tiles.js'), BREAK = process.env.PROPOSED_BREAK === '1', SBREAK = process.env.STAGES_BREAK === '1';
-const F_Q2 = '202611111300_CAPEX-Q2-STAGES.sql', F_MS = '202611111310_CAPEX-PROPOSED-MEASURES.sql', log = console.log, TODAY = '2026-11-11';
+const F_Q2 = '202611111300_CAPEX-Q2-STAGES.sql', F_MS = '202611111310_CAPEX-PROPOSED-MEASURES.sql', F_Q3 = '202611121200_CAPEX-Q3-EAC-FLOATDIV.sql', log = console.log, TODAY = '2026-11-11';
 let judged = 0, fails = 0, inconc = 0;
 const ck = (n, ok, i) => { judged++; if (!ok) fails++; log('  §CAPEX_PROPOSED_W ' + n + ' ' + (ok ? 'PASS' : 'FAIL') + (i !== undefined ? ' ' + JSON.stringify(i) : '')); };
 const inc = (n, why) => { inconc++; log('  §CAPEX_PROPOSED_W ' + n + ' INCONCLUSIVE ' + why); };
@@ -32,9 +32,9 @@ const finish = () => { const v = judged === 0 ? 'INCONCLUSIVE' : fails ? 'FAIL' 
   try {
     restore();
     // ── legacy: the scripts (idempotent), then the fixture
-    applyLegacy(F_Q2); applyLegacy(F_MS);
+    applyLegacy(F_Q2); applyLegacy(F_MS); applyLegacy(F_Q3);
     const cnt = () => psql("SELECT (SELECT COUNT(*) FROM c_phase WHERE c_projecttype_id=1000100)||'/'||(SELECT COUNT(*) FROM c_projecttype WHERE c_projecttype_id=1000100)||'/'||(SELECT COUNT(*) FROM pa_measure WHERE pa_measure_id BETWEEN 1000040 AND 1000042)||'/'||(SELECT COUNT(*) FROM pa_measurecalc WHERE pa_measurecalc_id BETWEEN 1000040 AND 1000042)");
-    const before = cnt(); applyLegacy(F_Q2); applyLegacy(F_MS); const after = cnt();
+    const before = cnt(); applyLegacy(F_Q2); applyLegacy(F_MS); applyLegacy(F_Q3); const after = cnt();
     ck('S3a applying both scripts a second time changes nothing on legacy (phases/type/measures/calcs)', before === after && before === '5/1/3/3', { before, after });
     psql(FIXUP.map(p => "INSERT INTO c_project (c_project_id,ad_client_id,ad_org_id,createdby,updatedby,value,name,c_currency_id,isactive,processed,plannedamt,projectbalanceamt,c_phase_id) VALUES (" + [p[0], 11, 11, 100, 100, "'WCP-" + p[0] + "'", "'W-CAPEX-PROPOSED " + p[0] + "'", 100, "'Y'", p[0] === 9300005 ? "'Y'" : "'N'", p[1], p[2], p[3] == null ? 'NULL' : p[3]].join(',') + ');').join('\n') +
       PHASES.map(h => "INSERT INTO c_projectphase (c_projectphase_id,ad_client_id,ad_org_id,createdby,updatedby,c_project_id,name,seqno,plannedamt,iscomplete) VALUES (" + [h[0], 11, 11, 100, 100, h[1], "'W-CAPEX-PROPOSED ph'", 10, h[2], "'" + h[3] + "'"].join(',') + ');').join('\n') +
@@ -48,10 +48,10 @@ const finish = () => { const v = judged === 0 ? 'INCONCLUSIVE' : fails ? 'FAIL' 
     // ── twin: seed + the SAME scripts + the fixture rows copied down
     const H = await C.boot(), has = t => !!H.one('SELECT 1 AS x FROM sqlite_master WHERE lower(name)=?', [t]);
     const app = (f) => MA.apply(fs.readFileSync(path.join(MIGDIR, f), 'utf8'), { file: f, run: s => H.db.run(s), convertSql: H.A.convertSql, log: () => {}, has });
-    app(F_Q2); app(F_MS);
+    app(F_Q2); app(F_MS); app(F_Q3);
     if (SBREAK) H.db.run('DELETE FROM c_phase WHERE c_phase_id=1000103');
     const tcnt = () => H.one('SELECT (SELECT COUNT(*) FROM c_phase WHERE c_projecttype_id=1000100) AS ph, (SELECT COUNT(*) FROM c_projecttype WHERE c_projecttype_id=1000100) AS pt, (SELECT COUNT(*) FROM pa_measure WHERE pa_measure_id BETWEEN 1000040 AND 1000042) AS m');
-    const tb = JSON.stringify(tcnt()); if (!SBREAK) { app(F_Q2); app(F_MS); } const ta = JSON.stringify(tcnt());
+    const tb = JSON.stringify(tcnt()); if (!SBREAK) { app(F_Q2); app(F_MS); app(F_Q3); } const ta = JSON.stringify(tcnt());
     ck('S3b applying both scripts a second time changes nothing on the twin', tb === ta && ta === '{"ph":5,"pt":1,"m":3}', { before: tb, after: ta });
     const twinPhases = H.q('SELECT name, seqno, c_projecttype_id FROM c_phase WHERE c_projecttype_id=1000100 ORDER BY seqno').map(r => r.name + '|' + r.seqno + '|' + r.c_projecttype_id);
     ck('S1 legacy and twin hold the same five stages, in order (name|SeqNo|type)', JSON.stringify(legacyPhases) === JSON.stringify(twinPhases) && legacyPhases.map(x => x.split('|')[0]).join() === NAMES.join(), { legacy: legacyPhases, twin: twinPhases });
