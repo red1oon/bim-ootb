@@ -36,7 +36,8 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
     var A = window.APP || {}; if (A.actor == null || A.clientId == null || A.roleId == null || !window.__idmpDb) return null;
     var role = A.roleId, cl = A.clientId, access = window.GoalEngine.accessOf(q, role, cl);   // the one owner of the role's client/org access (goal_engine.js accessOf)
     var d = new Date(), p2 = function (n) { return ('0' + n).slice(-2); }, today = d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate());
-    return { client: cl, user: A.actor, role: role, today: today, now: today + ' ' + p2(d.getHours()) + ':' + p2(d.getMinutes()) + ':' + p2(d.getSeconds()), orgIds: access.orgIds, access: access };
+    var env = null; try { env = window.AdCallout && window.AdCallout.sessionContext ? window.AdCallout.sessionContext({ session: A, client: cl, org: A.orgId, role: role, user: A.actor }) : null; } catch (e) { env = null; }   // the login context (Login.java:569 $C_Currency_ID ...), cached per session (§5.68)
+    return { client: cl, user: A.actor, role: role, today: today, now: today + ' ' + p2(d.getHours()) + ':' + p2(d.getMinutes()) + ':' + p2(d.getSeconds()), orgIds: access.orgIds, access: access, env: env };
   }
   // Recent Items side gadget = DPRecentItems (org.adempiere.ui.zk/.../dashboard/DPRecentItems.java): links newest first, click -> zoom
   //   (:222-260), refresh button + trash drop target (:183-190, :309-320). The list, the labels and the delete are the CORE's
