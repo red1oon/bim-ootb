@@ -75,7 +75,7 @@ async function main(bundle, out) {
     const n = r.columnname; if (elemOf[n]) return;
     const hit = sq('SELECT ad_element_id AS i FROM ad_element WHERE columnname=?', [n]);
     if (hit) { elemOf[n] = 'existing:AD_Element:' + n; return; }
-    elemOf[n] = 'ref:' + n; if (!elemSeen[n]) { elemSeen[n] = 1; elemRows.push({ columnname: n, name: r.name || n, printname: r.name || n, entitytype: r.entitytype || 'U' }); }
+    elemOf[n] = 'ref:' + n; if (!elemSeen[n]) { elemSeen[n] = 1; elemRows.push({ columnname: n, name: r.name || n, printname: r.name || n, entitytype: r.entitytype || 'A' }); }
   });
   if (elemRows.length) { tables.ad_element = { table: 'ad_element', idCol: 'ad_element_id', rows: elemRows.map((e, i) => Object.assign({ ad_element_id: -1 - i }, e)) }; }
   const sheets = {};
