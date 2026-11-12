@@ -196,7 +196,7 @@
     var up = P.map(function (p) { return p.Updated; }).filter(Boolean).sort();
     T.last_updated = up.length ? { v: up[up.length - 1] } : { vacuous: true };
     // §5.49 drill: key -> the project rows behind each number (same populations and same buckets as the tiles above)
-    function info(p) { var e = evm(p); return { id: p.C_Project_ID, Value: p.Value, Name: p.Name, cur: cur(p), planned: p.PlannedAmt, spent: p.ProjectBalanceAmt, committed: p.CommittedAmt, due: e.pv / 100, done: e.ev / 100, health: BK.health[p.C_Project_ID] || null, schedule: BK.schedule[p.C_Project_ID] || null, budget: BK.budget[p.C_Project_ID] || null, stage: phName[p.C_Phase_ID] || null }; }
+    function info(p) { var e = evm(p); return { id: p.C_Project_ID, Value: p.Value, Name: p.Name, cur: cur(p), planned: p.PlannedAmt, spent: p.ProjectBalanceAmt, committed: p.CommittedAmt, due: e.pv / 100, done: e.ev / 100, late: Math.round(e.overdue), health: BK.health[p.C_Project_ID] || null, schedule: BK.schedule[p.C_Project_ID] || null, budget: BK.budget[p.C_Project_ID] || null, stage: phName[p.C_Phase_ID] || null }; }
     var D = {}, put = function (k, p) { (D[k] = D[k] || []).push(info(p)); };
     P.forEach(function (p) { put('total_projects', p); });
     act.forEach(function (p) { put('active_projects', p); });

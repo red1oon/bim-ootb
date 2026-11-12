@@ -38,3 +38,20 @@ a.bim{background:var(--acc);color:#fff;padding:2px 9px;border-radius:6px;text-de
 /* §5.50 glance: formula notes collapsed behind a marker; a short warning chip */
 details.note{border-top:0;padding-top:0}details.note summary{cursor:pointer;color:var(--mut);list-style:none;font-size:10.5px}details.note summary::-webkit-details-marker{display:none}details.note[open] summary{margin-bottom:4px}.subv.warn{color:var(--warn);font-weight:600}
 .lead{margin:0 0 14px;color:var(--mut);font-size:14px}
+/* §5.53 skins: the dark skin replaces colour tokens only */
+body[data-skin=dark]{--bg:#0f172a;--card:#1e293b;--ink:#f1f5f9;--mut:#94a3b8;--line:#334155;--acc:#4f7cff;--ok:#22b36a;--warn:#f0ad1b;--bad:#e5484d;--none:#8c96ab}
+body[data-skin=dark] #side,body[data-skin=dark] select,body[data-skin=dark] input{background:var(--card);color:var(--ink);border-color:var(--line)}body[data-skin=dark] #nav a{color:var(--ink)}body[data-skin=dark] #nav a.on{color:#fff}
+/* §5.53 executive layout */
+.xhero{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}.xmid{display:grid;grid-template-columns:2fr 1fr;gap:14px;margin-top:14px}.xcol{display:grid;gap:14px;align-content:start}
+.meter{height:8px;border-radius:4px;background:var(--line);margin-top:10px;overflow:hidden;display:flex;gap:2px}.meter i{display:block;height:100%}
+.xseg{display:flex;gap:2px;height:32px;margin-top:10px}.xseg>div{display:grid;place-items:center;font-weight:700;font-size:13px;border-radius:4px;min-width:26px;cursor:pointer;color:#0b1220}
+.xseg .seg-green{background:var(--ok)}.xseg .seg-amber{background:var(--warn)}.xseg .seg-red{background:var(--bad)}.xseg .seg-none{background:var(--none)}
+.xseg>div:hover,.xseg>div:focus{outline:2px solid var(--ink);outline-offset:1px}.leg{display:flex;gap:12px;margin-top:8px;color:var(--mut);font-size:12px}.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px}
+.btn{position:absolute;right:16px;top:10px;font-size:11px;color:var(--mut);border:1px dashed var(--line);border-radius:6px;padding:1px 7px;background:none;cursor:pointer}.card{position:relative}
+circle.bub{cursor:pointer;transition:fill-opacity .12s}circle.bub:hover,circle.bub:focus{fill-opacity:1;outline:none}
+#tip{position:fixed;background:#0b1220;color:#fff;border-radius:10px;padding:10px 13px;font-size:12.5px;box-shadow:0 8px 24px rgba(0,0,0,.35);z-index:30;width:250px;pointer-events:none}#tip[hidden]{display:none}
+#tip .r{display:flex;justify-content:space-between;gap:12px;margin-top:3px;color:#cbd5e1}#tip .r span:last-child{color:#fff;font-weight:700}#tip .why{margin-top:6px;color:#fbbf24}#tip .hint{margin-top:6px;color:#94a3b8;font-size:11.5px}
+.chip{display:inline-block;border-radius:10px;padding:1px 8px;font-size:11.5px;font-weight:700;color:#0b1220}
+.att-row{display:flex;justify-content:space-between;align-items:center;padding:8px 6px;border-bottom:1px solid var(--line);cursor:pointer;border-radius:6px}.att-row:hover,.att-row:focus{background:var(--bg);outline:none}.att-row small{display:block;color:var(--mut);font-size:11.5px}
+#mapTable{width:100%;border-collapse:collapse;font-size:13px}#mapTable th,#mapTable td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)}#mapTable tr[data-open-project]{cursor:pointer}
+
