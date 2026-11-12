@@ -1323,3 +1323,12 @@ Same video timing as the English cut frame for frame (5694 frames, 227.78 s); on
   - (G1) The twin's Pack In `pipo_packin.apply` is the dictionary-pack path. It writes rows directly (`:139`), keeps the pack's client, has no `AD_Package_UUID_Map`, and runs no model class. For "twin 2Pack import parity" it needs the client-data path: the session's client, the UUID remap (`getTargetUUID` / `updateUUIDMap`), and save through the model layer (beforeSave / afterSave: currency, MProduct's accounting rows, the project header totals).
   - (G2) Seen in W-PROJECT-CURRENCY's break run: the twin saved a C_Project with no `C_Currency_ID` although the column is mandatory, where legacy's `PO.save` refuses it. That is a model-layer mandatory check to port, generic.
 - **Next for §5.67:** G1 → W-TD-PACK. Twin half: pack in under client 11 and read back by UU. Legacy half: `RUN_ApplyPackInFromFolder.sh` on the test instance, on a database copy taken first and restored after, because `C_Project.Value` is unique per client and a left-over set blocks the next run. Rows equal per table on both sides; Pack In twice changes nothing.
+
+**§5.67 LEGACY PACK IN PROVEN (2026-11-13; real iDempiere, `RUN_ApplyPackInFromFolder.sh` on the test instance, on a database copy, restored after; logs read):**
+- **First run FAILED, and that was a real twin defect.** `ReferenceUtils.resolveReference: Unknown column reference type=null` at the first C_Project. The twin's Pack Out wrote `AD_Org_ID` as plain text and left `AD_Client_ID` out, where legacy (`PoExporter.java:240-247`, preserved org) writes BOTH as table references. Fixed in `erp/pipo_packout.js` (generic, every client Pack Out with "include organization").
+- **Second run:** 12 projects (`C_Currency_ID` 100 set by MProject.beforeSave from the price list), 42 phases (19 ticked = the scenario's 3+1+2+2+1+1+2+3+1+0+0+3), 84 tasks, 84 lines, plan 4,067.80 (= the film's Approved), 2 products with their 4 `M_Product_Acct` rows (MProduct.afterSave ran), 0 exceptions.
+- **The same zip a second time:** counts unchanged (12/42/84/2), 0 exceptions (stable UUIDs).
+- The test instance was restored from the copy (0 TD projects, `§SETUP_VERDICT PASS`).
+- **The shipped zip was regenerated with the fix** (14,144 bytes).
+- W-PACK-COVERS 3/0. W-PACKOUT has the pre-existing O6 (libero form) only.
+- The twin half (G1, G2, client-admin Pack In) is still open: the resume list.
