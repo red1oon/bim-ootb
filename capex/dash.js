@@ -7,7 +7,7 @@
     subtitle: 'Single view of all projects · Plan · Monitor · Control · Deliver',
     brand: 'PMO', brandSub: 'Project Management Office',
     erpDb: '../erp/ad_seed.db', sqlJs: '../erp/sqljs/sql-wasm.js', sqlWasm: '../erp/sqljs/sql-wasm.wasm',
-    legacySnapshot: 'legacy_snapshot.json', buildingsBase: '../buildings/', viewerUrl: '../viewer/viewer.html'
+    legacySnapshot: 'legacy_snapshot.json', buildingsBase: '../buildings/', viewerUrl: '../viewer/viewer.html', erpUrl: '../erp/idempiere.html', legacyUi: 'http://localhost:8088/webui/index.zul'
   }, window.CAPEX_CFG || {});
   var Q = new URLSearchParams(location.search);
   if (Q.get('db')) CFG.erpDb = Q.get('db');
@@ -40,7 +40,8 @@
   }
   function state(x, why) { return x.inconclusive ? '<span class="nodata">n/a — ' + esc(x.inconclusive) + ' (INCONCLUSIVE)</span>' : x.vacuous ? '<span class="nodata">no data</span>' : x.pending ? '<span class="pending">definition pending (client)</span>' : null; }
   function note(k) { return '<div class="note">ƒ ' + esc(S.res.formula[k]) + '</div>'; }
-  function card(title, body, k, cls) { var c = h('div', 'card ' + (cls || ''), '<h3>' + esc(title) + '</h3>'); c.setAttribute('data-tile', k); c.insertAdjacentHTML('beforeend', body + (k ? note(k) : '')); return c; }
+  var DRILLABLE = { total_projects: 1, active_projects: 1, approved_budget: 1, actual_cost: 1, committed_cost: 1, forecast_cost: 1, completed_year: 1 };   // §5.49: tiles whose number opens the projects behind it
+  function card(title, body, k, cls) { var c = h('div', 'card ' + (cls || ''), '<h3>' + esc(title) + '</h3>'); c.setAttribute('data-tile', k); if (DRILLABLE[k]) c.setAttribute('data-drill', k); c.insertAdjacentHTML('beforeend', body + (k ? note(k) : '')); return c; }
 
   function fillFlat(root) {       // every [data-flat] element inside root gets its canonical value
     [].forEach.call(root.querySelectorAll('[data-flat]'), function (e) { e.setAttribute('data-value', S.flat[e.getAttribute('data-flat')]); });
@@ -71,12 +72,12 @@
       var segs = [['Green', x.green, 'var(--ok)', 'green'], ['Amber', x.amber, 'var(--warn)', 'amber'], ['Red', x.red, 'var(--bad)', 'red'], ['No EVM data', x.none, 'var(--none)', 'none']], R = 42, C = 2 * Math.PI * R, off = 0, svg = '';
       segs.forEach(function (s) { if (!s[1]) return; var len = C * s[1] / x.n; svg += '<circle r="' + R + '" cx="55" cy="55" fill="none" stroke="' + s[2] + '" stroke-width="14" stroke-dasharray="' + len + ' ' + (C - len) + '" stroke-dashoffset="' + (-off) + '" transform="rotate(-90 55 55)"/>'; off += len; });
       hb = '<div class="donut"><svg width="110" height="110">' + svg + '<text x="55" y="55" text-anchor="middle" font-size="20" font-weight="700" fill="currentColor">' + x.n + '</text><text x="55" y="70" text-anchor="middle" font-size="9" fill="var(--mut)">ACTIVE</text></svg><div>' +
-        segs.map(function (s) { return '<div class="row"><span><i class="dot" style="background:' + s[2] + '"></i>' + s[0] + '</span><b data-flat-part="health_' + s[3] + '">' + s[1] + ' (' + Math.round(100 * s[1] / x.n) + '%)</b></div>'; }).join('') + '</div></div>' + fl('health', '', 'span');
+        segs.map(function (s) { return '<div class="row" data-drill="health:' + s[3] + '"><span><i class="dot" style="background:' + s[2] + '"></i>' + s[0] + '</span><b data-flat-part="health_' + s[3] + '">' + s[1] + ' (' + Math.round(100 * s[1] / x.n) + '%)</b></div>'; }).join('') + '</div></div>' + fl('health', '', 'span');
     }
     g.appendChild(card('Project Health (Active)', hb, 'health'));
     // Stage
     x = t.stage; var sb = state(x);
-    if (!sb) { var mx = Math.max.apply(null, Object.keys(x.stages).map(function (k) { return x.stages[k]; })); sb = Object.keys(x.stages).sort().map(function (k) { return '<div class="row"><span>' + esc(k) + '</span><b>' + x.stages[k] + '</b></div><div class="bar"><i style="width:' + (100 * x.stages[k] / mx) + '%"></i></div>'; }).join('') + fl('stage', '', 'span'); }
+    if (!sb) { var mx = Math.max.apply(null, Object.keys(x.stages).map(function (k) { return x.stages[k]; })); sb = Object.keys(x.stages).sort().map(function (k) { return '<div class="row" data-drill="stage:' + esc(k) + '"><span>' + esc(k) + '</span><b>' + x.stages[k] + '</b></div><div class="bar"><i style="width:' + (100 * x.stages[k] / mx) + '%"></i></div>'; }).join('') + fl('stage', '', 'span'); }
     g.appendChild(card('Project Stage (pipeline)', sb, 'stage'));
     // Physical vs spent
     x = t.physical_spent; var pb = state(x);
@@ -86,13 +87,13 @@
     x = t.schedule; var cb = state(x);
     if (!cb) {
       var pc = function (n) { return x.n ? Math.round(100 * n / x.n) + '%' : ''; };
-      cb = [['On Time', x.ontime, 'var(--ok)'], ['Delayed', x.delayed, 'var(--bad)'], ['At Risk (SPI<0.9)', x.atrisk, 'var(--warn)'], ['No schedule data', x.nosched, 'var(--none)']].map(function (r) { return '<div class="row"><span><i class="dot" style="background:' + r[2] + '"></i>' + r[0] + '</span><b>' + r[1] + ' <small>' + pc(r[1]) + '</small></b></div>'; }).join('') +
+      cb = [['On Time', x.ontime, 'var(--ok)', 'ontime'], ['Delayed', x.delayed, 'var(--bad)', 'delayed'], ['At Risk (SPI<0.9)', x.atrisk, 'var(--warn)', 'atrisk'], ['No schedule data', x.nosched, 'var(--none)', 'nosched']].map(function (r) { return '<div class="row" data-drill="schedule:' + r[3] + '"><span><i class="dot" style="background:' + r[2] + '"></i>' + r[0] + '</span><b>' + r[1] + ' <small>' + pc(r[1]) + '</small></b></div>'; }).join('') +
         '<div class="row"><span>Average Delay</span><b>' + fl('avg_delay', x.avgDelay == null ? '<span class="nodata">no data</span>' : Math.round(x.avgDelay) + ' days') + '</b></div>' + fl('schedule', '', 'span');
     }
     g.appendChild(card('Schedule Performance', cb, 'schedule'));
     // Budget status
     x = t.budget_status; var bb = state(x);
-    if (!bb) bb = [['Within Budget', x.within, 'var(--ok)'], ['Over Budget', x.over, 'var(--bad)'], ['Not Started (no cost)', x.notstarted, 'var(--none)']].map(function (r) { return '<div class="row"><span><i class="dot" style="background:' + r[2] + '"></i>' + r[0] + '</span><b>' + r[1] + '</b></div>'; }).join('') +
+    if (!bb) bb = [['Within Budget', x.within, 'var(--ok)', 'within'], ['Over Budget', x.over, 'var(--bad)', 'over'], ['Not Started (no cost)', x.notstarted, 'var(--none)', 'notstarted']].map(function (r) { return '<div class="row" data-drill="budget:' + r[3] + '"><span><i class="dot" style="background:' + r[2] + '"></i>' + r[0] + '</span><b>' + r[1] + '</b></div>'; }).join('') +
       '<div class="row"><span>Actual Overrun</span><b>' + fl('actual_overrun', Object.keys(x.overrun).length ? money(x.overrun) : '<span class="nodata">no data</span>') + '</b></div>' + fl('budget_status', '', 'span');
     g.appendChild(card('Budget Status', bb, 'budget_status'));
     v.appendChild(g); fillFlat(v);
@@ -138,6 +139,25 @@
     _projFirst = false;
     log('§DASH_PROJSEL source=' + S.cur + ' options=' + rows.length + ' selected=' + (sel.value || '') + ' reset=' + (reset ? 1 : 0) + ' (all projects=' + P.length + ')');
   }
+  // §5.49 drill-down: a number on the page opens the projects behind it in a side panel; a project opens the ERP Project window (window 130) on that record
+  function openDrill(key, label) {
+    var rows = (S.res.drill || {})[key] || [], d = $('drill'), f = function (v) { return v == null || v === '' ? '<span class="nodata">—</span>' : (+v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
+    // the row opens the record in the system the numbers came from: legacy -> its WebUI zoom (AdempiereWebUI.processParameters: Action=Zoom&TableName&Record_ID); twin -> the ERP Project window (130)
+    var link = function (r) { return esc(S.cur === 'legacy' ? CFG.legacyUi + '?Action=Zoom&TableName=C_Project&Record_ID=' + r.id : CFG.erpUrl + '?window=130&record=' + r.id); };
+    d.innerHTML = '<div class="dhead"><b>' + esc(label) + '</b> <span class="dn" data-drill-n="' + rows.length + '">' + rows.length + ' project' + (rows.length === 1 ? '' : 's') + '</span><button type="button" id="drillClose" aria-label="Close">×</button></div>' +
+      (rows.length ? '<table><thead><tr><th>Project</th><th>Cur</th><th>Approved</th><th>Spent</th><th>Due</th><th>Done</th><th>Health</th><th>Schedule</th><th>Budget</th></tr></thead><tbody>' +
+        rows.map(function (r) { return '<tr data-project="' + esc(r.id) + '"><td><a class="open" href="' + link(r) + '" title="Open in the ERP Project window">' + esc(r.Value) + '</a><small>' + esc(r.Name || '') + '</small></td><td>' + esc(curInfo(r.cur).ISO_Code || r.cur) + '</td><td>' + f(r.planned) + '</td><td>' + f(r.spent) + '</td><td>' + f(r.due) + '</td><td>' + f(r.done) + '</td><td>' + esc(r.health || '') + '</td><td>' + esc(r.schedule || '') + '</td><td>' + esc(r.budget || '') + '</td></tr>'; }).join('') + '</tbody></table>'
+        : '<div class="nodata">no project in this bucket</div>');
+    d.hidden = false; d.setAttribute('data-key', key);
+    $('drillClose').onclick = function () { d.hidden = true; };
+    log('§DASH_DRILL_UI key=' + key + ' rows=' + rows.length + ' label=' + label);
+  }
+  document.addEventListener('click', function (ev) {
+    var el = ev.target.closest && ev.target.closest('#view [data-drill]'); if (!el || ev.target.closest('a')) return;
+    var card = el.closest('.card'), lbl = (card ? card.querySelector('h3').textContent : '') + (el.classList.contains('row') ? ' · ' + el.querySelector('span').textContent : '');
+    openDrill(el.getAttribute('data-drill'), lbl);
+  });
+  document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape' && $('drill')) $('drill').hidden = true; });
   function render() {
     var d = data(); if (!d) { $('view').innerHTML = '<div class="card"><span class="nodata">no data source loaded</span></div>'; $('foot').textContent = '§DASH_NODATA no source'; return; }
     var f = filters(); S.res = T.compute(d, f); S.flat = T.flatten(S.res.tiles);
