@@ -1,0 +1,16 @@
+chain	0	0	§TWIN_MOCK_BUILT projects=12/12 errors=0	F: 这一切从哪儿来？ | M: 一个内核。	F: 这一切从哪儿来？ | M: 从一个内核，一路到底。建筑的进度计划变成项目订单，订单去采购材料，材料收货、发往工地、开票、付款。仪表板读的就是这些同样的数据行。这里有十二个测试项目。
+glance	0	0	§DASH_TILE source=sqlite tile=total_projects value=12 §DASH_TILE source=sqlite tile=health value=green=2 amber=3 red=6 none=1 §FILM_DASH_SHOT b02_glance approved_budget=100:4067.80 actual_cost=100:12784.10 forecast_cost=100:24157.54	F: 这就是仪表板？ | M: 一个屏幕。	F: 这就是仪表板？ | M: 一个屏幕。十二个项目，全部在进行中。计划约四千美元，已花费约一万三千美元。预测约两万四千美元，口径不一致时会带警告。健康：两个绿色，三个黄色，六个红色。
+approved	0	0	§FILM_DASH_SHOT b03_drill_approved drill=approved_budget rows=12	F: 哪些项目构成这个数字？ | M: 点一下。	F: 哪些项目构成这个数字？ | M: 点一下。面板列出十二个项目和各自的计划金额。
+spent	0	0	§FILM_DASH_SHOT b04_drill_spent drill=actual_cost rows=12	F: 那花了多少？ | M: 点已花费。	F: 那已经花了多少？ | M: 点已花费。又是十二行，每个项目的实际成本。它来自发往工地的库存，也就是已完成的项目领料单，不是手工输入的数字。
+forecast	0	0	§FILM_DASH_SHOT b05_forecast_basis project=TD_DEPOT basisDiffers=true	F: 这个预测为什么带警告？ | M: 已花费和已完成不一致。	F: 这个预测为什么带警告？ | M: 这个项目已花费的金额远高于已完成的部分，它们不在同一口径上。预测是一个拟议的定义，在这里它如实说明，而不是假装成结果。
+amber	0	0	§FILM_DASH_SHOT b06_drill_amber drill=health:amber rows=3	F: 黄色是什么？ | M: 点开看。	F: 黄色是什么？ | M: 点开看。三个项目，每个都列出原因：某个阶段逾期，或者已花费走在进度前面。
+map	0	0	§FILM_DASH_SHOT b07_map_open drill=true	F: 有项目组合的图吗？ | M: 看地图。	F: 有项目组合的图吗？ | M: 每个气泡是一个项目：横向是落后天数，纵向是已花费占计划的比例。悬停显示数字，点击打开该项目。
+attention	0	0	§FILM_DASH_SHOT b08_attention rows=6	F: 我该先看哪个？ | M: 需要关注。	F: 我该先看哪个？ | M: 需要关注。六个项目，最严重的排在前面，每个都用平实的话写明原因。
+projects	0	0	§FILM_DASH_SHOT b09_m1_projects view=projects	F: 左边的菜单呢？ | M: 项目。	F: 左边的菜单呢？ | M: 项目列出所有通过筛选的项目，带有计划、实际和已承诺金额。仪表板这一项就是总览本身。
+budget	0	0	§FILM_DASH_SHOT b09_m2_budget view=budget	F: 钱呢？ | M: 预算与成本。	F: 钱呢？ | M: 预算与成本按项目显示金额：计划、已承诺、已开票和实际，使用项目自己的币种。
+procurement	0	0	§DASH_TILE source=sqlite tile=proc_openpo value=5 / 100:6780.00	F: 那采购呢？ | M: 采购风险，拟议定义。	F: 那采购呢？ | M: 采购风险，使用拟议的定义，等待客户确认。还有五张采购订单未完成，是尚未完成的草稿。
+approvals	0	0	§FILM_DASH_SHOT b09_m4_approvals approvals=10	F: 有什么在等我吗？ | M: 待批准。	F: 有什么在等我吗？ | M: 待批准统计有多少工作流审批在等人处理。十个，菜单上的角标就是同一个数字。
+handover	0	0	§FILM_DASH_SHOT b09_m5_handover handover_ready=1 handover_done=0	F: 项目的终点呢？ | M: 移交，拟议定义。	F: 项目的终点呢？ | M: 移交，同样是拟议的定义。一个项目已经可以移交，还没有任何项目被标记为完成。
+page	0	0	§FILM_DASH_SHOT b10_page_schedule project=TD_BRIDGE tab=schedule taskBars=8 phaseBars=4 §FILM_DASH_SHOT b10_page_procurement project=TD_BRIDGE tab=procurement	F: 能进入某个项目内部吗？ | M: 点它。	F: 能进入某个项目内部吗？ | M: 点它。每个项目有自己的页面，分成几个标签页。进度页画出四个阶段，下面是八个有日期的任务。采购页逐张订单显示供应链：已收货、已开票、已付款，每份单据一点就能打开它的记录。
+themes	0	0	§FILM_DASH_SHOT b11_theme_classic_light approved_budget=100:4067.80 §FILM_DASH_SHOT b11_theme_executive_dark approved_budget=100:4067.80	F: 能换外观吗？ | M: 布局和皮肤。	F: 能换外观吗？ | M: Classic 或 Executive 布局，浅色或深色。底层数据一样：换外观，数字不会变。每个磁贴上的公式标记显示它是怎么算的，表格视图可以列出任何图表。
+proof	0	0	§DASH_TWIN_W_VERDICT PASS judged=7 §TWIN_CHAIN_VERDICT PASS judged=5 §PROJECT_ISSUE_VERDICT PASS judged=7	F: 我怎么知道它是对的？ | M: 每个数字都核对过。	F: 我怎么知道它是对的？ | M: 屏幕上每个数字都对照数据行核对过：这个页面七项检查，供应链五项，发往工地的库存七项。没有一个是手工输入的。
