@@ -21,6 +21,7 @@ async function build(o) {
   const term = one("select c_paymentterm_id as t from c_paymentterm where ad_client_id=11 and name='Immediate'").t, wh = 103, pl = 102;
   const cat = save('M_Product_Category', { ad_client_id: 11, ad_org_id: 0, value: 'TD Materials (test data)', name: 'TD Materials (test data)', plannedmargin: 0, isdefault: 'N' }, 'category');
   const prods = {}; SC_.PRODUCTS.forEach(([v, n, , p]) => { prods[v] = save('M_Product', { ad_client_id: 11, ad_org_id: 0, value: v, name: n, description: 'throw-away test data', c_uom_id: 100, c_taxcategory_id: 107, producttype: 'I', isstocked: 'N', ispurchased: 'Y', issold: 'N', m_product_category_id: cat }, 'product ' + v); });
+  const BD = await import(path.join(ROOT, 'erp/plugins/bim_document.mjs')); BD.ensureTaskDateColumns({ run: (a, b) => H.db.run(a, b), query: (a, b) => q(a, b) });   // the plugin's own physical columns (§5.58)
   const made = [];
   for (const sc of SC_.SC) {
     const [v, n, off, durs, ticked, k, iss, po] = sc; if (ONLY && ONLY !== v) continue;
@@ -28,6 +29,9 @@ async function build(o) {
       const pid = save('C_Project', { ad_client_id: 11, ad_org_id: 11, value: v, name: n + ' (test data)', c_currency_id: 100, issummary: 'N' }, 'project ' + v); let t = off; const phs = [];
       durs.forEach((d, i) => { const s = t; t += d; const ph = save('C_ProjectPhase', { ad_client_id: 11, ad_org_id: 11, c_project_id: pid, name: SC_.PH[i], seqno: (i + 1) * 10, startdate: day(s), enddate: day(s + d), iscomplete: 'N' }, 'phase ' + SC_.PH[i]); phs.push(ph);
         SC_.PRODUCTS.forEach(([pv, pn, q0, p0]) => save('C_ProjectLine', { ad_client_id: 11, ad_org_id: 11, c_project_id: pid, c_projectphase_id: ph, m_product_id: prods[pv], plannedqty: +(q0 * k).toFixed(4), plannedprice: p0 }, 'line ' + pv)); });
+      // §5.62: two dated tasks per phase (first half / second half of the phase window) so the project page's Schedule tab has task bars to show; written through the BIM Document plugin's own columns (§5.58)
+      phs.forEach((ph, i) => { const ps = one('select startdate as s, enddate as e from c_projectphase where c_projectphase_id=?', [ph]), s0 = Date.parse(String(ps.s).slice(0, 10) + 'T00:00:00Z'), e0 = Date.parse(String(ps.e).slice(0, 10) + 'T00:00:00Z'), mid = s0 + Math.floor((e0 - s0) / 2 / 864e5) * 864e5, f = x => new Date(x).toISOString().slice(0, 10) + ' 00:00:00';
+        [[SC_.PH[i] + ' \u2014 part 1', s0, mid], [SC_.PH[i] + ' \u2014 part 2', mid, e0]].forEach(([nm, a, b], k) => { const tid = save('C_ProjectTask', { ad_client_id: 11, ad_org_id: 11, c_projectphase_id: ph, name: nm, seqno: (k + 1) * 10 }, 'task'); H.db.run('UPDATE c_projecttask SET bim_startdate=?, bim_enddate=? WHERE c_projecttask_id=?', [f(a), f(b), tid]); }); });
       phs.slice(0, ticked).forEach(ph => must(H.update('C_ProjectPhase', ph, { iscomplete: 'Y' }), 'tick phase ' + ph));
       (iss || '').split(',').filter(Boolean).forEach(x => { const [pr, qty] = x.split('x').map(Number), id = save('C_ProjectIssue', { ad_client_id: 11, ad_org_id: 11, c_project_id: pid, m_locator_id: 101, m_product_id: pr, movementqty: qty, movementdate: H.DAY }, 'issue'); must(H.docAction('C_ProjectIssue', id, 'CO'), 'complete issue ' + id); });
       const stages = (SC_.CHAIN[v] || []).slice(); let nChain = 0;

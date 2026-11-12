@@ -15,15 +15,17 @@ const W = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight:
 const nums = s => (s.match(/-?\d[\d,]*\.?\d*/g) || []).map(x => Number(x.replace(/,/g, '')));
 const STRUCT = { model2: ['two'], proof: ['two'] };   // 'two systems' = Kernel ERP + legacy iDempiere: a fact of the product, not a measured value; listed here, not hidden
 const bad = [], seenWords = [];
+const MAG = { two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, twenty: 20, 'twenty-four': 24, 'twenty-five': 25, thirty: 30 };   // "about N thousand/million": backed when a source value rounds to N x 1000 / 1e6 (within half a unit)
 rows.forEach(r => {
-  const t = r.detail.replace(/F: |M: /g, ' ').toLowerCase(), sn = nums(r.src);
+  const t0 = r.detail.replace(/F: |M: /g, ' ').toLowerCase(), sn = nums(r.src);
+  (t0.match(/\b[a-z]+(?:-[a-z]+)? (?:thousand|million)\b/g) || []).forEach(m => { const [w, unit] = m.split(' '), n = MAG[w], u = unit === 'thousand' ? 1e3 : 1e6; seenWords.push(r.id + ':' + m);
+    if (n == null) bad.push(r.id + ': "' + m + '" is not in the magnitude table'); else if (!sn.some(v => Math.abs(v - n * u) < u / 2)) bad.push(r.id + ': says "' + m + '" but no source value rounds to it ' + JSON.stringify(sn.slice(0, 6))); });
+  const t = t0.replace(/\b[a-z]+(?:-[a-z]+)? (?:thousand|million)\b/g, ' ');   // those are judged by magnitude above, not as small counts
   (t.match(/\b(eighty-nine|fifty-nine|eleven|twelve|one|two|three|four|five|six|seven|eight|nine|ten)\b/g) || []).forEach(w => {
     if (/\b(one more click|one project|one screen|click one|the one)\b/.test(t) && w === 'one') return;   // "one" as a pronoun/article, not a count
     if (w === 'one') { if (!/one (project|phase)\b/.test(t)) return; }
-    if ((STRUCT[r.id] || []).includes(w)) return; seenWords.push(r.id + ':' + w); if (/five thousand|seven million/.test(t) && /^(five|seven)$/.test(w)) return; if (!sn.includes(W[w])) bad.push(r.id + ': says "' + w + '" but the source holds ' + JSON.stringify(sn.slice(0, 6)));
+    if ((STRUCT[r.id] || []).includes(w)) return; seenWords.push(r.id + ':' + w); if (!sn.includes(W[w])) bad.push(r.id + ': says "' + w + '" but the source holds ' + JSON.stringify(sn.slice(0, 6)));
   });
-  if (/seven million/.test(t) && !sn.some(v => v >= 7e6 && v < 8e6)) bad.push(r.id + ': "seven million" but no source value in 7-8 million');
-  if (/five thousand/.test(t) && !sn.some(v => v >= 4500 && v < 5500)) bad.push(r.id + ': "five thousand" but no source value near 5 thousand');
 });
 ck('N1 every spoken number-word is backed by a value in the row\'s source (' + seenWords.length + ' spoken)', bad.length === 0 && seenWords.length > 8, bad.slice(0, 3));
 const miss = []; rows.forEach(r => (r.src.match(/§[A-Z_]+ [^§]*/g) || []).forEach(seg => { const key = seg.trim().replace(/\s+/g, ' '); if (/^§DASH_PA/.test(key)) return; const toks = key.split(' ').slice(1).filter(x => /=/.test(x)); const head = key.split(' ')[0];
