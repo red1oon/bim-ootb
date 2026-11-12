@@ -68,12 +68,29 @@
       if (s) db.run('UPDATE ad_sequence SET currentnext=? WHERE ad_sequence_id=?', [id + 1, s.ad_sequence_id]);
       return id;
     }
+    // ── the CLIENT-DATA path (bim-ootb prompts/CAPEX_DASHBOARD.md §5.67 G1): a client admin packs data in under their own client (opts.clientId > 0, Env.getAD_Client_ID(ctx)).
+    //   POFinder.getTargetUUID (:45-56): the pack's UUID -> AD_Package_UUID_Map.Target_UUID for this client, else as is; POFinder.findPO (:80-108): a row found by that UUID in ANOTHER client > 0 is not
+    //   touched, a new UUID is generated and mapped (updateUUIDMap :64-78) and the record is created afresh; found by ID in another client -> refused. PoFiller.autoFill :386-392 writes the target UUID.
+    //   New rows take the session's client (PO new under ctx). opts.modelSave(table, vals, row|null) -> id saves through the host's model layer (PO.saveEx: beforeSave / afterSave), as legacy does.
+    var CL = Number(opts.clientId) || 0;
+    function tableIdOf(t) { var r = q('SELECT ad_table_id AS i FROM ad_table WHERE lower(tablename)=?', [t.toLowerCase()])[0]; return r ? r.i : null; }
+    function targetUU(t, uu) {
+      if (!CL || !uu || !colsOf('ad_package_uuid_map')) return uu;
+      var r = q('SELECT target_uuid AS u FROM ad_package_uuid_map WHERE ad_client_id=? AND ad_table_id=? AND source_uuid=?', [CL, tableIdOf(t), uu])[0];
+      return r && r.u ? r.u : uu;
+    }
+    function updateUUIDMap(t, uu, target) {
+      if (!colsOf('ad_package_uuid_map')) throw new Error('AD_Package_UUID_Map is absent from the twin: a record of another client cannot be remapped (' + t + ' ' + uu + ')');
+      db.run('INSERT INTO ad_package_uuid_map (ad_package_uuid_map_id, ad_client_id, ad_org_id, isactive, created, createdby, updated, updatedby, ad_table_id, source_uuid, target_uuid, ad_package_uuid_map_uu) VALUES (?,?,0,\'Y\',?,0,?,0,?,?,?,?)',
+        [nextId('ad_package_uuid_map'), CL, now, now, tableIdOf(t), uu, target, uuid()]);
+      stat.uuidMapped = (stat.uuidMapped || 0) + 1;
+    }
     function resolveRef(propEl) {   // ReferenceUtils.resolveReference: id -> as written if present, uuid -> the id of that UUID, empty -> null
       var kind = propEl.getAttribute('reference'), key = propEl.getAttribute('reference-key'), v = propEl.textContent.trim();
       if (v === '') return { ok: true, v: null };
       if (kind === 'id') return { ok: true, v: Number(v) };   // ReferenceUtils.resolveReference:46-49: an id reference is taken as written
       if (!key || !colsOf(key)) return { ok: false, why: 'reference table ' + key + ' absent' };
-      var r = q('SELECT ' + key + '_id AS id FROM ' + key + ' WHERE ' + key + '_uu=?', [v])[0];   // IDFinder.findIdByColumn on the UUID column
+      var r = q('SELECT ' + key + '_id AS id FROM ' + key + ' WHERE ' + key + '_uu=?', [targetUU(key, v)])[0];   // IDFinder.findIdByColumn on the UUID column; a client Pack In maps it first (ReferenceUtils.java:54)
       return r ? { ok: true, v: r.id } : { ok: false, why: key + ' uuid ' + v + ' not found' };
     }
     // PO.afterSave(newRecord) rules legacy runs because its Pack In saves through PO.saveEx; the twin writes SQL, so the rule is applied here (ERP_FRIENDLY_OPS_LENS.md §22 L3).
@@ -109,9 +126,12 @@
         throw new Error('table ' + table + ' is absent from the dictionary DB (record EntityType ' + et0 + ', would be written)');
       }
       // find (POFinder)
-      var row = null, uu = P[table + '_UU'] ? P[table + '_UU'].textContent.trim() : '';
-      if (uu && c[uuCol]) row = q('SELECT * FROM ' + t + ' WHERE ' + uuCol + '=?', [uu])[0] || null;
-      if (!row && P[table + '_ID'] && c[pk]) { var idv = Number(P[table + '_ID'].textContent.trim()); if (idv) row = q('SELECT * FROM ' + t + ' WHERE ' + pk + '=?', [idv])[0] || null; }
+      var row = null, uu = P[table + '_UU'] ? P[table + '_UU'].textContent.trim() : '', tuu = uu;
+      if (uu && c[uuCol]) { tuu = targetUU(t, uu); row = q('SELECT * FROM ' + t + ' WHERE ' + uuCol + '=?', [tuu])[0] || null;
+        if (CL && row && Number(row.ad_client_id) > 0 && Number(row.ad_client_id) !== CL) { tuu = uuid(); updateUUIDMap(t, uu, tuu); row = null; } }
+      if (!row && P[table + '_ID'] && c[pk]) { var idv = Number(P[table + '_ID'].textContent.trim()); if (idv) row = q('SELECT * FROM ' + t + ' WHERE ' + pk + '=?', [idv])[0] || null;
+        if (CL && row && Number(row.ad_client_id) > 0 && Number(row.ad_client_id) !== CL) throw new Error('2Pack cannot update/access record that belongs to another tenant. TableName=' + table + ', Record_ID=' + idv + ', AD_Client_ID=' + row.ad_client_id + ' Context AD_Client_ID=' + CL);
+        if (CL && row && Number(row.ad_client_id) !== CL) row = null; }
       // fill (PoFiller.autoFill)
       var cl = P.AD_Client_ID ? P.AD_Client_ID.textContent.trim() : null;
       if (cl === '0') { vals.ad_client_id = 0; vals.ad_org_id = 0; }
@@ -122,6 +142,7 @@
         if (k === pk) { var iv = Number(pe.textContent.trim()); if (iv > 0 && iv <= MAX_OFFICIAL_ID) { var other = q('SELECT ad_client_id AS c FROM ' + t + ' WHERE ' + pk + '=?', [iv])[0]; if (!other || Number(other.c) === 0) vals[k] = iv; } return; }
         var txt = pe.textContent; vals[k] = (txt === '' && !pe.firstChild) ? null : txt;
       });
+      if (CL && cl !== '0') { vals.ad_client_id = CL; if (c[uuCol] && uu) vals[uuCol] = tuu; }   // PO new under the session's client; PoFiller.autoFill :386-392 the target UUID
       // gate (isProcessElement) BEFORE the defer, as GenericPOElementHandler.startElement:79-98 (fill, then the entity type check, then the not-founds)
       var et = vals.entitytype != null ? vals.entitytype : (row ? row.entitytype : null);
       if (c.entitytype && et != null && OFFICIAL_ET[et] && !pack.updateMode) { stat.skippedOfficial++; stat.byTable[table] = (stat.byTable[table] || { new: 0, update: 0, same: 0, skip: 0 }); stat.byTable[table].skip++; return 'skip'; }
@@ -131,8 +152,10 @@
       if (row) {
         var ch = Object.keys(vals).filter(function (k) { return k !== pk && String(row[k] == null ? '' : row[k]) !== String(vals[k] == null ? '' : vals[k]); });
         if (!ch.length) { bt.same++; action = 'Same'; }
+        else if (opts.modelSave) { var cv = {}; ch.forEach(function (k) { cv[k] = vals[k]; }); opts.modelSave(t, cv, row); bt.update++; action = 'Update'; }   // through the host's model class (PO.saveEx)
         else { db.run('UPDATE ' + t + ' SET ' + ch.map(function (k) { return k + '=?'; }).join(', ') + (c.updated ? ', updated=?' : '') + ' WHERE ' + pk + '=?', ch.map(function (k) { return vals[k]; }).concat(c.updated ? [now] : []).concat([row[pk]])); bt.update++; action = 'Update'; }
       } else {
+        if (opts.modelSave) { delete vals[pk]; var nid = opts.modelSave(t, vals, null); vals[pk] = nid; bt.new++; action = 'New'; stat.processed++; stat.details.push({ table: table, id: nid, uu: vals[uuCol] || uu, action: action }); return action; }   // PO.saveEx: the model class keys, defaults, beforeSave / afterSave
         if (vals[pk] == null && c[pk]) vals[pk] = nextId(t);
         if (c.created) { vals.created = now; vals.updated = now; vals.createdby = 0; vals.updatedby = 0; }
         if (c.isactive && vals.isactive == null) vals.isactive = 'Y';
