@@ -524,7 +524,7 @@
     <div id="idmp-content">
       <div id="idmp-placeholder"><div class="big">&#128193;</div><span data-i18n="main.placeholder">Select a menu item to open a window.</span><br>Every window, tab and field is folded from <b>ad_seed.db</b> via SQLite WASM.</div>
     </div>
-    <div id="idmp-status"><span id="idmp-status-main">Ready</span><span class="spacer" style="flex:1"></span><span class="seal" id="idmp-status-src"></span></div>
+    <div id="idmp-status"><span id="idmp-status-main">Ready</span><span class="spacer" style="flex:1"></span><span id="idmp-status-info" data-statusline=""></span><span class="seal" id="idmp-status-src"></span></div>
   </main>
 </div>
 
@@ -597,7 +597,7 @@
      header tabs carry an AD_Val_Rule_ID. -->
 <script src="ad_valrule.js?v=1"></script>
 <script src="ad_gridtab.js?v=6"></script>
-<script src="db_export_safe.js?v=1"></script><script src="ad_infowin.js?v=1"></script>
+<script src="db_export_safe.js?v=1"></script><script src="ad_infowin.js?v=1"></script><script src="ad_statusline.js?v=1"></script>
 <script src="../common/comm/semver_strict.js?v=1"></script>
 <script src="plugin_registry.js?v=8"></script>
 <!-- NINJA_MODE_PILL.md — the Plugin Engine "Create" (PackOut) face: Excel model sheet → AD model → live install.
@@ -5336,6 +5336,22 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     // FUNDAMENTAL LAW — iDempiere's status bar shows record info, not the storage engine. Provenance kept in the
     //   title (non-invent honesty) but OFF the visible bar (the "folded from SQLite WASM" tell is a dev artifact).
     var src = $('idmp-status-src'); if (src) { src.textContent = ''; src.title = 'folded from ad_seed.db via SQLite WASM (no server)'; }
+    _updateStatusInfo(tab);
+  }
+  // S7 (CAPEX_DASHBOARD §5.47): the east half of the status bar = AD_StatusLine for the master tab's current record (AbstractADWindowContent :2192-2198 `if (!detailTab) statusBar.setInfo(gt.getStatusLine())`).
+  //   Generic: window/tab/table ids and the record come from the open tab; the lookup and the text come from the dictionary (erp/ad_statusline.js). Nothing names a table here.
+  function _updateStatusInfo(tab) {
+    var el = $('idmp-status-info'); if (!el || !window.AdStatusLine) return;
+    var html = '';
+    try {
+      if (_activeTabIdx === 0 && !_newMode && _records && _records[_recIdx]) {
+        var rec = _records[_recIdx], rows = function (sql) { var r = window.__idmpDb.exec(sql); return r.length ? r[0].values : []; };
+        var tb = rows('SELECT ad_table_id FROM ad_tab WHERE ad_tab_id=' + Number(tab.id));
+        html = window.AdStatusLine.line({ rows: rows, windowId: _activeWin, tabId: tab.id, tableId: tb.length ? tb[0][0] : 0, ctx: function (n) { var v = recVal(rec, n); return v === '' ? undefined : v; } }) || '';
+      }
+    } catch (e) { html = ''; console.log('§STATUSLINE_UI error ' + e.message); }
+    el.innerHTML = html; el.setAttribute('data-statusline', html);
+    console.log('§STATUSLINE_UI win=' + _activeWin + ' tab=' + (tab && tab.id) + ' line=' + JSON.stringify(html));
   }
 
   // ── Menu filter ──
