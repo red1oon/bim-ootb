@@ -23,7 +23,7 @@ declare var BigDecimal: typeof import("../erp/bigdecimal.js");
 declare var BimDecoder: typeof import("../viewer/decoder.js");
 declare var BimOrdersOverlay: typeof import("../erp/bim_orders_overlay.js");
 declare var Bonsai: typeof import("../modeller/bcf_export.js") | typeof import("../modeller/bonsai_itemdrag.js") | typeof import("../modeller/bonsai_roommove.js");
-declare var CapexTiles: typeof import("../capex/tiles.js");
+declare var CapexPaTiles: typeof import("../capex/pa_tiles.js");
 declare var Clipboard: typeof import("../modeller/clipboard.js");
 declare var CommEnvelope: typeof import("../common/comm/comm_envelope.js");
 declare var CommRoster: typeof import("../common/comm/comm_roster.js");

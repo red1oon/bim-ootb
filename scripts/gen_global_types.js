@@ -12,7 +12,7 @@
 // HOW:   parse every production .js with espree (ESLint's parser, so comments never count as code).
 //        Candidates: `module.exports = NAME` or `<root|window|g|self|global|globalThis>.NAME = …` in a file with a
 //        `module.exports`. TypeScript then keeps only those whose `typeof import(file)` has members (editor_blind = dropped).
-//        Needs TypeScript as a parser-only dep: `npm i --no-save typescript@5.6.3` or TSLIB=<path>.
+//        TypeScript: found by scripts/lib/find_ts.js ($TSLIB, a local package, or VS Code's own bundled copy) — nothing to install.
 //        NAME is emitted only if another production file reads `NAME.` (token scan, upper bound).
 //        A NAME published by 2+ files becomes a union, so F12 offers every definition (that is a real
 //        duplicate and is listed in the header so it can be looked at).
@@ -100,8 +100,9 @@ for (const [nm, pubs] of [...publishers].sort((a, b) => a[0].localeCompare(b[0])
 // TypeScript decides: keep a candidate only if `typeof import("<file>")` has at least one property. An export made
 // inside a UMD wrapper function is often invisible to TypeScript (empty type, F12 finds nothing); those are
 // counted as `editor_blind` and left out, because declaring them would only move F12 to this file.
-let ts; try { ts = require(process.env.TSLIB || 'typescript'); }
-catch (e) { console.error('§ED_TYPES_NEED_TS npm i --no-save typescript@5.6.3  (or set TSLIB)'); process.exit(3); }
+const found = require('./lib/find_ts').findTs();   // VS Code's bundled TypeScript is enough — nothing to install (§13/§14)
+if (!found) { console.error('§ED_TYPES_NEED_TS no TypeScript found: open the repo in VS Code once, or set TSLIB=<path to typescript.js>'); process.exit(3); }
+const ts = found.ts;
 const probe = path.join(ROOT, 'types', '__probe.gen.d.ts');
 const probeSrc = emitted.map((e, i) => e.pubs.map((p, j) => `declare var __p${i}_${j}: typeof import("../${p}");`).join('\n')).join('\n');
 const opts = { allowJs: true, checkJs: false, noEmit: true, target: ts.ScriptTarget.ES2020, skipLibCheck: true };
@@ -148,4 +149,4 @@ if (process.argv.includes('--check')) {
 }
 fs.writeFileSync(OUT, out);
 if (removed) fs.writeFileSync(HAND, handOut);
-console.log(`§ED_TYPES_GEN files=${files.length} umd=${umd} parse_fail=${parseFail} published=${publishers.size} editor_blind=${blind} emitted=${emitted.length} multi_publisher=${dups.length} hand_any_removed=${removed}`);
+console.log(`§ED_TYPES_GEN ts=${found.from.split(':')[0]} files=${files.length} umd=${umd} parse_fail=${parseFail} published=${publishers.size} editor_blind=${blind} emitted=${emitted.length} multi_publisher=${dups.length} hand_any_removed=${removed}`);
