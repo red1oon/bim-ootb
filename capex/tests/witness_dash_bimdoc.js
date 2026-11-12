@@ -10,6 +10,7 @@
 //   D6 VACUOUS: a project with no deliverables prints 'no data', and says INCONCLUSIVE, never 0 %.   Break: BIMDOC_BREAK=1 makes the EXPECTED count ignore supersession → D3/D4 must FAIL.
 // Usage: NODE_PATH=<bim-ootb>/node_modules node capex/tests/witness_dash_bimdoc.js
 'use strict';
+require('./_setup_gate.js')('§DASH_BIMDOC_VERDICT');
 const fs = require('fs'), path = require('path'), http = require('http'), { execFileSync } = require('child_process'), { chromium } = require('/home/red1/bim-ootb/tests/node_modules/playwright');
 const ROOT = path.join(__dirname, '..', '..'), A = require('../adapters.js'), T = require('../tiles.js'), BREAK = process.env.BIMDOC_BREAK === '1';
 const BASE = process.env.BRIDGE_BASE || 'http://localhost:8108', DB = 'idempiere_bimdoc', TODAY = '2026-11-11', log = console.log;
