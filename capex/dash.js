@@ -62,7 +62,7 @@
     k.appendChild(card('Actual Cost', fl('actual_cost', money(t.actual_cost.cur), 'div') + '<div class="subv">% of plan: ' + fl('actual_cost_pct_of_plan', pctMap(t.actual_cost.pctOfPlan)) + '</div>', 'actual_cost'));
     k.appendChild(card('Committed Cost', fl('committed_cost', money(t.committed_cost.cur), 'div') + '<div class="subv">invoiced: ' + fl('committed_invoiced', Object.keys(t.committed_cost.invoiced).length ? Object.keys(t.committed_cost.invoiced).sort().map(function (c) { return esc(curInfo(c).ISO_Code) + ' ' + (t.committed_cost.invoiced[c] / 100).toFixed(2); }).join(' · ') : 'no data') + '</div>' + split('committed_contract', 'contract (proposed)', t.committed_contract) + split('committed_verified', 'verified (proposed)', t.committed_verified), 'committed_cost'));
     k.appendChild(card('Forecast Cost at Completion (proposed)', t.forecast_cost.inconclusive ? '<span class="nodata">n/a — ' + esc(t.forecast_cost.inconclusive) + ' (INCONCLUSIVE)</span>' : fl('forecast_cost', money(t.forecast_cost.cur), 'div') + '<div class="subv" title="EAC = Spent + (Budget − Done) ÷ CPI. Proposed, awaiting the client.">proposed formula</div>' + (t.forecast_cost.basisDiffers ? '<div class="subv warn" data-basis="differs" title="CPI is outside 0.5–2 on ' + t.forecast_cost.basisDiffers + ' project(s): Spent and Done are not on one basis, so read this forecast as an alarm, not a result">⚠ basis differs</div>' : ''), 'forecast_cost'));
-    k.appendChild(card('BIM Documents issued for construction', '<div class="big">' + fl('bim_documents', t.bim_documents.notinstalled ? '<span class="nodata">no data (BIM Document not installed on this server)</span>' : t.bim_documents.vacuous ? '<span class="nodata">no data</span>' : t.bim_documents.issued + ' / ' + t.bim_documents.total) + '</div><div class="subv">issued / deliverables</div>', 'bim_documents'));
+    k.appendChild(card('BIM Documents issued for construction', '<div class="big">' + fl('bim_documents', t.bim_documents.notinstalled ? '<span class="nodata" title="The BIM Document module is not installed on this server">no data (not installed)</span>' : t.bim_documents.vacuous ? '<span class="nodata">no data</span>' : t.bim_documents.issued + ' / ' + t.bim_documents.total) + '</div><div class="subv">issued / deliverables</div>', 'bim_documents'));
     k.appendChild(card('Projects Completed this year', '<div class="big">' + fl('completed_year', S.flat.completed_year) + '</div><div class="subv">year ' + esc(TODAY.slice(0, 4)) + '</div>', 'completed_year'));
     v.appendChild(k);
 
@@ -82,7 +82,7 @@
     g.appendChild(card('Project Stage (pipeline)', sb, 'stage'));
     // Physical vs spent
     x = t.physical_spent; var pb = state(x);
-    if (!pb) pb = '<div class="row"><span>Physical</span><b>' + fl('physical', pctMap(x.physical)) + '</b></div><div class="row"><span>Spent</span><b>' + fl('spent', pctMap(x.spent)) + '</b></div><div class="note">' + esc(x.caveat) + '</div>';
+    if (!pb) pb = '<div class="row"><span>Physical</span><b>' + fl('physical', pctMap(x.physical)) + '</b></div><div class="row"><span>Spent</span><b>' + fl('spent', pctMap(x.spent)) + '</b></div><details class="note"><summary title="How Physical and Spent are measured">how measured</summary><div>' + esc(x.caveat) + '</div></details>';
     g.appendChild(card('Physical vs Spent', pb, 'physical_spent'));
     // Schedule
     x = t.schedule; var cb = state(x);
