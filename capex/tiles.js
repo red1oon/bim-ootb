@@ -107,17 +107,18 @@
       return { bac: bac, pv: pv, ev: ev, dated: dated, overdue: overdue, ac: ac, spi: pv > 0 ? ev / pv : null, cpi: ac > 0 ? ev / ac : null };
     }
     var E = A.map(function (p) { return { p: p, e: evm(p) }; });
+    var BK = { health: {}, schedule: {}, budget: {} };   // §5.49: project id -> bucket, filled by the SAME loops that count the tiles
     function classTile(name, build) { var w = blocked(name); return w ? { inconclusive: w } : (A.length ? build() : { vacuous: true }); }
 
     T.health = classTile('health', function () {
       var r = { green: 0, amber: 0, red: 0, none: 0 };
       E.forEach(function (x) {
-        if (!(x.e.pv > 0)) { r.none++; return; }
+        if (!(x.e.pv > 0)) { r.none++; BK.health[x.p.C_Project_ID] = 'none'; return; }
         var idx = [x.e.spi]; if (x.e.cpi != null) idx.push(x.e.cpi);
         var ok = idx.filter(function (v) { return v >= 0.9; }).length;
         var cls = ok === idx.length ? 'green' : ok === 0 ? 'red' : 'amber';
         if (cls === 'green' && x.e.overdue > 0 && process_s2()) cls = 'amber';   // §5.44: never Green while a phase is overdue
-        r[cls]++;
+        r[cls]++; BK.health[x.p.C_Project_ID] = cls;
       }); r.n = A.length; return r;
     });
     T.stage = classTile('stage', function () {
@@ -132,10 +133,11 @@
     T.schedule = classTile('schedule', function () {
       var r = { ontime: 0, delayed: 0, atrisk: 0, nosched: 0, delaySum: 0, delayN: 0 };
       E.forEach(function (x) {
-        if (!x.e.dated) { r.nosched++; return; }
-        if (x.e.pv > 0 && x.e.spi < 0.9) { r.atrisk++; r.delaySum += x.e.overdue; r.delayN++; }
-        else if (x.e.overdue > 0) { r.delayed++; r.delaySum += x.e.overdue; r.delayN++; }
-        else r.ontime++;
+        var id = x.p.C_Project_ID;
+        if (!x.e.dated) { r.nosched++; BK.schedule[id] = 'nosched'; return; }
+        if (x.e.pv > 0 && x.e.spi < 0.9) { r.atrisk++; BK.schedule[id] = 'atrisk'; r.delaySum += x.e.overdue; r.delayN++; }
+        else if (x.e.overdue > 0) { r.delayed++; BK.schedule[id] = 'delayed'; r.delaySum += x.e.overdue; r.delayN++; }
+        else { r.ontime++; BK.schedule[id] = 'ontime'; }
       });
       r.avgDelay = r.delayN ? r.delaySum / r.delayN : null; r.n = A.length; return r;
     });
@@ -143,7 +145,7 @@
       var r = { within: 0, over: 0, notstarted: 0, overrun: {} };
       A.forEach(function (p) {
         var ac = cents(p.ProjectBalanceAmt) || 0, pl = cents(p.PlannedAmt) || 0;
-        if (ac === 0) r.notstarted++; else if (ac > pl) { r.over++; r.overrun[cur(p)] = (r.overrun[cur(p)] || 0) + (ac - pl); } else r.within++;
+        if (ac === 0) { r.notstarted++; BK.budget[p.C_Project_ID] = 'notstarted'; } else if (ac > pl) { r.over++; BK.budget[p.C_Project_ID] = 'over'; r.overrun[cur(p)] = (r.overrun[cur(p)] || 0) + (ac - pl); } else { r.within++; BK.budget[p.C_Project_ID] = 'within'; }
       }); r.n = A.length; return r;
     });
     var w = blocked('approvals');
@@ -170,7 +172,20 @@
       var vp = S.filter(function (p) { return has[String(p.C_Project_ID)]; }); T.committed_verified = { cur: sumBy(vp, function (p) { return p.ProjectBalanceAmt; }), n: vp.length }; if (!vp.length) T.committed_verified.vacuous = true; }
     var up = P.map(function (p) { return p.Updated; }).filter(Boolean).sort();
     T.last_updated = up.length ? { v: up[up.length - 1] } : { vacuous: true };
-    return { tiles: T, pop: { P: P.length, S: S.length, A: A.length }, formula: FORMULA, caveat: CAVEAT };
+    // §5.49 drill: key -> the project rows behind each number (same populations and same buckets as the tiles above)
+    function info(p) { var e = evm(p); return { id: p.C_Project_ID, Value: p.Value, Name: p.Name, cur: cur(p), planned: p.PlannedAmt, spent: p.ProjectBalanceAmt, committed: p.CommittedAmt, due: e.pv / 100, done: e.ev / 100, health: BK.health[p.C_Project_ID] || null, schedule: BK.schedule[p.C_Project_ID] || null, budget: BK.budget[p.C_Project_ID] || null, stage: phName[p.C_Phase_ID] || null }; }
+    var D = {}, put = function (k, p) { (D[k] = D[k] || []).push(info(p)); };
+    P.forEach(function (p) { put('total_projects', p); });
+    act.forEach(function (p) { put('active_projects', p); });
+    S.forEach(function (p) { if (p.PlannedAmt != null) put('approved_budget', p); if (p.ProjectBalanceAmt != null) put('actual_cost', p); if (p.CommittedAmt != null) put('committed_cost', p); });
+    P.forEach(function (p) { if (tn != null && yes(p.Processed) && p.DateFinish && day(p.DateFinish).slice(0, 4) === today.slice(0, 4)) put('completed_year', p); });
+    if (!fb) act.forEach(function (p) { var sp = cents(p.ProjectBalanceAmt), dn = (byProj[p.C_Project_ID] || []).reduce(function (a, ph) { return a + (yes(ph.IsComplete) ? (cents(ph.PlannedAmt) || 0) : 0); }, 0); if (sp > 0 && dn > 0) put('forecast_cost', p); });
+    A.forEach(function (p) {
+      ['health', 'schedule', 'budget'].forEach(function (t) { if (BK[t][p.C_Project_ID]) put(t + ':' + BK[t][p.C_Project_ID], p); });
+      put('stage:' + (p.C_Phase_ID == null ? '(no phase)' : (phName[p.C_Phase_ID] || ('C_Phase#' + p.C_Phase_ID))), p);
+    });
+    Object.keys(BK).forEach(function (t) { var names = { health: ['green', 'amber', 'red', 'none'], schedule: ['ontime', 'delayed', 'atrisk', 'nosched'], budget: ['within', 'over', 'notstarted'] }[t]; names.forEach(function (b) { if (!D[t + ':' + b]) D[t + ':' + b] = []; }); });
+    return { tiles: T, drill: D, pop: { P: P.length, S: S.length, A: A.length }, formula: FORMULA, caveat: CAVEAT };
   }
 
   // canonical strings (what the twin compares and the DOM exposes as data-value)

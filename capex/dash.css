@@ -30,3 +30,9 @@ a.bim{background:var(--acc);color:#fff;padding:2px 9px;border-radius:6px;text-de
 @media(max-width:1100px){.kpis{grid-template-columns:repeat(2,1fr)}.panels{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:700px){body{flex-direction:column}#side{width:auto}.kpis,.panels{grid-template-columns:1fr}}
 .fproject{font-weight:600;padding:4px 10px;border-radius:6px;background:#e0ecff;color:#1e3a8a;align-self:center}
+/* §5.49 drill-down */
+[data-drill]{cursor:pointer}.card[data-drill]:hover,.row[data-drill]:hover{outline:2px solid var(--acc);outline-offset:-2px}
+#drill{position:fixed;top:0;right:0;bottom:0;width:min(760px,96vw);background:var(--card);border-left:1px solid var(--line);box-shadow:-8px 0 24px rgba(0,0,0,.12);padding:16px;overflow:auto;z-index:20}
+#drill[hidden]{display:none}.dhead{display:flex;gap:10px;align-items:center;margin-bottom:10px}.dhead .dn{color:var(--mut)}#drillClose{margin-left:auto;border:0;background:none;font-size:22px;cursor:pointer;color:var(--mut)}
+#drill table{width:100%;border-collapse:collapse;font-size:13px}#drill th,#drill td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)}#drill td small{display:block;color:var(--mut)}#drill a.open{color:var(--acc);font-weight:600}
+
