@@ -5,14 +5,14 @@
 // ModelLayer + DocActions, no browser, no web service): projects, phases with dates, lines, ticked phases, completed Project Issues (erp/model_projectissue.js: stock + project balance), purchase orders (draft or completed) and, for each completed
 // purchase order, the chain the scenario's CHAIN names: receipt -> vendor invoice -> payment. The store is EXPORTED to a file (the dashboard's Source A reads it with adapters.loadSqlite): that file is the persistence, the seed is untouched,
 // teardown = delete the file. Product names/values are the scenario's neutral ones. Determinism: dates are relative to --today, ids from the model layer.
-// Usage: NODE_PATH=<bim-ootb>/node_modules node capex/tools/twin_mockchain.js [--today=YYYY-MM-DD] [--out=<file>] [--only=TD_VALUE]
+// Usage: NODE_PATH=<bim-ootb>/node_modules node capex/tools/twin_mockchain.js [--today=YYYY-MM-DD] [--out=<file>] [--only=TD_VALUE] [--keep-seed]
 'use strict';
 const fs = require('fs'), os = require('os'), path = require('path'), ROOT = path.join(__dirname, '..', '..'), SC_ = require('./td_scenario.js'), DD = require(path.join(ROOT, 'erp/tests/dd_common.js')), log = console.log;
 const arg = k => (process.argv.find(a => a.startsWith('--' + k + '=')) || '').slice(k.length + 3);
 async function build(o) {
   o = o || {}; const TODAY = o.today || arg('today') || new Date().toISOString().slice(0, 10), OUT = o.out || arg('out') || path.join(os.homedir(), '.cache/capex_film/twin_mock/erp_twin.db'), ONLY = o.only || arg('only');
   process.env.TODAY = TODAY; const day = off => new Date(Date.parse(TODAY + 'T00:00:00Z') + off * 864e5).toISOString().slice(0, 10) + ' 00:00:00';
-  const H = await DD.boot({}); H.A.bind(H.q); ['model_projectissue.js'].forEach(m => require(path.join(ROOT, 'erp', m)));
+  const H = await DD.boot({}); H.A.bind(H.q); ['model_project.js', 'model_projectissue.js'].forEach(m => require(path.join(ROOT, 'erp', m)));
   const q = H.q, one = H.one, errs = [];
   const must = (r, what) => { if (!r || r.ok === false) { const m = ((r && r.log) || []).filter(l => /SEVERE|ERR|WF/.test(l)).slice(0, 2).join(' | ').slice(0, 260); throw new Error(what + ' refused: ' + ((r && r.msg) || '') + ' ' + m); } return r; };
   const save = (t, f, what) => { must(H.save(t, f), what || t); return H.lastId(t); };
@@ -51,6 +51,16 @@ async function build(o) {
       made.push({ value: v, projectId: pid, phases: phs.length, ticked, issues: (iss || '').split(',').filter(Boolean).length, pos: (po || '').split(',').filter(Boolean).length, chain: nChain });
       log('§TWIN_MOCK ' + v + ' #' + pid + ' phases=' + phs.length + ' ticked=' + ticked + ' balance=' + one('select projectbalanceamt as b from c_project where c_project_id=?', [pid]).b + ' chain=' + nChain);
     } catch (e) { errs.push(v + ': ' + String(e.message).slice(0, 300)); log('§TWIN_MOCK_ERROR ' + v + ' ' + String(e.message).slice(0, 300)); }
+  }
+  // the seed carries three demo projects of its own (Landscape, Standard, Hospital, other currencies, with their own orders and issues): a film or a page that shows THIS store must not show them ("Total projects" counts inactive ones too).
+  //   They are removed from the EXPORT with their documents (plain DELETE on the in-memory copy that is exported; the seed file is untouched), counted in the log, unless --keep-seed.
+  if (!(o.keepSeed || arg('keep-seed'))) {
+    const mine = SC_.SC.map(r => r[0]), ids = q('select c_project_id as id, value as v from c_project').filter(r => mine.indexOf(r.v) < 0).map(r => r.id), L = ids.join(',');
+    if (ids.length) { const cnt = t => Number(q('select count(*) as n from ' + t + ' where c_project_id in (' + L + ')')[0].n), before = {};
+      ['c_projectissue', 'c_projectline', 'c_projectphase', 'c_order', 'c_project'].forEach(t => { before[t] = cnt(t); });
+      H.db.run('DELETE FROM c_orderline WHERE c_order_id IN (SELECT c_order_id FROM c_order WHERE c_project_id IN (' + L + '))'); H.db.run('DELETE FROM c_projecttask WHERE c_projectphase_id IN (SELECT c_projectphase_id FROM c_projectphase WHERE c_project_id IN (' + L + '))');
+      ['c_projectissue', 'c_projectline', 'c_projectphase', 'c_order', 'c_project'].forEach(t => H.db.run('DELETE FROM ' + t + ' WHERE c_project_id IN (' + L + ')'));
+      log('§TWIN_MOCK seed demo projects removed from the export ids=' + L + ' rows=' + JSON.stringify(before)); }
   }
   fs.mkdirSync(path.dirname(OUT), { recursive: true }); fs.writeFileSync(OUT, Buffer.from(H.db.export()));
   log('§TWIN_MOCK_BUILT file=' + OUT + ' bytes=' + fs.statSync(OUT).size + ' projects=' + made.length + '/' + (ONLY ? 1 : SC_.SC.length) + ' errors=' + errs.length + ' today=' + TODAY);
