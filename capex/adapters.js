@@ -6,7 +6,7 @@
   var COLS = {
     projects:   { table: 'C_Project',      cols: ['C_Project_ID', 'AD_Org_ID', 'Value', 'Name', 'C_Currency_ID', 'PlannedAmt', 'ProjectBalanceAmt', 'CommittedAmt', 'InvoicedAmt', 'C_Phase_ID', 'IsActive', 'Processed', 'ProjectCategory', 'DateFinish', 'Updated'] },
     phases:     { table: 'C_ProjectPhase', cols: ['C_ProjectPhase_ID', 'C_Project_ID', 'Name', 'StartDate', 'EndDate', 'IsComplete', 'PlannedAmt', 'CommittedAmt', 'SeqNo'] },
-    tasks:      { table: 'C_ProjectTask',  cols: ['C_ProjectTask_ID', 'C_ProjectPhase_ID', 'Name', 'PlannedAmt'] },
+    tasks:      { table: 'C_ProjectTask',  cols: ['C_ProjectTask_ID', 'C_ProjectPhase_ID', 'Name', 'PlannedAmt', 'BIM_StartDate', 'BIM_EndDate'] },   // §5.58: the last two exist only where the BIM Document plugin is (twin picks the columns it has; legacy: the read type's output fields), else null
     lines:      { table: 'C_ProjectLine',  cols: ['C_ProjectLine_ID', 'C_Project_ID', 'PlannedAmt', 'CommittedAmt', 'InvoicedAmt'] },
     orgs:       { table: 'AD_Org',         cols: ['AD_Org_ID', 'Name'] },
     phaseRef:   { table: 'C_Phase',        cols: ['C_Phase_ID', 'Name'] },

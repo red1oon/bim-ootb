@@ -26,7 +26,8 @@
   // BIM-folded rows live in a high PK band so they never collide with seed / real iDempiere IDs.
   var BIM_BASE = 990000;
 
-  function _scalar(db, sql, params) {
+  function _hasTaskDateCols(db) { var r = db.exec('PRAGMA table_info("C_ProjectTask")'), n = {}; (r.length ? r[0].values : []).forEach(function (v) { n[String(v[1]).toLowerCase()] = 1; }); return !!(n.bim_startdate && n.bim_enddate); }
+function _scalar(db, sql, params) {
     var r = db.exec(sql, params || []);
     return (r.length && r[0].values.length) ? r[0].values[0][0] : null;
   }
@@ -328,7 +329,7 @@
       seqLog.push({ phase: ph, seqno: P.seqno, start: sDate ? sDate.slice(0, 10) : null, end: eDate ? eDate.slice(0, 10) : null });
 
       // tasks: WITH a programme one per 4D task (= one Gantt bar, named as the owner names it in tasks.name); WITHOUT, per resource as before
-      var taskByRes = {}, taskBy4D = {};
+      var taskByRes = {}, taskBy4D = {}, taskWin = {};
       function _task(name) {
         var tId = _scalar(db, "SELECT C_ProjectTask_ID FROM C_ProjectTask WHERE C_ProjectPhase_ID=? AND Name=?", [phId, name]);
         if (tId == null) {
@@ -341,7 +342,11 @@
         return tId;
       }
       if (SCH) Object.keys(P.tasks).sort(function (a, b) { return P.tasks[a].t.sDays - P.tasks[b].t.sDays || (a < b ? -1 : 1); })
-        .forEach(function (k) { var t = P.tasks[k].t; taskBy4D[k] = _task(t.phase + ' \u2014 ' + t.storey); });
+        .forEach(function (k) { var t = P.tasks[k].t; taskBy4D[k] = _task(t.phase + ' \u2014 ' + t.storey);
+          // §5.58: the task row carries min start / max end of the 4D task(s) folded into it (same dayDate as the phase window); columns absent = noted once, never guessed
+          var tw = taskWin[taskBy4D[k]] || (taskWin[taskBy4D[k]] = { s: Infinity, e: -Infinity }); if (t.sDays < tw.s) tw.s = t.sDays; if (t.eDays > tw.e) tw.e = t.eDays; });
+      if (SCH) { if (_hasTaskDateCols(db)) Object.keys(taskWin).forEach(function (tid) { db.run("UPDATE C_ProjectTask SET BIM_StartDate=?, BIM_EndDate=? WHERE C_ProjectTask_ID=?", [dayDate(taskWin[tid].s), dayDate(taskWin[tid].e), tid]); });
+        else if (notes.indexOf('NO_TASK_DATE_COLUMNS') < 0) notes.push('NO_TASK_DATE_COLUMNS C_ProjectTask has no BIM_StartDate/BIM_EndDate (BIM Document plugin not started): task rows carry no dates'); }
       else Object.keys(P.resources).forEach(function (res) { taskByRes[res] = _task(res); });
 
       // lines per IFC class (the BoQ line); roll the cls's per-group rounded costs (BigDecimal)
