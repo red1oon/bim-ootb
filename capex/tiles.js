@@ -269,14 +269,15 @@
     f = f || {}; var today = f.today, tn = dnum(today), un = {}; (data.unavailable || []).forEach(function (u) { un[u] = 1; });
     var R = compute(data, { today: today, status: 'all', org: '', category: '', project: p.Value }), row = ((R.drill || {}).total_projects || [])[0] || {};
     var phases = (data.phases || []).filter(function (x) { return String(x.C_Project_ID) === String(id); }).sort(function (a, b) { return (a.SeqNo || 0) - (b.SeqNo || 0) || String(a.C_ProjectPhase_ID) - String(b.C_ProjectPhase_ID); });
-    var tasksBy = {}; (data.tasks || []).forEach(function (k) { tasksBy[k.C_ProjectPhase_ID] = (tasksBy[k.C_ProjectPhase_ID] || 0) + 1; });
+    var tasksBy = {}, taskRowsBy = {}; (data.tasks || []).forEach(function (k) { tasksBy[k.C_ProjectPhase_ID] = (tasksBy[k.C_ProjectPhase_ID] || 0) + 1;
+      (taskRowsBy[k.C_ProjectPhase_ID] = taskRowsBy[k.C_ProjectPhase_ID] || []).push({ id: k.C_ProjectTask_ID, name: k.Name, planned: Number(k.PlannedAmt) || 0, start: k.BIM_StartDate ? day(k.BIM_StartDate) : null, end: k.BIM_EndDate ? day(k.BIM_EndDate) : null }); });
     var out = { id: p.C_Project_ID, Value: p.Value, Name: p.Name, cur: p.C_Currency_ID == null ? 'none' : String(p.C_Currency_ID), health: row.health || null, schedule: row.schedule || null, budget: row.budget || null, late: row.late || 0, phases: [], why: [] };
     var due = 0, done = 0, pl = 0, cm = 0;
     phases.forEach(function (x) {
       var complete = yes(x.IsComplete), end = x.EndDate ? day(x.EndDate) : null, start = x.StartDate ? day(x.StartDate) : null, late = 0, st;
       if (complete) st = 'complete'; else if (end && end < today) { st = 'overdue'; late = Math.round(tn - dnum(end)); } else if (start && end && start <= today && today <= end) st = 'inprogress'; else st = 'tocome';
       var a = Number(x.PlannedAmt) || 0, c = Number(x.CommittedAmt) || 0; pl += a; cm += c; if (end && end <= today) due += a; if (complete) done += a;
-      out.phases.push({ id: x.C_ProjectPhase_ID, name: x.Name, seq: x.SeqNo, start: start, end: end, planned: a, committed: c, status: st, lateDays: late, tasks: tasksBy[x.C_ProjectPhase_ID] || 0, early: complete && end && end > today });
+      out.phases.push({ id: x.C_ProjectPhase_ID, name: x.Name, seq: x.SeqNo, start: start, end: end, planned: a, committed: c, status: st, lateDays: late, tasks: tasksBy[x.C_ProjectPhase_ID] || 0, taskRows: (taskRowsBy[x.C_ProjectPhase_ID] || []).slice().sort(function (a, b) { return (a.start || '9') < (b.start || '9') ? -1 : (a.start || '9') > (b.start || '9') ? 1 : String(a.name) < String(b.name) ? -1 : 1; }), early: complete && end && end > today });
     });
     var ln = (data.lines || []).filter(function (l) { return String(l.C_Project_ID) === String(id); });
     var sumL = function (k) { return ln.reduce(function (a, l) { return a + (Number(l[k]) || 0); }, 0); };

@@ -229,6 +229,21 @@
       body = '<div class="card"><h3>Phases against today</h3>' + svg + '<div class="leg">' + Object.keys(PSTAT).map(function (k) { return '<span><i class="dot" style="background:' + PSTAT[k][1] + '"></i>' + PSTAT[k][0] + '</span>'; }).join('') + '</div></div>' +
         '<div class="card tscroll"><table id="phTable"><thead><tr><th>Phase</th><th>Start</th><th>End</th><th>Planned</th><th>Tasks</th><th>Status</th></tr></thead><tbody>' + ph.map(function (x) { return '<tr data-phase="' + esc(x.name) + '"><td>' + esc(x.name) + '</td><td>' + esc(x.start || '—') + '</td><td>' + esc(x.end || '—') + '</td><td class="n">' + fmt(x.planned) + '</td><td class="n">' + x.tasks + '</td><td>' + PSTAT[x.status][0] + (x.lateDays ? ' · ' + x.lateDays + ' d' : '') + '</td></tr>'; }).join('') + '</tbody></table></div>';
     }
+    if (ph.length) {   // §5.58 task bars under their phase; no dates on the server = said so, never drawn from a guess
+      var trs = []; ph.forEach(function (x) { (x.taskRows || []).forEach(function (k) { trs.push({ ph: x, k: k }); }); });
+      var tdat = trs.filter(function (r) { return r.k.start && r.k.end; });
+      if (!trs.length) body += '<div class="card"><h3>Tasks</h3><span class="nodata" data-taskdates="none">this project has no tasks</span></div>';
+      else if (!tdat.length) body += '<div class="card"><h3>Tasks</h3><span class="nodata" data-taskdates="none">no task dates on this server (' + trs.length + ' tasks)</span></div>';
+      else {
+        var u0 = Math.min.apply(null, tdat.map(function (r) { return Date.parse(r.k.start); })), u1 = Math.max.apply(null, tdat.map(function (r) { return Date.parse(r.k.end); })), tdy = Date.parse(TODAY), ulo = Math.min(u0, tdy), uhi = Math.max(u1, tdy), UW = 760, UL = 210, UX = function (t) { return UL + (UW - UL - 10) * (t - ulo) / Math.max(1, uhi - ulo); };
+        var tsv = '<svg width="100%" viewBox="0 0 ' + UW + ' ' + (30 + trs.length * 22) + '" role="img" aria-label="Tasks against today">';
+        trs.forEach(function (r, i) { var y = 6 + i * 22, k = r.k; tsv += '<text x="0" y="' + (y + 13) + '" fill="var(--ink)" font-size="11.5">' + esc(String(k.name).slice(0, 30)) + '</text>';
+          if (k.start && k.end) tsv += '<rect class="tbar" tabindex="0" data-task="' + esc(k.name) + '" data-phase="' + esc(r.ph.name) + '" data-start="' + k.start + '" data-end="' + k.end + '" x="' + UX(Date.parse(k.start)) + '" y="' + y + '" width="' + Math.max(4, UX(Date.parse(k.end)) - UX(Date.parse(k.start))) + '" height="14" rx="3" fill="' + PSTAT[r.ph.status][1] + '"><title>' + esc(k.name) + ': ' + k.start + ' to ' + k.end + '</title></rect>';
+          else tsv += '<rect class="tbar" data-task="' + esc(k.name) + '" data-phase="' + esc(r.ph.name) + '" x="' + UL + '" y="' + y + '" width="4" height="14" rx="2" fill="var(--none)"><title>no dates</title></rect>'; });
+        tsv += '<line x1="' + UX(tdy) + '" x2="' + UX(tdy) + '" y1="0" y2="' + (8 + trs.length * 22) + '" stroke="var(--ink)" stroke-dasharray="4 3"/></svg>';
+        body += '<div class="card" data-taskdates="' + tdat.length + '/' + trs.length + '"><h3>Tasks against today</h3>' + tsv + '<div class="subv">' + tdat.length + ' of ' + trs.length + ' tasks carry dates from the 4D programme</div></div>';
+      }
+    }
     panel('schedule', body);
     var mxp = Math.max.apply(null, ph.map(function (x) { return Math.max(x.planned, x.committed); }).concat([1]));
     panel('cost', ph.length ? '<div class="card tscroll"><table id="costTable"><thead><tr><th>Phase</th><th>Planned</th><th>Committed</th><th>Share</th></tr></thead><tbody>' + ph.map(function (x) { return '<tr data-phase="' + esc(x.name) + '" data-planned="' + x.planned + '" data-committed="' + x.committed + '"><td>' + esc(x.name) + '</td><td class="n">' + fmt(x.planned) + '</td><td class="n">' + fmt(x.committed) + '</td><td class="bars"><i class="bl" style="width:' + (100 * x.planned / mxp).toFixed(1) + '%"></i>' + (x.committed ? '<i class="bc" style="width:' + (100 * x.committed / mxp).toFixed(1) + '%"></i>' : '') + '</td></tr>'; }).join('') +

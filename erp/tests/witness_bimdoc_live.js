@@ -549,7 +549,7 @@ const DXF = Buffer.from('0\nSECTION\n2\nENTITIES\n0\nLINE\n8\nWALLS\n10\n0.0\n20
   // D-1 progress: the module and the UI action against the HAND COUNT
   {
     const P = await page.evaluate(() => window.BimDocProgress.compute(window.__tipRead.rows('SELECT * FROM bim_document')));
-    const storedCol = (await dq("SELECT count(*) FROM AD_Column c JOIN AD_Table t ON t.AD_Table_ID=c.AD_Table_ID WHERE (lower(c.ColumnName) LIKE '%progress%' OR c.ColumnName LIKE 'BIM\\_%' ESCAPE '\\') AND COALESCE(c.ColumnSQL,'')='' AND t.TableName IN ('C_ProjectTask','C_ProjectPhase')"))[0][0];
+    const storedCol = (await dq("SELECT count(*) FROM AD_Column c JOIN AD_Table t ON t.AD_Table_ID=c.AD_Table_ID WHERE (lower(c.ColumnName) LIKE '%progress%' OR c.ColumnName LIKE 'BIM\\_%' ESCAPE '\\') AND COALESCE(c.ColumnSQL,'')='' AND c.ColumnName NOT IN ('BIM_StartDate','BIM_EndDate') /* §5.58: schedule data, not progress; the ONLY physical BIM_ columns on stock tables */ AND t.TableName IN ('C_ProjectTask','C_ProjectPhase')"))[0][0];
     let X = 0, N = 0; const bad = [];
     Object.entries(HAND.task).forEach(([k, w]) => { N++; const v = judgeCount(P.byTask[TK[k].id], w); if (v === 'PASS') X++; else bad.push('task ' + k + ' got ' + JSON.stringify(P.byTask[TK[k].id]) + ' want ' + JSON.stringify(w)); });
     Object.entries(HAND.phase).forEach(([k, w]) => { N++; const v = judgeCount(P.byPhase[PH[k]], w); if (v === 'PASS') X++; else bad.push('phase ' + k + ' got ' + JSON.stringify(P.byPhase[PH[k]]) + ' want ' + JSON.stringify(w)); });

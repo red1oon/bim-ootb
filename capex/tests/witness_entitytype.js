@@ -34,9 +34,10 @@ const psql = (db, sql) => { const r = cp.spawnSync('docker', ['exec', 'postgres'
     ad_table: ['tablename IN (' + names('ad_table', 'tablename') + ')']
   };
   q.ad_ref_list = ['ad_reference_id IN (SELECT ad_reference_id FROM ad_reference WHERE ' + q.ad_reference[0] + ')'];
-  q.ad_column = ['ad_table_id IN (SELECT ad_table_id FROM ad_table WHERE ' + q.ad_table[0] + ')'];
+  const BIMCOL = "columnname LIKE 'BIM\\_%'";   // the plugin's columns on stock tables too (C_ProjectTask/C_ProjectPhase virtual + the task-date pair, §5.58)
+  q.ad_column = ['(ad_table_id IN (SELECT ad_table_id FROM ad_table WHERE ' + q.ad_table[0] + ') OR ' + BIMCOL + ')'];
   q.ad_tab = ['ad_window_id IN (SELECT ad_window_id FROM ad_window WHERE ' + q.ad_window[0] + ')'];
-  q.ad_field = ['ad_tab_id IN (SELECT ad_tab_id FROM ad_tab WHERE ' + q.ad_tab[0] + ')'];
+  q.ad_field = ['(ad_tab_id IN (SELECT ad_tab_id FROM ad_tab WHERE ' + q.ad_tab[0] + ') OR ad_column_id IN (SELECT ad_column_id FROM ad_column WHERE ' + BIMCOL + '))'];
   let judged = 0, notA = []; const probe = psql('idempiere_bimdoc', 'select 1');
   if (probe === null) inc('E3', 'legacy test instance DB idempiere_bimdoc unreachable');
   else { Object.keys(q).forEach((t) => { const r = psql('idempiere_bimdoc', "select count(*), count(*) filter (where entitytype<>'A') from " + t + ' where ' + q[t][0]); if (r === null) { notA.push(t + ':query-failed'); return; } const [n, b] = r.split('|').map(Number); judged += n; if (b) notA.push(t + ':' + b + '/' + n); });

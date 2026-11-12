@@ -122,6 +122,22 @@ const vcolumns = VCOLS.map((c, i) => Object.assign({ ad_column_id: VCOL0 + i, ad
   ad_process_id: null, istoolbarbutton: 'N' }, STD));
 const vfields = VCOLS.map((c, i) => Object.assign({ ad_field_id: VFLD0 + i, ad_tab_id: c.tab, ad_column_id: VCOL0 + i, name: c.l, iscentrallymaintained: 'Y', isdisplayed: 'Y', isreadonly: 'Y',
   seqno: 900 + i * 10, issameline: 'N', isheading: 'N', isfieldonly: 'N', isencrypted: 'N', ad_field_uu: 'bimdoc-vfld-' + (VFLD0 + i), isdisplayedgrid: 'Y', seqnogrid: 900 + i * 10 }, STD));
+// ── TASK DATES (spec bim-ootb prompts/CAPEX_DASHBOARD.md §5.58): two physical Date columns on C_ProjectTask, EntityType 'A', IsSyncDatabase=Y. BIM_ prefix = never clashes with a future core column. ──
+const TCOL0 = 9541271, TFLD0 = 9541471;
+export const TASK_DATE_COLUMNS = [['BIM_StartDate', 'BIM Start Date', 'Start of the 4D task(s) folded into this task'], ['BIM_EndDate', 'BIM End Date', 'End of the 4D task(s) folded into this task']];
+const tcolumns = TASK_DATE_COLUMNS.map((c, i) => Object.assign({ ad_column_id: TCOL0 + i, ad_table_id: T_TASK, columnname: c[0], name: c[1], description: c[2],
+  ad_reference_id: 15, ad_reference_value_id: null, fieldlength: 7, defaultvalue: null, iskey: 'N', isparent: 'N', ismandatory: 'N', isupdateable: 'Y', isidentifier: 'N', seqno: 0, istranslated: 'N',
+  isencrypted: 'N', isselectioncolumn: 'N', issyncdatabase: 'Y', isalwaysupdateable: 'N', isallowlogging: 'N', isallowcopy: 'Y', columnsql: null, ad_column_uu: 'bimdoc-tcol-' + (TCOL0 + i), version: 0,
+  ad_process_id: null, istoolbarbutton: 'N' }, STD));
+const tfields = TASK_DATE_COLUMNS.map((c, i) => Object.assign({ ad_field_id: TFLD0 + i, ad_tab_id: TAB_TASK, ad_column_id: TCOL0 + i, name: c[1], iscentrallymaintained: 'Y', isdisplayed: 'Y', isreadonly: 'N',
+  seqno: 800 + i * 10, issameline: 'N', isheading: 'N', isfieldonly: 'N', isencrypted: 'N', ad_field_uu: 'bimdoc-tfld-' + (TFLD0 + i), isdisplayedgrid: 'Y', seqnogrid: 800 + i * 10 }, STD));
+// the twin's physical columns: ALTER TABLE ADD COLUMN when absent (as legacy's column sync does for IsSyncDatabase=Y); returns the names added
+export function ensureTaskDateColumns(db) {
+  const have = new Set((db.query ? db.query('PRAGMA table_info("c_projecttask")') : []).map((r) => String(r.name).toLowerCase())), add = TASK_DATE_COLUMNS.filter((c) => have.size && !have.has(lc(c[0])));
+  add.forEach((c) => db.run('ALTER TABLE "c_projecttask" ADD COLUMN "' + lc(c[0]) + '" TEXT'));
+  if (add.length) console.log('§BIMDOC-PLUGIN task-date-columns-added=[' + add.map((c) => c[0]).join(',') + ']');
+  return add.map((c) => c[0]);
+}
 const procOpen = Object.assign({ ad_process_id: P_OPEN, value: 'BIM_Document_Open', name: 'Open in Modeller / Viewer', description: 'Open the attached file of this BIM Document in the app its file kind names',
   help: 'The file kind of the document names the app (the Description of its BIM File Kind list row). The attached file of that kind is put in the browser file store and the app opens it by its sha256.',
   accesslevel: '3', isreport: 'N', isdirectprint: 'N', classname: P_OPEN_CLASS, statistic_count: 0, statistic_seconds: 0, isbetafunctionality: 'N', isserverprocess: 'N', showhelp: 'N', allowmultipleexecution: 'N',
@@ -144,10 +160,10 @@ export const manifest = {
     { table: 'ad_ref_table', idCol: 'ad_ref_table_uu', rows: [refTable] },
     { table: 'ad_process', idCol: 'ad_process_id', rows: [procOpen, procExport] },
     { table: 'ad_table', idCol: 'ad_table_id', rows: [table] },
-    { table: 'ad_column', idCol: 'ad_column_id', rows: columns.concat(vcolumns) },
+    { table: 'ad_column', idCol: 'ad_column_id', rows: columns.concat(vcolumns, tcolumns) },
     { table: 'ad_window', idCol: 'ad_window_id', rows: [window_] },
     { table: 'ad_tab', idCol: 'ad_tab_id', rows: [tabOwn, tabPrj, tabPrj1] },
-    { table: 'ad_field', idCol: 'ad_field_id', rows: fieldRows(TAB_OWN, FLD_OWN0, true).concat(fieldRows(TAB_PRJ, FLD_PRJ0, false), fieldRowsPrj1(), vfields) },
+    { table: 'ad_field', idCol: 'ad_field_id', rows: fieldRows(TAB_OWN, FLD_OWN0, true).concat(fieldRows(TAB_PRJ, FLD_PRJ0, false), fieldRowsPrj1(), vfields, tfields) },
     { table: 'ad_menu', idCol: 'ad_menu_id', rows: [menu] },
     { table: 'ad_treenodemm', idCol: 'node_id', rows: [node] }
   ]
@@ -267,6 +283,7 @@ export async function activate(ctx) {
   if (db.run) { const have = new Set(q('PRAGMA table_info("bim_document")').map((r) => String(r.name).toLowerCase())), add = COLS.filter((c) => have.size && !have.has(lc(c.n)));
     add.forEach((c) => db.run('ALTER TABLE "bim_document" ADD COLUMN "' + lc(c.n) + '" ' + (NUMERIC_REFS[c.ref] ? 'NUMERIC' : 'TEXT')));
     if (add.length) console.log('§BIMDOC-PLUGIN columns-added=[' + add.map((c) => c.n).join(',') + ']'); }
+  if (db.run) ensureTaskDateColumns(db);
   // document type "BIM Document" for every client that already has Project Issue (the project clients)
   const clients = q("SELECT DISTINCT ad_client_id AS c FROM c_doctype WHERE docbasetype='PJI' AND isactive='Y' ORDER BY 1").map((r) => Number(r.c));
   const dts = clients.map((c) => Object.assign({ c_doctype_id: DT0 + c, name: 'BIM Document', printname: 'BIM Document', description: 'A project deliverable, issued in the firm\'s states', docbasetype: 'BIM', issotrx: 'N',
