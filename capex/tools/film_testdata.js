@@ -20,14 +20,7 @@ const up = async (n = 60) => { for (let i = 0; i < n; i++) { try { const r = awa
 const sh = (f) => spawnSync('bash', [path.join(INST, f)], { encoding: 'utf8' });
 const kill = () => pg('postgres', "select pg_terminate_backend(pid) from pg_stat_activity where datname='" + DB + "' and pid<>pg_backend_pid()");
 const day = off => new Date(Date.parse(TODAY + 'T00:00:00Z') + off * 864e5).toISOString().slice(0, 10) + ' 00:00:00';
-// the scenario: [value, name, start offset (days from today), phase durations, ticked phases, plan scale, issues, po]. Offsets are relative so the film's dashboard shows a spread: green, amber, red, no data, over budget, ready for handover.
-const PH = ['Substructure', 'Superstructure', 'Envelope', 'Services', 'Finishes', 'Handover'];
-const SC = [['TD_RIVERSIDE', 'Riverside Tower', -230, [60, 80, 70, 60, 50], 3, 0.00135, '139x30', '139x40@50,d:139x10@50'], ['TD_DEPOT', 'North Depot', -150, [40, 50, 50, 40], 1, 0.00072, '139x10', 'd:139x12@70'], ['TD_BRIDGE', 'Bridge Deck', -300, [90, 90, 80, 60], 2, 0.00316, '139x80', '139x20@120,d:139x30@120'],
-  ['TD_CLINIC', 'Clinic Wing', -100, [30, 40, 40, 40], 2, 0.00149, '139x15', ''], ['TD_DATAHALL', 'Data Hall', -120, [50, 50, 40], 1, 0.0011, '139x25', '139x30@60,d:139x20@60'], ['TD_SUBSTATION', 'Substation', -60, [30, 40, 40], 1, 0.0015, '', '139x5@100'],
-  ['TD_CARPARK', 'Car Park', -90, [30, 30, 30], 2, 0.002, '139x60', ''], ['TD_SCHOOL', 'School Block', -180, [60, 60, 60, 60], 3, 0.00226, '139x35', '139x25@45'], ['TD_PUMP', 'Pump Station', -250, [40, 40, 40], 1, 0.00193, '139x5', ''],
-  ['TD_OFFICE', 'Office Fit-out', 10, [30, 30, 30], 0, 0.003, '', ''], ['TD_WAREHOUSE', 'Warehouse 3', -40, [30, 30, 30], 0, 0.002, '', 'd:139x8@80'], ['TD_PLAZA', 'Plaza', -300, [50, 50, 50], 3, 0.0007, '139x12', '']];
-// plan size: quantities are scaled by the plan factor (unit prices stay realistic, 400 and 300); the stock product costs 7.65 a unit, so the factor is what sets how much of the plan the issues have spent (about 12% to 140%)
-const PRODUCTS = [['TD_MAT_A', 'Test material A (test data)', 100, 400], ['TD_MAT_B', 'Test material B (test data)', 50, 300]];
+const { PH, SC, PRODUCTS } = require('./td_scenario.js');   // the scenario lives in td_scenario.js (one definition, also read by twin_mockchain.js)
 const L = { user: 'GardenAdmin', pass: 'GardenAdmin', lang: 'en_US', clientId: 11, roleId: 102, orgId: 11, warehouseId: 103, stage: 0 };
 const pushCfg = { baseUrl: BASE, login: L, serviceTypes: { C_Project: { query: 'QueryCProject', create: 'BridgeCreateCProject' }, C_ProjectPhase: { query: 'QueryCProjectPhase', create: 'BridgeCreateCProjectPhase' }, C_ProjectTask: { query: 'QueryCProjectTask', create: 'BridgeCreateCProjectTask' },
   C_ProjectLine: { query: 'QueryCProjectLine', create: 'BridgeCreateCProjectLine' }, M_Product: { query: 'QueryMProduct', create: 'Bridge_createData_M_Product' }, M_Product_Category: { query: 'QueryMProductCategory', create: 'Bridge_createData_M_Product_Category' }, C_UOM: { query: 'QueryCUOM', create: 'BridgeCreateCUOM' } } };
