@@ -191,6 +191,55 @@
     var rs = ((S.res.drill || {}).active_projects || []).filter(function (r) { return String(r.id) === el.getAttribute('data-open-project'); }); if (rs.length) openDrillRows(rs, rs[0].Value, 'project:' + rs[0].id);
   });
 
+  // ── §5.54 the project page: one project in narrow tabs. projectDetail() (tiles.js) does all the work; this only draws it.
+  var PTABS = [['overview', 'Overview'], ['schedule', 'Schedule'], ['cost', 'Cost'], ['procurement', 'Procurement'], ['documents', 'Documents']];
+  var PSTAT = { complete: ['Complete', 'var(--acc)'], inprogress: ['In progress', 'var(--warn)'], overdue: ['Overdue', 'var(--bad)'], tocome: ['To come', 'var(--none)'] };
+  function fmt(v, d) { return v == null ? '<span class="nodata">—</span>' : (+v).toLocaleString('en-US', { minimumFractionDigits: d == null ? 2 : d, maximumFractionDigits: d == null ? 2 : d }); }
+  function projectPage() {
+    var v = $('view'); v.innerHTML = ''; v.setAttribute('data-theme', S.theme);
+    var d = T.projectDetail(data(), { today: TODAY }, S.projId), root = h('div', 'ppage'); root.setAttribute('data-page', 'project');
+    if (!d) { root.innerHTML = '<a id="pBack" href="#dashboard">‹ Dashboard</a><div class="card"><span class="nodata">no such project in this data source</span></div>'; v.appendChild(root); return; }
+    var ci = curInfo(d.cur), iso = esc(ci.ISO_Code || ''), erp = S.cur === 'legacy' ? CFG.legacyUi + '?Action=Zoom&TableName=C_Project&Record_ID=' + d.id : CFG.erpUrl + '?window=130&record=' + d.id;
+    var COLV = { green: 'var(--ok)', amber: 'var(--warn)', red: 'var(--bad)', none: 'var(--none)', ontime: 'var(--ok)', delayed: 'var(--bad)', atrisk: 'var(--warn)', nosched: 'var(--none)', within: 'var(--ok)', over: 'var(--bad)', notstarted: 'var(--none)' };
+    var chip = function (kind, val, label) { return val ? '<span class="pchip" data-kind="' + kind + '" style="background:' + (COLV[val] || 'var(--none)') + '">' + esc(label) + '</span>' : ''; };
+    var W = { green: 'Green', amber: 'Amber', red: 'Red', none: 'No data' }, SW = { ontime: 'On time', delayed: 'Delayed' + (d.late ? ' ' + d.late + ' days' : ''), atrisk: 'At risk' + (d.late ? ' · ' + d.late + ' days' : ''), nosched: 'No schedule' }, BW = { within: 'Budget within plan', over: 'Over budget', notstarted: 'No cost yet' };
+    root.innerHTML = '<div class="pcrumb"><a id="pBack" href="#dashboard">‹ Dashboard</a> <span>/ Projects /</span> <b>' + esc(d.Value) + '</b></div>' +
+      '<div class="phead"><h2>' + esc(d.Value) + '</h2>' + (d.Name && d.Name !== d.Value ? '<span class="pname">' + esc(d.Name) + '</span>' : '') + chip('health', d.health, W[d.health] || '') + chip('schedule', d.schedule, SW[d.schedule] || '') + chip('budget', d.budget, BW[d.budget] || '') + '<a class="erp-link" href="' + esc(erp) + '" target="_blank" rel="noopener">Open in iDempiere ↗</a></div>';
+    var tl = h('div', 'ptabs'); tl.setAttribute('role', 'tablist');
+    PTABS.forEach(function (t) { var b = h('button', 'ptab', esc(t[1])); b.type = 'button'; b.setAttribute('role', 'tab'); b.setAttribute('data-tab', t[0]); b.setAttribute('aria-selected', t[0] === S.tab ? 'true' : 'false'); b.tabIndex = t[0] === S.tab ? 0 : -1; b.onclick = function () { location.hash = '#project/' + d.id + '/' + t[0]; }; tl.appendChild(b); });
+    tl.addEventListener('keydown', function (ev) { var i = PTABS.map(function (t) { return t[0]; }).indexOf(S.tab), n = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: PTABS.length - 1 }[ev.key]; if (n == null) return; ev.preventDefault(); n = (n + PTABS.length) % PTABS.length; S.refocusTab = true; location.hash = '#project/' + d.id + '/' + PTABS[n][0]; });
+    root.appendChild(tl);
+    var panel = function (k, html) { var p = h('div', 'ppanel', html); p.setAttribute('role', 'tabpanel'); p.setAttribute('data-panel', k); p.hidden = k !== S.tab; root.appendChild(p); };
+    var m = d.money, pp = function (k, label, val, sub) { return '<div class="card"><h3>' + label + '</h3><div class="big" data-pp="' + k + '" data-value="' + (val == null ? '' : val) + '"><span class="cur">' + iso + '</span>' + fmt(val) + '</div>' + (sub || '') + '</div>'; };
+    var spentPct = m.planned > 0 ? 100 * (m.spent || 0) / m.planned : null, donePct = m.planned > 0 ? 100 * m.done / m.planned : null, duePct = m.planned > 0 ? 100 * m.due / m.planned : null;
+    panel('overview', '<div class="pgrid">' + pp('planned', 'Approved', m.planned, '<div class="subv">' + d.phases.length + ' phases</div>') +
+      pp('spent', 'Spent', m.spent, spentPct != null ? meter([[spentPct, 'var(--acc)']]) + '<div class="subv">' + spentPct.toFixed(2) + '% of plan</div>' : '') +
+      '<div class="card"><h3>Due vs done</h3><div class="big"><span class="cur">' + iso + '</span><span data-pp="due" data-value="' + m.due + '">' + fmt(m.due) + '</span></div><div class="subv">due · done <span data-pp="done" data-value="' + m.done + '">' + fmt(m.done) + '</span></div>' + (donePct != null ? meter([[Math.min(100, donePct), 'var(--acc)']]) + '<div class="subv">done is ' + donePct.toFixed(1) + '% of plan, due ' + duePct.toFixed(1) + '%</div>' : '') + '</div>' +
+      '<div class="card"><h3>Forecast · proposed</h3><div class="subv">the figure is on the dashboard tile</div>' + (d.forecast.basisDiffers ? '<div class="subv warn" data-basis="differs">⚠ basis differs</div>' : '<div class="subv">basis consistent</div>') + '</div></div>' +
+      '<div class="card"><h3>In plain words</h3><ul class="why">' + (d.why.length ? d.why.map(function (w) { return '<li data-kind="' + w.kind + '">' + esc(w.text) + '</li>'; }).join('') : '<li class="nodata">nothing flagged</li>') + '</ul><div class="subv">Each line is generated from this project\'s rows. Nothing here is typed.</div></div>');
+    var ph = d.phases, dated = ph.filter(function (x) { return x.start && x.end; }), body;
+    if (!ph.length) body = '<div class="card"><span class="nodata">this project has no phases</span></div>';
+    else {
+      var t0 = dated.length ? Math.min.apply(null, dated.map(function (x) { return Date.parse(x.start); })) : 0, t1 = dated.length ? Math.max.apply(null, dated.map(function (x) { return Date.parse(x.end); })) : 1, td = Date.parse(TODAY), lo = Math.min(t0, td), hi = Math.max(t1, td), Wd = 760, L = 150, X = function (t) { return L + (Wd - L - 10) * (t - lo) / Math.max(1, hi - lo); };
+      var svg = '<svg width="100%" viewBox="0 0 ' + Wd + ' ' + (40 + ph.length * 32) + '" role="img" aria-label="Phases against today">';
+      ph.forEach(function (x, i) { var y = 12 + i * 32; svg += '<text x="0" y="' + (y + 15) + '" fill="var(--ink)" font-size="12.5" font-weight="600">' + esc(String(x.name).slice(0, 22)) + '</text>';
+        if (x.start && x.end) svg += '<rect class="pbar" tabindex="0" data-phase="' + esc(x.name) + '" data-status="' + x.status + '" data-late="' + x.lateDays + '" x="' + X(Date.parse(x.start)) + '" y="' + y + '" width="' + Math.max(6, X(Date.parse(x.end)) - X(Date.parse(x.start))) + '" height="20" rx="4" fill="' + PSTAT[x.status][1] + '"><title>' + esc(x.name) + ': ' + PSTAT[x.status][0] + (x.lateDays ? ', ' + x.lateDays + ' days late' : '') + ', ' + x.start + ' to ' + x.end + '</title></rect>';
+        else svg += '<rect class="pbar" data-phase="' + esc(x.name) + '" data-status="' + x.status + '" data-late="' + x.lateDays + '" x="' + L + '" y="' + y + '" width="6" height="20" rx="3" fill="var(--none)"><title>no dates</title></rect>'; });
+      svg += '<line x1="' + X(td) + '" x2="' + X(td) + '" y1="2" y2="' + (14 + ph.length * 32) + '" stroke="var(--ink)" stroke-dasharray="4 3"/><text x="' + X(td) + '" y="' + (32 + ph.length * 32) + '" text-anchor="middle" fill="var(--ink)" font-size="11" font-weight="700">today</text></svg>';
+      body = '<div class="card"><h3>Phases against today</h3>' + svg + '<div class="leg">' + Object.keys(PSTAT).map(function (k) { return '<span><i class="dot" style="background:' + PSTAT[k][1] + '"></i>' + PSTAT[k][0] + '</span>'; }).join('') + '</div></div>' +
+        '<div class="card tscroll"><table id="phTable"><thead><tr><th>Phase</th><th>Start</th><th>End</th><th>Planned</th><th>Tasks</th><th>Status</th></tr></thead><tbody>' + ph.map(function (x) { return '<tr data-phase="' + esc(x.name) + '"><td>' + esc(x.name) + '</td><td>' + esc(x.start || '—') + '</td><td>' + esc(x.end || '—') + '</td><td class="n">' + fmt(x.planned) + '</td><td class="n">' + x.tasks + '</td><td>' + PSTAT[x.status][0] + (x.lateDays ? ' · ' + x.lateDays + ' d' : '') + '</td></tr>'; }).join('') + '</tbody></table></div>';
+    }
+    panel('schedule', body);
+    var mxp = Math.max.apply(null, ph.map(function (x) { return Math.max(x.planned, x.committed); }).concat([1]));
+    panel('cost', ph.length ? '<div class="card tscroll"><table id="costTable"><thead><tr><th>Phase</th><th>Planned</th><th>Committed</th><th>Share</th></tr></thead><tbody>' + ph.map(function (x) { return '<tr data-phase="' + esc(x.name) + '" data-planned="' + x.planned + '" data-committed="' + x.committed + '"><td>' + esc(x.name) + '</td><td class="n">' + fmt(x.planned) + '</td><td class="n">' + fmt(x.committed) + '</td><td class="bars"><i class="bl" style="width:' + (100 * x.planned / mxp).toFixed(1) + '%"></i>' + (x.committed ? '<i class="bc" style="width:' + (100 * x.committed / mxp).toFixed(1) + '%"></i>' : '') + '</td></tr>'; }).join('') +
+      '<tr class="total" data-planned="' + d.totals.phasePlanned + '" data-committed="' + d.totals.phaseCommitted + '"><td>Total</td><td class="n">' + fmt(d.totals.phasePlanned) + '</td><td class="n">' + fmt(d.totals.phaseCommitted) + '</td><td></td></tr></tbody></table><div class="leg"><span><i class="dot" style="background:var(--line)"></i>planned</span><span><i class="dot" style="background:var(--acc)"></i>committed</span></div></div><div class="card"><h3>From the project lines</h3><div class="subv">' + m.lines + ' lines · committed ' + fmt(m.lineCommitted) + ' · invoiced ' + fmt(m.lineInvoiced) + ' · actual cost (project balance) ' + fmt(m.spent) + '</div></div>' : '<div class="card"><span class="nodata">this project has no phases to cost</span></div>');
+    var ni = '<span class="nodata" data-notinstalled="1" title="@WHAT@ not readable on this server">no data (not installed)</span>';
+    panel('procurement', '<div class="card tscroll">' + (d.orders === null ? ni.replace('@WHAT@', 'Purchase orders are') : d.orders.rows.length ? '<table id="poTable"><thead><tr><th>Order</th><th>Status</th><th>Total</th><th></th></tr></thead><tbody>' + d.orders.rows.map(function (o) { return '<tr data-order="' + esc(o.id) + '" data-open="' + (o.open ? 1 : 0) + '"><td>' + esc(o.id) + '</td><td>' + esc(o.status) + '</td><td class="n">' + esc(curInfo(o.cur).ISO_Code) + ' ' + fmt(o.total) + '</td><td>' + (o.open ? '<span class="chip" style="background:var(--warn)">open</span>' : '') + '</td></tr>'; }).join('') + '</tbody></table><div class="subv">' + d.orders.open + ' open of ' + d.orders.rows.length + ' purchase orders · open = not Completed, Closed, Voided or Reversed (proposed)</div>' : '<span class="nodata">this project has no purchase orders</span>') + '</div>');
+    panel('documents', '<div class="card tscroll">' + (d.docs === null ? ni.replace('@WHAT@', 'The BIM Document module is') : d.docs.rows.length ? '<table id="docTable"><thead><tr><th>Deliverable</th><th>Name</th><th>Rev</th><th>Status</th></tr></thead><tbody>' + d.docs.rows.map(function (r) { return '<tr data-deliverable="' + esc(r.no) + '" data-rev="' + r.rev + '" data-status="' + esc(r.status) + '"><td>' + esc(r.no) + '</td><td>' + esc(r.name || '') + '</td><td>' + r.rev + '</td><td>' + ({ CO: 'Issued for construction', IP: 'Issued for review', DR: 'Draft', RE: 'Superseded' }[r.status] || esc(r.status)) + '</td></tr>'; }).join('') + '</tbody></table><div class="docsum subv" data-issued="' + d.docs.issued + '" data-total="' + d.docs.total + '">' + d.docs.issued + ' of ' + d.docs.total + ' deliverables issued for construction (latest revision of each)</div>' : '<span class="nodata">no documents are filed against this project</span>') + '</div>');
+    v.appendChild(root);
+    if (S.refocusTab) { S.refocusTab = false; var sel = root.querySelector('[role=tab][aria-selected=true]'); if (sel) sel.focus(); }
+  }
+
   function projectsTable(cols, rowFn, head) {
     var P = data().projects.filter(function (p) { return passes(p); });
     var v = $('view'); v.innerHTML = '';
@@ -257,10 +306,10 @@
   function openDrillRows(rows, label, key) {
     var d = $('drill'), f = function (v) { return v == null || v === '' ? '<span class="nodata">—</span>' : (+v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
     // the row opens the record in the system the numbers came from: legacy -> its WebUI zoom (AdempiereWebUI.processParameters: Action=Zoom&TableName&Record_ID); twin -> the ERP Project window (130)
-    var link = function (r) { return esc(S.cur === 'legacy' ? CFG.legacyUi + '?Action=Zoom&TableName=C_Project&Record_ID=' + r.id : CFG.erpUrl + '?window=130&record=' + r.id); };
+    var link = function (r) { return esc(S.cur === 'legacy' ? CFG.legacyUi + '?Action=Zoom&TableName=C_Project&Record_ID=' + r.id : CFG.erpUrl + '?window=130&record=' + r.id); }, page = function (r) { return esc('#project/' + r.id); };
     d.innerHTML = '<div class="dhead"><b>' + esc(label) + '</b> <span class="dn" data-drill-n="' + rows.length + '">' + rows.length + ' project' + (rows.length === 1 ? '' : 's') + '</span><button type="button" id="drillClose" aria-label="Close">×</button></div>' +
       (rows.length ? '<table><thead><tr><th>Project</th><th>Cur</th><th>Approved</th><th>Spent</th><th>Due</th><th>Done</th><th>Health</th><th>Schedule</th><th>Budget</th></tr></thead><tbody>' +
-        rows.map(function (r) { return '<tr data-project="' + esc(r.id) + '"><td><a class="open" href="' + link(r) + '" title="Open in the ERP Project window">' + esc(r.Value) + '</a><small>' + esc(r.Name || '') + '</small></td><td>' + esc(curInfo(r.cur).ISO_Code || r.cur) + '</td><td>' + f(r.planned) + '</td><td>' + f(r.spent) + '</td><td>' + f(r.due) + '</td><td>' + f(r.done) + '</td><td>' + esc(r.health || '') + '</td><td>' + esc(r.schedule || '') + '</td><td>' + esc(r.budget || '') + '</td></tr>'; }).join('') + '</tbody></table>'
+        rows.map(function (r) { return '<tr data-project="' + esc(r.id) + '"><td><a class="open" href="' + page(r) + '" title="Open the project page">' + esc(r.Value) + '</a> <a class="erp" href="' + link(r) + '" title="Open in the ERP (' + esc(S.cur) + ')" target="_blank" rel="noopener">ERP ↗</a><small>' + esc(r.Name || '') + '</small></td><td>' + esc(curInfo(r.cur).ISO_Code || r.cur) + '</td><td>' + f(r.planned) + '</td><td>' + f(r.spent) + '</td><td>' + f(r.due) + '</td><td>' + f(r.done) + '</td><td>' + esc(r.health || '') + '</td><td>' + esc(r.schedule || '') + '</td><td>' + esc(r.budget || '') + '</td></tr>'; }).join('') + '</tbody></table>'
         : '<div class="nodata">no project in this bucket</div>');
     d.hidden = false; d.setAttribute('data-key', key);
     $('drillClose').onclick = function () { d.hidden = true; };
@@ -281,7 +330,7 @@
     var b = $('badgeApprovals'); b.textContent = S.res.tiles.approvals.n != null ? S.res.tiles.approvals.n : ''; b.setAttribute('data-value', S.flat.approvals);
     ({ dashboard: dashboard, projects: projects, budget: budget,
        procurement: procurement, handover: handover,
-       approvals: function () { var a = S.res.tiles.approvals; simple('Approval Pending', a.inconclusive ? state(a) : '<div class="big">' + fl('approvals', a.n) + '</div>', 'approvals'); } })[S.view](); addLead();
+       project: projectPage, approvals: function () { var a = S.res.tiles.approvals; simple('Approval Pending', a.inconclusive ? state(a) : '<div class="big">' + fl('approvals', a.n) + '</div>', 'approvals'); } })[S.view](); addLead();
     $('foot').textContent = 'Source: ' + S.cur + (d.meta && d.meta.url ? ' (' + d.meta.url + ')' : '') + (d.unavailable && d.unavailable.length ? ' · unavailable entities: ' + d.unavailable.join(', ') : '') + ' · date used: ' + TODAY;
     window.__capex = { flat: S.flat, source: S.cur, rendered: true, twin: S.twin || null };
   }
@@ -333,8 +382,12 @@
     window.onhashchange = nav; nav();
   }
   function nav() {
-    S.view = (location.hash || '#dashboard').slice(1); if (!{ dashboard: 1, projects: 1, budget: 1, procurement: 1, approvals: 1, handover: 1 }[S.view]) S.view = 'dashboard';
-    [].forEach.call(document.querySelectorAll('#nav a'), function (a) { a.classList.toggle('on', a.getAttribute('data-view') === S.view); });
+    var hs = (location.hash || '#dashboard').slice(1), pm = /^project\/([^/]+)(?:\/([a-z]+))?$/.exec(hs);
+    if (pm) { S.view = 'project'; S.projId = pm[1]; S.tab = PTABS.some(function (t) { return t[0] === pm[2]; }) ? pm[2] : 'overview'; }
+    else { S.view = hs; if (!{ dashboard: 1, projects: 1, budget: 1, procurement: 1, approvals: 1, handover: 1 }[S.view]) S.view = 'dashboard'; }
+    var drl = $('drill'); if (drl) drl.hidden = true;   // navigating closes the panel
+    document.body.setAttribute('data-view', S.view);   // the project page hides the portfolio filter bar (it does not apply to one project)
+    [].forEach.call(document.querySelectorAll('#nav a'), function (a) { a.classList.toggle('on', a.getAttribute('data-view') === (S.view === 'project' ? 'dashboard' : S.view)); });
     if (data()) render(); else render();
   }
   boot();

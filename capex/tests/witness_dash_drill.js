@@ -56,7 +56,7 @@ for (const status of ['active', 'all', 'closed']) {
       await pg.evaluate(k => { document.querySelector('#view [data-drill="' + k.replace(/"/g, '\\"') + '"]').dispatchEvent(new MouseEvent('click', { bubbles: true })); }, k);
       const n = await pg.$eval('#drill', d => d.hidden ? -1 : d.querySelectorAll('tbody tr').length), exp = (want[k] || []).length;
       if (n !== exp) bad.push(k + ' page=' + n + ' node=' + exp);
-      if (exp) { nonEmpty++; const hrefs = await pg.$$eval('#drill tbody a.open', a => a.map(x => x.getAttribute('href'))); hrefs.forEach((h, i) => { if (!new RegExp('Action=Zoom&TableName=C_Project&Record_ID=' + want[k][i].id + '$').test(h)) linkBad.push(k + ' ' + h); }); }
+      if (exp) { nonEmpty++; const hrefs = await pg.$$eval('#drill tbody a.erp', a => a.map(x => x.getAttribute('href'))); hrefs.forEach((h, i) => { if (!new RegExp('Action=Zoom&TableName=C_Project&Record_ID=' + want[k][i].id + '$').test(h)) linkBad.push(k + ' ' + h); }); }
     }
     ck('K5b each click opens the panel with exactly the node-computed rows (' + keys.length + ' keys, ' + nonEmpty + ' non-empty)', bad.length === 0 && nonEmpty > 0, bad.slice(0, 3));
     ck('K5c every row links to its own record in the source system (legacy: WebUI Action=Zoom on C_Project)', linkBad.length === 0 && nonEmpty > 0, linkBad.slice(0, 2));
