@@ -53,6 +53,20 @@
     afterDelete: function (trx, l) { return updateHeader(trx, l); }
   });
 
+  // ── MProject.beforeSave (MProject.java:408-422; bim-ootb prompts/CAPEX_DASHBOARD.md §5.67): AD_User_ID -1 (summary project in dimensions) -> 0; when M_PriceList_Version_ID changed and is set,
+  //    the project's currency follows that version's price list (getM_PriceList_ID :168-178 reads M_PriceList_Version.M_PriceList_ID; MPriceList.get -> C_Currency_ID). A Pack In of a project that carries
+  //    only its price list version lands in that price list's currency, on legacy (GenericPOElementHandler saves through the model class) and here alike. Logs §PROJECT-CURRENCY when it sets one.
+  function projectBeforeSave(trx, p, isNew, old) {
+    if (Number(p.ad_user_id) === -1) p.ad_user_id = 0;
+    var v = Number(p.m_pricelist_version_id) || 0, changed = !old || String(old.m_pricelist_version_id == null ? '' : old.m_pricelist_version_id) !== String(p.m_pricelist_version_id == null ? '' : p.m_pricelist_version_id);
+    if (changed && v) {
+      var plv = trx.q('SELECT m_pricelist_id AS l FROM m_pricelist_version WHERE m_pricelist_version_id=?', [v])[0], pl = plv && Number(plv.l) ? trx.q('SELECT c_currency_id AS c FROM m_pricelist WHERE m_pricelist_id=?', [plv.l])[0] : null;
+      if (pl && pl.c != null) { p.c_currency_id = pl.c; if (typeof console !== 'undefined') console.log('§PROJECT-CURRENCY project=' + (p.value || p.c_project_id) + ' from price list version ' + v + ' -> C_Currency_ID=' + pl.c); }
+    }
+    return null;
+  }
+  ML.registerModel('c_project', { beforeSave: projectBeforeSave });
+
   // ── MProject.setProjectType(MProjectType) MProject.java:370-378 and copyPhasesFrom(MProjectType) :385-405 (+ MProjectPhase(project, typePhase) MProjectPhase.java:107-119,
   //    copyTasksFrom(MProjectTypePhase) :240-258, MProjectTask(phase, typeTask) MProjectTask.java:109-121). Phases and tasks are copied ONLY for a Service project ('S').
   //    MProjectType.getPhases :166 / MProjectTypePhase.getTasks :94: IsActive='Y' ORDER BY SeqNo, <id>. Returns { category, phases, tasks }; logs §PROJECT-SETTYPE.
@@ -84,5 +98,5 @@
     trx.say('§PROJECT-SETTYPE project=' + project.c_project_id + ' type=' + type.c_projecttype_id + ' category=' + type.projectcategory + ' phases=' + c.phases + ' tasks=' + c.tasks);
     return { category: type.projectcategory, phases: c.phases, tasks: c.tasks };
   }
-  return { beforeSave: beforeSave, updateHeader: updateHeader, setProjectType: setProjectType, copyPhasesFrom: copyPhasesFrom };
+  return { beforeSave: beforeSave, projectBeforeSave: projectBeforeSave, updateHeader: updateHeader, setProjectType: setProjectType, copyPhasesFrom: copyPhasesFrom };
 });
