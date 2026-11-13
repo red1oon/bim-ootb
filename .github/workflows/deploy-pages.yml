@@ -38,12 +38,18 @@ jobs:
           printf '{"version":"%s","build":"%s","sha":"%s","pr":%s,"date":"%s"}\n' "$VERSION" "$BUILD" "$SHA" "${PR:-null}" "$DATE" > erp/version.json
           echo "§SYSMON-RELEASE stamped erp/version.json: $(cat erp/version.json)"
       # Rebuild the two SHIPPED AGENT BUNDLES (prompts/AGENT_QUEUE.md §AGENT-ZIPS-BUILT / §PZ.3).
-      # ⚠ THIS STEP DOES NOT REACH USERS TODAY, and neither does the version.json stamp above or the
-      # minify below: Pages for this repo is build_type "legacy", source {branch: main, path: /}, so it
-      # serves the TRACKED FILES ON MAIN and the artifact this job uploads is published by nothing
-      # (measured — erp/version.json has been 404 live since it was introduced, and the live JS is
-      # byte-identical to source, unminified). The zips are therefore COMMITTED; this step is kept so the
-      # artifact is correct the day Pages is switched to build_type "workflow", and it is harmless now.
+      # ⚠ TWO PUBLISHERS, LAST ONE WINS (measured 2026-11-13 and 2026-11-14; the older note here said this artifact
+      # reaches nobody: that was no longer true). While Pages for this repo is build_type "legacy"
+      # (source: branch main), GitHub's own "pages build and deployment" ALSO publishes the tracked files on
+      # every push. Whichever of the two finishes last is what users get:
+      #   - this workflow last  → minified JS, erp/version.json present, the zips built here
+      #   - the branch build last → raw tracked files, erp/version.json 404
+      # A merge made with the workflow token (ci.yml's auto-merge) starts ONLY the branch build.
+      # The zips are therefore still COMMITTED, so both publishers serve them.
+      # The fix is a repository setting, not code: Settings ▸ Pages ▸ Source = "GitHub Actions"
+      # (build_type "workflow"), which makes this workflow the only publisher.
+      # Check after any merge: X0 Navigator ▸ Run & Ship ▸ Fetch back must say PASS
+      # (bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md §F.13).
       - name: Build the shipped agent zips from their source directories
         run: node erp/tools/build_agent_zips.js
 
