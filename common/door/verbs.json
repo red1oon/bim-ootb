@@ -3123,6 +3123,106 @@
    "witness": "common/door/tests/witness_mis_load.js"
   },
   {
+   "verb": "mis.add_window",
+   "app": "mis",
+   "title": "Add a window from a CSV",
+   "description": "Make a new kind of record (a table, its window, form, menu entry and role access) from a .csv that lists its columns, one line per column: Column, Type (String, Quantity, Amount, YesNo, Date, DateTime, Text, List), Length, Mandatory, Identifier, Default, List (VALUE=Name, separated by commas), Lookup, Callout, Help. Only Column is required; the key, client, organisation, active flag and audit columns are added for you and must not be listed. The table is named after the file unless table= says otherwise. The file must be in the folder the line is run from. A faulty sheet is refused listing every fault with its line, and nothing is written. dry=Y checks the sheet and writes nothing. Afterwards the new kind works with every mis.* verb. A detail table (master=) is not built yet.",
+   "inputs": [
+    {
+     "name": "file",
+     "description": "The .csv of the table's columns, in the folder the line is run from.",
+     "required": true,
+     "type": "string",
+     "example": "AST_Asset.csv"
+    },
+    {
+     "name": "table",
+     "description": "Optional: the table name (letters, digits and _); default: the file name without .csv.",
+     "required": false,
+     "type": "string",
+     "example": "AST_Asset"
+    },
+    {
+     "name": "workflow",
+     "description": "Optional: Y adds the document columns (DocStatus, DocAction, Processed, DocumentNo, IsApproved).",
+     "required": false,
+     "type": "string",
+     "example": "Y"
+    },
+    {
+     "name": "dry",
+     "description": "Optional: Y checks the sheet, lists the columns it would make and writes nothing.",
+     "required": false,
+     "type": "string",
+     "example": "Y"
+    },
+    {
+     "name": "master",
+     "description": "Not built yet: a detail tab of another staged table. Refused.",
+     "required": false,
+     "type": "string",
+     "example": "AST_Asset"
+    }
+   ],
+   "harm": "writes",
+   "dictionary": true,
+   "calls": {
+    "cli": "erp_cli",
+    "who": "the ERP engine",
+    "argv": [
+     "add_window",
+     "--file",
+     "{file}",
+     {
+      "if": "table",
+      "args": [
+       "--table",
+       "{table}"
+      ]
+     },
+     {
+      "if": "workflow",
+      "args": [
+       "--workflow",
+       "{workflow}"
+      ]
+     },
+     {
+      "if": "dry",
+      "args": [
+       "--dry",
+       "{dry}"
+      ]
+     },
+     {
+      "if": "master",
+      "args": [
+       "--master",
+       "{master}"
+      ]
+     }
+    ]
+   },
+   "returns": {
+    "shape": "erp_cli JSON {table,kind,file,sha256,window:{id,name},columns,lists,opSummary,ops} or {dry,columns,standard,lists} or {refused,reason}",
+    "fields": [
+     {
+      "path": "table",
+      "type": "string"
+     },
+     {
+      "path": "ops",
+      "type": "number"
+     }
+    ]
+   },
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "witness": "common/door/tests/witness_mis_add_window.js"
+  },
+  {
    "verb": "erp.column",
    "app": "erp",
    "title": "Who fills a column: twin and legacy side by side (old name of mis.column)",

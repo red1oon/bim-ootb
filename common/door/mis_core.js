@@ -162,7 +162,8 @@
         if (env.status !== 'ok') { st.phase = 'dead'; st.note = 'cannot open ' + st.opts.kind + ': ' + (env.why || env.status); }
         else { var c = pickColumns(env.answer.properties); st.cols = c.cols; st.keyCol = c.keyCol; st.doc = c.doc; st.hasProc = c.hasProc; st.props = env.answer.properties.map(function (p) { return { name: p.name, label: p.label, type: p.type, mandatory: !!p.mandatory, updateable: p.updateable !== false, key: !!p.key, parent: !!p.parent, displayed: !!p.displayed, seq: p.seq || 0, fieldReadOnly: !!p.fieldReadOnly, readOnlyLogic: p.readOnlyLogic || '', alwaysUpdateable: !!p.alwaysUpdateable, allowCopy: p.allowCopy !== false, roleReadOnly: !!p.roleReadOnly, help: p.help || '' }; }); st.role = env.answer.role || null; st.phase = 'listing'; effects.push({ line: listLine(st), purpose: 'list' }); }
       } else if (p === 'list') {
-        if (env.status !== 'ok') { st.phase = 'dead'; st.note = 'cannot list ' + st.opts.kind + ': ' + (env.why || env.status); }
+        if (env.status !== 'ok' && env.answer && env.answer.verdict === 'VACUOUS' && env.answer.rows) { st.rows = []; st.total = 0; st.cursor = 0; st.phase = 'ready'; st.chips = []; st.chipsFor = null; if (!st.note) st.note = 'no ' + st.opts.kind + ' record yet: press + to make one'; }   // an empty kind is a list of nothing, not a dead screen (a table made a minute ago has no rows)
+        else if (env.status !== 'ok') { st.phase = 'dead'; st.note = 'cannot list ' + st.opts.kind + ': ' + (env.why || env.status); }
         else { st.rows = env.answer.rows; st.total = env.answer.total; st.phase = 'ready'; if (st.cursor >= st.rows.length) st.cursor = Math.max(0, st.rows.length - 1); settle(st, effects); }
       } else if (p === 'actions') {
         var r = rowAt(st);
