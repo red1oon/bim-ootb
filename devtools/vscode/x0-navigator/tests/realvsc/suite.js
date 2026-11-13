@@ -76,6 +76,12 @@ async function run() {
       x.status = api.statusText(doc);
       const lenses = await vscode.commands.executeCommand('vscode.executeCodeLensProvider', doc.uri, 500);
       x.lenses = (lenses || []).filter(l => l.command && l.command.command === 'x0Navigator.openLogLine').map(l => ({ line: l.range.start.line + 1, title: l.command.title }));
+      // §F.16: "Context for this file", run as a VS Code command on the open file. It copies the block and opens it beside.
+      await vscode.window.showTextDocument(doc);
+      x.context = await vscode.commands.executeCommand('x0Navigator.contextForFile');
+      await sleep(500);
+      x.contextClip = await vscode.env.clipboard.readText();
+      x.contextDocs = vscode.window.visibleTextEditors.filter(e => e.document.languageId === 'markdown' && e.document.getText().startsWith('# Context for')).length;
     }
   } catch (e) {
     res.error = String(e && e.stack || e);

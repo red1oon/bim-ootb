@@ -23,7 +23,8 @@ const ai = process.argv.indexOf('--compiler-root');
 const COMPILER = ai > 0 ? path.resolve(process.argv[ai + 1]) : path.resolve(ROOT, '..', 'bim-compiler');
 const KNOWN = '§HOSTED_BEFORE_HOST';
 const KNOWN_FILE = 'prompts/4D_MODEL_INTEGRITY.md';
-const FAKE = '§ZZ_NOT_A_TAG';
+// a per-run suffix: the bare name is quoted in a spec file (bim-compiler CODE_ARCHITECTURE_DESIGN.md), so it stopped being made-up
+const FAKE = '§ZZ_NOT_A_TAG_' + Date.now().toString(36).toUpperCase();
 
 function summary(f, verdict) {
   console.log('§DEVTK_SPEC ' + Object.keys(f).map(k => k + '=' + f[k]).join(' ') + ' verdict=' + verdict);

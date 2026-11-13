@@ -92,7 +92,7 @@ const probe = findProbe(def.file);
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'x0-realvsc-'));
 // two made-up things live in a scratch file OUTSIDE the repo (a file inside it would enter the real index)
 const scratch = path.join(TMP, 'scratch.js');
-fs.writeFileSync(scratch, ['var v = ' + G + '.zzNotAField__;', "console.log('" + SEC + "ZZ_NOT_A_TAG');", ''].join('\n'));
+fs.writeFileSync(scratch, ['var v = ' + G + '.zzNotAField__;', "console.log('" + SEC + 'ZZ_NOT_A_TAG_' + Date.now().toString(36).toUpperCase() + "');", ''].join('\n'));
 // §F.12: a log stamped by the repo's own stamper at this commit, carrying the known tag, so the real CodeLens has something
 // provable to show. It is removed after the run.
 const PROBE_LOG = path.join(ROOT, 'logs', 'x0_realvsc_lens_probe.log');
@@ -166,7 +166,7 @@ const fakeOk = check('red control: a made-up tag → "no spec found"', /no spec 
 
 // §F.12 first versions, inside the real editor
 const x = res.extras || {};
-const WANT = ['costIfDeployed', 'openLogLine', 'rebuildIndexes', 'shipCheck', 'shipFetchBack', 'shipRunLocal'].map(c => 'x0Navigator.' + c);
+const WANT = ['contextForFile', 'costIfDeployed', 'openLogLine', 'rebuildIndexes', 'shipCheck', 'shipFetchBack', 'shipRunLocal'].map(c => 'x0Navigator.' + c);
 const cmdOk = check('VS Code knows all ' + WANT.length + ' X0 commands', WANT.every(c => (x.commands || []).includes(c)));
 const costLines = (x.cost || []).filter(l => l.startsWith(SEC + 'DEPLOY_COST app='));
 const costOk = check('"Cost if deployed" run as a VS Code command → ' + costLines.length + ' app lines (' + (costLines[0] || '').slice(0, 80) + '…)', costLines.length >= 3);
@@ -179,7 +179,24 @@ let lensOk = true;
 if (!tagFileClean) console.log('  NOTE  ' + rel(tagAt.file) + ' differs from HEAD here: the lens rightly shows nothing, not judged');
 else lensOk = check('CodeLens from VS Code\'s own provider call: line ' + (lens && lens.line) + ' "' + (lens ? lens.title.slice(0, 70) : 'none') + '…"', !!lens && lens.line === tagAt.line);
 
+// §F.15 step 2: the tag hover on the printing line carries the provable value; the made-up tag (a file outside the repo) gets no such line
+let lastOk = true;
+const lastLine = (/last value[^\n]*/.exec(t.hover) || [''])[0];
+if (!tagFileClean) console.log('  NOTE  the hover\'s last-value line is not judged either (same reason)');
+else lastOk = check('tag hover from VS Code\'s own provider call ends with the provable value, its log and commit ("' + lastLine.slice(0, 96) + '")',
+  /^last value: `.*hostedTotal=11 matched=11` — x0_realvsc_lens_probe\.log:2 @ [0-9a-f]{7}$/.test(lastLine));
+const lastRedOk = check('red control: the made-up tag in a file outside the repo gets no last-value line', !/last value/.test(ft.hover));
+// §F.16: Context for this file, as VS Code ran it
+const FC = require('../../lib/file_context');
+const tagRel = rel(tagAt.file).split(path.sep).join('/');
+const ctx = String(x.context || '');
+const sec = (txt, title) => { const i = txt.indexOf('## ' + title); const j = txt.indexOf('\n## ', i + 3); return i < 0 ? null : txt.slice(i, j < 0 ? undefined : j); };
+const wantCtx = FC.build(ROOT, tagRel, { fields: null, tagIndex: null }).text;
+const ctxOk = check('"Context for this file" run as a VS Code command on ' + tagRel + ' → the lib\'s block (' + ctx.split('\n').length + ' lines; header and load sections identical), field and tag sections answered, copied to the clipboard, opened beside (' + x.contextDocs + ' markdown editor)',
+  ctx.startsWith('# Context for `' + tagRel + '`') && sec(ctx, 'Its own header') === sec(wantCtx, 'Its own header') && sec(ctx, 'How it reaches a user') === sec(wantCtx, 'How it reaches a user') &&
+  !/INCONCLUSIVE: no APP field index|spec index not available/.test(ctx) && ctx.includes('`' + KNOWN_TAG + '`') && x.contextClip === ctx && x.contextDocs === 1);
+
 if (KEEP) console.log('  kept: ' + TMP); else fs.rmSync(TMP, { recursive: true, force: true });
 line({ vscode: res.vscode, active: yn(active), fresh: yn(fresh), def: yn(defOk), hover: yn(hovOk), phantom: yn(phOk), unknown_silent: yn(unkOk),
-  tag: yn(tagOk), fake_tag: yn(fakeOk), commands: yn(cmdOk), cost: yn(costOk), check: yn(checkOk), status: yn(statusOk), lens: yn(lensOk), builtin_ready: yn(pr.ready), builtin_defs: pr.ready ? builtin : '?', seconds: secs }, fail === 0 ? 'PASS' : 'FAIL');
+  tag: yn(tagOk), fake_tag: yn(fakeOk), commands: yn(cmdOk), cost: yn(costOk), check: yn(checkOk), status: yn(statusOk), lens: yn(lensOk), last_value: yn(lastOk), last_value_red: yn(lastRedOk), context: yn(ctxOk), builtin_ready: yn(pr.ready), builtin_defs: pr.ready ? builtin : '?', seconds: secs }, fail === 0 ? 'PASS' : 'FAIL');
 if (fail) process.exitCode = 1;

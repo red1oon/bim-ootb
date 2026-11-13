@@ -81,7 +81,8 @@ const call = async (name, args) => { const r = await rpc('tools/call', { name, a
   const haveCompiler = fs.existsSync(path.join(COMPILER, 'prompts'));
   const tagOk = check('what_is_tag (given without the ' + SEC + ') → spec places and the code that prints it' + (haveCompiler ? ', bim-compiler specs included' : ' (bim-compiler not found: its specs are named as not searched)'),
     t1.text.startsWith(SEC + 'HOSTED_BEFORE_HOST') && /printed by:/.test(t1.text) && (haveCompiler ? /bim-compiler prompts\//.test(t1.text) : /not searched: bim-compiler/.test(t1.text)));
-  const t2 = await call('what_is_tag', { tag: SEC + 'ZZ_NOT_A_TAG' });
+  // a per-run suffix: the bare name is quoted in a spec file (bim-compiler CODE_ARCHITECTURE_DESIGN.md), so it stopped being made-up
+  const t2 = await call('what_is_tag', { tag: SEC + 'ZZ_NOT_A_TAG_' + Date.now().toString(36).toUpperCase() });
   const fakeTagOk = check('red control: a made-up tag → "no spec found"', /no spec found/.test(t2.text));
 
   const parser = !!J.loadTs(ROOT);

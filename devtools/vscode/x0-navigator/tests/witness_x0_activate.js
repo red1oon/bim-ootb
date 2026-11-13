@@ -106,7 +106,8 @@ const l4 = "  console.log('" + SEC + "HOSTED_BEFORE_HOST n=' + n);";
 const h4 = hovers(doc(l4), at(l4, 'HOSTED'));
 check(SEC + 'TAG hover → one hover naming the tag, with printers from this repo',
   h4.length === 1 && h4[0].contents.value.startsWith('**' + SEC + 'HOSTED_BEFORE_HOST**') && /printed by:/.test(h4[0].contents.value));
-const l5 = "  console.log('" + SEC + "ZZ_NOT_A_TAG');";
+// a per-run suffix: the bare name is quoted in a spec file (bim-compiler CODE_ARCHITECTURE_DESIGN.md), so it stopped being made-up
+const l5 = "  console.log('" + SEC + 'ZZ_NOT_A_TAG_' + Date.now().toString(36).toUpperCase() + "');";
 const h5 = hovers(doc(l5), at(l5, 'ZZ_NOT'));
 check('made-up ' + SEC + 'TAG → hover says "no spec found" (never silent)', h5.length === 1 && /no spec found/.test(h5[0].contents.value));
 check('commands registered: ' + reg.commands.join(', '), reg.commands.length === 7 && reg.commands.includes('x0Navigator.contextForFile') && ['x0Navigator.shipRunLocal', 'x0Navigator.shipCheck', 'x0Navigator.shipFetchBack'].every(c => reg.commands.includes(c)) && reg.commands.includes('x0Navigator.costIfDeployed') && reg.commands.includes('x0Navigator.openLogLine') && reg.saves === 2);
