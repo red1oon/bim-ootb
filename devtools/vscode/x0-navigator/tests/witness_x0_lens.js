@@ -92,10 +92,67 @@ const e6 = ex();
 const explainAbsentOk = check('explain: a tag no stamped log carries → "tag not in any stamped log"; red control: no stamped log at all → "no stamped log found" for both, no value',
   e5.length === 2 && e5[1].state === 'absent' && L.hoverLine(e5[1]) === 'last value not shown: tag not in any stamped log' &&
   e6.length === 2 && e6.every(x => x.state === 'absent' && L.hoverLine(x) === 'last value not shown: no stamped log found'));
+// §F.15 step 1 (#2976): logs in an EXTRA folder outside the checkout (the bake cache), nested, with the stamp a few lines
+// down behind a timestamp, as a bake log has it. The checkout's own logs/ holds only the unstamped file from above.
+const EX = fs.mkdtempSync(path.join(os.tmpdir(), 'x0-lens-extra-'));
+const TS = '12:00:00.000 +    0.0s ';
+const bakeDir = path.join(EX, 'run1', 'deep'); fs.mkdirSync(bakeDir, { recursive: true });
+const headRef = g(['rev-parse', '--short', 'HEAD']).stdout.trim();
+const envLine = TS + SEC + 'CLI_BAKE_ENV root=' + TMP + ' commit=' + headRef + ' sw=v1 db=X gpu=real out=/x.mp4';
+const wrapper = [SEC + 'BAKE_SCRIPT start', SEC + 'BAKE_SCRIPT gpu.lock wait', envLine];
+const bakeBody = [TS + '[con] ' + TAG_A + ' n=99', TS + '[con] ' + TAG_B + ' ok', ''];
+const bakeLog = path.join(bakeDir, 'bake.log');
+const exAll = () => L.explain(TMP, 'app/code.js', fs.readFileSync(path.join(TMP, 'app', 'code.js'), 'utf8'), L.scanLogs([path.join(TMP, 'logs'), EX], { maxBytes: 4000 }), new Map());
+// RED CONTROL first: the bake's own commit line is NOT a stamp (it records no dirty count)
+fs.writeFileSync(bakeLog, wrapper.concat(bakeBody).join('\n'));
+const x0 = exAll(), sx0 = L.scanLogs([path.join(TMP, 'logs'), EX], { maxBytes: 4000 });
+const bakeEnvRedOk = check('red control: a bake log with only its own commit line (no stamp) → no value, counted unstamped (' + sx0.unstamped + ')',
+  x0.every(e => e.state === 'absent') && sx0.logs.length === 0 && sx0.unstamped === 2);
+// the same log with the standard stamp on line 4, behind the timestamp
+fs.writeFileSync(bakeLog, wrapper.concat([TS + stampLine(TMP, 'cli_silent_bake db=X')]).concat(bakeBody).join('\n'));
+const x1 = exAll();
+const extraOk = check('a stamped log in a nested extra folder, stamp on line 4 behind a timestamp → shown (' + L.hoverLine(x1[0]) + ')',
+  x1.length === 2 && x1.every(e => e.state === 'shown') && new RegExp('n=99` — ' + path.basename(EX) + '/run1/deep/bake\\.log:5 @ [0-9a-f]{7}$').test(L.hoverLine(x1[0])));
+// the printing file edited afterwards → the same proofs apply to an extra folder
+const keep = fs.readFileSync(path.join(TMP, 'app', 'code.js'), 'utf8');
+fs.writeFileSync(path.join(TMP, 'app', 'code.js'), keep + '// edited\n');
+const x2 = exAll();
+fs.writeFileSync(path.join(TMP, 'app', 'code.js'), keep);
+const extraChangedOk = check('the printing file edited after that log → hidden, "file changed since the log"', x2.every(e => e.state === 'hidden' && e.why === 'file changed since the log'));
+// caps: a file over the size cap and a folder past the depth cap are skipped and counted, never read
+fs.writeFileSync(path.join(EX, 'huge.log'), stampLine(TMP, 'huge') + '\n' + TAG_A + ' n=1\n' + 'x'.repeat(5000));
+const far = path.join(EX, 'a', 'b', 'c', 'd', 'e', 'f', 'g'); fs.mkdirSync(far, { recursive: true });
+fs.writeFileSync(path.join(far, 'far.log'), stampLine(TMP, 'far') + '\n' + TAG_A + ' n=2\n');
+const sx3 = L.scanLogs([path.join(TMP, 'logs'), EX], { maxBytes: 4000 });
+const capsOk = check('caps: an oversize log (big=' + sx3.skipped.big + ') and a folder past depth ' + 5 + ' (deep=' + sx3.skipped.deep + ') are skipped; only the one real log is read',
+  sx3.skipped.big === 1 && sx3.skipped.deep === 1 && sx3.logs.length === 1 && sx3.logs[0].tags.get(TAG_A).text.endsWith('n=99'));
+check('"~" expands to the home folder, a plain path is kept', L.expandHome('~/x') === path.join(os.homedir(), 'x') && L.expandHome('/a/b') === '/a/b' && L.logDirs('/r', ['~/x'])[0] === path.join('/r', 'logs'));
+fs.rmSync(EX, { recursive: true, force: true });
+
+// the bake script writes the standard stamp, and can never be stopped by it: read with the parser, not a text search
+let bakeOk = null;
+{
+  const J = require('../lib/js_facts');
+  const ts = J.loadTs(ROOT);
+  const bakeFile = path.join(ROOT, 'cli_silent_bake.js');
+  if (!ts || !fs.existsSync(bakeFile)) console.log('  NOTE  no parser or no cli_silent_bake.js: the bake stamp call is not judged');
+  else {
+    const src = ts.createSourceFile('b.js', fs.readFileSync(bakeFile, 'utf8'), ts.ScriptTarget.Latest, true);
+    let calls = 0, inTry = 0;
+    (function walk(n) {
+      if (ts.isCallExpression(n) && ts.isPropertyAccessExpression(n.expression) && n.expression.name.text === 'stampLine') {
+        calls++;
+        for (let p = n.parent; p; p = p.parent) if (ts.isTryStatement(p) && n.pos >= p.tryBlock.pos && n.end <= p.tryBlock.end) { inTry++; break; }
+      }
+      ts.forEachChild(n, walk);
+    })(src);
+    bakeOk = check('cli_silent_bake.js calls stampLine once (' + calls + '), inside a try block (' + inTry + '): a stamp cannot stop a bake', calls === 1 && inTry === 1);
+  }
+}
 fs.rmSync(TMP, { recursive: true, force: true });
 // the real repo, for information: how many lenses would light up today
 const realScan = L.scanLogs(path.join(ROOT, 'logs'));
 console.log(SEC + 'LENS_REAL stamped_logs=' + realScan.logs.length + ' unstamped_logs=' + realScan.unstamped + ' tags_in_stamped_logs=' + new Set(realScan.logs.flatMap(l => Array.from(l.tags.keys()))).size + ' (this checkout\'s logs/, for information)');
 const yn = x => (x ? 'Y' : 'N');
-summary({ shown: yn(shownOk), hidden_changed: yn(changedOk), hidden_dirty: yn(dirtyOk), unstamped_ignored: yn(redOk), explain_shown: yn(explainShownOk), explain_hidden: yn(explainHiddenOk), explain_absent: yn(explainAbsentOk) }, fail === 0 ? 'PASS' : 'FAIL');
+summary({ shown: yn(shownOk), hidden_changed: yn(changedOk), hidden_dirty: yn(dirtyOk), unstamped_ignored: yn(redOk), explain_shown: yn(explainShownOk), explain_hidden: yn(explainHiddenOk), explain_absent: yn(explainAbsentOk), extra_dir: yn(extraOk), extra_changed: yn(extraChangedOk), bake_env_not_a_stamp: yn(bakeEnvRedOk), caps: yn(capsOk), bake_stamps: bakeOk === null ? '?' : yn(bakeOk) }, fail === 0 ? 'PASS' : 'FAIL');
 if (fail) process.exitCode = 1;

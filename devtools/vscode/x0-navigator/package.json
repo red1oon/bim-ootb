@@ -56,6 +56,12 @@
           "default": "",
           "description": "Path to the bim-compiler checkout, whose prompts/ and docs/ are also searched for \u00a7TAGs. Empty = a sibling folder ../bim-compiler next to bim-ootb."
         },
+        "bimDevtools.extraLogDirs": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["~/.cache/bim4d"],
+          "description": "Folders outside the repo whose saved logs are also read for \"values beside the code\" (read-only, sub-folders included). A log counts only if it carries a \u00a7LOG_STAMP line. Empty list = only the checkout's own logs/."
+        },
         "bimDevtools.costBaseRef": {
           "type": "string",
           "default": "origin/main",
