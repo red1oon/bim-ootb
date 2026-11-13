@@ -40,8 +40,10 @@ if (g(['init', '-q']).status !== 0) { summary({ git: 'N' }, 'INCONCLUSIVE'); pro
 const commit = m => { g(['add', '-A']); g(['-c', 'user.name=w', '-c', 'user.email=w@example.invalid', '-c', 'commit.gpgsign=false', 'commit', '-q', '--no-verify', '-m', m]); };
 // the fixture source is assembled so this witness file itself prints no such tag
 const TAG_A = SEC + 'CTX_PROBE_A', TAG_B = SEC + 'CTX_PROBE_B', TAG_C = SEC + 'CTX_PROBE_C';
+// the shared-object name is assembled too: written out, the generator would index this witness's fixture as a real field
+const OBJ = 'A', W = OBJ + '.ctxField';
 const code = ['#!/usr/bin/env node', '// Copyright (c) someone', '// SPDX-License-Identifier: MIT', '// code.js: the fixture header, line one', '// line two of the header', "'use strict';",
-  'function setupCode(A) {', '  A.ctxField = 1;', "  console.log('" + TAG_A + " n=' + A.ctxField);", "  console.log('" + TAG_B + " ok');", "  console.log('" + TAG_C + " never logged');", '}', ''].join('\n');
+  'function setupCode(' + OBJ + ') {', '  ' + W + ' = 1;', "  console.log('" + TAG_A + " n=' + " + W + ');', "  console.log('" + TAG_B + " ok');", "  console.log('" + TAG_C + " never logged');", '}', ''].join('\n');
 fs.mkdirSync(path.join(TMP, 'app')); fs.mkdirSync(path.join(TMP, 'logs')); fs.mkdirSync(path.join(TMP, 'internal'));
 fs.writeFileSync(path.join(TMP, 'app', 'code.js'), code);
 fs.writeFileSync(path.join(TMP, 'app', 'bare.js'), 'var bare = 1;\n');
@@ -83,7 +85,7 @@ const tagsOk = check('tags: the 3 printed tags, in order, with lens_index.explai
   r1.text.includes('last value: `' + TAG_A + ' n=7` [run.log:3 @ ') && r1.text.includes('not shown: tag not in any stamped log') && (r1.text.match(/spec: no spec found/g) || []).length === 3);
 
 // the file edited after the log → the reason, not the value
-fs.writeFileSync(path.join(TMP, 'app', 'code.js'), code.replace('  A.ctxField = 1;', '  A.ctxField = 2;'));
+fs.writeFileSync(path.join(TMP, 'app', 'code.js'), code.replace('  ' + W + ' = 1;', '  ' + W + ' = 2;'));
 const r2 = ctx('app/code.js');
 const changedOk = check('the file edited after the log → "file changed since the log" twice, no value, and the block says the file has uncommitted changes',
   r2.facts.tagStates.join(',') === 'hidden,hidden,absent' && (r2.text.match(/not shown: file changed since the log/g) || []).length === 2 && !/n=7/.test(r2.text) && /this file has uncommitted changes/.test(r2.text));
