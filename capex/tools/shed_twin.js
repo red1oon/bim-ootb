@@ -3,7 +3,8 @@
 // The push sends only what a user types (inputs taken from the folded rows); what legacy derives (line PlannedAmt = qty x price, phase/task/project rollups) is COMPARED, never sent.
 // Usage: NODE_PATH=<bim-ootb>/node_modules node capex/tools/shed_twin.js <fold.db> [projectValue=SHED] [today=YYYY-MM-DD]   (env BRIDGE_* as legacy_snapshot.js; localhost only without creds)
 const fs = require('fs'), path = require('path'), initSqlJs = require('sql.js');
-const A = require('../adapters.js'), T = require('../tiles.js'), Push = require(path.join(__dirname, '..', '..', 'viewer', 'erp_rest_push.js')), Plan = require(path.join(__dirname, '..', '..', 'viewer', 'erp_push_plan.js'));
+const A = require('../adapters.js'), T = require('../tests/pa_harness.js'), Push = require(path.join(__dirname, '..', '..', 'viewer', 'erp_rest_push.js')), Plan = require(path.join(__dirname, '..', '..', 'viewer', 'erp_push_plan.js'));
+(async () => { await require('../tests/pa_harness.js').init({ quiet: true });   // §5.75 step 3: the numbers come from the PA rows (pa_harness.js), not the hand formulas in tiles.js
 const env = process.env, base = env.BRIDGE_BASE || 'http://localhost:8088';
 if (!/^https?:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(base) && !(env.BRIDGE_USER && env.BRIDGE_PASS)) { console.error('§CFG BRIDGE_USER/BRIDGE_PASS required for a non-localhost base'); process.exit(2); }
 const L = { user: env.BRIDGE_USER || 'GardenAdmin', pass: env.BRIDGE_PASS || 'GardenAdmin', lang: 'en_US', ClientID: +(env.BRIDGE_CLIENT || 11), RoleID: +(env.BRIDGE_ROLE || 102), OrgID: +(env.BRIDGE_ORG || 11), WarehouseID: +(env.BRIDGE_WH || 103), stage: 0 };
@@ -61,3 +62,5 @@ const num = v => v == null || v === '' ? null : Number(v);
   console.log('§SHED_TWIN_VERDICT ' + verdict + ' tiles(match=' + tv.match + ' diff=' + tv.diff + ' inconclusive=' + tv.inconclusive + ') rows(match=' + rm + ' diff=' + rd + ') created=' + JSON.stringify(r.created));
   process.exitCode = verdict === 'PASS' ? 0 : 1;
 })().catch(e => { console.log('§SHED_TWIN_VERDICT FAIL harness ' + (e && e.stack || e)); process.exit(1); });
+
+})().catch(function (e) { console.log('§PA_HARNESS_CRASH ' + (e && e.stack || e)); process.exit(1); });

@@ -4,7 +4,8 @@
 // population (each project in exactly one bucket per tile); K4 every bucket the tiles produce has a drill key (denominator from the tile object). DRILL_BREAK=1 drops a project from one list: K1 must FAIL.
 // Node part runs tiles.js over the sample snapshot at three Status filters. Usage: NODE_PATH=<bim-ootb>/node_modules node capex/tests/witness_dash_drill.js
 'use strict';
-const fs = require('fs'), path = require('path'), T = require('../tiles.js');
+const fs = require('fs'), path = require('path'), T = require('./pa_harness.js');
+(async () => { await require('./pa_harness.js').init({ quiet: true });   // §5.75 step 3: the numbers come from the PA rows (pa_harness.js), not the hand formulas in tiles.js
 const snap = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'sample', 'pilot_snapshot.json'), 'utf8')), TODAY = '2026-11-04', BREAK = process.env.DRILL_BREAK === '1';
 let judged = 0, fails = 0, inc_ = 0; const log = console.log;
 const ck = (n, ok, i) => { judged++; if (!ok) fails++; log('  §DASH_DRILL ' + n + ' ' + (ok ? 'PASS' : 'FAIL') + (i !== undefined ? ' ' + JSON.stringify(i) : '')); };
@@ -71,3 +72,5 @@ for (const status of ['active', 'all', 'closed']) {
   await br.close(); server.close(); finish();
 })();
 function finish() { const v = judged === 0 ? 'INCONCLUSIVE' : fails ? 'FAIL' : 'PASS'; log('§DASH_DRILL_VERDICT ' + v + ' judged=' + judged + ' fail=' + fails + ' inconclusive=' + inc_ + (BREAK ? ' (BREAK)' : '')); process.exit(v === 'PASS' ? 0 : 1); }
+
+})().catch(function (e) { console.log('§PA_HARNESS_CRASH ' + (e && e.stack || e)); process.exit(1); });

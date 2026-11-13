@@ -6,7 +6,8 @@
 // PO A: received 1 (the draft not counted), invoiced 500, paid 500, stage paid, and PO B: ordered; L3 the card's zoom URL for each document names its table and id. Removed in `finally`. CHAIN_LEGACY_BREAK=1 expects the draft receipt counted: must FAIL L2.
 // Usage: NODE_PATH=<bim-ootb>/node_modules node capex/tests/witness_chain_legacy.js   (needs setup_test_instance.sh applied and the instance restarted: WS types are cached)
 'use strict';
-const path = require('path'), { execFileSync } = require('child_process'), ROOT = path.join(__dirname, '..', '..'), A = require(path.join(ROOT, 'capex/adapters.js')), T = require(path.join(ROOT, 'capex/tiles.js'));
+const path = require('path'), { execFileSync } = require('child_process'), ROOT = path.join(__dirname, '..', '..'), A = require(path.join(ROOT, 'capex/adapters.js')), T = require('./pa_harness.js');
+(async () => { await require('./pa_harness.js').init({ quiet: true });   // §5.75 step 3: the numbers come from the PA rows (pa_harness.js), not the hand formulas in tiles.js
 const BASE = process.env.BRIDGE_BASE || 'http://localhost:8108', DB = 'idempiere_bimdoc', BREAK = process.env.CHAIN_LEGACY_BREAK === '1', log = console.log;
 let judged = 0, fails = 0, inc = 0; const ck = (n, ok, i) => { judged++; if (!ok) fails++; log('  §CHAIN_LEGACY ' + n + ' ' + (ok ? 'PASS' : 'FAIL') + (i !== undefined ? ' ' + JSON.stringify(i) : '')); };
 const psql = (sql) => execFileSync('docker', ['exec', '-i', 'postgres', 'psql', '-U', 'adempiere', '-d', DB, '-v', 'ON_ERROR_STOP=1', '-qtA'], { input: 'SET search_path=adempiere;\n' + sql }).toString().trim();
@@ -39,3 +40,5 @@ const clean = () => psql("DELETE FROM c_payment WHERE documentno LIKE 'W-CHAIN%'
     ck('L3 each document of PO A is named in its docs (1 receipt, 1 invoice, 1 payment; the draft receipt is listed by id only if completed)', a.docs && a.docs.receipts.length === 1 && a.docs.invoices.length === 1 && a.docs.payments.length === 1, a.docs);
   } finally { try { clean(); log('§CHAIN_LEGACY fixture removed ' + psql("select count(*) from c_order where documentno like 'W-CHAIN%'")); } catch (e) { log('§CHAIN_LEGACY cleanup failed ' + e.message); } done(); }
 })().catch(e => { console.error('§CHAIN_LEGACY_ERROR ' + (e && e.stack || e)); process.exit(2); });
+
+})().catch(function (e) { console.log('§PA_HARNESS_CRASH ' + (e && e.stack || e)); process.exit(1); });

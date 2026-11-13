@@ -8,7 +8,8 @@
 // Usage: NODE_PATH=<bim-ootb>/node_modules node capex/tools/pa_probe.js
 'use strict';
 const { execFileSync } = require('child_process');
-const path = require('path'), A = require('../adapters.js'), Tl = require('../tiles.js');
+const path = require('path'), A = require('../adapters.js'), Tl = require('../tests/pa_harness.js');
+(async () => { await require('../tests/pa_harness.js').init({ quiet: true });   // §5.75 step 3: the numbers come from the PA rows (pa_harness.js), not the hand formulas in tiles.js
 const Push = require(path.join(__dirname, '..', '..', 'viewer', 'erp_rest_push.js'));
 const base = process.env.BRIDGE_BASE || 'http://localhost:8088';
 if (!/^https?:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(base)) { console.error('§CFG local pilot only'); process.exit(2); }
@@ -102,3 +103,5 @@ async function recompute(goalId) { const a = await saveTarget(goalId, '1'), b = 
   console.log('§PA_PROBE_VERDICT ' + verdict + ' judged=' + judged + ' fail=' + fails + ' colour=INCONCLUSIVE(no target)' + (process.env.BREAK === '1' ? ' (BREAK=1 — must be FAIL)' : ''));
   process.exit(verdict === 'PASS' ? 0 : 1);
 })().catch(e => { console.log('§PA_PROBE_ERROR ' + (e && e.stack || e)); process.exit(2); });
+
+})().catch(function (e) { console.log('§PA_HARNESS_CRASH ' + (e && e.stack || e)); process.exit(1); });
