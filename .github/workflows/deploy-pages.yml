@@ -33,7 +33,7 @@ jobs:
           REL=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -1)
           VERSION="${REL:-$BUILD}"                                   # fall back to the build if no semver release yet
           SHA=$(git rev-parse --short HEAD)
-          PR=$(git log -1 --pretty=%s | grep -oE '\(#[0-9]+\)' | tr -d '(#)' || true)
+          PR=$(git log -1 --pretty=%s | grep -oE '\(#[0-9]+\)' | tail -n 1 | tr -d '(#)' || true)   # the LAST number = the PR: a subject with an issue and a PR number gave two lines here and broke the JSON
           DATE=$(date -u +%Y-%m-%d)
           printf '{"version":"%s","build":"%s","sha":"%s","pr":%s,"date":"%s"}\n' "$VERSION" "$BUILD" "$SHA" "${PR:-null}" "$DATE" > erp/version.json
           echo "§SYSMON-RELEASE stamped erp/version.json: $(cat erp/version.json)"
