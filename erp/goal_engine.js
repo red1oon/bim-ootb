@@ -108,12 +108,14 @@
     return { ok: true, calcId: Number(calcId), actual: raw == null ? 0 : Math.round(Number(raw) * 1e6) / 1e6, raw: raw, state: raw == null ? 'EMPTY' : 'OK', sql: sql };
   }
   // ── queryKeys: MMeasureCalc.getQuery (:265-330): "SELECT <KeyColumn> " + the Select clause from its first "FROM " (case as legacy) + Where + restrictions + context → the key ids (the drill's rows)
-  function queryKeys(q, calcId, ctx, goalId) {
+  function queryKeys(q, calcId, ctx, goalId, timeScope) {   // timeScope: the goal's MeasureDisplay date window, as getQuery adds it (MMeasureCalc.java:279-293) and as calcSql does for the value
     var c = q('SELECT * FROM pa_measurecalc WHERE pa_measurecalc_id=?', [calcId])[0];
     if (!c) return { ok: false, reason: 'Not found PA_MeasureCalc_ID=' + calcId };
     if (!c.keycolumn) return { ok: false, reason: 'PA_MeasureCalc ' + calcId + ' has no KeyColumn' };
     var from = String(c.selectclause), i = from.indexOf('FROM '); if (i < 0) return { ok: false, reason: 'Cannot find FROM ' + from };
-    var sql = 'SELECT ' + c.keycolumn + ' ' + from.substring(i) + ' ' + String(c.whereclause), alias = aliasOf(sql);
+    var sql = 'SELECT ' + c.keycolumn + ' ' + from.substring(i) + ' ' + String(c.whereclause);
+    if (c.datecolumn && timeScope != null) { var tq = TRUNC_OF[String(timeScope)] || 'DD'; sql += " AND TRUNC(" + c.datecolumn + ",'" + tq + "')=TRUNC('" + day((ctx || {}).today) + "','" + tq + "')"; }
+    var alias = aliasOf(sql);
     var rs = goalId == null ? { sql: '' } : restrictionSql(q, goalId, c.orgcolumn || 'AD_Org_ID'); if (rs.unported) return { ok: false, reason: 'INCONCLUSIVE ' + rs.unported + ' not ported' };
     sql = parseCtx(sql + rs.sql + accessSql(alias, (ctx || {}).access), ctx); if (!sql) return { ok: false, reason: 'SQL failed: empty after context parse' };
     sql = convert(sql, ctx); var rows; try { rows = q(sql); } catch (e) { return { ok: false, reason: 'SQL failed: ' + String(e.message).slice(0, 120), sql: sql }; }

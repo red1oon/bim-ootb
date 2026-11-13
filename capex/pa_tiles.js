@@ -24,6 +24,16 @@
   // which population a slot reads (data, like the binding): 'P' = the Org / Category / Project filters only; every other slot = 'S', those plus the Status filter. Today's page meaning, kept (§5.66 D2 revised):
   //   the Total / Closed / Active / Closing / Completed-this-year rows state their own status, and Forecast / Over-committed / No-PO read the active projects of P.
   var POP = { total: 'P', closed: 'P', active_p: 'P', closing: 'P', completed_year: 'P', forecast: 'P', basis: 'P', overcommitted: 'P', nopo: 'P' };   // QtyAmountInTime rows judged per year (X_PA_Goal MEASURESCOPE_Year), as the legacy goal of that measure
+  // §5.75 step 2 — the drill: each key's project rows are the rows its PA row selects (GoalEngine.queryKeys = MMeasureCalc.getQuery). key -> slot (data, like BIND). A money key is asked once per currency.
+  //   via 'order' = the row's key is a C_Order: the list shows those orders' projects. Stage keys are not here (Stage is not moved, §5.66): they stay from tiles.js.
+  var DRILL = { total_projects: { slot: 'total' }, active_projects: { slot: 'active_p' }, completed_year: { slot: 'completed_year' },
+    approved_budget: { slot: 'approved', cur: 'C_Project', notNull: 'PlannedAmt' }, actual_cost: { slot: 'actual', cur: 'C_Project', notNull: 'ProjectBalanceAmt' }, committed_cost: { slot: 'committed', cur: 'C_Project', notNull: 'CommittedAmt' },
+    // forecast_cost is NOT here: the Forecast row's Select holds a sub-select, and getQuery cuts the Select at its FIRST "FROM " (MMeasureCalc.java getQuery; goal_engine.queryKeys :115 the same), so legacy itself cannot
+    //   drill that row. Its list stays from tiles.js until a COUNT row with the same WHERE exists (named in §5.75 step 2 RESULT; needed before step 4).
+    'health:green': { slot: 'green' }, 'health:amber': { slot: 'amber' }, 'health:red': { slot: 'red' }, 'health:none': { slot: 'none' },
+    'schedule:ontime': { slot: 'ontime' }, 'schedule:delayed': { slot: 'delayed' }, 'schedule:atrisk': { slot: 'atrisk' }, 'schedule:nosched': { slot: 'nosched' },
+    'budget:within': { slot: 'within' }, 'budget:over': { slot: 'over' }, 'budget:notstarted': { slot: 'notstarted' },
+    'proc:openpo': { slot: 'openpo', via: 'order' }, 'proc:overcommitted': { slot: 'overcommitted' }, 'proc:nopo': { slot: 'nopo' }, 'handover:ready': { slot: 'ready' }, 'handover:done': { slot: 'handover_done' } };
   var CHILD = { phases: 'C_Project_ID', lines: 'C_Project_ID', orders: 'C_Project_ID', issues: 'C_Project_ID', receipts: 'C_Project_ID', vinvoices: 'C_Project_ID', payments: 'C_Project_ID', bimdocs: 'C_Project_ID' };
   function yes(v) { return v === 'Y' || v === true || v === 1 || v === '1'; }
 
@@ -98,10 +108,38 @@
     T.procurement.overcommitted = { n: count('overcommitted') };
     if (!base.tiles.procurement.openpo.notinstalled) { T.procurement.openpo = { n: count('openpo'), projects: base.tiles.procurement.openpo.projects, cur: perCur('openpo_amt', 'C_Order', true) }; T.procurement.nopo = { n: count('nopo') }; }
     T.handover = P.length === 0 ? { vacuous: true } : { ready: count('ready'), done: count('handover_done') };
+    // the drill (step 2): ids from the PA rows; the row VIEW (name, amounts, due / done / late) is tiles.js info(), taken by project id from its total_projects list (every project of P)
+    var pos = {}; (data.projects || []).forEach(function (p, i) { pos[String(p.C_Project_ID)] = i; });
+    var view = {}, D = {}, dErr = [], bucketOf = { health: {}, schedule: {}, budget: {} };
+    (base.drill.total_projects || []).forEach(function (r) { view[String(r.id)] = r; });
+    var ordProj = {}; (data.orders || []).forEach(function (o) { ordProj[String(o.C_Order_ID)] = o.C_Project_ID; });
+    function keysOf(k) {
+      var d = DRILL[k], slot = d.slot, id = byUu[BIND[slot === 'active_p' ? 'active' : slot]], qq = POP[slot] === 'P' ? qP : q, ids = [], seen = {};
+      var envs = d.cur ? curs(d.cur, slot).map(function (c) { return { $C_Currency_ID: c }; }) : [null];
+      envs.forEach(function (env) { var r = deps.GE.queryKeys(qq, id, env ? Object.assign({ env: env }, ctx0) : ctx0, null, SCOPE[slot] || null);
+        if (!r.ok) { dErr.push(k + ': ' + r.reason); return; }
+        r.ids.forEach(function (x) { var pid = d.via === 'order' ? ordProj[String(x)] : x; if (pid != null && !seen[String(pid)]) { seen[String(pid)] = 1; ids.push(pid); } }); });
+      return ids;
+    }
+    var blockedKey = { 'proc:openpo': base.tiles.procurement.openpo.notinstalled, 'proc:nopo': base.tiles.procurement.openpo.notinstalled, completed_year: !f.today,
+      'health:green': base.tiles.health.inconclusive, 'health:amber': base.tiles.health.inconclusive, 'health:red': base.tiles.health.inconclusive, 'health:none': base.tiles.health.inconclusive,
+      'schedule:ontime': base.tiles.schedule.inconclusive, 'schedule:delayed': base.tiles.schedule.inconclusive, 'schedule:atrisk': base.tiles.schedule.inconclusive, 'schedule:nosched': base.tiles.schedule.inconclusive };
+    var idsBy = {};
+    Object.keys(DRILL).forEach(function (k) { idsBy[k] = blockedKey[k] ? [] : keysOf(k); var m = /^(health|schedule|budget):(.+)$/.exec(k); if (m) idsBy[k].forEach(function (pid) { bucketOf[m[1]][String(pid)] = m[2]; }); });
+    Object.keys(DRILL).forEach(function (k) {
+      var nn = DRILL[k].notNull, rows = [];
+      idsBy[k].forEach(function (pid) { var v = view[String(pid)]; if (!v) { dErr.push(k + ': project ' + pid + ' has no row view'); return; }
+        var src = nn ? (data.projects || []).filter(function (p) { return String(p.C_Project_ID) === String(pid); })[0] : null; if (nn && (!src || src[nn] == null)) return;   // a SUM ignores a NULL amount: that project added nothing to the number
+        rows.push(Object.assign({}, v, { health: bucketOf.health[String(pid)] || null, schedule: bucketOf.schedule[String(pid)] || null, budget: bucketOf.budget[String(pid)] || null })); });
+      rows.sort(function (x, y) { return pos[String(x.id)] - pos[String(y.id)]; });   // the source's own row order (a money key is asked per currency, which would group the list by currency)
+      if (rows.length || /^(health|schedule|budget|proc|handover):/.test(k)) D[k] = rows;   // a bucket key is always there (an empty bucket is a fact); a plain key with no row is absent, as the page expects
+    });
+    Object.keys(base.drill).forEach(function (k) { if (!DRILL[k]) D[k] = base.drill[k].map(function (r) { return Object.assign({}, r, { health: bucketOf.health[String(r.id)] || null, schedule: bucketOf.schedule[String(r.id)] || null, budget: bucketOf.budget[String(r.id)] || null }); }); });   // Stage keys: not moved
+    pa.drill = { keys: Object.keys(DRILL).length, errors: dErr }; dErr.forEach(function (e) { pa.errors.push('drill ' + e); });
     db.close(); dbP.close();
     log('§PA_TILES_PAGE source=' + (data.source || '?') + ' P=' + Pp.length + ' S=' + P.length + ' active=' + nA + ' judged=' + pa.judged + ' errors=' + pa.errors.length + (pa.errors.length ? ' first=' + JSON.stringify(pa.errors[0]) : ''));
-    return { tiles: T, drill: base.drill, pop: { P: Pp.length, S: P.length, A: nA }, formula: base.formula, caveat: base.caveat, pa: pa };
+    return { tiles: T, drill: D, pop: { P: Pp.length, S: P.length, A: nA }, formula: base.formula, caveat: base.caveat, pa: pa };
   }
-  var API = { compute: compute, population: population, BIND: BIND, SCOPE: SCOPE };
+  var API = { compute: compute, population: population, BIND: BIND, SCOPE: SCOPE, DRILL: DRILL };
   if (typeof module !== 'undefined' && module.exports) module.exports = API; else root.CapexPaTiles = API;
 })(typeof window !== 'undefined' ? window : this);
