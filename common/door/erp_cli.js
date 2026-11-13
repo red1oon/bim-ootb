@@ -120,77 +120,92 @@ async function addWindow(O, a) {
   if (!R.ok) refuse(R.refusals.length + ' fault' + (R.refusals.length > 1 ? 's' : '') + ' in ' + a.file + ': ' + R.refusals.map(x => (x.row ? 'line ' + x.row + ' ' : '') + x.column + (x.cell ? ' "' + x.cell + '"' : '') + ': ' + x.why).join(' | ') + '. Nothing was written');
   if (ent(table) != null) refuse(table + ' is already a window here; changing a staged window is not built yet. Nothing was written');
   const T = R.model.tables[0], user = T.columns.filter(c => !c.isStandard);
-  // list values: VALUE=Name as stated; a bare name follows Ninja (Value = the name's first two characters, NewEmptyTable.java L222)
   const lists = user.filter(c => c.listValues && c.listValues.length).map(c => {
-    const items = c.listValues.map((v, i) => { const nm = c.listNames ? c.listNames[i] : ''; return nm ? { value: v, name: nm } : { value: v.substring(0, v.length < 2 ? 1 : 2), name: v }; });
-    const seen = {}; items.forEach(it => { if (seen[it.value]) refuse('list ' + c.name + ': "' + seen[it.value] + '" and "' + it.name + '" both get the value "' + it.value + '" (a name alone takes its first two characters, as Ninja does); write them as VALUE=Name. Nothing was written'); seen[it.value] = it.name; });
+    const l = listItems(c, '');
     const clash = O.rows("SELECT ad_reference_id AS id FROM ad_reference WHERE name=? AND validationtype='L'", [c.name])[0];
     if (clash) refuse('a list reference named ' + c.name + ' already exists (AD_Reference ' + clash.id + '); Ninja would reuse one whose name starts with the column name, which is not reproduced here: rename the column. Nothing was written');
-    return { col: c.name, items };
+    return l;
   });
   const dry = String(a.dry || '').toUpperCase() === 'Y';
   if (dry) { say('add_window DRY table=' + table + ' columns=' + user.map(c => c.name).join(',') + ' sha256=' + sha.slice(0, 12)); return { dry: true, table, file: a.file, sha256: sha, columns: user.map(c => ({ name: c.name, reference: c.refId, mandatory: !!c.mandatory })), standard: T.columns.filter(c => c.isStandard).map(c => c.name), lists: lists.map(l => ({ column: l.col, values: l.items.map(i => i.value) })), ops: [] }; }
-  // 1. the one stager, in a savepoint: read back what it made, then undo it (the rows are written as ops below, so they replay)
+  const S = await stageAtDoor(O, R.model, { scope: () => table, bundleScope: table, meta: { [table]: { columns: T.columns, lists } } }), win = S.made.ad_window[0];
+  say('add_window table=' + table + ' slot=' + S.counts.slot + ' window=' + (win && win.ad_window_id) + ' ops=' + S.res.length + ' ' + JSON.stringify(sum(S.res)) + ' table_made=' + S.tables.join(',') + ' sha256=' + sha.slice(0, 12) + ' ms=' + (Date.now() - t0));
+  return { table, kind: (S.made.ad_table[0] || {}).name, file: a.file, sha256: sha, window: win ? { id: win.ad_window_id, name: win.name } : null, columns: user.map(c => c.name), lists: lists.map(l => ({ column: l.col, values: l.items.map(i => i.value) })), opSummary: sum(S.res), ops: S.res.length };
+}
+// A model of N tables staged at the door (§10 for one table, §12.2 for a workbook): the ONE stager in a savepoint, its rows read back, what it leaves empty added from the legacy owner
+// of each value (§10's table), the savepoint undone, the rows written as ONE group of ops. opt.meta[TableName] = { columns (the parser's, with the sheet's extras), lists:[{col,items}] };
+// opt.scope(TableName) and opt.bundleScope name the rows for their deterministic UUs; opt.nodeDescription is written on the bundle's menu node.
+async function stageAtDoor(O, model, opt) {
+  const NS = require(path.join(ROOT, 'erp', 'ninja_stage.js')), PG = require(path.join(ROOT, 'erp', 'pipo_packgen.js'));
+  if (typeof globalThis.crypto === 'undefined') globalThis.crypto = require('crypto').webcrypto;
   const ids = (t) => { const m = {}; O.rows('SELECT ' + t + '_id AS id, isactive AS a FROM ' + t + ' WHERE ' + t + '_id>=' + NS.NINJA_BASE).forEach(r => { m[r.id] = r.a; }); return m; };
   const nodes = () => { const m = {}; O.rows('SELECT ad_tree_id AS t, node_id AS n FROM ad_treenodemm WHERE node_id>=' + NS.NINJA_BASE).forEach(r => { m[r.t + '/' + r.n] = 1; }); return m; };
   const before = {}, made = {}, ups = []; AD_STAGED.forEach(t => { before[t] = ids(t); }); const nb = nodes();
   const log = console.log; console.log = () => {};
   O.db.run('SAVEPOINT addwin'); let counts;
   try {
-    counts = NS.stageModels(O.db, R.model, 0);
+    counts = NS.stageModels(O.db, model, 0);
     AD_STAGED.forEach(t => { const now = ids(t); made[t] = Object.keys(now).filter(id => !(id in before[t])).map(id => O.rows('SELECT * FROM ' + t + ' WHERE ' + t + '_id=?', [Number(id)])[0]); Object.keys(now).forEach(id => { if (id in before[t] && before[t][id] !== now[id]) ups.push({ t, id: Number(id), old: before[t][id], neu: now[id] }); }); });
     made.ad_treenodemm = O.rows('SELECT * FROM ad_treenodemm WHERE node_id>=' + NS.NINJA_BASE).filter(r => !nb[r.ad_tree_id + '/' + r.node_id]);
   } finally { O.db.run('ROLLBACK TO addwin'); O.db.run('RELEASE addwin'); console.log = log; }
-  // 2. what stageModels leaves empty, each from its legacy owner (§10's table)
+  // whose row is it: a column and a tab by their table, a field by its tab, a window by the table of its level-0 tab, a menu leaf by its window
+  const tblName = {}, tabTbl = {}, winTbl = {}; made.ad_table.forEach(r => { tblName[r.ad_table_id] = r.tablename; });
+  const nameOfTable = (id) => tblName[id] || (O.rows('SELECT tablename AS n FROM ad_table WHERE ad_table_id=?', [id])[0] || {}).n;
+  made.ad_tab.forEach(r => { tabTbl[r.ad_tab_id] = nameOfTable(r.ad_table_id); if (Number(r.tablevel) === 0) winTbl[r.ad_window_id] = tabTbl[r.ad_tab_id]; });
+  const tabTable = (id) => tabTbl[id] || nameOfTable((O.rows('SELECT ad_table_id AS t FROM ad_tab WHERE ad_tab_id=?', [id])[0] || {}).t);
+  // what stageModels leaves empty, each from its legacy owner (§10's table)
   const has = {}, hasCol = (t, c) => (has[t] || (has[t] = O.rows('PRAGMA table_info(' + t + ')').map(x => x.name.toLowerCase()))).indexOf(c) >= 0;
-  const uu = (t, key) => PG.uuidV5('ninja/' + table + '/' + t + '/' + key), bare = ADDWIN_BREAK === 'bare';
+  const uu = (scope, t, key) => PG.uuidV5('ninja/' + scope + '/' + t + '/' + key), bare = ADDWIN_BREAK === 'bare', sc = (tn) => opt.scope(tn);
   const src = {}; O.rows("SELECT lower(columnname) AS c, ismandatory, isupdateable, isallowcopy, defaultvalue FROM ad_column WHERE ad_table_id=102").forEach(r => { src[r.c] = r; });   // NewEmptyTable.java L95, L262: the standard columns are copies of AD_Reference's
-  const colName = {}; made.ad_column.forEach(c => { colName[c.ad_column_id] = c.columnname; });
-  const dress = async (t, row, key) => {
+  const colName = {}, colTbl = {}; made.ad_column.forEach(c => { colName[c.ad_column_id] = c.columnname; colTbl[c.ad_column_id] = nameOfTable(c.ad_table_id); });
+  const dress = async (t, row, scope, key) => {
     const f = {}; Object.keys(row).forEach(k => { if (row[k] != null) f[k] = row[k]; });
     if (bare) return f;
     if (hasCol(t, 'entitytype')) f.entitytype = 'U';
     if (hasCol(t, 'ad_client_id') && f.ad_client_id == null) f.ad_client_id = 0;
     if (hasCol(t, 'ad_org_id') && f.ad_org_id == null) f.ad_org_id = 0;
-    if (hasCol(t, t + '_uu')) f[t + '_uu'] = await uu(t, key);
+    if (hasCol(t, t + '_uu')) f[t + '_uu'] = await uu(scope, t, key);
     return f;
   };
   const ops = [], refAt = {};
-  if (!bare) for (const l of lists) {   // the reference first: the column points at it (NewEmptyTable.java L196-226)
-    refAt[l.col] = ops.length;
-    ops.push({ op_type: 'CRUD_CREATE', table: 'ad_reference', idCol: 'ad_reference_id', fields: { name: l.col, validationtype: 'L', entitytype: 'U', isactive: 'Y', ad_client_id: 0, ad_org_id: 0, ad_reference_uu: await uu('ad_reference', l.col) } });
-    for (const it of l.items) ops.push({ op_type: 'CRUD_CREATE', table: 'ad_ref_list', idCol: 'ad_ref_list_id', fields: { ad_reference_id: { __opRef: refAt[l.col] }, value: it.value, name: it.name, entitytype: 'U', isactive: 'Y', ad_client_id: 0, ad_org_id: 0, ad_ref_list_uu: await uu('ad_ref_list', l.col + '/' + it.value) } });
+  if (!bare) for (const tn of Object.keys(opt.meta)) for (const l of (opt.meta[tn].lists || [])) {   // the reference first: the column points at it (NewEmptyTable.java L196-226)
+    refAt[tn + '/' + l.col] = ops.length;
+    ops.push({ op_type: 'CRUD_CREATE', table: 'ad_reference', idCol: 'ad_reference_id', fields: { name: l.col, validationtype: 'L', entitytype: 'U', isactive: 'Y', ad_client_id: 0, ad_org_id: 0, ad_reference_uu: await uu(sc(tn), 'ad_reference', l.col) } });
+    for (const it of l.items) ops.push({ op_type: 'CRUD_CREATE', table: 'ad_ref_list', idCol: 'ad_ref_list_id', fields: { ad_reference_id: { __opRef: refAt[tn + '/' + l.col] }, value: it.value, name: it.name, entitytype: 'U', isactive: 'Y', ad_client_id: 0, ad_org_id: 0, ad_ref_list_uu: await uu(sc(tn), 'ad_ref_list', l.col + '/' + it.value) } });
   }
   for (const t of AD_STAGED) {
     if (t === 'ad_field' && ADDWIN_BREAK === 'nofield') continue;
     for (const row of made[t]) {
-      const key = t === 'ad_column' ? row.columnname : t === 'ad_field' ? colName[row.ad_column_id] : t === 'ad_menu' ? (row.issummary === 'Y' ? 'summary/' + row.name : table) : table;
+      const node = t === 'ad_menu' && row.issummary === 'Y';
+      const table = node ? null : t === 'ad_table' ? row.tablename : t === 'ad_column' ? colTbl[row.ad_column_id] : t === 'ad_tab' ? tabTbl[row.ad_tab_id] : t === 'ad_field' ? tabTable(row.ad_tab_id) : winTbl[row.ad_window_id] || nameOfTable((O.rows('SELECT ad_table_id AS t FROM ad_table WHERE ad_window_id=? ORDER BY ad_table_id', [row.ad_window_id])[0] || {}).t);
+      const key = t === 'ad_column' ? row.columnname : t === 'ad_field' ? (colName[row.ad_column_id] || (O.rows('SELECT columnname AS n FROM ad_column WHERE ad_column_id=?', [row.ad_column_id])[0] || {}).n) : node ? 'summary/' + row.name : table;
       if (!bare && t === 'ad_field' && /^(created|createdby|updated|updatedby)$/i.test(key)) continue;   // core TabCreateFields.java L99 (and Ninja AddTable.java L546-548): no field for Created* / Updated*
-      const f = await dress(t, row, key);
+      const f = await dress(t, row, node ? opt.bundleScope : sc(table), key);
+      if (node && !bare && opt.nodeDescription) f.description = opt.nodeDescription;
       if (!bare && t === 'ad_field' && (key.toLowerCase() === table.toLowerCase() + '_id' || key.toLowerCase() === table.toLowerCase() + '_uu')) { f.isdisplayed = 'N'; if (hasCol('ad_field', 'isdisplayedgrid')) f.isdisplayedgrid = 'N'; }   // TabCreateFields.java L156-158: the key and the UU are not shown
       if (!bare && t === 'ad_table') { f.accesslevel = '3'; f.isdeleteable = 'Y'; }   // MRO_ModelMaker.java L128-129
       if (!bare && t === 'ad_column') {
-        const lc = row.columnname.toLowerCase(), m = T.columns.filter(c => c.name === row.columnname)[0] || {};
+        const lc = row.columnname.toLowerCase(), m = ((opt.meta[table] || {}).columns || []).filter(c => c.name === row.columnname)[0] || {};
         if (STD7.indexOf(lc) >= 0 && src[lc]) { f.ismandatory = src[lc].ismandatory; f.isupdateable = src[lc].isupdateable; f.isallowcopy = src[lc].isallowcopy; if (src[lc].defaultvalue != null) f.defaultvalue = src[lc].defaultvalue; }
         else if (row.iskey === 'Y') { f.ismandatory = 'Y'; f.isupdateable = 'N'; f.isallowcopy = 'N'; }   // NewEmptyTable.java L87-90; MColumn.beforeSave L457, L491
         else if (lc === table.toLowerCase() + '_uu') { const u = src.ad_reference_uu || {}; f.ismandatory = u.ismandatory || 'N'; f.isupdateable = u.isupdateable || 'Y'; f.isallowcopy = u.isallowcopy || 'N'; }
         else {
           f.isupdateable = 'Y'; f.isallowcopy = 'Y'; f.ismandatory = m.mandatory ? 'Y' : 'N';   // NewEmptyTable.java L244, L173; the sheet's Mandatory is the user's data
           if (m.length) f.fieldlength = m.length; if (m.identifier) f.isidentifier = 'Y'; if (m.defaultValue != null) f.defaultvalue = m.defaultValue; if (m.help) f.help = m.help;
-          if (refAt[row.columnname] != null) f.ad_reference_value_id = { __opRef: refAt[row.columnname] };
+          if (refAt[table + '/' + row.columnname] != null) f.ad_reference_value_id = { __opRef: refAt[table + '/' + row.columnname] };
         }
       }
       ops.push({ op_type: 'CRUD_CREATE', table: t, idCol: t + '_id', fields: f });
     }
   }
-  for (const row of made.ad_treenodemm) ops.push({ op_type: 'CRUD_CREATE', table: 'ad_treenodemm', fields: await dress('ad_treenodemm', row, 'node/' + row.node_id) });
+  for (const row of made.ad_treenodemm) ops.push({ op_type: 'CRUD_CREATE', table: 'ad_treenodemm', fields: await dress('ad_treenodemm', row, opt.bundleScope, 'node/' + row.node_id) });
   ups.forEach(u => ops.push({ op_type: 'CRUD_UPDATE', table: u.t, idCol: u.t + '_id', id: u.id, changes: { isactive: { old: u.old, new: u.neu } } }));
-  const win = made.ad_window[0];
-  if (!bare && win) for (const r of O.rows("SELECT ad_role_id AS id, ad_client_id AS c FROM ad_role WHERE isactive='Y' AND ismanual='N' ORDER BY ad_role_id"))   // MWindow.afterSave L233-246, MWindowAccess L89-96
-    ops.push({ op_type: 'CRUD_CREATE', table: 'ad_window_access', fields: { ad_window_id: win.ad_window_id, ad_role_id: r.id, ad_client_id: r.c, ad_org_id: 0, isactive: 'Y', isreadwrite: 'Y', ad_window_access_uu: await uu('ad_window_access', 'role/' + r.id) } });
-  const res = persistGroup(O, ops), mk = ensureTables(O);
-  say('add_window table=' + table + ' slot=' + counts.slot + ' window=' + (win && win.ad_window_id) + ' ops=' + res.length + ' ' + JSON.stringify(sum(res)) + ' table_made=' + mk.join(',') + ' sha256=' + sha.slice(0, 12) + ' ms=' + (Date.now() - t0));
-  return { table, kind: (made.ad_table[0] || {}).name, file: a.file, sha256: sha, window: win ? { id: win.ad_window_id, name: win.name } : null, columns: user.map(c => c.name), lists: lists.map(l => ({ column: l.col, values: l.items.map(i => i.value) })), opSummary: sum(res), ops: res.length };
+  if (!bare) for (const win of made.ad_window) for (const r of O.rows("SELECT ad_role_id AS id, ad_client_id AS c FROM ad_role WHERE isactive='Y' AND ismanual='N' ORDER BY ad_role_id"))   // MWindow.afterSave L233-246, MWindowAccess L89-96
+    ops.push({ op_type: 'CRUD_CREATE', table: 'ad_window_access', fields: { ad_window_id: win.ad_window_id, ad_role_id: r.id, ad_client_id: r.c, ad_org_id: 0, isactive: 'Y', isreadwrite: 'Y', ad_window_access_uu: await uu(sc(winTbl[win.ad_window_id]), 'ad_window_access', 'role/' + r.id) } });
+  const logFile = process.env.BIM_OBJECT_OPLOG, size0 = EXEC_BREAK === 'onegroup' && logFile && fs.existsSync(logFile) ? fs.statSync(logFile).size : 0;
+  const res = persistGroup(O, ops), tables = ensureTables(O);
+  if (EXEC_BREAK === 'onegroup' && logFile) fs.truncateSync(logFile, size0);   // falsifier: the model's group is applied to this process only, not kept
+  return { res, counts, made, tables };
 }
 // ── the dictionary, read as rows ──
 function kindRef(O, kind) {   // any AD table: its key and its number column (DocumentNo, else Name, else Value: the window's Find)
@@ -529,6 +544,20 @@ function deleteRecord(O, a) {
 // The CSV is read by the same SheetJS the host ships (raw: true, so 007 stays 007); one CSV = one sheet named after the kind's table. The loader is ALL OR NOTHING (its F7), so
 // the preview names every bad row and writes <file>.rejected.csv / <file>.ok.csv, and a commit with any bad row is refused. Updates are not offered (the loader's update mode is a raw UPDATE
 // with no model events: use mis.update, which runs the window's save).
+// The Migrate Excel Data process on one grid (row 1 = the column names) for one kind. Nothing is persisted here: the caller writes tx.groupOps() or drops them.
+async function runLoader(O, K, grid) {
+  const url = require('url'), chunk = await import(url.pathToFileURL(path.join(ROOT, 'erp', 'plugins', 'ninja_migrate_process.mjs')).href), AP = require(path.join(ROOT, 'erp', 'ad_process.js'));
+  if (!AP.JAVA || !AP.JAVA[chunk.CLASSNAME]) chunk.activate({ process: AP });
+  const book = [{ name: K.table, rows: grid }], file = 'mis_load_' + process.pid + '.xlsx';
+  chunk.putFile(file, chunk.bookToWorkbook(book));
+  const log = console.log; console.log = () => {};
+  const tx = O.trx(); Object.assign(tx.env, { client: 11, org: 11, user: 101, date: today() + ' 00:00:00', now: stamp() });
+  let r; try { r = AP.runJava((s2, p2) => O.rows(s2, p2), tx.env, { trx: tx, AD_Process_ID: 9540001, className: chunk.CLASSNAME, title: 'Migrate Excel Data', params: { File_Directory: file, Processed: 'N' } }); }
+  catch (e) { r = { ok: false, summary: 'threw: ' + e.message, log: tx.log }; } finally { console.log = log; chunk.dropFile(file); }
+  const errs = (tx.log || []).filter(l => /^§NINJA-ERR/.test(l)).map(l => String(l).replace(/^§NINJA-ERR\s*/, '')), bad = {};
+  errs.forEach(e => { const m = /row (\d+)\b/.exec(e), n = m ? Number(m[1]) - 1 : 0; (bad[n] = bad[n] || []).push(e.replace(/^.*?row \d+:?\s*/, '')); });   // the loader counts sheet rows (the header is row 1): n = the data row
+  return { r, tx, bad };
+}
 const LOAD_BREAK = process.env.LOAD_BREAK || '';   // W-MIS-LOAD falsifiers: dryrunwrites | skiprejects
 async function loadRecords(O, a) {
   if (!a.kind) refuse('--kind is required');
@@ -540,16 +569,7 @@ async function loadRecords(O, a) {
   const XL = require(path.join(ROOT, 'erp', 'xlsx.mini.min.js')), wb0 = XL.read(text, { type: 'string', raw: true });
   const grid = XL.utils.sheet_to_json(wb0.Sheets[wb0.SheetNames[0]], { header: 1, raw: true, defval: '' }).map(r => r.map(c => String(c)));
   if (grid.length < 2) refuse('the file has no rows: ' + a.file + ' (a header line and at least one data line)');
-  const url = require('url'), chunk = await import(url.pathToFileURL(path.join(ROOT, 'erp', 'plugins', 'ninja_migrate_process.mjs')).href), AP = require(path.join(ROOT, 'erp', 'ad_process.js'));
-  if (!AP.JAVA || !AP.JAVA[chunk.CLASSNAME]) chunk.activate({ process: AP });
-  const book = [{ name: K.table, rows: grid }], file = 'mis_load_' + process.pid + '.xlsx';
-  chunk.putFile(file, chunk.bookToWorkbook(book));
-  const log = console.log; console.log = () => {};
-  const tx = O.trx(); Object.assign(tx.env, { client: 11, org: 11, user: 101, date: today() + ' 00:00:00', now: stamp() });
-  let r; try { r = AP.runJava((s2, p2) => O.rows(s2, p2), tx.env, { trx: tx, AD_Process_ID: 9540001, className: chunk.CLASSNAME, title: 'Migrate Excel Data', params: { File_Directory: file, Processed: 'N' } }); }
-  catch (e) { r = { ok: false, summary: 'threw: ' + e.message, log: tx.log }; } finally { console.log = log; chunk.dropFile(file); }
-  const errs = (tx.log || []).filter(l => /^§NINJA-ERR/.test(l)).map(l => String(l).replace(/^§NINJA-ERR\s*/, '')), bad = {};
-  errs.forEach(e => { const m = /row (\d+)\b/.exec(e), n = m ? Number(m[1]) - 1 : 0; (bad[n] = bad[n] || []).push(e.replace(/^.*?row \d+:?\s*/, '')); });   // the loader counts sheet rows (the header is row 1): n = the data row
+  const { r, tx, bad } = await runLoader(O, K, grid);
   const rows = grid.length - 1, badRows = Object.keys(bad).map(Number).filter(n => n > 0), unplaced = bad[0] || [], ok = rows - badRows.length;
   const base = String(a.file).replace(/\.csv$/i, ''), csv = (rs) => XL.utils.sheet_to_csv(XL.utils.aoa_to_sheet(rs), { FS: ',', RS: '\n' }) + '\n';   // a row number is the data row (1 = the first line after the header)
   const outFiles = {};
@@ -565,13 +585,96 @@ async function loadRecords(O, a) {
   const res = persistGroup(O, tx.groupOps()); out.loaded = true; out.ops = res.length; out.opSummary = sum(res); out.keys = res.filter(o => o.table === K.table && o.op_type === 'CRUD_CREATE').map(o => (o.fields || {})[K.key] != null ? o.fields[K.key] : o.id);
   return out;
 }
+// ── ninja.exec (bim-compiler prompts/ERP_MIS_WINDOW_FROM_CSV.md §12.2): a whole Ninja workbook at the door. One reader (the SheetJS the host ships), one sheet picker (ninja_create.js), one parser
+// (ninja_model.js), one stager (stageAtDoor above), one loader for its data sheets (runLoader). The model is ONE group of ops; each data sheet is its own group, after it, in the workbook's order.
+const EXEC_BREAK = process.env.NINJAEXEC_BREAK || '';   // W-NINJA-EXEC falsifiers: nodetail | onegroup | nodata
+const META_SHEET = (n) => n === 'Config' || n === 'List' || n === 'DataTypeMaker' || n === 'Model' || n === '2_RO_ModelMaker' || n === 'Process' || n === 'Menu' || n === 'ModelMakerSource' || /^[1345]_/.test(n);   // NinjaProcessor.java L124-145
+const DATA_SHEET = (n) => !META_SHEET(n) && n.indexOf('_') >= 0 && n.charAt(0) !== '_';   // L146-150
+function sheetGrid(XL, ws) {   // the rows down to the last cell that holds a value (a formatted empty range reports a million rows: measurement 4)
+  let mr = -1, mc = -1;
+  Object.keys(ws || {}).forEach(k => { if (k.charAt(0) === '!') return; const c = ws[k]; if (!c || c.v == null || String(c.v) === '') return; const d = XL.utils.decode_cell(k); if (d.r > mr) mr = d.r; if (d.c > mc) mc = d.c; });
+  if (mr < 0) return [];
+  return XL.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '', range: { s: { r: 0, c: 0 }, e: { r: mr, c: mc } } });
+}
+const listItems = (c, where) => {   // VALUE=Name as stated; a bare name follows Ninja (Value = the name's first two characters, NewEmptyTable.java L222)
+  const items = c.listValues.map((v, i) => { const nm = c.listNames ? c.listNames[i] : ''; return nm ? { value: v, name: nm } : { value: v.substring(0, v.length < 2 ? 1 : 2), name: v }; }), seen = {};
+  items.forEach(it => { if (seen[it.value]) refuse('list ' + where + c.name + ': "' + seen[it.value] + '" and "' + it.name + '" both get the value "' + it.value + '" (a name alone takes its first two characters, as Ninja does); write them as VALUE=Name. Nothing was written'); seen[it.value] = it.name; });
+  return { col: c.name, items };
+};
+async function ninjaExec(O, a) {
+  const t0 = Date.now(), NM = require(path.join(ROOT, 'erp', 'ninja_model.js')), NCr = require(path.join(ROOT, 'erp', 'ninja_create.js')), NS = require(path.join(ROOT, 'erp', 'ninja_stage.js')), XL = require(path.join(ROOT, 'erp', 'xlsx.mini.min.js'));
+  if (!a.file) refuse('--file is required (a Ninja workbook, .xlsx or .xls)');
+  if (!/\.xlsx?$/i.test(String(a.file))) refuse('the file must be a workbook (.xlsx or .xls): ' + a.file);
+  const base = process.cwd(), abs = path.resolve(base, String(a.file)), rel = path.relative(base, abs);
+  if (rel.startsWith('..') || path.isAbsolute(rel)) refuse('the file must be in the folder the line is run from (' + base + '); "' + a.file + '" leaves it. Nothing was written');
+  let buf; try { buf = fs.readFileSync(abs); } catch (e) { refuse('cannot read ' + a.file + ': ' + (e.code || e.message)); }
+  const sha = require('crypto').createHash('sha256').update(buf).digest('hex');
+  let wb; try { wb = XL.read(buf, { type: 'buffer' }); } catch (e) { refuse('cannot open ' + a.file + ' as a workbook: ' + e.message); }
+  const pick = NCr.pickModelSheet(wb);
+  if (!pick || !pick.name) refuse('no model sheet in ' + a.file + ' (it needs 2_RO_ModelMaker or ModelMakerSource). Nothing was written');
+  const hdr = wb.Sheets['1_RO_ModelHeader'] ? sheetGrid(XL, wb.Sheets['1_RO_ModelHeader']) : [];
+  const P = NM.parseSheet(sheetGrid(XL, wb.Sheets[pick.name]), { format: pick.format, bundleName: hdr[1] && hdr[1][0] ? String(hdr[1][0]).trim() : '' }), model = P.model || P, warnings = P.warnings || model.warnings || [];
+  if (!model.bundleName) model.bundleName = path.basename(abs).replace(/\.xlsx?$/i, '');
+  if (!model.tables || !model.tables.length) refuse('the model sheet ' + pick.name + ' names no table. Nothing was written');
+  if (warnings.length) refuse(warnings.length + ' fault' + (warnings.length > 1 ? 's' : '') + ' in the model sheet ' + pick.name + ': ' + warnings.map(w => typeof w === 'string' ? w : JSON.stringify(w)).join(' | ') + '. Nothing was written');
+  const two = {}; model.tables.forEach(t => { two[t.name] = (two[t.name] || 0) + 1; }); const dup = Object.keys(two).filter(n => two[n] > 1);
+  if (dup.length) refuse('the model names a table twice: ' + dup.join(', ') + '. Nothing was written');
+  // run twice: the bundle's node carries the workbook's sha256; the dictionary says what is there
+  const stagedRow = (tn) => O.rows('SELECT ad_table_id AS id, entitytype AS e, isactive AS a FROM ad_table WHERE lower(tablename)=lower(?)', [tn])[0];
+  const here = model.tables.map(t => ({ name: t.name, row: stagedRow(t.name) })), core = here.filter(x => x.row && !(Number(x.row.id) >= NS.NINJA_BASE)), staged = here.filter(x => x.row && Number(x.row.id) >= NS.NINJA_BASE);
+  const node = O.rows("SELECT ad_menu_id AS id, description AS d, isactive AS a FROM ad_menu WHERE issummary='Y' AND ad_menu_id>=" + NS.NINJA_BASE + ' AND name=?', [model.bundleName])[0];
+  const mark = 'workbook sha256 ' + sha, dry = String(a.dry || '').toUpperCase() === 'Y', withData = String(a.data || '').toUpperCase() !== 'N';
+  if (core.length) refuse(core.length + ' table name' + (core.length > 1 ? 's' : '') + ' of the workbook already exist' + (core.length > 1 ? '' : 's') + ' in the dictionary and ' + (core.length > 1 ? 'are' : 'is') + ' not staged here: ' + core.map(x => x.name).join(', ') + '. Nothing was written');
+  const again = staged.length === here.length && node && String(node.d || '').indexOf(mark) >= 0 && staged.every(x => x.row.a === 'Y');
+  if (staged.length && !again) refuse(staged.length + ' table' + (staged.length > 1 ? 's' : '') + ' of the workbook ' + (staged.length > 1 ? 'are' : 'is') + ' already staged here (' + staged.map(x => x.name).join(', ') + ') and this is not the workbook that staged ' + (staged.length > 1 ? 'them' : 'it') + ' (bundle ' + model.bundleName + ', another sha256, or other tables); changing a staged window is not built yet. Nothing was written');
+  // lists: one reference per L# column; a name used twice in the workbook, or already a list reference here, is refused (as mis.add_window refuses it)
+  const meta = {}, listAt = {};
+  if (!again) model.tables.forEach(t => {
+    const lists = t.columns.filter(c => !c.isStandard && c.listValues && c.listValues.length).map(c => {
+      if (listAt[c.name]) refuse('the list ' + c.name + ' is declared on two tables (' + listAt[c.name] + ' and ' + t.name + '); a list reference has one name. Nothing was written'); listAt[c.name] = t.name;
+      const clash = O.rows("SELECT ad_reference_id AS id FROM ad_reference WHERE name=? AND validationtype='L'", [c.name])[0];
+      if (clash) refuse('a list reference named ' + c.name + ' already exists (AD_Reference ' + clash.id + '); Ninja would reuse one whose name starts with the column name, which is not reproduced here: rename the column of ' + t.name + '. Nothing was written');
+      return listItems(c, t.name + '.');
+    });
+    meta[t.name] = { columns: t.columns, lists };
+  });
+  // the data sheets, in the workbook's order
+  const names = {}; model.tables.forEach(t => { names[t.name] = 1; });
+  const sheets = wb.SheetNames.filter(DATA_SHEET).map(n => {
+    const known = names[n] || !!O.rows("SELECT 1 AS x FROM ad_table WHERE tablename=? AND isactive='Y'", [n])[0], grid = known ? sheetGrid(XL, wb.Sheets[n]).map(r => r.map(c => String(c))) : [];
+    return { sheet: n, known, grid, rows: Math.max(0, grid.length - 1) };
+  });
+  const skipped = sheets.filter(s => !s.known).map(s => ({ sheet: s.sheet, why: 'no table of that exact name' + (s.sheet !== s.sheet.trim() ? ' (the sheet\'s name ends in a line break or a space; it is not trimmed to fit)' : '') }));
+  const bareList = []; model.tables.forEach(t => t.columns.forEach(c => { if (!c.isStandard && !(c.listValues && c.listValues.length) && listAt[c.name] && listAt[c.name] !== t.name) bareList.push(t.name + '.' + c.name); }));
+  const notChecked = ['the display names and the menu\'s place are as the stager leaves them (not yet compared with legacy)'].concat(bareList.length ? [bareList.length + ' column' + (bareList.length > 1 ? 's' : '') + ' named like a list declared on another table ' + (bareList.length > 1 ? 'are' : 'is') + ' plain text, not that list: ' + bareList.join(', ')] : []);
+  const shape = model.tables.map(t => ({ table: t.name, master: t.master || null, columns: t.columns.filter(c => !c.isStandard).length, lists: ((meta[t.name] || {}).lists || []).map(l => l.col) }));
+  const out = { bundle: model.bundleName, file: a.file, sha256: sha, sheet: pick.name, tables: shape, dataSheets: sheets.filter(s => s.known).map(s => ({ sheet: s.sheet, rows: s.rows })), skipped, notChecked };
+  if (dry) { say('ninja_exec DRY bundle=' + model.bundleName + ' tables=' + shape.length + ' data_sheets=' + out.dataSheets.length + ' skipped=' + skipped.length + ' sha256=' + sha.slice(0, 12)); return Object.assign(out, { dry: true, alreadyStaged: !!again, ops: [] }); }
+  if (again) { say('ninja_exec ALREADY bundle=' + model.bundleName + ' tables=' + shape.length + ' sha256=' + sha.slice(0, 12) + ' ops=0'); return Object.assign(out, { alreadyStaged: true, dataSheets: [], opSummary: {}, ops: 0, summary: 'this workbook is already staged (' + shape.length + ' tables); nothing was written' }); }
+  if (EXEC_BREAK === 'nodetail') model.tables.forEach(t => { t.master = ''; });
+  const S = await stageAtDoor(O, model, { scope: (tn) => tn, bundleScope: 'bundle:' + model.bundleName, meta, nodeDescription: 'Ninja bundle: ' + model.bundleName + ' (' + mark + ')' });
+  out.windows = S.made.ad_window.map(w => ({ id: w.ad_window_id, name: w.name })); out.detailTabs = S.counts.details || 0; out.opSummary = sum(S.res); out.ops = S.res.length; out.tablesMade = S.tables.length;
+  const loads = [];
+  if (withData && EXEC_BREAK !== 'nodata') for (const s of sheets.filter(x => x.known)) {
+    if (s.rows < 1) { loads.push({ sheet: s.sheet, rows: 0, loaded: 0, why: 'the sheet has no rows' }); continue; }
+    let K, L; try { K = kindRef(O, s.sheet); L = await runLoader(O, K, s.grid); } catch (e) { loads.push({ sheet: s.sheet, rows: s.rows, loaded: 0, why: e.message }); continue; }
+    const badRows = Object.keys(L.bad).map(Number).filter(n => n > 0).sort((x, y) => x - y);
+    if (!L.r || !L.r.ok) { loads.push({ sheet: s.sheet, rows: s.rows, loaded: 0, why: badRows.length ? badRows.length + ' of ' + s.rows + ' rows are rejected (the loader is all or nothing)' : String(L.r && L.r.summary || 'the loader gave no answer'), rejected: badRows.slice(0, 20).map(n => ({ row: n, why: L.bad[n] })), unplaced: L.bad[0] || [] }); continue; }
+    const res = persistGroup(O, L.tx.groupOps()); loads.push({ sheet: s.sheet, rows: s.rows, loaded: res.filter(o => o.table === K.table && o.op_type === 'CRUD_CREATE').length, ops: res.length });
+  }
+  out.dataSheets = withData ? loads : []; if (!withData) out.notChecked.push('data=N: the data sheets were left out');
+  const mem = process.memoryUsage();
+  say('ninja_exec bundle=' + model.bundleName + ' tables=' + shape.length + ' windows=' + out.windows.length + ' detail_tabs=' + out.detailTabs + ' ops=' + out.ops + ' ' + JSON.stringify(out.opSummary) + ' tables_made=' + out.tablesMade + ' data=' + loads.map(l => l.sheet.trim() + ':' + l.loaded + '/' + l.rows).join(',') + ' skipped=' + skipped.length + ' sha256=' + sha.slice(0, 12) + ' ms=' + (Date.now() - t0) + ' rss_mb=' + Math.round(mem.rss / 1048576) + ' heap_mb=' + Math.round(mem.heapUsed / 1048576));
+  out.ms = Date.now() - t0;
+  return out;
+}
 async function main(argv) {
   const cmd = argv[0], a = {};
   for (let i = 1; i < argv.length; i++) { const m = /^--(\w+)$/.exec(argv[i]); if (!m || i + 1 >= argv.length) { say('FAIL usage: ' + argv[i]); return 2; } if (m[1] === 'where') (a.where = a.where || []).push(argv[++i]); else a[m[1]] = argv[++i]; }
-  if (['find', 'actions', 'describe', 'read', 'list', 'sum', 'group', 'new', 'update', 'delete', 'load', 'add_window'].concat(Object.keys(ACT)).indexOf(cmd) < 0) { say('FAIL usage: erp_cli.js find|actions|complete|void|close|reverse|describe|read|list|sum|group --kind K (--number N | --id I) [--role R]'); return 2; }
+  if (['find', 'actions', 'describe', 'read', 'list', 'sum', 'group', 'new', 'update', 'delete', 'load', 'add_window', 'ninja_exec'].concat(Object.keys(ACT)).indexOf(cmd) < 0) { say('FAIL usage: erp_cli.js find|actions|complete|void|close|reverse|describe|read|list|sum|group --kind K (--number N | --id I) [--role R]'); return 2; }
   try {
     const O = await boot(a); O.actor = a.user == null ? 101 : Number(a.user);   // the session user: stated, default 101 (the same default the callout context takes), until sign-in exists
-    const out = await (ACT[cmd] ? act(O, a, ACT[cmd]) : ({ find, actions, describe, read, list: OC.list, sum: OC.sum, group: OC.group, new: createRecord, update: updateRecord, delete: deleteRecord, load: loadRecords, add_window: addWindow })[cmd](O, a));
+    const out = await (ACT[cmd] ? act(O, a, ACT[cmd]) : ({ find, actions, describe, read, list: OC.list, sum: OC.sum, group: OC.group, new: createRecord, update: updateRecord, delete: deleteRecord, load: loadRecords, add_window: addWindow, ninja_exec: ninjaExec })[cmd](O, a));
     process.stdout.write(JSON.stringify(out) + '\n'); return 0;
   } catch (e) {
     if (e instanceof Refused || e instanceof OC.Refused) { say('REFUSED ' + e.message); process.stdout.write(JSON.stringify({ refused: true, reason: e.message }) + '\n'); return 3; }
@@ -579,4 +682,4 @@ async function main(argv) {
   }
 }
 if (require.main === module) main(process.argv.slice(2)).then(c => process.exit(c));
-module.exports = { addWindow, ensureTables, tabFor, main, boot, loadRecords, find, actions, complete, act, ACT, describe, read, persistGroup, resolveOne, docKind, kindRef, byNumber, recordOf, loadEngine, b3 };
+module.exports = { ninjaExec, stageAtDoor, runLoader, sheetGrid, addWindow, ensureTables, tabFor, main, boot, loadRecords, find, actions, complete, act, ACT, describe, read, persistGroup, resolveOne, docKind, kindRef, byNumber, recordOf, loadEngine, b3 };
