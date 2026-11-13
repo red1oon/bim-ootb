@@ -18,18 +18,18 @@
     approved: U('00010070'), actual: U('00010071'), committed: U('00010072'), invoiced: U('00010073'), actual_pct: U('00010074'), overrun: U('00010075'),   // 202611131300_CAPEX-PAGE-MEASURES.sql
     forecast: U('00010076'), basis: U('00010077'), contract: U('00010078'), verified: U('00010079'), physical: U('00010080'), spent: U('00010081'),
     openpo: U('00010082'), openpo_amt: U('00010083'), overcommitted: U('00010084'), nopo: U('00010085'), ready: U('00010086'), closing: U('00010088'),
+    forecast_n: U('00010089'),   // CAPEX Forecast projects: the COUNT row over the Forecast row's WHERE (202611141000, pack 1.0.8): it exists so the Forecast number can be drilled
     handover_done: U('00010002')   // CAPEX Closed Projects over S (Handover › done = the processed projects of the filtered set)
   };
   var SCOPE = { completed_year: '1' };
   // which population a slot reads (data, like the binding): 'P' = the Org / Category / Project filters only; every other slot = 'S', those plus the Status filter. Today's page meaning, kept (§5.66 D2 revised):
   //   the Total / Closed / Active / Closing / Completed-this-year rows state their own status, and Forecast / Over-committed / No-PO read the active projects of P.
-  var POP = { total: 'P', closed: 'P', active_p: 'P', closing: 'P', completed_year: 'P', forecast: 'P', basis: 'P', overcommitted: 'P', nopo: 'P' };   // QtyAmountInTime rows judged per year (X_PA_Goal MEASURESCOPE_Year), as the legacy goal of that measure
+  var POP = { total: 'P', closed: 'P', active_p: 'P', closing: 'P', completed_year: 'P', forecast: 'P', forecast_n: 'P', basis: 'P', overcommitted: 'P', nopo: 'P' };   // QtyAmountInTime rows judged per year (X_PA_Goal MEASURESCOPE_Year), as the legacy goal of that measure
   // §5.75 step 2 — the drill: each key's project rows are the rows its PA row selects (GoalEngine.queryKeys = MMeasureCalc.getQuery). key -> slot (data, like BIND). A money key is asked once per currency.
   //   via 'order' = the row's key is a C_Order: the list shows those orders' projects. Stage keys are not here (Stage is not moved, §5.66): they stay from tiles.js.
   var DRILL = { total_projects: { slot: 'total' }, active_projects: { slot: 'active_p' }, completed_year: { slot: 'completed_year' },
     approved_budget: { slot: 'approved', cur: 'C_Project', notNull: 'PlannedAmt' }, actual_cost: { slot: 'actual', cur: 'C_Project', notNull: 'ProjectBalanceAmt' }, committed_cost: { slot: 'committed', cur: 'C_Project', notNull: 'CommittedAmt' },
-    // forecast_cost is NOT here: the Forecast row's Select holds a sub-select, and getQuery cuts the Select at its FIRST "FROM " (MMeasureCalc.java getQuery; goal_engine.queryKeys :115 the same), so legacy itself cannot
-    //   drill that row. Its list stays from tiles.js until a COUNT row with the same WHERE exists (named in §5.75 step 2 RESULT; needed before step 4).
+    forecast_cost: { slot: 'forecast_n', cur: 'C_Project' },   // the Forecast row itself cannot be drilled (its Select holds a sub-select; getQuery cuts at the FIRST "FROM "): its COUNT twin row lists the same projects
     'health:green': { slot: 'green' }, 'health:amber': { slot: 'amber' }, 'health:red': { slot: 'red' }, 'health:none': { slot: 'none' },
     'schedule:ontime': { slot: 'ontime' }, 'schedule:delayed': { slot: 'delayed' }, 'schedule:atrisk': { slot: 'atrisk' }, 'schedule:nosched': { slot: 'nosched' },
     'budget:within': { slot: 'within' }, 'budget:over': { slot: 'over' }, 'budget:notstarted': { slot: 'notstarted' },
@@ -124,7 +124,7 @@
         r.ids.forEach(function (x) { var pid = d.via === 'order' ? ordProj[String(x)] : x; if (pid != null && !seen[String(pid)]) { seen[String(pid)] = 1; ids.push(pid); } }); });
       return ids;
     }
-    var blockedKey = { 'proc:openpo': base.tiles.procurement.openpo.notinstalled, 'proc:nopo': base.tiles.procurement.openpo.notinstalled, completed_year: !f.today,
+    var blockedKey = { 'proc:openpo': base.tiles.procurement.openpo.notinstalled, 'proc:nopo': base.tiles.procurement.openpo.notinstalled, forecast_cost: base.tiles.forecast_cost.inconclusive, completed_year: !f.today,
       'health:green': base.tiles.health.inconclusive, 'health:amber': base.tiles.health.inconclusive, 'health:red': base.tiles.health.inconclusive, 'health:none': base.tiles.health.inconclusive,
       'schedule:ontime': base.tiles.schedule.inconclusive, 'schedule:delayed': base.tiles.schedule.inconclusive, 'schedule:atrisk': base.tiles.schedule.inconclusive, 'schedule:nosched': base.tiles.schedule.inconclusive };
     var idsBy = {};

@@ -52,7 +52,10 @@ const inc = (n, why) => { inconc++; log('  §PA_CTX ' + n + ' INCONCLUSIVE ' + w
   // (c) drill == count, every CAPEX COUNT(*) measure
   const counts = q("SELECT pa_measurecalc_id AS id, name FROM pa_measurecalc WHERE name LIKE 'CAPEX%' AND upper(selectclause) LIKE 'SELECT COUNT(*)%' ORDER BY 1"); let nonzero = 0;
   counts.forEach(c => {
-    const e = GE.evaluateCalc(q, c.id, ctxBase), k = GE.queryKeys(q, c.id, ctxBase); if (e.actual > 0) nonzero++;
+    // a COUNT row that names the context currency (1000089 CAPEX Forecast projects, §5.75) is judged in a currency the store holds, as a login would supply it; a row with no tag is judged as before
+    const tagged = /@\$C_Currency_ID@/.test(String((q('SELECT whereclause AS w FROM pa_measurecalc WHERE pa_measurecalc_id=?', [c.id])[0] || {}).w)), cur0 = tagged ? (q('SELECT MIN(C_Currency_ID) AS c FROM C_Project WHERE C_Currency_ID IS NOT NULL')[0] || {}).c : null;
+    const cx = tagged ? Object.assign({ env: { $C_Currency_ID: String(cur0) } }, ctxBase) : ctxBase;
+    const e = GE.evaluateCalc(q, c.id, cx), k = GE.queryKeys(q, c.id, cx); if (e.actual > 0) nonzero++;
     log('    §PA_CTX_C calc=' + c.id + ' ' + JSON.stringify(c.name) + ' count=' + e.actual + ' keys=' + (k.ok ? k.ids.length : 'ERR ' + k.reason));
     ck('C1 ' + c.id + ' drill rows == count', e.ok && k.ok && k.ids.length === e.actual, { count: e.actual, keys: k.ok ? k.ids.length : k.reason });
   });

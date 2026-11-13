@@ -19,7 +19,7 @@ verdict(){ local miss=0 t
 [ "${1:-}" = "--check" ] && { verdict; exit $?; }
 for f in ws/migration/iD13/$P/202611042300_CAPEX-WS-READ.sql migration/iD13/$P/202611031900_CAPEX-R0.sql migration/iD13/$P/202611032000_CAPEX-G2.sql migration/iD13/$P/202611032100_CAPEX-G3.sql \
   migration/iD13/$P/202611032200_CAPEX-G4.sql migration/iD13/$P/202611041000_CAPEX-G7.sql migration/iD13/$P/202611111300_CAPEX-Q2-STAGES.sql migration/iD13/$P/202611111310_CAPEX-PROPOSED-MEASURES.sql \
-  migration/iD13/$P/202611121000_CAPEX-S2-HEALTH-OVERDUE.sql migration/iD13/$P/202611121200_CAPEX-Q3-EAC-FLOATDIV.sql migration/iD13/$P/202611121500_CAPEX-ENTITYTYPE-A.sql migration/iD13/$P/202611131300_CAPEX-PAGE-MEASURES.sql migration/iD13/$P/202611131500_CAPEX-RETIRE-FIXED-CURRENCY.sql ws_testserver/migration/iD13/$P/202611042302_CAPEX-WS-PHASE.sql ws_testserver/migration/iD13/$P/202611042304_CAPEX-WS-PROGRESS.sql; do echo "== $f"; run < "$L/$f"; done
+  migration/iD13/$P/202611121000_CAPEX-S2-HEALTH-OVERDUE.sql migration/iD13/$P/202611121200_CAPEX-Q3-EAC-FLOATDIV.sql migration/iD13/$P/202611121500_CAPEX-ENTITYTYPE-A.sql migration/iD13/$P/202611131300_CAPEX-PAGE-MEASURES.sql migration/iD13/$P/202611131500_CAPEX-RETIRE-FIXED-CURRENCY.sql migration/iD13/$P/202611141000_CAPEX-FORECAST-PROJECTS.sql ws_testserver/migration/iD13/$P/202611042302_CAPEX-WS-PHASE.sql ws_testserver/migration/iD13/$P/202611042304_CAPEX-WS-PROGRESS.sql; do echo "== $f"; run < "$L/$f"; done
 for f in 202611042301_CAPEX-WS-PUSH.sql 202611042303_CAPEX-WS-PA.sql; do echo "== remapped $f"; run < "$HERE/$f"; done
 echo "== copied pilot types"; python3 "$HERE/copytypes.py" | run
 seqs
