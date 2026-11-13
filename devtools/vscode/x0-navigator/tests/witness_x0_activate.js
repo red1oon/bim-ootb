@@ -23,6 +23,7 @@ const vscodeStub = {
   languages: {
     registerDefinitionProvider(sel, p) { reg.definition.push({ sel, p }); return { dispose() {} }; },
     registerHoverProvider(sel, p) { reg.hover.push({ sel, p }); return { dispose() {} }; },
+    registerReferenceProvider(sel, p) { reg.refs = (reg.refs || []).concat([{ sel, p }]); return { dispose() {} }; },
     registerCodeLensProvider(sel, p) { reg.lens = (reg.lens || []).concat([{ sel, p }]); return { dispose() {} }; }
   },
   workspace: {
@@ -110,6 +111,7 @@ check(SEC + 'TAG hover → one hover naming the tag, with printers from this rep
 const l5 = "  console.log('" + SEC + 'ZZ_NOT_A_TAG_' + Date.now().toString(36).toUpperCase() + "');";
 const h5 = hovers(doc(l5), at(l5, 'ZZ_NOT'));
 check('made-up ' + SEC + 'TAG → hover says "no spec found" (never silent)', h5.length === 1 && /no spec found/.test(h5[0].contents.value));
+check('1 reference provider registered for javascript (Find All References)', (reg.refs || []).length === 1 && reg.refs[0].sel.language === 'javascript');
 check('commands registered: ' + reg.commands.join(', '), reg.commands.length === 7 && reg.commands.includes('x0Navigator.contextForFile') && ['x0Navigator.shipRunLocal', 'x0Navigator.shipCheck', 'x0Navigator.shipFetchBack'].every(c => reg.commands.includes(c)) && reg.commands.includes('x0Navigator.costIfDeployed') && reg.commands.includes('x0Navigator.openLogLine') && reg.saves === 2);
 // Run and ship (§F.12c): the side-bar list and the Check step, through the registered wiring, on this real checkout
 {

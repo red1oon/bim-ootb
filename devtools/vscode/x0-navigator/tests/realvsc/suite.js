@@ -46,7 +46,8 @@ async function run() {
         last = defs.length;
         if (tries > 1) await sleep(3000);
       }
-      res.steps[label] = { text: doc.lineAt(line - 1).text.trim().slice(0, 160), defs, hover: hoverText(hov) };
+      const refs = locs(await vscode.commands.executeCommand('vscode.executeReferenceProvider', doc.uri, pos));
+      res.steps[label] = { text: doc.lineAt(line - 1).text.trim().slice(0, 160), defs, hover: hoverText(hov), refs };
     };
     // Is VS Code's own JavaScript support answering yet? Ask it about a plain local function call (it can resolve
     // that without X0) until it does, so "it found nothing for the field" below is not just "it was still loading".

@@ -22,6 +22,7 @@
 //   R11 a phantom that DOES have a same-named write through a local `A.`/`app.` the gate could not tie to the object is
 //       listed a second time, under "untied write", with that site. The gate is a text rule and will miss a form again;
 //       R11 makes the miss visible instead of calling a live field dead.
+//   R12 with APPSURF_SITES=1 and a private APPSURF_OUT, every write and read site is also written as APP_SITES.json (#2983)
 //   R6 same gate for the third spelling, lowercase `app.x` (time_machine.js writes this one)
 //   R7 the "written at" column shows a PRODUCTION write site when one exists, never a test's
 //   R8 this script and its witness are excluded — they quote `APP.x` in prose and would self-index
@@ -158,4 +159,13 @@ for (const n of names) {
 }
 fs.mkdirSync(OUT_DIR, { recursive: true });
 fs.writeFileSync(path.join(OUT_DIR, 'APP_SURFACE.md'), L.join('\n') + '\n');
+// R12: every site, as data, for a tool that lists references (X0 Navigator "Find All References"). Written ONLY into a
+// private output folder (APPSURF_OUT) and only when asked (APPSURF_SITES=1): the repo's committed index stays one file.
+if (process.env.APPSURF_SITES === '1' && process.env.APPSURF_OUT) {
+  const sites = {};
+  for (const n of names) {
+    sites[n] = { w: (writes.get(n) || []).map(x => [x.rel, x.line, x.as]), r: (reads.get(n) || []).map(x => [x.rel, x.line]) };
+  }
+  fs.writeFileSync(path.join(OUT_DIR, 'APP_SITES.json'), JSON.stringify({ v: 1, fields: sites }));
+}
 console.log(`§APP_SURFACE files=${files.length} fields=${names.length} alias_only=${aliasOnly.length} phantom=${phantom.length} untied=${suspect.length}`);

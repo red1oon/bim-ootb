@@ -6,6 +6,7 @@ step. It never calls a model or the network, and nothing in `devtools/` is loade
 | Feature | Question it answers | Reads |
 |---|---|---|
 | F12 and hover on `APP.x` (also `A.x` / `app.x` in a file that binds them) | Where is this field set? | `internal/APP_SURFACE.md` (generated) |
+| Find All References (Shift+F12) on such a field | Where is this field written and read, under any spelling? | every site the repo's generator recorded, kept beside X0's own fresh index |
 | Hover on a `§TAG` | Which rule is this tag, and which code prints it? | `prompts/*.md`, `docs/**/*.md` of bim-ootb and bim-compiler, plus the `.js` source |
 
 | *Run & Ship* list in the Explorer side bar (also as commands) | Does it run, is it safe to ship, is it live? | the repo's own scripts, git, and (Fetch back only) the live site |
@@ -69,6 +70,7 @@ node devtools/vscode/x0-navigator/tests/witness_x0_deploy_cost.js # §PERF_IMPAC
 node devtools/vscode/x0-navigator/tests/witness_x0_lens.js       # §LENS
 node devtools/vscode/x0-navigator/tests/witness_x0_ship.js       # §SHIP_PANEL  [--live reads the public site once]
 node devtools/vscode/x0-navigator/tests/witness_x0_context.js    # §X0_CONTEXT
+node devtools/vscode/x0-navigator/tests/witness_x0_refs.js       # §X0_REFS
 node devtools/vscode/x0-navigator/tests/witness_x0_isolation.js  # §X0_ISOLATION
 ```
 

@@ -14,6 +14,7 @@ const deployCost = require('./lib/deploy_cost');
 const lensIndex = require('./lib/lens_index');
 const ship = require('./lib/ship');
 const fileContext = require('./lib/file_context');
+const appRefs = require('./lib/app_refs');
 
 const JS = { language: 'javascript' };
 const MARKER = path.join('internal', 'APP_SURFACE.md'); // a folder holding this file is the bim-ootb root
@@ -94,6 +95,20 @@ function activate(context) {
       const res = fieldUnderCursor(document, position);
       if (!res || res.kind !== 'definition') return null;
       return new vscode.Location(vscode.Uri.file(res.abs), new vscode.Position(res.line - 1, res.column));
+    }
+  }));
+  // Find All References (Shift+F12) on a field of the shared object: every write and read site the repo's own generator
+  // recorded, under any of its spellings (§F.19). Sites come with X0's fresh index copy; until that exists there are none.
+  context.subscriptions.push(vscode.languages.registerReferenceProvider(JS, {
+    provideReferences(document, position, ctx) {
+      const hit = surface.fieldAt(document.lineAt(position.line).text, position.character, document.getText());
+      const index = hit ? getFields() : null;
+      const sourceRoot = findSourceRoot(context);
+      if (!hit || !index || !sourceRoot) return null;
+      const r = appRefs.references(sourceRoot, appRefs.loadSites(index.file), hit.field);
+      if (!r.known) { if (!freshFile) refreshFields(); return null; }
+      const sites = (ctx && ctx.includeDeclaration === false ? [] : r.writes).concat(r.reads);
+      return sites.map(x => new vscode.Location(vscode.Uri.file(x.abs), new vscode.Position(x.line - 1, x.column)));
     }
   }));
   // X0-1: hover → written at · writes · reads, or PHANTOM, or "index stale".

@@ -14,6 +14,7 @@ const cp = require('child_process');
 
 const GENERATOR = path.join('scripts', 'gen_app_surface.js');
 const OUT_NAME = 'APP_SURFACE.md';
+const SITES_NAME = 'APP_SITES.json';   // every write and read site, for Find All References (lib/app_refs.js)
 
 /** One generator run. Resolves { file, ms, line }; rejects when the generator is missing or fails. */
 function runOnce(root, outDir) {
@@ -22,7 +23,7 @@ function runOnce(root, outDir) {
     if (!fs.existsSync(script)) { reject(new Error('generator not found: ' + GENERATOR)); return; }
     const t0 = Date.now();
     // ELECTRON_RUN_AS_NODE: inside VS Code, process.execPath is the editor itself; this makes it behave as node.
-    const env = Object.assign({}, process.env, { APPSURF_ROOT: root, APPSURF_OUT: outDir, ELECTRON_RUN_AS_NODE: '1' });
+    const env = Object.assign({}, process.env, { APPSURF_ROOT: root, APPSURF_OUT: outDir, APPSURF_SITES: '1', ELECTRON_RUN_AS_NODE: '1' });
     cp.execFile(process.execPath, [script], { env, cwd: root, maxBuffer: 1024 * 1024 }, (err, stdout) => {
       const file = path.join(outDir, OUT_NAME);
       if (err) { reject(err); return; }
@@ -58,4 +59,4 @@ function createRefresher(root, outDir) {
   return { refresh, runs: () => runs };
 }
 
-module.exports = { GENERATOR, OUT_NAME, runOnce, createRefresher };
+module.exports = { GENERATOR, OUT_NAME, SITES_NAME, runOnce, createRefresher };
