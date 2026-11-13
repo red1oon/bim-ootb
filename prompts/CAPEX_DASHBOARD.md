@@ -4,7 +4,70 @@ being **editable without code or AI**. Every number comes from rows of a real DB
 "no data" / INCONCLUSIVE, never 0 % or green. **Read the log after every run (`§DASH_*`, `§SHED_*`, `§FILM_SHOT`); the exit code is not evidence.** Spec before code; every witness names the issue it
 proves and has a break switch that must FAIL. Honour this block until the lane is closed. Full history (sessions 88 + 77, 2026-11-02 → 11-03): `prompts/archive/CAPEX_DASHBOARD_history_2026-11-02_to_11-03.md`.
 
-## ▶ RESUME HERE 2026-11-13 — the tiles.js move (§5.64 approved → §5.66 build); supersedes the 2026-11-12 blocks below wherever they differ; trigger "resume dashboard"
+## ▶ RESUME HERE 2026-11-13 (afternoon) — the test-data 2Pack is done end to end; next = G2, then PR C2. Supersedes every block below wherever they differ; trigger "resume dashboard"
+**What this block is for:** a fresh session (Fable) picks the lane up here. Below are, in order: what is merged, then what is next. After that, **the hard parts**: the ones where a session will be tempted to guess. Each says what is already measured and where the oracle is. Read the named § before acting. Run the witness first; read the log (the exit code is not evidence).
+
+**MERGED today (bim-ootb), the §5.67 test-data 2Pack, end to end:**
+| PR | § | what | witness |
+|---|---|---|---|
+| #2909 | 5.67 | the zip `capex/plugin/testdata_2pack/202611131200_GardenWorld_CAPEXTestData.zip` (12 projects / 42 / 84 / 84, built by `capex/tools/td_pack.js`), `MProject.beforeSave` in the twin | W-PROJECT-CURRENCY 4/0 |
+| #2911 | 5.68 | the fixed USD/BDT rows retired (pack 1.0.7); Home goals in the login currency | W-PA-RENDER 27/0, W-PA-TILES 101/0 |
+| #2912 | 5.67 | twin Pack Out writes AD_Client/AD_Org as table refs; a real legacy Pack In of the zip passes | (legacy run) |
+| #2913 | 5.69 | the twin's Pack In takes a CLIENT's data pack: session client, `AD_Package_UUID_Map` remap, save through the model layer | W-TD-PACK-TWIN 6/0 |
+| #2914 | 5.70 | window 50005 **Pack In** in the twin: `erp/processes/PackIn.js` (PackInProcess port); generic async continuation `pi.then`; zip + delta kept as `client:<id>:<name>` in IDB `fold_plugins`/`kv`/`packs`, replayed at load | W-TD-PACKIN-WINDOW 4/0 |
+| #2915 | 5.71 | the same zip lands the same rows on legacy and on the twin (225 records, 4,564 values, currency / M_Product_Acct / M_Cost) | W-TD-PACK 3/0 |
+| #2916 | 5.72 | the dashboard shows the 12 projects the same on both sides (Budget rows, amounts 0, Schedule-tab phase dates) | W-TD-PACK-DASH 4/0 |
+
+Every one of these witnesses has break runs that FAIL (named in its §).
+
+**NEXT, in order** (one PR each, from a fresh `origin/main` branch, spec section first):
+1. **G2, the NOT NULL rule in the twin** (hard part H1). The last open item of §5.67.
+2. **PR C2:** delete the moved formulas from `tiles.js compute()` (§5.66; the 2026-11-13 morning block below has the exact keep-list and the W-DASH-DRILL 59/0 gate).
+3. W-DASH-SYNC E2 premise fix (§5.68 RESULT: E2 expired with the calendar, not a defect).
+4. The BIM documents measure in the BIM Document plugin's pack; the Stage tile as an `AD_Chart` (needs a twin chart reader).
+5. **§5.65 UAT Guide build** (after C2): chapters 4-6 are the hands-on exercise over the 12 packed projects. The testers make the documents by hand (order → receipt → invoice → payment → issue). The film's `CHAIN` stages (`capex/tools/td_scenario.js`) are the target states, e.g. "make TD_RIVERSIDE's order Paid". Witness W-UAT-GUIDE, step by step.
+- Done and no longer open: the morning block's item (5), retire the per-currency rows, is §5.68 (#2911).
+
+**THE HARD PARTS (read before touching; each is measured, none is decided by guessing):**
+- **H1 — G2 is a DATABASE rule, not an `AD_Column.IsMandatory` rule.**
+  - Measured: legacy `PO.saveNew` (PO.java:3520) has NO Java null check for a mandatory column; the only one, `isMandatoryOK` (:2104), is deprecated since 13 and has no caller in the tree. What refuses a `C_Project` with no `C_Currency_ID` is Postgres's NOT NULL constraint (`information_schema.columns.is_nullable='NO'`).
+  - The two sets differ: 11,299 NOT NULL columns against 11,401 `IsMandatory='Y'` physical columns (`idempiere` DB, 2026-11-13). Port the NOT NULL set, and refuse with Postgres's own text: `null value in column "<col>" of relation "<table>" violates not-null constraint`.
+  - The precedent to copy is `uniqueError` (`erp/model_layer.js:361`): `ad_ddl_unique`, extracted by `erp/patches/build_ddl_unique_patch.py`, refused at insert/update with the DB's text.
+  - **Landmine:** the extracted list must NOT be added to `patches/ad_seed.db.sql`. That file is hashed into the Team BASE, so one line turns every existing team "base-mismatch". Use a boot overlay (`erp/ad_import_tables.js` pattern, `ensurePipo` is the newest example) or a separate unhashed file.
+  - **Blast radius:** every twin save path, not only the model layer. The host CRUD commit (`crud_overlay.applyOp`, `CRUD_CREATE`) writes rows too, and the DB constraint would refuse those on legacy. Find every insert path first and list them in the spec.
+  - Then run the trade-cycle and window sweeps (AD-LAYER LAW: X of N windows from `ad_seed.db`, not one happy path). Expect real defects, i.e. rows the twin has been saving that legacy would refuse. Each is a twin bug to fix, not a reason to soften the rule.
+  - Measure on the PATCHED db (`erp/tests/dd_common.js boot()`), never on `ad_seed.db` alone (§5.60 retractions).
+- **H2 — legacy re-saves every row on a Pack In re-walk; the twin does not.**
+  - Measured (§5.69): a re-walk of the same zip under a new file name bumps `Updated` on 225 of 225 rows. The twin writes nothing when no column differs.
+  - Likely cause: `PO.is_ValueChanged` (PO.java:791-803) compares with Java `equals`, so a BigDecimal scale or Timestamp difference after `PoFiller` marks a column changed. **Not proven.**
+  - To prove it: on a database copy of the test instance (restore after, `setup_test_instance.sh --check`), re-walk and find WHICH columns legacy saw as changed (column values before/after, or legacy's FINE log). Then port that rule, generically.
+  - Do not port "always re-save" without the mechanism.
+- **H3 — the full re-apply of a kept pack is RED on main already.**
+  - When the seed fingerprint changes, a kept pack is re-walked from its bytes, not replayed from its delta. W-PLUGIN-PACKS K4 + K4b FAIL on unmodified `origin/main` (`rows equal K1 (stable columns): false`, mfg bundle).
+  - §5.70's client entries use the same path (`plugin_overlay._packsReplay`, the `r.client` branch). That path is written but **unwitnessed**.
+  - Fix K4 first (it is the same mechanism), then add a W-TD-PACKIN-WINDOW case that forces a stale fingerprint.
+- **H4 — the test instance is shared, and three witnesses stop it.**
+  - W-TD-PACK and W-TD-PACK-DASH each stop `~/idempiere-bimdoc` (:8108), copy the DB (`idempiere_bimdoc_wtdbak` / `_wtpdbak`), pack in, read, and RESTORE in a `finally`. About 4 min each.
+  - Never run two of them at once, nor while another session uses :8108. Check: `ss -ltnp | grep 8108` and `pg_stat_activity` on `idempiere_bimdoc`.
+  - `idempiere_bimdoc_pretd` is the film test-data snapshot (`film_testdata.js`): not yours, do not drop it.
+  - Break runs reuse the cached legacy side (`~/.cache/capex_film/wtd_pack/*`, keyed by the zip's sha256) and never touch the instance.
+- **H5 — legacy folder Pack In SKIPS a zip it has installed** (`PackInApplicationActivator.verifyInstalledPackages ... already installed`). A second run of the same file is a skip, not a re-walk; to re-walk, copy it under a new `<yyyymmddHHMM>` prefix. §5.67's earlier "second run changes nothing" was such a skip.
+- **H6 — the page's tables return MIXED-CASE column names.** Any engine code that reads `SELECT *` rows from `__idmpDb` must lower-case the keys (`pipo_packin.js lcRow`). This hid every found row, so the cross-client check never fired and one test run moved client 12's project into client 11 (§5.69). Node harnesses (`dd_common.js`) lower-case for you, which is why it never showed there.
+- **H7 — two stale pins and one UTC clock, pre-existing, named, not fixed:**
+  - W-IMPORT-ORDER TABLE `base-hash` pins `38ae6753…`, but main hashes to `be91a5c9…` (the same on the baseline). Find which merged PR moved the base on purpose before re-pinning, and do not re-pin blind.
+  - W-PACKOUT O6 (libero form) fails on main.
+  - The dictionary path of `pipo_packin.apply` / `recordImport` defaults `now` to the UTC clock (§5.33 class). The client path passes the local clock.
+- **H8 — a process whose work is async must use the continuation, not fire-and-forget.** `pi.then = () => Promise<{ok, summary, commitOps}>` (ad_process.js `runJava` → `idempiere.html _runProcessNow`, `§PROC-ASYNC`). BIM Document Open still fires and forgets (it needs no final message). A process with no parameters runs at once from its window button, with no parameter dialog: witnesses must not wait for `[data-proc-run]`.
+
+**WITNESSES of today (run from a worktree of `origin/main`, `NODE_PATH=~/bim-ootb/node_modules`):**
+- W-TD-PACK-TWIN `capex/tests/witness_td_pack_twin.js` 6/0
+- W-TD-PACKIN-WINDOW `capex/tests/witness_td_packin_window.js` 4/0
+- W-TD-PACK `capex/tests/witness_td_pack.js` 3/0 (stops the test instance)
+- W-TD-PACK-DASH `capex/tests/witness_td_pack_dash.js` 4/0 (stops the test instance)
+- Unchanged and green: W-PACKIN 6/0, NC1-UI 13/0.
+- Red on main before today, not ours: W-PLUGIN-PACKS K4+K4b, W-PACKOUT O6, W-IMPORT-ORDER base-hash.
+
+## ▶ 2026-11-13 (morning) block — the tiles.js move (§5.64 approved → §5.66 build); SUPERSEDED by the afternoon block above wherever they differ (kept: its PR C2 keep-list and landmines still apply)
 **DONE + merged (bim-ootb):** #2900 study §5.64 · #2901 owner approval + §5.65 UAT Guide SPEC · #2902 PR A engine (context parse, `evaluateCalc`, `queryKeys`; W-PA-CTX) · #2903 PR B (18 page measures, pack 1.0.6, `capex/pa_tiles.js`, goal path carries the login context, `tiles.js` round-once fix; W-PA-FLAT, W-PA-TILES 101/0) · #2905 PR C1 (page reads PA rows on both sources; `QueryPAMeasureCalc` WS type on the pilot + test instance; W-DASH-TWIN D8). bim-compiler #595 guide merged + PUBLISHED (safe_gh_deploy PASS, live page fetched back).
 **NEXT, in order:**
 (0) **§5.67 the test-data 2Pack.** Part 1 is MERGED (#2909): `capex/plugin/testdata_2pack/202611131200_GardenWorld_CAPEXTestData.zip`, and MProject.beforeSave is in the twin (W-PROJECT-CURRENCY 4/0). Remaining, in order:
