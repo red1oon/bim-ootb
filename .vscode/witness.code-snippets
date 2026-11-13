@@ -1,0 +1,34 @@
+// Snippets for this repo (type the prefix, then Tab). Spec: bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md §F.0 Z3 (#2918).
+// Witness: node scripts/tests/witness_editor_zero_code.js  (§EZC_SNIPPET)
+{
+  "Witness (contract.js skeleton)": {
+    "scope": "javascript",
+    "prefix": "witness",
+    "description": "New witness built on witness_kit/contract.js. Unedited it FAILs (empty population) - it can never PASS by accident. Spec: bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md §F.0 Z3 (#2918).",
+    "body": [
+      "#!/usr/bin/env node",
+      "// # ⚠ DO NOT REMOVE — WITNESS W-${1:NAME}   (spec: ${2:bim-compiler prompts/FILE.md §SECTION})",
+      "// ISSUE THIS PROVES OR DISPROVES: \"${3:the defect, in one sentence, in the words it was reported}\"",
+      "// POPULATION: ${4:the REAL rows this judges (DB / generated output / persisted JSON), never a mocked fixture}",
+      "// RED CONTROL: ${5:how the broken copy is made, and why it must FAIL}",
+      "// Prints PASS/FAIL lines + one summary line §WITNESS_<NAME> pass= fail= ran= (witness_kit/contract.js).",
+      "// 0 rows = FAIL population-nonempty (§W-EMPTY-POP), never a silent PASS. Read the log, not the exit code.",
+      "// Command: node ${RELATIVE_FILEPATH}",
+      "'use strict';",
+      "const { Witness } = require('${6:../../witness_kit/contract}');",
+      "",
+      "function loadRows() {",
+      "  // Replace with the real read. Until then this returns [] and the witness FAILs on purpose.",
+      "  return [];",
+      "}",
+      "",
+      "Witness('${7:name}')",
+      "  .population(loadRows)",
+      "  .schema({ type: 'object', required: [${8:'id'}] })",
+      "  .invariant('${9:what must hold}', function (rows) { return rows.every(function (r) { return ${10:r.id != null}; }); })",
+      "  .redControl(function (rows) { return rows.map(function (r) { ${11:delete r.id;} return r; }); })",
+      "  .run();",
+      "$0"
+    ]
+  }
+}
