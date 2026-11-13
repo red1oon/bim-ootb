@@ -10,7 +10,7 @@ proves and has a break switch that must FAIL. Honour this block until the lane i
 (0) **§5.67 the test-data 2Pack.** Part 1 is MERGED (#2909): `capex/plugin/testdata_2pack/202611131200_GardenWorld_CAPEXTestData.zip`, and MProject.beforeSave is in the twin (W-PROJECT-CURRENCY 4/0). Remaining, in order:
 - (a) ✅ DONE 2026-11-13 (§5.69, W-TD-PACK-TWIN 6/0, branch `feat/capex-td-pack-g1`; `wip/capex-td-pack-g1` is superseded, delete it): the twin Pack In client-data path. OPEN from it: legacy's re-walk bumps `Updated` on every row, the twin does not (§5.69 RESULT).
 - (b) ✅ DONE 2026-11-13 (§5.70, W-TD-PACKIN-WINDOW 4/0): a GardenWorld admin packs the zip in from window 50005 Pack In (PackInProcess port, async continuation seam, kept + replayed). OPEN: the full re-apply of a kept client entry is unwitnessed.
-- (c) ✅ DONE 2026-11-13 (§5.71, W-TD-PACK 3/0, twin == legacy row by row; `capex/tests/witness_td_pack.js` restores the test instance itself). Remaining from §5.67: point 3, the dashboard on each side shows the 12 projects (phase dates, amounts 0).
+- (c) ✅ DONE 2026-11-13 (§5.71, W-TD-PACK 3/0, twin == legacy row by row; `capex/tests/witness_td_pack.js` restores the test instance itself). Point 3 ✅ DONE 2026-11-13 (§5.72, W-TD-PACK-DASH 4/0): the dashboard shows the 12 projects the same on both sides.
 - (d) **G2:** the model layer's mandatory-column check (the twin saved a C_Project with no currency). (1) **PR C2:** delete the moved formulas from `tiles.js compute()`. The drill buckets come from `GoalEngine.queryKeys` of each bound slot (`pa_tiles.BIND`, `POP` for the population). Check every drill key's population against W-DASH-DRILL (59/0 today) before deleting. `tiles.js` keeps Stage, BIM documents, Last updated, the drill row view `info()`, `projectDetail`, availability (`NEEDS`/`blocked`), formatting, `twin()`. When no PA rows exist, the fallback becomes "no data (CAPEX PA rows not installed)". (2) W-DASH-SYNC E2 premise fix (above). (3) The BIM documents measure in the BIM Document plugin's pack; the Stage tile as an `AD_Chart` (needs a twin chart reader). (4) §5.65 UAT Guide build (after C2): its chapters 4–6 become the hands-on exercise over the §5.67 projects. (5) Owner decision, named: retire the per-currency USD/BDT rows (released packs; pilot Home uses them).
 **LANDMINES (this session):** a Python generator with adjacent single-quoted strings dropped SQL quotes (`f.Name=Closed`): W-PA-FLAT caught it; dry-run every migration on Postgres in a rolled-back transaction. A `//` comment pasted mid-line swallowed the rest of a JS line twice; syntax-check is not enough, run the witness. PA measures are cached by the server: restart the pilot/test instance after changing a row (`~/idempiere-pilot/stop.sh && start.sh`, `~/idempiere-bimdoc/...`). Witnesses that create legacy goals must remove them (W-PA-TILES `§PA_TILES_CLEANUP`), or the pilot's Home changes. CACHE_VERSION bump detail now goes in the commit message, not `erp/sw.js` line 13 (`erp/SW_VERSION_HISTORY.md`, `node scripts/bump.js <file>`; PR #2904).
 
@@ -1461,3 +1461,31 @@ Same video timing as the English cut frame for frame (5694 frames, 227.78 s); on
 - **The test instance:** restored from the copy (0 TD projects), restarted; `§SETUP_VERDICT PASS`.
 - **Breaks, each FAIL:** `twinshift` → P2 (`c_projectphase.startdate legacy=2026-03-28 twin=2026-03-01`); `nomodel` → P2 (`m_attributesetinstance_id legacy=0 twin=null`) + P3 (currency null on the twin).
 - **Next for §5.67 (W-TD-PACK point 3):** the dashboard on each side shows the 12 projects with their phase dates and amounts 0 until documents exist.
+### 5.72 SPEC — §5.67 point 3: after the Pack In, the dashboard shows the 12 test projects the same on both sides (2026-11-13; written before code; owner: "go with your advice")
+**The issue:** §5.71 proves the ROWS equal on both sides. Nothing proves that the dashboard, the thing the testers look at, shows them, or shows them the same on Source A (twin) and Source B (legacy).
+**Witness W-TD-PACK-DASH** (`capex/tests/witness_td_pack_dash.js`, the shipped zip, the real page `capex/index.html`):
+- **Legacy (Source B):**
+  - test instance stopped, database copy, folder Pack In, instance started;
+  - `capex/tools/legacy_snapshot.js` with `BRIDGE_BASE=http://localhost:8108` (stock WebServices, GardenAdmin) → the snapshot the page opens with `?snapshot=…&source=legacy`;
+  - then stop, restore the copy, start, and `§SETUP_VERDICT PASS`, always.
+- **Twin (Source A):** real login as GardenAdmin, `PluginEngine.packInClient`, the page's database exported and served to the dashboard as `?db=`.
+- **Checks:**
+  - D1: the Budget view (`#budget`) on each side lists the zip's 12 project Values.
+  - D2: per test project, its Budget row (currency, Planned, Committed, Invoiced, Actual) is equal on both sides. Planned == SUM(PlannedQty × PlannedPrice) of that project's lines in the zip (independent). Committed, Invoiced and Actual are 0: no document exists yet.
+  - D3: per test project, the project page's Schedule tab (`#project/<id>/schedule`, `#phTable`) lists the zip's phases with the zip's start and end dates, on both sides.
+  - D4: no page error on either side.
+  - 0 projects judged = INCONCLUSIVE.
+- **Breaks, each MUST FAIL** (the twin half and the legacy snapshot of the last full run are reused, keyed by the zip's sha256):
+  - `WTPD_BREAK=legacyshift`: one phase StartDate shifted a day in the SERVED snapshot → D3.
+  - `WTPD_BREAK=twinplan`: +1 on one project's PlannedAmt in the SERVED twin database → D2.
+**§5.72 RESULT (2026-11-13; logs read; legacy snapshot `~/.cache/capex_film/wtd_pack/legacy_snapshot_aa51560fb746fa4c.json`):**
+- **W-TD-PACK-DASH `PASS 4/0`, the dashboard shows the packed set the same on twin and legacy:**
+  - D1: 12 of 12 projects in the Budget view on both sides.
+  - D2: 12 Budget rows equal; Planned == the zip's lines (e.g. TD_BRIDGE USD 695.20); Committed / Invoiced / Actual 0.
+  - D3: 42 phases with the zip's start and end dates on each side's Schedule tab.
+  - D4: no page error and no failed resource.
+- **Legacy, the full run:** folder Pack In `Completed successfully`, client 11. Snapshot from :8108: `projects=14 phases=42 tasks=84 lines=85` (the instance's 2 own projects + the 12). Restored (0 TD projects); `§SETUP_VERDICT PASS`.
+- **Twin:** `§PACKIN-CLIENT processed=225`. The page reads `projects=15` (the seed's 3 + the 12).
+- **D4's rule (decided by the code, named):** the page's two OPTIONAL probes are counted apart, not as errors: the HEAD per project for a BIM model (`capex/dash.js:381-382`, absent = no BIM link) and the default `legacy_snapshot.json` when the URL names none. Measured: twin 16 probes (15 HEAD + 1), legacy 14 (14 HEAD). Any other failed resource fails D4. The first full run failed D4 on exactly these probes; D1-D3 passed in it. The rule was then fixed and the run repeated on the same legacy snapshot.
+- **Breaks, each FAIL:** `legacyshift` → D3 (`TD_RIVERSIDE legacy Substructure 2026-03-29`, want 2026-03-28); `twinplan` → D2 (`TD_BRIDGE planned twin=696.2 legacy=695.2`).
+- **§5.67 is closed except G2** (the model layer's mandatory-column check, item (d)).
