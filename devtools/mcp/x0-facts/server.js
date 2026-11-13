@@ -56,6 +56,7 @@ const TOOLS = [
       if (!idx) return 'INCONCLUSIVE: no APP index (internal/APP_SURFACE.md missing and the generator could not run)';
       const r = surface.resolve(idx, name);
       if (!r) return 'APP.' + name + ': not in the index. No code under this checkout writes or reads a field of that name (index: ' + idx.fields.size + ' fields, ' + idx.source + ').';
+      if (r.kind === 'phantom' && r.untied) return 'APP.' + name + ': PHANTOM? The index found no writer it can tie to the shared object, but ' + r.untied.file + ':' + r.untied.line + ' assigns a field of this name through a local name. Probably not dead: read that line.';
       if (r.kind === 'phantom') return 'APP.' + name + ': PHANTOM. It is read but never written' + (r.firstRead ? ' (first read at ' + r.firstRead.file + ':' + r.firstRead.line + ')' : '') + '. A guard on it can never be true, or its writer was removed.';
       if (r.kind === 'stale') return 'APP.' + name + ': index stale. The index points at ' + r.file + ':' + r.line + ', but that line no longer mentions the field. Not reported, rather than reported wrong.';
       return 'APP.' + name + ' is written at ' + r.file + ':' + r.line + ' (spelled ' + r.as + '.' + name + ' there) · ' + r.writes + ' writes · ' + r.reads + ' reads. Source: ' + idx.source + '.';

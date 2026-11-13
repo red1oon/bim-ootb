@@ -104,6 +104,32 @@ ok('R5b-RED', !/localOnly/.test(r5b), 'an unrelated local `var A = {}` still add
 ok('R5b-real', /`APP\.toggleGridOverlay` \| `viewer\/grid_overlay\.js:\d+`/.test(idx) && !/`APP\.toggleGridOverlay` \| — \*phantom\*/.test(idx),
    'APP.toggleGridOverlay (real tree) resolves to its grid_overlay.js write site');
 
+// R5c + R11 — ISSUE (#2974): "a field written in a split-file part shows as PHANTOM; and when the gate misses a form the
+//       index calls a live field dead". Temp tree: a split part and an init() module (writes must be indexed), a file
+//       that binds through a name the gate cannot tie (its write must be listed as UNTIED, with the site), and a true
+//       phantom (read only: the red control, it must NOT be listed as untied).
+const r11 = (() => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'appsurf-'));
+  fs.mkdirSync(path.join(dir, 'viewer'));
+  fs.writeFileSync(path.join(dir, 'viewer/part.js'), 'window.__parts.x = function* __split_big_x(NF, A, nav) {\n  A.fromSplit = 1;\n};\n');
+  fs.writeFileSync(path.join(dir, 'viewer/nav.js'), 'function init(A, nav) {\n  A.fromInit = 1;\n}\n');
+  fs.writeFileSync(path.join(dir, 'viewer/odd.js'), 'var ref = null;\nfunction go() {\n  var A = ref;\n  A.untiedOne = 1;\n}\n');
+  fs.writeFileSync(path.join(dir, 'viewer/reader.js'), 'var z = [APP.fromSplit, APP.fromInit, APP.untiedOne, APP.trulyDead];\n');
+  const line = execFileSync('node', [path.join(ROOT, 'scripts/gen_app_surface.js')],
+    { encoding: 'utf8', env: { ...process.env, APPSURF_ROOT: dir, APPSURF_OUT: dir } });
+  const t = fs.readFileSync(path.join(dir, 'APP_SURFACE.md'), 'utf8');
+  fs.rmSync(dir, { recursive: true, force: true });
+  return { t, line };
+})();
+ok('R5c', /`APP\.fromSplit` \| `viewer\/part\.js:2`/.test(r11.t) && /`APP\.fromInit` \| `viewer\/nav\.js:2`/.test(r11.t),
+   'writes in a `function* __split_x(NF, A, …)` part and in `function init(A, nav)` are indexed');
+ok('R11', /`APP\.untiedOne` \| `viewer\/odd\.js:4` \*\(as `A\.`\)\*/.test(r11.t) && /`APP\.untiedOne` \| — \*phantom\*/.test(r11.t) && /untied=1\b/.test(r11.line),
+   'a phantom with a same-named write the gate cannot tie is listed as UNTIED with its site (odd.js:4), and counted (' + r11.line.trim() + ')');
+ok('R11-RED', /`APP\.trulyDead` \| `viewer\/reader\.js:1`/.test(r11.t) && !/`APP\.trulyDead` \| `[^`]+` \*\(as/.test(r11.t),
+   'a phantom with no write anywhere is in the phantom table and NOT in the untied table');
+ok('R5c-real', /`APP\.focusElement` \| `viewer\/nf_panel_search\.js:\d+`/.test(idx),
+   'APP.focusElement (real tree) resolves to its nf_panel_search.js write site');
+
 console.log(`§APP_SURFACE_W ${out.trim()}`);
 console.log(`§APP_SURFACE_W ${fail ? 'FAILED ' + fail : 'ALL PASS'}`);
 process.exit(fail ? 1 : 0);
