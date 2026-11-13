@@ -10,7 +10,7 @@ proves and has a break switch that must FAIL. Honour this block until the lane i
 (0) **§5.67 the test-data 2Pack.** Part 1 is MERGED (#2909): `capex/plugin/testdata_2pack/202611131200_GardenWorld_CAPEXTestData.zip`, and MProject.beforeSave is in the twin (W-PROJECT-CURRENCY 4/0). Remaining, in order:
 - (a) ✅ DONE 2026-11-13 (§5.69, W-TD-PACK-TWIN 6/0, branch `feat/capex-td-pack-g1`; `wip/capex-td-pack-g1` is superseded, delete it): the twin Pack In client-data path. OPEN from it: legacy's re-walk bumps `Updated` on every row, the twin does not (§5.69 RESULT).
 - (b) ✅ DONE 2026-11-13 (§5.70, W-TD-PACKIN-WINDOW 4/0): a GardenWorld admin packs the zip in from window 50005 Pack In (PackInProcess port, async continuation seam, kept + replayed). OPEN: the full re-apply of a kept client entry is unwitnessed.
-- (c) **W-TD-PACK.** Twin half: headless browser on `erp/idempiere.html`, as `erp/tests/witness_packin.js`. Legacy half: `RUN_ApplyPackInFromFolder.sh` (`~/idempiere-bimdoc/server/utils`) on a database copy, restored after.
+- (c) ✅ DONE 2026-11-13 (§5.71, W-TD-PACK 3/0, twin == legacy row by row; `capex/tests/witness_td_pack.js` restores the test instance itself). Remaining from §5.67: point 3, the dashboard on each side shows the 12 projects (phase dates, amounts 0).
 - (d) **G2:** the model layer's mandatory-column check (the twin saved a C_Project with no currency). (1) **PR C2:** delete the moved formulas from `tiles.js compute()`. The drill buckets come from `GoalEngine.queryKeys` of each bound slot (`pa_tiles.BIND`, `POP` for the population). Check every drill key's population against W-DASH-DRILL (59/0 today) before deleting. `tiles.js` keeps Stage, BIM documents, Last updated, the drill row view `info()`, `projectDetail`, availability (`NEEDS`/`blocked`), formatting, `twin()`. When no PA rows exist, the fallback becomes "no data (CAPEX PA rows not installed)". (2) W-DASH-SYNC E2 premise fix (above). (3) The BIM documents measure in the BIM Document plugin's pack; the Stage tile as an `AD_Chart` (needs a twin chart reader). (4) §5.65 UAT Guide build (after C2): its chapters 4–6 become the hands-on exercise over the §5.67 projects. (5) Owner decision, named: retire the per-currency USD/BDT rows (released packs; pilot Home uses them).
 **LANDMINES (this session):** a Python generator with adjacent single-quoted strings dropped SQL quotes (`f.Name=Closed`): W-PA-FLAT caught it; dry-run every migration on Postgres in a rolled-back transaction. A `//` comment pasted mid-line swallowed the rest of a JS line twice; syntax-check is not enough, run the witness. PA measures are cached by the server: restart the pilot/test instance after changing a row (`~/idempiere-pilot/stop.sh && start.sh`, `~/idempiere-bimdoc/...`). Witnesses that create legacy goals must remove them (W-PA-TILES `§PA_TILES_CLEANUP`), or the pilot's Home changes. CACHE_VERSION bump detail now goes in the commit message, not `erp/sw.js` line 13 (`erp/SW_VERSION_HISTORY.md`, `node scripts/bump.js <file>`; PR #2904).
 
@@ -1433,3 +1433,31 @@ Same video timing as the English cut frame for frame (5694 frames, 227.78 s); on
 - **OPEN (named):**
   - The FULL re-apply of a kept client entry (fingerprint changed: a new seed) is written but not witnessed; W4 covers the delta replay only.
   - The dictionary path's `now` default in `pipo_packin.apply` / `recordImport` is still the UTC clock (pre-existing; the client path passes the local clock).
+### 5.71 SPEC — (c) W-TD-PACK: the same zip lands the same rows on legacy and on the twin (2026-11-13; written before code; §5.67 W-TD-PACK points 1, 2, 4; point 3, the dashboard, is the next step)
+**The issue:** §5.69/§5.70 prove the twin against the zip, and §5.67 proved legacy's counts. Nothing has compared the two sides row by row (TWIN CARDINAL RULE).
+**Witness W-TD-PACK** (`capex/tests/witness_td_pack.js`, one run, both sides, the shipped zip):
+- **Legacy half:**
+  - stop the test instance;
+  - take a database copy `idempiere_bimdoc_wtdbak`;
+  - `RUN_ApplyPackInFromFolder.sh` on a folder holding ONLY the zip (folder Pack In = the client named in the file name, GardenWorld);
+  - read every row of the pack's tables by UUID (`row_to_json`);
+  - restore the database from the copy and start the instance;
+  - `setup_test_instance.sh --check` must print `§SETUP_VERDICT PASS`.
+  - A failure at any step still restores (try/finally).
+- **Twin half:** headless `erp/idempiere.html`, real login as GardenAdmin, the shipped path `PluginEngine.packInClient` (the one the Pack In window calls), then the same rows read through the page.
+- **Compared, per table, per UUID:**
+  - P1: the same set of UUIDs on both sides == the zip's records per table (independent scan).
+  - P2: every column the pack carries is equal, after normalising numbers and dates. A uuid reference is compared as the UUID of the row it points at; ids differ by design, since each side numbers rows from its own sequences. Not compared: keys and audit columns (`created`/`updated`/`createdby`/`updatedby`).
+  - P3: what the model layer writes outside the pack is equal: `C_Project.C_Currency_ID` per project, the `M_Product_Acct` row count per product, the `M_Cost` row count per product.
+  - 0 rows judged = INCONCLUSIVE.
+- **Break runs, each MUST FAIL:** `WTP_BREAK=twinshift` (one phase StartDate shifted by a day in the zip given to the TWIN only) → P2; `WTP_BREAK=nomodel` (the twin walk without the model layer) → P3.
+- A break run needs only the twin half, so it reads the legacy rows from the previous run's JSON (`~/.cache/capex_film/wtd_pack/legacy_rows.json`, written by a full run). The file records the zip's sha256, and a stale one is refused.
+**§5.71 RESULT (2026-11-13; logs read; legacy log `~/.cache/capex_film/wtd_pack/legacy_packin.log`, rows `legacy_rows.json`):**
+- **W-TD-PACK `PASS 3/0`, twin == legacy:**
+  - P1: 225 records, 1/2/12/42/84/84 UUIDs, the same on both sides and == the zip.
+  - P2: 4,564 values equal, references by UUID.
+  - P3: currency 100 on 12 of 12 projects; `M_Product_Acct` 2+2, `M_Cost` 2+2 on both.
+  - Legacy `AD_Package_Imp` `Completed successfully`, client 11; twin `§PACKIN-CLIENT processed=225 unresolved=0 statements=634`.
+- **The test instance:** restored from the copy (0 TD projects), restarted; `§SETUP_VERDICT PASS`.
+- **Breaks, each FAIL:** `twinshift` → P2 (`c_projectphase.startdate legacy=2026-03-28 twin=2026-03-01`); `nomodel` → P2 (`m_attributesetinstance_id legacy=0 twin=null`) + P3 (currency null on the twin).
+- **Next for §5.67 (W-TD-PACK point 3):** the dashboard on each side shows the 12 projects with their phase dates and amounts 0 until documents exist.
