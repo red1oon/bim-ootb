@@ -30,7 +30,11 @@ const vscodeStub = {
     onDidSaveTextDocument(fn) { reg.saves++; reg.onSave = fn; return { dispose() {} }; }
   },
   commands: { registerCommand(id) { reg.commands.push(id); return { dispose() {} }; } },
-  window: { showInformationMessage() {} },
+  window: { showInformationMessage() {}, activeTextEditor: undefined,
+    createOutputChannel() { reg.channels = (reg.channels || 0) + 1; return { appendLine() {}, show() {}, dispose() {} }; },
+    createStatusBarItem() { reg.status = { show() { this.shown = true; }, hide() { this.shown = false; }, dispose() {} }; return reg.status; },
+    onDidChangeActiveTextEditor(fn) { reg.onEditor = fn; return { dispose() {} }; } },
+  StatusBarAlignment: { Left: 1, Right: 2 },
   Uri: { file(p) { return { fsPath: p, with(o) { return { toString() { return 'file://' + p + '#' + o.fragment; } }; } }; } },
   Location: function (uri, position) { this.uri = uri; this.position = position; },
   Position: function (line, character) { this.line = line; this.character = character; },
@@ -97,7 +101,14 @@ check(SEC + 'TAG hover → one hover naming the tag, with printers from this rep
 const l5 = "  console.log('" + SEC + "ZZ_NOT_A_TAG');";
 const h5 = hovers(doc(l5), at(l5, 'ZZ_NOT'));
 check('made-up ' + SEC + 'TAG → hover says "no spec found" (never silent)', h5.length === 1 && /no spec found/.test(h5[0].contents.value));
-check('one command and one save listener registered', reg.commands.length === 1 && reg.saves === 1);
+check('commands registered: ' + reg.commands.join(', '), reg.commands.length === 2 && reg.commands.includes('x0Navigator.costIfDeployed') && reg.saves === 1);
+// Cost if deployed (§F.12a), through the registered wiring, on this real checkout
+const costLines = api.costIfDeployed();
+check('"Cost if deployed" prints one ' + SEC + 'DEPLOY_COST line per app (' + costLines.filter(l => l.startsWith(SEC + 'DEPLOY_COST app=')).length + ')',
+  costLines.filter(l => l.startsWith(SEC + 'DEPLOY_COST app=')).length >= 3);
+const fileDoc = rel => ({ uri: { fsPath: path.join(ROOT, rel) } });
+const stBoot = api.statusText(fileDoc('viewer/scene.js')), stNone = api.statusText(fileDoc('scripts/log_stamp.js'));
+check('status bar: a page script says "start-up" (' + stBoot + '); a dev script says "' + stNone + '"', /viewer: start-up/.test(stBoot || '') && stNone === 'not loaded at start');
 
 
 // §F.5: after the first refresh the providers read a fresh copy in the storage folder, never the committed one.
