@@ -115,7 +115,11 @@ const finish = () => { const v = judged === 0 ? 'INCONCLUSIVE' : fails ? 'FAIL' 
     const res = await setComplete('Y'); edited = true; log('§DASH_SYNC_W pilot edit SHED Substructure IsComplete=Y → ' + JSON.stringify(res).slice(0, 160));
     ck('E1 the stock web service took the edit', !res.isError && phaseFlag() === 'Y', phaseFlag());
     const after = parse(psqlRaw(selects(goals, 'A'))).A;
-    ck('E2 legacy moved: Health Green rose, a real green project on the pilot', Number(after[green.id]) > Number(before[green.id]), 'legacy ' + before[green.id] + ' -> ' + after[green.id]);
+    // E2 (§5.76): the premise is read from TODAY's data, not from a date that passes. It used to demand "Health Green rose", true only while Substructure was the one phase due (2026-11-04); once every phase
+    //   was due, ticking one left the project Red on BOTH sides and E2 failed with nothing wrong. What the E arm needs is that the edit moved SOME goal on legacy, so that Home == legacy judges a change.
+    const moved = goals.filter(g => after[g.id] !== before[g.id]);
+    if (!moved.length) inc('E2', 'the edit (SHED Substructure IsComplete=Y) moved no goal on legacy today: the E arm then compares unchanged values (Health Green ' + before[green.id] + ' -> ' + after[green.id] + ')');
+    else ck('E2 the edit moved ' + moved.length + ' goal(s) on legacy (' + moved.map(g => g.name).slice(0, 4).join(', ') + '), so the E arm judges a real change', true, 'Health Green ' + before[green.id] + ' -> ' + after[green.id]);
     goals.filter(g => after[g.id] !== before[g.id]).forEach(g => log('    §DASH_SYNC_W legacy moved ' + g.name + ' ' + before[g.id] + ' -> ' + after[g.id]));
     const snapEdit = (job(), JSON.parse(fs.readFileSync(COPY, 'utf8'))), d4 = NB.makeWritableDbHost(new SQL.Database(d1.export())), edit = applyCopy(d4, snapEdit, () => {});
     ck('E3 the mirror changes exactly the edited row', edit.tables.C_ProjectPhase.updated === 1 && Object.keys(edit.tables).filter(t => t !== 'C_ProjectPhase').every(t => edit.tables[t].updated === 0 && edit.tables[t].inserted === 0 && edit.tables[t].deleted === 0), { phase: edit.tables.C_ProjectPhase });
