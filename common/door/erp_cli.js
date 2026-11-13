@@ -373,6 +373,14 @@ function lookupByName(O, field, text, client) {   // a column that holds a recor
   if (rs.length > 1) refuse(rs.length + ' ' + table + ' records are named "' + text + '" (' + key + ' ' + rs.map(r => r.k).join(', ') + '); give the key');
   return rs[0].k;
 }
+// A List field holds only what its lookup holds (bim-compiler prompts/CLI_ERP_IVR.md §19): the window's dropdown is that lookup (MLookup.containsKeyNoDirect L300-311, ported ONCE as ad_callout RUNTIME.lookupContains);
+// the door has no dropdown, so it asks the same function before a value is set. The refusal is PO.set_Value's own text (PO.java L1096).
+function listValueCheck(O, A, st, f, v) {
+  if (MIS_BREAK === 'nolistcheck' || v === '' || v == null || f.getDisplayType() !== 17 || f.vo.AD_Reference_Value_ID == null) return;
+  if (A.RUNTIME.lookupContains(st, f, v)) return;
+  const valid = O.rows("SELECT value FROM ad_ref_list WHERE ad_reference_id=? AND isactive='Y' ORDER BY value", [f.vo.AD_Reference_Value_ID]).map(r => r.value);
+  refuse(f.vo.ColumnName + ' Invalid value - ' + v + ' - Reference_ID=' + f.vo.AD_Reference_Value_ID + valid.map(x => ' - ' + x).join('') + '; nothing was written');
+}
 function parseGiven(a) {   // the column=value pairs of a line (--where, repeated): shared by new and update
   const given = {}; (Array.isArray(a.where) ? a.where : (a.where ? [a.where] : [])).forEach(w => { const m = /^([A-Za-z_]\w*)=([\s\S]*)$/.exec(w); if (!m) refuse('a column is column=value, got "' + w + '"'); if (m[1].toLowerCase() in given) refuse('column ' + m[1] + ' given twice'); given[m[1].toLowerCase()] = m[2]; });
   return given;
@@ -415,6 +423,7 @@ function createRecord(O, a) {
     Object.keys(given).forEach(k => {   // each given column is an edit, in the order given: its callouts fire as on screen
       const f = bycol[k]; let v = given[k];
       if (f.vo.refTable && !DEC_ID.test(String(v).trim())) v = lookupByName(O, f, v, client);
+      listValueCheck(O, A, st, f, v);
       if (NEW_BREAK === 'nocallouts') f.setValue(A.typed(f.getDisplayType(), v), true); else st.setValue(f.vo.ColumnName, v);   // the break: an edit that fires no callout
       set.push(f.vo.ColumnName);
     });
@@ -474,6 +483,7 @@ function updateRecord(O, a) {
       const f = bycol[k]; let v = given[k] === '<null>' ? '' : given[k];   // <null> clears a column (a door line cannot carry an empty value)
       const why = MIS_BREAK === 'noeditcheck' ? null : notEditable(O, tab.id, f, r); if (why) refuse(f.vo.ColumnName + ' cannot be edited here: ' + why + '; nothing was written');
       if (v !== '' && f.vo.refTable && !DEC_ID.test(String(v).trim())) v = lookupByName(O, f, v, client);
+      listValueCheck(O, A, st, f, v);
       if (MIS_BREAK === 'nocallouts') f.setValue(A.typed(f.getDisplayType(), v), false); else st.setValue(f.vo.ColumnName, v);   // an edit: its callouts fire as on screen (the break: none)
       set.push(f.vo.ColumnName);
     });
