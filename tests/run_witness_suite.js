@@ -143,6 +143,9 @@ if (FILTER) files = files.filter(f => f.indexOf(FILTER) >= 0);
 const browserFiles = files.filter(isBrowser);
 if (!WITH_BROWSER) files = files.filter(f => !isBrowser(f));
 
+// §LOG_STAMP (scripts/log_stamp.js, #2927): the first line of every suite log says which code produced it.
+console.log(require('../scripts/log_stamp').stampLine(path.join(__dirname, '..'), 'run_witness_suite ' + args.join(' ')));
+
 if (LIST_ONLY) {
   files.forEach(f => console.log('  ' + f + (KNOWN_RED[f] ? '   [KNOWN_RED]' : '')));
   console.log('§SUITE_LIST ' + files.length + ' witnesses');
