@@ -11,6 +11,7 @@ const tagIndex = require('./lib/tag_index');
 const surface = require('./lib/app_surface_index');
 const surfaceRefresh = require('./lib/surface_refresh');
 const deployCost = require('./lib/deploy_cost');
+const lensIndex = require('./lib/lens_index');
 
 const JS = { language: 'javascript' };
 const MARKER = path.join('internal', 'APP_SURFACE.md'); // a folder holding this file is the bim-ootb root
@@ -179,9 +180,46 @@ function activate(context) {
   context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(showStatus));
   showStatus(vscode.window.activeTextEditor);
 
+  // ── Values beside the code (§F.12b): above a line that prints a §TAG, the last value a STAMPED log holds for it, shown
+  //    only when the printing file is unchanged since that log's commit. Logs are re-read only when one of them changes. ──
+  let logScan = null, logScanKey = '';
+  const proofCache = new Map();
+  function scanLogs(sourceRoot) {
+    const dir = path.join(sourceRoot, 'logs');
+    let key = '';
+    try { key = fs.readdirSync(dir).filter(n => n.endsWith('.log')).map(n => n + ':' + fs.statSync(path.join(dir, n)).mtimeMs).join('|'); } catch (e) { key = ''; }
+    if (!logScan || key !== logScanKey) { logScan = lensIndex.scanLogs(dir); logScanKey = key; proofCache.clear(); }
+    return logScan;
+  }
+  function lenses(document) {
+    const sourceRoot = findSourceRoot(context);
+    if (!sourceRoot || !document.uri.fsPath.startsWith(sourceRoot + path.sep)) return { shown: [], hidden: [] };
+    const scan = scanLogs(sourceRoot);
+    if (!scan.logs.length) return { shown: [], hidden: [] };
+    const rel = path.relative(sourceRoot, document.uri.fsPath).split(path.sep).join('/');
+    return lensIndex.lensesFor(sourceRoot, rel, document.getText(), scan, proofCache);
+  }
+  const lensChanged = new vscode.EventEmitter();
+  context.subscriptions.push(lensChanged);
+  context.subscriptions.push(vscode.languages.registerCodeLensProvider(JS, {
+    onDidChangeCodeLenses: lensChanged.event,
+    provideCodeLenses(document) {
+      return lenses(document).shown.map(l => new vscode.CodeLens(new vscode.Range(l.line, 0, l.line, 0),
+        { title: lensIndex.title(l), tooltip: 'From ' + l.logName + ' line ' + l.logLine + ', made at commit ' + l.commit + '. This file is unchanged since.', command: 'x0Navigator.openLogLine', arguments: [l.log, l.logLine] }));
+    }
+  }));
+  context.subscriptions.push(vscode.commands.registerCommand('x0Navigator.openLogLine', async (file, line) => {
+    const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(file));
+    const ed = await vscode.window.showTextDocument(doc);
+    const pos = new vscode.Position(Math.max(0, (line || 1) - 1), 0);
+    ed.selection = new vscode.Selection(pos, pos);
+    ed.revealRange(new vscode.Range(pos, pos));
+  }));
+  context.subscriptions.push(vscode.workspace.onDidSaveTextDocument(() => { proofCache.clear(); lensChanged.fire(); }));
+
   // For the node witness: when the first fresh copy is ready, and which index file the providers read now.
   return {
-    costIfDeployed, statusText,
+    costIfDeployed, statusText, lenses,
     whenFresh: () => firstRefresh,
     indexFile: () => { const f = getFields(); return f ? f.file : null; },
     refreshRuns: () => (refresher ? refresher.runs() : 0)

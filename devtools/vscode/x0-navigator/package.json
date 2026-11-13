@@ -25,6 +25,10 @@
       {
         "command": "x0Navigator.costIfDeployed",
         "title": "X0 Navigator: Cost if deployed (start-up and offline-cache bytes vs main)"
+      },
+      {
+        "command": "x0Navigator.openLogLine",
+        "title": "X0 Navigator: Open the log line behind a value"
       }
     ],
     "configuration": {

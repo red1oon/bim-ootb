@@ -177,4 +177,4 @@ function buildIndex(roots) {
   return { spec: buildSpecIndex(roots), printers: buildPrinterIndex(roots[0].dir) };
 }
 
-module.exports = { TAG_RE, SHOWN, tagsInLine, tagAt, buildSpecIndex, buildPrinterIndex, buildIndex, lookup, formatHover };
+module.exports = { TAG_RE, SHOWN, tagsInLine, tagAt, printerRank, buildSpecIndex, buildPrinterIndex, buildIndex, lookup, formatHover };

@@ -22,12 +22,13 @@ const reg = { definition: [], hover: [], commands: [], saves: 0 };
 const vscodeStub = {
   languages: {
     registerDefinitionProvider(sel, p) { reg.definition.push({ sel, p }); return { dispose() {} }; },
-    registerHoverProvider(sel, p) { reg.hover.push({ sel, p }); return { dispose() {} }; }
+    registerHoverProvider(sel, p) { reg.hover.push({ sel, p }); return { dispose() {} }; },
+    registerCodeLensProvider(sel, p) { reg.lens = (reg.lens || []).concat([{ sel, p }]); return { dispose() {} }; }
   },
   workspace: {
     workspaceFolders: [{ uri: { fsPath: ROOT } }],
     getConfiguration() { return { get() { return ''; } }; },
-    onDidSaveTextDocument(fn) { reg.saves++; reg.onSave = fn; return { dispose() {} }; }
+    onDidSaveTextDocument(fn) { reg.saves++; reg.saveFns = (reg.saveFns || []).concat([fn]); reg.onSave = d => reg.saveFns.forEach(f => f(d)); return { dispose() {} }; }
   },
   commands: { registerCommand(id) { reg.commands.push(id); return { dispose() {} }; } },
   window: { showInformationMessage() {}, activeTextEditor: undefined,
@@ -35,6 +36,10 @@ const vscodeStub = {
     createStatusBarItem() { reg.status = { show() { this.shown = true; }, hide() { this.shown = false; }, dispose() {} }; return reg.status; },
     onDidChangeActiveTextEditor(fn) { reg.onEditor = fn; return { dispose() {} }; } },
   StatusBarAlignment: { Left: 1, Right: 2 },
+  EventEmitter: function () { this.event = function () {}; this.fire = function () {}; this.dispose = function () {}; },
+  CodeLens: function (range, command) { this.range = range; this.command = command; },
+  Range: function (a, b, c, d) { this.start = { line: a, character: b }; this.end = { line: c, character: d }; },
+  Selection: function (a, b) { this.active = a; },
   Uri: { file(p) { return { fsPath: p, with(o) { return { toString() { return 'file://' + p + '#' + o.fragment; } }; } }; } },
   Location: function (uri, position) { this.uri = uri; this.position = position; },
   Position: function (line, character) { this.line = line; this.character = character; },
@@ -101,7 +106,30 @@ check(SEC + 'TAG hover → one hover naming the tag, with printers from this rep
 const l5 = "  console.log('" + SEC + "ZZ_NOT_A_TAG');";
 const h5 = hovers(doc(l5), at(l5, 'ZZ_NOT'));
 check('made-up ' + SEC + 'TAG → hover says "no spec found" (never silent)', h5.length === 1 && /no spec found/.test(h5[0].contents.value));
-check('commands registered: ' + reg.commands.join(', '), reg.commands.length === 2 && reg.commands.includes('x0Navigator.costIfDeployed') && reg.saves === 1);
+check('commands registered: ' + reg.commands.join(', '), reg.commands.length === 3 && reg.commands.includes('x0Navigator.costIfDeployed') && reg.commands.includes('x0Navigator.openLogLine') && reg.saves === 2);
+// Values beside the code (§F.12b), through the registered CodeLens provider, on this real checkout: a log is stamped by the
+// repo's own stamper at the current commit, so a tag printed by an unchanged file must get a lens, and an unstamped copy must not.
+check('1 CodeLens provider registered for javascript', (reg.lens || []).length === 1 && reg.lens[0].sel.language === 'javascript');
+{
+  const T2 = require(path.join(EXT, 'lib', 'tag_index.js'));
+  const pr = (T2.buildPrinterIndex(ROOT).tags.get(SEC + 'HOSTED_BEFORE_HOST') || []).find(x => x.rank === 0);
+  const text = fs.readFileSync(pr.abs, 'utf8');
+  const lensDoc = { uri: { fsPath: pr.abs }, getText() { return text; } };
+  const logsDir = path.join(ROOT, 'logs'), probe = path.join(logsDir, 'x0_activate_lens_probe.log');
+  const cp2 = require('child_process');
+  const fileClean = cp2.spawnSync('git', ['diff', '--quiet', 'HEAD', '--', pr.file], { cwd: ROOT }).status === 0;
+  fs.mkdirSync(logsDir, { recursive: true });
+  fs.writeFileSync(probe, SEC + 'HOSTED_BEFORE_HOST hostedTotal=7 (no stamp)' + '\n');
+  const unstamped = reg.lens[0].p.provideCodeLenses(lensDoc).filter(c => /hostedTotal=7/.test(c.command.title)).length;
+  fs.writeFileSync(probe, require(path.join(ROOT, 'scripts', 'log_stamp.js')).stampLine(ROOT, 'activate witness') + '\n' + SEC + 'HOSTED_BEFORE_HOST hostedTotal=7 matched=7' + '\n');
+  const fut = new Date(Date.now() + 5000); fs.utimesSync(probe, fut, fut);          // a new mtime, so the cached scan is dropped
+  const got = reg.lens[0].p.provideCodeLenses(lensDoc).filter(c => /hostedTotal=7 matched=7/.test(c.command.title));
+  fs.rmSync(probe);
+  check('red control: an unstamped log gives no lens (n=' + unstamped + ')', unstamped === 0);
+  if (!fileClean) console.log('  NOTE ' + pr.file + ' differs from HEAD in this checkout: the lens rightly shows nothing, not judged');
+  else check('a stamped log at this commit → a lens on ' + pr.file + ':' + pr.line + ' (' + (got[0] && got[0].command.title.slice(0, 70)) + '…)',
+    got.length >= 1 && got[0].range.start.line === pr.line - 1 && got[0].command.command === 'x0Navigator.openLogLine');
+}
 // Cost if deployed (§F.12a), through the registered wiring, on this real checkout
 const costLines = api.costIfDeployed();
 check('"Cost if deployed" prints one ' + SEC + 'DEPLOY_COST line per app (' + costLines.filter(l => l.startsWith(SEC + 'DEPLOY_COST app=')).length + ')',
