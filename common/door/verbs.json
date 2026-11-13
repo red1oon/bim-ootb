@@ -3223,6 +3223,78 @@
    "witness": "common/door/tests/witness_mis_add_window.js"
   },
   {
+   "verb": "ninja.exec",
+   "app": "ninja",
+   "title": "Run a Ninja workbook",
+   "description": "Make every table of a Ninja workbook (.xlsx or .xls) in one line: its windows, detail tabs, lists, menu entries and role access, then load the rows of its data sheets. The model is read from the sheet 2_RO_ModelMaker (one row per table: Master, Name, ColumnSet), else ModelMakerSource. A table whose Master is another table of the workbook becomes a tab of that window. A sheet named exactly after a table is a data sheet (row 1 the column names). The file must be in the folder the line is run from. dry=Y reads the workbook, lists what it would make and writes nothing. Run a second time with the same file it writes nothing. A table name that already exists, or a workbook that would change tables another workbook staged, is refused and nothing is written. Afterwards every table works with the mis.* verbs.",
+   "inputs": [
+    {
+     "name": "file",
+     "description": "The Ninja workbook, in the folder the line is run from.",
+     "required": true,
+     "type": "string",
+     "example": "Ninja_HRMIS.xlsx"
+    },
+    {
+     "name": "dry",
+     "description": "Optional: Y lists the tables, tabs and data sheets it would make and writes nothing.",
+     "required": false,
+     "type": "string",
+     "example": "Y"
+    },
+    {
+     "name": "data",
+     "description": "Optional: N leaves the data sheets out (the tables are made empty).",
+     "required": false,
+     "type": "string",
+     "example": "N"
+    }
+   ],
+   "harm": "writes",
+   "dictionary": true,
+   "calls": {
+    "cli": "erp_cli",
+    "who": "the ERP engine",
+    "argv": [
+     "ninja_exec",
+     "--file",
+     "{file}",
+     {
+      "if": "dry",
+      "args": [
+       "--dry",
+       "{dry}"
+      ]
+     },
+     {
+      "if": "data",
+      "args": [
+       "--data",
+       "{data}"
+      ]
+     }
+    ]
+   },
+   "returns": {
+    "shape": "erp_cli JSON {bundle,file,sha256,sheet,tables:[{table,master,columns,lists}],windows,detailTabs,dataSheets:[{sheet,rows,loaded}],skipped,notChecked,opSummary,ops} or {dry,...} or {alreadyStaged,...} or {refused,reason}",
+    "fields": [
+     {
+      "path": "bundle",
+      "type": "string"
+     },
+     {
+      "path": "ops",
+      "type": "number"
+     }
+    ]
+   },
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "witness": "common/door/tests/witness_ninja_exec.js"
+  },
+  {
    "verb": "erp.column",
    "app": "erp",
    "title": "Who fills a column: twin and legacy side by side (old name of mis.column)",

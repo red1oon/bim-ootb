@@ -20,7 +20,7 @@ async function compose(opts) {
   opts = opts || {};
   const hand = JSON.parse(fs.readFileSync(process.env.COMPOSE_HAND || path.join(ROOT, 'common/door/vocab/hand.json'), 'utf8'));   // COMPOSE_HAND: a test-only alternative hand source (W-VOCAB-COMPOSE C2)
   const gen = await require('./gen_erp_door_verbs.js').generate();
-  const born = (e) => /^mis\./.test(e.verb), docs = gen.filter(e => !RECORDS[e.verb] && !born(e)), recs = gen.filter(e => RECORDS[e.verb]).map(e => Object.assign(clone(e), { verb: RECORDS[e.verb], app: 'mis' })).concat(gen.filter(born));   // born = created under the MIS prefix, no old name
+  const born = (e) => /^(mis|ninja)\./.test(e.verb), docs = gen.filter(e => !RECORDS[e.verb] && !born(e)), recs = gen.filter(e => RECORDS[e.verb]).map(e => Object.assign(clone(e), { verb: RECORDS[e.verb], app: 'mis' })).concat(gen.filter(born));   // born = created under the MIS or the Ninja prefix, no old name
   const sources = { hand: hand.verbs, 'ad-documents': docs, 'ad-records': recs };
   const claimed = new Map(), out = [];
   for (const [src, list] of Object.entries(sources)) for (const e of list) {

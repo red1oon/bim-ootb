@@ -323,7 +323,7 @@ function createDoor(opts) {
     if (entry.calls.cli === 'erp_cli') {   // exit 0 answered · 3 refused (not found, not offered, the engine said no: an answer) · 1 failed · 2 usage. `next` = the legal actions the engine reports (verbs(ctx))
       const a = parse();
       if ((r.code === 0 || r.code === 3) && a !== undefined) {
-        const e = r.code === 3 ? envelope(base, 'refused', { answer: a, raw: r.out, why: a.reason || 'refused' }) : a.verdict === 'VACUOUS' ? envelope(base, 'inconclusive', { answer: a, raw: r.out, why: a.summary }) : envelope(base, 'ok', { answer: a, raw: r.out, ops: a.ops || [] });
+        const e = r.code === 3 ? envelope(base, 'refused', { answer: a, raw: r.out, why: a.reason || 'refused' }) : a.verdict === 'VACUOUS' ? envelope(base, 'inconclusive', { answer: a, raw: r.out, why: a.summary }) : envelope(base, 'ok', { answer: a, raw: r.out, ops: a.ops || [], notChecked: a.notChecked || [] });
         const nx = a.actions && a.actions.actions ? a.actions.actions : a.actions; if (Array.isArray(nx)) e.next = nx.slice();
         return e;
       }

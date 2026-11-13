@@ -221,6 +221,7 @@ function record(O, a) {
   if (!row) refuse('no ' + t.name + ' with ' + key.columnname + ' ' + a.uu);
   return { t, cols, key, row };
 }
+const EXEC_BREAK = process.env.NINJAEXEC_BREAK || '';   // W-NINJA-EXEC falsifier nochild: the child rows are not looked up
 function read(O, a) {
   const r = record(O, a), tx = O.trx(), R = roleFor(O, r.t, r.cols, a);
   if (R) {   // a record outside the role's rows answers exactly as one that does not exist; columns the role may not read are not shown; the child rows pass their own table's clause
@@ -229,7 +230,7 @@ function read(O, a) {
     r.cols.filter(c => !R.canRead(c)).forEach(c => { delete r.row[c.columnname.toLowerCase()]; });
   }
   const kids = childTabs(O.rows, r.t, R ? R.tab : null).map(c => {
-    let rs = c.link ? tx.find(c.table, { [c.link]: a.uu }) : [];
+    let rs = c.link && EXEC_BREAK !== 'nochild' ? tx.find(c.table, { [c.link.toLowerCase()]: a.uu }) : [];   // Trx rows are keyed in lower case: the dictionary's ColumnName (C_Order_ID) matched nothing, so no parent ever showed a child row
     if (R && rs.length) { const ct = kindOf(O.rows, c.table), cc = columnsOf(O.rows, ct), CA = accessOf(O, R.rc, ct.ad_table_id, cc), cw = CA.where(false), ck = cc.filter(x => x.iskey === 'Y');
       if (cw && ck.length === 1) { const ok = {}; O.rows('SELECT ' + ck[0].columnname + ' AS k FROM ' + ct.tablename + ' WHERE ' + c.link + '=? AND ' + cw, [/^-?\d+$/.test(String(a.uu)) ? Number(a.uu) : a.uu]).forEach(x => { ok[x.k] = 1; }); rs = rs.filter(x => ok[x[ck[0].columnname.toLowerCase()]]); }
       else if (cw) rs = [];   // a child table with no single key cannot be matched row by row: nothing is shown rather than everything
