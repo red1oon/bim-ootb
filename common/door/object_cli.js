@@ -70,11 +70,16 @@ function kindOf(rows, kind) {
 function columnsOf(rows, t) {
   return rows('SELECT c.ad_column_id, c.columnname, c.name, c.ad_reference_id, c.ad_reference_value_id, c.fieldlength, c.iskey, c.isparent, c.ismandatory, c.isupdateable, c.valuemin, c.valuemax, c.isallowlogging FROM ad_column c WHERE c.ad_table_id=? AND c.isactive=\'Y\' ORDER BY c.ad_column_id', [t.ad_table_id]);
 }
+// THE tab picker (bim-compiler prompts/CLI_ERP_IVR.md §18): a kind's active tabs by tab level, sequence, tab id. describe (edit, childTabs), the role (roleFor) and the write path (erp_cli tabFor)
+// all take its first row; no other query in common/door picks a tab (W-MIS-TAB P3). TAB_BREAK=noid is the witness's falsifier (the tie-break dropped: tied tabs fall to SQLite's row order).
+function tabsOf(rows, tableId) {
+  return rows("SELECT tb.ad_tab_id AS id, tb.ad_window_id AS win, tb.tablevel AS lvl, tb.seqno AS seq FROM ad_tab tb WHERE tb.ad_table_id=? AND tb.isactive='Y' ORDER BY tb.tablevel, tb.seqno" + (process.env.TAB_BREAK === 'noid' ? '' : ', tb.ad_tab_id'), [tableId]);
+}
 function childTabs(rows, t, tabId) {
   // the tabs one level below the tab that shows this table, in the same window (GridWindow tab levels); the link is the child's IsParent column. tabId: the tab a role opens (roleFor), else the first.
-  const mine = tabId != null ? rows('SELECT tb.ad_tab_id, tb.ad_window_id, tb.tablevel, tb.seqno FROM ad_tab tb WHERE tb.ad_tab_id=?', [tabId])[0] : rows('SELECT tb.ad_tab_id, tb.ad_window_id, tb.tablevel, tb.seqno FROM ad_tab tb WHERE tb.ad_table_id=? AND tb.isactive=\'Y\' ORDER BY tb.tablevel, tb.seqno', [t.ad_table_id])[0];
+  const mine = (tabId != null ? rows("SELECT tb.ad_tab_id AS id, tb.ad_window_id AS win, tb.tablevel AS lvl, tb.seqno AS seq FROM ad_tab tb WHERE tb.ad_tab_id=?", [tabId]) : tabsOf(rows, t.ad_table_id))[0];
   if (!mine) return [];
-  return rows('SELECT tb.name, tb.issinglerow, tb.isreadonly, tb.tablevel, tb.seqno, t2.name AS kind, t2.tablename, t2.ad_table_id FROM ad_tab tb JOIN ad_table t2 ON t2.ad_table_id=tb.ad_table_id WHERE tb.ad_window_id=? AND tb.isactive=\'Y\' AND tb.tablevel=? AND tb.seqno>? ORDER BY tb.seqno', [mine.ad_window_id, mine.tablevel + 1, mine.seqno])
+  return rows('SELECT tb.name, tb.issinglerow, tb.isreadonly, tb.tablevel, tb.seqno, t2.name AS kind, t2.tablename, t2.ad_table_id FROM ad_tab tb JOIN ad_table t2 ON t2.ad_table_id=tb.ad_table_id WHERE tb.ad_window_id=? AND tb.isactive=\'Y\' AND tb.tablevel=? AND tb.seqno>? ORDER BY tb.seqno', [mine.win, mine.lvl + 1, mine.seq])
     .map(c => ({ kind: c.kind, table: c.tablename, tab: c.name, single: c.issinglerow === 'Y', readonly: c.isreadonly === 'Y', link: (rows('SELECT columnname FROM ad_column WHERE ad_table_id=? AND isparent=\'Y\' AND isactive=\'Y\'', [c.ad_table_id])[0] || {}).columnname || null }));
 }
 function listValues(rows, refId) { return rows("SELECT value, name FROM ad_ref_list WHERE ad_reference_id=? AND isactive='Y' ORDER BY value", [refId]); }
@@ -83,7 +88,7 @@ function listValues(rows, refId) { return rows("SELECT value, name FROM ad_ref_l
 // The field is the one the kind's FIRST tab shows (lowest tablevel, seqno: the same pick as childTabs). A model whose patch lacks a table or column here simply omits those keys.
 function edit(rows, t, cols, tabId) {
   const have = (tb, c) => rows("SELECT 1 FROM pragma_table_info('" + tb + "') WHERE lower(name)=?", [c]).length > 0, tbl = (n) => rows("SELECT name FROM sqlite_master WHERE type='table' AND lower(name)=?", [n]).length > 0;
-  const tab = tabId != null ? { ad_tab_id: tabId } : tbl('ad_tab') && tbl('ad_field') ? rows('SELECT ad_tab_id FROM ad_tab WHERE ad_table_id=? AND isactive=\'Y\' ORDER BY tablevel, seqno', [t.ad_table_id])[0] : null;
+  const first = tabId == null && tbl('ad_tab') && tbl('ad_field') ? tabsOf(rows, t.ad_table_id)[0] : null, tab = tabId != null ? { ad_tab_id: tabId } : first ? { ad_tab_id: first.id } : null;
   const F = {}; if (tab) rows('SELECT * FROM ad_field WHERE ad_tab_id=? AND isactive=\'Y\'', [tab.ad_tab_id]).forEach(f => { F[f.ad_column_id] = f; });
   const C = {}; const cc = ['help', 'readonlylogic', 'isalwaysupdateable', 'ad_val_rule_id', 'isallowcopy'].filter(c => have('ad_column', c));
   if (cc.length) rows('SELECT ad_column_id, ' + cc.join(', ') + ' FROM ad_column WHERE ad_table_id=? AND isactive=\'Y\'', [t.ad_table_id]).forEach(r => { C[r.ad_column_id] = r; });
@@ -133,7 +138,7 @@ function accessOf(O, rc, tableId, cols) {
 function roleFor(O, t, cols, a) {
   const rc = roleCtx(O, a); if (!rc) return null;
   const R = accessOf(O, rc, t.ad_table_id, cols);
-  const tabs = O.rows("SELECT tb.ad_tab_id AS id, tb.ad_window_id AS win FROM ad_tab tb WHERE tb.ad_table_id=? AND tb.isactive='Y' ORDER BY tb.tablevel, tb.seqno, tb.ad_tab_id", [t.ad_table_id]);
+  const tabs = tabsOf(O.rows, t.ad_table_id);
   const tab = ROLE_BREAK() === 'nowindow' ? tabs[0] : tabs.filter(x => rc.gateWindow(Number(x.win)).allowed)[0];   // GridWindowVO.create L203: no AD_Window_Access row = "No Window"
   if (!tab) refuse('role ' + rc.AD_Role_ID + ' (' + rc.name + ') is not granted a window that shows ' + t.name + ' (AD_Window_Access)');
   const wn = (O.rows('SELECT name FROM ad_window WHERE ad_window_id=?', [tab.win])[0] || {}).name;
@@ -399,4 +404,4 @@ async function main(argv) {
   }
 }
 if (require.main === module) main(process.argv.slice(2)).then(c => process.exit(c));
-module.exports = { roleFor, roleCtx, accessOf, main, describe, read, update, attach, history, count, list, sum, group, decSum, boot, open, kindOf, columnsOf, childTabs, applyOp, loadChunker, Refused, oplogFile, readOps };
+module.exports = { tabsOf, roleFor, roleCtx, accessOf, main, describe, read, update, attach, history, count, list, sum, group, decSum, boot, open, kindOf, columnsOf, childTabs, applyOp, loadChunker, Refused, oplogFile, readOps };
