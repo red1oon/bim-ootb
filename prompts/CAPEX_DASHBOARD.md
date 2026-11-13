@@ -21,7 +21,7 @@ proves and has a break switch that must FAIL. Honour this block until the lane i
 Every one of these witnesses has break runs that FAIL (named in its §).
 
 **NEXT, in order** (one PR each, from a fresh `origin/main` branch, spec section first):
-1. ✅ **G2 DONE for the model-layer path** (§5.73 RESULT, W-DDL-NOTNULL 7/0, 479 of 479 tables == Postgres). **NEXT = G2b: the same rule on the window Save path** (§5.73 "Open": `crud_overlay._modelAfterSave` skips tables with no listener; needs the X-of-N window sweep). Then the N4 stored-null rows.
+1. ✅ **G2 DONE for the model-layer path** (§5.73 RESULT, W-DDL-NOTNULL 7/0, 479 of 479 tables == Postgres). ✅ **G2b DONE** (§5.74 RESULT, W-HOST-NOTNULL 3/0, 427 of 427 tab tables == Postgres). Left from G2, named there: group commits (till / kitchen / branch) are not gated; the N4 stored-null rows; the host numbering `Value`.
 2. **PR C2:** delete the moved formulas from `tiles.js compute()` (§5.66; the 2026-11-13 morning block below has the exact keep-list and the W-DASH-DRILL 59/0 gate).
 3. W-DASH-SYNC E2 premise fix (§5.68 RESULT: E2 expired with the calendar, not a defect).
 4. The BIM documents measure in the BIM Document plugin's pack; the Stage tile as an `AD_Chart` (needs a twin chart reader).
@@ -1609,3 +1609,43 @@ Same video timing as the English cut frame for frame (5694 frames, 227.78 s); on
 - Browser witnesses outside this lane were not run against the rule (only the nine above).
 - Raw writers (spec call site 3) stay unchecked: `Trx.insert/update` called directly, `pipo_packin.apply` dictionary path, the import-file loader, Team placement.
 - `ad_ddl_default` is built from `idempiere_pilot`, this list from `idempiere` (4 default flags differ between the two databases; no column of the 479 twin tables disagreed in N1).
+
+### 5.74 SPEC — G2b: the NOT NULL rule on the window Save path (2026-11-13 night; written before code; owner "proceed"; §5.73 "Open" item 1)
+**Issue it proves or disproves:** after §5.73 a window Save still writes a row legacy's database refuses, whenever the table has no model listener: `crud_overlay._modelAfterSave` (:2871-2889) answers `cb([])` without entering the model layer, and for a table that does listen `ML.run AFTER_SAVE` (model_layer.js:807) never called the rule either.
+**Measured before the spec:**
+- Every window write (form Save, grid Save, `applyOp`, the Save preview) reaches ONE seam: `commitCrud` → `_commitCrudSealed` → `_modelAfterSave(op, db, cb)`; a refusal there seals nothing (`§MODEL-SAVE-ROLLBACK`, :2942). `_previewRun` calls the same function.
+- At that seam a CREATE op carries the form's values + what `BEFORE_SAVE` derived (model `beforeSave`, ctor `initialDefaults`) + the allocated DocumentNo (`_allocDocNo`, before the seam). The fold stamps Created/Updated/By/Client/Org later from `stdDefaults` (crud_core.js:460-470).
+- **The host does not allocate `Value`** (no `byTable` call in `crud_overlay.js`): legacy's `PO.saveNew` always does (PO.java:3596-3605, the table sequence, made on demand). The host does not apply the physical DEFAULTs either. Both are existing host gaps, named, not this step's.
+**Rule (one owner, no second implementation):** `_modelAfterSave` first asks `ModelLayer.notNullError` (the §5.73 function, a Trx over the tip-shadowed bundle) for CREATE and UPDATE ops; an answer is returned as the refusal `DBExecuteError:<PG text>` and nothing is sealed. No new table list, no per-window branch.
+- CREATE: `notNullError(trx, table, fields, true, null, skip)`; `skip = ['value']` when the table is one legacy numbers itself (the `saveNewNumbers` rule: not `m_attributeinstance / ad_tableattribute / ad_sysconfig / t_*`), because legacy would have filled it and refusing would be a divergence the other way. Said in the log: `§HOST-NOTNULL-SKIP table=… column=value`.
+- UPDATE: the op's changed columns whose new value is null.
+- DELETE: not checked.
+- The model layer's own ops of the same group were already checked by `ML._save` (§5.73).
+**Witness W-HOST-NOTNULL** `erp/tests/witness_host_notnull.js` (real `idempiere.html` in a browser, GardenWorld admin; oracle = Postgres, the same INSERT in a rolled-back transaction, as W-DDL-NOTNULL N1):
+- H1 X of N: N = the distinct tables of the active AD tabs that the page has physically and that Postgres has. A blank CREATE through `CrudOverlay.applyOp` (the commit funnel) is refused naming the column Postgres names for the same row (Value / DocumentNo supplied on the Postgres side where legacy numbers them); nothing is sealed (kernel_ops count unchanged). Tables both sides accept are counted apart.
+- H2 an UPDATE of a stored row setting a NOT NULL column to null is refused; a nullable column is not.
+- H3 the form-unprotected set, printed: columns NOT NULL in the database, without a default, that `AD_Column.IsMandatory` does not mark (the form's own check cannot catch them); at least one of them is in H1's refusals, or INCONCLUSIVE.
+- Break `HOSTNN_BREAK=nogate` (the page is served `crud_overlay.js` with the gate call removed): H1 and H2 must FAIL.
+**Regression:** the browser witnesses that save through a window, run on the branch; every red one is read; a NOT NULL refusal in its log is resolved as twin defect or instrument, as in §5.73.
+**Not in this step (named):** the host allocating `Value` and applying physical DEFAULTs like `PO.saveNew`; legacy's dialog wording for a failed save (GridTable.java:2941-2950 strips `DBExecuteError:`; the twin's toast is the generic "Save refused: …" of every model refusal).
+
+### 5.74 RESULT — G2b built: the window Save path asks the same rule (2026-11-14; logs read; branch `feat/capex-g2b-window-notnull`)
+**W-HOST-NOTNULL `PASS judged=3 fail=0 inconclusive=0`** (`erp/tests/witness_host_notnull.js`; real `idempiere.html`, GardenWorld admin, the commit funnel `__crud.applyOp`; oracle = Postgres `idempiere`, rolled-back INSERT):
+- H1 blank new record: the host names the column Postgres names on **427 of 427** tab tables (408 refused with the same column, 19 accepted on both sides). N = the 697 tables of active tabs ∩ the 428 this page has physically ∩ Postgres.
+- H2 `C_BPartner.Name` → null on UPDATE refused with the DB text; a nullable column is not.
+- H3 the columns the form's own `IsMandatory` check cannot protect: 9 in the population (NOT NULL in the DB, no default, not marked mandatory); the 4 that are neither key, UU, Value nor DocumentNo are each refused at the commit (`M_InOutLineMA / M_InventoryLineMA / M_MovementLineMA.DateMaterialPolicy`, `R_Request.SalesRep_ID`).
+- **Break `HOSTNN_BREAK=nogate HOSTNN_LIMIT=40` → FAIL:** H1 3 of 40 (37 tables accept a row Postgres refuses), H2 FAIL. (Without LIMIT the break commits ~400 rows and runs past 25 minutes: the first break run was killed by its timeout and gave no verdict; named.)
+**Found by H1, fixed in the RULE (§5.73's function):** first run 424 of 427. The 3 misses (`AD_Ref_Table`, `C_AcctSchema_Default`, `C_AcctSchema_GL`) are keyed by a PARENT id the caller supplies; `notNullError` skipped that key as if PO assigned it. It now skips the key only where `PO.saveNew` assigns it (an IsKey column ending `_ID`, PO.java:3523-3528). W-DDL-NOTNULL N1 could not see this (its Postgres side supplied the twin's idCol): its instrument now supplies the key only for the dictionary's IsKey column; still `PASS 7/0`, 479 of 479.
+**Regression:**
+- 118 node witnesses: 0 regressions against the §5.73 final run (W-MASTER-SAVE-RULES extracts the host seam by function name: it now extracts the two new functions too).
+- 60 browser witnesses that save through a window, branch vs unmodified `origin/main` for every red one (33): 4 got worse, all resolved; none softened.
+  - **Twin defect, fixed (`erp/borrower.js`):** the borrower page created `C_PaymentProcessor` without the class's ctor defaults, so `Commission` was null (MPaymentProcessor.java:66-74; NOT NULL in the DB). `create()` now starts every new row from `ModelLayer.initialDefaultsOf(table)` of its engine frame.
+  - **Instruments that pushed a skeletal raw op through the funnel, fixed** (each now starts from the ctor defaults and carries the NOT NULL columns): W-MF-SEED (invoice without `C_BPartner_Location_ID`; it also prints every refused save on a crash now, `§MFS_REFUSED`), W-TEAM-UI-POS (movement lines without a header, 4-column invoices) → PASS 20/0 mutants 9/9, W-TIP-READERS → PASS 5/0 mutants 6/6, W-TIP-UPDATE-READ → PASS 4/0, `poc_libero_live` (order without plant / date / line) → PASS (it is red on main).
+  - W-MF-SEED ends red on B2 only; main is red on B2 and R. `witness_attach_live` hangs past its timeout on main and on the branch (killed both times; not this lane's).
+- Lane: W-TD-PACKIN-WINDOW 4/0, NC1-UI 13/13, W-DASH-TWIN 8/0. `§SW_AUDIT` 268/0; `crud_overlay.js?v=43`, `model_layer.js?v=13`, CACHE_VERSION v1072 (v1070 before the merge of main).
+**Lines:** production +36 / −1 (`crud_overlay.js` +29: the gate; `model_layer.js` +3; `borrower.js` +4 −1). Nothing to delete: the gate calls the one owner.
+**Open, named:**
+- **Group commits are not gated:** `applyOpGroup` / `depositGroup` (the POS till, kitchen, branch pages, the import-file loader, process results) call `commitGroup` directly, not `_modelAfterSave`. Process results come from the model layer (checked there); the till / kitchen / branch raw groups are unchecked = candidate defects, the next sweep.
+- **The host still does not number `Value` nor apply physical DEFAULTs** on a window create (the gate skips `Value` for that reason, logged `§HOST-NOTNULL-SKIP`).
+- The 27 green + 29 unchanged-red browser witnesses were compared by exit code and FAIL / line counts, not line by line.
+- N4 stored nulls (§5.73) unchanged.

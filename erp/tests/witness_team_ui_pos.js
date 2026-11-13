@@ -102,7 +102,7 @@ var TILL = 50004, HQ = 102, SRC = {};
     settle: async function (devs, who) { for (var i = 0; i < 6; i++) { for (var d of devs) await T.visit(d); if (await T.enrolled(who)) return true; await sleep(300); } return false; },
     roster: function (d, kid) { return d.pg.evaluate(async function (k) { var R = (await window.TeamSync.store().order()).roster, dv = R.devices[k]; return { plan: R.plan || null, person: dv ? dv.person : null, role: dv ? R.roleAt(k, Infinity).ad_role_id : null }; }, kid); },
     kind: function (d) { return d.pg.evaluate(function () { return window.TeamScope.kind(); }); },
-    create: function (d, table, fields) { return d.pg.evaluate(function (a) { return new Promise(function (res) { var once = function (e) { if (e.detail && String(e.detail.table).toLowerCase() === a.t) { window.removeEventListener('overlay:committed', once); res(e.detail.createdId); } }; window.addEventListener('overlay:committed', once); window.__crud.applyOp({ op_type: 'CRUD_CREATE', key: a.t, table: a.t, verb: 'create', fields: a.f }); setTimeout(function () { res(null); }, 8000); }); }, { t: table, f: fields }); },
+    create: function (d, table, fields) { return d.pg.evaluate(function (a) { return new Promise(function (res) { var once = function (e) { if (e.detail && String(e.detail.table).toLowerCase() === a.t) { window.removeEventListener('overlay:committed', once); res(e.detail.createdId); } }; window.addEventListener('overlay:committed', once); window.__crud.applyOp({ op_type: 'CRUD_CREATE', key: a.t, table: a.t, verb: 'create', fields: Object.assign({}, window.ModelLayer.initialDefaultsOf(a.t), a.f) }); setTimeout(function () { res(null); }, 8000); }); }, { t: table, f: fields }); },
     rows: function (d, sql) { return d.pg.evaluate(function (q) { return new Promise(function (res) { window.__crud.modelRun({ table: 'c_order', timing: 'PROCESS', fn: function (trx) { res(trx.q(q)); return { ok: true }; } }, function () {}); }); }, sql); },
     db: function (d, sql) { return d.pg.evaluate(function (q) { var r = window.__idmpDb.exec(q); return r.length ? r[0].values : []; }, sql); }
   };
@@ -168,8 +168,10 @@ var TILL = 50004, HQ = 102, SRC = {};
   var rB = await T.roster(A, await T.kid(B));
   console.log('   §UIP_OPTIONS groups=' + JSON.stringify(apB.groups) + ' options=' + apB.options.length + ' first=' + JSON.stringify(apB.options.slice(0, 6)));
   verdict('U2', (await T.enrolled(B)) && rB.person === orgs[0][1] && rB.role === TILL, 'Approve with Bound to = "' + northName + '" wrote the till\'s person_uu = that org\'s AD_Org_UU (' + String(orgs[0][1]).slice(0, 8) + ') at role 50004', JSON.stringify(rB));
-  var mvN = await T.create(A, 'm_movementline', { ad_client_id: 11, ad_org_id: 11, m_product_id: 123, qtyentered: 13, c_uom_id: 100, m_locator_id: 101, m_locatorto_id: 50002, description: 'replenish North ' + tag });
-  var mvS = await T.create(A, 'm_movementline', { ad_client_id: 11, ad_org_id: 11, m_product_id: 130, qtyentered: 17, c_uom_id: 100, m_locator_id: 101, m_locatorto_id: 50003, description: 'replenish South ' + tag });
+// a raw op carries no form: start from `new M..(ctx, 0)` (the class's ctor defaults) and give the columns the legacy DATABASE declares NOT NULL - else the commit gate refuses it as Postgres would (CAPEX_DASHBOARD.md §5.74)
+  var mvH = await T.create(A, 'm_movement', { ad_client_id: 11, ad_org_id: 11, documentno: 'MV-' + tag, c_doctype_id: 143, movementdate: '2026-10-28 00:00:00' });
+  var mvN = await T.create(A, 'm_movementline', { m_movement_id: mvH, ad_client_id: 11, ad_org_id: 11, m_product_id: 123, qtyentered: 13, c_uom_id: 100, m_locator_id: 101, m_locatorto_id: 50002, description: 'replenish North ' + tag });
+  var mvS = await T.create(A, 'm_movementline', { m_movement_id: mvH, ad_client_id: 11, ad_org_id: 11, m_product_id: 130, qtyentered: 17, c_uom_id: 100, m_locator_id: 101, m_locatorto_id: 50003, description: 'replenish South ' + tag });
   for (var r = 0; r < 3; r++) for (var d1 of [A, B]) await T.visit(d1);
   var mvq = "SELECT m_locatorto_id AS l FROM m_movementline WHERE qtyentered IN (13, 17) ORDER BY 1", mvBr = await T.rows(B, mvq), mvAr = await T.rows(A, mvq);
   verdict('U2', mvAr.length === 2 && mvBr.length === 1 && Number(mvBr[0].l) === 50002, 'the till bound through the dialog holds ONLY its branch\'s movement (locator 50002); the processor made two; 0 of South\'s reached it', 'processor=' + JSON.stringify(mvAr) + ' till=' + JSON.stringify(mvBr));
@@ -181,8 +183,10 @@ var TILL = 50004, HQ = 102, SRC = {};
   var rC = await T.roster(A, await T.kid(C));
   verdict('U3', (await T.enrolled(C)) && rC.person === bps[0][1], 'Approve with Bound to = "' + bps[0][2] + '" wrote the borrower\'s person_uu = that C_BPartner_UU (' + String(bps[0][1]).slice(0, 8) + ')', JSON.stringify(rC));
   var nA = 'LN-A-' + tag, nB = 'LN-B-' + tag;
-  var invA = await T.create(A, 'c_invoice', { ad_client_id: 11, ad_org_id: 11, c_bpartner_id: bps[0][0], documentno: nA, grandtotal: 228.85, dateinvoiced: '2026-10-28 00:00:00', issotrx: 'Y', description: 'secret of A' });
-  var invB = await T.create(A, 'c_invoice', { ad_client_id: 11, ad_org_id: 11, c_bpartner_id: bps[1][0], documentno: nB, grandtotal: 100, dateinvoiced: '2026-10-28 00:00:00', issotrx: 'Y', description: 'secret of B' });
+  var bplOf = async function (bp) { var r = await T.db(A, "SELECT MIN(c_bpartner_location_id) FROM c_bpartner_location WHERE isactive='Y' AND c_bpartner_id=" + Number(bp)); return r[0] && r[0][0]; };
+  var INVDOC = { c_doctype_id: 116, c_doctypetarget_id: 116, c_currency_id: 100, c_paymentterm_id: 105, m_pricelist_id: 101, dateacct: '2026-10-28 00:00:00' };   // DateAcct: the ctor's clock default, not in initialDefaultsOf
+  var invA = await T.create(A, 'c_invoice', Object.assign({ c_bpartner_location_id: await bplOf(bps[0][0]) }, INVDOC, { ad_client_id: 11, ad_org_id: 11, c_bpartner_id: bps[0][0], documentno: nA, grandtotal: 228.85, dateinvoiced: '2026-10-28 00:00:00', issotrx: 'Y', description: 'secret of A' }));
+  var invB = await T.create(A, 'c_invoice', Object.assign({ c_bpartner_location_id: await bplOf(bps[1][0]) }, INVDOC, { ad_client_id: 11, ad_org_id: 11, c_bpartner_id: bps[1][0], documentno: nB, grandtotal: 100, dateinvoiced: '2026-10-28 00:00:00', issotrx: 'Y', description: 'secret of B' }));
   for (var r2 = 0; r2 < 3; r2++) for (var d2 of [A, B, C]) await T.visit(d2);
   var cq = await T.rows(C, "SELECT documentno AS d FROM c_invoice WHERE documentno IN ('" + nA + "','" + nB + "')"), bq = await T.rows(B, "SELECT documentno AS d FROM c_invoice WHERE documentno IN ('" + nA + "','" + nB + "')");
   verdict('U3', invA != null && invB != null && cq.length === 1 && cq[0].d === nA && bq.length === 0, 'the borrower holds ITS loan (' + nA + ') and 0 of the other borrower\'s (' + nB + '); the till holds neither', JSON.stringify({ borrower: cq, till: bq }));

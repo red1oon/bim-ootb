@@ -2868,7 +2868,36 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
   }
   // _modelAfterSave — PO.afterSave (MOrderLine → order tax + header totals, MInvoiceLine → invoice tax/totals, …) for the
   // row this save writes; its ops join the SAME signed group (prompts/ERP_MODEL_LAYER.md §Seams AFTER save).
+  // §HOST-NOTNULL (bim-ootb prompts/CAPEX_DASHBOARD.md §5.74 — Witness: W-HOST-NOTNULL): the legacy DATABASE refuses a row with no value in a NOT NULL column, and every window write passes HERE before it is sealed.
+  //   The rule and its text are ModelLayer.notNullError (§5.73, one owner); this is only its call on the host's own op. CREATE: the op's fields; Value is left to legacy's numbering (PO.saveNew
+  //   PO.java:3596-3605 always fills it from the table sequence; this host does not yet - named in §5.74), on the tables PO numbers. UPDATE: the changed columns whose new value is null.
+  function _hostNotNull(op, cb) {
+    var ML = global.ModelLayer;
+    if (!ML || typeof ML.notNullError !== 'function' || typeof withBundle !== 'function' || (op.op_type !== 'CRUD_CREATE' && op.op_type !== 'CRUD_UPDATE')) { cb(null); return; }
+    withBundle(function (bdb) {
+      var err = null, sh = SIDE ? _tipShadowOn(bdb, _sideTables(SIDE)) : [];
+      try {
+        var t = String(op.table).toLowerCase(), trx = new ML.Trx(_modelQuery(bdb), _modelEnv()), rec = {}, k;
+        if (op.op_type === 'CRUD_CREATE') {
+          for (k in (op.fields || {})) rec[k.toLowerCase()] = op.fields[k];
+          var skip = /^(m_attributeinstance|ad_tableattribute|ad_sysconfig)$|^t_/.test(t) ? null : ['value'];
+          if (skip && rec.value == null && ML.notNullCols(trx, t).some(function (x) { return x.c === 'value'; })) console.log('§HOST-NOTNULL-SKIP table=' + t + ' column=value (legacy numbers it at the INSERT; this host does not)');
+          err = ML.notNullError(trx, t, rec, true, null, skip);
+        } else {
+          var ch = [];
+          for (k in (op.changes || {})) { var c = op.changes[k], v = (c && typeof c === 'object' && Object.prototype.hasOwnProperty.call(c, 'new')) ? c['new'] : c; rec[k.toLowerCase()] = v; ch.push(k.toLowerCase()); }
+          err = ML.notNullError(trx, t, rec, false, ch);
+        }
+      } catch (e) { console.log('§HOST-NOTNULL-ERR table=' + op.table + ' ' + (e && e.message)); err = null; }
+      finally { _tipShadowOff(bdb, sh); }
+      if (err) console.log('§HOST-NOTNULL table=' + op.table + ' op=' + op.op_type + ' refused: ' + err);
+      cb(err ? 'DBExecuteError:' + err : null);
+    });
+  }
   function _modelAfterSave(op, db, cb) {
+    _hostNotNull(op, function (nn) { if (nn) { cb([], nn); return; } _modelAfterSaveGated(op, db, cb); });
+  }
+  function _modelAfterSaveGated(op, db, cb) {
     var ML = global.ModelLayer, MVb = global.AdModelVal;
     var observing = !!(MVb && typeof MVb.hasSubscribers === 'function' && MVb.hasSubscribers(op.table));   // the topic bus (ad_modelval.js): someone listens on this table - the save must run the model path so its events exist
     op._observed = null;

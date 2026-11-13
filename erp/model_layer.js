@@ -403,6 +403,9 @@
     table = String(table).toLowerCase();
     var cs = notNullCols(trx, table); if (!cs.length) return null;
     var idc = isNew ? trx.idCol(table) : null, uuc = table + '_uu', dd = isNew ? ddlDefaults(trx, table) : null;
+    // PO.saveNew assigns the key only when the table HAS a key column ending _ID (PO.java:3523-3528, hasKeyColumn = an IsKey column); a table keyed by its parent (C_AcctSchema_GL: C_AcctSchema_ID,
+    //   AD_Ref_Table: AD_Reference_ID) takes that id from the caller, and the DB refuses the row without it (found by W-HOST-NOTNULL H1, CAPEX_DASHBOARD.md §5.74)
+    if (idc && !(/_id$/.test(idc) && isRealKey(trx.q, table, idc, trx.dbId))) idc = null;
     for (var i = 0; i < cs.length; i++) {
       var c = cs[i].c;
       if (isNew) { if (cs[i].d || dd[c] != null || c === idc || c === uuc || NN_STD.test(c) || (skip && skip.indexOf(c) >= 0)) continue; }

@@ -75,7 +75,7 @@ var BASE_OK = [
   function create(table, fields) { return pg.evaluate(function (a) { return new Promise(function (res) {
     var once = function (e) { if (e.detail && String(e.detail.table).toLowerCase() === a.t) { window.removeEventListener('overlay:committed', once); res(e.detail.createdId); } };
     window.addEventListener('overlay:committed', once);
-    window.__crud.applyOp({ op_type: 'CRUD_CREATE', key: a.t, table: a.t, verb: 'create', fields: a.f });
+    window.__crud.applyOp({ op_type: 'CRUD_CREATE', key: a.t, table: a.t, verb: 'create', fields: Object.assign({}, window.ModelLayer.initialDefaultsOf(a.t), a.f) });   // a raw op carries no form: start from `new M..(ctx, 0)` (the class's ctor defaults) and give the columns the legacy DATABASE declares NOT NULL - else the commit gate refuses it as Postgres would (CAPEX_DASHBOARD.md §5.74)
     setTimeout(function () { res(null); }, 8000); }); }, { t: table, f: fields }); }
 
   // ── TR3 first (nothing written yet: the zero-written baseline), then the four writes it needs ──
@@ -83,7 +83,7 @@ var BASE_OK = [
   var cost0 = await pg.evaluate(function (q) { var s = performance.now(); for (var i = 0; i < 40; i++) window.__crud.withModelTrx(function (x) { return x(q); }, { sql: q }); return (performance.now() - s) / 40; }, COST_SQL);
 
   // ── TR1 the defect: a warehouse created this session, offered in a process parameter opened from the menu ──
-  var whId = await create('m_warehouse', { value: 'TIPR-WH', name: 'TIPR Session Warehouse', ad_client_id: 11, ad_org_id: 12, isactive: 'Y' });
+  var whId = await create('m_warehouse', { c_location_id: 114, value: 'TIPR-WH', name: 'TIPR Session Warehouse', ad_client_id: 11, ad_org_id: 12, isactive: 'Y' });
   await sleep(500);
   var opened = await pg.evaluate(function () { var leaf = document.querySelector('#idmp-tree .idmp-row.leaf[data-menu-id="53354"]'); if (!leaf) return false; var n = leaf.parentElement; while (n && n.id !== 'idmp-tree') { if (n.classList && n.classList.contains('idmp-node')) n.classList.add('open'); n = n.parentElement; } leaf.click(); return true; });
   if (opened) await pg.waitForSelector('#idmp-content [data-proc-run]', { timeout: 20000 }).catch(function () {});
@@ -95,9 +95,9 @@ var BASE_OK = [
   else verdict('TR1', !!newOpt && /TIPR/.test(newOpt.t), 'a warehouse created this session is offered in the Replenish Report M_Warehouse_ID parameter (the seed warehouse 103 is, as control)', 'new option=' + JSON.stringify(newOpt || null));
 
   // ── TR3 cost: the same read, with m_warehouse written and then 3 more tables written; the hint keeps the unrelated read as cheap as before ──
-  await create('c_bpartner', { value: 'TIPR-BP', name: 'TIPR BP', ad_client_id: 11, ad_org_id: 12, isactive: 'Y' });
-  await create('m_product', { value: 'TIPR-P', name: 'TIPR Product', ad_client_id: 11, ad_org_id: 12, isactive: 'Y' });
-  await create('c_order', { documentno: 'TIPR-1', ad_client_id: 11, ad_org_id: 12, isactive: 'Y' });
+  await create('c_bpartner', { c_bp_group_id: 104, value: 'TIPR-BP', name: 'TIPR BP', ad_client_id: 11, ad_org_id: 12, isactive: 'Y' });
+  await create('m_product', { c_uom_id: 100, m_product_category_id: 111, c_taxcategory_id: 107, value: 'TIPR-P', name: 'TIPR Product', ad_client_id: 11, ad_org_id: 12, isactive: 'Y' });
+  await create('c_order', { dateordered: '2026-10-28 00:00:00', dateacct: '2026-10-28 00:00:00', datepromised: '2026-10-28 00:00:00', c_doctype_id: 0, c_doctypetarget_id: 132, c_bpartner_id: 112, c_bpartner_location_id: 108, c_currency_id: 100, c_paymentterm_id: 105, m_warehouse_id: 103, m_pricelist_id: 101, documentno: 'TIPR-1', ad_client_id: 11, ad_org_id: 12, isactive: 'Y' });
   var cost4 = await pg.evaluate(function (q) { var s = performance.now(); for (var i = 0; i < 40; i++) window.__crud.withModelTrx(function (x) { return x(q); }, { sql: q }); return (performance.now() - s) / 40; }, COST_SQL);
   var costRel = await pg.evaluate(function () { var q = 'SELECT name FROM m_warehouse WHERE m_warehouse_id=103', s = performance.now(); for (var i = 0; i < 40; i++) window.__crud.withModelTrx(function (x) { return x(q); }, { sql: q }); return (performance.now() - s) / 40; });
   var bare = await pg.evaluate(function (q) { var s = performance.now(); for (var i = 0; i < 40; i++) window.__idmpDb.exec(q); return (performance.now() - s) / 40; }, COST_SQL);
