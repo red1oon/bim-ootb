@@ -18,6 +18,7 @@ const D2 = [];   // §5.66 D2 revised: no key may differ under any Status (pa_ti
 let judged = 0, fails = 0, inconc = 0;
 const ck = (n, ok, i) => { judged++; if (!ok) fails++; log('  §PA_FLAT ' + n + ' ' + (ok ? 'PASS' : 'FAIL') + (i !== undefined ? ' ' + JSON.stringify(i) : '')); };
 const inc = (n, why) => { inconc++; log('  §PA_FLAT ' + n + ' INCONCLUSIVE ' + why); };
+let drillKeys = 0, drillRows = 0;
 (async () => {
   const SQL = await initSqlJs(), deps = { SQL, GE, AC, T, A, log: m => log('    ' + m) };
   // (1) the twin scenario store + the CAPEX scripts
@@ -29,6 +30,7 @@ const inc = (n, why) => { inconc++; log('  §PA_FLAT ' + n + ' INCONCLUSIVE ' + 
   AC.RUNTIME.registerSqlFunctions((n, f) => db.create_function(n, f));
   let mig = 0, migBad = 0; const have = db.exec("SELECT COUNT(*) FROM pa_measurecalc WHERE name LIKE 'CAPEX%'")[0].values[0][0];   // the builder installs the plugin's rows (§TWIN_MOCK_CAPEX_PACK)
   if (!have) fs.readdirSync(MIGDIR).filter(f => /\.sql$/.test(f)).sort().forEach(f => { const x = MA.apply(fs.readFileSync(path.join(MIGDIR, f), 'utf8'), { file: f, run: s => db.run(s), convertSql: AC.convertSql, log: () => {}, has: () => false }); mig += x.ok; migBad += x.failed; });
+  if (process.env.PA_DRILL_BREAK === '1') db.run("UPDATE pa_measurecalc SET whereclause='WHERE p.IsActive=''Y''' WHERE pa_measurecalc_uu='" + PT.BIND.red + "'");   // falsifier: the Red row selects every active project -> the drill arm must FAIL
   if (BREAK) db.run("UPDATE pa_measurecalc SET selectclause='SELECT COUNT(*)+1 FROM C_Project' WHERE pa_measurecalc_uu='" + PT.BIND.total + "'");
   const twin = A.fromSqlite(db, {}); twin.source = 'sqlite';
   log('§PA_FLAT_DATA twin projects=' + twin.projects.length + ' pacalc=' + twin.pacalc.length + ' migration_statements ok=' + mig + ' failed=' + migBad + ' unavailable=[' + twin.unavailable.join(',') + ']' + (BREAK ? ' (PA_FLAT_BREAK=1: FAIL expected)' : ''));
@@ -52,11 +54,22 @@ const inc = (n, why) => { inconc++; log('  §PA_FLAT ' + n + ' INCONCLUSIVE ' + 
       named.forEach(k => log('    §PA_FLAT_D2 ' + tag + ' ' + k + ' tiles=' + JSON.stringify(a[k]) + ' pa=' + JSON.stringify(b[k])));
       bad.forEach(k => log('    §PA_FLAT_DIFF ' + tag + ' ' + k + ' tiles=' + JSON.stringify(a[k]) + ' pa=' + JSON.stringify(b[k])));
       ck(tag + ' population=' + P.length + ' keys=' + Object.keys(a).length + ' pa_judged=' + res.pa.judged + ' D2_named=' + named.length, bad.length === 0, bad.length ? bad : undefined);
+      // §5.75 step 2: the drill from the PA rows' key queries == the hand drill, key by key (ids in the same order) and row by row (the health / schedule / budget labels)
+      const dA = T.compute(data, f).drill, dB = res.drill, keys = Array.from(new Set(Object.keys(dA).concat(Object.keys(dB)))), dbad = [];
+      let dX = 0, rows = 0;
+      keys.forEach(k => { const ia = (dA[k] || []).map(r => String(r.id)).sort(), ib = (dB[k] || []).map(r => String(r.id)).sort(), la = {}, lb = {};
+        (dA[k] || []).forEach(r => { la[r.id] = [r.health, r.schedule, r.budget].join('/'); }); (dB[k] || []).forEach(r => { lb[r.id] = [r.health, r.schedule, r.budget].join('/'); });
+        const oa = (dA[k] || []).map(r => String(r.id)).join(','), ob = (dB[k] || []).map(r => String(r.id)).join(','), same = (k in dA) === (k in dB) && oa === ob && ia.every(id => la[id] === lb[id]); rows += ia.length;
+        if (same) dX++; else dbad.push({ key: k, hand: ia.length, pa: ib.length, onlyHand: ia.filter(x => ib.indexOf(x) < 0).slice(0, 4), onlyPa: ib.filter(x => ia.indexOf(x) < 0).slice(0, 4), label: ia.filter(id => lb[id] !== undefined && la[id] !== lb[id]).slice(0, 2).map(id => id + ' ' + la[id] + ' vs ' + lb[id]) }); });
+      drillKeys += keys.length; drillRows += rows;
+      ck(tag + ' DRILL ' + dX + ' of ' + keys.length + ' keys equal (' + rows + ' rows)', dX === keys.length, dbad.length ? dbad.slice(0, 5) : undefined);
     }
   }
   finish();
 })().catch(e => { log('§PA_FLAT_VERDICT FAIL harness ' + (e && e.stack || e)); process.exit(1); });
 function finish() {
+  log('§PA_FLAT_DRILL keys_judged=' + drillKeys + ' rows_judged=' + drillRows);
+  if (!drillRows) { inconc++; log('  §PA_FLAT DRILL INCONCLUSIVE no drill row in any population'); }
   const v = fails ? 'FAIL' : judged ? 'PASS' : 'INCONCLUSIVE';
   log('§PA_FLAT_VERDICT ' + v + ' judged=' + judged + ' fail=' + fails + ' inconclusive=' + inconc + (BREAK ? ' (PA_FLAT_BREAK=1: FAIL expected)' : ''));
   process.exit(v === 'PASS' ? 0 : 1);
