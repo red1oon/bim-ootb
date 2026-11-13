@@ -34,7 +34,10 @@ const vscodeStub = {
   window: { showInformationMessage() {}, activeTextEditor: undefined,
     createOutputChannel() { reg.channels = (reg.channels || 0) + 1; return { appendLine() {}, show() {}, dispose() {} }; },
     createStatusBarItem() { reg.status = { show() { this.shown = true; }, hide() { this.shown = false; }, dispose() {} }; return reg.status; },
-    onDidChangeActiveTextEditor(fn) { reg.onEditor = fn; return { dispose() {} }; } },
+    onDidChangeActiveTextEditor(fn) { reg.onEditor = fn; return { dispose() {} }; },
+    registerTreeDataProvider(id, p) { reg.tree = { id, p }; return { dispose() {} }; } },
+  TreeItem: function (label) { this.label = label; },
+  tasks: { fetchTasks: async () => [{ name: 'Serve repo (http://localhost:8000)' }], executeTask: async t => { reg.taskRun = t.name; } },
   StatusBarAlignment: { Left: 1, Right: 2 },
   EventEmitter: function () { this.event = function () {}; this.fire = function () {}; this.dispose = function () {}; },
   CodeLens: function (range, command) { this.range = range; this.command = command; },
@@ -106,7 +109,16 @@ check(SEC + 'TAG hover → one hover naming the tag, with printers from this rep
 const l5 = "  console.log('" + SEC + "ZZ_NOT_A_TAG');";
 const h5 = hovers(doc(l5), at(l5, 'ZZ_NOT'));
 check('made-up ' + SEC + 'TAG → hover says "no spec found" (never silent)', h5.length === 1 && /no spec found/.test(h5[0].contents.value));
-check('commands registered: ' + reg.commands.join(', '), reg.commands.length === 3 && reg.commands.includes('x0Navigator.costIfDeployed') && reg.commands.includes('x0Navigator.openLogLine') && reg.saves === 2);
+check('commands registered: ' + reg.commands.join(', '), reg.commands.length === 6 && ['x0Navigator.shipRunLocal', 'x0Navigator.shipCheck', 'x0Navigator.shipFetchBack'].every(c => reg.commands.includes(c)) && reg.commands.includes('x0Navigator.costIfDeployed') && reg.commands.includes('x0Navigator.openLogLine') && reg.saves === 2);
+// Run and ship (§F.12c): the side-bar list and the Check step, through the registered wiring, on this real checkout
+{
+  const items = reg.tree ? reg.tree.p.getChildren().map(s => reg.tree.p.getTreeItem(s)) : [];
+  check('the "Run & Ship" list has 4 steps, each bound to a registered command (' + items.map(i => i.label).join(' | ') + ')',
+    reg.tree && reg.tree.id === 'x0RunShip' && items.length === 4 && items.every(i => reg.commands.includes(i.command.command)));
+  const chk = api.shipCheck();
+  check('Check prints its three steps and a verdict (' + (chk[chk.length - 1] || '').slice(0, 60) + ')',
+    chk.some(l => l.startsWith(SEC + 'SHIP_SYNTAX')) && chk.some(l => l.startsWith(SEC + 'SHIP_AUDIT verdict=PASS')) && /SHIP_CHECK verdict=(PASS|FAIL)/.test(chk[chk.length - 1]));
+}
 // Values beside the code (§F.12b), through the registered CodeLens provider, on this real checkout: a log is stamped by the
 // repo's own stamper at the current commit, so a tag printed by an unchanged file must get a lens, and an unstamped copy must not.
 check('1 CodeLens provider registered for javascript', (reg.lens || []).length === 1 && reg.lens[0].sel.language === 'javascript');
@@ -140,7 +152,7 @@ check('status bar: a page script says "start-up" (' + stBoot + '); a dev script 
 
 
 // §F.5: after the first refresh the providers read a fresh copy in the storage folder, never the committed one.
-api.whenFresh().then(r => {
+api.whenFresh().then(async r => {
   const now = api.indexFile();
   const fresh = !!r && !!now && now.startsWith(STORE) && now !== committedFile && fs.existsSync(now);
   check('before the refresh the providers read the committed index', committedFile === path.join(ROOT, 'internal', 'APP_SURFACE.md'));
@@ -158,6 +170,8 @@ api.whenFresh().then(r => {
   const afterMiss = api.refreshRuns() - runs0;
   check('a save alone, and a lookup that hits, start no generator run (n=' + afterHit + ')', afterHit === 0);
   check('a lookup that misses after a save starts exactly one (n=' + afterMiss + ')', afterMiss === 1);
+  const runLines = await api.shipRunLocal();
+  check('Run local starts the repo\'s own serve task and lists each app (' + reg.taskRun + ')', /^Serve repo/.test(reg.taskRun || '') && runLines.filter(l => /SHIP_RUN app=/.test(l)).length >= 3);
   context.subscriptions.forEach(d => d.dispose());
   fs.rmSync(STORE, { recursive: true, force: true });
   Module._load = realLoad;

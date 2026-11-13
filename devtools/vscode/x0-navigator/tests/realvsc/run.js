@@ -93,7 +93,14 @@ const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'x0-realvsc-'));
 // two made-up things live in a scratch file OUTSIDE the repo (a file inside it would enter the real index)
 const scratch = path.join(TMP, 'scratch.js');
 fs.writeFileSync(scratch, ['var v = ' + G + '.zzNotAField__;', "console.log('" + SEC + "ZZ_NOT_A_TAG');", ''].join('\n'));
-const plan = { probe, steps: [
+// §F.12: a log stamped by the repo's own stamper at this commit, carrying the known tag, so the real CodeLens has something
+// provable to show. It is removed after the run.
+const PROBE_LOG = path.join(ROOT, 'logs', 'x0_realvsc_lens_probe.log');
+const PROBE_VALUE = KNOWN_TAG + ' hostedTotal=11 matched=11';
+fs.mkdirSync(path.dirname(PROBE_LOG), { recursive: true });
+fs.writeFileSync(PROBE_LOG, require(path.join(ROOT, 'scripts', 'log_stamp.js')).stampLine(ROOT, 'x0_realvsc') + '\n' + PROBE_VALUE + '\n');
+const tagFileClean = cp.spawnSync('git', ['diff', '--quiet', 'HEAD', '--', path.relative(ROOT, tagAt.file)], { cwd: ROOT }).status === 0;
+const plan = { probe, extras: { lensFile: tagAt.file }, steps: [
   { label: 'def', file: def.file, line: def.line, col: def.col, tries: 4 },
   { label: 'phantom', file: ph.file, line: ph.line, col: ph.col, tries: 1 },
   { label: 'tag', file: tagAt.file, line: tagAt.line, col: tagAt.col, tries: 1 },
@@ -113,6 +120,7 @@ const env = Object.assign({}, process.env, { X0_REALVSC_OUT: OUT, X0_REALVSC_PLA
 delete env.ELECTRON_RUN_AS_NODE;
 const t0 = Date.now();
 const r = cp.spawnSync('xvfb-run', args, { env, encoding: 'utf8', timeout: 300000, maxBuffer: 1 << 26 });
+fs.rmSync(PROBE_LOG, { force: true });
 const secs = ((Date.now() - t0) / 1000).toFixed(1);
 console.log('  VS Code run: exit=' + r.status + (r.signal ? ' signal=' + r.signal : '') + ' seconds=' + secs + ' program=' + BIN);
 if (!fs.existsSync(OUT)) {
@@ -156,7 +164,22 @@ const tagOk = check(KNOWN_TAG + ' hover → names the tag, lists spec places' + 
 const ft = st.fake_tag || { hover: '' };
 const fakeOk = check('red control: a made-up tag → "no spec found"', /no spec found/.test(ft.hover));
 
+// §F.12 first versions, inside the real editor
+const x = res.extras || {};
+const WANT = ['costIfDeployed', 'openLogLine', 'rebuildIndexes', 'shipCheck', 'shipFetchBack', 'shipRunLocal'].map(c => 'x0Navigator.' + c);
+const cmdOk = check('VS Code knows all ' + WANT.length + ' X0 commands', WANT.every(c => (x.commands || []).includes(c)));
+const costLines = (x.cost || []).filter(l => l.startsWith(SEC + 'DEPLOY_COST app='));
+const costOk = check('"Cost if deployed" run as a VS Code command → ' + costLines.length + ' app lines (' + (costLines[0] || '').slice(0, 80) + '…)', costLines.length >= 3);
+const chk = x.check || [];
+const checkOk = check('"Check" run as a VS Code command: syntax step ran under VS Code\'s own runtime, audit passed, a verdict was printed (' + (chk[chk.length - 1] || 'no output') + ')',
+  chk.some(l => /SHIP_SYNTAX files=\d+ verdict=PASS/.test(l)) && chk.some(l => /SHIP_AUDIT verdict=PASS/.test(l)) && /SHIP_CHECK verdict=PASS/.test(chk[chk.length - 1] || ''));
+const statusOk = check('status bar text for ' + rel(tagAt.file) + ': ' + x.status, /start-up|offline cache/.test(x.status || ''));
+const lens = (x.lenses || []).find(l => l.title.includes('hostedTotal=11 matched=11'));
+let lensOk = true;
+if (!tagFileClean) console.log('  NOTE  ' + rel(tagAt.file) + ' differs from HEAD here: the lens rightly shows nothing, not judged');
+else lensOk = check('CodeLens from VS Code\'s own provider call: line ' + (lens && lens.line) + ' "' + (lens ? lens.title.slice(0, 70) : 'none') + '…"', !!lens && lens.line === tagAt.line);
+
 if (KEEP) console.log('  kept: ' + TMP); else fs.rmSync(TMP, { recursive: true, force: true });
 line({ vscode: res.vscode, active: yn(active), fresh: yn(fresh), def: yn(defOk), hover: yn(hovOk), phantom: yn(phOk), unknown_silent: yn(unkOk),
-  tag: yn(tagOk), fake_tag: yn(fakeOk), builtin_ready: yn(pr.ready), builtin_defs: pr.ready ? builtin : '?', seconds: secs }, fail === 0 ? 'PASS' : 'FAIL');
+  tag: yn(tagOk), fake_tag: yn(fakeOk), commands: yn(cmdOk), cost: yn(costOk), check: yn(checkOk), status: yn(statusOk), lens: yn(lensOk), builtin_ready: yn(pr.ready), builtin_defs: pr.ready ? builtin : '?', seconds: secs }, fail === 0 ? 'PASS' : 'FAIL');
 if (fail) process.exitCode = 1;

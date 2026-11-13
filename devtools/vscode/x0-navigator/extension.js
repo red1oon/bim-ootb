@@ -12,6 +12,7 @@ const surface = require('./lib/app_surface_index');
 const surfaceRefresh = require('./lib/surface_refresh');
 const deployCost = require('./lib/deploy_cost');
 const lensIndex = require('./lib/lens_index');
+const ship = require('./lib/ship');
 
 const JS = { language: 'javascript' };
 const MARKER = path.join('internal', 'APP_SURFACE.md'); // a folder holding this file is the bim-ootb root
@@ -217,9 +218,51 @@ function activate(context) {
   }));
   context.subscriptions.push(vscode.workspace.onDidSaveTextDocument(() => { proofCache.clear(); lensChanged.fire(); }));
 
+  // ── Run and ship (§F.12c), first version: Run local · Check · Fetch back. Each step prints § lines to the output and stops at
+  //    the first failure. Nothing here commits, pushes, merges or deploys. Fetch back is the one step that uses the network. ──
+  const say = lines => { lines.forEach(l => out.appendLine(l)); out.show(true); return lines; };
+  const baseRef = () => vscode.workspace.getConfiguration('bimDevtools').get('costBaseRef') || 'origin/main';
+  async function shipRunLocal() {
+    const sourceRoot = findSourceRoot(context);
+    if (!sourceRoot) return say(['X0 Navigator: bim-ootb root not found']);
+    let started = 'no task named "Serve repo…" in this workspace';
+    try {
+      const task = (await vscode.tasks.fetchTasks()).find(t => /^Serve repo/.test(t.name));
+      if (task) { await vscode.tasks.executeTask(task); started = 'started the task "' + task.name + '"'; }
+    } catch (e) { started = 'could not start the serve task: ' + e.message; }
+    return say(['\u00a7SHIP_RUN ' + started].concat(ship.runLocalLines(sourceRoot, 8000)));
+  }
+  function shipCheck() {
+    const sourceRoot = findSourceRoot(context);
+    return say(sourceRoot ? ship.check(sourceRoot, baseRef()).lines : ['X0 Navigator: bim-ootb root not found']);
+  }
+  async function shipFetchBack() {
+    const sourceRoot = findSourceRoot(context);
+    if (!sourceRoot) return say(['X0 Navigator: bim-ootb root not found']);
+    const site = vscode.workspace.getConfiguration('bimDevtools').get('liveSite') || undefined;
+    return say((await ship.fetchBack(sourceRoot, { base: baseRef(), site })).lines);
+  }
+  context.subscriptions.push(vscode.commands.registerCommand('x0Navigator.shipRunLocal', shipRunLocal));
+  context.subscriptions.push(vscode.commands.registerCommand('x0Navigator.shipCheck', shipCheck));
+  context.subscriptions.push(vscode.commands.registerCommand('x0Navigator.shipFetchBack', shipFetchBack));
+  const STEPS = [
+    ['1 · Run local', 'serve the repo, show each app\'s URL and version on disk', 'x0Navigator.shipRunLocal'],
+    ['2 · Check', 'syntax, precache audit, cache-version bump', 'x0Navigator.shipCheck'],
+    ['3 · Cost if deployed', 'start-up and offline-cache bytes vs main', 'x0Navigator.costIfDeployed'],
+    ['4 · Fetch back', 'is the live site on main? (uses the network)', 'x0Navigator.shipFetchBack']
+  ];
+  context.subscriptions.push(vscode.window.registerTreeDataProvider('x0RunShip', {
+    getChildren(el) { return el ? [] : STEPS; },
+    getTreeItem(s) {
+      const item = new vscode.TreeItem(s[0]);
+      item.description = s[1]; item.tooltip = s[1]; item.command = { command: s[2], title: s[0] };
+      return item;
+    }
+  }));
+
   // For the node witness: when the first fresh copy is ready, and which index file the providers read now.
   return {
-    costIfDeployed, statusText, lenses,
+    costIfDeployed, statusText, lenses, shipRunLocal, shipCheck, shipFetchBack, steps: () => STEPS,
     whenFresh: () => firstRefresh,
     indexFile: () => { const f = getFields(); return f ? f.file : null; },
     refreshRuns: () => (refresher ? refresher.runs() : 0)
