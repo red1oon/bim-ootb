@@ -112,7 +112,11 @@ function activate(context) {
       const index = getTags();
       if (!index) return null;
       const last = lastValueLine(document, position.line, tag);
-      return new vscode.Hover(new vscode.MarkdownString(tagIndex.formatHover(tagIndex.lookup(index, tag), link) + (last ? '\n\n' + last : '')));
+      // the value (or the reason there is none) goes right under the tag's name: below a long list of spec places it sat
+      // under the fold of the hover and had to be scrolled to (#2980)
+      const body = tagIndex.formatHover(tagIndex.lookup(index, tag), link);
+      const cut = body.indexOf('\n');
+      return new vscode.Hover(new vscode.MarkdownString(!last ? body : cut < 0 ? body + '\n\n' + last : body.slice(0, cut) + '\n\n' + last + body.slice(cut)));
     }
   }));
 

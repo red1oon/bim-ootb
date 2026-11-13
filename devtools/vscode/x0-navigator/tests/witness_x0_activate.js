@@ -147,6 +147,9 @@ check('1 CodeLens provider registered for javascript', (reg.lens || []).length =
     /last value not shown: (no stamped log found|tag not in any stamped log)/.test(hoverUnstamped) && !/hostedTotal=7/.test(hoverUnstamped));
   if (fileClean) check('with a stamped log at this commit the tag hover carries the value, its log and commit (' + ((/last value[^\n]*/.exec(hoverStamped) || [''])[0]).slice(0, 90) + ')',
     /last value: `.*hostedTotal=7 matched=7` — x0_activate_lens_probe\.log:2 @ [0-9a-f]{7}/.test(hoverStamped));
+  // #2980: that line comes right after the tag's name, before the spec places (it must not sit under the fold)
+  if (fileClean) check('the last-value line is the first thing under the tag name, before the list of spec places',
+    /^\*\*[^\n]+\*\*\n\nlast value: /.test(hoverStamped) && hoverStamped.indexOf('last value') < hoverStamped.indexOf('printed by:'));
   if (!fileClean) console.log('  NOTE ' + pr.file + ' differs from HEAD in this checkout: the lens rightly shows nothing, not judged');
   else check('a stamped log at this commit → a lens on ' + pr.file + ':' + pr.line + ' (' + (got[0] && got[0].command.title.slice(0, 70)) + '…)',
     got.length >= 1 && got[0].range.start.line === pr.line - 1 && got[0].command.command === 'x0Navigator.openLogLine');
