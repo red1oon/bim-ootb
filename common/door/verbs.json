@@ -2751,6 +2751,13 @@
      "required": false,
      "type": "string",
      "example": "103"
+    },
+    {
+     "name": "window",
+     "description": "Optional: the window to work in, by its name or id, when the kind is shown in more than one window (for example a table a Ninja workbook attached as a tab of another window). Without it, the kind's own window.",
+     "required": false,
+     "type": "string",
+     "example": "HR Employment"
     }
    ],
    "harm": "read",
@@ -2821,6 +2828,13 @@
      "required": false,
      "type": "string",
      "example": "103"
+    },
+    {
+     "name": "window",
+     "description": "Optional: the window to work in, by its name or id, when the kind is shown in more than one window (for example a table a Ninja workbook attached as a tab of another window). Without it, the kind's own window.",
+     "required": false,
+     "type": "string",
+     "example": "HR Employment"
     }
    ],
    "harm": "writes",
@@ -2843,6 +2857,13 @@
       "args": [
        "--role",
        "{role}"
+      ]
+     },
+     {
+      "if": "window",
+      "args": [
+       "--window",
+       "{window}"
       ]
      }
     ],
@@ -2907,6 +2928,13 @@
      "required": false,
      "type": "string",
      "example": "103"
+    },
+    {
+     "name": "window",
+     "description": "Optional: the window to work in, by its name or id, when the kind is shown in more than one window (for example a table a Ninja workbook attached as a tab of another window). Without it, the kind's own window.",
+     "required": false,
+     "type": "string",
+     "example": "HR Employment"
     }
    ],
    "harm": "writes",
@@ -2936,6 +2964,13 @@
       "args": [
        "--role",
        "{role}"
+      ]
+     },
+     {
+      "if": "window",
+      "args": [
+       "--window",
+       "{window}"
       ]
      }
     ],
@@ -3000,6 +3035,13 @@
      "required": false,
      "type": "string",
      "example": "103"
+    },
+    {
+     "name": "window",
+     "description": "Optional: the window to work in, by its name or id, when the kind is shown in more than one window (for example a table a Ninja workbook attached as a tab of another window). Without it, the kind's own window.",
+     "required": false,
+     "type": "string",
+     "example": "HR Employment"
     }
    ],
    "harm": "writes",
@@ -3029,6 +3071,13 @@
       "args": [
        "--role",
        "{role}"
+      ]
+     },
+     {
+      "if": "window",
+      "args": [
+       "--window",
+       "{window}"
       ]
      }
     ]
@@ -3946,6 +3995,13 @@
      "required": false,
      "type": "string",
      "example": "103"
+    },
+    {
+     "name": "window",
+     "description": "Optional: the window to work in, by its name or id, when the kind is shown in more than one window (for example a table a Ninja workbook attached as a tab of another window). Without it, the kind's own window.",
+     "required": false,
+     "type": "string",
+     "example": "HR Employment"
     }
    ],
    "harm": "read",
@@ -4018,6 +4074,13 @@
      "required": false,
      "type": "string",
      "example": "103"
+    },
+    {
+     "name": "window",
+     "description": "Optional: the window to work in, by its name or id, when the kind is shown in more than one window (for example a table a Ninja workbook attached as a tab of another window). Without it, the kind's own window.",
+     "required": false,
+     "type": "string",
+     "example": "HR Employment"
     }
    ],
    "harm": "writes",
@@ -4040,6 +4103,13 @@
       "args": [
        "--role",
        "{role}"
+      ]
+     },
+     {
+      "if": "window",
+      "args": [
+       "--window",
+       "{window}"
       ]
      }
     ],

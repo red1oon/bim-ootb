@@ -1,7 +1,7 @@
 // ⚠ DO NOT REMOVE — W-NINJA-STAGE-ISO (bim-compiler prompts/ERP_MIS_WINDOW_FROM_CSV.md §12.1: rollback is one model; a bundle has its own menu node). READ THE LOG; an exit code is not evidence.
 //   I1 ISSUE (rolling back one bundle switches off every other staged bundle) · I2 ISSUE (a rolled-back model cannot come back, or comes back under other ids)
 //   I3 ISSUE (two bundles share one menu node that carries a leftover name, so a bundle's name is shown nowhere) · I3b ISSUE (a rollback by bundle NAME, the form an emitted bundle module uses, is blanket or dead)
-//   I4 ISSUE (a call with no model rolls back everything)
+//   I4 ISSUE (a call with no model rolls back everything) · I5 ISSUE (rolling back a model that reused a dictionary table switches that table off, or leaves its added columns on)
 //   Falsifiers: NINJAISO_BREAK=blanket (must FAIL I1) · onenode (must FAIL I3). A model that stages no row gives INCONCLUSIVE, never PASS.
 //   Run: node erp/tests/witness_ninja_stage_iso.js > erp/tests/logs/ninja_stage_iso.log 2>&1
 'use strict';
@@ -61,12 +61,20 @@ const k = kit('W-NINJA-STAGE-ISO');
   k.chk('I2 the same model staged again after its rollback is active again under the same ids and the same node', same(a1, a3) && nA3.length === 1 && nA3[0].id === nA[0].id && nA3[0].a === 'Y' && same(b1, state(B)), 'rows ' + cnt(a3, 'Y') + '/' + Object.keys(a1).length + ' node ' + JSON.stringify(nA3));
 
   // ── I3b by bundle NAME (what an emitted bundle module passes)
-  const r3 = quiet(() => NS.rollbackModel(db, 'IsoBeta')), a4 = state(A), b4 = state(B);
+  let r3; try { r3 = quiet(() => NS.rollbackModel(db, 'IsoBeta')); } catch (e) { r3 = { v: {}, log: ['refused: ' + e.message] }; } const a4 = state(A), b4 = state(B);   // a refusal here is a FAIL of I3b, not a crash of the witness
   k.chk('I3b a rollback by bundle name takes that bundle only', cnt(b4, 'N') === Object.keys(b1).length && same(a3, a4), 'beta inactive ' + cnt(b4, 'N') + '/' + Object.keys(b1).length + ' alpha active ' + cnt(a4, 'Y') + '/' + Object.keys(a1).length + ' ' + r3.log.join(''));
 
   // ── I4 no model, or a name nothing carries: refused, nothing changed
   let e1 = '', e2 = ''; const snap = JSON.stringify(rows('SELECT AD_Table_ID, IsActive FROM AD_Table WHERE AD_Table_ID>=' + B0));
   try { quiet(() => NS.rollbackModel(db)); } catch (e) { e1 = e.message; } try { quiet(() => NS.rollbackModel(db, 'NoSuchBundle')); } catch (e) { e2 = e.message; }
   k.chk('I4 a rollback with no model, or with a name no bundle carries, is refused and changes nothing', /not offered/.test(e1) && /no staged bundle/.test(e2) && snap === JSON.stringify(rows('SELECT AD_Table_ID, IsActive FROM AD_Table WHERE AD_Table_ID>=' + B0)) && same(a4, state(A)), 'no model: "' + e1 + '" · unknown name: "' + e2 + '"');
+  // ── I5 a model that REUSES a dictionary table (legacy Ninja: an existing table under a master gets the sheet's columns and a tab): its rollback takes the added rows only
+  const C = parse('IsoReuse', [['', 'ZC_Club', 'Name'], ['ZC_Club', 'C_Greeting', 'Name,Q#Seats']]);
+  const gq = (w) => Number(one("SELECT count(*) FROM AD_Column c JOIN AD_Table t ON t.AD_Table_ID=c.AD_Table_ID WHERE t.TableName='C_Greeting' AND " + w)), g0 = { own: gq("c.IsActive='Y' AND c.AD_Column_ID<" + B0), tbl: one("SELECT IsActive FROM AD_Table WHERE TableName='C_Greeting'") };
+  const sC = quiet(() => NS.stageModels(db, C, 0)).v, on = { added: gq("c.IsActive='Y' AND c.AD_Column_ID>=" + B0), tab: Number(one("SELECT count(*) FROM AD_Tab tb JOIN AD_Table t ON t.AD_Table_ID=tb.AD_Table_ID WHERE t.TableName='C_Greeting' AND tb.IsActive='Y' AND tb.AD_Tab_ID>=" + B0)), rows: Number(one("SELECT count(*) FROM AD_Table WHERE upper(TableName)='C_GREETING'")) };
+  quiet(() => NS.rollbackModel(db, C)); const off = { added: gq("c.IsActive='Y' AND c.AD_Column_ID>=" + B0), own: gq("c.IsActive='Y' AND c.AD_Column_ID<" + B0), tab: Number(one("SELECT count(*) FROM AD_Tab tb JOIN AD_Table t ON t.AD_Table_ID=tb.AD_Table_ID WHERE t.TableName='C_Greeting' AND tb.IsActive='Y' AND tb.AD_Tab_ID>=" + B0)), tbl: one("SELECT IsActive FROM AD_Table WHERE TableName='C_Greeting'") };
+  if (!(sC.reused || []).length) k.incon('I5', 'the stager reused no table (the seed has no C_Greeting?)');
+  else k.chk('I5 a reused dictionary table: staged, it is still one row with 2 columns and 1 tab added; rolled back, the 2 added columns and the tab are off while the table and its ' + g0.own + ' own columns stay as they were',
+    on.rows === 1 && on.added === 2 && on.tab === 1 && off.added === 0 && off.tab === 0 && off.own === g0.own && off.tbl === g0.tbl && same(a4, state(A)), 'staged: rows=' + on.rows + ' added=' + on.added + ' tab=' + on.tab + ' · rolled back: added=' + off.added + ' tab=' + off.tab + ' own ' + off.own + '/' + g0.own + ' table active ' + g0.tbl + '->' + off.tbl + ' reused=' + JSON.stringify(sC.reused));
   k.end();
 })().catch(e => { console.log('§W-NINJA-STAGE-ISO ERROR ' + e.stack); process.exit(2); });
