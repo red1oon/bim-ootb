@@ -183,7 +183,7 @@ function eq(key, rule, got, want) { return { key: key, rule: rule, ok: JSON.stri
 
   // ── MS-BANK / MS-TAX: acct rows from C_AcctSchema_Default (base has no WHERE) ──
   var seqB0 = one("SELECT currentnext AS n FROM ad_sequence WHERE ad_client_id=11 AND name='DocumentNo_C_BankAccount'");
-  var rk = save('c_bankaccount', { c_bank_id: one('SELECT MIN(c_bank_id) AS b FROM c_bank WHERE ad_client_id=11').b, c_currency_id: 100, accountno: 'MS-001', bankaccounttype: 'C' }), ka = rk.ok ? acctExpect('c_bankaccount_acct', 'c_bankaccount_id', rk.id, 'SELECT * FROM c_acctschema_default WHERE ad_client_id=11 ORDER BY c_acctschema_id') : null;
+  var rk = save('c_bankaccount', { c_bank_id: one('SELECT MIN(c_bank_id) AS b FROM c_bank WHERE ad_client_id=11').b, c_currency_id: 100, accountno: 'MS-001', bankaccounttype: 'C', name: 'MS-001', value: 'MS-001' }), ka = rk.ok ? acctExpect('c_bankaccount_acct', 'c_bankaccount_id', rk.id, 'SELECT * FROM c_acctschema_default WHERE ad_client_id=11 ORDER BY c_acctschema_id') : null;
   if (!rk.ok) log('§MS-NOTE bank account refused: ' + (rk.error || rk.msg));
   verdict('MS-BANK', !ka ? [] : [eq('acct', 'MBankAccount.afterSave :220-226 -> insert_Accounting(C_BankAccount_Acct, C_AcctSchema_Default): ' + ka.n + ' columns per schema', ka.got, ka.want), eq('ddl', 'DB DEFAULT isdefault N, creditlimit 0', [one('SELECT isdefault, creditlimit FROM c_bankaccount WHERE c_bankaccount_id=?', [rk.id]).isdefault, Number(one('SELECT creditlimit FROM c_bankaccount WHERE c_bankaccount_id=?', [rk.id]).creditlimit)], ['N', 0]),
     eq('denominator', 'defaults exist', ka.want.length > 0, true)]);
@@ -229,7 +229,7 @@ function eq(key, rule, got, want) { return { key: key, rule: rule, ok: JSON.stri
 
   // ── MS-BANK-REFUSE (finding 5): MBankAccount.afterSave returns insert_Accounting's boolean (:222-225); MTax.afterSave ignores it (:400-407) ──
   db.run('CREATE TEMP TABLE _ms_def AS SELECT * FROM c_acctschema_default'); db.run('DELETE FROM c_acctschema_default');
-  var nBa = one('SELECT COUNT(*) n FROM c_bankaccount').n, rkr = save('c_bankaccount', { c_bank_id: one('SELECT MIN(c_bank_id) AS b FROM c_bank WHERE ad_client_id=11').b, c_currency_id: 100, accountno: 'MS-REFUSE', bankaccounttype: 'C' }), nBa2 = one('SELECT COUNT(*) n FROM c_bankaccount').n;
+  var nBa = one('SELECT COUNT(*) n FROM c_bankaccount').n, rkr = save('c_bankaccount', { c_bank_id: one('SELECT MIN(c_bank_id) AS b FROM c_bank WHERE ad_client_id=11').b, c_currency_id: 100, accountno: 'MS-REFUSE', bankaccounttype: 'C', name: 'MS-REFUSE', value: 'MS-REFUSE' }), nBa2 = one('SELECT COUNT(*) n FROM c_bankaccount').n;
   var rtn = save('c_tax', { name: 'MS Tax no defaults', rate: 5, c_taxcategory_id: 107, validfrom: '1990-01-01 00:00:00', sopotype: 'B', c_country_id: 100, to_country_id: 100 });
   db.run('INSERT INTO c_acctschema_default SELECT * FROM _ms_def'); db.run('DROP TABLE _ms_def');
   verdict('MS-BANK-REFUSE', [eq('bank_refused', 'no C_AcctSchema_Default rows => insert_Accounting false => the bank account save FAILS and writes nothing', [rkr.ok, /insert_Accounting/.test(String(rkr.error || rkr.msg)), nBa2 - nBa], [false, true, 0]),

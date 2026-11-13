@@ -55,7 +55,9 @@ var J = JSON.stringify, cents = function (v) { return Math.round(Number(v || 0) 
   function remove(table, id) { return commit(function (trx) { var rm = ML.remove(trx, table, trx.get(table, id)); return { ok: rm.ok, error: rm.error }; }, { ws: 'bst_del', tag: table }); }
   function raw(sql, p) { db.run(sql, p || []); }
   var mkStmt = function (extra) { return save('c_bankstatement', null, Object.assign({ ad_client_id: 11, ad_org_id: 11, c_bankaccount_id: BA, name: 'BST', statementdate: T1, dateacct: T1 }, extra || {})); };
-  var mkLine = function (stmt, extra) { return save('c_bankstatementline', null, Object.assign({ ad_client_id: 11, ad_org_id: 11, c_bankstatement_id: stmt, statementlinedate: T1, valutadate: T1, dateacct: T1 }, extra || {})); };
+  // C_BankStatementLine.C_Currency_ID is NOT NULL in the legacy database and MBankStatementLine does not fill it: the window's default is the bank account's currency (CAPEX_DASHBOARD.md §5.73)
+  var stmtCur = function (stmt) { var r = k.q('SELECT ba.c_currency_id AS c FROM c_bankstatement s JOIN c_bankaccount ba ON ba.c_bankaccount_id=s.c_bankaccount_id WHERE s.c_bankstatement_id=?', [stmt])[0]; return r ? r.c : null; };
+  var mkLine = function (stmt, extra) { return save('c_bankstatementline', null, Object.assign({ ad_client_id: 11, ad_org_id: 11, c_bankstatement_id: stmt, statementlinedate: T1, valutadate: T1, dateacct: T1, c_currency_id: stmtCur(stmt) }, extra || {})); };
   var st = function (id) { return one('SELECT * FROM c_bankstatement WHERE c_bankstatement_id=?', [id]); };
   var lns = function (id) { return k.q('SELECT * FROM c_bankstatementline WHERE c_bankstatement_id=? ORDER BY line, c_bankstatementline_id', [id]); };
   var bal = function () { return Number(one('SELECT currentbalance AS b FROM c_bankaccount WHERE c_bankaccount_id=?', [BA]).b); };

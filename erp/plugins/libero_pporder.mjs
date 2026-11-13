@@ -186,7 +186,10 @@ export function create(ctx) {
     const WF_COPY = ['value', 'workflowtype', 'qtybatchsize', 'name', 'accesslevel', 'author', 'durationunit', 'duration', 'entitytype', 'isdefault', 'publishstatus', 'version', 'cost', 'waitingtime', 'workingtime',
       'ad_wf_responsible_id', 'ad_workflow_id', 'limit', 'priority', 's_resource_id', 'queuingtime', 'setuptime', 'movingtime', 'processtype', 'ad_table_id', 'ad_wf_node_id', 'ad_workflowprocessor_id', 'description', 'validfrom', 'validto'];
     const wfFields = { pp_order_id: rec.pp_order_id, ad_org_id: rec.ad_org_id };
-    WF_COPY.forEach((c) => { wfFields[c] = wf[c] === undefined ? null : wf[c]; });
+    // the generated getters of an Integer / Number column answer 0 for a NULL (X_AD_Workflow.getLimit(): `if (ii == null) return 0`, getCost(): Env.ZERO), so the peer ctor writes 0, never NULL
+    //   (PP_Order_Workflow.Limit / Priority / Version / WaitingTime are NOT NULL in the legacy DB while AD_Workflow.Limit / Priority are nullable; found by the NOT NULL rule, CAPEX_DASHBOARD.md §5.73)
+    const ZERO_IF_NULL = { qtybatchsize: 1, duration: 1, version: 1, cost: 1, waitingtime: 1, workingtime: 1, limit: 1, priority: 1, queuingtime: 1, setuptime: 1, movingtime: 1, overlapunits: 1, xposition: 1, yposition: 1 };
+    WF_COPY.forEach((c) => { wfFields[c] = wf[c] == null ? (ZERO_IF_NULL[c] ? 0 : null) : wf[c]; });
     const owf = ML.newRecord(trx, 'pp_order_workflow', wfFields);
     if (!owf.save()) return owf.error;
     const clientOk = (r) => Number(r.ad_client_id || 0) === 0 || Number(r.ad_client_id) === Number(rec.ad_client_id);
@@ -201,7 +204,7 @@ export function create(ctx) {
     for (const wn of wfNodes) {
       if (!isValidFromTo(wn.validfrom, wn.validto, start)) continue;
       const nf = { pp_order_id: owf.row.pp_order_id, pp_order_workflow_id: owf.row.pp_order_workflow_id, ad_org_id: rec.ad_org_id, docstatus: 'DR' };
-      NODE_COPY.forEach((c) => { if (c in nodeCols && c in wn) nf[c] = wn[c]; });
+      NODE_COPY.forEach((c) => { if (c in nodeCols && c in wn) nf[c] = wn[c] == null && ZERO_IF_NULL[c] ? 0 : wn[c]; });
       nf.unitscycles = wn.unitscycles == null ? null : Math.trunc(Number(wn.unitscycles));   // getUnitsCycles().intValueExact()
       nf.setuptimerequiered = wn.setuptime;                                                    // setSetupTimeRequired(wfNode.getSetupTime())
       nf.qtyrequiered = num(qtyOrdered);                                                       // setQtyOrdered -> setQtyRequired
@@ -633,7 +636,12 @@ export function create(ctx) {
 
   return {
     docActions: { pp_order: orderDoc }, createStandardCosts,
-    models: { pp_order: { beforeSave: orderBeforeSave, afterSave: orderAfterSave, beforeDelete: orderBeforeDelete }, pp_order_bomline: { beforeSave: bomLineBeforeSave } },
+    // the constructors' setDefault() (new M..(ctx, 0)): MPPOrder.java:1419-1438 and MPPOrderBOMLine.java:492-501. Without them a new row carried NULL in columns the legacy DATABASE declares NOT NULL
+    //   (PP_Order.Line, PP_Order_BOMLine.QtyDelivered ...) and the NOT NULL rule refuses it (bim-ootb prompts/CAPEX_DASHBOARD.md §5.73). setDescription("") stores NULL (PO writes an empty string as NULL);
+    //   setC_DocTypeTarget_ID(DocBaseType) is a lookup, not a constant: not here (the column has a physical DEFAULT).
+    models: { pp_order: { initialDefaults: { line: 10, priorityrule: '5', qtydelivered: 0, qtyreject: 0, qtyscrap: 0, isselected: 'N', issotrx: 'N', isapproved: 'N', isprinted: 'N', docstatus: 'DR', docaction: 'PR' },
+        beforeSave: orderBeforeSave, afterSave: orderAfterSave, beforeDelete: orderBeforeDelete },
+      pp_order_bomline: { initialDefaults: { qtydelivered: 0, qtypost: 0, qtyreject: 0, qtyrequiered: 0, qtyreserved: 0, qtyscrap: 0 }, beforeSave: bomLineBeforeSave } },
     validators: [
       ['pp_order', 'AFTER_NEW', 'Libero.MPPMRP.PP_Order', validator('pp_order', mrpPPOrder)],
       ['pp_order', 'AFTER_CHANGE', 'Libero.MPPMRP.PP_Order', validator('pp_order', mrpPPOrder)],

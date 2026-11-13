@@ -92,7 +92,7 @@ var TABLES = ['C_UOM', 'C_PaymentTerm', 'M_Product_Category', 'C_ElementValue', 
     var errs = r.log.filter(function (l) { return /^§NINJA-ERR/.test(l); });
     say('§NM-RAW ok=' + r.ok + ' errors=' + errs.length + ' summary=' + String(r.summary).slice(0, 300));
     check('RAW', 'refused', 'the run answers not-ok and the summary says nothing was migrated', !r.ok && /Nothing migrated/.test(String(r.summary)), { ok: r.ok, summary: r.summary });
-    check('RAW', 'names-uom', 'the errors name the C_UOM sheet and the empty mandatory X12DE355 (the column Odoo has no field for)', errs.some(function (l) { return /01C_UOM row \d+: C_UOM mandatory .*x12de355/.test(l); }), { first: errs.slice(0, 3) });
+    check('RAW', 'names-uom', 'the errors name the C_UOM sheet and the empty X12DE355 (the column Odoo has no field for) with the DATABASE refusal of the save (NOT NULL, CAPEX_DASHBOARD.md §5.73; before it the loader own after-save check F8 said it)', errs.some(function (l) { return /01C_UOM row \d+: C_UOM save refused .*null value in column "x12de355" of relation "c_uom" violates not-null constraint/.test(l); }), { first: errs.slice(0, 3) });
     check('RAW', 'nothing-kept', 'all or nothing: the tenant has exactly the rows it had before in all 17 tables', J(C1) === J(C0), { before: C0, after: C1 });
   });
   verdict('RAW');
@@ -192,7 +192,7 @@ var TABLES = ['C_UOM', 'C_PaymentTerm', 'M_Product_Category', 'C_ElementValue', 
   });
   guard('FALS', 'mandatory', 'a partner without a Name (mandatory, no default anywhere) is refused (F8), not saved broken', function () {
     var r = run('mand.xlsx', chunk.bookToWorkbook([sh('01C_BPartner', [['Value', 'TaxID'], ['M-1', 'X-1']])]), { dry: true });
-    check('FALS', 'mandatory', 'refused, naming name', !r.ok && /mandatory [a-z_,]*\bname\b/.test(String(r.summary)), { r: r.summary });
+    check('FALS', 'mandatory', 'refused, naming name', !r.ok && /null value in column "name" of relation "c_bpartner" violates not-null constraint/.test(String(r.summary)), { r: r.summary });
   });
   guard('FALS', 'default-group', 'a partner with NO group column takes the tenant default group (legacy MBPartner.getBPGroup :876-886 -> MBPGroup.getDefault)', function () {
     var r = run('grp.xlsx', chunk.bookToWorkbook([sh('01C_BPartner', [['Value', 'Name'], ['G-1', 'Default Group Co']])]), { dry: true });
