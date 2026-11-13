@@ -1,0 +1,13 @@
+-- CAPEX-FORECAST-PROJECTS (bim-ootb prompts/CAPEX_DASHBOARD.md §5.75 step 2 RESULT): a COUNT row over the SAME WHERE as 1000076 CAPEX Forecast Cost at Completion.
+-- WHY: the drill of a measure is MMeasureCalc.getQuery, which cuts the Select at its FIRST "FROM "; row 1000076's Select holds a sub-select, so neither legacy nor the twin can list the projects it summed.
+-- This row's Select is a plain COUNT(*), so its key query lists them. The WHERE is copied from 1000076 by the generator of this file, never retyped. Id 1000089, EntityType 'A' (§5.57).
+-- Restore: DELETE FROM PA_Goal WHERE PA_Measure_ID=1000089; DELETE FROM PA_Measure WHERE PA_Measure_ID=1000089; DELETE FROM PA_MeasureCalc WHERE PA_MeasureCalc_ID=1000089;
+SELECT register_migration_script('202611141000_CAPEX-FORECAST-PROJECTS.sql') FROM dual;
+
+-- CAPEX Forecast projects (proposed)
+INSERT INTO PA_MeasureCalc (PA_MeasureCalc_ID,AD_Client_ID,AD_Org_ID,IsActive,Created,CreatedBy,Updated,UpdatedBy,Name,Description,SelectClause,WhereClause,DateColumn,OrgColumn,KeyColumn,AD_Table_ID,EntityType,PA_MeasureCalc_UU)
+SELECT 1000089,11,0,'Y',TO_TIMESTAMP('2026-11-14 10:00:00','YYYY-MM-DD HH24:MI:SS'),100,TO_TIMESTAMP('2026-11-14 10:00:00','YYYY-MM-DD HH24:MI:SS'),100,'CAPEX Forecast projects (proposed)','the projects the Forecast row sums: active, Spent and Done above 0, context currency (the same WHERE as CAPEX Forecast Cost at Completion; a COUNT row so the number can be drilled)','SELECT COUNT(*) FROM C_Project p','WHERE p.IsActive=''Y'' AND p.Processed=''N'' AND p.ProjectBalanceAmt>0 AND (SELECT SUM(ph.PlannedAmt) FROM C_ProjectPhase ph WHERE ph.C_Project_ID=p.C_Project_ID AND ph.IsComplete=''Y'')>0 AND p.C_Currency_ID=@$C_Currency_ID@','p.Created','p.AD_Org_ID','p.C_Project_ID',(SELECT AD_Table_ID FROM AD_Table WHERE TableName='C_Project'),'A','5a0c3e1e-0b7d-4c1e-9f3a-cafe00010089' FROM dual WHERE NOT EXISTS (SELECT 1 FROM PA_MeasureCalc WHERE PA_MeasureCalc_ID=1000089)
+;
+INSERT INTO PA_Measure (PA_Measure_ID,AD_Client_ID,AD_Org_ID,IsActive,Created,CreatedBy,Updated,UpdatedBy,Name,Description,MeasureType,MeasureDataType,PA_MeasureCalc_ID,PA_Measure_UU)
+SELECT 1000089,11,0,'Y',TO_TIMESTAMP('2026-11-14 10:00:00','YYYY-MM-DD HH24:MI:SS'),100,TO_TIMESTAMP('2026-11-14 10:00:00','YYYY-MM-DD HH24:MI:SS'),100,'CAPEX Forecast projects (proposed)','the projects the Forecast row sums: active, Spent and Done above 0, context currency (the same WHERE as CAPEX Forecast Cost at Completion; a COUNT row so the number can be drilled)','C','S',1000089,'5a0c3e1e-0b7d-4c1e-9f3a-cafe00020089' FROM dual WHERE NOT EXISTS (SELECT 1 FROM PA_Measure WHERE PA_Measure_ID=1000089)
+;
