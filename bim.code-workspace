@@ -1,0 +1,11 @@
+// bim.code-workspace — bim-ootb + bim-compiler in ONE window, so search, F12 and §TAG lookups cross both repos.
+// Open it with File → Open Workspace from File… (opening the bim-ootb folder alone keeps working as before).
+// Each folder keeps its own .vscode/settings.json (bim-compiler's hides its stale bim-ootb copies, BIMCompiler #596).
+// Expects bim-compiler checked out next to bim-ootb. Spec: bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md §F.0 Z1 (#2918).
+// Witness: node scripts/tests/witness_editor_zero_code.js  (§EZC_WORKSPACE)
+{
+  "folders": [
+    { "name": "bim-ootb", "path": "." },
+    { "name": "bim-compiler", "path": "../bim-compiler" }
+  ]
+}
