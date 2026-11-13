@@ -1,0 +1,4019 @@
+{
+ "recorded": "2026-11-13",
+ "commit": "4ed4e86f",
+ "today": "2026-11-04",
+ "note": "the hand formulas of capex/tiles.js at this commit (their last), over capex/sample/pilot_snapshot.json; PA == hand was checked when recorded",
+ "cases": [
+  {
+   "filter": {
+    "status": "all"
+   },
+   "population": {
+    "P": 13,
+    "S": 13,
+    "A": 9
+   },
+   "flat": {
+    "total_projects": "13",
+    "total_projects_closed": "1",
+    "active_projects": "9",
+    "active_projects_closing": "0",
+    "approved_budget": "100:39971166.17,322:30286701.64",
+    "actual_cost": "100:342.59,322:7.97",
+    "actual_cost_pct_of_plan": "100:0.0000,322:0.0000",
+    "committed_cost": "100:1347462.62,322:1000.00",
+    "committed_invoiced": "100:8.10,322:0.00",
+    "forecast_cost": "100:338.28",
+    "completed_year": "1",
+    "health": "green=0 amber=2 red=1 none=6",
+    "stage": "(no phase)=8;First Product Presentation=1",
+    "physical": "100:0.2000,322:0.0000",
+    "spent": "100:0.0000,322:0.0000",
+    "schedule": "ontime=2 delayed=1 atrisk=2 nosched=4",
+    "avg_delay": "180.00",
+    "budget_status": "within=1 over=2 notstarted=6",
+    "actual_overrun": "100:334.62,322:7.97",
+    "approvals": "261",
+    "committed_contract": "no data (not installed)",
+    "committed_verified": "no data (not installed)",
+    "bim_documents": "no data (not installed)",
+    "proc_openpo": "no data (not installed)",
+    "proc_overcommitted": "0",
+    "proc_nopo": "no data (not installed)",
+    "handover_ready": "0",
+    "handover_done": "1",
+    "last_updated": "2026-11-04 19:34:30.314"
+   },
+   "drill": {
+    "active_projects": [
+     [
+      101,
+      "none",
+      "nosched",
+      "notstarted"
+     ],
+     [
+      1000009,
+      "none",
+      "ontime",
+      "notstarted"
+     ],
+     [
+      1000014,
+      "amber",
+      "delayed",
+      "notstarted"
+     ],
+     [
+      100,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000007,
+      "red",
+      "atrisk",
+      "notstarted"
+     ],
+     [
+      1000013,
+      "amber",
+      "atrisk",
+      "within"
+     ],
+     [
+      1000015,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000012,
+      "none",
+      "nosched",
+      "notstarted"
+     ],
+     [
+      1000010,
+      "none",
+      "ontime",
+      "notstarted"
+     ]
+    ],
+    "actual_cost": [
+     [
+      101,
+      "none",
+      "nosched",
+      "notstarted"
+     ],
+     [
+      1000009,
+      "none",
+      "ontime",
+      "notstarted"
+     ],
+     [
+      1000014,
+      "amber",
+      "delayed",
+      "notstarted"
+     ],
+     [
+      1000005,
+      null,
+      null,
+      null
+     ],
+     [
+      100,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000007,
+      "red",
+      "atrisk",
+      "notstarted"
+     ],
+     [
+      1000013,
+      "amber",
+      "atrisk",
+      "within"
+     ],
+     [
+      1000015,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000012,
+      "none",
+      "nosched",
+      "notstarted"
+     ],
+     [
+      1000010,
+      "none",
+      "ontime",
+      "notstarted"
+     ],
+     [
+      1000004,
+      null,
+      null,
+      null
+     ],
+     [
+      1000006,
+      null,
+      null,
+      null
+     ],
+     [
+      1000011,
+      null,
+      null,
+      null
+     ]
+    ],
+    "approved_budget": [
+     [
+      101,
+      "none",
+      "nosched",
+      "notstarted"
+     ],
+     [
+      1000009,
+      "none",
+      "ontime",
+      "notstarted"
+     ],
+     [
+      1000014,
+      "amber",
+      "delayed",
+      "notstarted"
+     ],
+     [
+      1000005,
+      null,
+      null,
+      null
+     ],
+     [
+      100,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000007,
+      "red",
+      "atrisk",
+      "notstarted"
+     ],
+     [
+      1000013,
+      "amber",
+      "atrisk",
+      "within"
+     ],
+     [
+      1000015,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000012,
+      "none",
+      "nosched",
+      "notstarted"
+     ],
+     [
+      1000010,
+      "none",
+      "ontime",
+      "notstarted"
+     ],
+     [
+      1000004,
+      null,
+      null,
+      null
+     ],
+     [
+      1000006,
+      null,
+      null,
+      null
+     ],
+     [
+      1000011,
+      null,
+      null,
+      null
+     ]
+    ],
+    "budget:notstarted": [
+     [
+      101,
+      "none",
+      "nosched",
+      "notstarted"
+     ],
+     [
+      1000009,
+      "none",
+      "ontime",
+      "notstarted"
+     ],
+     [
+      1000014,
+      "amber",
+      "delayed",
+      "notstarted"
+     ],
+     [
+      1000007,
+      "red",
+      "atrisk",
+      "notstarted"
+     ],
+     [
+      1000012,
+      "none",
+      "nosched",
+      "notstarted"
+     ],
+     [
+      1000010,
+      "none",
+      "ontime",
+      "notstarted"
+     ]
+    ],
+    "budget:over": [
+     [
+      100,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000015,
+      "none",
+      "nosched",
+      "over"
+     ]
+    ],
+    "budget:within": [
+     [
+      1000013,
+      "amber",
+      "atrisk",
+      "within"
+     ]
+    ],
+    "committed_cost": [
+     [
+      101,
+      "none",
+      "nosched",
+      "notstarted"
+     ],
+     [
+      1000009,
+      "none",
+      "ontime",
+      "notstarted"
+     ],
+     [
+      1000014,
+      "amber",
+      "delayed",
+      "notstarted"
+     ],
+     [
+      1000005,
+      null,
+      null,
+      null
+     ],
+     [
+      100,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000007,
+      "red",
+      "atrisk",
+      "notstarted"
+     ],
+     [
+      1000013,
+      "amber",
+      "atrisk",
+      "within"
+     ],
+     [
+      1000015,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000012,
+      "none",
+      "nosched",
+      "notstarted"
+     ],
+     [
+      1000010,
+      "none",
+      "ontime",
+      "notstarted"
+     ],
+     [
+      1000004,
+      null,
+      null,
+      null
+     ],
+     [
+      1000006,
+      null,
+      null,
+      null
+     ],
+     [
+      1000011,
+      null,
+      null,
+      null
+     ]
+    ],
+    "completed_year": [
+     [
+      1000011,
+      null,
+      null,
+      null
+     ]
+    ],
+    "forecast_cost": [
+     [
+      1000013,
+      "amber",
+      "atrisk",
+      "within"
+     ]
+    ],
+    "handover:done": [
+     [
+      1000011,
+      null,
+      null,
+      null
+     ]
+    ],
+    "handover:ready": [],
+    "health:amber": [
+     [
+      1000014,
+      "amber",
+      "delayed",
+      "notstarted"
+     ],
+     [
+      1000013,
+      "amber",
+      "atrisk",
+      "within"
+     ]
+    ],
+    "health:green": [],
+    "health:none": [
+     [
+      101,
+      "none",
+      "nosched",
+      "notstarted"
+     ],
+     [
+      1000009,
+      "none",
+      "ontime",
+      "notstarted"
+     ],
+     [
+      100,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000015,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000012,
+      "none",
+      "nosched",
+      "notstarted"
+     ],
+     [
+      1000010,
+      "none",
+      "ontime",
+      "notstarted"
+     ]
+    ],
+    "health:red": [
+     [
+      1000007,
+      "red",
+      "atrisk",
+      "notstarted"
+     ]
+    ],
+    "proc:nopo": [],
+    "proc:openpo": [],
+    "proc:overcommitted": [],
+    "schedule:atrisk": [
+     [
+      1000007,
+      "red",
+      "atrisk",
+      "notstarted"
+     ],
+     [
+      1000013,
+      "amber",
+      "atrisk",
+      "within"
+     ]
+    ],
+    "schedule:delayed": [
+     [
+      1000014,
+      "amber",
+      "delayed",
+      "notstarted"
+     ]
+    ],
+    "schedule:nosched": [
+     [
+      101,
+      "none",
+      "nosched",
+      "notstarted"
+     ],
+     [
+      100,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000015,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000012,
+      "none",
+      "nosched",
+      "notstarted"
+     ]
+    ],
+    "schedule:ontime": [
+     [
+      1000009,
+      "none",
+      "ontime",
+      "notstarted"
+     ],
+     [
+      1000010,
+      "none",
+      "ontime",
+      "notstarted"
+     ]
+    ],
+    "stage:(no phase)": [
+     [
+      1000009,
+      "none",
+      "ontime",
+      "notstarted"
+     ],
+     [
+      1000014,
+      "amber",
+      "delayed",
+      "notstarted"
+     ],
+     [
+      100,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000007,
+      "red",
+      "atrisk",
+      "notstarted"
+     ],
+     [
+      1000013,
+      "amber",
+      "atrisk",
+      "within"
+     ],
+     [
+      1000015,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000012,
+      "none",
+      "nosched",
+      "notstarted"
+     ],
+     [
+      1000010,
+      "none",
+      "ontime",
+      "notstarted"
+     ]
+    ],
+    "stage:First Product Presentation": [
+     [
+      101,
+      "none",
+      "nosched",
+      "notstarted"
+     ]
+    ],
+    "total_projects": [
+     [
+      101,
+      "none",
+      "nosched",
+      "notstarted"
+     ],
+     [
+      1000009,
+      "none",
+      "ontime",
+      "notstarted"
+     ],
+     [
+      1000014,
+      "amber",
+      "delayed",
+      "notstarted"
+     ],
+     [
+      1000005,
+      null,
+      null,
+      null
+     ],
+     [
+      100,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000007,
+      "red",
+      "atrisk",
+      "notstarted"
+     ],
+     [
+      1000013,
+      "amber",
+      "atrisk",
+      "within"
+     ],
+     [
+      1000015,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000012,
+      "none",
+      "nosched",
+      "notstarted"
+     ],
+     [
+      1000010,
+      "none",
+      "ontime",
+      "notstarted"
+     ],
+     [
+      1000004,
+      null,
+      null,
+      null
+     ],
+     [
+      1000006,
+      null,
+      null,
+      null
+     ],
+     [
+      1000011,
+      null,
+      null,
+      null
+     ]
+    ]
+   }
+  },
+  {
+   "filter": {
+    "status": "all",
+    "org": "11"
+   },
+   "population": {
+    "P": 13,
+    "S": 13,
+    "A": 9
+   },
+   "flat": {
+    "total_projects": "13",
+    "total_projects_closed": "1",
+    "active_projects": "9",
+    "active_projects_closing": "0",
+    "approved_budget": "100:39971166.17,322:30286701.64",
+    "actual_cost": "100:342.59,322:7.97",
+    "actual_cost_pct_of_plan": "100:0.0000,322:0.0000",
+    "committed_cost": "100:1347462.62,322:1000.00",
+    "committed_invoiced": "100:8.10,322:0.00",
+    "forecast_cost": "100:338.28",
+    "completed_year": "1",
+    "health": "green=0 amber=2 red=1 none=6",
+    "stage": "(no phase)=8;First Product Presentation=1",
+    "physical": "100:0.2000,322:0.0000",
+    "spent": "100:0.0000,322:0.0000",
+    "schedule": "ontime=2 delayed=1 atrisk=2 nosched=4",
+    "avg_delay": "180.00",
+    "budget_status": "within=1 over=2 notstarted=6",
+    "actual_overrun": "100:334.62,322:7.97",
+    "approvals": "261",
+    "committed_contract": "no data (not installed)",
+    "committed_verified": "no data (not installed)",
+    "bim_documents": "no data (not installed)",
+    "proc_openpo": "no data (not installed)",
+    "proc_overcommitted": "0",
+    "proc_nopo": "no data (not installed)",
+    "handover_ready": "0",
+    "handover_done": "1",
+    "last_updated": "2026-11-04 19:34:30.314"
+   },
+   "drill": {
+    "active_projects": [
+     [
+      101,
+      "none",
+      "nosched",
+      "notstarted"
+     ],
+     [
+      1000009,
+      "none",
+      "ontime",
+      "notstarted"
+     ],
+     [
+      1000014,
+      "amber",
+      "delayed",
+      "notstarted"
+     ],
+     [
+      100,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000007,
+      "red",
+      "atrisk",
+      "notstarted"
+     ],
+     [
+      1000013,
+      "amber",
+      "atrisk",
+      "within"
+     ],
+     [
+      1000015,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000012,
+      "none",
+      "nosched",
+      "notstarted"
+     ],
+     [
+      1000010,
+      "none",
+      "ontime",
+      "notstarted"
+     ]
+    ],
+    "actual_cost": [
+     [
+      101,
+      "none",
+      "nosched",
+      "notstarted"
+     ],
+     [
+      1000009,
+      "none",
+      "ontime",
+      "notstarted"
+     ],
+     [
+      1000014,
+      "amber",
+      "delayed",
+      "notstarted"
+     ],
+     [
+      1000005,
+      null,
+      null,
+      null
+     ],
+     [
+      100,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000007,
+      "red",
+      "atrisk",
+      "notstarted"
+     ],
+     [
+      1000013,
+      "amber",
+      "atrisk",
+      "within"
+     ],
+     [
+      1000015,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000012,
+      "none",
+      "nosched",
+      "notstarted"
+     ],
+     [
+      1000010,
+      "none",
+      "ontime",
+      "notstarted"
+     ],
+     [
+      1000004,
+      null,
+      null,
+      null
+     ],
+     [
+      1000006,
+      null,
+      null,
+      null
+     ],
+     [
+      1000011,
+      null,
+      null,
+      null
+     ]
+    ],
+    "approved_budget": [
+     [
+      101,
+      "none",
+      "nosched",
+      "notstarted"
+     ],
+     [
+      1000009,
+      "none",
+      "ontime",
+      "notstarted"
+     ],
+     [
+      1000014,
+      "amber",
+      "delayed",
+      "notstarted"
+     ],
+     [
+      1000005,
+      null,
+      null,
+      null
+     ],
+     [
+      100,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000007,
+      "red",
+      "atrisk",
+      "notstarted"
+     ],
+     [
+      1000013,
+      "amber",
+      "atrisk",
+      "within"
+     ],
+     [
+      1000015,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000012,
+      "none",
+      "nosched",
+      "notstarted"
+     ],
+     [
+      1000010,
+      "none",
+      "ontime",
+      "notstarted"
+     ],
+     [
+      1000004,
+      null,
+      null,
+      null
+     ],
+     [
+      1000006,
+      null,
+      null,
+      null
+     ],
+     [
+      1000011,
+      null,
+      null,
+      null
+     ]
+    ],
+    "budget:notstarted": [
+     [
+      101,
+      "none",
+      "nosched",
+      "notstarted"
+     ],
+     [
+      1000009,
+      "none",
+      "ontime",
+      "notstarted"
+     ],
+     [
+      1000014,
+      "amber",
+      "delayed",
+      "notstarted"
+     ],
+     [
+      1000007,
+      "red",
+      "atrisk",
+      "notstarted"
+     ],
+     [
+      1000012,
+      "none",
+      "nosched",
+      "notstarted"
+     ],
+     [
+      1000010,
+      "none",
+      "ontime",
+      "notstarted"
+     ]
+    ],
+    "budget:over": [
+     [
+      100,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000015,
+      "none",
+      "nosched",
+      "over"
+     ]
+    ],
+    "budget:within": [
+     [
+      1000013,
+      "amber",
+      "atrisk",
+      "within"
+     ]
+    ],
+    "committed_cost": [
+     [
+      101,
+      "none",
+      "nosched",
+      "notstarted"
+     ],
+     [
+      1000009,
+      "none",
+      "ontime",
+      "notstarted"
+     ],
+     [
+      1000014,
+      "amber",
+      "delayed",
+      "notstarted"
+     ],
+     [
+      1000005,
+      null,
+      null,
+      null
+     ],
+     [
+      100,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000007,
+      "red",
+      "atrisk",
+      "notstarted"
+     ],
+     [
+      1000013,
+      "amber",
+      "atrisk",
+      "within"
+     ],
+     [
+      1000015,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000012,
+      "none",
+      "nosched",
+      "notstarted"
+     ],
+     [
+      1000010,
+      "none",
+      "ontime",
+      "notstarted"
+     ],
+     [
+      1000004,
+      null,
+      null,
+      null
+     ],
+     [
+      1000006,
+      null,
+      null,
+      null
+     ],
+     [
+      1000011,
+      null,
+      null,
+      null
+     ]
+    ],
+    "completed_year": [
+     [
+      1000011,
+      null,
+      null,
+      null
+     ]
+    ],
+    "forecast_cost": [
+     [
+      1000013,
+      "amber",
+      "atrisk",
+      "within"
+     ]
+    ],
+    "handover:done": [
+     [
+      1000011,
+      null,
+      null,
+      null
+     ]
+    ],
+    "handover:ready": [],
+    "health:amber": [
+     [
+      1000014,
+      "amber",
+      "delayed",
+      "notstarted"
+     ],
+     [
+      1000013,
+      "amber",
+      "atrisk",
+      "within"
+     ]
+    ],
+    "health:green": [],
+    "health:none": [
+     [
+      101,
+      "none",
+      "nosched",
+      "notstarted"
+     ],
+     [
+      1000009,
+      "none",
+      "ontime",
+      "notstarted"
+     ],
+     [
+      100,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000015,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000012,
+      "none",
+      "nosched",
+      "notstarted"
+     ],
+     [
+      1000010,
+      "none",
+      "ontime",
+      "notstarted"
+     ]
+    ],
+    "health:red": [
+     [
+      1000007,
+      "red",
+      "atrisk",
+      "notstarted"
+     ]
+    ],
+    "proc:nopo": [],
+    "proc:openpo": [],
+    "proc:overcommitted": [],
+    "schedule:atrisk": [
+     [
+      1000007,
+      "red",
+      "atrisk",
+      "notstarted"
+     ],
+     [
+      1000013,
+      "amber",
+      "atrisk",
+      "within"
+     ]
+    ],
+    "schedule:delayed": [
+     [
+      1000014,
+      "amber",
+      "delayed",
+      "notstarted"
+     ]
+    ],
+    "schedule:nosched": [
+     [
+      101,
+      "none",
+      "nosched",
+      "notstarted"
+     ],
+     [
+      100,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000015,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000012,
+      "none",
+      "nosched",
+      "notstarted"
+     ]
+    ],
+    "schedule:ontime": [
+     [
+      1000009,
+      "none",
+      "ontime",
+      "notstarted"
+     ],
+     [
+      1000010,
+      "none",
+      "ontime",
+      "notstarted"
+     ]
+    ],
+    "stage:(no phase)": [
+     [
+      1000009,
+      "none",
+      "ontime",
+      "notstarted"
+     ],
+     [
+      1000014,
+      "amber",
+      "delayed",
+      "notstarted"
+     ],
+     [
+      100,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000007,
+      "red",
+      "atrisk",
+      "notstarted"
+     ],
+     [
+      1000013,
+      "amber",
+      "atrisk",
+      "within"
+     ],
+     [
+      1000015,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000012,
+      "none",
+      "nosched",
+      "notstarted"
+     ],
+     [
+      1000010,
+      "none",
+      "ontime",
+      "notstarted"
+     ]
+    ],
+    "stage:First Product Presentation": [
+     [
+      101,
+      "none",
+      "nosched",
+      "notstarted"
+     ]
+    ],
+    "total_projects": [
+     [
+      101,
+      "none",
+      "nosched",
+      "notstarted"
+     ],
+     [
+      1000009,
+      "none",
+      "ontime",
+      "notstarted"
+     ],
+     [
+      1000014,
+      "amber",
+      "delayed",
+      "notstarted"
+     ],
+     [
+      1000005,
+      null,
+      null,
+      null
+     ],
+     [
+      100,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000007,
+      "red",
+      "atrisk",
+      "notstarted"
+     ],
+     [
+      1000013,
+      "amber",
+      "atrisk",
+      "within"
+     ],
+     [
+      1000015,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000012,
+      "none",
+      "nosched",
+      "notstarted"
+     ],
+     [
+      1000010,
+      "none",
+      "ontime",
+      "notstarted"
+     ],
+     [
+      1000004,
+      null,
+      null,
+      null
+     ],
+     [
+      1000006,
+      null,
+      null,
+      null
+     ],
+     [
+      1000011,
+      null,
+      null,
+      null
+     ]
+    ]
+   }
+  },
+  {
+   "filter": {
+    "status": "active"
+   },
+   "population": {
+    "P": 13,
+    "S": 9,
+    "A": 9
+   },
+   "flat": {
+    "total_projects": "13",
+    "total_projects_closed": "1",
+    "active_projects": "9",
+    "active_projects_closing": "0",
+    "approved_budget": "100:24982203.77,322:15139265.67",
+    "actual_cost": "100:342.59,322:7.97",
+    "actual_cost_pct_of_plan": "100:0.0000,322:0.0000",
+    "committed_cost": "100:1347462.62,322:1000.00",
+    "committed_invoiced": "100:8.10,322:0.00",
+    "forecast_cost": "100:338.28",
+    "completed_year": "1",
+    "health": "green=0 amber=2 red=1 none=6",
+    "stage": "(no phase)=8;First Product Presentation=1",
+    "physical": "100:0.2000,322:0.0000",
+    "spent": "100:0.0000,322:0.0000",
+    "schedule": "ontime=2 delayed=1 atrisk=2 nosched=4",
+    "avg_delay": "180.00",
+    "budget_status": "within=1 over=2 notstarted=6",
+    "actual_overrun": "100:334.62,322:7.97",
+    "approvals": "261",
+    "committed_contract": "no data (not installed)",
+    "committed_verified": "no data (not installed)",
+    "bim_documents": "no data (not installed)",
+    "proc_openpo": "no data (not installed)",
+    "proc_overcommitted": "0",
+    "proc_nopo": "no data (not installed)",
+    "handover_ready": "0",
+    "handover_done": "0",
+    "last_updated": "2026-11-04 19:34:30.314"
+   },
+   "drill": {
+    "active_projects": [
+     [
+      101,
+      "none",
+      "nosched",
+      "notstarted"
+     ],
+     [
+      1000009,
+      "none",
+      "ontime",
+      "notstarted"
+     ],
+     [
+      1000014,
+      "amber",
+      "delayed",
+      "notstarted"
+     ],
+     [
+      100,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000007,
+      "red",
+      "atrisk",
+      "notstarted"
+     ],
+     [
+      1000013,
+      "amber",
+      "atrisk",
+      "within"
+     ],
+     [
+      1000015,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000012,
+      "none",
+      "nosched",
+      "notstarted"
+     ],
+     [
+      1000010,
+      "none",
+      "ontime",
+      "notstarted"
+     ]
+    ],
+    "actual_cost": [
+     [
+      101,
+      "none",
+      "nosched",
+      "notstarted"
+     ],
+     [
+      1000009,
+      "none",
+      "ontime",
+      "notstarted"
+     ],
+     [
+      1000014,
+      "amber",
+      "delayed",
+      "notstarted"
+     ],
+     [
+      100,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000007,
+      "red",
+      "atrisk",
+      "notstarted"
+     ],
+     [
+      1000013,
+      "amber",
+      "atrisk",
+      "within"
+     ],
+     [
+      1000015,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000012,
+      "none",
+      "nosched",
+      "notstarted"
+     ],
+     [
+      1000010,
+      "none",
+      "ontime",
+      "notstarted"
+     ]
+    ],
+    "approved_budget": [
+     [
+      101,
+      "none",
+      "nosched",
+      "notstarted"
+     ],
+     [
+      1000009,
+      "none",
+      "ontime",
+      "notstarted"
+     ],
+     [
+      1000014,
+      "amber",
+      "delayed",
+      "notstarted"
+     ],
+     [
+      100,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000007,
+      "red",
+      "atrisk",
+      "notstarted"
+     ],
+     [
+      1000013,
+      "amber",
+      "atrisk",
+      "within"
+     ],
+     [
+      1000015,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000012,
+      "none",
+      "nosched",
+      "notstarted"
+     ],
+     [
+      1000010,
+      "none",
+      "ontime",
+      "notstarted"
+     ]
+    ],
+    "budget:notstarted": [
+     [
+      101,
+      "none",
+      "nosched",
+      "notstarted"
+     ],
+     [
+      1000009,
+      "none",
+      "ontime",
+      "notstarted"
+     ],
+     [
+      1000014,
+      "amber",
+      "delayed",
+      "notstarted"
+     ],
+     [
+      1000007,
+      "red",
+      "atrisk",
+      "notstarted"
+     ],
+     [
+      1000012,
+      "none",
+      "nosched",
+      "notstarted"
+     ],
+     [
+      1000010,
+      "none",
+      "ontime",
+      "notstarted"
+     ]
+    ],
+    "budget:over": [
+     [
+      100,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000015,
+      "none",
+      "nosched",
+      "over"
+     ]
+    ],
+    "budget:within": [
+     [
+      1000013,
+      "amber",
+      "atrisk",
+      "within"
+     ]
+    ],
+    "committed_cost": [
+     [
+      101,
+      "none",
+      "nosched",
+      "notstarted"
+     ],
+     [
+      1000009,
+      "none",
+      "ontime",
+      "notstarted"
+     ],
+     [
+      1000014,
+      "amber",
+      "delayed",
+      "notstarted"
+     ],
+     [
+      100,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000007,
+      "red",
+      "atrisk",
+      "notstarted"
+     ],
+     [
+      1000013,
+      "amber",
+      "atrisk",
+      "within"
+     ],
+     [
+      1000015,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000012,
+      "none",
+      "nosched",
+      "notstarted"
+     ],
+     [
+      1000010,
+      "none",
+      "ontime",
+      "notstarted"
+     ]
+    ],
+    "completed_year": [
+     [
+      1000011,
+      null,
+      null,
+      null
+     ]
+    ],
+    "forecast_cost": [
+     [
+      1000013,
+      "amber",
+      "atrisk",
+      "within"
+     ]
+    ],
+    "handover:done": [],
+    "handover:ready": [],
+    "health:amber": [
+     [
+      1000014,
+      "amber",
+      "delayed",
+      "notstarted"
+     ],
+     [
+      1000013,
+      "amber",
+      "atrisk",
+      "within"
+     ]
+    ],
+    "health:green": [],
+    "health:none": [
+     [
+      101,
+      "none",
+      "nosched",
+      "notstarted"
+     ],
+     [
+      1000009,
+      "none",
+      "ontime",
+      "notstarted"
+     ],
+     [
+      100,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000015,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000012,
+      "none",
+      "nosched",
+      "notstarted"
+     ],
+     [
+      1000010,
+      "none",
+      "ontime",
+      "notstarted"
+     ]
+    ],
+    "health:red": [
+     [
+      1000007,
+      "red",
+      "atrisk",
+      "notstarted"
+     ]
+    ],
+    "proc:nopo": [],
+    "proc:openpo": [],
+    "proc:overcommitted": [],
+    "schedule:atrisk": [
+     [
+      1000007,
+      "red",
+      "atrisk",
+      "notstarted"
+     ],
+     [
+      1000013,
+      "amber",
+      "atrisk",
+      "within"
+     ]
+    ],
+    "schedule:delayed": [
+     [
+      1000014,
+      "amber",
+      "delayed",
+      "notstarted"
+     ]
+    ],
+    "schedule:nosched": [
+     [
+      101,
+      "none",
+      "nosched",
+      "notstarted"
+     ],
+     [
+      100,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000015,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000012,
+      "none",
+      "nosched",
+      "notstarted"
+     ]
+    ],
+    "schedule:ontime": [
+     [
+      1000009,
+      "none",
+      "ontime",
+      "notstarted"
+     ],
+     [
+      1000010,
+      "none",
+      "ontime",
+      "notstarted"
+     ]
+    ],
+    "stage:(no phase)": [
+     [
+      1000009,
+      "none",
+      "ontime",
+      "notstarted"
+     ],
+     [
+      1000014,
+      "amber",
+      "delayed",
+      "notstarted"
+     ],
+     [
+      100,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000007,
+      "red",
+      "atrisk",
+      "notstarted"
+     ],
+     [
+      1000013,
+      "amber",
+      "atrisk",
+      "within"
+     ],
+     [
+      1000015,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000012,
+      "none",
+      "nosched",
+      "notstarted"
+     ],
+     [
+      1000010,
+      "none",
+      "ontime",
+      "notstarted"
+     ]
+    ],
+    "stage:First Product Presentation": [
+     [
+      101,
+      "none",
+      "nosched",
+      "notstarted"
+     ]
+    ],
+    "total_projects": [
+     [
+      101,
+      "none",
+      "nosched",
+      "notstarted"
+     ],
+     [
+      1000009,
+      "none",
+      "ontime",
+      "notstarted"
+     ],
+     [
+      1000014,
+      "amber",
+      "delayed",
+      "notstarted"
+     ],
+     [
+      1000005,
+      null,
+      null,
+      null
+     ],
+     [
+      100,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000007,
+      "red",
+      "atrisk",
+      "notstarted"
+     ],
+     [
+      1000013,
+      "amber",
+      "atrisk",
+      "within"
+     ],
+     [
+      1000015,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000012,
+      "none",
+      "nosched",
+      "notstarted"
+     ],
+     [
+      1000010,
+      "none",
+      "ontime",
+      "notstarted"
+     ],
+     [
+      1000004,
+      null,
+      null,
+      null
+     ],
+     [
+      1000006,
+      null,
+      null,
+      null
+     ],
+     [
+      1000011,
+      null,
+      null,
+      null
+     ]
+    ]
+   }
+  },
+  {
+   "filter": {
+    "status": "active",
+    "org": "11"
+   },
+   "population": {
+    "P": 13,
+    "S": 9,
+    "A": 9
+   },
+   "flat": {
+    "total_projects": "13",
+    "total_projects_closed": "1",
+    "active_projects": "9",
+    "active_projects_closing": "0",
+    "approved_budget": "100:24982203.77,322:15139265.67",
+    "actual_cost": "100:342.59,322:7.97",
+    "actual_cost_pct_of_plan": "100:0.0000,322:0.0000",
+    "committed_cost": "100:1347462.62,322:1000.00",
+    "committed_invoiced": "100:8.10,322:0.00",
+    "forecast_cost": "100:338.28",
+    "completed_year": "1",
+    "health": "green=0 amber=2 red=1 none=6",
+    "stage": "(no phase)=8;First Product Presentation=1",
+    "physical": "100:0.2000,322:0.0000",
+    "spent": "100:0.0000,322:0.0000",
+    "schedule": "ontime=2 delayed=1 atrisk=2 nosched=4",
+    "avg_delay": "180.00",
+    "budget_status": "within=1 over=2 notstarted=6",
+    "actual_overrun": "100:334.62,322:7.97",
+    "approvals": "261",
+    "committed_contract": "no data (not installed)",
+    "committed_verified": "no data (not installed)",
+    "bim_documents": "no data (not installed)",
+    "proc_openpo": "no data (not installed)",
+    "proc_overcommitted": "0",
+    "proc_nopo": "no data (not installed)",
+    "handover_ready": "0",
+    "handover_done": "0",
+    "last_updated": "2026-11-04 19:34:30.314"
+   },
+   "drill": {
+    "active_projects": [
+     [
+      101,
+      "none",
+      "nosched",
+      "notstarted"
+     ],
+     [
+      1000009,
+      "none",
+      "ontime",
+      "notstarted"
+     ],
+     [
+      1000014,
+      "amber",
+      "delayed",
+      "notstarted"
+     ],
+     [
+      100,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000007,
+      "red",
+      "atrisk",
+      "notstarted"
+     ],
+     [
+      1000013,
+      "amber",
+      "atrisk",
+      "within"
+     ],
+     [
+      1000015,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000012,
+      "none",
+      "nosched",
+      "notstarted"
+     ],
+     [
+      1000010,
+      "none",
+      "ontime",
+      "notstarted"
+     ]
+    ],
+    "actual_cost": [
+     [
+      101,
+      "none",
+      "nosched",
+      "notstarted"
+     ],
+     [
+      1000009,
+      "none",
+      "ontime",
+      "notstarted"
+     ],
+     [
+      1000014,
+      "amber",
+      "delayed",
+      "notstarted"
+     ],
+     [
+      100,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000007,
+      "red",
+      "atrisk",
+      "notstarted"
+     ],
+     [
+      1000013,
+      "amber",
+      "atrisk",
+      "within"
+     ],
+     [
+      1000015,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000012,
+      "none",
+      "nosched",
+      "notstarted"
+     ],
+     [
+      1000010,
+      "none",
+      "ontime",
+      "notstarted"
+     ]
+    ],
+    "approved_budget": [
+     [
+      101,
+      "none",
+      "nosched",
+      "notstarted"
+     ],
+     [
+      1000009,
+      "none",
+      "ontime",
+      "notstarted"
+     ],
+     [
+      1000014,
+      "amber",
+      "delayed",
+      "notstarted"
+     ],
+     [
+      100,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000007,
+      "red",
+      "atrisk",
+      "notstarted"
+     ],
+     [
+      1000013,
+      "amber",
+      "atrisk",
+      "within"
+     ],
+     [
+      1000015,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000012,
+      "none",
+      "nosched",
+      "notstarted"
+     ],
+     [
+      1000010,
+      "none",
+      "ontime",
+      "notstarted"
+     ]
+    ],
+    "budget:notstarted": [
+     [
+      101,
+      "none",
+      "nosched",
+      "notstarted"
+     ],
+     [
+      1000009,
+      "none",
+      "ontime",
+      "notstarted"
+     ],
+     [
+      1000014,
+      "amber",
+      "delayed",
+      "notstarted"
+     ],
+     [
+      1000007,
+      "red",
+      "atrisk",
+      "notstarted"
+     ],
+     [
+      1000012,
+      "none",
+      "nosched",
+      "notstarted"
+     ],
+     [
+      1000010,
+      "none",
+      "ontime",
+      "notstarted"
+     ]
+    ],
+    "budget:over": [
+     [
+      100,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000015,
+      "none",
+      "nosched",
+      "over"
+     ]
+    ],
+    "budget:within": [
+     [
+      1000013,
+      "amber",
+      "atrisk",
+      "within"
+     ]
+    ],
+    "committed_cost": [
+     [
+      101,
+      "none",
+      "nosched",
+      "notstarted"
+     ],
+     [
+      1000009,
+      "none",
+      "ontime",
+      "notstarted"
+     ],
+     [
+      1000014,
+      "amber",
+      "delayed",
+      "notstarted"
+     ],
+     [
+      100,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000007,
+      "red",
+      "atrisk",
+      "notstarted"
+     ],
+     [
+      1000013,
+      "amber",
+      "atrisk",
+      "within"
+     ],
+     [
+      1000015,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000012,
+      "none",
+      "nosched",
+      "notstarted"
+     ],
+     [
+      1000010,
+      "none",
+      "ontime",
+      "notstarted"
+     ]
+    ],
+    "completed_year": [
+     [
+      1000011,
+      null,
+      null,
+      null
+     ]
+    ],
+    "forecast_cost": [
+     [
+      1000013,
+      "amber",
+      "atrisk",
+      "within"
+     ]
+    ],
+    "handover:done": [],
+    "handover:ready": [],
+    "health:amber": [
+     [
+      1000014,
+      "amber",
+      "delayed",
+      "notstarted"
+     ],
+     [
+      1000013,
+      "amber",
+      "atrisk",
+      "within"
+     ]
+    ],
+    "health:green": [],
+    "health:none": [
+     [
+      101,
+      "none",
+      "nosched",
+      "notstarted"
+     ],
+     [
+      1000009,
+      "none",
+      "ontime",
+      "notstarted"
+     ],
+     [
+      100,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000015,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000012,
+      "none",
+      "nosched",
+      "notstarted"
+     ],
+     [
+      1000010,
+      "none",
+      "ontime",
+      "notstarted"
+     ]
+    ],
+    "health:red": [
+     [
+      1000007,
+      "red",
+      "atrisk",
+      "notstarted"
+     ]
+    ],
+    "proc:nopo": [],
+    "proc:openpo": [],
+    "proc:overcommitted": [],
+    "schedule:atrisk": [
+     [
+      1000007,
+      "red",
+      "atrisk",
+      "notstarted"
+     ],
+     [
+      1000013,
+      "amber",
+      "atrisk",
+      "within"
+     ]
+    ],
+    "schedule:delayed": [
+     [
+      1000014,
+      "amber",
+      "delayed",
+      "notstarted"
+     ]
+    ],
+    "schedule:nosched": [
+     [
+      101,
+      "none",
+      "nosched",
+      "notstarted"
+     ],
+     [
+      100,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000015,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000012,
+      "none",
+      "nosched",
+      "notstarted"
+     ]
+    ],
+    "schedule:ontime": [
+     [
+      1000009,
+      "none",
+      "ontime",
+      "notstarted"
+     ],
+     [
+      1000010,
+      "none",
+      "ontime",
+      "notstarted"
+     ]
+    ],
+    "stage:(no phase)": [
+     [
+      1000009,
+      "none",
+      "ontime",
+      "notstarted"
+     ],
+     [
+      1000014,
+      "amber",
+      "delayed",
+      "notstarted"
+     ],
+     [
+      100,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000007,
+      "red",
+      "atrisk",
+      "notstarted"
+     ],
+     [
+      1000013,
+      "amber",
+      "atrisk",
+      "within"
+     ],
+     [
+      1000015,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000012,
+      "none",
+      "nosched",
+      "notstarted"
+     ],
+     [
+      1000010,
+      "none",
+      "ontime",
+      "notstarted"
+     ]
+    ],
+    "stage:First Product Presentation": [
+     [
+      101,
+      "none",
+      "nosched",
+      "notstarted"
+     ]
+    ],
+    "total_projects": [
+     [
+      101,
+      "none",
+      "nosched",
+      "notstarted"
+     ],
+     [
+      1000009,
+      "none",
+      "ontime",
+      "notstarted"
+     ],
+     [
+      1000014,
+      "amber",
+      "delayed",
+      "notstarted"
+     ],
+     [
+      1000005,
+      null,
+      null,
+      null
+     ],
+     [
+      100,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000007,
+      "red",
+      "atrisk",
+      "notstarted"
+     ],
+     [
+      1000013,
+      "amber",
+      "atrisk",
+      "within"
+     ],
+     [
+      1000015,
+      "none",
+      "nosched",
+      "over"
+     ],
+     [
+      1000012,
+      "none",
+      "nosched",
+      "notstarted"
+     ],
+     [
+      1000010,
+      "none",
+      "ontime",
+      "notstarted"
+     ],
+     [
+      1000004,
+      null,
+      null,
+      null
+     ],
+     [
+      1000006,
+      null,
+      null,
+      null
+     ],
+     [
+      1000011,
+      null,
+      null,
+      null
+     ]
+    ]
+   }
+  },
+  {
+   "filter": {
+    "status": "closed"
+   },
+   "population": {
+    "P": 13,
+    "S": 1,
+    "A": 0
+   },
+   "flat": {
+    "total_projects": "13",
+    "total_projects_closed": "1",
+    "active_projects": "9",
+    "active_projects_closing": "0",
+    "approved_budget": "100:4996320.72",
+    "actual_cost": "100:0.00",
+    "actual_cost_pct_of_plan": "100:0.0000",
+    "committed_cost": "100:0.00",
+    "committed_invoiced": "100:0.00",
+    "forecast_cost": "100:338.28",
+    "completed_year": "1",
+    "health": "no data",
+    "stage": "no data",
+    "physical": "no data",
+    "spent": "no data",
+    "schedule": "no data",
+    "avg_delay": "no data",
+    "budget_status": "no data",
+    "actual_overrun": "no data",
+    "approvals": "261",
+    "committed_contract": "no data (not installed)",
+    "committed_verified": "no data (not installed)",
+    "bim_documents": "no data (not installed)",
+    "proc_openpo": "no data (not installed)",
+    "proc_overcommitted": "0",
+    "proc_nopo": "no data (not installed)",
+    "handover_ready": "0",
+    "handover_done": "1",
+    "last_updated": "2026-11-04 19:34:30.314"
+   },
+   "drill": {
+    "active_projects": [
+     [
+      101,
+      null,
+      null,
+      null
+     ],
+     [
+      1000009,
+      null,
+      null,
+      null
+     ],
+     [
+      1000014,
+      null,
+      null,
+      null
+     ],
+     [
+      100,
+      null,
+      null,
+      null
+     ],
+     [
+      1000007,
+      null,
+      null,
+      null
+     ],
+     [
+      1000013,
+      null,
+      null,
+      null
+     ],
+     [
+      1000015,
+      null,
+      null,
+      null
+     ],
+     [
+      1000012,
+      null,
+      null,
+      null
+     ],
+     [
+      1000010,
+      null,
+      null,
+      null
+     ]
+    ],
+    "actual_cost": [
+     [
+      1000011,
+      null,
+      null,
+      null
+     ]
+    ],
+    "approved_budget": [
+     [
+      1000011,
+      null,
+      null,
+      null
+     ]
+    ],
+    "budget:notstarted": [],
+    "budget:over": [],
+    "budget:within": [],
+    "committed_cost": [
+     [
+      1000011,
+      null,
+      null,
+      null
+     ]
+    ],
+    "completed_year": [
+     [
+      1000011,
+      null,
+      null,
+      null
+     ]
+    ],
+    "forecast_cost": [
+     [
+      1000013,
+      null,
+      null,
+      null
+     ]
+    ],
+    "handover:done": [
+     [
+      1000011,
+      null,
+      null,
+      null
+     ]
+    ],
+    "handover:ready": [],
+    "health:amber": [],
+    "health:green": [],
+    "health:none": [],
+    "health:red": [],
+    "proc:nopo": [],
+    "proc:openpo": [],
+    "proc:overcommitted": [],
+    "schedule:atrisk": [],
+    "schedule:delayed": [],
+    "schedule:nosched": [],
+    "schedule:ontime": [],
+    "total_projects": [
+     [
+      101,
+      null,
+      null,
+      null
+     ],
+     [
+      1000009,
+      null,
+      null,
+      null
+     ],
+     [
+      1000014,
+      null,
+      null,
+      null
+     ],
+     [
+      1000005,
+      null,
+      null,
+      null
+     ],
+     [
+      100,
+      null,
+      null,
+      null
+     ],
+     [
+      1000007,
+      null,
+      null,
+      null
+     ],
+     [
+      1000013,
+      null,
+      null,
+      null
+     ],
+     [
+      1000015,
+      null,
+      null,
+      null
+     ],
+     [
+      1000012,
+      null,
+      null,
+      null
+     ],
+     [
+      1000010,
+      null,
+      null,
+      null
+     ],
+     [
+      1000004,
+      null,
+      null,
+      null
+     ],
+     [
+      1000006,
+      null,
+      null,
+      null
+     ],
+     [
+      1000011,
+      null,
+      null,
+      null
+     ]
+    ]
+   }
+  },
+  {
+   "filter": {
+    "status": "closed",
+    "org": "11"
+   },
+   "population": {
+    "P": 13,
+    "S": 1,
+    "A": 0
+   },
+   "flat": {
+    "total_projects": "13",
+    "total_projects_closed": "1",
+    "active_projects": "9",
+    "active_projects_closing": "0",
+    "approved_budget": "100:4996320.72",
+    "actual_cost": "100:0.00",
+    "actual_cost_pct_of_plan": "100:0.0000",
+    "committed_cost": "100:0.00",
+    "committed_invoiced": "100:0.00",
+    "forecast_cost": "100:338.28",
+    "completed_year": "1",
+    "health": "no data",
+    "stage": "no data",
+    "physical": "no data",
+    "spent": "no data",
+    "schedule": "no data",
+    "avg_delay": "no data",
+    "budget_status": "no data",
+    "actual_overrun": "no data",
+    "approvals": "261",
+    "committed_contract": "no data (not installed)",
+    "committed_verified": "no data (not installed)",
+    "bim_documents": "no data (not installed)",
+    "proc_openpo": "no data (not installed)",
+    "proc_overcommitted": "0",
+    "proc_nopo": "no data (not installed)",
+    "handover_ready": "0",
+    "handover_done": "1",
+    "last_updated": "2026-11-04 19:34:30.314"
+   },
+   "drill": {
+    "active_projects": [
+     [
+      101,
+      null,
+      null,
+      null
+     ],
+     [
+      1000009,
+      null,
+      null,
+      null
+     ],
+     [
+      1000014,
+      null,
+      null,
+      null
+     ],
+     [
+      100,
+      null,
+      null,
+      null
+     ],
+     [
+      1000007,
+      null,
+      null,
+      null
+     ],
+     [
+      1000013,
+      null,
+      null,
+      null
+     ],
+     [
+      1000015,
+      null,
+      null,
+      null
+     ],
+     [
+      1000012,
+      null,
+      null,
+      null
+     ],
+     [
+      1000010,
+      null,
+      null,
+      null
+     ]
+    ],
+    "actual_cost": [
+     [
+      1000011,
+      null,
+      null,
+      null
+     ]
+    ],
+    "approved_budget": [
+     [
+      1000011,
+      null,
+      null,
+      null
+     ]
+    ],
+    "budget:notstarted": [],
+    "budget:over": [],
+    "budget:within": [],
+    "committed_cost": [
+     [
+      1000011,
+      null,
+      null,
+      null
+     ]
+    ],
+    "completed_year": [
+     [
+      1000011,
+      null,
+      null,
+      null
+     ]
+    ],
+    "forecast_cost": [
+     [
+      1000013,
+      null,
+      null,
+      null
+     ]
+    ],
+    "handover:done": [
+     [
+      1000011,
+      null,
+      null,
+      null
+     ]
+    ],
+    "handover:ready": [],
+    "health:amber": [],
+    "health:green": [],
+    "health:none": [],
+    "health:red": [],
+    "proc:nopo": [],
+    "proc:openpo": [],
+    "proc:overcommitted": [],
+    "schedule:atrisk": [],
+    "schedule:delayed": [],
+    "schedule:nosched": [],
+    "schedule:ontime": [],
+    "total_projects": [
+     [
+      101,
+      null,
+      null,
+      null
+     ],
+     [
+      1000009,
+      null,
+      null,
+      null
+     ],
+     [
+      1000014,
+      null,
+      null,
+      null
+     ],
+     [
+      1000005,
+      null,
+      null,
+      null
+     ],
+     [
+      100,
+      null,
+      null,
+      null
+     ],
+     [
+      1000007,
+      null,
+      null,
+      null
+     ],
+     [
+      1000013,
+      null,
+      null,
+      null
+     ],
+     [
+      1000015,
+      null,
+      null,
+      null
+     ],
+     [
+      1000012,
+      null,
+      null,
+      null
+     ],
+     [
+      1000010,
+      null,
+      null,
+      null
+     ],
+     [
+      1000004,
+      null,
+      null,
+      null
+     ],
+     [
+      1000006,
+      null,
+      null,
+      null
+     ],
+     [
+      1000011,
+      null,
+      null,
+      null
+     ]
+    ]
+   }
+  },
+  {
+   "filter": {
+    "status": "inactive"
+   },
+   "population": {
+    "P": 13,
+    "S": 3,
+    "A": 0
+   },
+   "flat": {
+    "total_projects": "13",
+    "total_projects_closed": "1",
+    "active_projects": "9",
+    "active_projects_closing": "0",
+    "approved_budget": "100:9992641.67,322:15147435.97",
+    "actual_cost": "100:0.00,322:0.00",
+    "actual_cost_pct_of_plan": "100:0.0000,322:0.0000",
+    "committed_cost": "100:0.00,322:0.00",
+    "committed_invoiced": "100:0.00,322:0.00",
+    "forecast_cost": "100:338.28",
+    "completed_year": "1",
+    "health": "no data",
+    "stage": "no data",
+    "physical": "no data",
+    "spent": "no data",
+    "schedule": "no data",
+    "avg_delay": "no data",
+    "budget_status": "no data",
+    "actual_overrun": "no data",
+    "approvals": "261",
+    "committed_contract": "no data (not installed)",
+    "committed_verified": "no data (not installed)",
+    "bim_documents": "no data (not installed)",
+    "proc_openpo": "no data (not installed)",
+    "proc_overcommitted": "0",
+    "proc_nopo": "no data (not installed)",
+    "handover_ready": "0",
+    "handover_done": "0",
+    "last_updated": "2026-11-04 19:34:30.314"
+   },
+   "drill": {
+    "active_projects": [
+     [
+      101,
+      null,
+      null,
+      null
+     ],
+     [
+      1000009,
+      null,
+      null,
+      null
+     ],
+     [
+      1000014,
+      null,
+      null,
+      null
+     ],
+     [
+      100,
+      null,
+      null,
+      null
+     ],
+     [
+      1000007,
+      null,
+      null,
+      null
+     ],
+     [
+      1000013,
+      null,
+      null,
+      null
+     ],
+     [
+      1000015,
+      null,
+      null,
+      null
+     ],
+     [
+      1000012,
+      null,
+      null,
+      null
+     ],
+     [
+      1000010,
+      null,
+      null,
+      null
+     ]
+    ],
+    "actual_cost": [
+     [
+      1000005,
+      null,
+      null,
+      null
+     ],
+     [
+      1000004,
+      null,
+      null,
+      null
+     ],
+     [
+      1000006,
+      null,
+      null,
+      null
+     ]
+    ],
+    "approved_budget": [
+     [
+      1000005,
+      null,
+      null,
+      null
+     ],
+     [
+      1000004,
+      null,
+      null,
+      null
+     ],
+     [
+      1000006,
+      null,
+      null,
+      null
+     ]
+    ],
+    "budget:notstarted": [],
+    "budget:over": [],
+    "budget:within": [],
+    "committed_cost": [
+     [
+      1000005,
+      null,
+      null,
+      null
+     ],
+     [
+      1000004,
+      null,
+      null,
+      null
+     ],
+     [
+      1000006,
+      null,
+      null,
+      null
+     ]
+    ],
+    "completed_year": [
+     [
+      1000011,
+      null,
+      null,
+      null
+     ]
+    ],
+    "forecast_cost": [
+     [
+      1000013,
+      null,
+      null,
+      null
+     ]
+    ],
+    "handover:done": [],
+    "handover:ready": [],
+    "health:amber": [],
+    "health:green": [],
+    "health:none": [],
+    "health:red": [],
+    "proc:nopo": [],
+    "proc:openpo": [],
+    "proc:overcommitted": [],
+    "schedule:atrisk": [],
+    "schedule:delayed": [],
+    "schedule:nosched": [],
+    "schedule:ontime": [],
+    "total_projects": [
+     [
+      101,
+      null,
+      null,
+      null
+     ],
+     [
+      1000009,
+      null,
+      null,
+      null
+     ],
+     [
+      1000014,
+      null,
+      null,
+      null
+     ],
+     [
+      1000005,
+      null,
+      null,
+      null
+     ],
+     [
+      100,
+      null,
+      null,
+      null
+     ],
+     [
+      1000007,
+      null,
+      null,
+      null
+     ],
+     [
+      1000013,
+      null,
+      null,
+      null
+     ],
+     [
+      1000015,
+      null,
+      null,
+      null
+     ],
+     [
+      1000012,
+      null,
+      null,
+      null
+     ],
+     [
+      1000010,
+      null,
+      null,
+      null
+     ],
+     [
+      1000004,
+      null,
+      null,
+      null
+     ],
+     [
+      1000006,
+      null,
+      null,
+      null
+     ],
+     [
+      1000011,
+      null,
+      null,
+      null
+     ]
+    ]
+   }
+  },
+  {
+   "filter": {
+    "status": "inactive",
+    "org": "11"
+   },
+   "population": {
+    "P": 13,
+    "S": 3,
+    "A": 0
+   },
+   "flat": {
+    "total_projects": "13",
+    "total_projects_closed": "1",
+    "active_projects": "9",
+    "active_projects_closing": "0",
+    "approved_budget": "100:9992641.67,322:15147435.97",
+    "actual_cost": "100:0.00,322:0.00",
+    "actual_cost_pct_of_plan": "100:0.0000,322:0.0000",
+    "committed_cost": "100:0.00,322:0.00",
+    "committed_invoiced": "100:0.00,322:0.00",
+    "forecast_cost": "100:338.28",
+    "completed_year": "1",
+    "health": "no data",
+    "stage": "no data",
+    "physical": "no data",
+    "spent": "no data",
+    "schedule": "no data",
+    "avg_delay": "no data",
+    "budget_status": "no data",
+    "actual_overrun": "no data",
+    "approvals": "261",
+    "committed_contract": "no data (not installed)",
+    "committed_verified": "no data (not installed)",
+    "bim_documents": "no data (not installed)",
+    "proc_openpo": "no data (not installed)",
+    "proc_overcommitted": "0",
+    "proc_nopo": "no data (not installed)",
+    "handover_ready": "0",
+    "handover_done": "0",
+    "last_updated": "2026-11-04 19:34:30.314"
+   },
+   "drill": {
+    "active_projects": [
+     [
+      101,
+      null,
+      null,
+      null
+     ],
+     [
+      1000009,
+      null,
+      null,
+      null
+     ],
+     [
+      1000014,
+      null,
+      null,
+      null
+     ],
+     [
+      100,
+      null,
+      null,
+      null
+     ],
+     [
+      1000007,
+      null,
+      null,
+      null
+     ],
+     [
+      1000013,
+      null,
+      null,
+      null
+     ],
+     [
+      1000015,
+      null,
+      null,
+      null
+     ],
+     [
+      1000012,
+      null,
+      null,
+      null
+     ],
+     [
+      1000010,
+      null,
+      null,
+      null
+     ]
+    ],
+    "actual_cost": [
+     [
+      1000005,
+      null,
+      null,
+      null
+     ],
+     [
+      1000004,
+      null,
+      null,
+      null
+     ],
+     [
+      1000006,
+      null,
+      null,
+      null
+     ]
+    ],
+    "approved_budget": [
+     [
+      1000005,
+      null,
+      null,
+      null
+     ],
+     [
+      1000004,
+      null,
+      null,
+      null
+     ],
+     [
+      1000006,
+      null,
+      null,
+      null
+     ]
+    ],
+    "budget:notstarted": [],
+    "budget:over": [],
+    "budget:within": [],
+    "committed_cost": [
+     [
+      1000005,
+      null,
+      null,
+      null
+     ],
+     [
+      1000004,
+      null,
+      null,
+      null
+     ],
+     [
+      1000006,
+      null,
+      null,
+      null
+     ]
+    ],
+    "completed_year": [
+     [
+      1000011,
+      null,
+      null,
+      null
+     ]
+    ],
+    "forecast_cost": [
+     [
+      1000013,
+      null,
+      null,
+      null
+     ]
+    ],
+    "handover:done": [],
+    "handover:ready": [],
+    "health:amber": [],
+    "health:green": [],
+    "health:none": [],
+    "health:red": [],
+    "proc:nopo": [],
+    "proc:openpo": [],
+    "proc:overcommitted": [],
+    "schedule:atrisk": [],
+    "schedule:delayed": [],
+    "schedule:nosched": [],
+    "schedule:ontime": [],
+    "total_projects": [
+     [
+      101,
+      null,
+      null,
+      null
+     ],
+     [
+      1000009,
+      null,
+      null,
+      null
+     ],
+     [
+      1000014,
+      null,
+      null,
+      null
+     ],
+     [
+      1000005,
+      null,
+      null,
+      null
+     ],
+     [
+      100,
+      null,
+      null,
+      null
+     ],
+     [
+      1000007,
+      null,
+      null,
+      null
+     ],
+     [
+      1000013,
+      null,
+      null,
+      null
+     ],
+     [
+      1000015,
+      null,
+      null,
+      null
+     ],
+     [
+      1000012,
+      null,
+      null,
+      null
+     ],
+     [
+      1000010,
+      null,
+      null,
+      null
+     ],
+     [
+      1000004,
+      null,
+      null,
+      null
+     ],
+     [
+      1000006,
+      null,
+      null,
+      null
+     ],
+     [
+      1000011,
+      null,
+      null,
+      null
+     ]
+    ]
+   }
+  },
+  {
+   "filter": {
+    "status": "all",
+    "project": "Landscape"
+   },
+   "population": {
+    "P": 1,
+    "S": 1,
+    "A": 1
+   },
+   "flat": {
+    "total_projects": "1",
+    "total_projects_closed": "0",
+    "active_projects": "1",
+    "active_projects_closing": "0",
+    "approved_budget": "100:600.00",
+    "actual_cost": "100:0.00",
+    "actual_cost_pct_of_plan": "100:0.0000",
+    "committed_cost": "100:0.00",
+    "committed_invoiced": "100:0.00",
+    "forecast_cost": "no data",
+    "completed_year": "0",
+    "health": "green=0 amber=0 red=0 none=1",
+    "stage": "First Product Presentation=1",
+    "physical": "no data",
+    "spent": "100:0.0000",
+    "schedule": "ontime=0 delayed=0 atrisk=0 nosched=1",
+    "avg_delay": "no data",
+    "budget_status": "within=0 over=0 notstarted=1",
+    "actual_overrun": "no data",
+    "approvals": "261",
+    "committed_contract": "no data (not installed)",
+    "committed_verified": "no data (not installed)",
+    "bim_documents": "no data (not installed)",
+    "proc_openpo": "no data (not installed)",
+    "proc_overcommitted": "0",
+    "proc_nopo": "no data (not installed)",
+    "handover_ready": "0",
+    "handover_done": "0",
+    "last_updated": "2006-03-26 20:03:36"
+   },
+   "drill": {
+    "active_projects": [
+     [
+      101,
+      "none",
+      "nosched",
+      "notstarted"
+     ]
+    ],
+    "actual_cost": [
+     [
+      101,
+      "none",
+      "nosched",
+      "notstarted"
+     ]
+    ],
+    "approved_budget": [
+     [
+      101,
+      "none",
+      "nosched",
+      "notstarted"
+     ]
+    ],
+    "budget:notstarted": [
+     [
+      101,
+      "none",
+      "nosched",
+      "notstarted"
+     ]
+    ],
+    "budget:over": [],
+    "budget:within": [],
+    "committed_cost": [
+     [
+      101,
+      "none",
+      "nosched",
+      "notstarted"
+     ]
+    ],
+    "handover:done": [],
+    "handover:ready": [],
+    "health:amber": [],
+    "health:green": [],
+    "health:none": [
+     [
+      101,
+      "none",
+      "nosched",
+      "notstarted"
+     ]
+    ],
+    "health:red": [],
+    "proc:nopo": [],
+    "proc:openpo": [],
+    "proc:overcommitted": [],
+    "schedule:atrisk": [],
+    "schedule:delayed": [],
+    "schedule:nosched": [
+     [
+      101,
+      "none",
+      "nosched",
+      "notstarted"
+     ]
+    ],
+    "schedule:ontime": [],
+    "stage:First Product Presentation": [
+     [
+      101,
+      "none",
+      "nosched",
+      "notstarted"
+     ]
+    ],
+    "total_projects": [
+     [
+      101,
+      "none",
+      "nosched",
+      "notstarted"
+     ]
+    ]
+   }
+  },
+  {
+   "filter": {
+    "status": "all",
+    "project": "HHS_PLUGIN_POC"
+   },
+   "population": {
+    "P": 1,
+    "S": 1,
+    "A": 1
+   },
+   "flat": {
+    "total_projects": "1",
+    "total_projects_closed": "0",
+    "active_projects": "1",
+    "active_projects_closing": "0",
+    "approved_budget": "100:4996320.81",
+    "actual_cost": "100:0.00",
+    "actual_cost_pct_of_plan": "100:0.0000",
+    "committed_cost": "100:1347462.62",
+    "committed_invoiced": "100:8.10",
+    "forecast_cost": "no data",
+    "completed_year": "0",
+    "health": "green=0 amber=0 red=0 none=1",
+    "stage": "(no phase)=1",
+    "physical": "100:0.0000",
+    "spent": "100:0.0000",
+    "schedule": "ontime=1 delayed=0 atrisk=0 nosched=0",
+    "avg_delay": "no data",
+    "budget_status": "within=0 over=0 notstarted=1",
+    "actual_overrun": "no data",
+    "approvals": "261",
+    "committed_contract": "no data (not installed)",
+    "committed_verified": "no data (not installed)",
+    "bim_documents": "no data (not installed)",
+    "proc_openpo": "no data (not installed)",
+    "proc_overcommitted": "0",
+    "proc_nopo": "no data (not installed)",
+    "handover_ready": "0",
+    "handover_done": "0",
+    "last_updated": "2026-11-04 19:34:29.412"
+   },
+   "drill": {
+    "active_projects": [
+     [
+      1000009,
+      "none",
+      "ontime",
+      "notstarted"
+     ]
+    ],
+    "actual_cost": [
+     [
+      1000009,
+      "none",
+      "ontime",
+      "notstarted"
+     ]
+    ],
+    "approved_budget": [
+     [
+      1000009,
+      "none",
+      "ontime",
+      "notstarted"
+     ]
+    ],
+    "budget:notstarted": [
+     [
+      1000009,
+      "none",
+      "ontime",
+      "notstarted"
+     ]
+    ],
+    "budget:over": [],
+    "budget:within": [],
+    "committed_cost": [
+     [
+      1000009,
+      "none",
+      "ontime",
+      "notstarted"
+     ]
+    ],
+    "handover:done": [],
+    "handover:ready": [],
+    "health:amber": [],
+    "health:green": [],
+    "health:none": [
+     [
+      1000009,
+      "none",
+      "ontime",
+      "notstarted"
+     ]
+    ],
+    "health:red": [],
+    "proc:nopo": [],
+    "proc:openpo": [],
+    "proc:overcommitted": [],
+    "schedule:atrisk": [],
+    "schedule:delayed": [],
+    "schedule:nosched": [],
+    "schedule:ontime": [
+     [
+      1000009,
+      "none",
+      "ontime",
+      "notstarted"
+     ]
+    ],
+    "stage:(no phase)": [
+     [
+      1000009,
+      "none",
+      "ontime",
+      "notstarted"
+     ]
+    ],
+    "total_projects": [
+     [
+      1000009,
+      "none",
+      "ontime",
+      "notstarted"
+     ]
+    ]
+   }
+  },
+  {
+   "filter": {
+    "status": "all",
+    "project": "HHS_VIEWER_PUSH_261103050840"
+   },
+   "population": {
+    "P": 1,
+    "S": 1,
+    "A": 1
+   },
+   "flat": {
+    "total_projects": "1",
+    "total_projects_closed": "0",
+    "active_projects": "1",
+    "active_projects_closing": "0",
+    "approved_budget": "100:4996320.72",
+    "actual_cost": "100:0.00",
+    "actual_cost_pct_of_plan": "100:0.0000",
+    "committed_cost": "100:0.00",
+    "committed_invoiced": "100:0.00",
+    "forecast_cost": "no data",
+    "completed_year": "0",
+    "health": "green=0 amber=1 red=0 none=0",
+    "stage": "(no phase)=1",
+    "physical": "100:0.9764",
+    "spent": "100:0.0000",
+    "schedule": "ontime=0 delayed=1 atrisk=0 nosched=0",
+    "avg_delay": "254.00",
+    "budget_status": "within=0 over=0 notstarted=1",
+    "actual_overrun": "no data",
+    "approvals": "261",
+    "committed_contract": "no data (not installed)",
+    "committed_verified": "no data (not installed)",
+    "bim_documents": "no data (not installed)",
+    "proc_openpo": "no data (not installed)",
+    "proc_overcommitted": "0",
+    "proc_nopo": "no data (not installed)",
+    "handover_ready": "0",
+    "handover_done": "0",
+    "last_updated": "2026-11-03 13:08:43.064"
+   },
+   "drill": {
+    "active_projects": [
+     [
+      1000014,
+      "amber",
+      "delayed",
+      "notstarted"
+     ]
+    ],
+    "actual_cost": [
+     [
+      1000014,
+      "amber",
+      "delayed",
+      "notstarted"
+     ]
+    ],
+    "approved_budget": [
+     [
+      1000014,
+      "amber",
+      "delayed",
+      "notstarted"
+     ]
+    ],
+    "budget:notstarted": [
+     [
+      1000014,
+      "amber",
+      "delayed",
+      "notstarted"
+     ]
+    ],
+    "budget:over": [],
+    "budget:within": [],
+    "committed_cost": [
+     [
+      1000014,
+      "amber",
+      "delayed",
+      "notstarted"
+     ]
+    ],
+    "handover:done": [],
+    "handover:ready": [],
+    "health:amber": [
+     [
+      1000014,
+      "amber",
+      "delayed",
+      "notstarted"
+     ]
+    ],
+    "health:green": [],
+    "health:none": [],
+    "health:red": [],
+    "proc:nopo": [],
+    "proc:openpo": [],
+    "proc:overcommitted": [],
+    "schedule:atrisk": [],
+    "schedule:delayed": [
+     [
+      1000014,
+      "amber",
+      "delayed",
+      "notstarted"
+     ]
+    ],
+    "schedule:nosched": [],
+    "schedule:ontime": [],
+    "stage:(no phase)": [
+     [
+      1000014,
+      "amber",
+      "delayed",
+      "notstarted"
+     ]
+    ],
+    "total_projects": [
+     [
+      1000014,
+      "amber",
+      "delayed",
+      "notstarted"
+     ]
+    ]
+   }
+  }
+ ]
+}
