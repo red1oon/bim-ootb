@@ -35,4 +35,11 @@ node devtools/vscode/x0-navigator/tests/witness_x0_fresh.js      # §X0_FRESH
 node devtools/vscode/x0-navigator/tests/witness_x0_isolation.js  # §X0_ISOLATION
 ```
 
+One more runs the **real VS Code** (its extension-test mode, a temp profile, a virtual display, no GPU), so it is
+local only and starts nothing without `--go`. It needs VS Code and `xvfb-run`:
+
+```sh
+node devtools/vscode/x0-navigator/tests/realvsc/run.js --go      # §X0_REALVSC  [--compiler-root <dir>]
+```
+
 Spec: bim-compiler `prompts/CODE_ARCHITECTURE_DESIGN.md` §F.4, §F.5.
