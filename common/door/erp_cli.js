@@ -21,6 +21,9 @@ const OC = require('./object_cli.js');
 const say = (s) => process.stderr.write('§ERP ' + s + '\n');
 const BREAK = process.env.ERP_BREAK || '';   // witness falsifiers: 'actor' (the answer depends on who asks) · 'norole' (the role filter is skipped) · 'wrongcode' (close runs the void action) · 'firstmatch' (an ambiguous number takes the first) · 'neighbour' (a number resolves to the next record)
 class Refused extends Error {}
+// The door's clock for what a record stores (Created, Updated, a document's dates): the LOCAL day and time, as the page writes them (crud_core.js localDay; ad_callout.js RUNTIME.now) and as legacy's
+// server does. toISOString() alone is UTC: before 08:00 in Kuala Lumpur it names yesterday (the defect of bim-ootb prompts/CAPEX_DASHBOARD.md §5.24, which had not reached this file). An op's own `t` stays an instant in UTC.
+const localIso = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString(), stamp = () => localIso().replace('T', ' ').slice(0, 19), today = () => localIso().slice(0, 10);
 const refuse = (m) => { throw new Refused(m); };
 
 // ── the host glue every ERP host needs once: model classes, callout runtime, SQL functions ──
@@ -81,7 +84,7 @@ async function boot(a) {
   O.ops.forEach(o => { const t = String(o.table || '').toLowerCase(); if (t && !known[t]) { ensureTables(O).forEach(n => { known[n] = 1; }); known[t] = 1; } OC.applyOp(O.db, O.rows, o); });   // an op on a table a staged window brought: its physical table is made first (§10)
   ensureTables(O);
   O.ML = require(path.join(ROOT, 'erp', 'model_layer.js')); O.dbId = 'model:' + path.basename(O.file);
-  O.trx = () => new O.ML.Trx((sql, p) => O.rows(sql, p), { db: O.dbId, now: new Date().toISOString().replace('T', ' ').slice(0, 19), uuid: () => require('crypto').randomUUID() });
+  O.trx = () => new O.ML.Trx((sql, p) => O.rows(sql, p), { db: O.dbId, now: stamp(), uuid: () => require('crypto').randomUUID() });
   loadEngine(O); O.b3 = b3(O);
   say('boot db=' + path.basename(O.file) + ' replayed_ops=' + O.ops.length + ' oplog=' + O.opfile + ' sql_functions=' + O.udf);
   return O;
@@ -264,7 +267,15 @@ function resolveOne(O, op, ids, i, cols) {
   if (o.op_type === 'CRUD_CREATE') {
     Object.keys(o.fields).forEach(k => { o.fields[k] = ref(o.fields[k]); });
     if (phys) { if (o.fields[idc] == null) { const m = O.rows('SELECT max(' + idc + ') AS m FROM ' + t)[0]; o.fields[idc] = Math.max(1, Number(m && m.m || 0) + 1); } ids[i] = o.fields[idc]; o.idCol = idc; }
-    else { o.idCol = colsOf(t).filter(c => /_uu$/.test(c) && o.fields[c] != null)[0] || Object.keys(o.fields)[0]; ids[i] = o.fields[o.idCol]; o.keyless = true; }   // a table with no single _ID key (composite or UU key): created whole, never addressed by an update here
+    else { o.idCol = colsOf(t).filter(c => /_uu$/.test(c) && o.fields[c] != null)[0] || Object.keys(o.fields)[0]; ids[i] = o.fields[o.idCol]; o.keyless = true; }
+    // the host's stamp on a new row (bim-compiler prompts/CLI_ERP_IVR.md §20): PO.setStandardDefaults (PO.java L1973-2001) and the UU (L3545-3556). The model layer leaves them to the host commit
+    // (model_layer.js L389); the page's host does it at its fold (crud_core.js L452-470); this is the door's. Written INTO the op, so a replay reads these values and never makes new ones.
+    if (process.env.STAMP_BREAK !== 'off') {
+      const tc = colsOf(t), f = o.fields, empty = (c) => tc.indexOf(c) >= 0 && (f[c] == null || f[c] === ''), now = O.stampNow || (O.stampNow = stamp()), who = O.actor == null ? 101 : O.actor;
+      if (empty('created')) f.created = now; if (empty('updated')) f.updated = now;
+      if (empty('createdby')) f.createdby = who; if (empty('updatedby')) f.updatedby = who;
+      if (empty(t + '_uu')) f[t + '_uu'] = require('crypto').randomUUID();
+    }   // a table with no single _ID key (composite or UU key): created whole, never addressed by an update here
   } else if (o.op_type === 'CRUD_UPDATE' || o.op_type === 'CRUD_DELETE') {
     o.id = ref(o.id);
     if (o.changes) Object.keys(o.changes).forEach(k => { if (o.changes[k]) o.changes[k].new = ref(o.changes[k].new); });   // a changed column may point at a row created earlier in the same group
@@ -307,7 +318,7 @@ function act(O, a, code) {
     if (!res.walked) refuse(res.why);
     if (res.offered.indexOf(code) < 0) refuse(aname + ' is not offered to role ' + a.role + ' for this ' + K.name + ' (status ' + res.status + '; offered: ' + (res.offered.join(', ') || 'nothing') + ')');
   }
-  const ML = O.ML, env = { db: O.dbId, client: r.ad_client_id, org: r.ad_org_id, date: String(new Date().toISOString()).slice(0, 10) + ' 00:00:00', now: new Date().toISOString().replace('T', ' ').slice(0, 19), uuid: () => require('crypto').randomUUID() };
+  const ML = O.ML, env = { db: O.dbId, client: r.ad_client_id, org: r.ad_org_id, date: today() + ' 00:00:00', now: stamp(), uuid: () => require('crypto').randomUUID() };
   const log = console.log; console.log = () => {};
   let run; try { run = ML.run((s, p) => O.rows(s, p), env, { table: K.table, timing: 'DOCACTION', id, action: code }); } finally { console.log = log; }
   const lines = (run.log || []).filter(l => /§MODEL/.test(l)).map(l => String(l).slice(0, 160));
@@ -393,7 +404,7 @@ function createRecord(O, a) {
   const log = console.log; console.log = () => {};   // the engine prints its own § lines to stdout; stdout here carries only the answer
   try {
     A.bind((sql, p) => O.rows(sql, p));
-    const day = (a.date || new Date().toISOString().slice(0, 10)), client = 11, org = Number(given.ad_org_id || 11), holder = {};
+    const day = (a.date || today()), client = 11, org = Number(given.ad_org_id || 11), holder = {};
     const ctx = A.sessionContext({ client, org, role: Number(a.role || 102), user: Number(a.user || 101), wh: 103, date: day, session: holder });
     const W = 1; let parent = null;
     const field0 = A.openTab(tab.id, { ctx, windowNo: W, tabNo: 0 });   // the target tab, to know its columns before choosing parents
@@ -466,7 +477,7 @@ function updateRecord(O, a) {
   const log = console.log; console.log = () => {};
   try {
     A.bind((sql, p) => O.rows(sql, p));
-    const day = new Date().toISOString().slice(0, 10), client = r.ad_client_id == null ? 11 : r.ad_client_id, org = r.ad_org_id == null ? 11 : r.ad_org_id, holder = {};
+    const day = today(), client = r.ad_client_id == null ? 11 : r.ad_client_id, org = r.ad_org_id == null ? 11 : r.ad_org_id, holder = {};
     const ctx = A.sessionContext({ client, org, role: Number(a.role || 102), user: Number(a.user || 101), wh: 103, date: day, session: holder });
     const W = 1, probe = A.openTab(tab.id, { ctx, windowNo: W, tabNo: 0 });
     let parent = null;   // a line's callouts read its document: the parent record, by the tab's own link column
@@ -491,7 +502,7 @@ function updateRecord(O, a) {
     st.fields.forEach(f => { const c = f.vo.ColumnName; if (f.isKey() || String(after[c]) === String(before[c])) return; changes[c.toLowerCase()] = after[c] === '' ? null : num(f, after[c]); });
     const empty = st.fields.filter(f => f.isMandatory() && !f.isKey() && (after[f.vo.ColumnName] == null || after[f.vo.ColumnName] === '') && Object.prototype.hasOwnProperty.call(changes, f.vo.ColumnName.toLowerCase())).map(f => f.vo.ColumnName);
     if (empty.length) refuse('mandatory and left empty: ' + empty.join(', ') + '; nothing was written');
-    const tx = O.trx(); Object.assign(tx.env, { client, org, date: day + ' 00:00:00', now: new Date().toISOString().replace('T', ' ').slice(0, 19), user: Number(a.user || 101) });
+    const tx = O.trx(); Object.assign(tx.env, { client, org, date: day + ' 00:00:00', now: stamp(), user: Number(a.user || 101) });
     const live = tx.get(K.table, r[K.key]), sv = O.ML.save(tx, K.table, live, changes); if (!sv.ok) refuse('the model layer refused the save: ' + sv.error + '; nothing was written');
     const res = persistGroup(O, tx.groupOps()), saved = O.rows('SELECT * FROM ' + K.table + ' WHERE ' + K.key + '=?', [r[K.key]])[0] || {};
     console.log = log; const changed = Object.keys(changes), derived = changed.filter(c => set.map(x => x.toLowerCase()).indexOf(c) < 0);
@@ -506,7 +517,7 @@ function deleteRecord(O, a) {
   const tq = O.rows('SELECT t.isreadonly AS tro, x.isdeleteable AS del FROM ad_tab t JOIN ad_table x ON x.ad_table_id=t.ad_table_id WHERE t.ad_tab_id=?', [tab.id])[0] || {};
   if (tq.tro === 'Y') refuse(K.name + ' is not deleted: the tab is read-only (GridTable.dataDelete L2170: AccessCannotDelete)');
   if (tq.del === 'N') refuse(K.name + ' is not deleted: the table is not deleteable (GridTable.dataDelete L2177: AccessNotDeleteable)');
-  const env = { db: O.dbId, client: r.ad_client_id, org: r.ad_org_id, date: String(new Date().toISOString()).slice(0, 10) + ' 00:00:00', now: new Date().toISOString().replace('T', ' ').slice(0, 19), uuid: () => require('crypto').randomUUID() };
+  const env = { db: O.dbId, client: r.ad_client_id, org: r.ad_org_id, date: today() + ' 00:00:00', now: stamp(), uuid: () => require('crypto').randomUUID() };
   const log = console.log; console.log = () => {};
   let run; try { run = O.ML.run((s, p) => O.rows(s, p), env, { table: K.table, timing: 'DELETE', id, force: MIS_BREAK === 'noprocessed' }); } finally { console.log = log; }
   say('delete kind=' + K.name + ' id=' + id + ' ok=' + run.ok + (run.error || run.msg ? ' why=' + JSON.stringify(String(run.error || run.msg).slice(0, 120)) : '') + ' ops=' + (run.ops || []).length);
@@ -534,7 +545,7 @@ async function loadRecords(O, a) {
   const book = [{ name: K.table, rows: grid }], file = 'mis_load_' + process.pid + '.xlsx';
   chunk.putFile(file, chunk.bookToWorkbook(book));
   const log = console.log; console.log = () => {};
-  const tx = O.trx(); Object.assign(tx.env, { client: 11, org: 11, user: 101, date: new Date().toISOString().slice(0, 10) + ' 00:00:00', now: new Date().toISOString().replace('T', ' ').slice(0, 19) });
+  const tx = O.trx(); Object.assign(tx.env, { client: 11, org: 11, user: 101, date: today() + ' 00:00:00', now: stamp() });
   let r; try { r = AP.runJava((s2, p2) => O.rows(s2, p2), tx.env, { trx: tx, AD_Process_ID: 9540001, className: chunk.CLASSNAME, title: 'Migrate Excel Data', params: { File_Directory: file, Processed: 'N' } }); }
   catch (e) { r = { ok: false, summary: 'threw: ' + e.message, log: tx.log }; } finally { console.log = log; chunk.dropFile(file); }
   const errs = (tx.log || []).filter(l => /^§NINJA-ERR/.test(l)).map(l => String(l).replace(/^§NINJA-ERR\s*/, '')), bad = {};
@@ -559,7 +570,8 @@ async function main(argv) {
   for (let i = 1; i < argv.length; i++) { const m = /^--(\w+)$/.exec(argv[i]); if (!m || i + 1 >= argv.length) { say('FAIL usage: ' + argv[i]); return 2; } if (m[1] === 'where') (a.where = a.where || []).push(argv[++i]); else a[m[1]] = argv[++i]; }
   if (['find', 'actions', 'describe', 'read', 'list', 'sum', 'group', 'new', 'update', 'delete', 'load', 'add_window'].concat(Object.keys(ACT)).indexOf(cmd) < 0) { say('FAIL usage: erp_cli.js find|actions|complete|void|close|reverse|describe|read|list|sum|group --kind K (--number N | --id I) [--role R]'); return 2; }
   try {
-    const O = await boot(a), out = await (ACT[cmd] ? act(O, a, ACT[cmd]) : ({ find, actions, describe, read, list: OC.list, sum: OC.sum, group: OC.group, new: createRecord, update: updateRecord, delete: deleteRecord, load: loadRecords, add_window: addWindow })[cmd](O, a));
+    const O = await boot(a); O.actor = a.user == null ? 101 : Number(a.user);   // the session user: stated, default 101 (the same default the callout context takes), until sign-in exists
+    const out = await (ACT[cmd] ? act(O, a, ACT[cmd]) : ({ find, actions, describe, read, list: OC.list, sum: OC.sum, group: OC.group, new: createRecord, update: updateRecord, delete: deleteRecord, load: loadRecords, add_window: addWindow })[cmd](O, a));
     process.stdout.write(JSON.stringify(out) + '\n'); return 0;
   } catch (e) {
     if (e instanceof Refused || e instanceof OC.Refused) { say('REFUSED ' + e.message); process.stdout.write(JSON.stringify({ refused: true, reason: e.message }) + '\n'); return 3; }
