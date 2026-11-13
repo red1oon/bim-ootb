@@ -72,12 +72,32 @@
       var rows;
       try { rows = parseRows(j); }
       catch (x) { if (/Service type .* not configured/.test(x.message)) { out.unavailable.push(e); out.meta['err_' + e] = x.message.slice(0, 160); out[e] = []; continue; } throw x; }   // a type this server never registered (e.g. QueryBIMDocument where the plugin is not installed) = UNAVAILABLE, not a crash
+      // §5.75: legacy's JSON answer DROPS a value its XML answer wraps in CDATA (XMLBeans does that for a text with several < > & in it, e.g. a PA_MeasureCalc WhereClause): the field arrives as ''.
+      //   An empty string is therefore ambiguous. When a row holds one, the same request is read once more as XML and every CDATA value is put back (row order is the server's, both times).
+      if (rows.some(function (r) { return Object.keys(r).some(function (c) { return r[c] === ''; }); })) {
+        var xres = await fetch(cfg.base + PATH, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/xml' },
+          body: JSON.stringify({ ModelCRUDRequest: { ModelCRUD: { serviceType: types[e] }, ADLoginRequest: cfg.login } }) });
+        var fixed = repairCdata(rows, await xres.text()); out.meta['cdata_' + e] = fixed;
+        if (fixed && typeof console !== 'undefined') console.log('§DASH_LEGACY_CDATA entity=' + e + ' values_restored=' + fixed + ' (dropped by the JSON answer, read from the XML answer)');
+      }
       out[e] = rows.map(function (r) { if (all) return r; var o = {}; cols.forEach(function (c) { o[c] = r[c] === undefined ? null : r[c]; }); return o; });
     }
     return out;
   }
+  // repairCdata(rows, xml) -> how many '' values were restored. Only a field that is '' in the JSON rows AND a CDATA value in the XML is touched; a row-count mismatch throws (never a guess).
+  function repairCdata(rows, xml) {
+    var drs = String(xml).match(/<(?:\w+:)?DataRow>[\s\S]*?<\/(?:\w+:)?DataRow>/g) || [], n = 0;
+    if (!/<!\[CDATA\[/.test(xml)) return 0;
+    if (drs.length !== rows.length) throw new Error('§AD_CDATA rows json=' + rows.length + ' xml=' + drs.length);
+    drs.forEach(function (dr, i) {
+      var re = /<(?:\w+:)?field column="([^"]*)"[^>]*>\s*<(?:\w+:)?val[^>]*>([\s\S]*?)<\/(?:\w+:)?val>/g, m;
+      while ((m = re.exec(dr))) { if (m[2].indexOf('<![CDATA[') < 0 || rows[i][m[1]] !== '') continue;
+        rows[i][m[1]] = m[2].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, function (_, t) { return t; }); n++; }
+    });
+    return n;
+  }
   async function loadSnapshot(url) { var j = await (await fetch(url)).json(); j.source = 'legacy'; return j; }
 
-  var API = { fromSqlite: fromSqlite, loadSqlite: loadSqlite, loadLegacy: loadLegacy, loadSnapshot: loadSnapshot, parseRows: parseRows, ENTITIES: ENTITIES, COLS: COLS, OPTIONAL: OPTIONAL, LEGACY_TYPES: LEGACY_TYPES };
+  var API = { fromSqlite: fromSqlite, loadSqlite: loadSqlite, loadLegacy: loadLegacy, loadSnapshot: loadSnapshot, parseRows: parseRows, repairCdata: repairCdata, ENTITIES: ENTITIES, COLS: COLS, OPTIONAL: OPTIONAL, LEGACY_TYPES: LEGACY_TYPES };
   if (typeof module !== 'undefined' && module.exports) module.exports = API; else root.CapexAdapters = API;
 })(typeof window !== 'undefined' ? window : this);

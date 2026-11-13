@@ -16,7 +16,7 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.wasm': 'applica
   if (!fs.existsSync(SNAP)) { log('§CAPEX_SAMPLE no sample file'); finish(); }
   const snap = JSON.parse(fs.readFileSync(SNAP, 'utf8'));
   log('§CAPEX_SAMPLE sample takenAt=' + snap.meta.takenAt + ' ' + ['projects', 'phases', 'tasks', 'lines', 'wf'].map(k => k + '=' + snap[k].length).join(' '));
-  const server = http.createServer((q, r) => { const f = path.join(ROOT, decodeURIComponent(q.url.split('?')[0])); fs.readFile(f, (e, b) => { if (e) { r.writeHead(404); return r.end('404'); } r.writeHead(200, { 'Content-Type': MIME[path.extname(f)] || 'application/octet-stream' }); r.end(b); }); });
+  const server = http.createServer((q, r) => { const f = path.join(ROOT, decodeURIComponent(q.url.split('?')[0])); fs.readFile(f, (e, b) => { if (e) { r.writeHead(404); return r.end('404'); } if (process.env.SAMPLE_PA_BREAK === '1' && /pilot_snapshot\.json$/.test(f)) { const j = JSON.parse(b); j.pacalc = []; b = Buffer.from(JSON.stringify(j)); } r.writeHead(200, { 'Content-Type': MIME[path.extname(f)] || 'application/octet-stream' }); r.end(b); }); });
   await new Promise(r => server.listen(0, r));
   const b = await chromium.launch({ args: ['--no-sandbox', '--disable-gpu'] }), c = await b.newContext({ viewport: { width: 1640, height: 700 }, deviceScaleFactor: 2 }), p = await c.newPage(), errs = [], nf = [];
   p.on('pageerror', e => errs.push(String(e))); p.on('response', r => { if (r.status() >= 400 && !/_extracted\.db/.test(r.url())) nf.push(r.url()); });
@@ -25,6 +25,9 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.wasm': 'applica
     await p.waitForFunction(() => window.__capex && window.__capex.rendered, null, { timeout: 40000 });
     const cur = await p.evaluate(() => window.__capex.source);
     ck('S1 the page opened the sample, not the seed', cur === 'legacy', cur);
+    // §5.75 step 1: the sample carries the server's PA_MeasureCalc rows, so its numbers come from PA rows (not from the tiles.js fallback). SAMPLE_PA_BREAK=1 serves the sample without them -> must FAIL.
+    const pa = await p.evaluate(() => window.__capex.pa);
+    ck('S1b the sample page computed from PA rows (judged > 0, no error)', !!pa && pa.judged > 0 && pa.errors.length === 0, pa);
     for (const status of ['active', 'all']) {
       await p.selectOption('#fStatus', status); await p.waitForTimeout(500);
       const want = T.flatten(T.compute(snap, { org: '', category: '', status, project: '', today: TODAY }).tiles), got = await p.evaluate(() => { const o = {}; document.querySelectorAll('#view [data-flat]').forEach(e => { o[e.getAttribute('data-flat')] = e.getAttribute('data-value'); }); return o; });
