@@ -22,7 +22,7 @@ Every one of these witnesses has break runs that FAIL (named in its §).
 
 **NEXT, in order** (one PR each, from a fresh `origin/main` branch, spec section first):
 1. ✅ **G2 DONE for the model-layer path** (§5.73 RESULT, W-DDL-NOTNULL 7/0, 479 of 479 tables == Postgres). ✅ **G2b DONE** (§5.74 RESULT, W-HOST-NOTNULL 3/0, 427 of 427 tab tables == Postgres). Left from G2, named there: group commits (till / kitchen / branch) are not gated; the N4 stored-null rows; the host numbering `Value`.
-2. **PR C2:** delete the moved formulas from `tiles.js compute()`. **Read §5.75 first: the build spec (5 steps, 21 consumers, the sample has no PA rows, the drill is not on PA yet). NOT started.**
+2. **PR C2:** delete the moved formulas from `tiles.js compute()`. **Read §5.75 first: the build spec (5 steps, 21 consumers). Step 1 DONE (§5.75 RESULT: the sample has its PA rows; a legacy-read CDATA defect fixed). NEXT = step 2, the drill from `queryKeys`.**
 3. W-DASH-SYNC E2 premise fix (§5.68 RESULT: E2 expired with the calendar, not a defect).
 4. The BIM documents measure in the BIM Document plugin's pack; the Stage tile as an `AD_Chart` (needs a twin chart reader).
 5. **§5.65 UAT Guide build** (after C2): chapters 4-6 are the hands-on exercise over the 12 packed projects. The testers make the documents by hand (order → receipt → invoice → payment → issue). The film's `CHAIN` stages (`capex/tools/td_scenario.js`) are the target states, e.g. "make TD_RIVERSIDE's order Paid". Witness W-UAT-GUIDE, step by step.
@@ -1669,3 +1669,15 @@ Same video timing as the English cut frame for frame (5694 frames, 227.78 s); on
 **Re-run and read after step 4:** W-PA-TILES (pilot :8088), W-DASH-TWIN, W-DASH-BIMDOC and W-TD-PACK-DASH (test instance :8108, H4: one at a time), W-DASH-DRILL, W-DASH-PROJSEL, W-PROJECT-PAGE, W-THEME, W-CAPEX-SAMPLE, W-CHAIN, W-TWIN-CHAIN, W-PA-CTX, W-PA-RENDER.
 **Deletion budget:** stated in the PR; expected about −130 lines in `tiles.js compute()`, the fallback branches in `pa_tiles.js` and `dash.js :351`.
 **Risks named:** the film tools read `tiles.js` (`film_dash_twin_shots.js`): they move to the harness or the films' next bake breaks; W-CAPEX and W-CAPEX-PROPOSED are red or unrun on main already (§5.66 "Not ours") and must be re-based, not counted as regressions.
+
+### 5.75 RESULT, step 1 — the sample carries its PA rows; a legacy-read defect found and fixed (2026-11-14; logs read; branch `feat/capex-c2-step1-sample-pa`). Steps 2-5 NOT started.
+- **Sample.** `capex/tools/legacy_snapshot.js --add <entity> <file>` reads ONE entity from the server into an existing snapshot (every other entity byte-identical: checked). `capex/sample/pilot_snapshot.json` now holds the pilot's 51 `PA_MeasureCalc` rows; all 37 bound slots are present.
+- **Found by this step, a defect live on main (not caused by C2):** the first sample run showed Health `amber=9` where the hand formula and the migration script give 2. Cause, measured:
+  - The pilot's row 1000024 is right in the database (WhereClause 1,878 characters).
+  - Legacy's web service answers it as `""` in JSON. Its XML answer holds the text in a CDATA block (XMLBeans wraps a text with several `<` `>` `&`), and the JSON conversion drops CDATA content.
+  - So every legacy-source page read the Amber rule with NO condition and counted every project as Amber. W-DASH-BIMDOC still passed (`errors=0`): an empty WHERE is valid SQL. W-PA-FLAT could not see it: it lent the snapshot the twin store's rows.
+- **Fix (`capex/adapters.js loadLegacy`):** when a JSON row holds an empty string, the same request is read once more as XML and every CDATA value is restored (`repairCdata`; a row-count mismatch throws). Logged `§DASH_LEGACY_CDATA entity=… values_restored=…`.
+- **W-LEGACY-CDATA** `capex/tests/witness_legacy_cdata.js` `PASS 3/0` (oracle = the server's XML answer, parsed in the witness): 51 of 51 rows' Select and Where equal it; 1 CDATA value in the population. Break `LEGACY_CDATA_BREAK=1` → FAIL on exactly row 1000024 (`got 0, want 1878`).
+- **W-CAPEX-SAMPLE** `PASS 9/0`: new arm S1b, the sample page computed from PA rows (`judged=41 errors=[]`); all 22 drawn tiles == `tiles.js` at Status Active and All. Break `SAMPLE_PA_BREAK=1` (sample served without the rows) → S1b FAIL.
+- **Unchanged PASS:** W-DASH-PROJSEL 8/0, W-DASH-DRILL 59/0, W-THEME 11/0, W-PROJECT-PAGE 16/0, W-PA-FLAT 15/0, W-DASH-TWIN 8/0, W-CHAIN 11/0.
+- **Open, named:** the same JSON loss is in bim-compiler `scripts/bridge/ad_client.js` (the parallel-run bridge reads the same wire): not fixed here, its own lane. Whether the twin's own web service must reproduce the loss (CARDINAL RULE) is a question for the WS lane, not decided here. Live legacy snapshots taken before this fix (`capex/legacy_snapshot.json`, git-ignored) hold the empty Amber rule: retake them.
