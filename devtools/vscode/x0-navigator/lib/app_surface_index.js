@@ -14,7 +14,7 @@ const path = require('path');
 
 // The same gates as scripts/gen_app_surface.js R5/R6: bare `A.` / `app.` is the god object ONLY in a file that
 // binds it. Copied verbatim; the witness compares these two against the generator's source, so a drift FAILs.
-const BINDS_A = /function\s+setup\w*\s*\(\s*A\s*[,)]|\(\s*A\s*\)\s*(?:=>|\{)|\bA\s*=\s*window\.APP\b/;
+const BINDS_A = /function\s+setup\w*\s*\(\s*A\s*[,)]|\(\s*A\s*\)\s*(?:=>|\{)|\bA\s*=\s*window\.APP\b|\b(?:var|let|const)\s+A\s*=\s*APP\b/;
 const BINDS_app = /function\s+\w*\s*\(\s*app\s*[,)]|\bapp\s*=\s*window\.APP\b|\bvar\s+app\s*=\s*(?:window\.)?APP\b/;
 
 const cells = row => row.split('|').slice(1, -1).map(c => c.trim());
