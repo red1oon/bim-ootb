@@ -9,11 +9,11 @@ nothing. This index is the missing "go to definition".
 
 | | |
 |---|---:|
-| files scanned | 2986 |
-| distinct fields | 1676 |
-| written only as `A.x`/`app.x` (invisible to an `APP.` grep) | 1316 |
-| read but never written (phantom) | 271 |
-| — of those, read from production code | 171 |
+| files scanned | 3222 |
+| distinct fields | 1693 |
+| written only as `A.x`/`app.x` (invisible to an `APP.` grep) | 1321 |
+| read but never written (phantom) | 282 |
+| — of those, read from production code | 172 |
 
 ## Phantom fields — read, never written
 
@@ -21,13 +21,14 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 
 | field | first read site | prod? |
 |---|---|---|
-| `APP.Ctx` | `erp/crud_overlay.js:480` | **yes** |
-| `APP.Env` | `erp/crud_overlay.js:485` | **yes** |
+| `APP.Ctx` | `erp/crud_overlay.js:484` | **yes** |
+| `APP.Env` | `erp/crud_overlay.js:489` | **yes** |
 | `APP.KernelOps` | `viewer/cpe_ledger_ticker.js:62` | **yes** |
 | `APP.L` | `viewer/tests/witness_colour_truth_gpu.js:153` | no |
 | `APP.LABOR_RATES` | `viewer/cpe_resource_panel.js:43` | **yes** |
 | `APP.LIB_URL` | `tests/specs/10-deploy-integrity.spec.js:78` | no |
-| `APP.RUNTIME` | `erp/crud_overlay.js:428` | **yes** |
+| `APP.RUNTIME` | `erp/crud_overlay.js:432` | **yes** |
+| `APP.__cease3DProbe` | `viewer/tests/witness_drawn_film_frame.js:109` | no |
 | `APP._allRoomVolumes` | `scripts/probe_buildpass_v2.js:80` | no |
 | `APP._applyViewFilter` | `viewer/panels.js:2532` | **yes** |
 | `APP._billboardAutoBuild` | `viewer/streaming.js:3398` | **yes** |
@@ -67,16 +68,16 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP._glowSpriteCount` | `scripts/probe_glow_night.js:37` | no |
 | `APP._gradePass` | `witness/witness_photo_grade.js:58` | no |
 | `APP._gridGroup` | `tests/specs/20-s250-polish.spec.js:250` | no |
-| `APP._gridOverlayState` | `viewer/scene.js:2626` | **yes** |
+| `APP._gridOverlayState` | `viewer/scene.js:2633` | **yes** |
 | `APP._groundWetnessOverride` | `scripts/probe_ground_albedo.js:80` | no |
 | `APP._hbaClassFilter` | `viewer/hba_lens.js:472` | **yes** |
 | `APP._hbaPeriod` | `viewer/hba_avatars.js:63` | **yes** |
 | `APP._isPhotoGlossyMat` | `viewer/tests/witness_sun_fill_ratio.js:347` | no |
-| `APP._loadPathArmTFilm` | `viewer/maxq_start.js:2464` | **yes** |
+| `APP._loadPathArmTFilm` | `viewer/maxq_start.js:2467` | **yes** |
 | `APP._loadPathDiagRaycast` | `viewer/maxq_capture_stitch.js:147` | **yes** |
 | `APP._loadPathDiagSample` | `viewer/maxq_capture_stitch.js:89` | **yes** |
 | `APP._loadPathFadeSecFor` | `viewer/maxq_start.js:310` | **yes** |
-| `APP._loadPathReleaseTFilm` | `viewer/maxq_start.js:2464` | **yes** |
+| `APP._loadPathReleaseTFilm` | `viewer/maxq_start.js:2467` | **yes** |
 | `APP._loadPathRestoreCount` | `viewer/maxq_capture_stitch.js:578` | **yes** |
 | `APP._loadPathVisualRev` | `viewer/maxq_start.js:2314` | **yes** |
 | `APP._loadPathWindow` | `viewer/maxq_start.js:920` | **yes** |
@@ -177,12 +178,14 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP.askAnswers` | `viewer/tests/witness_find_ask_answers.js:185` | no |
 | `APP.askBuildWorkbook` | `viewer/tests/witness_find_ask_answers.js:202` | no |
 | `APP.askInput` | `viewer/tests/witness_find_ask_answers.js:189` | no |
-| `APP.askRun` | `viewer/tests/witness_find_ask_answers.js:127` | no |
+| `APP.askRun` | `viewer/tests/witness_find_ask_answers.js:127` | **yes** |
 | `APP.askSuggest` | `viewer/tests/witness_find_ask_answers.js:105` | no |
 | `APP.b` | `modeller/dxf2analytical.js:25` | **yes** |
-| `APP.bind` | `erp/crud_overlay.js:426` | **yes** |
+| `APP.bind` | `erp/crud_overlay.js:427` | **yes** |
+| `APP.budget` | `capex/tests/witness_td_pack_dash.js:124` | no |
 | `APP.buildRouteTemplate` | `tests/specs/17-find-navigate.spec.js:585` | no |
 | `APP.buildingName` | `viewer/hba_iot.js:268` | **yes** |
+| `APP.bytes` | `erp/tests/witness_bimdoc_live.js:312` | no |
 | `APP.cinemaBandFlow` | `scripts/probe_band_len.js:30` | no |
 | `APP.cinemaBandWaypoints` | `witness/witness_cinema_bands.js:145` | no |
 | `APP.cinemaFan` | `witness/witness_cinema_bands.js:136` | no |
@@ -216,6 +219,7 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP.ensureHdriEnvMapReady` | `viewer/maxq_start.js:736` | **yes** |
 | `APP.ensureRooms` | `scripts/probe_band_len.js:23` | **yes** |
 | `APP.error` | `viewer/tests/witness_colour_truth_gpu.js:151` | no |
+| `APP.errs` | `capex/tests/witness_td_pack_dash.js:142` | no |
 | `APP.fault` | `viewer/tests/witness_light_field_db.js:98` | no |
 | `APP.faultGi` | `viewer/tests/witness_light_field_db.js:103` | no |
 | `APP.fieldSweepMs` | `viewer/tests/witness_light_field_db.js:96` | no |
@@ -230,25 +234,29 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP.glassReflDark` | `viewer/tests/witness_light_field_db.js:98` | no |
 | `APP.integrity` | `viewer/tests/witness_light_field_db.js:94` | no |
 | `APP.kernelOps` | `viewer/tm_lifecycle_api.js:713` | **yes** |
+| `APP.load` | `erp/tests/witness_bimdoc_live.js:311` | no |
 | `APP.loadPathApplyVisual` | `viewer/maxq_start.js:1616` | **yes** |
 | `APP.loadPathBuild` | `viewer/maxq_start.js:907` | **yes** |
 | `APP.loadPathCardOn` | `viewer/maxq_capture_stitch.js:368` | **yes** |
 | `APP.loadPathCompositeOntoCanvas` | `viewer/maxq_capture_stitch.js:72` | **yes** |
-| `APP.loadPathDispose` | `viewer/maxq_start.js:2541` | **yes** |
+| `APP.loadPathDispose` | `viewer/maxq_start.js:2544` | **yes** |
+| `APP.lookup` | `erp/tests/witness_bimdoc_live.js:309` | no |
 | `APP.materializeZones` | `optics_hud.js:34` | **yes** |
 | `APP.n` | `modeller/dxf2analytical.js:28` | **yes** |
 | `APP.navJumpToEnd` | `tests/specs/17-find-navigate.spec.js:179` | no |
 | `APP.onSectionOff` | `viewer/tools.js:519` | **yes** |
 | `APP.onSectionSliderChange` | `viewer/tools.js:591` | **yes** |
-| `APP.openTab` | `erp/crud_overlay.js:487` | **yes** |
+| `APP.openTab` | `erp/crud_overlay.js:491` | **yes** |
+| `APP.order` | `erp/tests/gen_idempiere_identity.js:58` | no |
 | `APP.pageErrors` | `viewer/tests/witness_colour_truth_gpu.js:151` | no |
-| `APP.paramsToParas` | `erp/idempiere.html:4629` | **yes** |
-| `APP.parasToParams` | `erp/idempiere.html:4648` | **yes** |
+| `APP.paramsToParas` | `erp/idempiere.html:4719` | **yes** |
+| `APP.parasToParams` | `erp/idempiere.html:4738` | **yes** |
 | `APP.pauseStillRefineForGI` | `viewer/effects_gi_poc.js:131` | no |
-| `APP.pinstanceList` | `erp/idempiere.html:4613` | **yes** |
+| `APP.pinstanceList` | `erp/idempiere.html:4703` | **yes** |
 | `APP.populateActive` | `viewer/panels.js:426` | **yes** |
 | `APP.poses` | `viewer/tests/witness_colour_truth_gpu.js:141` | no |
 | `APP.probeGradeHdr` | `scripts/probe_grade_hdr.js:20` | no |
+| `APP.probes` | `capex/tests/witness_td_pack_dash.js:142` | no |
 | `APP.resetCinemaGhostLens` | `viewer/maxq_start.js:26` | **yes** |
 | `APP.resident` | `viewer/tests/witness_light_field_db.js:106` | no |
 | `APP.rowBytes` | `viewer/tests/witness_light_field_db.js:94` | no |
@@ -259,17 +267,20 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP.saveMs` | `viewer/tests/witness_light_field_db.js:94` | no |
 | `APP.saveWallMs` | `viewer/tests/witness_light_field_db.js:94` | no |
 | `APP.savedBytes` | `viewer/tests/witness_light_field_db.js:94` | no |
-| `APP.sessionContext` | `erp/crud_overlay.js:448` | **yes** |
-| `APP.setOutline` | `viewer/measure.js:816` | **yes** |
+| `APP.sched` | `capex/tests/witness_td_pack_dash.js:137` | no |
+| `APP.sessionContext` | `erp/crud_overlay.js:452` | **yes** |
+| `APP.setOutline` | `viewer/measure.js:819` | **yes** |
+| `APP.sheets` | `erp/tests/gen_idempiere_identity.js:58` | no |
 | `APP.shellPassMs` | `viewer/tests/witness_light_field_db.js:96` | no |
 | `APP.sky` | `witness/witness_cinema_r1_sit_fallback.js:34` | no |
 | `APP.softStopStillRefine` | `viewer/main.js:801` | **yes** |
 | `APP.sourcedStage` | `viewer/tests/witness_light_field_db.js:96` | no |
+| `APP.src` | `capex/tests/witness_td_pack_dash.js:122` | no |
 | `APP.srcBytes` | `viewer/tests/witness_light_field_db.js:94` | no |
 | `APP.stageCinemaPath` | `witness/witness_cinema_path_persist.js:84` | no |
 | `APP.stagingTotal` | `viewer/tests/witness_light_field_db.js:96` | no |
 | `APP.startCinemaOrbit` | `viewer/panels.js:450` | **yes** |
-| `APP.startFlyTour` | `viewer/main.js:1224` | **yes** |
+| `APP.startFlyTour` | `viewer/main.js:1242` | **yes** |
 | `APP.startMaxQ` | `scripts/probe_bake_start.js:22` | no |
 | `APP.startNavigation` | `viewer/navigate.js:37` | **yes** |
 | `APP.startStillRefine` | `scripts/probe_allout.js:14` | **yes** |
@@ -341,7 +352,7 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP.WALK_STEP_THRESHOLD` | `viewer/config.js:89` *(as `A.`)* | 1 | 3 |
 | `APP._CACHE_MAX_BLOB_BYTES` | `viewer/scene.js:1884` *(as `A.`)* | 1 | 4 |
 | `APP._CACHE_WRITE_TIMEOUT_MS` | `viewer/scene.js:1875` *(as `A.`)* | 1 | 5 |
-| `APP._CLASH_PAGE_SIZE` | `viewer/clash_report.js:106` *(as `A.`)* | 10 | 22 |
+| `APP._CLASH_PAGE_SIZE` | `viewer/clash_report.js:106` *(as `A.`)* | 12 | 25 |
 | `APP._MAX_CACHE_ENTRIES` | `viewer/scene.js:648` *(as `A.`)* | 1 | 3 |
 | `APP._MERGE_GEO_TABLES` | `viewer/scene.js:1124` *(as `A.`)* | 1 | 7 |
 | `APP._MERGE_GUID_ROW_TABLES` | `viewer/scene.js:1127` *(as `A.`)* | 1 | 3 |
@@ -350,25 +361,28 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP._TRIPLANAR_BY_NAME` | `viewer/streaming.js:1798` *(as `A.`)* | 1 | 5 |
 | `APP._TRIPLANAR_MAT` | `viewer/streaming.js:1797` *(as `A.`)* | 1 | 5 |
 | `APP._TRI_BIG_CLASSES` | `viewer/streaming.js:954` *(as `A.`)* | 1 | 3 |
+| `APP.__cease3DProbe` | — *phantom* | 0 | 2 |
+| `APP.__ceaseSubjectOff` | `viewer/tests/witness_drawn_film_frame.js:114` *(as `A.`)* | 2 | 2 |
 | `APP.__cpeAimOff` | `witness/witness_cpe_corr_brush.js:190` *(as `A.`)* | 2 | 2 |
 | `APP.__frameQaCv` | `viewer/maxq_capture_stitch.js:625` *(as `A.`)* | 1 | 2 |
+| `APP.__tmIsolateOff` | `viewer/tests/witness_drawn_film_frame.js:85` | 4 | 4 |
 | `APP._allRoomVolumes` | — *phantom* | 0 | 2 |
 | `APP._alphaOf` | `viewer/streaming.js:940` *(as `A.`)* | 1 | 9 |
 | `APP._ambienceTick` | `viewer/tools.js:779` *(as `A.`)* | 1 | 4 |
 | `APP._applyDiscVisibility` | `viewer/panels.js:837` *(as `A.`)* | 1 | 9 |
 | `APP._applyGroundTexture` | `viewer/tools.js:294` *(as `A.`)* | 1 | 3 |
 | `APP._applyNightGlowToMatCache` | `viewer/tools.js:1712` *(as `A.`)* | 1 | 2 |
-| `APP._applyPendingPatch` | `viewer/scene.js:2104` *(as `A.`)* | 1 | 6 |
+| `APP._applyPendingPatch` | `viewer/scene.js:2111` *(as `A.`)* | 1 | 6 |
 | `APP._applyViewFilter` | — *phantom* | 0 | 4 |
 | `APP._archGroundZ` | `viewer/city.js:274` *(as `A.`)* | 1 | 3 |
-| `APP._areaBackups` | `viewer/measure.js:1279` *(as `A.`)* | 2 | 5 |
-| `APP._areaCache` | `viewer/measure.js:1497` *(as `A.`)* | 1 | 4 |
+| `APP._areaBackups` | `viewer/measure.js:1282` *(as `A.`)* | 2 | 5 |
+| `APP._areaCache` | `viewer/measure.js:1500` *(as `A.`)* | 1 | 4 |
 | `APP._bakeCameraPoseAt` | `viewer/maxq_start.js:420` *(as `A.`)* | 1 | 1 |
 | `APP._bakeOwned` | `viewer/scene.js:547` *(as `A.`)* | 1 | 8 |
 | `APP._bareMetalKey` | `viewer/streaming.js:772` *(as `A.`)* | 1 | 2 |
 | `APP._batchDiscMap` | `viewer/streaming.js:2714` *(as `A.`)* | 1 | 6 |
 | `APP._batchFlushCount` | `viewer/streaming.js:3340` *(as `A.`)* | 1 | 4 |
-| `APP._batchMeta` | `viewer/streaming.js:2712` *(as `A.`)* | 1 | 163 |
+| `APP._batchMeta` | `viewer/streaming.js:2712` *(as `A.`)* | 1 | 166 |
 | `APP._batchStoreyMap` | `viewer/streaming.js:2713` *(as `A.`)* | 1 | 6 |
 | `APP._bboxCleared` | `viewer/streaming.js:434` *(as `A.`)* | 5 | 9 |
 | `APP._bboxMaterial` | `viewer/helpers.js:535` *(as `A.`)* | 1 | 4 |
@@ -389,7 +403,7 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP._bom` | `viewer/panels.js:1197` *(as `A.`)* | 2 | 19 |
 | `APP._bomDb` | `viewer/panels.js:2629` *(as `A.`)* | 1 | 4 |
 | `APP._bsDrawErrLogged` | `viewer/maxq_capture_stitch.js:450` *(as `A.`)* | 1 | 2 |
-| `APP._buildClashDeepLink` | `viewer/measure.js:831` *(as `A.`)* | 1 | 9 |
+| `APP._buildClashDeepLink` | `viewer/measure.js:834` *(as `A.`)* | 1 | 9 |
 | `APP._buildExportHtml` | `viewer/clash_report.js:97` *(as `A.`)* | 1 | 5 |
 | `APP._buildGraphRoute` | `viewer/tour.js:471` *(as `A.`)* | 1 | 3 |
 | `APP._buildGraphRouteInner` | `viewer/tour.js:482` *(as `A.`)* | 1 | 2 |
@@ -423,6 +437,8 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP._capT0` | `viewer/maxq_capture_stitch.js:36` | 1 | 4 |
 | `APP._captureCtx` | `viewer/maxq_capture_stitch.js:50` *(as `A.`)* | 1 | 1 |
 | `APP._catFirst` | `scripts/probe_dim_catalogue.js:206` *(as `A.`)* | 1 | 2 |
+| `APP._cease3DKeptSeen` | `viewer/tests/witness_drawn_film_frame.js:113` *(as `A.`)* | 1 | 1 |
+| `APP._cease3DSeen` | `viewer/tests/witness_drawn_film_frame.js:113` *(as `A.`)* | 1 | 1 |
 | `APP._chainageDropGuid` | `viewer/tests/witness_chainage_grid.js:95` *(as `A.`)* | 2 | 5 |
 | `APP._checkCache` | `viewer/scene.js:764` *(as `A.`)* | 1 | 5 |
 | `APP._chromaOf` | `viewer/streaming.js:720` *(as `A.`)* | 1 | 10 |
@@ -498,9 +514,9 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP._civilSection` | `viewer/civil_sections.js:169` *(as `A.`)* | 2 | 11 |
 | `APP._civilSectionPoll` | `viewer/civil_sections.js:682` *(as `A.`)* | 1 | 1 |
 | `APP._civilStd` | `viewer/chainage_grid.js:269` *(as `A.`)* | 3 | 7 |
-| `APP._clashBackups` | `viewer/measure.js:622` *(as `A.`)* | 2 | 3 |
-| `APP._clashBboxCloud` | `viewer/measure.js:1825` *(as `A.`)* | 2 | 8 |
-| `APP._clashBboxMap` | `viewer/measure.js:1877` *(as `A.`)* | 1 | 6 |
+| `APP._clashBackups` | `viewer/measure.js:625` *(as `A.`)* | 2 | 3 |
+| `APP._clashBboxCloud` | `viewer/measure.js:1828` *(as `A.`)* | 2 | 8 |
+| `APP._clashBboxMap` | `viewer/measure.js:1880` *(as `A.`)* | 1 | 6 |
 | `APP._clashDiscCache` | `viewer/clash_matrix.js:13` *(as `A.`)* | 1 | 7 |
 | `APP._clashEnvelopes` | `viewer/clash_matrix.js:342` *(as `A.`)* | 3 | 5 |
 | `APP._clashExistsPerPair` | `viewer/measure.js:243` *(as `A.`)* | 1 | 1 |
@@ -512,28 +528,28 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP._clashLblDrawErrLogged` | `viewer/maxq_capture_stitch.js:262` *(as `A.`)* | 1 | 2 |
 | `APP._clashLblErrLogged` | `viewer/maxq_start.js:1703` *(as `A.`)* | 1 | 2 |
 | `APP._clashLblStopped` | `viewer/maxq_start.js:856` *(as `A.`)* | 2 | 3 |
-| `APP._clashListDiv` | `viewer/measure.js:974` *(as `A.`)* | 5 | 56 |
-| `APP._clashListNav` | `viewer/scene.js:2804` *(as `A.`)* | 1 | 4 |
-| `APP._clashLodUpdateFreq` | `viewer/measure.js:1826` *(as `A.`)* | 1 | 2 |
+| `APP._clashListDiv` | `viewer/measure.js:977` *(as `A.`)* | 5 | 56 |
+| `APP._clashListNav` | `viewer/scene.js:2811` *(as `A.`)* | 1 | 4 |
+| `APP._clashLodUpdateFreq` | `viewer/measure.js:1829` *(as `A.`)* | 1 | 2 |
 | `APP._clashMatrixDiv` | `viewer/clash_matrix.js:248` *(as `A.`)* | 7 | 38 |
-| `APP._clashModeActive` | `viewer/measure.js:1824` *(as `A.`)* | 3 | 11 |
-| `APP._clashPair` | `viewer/measure.js:645` *(as `A.`)* | 1 | 3 |
+| `APP._clashModeActive` | `viewer/measure.js:1827` *(as `A.`)* | 3 | 11 |
+| `APP._clashPair` | `viewer/measure.js:648` *(as `A.`)* | 1 | 3 |
 | `APP._clashPairBoxTotal` | `viewer/measure.js:507` *(as `A.`)* | 3 | 10 |
-| `APP._clashPairKey` | `viewer/measure.js:684` *(as `A.`)* | 2 | 15 |
+| `APP._clashPairKey` | `viewer/measure.js:687` *(as `A.`)* | 2 | 15 |
 | `APP._clashPairOffset` | `viewer/clash_matrix.js:291` *(as `A.`)* | 7 | 8 |
-| `APP._clashProxMeshes` | `viewer/measure.js:1829` *(as `A.`)* | 4 | 8 |
-| `APP._clashProxSet` | `viewer/measure.js:1828` *(as `A.`)* | 3 | 7 |
-| `APP._clashRevealActive` | `viewer/measure.js:621` *(as `A.`)* | 4 | 13 |
+| `APP._clashProxMeshes` | `viewer/measure.js:1832` *(as `A.`)* | 4 | 8 |
+| `APP._clashProxSet` | `viewer/measure.js:1831` *(as `A.`)* | 3 | 7 |
+| `APP._clashRevealActive` | `viewer/measure.js:624` *(as `A.`)* | 4 | 13 |
 | `APP._clashRtreeBuilding` | `viewer/measure.js:103` *(as `A.`)* | 6 | 7 |
 | `APP._clashRtreeReady` | `viewer/measure.js:102` *(as `A.`)* | 4 | 25 |
 | `APP._clashRuleFamily` | `viewer/measure.js:196` *(as `A.`)* | 1 | 5 |
 | `APP._clashRules` | `viewer/measure.js:73` *(as `A.`)* | 2 | 4 |
 | `APP._clashRulesLoading` | `viewer/measure.js:74` *(as `A.`)* | 4 | 5 |
-| `APP._clashSeverity` | `viewer/measure.js:613` *(as `A.`)* | 1 | 7 |
-| `APP._clashStatusCycle` | `viewer/measure.js:625` *(as `A.`)* | 1 | 2 |
-| `APP._clashStatusKey` | `viewer/measure.js:634` *(as `A.`)* | 1 | 4 |
-| `APP._clashStatusStyles` | `viewer/measure.js:626` *(as `A.`)* | 1 | 2 |
-| `APP._clashStatuses` | `viewer/measure.js:637` *(as `A.`)* | 4 | 21 |
+| `APP._clashSeverity` | `viewer/measure.js:616` *(as `A.`)* | 1 | 7 |
+| `APP._clashStatusCycle` | `viewer/measure.js:628` *(as `A.`)* | 1 | 2 |
+| `APP._clashStatusKey` | `viewer/measure.js:637` *(as `A.`)* | 1 | 4 |
+| `APP._clashStatusStyles` | `viewer/measure.js:629` *(as `A.`)* | 1 | 2 |
+| `APP._clashStatuses` | `viewer/measure.js:640` *(as `A.`)* | 4 | 21 |
 | `APP._clashTolerance` | `viewer/measure.js:224` *(as `A.`)* | 1 | 6 |
 | `APP._clashWhereParts` | `viewer/measure.js:226` *(as `A.`)* | 1 | 12 |
 | `APP._clearBboxPlaceholders` | `viewer/streaming.js:600` *(as `A.`)* | 1 | 5 |
@@ -566,14 +582,14 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP._cpeRevealLightsOffLast` | `viewer/maxq_start.js:1721` *(as `A.`)* | 1 | 2 |
 | `APP._cpeRevealVisualKey` | — *phantom* | 0 | 4 |
 | `APP._cpeViewfinderRender` | — *phantom* | 0 | 6 |
-| `APP._createIsSOTrx` | `erp/idempiere.html:5134` | 1 | 1 |
-| `APP._createMovementType` | `erp/idempiere.html:5142` | 1 | 1 |
+| `APP._createIsSOTrx` | `erp/idempiere.html:5244` | 1 | 1 |
+| `APP._createMovementType` | `erp/idempiere.html:5252` | 1 | 1 |
 | `APP._csmUncovered` | — *phantom* | 0 | 2 |
 | `APP._csvExportInProgress` | `viewer/clash_report.js:9` *(as `A.`)* | 4 | 5 |
 | `APP._currentClashPairLabel` | `viewer/clash_matrix.js:313` *(as `A.`)* | 3 | 6 |
 | `APP._currentClashRules` | `viewer/issues.js:174` *(as `A.`)* | 5 | 12 |
-| `APP._currentClashStorey` | `viewer/measure.js:1718` *(as `A.`)* | 2 | 7 |
-| `APP._currentClashViewIdx` | `viewer/measure.js:690` *(as `A.`)* | 1 | 3 |
+| `APP._currentClashStorey` | `viewer/measure.js:1721` *(as `A.`)* | 2 | 7 |
+| `APP._currentClashViewIdx` | `viewer/measure.js:693` *(as `A.`)* | 1 | 3 |
 | `APP._currentClashes` | `viewer/clash_matrix.js:312` *(as `A.`)* | 10 | 43 |
 | `APP._dbPersistUrl` | `viewer/streaming.js:3841` *(as `A.`)* | 2 | 14 |
 | `APP._debugForceGhostLensOwned` | — *phantom* | 0 | 6 |
@@ -585,7 +601,7 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP._dimNaNLogged` | `viewer/cpe_flythru_cues.js:422` *(as `A.`)* | 1 | 2 |
 | `APP._dimPickTargets` | `scripts/probe_dim_cue_demo.js:75` *(as `A.`)* | 1 | 2 |
 | `APP._dimTargetFor` | `scripts/probe_dim_cue_demo.js:42` *(as `A.`)* | 1 | 4 |
-| `APP._dismissClashes` | `viewer/measure.js:1203` *(as `A.`)* | 1 | 12 |
+| `APP._dismissClashes` | `viewer/measure.js:1206` *(as `A.`)* | 1 | 12 |
 | `APP._dlodBboxGeo` | `viewer/scene.js:477` *(as `A.`)* | 1 | 2 |
 | `APP._dlodEnabled` | `viewer/dlod.js:14` *(as `A.`)* | 4 | 26 |
 | `APP._dlodFrame` | `viewer/dlod.js:15` *(as `A.`)* | 9 | 11 |
@@ -593,7 +609,7 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP._dlodSlots` | `viewer/streaming.js:20` *(as `A.`)* | 1 | 4 |
 | `APP._dlodStillHold` | — *phantom* | 0 | 2 |
 | `APP._dlodStillWanted` | `viewer/dlod.js:113` *(as `A.`)* | 1 | 2 |
-| `APP._doMeasureClick` | `viewer/measure.js:1315` *(as `A.`)* | 1 | 2 |
+| `APP._doMeasureClick` | `viewer/measure.js:1318` *(as `A.`)* | 1 | 2 |
 | `APP._doReportBug` | `viewer/helpers.js:241` *(as `A.`)* | 1 | 6 |
 | `APP._docEnv` | `viewer/doc_canvas.js:566` *(as `A.`)* | 1 | 32 |
 | `APP._downloadClashSnag` | `viewer/clash_snag.js:244` *(as `A.`)* | 1 | 4 |
@@ -608,10 +624,10 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP._editedKeys` | `viewer/scene.js:664` *(as `A.`)* | 1 | 2 |
 | `APP._egressRulesCache` | — *phantom* | 0 | 2 |
 | `APP._egressRulesSource` | — *phantom* | 0 | 1 |
-| `APP._elementOverlay` | `viewer/measure.js:1400` *(as `A.`)* | 1 | 4 |
+| `APP._elementOverlay` | `viewer/measure.js:1403` *(as `A.`)* | 1 | 4 |
 | `APP._elementVariant` | `viewer/streaming.js:819` *(as `A.`)* | 1 | 4 |
 | `APP._ensureClashIndexes` | `viewer/measure.js:107` *(as `A.`)* | 1 | 8 |
-| `APP._enterClashMode` | `viewer/measure.js:1833` *(as `A.`)* | 1 | 2 |
+| `APP._enterClashMode` | `viewer/measure.js:1836` *(as `A.`)* | 1 | 2 |
 | `APP._entourageVariant` | `viewer/streaming.js:627` *(as `A.`)* | 1 | 5 |
 | `APP._envCache` | — *phantom* | 0 | 2 |
 | `APP._envMap` | `viewer/scene.js:251` *(as `A.`)* | 1 | 15 |
@@ -626,7 +642,7 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP._evictOldest` | `viewer/scene.js:692` *(as `A.`)* | 1 | 3 |
 | `APP._ewInfer` | `viewer/earthworks_overlay.js:148` *(as `A.`)* | 1 | 1 |
 | `APP._ewRowSets` | `viewer/earthworks_overlay.js:193` *(as `A.`)* | 1 | 1 |
-| `APP._exitClashMode` | `viewer/measure.js:1924` *(as `A.`)* | 1 | 8 |
+| `APP._exitClashMode` | `viewer/measure.js:1927` *(as `A.`)* | 1 | 8 |
 | `APP._exportBuildingDb` | `viewer/scene.js:988` *(as `A.`)* | 1 | 17 |
 | `APP._exportCSVBackground` | `viewer/clash_report.js:391` *(as `A.`)* | 1 | 5 |
 | `APP._exportClashReport` | `viewer/clash_report.js:16` *(as `A.`)* | 1 | 4 |
@@ -640,13 +656,14 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP._filmGeomWhole` | `viewer/maxq_start.js:1562` *(as `A.`)* | 1 | 1 |
 | `APP._filmGeomWhyLast` | `viewer/maxq_start.js:1563` *(as `A.`)* | 1 | 2 |
 | `APP._filmLampDataN` | `viewer/tools.js:2835` *(as `A.`)* | 1 | 1 |
+| `APP._filmLayers` | `viewer/cpe_drawn_services.js:45` *(as `A.`)* | 1 | 3 |
 | `APP._filmLogCompact` | `viewer/maxq_start.js:47` *(as `A.`)* | 1 | 3 |
 | `APP._filmParity` | `viewer/tests/witness_civil_night_lamps.js:114` *(as `A.`)* | 2 | 10 |
 | `APP._filmParityStep` | — *phantom* | 0 | 6 |
 | `APP._filmWinPullErr` | `viewer/maxq_capture_stitch.js:132` *(as `A.`)* | 1 | 2 |
 | `APP._filmWinPullN` | `viewer/maxq_capture_stitch.js:131` *(as `A.`)* | 1 | 2 |
 | `APP._findRefreshTree` | — *phantom* | 0 | 8 |
-| `APP._findingsHudSuppress` | `viewer/cpe_storey_reveal.js:2469` *(as `A.`)* | 3 | 4 |
+| `APP._findingsHudSuppress` | `viewer/cpe_storey_reveal.js:2469` *(as `A.`)* | 5 | 6 |
 | `APP._fixFacePatch` | `viewer/tools.js:1447` *(as `A.`)* | 1 | 2 |
 | `APP._fixFaceU` | `viewer/tools.js:1445` *(as `A.`)* | 1 | 6 |
 | `APP._fixtureFaceApply` | `viewer/tools.js:1505` *(as `A.`)* | 1 | 1 |
@@ -655,7 +672,7 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP._flushBboxBatched` | `viewer/streaming.js:3410` *(as `A.`)* | 1 | 2 |
 | `APP._flushInstanced` | `viewer/streaming.js:2823` *(as `A.`)* | 1 | 3 |
 | `APP._flyPreparing` | `viewer/tour.js:70` *(as `A.`)* | 3 | 6 |
-| `APP._flyToClash` | `viewer/measure.js:687` *(as `A.`)* | 1 | 10 |
+| `APP._flyToClash` | `viewer/measure.js:690` *(as `A.`)* | 1 | 10 |
 | `APP._flyoutBeatsWarned` | `viewer/maxq_capture_stitch.js:226` *(as `A.`)* | 1 | 2 |
 | `APP._flythruCueWarned` | `viewer/maxq_start.js:1674` *(as `A.`)* | 1 | 2 |
 | `APP._flythruCuesLast` | `viewer/cpe_flythru_cues.js:553` *(as `A.`)* | 1 | 4 |
@@ -708,7 +725,7 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP._groundUserPicked` | `viewer/tools.js:187` *(as `A.`)* | 2 | 3 |
 | `APP._groundWetnessOverride` | — *phantom* | 0 | 2 |
 | `APP._groupBy` | `viewer/tools.js:727` *(as `A.`)* | 1 | 17 |
-| `APP._guidToMesh` | `viewer/measure.js:1290` *(as `A.`)* | 1 | 1 |
+| `APP._guidToMesh` | `viewer/measure.js:1293` *(as `A.`)* | 1 | 1 |
 | `APP._hasBbox` | `viewer/streaming.js:384` *(as `A.`)* | 6 | 21 |
 | `APP._hasBuildingCol` | `viewer/streaming.js:258` *(as `A.`)* | 1 | 12 |
 | `APP._hasMatNameCol` | `viewer/streaming.js:289` *(as `A.`)* | 1 | 2 |
@@ -730,7 +747,7 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP._hbaSpaceClass` | `viewer/hba_lens.js:206` *(as `A.`)* | 1 | 2 |
 | `APP._hbaStoreyOf` | `viewer/hba_lens.js:225` *(as `A.`)* | 2 | 11 |
 | `APP._hbaTenancySpec` | `viewer/hba_lens.js:298` *(as `A.`)* | 2 | 16 |
-| `APP._highlightMesh` | `viewer/measure.js:1548` *(as `A.`)* | 1 | 2 |
+| `APP._highlightMesh` | `viewer/measure.js:1551` *(as `A.`)* | 1 | 2 |
 | `APP._historyOpened` | `viewer/streaming.js:2522` *(as `A.`)* | 1 | 4 |
 | `APP._hoverNameState` | `viewer/hover_name.js:221` *(as `A.`)* | 1 | 4 |
 | `APP._hrCost` | `viewer/tm_lifecycle_api.js:421` *(as `app.`)* | 2 | 24 |
@@ -751,7 +768,7 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP._inLoadPathComposite` | `viewer/maxq_capture_stitch.js:528` *(as `A.`)* | 2 | 2 |
 | `APP._indoorBeatsAtWarned` | `viewer/maxq_start.js:1670` *(as `A.`)* | 1 | 2 |
 | `APP._indoorBeatsWarned` | `viewer/maxq_capture_stitch.js:220` *(as `A.`)* | 1 | 2 |
-| `APP._infoCardDiv` | `viewer/measure.js:1291` *(as `A.`)* | 6 | 11 |
+| `APP._infoCardDiv` | `viewer/measure.js:1294` *(as `A.`)* | 6 | 11 |
 | `APP._initMarkupListeners` | `viewer/sitecam.js:400` *(as `A.`)* | 1 | 3 |
 | `APP._initSnagTable` | `viewer/helpers.js:462` *(as `A.`)* | 1 | 3 |
 | `APP._instDiscMixed` | `viewer/streaming.js:3060` *(as `A.`)* | 1 | 6 |
@@ -762,7 +779,7 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP._installGroundShader` | `viewer/tools.js:257` *(as `A.`)* | 1 | 2 |
 | `APP._installMergedRaycast` | `viewer/streaming.js:2760` *(as `A.`)* | 1 | 2 |
 | `APP._instanceGuids` | `viewer/streaming.js:519` *(as `A.`)* | 2 | 9 |
-| `APP._instanceMeta` | `viewer/streaming.js:518` *(as `A.`)* | 2 | 166 |
+| `APP._instanceMeta` | `viewer/streaming.js:518` *(as `A.`)* | 2 | 169 |
 | `APP._interiorLightsOff` | `viewer/maxq_start.js:1572` *(as `A.`)* | 3 | 13 |
 | `APP._isAuthoredMatName` | `viewer/streaming.js:735` *(as `A.`)* | 1 | 12 |
 | `APP._isExporterPlaceholder` | `viewer/streaming.js:741` *(as `A.`)* | 1 | 10 |
@@ -792,21 +809,21 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP._lampZoneTableCache` | `viewer/tools.js:2427` *(as `A.`)* | 1 | 2 |
 | `APP._lampZoneView` | `viewer/tools.js:2440` *(as `A.`)* | 1 | 2 |
 | `APP._lampsSum` | `viewer/maxq_start.js:45` *(as `A.`)* | 3 | 5 |
-| `APP._lastClashLodUpdate` | `viewer/measure.js:1827` *(as `A.`)* | 2 | 3 |
+| `APP._lastClashLodUpdate` | `viewer/measure.js:1830` *(as `A.`)* | 2 | 3 |
 | `APP._lastFlushIdx` | `viewer/streaming.js:433` *(as `A.`)* | 4 | 6 |
 | `APP._lastGoodFrameBlob` | `viewer/maxq_start.js:2358` *(as `A.`)* | 1 | 3 |
-| `APP._lastMeasureItem` | `viewer/measure.js:1489` *(as `A.`)* | 1 | 1 |
+| `APP._lastMeasureItem` | `viewer/measure.js:1492` *(as `A.`)* | 1 | 1 |
 | `APP._lastMeasureTap` | `viewer/picking.js:178` *(as `A.`)* | 2 | 4 |
 | `APP._lastPickCenter` | `viewer/picking.js:235` *(as `A.`)* | 4 | 4 |
 | `APP._lastPickGuid` | `viewer/picking.js:235` *(as `A.`)* | 5 | 7 |
 | `APP._ledgerTickerDrawWarned` | `viewer/maxq_capture_stitch.js:535` *(as `A.`)* | 1 | 2 |
 | `APP._lensflare` | `viewer/scene.js:448` *(as `A.`)* | 1 | 1 |
 | `APP._libHasNormals` | `viewer/streaming.js:18` *(as `A.`)* | 5 | 17 |
-| `APP._lightFieldByBuilding` | `viewer/scene.js:2070` *(as `A.`)* | 1 | 3 |
+| `APP._lightFieldByBuilding` | `viewer/scene.js:2077` *(as `A.`)* | 1 | 3 |
 | `APP._lightZoneInnerR` | `viewer/tests/witness_sourced_stack.js:51` | 1 | 3 |
 | `APP._linearBeatWarned` | `viewer/maxq_capture_stitch.js:205` *(as `A.`)* | 1 | 2 |
 | `APP._loadClashRules` | `viewer/measure.js:76` *(as `A.`)* | 1 | 13 |
-| `APP._loadClashStatuses` | `viewer/measure.js:665` *(as `A.`)* | 1 | 2 |
+| `APP._loadClashStatuses` | `viewer/measure.js:668` *(as `A.`)* | 1 | 2 |
 | `APP._loadGroundConfig` | `viewer/tools.js:190` *(as `A.`)* | 1 | 3 |
 | `APP._loadNightFixtures` | `viewer/tools.js:1778` *(as `A.`)* | 1 | 3 |
 | `APP._loadPathArmFrameThisFrame` | `viewer/maxq_capture_stitch.js:546` *(as `A.`)* | 1 | 2 |
@@ -825,10 +842,10 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP._loadPathRestoreCount` | — *phantom* | 0 | 2 |
 | `APP._loadPathVisualRev` | — *phantom* | 0 | 2 |
 | `APP._loadPathWindow` | — *phantom* | 0 | 12 |
-| `APP._loadPrebake` | `viewer/scene.js:2053` *(as `A.`)* | 1 | 3 |
+| `APP._loadPrebake` | `viewer/scene.js:2060` *(as `A.`)* | 1 | 3 |
 | `APP._loadRemainingStoreys` | `viewer/measure.js:447` *(as `A.`)* | 1 | 3 |
-| `APP._longPressFired` | `viewer/measure.js:1257` *(as `A.`)* | 4 | 5 |
-| `APP._longPressTimer` | `viewer/measure.js:1256` *(as `A.`)* | 7 | 15 |
+| `APP._longPressFired` | `viewer/measure.js:1260` *(as `A.`)* | 4 | 5 |
+| `APP._longPressTimer` | `viewer/measure.js:1259` *(as `A.`)* | 7 | 15 |
 | `APP._lp129PostReleaseFrameCount` | `viewer/maxq_capture_stitch.js:577` *(as `A.`)* | 2 | 13 |
 | `APP._lpCamDirN` | `viewer/maxq_start.js:2337` *(as `A.`)* | 1 | 5 |
 | `APP._lpStackOnly` | — *phantom* | 0 | 1 |
@@ -847,10 +864,10 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP._maxqActive` | `viewer/maxq_start.js:44` *(as `A.`)* | 10 | 43 |
 | `APP._measureBoxWarned` | `viewer/maxq_capture_stitch.js:281` *(as `A.`)* | 1 | 2 |
 | `APP._measureCardLast` | `viewer/maxq_start.js:855` *(as `A.`)* | 2 | 3 |
-| `APP._measureClickTimer` | `viewer/measure.js:1255` *(as `A.`)* | 6 | 14 |
-| `APP._measureFirstHit` | `viewer/measure.js:1334` *(as `A.`)* | 1 | 2 |
-| `APP._measureFirstMesh` | `viewer/measure.js:1333` *(as `A.`)* | 3 | 3 |
-| `APP._measureItem` | `viewer/measure.js:1425` *(as `A.`)* | 1 | 4 |
+| `APP._measureClickTimer` | `viewer/measure.js:1258` *(as `A.`)* | 6 | 14 |
+| `APP._measureFirstHit` | `viewer/measure.js:1337` *(as `A.`)* | 1 | 2 |
+| `APP._measureFirstMesh` | `viewer/measure.js:1336` *(as `A.`)* | 3 | 3 |
+| `APP._measureItem` | `viewer/measure.js:1428` *(as `A.`)* | 1 | 4 |
 | `APP._mepDiscAlbedo` | `viewer/streaming.js:914` *(as `A.`)* | 1 | 10 |
 | `APP._mepHueClasses` | `viewer/streaming.js:708` *(as `A.`)* | 1 | 5 |
 | `APP._mepHueCounts` | `viewer/streaming.js:1881` *(as `A.`)* | 2 | 5 |
@@ -878,9 +895,9 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP._mergedIndex` | `viewer/streaming.js:2719` *(as `A.`)* | 2 | 10 |
 | `APP._mergedMeta` | `viewer/streaming.js:2718` *(as `A.`)* | 2 | 39 |
 | `APP._mergedRayStats` | `viewer/streaming.js:2722` *(as `A.`)* | 1 | 6 |
-| `APP._meshArea` | `viewer/measure.js:1498` *(as `A.`)* | 1 | 4 |
+| `APP._meshArea` | `viewer/measure.js:1501` *(as `A.`)* | 1 | 4 |
 | `APP._meshSlimLoadLogged` | `viewer/streaming.js:2619` *(as `A.`)* | 1 | 2 |
-| `APP._meshVolume` | `viewer/measure.js:1539` *(as `A.`)* | 1 | 1 |
+| `APP._meshVolume` | `viewer/measure.js:1542` *(as `A.`)* | 1 | 1 |
 | `APP._metaGen` | `viewer/city.js:164` *(as `A.`)* | 5 | 23 |
 | `APP._metalPbrLogged` | `viewer/streaming.js:1830` *(as `A.`)* | 1 | 2 |
 | `APP._metalPbrOff` | `viewer/streaming.js:832` *(as `A.`)* | 1 | 8 |
@@ -929,12 +946,12 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP._nightWindowGlowClasses` | `viewer/tools.js:2195` *(as `A.`)* | 1 | 2 |
 | `APP._nlpDiscMap` | `viewer/nlp.js:597` *(as `A.`)* | 1 | 1 |
 | `APP._nlpExecute` | `viewer/nlp.js:591` *(as `A.`)* | 1 | 23 |
-| `APP._normalsComputed` | `viewer/scene.js:2382` *(as `A.`)* | 2 | 5 |
-| `APP._normalsPrecomputed` | `viewer/scene.js:2379` *(as `A.`)* | 2 | 5 |
-| `APP._onResize` | `viewer/scene.js:2406` *(as `A.`)* | 1 | 4 |
+| `APP._normalsComputed` | `viewer/scene.js:2389` *(as `A.`)* | 2 | 5 |
+| `APP._normalsPrecomputed` | `viewer/scene.js:2386` *(as `A.`)* | 2 | 5 |
+| `APP._onResize` | `viewer/scene.js:2413` *(as `A.`)* | 1 | 4 |
 | `APP._onStreamDone` | `viewer/main.js:930` | 1 | 4 |
 | `APP._openDbBytes` | `viewer/scene.js:1541` *(as `A.`)* | 1 | 7 |
-| `APP._openIfcFiles` | `viewer/scene.js:1610` *(as `A.`)* | 1 | 3 |
+| `APP._openIfcFiles` | `viewer/scene.js:1610` *(as `A.`)* | 1 | 5 |
 | `APP._openIssuesDB` | `viewer/issues.js:9` *(as `A.`)* | 1 | 7 |
 | `APP._openJsonEditor` | `viewer/panels.js:2426` *(as `A.`)* | 1 | 3 |
 | `APP._openSplitDbBytes` | `viewer/scene.js:1570` *(as `A.`)* | 1 | 4 |
@@ -968,17 +985,17 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP._porcelainKey` | `viewer/streaming.js:756` *(as `A.`)* | 1 | 7 |
 | `APP._porcelainVariant` | `viewer/streaming.js:762` *(as `A.`)* | 1 | 2 |
 | `APP._positionRows` | `viewer/streaming.js:3775` *(as `A.`)* | 2 | 8 |
-| `APP._prebake` | `viewer/scene.js:2052` *(as `A.`)* | 3 | 9 |
-| `APP._prebakeFnv` | `viewer/scene.js:2051` *(as `A.`)* | 1 | 3 |
-| `APP._prebakeOut` | `viewer/scene.js:2052` *(as `A.`)* | 1 | 5 |
-| `APP._prebakeRecord` | `viewer/scene.js:2067` *(as `A.`)* | 1 | 3 |
+| `APP._prebake` | `viewer/scene.js:2059` *(as `A.`)* | 3 | 9 |
+| `APP._prebakeFnv` | `viewer/scene.js:2058` *(as `A.`)* | 1 | 3 |
+| `APP._prebakeOut` | `viewer/scene.js:2059` *(as `A.`)* | 1 | 5 |
+| `APP._prebakeRecord` | `viewer/scene.js:2074` *(as `A.`)* | 1 | 3 |
 | `APP._prepareGraphTour` | `viewer/tour.js:113` *(as `A.`)* | 1 | 2 |
 | `APP._probeAimDepth` | — *phantom* | 0 | 7 |
 | `APP._proxySubstance` | `viewer/streaming.js:801` *(as `A.`)* | 1 | 2 |
 | `APP._proxySubstanceOff` | `viewer/streaming.js:796` *(as `A.`)* | 1 | 3 |
 | `APP._proxyVariant` | `viewer/streaming.js:808` *(as `A.`)* | 1 | 3 |
-| `APP._qualifyClashRows` | `viewer/measure.js:1196` *(as `A.`)* | 1 | 6 |
-| `APP._queryClashes` | `viewer/measure.js:589` *(as `A.`)* | 1 | 1 |
+| `APP._qualifyClashRows` | `viewer/measure.js:1199` *(as `A.`)* | 1 | 6 |
+| `APP._queryClashes` | `viewer/measure.js:592` *(as `A.`)* | 1 | 1 |
 | `APP._queryClashesPair` | `viewer/measure.js:293` *(as `A.`)* | 1 | 5 |
 | `APP._queryClashesPairAll` | `viewer/measure.js:555` *(as `A.`)* | 1 | 3 |
 | `APP._queryClashesPairRtree` | `viewer/measure.js:360` *(as `A.`)* | 1 | 8 |
@@ -1003,12 +1020,12 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP._rayAABB` | `viewer/city.js:909` *(as `A.`)* | 1 | 2 |
 | `APP._recolorMesh` | `viewer/tools.js:717` *(as `A.`)* | 1 | 8 |
 | `APP._redrawMarkup` | `viewer/sitecam.js:358` *(as `A.`)* | 1 | 4 |
-| `APP._refreshClashList` | `viewer/measure.js:1187` *(as `A.`)* | 1 | 7 |
+| `APP._refreshClashList` | `viewer/measure.js:1190` *(as `A.`)* | 1 | 7 |
 | `APP._refreshGroundBtns` | `viewer/panels.js:1738` *(as `A.`)* | 1 | 5 |
 | `APP._registerBatchSlot` | `viewer/streaming.js:2739` *(as `A.`)* | 1 | 4 |
 | `APP._registerInstanceSlot` | `viewer/streaming.js:2815` *(as `A.`)* | 1 | 3 |
-| `APP._registerPanel` | `viewer/scene.js:3588` *(as `A.`)* | 1 | 1 |
-| `APP._renderClashList` | `viewer/measure.js:881` *(as `A.`)* | 1 | 8 |
+| `APP._registerPanel` | `viewer/scene.js:3595` *(as `A.`)* | 1 | 1 |
+| `APP._renderClashList` | `viewer/measure.js:884` *(as `A.`)* | 1 | 8 |
 | `APP._renderIssueList` | `viewer/issues.js:95` *(as `A.`)* | 1 | 4 |
 | `APP._renderSnagStamps` | `viewer/helpers.js:481` *(as `A.`)* | 1 | 3 |
 | `APP._repairDegenerateNormals` | `viewer/streaming.js:2336` *(as `A.`)* | 1 | 1 |
@@ -1034,7 +1051,7 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP._restoreIsolation` | `viewer/picking.js:42` *(as `A.`)* | 1 | 1 |
 | `APP._restoreSunglass` | `viewer/tools.js:695` *(as `A.`)* | 1 | 2 |
 | `APP._revalidateCache` | `viewer/scene.js:1696` *(as `A.`)* | 1 | 2 |
-| `APP._revealClashes` | `viewer/measure.js:853` *(as `A.`)* | 1 | 5 |
+| `APP._revealClashes` | `viewer/measure.js:856` *(as `A.`)* | 1 | 5 |
 | `APP._riN` | `viewer/maxq_capture_stitch.js:94` *(as `A.`)* | 1 | 4 |
 | `APP._roadPanelTn` | `viewer/maxq_start.js:1489` *(as `A.`)* | 3 | 5 |
 | `APP._roadPanelsWarned` | `viewer/maxq_capture_stitch.js:524` *(as `A.`)* | 1 | 2 |
@@ -1044,7 +1061,7 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP._roadStdStd` | `viewer/road_standards.js:136` *(as `A.`)* | 1 | 1 |
 | `APP._roleFilterIdx` | `viewer/panels.js:819` *(as `A.`)* | 2 | 11 |
 | `APP._roleFilterLabel` | `viewer/panels.js:832` *(as `A.`)* | 1 | 3 |
-| `APP._roomCycle` | `viewer/scene.js:2613` *(as `A.`)* | 1 | 1 |
+| `APP._roomCycle` | `viewer/scene.js:2620` *(as `A.`)* | 1 | 1 |
 | `APP._rowOutlines` | `viewer/streaming.js:1517` *(as `A.`)* | 2 | 10 |
 | `APP._ruleChecklistActiveCategory` | `viewer/rule_checklist.js:321` *(as `A.`)* | 3 | 6 |
 | `APP._ruleChecklistConfig` | `viewer/rule_checklist.js:320` *(as `A.`)* | 2 | 7 |
@@ -1061,7 +1078,7 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP._ruleTintMeshes` | `viewer/rule_checklist.js:529` *(as `A.`)* | 3 | 11 |
 | `APP._runSqlChunked` | `viewer/scene.js:2017` *(as `A.`)* | 1 | 3 |
 | `APP._saveClashIssue` | `viewer/clash_snag.js:260` *(as `A.`)* | 1 | 4 |
-| `APP._saveClashStatuses` | `viewer/measure.js:681` *(as `A.`)* | 1 | 2 |
+| `APP._saveClashStatuses` | `viewer/measure.js:684` *(as `A.`)* | 1 | 2 |
 | `APP._saveIssueToLog` | `viewer/issues.js:24` *(as `A.`)* | 1 | 3 |
 | `APP._savedClearColor` | `viewer/tools.js:1188` *(as `A.`)* | 2 | 4 |
 | `APP._savedGroundColor` | `viewer/tools.js:1196` *(as `A.`)* | 1 | 3 |
@@ -1226,7 +1243,7 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP._tmSnapshotCaption` | `viewer/share.js:358` *(as `A.`)* | 1 | 2 |
 | `APP._tmState` | — *phantom* | 0 | 3 |
 | `APP._tmUnmergeTried` | `viewer/tm_lifecycle_api.js:308` *(as `app.`)* | 1 | 2 |
-| `APP._toggleClashStatus` | `viewer/measure.js:1133` *(as `A.`)* | 1 | 3 |
+| `APP._toggleClashStatus` | `viewer/measure.js:1136` *(as `A.`)* | 1 | 3 |
 | `APP._toolbarNav` | `viewer/panels.js:668` *(as `A.`)* | 1 | 3 |
 | `APP._tourCacheBust` | `viewer/tour.js:274` *(as `A.`)* | 1 | 5 |
 | `APP._tourCachedRoute` | `viewer/tour.js:91` *(as `A.`)* | 3 | 8 |
@@ -1246,7 +1263,7 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP._triplanarTexCache` | `viewer/streaming.js:2028` *(as `A.`)* | 1 | 5 |
 | `APP._updateCamLight` | — *phantom* | 0 | 2 |
 | `APP._updateCamTorch` | — *phantom* | 0 | 2 |
-| `APP._updateClashLOD` | `viewer/measure.js:1962` *(as `A.`)* | 1 | 3 |
+| `APP._updateClashLOD` | `viewer/measure.js:1965` *(as `A.`)* | 1 | 3 |
 | `APP._updateFacadeFacing` | — *phantom* | 0 | 2 |
 | `APP._updateFogDensity` | `viewer/scene.js:145` *(as `A.`)* | 1 | 9 |
 | `APP._useDlodPath` | `viewer/streaming.js:19` *(as `A.`)* | 3 | 7 |
@@ -1269,24 +1286,24 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP._walkUnlocked` | `viewer/walk.js:112` *(as `A.`)* | 2 | 3 |
 | `APP._webglContextLost` | `viewer/scene.js:497` *(as `A.`)* | 2 | 3 |
 | `APP._whiteBg` | `viewer/tools.js:1187` *(as `A.`)* | 2 | 11 |
-| `APP._winCtx` | `erp/idempiere.html:5416` | 1 | 1 |
+| `APP._winCtx` | `erp/idempiere.html:5542` | 1 | 1 |
 | `APP._windBuckets` | `viewer/streaming.js:1501` *(as `A.`)* | 1 | 4 |
 | `APP._windFlip` | `viewer/still_fault.js:186` | 1 | 2 |
 | `APP._windFlipAny` | `viewer/streaming.js:1501` *(as `A.`)* | 1 | 4 |
-| `APP._windStat` | `viewer/scene.js:2363` *(as `A.`)* | 1 | 8 |
-| `APP._windTable` | `viewer/scene.js:2323` *(as `A.`)* | 2 | 5 |
-| `APP._windTableGet` | `viewer/scene.js:2322` *(as `A.`)* | 1 | 5 |
+| `APP._windStat` | `viewer/scene.js:2370` *(as `A.`)* | 1 | 8 |
+| `APP._windTable` | `viewer/scene.js:2330` *(as `A.`)* | 2 | 5 |
+| `APP._windTableGet` | `viewer/scene.js:2329` *(as `A.`)* | 1 | 5 |
 | `APP._wing2d` | `viewer/wing_2d.js:327` *(as `A.`)* | 1 | 8 |
 | `APP._wireListKeyNav` | `viewer/panels.js:662` *(as `A.`)* | 1 | 3 |
 | `APP._wizardLoaded` | `viewer/main.js:292` | 3 | 3 |
 | `APP._wizardPromise` | `viewer/main.js:295` | 1 | 4 |
 | `APP._wlog` | `viewer/picking.js:88` *(as `A.`)* | 1 | 3 |
 | `APP.a` | — *phantom* | 0 | 2 |
-| `APP.activeBuilding` | `viewer/city.js:793` *(as `A.`)* | 9 | 318 |
+| `APP.activeBuilding` | `viewer/city.js:793` *(as `A.`)* | 9 | 320 |
 | `APP.activeBuildingTotal` | `viewer/city.js:794` *(as `A.`)* | 9 | 19 |
 | `APP.activeGuidFilter` | `viewer/panels.js:863` *(as `A.`)* | 1 | 13 |
-| `APP.activeStoreyFilter` | `viewer/main.js:1190` | 4 | 30 |
-| `APP.actor` | `erp/idempiere.html:1483` | 3 | 43 |
+| `APP.activeStoreyFilter` | `viewer/main.js:1208` | 4 | 30 |
+| `APP.actor` | `erp/idempiere.html:1501` | 3 | 53 |
 | `APP.addQRBorder` | `viewer/helpers.js:412` *(as `A.`)* | 1 | 2 |
 | `APP.advanceNavStep` | — *phantom* | 0 | 2 |
 | `APP.advanceWalkStep` | `viewer/walk.js:458` *(as `A.`)* | 1 | 5 |
@@ -1302,7 +1319,7 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP.askAnswers` | — *phantom* | 0 | 7 |
 | `APP.askBuildWorkbook` | — *phantom* | 0 | 2 |
 | `APP.askInput` | — *phantom* | 0 | 1 |
-| `APP.askRun` | — *phantom* | 0 | 6 |
+| `APP.askRun` | — *phantom* | 0 | 8 |
 | `APP.askSuggest` | — *phantom* | 0 | 5 |
 | `APP.b` | — *phantom* | 0 | 2 |
 | `APP.bearingDirectionThree` | `viewer/sun_path.js:207` *(as `A.`)* | 1 | 6 |
@@ -1313,7 +1330,8 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP.bigStatsCompositeOntoCanvas` | `viewer/cpe_resource_panel.js:899` *(as `A.`)* | 1 | 6 |
 | `APP.bigStatsLastBox` | `viewer/cpe_resource_panel.js:900` *(as `A.`)* | 3 | 8 |
 | `APP.bind` | — *phantom* | 0 | 3 |
-| `APP.blobToGeometry` | `viewer/scene.js:2330` *(as `A.`)* | 1 | 9 |
+| `APP.blobToGeometry` | `viewer/scene.js:2337` *(as `A.`)* | 1 | 9 |
+| `APP.budget` | — *phantom* | 0 | 4 |
 | `APP.buildDoorPath` | `viewer/tour.js:2375` *(as `A.`)* | 1 | 2 |
 | `APP.buildPointPath` | `viewer/tour.js:2283` *(as `A.`)* | 1 | 3 |
 | `APP.buildRouteTemplate` | — *phantom* | 0 | 2 |
@@ -1326,19 +1344,20 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP.buildingMeasureCard` | `viewer/cpe_resource_panel.js:700` *(as `A.`)* | 1 | 2 |
 | `APP.buildingMeasureCards` | `viewer/cpe_resource_panel.js:634` *(as `A.`)* | 1 | 3 |
 | `APP.buildingName` | — *phantom* | 0 | 4 |
-| `APP.buildingsRendered` | `viewer/scene.js:483` *(as `A.`)* | 1 | 116 |
-| `APP.buildupCursorAt` | `viewer/maxq_start.js:2688` | 1 | 31 |
-| `APP.buildupPacingReset` | `viewer/maxq_start.js:2693` | 1 | 19 |
-| `APP.buildupTAt` | `viewer/maxq_start.js:2691` | 1 | 27 |
-| `APP.buildupTopoutU` | `viewer/maxq_start.js:2692` | 1 | 9 |
+| `APP.buildingsRendered` | `viewer/scene.js:483` *(as `A.`)* | 1 | 118 |
+| `APP.buildupCursorAt` | `viewer/maxq_start.js:2691` | 1 | 31 |
+| `APP.buildupPacingReset` | `viewer/maxq_start.js:2696` | 1 | 19 |
+| `APP.buildupTAt` | `viewer/maxq_start.js:2694` | 1 | 27 |
+| `APP.buildupTopoutU` | `viewer/maxq_start.js:2695` | 1 | 9 |
+| `APP.bytes` | — *phantom* | 0 | 1 |
 | `APP.cacheStoreyLevels` | `viewer/walk.js:243` *(as `A.`)* | 1 | 2 |
 | `APP.cachedFetch` | `viewer/scene.js:1742` *(as `A.`)* | 1 | 21 |
 | `APP.camera` | `viewer/grid_views.js:83` *(as `A.`)* | 4 | 1063 |
-| `APP.cancelMaxQualityOrbit` | `viewer/maxq_start.js:2683` | 1 | 4 |
+| `APP.cancelMaxQualityOrbit` | `viewer/maxq_start.js:2686` | 1 | 4 |
 | `APP.cancelWalkAnchor` | `viewer/walk.js:33` *(as `A.`)* | 1 | 2 |
 | `APP.canvas` | `viewer/scene.js:10` *(as `A.`)* | 1 | 76 |
 | `APP.chainage` | `viewer/chainage_grid.js:519` *(as `A.`)* | 1 | 35 |
-| `APP.checkUpdate` | `viewer/scene.js:3512` *(as `A.`)* | 1 | 1 |
+| `APP.checkUpdate` | `viewer/scene.js:3519` *(as `A.`)* | 1 | 1 |
 | `APP.cinemaBandFlow` | — *phantom* | 0 | 9 |
 | `APP.cinemaBandWaypoints` | — *phantom* | 0 | 1 |
 | `APP.cinemaFan` | — *phantom* | 0 | 4 |
@@ -1389,9 +1408,9 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP.clashNarrow` | `viewer/clash_narrow.js:447` *(as `A.`)* | 1 | 50 |
 | `APP.clearAllIssues` | `viewer/issues.js:261` *(as `A.`)* | 1 | 2 |
 | `APP.clearFocusElement` | — *phantom* | 0 | 11 |
-| `APP.clearMeasures` | `viewer/measure.js:1265` *(as `A.`)* | 1 | 5 |
+| `APP.clearMeasures` | `viewer/measure.js:1268` *(as `A.`)* | 1 | 5 |
 | `APP.clearStreamed` | `viewer/streaming.js:4315` *(as `A.`)* | 1 | 3 |
-| `APP.clientId` | `erp/idempiere.html:1484` | 1 | 38 |
+| `APP.clientId` | `erp/idempiere.html:1502` | 1 | 53 |
 | `APP.clientName` | — *phantom* | 0 | 2 |
 | `APP.closeFindPanel` | — *phantom* | 0 | 2 |
 | `APP.closeSiteCamera` | `viewer/sitecam.js:179` *(as `A.`)* | 1 | 11 |
@@ -1399,7 +1418,7 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP.closeSunglass` | — *phantom* | 0 | 1 |
 | `APP.collectMeshes` | `viewer/helpers.js:20` *(as `A.`)* | 1 | 110 |
 | `APP.column` | — *phantom* | 0 | 1 |
-| `APP.composeGhostsFromAggregates` | `viewer/scene.js:2229` *(as `A.`)* | 1 | 5 |
+| `APP.composeGhostsFromAggregates` | `viewer/scene.js:2236` *(as `A.`)* | 1 | 5 |
 | `APP.computeDiff` | `viewer/diff.js:18` *(as `A.`)* | 1 | 4 |
 | `APP.computePathLength` | `viewer/tour.js:2380` *(as `A.`)* | 1 | 2 |
 | `APP.contributeBuilding` | — *phantom* | 0 | 2 |
@@ -1430,11 +1449,11 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP.dayCounterLiveStart` | `viewer/cpe_day_counter.js:147` *(as `A.`)* | 1 | 1 |
 | `APP.dayCounterLiveStop` | `viewer/cpe_day_counter.js:171` *(as `A.`)* | 1 | 1 |
 | `APP.dayCounterLiveTick` | `viewer/cpe_day_counter.js:156` *(as `A.`)* | 1 | 1 |
-| `APP.db` | `viewer/city.js:717` *(as `A.`)* | 14 | 702 |
-| `APP.dbQuery` | `viewer/helpers.js:116` *(as `A.`)* | 2 | 594 |
+| `APP.db` | `viewer/city.js:717` *(as `A.`)* | 14 | 704 |
+| `APP.dbQuery` | `viewer/helpers.js:116` *(as `A.`)* | 2 | 595 |
 | `APP.dbQueryFirst` | `viewer/helpers.js:130` *(as `A.`)* | 1 | 11 |
 | `APP.deleteImported` | `viewer/import.js:599` *(as `A.`)* | 1 | 4 |
-| `APP.diffDb` | `viewer/main.js:1056` | 1 | 18 |
+| `APP.diffDb` | `viewer/main.js:1074` | 1 | 18 |
 | `APP.diffResult` | `viewer/diff.js:47` *(as `A.`)* | 1 | 32 |
 | `APP.discCounts` | `viewer/scene.js:475` *(as `A.`)* | 3 | 12 |
 | `APP.dlodDemoteAll` | `viewer/dlod.js:140` *(as `A.`)* | 1 | 1 |
@@ -1443,10 +1462,11 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP.dlodTick` | `viewer/dlod.js:145` *(as `A.`)* | 1 | 26 |
 | `APP.downloadSitePhoto` | `viewer/sitecam.js:514` *(as `A.`)* | 1 | 4 |
 | `APP.drawBuildingBoxes` | `viewer/streaming.js:23` *(as `A.`)* | 1 | 4 |
-| `APP.drawnOnlyView` | `viewer/cpe_drawn_services.js:83` *(as `A.`)* | 1 | 1 |
-| `APP.drawnServicesApply` | `viewer/cpe_drawn_services.js:69` *(as `A.`)* | 1 | 1 |
-| `APP.drawnServicesEnable` | `viewer/maxq_start.js:2715` | 1 | 6 |
-| `APP.drawnServicesStats` | `viewer/cpe_drawn_services.js:80` *(as `A.`)* | 1 | 1 |
+| `APP.drawnOnlyView` | `viewer/cpe_drawn_services.js:87` *(as `A.`)* | 1 | 2 |
+| `APP.drawnServicesApply` | `viewer/cpe_drawn_services.js:73` *(as `A.`)* | 1 | 1 |
+| `APP.drawnServicesEnable` | `viewer/maxq_start.js:2718` | 1 | 8 |
+| `APP.drawnServicesFrame` | `viewer/cpe_drawn_services.js:107` *(as `A.`)* | 1 | 6 |
+| `APP.drawnServicesStats` | `viewer/cpe_drawn_services.js:84` *(as `A.`)* | 1 | 1 |
 | `APP.earthworksPanelOpen` | `viewer/earthworks_overlay.js:183` *(as `A.`)* | 1 | 4 |
 | `APP.earthworksVolume` | `viewer/cpe_road_panels.js:18` *(as `A.`)* | 1 | 5 |
 | `APP.earthworksVolumeLine` | `viewer/cpe_road_panels.js:26` *(as `A.`)* | 1 | 4 |
@@ -1454,6 +1474,7 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP.ensureRooms` | — *phantom* | 0 | 78 |
 | `APP.erpQuery` | `viewer/hba_lens.js:349` *(as `A.`)* | 1 | 3 |
 | `APP.error` | — *phantom* | 0 | 1 |
+| `APP.errs` | — *phantom* | 0 | 2 |
 | `APP.escapeRouteApplyVisual` | `viewer/cpe_escape_route.js:1409` *(as `A.`)* | 1 | 10 |
 | `APP.escapeRouteBreach` | `viewer/cpe_escape_route.js:693` *(as `A.`)* | 1 | 5 |
 | `APP.escapeRouteBuild` | `viewer/cpe_escape_route.js:460` *(as `A.`)* | 1 | 5 |
@@ -1507,9 +1528,9 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP.filmBoxesStatusLastBox` | `viewer/cpe_film_boxes.js:209` *(as `A.`)* | 2 | 7 |
 | `APP.filmBoxesStatusRowNames` | `viewer/cpe_film_boxes.js:112` *(as `A.`)* | 1 | 1 |
 | `APP.filmBoxesStatusRows` | `viewer/cpe_film_boxes.js:119` *(as `A.`)* | 1 | 3 |
-| `APP.filmLayer` | `viewer/maxq_start.js:958` *(as `A.`)* | 1 | 12 |
+| `APP.filmLayer` | `viewer/maxq_start.js:958` *(as `A.`)* | 1 | 16 |
 | `APP.filterBatchedMesh` | `viewer/helpers.js:62` *(as `A.`)* | 1 | 4 |
-| `APP.filterByGuids` | `viewer/panels.js:862` *(as `A.`)* | 1 | 15 |
+| `APP.filterByGuids` | `viewer/panels.js:862` *(as `A.`)* | 1 | 16 |
 | `APP.filterDisc` | `viewer/panels.js:765` *(as `A.`)* | 1 | 3 |
 | `APP.filterDiscs` | `viewer/panels.js:770` *(as `A.`)* | 1 | 5 |
 | `APP.filterInstancedMesh` | `viewer/helpers.js:36` *(as `A.`)* | 1 | 5 |
@@ -1579,17 +1600,17 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP.focusElement` | — *phantom* | 0 | 28 |
 | `APP.freezePerfBuild` | — *phantom* | 0 | 2 |
 | `APP.friendlyName` | — *phantom* | 0 | 13 |
-| `APP.gateRecordFor` | `erp/idempiere.html:1494` | 1 | 1 |
+| `APP.gateRecordFor` | `erp/idempiere.html:1512` | 1 | 1 |
 | `APP.gazeAcquireCap` | — *phantom* | 0 | 5 |
 | `APP.gazeAcquireStep` | — *phantom* | 0 | 2 |
 | `APP.generateQR` | `viewer/helpers.js:391` *(as `A.`)* | 1 | 4 |
 | `APP.getDiffDetail` | `viewer/diff.js:168` *(as `A.`)* | 1 | 1 |
 | `APP.getRoomGraph` | `witness/witness_escape_colours.js:35` *(as `A.`)* | 2 | 35 |
 | `APP.getRouteTemplate` | — *phantom* | 0 | 2 |
-| `APP.ghostGroundArm` | `viewer/maxq_start.js:2694` | 1 | 9 |
-| `APP.ghostGroundAt` | `viewer/maxq_start.js:2695` | 1 | 10 |
-| `APP.ghostGroundDebugState` | `viewer/maxq_start.js:2701` | 1 | 3 |
-| `APP.ghostGroundRestore` | `viewer/maxq_start.js:2696` | 1 | 8 |
+| `APP.ghostGroundArm` | `viewer/maxq_start.js:2697` | 1 | 9 |
+| `APP.ghostGroundAt` | `viewer/maxq_start.js:2698` | 1 | 10 |
+| `APP.ghostGroundDebugState` | `viewer/maxq_start.js:2704` | 1 | 3 |
+| `APP.ghostGroundRestore` | `viewer/maxq_start.js:2699` | 1 | 8 |
 | `APP.giBlown` | — *phantom* | 0 | 2 |
 | `APP.glassMs` | — *phantom* | 0 | 1 |
 | `APP.glassReflDark` | — *phantom* | 0 | 1 |
@@ -1597,9 +1618,9 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP.groundIfcZ` | `viewer/tools.js:156` *(as `A.`)* | 1 | 12 |
 | `APP.guidForHit` | `viewer/hover_name.js:72` *(as `A.`)* | 1 | 4 |
 | `APP.guidMap` | `viewer/city.js:827` *(as `A.`)* | 4 | 318 |
-| `APP.handleMeasureClick` | `viewer/measure.js:1304` *(as `A.`)* | 1 | 2 |
-| `APP.handleMeasureDblClick` | `viewer/measure.js:1569` *(as `A.`)* | 1 | 4 |
-| `APP.handleMeasureRightClick` | `viewer/measure.js:1592` *(as `A.`)* | 1 | 3 |
+| `APP.handleMeasureClick` | `viewer/measure.js:1307` *(as `A.`)* | 1 | 2 |
+| `APP.handleMeasureDblClick` | `viewer/measure.js:1572` *(as `A.`)* | 1 | 4 |
+| `APP.handleMeasureRightClick` | `viewer/measure.js:1595` *(as `A.`)* | 1 | 3 |
 | `APP.handleWallXray` | `viewer/walk.js:474` *(as `A.`)* | 1 | 2 |
 | `APP.hemi` | `viewer/scene.js:222` *(as `A.`)* | 1 | 39 |
 | `APP.hiddenDiscs` | `viewer/panels.js:751` *(as `A.`)* | 1 | 44 |
@@ -1614,7 +1635,7 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP.ifc2threeDir` | `viewer/scene.js:534` *(as `A.`)* | 1 | 8 |
 | `APP.importIFC` | `viewer/import.js:151` *(as `A.`)* | 1 | 3 |
 | `APP.importMesh` | `viewer/import.js:445` *(as `A.`)* | 1 | 3 |
-| `APP.importMultiIFC` | `viewer/import.js:275` *(as `A.`)* | 1 | 11 |
+| `APP.importMultiIFC` | `viewer/import.js:275` *(as `A.`)* | 1 | 12 |
 | `APP.indoorBeatsAt` | `viewer/cpe_indoor_beats.js:249` *(as `A.`)* | 1 | 5 |
 | `APP.indoorBeatsBuild` | `viewer/cpe_indoor_beats.js:33` *(as `A.`)* | 1 | 7 |
 | `APP.indoorBeatsCompositeOntoCanvas` | `viewer/cpe_indoor_beats.js:264` *(as `A.`)* | 1 | 4 |
@@ -1640,9 +1661,10 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP.linearBeatDispose` | `viewer/cpe_linear_beat.js:191` *(as `A.`)* | 1 | 5 |
 | `APP.linearBeatReport` | `viewer/cpe_linear_beat.js:190` *(as `A.`)* | 1 | 5 |
 | `APP.listRooms` | `viewer/panels.js:891` *(as `A.`)* | 1 | 2 |
+| `APP.load` | — *phantom* | 0 | 1 |
 | `APP.loadCityManual` | `viewer/city.js:306` *(as `A.`)* | 1 | 1 |
 | `APP.loadFromHash` | `viewer/streaming.js:4306` *(as `A.`)* | 1 | 2 |
-| `APP.loadNavigate` | `viewer/main.js:155` | 1 | 129 |
+| `APP.loadNavigate` | `viewer/main.js:155` | 1 | 130 |
 | `APP.loadPathApplyVisual` | — *phantom* | 0 | 6 |
 | `APP.loadPathBuild` | — *phantom* | 0 | 2 |
 | `APP.loadPathCardOn` | — *phantom* | 0 | 2 |
@@ -1650,15 +1672,16 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP.loadPathDispose` | — *phantom* | 0 | 4 |
 | `APP.loadRuleSet` | `viewer/rule_checklist.js:810` *(as `A.`)* | 1 | 3 |
 | `APP.loadWizard` | `viewer/main.js:293` | 1 | 2 |
+| `APP.lookup` | — *phantom* | 0 | 1 |
 | `APP.markDirty` | `viewer/main.js:783` | 3 | 374 |
 | `APP.markEdited` | `viewer/scene.js:678` *(as `A.`)* | 1 | 4 |
 | `APP.materializeZones` | — *phantom* | 0 | 2 |
-| `APP.maxqStatusDayRoomSegs` | `viewer/maxq_start.js:2707` | 1 | 13 |
-| `APP.measureActive` | `viewer/main.js:1136` | 4 | 28 |
-| `APP.measureFirstMarker` | `viewer/measure.js:1276` *(as `A.`)* | 5 | 9 |
-| `APP.measureFirstPoint` | `viewer/measure.js:1275` *(as `A.`)* | 5 | 8 |
+| `APP.maxqStatusDayRoomSegs` | `viewer/maxq_start.js:2710` | 1 | 13 |
+| `APP.measureActive` | `viewer/main.js:1154` | 4 | 28 |
+| `APP.measureFirstMarker` | `viewer/measure.js:1279` *(as `A.`)* | 5 | 9 |
+| `APP.measureFirstPoint` | `viewer/measure.js:1278` *(as `A.`)* | 5 | 8 |
 | `APP.measureGroup` | `viewer/picking.js:66` *(as `A.`)* | 1 | 23 |
-| `APP.measureLabels` | `viewer/measure.js:1274` *(as `A.`)* | 3 | 24 |
+| `APP.measureLabels` | `viewer/measure.js:1277` *(as `A.`)* | 3 | 24 |
 | `APP.mepSmoothNormals` | `viewer/streaming.js:84` *(as `A.`)* | 1 | 5 |
 | `APP.meshCache` | `viewer/scene.js:476` *(as `A.`)* | 2 | 41 |
 | `APP.meshSolidVolume` | `viewer/cpe_road_panels.js:16` *(as `A.`)* | 1 | 4 |
@@ -1683,7 +1706,8 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP.openShareSheet` | `viewer/import.js:610` *(as `A.`)* | 2 | 5 |
 | `APP.openSiteCamera` | `viewer/sitecam.js:73` *(as `A.`)* | 1 | 7 |
 | `APP.openTab` | — *phantom* | 0 | 2 |
-| `APP.orgId` | `erp/idempiere.html:1485` | 1 | 17 |
+| `APP.order` | — *phantom* | 0 | 2 |
+| `APP.orgId` | `erp/idempiere.html:1503` | 1 | 24 |
 | `APP.pageErrors` | — *phantom* | 0 | 1 |
 | `APP.paramsToParas` | — *phantom* | 0 | 1 |
 | `APP.parasToParams` | — *phantom* | 0 | 1 |
@@ -1703,6 +1727,7 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP.poses` | — *phantom* | 0 | 4 |
 | `APP.printQRSheet` | `viewer/helpers.js:442` *(as `A.`)* | 1 | 3 |
 | `APP.probeGradeHdr` | — *phantom* | 0 | 2 |
+| `APP.probes` | — *phantom* | 0 | 2 |
 | `APP.queryWalkPath` | `viewer/tour.js:2070` *(as `A.`)* | 1 | 1 |
 | `APP.quickShare` | `viewer/share.js:636` *(as `A.`)* | 1 | 7 |
 | `APP.raycaster` | `viewer/scene.js:517` *(as `A.`)* | 1 | 18 |
@@ -1730,8 +1755,8 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP.roadReportOpen` | `viewer/road_report.js:151` *(as `A.`)* | 1 | 4 |
 | `APP.roadStandardsOpen` | `viewer/road_standards.js:125` *(as `A.`)* | 1 | 4 |
 | `APP.roadworksPanelOpen` | `viewer/earthworks_overlay.js:191` *(as `A.`)* | 1 | 4 |
-| `APP.roleId` | `erp/idempiere.html:1486` | 5 | 35 |
-| `APP.roleOrgWhere` | `erp/idempiere.html:2650` | 1 | 1 |
+| `APP.roleId` | `erp/idempiere.html:1504` | 5 | 41 |
+| `APP.roleOrgWhere` | `erp/idempiere.html:2699` | 1 | 1 |
 | `APP.roomTitleApplyHold` | `viewer/cpe_room_title.js:799` *(as `A.`)* | 1 | 10 |
 | `APP.roomTitleApplyLead` | `viewer/cpe_room_title.js:747` *(as `A.`)* | 1 | 12 |
 | `APP.roomTitleBandSize` | `viewer/cpe_room_title.js:859` *(as `A.`)* | 1 | 1 |
@@ -1764,8 +1789,9 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP.saveWallMs` | — *phantom* | 0 | 1 |
 | `APP.savedBytes` | — *phantom* | 0 | 2 |
 | `APP.savedStreams` | `viewer/streaming.js:17` *(as `A.`)* | 1 | 8 |
-| `APP.scene` | `viewer/scene.js:159` *(as `A.`)* | 1 | 772 |
+| `APP.scene` | `viewer/scene.js:159` *(as `A.`)* | 1 | 774 |
 | `APP.sceneScopeBuilding` | `viewer/streaming.js:309` *(as `A.`)* | 1 | 3 |
+| `APP.sched` | — *phantom* | 0 | 2 |
 | `APP.screenshot` | `viewer/tools.js:613` *(as `A.`)* | 1 | 4 |
 | `APP.sectionAxis` | `viewer/section_cut.js:834` | 4 | 13 |
 | `APP.sectionMax` | `viewer/tools.js:479` *(as `A.`)* | 2 | 2 |
@@ -1780,12 +1806,13 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP.setOutline` | — *phantom* | 0 | 12 |
 | `APP.setSectionAxis` | `viewer/tools.js:524` *(as `A.`)* | 1 | 4 |
 | `APP.setWalkAnchor` | `viewer/walk.js:37` *(as `A.`)* | 1 | 2 |
-| `APP.shareProject` | `viewer/scene.js:3513` *(as `A.`)* | 1 | 1 |
+| `APP.shareProject` | `viewer/scene.js:3520` *(as `A.`)* | 1 | 1 |
 | `APP.shareSitePhoto` | `viewer/sitecam.js:456` *(as `A.`)* | 1 | 4 |
 | `APP.shareUrl` | `viewer/share.js:294` *(as `A.`)* | 1 | 5 |
+| `APP.sheets` | — *phantom* | 0 | 3 |
 | `APP.shellPassMs` | — *phantom* | 0 | 1 |
-| `APP.showAdvanced` | `erp/idempiere.html:1487` | 2 | 4 |
-| `APP.showCommandPalette` | `viewer/scene.js:3110` *(as `A.`)* | 1 | 1 |
+| `APP.showAdvanced` | `erp/idempiere.html:1505` | 2 | 4 |
+| `APP.showCommandPalette` | `viewer/scene.js:3117` *(as `A.`)* | 1 | 1 |
 | `APP.showDiffSummary` | `viewer/diff.js:293` *(as `A.`)* | 1 | 2 |
 | `APP.showEarthworksPanel` | `viewer/earthworks_overlay.js:170` *(as `A.`)* | 1 | 2 |
 | `APP.showEgressSanity` | `viewer/rule_checklist.js:852` *(as `A.`)* | 1 | 4 |
@@ -1808,6 +1835,7 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP.softStopStillRefine` | — *phantom* | 0 | 4 |
 | `APP.sourcedStage` | — *phantom* | 0 | 2 |
 | `APP.speedZones` | `viewer/speed_zones.js:644` *(as `A.`)* | 1 | 10 |
+| `APP.src` | — *phantom* | 0 | 1 |
 | `APP.srcBytes` | — *phantom* | 0 | 2 |
 | `APP.stageCinemaPath` | — *phantom* | 0 | 1 |
 | `APP.stagingTotal` | — *phantom* | 0 | 2 |
@@ -1815,15 +1843,15 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP.startDriveThru` | `viewer/walk.js:396` *(as `A.`)* | 1 | 7 |
 | `APP.startFlyTour` | — *phantom* | 0 | 2 |
 | `APP.startMaxQ` | — *phantom* | 0 | 2 |
-| `APP.startMaxQualityOrbit` | `viewer/maxq_start.js:2682` | 1 | 86 |
+| `APP.startMaxQualityOrbit` | `viewer/maxq_start.js:2685` | 1 | 86 |
 | `APP.startNavigation` | — *phantom* | 0 | 3 |
-| `APP.startOfflineDownload` | `viewer/scene.js:3514` *(as `A.`)* | 1 | 3 |
+| `APP.startOfflineDownload` | `viewer/scene.js:3521` *(as `A.`)* | 1 | 3 |
 | `APP.startStepDetection` | `viewer/walk.js:354` *(as `A.`)* | 1 | 1 |
 | `APP.startStillRefine` | — *phantom* | 0 | 53 |
 | `APP.startStillSSGIPhase` | `viewer/effects_gi_poc.js:542` *(as `A.`)* | 1 | 1 |
 | `APP.startStreaming` | `viewer/streaming.js:333` *(as `A.`)* | 1 | 2 |
 | `APP.startWalkGpsTracking` | `viewer/walk.js:260` *(as `A.`)* | 1 | 2 |
-| `APP.status` | `viewer/scene.js:484` *(as `A.`)* | 1 | 303 |
+| `APP.status` | `viewer/scene.js:484` *(as `A.`)* | 1 | 305 |
 | `APP.std` | — *phantom* | 0 | 1 |
 | `APP.stillExit` | — *phantom* | 0 | 2 |
 | `APP.stopDriveThru` | `viewer/walk.js:447` *(as `A.`)* | 1 | 2 |
@@ -1849,7 +1877,7 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP.streamQueue` | `viewer/city.js:782` *(as `A.`)* | 12 | 89 |
 | `APP.streamTick` | `viewer/streaming.js:2378` *(as `A.`)* | 1 | 2 |
 | `APP.streamedCount` | `viewer/city.js:825` *(as `A.`)* | 5 | 44 |
-| `APP.streaming` | `viewer/city.js:792` *(as `A.`)* | 15 | 187 |
+| `APP.streaming` | `viewer/city.js:792` *(as `A.`)* | 15 | 188 |
 | `APP.sun` | `viewer/scene.js:218` *(as `A.`)* | 1 | 191 |
 | `APP.sunClockBoxSize` | `viewer/cpe_sun_compass.js:735` *(as `A.`)* | 1 | 2 |
 | `APP.sunClockCompositeOntoCanvas` | `viewer/cpe_sun_compass.js:741` *(as `A.`)* | 1 | 5 |
@@ -1879,7 +1907,7 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP.tmFrontierPhase` | `witness/witness_cpe_room_title_collective.js:146` *(as `A.`)* | 3 | 6 |
 | `APP.toast` | — *phantom* | 0 | 2 |
 | `APP.toggleBackground` | `viewer/tools.js:1189` *(as `A.`)* | 1 | 2 |
-| `APP.toggleClashMode` | `viewer/measure.js:2091` *(as `A.`)* | 1 | 1 |
+| `APP.toggleClashMode` | `viewer/measure.js:2094` *(as `A.`)* | 1 | 1 |
 | `APP.toggleDisc` | `viewer/panels.js:755` *(as `A.`)* | 1 | 2 |
 | `APP.toggleEarthworksPanel` | `viewer/earthworks_overlay.js:184` *(as `A.`)* | 1 | 3 |
 | `APP.toggleFlyAround` | `viewer/tour.js:8` *(as `A.`)* | 1 | 10 |
@@ -1888,7 +1916,7 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP.toggleGridOverlay` | — *phantom* | 0 | 25 |
 | `APP.toggleHoverName` | `viewer/hover_name.js:198` *(as `A.`)* | 1 | 12 |
 | `APP.toggleIssues` | `viewer/issues.js:243` *(as `A.`)* | 1 | 2 |
-| `APP.toggleMeasure` | `viewer/measure.js:1230` *(as `A.`)* | 1 | 8 |
+| `APP.toggleMeasure` | `viewer/measure.js:1233` *(as `A.`)* | 1 | 8 |
 | `APP.toggleNightMode` | `viewer/tools.js:2112` *(as `A.`)* | 1 | 18 |
 | `APP.toggleNlp` | `viewer/nlp.js:676` *(as `A.`)* | 1 | 9 |
 | `APP.togglePanel` | `viewer/panels.js:508` *(as `A.`)* | 1 | 2 |
@@ -1919,7 +1947,7 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP.updateHUD` | `viewer/panels.js:955` *(as `A.`)* | 1 | 7 |
 | `APP.updateHash` | `viewer/streaming.js:4297` *(as `A.`)* | 1 | 2 |
 | `APP.updateLighting` | `viewer/tools.js:997` *(as `A.`)* | 1 | 2 |
-| `APP.updateMeasureLabels` | `viewer/measure.js:1792` *(as `A.`)* | 1 | 2 |
+| `APP.updateMeasureLabels` | `viewer/measure.js:1795` *(as `A.`)* | 1 | 2 |
 | `APP.updateSectionPlane` | `viewer/tools.js:586` *(as `A.`)* | 1 | 4 |
 | `APP.updateSky` | `viewer/scene.js:275` *(as `A.`)* | 1 | 15 |
 | `APP.v` | — *phantom* | 0 | 2 |

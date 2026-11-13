@@ -9,12 +9,15 @@
   var q = function (v) { return /[\s"=]/.test(String(v)) ? JSON.stringify(String(v)) : String(v); };
   var up = function (s) { return String(s).toLowerCase(); };
   function create(o) {
-    return { v: 1, opts: { kind: o.kind, filters: o.filters || [], limit: o.limit || 10, actionVerbs: o.actionVerbs || {}, brk: o.brk || '' },
+    return { v: 1, opts: { kind: o.kind, filters: o.filters || [], limit: o.limit || 10, actionVerbs: o.actionVerbs || {}, brk: o.brk || '', role: o.role == null || o.role === '' ? null : String(o.role) }, role: null,
       phase: 'new', cols: [], keyCol: null, doc: false, hasProc: false, rows: [], total: 0, offset: 0, cursor: 0, chip: 0, chips: [], chipsFor: null, note: '', confirm: null };
   }
+  // CLI_ERP_IVR §17: with a role, EVERY door line the screen sends carries it (rl); without one nothing is filtered and the head line says so.
+  function rl(st, line) { return st.opts.role == null || st.opts.brk === 'dropRole' ? line : line + ' role=' + st.opts.role; }
+  function roWin(st) { return !!(st.role && st.role.window && st.role.window.readWrite === false); }
   function listLine(st) {
     var o = st.opts, fl = o.filters.map(function (f) { return f.col + '=' + q(f.value); }).join(' ');
-    return 'mis.list kind=' + q(o.kind) + ' columns=' + st.cols.join(',') + ' names=Y limit=' + o.limit + ' offset=' + st.offset + (fl ? ' ' + fl : '');
+    return rl(st, 'mis.list kind=' + q(o.kind) + ' columns=' + st.cols.join(',') + ' names=Y limit=' + o.limit + ' offset=' + st.offset + (fl ? ' ' + fl : ''));
   }
   function pickColumns(props) {
     var by = {}, key = null; props.forEach(function (p) { by[up(p.name)] = p; if (p.key) key = p.name; });
@@ -27,11 +30,12 @@
   function rowAt(st) { var i = st.opts.brk === 'offbyone' ? st.cursor + 1 : st.cursor; return st.rows[i] || st.rows[st.cursor] || null; }
   function rowId(st, r) { return r ? r[st.keyCol] : null; }
   function numOf(st, r) { if (!r) return ''; var c = ['DocumentNo', 'Value', 'Name'].filter(function (n) { return r[n] != null; })[0]; return c ? r[c] : rowId(st, r); }
-  function idLine(st, verb, r) { return verb + ' kind=' + q(st.opts.kind) + ' id=' + rowId(st, r); }
+  function idLine(st, verb, r) { return rl(st, verb + ' kind=' + q(st.opts.kind) + ' id=' + rowId(st, r)); }
   function mkChips(st, r, actions) {
     var used = {}, out = [], take = function (word, want) { var l = want; if (!l) { for (var i = 0; i < word.length; i++) { var c = word.charAt(i).toUpperCase(); if (!used[c]) { l = c; break; } } } used[l] = 1; return l; };
     take('Edit', 'U'); take('Delete', 'D');
     var processed = r && r.Processed === 'Y';
+    if (roWin(st)) return out;   // the role opens this window read-only (GridWindowVO L277): nothing to run on a row
     if (st.doc) {
       out.push({ l: 'U', w: 'Edit', edit: true, line: idLine(st, 'mis.read', r) });
       (actions || []).forEach(function (code) { var v = st.opts.actionVerbs[code]; if (v) { var w = v.split('.')[1]; w = w.charAt(0).toUpperCase() + w.slice(1); out.push({ l: take(w), w: w, line: idLine(st, v, r), act: true }); } });
@@ -64,6 +68,7 @@
       if (!p.displayed || p.key || p.parent || !KNOWN[p.type]) return false;
       if (loose) return true;
       if (p.fieldReadOnly || p.readOnlyLogic) return false;
+      if (p.roleReadOnly && st.opts.brk !== 'roleEdit') return false;   // the role may read it, not write it (AD_Column_Access)
       if (!p.updateable && !p.alwaysUpdateable) return false;
       if (proc && !p.alwaysUpdateable) return false;
       return true;
@@ -71,14 +76,14 @@
   }
   function copyable(st) {   // GridTab.dataNew(copy=true): the displayed columns of the record, minus the key, those the dictionary says IsAllowCopy=N, and those the window would not let a person set
     var loose = st.opts.brk === 'copyall';
-    return (st.props || []).filter(function (p) { return p.displayed && !p.key && KNOWN[p.type] && (loose || (p.allowCopy && !p.fieldReadOnly && !p.readOnlyLogic)); }).sort(function (a, b) { return a.seq - b.seq; });
+    return (st.props || []).filter(function (p) { return p.displayed && !p.key && KNOWN[p.type] && (loose || (p.allowCopy && !p.fieldReadOnly && !p.readOnlyLogic && !p.roleReadOnly)); }).sort(function (a, b) { return a.seq - b.seq; });
   }
   var LOOK = { tabledirect: 1, table: 1, search: 1 };
   function formLine(st) {
     var f = st.form, parts = [];
     f.fields.forEach(function (x) { if (f.mode === 'new') { if (x.value !== '') parts.push(x.name + '=' + q(x.value)); } else if (st.opts.brk === 'sendall' || x.value !== x.orig) parts.push(x.name + '=' + (x.value === '' ? '<null>' : q(x.value))); });
-    if (f.mode === 'new') return 'mis.new kind=' + q(st.opts.kind) + (parts.length ? ' ' + parts.join(' ') : '');
-    return parts.length ? 'mis.update kind=' + q(st.opts.kind) + ' id=' + f.id + ' ' + parts.join(' ') : null;
+    if (f.mode === 'new') return rl(st, 'mis.new kind=' + q(st.opts.kind) + (parts.length ? ' ' + parts.join(' ') : ''));
+    return parts.length ? rl(st, 'mis.update kind=' + q(st.opts.kind) + ' id=' + f.id + ' ' + parts.join(' ')) : null;
   }
   function openForm(st, mode, fields, id) { st.form = { mode: mode, fields: fields, idx: 0, id: id, line: null }; st.phase = fields.length ? 'form' : 'formConfirm'; if (!fields.length) st.form.line = formLine(st); st.note = ''; }
   function phase_busy(st) { st.phase = 'busy'; st.note = ''; }
@@ -115,7 +120,7 @@
       if (!fl.length) { st.phase = 'ready'; st.note = 'nothing in this record can be ' + (cp ? 'copied' : 'edited') + ' here'; return true; }
       var look = fl.filter(function (f1) { return LOOK[f1.type] && f1.value !== ''; }), id = rowId(st, rowAt(st));
       st.pending = { mode: cp ? 'new' : 'edit', copy: cp, fields: fl, id: id };
-      if (look.length) { phase_busy(st); effects.push({ line: 'mis.list kind=' + q(st.opts.kind) + ' ' + st.keyCol + '=' + id + ' columns=' + look.map(function (f1) { return f1.name; }).join(',') + ' names=Y limit=1', purpose: 'readnames' }); return true; }
+      if (look.length) { phase_busy(st); effects.push({ line: rl(st, 'mis.list kind=' + q(st.opts.kind) + ' ' + st.keyCol + '=' + id + ' columns=' + look.map(function (f1) { return f1.name; }).join(',') + ' names=Y limit=1'), purpose: 'readnames' }); return true; }
       openForm(st, st.pending.mode, fl, id); st.form.copy = cp; st.pending = null; return true;
     }
     if (p === 'readnames') {
@@ -155,9 +160,10 @@
       if (formResult(st, p, env, effects)) return { state: st, effects: effects, screen: render(st) };
       if (p === 'describe') {
         if (env.status !== 'ok') { st.phase = 'dead'; st.note = 'cannot open ' + st.opts.kind + ': ' + (env.why || env.status); }
-        else { var c = pickColumns(env.answer.properties); st.cols = c.cols; st.keyCol = c.keyCol; st.doc = c.doc; st.hasProc = c.hasProc; st.props = env.answer.properties.map(function (p) { return { name: p.name, label: p.label, type: p.type, mandatory: !!p.mandatory, updateable: p.updateable !== false, key: !!p.key, parent: !!p.parent, displayed: !!p.displayed, seq: p.seq || 0, fieldReadOnly: !!p.fieldReadOnly, readOnlyLogic: p.readOnlyLogic || '', alwaysUpdateable: !!p.alwaysUpdateable, allowCopy: p.allowCopy !== false, help: p.help || '' }; }); st.phase = 'listing'; effects.push({ line: listLine(st), purpose: 'list' }); }
+        else { var c = pickColumns(env.answer.properties); st.cols = c.cols; st.keyCol = c.keyCol; st.doc = c.doc; st.hasProc = c.hasProc; st.props = env.answer.properties.map(function (p) { return { name: p.name, label: p.label, type: p.type, mandatory: !!p.mandatory, updateable: p.updateable !== false, key: !!p.key, parent: !!p.parent, displayed: !!p.displayed, seq: p.seq || 0, fieldReadOnly: !!p.fieldReadOnly, readOnlyLogic: p.readOnlyLogic || '', alwaysUpdateable: !!p.alwaysUpdateable, allowCopy: p.allowCopy !== false, roleReadOnly: !!p.roleReadOnly, help: p.help || '' }; }); st.role = env.answer.role || null; st.phase = 'listing'; effects.push({ line: listLine(st), purpose: 'list' }); }
       } else if (p === 'list') {
-        if (env.status !== 'ok') { st.phase = 'dead'; st.note = 'cannot list ' + st.opts.kind + ': ' + (env.why || env.status); }
+        if (env.status !== 'ok' && env.answer && env.answer.verdict === 'VACUOUS' && env.answer.rows) { st.rows = []; st.total = 0; st.cursor = 0; st.phase = 'ready'; st.chips = []; st.chipsFor = null; if (!st.note) st.note = 'no ' + st.opts.kind + ' record yet: press + to make one'; }   // an empty kind is a list of nothing, not a dead screen (a table made a minute ago has no rows)
+        else if (env.status !== 'ok') { st.phase = 'dead'; st.note = 'cannot list ' + st.opts.kind + ': ' + (env.why || env.status); }
         else { st.rows = env.answer.rows; st.total = env.answer.total; st.phase = 'ready'; if (st.cursor >= st.rows.length) st.cursor = Math.max(0, st.rows.length - 1); settle(st, effects); }
       } else if (p === 'actions') {
         var r = rowAt(st);
@@ -170,7 +176,7 @@
     }
     if (input.text != null) { if (st.phase === 'form') st.form.fields[st.form.idx].value = String(input.text); return { state: st, effects: effects, screen: render(st) }; }   // a typed line answers the prompt: it REPLACES the value
     var k = String(input.key);
-    if (k === '__start') { st.phase = 'describing'; effects.push({ line: 'mis.describe kind=' + q(st.opts.kind), purpose: 'describe' }); return { state: st, effects: effects, screen: render(st) }; }
+    if (k === '__start') { st.phase = 'describing'; effects.push({ line: rl(st, 'mis.describe kind=' + q(st.opts.kind)), purpose: 'describe' }); return { state: st, effects: effects, screen: render(st) }; }
     if (st.phase === 'form' || st.phase === 'formConfirm') { formKey(st, k, effects); return { state: st, effects: effects, screen: render(st) }; }
     if (st.phase === 'confirm') {
       if (k === 'y' || k === 'Y') { st.phase = 'busy'; effects.push({ line: st.confirm.line, purpose: 'write' }); st.confirm = null; }
@@ -186,7 +192,7 @@
     else if (k === 'Enter') runChip(st, st.chips[st.chip], effects);
     else if (k === 'PageDown') { if (st.offset + st.opts.limit < st.total) { st.offset += st.opts.limit; st.cursor = 0; st.phase = 'listing'; effects.push({ line: listLine(st), purpose: 'list' }); } else st.note = 'last page'; }
     else if (k === 'PageUp') { if (st.offset > 0) { st.offset = Math.max(0, st.offset - st.opts.limit); st.cursor = 0; st.phase = 'listing'; effects.push({ line: listLine(st), purpose: 'list' }); } else st.note = 'first page'; }
-    else if (k === '+' || k === 'n') { st.phase = 'busy'; st.note = ''; effects.push({ line: 'mis.new kind=' + q(st.opts.kind) + ' dry=Y', purpose: 'newdry' }); }
+    else if (k === '+' || k === 'n') { if (roWin(st)) st.note = 'read-only for this role: nothing can be created here'; else { st.phase = 'busy'; st.note = ''; effects.push({ line: rl(st, 'mis.new kind=' + q(st.opts.kind) + ' dry=Y'), purpose: 'newdry' }); } }
     else if (k.length === 1) { var ci = -1; st.chips.forEach(function (c, i) { if (c.l === k.toUpperCase()) ci = i; }); if (ci >= 0) { st.chip = ci; runChip(st, st.chips[ci], effects); } }
     return { state: st, effects: effects, screen: render(st) };
   }
@@ -194,7 +200,8 @@
     if ((st.phase === 'form' || st.phase === 'formConfirm') && st.form) return renderForm(st);
     var L = [], seg = function (t, s) { return { t: String(t), s: s }; };
     var from = st.rows.length ? st.offset + 1 : 0, to = st.offset + st.rows.length;
-    L.push([seg(st.opts.kind + (st.opts.filters.length ? ' (' + st.opts.filters.map(function (f) { return f.col + '=' + f.value; }).join(', ') + ')' : '') + '   shown ' + from + '-' + to + ' of ' + st.total + '   [+ New]', 'head')]);
+    L.push([seg(st.opts.kind + (st.opts.filters.length ? ' (' + st.opts.filters.map(function (f) { return f.col + '=' + f.value; }).join(', ') + ')' : '') + '   shown ' + from + '-' + to + ' of ' + st.total + (roWin(st) ? '' : '   [+ New]'), 'head'),
+      seg(st.opts.role == null ? '   no role: nothing is filtered' : '   role ' + st.opts.role + (st.role ? ': ' + st.role.name + (roWin(st) ? ' (read-only)' : '') : ''), 'dim')]);
     if (st.phase === 'dead') { L.push([seg(st.note, 'note')]); return L; }
     var w = st.cols.map(function (c) { var m = c.length; st.rows.forEach(function (r) { m = Math.max(m, String(r[c] == null ? '' : r[c]).length); }); return Math.min(m, 22); });
     var cell = function (v, i) { var s = String(v == null ? '' : v); if (s.length > w[i]) s = s.slice(0, w[i] - 1) + '~'; return s + new Array(w[i] - s.length + 1).join(' '); };

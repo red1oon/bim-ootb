@@ -11,7 +11,7 @@
 //     read     --kind K (--id I | --number N)   one record by its key or its number (the one resolver, recordOf), with its single-row child tabs (object_cli's read)
 //     complete|void|close|reverse --kind K --id I [--role R]   DocAction CO|VO|CL|RC (DocumentEngine constants) through ModelLayer.run (DocumentEngine.processIt) = the twin of legacy's action; --role refuses what that role is not offered
 //   Writes never touch the .db: each op is appended to the op-log (JSONL; --oplog, else $BIM_OBJECT_OPLOG, else ~/.cache/bim_object/<db>.ops.jsonl, the object layer's own log) and replayed on every run.
-//   The .db is the shipped erp/ad_seed.db (--db to name another); it is opened into memory, never written.
+//   The .db is the shipped erp/ad_seed.db (--db, else $ERP_SEED_DB, to name another: a witness's fixture copy with its patches/ folder beside it); it is opened into memory, never written.
 // Exit: 0 ok · 3 refused (an answer: not found, not offered, the engine said no) · 1 error · 2 usage.
 // Run: node common/door/erp_cli.js find --kind "Order" --number 50000
 'use strict';
@@ -63,7 +63,7 @@ function applyPatch(O, seed) {   // same loop as idempiere.html :1160-1169: stat
   return { pOk, pFail };
 }
 async function boot(a) {
-  const seed = a.db || path.join(ROOT, 'erp', 'ad_seed.db'), t0 = Date.now(), off = process.env.ERP_SNAPSHOT === 'off';
+  const seed = a.db || process.env.ERP_SEED_DB || path.join(ROOT, 'erp', 'ad_seed.db'), t0 = Date.now(), off = process.env.ERP_SNAPSHOT === 'off';
   // the page's self-heal patch comes BEFORE the op-log replay (an op may write a table only the patch creates, e.g. m_storagereservationlog)
   let O, how = 'off', key = '-';
   if (!off) {
@@ -77,7 +77,9 @@ async function boot(a) {
   } else { O = await OC.open({ db: seed }); const r = applyPatch(O, seed); say('patch statements=' + r.pOk + ' failed=' + r.pFail); }
   say('snapshot=' + how + ' key=' + key + ' ms=' + (Date.now() - t0));
   O.opfile = OC.oplogFile({ oplog: a.oplog }, O.file); O.ops = OC.readOps(O.opfile);
-  O.ops.forEach(o => OC.applyOp(O.db, O.rows, o));
+  const known = {}; O.rows("SELECT lower(name) AS n FROM sqlite_master WHERE type='table'").forEach(r => { known[r.n] = 1; });
+  O.ops.forEach(o => { const t = String(o.table || '').toLowerCase(); if (t && !known[t]) { ensureTables(O).forEach(n => { known[n] = 1; }); known[t] = 1; } OC.applyOp(O.db, O.rows, o); });   // an op on a table a staged window brought: its physical table is made first (§10)
+  ensureTables(O);
   O.ML = require(path.join(ROOT, 'erp', 'model_layer.js')); O.dbId = 'model:' + path.basename(O.file);
   O.trx = () => new O.ML.Trx((sql, p) => O.rows(sql, p), { db: O.dbId, now: new Date().toISOString().replace('T', ' ').slice(0, 19), uuid: () => require('crypto').randomUUID() });
   loadEngine(O); O.b3 = b3(O);
@@ -85,6 +87,108 @@ async function boot(a) {
   return O;
 }
 
+// ── mis.add_window (bim-compiler prompts/ERP_MIS_WINDOW_FROM_CSV.md §10) ──
+const ADDWIN_BREAK = process.env.ADDWIN_BREAK || '';   // W-MIS-ADD falsifiers: nofield | notable | bare
+// The physical table of a STAGED AD_Table (EntityType U, id in the Ninja range) that has none, from its AD_Column rows, by NinjaStage.dataTableSql (the one rule). Returns the lower-case names it made.
+// The seed's own user-made kinds that ship with no table (MP_*) are left as they are: the page says "not in this seed" for them and this step must not change that.
+function ensureTables(O) {
+  if (ADDWIN_BREAK === 'notable') return [];
+  const NS = require(path.join(ROOT, 'erp', 'ninja_stage.js')), made = [];
+  O.rows("SELECT t.ad_table_id AS id, t.tablename AS tn FROM ad_table t WHERE t.isactive='Y' AND t.entitytype='U' AND t.ad_table_id>=" + NS.NINJA_BASE + " AND COALESCE(t.isview,'N')<>'Y' AND NOT EXISTS (SELECT 1 FROM sqlite_master m WHERE m.type IN ('table','view') AND lower(m.name)=lower(t.tablename))").forEach(t => {
+    const cols = O.rows("SELECT columnname AS name, ad_reference_id AS refId FROM ad_column WHERE ad_table_id=? AND isactive='Y' AND (columnsql IS NULL OR columnsql='') ORDER BY ad_column_id", [t.id]).map(c => ({ name: c.name, refId: Number(c.refid) }));
+    if (!cols.length) return;
+    O.db.run(NS.dataTableSql(t.tn, cols)); made.push(t.tn.toLowerCase()); say('table-made ' + t.tn + ' columns=' + cols.length + ' (from its AD_Column rows)');
+  });
+  return made;
+}
+const AD_STAGED = ['ad_window', 'ad_table', 'ad_tab', 'ad_column', 'ad_field', 'ad_menu'], STD7 = ['ad_client_id', 'ad_org_id', 'isactive', 'created', 'createdby', 'updated', 'updatedby'];
+async function addWindow(O, a) {
+  const t0 = Date.now(), NS = require(path.join(ROOT, 'erp', 'ninja_stage.js')), NC = require(path.join(ROOT, 'erp', 'ninja_csv.js')), XL = require(path.join(ROOT, 'erp', 'xlsx.mini.min.js')), PG = require(path.join(ROOT, 'erp', 'pipo_packgen.js'));
+  if (typeof globalThis.crypto === 'undefined') globalThis.crypto = require('crypto').webcrypto;   // pipo_packgen.uuidV5 uses the web crypto the page has; Node before 19 does not name it globally
+  if (!a.file) refuse('--file is required (a .csv of the table\'s properties)');
+  if (!/\.csv$/i.test(String(a.file))) refuse('the file must be a .csv: ' + a.file);
+  const base = process.cwd(), abs = path.resolve(base, String(a.file)), rel = path.relative(base, abs);
+  if (rel.startsWith('..') || path.isAbsolute(rel)) refuse('the file must be in the folder the line is run from (' + base + '); "' + a.file + '" leaves it. Nothing was written');
+  let text; try { text = fs.readFileSync(abs, 'utf8'); } catch (e) { refuse('cannot read ' + a.file + ': ' + (e.code || e.message)); }
+  const sha = require('crypto').createHash('sha256').update(text).digest('hex'), table = String(a.table || path.basename(abs).replace(/\.csv$/i, ''));
+  if (a.master) refuse('master= is not built yet: a detail tab is staged together with its master (ERP_MIS_WINDOW_FROM_CSV §10, step M2b). Nothing was written');
+  const ent = (tn) => { const r = O.rows('SELECT entitytype AS e FROM ad_table WHERE lower(tablename)=lower(?)', [tn])[0]; return r ? (r.e == null ? '' : r.e) : null; };
+  const R = NC.fromText(text, XL, { table, workflow: a.workflow, name: a.name, existing: ent });
+  if (!R.ok) refuse(R.refusals.length + ' fault' + (R.refusals.length > 1 ? 's' : '') + ' in ' + a.file + ': ' + R.refusals.map(x => (x.row ? 'line ' + x.row + ' ' : '') + x.column + (x.cell ? ' "' + x.cell + '"' : '') + ': ' + x.why).join(' | ') + '. Nothing was written');
+  if (ent(table) != null) refuse(table + ' is already a window here; changing a staged window is not built yet. Nothing was written');
+  const T = R.model.tables[0], user = T.columns.filter(c => !c.isStandard);
+  // list values: VALUE=Name as stated; a bare name follows Ninja (Value = the name's first two characters, NewEmptyTable.java L222)
+  const lists = user.filter(c => c.listValues && c.listValues.length).map(c => {
+    const items = c.listValues.map((v, i) => { const nm = c.listNames ? c.listNames[i] : ''; return nm ? { value: v, name: nm } : { value: v.substring(0, v.length < 2 ? 1 : 2), name: v }; });
+    const seen = {}; items.forEach(it => { if (seen[it.value]) refuse('list ' + c.name + ': "' + seen[it.value] + '" and "' + it.name + '" both get the value "' + it.value + '" (a name alone takes its first two characters, as Ninja does); write them as VALUE=Name. Nothing was written'); seen[it.value] = it.name; });
+    const clash = O.rows("SELECT ad_reference_id AS id FROM ad_reference WHERE name=? AND validationtype='L'", [c.name])[0];
+    if (clash) refuse('a list reference named ' + c.name + ' already exists (AD_Reference ' + clash.id + '); Ninja would reuse one whose name starts with the column name, which is not reproduced here: rename the column. Nothing was written');
+    return { col: c.name, items };
+  });
+  const dry = String(a.dry || '').toUpperCase() === 'Y';
+  if (dry) { say('add_window DRY table=' + table + ' columns=' + user.map(c => c.name).join(',') + ' sha256=' + sha.slice(0, 12)); return { dry: true, table, file: a.file, sha256: sha, columns: user.map(c => ({ name: c.name, reference: c.refId, mandatory: !!c.mandatory })), standard: T.columns.filter(c => c.isStandard).map(c => c.name), lists: lists.map(l => ({ column: l.col, values: l.items.map(i => i.value) })), ops: [] }; }
+  // 1. the one stager, in a savepoint: read back what it made, then undo it (the rows are written as ops below, so they replay)
+  const ids = (t) => { const m = {}; O.rows('SELECT ' + t + '_id AS id, isactive AS a FROM ' + t + ' WHERE ' + t + '_id>=' + NS.NINJA_BASE).forEach(r => { m[r.id] = r.a; }); return m; };
+  const nodes = () => { const m = {}; O.rows('SELECT ad_tree_id AS t, node_id AS n FROM ad_treenodemm WHERE node_id>=' + NS.NINJA_BASE).forEach(r => { m[r.t + '/' + r.n] = 1; }); return m; };
+  const before = {}, made = {}, ups = []; AD_STAGED.forEach(t => { before[t] = ids(t); }); const nb = nodes();
+  const log = console.log; console.log = () => {};
+  O.db.run('SAVEPOINT addwin'); let counts;
+  try {
+    counts = NS.stageModels(O.db, R.model, 0);
+    AD_STAGED.forEach(t => { const now = ids(t); made[t] = Object.keys(now).filter(id => !(id in before[t])).map(id => O.rows('SELECT * FROM ' + t + ' WHERE ' + t + '_id=?', [Number(id)])[0]); Object.keys(now).forEach(id => { if (id in before[t] && before[t][id] !== now[id]) ups.push({ t, id: Number(id), old: before[t][id], neu: now[id] }); }); });
+    made.ad_treenodemm = O.rows('SELECT * FROM ad_treenodemm WHERE node_id>=' + NS.NINJA_BASE).filter(r => !nb[r.ad_tree_id + '/' + r.node_id]);
+  } finally { O.db.run('ROLLBACK TO addwin'); O.db.run('RELEASE addwin'); console.log = log; }
+  // 2. what stageModels leaves empty, each from its legacy owner (§10's table)
+  const has = {}, hasCol = (t, c) => (has[t] || (has[t] = O.rows('PRAGMA table_info(' + t + ')').map(x => x.name.toLowerCase()))).indexOf(c) >= 0;
+  const uu = (t, key) => PG.uuidV5('ninja/' + table + '/' + t + '/' + key), bare = ADDWIN_BREAK === 'bare';
+  const src = {}; O.rows("SELECT lower(columnname) AS c, ismandatory, isupdateable, isallowcopy, defaultvalue FROM ad_column WHERE ad_table_id=102").forEach(r => { src[r.c] = r; });   // NewEmptyTable.java L95, L262: the standard columns are copies of AD_Reference's
+  const colName = {}; made.ad_column.forEach(c => { colName[c.ad_column_id] = c.columnname; });
+  const dress = async (t, row, key) => {
+    const f = {}; Object.keys(row).forEach(k => { if (row[k] != null) f[k] = row[k]; });
+    if (bare) return f;
+    if (hasCol(t, 'entitytype')) f.entitytype = 'U';
+    if (hasCol(t, 'ad_client_id') && f.ad_client_id == null) f.ad_client_id = 0;
+    if (hasCol(t, 'ad_org_id') && f.ad_org_id == null) f.ad_org_id = 0;
+    if (hasCol(t, t + '_uu')) f[t + '_uu'] = await uu(t, key);
+    return f;
+  };
+  const ops = [], refAt = {};
+  if (!bare) for (const l of lists) {   // the reference first: the column points at it (NewEmptyTable.java L196-226)
+    refAt[l.col] = ops.length;
+    ops.push({ op_type: 'CRUD_CREATE', table: 'ad_reference', idCol: 'ad_reference_id', fields: { name: l.col, validationtype: 'L', entitytype: 'U', isactive: 'Y', ad_client_id: 0, ad_org_id: 0, ad_reference_uu: await uu('ad_reference', l.col) } });
+    for (const it of l.items) ops.push({ op_type: 'CRUD_CREATE', table: 'ad_ref_list', idCol: 'ad_ref_list_id', fields: { ad_reference_id: { __opRef: refAt[l.col] }, value: it.value, name: it.name, entitytype: 'U', isactive: 'Y', ad_client_id: 0, ad_org_id: 0, ad_ref_list_uu: await uu('ad_ref_list', l.col + '/' + it.value) } });
+  }
+  for (const t of AD_STAGED) {
+    if (t === 'ad_field' && ADDWIN_BREAK === 'nofield') continue;
+    for (const row of made[t]) {
+      const key = t === 'ad_column' ? row.columnname : t === 'ad_field' ? colName[row.ad_column_id] : t === 'ad_menu' ? (row.issummary === 'Y' ? 'summary/' + row.name : table) : table;
+      if (!bare && t === 'ad_field' && /^(created|createdby|updated|updatedby)$/i.test(key)) continue;   // core TabCreateFields.java L99 (and Ninja AddTable.java L546-548): no field for Created* / Updated*
+      const f = await dress(t, row, key);
+      if (!bare && t === 'ad_field' && (key.toLowerCase() === table.toLowerCase() + '_id' || key.toLowerCase() === table.toLowerCase() + '_uu')) { f.isdisplayed = 'N'; if (hasCol('ad_field', 'isdisplayedgrid')) f.isdisplayedgrid = 'N'; }   // TabCreateFields.java L156-158: the key and the UU are not shown
+      if (!bare && t === 'ad_table') { f.accesslevel = '3'; f.isdeleteable = 'Y'; }   // MRO_ModelMaker.java L128-129
+      if (!bare && t === 'ad_column') {
+        const lc = row.columnname.toLowerCase(), m = T.columns.filter(c => c.name === row.columnname)[0] || {};
+        if (STD7.indexOf(lc) >= 0 && src[lc]) { f.ismandatory = src[lc].ismandatory; f.isupdateable = src[lc].isupdateable; f.isallowcopy = src[lc].isallowcopy; if (src[lc].defaultvalue != null) f.defaultvalue = src[lc].defaultvalue; }
+        else if (row.iskey === 'Y') { f.ismandatory = 'Y'; f.isupdateable = 'N'; f.isallowcopy = 'N'; }   // NewEmptyTable.java L87-90; MColumn.beforeSave L457, L491
+        else if (lc === table.toLowerCase() + '_uu') { const u = src.ad_reference_uu || {}; f.ismandatory = u.ismandatory || 'N'; f.isupdateable = u.isupdateable || 'Y'; f.isallowcopy = u.isallowcopy || 'N'; }
+        else {
+          f.isupdateable = 'Y'; f.isallowcopy = 'Y'; f.ismandatory = m.mandatory ? 'Y' : 'N';   // NewEmptyTable.java L244, L173; the sheet's Mandatory is the user's data
+          if (m.length) f.fieldlength = m.length; if (m.identifier) f.isidentifier = 'Y'; if (m.defaultValue != null) f.defaultvalue = m.defaultValue; if (m.help) f.help = m.help;
+          if (refAt[row.columnname] != null) f.ad_reference_value_id = { __opRef: refAt[row.columnname] };
+        }
+      }
+      ops.push({ op_type: 'CRUD_CREATE', table: t, idCol: t + '_id', fields: f });
+    }
+  }
+  for (const row of made.ad_treenodemm) ops.push({ op_type: 'CRUD_CREATE', table: 'ad_treenodemm', fields: await dress('ad_treenodemm', row, 'node/' + row.node_id) });
+  ups.forEach(u => ops.push({ op_type: 'CRUD_UPDATE', table: u.t, idCol: u.t + '_id', id: u.id, changes: { isactive: { old: u.old, new: u.neu } } }));
+  const win = made.ad_window[0];
+  if (!bare && win) for (const r of O.rows("SELECT ad_role_id AS id, ad_client_id AS c FROM ad_role WHERE isactive='Y' AND ismanual='N' ORDER BY ad_role_id"))   // MWindow.afterSave L233-246, MWindowAccess L89-96
+    ops.push({ op_type: 'CRUD_CREATE', table: 'ad_window_access', fields: { ad_window_id: win.ad_window_id, ad_role_id: r.id, ad_client_id: r.c, ad_org_id: 0, isactive: 'Y', isreadwrite: 'Y', ad_window_access_uu: await uu('ad_window_access', 'role/' + r.id) } });
+  const res = persistGroup(O, ops), mk = ensureTables(O);
+  say('add_window table=' + table + ' slot=' + counts.slot + ' window=' + (win && win.ad_window_id) + ' ops=' + res.length + ' ' + JSON.stringify(sum(res)) + ' table_made=' + mk.join(',') + ' sha256=' + sha.slice(0, 12) + ' ms=' + (Date.now() - t0));
+  return { table, kind: (made.ad_table[0] || {}).name, file: a.file, sha256: sha, window: win ? { id: win.ad_window_id, name: win.name } : null, columns: user.map(c => c.name), lists: lists.map(l => ({ column: l.col, values: l.items.map(i => i.value) })), opSummary: sum(res), ops: res.length };
+}
 // ── the dictionary, read as rows ──
 function kindRef(O, kind) {   // any AD table: its key and its number column (DocumentNo, else Name, else Value: the window's Find)
   const t = O.rows("SELECT ad_table_id, name, tablename FROM ad_table WHERE isactive='Y' AND (lower(name)=lower(?) OR lower(tablename)=lower(?)) ORDER BY ad_table_id", [kind, kind])[0];
@@ -102,18 +206,19 @@ function docKind(O, kind) {   // a document = an AD table with a DocAction colum
   return K;
 }
 // THE resolver (NEURO §R.V.1): "the record a line means". Every verb that takes --id or --number comes through here; find lists the same rows.
-function byNumber(O, K, number) {
+function byNumber(O, K, number, and) {
   if (!K.numCol) refuse('kind ' + K.name + ' has no DocumentNo, Name or Value column to find by; name the record with --id');
-  return O.rows('SELECT * FROM ' + K.table + ' WHERE ' + K.numCol + '=? ORDER BY ' + K.key, [String(number)]);
+  return O.rows('SELECT * FROM ' + K.table + ' WHERE ' + K.numCol + '=?' + (and || '') + ' ORDER BY ' + K.key, [String(number)]);
 }
-function recordOf(O, K, a) {
+function recordOf(O, K, a, R) {   // R (a role, roleOf): the record is looked for among the role's rows only, so one outside them answers as one that does not exist
   if (a.id == null && a.number == null) refuse('a record is named by --id or --number');
+  const rw = R ? R.where(false) : '', and = rw ? ' AND ' + rw : '';
   let r;
   if (a.id != null) {
-    r = O.rows('SELECT * FROM ' + K.table + ' WHERE ' + K.key + '=?', [/^-?\d+$/.test(String(a.id)) ? Number(a.id) : a.id])[0];
+    r = O.rows('SELECT * FROM ' + K.table + ' WHERE ' + K.key + '=?' + and, [/^-?\d+$/.test(String(a.id)) ? Number(a.id) : a.id])[0];
     if (r && a.number != null && K.numCol && String(r[K.numCol]) !== String(a.number)) refuse(K.key + ' ' + a.id + ' is ' + K.name + ' ' + r[K.numCol] + ', not number ' + a.number + ': the line names two different records');
   } else {
-    const rs = byNumber(O, K, a.number);
+    const rs = byNumber(O, K, a.number, and);
     if (rs.length > 1 && BREAK !== 'firstmatch') refuse(rs.length + ' ' + K.name + ' records carry number ' + a.number + ' (ids ' + rs.map(x => x[K.key]).join(', ') + '); name one with --id');
     r = rs[0];
     if (r && BREAK === 'neighbour') r = O.rows('SELECT * FROM ' + K.table + ' WHERE ' + K.key + '<? ORDER BY ' + K.key + ' DESC LIMIT 1', [r[K.key]])[0] || O.rows('SELECT * FROM ' + K.table + ' WHERE ' + K.key + '>? ORDER BY ' + K.key + ' LIMIT 1', [r[K.key]])[0] || r;   // falsifier: the number resolves to a neighbouring record (the one before; the newest record has none after it, which made the first form of this falsifier blind to N1/N2)
@@ -215,20 +320,43 @@ function act(O, a, code) {
 
 const complete = (O, a) => act(O, a, ACT.complete);
 // the generic object layer over ERP tables = object_cli's own describe/read run over the ERP's booted handle (no per-table code; the same AD rows)
-function describe(O, a) { if (!a.kind) refuse('--kind is required'); return OC.describe(O, { kind: a.kind, uu: a.id }); }
+function describe(O, a) { if (!a.kind) refuse('--kind is required'); return OC.describe(O, { kind: a.kind, uu: a.id, role: a.role }); }
 function read(O, a) {   // by --id: unchanged. By --number: the resolver names the record, then the same read by its key
   if (!a.kind) refuse('--kind is required');
-  if (a.number == null) { if (a.id == null) refuse('a record is named by --id or --number'); return OC.read(O, { kind: a.kind, uu: a.id }); }
-  const K = kindRef(O, a.kind), r = recordOf(O, K, a);
+  if (a.number == null) { if (a.id == null) refuse('a record is named by --id or --number'); return OC.read(O, { kind: a.kind, uu: a.id, role: a.role }); }
+  const K = kindRef(O, a.kind), r = recordOf(O, K, a, roleOf(O, K, a));
   say('read-by-number kind=' + K.name + ' by=' + K.numCol + ' number=' + a.number + ' -> ' + K.key + '=' + r[K.key]);
-  return OC.read(O, { kind: a.kind, uu: String(r[K.key]) });
+  return OC.read(O, { kind: a.kind, uu: String(r[K.key]), role: a.role });
+}
+// ── the role on a write (bim-compiler prompts/CLI_ERP_IVR.md §17 rules 1, 6, 7). The rules are erp/ad_access.js (the MRole port), reached through object_cli's roleFor; null = no --role = nothing judged.
+function roleOf(O, K, a) {
+  if (a.role == null) return null;
+  const t = OC.kindOf(O.rows, K.table), cols = OC.columnsOf(O.rows, t), R = OC.roleFor(O, t, cols, a);
+  R.K = K; R.colOf = (n) => cols.filter(c => c.columnname.toLowerCase() === String(n).toLowerCase())[0];
+  return R;
+}
+const who = (R) => 'role ' + R.info.id + ' (' + R.info.name + ')';
+function roleMayWrite(R, K, what) {   // GridWindowVO.create L277-278: a read-only window grant makes every tab read-only
+  if (R && !R.window.readWrite) refuse(K.name + ' is not ' + what + ': ' + who(R) + ' opens the window ' + R.window.name + ' read-only (AD_Window_Access.IsReadWrite=N); nothing was written');
+}
+function roleMayUpdate(R, K, client, org, id, what) {   // MRole.canUpdate L2335-2392 (user level, client, organisation, table); with a record id also isRecordAccess(rw), as GridField.isEditable L522 asks for an edit (GridTable.dataSave L1622 and dataDelete L2199 pass Record_ID 0)
+  if (!R) return;
+  const cu = R.rc.canUpdate(Number(client), Number(org), K.id, R.level);
+  if (!cu.allowed) refuse(K.name + ' is not ' + what + ': ' + who(R) + ' may not update a record of client ' + client + ', organisation ' + org + ' (MRole.canUpdate: ' + cu.reason + '); nothing was written');
+  if (id != null && !R.rc.isRecordAccess(K.id, Number(id), false)) refuse(K.name + ' is not ' + what + ': ' + who(R) + ' holds this record read-only (AD_Record_Access); nothing was written');
+}
+function roleMayWriteColumn(R, K, name) {   // GridField.isEditable L525: isColumnAccess(table, column, ro=false)
+  if (!R) return; const c = R.colOf(name); if (!c) return;
+  if (!R.canRead(c)) refuse(who(R) + ' may not read ' + c.columnname + ' of ' + K.name + ' (AD_Column_Access); nothing was written');
+  if (!R.canWrite(c)) refuse(c.columnname + ' cannot be edited here: ' + who(R) + ' holds it read-only (AD_Column_Access); nothing was written');
 }
 
 // ── new (NEURO §R.V item 2): a record created the way the window creates it. GridTab.dataNew defaults + the callout fan (ad_callout.js, the same engine the window runs), the user's columns set one
 //    by one as edits (so the callouts fire as they do on screen), mandatory columns checked, then the model layer's own save (Document No from the sequence). No per-table code. ──
 const DEC_ID = /^-?\d+$/, NEW_BREAK = process.env.NEW_BREAK || '';   // W-ERP-NEW falsifiers: nocallouts | nomandatory
-function tabFor(O, K) {   // the table's own tab: the lowest tab level in its window (the window the user would open)
-  const t = O.rows("SELECT t.ad_tab_id AS id, t.ad_window_id AS win, t.tablevel AS lvl, t.seqno AS seq FROM ad_tab t WHERE t.ad_table_id=? AND t.isactive='Y' ORDER BY t.tablevel, t.seqno, t.ad_tab_id", [K.id])[0];
+function tabFor(O, K, R) {   // the table's own tab: the lowest tab level in its window (the window the user would open); under a role, the first such tab in a window the role is granted
+  if (R && R.K === K) return { id: R.tab, win: R.window.id };
+  const t = OC.tabsOf(O.rows, K.id)[0];   // the one picker (CLI_ERP_IVR §18)
   if (!t) refuse('kind ' + K.name + ' has no tab in the dictionary, so there is no window to create it in');
   return t;
 }
@@ -251,8 +379,9 @@ function parseGiven(a) {   // the column=value pairs of a line (--where, repeate
 }
 function createRecord(O, a) {
   if (!a.kind) refuse('--kind is required');
-  const t0 = Date.now(), K = kindRef(O, a.kind), tab = tabFor(O, K), A = require(path.join(ROOT, 'erp', 'ad_callout.js'));
+  const t0 = Date.now(), K = kindRef(O, a.kind), R = roleOf(O, K, a), tab = tabFor(O, K, R), A = require(path.join(ROOT, 'erp', 'ad_callout.js'));
   const given = parseGiven(a);
+  roleMayWrite(R, K, 'created'); Object.keys(given).forEach(k => roleMayWriteColumn(R, K, k));
   const log = console.log; console.log = () => {};   // the engine prints its own § lines to stdout; stdout here carries only the answer
   try {
     A.bind((sql, p) => O.rows(sql, p));
@@ -294,12 +423,13 @@ function createRecord(O, a) {
     const row = {}; st.fields.forEach(f => { const c = f.vo.ColumnName, v = snap[c]; if (f.isKey() || v == null || v === '') return; row[c.toLowerCase()] = (A.DisplayType.isNumeric(f.getDisplayType()) && !A.DisplayType.isID(f.getDisplayType()) && DEC_ID.test(String(v).replace('.', '')) ) ? Number(v) : v; });
     if (dry) { console.log = log; say('new DRY kind=' + K.name + ' given=' + set.join(',') + ' mandatory_empty=' + empty.join(',') + ' needs=' + needs.map(n => n.name).join(',') + ' defaulted=' + (Object.keys(row).length - set.length) + ' ms=' + (Date.now() - t0));
       return { dry: true, kind: K.name, table: K.table, mandatory: empty.filter(c => !needs.some(n => n.name.toLowerCase() === c.toLowerCase())), needs, given: set.filter(c => !(c.toLowerCase() === 'issotrx' && needs.length)), defaulted: Object.keys(row).length - set.length, filled: Object.keys(row).filter(c => set.map(x => x.toLowerCase()).indexOf(c) < 0), ops: [] }; }
+    roleMayUpdate(R, K, row.ad_client_id == null ? client : row.ad_client_id, row.ad_org_id == null ? org : row.ad_org_id, null, 'created');   // GridTable.dataSave: canUpdate on the row's own client and organisation
     const tx = O.trx(); Object.assign(tx.env, { client, org, date: day + ' 00:00:00' });
     const r = O.ML.save(tx, K.table, null, row); if (!r.ok) refuse('the model layer refused the save: ' + r.error);
     const res = persistGroup(O, tx.groupOps()), main = res.filter(o => o.table === K.table)[0] || res[res.length - 1], id = main.fields ? main.fields[K.key] : main.id;
     const saved = O.rows('SELECT * FROM ' + K.table + ' WHERE ' + K.key + '=?', [id])[0] || {};
     console.log = log; say('new kind=' + K.name + ' tab=' + tab.id + ' given=' + set.join(',') + ' fields=' + Object.keys(row).length + ' id=' + id + ' number=' + (K.numCol ? saved[K.numCol] : '') + ' ms=' + (Date.now() - t0));
-    return { number: K.numCol ? saved[K.numCol] : null, kind: K.name, table: K.table, id, docStatus: saved.docstatus == null ? null : saved.docstatus, given: set, defaulted: Object.keys(row).length - set.length, filled: Object.keys(row).filter(c => set.map(x => x.toLowerCase()).indexOf(c) < 0), record: saved, ops: res.map(o => ({ op_type: o.op_type, table: o.table })) };
+    return { number: K.numCol ? saved[K.numCol] : null, kind: K.name, table: K.table, id, docStatus: saved.docstatus == null ? null : saved.docstatus, given: set, defaulted: Object.keys(row).length - set.length, filled: Object.keys(row).filter(c => set.map(x => x.toLowerCase()).indexOf(c) < 0), record: saved, ops: res.map(o => ({ op_type: o.op_type, table: o.table })), ...(R ? { role: R.info } : {}) };
   } finally { console.log = log; }
 }
 // ── mis.update / mis.delete (bim-compiler prompts/CLI_ERP_IVR.md §12): the WINDOW's edit and delete, never a raw UPDATE/DELETE ──
@@ -321,8 +451,9 @@ function notEditable(O, tabId, f, rec) {
 }
 function updateRecord(O, a) {
   if (!a.kind) refuse('--kind is required');
-  const t0 = Date.now(), K = kindRef(O, a.kind), r = recordOf(O, K, a), tab = tabFor(O, K), A = require(path.join(ROOT, 'erp', 'ad_callout.js')), given = parseGiven(a);
+  const t0 = Date.now(), K = kindRef(O, a.kind), R = roleOf(O, K, a), r = recordOf(O, K, a, R), tab = tabFor(O, K, R), A = require(path.join(ROOT, 'erp', 'ad_callout.js')), given = parseGiven(a);
   if (!Object.keys(given).length) refuse('nothing to change: give column=value');
+  roleMayWrite(R, K, 'changed'); roleMayUpdate(R, K, r.ad_client_id == null ? 0 : r.ad_client_id, r.ad_org_id == null ? 0 : r.ad_org_id, r[K.key], 'changed'); Object.keys(given).forEach(k => roleMayWriteColumn(R, K, k));
   const log = console.log; console.log = () => {};
   try {
     A.bind((sql, p) => O.rows(sql, p));
@@ -360,7 +491,8 @@ function updateRecord(O, a) {
 }
 function deleteRecord(O, a) {
   if (!a.kind) refuse('--kind is required');
-  const t0 = Date.now(), K = kindRef(O, a.kind), r = recordOf(O, K, a), tab = tabFor(O, K), id = r[K.key];
+  const t0 = Date.now(), K = kindRef(O, a.kind), R = roleOf(O, K, a), r = recordOf(O, K, a, R), tab = tabFor(O, K, R), id = r[K.key];
+  roleMayWrite(R, K, 'deleted'); roleMayUpdate(R, K, r.ad_client_id == null ? 0 : r.ad_client_id, r.ad_org_id == null ? 0 : r.ad_org_id, null, 'deleted');   // GridTable.dataDelete L2199: canUpdate(client, org, table, 0): the role cannot update that client/org -> AccessCannotDelete (Record_ID 0: no record-access question, as legacy)
   const tq = O.rows('SELECT t.isreadonly AS tro, x.isdeleteable AS del FROM ad_tab t JOIN ad_table x ON x.ad_table_id=t.ad_table_id WHERE t.ad_tab_id=?', [tab.id])[0] || {};
   if (tq.tro === 'Y') refuse(K.name + ' is not deleted: the tab is read-only (GridTable.dataDelete L2170: AccessCannotDelete)');
   if (tq.del === 'N') refuse(K.name + ' is not deleted: the table is not deleteable (GridTable.dataDelete L2177: AccessNotDeleteable)');
@@ -381,6 +513,7 @@ async function loadRecords(O, a) {
   if (!a.kind) refuse('--kind is required');
   if (!a.file) refuse('--file is required (a .csv)');
   if (!/\.csv$/i.test(String(a.file))) refuse('the file must be a .csv: ' + a.file);
+  if (a.role != null) refuse('mis.load does not judge a role yet: the loader is a process, and its access is the process grant (AD_Process_Access), which is not wired here; run it without role. Nothing was loaded');
   const K = kindRef(O, a.kind), dry = String(a.dry == null ? 'Y' : a.dry).toUpperCase() !== 'N', t0 = Date.now();
   let text; try { text = fs.readFileSync(a.file, 'utf8'); } catch (e) { refuse('cannot read ' + a.file + ': ' + (e.code || e.message)); }
   const XL = require(path.join(ROOT, 'erp', 'xlsx.mini.min.js')), wb0 = XL.read(text, { type: 'string', raw: true });
@@ -414,9 +547,9 @@ async function loadRecords(O, a) {
 async function main(argv) {
   const cmd = argv[0], a = {};
   for (let i = 1; i < argv.length; i++) { const m = /^--(\w+)$/.exec(argv[i]); if (!m || i + 1 >= argv.length) { say('FAIL usage: ' + argv[i]); return 2; } if (m[1] === 'where') (a.where = a.where || []).push(argv[++i]); else a[m[1]] = argv[++i]; }
-  if (['find', 'actions', 'describe', 'read', 'list', 'sum', 'group', 'new', 'update', 'delete', 'load'].concat(Object.keys(ACT)).indexOf(cmd) < 0) { say('FAIL usage: erp_cli.js find|actions|complete|void|close|reverse|describe|read|list|sum|group --kind K (--number N | --id I) [--role R]'); return 2; }
+  if (['find', 'actions', 'describe', 'read', 'list', 'sum', 'group', 'new', 'update', 'delete', 'load', 'add_window'].concat(Object.keys(ACT)).indexOf(cmd) < 0) { say('FAIL usage: erp_cli.js find|actions|complete|void|close|reverse|describe|read|list|sum|group --kind K (--number N | --id I) [--role R]'); return 2; }
   try {
-    const O = await boot(a), out = await (ACT[cmd] ? act(O, a, ACT[cmd]) : ({ find, actions, describe, read, list: OC.list, sum: OC.sum, group: OC.group, new: createRecord, update: updateRecord, delete: deleteRecord, load: loadRecords })[cmd](O, a));
+    const O = await boot(a), out = await (ACT[cmd] ? act(O, a, ACT[cmd]) : ({ find, actions, describe, read, list: OC.list, sum: OC.sum, group: OC.group, new: createRecord, update: updateRecord, delete: deleteRecord, load: loadRecords, add_window: addWindow })[cmd](O, a));
     process.stdout.write(JSON.stringify(out) + '\n'); return 0;
   } catch (e) {
     if (e instanceof Refused || e instanceof OC.Refused) { say('REFUSED ' + e.message); process.stdout.write(JSON.stringify({ refused: true, reason: e.message }) + '\n'); return 3; }
@@ -424,4 +557,4 @@ async function main(argv) {
   }
 }
 if (require.main === module) main(process.argv.slice(2)).then(c => process.exit(c));
-module.exports = { main, boot, loadRecords, find, actions, complete, act, ACT, describe, read, persistGroup, resolveOne, docKind, kindRef, byNumber, recordOf, loadEngine, b3 };
+module.exports = { addWindow, ensureTables, tabFor, main, boot, loadRecords, find, actions, complete, act, ACT, describe, read, persistGroup, resolveOne, docKind, kindRef, byNumber, recordOf, loadEngine, b3 };

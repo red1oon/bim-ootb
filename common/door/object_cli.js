@@ -70,20 +70,25 @@ function kindOf(rows, kind) {
 function columnsOf(rows, t) {
   return rows('SELECT c.ad_column_id, c.columnname, c.name, c.ad_reference_id, c.ad_reference_value_id, c.fieldlength, c.iskey, c.isparent, c.ismandatory, c.isupdateable, c.valuemin, c.valuemax, c.isallowlogging FROM ad_column c WHERE c.ad_table_id=? AND c.isactive=\'Y\' ORDER BY c.ad_column_id', [t.ad_table_id]);
 }
-function childTabs(rows, t) {
-  // the tabs one level below the tab that shows this table, in the same window (GridWindow tab levels); the link is the child's IsParent column
-  const mine = rows('SELECT tb.ad_tab_id, tb.ad_window_id, tb.tablevel, tb.seqno FROM ad_tab tb WHERE tb.ad_table_id=? AND tb.isactive=\'Y\' ORDER BY tb.tablevel, tb.seqno', [t.ad_table_id])[0];
+// THE tab picker (bim-compiler prompts/CLI_ERP_IVR.md §18): a kind's active tabs by tab level, sequence, tab id. describe (edit, childTabs), the role (roleFor) and the write path (erp_cli tabFor)
+// all take its first row; no other query in common/door picks a tab (W-MIS-TAB P3). TAB_BREAK=noid is the witness's falsifier (the tie-break dropped: tied tabs fall to SQLite's row order).
+function tabsOf(rows, tableId) {
+  return rows("SELECT tb.ad_tab_id AS id, tb.ad_window_id AS win, tb.tablevel AS lvl, tb.seqno AS seq FROM ad_tab tb WHERE tb.ad_table_id=? AND tb.isactive='Y' ORDER BY tb.tablevel, tb.seqno" + (process.env.TAB_BREAK === 'noid' ? '' : ', tb.ad_tab_id'), [tableId]);
+}
+function childTabs(rows, t, tabId) {
+  // the tabs one level below the tab that shows this table, in the same window (GridWindow tab levels); the link is the child's IsParent column. tabId: the tab a role opens (roleFor), else the first.
+  const mine = (tabId != null ? rows("SELECT tb.ad_tab_id AS id, tb.ad_window_id AS win, tb.tablevel AS lvl, tb.seqno AS seq FROM ad_tab tb WHERE tb.ad_tab_id=?", [tabId]) : tabsOf(rows, t.ad_table_id))[0];
   if (!mine) return [];
-  return rows('SELECT tb.name, tb.issinglerow, tb.isreadonly, tb.tablevel, tb.seqno, t2.name AS kind, t2.tablename, t2.ad_table_id FROM ad_tab tb JOIN ad_table t2 ON t2.ad_table_id=tb.ad_table_id WHERE tb.ad_window_id=? AND tb.isactive=\'Y\' AND tb.tablevel=? AND tb.seqno>? ORDER BY tb.seqno', [mine.ad_window_id, mine.tablevel + 1, mine.seqno])
+  return rows('SELECT tb.name, tb.issinglerow, tb.isreadonly, tb.tablevel, tb.seqno, t2.name AS kind, t2.tablename, t2.ad_table_id FROM ad_tab tb JOIN ad_table t2 ON t2.ad_table_id=tb.ad_table_id WHERE tb.ad_window_id=? AND tb.isactive=\'Y\' AND tb.tablevel=? AND tb.seqno>? ORDER BY tb.seqno', [mine.win, mine.lvl + 1, mine.seq])
     .map(c => ({ kind: c.kind, table: c.tablename, tab: c.name, single: c.issinglerow === 'Y', readonly: c.isreadonly === 'Y', link: (rows('SELECT columnname FROM ad_column WHERE ad_table_id=? AND isparent=\'Y\' AND isactive=\'Y\'', [c.ad_table_id])[0] || {}).columnname || null }));
 }
 function listValues(rows, refId) { return rows("SELECT value, name FROM ad_ref_list WHERE ad_reference_id=? AND isactive='Y' ORDER BY value", [refId]); }
 
 // CLI_ERP_IVR §9 (V1-a): what the edit screen and type assist need, read from the dictionary rows ONLY; a cell the dictionary leaves empty gives NO key (never a default).
 // The field is the one the kind's FIRST tab shows (lowest tablevel, seqno: the same pick as childTabs). A model whose patch lacks a table or column here simply omits those keys.
-function edit(rows, t, cols) {
+function edit(rows, t, cols, tabId) {
   const have = (tb, c) => rows("SELECT 1 FROM pragma_table_info('" + tb + "') WHERE lower(name)=?", [c]).length > 0, tbl = (n) => rows("SELECT name FROM sqlite_master WHERE type='table' AND lower(name)=?", [n]).length > 0;
-  const tab = tbl('ad_tab') && tbl('ad_field') ? rows('SELECT ad_tab_id FROM ad_tab WHERE ad_table_id=? AND isactive=\'Y\' ORDER BY tablevel, seqno', [t.ad_table_id])[0] : null;
+  const first = tabId == null && tbl('ad_tab') && tbl('ad_field') ? tabsOf(rows, t.ad_table_id)[0] : null, tab = tabId != null ? { ad_tab_id: tabId } : first ? { ad_tab_id: first.id } : null;
   const F = {}; if (tab) rows('SELECT * FROM ad_field WHERE ad_tab_id=? AND isactive=\'Y\'', [tab.ad_tab_id]).forEach(f => { F[f.ad_column_id] = f; });
   const C = {}; const cc = ['help', 'readonlylogic', 'isalwaysupdateable', 'ad_val_rule_id', 'isallowcopy'].filter(c => have('ad_column', c));
   if (cc.length) rows('SELECT ad_column_id, ' + cc.join(', ') + ' FROM ad_column WHERE ad_table_id=? AND isactive=\'Y\'', [t.ad_table_id]).forEach(r => { C[r.ad_column_id] = r; });
@@ -105,13 +110,61 @@ function edit(rows, t, cols) {
     return o;
   };
 }
+// ── the role on anything that lists (bim-compiler prompts/CLI_ERP_IVR.md §17; NEURO §R.V item 6). The rules are erp/ad_access.js RoleContext (the MRole port); this only asks them.
+// Without --role nothing is filtered (null). With it: the window the role is granted (rule 1), the row clause (rules 2-4), the column verdicts (rules 5-6). No table is named.
+const ROLE_BREAK = () => process.env.ROLE_BREAK || '';   // W-MIS-ROLE falsifiers: norows | nowindow | nocolumns
+const b3of = (O) => O.b3 || { prepare: (sql) => ({ get: (...p) => O.rows(sql, p)[0], all: (...p) => O.rows(sql, p) }) };
+function roleCtx(O, a) {
+  if (a.role == null) return null;
+  if (!/^\d+$/.test(String(a.role))) refuse('role is an AD_Role id (a number), got "' + a.role + '"');
+  if (!O.rows("SELECT 1 AS x FROM sqlite_master WHERE type='table' AND lower(name)='ad_role'").length) refuse('this model holds no roles, so role ' + a.role + ' cannot be applied');
+  O._roles = O._roles || {};
+  if (!(a.role in O._roles)) { let rc = null; try { rc = require('../../erp/ad_access.js').buildRole(b3of(O), Number(a.role)); } catch (e) { rc = null; } O._roles[a.role] = rc; }
+  if (!O._roles[a.role]) refuse('unknown role ' + a.role);
+  return O._roles[a.role];
+}
+// the access of a role to ONE table (no window question): the row clause and the column verdicts. Used for the kind itself and for the child rows a read shows.
+function accessOf(O, rc, tableId, cols) {
+  const AC = require('../../erp/ad_access.js'), tr = O.rows('SELECT name, accesslevel FROM ad_table WHERE ad_table_id=?', [tableId])[0] || {};
+  const un = AC.unportedRules(b3of(O), rc, tableId);
+  if (un.length) refuse('role ' + rc.AD_Role_ID + ' (' + rc.name + ') cannot be judged for ' + tr.name + ': it uses a rule this twin has not ported: ' + un.join('; ') + '; nothing is shown');
+  const has = (n) => cols.some(c => c.columnname.toLowerCase() === n), keys = cols.filter(c => c.iskey === 'Y'), key = keys.length === 1 ? keys[0].columnname : null;
+  const T = { tableId, level: tr.accesslevel, keyColumn: key, hasClient: has('ad_client_id'), hasOrg: has('ad_org_id') };
+  return { rc, tableId, level: tr.accesslevel,
+    where: (rw) => ROLE_BREAK() === 'norows' ? '' : rc.accessWhere(T, !!rw),
+    canRead: (c) => ROLE_BREAK() === 'nocolumns' || rc.isColumnAccess(tableId, tr.accesslevel, c.ad_column_id, true),
+    canWrite: (c) => ROLE_BREAK() === 'nocolumns' || rc.isColumnAccess(tableId, tr.accesslevel, c.ad_column_id, false) };
+}
+function roleFor(O, t, cols, a) {
+  const rc = roleCtx(O, a); if (!rc) return null;
+  const R = accessOf(O, rc, t.ad_table_id, cols);
+  const tabs = tabsOf(O.rows, t.ad_table_id);
+  const tab = ROLE_BREAK() === 'nowindow' ? tabs[0] : tabs.filter(x => rc.gateWindow(Number(x.win)).allowed)[0];   // GridWindowVO.create L203: no AD_Window_Access row = "No Window"
+  if (!tab) refuse('role ' + rc.AD_Role_ID + ' (' + rc.name + ') is not granted a window that shows ' + t.name + ' (AD_Window_Access)');
+  const wn = (O.rows('SELECT name FROM ad_window WHERE ad_window_id=?', [tab.win])[0] || {}).name;
+  R.tab = tab.id; R.window = { id: tab.win, name: wn, readWrite: ROLE_BREAK() === 'nowindow' ? true : rc.gateWindow(Number(tab.win)).readWrite };
+  R.info = { id: rc.AD_Role_ID, name: rc.name, window: R.window };
+  R.cols = cols.filter(R.canRead);
+  R.named = (name, what) => { const c = cols.filter(x => x.columnname.toLowerCase() === String(name).toLowerCase())[0]; if (c && !R.canRead(c)) refuse('role ' + rc.AD_Role_ID + ' (' + rc.name + ') may not read ' + c.columnname + ' of ' + t.name + ' (AD_Column_Access), so it cannot be used for ' + what); };
+  return R;
+}
+// the columns a row verb names (filters, columns, sort, sum, by): a column the role may not read is refused before anything is read; then the role's rows are the only rows
+function roleRows(O, t, cols, a) {
+  const R = roleFor(O, t, cols, a); if (!R) return { R: null, cols, and: [] };
+  (a.where || []).forEach(w => { const m = /^([A-Za-z_]\w*)=/.exec(w); if (m) R.named(m[1], 'a filter'); });
+  if (a.columns) String(a.columns).split(',').forEach(x => R.named(x.trim(), 'columns'));
+  if (a.sort) R.named(String(a.sort).replace(/^-/, ''), 'sort'); if (a.column) R.named(a.column, 'sum'); if (a.by) R.named(a.by, 'by');
+  const w = R.where(false);
+  return { R, cols: R.cols, and: w ? [w] : [], all: cols.length };
+}
 function describe(O, a) {
-  const t = kindOf(O.rows, a.kind), cols = columnsOf(O.rows, t), tabs = childTabs(O.rows, t);
-  const X = edit(O.rows, t, cols);
+  const t = kindOf(O.rows, a.kind), all = columnsOf(O.rows, t), R = roleFor(O, t, all, a), cols = R ? R.cols : all, tabs = childTabs(O.rows, t, R ? R.tab : null);
+  const X = edit(O.rows, t, cols, R ? R.tab : null);
   const props = cols.map(c => {
     const p = { name: c.columnname, label: c.name, type: REF[c.ad_reference_id] || 'ref:' + c.ad_reference_id, mandatory: c.ismandatory === 'Y', updateable: c.isupdateable === 'Y', key: c.iskey === 'Y', parent: c.isparent === 'Y', length: c.fieldlength };
     if (c.valuemin != null) p.min = c.valuemin; if (c.valuemax != null) p.max = c.valuemax;
     if (c.ad_reference_id === 17 && c.ad_reference_value_id != null) p.values = listValues(O.rows, c.ad_reference_value_id).map(v => v.value);
+    if (R && (!R.window.readWrite || !R.canWrite(c))) p.roleReadOnly = true;   // GridField.isEditable L518-526: the role may read it, not write it
     if (!process.env.ERP_BREAK_DESCFIELD) Object.assign(p, X(c)); else Object.assign(p, { displayed: false, seq: 0, displayLogic: '', readOnlyLogic: '', help: '' });   // ERP_BREAK_DESCFIELD: the falsifier of W-ERP-VERBS-DOOR D4 (empty cells filled with defaults)
     return p;
   });
@@ -122,6 +175,7 @@ function describe(O, a) {
   if (AT.canHave(tab)) methods.push('attach');
   if (t.ischangelog === 'Y') methods.push('history');
   const out = { kind: t.name, table: t.tablename, uu: t.ad_table_uu, key: key ? key.columnname : null, highVolume: t.ishighvolume === 'Y', properties: props, childTabs: tabs, methods };
+  if (R) out.role = R.info;
   if (a.uu) out.record = { uu: a.uu, childWhere: tabs.map(c => c.table + '.' + c.link + ' = ' + lit(a.uu)) };   // the link, read from the dictionary; no data row is read
   say('describe kind=' + t.name + ' properties=' + props.length + ' childTabs=' + tabs.length + ' methods=' + methods.join(',') + ' source=dictionary-rows-only');
   return out;
@@ -168,9 +222,22 @@ function record(O, a) {
   return { t, cols, key, row };
 }
 function read(O, a) {
-  const r = record(O, a), tx = O.trx(), kids = childTabs(O.rows, r.t).map(c => ({ kind: c.kind, rows: c.link ? tx.find(c.table, { [c.link]: a.uu }) : [] }));
+  const r = record(O, a), tx = O.trx(), R = roleFor(O, r.t, r.cols, a);
+  if (R) {   // a record outside the role's rows answers exactly as one that does not exist; columns the role may not read are not shown; the child rows pass their own table's clause
+    const w = R.where(false);
+    if (w && !O.rows('SELECT 1 AS x FROM ' + r.t.tablename + ' WHERE ' + r.key.columnname + '=? AND ' + w, [/^-?\d+$/.test(String(a.uu)) ? Number(a.uu) : a.uu]).length) refuse('no ' + r.t.name + ' with ' + r.key.columnname + ' ' + a.uu);
+    r.cols.filter(c => !R.canRead(c)).forEach(c => { delete r.row[c.columnname.toLowerCase()]; });
+  }
+  const kids = childTabs(O.rows, r.t, R ? R.tab : null).map(c => {
+    let rs = c.link ? tx.find(c.table, { [c.link]: a.uu }) : [];
+    if (R && rs.length) { const ct = kindOf(O.rows, c.table), cc = columnsOf(O.rows, ct), CA = accessOf(O, R.rc, ct.ad_table_id, cc), cw = CA.where(false), ck = cc.filter(x => x.iskey === 'Y');
+      if (cw && ck.length === 1) { const ok = {}; O.rows('SELECT ' + ck[0].columnname + ' AS k FROM ' + ct.tablename + ' WHERE ' + c.link + '=? AND ' + cw, [/^-?\d+$/.test(String(a.uu)) ? Number(a.uu) : a.uu]).forEach(x => { ok[x.k] = 1; }); rs = rs.filter(x => ok[x[ck[0].columnname.toLowerCase()]]); }
+      else if (cw) rs = [];   // a child table with no single key cannot be matched row by row: nothing is shown rather than everything
+      const hide = cc.filter(x => !CA.canRead(x)).map(x => x.columnname.toLowerCase()); if (hide.length) rs = rs.map(x => { const o = Object.assign({}, x); hide.forEach(h => { delete o[h]; }); return o; }); }
+    return { kind: c.kind, rows: rs };
+  });
   say('read kind=' + r.t.name + ' uu=' + a.uu + ' key=' + r.key.columnname + ' children=' + kids.map(k => k.kind + ':' + k.rows.length).join(','));
-  return { kind: r.t.name, uu: a.uu, record: r.row, children: kids };
+  return Object.assign({ kind: r.t.name, uu: a.uu, record: r.row, children: kids }, R ? { role: R.info } : {});
 }
 // shape checks from the dictionary (type, mandatory, list, updateable). The generated validator shared with the door is §0.4 detail 3a: deferred; this is the dictionary's own rule meanwhile.
 function shape(O, cols, c, value) {
@@ -232,8 +299,8 @@ function filtersOf(t, cols, a) {   // the shared filter reader: --where column=v
   return process.env.ROWS_BREAK === 'nofilter' ? { filters, where: [], params: [] } : { filters, where, params };   // the break: the filters are named in the answer but not applied
 }
 function count(O, a) {
-  const t = kindOf(O.rows, a.kind), cols = columnsOf(O.rows, t), { filters, where, params } = filtersOf(t, cols, a);
-  const population = Number(O.rows('SELECT count(*) AS n FROM ' + t.tablename)[0].n);
+  const t = kindOf(O.rows, a.kind), RR = roleRows(O, t, columnsOf(O.rows, t), a), cols = RR.cols, F = filtersOf(t, cols, a), filters = F.filters, params = F.params, where = F.where.concat(RR.and);
+  const population = popOf(O, t, RR);
   let n = filters.length && CB() !== 'nofilter' ? Number(O.rows('SELECT count(*) AS n FROM ' + t.tablename + ' WHERE ' + where.join(' AND '), params)[0].n) : population;
   if (CB() === 'plus1') n += 1;
   const verdict = population === 0 && CB() !== 'zero_ok' ? 'VACUOUS' : 'OK';
@@ -250,7 +317,8 @@ function colOf(t, cols, name, what) {
 }
 const isNum = (c) => ['number', 'integer', 'amount', 'quantity'].indexOf(REF[c.ad_reference_id]) >= 0;
 function whereSql(w) { return w.where.length ? ' WHERE ' + w.where.join(' AND ') : ''; }
-const popOf = (O, t) => Number(O.rows('SELECT count(*) AS n FROM ' + t.tablename)[0].n);
+const popOf = (O, t, RR) => Number(O.rows('SELECT count(*) AS n FROM ' + t.tablename + (RR && RR.and.length ? ' WHERE ' + RR.and.join(' AND ') : ''))[0].n);   // under a role: the rows the role may see (a count must not leak what the list hides)
+const roleSay = (RR) => RR && RR.R ? ' role=' + RR.R.info.id + ' window=' + RR.R.window.id + ' rw=' + RR.R.window.readWrite + ' access=' + JSON.stringify(RR.and.join(' AND ')) + ' hidden_columns=' + (RR.R.cols ? (RR.all - RR.R.cols.length) : 0) : ' role=none(nothing filtered)';
 // names=Y (CLI_ERP_IVR §13 L5): each lookup column (reference 18 table, 19 table direct, 30 search) is written as the NAME of the record it points at, resolved from the dictionary (AD_Ref_Table, or the
 // column name minus _ID), never a table named here. A target with no Name column, or a value that points at nothing, stays as the key (as the loader reads a lookup table with no Name column).
 function lookupNames(O, t, cols, names, rows) {
@@ -266,7 +334,7 @@ function lookupNames(O, t, cols, names, rows) {
   });
 }
 function list(O, a) {
-  const t0 = Date.now(), t = kindOf(O.rows, a.kind), cols = columnsOf(O.rows, t), w = filtersOf(t, cols, a);
+  const t0 = Date.now(), t = kindOf(O.rows, a.kind), RR = roleRows(O, t, columnsOf(O.rows, t), a), cols = RR.cols, w = filtersOf(t, cols, a), R = RR.R;
   const has = (n) => cols.filter(x => x.columnname.toLowerCase() === n)[0];
   const key = cols.filter(x => x.iskey === 'Y')[0];
   const names = a.columns ? String(a.columns).split(',').map(x => colOf(t, cols, x.trim(), 'columns').columnname)
@@ -276,13 +344,14 @@ function list(O, a) {
   const limit = RB() === 'capoff' ? 1000000 : a.limit == null ? LIST_DEFAULT : Number(a.limit), offset = a.offset == null ? 0 : Number(a.offset);
   if (!Number.isInteger(limit) || limit < 1 || (limit > LIST_MAX && RB() !== 'capoff')) refuse('limit must be a whole number from 1 to ' + LIST_MAX + ', got "' + a.limit + '"');
   if (!Number.isInteger(offset) || offset < 0) refuse('offset must be a whole number, 0 or more, got "' + a.offset + '"');
-  const population = popOf(O, t), total = w.where.length ? Number(O.rows('SELECT count(*) AS n FROM ' + t.tablename + whereSql(w), w.params)[0].n) : population;
+  const population = popOf(O, t, RR); w.where = w.where.concat(RR.and);
+  const total = w.where.length ? Number(O.rows('SELECT count(*) AS n FROM ' + t.tablename + whereSql(w), w.params)[0].n) : population;
   const raw = O.rows('SELECT ' + names.map(n => n + ' AS "' + n + '"').join(', ') + ' FROM ' + t.tablename + whereSql(w) + order + ' LIMIT ' + limit + ' OFFSET ' + offset, w.params);
   const rows = raw.map(r => { const o = {}; names.forEach(n => { o[n] = r[n] !== undefined ? r[n] : r[n.toLowerCase()]; }); return o; });
   if (String(a.names || '').toUpperCase() === 'Y') lookupNames(O, t, cols, names, rows);   // a lookup column as the name of the record it points at: what the window's grid shows and what mis.load reads
   const verdict = population === 0 ? 'VACUOUS' : 'OK';
-  say('list kind=' + t.name + ' table=' + t.tablename + ' filters=' + JSON.stringify(w.filters) + ' rows=' + rows.length + ' total=' + total + ' population=' + population + ' offset=' + offset + ' limit=' + limit + ' ms=' + (Date.now() - t0) + ' verdict=' + verdict);
-  return { kind: t.name, table: t.tablename, filters: w.filters, columns: names, rows, shown: rows.length, total, population, offset, verdict, summary: verdict === 'VACUOUS' ? 'this model holds no ' + t.name + ' record, so nothing was listed' : 'shown ' + rows.length + ' of ' + total + ' ' + t.name };
+  say('list kind=' + t.name + ' table=' + t.tablename + ' filters=' + JSON.stringify(w.filters) + roleSay(RR) + ' rows=' + rows.length + ' total=' + total + ' population=' + population + ' offset=' + offset + ' limit=' + limit + ' ms=' + (Date.now() - t0) + ' verdict=' + verdict);
+  return { kind: t.name, table: t.tablename, filters: w.filters, columns: names, rows, shown: rows.length, total, population, offset, verdict, summary: verdict === 'VACUOUS' ? 'this model holds no ' + t.name + ' record' + (R ? ' that role ' + R.info.id + ' may see' : '') + ', so nothing was listed' : 'shown ' + rows.length + ' of ' + total + ' ' + t.name, ...(R ? { role: R.info } : {}) };
 }
 function decSum(texts) {   // exact: BigInt coefficient over a common scale (no floating point)
   const parts = texts.map(s => { const m = /^([+-]?)(\d+)(?:\.(\d+))?(?:[eE]([+-]?\d+))?$/.exec(String(s).trim()); if (!m) throw new Error('"' + s + '" is not a number the sum can add exactly'); let sc = (m[3] || '').length - (m[4] ? +m[4] : 0), big = BigInt(m[2] + (m[3] || '')); if (sc < 0) { big *= 10n ** BigInt(-sc); sc = 0; } return [m[1] === '-' ? -big : big, sc]; });
@@ -291,23 +360,23 @@ function decSum(texts) {   // exact: BigInt coefficient over a common scale (no 
   return (neg && /[1-9]/.test(out) ? '-' : '') + out;
 }
 function sum(O, a) {
-  const t0 = Date.now(), t = kindOf(O.rows, a.kind), cols = columnsOf(O.rows, t), w = filtersOf(t, cols, a);
+  const t0 = Date.now(), t = kindOf(O.rows, a.kind), RR = roleRows(O, t, columnsOf(O.rows, t), a), cols = RR.cols, w = filtersOf(t, cols, a), R = RR.R;
   if (!a.column) refuse('sum needs --column');
   const c = colOf(t, cols, a.column, 'sum'); if (!isNum(c)) refuse(c.columnname + ' is not a number column (' + (REF[c.ad_reference_id] || 'reference ' + c.ad_reference_id) + '), so it cannot be summed');
-  const population = popOf(O, t);
+  const population = popOf(O, t, RR); w.where = w.where.concat(RR.and);
   const vals = O.rows('SELECT CAST(' + c.columnname + ' AS TEXT) AS v FROM ' + t.tablename + whereSql(w) + (w.where.length ? ' AND ' : ' WHERE ') + c.columnname + ' IS NOT NULL', w.params).map(r => r.v);
   const total = RB() === 'floatsum' ? String(vals.reduce((x, v) => x + Number(v), 0)) : decSum(vals), verdict = population === 0 ? 'VACUOUS' : 'OK';
-  say('sum kind=' + t.name + ' column=' + c.columnname + ' filters=' + JSON.stringify(w.filters) + ' n=' + vals.length + ' sum=' + total + ' population=' + population + ' ms=' + (Date.now() - t0) + ' verdict=' + verdict);
-  return { kind: t.name, table: t.tablename, column: c.columnname, filters: w.filters, n: vals.length, sum: total, population, verdict, summary: verdict === 'VACUOUS' ? 'this model holds no ' + t.name + ' record, so nothing was summed' : total + ' = sum of ' + c.columnname + ' over ' + vals.length + ' ' + t.name };
+  say('sum kind=' + t.name + ' column=' + c.columnname + ' filters=' + JSON.stringify(w.filters) + roleSay(RR) + ' n=' + vals.length + ' sum=' + total + ' population=' + population + ' ms=' + (Date.now() - t0) + ' verdict=' + verdict);
+  return { kind: t.name, table: t.tablename, column: c.columnname, filters: w.filters, n: vals.length, sum: total, population, verdict, summary: verdict === 'VACUOUS' ? 'this model holds no ' + t.name + ' record, so nothing was summed' : total + ' = sum of ' + c.columnname + ' over ' + vals.length + ' ' + t.name, ...(R ? { role: R.info } : {}) };
 }
 function group(O, a) {
-  const t0 = Date.now(), t = kindOf(O.rows, a.kind), cols = columnsOf(O.rows, t), w = filtersOf(t, cols, a);
+  const t0 = Date.now(), t = kindOf(O.rows, a.kind), RR = roleRows(O, t, columnsOf(O.rows, t), a), cols = RR.cols, w = filtersOf(t, cols, a), R = RR.R;
   if (!a.by) refuse('group needs --by');
-  const c = colOf(t, cols, a.by, 'by'), population = popOf(O, t);
+  const c = colOf(t, cols, a.by, 'by'), population = popOf(O, t, RR); w.where = w.where.concat(RR.and);
   const raw = O.rows('SELECT ' + c.columnname + ' AS g, count(*) AS n FROM ' + t.tablename + whereSql(w) + ' GROUP BY ' + c.columnname + ' ORDER BY n DESC, g', w.params);
   const rows = raw.map(r => ({ [c.columnname]: r.g, count: Number(r.n) })), records = rows.reduce((x, r) => x + r.count, 0), verdict = population === 0 ? 'VACUOUS' : 'OK';
-  say('group kind=' + t.name + ' by=' + c.columnname + ' filters=' + JSON.stringify(w.filters) + ' groups=' + rows.length + ' records=' + records + ' population=' + population + ' ms=' + (Date.now() - t0) + ' verdict=' + verdict);
-  return { kind: t.name, table: t.tablename, by: c.columnname, filters: w.filters, columns: [c.columnname, 'count'], rows, shown: rows.length, total: rows.length, records, population, verdict, summary: verdict === 'VACUOUS' ? 'this model holds no ' + t.name + ' record, so nothing was counted' : rows.length + ' groups over ' + records + ' ' + t.name };
+  say('group kind=' + t.name + ' by=' + c.columnname + ' filters=' + JSON.stringify(w.filters) + roleSay(RR) + ' groups=' + rows.length + ' records=' + records + ' population=' + population + ' ms=' + (Date.now() - t0) + ' verdict=' + verdict);
+  return { kind: t.name, table: t.tablename, by: c.columnname, filters: w.filters, columns: [c.columnname, 'count'], rows, shown: rows.length, total: rows.length, records, population, verdict, summary: verdict === 'VACUOUS' ? 'this model holds no ' + t.name + ' record, so nothing was counted' : rows.length + ' groups over ' + records + ' ' + t.name, ...(R ? { role: R.info } : {}) };
 }
 function history(O, a) {
   const r = record(O, a), CC = require('../../erp/crud_core.js');
@@ -335,4 +404,4 @@ async function main(argv) {
   }
 }
 if (require.main === module) main(process.argv.slice(2)).then(c => process.exit(c));
-module.exports = { main, describe, read, update, attach, history, count, list, sum, group, decSum, boot, open, kindOf, columnsOf, childTabs, applyOp, loadChunker, Refused, oplogFile, readOps };
+module.exports = { tabsOf, roleFor, roleCtx, accessOf, main, describe, read, update, attach, history, count, list, sum, group, decSum, boot, open, kindOf, columnsOf, childTabs, applyOp, loadChunker, Refused, oplogFile, readOps };
