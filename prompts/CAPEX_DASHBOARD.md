@@ -8,7 +8,7 @@ proves and has a break switch that must FAIL. Honour this block until the lane i
 **DONE + merged (bim-ootb):** #2900 study §5.64 · #2901 owner approval + §5.65 UAT Guide SPEC · #2902 PR A engine (context parse, `evaluateCalc`, `queryKeys`; W-PA-CTX) · #2903 PR B (18 page measures, pack 1.0.6, `capex/pa_tiles.js`, goal path carries the login context, `tiles.js` round-once fix; W-PA-FLAT, W-PA-TILES 101/0) · #2905 PR C1 (page reads PA rows on both sources; `QueryPAMeasureCalc` WS type on the pilot + test instance; W-DASH-TWIN D8). bim-compiler #595 guide merged + PUBLISHED (safe_gh_deploy PASS, live page fetched back).
 **NEXT, in order:**
 (0) **§5.67 the test-data 2Pack.** Part 1 is MERGED (#2909): `capex/plugin/testdata_2pack/202611131200_GardenWorld_CAPEXTestData.zip`, and MProject.beforeSave is in the twin (W-PROJECT-CURRENCY 4/0). Remaining, in order:
-- (a) **G1:** the twin Pack In client-data path. Code is on the pushed branch `wip/capex-td-pack-g1` (UNWITNESSED, no PR): session client, `AD_Package_UUID_Map` remap, save through the model layer.
+- (a) ✅ DONE 2026-11-13 (§5.69, W-TD-PACK-TWIN 6/0, branch `feat/capex-td-pack-g1`; `wip/capex-td-pack-g1` is superseded, delete it): the twin Pack In client-data path. OPEN from it: legacy's re-walk bumps `Updated` on every row, the twin does not (§5.69 RESULT).
 - (b) A client-admin Pack In entry in the twin. Today the twin packs in only at plugin Start (System). Port iDempiere's Pack In window / `PackInProcess` (`AD_Package_Imp_Proc` + attached zip), so a GardenWorld admin packs it in as on legacy.
 - (c) **W-TD-PACK.** Twin half: headless browser on `erp/idempiere.html`, as `erp/tests/witness_packin.js`. Legacy half: `RUN_ApplyPackInFromFolder.sh` (`~/idempiere-bimdoc/server/utils`) on a database copy, restored after.
 - (d) **G2:** the model layer's mandatory-column check (the twin saved a C_Project with no currency). (1) **PR C2:** delete the moved formulas from `tiles.js compute()`. The drill buckets come from `GoalEngine.queryKeys` of each bound slot (`pa_tiles.BIND`, `POP` for the population). Check every drill key's population against W-DASH-DRILL (59/0 today) before deleting. `tiles.js` keeps Stage, BIM documents, Last updated, the drill row view `info()`, `projectDetail`, availability (`NEEDS`/`blocked`), formatting, `twin()`. When no PA rows exist, the fallback becomes "no data (CAPEX PA rows not installed)". (2) W-DASH-SYNC E2 premise fix (above). (3) The BIM documents measure in the BIM Document plugin's pack; the Stage tile as an `AD_Chart` (needs a twin chart reader). (4) §5.65 UAT Guide build (after C2): its chapters 4–6 become the hands-on exercise over the §5.67 projects. (5) Owner decision, named: retire the per-currency USD/BDT rows (released packs; pilot Home uses them).
@@ -1348,3 +1348,44 @@ Same video timing as the English cut frame for frame (5694 frames, 227.78 s); on
 - PASS: W-PA-RENDER 27/0 (B3 now 22 active goals, with the arithmetic), W-PA-EDITOR 7/0 (edits the login-currency goal), W-GOAL-STORE 10/0, W-HOME-TIP 9/0, W-PA-ENGINE 23/0, W-GOAL-ENGINE 5/0.
 - W-PA-TILES (pilot) `PASS 101/0`, cleanup 13.
 - W-DASH-SYNC `judged=144 fail=1`: only E2, the expired premise explained above. Z: the pilot's real Home == the twin's, 22 of 22.
+### 5.69 SPEC — G1: the twin's Pack In takes a client's DATA 2Pack the way legacy does (2026-11-13; written before code; owner on where the rows live: *"Base DB + replay"*)
+**The issue:** the §5.67 zip packs into legacy (12/42/84/84/2, currency from the price list, 4 `M_Product_Acct` rows, a second run changes nothing) but the twin's `pipo_packin.apply` is the dictionary path: it keeps the pack's client, has no `AD_Package_UUID_Map`, and writes SQL with no model class, so `C_Project.C_Currency_ID` stays empty and `MProduct.afterSave` never runs.
+**Where the rows live (owner's choice):** the base DB, as plugin packs do (`plugin_overlay._packApply`: one atomic pass on a `recording(db)`, the delta + the zip bytes kept, replayed on every load). Teamwork sync does not carry them; each site packs the zip in, as on legacy.
+**What changes, generic (no table names in the engine):**
+- `apply(db, xml, { clientId, model: { ML, env } })`. `clientId > 0` = the client-data path (`Env.getAD_Client_ID(ctx)`):
+  - `POFinder.getTargetUUID` (:45-56): a pack UUID is looked up in `AD_Package_UUID_Map` for this client first, on the record AND on every uuid reference (`ReferenceUtils.java:54`).
+  - `POFinder.findPO` (:80-108): a row found by UUID in another client > 0 is left alone: a new UUID is generated, mapped (`updateUUIDMap` :64-78) and the record is created. Found by ID in another client: refused with legacy's message.
+  - `PoFiller.autoFill` :386-392: new rows take the session client and the target UUID.
+- `model` given = every New / Update goes through `ModelLayer.run(q, env, SAVE)` (`PO.saveEx`: initial defaults, beforeSave, the validators, afterSave). The group's ops (CRUD_CREATE / UPDATE / DELETE, `{__opRef}` keys) are written into the same DB inside the Pack In savepoint, keys from `AD_Sequence` (`MSequence.getNextID`), audit columns from the session. A refused save fails the whole pack (legacy: the PackIn transaction rolls back).
+- No `model` = today's dictionary path, unchanged (W-PACKIN, W-PLUGIN-PACKS must not move).
+**Witness W-TD-PACK-TWIN** (`capex/tests/witness_td_pack_twin.js`, headless browser on `erp/idempiere.html`, the shipped zip, read with the system `unzip` for the independent counts):
+- T1 rows per table by target UUID == the pack's record count per table (independent scan of `PackOut.xml`); every row's `AD_Client_ID` = 11.
+- T2 every column the pack carries == the row (references resolved to the target ids), per row; 0 rows judged = INCONCLUSIVE.
+- T3 the model layer ran: every project's `C_Currency_ID` == its price list's currency (not in the pack), and `M_Product_Acct` rows exist for the 2 products (legacy wrote 4).
+- T4 the same zip again: every record `Same`, counts unchanged.
+- T5 remap: a copy of one project moved to another client before the run → the run creates a NEW project for client 11 with a new UUID and one `AD_Package_UUID_Map` row; a further run finds it through the map (`Same`).
+- Break runs, each MUST FAIL: `WTD_BREAK=skiptable` (the c_projecttask records removed from the XML fed to the engine, the independent count still from the zip) → T1; `WTD_BREAK=shiftdate` (one phase StartDate shifted a day in the XML, the comparison against the zip's) → T2; `WTD_BREAK=nomodel` (no `model`) → T3.
+**Not in this step (next, named):** the client-admin Pack In entry in the twin (item (b)), keeping the delta for replay, the legacy half of W-TD-PACK (twin rows == legacy rows), G2 mandatory check.
+**§5.69 RESULT (2026-11-13; logs read, scratch not committed):**
+- **W-TD-PACK-TWIN `PASS 6/0`** on the shipped zip (225 records):
+  - T1: 1/2/12/42/84/84 rows, all client 11.
+  - T2: 4,564 values equal.
+  - T3: currency 100 from the price list on 12 of 12 projects; `M_Product_Acct` 2+2; model side rows `m_product_acct 4, m_cost 4, m_product_category_acct 2, ad_treenodepr 2` (`§PACKIN ... modelOps=405`).
+  - T4: re-walk as legacy, T4b: a third run changes nothing.
+  - T5: remap 1 map row; the new project takes its 5 phases and 10 lines.
+  - Breaks, each FAIL: `skiptable` T1, `shiftdate` T2 (`StartDate pack=2026-03-28 twin=2026-03-01`), `nomodel` T2+T3 (currency null, 0 acct rows).
+- **Defects found and fixed on the way:**
+  - (1) `AD_Package_UUID_Map` was in the dictionary with no physical table. It is now created by the boot overlay `ad_import_tables.js ensurePipo`, NOT in `patches/ad_seed.db.sql`, because a line there moves the Team BASE hash (`idempiere.html` note at the overlay calls). A first try regenerated the whole seed patch from the live DB and dropped 11,664 lines: reverted, never committed.
+  - (2) The page's tables return mixed-case column names, so a found row read as all-undefined. Every re-run then failed with a duplicate key, and the cross-client check never fired: the run moved client 12's project back to client 11. The found row is now lower-cased at the lookup (`lcRow`).
+  - (3) After a remap, `POFinder.findPO` returns at once (:96-101) and a client-0 row found by ID is kept (:122-127): the WIP did neither; ported.
+  - (4) A found record is logged `Update` whatever changed (`GenericPOElementHandler.java:103`); the twin logged `Same`. No other code read the label.
+- **Legacy measured (test instance, on a database copy, restored after; `§SETUP_VERDICT PASS`):**
+  - Folder Pack In SKIPS a zip already installed (`PackInApplicationActivator.verifyInstalledPackages ... already installed`). So the §5.67 "the same zip a second time: counts unchanged" was a skip, not a re-walk.
+  - A re-walk (the same zip under a new file name) logs `Update` for 225 of 225 and sets `M_Product.M_AttributeSetInstance_ID` 0 → NULL on the 2 products. Run 1 had stored 0, the column default, for the pack's empty value. The twin does exactly that (T4).
+  - **OPEN, not accepted:** legacy's re-walk also bumps `Updated` on every row (225 of 225), where the twin writes nothing when no column differs. The likely cause is `PO.is_ValueChanged` :802, which uses Java `equals` (BigDecimal scale); not proven. Next: read which column legacy sees changed, then port that rule.
+- **Regressions (each also run on unmodified `origin/main` for the baseline):**
+  - W-PACKIN `GREEN 6/0`, the dictionary path unchanged.
+  - W-PLUGIN-PACKS `RED 2` = K4 + K4b, the same on the baseline.
+  - W-PACKOUT `RED 1` = O6, pre-existing.
+  - W-IMPORT-ORDER `FAIL 1` = TABLE base-hash: got `be91a5c9…` against the pin `38ae6753…`, the SAME on the baseline. The pin is stale and this change does not move the base hash (no hashed file touched).
+  - SW precache audit 268/0. `pipo_packin.js?v=3`, `ad_import_tables.js?v=3`, CACHE_VERSION v1067.
