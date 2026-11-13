@@ -112,7 +112,7 @@ function read(f) { try { return fs.readFileSync(path.join(ERP, f), 'utf8'); } ca
   });
   guard('UNIQUE', 'order-insert', 'c_order: a duplicate INSERT of a stored (DocumentNo, C_DocType_ID, C_BPartner_ID) is refused by ML.save with the legacy text; the same row with a new DocumentNo passes', function () {
     var seedO = one("SELECT documentno, c_doctype_id, c_bpartner_id FROM c_order WHERE documentno='80000' AND c_doctype_id=135 AND c_bpartner_id=112");
-    var t1 = trxNew(), r1 = ML.save(t1, 'c_order', null, ordF('80000')), t2 = trxNew(), r2 = ML.save(t2, 'c_order', null, ordF('80000-UQ'));
+    var t1 = trxNew(), r1 = ML.save(t1, 'c_order', null, ML.newPO(t1, 'c_order', ordF('80000'))), t2 = trxNew(), r2 = ML.save(t2, 'c_order', null, ML.newPO(t2, 'c_order', ordF('80000-UQ')));   // new MOrder(ctx, 0) first: the ctor defaults (DocStatus, the rules) are NOT NULL in the legacy DB, and Postgres checks NOT NULL before the unique index (CAPEX_DASHBOARD.md §5.73)
     check('UNIQUE', 'order-insert', 'duplicate c_order insert refused with the PG text naming c_order_documentno and Key (documentno, c_doctype_id, c_bpartner_id)=(80000, 135, 112); the non-duplicate passes',
       !!seedO && r1.ok === false && r1.error === uqTxt('c_order_documentno', ['documentno', 'c_doctype_id', 'c_bpartner_id'], ['80000', 135, 112]) && r2.ok === true, { seed: seedO, dup: r1, nonDup: r2.ok ? 'ok' : r2.error });
   });

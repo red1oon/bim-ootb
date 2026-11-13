@@ -174,9 +174,8 @@
                       upc: imp.upc, sku: imp.sku, c_uom_id: imp.c_uom_id, m_product_category_id: imp.m_product_category_id, producttype: imp.producttype, imageurl: imp.imageurl, descriptionurl: imp.descriptionurl,
                       volume: imp.volume, weight: imp.weight, customstariffnumber: imp.customstariffnumber, group1: imp.group1, group2: imp.group2, m_attributeset_id: imp.m_attributeset_id };     // MProduct(X_I_Product) MProduct.java:313-337
             if (C_TaxCategory_ID) f.c_taxcategory_id = C_TaxCategory_ID;                                     // product.setC_TaxCategory_ID :493
-            // twin decision (f): PostgreSQL's NOT NULL on these M_Product columns refuses the INSERT (-> product.save() false -> 'Insert Product failed'); the twin's model layer does not model NOT NULL, so the port checks the columns MProduct(X_I_Product) sets
-            var miss = ['value', 'name', 'c_uom_id', 'm_product_category_id', 'producttype', 'c_taxcategory_id'].filter(function (c) { return f[c] == null || f[c] === ''; });
-            var sp0 = trx.setSavepoint(), sv = miss.length ? { ok: false, error: 'null value in column ' + miss.join(',') + ' violates not-null constraint' } : ML().save(trx, 'm_product', null, ML().newPO(trx, 'm_product', f));
+            // PostgreSQL's NOT NULL on M_Product refuses the INSERT (-> product.save() false -> 'Insert Product failed'): ModelLayer.save carries that rule (ML.notNullError, CAPEX_DASHBOARD.md §5.73)
+            var sp0 = trx.setSavepoint(), sv = ML().save(trx, 'm_product', null, ML().newPO(trx, 'm_product', f));
             if (sv.ok) { M_Product_ID = sv.row.m_product_id; noInsert++; }
             else { trx.rollbackTo(sp0); trx.say('§IMPORT_PRODUCT_SAVE_REFUSED row=' + I_Product_ID + ' value=' + imp.value + ' :: ' + String(sv.error).replace(/\s+/g, ' ').slice(0, 200)); markError('Insert Product failed'); return; }   // :495-507
           } else {                                                                                           //	Update Product :509-550 (raw UPDATE: ImageURL is NOT in the SET list)

@@ -382,6 +382,36 @@
     }
     return null;
   }
+  // ── the DB's NOT NULL refusal (G2, bim-ootb prompts/CAPEX_DASHBOARD.md §5.73 — Witness: W-DDL-NOTNULL) ────────────────────────────────────────────────────────────────────────────────────────────────
+  // Legacy has no Java check for an unset mandatory column (PO.saveNew PO.java:3520; isMandatoryOK :2104 is deprecated and uncalled): PostgreSQL refuses the row,
+  // "ERROR: null value in column "<col>" of relation "<table>" violates not-null constraint". The list is ad_ddl_notnull.js (information_schema.columns is_nullable='NO' of the reference
+  // schema, per table in ordinal order = the attribute Postgres names first; * = the column has a physical DEFAULT). It is a script file, not a DB table, so the Team BASE hash does not move.
+  // INSERT (isNew): PO.doInsert omits null columns (PO.java:3735), so a defaulted column is filled by the DB and never refused; the key (:3528 getNextID), <table>_uu (:3547-3554) and the
+  // standard columns (PO.setStandardDefaults :1973-2001, stamped by the host commit from the session) are PO's own. UPDATE: PO.doUpdate sends NULL, so every CHANGED column is checked (a stored
+  // row that already holds a null stays editable, the uniqueError precedent). A listed column this host's table does not have is skipped. Returns the PG text, or null.
+  var _nn = {}, _nnAbsentSaid = false, NN_STD = /^(created|createdby|updated|updatedby|ad_client_id|ad_org_id|isactive)$/;
+  function notNullList() { if (typeof globalThis !== 'undefined' && globalThis.AD_DDL_NOTNULL === false) return null;   // a host that states it has no list (W-DDL-NOTNULL nolist)
+    return (typeof globalThis !== 'undefined' && globalThis.AD_DDL_NOTNULL) || (typeof module !== 'undefined' && module.exports && (function () { try { return require('./ad_ddl_notnull.js'); } catch (e) { return null; } })()) || null; }
+  function notNullCols(trx, table) {
+    var dk = ck(trx.dbId, table); if (_nn[dk]) return _nn[dk];
+    var L = notNullList(); if (!L) { if (!_nnAbsentSaid) { _nnAbsentSaid = true; trx.say('§MODEL-NOTNULL list=absent (ad_ddl_notnull.js not loaded on this host: NOT NULL is not enforced)'); } return []; }
+    var raw = L[table]; if (!raw) return (_nn[dk] = []);
+    var have = {}; try { trx.q('PRAGMA table_info("' + table.replace(/"/g, '') + '")').forEach(function (r) { have[String(r.name).toLowerCase()] = 1; }); } catch (e) {}
+    return (_nn[dk] = String(raw).split(',').map(function (c) { var d = c.charAt(c.length - 1) === '*'; return { c: d ? c.slice(0, -1) : c, d: d }; }).filter(function (x) { return have[x.c]; }));
+  }
+  function notNullError(trx, table, row, isNew, changed, skip) {
+    table = String(table).toLowerCase();
+    var cs = notNullCols(trx, table); if (!cs.length) return null;
+    var idc = isNew ? trx.idCol(table) : null, uuc = table + '_uu', dd = isNew ? ddlDefaults(trx, table) : null;
+    for (var i = 0; i < cs.length; i++) {
+      var c = cs[i].c;
+      if (isNew) { if (cs[i].d || dd[c] != null || c === idc || c === uuc || NN_STD.test(c) || (skip && skip.indexOf(c) >= 0)) continue; }
+      else if (!changed || changed.indexOf(c) < 0) continue;
+      if (row[c] == null) { trx.say('§MODEL-NOTNULL table=' + table + ' column=' + c + ' at=' + (isNew ? 'insert' : 'update')); return 'ERROR: null value in column "' + c + '" of relation "' + table + '" violates not-null constraint'; }
+    }
+    return null;
+  }
+  var NN_SAVED = 'DBExecuteError:';   // the saved error of a failed statement: DB.java:852 log.saveError("DBExecuteError", e), joined as "DBExecuteError:<text>" (PO.java:6025, GridTable.java:1795)
   // save — PO.save (PO.java saveNew/saveUpdate): beforeSave → validators → write → afterSave → validators.
   // opts.isReplication = PO.saveReplica(true): the AFTER timing is the *_REPLICATION one INSTEAD of afterNew/afterChange (PO.java:2783-2789; the twin's AFTER_SAVE alias is a NEW-or-CHANGE alias so it
   //   does not fire either), the received key is kept (Trx.insert keepKey, :3530-3535). The BEFORE timings and the model class's beforeSave/afterSave are not replica-gated in legacy.
@@ -400,11 +430,12 @@
     var e1 = fire(trx, isNew ? 'BEFORE_NEW' : 'BEFORE_CHANGE', table, rec, Object.assign({ recordOld: old }, rx)) || fire(trx, 'BEFORE_SAVE', table, rec, Object.assign({ recordOld: old }, rx));
     if (e1) return { ok: false, error: e1 };
     var live;
-    if (isNew) { saveNewNumbers(trx, table, rec); var eu = uniqueError(trx, table, rec, null); if (eu) return { ok: false, error: eu }; ev(trx, 'WRITE_INSERT', table); live = trx.insert(table, rec, repl ? { keepKey: true } : null); }   // the DB refuses a duplicate key at the INSERT (B0)
+    if (isNew) { saveNewNumbers(trx, table, rec); var en = notNullError(trx, table, rec, true); if (en) return { ok: false, error: NN_SAVED + en }; var eu = uniqueError(trx, table, rec, null); if (eu) return { ok: false, error: eu }; ev(trx, 'WRITE_INSERT', table); live = trx.insert(table, rec, repl ? { keepKey: true } : null); }   // the DB refuses a duplicate key at the INSERT (B0)
     else { var ch = {}; for (var k in rec) if (!same(rec[k], row[k]) || (rec[k] == null) !== (row[k] == null)) ch[k] = rec[k];
       if (Object.keys(ch).length && trx.env && trx.env.now) {   // PO.doUpdate (PO.java:3181-3190): when anything changed and Updated was not set explicitly, Updated := now (UpdatedBy := the session user); SODA's watermark (Export2Queue rule, POS_PLUGIN_LOCAL_FIRST §28.1) reads it. SQLITE_GAP found by bridge/witness_soda_parity.js §SODAP_DELTA.
         if ('updated' in rec && !(changes && Object.prototype.hasOwnProperty.call(changes, 'updated'))) { ch.updated = rec.updated = trx.env.now; }
         if ('updatedby' in rec && trx.env.user != null && !(changes && Object.prototype.hasOwnProperty.call(changes, 'updatedby'))) { ch.updatedby = rec.updatedby = Number(trx.env.user); } }
+      var en2 = notNullError(trx, table, rec, false, Object.keys(ch)); if (en2) return { ok: false, error: NN_SAVED + en2 };
       var eu2 = uniqueError(trx, table, rec, row[trx.idCol(table)], Object.keys(ch)); if (eu2) return { ok: false, error: eu2 }; ev(trx, 'WRITE_UPDATE', table); live = trx.update(table, row, ch); }   // ... and at the UPDATE of an indexed column (B0)
     if (M.afterSave) { ev(trx, 'M.afterSave', table); var e2 = M.afterSave(trx, live, isNew, old); if (e2) return { ok: false, error: e2 }; }
     var e3 = fire(trx, isNew ? (repl ? 'AFTER_NEW_REPLICATION' : 'AFTER_NEW') : (repl ? 'AFTER_CHANGE_REPLICATION' : 'AFTER_CHANGE'), table, live, Object.assign({ recordOld: old }, rx))
@@ -819,6 +850,7 @@
 
   return { idSet: idSet, setGeneratedDefaults: setGeneratedDefaults, initialDefaultsOf: initialDefaultsOf, generatedDefaults: function () { return GEN_DEFAULTS; }, PO: PO, po: po, newRecord: newRecord, setDocNoAllocator: setDocNoAllocator, columnsOf: columnsOf, setPoster: setPoster, getPoster: function () { return _poster; }, clientAccounting: clientAccounting, MV: MV, Trx: Trx, D: D, N: N, isNewId: isNewId, keyColsOf: keyColsOf, newPO: newPO, copyValues: copyValues, saveEx: saveEx, registerModel: registerModel, unregisterModel: unregisterModel, saveReplica: saveReplica, fireReplica: fireReplica, saveReplicaEx: saveReplicaEx, removeReplica: removeReplica, deliverObserved: deliverObserved, unregisterDocAction: unregisterDocAction, removeOwner: removeOwner, describe: describe, MODEL: MODEL, fire: fire,
            save: save, remove: remove, fkPlan: fkPlan, registerDocAction: registerDocAction, docActionFor: docActionFor, DOCS: DOCS,
+           notNullError: notNullError, notNullCols: notNullCols,   // G2 (§5.73): the DB's NOT NULL refusal, ONE implementation
            uniqueError: uniqueError,   // B0: the legacy unique-index refusal, ONE implementation (ws_adinterface.js no longer has its own)
            eventSeq: function (trx) { return (trx && trx._events || []).map(function (e) { return e.event + '@' + e.table; }); }, processIt: processIt, runWorkflow: runWorkflow, workflowOf: workflowOf, tableIdOf: tableIdOf, run: run };
 });

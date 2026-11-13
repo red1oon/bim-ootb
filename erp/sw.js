@@ -10,7 +10,7 @@
 // init-bubble must be INSTANT, ERP_INIT_BUBBLE_INSTANT.md); network-first for non-precached .js (fresh on
 // deploy); cache-first for precached assets/.wasm/images. Freshness on deploy is carried by the SW version
 // bump (skipWaiting+clients.claim precache the new shell), so SWR strands a user at most one load post-deploy.
-const CACHE_VERSION = 'v1068';   // bump on each deploy; detail goes in the commit message. History to v1063: SW_VERSION_HISTORY.md
+const CACHE_VERSION = 'v1069';   // bump on each deploy; detail goes in the commit message. History to v1063: SW_VERSION_HISTORY.md
 // v810 (2026-10-03) UI locales: a machine-catalogue entry gets the same fmt as a pack hit (de/ms login title lost its
 //   'Kernel-ERP — ' prefix — found by fetching the live page, ERP_UI_LOCALES.md §L7).
 // v809 (2026-10-03) UI locales (bim-compiler prompts/ERP_UI_LOCALES.md, W-ERP-I18N): erp_i18n.js + i18n/chrome.json +
@@ -84,6 +84,7 @@ const PRECACHE_ASSETS = [
   'ad_modelval.js',
   'ad_rule.js',        // TEAM_REPLICATION_PLUGIN_STUDY §10.8 — stage 3 of the model-validation bus (window.AdRule), W-BUS-ROW
   'ad_official_indexes.js',   // HS3: legacy's official dictionary indexes (generated list)
+  'ad_ddl_notnull.js',   // CAPEX_DASHBOARD §5.73 G2: legacy's NOT NULL columns (generated list), read by model_layer.js notNullError
   'ad_index_overlay.js',
   'ad_docvalue_wf.js', 'ad_docvalue_overlay.js', 'ad_taxcat_overlay.js', 'ad_hba_seed_overlay.js',   // W-DOCVALUE-WF: document-value workflow rows, boot overlay outside the team base hash   // HS3: ... created as a boot overlay (window.AdIndexOverlay), outside the team base hash
   'seed_patch.js',   // F1: the one applier of patches/ad_seed.db.sql, heals duplicate rows
