@@ -1433,3 +1433,22 @@ Same video timing as the English cut frame for frame (5694 frames, 227.78 s); on
 - **OPEN (named):**
   - The FULL re-apply of a kept client entry (fingerprint changed: a new seed) is written but not witnessed; W4 covers the delta replay only.
   - The dictionary path's `now` default in `pipo_packin.apply` / `recordImport` is still the UTC clock (pre-existing; the client path passes the local clock).
+### 5.71 SPEC — (c) W-TD-PACK: the same zip lands the same rows on legacy and on the twin (2026-11-13; written before code; §5.67 W-TD-PACK points 1, 2, 4; point 3, the dashboard, is the next step)
+**The issue:** §5.69/§5.70 prove the twin against the zip, and §5.67 proved legacy's counts. Nothing has compared the two sides row by row (TWIN CARDINAL RULE).
+**Witness W-TD-PACK** (`capex/tests/witness_td_pack.js`, one run, both sides, the shipped zip):
+- **Legacy half:**
+  - stop the test instance;
+  - take a database copy `idempiere_bimdoc_wtdbak`;
+  - `RUN_ApplyPackInFromFolder.sh` on a folder holding ONLY the zip (folder Pack In = the client named in the file name, GardenWorld);
+  - read every row of the pack's tables by UUID (`row_to_json`);
+  - restore the database from the copy and start the instance;
+  - `setup_test_instance.sh --check` must print `§SETUP_VERDICT PASS`.
+  - A failure at any step still restores (try/finally).
+- **Twin half:** headless `erp/idempiere.html`, real login as GardenAdmin, the shipped path `PluginEngine.packInClient` (the one the Pack In window calls), then the same rows read through the page.
+- **Compared, per table, per UUID:**
+  - P1: the same set of UUIDs on both sides == the zip's records per table (independent scan).
+  - P2: every column the pack carries is equal, after normalising numbers and dates. A uuid reference is compared as the UUID of the row it points at; ids differ by design, since each side numbers rows from its own sequences. Not compared: keys and audit columns (`created`/`updated`/`createdby`/`updatedby`).
+  - P3: what the model layer writes outside the pack is equal: `C_Project.C_Currency_ID` per project, the `M_Product_Acct` row count per product, the `M_Cost` row count per product.
+  - 0 rows judged = INCONCLUSIVE.
+- **Break runs, each MUST FAIL:** `WTP_BREAK=twinshift` (one phase StartDate shifted by a day in the zip given to the TWIN only) → P2; `WTP_BREAK=nomodel` (the twin walk without the model layer) → P3.
+- A break run needs only the twin half, so it reads the legacy rows from the previous run's JSON (`~/.cache/capex_film/wtd_pack/legacy_rows.json`, written by a full run). The file records the zip's sha256, and a stale one is refused.
