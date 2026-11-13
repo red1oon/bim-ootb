@@ -4,8 +4,8 @@
 // HOW: the source's rows (adapters.js shape, A = the twin store, B = legacy) are loaded into in-memory SQLite "page DBs" holding ONLY the filtered population (§5.66 D2 revised: a filter narrows the rows,
 //   never rewrites a formula, as a legacy goal restriction; POP says per slot whether the Status filter applies, as today's page). Each tile slot below names a PA_MeasureCalc by its UU (D4: data, no formula); the kernel's ONE engine (erp/goal_engine.js evaluateCalc,
 //   the MMeasureCalc.getSqlPI port incl. Env.parseContext) runs that row there. Money rows carry @$C_Currency_ID@ and are evaluated once per currency present (D3). The page DB's SYSDATE is the page's day.
-// NOT moved (named in §5.66): Stage (needs an AD_Chart reader), BIM documents (its measure belongs in the BIM Document plugin's pack), Last updated (a date, not a PA number), the drill rows and the project
-//   page (record views). Those come from tiles.js compute(), whose result this module starts from and overrides slot by slot.
+// NOT moved (named in §5.66): Stage (needs an AD_Chart reader), BIM documents (its measure belongs in the BIM Document plugin's pack), Last updated (a date, not a PA number), the drill's row view and the
+//   project page (record views). Those come from tiles.js frame(); tiles.js holds NO formula of a moved tile any more (§5.75 step 4). A source without the CAPEX rows reads "no data (CAPEX PA rows not installed)".
 // compute(deps, data, f) -> { tiles, drill, pop, formula, caveat, pa: { judged, errors[], slots } }   deps = { SQL (sql.js), GE (GoalEngine), AC (AdCallout, callouts/sqlfn.js loaded), T (CapexTiles), log }
 (function (root) {
   'use strict';
@@ -73,14 +73,14 @@
   function mkq(db) { return function (s, p) { var st = db.prepare(s), o = []; try { if (p) st.bind(p); while (st.step()) { var x = st.getAsObject(), k = {}; Object.keys(x).forEach(function (c) { k[c.toLowerCase()] = x[c]; }); o.push(k); } } finally { st.free(); } return o; }; }
 
   function compute(deps, data, f) {
-    f = f || {}; var log = deps.log || function () {}, base = deps.T.compute(data, f), T = JSON.parse(JSON.stringify(base.tiles)), un = {};
+    f = f || {}; var log = deps.log || function () {}, fr = deps.T.frame(data, f), FL = fr.flags, T = JSON.parse(JSON.stringify(fr.tiles)), un = {}, noRows = function () { var r = deps.T.compute(data, f); r.pa = pa; return r; };   // frame: populations, availability, the not-moved tiles, the row view (no formula of a moved tile)
     (data.unavailable || []).forEach(function (u) { un[u] = 1; });
     var pa = { judged: 0, errors: [], slots: {} };
-    if (un.pacalc || !(data.pacalc || []).length) { pa.errors.push('no PA_MeasureCalc rows in this source'); log('§PA_TILES_PAGE none (no PA_MeasureCalc rows: ' + (un.pacalc ? 'no read type' : 'empty') + ')'); return { tiles: base.tiles, drill: base.drill, pop: base.pop, formula: base.formula, caveat: base.caveat, pa: pa }; }
+    if (un.pacalc || !(data.pacalc || []).length) { pa.errors.push('no PA_MeasureCalc rows in this source'); log('§PA_TILES_PAGE none (no PA_MeasureCalc rows: ' + (un.pacalc ? 'no read type' : 'empty') + '): every moved tile reads "no data (' + deps.T.NOPA + ')"'); return noRows(); }
     var Pp = population(data, f, true), P = population(data, f), dbP = pageDb(deps, data, Pp, f.today), db = pageDb(deps, data, P, f.today), qP = mkq(dbP), q = mkq(db), byUu = {}, ctx0 = { today: f.today, convertSql: deps.AC.convertSql };
     q('SELECT pa_measurecalc_id AS i, pa_measurecalc_uu AS u, isactive AS a FROM PA_MeasureCalc').forEach(function (r) { if (r.a !== 'N') byUu[String(r.u)] = r.i; });
     var missing = Object.keys(BIND).filter(function (k) { return byUu[BIND[k]] == null; });
-    if (missing.length) { pa.errors.push('CAPEX PA rows not installed on this source: ' + missing.join(',')); log('§PA_TILES_PAGE fallback tiles.js (CAPEX PA rows not installed on this source: missing=' + missing.length + ' of ' + Object.keys(BIND).length + ')'); db.close(); dbP.close(); return { tiles: base.tiles, drill: base.drill, pop: base.pop, formula: base.formula, caveat: base.caveat, pa: pa }; }
+    if (missing.length) { pa.errors.push('CAPEX PA rows not installed on this source: ' + missing.join(',')); log('§PA_TILES_PAGE none (CAPEX PA rows not installed on this source: missing=' + missing.length + ' of ' + Object.keys(BIND).length + '): every moved tile reads "no data (' + deps.T.NOPA + ')"'); db.close(); dbP.close(); return noRows(); }
     function ev(slot, env) {
       var id = byUu[BIND[slot === 'active_p' ? 'active' : slot]]; if (id == null) { pa.errors.push(slot + ': no active PA_MeasureCalc ' + BIND[slot]); return null; }
       var r = deps.GE.evaluateCalc(POP[slot] === 'P' ? qP : q, id, env ? Object.assign({ env: env }, ctx0) : ctx0, SCOPE[slot] || null); pa.judged++;
@@ -93,28 +93,29 @@
     function perCur(slot, table, cents) { var m = {}; curs(table, slot).forEach(function (c) { var r = ev(slot, { $C_Currency_ID: c }); if (r && r.state === 'OK') m[c] = cents ? Math.round(r.actual * 100) : r.actual; }); return m; }
     var none = Pp.length === 0, nA = count('active'), nAp = count('active_p');
     T.total_projects = { n: count('total'), closed: count('closed'), vacuous: none };
-    T.active_projects = base.tiles.active_projects.closingWhy ? { n: nAp, closing: null, closingWhy: base.tiles.active_projects.closingWhy, vacuous: none } : { n: nAp, closing: count('closing'), vacuous: none };
+    T.active_projects = FL.closingWhy ? { n: nAp, closing: null, closingWhy: FL.closingWhy, vacuous: none } : { n: nAp, closing: count('closing'), vacuous: none };
     T.approved_budget = { cur: perCur('approved', 'C_Project', true) };
     T.actual_cost = { cur: perCur('actual', 'C_Project', true), pctOfPlan: perCur('actual_pct', 'C_Project', false) };
     T.committed_cost = { cur: perCur('committed', 'C_Project', true), invoiced: perCur('invoiced', 'C_Project', true) };
-    if (!base.tiles.forecast_cost.inconclusive) T.forecast_cost = { cur: perCur('forecast', 'C_Project', true), basisDiffers: count('basis') };
+    T.forecast_cost = FL.forecast_cost ? { inconclusive: FL.forecast_cost } : { cur: perCur('forecast', 'C_Project', true), basisDiffers: count('basis') };
     T.completed_year = { vacuous: none, n: f.today ? count('completed_year') : null };
     var A0 = !nA;   // the classification tiles judge the active population: empty = vacuous (tiles.js classTile)
-    function cls(name, build) { var b = base.tiles[name]; return b.inconclusive ? b : A0 ? { vacuous: true } : build(); }
+    function cls(name, build) { return FL[name] ? { inconclusive: FL[name] } : A0 ? { vacuous: true } : build(); }
     T.health = cls('health', function () { return { green: count('green'), amber: count('amber'), red: count('red'), none: count('none'), n: nA }; });
-    T.physical_spent = cls('physical_spent', function () { return { physical: perCur('physical', 'C_Project', false), spent: perCur('spent', 'C_Project', false), caveat: base.caveat }; });
+    T.physical_spent = cls('physical_spent', function () { return { physical: perCur('physical', 'C_Project', false), spent: perCur('spent', 'C_Project', false), caveat: fr.caveat }; });
     T.schedule = cls('schedule', function () { var r = { ontime: count('ontime'), delayed: count('delayed'), atrisk: count('atrisk'), nosched: count('nosched'), n: nA }, d = ev('avg_delay'); r.avgDelay = d && d.state === 'OK' ? d.actual : null; return r; });
     T.budget_status = cls('budget_status', function () { return { within: count('within'), over: count('over'), notstarted: count('notstarted'), overrun: perCur('overrun', 'C_Project', true), n: nA }; });   // n: the judged population, as the health and schedule tiles carry it (tiles.js r.n; W-DASH-DRILL K1/K3 read it)
-    if (!base.tiles.approvals.inconclusive) T.approvals = { n: count('approvals') };
-    if (!base.tiles.committed_contract.notinstalled) { var cc = perCur('contract', 'C_Order', true); T.committed_contract = { cur: cc }; if (!Object.keys(cc).length) T.committed_contract.vacuous = true; }
-    if (!base.tiles.committed_verified.notinstalled) { var cv = perCur('verified', 'C_Project', true); T.committed_verified = { cur: cv }; if (!Object.keys(cv).length) T.committed_verified.vacuous = true; }
-    T.procurement.overcommitted = { n: count('overcommitted') };
-    if (!base.tiles.procurement.openpo.notinstalled) { T.procurement.openpo = { n: count('openpo'), projects: base.tiles.procurement.openpo.projects, cur: perCur('openpo_amt', 'C_Order', true) }; T.procurement.nopo = { n: count('nopo') }; }
+    T.approvals = FL.approvals ? { inconclusive: FL.approvals } : { n: count('approvals') };
+    if (FL.committed_contract) T.committed_contract = { notinstalled: true }; else { var cc = perCur('contract', 'C_Order', true); T.committed_contract = { cur: cc }; if (!Object.keys(cc).length) T.committed_contract.vacuous = true; }
+    if (FL.committed_verified) T.committed_verified = { notinstalled: true }; else { var cv = perCur('verified', 'C_Project', true); T.committed_verified = { cur: cv }; if (!Object.keys(cv).length) T.committed_verified.vacuous = true; }
+    T.procurement = { overcommitted: { n: count('overcommitted') } };
+    if (FL.procurement) { T.procurement.openpo = { notinstalled: true }; T.procurement.nopo = { notinstalled: true }; }
+    else { T.procurement.openpo = { n: count('openpo'), projects: null, cur: perCur('openpo_amt', 'C_Order', true) }; T.procurement.nopo = { n: count('nopo') }; }   // projects: set below from the drill (the orders' projects)
     T.handover = P.length === 0 ? { vacuous: true } : { ready: count('ready'), done: count('handover_done') };
     // the drill (step 2): ids from the PA rows; the row VIEW (name, amounts, due / done / late) is tiles.js info(), taken by project id from its total_projects list (every project of P)
     var pos = {}; (data.projects || []).forEach(function (p, i) { pos[String(p.C_Project_ID)] = i; });
-    var view = {}, D = {}, dErr = [], bucketOf = { health: {}, schedule: {}, budget: {} };
-    (base.drill.total_projects || []).forEach(function (r) { view[String(r.id)] = r; });
+    var view, D = {}, dErr = [], bucketOf = { health: {}, schedule: {}, budget: {} };
+    view = fr.view;   // tiles.js info(): one row per project of P
     var ordProj = {}; (data.orders || []).forEach(function (o) { ordProj[String(o.C_Order_ID)] = o.C_Project_ID; });
     function keysOf(k) {
       var d = DRILL[k], slot = d.slot, id = byUu[BIND[slot === 'active_p' ? 'active' : slot]], qq = POP[slot] === 'P' ? qP : q, ids = [], seen = {};
@@ -124,9 +125,9 @@
         r.ids.forEach(function (x) { var pid = d.via === 'order' ? ordProj[String(x)] : x; if (pid != null && !seen[String(pid)]) { seen[String(pid)] = 1; ids.push(pid); } }); });
       return ids;
     }
-    var blockedKey = { 'proc:openpo': base.tiles.procurement.openpo.notinstalled, 'proc:nopo': base.tiles.procurement.openpo.notinstalled, forecast_cost: base.tiles.forecast_cost.inconclusive, completed_year: !f.today,
-      'health:green': base.tiles.health.inconclusive, 'health:amber': base.tiles.health.inconclusive, 'health:red': base.tiles.health.inconclusive, 'health:none': base.tiles.health.inconclusive,
-      'schedule:ontime': base.tiles.schedule.inconclusive, 'schedule:delayed': base.tiles.schedule.inconclusive, 'schedule:atrisk': base.tiles.schedule.inconclusive, 'schedule:nosched': base.tiles.schedule.inconclusive };
+    var blockedKey = { 'proc:openpo': FL.procurement, 'proc:nopo': FL.procurement, forecast_cost: FL.forecast_cost, completed_year: !f.today,
+      'health:green': FL.health, 'health:amber': FL.health, 'health:red': FL.health, 'health:none': FL.health,
+      'schedule:ontime': FL.schedule, 'schedule:delayed': FL.schedule, 'schedule:atrisk': FL.schedule, 'schedule:nosched': FL.schedule };
     var idsBy = {};
     Object.keys(DRILL).forEach(function (k) { idsBy[k] = blockedKey[k] ? [] : keysOf(k); var m = /^(health|schedule|budget):(.+)$/.exec(k); if (m) idsBy[k].forEach(function (pid) { bucketOf[m[1]][String(pid)] = m[2]; }); });
     Object.keys(DRILL).forEach(function (k) {
@@ -137,11 +138,14 @@
       rows.sort(function (x, y) { return pos[String(x.id)] - pos[String(y.id)]; });   // the source's own row order (a money key is asked per currency, which would group the list by currency)
       if (rows.length || /^(health|schedule|budget|proc|handover):/.test(k)) D[k] = rows;   // a bucket key is always there (an empty bucket is a fact); a plain key with no row is absent, as the page expects
     });
-    Object.keys(base.drill).forEach(function (k) { if (!DRILL[k]) D[k] = base.drill[k].map(function (r) { return Object.assign({}, r, { health: bucketOf.health[String(r.id)] || null, schedule: bucketOf.schedule[String(r.id)] || null, budget: bucketOf.budget[String(r.id)] || null }); }); });   // Stage keys: not moved
+    if (T.procurement.openpo && !T.procurement.openpo.notinstalled) T.procurement.openpo.projects = idsBy['proc:openpo'].length;
+    Object.keys(fr.stageDrill).forEach(function (k) { D[k] = fr.stageDrill[k].map(function (r) { return Object.assign({}, r, { health: bucketOf.health[String(r.id)] || null, schedule: bucketOf.schedule[String(r.id)] || null, budget: bucketOf.budget[String(r.id)] || null }); }); });   // Stage keys: not moved (tiles.js frame)
+    // row membership the project page reads (not a drill key): which projects the "basis differs" row selects
+    var members = { basis: [] }; if (!FL.forecast_cost) { var mb = deps.GE.queryKeys(qP, byUu[BIND.basis], ctx0, null, null); if (mb.ok) members.basis = mb.ids; else dErr.push('basis: ' + mb.reason); }
     pa.drill = { keys: Object.keys(DRILL).length, errors: dErr }; dErr.forEach(function (e) { pa.errors.push('drill ' + e); });
     db.close(); dbP.close();
     log('§PA_TILES_PAGE source=' + (data.source || '?') + ' P=' + Pp.length + ' S=' + P.length + ' active=' + nA + ' judged=' + pa.judged + ' errors=' + pa.errors.length + (pa.errors.length ? ' first=' + JSON.stringify(pa.errors[0]) : ''));
-    return { tiles: T, drill: D, pop: { P: Pp.length, S: P.length, A: nA }, formula: base.formula, caveat: base.caveat, pa: pa };
+    return { tiles: T, drill: D, pop: { P: Pp.length, S: P.length, A: nA }, formula: fr.formula, caveat: fr.caveat, pa: pa, members: members };
   }
   var API = { compute: compute, population: population, BIND: BIND, SCOPE: SCOPE, DRILL: DRILL };
   if (typeof module !== 'undefined' && module.exports) module.exports = API; else root.CapexPaTiles = API;

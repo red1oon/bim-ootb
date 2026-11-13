@@ -35,6 +35,8 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.wasm': 'applica
 (async () => {
   const orderFile = SNAPS[1][1]; if (!fs.existsSync(orderFile)) { incon('P2-P9', 'order snapshot missing'); return fin(); }
   const snap = JSON.parse(fs.readFileSync(orderFile, 'utf8')), BA = snap.projects.find(p => p.Value === 'BUILDING_A').C_Project_ID; snap.unavailable = (snap.unavailable || []).filter(u => u !== 'orders' && u !== 'bimdocs');
+  // §5.75 step 4: this snapshot was taken before the page read PA rows; a page without them shows "no data" on every moved tile, so the browser is served the same rows the node side is lent (pa_harness.js)
+  if (!(snap.pacalc || []).length) { snap.pacalc = T.rows(); snap.unavailable = snap.unavailable.filter(u => u !== 'pacalc'); log('§PROJECT_PAGE_DATA the order snapshot holds no PA_MeasureCalc rows: lent ' + snap.pacalc.length + ' (the pilot rows of the sample)'); }
   snap.orders = (snap.orders || []).concat([{ C_Order_ID: 9001, C_Project_ID: BA, GrandTotal: 500, C_Currency_ID: 100, IsSOTrx: 'N', DocStatus: 'DR' }]);
   snap.bimdocs = [{ BIM_Document_ID: 1, C_Project_ID: BA, DeliverableNo: 'A-101', Revision: 1, DocStatus: 'RE', IsActive: 'Y', Name: 'Plan' }, { BIM_Document_ID: 2, C_Project_ID: BA, DeliverableNo: 'A-101', Revision: 2, DocStatus: 'CO', IsActive: 'Y', Name: 'Plan B' }, { BIM_Document_ID: 3, C_Project_ID: BA, DeliverableNo: 'C-301', Revision: 1, DocStatus: 'DR', IsActive: 'Y', Name: 'Elev' }];
   const want = T.projectDetail(snap, { today: '2026-11-11' }, BA);

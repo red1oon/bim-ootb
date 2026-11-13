@@ -1,76 +1,40 @@
 #!/usr/bin/env node
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
 // SPDX-License-Identifier: MIT
-// ⚠ DO NOT REMOVE — W-PA-FLAT (spec prompts/CAPEX_DASHBOARD.md §5.66 PR B). READ THE LOG: verdict = §PA_FLAT_VERDICT; the exit code alone is not evidence.
-// THE ISSUE it proves/disproves: "the dashboard's numbers cannot come from iDempiere PA rows (what legacy and the twin both run) without changing a number the page shows today (capex/tiles.js)".
-// Per data set × filter: capex/pa_tiles.js flat map (every slot run by erp/goal_engine.js from a PA_MeasureCalc row) == capex/tiles.js flat map, key by key. No key may differ under any filter (§5.66 D2 revised). Any PA error (a slot with no row, a SQL failure) = FAIL.
-// Data: (1) the twin's own 12-project scenario (capex/tools/twin_mockchain.js) with the CAPEX migration scripts applied to that store, so the PA rows are the store's own;
-//   (2) the committed legacy snapshot capex/sample/pilot_snapshot.json (a real pilot read); it has no PA_MeasureCalc read type, so the store's rows from (1) are given to it (the same scripts legacy applied) — printed.
-// A data set whose population is empty under a filter is counted INCONCLUSIVE for that filter, never PASS. Break: PA_FLAT_BREAK=1 makes the Total Projects row count one more → MUST FAIL.
-// Usage: NODE_PATH=<bim-ootb>/node_modules node capex/tests/witness_pa_flat.js
+// ⚠ DO NOT REMOVE — W-PA-FLAT (prompts/CAPEX_DASHBOARD.md §5.66 PR B, re-based by §5.75 steps 4-5). READ THE LOG; the exit code is not evidence.
+// HISTORY: until §5.75 step 4 this witness proved "PA rows == the hand formulas in capex/tiles.js" live, key by key and drill row by drill row. Step 4 DELETED those formulas, so that oracle no longer exists.
+// WHAT IT PROVES NOW: the page's PA path (capex/pa_tiles.js + goal_engine over the sample's own PA rows) still gives, for every filter case, exactly what the hand formulas gave on their LAST commit:
+//   capex/tests/pa_flat_golden.json was recorded BY THE HAND FORMULAS (tiles.js compute at the commit named in the file), when PA == hand held for all its cases. It is a regression pin of the page path,
+//   not an oracle of the rows: the oracle of the rows is legacy's own engine (W-PA-TILES, pilot). A legitimate change of a PA row or of the sample changes these values: re-record ONLY with the reason
+//   written in §5.75 (never to make a red run green).
+// Cases: per recorded filter - F flat values equal · D drill keys, ids, order and the health / schedule / budget labels equal. An empty population is INCONCLUSIVE.
+// Breaks (each must FAIL): PA_FLAT_BREAK=1 the Total row counts +1 · PA_DRILL_BREAK=1 the Red row selects every active project.
 'use strict';
-const fs = require('fs'), os = require('os'), path = require('path'), initSqlJs = require('sql.js');
-const ROOT = path.join(__dirname, '..', '..'), GE = require(path.join(ROOT, 'erp/goal_engine.js')), AC = require(path.join(ROOT, 'erp/ad_callout.js')), MA = require(path.join(ROOT, 'capex/tools/migration_apply.js'));
-const A = require('../adapters.js'), T = require('../tiles.js'), PT = require('../pa_tiles.js');
-['support', 'support_stock', 'views', 'currency', 'uom', 'pricing', 'tax', 'sqlfn'].forEach(m => require(path.join(ROOT, 'erp/callouts', m + '.js')));
-const MIGDIR = path.join(ROOT, 'capex/legacy/migration/iD13/postgresql'), BREAK = process.env.PA_FLAT_BREAK === '1', log = console.log;
-const D2 = [];   // §5.66 D2 revised: no key may differ under any Status (pa_tiles POP keeps today's populations)
-let judged = 0, fails = 0, inconc = 0;
-const ck = (n, ok, i) => { judged++; if (!ok) fails++; log('  §PA_FLAT ' + n + ' ' + (ok ? 'PASS' : 'FAIL') + (i !== undefined ? ' ' + JSON.stringify(i) : '')); };
-const inc = (n, why) => { inconc++; log('  §PA_FLAT ' + n + ' INCONCLUSIVE ' + why); };
-let drillKeys = 0, drillRows = 0;
+const fs = require('fs'), path = require('path'), H = require('./pa_harness.js');
+const GOLD = JSON.parse(fs.readFileSync(path.join(__dirname, 'pa_flat_golden.json'), 'utf8')), SNAP = path.join(__dirname, '..', 'sample', 'pilot_snapshot.json'), log = console.log;
+let judged = 0, fails = 0, inconc = 0, rowsJudged = 0, keysJudged = 0;
+const ck = (n, ok, i) => { judged++; if (!ok) fails++; log('  §PA_FLAT ' + n + ' ' + (ok ? 'PASS' : 'FAIL') + (i !== undefined ? ' ' + JSON.stringify(i).slice(0, 700) : '')); };
 (async () => {
-  const SQL = await initSqlJs(), deps = { SQL, GE, AC, T, A, log: m => log('    ' + m) };
-  // (1) the twin scenario store + the CAPEX scripts
-  const out = path.join(os.tmpdir(), 'pa_flat_' + process.pid + '.db'), { build } = require(path.join(ROOT, 'capex/tools/twin_mockchain.js')), TODAY = '2026-11-12';
-  const _l = console.log, lines = []; console.log = (...a) => lines.push(a.join(' ')); let r; try { r = await build({ today: TODAY, out }); } finally { console.log = _l; }
-  lines.filter(l => /§TWIN_MOCK_BUILT/.test(l)).forEach(l => log(l));
-  if (!r || r.errs.length || !fs.existsSync(out)) { ck('W0 the twin scenario store was built', false, r && r.errs); return finish(); }
-  const db = new SQL.Database(fs.readFileSync(out)); fs.unlinkSync(out);
-  AC.RUNTIME.registerSqlFunctions((n, f) => db.create_function(n, f));
-  let mig = 0, migBad = 0; const have = db.exec("SELECT COUNT(*) FROM pa_measurecalc WHERE name LIKE 'CAPEX%'")[0].values[0][0];   // the builder installs the plugin's rows (§TWIN_MOCK_CAPEX_PACK)
-  if (!have) fs.readdirSync(MIGDIR).filter(f => /\.sql$/.test(f)).sort().forEach(f => { const x = MA.apply(fs.readFileSync(path.join(MIGDIR, f), 'utf8'), { file: f, run: s => db.run(s), convertSql: AC.convertSql, log: () => {}, has: () => false }); mig += x.ok; migBad += x.failed; });
-  if (process.env.PA_DRILL_BREAK === '1') db.run("UPDATE pa_measurecalc SET whereclause='WHERE p.IsActive=''Y''' WHERE pa_measurecalc_uu='" + PT.BIND.red + "'");   // falsifier: the Red row selects every active project -> the drill arm must FAIL
-  if (BREAK) db.run("UPDATE pa_measurecalc SET selectclause='SELECT COUNT(*)+1 FROM C_Project' WHERE pa_measurecalc_uu='" + PT.BIND.total + "'");
-  const twin = A.fromSqlite(db, {}); twin.source = 'sqlite';
-  log('§PA_FLAT_DATA twin projects=' + twin.projects.length + ' pacalc=' + twin.pacalc.length + ' migration_statements ok=' + mig + ' failed=' + migBad + ' unavailable=[' + twin.unavailable.join(',') + ']' + (BREAK ? ' (PA_FLAT_BREAK=1: FAIL expected)' : ''));
-  ck('W1 the store holds the CAPEX rows (' + (have ? 'installed by the builder: ' + have : 'applied here') + ') without a failed statement', migBad === 0 && (have || mig > 0), { have, ok: mig, failed: migBad });
-  // (2) the legacy snapshot
-  const snap = JSON.parse(fs.readFileSync(path.join(ROOT, 'capex/sample/pilot_snapshot.json'), 'utf8')); snap.source = 'legacy';
-  if (!snap.pacalc || !snap.pacalc.length) { snap.pacalc = twin.pacalc; snap.unavailable = (snap.unavailable || []).filter(u => u !== 'pacalc'); log('§PA_FLAT_DATA legacy snapshot has no PA_MeasureCalc rows: given the store\'s ' + twin.pacalc.length + ' (the same scripts legacy applied)'); }
-  const snapDay = String((snap.meta && (snap.meta.takenAt || snap.meta.today)) || '2026-11-13').slice(0, 10);
-  log('§PA_FLAT_DATA legacy projects=' + snap.projects.length + ' today=' + snapDay + ' unavailable=[' + (snap.unavailable || []).join(',') + ']');
-  for (const [name, data, today] of [['twin', twin, TODAY], ['legacy', snap, snapDay]]) {
-    const org = (data.projects.find(p => p.AD_Org_ID != null) || {}).AD_Org_ID, prj = (data.projects[0] || {}).Value;
-    const filters = [];
-    ['all', 'active', 'closed', 'inactive'].forEach(st => { filters.push({ status: st }); if (org != null) filters.push({ status: st, org: String(org) }); });
-    if (prj) filters.push({ status: 'all', project: prj });
-    for (const f0 of filters) {
-      const f = Object.assign({ today }, f0), tag = name + ' ' + JSON.stringify(f0), P = PT.population(data, f);
-      const a = T.flatten(T.compute(data, f).tiles), res = PT.compute(deps, data, f), b = T.flatten(res.tiles);
-      if (res.pa.errors.length) { ck(tag + ' PA rows ran without error', false, res.pa.errors.slice(0, 4)); continue; }
-      if (!P.length) { inc(tag, 'empty population'); continue; }
-      const diff = Object.keys(a).filter(k => a[k] !== b[k]), bad = diff.filter(k => f.status === 'all' || D2.indexOf(k) < 0), named = diff.filter(k => bad.indexOf(k) < 0);
-      named.forEach(k => log('    §PA_FLAT_D2 ' + tag + ' ' + k + ' tiles=' + JSON.stringify(a[k]) + ' pa=' + JSON.stringify(b[k])));
-      bad.forEach(k => log('    §PA_FLAT_DIFF ' + tag + ' ' + k + ' tiles=' + JSON.stringify(a[k]) + ' pa=' + JSON.stringify(b[k])));
-      ck(tag + ' population=' + P.length + ' keys=' + Object.keys(a).length + ' pa_judged=' + res.pa.judged + ' D2_named=' + named.length, bad.length === 0, bad.length ? bad : undefined);
-      // §5.75 step 2: the drill from the PA rows' key queries == the hand drill, key by key (ids in the same order) and row by row (the health / schedule / budget labels)
-      const dA = T.compute(data, f).drill, dB = res.drill, keys = Array.from(new Set(Object.keys(dA).concat(Object.keys(dB)))), dbad = [];
-      let dX = 0, rows = 0;
-      keys.forEach(k => { const ia = (dA[k] || []).map(r => String(r.id)).sort(), ib = (dB[k] || []).map(r => String(r.id)).sort(), la = {}, lb = {};
-        (dA[k] || []).forEach(r => { la[r.id] = [r.health, r.schedule, r.budget].join('/'); }); (dB[k] || []).forEach(r => { lb[r.id] = [r.health, r.schedule, r.budget].join('/'); });
-        const oa = (dA[k] || []).map(r => String(r.id)).join(','), ob = (dB[k] || []).map(r => String(r.id)).join(','), same = (k in dA) === (k in dB) && oa === ob && ia.every(id => la[id] === lb[id]); rows += ia.length;
-        if (same) dX++; else dbad.push({ key: k, hand: ia.length, pa: ib.length, onlyHand: ia.filter(x => ib.indexOf(x) < 0).slice(0, 4), onlyPa: ib.filter(x => ia.indexOf(x) < 0).slice(0, 4), label: ia.filter(id => lb[id] !== undefined && la[id] !== lb[id]).slice(0, 2).map(id => id + ' ' + la[id] + ' vs ' + lb[id]) }); });
-      drillKeys += keys.length; drillRows += rows;
-      ck(tag + ' DRILL ' + dX + ' of ' + keys.length + ' keys equal (' + rows + ' rows)', dX === keys.length, dbad.length ? dbad.slice(0, 5) : undefined);
-    }
+  await H.init();
+  const snap = JSON.parse(fs.readFileSync(SNAP, 'utf8')); let rows = null;
+  if (process.env.PA_FLAT_BREAK === '1' || process.env.PA_DRILL_BREAK === '1') { rows = JSON.parse(JSON.stringify(snap.pacalc));
+    if (process.env.PA_FLAT_BREAK === '1') rows.find(r => r.PA_MeasureCalc_UU === H.PT.BIND.total).SelectClause = 'SELECT COUNT(*)+1 FROM C_Project';
+    if (process.env.PA_DRILL_BREAK === '1') rows.find(r => r.PA_MeasureCalc_UU === H.PT.BIND.red).WhereClause = "WHERE p.IsActive='Y'"; }
+  log('§PA_FLAT_DATA golden recorded=' + GOLD.recorded + ' by the hand formulas at commit ' + GOLD.commit + ' cases=' + GOLD.cases.length + ' today=' + GOLD.today + ' sample pacalc=' + (snap.pacalc || []).length + (rows ? ' (BREAK: FAIL expected)' : ''));
+  for (const c of GOLD.cases) {
+    const f = Object.assign({ today: GOLD.today, org: '', category: '', project: '' }, c.filter), tag = JSON.stringify(c.filter);
+    if (!c.population.P) { inconc++; log('  §PA_FLAT ' + tag + ' INCONCLUSIVE empty population'); continue; }
+    let res; try { res = H.compute(snap, f, rows ? { rows } : null); } catch (e) { ck(tag + ' PA rows ran without error', false, String(e.message).slice(0, 200)); continue; }
+    const flat = H.flatten(res.tiles), fbad = Object.keys(c.flat).concat(Object.keys(flat)).filter((k, i, a) => a.indexOf(k) === i && c.flat[k] !== flat[k]);
+    ck(tag + ' F ' + (Object.keys(c.flat).length - fbad.length) + ' of ' + Object.keys(c.flat).length + ' flat values equal the recorded ones (pa_judged=' + res.pa.judged + ')', fbad.length === 0, fbad.slice(0, 5).map(k => k + ' recorded=' + c.flat[k] + ' pa=' + flat[k]));
+    const keys = Object.keys(c.drill).concat(Object.keys(res.drill)).filter((k, i, a) => a.indexOf(k) === i), dbad = []; let n = 0;
+    keys.forEach(k => { const a = JSON.stringify(c.drill[k]), b = res.drill[k] ? JSON.stringify(res.drill[k].map(r => [r.id, r.health, r.schedule, r.budget])) : undefined; n += (c.drill[k] || []).length; if (a !== b) dbad.push({ key: k, recorded: (c.drill[k] || []).length, pa: (res.drill[k] || []).length }); });
+    keysJudged += keys.length; rowsJudged += n;
+    ck(tag + ' D ' + (keys.length - dbad.length) + ' of ' + keys.length + ' drill keys equal (' + n + ' rows: ids, order, labels)', dbad.length === 0, dbad.slice(0, 5));
   }
-  finish();
-})().catch(e => { log('§PA_FLAT_VERDICT FAIL harness ' + (e && e.stack || e)); process.exit(1); });
-function finish() {
-  log('§PA_FLAT_DRILL keys_judged=' + drillKeys + ' rows_judged=' + drillRows);
-  if (!drillRows) { inconc++; log('  §PA_FLAT DRILL INCONCLUSIVE no drill row in any population'); }
+  log('§PA_FLAT_DRILL keys_judged=' + keysJudged + ' rows_judged=' + rowsJudged);
+  if (!rowsJudged) { inconc++; log('  §PA_FLAT DRILL INCONCLUSIVE no drill row was judged'); }
   const v = fails ? 'FAIL' : judged ? 'PASS' : 'INCONCLUSIVE';
-  log('§PA_FLAT_VERDICT ' + v + ' judged=' + judged + ' fail=' + fails + ' inconclusive=' + inconc + (BREAK ? ' (PA_FLAT_BREAK=1: FAIL expected)' : ''));
+  log('§PA_FLAT_VERDICT ' + v + ' judged=' + judged + ' fail=' + fails + ' inconclusive=' + inconc + (rows ? ' (BREAK: FAIL expected)' : ''));
   process.exit(v === 'PASS' ? 0 : 1);
-}
+})().catch(e => { log('§PA_FLAT_VERDICT FAIL harness ' + (e && e.stack || e)); process.exit(1); });

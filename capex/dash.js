@@ -348,7 +348,7 @@
   // §5.66: every moved number is a PA row of the source, run by the kernel engine (capex/pa_tiles.js); without the engine scripts the page says so and falls back to tiles.js
   function compute(d, f) {
     var PT = window.CapexPaTiles, ok = PT && S.SQL && window.GoalEngine && window.AdCallout && window.AdCallout.RUNTIME && window.AdCallout.RUNTIME.registerSqlFunctions;
-    if (!ok) { log('§DASH_PA unavailable (engine scripts not loaded): tiles.js'); return T.compute(d, f); }
+    if (!ok) { log('§DASH_PA unavailable (engine scripts not loaded): every moved tile reads no data'); var r0 = T.compute(d, f); r0.pa = { judged: 0, errors: ['the PA engine scripts are not loaded'] }; return r0; }
     return PT.compute({ SQL: S.SQL, GE: window.GoalEngine, AC: window.AdCallout, T: T, A: AD, log: log }, d, f);
   }
   function render() {
@@ -363,6 +363,9 @@
        procurement: procurement, handover: handover,
        project: projectPage, approvals: function () { var a = S.res.tiles.approvals; simple('Approval Pending', a.inconclusive ? state(a) : '<div class="big">' + fl('approvals', a.n) + '</div>', 'approvals'); } })[S.view](); addLead();
     $('foot').textContent = 'Source: ' + S.cur + (d.meta && d.meta.url ? ' (' + d.meta.url + ')' : '') + (d.unavailable && d.unavailable.length ? ' · unavailable entities: ' + d.unavailable.join(', ') : '') + ' · date used: ' + TODAY;
+    // §5.75 step 4: a source without the CAPEX PA rows has no definition for the moved tiles. Say it once, at the top, in plain words (each such tile already reads "no data").
+    var old = document.getElementById('noPaNote'); if (old) old.parentNode.removeChild(old);
+    if (S.res.pa && S.res.pa.judged === 0 && S.res.pa.errors.length) { var nn = h('div', 'card', '<span class="nodata" data-nopa="1">This data source has no CAPEX dashboard definitions (PA rows), so the tiles that are computed from them show "no data". Install the CAPEX Dashboard plugin on this source, or open a source that has it.</span>'); nn.id = 'noPaNote'; var vw = $('view'); vw.insertBefore(nn, vw.firstChild); }
     window.__capex = { flat: S.flat, source: S.cur, rendered: true, twin: S.twin || null, pa: S.res.pa ? { judged: S.res.pa.judged, errors: S.res.pa.errors.slice(0, 5) } : null };   // pa: did the numbers come from PA rows (§5.66)
   }
 
