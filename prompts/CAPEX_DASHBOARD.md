@@ -1348,3 +1348,21 @@ Same video timing as the English cut frame for frame (5694 frames, 227.78 s); on
 - PASS: W-PA-RENDER 27/0 (B3 now 22 active goals, with the arithmetic), W-PA-EDITOR 7/0 (edits the login-currency goal), W-GOAL-STORE 10/0, W-HOME-TIP 9/0, W-PA-ENGINE 23/0, W-GOAL-ENGINE 5/0.
 - W-PA-TILES (pilot) `PASS 101/0`, cleanup 13.
 - W-DASH-SYNC `judged=144 fail=1`: only E2, the expired premise explained above. Z: the pilot's real Home == the twin's, 22 of 22.
+### 5.69 SPEC — G1: the twin's Pack In takes a client's DATA 2Pack the way legacy does (2026-11-13; written before code; owner on where the rows live: *"Base DB + replay"*)
+**The issue:** the §5.67 zip packs into legacy (12/42/84/84/2, currency from the price list, 4 `M_Product_Acct` rows, a second run changes nothing) but the twin's `pipo_packin.apply` is the dictionary path: it keeps the pack's client, has no `AD_Package_UUID_Map`, and writes SQL with no model class, so `C_Project.C_Currency_ID` stays empty and `MProduct.afterSave` never runs.
+**Where the rows live (owner's choice):** the base DB, as plugin packs do (`plugin_overlay._packApply`: one atomic pass on a `recording(db)`, the delta + the zip bytes kept, replayed on every load). Teamwork sync does not carry them; each site packs the zip in, as on legacy.
+**What changes, generic (no table names in the engine):**
+- `apply(db, xml, { clientId, model: { ML, env } })`. `clientId > 0` = the client-data path (`Env.getAD_Client_ID(ctx)`):
+  - `POFinder.getTargetUUID` (:45-56): a pack UUID is looked up in `AD_Package_UUID_Map` for this client first, on the record AND on every uuid reference (`ReferenceUtils.java:54`).
+  - `POFinder.findPO` (:80-108): a row found by UUID in another client > 0 is left alone: a new UUID is generated, mapped (`updateUUIDMap` :64-78) and the record is created. Found by ID in another client: refused with legacy's message.
+  - `PoFiller.autoFill` :386-392: new rows take the session client and the target UUID.
+- `model` given = every New / Update goes through `ModelLayer.run(q, env, SAVE)` (`PO.saveEx`: initial defaults, beforeSave, the validators, afterSave). The group's ops (CRUD_CREATE / UPDATE / DELETE, `{__opRef}` keys) are written into the same DB inside the Pack In savepoint, keys from `AD_Sequence` (`MSequence.getNextID`), audit columns from the session. A refused save fails the whole pack (legacy: the PackIn transaction rolls back).
+- No `model` = today's dictionary path, unchanged (W-PACKIN, W-PLUGIN-PACKS must not move).
+**Witness W-TD-PACK-TWIN** (`capex/tests/witness_td_pack_twin.js`, headless browser on `erp/idempiere.html`, the shipped zip, read with the system `unzip` for the independent counts):
+- T1 rows per table by target UUID == the pack's record count per table (independent scan of `PackOut.xml`); every row's `AD_Client_ID` = 11.
+- T2 every column the pack carries == the row (references resolved to the target ids), per row; 0 rows judged = INCONCLUSIVE.
+- T3 the model layer ran: every project's `C_Currency_ID` == its price list's currency (not in the pack), and `M_Product_Acct` rows exist for the 2 products (legacy wrote 4).
+- T4 the same zip again: every record `Same`, counts unchanged.
+- T5 remap: a copy of one project moved to another client before the run → the run creates a NEW project for client 11 with a new UUID and one `AD_Package_UUID_Map` row; a further run finds it through the map (`Same`).
+- Break runs, each MUST FAIL: `WTD_BREAK=skiptable` (the c_projecttask records removed from the XML fed to the engine, the independent count still from the zip) → T1; `WTD_BREAK=shiftdate` (one phase StartDate shifted a day in the XML, the comparison against the zip's) → T2; `WTD_BREAK=nomodel` (no `model`) → T3.
+**Not in this step (next, named):** the client-admin Pack In entry in the twin (item (b)), keeping the delta for replay, the legacy half of W-TD-PACK (twin rows == legacy rows), G2 mandatory check.
