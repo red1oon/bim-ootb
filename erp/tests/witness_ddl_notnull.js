@@ -44,6 +44,7 @@ const NNRE = /null value in column "([^"]+)" of relation "([^"]+)" violates not-
   // N1 — X of N tables: a blank new record; the twin's answer == the column Postgres names for the same INSERT
   const enf = twinTables.filter(t => { const e = ML.notNullCols(trx(), t); return e && e.length; });
   log('§DDL_NOTNULL_POP twin_tables=' + twinTables.length + ' with_enforceable_notnull=' + enf.length + ' in_postgres=' + enf.filter(t => pgCols[t]).length);
+  const isKey = {}; H.q("SELECT lower(t.tablename) AS t, lower(c.columnname) AS c FROM ad_column c JOIN ad_table t ON t.ad_table_id=c.ad_table_id WHERE c.iskey='Y' AND c.isactive='Y'").forEach(r => { if (/_id$/.test(r.c)) isKey[r.t + '.' + r.c] = 1; });
   const STD = { created: 'now()', updated: 'now()', createdby: '100', updatedby: '100', isactive: "'Y'" };
   let sql = '', cases = [];
   enf.forEach(t => {
@@ -53,7 +54,7 @@ const NNRE = /null value in column "([^"]+)" of relation "([^"]+)" violates not-
     Object.keys(pgCols[t]).forEach(c => {
       let v = row[c];
       if (c === t + '_uu') { cols.push(c); vals.push("'a0000000-0000-4000-8000-0000000000aa'"); return; }   // PO.saveNew makes the UU (PO.java:3547-3554)
-      if (c === idc) { cols.push(c); vals.push('999999990'); return; }
+      if (c === idc && isKey[t + '.' + c]) { cols.push(c); vals.push('999999990'); return; }   // PO assigns the key only for an IsKey column ending _ID (PO.java:3523-3528); a parent-keyed table gets it from the caller
       if (STD[c] && v == null) { cols.push(c); vals.push(STD[c]); return; }
       if ((c === 'ad_client_id' || c === 'ad_org_id') && v == null) { cols.push(c); vals.push('11'); return; }
       if (v == null) return;                                   // PO.doInsert omits a null column (PO.java:3735)

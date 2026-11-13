@@ -102,7 +102,7 @@ var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms);
   // T4 created side (control)
   var cid = await pg.evaluate(function () { return new Promise(function (res) { var once = function (e) { if (e.detail && String(e.detail.table).toLowerCase() === 'm_warehouse') { window.removeEventListener('overlay:committed', once); res(e.detail.createdId); } };
     window.addEventListener('overlay:committed', once);
-    window.__crud.applyOp({ op_type: 'CRUD_CREATE', key: 'm_warehouse', table: 'm_warehouse', verb: 'create', fields: { value: 'TIPW', name: 'Tip Warehouse', ad_client_id: 11, ad_org_id: 12, isactive: 'Y' } });
+    window.__crud.applyOp({ op_type: 'CRUD_CREATE', key: 'm_warehouse', table: 'm_warehouse', verb: 'create', fields: Object.assign({}, window.ModelLayer.initialDefaultsOf('m_warehouse'), { value: 'TIPW', name: 'Tip Warehouse', c_location_id: 114, ad_client_id: 11, ad_org_id: 12, isactive: 'Y' }) });   // a raw op carries no form: start from `new M..(ctx, 0)` (the class's ctor defaults) and give the columns the legacy DATABASE declares NOT NULL - else the commit gate refuses it as Postgres would (CAPEX_DASHBOARD.md §5.74)
     setTimeout(function () { res(null); }, 6000); }); });
   await sleep(400);
   var g4 = cid != null ? await trxGet('m_warehouse', cid) : null, q4 = cid != null ? await trxQ('SELECT name FROM m_warehouse WHERE m_warehouse_id=' + Number(cid)) : null;

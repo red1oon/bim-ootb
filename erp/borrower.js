@@ -32,7 +32,10 @@
       setTimeout(function () { E.removeEventListener('overlay:committed', once); res(null); }, 8000);
     });
   }
-  function create(table, fields) { return commit({ op_type: 'CRUD_CREATE', key: table, table: table, verb: 'create', fields: fields }, table); }
+  // a new row is `new M..(ctx, 0)` first: the class's setInitialDefaults (ModelLayer.initialDefaultsOf, generated from the iDempiere source) lie under what this page sets. Without them the
+  //   C_PaymentProcessor row had no Commission (MPaymentProcessor.java:66-74), a column the legacy DATABASE declares NOT NULL (found by the commit gate, bim-ootb prompts/CAPEX_DASHBOARD.md §5.74)
+  function create(table, fields) { var ML = E && E.ModelLayer, init = ML && ML.initialDefaultsOf ? ML.initialDefaultsOf(table) : {};
+    return commit({ op_type: 'CRUD_CREATE', key: table, table: table, verb: 'create', fields: Object.assign({}, init, fields) }, table); }
   function update(table, id, changes) { return commit({ op_type: 'CRUD_UPDATE', key: table, table: table, verb: 'update', id: id, changes: changes }, table); }
   function remove(table, id) { return commit({ op_type: 'CRUD_DELETE', key: table, table: table, verb: 'delete', id: id }, table); }
 

@@ -38,7 +38,8 @@ let fails = 0; const ok = (n, c, i) => { if (!c) fails++; console.log('  §LIBER
   ok('V2 clicking the menu leaf ACTIVATED the bundle before the window rendered (ACTIVE, model class registered)', s3.state === 'ACTIVE' && s3.model && iAct >= 0 && iWin > iAct, { s3, iAct, iWin });
   // the host commit funnel: a PP_Order through applyOp -> sidecar; the bundle's model classes explode the BOM + write MRP
   const out = await pg.evaluate(async () => {
-    const f = { ad_client_id: 11, ad_org_id: 50006, documentno: 'LIVE-1', m_product_id: 136, pp_product_bom_id: 50004, qtyordered: 100, m_warehouse_id: 50002, c_uom_id: 100, ad_workflow_id: 50017, qtybatchsize: 100,
+    // a raw op through the funnel carries no form: it must hold what the Manufacturing Order window supplies (ctor defaults Line / PriorityRule, DateOrdered, the plant), all NOT NULL in the legacy DB (CAPEX_DASHBOARD.md §5.74)
+    const f = { line: 10, priorityrule: '5', dateordered: '2008-08-16 00:00:00', s_resource_id: 50000, ad_client_id: 11, ad_org_id: 50006, documentno: 'LIVE-1', m_product_id: 136, pp_product_bom_id: 50004, qtyordered: 100, m_warehouse_id: 50002, c_uom_id: 100, ad_workflow_id: 50017, qtybatchsize: 100,
       datestartschedule: '2008-08-16 00:00:00', datefinishschedule: '2008-08-17 00:00:00', datepromised: '2008-08-17 00:00:00', docstatus: 'DR', docaction: 'CO', isactive: 'Y' };
     window.__crud.applyOp({ op_type: 'CRUD_CREATE', key: 'pp_order', table: 'pp_order', verb: 'create', fields: f }); await new Promise(r => setTimeout(r, 4000));
     const k = window.__crud.kernelDb && window.__crud.kernelDb(); if (!k) return { noKernel: true };
@@ -53,7 +54,7 @@ let fails = 0; const ok = (n, c, i) => { if (!c) fails++; console.log('  §LIBER
   // V5 PO.save semantics: an order whose afterSave REFUSES (no routing) must not be sealed at all (rollback), not sealed-with-a-log-line
   const mR = logs.length;
   const nr = await pg.evaluate(async () => {
-    const f = { ad_client_id: 11, ad_org_id: 50006, documentno: 'LIVE-NOROUTE', m_product_id: 136, pp_product_bom_id: 50004, qtyordered: 10, m_warehouse_id: 50002, c_uom_id: 100, datestartschedule: '2008-08-16 00:00:00', datepromised: '2008-08-17 00:00:00', docstatus: 'DR', docaction: 'CO', isactive: 'Y' };
+    const f = { line: 10, priorityrule: '5', dateordered: '2008-08-16 00:00:00', s_resource_id: 50000, ad_client_id: 11, ad_org_id: 50006, documentno: 'LIVE-NOROUTE', m_product_id: 136, pp_product_bom_id: 50004, qtyordered: 10, m_warehouse_id: 50002, c_uom_id: 100, datestartschedule: '2008-08-16 00:00:00', datepromised: '2008-08-17 00:00:00', docstatus: 'DR', docaction: 'CO', isactive: 'Y' };
     window.__crud.applyOp({ op_type: 'CRUD_CREATE', key: 'pp_order', table: 'pp_order', verb: 'create', fields: f }); await new Promise(r => setTimeout(r, 3000));
     const k = window.__crud.kernelDb(); const rows = (k.exec('SELECT * FROM kernel_ops ORDER BY 1')[0] || { values: [] }).values.map(v => { try { return JSON.parse(v[4]); } catch (e) { return null; } }).filter(Boolean);
     return rows.filter(o => o.fields && o.fields.documentno === 'LIVE-NOROUTE').length;

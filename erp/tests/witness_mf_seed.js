@@ -37,6 +37,7 @@ var ROOT = process.env.MFS_ROOT || path.join(__dirname, '..', '..');
 var HERE = path.join(__dirname, '..', '..');
 var MIME = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json', '.wasm': 'application/wasm', '.png': 'image/png', '.css': 'text/css' };
 function reqPw() { try { return require('playwright'); } catch (e) { return require('/home/red1/bim-ootb/tests/node_modules/playwright'); } }
+var ALLPAGES = [];
 var subtle = nodeCrypto.webcrypto.subtle, fails = 0, judged = 0, errors = 0, ARMS = {}, QUIET = !!process.env.MFS_ONLY_ARMS, INCONC = [];
 function verdict(arm, ok, label, detail) { judged++; ARMS[arm] = ARMS[arm] || 0; if (!ok) { fails++; ARMS[arm]++; } if (!QUIET) console.log('   ' + (ok ? '🟢' : '🔴') + ' ' + arm + ' ' + label + (detail ? ' — ' + detail : '')); return ok; }
 function inconclusive(arm, label) { INCONC.push(arm); if (!QUIET) console.log('   ⚪ ' + arm + ' INCONCLUSIVE — ' + label); }
@@ -131,6 +132,7 @@ var BORROWERS = [121, 200000], SHIPPED_ROLE = 50004, TILL_ROLE = Number(process.
     await pg.addInitScript(function () { var q = new URLSearchParams(location.search).get('xcfg'); if (q) { var c = JSON.parse(atob(q)); window.TEAM_PLAN_TRUST = c.trust; } });
     await pg.goto(base + url, { waitUntil: 'load' });
     await pg.waitForFunction(ready, null, { timeout: 240000 });
+    ALLPAGES.push({ name: name, logs: logs });
     return { name: name, pg: pg, logs: logs, errs: errs, ctx: ctx };
   }
   var qsBase = '&team=1&pipe=' + encodeURIComponent(PIPE) + '&xcfg=' + xcfg;
@@ -191,7 +193,9 @@ var BORROWERS = [121, 200000], SHIPPED_ROLE = 50004, TILL_ROLE = Number(process.
   var loans = [];
   for (var bi = 0; bi < 2; bi++) {
     var price = bi === 0 ? 200 : 100, docno = 'MFL-' + (bi + 1) + '-' + TAG;
-    var inv = await T.create(A, 'c_invoice', { ad_client_id: 11, ad_org_id: 11, c_doctype_id: 116, c_doctypetarget_id: 116, c_bpartner_id: bps[bi].id, c_paymentterm_id: 108, m_pricelist_id: 103, c_currency_id: 100, issotrx: 'Y', isactive: 'Y', docstatus: 'DR', docaction: 'CO', dateinvoiced: '2026-10-28 00:00:00', dateacct: '2026-10-28 00:00:00', paymentrule: 'P', processed: 'N', documentno: docno, description: 'micro loan ' + (bi + 1) });
+    // the Invoice window fills the partner's location from the partner (MInvoice.setBPartner); a raw create must carry it: C_Invoice.C_BPartner_Location_ID is NOT NULL in the legacy DB (CAPEX_DASHBOARD.md §5.74)
+    var bpl = (await T.rows(A, 'SELECT MIN(c_bpartner_location_id) AS l FROM c_bpartner_location WHERE c_bpartner_id=' + Number(bps[bi].id) + " AND isactive='Y'"))[0];
+    var inv = await T.create(A, 'c_invoice', { c_bpartner_location_id: bpl && bpl.l, ad_client_id: 11, ad_org_id: 11, c_doctype_id: 116, c_doctypetarget_id: 116, c_bpartner_id: bps[bi].id, c_paymentterm_id: 108, m_pricelist_id: 103, c_currency_id: 100, issotrx: 'Y', isactive: 'Y', docstatus: 'DR', docaction: 'CO', dateinvoiced: '2026-10-28 00:00:00', dateacct: '2026-10-28 00:00:00', paymentrule: 'P', processed: 'N', documentno: docno, description: 'micro loan ' + (bi + 1) });
     await T.create(A, 'c_invoiceline', { ad_client_id: 11, ad_org_id: 11, c_invoice_id: inv, line: 10, m_product_id: 124, qtyinvoiced: 1, qtyentered: 1, c_uom_id: 100, priceentered: price, priceactual: price, pricelist: price, c_tax_id: 105, linenetamt: price, isdescription: 'N', isactive: 'Y' });
     var n0 = A.logs.length; await eng(A, function (W, id) { W.__crud.process('c_invoice', id, 'CO', { from: 'DR', to: 'CO', outcome: 'success' }); return true; }, inv);
     await waitFor(async function () { return A.logs.slice(n0).some(function (l) { return /§CRUD process committed key=c_invoice/.test(l); }); }, 30000); await sleep(1500);
@@ -425,4 +429,7 @@ var BORROWERS = [121, 200000], SHIPPED_ROLE = 50004, TILL_ROLE = Number(process.
     console.log('§MFS_VERDICT ' + (fails ? 'FAIL' : 'PASS') + ' judged=' + judged + ' fails=' + fails + ' inconclusive=' + (INCONC.join(',') || 'none') + ' mutants_killed=' + killed + '/' + muts.length + ' pageerrors=' + errors);
     process.exit(fails ? 1 : 0);
   }
-})().catch(function (e) { console.log('§MFS_CRASH ' + (e && e.stack || e)); process.exit(2); });
+})().catch(function (e) { console.log('§MFS_CRASH ' + (e && e.stack || e));
+  // the shipped §-log is the evidence of WHY: every refused save of every page (the model's and the commit gate's own lines)
+  ALLPAGES.forEach(function (p) { p.logs.filter(function (l) { return /§MODEL-SAVE-ROLLBACK|§HOST-NOTNULL table=|§AD-MODELVAL-LIVE .*REJECT/.test(l); }).slice(0, 12).forEach(function (l) { console.log('   §MFS_REFUSED page=' + p.name + ' ' + String(l).slice(0, 300)); }); });
+  process.exit(2); });
