@@ -32,6 +32,10 @@
   // I_BankStatement (AD_Table 600, 60 AD_Column rows in the seed, no physical table) for Import Bank Statement, AD_Process 221 - Witness: W-IMPORT-BANKSTATEMENT (erp/tests/witness_import_bankstatement.js), bim-compiler prompts/MIGRATE_INSTALL_TENANT.md section E3D-SPEC lane IB;
   //   DDL verbatim from build/erp/ad_full.db (sqlite3 .schema i_bankstatement). Kept apart from DDL (as Inventory / GLJournal / Invoice) so ensure() still reports the three older import tables; ensure() calls ensureBankStatement().
   var DDL_IBS = { i_bankstatement: 'CREATE TABLE IF NOT EXISTS "i_bankstatement" ("i_bankstatement_id" NUMERIC, "ad_client_id" NUMERIC, "ad_org_id" NUMERIC, "isactive" TEXT, "created" TEXT, "createdby" NUMERIC, "updated" TEXT, "updatedby" NUMERIC, "i_isimported" TEXT, "i_errormsg" TEXT, "processed" TEXT, "c_bankstatement_id" NUMERIC, "statementdate" TEXT, "description" TEXT, "c_bankaccount_id" NUMERIC, "routingno" TEXT, "bankaccountno" TEXT, "c_payment_id" NUMERIC, "paymentdocumentno" TEXT, "c_currency_id" NUMERIC, "iso_code" TEXT, "c_bpartner_id" NUMERIC, "name" TEXT, "bpartnervalue" TEXT, "c_invoice_id" NUMERIC, "invoicedocumentno" TEXT, "c_charge_id" NUMERIC, "chargename" TEXT, "chargeamt" NUMERIC, "c_bankstatementline_id" NUMERIC, "line" NUMERIC, "dateacct" TEXT, "valutadate" TEXT, "statementlinedate" TEXT, "trxtype" TEXT, "referenceno" TEXT, "memo" TEXT, "isreversal" TEXT, "interestamt" NUMERIC, "trxamt" NUMERIC, "linedescription" TEXT, "stmtamt" NUMERIC, "eftstatementdate" TEXT, "eftstatementreference" TEXT, "eftstatementlinedate" TEXT, "eftvalutadate" TEXT, "eftreference" TEXT, "eftcheckno" TEXT, "efttrxid" TEXT, "efttrxtype" TEXT, "eftmemo" TEXT, "eftpayee" TEXT, "eftpayeeaccount" TEXT, "eftamt" NUMERIC, "eftcurrency" TEXT, "createpayment" TEXT, "processing" TEXT, "matchstatement" TEXT, "i_bankstatement_uu" TEXT, "iban" TEXT);' };
+  // AD_Package_UUID_Map (AD_Table 200105, 12 AD_Column rows in the seed, no physical table): a client admin's DATA Pack In remaps a record of another client through it (POFinder.getTargetUUID / updateUUIDMap,
+  //   erp/pipo_packin.js client-data path) - Witness: W-TD-PACK-TWIN (capex/tests/witness_td_pack_twin.js), bim-ootb prompts/CAPEX_DASHBOARD.md section 5.69. DDL from the live iDempiere 13 schema (information_schema.columns
+  //   of adempiere.ad_package_uuid_map, numeric -> NUMERIC else TEXT, the build_ad_seed_patch.sh extraction), PRIMARY KEY on the table's key. Kept apart (as Inventory) so ensure() still reports the import tables; ensure() calls ensurePipo().
+  var DDL_PIPO = { ad_package_uuid_map: 'CREATE TABLE IF NOT EXISTS "ad_package_uuid_map" ("ad_client_id" NUMERIC, "ad_org_id" NUMERIC, "ad_package_uuid_map_id" NUMERIC, "ad_package_uuid_map_uu" TEXT, "ad_table_id" NUMERIC, "created" TEXT, "createdby" NUMERIC, "isactive" TEXT, "source_uuid" TEXT, "target_uuid" TEXT, "updated" TEXT, "updatedby" NUMERIC, PRIMARY KEY ("ad_package_uuid_map_id"))' };
   var DDL_RECURRING = {
     c_recurring_run: 'CREATE TABLE IF NOT EXISTS "c_recurring_run" ("c_recurring_run_id" NUMERIC, "ad_client_id" NUMERIC, "ad_org_id" NUMERIC, "isactive" TEXT, "created" TEXT, "createdby" NUMERIC, "updated" TEXT, "updatedby" NUMERIC, "c_payment_id" NUMERIC, "c_order_id" NUMERIC, "c_invoice_id" NUMERIC, "c_project_id" NUMERIC, "gl_journalbatch_id" NUMERIC, "c_recurring_id" NUMERIC, "datedoc" TEXT, "c_recurring_run_uu" TEXT)',
     c_recurringgroup: 'CREATE TABLE IF NOT EXISTS "c_recurringgroup" ("ad_client_id" NUMERIC, "ad_org_id" NUMERIC, "created" TEXT, "createdby" NUMERIC, "c_recurringgroup_id" NUMERIC, "c_recurringgroup_uu" TEXT, "description" TEXT, "help" TEXT, "isactive" TEXT, "name" TEXT, "updated" TEXT, "updatedby" NUMERIC, "value" TEXT)'
@@ -76,6 +80,7 @@
     ensureGLJournal(db);
     ensureBankStatement(db);
     ensureInvoice(db);
+    ensurePipo(db);
     return made;
   }
   // ensureRecurring(db) - the Recurring tables (see DDL_RECURRING); idempotent; returns the number it created. ensure() calls it, so every host that boots the import tables boots these too.
@@ -111,6 +116,13 @@
     return made;
   }
 
+  function ensurePipo(db) {
+    var made = 0;
+    Object.keys(DDL_PIPO).forEach(function (t) { var r = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='" + t + "'"); if (r.length && r[0].values.length) return; db.run(DDL_PIPO[t]); made++; });
+    log('§PIPO_TABLES ensure created=' + made + ' (' + Object.keys(DDL_PIPO).join(', ') + '; boot overlay, outside the team base hash)');
+    return made;
+  }
+
   function ensureBankStatement(db) {
     var made = 0;
     Object.keys(DDL_IBS).forEach(function (t) { var r = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='" + t + "'"); if (r.length && r[0].values.length) return; db.run(DDL_IBS[t]); made++; });
@@ -118,7 +130,7 @@
     return made;
   }
 
-  var API = { DDL_IBS: DDL_IBS, ensureBankStatement: ensureBankStatement, DDL: DDL, DDL_RECURRING: DDL_RECURRING, DDL_POS: DDL_POS, DDL_INV: DDL_INV, ensureInventory: ensureInventory, DDL_INVOICE: DDL_INVOICE, ensureInvoice: ensureInvoice, DDL_GLJ: DDL_GLJ, ensureGLJournal: ensureGLJournal, ensure: ensure, ensureRecurring: ensureRecurring, ensurePos: ensurePos };
+  var API = { DDL_PIPO: DDL_PIPO, ensurePipo: ensurePipo, DDL_IBS: DDL_IBS, ensureBankStatement: ensureBankStatement, DDL: DDL, DDL_RECURRING: DDL_RECURRING, DDL_POS: DDL_POS, DDL_INV: DDL_INV, ensureInventory: ensureInventory, DDL_INVOICE: DDL_INVOICE, ensureInvoice: ensureInvoice, DDL_GLJ: DDL_GLJ, ensureGLJournal: ensureGLJournal, ensure: ensure, ensureRecurring: ensureRecurring, ensurePos: ensurePos };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;   // node witness / ws host
   if (typeof window !== 'undefined') window.AdImportTables = API;              // browser
   else if (global) global.AdImportTables = API;
