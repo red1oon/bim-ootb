@@ -9,7 +9,7 @@
 //   - plain node, no npm: the MCP wire format is JSON-RPC 2.0, one JSON message per line on stdin/stdout, spoken here by hand
 //   - OFF by default: nothing in the repo starts it. Turn on:  claude mcp add x0-facts --scope local -- node devtools/mcp/x0-facts/server.js
 //                                                    Turn off: claude mcp remove x0-facts --scope local
-// Usage: node devtools/mcp/x0-facts/server.js [--root <bim-ootb checkout>] [--compiler-root <bim-compiler checkout>]
+// Usage: node devtools/mcp/x0-facts/server.js [--root <bim-ootb checkout>] [--compiler-root <bim-compiler checkout>] [--extra-logs <dir,dir|none>]
 // stdout carries ONLY protocol messages. Anything for a human goes to stderr.
 'use strict';
 const fs = require('fs');
@@ -31,6 +31,8 @@ const argv = process.argv.slice(2);
 const arg = n => { const i = argv.indexOf(n); return i >= 0 ? argv[i + 1] : null; };
 const ROOT = path.resolve(arg('--root') || path.join(__dirname, '..', '..', '..'));
 const COMPILER = path.resolve(arg('--compiler-root') || process.env.X0_COMPILER_ROOT || path.join(ROOT, '..', 'bim-compiler'));
+// extra log folders (read-only): --extra-logs a,b · default = the editor's default (the bake cache). `--extra-logs none` reads only logs/.
+const EXTRA_LOGS = arg('--extra-logs') === 'none' ? [] : (arg('--extra-logs') ? arg('--extra-logs').split(',') : lens.DEFAULT_EXTRA);
 const SEC = '§';
 const relOf = f => path.relative(ROOT, path.resolve(ROOT, f)).split(path.sep).join('/');
 
@@ -101,7 +103,7 @@ const TOOLS = [
     async run(a) {
       const rel = relOf(a.file);
       let text; try { text = fs.readFileSync(path.join(ROOT, rel), 'utf8'); } catch (e) { return rel + ': no such file in this checkout'; }
-      const scan = lens.scanLogs(path.join(ROOT, 'logs'));
+      const scan = lens.scanLogs(lens.logDirs(ROOT, EXTRA_LOGS));
       const r = lens.lensesFor(ROOT, rel, text, scan, new Map());
       const out = [rel + ': ' + r.shown.length + ' provable value(s), ' + r.hidden.length + ' hidden (stamped logs: ' + scan.logs.length + ', unstamped and ignored: ' + scan.unstamped + ')'];
       r.shown.forEach(l => out.push('  line ' + (l.line + 1) + ' ' + l.tag + ' → ' + l.value + '   [' + l.logName + ':' + l.logLine + ' @ ' + l.commit + ']'));
@@ -111,7 +113,7 @@ const TOOLS = [
   { name: 'context_for_file',
     description: 'Everything the repo\'s own indexes say about ONE file, in one answer: its header comment, how it reaches a user (start-up / offline cache / not loaded at start, and the cache-bump command if it needs one), the shared-object fields whose write site is in it, and each ' + SEC + 'TAG it prints with its spec place and last provable logged value (or the named reason none is shown). Call this before reading or editing a file you do not know.',
     inputSchema: { type: 'object', properties: { file: { type: 'string', description: 'Path relative to the repo root, e.g. viewer/cost_panel.js' } }, required: ['file'] },
-    async run(a) { return fileContext.build(ROOT, relOf(a.file), { fields: await fields(), tagIndex: tagIndex() }).text; } },
+    async run(a) { return fileContext.build(ROOT, relOf(a.file), { fields: await fields(), tagIndex: tagIndex(), extraLogDirs: EXTRA_LOGS }).text; } },
   { name: 'ship_check',
     description: 'Runs the repo\'s pre-ship checks on the working tree and stops at the first failure: node --check on the JS files that differ from the base ref, the service-worker precache audit, and the bump rule (a precached file changed while that app\'s CACHE_VERSION did not). Read-only. Returns the ' + SEC + 'SHIP_* lines.',
     inputSchema: { type: 'object', properties: { base: { type: 'string', description: 'git ref to compare against (default origin/main)' } } },

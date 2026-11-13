@@ -299,6 +299,11 @@ const server = http.createServer((req, res) => {
   const commit = execFileSync('git', ['-C', ROOT, 'rev-parse', '--short', 'HEAD']).toString().trim();
   const swv = (fs.readFileSync(path.join(ROOT, 'viewer/sw.js'), 'utf8').match(/CACHE_VERSION = '([^']+)'/) || [])[1];
   log(`§CLI_BAKE_ENV root=${ROOT} commit=${commit} sw=${swv} db=${DB} gpu=${GPU} out=${OUT}`);
+  // The standard stamp (scripts/log_stamp.js): commit + how many tracked files were edited, and which. With it a tool can
+  // prove whether a value in this log still belongs to today's code (bim-compiler CODE_ARCHITECTURE_DESIGN.md §F.15 step 1,
+  // #2976). §CLI_BAKE_ENV above names the commit only. A stamp must never stop a bake: any failure is logged and skipped.
+  try { log(require(path.join(ROOT, 'scripts', 'log_stamp.js')).stampLine(ROOT, 'cli_silent_bake db=' + DB)); }
+  catch (e) { log('§LOG_STAMP_SKIP ' + (e && e.message)); }
 
   // MEASURED 2026-09-01 (gl_probe, this machine): headless '--use-angle=vulkan' = NO-CONTEXT;
   // plain headless = SwiftShader; '--use-angle=gl-egl' = Intel UHD via Mesa; gl-egl PLUS

@@ -174,7 +174,7 @@ function activate(context) {
       return null;
     }
     const rel = path.relative(sourceRoot, editor.document.uri.fsPath).split(path.sep).join('/');
-    const r = fileContext.build(sourceRoot, rel, { fields: getFields(), tagIndex: getTags(), costNow: measureNow() });
+    const r = fileContext.build(sourceRoot, rel, { fields: getFields(), tagIndex: getTags(), costNow: measureNow(), extraLogDirs: extraLogDirs() });
     try {
       await vscode.env.clipboard.writeText(r.text);
       const doc = await vscode.workspace.openTextDocument({ content: r.text, language: 'markdown' });
@@ -206,11 +206,22 @@ function activate(context) {
   //    only when the printing file is unchanged since that log's commit. Logs are re-read only when one of them changes. ──
   let logScan = null, logScanKey = '';
   const proofCache = new Map();
+  function extraLogDirs() {
+    const set = vscode.workspace.getConfiguration('bimDevtools').get('extraLogDirs');
+    return Array.isArray(set) ? set : lensIndex.DEFAULT_EXTRA;
+  }
+  // The checkout's own logs/ is re-read when one of its files changes; the extra folders (hundreds of files, outside the
+  // repo) are re-listed at most every 15 s.
+  let logScanAt = 0;
   function scanLogs(sourceRoot) {
     const dir = path.join(sourceRoot, 'logs');
     let key = '';
     try { key = fs.readdirSync(dir).filter(n => n.endsWith('.log')).map(n => n + ':' + fs.statSync(path.join(dir, n)).mtimeMs).join('|'); } catch (e) { key = ''; }
-    if (!logScan || key !== logScanKey) { logScan = lensIndex.scanLogs(dir); logScanKey = key; proofCache.clear(); }
+    const extra = extraLogDirs();
+    key += '\u0000' + extra.join('|');
+    if (!logScan || key !== logScanKey || Date.now() - logScanAt > 15000) {
+      logScan = lensIndex.scanLogs(lensIndex.logDirs(sourceRoot, extra)); logScanKey = key; logScanAt = Date.now(); proofCache.clear();
+    }
     return logScan;
   }
   function lenses(document) {

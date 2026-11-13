@@ -43,7 +43,7 @@ function git(root, args) {
 /**
  * @param {string} root - the bim-ootb checkout
  * @param {string} rel  - the file, relative to root, with forward slashes
- * @param {{fields: object|null, tagIndex: object|null, costNow?: object}} deps - indexes the caller already holds
+ * @param {{fields: object|null, tagIndex: object|null, costNow?: object, extraLogDirs?: string[]}} deps - indexes the caller already holds
  *   (fields: app_surface_index.loadSurface() · tagIndex: tag_index.buildIndex()); a null one makes its section INCONCLUSIVE.
  * @returns {{found: boolean, text: string, facts: object}} facts repeats, as data, what the text says (the witness reads it).
  */
@@ -97,7 +97,7 @@ function build(root, rel, deps) {
   L.push('');
 
   L.push('## The § tags it prints', '');
-  const scan = lens.scanLogs(path.join(root, 'logs'));
+  const scan = lens.scanLogs(lens.logDirs(root, deps.extraLogDirs));
   const printed = lens.explain(root, rel, text, scan, new Map());
   facts.tags = printed.map(p => p.tag);
   facts.tagStates = printed.map(p => p.state);

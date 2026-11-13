@@ -12,6 +12,7 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const cp = require('child_process');
 const T = require('./tag_index');
 
@@ -26,24 +27,70 @@ function parseStamp(line) {
   return { commit, dirty, dirtyFiles: df ? df.split(',') : [], at: f('at') || '' };
 }
 
-/** Read every `*.log` in `logsDir`. Stamped logs come back with their tags; unstamped ones are only counted. */
-function scanLogs(logsDir) {
-  const logs = []; let unstamped = 0;
-  let names; try { names = fs.readdirSync(logsDir).filter(n => n.endsWith('.log')).sort(); } catch (e) { names = []; }
-  for (const n of names) {
-    let text; try { text = fs.readFileSync(path.join(logsDir, n), 'utf8'); } catch (e) { continue; }
-    const lines = text.split('\n');
-    const stamp = parseStamp(lines[0]);
-    if (!stamp) { unstamped++; continue; }
-    const tags = new Map();
-    for (let i = 1; i < lines.length; i++) {
-      if (lines[i].indexOf('§') < 0) continue;
-      for (const h of T.tagsInLine(lines[i])) tags.set(h.tag, { text: lines[i].trim(), line: i + 1 });   // the last one wins
-    }
-    logs.push({ file: path.join(logsDir, n), name: n, stamp, tags });
+const STAMP_LINES = 20;          // a stamp must be within the first lines: a wrapper script may write a few lines before it
+const MAX_DEPTH = 5;             // folders below a log root that are still read
+const MAX_BYTES = 4 * 1024 * 1024;
+const DEFAULT_EXTRA = ['~/.cache/bim4d'];   // where bake and browser logs are kept (§F.15 step 1)
+
+/** `~` and `~/x` → the home folder. Anything else is returned as given. */
+function expandHome(p) {
+  if (p === '~') return os.homedir();
+  return p.startsWith('~/') ? path.join(os.homedir(), p.slice(2)) : p;
+}
+/** The log roots for a checkout: its own `logs/`, then the extra folders (read-only, outside the repo). */
+function logDirs(root, extra) {
+  return [path.join(root, 'logs')].concat((extra || []).filter(Boolean).map(d => path.resolve(root, expandHome(String(d)))));
+}
+/** The stamp among the first lines, wherever it starts on its line (a bake log puts a timestamp before it), or null. */
+function findStamp(lines) {
+  for (let i = 0; i < Math.min(lines.length, STAMP_LINES); i++) {
+    const k = lines[i].indexOf('§LOG_STAMP ');
+    if (k < 0) continue;
+    const stamp = parseStamp(lines[i].slice(k));
+    if (stamp) return { stamp, index: i };
   }
+  return null;
+}
+function listLogs(dir, depth, out, skipped) {
+  let ents; try { ents = fs.readdirSync(dir, { withFileTypes: true }); } catch (e) { return out; }
+  for (const e of ents.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
+    const full = path.join(dir, e.name);
+    if (e.isDirectory()) { if (depth >= MAX_DEPTH) skipped.deep++; else listLogs(full, depth + 1, out, skipped); }
+    else if (e.isFile() && e.name.endsWith('.log')) out.push(full);
+  }
+  return out;
+}
+
+/**
+ * Read every `*.log` under the given folder(s), sub-folders included. Stamped logs come back with their tags; unstamped
+ * ones are only counted. A log is stamped only by a `§LOG_STAMP` line (scripts/log_stamp.js): any other line that names a
+ * commit (a bake's `§CLI_BAKE_ENV`) records no dirty count, so nothing could be proven from it.
+ * @param {string|string[]} dirs - one folder or several; the first is the checkout's own `logs/`.
+ * @param {{maxBytes?: number}} [opts]
+ * @returns {{logs: object[], unstamped: number, skipped: {big: number, deep: number}, dirs: number}}
+ */
+function scanLogs(dirs, opts) {
+  const roots = Array.isArray(dirs) ? dirs : [dirs];
+  const maxBytes = (opts && opts.maxBytes) || MAX_BYTES;
+  const logs = []; let unstamped = 0; const skipped = { big: 0, deep: 0 };
+  roots.forEach((rootDir, ri) => {
+    for (const file of listLogs(rootDir, 0, [], skipped)) {
+      let text;
+      try { if (fs.statSync(file).size > maxBytes) { skipped.big++; continue; } text = fs.readFileSync(file, 'utf8'); } catch (e) { continue; }
+      const lines = text.split('\n');
+      const found = findStamp(lines);
+      if (!found) { unstamped++; continue; }
+      const tags = new Map();
+      for (let i = found.index + 1; i < lines.length; i++) {
+        if (lines[i].indexOf('§') < 0) continue;
+        for (const h of T.tagsInLine(lines[i])) tags.set(h.tag, { text: lines[i].trim(), line: i + 1 });   // the last one wins
+      }
+      const rel = path.relative(rootDir, file).split(path.sep).join('/');
+      logs.push({ file, name: ri === 0 ? rel : path.basename(rootDir) + '/' + rel, stamp: found.stamp, tags });
+    }
+  });
   logs.sort((a, b) => (a.stamp.at < b.stamp.at ? 1 : a.stamp.at > b.stamp.at ? -1 : 0));   // newest first
-  return { logs, unstamped };
+  return { logs, unstamped, skipped, dirs: roots.length };
 }
 
 function gitQuiet(root, args) {
@@ -124,4 +171,4 @@ function hoverLine(e) {
 }
 const title = l => 'last: ' + (l.value.length > 110 ? l.value.slice(0, 107) + '…' : l.value) + '   ·   ' + l.logName + ' @ ' + l.commit.slice(0, 7);
 
-module.exports = { parseStamp, scanLogs, whyNot, lensesFor, explain, hoverLine, title };
+module.exports = { DEFAULT_EXTRA, expandHome, logDirs, findStamp, parseStamp, scanLogs, whyNot, lensesFor, explain, hoverLine, title };

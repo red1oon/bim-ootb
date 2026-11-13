@@ -24,7 +24,9 @@ step. It never calls a model or the network, and nothing in `devtools/` is loade
 - **Cost if deployed** counts raw bytes: *start-up* = the scripts the app's pages load, *offline cache* = the files its service
   worker stores, for your working tree against `origin/main`. **Not yet:** minified sizes, budgets, memory estimates, browser timings.
 - **Values beside the code** shows a logged value only when it can be proven current: the log names its commit, and the file that
-  prints the tag is unchanged since. Otherwise it shows nothing. **Not yet:** other log folders, history. Expect few at first: only
+  prints the tag is unchanged since. Otherwise it shows nothing. It reads the checkout's `logs/` and the folders in the setting
+  `bimDevtools.extraLogDirs` (default `~/.cache/bim4d`, where bake logs are kept; read-only, sub-folders included). A log counts
+  only if a `§LOG_STAMP` line is among its first 20 lines; `cli_silent_bake.js` writes one since 2026-11-14. **Not yet:** other log folders, history. Expect few at first: only
   logs saved since 2026-11-13 carry the stamp.
 
 It never guesses: a phantom field (read, never written) gets a hover and no jump, an unknown field gets nothing,
