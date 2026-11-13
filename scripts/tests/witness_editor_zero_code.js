@@ -83,7 +83,7 @@ guard('§EZC_MATCHER', function z2() {
   const res = {};
   for (const [f, src] of Object.entries(fixtures)) {
     fs.writeFileSync(path.join(tmp, f), src + '\n');
-    const cmd = t.command.split('${relativeFile}').join(f).split('${fileBasenameNoExtension}').join(f.replace(/\.js$/, ''));
+    const cmd = t.command.split('${workspaceFolder}').join(ROOT).split('${relativeFile}').join(f).split('${fileBasenameNoExtension}').join(f.replace(/\.js$/, ''));
     const r = cp.spawnSync('bash', ['-c', cmd], { cwd: tmp, encoding: 'utf8' });
     const out = (r.stdout || '').split('\n');
     res[f] = { exit: r.status, errors: out.filter(l => errRe.test(l)).length, warnings: out.filter(l => warnRe.test(l)).length,

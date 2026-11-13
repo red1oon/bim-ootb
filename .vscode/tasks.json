@@ -9,8 +9,9 @@
     {
       "label": "Run this witness (full log -> logs/)",
       "type": "shell",
-      "command": "mkdir -p logs && node '${relativeFile}' > 'logs/${fileBasenameNoExtension}.log' 2>&1; ec=$?; tail -n 20 'logs/${fileBasenameNoExtension}.log'; grep -E '(^\\s*FAIL\\b|verdict=FAIL|INCONCLUSIVE|VACUOUS)' 'logs/${fileBasenameNoExtension}.log' | head -n 20 | sed -E 's|^\\s*|${relativeFile}: |'; echo \"exit=$ec  full log: logs/${fileBasenameNoExtension}.log\"; exit $ec",
+      "command": "mkdir -p logs && node '${workspaceFolder}/scripts/log_stamp.js' '${relativeFile}' > 'logs/${fileBasenameNoExtension}.log' 2>&1; node '${relativeFile}' >> 'logs/${fileBasenameNoExtension}.log' 2>&1; ec=$?; tail -n 20 'logs/${fileBasenameNoExtension}.log'; grep -E '(^\\s*FAIL\\b|verdict=FAIL|INCONCLUSIVE|VACUOUS)' 'logs/${fileBasenameNoExtension}.log' | head -n 20 | sed -E 's|^\\s*|${relativeFile}: |'; echo \"exit=$ec  full log: logs/${fileBasenameNoExtension}.log\"; exit $ec",
       "options": { "shell": { "executable": "bash", "args": ["-c"] } },
+      // §F.7 (#2927): line 1 of the saved log is §LOG_STAMP (scripts/log_stamp.js): the commit and dirty files that produced it.
       // §F.0 Z2 (#2918): the log's FAIL lines -> errors, INCONCLUSIVE/VACUOUS -> warnings in the Problems panel, on the witness file.
       "problemMatcher": [
         { "owner": "bim-witness", "source": "witness", "severity": "error", "fileLocation": ["relative", "${workspaceFolder}"],
