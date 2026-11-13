@@ -8,6 +8,7 @@ const fs = require('fs');
 const path = require('path');
 const vscode = require('vscode');
 const tagIndex = require('./lib/tag_index');
+const surface = require('./lib/app_surface_index');
 
 const JS = { language: 'javascript' };
 const MARKER = path.join('internal', 'APP_SURFACE.md'); // a folder holding this file is the bim-ootb root
@@ -45,6 +46,39 @@ function activate(context) {
   }
   const link = (abs, line) => vscode.Uri.file(abs).with({ fragment: 'L' + line }).toString();
 
+  // The APP field index is re-read only when the generated file itself changes (one stat per request).
+  let fields = null, fieldsStamp = -1;
+  function getFields() {
+    const sourceRoot = findSourceRoot(context);
+    if (!sourceRoot) return null;
+    let stamp;
+    try { stamp = fs.statSync(path.join(sourceRoot, MARKER)).mtimeMs; } catch (e) { return null; }
+    if (!fields || stamp !== fieldsStamp || fields.root !== sourceRoot) { fields = surface.loadSurface(sourceRoot); fieldsStamp = stamp; }
+    return fields;
+  }
+  function fieldUnderCursor(document, position) {
+    const hit = surface.fieldAt(document.lineAt(position.line).text, position.character, document.getText());
+    if (!hit) return null;
+    const index = getFields();
+    return index ? surface.resolve(index, hit.field) : null;
+  }
+
+  // X0-1: F12 on the god object's field → where it is written. Phantom, stale or unknown → no jump (never a guess).
+  context.subscriptions.push(vscode.languages.registerDefinitionProvider(JS, {
+    provideDefinition(document, position) {
+      const res = fieldUnderCursor(document, position);
+      if (!res || res.kind !== 'definition') return null;
+      return new vscode.Location(vscode.Uri.file(res.abs), new vscode.Position(res.line - 1, res.column));
+    }
+  }));
+  // X0-1: hover → written at · writes · reads, or PHANTOM, or "index stale".
+  context.subscriptions.push(vscode.languages.registerHoverProvider(JS, {
+    provideHover(document, position) {
+      const text = surface.formatHover(fieldUnderCursor(document, position), link);
+      return text ? new vscode.Hover(new vscode.MarkdownString(text)) : null;
+    }
+  }));
+
   // X0-2: hover on a §TAG → its spec places and the code that prints it.
   context.subscriptions.push(vscode.languages.registerHoverProvider(JS, {
     provideHover(document, position) {
@@ -61,6 +95,7 @@ function activate(context) {
   }));
   context.subscriptions.push(vscode.commands.registerCommand('x0Navigator.rebuildIndexes', () => {
     tags = null;
+    fields = null;
     const index = getTags();
     vscode.window.showInformationMessage(index
       ? 'X0 Navigator: ' + index.spec.tags.size + ' §TAGs in ' + index.spec.files + ' spec files'
