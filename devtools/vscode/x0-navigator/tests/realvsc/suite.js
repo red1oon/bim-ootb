@@ -64,6 +64,19 @@ async function run() {
       res.probe.seconds = Math.round((Date.now() - t0) / 100) / 10;
     }
     for (const s of plan.steps || []) await at(s.label, s.file, s.line, s.col, s.tries);
+    // §F.12 first versions, asked through VS Code's own command and provider entry points
+    if (plan.extras) {
+      const x = res.extras = {};
+      const all = await vscode.commands.getCommands(true);
+      x.commands = all.filter(c => c.startsWith('x0Navigator.')).sort();
+      x.cost = await vscode.commands.executeCommand('x0Navigator.costIfDeployed');
+      x.check = await vscode.commands.executeCommand('x0Navigator.shipCheck');
+      const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(plan.extras.lensFile));
+      await vscode.window.showTextDocument(doc);
+      x.status = api.statusText(doc);
+      const lenses = await vscode.commands.executeCommand('vscode.executeCodeLensProvider', doc.uri, 500);
+      x.lenses = (lenses || []).filter(l => l.command && l.command.command === 'x0Navigator.openLogLine').map(l => ({ line: l.range.start.line + 1, title: l.command.title }));
+    }
   } catch (e) {
     res.error = String(e && e.stack || e);
   }
