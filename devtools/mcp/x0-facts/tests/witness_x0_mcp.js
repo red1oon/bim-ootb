@@ -60,7 +60,7 @@ const call = async (name, args) => { const r = await rpc('tools/call', { name, a
   child.stdin.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) + '\n');
   const list = await rpc('tools/list', {});
   const tools = (list.result && list.result.tools) || [];
-  const WANT = ['where_is_field_set', 'what_is_tag', 'how_is_file_loaded', 'cost_if_deployed', 'last_logged_value', 'ship_check'];
+  const WANT = ['where_is_field_set', 'what_is_tag', 'how_is_file_loaded', 'cost_if_deployed', 'last_logged_value', 'context_for_file', 'ship_check'];
   const toolsOk = check('tools/list → ' + tools.length + ' tools, each with a description and an input schema', WANT.every(n => tools.some(t => t.name === n && t.description.length > 40 && t.inputSchema && t.inputSchema.type === 'object')) && tools.length === WANT.length);
 
   // fields: compare with the lib's own answer on the committed index (a field the lib resolves there, and whose line matches)
@@ -94,6 +94,15 @@ const call = async (name, args) => { const r = await rpc('tools/call', { name, a
   const v1 = await call('last_logged_value', { file: 'viewer/schedule_gate.js' });
   const lensOk = check('last_logged_value → counts provable and hidden values, and names how many logs were ignored as unstamped (' + v1.text.split('\n')[0].slice(0, 90) + ')',
     /^viewer\/schedule_gate\.js: \d+ provable value\(s\), \d+ hidden \(stamped logs: \d+, unstamped and ignored: \d+\)/.test(v1.text));
+  // context_for_file: the same block lib/file_context.js builds (compared on the sections that do not depend on which index copy is read)
+  const FC = require(path.join(LIB, 'file_context'));
+  const x1 = await call('context_for_file', { file: 'viewer/cost_panel.js' });
+  const want = FC.build(ROOT, 'viewer/cost_panel.js', { fields: null, tagIndex: null }).text;
+  const sec = (t, title) => { const i = t.indexOf('## ' + title); const j = t.indexOf('\n## ', i + 3); return i < 0 ? null : t.slice(i, j < 0 ? undefined : j); };
+  const x2 = await call('context_for_file', { file: 'viewer/zz_no_such_file.js' });
+  const contextOk = check('context_for_file → the lib\'s own block (header and load sections identical), field and tag sections answered from the indexes; a missing file says so',
+    x1.text.startsWith('# Context for `viewer/cost_panel.js`') && sec(x1.text, 'Its own header') === sec(want, 'Its own header') &&
+    (!parser || sec(x1.text, 'How it reaches a user') === sec(want, 'How it reaches a user')) && !/INCONCLUSIVE: no APP field index|spec index not available/.test(x1.text) && /no such file/.test(x2.text));
   const k1 = await call('ship_check', { base: 'HEAD' });
   const checkOk = !parser ? null : check('ship_check → the three steps and a verdict (' + k1.text.split('\n').pop() + ')',
     /SHIP_SYNTAX files=\d+ verdict=PASS/.test(k1.text) && /SHIP_AUDIT verdict=PASS/.test(k1.text) && /SHIP_CHECK verdict=(PASS|FAIL)/.test(k1.text));
@@ -131,7 +140,7 @@ const call = async (name, args) => { const r = await rpc('tools/call', { name, a
 
   child.stdin.end();
   const f = { tools: tools.length, init: yn(initOk), field: yn(fieldOk), phantom: yn(phantomOk), unknown: yn(unknownOk), tag: yn(tagOk), fake_tag: yn(fakeTagOk),
-    cost: costOk === null ? '?' : yn(costOk), loaded: loadedOk === null ? '?' : yn(loadedOk), lens: yn(lensOk), check: checkOk === null ? '?' : yn(checkOk),
+    cost: costOk === null ? '?' : yn(costOk), loaded: loadedOk === null ? '?' : yn(loadedOk), lens: yn(lensOk), context: yn(contextOk), check: checkOk === null ? '?' : yn(checkOk),
     bad_tool_error: yn(badToolOk), bad_json_survives: yn(badJsonOk), network_modules: net };
   summary(f, fail ? 'FAIL' : (parser && toolsOk ? 'PASS' : 'INCONCLUSIVE'));
   if (fail) process.exitCode = 1;

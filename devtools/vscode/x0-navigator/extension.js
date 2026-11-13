@@ -13,6 +13,7 @@ const surfaceRefresh = require('./lib/surface_refresh');
 const deployCost = require('./lib/deploy_cost');
 const lensIndex = require('./lib/lens_index');
 const ship = require('./lib/ship');
+const fileContext = require('./lib/file_context');
 
 const JS = { language: 'javascript' };
 const MARKER = path.join('internal', 'APP_SURFACE.md'); // a folder holding this file is the bim-ootb root
@@ -161,6 +162,25 @@ function activate(context) {
     lines.forEach(l => out.appendLine(l));
     out.show(true);
     return lines;
+  }));
+  // Context for this file (§F.16, F-3 (a)): what the indexes say about the open file, as markdown, for whatever assistant the
+  // developer chose. Opened beside the code and copied. X0 calls no model: the developer pastes it where they like.
+  context.subscriptions.push(vscode.commands.registerCommand('x0Navigator.contextForFile', async () => {
+    const sourceRoot = findSourceRoot(context);
+    const editor = vscode.window.activeTextEditor;
+    if (!sourceRoot || !editor || !editor.document.uri.fsPath.startsWith(sourceRoot + path.sep)) {
+      vscode.window.showInformationMessage('X0 Navigator: open a file of the bim-ootb folder first');
+      return null;
+    }
+    const rel = path.relative(sourceRoot, editor.document.uri.fsPath).split(path.sep).join('/');
+    const r = fileContext.build(sourceRoot, rel, { fields: getFields(), tagIndex: getTags(), costNow: measureNow() });
+    try {
+      await vscode.env.clipboard.writeText(r.text);
+      const doc = await vscode.workspace.openTextDocument({ content: r.text, language: 'markdown' });
+      await vscode.window.showTextDocument(doc, { viewColumn: vscode.ViewColumn.Beside, preview: true, preserveFocus: true });
+      vscode.window.showInformationMessage('X0 Navigator: context for ' + rel + ' copied');
+    } catch (e) { out.appendLine(r.text); out.show(true); }
+    return r.text;
   }));
   // Status bar: how the open file reaches a user. "start-up" = every user pays for it when the page opens.
   const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 90);

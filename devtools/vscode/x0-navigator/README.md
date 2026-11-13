@@ -11,6 +11,7 @@ step. It never calls a model or the network, and nothing in `devtools/` is loade
 | *Run & Ship* list in the Explorer side bar (also as commands) | Does it run, is it safe to ship, is it live? | the repo's own scripts, git, and (Fetch back only) the live site |
 | Status bar note + command *Cost if deployed* | What does this file, or my change, add to what every user downloads? | `sw.js` cache lists and the pages' script tags |
 | A grey line above code that prints a `§TAG` | What did this line last print? | `logs/*.log` that start with a `§LOG_STAMP` |
+| Command *Context for this file* | What do the indexes say about this file, as one block I can paste to an assistant? | all of the above, for the open file (X0 itself calls no model) |
 
 **First versions (2026-11-13), and what each does not do yet:**
 
@@ -65,6 +66,7 @@ node devtools/vscode/x0-navigator/tests/witness_x0_fresh.js      # §X0_FRESH
 node devtools/vscode/x0-navigator/tests/witness_x0_deploy_cost.js # §PERF_IMPACT
 node devtools/vscode/x0-navigator/tests/witness_x0_lens.js       # §LENS
 node devtools/vscode/x0-navigator/tests/witness_x0_ship.js       # §SHIP_PANEL  [--live reads the public site once]
+node devtools/vscode/x0-navigator/tests/witness_x0_context.js    # §X0_CONTEXT
 node devtools/vscode/x0-navigator/tests/witness_x0_isolation.js  # §X0_ISOLATION
 ```
 

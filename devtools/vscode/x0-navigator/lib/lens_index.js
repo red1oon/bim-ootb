@@ -90,6 +90,32 @@ function lensesFor(root, fileRel, docText, scan, cache) {
   }
   return { shown, hidden };
 }
+/**
+ * Every tag the document prints (a log call outside tests), each with what can be said about its last value. Never silent:
+ * @returns {object[]} { line (0-based), tag, state: 'shown' | 'hidden' | 'absent', value?, logName?, logLine?, commit?, why? }
+ *   shown = provably current · hidden = a stamped log carries the tag but the value cannot be proven current (why says which
+ *   proof failed) · absent = no stamped log carries the tag (why: `no stamped log found` or `tag not in any stamped log`).
+ */
+function explain(root, fileRel, docText, scan, cache) {
+  const r = lensesFor(root, fileRel, docText, scan, cache);
+  const key = x => x.line + '\u0000' + x.tag;
+  const known = new Map();
+  r.shown.forEach(x => known.set(key(x), Object.assign({ state: 'shown' }, x)));
+  r.hidden.forEach(x => known.set(key(x), Object.assign({ state: 'hidden' }, x)));
+  const out = [];
+  const lines = docText.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].indexOf('§') < 0 || T.printerRank(fileRel, lines[i]) !== 0) continue;
+    const seen = new Set();
+    for (const h of T.tagsInLine(lines[i])) {
+      if (seen.has(h.tag)) continue;
+      seen.add(h.tag);
+      out.push(known.get(i + '\u0000' + h.tag) ||
+        { line: i, tag: h.tag, state: 'absent', why: scan.logs.length ? 'tag not in any stamped log' : 'no stamped log found' });
+    }
+  }
+  return out;
+}
 const title = l => 'last: ' + (l.value.length > 110 ? l.value.slice(0, 107) + '…' : l.value) + '   ·   ' + l.logName + ' @ ' + l.commit.slice(0, 7);
 
-module.exports = { parseStamp, scanLogs, whyNot, lensesFor, title };
+module.exports = { parseStamp, scanLogs, whyNot, lensesFor, explain, title };
