@@ -1389,3 +1389,31 @@ Same video timing as the English cut frame for frame (5694 frames, 227.78 s); on
   - W-PACKOUT `RED 1` = O6, pre-existing.
   - W-IMPORT-ORDER `FAIL 1` = TABLE base-hash: got `be91a5c9…` against the pin `38ae6753…`, the SAME on the baseline. The pin is stale and this change does not move the base hash (no hashed file touched).
   - SW precache audit 268/0. `pipo_packin.js?v=3`, `ad_import_tables.js?v=3`, CACHE_VERSION v1067.
+### 5.70 SPEC — (b): a client admin packs the data 2Pack in from the twin's own Pack In window, kept across reloads (2026-11-13; owner "Proceed"; written before code)
+**The issue:** after §5.69 the engine takes a client's data pack, but nothing in the twin lets a user run it. The twin packs in only at plugin Start (System). Legacy's way: a client admin opens window 50005 **Pack In** (AD_Package_Imp_Proc, AccessLevel 6), types a Name, attaches the zip, and presses the **Pack In** button (AD_Process 50008, `org.adempiere.pipo.PackIn` → `PackInProcess.doIt` :79-158). GardenWorld Admin (role 102) has window and process access in the seed.
+**What legacy does (read, `PackInProcess.java`, `PackIn.importXML` :153-188, `PackInHandler` :171-207):**
+- No attachment, or no entry 0 → returns *"Please attach the pack out archive before running the process"*.
+- Otherwise it unzips entry 0, reads `dict/PackOut.xml` and walks it under the SESSION context, so the client-data path of §5.69 applies.
+- It writes `AD_Package_Imp` in the session client and org, with `AD_Package_Imp_Proc_ID` set, plus the `_Inst` / `_Detail` rows.
+- Success returns `Processed=<n> Un-Resolved=<n>`; unresolved elements throw.
+- Finally it sets `DateProcessed` and `P_Msg` on the Pack In record.
+**Build (generic, no table named in the host):**
+- `erp/processes/PackIn.js`: the `PackInProcess` port. `prepare` takes Record_ID. `doIt` reads the record and its attachment through the process transaction (the same `AdAttachment.lookup` the window uses); no attachment → legacy's message. The rest is asynchronous in a browser (attachment bytes, `DecompressionStream`), so `doIt` hands it to the host as the process's continuation.
+- **ONE new generic seam (`ad_process.js` + `idempiere.html`):**
+  - A ported process may set `pi.then = () => Promise<{ ok, summary, commitOps }>`.
+  - The host awaits it BEFORE it draws the result card, so the user sees the final message as on legacy.
+  - The host commits its `commitOps` the same way as a process's own ops.
+  - No continuation = today's path, unchanged.
+- `PluginEngine.packInClient(...)` (`plugin_overlay.js`, beside the plugin packs it mirrors):
+  - attachment entry 0 → `PackOut.xml`;
+  - one atomic `apply` on a `recording(rawDb)` with `clientId` + `model`, then `recordImport` in the session client/org with `AD_Package_Imp_Proc_ID`;
+  - the zip bytes and the delta are KEPT under `client:<AD_Client_ID>:<name>` in the same store as the plugin packs;
+  - returns `Processed=… Un-Resolved=…` and the update of `DateProcessed` / `P_Msg` as ops.
+- **Replay:** `_packsReplay` replays a client entry's delta like any pack. When the fingerprint changed, it re-applies the kept zip through the client path (`clientId` + `model`), not the dictionary path.
+**Witness W-TD-PACKIN-WINDOW** (`capex/tests/witness_td_packin_window.js`, headless `erp/idempiere.html?login=GardenAdmin`, the shipped zip, driven through the window's own seams):
+- W1: logged in as GardenWorld Admin (client 11, role 102); window 50005 opens for this role.
+- W2: a Pack In record saved with no attachment → the process returns legacy's message and writes no project.
+- W3: the zip attached through the attachment module → Run → summary `Processed=225 Un-Resolved=0`; 12 projects / 42 / 84 / 84 rows, client 11; `AD_Package_Imp` row client 11 with the record's id; the record's `DateProcessed` set and `P_Msg` == the summary.
+- W4: reload and log in again → the same rows are there (`§PACKIN-REPLAY bundle=client:11:…`), not twice.
+- 0 rows judged = INCONCLUSIVE.
+- Break runs, each MUST FAIL: `WTW_BREAK=noreplay` (the kept entry is deleted before the reload) → W4; `WTW_BREAK=nothen` (the host ignores the continuation) → W3.
