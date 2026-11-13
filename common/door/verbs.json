@@ -2394,6 +2394,13 @@
      "required": true,
      "type": "string",
      "example": "Order"
+    },
+    {
+     "name": "role",
+     "description": "Optional: an AD_Role id. The answer is what that role may see and do in the window it is granted: its client and organisations, its record and column access; a kind none of whose windows it is granted is refused. WITHOUT a role nothing is filtered. The role is stated, not a sign-in.",
+     "required": false,
+     "type": "string",
+     "example": "103"
     }
    ],
    "harm": "read",
@@ -2403,7 +2410,14 @@
     "argv": [
      "describe",
      "--kind",
-     "{kind}"
+     "{kind}",
+     {
+      "if": "role",
+      "args": [
+       "--role",
+       "{role}"
+      ]
+     }
     ]
    },
    "returns": {
@@ -2451,6 +2465,13 @@
      "required": false,
      "type": "string",
      "example": "50000"
+    },
+    {
+     "name": "role",
+     "description": "Optional: an AD_Role id. The answer is what that role may see and do in the window it is granted: its client and organisations, its record and column access; a kind none of whose windows it is granted is refused. WITHOUT a role nothing is filtered. The role is stated, not a sign-in.",
+     "required": false,
+     "type": "string",
+     "example": "103"
     }
    ],
    "harm": "read",
@@ -2473,6 +2494,13 @@
       "args": [
        "--number",
        "{number}"
+      ]
+     },
+     {
+      "if": "role",
+      "args": [
+       "--role",
+       "{role}"
       ]
      }
     ]
@@ -2539,6 +2567,13 @@
      "required": false,
      "type": "string",
      "example": "Y"
+    },
+    {
+     "name": "role",
+     "description": "Optional: an AD_Role id. The answer is what that role may see and do in the window it is granted: its client and organisations, its record and column access; a kind none of whose windows it is granted is refused. WITHOUT a role nothing is filtered. The role is stated, not a sign-in.",
+     "required": false,
+     "type": "string",
+     "example": "103"
     }
    ],
    "harm": "read",
@@ -2582,6 +2617,13 @@
       "args": [
        "--names",
        "{names}"
+      ]
+     },
+     {
+      "if": "role",
+      "args": [
+       "--role",
+       "{role}"
       ]
      }
     ],
@@ -2632,6 +2674,13 @@
      "required": true,
      "type": "string",
      "example": "GrandTotal"
+    },
+    {
+     "name": "role",
+     "description": "Optional: an AD_Role id. The answer is what that role may see and do in the window it is granted: its client and organisations, its record and column access; a kind none of whose windows it is granted is refused. WITHOUT a role nothing is filtered. The role is stated, not a sign-in.",
+     "required": false,
+     "type": "string",
+     "example": "103"
     }
    ],
    "harm": "read",
@@ -2643,7 +2692,14 @@
      "--kind",
      "{kind}",
      "--column",
-     "{column}"
+     "{column}",
+     {
+      "if": "role",
+      "args": [
+       "--role",
+       "{role}"
+      ]
+     }
     ],
     "rest": {
      "flag": "--where",
@@ -2688,6 +2744,13 @@
      "required": true,
      "type": "string",
      "example": "DocStatus"
+    },
+    {
+     "name": "role",
+     "description": "Optional: an AD_Role id. The answer is what that role may see and do in the window it is granted: its client and organisations, its record and column access; a kind none of whose windows it is granted is refused. WITHOUT a role nothing is filtered. The role is stated, not a sign-in.",
+     "required": false,
+     "type": "string",
+     "example": "103"
     }
    ],
    "harm": "read",
@@ -2699,7 +2762,14 @@
      "--kind",
      "{kind}",
      "--by",
-     "{by}"
+     "{by}",
+     {
+      "if": "role",
+      "args": [
+       "--role",
+       "{role}"
+      ]
+     }
     ],
     "rest": {
      "flag": "--where",
@@ -2744,6 +2814,13 @@
      "required": false,
      "type": "string",
      "example": "Y"
+    },
+    {
+     "name": "role",
+     "description": "Optional: an AD_Role id. The answer is what that role may see and do in the window it is granted: its client and organisations, its record and column access; a kind none of whose windows it is granted is refused. WITHOUT a role nothing is filtered. The role is stated, not a sign-in.",
+     "required": false,
+     "type": "string",
+     "example": "103"
     }
    ],
    "harm": "writes",
@@ -2759,6 +2836,13 @@
       "args": [
        "--dry",
        "{dry}"
+      ]
+     },
+     {
+      "if": "role",
+      "args": [
+       "--role",
+       "{role}"
       ]
      }
     ],
@@ -2816,6 +2900,13 @@
      "required": false,
      "type": "string",
      "example": "50000"
+    },
+    {
+     "name": "role",
+     "description": "Optional: an AD_Role id. The answer is what that role may see and do in the window it is granted: its client and organisations, its record and column access; a kind none of whose windows it is granted is refused. WITHOUT a role nothing is filtered. The role is stated, not a sign-in.",
+     "required": false,
+     "type": "string",
+     "example": "103"
     }
    ],
    "harm": "writes",
@@ -2838,6 +2929,13 @@
       "args": [
        "--number",
        "{number}"
+      ]
+     },
+     {
+      "if": "role",
+      "args": [
+       "--role",
+       "{role}"
       ]
      }
     ],
@@ -2895,6 +2993,13 @@
      "required": false,
      "type": "string",
      "example": "50000"
+    },
+    {
+     "name": "role",
+     "description": "Optional: an AD_Role id. The answer is what that role may see and do in the window it is granted: its client and organisations, its record and column access; a kind none of whose windows it is granted is refused. WITHOUT a role nothing is filtered. The role is stated, not a sign-in.",
+     "required": false,
+     "type": "string",
+     "example": "103"
     }
    ],
    "harm": "writes",
@@ -2917,6 +3022,13 @@
       "args": [
        "--number",
        "{number}"
+      ]
+     },
+     {
+      "if": "role",
+      "args": [
+       "--role",
+       "{role}"
       ]
      }
     ]
@@ -3297,6 +3409,13 @@
      "required": true,
      "type": "string",
      "example": "Order"
+    },
+    {
+     "name": "role",
+     "description": "Optional: an AD_Role id. The answer is what that role may see and do in the window it is granted: its client and organisations, its record and column access; a kind none of whose windows it is granted is refused. WITHOUT a role nothing is filtered. The role is stated, not a sign-in.",
+     "required": false,
+     "type": "string",
+     "example": "103"
     }
    ],
    "harm": "read",
@@ -3306,7 +3425,14 @@
     "argv": [
      "describe",
      "--kind",
-     "{kind}"
+     "{kind}",
+     {
+      "if": "role",
+      "args": [
+       "--role",
+       "{role}"
+      ]
+     }
     ]
    },
    "returns": {
@@ -3356,6 +3482,13 @@
      "required": false,
      "type": "string",
      "example": "50000"
+    },
+    {
+     "name": "role",
+     "description": "Optional: an AD_Role id. The answer is what that role may see and do in the window it is granted: its client and organisations, its record and column access; a kind none of whose windows it is granted is refused. WITHOUT a role nothing is filtered. The role is stated, not a sign-in.",
+     "required": false,
+     "type": "string",
+     "example": "103"
     }
    ],
    "harm": "read",
@@ -3378,6 +3511,13 @@
       "args": [
        "--number",
        "{number}"
+      ]
+     },
+     {
+      "if": "role",
+      "args": [
+       "--role",
+       "{role}"
       ]
      }
     ]
@@ -3446,6 +3586,13 @@
      "required": false,
      "type": "string",
      "example": "Y"
+    },
+    {
+     "name": "role",
+     "description": "Optional: an AD_Role id. The answer is what that role may see and do in the window it is granted: its client and organisations, its record and column access; a kind none of whose windows it is granted is refused. WITHOUT a role nothing is filtered. The role is stated, not a sign-in.",
+     "required": false,
+     "type": "string",
+     "example": "103"
     }
    ],
    "harm": "read",
@@ -3489,6 +3636,13 @@
       "args": [
        "--names",
        "{names}"
+      ]
+     },
+     {
+      "if": "role",
+      "args": [
+       "--role",
+       "{role}"
       ]
      }
     ],
@@ -3541,6 +3695,13 @@
      "required": true,
      "type": "string",
      "example": "GrandTotal"
+    },
+    {
+     "name": "role",
+     "description": "Optional: an AD_Role id. The answer is what that role may see and do in the window it is granted: its client and organisations, its record and column access; a kind none of whose windows it is granted is refused. WITHOUT a role nothing is filtered. The role is stated, not a sign-in.",
+     "required": false,
+     "type": "string",
+     "example": "103"
     }
    ],
    "harm": "read",
@@ -3552,7 +3713,14 @@
      "--kind",
      "{kind}",
      "--column",
-     "{column}"
+     "{column}",
+     {
+      "if": "role",
+      "args": [
+       "--role",
+       "{role}"
+      ]
+     }
     ],
     "rest": {
      "flag": "--where",
@@ -3599,6 +3767,13 @@
      "required": true,
      "type": "string",
      "example": "DocStatus"
+    },
+    {
+     "name": "role",
+     "description": "Optional: an AD_Role id. The answer is what that role may see and do in the window it is granted: its client and organisations, its record and column access; a kind none of whose windows it is granted is refused. WITHOUT a role nothing is filtered. The role is stated, not a sign-in.",
+     "required": false,
+     "type": "string",
+     "example": "103"
     }
    ],
    "harm": "read",
@@ -3610,7 +3785,14 @@
      "--kind",
      "{kind}",
      "--by",
-     "{by}"
+     "{by}",
+     {
+      "if": "role",
+      "args": [
+       "--role",
+       "{role}"
+      ]
+     }
     ],
     "rest": {
      "flag": "--where",
@@ -3657,6 +3839,13 @@
      "required": false,
      "type": "string",
      "example": "Y"
+    },
+    {
+     "name": "role",
+     "description": "Optional: an AD_Role id. The answer is what that role may see and do in the window it is granted: its client and organisations, its record and column access; a kind none of whose windows it is granted is refused. WITHOUT a role nothing is filtered. The role is stated, not a sign-in.",
+     "required": false,
+     "type": "string",
+     "example": "103"
     }
    ],
    "harm": "writes",
@@ -3672,6 +3861,13 @@
       "args": [
        "--dry",
        "{dry}"
+      ]
+     },
+     {
+      "if": "role",
+      "args": [
+       "--role",
+       "{role}"
       ]
      }
     ],

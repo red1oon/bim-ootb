@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: MIT
 // ⚠ DO NOT REMOVE — mis.js: the Node driver of the MIS list screen (bim-compiler prompts/CLI_ERP_IVR.md §14). The screen logic is common/door/mis_core.js (pure); this file only
 // (1) runs each effect line through the door (journalled, claim-checked: createDoor().runLine), printing "-> <line>" first, (2) feeds the envelope back, (3) draws the screen, (4) reads keys.
-// Usage: node common/door/mis.js kind="Business Partner" [name=Standard] [limit=10] [--plain]      keys: one per whitespace-separated token on stdin (Up Down Left Right Tab Enter Esc PageDown, a letter, a digit),
+// Usage: node common/door/mis.js kind="Business Partner" [name=Standard] [limit=10] [role=103] [--plain]   (role: an AD_Role id put on every door line, §17; without it nothing is filtered)      keys: one per whitespace-separated token on stdin (Up Down Left Right Tab Enter Esc PageDown, a letter, a digit),
 //   or, on a terminal without --plain, the arrow keys / Enter / Esc / Tab / PageDown. Nothing is written until a chip is run; Delete asks y/N first.
 'use strict';
 const path = require('path'), fs = require('fs');
@@ -12,12 +12,12 @@ const KEYS = { Up: 'Up', Down: 'Down', Left: 'Left', Right: 'Right', Tab: 'Tab',
 const actionVerbs = () => { const m = {}; Object.keys(EC.ACT).forEach(v => { m[EC.ACT[v]] = 'erp.' + v; }); return m; };   // DocAction code -> the door verb that runs it (erp_cli's own table, not a second one)
 function parse(argv) {
   const o = { filters: [], limit: 10, plain: false };
-  argv.forEach(a => { if (a === '--plain') o.plain = true; else { const m = /^([A-Za-z_]\w*)=([\s\S]*)$/.exec(a); if (!m) throw new Error('usage: mis.js kind=K [column=value ...] [limit=N] [--plain]; got "' + a + '"'); if (m[1] === 'kind') o.kind = m[2]; else if (m[1] === 'limit') o.limit = Number(m[2]); else o.filters.push({ col: m[1], value: m[2] }); } });
+  argv.forEach(a => { if (a === '--plain') o.plain = true; else { const m = /^([A-Za-z_]\w*)=([\s\S]*)$/.exec(a); if (!m) throw new Error('usage: mis.js kind=K [column=value ...] [limit=N] [role=R] [--plain]; got "' + a + '"'); if (m[1] === 'kind') o.kind = m[2]; else if (m[1] === 'limit') o.limit = Number(m[2]); else if (m[1] === 'role') o.role = m[2]; else o.filters.push({ col: m[1], value: m[2] }); } });
   if (!o.kind) throw new Error('kind= is required');
   return o;
 }
 async function session(o, nextKey, out, door) {
-  let st = Core.create({ kind: o.kind, filters: o.filters, limit: o.limit, actionVerbs: actionVerbs(), brk: process.env.MIS_SCREEN_BREAK || '' }), lines = [];
+  let st = Core.create({ kind: o.kind, filters: o.filters, limit: o.limit, role: o.role, actionVerbs: actionVerbs(), brk: process.env.MIS_SCREEN_BREAK || '' }), lines = [];
   const apply = async (input) => {
     let queue = [input];
     while (queue.length) {

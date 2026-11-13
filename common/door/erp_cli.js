@@ -11,7 +11,7 @@
 //     read     --kind K (--id I | --number N)   one record by its key or its number (the one resolver, recordOf), with its single-row child tabs (object_cli's read)
 //     complete|void|close|reverse --kind K --id I [--role R]   DocAction CO|VO|CL|RC (DocumentEngine constants) through ModelLayer.run (DocumentEngine.processIt) = the twin of legacy's action; --role refuses what that role is not offered
 //   Writes never touch the .db: each op is appended to the op-log (JSONL; --oplog, else $BIM_OBJECT_OPLOG, else ~/.cache/bim_object/<db>.ops.jsonl, the object layer's own log) and replayed on every run.
-//   The .db is the shipped erp/ad_seed.db (--db to name another); it is opened into memory, never written.
+//   The .db is the shipped erp/ad_seed.db (--db, else $ERP_SEED_DB, to name another: a witness's fixture copy with its patches/ folder beside it); it is opened into memory, never written.
 // Exit: 0 ok · 3 refused (an answer: not found, not offered, the engine said no) · 1 error · 2 usage.
 // Run: node common/door/erp_cli.js find --kind "Order" --number 50000
 'use strict';
@@ -63,7 +63,7 @@ function applyPatch(O, seed) {   // same loop as idempiere.html :1160-1169: stat
   return { pOk, pFail };
 }
 async function boot(a) {
-  const seed = a.db || path.join(ROOT, 'erp', 'ad_seed.db'), t0 = Date.now(), off = process.env.ERP_SNAPSHOT === 'off';
+  const seed = a.db || process.env.ERP_SEED_DB || path.join(ROOT, 'erp', 'ad_seed.db'), t0 = Date.now(), off = process.env.ERP_SNAPSHOT === 'off';
   // the page's self-heal patch comes BEFORE the op-log replay (an op may write a table only the patch creates, e.g. m_storagereservationlog)
   let O, how = 'off', key = '-';
   if (!off) {
@@ -102,18 +102,19 @@ function docKind(O, kind) {   // a document = an AD table with a DocAction colum
   return K;
 }
 // THE resolver (NEURO §R.V.1): "the record a line means". Every verb that takes --id or --number comes through here; find lists the same rows.
-function byNumber(O, K, number) {
+function byNumber(O, K, number, and) {
   if (!K.numCol) refuse('kind ' + K.name + ' has no DocumentNo, Name or Value column to find by; name the record with --id');
-  return O.rows('SELECT * FROM ' + K.table + ' WHERE ' + K.numCol + '=? ORDER BY ' + K.key, [String(number)]);
+  return O.rows('SELECT * FROM ' + K.table + ' WHERE ' + K.numCol + '=?' + (and || '') + ' ORDER BY ' + K.key, [String(number)]);
 }
-function recordOf(O, K, a) {
+function recordOf(O, K, a, R) {   // R (a role, roleOf): the record is looked for among the role's rows only, so one outside them answers as one that does not exist
   if (a.id == null && a.number == null) refuse('a record is named by --id or --number');
+  const rw = R ? R.where(false) : '', and = rw ? ' AND ' + rw : '';
   let r;
   if (a.id != null) {
-    r = O.rows('SELECT * FROM ' + K.table + ' WHERE ' + K.key + '=?', [/^-?\d+$/.test(String(a.id)) ? Number(a.id) : a.id])[0];
+    r = O.rows('SELECT * FROM ' + K.table + ' WHERE ' + K.key + '=?' + and, [/^-?\d+$/.test(String(a.id)) ? Number(a.id) : a.id])[0];
     if (r && a.number != null && K.numCol && String(r[K.numCol]) !== String(a.number)) refuse(K.key + ' ' + a.id + ' is ' + K.name + ' ' + r[K.numCol] + ', not number ' + a.number + ': the line names two different records');
   } else {
-    const rs = byNumber(O, K, a.number);
+    const rs = byNumber(O, K, a.number, and);
     if (rs.length > 1 && BREAK !== 'firstmatch') refuse(rs.length + ' ' + K.name + ' records carry number ' + a.number + ' (ids ' + rs.map(x => x[K.key]).join(', ') + '); name one with --id');
     r = rs[0];
     if (r && BREAK === 'neighbour') r = O.rows('SELECT * FROM ' + K.table + ' WHERE ' + K.key + '<? ORDER BY ' + K.key + ' DESC LIMIT 1', [r[K.key]])[0] || O.rows('SELECT * FROM ' + K.table + ' WHERE ' + K.key + '>? ORDER BY ' + K.key + ' LIMIT 1', [r[K.key]])[0] || r;   // falsifier: the number resolves to a neighbouring record (the one before; the newest record has none after it, which made the first form of this falsifier blind to N1/N2)
@@ -215,19 +216,42 @@ function act(O, a, code) {
 
 const complete = (O, a) => act(O, a, ACT.complete);
 // the generic object layer over ERP tables = object_cli's own describe/read run over the ERP's booted handle (no per-table code; the same AD rows)
-function describe(O, a) { if (!a.kind) refuse('--kind is required'); return OC.describe(O, { kind: a.kind, uu: a.id }); }
+function describe(O, a) { if (!a.kind) refuse('--kind is required'); return OC.describe(O, { kind: a.kind, uu: a.id, role: a.role }); }
 function read(O, a) {   // by --id: unchanged. By --number: the resolver names the record, then the same read by its key
   if (!a.kind) refuse('--kind is required');
-  if (a.number == null) { if (a.id == null) refuse('a record is named by --id or --number'); return OC.read(O, { kind: a.kind, uu: a.id }); }
-  const K = kindRef(O, a.kind), r = recordOf(O, K, a);
+  if (a.number == null) { if (a.id == null) refuse('a record is named by --id or --number'); return OC.read(O, { kind: a.kind, uu: a.id, role: a.role }); }
+  const K = kindRef(O, a.kind), r = recordOf(O, K, a, roleOf(O, K, a));
   say('read-by-number kind=' + K.name + ' by=' + K.numCol + ' number=' + a.number + ' -> ' + K.key + '=' + r[K.key]);
-  return OC.read(O, { kind: a.kind, uu: String(r[K.key]) });
+  return OC.read(O, { kind: a.kind, uu: String(r[K.key]), role: a.role });
+}
+// ── the role on a write (bim-compiler prompts/CLI_ERP_IVR.md §17 rules 1, 6, 7). The rules are erp/ad_access.js (the MRole port), reached through object_cli's roleFor; null = no --role = nothing judged.
+function roleOf(O, K, a) {
+  if (a.role == null) return null;
+  const t = OC.kindOf(O.rows, K.table), cols = OC.columnsOf(O.rows, t), R = OC.roleFor(O, t, cols, a);
+  R.K = K; R.colOf = (n) => cols.filter(c => c.columnname.toLowerCase() === String(n).toLowerCase())[0];
+  return R;
+}
+const who = (R) => 'role ' + R.info.id + ' (' + R.info.name + ')';
+function roleMayWrite(R, K, what) {   // GridWindowVO.create L277-278: a read-only window grant makes every tab read-only
+  if (R && !R.window.readWrite) refuse(K.name + ' is not ' + what + ': ' + who(R) + ' opens the window ' + R.window.name + ' read-only (AD_Window_Access.IsReadWrite=N); nothing was written');
+}
+function roleMayUpdate(R, K, client, org, id, what) {   // MRole.canUpdate L2335-2392 (user level, client, organisation, table); with a record id also isRecordAccess(rw), as GridField.isEditable L522 asks for an edit (GridTable.dataSave L1622 and dataDelete L2199 pass Record_ID 0)
+  if (!R) return;
+  const cu = R.rc.canUpdate(Number(client), Number(org), K.id, R.level);
+  if (!cu.allowed) refuse(K.name + ' is not ' + what + ': ' + who(R) + ' may not update a record of client ' + client + ', organisation ' + org + ' (MRole.canUpdate: ' + cu.reason + '); nothing was written');
+  if (id != null && !R.rc.isRecordAccess(K.id, Number(id), false)) refuse(K.name + ' is not ' + what + ': ' + who(R) + ' holds this record read-only (AD_Record_Access); nothing was written');
+}
+function roleMayWriteColumn(R, K, name) {   // GridField.isEditable L525: isColumnAccess(table, column, ro=false)
+  if (!R) return; const c = R.colOf(name); if (!c) return;
+  if (!R.canRead(c)) refuse(who(R) + ' may not read ' + c.columnname + ' of ' + K.name + ' (AD_Column_Access); nothing was written');
+  if (!R.canWrite(c)) refuse(c.columnname + ' cannot be edited here: ' + who(R) + ' holds it read-only (AD_Column_Access); nothing was written');
 }
 
 // ── new (NEURO §R.V item 2): a record created the way the window creates it. GridTab.dataNew defaults + the callout fan (ad_callout.js, the same engine the window runs), the user's columns set one
 //    by one as edits (so the callouts fire as they do on screen), mandatory columns checked, then the model layer's own save (Document No from the sequence). No per-table code. ──
 const DEC_ID = /^-?\d+$/, NEW_BREAK = process.env.NEW_BREAK || '';   // W-ERP-NEW falsifiers: nocallouts | nomandatory
-function tabFor(O, K) {   // the table's own tab: the lowest tab level in its window (the window the user would open)
+function tabFor(O, K, R) {   // the table's own tab: the lowest tab level in its window (the window the user would open); under a role, the first such tab in a window the role is granted
+  if (R && R.K === K) return { id: R.tab, win: R.window.id };
   const t = O.rows("SELECT t.ad_tab_id AS id, t.ad_window_id AS win, t.tablevel AS lvl, t.seqno AS seq FROM ad_tab t WHERE t.ad_table_id=? AND t.isactive='Y' ORDER BY t.tablevel, t.seqno, t.ad_tab_id", [K.id])[0];
   if (!t) refuse('kind ' + K.name + ' has no tab in the dictionary, so there is no window to create it in');
   return t;
@@ -251,8 +275,9 @@ function parseGiven(a) {   // the column=value pairs of a line (--where, repeate
 }
 function createRecord(O, a) {
   if (!a.kind) refuse('--kind is required');
-  const t0 = Date.now(), K = kindRef(O, a.kind), tab = tabFor(O, K), A = require(path.join(ROOT, 'erp', 'ad_callout.js'));
+  const t0 = Date.now(), K = kindRef(O, a.kind), R = roleOf(O, K, a), tab = tabFor(O, K, R), A = require(path.join(ROOT, 'erp', 'ad_callout.js'));
   const given = parseGiven(a);
+  roleMayWrite(R, K, 'created'); Object.keys(given).forEach(k => roleMayWriteColumn(R, K, k));
   const log = console.log; console.log = () => {};   // the engine prints its own § lines to stdout; stdout here carries only the answer
   try {
     A.bind((sql, p) => O.rows(sql, p));
@@ -294,12 +319,13 @@ function createRecord(O, a) {
     const row = {}; st.fields.forEach(f => { const c = f.vo.ColumnName, v = snap[c]; if (f.isKey() || v == null || v === '') return; row[c.toLowerCase()] = (A.DisplayType.isNumeric(f.getDisplayType()) && !A.DisplayType.isID(f.getDisplayType()) && DEC_ID.test(String(v).replace('.', '')) ) ? Number(v) : v; });
     if (dry) { console.log = log; say('new DRY kind=' + K.name + ' given=' + set.join(',') + ' mandatory_empty=' + empty.join(',') + ' needs=' + needs.map(n => n.name).join(',') + ' defaulted=' + (Object.keys(row).length - set.length) + ' ms=' + (Date.now() - t0));
       return { dry: true, kind: K.name, table: K.table, mandatory: empty.filter(c => !needs.some(n => n.name.toLowerCase() === c.toLowerCase())), needs, given: set.filter(c => !(c.toLowerCase() === 'issotrx' && needs.length)), defaulted: Object.keys(row).length - set.length, filled: Object.keys(row).filter(c => set.map(x => x.toLowerCase()).indexOf(c) < 0), ops: [] }; }
+    roleMayUpdate(R, K, row.ad_client_id == null ? client : row.ad_client_id, row.ad_org_id == null ? org : row.ad_org_id, null, 'created');   // GridTable.dataSave: canUpdate on the row's own client and organisation
     const tx = O.trx(); Object.assign(tx.env, { client, org, date: day + ' 00:00:00' });
     const r = O.ML.save(tx, K.table, null, row); if (!r.ok) refuse('the model layer refused the save: ' + r.error);
     const res = persistGroup(O, tx.groupOps()), main = res.filter(o => o.table === K.table)[0] || res[res.length - 1], id = main.fields ? main.fields[K.key] : main.id;
     const saved = O.rows('SELECT * FROM ' + K.table + ' WHERE ' + K.key + '=?', [id])[0] || {};
     console.log = log; say('new kind=' + K.name + ' tab=' + tab.id + ' given=' + set.join(',') + ' fields=' + Object.keys(row).length + ' id=' + id + ' number=' + (K.numCol ? saved[K.numCol] : '') + ' ms=' + (Date.now() - t0));
-    return { number: K.numCol ? saved[K.numCol] : null, kind: K.name, table: K.table, id, docStatus: saved.docstatus == null ? null : saved.docstatus, given: set, defaulted: Object.keys(row).length - set.length, filled: Object.keys(row).filter(c => set.map(x => x.toLowerCase()).indexOf(c) < 0), record: saved, ops: res.map(o => ({ op_type: o.op_type, table: o.table })) };
+    return { number: K.numCol ? saved[K.numCol] : null, kind: K.name, table: K.table, id, docStatus: saved.docstatus == null ? null : saved.docstatus, given: set, defaulted: Object.keys(row).length - set.length, filled: Object.keys(row).filter(c => set.map(x => x.toLowerCase()).indexOf(c) < 0), record: saved, ops: res.map(o => ({ op_type: o.op_type, table: o.table })), ...(R ? { role: R.info } : {}) };
   } finally { console.log = log; }
 }
 // ── mis.update / mis.delete (bim-compiler prompts/CLI_ERP_IVR.md §12): the WINDOW's edit and delete, never a raw UPDATE/DELETE ──
@@ -321,8 +347,9 @@ function notEditable(O, tabId, f, rec) {
 }
 function updateRecord(O, a) {
   if (!a.kind) refuse('--kind is required');
-  const t0 = Date.now(), K = kindRef(O, a.kind), r = recordOf(O, K, a), tab = tabFor(O, K), A = require(path.join(ROOT, 'erp', 'ad_callout.js')), given = parseGiven(a);
+  const t0 = Date.now(), K = kindRef(O, a.kind), R = roleOf(O, K, a), r = recordOf(O, K, a, R), tab = tabFor(O, K, R), A = require(path.join(ROOT, 'erp', 'ad_callout.js')), given = parseGiven(a);
   if (!Object.keys(given).length) refuse('nothing to change: give column=value');
+  roleMayWrite(R, K, 'changed'); roleMayUpdate(R, K, r.ad_client_id == null ? 0 : r.ad_client_id, r.ad_org_id == null ? 0 : r.ad_org_id, r[K.key], 'changed'); Object.keys(given).forEach(k => roleMayWriteColumn(R, K, k));
   const log = console.log; console.log = () => {};
   try {
     A.bind((sql, p) => O.rows(sql, p));
@@ -360,7 +387,8 @@ function updateRecord(O, a) {
 }
 function deleteRecord(O, a) {
   if (!a.kind) refuse('--kind is required');
-  const t0 = Date.now(), K = kindRef(O, a.kind), r = recordOf(O, K, a), tab = tabFor(O, K), id = r[K.key];
+  const t0 = Date.now(), K = kindRef(O, a.kind), R = roleOf(O, K, a), r = recordOf(O, K, a, R), tab = tabFor(O, K, R), id = r[K.key];
+  roleMayWrite(R, K, 'deleted'); roleMayUpdate(R, K, r.ad_client_id == null ? 0 : r.ad_client_id, r.ad_org_id == null ? 0 : r.ad_org_id, null, 'deleted');   // GridTable.dataDelete L2199: canUpdate(client, org, table, 0): the role cannot update that client/org -> AccessCannotDelete (Record_ID 0: no record-access question, as legacy)
   const tq = O.rows('SELECT t.isreadonly AS tro, x.isdeleteable AS del FROM ad_tab t JOIN ad_table x ON x.ad_table_id=t.ad_table_id WHERE t.ad_tab_id=?', [tab.id])[0] || {};
   if (tq.tro === 'Y') refuse(K.name + ' is not deleted: the tab is read-only (GridTable.dataDelete L2170: AccessCannotDelete)');
   if (tq.del === 'N') refuse(K.name + ' is not deleted: the table is not deleteable (GridTable.dataDelete L2177: AccessNotDeleteable)');
@@ -381,6 +409,7 @@ async function loadRecords(O, a) {
   if (!a.kind) refuse('--kind is required');
   if (!a.file) refuse('--file is required (a .csv)');
   if (!/\.csv$/i.test(String(a.file))) refuse('the file must be a .csv: ' + a.file);
+  if (a.role != null) refuse('mis.load does not judge a role yet: the loader is a process, and its access is the process grant (AD_Process_Access), which is not wired here; run it without role. Nothing was loaded');
   const K = kindRef(O, a.kind), dry = String(a.dry == null ? 'Y' : a.dry).toUpperCase() !== 'N', t0 = Date.now();
   let text; try { text = fs.readFileSync(a.file, 'utf8'); } catch (e) { refuse('cannot read ' + a.file + ': ' + (e.code || e.message)); }
   const XL = require(path.join(ROOT, 'erp', 'xlsx.mini.min.js')), wb0 = XL.read(text, { type: 'string', raw: true });
