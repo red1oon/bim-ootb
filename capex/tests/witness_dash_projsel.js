@@ -9,7 +9,8 @@
 // Usage: NODE_PATH=<bim-ootb>/node_modules node capex/tests/witness_dash_projsel.js
 'use strict';
 const fs = require('fs'), path = require('path'), http = require('http'), { chromium } = require('/home/red1/bim-ootb/tests/node_modules/playwright');
-const ROOT = path.join(__dirname, '..', '..'), T = require('../tiles.js'), SNAP = path.join(ROOT, 'capex/sample/pilot_snapshot.json'), TODAY = '2026-11-04', BREAK = process.env.PROJSEL_BREAK === '1';
+const ROOT = path.join(__dirname, '..', '..'), T = require('./pa_harness.js'), SNAP = path.join(ROOT, 'capex/sample/pilot_snapshot.json'), TODAY = '2026-11-04', BREAK = process.env.PROJSEL_BREAK === '1';
+(async () => { await require('./pa_harness.js').init({ quiet: true });   // §5.75 step 3: the numbers come from the PA rows (pa_harness.js), not the hand formulas in tiles.js
 const log = console.log; let judged = 0, fails = 0, inconc = 0;
 const ck = (n, ok, i) => { judged++; if (!ok) fails++; log('  §DASH_PROJSEL_W ' + n + ' ' + (ok ? 'PASS' : 'FAIL') + (i !== undefined ? ' ' + JSON.stringify(i) : '')); };
 const inc = (n, why) => { inconc++; log('  §DASH_PROJSEL_W ' + n + ' INCONCLUSIVE ' + why); };
@@ -69,3 +70,5 @@ const base = (p, f) => (!f.org || String(p.AD_Org_ID) === f.org) && (!f.category
   } catch (e) { ck('D0 the run', false, String(e).slice(0, 160)); }
   await br.close(); server.close(); finish();
 })();
+
+})().catch(function (e) { console.log('§PA_HARNESS_CRASH ' + (e && e.stack || e)); process.exit(1); });

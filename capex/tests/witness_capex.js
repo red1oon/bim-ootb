@@ -8,7 +8,8 @@ const initSqlJs = require('sql.js');
 const puppeteer = require(path.join(process.env.HOME, 'bim-compiler/node_modules/puppeteer'));
 const ROOT = path.join(__dirname, '..', '..'), TODAY = '2026-11-02';
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'capexw-'));
-const A = require('../adapters.js'), Tl = require('../tiles.js');
+const A = require('../adapters.js'), Tl = require('./pa_harness.js');
+(async () => { await require('./pa_harness.js').init({ quiet: true });   // §5.75 step 3: the numbers come from the PA rows (pa_harness.js), not the hand formulas in tiles.js
 let fails = 0, judged = 0;
 const say = m => console.log(m);
 function check(name, ok, detail) { judged++; if (!ok) fails++; say('§CAPEX_ASSERT ' + (ok ? 'PASS' : 'FAIL') + ' ' + name + (detail ? ' ' + detail : '')); }
@@ -223,3 +224,5 @@ async function verify(label, browser, base, dbFile, dbUrl, f, extra) {
   const verdict = !judged ? 'INCONCLUSIVE' : fails ? 'FAIL' : 'PASS';
   say(`§CAPEX_VERDICT ${verdict} asserts=${judged} failed=${fails}`); process.exitCode = fails ? 1 : 0;
 })().catch(e => { console.error(e); process.exit(1); });
+
+})().catch(function (e) { console.log('§PA_HARNESS_CRASH ' + (e && e.stack || e)); process.exit(1); });

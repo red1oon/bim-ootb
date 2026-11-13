@@ -197,7 +197,7 @@
   function fmt(v, d) { return v == null ? '<span class="nodata">—</span>' : (+v).toLocaleString('en-US', { minimumFractionDigits: d == null ? 2 : d, maximumFractionDigits: d == null ? 2 : d }); }
   function projectPage() {
     var v = $('view'); v.innerHTML = ''; v.setAttribute('data-theme', S.theme);
-    var d = T.projectDetail(data(), { today: TODAY }, S.projId), root = h('div', 'ppage'); root.setAttribute('data-page', 'project');
+    var d = T.projectDetail(data(), { today: TODAY }, S.projId, compute), root = h('div', 'ppage'); root.setAttribute('data-page', 'project');
     if (!d) { root.innerHTML = '<a id="pBack" href="#dashboard">‹ Dashboard</a><div class="card"><span class="nodata">no such project in this data source</span></div>'; v.appendChild(root); return; }
     var ci = curInfo(d.cur), iso = esc(ci.ISO_Code || ''), erp = S.cur === 'legacy' ? CFG.legacyUi + '?Action=Zoom&TableName=C_Project&Record_ID=' + d.id : CFG.erpUrl + '?window=130&record=' + d.id;
     var COLV = { green: 'var(--ok)', amber: 'var(--warn)', red: 'var(--bad)', none: 'var(--none)', ontime: 'var(--ok)', delayed: 'var(--bad)', atrisk: 'var(--warn)', nosched: 'var(--none)', within: 'var(--ok)', over: 'var(--bad)', notstarted: 'var(--none)' };

@@ -6,7 +6,8 @@
 // phases and issue counts per project == the scenario · W4 every completed document of the chain carries its project (no chain document without C_Project_ID) · W5 the exported store is a real file the page can load (sql.js opens it, 12 TD projects).
 // TWINCHAIN_BREAK=1 deletes one completed receipt from the store before reading and must FAIL W1 and W2. Usage: NODE_PATH=<bim-ootb>/node_modules node capex/tests/witness_twin_chain.js
 'use strict';
-const fs = require('fs'), os = require('os'), path = require('path'), initSqlJs = require('sql.js'), ROOT = path.join(__dirname, '..', '..'), SC_ = require(path.join(ROOT, 'capex/tools/td_scenario.js')), A = require(path.join(ROOT, 'capex/adapters.js')), T = require(path.join(ROOT, 'capex/tiles.js'));
+const fs = require('fs'), os = require('os'), path = require('path'), initSqlJs = require('sql.js'), ROOT = path.join(__dirname, '..', '..'), SC_ = require(path.join(ROOT, 'capex/tools/td_scenario.js')), A = require(path.join(ROOT, 'capex/adapters.js')), T = require('./pa_harness.js');
+(async () => { await require('./pa_harness.js').init({ quiet: true });   // §5.75 step 3: the numbers come from the PA rows (pa_harness.js), not the hand formulas in tiles.js
 const BREAK = process.env.TWINCHAIN_BREAK === '1', log = console.log, TODAY = '2026-11-12';
 let judged = 0, fails = 0, inc = 0; const ck = (n, ok, i) => { judged++; if (!ok) fails++; log('  §TWIN_CHAIN ' + n + ' ' + (ok ? 'PASS' : 'FAIL') + (i !== undefined ? ' ' + JSON.stringify(i) : '')); };
 (async () => {
@@ -47,3 +48,5 @@ let judged = 0, fails = 0, inc = 0; const ck = (n, ok, i) => { judged++; if (!ok
   finish();
   function finish() { try { fs.unlinkSync(out); } catch (e) { } const v = fails ? 'FAIL' : (judged && !inc) ? 'PASS' : 'INCONCLUSIVE'; log('§TWIN_CHAIN_VERDICT ' + v + ' judged=' + judged + ' fail=' + fails + ' inconclusive=' + inc + (BREAK ? ' (BREAK)' : '')); process.exit(v === 'PASS' ? 0 : 1); }
 })().catch(e => { console.error('§TWIN_CHAIN_ERROR ' + (e && e.stack || e)); process.exit(2); });
+
+})().catch(function (e) { console.log('§PA_HARNESS_CRASH ' + (e && e.stack || e)); process.exit(1); });

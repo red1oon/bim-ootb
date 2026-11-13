@@ -19,7 +19,7 @@ function check(n, ok, info) { judged++; if (!ok) fails++; log('  §DVWF ' + n + 
   var wf = H.one("SELECT ad_workflow_id AS id, ad_table_id AS t, docvaluelogic AS l, ad_wf_node_id AS n FROM ad_workflow WHERE workflowtype='V' AND ad_workflow_id=131");
   log('§DVWF_FIXTURE patch ok=' + H.patchOk + ' bad=' + H.patchBad + ' wf131=' + JSON.stringify(wf));
   if (!wf) { log('§DVWF_VERDICT INCONCLUSIVE judged=0 reason=workflow 131 absent from seed+patch (DATA half of §11.1 not shipped)'); process.exit(1); }
-  var T = require(path.join(H.ERP, '..', 'capex', 'tiles.js')), A = require(path.join(H.ERP, '..', 'capex', 'adapters.js'));
+  var T = await require(path.join(H.ERP, '..', 'capex', 'tests', 'pa_harness.js')).init({ quiet: true }), A = require(path.join(H.ERP, '..', 'capex', 'adapters.js'));
   var approvals = function () { var data = A.fromSqlite({ exec: function (s) { return H.db.exec(s); } }); return T.flatten(T.compute(data, { status: 'all', today: H.TODAY }).tiles).approvals; };
   var cnt = function (t, w, p) { return Number(H.one('SELECT COUNT(*) AS c FROM ' + t + ' WHERE ' + w, p || []).c); };
   var tile0 = approvals(), act0 = cnt('ad_wf_activity', "ad_table_id=291 AND wfstate='OS' AND processed='N'");

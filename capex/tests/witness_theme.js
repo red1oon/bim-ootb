@@ -4,7 +4,8 @@
 // Usage: NODE_PATH=<bim-ootb>/node_modules node capex/tests/witness_theme.js
 'use strict';
 const fs = require('fs'), path = require('path'), http = require('http'), { chromium } = require('/home/red1/bim-ootb/tests/node_modules/playwright');
-const ROOT = path.join(__dirname, '..', '..'), T = require('../tiles.js'), SNAP = path.join(ROOT, 'capex/sample/pilot_snapshot.json'), TODAY = '2026-11-04', BREAK = process.env.THEME_BREAK === '1';
+const ROOT = path.join(__dirname, '..', '..'), T = require('./pa_harness.js'), SNAP = path.join(ROOT, 'capex/sample/pilot_snapshot.json'), TODAY = '2026-11-04', BREAK = process.env.THEME_BREAK === '1';
+(async () => { await require('./pa_harness.js').init({ quiet: true });   // §5.75 step 3: the numbers come from the PA rows (pa_harness.js), not the hand formulas in tiles.js
 const snap = JSON.parse(fs.readFileSync(SNAP, 'utf8')), log = console.log; let judged = 0, fails = 0, inc = 0;
 const ck = (n, ok, i) => { judged++; if (!ok) fails++; log('  §THEME ' + n + ' ' + (ok ? 'PASS' : 'FAIL') + (i !== undefined ? ' ' + JSON.stringify(i) : '')); };
 const incon = (n, w) => { inc++; log('  §THEME ' + n + ' INCONCLUSIVE ' + w); };
@@ -73,3 +74,5 @@ const cr = (a, b) => { const x = lum(a), y = lum(b), hi = Math.max(x, y), lo = M
   await br.close(); server.close();
   const v = judged === 0 ? 'INCONCLUSIVE' : fails ? 'FAIL' : 'PASS'; log('§THEME_VERDICT ' + v + ' judged=' + judged + ' fail=' + fails + ' inconclusive=' + inc + (BREAK ? ' (BREAK)' : '')); process.exit(v === 'PASS' ? 0 : 1);
 })();
+
+})().catch(function (e) { console.log('§PA_HARNESS_CRASH ' + (e && e.stack || e)); process.exit(1); });

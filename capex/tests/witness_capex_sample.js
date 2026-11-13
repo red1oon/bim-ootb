@@ -7,7 +7,8 @@
 // Also prints every quoted value (§CAPEX_SAMPLE_QUOTE) and, with CAPTURE_DIR, the guide's frames. Break: CAPEX_SAMPLE_BREAK=1 expects each value changed → FAIL. Usage: NODE_PATH=<bim-ootb>/node_modules node capex/tests/witness_capex_sample.js
 'use strict';
 const fs = require('fs'), path = require('path'), http = require('http'), { chromium } = require('/home/red1/bim-ootb/tests/node_modules/playwright');
-const ROOT = path.join(__dirname, '..', '..'), T = require('../tiles.js'), SNAP = path.join(ROOT, 'capex/sample/pilot_snapshot.json'), TODAY = '2026-11-04', BREAK = process.env.CAPEX_SAMPLE_BREAK === '1', OUT = process.env.CAPTURE_DIR;
+const ROOT = path.join(__dirname, '..', '..'), T = require('./pa_harness.js'), SNAP = path.join(ROOT, 'capex/sample/pilot_snapshot.json'), TODAY = '2026-11-04', BREAK = process.env.CAPEX_SAMPLE_BREAK === '1', OUT = process.env.CAPTURE_DIR;
+(async () => { await require('./pa_harness.js').init({ quiet: true });   // §5.75 step 3: the numbers come from the PA rows (pa_harness.js), not the hand formulas in tiles.js
 const log = console.log; let judged = 0, fails = 0, inconc = 0;
 const ck = (n, ok, i) => { judged++; if (!ok) fails++; log('  §CAPEX_SAMPLE ' + n + ' ' + (ok ? 'PASS' : 'FAIL') + (i !== undefined ? ' ' + JSON.stringify(i) : '')); };
 const finish = () => { const v = judged === 0 ? 'INCONCLUSIVE' : fails ? 'FAIL' : 'PASS'; log('§CAPEX_SAMPLE_VERDICT ' + v + ' judged=' + judged + ' fail=' + fails + ' inconclusive=' + inconc + (BREAK ? ' (BREAK=1: FAIL expected)' : '')); process.exit(v === 'PASS' ? 0 : v === 'FAIL' ? 1 : 2); };
@@ -52,3 +53,5 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.wasm': 'applica
   } catch (e) { ck('flow', false, String(e && e.message || e)); }
   await b.close(); server.close(); finish();
 })();
+
+})().catch(function (e) { console.log('§PA_HARNESS_CRASH ' + (e && e.stack || e)); process.exit(1); });

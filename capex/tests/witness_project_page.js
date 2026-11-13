@@ -4,7 +4,8 @@
 // Usage: NODE_PATH=<bim-ootb>/node_modules node capex/tests/witness_project_page.js
 'use strict';
 const fs = require('fs'), path = require('path'), http = require('http'), { chromium } = require('/home/red1/bim-ootb/tests/node_modules/playwright');
-const ROOT = path.join(__dirname, '..', '..'), T = require('../tiles.js'), BREAK = process.env.PP_BREAK === '1', log = console.log;
+const ROOT = path.join(__dirname, '..', '..'), T = require('./pa_harness.js'), BREAK = process.env.PP_BREAK === '1', log = console.log;
+(async () => { await require('./pa_harness.js').init({ quiet: true });   // §5.75 step 3: the numbers come from the PA rows (pa_harness.js), not the hand formulas in tiles.js
 const SNAPS = [['pilot', path.join(ROOT, 'capex/sample/pilot_snapshot.json'), '2026-11-04'], ['order', path.join(process.env.HOME, '.cache/capex_film/seq_2026-11-11/data/legacy_all.json'), '2026-11-11']];
 let judged = 0, fails = 0, inc = 0; const ck = (n, ok, i) => { judged++; if (!ok) fails++; log('  §PROJECT_PAGE ' + n + ' ' + (ok ? 'PASS' : 'FAIL') + (i !== undefined ? ' ' + JSON.stringify(i) : '')); };
 const incon = (n, w) => { inc++; log('  §PROJECT_PAGE ' + n + ' INCONCLUSIVE ' + w); };
@@ -83,3 +84,5 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.wasm': 'applica
   await br.close(); server.close(); fin();
 })();
 function fin() { const v = judged === 0 ? 'INCONCLUSIVE' : fails ? 'FAIL' : 'PASS'; log('§PROJECT_PAGE_VERDICT ' + v + ' judged=' + judged + ' fail=' + fails + ' inconclusive=' + inc + (BREAK ? ' (BREAK)' : '')); process.exit(v === 'PASS' ? 0 : 1); }
+
+})().catch(function (e) { console.log('§PA_HARNESS_CRASH ' + (e && e.stack || e)); process.exit(1); });

@@ -266,10 +266,10 @@
   }
 
   // §5.54 the project page: everything one project's tabs draw, from the same rows and buckets as compute(). Pure: no DOM, no fetch, no clock (today comes in f.today).
-  function projectDetail(data, f, id) {
+  function projectDetail(data, f, id, comp) {   // comp (§5.75 step 3): the compute to take the project's health / schedule / budget from - the page and the node harness pass the PA one; absent = compute() here
     var p = (data.projects || []).filter(function (x) { return String(x.C_Project_ID) === String(id); })[0]; if (!p) return null;
     f = f || {}; var today = f.today, tn = dnum(today), un = {}; (data.unavailable || []).forEach(function (u) { un[u] = 1; });
-    var R = compute(data, { today: today, status: 'all', org: '', category: '', project: p.Value }), row = ((R.drill || {}).total_projects || [])[0] || {};
+    var R = (comp || compute)(data, { today: today, status: 'all', org: '', category: '', project: p.Value }), row = ((R.drill || {}).total_projects || [])[0] || {};
     var phases = (data.phases || []).filter(function (x) { return String(x.C_Project_ID) === String(id); }).sort(function (a, b) { return (a.SeqNo || 0) - (b.SeqNo || 0) || String(a.C_ProjectPhase_ID) - String(b.C_ProjectPhase_ID); });
     var tasksBy = {}, taskRowsBy = {}; (data.tasks || []).forEach(function (k) { tasksBy[k.C_ProjectPhase_ID] = (tasksBy[k.C_ProjectPhase_ID] || 0) + 1;
       (taskRowsBy[k.C_ProjectPhase_ID] = taskRowsBy[k.C_ProjectPhase_ID] || []).push({ id: k.C_ProjectTask_ID, name: k.Name, planned: Number(k.PlannedAmt) || 0, start: k.BIM_StartDate ? day(k.BIM_StartDate) : null, end: k.BIM_EndDate ? day(k.BIM_EndDate) : null }); });

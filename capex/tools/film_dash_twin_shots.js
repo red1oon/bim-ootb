@@ -3,7 +3,8 @@
 // Stills are for the owner to read, never evidence (witness numbers are). Software rendering, no GPU. Usage: NODE_PATH=<bim-ootb>/node_modules node capex/tools/film_dash_twin_shots.js <store.db> <outDir> [today=2026-11-12]
 'use strict';
 const fs = require('fs'), path = require('path'), http = require('http'), { chromium } = require('/home/red1/bim-ootb/tests/node_modules/playwright');
-const [dbFile, out, TODAY = '2026-11-12'] = process.argv.slice(2), ROOT = path.join(__dirname, '..', '..'), log = console.log, T = require('../tiles.js'), AD = require('../adapters.js'), initSqlJs = require('sql.js');
+const [dbFile, out, TODAY = '2026-11-12'] = process.argv.slice(2), ROOT = path.join(__dirname, '..', '..'), log = console.log, T = require('../tests/pa_harness.js'), AD = require('../adapters.js'), initSqlJs = require('sql.js');
+(async () => { await require('../tests/pa_harness.js').init({ quiet: true });   // §5.75 step 3: the numbers come from the PA rows (pa_harness.js), not the hand formulas in tiles.js
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.wasm': 'application/wasm', '.json': 'application/json', '.css': 'text/css', '.png': 'image/png' };
 fs.mkdirSync(out, { recursive: true });
 (async () => {
@@ -51,3 +52,5 @@ fs.mkdirSync(out, { recursive: true });
   const tiles = logs.filter(l => /^§DASH_TILE source=sqlite tile=(total_projects|approved_budget|actual_cost|health|schedule|budget_status|proc_openpo|forecast_cost) /.test(l)); const seen = {}; tiles.reverse().forEach(l => { const k = l.split(' ')[2]; if (!seen[k]) { seen[k] = 1; log(l); } });
   await br.close(); server.close();
 })();
+
+})().catch(function (e) { console.log('§PA_HARNESS_CRASH ' + (e && e.stack || e)); process.exit(1); });

@@ -74,7 +74,7 @@ var R0_MEASURE = 1000000, GOAL = 'CAPEX Approved Budget (USD)';
   // ── A + B: oracles on the SAME project rows ──
   if (OFFLINE) { inc('A', '--offline (pilot not read)'); inc('B', '--offline'); }
   else {
-    var Ad = require(path.join(ROOT, 'capex/adapters.js')), Tl = require(path.join(ROOT, 'capex/tiles.js')), Push = require(path.join(ROOT, 'viewer/erp_rest_push.js'));
+    var Ad = require(path.join(ROOT, 'capex/adapters.js')), Tl = await require(path.join(ROOT, 'capex/tests/pa_harness.js')).init({ quiet: true }), Push = require(path.join(ROOT, 'viewer/erp_rest_push.js'));
     var base = process.env.BRIDGE_BASE || 'http://localhost:8088';
     var L = { user: 'GardenAdmin', pass: 'GardenAdmin', lang: 'en_US', ClientID: 11, RoleID: 102, OrgID: 11, WarehouseID: 103, stage: 0 };
     var login = { user: L.user, pass: L.pass, lang: 'en_US', clientId: 11, roleId: 102, orgId: 11, warehouseId: 103, stage: 0 };
