@@ -265,26 +265,29 @@
   }
 
   // ── AD_Package_Imp (+ _Inst, _Detail): what Packages Installed shows ──
-  function recordImport(db, bundle, version, stat, now) {
-    now = now || new Date().toISOString().slice(0, 19).replace('T', ' ');
+  //   o (optional, a client admin's Pack In, PackInHandler.java:171-207): { clientId, orgId, procId } -> AD_Package_Imp / _Inst in the session client and org, AD_Package_Imp_Proc_ID = the Pack In record; default 0/0, none
+  function recordImport(db, bundle, version, stat, now, o) {
+    now = now || new Date().toISOString().slice(0, 19).replace('T', ' '); o = o || {};
+    var oc = Number(o.clientId) || 0, oo = Number(o.orgId) || 0;
     var has = function (t) { try { db.exec('SELECT 1 FROM ' + t + ' LIMIT 1'); return true; } catch (e) { return false; } };
     if (!has('ad_package_imp')) return null;
     var id = (db.exec('SELECT COALESCE(MAX(ad_package_imp_id),0)+1 FROM ad_package_imp')[0].values[0][0]);
     id = Math.max(Number(id), MAX_OFFICIAL_ID + 1);
     var status = stat.ok ? 'Completed successfully' : ('Import Failed: ' + stat.error).slice(0, 60);
-    db.run('INSERT INTO ad_package_imp (ad_package_imp_id, ad_client_id, ad_org_id, isactive, created, createdby, updated, updatedby, name, pk_version, pk_status, description, processed) VALUES (?,0,0,\'Y\',?,0,?,0,?,?,?,?,\'Y\')',
-      [id, now, now, bundle, version, status, 'Pack In (twin) ' + stat.processed + ' processed, ' + stat.skippedOfficial + ' official skipped, ' + stat.sql.ok + ' SQL']);
+    db.run('INSERT INTO ad_package_imp (ad_package_imp_id, ad_client_id, ad_org_id, isactive, created, createdby, updated, updatedby, name, pk_version, pk_status, description, processed) VALUES (?,?,?,\'Y\',?,0,?,0,?,?,?,?,\'Y\')',
+      [id, oc, oo, now, now, bundle, version, status, 'Pack In (twin) ' + stat.processed + ' processed, ' + stat.skippedOfficial + ' official skipped, ' + stat.sql.ok + ' SQL']);
+    if (o.procId) { try { db.run('UPDATE ad_package_imp SET ad_package_imp_proc_id=? WHERE ad_package_imp_id=?', [Number(o.procId), id]); } catch (e) { /* a dictionary without the column */ } }
     if (has('ad_package_imp_inst')) {   // PackInHandler.java:197-232: the install log row per (Name, PK_Version), its status refreshed on a re-install
       var ex = db.exec("SELECT ad_package_imp_inst_id FROM ad_package_imp_inst WHERE name='" + String(bundle).replace(/'/g, "''") + "' AND pk_version='" + String(version).replace(/'/g, "''") + "'");
       if (ex.length && ex[0].values.length) db.run('UPDATE ad_package_imp_inst SET pk_status=?, updated=? WHERE ad_package_imp_inst_id=?', [status, now, ex[0].values[0][0]]);
       else { var iid = Math.max(Number(db.exec('SELECT COALESCE(MAX(ad_package_imp_inst_id),0)+1 FROM ad_package_imp_inst')[0].values[0][0]), MAX_OFFICIAL_ID + 1);
-        db.run("INSERT INTO ad_package_imp_inst (ad_package_imp_inst_id, ad_client_id, ad_org_id, isactive, created, createdby, updated, updatedby, name, pk_status, pk_version, processed) VALUES (?,0,0,'Y',?,0,?,0,?,?,?,'Y')", [iid, now, now, bundle, status, version]); }
+        db.run("INSERT INTO ad_package_imp_inst (ad_package_imp_inst_id, ad_client_id, ad_org_id, isactive, created, createdby, updated, updatedby, name, pk_status, pk_version, processed) VALUES (?,?,?,'Y',?,0,?,0,?,?,?,'Y')", [iid, oc, oo, now, now, bundle, status, version]); }
     }
     if (has('ad_package_imp_detail')) {
       var did = Math.max(Number(db.exec('SELECT COALESCE(MAX(ad_package_imp_detail_id),0)+1 FROM ad_package_imp_detail')[0].values[0][0]), MAX_OFFICIAL_ID + 1);
       stat.details.forEach(function (d, i) {
-        try { db.run('INSERT INTO ad_package_imp_detail (ad_package_imp_detail_id, ad_client_id, ad_org_id, isactive, created, createdby, updated, updatedby, ad_package_imp_id, name, action, success, type, tablename, record_id, record_uu, result) VALUES (?,0,0,\'Y\',?,0,?,0,?,?,?,?,?,?,?,?,?)',
-          [did + i, now, now, id, String(d.table), String(d.action).slice(0, 10), d.action === 'Failed' ? 'N' : 'Y', d.table === 'SQLStatement' ? 'SQL' : 'table', String(d.table), d.id || 0, d.uu || null, d.sql || d.error || null]); } catch (e) {}
+        try { db.run('INSERT INTO ad_package_imp_detail (ad_package_imp_detail_id, ad_client_id, ad_org_id, isactive, created, createdby, updated, updatedby, ad_package_imp_id, name, action, success, type, tablename, record_id, record_uu, result) VALUES (?,?,?,\'Y\',?,0,?,0,?,?,?,?,?,?,?,?,?)',
+          [did + i, oc, oo, now, now, id, String(d.table), String(d.action).slice(0, 10), d.action === 'Failed' ? 'N' : 'Y', d.table === 'SQLStatement' ? 'SQL' : 'table', String(d.table), d.id || 0, d.uu || null, d.sql || d.error || null]); } catch (e) {}
       });
     }
     return { id: id, status: status };

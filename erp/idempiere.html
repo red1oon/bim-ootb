@@ -546,7 +546,7 @@
 <!-- B-5/C-5 process dispatch (MULTI_LANE_LAUNCH Lane A) — AD_Process spine (W-PROC). Its report handlers
      resolve to report_overlay's PURE CORE folds, loaded below AFTER bigdecimal.js (the folds are BigDecimal-exact
      and BD must exist at parse time — glassbowl.html load-order parity). -->
-<script src="ad_process.js?v=19"></script>
+<script src="ad_process.js?v=20"></script>
 <script src="ad_find.js?v=2"></script>
 <script src="ad_recent.js?v=1"></script>
 <script src="ad_toolbar.js?v=1"></script>
@@ -610,9 +610,9 @@
 <script src="ninja_starter.js?v=1"></script>
 <script src="ninja_export.js?v=1"></script>
 <script src="pg_view_sql.js?v=1"></script>  <!-- ONE Postgres->SQLite view translator (core views + plugin packs), ERP_FRIENDLY_OPS_LENS.md §24 -->
-<script src="pipo_packin.js?v=3"></script>
+<script src="pipo_packin.js?v=4"></script>
 <script src="pipo_packout.js?v=2"></script>  <!-- Pack Out to a real 2Pack (ERP_FRIENDLY_OPS_LENS.md §25) -->  <!-- Pack In of a bundle's 2Packs (bim-compiler ERP_FRIENDLY_OPS_LENS.md §20.A/§22) -->
-<script src="plugin_overlay.js?v=9"></script>
+<script src="plugin_overlay.js?v=10"></script>
 <!-- PLUGIN_SYSTEM_LANE.md §Phase E — bridges the real ad_modelvalidator AD table (ad_modelval.js
      readValidators) into the plugin host above: adding an ad_modelvalidator row becomes the AD-native
      way to add a validator. Install-only (never auto-start — Q1); loads after ad_modelval.js/
@@ -707,6 +707,7 @@
 <script src="callouts/InOutFreightCostRule.js?v=1"></script>
 <script src="processes/AcctSchemaCopyAcct.js?v=1"></script>
 <script src="processes/PackOut.js?v=1"></script>
+<script src="processes/PackIn.js?v=1"></script>   <!-- Pack In process (org.adempiere.pipo.PackIn), a client admin's data 2Pack (bim-ootb CAPEX_DASHBOARD.md §5.70) -->
 <script src="processes/AllocationReset.js?v=1"></script>
 <script src="processes/BOMVerify.js?v=1"></script>
 <script src="processes/BankStatementMatcher.js?v=1"></script>
@@ -4897,7 +4898,20 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     console.log('§AD-PROC-LIVE proc=' + res.ad_process_id + ' name="' + res.name + '" classname=' + (res.classname || '(blank)') +
       ' dispatched=' + (res.dispatched ? 'Y' : 'N') +
       (res.dispatched ? ' ok=' + (res.ok ? 'Y' : 'N') + ' rows=' + res.rows + (res.ok ? '' : ' reason=' + res.reason + ' message=' + JSON.stringify(res.message)) : ' reason=' + res.reason));
-    renderProcResult(proc, res);
+    // §PROC-ASYNC (bim-ootb prompts/CAPEX_DASHBOARD.md §5.70): a process that handed the host its asynchronous rest (pi.then) is shown only when that rest is done, with ITS message - as legacy's
+    //   dialog shows doIt's return; its ops are committed as one group, the same way as the process's own. A witness can switch the wait off (window.__procNoThen) to prove the card depends on it.
+    var then = res && res.ok && res.result && typeof res.result.then === 'function' && !window.__procNoThen ? res.result.then : null;
+    if (!then) { renderProcResult(proc, res); return; }
+    status('Running ' + proc.name + '...');
+    Promise.resolve().then(then).then(function (r) { return r || { ok: false, summary: 'no result' }; }, function (e) { return { ok: false, summary: (e && e.message) || String(e) }; }).then(function (r) {
+      var ops = r.commitOps || [], done = function () {
+        res.ok = !!r.ok; res.message = r.summary != null ? String(r.summary) : res.message; if (!r.ok) res.reason = 'process-error';
+        console.log('§PROC-ASYNC proc=' + res.ad_process_id + ' ok=' + (res.ok ? 'Y' : 'N') + ' ops=' + ops.length + ' message=' + JSON.stringify(res.message));
+        renderProcResult(proc, res); status('Ready');
+      };
+      if (ops.length && window.__crud && typeof window.__crud.applyOpGroup === 'function') window.__crud.applyOpGroup(ops, function (cr) { console.log('§PROC-COMMIT proc=' + res.ad_process_id + ' ops=' + ops.length + ' committed=' + !!(cr && cr.committed) + ' (async rest)'); done(); });
+      else done();
+    });
   }
   // §CREATEFROM-COMMIT / §KIND2-COMMIT — the ONE translation from ENGINE vocabulary to CRUD vocabulary,
   // shared by both Confirm & Post seams below (it was written once for CreateFromInvoice in #1654; the

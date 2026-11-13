@@ -9,7 +9,7 @@ proves and has a break switch that must FAIL. Honour this block until the lane i
 **NEXT, in order:**
 (0) **§5.67 the test-data 2Pack.** Part 1 is MERGED (#2909): `capex/plugin/testdata_2pack/202611131200_GardenWorld_CAPEXTestData.zip`, and MProject.beforeSave is in the twin (W-PROJECT-CURRENCY 4/0). Remaining, in order:
 - (a) ✅ DONE 2026-11-13 (§5.69, W-TD-PACK-TWIN 6/0, branch `feat/capex-td-pack-g1`; `wip/capex-td-pack-g1` is superseded, delete it): the twin Pack In client-data path. OPEN from it: legacy's re-walk bumps `Updated` on every row, the twin does not (§5.69 RESULT).
-- (b) A client-admin Pack In entry in the twin. Today the twin packs in only at plugin Start (System). Port iDempiere's Pack In window / `PackInProcess` (`AD_Package_Imp_Proc` + attached zip), so a GardenWorld admin packs it in as on legacy.
+- (b) ✅ DONE 2026-11-13 (§5.70, W-TD-PACKIN-WINDOW 4/0): a GardenWorld admin packs the zip in from window 50005 Pack In (PackInProcess port, async continuation seam, kept + replayed). OPEN: the full re-apply of a kept client entry is unwitnessed.
 - (c) **W-TD-PACK.** Twin half: headless browser on `erp/idempiere.html`, as `erp/tests/witness_packin.js`. Legacy half: `RUN_ApplyPackInFromFolder.sh` (`~/idempiere-bimdoc/server/utils`) on a database copy, restored after.
 - (d) **G2:** the model layer's mandatory-column check (the twin saved a C_Project with no currency). (1) **PR C2:** delete the moved formulas from `tiles.js compute()`. The drill buckets come from `GoalEngine.queryKeys` of each bound slot (`pa_tiles.BIND`, `POP` for the population). Check every drill key's population against W-DASH-DRILL (59/0 today) before deleting. `tiles.js` keeps Stage, BIM documents, Last updated, the drill row view `info()`, `projectDetail`, availability (`NEEDS`/`blocked`), formatting, `twin()`. When no PA rows exist, the fallback becomes "no data (CAPEX PA rows not installed)". (2) W-DASH-SYNC E2 premise fix (above). (3) The BIM documents measure in the BIM Document plugin's pack; the Stage tile as an `AD_Chart` (needs a twin chart reader). (4) §5.65 UAT Guide build (after C2): its chapters 4–6 become the hands-on exercise over the §5.67 projects. (5) Owner decision, named: retire the per-currency USD/BDT rows (released packs; pilot Home uses them).
 **LANDMINES (this session):** a Python generator with adjacent single-quoted strings dropped SQL quotes (`f.Name=Closed`): W-PA-FLAT caught it; dry-run every migration on Postgres in a rolled-back transaction. A `//` comment pasted mid-line swallowed the rest of a JS line twice; syntax-check is not enough, run the witness. PA measures are cached by the server: restart the pilot/test instance after changing a row (`~/idempiere-pilot/stop.sh && start.sh`, `~/idempiere-bimdoc/...`). Witnesses that create legacy goals must remove them (W-PA-TILES `§PA_TILES_CLEANUP`), or the pilot's Home changes. CACHE_VERSION bump detail now goes in the commit message, not `erp/sw.js` line 13 (`erp/SW_VERSION_HISTORY.md`, `node scripts/bump.js <file>`; PR #2904).
@@ -1417,3 +1417,19 @@ Same video timing as the English cut frame for frame (5694 frames, 227.78 s); on
 - W4: reload and log in again → the same rows are there (`§PACKIN-REPLAY bundle=client:11:…`), not twice.
 - 0 rows judged = INCONCLUSIVE.
 - Break runs, each MUST FAIL: `WTW_BREAK=noreplay` (the kept entry is deleted before the reload) → W4; `WTW_BREAK=nothen` (the host ignores the continuation) → W3.
+**§5.70 RESULT (2026-11-13; logs read, scratch not committed):**
+- **W-TD-PACKIN-WINDOW `PASS 4/0`** (`?login`-free: the real login dialog, GardenWorld → GardenAdmin; the menu → window 50005):
+  - W1: client 11, role 102, menu 50006 opens the window.
+  - W2: a record with no attachment → card *"Please attach the pack out archive before running the process"*, 0 projects.
+  - W3: zip attached → card `Processed=225 Un-Resolved=0`; 12/42/84/84 rows in client 11; `AD_Package_Imp` 1000002 client 11 `Completed successfully` with `AD_Package_Imp_Proc_ID` = the record; `DateProcessed 2026-11-13 09:03:32` (the local day) and `P_Msg` == the card. `§PACKIN-CLIENT ... statements=635 ms=672`.
+  - W4: reload + login → the same 12/42/84/84, once, from `§PACKIN-REPLAY bundle=client:11:… mode=delta statements=635 ms=10`.
+- **Breaks, each FAIL:** `noreplay` → W4 (0 rows after the reload); `nothen` → W2+W3 (the card shows the provisional `Pack In … ...`, nothing written).
+- **Seen while building:** a process with no parameters runs at once from the window's button (no parameter dialog), as on legacy. The record is a tip row (id −6); its attachment, the `AD_Package_Imp_Proc_ID` and the `P_Msg` update all address it by that id.
+- **Regressions (same set as §5.69):**
+  - W-TD-PACK-TWIN 6/0, W-PACKIN GREEN 6/0.
+  - NC1-UI 13/0: a live record-process button, the changed host path.
+  - W-PLUGIN-PACKS K4+K4b and W-PACKOUT O6: the same as on the `origin/main` baseline.
+  - SW audit 0 missing. `ad_process.js?v=20`, `pipo_packin.js?v=4`, `plugin_overlay.js?v=10`, `processes/PackIn.js?v=1` (precached), CACHE_VERSION v1068.
+- **OPEN (named):**
+  - The FULL re-apply of a kept client entry (fingerprint changed: a new seed) is written but not witnessed; W4 covers the delta replay only.
+  - The dictionary path's `now` default in `pipo_packin.apply` / `recordImport` is still the UTC clock (pre-existing; the client path passes the local clock).
