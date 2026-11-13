@@ -1461,3 +1461,20 @@ Same video timing as the English cut frame for frame (5694 frames, 227.78 s); on
 - **The test instance:** restored from the copy (0 TD projects), restarted; `§SETUP_VERDICT PASS`.
 - **Breaks, each FAIL:** `twinshift` → P2 (`c_projectphase.startdate legacy=2026-03-28 twin=2026-03-01`); `nomodel` → P2 (`m_attributesetinstance_id legacy=0 twin=null`) + P3 (currency null on the twin).
 - **Next for §5.67 (W-TD-PACK point 3):** the dashboard on each side shows the 12 projects with their phase dates and amounts 0 until documents exist.
+### 5.72 SPEC — §5.67 point 3: after the Pack In, the dashboard shows the 12 test projects the same on both sides (2026-11-13; written before code; owner: "go with your advice")
+**The issue:** §5.71 proves the ROWS equal on both sides. Nothing proves that the dashboard, the thing the testers look at, shows them, or shows them the same on Source A (twin) and Source B (legacy).
+**Witness W-TD-PACK-DASH** (`capex/tests/witness_td_pack_dash.js`, the shipped zip, the real page `capex/index.html`):
+- **Legacy (Source B):**
+  - test instance stopped, database copy, folder Pack In, instance started;
+  - `capex/tools/legacy_snapshot.js` with `BRIDGE_BASE=http://localhost:8108` (stock WebServices, GardenAdmin) → the snapshot the page opens with `?snapshot=…&source=legacy`;
+  - then stop, restore the copy, start, and `§SETUP_VERDICT PASS`, always.
+- **Twin (Source A):** real login as GardenAdmin, `PluginEngine.packInClient`, the page's database exported and served to the dashboard as `?db=`.
+- **Checks:**
+  - D1: the Budget view (`#budget`) on each side lists the zip's 12 project Values.
+  - D2: per test project, its Budget row (currency, Planned, Committed, Invoiced, Actual) is equal on both sides. Planned == SUM(PlannedQty × PlannedPrice) of that project's lines in the zip (independent). Committed, Invoiced and Actual are 0: no document exists yet.
+  - D3: per test project, the project page's Schedule tab (`#project/<id>/schedule`, `#phTable`) lists the zip's phases with the zip's start and end dates, on both sides.
+  - D4: no page error on either side.
+  - 0 projects judged = INCONCLUSIVE.
+- **Breaks, each MUST FAIL** (the twin half and the legacy snapshot of the last full run are reused, keyed by the zip's sha256):
+  - `WTPD_BREAK=legacyshift`: one phase StartDate shifted a day in the SERVED snapshot → D3.
+  - `WTPD_BREAK=twinplan`: +1 on one project's PlannedAmt in the SERVED twin database → D2.
