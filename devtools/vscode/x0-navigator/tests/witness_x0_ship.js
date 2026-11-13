@@ -70,6 +70,9 @@ if (!J.loadTs(ROOT)) { summary({ parser: 'N' }, 'INCONCLUSIVE'); process.exit(0)
   const dOk = check('(d) a live version.json whose sha is not main\'s → Fetch back FAIL', !fSha.ok && fSha.lines.some(l => /version\.json http=200 live_sha=0000000f .* match=N/.test(l)));
   const fDown = await S.fetchBack(TMP, { site: 'http://fake.invalid', base: 'HEAD', get: async () => ({ status: 0, text: '' }) });
   check('an unreachable site is a FAIL, never a pass', !fDown.ok && fDown.verdict === 'FAIL');
+  const fBroken = await S.fetchBack(TMP, { site: 'http://fake.invalid', base: 'HEAD', get: site("const CACHE_VERSION = 'v1';", '{"sha":"' + sha.slice(0, 8) + '","pr":12\n13}') }); show(fBroken);
+  check('a live stamp that is not valid JSON (the 2026-11-13 deploy: two PR numbers on two lines) → FAIL, named as unreadable',
+    !fBroken.ok && fBroken.verdict === 'FAIL' && fBroken.lines.some(l => /live_sha=unreadable/.test(l)));
   const fNoStamp = await S.fetchBack(TMP, { site: 'http://fake.invalid', base: 'HEAD', get: async url => (/sw\.js/.test(url) ? { status: 200, text: "const CACHE_VERSION = 'v1';" } : { status: 404, text: '<html>' }) }); show(fNoStamp);
   const noStampOk = check('versions match but the live site carries no deploy stamp → INCONCLUSIVE, never PASS', !fNoStamp.ok && fNoStamp.verdict === 'INCONCLUSIVE');
   fs.rmSync(TMP, { recursive: true, force: true });

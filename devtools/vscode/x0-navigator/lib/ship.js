@@ -136,7 +136,13 @@ async function fetchBack(root, opts) {
   let stamps = 0;
   for (const a of main) {
     const r = await get(site + '/' + a.app + '/version.json?x0=' + Date.now());
-    let liveSha = null; try { liveSha = String(JSON.parse(r.text).sha || ''); } catch (e) { liveSha = null; }
+    let liveSha = null, unreadable = false;
+    try { liveSha = String(JSON.parse(r.text).sha || ''); } catch (e) { liveSha = null; unreadable = r.status === 200 && /"sha"\s*:/.test(r.text); }
+    if (unreadable) {   // the deploy wrote a stamp, but it is not valid JSON: the page that reads it cannot read it either
+      stamps++; ok = false;
+      lines.push(SEC + 'SHIP_FETCH file=' + a.app + '/version.json http=200 live_sha=unreadable (not valid JSON) match=N');
+      continue;
+    }
     if (r.status !== 200 || !liveSha) continue;
     stamps++;
     const match = liveSha.length >= 7 && sha.startsWith(liveSha);
