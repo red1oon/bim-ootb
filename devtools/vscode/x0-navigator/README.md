@@ -9,7 +9,12 @@ step. It never calls a model or the network, and nothing in `devtools/` is loade
 | Hover on a `§TAG` | Which rule is this tag, and which code prints it? | `prompts/*.md`, `docs/**/*.md` of bim-ootb and bim-compiler, plus the `.js` source |
 
 It never guesses: a phantom field (read, never written) gets a hover and no jump, an unknown field gets nothing,
-and a stale index gets `index stale` instead of a wrong jump. Run the task *Regenerate editor indexes* to refresh.
+and a field whose line has moved gets `index stale` instead of a wrong jump.
+
+**The APP index stays fresh by itself.** The committed `internal/APP_SURFACE.md` is only a snapshot (most merges
+move its line numbers). X0 runs the repo's own `scripts/gen_app_surface.js` into VS Code's storage folder when it
+starts, and again when a lookup misses after you saved a file (one run, about 4 s, in the background). It never
+writes inside the repo. The command *X0 Navigator: Rebuild indexes* forces a run.
 
 ## Install (from the repo, works offline)
 
@@ -26,7 +31,8 @@ sibling folder `../bim-compiler`.
 node devtools/vscode/x0-navigator/tests/witness_x0_appdef.js     # §X0_APPDEF
 node devtools/vscode/x0-navigator/tests/witness_x0_taghover.js   # §DEVTK_SPEC  [--compiler-root <dir>]
 node devtools/vscode/x0-navigator/tests/witness_x0_activate.js   # §X0_ACTIVATE
+node devtools/vscode/x0-navigator/tests/witness_x0_fresh.js      # §X0_FRESH
 node devtools/vscode/x0-navigator/tests/witness_x0_isolation.js  # §X0_ISOLATION
 ```
 
-Spec: bim-compiler `prompts/CODE_ARCHITECTURE_DESIGN.md` §F.4.
+Spec: bim-compiler `prompts/CODE_ARCHITECTURE_DESIGN.md` §F.4, §F.5.

@@ -73,7 +73,7 @@ const shifted = { root: ROOT, fields: new Map([[aDef.field, Object.assign({}, in
 const st = S.resolve(shifted, aDef.field);
 const goodHover = S.formatHover(S.resolve(index, aDef.field));
 check('index shifted by one line (APP.' + aDef.field + ') → stale, never a jump',
-  st.kind === 'stale' && !st.abs && /index stale — run "Regenerate editor indexes"/.test(S.formatHover(st)));
+  st.kind === 'stale' && !st.abs && /index stale — hover again in a few seconds, or run "X0 Navigator: Rebuild indexes"/.test(S.formatHover(st)));
 check('hover text: written at <file:line> · N writes · N reads',
   new RegExp('written at `' + aDef.file.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ':' + aDef.line + '` · \\d+ writes · \\d+ reads$').test(goodHover));
 

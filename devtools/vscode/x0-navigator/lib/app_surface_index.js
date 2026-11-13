@@ -67,9 +67,12 @@ function parseSurface(text) {
   return { fields, rows: (all || []).length, phantoms, tablesFound: (all ? 1 : 0) + (ph ? 1 : 0) };
 }
 
-/** Load the index from a bim-ootb root. Returns null when the generated file is not there. */
-function loadSurface(root) {
-  const file = path.join(root, 'internal', 'APP_SURFACE.md');
+/**
+ * Load the index for a bim-ootb root. `indexFile` is an optional fresher copy kept outside the repo (§F.5);
+ * the default is the committed one. Source lines are always resolved against `root`. Null when the file is not there.
+ */
+function loadSurface(root, indexFile) {
+  const file = indexFile || path.join(root, 'internal', 'APP_SURFACE.md');
   let text;
   try { text = fs.readFileSync(file, 'utf8'); } catch (e) { return null; }
   const index = parseSurface(text);
@@ -131,7 +134,7 @@ function formatHover(res, link) {
     const fr = res.firstRead;
     return head + '\n\nPHANTOM — read, never written' + (fr ? ' (first read `' + fr.file + ':' + fr.line + '`)' : '');
   }
-  if (res.kind === 'stale') return head + '\n\nindex stale — run "Regenerate editor indexes"';
+  if (res.kind === 'stale') return head + '\n\nindex stale — hover again in a few seconds, or run "X0 Navigator: Rebuild indexes"';
   const label = res.file + ':' + res.line;
   const target = link ? link(res.abs, res.line) : null;
   return head + '\n\nwritten at ' + (target ? '[' + label + '](' + target + ')' : '`' + label + '`')
