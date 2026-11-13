@@ -14,7 +14,7 @@ const path = require('path');
 
 // The same gates as scripts/gen_app_surface.js R5/R6: bare `A.` / `app.` is the god object ONLY in a file that
 // binds it. Copied verbatim; the witness compares these two against the generator's source, so a drift FAILs.
-const BINDS_A = /function\s+setup\w*\s*\(\s*A\s*[,)]|\(\s*A\s*\)\s*(?:=>|\{)|\bA\s*=\s*window\.APP\b|\b(?:var|let|const)\s+A\s*=\s*APP\b/;
+const BINDS_A = /function\s+setup\w*\s*\(\s*A\s*[,)]|\(\s*A\s*\)\s*(?:=>|\{)|\bA\s*=\s*window\.APP\b|\b(?:var|let|const)\s+A\s*=\s*APP\b|function\s*\*?\s*(?:__split_\w+|init)\s*\((?:\s*\w+\s*,)*\s*A\s*[,)]/;
 const BINDS_app = /function\s+\w*\s*\(\s*app\s*[,)]|\bapp\s*=\s*window\.APP\b|\bvar\s+app\s*=\s*(?:window\.)?APP\b/;
 
 const cells = row => row.split('|').slice(1, -1).map(c => c.trim());
@@ -64,7 +64,17 @@ function parseSurface(text) {
     f.firstRead = { file: site[1], line: Number(site[2]) };
     fields.set(name, f);
   }
-  return { fields, rows: (all || []).length, phantoms, tablesFound: (all ? 1 : 0) + (ph ? 1 : 0) };
+  // a phantom with a same-named write the generator could not tie to the object (its R11): not proven dead
+  let untied = 0;
+  for (const r of tableRows(lines, ['field', 'untied write site']) || []) {
+    const name = nameOf(r[0]);
+    const site = SITE_RE.exec(r[1] || '');
+    const f = name && fields.get(name);
+    if (!f || !site || !f.phantom) continue;
+    f.untied = { file: site[1], line: Number(site[2]) };
+    untied++;
+  }
+  return { fields, rows: (all || []).length, phantoms, untied, tablesFound: (all ? 1 : 0) + (ph ? 1 : 0) };
 }
 
 /**
@@ -118,7 +128,7 @@ function readLine(root, file, line) {
 function resolve(index, field, read) {
   const f = index && index.fields.get(field);
   if (!f) return null;
-  const base = { field, writes: f.writes, reads: f.reads, firstRead: f.firstRead, file: f.file, line: f.line, as: f.as };
+  const base = { field, writes: f.writes, reads: f.reads, firstRead: f.firstRead, file: f.file, line: f.line, as: f.as, untied: f.untied || null };
   if (f.phantom) return Object.assign(base, { kind: 'phantom' });
   const text = (read || readLine)(index.root, f.file, f.line);
   if (!lineHasField(text, field)) return Object.assign(base, { kind: 'stale' });
@@ -132,6 +142,10 @@ function formatHover(res, link) {
   const head = '**APP.' + res.field + '**';
   if (res.kind === 'phantom') {
     const fr = res.firstRead;
+    if (res.untied) {
+      return head + '\n\nPHANTOM? — no writer the index can tie to the shared object, but `' + res.untied.file + ':' + res.untied.line +
+        '` assigns a field of this name through a local name. Probably not dead: read that line.';
+    }
     return head + '\n\nPHANTOM — read, never written' + (fr ? ' (first read `' + fr.file + ':' + fr.line + '`)' : '');
   }
   if (res.kind === 'stale') return head + '\n\nindex stale — hover again in a few seconds, or run "X0 Navigator: Rebuild indexes"';

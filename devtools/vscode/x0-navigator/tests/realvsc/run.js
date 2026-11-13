@@ -62,7 +62,7 @@ function findRead(pred) {
   return null;
 }
 const def = findRead(f => !f.phantom && f.as === 'A' && S.resolve(index, f.name).kind === 'definition');
-const ph = findRead(f => f.phantom);
+const ph = findRead(f => f.phantom && !f.untied);
 function findTag(tag) {
   const T = require('../../lib/tag_index');
   const p = (T.buildPrinterIndex(ROOT).tags.get(tag) || []).find(x => x.rank === 0);

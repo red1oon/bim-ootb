@@ -17,6 +17,11 @@
 //   R4 counts in the header                  → recomputed each run, never hand-edited
 //   R5 bare `A.x` counts ONLY in a file that binds A to APP (setupX(A) / = window.APP)
 //   R5b `var A = APP;` inside `function setupX(APP)` is a binding too (viewer/grid_overlay.js; #2961: its writes showed as PHANTOM)
+//   R5c the parts of a split file bind it as a later parameter: `function* __split_x(NF, A, …)`, and navigate_*.js as
+//       `function init(A, nav)`. Both are bindings (#2974: 138 of 281 "phantoms" had a writer in such a file).
+//   R11 a phantom that DOES have a same-named write through a local `A.`/`app.` the gate could not tie to the object is
+//       listed a second time, under "untied write", with that site. The gate is a text rule and will miss a form again;
+//       R11 makes the miss visible instead of calling a live field dead.
 //   R6 same gate for the third spelling, lowercase `app.x` (time_machine.js writes this one)
 //   R7 the "written at" column shows a PRODUCTION write site when one exists, never a test's
 //   R8 this script and its witness are excluded — they quote `APP.x` in prose and would self-index
@@ -55,7 +60,7 @@ function walk(dir, out) {
 // `A` counts as the god object ONLY in a file that actually binds it to APP —
 // a `setupX(A)`/`(A)` module entry, an explicit `= window.APP`, or a declared `var A = APP` (R5b). Without this
 // gate, any unrelated local named `A` pollutes the index (R5).
-const BINDS_A = /function\s+setup\w*\s*\(\s*A\s*[,)]|\(\s*A\s*\)\s*(?:=>|\{)|\bA\s*=\s*window\.APP\b|\b(?:var|let|const)\s+A\s*=\s*APP\b/;
+const BINDS_A = /function\s+setup\w*\s*\(\s*A\s*[,)]|\(\s*A\s*\)\s*(?:=>|\{)|\bA\s*=\s*window\.APP\b|\b(?:var|let|const)\s+A\s*=\s*APP\b|function\s*\*?\s*(?:__split_\w+|init)\s*\((?:\s*\w+\s*,)*\s*A\s*[,)]/;
 const BINDS_app = /function\s+\w*\s*\(\s*app\s*[,)]|\bapp\s*=\s*window\.APP\b|\bvar\s+app\s*=\s*(?:window\.)?APP\b/;
 const W_APP = /(?<![\w.])window\.APP\.([A-Za-z_]\w*)\s*=(?!=)|(?<![\w.])APP\.([A-Za-z_]\w*)\s*=(?!=)/g;
 const W_A   = /(?<![\w.])A\.([A-Za-z_]\w*)\s*=(?!=)/g;
@@ -64,7 +69,7 @@ const R_APP = /(?<![\w.])(?:window\.)?APP\.([A-Za-z_]\w*)/g;
 const R_A   = /(?<![\w.])A\.([A-Za-z_]\w*)/g;
 const R_app = /(?<![\w.])app\.([A-Za-z_]\w*)/g;
 
-const writes = new Map(), reads = new Map();
+const writes = new Map(), reads = new Map(), untied = new Map();   // untied: R11
 const add = (m, k, v) => (m.get(k) || m.set(k, []).get(k)).push(v);
 
 const files = walk(ROOT, []);
@@ -87,6 +92,8 @@ for (const f of files) {
     while ((m = W_APP.exec(ln))) add(writes, m[1] || m[2], { rel, line: i + 1, as: 'APP' });
     R_APP.lastIndex = 0;
     while ((m = R_APP.exec(ln))) add(reads, m[1], { rel, line: i + 1 });
+    if (!aliased) { W_A.lastIndex = 0; while ((m = W_A.exec(ln))) add(untied, m[1], { rel, line: i + 1, as: 'A' }); }
+    if (!lcAlias) { W_app.lastIndex = 0; while ((m = W_app.exec(ln))) add(untied, m[1], { rel, line: i + 1, as: 'app' }); }
     if (aliased) {
       W_A.lastIndex = 0;
       while ((m = W_A.exec(ln))) add(writes, m[1], { rel, line: i + 1, as: 'A' });
@@ -105,6 +112,8 @@ for (const f of files) {
 const isProd = r => !/test|witness|probe|spike|poc/i.test(r.rel);
 const names = [...new Set([...writes.keys(), ...reads.keys()])].sort();
 const phantom = names.filter(n => !writes.has(n));
+// R11: only production writes count as a lead (a test harness that fakes the object is not a writer)
+const suspect = phantom.filter(n => (untied.get(n) || []).some(isProd));
 const aliasOnly = names.filter(n => writes.has(n) && writes.get(n).every(w => w.as !== 'APP'));
 
 const L = [];
@@ -120,6 +129,7 @@ L.push(`| distinct fields | ${names.length} |`);
 L.push(`| written only as \`A.x\`/\`app.x\` (invisible to an \`APP.\` grep) | ${aliasOnly.length} |`);
 L.push(`| read but never written (phantom) | ${phantom.length} |`);
 L.push(`| — of those, read from production code | ${phantom.filter(n => reads.get(n).some(isProd)).length} |`);
+L.push(`| — of those, with an untied write: NOT proven dead (R11) | ${suspect.length} |`);
 L.push('');
 if (phantom.length) {
   L.push('## Phantom fields — read, never written', '');
@@ -129,6 +139,13 @@ if (phantom.length) {
     const r = reads.get(n)[0];
     L.push(`| \`APP.${n}\` | \`${r.rel}:${r.line}\` | ${reads.get(n).some(isProd) ? '**yes**' : 'no' } |`);
   }
+  L.push('');
+}
+if (suspect.length) {
+  L.push('## Phantom, but an untied write exists', '');
+  L.push('The index found no writer it can tie to the shared object, yet production code assigns a field of this name through a', 'local `A.`/`app.` it could not tie. Probably NOT dead: read that line before trusting "phantom".', '');
+  L.push('| field | untied write site |', '|---|---|');
+  for (const n of suspect) { const u = untied.get(n).find(isProd); L.push(`| \`APP.${n}\` | \`${u.rel}:${u.line}\` *(as \`${u.as}.\`)* |`); }
   L.push('');
 }
 L.push('## All fields', '');
@@ -141,4 +158,4 @@ for (const n of names) {
 }
 fs.mkdirSync(OUT_DIR, { recursive: true });
 fs.writeFileSync(path.join(OUT_DIR, 'APP_SURFACE.md'), L.join('\n') + '\n');
-console.log(`§APP_SURFACE files=${files.length} fields=${names.length} alias_only=${aliasOnly.length} phantom=${phantom.length}`);
+console.log(`§APP_SURFACE files=${files.length} fields=${names.length} alias_only=${aliasOnly.length} phantom=${phantom.length} untied=${suspect.length}`);

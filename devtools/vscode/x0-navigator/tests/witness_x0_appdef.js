@@ -63,10 +63,20 @@ let extraFail = 0;
 function check(label, cond) { console.log('  ' + (cond ? 'PASS ' : 'FAIL ') + label); if (!cond) extraFail++; }
 
 // Red controls on the three "never guess" cases.
-const aPhantom = names.find(n => index.fields.get(n).phantom);
+const aPhantom = names.find(n => index.fields.get(n).phantom && !index.fields.get(n).untied);
 const ph = aPhantom ? S.resolve(index, aPhantom) : null;
 check('phantom APP.' + aPhantom + ' → hover says PHANTOM, no location',
   !!ph && ph.kind === 'phantom' && !ph.abs && /^\*\*APP\.[\w$]+\*\*\n\nPHANTOM — read, never written \(first read `/.test(S.formatHover(ph)));
+// #2974: a phantom that has a same-named write the generator could not tie is NOT called dead: the hover says PHANTOM? and names that line
+const anUntied = names.find(n => index.fields.get(n).untied);
+if (!anUntied) console.log('  NOTE  no untied phantom in this index: the PHANTOM? hover is not judged here');
+else {
+  const u = S.resolve(index, anUntied), ut = S.formatHover(u) || '';
+  const src = fs.readFileSync(path.join(ROOT, u.untied.file), 'utf8').split('\n')[u.untied.line - 1] || '';
+  check('untied phantom APP.' + anUntied + ' → hover says "PHANTOM?" and names ' + u.untied.file + ':' + u.untied.line + ', a line that assigns that name; no jump',
+    u.kind === 'phantom' && !u.abs && /PHANTOM\? — no writer the index can tie/.test(ut) && ut.includes(u.untied.file + ':' + u.untied.line) &&
+    !/PHANTOM — read, never written/.test(ut) && new RegExp('\\.' + anUntied + '\\s*=').test(src));
+}
 check('made-up field zzNotAField__ → nothing at all', S.resolve(index, 'zzNotAField__') === null && S.formatHover(null) === null);
 const aDef = sample.find(r => r.kind === 'definition');
 const shifted = { root: ROOT, fields: new Map([[aDef.field, Object.assign({}, index.fields.get(aDef.field), { line: aDef.line + 1 })]]) };
@@ -103,7 +113,7 @@ check('the extension\'s own files add no row to the index (n=' + selfRows + ')',
 let allDef = 0, allStale = 0;
 for (const n of names) { const r = S.resolve(index, n); if (r.kind === 'definition') allDef++; else if (r.kind === 'stale') allStale++; }
 console.log('§X0_APPDEF_ALL rows=' + index.rows + ' fields=' + names.length + ' definition=' + allDef + ' stale=' + allStale
-  + ' phantom=' + (names.length - allDef - allStale) + ' phantom_table=' + index.phantoms);
+  + ' phantom=' + (names.length - allDef - allStale) + ' phantom_table=' + index.phantoms + ' untied=' + index.untied);
 
 const resolved = sample.filter(r => r.kind === 'definition').length;
 const lm = matches(sample);
