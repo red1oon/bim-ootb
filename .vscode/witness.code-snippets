@@ -1,5 +1,5 @@
 // Snippets for this repo (type the prefix, then Tab). Spec: bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md §F.0 Z3 (#2918).
-// Witness: node scripts/tests/witness_editor_zero_code.js  (§EZC_SNIPPET)
+// Witness: node scripts/tests/witness_editor_zero_code.js  (§EZC_SNIPPET, §EZC_LOG_SNIPPETS)
 {
   "Witness (contract.js skeleton)": {
     "scope": "javascript",
@@ -28,6 +28,27 @@
       "  .invariant('${9:what must hold}', function (rows) { return rows.every(function (r) { return ${10:r.id != null}; }); })",
       "  .redControl(function (rows) { return rows.map(function (r) { ${11:delete r.id;} return r; }); })",
       "  .run();",
+      "$0"
+    ]
+  },
+  "Section-sign log line": {
+    "scope": "javascript",
+    "prefix": "slog",
+    "description": "One § log line in the repo's form: console.log('§TAG key=' + value). Spec: bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md §F.0 Z4 (#2962).",
+    "body": [
+      "console.log('§${1:TAG} ${2:key}=' + ${3:value});"
+    ]
+  },
+  "Spec header (DO NOT REMOVE block)": {
+    "scope": "javascript",
+    "prefix": "spec",
+    "description": "The header a new script or module opens with: scope, issue, use, and the log rule. Comment lines only. Spec: bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md §F.0 Z4 (#2962).",
+    "body": [
+      "// # ⚠ DO NOT REMOVE — SPEC (W-${1:NAME}), ${2:bim-compiler prompts/FILE.md §SECTION}",
+      "// ISSUE: ${3:the defect or need, in one sentence}",
+      "// WHAT:  ${4:what this file does about it, and what it must not touch}",
+      "// USE:   node ${RELATIVE_FILEPATH}",
+      "// LOG:   ${5:§TAG key= ...}   Read the log after every run - exit code is not evidence.",
       "$0"
     ]
   }

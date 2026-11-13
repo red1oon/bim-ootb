@@ -2,12 +2,14 @@
 // SPDX-License-Identifier: MIT
 //
 // # ⚠ DO NOT REMOVE — WITNESS W-EDITOR-ZERO-CODE (bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md §F.0 Z1–Z3, bim-ootb #2918)
-// Three dev-side editor files, one § line each. Each line names the issue it proves or disproves:
+// Three dev-side editor files, one § line per check. Each line names the issue it proves or disproves:
 //   Z1 §EZC_WORKSPACE  "search and F12 cannot cross the two repos"       — bim.code-workspace resolves both checkouts
 //   Z2 §EZC_MATCHER    "a failing witness is not clickable in Problems"  — the task's OWN command + OWN matcher regexes,
 //                                                                          run on 3 fixture witnesses in a temp folder
 //   Z3 §EZC_SNIPPET    "a new witness starts without the contract, or can PASS unedited" — the snippet expanded with its
 //                                                                          defaults and RUN against the real witness_kit
+//   Z4 §EZC_LOG_SNIPPETS "a hand-typed log line or header drifts from the § and DO NOT REMOVE conventions" — `slog`
+//                                                                          expanded and RUN; `spec` expanded and read (§F.0 Z4, #2962)
 // Every check has a red control. A check that judged nothing prints INCONCLUSIVE, never PASS.
 // Everything is read from the committed files (tasks.json, bim.code-workspace, witness.code-snippets): nothing is re-typed here.
 // Usage: node scripts/tests/witness_editor_zero_code.js [--layout-root <dir>]
@@ -134,6 +136,36 @@ guard('§EZC_SNIPPET', function z3() {
   const ok = usesContract && !uneditedPass && unedited.fail > 0 && filled.exit === 0 && filled.fail === 0 && filled.ran === 1;
   line('§EZC_SNIPPET', { uses_contract: usesContract ? 'Y' : 'N', unedited_exit: unedited.exit, unedited_pass: uneditedPass ? 'Y' : 'N',
                          filled_pass: filled.exit === 0 && filled.fail === 0 ? 'Y' : 'N' }, ok ? 'PASS' : 'FAIL');
+});
+
+// ── Z4 slog + spec snippets ──────────────────────────────────────────────────────────────────────────────
+// One § line = the whole stdout is a single line that starts with the section sign.
+function isOneSectionLine(out) { const ls = out.split('\n').filter(Boolean); return ls.length === 1 && ls[0].startsWith('§'); }
+function runLine(code) {
+  const r = cp.spawnSync(process.execPath, ['-e', 'var value = 7;\n' + code], { encoding: 'utf8' });
+  return { exit: r.status, out: r.stdout || '' };
+}
+guard('§EZC_LOG_SNIPPETS', function z4() {
+  const snips = readJsonc(path.join(ROOT, '.vscode', 'witness.code-snippets'));
+  const slog = Object.values(snips).find(x => x.prefix === 'slog');
+  const spec = Object.values(snips).find(x => x.prefix === 'spec');
+  if (!slog || !spec) { line('§EZC_LOG_SNIPPETS', { slog: slog ? 'found' : 'missing', spec: spec ? 'found' : 'missing' }, 'FAIL'); return; }
+  const code = expand(slog.body, 'app/x.js');
+  const ran = runLine(code);
+  console.log('  §EZC_SLOG_RUN exit=' + ran.exit + ' out=' + JSON.stringify(ran.out.trim()));
+  const slogOk = ran.exit === 0 && isOneSectionLine(ran.out);
+  // red control: the same line without its section sign must NOT be judged a § line — proves the check can see a miss
+  const red = runLine(code.replace('§', ''));
+  console.log('  §EZC_SLOG_RED exit=' + red.exit + ' out=' + JSON.stringify(red.out.trim()));
+  const redSeen = code.includes('§') && red.exit === 0 && !isOneSectionLine(red.out);
+  const hdr = expand(spec.body, 'app/x.js').split('\n').filter(Boolean);
+  const allComment = hdr.length > 0 && hdr.every(l => l.startsWith('//'));
+  const marker = /^\/\/ # ⚠ DO NOT REMOVE — SPEC \(W-/.test(hdr[0] || '');
+  const logRule = hdr.some(l => /Read the log after every run/.test(l)) && hdr.some(l => /^\/\/ ISSUE:/.test(l));
+  console.log('  §EZC_SPEC_HEADER lines=' + hdr.length + ' all_comment=' + allComment + ' marker=' + marker + ' log_rule=' + logRule);
+  const ok = slogOk && redSeen && allComment && marker && logRule;
+  line('§EZC_LOG_SNIPPETS', { slog_prints: slogOk ? 'Y' : 'N', red_not_section: redSeen ? 'Y' : 'N', spec_lines: hdr.length,
+                              spec_header: allComment && marker && logRule ? 'Y' : 'N' }, ok ? 'PASS' : 'FAIL');
 });
 
 const final = verdicts.includes('FAIL') ? 'FAIL' : verdicts.includes('INCONCLUSIVE') ? 'INCONCLUSIVE' : 'PASS';
