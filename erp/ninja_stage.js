@@ -73,6 +73,14 @@
   // db    : sql.js Database (loaded with post_poc/ad_seed schema)
   // model : NinjaModel.parseSheet() result
   // ts    : optional deterministic timestamp (integer)
+  // dataTableSql(name, columns[{name, refId}]) — THE rule for a staged table's physical table (seed convention: NUMERIC / TEXT, PRIMARY KEY on <Table>_ID; IF NOT EXISTS, so rows
+  // already entered are never touched). stageModels runs it; the door's boot step (common/door/erp_cli.js ensureTables, bim-compiler prompts/ERP_MIS_WINDOW_FROM_CSV.md §10) runs the same text.
+  var NUMERIC_REFS = { 11: 1, 12: 1, 13: 1, 18: 1, 19: 1, 29: 1 };
+  function dataTableSql(name, columns) {
+    var ddl = columns.map(function (col) { return '"' + String(col.name).replace(/"/g, '') + '" ' + (NUMERIC_REFS[col.refId] ? 'NUMERIC' : 'TEXT'); });
+    var hasPk = columns.some(function (col) { return col.name === name + '_ID'; });
+    return 'CREATE TABLE IF NOT EXISTS "' + String(name).replace(/"/g, '') + '" (' + ddl.join(', ') + (hasPk ? ', PRIMARY KEY ("' + name + '_ID")' : '') + ')';
+  }
   function stageModels(db, model, ts) {
     ts = ts != null ? ts : 0;
     var bundleName = model.bundleName || 'Ninja';
@@ -231,11 +239,8 @@
       // Data table (iDempiere: Synchronize Column / "Create Table in DB"). Without it the window renders "table not in this seed"
       // (idempiere.html renderActiveTab) and neither tab has a row source — AD alone is not a module. Seed convention: NUMERIC / TEXT,
       // PRIMARY KEY on <Table>_ID. IF NOT EXISTS: a re-stage / rollback never touches rows already entered.
-      var NUMERIC_REFS = { 11: 1, 12: 1, 13: 1, 18: 1, 19: 1, 29: 1 };
-      var ddl = t.columns.map(function (col) { return '"' + col.name.replace(/"/g, '') + '" ' + (NUMERIC_REFS[col.refId] ? 'NUMERIC' : 'TEXT'); });
-      var hasPk = t.columns.some(function (col) { return col.name === t.name + '_ID'; });
       if (isMissing(db, 'sqlite_master', "type='table' AND lower(name)=lower('" + q(t.name) + "')")) counts.dataTables = (counts.dataTables || 0) + 1;
-      db.run('CREATE TABLE IF NOT EXISTS "' + t.name.replace(/"/g, '') + '" (' + ddl.join(', ') + (hasPk ? ', PRIMARY KEY ("' + t.name + '_ID")' : '') + ')');
+      db.run(dataTableSql(t.name, t.columns));
 
       // AD_Menu leaf — one per WINDOW (a detail is a tab of its master's window, not a menu entry)
       if (isDetail) { /* §GT-NINJA no menu leaf */ }
@@ -366,7 +371,7 @@
     return { bundleName: bundleName, tables: modelTables };
   }
 
-  var API = { stageModels: stageModels, rollbackModel: rollbackModel, extractModel: extractModel, NINJA_BASE: NINJA_BASE };
+  var API = { stageModels: stageModels, dataTableSql: dataTableSql, rollbackModel: rollbackModel, extractModel: extractModel, NINJA_BASE: NINJA_BASE };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   else global.NinjaStage = API;
 

@@ -58,8 +58,8 @@
         if (pfx && pfx !== 'L') { no(n, 'List', lt, 'list values on a column whose Type is not List'); bad = true; }
         pfx = 'L';
         lt.split(',').forEach(function (item) {
-          var e = item.indexOf('='), v = (e < 0 ? item : item.slice(0, e)).trim(), nm = e < 0 ? v : item.slice(e + 1).trim();
-          if (!v || /[\s\/=]/.test(v) || /[\/=]/.test(nm) || !nm) { no(n, 'List', item, 'a list entry is VALUE or VALUE=Name; the value holds no space, / or =, the name no / or ='); bad = true; return; }
+          var e = item.indexOf('='), v = (e < 0 ? item : item.slice(0, e)).trim(), nm = e < 0 ? '' : item.slice(e + 1).trim();   // a bare entry carries no name: staging gives it Ninja's rule (§10)
+          if (!v || /[\s\/=]/.test(v) || /[\/=]/.test(nm) || (e >= 0 && !nm)) { no(n, 'List', item, 'a list entry is VALUE or VALUE=Name; the value holds no space, / or =, the name no / or ='); bad = true; return; }
           if (values.indexOf(v) >= 0) { no(n, 'List', item, 'list value given twice'); bad = true; return; }
           values.push(v); names.push(nm);
         });
@@ -93,7 +93,7 @@
       if (c.identifier) { m.identifier = true; carried.Identifier = 1; }
       if (c.def !== '') { m.defaultValue = c.def; carried.Default = 1; }
       if (c.help) { m.help = c.help; carried.Help = 1; }
-      if (c.names.length && m.listValues) { m.listNames = c.names; carried.List = 1; }
+      if (c.names.some(function (x) { return x; }) && m.listValues) { m.listNames = c.names; carried.List = 1; } else if (m.listValues) carried.List = 1;
       if (c.lookup) { m.fkTable = c.lookup; carried.Lookup = 1; }
       if (m.callout) carried.Callout = 1;
       if (c.token.indexOf('#') > 0) carried.Type = 1;

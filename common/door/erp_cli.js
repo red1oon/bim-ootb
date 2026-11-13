@@ -77,7 +77,9 @@ async function boot(a) {
   } else { O = await OC.open({ db: seed }); const r = applyPatch(O, seed); say('patch statements=' + r.pOk + ' failed=' + r.pFail); }
   say('snapshot=' + how + ' key=' + key + ' ms=' + (Date.now() - t0));
   O.opfile = OC.oplogFile({ oplog: a.oplog }, O.file); O.ops = OC.readOps(O.opfile);
-  O.ops.forEach(o => OC.applyOp(O.db, O.rows, o));
+  const known = {}; O.rows("SELECT lower(name) AS n FROM sqlite_master WHERE type='table'").forEach(r => { known[r.n] = 1; });
+  O.ops.forEach(o => { const t = String(o.table || '').toLowerCase(); if (t && !known[t]) { ensureTables(O).forEach(n => { known[n] = 1; }); known[t] = 1; } OC.applyOp(O.db, O.rows, o); });   // an op on a table a staged window brought: its physical table is made first (§10)
+  ensureTables(O);
   O.ML = require(path.join(ROOT, 'erp', 'model_layer.js')); O.dbId = 'model:' + path.basename(O.file);
   O.trx = () => new O.ML.Trx((sql, p) => O.rows(sql, p), { db: O.dbId, now: new Date().toISOString().replace('T', ' ').slice(0, 19), uuid: () => require('crypto').randomUUID() });
   loadEngine(O); O.b3 = b3(O);
@@ -85,6 +87,108 @@ async function boot(a) {
   return O;
 }
 
+// ── mis.add_window (bim-compiler prompts/ERP_MIS_WINDOW_FROM_CSV.md §10) ──
+const ADDWIN_BREAK = process.env.ADDWIN_BREAK || '';   // W-MIS-ADD falsifiers: nofield | notable | bare
+// The physical table of a STAGED AD_Table (EntityType U, id in the Ninja range) that has none, from its AD_Column rows, by NinjaStage.dataTableSql (the one rule). Returns the lower-case names it made.
+// The seed's own user-made kinds that ship with no table (MP_*) are left as they are: the page says "not in this seed" for them and this step must not change that.
+function ensureTables(O) {
+  if (ADDWIN_BREAK === 'notable') return [];
+  const NS = require(path.join(ROOT, 'erp', 'ninja_stage.js')), made = [];
+  O.rows("SELECT t.ad_table_id AS id, t.tablename AS tn FROM ad_table t WHERE t.isactive='Y' AND t.entitytype='U' AND t.ad_table_id>=" + NS.NINJA_BASE + " AND COALESCE(t.isview,'N')<>'Y' AND NOT EXISTS (SELECT 1 FROM sqlite_master m WHERE m.type IN ('table','view') AND lower(m.name)=lower(t.tablename))").forEach(t => {
+    const cols = O.rows("SELECT columnname AS name, ad_reference_id AS refId FROM ad_column WHERE ad_table_id=? AND isactive='Y' AND (columnsql IS NULL OR columnsql='') ORDER BY ad_column_id", [t.id]).map(c => ({ name: c.name, refId: Number(c.refid) }));
+    if (!cols.length) return;
+    O.db.run(NS.dataTableSql(t.tn, cols)); made.push(t.tn.toLowerCase()); say('table-made ' + t.tn + ' columns=' + cols.length + ' (from its AD_Column rows)');
+  });
+  return made;
+}
+const AD_STAGED = ['ad_window', 'ad_table', 'ad_tab', 'ad_column', 'ad_field', 'ad_menu'], STD7 = ['ad_client_id', 'ad_org_id', 'isactive', 'created', 'createdby', 'updated', 'updatedby'];
+async function addWindow(O, a) {
+  const t0 = Date.now(), NS = require(path.join(ROOT, 'erp', 'ninja_stage.js')), NC = require(path.join(ROOT, 'erp', 'ninja_csv.js')), XL = require(path.join(ROOT, 'erp', 'xlsx.mini.min.js')), PG = require(path.join(ROOT, 'erp', 'pipo_packgen.js'));
+  if (typeof globalThis.crypto === 'undefined') globalThis.crypto = require('crypto').webcrypto;   // pipo_packgen.uuidV5 uses the web crypto the page has; Node before 19 does not name it globally
+  if (!a.file) refuse('--file is required (a .csv of the table\'s properties)');
+  if (!/\.csv$/i.test(String(a.file))) refuse('the file must be a .csv: ' + a.file);
+  const base = process.cwd(), abs = path.resolve(base, String(a.file)), rel = path.relative(base, abs);
+  if (rel.startsWith('..') || path.isAbsolute(rel)) refuse('the file must be in the folder the line is run from (' + base + '); "' + a.file + '" leaves it. Nothing was written');
+  let text; try { text = fs.readFileSync(abs, 'utf8'); } catch (e) { refuse('cannot read ' + a.file + ': ' + (e.code || e.message)); }
+  const sha = require('crypto').createHash('sha256').update(text).digest('hex'), table = String(a.table || path.basename(abs).replace(/\.csv$/i, ''));
+  if (a.master) refuse('master= is not built yet: a detail tab is staged together with its master (ERP_MIS_WINDOW_FROM_CSV §10, step M2b). Nothing was written');
+  const ent = (tn) => { const r = O.rows('SELECT entitytype AS e FROM ad_table WHERE lower(tablename)=lower(?)', [tn])[0]; return r ? (r.e == null ? '' : r.e) : null; };
+  const R = NC.fromText(text, XL, { table, workflow: a.workflow, name: a.name, existing: ent });
+  if (!R.ok) refuse(R.refusals.length + ' fault' + (R.refusals.length > 1 ? 's' : '') + ' in ' + a.file + ': ' + R.refusals.map(x => (x.row ? 'line ' + x.row + ' ' : '') + x.column + (x.cell ? ' "' + x.cell + '"' : '') + ': ' + x.why).join(' | ') + '. Nothing was written');
+  if (ent(table) != null) refuse(table + ' is already a window here; changing a staged window is not built yet. Nothing was written');
+  const T = R.model.tables[0], user = T.columns.filter(c => !c.isStandard);
+  // list values: VALUE=Name as stated; a bare name follows Ninja (Value = the name's first two characters, NewEmptyTable.java L222)
+  const lists = user.filter(c => c.listValues && c.listValues.length).map(c => {
+    const items = c.listValues.map((v, i) => { const nm = c.listNames ? c.listNames[i] : ''; return nm ? { value: v, name: nm } : { value: v.substring(0, v.length < 2 ? 1 : 2), name: v }; });
+    const seen = {}; items.forEach(it => { if (seen[it.value]) refuse('list ' + c.name + ': "' + seen[it.value] + '" and "' + it.name + '" both get the value "' + it.value + '" (a name alone takes its first two characters, as Ninja does); write them as VALUE=Name. Nothing was written'); seen[it.value] = it.name; });
+    const clash = O.rows("SELECT ad_reference_id AS id FROM ad_reference WHERE name=? AND validationtype='L'", [c.name])[0];
+    if (clash) refuse('a list reference named ' + c.name + ' already exists (AD_Reference ' + clash.id + '); Ninja would reuse one whose name starts with the column name, which is not reproduced here: rename the column. Nothing was written');
+    return { col: c.name, items };
+  });
+  const dry = String(a.dry || '').toUpperCase() === 'Y';
+  if (dry) { say('add_window DRY table=' + table + ' columns=' + user.map(c => c.name).join(',') + ' sha256=' + sha.slice(0, 12)); return { dry: true, table, file: a.file, sha256: sha, columns: user.map(c => ({ name: c.name, reference: c.refId, mandatory: !!c.mandatory })), standard: T.columns.filter(c => c.isStandard).map(c => c.name), lists: lists.map(l => ({ column: l.col, values: l.items.map(i => i.value) })), ops: [] }; }
+  // 1. the one stager, in a savepoint: read back what it made, then undo it (the rows are written as ops below, so they replay)
+  const ids = (t) => { const m = {}; O.rows('SELECT ' + t + '_id AS id, isactive AS a FROM ' + t + ' WHERE ' + t + '_id>=' + NS.NINJA_BASE).forEach(r => { m[r.id] = r.a; }); return m; };
+  const nodes = () => { const m = {}; O.rows('SELECT ad_tree_id AS t, node_id AS n FROM ad_treenodemm WHERE node_id>=' + NS.NINJA_BASE).forEach(r => { m[r.t + '/' + r.n] = 1; }); return m; };
+  const before = {}, made = {}, ups = []; AD_STAGED.forEach(t => { before[t] = ids(t); }); const nb = nodes();
+  const log = console.log; console.log = () => {};
+  O.db.run('SAVEPOINT addwin'); let counts;
+  try {
+    counts = NS.stageModels(O.db, R.model, 0);
+    AD_STAGED.forEach(t => { const now = ids(t); made[t] = Object.keys(now).filter(id => !(id in before[t])).map(id => O.rows('SELECT * FROM ' + t + ' WHERE ' + t + '_id=?', [Number(id)])[0]); Object.keys(now).forEach(id => { if (id in before[t] && before[t][id] !== now[id]) ups.push({ t, id: Number(id), old: before[t][id], neu: now[id] }); }); });
+    made.ad_treenodemm = O.rows('SELECT * FROM ad_treenodemm WHERE node_id>=' + NS.NINJA_BASE).filter(r => !nb[r.ad_tree_id + '/' + r.node_id]);
+  } finally { O.db.run('ROLLBACK TO addwin'); O.db.run('RELEASE addwin'); console.log = log; }
+  // 2. what stageModels leaves empty, each from its legacy owner (§10's table)
+  const has = {}, hasCol = (t, c) => (has[t] || (has[t] = O.rows('PRAGMA table_info(' + t + ')').map(x => x.name.toLowerCase()))).indexOf(c) >= 0;
+  const uu = (t, key) => PG.uuidV5('ninja/' + table + '/' + t + '/' + key), bare = ADDWIN_BREAK === 'bare';
+  const src = {}; O.rows("SELECT lower(columnname) AS c, ismandatory, isupdateable, isallowcopy, defaultvalue FROM ad_column WHERE ad_table_id=102").forEach(r => { src[r.c] = r; });   // NewEmptyTable.java L95, L262: the standard columns are copies of AD_Reference's
+  const colName = {}; made.ad_column.forEach(c => { colName[c.ad_column_id] = c.columnname; });
+  const dress = async (t, row, key) => {
+    const f = {}; Object.keys(row).forEach(k => { if (row[k] != null) f[k] = row[k]; });
+    if (bare) return f;
+    if (hasCol(t, 'entitytype')) f.entitytype = 'U';
+    if (hasCol(t, 'ad_client_id') && f.ad_client_id == null) f.ad_client_id = 0;
+    if (hasCol(t, 'ad_org_id') && f.ad_org_id == null) f.ad_org_id = 0;
+    if (hasCol(t, t + '_uu')) f[t + '_uu'] = await uu(t, key);
+    return f;
+  };
+  const ops = [], refAt = {};
+  if (!bare) for (const l of lists) {   // the reference first: the column points at it (NewEmptyTable.java L196-226)
+    refAt[l.col] = ops.length;
+    ops.push({ op_type: 'CRUD_CREATE', table: 'ad_reference', idCol: 'ad_reference_id', fields: { name: l.col, validationtype: 'L', entitytype: 'U', isactive: 'Y', ad_client_id: 0, ad_org_id: 0, ad_reference_uu: await uu('ad_reference', l.col) } });
+    for (const it of l.items) ops.push({ op_type: 'CRUD_CREATE', table: 'ad_ref_list', idCol: 'ad_ref_list_id', fields: { ad_reference_id: { __opRef: refAt[l.col] }, value: it.value, name: it.name, entitytype: 'U', isactive: 'Y', ad_client_id: 0, ad_org_id: 0, ad_ref_list_uu: await uu('ad_ref_list', l.col + '/' + it.value) } });
+  }
+  for (const t of AD_STAGED) {
+    if (t === 'ad_field' && ADDWIN_BREAK === 'nofield') continue;
+    for (const row of made[t]) {
+      const key = t === 'ad_column' ? row.columnname : t === 'ad_field' ? colName[row.ad_column_id] : t === 'ad_menu' ? (row.issummary === 'Y' ? 'summary/' + row.name : table) : table;
+      if (!bare && t === 'ad_field' && /^(created|createdby|updated|updatedby)$/i.test(key)) continue;   // core TabCreateFields.java L99 (and Ninja AddTable.java L546-548): no field for Created* / Updated*
+      const f = await dress(t, row, key);
+      if (!bare && t === 'ad_field' && (key.toLowerCase() === table.toLowerCase() + '_id' || key.toLowerCase() === table.toLowerCase() + '_uu')) { f.isdisplayed = 'N'; if (hasCol('ad_field', 'isdisplayedgrid')) f.isdisplayedgrid = 'N'; }   // TabCreateFields.java L156-158: the key and the UU are not shown
+      if (!bare && t === 'ad_table') { f.accesslevel = '3'; f.isdeleteable = 'Y'; }   // MRO_ModelMaker.java L128-129
+      if (!bare && t === 'ad_column') {
+        const lc = row.columnname.toLowerCase(), m = T.columns.filter(c => c.name === row.columnname)[0] || {};
+        if (STD7.indexOf(lc) >= 0 && src[lc]) { f.ismandatory = src[lc].ismandatory; f.isupdateable = src[lc].isupdateable; f.isallowcopy = src[lc].isallowcopy; if (src[lc].defaultvalue != null) f.defaultvalue = src[lc].defaultvalue; }
+        else if (row.iskey === 'Y') { f.ismandatory = 'Y'; f.isupdateable = 'N'; f.isallowcopy = 'N'; }   // NewEmptyTable.java L87-90; MColumn.beforeSave L457, L491
+        else if (lc === table.toLowerCase() + '_uu') { const u = src.ad_reference_uu || {}; f.ismandatory = u.ismandatory || 'N'; f.isupdateable = u.isupdateable || 'Y'; f.isallowcopy = u.isallowcopy || 'N'; }
+        else {
+          f.isupdateable = 'Y'; f.isallowcopy = 'Y'; f.ismandatory = m.mandatory ? 'Y' : 'N';   // NewEmptyTable.java L244, L173; the sheet's Mandatory is the user's data
+          if (m.length) f.fieldlength = m.length; if (m.identifier) f.isidentifier = 'Y'; if (m.defaultValue != null) f.defaultvalue = m.defaultValue; if (m.help) f.help = m.help;
+          if (refAt[row.columnname] != null) f.ad_reference_value_id = { __opRef: refAt[row.columnname] };
+        }
+      }
+      ops.push({ op_type: 'CRUD_CREATE', table: t, idCol: t + '_id', fields: f });
+    }
+  }
+  for (const row of made.ad_treenodemm) ops.push({ op_type: 'CRUD_CREATE', table: 'ad_treenodemm', fields: await dress('ad_treenodemm', row, 'node/' + row.node_id) });
+  ups.forEach(u => ops.push({ op_type: 'CRUD_UPDATE', table: u.t, idCol: u.t + '_id', id: u.id, changes: { isactive: { old: u.old, new: u.neu } } }));
+  const win = made.ad_window[0];
+  if (!bare && win) for (const r of O.rows("SELECT ad_role_id AS id, ad_client_id AS c FROM ad_role WHERE isactive='Y' AND ismanual='N' ORDER BY ad_role_id"))   // MWindow.afterSave L233-246, MWindowAccess L89-96
+    ops.push({ op_type: 'CRUD_CREATE', table: 'ad_window_access', fields: { ad_window_id: win.ad_window_id, ad_role_id: r.id, ad_client_id: r.c, ad_org_id: 0, isactive: 'Y', isreadwrite: 'Y', ad_window_access_uu: await uu('ad_window_access', 'role/' + r.id) } });
+  const res = persistGroup(O, ops), mk = ensureTables(O);
+  say('add_window table=' + table + ' slot=' + counts.slot + ' window=' + (win && win.ad_window_id) + ' ops=' + res.length + ' ' + JSON.stringify(sum(res)) + ' table_made=' + mk.join(',') + ' sha256=' + sha.slice(0, 12) + ' ms=' + (Date.now() - t0));
+  return { table, kind: (made.ad_table[0] || {}).name, file: a.file, sha256: sha, window: win ? { id: win.ad_window_id, name: win.name } : null, columns: user.map(c => c.name), lists: lists.map(l => ({ column: l.col, values: l.items.map(i => i.value) })), opSummary: sum(res), ops: res.length };
+}
 // ── the dictionary, read as rows ──
 function kindRef(O, kind) {   // any AD table: its key and its number column (DocumentNo, else Name, else Value: the window's Find)
   const t = O.rows("SELECT ad_table_id, name, tablename FROM ad_table WHERE isactive='Y' AND (lower(name)=lower(?) OR lower(tablename)=lower(?)) ORDER BY ad_table_id", [kind, kind])[0];
@@ -443,9 +547,9 @@ async function loadRecords(O, a) {
 async function main(argv) {
   const cmd = argv[0], a = {};
   for (let i = 1; i < argv.length; i++) { const m = /^--(\w+)$/.exec(argv[i]); if (!m || i + 1 >= argv.length) { say('FAIL usage: ' + argv[i]); return 2; } if (m[1] === 'where') (a.where = a.where || []).push(argv[++i]); else a[m[1]] = argv[++i]; }
-  if (['find', 'actions', 'describe', 'read', 'list', 'sum', 'group', 'new', 'update', 'delete', 'load'].concat(Object.keys(ACT)).indexOf(cmd) < 0) { say('FAIL usage: erp_cli.js find|actions|complete|void|close|reverse|describe|read|list|sum|group --kind K (--number N | --id I) [--role R]'); return 2; }
+  if (['find', 'actions', 'describe', 'read', 'list', 'sum', 'group', 'new', 'update', 'delete', 'load', 'add_window'].concat(Object.keys(ACT)).indexOf(cmd) < 0) { say('FAIL usage: erp_cli.js find|actions|complete|void|close|reverse|describe|read|list|sum|group --kind K (--number N | --id I) [--role R]'); return 2; }
   try {
-    const O = await boot(a), out = await (ACT[cmd] ? act(O, a, ACT[cmd]) : ({ find, actions, describe, read, list: OC.list, sum: OC.sum, group: OC.group, new: createRecord, update: updateRecord, delete: deleteRecord, load: loadRecords })[cmd](O, a));
+    const O = await boot(a), out = await (ACT[cmd] ? act(O, a, ACT[cmd]) : ({ find, actions, describe, read, list: OC.list, sum: OC.sum, group: OC.group, new: createRecord, update: updateRecord, delete: deleteRecord, load: loadRecords, add_window: addWindow })[cmd](O, a));
     process.stdout.write(JSON.stringify(out) + '\n'); return 0;
   } catch (e) {
     if (e instanceof Refused || e instanceof OC.Refused) { say('REFUSED ' + e.message); process.stdout.write(JSON.stringify({ refused: true, reason: e.message }) + '\n'); return 3; }
@@ -453,4 +557,4 @@ async function main(argv) {
   }
 }
 if (require.main === module) main(process.argv.slice(2)).then(c => process.exit(c));
-module.exports = { tabFor, main, boot, loadRecords, find, actions, complete, act, ACT, describe, read, persistGroup, resolveOne, docKind, kindRef, byNumber, recordOf, loadEngine, b3 };
+module.exports = { addWindow, ensureTables, tabFor, main, boot, loadRecords, find, actions, complete, act, ACT, describe, read, persistGroup, resolveOne, docKind, kindRef, byNumber, recordOf, loadEngine, b3 };
