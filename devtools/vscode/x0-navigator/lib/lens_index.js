@@ -116,6 +116,12 @@ function explain(root, fileRel, docText, scan, cache) {
   }
   return out;
 }
+/** One line for a hover, from an explain() entry: the provable value with its log and commit, or the named reason there is none. */
+function hoverLine(e) {
+  return e.state === 'shown'
+    ? 'last value: `' + (e.value.length > 160 ? e.value.slice(0, 157) + '…' : e.value) + '` — ' + e.logName + ':' + e.logLine + ' @ ' + e.commit.slice(0, 7)
+    : 'last value not shown: ' + e.why;
+}
 const title = l => 'last: ' + (l.value.length > 110 ? l.value.slice(0, 107) + '…' : l.value) + '   ·   ' + l.logName + ' @ ' + l.commit.slice(0, 7);
 
-module.exports = { parseStamp, scanLogs, whyNot, lensesFor, explain, title };
+module.exports = { parseStamp, scanLogs, whyNot, lensesFor, explain, hoverLine, title };

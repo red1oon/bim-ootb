@@ -111,7 +111,8 @@ function activate(context) {
       if (!tag) return null;
       const index = getTags();
       if (!index) return null;
-      return new vscode.Hover(new vscode.MarkdownString(tagIndex.formatHover(tagIndex.lookup(index, tag), link)));
+      const last = lastValueLine(document, position.line, tag);
+      return new vscode.Hover(new vscode.MarkdownString(tagIndex.formatHover(tagIndex.lookup(index, tag), link) + (last ? '\n\n' + last : '')));
     }
   }));
 
@@ -219,6 +220,15 @@ function activate(context) {
     if (!scan.logs.length) return { shown: [], hidden: [] };
     const rel = path.relative(sourceRoot, document.uri.fsPath).split(path.sep).join('/');
     return lensIndex.lensesFor(sourceRoot, rel, document.getText(), scan, proofCache);
+  }
+  // §F.15 step 2: on a line that PRINTS the tag, the hover also says the last provable value, or names why there is none
+  // (the grey line above stays silent in that case; the hover is where the reason is asked for). Other lines: nothing added.
+  function lastValueLine(document, line, tag) {
+    const sourceRoot = findSourceRoot(context);
+    if (!sourceRoot || !document.uri || !document.uri.fsPath.startsWith(sourceRoot + path.sep)) return null;
+    const rel = path.relative(sourceRoot, document.uri.fsPath).split(path.sep).join('/');
+    const e = lensIndex.explain(sourceRoot, rel, document.getText(), scanLogs(sourceRoot), proofCache).find(x => x.line === line && x.tag === tag);
+    return e ? lensIndex.hoverLine(e) : null;
   }
   const lensChanged = new vscode.EventEmitter();
   context.subscriptions.push(lensChanged);

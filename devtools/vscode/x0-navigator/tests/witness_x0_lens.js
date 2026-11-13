@@ -52,11 +52,21 @@ const shownOk = check('stamped log + unchanged file → both printed tags get th
   r1.shown.length === 2 && a.value === TAG_A + ' n=42' && a.line === 1 && a.logLine === 4 && b.line === 3 && r1.hidden.length === 0);
 check('the lens title carries the value, the log name and the commit', !!a && /^last: .*n=42 .* run\.log @ [0-9a-f]{7}$/.test(L.title(a)));
 
+// explain(): every printed tag gets a state and a hover line (§F.15 step 2) — never silence
+const ex = () => L.explain(TMP, 'app/code.js', fs.readFileSync(path.join(TMP, 'app', 'code.js'), 'utf8'), L.scanLogs(path.join(TMP, 'logs')), new Map());
+const e1 = ex();
+const explainShownOk = check('explain: both tags shown, hover line carries value, log line and commit (' + L.hoverLine(e1[0]) + ')',
+  e1.length === 2 && e1.every(x => x.state === 'shown') && /^last value: `.*n=42` — run\.log:4 @ [0-9a-f]{7}$/.test(L.hoverLine(e1[0])));
+
 // 2. the file is edited after the log
 fs.writeFileSync(path.join(TMP, 'app', 'code.js'), src.replace('function run(n) {', 'function run(n) {\n  n = n + 1;'));
 const r2 = lens();
 const changedOk = check('the printing file edited after the log → nothing shown (why: ' + (r2.hidden[0] && r2.hidden[0].why) + ')',
   r2.shown.length === 0 && r2.hidden.length === 2 && r2.hidden.every(h => h.why === 'file changed since the log'));
+
+const e2 = ex();
+const explainHiddenOk = check('explain: the edited file → hidden, hover line names the reason (' + L.hoverLine(e2[0]) + ')',
+  e2.length === 2 && e2.every(x => x.state === 'hidden') && L.hoverLine(e2[0]) === 'last value not shown: file changed since the log' && !/n=42/.test(L.hoverLine(e2[0])));
 
 // 3. a log made WHILE the file was dirty: the stamp names it
 fs.writeFileSync(path.join(TMP, 'logs', 'run.log'), stampLine(TMP, 'fixture') + '\n' + body);
@@ -74,10 +84,18 @@ check('after committing the edit a new log is shown again, and another file bein
 // 5. a stamp from outside any checkout is not a stamp for this purpose
 check('a stamp with commit=none is not accepted', L.parseStamp(SEC + 'LOG_STAMP commit=none dirty=? branch=none at=2026-01-01T00:00:00.000Z cmd=-') === null);
 
+// absent: a stamped log that does not carry the tag, then no stamped log at all (the red control for "never a value")
+fs.writeFileSync(path.join(TMP, 'logs', 'run.log'), stampLine(TMP, 'fixture') + '\n' + TAG_A + ' n=5\n');
+const e5 = ex();
+fs.writeFileSync(path.join(TMP, 'logs', 'run.log'), TAG_A + ' n=5\n' + TAG_B + ' ok\n');
+const e6 = ex();
+const explainAbsentOk = check('explain: a tag no stamped log carries → "tag not in any stamped log"; red control: no stamped log at all → "no stamped log found" for both, no value',
+  e5.length === 2 && e5[1].state === 'absent' && L.hoverLine(e5[1]) === 'last value not shown: tag not in any stamped log' &&
+  e6.length === 2 && e6.every(x => x.state === 'absent' && L.hoverLine(x) === 'last value not shown: no stamped log found'));
 fs.rmSync(TMP, { recursive: true, force: true });
 // the real repo, for information: how many lenses would light up today
 const realScan = L.scanLogs(path.join(ROOT, 'logs'));
 console.log(SEC + 'LENS_REAL stamped_logs=' + realScan.logs.length + ' unstamped_logs=' + realScan.unstamped + ' tags_in_stamped_logs=' + new Set(realScan.logs.flatMap(l => Array.from(l.tags.keys()))).size + ' (this checkout\'s logs/, for information)');
 const yn = x => (x ? 'Y' : 'N');
-summary({ shown: yn(shownOk), hidden_changed: yn(changedOk), hidden_dirty: yn(dirtyOk), unstamped_ignored: yn(redOk) }, fail === 0 ? 'PASS' : 'FAIL');
+summary({ shown: yn(shownOk), hidden_changed: yn(changedOk), hidden_dirty: yn(dirtyOk), unstamped_ignored: yn(redOk), explain_shown: yn(explainShownOk), explain_hidden: yn(explainHiddenOk), explain_absent: yn(explainAbsentOk) }, fail === 0 ? 'PASS' : 'FAIL');
 if (fail) process.exitCode = 1;

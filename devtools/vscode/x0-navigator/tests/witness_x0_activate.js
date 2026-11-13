@@ -126,18 +126,26 @@ check('1 CodeLens provider registered for javascript', (reg.lens || []).length =
   const T2 = require(path.join(EXT, 'lib', 'tag_index.js'));
   const pr = (T2.buildPrinterIndex(ROOT).tags.get(SEC + 'HOSTED_BEFORE_HOST') || []).find(x => x.rank === 0);
   const text = fs.readFileSync(pr.abs, 'utf8');
-  const lensDoc = { uri: { fsPath: pr.abs }, getText() { return text; } };
+  const lensDoc = { uri: { fsPath: pr.abs }, getText() { return text; }, lineAt(i) { return { text: text.split('\n')[i] }; } };
+  const tagHover = () => { const t = text.split('\n')[pr.line - 1]; return reg.hover.map(h => h.p.provideHover(lensDoc, { line: pr.line - 1, character: t.indexOf(SEC + 'HOSTED') + 2 })).filter(Boolean).map(h => h.contents.value).join('\n'); };
   const logsDir = path.join(ROOT, 'logs'), probe = path.join(logsDir, 'x0_activate_lens_probe.log');
   const cp2 = require('child_process');
   const fileClean = cp2.spawnSync('git', ['diff', '--quiet', 'HEAD', '--', pr.file], { cwd: ROOT }).status === 0;
   fs.mkdirSync(logsDir, { recursive: true });
   fs.writeFileSync(probe, SEC + 'HOSTED_BEFORE_HOST hostedTotal=7 (no stamp)' + '\n');
+  const hoverUnstamped = tagHover();
   const unstamped = reg.lens[0].p.provideCodeLenses(lensDoc).filter(c => /hostedTotal=7/.test(c.command.title)).length;
   fs.writeFileSync(probe, require(path.join(ROOT, 'scripts', 'log_stamp.js')).stampLine(ROOT, 'activate witness') + '\n' + SEC + 'HOSTED_BEFORE_HOST hostedTotal=7 matched=7' + '\n');
   const fut = new Date(Date.now() + 5000); fs.utimesSync(probe, fut, fut);          // a new mtime, so the cached scan is dropped
   const got = reg.lens[0].p.provideCodeLenses(lensDoc).filter(c => /hostedTotal=7 matched=7/.test(c.command.title));
+  const hoverStamped = tagHover();
   fs.rmSync(probe);
   check('red control: an unstamped log gives no lens (n=' + unstamped + ')', unstamped === 0);
+  // §F.15 step 2: the hover on the printing line names the reason, or carries the provable value
+  check('red control: with only an unstamped log the tag hover names a reason and quotes no value (' + ((/last value[^\n]*/.exec(hoverUnstamped) || [''])[0]) + ')',
+    /last value not shown: (no stamped log found|tag not in any stamped log)/.test(hoverUnstamped) && !/hostedTotal=7/.test(hoverUnstamped));
+  if (fileClean) check('with a stamped log at this commit the tag hover carries the value, its log and commit (' + ((/last value[^\n]*/.exec(hoverStamped) || [''])[0]).slice(0, 90) + ')',
+    /last value: `.*hostedTotal=7 matched=7` — x0_activate_lens_probe\.log:2 @ [0-9a-f]{7}/.test(hoverStamped));
   if (!fileClean) console.log('  NOTE ' + pr.file + ' differs from HEAD in this checkout: the lens rightly shows nothing, not judged');
   else check('a stamped log at this commit → a lens on ' + pr.file + ':' + pr.line + ' (' + (got[0] && got[0].command.title.slice(0, 70)) + '…)',
     got.length >= 1 && got[0].range.start.line === pr.line - 1 && got[0].command.command === 'x0Navigator.openLogLine');
