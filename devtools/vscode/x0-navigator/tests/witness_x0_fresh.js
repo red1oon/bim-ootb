@@ -48,6 +48,11 @@ const moduleSrc = ['function setup' + 'Probe(' + 'A) {', '  A' + '.' + FIELD + '
   fs.copyFileSync(path.join(ROOT, 'scripts', 'lib', 'js_scan.js'), path.join(FIX, 'scripts', 'lib', 'js_scan.js'));
   const mod = path.join(FIX, 'viewer', 'probe.js');
   fs.writeFileSync(mod, moduleSrc.join('\n'));
+  // A nested checkout (an agent worktree) holding an OLDER copy of the same module, sorted before viewer/ (#2930).
+  const NEST = path.join(FIX, '.claude', 'worktrees', 'agent-x');
+  fs.mkdirSync(path.join(NEST, 'viewer'), { recursive: true });
+  fs.writeFileSync(path.join(NEST, '.git'), 'gitdir: elsewhere\n');
+  fs.writeFileSync(path.join(NEST, 'viewer', 'probe.js'), ['// copy', '// copy', '// copy'].concat(moduleSrc).join('\n'));
   await R.runOnce(FIX, path.join(FIX, 'internal'));              // the "committed" index
   const committed = path.join(FIX, 'internal', R.OUT_NAME);
   const committedSha = sha(committed);
@@ -68,6 +73,15 @@ const moduleSrc = ['function setup' + 'Probe(' + 'A) {', '  A' + '.' + FIELD + '
     && S.lineHasField(fs.readFileSync(after.abs, 'utf8').split('\n')[after.line - 1], FIELD);
   check('fresh copy resolves the field at its NEW line (4), and that line mentions it', lineOk);
   check('the fresh copy lives outside the repo', r1.file.startsWith(OUT) && !r1.file.startsWith(FIX));
+  const nestedRows = fs.readFileSync(r1.file, 'utf8').split('\n').filter(l => l.includes('agent-x')).length;
+  check('a nested checkout is not indexed: the field resolves in viewer/probe.js, 0 rows cite the copy (n=' + nestedRows + ')',
+    nestedRows === 0 && !!after && after.file === 'viewer/probe.js');
+  // Red control for that check: the same copy WITHOUT its .git entry is ordinary source and must be indexed.
+  fs.rmSync(path.join(NEST, '.git'));
+  const r1b = await R.runOnce(FIX, path.join(TMP, 'store-red'));
+  const redNested = fs.readFileSync(r1b.file, 'utf8').split('\n').filter(l => l.includes('agent-x')).length;
+  check('red control: without its .git entry the same folder IS indexed (n=' + redNested + ')', redNested > 0);
+  fs.writeFileSync(path.join(NEST, '.git'), 'gitdir: elsewhere\n');
 
   // ── 3. the committed index is not touched ──
   const untouchedFix = sha(committed) === committedSha;
@@ -106,7 +120,7 @@ const moduleSrc = ['function setup' + 'Probe(' + 'A) {', '  A' + '.' + FIELD + '
   fs.rmSync(TMP, { recursive: true, force: true });
   const fields = {
     before: before ? before.kind : 'none', after: after ? after.kind : 'none', line_ok: lineOk ? 'Y' : 'N',
-    committed_untouched: untouchedFix && untouchedReal ? 'Y' : 'N', real_fields: real.fields.size, real_stale: stale,
+    committed_untouched: untouchedFix && untouchedReal ? 'Y' : 'N', nested_rows: nestedRows, real_fields: real.fields.size, real_stale: stale,
     runs: burst, gen_ms: rr.ms
   };
   if (!redSeen) { summary(fields, 'INCONCLUSIVE'); return; }
