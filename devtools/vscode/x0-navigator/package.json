@@ -1,18 +1,31 @@
 {
   "name": "x0-navigator",
   "displayName": "BIM DevTools: X0 Navigator",
-  "description": "Read-only code navigation for bim-ootb, answered from the repo's own generated files: where an APP field is set, and which rule a §TAG stands for. No AI, no network, no dependencies.",
+  "description": "Read-only code navigation for bim-ootb, answered from the repo's own generated files: where an APP field is set, and which rule a \u00a7TAG stands for. No AI, no network, no dependencies.",
   "version": "0.1.0",
   "publisher": "bim-devtools",
   "license": "MIT",
   "private": true,
-  "engines": { "vscode": "^1.75.0" },
-  "categories": ["Other"],
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Other"
+  ],
   "main": "extension.js",
-  "activationEvents": ["onLanguage:javascript"],
+  "activationEvents": [
+    "onLanguage:javascript"
+  ],
   "contributes": {
     "commands": [
-      { "command": "x0Navigator.rebuildIndexes", "title": "X0 Navigator: Rebuild indexes" }
+      {
+        "command": "x0Navigator.rebuildIndexes",
+        "title": "X0 Navigator: Rebuild indexes"
+      },
+      {
+        "command": "x0Navigator.costIfDeployed",
+        "title": "X0 Navigator: Cost if deployed (start-up and offline-cache bytes vs main)"
+      }
     ],
     "configuration": {
       "title": "BIM DevTools",
@@ -20,7 +33,12 @@
         "bimDevtools.compilerRoot": {
           "type": "string",
           "default": "",
-          "description": "Path to the bim-compiler checkout, whose prompts/ and docs/ are also searched for §TAGs. Empty = a sibling folder ../bim-compiler next to bim-ootb."
+          "description": "Path to the bim-compiler checkout, whose prompts/ and docs/ are also searched for \u00a7TAGs. Empty = a sibling folder ../bim-compiler next to bim-ootb."
+        },
+        "bimDevtools.costBaseRef": {
+          "type": "string",
+          "default": "origin/main",
+          "description": "The git ref \"Cost if deployed\" compares the working tree against."
         }
       }
     }
