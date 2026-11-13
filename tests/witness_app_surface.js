@@ -83,6 +83,27 @@ ok('R9c', /`APP\.screenshot` \| `viewer\/tools\.js:\d+`/.test(idx), 'APP.screens
 //               must not pollute. THREE.js math helpers use `A.x`/`A.y` heavily.
 ok('R5n', !/`APP\.(elements|isVector3)`/.test(idx), 'unbound local `A` did not pollute the index');
 
+// R5b — ISSUE (#2961): "a field written in a file that says `var A = APP;` shows as PHANTOM".
+//       Real case: viewer/grid_overlay.js `function setupGridOverlay(APP) { var A = APP; … A.toggleGridOverlay = …`.
+//       Temp tree: one file binds by declaration (its write must be indexed), one declares an unrelated local A
+//       (its write must NOT be indexed: the red control for the widened gate).
+const r5b = (() => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'appsurf-'));
+  fs.mkdirSync(path.join(dir, 'viewer'));
+  fs.writeFileSync(path.join(dir, 'viewer/bound.js'), 'function setupB(APP) {\n  var A = APP;\n  A.aliasField = 1;\n}\nvar z = APP.aliasField;\n');
+  fs.writeFileSync(path.join(dir, 'viewer/local.js'), 'function f() {\n  var A = {};\n  A.localOnly = 1;\n}\n');
+  execFileSync('node', [path.join(ROOT, 'scripts/gen_app_surface.js')],
+    { encoding: 'utf8', env: { ...process.env, APPSURF_ROOT: dir, APPSURF_OUT: dir } });
+  const t = fs.readFileSync(path.join(dir, 'APP_SURFACE.md'), 'utf8');
+  fs.rmSync(dir, { recursive: true, force: true });
+  return t;
+})();
+ok('R5b', /`APP\.aliasField` \| `viewer\/bound\.js:3`/.test(r5b) && !/`APP\.aliasField`.*phantom/.test(r5b),
+   'a write in a `var A = APP;` file is indexed (bound.js:3), not phantom');
+ok('R5b-RED', !/localOnly/.test(r5b), 'an unrelated local `var A = {}` still adds nothing to the index');
+ok('R5b-real', /`APP\.toggleGridOverlay` \| `viewer\/grid_overlay\.js:\d+`/.test(idx) && !/`APP\.toggleGridOverlay` \| — \*phantom\*/.test(idx),
+   'APP.toggleGridOverlay (real tree) resolves to its grid_overlay.js write site');
+
 console.log(`§APP_SURFACE_W ${out.trim()}`);
 console.log(`§APP_SURFACE_W ${fail ? 'FAILED ' + fail : 'ALL PASS'}`);
 process.exit(fail ? 1 : 0);

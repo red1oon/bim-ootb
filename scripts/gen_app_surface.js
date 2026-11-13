@@ -16,6 +16,7 @@
 //   R3 vendored/minified/archive paths       → never scanned (not our code)
 //   R4 counts in the header                  → recomputed each run, never hand-edited
 //   R5 bare `A.x` counts ONLY in a file that binds A to APP (setupX(A) / = window.APP)
+//   R5b `var A = APP;` inside `function setupX(APP)` is a binding too (viewer/grid_overlay.js; #2961: its writes showed as PHANTOM)
 //   R6 same gate for the third spelling, lowercase `app.x` (time_machine.js writes this one)
 //   R7 the "written at" column shows a PRODUCTION write site when one exists, never a test's
 //   R8 this script and its witness are excluded — they quote `APP.x` in prose and would self-index
@@ -52,9 +53,9 @@ function walk(dir, out) {
 }
 
 // `A` counts as the god object ONLY in a file that actually binds it to APP —
-// a `setupX(A)`/`(A)` module entry, or an explicit `= window.APP`. Without this
+// a `setupX(A)`/`(A)` module entry, an explicit `= window.APP`, or a declared `var A = APP` (R5b). Without this
 // gate, any unrelated local named `A` pollutes the index (R5).
-const BINDS_A = /function\s+setup\w*\s*\(\s*A\s*[,)]|\(\s*A\s*\)\s*(?:=>|\{)|\bA\s*=\s*window\.APP\b/;
+const BINDS_A = /function\s+setup\w*\s*\(\s*A\s*[,)]|\(\s*A\s*\)\s*(?:=>|\{)|\bA\s*=\s*window\.APP\b|\b(?:var|let|const)\s+A\s*=\s*APP\b/;
 const BINDS_app = /function\s+\w*\s*\(\s*app\s*[,)]|\bapp\s*=\s*window\.APP\b|\bvar\s+app\s*=\s*(?:window\.)?APP\b/;
 const W_APP = /(?<![\w.])window\.APP\.([A-Za-z_]\w*)\s*=(?!=)|(?<![\w.])APP\.([A-Za-z_]\w*)\s*=(?!=)/g;
 const W_A   = /(?<![\w.])A\.([A-Za-z_]\w*)\s*=(?!=)/g;
