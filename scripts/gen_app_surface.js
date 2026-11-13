@@ -19,6 +19,7 @@
 //   R6 same gate for the third spelling, lowercase `app.x` (time_machine.js writes this one)
 //   R7 the "written at" column shows a PRODUCTION write site when one exists, never a test's
 //   R8 this script and its witness are excluded — they quote `APP.x` in prose and would self-index
+//   R10 a sub-folder that is itself a git checkout → never scanned (a copy of this tree, not this tree)
 //   R9 comments are stripped before matching. A regex cannot tell code from prose, and this
 //      tree documents its own fields IN prose ("set A._bloomOff = false to try it again").
 //      R9 uses the single-pass tokenizer scripts/lib/js_scan.js (a `/*` in a `//` line no longer hides code).
@@ -40,8 +41,12 @@ function walk(dir, out) {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
     const p = path.join(dir, e.name);
     if (SKIP.some(s => p.includes(s))) continue;
-    if (e.isDirectory()) walk(p, out);
-    else if (/\.(js|mjs|html)$/.test(e.name)) out.push(p);
+    if (e.isDirectory()) {
+      // R10: a sub-folder that is itself a git checkout (an agent worktree under .claude/worktrees/, a nested clone)
+      // is a COPY of this tree, not this tree. Indexing it made 1,082 rows cite the copy as the write site (#2930).
+      if (fs.existsSync(path.join(p, '.git'))) continue;
+      walk(p, out);
+    } else if (/\.(js|mjs|html)$/.test(e.name)) out.push(p);
   }
   return out;
 }
