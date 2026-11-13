@@ -25,6 +25,7 @@ const tags = require(path.join(LIB, 'tag_index'));
 const cost = require(path.join(LIB, 'deploy_cost'));
 const lens = require(path.join(LIB, 'lens_index'));
 const ship = require(path.join(LIB, 'ship'));
+const fileContext = require(path.join(LIB, 'file_context'));
 
 const argv = process.argv.slice(2);
 const arg = n => { const i = argv.indexOf(n); return i >= 0 ? argv[i + 1] : null; };
@@ -106,6 +107,10 @@ const TOOLS = [
       r.hidden.forEach(h => out.push('  line ' + (h.line + 1) + ' ' + h.tag + ' → not shown: ' + h.why));
       return out.join('\n');
     } },
+  { name: 'context_for_file',
+    description: 'Everything the repo\'s own indexes say about ONE file, in one answer: its header comment, how it reaches a user (start-up / offline cache / not loaded at start, and the cache-bump command if it needs one), the shared-object fields whose write site is in it, and each ' + SEC + 'TAG it prints with its spec place and last provable logged value (or the named reason none is shown). Call this before reading or editing a file you do not know.',
+    inputSchema: { type: 'object', properties: { file: { type: 'string', description: 'Path relative to the repo root, e.g. viewer/cost_panel.js' } }, required: ['file'] },
+    async run(a) { return fileContext.build(ROOT, relOf(a.file), { fields: await fields(), tagIndex: tagIndex() }).text; } },
   { name: 'ship_check',
     description: 'Runs the repo\'s pre-ship checks on the working tree and stops at the first failure: node --check on the JS files that differ from the base ref, the service-worker precache audit, and the bump rule (a precached file changed while that app\'s CACHE_VERSION did not). Read-only. Returns the ' + SEC + 'SHIP_* lines.',
     inputSchema: { type: 'object', properties: { base: { type: 'string', description: 'git ref to compare against (default origin/main)' } } },
