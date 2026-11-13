@@ -9,6 +9,7 @@ const path = require('path');
 const vscode = require('vscode');
 const tagIndex = require('./lib/tag_index');
 const surface = require('./lib/app_surface_index');
+const surfaceRefresh = require('./lib/surface_refresh');
 
 const JS = { language: 'javascript' };
 const MARKER = path.join('internal', 'APP_SURFACE.md'); // a folder holding this file is the bim-ootb root
@@ -46,21 +47,41 @@ function activate(context) {
   }
   const link = (abs, line) => vscode.Uri.file(abs).with({ fragment: 'L' + line }).toString();
 
-  // The APP field index is re-read only when the generated file itself changes (one stat per request).
-  let fields = null, fieldsStamp = -1;
+  // The APP field index (§F.5): X0 keeps its own fresh copy in VS Code's storage folder, made by the repo's own
+  // generator. Until that copy exists, or if the generator fails, the committed internal/APP_SURFACE.md is used.
+  // Either way the file is re-read only when it changes (one stat per request).
+  const storage = context.storageUri || context.globalStorageUri;
+  // A generator run costs ~4 s and ~300 MB in a child process (measured 2026-11-13), so it is never run per save:
+  // a save only marks the copy dirty, and the next lookup that finds a moved or unknown field starts ONE run.
+  let fields = null, fieldsKey = '', refresher = null, refresherRoot = null, freshFile = null, dirty = false;
+  function refreshFields() {
+    const sourceRoot = findSourceRoot(context);
+    if (!sourceRoot || !storage) return Promise.resolve(null);
+    if (!refresher || refresherRoot !== sourceRoot) {
+      refresher = surfaceRefresh.createRefresher(sourceRoot, path.join(storage.fsPath, 'app_surface'));
+      refresherRoot = sourceRoot;
+      freshFile = null;
+    }
+    dirty = false;
+    return refresher.refresh().then(r => { freshFile = r.file; return r; }, () => null);
+  }
   function getFields() {
     const sourceRoot = findSourceRoot(context);
     if (!sourceRoot) return null;
-    let stamp;
-    try { stamp = fs.statSync(path.join(sourceRoot, MARKER)).mtimeMs; } catch (e) { return null; }
-    if (!fields || stamp !== fieldsStamp || fields.root !== sourceRoot) { fields = surface.loadSurface(sourceRoot); fieldsStamp = stamp; }
+    const file = freshFile && refresherRoot === sourceRoot ? freshFile : path.join(sourceRoot, MARKER);
+    let key;
+    try { key = file + '@' + fs.statSync(file).mtimeMs; } catch (e) { return null; }
+    if (!fields || key !== fieldsKey) { fields = surface.loadSurface(sourceRoot, file); fieldsKey = key; }
     return fields;
   }
+  const firstRefresh = refreshFields();
   function fieldUnderCursor(document, position) {
     const hit = surface.fieldAt(document.lineAt(position.line).text, position.character, document.getText());
     if (!hit) return null;
     const index = getFields();
-    return index ? surface.resolve(index, hit.field) : null;
+    const res = index ? surface.resolve(index, hit.field) : null;
+    if (dirty && (!res || res.kind === 'stale')) refreshFields(); // answers the NEXT lookup; this one stays honest
+    return res;
   }
 
   // X0-1: F12 on the god object's field → where it is written. Phantom, stale or unknown → no jump (never a guess).
@@ -92,15 +113,24 @@ function activate(context) {
 
   context.subscriptions.push(vscode.workspace.onDidSaveTextDocument(doc => {
     if (/\.(js|md)$/.test(doc.fileName)) tags = null;
+    if (/\.(js|mjs|html)$/.test(doc.fileName)) dirty = true;
   }));
   context.subscriptions.push(vscode.commands.registerCommand('x0Navigator.rebuildIndexes', () => {
     tags = null;
     fields = null;
+    refreshFields();
     const index = getTags();
     vscode.window.showInformationMessage(index
       ? 'X0 Navigator: ' + index.spec.tags.size + ' §TAGs in ' + index.spec.files + ' spec files'
       : 'X0 Navigator: bim-ootb root not found (no ' + MARKER + ' in the open folders)');
   }));
+
+  // For the node witness: when the first fresh copy is ready, and which index file the providers read now.
+  return {
+    whenFresh: () => firstRefresh,
+    indexFile: () => { const f = getFields(); return f ? f.file : null; },
+    refreshRuns: () => (refresher ? refresher.runs() : 0)
+  };
 }
 
 function deactivate() {}

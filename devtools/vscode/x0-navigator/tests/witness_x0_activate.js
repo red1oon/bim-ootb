@@ -27,7 +27,7 @@ const vscodeStub = {
   workspace: {
     workspaceFolders: [{ uri: { fsPath: ROOT } }],
     getConfiguration() { return { get() { return ''; } }; },
-    onDidSaveTextDocument() { reg.saves++; return { dispose() {} }; }
+    onDidSaveTextDocument(fn) { reg.saves++; reg.onSave = fn; return { dispose() {} }; }
   },
   commands: { registerCommand(id) { reg.commands.push(id); return { dispose() {} }; } },
   window: { showInformationMessage() {} },
@@ -44,8 +44,11 @@ let fail = 0;
 function check(label, cond) { console.log('  ' + (cond ? 'PASS ' : 'FAIL ') + label); if (!cond) fail++; }
 
 const ext = require(path.join(EXT, 'extension.js'));
-const context = { subscriptions: [], extensionPath: EXT };
-ext.activate(context);
+const os = require('os');
+const STORE = fs.mkdtempSync(path.join(os.tmpdir(), 'x0-activate-'));
+const context = { subscriptions: [], extensionPath: EXT, storageUri: { fsPath: STORE } };
+const api = ext.activate(context);
+const committedFile = api.indexFile();
 
 const isJs = r => r.sel && r.sel.language === 'javascript';
 const nDef = reg.definition.filter(isJs).length, nHover = reg.hover.filter(isJs).length;
@@ -96,7 +99,30 @@ const h5 = hovers(doc(l5), at(l5, 'ZZ_NOT'));
 check('made-up ' + SEC + 'TAG → hover says "no spec found" (never silent)', h5.length === 1 && /no spec found/.test(h5[0].contents.value));
 check('one command and one save listener registered', reg.commands.length === 1 && reg.saves === 1);
 
-Module._load = realLoad;
-console.log('§X0_ACTIVATE definition=' + nDef + ' hover=' + nHover + ' commands=' + reg.commands.length
-  + ' checks_failed=' + fail + ' verdict=' + (fail === 0 ? 'PASS' : 'FAIL'));
-if (fail) process.exitCode = 1;
+
+// §F.5: after the first refresh the providers read a fresh copy in the storage folder, never the committed one.
+api.whenFresh().then(r => {
+  const now = api.indexFile();
+  const fresh = !!r && !!now && now.startsWith(STORE) && now !== committedFile && fs.existsSync(now);
+  check('before the refresh the providers read the committed index', committedFile === path.join(ROOT, 'internal', 'APP_SURFACE.md'));
+  check('after it they read a fresh copy in the storage folder (' + (r ? r.line : 'refresh failed') + ')', fresh);
+  const d6 = define(doc(l1), at(l1, defName));
+  check('F12 still resolves from the fresh copy, at a line that mentions the field',
+    !!d6 && S.lineHasField(fs.readFileSync(d6.uri.fsPath, 'utf8').split('\n')[d6.position.line], defName));
+  // A save must not start a generator run by itself (~4 s each). Only a lookup that misses after a save does, once.
+  const runs0 = api.refreshRuns();
+  reg.onSave({ fileName: path.join(ROOT, 'viewer', 'anything.js') });
+  hovers(doc(l1), at(l1, defName));                       // a hit: no run
+  const afterHit = api.refreshRuns() - runs0;
+  hovers(doc(l3), at(l3, 'zzNotAField__'));               // a miss after a save: one run
+  hovers(doc(l3), at(l3, 'zzNotAField__'));               // a second miss: no further run
+  const afterMiss = api.refreshRuns() - runs0;
+  check('a save alone, and a lookup that hits, start no generator run (n=' + afterHit + ')', afterHit === 0);
+  check('a lookup that misses after a save starts exactly one (n=' + afterMiss + ')', afterMiss === 1);
+  context.subscriptions.forEach(d => d.dispose());
+  fs.rmSync(STORE, { recursive: true, force: true });
+  Module._load = realLoad;
+  console.log('§X0_ACTIVATE definition=' + nDef + ' hover=' + nHover + ' commands=' + reg.commands.length
+    + ' fresh=' + (fresh ? 'Y' : 'N') + ' checks_failed=' + fail + ' verdict=' + (fail === 0 ? 'PASS' : 'FAIL'));
+  if (fail) process.exitCode = 1;
+});
