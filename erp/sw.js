@@ -10,7 +10,7 @@
 // init-bubble must be INSTANT, ERP_INIT_BUBBLE_INSTANT.md); network-first for non-precached .js (fresh on
 // deploy); cache-first for precached assets/.wasm/images. Freshness on deploy is carried by the SW version
 // bump (skipWaiting+clients.claim precache the new shell), so SWR strands a user at most one load post-deploy.
-const CACHE_VERSION = 'v1067';   // bump on each deploy; detail goes in the commit message. History to v1063: SW_VERSION_HISTORY.md
+const CACHE_VERSION = 'v1068';   // bump on each deploy; detail goes in the commit message. History to v1063: SW_VERSION_HISTORY.md
 // v810 (2026-10-03) UI locales: a machine-catalogue entry gets the same fmt as a pack hit (de/ms login title lost its
 //   'Kernel-ERP — ' prefix — found by fetching the live page, ERP_UI_LOCALES.md §L7).
 // v809 (2026-10-03) UI locales (bim-compiler prompts/ERP_UI_LOCALES.md, W-ERP-I18N): erp_i18n.js + i18n/chrome.json +
@@ -203,6 +203,7 @@ const PRECACHE_ASSETS = [
   'ad_callout.js',
   'processes/AcctSchemaCopyAcct.js',
   'processes/PackOut.js',   // Pack Out process (org.adempiere.pipo.PackOut), §25
+  'processes/PackIn.js',    // Pack In process (org.adempiere.pipo.PackIn), bim-ootb CAPEX_DASHBOARD.md §5.70
   'processes/AllocationReset.js',
   'processes/BOMVerify.js',
   'processes/BankStatementMatcher.js',

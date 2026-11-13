@@ -108,6 +108,42 @@
         });
       }); }).catch(function (e) { console.log('§PACKIN-START bundle=' + bundleId + ' ok=false error=' + e.message); return { ok: false, error: e.message }; });
   }
+  // A CLIENT ADMIN's data Pack In (window 50005 Pack In -> AD_Process 50008 PackInProcess, erp/processes/PackIn.js; bim-ootb prompts/CAPEX_DASHBOARD.md §5.70): the same atomic walk as a bundle's packs on a recording
+  //   of the base DB, under the session client with the model layer (pipo_packin client-data path, §5.69), AD_Package_Imp in the session client/org; the zip bytes + the delta are kept in the SAME store as
+  //   the plugin packs under 'client:<AD_Client_ID>:<name>' and replayed at every load (owner: base DB + replay; Teamwork sync does not carry them, each site packs the zip in, as on legacy).
+  function _localNow() { var d = new Date(), p = function (n) { return ('0' + n).slice(-2); }; return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds()); }   // the local clock, as crud_overlay._modelEnv (never the UTC day: §5.33)
+  function _clientEnv(r) {   // the model layer's session env for a kept client pack (the env the walk ran under, today's clock)
+    var now = _localNow();
+    return { client: r.client, org: r.org || 0, user: r.user != null ? r.user : 0, role: r.role || 0, date: now.slice(0, 10) + ' 00:00:00', now: now, nowMillis: Date.now(),
+      uuid: function () { return (global.crypto && global.crypto.randomUUID) ? global.crypto.randomUUID() : null; } };
+  }
+  function _clientWalk(rdb, db, r, xml) {
+    if (global.__crud && global.__crud.bindUdf) { try { global.__crud.bindUdf(db); } catch (e) { /* the UDFs are already bound */ } }
+    return global.PipoPackIn.apply(rdb, xml, Object.assign(_packOpts(db), { clientId: r.client, model: { ML: global.ModelLayer, env: _clientEnv(r) }, name: r.name, now: _localNow() }));
+  }
+  function packInClient(o) {   // o = { name, bytes, clientId, orgId, userId, roleId, procId } -> Promise<{ ok, summary, stat, key }>
+    var db = _rawDb(), P = global.PipoPackIn, t0 = performance.now();
+    if (!db) return Promise.resolve({ ok: false, summary: 'no writable database' });
+    if (!P || !global.ModelLayer) return Promise.resolve({ ok: false, summary: 'pipo_packin.js / model_layer.js not loaded' });
+    var r = { client: Number(o.clientId) || 0, org: Number(o.orgId) || 0, user: o.userId, role: o.roleId, name: String(o.name || 'PackIn') };
+    if (!r.client) return Promise.resolve({ ok: false, summary: 'Pack In of client data needs a client session (AD_Client_ID > 0)' });
+    var key = 'client:' + r.client + ':' + r.name;
+    return P.packOutXml(o.bytes).then(function (px) {
+      var rdb = P.recording(db), st = _clientWalk(rdb, db, r, px.xml), ver = st.pack && st.pack.version, imp = P.recordImport(rdb, r.name, ver, st, _localNow(), { clientId: r.client, orgId: r.org, procId: o.procId });
+      var summary = st.ok ? 'Processed=' + st.processed + ' Un-Resolved=' + st.unresolved.length : (st.error || 'Pack In failed');   // PackIn.importXML :178 / the exception's message
+      var keep = !st.ok ? Promise.resolve() : _kvGet(PACKS_KEY, {}).then(function (store) {
+        var rec = store[key] || Object.assign({ packs: [], delta: [] }, r);
+        rec.packs = rec.packs.filter(function (k) { return k.version !== ver; }).concat([{ version: ver, bytes: new Uint8Array(o.bytes) }]);
+        rec.delta = (rec.delta || []).concat(rdb.delta()); rec.fingerprint = global.__adSeedFingerprint || null; Object.assign(rec, r); store[key] = rec;
+        return _kvPut(PACKS_KEY, store);
+      });
+      return keep.then(function () {
+        console.log('§PACKIN-CLIENT key=' + key + ' ok=' + st.ok + ' processed=' + st.processed + ' unresolved=' + st.unresolved.length + ' statements=' + rdb.delta().length + ' imp=' + (imp && imp.id) +
+          ' proc=' + (o.procId || 0) + ' ms=' + Math.round(performance.now() - t0) + ' heapMB=' + _heapMB() + (st.ok ? '' : ' error=' + st.error));
+        return { ok: !!st.ok, summary: summary, stat: st, key: key, imp: imp };
+      });
+    }, function (e) { console.log('§PACKIN-CLIENT key=' + key + ' ok=false error=' + e.message); return { ok: false, summary: e.message }; });
+  }
   // B4: every load, BEFORE the bundles are restored, every kept bundle's rows are put back: the delta on the same base, else a full Pack In from the kept bytes.
   function _packsReplay() {
     var db = _rawDb(), P = global.PipoPackIn; if (!db || !P) return Promise.resolve();
@@ -123,7 +159,9 @@
             reason = 'replay failed at ' + rr.statements + ': ' + rr.error;
           } else reason = 'fingerprint ' + r.fingerprint + ' -> ' + fp;
           var rdb = P.recording(db);
-          return P.incremental(rdb, id, r.packs || [], _packOpts(db)).then(function (res) {
+          var walk = r.client ? (r.packs || []).reduce(function (p, k) { return p.then(function (acc) { return P.packOutXml(k.bytes).then(function (px) { var st = _clientWalk(rdb, db, r, px.xml); acc.push({ version: k.version, ok: st.ok, stat: st }); return acc; }); }); }, Promise.resolve([]))   // a client admin's pack: the client-data path again (§5.70)
+            : P.incremental(rdb, id, r.packs || [], _packOpts(db));
+          return walk.then(function (res) {
             r.delta = rdb.delta(); r.fingerprint = fp; changed = true;
             console.log('§PACKIN-REPLAY bundle=' + id + ' mode=full reason=' + reason + ' applied=[' + res.map(function (x) { return x.version + (x.ok ? '' : '!'); }).join(',') + '] statements=' + r.delta.length + ' ms=' + Math.round(performance.now() - t0) + ' heapMB=' + _heapMB());
           });
@@ -605,5 +643,5 @@
   function hasPending(trig) { return !!(_reg && _reg.hasPending && _reg.hasPending(trig)); }
   function noteTouched(tables) { return _reg && _reg.noteTouched ? _reg.noteTouched(tables) : []; }
 
-  global.PluginEngine = { open: open, ensure: ensure, boot: boot, need: need, hasPending: hasPending, noteTouched: noteTouched, persist: function () { return _persist(); }, _bindFunctions: _bindFunctions, _reg: function () { return _reg; } };
+  global.PluginEngine = { packInClient: packInClient, open: open, ensure: ensure, boot: boot, need: need, hasPending: hasPending, noteTouched: noteTouched, persist: function () { return _persist(); }, _bindFunctions: _bindFunctions, _reg: function () { return _reg; } };
 })(typeof window !== 'undefined' ? window : this);
