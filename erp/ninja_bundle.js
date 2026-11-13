@@ -54,7 +54,7 @@
         return Promise.resolve(counts);
       },
       deactivate: function (ctx) {
-        return Promise.resolve(NinjaStage.rollbackModel(ctx.db, model.bundleName));
+        return Promise.resolve(NinjaStage.rollbackModel(ctx.db, model));
       }
     };
   }
@@ -83,7 +83,7 @@
       '}',
       '',
       'export async function deactivate(ctx) {',
-      '  return NinjaStage.rollbackModel(ctx.db, MODEL.bundleName);',
+      '  return NinjaStage.rollbackModel(ctx.db, MODEL);',
       '}',
       ''
     ].join('\n');

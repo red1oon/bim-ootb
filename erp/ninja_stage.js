@@ -21,13 +21,15 @@
 // A table whose master is NOT in the model (external FK) keeps the legacy own-window shape: no parent tab to be a detail of.
 //
 // ID policy (deterministic): NINJA_BASE = 7_000_000. Same model → same IDs on every re-run.
-// Rollback: SET IsActive='N' on all rows with ID >= NINJA_BASE.
+// Rollback: SET IsActive='N' on the rows of ONE model (its tables, by name); another bundle's rows are not touched.
+// Menu: each bundle has its own summary node, found by the bundle's name in the node range (NINJA_BASE + 450000 up).
 // kernel_ops audit: NINJA_STAGE / NINJA_ROLLBACK ops appended.
 
 (function (global) {
   'use strict';
 
   var NINJA_BASE    = 7000000;  // matches oracle PackOut.xml starting IDs
+  var BREAK = (typeof process !== 'undefined' && process.env && process.env.NINJAISO_BREAK) || '';   // the falsifiers of W-NINJA-STAGE-ISO
   var NINJA_TREE_ID = 10;       // AD_TreeNodeMM tree (10 = menu tree in seed db)
 
   // Stock iDempiere DefaultValue of the standard columns (verified against ad_seed C_Order: IsActive 'Y', AD_Org_ID/AD_Client_ID
@@ -101,24 +103,27 @@
     var fBase  = NINJA_BASE + 300000;
     var mBase  = NINJA_BASE + 400000;
     var cBase  = NINJA_BASE + 500000;
+    var sBase  = NINJA_BASE + 450000, sEnd = cBase;   // the bundles' summary nodes
 
     // Determine parent menu ID: use the highest existing summary menu below NINJA_BASE
     var parentMenuId = Number(val(db,
       "SELECT COALESCE(MAX(AD_Menu_ID),0) FROM AD_Menu WHERE IsSummary='Y' AND AD_Menu_ID < " + NINJA_BASE
     )) || 0;
 
-    // ── Summary menu node ──────────────────────────────────────────────────────────────
-    var summaryMenuId = mBase;
+    // ── Summary menu node: the bundle's OWN, found by its name (bim-compiler prompts/ERP_MIS_WINDOW_FROM_CSV.md §12.1 F2) ──
+    var summaryMenuId = BREAK === 'onenode' ? mBase : (Number(val(db, "SELECT MIN(AD_Menu_ID) FROM AD_Menu WHERE IsSummary='Y' AND AD_Menu_ID>=" + sBase +
+      ' AND AD_Menu_ID<' + sEnd + " AND Name='" + q(bundleName) + "'")) || 0);
+    if (!summaryMenuId) summaryMenuId = Math.max(sBase - 1, Number(val(db, 'SELECT MAX(AD_Menu_ID) FROM AD_Menu WHERE AD_Menu_ID>=' + sBase + ' AND AD_Menu_ID<' + sEnd)) || 0) + 1;
     if (ensure(db, 'AD_Menu', 'AD_Menu_ID', summaryMenuId)) {
       db.run("INSERT INTO AD_Menu (AD_Menu_ID, Name, Description, IsSummary, IsActive)" +
         " VALUES (" + summaryMenuId + ",'" + q(bundleName) + "','Ninja bundle: " + q(bundleName) + "','Y','Y')");
       counts.menus++;
-      if (parentMenuId && isMissing(db, 'AD_TreeNodeMM',
-        'AD_Tree_ID=' + NINJA_TREE_ID + ' AND Node_ID=' + summaryMenuId)) {
-        db.run('INSERT INTO AD_TreeNodeMM (AD_Tree_ID, Node_ID, Parent_ID, SeqNo, IsActive)' +
-          ' VALUES (' + NINJA_TREE_ID + ',' + summaryMenuId + ',' + parentMenuId + ',1000,"Y")');
-      }
     } else { counts.skipped++; }
+    if (parentMenuId && isMissing(db, 'AD_TreeNodeMM', 'AD_Tree_ID=' + NINJA_TREE_ID + ' AND Node_ID=' + summaryMenuId)) {
+      db.run('INSERT INTO AD_TreeNodeMM (AD_Tree_ID, Node_ID, Parent_ID, SeqNo, IsActive)' +
+        ' VALUES (' + NINJA_TREE_ID + ',' + summaryMenuId + ',' + parentMenuId + ',1000,"Y")');
+    }
+    counts.node = summaryMenuId;
 
     // ── §GT-NINJA master/detail resolution — from the model only (t.master + the staged table set) ──
     var byName = {};
@@ -255,7 +260,9 @@
             ' VALUES (' + NINJA_TREE_ID + ',' + menuId + ',' + summaryMenuId + ',' + (ti + 1) + ',"Y")');
         }
       } else { counts.skipped++; }
+      if (!isDetail) db.run('UPDATE AD_TreeNodeMM SET Parent_ID=' + summaryMenuId + ' WHERE AD_Tree_ID=' + NINJA_TREE_ID + ' AND Node_ID=' + menuId);   // a re-stage moves the leaf under its bundle's own node
     });
+    emptyNodesOff(db);
 
     // kernel_ops audit
     ensureKernelOps(db);
@@ -266,26 +273,55 @@
     return counts;
   }
 
-  // ── rollbackModel(db) — SET IsActive='N' on all Ninja-staged rows (ID >= NINJA_BASE) ──────
-  function rollbackModel(db, bundleName) {
-    var counts = {};
-    function deact(table, col) {
-      var n = Number(val(db, 'SELECT COUNT(*) FROM ' + table +
-        " WHERE IsActive='Y' AND " + col + '>=' + NINJA_BASE)) || 0;
-      db.run("UPDATE " + table + " SET IsActive='N' WHERE " + col + '>=' + NINJA_BASE);
+  // A staged summary node with no active leaf under it is switched off (stage and rollback both end with it).
+  function emptyNodesOff(db) {
+    db.run("UPDATE AD_Menu SET IsActive='N' WHERE IsSummary='Y' AND IsActive='Y' AND AD_Menu_ID>=" + NINJA_BASE +
+      ' AND NOT EXISTS (SELECT 1 FROM AD_TreeNodeMM n JOIN AD_Menu l ON l.AD_Menu_ID=n.Node_ID' +
+      " WHERE n.AD_Tree_ID=" + NINJA_TREE_ID + " AND n.Parent_ID=AD_Menu.AD_Menu_ID AND l.IsActive='Y')");
+  }
+
+  // ── rollbackModel(db, model) — SET IsActive='N' on what ONE model staged (§12.1 F1). `model` is the model object
+  //    ({ bundleName, tables:[{name}] }); a bundle NAME is taken too (an emitted bundle module passes it): its tables are
+  //    the ones whose windows hang under the node of that name. No model, or a name no node carries: refused (never "all").
+  function rollbackModel(db, model) {
+    var counts = { tables: 0, cols: 0, windows: 0, tabs: 0, fields: 0, menus: 0 }, ids = [], name;
+    function list(sql) { var r = db.exec(sql); return r.length ? r[0].values.map(function (v) { return Number(v[0]); }) : []; }
+    function off(table, where) {
+      var n = Number(val(db, 'SELECT COUNT(*) FROM ' + table + " WHERE IsActive='Y' AND " + where)) || 0;
+      if (n) db.run('UPDATE ' + table + " SET IsActive='N' WHERE " + where);
       return n;
     }
-    counts.tables  = deact('AD_Table',  'AD_Table_ID');
-    counts.cols    = deact('AD_Column', 'AD_Column_ID');
-    counts.windows = deact('AD_Window', 'AD_Window_ID');
-    counts.tabs    = deact('AD_Tab',    'AD_Tab_ID');
-    counts.fields  = deact('AD_Field',  'AD_Field_ID');
-    counts.menus   = deact('AD_Menu',   'AD_Menu_ID');
+    if (BREAK === 'blanket') ids = list('SELECT AD_Table_ID FROM AD_Table WHERE AD_Table_ID>=' + NINJA_BASE);
+    else if (model && typeof model === 'object' && model.tables) {
+      name = model.bundleName;
+      model.tables.forEach(function (t) { ids = ids.concat(list("SELECT AD_Table_ID FROM AD_Table WHERE TableName='" + q(t.name) + "' AND AD_Table_ID>=" + NINJA_BASE)); });
+    } else if (typeof model === 'string' && model) {
+      name = model;
+      ids = list('SELECT DISTINCT t.AD_Table_ID FROM AD_Menu s JOIN AD_TreeNodeMM n ON n.Parent_ID=s.AD_Menu_ID AND n.AD_Tree_ID=' + NINJA_TREE_ID +
+        ' JOIN AD_Menu l ON l.AD_Menu_ID=n.Node_ID JOIN AD_Tab t ON t.AD_Window_ID=l.AD_Window_ID' +
+        " WHERE s.IsSummary='Y' AND s.AD_Menu_ID>=" + NINJA_BASE + " AND s.Name='" + q(model) + "' AND t.AD_Table_ID>=" + NINJA_BASE);
+      if (!ids.length) throw new Error('rollbackModel: no staged bundle is named ' + model + ' (nothing was changed)');
+    } else throw new Error('rollbackModel needs the model (or its bundle name): a rollback of every staged model is not offered');
+    if (ids.length) {
+      var inT = '(' + ids.join(',') + ')', tabs = list('SELECT AD_Tab_ID FROM AD_Tab WHERE AD_Table_ID IN ' + inT), wins = list('SELECT DISTINCT AD_Window_ID FROM AD_Tab WHERE AD_Table_ID IN ' + inT + ' AND AD_Window_ID>=' + NINJA_BASE);
+      counts.tables = off('AD_Table', 'AD_Table_ID IN ' + inT);
+      counts.cols   = off('AD_Column', 'AD_Table_ID IN ' + inT);
+      if (tabs.length) { counts.fields = off('AD_Field', 'AD_Tab_ID IN (' + tabs.join(',') + ')'); counts.tabs = off('AD_Tab', 'AD_Tab_ID IN (' + tabs.join(',') + ')'); }
+      wins.forEach(function (w) {   // a window goes when no active tab is left in it; its menu leaf goes with it
+        if (Number(val(db, "SELECT COUNT(*) FROM AD_Tab WHERE IsActive='Y' AND AD_Window_ID=" + w))) return;
+        counts.windows += off('AD_Window', 'AD_Window_ID=' + w);
+        counts.menus += off('AD_Menu', 'AD_Window_ID=' + w + ' AND AD_Menu_ID>=' + NINJA_BASE);
+      });
+      var before = Number(val(db, "SELECT COUNT(*) FROM AD_Menu WHERE IsSummary='Y' AND IsActive='Y' AND AD_Menu_ID>=" + NINJA_BASE)) || 0;
+      emptyNodesOff(db);
+      counts.menus += before - (Number(val(db, "SELECT COUNT(*) FROM AD_Menu WHERE IsSummary='Y' AND IsActive='Y' AND AD_Menu_ID>=" + NINJA_BASE)) || 0);
+    }
+    console.log('§NINJA_ROLLBACK bundle=' + (name || 'unknown') + ' tables=' + counts.tables + ' cols=' + counts.cols + ' windows=' + counts.windows + ' tabs=' + counts.tabs + ' fields=' + counts.fields + ' menus=' + counts.menus);
 
     ensureKernelOps(db);
     db.run("INSERT INTO kernel_ops (timestamp, op_type, parameters)" +
       " VALUES (0,'NINJA_ROLLBACK','" +
-      q(JSON.stringify(Object.assign({ bundle: bundleName || 'unknown' }, counts))) + "')");
+      q(JSON.stringify(Object.assign({ bundle: name || 'unknown' }, counts))) + "')");
     return counts;
   }
 
