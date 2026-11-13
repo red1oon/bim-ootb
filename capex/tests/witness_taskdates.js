@@ -57,7 +57,8 @@ function openErp(SQL) {
     const r3 = ProjFold.foldProjectOrder(edb, building, rows, Object.assign({ schedule: sched }, base)), plus = r3.created.phases + r3.created.tasks + r3.created.lines + r3.created.products;
     check('T5 2nd fold creates 0', plus === 0, JSON.stringify(r3.created));
     // T6 projectDetail
-    const AD = require(path.join(ROOT, 'capex/adapters.js')), TI = require(path.join(ROOT, 'capex/tiles.js')), data = AD.fromSqlite(edb, {}), pj = q(edb, 'SELECT Value FROM C_Project WHERE C_Project_ID=?', [pid])[0];
+    const AD = require(path.join(ROOT, 'capex/adapters.js')), TI = require('./pa_harness.js'), data = AD.fromSqlite(edb, {}), pj = q(edb, 'SELECT Value FROM C_Project WHERE C_Project_ID=?', [pid])[0];
+    await require('./pa_harness.js').init({ quiet: true });   // §5.75 step 3: PA rows, not the hand formulas
     const d = TI.projectDetail(data, { today: START }, pid), dt = d ? [].concat.apply([], d.phases.map(p => (p.taskRows || []).map(k => p.name + '|' + k.name + '|' + String(k.start).slice(0, 10) + '|' + String(k.end).slice(0, 10)))) : [];
     const dbt = got.map(v => v[0] + '|' + v[1] + '|' + String(v[2]).slice(0, 10) + '|' + String(v[3]).slice(0, 10));
     check('T6 projectDetail() task rows == the ' + dbt.length + ' DB task rows (name, start, end)', dt.slice().sort().join(';') === dbt.slice().sort().join(';'), 'detail=' + dt.length + ' db=' + dbt.length);

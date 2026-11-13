@@ -2,7 +2,9 @@
 // ⚠ DO NOT REMOVE — W-BASIS-DIFFERS (prompts/CAPEX_DASHBOARD.md §5.45). READ THE LOG: §BASIS_VERDICT.
 // ISSUE (§5.42 F2): "a Forecast far from Planned with CPI far from 1 is shown as a result, not as a data-basis alarm".
 'use strict';
-const T = require('../tiles.js'); let judged = 0, fails = 0;
+// §5.75 step 3: computed from the PA rows (capex/tests/pa_harness.js), no longer the hand formula in tiles.js.
+const H = require('./pa_harness.js'), T = H; let judged = 0, fails = 0;
+(async () => { await H.init();
 const chk = (n, ok, i) => { judged++; if (!ok) fails++; console.log('  §BASIS ' + n + ' ' + (ok ? 'PASS' : 'FAIL') + ' ' + (i || '')); };
 const mk = spent => ({ projects: [{ C_Project_ID: 1, Value: 'P', IsActive: 'Y', Processed: 'N', AD_Org_ID: 1, C_Currency_ID: 100, PlannedAmt: '1000000', ProjectBalanceAmt: spent }],
   phases: [{ C_Project_ID: 1, StartDate: '2026-01-01', EndDate: '2026-02-01', IsComplete: 'Y', PlannedAmt: '500000' }, { C_Project_ID: 1, StartDate: '2026-02-01', EndDate: '2026-12-01', IsComplete: 'N', PlannedAmt: '500000' }] });
@@ -13,3 +15,4 @@ chk('B2 CPI 1.0 -> not flagged, forecast == budget', b.basisDiffers === 0 && b.c
 const fl = T.flatten(T.compute(mk('528'), { today: '2026-06-01' }).tiles);
 chk('B3 the compared string carries no flag', JSON.stringify(fl).indexOf('basis') < 0);
 const v = fails ? 'FAIL' : judged ? 'PASS' : 'INCONCLUSIVE'; console.log('§BASIS_VERDICT ' + v + ' judged=' + judged + ' fail=' + fails); process.exit(v === 'PASS' ? 0 : 1);
+})().catch(e => { console.log('§BASIS_VERDICT FAIL harness ' + (e && e.stack || e)); process.exit(1); });

@@ -35,6 +35,7 @@
     'budget:within': { slot: 'within' }, 'budget:over': { slot: 'over' }, 'budget:notstarted': { slot: 'notstarted' },
     'proc:openpo': { slot: 'openpo', via: 'order' }, 'proc:overcommitted': { slot: 'overcommitted' }, 'proc:nopo': { slot: 'nopo' }, 'handover:ready': { slot: 'ready' }, 'handover:done': { slot: 'handover_done' } };
   var CHILD = { phases: 'C_Project_ID', lines: 'C_Project_ID', orders: 'C_Project_ID', issues: 'C_Project_ID', receipts: 'C_Project_ID', vinvoices: 'C_Project_ID', payments: 'C_Project_ID', bimdocs: 'C_Project_ID' };
+  var NUMCOL = /(_ID|Amt|Qty|Total|Price|SeqNo|Revision|Precision|HoursBudget)$/;
   function yes(v) { return v === 'Y' || v === true || v === 1 || v === '1'; }
 
   // the filtered population (D2): org, category, project (by Value) and status choose the projects; child rows follow their project; reference rows (orgs, C_Phase, currencies, workflow) stay whole
@@ -53,7 +54,9 @@
     P.forEach(function (p) { ids[String(p.C_Project_ID)] = 1; });
     A.ENTITIES.forEach(function (e) {
       var spec = A.COLS[e]; if (!spec) return;
-      db.run('CREATE TABLE "' + spec.table + '" (' + spec.cols.map(function (c) { return '"' + c + '"'; }).join(',') + ')');
+      // amounts, quantities and ids are NUMERIC columns, as they are in the ERP: a source that hands a number over as text ('200', a JSON string) must still compare as a number
+      //   ('200' > '1000' as text counted a project as over-committed; found by W-PROC-HANDOVER on the PA rows, §5.75 step 3). Other columns keep what the source gave.
+      db.run('CREATE TABLE "' + spec.table + '" (' + spec.cols.map(function (c) { return '"' + c + '"' + (NUMCOL.test(c) ? ' NUMERIC' : ''); }).join(',') + ')');
       var rows = e === 'projects' ? P : (data[e] || []);
       if (CHILD[e]) rows = rows.filter(function (r) { return ids[String(r[CHILD[e]])]; });
       if (e === 'phases') rows.forEach(function (r) { phIds[String(r.C_ProjectPhase_ID)] = 1; });
@@ -101,7 +104,7 @@
     T.health = cls('health', function () { return { green: count('green'), amber: count('amber'), red: count('red'), none: count('none'), n: nA }; });
     T.physical_spent = cls('physical_spent', function () { return { physical: perCur('physical', 'C_Project', false), spent: perCur('spent', 'C_Project', false), caveat: base.caveat }; });
     T.schedule = cls('schedule', function () { var r = { ontime: count('ontime'), delayed: count('delayed'), atrisk: count('atrisk'), nosched: count('nosched'), n: nA }, d = ev('avg_delay'); r.avgDelay = d && d.state === 'OK' ? d.actual : null; return r; });
-    T.budget_status = cls('budget_status', function () { return { within: count('within'), over: count('over'), notstarted: count('notstarted'), overrun: perCur('overrun', 'C_Project', true) }; });
+    T.budget_status = cls('budget_status', function () { return { within: count('within'), over: count('over'), notstarted: count('notstarted'), overrun: perCur('overrun', 'C_Project', true), n: nA }; });   // n: the judged population, as the health and schedule tiles carry it (tiles.js r.n; W-DASH-DRILL K1/K3 read it)
     if (!base.tiles.approvals.inconclusive) T.approvals = { n: count('approvals') };
     if (!base.tiles.committed_contract.notinstalled) { var cc = perCur('contract', 'C_Order', true); T.committed_contract = { cur: cc }; if (!Object.keys(cc).length) T.committed_contract.vacuous = true; }
     if (!base.tiles.committed_verified.notinstalled) { var cv = perCur('verified', 'C_Project', true); T.committed_verified = { cur: cv }; if (!Object.keys(cv).length) T.committed_verified.vacuous = true; }

@@ -15,7 +15,8 @@ require('./_setup_gate.js')('§CAPEX_PROPOSED_VERDICT');
 const fs = require('fs'), path = require('path'), { execFileSync } = require('child_process');
 const ROOT = path.join(__dirname, '..', '..'), MIGDIR = path.join(ROOT, 'capex/legacy/migration/iD13/postgresql'), DB = 'idempiere_bimdoc';
 const C = require(path.join(ROOT, 'erp/tests/dd_common.js')), GE = require(path.join(ROOT, 'erp/goal_engine.js')), MA = require(path.join(ROOT, 'capex/tools/migration_apply.js'));
-const Ad = require('../adapters.js'), Tl = require('../tiles.js'), BREAK = process.env.PROPOSED_BREAK === '1', SBREAK = process.env.STAGES_BREAK === '1';
+const Ad = require('../adapters.js'), Tl = require('./pa_harness.js'), BREAK = process.env.PROPOSED_BREAK === '1', SBREAK = process.env.STAGES_BREAK === '1';
+(async () => { await require('./pa_harness.js').init({ quiet: true });   // §5.75 step 3: the numbers come from the PA rows (pa_harness.js), not the hand formulas in tiles.js
 const F_Q2 = '202611111300_CAPEX-Q2-STAGES.sql', F_MS = '202611111310_CAPEX-PROPOSED-MEASURES.sql', F_Q3 = '202611121200_CAPEX-Q3-EAC-FLOATDIV.sql', log = console.log, TODAY = '2026-11-11';
 let judged = 0, fails = 0, inconc = 0;
 const ck = (n, ok, i) => { judged++; if (!ok) fails++; log('  §CAPEX_PROPOSED_W ' + n + ' ' + (ok ? 'PASS' : 'FAIL') + (i !== undefined ? ' ' + JSON.stringify(i) : '')); };
@@ -102,3 +103,5 @@ const finish = () => { const v = judged === 0 ? 'INCONCLUSIVE' : fails ? 'FAIL' 
   finally { try { restore(); log('§CAPEX_PROPOSED_W fixture restored: projects left=' + psql('SELECT COUNT(*) FROM c_project WHERE c_project_id BETWEEN 9300001 AND 9300005') + ' POs with a project=' + psql('SELECT COUNT(*) FROM c_order WHERE c_order_id IN (104,105,106) AND c_project_id IS NOT NULL')); } catch (e) { log('§CAPEX_PROPOSED_W restore failed ' + e.message); } }
   finish();
 })();
+
+})().catch(function (e) { console.log('§PA_HARNESS_CRASH ' + (e && e.stack || e)); process.exit(1); });

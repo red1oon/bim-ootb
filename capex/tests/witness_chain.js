@@ -5,7 +5,8 @@
 // says "not installed" · C4 real page: the card sits inside the Procurement tab, the glance (tile list + left menu) is unchanged, strip counts == rows · CHAIN_BREAK=1 counts a draft receipt as received and must FAIL C1.
 // Usage: NODE_PATH=<bim-ootb>/node_modules node capex/tests/witness_chain.js
 'use strict';
-const fs = require('fs'), path = require('path'), http = require('http'), ROOT = path.join(__dirname, '..', '..'), T = require(path.join(ROOT, 'capex/tiles.js')), BREAK = process.env.CHAIN_BREAK === '1', log = console.log;
+const fs = require('fs'), path = require('path'), http = require('http'), ROOT = path.join(__dirname, '..', '..'), T = require('./pa_harness.js'), BREAK = process.env.CHAIN_BREAK === '1', log = console.log;
+(async () => { await require('./pa_harness.js').init({ quiet: true });   // §5.75 step 3: the numbers come from the PA rows (pa_harness.js), not the hand formulas in tiles.js
 let judged = 0, fails = 0, inc = 0; const ck = (n, ok, i) => { judged++; if (!ok) fails++; log('  §CHAIN ' + n + ' ' + (ok ? 'PASS' : 'FAIL') + (i !== undefined ? ' ' + JSON.stringify(i) : '')); };
 const P = 1, OTHER = 2;
 const base = () => ({ source: 'legacy', unavailable: [], projects: [{ C_Project_ID: P, Value: 'CH1', Name: 'Chain', IsActive: 'Y', Processed: 'N', C_Currency_ID: 100, PlannedAmt: '10000', ProjectBalanceAmt: '0' }, { C_Project_ID: OTHER, Value: 'CH2', Name: 'Other', IsActive: 'Y', Processed: 'N', C_Currency_ID: 100, PlannedAmt: '500', ProjectBalanceAmt: '0' }],
@@ -85,3 +86,5 @@ function indep(d, proj) {
   }
   const v = fails ? 'FAIL' : (judged && !inc) ? 'PASS' : 'INCONCLUSIVE'; log('§CHAIN_VERDICT ' + v + ' judged=' + judged + ' fail=' + fails + ' inconclusive=' + inc + (BREAK ? ' (BREAK)' : '')); process.exit(v === 'PASS' ? 0 : 1);
 })().catch(e => { console.error('§CHAIN_ERROR ' + (e && e.stack || e)); process.exit(2); });
+
+})().catch(function (e) { console.log('§PA_HARNESS_CRASH ' + (e && e.stack || e)); process.exit(1); });

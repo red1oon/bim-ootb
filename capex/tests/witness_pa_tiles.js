@@ -13,7 +13,8 @@
 const fs = require('fs'), path = require('path'), { execFileSync } = require('child_process');
 const ROOT = path.join(__dirname, '..', '..'), MIGDIR = path.join(ROOT, 'capex/legacy/migration/iD13/postgresql');
 const C = require(path.join(ROOT, 'erp/tests/dd_common.js')), GE = require(path.join(ROOT, 'erp/goal_engine.js')), MA = require(path.join(ROOT, 'capex/tools/migration_apply.js')), BD = require(path.join(ROOT, 'erp/bigdecimal.js'));
-const Ad = require('../adapters.js'), Tl = require('../tiles.js'), Push = require(path.join(ROOT, 'viewer/erp_rest_push.js'));
+const Ad = require('../adapters.js'), Tl = require('./pa_harness.js'), Push = require(path.join(ROOT, 'viewer/erp_rest_push.js'));
+(async () => { await require('./pa_harness.js').init({ quiet: true });   // §5.75 step 3: the numbers come from the PA rows (pa_harness.js), not the hand formulas in tiles.js
 const base = process.env.BRIDGE_BASE || 'http://localhost:8088', BREAK = process.env.BREAK === '1';
 if (!/^https?:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(base)) { console.log('§PA_TILES_VERDICT INCONCLUSIVE local pilot only'); process.exit(2); }
 const L = { user: 'GardenAdmin', pass: 'GardenAdmin', lang: 'en_US', ClientID: 11, RoleID: 102, OrgID: 11, WarehouseID: 103, stage: 0 };
@@ -146,3 +147,5 @@ const dt = v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.
   log('§PA_TILES_VERDICT ' + verdict + ' judged=' + judged + ' fail=' + fails + ' inconclusive=' + inconc + (BREAK ? ' (BREAK=1: FAIL expected)' : ''));
   process.exit(verdict === 'PASS' ? 0 : 1);
 })().catch(e => { log('§PA_TILES_VERDICT FAIL harness ' + (e && e.stack || e)); process.exit(1); });
+
+})().catch(function (e) { console.log('§PA_HARNESS_CRASH ' + (e && e.stack || e)); process.exit(1); });
