@@ -252,7 +252,7 @@ function roleMayWriteColumn(R, K, name) {   // GridField.isEditable L525: isColu
 const DEC_ID = /^-?\d+$/, NEW_BREAK = process.env.NEW_BREAK || '';   // W-ERP-NEW falsifiers: nocallouts | nomandatory
 function tabFor(O, K, R) {   // the table's own tab: the lowest tab level in its window (the window the user would open); under a role, the first such tab in a window the role is granted
   if (R && R.K === K) return { id: R.tab, win: R.window.id };
-  const t = O.rows("SELECT t.ad_tab_id AS id, t.ad_window_id AS win, t.tablevel AS lvl, t.seqno AS seq FROM ad_tab t WHERE t.ad_table_id=? AND t.isactive='Y' ORDER BY t.tablevel, t.seqno, t.ad_tab_id", [K.id])[0];
+  const t = OC.tabsOf(O.rows, K.id)[0];   // the one picker (CLI_ERP_IVR §18)
   if (!t) refuse('kind ' + K.name + ' has no tab in the dictionary, so there is no window to create it in');
   return t;
 }
@@ -453,4 +453,4 @@ async function main(argv) {
   }
 }
 if (require.main === module) main(process.argv.slice(2)).then(c => process.exit(c));
-module.exports = { main, boot, loadRecords, find, actions, complete, act, ACT, describe, read, persistGroup, resolveOne, docKind, kindRef, byNumber, recordOf, loadEngine, b3 };
+module.exports = { tabFor, main, boot, loadRecords, find, actions, complete, act, ACT, describe, read, persistGroup, resolveOne, docKind, kindRef, byNumber, recordOf, loadEngine, b3 };
