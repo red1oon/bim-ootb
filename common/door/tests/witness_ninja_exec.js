@@ -2,7 +2,7 @@
 //   E1 ISSUE (the door stages another shape than the stager: a detail lands in its own window) · E2 ISSUE (a record cannot be made under its master, or a master does not show its child rows)
 //   E2c ISSUE (no parent of ANY table shows its child rows: the lookup key's case) · E3 ISSUE (the workbook is gone after a restart) · E4 ISSUE (the data sheets are not loaded, or a misnamed sheet is silently dropped)
 //   E5 ISSUE (a second run stages again; a refusal leaves something written) · E6 ISSUE (a dry run writes; an AI stages a workbook without a person)
-//   E7 ISSUE (the owner's own workbook does not go through) · E8 the cost of the line, logged (no threshold)
+//   E7 ISSUE (the owner's own workbook does not go through) · E8 the cost of the line, logged (no threshold) · E9 ISSUE (the practice workbook the guide points at does not stage)
 //   Falsifiers: NINJAEXEC_BREAK=nodetail (must FAIL E1) · onegroup (E3) · nodata (E4) · nochild (E2, E2c). The owner's workbook: NINJA_HRMIS=<path>; absent = INCONCLUSIVE, never PASS.
 //   Run: node common/door/tests/witness_ninja_exec.js > common/door/tests/logs/ninja_exec.log 2>&1
 'use strict';
@@ -89,6 +89,15 @@ const k = kit('W-NINJA-EXEC'), BRK = process.env.NINJAEXEC_BREAK || '';
   const cost = (j) => ({ wall: (/Elapsed \(wall clock\) time.*\): ([\d:.]+)/.exec(j.err) || [])[1], rssMb: Math.round(Number((/Maximum resident set size \(kbytes\): (\d+)/.exec(j.err) || [])[1] || 0) / 1024) });
   const c1 = cost(run); k.L('E8 cost fixture: wall=' + c1.wall + ' peak_rss_mb=' + c1.rssMb + ' ops=' + n1 + ' oplog_bytes=' + fs.statSync(E1.BIM_OBJECT_OPLOG).size + ' engine_ms=' + run.answer.ms);
 
+  // ── E9 the practice workbook the guide's lines use is the file in the repo, and it stages
+  const PW = path.join(ROOT, 'common/door/samples/Ninja_Practice.xlsx');
+  if (!fs.existsSync(PW)) k.incon('E9', 'common/door/samples/Ninja_Practice.xlsx is not in this checkout');
+  else {
+    fs.copyFileSync(PW, path.join(dir, 'Ninja_Practice.xlsx'));
+    const E9 = envOf('practice'), d9 = doorE(E9), p9 = await d9('ninja.exec file=Ninja_Practice.xlsx'), pl = await d9('mis.list kind=PR_Patient'), rm = await d9('mis.list kind=PR_Room'), A9 = p9.answer || {};
+    k.chk('E9 the shipped practice workbook stages: 4 tables, 2 windows, 2 detail tabs, its 3 patients and 2 rooms loaded and listed', ok(p9) && A9.tables.length === 4 && A9.windows.length === 2 && A9.detailTabs === 2 && ok(pl) && pl.answer.total === 3 && ok(rm) && rm.answer.total === 2,
+      p9.status + ' ' + String(p9.why || '').slice(0, 120) + ' tables=' + (A9.tables || []).length + ' windows=' + (A9.windows || []).length + ' detailTabs=' + A9.detailTabs + ' patients=' + (pl.answer && pl.answer.total) + ' rooms=' + (rm.answer && rm.answer.total));
+  }
   // ── E7 the owner's workbook
   const H = process.env.NINJA_HRMIS;
   if (!H || !fs.existsSync(H)) k.incon('E7', 'the owner\'s workbook is not on this machine (set NINJA_HRMIS=<path to Ninja_HRMIS.xlsx>)');
