@@ -14,7 +14,8 @@
   ],
   "main": "extension.js",
   "activationEvents": [
-    "onLanguage:javascript"
+    "onLanguage:javascript",
+    "onView:x0RunShip"
   ],
   "contributes": {
     "commands": [
@@ -29,6 +30,18 @@
       {
         "command": "x0Navigator.openLogLine",
         "title": "X0 Navigator: Open the log line behind a value"
+      },
+      {
+        "command": "x0Navigator.shipRunLocal",
+        "title": "X0 Navigator: Run local (serve the repo, show each app's URL and version on disk)"
+      },
+      {
+        "command": "x0Navigator.shipCheck",
+        "title": "X0 Navigator: Check (syntax, precache audit, cache-version bump)"
+      },
+      {
+        "command": "x0Navigator.shipFetchBack",
+        "title": "X0 Navigator: Fetch back (is the live site on main? uses the network)"
       }
     ],
     "configuration": {
@@ -43,8 +56,21 @@
           "type": "string",
           "default": "origin/main",
           "description": "The git ref \"Cost if deployed\" compares the working tree against."
+        },
+        "bimDevtools.liveSite": {
+          "type": "string",
+          "default": "",
+          "description": "The live site \"Fetch back\" reads. Empty = derived from the git remote (https://<owner>.github.io/<repo>)."
         }
       }
+    },
+    "views": {
+      "explorer": [
+        {
+          "id": "x0RunShip",
+          "name": "Run & Ship"
+        }
+      ]
     }
   }
 }

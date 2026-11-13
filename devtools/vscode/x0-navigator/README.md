@@ -8,6 +8,24 @@ step. It never calls a model or the network, and nothing in `devtools/` is loade
 | F12 and hover on `APP.x` (also `A.x` / `app.x` in a file that binds them) | Where is this field set? | `internal/APP_SURFACE.md` (generated) |
 | Hover on a `§TAG` | Which rule is this tag, and which code prints it? | `prompts/*.md`, `docs/**/*.md` of bim-ootb and bim-compiler, plus the `.js` source |
 
+| *Run & Ship* list in the Explorer side bar (also as commands) | Does it run, is it safe to ship, is it live? | the repo's own scripts, git, and (Fetch back only) the live site |
+| Status bar note + command *Cost if deployed* | What does this file, or my change, add to what every user downloads? | `sw.js` cache lists and the pages' script tags |
+| A grey line above code that prints a `§TAG` | What did this line last print? | `logs/*.log` that start with a `§LOG_STAMP` |
+
+**First versions (2026-11-13), and what each does not do yet:**
+
+- **Run & Ship** has four steps. *Run local* starts the task *Serve repo* and lists each app's local URL and cache version on disk.
+  *Check* runs `node --check` on the JS files that differ from `origin/main`, the repo's precache audit, and the bump rule (a
+  precached file changed but that app's `CACHE_VERSION` did not). *Cost if deployed* is below. *Fetch back* reads the live site and
+  compares each app's cache version, and the deploy's commit stamp, with `origin/main`; no stamp on the live site → INCONCLUSIVE.
+  It stops at the first failure. **Not yet:** issue, commit, PR, merge or deploy; any browser step. Fetch back is the only step that
+  uses the network, and only when you press it.
+- **Cost if deployed** counts raw bytes: *start-up* = the scripts the app's pages load, *offline cache* = the files its service
+  worker stores, for your working tree against `origin/main`. **Not yet:** minified sizes, budgets, memory estimates, browser timings.
+- **Values beside the code** shows a logged value only when it can be proven current: the log names its commit, and the file that
+  prints the tag is unchanged since. Otherwise it shows nothing. **Not yet:** other log folders, history. Expect few at first: only
+  logs saved since 2026-11-13 carry the stamp.
+
 It never guesses: a phantom field (read, never written) gets a hover and no jump, an unknown field gets nothing,
 and a field whose line has moved gets `index stale` instead of a wrong jump.
 
@@ -44,6 +62,9 @@ node devtools/vscode/x0-navigator/tests/witness_x0_appdef.js     # §X0_APPDEF
 node devtools/vscode/x0-navigator/tests/witness_x0_taghover.js   # §DEVTK_SPEC  [--compiler-root <dir>]
 node devtools/vscode/x0-navigator/tests/witness_x0_activate.js   # §X0_ACTIVATE
 node devtools/vscode/x0-navigator/tests/witness_x0_fresh.js      # §X0_FRESH
+node devtools/vscode/x0-navigator/tests/witness_x0_deploy_cost.js # §PERF_IMPACT
+node devtools/vscode/x0-navigator/tests/witness_x0_lens.js       # §LENS
+node devtools/vscode/x0-navigator/tests/witness_x0_ship.js       # §SHIP_PANEL  [--live reads the public site once]
 node devtools/vscode/x0-navigator/tests/witness_x0_isolation.js  # §X0_ISOLATION
 ```
 
