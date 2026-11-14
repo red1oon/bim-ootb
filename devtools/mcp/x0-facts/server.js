@@ -26,6 +26,7 @@ const cost = require(path.join(LIB, 'deploy_cost'));
 const lens = require(path.join(LIB, 'lens_index'));
 const ship = require(path.join(LIB, 'ship'));
 const fileContext = require(path.join(LIB, 'file_context'));
+const appRefs = require(path.join(LIB, 'app_refs'));
 
 const argv = process.argv.slice(2);
 const arg = n => { const i = argv.indexOf(n); return i >= 0 ? argv[i + 1] : null; };
@@ -62,6 +63,22 @@ const TOOLS = [
       if (r.kind === 'phantom') return 'APP.' + name + ': PHANTOM. It is read but never written' + (r.firstRead ? ' (first read at ' + r.firstRead.file + ':' + r.firstRead.line + ')' : '') + '. A guard on it can never be true, or its writer was removed.';
       if (r.kind === 'stale') return 'APP.' + name + ': index stale. The index points at ' + r.file + ':' + r.line + ', but that line no longer mentions the field. Not reported, rather than reported wrong.';
       return 'APP.' + name + ' is written at ' + r.file + ':' + r.line + ' (spelled ' + r.as + '.' + name + ' there) · ' + r.writes + ' writes · ' + r.reads + ' reads. Source: ' + idx.source + '.';
+    } },
+  { name: 'where_is_field_used',
+    description: 'Every place the shared-object field APP.<field> is written or read, under any of its three spellings (the long name, the one-letter name, the lowercase name): file:line for each write, then the reads grouped by file. Use it before renaming, removing or changing the meaning of a field. Says so when the field is not in the index.',
+    inputSchema: { type: 'object', properties: { field: { type: 'string', description: 'The field name alone, e.g. "camera"' }, limit: { type: 'number', description: 'How many read sites to list (default 40)' } }, required: ['field'] },
+    async run(a) {
+      const name = String(a.field || '').replace(/^(window\.)?(APP|A|app)\./, '');
+      const idx = await fields();
+      const r = appRefs.references(ROOT, idx ? appRefs.loadSites(idx.file) : null, name);
+      if (!r.known) return 'APP.' + name + ': no reference list. ' + (idx && idx.fields.has(name) ? 'The site list could not be made (the generator did not run).' : 'No code under this checkout writes or reads a field of that name.');
+      const cap = Math.max(1, Math.min(400, Number(a.limit) || 40));
+      const out = ['APP.' + name + ': ' + r.writes.length + ' write site(s), ' + r.reads.length + ' other read site(s)' + (r.dropped ? ' (' + r.dropped + ' dropped: the line no longer mentions the field)' : '')];
+      r.writes.forEach(w => out.push('  write ' + w.file + ':' + w.line + (w.as && w.as !== 'APP' ? ' (as ' + w.as + '.' + name + ')' : '')));
+      const by = new Map(); r.reads.slice(0, cap).forEach(x => { if (!by.has(x.file)) by.set(x.file, []); by.get(x.file).push(x.line); });
+      for (const [f, ls] of by) out.push('  read  ' + f + ': ' + ls.join(', '));
+      if (r.reads.length > cap) out.push('  … ' + (r.reads.length - cap) + ' more read sites (raise limit)');
+      return out.join('\n');
     } },
   { name: 'what_is_tag',
     description: 'What a ' + SEC + 'TAG (a log marker such as ' + SEC + 'HOSTED_BEFORE_HOST) stands for: the spec files and headings that name it (prompts/ and docs/ of bim-ootb and bim-compiler) and the code lines that print it. Says "no spec found" when no spec names it.',

@@ -14,6 +14,7 @@ const deployCost = require('./lib/deploy_cost');
 const lensIndex = require('./lib/lens_index');
 const ship = require('./lib/ship');
 const fileContext = require('./lib/file_context');
+const appRefs = require('./lib/app_refs');
 
 const JS = { language: 'javascript' };
 const MARKER = path.join('internal', 'APP_SURFACE.md'); // a folder holding this file is the bim-ootb root
@@ -94,6 +95,20 @@ function activate(context) {
       const res = fieldUnderCursor(document, position);
       if (!res || res.kind !== 'definition') return null;
       return new vscode.Location(vscode.Uri.file(res.abs), new vscode.Position(res.line - 1, res.column));
+    }
+  }));
+  // Find All References (Shift+F12) on a field of the shared object: every write and read site the repo's own generator
+  // recorded, under any of its spellings (§F.19). Sites come with X0's fresh index copy; until that exists there are none.
+  context.subscriptions.push(vscode.languages.registerReferenceProvider(JS, {
+    provideReferences(document, position, ctx) {
+      const hit = surface.fieldAt(document.lineAt(position.line).text, position.character, document.getText());
+      const index = hit ? getFields() : null;
+      const sourceRoot = findSourceRoot(context);
+      if (!hit || !index || !sourceRoot) return null;
+      const r = appRefs.references(sourceRoot, appRefs.loadSites(index.file), hit.field);
+      if (!r.known) { if (!freshFile) refreshFields(); return null; }
+      const sites = (ctx && ctx.includeDeclaration === false ? [] : r.writes).concat(r.reads);
+      return sites.map(x => new vscode.Location(vscode.Uri.file(x.abs), new vscode.Position(x.line - 1, x.column)));
     }
   }));
   // X0-1: hover → written at · writes · reads, or PHANTOM, or "index stale".
@@ -287,6 +302,65 @@ function activate(context) {
     const site = vscode.workspace.getConfiguration('bimDevtools').get('liveSite') || undefined;
     return say((await ship.fetchBack(sourceRoot, { base: baseRef(), site })).lines);
   }
+  // ── One-click cache bump (decision F-6, #2986): a saved file the offline cache serves, edited, with its app's CACHE_VERSION
+  //    not raised, gets ONE warning on its first line. The quick fix runs the repo's own scripts/bump.js. Nothing is ever
+  //    written without that click. The rule is lib/ship.js needsBump (the Check step's rule, for one file). ──
+  const BUMP_CODE = 'x0.bump';
+  const bumpDiag = vscode.languages.createDiagnosticCollection('x0-bump');
+  context.subscriptions.push(bumpDiag);
+  function relIn(document) {
+    const sourceRoot = findSourceRoot(context);
+    if (!sourceRoot || !document || !document.uri || document.uri.scheme !== 'file' || !document.uri.fsPath.startsWith(sourceRoot + path.sep)) return null;
+    return { sourceRoot, rel: path.relative(sourceRoot, document.uri.fsPath).split(path.sep).join('/') };
+  }
+  function judgeBump(document) {
+    const at = relIn(document);
+    if (!at) return null;
+    let need = null;
+    try { costNow = null; need = ship.needsBump(at.sourceRoot, at.rel, baseRef(), measureNow()); } catch (e) { need = null; }
+    if (!need) { bumpDiag.delete(document.uri); return null; }
+    const d = new vscode.Diagnostic(new vscode.Range(0, 0, 0, 1),
+      'This file is served from the ' + need.app + ' offline cache and was edited, but ' + need.sw + ' is still ' + need.version +
+      ': users with a cached copy keep the old file. Quick fix: bump the cache version.', vscode.DiagnosticSeverity.Warning);
+    d.source = 'X0 Navigator'; d.code = BUMP_CODE;
+    bumpDiag.set(document.uri, [d]);
+    return need;
+  }
+  context.subscriptions.push(vscode.workspace.onDidSaveTextDocument(doc => { judgeBump(doc); }));
+  context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(ed => { if (ed) judgeBump(ed.document); }));
+  async function bumpThisFile(rel, write) {
+    const sourceRoot = findSourceRoot(context);
+    const ed = vscode.window.activeTextEditor;
+    const at = rel ? { sourceRoot, rel } : (ed ? relIn(ed.document) : null);
+    if (!at || !at.sourceRoot) return say(['X0 Navigator: open a file of the bim-ootb folder first']);
+    if (write === undefined) {                       // from the palette: show the dry run, then ask once
+      const dry = ship.bump(at.sourceRoot, at.rel, false);
+      say(dry.lines);
+      if (!dry.ok) return dry.lines;
+      const pick = await vscode.window.showInformationMessage('X0 Navigator: apply this bump for ' + at.rel + '? (the lines are in the X0 Navigator output)', 'Apply');
+      if (pick !== 'Apply') return dry.lines;
+      write = true;
+    }
+    const r = ship.bump(at.sourceRoot, at.rel, !!write);
+    say(r.lines);
+    if (write) for (const e of vscode.window.visibleTextEditors) judgeBump(e.document);
+    return r.lines;
+  }
+  context.subscriptions.push(vscode.commands.registerCommand('x0Navigator.bumpThisFile', bumpThisFile));
+  context.subscriptions.push(vscode.languages.registerCodeActionsProvider({ scheme: 'file' }, {
+    provideCodeActions(document, range, ctx) {
+      const mine = ((ctx && ctx.diagnostics) || []).filter(d => d.code === BUMP_CODE);
+      const at = mine.length ? relIn(document) : null;
+      if (!at) return [];
+      const act = (title, write, preferred) => {
+        const a = new vscode.CodeAction(title, vscode.CodeActionKind.QuickFix);
+        a.diagnostics = mine; a.isPreferred = !!preferred;
+        a.command = { command: 'x0Navigator.bumpThisFile', title, arguments: [at.rel, write] };
+        return a;
+      };
+      return [act('Bump the cache version for this file (scripts/bump.js --write)', true, true), act('Show what the bump would change (dry run)', false, false)];
+    }
+  }, { providedCodeActionKinds: [vscode.CodeActionKind.QuickFix] }));
   context.subscriptions.push(vscode.commands.registerCommand('x0Navigator.shipRunLocal', shipRunLocal));
   context.subscriptions.push(vscode.commands.registerCommand('x0Navigator.shipCheck', shipCheck));
   context.subscriptions.push(vscode.commands.registerCommand('x0Navigator.shipFetchBack', shipFetchBack));

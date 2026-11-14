@@ -2751,6 +2751,13 @@
      "required": false,
      "type": "string",
      "example": "103"
+    },
+    {
+     "name": "window",
+     "description": "Optional: the window to work in, by its name or id, when the kind is shown in more than one window (for example a table a Ninja workbook attached as a tab of another window). Without it, the kind's own window.",
+     "required": false,
+     "type": "string",
+     "example": "HR Employment"
     }
    ],
    "harm": "read",
@@ -2821,6 +2828,13 @@
      "required": false,
      "type": "string",
      "example": "103"
+    },
+    {
+     "name": "window",
+     "description": "Optional: the window to work in, by its name or id, when the kind is shown in more than one window (for example a table a Ninja workbook attached as a tab of another window). Without it, the kind's own window.",
+     "required": false,
+     "type": "string",
+     "example": "HR Employment"
     }
    ],
    "harm": "writes",
@@ -2843,6 +2857,13 @@
       "args": [
        "--role",
        "{role}"
+      ]
+     },
+     {
+      "if": "window",
+      "args": [
+       "--window",
+       "{window}"
       ]
      }
     ],
@@ -2907,6 +2928,13 @@
      "required": false,
      "type": "string",
      "example": "103"
+    },
+    {
+     "name": "window",
+     "description": "Optional: the window to work in, by its name or id, when the kind is shown in more than one window (for example a table a Ninja workbook attached as a tab of another window). Without it, the kind's own window.",
+     "required": false,
+     "type": "string",
+     "example": "HR Employment"
     }
    ],
    "harm": "writes",
@@ -2936,6 +2964,13 @@
       "args": [
        "--role",
        "{role}"
+      ]
+     },
+     {
+      "if": "window",
+      "args": [
+       "--window",
+       "{window}"
       ]
      }
     ],
@@ -3000,6 +3035,13 @@
      "required": false,
      "type": "string",
      "example": "103"
+    },
+    {
+     "name": "window",
+     "description": "Optional: the window to work in, by its name or id, when the kind is shown in more than one window (for example a table a Ninja workbook attached as a tab of another window). Without it, the kind's own window.",
+     "required": false,
+     "type": "string",
+     "example": "HR Employment"
     }
    ],
    "harm": "writes",
@@ -3029,6 +3071,13 @@
       "args": [
        "--role",
        "{role}"
+      ]
+     },
+     {
+      "if": "window",
+      "args": [
+       "--window",
+       "{window}"
       ]
      }
     ]
@@ -3293,6 +3342,64 @@
     "ai"
    ],
    "witness": "common/door/tests/witness_ninja_exec.js"
+  },
+  {
+   "verb": "ninja.workflow",
+   "app": "ninja",
+   "title": "Give a table the document columns",
+   "description": "Give one table that a Ninja line made the five document columns (DocStatus, DocAction, Processed, DocumentNo, IsApproved) with their lists and defaults, a field for each on its tabs, and the defaults on the records that are already there. It looks at what the table has and adds only what is missing: run a second time it writes nothing. A table that came with the system is refused. It does not make a workflow or say what Complete does: the answer lists what is not made. dry=Y says what it would add and writes nothing.",
+   "inputs": [
+    {
+     "name": "table",
+     "description": "The table, as a Ninja line made it.",
+     "required": true,
+     "type": "string",
+     "example": "PR_Visit"
+    },
+    {
+     "name": "dry",
+     "description": "Optional: Y lists what would be added and writes nothing.",
+     "required": false,
+     "type": "string",
+     "example": "Y"
+    }
+   ],
+   "harm": "writes",
+   "dictionary": true,
+   "calls": {
+    "cli": "erp_cli",
+    "who": "the ERP engine",
+    "argv": [
+     "ninja_workflow",
+     "--table",
+     "{table}",
+     {
+      "if": "dry",
+      "args": [
+       "--dry",
+       "{dry}"
+      ]
+     }
+    ]
+   },
+   "returns": {
+    "shape": "erp_cli JSON {table,added,corrected,fields,rowsFilled,notMade,opSummary,ops} or {dry,...} or {alreadyDone,...} or {refused,reason}",
+    "fields": [
+     {
+      "path": "table",
+      "type": "string"
+     },
+     {
+      "path": "ops",
+      "type": "number"
+     }
+    ]
+   },
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "witness": "common/door/tests/witness_ninja_workflow.js"
   },
   {
    "verb": "erp.column",
@@ -3946,6 +4053,13 @@
      "required": false,
      "type": "string",
      "example": "103"
+    },
+    {
+     "name": "window",
+     "description": "Optional: the window to work in, by its name or id, when the kind is shown in more than one window (for example a table a Ninja workbook attached as a tab of another window). Without it, the kind's own window.",
+     "required": false,
+     "type": "string",
+     "example": "HR Employment"
     }
    ],
    "harm": "read",
@@ -4018,6 +4132,13 @@
      "required": false,
      "type": "string",
      "example": "103"
+    },
+    {
+     "name": "window",
+     "description": "Optional: the window to work in, by its name or id, when the kind is shown in more than one window (for example a table a Ninja workbook attached as a tab of another window). Without it, the kind's own window.",
+     "required": false,
+     "type": "string",
+     "example": "HR Employment"
     }
    ],
    "harm": "writes",
@@ -4040,6 +4161,13 @@
       "args": [
        "--role",
        "{role}"
+      ]
+     },
+     {
+      "if": "window",
+      "args": [
+       "--window",
+       "{window}"
       ]
      }
     ],

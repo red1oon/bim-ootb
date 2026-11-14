@@ -95,6 +95,44 @@ function check(root, base, nodeBin) {
   return { ok: true, stoppedAt: null, lines };
 }
 
+/**
+ * The bump rule for ONE file (decision F-6, #2986): the file is in an app's offline cache list (the set the Check step judges), it
+ * differs from the base ref (or is new), and that app's CACHE_VERSION is still the base's. Users would keep the old copy.
+ * @param {object} [now] - a deploy_cost.measure() of the working tree the caller already has
+ * @returns {{app: string, version: string, sw: string} | null} null = no bump needed, or it cannot be told (no parser, no base ref)
+ */
+function needsBump(root, rel, base, now) {
+  const ref = base || 'origin/main';
+  if (git(root, ['rev-parse', '--verify', '--quiet', ref + '^{commit}']).status !== 0) return null;
+  const m = now || D.measure(root, D.fsReader(root));
+  if (!m.parser) return null;
+  const served = Object.keys(m.apps).filter(a => m.apps[a].precache.has(rel));   // the same set the Check step judges
+  if (!served.length) return null;
+  const isNew = git(root, ['cat-file', '-e', ref + ':' + rel]).status !== 0;
+  if (!isNew && git(root, ['diff', '--quiet', ref, '--', rel]).status === 0) return null;
+  const vNow = apps(root, D.fsReader(root)), vWas = apps(root, D.gitReader(root, ref));
+  for (const a of served) {
+    const cur = vNow.find(x => x.app === a), before = vWas.find(x => x.app === a);
+    if (cur && before && cur.version === before.version) return { app: a, version: cur.version, sw: a + '/sw.js' };
+  }
+  return null;
+}
+
+/**
+ * Run the repo's OWN scripts/bump.js on one file: a dry run, or (write=true) the edit. Never re-implemented here.
+ * `scriptRoot` is where bump.js lives when `root` is a fixture without it.
+ * @returns {{ok: boolean, exit: number|null, lines: string[]}}
+ */
+function bump(root, rel, write, nodeBin, scriptRoot) {
+  const script = path.join(scriptRoot || root, 'scripts', 'bump.js');
+  if (!fs.existsSync(script)) return { ok: false, exit: null, lines: [SEC + 'SHIP_BUMPFIX file=' + rel + ' verdict=INCONCLUSIVE reason="scripts/bump.js not in this repo"'] };
+  const env = Object.assign({}, process.env, { ELECTRON_RUN_AS_NODE: '1' });
+  const r = cp.spawnSync(nodeBin || process.execPath, [script, rel, '--root', root].concat(write ? ['--write'] : []), { cwd: root, encoding: 'utf8', env, timeout: 60000 });
+  const lines = (r.stdout || '').split('\n').filter(l => l.trim());
+  lines.push(SEC + 'SHIP_BUMPFIX file=' + rel + ' mode=' + (write ? 'write' : 'dry') + ' exit=' + r.status + ' verdict=' + (r.status === 0 ? 'PASS' : 'FAIL'));
+  return { ok: r.status === 0, exit: r.status, lines };
+}
+
 /** `https://<owner>.github.io/<repo>` from the origin remote, or null. */
 function liveSite(root) {
   const url = git(root, ['remote', 'get-url', 'origin']).out;
@@ -157,4 +195,4 @@ async function fetchBack(root, opts) {
   return { ok: verdict === 'PASS', verdict, lines };
 }
 
-module.exports = { apps, runLocalLines, check, liveSite, fetchBack, httpGet };
+module.exports = { apps, runLocalLines, check, needsBump, bump, liveSite, fetchBack, httpGet };

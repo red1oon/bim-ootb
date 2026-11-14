@@ -81,7 +81,8 @@ async function boot(a) {
   say('snapshot=' + how + ' key=' + key + ' ms=' + (Date.now() - t0));
   O.opfile = OC.oplogFile({ oplog: a.oplog }, O.file); O.ops = OC.readOps(O.opfile);
   const known = {}; O.rows("SELECT lower(name) AS n FROM sqlite_master WHERE type='table'").forEach(r => { known[r.n] = 1; });
-  O.ops.forEach(o => { const t = String(o.table || '').toLowerCase(); if (t && !known[t]) { ensureTables(O).forEach(n => { known[n] = 1; }); known[t] = 1; } OC.applyOp(O.db, O.rows, o); });   // an op on a table a staged window brought: its physical table is made first (§10)
+  let colDirty = false;   // an AD_Column row was replayed: the next op on a data table may need that column made first
+  O.ops.forEach(o => { const t = String(o.table || '').toLowerCase(); if (t === 'ad_column') colDirty = true; else if (t && (!known[t] || (colDirty && t.slice(0, 3) !== 'ad_'))) { ensureTables(O).forEach(n => { known[n] = 1; }); known[t] = 1; colDirty = false; } OC.applyOp(O.db, O.rows, o); });   // an op on a table a staged window brought: its physical table is made first (§10)
   ensureTables(O);
   O.ML = require(path.join(ROOT, 'erp', 'model_layer.js')); O.dbId = 'model:' + path.basename(O.file);
   O.trx = () => new O.ML.Trx((sql, p) => O.rows(sql, p), { db: O.dbId, now: stamp(), uuid: () => require('crypto').randomUUID() });
@@ -101,6 +102,12 @@ function ensureTables(O) {
     const cols = O.rows("SELECT columnname AS name, ad_reference_id AS refId FROM ad_column WHERE ad_table_id=? AND isactive='Y' AND (columnsql IS NULL OR columnsql='') ORDER BY ad_column_id", [t.id]).map(c => ({ name: c.name, refId: Number(c.refid) }));
     if (!cols.length) return;
     O.db.run(NS.dataTableSql(t.tn, cols)); made.push(t.tn.toLowerCase()); say('table-made ' + t.tn + ' columns=' + cols.length + ' (from its AD_Column rows)');
+  });
+  // a column the dictionary gained on a table that is already there (a reused table's added columns, §12.7; a staged table's workflow columns, §12.3): added by the one rule (NinjaStage.columnSql)
+  O.rows("SELECT t.tablename AS tn, c.columnname AS name, c.ad_reference_id AS refid FROM ad_column c JOIN ad_table t ON t.ad_table_id=c.ad_table_id WHERE c.isactive='Y' AND t.isactive='Y' AND c.ad_column_id>=" + NS.NINJA_BASE + " AND (c.columnsql IS NULL OR c.columnsql='') ORDER BY c.ad_column_id").forEach(c => {
+    const phys = (O.rows("SELECT name FROM sqlite_master WHERE type='table' AND lower(name)=lower(?)", [c.tn])[0] || {}).name;
+    if (!phys || O.rows("SELECT 1 AS x FROM pragma_table_info('" + String(phys).replace(/'/g, '') + "') WHERE lower(name)=lower(?)", [c.name]).length) return;
+    O.db.run(NS.columnSql(phys, { name: c.name, refId: Number(c.refid) })); say('column-added ' + c.tn + '.' + c.name + ' (from its AD_Column row)');
   });
   return made;
 }
@@ -130,7 +137,8 @@ async function addWindow(O, a) {
   if (dry) { say('add_window DRY table=' + table + ' columns=' + user.map(c => c.name).join(',') + ' sha256=' + sha.slice(0, 12)); return { dry: true, table, file: a.file, sha256: sha, columns: user.map(c => ({ name: c.name, reference: c.refId, mandatory: !!c.mandatory })), standard: T.columns.filter(c => c.isStandard).map(c => c.name), lists: lists.map(l => ({ column: l.col, values: l.items.map(i => i.value) })), ops: [] }; }
   const S = await stageAtDoor(O, R.model, { scope: () => table, bundleScope: table, meta: { [table]: { columns: T.columns, lists } } }), win = S.made.ad_window[0];
   say('add_window table=' + table + ' slot=' + S.counts.slot + ' window=' + (win && win.ad_window_id) + ' ops=' + S.res.length + ' ' + JSON.stringify(sum(S.res)) + ' table_made=' + S.tables.join(',') + ' sha256=' + sha.slice(0, 12) + ' ms=' + (Date.now() - t0));
-  return { table, kind: (S.made.ad_table[0] || {}).name, file: a.file, sha256: sha, window: win ? { id: win.ad_window_id, name: win.name } : null, columns: user.map(c => c.name), lists: lists.map(l => ({ column: l.col, values: l.items.map(i => i.value) })), opSummary: sum(S.res), ops: S.res.length };
+  const W = String(a.workflow || '').toUpperCase() === 'Y' && ADDWIN_BREAK !== 'bare' ? await workflowOn(O, table, false) : null;   // the document columns get their list and default by the one function (§12.3)
+  return Object.assign({ table, kind: (S.made.ad_table[0] || {}).name, file: a.file, sha256: sha, window: win ? { id: win.ad_window_id, name: win.name } : null, columns: user.map(c => c.name), lists: lists.map(l => ({ column: l.col, values: l.items.map(i => i.value) })), opSummary: sum(S.res), ops: S.res.length + (W ? W.ops || 0 : 0) }, W ? { workflow: { corrected: W.corrected, notMade: W.notMade } } : {});
 }
 // A model of N tables staged at the door (§10 for one table, §12.2 for a workbook): the ONE stager in a savepoint, its rows read back, what it leaves empty added from the legacy owner
 // of each value (§10's table), the savepoint undone, the rows written as ONE group of ops. opt.meta[TableName] = { columns (the parser's, with the sheet's extras), lists:[{col,items}] };
@@ -328,6 +336,7 @@ function act(O, a, code) {
   if (!a.kind) refuse('--kind is required');
   const aname = (O.rows('SELECT name FROM ad_ref_list WHERE ad_reference_id=135 AND value=?', [code])[0] || { name: code }).name;
   const K = docKind(O, a.kind), r = recordOf(O, K, a), id = r[K.key], before = r.docstatus;
+  if (!O.ML.docActionFor(K.table)) refuse(aname + ' was not done: ' + K.name + ' has the document columns but no document class yet, so nothing says what ' + aname + ' does on it (DocStatus stays ' + before + ')');
   if (a.role != null && BREAK !== 'norole') {   // the UI never offers what the role's Document Action Access withholds (WDocActionPanel.java:185-205); the twin refuses it at the same place
     const res = actionsOf(O, K, r, a);
     if (!res.walked) refuse(res.why);
@@ -380,11 +389,24 @@ function roleMayWriteColumn(R, K, name) {   // GridField.isEditable L525: isColu
 // ── new (NEURO §R.V item 2): a record created the way the window creates it. GridTab.dataNew defaults + the callout fan (ad_callout.js, the same engine the window runs), the user's columns set one
 //    by one as edits (so the callouts fire as they do on screen), mandatory columns checked, then the model layer's own save (Document No from the sequence). No per-table code. ──
 const DEC_ID = /^-?\d+$/, NEW_BREAK = process.env.NEW_BREAK || '';   // W-ERP-NEW falsifiers: nocallouts | nomandatory
-function tabFor(O, K, R) {   // the table's own tab: the lowest tab level in its window (the window the user would open); under a role, the first such tab in a window the role is granted
+function tabFor(O, K, R, a) {   // the table's own tab: the lowest tab level in its window (the window the user would open); under a role, the first such tab in a window the role is granted; window= names another window that shows the kind (§12.7)
+  const want = a && a.window != null && String(a.window) !== '' ? String(a.window) : null;
+  if (want) {
+    const wn = {}; O.rows("SELECT ad_window_id AS id, name FROM ad_window WHERE isactive='Y'").forEach(w => { wn[w.id] = w.name; });
+    const all = OC.tabsOf(O.rows, K.id).filter(t => wn[t.win] != null).map(t => Object.assign({ wname: wn[t.win] }, t));   // the one picker's order (CLI_ERP_IVR §18), narrowed to the window named
+    const hit = all.filter(t => String(t.win) === want || String(t.wname).toLowerCase() === want.toLowerCase())[0];
+    if (!hit) refuse('kind ' + K.name + ' is not shown in a window "' + want + '"; it is shown in: ' + all.map(t => t.wname + ' (' + t.win + ')').filter((x, i, s) => s.indexOf(x) === i).join(', ') + '. Nothing was written');
+    if (R && R.K === K && String(R.window.id) !== String(hit.win)) refuse('under role ' + R.info.id + ' the kind ' + K.name + ' opens in the window ' + R.window.name + ', not ' + hit.wname + '; give the role alone or the window alone. Nothing was written');
+    return { id: hit.id, win: hit.win };
+  }
   if (R && R.K === K) return { id: R.tab, win: R.window.id };
   const t = OC.tabsOf(O.rows, K.id)[0];   // the one picker (CLI_ERP_IVR §18)
   if (!t) refuse('kind ' + K.name + ' has no tab in the dictionary, so there is no window to create it in');
   return t;
+}
+function alsoIn(O, K, tab) {   // the other windows that show this kind: the hint a refusal carries, so a column of another window's tab is not a dead end
+  const ow = O.rows("SELECT DISTINCT w.name AS n, w.ad_window_id AS id FROM ad_tab tb JOIN ad_window w ON w.ad_window_id=tb.ad_window_id WHERE tb.ad_table_id=? AND tb.isactive='Y' AND w.isactive='Y' AND tb.ad_tab_id<>?", [K.id, tab.id]);
+  return ow.length ? '; the kind is also shown in the window ' + ow.map(x => x.n + ' (' + x.id + ')').join(', ') + ': add window=<name or id> to work there' : '';
 }
 function identOf(O, table) {   // the columns a person types to name a record of this table: DocumentNo, else Value, else Name (the lookup's identifier columns)
   const cols = O.rows("SELECT lower(c.columnname) AS c FROM ad_column c JOIN ad_table t ON t.ad_table_id=c.ad_table_id WHERE lower(t.tablename)=? AND c.isactive='Y'", [table.toLowerCase()]).map(r => r.c);
@@ -413,7 +435,7 @@ function parseGiven(a) {   // the column=value pairs of a line (--where, repeate
 }
 function createRecord(O, a) {
   if (!a.kind) refuse('--kind is required');
-  const t0 = Date.now(), K = kindRef(O, a.kind), R = roleOf(O, K, a), tab = tabFor(O, K, R), A = require(path.join(ROOT, 'erp', 'ad_callout.js'));
+  const t0 = Date.now(), K = kindRef(O, a.kind), R = roleOf(O, K, a), tab = tabFor(O, K, R, a), A = require(path.join(ROOT, 'erp', 'ad_callout.js'));
   const given = parseGiven(a);
   roleMayWrite(R, K, 'created'); Object.keys(given).forEach(k => roleMayWriteColumn(R, K, k));
   const log = console.log; console.log = () => {};   // the engine prints its own § lines to stdout; stdout here carries only the answer
@@ -439,7 +461,7 @@ function createRecord(O, a) {
     const st = A.openTab(tab.id, { ctx, windowNo: W, tabNo: parent ? 1 : 0, parentTab: parent });
     const bycol = {}; st.fields.forEach(f => { bycol[f.vo.ColumnName.toLowerCase()] = f; });
     const unknown = Object.keys(given).filter(k => !bycol[k]);
-    if (unknown.length) refuse('kind ' + K.name + ' has no property "' + unknown[0] + '" (its properties: ' + st.fields.map(f => f.vo.ColumnName).join(', ') + ')');
+    if (unknown.length) refuse('kind ' + K.name + ' has no property "' + unknown[0] + '" (its properties: ' + st.fields.map(f => f.vo.ColumnName).join(', ') + ')' + alsoIn(O, K, tab));
     // a window that opens as Sales or Purchase takes IsSOTrx from the menu; "Order" alone does not say which
     const dry = String(a.dry || '').toUpperCase() === 'Y', needs = [];   // dry=Y (CLI_ERP_IVR §15): everything but the save; what the engine cannot fill is REPORTED instead of refused
     const iso = bycol.issotrx; if (iso && /@IsSOTrx@/i.test(iso.vo.DefaultValue || '') && !('issotrx' in given)) { if (!dry) refuse('kind ' + K.name + ' is a Sales or a Purchase document: say issotrx=Y or issotrx=N'); needs.push({ name: 'IsSOTrx', why: 'Sales (Y) or Purchase (N): the menu entry decides in the window' }); given.issotrx = 'Y'; }
@@ -486,7 +508,7 @@ function notEditable(O, tabId, f, rec) {
 }
 function updateRecord(O, a) {
   if (!a.kind) refuse('--kind is required');
-  const t0 = Date.now(), K = kindRef(O, a.kind), R = roleOf(O, K, a), r = recordOf(O, K, a, R), tab = tabFor(O, K, R), A = require(path.join(ROOT, 'erp', 'ad_callout.js')), given = parseGiven(a);
+  const t0 = Date.now(), K = kindRef(O, a.kind), R = roleOf(O, K, a), r = recordOf(O, K, a, R), tab = tabFor(O, K, R, a), A = require(path.join(ROOT, 'erp', 'ad_callout.js')), given = parseGiven(a);
   if (!Object.keys(given).length) refuse('nothing to change: give column=value');
   roleMayWrite(R, K, 'changed'); roleMayUpdate(R, K, r.ad_client_id == null ? 0 : r.ad_client_id, r.ad_org_id == null ? 0 : r.ad_org_id, r[K.key], 'changed'); Object.keys(given).forEach(k => roleMayWriteColumn(R, K, k));
   const log = console.log; console.log = () => {};
@@ -503,7 +525,7 @@ function updateRecord(O, a) {
     });
     const st = A.openTab(tab.id, { ctx, windowNo: W, tabNo: parent ? 1 : 0, parentTab: parent }), bycol = {}; st.fields.forEach(f => { bycol[f.vo.ColumnName.toLowerCase()] = f; });
     const unknown = Object.keys(given).filter(k => !bycol[k]);
-    if (unknown.length) refuse('kind ' + K.name + ' has no property "' + unknown[0] + '" (its properties: ' + st.fields.map(f => f.vo.ColumnName).join(', ') + ')');
+    if (unknown.length) refuse('kind ' + K.name + ' has no property "' + unknown[0] + '" (its properties: ' + st.fields.map(f => f.vo.ColumnName).join(', ') + ')' + alsoIn(O, K, tab));
     st.load(r, false); const before = st.snapshot(), set = [];
     Object.keys(given).forEach(k => {
       const f = bycol[k]; let v = given[k] === '<null>' ? '' : given[k];   // <null> clears a column (a door line cannot carry an empty value)
@@ -527,7 +549,7 @@ function updateRecord(O, a) {
 }
 function deleteRecord(O, a) {
   if (!a.kind) refuse('--kind is required');
-  const t0 = Date.now(), K = kindRef(O, a.kind), R = roleOf(O, K, a), r = recordOf(O, K, a, R), tab = tabFor(O, K, R), id = r[K.key];
+  const t0 = Date.now(), K = kindRef(O, a.kind), R = roleOf(O, K, a), r = recordOf(O, K, a, R), tab = tabFor(O, K, R, a), id = r[K.key];
   roleMayWrite(R, K, 'deleted'); roleMayUpdate(R, K, r.ad_client_id == null ? 0 : r.ad_client_id, r.ad_org_id == null ? 0 : r.ad_org_id, null, 'deleted');   // GridTable.dataDelete L2199: canUpdate(client, org, table, 0): the role cannot update that client/org -> AccessCannotDelete (Record_ID 0: no record-access question, as legacy)
   const tq = O.rows('SELECT t.isreadonly AS tro, x.isdeleteable AS del FROM ad_tab t JOIN ad_table x ON x.ad_table_id=t.ad_table_id WHERE t.ad_tab_id=?', [tab.id])[0] || {};
   if (tq.tro === 'Y') refuse(K.name + ' is not deleted: the tab is read-only (GridTable.dataDelete L2170: AccessCannotDelete)');
@@ -621,11 +643,14 @@ async function ninjaExec(O, a) {
   if (dup.length) refuse('the model names a table twice: ' + dup.join(', ') + '. Nothing was written');
   // run twice: the bundle's node carries the workbook's sha256; the dictionary says what is there
   const stagedRow = (tn) => O.rows('SELECT ad_table_id AS id, entitytype AS e, isactive AS a FROM ad_table WHERE lower(tablename)=lower(?)', [tn])[0];
-  const here = model.tables.map(t => ({ name: t.name, row: stagedRow(t.name) })), core = here.filter(x => x.row && !(Number(x.row.id) >= NS.NINJA_BASE)), staged = here.filter(x => x.row && Number(x.row.id) >= NS.NINJA_BASE);
+  // a table the dictionary already holds outside the Ninja range: legacy Ninja reuses it and adds the sheet's columns; with no master and not user-maintained it leaves the row alone (MRO_ModelMaker.handleModel L108-150)
+  const here = model.tables.map(t => ({ name: t.name, master: t.master, row: stagedRow(t.name), ext: EXEC_BREAK === 'noreuse' ? null : NS.existingTable(O.db, t.name) }));
+  const reused = here.filter(x => x.ext && (x.master || x.ext.entity === 'U')), leftAlone = here.filter(x => x.ext && !(x.master || x.ext.entity === 'U')), fresh = here.filter(x => !x.ext), core = EXEC_BREAK === 'noreuse' ? here.filter(x => x.row && !(Number(x.row.id) >= NS.NINJA_BASE)) : [], staged = fresh.filter(x => x.row && Number(x.row.id) >= NS.NINJA_BASE);
+  if (!fresh.length && !reused.length) refuse('every table of the workbook is already in the dictionary and has no master (' + leftAlone.map(x => x.name).join(', ') + '): Ninja leaves such a table as it is, so there is nothing to make. Nothing was written');
   const node = O.rows("SELECT ad_menu_id AS id, description AS d, isactive AS a FROM ad_menu WHERE issummary='Y' AND ad_menu_id>=" + NS.NINJA_BASE + ' AND name=?', [model.bundleName])[0];
   const mark = 'workbook sha256 ' + sha, dry = String(a.dry || '').toUpperCase() === 'Y', withData = String(a.data || '').toUpperCase() !== 'N';
   if (core.length) refuse(core.length + ' table name' + (core.length > 1 ? 's' : '') + ' of the workbook already exist' + (core.length > 1 ? '' : 's') + ' in the dictionary and ' + (core.length > 1 ? 'are' : 'is') + ' not staged here: ' + core.map(x => x.name).join(', ') + '. Nothing was written');
-  const again = staged.length === here.length && node && String(node.d || '').indexOf(mark) >= 0 && staged.every(x => x.row.a === 'Y');
+  const again = staged.length === fresh.length && (fresh.length || reused.every(x => O.rows('SELECT 1 AS x FROM ad_tab WHERE ad_table_id=? AND ad_tab_id>=' + NS.NINJA_BASE + " AND isactive='Y'", [x.ext.id]).length)) && node && String(node.d || '').indexOf(mark) >= 0 && staged.every(x => x.row.a === 'Y');
   if (staged.length && !again) refuse(staged.length + ' table' + (staged.length > 1 ? 's' : '') + ' of the workbook ' + (staged.length > 1 ? 'are' : 'is') + ' already staged here (' + staged.map(x => x.name).join(', ') + ') and this is not the workbook that staged ' + (staged.length > 1 ? 'them' : 'it') + ' (bundle ' + model.bundleName + ', another sha256, or other tables); changing a staged window is not built yet. Nothing was written');
   // lists: one reference per L# column; a name used twice in the workbook, or already a list reference here, is refused (as mis.add_window refuses it)
   const meta = {}, listAt = {};
@@ -648,7 +673,8 @@ async function ninjaExec(O, a) {
   const bareList = []; model.tables.forEach(t => t.columns.forEach(c => { if (!c.isStandard && !(c.listValues && c.listValues.length) && listAt[c.name] && listAt[c.name] !== t.name) bareList.push(t.name + '.' + c.name); }));
   const notChecked = ['the display names and the menu\'s place are as the stager leaves them (not yet compared with legacy)'].concat(bareList.length ? [bareList.length + ' column' + (bareList.length > 1 ? 's' : '') + ' named like a list declared on another table ' + (bareList.length > 1 ? 'are' : 'is') + ' plain text, not that list: ' + bareList.join(', ')] : []);
   const shape = model.tables.map(t => ({ table: t.name, master: t.master || null, columns: t.columns.filter(c => !c.isStandard).length, lists: ((meta[t.name] || {}).lists || []).map(l => l.col) }));
-  const out = { bundle: model.bundleName, file: a.file, sha256: sha, sheet: pick.name, tables: shape, dataSheets: sheets.filter(s => s.known).map(s => ({ sheet: s.sheet, rows: s.rows })), skipped, notChecked };
+  if (reused.length) notChecked.push('a reused table keeps its own rules: a record of ' + reused.map(x => x.name).join(', ') + ' must still fill that table\'s own mandatory columns');
+  const out = { bundle: model.bundleName, file: a.file, sha256: sha, sheet: pick.name, tables: shape, reused: reused.map(x => ({ table: x.ext.name, entityType: x.ext.entity, why: 'the dictionary already holds it: the workbook\'s columns are added to it and it gets a tab here' })), leftAlone: leftAlone.map(x => ({ table: x.ext.name, why: 'the dictionary already holds it and the workbook gives it no master: Ninja leaves it as it is' })), dataSheets: sheets.filter(s => s.known).map(s => ({ sheet: s.sheet, rows: s.rows })), skipped, notChecked };
   if (dry) { say('ninja_exec DRY bundle=' + model.bundleName + ' tables=' + shape.length + ' data_sheets=' + out.dataSheets.length + ' skipped=' + skipped.length + ' sha256=' + sha.slice(0, 12)); return Object.assign(out, { dry: true, alreadyStaged: !!again, ops: [] }); }
   if (again) { say('ninja_exec ALREADY bundle=' + model.bundleName + ' tables=' + shape.length + ' sha256=' + sha.slice(0, 12) + ' ops=0'); return Object.assign(out, { alreadyStaged: true, dataSheets: [], opSummary: {}, ops: 0, summary: 'this workbook is already staged (' + shape.length + ' tables); nothing was written' }); }
   if (EXEC_BREAK === 'nodetail') model.tables.forEach(t => { t.master = ''; });
@@ -668,13 +694,71 @@ async function ninjaExec(O, a) {
   out.ms = Date.now() - t0;
   return out;
 }
+// ── ninja.workflow (bim-compiler prompts/ERP_MIS_WINDOW_FROM_CSV.md §12.3): the document columns on ONE staged table. It reads the dictionary to see what is there and adds only what is missing.
+// The five columns and their values are legacy Ninja's (NinjaProcessor.addWorkflowStructureColumns L365-401); the two list references are found by NAME, as that routine finds them.
+// A feature column or field made after staging takes an id in its own range (the stager's ranges are index-derived and must stay free for the next model).
+const WF_BREAK = process.env.NINJAWF_BREAK || '';   // W-NINJA-WORKFLOW falsifiers: nodefault | again
+const WF_COLS = [{ name: 'DocStatus', ref: 17, list: '_Document Status', def: 'DR', len: 2 }, { name: 'DocAction', ref: 28, list: '_Document Action', def: 'CO', len: 2 }, { name: 'Processed', ref: 20, def: 'N', len: 1 }, { name: 'DocumentNo', ref: 10, len: 30 }, { name: 'IsApproved', ref: 20, def: 'N', len: 1 }];
+async function workflowOn(O, tn, dry) {   // the one function: ninja.workflow, and mis.add_window workflow=Y after its staging
+  const NS = require(path.join(ROOT, 'erp', 'ninja_stage.js')), PG = require(path.join(ROOT, 'erp', 'pipo_packgen.js'));
+  if (typeof globalThis.crypto === 'undefined') globalThis.crypto = require('crypto').webcrypto;
+  const T = O.rows("SELECT ad_table_id AS id, tablename AS tn FROM ad_table WHERE lower(tablename)=lower(?) AND isactive='Y' ORDER BY ad_table_id DESC", [tn])[0];
+  if (!T) refuse('no table named ' + tn + ' here. Nothing was written');
+  if (!(Number(T.id) >= NS.NINJA_BASE)) refuse(T.tn + ' is not a table a Ninja line made here (it belongs to the dictionary that came with the system); ninja.workflow works on a staged table only. Nothing was written');
+  const tabs = O.rows("SELECT ad_tab_id AS id FROM ad_tab WHERE ad_table_id=? AND isactive='Y' ORDER BY ad_tab_id", [T.id]);
+  if (!tabs.length) refuse(T.tn + ' has no window, so there is nowhere to show the document columns. Nothing was written');
+  const refId = {}; WF_COLS.filter(c => c.list).forEach(c => { const r = O.rows('SELECT ad_reference_id AS id FROM ad_reference WHERE name=?', [c.list])[0]; if (!r) refuse('the list reference "' + c.list + '" is not in this dictionary, so ' + c.name + ' cannot be made as legacy makes it. Nothing was written'); refId[c.name] = r.id; });
+  const has = {}, hasCol = (t, c) => (has[t] || (has[t] = O.rows('PRAGMA table_info(' + t + ')').map(x => x.name.toLowerCase()))).indexOf(c) >= 0;
+  const next = (t, base) => { const m = O.rows('SELECT max(' + t + '_id) AS m FROM ' + t + ' WHERE ' + t + '_id>=' + base + ' AND ' + t + '_id<' + (base + 100000))[0]; return Math.max(base, Number(m && m.m || 0) + 1); };
+  let colId = next('ad_column', NS.NINJA_BASE + 600000), fldId = next('ad_field', NS.NINJA_BASE + 700000);
+  const uu = (t, key) => PG.uuidV5('ninja/' + T.tn + '/' + t + '/' + key), ops = [], added = [], corrected = [], fieldsAdded = [], colOf = {};
+  for (const c of WF_COLS) {
+    const cur = O.rows("SELECT * FROM ad_column WHERE ad_table_id=? AND lower(columnname)=lower(?) AND isactive='Y'", [T.id, c.name])[0];
+    const want = { ad_reference_id: c.ref, ad_reference_value_id: c.list ? refId[c.name] : null, defaultvalue: WF_BREAK === 'nodefault' ? null : (c.def == null ? null : c.def), fieldlength: c.len };
+    if (!cur) {
+      const f = { ad_column_id: colId, ad_table_id: T.id, columnname: c.name, name: c.name, description: 'Ninja col', ad_reference_id: c.ref, fieldlength: c.len, ismandatory: 'N', iskey: 'N', isparent: 'N', isidentifier: 'N', isupdateable: 'Y', isallowcopy: 'Y', isactive: 'Y', entitytype: 'U', ad_client_id: 0, ad_org_id: 0 };
+      if (want.ad_reference_value_id != null) f.ad_reference_value_id = want.ad_reference_value_id; if (want.defaultvalue != null) f.defaultvalue = want.defaultvalue;
+      Object.keys(f).forEach(k => { if (!hasCol('ad_column', k)) delete f[k]; }); if (hasCol('ad_column', 'ad_column_uu')) f.ad_column_uu = await uu('ad_column', c.name);
+      ops.push({ op_type: 'CRUD_CREATE', table: 'ad_column', idCol: 'ad_column_id', fields: f }); colOf[c.name] = colId++; added.push(c.name);
+    } else {
+      colOf[c.name] = cur.ad_column_id; const ch = {};
+      Object.keys(want).forEach(k => { if (k === 'fieldlength') return; const o = cur[k] == null || cur[k] === '' ? null : cur[k]; if (String(o) !== String(want[k]) && want[k] != null) ch[k] = { old: o, new: want[k] }; });   // a column staged without its list or default (mis.add_window workflow=Y before this step) is corrected, never widened
+      if (Object.keys(ch).length) { ops.push({ op_type: 'CRUD_UPDATE', table: 'ad_column', idCol: 'ad_column_id', id: cur.ad_column_id, changes: ch }); corrected.push(c.name + ' (' + Object.keys(ch).join(', ') + ')'); }
+    }
+  }
+  for (const tab of tabs) {   // a field on every tab that shows the table
+    let seq = Number((O.rows('SELECT max(seqno) AS m FROM ad_field WHERE ad_tab_id=?', [tab.id])[0] || {}).m || 0);
+    for (const c of WF_COLS) {
+      if (O.rows("SELECT 1 AS x FROM ad_field f JOIN ad_column cc ON cc.ad_column_id=f.ad_column_id WHERE f.ad_tab_id=? AND lower(cc.columnname)=lower(?) AND f.isactive='Y'", [tab.id, c.name]).length) continue;
+      seq += 10; const f = { ad_field_id: fldId++, ad_tab_id: tab.id, ad_column_id: colOf[c.name], name: c.name, seqno: seq, isdisplayed: 'Y', isreadonly: 'N', isactive: 'Y', entitytype: 'U', ad_client_id: 0, ad_org_id: 0 };
+      Object.keys(f).forEach(k => { if (!hasCol('ad_field', k)) delete f[k]; }); if (hasCol('ad_field', 'ad_field_uu')) f.ad_field_uu = await uu('ad_field', tab.id + '/' + c.name);
+      ops.push({ op_type: 'CRUD_CREATE', table: 'ad_field', idCol: 'ad_field_id', fields: f }); fieldsAdded.push(tab.id + ':' + c.name);
+    }
+  }
+  const notMade = ['the AD_Workflow, its nodes and the AD_Process the older Ninja makes (this dictionary has no table to hold the first two yet)', 'the document class: Complete, Void, Close stay refused on this table until it has one'];
+  const out = { table: T.tn, added, corrected, fields: fieldsAdded.length, notMade };
+  if (WF_BREAK === 'again' && !ops.length) { ops.push({ op_type: 'CRUD_UPDATE', table: 'ad_table', idCol: 'ad_table_id', id: T.id, changes: { description: { old: null, new: 'Ninja: ' + T.tn } } }); }
+  if (dry) return Object.assign(out, { dry: true, rowsToFill: 0, ops: [] });
+  if (!ops.length) { say('ninja_workflow ALREADY table=' + T.tn + ' ops=0'); return Object.assign(out, { alreadyDone: true, rowsFilled: 0, opSummary: {}, ops: 0, summary: T.tn + ' has the document columns already; nothing was written' }); }
+  const res = persistGroup(O, ops); ensureTables(O);
+  // the records that are already there take the defaults a new one would get (DocStatus DR, DocAction CO, Processed N, IsApproved N), where empty
+  const key = (O.rows("SELECT columnname AS c FROM ad_column WHERE ad_table_id=? AND iskey='Y' AND isactive='Y'", [T.id])[0] || {}).c, fill = [];
+  if (key && WF_BREAK !== 'nodefault') O.rows('SELECT * FROM ' + T.tn).forEach(r => { const ch = {}; WF_COLS.filter(c => c.def != null).forEach(c => { const v = r[c.name.toLowerCase()]; if (v == null || v === '') ch[c.name.toLowerCase()] = { old: null, new: c.def }; }); if (Object.keys(ch).length) fill.push({ op_type: 'CRUD_UPDATE', table: T.tn.toLowerCase(), idCol: key.toLowerCase(), id: r[key.toLowerCase()], changes: ch }); });
+  const res2 = fill.length ? persistGroup(O, fill) : [];
+  say('ninja_workflow table=' + T.tn + ' added=' + added.join(',') + ' corrected=' + corrected.join(';') + ' fields=' + fieldsAdded.length + ' rows_filled=' + res2.length + ' ops=' + (res.length + res2.length));
+  return Object.assign(out, { rowsFilled: res2.length, opSummary: sum(res.concat(res2)), ops: res.length + res2.length });
+}
+async function ninjaWorkflow(O, a) {
+  if (!a.table) refuse('--table is required (a table a Ninja line made here)');
+  return workflowOn(O, String(a.table), String(a.dry || '').toUpperCase() === 'Y');
+}
 async function main(argv) {
   const cmd = argv[0], a = {};
   for (let i = 1; i < argv.length; i++) { const m = /^--(\w+)$/.exec(argv[i]); if (!m || i + 1 >= argv.length) { say('FAIL usage: ' + argv[i]); return 2; } if (m[1] === 'where') (a.where = a.where || []).push(argv[++i]); else a[m[1]] = argv[++i]; }
-  if (['find', 'actions', 'describe', 'read', 'list', 'sum', 'group', 'new', 'update', 'delete', 'load', 'add_window', 'ninja_exec'].concat(Object.keys(ACT)).indexOf(cmd) < 0) { say('FAIL usage: erp_cli.js find|actions|complete|void|close|reverse|describe|read|list|sum|group --kind K (--number N | --id I) [--role R]'); return 2; }
+  if (['find', 'actions', 'describe', 'read', 'list', 'sum', 'group', 'new', 'update', 'delete', 'load', 'add_window', 'ninja_exec', 'ninja_workflow'].concat(Object.keys(ACT)).indexOf(cmd) < 0) { say('FAIL usage: erp_cli.js find|actions|complete|void|close|reverse|describe|read|list|sum|group --kind K (--number N | --id I) [--role R]'); return 2; }
   try {
     const O = await boot(a); O.actor = a.user == null ? 101 : Number(a.user);   // the session user: stated, default 101 (the same default the callout context takes), until sign-in exists
-    const out = await (ACT[cmd] ? act(O, a, ACT[cmd]) : ({ find, actions, describe, read, list: OC.list, sum: OC.sum, group: OC.group, new: createRecord, update: updateRecord, delete: deleteRecord, load: loadRecords, add_window: addWindow, ninja_exec: ninjaExec })[cmd](O, a));
+    const out = await (ACT[cmd] ? act(O, a, ACT[cmd]) : ({ find, actions, describe, read, list: OC.list, sum: OC.sum, group: OC.group, new: createRecord, update: updateRecord, delete: deleteRecord, load: loadRecords, add_window: addWindow, ninja_exec: ninjaExec, ninja_workflow: ninjaWorkflow })[cmd](O, a));
     process.stdout.write(JSON.stringify(out) + '\n'); return 0;
   } catch (e) {
     if (e instanceof Refused || e instanceof OC.Refused) { say('REFUSED ' + e.message); process.stdout.write(JSON.stringify({ refused: true, reason: e.message }) + '\n'); return 3; }
@@ -682,4 +766,4 @@ async function main(argv) {
   }
 }
 if (require.main === module) main(process.argv.slice(2)).then(c => process.exit(c));
-module.exports = { ninjaExec, stageAtDoor, runLoader, sheetGrid, addWindow, ensureTables, tabFor, main, boot, loadRecords, find, actions, complete, act, ACT, describe, read, persistGroup, resolveOne, docKind, kindRef, byNumber, recordOf, loadEngine, b3 };
+module.exports = { ninjaWorkflow, workflowOn, ninjaExec, stageAtDoor, runLoader, sheetGrid, addWindow, ensureTables, tabFor, main, boot, loadRecords, find, actions, complete, act, ACT, describe, read, persistGroup, resolveOne, docKind, kindRef, byNumber, recordOf, loadEngine, b3 };

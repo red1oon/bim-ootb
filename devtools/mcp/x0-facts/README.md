@@ -16,6 +16,7 @@ project's own tools. It answers from the **same code** X0 Navigator uses in the 
 | `how_is_file_loaded` | Is this file loaded at start-up, stored for offline use, or neither? |
 | `cost_if_deployed` | What does my working tree add to what users download, against `origin/main`? |
 | `last_logged_value` | What did this file last print, in a saved log that is provably current? |
+| `where_is_field_used` | Every place a field is written or read, under any spelling |
 | `context_for_file` | Everything the indexes say about one file, in one answer: header, how it is loaded, fields set in it, tags it prints and their last provable values |
 | `ship_check` | Do the pre-ship checks pass (syntax, precache audit, cache-version bump)? |
 

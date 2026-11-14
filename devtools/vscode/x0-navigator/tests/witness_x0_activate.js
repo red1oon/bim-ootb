@@ -23,6 +23,9 @@ const vscodeStub = {
   languages: {
     registerDefinitionProvider(sel, p) { reg.definition.push({ sel, p }); return { dispose() {} }; },
     registerHoverProvider(sel, p) { reg.hover.push({ sel, p }); return { dispose() {} }; },
+    createDiagnosticCollection(name) { reg.diag = { name, m: new Map(), set(u, d) { this.m.set(u.fsPath, d); }, delete(u) { this.m.delete(u.fsPath); }, dispose() {} }; return reg.diag; },
+    registerCodeActionsProvider(sel, p, meta) { reg.actions = (reg.actions || []).concat([{ sel, p, meta }]); return { dispose() {} }; },
+    registerReferenceProvider(sel, p) { reg.refs = (reg.refs || []).concat([{ sel, p }]); return { dispose() {} }; },
     registerCodeLensProvider(sel, p) { reg.lens = (reg.lens || []).concat([{ sel, p }]); return { dispose() {} }; }
   },
   workspace: {
@@ -41,6 +44,10 @@ const vscodeStub = {
   StatusBarAlignment: { Left: 1, Right: 2 },
   EventEmitter: function () { this.event = function () {}; this.fire = function () {}; this.dispose = function () {}; },
   CodeLens: function (range, command) { this.range = range; this.command = command; },
+  Diagnostic: function (range, message, severity) { this.range = range; this.message = message; this.severity = severity; },
+  DiagnosticSeverity: { Error: 0, Warning: 1, Information: 2, Hint: 3 },
+  CodeAction: function (title, kind) { this.title = title; this.kind = kind; },
+  CodeActionKind: { QuickFix: 'quickfix' },
   Range: function (a, b, c, d) { this.start = { line: a, character: b }; this.end = { line: c, character: d }; },
   Selection: function (a, b) { this.active = a; },
   Uri: { file(p) { return { fsPath: p, with(o) { return { toString() { return 'file://' + p + '#' + o.fragment; } }; } }; } },
@@ -110,7 +117,25 @@ check(SEC + 'TAG hover → one hover naming the tag, with printers from this rep
 const l5 = "  console.log('" + SEC + 'ZZ_NOT_A_TAG_' + Date.now().toString(36).toUpperCase() + "');";
 const h5 = hovers(doc(l5), at(l5, 'ZZ_NOT'));
 check('made-up ' + SEC + 'TAG → hover says "no spec found" (never silent)', h5.length === 1 && /no spec found/.test(h5[0].contents.value));
-check('commands registered: ' + reg.commands.join(', '), reg.commands.length === 7 && reg.commands.includes('x0Navigator.contextForFile') && ['x0Navigator.shipRunLocal', 'x0Navigator.shipCheck', 'x0Navigator.shipFetchBack'].every(c => reg.commands.includes(c)) && reg.commands.includes('x0Navigator.costIfDeployed') && reg.commands.includes('x0Navigator.openLogLine') && reg.saves === 2);
+// One-click bump (F-6): the provider offers its two actions for X0's own warning only, each bound to the registered command
+{
+  const ap = (reg.actions || [])[0];
+  const some = path.join(ROOT, 'viewer', 'scene.js');
+  const adoc = { uri: { scheme: 'file', fsPath: some } };
+  const mine = ap ? ap.p.provideCodeActions(adoc, null, { diagnostics: [{ code: 'x0.bump' }] }) : [];
+  const other = ap ? ap.p.provideCodeActions(adoc, null, { diagnostics: [{ code: 'no-undef' }] }) : ['x'];
+  check('quick fix: 2 actions for X0\'s own warning (' + mine.map(a => a.title.slice(0, 28)).join(' | ') + '), write then dry run, both bound to x0Navigator.bumpThisFile with the file',
+    !!reg.diag && reg.diag.name === 'x0-bump' && (reg.actions || []).length === 1 && mine.length === 2 && mine.every(a => a.command.command === 'x0Navigator.bumpThisFile' && a.command.arguments[0] === 'viewer/scene.js') &&
+    mine[0].command.arguments[1] === true && mine[1].command.arguments[1] === false && mine[0].isPreferred === true);
+  check('red control: another tool\'s warning gets no X0 action', other.length === 0);
+  // on this checkout as it is, saving a file must not raise the warning unless the rule says so: compare with the lib's own answer
+  const Sh = require(path.join(EXT, 'lib', 'ship.js'));
+  reg.onSave(adoc);
+  const flagged = reg.diag.m.has(some) && reg.diag.m.get(some).length === 1;
+  check('on save the warning is set exactly when the lib\'s rule says so (flagged=' + flagged + ')', flagged === !!Sh.needsBump(ROOT, 'viewer/scene.js', 'origin/main'));
+}
+check('1 reference provider registered for javascript (Find All References)', (reg.refs || []).length === 1 && reg.refs[0].sel.language === 'javascript');
+check('commands registered: ' + reg.commands.join(', '), reg.commands.length === 8 && reg.commands.includes('x0Navigator.bumpThisFile') && reg.commands.includes('x0Navigator.contextForFile') && ['x0Navigator.shipRunLocal', 'x0Navigator.shipCheck', 'x0Navigator.shipFetchBack'].every(c => reg.commands.includes(c)) && reg.commands.includes('x0Navigator.costIfDeployed') && reg.commands.includes('x0Navigator.openLogLine') && reg.saves === 3);
 // Run and ship (§F.12c): the side-bar list and the Check step, through the registered wiring, on this real checkout
 {
   const items = reg.tree ? reg.tree.p.getChildren().map(s => reg.tree.p.getTreeItem(s)) : [];
