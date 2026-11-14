@@ -97,7 +97,7 @@ const k = kit('W-NINJA-EXEC'), BRK = process.env.NINJAEXEC_BREAK || '';
   else {
     fs.copyFileSync(PW, path.join(dir, 'Ninja_Practice.xlsx'));
     const E9 = envOf('practice'), d9 = doorE(E9), p9 = await d9('ninja.exec file=Ninja_Practice.xlsx'), pl = await d9('mis.list kind=PR_Patient'), rm = await d9('mis.list kind=PR_Room'), A9 = p9.answer || {};
-    k.chk('E9 the shipped practice workbook stages: 4 tables, 2 windows, 2 detail tabs, its 3 patients and 2 rooms loaded and listed', ok(p9) && A9.tables.length === 4 && A9.windows.length === 2 && A9.detailTabs === 2 && ok(pl) && pl.answer.total === 3 && ok(rm) && rm.answer.total === 2,
+    k.chk('E9 the shipped practice workbook stages: 5 tables, 2 windows, 3 detail tabs (one of them, PR_Referral, attached to the Business Partner window), its 3 patients and 2 rooms loaded and listed', ok(p9) && A9.tables.length === 5 && A9.windows.length === 2 && A9.detailTabs === 3 && (A9.attached || []).map(x => x.table + '@' + x.window).join() === 'PR_Referral@Business Partner' && ok(pl) && pl.answer.total === 3 && ok(rm) && rm.answer.total === 2,
       p9.status + ' ' + String(p9.why || '').slice(0, 120) + ' tables=' + (A9.tables || []).length + ' windows=' + (A9.windows || []).length + ' detailTabs=' + A9.detailTabs + ' patients=' + (pl.answer && pl.answer.total) + ' rooms=' + (rm.answer && rm.answer.total));
   }
   // ── E10 a table the dictionary already holds: reused with the sheet's columns added (it has a master), or left alone (it has none): legacy Ninja, MRO_ModelMaker.handleModel L108-150
