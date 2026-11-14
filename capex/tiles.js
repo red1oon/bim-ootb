@@ -216,7 +216,7 @@
     out.chain = null;
     if (!(un.receipts || un.vinvoices || un.payments) && data.receipts != null && data.vinvoices != null && data.payments != null && out.orders) {
       var dn2 = function (st) { return st === 'CO' || st === 'CL'; }, mine = function (a) { return (a || []).filter(function (x) { return String(x.C_Project_ID) === String(id); }); };
-      var rc = mine(data.receipts).filter(function (x) { return x.IsSOTrx === 'N' && dn2(x.DocStatus); }), iv = mine(data.vinvoices).filter(function (x) { return x.IsSOTrx === 'N' && dn2(x.DocStatus); }), py = mine(data.payments).filter(function (x) { return x.IsReceipt === 'N' && dn2(x.DocStatus); });
+      var rc = mine(data.receipts).filter(function (x) { return x.IsSOTrx === 'N' && dn2(x.DocStatus); }), iv = mine(data.vinvoices).filter(function (x) { return x.IsSOTrx === 'N' && dn2(x.DocStatus); }), py = (data.payments || []).filter(function (x) { return x.IsReceipt === 'N' && dn2(x.DocStatus) && (String(x.C_Project_ID) === String(id) || (x.C_Invoice_ID != null && iv.some(function (i) { return String(i.C_Invoice_ID) === String(x.C_Invoice_ID); }))); });   // a payment belongs to the project by its own Project OR by its INVOICE: the Payment window hides Project once an invoice is picked (UAT dry run 2026-11-14)
       var poRows = (data.orders || []).filter(function (o) { return String(o.C_Project_ID) === String(id) && o.IsSOTrx === 'N'; }), poSet = {}, invSet = {};
       var rows = poRows.map(function (o) {
         poSet[o.C_Order_ID] = 1; var mi = iv.filter(function (x) { return String(x.C_Order_ID) === String(o.C_Order_ID); }), si = mi.filter(function (x) { return String(x.C_Currency_ID) === String(o.C_Currency_ID); }), ids = {};
