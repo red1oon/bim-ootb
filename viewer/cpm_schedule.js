@@ -793,7 +793,7 @@
       else refused++;
     }
     var total = intra + ok + refused;
-    return { lvl2: lvl2, loc2: loc2, promoted: promoted,
+    return { lvl2: lvl2, loc2: loc2, promoted: promoted, des: des,
              e1Total: total, intra: intra, representable: ok, refused: refused,
              repr: total ? (intra + ok) / total : 1 };
   }
@@ -821,14 +821,41 @@
     function poolOf(resource) {
       return pools[resource] || (pools[resource] = new Array(crewCapFor(resource)).fill(base));
     }
+    // §D5_FLOOR_SLAB_FIRST (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.7 D5, 2026-11-14) — the floor
+    // a column stands on is built before it, whatever its class sequence. R1 ("column 2, beam 3,
+    // slab 4") is true only of the slab ON TOP; measured before: Hospital 57 of 58 columns standing on
+    // a slab of their own (level, Superstructure task) were drawn before it, all on Level 1.
+    // Rule, read from the elected edge as EXTRACTION (the way §S47.3's hang filing above reads it —
+    // not a new relation, not a class rule): an IfcSlab that is the elected BEARING-BELOW support of a
+    // structural element (supportPool) of the SAME final level is that level's FLOOR, and its cell
+    // runs before sequence 2 of that level (FLOOR_TRD, between Substructure 1 and the vertical
+    // bearers 2). Phase, task, trade, rate and the gate quantity (_cellFiling) are untouched — only
+    // the order inside the level moves. Counted on §D5_FLOOR_SLAB.
+    var FLOOR_TRD = 1.5;
+    var SGd = (typeof global.ScheduleGate !== 'undefined') ? global.ScheduleGate : ScheduleGate;
+    var trdOf = new Array(n), floorN = 0, floorBy = {};
+    for (i = 0; i < n; i++) trdOf[i] = _trdOf(items[i]);
+    if (filing.des && SGd && SGd.supportPool) {
+      for (i = 0; i < n; i++) {
+        var fs = filing.des[i]; if (fs < 0) continue;
+        var F = items[fs], Tn = items[i];
+        if (F.cls !== 'IfcSlab' || !SGd.supportPool(Tn)) continue;
+        if (filing.lvl2[fs] !== filing.lvl2[i]) continue;
+        if (!(F.bz < Tn.bz - SGd.EPS && F.tz >= Tn.bz - SGd.GAP)) continue;   // bearing-below, the election's own clause
+        if (trdOf[fs] <= FLOOR_TRD) continue;                                 // already ahead of the bearers (or counted)
+        trdOf[fs] = FLOOR_TRD; floorN++; floorBy[Tn.cls] = (floorBy[Tn.cls] || 0) + 1;
+      }
+    }
+    console.log('§D5_FLOOR_SLAB floorSlabs=' + floorN + ' firstCarriedBy=' + JSON.stringify(floorBy) +
+      ' trd=' + FLOOR_TRD + (filing.des ? '' : ' INACTIVE — no election passed to the cell solve'));
     // group members per cell
     var SEP = '';
     var cellMem = {}, cellMeta = {}, keyOf = new Array(n);
     for (i = 0; i < n; i++) {
-      var k = filing.lvl2[i] + SEP + _trdOf(items[i]) + SEP + filing.loc2[i];
+      var k = filing.lvl2[i] + SEP + trdOf[i] + SEP + filing.loc2[i];
       keyOf[i] = k;
       (cellMem[k] || (cellMem[k] = [])).push(i);
-      cellMeta[k] || (cellMeta[k] = { lvl: filing.lvl2[i], trd: _trdOf(items[i]), loc: filing.loc2[i] });
+      cellMeta[k] || (cellMeta[k] = { lvl: filing.lvl2[i], trd: trdOf[i], loc: filing.loc2[i] });
     }
     var keys = Object.keys(cellMem).sort(function (x, y) {
       var a = cellMeta[x], b = cellMeta[y];
