@@ -831,7 +831,7 @@
     // runs before sequence 2 of that level (FLOOR_TRD, between Substructure 1 and the vertical
     // bearers 2). Phase, task, trade, rate and the gate quantity (_cellFiling) are untouched — only
     // the order inside the level moves. Counted on §D5_FLOOR_SLAB.
-    var FLOOR_TRD = 1.5;
+    var FLOOR_TRD = 1.5, HOLDER_TRD = 1.25;
     var SGd = (typeof global.ScheduleGate !== 'undefined') ? global.ScheduleGate : ScheduleGate;
     var trdOf = new Array(n), floorN = 0, floorBy = {}, heldN = 0, heldSeen = {};
     for (i = 0; i < n; i++) trdOf[i] = _trdOf(items[i]);
@@ -849,11 +849,14 @@
         // column, Terminal 2 on a Substructure beam). It keeps its sequence.
         var fh = filing.des[fs];
         if (fh >= 0 && filing.lvl2[fh] === filing.lvl2[fs] && SGd.supportPool(items[fh]) &&
-            items[fh].bz < F.bz - SGd.EPS && items[fh].tz >= F.bz - SGd.GAP) { if (!heldSeen[fs]) { heldSeen[fs] = 1; heldN++; } continue; }
+            items[fh].bz < F.bz - SGd.EPS && items[fh].tz >= F.bz - SGd.GAP) {
+          // VARIANT B (measured for the owner, §Q.7): the holder goes first instead — pier → floor → bearers
+          if (trdOf[fh] > HOLDER_TRD) { trdOf[fh] = HOLDER_TRD; heldN++; }
+        }
         trdOf[fs] = FLOOR_TRD; floorN++; floorBy[Tn.cls] = (floorBy[Tn.cls] || 0) + 1;
       }
     }
-    console.log('§D5_FLOOR_SLAB floorSlabs=' + floorN + ' heldBySameLevelStructure(kept)=' + heldN + ' firstCarriedBy=' + JSON.stringify(floorBy) +
+    console.log('§D5_FLOOR_SLAB floorSlabs=' + floorN + ' holdersMovedFirst=' + heldN + ' firstCarriedBy=' + JSON.stringify(floorBy) +
       ' trd=' + FLOOR_TRD + (filing.des ? '' : ' INACTIVE — no election passed to the cell solve'));
     // group members per cell
     var SEP = '';
@@ -862,7 +865,7 @@
       var k = filing.lvl2[i] + SEP + trdOf[i] + SEP + filing.loc2[i];
       // the REPORTED cell identity (gate.cellKeys → the Gantt's §S51 per-cell grouping) keeps the
       // element's own sequence: D5 moves the order inside the level, never a bar
-      keyOf[i] = (trdOf[i] === FLOOR_TRD) ? filing.lvl2[i] + SEP + _trdOf(items[i]) + SEP + filing.loc2[i] : k;
+      keyOf[i] = (trdOf[i] === FLOOR_TRD || trdOf[i] === HOLDER_TRD) ? filing.lvl2[i] + SEP + _trdOf(items[i]) + SEP + filing.loc2[i] : k;
       (cellMem[k] || (cellMem[k] = [])).push(i);
       cellMeta[k] || (cellMeta[k] = { lvl: filing.lvl2[i], trd: trdOf[i], loc: filing.loc2[i] });
     }
