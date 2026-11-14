@@ -13,7 +13,8 @@ const MODEL = [   // Master, Name, Help, ColumnSet (Ninja's tokens: D# date, A# 
   ['', 'PR_Patient', 'A patient', 'Name,D#DateOfBirth,L#BloodGroup=A/B/AB/O,Y#IsInsured'],
   ['PR_Patient', 'PR_Visit', 'A visit of that patient', 'Name,D#DateVisit,A#Fee,T#Notes'],
   ['PR_Visit', 'PR_Medicine', 'A medicine given at that visit', 'Name,Q#Qty'],
-  ['', 'PR_Room', 'A room of the clinic', 'Name,Q#Beds']
+  ['', 'PR_Room', 'A room of the clinic', 'Name,Q#Beds'],
+  ['C_BPartner', 'PR_Referral', 'A referral by a business partner: its Master is a table of the system, so it becomes a tab of the Business Partner window', 'Name,D#DateReferred']
 ];
 const wb = XL.utils.book_new(), add = (n, rows) => XL.utils.book_append_sheet(wb, XL.utils.aoa_to_sheet(rows), n);
 add('1_RO_ModelHeader', [['Name', 'Version'], ['Practice', '1']]);
