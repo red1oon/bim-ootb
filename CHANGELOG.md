@@ -4,6 +4,58 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.89.0](https://github.com/red1oon/bim-ootb/compare/v1.88.0...v1.89.0) (2026-11-14)
+
+
+### ✨ Features
+
+* **dev:** §LOG_STAMP - every saved witness log says which code made it ([#2927](https://github.com/red1oon/bim-ootb/issues/2927)) ([#2928](https://github.com/red1oon/bim-ootb/issues/2928)) ([2c1e7c9](https://github.com/red1oon/bim-ootb/commit/2c1e7c94c4812567290df24128d323e49f18b56c))
+* **devtools:** Context for this file - X0 command and facts-server tool ([#2965](https://github.com/red1oon/bim-ootb/issues/2965)) ([#2966](https://github.com/red1oon/bim-ootb/issues/2966)) ([6e938ef](https://github.com/red1oon/bim-ootb/commit/6e938ef08e25866b63474cbfdb3e4ce25cea760c))
+* **devtools:** Find All References for a field of the shared object - editor provider and facts-server tool ([#2983](https://github.com/red1oon/bim-ootb/issues/2983)) ([#2985](https://github.com/red1oon/bim-ootb/issues/2985)) ([acdeef2](https://github.com/red1oon/bim-ootb/commit/acdeef2b9b6743a73e2daafe6eebdc2f97f0247d))
+* **devtools:** one-click cache bump - warning and quick fix for an edited cached file ([#2986](https://github.com/red1oon/bim-ootb/issues/2986)) ([#2988](https://github.com/red1oon/bim-ootb/issues/2988)) ([3499a68](https://github.com/red1oon/bim-ootb/commit/3499a6888e1ee929456c3a02e55aa56d0cf95cd1))
+* **devtools:** tag hover says the last provable value or names why there is none ([#2969](https://github.com/red1oon/bim-ootb/issues/2969)) ([#2970](https://github.com/red1oon/bim-ootb/issues/2970)) ([7b03005](https://github.com/red1oon/bim-ootb/commit/7b030057fb648750e073191f97b509eeb97bdaee))
+* **devtools:** values beside the code read extra log folders; the bake writes the standard stamp ([#2976](https://github.com/red1oon/bim-ootb/issues/2976)) ([#2977](https://github.com/red1oon/bim-ootb/issues/2977)) ([9468d73](https://github.com/red1oon/bim-ootb/commit/9468d73a4d4031596a22f6e7b68ae6b37e408c4c))
+* **devtools:** X0 Navigator - cost if deployed, first version ([#2943](https://github.com/red1oon/bim-ootb/issues/2943)) ([#2944](https://github.com/red1oon/bim-ootb/issues/2944)) ([6209571](https://github.com/red1oon/bim-ootb/commit/6209571807c57e85095489abe2c6c030c2680a22))
+* **devtools:** X0 Navigator - Run and ship, first version; real-VS-Code check covers the three new features ([#2947](https://github.com/red1oon/bim-ootb/issues/2947)) ([#2948](https://github.com/red1oon/bim-ootb/issues/2948)) ([9e8d345](https://github.com/red1oon/bim-ootb/commit/9e8d34545f36c61d3a67e78c44a9141affb4cc63))
+* **devtools:** X0 Navigator - values beside the code, first version ([#2945](https://github.com/red1oon/bim-ootb/issues/2945)) ([#2946](https://github.com/red1oon/bim-ootb/issues/2946)) ([5c89d63](https://github.com/red1oon/bim-ootb/commit/5c89d63ec0132d61c04d174236f40c5b5508c21e))
+* **devtools:** X0 Navigator keeps its own fresh APP index ([#2924](https://github.com/red1oon/bim-ootb/issues/2924)) ([#2925](https://github.com/red1oon/bim-ootb/issues/2925)) ([fed5fe5](https://github.com/red1oon/bim-ootb/commit/fed5fe51b67015dea15834901c8098384fbe68da))
+* **devtools:** X0 Navigator slice 1 — APP.x go-to-definition + hover, §TAG hover ([#2922](https://github.com/red1oon/bim-ootb/issues/2922)) ([d7ca9eb](https://github.com/red1oon/bim-ootb/commit/d7ca9eb399cb6f5398d080501eef6bbc19cd5305))
+* **devtools:** x0-facts - a local MCP facts server for AI assistants (no npm, read-only, off by default) ([#2955](https://github.com/red1oon/bim-ootb/issues/2955)) ([a3d7013](https://github.com/red1oon/bim-ootb/commit/a3d701378efeb9b10622c1cb1a226c7eea69c37d))
+* **door:** a practice Ninja workbook for the guide's lines (W-NINJA-EXEC E9) ([#2979](https://github.com/red1oon/bim-ootb/issues/2979)) ([e143941](https://github.com/red1oon/bim-ootb/commit/e143941dee377acf6e98b9e036fb8119a160b365))
+* **door:** ninja.exec - a whole Ninja workbook staged in one line ([#2978](https://github.com/red1oon/bim-ootb/issues/2978)) ([84adb21](https://github.com/red1oon/bim-ootb/commit/84adb218cf97f9f1883fae30dd0882f4d369859e))
+* **door:** ninja.rollback and ninja.export - undo one staged bundle, write a bundle back as a workbook (bim-compiler ERP_MIS_WINDOW_FROM_CSV §12.11) ([#3003](https://github.com/red1oon/bim-ootb/issues/3003)) ([5e92d80](https://github.com/red1oon/bim-ootb/commit/5e92d8060cd6f8cf6b53bf24076630fef0ee838f))
+* **door:** ninja.workflow - the document columns on one staged table ([#2987](https://github.com/red1oon/bim-ootb/issues/2987)) ([f994f26](https://github.com/red1oon/bim-ootb/commit/f994f26f4150b04464aa71a23d54d275230deaf8))
+* **door:** the practice workbook shows a tab on the Business Partner window (PR_Referral, Master=C_BPartner) ([#2994](https://github.com/red1oon/bim-ootb/issues/2994)) ([dfc361f](https://github.com/red1oon/bim-ootb/commit/dfc361f8f008668cd8f3c280e8343ab979900c71))
+* **editor:** slog and spec snippets, witnessed ([#2962](https://github.com/red1oon/bim-ootb/issues/2962)) ([#2963](https://github.com/red1oon/bim-ootb/issues/2963)) ([55c0e02](https://github.com/red1oon/bim-ootb/commit/55c0e02a28c39513074dc774b982d769f68c9c08))
+* **ninja:** a tab on any window - a Master outside the sheet is looked up in the dictionary, as legacy Ninja does (sw v1076) ([#2992](https://github.com/red1oon/bim-ootb/issues/2992)) ([89d7078](https://github.com/red1oon/bim-ootb/commit/89d7078be4b4920f63e401854ce341feae27366c))
+* **ninja:** reuse a table the dictionary already holds, as legacy Ninja does; window= on the write verbs (sw v1075) ([#2984](https://github.com/red1oon/bim-ootb/issues/2984)) ([804ed33](https://github.com/red1oon/bim-ootb/commit/804ed3319a5c9da294c70ae8aa2133493a7f5a88))
+
+
+### 🐛 Fixes
+
+* **app-surface:** a nested checkout is a copy, not source - never indexed (R10) ([#2930](https://github.com/red1oon/bim-ootb/issues/2930)) ([#2931](https://github.com/red1oon/bim-ootb/issues/2931)) ([a43eecc](https://github.com/red1oon/bim-ootb/commit/a43eecc72ef407fb5f8ba5e1ca84518b176127af))
+* **capex:** record links on the legacy source open the server the rows were read from (snapshot meta.base), not a fixed localhost:8088 ([#2989](https://github.com/red1oon/bim-ootb/issues/2989)) ([19a919d](https://github.com/red1oon/bim-ootb/commit/19a919d51b9c355364263d1f17e18f37af6a8458))
+* **deploy:** erp/version.json stays valid JSON when the commit subject has two numbers; Fetch back fails on an unreadable stamp ([#2951](https://github.com/red1oon/bim-ootb/issues/2951)) ([143edee](https://github.com/red1oon/bim-ootb/commit/143edeef3e51f56cf3b171f5bd463258086ff906))
+* **devtools:** APP index sees a file that binds 'var A = APP' ([#2961](https://github.com/red1oon/bim-ootb/issues/2961)) ([#2964](https://github.com/red1oon/bim-ootb/issues/2964)) ([da14e07](https://github.com/red1oon/bim-ootb/commit/da14e072731143741a688598aae766925da7f72f))
+* **devtools:** APP index sees split-file parts and init(A); a phantom with an untied write says PHANTOM? ([#2974](https://github.com/red1oon/bim-ootb/issues/2974)) ([#2975](https://github.com/red1oon/bim-ootb/issues/2975)) ([3b7cd75](https://github.com/red1oon/bim-ootb/commit/3b7cd756db3240a865a0f232caa9d9d96a94ad77))
+* **devtools:** context witness fixture no longer indexed as a real field ([#2967](https://github.com/red1oon/bim-ootb/issues/2967)) ([#2968](https://github.com/red1oon/bim-ootb/issues/2968)) ([48b432f](https://github.com/red1oon/bim-ootb/commit/48b432f5c635e36d23fe1614113cf6915b53c01f))
+* **devtools:** tag hover shows the last value (or the reason) right under the tag name ([#2980](https://github.com/red1oon/bim-ootb/issues/2980)) ([#2981](https://github.com/red1oon/bim-ootb/issues/2981)) ([8b16183](https://github.com/red1oon/bim-ootb/commit/8b161835162ed4c813c6aa01ba242c4fe9fc9cbb))
+* **devtools:** X0 Navigator installs as a .vsix (no-npm packer); the symlink install did not load ([#2938](https://github.com/red1oon/bim-ootb/issues/2938)) ([#2939](https://github.com/red1oon/bim-ootb/issues/2939)) ([447b3b3](https://github.com/red1oon/bim-ootb/commit/447b3b3d19593753954fe939f9029ccff0383f91))
+* **door:** a window made at the terminal showed an EMPTY grid in the browser - its fields carried no grid flag ([#2998](https://github.com/red1oon/bim-ootb/issues/2998)) ([1016875](https://github.com/red1oon/bim-ootb/commit/1016875d601aa191bfce392231194e924f8973cb))
+* **modeller:** ERP ▸ Project Order on a model made in the Modeller says why it cannot price and names the Viewer route (was an empty panel and a page error) ([#2990](https://github.com/red1oon/bim-ootb/issues/2990)) ([52737f3](https://github.com/red1oon/bim-ootb/commit/52737f34e8c1b951814e84f6044ecb729133d6f8))
+* **ninja:** rollback is one model, a bundle has its own menu node (sw v1074) ([#2973](https://github.com/red1oon/bim-ootb/issues/2973)) ([c821676](https://github.com/red1oon/bim-ootb/commit/c8216766a009ff7e65bb4c4e9bdd846e7926a72c))
+
+
+### ⚡ Performance
+
+* **door:** keep an image of the replayed op-log, apply only the ops after it ([#2993](https://github.com/red1oon/bim-ootb/issues/2993)) ([05b967e](https://github.com/red1oon/bim-ootb/commit/05b967e9d9441337d01432281f4b5131bc0c2bce))
+
+
+### 📝 Documentation
+
+* **deploy:** correct the stale note in deploy-pages.yml - two publishers, the last one wins ([#2958](https://github.com/red1oon/bim-ootb/issues/2958)) ([4ed4e86](https://github.com/red1oon/bim-ootb/commit/4ed4e86ffcf17e5abc910d740473512262748d7a))
+* **devtools:** X0 README - how to run the real-VS-Code witness ([#2932](https://github.com/red1oon/bim-ootb/issues/2932)) ([#2935](https://github.com/red1oon/bim-ootb/issues/2935)) ([47bcac4](https://github.com/red1oon/bim-ootb/commit/47bcac4be1804de7f4a63463e81eac35cb097495))
+
 ## [1.88.0](https://github.com/red1oon/bim-ootb/compare/v1.87.0...v1.88.0) (2026-11-10)
 
 
