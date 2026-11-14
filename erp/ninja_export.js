@@ -42,7 +42,7 @@
   // ── colDef(col) — one user column {name, refId} → its field-def token ─────────────────────────────
   function colDef(col) {
     var pre = REV_PREFIX[Number(col.refId)] || '';
-    return pre + col.name;
+    return pre + col.name + (col.listItems && col.listItems.length ? '=' + col.listItems.join('/') : '');
   }
 
   // ── modelToRows(model) → { header, model, headerSheet, modelSheet } (array-of-arrays) ─────────────
