@@ -70,7 +70,7 @@
       if (pBank === 0 || !ba || Number(ba.c_bankaccount_id) !== pBank) throw new Error('@NotFound@ @C_BankAccount_ID@ - ' + pBank);   // :89-90 AdempiereUserError
       if (pOrg !== nz(ba.ad_org_id) && nz(ba.ad_org_id) !== 0) pOrg = nz(ba.ad_org_id);                           // :91-92
       var C = Number(ba.ad_client_id), O = pOrg;
-      var nowTs = trx.env.now || (trx.env.nowMillis != null ? new Date(trx.env.nowMillis).toISOString().slice(0, 19).replace('T', ' ') : new Date().toISOString().slice(0, 19).replace('T', ' '));   // getDate()
+      var nowTs = A.Env.nowStamp(trx.env);   // getDate()
       var R = [];                                                                                          // working copies of the I_Payment rows: { id, base, cur }
       function load() { R = trx.find('i_payment', {}).map(function (r) { return { id: r.i_payment_id, base: Object.assign({}, r), cur: Object.assign({}, r) }; }); }
       function flush() {                                                                                    // the raw UPDATEs reach the Trx (no model events, like DB.executeUpdate)

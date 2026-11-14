@@ -62,7 +62,7 @@
       var trx = this.get_TrxName(), A = X.A, C = this.p_AD_Client_ID, O = this.p_AD_Org_ID, pBank = this.p_C_BankAccount_ID, ctx = this.getCtx();
       try { trx.q('SELECT 1 AS x FROM i_bankstatement LIMIT 1'); } catch (e) { throw new Error('I_BankStatement has no physical table on this host (AdImportTables.ensure, MIGRATE_INSTALL_TENANT E3D-SPEC lane IB)'); }
       trx.say('§IMPORT_BANKSTATEMENT_START AD_Org_ID=' + O + ', C_BankAccount_ID' + pBank);                          // :88-89
-      var nowTs = trx.env.now || (trx.env.nowMillis != null ? new Date(trx.env.nowMillis).toISOString().slice(0, 19).replace('T', ' ') : new Date().toISOString().slice(0, 19).replace('T', ' '));
+      var nowTs = A.Env.nowStamp(trx.env);
       var R = [];
       function load() { R = trx.find('i_bankstatement', {}).map(function (r) { return { id: r.i_bankstatement_id, base: Object.assign({}, r), cur: Object.assign({}, r) }; }); }
       function flush() { R.forEach(function (w) { var ch = {}; Object.keys(w.cur).forEach(function (c) { if (!same(w.cur[c], w.base[c])) ch[c] = w.cur[c]; }); if (!Object.keys(ch).length) return; trx.update('i_bankstatement', trx.get('i_bankstatement', w.id), ch); w.base = Object.assign({}, trx.get('i_bankstatement', w.id)); }); }

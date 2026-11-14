@@ -70,7 +70,7 @@
       var self = this, trx = this.get_TrxName(), A = X.A, C = this.m_AD_Client_ID, O = this.m_AD_Org_ID, ctx = this.getCtx();
       try { trx.q('SELECT 1 AS x FROM i_gljournal LIMIT 1'); } catch (e) { throw new Error('I_GLJournal has no physical table on this host (AdImportTables.ensure, MIGRATE_INSTALL_TENANT ENGINE-SPEC E3a)'); }
       trx.say('§IMPORT_GLJOURNAL_START IsValidateOnly=' + this.m_IsValidateOnly + ', IsImportOnlyNoErrors=' + this.m_IsImportOnlyNoErrors);   // :100-101
-      var nowTs = trx.env.now || (trx.env.nowMillis != null ? new Date(trx.env.nowMillis).toISOString().slice(0, 19).replace('T', ' ') : new Date().toISOString().slice(0, 19).replace('T', ' '));
+      var nowTs = A.Env.nowStamp(trx.env);
       var R = [];
       function load() { R = trx.find('i_gljournal', {}).map(function (r) { return { id: r.i_gljournal_id, base: Object.assign({}, r), cur: Object.assign({}, r) }; }); }
       function flush() { R.forEach(function (w) { var ch = {}; Object.keys(w.cur).forEach(function (c) { if (!same(w.cur[c], w.base[c])) ch[c] = w.cur[c]; }); if (!Object.keys(ch).length) return; trx.update('i_gljournal', trx.get('i_gljournal', w.id), ch); w.base = Object.assign({}, trx.get('i_gljournal', w.id)); }); }

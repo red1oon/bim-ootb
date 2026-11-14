@@ -46,7 +46,7 @@
     ImportProduct.prototype.doIt = function () {
       var self = this, trx = this.get_TrxName(), A = X.A, C = this.m_AD_Client_ID, pPLV = this.p_M_PriceList_Version_ID;
       try { trx.q('SELECT 1 AS x FROM i_product LIMIT 1'); } catch (e) { throw new Error('I_Product has no physical table on this host (AdImportTables.ensure, POS_PLUGIN_LOCAL_FIRST section 30)'); }
-      var nowTs = trx.env.now || (trx.env.nowMillis != null ? new Date(trx.env.nowMillis).toISOString().slice(0, 19).replace('T', ' ') : new Date().toISOString().slice(0, 19).replace('T', ' '));   // getDate()
+      var nowTs = A.Env.nowStamp(trx.env);   // getDate()
       var R = [];
       function load() { R = trx.find('i_product', {}).map(function (r) { return { id: r.i_product_id, base: Object.assign({}, r), cur: Object.assign({}, r) }; }); }
       function flush() {
