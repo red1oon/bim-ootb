@@ -25,11 +25,13 @@ var pass = 0, fail = 0, ok = function (id, n, c, d) { console.log((c ? '  ✅ ' 
   var day = typeof C.localDay === 'function' ? C.localDay(T) : '(no localDay)';
   console.log('§LT-DAY localDay=' + day + ' utcDay=' + new Date(T).toISOString().slice(0, 10) + ' fmt=' + C.fmtKernelTs(T));
   ok('B', 'today at 02:30 local = 2026-10-16 (legacy #Date), not the UTC date 2026-10-15', day === '2026-10-16' && C.fmtKernelTs(T) === '2026-10-16 02:30:00', day);
-  var sites = [['idempiere.html', /put\('date', ([^)]*\))/], ['idempiere.html', /ln === 'date'\) return ([^;]*);/], ['idempiere.html', /today: (CrudCore[^}]*?|\(new Date[^}]*?) \}/], ['idempiere.html', /today: (CrudCore\.localDay\(\)|\(function \(\) \{ var d = new Date\(\)[^,]*)\,/], ['crud_overlay.js', /function today\(\) \{ try \{ return ([^;]*);/],
-    ['ad_process.js', /var today = ctx\.today \|\| ([^;]*);/]]   // pos_lens.js was deleted by #2585 (the till replaced it; the till has no clock-'today' site);
+  var sites = [['idempiere.html', /put\('date', ([^)]*\))/], ['idempiere.html', /ln === 'date'\) return ([^;]*);/], ['idempiere.html', /today: (CrudCore[^}]*?|\(new Date[^}]*?) \}/], ['idempiere.html', /today: (CrudCore\.localDay\(Date\.now\(\)\)|\(function \(\) \{ var d = new Date\(\)[^,]*)\,/], ['crud_overlay.js', /function today\(\) \{ try \{ return ([^;]*);/],
+    ['ad_process.js', /var today = ctx\.today; if \(!today\) return \{ ok: false, message: '(§ENV_NO_DATE)/], ['ad_process.js', /var today = ctx\.today; if \(!today\) return \{ ok: false, message: '(§ENV_NO_DATE)/]]   // A2: the two core report handlers take ctx.today and REFUSE without it; the edge passes the instant   // pos_lens.js was deleted by #2585 (the till replaced it; the till has no clock-'today' site);
   var got = sites.map(function (s) { var m = s[1].exec(fs.readFileSync(path.join(ERP, s[0]), 'utf8')); return s[0] + ': ' + (m ? m[1] : 'NOT FOUND'); });
   console.log('§LT-SITES ' + JSON.stringify(got));
-  ok('C', 'every clock-"today" call site uses the one localDay (none on toISOString)', got.every(function (g) { return /localDay\(\)/.test(g) && !/toISOString/.test(g); }), got.filter(function (g) { return !/localDay\(\)/.test(g); }).join(' | '));
+  ok('C', 'every clock-"today" call site uses the one localDay (none on toISOString)', got.every(function (g) { return (/localDay\(Date\.now\(\)/.test(g) || /§ENV_NO_DATE/.test(g)) && !/toISOString/.test(g); }), got.filter(function (g) { return !/localDay\(\)/.test(g); }).join(' | '));
+  var threw = false; try { C.localDay(); } catch (e) { threw = true; }
+  ok('D', 'localDay() with no instant refuses (A-3: core never reads a wall clock)', threw && C.localDay(T) === '2026-10-16', String(threw));
   console.log('§LT-VERDICT ' + (fail ? 'FAIL' : 'PASS') + ' ' + pass + '/' + (pass + fail));
   process.exit(fail ? 1 : 0);
 })().catch(function (e) { console.log('§LT-VERDICT INCONCLUSIVE ' + (e.stack || e)); process.exit(2); });

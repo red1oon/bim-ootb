@@ -164,7 +164,7 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
     } catch (e) {}
   });
 
-  function today() { try { return CORE.localDay(); } catch (e) { return ''; } }   // §LOCAL-TIME: legacy #Date = the local day
+  function today() { try { return CORE.localDay(Date.now()); } catch (e) { return ''; } }   // §LOCAL-TIME: legacy #Date = the local day
   // S2B — FOLDED holds host-registered AD-folded specs (one per non-curated table). entryFor prefers the CURATED
   //   crud_ops entry (it carries docPolicy fan-out / ownerGate / docAction); else falls back to the folded spec so
   //   ANY window is editable per its own dictionary. Lower-cased key, mirrors crud_ops keys.
