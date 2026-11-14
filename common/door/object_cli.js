@@ -286,10 +286,26 @@ async function attach(O, a) {
 // §0.13 the first MEASURE: a count of a kind. The kind's table and every filter column come from the dictionary (reflection: an unknown column is an error that names it). population = the kind's
 // rows with no filter; when that is 0 nothing was judged, so the verdict is VACUOUS (the door replies inconclusive), never 0-as-an-answer.
 const CB = () => process.env.COUNT_BREAK || '';   // W-OBJ-COUNT falsifiers: plus1 | nofilter | zero_ok
-function filtersOf(t, cols, a) {   // the shared filter reader: --where column=value, each column checked against the dictionary (reflection), a number column takes a number
+function masterFilter(O, t, cols, spec) {   // master=Table/record (bim-compiler ERP_MIS_WINDOW_FROM_CSV §12.12): the rows of ONE parent. The link column is the kind's own IsParent column that names the master's key (GridWindow.initTab); the record is an id or a number
+  const i = String(spec).indexOf('/'), mn = i < 0 ? '' : spec.slice(0, i).trim(), ref = i < 0 ? '' : spec.slice(i + 1).trim();
+  if (!mn || !ref) refuse('master is Table/record (the table of the parent, then its id or number), got "' + spec + '"');
+  let mt; try { mt = kindOf(O.rows, mn); } catch (e) { refuse('master=' + spec + ': ' + e.message); }
+  const mc = columnsOf(O.rows, mt), mk = mc.filter(c => c.iskey === 'Y')[0]; if (!mk) refuse(mt.name + ' has no key column, so it cannot be a master');
+  const link = cols.filter(c => c.isparent === 'Y' && c.columnname.toLowerCase() === mk.columnname.toLowerCase())[0];
+  if (!link) refuse(t.name + ' is not a detail of ' + mt.name + ': it has no link column ' + mk.columnname + ' (the parent link of a tab). Nothing was listed');
+  let id;
+  if (/^\d+$/.test(ref) && MB() !== 'noresolve') { id = Number(ref); if (!O.rows('SELECT 1 AS x FROM ' + mt.tablename + ' WHERE ' + mk.columnname + '=?', [id]).length) refuse('no ' + mt.name + ' record with ' + mk.columnname + ' ' + id + '. Nothing was listed'); }
+  else { const nc = ['documentno', 'name', 'value'].map(n => mc.filter(c => c.columnname.toLowerCase() === n)[0]).filter(Boolean)[0]; if (!nc) refuse(mt.name + ' has no number or name column, so give its id (' + mk.columnname + ')');
+    const hit = O.rows('SELECT ' + mk.columnname + ' AS id FROM ' + mt.tablename + ' WHERE ' + nc.columnname + '=?', [ref]);
+    if (!hit.length) refuse('no ' + mt.name + ' has ' + nc.columnname + ' "' + ref + '". Nothing was listed'); if (hit.length > 1) refuse(hit.length + ' ' + mt.name + ' records have ' + nc.columnname + ' "' + ref + '": give the id (' + mk.columnname + ') instead. Nothing was listed'); id = Number(hit[0].id); }
+  return { column: link.columnname, value: String(id), master: mt.name + '/' + id };
+}
+const MB = () => process.env.MASTER_BREAK || '';   // W-MIS-MASTER falsifiers: nofilter | nolinkcheck
+function filtersOf(t, cols, a, O) {   // the shared filter reader: --where column=value, each column checked against the dictionary (reflection), a number column takes a number
   const filters = [], where = [], params = [];
   (a.where || []).forEach(w => {
     const m = /^([A-Za-z_]\w*)=([\s\S]*)$/.exec(w); if (!m) refuse('a filter is column=value, got "' + w + '"');
+    if (O && m[1].toLowerCase() === 'master' && !cols.some(x => x.columnname.toLowerCase() === 'master')) { const mf = masterFilter(O, t, cols, m[2]); if (filters.some(f => f.column === mf.column)) refuse('filter ' + mf.column + ' given twice'); filters.push(mf); if (MB() !== 'nofilter') { where.push(mf.column + ' = CAST(? AS NUMERIC)'); params.push(mf.value); } return; }
     const c = cols.filter(x => x.columnname.toLowerCase() === m[1].toLowerCase())[0];
     if (!c) throw new Error('kind ' + t.name + ' has no property "' + m[1] + '" (its properties: ' + cols.map(x => x.columnname).join(', ') + ')');
     if (filters.some(f => f.column === c.columnname)) refuse('filter ' + c.columnname + ' given twice');
@@ -300,7 +316,7 @@ function filtersOf(t, cols, a) {   // the shared filter reader: --where column=v
   return process.env.ROWS_BREAK === 'nofilter' ? { filters, where: [], params: [] } : { filters, where, params };   // the break: the filters are named in the answer but not applied
 }
 function count(O, a) {
-  const t = kindOf(O.rows, a.kind), RR = roleRows(O, t, columnsOf(O.rows, t), a), cols = RR.cols, F = filtersOf(t, cols, a), filters = F.filters, params = F.params, where = F.where.concat(RR.and);
+  const t = kindOf(O.rows, a.kind), RR = roleRows(O, t, columnsOf(O.rows, t), a), cols = RR.cols, F = filtersOf(t, cols, a, O), filters = F.filters, params = F.params, where = F.where.concat(RR.and);
   const population = popOf(O, t, RR);
   let n = filters.length && CB() !== 'nofilter' ? Number(O.rows('SELECT count(*) AS n FROM ' + t.tablename + ' WHERE ' + where.join(' AND '), params)[0].n) : population;
   if (CB() === 'plus1') n += 1;
@@ -335,7 +351,7 @@ function lookupNames(O, t, cols, names, rows) {
   });
 }
 function list(O, a) {
-  const t0 = Date.now(), t = kindOf(O.rows, a.kind), RR = roleRows(O, t, columnsOf(O.rows, t), a), cols = RR.cols, w = filtersOf(t, cols, a), R = RR.R;
+  const t0 = Date.now(), t = kindOf(O.rows, a.kind), RR = roleRows(O, t, columnsOf(O.rows, t), a), cols = RR.cols, w = filtersOf(t, cols, a, O), R = RR.R;
   const has = (n) => cols.filter(x => x.columnname.toLowerCase() === n)[0];
   const key = cols.filter(x => x.iskey === 'Y')[0];
   const names = a.columns ? String(a.columns).split(',').map(x => colOf(t, cols, x.trim(), 'columns').columnname)
@@ -361,7 +377,7 @@ function decSum(texts) {   // exact: BigInt coefficient over a common scale (no 
   return (neg && /[1-9]/.test(out) ? '-' : '') + out;
 }
 function sum(O, a) {
-  const t0 = Date.now(), t = kindOf(O.rows, a.kind), RR = roleRows(O, t, columnsOf(O.rows, t), a), cols = RR.cols, w = filtersOf(t, cols, a), R = RR.R;
+  const t0 = Date.now(), t = kindOf(O.rows, a.kind), RR = roleRows(O, t, columnsOf(O.rows, t), a), cols = RR.cols, w = filtersOf(t, cols, a, O), R = RR.R;
   if (!a.column) refuse('sum needs --column');
   const c = colOf(t, cols, a.column, 'sum'); if (!isNum(c)) refuse(c.columnname + ' is not a number column (' + (REF[c.ad_reference_id] || 'reference ' + c.ad_reference_id) + '), so it cannot be summed');
   const population = popOf(O, t, RR); w.where = w.where.concat(RR.and);
@@ -371,7 +387,7 @@ function sum(O, a) {
   return { kind: t.name, table: t.tablename, column: c.columnname, filters: w.filters, n: vals.length, sum: total, population, verdict, summary: verdict === 'VACUOUS' ? 'this model holds no ' + t.name + ' record, so nothing was summed' : total + ' = sum of ' + c.columnname + ' over ' + vals.length + ' ' + t.name, ...(R ? { role: R.info } : {}) };
 }
 function group(O, a) {
-  const t0 = Date.now(), t = kindOf(O.rows, a.kind), RR = roleRows(O, t, columnsOf(O.rows, t), a), cols = RR.cols, w = filtersOf(t, cols, a), R = RR.R;
+  const t0 = Date.now(), t = kindOf(O.rows, a.kind), RR = roleRows(O, t, columnsOf(O.rows, t), a), cols = RR.cols, w = filtersOf(t, cols, a, O), R = RR.R;
   if (!a.by) refuse('group needs --by');
   const c = colOf(t, cols, a.by, 'by'), population = popOf(O, t, RR); w.where = w.where.concat(RR.and);
   const raw = O.rows('SELECT ' + c.columnname + ' AS g, count(*) AS n FROM ' + t.tablename + whereSql(w) + ' GROUP BY ' + c.columnname + ' ORDER BY n DESC, g', w.params);

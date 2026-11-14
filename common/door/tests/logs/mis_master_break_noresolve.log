@@ -1,0 +1,5 @@
+  ❌ M1 master=PR_Patient/1 lists exactly the two visits of patient 1 (not the third, which belongs to patient 2), the same rows by the parent's name and by the plain PR_Patient_ID=1 filter; the answer names the master filter  by id= · by name=V1,V2 · by column=V1,V2 · all=V1,V2,V3 · filter=undefined
+  ❌ M2 the sum of Fee under patient 1 is 30.75 (10.5 + 20.25, added here, not by the verb), over 2 rows; the count by patient under that master has one group of 2  sum=undefined n=undefined · group=undefined
+  ❌ M3 refused with the reason, rows never returned: a table that is not a detail of the master; a parent id that does not exist; a spec with no record; a name no parent has; an unknown master table; a name two parents share (it asks for the id)  refused/refused/refused/refused/refused/refused · 2 PR Patient records have Name "Aminah": give the id (PR_Patient_ID) i
+  ❌ M4 a parent with no children is a true zero (0 of the 3 visits, verdict OK), not an empty model; reading wrote nothing (the one write above is the duplicate patient: ops 159 -> 160)  status=refused total=undefined verdict=undefined
+§WITNESS_MIS_MASTER pass=0 fail=4 inconclusive=0 verdict=FAIL
