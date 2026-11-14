@@ -5,6 +5,7 @@
 //   T1 the committed script == the generator's output on today's pack file (no hand edit)
 //   T2 on the test instance's DB, in ONE transaction that is ROLLED BACK (nothing kept, no restart): the script applies with no error; 10 products in category Construction, each with its unit,
 //      its price on the newest Purchase list version and its M_Cost standard price == pack rate / exchange_rate (read here independently from the JSON); the category costs by Standard on every schema
+//   T2c the client's primary accounting schema costs by Standard
 //   T3 a second apply in the same transaction adds 0 rows
 // Break switch TDP_BREAK=1: the script is generated from a COPY of the pack with one rate changed; T1 and T2 MUST FAIL. 0 products judged = INCONCLUSIVE.
 // Run: node capex/tests/witness_td_products.js > <log>
@@ -29,6 +30,7 @@ if (!exp.size) { say('§WTPR INCONCLUSIVE 0 products expected'); process.exit(2)
 const body = gen.split('\n').filter(l => !/register_migration_script/.test(l)).join('\n');
 const Q = `select 'P|'||p.value||'|'||u.x12de355||'|'||pc.value||'|'||coalesce((select pp.pricestd::text from m_productprice pp where pp.m_product_id=p.m_product_id and pp.m_pricelist_version_id=(select v.m_pricelist_version_id from m_pricelist_version v join m_pricelist l using(m_pricelist_id) where v.ad_client_id=11 and l.name='Purchase' and l.issopricelist='N' order by v.validfrom desc limit 1)),'-')||'|'||coalesce((select string_agg(c.currentcostprice::text,',') from m_cost c join m_costelement ce using(m_costelement_id) join c_acctschema s using(c_acctschema_id) where c.m_product_id=p.m_product_id and ce.costingmethod='S' and ce.costelementtype='M' and s.c_currency_id=100),'-') from m_product p join c_uom u using(c_uom_id) join m_product_category pc using(m_product_category_id) where p.ad_client_id=11 and p.value like 'PWD-%' order by 1;
 select 'A|'||c_acctschema_id||'|'||coalesce(costingmethod,'-') from m_product_category_acct where m_product_category_id=(select m_product_category_id from m_product_category where ad_client_id=11 and value='Construction') order by 1;
+select 'S|'||costingmethod from c_acctschema where c_acctschema_id=(select c_acctschema1_id from ad_clientinfo where ad_client_id=11);
 select 'N|'||(select count(*) from m_product where value like 'PWD-%')||'|'||(select count(*) from m_productprice pp join m_product p using(m_product_id) where p.value like 'PWD-%')||'|'||(select count(*) from m_cost c join m_product p using(m_product_id) where p.value like 'PWD-%')||'|'||(select count(*) from m_product_acct a join m_product p using(m_product_id) where p.value like 'PWD-%')||'|'||(select count(*) from c_uom where ad_client_id=11 and x12de355 in ('M3','M2'));`;
 const sql = `set search_path=adempiere;\nBEGIN;\n${body}\nselect '--1';\n${Q}\n${body}\nselect '--2';\n${Q}\nROLLBACK;\n`;
 let out; try { out = execFileSync('docker', ['exec', '-i', 'postgres', 'psql', '-U', 'adempiere', '-d', DB, '-At', '-v', 'ON_ERROR_STOP=1'], { input: sql, encoding: 'utf8', maxBuffer: 1 << 26 }).split('\n'); }
@@ -42,6 +44,8 @@ for (const [code, e] of exp) { const row = P.find(r => r[1] === code), want = (M
   if (Math.abs(+row[4] - want) > 1e-9) bad.push(code + ' price ' + row[4] + ' != ' + want); if (Math.abs(+row[5] - want) > 1e-9) bad.push(code + ' cost ' + row[5] + ' != ' + want); }
 verdict('T2a', 'every pack item has a product with its unit, category Construction, Purchase-list price and Standard M_Cost == rate/' + FX, !bad.length && P.length === exp.size, { expected: exp.size, found: P.length, bad: bad.slice(0, 6) });
 verdict('T2b', 'category costs by Standard on every schema', A.length >= 1 && A.every(a => a[2] === 'S'), { schemas: A.map(a => a[1] + ':' + a[2]) });
+const SM = (r1.find(l => l.startsWith('S|')) || '').split('|')[1];
+verdict('T2c', 'the primary accounting schema costs by Standard (a project issue is costed by the SCHEMA method, MProjectIssue.updateBalanceAmt)', SM === 'S', { method: SM });
 verdict('T3', 'a second apply adds 0 rows (products, prices, costs, product accts, units)', N1.length === 5 && JSON.stringify(N1) === JSON.stringify(N2), { first: N1, second: N2 });
 say(`§WTPR ${fails ? 'FAIL' : 'PASS'} judged=${judged} fails=${fails} break=${BREAK ? 1 : 0}`);
 process.exit(fails ? 1 : 0);
