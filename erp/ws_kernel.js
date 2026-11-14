@@ -77,8 +77,8 @@ function build(db) {
   let clock = Date.now(), uu = 0;
   const sessionTok = new WeakMap();   // one token per (this kernel, login session): the holder of that login's context (ad_callout sessionContext = Env.getCtx())
   function env(s) {   // the session of the WS login, like Env.getCtx() for the request
-    clock += 1000; const d = new Date(clock), day = d.toISOString().slice(0, 10);
-    return { client: s.clientId, org: s.orgId, user: s.userId, role: s.roleId, date: day + ' 00:00:00', now: d.toISOString().slice(0, 19).replace('T', ' '), nowMillis: clock, session: sessionTok.get(s) || (sessionTok.set(s, {}), sessionTok.get(s)), ctx: { m_warehouse_id: s.warehouseId },   // Env.getContextAsInt(ctx, "#M_Warehouse_ID") of the WS login (MOrder.beforeSave :1206-1215)
+    clock += 1000; const st = A.Env.stamp(clock);   // the LOCAL day + stamp (A.Env, the login context's one clock): legacy's WS session #Date is SimpleDateFormat of currentTimeMillis in the JVM's zone (CompiereService.java:281-283). Was the UTC day (#2996).
+    return { client: s.clientId, org: s.orgId, user: s.userId, role: s.roleId, date: st.day + ' 00:00:00', now: st.now, nowMillis: clock, session: sessionTok.get(s) || (sessionTok.set(s, {}), sessionTok.get(s)), ctx: { m_warehouse_id: s.warehouseId },   // Env.getContextAsInt(ctx, "#M_Warehouse_ID") of the WS login (MOrder.beforeSave :1206-1215)
       uuid: function () { uu++; return crypto.randomUUID(); } };
   }
   const journal = [], hooks = { onJournal: null }, ctxMeta = { v: null };   // ctxMeta.v: extra journal meta for the call in flight (e.g. approvedBy)   // the kernel's own ordered op history: every entry names the caller's actor and chains the hash of the one before (ERP_WS_API.md S5)
