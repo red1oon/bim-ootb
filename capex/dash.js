@@ -10,6 +10,8 @@
     legacySnapshot: 'legacy_snapshot.json', buildingsBase: '../buildings/', viewerUrl: '../viewer/viewer.html', erpUrl: '../erp/idempiere.html', legacyUi: 'http://localhost:8088/webui/index.zul'
   }, window.CAPEX_CFG || {});
   var Q = new URLSearchParams(location.search);
+  // §5.79: a record link on the legacy source opens the server the rows were READ from: the read job writes its base into the snapshot (meta.base). An explicit CAPEX_CFG.legacyUi wins; no base in the file = the default above.
+  function legacyUi() { var m = S.sources && S.sources.legacy && S.sources.legacy.meta, x = window.CAPEX_CFG && window.CAPEX_CFG.legacyUi; return x || (m && m.base ? String(m.base).replace(/\/+$/, '') + '/webui/index.zul' : CFG.legacyUi); }
   if (Q.get('db')) CFG.erpDb = Q.get('db');
   if (Q.get('snapshot')) CFG.legacySnapshot = Q.get('snapshot');
   if (Q.get('buildings')) CFG.buildingsBase = Q.get('buildings');
@@ -199,7 +201,7 @@
     var v = $('view'); v.innerHTML = ''; v.setAttribute('data-theme', S.theme);
     var d = T.projectDetail(data(), { today: TODAY }, S.projId, compute), root = h('div', 'ppage'); root.setAttribute('data-page', 'project');
     if (!d) { root.innerHTML = '<a id="pBack" href="#dashboard">‹ Dashboard</a><div class="card"><span class="nodata">no such project in this data source</span></div>'; v.appendChild(root); return; }
-    var ci = curInfo(d.cur), iso = esc(ci.ISO_Code || ''), erp = S.cur === 'legacy' ? CFG.legacyUi + '?Action=Zoom&TableName=C_Project&Record_ID=' + d.id : CFG.erpUrl + '?window=130&record=' + d.id;
+    var ci = curInfo(d.cur), iso = esc(ci.ISO_Code || ''), erp = S.cur === 'legacy' ? legacyUi() + '?Action=Zoom&TableName=C_Project&Record_ID=' + d.id : CFG.erpUrl + '?window=130&record=' + d.id;
     var COLV = { green: 'var(--ok)', amber: 'var(--warn)', red: 'var(--bad)', none: 'var(--none)', ontime: 'var(--ok)', delayed: 'var(--bad)', atrisk: 'var(--warn)', nosched: 'var(--none)', within: 'var(--ok)', over: 'var(--bad)', notstarted: 'var(--none)' };
     var chip = function (kind, val, label) { return val ? '<span class="pchip" data-kind="' + kind + '" style="background:' + (COLV[val] || 'var(--none)') + '">' + esc(label) + '</span>' : ''; };
     var W = { green: 'Green', amber: 'Amber', red: 'Red', none: 'No data' }, SW = { ontime: 'On time', delayed: 'Delayed' + (d.late ? ' ' + d.late + ' days' : ''), atrisk: 'At risk' + (d.late ? ' · ' + d.late + ' days' : ''), nosched: 'No schedule' }, BW = { within: 'Budget within plan', over: 'Over budget', notstarted: 'No cost yet' };
@@ -250,7 +252,7 @@
       '<tr class="total" data-planned="' + d.totals.phasePlanned + '" data-committed="' + d.totals.phaseCommitted + '"><td>Total</td><td class="n">' + fmt(d.totals.phasePlanned) + '</td><td class="n">' + fmt(d.totals.phaseCommitted) + '</td><td></td></tr></tbody></table><div class="leg"><span><i class="dot" style="background:var(--line)"></i>planned</span><span><i class="dot" style="background:var(--acc)"></i>committed</span></div></div><div class="card"><h3>From the project lines</h3><div class="subv">' + m.lines + ' lines · committed ' + fmt(m.lineCommitted) + ' · invoiced ' + fmt(m.lineInvoiced) + ' · actual cost (project balance) ' + fmt(m.spent) + '</div></div>' : '<div class="card"><span class="nodata">this project has no phases to cost</span></div>');
     var ni = '<span class="nodata" data-notinstalled="1" title="@WHAT@ not readable on this server">no data (not installed)</span>';
     // §5.59 the supply chain drill: one card at the top of Procurement; every document opens in the system the numbers came from (legacy: its WebUI zoom by URL, Action=Zoom&TableName&Record_ID; twin: the purchase window of the table)
-    var ZW = { C_Order: 181, M_InOut: 184, C_Invoice: 183, C_Payment: 195 }, zoom = function (tn, id) { return esc(S.cur === 'legacy' ? CFG.legacyUi + '?Action=Zoom&TableName=' + tn + '&Record_ID=' + id : CFG.erpUrl + '?window=' + ZW[tn] + '&record=' + id); };
+    var ZW = { C_Order: 181, M_InOut: 184, C_Invoice: 183, C_Payment: 195 }, zoom = function (tn, id) { return esc(S.cur === 'legacy' ? legacyUi() + '?Action=Zoom&TableName=' + tn + '&Record_ID=' + id : CFG.erpUrl + '?window=' + ZW[tn] + '&record=' + id); };
     var zl = function (tn, ids, lab) { return ids.length ? ids.map(function (i) { return '<a class="erp-link" data-doc="' + tn + '" data-id="' + esc(i) + '" href="' + zoom(tn, i) + '" target="_blank" rel="noopener">' + lab + ' ' + esc(i) + '</a>'; }).join(' ') : '<span class="nodata">—</span>'; };
     var STG = { ordered: 'Ordered', received: 'Received', invoiced: 'Invoiced', paid: 'Paid', unfinished: 'Not completed' }, ch = d.chain, chainCard = '';
     if (d.orders !== null) chainCard = ch === null ? '<div class="card" data-chain="none">' + ni.replace('@WHAT@', 'Receipts, vendor invoices and payments are') + '</div>'
@@ -330,7 +332,7 @@
   function openDrillRows(rows, label, key) {
     var d = $('drill'), f = function (v) { return v == null || v === '' ? '<span class="nodata">—</span>' : (+v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
     // the row opens the record in the system the numbers came from: legacy -> its WebUI zoom (AdempiereWebUI.processParameters: Action=Zoom&TableName&Record_ID); twin -> the ERP Project window (130)
-    var link = function (r) { return esc(S.cur === 'legacy' ? CFG.legacyUi + '?Action=Zoom&TableName=C_Project&Record_ID=' + r.id : CFG.erpUrl + '?window=130&record=' + r.id); }, page = function (r) { return esc('#project/' + r.id); };
+    var link = function (r) { return esc(S.cur === 'legacy' ? legacyUi() + '?Action=Zoom&TableName=C_Project&Record_ID=' + r.id : CFG.erpUrl + '?window=130&record=' + r.id); }, page = function (r) { return esc('#project/' + r.id); };
     d.innerHTML = '<div class="dhead"><b>' + esc(label) + '</b> <span class="dn" data-drill-n="' + rows.length + '">' + rows.length + ' project' + (rows.length === 1 ? '' : 's') + '</span><button type="button" id="drillClose" aria-label="Close">×</button></div>' +
       (rows.length ? '<table><thead><tr><th>Project</th><th>Cur</th><th>Approved</th><th>Spent</th><th>Due</th><th>Done</th><th>Health</th><th>Schedule</th><th>Budget</th></tr></thead><tbody>' +
         rows.map(function (r) { return '<tr data-project="' + esc(r.id) + '"><td><a class="open" href="' + page(r) + '" title="Open the project page">' + esc(r.Value) + '</a> <a class="erp" href="' + link(r) + '" title="Open in the ERP (' + esc(S.cur) + ')" target="_blank" rel="noopener">ERP ↗</a><small>' + esc(r.Name || '') + '</small></td><td>' + esc(curInfo(r.cur).ISO_Code || r.cur) + '</td><td>' + f(r.planned) + '</td><td>' + f(r.spent) + '</td><td>' + f(r.due) + '</td><td>' + f(r.done) + '</td><td>' + esc(r.health || '') + '</td><td>' + esc(r.schedule || '') + '</td><td>' + esc(r.budget || '') + '</td></tr>'; }).join('') + '</tbody></table>'
@@ -403,7 +405,7 @@
       S.sources.sqlite = await AD.loadSqlite(SQL, CFG.erpDb);
       var d = S.sources.sqlite; log('§DASH_SOURCE sqlite url=' + CFG.erpDb + ' projects=' + d.projects.length + ' phases=' + d.phases.length + ' tasks=' + d.tasks.length + ' lines=' + d.lines.length + ' unavailable=[' + d.unavailable.join(',') + ']');
     } catch (e) { log('§DASH_SOURCE sqlite FAIL ' + e.message); }
-    try { S.sources.legacy = await AD.loadSnapshot(CFG.legacySnapshot); log('§DASH_SOURCE legacy snapshot projects=' + S.sources.legacy.projects.length + ' unavailable=[' + S.sources.legacy.unavailable.join(',') + ']'); }
+    try { S.sources.legacy = await AD.loadSnapshot(CFG.legacySnapshot); log('§DASH_SOURCE legacy snapshot projects=' + S.sources.legacy.projects.length + ' unavailable=[' + S.sources.legacy.unavailable.join(',') + ']'); log('§DASH_LEGACY_UI ' + legacyUi() + ' from=' + (window.CAPEX_CFG && window.CAPEX_CFG.legacyUi ? 'config' : (S.sources.legacy.meta && S.sources.legacy.meta.base ? 'snapshot meta.base' : 'default'))); }
     catch (e) { log('§DASH_SOURCE legacy none (' + CFG.legacySnapshot + ')'); }
     S.cur = (Q.get('source') === 'legacy' && S.sources.legacy) ? 'legacy' : S.sources.sqlite ? 'sqlite' : (S.sources.legacy ? 'legacy' : 'none');   // ?source=legacy opens the snapshot (§5.27)
     $('src').innerHTML = Object.keys(S.sources).map(function (k) { return '<option value="' + k + '">' + (k === 'sqlite' ? 'A · SQLite ERP DB' : 'B · Legacy iDempiere') + '</option>'; }).join('');
