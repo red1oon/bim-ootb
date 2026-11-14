@@ -1,0 +1,11 @@
+  ✅ S2 before model.open: convert, addbay and undo are refused ("no session: model.open first"), none starts a page  refused/refused/refused
+  ✅ S1 the open session is a separate process from every later line: the sheets are open (9, gate open, 445 bodies read), a second model.open is refused, and an addbay before convert is refused  open: 9 sheets open, 445 bodies read (4 left out), the gate is open · again: refused · early addbay: refused
+  ✅ S2b convert works once, says how many elements it made (equal to its inserts) and that add-a-bay is offered for Farming Shed; a second convert is refused  inserts=444 elements=444 offered=true
+  ✅ S3a the bay at the high end: the copies are the sum of their classes (29), the page's typical bay (2 column, 2 beam, 2 footing, 2 wall, 12 member, 9 plate), the elements grew by exactly the copies (444 -> 473), the cost total is added + changed, the gate is as the page logged  copies=29 {"IfcColumn":2,"IfcBeam":2,"IfcFooting":2,"IfcWall":2,"IfcMember":12,"IfcPlate":9} · 444->473 · cost={"added":10722,"changed":5176,"total":15898,"currency":"USD","pack":"rsmeans2024_us"} · gate=clean
+  ✅ S3b model.undo returns the element count to before the bay (473 -> 444)  {"b":473,"a":444}
+  ✅ S3c the bay at the LOW end is a different hinge (02 against 41) and the same typical bay (29 copies, +29 elements); its gate string is the page's own (⚠ 8 ORANGE)  hinge=02 gate=⚠ 8 ORANGE cost={"added":11144,"changed":5176,"total":16320,"currency":"USD","pack":"rsmeans2024_us"}
+  ✅ S5 an end that is not high or low, and no end at all, are refused with the reason (nothing added)  refused/error
+  ✅ S5b after model.close the session is gone: the next line is refused (no session), and the state file is removed  close=ok next=refused
+  ✅ S4 with no building type stated, convert says add-a-bay is NOT offered and model.addbay is refused saying so (the rule is the type's row, never assumed)  offered=false · addbay=refused the building type General declares no bay_repeat
+  ✅ S6 the vocabulary holds model.open, model.convert, model.addbay, model.undo, model.close (harm trial, they name this witness)  model.open model.convert model.addbay model.undo model.close
+§WITNESS_MODEL_SESSION pass=10 fail=0 inconclusive=0 verdict=PASS

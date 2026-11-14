@@ -16,9 +16,11 @@
 // stdout: JSON only, {ok, building, edits:[report | {refused,grid,move,reason}], ms}. Logs: stderr. Exit: 0 every edit reported · 3 an edit refused · 2 usage · 1 failed.
 'use strict';
 const path = require('path');
-const args = process.argv.slice(2), edits = []; let building = null, bad = null, wantLines = false, ownGrid = false, latticeBoxes = false, url = null, reportOnly = false;
+const args = process.argv.slice(2), edits = []; let building = null, localFile = null, bad = null, wantLines = false, wantOpen = false, ownGrid = false, latticeBoxes = false, url = null, reportOnly = false;
 for (let i = 0; i < args.length; i++) {
   if (args[i] === '--building') building = args[++i];
+  else if (args[i] === '--file') { localFile = args[++i]; if (!building) building = require('path').basename(String(localFile)).replace(/_extracted\.db$|\.db$/i, ''); }   // a building that is a .db on this computer: opened the way the page's "Open local .db" row opens it
+  else if (args[i] === '--open') wantOpen = true;
   else if (args[i] === '--lines') wantLines = true;
   else if (args[i] === '--url') url = args[++i];
   else if (args[i] === '--report-only') reportOnly = true;
@@ -30,7 +32,7 @@ for (let i = 0; i < args.length; i++) {
   else bad = 'unknown argument ' + args[i];
 }
 if (!bad && !building) bad = '--building is required';
-if (!bad && !edits.length && !wantLines) bad = 'at least one --grid or --shift, with --move, is required';
+if (!bad && !edits.length && !wantLines && !wantOpen) bad = 'at least one --grid or --shift, with --move, is required';
 if (!bad && edits.some(e => e.move == null)) bad = 'every --grid or --shift needs a --move';
 if (bad) { process.stderr.write('edit_cli: ' + bad + '\n'); process.exit(2); }
 
@@ -66,8 +68,11 @@ function serveRepo() {
     await pg.goto(url, { waitUntil: 'load', timeout: 120000 });
     await pg.waitForFunction('window.__sceneReady===true && !!window.THREE && !!window.A && !!window.Bonsai', { timeout: 60000 }).catch(() => {});
     await pg.click('#b-open'); await sleep(200);
+    if (localFile) { const [fc] = await Promise.all([pg.waitForFileChooser({ timeout: 15000 }), pg.click('#m-open-panel .mo-row[data-key="__local"]')]); await fc.accept([path.resolve(localFile)]); }
+    else {
     if (!await pg.$('#m-open-panel .mo-row[data-key="' + building + '"]')) { const k = await pg.evaluate(() => Array.from(document.querySelectorAll('#m-open-panel .mo-row')).map(r => r.dataset.key).filter(k => k && k.indexOf('__') !== 0)); throw new Error('no building ' + building + ' (' + k.join(', ') + ')'); }
     await pg.click('#m-open-panel .mo-row[data-key="' + building + '"]');
+    }
     await pg.waitForFunction(() => !!window.__dwBuf, { timeout: 120000 }).catch(() => {});
     await sleep(2200);
     // Settled = the seed has armed the Save baseline with real boxes. Editing sooner moves nothing and reports "not judged", so the answer would depend on machine load.
