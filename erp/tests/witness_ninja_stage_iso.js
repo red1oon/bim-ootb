@@ -1,7 +1,7 @@
 // ⚠ DO NOT REMOVE — W-NINJA-STAGE-ISO (bim-compiler prompts/ERP_MIS_WINDOW_FROM_CSV.md §12.1: rollback is one model; a bundle has its own menu node). READ THE LOG; an exit code is not evidence.
 //   I1 ISSUE (rolling back one bundle switches off every other staged bundle) · I2 ISSUE (a rolled-back model cannot come back, or comes back under other ids)
 //   I3 ISSUE (two bundles share one menu node that carries a leftover name, so a bundle's name is shown nowhere) · I3b ISSUE (a rollback by bundle NAME, the form an emitted bundle module uses, is blanket or dead)
-//   I4 ISSUE (a call with no model rolls back everything) · I5 ISSUE (rolling back a model that reused a dictionary table switches that table off, or leaves its added columns on)
+//   I4 ISSUE (a call with no model rolls back everything) · I6 ISSUE (rolling back a tab attached to a core window switches that window or its tabs off) · I5 ISSUE (rolling back a model that reused a dictionary table switches that table off, or leaves its added columns on)
 //   Falsifiers: NINJAISO_BREAK=blanket (must FAIL I1) · onenode (must FAIL I3). A model that stages no row gives INCONCLUSIVE, never PASS.
 //   Run: node erp/tests/witness_ninja_stage_iso.js > erp/tests/logs/ninja_stage_iso.log 2>&1
 'use strict';
@@ -76,5 +76,12 @@ const k = kit('W-NINJA-STAGE-ISO');
   if (!(sC.reused || []).length) k.incon('I5', 'the stager reused no table (the seed has no C_Greeting?)');
   else k.chk('I5 a reused dictionary table: staged, it is still one row with 2 columns and 1 tab added; rolled back, the 2 added columns and the tab are off while the table and its ' + g0.own + ' own columns stay as they were',
     on.rows === 1 && on.added === 2 && on.tab === 1 && off.added === 0 && off.tab === 0 && off.own === g0.own && off.tbl === g0.tbl && same(a4, state(A)), 'staged: rows=' + on.rows + ' added=' + on.added + ' tab=' + on.tab + ' · rolled back: added=' + off.added + ' tab=' + off.tab + ' own ' + off.own + '/' + g0.own + ' table active ' + g0.tbl + '->' + off.tbl + ' reused=' + JSON.stringify(sC.reused));
+  // ── I6 a table attached to a window of the core (Master=C_BPartner, §12.9): its rollback takes the added tab and leaves the window and its own tabs as they were
+  const Dm = parse('IsoAttach', [['C_BPartner', 'ZD_Visit', 'Name']]), CT = "SELECT group_concat(AD_Tab_ID || ':' || TabLevel || ':' || SeqNo || ':' || IsActive, ' ') FROM (SELECT * FROM AD_Tab WHERE AD_Window_ID=123 AND AD_Tab_ID<" + B0 + ' ORDER BY AD_Tab_ID)';
+  const t0 = one(CT), w0 = one('SELECT IsActive FROM AD_Window WHERE AD_Window_ID=123'), sD = quiet(() => NS.stageModels(db, Dm, 0)).v, onD = rows("SELECT tb.AD_Window_ID AS w, tb.TabLevel AS l, tb.IsActive AS a FROM AD_Tab tb JOIN AD_Table t ON t.AD_Table_ID=tb.AD_Table_ID WHERE t.TableName='ZD_Visit'")[0] || {};
+  quiet(() => NS.rollbackModel(db, Dm)); const offD = rows("SELECT tb.IsActive AS a FROM AD_Tab tb JOIN AD_Table t ON t.AD_Table_ID=tb.AD_Table_ID WHERE t.TableName='ZD_Visit'")[0] || {};
+  if (!(sD.attached || []).length) k.incon('I6', 'the stager attached no table (the seed has no Business Partner window 123 with a C_BPartner tab?)');
+  else k.chk('I6 a tab attached to the Business Partner window: staged it is active there one level under the partner tab; rolled back it is off, and the window and its own tabs are exactly as before', Number(onD.w) === 123 && Number(onD.l) === 1 && onD.a === 'Y' && offD.a === 'N' && one(CT) === t0 && one('SELECT IsActive FROM AD_Window WHERE AD_Window_ID=123') === w0 && w0 === 'Y',
+    'staged: window=' + onD.w + ' level=' + onD.l + ' active=' + onD.a + ' · rolled back: active=' + offD.a + ' core tabs unchanged=' + (one(CT) === t0) + ' window active ' + w0 + '->' + one('SELECT IsActive FROM AD_Window WHERE AD_Window_ID=123'));
   k.end();
 })().catch(e => { console.log('§W-NINJA-STAGE-ISO ERROR ' + e.stack); process.exit(2); });

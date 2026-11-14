@@ -55,10 +55,10 @@ const CHAIN = mk([['', 'TST_Head', 'Name,A#Total'], ['TST_Head', 'TST_Line', 'Na
   const hw = by.TST_Head.window;
   const g = { Line: gt(db, hw, 'TST_Line'), Sub: gt(db, hw, 'TST_SubLine') };
   row('NT-1', { claim: 'Line+SubLine live in Head window, level 1/2, no own window/menu', verdict: (by.TST_Line.window === hw && by.TST_SubLine.window === hw && by.TST_Line.tabLevel === 1 && by.TST_SubLine.tabLevel === 2 && by.TST_Line.menu === 1 && by.TST_Head.menu === 1 && by.TST_Line.ownWindows === 0 && by.TST_SubLine.ownWindows === 0) ? 'PASS' : 'GAP', detail: JSON.stringify({ hw, line: by.TST_Line, sub: by.TST_SubLine }) });
-  row('NT-2', { claim: 'IsParent only on <Master>_ID of a detail', verdict: (by.TST_Head.isParentCols === '' && by.TST_Line.isParentCols === 'TST_Head_ID' && by.TST_SubLine.isParentCols === 'TST_Line_ID' && by.TST_Ext.isParentCols === '') ? 'PASS' : 'GAP', detail: JSON.stringify(sh.map(s => s.table + ':' + (s.isParentCols || '-'))) });
+  row('NT-2', { claim: 'IsParent only on <Master>_ID of a detail', verdict: (by.TST_Head.isParentCols === '' && by.TST_Line.isParentCols === 'TST_Head_ID' && by.TST_SubLine.isParentCols === 'TST_Line_ID' && by.TST_Ext.isParentCols === 'C_BPartner_ID') ? 'PASS' : 'GAP', detail: JSON.stringify(sh.map(s => s.table + ':' + (s.isParentCols || '-'))) });
   row('NT-3', { claim: 'GridTab reads Line as a detail of Head, link=TST_Head_ID (zero Ninja code)', verdict: (g.Line.parentIndex >= 0 && g.Line.parentTable === 'TST_Head' && g.Line.isDetail && g.Line.link === 'TST_Head_ID') ? 'PASS' : 'GAP', detail: JSON.stringify(g.Line) });
   row('NT-4', { claim: '3-level chain: SubLine detail of Line, link=TST_Line_ID', verdict: (g.Sub.tabLevel === 2 && g.Sub.parentTable === 'TST_Line' && g.Sub.isDetail && g.Sub.link === 'TST_Line_ID') ? 'PASS' : 'GAP', detail: JSON.stringify(g.Sub) });
-  row('NT-5', { claim: 'external master (C_BPartner not in model): own window, no IsParent, not a detail', verdict: (by.TST_Ext.ownWindows === 1 && by.TST_Ext.window !== hw && by.TST_Ext.isParentCols === '') ? 'PASS' : 'GAP', detail: JSON.stringify(by.TST_Ext) });
+  row('NT-5', { claim: 'external master (C_BPartner: not in the model, a table of the dictionary): a tab INSIDE that table\'s own window, one level under its tab, IsParent on C_BPartner_ID, no window of its own (legacy Ninja MRO_ModelMaker.createMasterDetail L823-926; bim-compiler prompts/ERP_MIS_WINDOW_FROM_CSV.md §12.9, which replaces the own-window rule this arm held)', verdict: (by.TST_Ext.ownWindows === 0 && by.TST_Ext.window === Number(one(db, "SELECT AD_Window_ID FROM AD_Table WHERE TableName='C_BPartner'")) && by.TST_Ext.tabLevel === 1 && by.TST_Ext.isParentCols === 'C_BPartner_ID') ? 'PASS' : 'GAP', detail: JSON.stringify(by.TST_Ext) });
   console.log = _log;
   console.log('§NINJA-DETAIL counts=' + JSON.stringify(counts) + ' (windows=' + counts.windows + ' for ' + model.tables.length + ' tables; details=' + counts.details + ')');
   console.log = () => {};
@@ -93,7 +93,7 @@ const CHAIN = mk([['', 'TST_Head', 'Name,A#Total'], ['TST_Head', 'TST_Line', 'Na
   NS.stageModels(A, model, 0); const c2 = NS.stageModels(A, model, 0);
   const s3 = shape(A, ['TST_Line'])[0];
   const nWin = Number(one(A, "SELECT COUNT(*) FROM AD_Window WHERE IsActive='Y' AND AD_Window_ID>=7000000")), nTab = Number(one(A, "SELECT COUNT(*) FROM AD_Tab WHERE IsActive='Y' AND AD_Tab_ID>=7000000"));
-  row('NT-7', { claim: 'second+third stage idempotent; legacy detail window/menu deactivated, moved into master window', verdict: (s3.window === hw && s3.tabLevel === 1 && s3.isParentCols === 'TST_Head_ID' && s3.menu === 1 && Number(one(A, 'SELECT IsActive="Y" FROM AD_Window WHERE AD_Window_ID=' + ownW)) === 0 && nWin === 2 && nTab === 4 && c2.tables === 0 && c2.cols === 0 && c2.tabs === 0) ? 'PASS' : 'GAP',
+  row('NT-7', { claim: 'second+third stage idempotent; legacy detail window/menu deactivated, moved into master window', verdict: (s3.window === hw && s3.tabLevel === 1 && s3.isParentCols === 'TST_Head_ID' && s3.menu === 1 && Number(one(A, 'SELECT IsActive="Y" FROM AD_Window WHERE AD_Window_ID=' + ownW)) === 0 && nWin === 1 && nTab === 4 && c2.tables === 0 && c2.cols === 0 && c2.tabs === 0) ? 'PASS' : 'GAP',
     detail: JSON.stringify({ s3, nWin, nTab, c2 }) });
 
   console.log = _log;

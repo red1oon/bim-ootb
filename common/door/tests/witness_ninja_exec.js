@@ -4,7 +4,8 @@
 //   E5 ISSUE (a second run stages again; a refusal leaves something written) · E6 ISSUE (a dry run writes; an AI stages a workbook without a person)
 //   E7 ISSUE (the owner's own workbook does not go through) · E8 the cost of the line, logged (no threshold) · E9 ISSUE (the practice workbook the guide points at does not stage)
 //   E10 ISSUE (a table the dictionary already holds is refused or made twice, where legacy Ninja reuses it and adds the sheet's columns; a kind shown in two windows can be written through one only)
-//   Falsifiers: NINJAEXEC_BREAK=nodetail (must FAIL E1) · onegroup (E3) · nodata (E4) · nochild (E2, E2c) · noreuse (E10, E7). The owner's workbook: NINJA_HRMIS=<path>; absent = INCONCLUSIVE, never PASS.
+//   E11 ISSUE (a Master that is a table of the system, not of the sheet, gives a lonely window where legacy Ninja puts a tab into that table's own window)
+//   Falsifiers: NINJAEXEC_BREAK=nodetail (must FAIL E1) · onegroup (E3) · nodata (E4) · nochild (E2, E2c) · noreuse (E10, E7) · noattach (E11a). The owner's workbook: NINJA_HRMIS=<path>; absent = INCONCLUSIVE, never PASS.
 //   Run: node common/door/tests/witness_ninja_exec.js > common/door/tests/logs/ninja_exec.log 2>&1
 'use strict';
 const fs = require('fs'), path = require('path'), cp = require('child_process');
@@ -120,6 +121,30 @@ const k = kit('W-NINJA-EXEC'), BRK = process.env.NINJAEXEC_BREAK || '';
       k.chk('E10b a kind shown in two windows: without window= the workbook\'s column is refused with the window to name; with window= (by id, then by name) the record is made under the club and changed, each line a fresh process; the club shows it with Seats 6; a second run writes nothing',
         ok(c1) && ref(g1, /also shown in the window ZR Club/) && ok(g2) && ok(g3) && ok(rc) && kid.rows.length === 1 && Number(kid.rows[0].seats) === 6 && Number(kid.rows[0].zr_club_id) === 1 && ok(ag) && ag.answer.alreadyStaged === true,
         'club=' + c1.status + ' no window=' + g1.status + ' "' + String(g1.why || '').slice(-80) + '" window id=' + g2.status + ' ' + String(g2.why || '').slice(0, 90) + ' window name=' + g3.status + ' ' + String(g3.why || '').slice(0, 90) + ' child=' + JSON.stringify(kid.rows.map(r => ({ name: r.name, seats: r.seats, club: r.zr_club_id }))) + ' again=' + (ag.answer && ag.answer.alreadyStaged));
+    }
+  }
+  // ── E11 a tab on any window: the Master is a table of the dictionary, not of the sheet (legacy Ninja, MRO_ModelMaker.createMasterDetail L823-926). §12.9
+  {
+    const mk = (file, rows) => { const wb = XL.utils.book_new(), add = (n, r) => XL.utils.book_append_sheet(wb, XL.utils.aoa_to_sheet(r), n); add('1_RO_ModelHeader', [['Name', 'Version'], [file.replace(/\W/g, ''), '1']]); add('2_RO_ModelMaker', [HDR].concat(rows.map((m, i) => ['X', i + 1, 'N', 'N', m[0], m[1], '', m[2]]))); fs.writeFileSync(path.join(dir, file), XL.write(wb, { type: 'buffer', bookType: 'xlsx' })); };
+    const noWin = (sq("SELECT tablename AS t FROM ad_table WHERE isactive='Y' AND ad_window_id IS NULL AND ad_table_id<1000 ORDER BY ad_table_id LIMIT 1")[0] || {}).t;
+    mk('fix_attach.xlsx', [['C_BPartner', 'ZV_SiteVisit', 'Name,D#DateVisit'], ['ZV_SiteVisit', 'ZV_VisitNote', 'Name,T#Notes']]); mk('fix_nomaster.xlsx', [['ZZ_NoSuchTable', 'ZV_Orphan', 'Name']]); if (noWin) mk('fix_nowin.xlsx', [[noWin, 'ZV_Lost', 'Name']]);
+    const EB = envOf('attach'), dB = doorE(EB), TABS = "SELECT ad_tab_id AS id, tablevel AS lvl, seqno AS seq, isactive AS a FROM ad_tab WHERE ad_window_id=123 AND ad_tab_id<" + NS.NINJA_BASE + ' ORDER BY ad_tab_id', seedTabs = JSON.stringify(sq(TABS)), maxSeq = sq('SELECT max(seqno) AS m, count(*) AS n FROM ad_tab WHERE ad_window_id=123')[0], bpTab = sq("SELECT tablevel AS lvl FROM ad_tab WHERE ad_window_id=123 AND ad_table_id=(SELECT ad_table_id FROM ad_table WHERE tablename='C_BPartner') ORDER BY tablevel, seqno LIMIT 1")[0];
+    const x1 = await dB('ninja.exec file=fix_nomaster.xlsx'), x2 = noWin ? await dB('ninja.exec file=fix_nowin.xlsx') : null, nB0 = nops(EB);
+    if (!noWin) k.incon('E11c', 'the seed has no table without a window to try');
+    else k.chk('E11c refused, nothing written: a Master that is neither in the sheet nor a table here; a Master (' + noWin + ') that has no window here', ref(x1, /does not exist \(yet\)/) && ref(x2, /no window here/) && nB0 === 0, 'no such master: ' + x1.status + ' · no window: ' + x2.status + ' "' + String(x2.why || '').slice(0, 80) + '" · ops=' + nB0);
+    const at = await dB('ninja.exec file=fix_attach.xlsx'), AT = at.answer || {};
+    if (!ok(at)) k.chk('E11a a sheet row whose Master is C_BPartner is staged', false, at.status + ' ' + String(at.why || '').slice(0, 200));
+    else {
+      const OB = await image(EB), mine = OB.rows("SELECT t.tablename AS tn, tb.ad_window_id AS win, tb.tablevel AS lvl, tb.seqno AS seq, (SELECT group_concat(c.columnname) FROM ad_column c WHERE c.ad_table_id=t.ad_table_id AND c.isparent='Y' AND c.isactive='Y') AS parent FROM ad_tab tb JOIN ad_table t ON t.ad_table_id=tb.ad_table_id WHERE tb.isactive='Y' AND t.tablename LIKE 'ZV!_%' ESCAPE '!' ORDER BY tb.seqno").map(r => [r.tn, r.win, r.lvl, r.seq, r.parent].join('|'));
+      const nowTabs = JSON.stringify(OB.rows(TABS).map(r => ({ id: r.id, lvl: r.lvl, seq: r.seq, a: r.a }))), made = AT.opSummary || {}, leafs = OB.rows("SELECT count(*) AS n FROM ad_menu m WHERE m.ad_menu_id>=" + NS.NINJA_BASE + " AND m.issummary='N' AND m.isactive='Y'")[0].n;
+      const wantA = ['ZV_SiteVisit|123|' + (Number(bpTab.lvl) + 1) + '|' + (10 + 10 * maxSeq.n) + '|C_BPartner_ID', 'ZV_VisitNote|123|' + (Number(bpTab.lvl) + 2) + '|' + (20 + 10 * maxSeq.n) + '|ZV_SiteVisit_ID'];
+      k.chk('E11a Master=C_BPartner puts the tab INTO the Business Partner window: one level under the partner tab, after the ' + maxSeq.n + ' tabs that are there (SeqNo 10 + count x 10, as legacy), its own detail one level further; no window and no menu entry made; the window\'s own tabs are as the seed has them',
+        JSON.stringify(mine) === JSON.stringify(wantA) && Number(mine[0].split('|')[3]) > Number(maxSeq.m) && !made['create:ad_window'] && leafs === 0 && nowTabs === seedTabs && (AT.attached || []).map(x => x.table + '>' + x.master + '@' + x.window).join() === 'ZV_SiteVisit>C_BPartner@Business Partner',
+        'tabs=' + JSON.stringify(mine) + (JSON.stringify(mine) === JSON.stringify(wantA) ? '' : ' want=' + JSON.stringify(wantA)) + ' seed max SeqNo=' + maxSeq.m + ' windows made=' + (made['create:ad_window'] || 0) + ' menu leaves=' + leafs + ' core tabs unchanged=' + (nowTabs === seedTabs) + ' attached=' + JSON.stringify(AT.attached));
+      const v1 = await dB('mis.new kind=ZV_SiteVisit Name=First C_BPartner_ID=112'), v2 = await dB('mis.new kind=ZV_VisitNote Name=N1 ZV_SiteVisit_ID=1'), v3 = await dB('mis.new kind=ZV_SiteVisit Name=Second C_BPartner_ID=112 role=102'), rb = await dB('mis.read kind=C_BPartner id=112'), rv = await dB('mis.read kind=ZV_SiteVisit id=1'), agB = await dB('ninja.exec file=fix_attach.xlsx');
+      const kidB = ((rb.answer || {}).children || []).filter(c => c.kind === 'ZV SiteVisit')[0] || { rows: [] }, kidV = (((rv.answer || {}).children || [])[0] || { rows: [] });
+      k.chk('E11b records through the attached tab: a visit under partner 112, a note under that visit, a second visit under role 102; the partner shows its 2 visits among its tabs, the visit its 1 note; a second run writes nothing',
+        ok(v1) && ok(v2) && ok(v3) && kidB.rows.length === 2 && kidV.rows.length === 1 && ok(agB) && agB.answer.alreadyStaged === true, 'visit=' + v1.status + ' note=' + v2.status + ' role 102=' + v3.status + ' ' + String(v1.why || v2.why || v3.why || '').slice(0, 100) + ' partner tabs=' + ((rb.answer || {}).children || []).map(c => c.kind + ':' + c.rows.length).join() + ' visit children=' + kidV.rows.length + ' again=' + (agB.answer && agB.answer.alreadyStaged));
     }
   }
   // ── E7 the owner's workbook
