@@ -4,7 +4,18 @@ being **editable without code or AI**. Every number comes from rows of a real DB
 "no data" / INCONCLUSIVE, never 0 % or green. **Read the log after every run (`§DASH_*`, `§SHED_*`, `§FILM_SHOT`); the exit code is not evidence.** Spec before code; every witness names the issue it
 proves and has a break switch that must FAIL. Honour this block until the lane is closed. Full history (sessions 88 + 77, 2026-11-02 → 11-03): `prompts/archive/CAPEX_DASHBOARD_history_2026-11-02_to_11-03.md`.
 
-## ▶ RESUME HERE 2026-11-14 — G2, G2b and PR C2 are done; the UAT Guide and its film exist; NEXT = a full systems test dry run as the UAT Guide tells it. Supersedes every block below wherever they differ; trigger "resume dashboard"
+## ▶ RESUME HERE 2026-11-14 (after the dry run) — the full dry run is done and written (§5.78 RESULT); 2 defects fixed, the guide corrected and published. Supersedes every block below wherever they differ; trigger "resume dashboard"
+**Done this session:** §5.78 (56 steps walked, one row each) · §5.79 bim-ootb #2989 (legacy links follow the snapshot's server; W-DASH-LEGACY-LINK 4/0) · §5.80 bim-ootb #2990 (the Modeller's ERP button explains itself on a made model; W-S9-CONVERTED 3/0) · §5.81 BIMCompiler #661 (guide, published).
+**NEXT, in order:**
+1. The three ⛔ owner questions at the end of §5.78 RESULT (how testers receive the marked sheets; is the Shed drawing shortened; the chapter C table's product).
+2. Walk the legacy WINDOW click-paths of chapters A and C: not walked (§5.78 "What confirmed does NOT cover"). Needs a ZK driver, or a person.
+3. If the owner picks *Test material A* for the orders: re-run chapter C that way on a copy of the test instance and read the Budget tile (the cut-off pass of §5.78 F-C).
+4. Pictures for the guide's new B4 (Viewer route) and for chapters A, C, D; W-UAT-GUIDE (§5.65) is still not written.
+5. Pricing a made model from the Modeller itself (§5.80 "NOT built").
+6. Everything "Left open" in the block below still stands.
+**Hard parts added by this run:** the menu search of the legacy ZK page wipes text typed by puppeteer, and `?Action=Zoom` never reaches network-idle (use `domcontentloaded`, and expect to fail). After a first successful login the role screen is skipped. A `Uat*` web-service type must be followed by a server restart. `RUN_ApplyPackInFromFolder.sh` runs with the server up. In the Viewer, a `.db` is opened with Ctrl+O through the OS picker (`showOpenFilePicker`): headless runs must stand the picker in. `scripts/safe_gh_deploy.sh` aborts on `glassbowl_data.db` unless that live file is in `docs/` of the tree being published (it is untracked in the main checkout).
+
+## ▶ 2026-11-14 (morning) block (SUPERSEDED by the block above wherever they differ; its D1-D10 still apply) — G2, G2b and PR C2 are done; the UAT Guide and its film exist; NEXT = a full systems test dry run as the UAT Guide tells it. Supersedes every block below wherever they differ; trigger "resume dashboard"
 **What this block is for:** the owner closed the session with: the next session does a FULL SYSTEMS TEST DRY RUN following the UAT Guide. Below: what merged, the job, then the hard parts for that job.
 
 **MERGED 2026-11-13 → 14 (bim-ootb unless said):**
@@ -1773,3 +1784,90 @@ Same video timing as the English cut frame for frame (5694 frames, 227.78 s); on
 **House rules that change a step's letter (each is named in its row, never silently):** A1.1 "git clone" is done as a worktree of `origin/main` (one clone per repo); D4: the nine marked sheets are made by the product's CLI with the line in `uat_shed_shots.js`, because how testers receive them is not stated anywhere (owner question, kept ⛔).
 **Verdict rules:** a step whose Confirm line names no checkable value is "Not confirmable as written" and the row proposes the value. A step that cannot be done because of a software defect is Blocked; the chapter is finished first, then the defect is fixed in its own PR (only defects of the expected kind: the guide's wording, a script, a harness; a design decision goes to the owner as ⛔). Counts are per chapter, X of N steps; 0 judged = INCONCLUSIVE.
 **Result goes in:** §5.78 RESULT below (one row per step, the guide's own tables filled in) + "what the guide gets wrong", then a bim-compiler PR for the guide's wording.
+
+### 5.78 RESULT — the dry run walked all 56 steps (2026-11-14; every log read; logs in `~/.cache/capex_uat_dryrun/`, scripts were scratch and are not committed)
+**Counts (step as the guide wrote it on 2026-11-14 morning):** A 16 of 16 confirmed · B 19 of 23 confirmed, 4 Blocked (B4.1 to B4.4 by a defect, then walked by the Viewer route: 4 of 4) · C 8 of 8 confirmed on the rows · D 9 of 9 confirmed. 14 wording errors in the guide, 2 software defects; all fixed or named below.
+**What "confirmed" does NOT cover (named, not hidden):** the legacy iDempiere WINDOW click-paths. Driven by pointer on the real ZK pages: login, role, the Home tab (A2.2, D9). Everything else on legacy was done through the same server's own model layer and read back from its tables: A3.1 by `RUN_ApplyPackInFromFolder.sh` (the guide's first option), chapter C by web services (5 existing types + 8 temporary `Uat*` create / doc-action types for receipt, invoice, payment, gone with the restore). A2.3, A3.2 to A3.4, A4 were read from the tables, not from the windows. A ZK driver that opens a window and fills a document is not built: the menu search wipes typed text and the Zoom link never reaches network-idle under puppeteer.
+**Instance:** copy taken before A3, restored after; `§SETUP_VERDICT PASS`, 0 `TD_%` projects, 0 `Uat%` types, the copy dropped, `idempiere_bimdoc_pretd` untouched. The pilot was not written to.
+
+| Step | Value read | Verdict |
+|---|---|---|
+| A1.1 | worktree of `origin/main` @281ff98b (one clone per repo), has `index.html`, `modeller/`, `erp/`, `capex/` | Pass (by worktree) |
+| A1.2 | `python3 -m http.server 8080`, `/index.html` → 200 | Pass |
+| A1.3 | first visit = two pills (`§BOOT cold → Morpheus`); after red: `#por-gps` "Buildings / IFC", `#por-bonsai` "BIM Modeller", `#por-erp` "ERP" (names are hover titles) | Pass, guide wording fixed |
+| A1.4 | `§DASH_SOURCE sqlite projects=3`; every computed tile "no data (CAPEX PA rows not installed)" (D8: correct) | Pass, guide wording fixed |
+| A2.1 | scratch copy of the base seed: 17 scripts in file-name order, each rc=0, `update_sequences` rc=0; 49 CAPEX calc rows and 22 goals = the test instance; 14 of 15 read types (the 15th is the optional BIM Document one) | Pass |
+| A2.2 | Home tab text: 22 `CAPEX …` goals | Pass (ZK page) |
+| A2.3 | the window's name is **Performance Measure Calculation**; 49 `CAPEX%` rows | Pass, guide wording fixed |
+| A3.1 | rc=0, "Successful application", `Error=false`, "Done"; **84 `java.lang.Exception` traces** (`MProduct.loadPO: NO Data found`, one per planned line); rows: 12 / 42 / 84 / 84 / 2 | Pass on rows; guide's "no exception" was false, fixed |
+| A3.2 | 12 `TD_%` projects | Pass |
+| A3.3 | TD_RIVERSIDE 5 phases, 3 complete | Pass |
+| A3.4 | `C_Currency_ID=100` (USD) = the Purchase price list's | Pass |
+| A3.5 | "already installed. Removing it from the list": a SKIP (H5); still 12 projects, `Updated` unchanged | Pass; guide's "updates the same rows" was false, fixed |
+| A4.1 | 9 vendors | Pass |
+| A4.2 | Rake Bamboo stocked, purchased, Purchase list 7.65 / 9; on hand **-3** | Pass |
+| A4.3 | HQ Warehouse, Default HQ Locator | Pass |
+| A4.4 | Test material A in TD Materials | Pass |
+| B1.1 | `0_FLOOR_PLAN_marked.dxf:plan`, 5,932 line vertices drawn; badge "Blocked · 0" for one sheet | Pass, guide note added |
+| B1.2 | fold `slim false→true`, metadata panel closed, wheel dist 95.8→70.4, drag moved the camera | Pass |
+| B1.3 / B1.4 | 3,478 / 3,382 line vertices; an elevation alone: 0 (as the guide says) | Pass |
+| B2.1 | "2D DRAWINGS · 9 SHEETS"; rows 3 PLAN, 4 ELEV, 1 SECTION, 1 NOTES | Pass |
+| B2.2 | chip "Qualifies" (`data-verdict=qualifies`) | Pass |
+| B2.3 | 3 plan sheets flat at z 0, 4 elevations and the section standing; Arrange replays (46 steps) | Pass |
+| B2.4 | panel folded, metadata closed, camera moved on drag | Pass |
+| B2.5 | box ticked; **while the Arrange replay runs the panel is 46 px wide and the box has no size** | Pass, guide note added |
+| B2.6 | 511 inserts; exported classes: 96 columns, 40 walls, 35 beams, 168 members, 117 plates, 2 roofs, 4 doors, 13 fans, 32 footings | Pass |
+| B2.7 | model: 14 × 4 column lines over 39.6 m; plan: 14 `@GRIDX` labels (01-06, 35-42) × 4 `@GRIDY`. "Same length" is not checkable from the page | Pass on grid lines; guide wording fixed; ⛔ below |
+| B2.8 | `SHED_extracted.db` 1,257,472 bytes | Pass |
+| B2.9 | route = Buildings / IFC → Blank Viewer → Ctrl+O; "DONE — SHED 511 elements" (the hub's own file input takes no `.db`). The OS file picker was stood in for | Pass, guide wording fixed |
+| B3.1 | pack `rsmeans2024_us`; total cost USD 96,839; `§GANTT anchor=11/14/2026 end=11/24/2026`, totalDays 10 | Pass |
+| B3.2 | IfcWall 48 → 52.8 saved; the template form has **no phase duration field** (`anyDurationField=false`); lag +5 on the 2 superstructure edges saved; bad JSON: last good value kept (`§PROPSHEET_JSON_BAD`) | Pass with the lag edit; guide's example fixed |
+| B3.3 | "DONE — SHED 511 elements" after reload, `§RATE_OVERRIDE applied=1` | Pass |
+| B3.4 | USD 96,839 → 97,031 (+192 = 40 walls × 4.8) | Pass |
+| B3.5 | end 11/24 → 12/4, totalDays 10 → 20; Jump to start then Build: DAY 0 → DAY 4 in 24 s, placed 67 → 328, footings → columns → beams → truss | Pass, guide wording fixed |
+| B3.6 | 2 files downloaded (rate 52.8 inside), Reset removed both copies, cost back to 96,839 | Pass |
+| B4.1 to B4.4 (Modeller) | button shown; panel EMPTY + page error `tried to bind a value of an unknown type (undefined)`; `§S9-BUILDING resident=undefined` | **Blocked** (defect 2) |
+| B4.1 to B4.4 (Viewer route) | Find › ERP: `§PROJ_PUSH project="SHED" phases=+1 tasks=+1 lines=+1 plannedAmt=594.360`; again: `+0 +0 +0`; open ↗ → sign in → `§IDEMPIERE-DEEPLINK record=990001 landed`, SHED / BIM: SHED / 594.36 | Pass; the guide now tells this route |
+| C1.1 | 10 orders, each grand total = qty × price (tax Standard 0) | Pass (web service) |
+| C1.2 | 5 CO, 5 DR as the table says | Pass (web service) |
+| C2.1 | 4 receipts CO; on hand -3 → 112; order lines delivered | Pass (temporary type) |
+| C3.1 | 3 invoices CO, linked to order and project | Pass (temporary type) |
+| C3.2 | RIVERSIDE and SCHOOL open 0.00, BRIDGE open 1,200 of 2,400 | Pass (temporary type) |
+| C4.1 | 9 issues processed; on hand ends at **-160** | Pass (web service) |
+| C4.2 | balance rose by 63.70 a unit, not 7.65 (TD_RIVERSIDE 0 → 1,910.87 for 30) | Pass; finding F-C below |
+| C5.1 | TD_DEPOT Superstructure ticked, 1 → 2 | Pass (web service) |
+| D1 | Total 14, Active 14 (12 + Standard + Landscape) | Pass |
+| D2 | USD 4,667.80 = 4,067.80 (the 12) + 600 | Pass |
+| D3 | USD 17,462.92 = 17,325.22 issued + 137.70 already there | Pass |
+| D4 | left menu: open purchase orders 5 · USD 6,780.00; project pages: SUBSTATION Ordered, DATAHALL Received, BRIDGE Invoiced, RIVERSIDE and SCHOOL Paid (= `STRIP` 1/1/1/2) | Pass; the strip is on the project page, guide fixed |
+| D5 | drill lists 14 rows; a row opens `#project/<id>`; the "ERP ↗" link pointed at `localhost:8088` though the rows came from `:8108` | Pass; defect 1 |
+| D6 | 5 tabs; Schedule: 5 bars with the pack's dates, 3 Complete; "no task dates on this server" (known limit) | Pass |
+| D7 | "COUNT(C_Project); closed = Processed='Y'"; the legacy row is `SELECT COUNT(*) FROM C_Project WHERE 1=1` | Pass (same meaning; the ƒ line is prose, not the row's SQL) |
+| D8 | Executive layout and Dark skin change the look; `§DASH_TILE` values identical | Pass |
+| D9 | the 22 `pa_goal.MeasureActual` values = the 22 tiles (14, 0, 14, 4667.80, 17462.92, 1/4/6/3, 6/0/6/2, 42.67, 0/10/4, 14467.62, 10). The Home text shows a percentage for the 6 goals that have a target | Pass, guide note added |
+
+**Findings that are not wording:**
+- **F-C (scenario, owner's call ⛔):** the guide's table buys Rake Bamboo at 45 to 120 and then issues Rake Bamboo. The receipts lift its cost from 7.65 to about 63.70, so every project with an issue ends 400 to 880 % of plan: Budget "over" 10 of 14, Within 0. `td_scenario.js` intends 12 to 140 % (the film made no receipts on legacy). A pass with the orders on the pack's own *Test material A* (never issued) was started and cut off before its result: NOT measured. The guide now tells testers the over-budget picture is expected with this table.
+- **A4.2 / C4.1:** on hand starts at -3 and ends at -160. GardenWorld allows negative stock; a tester's warehouse that disallows it will refuse the issues. Not in the guide.
+- **D9:** `CAPEX Actual Cost`, `Committed Cost`, `Invoiced` carry a target of 39,971,166.17 on GardenWorld (performance 0.0004). Where that constant comes from was not traced.
+- **D7 (hard part D7 of the RESUME block):** no step narrows the dashboard to the test projects. The guide's D6 now checks one project page (TD_RIVERSIDE: Approved 371.25, 5 phases); a Project-selector step was not added.
+- **Known limits line "This pack in the Kernel ERP … not available yet":** §5.70 merged the twin's Pack In window. Not re-walked here; the line may be stale.
+
+**⛔ BLOCKED (owner facts, one question each):**
+- D4 of the RESUME block: how do the client's testers RECEIVE the nine marked Shed sheets? (For this run they were made by the CLI line in `uat_shed_shots.js`: 512 bodies by the CLI, 511 by the page.)
+- B2.7: the plan's grid labels run 01-06 then 35-42 and the model has 14 lines, 39.6 m. Is the real shed 42 grids long, and should the guide say the drawing is shortened?
+- F-C: keep the table as it is (everything over budget), or put the purchase orders on *Test material A*?
+
+### 5.79 SPEC + RESULT — record links on the legacy source open the server the rows were read from (2026-11-14; defect 1 of §5.78; the spec is this paragraph, written with the 6-line change: named)
+**Issue:** `capex/dash.js` built every legacy link from a fixed `CFG.legacyUi` = `http://localhost:8088/webui/index.zul`. W-DASH-DRILL K5c, W-CHAIN C5 and W-PROJECT-PAGE P9 judge only the query part of a link, never its host: scope-blind for this.
+**Rule:** the base is the snapshot's own `meta.base` (the read job writes it); an explicit `CAPEX_CFG.legacyUi` wins; no base in the file = the default. `§DASH_LEGACY_UI <base> from=snapshot meta.base|config|default`.
+**Result (bim-ootb #2989, MERGED):** W-DASH-LEGACY-LINK `capex/tests/witness_dash_legacy_link.js` 4/0 (13 drill links; 5 links over C_Project, C_Order, M_InOut, C_Invoice, C_Payment). `LINK_BREAK=1` fails L1. W-DASH-DRILL 59/0, W-PROJECT-PAGE 16/0, W-CHAIN 11/0 unchanged. `dash.js` +6 / -4.
+
+### 5.80 SPEC + RESULT — the Modeller's ERP ▸ Project Order on a model made in the Modeller (2026-11-14; defect 2 of §5.78; spec written with the change: named)
+**Issue:** a model converted from 2D drawings has no opened building database (`window.__dwBuf` absent), and `proj_order_ui.js render()` priced from null: an empty panel and a page error.
+**Measured before choosing the fix:** the model's own Viewer database cannot simply stand in. Its part ids are IFC GlobalIds; the Modeller's are `dxf-body-…`: 0 of 511 match. Its building name is "Building", not SHED. Pricing a made model from the Modeller needs that mapping: NOT built, open.
+**Rule (this PR):** no opened building database → the panel says so and names the route that works (Export ▸ Viewer database, then the Viewer's › ERP); `§S9-NO-BUILDING-DB`; no Generate button.
+**Result (bim-ootb #2990, MERGED):** W-S9-CONVERTED `modeller/tests/witness_s9_converted_model.js` 3/0. `S9_CONV_BREAK=1` fails N2; the unfixed file fails N2 and N3. Modeller sw v272 → v273.
+
+### 5.81 RESULT — the guide corrected and published (2026-11-14)
+BIMCompiler #661 MERGED: 18 edits to `docs/CapexUATGuide.md`, step counts unchanged (16 / 23 / 8 / 9). B4's two Modeller pictures were removed with the route change; the Viewer route has no pictures yet. Published with `scripts/safe_gh_deploy.sh`: first run ABORTED (`glassbowl_data.db`, 94,208 bytes, is live but not in the tracked tree); the live file was carried into the build unchanged and the second run passed, all canaries 200.
