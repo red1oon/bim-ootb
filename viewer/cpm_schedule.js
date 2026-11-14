@@ -202,7 +202,7 @@
   function designatedSupport(items, G) {
     var SG = (typeof global.ScheduleGate !== 'undefined') ? global.ScheduleGate : ScheduleGate;
     var EPS = SG.EPS, GAP = SG.GAP;
-    var n = items.length, out = new Int32Array(n);
+    var n = items.length, out = new Int32Array(n), noSup = [], noSupGrounded = 0;
     for (var i = 0; i < n; i++) {
       out[i] = -1;
       var list = G.contacts[i]; if (!list) continue;
@@ -215,9 +215,19 @@
       // touches — W-MZ-2 went 0 -> 2,781 on LTU, 0 -> 107 on Hospital. So the same classification
       // elects TWICE: the pool winner when one exists, else the unrestricted winner. Nothing loses
       // its support edge; a real structural support simply outranks a pipe.
+      // §D2_STRUCT_NO_CARRIER (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.6 D2, 2026-11-14) — a
+      // STRUCTURAL element (T itself in supportPool) never hangs from what it carries: for such T
+      // carrier-above is NOT eligible and ONLY pool contacts are eligible. Measured before: every
+      // beam whose pool winner was carrier-above was midair by construction (Hospital 30/30,
+      // Terminal 26/26, Duplex 4/4 — §Q.3 Gap 1: R1 puts the slab after the beam it "hangs" from).
+      // No eligible contact ⇒ -1 and the element is COUNTED and NAMED (out.structNoSupport,
+      // §STRUCT_NO_SUPPORT) — a model gap, never hidden and never called midair. Non-structural T
+      // (services, ceilings, fit-out): election unchanged, §S26.2 pool override included. Without a
+      // supportPool no T is structural — the old behaviour, exactly.
       var T = items[i], bestJ = -1, bestCls = 9, bestScore = Infinity;
       var poolJ = -1, poolCls = 9, poolScore = Infinity;
       var inPool = SG.supportPool || function () { return true; };
+      var tStruct = !!(SG.supportPool && SG.supportPool(T));
       for (var k = 0; k < list.length; k++) {
         var j = list[k], S = items[j], cls, score;
         if (S.bz < T.bz - EPS && S.tz >= T.bz - GAP) { cls = 0; score = -S.tz; }
@@ -227,15 +237,32 @@
             (score === bestScore && (bestJ < 0 || String(S.guid) < String(items[bestJ].guid)))))) {
           bestCls = cls; bestScore = score; bestJ = j;
         }
+        if (tStruct && cls === 2) continue;                   // §D2: structure is not hung from what it carries
         if (inPool(S) && (cls < poolCls || (cls === poolCls && (score < poolScore ||
             (score === poolScore && (poolJ < 0 || String(S.guid) < String(items[poolJ].guid))))))) {
           poolCls = cls; poolScore = score; poolJ = j;
         }
       }
+      if (tStruct) {                                          // §D2: only a pool contact below/embedded
+        if (poolJ < 0) {
+          // ground seeds (§I.2 / §GROUND_CONNECTED: seq===1 or Substructure) rest on soil — not a gap
+          if (!(T.seq === 1 || T.phase === 'Substructure')) { noSup.push(i); if (G.grounded[i]) noSupGrounded++; }
+          continue;
+        }
+        out[i] = poolJ; continue;
+      }
       if (poolJ >= 0) { bestJ = poolJ; bestCls = poolCls; }   // §S26.2 structure outranks contact
       if (bestCls === 2 && G.grounded[i]) continue;   // carrier-above rejected ONLY when grounded
       out[i] = bestJ;
     }
+    // §STRUCT_NO_SUPPORT — counted and named on every call (PRIMAL LAW 4: the count is printed even at 0)
+    var byCls = {};
+    for (var q = 0; q < noSup.length; q++) byCls[items[noSup[q]].cls] = (byCls[items[noSup[q]].cls] || 0) + 1;
+    console.log('§STRUCT_NO_SUPPORT n=' + noSup.length + ' footprintGrounded=' + noSupGrounded +
+      ' structural=' + (SG.supportPool ? 'supportPool' : 'NONE (no pool loaded — rule inactive)') +
+      ' byCls=' + JSON.stringify(byCls) +
+      ' guids=' + noSup.slice(0, 20).map(function (x) { return items[x].guid; }).join(',') + (noSup.length > 20 ? ',…' : ''));
+    out.structNoSupport = noSup;
     return out;
   }
 
