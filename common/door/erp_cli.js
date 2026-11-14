@@ -887,13 +887,49 @@ async function ninjaExport(O, a) {
   return { file: a.file, bundle: model.bundleName, tables: model.tables.map(t => ({ table: t.name, master: t.master || null, columns: t.columns.length })), lists: nLists, ops: 0,
     notMade: ['the rows are not written (legacy NinjaExporter writes the model only)', 'validation rules, display logic and callouts are not carried (the stager never wrote them into the model)'], summary: 'wrote the model of ' + model.tables.length + ' table' + (model.tables.length > 1 ? 's' : '') + ' to ' + a.file };
 }
+// ── mis.diff (bim-compiler prompts/ERP_MIS_WINDOW_FROM_CSV.md §12.13): a CSV against the table it would be loaded into: which lines are new, which differ (old and new value), which are the same, which records of the table the sheet does not mention.
+// READ ONLY. The key is the kind's number column as mis.update reads it (DocumentNo, else Name, else Value) or key=<column>; a lookup header (X_ID, or X_ID>Alt) is compared by the NAME (or the Alt column) of the record the stored id points at, the way the loader reads the cell.
+const DIFF_BREAK = process.env.MISDIFF_BREAK || '';   // W-MIS-DIFF falsifiers: nokey | nonumeric | writes
+function misDiff(O, a) {
+  if (!a.kind) refuse('--kind is required'); if (!a.file) refuse('--file is required (a .csv)');
+  if (!/\.csv$/i.test(String(a.file))) refuse('the file must be a .csv: ' + a.file);
+  const K = kindRef(O, a.kind); let text; try { text = fs.readFileSync(a.file, 'utf8'); } catch (e) { refuse('cannot read ' + a.file + ': ' + (e.code || e.message)); }
+  const XL = require(path.join(ROOT, 'erp', 'xlsx.mini.min.js')), wb0 = XL.read(text, { type: 'string', raw: true });
+  const grid = XL.utils.sheet_to_json(wb0.Sheets[wb0.SheetNames[0]], { header: 1, raw: true, defval: '' }).map(r => r.map(c => String(c)));
+  if (grid.length < 2) refuse('the file has no rows: ' + a.file + ' (a header line and at least one data line)');
+  const dcols = O.rows("SELECT columnname, ad_reference_id AS r FROM ad_column WHERE ad_table_id=? AND isactive='Y'", [K.id]), colOf = (n) => dcols.filter(c => c.columnname.toLowerCase() === n.toLowerCase())[0];
+  const heads = grid[0].map(h => { const m = /^([A-Za-z_]\w*)(?:>([A-Za-z_]\w*))?$/.exec(h.trim()); if (!m) refuse('the header "' + h + '" is not a column name (Column or Column>Alt)'); const c = colOf(m[1]); if (!c) refuse('the header ' + m[1] + ' is not a column of ' + K.name + ' (nothing was compared)'); return { col: c.columnname.toLowerCase(), name: c.columnname, ref: Number(c.r), alt: m[2] || null }; });
+  const keyName = a.key ? String(a.key) : K.numCol; if (!keyName) refuse(K.name + ' has no DocumentNo, Name or Value column to match by; give key=<column of the file>');
+  const ki = heads.findIndex(h => h.col === keyName.toLowerCase()); if (ki < 0) refuse('the key column ' + keyName + ' is not in the file\'s header; the lines cannot be matched. Nothing was compared');
+  const lk = {}, shown = (h, v) => {   // a stored lookup id read as the name the sheet would hold
+    if (v == null || v === '') return ''; if (!(h.name.slice(-3).toLowerCase() === '_id' && h.ref !== 13 && /^[0-9]+$/.test(String(v)))) return String(v);
+    const tn = h.name.slice(0, -3), kk = h.name.toLowerCase() + '|' + h.alt + '|' + v; if (kk in lk) return lk[kk];
+    const alt = h.alt || 'Name'; let r = null; try { r = O.rows('SELECT ' + alt + ' AS x FROM ' + tn + ' WHERE ' + h.name + '=?', [v])[0]; } catch (e) { r = null; } return (lk[kk] = r && r.x != null ? String(r.x) : String(v)); };
+  const numeric = (h) => [11, 12, 22, 29, 37].indexOf(h.ref) >= 0, dec = (x) => { const t = String(x).trim(); return /^[+-]?\d+(\.\d+)?$/.test(t) ? t.replace(/^\+/, '').replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '').replace(/^(-?)0+(?=\d)/, '$1') : t; };
+  const same = (h, sheet, stored) => { const s = String(sheet).trim(), t = shown(h, stored).trim(); if (s === t) return true; if (DIFF_BREAK !== 'nonumeric' && numeric(h) && dec(s) === dec(t)) return true; if (/^\d{4}-\d{2}-\d{2}$/.test(s) && t.slice(0, 10) === s && /^(00:00:00(\.0+)?)?$/.test(t.slice(11).trim())) return true; return false; };
+  const rowsAll = O.rows('SELECT * FROM ' + K.table), byKey = {}; rowsAll.forEach(r => { const k = r[keyName.toLowerCase()]; if (k != null) (byKey[String(k)] = byKey[String(k)] || []).push(r); });
+  const seen = {}, out = { kind: K.name, table: K.table, file: a.file, key: heads[ki].name, rows: grid.length - 1, new: [], changed: [], same: 0, duplicates: [], ambiguous: [], missing: [], unkeyed: [] };
+  grid.slice(1).forEach((line, i) => { const n = i + 1, kv = (line[ki] || '').trim();
+    if (!kv) { out.unkeyed.push(n); return; }
+    if (seen[kv] && DIFF_BREAK !== 'nokey') { out.duplicates.push({ row: n, key: kv, firstRow: seen[kv] }); return; } seen[kv] = n;
+    const hit = byKey[kv] || []; if (!hit.length) { out.new.push({ row: n, key: kv }); return; } if (hit.length > 1) { out.ambiguous.push({ row: n, key: kv, records: hit.length }); return; }
+    const ch = []; heads.forEach((h, j) => { if (j === ki) return; if (!same(h, line[j] == null ? '' : line[j], hit[0][h.col])) ch.push({ column: h.name, table: shown(h, hit[0][h.col]), sheet: line[j] }); });
+    if (ch.length) out.changed.push({ row: n, key: kv, changes: ch }); else out.same++; });
+  const inSheet = {}; Object.keys(seen).forEach(k => { inSheet[k] = 1; });
+  rowsAll.forEach(r => { const k = r[keyName.toLowerCase()]; if (k != null && !inSheet[String(k)] && r.isactive !== 'N') out.missing.push(String(k)); });
+  if (DIFF_BREAK === 'writes') persistGroup(O, [{ op_type: 'CRUD_UPDATE', table: 'ad_table', idCol: 'ad_table_id', id: K.id, changes: { description: { old: null, new: 'diff' } } }]);
+  out.counts = { new: out.new.length, changed: out.changed.length, same: out.same, missing: out.missing.length, duplicates: out.duplicates.length, ambiguous: out.ambiguous.length, unkeyed: out.unkeyed.length };
+  out.notCompared = ['a column of the table that the file does not name is not compared', 'a lookup cell is compared by the name (or the Alt column) of the record the stored id points at; whether the loader would FIND that name is not asked (mis.load dry=Y does)'];
+  const c = out.counts; out.ops = 0; out.summary = c.new + ' new, ' + c.changed + ' changed, ' + c.same + ' the same, ' + c.missing + ' in the table and not in the file' + (c.duplicates || c.ambiguous || c.unkeyed ? ' (' + [c.duplicates && c.duplicates + ' repeated in the file', c.ambiguous && c.ambiguous + ' matching several records', c.unkeyed && c.unkeyed + ' without a key'].filter(Boolean).join(', ') + ')' : '') + '; nothing was written';
+  say('diff kind=' + K.name + ' key=' + out.key + ' ' + JSON.stringify(c)); return out;
+}
 async function main(argv) {
   const cmd = argv[0], a = {};
   for (let i = 1; i < argv.length; i++) { const m = /^--(\w+)$/.exec(argv[i]); if (!m || i + 1 >= argv.length) { say('FAIL usage: ' + argv[i]); return 2; } if (m[1] === 'where') (a.where = a.where || []).push(argv[++i]); else a[m[1]] = argv[++i]; }
-  if (['find', 'actions', 'describe', 'read', 'list', 'sum', 'group', 'new', 'update', 'delete', 'load', 'add_window', 'ninja_exec', 'ninja_workflow', 'ninja_rollback', 'ninja_export'].concat(Object.keys(ACT)).indexOf(cmd) < 0) { say('FAIL usage: erp_cli.js find|actions|complete|void|close|reverse|describe|read|list|sum|group --kind K (--number N | --id I) [--role R]'); return 2; }
+  if (['find', 'actions', 'describe', 'read', 'list', 'sum', 'group', 'new', 'update', 'delete', 'load', 'add_window', 'ninja_exec', 'ninja_workflow', 'ninja_rollback', 'ninja_export', 'diff'].concat(Object.keys(ACT)).indexOf(cmd) < 0) { say('FAIL usage: erp_cli.js find|actions|complete|void|close|reverse|describe|read|list|sum|group --kind K (--number N | --id I) [--role R]'); return 2; }
   try {
     const O = await boot(a); O.actor = a.user == null ? 101 : Number(a.user);   // the session user: stated, default 101 (the same default the callout context takes), until sign-in exists
-    const out = await (ACT[cmd] ? act(O, a, ACT[cmd]) : ({ find, actions, describe, read, list: OC.list, sum: OC.sum, group: OC.group, new: createRecord, update: updateRecord, delete: deleteRecord, load: loadRecords, add_window: addWindow, ninja_exec: ninjaExec, ninja_workflow: ninjaWorkflow, ninja_rollback: ninjaRollback, ninja_export: ninjaExport })[cmd](O, a));
+    const out = await (ACT[cmd] ? act(O, a, ACT[cmd]) : ({ find, actions, describe, read, list: OC.list, sum: OC.sum, group: OC.group, new: createRecord, update: updateRecord, delete: deleteRecord, load: loadRecords, add_window: addWindow, ninja_exec: ninjaExec, ninja_workflow: ninjaWorkflow, ninja_rollback: ninjaRollback, ninja_export: ninjaExport, diff: misDiff })[cmd](O, a));
     process.stdout.write(JSON.stringify(out) + '\n'); return 0;
   } catch (e) {
     if (e instanceof Refused || e instanceof OC.Refused) { say('REFUSED ' + e.message); process.stdout.write(JSON.stringify({ refused: true, reason: e.message }) + '\n'); return 3; }
@@ -901,4 +937,4 @@ async function main(argv) {
   }
 }
 if (require.main === module) main(process.argv.slice(2)).then(c => process.exit(c));
-module.exports = { ninjaRollback, ninjaExport, ninjaWorkflow, workflowOn, ninjaExec, stageAtDoor, runLoader, sheetGrid, addWindow, ensureTables, tabFor, main, boot, loadRecords, find, actions, complete, act, ACT, describe, read, persistGroup, resolveOne, docKind, kindRef, byNumber, recordOf, loadEngine, b3 };
+module.exports = { misDiff, ninjaRollback, ninjaExport, ninjaWorkflow, workflowOn, ninjaExec, stageAtDoor, runLoader, sheetGrid, addWindow, ensureTables, tabFor, main, boot, loadRecords, find, actions, complete, act, ACT, describe, read, persistGroup, resolveOne, docKind, kindRef, byNumber, recordOf, loadEngine, b3 };
