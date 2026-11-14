@@ -200,7 +200,7 @@ function applyCostUpdate(db, u, dateAcct) {
 // F9.2 (numbered gap, spec §78): inside the BackDateDay window legacy RE-POSTS every later document (DocManager.startBackDateProcess :640-900). Not ported — named, so the posting is refused
 // instead of silently diverging. BackDateDay NULL/0 (every pilot schema) ⇒ never inside the window ⇒ null. today = the host calendar day ('YYYY-MM-DD').
 function costBackDateGap(db, dateAcct, today) {
-  if (!today) { var n = new Date(); today = n.getFullYear() + '-' + String(n.getMonth() + 1).padStart(2, '0') + '-' + String(n.getDate()).padStart(2, '0'); }   // host calendar day (the legacy server's local day)
+  if (!today) { console.log('§ENV_NO_DATE costBackDateGap needs today (the session day); core never reads a wall clock'); throw new Error('costBackDateGap: no today (A-3)'); }
   if (!dateAcct || !_hasCol(db, 'c_acctschema', 'backdateday') || _dayOf(dateAcct) >= _dayOf(today)) return null;
   var sch = allRows(db, 'SELECT c_acctschema_id AS id, backdateday AS bd FROM c_acctschema' + (_hasCol(db, 'c_acctschema', 'isactive') ? " WHERE isactive='Y'" : ''), []);
   for (var i = 0; i < sch.length; i++) {

@@ -67,7 +67,8 @@
     if (!f.ok) { out.errors.push(f.reason); return out; }
     var s = one(r, 'SELECT * FROM m_attributeset WHERE m_attributeset_id=?', [f.setId]);
     var vin = o.values || {}, v = { lot: null, serno: null, guaranteedate: null, attrs: {} }, mode = o.mode || 'dialog';
-    var today = o.today || new Date().toISOString().slice(0, 10), lotRow = null, lotCtlUpd = null, snCtlUpd = null;
+    var today = o.today, lotRow = null, lotCtlUpd = null, snCtlUpd = null;
+    if (!today) { out.errors.push('§ENV_NO_DATE ASI plan has no today (the caller passes the session day; core never reads a wall clock)'); return out; }
     var autoNew = mode !== 'dialog';
     if (!o.productWindow) {
       if (s.islot === 'Y' || autoNew) {   // getLot(true) / generateLot create from the lot control whatever IsLot says (MAttributeSetInstance.java:294-318, :444-459)
@@ -130,7 +131,7 @@
 
   // create(trx, o): write a plan through the model layer (a receipt-line auto-generate lot, MAttributeSetInstance.create). Returns { ok, asi, description, error }.
   function create(trx, o) {
-    var p = plan({ q: function (sql, prm) { return trx.q(sql, prm); } }, o);
+    var p = plan({ q: function (sql, prm) { return trx.q(sql, prm); } }, o.today ? o : Object.assign({}, o, { today: String(trx.env.date || '').slice(0, 10) }));   // no explicit day: the session's date (trx.env.date), A-3
     if (!p.ok) return { ok: false, error: p.errors.join('; ') };
     var asiPlan = p.rows[0], lot = null;
     if (asiPlan.lotRef) { var lp = p.rows[1]; lot = trx.insert('m_lot', ML.newPO(trx, 'm_lot', Object.assign({ ad_client_id: trx.env.client, isactive: 'Y' }, lp.fields))); asiPlan.fields.m_lot_id = lot.m_lot_id; }

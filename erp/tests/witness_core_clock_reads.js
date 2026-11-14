@@ -12,7 +12,7 @@
 'use strict';
 const fs = require('fs'), path = require('path');
 const ERP = path.join(__dirname, '..'), say = s => process.stdout.write(s + '\n');
-const MIGRATED = ['processes/ImportBankStatement.js', 'processes/ImportGLJournal.js', 'processes/ImportInventory.js', 'processes/ImportInvoice.js', 'processes/ImportOrder.js', 'processes/ImportPayment.js', 'processes/ImportProduct.js', 'processes/ClientAcctProcessor.js', 'processes/InvoiceGenerate.js', 'processes/InOutGenerate.js'];
+const MIGRATED = ['processes/ImportBankStatement.js', 'processes/ImportGLJournal.js', 'processes/ImportInventory.js', 'processes/ImportInvoice.js', 'processes/ImportOrder.js', 'processes/ImportPayment.js', 'processes/ImportProduct.js', 'processes/ClientAcctProcessor.js', 'processes/InvoiceGenerate.js', 'processes/InOutGenerate.js', 'model_asi.js', 'doc_poster.js'];
 const CLOCK = /(?<![\w.])new Date\(\s*\)|\bDate\.now\(\s*\)|\bperformance\.now\(\s*\)|\bMath\.random\(\s*\)|\brandomUUID\(\s*\)/g;
 const scan = src => (src.replace(/\/\/[^\n]*/g, '').match(CLOCK) || []).length;
 const rows = MIGRATED.map(f => { const src = fs.readFileSync(path.join(ERP, f), 'utf8'); const n = scan(src); say('  §CORE_CLOCK file=erp/' + f + ' bytes=' + src.length + ' clockReads=' + n); return { name: f, bytes: src.length, clockReads: n }; });

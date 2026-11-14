@@ -907,7 +907,7 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
       var r = _asiReader(db), fm = panel._asiForm, pid = _asiProduct(wrap, fm.productWindow);
       var attrs = {}; panel.querySelectorAll('[data-asi-attr]').forEach(function (x) { attrs[x.getAttribute('data-asi-attr')] = x.value; });
       var vals = { lot: panel._newLot ? '' : g('lot'), serno: panel._newSerNo ? '' : g('serno'), guaranteedate: g('guaranteedate'), newLot: !!panel._newLot, newSerNo: !!panel._newSerNo, attrs: attrs };
-      var pl = MA.plan(r, { productId: pid, mode: 'dialog', productWindow: fm.productWindow, today: new Date().toISOString().slice(0, 10), values: vals, org: (global.APP && global.APP.orgId) != null ? global.APP.orgId : 0 });
+      var pl = MA.plan(r, { productId: pid, mode: 'dialog', productWindow: fm.productWindow, today: global.AdCallout.Env.stamp(Date.now()).day, values: vals, org: (global.APP && global.APP.orgId) != null ? global.APP.orgId : 0 });
       if (!pl.ok) { toast(pl.errors.join('; ')); console.log('§ASI-EDITOR refused ' + pl.errors.join('; ')); return; }
       var ops = [], asiRow = pl.rows[0], lotIdx = -1, asiIdx;
       var mk = function (table, fields) {
