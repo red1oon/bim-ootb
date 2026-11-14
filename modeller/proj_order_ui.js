@@ -64,6 +64,8 @@
     if (!sel.guids.length) { panel.style.display = 'none'; return; }
     panel.style.display = 'block';
     if (!(await _ensure())) { panel.textContent = 'ERP owners could not be loaded.'; return; }
+    // a model made here (2D drawings converted, or drawn) has no opened building database to price from: say so and name the route that works, instead of an empty panel (CAPEX_DASHBOARD.md §5.80)
+    if (!(await _bdb())) { panel.innerHTML = '<div id="s9-nodb">This model was made in the Modeller, so there is no opened building database to price it from.<br>To send it to the ERP: <b>Export ▸ Viewer database (.db)</b>, open that file in the Viewer, select parts in the Find panel and press <b>› ERP</b>.</div>'; console.log('§S9-NO-BUILDING-DB parts=' + sel.guids.length + ' (no open building database: the Viewer route is named)'); return; }
     var PS = window.ProjOrderState, env = _env(), st = await _db(), db = st.db, building = await _building(), fb = await _fb();
     var priced = PS.pricedRowsFor(await _bdb(), sel.guids, env, sel.edits, fb);
     var classes = priced.rows.map(function (r) { return r.cls; });
