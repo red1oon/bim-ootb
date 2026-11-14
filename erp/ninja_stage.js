@@ -83,11 +83,23 @@
     var hasPk = columns.some(function (col) { return col.name === name + '_ID'; });
     return 'CREATE TABLE IF NOT EXISTS "' + String(name).replace(/"/g, '') + '" (' + ddl.join(', ') + (hasPk ? ', PRIMARY KEY ("' + name + '_ID")' : '') + ')';
   }
+  // one new column of a table that is already there (a reused dictionary table, or a staged table that gains a column): the same type rule as dataTableSql
+  function columnSql(physName, col) {
+    return 'ALTER TABLE "' + String(physName).replace(/"/g, '') + '" ADD COLUMN "' + String(col.name).replace(/"/g, '') + '" ' + (NUMERIC_REFS[col.refId] ? 'NUMERIC' : 'TEXT');
+  }
+  // A model table whose name the dictionary already holds outside the Ninja range (legacy Ninja, MRO_ModelMaker.handleModel L108-150: the table is looked up by name, upper case;
+  // absent it is created, present it is reused and the sheet's columns are added; present, not user-maintained and with NO master, the row is left alone, L110).
+  function existingTable(db, name) {
+    var r = db.exec("SELECT AD_Table_ID, TableName, EntityType FROM AD_Table WHERE upper(TableName)=upper('" + q(name) + "') AND AD_Table_ID<" + NINJA_BASE + ' ORDER BY AD_Table_ID');
+    return r.length && r[0].values.length ? { id: Number(r[0].values[0][0]), name: r[0].values[0][1], entity: r[0].values[0][2] } : null;
+  }
   function stageModels(db, model, ts) {
     ts = ts != null ? ts : 0;
     var bundleName = model.bundleName || 'Ninja';
     var tables = model.tables || [];
-    var counts = { tables: 0, cols: 0, windows: 0, tabs: 0, fields: 0, menus: 0, skipped: 0, callouts: 0 };
+    var counts = { tables: 0, cols: 0, windows: 0, tabs: 0, fields: 0, menus: 0, skipped: 0, callouts: 0, reused: [], leftAlone: [] };
+    var ext = tables.map(function (t) { return existingTable(db, t.name); });
+    var leave = tables.map(function (t, i) { return !!ext[i] && !t.master && ext[i].entity !== 'U'; });
 
     // ensure AD_Column.Callout exists (additive — ad_seed.db omits it; ALTER is safe if missing)
     var hasCalloutCol = db.exec("SELECT name FROM pragma_table_info('AD_Column') WHERE lower(name)='callout'").length > 0;
@@ -154,6 +166,7 @@
     var slot = 0;
     for (;;) {
       var clash = tables.some(function (t, i) {
+        if (ext[i]) return false;                              // a reused table takes no slot of its own
         var nm = val(db, 'SELECT TableName FROM AD_Table WHERE AD_Table_ID=' + (tBase + i + slot));
         return nm != null && nm !== t.name;
       });
@@ -163,9 +176,18 @@
     counts.slot = slot;
 
     tables.forEach(function (t, ti) {
-      var isDetail = parentOf[ti] >= 0;
+      if (leave[ti]) { counts.leftAlone.push(t.name); return; }
+      var isDetail = parentOf[ti] >= 0, E = ext[ti];
       var si       = ti + slot;
-      var tableId  = tBase    + si;
+      var tableId  = E ? E.id : tBase + si;
+      var have = {}, others = [];                              // a reused table: its columns by name, and the ones the sheet does not name
+      if (E) {
+        counts.reused.push(t.name);
+        var ec = db.exec("SELECT AD_Column_ID, ColumnName FROM AD_Column WHERE AD_Table_ID=" + E.id + " AND IsActive='Y' AND AD_Column_ID<" + NINJA_BASE + ' ORDER BY AD_Column_ID');
+        (ec.length ? ec[0].values : []).forEach(function (v) { have[String(v[1]).toUpperCase()] = Number(v[0]); });
+        var named = {}; t.columns.forEach(function (c) { named[c.name.toUpperCase()] = 1; });
+        (ec.length ? ec[0].values : []).forEach(function (v) { if (!named[String(v[1]).toUpperCase()]) others.push({ id: Number(v[0]), name: v[1] }); });
+      }
       var windowId = wBase    + (isDetail ? rootOf[ti] : ti) + slot;   // a detail lives in its root master's window
       var ownWinId = wBase    + si;
       var tabId    = tabBase  + si;
@@ -187,14 +209,15 @@
         counts.windows++;
       } else { counts.skipped++; }
 
-      // AD_Table
-      if (ensure(db, 'AD_Table', 'AD_Table_ID', tableId)) {
+      // AD_Table (a reused table keeps its own row untouched)
+      if (E) { /* reused */ }
+      else if (ensure(db, 'AD_Table', 'AD_Table_ID', tableId)) {
         db.run("INSERT INTO AD_Table (AD_Table_ID, TableName, Name, Description, AD_Window_ID, IsActive)" +
           " VALUES (" + tableId + ",'" + q(t.name) + "','" + q(t.name.replace(/_/g, ' ')) + "'," +
           "'Ninja: " + q(t.name) + "'," + windowId + ",'Y')");
         counts.tables++;
       } else { counts.skipped++; }
-      db.run('UPDATE AD_Table SET AD_Window_ID=' + windowId + ' WHERE AD_Table_ID=' + tableId);   // re-stage corrects the shape
+      if (!E) db.run('UPDATE AD_Table SET AD_Window_ID=' + windowId + ' WHERE AD_Table_ID=' + tableId);   // re-stage corrects the shape
 
       // AD_Tab
       if (ensure(db, 'AD_Tab', 'AD_Tab_ID', tabId)) {
@@ -206,8 +229,19 @@
       db.run('UPDATE AD_Tab SET AD_Window_ID=' + windowId + ', TabLevel=' + tabLevel + ', SeqNo=' + tabSeq + ' WHERE AD_Tab_ID=' + tabId);
 
       // AD_Columns + AD_Fields
+      // a reused table's other columns get a field too, first, in their own order (legacy createTabFields: every column of the table, by AD_Column_ID)
+      others.forEach(function (o, k) {
+        var fid = fieldStart + 100 + k;
+        if (ensure(db, 'AD_Field', 'AD_Field_ID', fid)) {
+          db.run("INSERT INTO AD_Field (AD_Field_ID, AD_Tab_ID, AD_Column_ID, Name, SeqNo, IsDisplayed, IsReadOnly, IsActive)" +
+            " VALUES (" + fid + "," + tabId + "," + o.id + ",'" + q(String(o.name).replace(/_/g, ' ')) + "'," + ((k + 1) * 10) + ",'Y','N','Y')");
+          counts.fields++;
+        } else { counts.skipped++; }
+      });
+      var newCols = [];
       t.columns.forEach(function (col, ci) {
-        var colId   = colStart   + ci;
+        var old     = E ? have[col.name.toUpperCase()] : 0;
+        var colId   = old || (colStart + ci);
         var fieldId = fieldStart + ci;
         var fieldLen = 22;
         if (col.refId === 20) fieldLen = 1;                   // YesNo
@@ -220,7 +254,9 @@
         var stdDef = Object.prototype.hasOwnProperty.call(STD_DEFAULTS, col.name) && col.isStandard ? "'" + q(STD_DEFAULTS[col.name]) + "'" : 'NULL';
         var isParent = (isDetail && col.name === t.master + '_ID') ? 'Y' : 'N';   // §GT-NINJA — iDempiere's link-column marker
 
-        if (ensure(db, 'AD_Column', 'AD_Column_ID', colId)) {
+        if (old) { /* the table has this column already: it is left as it is */ }
+        else if (ensure(db, 'AD_Column', 'AD_Column_ID', colId)) {
+          newCols.push(col);
           var calloutVal = col.callout ? "'" + q(col.callout) + "'" : 'NULL';
           db.run("INSERT INTO AD_Column (AD_Column_ID, AD_Table_ID, ColumnName, Name, Description," +
             " AD_Reference_ID, FieldLength, IsMandatory, IsKey, IsParent, IsIdentifier, Callout, DefaultValue, IsActive)" +
@@ -230,13 +266,13 @@
           counts.cols++;
           if (col.callout) counts.callouts++;
         } else { counts.skipped++; }
-        db.run("UPDATE AD_Column SET IsParent='" + isParent + "'" + (stdDef !== 'NULL' ? ', DefaultValue=COALESCE(DefaultValue,' + stdDef + ')' : '') + ' WHERE AD_Column_ID=' + colId);
+        if (!old) db.run("UPDATE AD_Column SET IsParent='" + isParent + "'" + (stdDef !== 'NULL' ? ', DefaultValue=COALESCE(DefaultValue,' + stdDef + ')' : '') + ' WHERE AD_Column_ID=' + colId);
 
         if (ensure(db, 'AD_Field', 'AD_Field_ID', fieldId)) {
           db.run("INSERT INTO AD_Field (AD_Field_ID, AD_Tab_ID, AD_Column_ID, Name," +
             " SeqNo, IsDisplayed, IsReadOnly, IsActive)" +
             " VALUES (" + fieldId + "," + tabId + "," + colId + "," +
-            "'" + q(col.name.replace(/_/g, ' ')) + "'," + ((ci + 1) * 10) + ",'Y','N','Y')");
+            "'" + q(col.name.replace(/_/g, ' ')) + "'," + ((others.length + ci + 1) * 10) + ",'Y','N','Y')");
           counts.fields++;
         } else { counts.skipped++; }
       });
@@ -244,8 +280,16 @@
       // Data table (iDempiere: Synchronize Column / "Create Table in DB"). Without it the window renders "table not in this seed"
       // (idempiere.html renderActiveTab) and neither tab has a row source — AD alone is not a module. Seed convention: NUMERIC / TEXT,
       // PRIMARY KEY on <Table>_ID. IF NOT EXISTS: a re-stage / rollback never touches rows already entered.
+      if (E) {                                                 // the table is there: only the columns the sheet adds (legacy: Synchronize Column, ALTER TABLE ADD)
+        var phys = val(db, "SELECT name FROM sqlite_master WHERE type='table' AND lower(name)=lower('" + q(E.name) + "')");
+        if (phys) {
+          var pc = {}; var pr = db.exec('PRAGMA table_info("' + String(phys).replace(/"/g, '') + '")'); (pr.length ? pr[0].values : []).forEach(function (v) { pc[String(v[1]).toUpperCase()] = 1; });
+          t.columns.forEach(function (col) { if (!have[col.name.toUpperCase()] && !pc[col.name.toUpperCase()]) { db.run(columnSql(phys, col)); counts.colsAdded = (counts.colsAdded || 0) + 1; } });
+        }
+      } else {
       if (isMissing(db, 'sqlite_master', "type='table' AND lower(name)=lower('" + q(t.name) + "')")) counts.dataTables = (counts.dataTables || 0) + 1;
       db.run(dataTableSql(t.name, t.columns));
+      }
 
       // AD_Menu leaf — one per WINDOW (a detail is a tab of its master's window, not a menu entry)
       if (isDetail) { /* §GT-NINJA no menu leaf */ }
@@ -294,18 +338,18 @@
     if (BREAK === 'blanket') ids = list('SELECT AD_Table_ID FROM AD_Table WHERE AD_Table_ID>=' + NINJA_BASE);
     else if (model && typeof model === 'object' && model.tables) {
       name = model.bundleName;
-      model.tables.forEach(function (t) { ids = ids.concat(list("SELECT AD_Table_ID FROM AD_Table WHERE TableName='" + q(t.name) + "' AND AD_Table_ID>=" + NINJA_BASE)); });
+      model.tables.forEach(function (t) { ids = ids.concat(list("SELECT AD_Table_ID FROM AD_Table WHERE upper(TableName)=upper('" + q(t.name) + "')")); });   // a reused dictionary table too: only its Ninja-range columns and tabs go off
     } else if (typeof model === 'string' && model) {
       name = model;
       ids = list('SELECT DISTINCT t.AD_Table_ID FROM AD_Menu s JOIN AD_TreeNodeMM n ON n.Parent_ID=s.AD_Menu_ID AND n.AD_Tree_ID=' + NINJA_TREE_ID +
         ' JOIN AD_Menu l ON l.AD_Menu_ID=n.Node_ID JOIN AD_Tab t ON t.AD_Window_ID=l.AD_Window_ID' +
-        " WHERE s.IsSummary='Y' AND s.AD_Menu_ID>=" + NINJA_BASE + " AND s.Name='" + q(model) + "' AND t.AD_Table_ID>=" + NINJA_BASE);
+        " WHERE s.IsSummary='Y' AND s.AD_Menu_ID>=" + NINJA_BASE + " AND s.Name='" + q(model) + "' AND t.AD_Tab_ID>=" + NINJA_BASE);
       if (!ids.length) throw new Error('rollbackModel: no staged bundle is named ' + model + ' (nothing was changed)');
     } else throw new Error('rollbackModel needs the model (or its bundle name): a rollback of every staged model is not offered');
     if (ids.length) {
-      var inT = '(' + ids.join(',') + ')', tabs = list('SELECT AD_Tab_ID FROM AD_Tab WHERE AD_Table_ID IN ' + inT), wins = list('SELECT DISTINCT AD_Window_ID FROM AD_Tab WHERE AD_Table_ID IN ' + inT + ' AND AD_Window_ID>=' + NINJA_BASE);
-      counts.tables = off('AD_Table', 'AD_Table_ID IN ' + inT);
-      counts.cols   = off('AD_Column', 'AD_Table_ID IN ' + inT);
+      var inT = '(' + ids.join(',') + ')', tabs = list('SELECT AD_Tab_ID FROM AD_Tab WHERE AD_Table_ID IN ' + inT + ' AND AD_Tab_ID>=' + NINJA_BASE), wins = list('SELECT DISTINCT AD_Window_ID FROM AD_Tab WHERE AD_Table_ID IN ' + inT + ' AND AD_Tab_ID>=' + NINJA_BASE + ' AND AD_Window_ID>=' + NINJA_BASE);
+      counts.tables = off('AD_Table', 'AD_Table_ID IN ' + inT + ' AND AD_Table_ID>=' + NINJA_BASE);
+      counts.cols   = off('AD_Column', 'AD_Table_ID IN ' + inT + ' AND AD_Column_ID>=' + NINJA_BASE);
       if (tabs.length) { counts.fields = off('AD_Field', 'AD_Tab_ID IN (' + tabs.join(',') + ')'); counts.tabs = off('AD_Tab', 'AD_Tab_ID IN (' + tabs.join(',') + ')'); }
       wins.forEach(function (w) {   // a window goes when no active tab is left in it; its menu leaf goes with it
         if (Number(val(db, "SELECT COUNT(*) FROM AD_Tab WHERE IsActive='Y' AND AD_Window_ID=" + w))) return;
@@ -407,7 +451,7 @@
     return { bundleName: bundleName, tables: modelTables };
   }
 
-  var API = { stageModels: stageModels, dataTableSql: dataTableSql, rollbackModel: rollbackModel, extractModel: extractModel, NINJA_BASE: NINJA_BASE };
+  var API = { stageModels: stageModels, dataTableSql: dataTableSql, columnSql: columnSql, existingTable: existingTable, rollbackModel: rollbackModel, extractModel: extractModel, NINJA_BASE: NINJA_BASE };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   else global.NinjaStage = API;
 
