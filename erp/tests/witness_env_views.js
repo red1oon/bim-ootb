@@ -8,7 +8,7 @@
 // POPULATION: one child process per time zone (TZ=UTC and Asia/Kuala_Lumpur), the clock fixed at 2026-11-13 00:30 LOCAL before any code loads; the
 //   REAL ad_callout.js Env and the REAL ws_kernel.js env(session). The expected day is the literal local date the clock was set to, not a re-computation.
 // RED CONTROL: the same population with the day cut from toISOString() (the #2996 defect) must FAIL the local-day invariant at +08.
-// KNOWN-DIFF, never PASS-washed: ws_kernel env() at +08 prints §ENV_VIEWS producer=ws_kernel.date same=N KNOWN-DIFF #2996 until A2 fixes it.
+// A2 (bim-ootb #2996, fixed): ws_kernel env() now takes the local day too (legacy CompiereService.java:281-283); a regression to the UTC day prints same=N and FAILS the kernel invariant.
 // INCONCLUSIVE if fewer than 2 producers were compared in a zone, or a child could not run.
 // Command: node erp/tests/witness_env_views.js
 'use strict';
@@ -50,10 +50,10 @@ else {
   const { Witness } = require(path.join(__dirname, '..', '..', 'witness_kit', 'contract.js'));
   const rows = ['UTC', 'Asia/Kuala_Lumpur'].map(tz => {
     const R = run(tz);
-    const row = { tz, localDay: R.edgeDay, expectDay: EXPECT_DAY, nowOk: R.edgeNow === EXPECT_NOW, ids: R.edgeIds.join(','), ctxDateWins: R.ctxDay === '2026-11-10', refusesNoDate: R.threw && R.noDateLogged, elapsedOk: R.elapsed === 3, producers: 2 };
+    const row = { tz, localDay: R.edgeDay, expectDay: EXPECT_DAY, nowOk: R.edgeNow === EXPECT_NOW, ids: R.edgeIds.join(','), kernelLocal: R.kernelDay === EXPECT_DAY, ctxDateWins: R.ctxDay === '2026-11-10', refusesNoDate: R.threw && R.noDateLogged, elapsedOk: R.elapsed === 3, producers: 2 };
     say('  §ENV_VIEWS tz=' + tz + ' producer=Env.modelEnv date=' + R.edgeDay + ' expect=' + EXPECT_DAY + ' same=' + (R.edgeDay === EXPECT_DAY ? 'Y' : 'N') + ' now=' + R.edgeNow + ' ctxDate=' + R.ctxDay + ' noDate=' + (row.refusesNoDate ? 'throws+§ENV_NO_DATE' : 'FALLS BACK'));
     const same = R.kernelDay === EXPECT_DAY;
-    say('  §ENV_VIEWS tz=' + tz + ' producer=ws_kernel.date date=' + R.kernelDay + ' expect=' + EXPECT_DAY + ' same=' + (same ? 'Y' : 'N') + (same ? '' : ' KNOWN-DIFF #2996 (UTC day ' + R.utcDay + ')'));
+    say('  §ENV_VIEWS tz=' + tz + ' producer=ws_kernel.date date=' + R.kernelDay + ' expect=' + EXPECT_DAY + ' same=' + (same ? 'Y' : 'N') + (same ? '' : ' REGRESSION #2996 (UTC day ' + R.utcDay + ')'));
     return row;
   });
   Witness('ENV_VIEWS')
@@ -61,6 +61,7 @@ else {
     .schema({ type: 'object', required: ['tz', 'localDay', 'expectDay', 'producers'], properties: { producers: { type: 'integer', minimum: 2 } } })
     .invariant('Env.modelEnv gives the local calendar day and the local wall-clock string in every time zone', rs => rs.length === 2 && rs.every(r => r.localDay === r.expectDay && r.nowOk))
     .invariant('the login context #Date wins when present, a missing date throws with §ENV_NO_DATE (A-3), elapsed reads the injected timer (A-4)', rs => rs.every(r => r.ctxDateWins && r.refusesNoDate && r.elapsedOk))
+    .invariant('the headless kernel session date is the local day too (#2996, legacy CompiereService.java:281-283)', rs => rs.every(r => r.kernelLocal))
     .invariant('the login ids come from the context unchanged', rs => rs.every(r => r.ids === '11,11,100,102'))
     .redControl(rs => rs.map(r => Object.assign({}, r, { localDay: r.tz === 'UTC' ? r.localDay : '2026-11-12' })))   // the #2996 shape: the UTC day at +08 00:30
     .run();
