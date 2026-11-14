@@ -35,7 +35,7 @@
         else X.A.RUNTIME.log('§PROC-UNKNOWN-PARA InvoiceGenerate ' + name);
       }
       if (this.p_DateInvoiced == null) this.p_DateInvoiced = X.A.Env.getContextAsDate ? X.A.Env.getContextAsDate(this.getCtx(), 'Date') : null;   // :111-112 login date
-      if (this.p_DateInvoiced == null) this.p_DateInvoiced = new Date().toISOString().slice(0, 10);                                                // :113-114
+      if (this.p_DateInvoiced == null) this.p_DateInvoiced = X.A.Env.nowStamp(this.get_TrxName().env).slice(0, 10);                                                // :113-114
       if ('CO' !== this.p_docAction) this.p_docAction = 'PR';                                                                                      // :117-118 ACTION_Prepare
     };
     InvoiceGenerate.prototype.doIt = function () {                                      // :127-205
