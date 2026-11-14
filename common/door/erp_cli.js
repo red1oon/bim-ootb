@@ -144,6 +144,7 @@ function ensureTables(O) {
   });
   return made;
 }
+const GRID_BREAK = process.env.ADDWIN_BREAK || '';   // W-MIS-ADD falsifier nogrid: the fields carry no grid flag (the browser's grid then shows no column)
 const AD_STAGED = ['ad_window', 'ad_table', 'ad_tab', 'ad_column', 'ad_field', 'ad_menu'], STD7 = ['ad_client_id', 'ad_org_id', 'isactive', 'created', 'createdby', 'updated', 'updatedby'];
 async function addWindow(O, a) {
   const t0 = Date.now(), NS = require(path.join(ROOT, 'erp', 'ninja_stage.js')), NC = require(path.join(ROOT, 'erp', 'ninja_csv.js')), XL = require(path.join(ROOT, 'erp', 'xlsx.mini.min.js')), PG = require(path.join(ROOT, 'erp', 'pipo_packgen.js'));
@@ -224,6 +225,8 @@ async function stageAtDoor(O, model, opt) {
       const f = await dress(t, row, node ? opt.bundleScope : sc(table), key);
       if (node && !bare && opt.nodeDescription) f.description = opt.nodeDescription;
       if (!bare && t === 'ad_field' && (key.toLowerCase() === table.toLowerCase() + '_id' || key.toLowerCase() === table.toLowerCase() + '_uu')) { f.isdisplayed = 'N'; if (hasCol('ad_field', 'isdisplayedgrid')) f.isdisplayedgrid = 'N'; }   // TabCreateFields.java L156-158: the key and the UU are not shown
+      else if (!bare && t === 'ad_field' && GRID_BREAK !== 'nogrid' && hasCol('ad_field', 'isdisplayedgrid')) f.isdisplayedgrid = /^(ad_client_id|ad_org_id)$/i.test(key) ? 'N' : 'Y';   // legacy Ninja AddTable.java L571-586: client and organisation are not grid columns; every other field is (AD_Field.IsDisplayedGrid defaults Y)
+      if (!bare && t === 'ad_field' && GRID_BREAK !== 'nogrid' && hasCol('ad_field', 'seqnogrid') && f.seqnogrid == null) f.seqnogrid = f.seqno;   // AD_Field.SeqNoGrid defaults to the tab's max + 10 at each save: the creation order, which is the stager's SeqNo
       if (!bare && t === 'ad_table') { f.accesslevel = '3'; f.isdeleteable = 'Y'; }   // MRO_ModelMaker.java L128-129
       if (!bare && t === 'ad_column') {
         const lc = row.columnname.toLowerCase(), m = ((opt.meta[table] || {}).columns || []).filter(c => c.name === row.columnname)[0] || {};
@@ -769,7 +772,7 @@ async function workflowOn(O, tn, dry) {   // the one function: ninja.workflow, a
     let seq = Number((O.rows('SELECT max(seqno) AS m FROM ad_field WHERE ad_tab_id=?', [tab.id])[0] || {}).m || 0);
     for (const c of WF_COLS) {
       if (O.rows("SELECT 1 AS x FROM ad_field f JOIN ad_column cc ON cc.ad_column_id=f.ad_column_id WHERE f.ad_tab_id=? AND lower(cc.columnname)=lower(?) AND f.isactive='Y'", [tab.id, c.name]).length) continue;
-      seq += 10; const f = { ad_field_id: fldId++, ad_tab_id: tab.id, ad_column_id: colOf[c.name], name: c.name, seqno: seq, isdisplayed: 'Y', isreadonly: 'N', isactive: 'Y', entitytype: 'U', ad_client_id: 0, ad_org_id: 0 };
+      seq += 10; const f = { ad_field_id: fldId++, ad_tab_id: tab.id, ad_column_id: colOf[c.name], name: c.name, seqno: seq, seqnogrid: seq, isdisplayedgrid: 'Y', isdisplayed: 'Y', isreadonly: 'N', isactive: 'Y', entitytype: 'U', ad_client_id: 0, ad_org_id: 0 };
       Object.keys(f).forEach(k => { if (!hasCol('ad_field', k)) delete f[k]; }); if (hasCol('ad_field', 'ad_field_uu')) f.ad_field_uu = await uu('ad_field', tab.id + '/' + c.name);
       ops.push({ op_type: 'CRUD_CREATE', table: 'ad_field', idCol: 'ad_field_id', fields: f }); fieldsAdded.push(tab.id + ':' + c.name);
     }
