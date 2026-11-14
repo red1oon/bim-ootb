@@ -2524,7 +2524,7 @@
    "verb": "mis.list",
    "app": "mis",
    "title": "List records",
-   "description": "List the records of a kind as rows. Columns, filters and the sort are checked against the dictionary: an unknown column is an error that names the kind's properties. Shows at most 50 rows unless limit says otherwise (up to 1000); the answer always carries the total, so a short list is never mistaken for the whole. Nothing is changed. Add column=value to filter (several allowed).",
+   "description": "List the records of a kind as rows. Columns, filters and the sort are checked against the dictionary: an unknown column is an error that names the kind's properties. Shows at most 50 rows unless limit says otherwise (up to 1000); the answer always carries the total, so a short list is never mistaken for the whole. Nothing is changed. Add column=value to filter (several allowed). Add master=Table/record (an id, or the number or name of the parent) to list only the rows of one parent, for a table shown as a tab under it.",
    "inputs": [
     {
      "name": "kind",
@@ -2659,7 +2659,7 @@
    "verb": "mis.sum",
    "app": "mis",
    "title": "Add up a column",
-   "description": "The exact sum of one number column over the records of a kind (all of them, or those matching column=value filters). Decimals are added exactly, never as floating point. An empty kind is inconclusive, never a plain 0. Nothing is changed.",
+   "description": "The exact sum of one number column over the records of a kind (all of them, or those matching column=value filters, or the rows of one parent with master=Table/record). Decimals are added exactly, never as floating point. An empty kind is inconclusive, never a plain 0. Nothing is changed.",
    "inputs": [
     {
      "name": "kind",
@@ -3966,7 +3966,7 @@
    "verb": "erp.list",
    "app": "erp",
    "title": "List records (old name of mis.list)",
-   "description": "List the records of a kind as rows. Columns, filters and the sort are checked against the dictionary: an unknown column is an error that names the kind's properties. Shows at most 50 rows unless limit says otherwise (up to 1000); the answer always carries the total, so a short list is never mistaken for the whole. Nothing is changed. Add column=value to filter (several allowed).",
+   "description": "List the records of a kind as rows. Columns, filters and the sort are checked against the dictionary: an unknown column is an error that names the kind's properties. Shows at most 50 rows unless limit says otherwise (up to 1000); the answer always carries the total, so a short list is never mistaken for the whole. Nothing is changed. Add column=value to filter (several allowed). Add master=Table/record (an id, or the number or name of the parent) to list only the rows of one parent, for a table shown as a tab under it.",
    "inputs": [
     {
      "name": "kind",
@@ -4103,7 +4103,7 @@
    "verb": "erp.sum",
    "app": "erp",
    "title": "Add up a column (old name of mis.sum)",
-   "description": "The exact sum of one number column over the records of a kind (all of them, or those matching column=value filters). Decimals are added exactly, never as floating point. An empty kind is inconclusive, never a plain 0. Nothing is changed.",
+   "description": "The exact sum of one number column over the records of a kind (all of them, or those matching column=value filters, or the rows of one parent with master=Table/record). Decimals are added exactly, never as floating point. An empty kind is inconclusive, never a plain 0. Nothing is changed.",
    "inputs": [
     {
      "name": "kind",
