@@ -93,6 +93,12 @@ async function generate() {   // the dictionary-derived entries only; scripts/co
     harm: 'writes', dictionary: true, calls: { cli: 'erp_cli', who: 'the ERP engine', argv: ['ninja_exec', '--file', '{file}', { if: 'dry', args: ['--dry', '{dry}'] }, { if: 'data', args: ['--data', '{data}'] }] },
     returns: { shape: 'erp_cli JSON {bundle,file,sha256,sheet,tables:[{table,master,columns,lists}],windows,detailTabs,dataSheets:[{sheet,rows,loaded}],skipped,notChecked,opSummary,ops} or {dry,...} or {alreadyStaged,...} or {refused,reason}', fields: [{ path: 'bundle', type: 'string' }, { path: 'ops', type: 'number' }] },
     actors: ['human', 'ai'], witness: 'common/door/tests/witness_ninja_exec.js' });
+  // ninja.workflow (bim-compiler prompts/ERP_MIS_WINDOW_FROM_CSV.md §12.3): the document columns on one staged table; reads the dictionary to see what is there and adds only what is missing.
+  out.push({ verb: 'ninja.workflow', app: 'ninja', title: 'Give a table the document columns', description: 'Give one table that a Ninja line made the five document columns (DocStatus, DocAction, Processed, DocumentNo, IsApproved) with their lists and defaults, a field for each on its tabs, and the defaults on the records that are already there. It looks at what the table has and adds only what is missing: run a second time it writes nothing. A table that came with the system is refused. It does not make a workflow or say what Complete does: the answer lists what is not made. dry=Y says what it would add and writes nothing.',
+    inputs: [{ name: 'table', description: 'The table, as a Ninja line made it.', required: true, type: 'string', example: 'PR_Visit' }, { name: 'dry', description: 'Optional: Y lists what would be added and writes nothing.', required: false, type: 'string', example: 'Y' }],
+    harm: 'writes', dictionary: true, calls: { cli: 'erp_cli', who: 'the ERP engine', argv: ['ninja_workflow', '--table', '{table}', { if: 'dry', args: ['--dry', '{dry}'] }] },
+    returns: { shape: 'erp_cli JSON {table,added,corrected,fields,rowsFilled,notMade,opSummary,ops} or {dry,...} or {alreadyDone,...} or {refused,reason}', fields: [{ path: 'table', type: 'string' }, { path: 'ops', type: 'number' }] },
+    actors: ['human', 'ai'], witness: 'common/door/tests/witness_ninja_workflow.js' });
   const seen = new Set();
   for (const a of av) {
     if (seen.has(a.verb)) continue; seen.add(a.verb);

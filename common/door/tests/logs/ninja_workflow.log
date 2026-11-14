@@ -1,0 +1,9 @@
+  ✅ F5 a table that came with the system and an unknown table are refused; dry=Y names the five columns it would add; the op count does not move (135)  core: refused · unknown: refused · dry added=DocStatus,DocAction,Processed,DocumentNo,IsApproved · ops 135->135
+§W-NINJA-WORKFLOW ninja.workflow {"added":["DocStatus","DocAction","Processed","DocumentNo","IsApproved"],"corrected":[],"fields":5,"rowsFilled":1,"ops":11,"opSummary":{"create:ad_column":5,"create:ad_field":5,"update:pr_visit":1}}
+  ✅ F1 the five columns carry the reference, list reference and default of the system's own document columns (C_Order's, read from the seed; Processed and IsApproved default N as legacy Ninja sets them), each with a field  staged: DocStatus=17|131|DR DocAction=28|135|CO Processed=20||N DocumentNo=10|| IsApproved=20||N · fields=5
+  ✅ F2 a record made before the verb and one made after it both read DR / CO / N / N  rows: After/DR/CO/N/N Before/DR/CO/N/N · filled by the verb=1 
+  ✅ F4 it survives a restart: the listing above was a new process on the same op-log, and it read the columns and the values  rows=2 
+  ✅ F3 a second run says it is already done and writes nothing (148 ops before and after)  alreadyDone=true ops 148->148
+  ✅ F6 a table made by mis.add_window workflow=Y carries the same five columns as one the verb worked on, and its first record reads DR / CO / N / N  add_window: ok  columns equal=true · record DR/CO/N/N
+  ✅ F7 the answer names what is NOT made (the workflow and its process; the document class); Complete is refused saying the table has no document class, the status stays DR; an AI's line is a claim; the vocabulary entry is generated, harm writes, dictionary true  notMade=2 · complete: refused "Complete was not done: PR Visit has the document columns but no document class yet, so nothing says what Compl" · ai=claim ops=0 · entry={"harm":"writes","dictionary":true}
+§WITNESS_NINJA_WORKFLOW pass=7 fail=0 inconclusive=0 verdict=PASS
