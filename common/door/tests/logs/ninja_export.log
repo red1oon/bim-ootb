@@ -1,0 +1,17 @@
+§W-NINJA-EXPORT original
+PR_Patient|master=|Name:10,DateOfBirth:15,BloodGroup:17=A/B/AB/O,IsInsured:20
+PR_Visit|master=PR_Patient|Name:10,DateVisit:15,Fee:12,Notes:14
+PR_Medicine|master=PR_Visit|Name:10,Qty:29
+PR_Room|master=|Name:10,Beds:29
+PR_Referral|master=C_BPartner|Name:10,DateReferred:15
+§W-NINJA-EXPORT exported
+PR_Patient|master=|Name:10,DateOfBirth:15,BloodGroup:17=A/B/AB/O,IsInsured:20
+PR_Visit|master=PR_Patient|Name:10,DateVisit:15,Fee:12,Notes:14
+PR_Medicine|master=PR_Visit|Name:10,Qty:29
+PR_Room|master=|Name:10,Beds:29
+PR_Referral|master=C_BPartner|Name:10,DateReferred:15
+  ✅ E1 the exported workbook, read by the parser ninja.exec uses, holds the same tables, Master links, column names, reference types and list values as the sheet that made the bundle (5 tables, compared field by field)  identical · lists=1
+  ✅ E2 the exported file run by ninja.exec on a fresh door makes the same shape (tables, Master links, lists); after an edit of the file (a yes-no column added to PR_Room) the run makes that column  round: ok same shape=true  · edited: ok  · IsOpenNow=[{"n":"IsOpenNow","r":20}]
+  ✅ E3 the file holds the model only (sheets: 1_RO_ModelHeader, 2_RO_ModelMaker) and the answer says the rows are not written; an existing file is refused; no selector is refused with legacy's rule; two selectors, a system table, an unknown bundle and a non-workbook name are refused; none of the refusals writes a file or an op  overwrite: refused · none: refused · two: refused · core: refused · unknown: refused · ext: refused · files=false · ops 151->151
+  ✅ E4 the vocabulary entry is generated and names its witness; an AI's line is a claim and writes no file  ai=claim · entry={"harm":"writes","witness":"common/door/tests/witness_ninja_export.js"}
+§WITNESS_NINJA_EXPORT pass=4 fail=0 inconclusive=0 verdict=PASS

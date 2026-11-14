@@ -693,10 +693,12 @@ async function ninjaExec(O, a) {
   const mark = 'workbook sha256 ' + sha, dry = String(a.dry || '').toUpperCase() === 'Y', withData = String(a.data || '').toUpperCase() !== 'N';
   if (core.length) refuse(core.length + ' table name' + (core.length > 1 ? 's' : '') + ' of the workbook already exist' + (core.length > 1 ? '' : 's') + ' in the dictionary and ' + (core.length > 1 ? 'are' : 'is') + ' not staged here: ' + core.map(x => x.name).join(', ') + '. Nothing was written');
   const again = staged.length === fresh.length && (fresh.length || reused.every(x => O.rows('SELECT 1 AS x FROM ad_tab WHERE ad_table_id=? AND ad_tab_id>=' + NS.NINJA_BASE + " AND isactive='Y'", [x.ext.id]).length)) && node && String(node.d || '').indexOf(mark) >= 0 && staged.every(x => x.row.a === 'Y');
-  if (staged.length && !again) refuse(staged.length + ' table' + (staged.length > 1 ? 's' : '') + ' of the workbook ' + (staged.length > 1 ? 'are' : 'is') + ' already staged here (' + staged.map(x => x.name).join(', ') + ') and this is not the workbook that staged ' + (staged.length > 1 ? 'them' : 'it') + ' (bundle ' + model.bundleName + ', another sha256, or other tables); changing a staged window is not built yet. Nothing was written');
+  // a bundle this workbook made and ninja.rollback switched off (§12.11 R5): its rows are switched on again (one group), then the data sheets load as for a new bundle
+  const revive = !again && !!node && node.a === 'N' && String(node.d || '').indexOf(mark) >= 0 && staged.length === fresh.length && staged.every(x => x.row.a === 'N') && EXEC_BREAK !== 'norevive';
+  if (staged.length && !again && !revive) refuse(staged.length + ' table' + (staged.length > 1 ? 's' : '') + ' of the workbook ' + (staged.length > 1 ? 'are' : 'is') + ' already staged here (' + staged.map(x => x.name).join(', ') + ') and this is not the workbook that staged ' + (staged.length > 1 ? 'them' : 'it') + ' (bundle ' + model.bundleName + ', another sha256, or other tables); changing a staged window is not built yet. Nothing was written');
   // lists: one reference per L# column; a name used twice in the workbook, or already a list reference here, is refused (as mis.add_window refuses it)
   const meta = {}, listAt = {};
-  if (!again) model.tables.forEach(t => {
+  if (!again && !revive) model.tables.forEach(t => {
     const lists = t.columns.filter(c => !c.isStandard && c.listValues && c.listValues.length).map(c => {
       if (listAt[c.name]) refuse('the list ' + c.name + ' is declared on two tables (' + listAt[c.name] + ' and ' + t.name + '); a list reference has one name. Nothing was written'); listAt[c.name] = t.name;
       const clash = O.rows("SELECT ad_reference_id AS id FROM ad_reference WHERE name=? AND validationtype='L'", [c.name])[0];
@@ -720,7 +722,7 @@ async function ninjaExec(O, a) {
   if (dry) { say('ninja_exec DRY bundle=' + model.bundleName + ' tables=' + shape.length + ' data_sheets=' + out.dataSheets.length + ' skipped=' + skipped.length + ' sha256=' + sha.slice(0, 12)); return Object.assign(out, { dry: true, alreadyStaged: !!again, ops: [] }); }
   if (again) { say('ninja_exec ALREADY bundle=' + model.bundleName + ' tables=' + shape.length + ' sha256=' + sha.slice(0, 12) + ' ops=0'); return Object.assign(out, { alreadyStaged: true, dataSheets: [], opSummary: {}, ops: 0, summary: 'this workbook is already staged (' + shape.length + ' tables); nothing was written' }); }
   if (EXEC_BREAK === 'nodetail') model.tables.forEach(t => { t.master = ''; });
-  const S = await stageAtDoor(O, model, { scope: (tn) => tn, bundleScope: 'bundle:' + model.bundleName, meta, nodeDescription: 'Ninja bundle: ' + model.bundleName + ' (' + mark + ')' });
+  const S = revive ? await reviveBundle(O, model.bundleName, model.tables.map(t => t.name)) : await stageAtDoor(O, model, { scope: (tn) => tn, bundleScope: 'bundle:' + model.bundleName, meta, nodeDescription: 'Ninja bundle: ' + model.bundleName + ' (' + mark + '; tables ' + model.tables.map(t => t.name).join(',') + ')' });
   out.windows = S.made.ad_window.map(w => ({ id: w.ad_window_id, name: w.name })); out.detailTabs = S.counts.details || 0; out.opSummary = sum(S.res); out.ops = S.res.length; out.tablesMade = S.tables.length;
   const loads = [];
   if (withData && EXEC_BREAK !== 'nodata') for (const s of sheets.filter(x => x.known)) {
@@ -794,13 +796,104 @@ async function ninjaWorkflow(O, a) {
   if (!a.table) refuse('--table is required (a table a Ninja line made here)');
   return workflowOn(O, String(a.table), String(a.dry || '').toUpperCase() === 'Y');
 }
+// ── ninja.rollback (bim-compiler prompts/ERP_MIS_WINDOW_FROM_CSV.md §12.11): undo ONE staged bundle. The stager's rollbackModel says what goes off (it switches rows off, never deletes); it is run inside a savepoint, the rows it
+// switched are read back as CRUD_UPDATE ops, the savepoint is undone, and the ops are written as ONE group (so the log replays it and the door's undo brings it back). Legacy DeleteModel's rule: a table that holds rows blocks it.
+const ROLL_BREAK = process.env.NINJAROLL_BREAK || '';   // W-NINJA-ROLLBACK falsifiers: keepmenu | nodatacheck | blanket
+async function reviveBundle(O, name, tnames) {   // the inverse of ninjaRollback, from the table names the bundle's node carries: the Ninja-range rows of those tables, their tabs, fields, windows and menu entries, and the node, switched on (ONE group)
+  const NS = require(path.join(ROOT, 'erp', 'ninja_stage.js')), B = NS.NINJA_BASE, ids = (t) => { const m = {}; O.rows('SELECT ' + t + '_id AS id, isactive AS a FROM ' + t + ' WHERE ' + t + '_id>=' + B).forEach(r => { m[r.id] = r.a; }); return m; };
+  const before = {}; AD_STAGED.forEach(t => { before[t] = ids(t); }); const ops = [];
+  const tids = tnames.map(n => (O.rows('SELECT ad_table_id AS id FROM ad_table WHERE lower(tablename)=lower(?) ORDER BY ad_table_id DESC', [n])[0] || {}).id).filter(x => x != null), inT = '(' + (tids.join(',') || '0') + ')';
+  O.db.run('SAVEPOINT revive'); try {
+    O.db.run("UPDATE ad_table SET isactive='Y' WHERE ad_table_id IN " + inT + ' AND ad_table_id>=' + B);
+    O.db.run("UPDATE ad_column SET isactive='Y' WHERE ad_table_id IN " + inT + ' AND ad_column_id>=' + B);
+    O.db.run("UPDATE ad_field SET isactive='Y' WHERE ad_field_id>=" + B + ' AND ad_tab_id IN (SELECT ad_tab_id FROM ad_tab WHERE ad_table_id IN ' + inT + ' AND ad_tab_id>=' + B + ')');
+    O.db.run("UPDATE ad_window SET isactive='Y' WHERE ad_window_id>=" + B + ' AND ad_window_id IN (SELECT ad_window_id FROM ad_tab WHERE ad_table_id IN ' + inT + ' AND ad_tab_id>=' + B + ')');
+    O.db.run("UPDATE ad_tab SET isactive='Y' WHERE ad_table_id IN " + inT + ' AND ad_tab_id>=' + B);
+    O.db.run("UPDATE ad_menu SET isactive='Y' WHERE ad_menu_id>=" + B + ' AND ad_window_id IN (SELECT ad_window_id FROM ad_tab WHERE ad_table_id IN ' + inT + ' AND ad_tab_id>=' + B + ')');
+    O.db.run("UPDATE ad_menu SET isactive='Y' WHERE issummary='Y' AND ad_menu_id>=" + B + " AND name='" + String(name).replace(/'/g, "''") + "'");
+    AD_STAGED.forEach(t => { const now = ids(t); Object.keys(now).forEach(id => { if (before[t][id] === 'N' && now[id] === 'Y') ops.push({ op_type: 'CRUD_UPDATE', table: t, idCol: t + '_id', id: Number(id), changes: { isactive: { old: 'N', new: 'Y' } } }); }); });
+  } finally { O.db.run('ROLLBACK TO revive'); O.db.run('RELEASE revive'); }
+  const res = persistGroup(O, ops); ensureTables(O); say('ninja_exec REVIVE bundle=' + name + ' ops=' + res.length);
+  return { made: { ad_window: res.filter(o => o.table === 'ad_window').map(o => ({ ad_window_id: o.id, name: (O.rows('SELECT name FROM ad_window WHERE ad_window_id=?', [o.id])[0] || {}).name })) }, counts: { details: 0 }, res, tables: tids };
+}
+async function ninjaRollback(O, a) {
+  const NS = require(path.join(ROOT, 'erp', 'ninja_stage.js')), name = String(a.bundle || '').trim(), dry = String(a.dry || '').toUpperCase() === 'Y';
+  if (!name) refuse('--bundle is required: the name of a bundle a Ninja workbook made (legacy Ninja: "Choose something!"; a rollback of every bundle is not offered). Nothing was written');
+  const node = O.rows("SELECT ad_menu_id AS id, description AS d FROM ad_menu WHERE issummary='Y' AND ad_menu_id>=" + NS.NINJA_BASE + ' AND name=?', [name])[0];
+  if (!node) refuse('no staged bundle is named ' + name + ' here. Nothing was written');
+  const named = (/; tables ([^)]*)\)/.exec(String(node.d || '')) || [])[1], names = named ? named.split(',') : null;   // the node carries the tables the workbook made (a table attached to another window is only found this way)
+  const tabs = names ? O.rows('SELECT DISTINCT t.ad_table_id AS id, tb.tablename AS tn FROM ad_tab t JOIN ad_table tb ON tb.ad_table_id=t.ad_table_id WHERE t.ad_tab_id>=' + NS.NINJA_BASE + ' AND lower(tb.tablename) IN (' + names.map(() => 'lower(?)').join(',') + ')', names) : O.rows('SELECT DISTINCT t.ad_table_id AS id, tb.tablename AS tn FROM ad_menu s JOIN ad_treenodemm n ON n.parent_id=s.ad_menu_id JOIN ad_menu l ON l.ad_menu_id=n.node_id JOIN ad_tab t ON t.ad_window_id=l.ad_window_id JOIN ad_table tb ON tb.ad_table_id=t.ad_table_id' +
+    " WHERE s.issummary='Y' AND s.ad_menu_id>=" + NS.NINJA_BASE + ' AND s.name=? AND t.ad_tab_id>=' + NS.NINJA_BASE, [name]);
+  const own = tabs.filter(t => Number(t.id) >= NS.NINJA_BASE), held = [];   // legacy DeleteModel: "ERROR <table> HAS DATA! DELETE THEM FIRST"
+  if (ROLL_BREAK !== 'nodatacheck') own.forEach(t => { let n = 0; try { n = Number((O.rows('SELECT COUNT(*) AS n FROM ' + t.tn)[0] || {}).n || 0); } catch (e) { n = 0; } if (n > 0) held.push({ table: t.tn, rows: n }); });
+  if (held.length) refuse(held.map(h => h.table + ' has ' + h.rows + ' record' + (h.rows > 1 ? 's' : '')).join(', ') + ': delete them first (legacy Ninja: "HAS DATA! DELETE THEM FIRST"). Nothing was written');
+  const ids = (t) => { const m = {}; O.rows('SELECT ' + t + '_id AS id, isactive AS a FROM ' + t + ' WHERE ' + t + '_id>=' + NS.NINJA_BASE).forEach(r => { m[r.id] = r.a; }); return m; };
+  const before = {}; AD_STAGED.forEach(t => { before[t] = ids(t); }); const ops = [], log = console.log; console.log = () => {};
+  O.db.run('SAVEPOINT rollb'); try {
+    NS.rollbackModel(O.db, names ? { bundleName: name, tables: names.map(n => ({ name: n })) } : name);
+    if (ROLL_BREAK === 'blanket') O.db.run("UPDATE ad_table SET isactive='N' WHERE ad_table_id>=" + NS.NINJA_BASE);
+    AD_STAGED.forEach(t => { const now = ids(t); Object.keys(now).forEach(id => { if (before[t][id] === 'Y' && now[id] === 'N') ops.push({ op_type: 'CRUD_UPDATE', table: t, idCol: t + '_id', id: Number(id), changes: { isactive: { old: 'Y', new: 'N' } } }); }); });
+  } finally { O.db.run('ROLLBACK TO rollb'); O.db.run('RELEASE rollb'); console.log = log; }
+  const kept = ROLL_BREAK === 'keepmenu' ? ops.filter(o => o.table !== 'ad_menu') : ops, out = { bundle: name, tables: own.map(t => t.tn), attachedTo: tabs.filter(t => Number(t.id) < NS.NINJA_BASE).map(t => t.tn), opSummary: sum(kept), ops: kept.length,
+    notMade: ['legacy Ninja deletes the rows of the dictionary; here they are switched off (the log keeps its history and the undo of this group brings the bundle back)'] };
+  if (dry) { say('ninja_rollback DRY bundle=' + name + ' would_switch_off=' + kept.length + ' ' + JSON.stringify(out.opSummary)); return Object.assign(out, { dry: true, ops: 0, wouldSwitchOff: kept.length }); }
+  if (!kept.length) { say('ninja_rollback ALREADY bundle=' + name + ' ops=0'); return Object.assign(out, { alreadyDone: true, ops: 0, opSummary: {}, summary: name + ' is rolled back already; nothing was written' }); }
+  const res = persistGroup(O, kept); say('ninja_rollback bundle=' + name + ' ops=' + res.length + ' ' + JSON.stringify(sum(res)));
+  return Object.assign(out, { opSummary: sum(res), ops: res.length, summary: name + ' is rolled back: ' + res.length + ' dictionary rows switched off' });
+}
+// ── ninja.export (§12.11): the model of a staged bundle, window or table written back as the workbook ninja.exec reads. The model only (as legacy NinjaExporter): the rows are not written. One reader of the dictionary (the stager's extractModel),
+// one writer (ninja_export.modelToWorkbook); the list values are read from the table's list reference and written as L#Name=VALUE=Name/…
+const EXP_BREAK = process.env.NINJAEXPORT_BREAK || '';   // W-NINJA-EXPORT falsifiers: nomaster | nolists
+async function ninjaExport(O, a) {
+  const NS = require(path.join(ROOT, 'erp', 'ninja_stage.js')), NX = require(path.join(ROOT, 'erp', 'ninja_export.js')), XL = require(path.join(ROOT, 'erp', 'xlsx.mini.min.js'));
+  const sel = ['bundle', 'window', 'table'].filter(k => a[k]);
+  if (!sel.length) refuse('name one thing to export: bundle=, window= or table= (legacy Ninja: "Don\'t ever reverse everything. Choose something!"). Nothing was written');
+  if (sel.length > 1) refuse('name only one of bundle=, window=, table=. Nothing was written');
+  if (!a.file) refuse('--file is required (the workbook to write, .xlsx)');
+  if (!/\.xlsx$/i.test(String(a.file))) refuse('the file must end in .xlsx: ' + a.file);
+  const base = process.cwd(), abs = path.resolve(base, String(a.file)), rel = path.relative(base, abs);
+  if (rel.startsWith('..') || path.isAbsolute(rel)) refuse('the file must be in the folder the line is run from (' + base + '); "' + a.file + '" leaves it. Nothing was written');
+  if (fs.existsSync(abs)) refuse(a.file + ' exists already and is never overwritten. Nothing was written');
+  let wins = [], bundle = '', listed = null;
+  if (a.bundle) {
+    const node = O.rows("SELECT ad_menu_id AS id, name, description AS d FROM ad_menu WHERE issummary='Y' AND isactive='Y' AND ad_menu_id>=" + NS.NINJA_BASE + ' AND name=?', [String(a.bundle)])[0];
+    if (!node) refuse('no active staged bundle is named ' + a.bundle + ' here. Nothing was written'); bundle = node.name;
+    wins = O.rows('SELECT DISTINCT l.ad_window_id AS w FROM ad_treenodemm n JOIN ad_menu l ON l.ad_menu_id=n.node_id WHERE n.parent_id=? AND l.isactive=\'Y\' AND l.ad_window_id IS NOT NULL ORDER BY l.ad_menu_id', [node.id]).map(r => Number(r.w));
+    const nm = (/; tables ([^)]*)\)/.exec(String(node.d || '')) || [])[1]; if (nm) { listed = nm.split(',').map(x => x.toLowerCase()); O.rows('SELECT DISTINCT t.ad_window_id AS w FROM ad_tab t JOIN ad_table tb ON tb.ad_table_id=t.ad_table_id WHERE t.isactive=\'Y\' AND t.ad_tab_id>=' + NS.NINJA_BASE + ' AND lower(tb.tablename) IN (' + listed.map(() => '?').join(',') + ')', listed).forEach(r => { if (wins.indexOf(Number(r.w)) < 0) wins.push(Number(r.w)); }); }   // a table attached to another window is found by the names the node carries
+  } else if (a.window) {
+    const w = O.rows("SELECT ad_window_id AS w, name FROM ad_window WHERE isactive='Y' AND ad_window_id>=" + NS.NINJA_BASE + ' AND (ad_window_id=? OR lower(name)=lower(?))', [Number(a.window) || -1, String(a.window)])[0];
+    if (!w) refuse('no window of a Ninja bundle is named or numbered ' + a.window + ' (a window that came with the system is the system\'s own model). Nothing was written'); wins = [Number(w.w)];
+  } else {
+    const T = O.rows("SELECT ad_table_id AS id, tablename AS tn FROM ad_table WHERE lower(tablename)=lower(?) AND isactive='Y' ORDER BY ad_table_id DESC", [String(a.table)])[0];
+    if (!T) refuse('no table named ' + a.table + ' here. Nothing was written');
+    if (!(Number(T.id) >= NS.NINJA_BASE)) refuse(T.tn + ' came with the system: its model is the system\'s own, not a Ninja one. Nothing was written');
+    wins = O.rows("SELECT DISTINCT ad_window_id AS w FROM ad_tab WHERE ad_table_id=? AND isactive='Y' AND ad_tab_id>=" + NS.NINJA_BASE, [T.id]).map(r => Number(r.w));
+  }
+  if (!wins.length) refuse('nothing to export: no window found. Nothing was written');
+  const model = { bundleName: bundle, tables: [] }, seen = {};
+  wins.forEach(w => { const m = NS.extractModel(O.db, w); if (!m) return; if (!model.bundleName) model.bundleName = m.bundleName; m.tables.forEach(t => { if (!seen[t.name.toLowerCase()]) { seen[t.name.toLowerCase()] = 1; model.tables.push(t); } }); });
+  if (listed) model.tables = model.tables.filter(t => listed.indexOf(t.name.toLowerCase()) >= 0).sort((x, y) => listed.indexOf(x.name.toLowerCase()) - listed.indexOf(y.name.toLowerCase()));
+  if (a.table) { const keep = String(a.table).toLowerCase(); model.tables = model.tables.filter(t => t.name.toLowerCase() === keep); }
+  if (!model.tables.length) refuse('the dictionary holds no model for that. Nothing was written');
+  let nLists = 0;
+  model.tables.forEach(t => {   // the list values of the table's list columns (extractModel does not carry them)
+    t.columns.forEach(c => { if (Number(c.refId) !== 17 || EXP_BREAK === 'nolists') return;
+      const rv = O.rows('SELECT c.ad_reference_value_id AS r FROM ad_column c JOIN ad_table tb ON tb.ad_table_id=c.ad_table_id WHERE lower(tb.tablename)=lower(?) AND c.columnname=? AND c.isactive=\'Y\'', [t.name, c.name])[0];
+      if (rv && rv.r != null) { const items = O.rows("SELECT value AS v, name AS n FROM ad_ref_list WHERE ad_reference_id=? AND isactive='Y' ORDER BY ad_ref_list_id", [rv.r]); if (items.length) { items.forEach(i => { if (/[=\/,]/.test(i.v + i.n)) refuse('the list of ' + t.name + '.' + c.name + ' has a value or name with = / or , (' + i.v + '=' + i.n + '): the sheet\'s grammar cannot carry it. Nothing was written'); }); c.listItems = items.map(i => (i.v === String(i.n).substring(0, String(i.n).length < 2 ? 1 : 2) ? i.n : i.v + '=' + i.n)); nLists++; } } });
+    if (EXP_BREAK === 'nomaster') t.master = null;
+  });
+  const wb = NX.modelToWorkbook(model, XL); fs.writeFileSync(abs, Buffer.from(XL.write(wb, { bookType: 'xlsx', type: 'array' })));
+  say('ninja_export ' + (a.bundle ? 'bundle=' + a.bundle : a.window ? 'window=' + a.window : 'table=' + a.table) + ' tables=' + model.tables.length + ' lists=' + nLists + ' file=' + a.file);
+  return { file: a.file, bundle: model.bundleName, tables: model.tables.map(t => ({ table: t.name, master: t.master || null, columns: t.columns.length })), lists: nLists, ops: 0,
+    notMade: ['the rows are not written (legacy NinjaExporter writes the model only)', 'validation rules, display logic and callouts are not carried (the stager never wrote them into the model)'], summary: 'wrote the model of ' + model.tables.length + ' table' + (model.tables.length > 1 ? 's' : '') + ' to ' + a.file };
+}
 async function main(argv) {
   const cmd = argv[0], a = {};
   for (let i = 1; i < argv.length; i++) { const m = /^--(\w+)$/.exec(argv[i]); if (!m || i + 1 >= argv.length) { say('FAIL usage: ' + argv[i]); return 2; } if (m[1] === 'where') (a.where = a.where || []).push(argv[++i]); else a[m[1]] = argv[++i]; }
-  if (['find', 'actions', 'describe', 'read', 'list', 'sum', 'group', 'new', 'update', 'delete', 'load', 'add_window', 'ninja_exec', 'ninja_workflow'].concat(Object.keys(ACT)).indexOf(cmd) < 0) { say('FAIL usage: erp_cli.js find|actions|complete|void|close|reverse|describe|read|list|sum|group --kind K (--number N | --id I) [--role R]'); return 2; }
+  if (['find', 'actions', 'describe', 'read', 'list', 'sum', 'group', 'new', 'update', 'delete', 'load', 'add_window', 'ninja_exec', 'ninja_workflow', 'ninja_rollback', 'ninja_export'].concat(Object.keys(ACT)).indexOf(cmd) < 0) { say('FAIL usage: erp_cli.js find|actions|complete|void|close|reverse|describe|read|list|sum|group --kind K (--number N | --id I) [--role R]'); return 2; }
   try {
     const O = await boot(a); O.actor = a.user == null ? 101 : Number(a.user);   // the session user: stated, default 101 (the same default the callout context takes), until sign-in exists
-    const out = await (ACT[cmd] ? act(O, a, ACT[cmd]) : ({ find, actions, describe, read, list: OC.list, sum: OC.sum, group: OC.group, new: createRecord, update: updateRecord, delete: deleteRecord, load: loadRecords, add_window: addWindow, ninja_exec: ninjaExec, ninja_workflow: ninjaWorkflow })[cmd](O, a));
+    const out = await (ACT[cmd] ? act(O, a, ACT[cmd]) : ({ find, actions, describe, read, list: OC.list, sum: OC.sum, group: OC.group, new: createRecord, update: updateRecord, delete: deleteRecord, load: loadRecords, add_window: addWindow, ninja_exec: ninjaExec, ninja_workflow: ninjaWorkflow, ninja_rollback: ninjaRollback, ninja_export: ninjaExport })[cmd](O, a));
     process.stdout.write(JSON.stringify(out) + '\n'); return 0;
   } catch (e) {
     if (e instanceof Refused || e instanceof OC.Refused) { say('REFUSED ' + e.message); process.stdout.write(JSON.stringify({ refused: true, reason: e.message }) + '\n'); return 3; }
@@ -808,4 +901,4 @@ async function main(argv) {
   }
 }
 if (require.main === module) main(process.argv.slice(2)).then(c => process.exit(c));
-module.exports = { ninjaWorkflow, workflowOn, ninjaExec, stageAtDoor, runLoader, sheetGrid, addWindow, ensureTables, tabFor, main, boot, loadRecords, find, actions, complete, act, ACT, describe, read, persistGroup, resolveOne, docKind, kindRef, byNumber, recordOf, loadEngine, b3 };
+module.exports = { ninjaRollback, ninjaExport, ninjaWorkflow, workflowOn, ninjaExec, stageAtDoor, runLoader, sheetGrid, addWindow, ensureTables, tabFor, main, boot, loadRecords, find, actions, complete, act, ACT, describe, read, persistGroup, resolveOne, docKind, kindRef, byNumber, recordOf, loadEngine, b3 };
