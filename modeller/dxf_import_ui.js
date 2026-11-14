@@ -998,6 +998,8 @@
   function structureGate() {
     var choices = (window.DxfMetaEditor && window.DxfMetaEditor.defaultChoices && window.DxfMetaEditor.defaultChoices()) || {};
     var out = window.Dxf2Structure.judge(state.sheets, { I: window.Dxf2BimImport, B: window.Dxf2Bodies, choices: choices, complete: state.complete ? {} : null, ref: state.ref || null, defaultsRef: state.defaultsRef || null }), g = out.gate;
+    // a value the user KEPT (Keep this value / Accept all, DxfMetaEditor.defaultChoices) stays kept: the reading modules add their own assumptions with DEF.assume (no registry), so without this every re-feed re-listed them as open defaults (measured 2026-11-14: panel.thickness_inherited, section.bar.size, section.plate.thickness never cleared). A changed value (new geometry) is a new assumption and stays open. Falsifier: window.__dmNoKeepModule = true.
+    if (!window.__dmNoKeepModule) out.defaults.forEach(function (r) { if (r.kind === 'default' && choices[r.key] !== undefined && String(choices[r.key]) === String(r.value)) r.kind = 'chosen'; });
     if (out.defaults.length) state.defaults = (state.defaults || []).concat(out.defaults);
     state.gate = g;
     console.log(TAG + ' ' + out.log);
