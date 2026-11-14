@@ -4,6 +4,32 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.90.0](https://github.com/red1oon/bim-ootb/compare/v1.89.0...v1.90.0) (2026-11-14)
+
+
+### ✨ Features
+
+* **door:** master=Table/record on mis.list, mis.sum, mis.group - the rows of one parent (W-MIS-MASTER 4/0; bim-compiler ERP_MIS_WINDOW_FROM_CSV §12.12) ([#3004](https://github.com/red1oon/bim-ootb/issues/3004)) ([117793c](https://github.com/red1oon/bim-ootb/commit/117793c951a49cd25780efd515f07f92b6830ebb))
+* **door:** mis.diff - a CSV against the table, read only (W-MIS-DIFF 5/0; bim-compiler ERP_MIS_WINDOW_FROM_CSV §12.13) ([#3011](https://github.com/red1oon/bim-ootb/issues/3011)) ([b3fadf9](https://github.com/red1oon/bim-ootb/commit/b3fadf95f44961e32a77f11d2e6a767c78936a1d))
+* **erp:** Env.stamp + Env.modelEnv, the login context's one clock (A1, additive) + W-ENV-VIEWS ([#3007](https://github.com/red1oon/bim-ootb/issues/3007)) ([d53b1fa](https://github.com/red1oon/bim-ootb/commit/d53b1fab943807dcd2829dc83a3bcaf32563e825))
+
+
+### 🐛 Fixes
+
+* **4d:** D2 — a structural element never elects what it carries (§STRUCT_NO_SUPPORT) ([#3022](https://github.com/red1oon/bim-ootb/issues/3022)) ([15523bc](https://github.com/red1oon/bim-ootb/commit/15523bc0e52ab516eeab3aa3dfce4619f25f88b2))
+* **4d:** D5 — the floor slab a structural element stands on runs before sequence 2 of its level; its same-level holder first (§D5_FLOOR_SLAB) ([#3023](https://github.com/red1oon/bim-ootb/issues/3023)) ([a60d381](https://github.com/red1oon/bim-ootb/commit/a60d381f4ef5c57762151ae8b7c145d62f42f6de))
+* **erp:** ws_kernel session date is the LOCAL day like legacy (A2 first file) ([#3010](https://github.com/red1oon/bim-ootb/issues/3010)) ([614bb12](https://github.com/red1oon/bim-ootb/commit/614bb12103a71115a057ab221c05bbe6c748b1ad))
+* **modeller:** Keep / Accept all clear the reading modules' own assumptions (W-DXF-KEEP 4/0, v22, sw v274); prompts §D103 + §5.83 close ([#3019](https://github.com/red1oon/bim-ootb/issues/3019)) ([4f7a7db](https://github.com/red1oon/bim-ootb/commit/4f7a7db75aa3f135f0cf162bb746fa0120ce9019))
+
+
+### ♻️ Refactors
+
+* **4d:** one owner for the support relation — support_sweep delegates to cpm_schedule (§I.1a, step 0) ([#3018](https://github.com/red1oon/bim-ootb/issues/3018)) ([039d2e2](https://github.com/red1oon/bim-ootb/commit/039d2e2eabed5e7f48ea65f0d120e94124284853))
+* **erp:** crud_core.localDay takes the caller's instant; report handlers refuse a missing ctx.today (A2) ([#3026](https://github.com/red1oon/bim-ootb/issues/3026)) ([33263ed](https://github.com/red1oon/bim-ootb/commit/33263ed2d323a2888972a6c39fb5a76cdc4e05ed))
+* **erp:** Import* + ClientAcctProcessor read now from the env, never a wall clock (A2) ([#3013](https://github.com/red1oon/bim-ootb/issues/3013)) ([393bb69](https://github.com/red1oon/bim-ootb/commit/393bb69116eb81a246d369e7abbd70977b96e25c))
+* **erp:** InvoiceGenerate + InOutGenerate date fallback = the env's local day, not the UTC wall clock (A2) ([#3016](https://github.com/red1oon/bim-ootb/issues/3016)) ([190e92d](https://github.com/red1oon/bim-ootb/commit/190e92d1b274b9cce151382b7d2ce3d5999eb900))
+* **erp:** model_asi + doc_poster never read a wall clock; the ASI dialog day is local (A2) ([#3021](https://github.com/red1oon/bim-ootb/issues/3021)) ([d784c6c](https://github.com/red1oon/bim-ootb/commit/d784c6c0e5539e37df4f8962d33efbeee81b4760))
+
 ## [1.89.0](https://github.com/red1oon/bim-ootb/compare/v1.88.0...v1.89.0) (2026-11-14)
 
 
