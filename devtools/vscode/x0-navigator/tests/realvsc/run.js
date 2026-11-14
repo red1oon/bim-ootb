@@ -179,6 +179,17 @@ let lensOk = true;
 if (!tagFileClean) console.log('  NOTE  ' + rel(tagAt.file) + ' differs from HEAD here: the lens rightly shows nothing, not judged');
 else lensOk = check('CodeLens from VS Code\'s own provider call: line ' + (lens && lens.line) + ' "' + (lens ? lens.title.slice(0, 70) : 'none') + '…"', !!lens && lens.line === tagAt.line);
 
+// §F.19: Find All References, asked through VS Code's own entry point, compared with the lib's list made from the SAME fresh index
+const AR = require('../../lib/app_refs');
+const libRefs = AR.references(ROOT, AR.loadSites(res.indexAfter), def.field);
+const key = x => path.resolve(x.file || x.abs) + ':' + x.line;
+const got = new Set((d.refs || []).map(key));
+const wantSites = libRefs.writes.concat(libRefs.reads);
+const missing = wantSites.filter(x => !got.has(path.join(ROOT, x.file) + ':' + x.line)).length;
+const refsOk = check('Find All References on ' + G + '.' + def.field + ' → VS Code returns ' + (d.refs || []).length + ' places; all ' + wantSites.length + ' sites of the index are among them (missing ' + missing + '), the write site included',
+  libRefs.known && wantSites.length > 1 && missing === 0 && got.has(path.join(ROOT, want.file) + ':' + want.line));
+const refsRedOk = check('red control: a made-up field → X0 adds no reference (' + ((st.unknown || {}).refs || []).length + ' from VS Code itself)', ((st.unknown || {}).refs || []).every(x => !String(x.file).startsWith(ROOT + path.sep)));
+
 // §F.15 step 2: the tag hover on the printing line carries the provable value; the made-up tag (a file outside the repo) gets no such line
 let lastOk = true;
 const lastLine = (/last value[^\n]*/.exec(t.hover) || [''])[0];
@@ -198,5 +209,5 @@ const ctxOk = check('"Context for this file" run as a VS Code command on ' + tag
 
 if (KEEP) console.log('  kept: ' + TMP); else fs.rmSync(TMP, { recursive: true, force: true });
 line({ vscode: res.vscode, active: yn(active), fresh: yn(fresh), def: yn(defOk), hover: yn(hovOk), phantom: yn(phOk), unknown_silent: yn(unkOk),
-  tag: yn(tagOk), fake_tag: yn(fakeOk), commands: yn(cmdOk), cost: yn(costOk), check: yn(checkOk), status: yn(statusOk), lens: yn(lensOk), last_value: yn(lastOk), last_value_red: yn(lastRedOk), context: yn(ctxOk), builtin_ready: yn(pr.ready), builtin_defs: pr.ready ? builtin : '?', seconds: secs }, fail === 0 ? 'PASS' : 'FAIL');
+  tag: yn(tagOk), fake_tag: yn(fakeOk), commands: yn(cmdOk), cost: yn(costOk), check: yn(checkOk), status: yn(statusOk), lens: yn(lensOk), refs: yn(refsOk), refs_red: yn(refsRedOk), last_value: yn(lastOk), last_value_red: yn(lastRedOk), context: yn(ctxOk), builtin_ready: yn(pr.ready), builtin_defs: pr.ready ? builtin : '?', seconds: secs }, fail === 0 ? 'PASS' : 'FAIL');
 if (fail) process.exitCode = 1;

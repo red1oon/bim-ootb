@@ -60,7 +60,7 @@ const call = async (name, args) => { const r = await rpc('tools/call', { name, a
   child.stdin.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) + '\n');
   const list = await rpc('tools/list', {});
   const tools = (list.result && list.result.tools) || [];
-  const WANT = ['where_is_field_set', 'what_is_tag', 'how_is_file_loaded', 'cost_if_deployed', 'last_logged_value', 'context_for_file', 'ship_check'];
+  const WANT = ['where_is_field_set', 'where_is_field_used', 'what_is_tag', 'how_is_file_loaded', 'cost_if_deployed', 'last_logged_value', 'context_for_file', 'ship_check'];
   const toolsOk = check('tools/list → ' + tools.length + ' tools, each with a description and an input schema', WANT.every(n => tools.some(t => t.name === n && t.description.length > 40 && t.inputSchema && t.inputSchema.type === 'object')) && tools.length === WANT.length);
 
   // fields: compare with the lib's own answer on the committed index (a field the lib resolves there, and whose line matches)
@@ -104,6 +104,11 @@ const call = async (name, args) => { const r = await rpc('tools/call', { name, a
   const contextOk = check('context_for_file → the lib\'s own block (header and load sections identical), field and tag sections answered from the indexes; a missing file says so',
     x1.text.startsWith('# Context for `viewer/cost_panel.js`') && sec(x1.text, 'Its own header') === sec(want, 'Its own header') &&
     (!parser || sec(x1.text, 'How it reaches a user') === sec(want, 'How it reaches a user')) && !/INCONCLUSIVE: no APP field index|spec index not available/.test(x1.text) && /no such file/.test(x2.text));
+  // where_is_field_used: the lib's own list, made from the same fresh index the server uses
+  const y1 = await call('where_is_field_used', { field: 'db', limit: 5 });
+  const y2 = await call('where_is_field_used', { field: 'zzNotAField__' });
+  const usedOk = check('where_is_field_used → counts and write sites for a real field (' + y1.text.split('\n')[0] + '); a made-up field says so',
+    /^APP\.db: \d+ write site\(s\), \d+ other read site\(s\)/.test(y1.text) && /\n  write \S+:\d+/.test(y1.text) && /more read sites/.test(y1.text) && /No code under this checkout/.test(y2.text));
   const k1 = await call('ship_check', { base: 'HEAD' });
   const checkOk = !parser ? null : check('ship_check → the three steps and a verdict (' + k1.text.split('\n').pop() + ')',
     /SHIP_SYNTAX files=\d+ verdict=PASS/.test(k1.text) && /SHIP_AUDIT verdict=PASS/.test(k1.text) && /SHIP_CHECK verdict=(PASS|FAIL)/.test(k1.text));
@@ -141,7 +146,7 @@ const call = async (name, args) => { const r = await rpc('tools/call', { name, a
 
   child.stdin.end();
   const f = { tools: tools.length, init: yn(initOk), field: yn(fieldOk), phantom: yn(phantomOk), unknown: yn(unknownOk), tag: yn(tagOk), fake_tag: yn(fakeTagOk),
-    cost: costOk === null ? '?' : yn(costOk), loaded: loadedOk === null ? '?' : yn(loadedOk), lens: yn(lensOk), context: yn(contextOk), check: checkOk === null ? '?' : yn(checkOk),
+    cost: costOk === null ? '?' : yn(costOk), loaded: loadedOk === null ? '?' : yn(loadedOk), lens: yn(lensOk), context: yn(contextOk), used: yn(usedOk), check: checkOk === null ? '?' : yn(checkOk),
     bad_tool_error: yn(badToolOk), bad_json_survives: yn(badJsonOk), network_modules: net };
   summary(f, fail ? 'FAIL' : (parser && toolsOk ? 'PASS' : 'INCONCLUSIVE'));
   if (fail) process.exitCode = 1;
