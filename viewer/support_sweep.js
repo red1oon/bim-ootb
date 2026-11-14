@@ -380,163 +380,30 @@
   // schedule that can fix it (it hangs at every instant, including the last frame). That is an
   // extraction/authoring fact — measured 972 across the 7 buildings — and it is logged for exactly
   // the same reason §SUPPORT_UNCHECKED is: so a data limit is never mistaken for a scheduling bug.
-  // _contactGraph(items) — the one place the physical world is derived. Both the repair below and
-  // the LOCK-GATE audit (_midairAudit → verifyGanttIntegrity) build on this single definition, so a
-  // planner's own edit is judged by exactly the rule the generator enforced. items need bbox
-  // (x0,x1,y0,y1,bz,tz) — times are read later, never here: geometry does not move — plus
-  // seq/phase for the §GROUND_CONNECTED classification seeds (absent ⇒ NOT exempt, never looser;
-  // a population carrying none at all takes the ground-band fallback, see below).
-  // Returns { contacts: [idx[]|null], grounded: Uint8Array, orphans, groundedN, ok,
-  //           groundConnected: Uint8Array, groundConnectedN, groundSeeds, groundSeedMode }.
+  // _contactGraph / _designatedSupport — the physical support relation ("does S support T?" / "which ONE
+  // thing supports T?"). ONE owner: cpm_schedule.js contactGraph/designatedSupport (bim-compiler
+  // prompts/4D_MODEL_INTEGRITY.md §I.1a, 2026-10-06). The two former copies here were code-identical to it
+  // (§CPM_PARITY kept them in step); their bodies and doctrine comments now live there only. Resolved at CALL
+  // time, so script load order and node-only callers both work. A missing owner is LOGGED and returns the
+  // not-ok shape — never a silent local copy. Callers here (_ogSupportSweep, _midairAudit, the lock gate)
+  // are unchanged: same names, same return shape.
+  function _cpm() {
+    if (global.CpmSchedule && global.CpmSchedule.contactGraph) return global.CpmSchedule;
+    if (typeof module !== 'undefined' && module.exports && typeof require === 'function' && typeof __dirname === 'string') {
+      try { return require(__dirname + '/cpm_schedule.js'); } catch (e) { /* fall through to the logged miss */ }
+    }
+    return null;
+  }
   function _contactGraph(items) {
-    var SG = (typeof ScheduleGate !== 'undefined') ? ScheduleGate : null;
-    if (!SG || !SG.CELL) return { ok: false, contacts: null, grounded: null, orphans: 0, groundedN: 0 };
-    var CELL = SG.CELL, EPS = SG.EPS, GAP = SG.GAP;   // the shipped constants, never re-typed here
-    var n = items.length, i, j, k, c, S, T, arr, cs;
-    var grid = {};
-    function cellsOf(e) {
-      var o = [], a, b;
-      for (a = Math.floor(e.x0 / CELL); a <= Math.floor(e.x1 / CELL); a++)
-        for (b = Math.floor(e.y0 / CELL); b <= Math.floor(e.y1 / CELL); b++) o.push(a + ',' + b);
-      return o;
-    }
-    for (i = 0; i < n; i++) { cs = cellsOf(items[i]); for (c = 0; c < cs.length; c++) (grid[cs[c]] || (grid[cs[c]] = [])).push(i); }
-    var contacts = new Array(n), grounded = new Uint8Array(n), stamp = new Int32Array(n);
-    var orphans = 0, groundedN = 0;
-    for (i = 0; i < n; i++) {
-      T = items[i]; cs = cellsOf(T);
-      var lowest = Infinity, list = null;
-      for (c = 0; c < cs.length; c++) {
-        arr = grid[cs[c]]; if (!arr) continue;
-        for (k = 0; k < arr.length; k++) {
-          j = arr[k]; if (j === i || stamp[j] === i + 1) continue;
-          S = items[j];
-          if (!(S.x0 <= T.x1 && S.x1 >= T.x0 && S.y0 <= T.y1 && S.y1 >= T.y0)) continue;
-          stamp[j] = i + 1;
-          if (S.bz < lowest) lowest = S.bz;
-          if ((S.bz < T.bz - EPS && S.tz >= T.bz - GAP) ||        // bearing below — I rest on S
-              (S.bz >= T.tz - GAP && S.tz > T.tz + EPS) ||        // carrier above — I hang from S
-              (S.bz <= T.bz + EPS && S.tz >= T.tz - EPS)) {       // embedded — S spans my height
-            (list || (list = [])).push(j);
-          }
-        }
-      }
-      grounded[i] = (lowest < T.bz - GAP) ? 0 : 1;                // 1 ⇒ I am my footprint's ground layer
-      contacts[i] = list;
-      if (grounded[i]) groundedN++;
-    }
-    // §GROUND_CONNECTED (2026-09-12, bim-compiler prompts/4D_MODEL_INTEGRITY.md §N) — the orphan
-    // exemption is DERIVED from classification and graph reachability, never from `grounded[i]`.
-    // `grounded[i]` answers "is nothing beneath me in my own XY column" (footprint-local; correct
-    // for "rests on soil in its footprint", §I.2) and was reused on this line as "is this element
-    // allowed to be unsupported" — a different question whose answer §I.2 already names: seq===1.
-    // Two failure shapes, one root line: (a) an element with ZERO contacts and nothing below it
-    // defaulted into "grounded" by the absence of any comparison; (b) the bottom of a stack that
-    // never reaches real ground read grounded=1 because "nothing below me in my column" is locally
-    // true (HHS's three 7m Stahlbalkon brackets at bz 3.74: contacts=0, grounded=1 — absorbed into
-    // groundedN, never an orphan, revealed alone in the bake). Fix: a DIRECTED walk along the
-    // support edges this function already built (contacts[i] = "what supports i"; the walk goes
-    // supporter -> supported), seeded from the true-ground population. An element is ground-
-    // connected iff it is a seed or something ground-connected supports it; everything else is an
-    // orphan REGARDLESS of grounded[i]. Directed, not undirected: the segment resting ON a floating
-    // bracket lists the bracket as its bearing contact, and an undirected walk would let that
-    // segment "rescue" the bracket — the backward "I depend on the thing resting on me" edge
-    // §GROUNDED_NEVER_HANGS already rejects (measured: undirected reaches all 6839 of HHS).
-    //   seeds (classification, §I.2): seq===1 (IfcFooting/IfcPile/§SLAB_ON_GRADE_RECLASS) OR
-    //   phase==='Substructure' (§GROUNDWORK_SLAB reclassifies slab-on-grade by mutating phase ONLY,
-    //   seq stays 4 — JKR's 16 are its whole classified ground, reachable no other way). A missing
-    //   .seq/.phase is NOT a seed — stricter, never looser.
-    //   fallback (ONLY when the population carries no classified ground at all — schedule_gate's
-    //   own buildingModelsSubstructure=false, "this building never modeled a foundation layer",
-    //   HHS today): footprint-grounded elements within ScheduleGate.GROUND_BAND of the building's
-    //   1st-percentile base — the same ground datum witness_true_orphan_floating.js (PR #1712)
-    //   exempts. Without it a building with no substructure would be 100% orphans; with it a stack
-    //   bottom metres above the datum (the HHS brackets) still cannot seed itself. The mode is
-    //   RETURNED, never silent.
-    // MEASURED on the 7 shipped buildings (2026-09-12, extracted DBs, before -> after):
-    //   Duplex 1->0 (the one old "orphan" was a seq===1 slab-on-grade — §I.2's own example, wrongly
-    //   flagged before) · Clinic 27->27 · HHS 36->44 (+3 brackets, +5 that rest only on them) ·
-    //   JKR 1->2 · Hospital 35->69 (+a 30-railing island with NOTHING beneath its lowest member) ·
-    //   Terminal 7->14 · LTU_AHouse 51->1096 (a ground-floor MEP network with no modelled substrate;
-    //   PR #1712's engine-blind detector already reports 2548 true orphans on this building).
-    //   W-MZ-4's lock (meta DBs where they exist) moves further on the two patched-elevation files:
-    //   Terminal_meta 25->2740 (2711 co-planar "Metal Deck" IfcPlate roof sheets with 18.7m of
-    //   nothing beneath them in that DB) and LTU_AHouse_meta 865->3288 — data findings the old
-    //   exemption hid, recorded in baselines/midair.json `_relocked_2026_09_12`.
-    // `grounded`/`groundedN` keep their footprint-local meaning (designatedSupport's cls=2
-    // rejection still reads them). Return fields are additive; `orphans` now counts !groundConnected.
-    var reach = new Uint8Array(n), stack = new Int32Array(n), sp = 0, seeds = 0, seedMode = 'classification';
-    for (i = 0; i < n; i++) {
-      T = items[i];
-      if (T.seq === 1 || T.phase === 'Substructure') { reach[i] = 1; stack[sp++] = i; seeds++; }
-    }
-    if (!seeds && n) {
-      seedMode = 'ground-band';
-      var zs = new Float64Array(n);
-      for (i = 0; i < n; i++) zs[i] = items[i].bz;
-      zs.sort();                                                   // typed-array sort is numeric
-      var datum = zs[Math.floor(n * 0.01)] + SG.GROUND_BAND;
-      for (i = 0; i < n; i++) if (grounded[i] && items[i].bz <= datum) { reach[i] = 1; stack[sp++] = i; seeds++; }
-    }
-    var deg = new Int32Array(n + 1);                               // CSR of the REVERSE edges: supporter -> supported
-    for (i = 0; i < n; i++) { arr = contacts[i]; if (arr) for (k = 0; k < arr.length; k++) deg[arr[k] + 1]++; }
-    for (i = 0; i < n; i++) deg[i + 1] += deg[i];
-    var fill = deg.slice(0, n), sup = new Int32Array(deg[n]);
-    for (i = 0; i < n; i++) { arr = contacts[i]; if (arr) for (k = 0; k < arr.length; k++) sup[fill[arr[k]]++] = i; }
-    while (sp) { j = stack[--sp]; for (k = deg[j]; k < deg[j + 1]; k++) { c = sup[k]; if (!reach[c]) { reach[c] = 1; stack[sp++] = c; } } }
-    var groundConnectedN = 0;
-    for (i = 0; i < n; i++) if (reach[i]) groundConnectedN++;
-    orphans = n - groundConnectedN;
-    return { ok: true, contacts: contacts, grounded: grounded, orphans: orphans, groundedN: groundedN,
-             groundConnected: reach, groundConnectedN: groundConnectedN, groundSeeds: seeds, groundSeedMode: seedMode };
+    var C = _cpm();
+    if (!C) { console.log('§SS_CPM_MISSING contactGraph — cpm_schedule.js (the owner) is not loaded'); return { ok: false, contacts: null, grounded: null, orphans: 0, groundedN: 0 }; }
+    return C.contactGraph(items);
   }
 
-  // _designatedSupport(items, G) — mirrors cpm_schedule.js's designatedSupport EXACTLY (same
-  // formula, same preference order, same grounded-narrowing) — kept as a second copy under the
-  // same §CPM_PARITY drift-prevention discipline as _contactGraph above (probe_cpm_schedule.js
-  // now also diffs this pair contact-for-contact; a diverging edit here fails that witness loudly
-  // instead of silently). See cpm_schedule.js's own §GROUNDED_NEVER_HANGS comment for the full
-  // reasoning — summary: bearing-below (nearest below), else embedded, else carrier-above ONLY
-  // when the element is not grounded (a genuine close support, even under the coarse `grounded`
-  // threshold, always wins over the grounded exemption — §GROUNDED_OVERRIDE_FIX precedent).
   function _designatedSupport(items, G) {
-    var SG = (typeof ScheduleGate !== 'undefined') ? ScheduleGate : null;
-    var EPS = SG.EPS, GAP = SG.GAP;
-    var n = items.length, out = new Int32Array(n);
-    for (var i = 0; i < n; i++) {
-      out[i] = -1;
-      var list = G.contacts[i]; if (!list) continue;
-      // §S26.2 (2026-08-19) — STRUCTURE FIRST, contact only as a last resort. The election used to
-      // take any lower touching box, so an IfcFlowSegment under a wall "bore" that wall: a CONTACT,
-      // not a precedence, and those edges are what contradict phase order (Duplex: 761 physics-vs-
-      // phase contradictions vs 1 when supports are restricted to load-bearing classes).
-      // Electing ONLY from the pool was measured FIRST and is wrong: an element whose every contact
-      // is non-pool then gets no support at all, starts at day 0, and appears before the thing it
-      // touches — W-MZ-2 went 0 -> 2,781 on LTU, 0 -> 107 on Hospital. So the same classification
-      // elects TWICE: the pool winner when one exists, else the unrestricted winner. Nothing loses
-      // its support edge; a real structural support simply outranks a pipe.
-      var T = items[i], bestJ = -1, bestCls = 9, bestScore = Infinity;
-      var poolJ = -1, poolCls = 9, poolScore = Infinity;
-      var inPool = SG.supportPool || function () { return true; };
-      for (var k = 0; k < list.length; k++) {
-        var j = list[k], S = items[j], cls, score;
-        if (S.bz < T.bz - EPS && S.tz >= T.bz - GAP) { cls = 0; score = -S.tz; }
-        else if (S.bz <= T.bz + EPS && S.tz >= T.tz - EPS) { cls = 1; score = Math.abs(S.bz - T.bz); }
-        else { cls = 2; score = S.bz; }
-        if (cls < bestCls || (cls === bestCls && (score < bestScore ||
-            (score === bestScore && (bestJ < 0 || String(S.guid) < String(items[bestJ].guid)))))) {
-          bestCls = cls; bestScore = score; bestJ = j;
-        }
-        if (inPool(S) && (cls < poolCls || (cls === poolCls && (score < poolScore ||
-            (score === poolScore && (poolJ < 0 || String(S.guid) < String(items[poolJ].guid))))))) {
-          poolCls = cls; poolScore = score; poolJ = j;
-        }
-      }
-      if (poolJ >= 0) { bestJ = poolJ; bestCls = poolCls; }   // §S26.2 structure outranks contact
-      if (bestCls === 2 && G.grounded[i]) continue;
-      out[i] = bestJ;
-    }
-    return out;
+    var C = _cpm();
+    if (!C) { console.log('§SS_CPM_MISSING designatedSupport — cpm_schedule.js (the owner) is not loaded'); return new Int32Array(items.length).fill(-1); }
+    return C.designatedSupport(items, G);
   }
 
   // _midairAudit(items) — the JUDGE, same graph, no mutation: how many elements appear before what
