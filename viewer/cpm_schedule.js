@@ -853,7 +853,9 @@
     var cellMem = {}, cellMeta = {}, keyOf = new Array(n);
     for (i = 0; i < n; i++) {
       var k = filing.lvl2[i] + SEP + trdOf[i] + SEP + filing.loc2[i];
-      keyOf[i] = k;
+      // the REPORTED cell identity (gate.cellKeys → the Gantt's §S51 per-cell grouping) keeps the
+      // element's own sequence: D5 moves the order inside the level, never a bar
+      keyOf[i] = (trdOf[i] === FLOOR_TRD) ? filing.lvl2[i] + SEP + _trdOf(items[i]) + SEP + filing.loc2[i] : k;
       (cellMem[k] || (cellMem[k] = [])).push(i);
       cellMeta[k] || (cellMeta[k] = { lvl: filing.lvl2[i], trd: trdOf[i], loc: filing.loc2[i] });
     }
