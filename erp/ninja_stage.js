@@ -18,7 +18,8 @@
 // its master's AD_Window (no window / menu leaf of its own), with AD_Column.IsParent='Y' on `<Master>_ID`. The generic GridTab
 // layer (ad_gridtab.js, GridWindow.initTab:193-242) then resolves the link column from IsParent alone — AD_Tab.AD_Column_ID is
 // only written where iDempiere needs it (more than one IsParent column on the tab's table; the Ninja grammar yields exactly one).
-// A table whose master is NOT in the model (external FK) keeps the legacy own-window shape: no parent tab to be a detail of.
+// A table whose master is NOT in the model but IS a table of the dictionary with a window gets its tab inside THAT window (the older Ninja,
+// MRO_ModelMaker.createMasterDetail L823-926; prompts/ERP_MIS_WINDOW_FROM_CSV.md §12.9). A master found nowhere keeps the own-window shape.
 //
 // ID policy (deterministic): NINJA_BASE = 7_000_000. Same model → same IDs on every re-run.
 // Rollback: SET IsActive='N' on the rows of ONE model (its tables, by name); another bundle's rows are not touched.
@@ -30,6 +31,7 @@
 
   var NINJA_BASE    = 7000000;  // matches oracle PackOut.xml starting IDs
   var BREAK = (typeof process !== 'undefined' && process.env && process.env.NINJAISO_BREAK) || '';   // the falsifiers of W-NINJA-STAGE-ISO
+  var XBREAK = (typeof process !== 'undefined' && process.env && process.env.NINJAEXEC_BREAK) || '';   // W-NINJA-EXEC falsifier noattach
   var NINJA_TREE_ID = 10;       // AD_TreeNodeMM tree (10 = menu tree in seed db)
 
   // Stock iDempiere DefaultValue of the standard columns (verified against ad_seed C_Order: IsActive 'Y', AD_Org_ID/AD_Client_ID
@@ -92,6 +94,16 @@
   function existingTable(db, name) {
     var r = db.exec("SELECT AD_Table_ID, TableName, EntityType FROM AD_Table WHERE upper(TableName)=upper('" + q(name) + "') AND AD_Table_ID<" + NINJA_BASE + ' ORDER BY AD_Table_ID');
     return r.length && r[0].values.length ? { id: Number(r[0].values[0][0]), name: r[0].values[0][1], entity: r[0].values[0][2] } : null;
+  }
+  // the master of a detail, looked up in the dictionary by its table name: its own window (AD_Table.AD_Window_ID) and its tab there (createMasterDetail L827-879)
+  function outsideMaster(db, name) {
+    var r = db.exec("SELECT t.AD_Table_ID, t.AD_Window_ID, (SELECT w.IsActive FROM AD_Window w WHERE w.AD_Window_ID=t.AD_Window_ID) FROM AD_Table t WHERE t.TableName='" + q(name) + "' AND t.IsActive='Y' ORDER BY t.AD_Table_ID");
+    if (!r.length || !r[0].values.length) return null;
+    var v = r[0].values[0], out = { id: Number(v[0]), win: v[1] == null ? null : Number(v[1]), tab: null, lvl: 0 };
+    if (out.win == null || v[2] !== 'Y') return out;
+    var tb = db.exec('SELECT AD_Tab_ID, TabLevel FROM AD_Tab WHERE AD_Table_ID=' + out.id + ' AND AD_Window_ID=' + out.win + " AND IsActive='Y' ORDER BY TabLevel, SeqNo, AD_Tab_ID");
+    if (tb.length && tb[0].values.length) { out.tab = Number(tb[0].values[0][0]); out.lvl = Number(tb[0].values[0][1]) || 0; }
+    return out;
   }
   function stageModels(db, model, ts) {
     ts = ts != null ? ts : 0;
@@ -158,7 +170,15 @@
         (function dfs(i, lvl) { rootOf[i] = r; levelOf[i] = lvl; seqOf[i] = 10 * (++pos); kids[i].forEach(function (k) { dfs(k, lvl + 1); }); })(r, 0);
       });
     })();
-    counts.details = 0; counts.dataTables = 0;
+    counts.details = 0; counts.dataTables = 0; counts.attached = [];
+    // ── a root whose Master is NOT in the model but is in the dictionary: its tab goes into that table's own window, after the tabs that are there
+    //    (legacy Ninja, MRO_ModelMaker.createMasterDetail L823-926: "This can also attach any table to another table's parent Window!"). §12.9
+    var att = tables.map(function () { return null; });
+    tables.forEach(function (t, i) {
+      if (XBREAK === 'noattach' || parentOf[i] >= 0 || !t.master || t.master === t.name || byName[t.master] !== undefined) return;
+      var m = outsideMaster(db, t.master);
+      if (m && m.tab) att[i] = { win: m.win, lvl: m.lvl + 1, seq: null, master: t.master };
+    });
 
     // ── slot offset: IDs are index-derived (deterministic), but a slot may already hold a DIFFERENT table — ad_seed.db ships a
     //    deactivated Ninja leftover (C_Attendance @7000000), and ensure() would silently reactivate it AS this model's table.
@@ -166,9 +186,11 @@
     var slot = 0;
     for (;;) {
       var clash = tables.some(function (t, i) {
-        if (ext[i]) return false;                              // a reused table takes no slot of its own
         var nm = val(db, 'SELECT TableName FROM AD_Table WHERE AD_Table_ID=' + (tBase + i + slot));
-        return nm != null && nm !== t.name;
+        if (nm != null && (ext[i] || nm !== t.name)) return true;   // a reused table makes no AD_Table row, so a row in its slot is another model's
+        // the slot's tab id is taken by every table, reused ones too: it must be free or already this table's (a reused table left no AD_Table row to tell)
+        var own = val(db, 'SELECT t.TableName FROM AD_Tab tb JOIN AD_Table t ON t.AD_Table_ID=tb.AD_Table_ID WHERE tb.AD_Tab_ID=' + (tabBase + i + slot));
+        return own != null && String(own).toUpperCase() !== String(t.name).toUpperCase();
       });
       if (!clash) break;
       slot++;
@@ -177,7 +199,7 @@
 
     tables.forEach(function (t, ti) {
       if (leave[ti]) { counts.leftAlone.push(t.name); return; }
-      var isDetail = parentOf[ti] >= 0, E = ext[ti];
+      var A = att[rootOf[ti]], isDetail = parentOf[ti] >= 0 || !!A, E = ext[ti];
       var si       = ti + slot;
       var tableId  = E ? E.id : tBase + si;
       var have = {}, others = [];                              // a reused table: its columns by name, and the ones the sheet does not name
@@ -194,6 +216,14 @@
       var menuId   = mBase    + 1 + si;
       var tabLevel = isDetail ? levelOf[ti] : (t.master ? 1 : 0);
       var tabSeq   = isDetail ? seqOf[ti] : 10;
+      if (A) {                                                 // the attached tree: levels and order continue from the window that is there; a re-stage keeps the place it took
+        if (A.seq == null) {
+          var curSeq = val(db, 'SELECT SeqNo FROM AD_Tab WHERE AD_Tab_ID=' + (tabBase + rootOf[ti] + slot));
+          A.seq = curSeq != null ? Number(curSeq) : 10 + 10 * (Number(val(db, 'SELECT COUNT(*) FROM AD_Tab WHERE AD_Window_ID=' + A.win)) || 1);   // legacy L902-904: 10 + the window's tab count x 10
+        }
+        windowId = A.win; tabLevel = A.lvl + levelOf[ti]; tabSeq = A.seq + seqOf[ti] - 10;
+        if (rootOf[ti] === ti) counts.attached.push({ table: t.name, master: A.master, window: A.win });
+      }
       if (isDetail) counts.details++;
       var colStart = cBase    + si * 200;
       var fieldStart = fBase  + si * 200;
@@ -451,7 +481,7 @@
     return { bundleName: bundleName, tables: modelTables };
   }
 
-  var API = { stageModels: stageModels, dataTableSql: dataTableSql, columnSql: columnSql, existingTable: existingTable, rollbackModel: rollbackModel, extractModel: extractModel, NINJA_BASE: NINJA_BASE };
+  var API = { stageModels: stageModels, dataTableSql: dataTableSql, columnSql: columnSql, existingTable: existingTable, outsideMaster: outsideMaster, rollbackModel: rollbackModel, extractModel: extractModel, NINJA_BASE: NINJA_BASE };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   else global.NinjaStage = API;
 
