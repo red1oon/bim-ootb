@@ -65,13 +65,42 @@ function applyPatch(O, seed) {   // same loop as idempiere.html :1160-1169: stat
   patchFiles(seed).forEach(pf => { fs.readFileSync(pf, 'utf8').split(/;\s*\n/).forEach(st => { st = st.replace(/^\s*--[^\n]*\n?/gm, '').trim(); if (!st) return; try { O.db.run(st); pOk++; } catch (e) { pFail++; } }); });
   return { pOk, pFail };
 }
+// The op-log image (bim-compiler prompts/ERP_MIS_WINDOW_FROM_CSV.md §12.10): what a PREFIX of the op-log makes of the patched seed, kept beside the seed's snapshot, so a later line applies only
+// the ops after it. It is used only while the op-log still BEGINS with exactly those bytes (sha256) under the same seed key; anything else is a full replay. ERP_OPIMAGE=off switches it off;
+// ERP_OPIMAGE_MIN (default 200) is how many ops must have been applied after the last image before a new one is written. An op-log in the temp folder gets an image only with ERP_OPIMAGE=on
+// (a witness's throw-away log must not leave 27 MB behind). Witness: common/door/tests/witness_erp_opimage.js (W-ERP-OPIMAGE).
+const IMG_BREAK = process.env.ERP_BREAK || '';   // staleimage | noimage
+function imageSide(dir, key, opfile) { return path.join(dir, 'opimg-' + key + '-' + require('crypto').createHash('sha256').update(path.resolve(opfile)).digest('hex').slice(0, 16) + '.json'); }
+function findImage(dir, key, opfile, raw) {
+  if (IMG_BREAK === 'noimage') return null;
+  let j; try { j = JSON.parse(fs.readFileSync(imageSide(dir, key, opfile), 'utf8')); } catch (e) { return null; }
+  if (!j || !(j.bytes > 0) || raw.length < j.bytes || !fs.existsSync(j.file)) return null;
+  if (IMG_BREAK !== 'staleimage' && require('crypto').createHash('sha256').update(raw.subarray(0, j.bytes)).digest('hex') !== j.sha) return null;   // the log no longer begins with what the image was made from
+  return j;
+}
+function writeImage(O, dir, key, opfile, raw, nOps) {
+  const sha = require('crypto').createHash('sha256').update(raw).digest('hex'), side = imageSide(dir, key, opfile), file = side.replace(/\.json$/, '-' + sha.slice(0, 16) + '.db');
+  let old = null; try { old = JSON.parse(fs.readFileSync(side, 'utf8')).file; } catch (e) { /* none */ }
+  fs.mkdirSync(dir, { recursive: true });
+  const tmp = file + '.' + process.pid + '.tmp'; fs.writeFileSync(tmp, Buffer.from(O.db.export())); fs.renameSync(tmp, file);
+  const st = side + '.' + process.pid + '.tmp'; fs.writeFileSync(st, JSON.stringify({ oplog: path.resolve(opfile), bytes: raw.length, sha, ops: nOps, file })); fs.renameSync(st, side);
+  if (old && old !== file) { try { fs.unlinkSync(old); } catch (e) { /* gone */ } }
+  let swept = 0;   // an image whose op-log file is gone is deleted
+  fs.readdirSync(dir).filter(f => /^opimg-.*\.json$/.test(f)).forEach(f => { const p = path.join(dir, f); if (p === side) return; let j; try { j = JSON.parse(fs.readFileSync(p, 'utf8')); } catch (e) { return; }
+    if (j && j.oplog && !fs.existsSync(j.oplog)) { try { fs.unlinkSync(j.file); } catch (e) { /* gone */ } try { fs.unlinkSync(p); swept++; } catch (e) { /* gone */ } } });
+  return { file, swept };
+}
 async function boot(a) {
   const seed = a.db || process.env.ERP_SEED_DB || path.join(ROOT, 'erp', 'ad_seed.db'), t0 = Date.now(), off = process.env.ERP_SNAPSHOT === 'off';
   // the page's self-heal patch comes BEFORE the op-log replay (an op may write a table only the patch creates, e.g. m_storagereservationlog)
-  let O, how = 'off', key = '-';
+  let O, how = 'off', key = '-', img = null, raw = null;
+  const opfile = OC.oplogFile({ oplog: a.oplog }, seed), dir = process.env.ERP_SNAPSHOT_DIR || path.join(require('os').homedir(), '.cache', 'bim_erp');
+  const inTmp = path.resolve(opfile).indexOf(path.resolve(require('os').tmpdir()) + path.sep) === 0, imgOn = !off && process.env.ERP_OPIMAGE !== 'off' && (!inTmp || process.env.ERP_OPIMAGE === 'on'), IMG_MIN = Math.max(1, Number(process.env.ERP_OPIMAGE_MIN || 200));
   if (!off) {
-    key = snapshotKey(seed); const dir = process.env.ERP_SNAPSHOT_DIR || path.join(require('os').homedir(), '.cache', 'bim_erp'), snap = path.join(dir, path.basename(seed).replace(/\.db$/, '') + '-' + key + '.db');
-    if (fs.existsSync(snap)) { O = await OC.open({ db: snap }); O.file = seed; how = 'hit'; }
+    key = snapshotKey(seed); const snap = path.join(dir, path.basename(seed).replace(/\.db$/, '') + '-' + key + '.db');
+    if (imgOn) { try { raw = fs.readFileSync(opfile); } catch (e) { raw = Buffer.alloc(0); } img = findImage(dir, key, opfile, raw); }
+    if (img) { O = await OC.open({ db: img.file }); O.file = seed; how = 'image'; }
+    else if (fs.existsSync(snap)) { O = await OC.open({ db: snap }); O.file = seed; how = 'hit'; }
     else {
       O = await OC.open({ db: seed }); const r = applyPatch(O, seed); how = 'miss';
       try { fs.mkdirSync(dir, { recursive: true }); const tmp = snap + '.' + process.pid + '.tmp'; fs.writeFileSync(tmp, Buffer.from(O.db.export())); fs.renameSync(tmp, snap); } catch (e) { how = 'miss-unsaved:' + e.message; }
@@ -79,15 +108,19 @@ async function boot(a) {
     }
   } else { O = await OC.open({ db: seed }); const r = applyPatch(O, seed); say('patch statements=' + r.pOk + ' failed=' + r.pFail); }
   say('snapshot=' + how + ' key=' + key + ' ms=' + (Date.now() - t0));
-  O.opfile = OC.oplogFile({ oplog: a.oplog }, O.file); O.ops = OC.readOps(O.opfile);
+  O.opfile = opfile; O.ops = raw ? (() => { try { return raw.toString('utf8').split('\n').filter(Boolean).map(l => JSON.parse(l)); } catch (e) { return []; } })() : OC.readOps(O.opfile);   // the same bytes the image was checked against
+  const skip = img ? img.ops : 0;
   const known = {}; O.rows("SELECT lower(name) AS n FROM sqlite_master WHERE type='table'").forEach(r => { known[r.n] = 1; });
   let colDirty = false;   // an AD_Column row was replayed: the next op on a data table may need that column made first
-  O.ops.forEach(o => { const t = String(o.table || '').toLowerCase(); if (t === 'ad_column') colDirty = true; else if (t && (!known[t] || (colDirty && t.slice(0, 3) !== 'ad_'))) { ensureTables(O).forEach(n => { known[n] = 1; }); known[t] = 1; colDirty = false; } OC.applyOp(O.db, O.rows, o); });   // an op on a table a staged window brought: its physical table is made first (§10)
+  O.ops.forEach((o, i) => { if (i < skip) return; const t = String(o.table || '').toLowerCase(); if (t === 'ad_column') colDirty = true; else if (t && (!known[t] || (colDirty && t.slice(0, 3) !== 'ad_'))) { ensureTables(O).forEach(n => { known[n] = 1; }); known[t] = 1; colDirty = false; } OC.applyOp(O.db, O.rows, o); });   // an op on a table a staged window brought: its physical table is made first (§10)
   ensureTables(O);
+  if (imgOn && raw && O.ops.length - skip >= IMG_MIN && raw.length && raw[raw.length - 1] === 10) {   // enough was applied after the last image: keep the result (before the engine binds its SQL functions: an export drops them)
+    try { const t1 = Date.now(), w = writeImage(O, dir, key, opfile, raw, O.ops.length); say('opimage=written ops=' + O.ops.length + ' bytes=' + raw.length + ' swept=' + w.swept + ' ms=' + (Date.now() - t1)); } catch (e) { say('opimage=unsaved ' + e.message); }
+  }
   O.ML = require(path.join(ROOT, 'erp', 'model_layer.js')); O.dbId = 'model:' + path.basename(O.file);
   O.trx = () => new O.ML.Trx((sql, p) => O.rows(sql, p), { db: O.dbId, now: stamp(), uuid: () => require('crypto').randomUUID() });
   loadEngine(O); O.b3 = b3(O);
-  say('boot db=' + path.basename(O.file) + ' replayed_ops=' + O.ops.length + ' oplog=' + O.opfile + ' sql_functions=' + O.udf);
+  say('boot db=' + path.basename(O.file) + ' replayed_ops=' + (O.ops.length - skip) + ' image_ops=' + skip + ' oplog=' + O.opfile + ' sql_functions=' + O.udf);
   return O;
 }
 
