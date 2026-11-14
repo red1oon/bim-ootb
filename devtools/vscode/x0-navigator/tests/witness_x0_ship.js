@@ -60,6 +60,34 @@ if (!J.loadTs(ROOT)) { summary({ parser: 'N' }, 'INCONCLUSIVE'); process.exit(0)
   const cc = S.check(TMP, 'HEAD'); show(cc);
   const bumpedOk = check('red control: the same change with CACHE_VERSION bumped v1->v2 passes', cc.ok && cc.lines.some(l => /cache_version=v1->v2/.test(l)));
 
+  // One-click bump (decision F-6): the rule for ONE file, and the repo's own bump script run through the lib, on a second
+  // fixture whose page carries a ?v= (the form scripts/bump.js edits).
+  const FX = fs.mkdtempSync(path.join(os.tmpdir(), 'x0-bumpfix-'));
+  const w2 = (rel, txt) => { fs.mkdirSync(path.dirname(path.join(FX, rel)), { recursive: true }); fs.writeFileSync(path.join(FX, rel), txt); };
+  const g2 = a => cp.spawnSync('git', a, { cwd: FX, encoding: 'utf8' });
+  g2(['init', '-q']);
+  w2('scripts/lib/find_ts.js', fs.readFileSync(path.join(ROOT, 'scripts', 'lib', 'find_ts.js'), 'utf8'));
+  w2('app/sw.js', "const CACHE_VERSION = 'v7';\nconst PRECACHE_ASSETS = [\n  'page.html',\n  'a.js',\n];\n");
+  w2('app/page.html', '<script src="a.js?v=3"></script>\n'); w2('app/a.js', 'var a = 1;\n'); w2('app/loose.js', 'var loose = 1;\n');
+  g2(['add', '-A']); g2(['-c', 'user.name=w', '-c', 'user.email=w@example.invalid', '-c', 'commit.gpgsign=false', 'commit', '-q', '--no-verify', '-m', 'base']);
+  const read2 = rel => fs.readFileSync(path.join(FX, rel), 'utf8');
+  const n0 = S.needsBump(FX, 'app/a.js', 'HEAD');
+  w2('app/a.js', 'var a = 2;\n'); w2('app/loose.js', 'var loose = 2;\n');
+  const n1 = S.needsBump(FX, 'app/a.js', 'HEAD'), nLoose = S.needsBump(FX, 'app/loose.js', 'HEAD');
+  const needOk = check('one file: an edited cached file needs a bump, and the app and version are named (' + JSON.stringify(n1) + ')', !!n1 && n1.app === 'app' && n1.version === 'v7' && n1.sw === 'app/sw.js');
+  const needRedOk = check('red controls: the same file BEFORE the edit, and an edited file no cache list names, are not flagged', n0 === null && nLoose === null);
+  const before = read2('app/sw.js') + read2('app/page.html');
+  const dry = S.bump(FX, 'app/a.js', false, process.execPath, ROOT); dry.lines.forEach(l => console.log('    ' + l.slice(0, 200)));
+  const dryOk = check('the dry run (the repo\'s own scripts/bump.js) names both edits and writes nothing', dry.ok && dry.lines.some(l => /BUMP sw=app\/sw\.js CACHE_VERSION v7->v8/.test(l)) && dry.lines.some(l => /ref=.*v=3->4/.test(l)) &&
+    read2('app/sw.js') + read2('app/page.html') === before && /mode=dry exit=0 verdict=PASS/.test(dry.lines[dry.lines.length - 1]));
+  const wr = S.bump(FX, 'app/a.js', true, process.execPath, ROOT);
+  const n2 = S.needsBump(FX, 'app/a.js', 'HEAD'), c2 = S.check(FX, 'HEAD');
+  const appliedOk = check('the applied bump raises CACHE_VERSION to v8 and the page\'s ?v= to 4; after it the file is no longer flagged and Check passes',
+    wr.ok && /CACHE_VERSION = 'v8'/.test(read2('app/sw.js')) && /a\.js\?v=4/.test(read2('app/page.html')) && n2 === null && c2.ok);
+  const noScript = S.bump(FX, 'app/a.js', false, process.execPath);
+  check('a repo without scripts/bump.js → INCONCLUSIVE, nothing run', !noScript.ok && /verdict=INCONCLUSIVE/.test(noScript.lines[0]));
+  fs.rmSync(FX, { recursive: true, force: true });
+
   // Fetch back against a fake live site (main = the committed fixture: v1, sha)
   const site = (swText, json) => async url => (/\/app\/sw\.js/.test(url) ? { status: 200, text: swText } : /version\.json/.test(url) ? { status: 200, text: json } : { status: 404, text: '' });
   const fGood = await S.fetchBack(TMP, { site: 'http://fake.invalid', base: 'HEAD', get: site('const CACHE_VERSION="v1",x=1;', JSON.stringify({ sha: sha.slice(0, 8) })) }); show(fGood);
@@ -92,7 +120,7 @@ if (!J.loadTs(ROOT)) { summary({ parser: 'N' }, 'INCONCLUSIVE'); process.exit(0)
     check('real site answered for every app (whether it matches main depends on the deploy, so it is reported, not judged)', fb.lines.filter(l => / http=200 /.test(l)).length >= 3);
   }
   const yn = x => (x ? 'Y' : 'N');
-  summary({ syntax_stops: yn(aOk), bump_stops: yn(bOk), old_live_fails: yn(cOk), wrong_sha_fails: yn(dOk), red_clean: yn(cleanOk), red_bumped: yn(bumpedOk), red_live_match: yn(goodOk), no_stamp_inconclusive: yn(noStampOk),
+  summary({ syntax_stops: yn(aOk), bump_stops: yn(bOk), old_live_fails: yn(cOk), wrong_sha_fails: yn(dOk), red_clean: yn(cleanOk), red_bumped: yn(bumpedOk), one_file_needs: yn(needOk), one_file_red: yn(needRedOk), dry_writes_nothing: yn(dryOk), applied: yn(appliedOk), red_live_match: yn(goodOk), no_stamp_inconclusive: yn(noStampOk),
     real_run: yn(realRun), real_check: yn(realCheck), real_live: live }, fail === 0 ? 'PASS' : 'FAIL');
   if (fail) process.exitCode = 1;
 })().catch(e => { console.log('  FAIL witness crashed: ' + (e && e.stack)); summary({ crashed: 'Y' }, 'FAIL'); process.exitCode = 1; });
