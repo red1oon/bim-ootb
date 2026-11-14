@@ -115,6 +115,28 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
     AD_CLIENT_ID: '#AD_Client_ID', AD_ORG_ID: '#AD_Org_ID', AD_USER_ID: '#AD_User_ID', AD_ROLE_ID: '#AD_Role_ID',
     M_WAREHOUSE_ID: '#M_Warehouse_ID', DATE: '#Date', C_CURRENCY_ID: '$C_Currency_ID', SALESREP_ID: '#SalesRep_ID',
     TAB_INFO: 1113,
+    // ── ONE CLOCK (bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md Part A, A1; decisions A-2/A-3/A-4; bim-ootb #3006) ───────────────────────────────────────────────────────────────────
+    //   The login context is the one source of "now"/"today". The shell (edge) injects { nowMs(), uuid(), perfMs() } ONCE; core code asks the env built here. ADDITIVE: no caller uses it yet (A2 moves them).
+    //   stamp(ms): the LOCAL calendar day + local wall-clock string of an instant. Never the UTC day (W-LOCAL-TIME; legacy dates by the server's local day).
+    stamp: function (ms) {
+      var d = new Date(ms);
+      return { day: pad(d.getFullYear(), 4) + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()),
+               now: pad(d.getFullYear(), 4) + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds()), millis: ms };
+    },
+    //   modelEnv(ctx, edge): the transaction env {client, org, user, role, date, now, nowMillis, uuid, perfMs, elapsed}. date = ctx '#Date' (legacy's session date) when set, else the edge's local day;
+    //   with neither it THROWS and logs §ENV_NO_DATE (A-3: core never falls back to a wall clock). elapsed(t0) is the timing seam (A-4): the only way core may time a pass.
+    modelEnv: function (ctx, edge) {
+      edge = edge || {};
+      var ctxDate = ctx ? ctx.getProperty(Env.DATE, '') : '', hasClock = typeof edge.nowMs === 'function', ms = hasClock ? edge.nowMs() : null;
+      var day = ctxDate ? String(ctxDate).slice(0, 10) : (hasClock ? Env.stamp(ms).day : '');
+      if (!day) { RUNTIME.log('§ENV_NO_DATE no #Date in the login context and no edge clock injected'); throw new Error('Env.modelEnv: no session date (A-3: core never falls back to a wall clock)'); }
+      var num = function (k) { var v = ctx ? ctx.getProperty(k, '') : ''; return v === '' ? null : Number(v); };
+      var perf = typeof edge.perfMs === 'function' ? edge.perfMs : null;
+      return { client: num(Env.AD_CLIENT_ID), org: num(Env.AD_ORG_ID) == null ? 0 : num(Env.AD_ORG_ID), user: num(Env.AD_USER_ID), role: num(Env.AD_ROLE_ID) == null ? 0 : num(Env.AD_ROLE_ID),
+               date: day + ' 00:00:00', now: hasClock ? Env.stamp(ms).now : day + ' 00:00:00', nowMillis: hasClock ? ms : Date.parse(day + 'T00:00:00Z'),
+               uuid: typeof edge.uuid === 'function' ? edge.uuid : function () { return null; },
+               perfMs: function () { return perf ? perf() : 0; }, elapsed: function (t0) { return perf ? perf() - t0 : 0; } };
+    },
     isGlobalVariable: function (v) { return v.charAt(0) === '#' || v.charAt(0) === '$' || v.charAt(0) === '+'; },   // :2632
     isPreference: function (v) { return v.indexOf('P|') === 0; },                                                     // :2644
     // getContext — overloads by argument shape (Env.java:604, :631, :670, :685, :717, :734)
