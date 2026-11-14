@@ -53,8 +53,7 @@
       var self = this, client = this.getAD_Client_ID(), post = trx.env.postImmediate && typeof trx.env.postImmediate === 'function' ? trx.env.postImmediate : null;
       var poster = post || ML.getPoster();
       if (!poster) throw new Error('ClientAcctProcessor: no document poster is registered in this host (model_post.js not loaded)');
-      var nowMs = trx.env.nowMillis;
-      if (nowMs == null) { nowMs = new Date().getTime(); trx.say('§ACCTP-CLOCK source=wall-clock (no recorded clock in env.nowMillis)'); }
+      var nowMs = X.A.Env.nowMs(trx.env);   // the recorded clock; a missing one throws §ENV_NO_DATE (A-3), never a wall clock
       var value = nowMs - 2000;                                                                                                       // go back 2 seconds to be safe
       var tabs = trx.q("SELECT t.ad_table_id AS id, t.tablename AS name FROM ad_table t, ad_column c WHERE t.ad_table_id=c.ad_table_id AND c.columnname='Posted' AND t.isview='N' ORDER BY t.ad_table_id");   // DocManager.fillDocumentsTableArrays
       var errSeen = {}, processedOns = [0];                                                                                                         // to include potential null values
