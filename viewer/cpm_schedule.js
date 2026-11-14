@@ -833,7 +833,7 @@
     // the order inside the level moves. Counted on §D5_FLOOR_SLAB.
     var FLOOR_TRD = 1.5;
     var SGd = (typeof global.ScheduleGate !== 'undefined') ? global.ScheduleGate : ScheduleGate;
-    var trdOf = new Array(n), floorN = 0, floorBy = {};
+    var trdOf = new Array(n), floorN = 0, floorBy = {}, heldN = 0, heldSeen = {};
     for (i = 0; i < n; i++) trdOf[i] = _trdOf(items[i]);
     if (filing.des && SGd && SGd.supportPool) {
       for (i = 0; i < n; i++) {
@@ -843,10 +843,17 @@
         if (filing.lvl2[fs] !== filing.lvl2[i]) continue;
         if (!(F.bz < Tn.bz - SGd.EPS && F.tz >= Tn.bz - SGd.GAP)) continue;   // bearing-below, the election's own clause
         if (trdOf[fs] <= FLOOR_TRD) continue;                                 // already ahead of the bearers (or counted)
+        // "the slab a column HOLDS UP is built after it" (§Q.7, same practice line): a slab that is
+        // itself carried by structure of this level is a mid-level slab, not the level's floor — moving
+        // it ahead would put it before what holds it up (measured: Hospital 2 slabs on a Level-1
+        // column, Terminal 2 on a Substructure beam). It keeps its sequence.
+        var fh = filing.des[fs];
+        if (fh >= 0 && filing.lvl2[fh] === filing.lvl2[fs] && SGd.supportPool(items[fh]) &&
+            items[fh].bz < F.bz - SGd.EPS && items[fh].tz >= F.bz - SGd.GAP) { if (!heldSeen[fs]) { heldSeen[fs] = 1; heldN++; } continue; }
         trdOf[fs] = FLOOR_TRD; floorN++; floorBy[Tn.cls] = (floorBy[Tn.cls] || 0) + 1;
       }
     }
-    console.log('§D5_FLOOR_SLAB floorSlabs=' + floorN + ' firstCarriedBy=' + JSON.stringify(floorBy) +
+    console.log('§D5_FLOOR_SLAB floorSlabs=' + floorN + ' heldBySameLevelStructure(kept)=' + heldN + ' firstCarriedBy=' + JSON.stringify(floorBy) +
       ' trd=' + FLOOR_TRD + (filing.des ? '' : ' INACTIVE — no election passed to the cell solve'));
     // group members per cell
     var SEP = '';
