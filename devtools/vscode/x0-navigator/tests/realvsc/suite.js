@@ -77,6 +77,24 @@ async function run() {
       x.status = api.statusText(doc);
       const lenses = await vscode.commands.executeCommand('vscode.executeCodeLensProvider', doc.uri, 500);
       x.lenses = (lenses || []).filter(l => l.command && l.command.command === 'x0Navigator.openLogLine').map(l => ({ line: l.range.start.line + 1, title: l.command.title }));
+      // F-6: a real cached file is edited and saved in the editor → X0's warning, its two quick fixes, and the dry run.
+      // The edit is taken back and saved again before anything else (run.js also restores the file from git).
+      if (plan.extras.bumpFile) {
+        const bdoc = await vscode.workspace.openTextDocument(vscode.Uri.file(plan.extras.bumpFile));
+        const bed = await vscode.window.showTextDocument(bdoc);
+        const mineOf = () => vscode.languages.getDiagnostics(bdoc.uri).filter(d => d.code === 'x0.bump');
+        x.bumpBefore = mineOf().length;
+        await bed.edit(e => e.insert(new vscode.Position(0, 0), '// realvsc: one line added\n'));
+        await bdoc.save(); await sleep(1500);
+        const diags = mineOf();
+        x.bumpAfter = diags.length; x.bumpMessage = diags[0] ? diags[0].message : '';
+        const acts = diags[0] ? await vscode.commands.executeCommand('vscode.executeCodeActionProvider', bdoc.uri, diags[0].range, 'quickfix') : [];
+        x.bumpActions = (acts || []).filter(a => a.command && a.command.command === 'x0Navigator.bumpThisFile').map(a => ({ title: a.title, write: a.command.arguments[1] }));
+        x.bumpDry = await vscode.commands.executeCommand('x0Navigator.bumpThisFile', plan.extras.bumpRel, false);
+        await bed.edit(e => e.delete(new vscode.Range(0, 0, 1, 0)));
+        await bdoc.save(); await sleep(1500);
+        x.bumpRestored = mineOf().length;
+      }
       // §F.16: "Context for this file", run as a VS Code command on the open file. It copies the block and opens it beside.
       await vscode.window.showTextDocument(doc);
       x.context = await vscode.commands.executeCommand('x0Navigator.contextForFile');

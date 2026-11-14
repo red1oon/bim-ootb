@@ -100,7 +100,10 @@ const PROBE_VALUE = KNOWN_TAG + ' hostedTotal=11 matched=11';
 fs.mkdirSync(path.dirname(PROBE_LOG), { recursive: true });
 fs.writeFileSync(PROBE_LOG, require(path.join(ROOT, 'scripts', 'log_stamp.js')).stampLine(ROOT, 'x0_realvsc') + '\n' + PROBE_VALUE + '\n');
 const tagFileClean = cp.spawnSync('git', ['diff', '--quiet', 'HEAD', '--', path.relative(ROOT, tagAt.file)], { cwd: ROOT }).status === 0;
-const plan = { probe, extras: { lensFile: tagAt.file }, steps: [
+// F-6: a file the viewer's offline cache serves and that equals HEAD here (the def step's own file); it is edited and restored
+const bumpRel = path.relative(ROOT, def.file).split(path.sep).join('/');
+const bumpClean = cp.spawnSync('git', ['diff', '--quiet', 'HEAD', '--', bumpRel], { cwd: ROOT }).status === 0 && require('../../lib/ship').needsBump(ROOT, bumpRel, 'origin/main') === null;
+const plan = { probe, extras: { lensFile: tagAt.file, bumpFile: bumpClean ? def.file : null, bumpRel }, steps: [
   { label: 'def', file: def.file, line: def.line, col: def.col, tries: 4 },
   { label: 'phantom', file: ph.file, line: ph.line, col: ph.col, tries: 1 },
   { label: 'tag', file: tagAt.file, line: tagAt.line, col: tagAt.col, tries: 1 },
@@ -121,6 +124,7 @@ delete env.ELECTRON_RUN_AS_NODE;
 const t0 = Date.now();
 const r = cp.spawnSync('xvfb-run', args, { env, encoding: 'utf8', timeout: 300000, maxBuffer: 1 << 26 });
 fs.rmSync(PROBE_LOG, { force: true });
+if (bumpClean) cp.spawnSync('git', ['checkout', '--', bumpRel], { cwd: ROOT });   // whatever happened in the editor, the file is back
 const secs = ((Date.now() - t0) / 1000).toFixed(1);
 console.log('  VS Code run: exit=' + r.status + (r.signal ? ' signal=' + r.signal : '') + ' seconds=' + secs + ' program=' + BIN);
 if (!fs.existsSync(OUT)) {
@@ -166,7 +170,7 @@ const fakeOk = check('red control: a made-up tag → "no spec found"', /no spec 
 
 // §F.12 first versions, inside the real editor
 const x = res.extras || {};
-const WANT = ['contextForFile', 'costIfDeployed', 'openLogLine', 'rebuildIndexes', 'shipCheck', 'shipFetchBack', 'shipRunLocal'].map(c => 'x0Navigator.' + c);
+const WANT = ['bumpThisFile', 'contextForFile', 'costIfDeployed', 'openLogLine', 'rebuildIndexes', 'shipCheck', 'shipFetchBack', 'shipRunLocal'].map(c => 'x0Navigator.' + c);
 const cmdOk = check('VS Code knows all ' + WANT.length + ' X0 commands', WANT.every(c => (x.commands || []).includes(c)));
 const costLines = (x.cost || []).filter(l => l.startsWith(SEC + 'DEPLOY_COST app='));
 const costOk = check('"Cost if deployed" run as a VS Code command → ' + costLines.length + ' app lines (' + (costLines[0] || '').slice(0, 80) + '…)', costLines.length >= 3);
@@ -178,6 +182,18 @@ const lens = (x.lenses || []).find(l => l.title.includes('hostedTotal=11 matched
 let lensOk = true;
 if (!tagFileClean) console.log('  NOTE  ' + rel(tagAt.file) + ' differs from HEAD here: the lens rightly shows nothing, not judged');
 else lensOk = check('CodeLens from VS Code\'s own provider call: line ' + (lens && lens.line) + ' "' + (lens ? lens.title.slice(0, 70) : 'none') + '…"', !!lens && lens.line === tagAt.line);
+
+// F-6: the one-click bump, as the real editor shows it
+let bumpOk = true;
+if (!bumpClean) console.log('  NOTE  ' + bumpRel + ' is not clean against HEAD and origin/main here: the bump warning is not judged');
+else {
+  const dry = x.bumpDry || [];
+  bumpOk = check('one-click bump: no warning before the edit (' + x.bumpBefore + '); after an edit and save, 1 warning naming the app and its sw.js; 2 quick fixes (' + (x.bumpActions || []).map(a => a.write ? 'write' : 'dry').join(', ') + '); the dry run names CACHE_VERSION and writes nothing; warning gone once the edit is taken back (' + x.bumpRestored + ')',
+    x.bumpBefore === 0 && x.bumpAfter === 1 && /offline cache and was edited, but \S+\/sw\.js is still v\d+/.test(x.bumpMessage || '') &&
+    (x.bumpActions || []).length === 2 && x.bumpActions[0].write === true && x.bumpActions[1].write === false &&
+    dry.some(l => /BUMP sw=\S+ CACHE_VERSION v\d+->v\d+/.test(l)) && /mode=dry exit=0 verdict=PASS/.test(dry[dry.length - 1] || '') && x.bumpRestored === 0 &&
+    cp.spawnSync('git', ['status', '--porcelain', '--', '*/sw.js', '*.html'], { cwd: ROOT, encoding: 'utf8' }).stdout.trim() === '');
+}
 
 // §F.19: Find All References, asked through VS Code's own entry point, compared with the lib's list made from the SAME fresh index
 const AR = require('../../lib/app_refs');
@@ -209,5 +225,5 @@ const ctxOk = check('"Context for this file" run as a VS Code command on ' + tag
 
 if (KEEP) console.log('  kept: ' + TMP); else fs.rmSync(TMP, { recursive: true, force: true });
 line({ vscode: res.vscode, active: yn(active), fresh: yn(fresh), def: yn(defOk), hover: yn(hovOk), phantom: yn(phOk), unknown_silent: yn(unkOk),
-  tag: yn(tagOk), fake_tag: yn(fakeOk), commands: yn(cmdOk), cost: yn(costOk), check: yn(checkOk), status: yn(statusOk), lens: yn(lensOk), refs: yn(refsOk), refs_red: yn(refsRedOk), last_value: yn(lastOk), last_value_red: yn(lastRedOk), context: yn(ctxOk), builtin_ready: yn(pr.ready), builtin_defs: pr.ready ? builtin : '?', seconds: secs }, fail === 0 ? 'PASS' : 'FAIL');
+  tag: yn(tagOk), fake_tag: yn(fakeOk), commands: yn(cmdOk), cost: yn(costOk), check: yn(checkOk), status: yn(statusOk), lens: yn(lensOk), refs: yn(refsOk), bump: yn(bumpOk), refs_red: yn(refsRedOk), last_value: yn(lastOk), last_value_red: yn(lastRedOk), context: yn(ctxOk), builtin_ready: yn(pr.ready), builtin_defs: pr.ready ? builtin : '?', seconds: secs }, fail === 0 ? 'PASS' : 'FAIL');
 if (fail) process.exitCode = 1;
