@@ -1,0 +1,182 @@
+{
+ "_": "The message catalog: text meant for a PERSON, one key per message, read by msg_core.js (bim-compiler prompts/VOCAB_MESSAGE_CATALOG.md §3). Templates take {0} {1} … (legacy MessageFormat). P2a: English only, the keys of words_core.js; the bytes a person sees are the literals the code printed before (W-MSG-CATALOG M1). Never the envelope, the journal or verbs.json.",
+ "messages": {
+  "words.quote_in_value": {
+   "en": "a value may not hold a double quote: {0}"
+  },
+  "words.usage": {
+   "en": "{0}: {1}  (here: {2})"
+  },
+  "words.not_a_word": {
+   "en": "\"{0}\" is not a word of red1 (type help) nor a door line (app.verb key=value)"
+  },
+  "words.ls_filters_column": {
+   "en": "ls here filters a column: ls <column>=<glob>, e.g. ls {0}={1}  (columns: {2})"
+  },
+  "words.works_nowhere": {
+   "en": "{0} works {1}; you are nowhere yet"
+  },
+  "words.works_in": {
+   "en": "{0} works {1}; you are in {2}"
+  },
+  "words.works_list_or": {
+   "en": " or "
+  },
+  "words.works_place.kind": {
+   "en": "in a kind (cd Element)"
+  },
+  "words.works_place.building": {
+   "en": "in a building (cd Duplex)"
+  },
+  "words.works_place.erp": {
+   "en": "in an ERP kind (cd \"Business Partner\")"
+  },
+  "words.works_place.any": {
+   "en": "anywhere"
+  },
+  "words.needs_one_of": {
+   "en": "{0} needs one of: {1} — {2}"
+  },
+  "words.verb_not_in_vocab": {
+   "en": "the word {0} names a verb the vocabulary does not have: {1}"
+  },
+  "words.too_many_values": {
+   "en": "too many values for {0} ({1}); {2}"
+  },
+  "words.pick_none": {
+   "en": "{0}: no {1} to pick from ({2})"
+  },
+  "words.answer_no_rows": {
+   "en": "the answer has no rows"
+  },
+  "words.pick_title": {
+   "en": "{0}: pick {1} ({2})"
+  },
+  "words.run_no_params": {
+   "en": "run: {0} has no parameter to ask ({1})"
+  },
+  "words.none_in_dictionary": {
+   "en": "none in the dictionary"
+  },
+  "words.lookup_none": {
+   "en": "{0} ({1}): nothing to pick from; type it (Enter: {2})"
+  },
+  "words.lookup_none_why": {
+   "en": "{0} ({1}): nothing to pick from ({2}); type it (Enter: {3})"
+  },
+  "words.enter_needed": {
+   "en": "needed"
+  },
+  "words.enter_none": {
+   "en": "none"
+  },
+  "words.leave_out_item": {
+   "en": "(leave it out)"
+  },
+  "words.run_pick_title": {
+   "en": "run: pick {0} ({1}, {2})"
+  },
+  "words.cd_kind_ok": {
+   "en": "{0}/{1}: {2} properties; ls shows {3}"
+  },
+  "words.cd_erp_ok": {
+   "en": "{0}: {1} properties; ls shows {2}"
+  },
+  "words.cd_unknown": {
+   "en": "cd: no building, kind or ERP window is named \"{0}\""
+  },
+  "words.cd_unknown_buildings": {
+   "en": "cd: no building, kind or ERP window is named \"{0}\" (buildings: {1})"
+  },
+  "words.cancelled_pick": {
+   "en": "cancelled: nothing was run ({0} needs {1})"
+  },
+  "words.left_out": {
+   "en": "{0}: left out"
+  },
+  "words.picked": {
+   "en": "{0} = {1}"
+  },
+  "words.cancelled": {
+   "en": "cancelled: nothing was run"
+  },
+  "words.param_needed": {
+   "en": "{0} ({1}) is needed: {2}"
+  },
+  "words.not_done": {
+   "en": "not done: {0}"
+  },
+  "words.cd_building": {
+   "en": "building {0}"
+  },
+  "words.pwd_nowhere": {
+   "en": "(nowhere: cd <building> or cd <ERP kind>)"
+  },
+  "words.role_not_number": {
+   "en": "role is a number (an AD_Role id), got {0}"
+  },
+  "words.role_set": {
+   "en": "role {0} on every line"
+  },
+  "words.role_none": {
+   "en": "no role"
+  },
+  "words.ask_default": {
+   "en": "{0} ({1})? [{2}]"
+  },
+  "words.ask_needed": {
+   "en": "{0} ({1})? [needed]"
+  },
+  "words.ask_context": {
+   "en": "{0} ({1})? [from the context: Enter]"
+  },
+  "words.ask_none": {
+   "en": "{0} ({1})? [Enter: none]"
+  },
+  "words.confirm_run": {
+   "en": "{0}   run it? y/N"
+  },
+  "words.place.building": {
+   "en": "in a building"
+  },
+  "words.place.kind": {
+   "en": "in a kind of it (cd Element)"
+  },
+  "words.place.erp": {
+   "en": "in an ERP kind"
+  },
+  "words.place.any": {
+   "en": "anywhere"
+  },
+  "words.help_intro": {
+   "en": "red1: type a short word; red1 prints the full line it runs (→ …), then runs it."
+  },
+  "words.help_group_row": {
+   "en": "{0}start with: {1}   ({2} words)"
+  },
+  "words.help_everywhere": {
+   "en": "  everywhere: {0}"
+  },
+  "words.help_footer": {
+   "en": "Type bim, mis or erp for its words · help <word> for one word · help verbs for the full door lines."
+  },
+  "words.help_group_head": {
+   "en": "{0}: {1} (start with: {2})"
+  },
+  "words.help_place_head": {
+   "en": " {0}:"
+  },
+  "words.help_word_head": {
+   "en": "{0}: {1}"
+  },
+  "words.help_word_form": {
+   "en": "  {0}: {1}   → {2}"
+  },
+  "words.help_word_form_codes": {
+   "en": "  {0}: {1}   → {2}   codes: {3}"
+  },
+  "words.help_action_placeholder": {
+   "en": "<action>"
+  }
+ }
+}

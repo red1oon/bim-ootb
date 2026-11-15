@@ -12,7 +12,7 @@ const D = require(DOOR), W = require(path.join(ROOT, 'common/door/words_core.js'
 const vocab = D.loadVocab(), words = JSON.parse(fs.readFileSync(path.join(ROOT, 'common/door/vocab/words.json'), 'utf8')), byVerb = {};
 vocab.verbs.forEach(v => { byVerb[v.verb] = v; });
 const run = (argv, input) => { const r = cp.spawnSync(process.execPath, argv, { input: input || '', env: process.env, encoding: 'utf8' }); return { out: r.stdout || '', err: r.stderr || '', code: r.status }; };
-const core = W.create({ vocab, words, tokenize: D.tokenize, pickColumns: M.pickColumns, buildings: ['Duplex'], brk: BRK });
+const core = W.create({ vocab, words, msg: require(path.join(ROOT, 'common/door/msg_core.js')).create(JSON.parse(fs.readFileSync(path.join(ROOT, 'common/door/vocab/messages.json'), 'utf8'))), tokenize: D.tokenize, pickColumns: M.pickColumns, buildings: ['Duplex'], brk: BRK });
 const PLACE = { 'in a building': { building: 'Duplex' }, 'in a kind of it (cd Element)': { building: 'Duplex', kind: 'Element', columns: ['guid'] }, 'in an ERP kind': { erp: 'Order', ecolumns: ['DocumentNo'] }, 'anywhere': {} };
 const IN = { 'in a building': 'building', 'in a kind of it (cd Element)': 'kind', 'in an ERP kind': 'erp', 'anywhere': 'any' };
 const GROUPS = Object.keys(words.groups).filter(g => g !== '_');
