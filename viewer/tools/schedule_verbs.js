@@ -230,13 +230,59 @@ async function scheduleCompare(a) {
   } finally { console.log = _log; console.warn = _warn; }
 }
 
-module.exports = { scheduleAt, scheduleCompare, stateAt, stateOf, cachedRun };
+// ═════════════════════════════════════ cost ═══════════════════════════════════════
+// bim-compiler prompts/CLI_ERP_IVR.md §29.2 (P2): the Find panel's cost of a selection, at the door. NOTHING re-derived:
+//   quantities × rates = ProjOrderState.pricedRowsFor (viewer/proj_order_state.js; pinned equal to the Find panel's _selectionPriced SQL by W-S9-PURE S1),
+//   the rate pack = rates.js RATES (the Find panel's default when no pack is chosen: nf_highlight_cost.js _pack() 'hardcoded'),
+//   the phase / task of an element = the PERSISTED 4D run's task grid (cachedRun: the owner's answer, §I "what phase is this element?", PRIMAL LAW 5),
+//   a selection = `col=glob` over elements_meta columns, compiled by common/door/glob.js (the ONE wildcard reader).
+async function cost(a) {
+  const BY = ['phase', 'task', 'storey', 'discipline', 'class'], by = a.by || 'phase';
+  if (BY.indexOf(by) < 0) throw bad('by must be one of: ' + BY.join(', '));
+  const c = cachedRun(a.building); if (!c.run) return { verb: 'cost', building: a.building, verdict: 'INCONCLUSIVE', summary: 'no 4D run for ' + a.building + ': ' + c.why, groups: [], rows: [] };
+  const SQL = await getSQL(), bdb = new SQL.Database(fs.readFileSync(c.dbf.path));   // the SAME database the 4D run was built from (cachedRun resolves it)
+  const vm = require('vm'), V = path.join(ROOT, 'viewer'), rt = {};
+  vm.runInNewContext(__readSrc(path.join(V, 'rates.js')) + '\n;__o.RATES=RATES;', { __o: rt, console: { log() {}, warn() {} }, window: undefined });
+  const PS = require(path.join(V, 'proj_order_state.js')), env = { EditDelta: require(path.join(V, 'edit_delta.js')), RATES: rt.RATES };
+  const G = require(path.join(ROOT, 'common', 'door', 'glob.js'));
+  const cols = bdb.exec('PRAGMA table_info(elements_meta)')[0].values.map(r => r[1]);
+  const where = [], params = [];
+  (a.where || []).forEach(w => { const m = /^([A-Za-z_]\w*)=([\s\S]*)$/.exec(w); if (!m) throw bad('a selection is column=value, got "' + w + '"');
+    const col = cols.filter(x => x.toLowerCase() === m[1].toLowerCase())[0];
+    if (!col) { const nb = require(path.join(ROOT, 'common', 'door', 'assist_core.js')).nearest(m[1], cols, 3).map(x => x.name); throw bad('elements have no column "' + m[1] + '"' + (nb.length ? '; nearest: ' + nb.join(', ') : '; columns: ' + cols.join(', '))); }
+    if (G.isGlob(m[2])) { where.push('lower(CAST(m.' + col + ' AS TEXT)) GLOB ?'); params.push(G.toSqlGlob(m[2])); } else { where.push('m.' + col + ' = ?'); params.push(m[2]); } });
+  const sel = bdb.exec('SELECT m.guid FROM elements_meta m' + (where.length ? ' WHERE ' + where.join(' AND ') : ''), params);
+  const guids = sel.length ? sel[0].values.map(r => r[0]) : [];
+  const g2t = {}; (c.run.tasks || []).forEach(t => (t.guids || []).forEach(g => { g2t[g] = t; }));
+  const keyOf = { phase: (g) => (g2t[g] ? g2t[g].phase : '(not in the 4D run)'), task: (g) => (g2t[g] ? g2t[g].phase + ' — ' + g2t[g].storey : '(not in the 4D run)') };
+  const groups = [], all = { elements: 0, cost: 0, rows: [] };
+  if (by === 'phase' || by === 'task') {
+    const order = []; const bucket = {}; guids.forEach(g => { const k = keyOf[by](g); if (!bucket[k]) { bucket[k] = []; order.push(k); } bucket[k].push(g); });
+    const seq = {}; (c.run.tasks || []).forEach(t => { const k = by === 'phase' ? t.phase : t.phase + ' — ' + t.storey; if (seq[k] == null || t.sDays < seq[k]) seq[k] = t.sDays; });   // programme order: the earliest start of the phase / task
+    order.sort((x, y) => (seq[x] == null ? 1e9 : seq[x]) - (seq[y] == null ? 1e9 : seq[y]));
+    order.forEach(k => { const p = PS.pricedRowsFor(bdb, bucket[k], env, null); const sum = p.rows.reduce((s, r) => s + r.cost, 0);
+      groups.push({ key: k, elements: p.elements, cost: sum }); all.elements += p.elements; all.cost += sum; all.rows = all.rows.concat(p.rows.map(r => Object.assign({ [by]: k }, r))); });
+  } else {
+    const p = PS.pricedRowsFor(bdb, guids, env, null), f = { storey: 'storey', discipline: 'disc', class: 'cls' }[by], acc = {}, order = [];
+    p.rows.forEach(r => { const k = r[f]; if (!acc[k]) { acc[k] = { key: k, elements: 0, cost: 0 }; order.push(k); } acc[k].elements += r.count; acc[k].cost += r.cost; });
+    order.sort((x, y) => acc[y].cost - acc[x].cost).forEach(k => groups.push(acc[k])); all.elements = p.elements; all.cost = p.rows.reduce((s, r) => s + r.cost, 0); all.rows = p.rows;
+  }
+  if (process.env.COST_BREAK === 'dropgroup' && groups.length > 1) groups.pop();   // W-RED1-COST falsifier: one group lost (must FAIL C1)
+  const unpriced = all.rows.filter(r => !r.rate).reduce((s, r) => s + r.count, 0), nosize = guids.length - all.elements;   // no size = no element_transforms bbox: cannot be measured
+  say('§COST building=' + a.building + ' by=' + by + ' selection=' + JSON.stringify(a.where || []) + ' selected=' + guids.length + ' priced=' + all.elements + ' unpriced=' + unpriced + ' nosize=' + nosize + ' total=' + all.cost + ' groups=' + groups.length + ' run=' + c.status);
+  const verdict = guids.length ? 'OK' : 'INCONCLUSIVE';
+  return { verb: 'cost', building: a.building, by, selection: a.where || [], verdict, selected: guids.length, elements: all.elements, unpriced, nosize, total: all.cost, pack: 'rates.js (the Find panel default)',
+    summary: verdict === 'OK' ? all.elements + ' elements · ' + all.cost + ' total' + (unpriced ? ' (' + unpriced + ' with no rate)' : '') + (nosize ? '; ' + nosize + ' with no size, not priced' : '') : 'the selection matched no element', groups, rows: all.rows, cache: c.status };
+}
+
+module.exports = { scheduleAt, scheduleCompare, cost, stateAt, stateOf, cachedRun };
 
 if (require.main === module) {
   const argv = process.argv.slice(2), verb = argv[0], arg = (k) => { const i = argv.indexOf('--' + k); return i >= 0 ? argv[i + 1] : undefined; };
   const num = (v) => (v === undefined ? undefined : (v !== '' && isFinite(Number(v)) ? Number(v) : NaN));
   const f = verb === 'at' ? () => Promise.resolve().then(() => scheduleAt({ building: arg('building'), day: num(arg('day')) }))
-    : verb === 'compare' ? () => scheduleCompare({ building: arg('building'), shiftHours: num(arg('shift-hours')) }) : null;
+    : verb === 'compare' ? () => scheduleCompare({ building: arg('building'), shiftHours: num(arg('shift-hours')) })
+    : verb === 'cost' ? () => cost({ building: arg('building'), by: arg('by'), where: argv.reduce((w, x, i) => (x === '--where' && argv[i + 1] != null ? w.concat([argv[i + 1]]) : w), []) }) : null;
   if (!f) { console.error('usage: node viewer/tools/schedule_verbs.js at --building B --day N | compare --building B [--shift-hours H]'); process.exit(2); }
   f().then(r => { process.stdout.write(JSON.stringify(r) + '\n', () => process.exit(r.verdict === 'INCONCLUSIVE' ? 3 : 0)); })
     .catch(e => { if (e && e.usage) { console.error('§SCHED_VERB USAGE ' + e.message); process.exit(2); } console.error('§SCHED_VERB FAIL ' + (e && e.message || e)); process.exit(1); });
