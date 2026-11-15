@@ -20,4 +20,4 @@ Spec: bim-compiler `prompts/CODE_ARCHITECTURE_DESIGN.md` §F.22. Witness: `devto
 3. The bookmarklet: `javascript:(function(){var s=document.createElement('script');s.src='/devtools/hover/erp_hover.js?'+Date.now();document.head.appendChild(s)})()`
 4. Hover a field: its layers in the order they fire (the field's dictionary row, on change: callouts, picker: validation rule, on save: model hooks, doc action, model validators,
    button: process), each with its owner, the line that registered it and the iDempiere Java file it was ported from. Keys **1-9** open that line in VS Code.
-   A layer with nothing registered says UNPORTED; nothing is guessed. Before the first save the page has not installed its model validators yet: the tooltip lists the ones the code registers.
+   A layer with nothing registered says UNPORTED (checked against the engine's own lookup); nothing is guessed. In a text field use Alt+1-9. Before the first save the page has not installed its model validators yet: the tooltip lists the ones the code registers.

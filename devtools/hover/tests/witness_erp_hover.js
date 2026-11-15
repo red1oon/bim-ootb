@@ -7,6 +7,7 @@
 //   E1 the index (devtools/hover/erp_index.json) = a fresh parse; every name the registries REPORT (callout classes, processes, model tables, validators) has its line (unindexed ones listed)
 //   E2 the denominator: the node kernel (erp/ws_kernel.js load(), plus every erp/callouts/*.js as the page loads them) over EVERY column shown on an active AD window: each layer that names a line
 //      must land on a line whose text holds that registration (the name, or prototype.<method>); UNPORTED callouts/processes are counted and listed, not failed (a coverage fact)
+//   E2b every UNPORTED claim agrees with the ENGINE's own lookup (ad_callout.js getCallout; ad_process JAVA + handlers): v1 called CalloutEngine.dateAcct UNPORTED (found 2026-11-15)
 //   E3 RED CONTROL: one index entry that E2 used is removed -> the judge must count its layers as unresolved
 //   E4 THE PAGE (headless Chromium, CPU, ONE session): GardenWorld login, the Sales Order window, the overlay loaded with the bookmarklet's own code, REAL mouse hovers on form fields: the tooltip's
 //      stack (step, kind, name, line) = E2's for that column; key 1 records the vscode:// link. INCONCLUSIVE if it hovered 0 fields with a layer that names a line. WEH_PAGE=0 skips E4 (printed).
@@ -43,19 +44,26 @@ const quiet = fn => { const l = console.log; console.log = () => {}; try { retur
   const holds = l => { const t = lineText(l.at), nm = l.name.replace(/\s*\(.*\)$/, ''); if (l.kind === 'callout') return t.indexOf('prototype.' + nm.split('.').pop()) >= 0 || t.indexOf(nm.split('.')[0]) >= 0;
     if (l.kind === 'model' || l.kind === 'doc action') return /register(Model|DocAction)\(/.test(t) || new RegExp('\\b' + l.__table + '\\s*:', 'i').test(t);   // a loop-installed model's line is its { <table>: … } entry if (l.kind === 'process') return /defineProcess\(/.test(t); if (l.kind === 'model validator') return t.indexOf(nm) >= 0 || /registerValidator\(/.test(t);
     if (l.kind === 'column-callout') return /defineColumnCallout\(/.test(t); return t.length > 0; };
-  const judge = index => { const c = ctx(index), S = {}; let withLayers = 0, named = 0, resolved = 0, unported = 0, bad = [], unresolved = 0; const unp = {};
+  const judge = index => { const c = ctx(index), S = {}; let withLayers = 0, named = 0, resolved = 0, unported = 0, bad = [], unresolved = 0, falseUnported = 0; const unp = {}, falseU = [];
     fields.forEach(f => { const s = quiet(() => H.stackFor(f.t, f.c, c)); S[f.t + '.' + f.c] = s; if (s.layers.length > 1) withLayers++;
       s.layers.forEach(l => { l.__table = String(f.t).toLowerCase(); if (l.kind === 'callout' || l.kind === 'process') named++;
-        if (/^UNPORTED/.test(l.note || '')) { unported++; unp[l.name] = 1; return; }
+        if (/^UNPORTED/.test(l.note || '')) { unported++; unp[l.name] = 1;   // E2b: every UNPORTED claim must agree with the ENGINE's own lookup (v1 called a real callout UNPORTED)
+          // the command / class come from the DICTIONARY here, not from the hover's output (a check that read the hover's own fields was blind to v1: its red run passed)
+          const row = K.q("SELECT c.callout, p.classname FROM ad_column c JOIN ad_table t ON t.ad_table_id = c.ad_table_id LEFT JOIN ad_process p ON p.ad_process_id = c.ad_process_id WHERE lower(t.tablename) = ? AND lower(c.columnname) = ?", [String(f.t).toLowerCase(), String(f.c).toLowerCase()])[0] || {};
+          const cmd = String(row.callout || '').split(/[;,]/).map(x => x.trim()).filter(Boolean).find(x => { const i = x.lastIndexOf('.'); return x.slice(0, i).split('.').pop() + '.' + x.slice(i + 1) === l.name; });
+          const live = l.kind === 'callout' ? !!(cmd && c.callouts.hasCallout(cmd)) : l.kind === 'process' ? !!(row.classname && (c.processes.describe().processes[row.classname] || c.processes.describe().handlers[row.classname])) : false;
+          if (live) { falseUnported++; if (falseU.length < 5) falseU.push(f.t + '.' + f.c + ' ' + l.kind + ':' + l.name); } return; }
         if (/line not in the index/.test(l.note || '')) { unresolved++; if (bad.unres = bad.unres || [], bad.unres.length < 12) bad.unres.push(f.t + '.' + f.c + ' ' + l.kind + ':' + l.name); return; }
         if (l.at) { if (holds(l)) resolved++; else bad.push(f.t + '.' + f.c + ' ' + l.kind + ':' + l.name + '@' + l.at); } }); });
-    return { S, withLayers, named, resolved, unported, unp: Object.keys(unp), bad, unresolved }; };
+    return { S, withLayers, named, resolved, unported, unp: Object.keys(unp), bad, unresolved, falseUnported, falseU }; };
   const J = judge(IX);
   console.log('§ERP_HOVER_W E2 fields=' + fields.length + ' with_layers=' + J.withLayers + ' callouts_and_processes_named=' + J.named + ' lines_resolved=' + J.resolved + ' wrong_line=' + J.bad.length + ' unresolved=' + J.unresolved + ' unported=' + J.unported + ' (distinct ' + J.unp.length + ')');
   console.log('§ERP_HOVER_W E2 unported_first=' + J.unp.slice(0, 10).join(','));
   J.bad.slice(0, 5).forEach(b => console.log('  §ERP_HOVER_W E2 WRONG_LINE ' + b));
   (J.bad.unres || []).forEach(b => console.log('  §ERP_HOVER_W E2 UNRESOLVED ' + b));
   if (!fields.length) { console.log('§ERP_HOVER_W VERDICT INCONCLUSIVE no AD window field in the dictionary'); process.exit(2); }
+  console.log('§ERP_HOVER_W E2b false_unported=' + J.falseUnported + (J.falseU.length ? ' e.g. ' + J.falseU.join(' | ') : ''));
+  ok('E2b every UNPORTED the hover says agrees with the engine\'s own lookup (getCallout / the process registries)', J.falseUnported === 0);
   ok('E2 every layer that names a line lands on its registration, over all ' + fields.length + ' AD window fields', J.bad.length === 0 && J.unresolved === 0 && J.resolved > 0, J.withLayers + ' fields with layers beyond the dictionary row');
   // E3 — red control
   const used = (() => { for (const k of Object.keys(J.S)) for (const l of J.S[k].layers) if (l.at && l.kind === 'callout') return l.at; return null; })();
