@@ -399,7 +399,7 @@ function createDoor(opts) {
     let pl;
     try { pl = parseLine(text); } catch (e) { return journalled(base, text, envelope(base, 'error', { why: 'cannot read the line: ' + e.message })); }
     if (pl.blank) return null;
-    if (pl.question) return journalled(base, text, envelope(base, 'refused', { why: 'not a command: "' + pl.text.slice(0, 80) + '"', answer: { question: 'I could not read that as a command. A command is app.verb key=value … Which one do you mean? Type !help.', verbs: vocab.verbs.map(v => v.verb) } }));
+    if (pl.question) return journalled(base, text, envelope(base, 'refused', { why: 'not a command: "' + pl.text.slice(0, 80) + '"', answer: { question: 'I could not read that as a command. A command is app.verb key=value … Which one do you mean? Type help.', verbs: vocab.verbs.map(v => v.verb) } }));
     const entry = vocab.byVerb.get(pl.verb); base.verb = pl.verb;
     if (!entry) return journalled(base, text, envelope(base, 'error', { why: 'unknown verb: ' + pl.verb + '. Verbs: ' + vocab.verbs.map(v => v.verb).join(', ') }));
     const scope = ctx.scope || new Map(), args = {};
@@ -458,20 +458,20 @@ if (require.main === module) {
       else if (a[i] === '--list') form = 'list'; else if (a[i] === '--csv') form = 'csv'; else if (a[i] === '--json') form = 'json'; else if (a[i] === '--out') outFile = a[++i]; else rest.push(a[i]);
     }
     // the readable forms live in render.js (beside this file in a download, else in the repo); a missing one is named with its curl line
-    const needRender = form !== 'json' || outFile || script || (rest.length === 1 && /^\s*(!help|help|\?)(\s|$)/.test(rest[0]));
+    const needRender = form !== 'json' || outFile || script || (rest.length === 1 && /^\s*(help|\?)(\s|$)/.test(rest[0]));
     let R = null; if (needRender) { if (missingFiles(['render.js']).length) { console.error('§DOOR FAIL render.js is not beside door.js. Fetch it:\n' + curlFor(['render.js'])); process.exit(1); } R = require(locate('render.js')); }
-    // §21 /M: the terminal menu (mis.js --menu, the list screen's driver). It is a front end only: every step it takes is a door line. `/M role=102` or `/M` then role=102 as its own word
-    if (rest.length && /^\/m(\s|$)/i.test(rest[0])) {
+    // §21 the terminal menu (mis.js --menu, the list screen's driver): `menu` (was `/M`, retired 2026-11-15, CLI_ERP_IVR §22.9). A front end only: every step it takes is a door line. `menu role=102`
+    if (rest.length && /^menu(\s|$)/i.test(rest[0])) {
       const words = rest[0].trim().split(/\s+/).slice(1).concat(rest.slice(1)), mis = path.join(__dirname, 'mis.js');
-      if (!fs.existsSync(mis)) { console.error('§DOOR FAIL /M needs mis.js beside door.js (a bim-ootb checkout)'); process.exit(1); }
+      if (!fs.existsSync(mis)) { console.error('§DOOR FAIL menu needs mis.js beside door.js (a bim-ootb checkout)'); process.exit(1); }
       const r = require('child_process').spawnSync(process.execPath, [mis, '--menu'].concat(words), { stdio: 'inherit', env: process.env });
       process.exit(r.status == null ? 1 : r.status);
     }
     if (rest.length === 1 && R && R.isHelp(rest[0])) {   // reads nothing, runs nothing, not journalled; the same text for every actor
       let vocab; try { vocab = loadVocab(); } catch (e) { console.error('§DOOR FAIL ' + e.message); process.exit(1); }
-      const h = R.help(vocab, rest[0]); (h.ok ? process.stdout : process.stderr).write(h.text); console.error('§DOOR help topic=' + JSON.stringify(rest[0].replace(/^\s*(!help|help|\?)/, '').trim()) + ' ok=' + h.ok); process.exit(h.ok ? 0 : 1);
+      const h = R.help(vocab, rest[0]); (h.ok ? process.stdout : process.stderr).write(h.text); console.error('§DOOR help topic=' + JSON.stringify(rest[0].replace(/^\s*(help|\?)/, '').trim()) + ' ok=' + h.ok); process.exit(h.ok ? 0 : 1);
     }
-    if (!script && !o.confirm && !o.claims && rest.length !== 1) { console.error('usage: node common/door/door.js [--actor human|ai] [--request ID] [--journal FILE] [--json|--list|--csv] [--out FILE] \'app.verb key=value …\'   |   --script FILE|- [--dry]   |   --claims   |   --confirm REQUEST_ID   |   \'!help\''); process.exit(2); }
+    if (!script && !o.confirm && !o.claims && rest.length !== 1) { console.error('usage: node common/door/door.js [--actor human|ai] [--request ID] [--journal FILE] [--json|--list|--csv] [--out FILE] \'app.verb key=value …\'   |   --script FILE|- [--dry]   |   --claims   |   --confirm REQUEST_ID   |   \'help\''); process.exit(2); }
     // §12.14 --dry: the whole file runs on a COPY (the op-log named by BIM_OBJECT_OPLOG, this folder's own files, a new journal) in a temp folder; a later line sees an earlier line's write; the copy is deleted at the end
     let dry = null;
     if (o.dry) {

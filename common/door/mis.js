@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: MIT
 // ⚠ DO NOT REMOVE — mis.js: the Node driver of the MIS list screen (bim-compiler prompts/CLI_ERP_IVR.md §14). The screen logic is common/door/mis_core.js (pure); this file only
 // (1) runs each effect line through the door (journalled, claim-checked: createDoor().runLine), printing "-> <line>" first, (2) feeds the envelope back, (3) draws the screen, (4) reads keys.
-// Menu (CLI_ERP_IVR §21): node common/door/mis.js --menu [role=R] [--plain] — or `door.js /M` — the ERP menu (menu_core.js, the door's mis.menu); Enter on a window opens this list screen on it, Esc comes back.
+// Menu (CLI_ERP_IVR §21): node common/door/mis.js --menu [role=R] [--plain] — or `door.js menu` / `red1 menu` — the ERP menu (menu_core.js, the door's mis.menu); Enter on a window opens this list screen on it, Esc comes back.
 // Usage: node common/door/mis.js kind="Business Partner" [name=Standard] [limit=10] [role=103] [--plain]   (role: an AD_Role id put on every door line, §17; without it nothing is filtered)      keys: one per whitespace-separated token on stdin (Up Down Left Right Tab Enter Esc PageDown, a letter, a digit),
 //   or, on a terminal without --plain, the arrow keys / Enter / Esc / Tab / PageDown. Nothing is written until a chip is run; Delete asks y/N first.
 'use strict';

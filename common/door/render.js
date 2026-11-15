@@ -1,9 +1,9 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
 // SPDX-License-Identifier: MIT
 //
-// # ⚠ DO NOT REMOVE — render.js: the door's readable forms. READ THE §-LOG after every run. One envelope, three renderings (--json | --list | --csv), and !help.
-// Spec: bim-compiler prompts/NEURO_SYMBOLIC_ORDER_CONTRACT.md §R.V items 9 (results as a list / into a file) and 10 (!help). Witnesses: W-DOOR-OUT, W-DOOR-HELP.
-// Nothing here runs an engine or reads anything but the envelope it is handed and verbs.json. Every word of !help comes from the vocabulary (never a hand list).
+// # ⚠ DO NOT REMOVE — render.js: the door's readable forms. READ THE §-LOG after every run. One envelope, three renderings (--json | --list | --csv), and help.
+// Spec: bim-compiler prompts/NEURO_SYMBOLIC_ORDER_CONTRACT.md §R.V items 9 (results as a list / into a file) and 10 (help; `help` retired 2026-11-15, CLI_ERP_IVR §22.9). Witnesses: W-DOOR-OUT, W-DOOR-HELP.
+// Nothing here runs an engine or reads anything but the envelope it is handed and verbs.json. Every word of help comes from the vocabulary (never a hand list).
 'use strict';
 const path = require('path');
 
@@ -61,20 +61,20 @@ function inside(folder, file) {
   return p === root || p.indexOf(root + path.sep) === 0 ? p : null;
 }
 
-// ───────────── !help : generated from the vocabulary ─────────────
+// ───────────── help : generated from the vocabulary ─────────────
 const HARM_WORDS = { read: 'reads only', trial: 'tries it on a copy, changes nothing real', writes: 'writes', posts: 'posts to the books', sends: 'sends something outside' };
 function exampleOf(e) {
   const parts = e.inputs.filter(i => i.required && i.example != null).map(i => i.name + '=' + (/[\s"]/.test(String(i.example)) ? JSON.stringify(String(i.example)) : i.example));
   return e.verb + (parts.length ? ' ' + parts.join(' ') : '');
 }
-function isHelp(line) { return /^\s*(!help|help|\?)(\s|$)/.test(line); }
+function isHelp(line) { return /^\s*(help|\?)(\s|$)/.test(line); }
 function help(vocab, line) {
   if (process.env.HELP_BREAK === 'handlist') vocab = { verbs: vocab.verbs.slice(0, -2), byVerb: vocab.byVerb };   // the witness's falsifier: a stale hand list
-  const topic = String(line).replace(/^\s*(!help|help|\?)/, '').trim(), verbs = vocab.verbs, apps = [];
+  const topic = String(line).replace(/^\s*(help|\?)/, '').trim(), verbs = vocab.verbs, apps = [];
   verbs.forEach(v => { if (apps.indexOf(v.app) < 0) apps.push(v.app); });
   const row = (e) => '  ' + exampleOf(e).padEnd(64) + '  ' + e.title;
   if (!topic) {
-    const out = ['Common commands (type !help <app> for all of an app, !help <app.verb> for one, !help all for everything):'];
+    const out = ['Common commands (type help <app> for all of an app, help <app.verb> for one, help all for everything):'];
     apps.forEach(a => {
       const all = verbs.filter(v => v.app === a), com = all.filter(v => v.common);
       if (com.length) out.push('', a + ' (' + com.length + ' of ' + all.length + ')', ...com.map(row));

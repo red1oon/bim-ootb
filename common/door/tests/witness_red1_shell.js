@@ -60,9 +60,9 @@ const k = kit('W-RED1-SHELL'), RED1 = path.join(ROOT, 'common/door/red1.js'), BR
     'sha ' + before + ' → ' + after + ' statuses=' + dr.envs.map(x => x.status).join('/'));
 
   // S4 help in a session = the door's help text; the journal does not move
-  const eD = fresh('S4'), dh = await run(DOOR, eD, ['!help']), jBefore = lines(jOf('S4')).length;
+  const eD = fresh('S4'), dh = await run(DOOR, eD, ['help']), jBefore = lines(jOf('S4')).length;
   const sh = await run(RED1, eD, [], 'help verbs\n'), sw = await run(RED1, eD, [], 'help\n'), WN = Object.keys(JSON.parse(fs.readFileSync(path.join(ROOT, 'common/door/vocab/words.json'), 'utf8')).words), missing = WN.filter(w => !new RegExp('^  ' + w + ' ', 'm').test(sw.out));
-  k.chk('S4 `help verbs` in a session prints exactly the door\'s `!help` text, `help` lists every word of words.json, and neither journals anything', dh.out.length > 50 && sh.out === dh.out && !missing.length && WN.length > 10 && lines(jOf('S4')).length === jBefore,
+  k.chk('S4 `help verbs` in a session prints exactly the door\'s `help` text, `help` lists every word of words.json, and neither journals anything', dh.out.length > 50 && sh.out === dh.out && !missing.length && WN.length > 10 && lines(jOf('S4')).length === jBefore,
     'door help bytes=' + dh.out.length + ' session bytes=' + sh.out.length + ' words listed=' + (WN.length - missing.length) + '/' + WN.length + ' journal ' + jBefore + '→' + lines(jOf('S4')).length);
 
   // S5 a refused line does not end the session
