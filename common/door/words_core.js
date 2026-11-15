@@ -14,7 +14,8 @@
     var buildings = (o.buildings || []).slice();
     if (!o.msg || typeof o.msg.t !== 'function') throw new Error('words_core: no message catalog handed in (o.msg = MsgCore.create(vocab/messages.json))');
     var M = o.msg.t;   // the person's text comes from the catalog (bim-compiler prompts/VOCAB_MESSAGE_CATALOG.md §3, W-MSG-CATALOG)
-    var SKIP = '\u0000leave-out';   // §25: the pick-list item that leaves an optional parameter out (never a value a record can have)
+    var SKIP = '\u0000leave-out';
+    var LEVELS = ['short', 'student'];   // §0: Student is a LEVEL beside the language (VOCAB_MESSAGE_CATALOG.md)   // §25: the pick-list item that leaves an optional parameter out (never a value a record can have)
     function init() { return { building: null, kind: null, columns: null, props: null, erp: null, ecolumns: null, eprops: null, role: null, pending: null, last: null, menu: null, pickFor: null, paras: null, runFor: null, asking: null }; }
     function prompt(st) {
       var where = st.erp ? st.erp : (st.building ? st.building + (st.kind ? '/' + st.kind : '') : '');
@@ -39,7 +40,8 @@
     }
     function usage(w) { return M('words.usage', w, words[w].help, words[w].forms.map(function (f) { return f.in; }).join(', ')); }
     // a word-line -> {line} | {error}
-    function expand(st, toks) {
+    function expand(st, toks, xo) {
+      var live = interactive && !(xo && xo.plain);
       var w = toks[0].text, def = words[w];
       if (!def) return { error: M('words.not_a_word', w) };
       if (w === 'ls' && st.last && (toks.length === 1 || (toks.length === 2 && toks[1].text.indexOf('=') < 0)))   // §22.6: the details of the last summary, the SAME line; §22.7 `ls <glob>` filters its rows (the shell's view: `line | glob`)
@@ -61,7 +63,7 @@
       var colsHere = verb.indexOf('object.') === 0 ? st.columns : st.ecolumns;
       Object.keys(form.defaults || {}).forEach(function (k) { if (args[k] != null) return; var v = form.defaults[k]; if (v === '$columns') { if (colsHere && colsHere.length) args[k] = colsHere.join(','); } else args[k] = v; });
       // §25 D13: `run` in a session asks for each parameter not typed, one at a time, in AD_Process_Para SeqNo order (the legacy dialog's order), read by ONE door line
-      if (form.ask === 'params' && interactive && args.name) {
+      if (form.ask === 'params' && live && args.name) {
         var PR = st.paras; if (!PR || PR.name !== args.name) return { params: { name: args.name } };
         var nx = PR.rows.filter(function (q) { var c = q.ColumnName; return c && !Object.keys(args).some(function (k2) { return k2.toLowerCase() === c.toLowerCase(); }) && PR.skipped.indexOf(c) < 0; });
         if (brk === 'paramorder' && nx.length > 1) nx = nx.slice().reverse();   // W-RED1-RUN falsifier: the questions out of SeqNo order (must FAIL R2)
@@ -69,7 +71,7 @@
       }
       // §22.8 R5: a required input still missing opens a pick menu of its legal values (interactive sessions only; elsewhere the door refuses, naming it)
       var miss = e.inputs.filter(function (i) { return i.required && args[i.name] == null; })[0];
-      if (miss && interactive && Menu && choices[miss.type]) return { pick: { input: miss.name, type: miss.type, word: w, verb: verb } };
+      if (miss && live && Menu && choices[miss.type]) return { pick: { input: miss.name, type: miss.type, word: w, verb: verb } };
       return { line: lineOf(verb, args), verb: verb, args: args, confirm: !!def.confirm, view: form.summary ? 'summary' : null, draw: form.draw || null };
     }
     function step(st, input) {
@@ -145,7 +147,7 @@
       if (w === 'cd') {
         st.last = null;
         var arg = toks.slice(1).map(function (t) { return t.text; }).join(' ');
-        if (!arg || arg === '/') { var r0 = init(); r0.role = st.role; st = r0; return out(); }
+        if (!arg || arg === '/') { var r0 = init(); r0.role = st.role; if (st.level) r0.level = st.level; st = r0; return out(); }
         if (arg === '..') { if (st.kind) { st.kind = null; st.columns = null; } else if (st.building) st.building = null; else if (st.erp) { st.erp = null; st.ecolumns = null; } return out(); }
         var b = buildings.filter(function (x) { return x.toLowerCase() === arg.toLowerCase(); })[0];
         if (b) { st.building = b; st.kind = null; st.columns = null; st.erp = null; st.ecolumns = null; screen.push(M('words.cd_building', b)); return out(); }
@@ -159,6 +161,8 @@
         screen.push(k.length ? k.join(' ') : M('words.pwd_nowhere')); return out();
       }
       if (w === 'role') { var rr = toks[1] ? toks[1].text : ''; if (rr && !/^\d+$/.test(rr)) { screen.push(M('words.role_not_number', rr)); return out(); } st.role = rr || null; screen.push(rr ? M('words.role_set', rr) : M('words.role_none')); return out(); }
+      if (w === 'level') { var lv = toks[1] ? toks[1].text.toLowerCase() : 'short'; if (LEVELS.indexOf(lv) < 0) { screen.push(M('words.level_bad', toks[1].text, LEVELS.join(', '))); return out(); }
+        if (lv === 'short') delete st.level; else st.level = lv; screen.push(lv === 'short' ? M('words.level_short') : M('words.level_student')); return out(); }   // §4 P3a: a person's setting beside the language
       var x; try { x = expand(st, toks); } catch (err) { x = { error: err.message }; }
       if (x.error) { screen.push(x.error); return out(); }
       if (x.params) { st.runFor = { text: text, name: x.params.name }; effects.push({ line: lineOf('mis.list', { kind: 'AD_Process_Para', columns: 'ColumnName,Name,IsMandatory,DefaultValue,SeqNo,AD_Reference_ID', sort: 'SeqNo', limit: '50', master: 'Process/' + x.params.name }), purpose: 'run-paras' }); return out(); }
@@ -197,7 +201,27 @@
       return rows;
     }
     function pad(rows) { var wid = Math.max.apply(null, rows.map(function (r) { return r[0].length; }).concat([4])); return rows.map(function (r) { return '  ' + r[0] + new Array(wid - r[0].length + 3).join(' ') + r[1]; }); }
-    function helpText(topic) {
+    // §4 P3a: the Student block of one form, every fact from the vocabulary: the verb's description and its inputs (verbs.json), the example expanded in the sample place
+    var SAMPLE = { building: { building: 'Duplex' }, kind: { building: 'Duplex', kind: 'Element', columns: ['guid'] }, erp: { erp: 'Order', ecolumns: ['DocumentNo'] }, any: {} };
+    function studentBlock(w, f) {
+      var sp = SAMPLE[f.in] || {}, st = Object.assign(init(), sp), x, lines = [];
+      var exT = String(f.ex || w).replace(/<([A-Za-z_]\w*)>=<([^<>\s]+)>/g, '$1=$2');   // a placeholder pair <Key>=<value> is read as Key=value, the shape the word's own help shows (new Column=value …)
+      try { x = expand(st, tokenize(exT), { plain: true }); } catch (err) { x = { error: err.message }; }
+      if (brk === 'dropctx' && x.args) { delete x.args.building; x.line = lineOf(x.verb, x.args); }   // W-HELP-STUDENT falsifier: the worked line loses its building (must FAIL S3)
+      var e = x.line && verbs[x.verb]; if (!e) return lines;
+      var dsc = e.description; if (brk === 'swapdesc') { var vs = Object.keys(verbs), o2 = verbs[vs[(vs.indexOf(x.verb) + 1) % vs.length]]; dsc = o2.description; }   // W-HELP-STUDENT falsifier (must FAIL S2)
+      if (dsc) lines.push(M('words.student.does', dsc));
+      var inp = function (n) { return e.inputs.filter(function (i) { return i.name === n; })[0]; };
+      var you = (f.pick ? [M('words.student.action', f.pick.join(', '))] : []).concat((f.args || []).map(function (n) { var i = inp(n); return i && i.description ? M('words.student.input', n, i.description) : n; }));
+      lines.push(you.length ? M('words.student.you_type', you.join(M('words.student.sep'))) : M('words.student.you_type_none'));
+      var ctx = {}; ctxArgs(st, e, ctx); var typed = tokenize(exT).slice(1).map(function (t) { var m = /^([A-Za-z_]\w*)=/.exec(t.text); return m ? m[1] : null; });
+      var from = Object.keys(ctx).filter(function (n) { return typed.indexOf(n) < 0 && x.args[n] === ctx[n]; });
+      if (from.length) lines.push(M('words.student.from_here', from.join(', ')));
+      var place = f.in === 'kind' ? sp.building + '/' + sp.kind : f.in === 'building' ? sp.building : f.in === 'erp' ? sp.erp : null;
+      lines.push(place ? M('words.student.example_in', place, x.line) : M('words.student.example', x.line));
+      return lines;
+    }
+    function helpText(topic, level) {
       topic = String(topic || '').trim();
       if (!topic) {
         var nw = function (g) { var seen = {}; formsOf(g).forEach(function (r) { seen[r.word] = 1; }); return Object.keys(seen).length; }, tw = Math.max.apply(null, GN.map(function (g) { return G[g].title.length; }));
@@ -217,7 +241,7 @@
       }
       if (words[topic]) {
         var d = words[topic];
-        return M('words.help_word_head', topic, d.help) + '\n' + d.forms.map(function (f) { var vb = f.verb.replace('{1}', M('words.help_action_placeholder')); return f.codes ? M('words.help_word_form_codes', PLACE[f.in], f.ex || topic, vb, Object.keys(f.codes).map(function (c) { return c + ' ' + f.codes[c]; }).join(', ')) : M('words.help_word_form', PLACE[f.in], f.ex || topic, vb); }).join('\n') + '\n';
+        return M('words.help_word_head', topic, d.help) + '\n' + d.forms.map(function (f) { var vb = f.verb.replace('{1}', M('words.help_action_placeholder')); var fl = f.codes ? M('words.help_word_form_codes', PLACE[f.in], f.ex || topic, vb, Object.keys(f.codes).map(function (c) { return c + ' ' + f.codes[c]; }).join(', ')) : M('words.help_word_form', PLACE[f.in], f.ex || topic, vb); return level === 'student' ? [fl].concat(studentBlock(topic, f)).join('\n') : fl; }).join('\n') + '\n';
       }
       return null;
     }
