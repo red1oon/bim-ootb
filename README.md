@@ -106,7 +106,7 @@ A proven kernel and architecture, not a finished ERP. The constituent techniques
 
 ## Architecture
 
-140+ vanilla JS modules (≈100 BIM + 40 ERP). No framework, no build step, no server dependency.
+About 2,600 JS and HTML files of app code (viewer 729, modeller 643, erp 843, common 135, plus teams, capex and others; measured 2026-11-15 on `main`, excluding tests, witnesses, sandbox and scripts; `common/lib` holds third-party code). Vanilla JS: no framework, no build step, no server dependency.
 
 Application state lives in **two SQLite databases** queried via sql-wasm — one for the BIM model, one for the ERP Application Dictionary. Three.js r184 ESM handles rendering with BatchedMesh and distance-based LOD; IFC files are parsed client-side by web-ifc and stored in IndexedDB. Both engines share one signed operation log.
 
