@@ -35,6 +35,16 @@
       E + ' ' + n(v.unknown) + ' not judged'
     ];
   }
-  var API = { table: table, cell: cell, funnel: funnel };
+  // THE NEXT-STEP TREE (§22.8, R6): a document's legal actions as erp.actions answers them (its status, then each code in the engine's order); a code the shell has
+  // a word for shows the line that runs it (verbOf: code -> the do word, from erp_cli's own ACT table, handed in). Nothing here judges what is legal.
+  function nextTree(a, verbOf, o) {
+    o = o || {}; var A = !!o.ascii, T = A ? '+-' : '├─', E = A ? '\\-' : '└─';
+    if (!a || !a.document || !Array.isArray(a.legal)) return null;
+    var codes = o.brk === 'dropone' ? a.legal.slice(0, -1) : a.legal, no = a.document.number, d = a.document;
+    var out = [d.kind + ' ' + no + '  status ' + a.docStatus + (codes.length ? '' : '  (no action is legal now)')];
+    codes.forEach(function (c, i) { var v = verbOf[c]; out.push((i === codes.length - 1 ? E : T) + ' ' + c + (v ? '  → do ' + v + ' ' + no : '  (no red1 word for it yet)')); });
+    return out;
+  }
+  var API = { table: table, cell: cell, funnel: funnel, nextTree: nextTree };
   if (typeof module !== 'undefined' && module.exports) module.exports = API; else root.DrawCore = API;
 })(this);
