@@ -35,6 +35,10 @@
     receivable: function (t, bp, s) { return vc(t, 'c_bp_customer_acct', 'c_receivable_acct', 'c_bpartner_id', bp, s); },
     liability: function (t, bp, s) { return vc(t, 'c_bp_vendor_acct', 'v_liability_acct', 'c_bpartner_id', bp, s); },
     revenue: function (t, p, s) { return vc(t, 'm_product_acct', 'p_revenue_acct', 'm_product_id', p, s); },
+    // ProductCost.getAccount(P_Revenue) with NO product -> getAccountDefault :250-290: the P_Revenue_Acct of the DEFAULT product category's accounting row (IsDefault DESC, Created) for the schema - not
+    //   C_AcctSchema_Default. MEASURED on :8108 (W-PROJ-PROCS-LEGACY SG3): a product-less invoice line posts its revenue there (41000).
+    revenueNoProduct: function (t, s) { var r = t.q('SELECT pca.p_revenue_acct AS a FROM m_product_category pc, m_product_category_acct pca WHERE pc.m_product_category_id=pca.m_product_category_id AND pca.c_acctschema_id=? ORDER BY pc.isdefault DESC, pc.created', [s])[0];
+      if (!r || r.a == null) return null; var v = t.q('SELECT account_id AS e FROM c_validcombination WHERE c_validcombination_id=?', [r.a])[0]; return v ? v.e : null; },
     expense: function (t, p, s) { return vc(t, 'm_product_acct', 'p_expense_acct', 'm_product_id', p, s); },
     cogs: function (t, p, s) { return vc(t, 'm_product_acct', 'p_cogs_acct', 'm_product_id', p, s); },
     asset: function (t, p, s) { return vc(t, 'm_product_acct', 'p_asset_acct', 'm_product_id', p, s); },
@@ -833,9 +837,8 @@
         F.line(ACCT.taxDue(trx, t.c_tax_id, as.c_acctschema_id), cur, cm ? t.taxamt : null, cm ? null : t.taxamt, Object.assign({ c_tax_id: t.c_tax_id, qty: 0 }, base)); });
       trx.find('c_invoiceline', { c_invoice_id: inv.c_invoice_id }, ['line']).forEach(function (l) {
         if (Y(l.isdescription)) return;   // Doc_Invoice.loadLines :197 `if (line.isDescription()) continue;` - Generate Invoices adds description lines (InvoiceGenerate); they never post
-        if (!nz(l.m_product_id) && !nz(l.c_charge_id)) { F.err = 'description invoice line (no product, no charge) posting not ported — named'; return; }
         // DocLine.getAccount(P_Revenue) DocLine.java:447-461: a line with NO product and a charge posts to MCharge.getAccount (C_Charge_Acct.Ch_Expense_Acct), both SO and PO (W-IMPORT-INVOICE: the open-AR Opening Charge)
-        F.line(nz(l.m_product_id) ? ACCT.revenue(trx, l.m_product_id, as.c_acctschema_id) : ACCT.chargeExpense(trx, l.c_charge_id, as.c_acctschema_id), cur, cm ? l.linenetamt : null, cm ? null : l.linenetamt, Object.assign({}, base, { line_id: l.c_invoiceline_id, m_product_id: l.m_product_id,
+        F.line(nz(l.m_product_id) ? ACCT.revenue(trx, l.m_product_id, as.c_acctschema_id) : nz(l.c_charge_id) ? ACCT.chargeExpense(trx, l.c_charge_id, as.c_acctschema_id) : ACCT.revenueNoProduct(trx, as.c_acctschema_id), cur, cm ? l.linenetamt : null, cm ? null : l.linenetamt, Object.assign({}, base, { line_id: l.c_invoiceline_id, m_product_id: l.m_product_id,
           c_uom_id: l.c_uom_id, c_tax_id: l.c_tax_id, qty: N(cm ? D(l.qtyinvoiced) : D(l.qtyinvoiced).negate()), description: inv.documentno + ' #' + l.line + (hasDesc(l.description) ? ' (' + l.description + ')' : hasDesc(inv.description) ? ' (' + inv.description + ')' : '') })); });
       return !F.err;
     },
