@@ -3,17 +3,18 @@
 // SPDX-License-Identifier: MIT
 // ⚠ DO NOT REMOVE — mis.js: the Node driver of the MIS list screen (bim-compiler prompts/CLI_ERP_IVR.md §14). The screen logic is common/door/mis_core.js (pure); this file only
 // (1) runs each effect line through the door (journalled, claim-checked: createDoor().runLine), printing "-> <line>" first, (2) feeds the envelope back, (3) draws the screen, (4) reads keys.
+// Menu (CLI_ERP_IVR §21): node common/door/mis.js --menu [role=R] [--plain] — or `door.js /M` — the ERP menu (menu_core.js, the door's mis.menu); Enter on a window opens this list screen on it, Esc comes back.
 // Usage: node common/door/mis.js kind="Business Partner" [name=Standard] [limit=10] [role=103] [--plain]   (role: an AD_Role id put on every door line, §17; without it nothing is filtered)      keys: one per whitespace-separated token on stdin (Up Down Left Right Tab Enter Esc PageDown, a letter, a digit),
 //   or, on a terminal without --plain, the arrow keys / Enter / Esc / Tab / PageDown. Nothing is written until a chip is run; Delete asks y/N first.
 'use strict';
 const path = require('path'), fs = require('fs');
-const Core = require('./mis_core.js'), { createDoor } = require('./door.js'), EC = require('./erp_cli.js');
+const Core = require('./mis_core.js'), MenuCore = require('./menu_core.js'), { createDoor } = require('./door.js'), EC = require('./erp_cli.js');
 const KEYS = { Up: 'Up', Down: 'Down', Left: 'Left', Right: 'Right', Tab: 'Tab', Enter: 'Enter', Esc: 'Esc', PageDown: 'PageDown', PageUp: 'PageUp' };
 const actionVerbs = () => { const m = {}; Object.keys(EC.ACT).forEach(v => { m[EC.ACT[v]] = 'erp.' + v; }); return m; };   // DocAction code -> the door verb that runs it (erp_cli's own table, not a second one)
 function parse(argv) {
   const o = { filters: [], limit: 10, plain: false };
-  argv.forEach(a => { if (a === '--plain') o.plain = true; else { const m = /^([A-Za-z_]\w*)=([\s\S]*)$/.exec(a); if (!m) throw new Error('usage: mis.js kind=K [column=value ...] [limit=N] [role=R] [--plain]; got "' + a + '"'); if (m[1] === 'kind') o.kind = m[2]; else if (m[1] === 'limit') o.limit = Number(m[2]); else if (m[1] === 'role') o.role = m[2]; else o.filters.push({ col: m[1], value: m[2] }); } });
-  if (!o.kind) throw new Error('kind= is required');
+  argv.forEach(a => { if (a === '--plain') o.plain = true; else if (a === '--menu') o.menu = true; else { const m = /^([A-Za-z_]\w*)=([\s\S]*)$/.exec(a); if (!m) throw new Error('usage: mis.js kind=K [column=value ...] [limit=N] [role=R] [--plain]; got "' + a + '"'); if (m[1] === 'kind') o.kind = m[2]; else if (m[1] === 'limit') o.limit = Number(m[2]); else if (m[1] === 'role') o.role = m[2]; else o.filters.push({ col: m[1], value: m[2] }); } });
+  if (!o.kind && !o.menu) throw new Error('kind= is required (or --menu, the whole menu)');
   return o;
 }
 async function session(o, nextKey, out, door) {
@@ -34,6 +35,29 @@ async function session(o, nextKey, out, door) {
   }
   return { lines, state: st };
 }
+// the menu, then a list screen on the window picked (the same session() as `mis.js kind=`), then back to the menu: every step is a door line (§21)
+async function menuSession(o, nextKey, out, door) {
+  let st = MenuCore.create({ role: o.role, brk: process.env.MENU_SCREEN_BREAK || '' }), lines = [], opened = [];
+  const apply = async (input) => {
+    let queue = [input], screen = null;
+    while (queue.length) {
+      const r = MenuCore.step(st, queue.shift()); st = r.state; screen = r.screen;
+      for (const e of r.effects) {
+        if (e.open) { opened.push(e.open.kind); out('-> (open ' + e.open.name + ': the list screen on ' + e.open.kind + ')');
+          const sub = await session({ kind: e.open.kind, filters: [], limit: o.limit, role: o.role }, nextKey, out, door); lines.push.apply(lines, sub.lines); queue.push({ key: '__back' }); continue; }
+        out('-> ' + e.line); lines.push(e.line); const env = await door.runLine(e.line, { actor: 'human' }); queue.push({ result: { purpose: e.purpose, envelope: env } });
+      }
+    }
+    return screen;
+  };
+  let screen = await apply({ key: '__start' }); out(MenuCore.plain(screen).join('\n'));
+  for (;;) {
+    if (st.phase === 'quit' || st.phase === 'dead') break;
+    const k = await nextKey(); if (k == null) break;
+    const inp = typeof k === 'object' ? k : { key: k }; out('key ' + (inp.text != null ? '=' + inp.text : inp.key)); screen = await apply(inp); out(MenuCore.plain(screen).join('\n'));
+  }
+  return { lines, state: st, opened };
+}
 async function main(argv) {
   let o; try { o = parse(argv); } catch (e) { console.error('§MIS FAIL ' + e.message); return 2; }
   const door = createDoor({}), toks = [];
@@ -53,10 +77,10 @@ async function main(argv) {
   }
   const out = (s) => process.stdout.write((tty ? s.replace(/^key .*\n?/, '') : s) + '\n');
   const sf = process.env.MIS_SESSION_FILE;   // a terminal draws screens only; the door lines it ran go to MIS_SESSION_FILE (a replayable door script), one per line
-  const r = await session(o, nextKey, tty ? (s) => { if (/^-> /.test(s)) { if (sf) fs.appendFileSync(sf, s.slice(3) + '\n'); return; } process.stdout.write('\x1b[2J\x1b[H' + s.replace(/\n/g, '\r\n') + '\r\n'); } : out, door);
+  const r = await (o.menu ? menuSession : session)(o, nextKey, tty ? (s) => { if (/^-> /.test(s)) { if (sf) fs.appendFileSync(sf, s.slice(3) + '\n'); return; } process.stdout.write('\x1b[2J\x1b[H' + s.replace(/\n/g, '\r\n') + '\r\n'); } : out, door);
   if (tty) process.stdin.setRawMode(false);
   console.error('§MIS session lines=' + r.lines.length + ' phase=' + r.state.phase);
   process.exit(0);
 }
-module.exports = { session, parse, actionVerbs };
+module.exports = { session, menuSession, parse, actionVerbs };
 if (require.main === module) main(process.argv.slice(2));
