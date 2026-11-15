@@ -13,7 +13,9 @@ const fs = require('fs'), path = require('path'), crypto = require('crypto');
 const { kit, tmp, run, ROOT } = require('./_kit');
 const D = require('../door.js');
 const k = kit('W-DOOR-SHAPE');
-const LEGACY_SHA = '31e328c54be57ab5ccd4df632c9443f88a896f382c0d7908d5f8ac4d56c27e25';   // sha256(JSON.stringify of the 4 tools as origin/main bim_mcp.js published them)
+// sha256(JSON.stringify of the 4 published tools). Was 31e328c5…7e25 (the 4 tools as origin/main bim_mcp.js published them, pre-D1). CHANGED ON PURPOSE 2026-11-15:
+// viewer_clashes gained ONE optional input `rows` (a number or "all"; bim-compiler prompts/CLI_ERP_IVR.md §22.6, bim-ootb #3062); every request valid before means the same now.
+const LEGACY_SHA = 'a71506d5d1786865f96b67e18a4abc8b5a2433b91d7406e2b92a2bfd06ac6660';
 const STUB = path.join(__dirname, 'stub_cli.js'), count = tmp('door_cnt_'), journal = tmp('door_j_');
 process.env.STUB_COUNT = count;
 const spawned = () => (fs.existsSync(count) ? fs.readFileSync(count, 'utf8').trim().split('\n').filter(Boolean).length : 0);
@@ -66,7 +68,7 @@ const spawned = () => (fs.existsSync(count) ? fs.readFileSync(count, 'utf8').tri
   k.chk('FRESH every entry\'s witness file exists', !noW.length, 'bad=' + noW.map(e => e.verb + '->' + e.witness).join(','));
   k.chk('FRESH harm and actors are from the vocabulary', entries.every(e => D.HARM.indexOf(e.harm) >= 0 && e.actors.every(a => a === 'human' || a === 'ai')));
   const tools = door.mcpTools(), sha = crypto.createHash('sha256').update(JSON.stringify(tools)).digest('hex');
-  k.chk('FRESH tools/list built from verbs.json = the pre-D1 published bytes (names, descriptions, schemas)', sha === LEGACY_SHA && tools.length === 4, 'sha=' + sha.slice(0, 12) + ' tools=' + tools.map(t => t.name).join(','));
+  k.chk('FRESH tools/list built from verbs.json = the published bytes (pre-D1, plus viewer_clashes rows= §22.6)', sha === LEGACY_SHA && tools.length === 4, 'sha=' + sha.slice(0, 12) + ' tools=' + tools.map(t => t.name).join(','));
   // ask the live connector
   const { spawn } = require('child_process'); const srv = path.join(ROOT, 'modeller', 'tools', 'bim_mcp.js');
   const live = await new Promise((res) => { const p = spawn(process.execPath, [srv], { stdio: ['pipe', 'pipe', 'ignore'], env: Object.assign({}, process.env, { BIM_DOOR_JOURNAL: journal }) }); let b = ''; p.stdout.on('data', d => { b += d; if (b.indexOf('\n') >= 0) { p.kill(); try { res(JSON.parse(b.split('\n')[0]).result.tools); } catch (e) { res(null); } } }); p.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }) + '\n'); setTimeout(() => { p.kill(); res(null); }, 20000); });

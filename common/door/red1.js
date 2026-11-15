@@ -36,6 +36,22 @@ function makeShell(o) {
   const door = D.createDoor({ journal: o.journal }), vocab = D.loadVocab(), words = JSON.parse(fs.readFileSync(path.join(__dirname, 'vocab', 'words.json'), 'utf8'));
   const core = W.create({ vocab, words, tokenize: D.tokenize, pickColumns: M.pickColumns, buildings: buildingNames(), brk: process.env.WORDS_BREAK || '' });
   let st = core.init(), n = 0; const held = new Map(), G = require(path.join(__dirname, 'glob.js'));
+  // §22.8 / R7 the warm page: while the session is in a building, ONE headless Viewer page of it stays open (viewer_verbs.js __serve); the verbs find it through
+  // $VIEWER_SESSION and ask it instead of opening a page per line. RED1_WARM=off: no warm page (every line opens its own, as a line run alone does).
+  const warm = { building: null, child: null, file: path.join(os.tmpdir(), 'red1-' + process.pid + '-viewer.json') };
+  const warmTo = (b) => {
+    if (process.env.RED1_WARM === 'off' || b === warm.building) return;
+    if (warm.child) { try { warm.child.kill(); } catch (e) { /* gone */ } warm.child = null; }
+    try { fs.unlinkSync(warm.file); } catch (e) { /* none */ }
+    warm.building = b; if (!b) { delete process.env.VIEWER_SESSION; return; }
+    const vv = path.join(__dirname, '..', '..', 'viewer', 'tools', 'viewer_verbs.js'); if (!fs.existsSync(vv)) return;
+    fs.writeFileSync(warm.file, JSON.stringify({ building: b, ready: false }));
+    const log = fs.openSync(warm.file.replace(/\.json$/, '.log'), 'w');
+    warm.child = cp.spawn(process.execPath, [vv, '__serve', '--building', b, '--state', warm.file], { stdio: ['ignore', log, log], env: Object.assign({}, process.env, { __VIEWER_PARENT: String(process.pid) }) });
+    process.env.VIEWER_SESSION = warm.file;
+    say('warm start building=' + b + ' pid=' + warm.child.pid + ' state=' + warm.file);
+  };
+  process.on('exit', () => { if (warm.child) { try { warm.child.kill(); } catch (e) { /* gone */ } } [warm.file, warm.file.replace(/\.json$/, '.log')].forEach(f => { try { fs.unlinkSync(f); } catch (e) { /* none */ } }); });
   // the shell's row filter (§22.7): the answer's rows kept where ANY cell matches the glob (glob.js, the one reader); the envelope says so (match, matched)
   const viewOf = (e, match) => {
     if (!match || !e || !e.answer || !Array.isArray(e.answer.rows)) return e;
@@ -63,7 +79,7 @@ function makeShell(o) {
       const e = await exec(line, null, match); if (e) { envs.push(e); io.show(viewOf(e, match)); } return envs; }
     let r = core.step(st, { text });
     for (;;) {
-      st = r.state; r.screen.forEach(io.print);
+      st = r.state; r.screen.forEach(io.print); warmTo(st.building);
       if (!r.effects.length) break;
       const ef = r.effects[0], e = await exec(ef.line, ef.shown, ef.match);
       if (!e) break;
@@ -141,10 +157,8 @@ if (require.main === module) {
     if (rest.length === 1 && /^\s*menu(\s|$)/i.test(rest[0])) a[a.indexOf(rest[0])] = rest[0].replace(/^\s*menu/i, '/M');   // `red1 menu` = the door's terminal menu
     else if (rest.length === 1 && /^\s*\?/.test(rest[0])) a[a.indexOf(rest[0])] = rest[0].replace(/^\s*\?/, 'help');
     else if (rest.length === 1 && a.indexOf('--script') < 0 && (!isDoorLine(rest[0]) || /\s\|\s/.test(rest[0])) && !/^\s*(!help|help)(\s|$)/.test(rest[0])) {   // words, or a door line with the shell's `| glob`
-      wordShot(rest[0], o).then(c => process.exit(c)).catch(e => { say('FAIL ' + (e && e.stack || e)); process.exit(1); }); return;
-    }
-    process.exit(passThrough(a));
-  }
-  session(o).then(c => process.exit(c)).catch(e => { say('FAIL ' + (e && e.stack || e)); process.exit(1); });
+      wordShot(rest[0], o).then(c => process.exit(c)).catch(e => { say('FAIL ' + (e && e.stack || e)); process.exit(1); });
+    } else process.exit(passThrough(a));
+  } else session(o).then(c => process.exit(c)).catch(e => { say('FAIL ' + (e && e.stack || e)); process.exit(1); });
 }
 module.exports = { session, makeShell, buildingNames };
