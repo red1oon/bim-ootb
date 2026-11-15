@@ -95,6 +95,8 @@
       return null;
     }
 
+    // Col>Alt — the column is the part before '>' (legacy org.red1.ninja NewEmptyTable.addColumn L144-147; the Alt names the lookup column of a data sheet, not a column)
+    if (colName.indexOf('>') !== -1) colName = colName.slice(0, colName.indexOf('>'));
     // L#ColName=Value1/Value2/... — strip inline list values
     var listValues = null;
     if (prefix === 'L' && colName.indexOf('=') !== -1) {
@@ -102,6 +104,8 @@
       listValues = colName.slice(eqIdx + 1).split('/').map(function (v) { return v.trim(); });
       colName = colName.slice(0, eqIdx);
     }
+    // Col=a/b with another prefix: the column is the part before '='; the values make a list only for L# (NewEmptyTable.addColumn L148-152, L196). bim-compiler prompts/ERP_MIS_WINDOW_FROM_CSV.md §12.15 C2
+    if (colName.indexOf('=') !== -1) colName = colName.slice(0, colName.indexOf('='));
 
     if (!colName) return null;
 
