@@ -37,7 +37,10 @@
     function expand(st, toks) {
       var w = toks[0].text, def = words[w];
       if (!def) return { error: '"' + w + '" is not a word of red1 (type help) nor a door line (app.verb key=value)' };
-      if (w === 'ls' && st.last && toks.length === 1) return { line: st.last.line, verb: st.last.verb, args: st.last.args, view: 'rows' };   // §22.6: the details of the last summary, the SAME line
+      if (w === 'ls' && st.last && (toks.length === 1 || (toks.length === 2 && toks[1].text.indexOf('=') < 0)))   // §22.6: the details of the last summary, the SAME line; §22.7 `ls <glob>` filters its rows (the shell's view: `line | glob`)
+        return { line: st.last.line, verb: st.last.verb, args: st.last.args, view: 'rows', match: toks[1] ? toks[1].text : null };
+      if (w === 'ls' && toks.length > 1 && toks.slice(1).some(function (t) { return t.text.indexOf('=') < 0; }) && (st.kind || st.erp))
+        return { error: 'ls here filters a column: ls <column>=<glob>, e.g. ls ' + ((st.kind ? st.columns : st.ecolumns) || ['Name']).slice(-1)[0] + '=' + toks[1].text + '  (columns: ' + ((st.kind ? st.columns : st.ecolumns) || []).join(', ') + ')' };
       var here = where(st), form = def.forms.filter(function (f) { return fits(f, here); })[0];
       if (!form) return { error: w + ' works ' + def.forms.map(function (f) { return f.in === 'kind' ? 'in a kind (cd Element)' : f.in === 'building' ? 'in a building (cd Duplex)' : f.in === 'erp' ? 'in an ERP kind (cd "Business Partner")' : 'anywhere'; }).join(' or ') + '; you are ' + (here === 'any' ? 'nowhere yet' : 'in ' + (here === 'erp' ? st.erp : st.building + (st.kind ? '/' + st.kind : ''))) };
       var pos = [], args = {};
@@ -96,7 +99,7 @@
       if (w === 'role') { var rr = toks[1] ? toks[1].text : ''; if (rr && !/^\d+$/.test(rr)) { screen.push('role is a number (an AD_Role id), got ' + rr); return out(); } st.role = rr || null; screen.push(rr ? 'role ' + rr + ' on every line' : 'no role'); return out(); }
       var x; try { x = expand(st, toks); } catch (err) { x = { error: err.message }; }
       if (x.error) { screen.push(x.error); return out(); }
-      var eff = { line: x.line, purpose: 'run', view: x.view || null };
+      var eff = { line: x.line, purpose: 'run', view: x.view || null, match: x.match || null };
       if (x.view === 'summary') st.last = { line: x.line, verb: x.verb, args: x.args }; else if (x.view !== 'rows') st.last = null;
       if (brk === 'dropkey' && x.args.building) eff.shown = x.line.replace(/ building=\S+/, '');   // W-RED1-WORDS falsifier: the printed line lacks the context key
       if (x.confirm) { st.pending = x.line; screen.push(x.line + '   run it? y/N'); return out(); }
