@@ -12,6 +12,7 @@
 // answer is the engine's own JSON, unchanged. No AI parses anything here. No eval, no SQL, no shell: a verb can only name a CLI from the fixed table below.
 //   node common/door/door.js [--actor human] [--request ID] [--journal FILE] 'modeller.lines building=HospitalGarage'
 //   node common/door/door.js [--actor human] --script FILE|-          (several lines; named results flow downwards; stops at the first line that is not ok)
+//   node common/door/door.js --script FILE --dry                       (the whole file on a throw-away copy of the op-log and of this folder's files; nothing real changes. bim-compiler prompts/ERP_MIS_WINDOW_FROM_CSV.md §12.14, W-DOOR-SCRIPT)
 // Exit: 0 ok · 3 refused / claim / inconclusive (an answer, not a failure) · 1 error · 2 usage.
 'use strict';
 const fs = require('fs'), path = require('path'), os = require('os'), { spawn } = require('child_process');
@@ -37,7 +38,9 @@ const STATUS = ['ok', 'refused', 'claim', 'error', 'inconclusive'];
 // §0.6 detail 4. Only the local actors are wired; any other name (email, mobile, device, an outside system) has no proof here: read only, the rest is a claim.
 const ACTORS = { human: { proof: 'local-session', allow: HARM }, ai: { proof: 'local-user', allow: ['read', 'trial'] } };
 const NO_PROOF = { proof: 'none', allow: ['read'] };
-const BREAK = () => process.env.DOOR_BREAK || '';   // the witnesses' falsifiers: shape | float | halve | confirm_ai | confirm_twice
+const BREAK = () => process.env.DOOR_BREAK || '';   // the witnesses' falsifiers: shape | float | halve | confirm_ai | confirm_twice | continue | dry_real
+// §12.14 S4: the programs that keep every write in the op-log (their headers: "Writes never touch the .db: each op is appended to an op-log"), so a dry run on a copy of that log holds their writes back
+const OPLOG_CLIS = ['erp_cli', 'object_cli'];
 
 // ───────────────────────── exact decimal (BigInt coefficient + scale; no floating point) ─────────────────────────
 const DIV_DIGITS = 30;   // division carries 30 fractional digits, rounded half up
@@ -376,6 +379,7 @@ function createDoor(opts) {
     if (entry.actors.indexOf(base.actor) < 0) return envelope(base, 'refused', { why: 'actor ' + base.actor + ' is not allowed to use ' + entry.verb + ' (allowed: ' + entry.actors.join(', ') + ')' });
     if (prior && HARM.indexOf(entry.harm) > 1) return envelope(base, 'refused', { why: 'request ' + base.request + ' started earlier and no result was recorded; a ' + entry.harm + ' verb is not re-run on a guess' });
     if (entry.body) return composed(entry, base, o);
+    if (opts.dry && entry.harm !== 'read' && OPLOG_CLIS.indexOf(entry.calls.cli) < 0) return envelope(base, 'refused', { why: 'a dry run cannot hold back this line: ' + entry.verb + ' (' + entry.harm + ') is answered by ' + entry.calls.cli + ', which does not keep its writes in the op-log. The file stops here; nothing of it was kept' });
     if (!Object.prototype.hasOwnProperty.call(cli, entry.calls.cli)) return envelope(base, 'error', { why: 'verb ' + entry.verb + ' names a program (' + entry.calls.cli + ') that is not in the door\'s table; not run' });
     return engineResult(entry, base, await spawnCli(entry.calls.cli, buildArgv(entry, o.args)));
   }
@@ -450,7 +454,7 @@ if (require.main === module) {
     const a = process.argv.slice(2), o = { actor: 'human' }; let script = null, form = 'json', outFile = null; const rest = [];
     for (let i = 0; i < a.length; i++) {
       if (a[i] === '--actor') o.actor = a[++i]; else if (a[i] === '--request') o.request = a[++i]; else if (a[i] === '--journal') o.journal = a[++i];
-      else if (a[i] === '--script') script = a[++i]; else if (a[i] === '--confirm') o.confirm = a[++i]; else if (a[i] === '--claims') o.claims = true;
+      else if (a[i] === '--script') script = a[++i]; else if (a[i] === '--dry') o.dry = true; else if (a[i] === '--confirm') o.confirm = a[++i]; else if (a[i] === '--claims') o.claims = true;
       else if (a[i] === '--list') form = 'list'; else if (a[i] === '--csv') form = 'csv'; else if (a[i] === '--json') form = 'json'; else if (a[i] === '--out') outFile = a[++i]; else rest.push(a[i]);
     }
     // the readable forms live in render.js (beside this file in a download, else in the repo); a missing one is named with its curl line
@@ -460,12 +464,28 @@ if (require.main === module) {
       let vocab; try { vocab = loadVocab(); } catch (e) { console.error('§DOOR FAIL ' + e.message); process.exit(1); }
       const h = R.help(vocab, rest[0]); (h.ok ? process.stdout : process.stderr).write(h.text); console.error('§DOOR help topic=' + JSON.stringify(rest[0].replace(/^\s*(!help|help|\?)/, '').trim()) + ' ok=' + h.ok); process.exit(h.ok ? 0 : 1);
     }
-    if (!script && !o.confirm && !o.claims && rest.length !== 1) { console.error('usage: node common/door/door.js [--actor human|ai] [--request ID] [--journal FILE] [--json|--list|--csv] [--out FILE] \'app.verb key=value …\'   |   --script FILE|-   |   --claims   |   --confirm REQUEST_ID   |   \'!help\''); process.exit(2); }
-    let door; try { door = createDoor({ journal: o.journal }); } catch (e) { console.error('§DOOR FAIL ' + e.message); process.exit(1); }
+    if (!script && !o.confirm && !o.claims && rest.length !== 1) { console.error('usage: node common/door/door.js [--actor human|ai] [--request ID] [--journal FILE] [--json|--list|--csv] [--out FILE] \'app.verb key=value …\'   |   --script FILE|- [--dry]   |   --claims   |   --confirm REQUEST_ID   |   \'!help\''); process.exit(2); }
+    // §12.14 --dry: the whole file runs on a COPY (the op-log named by BIM_OBJECT_OPLOG, this folder's own files, a new journal) in a temp folder; a later line sees an earlier line's write; the copy is deleted at the end
+    let dry = null;
+    if (o.dry) {
+      if (!script) { console.error('§DOOR FAIL --dry is for a file of lines (--script FILE --dry); one line takes its verb\'s own dry=Y'); process.exit(2); }
+      const real = process.env.BIM_OBJECT_OPLOG;
+      if (!real) { const why = 'a dry run needs the op-log named (BIM_OBJECT_OPLOG): the door cannot copy a log it does not know (without it each program picks its own log). No line was run'; console.error('§DOOR dry refused ' + why); console.log(JSON.stringify({ request: null, verb: null, actor: o.actor, status: 'refused', why, dry: true })); process.exit(3); }
+      const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'door-dry-')), here = process.cwd(); let files = 0, bytes = 0;
+      fs.readdirSync(here).forEach(n => { const s = path.join(here, n); let st; try { st = fs.statSync(s); } catch (e) { return; } if (st.isFile()) { fs.copyFileSync(s, path.join(tmp, n)); files++; bytes += st.size; } });
+      const log = path.join(tmp, '.door_dry_oplog.jsonl'); if (fs.existsSync(real)) fs.copyFileSync(real, log); else fs.writeFileSync(log, '');
+      if (BREAK() !== 'dry_real') process.env.BIM_OBJECT_OPLOG = log;
+      if (script !== '-') script = path.resolve(script);
+      o.journal = path.join(tmp, '.door_dry_journal.jsonl'); process.chdir(tmp);
+      dry = { tmp, files, bytes, real };
+      console.error('§DOOR dry copy=' + tmp + ' files=' + files + ' bytes=' + bytes + ' oplog=' + (BREAK() === 'dry_real' ? real + ' (BREAK dry_real: the REAL log)' : log) + ' (subfolders are not copied)');
+      process.on('exit', () => { try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (e) { /* gone */ } });
+    }
+    let door; try { door = createDoor({ journal: o.journal, dry: !!o.dry }); } catch (e) { console.error('§DOOR FAIL ' + e.message); process.exit(1); }
     if (o.claims) { const c = door.claims(); console.error('§DOOR claims held=' + c.length + ' journal=' + door.journalFile); console.log(JSON.stringify({ claims: c })); process.exit(0); }
     if (o.confirm) { const e = await door.confirm(o.confirm, o); console.log(JSON.stringify(e)); process.exit(e.status === 'ok' ? 0 : (e.status === 'error' ? 1 : 3)); }
     // one line's output: stdout in the chosen form; a line that is not ok, or has no rows for the form, writes no file (and says so)
-    const folder = script && script !== '-' ? path.dirname(path.resolve(script)) : process.cwd();
+    const folder = dry ? dry.tmp : (script && script !== '-' ? path.dirname(path.resolve(script)) : process.cwd());
     const emit = (e, f, file, append) => {
       const txt = R ? R.render(e, f) : JSON.stringify(e) + '\n';
       if (txt == null) { console.error('§DOOR out form=' + f + ' no rows in this answer' + (file ? '; ' + file + ' not written' : '')); if (!file) console.log(JSON.stringify(e)); return; }
@@ -482,8 +502,9 @@ if (require.main === module) {
         const m = /^(.*?)\s+(>>?)\s*(\S+)\s*$/.exec(raw), line = m ? m[1] : raw, c = Object.assign({}, o, { scope, request: o.request ? o.request + '.' + (++n) : undefined });
         const e = await door.runLine(line, c); if (!e) continue; envs.push(e); worstStatus = e.status;
         if (m) emit(e, R.formOf(m[3]), m[3], m[2] === '>>'); else emit(e, form, outFile, false);
-        if (e.status !== 'ok') break;
+        if (e.status !== 'ok' && BREAK() !== 'continue') break;
       }
+      if (dry) console.error('§DOOR dry done lines=' + envs.length + ' last=' + worstStatus + ' copy deleted; the real op-log ' + dry.real + ' was not touched');
       process.exit(!envs.length || worstStatus === 'error' ? 1 : (worstStatus === 'ok' ? 0 : 3));
     }
     envs = [await door.runLine(rest[0], o)].filter(Boolean);
