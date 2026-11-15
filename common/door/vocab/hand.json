@@ -1920,6 +1920,194 @@
     "fields": []
    },
    "witness": "common/door/tests/witness_legacy_plugin.js"
+  },
+  {
+   "verb": "model.open",
+   "app": "modeller",
+   "title": "Open 2D sheets in the Modeller",
+   "description": "Open a set of 2D drawing sheets (a folder of .dxf files, each carrying its markings) in a Modeller kept open between lines, headless. Name the building type (for example Farming Shed) and the app reads its rules for it, among them whether a bay can be added. The answer says how many sheets, how many bodies the reader found and whether the gate is open. Nothing is saved: closing the session drops the model. One session per folder.",
+   "inputs": [
+    {
+     "name": "sheets",
+     "description": "A folder of .dxf sheets, or a comma list of files.",
+     "required": true,
+     "type": "string",
+     "example": "marked"
+    },
+    {
+     "name": "type",
+     "description": "Optional: the building type, as the editor's Element defaults list it.",
+     "required": false,
+     "type": "string",
+     "example": "Farming Shed"
+    }
+   ],
+   "harm": "trial",
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "calls": {
+    "cli": "model_session",
+    "who": "the app",
+    "argv": [
+     "open",
+     "sheets={sheets}",
+     {
+      "if": "type",
+      "args": [
+       "type={type}"
+      ]
+     }
+    ]
+   },
+   "returns": {
+    "shape": "model_session JSON {sheets,gate:{ok,bodies,left_out},type,summary} or {refused,error}",
+    "fields": [
+     {
+      "path": "gate.ok",
+      "type": "boolean"
+     },
+     {
+      "path": "sheets",
+      "type": "number"
+     }
+    ]
+   },
+   "witness": "modeller/tests/witness_model_session.js"
+  },
+  {
+   "verb": "model.convert",
+   "app": "modeller",
+   "title": "Convert the open sheets to a 3D model",
+   "description": "Convert the sheets opened by model.open into the 3D model, as the page's Convert does, in one gesture. The answer says how many elements were made and whether add-a-bay is offered for the building type. Refused with the reason when nothing is open or the gate is closed.",
+   "inputs": [],
+   "harm": "trial",
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "calls": {
+    "cli": "model_session",
+    "who": "the app",
+    "argv": [
+     "convert"
+    ]
+   },
+   "returns": {
+    "shape": "model_session JSON {inserts,elements,bayOffered,type,rule,summary} or {refused,error}",
+    "fields": [
+     {
+      "path": "inserts",
+      "type": "number"
+     },
+     {
+      "path": "bayOffered",
+      "type": "boolean"
+     }
+    ]
+   },
+   "witness": "modeller/tests/witness_model_session.js"
+  },
+  {
+   "verb": "model.addbay",
+   "app": "modeller",
+   "title": "Add a bay to the model",
+   "description": "Lengthen the converted repeating-bay building by one bay at the high or low end, as the page's Add a bay does: the typical bay's elements are copied one pitch on, everything beyond moves, the full-length members and coverings stretch, all as one gesture. The answer gives the pitch, the copies by class, the gate verdict and the cost of the variation (added and changed) in the page's rate pack. Refused with the reason when the building type declares no bay rule.",
+   "inputs": [
+    {
+     "name": "end",
+     "description": "Which end to lengthen: high or low.",
+     "required": true,
+     "type": "string",
+     "example": "high"
+    }
+   ],
+   "harm": "trial",
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "calls": {
+    "cli": "model_session",
+    "who": "the app",
+    "argv": [
+     "addbay",
+     "end={end}"
+    ]
+   },
+   "returns": {
+    "shape": "model_session JSON {end,hinge,pitch_m,copies,copies_by_class,gate,cost:{added,changed,total,currency,pack},elements_before,elements_after,summary} or {refused,error}",
+    "fields": [
+     {
+      "path": "copies",
+      "type": "number"
+     },
+     {
+      "path": "cost.total",
+      "type": "number"
+     }
+    ]
+   },
+   "witness": "modeller/tests/witness_model_session.js"
+  },
+  {
+   "verb": "model.undo",
+   "app": "modeller",
+   "title": "Undo the last model change",
+   "description": "Undo the last gesture in the open Modeller session (Convert, or an added bay), as Ctrl+Z does. The answer gives the element count before and after.",
+   "inputs": [],
+   "harm": "trial",
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "calls": {
+    "cli": "model_session",
+    "who": "the app",
+    "argv": [
+     "undo"
+    ]
+   },
+   "returns": {
+    "shape": "model_session JSON {elements_before,elements_after,summary}",
+    "fields": [
+     {
+      "path": "elements_after",
+      "type": "number"
+     }
+    ]
+   },
+   "witness": "modeller/tests/witness_model_session.js"
+  },
+  {
+   "verb": "model.close",
+   "app": "modeller",
+   "title": "Close the Modeller session",
+   "description": "Stop the Modeller session kept open in this folder. Nothing was saved; the model is dropped.",
+   "inputs": [],
+   "harm": "trial",
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "calls": {
+    "cli": "model_session",
+    "who": "the app",
+    "argv": [
+     "close"
+    ]
+   },
+   "returns": {
+    "shape": "model_session JSON {closed}",
+    "fields": [
+     {
+      "path": "closed",
+      "type": "boolean"
+     }
+    ]
+   },
+   "witness": "modeller/tests/witness_model_session.js"
   }
  ]
 }
