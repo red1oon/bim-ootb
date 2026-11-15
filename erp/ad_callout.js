@@ -110,6 +110,7 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
     if (v instanceof BD) return v.toString();
     return String(v);
   }
+  var _edge = null;                                       // A-5: the one edge the shell installs (Env.setEdge)
   var Env = {
     ZERO: BD.ZERO, ONE: BD.ONE, ONEHUNDRED: BD.of(100),
     AD_CLIENT_ID: '#AD_Client_ID', AD_ORG_ID: '#AD_Org_ID', AD_USER_ID: '#AD_User_ID', AD_ROLE_ID: '#AD_Role_ID',
@@ -132,6 +133,18 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
     nowMs: function (env) {
       if (env && env.nowMillis != null) return env.nowMillis;
       RUNTIME.log('§ENV_NO_DATE trx env has no nowMillis (core never reads a wall clock)'); throw new Error('no session clock in the transaction env (A-3)');
+    },
+    //   setEdge(edge) / edge(): A-5 (2026-11-15) — how a core module with NO transaction (rule_fold.js, processes/PackIn.js) gets its clock and id. The SHELL installs { nowMs(), uuid(), perfMs()? } ONCE
+    //   (erp/idempiere.html, right after this file loads); core asks Env.edge(). No edge installed = §ENV_NO_DATE + throw (A-3: core never reaches a wall clock or the RNG itself). Witness: W-RULE-FOLD-EDGE.
+    setEdge: function (edge) {
+      if (!edge || typeof edge.nowMs !== 'function' || typeof edge.uuid !== 'function') throw new Error('Env.setEdge: the edge needs nowMs() and uuid() functions (A-5)');
+      var replaced = _edge != null; _edge = edge;
+      RUNTIME.log('§ENV_EDGE set nowMs=Y uuid=Y perfMs=' + (typeof edge.perfMs === 'function' ? 'Y' : 'N') + ' replaced=' + (replaced ? 'Y' : 'N'));
+      return edge;
+    },
+    edge: function () {
+      if (_edge) return _edge;
+      RUNTIME.log('§ENV_NO_DATE no edge installed (Env.setEdge was never called by the page; core never reads a wall clock)'); throw new Error('Env.edge: no edge installed (A-5)');
     },
     //   modelEnv(ctx, edge): the transaction env {client, org, user, role, date, now, nowMillis, uuid, perfMs, elapsed}. date = ctx '#Date' (legacy's session date) when set, else the edge's local day;
     //   with neither it THROWS and logs §ENV_NO_DATE (A-3: core never falls back to a wall clock). elapsed(t0) is the timing seam (A-4): the only way core may time a pass.
