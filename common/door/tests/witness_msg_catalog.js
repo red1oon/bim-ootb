@@ -128,10 +128,13 @@ k.L('M1 base=' + BASE + (oldSrc ? '' : ' (git show failed: ' + String(baseR.stde
 diffs.slice(0, 12).forEach(d => k.L('M1 DIFF ' + d));
 if (!oldSrc) k.incon('M1', 'no baseline words_core.js from git at ' + BASE);
 else k.chk('M1 the pre-change and the new words_core.js answer the same corpus byte for byte (' + (steps - diffs.length) + ' of ' + steps + ' steps)', diffs.length === 0, diffs.length ? 'first: ' + diffs[0].slice(0, 200) : '');
-const used = MSG.used(), reached = catWords.filter(x => used[x]), unreached = catWords.filter(x => !used[x]);
+// keys a LATER phase added are judged by that phase's witness, named here (M2's scope is the P2a move): words.level_* and words.student.* -> W-HELP-STUDENT (VOCAB_MESSAGE_CATALOG.md §4)
+const LATER = (x) => /^words\.(level_|student\.)/.test(x), handed = catWords.filter(LATER);
+const used = MSG.used(), reached = catWords.filter(x => !LATER(x) && used[x]), unreached = catWords.filter(x => !LATER(x) && !used[x]);
+k.L('M2 handed to W-HELP-STUDENT: ' + handed.length + ' keys ' + JSON.stringify(handed));
 k.L('M2 reached ' + reached.length + ' of ' + catWords.length + ' keys; uses=' + JSON.stringify(used));
 if (unreached.length) k.incon('M2', 'keys the corpus never reached: ' + unreached.join(', '));
-else k.chk('M2 every words.* key was reached by the corpus (' + reached.length + ' of ' + catWords.length + ')', reached.length > 0 && reached.length === catWords.length);
+else k.chk('M2 every P2a words.* key was reached by the corpus (' + reached.length + ' of ' + (catWords.length - handed.length) + '; ' + handed.length + ' later keys handed on)', reached.length > 0 && reached.length === catWords.length - handed.length);
 k.L('M3 code keys=' + codeKeys.length + ' catalog words.* keys=' + catWords.length + ' notInCatalog=' + JSON.stringify(notInCat) + ' notInCode=' + JSON.stringify(notInCode) + ' templates bad=' + JSON.stringify(tplBad) + ' extra-argument calls=' + JSON.stringify(Array.from(new Set(extra))));
 if (!codeKeys.length) k.incon('M3', 'no M(\'…\') key found in words_core.js');
 else k.chk('M3 keys both ways: ' + (codeKeys.length - notInCat.length) + ' of ' + codeKeys.length + ' code keys in the catalog, ' + (catWords.length - notInCode.length) + ' of ' + catWords.length + ' catalog keys in code; templates {0}..{n-1}, no stray brace; no call drops an argument',

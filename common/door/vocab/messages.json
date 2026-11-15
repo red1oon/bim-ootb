@@ -1,5 +1,5 @@
 {
- "_": "The message catalog: text meant for a PERSON, one key per message, read by msg_core.js (bim-compiler prompts/VOCAB_MESSAGE_CATALOG.md §3). Templates take {0} {1} … (legacy MessageFormat). P2a: English only, the keys of words_core.js; the bytes a person sees are the literals the code printed before (W-MSG-CATALOG M1). Never the envelope, the journal or verbs.json.",
+ "_": "The message catalog: text meant for a PERSON, one key per message, read by msg_core.js (bim-compiler prompts/VOCAB_MESSAGE_CATALOG.md §3). Templates take {0} {1} … (legacy MessageFormat). English only, the keys of words_core.js (P2a; P3a adds the Student level labels, words.student.*, and the level setting); the bytes a person sees are the literals the code printed before (W-MSG-CATALOG M1). Never the envelope, the journal or verbs.json.",
  "messages": {
   "words.quote_in_value": {
    "en": "a value may not hold a double quote: {0}"
@@ -177,6 +177,42 @@
   },
   "words.help_action_placeholder": {
    "en": "<action>"
+  },
+  "words.level_short": {
+   "en": "level short: help <word> shows one line per place"
+  },
+  "words.level_student": {
+   "en": "level student: help <word> also shows what it does, what you type and the line it runs"
+  },
+  "words.level_bad": {
+   "en": "level is one of: {1} (got {0})"
+  },
+  "words.student.does": {
+   "en": "    what it does: {0}"
+  },
+  "words.student.you_type": {
+   "en": "    you type: {0}"
+  },
+  "words.student.you_type_none": {
+   "en": "    you type: nothing more"
+  },
+  "words.student.input": {
+   "en": "{0} ({1})"
+  },
+  "words.student.action": {
+   "en": "the action, one of: {0}"
+  },
+  "words.student.sep": {
+   "en": " · "
+  },
+  "words.student.from_here": {
+   "en": "    taken from where you are: {0}"
+  },
+  "words.student.example_in": {
+   "en": "    e.g. in {0}: {1}"
+  },
+  "words.student.example": {
+   "en": "    e.g.: {0}"
   }
  }
 }
