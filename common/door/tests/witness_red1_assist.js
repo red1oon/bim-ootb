@@ -11,7 +11,7 @@ const path = require('path'), cp = require('child_process'), fs = require('fs'),
 const { kit, ROOT } = require('./_kit');
 const k = kit('W-RED1-ASSIST'), RED1 = path.join(ROOT, 'common/door/red1.js'), A = require(path.join(ROOT, 'common/door/assist_core.js'));
 const BRK = process.env.ASSIST_BREAK || '';
-const sh = (cmd, ms) => new Promise((res) => { let o = ''; const p = cp.spawn('bash', ['-c', cmd], { env: Object.assign({}, process.env, { RED1_WARM: 'off' }, BRK ? { ASSIST_BREAK: BRK } : {}) }); p.stdout.on('data', d => { o += d; }); p.stderr.on('data', d => { o += d; }); const t = setTimeout(() => { p.kill(); }, ms); p.on('close', () => { clearTimeout(t); res(o); }); });
+const sh = (cmd, ms) => new Promise((res) => { let o = ''; const p = cp.spawn('bash', ['-c', cmd], { env: Object.assign({}, process.env, { RED1_WARM: 'off', RED1_LOG: 'stderr' }, BRK ? { ASSIST_BREAK: BRK } : {}) }); p.stdout.on('data', d => { o += d; }); p.stderr.on('data', d => { o += d; }); const t = setTimeout(() => { p.kill(); }, ms); p.on('close', () => { clearTimeout(t); res(o); }); });
 const envOf = (out) => out.split('\n').filter(l => l.charAt(0) === '{').map(l => { try { return JSON.parse(l); } catch (e) { return null; } }).filter(Boolean);
 (async () => {
   // the Project kind's properties, from the door (what the session holds after `cd Project`)

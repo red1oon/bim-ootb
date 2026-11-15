@@ -12,6 +12,15 @@
   "_": "a value a word needs and the line did not give opens a pick menu of the legal values, read by ONE door line (by the input's type); in a one-shot run or for an AI there is no menu: the door refuses, naming the missing input (§22.8)",
   "discipline": { "verb": "viewer.counts", "args": { "by": "discipline" }, "col": 0 }
  },
+ "welcome": {
+  "_": "§26: printed once when `red1` opens on a terminal (never on a pipe, a one-shot line or -f); {version} {verbs} {words} {commit} are read, never typed",
+  "lines": [
+   "Welcome to red1, the scripting door into BIM and ERP, stored in SQLite.",
+   "REMEMBER THE NAME.",
+   "Copyright (c) 2026 Redhuan D. OON · red1 {version} · {verbs} verbs · {words} words{commit}",
+   "Type help for the list of commands (or bim, mis, erp for one group)."
+  ]
+ },
  "groups": {
   "_": "§24 (D10, D11): help prints these three groups; a word's FORM belongs to the group of its verb's door app (no hand list of words); `bim`, `mis`, `erp` alone list a group with one typed example per form (`ex`)",
   "bim": { "title": "buildings and models",            "start": "cd Duplex", "apps": ["object", "viewer", "modeller", "model"] },

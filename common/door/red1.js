@@ -15,7 +15,10 @@
 const fs = require('fs'), path = require('path'), os = require('os'), cp = require('child_process'), readline = require('readline');
 const DOOR = path.join(__dirname, 'door.js');
 const BREAK = () => process.env.RED1_BREAK || '';
-const say = (s) => process.stderr.write('§RED1 ' + s + '\n');
+// §26 the § log: stderr (pipes, one-shot, -f: what scripts and witnesses read); in a session on a terminal it goes to a FILE so the person's screen stays clean
+// ($RED1_LOG = a path, default ~/.cache/red1/red1.log; RED1_LOG=stderr keeps it on the screen). The log is kept, never dropped (the Log Mandate).
+let sayTo = null;
+const say = (s) => { if (sayTo) { try { fs.appendFileSync(sayTo, new Date().toISOString() + ' §RED1 ' + s + '\n'); return; } catch (e) { sayTo = null; } } process.stderr.write('§RED1 ' + s + '\n'); };
 
 function passThrough(argv) {   // a door line and -f: the door's own command line, unchanged (one implementation of a run, a file and a dry run)
   const r = cp.spawnSync(process.execPath, [DOOR].concat(argv), { stdio: 'inherit', env: process.env });
@@ -37,6 +40,15 @@ function helpOf(line, core, vocab) {
   const t = topic === 'verbs' ? null : core.helpText(topic);
   if (t != null) return { text: t, topic };
   const h = R.help(vocab, 'help' + (topic && topic !== 'verbs' ? ' ' + topic : '')); return { text: h.text, topic, door: true };
+}
+// §26 the greeting: words.json `welcome` (data), its fields read from package.json, verbs.json, words.json and the checkout's commit
+function welcome() {
+  const root = path.join(__dirname, '..', '..'), words = JSON.parse(fs.readFileSync(path.join(__dirname, 'vocab', 'words.json'), 'utf8')), W = words.welcome || { lines: [] };
+  let version = '?'; try { version = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version; } catch (e) { /* no package.json */ }
+  const nVerbs = JSON.parse(fs.readFileSync(path.join(__dirname, 'verbs.json'), 'utf8')).verbs.length, nWords = Object.keys(words.words).length;
+  let commit = ''; try { const r = cp.spawnSync('git', ['-C', root, 'rev-parse', '--short', 'HEAD'], { encoding: 'utf8' }); if (r.status === 0 && r.stdout.trim()) commit = ' · ' + r.stdout.trim(); } catch (e) { /* not a checkout */ }
+  const f = (l) => l.replace('{version}', version).replace('{verbs}', nVerbs).replace('{words}', nWords).replace('{commit}', commit);
+  return { lines: W.lines.map(f), version: W.lines.map(f).filter(l => l.indexOf('red1 ' + version) >= 0)[0] || ('red1 ' + version) };
 }
 function wordsCore() {   // the expander alone, enough to print help (no door, no shell)
   const D = require(DOOR), vocab = D.loadVocab(), words = JSON.parse(fs.readFileSync(path.join(__dirname, 'vocab', 'words.json'), 'utf8'));
@@ -135,6 +147,11 @@ async function session(o) {
     if (key && key.name === 'right' && hint && hint.ghost && rl.cursor === (rl.line || '').length) { const g = hint.ghost; hint = null; say('assist take ghost=' + JSON.stringify(g)); rl.write(g); return; }
     setImmediate(drawHint);
   });
+  if (tty && process.env.RED1_LOG !== 'stderr') { const f = process.env.RED1_LOG || path.join(os.homedir(), '.cache', 'red1', 'red1.log'); try { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.appendFileSync(f, ''); sayTo = f;
+    const errW = process.stderr.write.bind(process.stderr);   // every § line of the session (the door's §DOOR too) goes to the same file; anything else (a real error) stays on screen
+    process.stderr.write = (c, ...r) => { const t = String(c); if (sayTo && /^§/.test(t)) { try { fs.appendFileSync(sayTo, new Date().toISOString() + ' ' + t); return true; } catch (e) { /* fall through */ } } return errW(c, ...r); };
+  } catch (e) { /* stays on stderr */ } }
+  if (tty || process.env.WELCOME_BREAK === 'pipe') { const g = welcome(); process.stdout.write(g.lines.join('\n') + '\n\n'); say('welcome lines=' + g.lines.length + ' version=' + JSON.stringify(g.version)); }   // §26: a terminal only (pipe: W-RED1-WELCOME falsifier, must FAIL W2)
   say('session tty=' + tty + ' journal=' + sh.door.journalFile + ' verbs=' + vocab.verbs.length + ' words=' + sh.core.wordList().length);
   // a pick menu on a terminal is redrawn in place (no scroll): the lines it took are cleared first; anything else printed ends that
   let menuH = 0;
@@ -225,6 +242,7 @@ if (require.main === module) {
   const flags = new Set(['--json', '--list', '--csv', '--dry', '--claims']), withArg = new Set(['--out', '--actor', '--journal', '--request', '--script', '--confirm']);
   const rest = []; const o = { actor: 'human' };
   for (let i = 0; i < a.length; i++) { if (withArg.has(a[i])) { if (a[i] === '--actor') o.actor = a[i + 1]; if (a[i] === '--journal') o.journal = a[i + 1]; if (a[i] === '--request') o.request = a[i + 1]; i++; } else if (!flags.has(a[i])) rest.push(a[i]); }
+  if (a.indexOf('--version') >= 0) { console.log(welcome().version); process.exit(0); }
   if (a.indexOf('-h') >= 0 || a.indexOf('--help') >= 0) { console.log("usage: red1                         (a session, the red1> prompt)\n       red1 'app.verb key=value …'  [--json|--list|--csv] [--out FILE]\n       red1 'cd Duplex; count'      (words, ; between them)\n       red1 -f FILE [--dry]\n       red1 help [topic]"); process.exit(0); }
   const oneShot = rest.length > 0 || a.indexOf('--script') >= 0 || a.indexOf('--claims') >= 0 || a.indexOf('--confirm') >= 0;
   if (oneShot) {
