@@ -6,7 +6,7 @@
 const path = require('path'), cp = require('child_process'), fs = require('fs'), os = require('os');
 const { kit, ROOT } = require('./_kit');
 const k = kit('W-RED1-PAGE'), RED1 = path.join(ROOT, 'common/door/red1.js'), BRK = process.env.PAGE_BREAK || '';
-const sh = (cmd, ms) => new Promise((res) => { let o = ''; const p = cp.spawn('bash', ['-c', cmd], { env: Object.assign({}, process.env, { RED1_WARM: 'off' }, BRK ? { PAGE_BREAK: BRK } : {}) }); p.stdout.on('data', d => { o += d; }); p.stderr.on('data', d => { o += d; }); const t = setTimeout(() => p.kill(), ms); p.on('close', () => { clearTimeout(t); res(o); }); });
+const sh = (cmd, ms) => new Promise((res) => { let o = ''; const p = cp.spawn('bash', ['-c', cmd], { env: Object.assign({}, process.env, { RED1_WARM: 'off', RED1_LOG: 'stderr' }, BRK ? { PAGE_BREAK: BRK } : {}) }); p.stdout.on('data', d => { o += d; }); p.stderr.on('data', d => { o += d; }); const t = setTimeout(() => p.kill(), ms); p.on('close', () => { clearTimeout(t); res(o); }); });
 (async () => {
   const hist = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'r1p_')), 'h');
   const hasScript = cp.spawnSync('bash', ['-c', 'command -v script']).status === 0;
