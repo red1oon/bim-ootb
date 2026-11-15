@@ -512,6 +512,9 @@ function createRecord(O, a) {
       set.push(f.vo.ColumnName);
     });
     const snap = st.snapshot(), empty = st.fields.filter(f => f.isMandatory() && !f.isKey() && (snap[f.vo.ColumnName] == null || snap[f.vo.ColumnName] === '') && !/^(Created|Updated|CreatedBy|UpdatedBy)$/.test(f.vo.ColumnName)).map(f => f.vo.ColumnName);
+    // legacy's web service checks the foreign keys before the save, so before the mandatory columns (ModelADServiceImpl L824, PO.validForeignKeysEx): a new record checks every one it holds
+    const fkRow = {}; Object.keys(snap).forEach(c => { fkRow[c.toLowerCase()] = snap[c]; });
+    const fkBad = FK_BREAK === 'nofk' ? null : O.ML.validForeignKeys(O.rows, K.table, fkRow, null, client); if (fkBad) refuse('Cannot save record in ' + ((O.rows('SELECT tablename AS t FROM ad_table WHERE ad_table_id=?', [K.id])[0] || {}).t || K.table) + ': ' + fkBad + '; nothing was written');
     if (empty.length && NEW_BREAK !== 'nomandatory' && !dry) refuse('mandatory and still empty after the defaults and callouts: ' + empty.join(', ') + ' (give them as column=value)');
     const row = {}; st.fields.forEach(f => { const c = f.vo.ColumnName, v = snap[c]; if (f.isKey() || v == null || v === '') return; row[c.toLowerCase()] = (A.DisplayType.isNumeric(f.getDisplayType()) && !A.DisplayType.isID(f.getDisplayType()) && DEC_ID.test(String(v).replace('.', '')) ) ? Number(v) : v; });
     if (dry) { console.log = log; say('new DRY kind=' + K.name + ' given=' + set.join(',') + ' mandatory_empty=' + empty.join(',') + ' needs=' + needs.map(n => n.name).join(',') + ' defaulted=' + (Object.keys(row).length - set.length) + ' ms=' + (Date.now() - t0));
@@ -574,6 +577,7 @@ function updateRecord(O, a) {
     const after = st.snapshot(), changes = {}, num = (f, v) => (A.DisplayType.isNumeric(f.getDisplayType()) && !A.DisplayType.isID(f.getDisplayType()) && DEC_ID.test(String(v).replace('.', ''))) ? Number(v) : v;
     st.fields.forEach(f => { const c = f.vo.ColumnName; if (f.isKey() || String(after[c]) === String(before[c])) return; changes[c.toLowerCase()] = after[c] === '' ? null : num(f, after[c]); });
     const empty = st.fields.filter(f => f.isMandatory() && !f.isKey() && (after[f.vo.ColumnName] == null || after[f.vo.ColumnName] === '') && Object.prototype.hasOwnProperty.call(changes, f.vo.ColumnName.toLowerCase())).map(f => f.vo.ColumnName);
+    const fkBad = FK_BREAK === 'nofk' ? null : O.ML.validForeignKeys(O.rows, K.table, changes, Object.keys(changes), client); if (fkBad) refuse('Cannot save record in ' + ((O.rows('SELECT tablename AS t FROM ad_table WHERE ad_table_id=?', [K.id])[0] || {}).t || K.table) + ': ' + fkBad + '; nothing was written');   // an update checks the columns it changes (is_ValueChanged)
     if (empty.length) refuse('mandatory and left empty: ' + empty.join(', ') + '; nothing was written');
     const tx = O.trx(); Object.assign(tx.env, { client, org, date: day + ' 00:00:00', now: stamp(), user: Number(a.user || 101) });
     const live = tx.get(K.table, r[K.key]), sv = O.ML.save(tx, K.table, live, changes); if (!sv.ok) refuse('the model layer refused the save: ' + sv.error + '; nothing was written');
@@ -661,7 +665,8 @@ const listItems = (c, where) => {   // VALUE=Name as stated; a bare name follows
 };
 // ── ninja.exec file=<Table>.csv (bim-compiler prompts/ERP_MIS_WINDOW_FROM_CSV.md §12.15): a CSV whose header is the model, as legacy Ninja's HandleCSVImport reads one.
 // The header becomes a ColumnSet by its seven name rules, the rows a data sheet named after the table; the rest is the workbook path above (one stager, one loader).
-const CSV_BREAK = process.env.NINJACSV_BREAK || '';   // W-NINJA-CSV falsifiers: norules | nofirsttwo
+const CSV_BREAK = process.env.NINJACSV_BREAK || '';
+const FK_BREAK = process.env.FK_BREAK || '';   // W-VALRULE-PARITY falsifier: nofk (the door saves a foreign key that names no record)   // W-NINJA-CSV falsifiers: norules | nofirsttwo
 function csvToken(cell) {   // HandleCSVImport.processCSV L132-147, first match wins; the quirks are legacy's own (Income is Yes/No by rule 4)
   const e = String(cell), U = e.toUpperCase();
   if (CSV_BREAK === 'norules') return e.replace(/\s+/g, '');

@@ -539,19 +539,50 @@
       if (r.k === 'Y' || r.cn === r.tn + '_uu') return;
       if (rule !== 'M' && known[r.tn]) return;   // the database speaks for this table
       if (!rule) { if (/^(ad_client_id|ad_org_id|createdby|updatedby)$/.test(r.cn)) return; rule = 'N'; }   // a module's blank: MColumn.getForeignKeyConstraint :1278-1279 creates NoAction, :1138-1141 not for these four
-      if (rf === 19 || rf === 200234 || ((rf === 30 || rf === 200235) && !Number(r.rv))) target = r.cn.slice(0, -3);
-      else if (rf === 18 || rf === 200233 || rf === 30 || rf === 200235) target = r.rn;
-      else if (rf === 28) target = r.cn === 'ad_orgbp_id' ? 'ad_org' : r.cn === 'c_projecttype_id' ? 'c_projecttype' : null;
-      else if (rf === 32 && r.cn !== 'binarydata') target = 'ad_image';
-      else target = FK_FIXED[rf] || null;
+      target = refTableOf(r.cn, rf, r.rv, r.rn);
       if (!target) return;
-      target = FK_VIEW[target] || target;
       if (known[r.tn]) { model[r.tn + '.' + r.cn + '.' + target] = 1; return; }
       (by[target] = by[target] || []).push({ table: r.tn, column: r.cn, rule: rule, uu: rf === 200233 || rf === 200234 || rf === 200235 });
     });
     if (FR) Object.keys(FR.fk).forEach(function (ch) { String(FR.fk[ch]).split(',').forEach(function (e) { var p = e.split(':'), m = model[ch + '.' + p[0] + '.' + p[1]];
       (by[p[1]] = by[p[1]] || []).push({ table: ch, column: p[0], rule: m ? 'M' : RULE[p[2]], uu: /_uu$/.test(p[0]) }); }); });
     _fkByTarget = by; _fkRecord = rec;
+  }
+  // MColumn.getReferenceTableName (MColumn.java, the AD_All*_V views mapped back): ONE mapping, for the delete plan above and the save check below. cn lower case, rn = the AD_Ref_Table's table
+  function refTableOf(cn, rf, rv, rn) {
+    var t = null;
+    if (rf === 19 || rf === 200234 || ((rf === 30 || rf === 200235) && !Number(rv))) t = cn.slice(0, -3);
+    else if (rf === 18 || rf === 200233 || rf === 30 || rf === 200235) t = rn || null;
+    else if (rf === 28) t = cn === 'ad_orgbp_id' ? 'ad_org' : cn === 'c_projecttype_id' ? 'c_projecttype' : null;
+    else if (rf === 32 && cn !== 'binarydata') t = 'ad_image';
+    else t = FK_FIXED[rf] || null;
+    return t ? (FK_VIEW[t] || t) : null;
+  }
+  // ── PO.getForeignColumnIdxs + PO.validForeignKeysEx (PO.java L6131-6180), the check legacy's web service runs before it saves (ModelADServiceImpl L824 create, L1022 update):
+  // a foreign key that is new or changed must name a record, and the record's tenant must be the session's (or System, when the referenced table's access level allows System rows).
+  // The types are DisplayType.isID without ID and RecordID; AD_Client_ID is left to the client check. NOT ported: the UUID types (legacy compares a UU to the key column). bim-compiler prompts/ERP_MIS_WINDOW_FROM_CSV.md §12.16
+  var FK_SAVE = { 18: 1, 19: 1, 30: 1, 21: 1, 31: 1, 25: 1, 33: 1, 35: 1, 32: 1, 53370: 1 }, _fkCols = {};
+  function foreignColumns(q, table) {
+    var tn = String(table).toLowerCase(); if (_fkCols[tn]) return _fkCols[tn];
+    return (_fkCols[tn] = q("SELECT c.columnname AS col, lower(c.columnname) AS cn, c.ad_reference_id AS rf, c.ad_reference_value_id AS rv, lower(tr.tablename) AS rn FROM ad_column c JOIN ad_table t ON t.ad_table_id=c.ad_table_id " +
+      "LEFT JOIN ad_ref_table rt ON rt.ad_reference_id=c.ad_reference_value_id LEFT JOIN ad_table tr ON tr.ad_table_id=rt.ad_table_id WHERE lower(t.tablename)=? AND c.isactive='Y'", [tn])
+      .filter(function (r) { return FK_SAVE[Number(r.rf)] && r.cn !== 'ad_client_id'; })
+      .map(function (r) { return { col: r.col, cn: r.cn, target: refTableOf(r.cn, Number(r.rf), r.rv, r.rn) }; }).filter(function (r) { return r.target; }));
+  }
+  function validForeignKeys(q, table, row, cols, client) {   // row: lower-case column -> value; cols: the columns to check (null = every column, a new record); returns the refusal or null
+    var fks = foreignColumns(q, table);
+    for (var i = 0; i < fks.length; i++) {
+      var fk = fks[i]; if (cols && cols.indexOf(fk.cn) < 0) continue;
+      var n = Number(row[fk.cn]); if (!(n > 0)) continue;
+      var ft = q('SELECT ad_table_id AS id, accesslevel AS al FROM ad_table WHERE lower(tablename)=?', [fk.target])[0]; if (!ft) continue;
+      var key = q("SELECT lower(columnname) AS k FROM ad_column WHERE ad_table_id=? AND iskey='Y' ORDER BY ad_column_id", [ft.id])[0]; if (!key) continue;
+      var sys = ['7', '4', '6'].indexOf(String(ft.al)) >= 0, hit;   // MTable.ACCESSLEVEL_All / SystemOnly / SystemPlusClient
+      try { hit = q('SELECT ad_client_id AS c FROM ' + fk.target + ' WHERE ' + key.k + '=?', [n])[0]; } catch (e) { continue; }   // a table this database does not carry is not judged here
+      var poc = hit ? Number(hit.c) : -1;
+      if (poc < 0) return 'Foreign ID ' + n + ' not found in ' + fk.col;
+      if ((poc === 0 && !sys) || (poc > 0 && poc !== Number(client))) return 'Cross tenant ID ' + n + ' not allowed in ' + fk.col;
+    }
+    return null;
   }
   function fkPlan(q, table) { fkLoad(q); return (_fkByTarget[String(table).toLowerCase()] || []).slice(); }
   // PO_Record.exists + deleteModelCascade + deleteRecordCascade + setRecordNull (PO.java:4279-4337), then the DELETE's own FK behaviour: a -> refuse, c -> delete (no PO hooks), n -> null. A refusal fails the whole trx, as the rollback does.
@@ -852,7 +883,7 @@
   function deliverObserved(res, ctx, resolve) { return MV.deliverObserved(res && res.observed !== undefined ? res.observed : res, ctx || {}, resolve); }
 
   return { idSet: idSet, setGeneratedDefaults: setGeneratedDefaults, initialDefaultsOf: initialDefaultsOf, generatedDefaults: function () { return GEN_DEFAULTS; }, PO: PO, po: po, newRecord: newRecord, setDocNoAllocator: setDocNoAllocator, columnsOf: columnsOf, setPoster: setPoster, getPoster: function () { return _poster; }, clientAccounting: clientAccounting, MV: MV, Trx: Trx, D: D, N: N, isNewId: isNewId, keyColsOf: keyColsOf, newPO: newPO, copyValues: copyValues, saveEx: saveEx, registerModel: registerModel, unregisterModel: unregisterModel, saveReplica: saveReplica, fireReplica: fireReplica, saveReplicaEx: saveReplicaEx, removeReplica: removeReplica, deliverObserved: deliverObserved, unregisterDocAction: unregisterDocAction, removeOwner: removeOwner, describe: describe, MODEL: MODEL, fire: fire,
-           save: save, remove: remove, fkPlan: fkPlan, registerDocAction: registerDocAction, docActionFor: docActionFor, DOCS: DOCS,
+           save: save, remove: remove, fkPlan: fkPlan, validForeignKeys: validForeignKeys, registerDocAction: registerDocAction, docActionFor: docActionFor, DOCS: DOCS,
            notNullError: notNullError, notNullCols: notNullCols,   // G2 (§5.73): the DB's NOT NULL refusal, ONE implementation
            uniqueError: uniqueError,   // B0: the legacy unique-index refusal, ONE implementation (ws_adinterface.js no longer has its own)
            eventSeq: function (trx) { return (trx && trx._events || []).map(function (e) { return e.event + '@' + e.table; }); }, processIt: processIt, runWorkflow: runWorkflow, workflowOf: workflowOf, tableIdOf: tableIdOf, run: run };

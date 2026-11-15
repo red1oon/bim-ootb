@@ -1,0 +1,8 @@
+{
+  "source": "legacy iDempiere pilot (idempiere_pilot, :8088), web service createData, serviceType Pilot_createData_C_Order, login GardenAdmin client 11 role 102 org 11; read back with psql. Run 2026-11-15 by bim-compiler prompts/ERP_MIS_WINDOW_FROM_CSV.md §12.16 V4; pilot snapshot taken first: ~/.cache/bim_bridge/snapshots/idempiere_pilot_20261115_092500.dump",
+  "cases": [
+    { "id": "V0", "fields": { "AD_Org_ID": 11, "C_BPartner_ID": 117, "C_DocTypeTarget_ID": 132, "IsSOTrx": "Y" }, "legacy": { "status": "ok", "recordId": 1009957, "stored": { "c_doctypetarget_id": 132, "issotrx": "Y", "docstatus": "DR" } } },
+    { "id": "V2", "fields": { "AD_Org_ID": 11, "C_BPartner_ID": 117, "C_DocTypeTarget_ID": 126, "IsSOTrx": "Y" }, "legacy": { "status": "ok", "recordId": 1009958, "stored": { "c_doctypetarget_id": 126, "issotrx": "Y", "docstatus": "DR" } } },
+    { "id": "V3", "fields": { "AD_Org_ID": 11, "C_BPartner_ID": 999999, "C_DocTypeTarget_ID": 132, "IsSOTrx": "Y" }, "legacy": { "status": "refused", "error": "Cannot save record in C_Order: Foreign ID 999999 not found in C_BPartner_ID" } }
+  ]
+}
