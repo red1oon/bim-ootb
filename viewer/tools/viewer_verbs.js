@@ -135,9 +135,9 @@ module.exports = { viewerCounts, viewerClashes, resolveDb };
 
 if (require.main === module) {
   const argv = process.argv.slice(2), verb = argv[0], arg = (k) => { const i = argv.indexOf('--' + k); return i >= 0 ? argv[i + 1] : undefined; };
-  if (verb === '__serve') { serve(arg('building'), arg('state')).catch(e => { console.error('§VIEWER_VERB FAIL ' + (e && e.message || e)); process.exit(1); }); return; }
   const f = verb === 'counts' ? () => viewerCounts({ building: arg('building'), by: arg('by') })
     : verb === 'clashes' ? () => viewerClashes({ building: arg('building'), discA: arg('a'), discB: arg('b'), rows: arg('rows') }) : null;
-  if (!f) { console.error('usage: node viewer/tools/viewer_verbs.js counts --building B [--by discipline|storey] | clashes --building B --a ARC --b MEP'); process.exit(2); }
-  f().then(r => { console.log(JSON.stringify(r)); process.exit(0); }).catch(e => { console.error('§VIEWER_VERB FAIL ' + (e && e.message || e)); process.exit(1); });
+  if (verb === '__serve') serve(arg('building'), arg('state')).catch(e => { console.error('§VIEWER_VERB FAIL ' + (e && e.message || e)); process.exit(1); });   // the warm page (red1, §22.8): it stays up
+  else if (!f) { console.error('usage: node viewer/tools/viewer_verbs.js counts --building B [--by discipline|storey] | clashes --building B --a ARC --b MEP [--rows N|all]'); process.exit(2); }
+  else f().then(r => { console.log(JSON.stringify(r)); process.exit(0); }).catch(e => { console.error('§VIEWER_VERB FAIL ' + (e && e.message || e)); process.exit(1); });
 }
