@@ -1,6 +1,6 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
 // SPDX-License-Identifier: MIT
-// ⚠ DO NOT REMOVE — words_core.js: the PURE expander of the red1 shell's short words (bim-compiler prompts/CLI_ERP_IVR.md §22.3-§22.5, steps R1 + R2). READ THE LOG of W-RED1-WORDS / W-RED1-CD after every change.
+// ⚠ DO NOT REMOVE — words_core.js: the PURE expander of the red1 shell's short words (bim-compiler prompts/CLI_ERP_IVR.md §22.3-§22.5, steps R1 + R2; §24 help groups + DocAction codes). READ THE LOG of W-RED1-WORDS / W-RED1-CD after every change.
 // (state, input) -> { state, effects, screen }, the contract of mis_core.js / menu_core.js. NO require, NO process, NO fs, NO terminal codes: it runs unchanged in Node and in the page.
 // It never acts: every effect is ONE door line {line, purpose}; the driver (red1.js) prints it, runs it through the door, and feeds the envelope back as {result:{purpose, envelope}}.
 // The table of words is DATA (vocab/words.json); the verbs and their inputs come from the vocabulary (verbs.json); the tokenizer is the door's own (handed in). Nothing here holds a rule of an engine.
@@ -46,7 +46,8 @@
       var pos = [], args = {};
       toks.slice(1).forEach(function (t) { var m = /^([A-Za-z_]\w*)=([\s\S]*)$/.exec(t.text); if (m && !(t.quoted && t.text.indexOf('=') < 0)) args[m[1]] = m[2]; else pos.push(t.text); });
       var verb = form.verb;
-      if (form.pick) { var a = (pos.shift() || '').toLowerCase(); if (form.pick.indexOf(a) < 0) return { error: w + ' needs one of: ' + form.pick.join(', ') + ' — ' + usage(w) }; verb = verb.replace('{1}', a); }
+      if (form.pick) { var a0 = pos.shift() || '', code = form.codes && form.codes[a0.toUpperCase()]; if (code && brk === 'codes') code = form.pick[(form.pick.indexOf(code) + 1) % form.pick.length];   // §24 D12: a legacy DocAction code (CO VO CL RC) names the action; codes: W-RED1-HELP falsifier (a code names the next action: must FAIL H5)
+        var a = (code || a0).toLowerCase(); if (form.pick.indexOf(a) < 0) return { error: w + ' needs one of: ' + form.pick.join(', ') + ' — ' + usage(w) }; verb = verb.replace('{1}', a); }
       if (!verbs[verb]) return { error: 'the word ' + w + ' names a verb the vocabulary does not have: ' + verb };
       if (pos.length > form.args.length) return { error: 'too many values for ' + w + ' (' + pos.join(' ') + '); ' + usage(w) };
       pos.forEach(function (v, i) { if (args[form.args[i]] == null) args[form.args[i]] = v; });
@@ -133,8 +134,45 @@
       if (x.confirm) { st.pending = x.line; screen.push(x.line + '   run it? y/N'); return out(); }
       effects.push(eff); return out();
     }
+    // §24 D10-D11: the help text, PURE (the session and a one-shot `red1 help` print the same bytes). topic '' = the three groups; 'bim'|'mis'|'erp' = a group,
+    // one typed example per form; a word = its detail (where it works, which door verb); anything else -> null (the driver hands it to the door's own help).
+    var G = o.words.groups || {}, GN = Object.keys(G).filter(function (g) { return g !== '_'; }), EV = o.words.everywhere || [];
+    function groupOf(verb) { var app = verb.split('.')[0]; return GN.filter(function (g) { return (G[g].apps || []).indexOf(app) >= 0; })[0] || null; }
+    var PLACE = { building: 'in a building', kind: 'in a kind of it (cd Element)', erp: 'in an ERP kind', any: 'anywhere' }, ORDER = ['building', 'kind', 'erp', 'any'];
+    function short(h) { return String(h).split(':')[0]; }
+    function formsOf(g) {
+      var rows = [];
+      Object.keys(words).forEach(function (w) { words[w].forms.forEach(function (f) { if (groupOf(f.verb) === g) rows.push({ word: w, form: f }); }); });
+      if (brk === 'dropform' && rows.length) rows.shift();   // W-RED1-HELP falsifier: one form left out of its group (must FAIL H2)
+      return rows;
+    }
+    function pad(rows) { var wid = Math.max.apply(null, rows.map(function (r) { return r[0].length; }).concat([4])); return rows.map(function (r) { return '  ' + r[0] + new Array(wid - r[0].length + 3).join(' ') + r[1]; }); }
+    function helpText(topic) {
+      topic = String(topic || '').trim();
+      if (!topic) {
+        var nw = function (g) { var seen = {}; formsOf(g).forEach(function (r) { seen[r.word] = 1; }); return Object.keys(seen).length; }, tw = Math.max.apply(null, GN.map(function (g) { return G[g].title.length; }));
+        var tl = GN.map(function (g) { return [g, G[g].title + new Array(tw - G[g].title.length + 4).join(' ') + 'start with: ' + G[g].start + '   (' + nw(g) + ' words)']; });
+        return ['red1: type a short word; red1 prints the full line it runs (→ …), then runs it.'].concat(pad(tl), ['  everywhere: ' + EV.map(function (e) { return e[0]; }).join(' · '),
+          'Type bim, mis or erp for its words · help <word> for one word · help verbs for the full door lines.']).join('\n') + '\n';
+      }
+      if (G[topic] && topic !== '_') {
+        var fr = formsOf(topic), out = [topic + ': ' + G[topic].title + ' (start with: ' + G[topic].start + ')'], first = true;
+        ORDER.forEach(function (pl) {
+          var here = fr.filter(function (r) { return r.form.in === pl; }).map(function (r) { var ex = r.form.ex || r.word; if (brk === 'badexample' && first) { ex += ' zz zz zz'; first = false; } return [ex, short(words[r.word].help)]; });
+          if (pl === 'any') here = here.concat(G[topic].session || []);   // the group's session words (menu) work anywhere
+          if (!here.length) return;
+          out.push(' ' + PLACE[pl] + ':'); pad(here).forEach(function (l) { out.push(l); });
+        });
+        return out.join('\n') + '\n';
+      }
+      if (words[topic]) {
+        var d = words[topic];
+        return topic + ': ' + d.help + '\n' + d.forms.map(function (f) { return '  ' + PLACE[f.in] + ': ' + (f.ex || topic) + '   → ' + f.verb.replace('{1}', '<action>') + (f.codes ? '   codes: ' + Object.keys(f.codes).map(function (c) { return c + ' ' + f.codes[c]; }).join(', ') : ''); }).join('\n') + '\n';
+      }
+      return null;
+    }
     function wordList() { return Object.keys(words).map(function (w) { return { word: w, help: words[w].help, forms: words[w].forms }; }); }
-    return { init: init, step: step, prompt: prompt, expand: expand, lineOf: lineOf, wordList: wordList, menuOpen: function (st) { return !!(st && st.menu); } };
+    return { init: init, step: step, prompt: prompt, expand: expand, lineOf: lineOf, wordList: wordList, helpText: helpText, groupOf: groupOf, menuOpen: function (st) { return !!(st && st.menu); } };
   }
   var API = { create: create };
   if (typeof module !== 'undefined' && module.exports) module.exports = API; else root.WordsCore = API;
