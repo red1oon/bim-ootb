@@ -48,6 +48,8 @@
                { "in": "erp", "ex": "group DocStatus",      "verb": "mis.group",     "args": ["by"] } ] },
   "clash":   { "help": "clashes between two disciplines: clash <A> <B>", "forms": [
                { "in": "building", "ex": "clash ARC MEP", "verb": "viewer.clashes", "args": ["discA", "discB"], "defaults": { "rows": "all" }, "summary": true, "draw": "funnel" } ] },
+  "cost":    { "help": "the cost of a selection: cost [phase|task|storey|discipline|class] [column=value …]", "forms": [
+               { "in": "building", "ex": "cost discipline", "verb": "viewer.cost", "args": ["by"] } ] },
   "grid":    { "help": "the building's grid lines",              "forms": [
                { "in": "building", "ex": "grid", "verb": "modeller.lines", "args": [] } ] },
   "walk":    { "help": "walk a discipline: walk <discipline>",   "forms": [

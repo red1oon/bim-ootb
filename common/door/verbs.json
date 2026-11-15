@@ -2394,6 +2394,71 @@
    "witness": "common/door/tests/witness_mis_lookup.js"
   },
   {
+   "verb": "viewer.cost",
+   "app": "viewer",
+   "title": "The cost of a selection of a building",
+   "description": "Price a selection of a building's elements as the Viewer's Find panel does: quantities from the model × the rate pack, grouped by 4D phase, task, storey, discipline or IFC class; a selection is column=value (wildcards * ? [] allowed) over the elements' columns. Phases and tasks come from the persisted 4D run. Reports elements with no rate and with no size. Changes nothing.",
+   "inputs": [
+    {
+     "name": "building",
+     "description": "The building name, e.g. \"Duplex\".",
+     "required": true,
+     "type": "building",
+     "example": "Duplex"
+    },
+    {
+     "name": "by",
+     "description": "phase (default), task, storey, discipline or class.",
+     "required": false,
+     "type": "string",
+     "example": "discipline"
+    }
+   ],
+   "harm": "read",
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "calls": {
+    "cli": "schedule_verbs",
+    "who": "the Viewer",
+    "argv": [
+     "cost",
+     "--building",
+     "{building}",
+     {
+      "if": "by",
+      "args": [
+       "--by",
+       "{by}"
+      ]
+     }
+    ],
+    "rest": {
+     "flag": "--where",
+     "what": "column=value over the elements (wildcards allowed), e.g. discipline=ARC storey=*Level*"
+    }
+   },
+   "returns": {
+    "shape": "schedule_verbs JSON {verb,building,by,selection,verdict OK|INCONCLUSIVE,selected,elements,unpriced,nosize,total,pack,summary,groups:[{key,elements,cost}],rows,cache}",
+    "fields": [
+     {
+      "path": "verdict",
+      "type": "string"
+     },
+     {
+      "path": "total",
+      "type": "number"
+     },
+     {
+      "path": "elements",
+      "type": "number"
+     }
+    ]
+   },
+   "witness": "common/door/tests/witness_red1_cost.js"
+  },
+  {
    "verb": "erp.find",
    "app": "erp",
    "title": "Find a document",

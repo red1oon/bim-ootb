@@ -106,7 +106,7 @@ function SR() {
     k.chk('SR-b ' + r.script + ' is gone from the working tree', !fs.existsSync(path.join(ROOT, r.script)));
     k.chk('SR-c ' + r.script + ' existed at the pinned base ' + BASE_REV + ' (so this is a retirement, not a typo)', git(['cat-file', '-e', BASE_REV + ':' + r.script]).status === 0);
     const hits = git(['grep', '-n', path.basename(r.script, '.js'), '--', '.']).stdout.split('\n').filter(Boolean);
-    const requires = hits.filter(h => /require\(|spawn|exec(File|Sync)?\(|node\s+\S*probe_schedule_engine|\.sh:|["']scripts\/probe_schedule_engine/.test(h) && !/^common\/door\/tests\/witness_schedule_verbs\.js/.test(h));
+    const requires = hits.filter(h => /require\(|spawn|exec(File|Sync)?\(|node\s+\S*probe_schedule_engine|\.sh:|["']scripts\/probe_schedule_engine/.test(h) && !/^common\/door\/tests\/witness_schedule_verbs\.js/.test(h) && !/^common\/door\/tests\/logs\//.test(h));   // a committed LOG quotes this check's own text ('spawns'): evidence, not a caller (failed on untouched main, 2026-11-16)
     k.L('SR ' + r.script + ' mentions=' + hits.length + ' requiring=' + requires.length + (hits.length ? ' [' + hits.map(h => h.split(':').slice(0, 2).join(':')).join(' ') + ']' : ''));
     k.chk('SR-d no live file requires, spawns or lists ' + r.script + ' (mentions in comments are not callers)', requires.length === 0, requires.join(' | ').slice(0, 300));
     const entry = vocab.byVerb.get(r.verb);
