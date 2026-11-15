@@ -49,7 +49,7 @@ function tokens(line) { return line.match(/"[^"]*"|'[^']*'|\S+/g).map(t => t.rep
   v('A4', 'the AI never completed the order: ' + JSON.stringify(order), !!order && order.docstatus !== 'CO' && order.docstatus !== 'CL' && Number(order.createdby) === 1700000, { order }, !order);
   // 4 audit + revoke, as the page describes
   const ver = Kernel.verifyJournal(fs.readFileSync(jr, 'utf8')), actor = 'ws:' + C.user + '/client:' + C.clientId + '/role:' + C.roleId;
-  v('A5', 'journal verifies and names the agent for every write: ' + JSON.stringify(ver.actors), ver.ok && ver.entries >= 4 && Object.keys(ver.actors).length === 1 && ver.actors[actor] === ver.entries, ver, ver.entries === 0);
+  v('A5', 'journal verifies and names the agent for every write: ' + JSON.stringify(ver.actors), ver.ok && ver.entries >= 3 &&   /* was >= 4: the fourth entry was the WORKFLOW's own rows of the refused try-complete; legacy's web-service setDocAction runs no workflow (ModelADServiceImpl:265), so a doc action that changes nothing journals nothing (W-PROJ-PROCS-LEGACY) */ Object.keys(ver.actors).length === 1 && ver.actors[actor] === ver.entries, ver, ver.entries === 0);
   Agent.revoke({ dir, name: C.user }); await new Promise(r => setTimeout(r, 900));
   const after = await (await fetch(B + '/ADInterface/services/rest/model_adservice/query_data', { method: 'POST', headers: { 'Content-Type': 'application/xml' }, body: md.match(/<!-- ws-run id=read-partner method[\s\S]*?```xml\n([\s\S]*?)```/)[1].replace(/\{\{(\w+)\}\}/g, (x, k) => vars[k]) })).text();
   v('A6', 'after revoke the page\'s first request is refused: ' + (/<_0:Error>([^<]*)/.exec(after) || [])[1], /Error login - User invalid/.test(after));

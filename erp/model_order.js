@@ -83,7 +83,11 @@
       if (!nz(l.m_product_id)) l.m_attributesetinstance_id = 0;
       else { var perr = PXO.MOrderLine_beforeSavePricing(trx, l, o); if (perr) return perr; }                // :821-850 (S2b)
       PXO.MOrderLine_setTaxIfMissing(trx, l, o);                                                              // :865-867 if (getC_Tax_ID() == 0) setTax() (a line saved without the window callout: a process, the WebService)
-      if (!nz(l.c_uom_id)) { var p = T.product(trx, l.m_product_id); if (p) l.c_uom_id = p.c_uom_id; }
+      if (!nz(l.c_uom_id)) {                                                                                  // :853-854 setDefaultC_UOM_ID :924-935: the product's UOM, else (no product) MUOM.getDefault_UOM_ID :90-97 (measured W-PROJ-PROCS-LEGACY SG3: a product-less line saves with the default UOM)
+        var p = nz(l.m_product_id) ? T.product(trx, l.m_product_id) : null;
+        if (p) { if (nz(p.c_uom_id)) l.c_uom_id = p.c_uom_id; }
+        else { var du = trx.q('SELECT c_uom_id AS u FROM c_uom WHERE ad_client_id IN (0,?) ORDER BY isdefault DESC, ad_client_id DESC, c_uom_id', [nz(l.ad_client_id) ? l.ad_client_id : trx.env.client])[0]; if (du && nz(du.u)) l.c_uom_id = du.u; }
+      }
       if (!Number(l.line)) { var mx = 0; trx.find('c_orderline', { c_order_id: o.c_order_id }).forEach(function (x) { mx = Math.max(mx, Number(x.line) || 0); }); l.line = mx + 10; }
       var prec = T.precisionOf(trx, o.c_currency_id), bd = D(l.priceentered).multiply(D(l.qtyentered));
       if (bd.scale() > prec) bd = bd.setScale(prec, HU);
@@ -968,14 +972,15 @@
   //   SO: setC_DocTypeTarget_ID(DocSubTypeSO) :662-682 (default 'WI' On Credit). The PO branch (setC_DocTypeTarget_ID() :688-) is MOrder_setDocTypeTargetDefault.
   S.MOrder_fromProject = function (trx, project, isSOTrx, docSubTypeSO) {
     var o = S.MOrder_new(trx);
-    o.set('ad_client_id', project.ad_client_id).set('ad_org_id', project.ad_org_id).set('c_campaign_id', project.c_campaign_id).set('salesrep_id', project.salesrep_id)
-      .set('c_project_id', project.c_project_id).set('description', project.name);
+    o.set('ad_client_id', project.ad_client_id).set('ad_org_id', project.ad_org_id).setID('c_campaign_id', project.c_campaign_id).setID('salesrep_id', project.salesrep_id)   // the generated setXxx_ID(int): 0 -> null, a mandatory column remembers FillMandatory (MOrder.java:487-522)
+      .setID('c_project_id', project.c_project_id).set('description', project.name);
     if (project.datecontract != null) o.set('dateordered', project.datecontract);
     if (project.datefinish != null) o.set('datepromised', project.datefinish);
-    o.set('c_bpartner_id', project.c_bpartner_id).set('c_bpartner_location_id', project.c_bpartner_location_id).set('ad_user_id', project.ad_user_id)
-      .set('m_warehouse_id', project.m_warehouse_id).set('c_paymentterm_id', project.c_paymentterm_id);
+    o.setID('c_bpartner_id', project.c_bpartner_id).setID('bill_bpartner_id', project.c_bpartner_id).setID('c_bpartner_location_id', project.c_bpartner_location_id).setID('bill_location_id', project.c_bpartner_location_id)
+      .setID('ad_user_id', project.ad_user_id).setID('bill_user_id', project.ad_user_id)   // MOrder.setC_BPartner_ID / setC_BPartner_Location_ID / setAD_User_ID set the Bill side too (:570-594)
+      .setID('m_warehouse_id', project.m_warehouse_id).setID('c_paymentterm_id', project.c_paymentterm_id);
     var pl = nz(project.m_pricelist_version_id) ? sqlInt(trx, 'SELECT M_PriceList_ID FROM M_PriceList_Version WHERE M_PriceList_Version_ID=?', [project.m_pricelist_version_id]) : 0;
-    o.set('m_pricelist_id', pl > 0 ? pl : 0);
+    o.setID('m_pricelist_id', pl > 0 ? pl : 0);
     o.set('issotrx', isSOTrx ? 'Y' : 'N');
     if (isSOTrx) {
       var sub = docSubTypeSO || 'WI';

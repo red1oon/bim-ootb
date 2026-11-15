@@ -243,6 +243,16 @@
       if (nz(inv.ad_user_id) && trx.env.now) { var u = trx.get('ad_user', inv.ad_user_id);   // :2193-2203 user last contact
         if (u) trx.update('ad_user', u, { lastcontact: trx.env.now, lastresult: 'Invoice: ' + inv.documentno }); }
       inv = trx.get('c_invoice', inv.c_invoice_id);
+      // MInvoice.completeIt :2217-2218 "Update Project" -> updateProjectInvoiceAmt(false) :3596-3631 (measured on :8108, W-PROJ-PROCS-LEGACY SG1: C_Project.InvoicedAmt 0 -> 667.5): a SALES invoice of a project adds its
+      //   GrandTotal (credit memo negated, getGrandTotal(true)) in the project's currency to C_Project.InvoicedAmt. The Java ignores the returned status (a failed conversion leaves the project alone here).
+      if (Y(inv.issotrx) && nz(inv.c_project_id)) {
+        var prj = trx.get('c_project', inv.c_project_id);
+        if (prj) {
+          var amt = isCM(trx, inv) ? D(inv.grandtotal).negate() : D(inv.grandtotal);
+          if (String(prj.c_currency_id) !== String(inv.c_currency_id)) amt = T.convert(trx, amt, inv.c_currency_id, prj.c_currency_id, inv.dateacct, 0, inv.ad_org_id);
+          if (amt != null) { var pr2 = ML.save(trx, 'c_project', prj, { invoicedamt: N(D(prj.invoicedamt == null ? 0 : prj.invoicedamt).add(amt)) }); if (!pr2.ok) trx.say('§MODEL-SEVERE MInvoice.updateProjectInvoiceAmt Could not update Project: ' + pr2.error); }
+        }
+      }
       if (inv.paymentrule === 'B') invTestAllocation(trx, inv, true);                          // :2321-2327
       m = fire(trx, 'AFTER_COMPLETE', 'c_invoice', inv); if (m) { T.msg(trx, m); return 'IN'; }
       setProcessedInv(trx, inv, 'Y');

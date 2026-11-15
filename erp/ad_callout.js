@@ -267,7 +267,12 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
     },
     // translate (Msg.java:609-650): AD_Message text, else the AD_Element name, else the key itself
     translate: function (ctx, key) { var t = _dbText(key, false); if (t != null) return t; t = _dbText(key, true); return t != null ? t : key; },
-    getElement: function (ctx, col) { var t = _dbText(col, true); return t != null ? t : col; },
+    // Msg.getElement(ad_language, ColumnName, isSOTrx): isSOTrx=false gives the element's PO_Name when it has one ("Purchase Order" for C_Order_ID), else its Name (ProjectGenPO.java:208-213; measured on :8108, W-PROJ-PROCS-LEGACY SP1)
+    getElement: function (ctx, col, isSOTrx) {
+      if (isSOTrx === false) { var ck = 'poelement:' + col, po = Object.prototype.hasOwnProperty.call(_msgs, ck) ? _msgs[ck] : undefined;
+        if (po === undefined) { po = null; try { var D = (typeof RUNTIME !== 'undefined' && RUNTIME.DB) ? RUNTIME.DB : null; if (D) { var r = D.query('SELECT PO_Name AS t FROM AD_Element WHERE ColumnName=?', [col])[0]; po = r && r.t != null && r.t !== '' ? r.t : null; } } catch (e) { po = null; } _msgs[ck] = po; }
+        if (po != null) return po; }
+      var t = _dbText(col, true); return t != null ? t : col; },
     parseTranslation: function (ctx, s) { return String(s).replace(/@([A-Za-z0-9_]+)@/g, function (m, k) { return Msg.translate(ctx, k); }); }
   };
   // AdempiereException / PeriodClosedException analogue: a thrown Error whose message is what Dialog.error shows

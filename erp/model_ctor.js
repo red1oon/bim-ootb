@@ -10,6 +10,11 @@
   else root.ModelCtor = factory(root.ModelLayer, root.ModelTrade, root.BigDecimal);
 })(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this), function (ML, T, BigDecimal) {
   var D = T.D, N = T.N, Y = T.Y, nz = T.nz, HU = T.HU, Z = T.Z;
+  // The line getters getC_Project_ID / getC_Activity_ID / getC_Campaign_ID / getUser1_ID / getUser2_ID / getAD_OrgTrx_ID of MOrderLine :541-607, MInOutLine :492-558 and MInvoiceLine :698-764 return the
+  //   HEADER's value when the line's own is 0 - and setOrderLine / setShipLine / setInvoiceLine copy through those getters. Measured on :8108 (W-PROJ-PROCS-LEGACY SG1): a Project order's shipment line and
+  //   invoice line carry C_Project_ID though the order line holds none. VP(trx, line, 'c_order', col) = that getter.
+  var DIM6 = /^(c_project_id|c_activity_id|c_campaign_id|user1_id|user2_id|ad_orgtrx_id)$/;
+  function VP(trx, x, parentTable, c) { var v = V(x, c); if (nz(v) || !DIM6.test(c)) return v; var pid = V(x, parentTable + '_id'), p = nz(pid) ? trx.get(parentTable, pid) : null; return p && p[c] != null ? p[c] : v; }
   function V(x, c) { return x instanceof ML.PO ? x.get(c) : (x ? x[c] : null); }               // read a PO handle or a plain row alike
   function row(x) { return x instanceof ML.PO ? x.values() : x; }
   function today(trx) { return trx.env.date; }
@@ -112,7 +117,7 @@
       else r.set('m_locator_id', null);
     }
     ['c_charge_id', 'description', 'isdescription', 'c_project_id', 'c_projectphase_id', 'c_projecttask_id', 'c_activity_id', 'c_campaign_id', 'ad_orgtrx_id', 'user1_id', 'user2_id',
-     'c_costcenter_id', 'c_department_id'].forEach(function (c) { r.set(c, V(oLine, c)); });
+     'c_costcenter_id', 'c_department_id'].forEach(function (c) { r.set(c, VP(trx, oLine, 'c_order', c)); });
   }
   // MInOutLine.setInvoiceLine(MInvoiceLine iLine, int M_Locator_ID, BigDecimal Qty) :272-307
   function ioSetInvoiceLine(trx, r, iLine, M_Locator_ID, qty) {
@@ -121,7 +126,7 @@
     else { r.set('m_product_id', V(iLine, 'm_product_id')).set('m_attributesetinstance_id', V(iLine, 'm_attributesetinstance_id') || 0);
       if (!nz(M_Locator_ID)) ioSetLocatorByQty(trx, r, qty); else r.set('m_locator_id', M_Locator_ID); }
     ['c_charge_id', 'description', 'isdescription', 'c_project_id', 'c_projectphase_id', 'c_projecttask_id', 'c_activity_id', 'c_campaign_id', 'ad_orgtrx_id', 'user1_id', 'user2_id',
-     'c_costcenter_id', 'c_department_id'].forEach(function (c) { r.set(c, V(iLine, c)); });
+     'c_costcenter_id', 'c_department_id'].forEach(function (c) { r.set(c, VP(trx, iLine, 'c_invoice', c)); });
   }
   // setQty :377-381 = setQtyEntered (UOM precision :388-396) + setMovementQty (product UOM precision :403-412)
   function ioSetQtyEntered(trx, r, q) { q = D(q); if (nz(r.get('c_uom_id'))) q = q.setScale(uomPrecision(trx, r.get('c_uom_id')), HU); r.set('qtyentered', q); }
@@ -226,7 +231,7 @@
     if (!nz(V(oLine, 'm_product_id'))) r.set('c_charge_id', V(oLine, 'c_charge_id'));
     ['m_product_id', 'm_attributesetinstance_id', 's_resourceassignment_id', 'c_uom_id', 'priceentered', 'priceactual', 'pricelimit', 'pricelist', 'c_tax_id', 'linenetamt',
      'c_project_id', 'c_projectphase_id', 'c_projecttask_id', 'c_activity_id', 'c_campaign_id', 'ad_orgtrx_id', 'user1_id', 'user2_id', 'c_costcenter_id', 'c_department_id',
-     'rramt', 'rrstartdate'].forEach(function (c) { r.set(c, V(oLine, c)); });
+     'rramt', 'rrstartdate'].forEach(function (c) { r.set(c, VP(trx, oLine, 'c_order', c)); });
   }
   // MInOutLine.sameOrderLineUOM — same UOM as its order line (no order line → true)
   function sameOrderLineUOM(trx, sLine) { if (!nz(V(sLine, 'c_orderline_id'))) return true; var ol = trx.get('c_orderline', V(sLine, 'c_orderline_id')); return !ol || String(ol.c_uom_id) === String(V(sLine, 'c_uom_id')); }
@@ -241,14 +246,14 @@
     if (nz(V(sLine, 'c_orderline_id'))) {
       var ol = trx.get('c_orderline', V(sLine, 'c_orderline_id'));
       r.set('s_resourceassignment_id', ol.s_resourceassignment_id).set('priceentered', sameOrderLineUOM(trx, sLine) ? ol.priceentered : ol.priceactual)
-        .set('priceactual', ol.priceactual).set('pricelimit', ol.pricelimit).set('pricelist', ol.pricelist).set('c_tax_id', ol.c_tax_id).set('linenetamt', ol.linenetamt).set('c_project_id', ol.c_project_id);
+        .set('priceactual', ol.priceactual).set('pricelimit', ol.pricelimit).set('pricelist', ol.pricelist).set('c_tax_id', ol.c_tax_id).set('linenetamt', ol.linenetamt).set('c_project_id', VP(trx, ol, 'c_order', 'c_project_id'));
     } else if (nz(V(sLine, 'm_rmaline_id'))) {
       var rl = trx.get('m_rmaline', V(sLine, 'm_rmaline_id'));
       trx.say('§MODEL-UNPORTED-DEP MInvoiceLine.setPrice() → MProductPricing (MInvoiceLine.java:377) — RMA line pricing'); r.set('priceactual', rl.amt).set('priceentered', rl.amt);
       r.set('c_tax_id', rl.c_tax_id).set('linenetamt', rl.linenetamt);
     } else trx.say('§MODEL-UNPORTED-DEP MInvoiceLine.setPrice()/setTax() → MProductPricing + Tax.get (MInvoiceLine.java:384-385) — shipment line without order line');
     ['c_project_id', 'c_projectphase_id', 'c_projecttask_id', 'c_activity_id', 'c_campaign_id', 'ad_orgtrx_id', 'user1_id', 'user2_id', 'c_costcenter_id', 'c_department_id']
-      .forEach(function (c) { r.set(c, V(sLine, c)); });
+      .forEach(function (c) { r.set(c, VP(trx, sLine, 'm_inout', c)); });
   }
   // setQtyEntered (UOM precision :611-619) / setQtyInvoiced (product UOM precision :626-635) / setQty :600-604
   function ilSetQtyEntered(trx, r, q) { q = D(q); if (nz(r.get('c_uom_id'))) q = q.setScale(uomPrecision(trx, r.get('c_uom_id')), HU); r.set('qtyentered', q); }

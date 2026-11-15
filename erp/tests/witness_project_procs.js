@@ -56,7 +56,7 @@ function num(x) { return x == null ? null : Number(x); }
   }
   var N = 0;
   function mkProject(f) { N++; return mk('c_project', Object.assign({ value: 'PP' + N + '-' + process.pid, name: 'PP project ' + N, c_currency_id: 100, m_pricelist_version_id: 104, m_warehouse_id: 103, c_bpartner_id: 117, c_bpartner_location_id: 112,
-    ad_user_id: 104, c_paymentterm_id: 105, datecontract: '2026-11-01 00:00:00', datefinish: '2026-12-31 00:00:00', issummary: 'N', projectcategory: 'N' }, f || {})); }
+    ad_user_id: 104, c_paymentterm_id: 105, salesrep_id: 101, datecontract: '2026-11-01 00:00:00', datefinish: '2026-12-31 00:00:00', issummary: 'N', projectcategory: 'N' }, f || {})); }
   function mkLine(pid, f) { return mk('c_projectline', Object.assign({ c_project_id: pid }, f)); }
   var ALLLOG = [];
   function run(procId, rec, params) {
@@ -86,6 +86,7 @@ function num(x) { return x == null ? null : Number(x); }
   ['ProjectClose', 'ProjectGenOrder', 'ProjectGenPO', 'CopyFromProject', 'ProjectPhaseGenOrder'].forEach(function (c) {
     check('P0', 'wiring-' + c, 'idempiere.html loads processes/' + c + '.js and sw.js precaches it', new RegExp('<script src="processes/' + c + '\\.js\\?v=\\d+"').test(html) && sw.indexOf("'processes/" + c + ".js'") >= 0, {});
   });
+  check('P0', 'ws-docaction-direct', 'MEASURED ON LEGACY (SG1): the web-service set_docaction runs po.processIt directly (ModelADServiceImpl:265), no workflow: ws_adinterface.js does not call runWorkflow', read('ws_adinterface.js').indexOf('ML.runWorkflow(') < 0, {});
   check('P0', 'html-no-engine-wiring', 'idempiere.html no longer calls registerProjectGenOrder', html.indexOf('registerProjectGenOrder(') < 0, {});
 
   // ═══ shared seed facts (read by SQL, never assumed) ═══
@@ -112,7 +113,7 @@ function num(x) { return x == null ? null : Number(x); }
     check('G', 'G1-run', 'the process ran ok and an order exists for the project', r.ok && !!o && one('SELECT count(*) AS n FROM c_order').n === nOrd0 + 1, { ok: r.ok, s: r.summary });
     if (!o) return;
     check('G', 'G1-header', 'header: Sales (IsSOTrx Y), doc type target = the On Credit order type (WI) ' + WI.d + ', project, partner/location/user/warehouse/payment term from the project, price list = that of the version (' + listId + '), description = project name, DateOrdered = DateContract, DatePromised = DateFinish, draft (DR)',
-      o.issotrx === 'Y' && Number(o.c_doctypetarget_id) === Number(WI.d) && Number(o.c_project_id) === pid && Number(o.c_bpartner_id) === 117 && Number(o.c_bpartner_location_id) === 112 && Number(o.ad_user_id) === 104 && Number(o.m_warehouse_id) === 103 && Number(o.c_paymentterm_id) === 105
+      o.issotrx === 'Y' && Number(o.c_doctypetarget_id) === Number(WI.d) && Number(o.c_project_id) === pid && Number(o.c_bpartner_id) === 117 && Number(o.c_bpartner_location_id) === 112 && Number(o.ad_user_id) === 104 && Number(o.bill_user_id) === 104 && Number(o.m_warehouse_id) === 103 && Number(o.c_paymentterm_id) === 105
       && Number(o.m_pricelist_id) === Number(listId) && o.description === pr.name && String(o.dateordered).slice(0, 10) === '2026-11-01' && String(o.datepromised).slice(0, 10) === '2026-12-31' && o.docstatus === 'DR', { o: o });
     var expNo = String(seq0.p || '') + String(seq0.n);
     check('G', 'G1-docno', 'DocumentNo = the doc type sequence\'s current next (' + expNo + ') and the sequence moved by its increment', o.documentno === expNo && Number(seqNext(WI.s).n) === Number(seq0.n) + Number(seq0.i), { got: o.documentno, want: expNo, seq: seqNext(WI.s) });
@@ -143,6 +144,29 @@ function num(x) { return x == null ? null : Number(x); }
     });
     var n0 = one('SELECT count(*) AS n FROM c_order').n, a = run(PROC.genorder, 987654321), b = run(PROC.genorder, 0);
     check('G', 'G2-not-found', 'an id that is no project: "Project not found C_Project_ID=987654321" (:124-125); id 0: "C_Project_ID == 0" (:67-68); nothing written', !a.ok && a.summary === 'Project not found C_Project_ID=987654321' && !b.ok && b.summary === 'C_Project_ID == 0' && a.nops === 0 && b.nops === 0 && one('SELECT count(*) AS n FROM c_order').n === n0, { a: a.summary, b: b.summary });
+  });
+  guard('G', 'G9', 'G9 MEASURED ON LEGACY (SG1/SG3): completing the order. The On Credit order makes a shipment and an invoice; their lines carry the project (the line getters fall back to the header, MOrderLine.java:541), and the invoice adds its GrandTotal to C_Project.InvoicedAmt (MInvoice.updateProjectInvoiceAmt :3596)', function () {
+    var pid = mkProject({}); mkLine(pid, { line: 10, m_product_id: 137, plannedqty: 2, plannedprice: 0 }); mkLine(pid, { line: 20, plannedqty: 2, plannedprice: 5, description: 'no product' });
+    var r = run(PROC.genorder, pid), o = one('SELECT * FROM c_order WHERE c_project_id=?', [pid]), inv0 = one('SELECT invoicedamt AS a FROM c_project WHERE c_project_id=?', [pid]).a;
+    check('G', 'G10-product-less', 'MEASURED ON LEGACY (SG3): a PRODUCT-LESS project line is ordered too (default UOM, the Exempt tax: Tax.get with no product and no charge = getExemptTax), so the answer is (2) and the order has 2 lines; the Exempt line carries a C_Tax with IsTaxExempt=Y',
+      r.ok && /\(2\)$/.test(r.summary || '') && !!o && olines(o.c_order_id).length === 2 && !!olines(o.c_order_id)[1].c_uom_id && (one('SELECT istaxexempt AS x FROM c_tax WHERE c_tax_id=?', [olines(o.c_order_id)[1].c_tax_id]) || {}).x === 'Y', { s: r.summary, l: o && olines(o.c_order_id).map(function (x) { return [x.line, x.c_uom_id, x.c_tax_id]; }) });
+    if (!o) return;
+    var co = commit(function (trx, M) { var d0 = trx.get('c_order', o.c_order_id); trx.update('c_order', d0, { docaction: 'CO' }); var x = M.processIt(trx, 'c_order', o.c_order_id, 'CO'); return { ok: x.ok, error: x.msg }; });
+    var sh = one('SELECT * FROM m_inout WHERE c_order_id=?', [o.c_order_id]), inv = one('SELECT * FROM c_invoice WHERE c_order_id=?', [o.c_order_id]);
+    check('G', 'G9-complete', 'the order completes and makes a shipment and an invoice', co.ok && !!sh && !!inv, { co: co.error });
+    if (!sh || !inv) return;
+    var sl = q('SELECT c_project_id AS p FROM m_inoutline WHERE m_inout_id=?', [sh.m_inout_id]), il = q('SELECT c_project_id AS p FROM c_invoiceline WHERE c_invoice_id=?', [inv.c_invoice_id]);
+    check('G', 'G9-lines-project', 'every shipment line and invoice line carries the project (' + pid + ')', sl.length > 0 && il.length > 0 && sl.every(function (x) { return Number(x.p) === pid; }) && il.every(function (x) { return Number(x.p) === pid; }), { sl: sl, il: il });
+    var after = one('SELECT invoicedamt AS a FROM c_project WHERE c_project_id=?', [pid]).a;
+    check('G', 'G9-project-invoiced', 'C_Project.InvoicedAmt = ' + inv0 + ' + the invoice GrandTotal ' + inv.grandtotal, r2(after) === r2(Number(inv0) + Number(inv.grandtotal)) && Number(inv.grandtotal) > 0, { before: inv0, after: after, gt: inv.grandtotal });
+  });
+  guard('G', 'G8', 'G8 MEASURED ON LEGACY (:8108, W-PROJ-PROCS-LEGACY SG2f): a project without a Sales Representative cannot make an order - MOrder.setSalesRep_ID(0) sets a MANDATORY column to null, PO.set_Value remembers FillMandatory (PO.java:997-1004) and order.save() is false', function () {
+    var pid = mkProject({ salesrep_id: null }); mkLine(pid, { line: 10, m_product_id: 123, plannedqty: 1, plannedprice: 5 });
+    var n0 = one('SELECT count(*) AS n FROM c_order').n, r = run(PROC.genorder, pid);
+    check('G', 'G8-no-salesrep', 'the process fails with "Could not create Order", no order, no op (legacy answer, measured)', !r.ok && r.summary === 'Could not create Order' && r.nops === 0 && one('SELECT count(*) AS n FROM c_order').n === n0, { ok: r.ok, s: r.summary });
+    var pid2 = mkProject({ c_paymentterm_id: null }); mkLine(pid2, { line: 10, m_product_id: 123, plannedqty: 1, plannedprice: 5 });
+    var r2 = run(PROC.genorder, pid2);
+    check('G', 'G8-no-paymentterm', 'a project without a payment term (C_Order.C_PaymentTerm_ID is mandatory) is refused the same way', !r2.ok && r2.summary === 'Could not create Order' && r2.nops === 0, { s: r2.summary });
   });
   guard('G', 'G3', 'G3 a Service Charge project (category S): the Java saves the order FIRST and then throws - the process fails and the order is rolled back', function () {
     var pid = mkProject({ projectcategory: 'S' }); mkLine(pid, { line: 10, m_product_id: 123, plannedqty: 1, plannedprice: 5 });
@@ -226,8 +250,8 @@ function num(x) { return x == null ? null : Number(x); }
     check('O', 'O1-skip-messages', 'the skips are logged by project line number with legacy\'s text: 40 "Line has no Product", 50 "Line was ordered previously", 60 "Product has no PO record"; the inactive line 70 says nothing (the loop filters IsActive, :108)',
       msgs.indexOf('40:Line has no Product') >= 0 && msgs.indexOf('50:Line was ordered previously') >= 0 && msgs.indexOf('60:Product has no PO record') >= 0 && !msgs.some(function (m) { return /^70:/.test(m); }), { msgs: msgs });
     var bl = r.logs.filter(function (l) { return Number(l.tableId) === 259; });
-    check('O', 'O1-buffer-log', 'one log row per created order line (3), each "<Order>:<DocumentNo>" of the order that line is on, on table C_Order (259), the record id = the log id = that order',
-      bl.length === 3 && bl.map(function (l) { return /:(\d+)$/.exec(l.msg)[1]; }).sort().join() === [o1.documentno, o1.documentno, o2.documentno].sort().join() && bl.every(function (l) { return String(l.id) === String(l.recordId); }), { bl: bl.map(function (l) { return l.msg; }) });
+    check('O', 'O1-buffer-log', 'one log row per created order line (3), each "Purchase Order:<DocumentNo>" (Msg.getElement(lang, C_Order_ID, false) = the element PO name; MEASURED on :8108 SP1) of the order that line is on, on table C_Order (259), the record id = the log id = that order',
+      bl.length === 3 && bl.every(function (l) { return /^Purchase Order:\d+$/.test(l.msg); }) && bl.map(function (l) { return /:(\d+)$/.exec(l.msg)[1]; }).sort().join() === [o1.documentno, o1.documentno, o2.documentno].sort().join() && bl.every(function (l) { return String(l.id) === String(l.recordId); }), { bl: bl.map(function (l) { return l.msg; }) });
     // O6 second run
     var n0 = one('SELECT count(*) AS n FROM c_order').n, r6 = run(PROC.genpo, 0, { C_Project_ID: pid }), m6 = r6.logs.map(function (l) { return Number(l.id) + ':' + l.msg; });
     check('O', 'O6-rerun', 'a second run orders nothing: no new PO; A,B,C are "Line was ordered previously"', r6.ok && one('SELECT count(*) AS n FROM c_order').n === n0 && ['10', '20', '30'].every(function (n) { return m6.indexOf(n + ':Line was ordered previously') >= 0; }), { m6: m6 });
@@ -309,7 +333,7 @@ function num(x) { return x == null ? null : Number(x); }
     var pid = mkProject({}), r = run(PROC.close, pid);
     check('C', 'C3-no-lines', 'the project is Processed with 0 lines', r.ok && one('SELECT processed AS p FROM c_project WHERE c_project_id=?', [pid]).p === 'Y', { s: r.summary });
     var n0 = one("SELECT count(*) AS n FROM c_project WHERE processed='Y'").n, r4 = run(PROC.close, 987654321);
-    check('C', 'C4-unknown', 'unknown id: the process fails, no op committed, no project changed', !r4.ok && r4.nops === 0 && one("SELECT count(*) AS n FROM c_project WHERE processed='Y'").n === n0, { s: r4.summary });
+    check('C', 'C4-unknown', 'unknown id (MEASURED ON LEGACY, SC2): the Java makes a NEW empty MProject (client 0) and project.saveEx() on a session of client 11 is refused by PO.checkCrossTenant: "Cross tenant PO writing request detected from session  for table C_Project Record_ID=0"; no op committed, no project changed', !r4.ok && /^Cross tenant PO writing request detected from session .* for table C_Project Record_ID=0$/.test(r4.summary || '') && r4.nops === 0 && one("SELECT count(*) AS n FROM c_project WHERE processed='Y'").n === n0, { s: r4.summary });
   });
 
   // ═══ K Copy Details (CopyFromProject.java / MProject.copyDetailsFrom) ═══
@@ -338,6 +362,9 @@ function num(x) { return x == null ? null : Number(x); }
     check('K', 'K1-plain-lines', 'plain lines: product/qty/price/description copied; Invoiced Qty/Amt 0, C_OrderPO_ID and C_Order_ID empty, Processed N (MProject.copyLinesFrom :297-301), project = target, a new key',
       plain.length === 2 && Number(c1.c_project_id) === tgt && Number(c1.m_product_id) === 123 && num(c1.plannedqty) === 10 && num(c1.plannedprice) === 60 && num(c1.invoicedqty) === 0 && num(c1.invoicedamt) === 0 && !c1.c_orderpo_id && !c1.c_order_id && c1.processed === 'N' && Number(c1.c_projectline_id) !== src.l1
       && Number(c2.m_product_id) === 138 && num(c2.plannedqty) === 3, { c1: c1 });
+    var pl1 = one('SELECT pricelimit AS l FROM m_productprice WHERE m_pricelist_version_id=? AND m_product_id=123', [pv]), pl2 = one('SELECT pricelimit AS l FROM m_productprice WHERE m_pricelist_version_id=? AND m_product_id=138', [pv]);
+    check('K', 'K1-margin', 'MEASURED ON LEGACY (SK1): a copied line is saved through MProjectLine.beforeSave, which sets PlannedMarginAmt = (PlannedPrice - the price LIMIT on the project price list) x PlannedQty (getLimitPrice :170-182): Oak (60 - ' + pl1.l + ') x 10 = ' + r2((60 - pl1.l) * 10) + ', Hoe (4 - ' + pl2.l + ') x 3 = ' + r2((4 - pl2.l) * 3),
+      num(c1.plannedmarginamt) === r2((60 - pl1.l) * 10) && num(c2.plannedmarginamt) === r2((4 - pl2.l) * 3), { c1: c1.plannedmarginamt, c2: c2.plannedmarginamt });
     var ph1 = T.phases.filter(function (x) { return x.name === 'K-Ph1'; })[0] || {}, ph2 = T.phases.filter(function (x) { return x.name === 'K-Ph2'; })[0] || {};
     check('K', 'K1-phases', 'phases: name/seqno/description/qty/C_Phase_ID copied, project = target, new keys, IsComplete N, C_Order_ID empty', Number(ph1.c_project_id) === tgt && ph1.description === 'ph1d' && num(ph1.qty) === 3 && Number(ph1.seqno) === 10 && ph1.iscomplete === 'N' && !ph1.c_order_id && Number(ph2.c_phase_id) === Number(dummyPhase) && Number(ph1.c_projectphase_id) !== src.p1, { ph1: ph1 });
     var t1 = T.tasks.filter(function (x) { return x.name === 'K-T1'; })[0] || {}, t2 = T.tasks.filter(function (x) { return x.name === 'K-T2'; })[0] || {};
