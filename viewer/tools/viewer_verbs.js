@@ -68,7 +68,7 @@ function warmOf(building) {
 async function askWarm(st, f, building, tpl, slots, text) {
   for (let i = 0; i < 600 && st && !st.ready; i++) { await new Promise(r => setTimeout(r, 500)); try { st = JSON.parse(fs.readFileSync(f, 'utf8')); } catch (e) { return null; } if (st.building !== building) return null; }
   if (!st || !st.ready) return null;
-  return new Promise((res) => { const body = JSON.stringify({ tpl, slots, text }); const rq = require('http').request({ host: '127.0.0.1', port: st.port, method: 'POST', headers: { 'x-token': st.token, 'content-length': Buffer.byteLength(body) }, timeout: 1800000 },
+  return new Promise((res) => { const body = JSON.stringify({ tpl, slots, text }); const rq = require('http').request({ host: '127.0.0.1', port: st.port, method: 'POST', headers: { 'x-token': st.token, 'content-length': require('buffer').Buffer.byteLength(body) }, timeout: 1800000 },
     (x) => { let b = ''; x.on('data', d => { b += d; }); x.on('end', () => { try { const j = JSON.parse(b); res(x.statusCode === 200 ? j : null); } catch (e) { res(null); } }); });
     rq.on('error', () => res(null)); rq.end(body); });
 }

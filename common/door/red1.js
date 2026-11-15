@@ -157,10 +157,8 @@ if (require.main === module) {
     if (rest.length === 1 && /^\s*menu(\s|$)/i.test(rest[0])) a[a.indexOf(rest[0])] = rest[0].replace(/^\s*menu/i, '/M');   // `red1 menu` = the door's terminal menu
     else if (rest.length === 1 && /^\s*\?/.test(rest[0])) a[a.indexOf(rest[0])] = rest[0].replace(/^\s*\?/, 'help');
     else if (rest.length === 1 && a.indexOf('--script') < 0 && (!isDoorLine(rest[0]) || /\s\|\s/.test(rest[0])) && !/^\s*(!help|help)(\s|$)/.test(rest[0])) {   // words, or a door line with the shell's `| glob`
-      wordShot(rest[0], o).then(c => process.exit(c)).catch(e => { say('FAIL ' + (e && e.stack || e)); process.exit(1); }); return;
-    }
-    process.exit(passThrough(a));
-  }
-  session(o).then(c => process.exit(c)).catch(e => { say('FAIL ' + (e && e.stack || e)); process.exit(1); });
+      wordShot(rest[0], o).then(c => process.exit(c)).catch(e => { say('FAIL ' + (e && e.stack || e)); process.exit(1); });
+    } else process.exit(passThrough(a));
+  } else session(o).then(c => process.exit(c)).catch(e => { say('FAIL ' + (e && e.stack || e)); process.exit(1); });
 }
 module.exports = { session, makeShell, buildingNames };
