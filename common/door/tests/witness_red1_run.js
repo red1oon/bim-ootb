@@ -3,7 +3,7 @@
 //   R2 ISSUE (the questions are not the legacy dialog's): in a session, `run "Generate PO from Project"` asks C_Project_ID, C_ProjectPhase_ID, C_ProjectLine_ID, ConsolidateDocument in AD_Process_Para SeqNo order (an independent SQL), the default [Y] shown
 //   R3 ISSUE (the printed line is not the line that ran): the `→ erp.process …` line, run alone through door.js on a fresh op-log, gives the same answer
 //   R4 ISSUE (one-shot asks, or runs half-filled): `red1 'cd Project; run "Set Project Type" 990000'` asks nothing and is refused naming C_ProjectType_ID
-//   R5 ISSUE (a process with no port pretends): Close Project is refused naming its class; the count of ported processes on the Project table is logged (X of N)
+//   R5 ISSUE (a process with no port pretends): a process with no JS port (picked from the dictionary, not named) is refused naming its class; the count of ported processes on the Project table is logged (X of N)
 //   R6 ISSUE (a typo runs or is unhelpful): a misspelt process and a misspelt parameter are refused naming the nearest
 //   Falsifiers: RUN_BREAK=skipcommit (the ops are not kept: must FAIL R1) · WORDS_BREAK=paramorder (the questions reversed: must FAIL R2).
 //   Run: node common/door/tests/witness_red1_run.js > common/door/tests/logs/red1_run.log 2>&1
@@ -16,6 +16,14 @@ const run = (argv, env, input) => { const r = cp.spawnSync(process.execPath, arg
 const envs = (o) => o.split('\n').filter(l => l.charAt(0) === '{').map(l => { try { return JSON.parse(l); } catch (e) { return null; } }).filter(Boolean);
 const nops = (e) => { try { return fs.readFileSync(e.BIM_OBJECT_OPLOG, 'utf8').split('\n').filter(Boolean).length; } catch (x) { return 0; } };
 const mask = (a) => JSON.stringify(a, (key, v) => (key === 'request' || key === 'ms' ? undefined : v));
+// a process with NO JS port and no mandatory parameter, read from the dictionary + the ports loaded (so the claim follows the parity lane's progress, never a name that goes stale)
+async function noPortProcess() {
+  const AP = require(path.join(ROOT, 'erp/ad_process.js')); fs.readdirSync(path.join(ROOT, 'erp/processes')).filter(f => /\.js$/.test(f)).forEach(f => { try { require(path.join(ROOT, 'erp/processes', f)); } catch (e) { /* skip */ } });
+  const SQL = await require('sql.js')(), db = new SQL.Database(fs.readFileSync(path.join(ROOT, 'erp/ad_seed.db')));
+  const r = db.exec("SELECT p.name, p.classname FROM ad_process p WHERE p.isactive='Y' AND p.classname IS NOT NULL AND p.classname<>'' AND NOT EXISTS (SELECT 1 FROM ad_process_para pp WHERE pp.ad_process_id=p.ad_process_id AND pp.isactive='Y' AND pp.ismandatory='Y' AND (pp.defaultvalue IS NULL OR pp.defaultvalue='')) ORDER BY p.ad_process_id");
+  const hit = (r.length ? r[0].values : []).filter(x => !(AP.JAVA && AP.JAVA[x[1]]) && !AP.hasHandler(x[1]))[0];
+  return hit ? { name: hit[0], classname: hit[1] } : null;
+}
 (async () => {
   // R1
   const e1 = fresh(), s1 = run([RED1, 'cd Project; run "Set Project Type" 990000 C_ProjectType_ID=103'], e1);
@@ -41,14 +49,14 @@ const mask = (a) => JSON.stringify(a, (key, v) => (key === 'request' || key === 
   const s4 = run([RED1, 'cd Project; run "Set Project Type" 990000'], fresh()), r4 = envs(s4.out).pop();
   k.chk('R4 one-shot `run "Set Project Type" 990000` asks nothing and is refused naming C_ProjectType_ID', !!r4 && r4.status === 'refused' && /missing parameter: C_ProjectType_ID/.test(r4.why || '') && !/\? \[/.test(s4.out), 'status=' + (r4 && r4.status) + ' why=' + (r4 && r4.why));
   // R5 no port: refused naming the class; X of N
-  const r5 = envs(run([DOOR, 'erp.process name="Close Project" record=990000'], fresh()).out).pop();
+  const np = await noPortProcess(), r5 = np ? envs(run([DOOR, 'erp.process name="' + np.name + '" record=990000 kind=Project'], fresh()).out).pop() : null;
   try { const AP = require(path.join(ROOT, 'erp/ad_process.js')); fs.readdirSync(path.join(ROOT, 'erp/processes')).filter(f => /\.js$/.test(f)).forEach(f => { try { require(path.join(ROOT, 'erp/processes', f)); } catch (e) { /* skip */ } });
     const SQL = await require('sql.js')(), db = new SQL.Database(fs.readFileSync(path.join(ROOT, 'erp/ad_seed.db')));
     const q = db.exec("SELECT DISTINCT p.name, p.classname FROM ad_process p JOIN ad_column c ON c.ad_process_id=p.ad_process_id JOIN ad_table t ON t.ad_table_id=c.ad_table_id WHERE lower(t.tablename)='c_project' AND p.isactive='Y'");
     const rows = q.length ? q[0].values : [], ported = rows.filter(r => r[1] && (AP.JAVA && AP.JAVA[r[1]] || AP.hasHandler(r[1])));
     k.L('§RED1_RUN_COVERAGE Project-window buttons: ' + ported.length + ' of ' + rows.length + ' run (' + ported.map(r => r[0]).join(', ') + '); not ported: ' + rows.filter(r => ported.indexOf(r) < 0).map(r => r[0]).join(', '));
   } catch (e) { k.L('R5 coverage: ' + e.message); }
-  k.chk('R5 Close Project (no JS port) is refused naming its class', !!r5 && r5.status === 'refused' && /no JS port yet \(class org\.compiere\.process\.ProjectClose\)/.test(r5.why || ''), r5 && r5.why);
+  if (!np) k.incon('R5', 'every process has a port: nothing to refuse'); else k.chk('R5 a process with no JS port (' + np.name + ', from the dictionary) is refused naming its class', !!r5 && r5.status === 'refused' && (r5.why || '').indexOf('no JS port yet (class ' + np.classname + ')') >= 0, r5 && r5.why);
   // R6 typos
   const t1 = envs(run([DOOR, 'erp.process name="Set Projct Type" record=990000'], fresh()).out).pop(), t2 = envs(run([DOOR, 'erp.process name="Set Project Type" record=990000 C_ProjectTyp=103'], fresh()).out).pop();
   k.chk('R6 a misspelt process and a misspelt parameter are refused naming the nearest (Set Project Type, C_ProjectType_ID)', !!t1 && t1.status === 'refused' && /nearest: Set Project Type/.test(t1.why) && !!t2 && t2.status === 'refused' && /nearest: C_ProjectType_ID/.test(t2.why), (t1 && t1.why) + ' | ' + (t2 && t2.why));
