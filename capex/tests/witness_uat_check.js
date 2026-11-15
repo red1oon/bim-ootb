@@ -8,6 +8,7 @@
 //   K2 a pack with one marked file changed but its manifest kept: the page refuses it (damaged), the button stays off
 // Inputs (made by W-UAT-CHAIN with UAT_OUT, and capex/tools/uat_pack.js): UAT_PACK=<zip> UAT_RUN=<UAT_OUT dir> UAT_RUN_BREAK=<UAT_OUT dir of the BREAK run>; SKIP without.
 // Usage: UAT_PACK=… UAT_RUN=… UAT_RUN_BREAK=… NODE_PATH=~/bim-compiler/node_modules node capex/tests/witness_uat_check.js
+//   UAT_CHECK_URL=<the published check.html> judges the LIVE page instead of this worktree's copy (the pack may then be the fetched OCI copy).
 'use strict';
 const fs = require('fs'), path = require('path'), http = require('http'), os = require('os'), cp = require('child_process');
 const puppeteer = require(path.join(process.env.HOME, 'bim-compiler', 'node_modules', 'puppeteer')), sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -28,7 +29,7 @@ let judged = 0, fails = 0; const say = s => console.log(s), ck = (id, c, i) => {
   const br = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox'] });
   async function mark(packFile, tester, label) {   // tester = { dir, run } or null
     const pg = await br.newPage(), logs = []; pg.on('console', m => { const t = m.text(); if (/§UATCHECK/.test(t)) logs.push(t); }); pg.on('pageerror', e => say('§UATCK ' + label + ' PAGEERR ' + String(e).slice(0, 200)));
-    await pg.goto('http://127.0.0.1:' + srv.address().port + '/capex/uat/check.html', { waitUntil: 'load' });
+    await pg.goto(process.env.UAT_CHECK_URL || ('http://127.0.0.1:' + srv.address().port + '/capex/uat/check.html'), { waitUntil: 'load' });
     await (await pg.$('#pack')).uploadFile(packFile);
     for (let i = 0; i < 60 && !logs.some(l => /pack (ok|refused)/.test(l)); i++) await sleep(250);
     const packLine = logs.find(l => /pack (ok|refused)/.test(l)) || '(no pack line)', info = await pg.$eval('#packinfo', e => e.textContent), enabled = await pg.$eval('#go', e => !e.disabled);
@@ -41,6 +42,7 @@ let judged = 0, fails = 0; const say = s => console.log(s), ck = (id, c, i) => {
     }
     say('§UATCK ' + label + ': ' + packLine + ' | page says: ' + info + ' | result ' + JSON.stringify(res)); await pg.close(); return { packLine, info, enabled, res };
   }
+  say('§UATCK page ' + (process.env.UAT_CHECK_URL || 'this worktree (localhost)'));
   const A = await mark(PACK, { dir: RUN, run }, 'A');
   ck('K1b the page finds the pack intact (every sha256)', /pack ok files=\d+/.test(A.packLine) && A.enabled, { line: A.packLine });
   const v = r => r && Object.fromEntries(r.rows);
