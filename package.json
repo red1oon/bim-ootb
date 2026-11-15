@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "BIM OOTB viewer — static browser app (no build).",
   "private": true,
+  "bin": {
+    "red1": "common/door/red1.js"
+  },
   "scripts": {
     "lint": "eslint viewer",
     "test": "node tests/run_witness_suite.js"
