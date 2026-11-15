@@ -128,7 +128,14 @@ async function session(o) {
   // `▸ Name` (another spelling: case, -, a typo). Tab takes it (→ takes a grey one). Enter NEVER applies it: the line runs as typed. Not on a pipe, not in a menu.
   const AS = require(path.join(__dirname, 'assist_core.js')), VB = {}, BLD = buildingNames(), DOF = ((sh.words.words.do || {}).forms || [{}])[0] || {};
   vocab.verbs.forEach(v => { VB[v.verb] = v; });
-  const actx = () => { const s = sh.state(); return { words: names.filter(n => n.indexOf('.') < 0), verbs: VB, buildings: BLD, props: s.kind ? s.props : (s.erp ? s.eprops : null), codes: DOF.codes || {} }; };
+  // §1d.1 the ERP kinds `cd` can name, read ONCE per terminal session by one door line (journalled like any read), those with a window first
+  let KINDS = [];
+  if (tty && process.env.RED1_KINDS !== 'off') sh.door.runLine('mis.list kind=AD_Table columns=Name,AD_Window_ID IsActive=Y IsView=N sort=Name limit=1000', { actor: 'human' }).then(e => {
+    const rows = e && e.status === 'ok' && e.answer && Array.isArray(e.answer.rows) ? e.answer.rows : [];
+    KINDS = rows.filter(r => r.Name).map(r => ({ name: r.Name, window: r.AD_Window_ID != null })).sort((x, y) => (y.window - x.window) || (x.name < y.name ? -1 : 1));
+    say('assist kinds=' + KINDS.length + ' with-window=' + KINDS.filter(k => k.window).length);
+  }).catch(err => say('assist kinds FAIL ' + (err && err.message)));
+  const actx = () => { const s = sh.state(); return { words: names.filter(n => n.indexOf('.') < 0), verbs: VB, buildings: BLD, kinds: KINDS, props: s.kind ? s.props : (s.erp ? s.eprops : null), codes: DOF.codes || {} }; };
   let hint = null;
   const completer = (line) => {
     if (hint && hint.ghost) return [[hint.token + hint.ghost], hint.token];

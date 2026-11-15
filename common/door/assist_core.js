@@ -51,7 +51,7 @@
   function suggest(ctx, text) {
     ctx = ctx || {}; text = String(text || '');
     var lt = lastToken(text), tok = lt.tok, words = lt.before.trim() ? lt.before.trim().split(/\s+/) : [], first = words[0] || null;
-    if (/^"/.test(tok)) return null;   // inside a quoted value: no assist
+    if (/^"/.test(tok) && !(first === 'cd' && words.length === 1 && lt.before.trim() === 'cd')) return null;   // inside a quoted value: no assist (but a quoted kind after cd)
     // 1. the first word: red1 words, the help groups, session words, door verbs
     if (!first) {
       if (!tok) return null;
@@ -59,7 +59,14 @@
       return answer(tok, cands(tok, w1));
     }
     // 2. after cd: the buildings, the kinds this session knows
-    if (first === 'cd' && words.length === 1) return tok ? answer(tok, cands(tok, (ctx.buildings || []).map(function (b) { return { name: b, reason: 'building' }; }))) : null;
+    if (first === 'cd' && words.length === 1) {   // §1d.1: the buildings, then the ERP kinds (those with a window first); a name with a space is completed in quotes
+      if (!tok) return null;
+      var raw = tok.replace(/^"/, ''), cl2 = (ctx.buildings || []).map(function (b) { return { name: b, reason: 'building' }; }).concat((ctx.kinds || []).map(function (k4) { return { name: k4.name, reason: k4.window ? 'ERP kind · window' : 'ERP kind' }; }));
+      var r2 = answer(raw, cands(raw, cl2)); if (!r2 || !r2.candidates.length) return r2;
+      var c0 = r2.candidates[0].name;
+      if (/\s/.test(c0) || /^"/.test(tok)) { r2.token = tok; r2.ghost = ''; r2.replace = { from: tok, to: '"' + c0 + '"' }; }
+      return r2;
+    }
     // 3. after do: the legacy codes, then the action names
     if (first === 'do' && words.length === 1) {
       var cl = Object.keys(ctx.codes || {}).map(function (c) { return { name: c, reason: ctx.codes[c] }; }).concat(Object.keys(ctx.codes || {}).map(function (c) { return { name: ctx.codes[c], reason: c }; }));
