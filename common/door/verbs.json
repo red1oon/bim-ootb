@@ -1925,7 +1925,7 @@
    "verb": "model.open",
    "app": "modeller",
    "title": "Open 2D sheets in the Modeller",
-   "description": "Open a set of 2D drawing sheets (a folder of .dxf files, each carrying its markings) in a Modeller kept open between lines, headless. Name the building type (for example Farming Shed) and the app reads its rules for it, among them whether a bay can be added. The answer says how many sheets, how many bodies the reader found and whether the gate is open. Nothing is saved: closing the session drops the model. One session per folder.",
+   "description": "Open a set of 2D drawing sheets (a folder of .dxf files, each carrying its markings) in a Modeller kept open between lines, headless. Name the building type (for example Farming Shed) and the app reads its rules for it, among them whether a bay can be added. The answer says how many sheets, how many bodies the reader found and whether the gate is open. Nothing is saved until model.save (or model.close with a save file known); file= names the .db the saves go to. One session per folder.",
    "inputs": [
     {
      "name": "sheets",
@@ -1940,6 +1940,13 @@
      "required": false,
      "type": "string",
      "example": "Farming Shed"
+    },
+    {
+     "name": "file",
+     "description": "Optional: the .db in this folder that model.save and the save on close write.",
+     "required": false,
+     "type": "string",
+     "example": "shed.db"
     }
    ],
    "harm": "trial",
@@ -1957,6 +1964,12 @@
       "if": "type",
       "args": [
        "type={type}"
+      ]
+     },
+     {
+      "if": "file",
+      "args": [
+       "file={file}"
       ]
      }
     ]
@@ -2081,11 +2094,66 @@
    "witness": "modeller/tests/witness_model_session.js"
   },
   {
+   "verb": "model.save",
+   "app": "modeller",
+   "title": "Save the open model",
+   "description": "Press the page's Save in the open Modeller session: the clash gate first (a RED clash blocks the save, as on screen, and nothing is written), then the fold to the native .db, which is written to the file in this folder. The answer gives the bytes, the sha256, and the time of each phase (gate, heal and re-gate, fold and catalog, file write).",
+   "inputs": [
+    {
+     "name": "file",
+     "description": "The .db in this folder to write; optional once model.open or an earlier save named it.",
+     "required": false,
+     "type": "string",
+     "example": "shed.db"
+    }
+   ],
+   "harm": "writes",
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "calls": {
+    "cli": "model_session",
+    "who": "the app",
+    "argv": [
+     "save",
+     {
+      "if": "file",
+      "args": [
+       "file={file}"
+      ]
+     }
+    ]
+   },
+   "returns": {
+    "shape": "model_session JSON {file,bytes,sha256,catalog_version,elements,phases,total_ms,summary} or {refused,error}",
+    "fields": [
+     {
+      "path": "bytes",
+      "type": "number"
+     },
+     {
+      "path": "total_ms",
+      "type": "number"
+     }
+    ]
+   },
+   "witness": "modeller/tests/witness_model_save.js"
+  },
+  {
    "verb": "model.close",
    "app": "modeller",
    "title": "Close the Modeller session",
-   "description": "Stop the Modeller session kept open in this folder. Nothing was saved; the model is dropped.",
-   "inputs": [],
+   "description": "Stop the Modeller session kept open in this folder. When the model changed since the last save and a save file is known, it is saved first; when it changed and no file is known, the close is refused and the session stays open (model.save file=..., or discard=Y to drop the changes).",
+   "inputs": [
+    {
+     "name": "discard",
+     "description": "Optional: Y drops the unsaved changes on purpose.",
+     "required": false,
+     "type": "string",
+     "example": "Y"
+    }
+   ],
    "harm": "trial",
    "actors": [
     "human",
@@ -2095,11 +2163,17 @@
     "cli": "model_session",
     "who": "the app",
     "argv": [
-     "close"
+     "close",
+     {
+      "if": "discard",
+      "args": [
+       "discard={discard}"
+      ]
+     }
     ]
    },
    "returns": {
-    "shape": "model_session JSON {closed}",
+    "shape": "model_session JSON {closed,saved,discarded} or {refused,error}",
     "fields": [
      {
       "path": "closed",
