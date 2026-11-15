@@ -12,7 +12,8 @@
     var words = o.words.words, choices = o.words.choices || {}, verbs = {}, tokenize = o.tokenize, pick = o.pickColumns, brk = o.brk || '', Menu = o.menuCore || null, interactive = !!o.interactive;
     o.vocab.verbs.forEach(function (v) { verbs[v.verb] = v; });
     var buildings = (o.buildings || []).slice();
-    function init() { return { building: null, kind: null, columns: null, props: null, erp: null, ecolumns: null, eprops: null, role: null, pending: null, last: null, menu: null, pickFor: null }; }
+    var SKIP = '\u0000leave-out';   // §25: the pick-list item that leaves an optional parameter out (never a value a record can have)
+    function init() { return { building: null, kind: null, columns: null, props: null, erp: null, ecolumns: null, eprops: null, role: null, pending: null, last: null, menu: null, pickFor: null, paras: null, runFor: null, asking: null }; }
     function prompt(st) {
       var where = st.erp ? st.erp : (st.building ? st.building + (st.kind ? '/' + st.kind : '') : '');
       return 'red1' + (st.role ? ' [' + st.role + ']' : '') + (where ? ' ' + where : '') + '> ';
@@ -56,6 +57,13 @@
       var e = verbs[verb]; ctxArgs(st, e, args);
       var colsHere = verb.indexOf('object.') === 0 ? st.columns : st.ecolumns;
       Object.keys(form.defaults || {}).forEach(function (k) { if (args[k] != null) return; var v = form.defaults[k]; if (v === '$columns') { if (colsHere && colsHere.length) args[k] = colsHere.join(','); } else args[k] = v; });
+      // §25 D13: `run` in a session asks for each parameter not typed, one at a time, in AD_Process_Para SeqNo order (the legacy dialog's order), read by ONE door line
+      if (form.ask === 'params' && interactive && args.name) {
+        var PR = st.paras; if (!PR || PR.name !== args.name) return { params: { name: args.name } };
+        var nx = PR.rows.filter(function (q) { var c = q.ColumnName; return c && !Object.keys(args).some(function (k2) { return k2.toLowerCase() === c.toLowerCase(); }) && PR.skipped.indexOf(c) < 0; });
+        if (brk === 'paramorder' && nx.length > 1) nx = nx.slice().reverse();   // W-RED1-RUN falsifier: the questions out of SeqNo order (must FAIL R2)
+        if (nx.length) return { ask: nx[0] };
+      }
       // §22.8 R5: a required input still missing opens a pick menu of its legal values (interactive sessions only; elsewhere the door refuses, naming it)
       var miss = e.inputs.filter(function (i) { return i.required && args[i.name] == null; })[0];
       if (miss && interactive && Menu && choices[miss.type]) return { pick: { input: miss.name, type: miss.type, word: w, verb: verb } };
@@ -72,6 +80,18 @@
           var vals = rows.map(function (r) { return Array.isArray(r) ? r[ch.col] : r[Object.keys(r)[ch.col]]; }).filter(function (v) { return v != null && v !== ''; });
           if (!vals.length) { st.pickFor = null; screen.push(pf.word + ': no ' + pf.input + ' to pick from (' + (env.why || 'the answer has no rows') + ')'); return out(); }
           st.menu = Menu.create({ items: vals.map(function (v) { return { name: String(v) }; }), title: pf.word + ': pick ' + pf.input + ' (' + vals.length + ')' });
+          Menu.plain(Menu.render(st.menu)).forEach(function (l) { screen.push(l); }); return out();
+        }
+        if (p === 'run-paras') {   // the process's parameters, in SeqNo order; then the same word-line again (now it can ask)
+          var rf = st.runFor; st.runFor = null;
+          st.paras = { name: rf.name, rows: ok && Array.isArray(env.answer.rows) ? env.answer.rows : [], skipped: [] };
+          if (!st.paras.rows.length) screen.push('run: ' + rf.name + ' has no parameter to ask (' + (env.why || 'none in the dictionary') + ')');
+          var ag = step(st, { text: rf.text }); ag.screen = screen.concat(ag.screen); return ag;
+        }
+        if (p === 'lookup') {   // a table-direct parameter: its legal records as a pick list (value = the id, shown with its name)
+          var lf = st.pickFor, lr = ok && Array.isArray(env.answer.rows) ? env.answer.rows : [];
+          if (!lr.length) { st.pickFor = null; st.asking = lf.ask; screen.push(lf.ask.label + ' (' + lf.input + '): no record to pick from; type it (Enter: ' + (lf.ask.def || 'none') + ')'); return out(); }
+          st.menu = Menu.create({ items: (lf.ask.mandatory ? [] : [{ name: '(leave it out)', value: SKIP }]).concat(lr.map(function (r) { var ks = Object.keys(r); return { name: (r.Name != null ? r.Name + ' · ' : '') + r[ks[0]], value: r[ks[0]] }; })), title: 'run: pick ' + lf.ask.label + ' (' + lf.input + ', ' + lr.length + ')' });
           Menu.plain(Menu.render(st.menu)).forEach(function (l) { screen.push(l); }); return out();
         }
         if (p === 'cd-kind') {
@@ -97,11 +117,20 @@
         }
         if (st.menu) { Menu.plain(Menu.render(st.menu)).forEach(function (l) { screen.push(l); }); return out(); }
         var pf2 = st.pickFor; st.pickFor = null;
+        if (picked.value === SKIP) { st.paras.skipped.push(pf2.input); screen.push(pf2.input + ': left out'); var sp = step(st, { text: pf2.text }); sp.screen = screen.concat(sp.screen); return sp; }   // §25: an optional parameter left out
         screen.push(pf2.input + ' = ' + picked.name);
         var again = step(st, { text: pf2.text + ' ' + pf2.input + '=' + quote(picked.value) });   // the picked value goes on the line as key=value: the line then says what was chosen
         again.screen = screen.concat(again.screen); return again;
       }
       var text = String(input.text || '').trim();
+      if (st.asking) {   // §25: a parameter question is open: Enter keeps the default (or leaves an optional one out), q cancels
+        var q = st.asking; st.asking = null;
+        if (/^(q|esc)$/i.test(text)) { st.paras = null; screen.push('cancelled: nothing was run'); return out(); }
+        var val = text !== '' ? text : (q.def != null && q.def !== '' && String(q.def).indexOf('@') < 0 ? String(q.def) : null);
+        if (val == null && q.mandatory) { st.asking = q; screen.push(q.label + ' (' + q.input + ') is needed: ' + q.question); return out(); }
+        if (val == null) { st.paras.skipped.push(q.input); var sk = step(st, { text: q.text }); sk.screen = screen.concat(sk.screen); return sk; }
+        var an = step(st, { text: q.text + ' ' + q.input + '=' + quote(val) }); an.screen = screen.concat(an.screen); return an;
+      }
       if (st.pending) {   // a y/N question is open
         var pend = st.pending; st.pending = null;
         if (/^y(es)?$/i.test(text)) effects.push({ line: pend, purpose: 'run' }); else screen.push('not done: ' + pend);
@@ -128,11 +157,23 @@
       if (w === 'role') { var rr = toks[1] ? toks[1].text : ''; if (rr && !/^\d+$/.test(rr)) { screen.push('role is a number (an AD_Role id), got ' + rr); return out(); } st.role = rr || null; screen.push(rr ? 'role ' + rr + ' on every line' : 'no role'); return out(); }
       var x; try { x = expand(st, toks); } catch (err) { x = { error: err.message }; }
       if (x.error) { screen.push(x.error); return out(); }
+      if (x.params) { st.runFor = { text: text, name: x.params.name }; effects.push({ line: lineOf('mis.list', { kind: 'AD_Process_Para', columns: 'ColumnName,Name,IsMandatory,DefaultValue,SeqNo,AD_Reference_ID', sort: 'SeqNo', limit: '50', master: 'Process/' + x.params.name }), purpose: 'run-paras' }); return out(); }
+      if (x.ask) {
+        var a1 = x.ask, def = a1.DefaultValue, ctxDef = def != null && String(def).indexOf('@') >= 0, qq = { text: text, input: a1.ColumnName, label: a1.Name || a1.ColumnName, def: ctxDef ? null : def, mandatory: a1.IsMandatory === 'Y' && !ctxDef };
+        qq.question = qq.label + ' (' + qq.input + ')? ' + (qq.def != null && qq.def !== '' ? '[' + qq.def + ']' : qq.mandatory ? '[needed]' : ctxDef ? '[from the context: Enter]' : '[Enter: none]');
+        if (ctxDef) { st.paras.skipped.push(qq.input); var cs = step(st, { text: text }); cs.screen = screen.concat(cs.screen); return cs; }   // a context default (@…@): the engine fills it, as the dialog does
+        if (Number(a1.AD_Reference_ID) === 19 && Menu && /_ID$/i.test(qq.input)) {   // table direct: the table is the column name without _ID (the dictionary's own rule)
+          var tb = qq.input.replace(/_ID$/i, '');
+          st.pickFor = { text: text, input: qq.input, word: 'run', ask: qq }; effects.push({ line: lineOf('mis.list', { kind: tb, columns: qq.input + ',Name', limit: '50' }), purpose: 'lookup' }); return out();
+        }
+        st.asking = qq; screen.push(qq.question); return out();
+      }
       if (x.pick) { st.pickFor = { text: text, input: x.pick.input, type: x.pick.type, word: x.pick.word }; var c0 = choices[x.pick.type], ca = JSON.parse(JSON.stringify(c0.args || {})); ctxArgs(st, verbs[c0.verb], ca);
         effects.push({ line: lineOf(c0.verb, ca), purpose: 'choices' }); return out(); }
       var eff = { line: x.line, purpose: 'run', view: x.view || null, match: x.match || null, draw: x.draw || null };
       if (x.view === 'summary') st.last = { line: x.line, verb: x.verb, args: x.args }; else if (x.view !== 'rows') st.last = null;
       if (brk === 'dropkey' && x.args.building) eff.shown = x.line.replace(/ building=\S+/, '');   // W-RED1-WORDS falsifier: the printed line lacks the context key
+      if (x.verb === 'erp.process') st.paras = null;   // the questions are done: the next run reads its parameters again
       if (x.confirm) { st.pending = x.line; screen.push(x.line + '   run it? y/N'); return out(); }
       effects.push(eff); return out();
     }

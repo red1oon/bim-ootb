@@ -1020,13 +1020,57 @@ function misDiff(O, a) {
   const c = out.counts; out.ops = 0; out.summary = c.new + ' new, ' + c.changed + ' changed, ' + c.same + ' the same, ' + c.missing + ' in the table and not in the file' + (c.duplicates || c.ambiguous || c.unkeyed ? ' (' + [c.duplicates && c.duplicates + ' repeated in the file', c.ambiguous && c.ambiguous + ' matching several records', c.unkeyed && c.unkeyed + ' without a key'].filter(Boolean).join(', ') + ')' : '') + '; nothing was written';
   say('diff kind=' + K.name + ' key=' + out.key + ' ' + JSON.stringify(c)); return out;
 }
+// ── erp.process (bim-compiler prompts/CLI_ERP_IVR.md §25, owner D13): ONE verb for every dictionary process; a process ported to JS (erp/processes/*.js) runs with no door code ──
+// The spine is erp/ad_process.js dispatch (read AD_Process + AD_Process_Para, resolve the classname, check the parameters, run the port inside ONE ModelLayer.Trx);
+// the host part is the web service's (erp/ws_adinterface.js:484): the trx's ops are committed as ONE group (persistGroup), nothing if it fails or dry=Y.
+const RUN_BREAK = process.env.RUN_BREAK || '';   // W-RED1-RUN falsifier: skipcommit (the process runs, its ops are not kept: must FAIL R1)
+function processOf(O, name) {
+  const all = O.rows("SELECT ad_process_id AS id, value, name, classname FROM ad_process WHERE isactive='Y'"), lo = String(name).toLowerCase();
+  const hit = all.filter(p => String(p.value).toLowerCase() === lo || String(p.name).toLowerCase() === lo || String(p.id) === String(name));
+  if (!hit.length) { const nb = require('./assist_core.js').nearest(name, all.map(p => p.name), 3).map(x => x.name); refuse('no process "' + name + '"' + (nb.length ? '; nearest: ' + nb.join(', ') : '')); }
+  if (hit.length > 1) refuse(hit.length + ' processes are called "' + name + '": ' + hit.map(p => p.value + ' (id ' + p.id + ')').join(', ') + '; name one by its search key or id');
+  return hit[0];
+}
+function runProcess(O, a) {
+  if (!a.name) refuse('--name is required');
+  const AP = require(path.join(ROOT, 'erp', 'ad_process.js'));
+  fs.readdirSync(path.join(ROOT, 'erp', 'processes')).filter(f => /\.js$/.test(f)).forEach(f => { try { require(path.join(ROOT, 'erp', 'processes', f)); } catch (e) { say('LOAD-SKIP processes/' + f + ': ' + e.message); } });   // as ws_kernel.js:29
+  const P = processOf(O, a.name);
+  const paras = O.rows("SELECT columnname, name, ismandatory, defaultvalue, seqno FROM ad_process_para WHERE ad_process_id=? AND isactive='Y' ORDER BY seqno", [P.id]);
+  // the table the process runs on: the window button that names it (AD_Column.AD_Process_ID), or the kind given
+  const btn = O.rows('SELECT DISTINCT t.tablename AS tn, t.ad_table_id AS tid, t.name AS nm FROM ad_column c JOIN ad_table t ON t.ad_table_id=c.ad_table_id WHERE c.ad_process_id=?', [P.id]);
+  let K = null, r = null;
+  if (a.record != null) {
+    const kind = a.kind || (btn.length === 1 ? btn[0].tn : null);
+    if (!kind) refuse('say which kind the record is (kind=): ' + P.name + ' is on ' + (btn.length ? btn.map(b => b.nm).join(', ') : 'no window button'));
+    K = kindRef(O, kind); r = /^\d+$/.test(String(a.record)) ? O.rows('SELECT * FROM ' + K.table + ' WHERE ' + K.key + '=?', [Number(a.record)])[0] : recordOf(O, K, { number: a.record });
+    if (!r) refuse('no ' + K.name + ' ' + a.record);
+  }
+  const given = {}; (a.where || []).forEach(w => { const m = /^([A-Za-z_]\w*)=([\s\S]*)$/.exec(w); if (!m) refuse('a parameter is Name=value, got "' + w + '"');
+    const pp = paras.filter(x => x.columnname.toLowerCase() === m[1].toLowerCase())[0];
+    if (!pp) { const nb = require('./assist_core.js').nearest(m[1], paras.map(x => x.columnname), 3).map(x => x.name); refuse(P.name + ' has no parameter "' + m[1] + '"' + (nb.length ? '; nearest: ' + nb.join(', ') : '; its parameters: ' + (paras.map(x => x.columnname).join(', ') || 'none'))); }
+    given[pp.columnname] = /^-?\d+(\.\d+)?$/.test(m[2]) ? Number(m[2]) : m[2]; });
+  const miss = paras.filter(x => x.ismandatory === 'Y' && given[x.columnname] == null && (x.defaultvalue == null || x.defaultvalue === ''));
+  if (miss.length) refuse('missing parameter: ' + miss.map(x => x.columnname + ' (' + x.name + ')').join(', '));
+  const dbS = { prepare: (sql) => ({ get: (...p) => O.rows(sql, p)[0], all: (...p) => O.rows(sql, p) }) };
+  const env = { db: O.dbId, client: r ? r.ad_client_id : 11, org: r ? r.ad_org_id : 0, date: today() + ' 00:00:00', now: stamp(), uuid: () => require('crypto').randomUUID() };
+  let jr = null; const ctx = { runInTrx: (fn) => { jr = fn((s, p) => O.rows(s, p), env); return jr; } };
+  const log = console.log; console.log = () => {};
+  let res; try { res = AP.dispatch(dbS, { AD_Process_ID: P.id, Record_ID: r ? r[K.key] : 0, Table_ID: K ? K.id : 0, params: given }, ctx); } finally { console.log = log; }
+  say('process name=' + JSON.stringify(P.name) + ' id=' + P.id + ' class=' + P.classname + ' record=' + (r ? K.table + '/' + r[K.key] : '-') + ' dispatched=' + res.dispatched + ' ok=' + res.ok + ' reason=' + res.reason + ' ops=' + (jr && jr.ops ? jr.ops.length : 0) + (a.dry === 'Y' ? ' dry=Y' : ''));
+  if (!res.dispatched) refuse(P.name + ' was not run: ' + (res.reason === 'absent-handler' ? 'it has no JS port yet (class ' + (P.classname || 'none') + ')' : res.message));
+  if (!res.ok) refuse(P.name + ' failed: ' + (res.message || res.reason) + ' (nothing was kept)');
+  const ops = a.dry === 'Y' || RUN_BREAK === 'skipcommit' ? [] : persistGroup(O, (res.result && res.result.commitOps) || []);
+  return { process: { id: P.id, value: P.value, name: P.name, classname: P.classname }, record: r ? brief(K, O.rows('SELECT * FROM ' + K.table + ' WHERE ' + K.key + '=?', [r[K.key]])[0] || r) : null,
+    params: given, message: res.message, dry: a.dry === 'Y', ops: ops.map(o => ({ op_type: o.op_type, table: o.table })), opSummary: sum(ops), planned: ((res.result && res.result.commitOps) || []).length };
+}
 async function main(argv) {
   const cmd = argv[0], a = {};
   for (let i = 1; i < argv.length; i++) { const m = /^--(\w+)$/.exec(argv[i]); if (!m || i + 1 >= argv.length) { say('FAIL usage: ' + argv[i]); return 2; } if (m[1] === 'where') (a.where = a.where || []).push(argv[++i]); else a[m[1]] = argv[++i]; }
-  if (['find', 'actions', 'describe', 'read', 'list', 'sum', 'group', 'new', 'update', 'delete', 'load', 'add_window', 'ninja_exec', 'ninja_workflow', 'ninja_rollback', 'ninja_export', 'diff', 'menu'].concat(Object.keys(ACT)).indexOf(cmd) < 0) { say('FAIL usage: erp_cli.js find|actions|complete|void|close|reverse|describe|read|list|sum|group --kind K (--number N | --id I) [--role R]'); return 2; }
+  if (['find', 'actions', 'describe', 'read', 'list', 'sum', 'group', 'new', 'update', 'delete', 'load', 'add_window', 'ninja_exec', 'ninja_workflow', 'ninja_rollback', 'ninja_export', 'diff', 'menu', 'process'].concat(Object.keys(ACT)).indexOf(cmd) < 0) { say('FAIL usage: erp_cli.js find|actions|complete|void|close|reverse|describe|read|list|sum|group --kind K (--number N | --id I) [--role R]'); return 2; }
   try {
     const O = await boot(a); O.actor = a.user == null ? 101 : Number(a.user);   // the session user: stated, default 101 (the same default the callout context takes), until sign-in exists
-    const out = await (ACT[cmd] ? act(O, a, ACT[cmd]) : ({ find, actions, describe, read, list: OC.list, sum: OC.sum, group: OC.group, new: createRecord, update: updateRecord, delete: deleteRecord, load: loadRecords, add_window: addWindow, ninja_exec: ninjaExec, ninja_workflow: ninjaWorkflow, ninja_rollback: ninjaRollback, ninja_export: ninjaExport, diff: misDiff, menu: menuOf })[cmd](O, a));
+    const out = await (ACT[cmd] ? act(O, a, ACT[cmd]) : ({ find, actions, describe, read, list: OC.list, sum: OC.sum, group: OC.group, new: createRecord, update: updateRecord, delete: deleteRecord, load: loadRecords, add_window: addWindow, ninja_exec: ninjaExec, ninja_workflow: ninjaWorkflow, ninja_rollback: ninjaRollback, ninja_export: ninjaExport, diff: misDiff, menu: menuOf, process: runProcess })[cmd](O, a));
     process.stdout.write(JSON.stringify(out) + '\n'); return 0;
   } catch (e) {
     if (e instanceof Refused || e instanceof OC.Refused) { say('REFUSED ' + e.message); process.stdout.write(JSON.stringify({ refused: true, reason: e.message }) + '\n'); return 3; }
