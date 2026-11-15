@@ -4,6 +4,7 @@
 //   A3 ISSUE (Enter applies a suggestion the person did not take): on a terminal, `ls Valu=Hospital` + Enter runs nothing; the hint was shown and not taken
 //   A4 ISSUE (Tab or → takes something other than what was shown): on a terminal, Tab on a typo and → on a grey text give exactly the shown name, and the printed → line carries it
 //   A5 ISSUE (one-shot / scripts get a suggestion or a different answer): `red1 'cd Project; ls Valu=Hospital'` prints no hint and the same refusal
+//   A6 ISSUE (cd cannot be completed to an ERP kind, or a name with a space breaks): on a terminal `cd Busi` + Tab gives `cd "Business Partner"` and the prompt becomes red1 Business Partner>; the kinds come from ONE door line (§RED1 assist kinds=N)
 //   Falsifier: ASSIST_BREAK=autoapply (Enter applies the hint: must FAIL A3). A1 FAILs if assist_core offers a hand name. Needs `script` for A3/A4 (else INCONCLUSIVE).
 //   Run: node common/door/tests/witness_red1_assist.js > common/door/tests/logs/red1_assist.log 2>&1
 'use strict';
@@ -67,6 +68,15 @@ const envOf = (out) => out.split('\n').filter(l => l.charAt(0) === '{').map(l =>
     const took = (o4.match(/§RED1 assist take [^\n]*/g) || []);
     k.L('A4 arrows=' + JSON.stringify(arrows) + ' oks=' + oks + ' takes=' + JSON.stringify(took));
     k.chk('A4 on a terminal Tab on `Valu=Hospital` and → on the grey `e=` each give `Value=Hospital`; both printed → lines carry it and answer ok', tab === 2 && oks === 2 && took.length === 2, 'lines with Value=Hospital=' + tab + ' ok=' + oks + ' takes=' + took.length);
+  }
+  // A6 cd to an ERP kind with Tab, on a pseudo-terminal
+  if (!hasScript) k.incon('A6', 'no `script`');
+  else {
+    const hist6 = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'r1a6_')), 'h');
+    const o6 = (await sh("(sleep 6; printf 'cd Busi'; sleep 1; printf '\\t'; sleep 1; printf '\\r'; sleep 4; printf 'pwd\\r'; sleep 2; printf 'exit\\r') | script -qc \"stty rows 40 cols 200; RED1_HISTORY=" + hist6 + " node " + RED1 + "\" /dev/null", 60000)).replace(/\x1b\[[0-9;]*[A-Za-z]/g, '').replace(/\r/g, '');
+    const nk = /§RED1 assist kinds=(\d+)/.exec(o6), took6 = /§RED1 assist take from="Busi" to="\\"Business Partner\\""/.test(o6), pw = /^kind="Business Partner"/m.test(o6);
+    k.L('A6 kinds=' + (nk && nk[1]) + ' took=' + took6 + ' pwd=' + pw);
+    k.chk('A6 on a terminal `cd Busi` + Tab takes `cd "Business Partner"` (the kinds read by one door line), and pwd then reads kind="Business Partner"', !!nk && Number(nk[1]) > 100 && took6 && pw, 'kinds=' + (nk && nk[1]) + ' took=' + took6 + ' pwd=' + pw);
   }
   // A5: one-shot words: no hint, the same refusal
   const o5 = await sh('node ' + RED1 + " 'cd Project; ls Valu=Hospital'", 60000);

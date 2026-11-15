@@ -1111,6 +1111,10 @@ function lookup(O, a) {
     say('lookup column=' + def.c + ' table=' + T.tn + ' unresolved=' + out.unresolved.join(','));
     return Object.assign(out, { table: T.tn, rows: [], shown: 0, total: 0, why: 'the rule needs ' + out.unresolved.map(t => '@' + t + '@').join(', ') + ' (give ' + out.unresolved.map(t => t.replace(/^[#$]/, '') + '=').join(' ') + ')' });
   }
+  if (a.role != null && LOOKUP_BREAK !== 'norole') {   // §1d TA5: a role sees only the rows its access gives (the same reader as mis.list, object_cli roleRows): never wider than the window's own list
+    const t2 = OC.kindOf(O.rows, T.tn), RR = OC.roleRows(O, t2, OC.columnsOf(O.rows, t2), { role: a.role });
+    RR.and.forEach(w => where.push('(' + w + ')')); out.role = { id: Number(a.role), where: RR.and[0] || null };
+  }
   const limit = Math.min(Number(a.limit) || 50, 1000), cols = [key].concat(disp.filter(d => d.toLowerCase() !== String(key).toLowerCase()));
   const total = Number(O.rows('SELECT count(*) AS n FROM ' + T.tn + ' WHERE ' + where.join(' AND '))[0].n);
   const rows = O.rows('SELECT ' + cols.join(', ') + ' FROM ' + T.tn + ' WHERE ' + where.join(' AND ') + ' ORDER BY ' + (order || (disp[0] || key)) + ' LIMIT ' + limit);

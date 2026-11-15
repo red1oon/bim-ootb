@@ -36,9 +36,9 @@ const isDoorLine = (l) => /^\s*([A-Za-z_]\w*\s*=\s*)?[a-z][a-z0-9]*\.[a-z][a-z0-
 const SESSION_WORD = /^\s*(exit|quit|history|menu)(\s|$)/i;
 const GROUP_WORD = /^\s*(bim|mis|erp)\s*$/i;
 // §24 the one help reader: `help`, `?`, `bim|mis|erp`, `help <group|word>` -> words_core.helpText; anything else after help -> the door's own help (render.js help)
-function helpOf(line, core, vocab) {
+function helpOf(line, core, vocab, level) {   // level: the person's setting (VOCAB_MESSAGE_CATALOG.md §4 P3a), null = short
   const R = require(path.join(__dirname, 'render.js')), topic = String(line).replace(/^\s*(help|\?)/, '').trim().toLowerCase().replace(/^(bim|mis|erp)$/, '$1');
-  const t = topic === 'verbs' ? null : core.helpText(topic);
+  const t = topic === 'verbs' ? null : core.helpText(topic, level || null);
   if (t != null) return { text: t, topic };
   const h = R.help(vocab, 'help' + (topic && topic !== 'verbs' ? ' ' + topic : '')); return { text: h.text, topic, door: true };
 }
@@ -128,7 +128,14 @@ async function session(o) {
   // `▸ Name` (another spelling: case, -, a typo). Tab takes it (→ takes a grey one). Enter NEVER applies it: the line runs as typed. Not on a pipe, not in a menu.
   const AS = require(path.join(__dirname, 'assist_core.js')), VB = {}, BLD = buildingNames(), DOF = ((sh.words.words.do || {}).forms || [{}])[0] || {};
   vocab.verbs.forEach(v => { VB[v.verb] = v; });
-  const actx = () => { const s = sh.state(); return { words: names.filter(n => n.indexOf('.') < 0), verbs: VB, buildings: BLD, props: s.kind ? s.props : (s.erp ? s.eprops : null), codes: DOF.codes || {} }; };
+  // §1d.1 the ERP kinds `cd` can name, read ONCE per terminal session by one door line (journalled like any read), those with a window first
+  let KINDS = [];
+  if (tty && process.env.RED1_KINDS !== 'off') sh.door.runLine('mis.list kind=AD_Table columns=Name,AD_Window_ID IsActive=Y IsView=N sort=Name limit=1000', { actor: 'human' }).then(e => {
+    const rows = e && e.status === 'ok' && e.answer && Array.isArray(e.answer.rows) ? e.answer.rows : [];
+    KINDS = rows.filter(r => r.Name).map(r => ({ name: r.Name, window: r.AD_Window_ID != null })).sort((x, y) => (y.window - x.window) || (x.name < y.name ? -1 : 1));
+    say('assist kinds=' + KINDS.length + ' with-window=' + KINDS.filter(k => k.window).length);
+  }).catch(err => say('assist kinds FAIL ' + (err && err.message)));
+  const actx = () => { const s = sh.state(); return { words: names.filter(n => n.indexOf('.') < 0), verbs: VB, buildings: BLD, kinds: KINDS, props: s.kind ? s.props : (s.erp ? s.eprops : null), codes: DOF.codes || {} }; };
   let hint = null;
   const completer = (line) => {
     if (hint && hint.ghost) return [[hint.token + hint.ghost], hint.token];
@@ -155,7 +162,7 @@ async function session(o) {
     const errW = process.stderr.write.bind(process.stderr);   // every § line of the session (the door's §DOOR too) goes to the same file; anything else (a real error) stays on screen
     process.stderr.write = (c, ...r) => { const t = String(c); if (/^§/.test(t)) { RING.push(t.replace(/\n$/, '')); if (RING.length > 200) RING.shift(); } if (sayTo && /^§/.test(t)) { try { fs.appendFileSync(sayTo, new Date().toISOString() + ' ' + t); return true; } catch (e) { /* fall through */ } } return errW(c, ...r); };
   } catch (e) { /* stays on stderr */ } }
-  if (tty || process.env.WELCOME_BREAK === 'pipe') { const g = welcome(); process.stdout.write(g.lines.join('\n') + '\n\n'); say('welcome lines=' + g.lines.length + ' version=' + JSON.stringify(g.version)); }   // §26: a terminal only (pipe: W-RED1-WELCOME falsifier, must FAIL W2)
+  if (tty || process.env.WELCOME_BREAK === 'pipe') { const g = welcome(), tips = o.fast ? [] : [msgCore().t('words.tip_level')]; process.stdout.write(g.lines.concat(tips).join('\n') + '\n\n'); say('welcome lines=' + g.lines.length + ' tips=' + tips.length + (o.fast ? ' fast=1' : '') + ' version=' + JSON.stringify(g.version)); }   // the tip: VOCAB_MESSAGE_CATALOG.md §4 P3a-1 (owner: shown on opening, --fast skips it);   // §26: a terminal only (pipe: W-RED1-WELCOME falsifier, must FAIL W2)
   say('session tty=' + tty + ' journal=' + sh.door.journalFile + ' verbs=' + vocab.verbs.length + ' words=' + sh.core.wordList().length);
   // a pick menu on a terminal is redrawn in place (no scroll): the lines it took are cleared first; anything else printed ends that
   let menuH = 0;
@@ -210,7 +217,7 @@ async function session(o) {
     const line = raw.trim(); if ((!line && !sh.menuOpen() && !sh.state().asking) || line.indexOf('--') === 0) return;
     typed.push(line);
     if ((R.isHelp(line) || GROUP_WORD.test(line)) && !sh.menuOpen()) {   // §24: help / bim / mis / erp / help <word> = words_core.helpText (the SAME bytes as a one-shot `red1 help`); help verbs | help <app> | help <app.verb> = the door's own help
-      const h = helpOf(line, sh.core, vocab); process.stdout.write(h.text); say('help topic=' + JSON.stringify(h.topic) + (h.door ? ' door=1' : ' words=1')); return;
+      const h = helpOf(line, sh.core, vocab, sh.state().level); process.stdout.write(h.text); say('help topic=' + JSON.stringify(h.topic) + (h.door ? ' door=1' : ' words=1')); return;
     }
     if (pendingReport && !sh.menuOpen()) {   // §28: the choice after `report`
       const g = pendingReport; pendingReport = null; const RC = require(path.join(__dirname, 'report_core.js'));
@@ -261,16 +268,17 @@ async function wordShot(text, o) {
 if (require.main === module) {
   const a = process.argv.slice(2);
   const fi = a.indexOf('-f'); if (fi >= 0) a[fi] = '--script';
-  const flags = new Set(['--json', '--list', '--csv', '--dry', '--claims']), withArg = new Set(['--out', '--actor', '--journal', '--request', '--script', '--confirm']);
-  const rest = []; const o = { actor: 'human' };
-  for (let i = 0; i < a.length; i++) { if (withArg.has(a[i])) { if (a[i] === '--actor') o.actor = a[i + 1]; if (a[i] === '--journal') o.journal = a[i + 1]; if (a[i] === '--request') o.request = a[i + 1]; i++; } else if (!flags.has(a[i])) rest.push(a[i]); }
+  const flags = new Set(['--json', '--list', '--csv', '--dry', '--claims', '--fast']), withArg = new Set(['--out', '--actor', '--journal', '--request', '--script', '--confirm', '--level']);
+  const rest = []; const o = { actor: 'human', fast: a.indexOf('--fast') >= 0 };
+  for (let i = 0; i < a.length; i++) { if (withArg.has(a[i])) { if (a[i] === '--actor') o.actor = a[i + 1]; if (a[i] === '--journal') o.journal = a[i + 1]; if (a[i] === '--request') o.request = a[i + 1]; if (a[i] === '--level') o.level = a[i + 1]; i++; } else if (!flags.has(a[i])) rest.push(a[i]); }
   if (a.indexOf('--version') >= 0) { console.log(welcome().version); process.exit(0); }
-  if (a.indexOf('-h') >= 0 || a.indexOf('--help') >= 0) { console.log("usage: red1                         (a session, the red1> prompt)\n       red1 'app.verb key=value …'  [--json|--list|--csv] [--out FILE]\n       red1 'cd Duplex; count'      (words, ; between them)\n       red1 -f FILE [--dry]\n       red1 help [topic]"); process.exit(0); }
+  if (a.indexOf('-h') >= 0 || a.indexOf('--help') >= 0) { console.log("usage: red1                         (a session, the red1> prompt)\n       red1 'app.verb key=value …'  [--json|--list|--csv] [--out FILE]\n       red1 'cd Duplex; count'      (words, ; between them)\n       red1 -f FILE [--dry]\n       red1 help [topic]   [--level student]\n       red1 --fast                  (a session with no tips)"); process.exit(0); }
   const oneShot = rest.length > 0 || a.indexOf('--script') >= 0 || a.indexOf('--claims') >= 0 || a.indexOf('--confirm') >= 0;
   if (oneShot) {
     if (rest.length === 1 && /^\s*menu(\s|$)/i.test(rest[0])) { /* `red1 menu` = the door's terminal menu, passed as it is */ }
     else if (rest.length === 1 && (/^\s*(help|\?)(\s|$)/.test(rest[0]) || GROUP_WORD.test(rest[0])) && process.env.RED1_HELP_BREAK !== 'oneshot') {   // §24 D10: the session's help, the same bytes (oneshot: W-RED1-HELP falsifier, the door's text kept: must FAIL H1)
-      const w = wordsCore(), h = helpOf(rest[0], w.core, w.vocab); process.stdout.write(h.text); say('help topic=' + JSON.stringify(h.topic) + (h.door ? ' door=1' : ' words=1')); process.exit(0);
+      if (o.level != null && ['short', 'student'].indexOf(o.level) < 0) { process.stderr.write(msgCore().t('words.level_bad', o.level, 'short, student') + '\n'); process.exit(2); }
+      const w = wordsCore(), h = helpOf(rest[0], w.core, w.vocab, o.level === 'student' ? 'student' : null); process.stdout.write(h.text); say('help topic=' + JSON.stringify(h.topic) + (h.door ? ' door=1' : ' words=1')); process.exit(0);
     }
     else if (rest.length === 1 && /^\s*\?/.test(rest[0])) a[a.indexOf(rest[0])] = rest[0].replace(/^\s*\?/, 'help');
     else if (rest.length === 1 && a.indexOf('--script') < 0 && (!isDoorLine(rest[0]) || /\s\|\s/.test(rest[0])) && !/^\s*(help)(\s|$)/.test(rest[0])) {   // words, or a door line with the shell's `| glob`

@@ -426,4 +426,4 @@ async function main(argv) {
   }
 }
 if (require.main === module) main(process.argv.slice(2)).then(c => process.exit(c));
-module.exports = { noProperty, tabsOf, roleFor, roleCtx, accessOf, main, describe, read, update, attach, history, count, list, sum, group, decSum, boot, open, kindOf, columnsOf, childTabs, applyOp, loadChunker, Refused, oplogFile, readOps };
+module.exports = { noProperty, roleRows, tabsOf, roleFor, roleCtx, accessOf, main, describe, read, update, attach, history, count, list, sum, group, decSum, boot, open, kindOf, columnsOf, childTabs, applyOp, loadChunker, Refused, oplogFile, readOps };

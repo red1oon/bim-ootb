@@ -3,7 +3,8 @@
 //   L2 ISSUE (an unresolved @token@ shows the whole table): with no C_Project_ID the answer has NO rows and names the token (Env.java:1641-1645, MLookup.java:1128-1140)
 //   L3 ISSUE (a List column's values or order differ from the dictionary): Project.ProjectCategory == AD_Ref_List of its reference, in the reference's order (IsOrderByValue)
 //   L4 ISSUE (red1 run's pick list is not the filtered lookup): a session `run "Generate PO from Project"` picking Hospital is offered exactly L1's phases (+ "(leave it out)")
-//   Falsifiers: LOOKUP_BREAK=norule (must FAIL L1) · LOOKUP_BREAK=unfiltered (must FAIL L2).
+//   L5 ISSUE (a role is offered rows its access forbids, §1d TA5): Order.AD_Org_ID with role 103 == an independent SQL of the role's org access (and fewer than role 102's)
+//   Falsifiers: LOOKUP_BREAK=norule (must FAIL L1) · LOOKUP_BREAK=unfiltered (must FAIL L2) · LOOKUP_BREAK=norole (must FAIL L5).
 //   Run: node common/door/tests/witness_mis_lookup.js > common/door/tests/logs/mis_lookup.log 2>&1
 'use strict';
 const path = require('path'), cp = require('child_process'), fs = require('fs'), os = require('os');
@@ -34,5 +35,12 @@ const last = (o) => o.split('\n').filter(l => l.charAt(0) === '{').map(l => JSON
   const block = s4.split('run: pick Project Phase')[1] || '', offered = (block.split('Up/Down')[0].match(/· (\d+)\s*$/mg) || []).map(x => Number(x.replace(/\D/g, ''))).sort((x, y) => x - y);
   k.L('L4 offered=' + JSON.stringify(offered) + ' leave-out=' + /\(leave it out\)/.test(block));
   k.chk('L4 red1 `run` picking Hospital offers exactly L1\'s phases (and "(leave it out)", the parameter being optional)', JSON.stringify(offered) === JSON.stringify(wa) && /\(leave it out\)/.test(block), 'offered ' + offered.length + ' of ' + wa.length);
+  // L5 the role's access (independent SQL: AD_Role_OrgAccess, the val rule's own condition)
+  const lr = (r) => { const e = last(run([DOOR, 'mis.lookup kind=Order column=AD_Org_ID id=104 role=' + r])); return e && e.answer ? e.answer.rows.map(x => x.value).sort((x, y) => x - y) : null; };
+  const g103 = lr(103), g102 = lr(102);
+  const w103 = q("SELECT o.ad_org_id FROM ad_org o WHERE o.isactive='Y' AND o.ad_org_id<>0 AND o.issummary='N' AND o.ad_client_id IN (0,11) AND o.ad_org_id IN (SELECT ad_org_id FROM ad_role_orgaccess WHERE ad_role_id=103 AND isactive='Y')").map(r => r[0]).sort((x, y) => x - y);
+  k.L('L5 role 103 lookup=' + JSON.stringify(g103) + ' sql=' + JSON.stringify(w103) + ' · role 102 lookup=' + JSON.stringify(g102));
+  if (!w103.length) k.incon('L5', 'role 103 has no org access in the seed');
+  else k.chk('L5 Order.AD_Org_ID for role 103 offers exactly its org access (' + w103.length + ', an independent SQL), fewer than role 102 (' + (g102 || []).length + ')', JSON.stringify(g103) === JSON.stringify(w103) && !!g102 && g102.length > g103.length, 'got ' + JSON.stringify(g103));
   k.end();
 })().catch(e => { console.log('§W-MIS-LOOKUP FAIL ' + (e && e.stack || e)); process.exit(1); });

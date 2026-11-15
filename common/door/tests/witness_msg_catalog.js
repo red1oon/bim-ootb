@@ -5,7 +5,8 @@
 //   M3 ISSUE (a key renamed in code alone throws at a person's terminal; a template with a gap or a stray brace): every M('…') key of words_core.js is in the catalog,
 //      every words.* key of the catalog is used in code, every template's placeholders are {0}..{n-1} with no gap and no other brace, no call passes more arguments than its template takes.
 //   M4 ISSUE (half-moved text, the deletion budget): the person-facing literals of words_core.js (screen.push('…, error: '…, throw new Error('…, title: '…, the helpText sentences) before and after; after must be 0.
-//   Falsifiers: MSG_BREAK=edittemplate (one template changed by one character in a copy of the catalog: must FAIL M1 naming the key) ·
+//   M5 ISSUE (a wording change slips in unrecorded): the live catalog differs from the P2a catalog (git MSG_P2A) only by the LEDGER of deliberate changes, each exactly its new text.
+//   Falsifiers: MSG_BREAK=unledgered (one key changed with no ledger entry: must FAIL M5) · MSG_BREAK=edittemplate (one template changed by one character in a copy of the catalog: must FAIL M1 naming the key) ·
 //               MSG_BREAK=renamekey (one key renamed in a copy of words_core.js only: must FAIL M3, and M1 where the corpus reaches it).
 //   Run: node common/door/tests/witness_msg_catalog.js > common/door/tests/logs/msg_catalog.log 2>&1
 'use strict';
@@ -15,6 +16,14 @@ const k = kit('W-MSG-CATALOG'), BRK = process.env.MSG_BREAK || '', BASE = proces
 const DD = path.join(ROOT, 'common/door'), D = require(DOOR), MC = require(path.join(DD, 'msg_core.js')), MIS = require(path.join(DD, 'mis_core.js')), MENU = require(path.join(DD, 'menu_core.js'));
 const tmpd = fs.mkdtempSync(path.join(os.tmpdir(), 'msgcat_'));
 let catalog = JSON.parse(fs.readFileSync(path.join(DD, 'vocab/messages.json'), 'utf8'));
+// THE LEDGER of deliberate wording changes since P2a (VOCAB_MESSAGE_CATALOG.md §4 P3a-1). M1 proves the CODE byte-identical, so it runs on the catalog as it was
+// at P2a: the live one with each ledgered change reverted. M5 proves the ledger is the ONLY drift, against the P2a catalog read from git (MSG_P2A, the P2a merge).
+const LEDGER = [
+  { key: 'words.help_footer', from: 'Type bim, mis or erp for its words · help <word> for one word · help verbs for the full door lines.', to: 'Type bim, mis or erp for its words · help <word> for one word (level student first for the full explanation) · help verbs for the full door lines.', owner: 'Yes it should (mention level student), 2026-11-16' }
+];
+const live = JSON.parse(JSON.stringify(catalog));
+if (BRK === 'unledgered') { live.messages['words.pwd_nowhere'].en += ' '; k.L('BREAK unledgered words.pwd_nowhere gets a trailing space in a copy of the catalog, with no ledger entry'); }
+LEDGER.forEach(c => { if (catalog.messages[c.key]) catalog.messages[c.key] = { en: c.from }; });   // `catalog` is now the P2a wording for M1
 let newSrc = fs.readFileSync(path.join(DD, 'words_core.js'), 'utf8');
 if (BRK === 'edittemplate') { catalog = JSON.parse(JSON.stringify(catalog)); catalog.messages['words.cd_unknown'].en = catalog.messages['words.cd_unknown'].en.replace('cd:', 'cd;'); k.L('BREAK edittemplate words.cd_unknown -> ' + JSON.stringify(catalog.messages['words.cd_unknown'].en)); }
 if (BRK === 'renamekey') { newSrc = newSrc.replace("M('words.not_done'", "M('words.not_donee'"); k.L('BREAK renamekey words.not_done -> words.not_donee in a copy of words_core.js'); }
@@ -26,7 +35,9 @@ const vocab = D.loadVocab(), words0 = JSON.parse(fs.readFileSync(path.join(DD, '
 const wordsX = JSON.parse(JSON.stringify(words0)); wordsX.words.zzbad = { help: 'zz: a word for the witness', forms: [{ in: 'any', verb: 'nope.verb', args: [] }] };
 
 // ── M3 / M4 static: read the code ──
-const codeKeys = Array.from(new Set((newSrc.match(/\bM\('([^']+)'/g) || []).map(s => s.slice(3, -1))));
+// the code that reads the catalog: words_core.js (M('…')) and red1.js (.t('…'), the greeting's tip and the --level refusal)
+const red1Src = fs.readFileSync(path.join(DD, 'red1.js'), 'utf8');
+const codeKeys = Array.from(new Set((newSrc.match(/\bM\('([^']+)'/g) || []).map(s => s.slice(3, -1)).concat((red1Src.match(/\.t\('([^']+)'/g) || []).map(s => s.slice(4, -1)))));
 const catKeys = Object.keys(catalog.messages), catWords = catKeys.filter(x => x.indexOf('words.') === 0);
 const notInCat = codeKeys.filter(x => catKeys.indexOf(x) < 0), notInCode = catWords.filter(x => codeKeys.indexOf(x) < 0);
 const tplBad = [];
@@ -128,10 +139,13 @@ k.L('M1 base=' + BASE + (oldSrc ? '' : ' (git show failed: ' + String(baseR.stde
 diffs.slice(0, 12).forEach(d => k.L('M1 DIFF ' + d));
 if (!oldSrc) k.incon('M1', 'no baseline words_core.js from git at ' + BASE);
 else k.chk('M1 the pre-change and the new words_core.js answer the same corpus byte for byte (' + (steps - diffs.length) + ' of ' + steps + ' steps)', diffs.length === 0, diffs.length ? 'first: ' + diffs[0].slice(0, 200) : '');
-const used = MSG.used(), reached = catWords.filter(x => used[x]), unreached = catWords.filter(x => !used[x]);
+// keys a LATER phase added are judged by that phase's witness, named here (M2's scope is the P2a move): words.level_*, words.student.* and words.tip_* -> W-HELP-STUDENT (S5, S6) (VOCAB_MESSAGE_CATALOG.md §4)
+const LATER = (x) => /^words\.(level_|student\.|tip_)/.test(x), handed = catWords.filter(LATER);
+const used = MSG.used(), reached = catWords.filter(x => !LATER(x) && used[x]), unreached = catWords.filter(x => !LATER(x) && !used[x]);
+k.L('M2 handed to W-HELP-STUDENT: ' + handed.length + ' keys ' + JSON.stringify(handed));
 k.L('M2 reached ' + reached.length + ' of ' + catWords.length + ' keys; uses=' + JSON.stringify(used));
 if (unreached.length) k.incon('M2', 'keys the corpus never reached: ' + unreached.join(', '));
-else k.chk('M2 every words.* key was reached by the corpus (' + reached.length + ' of ' + catWords.length + ')', reached.length > 0 && reached.length === catWords.length);
+else k.chk('M2 every P2a words.* key was reached by the corpus (' + reached.length + ' of ' + (catWords.length - handed.length) + '; ' + handed.length + ' later keys handed on)', reached.length > 0 && reached.length === catWords.length - handed.length);
 k.L('M3 code keys=' + codeKeys.length + ' catalog words.* keys=' + catWords.length + ' notInCatalog=' + JSON.stringify(notInCat) + ' notInCode=' + JSON.stringify(notInCode) + ' templates bad=' + JSON.stringify(tplBad) + ' extra-argument calls=' + JSON.stringify(Array.from(new Set(extra))));
 if (!codeKeys.length) k.incon('M3', 'no M(\'…\') key found in words_core.js');
 else k.chk('M3 keys both ways: ' + (codeKeys.length - notInCat.length) + ' of ' + codeKeys.length + ' code keys in the catalog, ' + (catWords.length - notInCode.length) + ' of ' + catWords.length + ' catalog keys in code; templates {0}..{n-1}, no stray brace; no call drops an argument',
@@ -145,5 +159,15 @@ k.L('M4 person-facing literals in words_core.js: before=' + (before ? before.len
 if (!before) k.incon('M4', 'no baseline to count against');
 else if (!before.length) k.incon('M4', 'the literal patterns found nothing in the baseline either (the instrument is blind)');
 else k.chk('M4 no person-facing literal left in words_core.js (' + before.length + ' before, ' + after.length + ' after)', after.length === 0, after.join(' | '));
+// M5: the ledger is the only drift from the P2a catalog (git MSG_P2A); keys added since are additions, logged, not drift
+const P2A = process.env.MSG_P2A || '78aa51b6', p2r = cp.spawnSync('git', ['-C', ROOT, 'show', P2A + ':common/door/vocab/messages.json'], { encoding: 'utf8' });
+if (p2r.status !== 0) k.incon('M5', 'no P2a catalog from git at ' + P2A);
+else {
+  const p2 = JSON.parse(p2r.stdout).messages, drift = [], ledgerBad = [], added = Object.keys(live.messages).filter(x => !p2[x]);
+  Object.keys(p2).forEach(x => { const L = LEDGER.filter(c => c.key === x)[0], now = live.messages[x] ? live.messages[x].en : null;
+    if (L) { if (p2[x].en !== L.from || now !== L.to) ledgerBad.push(x); } else if (now !== p2[x].en) drift.push(x); });
+  k.L('M5 p2a=' + P2A + ' keys=' + Object.keys(p2).length + ' ledgered=' + LEDGER.length + ' drift=' + JSON.stringify(drift) + ' ledger-mismatch=' + JSON.stringify(ledgerBad) + ' added since=' + added.length + ' ' + JSON.stringify(added));
+  k.chk('M5 the catalog differs from P2a only by the ledger (' + LEDGER.length + ' change' + (LEDGER.length === 1 ? '' : 's') + ', each exactly its new text); ' + added.length + ' keys added since', !drift.length && !ledgerBad.length, drift.concat(ledgerBad).join(', '));
+}
 try { fs.rmSync(tmpd, { recursive: true, force: true }); } catch (e) { /* tmp */ }
 k.end();
