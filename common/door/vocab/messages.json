@@ -158,7 +158,7 @@
    "en": "  everywhere: {0}"
   },
   "words.help_footer": {
-   "en": "Type bim, mis or erp for its words · help <word> for one word · help verbs for the full door lines."
+   "en": "Type bim, mis or erp for its words · help <word> for one word (level student first for the full explanation) · help verbs for the full door lines."
   },
   "words.help_group_head": {
    "en": "{0}: {1} (start with: {2})"
@@ -213,6 +213,9 @@
   },
   "words.student.example": {
    "en": "    e.g.: {0}"
+  },
+  "words.tip_level": {
+   "en": "Tip: type level student for fuller help on each word (red1 --fast opens without tips)."
   }
  }
 }
