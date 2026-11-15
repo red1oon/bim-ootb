@@ -12,7 +12,7 @@
     var words = o.words.words, verbs = {}, tokenize = o.tokenize, pick = o.pickColumns, brk = o.brk || '';
     o.vocab.verbs.forEach(function (v) { verbs[v.verb] = v; });
     var buildings = (o.buildings || []).slice();
-    function init() { return { building: null, kind: null, columns: null, erp: null, ecolumns: null, role: null, pending: null }; }
+    function init() { return { building: null, kind: null, columns: null, erp: null, ecolumns: null, role: null, pending: null, last: null }; }
     function prompt(st) {
       var where = st.erp ? st.erp : (st.building ? st.building + (st.kind ? '/' + st.kind : '') : '');
       return 'red1' + (st.role ? ' [' + st.role + ']' : '') + (where ? ' ' + where : '') + '> ';
@@ -37,6 +37,7 @@
     function expand(st, toks) {
       var w = toks[0].text, def = words[w];
       if (!def) return { error: '"' + w + '" is not a word of red1 (type help) nor a door line (app.verb key=value)' };
+      if (w === 'ls' && st.last && toks.length === 1) return { line: st.last.line, verb: st.last.verb, args: st.last.args, view: 'rows' };   // §22.6: the details of the last summary, the SAME line
       var here = where(st), form = def.forms.filter(function (f) { return fits(f, here); })[0];
       if (!form) return { error: w + ' works ' + def.forms.map(function (f) { return f.in === 'kind' ? 'in a kind (cd Element)' : f.in === 'building' ? 'in a building (cd Duplex)' : f.in === 'erp' ? 'in an ERP kind (cd "Business Partner")' : 'anywhere'; }).join(' or ') + '; you are ' + (here === 'any' ? 'nowhere yet' : 'in ' + (here === 'erp' ? st.erp : st.building + (st.kind ? '/' + st.kind : ''))) };
       var pos = [], args = {};
@@ -49,7 +50,7 @@
       var e = verbs[verb]; ctxArgs(st, e, args);
       var colsHere = verb.indexOf('object.') === 0 ? st.columns : st.ecolumns;
       Object.keys(form.defaults || {}).forEach(function (k) { if (args[k] != null) return; var v = form.defaults[k]; if (v === '$columns') { if (colsHere && colsHere.length) args[k] = colsHere.join(','); } else args[k] = v; });
-      return { line: lineOf(verb, args), verb: verb, args: args, confirm: !!def.confirm };
+      return { line: lineOf(verb, args), verb: verb, args: args, confirm: !!def.confirm, view: form.summary ? 'summary' : null };
     }
     function step(st, input) {
       st = JSON.parse(JSON.stringify(st || init()));
@@ -77,6 +78,7 @@
       var toks = tokenize(text); if (!toks.length) return out();
       var w = toks[0].text;
       if (w === 'cd') {
+        st.last = null;
         var arg = toks.slice(1).map(function (t) { return t.text; }).join(' ');
         if (!arg || arg === '/') { var r0 = init(); r0.role = st.role; st = r0; return out(); }
         if (arg === '..') { if (st.kind) { st.kind = null; st.columns = null; } else if (st.building) st.building = null; else if (st.erp) { st.erp = null; st.ecolumns = null; } return out(); }
@@ -94,7 +96,8 @@
       if (w === 'role') { var rr = toks[1] ? toks[1].text : ''; if (rr && !/^\d+$/.test(rr)) { screen.push('role is a number (an AD_Role id), got ' + rr); return out(); } st.role = rr || null; screen.push(rr ? 'role ' + rr + ' on every line' : 'no role'); return out(); }
       var x; try { x = expand(st, toks); } catch (err) { x = { error: err.message }; }
       if (x.error) { screen.push(x.error); return out(); }
-      var eff = { line: x.line, purpose: 'run' };
+      var eff = { line: x.line, purpose: 'run', view: x.view || null };
+      if (x.view === 'summary') st.last = { line: x.line, verb: x.verb, args: x.args }; else if (x.view !== 'rows') st.last = null;
       if (brk === 'dropkey' && x.args.building) eff.shown = x.line.replace(/ building=\S+/, '');   // W-RED1-WORDS falsifier: the printed line lacks the context key
       if (x.confirm) { st.pending = x.line; screen.push(x.line + '   run it? y/N'); return out(); }
       effects.push(eff); return out();

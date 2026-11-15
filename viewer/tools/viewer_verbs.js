@@ -68,7 +68,10 @@ async function viewerClashes(a) {
   await target(a.building);   // unknown building: error before the browser starts
   const r = await ask(a.building, 'clash_pair', { a: a.discA, b: a.discB }, 'Find clashes between ' + a.discA + ' and ' + a.discB);
   if (r.ans.verdict !== 'OK') throw new Error('the Viewer says ' + r.ans.verdict + ': ' + r.ans.summary);
-  return pack('viewer_clashes', a.building, r, 20);
+  // rows: how many detail rows come back (bim-compiler prompts/CLI_ERP_IVR.md §22.6): a whole number, or "all"; 20 when not given (as before)
+  const cap = a.rows == null ? 20 : (String(a.rows).toLowerCase() === 'all' ? 0 : (/^[1-9]\d{0,5}$/.test(String(a.rows)) ? Number(a.rows) : NaN));
+  if (Number.isNaN(cap)) throw new Error('rows must be a whole number or "all", got "' + a.rows + '"');
+  return pack('viewer_clashes', a.building, r, cap);
 }
 function pack(verb, building, r, rowCap) {
   const a = r.ans, value = JSON.parse(JSON.stringify(a.value));
@@ -89,7 +92,7 @@ module.exports = { viewerCounts, viewerClashes, resolveDb };
 if (require.main === module) {
   const argv = process.argv.slice(2), verb = argv[0], arg = (k) => { const i = argv.indexOf('--' + k); return i >= 0 ? argv[i + 1] : undefined; };
   const f = verb === 'counts' ? () => viewerCounts({ building: arg('building'), by: arg('by') })
-    : verb === 'clashes' ? () => viewerClashes({ building: arg('building'), discA: arg('a'), discB: arg('b') }) : null;
+    : verb === 'clashes' ? () => viewerClashes({ building: arg('building'), discA: arg('a'), discB: arg('b'), rows: arg('rows') }) : null;
   if (!f) { console.error('usage: node viewer/tools/viewer_verbs.js counts --building B [--by discipline|storey] | clashes --building B --a ARC --b MEP'); process.exit(2); }
   f().then(r => { console.log(JSON.stringify(r)); process.exit(0); }).catch(e => { console.error('§VIEWER_VERB FAIL ' + (e && e.message || e)); process.exit(1); });
 }

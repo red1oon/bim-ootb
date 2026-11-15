@@ -35,13 +35,18 @@ function makeShell(o) {
   const D = require(DOOR), R = require(path.join(__dirname, 'render.js')), W = require(path.join(__dirname, 'words_core.js')), M = require(path.join(__dirname, 'mis_core.js'));
   const door = D.createDoor({ journal: o.journal }), vocab = D.loadVocab(), words = JSON.parse(fs.readFileSync(path.join(__dirname, 'vocab', 'words.json'), 'utf8'));
   const core = W.create({ vocab, words, tokenize: D.tokenize, pickColumns: M.pickColumns, buildings: buildingNames(), brk: process.env.WORDS_BREAK || '' });
-  let st = core.init(), n = 0;
+  let st = core.init(), n = 0; const held = new Map();
   // one word-line (or door line): returns the envelopes of the lines it ran. print(text) for the screen, shown(line) for the `→` line
   async function run(text, io) {
     const envs = [];
     const exec = async (line, shownLine) => {
       io.arrow(shownLine || line);
+      // §22.6 the held answer: a READ line the session already ran is served from its answer (said so), never re-run; any line that is not a read forgets them all
+      const key = BREAK() === 'stale' && held.size ? held.keys().next().value : line;   // W-RED1-LS falsifier: serve the answer of another line (must FAIL L1)
+      if (held.has(key)) { io.print('(answer of the line above, not re-run)'); say('held line=' + JSON.stringify(line)); return Object.assign({}, held.get(key), { held: true }); }
       const e = await door.runLine(line, { actor: o.actor, request: o.request ? o.request + '.' + (++n) : undefined });
+      const ent = e && vocab.byVerb.get(e.verb);
+      if (e && e.status === 'ok' && ent && ent.harm === 'read') held.set(line, e); else if (e && !(ent && ent.harm === 'read')) held.clear();
       if (BREAK() === 'twice') await door.runLine(line, { actor: o.actor });   // W-RED1-SHELL falsifier: a line run twice (must FAIL S2)
       if (e) say('line verb=' + (e.verb || '-') + ' status=' + e.status + ' request=' + e.request + ' line=' + JSON.stringify(line));
       return e;
@@ -53,7 +58,7 @@ function makeShell(o) {
       if (!r.effects.length) break;
       const ef = r.effects[0], e = await exec(ef.line, ef.shown);
       if (!e) break;
-      if (ef.purpose === 'run') { envs.push(e); io.show(e); r = { state: st, effects: r.effects.slice(1), screen: [] }; continue; }
+      if (ef.purpose === 'run') { envs.push(e); io.show(e, ef.view); r = { state: st, effects: r.effects.slice(1), screen: [] }; continue; }
       r = core.step(st, { result: { purpose: ef.purpose, envelope: e } });
     }
     return envs;
@@ -73,10 +78,11 @@ async function session(o) {
   const io = {
     print: (t) => process.stdout.write(t + '\n'),
     arrow: (l) => process.stdout.write('→ ' + l + '\n'),
-    show: (e) => {
-      const a = e.answer || {}, rows = Array.isArray(a.rows) ? a.rows : null;
-      process.stdout.write(e.status + (e.verb ? ' · ' + e.verb : '') + (e.ms != null ? ' · ' + e.ms + ' ms' : '') + (e.why ? ' · ' + e.why : '') + '\n');
+    show: (e, view) => {
+      const a = e.answer || {}, rows = Array.isArray(a.rows) && view !== 'summary' ? a.rows : null;
+      process.stdout.write(e.status + (e.verb ? ' · ' + e.verb : '') + (e.held ? ' · held' : (e.ms != null ? ' · ' + e.ms + ' ms' : '')) + (e.why ? ' · ' + e.why : '') + '\n');
       if (a.summary) process.stdout.write(a.summary + '\n');
+      if (view === 'summary' && Array.isArray(a.rows)) process.stdout.write('ls lists the ' + a.rows.length + ' rows\n');
       if (rows && rows.length) { const cols = Array.isArray(a.cols) ? a.cols : (Array.isArray(a.columns) ? a.columns : Object.keys(rows[0])); Dr.table(cols, rows).forEach(l => process.stdout.write(l + '\n')); if (a.rowsTotal > rows.length) process.stdout.write('(' + rows.length + ' of ' + a.rowsTotal + ' rows)\n'); }
       else if (e.answer != null && !a.summary) process.stdout.write((e.status === 'ok' && R.render(e, 'list')) || JSON.stringify(e.answer, null, 1).split('\n').slice(0, 40).join('\n') + '\n');
     }

@@ -210,6 +210,13 @@
      "required": true,
      "type": "discipline",
      "example": "MEP"
+    },
+    {
+     "name": "rows",
+     "description": "How many detail rows to return: a whole number, or \"all\". Without it, 20 (rowsTotal always says how many there are).",
+     "required": false,
+     "type": "string",
+     "example": "all"
     }
    ],
    "harm": "read",
@@ -227,7 +234,14 @@
      "--a",
      "{discA}",
      "--b",
-     "{discB}"
+     "{discB}",
+     {
+      "if": "rows",
+      "args": [
+       "--rows",
+       "{rows}"
+      ]
+     }
     ]
    },
    "returns": {
