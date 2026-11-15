@@ -46,7 +46,7 @@ const k = kit('W-RED1-SHELL'), RED1 = path.join(ROOT, 'common/door/red1.js'), BR
   const sess = await run(RED1, eA, [], L3.join('\n') + '\n', BRK === 'twice' ? 'twice' : '');
   for (const l of L3) await door(eB, l);
   const opsA = lines(logOf('S2a')).slice(nBase), opsB = lines(logOf('S2b')).slice(nBase), jA = lines(jOf('S2a')), jB = lines(jOf('S2b'));
-  const sessOk = (sess.err.match(/^§RED1 line n=\d+ .*status=ok/mg) || []).length;
+  const sessOk = (sess.err.match(/^§RED1 line verb=.*status=ok/mg) || []).length;
   if (!opsB.length) k.incon('S2', 'the one-by-one run wrote no op: nothing to compare');
   else k.chk('S2 a session of 3 lines writes the same ops and the same number of journal records as the 3 lines run one by one (each line once)',
     opsA.length === opsB.length && opsA.map(mask).join('\n') === opsB.map(mask).join('\n') && jA.length === jB.length && sessOk === 3,
@@ -67,7 +67,7 @@ const k = kit('W-RED1-SHELL'), RED1 = path.join(ROOT, 'common/door/red1.js'), BR
 
   // S5 a refused line does not end the session
   const eE = fresh('S5'), s5 = await run(RED1, eE, [], 'mis.list kind=NoSuchKind\nmis.describe kind=PR_Patient\n');
-  const st5 = (s5.err.match(/^§RED1 line n=\d+ .*$/mg) || []);
+  const st5 = (s5.err.match(/^§RED1 line verb=.*$/mg) || []);
   k.chk('S5 after a line that is not ok, the next line of the session still runs and answers ok', st5.length === 2 && !/status=ok/.test(st5[0]) && /status=ok/.test(st5[1]),
     st5.map(l => l.replace(/ request=.*/, '')).join(' | '));
   k.end();

@@ -218,6 +218,6 @@
     return L;
   }
   function plain(screen) { return screen.map(function (l) { return l.map(function (g) { return g.s === 'chipHi' ? '>' + g.t + '<' : g.t; }).join(''); }); }
-  var API = { create: create, step: step, render: render, plain: plain };
+  var API = { create: create, step: step, render: render, plain: plain, pickColumns: pickColumns };
   if (typeof module !== 'undefined' && module.exports) module.exports = API; else root.MisCore = API;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

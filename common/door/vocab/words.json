@@ -1,0 +1,65 @@
+{
+ "spec": "bim-compiler prompts/CLI_ERP_IVR.md §22.5 (the first word table) — DATA, read by common/door/words_core.js; every word expands to an EXISTING door verb, printed before it runs",
+ "contexts": {
+  "kind": "a kind of the building (after cd Duplex, cd Element)",
+  "building": "a building (after cd Duplex)",
+  "erp": "an ERP kind (after cd \"Business Partner\")",
+  "any": "anywhere"
+ },
+ "fill": "the context fills an input the verb has and the line did not give: building <- the building, kind <- the BIM kind (object.*) or the ERP kind (mis.* / erp.*), role <- the role, columns <- the columns the kind's list screen shows (mis_core pickColumns)",
+ "words": {
+  "ls":      { "help": "list what is here",                      "forms": [
+               { "in": "kind",     "verb": "object.list",   "args": [], "defaults": { "columns": "$columns", "limit": "20" } },
+               { "in": "building", "verb": "viewer.counts", "args": [], "defaults": { "by": "discipline" } },
+               { "in": "erp",      "verb": "mis.list",      "args": [], "defaults": { "columns": "$columns", "names": "Y", "limit": "20" } } ] },
+  "count":   { "help": "how many",                               "forms": [
+               { "in": "kind",     "verb": "object.count",  "args": [] },
+               { "in": "building", "verb": "viewer.counts", "args": ["by"], "defaults": { "by": "discipline" } },
+               { "in": "erp",      "verb": "mis.list",      "args": [], "defaults": { "columns": "$columns", "limit": "1" } } ] },
+  "cat":     { "help": "one record: cat <uu|id>",                "forms": [
+               { "in": "kind",     "verb": "object.read",   "args": ["uu"] },
+               { "in": "erp",      "verb": "mis.read",      "args": ["id"] } ] },
+  "sum":     { "help": "add a column: sum <column>",             "forms": [
+               { "in": "kind",     "verb": "object.sum",    "args": ["column"] },
+               { "in": "erp",      "verb": "mis.sum",       "args": ["column"] } ] },
+  "group":   { "help": "count by a column: group <column>",      "forms": [
+               { "in": "kind",     "verb": "object.group",  "args": ["by"] },
+               { "in": "erp",      "verb": "mis.group",     "args": ["by"] } ] },
+  "clash":   { "help": "clashes between two disciplines: clash <A> <B>", "forms": [
+               { "in": "building", "verb": "viewer.clashes", "args": ["discA", "discB"] } ] },
+  "grid":    { "help": "the building's grid lines",              "forms": [
+               { "in": "building", "verb": "modeller.lines", "args": [] } ] },
+  "walk":    { "help": "walk a discipline: walk <discipline>",   "forms": [
+               { "in": "building", "verb": "modeller.walk",  "args": ["discipline"] } ] },
+  "day":     { "help": "the schedule on a day: day <n>",         "forms": [
+               { "in": "building", "verb": "viewer.schedule_at", "args": ["day"] } ] },
+  "compare": { "help": "the schedule compared: compare [hours]", "forms": [
+               { "in": "building", "verb": "viewer.schedule_compare", "args": ["shift_hours"] } ] },
+  "open":    { "help": "open a model: open <sheets>",            "forms": [
+               { "in": "any",      "verb": "model.open",    "args": ["sheets"] } ] },
+  "bay":     { "help": "add a bay: bay <end>",                   "forms": [
+               { "in": "any",      "verb": "model.addbay",  "args": ["end"] } ] },
+  "undo":    { "help": "undo the last model change",             "forms": [
+               { "in": "any",      "verb": "model.undo",    "args": [] } ] },
+  "save":    { "help": "save the model: save [file]",            "forms": [
+               { "in": "any",      "verb": "model.save",    "args": ["file"] } ] },
+  "close":   { "help": "close the model",                        "forms": [
+               { "in": "any",      "verb": "model.close",   "args": [] } ] },
+  "new":     { "help": "a new record: new Column=value …",       "forms": [
+               { "in": "erp",      "verb": "mis.new",       "args": [] } ] },
+  "set":     { "help": "change a record: set <id> Column=value …", "forms": [
+               { "in": "erp",      "verb": "mis.update",    "args": ["id"] } ] },
+  "rm":      { "help": "delete a record: rm <id> (asks y/N)",    "confirm": true, "forms": [
+               { "in": "erp",      "verb": "mis.delete",    "args": ["id"] } ] },
+  "do":      { "help": "a document action: do <complete|void|close|reverse> <number>", "forms": [
+               { "in": "erp",      "verb": "erp.{1}",       "args": ["number"], "pick": ["complete", "void", "close", "reverse"] } ] },
+  "next":    { "help": "what a document may do next: next <number>", "forms": [
+               { "in": "erp",      "verb": "erp.actions",   "args": ["number"] } ] },
+  "load":    { "help": "load rows from a file: load <file>",     "forms": [
+               { "in": "erp",      "verb": "mis.load",      "args": ["file"] } ] },
+  "diff":    { "help": "compare a file with the records: diff <file>", "forms": [
+               { "in": "erp",      "verb": "mis.diff",      "args": ["file"] } ] },
+  "ninja":   { "help": "stage a workbook or CSV: ninja <file>",  "forms": [
+               { "in": "any",      "verb": "ninja.exec",    "args": ["file"] } ] }
+ }
+}
