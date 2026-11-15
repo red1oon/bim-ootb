@@ -23,6 +23,7 @@
 //   --fact                a fact the model cannot give, for the report: --fact plot_area_m2=1200 --fact soil_kPa=150 --fact district=Dhaka (absent = "not stated")
 //   --ifc-in <file.ifc>   no 2D sheets: build the analytical model from ANY IFC (needs --analytical and --out; web-ifc + sql.js as for --ifc) (§D105)
 //   --analytical          also write <out>/model.std (STAAD.Pro) + <out>/analytical.json (dxf2bim-analytical/1): a starting analytical model, not a design (dxf2analytical.js, §D103)
+//   --trace               also write <out>/trace.json {guid: key}: the literal key of the one line that built each body (F.21, a dev aid; the model files are unchanged)
 //   --ifc                 also write <out>/model.ifc (IFC4, typed bodies, via dxf2ifc.js + web-ifc: `require('web-ifc')`, else $WEB_IFC, else ~/bim-compiler/node_modules/web-ifc)
 // writes <out>/marked/<sheet>_marked.dxf (the settings sheets), verdict.json, bodies.json, ops.json; prints §CLI lines; exit 0 = the set qualifies, 2 = it does not.
 'use strict';
@@ -41,6 +42,7 @@ function parseArgs(argv) {
     else if (k === '--complete') a.complete = true;
     else if (k === '--analytical') a.analytical = true;   // §D103
     else if (k === '--impact') a.impact = true;   // §D99 P2: rank the used defaults by what each option moves (bill, own weight, bodies)
+    else if (k === '--trace') a.trace = true;   // F.21: record which line built each body (trace.json + §DXF_TRACE); the model files are unchanged   // §D99 P2: rank the used defaults by what each option moves (bill, own weight, bodies)
     else if (k === '--ifc-in') a.ifcIn = argv[++i];
     else if (['--out', '--set', '--level'].includes(k)) a[k.slice(2)] = argv[++i];
     else if (['--layer', '--datum', '--haxis', '--bodyz', '--size', '--pack', '--default', '--choice', '--exclude', '--fact'].includes(k)) a[k.slice(2)].push(argv[++i]);
@@ -144,6 +146,20 @@ function write(res, dir) {
   return bodies;
 }
 
+// F.21 slice 1: trace.json {guid: key} for every body + §DXF_TRACE (coverage) + §DXF_TRACE_UNTRACED (each body no producer claimed: the site that still needs a stamp)
+function traceReport(els, map) {
+  const t = {}, un = [], keys = {};
+  (els || []).forEach(e => { const k = map.get(e.guid); if (k) { t[e.guid] = k; keys[k] = (keys[k] || 0) + 1; } else un.push(e); });
+  return { trace: t, untraced: un, keys, elements: (els || []).length };
+}
+function writeTrace(res, dir, map) {
+  const R = res.out.gate && res.out.gate.R, T = traceReport(R && R.els, map);
+  fs.writeFileSync(path.join(dir, 'trace.json'), JSON.stringify({ format: 'dxf2bim-trace/1', trace: T.trace }, null, 1));
+  console.log('§DXF_TRACE elements=' + T.elements + ' traced=' + (T.elements - T.untraced.length) + ' untraced=' + T.untraced.length + ' keys=' + Object.keys(T.keys).length);
+  T.untraced.forEach(e => console.log('§DXF_TRACE_UNTRACED guid=' + e.guid + ' class=' + e.class + ' kind=' + (e.kind || '-') + ' handle=' + e.handle + ' layer=' + (e.layer || '-')));
+  return T;
+}
+
 function webIfc() {
   for (const m of ['web-ifc', process.env.WEB_IFC, path.join(process.env.HOME || '', 'bim-compiler/node_modules/web-ifc')]) { if (!m) continue; try { return require(m); } catch (e) { /* next */ } }
   throw new Error('--ifc needs web-ifc (npm i web-ifc, or set WEB_IFC=<dir>)');
@@ -163,7 +179,10 @@ if (require.main === module) {
   try {
     const args = parseArgs(process.argv.slice(2));
     if (args.ifcIn) { const m = await analyticalFromIfc(new Uint8Array(fs.readFileSync(args.ifcIn)), registryValues(), path.resolve(args.out)); process.exit(m.refused ? 2 : 0); }
-    const res = run(args), bodies = write(res, path.resolve(args.out)), g = res.out.gate;
+    if (args.trace) globalThis.__DXF_TRACE = new Map();   // F.21 slice 1: ON only for this run
+    const res = run(args), traced = globalThis.__DXF_TRACE; delete globalThis.__DXF_TRACE;
+    const bodies = write(res, path.resolve(args.out)), g = res.out.gate;
+    if (traced) writeTrace(res, path.resolve(args.out), traced);
     if (args.ifc && g.ok) { const r = await writeIfc(res, path.resolve(args.out)); console.log('§CLI ifc seeded=' + r.seeded + ' typed=' + r.typed + ' coloured=' + r.coloured + ' psets=' + r.withPset + ' styles=' + r.styles + ' byClass=' + JSON.stringify(r.byClass) + ' storeys=' + JSON.stringify(r.storeys)); }
     if (args.report && g.ok) await writeReport(res, path.resolve(args.out), args);
     if (args.analytical && g.ok) await writeAnalytical(res, path.resolve(args.out));
@@ -226,4 +245,4 @@ function impact(args, log) {
     return { bodies: G ? G.els.length : 0, total: r.bill ? r.bill.totals.amount : 0, kN: r.loadSummary ? r.loadSummary.total_kN : 0 };
   }, log || (l => console.log(l)));
 }
-module.exports = { run, write, parseArgs, writeIfc, writeReport, impact, writeAnalytical, analyticalFromIfc, registryValues, buildIfc };
+module.exports = { traceReport, writeTrace, run, write, parseArgs, writeIfc, writeReport, impact, writeAnalytical, analyticalFromIfc, registryValues, buildIfc };

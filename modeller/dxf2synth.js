@@ -43,8 +43,8 @@
     else {
       slabT = DF.use('synth.slab.thickness'); DF.use('synth.slab.footprint');
       var top = Math.min.apply(null, cols.map(function (b) { return b.z0; })), m = prismBox(x0, y0, top - slabT, x1, y1, top);
-      els.push({ guid: 'synth-slab-ground', class: P.ifcType('slab').ifc_class, storey: storey, vertices: m.vertices, faces: m.faces, handle: 'synth', layer: '(synthetic)', sheet: '(set)', kind: 'slab', prov: 'derived',
-        ifc: P.ifcType('slab', 'Ground floor slab', null), mark: null, z0: r6(top - slabT), z1: r6(top), height_source: 'derived', size: { t: { number: slabT, source: 'default' } }, members: [] });
+      els.push(D.P.trace('dxf2synth:slab', { guid: 'synth-slab-ground', class: P.ifcType('slab').ifc_class, storey: storey, vertices: m.vertices, faces: m.faces, handle: 'synth', layer: '(synthetic)', sheet: '(set)', kind: 'slab', prov: 'derived',
+        ifc: P.ifcType('slab', 'Ground floor slab', null), mark: null, z0: r6(top - slabT), z1: r6(top), height_source: 'derived', size: { t: { number: slabT, source: 'default' } }, members: [] }));
     }
     // ---- column below grade (§L29): a column schedule states a larger section below grade; one body from the footing top to grade (that section) and one from grade to the column base (the column's own section) ----
     var ftg = bodies.filter(function (b) { return b.kind === 'footing'; });
@@ -59,8 +59,8 @@
           if (!(zf < zg && zg < c.z0)) { gaps.push({ code: 'GAP:synth_column_levels', detail: 'column ' + (c.guid || i) + ': footing top ' + r6(zf) + ', grade ' + r6(zg) + ', base ' + r6(c.z0) + ' are not in order', handle: c.handle }); return; }
           [['below', zf, zg, bs, bs, 'Column below grade'], ['stub', zg, c.z0, cb.mx[0] - cb.mn[0], cb.mx[1] - cb.mn[1], 'Column grade to base']].forEach(function (q) {
             var m3 = prismBox(r6(cx - q[3] / 2), r6(cy - q[4] / 2), r6(q[1]), r6(cx + q[3] / 2), r6(cy + q[4] / 2), r6(q[2])); nb++;
-            els.push({ guid: 'synth-col' + q[0] + '-' + i, class: P.ifcType('column').ifc_class, storey: storey, vertices: m3.vertices, faces: m3.faces, handle: c.handle || 'synth', layer: c.layer || '(synthetic)', sheet: c.sheet || '(set)', kind: 'column', prov: 'derived', part_of: c.guid, part_type: (c.ifc && c.ifc.type_name) || null,
-              ifc: P.ifcType('column', q[5], null), mark: null, z0: r6(q[1]), z1: r6(q[2]), height_source: 'derived', size: { x: { number: r6(q[3]), source: q[0] === 'below' ? DF.source('synth.column.belowgrade.size') : 'inherited' }, y: { number: r6(q[4]), source: q[0] === 'below' ? DF.source('synth.column.belowgrade.size') : 'inherited' } }, members: [] });
+            els.push(D.P.trace('dxf2synth:column', { guid: 'synth-col' + q[0] + '-' + i, class: P.ifcType('column').ifc_class, storey: storey, vertices: m3.vertices, faces: m3.faces, handle: c.handle || 'synth', layer: c.layer || '(synthetic)', sheet: c.sheet || '(set)', kind: 'column', prov: 'derived', part_of: c.guid, part_type: (c.ifc && c.ifc.type_name) || null,
+              ifc: P.ifcType('column', q[5], null), mark: null, z0: r6(q[1]), z1: r6(q[2]), height_source: 'derived', size: { x: { number: r6(q[3]), source: q[0] === 'below' ? DF.source('synth.column.belowgrade.size') : 'inherited' }, y: { number: r6(q[4]), source: q[0] === 'below' ? DF.source('synth.column.belowgrade.size') : 'inherited' } }, members: [] }));
           });
         });
       }
@@ -85,8 +85,8 @@
         var slope = Math.atan2(ridgeZ - eaveZ, Math.max(Math.abs(yr - ya), Math.abs(yb - yr))) * 180 / Math.PI;
         [['a', ya, yr], ['b', yb, yr]].forEach(function (s) {
           var m2 = slopeSlab(xa, xb, s[1], eaveZ, s[2], ridgeZ, roofT, true);
-          els.push({ guid: 'synth-roof-' + s[0], class: P.ifcType('roof').ifc_class, storey: storey, vertices: m2.vertices, faces: m2.faces, handle: 'synth', layer: '(synthetic)', sheet: '(set)', kind: 'roof', prov: 'derived',
-            ifc: P.ifcType('roof', 'Roof sheeting', null), mark: null, z0: r6(eaveZ), z1: r6(ridgeZ), height_source: 'derived', size: { t: { number: roofT, source: 'default' }, slope_deg: r6(slope) }, members: [] });
+          els.push(D.P.trace('dxf2synth:roof', { guid: 'synth-roof-' + s[0], class: P.ifcType('roof').ifc_class, storey: storey, vertices: m2.vertices, faces: m2.faces, handle: 'synth', layer: '(synthetic)', sheet: '(set)', kind: 'roof', prov: 'derived',
+            ifc: P.ifcType('roof', 'Roof sheeting', null), mark: null, z0: r6(eaveZ), z1: r6(ridgeZ), height_source: 'derived', size: { t: { number: roofT, source: 'default' }, slope_deg: r6(slope) }, members: [] }));
         });
       }
     }

@@ -80,8 +80,8 @@
           var z0 = r6(top - h.depth), z1 = r6(top), V = ring.map(function (c) { return [c[0], c[1], z0]; }).concat(ring.map(function (c) { return [c[0], c[1], z1]; })), mesh = S.box(V), lv = levels.filter(function (l) { return l <= z1; }).pop(); if (lv === undefined) lv = levels[0];
           if (DF) { ['beam.label_reach', 'beam.edge_tol'].forEach(function (q) { if (DF.has(q)) DF.use(q); }); if (sp2.split && DF.has('beam.span_split')) DF.use('beam.span_split'); }
           report.built++;
-          els.push({ guid: 'body-beam-' + pi + '-' + h.lab.handle, class: 'IfcBeam', storey: 'Level ' + (levels.indexOf(lv) + 1), vertices: mesh.vertices, faces: mesh.faces, handle: h.lab.handle, layer: h.lab.layer, sheet: ps.name, kind: 'beam', mark: h.mark, band: false, members: first.members, z0: z0, z1: z1,
-            size: { w: { value: r6(Math.abs(first.sp) * k), source: 'drawn', label: h.label }, d: { value: h.depth, source: 'label' }, top: { value: z1, source: toc ? 'TOC label' : 'plan level' }, length: { value: r6((sp2.s1 - sp2.s0) * k), source: sp2.split ? 'split at the midpoint between labels' : 'drawn' } }, height_source: toc ? 'label' : 'plan', prov: 'derived', ifc: P.ifcType('beam', h.mark, null) });
+          els.push(D.P.trace('dxf2beams:beam', { guid: 'body-beam-' + pi + '-' + h.lab.handle, class: 'IfcBeam', storey: 'Level ' + (levels.indexOf(lv) + 1), vertices: mesh.vertices, faces: mesh.faces, handle: h.lab.handle, layer: h.lab.layer, sheet: ps.name, kind: 'beam', mark: h.mark, band: false, members: first.members, z0: z0, z1: z1,
+            size: { w: { value: r6(Math.abs(first.sp) * k), source: 'drawn', label: h.label }, d: { value: h.depth, source: 'label' }, top: { value: z1, source: toc ? 'TOC label' : 'plan level' }, length: { value: r6((sp2.s1 - sp2.s0) * k), source: sp2.split ? 'split at the midpoint between labels' : 'drawn' } }, height_source: toc ? 'label' : 'plan', prov: 'derived', ifc: P.ifcType('beam', h.mark, null) }));
         });
       });
     });

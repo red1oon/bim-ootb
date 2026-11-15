@@ -155,9 +155,9 @@
         else { V = m.vertices.map(function (q) { return [r6(q[0]), r6(q[2]), r6(q[1])]; }); Fc = m.faces.map(function (f) { return [f[0], f[2], f[1]]; }); }   // (X=u, Y=w, Z=v): odd, flip the winding
         var el = { vertices: V, faces: Fc };
         if (volume(el) < 0) { el.faces = el.faces.map(function (f) { return [f[0], f[2], f[1]]; }); }
-        els.push({ guid: lp.id, class: P.ifcType('panel').ifc_class, storey: 'Level 1', vertices: el.vertices, faces: el.faces, handle: lp.h.handle + (lp.n > 1 ? '-L' + lp.li : ''), layer: lp.h.layer, sheet: es.name,
+        els.push(D.P.trace('dxf2panels:panel', { guid: lp.id, class: P.ifcType('panel').ifc_class, storey: 'Level 1', vertices: el.vertices, faces: el.faces, handle: lp.h.handle + (lp.n > 1 ? '-L' + lp.li : ''), layer: lp.h.layer, sheet: es.name,
           kind: 'panel', prov: src === 'inherited' ? 'derived' : 'drawn', ifc: P.ifcType('panel', text, null), mark: null, z0: r6(lp.z0), z1: r6(lp.z1), height_source: 'elevation',
-          size: { t: { number: r6(t), source: src, text: text }, plane: r6(plane), pattern: lp.h.pattern }, members: [lp.h.handle] });
+          size: { t: { number: r6(t), source: src, text: text }, plane: r6(plane), pattern: lp.h.pattern }, members: [lp.h.handle] }));
         rep.panels++; report.panels++;
       });
       // §L11.4 nets: the mesh-pattern hatches (ZIGZAG, MESH, NET, WIRE) of a layer typed `net`: a thin cladding sheet over the opening above a low panel (a farm's ventilation net). The pattern is the evidence of
@@ -175,8 +175,8 @@
             else { V3 = m.vertices.map(function (q2) { return [r6(q2[0]), r6(q2[2]), r6(q2[1])]; }); F3 = m.faces.map(function (f) { return [f[0], f[2], f[1]]; }); }
             var nm = { vertices: V3, faces: F3 }; if (volume(nm) < 0) nm.faces = nm.faces.map(function (f) { return [f[0], f[2], f[1]]; });
             var zz = poly.map(function (q) { return q[1]; });
-            els.push({ guid: id, class: P.ifcType('net').ifc_class, storey: 'Level 1', vertices: nm.vertices, faces: nm.faces, handle: h.handle + (all.length > 1 ? '-L' + li : ''), layer: h.layer, sheet: es.name, kind: 'net', prov: 'derived',
-              ifc: P.ifcType('net', 'Netting', null), mark: null, z0: r6(Math.min.apply(null, zz)), z1: r6(Math.max.apply(null, zz)), height_source: 'elevation', size: { t: { number: r6(t), source: u.w > 0 ? 'user' : DF.source('net.thickness') }, plane: r6(plane), pattern: h.pattern }, members: [h.handle] });
+            els.push(D.P.trace('dxf2panels:net', { guid: id, class: P.ifcType('net').ifc_class, storey: 'Level 1', vertices: nm.vertices, faces: nm.faces, handle: h.handle + (all.length > 1 ? '-L' + li : ''), layer: h.layer, sheet: es.name, kind: 'net', prov: 'derived',
+              ifc: P.ifcType('net', 'Netting', null), mark: null, z0: r6(Math.min.apply(null, zz)), z1: r6(Math.max.apply(null, zz)), height_source: 'elevation', size: { t: { number: r6(t), source: u.w > 0 ? 'user' : DF.source('net.thickness') }, plane: r6(plane), pattern: h.pattern }, members: [h.handle] }));
             report.nets = (report.nets || 0) + 1; netsUsed = true;
           });
         });
@@ -204,8 +204,8 @@
           if (F.coord === 'X') { V2 = m.vertices.map(function (q2) { return [r6(q2[2]), r6(q2[0]), r6(q2[1])]; }); F2 = m.faces; }
           else { V2 = m.vertices.map(function (q2) { return [r6(q2[0]), r6(q2[2]), r6(q2[1])]; }); F2 = m.faces.map(function (f) { return [f[0], f[2], f[1]]; }); }
           var fm = { vertices: V2, faces: F2 }; if (volume(fm) < 0) fm.faces = fm.faces.map(function (f) { return [f[0], f[2], f[1]]; });
-          els.push({ guid: id, class: P.ifcType('fan').ifc_class, storey: 'Level 1', vertices: fm.vertices, faces: fm.faces, handle: g.h, layer: es.desc.layers.filter(function (l) { return l.type === 'fan'; })[0].layer, sheet: es.name, kind: 'fan', prov: 'derived',
-            ifc: P.ifcType('fan', 'Axial fan', null), mark: null, z0: r6(cv - R), z1: r6(cv + R), height_source: 'elevation', size: { d: { number: r6(2 * R), source: 'drawn' }, depth: { number: r6(depth), source: u.w > 0 ? 'user' : DF.source('fan.depth') }, plane: r6(plane), rings: g.n }, members: [g.h] });
+          els.push(D.P.trace('dxf2panels:fan', { guid: id, class: P.ifcType('fan').ifc_class, storey: 'Level 1', vertices: fm.vertices, faces: fm.faces, handle: g.h, layer: es.desc.layers.filter(function (l) { return l.type === 'fan'; })[0].layer, sheet: es.name, kind: 'fan', prov: 'derived',
+            ifc: P.ifcType('fan', 'Axial fan', null), mark: null, z0: r6(cv - R), z1: r6(cv + R), height_source: 'elevation', size: { d: { number: r6(2 * R), source: 'drawn' }, depth: { number: r6(depth), source: u.w > 0 ? 'user' : DF.source('fan.depth') }, plane: r6(plane), rings: g.n }, members: [g.h] }));
           if (fanM) { els[els.length - 1].size.profile = { family: 'axial', housing_r: r6(R), hub_r: r6(g.rIn * k), blades: DF.use('fan.blades'), wall: DF.use('fan.housing_wall') }; if (!fanDetailListed) { fanDetailListed = true; gaps.push({ code: 'GAP:fan_detail_defaulted', sheet: es.name, kind: 'fan', handle: g.h, detail: 'the blade count (' + DF.use('fan.blades') + ') and the housing wall (' + DF.use('fan.housing_wall') + ' m) are stated defaults: the rings give only the radii' }); } }
           report.fans = (report.fans || 0) + 1; fansUsed = true;
         });

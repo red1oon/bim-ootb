@@ -86,8 +86,8 @@
           var m = outward({ vertices: V.map(function (q) { return [r6(q[0]), r6(q[1]), r6(q[2])]; }), faces: BOX });
           if (lPoly) m = PF.prismBetween(lPoly.map(function (q) { return W(A[0] + qu * q[0], A[1] + qv * q[0], n + q[1]); }), lPoly.map(function (q) { return W(B[0] + qu * q[0], B[1] + qv * q[0], n + q[1]); }));
           var prov = atCut(n) ? 'derived' : 'assumed';
-          els.push({ guid: c.id + '-S' + ni, class: P.ifcType('bar').ifc_class, storey: 'Level 1', vertices: m.vertices, faces: m.faces, handle: c.e.handle + '-S' + ni, layer: c.e.layer, sheet: ss.name, kind: 'bar', prov: prov,
-            ifc: P.ifcType('bar', c.label || 'Section member', null), mark: null, z0: r6(Math.min(A[1], B[1]) - h), z1: r6(Math.max(A[1], B[1]) + h), height_source: 'section', size: { w: { number: r6(s), source: src }, station: n }, members: [c.e.handle] }); if (lPoly) els[els.length - 1].size.profile = { family: 'L', b: pa.b, t: pa.t, heel: DF.use('profile.angle_heel') }; rep.bars++;
+          els.push(D.P.trace('dxf2section:bar', { guid: c.id + '-S' + ni, class: P.ifcType('bar').ifc_class, storey: 'Level 1', vertices: m.vertices, faces: m.faces, handle: c.e.handle + '-S' + ni, layer: c.e.layer, sheet: ss.name, kind: 'bar', prov: prov,
+            ifc: P.ifcType('bar', c.label || 'Section member', null), mark: null, z0: r6(Math.min(A[1], B[1]) - h), z1: r6(Math.max(A[1], B[1]) + h), height_source: 'section', size: { w: { number: r6(s), source: src }, station: n }, members: [c.e.handle] })); if (lPoly) els[els.length - 1].size.profile = { family: 'L', b: pa.b, t: pa.t, heel: DF.use('profile.angle_heel') }; rep.bars++;
         });
       });
       // plates: closed outlines in the section plane, thickness from the sheet's one "Thickness Plate" label (a yellow default: the label does not point into the plate) or the user
@@ -100,8 +100,8 @@
         if (!pm) { gaps.push({ code: 'GAP:plate_degenerate', sheet: ss.name, kind: 'plate', handle: e.handle, detail: 'the outline could not be triangulated' }); rep.left_out++; return; }
         stations.forEach(function (n, ni) {
           var m = outward({ vertices: pm.vertices.map(function (q) { var w = W(q[0], q[1], n + q[2]); return [r6(w[0]), r6(w[1]), r6(w[2])]; }), faces: pm.faces.map(function (f) { return f.slice(); }) });
-          els.push({ guid: id + '-S' + ni, class: P.ifcType('plate').ifc_class, storey: 'Level 1', vertices: m.vertices, faces: m.faces, handle: e.handle + '-S' + ni, layer: e.layer, sheet: ss.name, kind: 'plate', prov: atCut(n) ? 'derived' : 'assumed',
-            ifc: P.ifcType('plate', plateLab[0] ? plateLab[0].text : 'Plate', null), mark: null, z0: r6(Math.min.apply(null, poly.map(function (q) { return q[1]; }))), z1: r6(Math.max.apply(null, poly.map(function (q) { return q[1]; }))), height_source: 'section', size: { t: { number: r6(t), source: src }, station: n }, members: [e.handle] }); rep.plates++;
+          els.push(D.P.trace('dxf2section:plate', { guid: id + '-S' + ni, class: P.ifcType('plate').ifc_class, storey: 'Level 1', vertices: m.vertices, faces: m.faces, handle: e.handle + '-S' + ni, layer: e.layer, sheet: ss.name, kind: 'plate', prov: atCut(n) ? 'derived' : 'assumed',
+            ifc: P.ifcType('plate', plateLab[0] ? plateLab[0].text : 'Plate', null), mark: null, z0: r6(Math.min.apply(null, poly.map(function (q) { return q[1]; }))), z1: r6(Math.max.apply(null, poly.map(function (q) { return q[1]; }))), height_source: 'section', size: { t: { number: r6(t), source: src }, station: n }, members: [e.handle] })); rep.plates++;
         });
       });
       // runs (purlins): each outline on a `member` layer is a profile whose bounding rectangle runs from the first to the last station
@@ -110,8 +110,8 @@
         var pts = e.vertices.map(function (v) { return [map.toPlan(v.x), map.zOf(v.y)]; }), u0 = Math.min.apply(null, pts.map(function (q) { return q[0]; })), u1 = Math.max.apply(null, pts.map(function (q) { return q[0]; })), v0 = Math.min.apply(null, pts.map(function (q) { return q[1]; })), v1 = Math.max.apply(null, pts.map(function (q) { return q[1]; })), n0 = stations[0], n1 = stations[stations.length - 1];
         var V = [[u0, v0, n0], [u1, v0, n0], [u1, v1, n0], [u0, v1, n0], [u0, v0, n1], [u1, v0, n1], [u1, v1, n1], [u0, v1, n1]].map(function (q) { var w = W(q[0], q[1], q[2]); return [r6(w[0]), r6(w[1]), r6(w[2])]; });
         var m = outward({ vertices: V, faces: BOX });
-        els.push({ guid: 'body-run-' + si + '-' + e.handle, class: P.ifcType('member').ifc_class, storey: 'Level 1', vertices: m.vertices, faces: m.faces, handle: e.handle, layer: e.layer, sheet: ss.name, kind: 'member', prov: 'derived',
-          ifc: P.ifcType('member', 'Section run', null), mark: null, z0: r6(v0), z1: r6(v1), height_source: 'section', size: { run: [r6(n0), r6(n1)] }, members: [e.handle] }); rep.runs++;
+        els.push(D.P.trace('dxf2section:member', { guid: 'body-run-' + si + '-' + e.handle, class: P.ifcType('member').ifc_class, storey: 'Level 1', vertices: m.vertices, faces: m.faces, handle: e.handle, layer: e.layer, sheet: ss.name, kind: 'member', prov: 'derived',
+          ifc: P.ifcType('member', 'Section run', null), mark: null, z0: r6(v0), z1: r6(v1), height_source: 'section', size: { run: [r6(n0), r6(n1)] }, members: [e.handle] })); rep.runs++;
       });
     });
     if (sizeDefaulted) DEF.assume('section.bar.size', String(sizeDefaulted) + ' bars', sizeDefaulted + ' bars have no label pointing at them: they take the most common labelled size (square envelope)', ['most common labelled size']);

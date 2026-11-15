@@ -74,8 +74,8 @@
         var V = [[hx + nx * hh, hy + ny * hh, z0], [hx + ux * w + nx * hh, hy + uy * w + ny * hh, z0], [hx + ux * w - nx * hh, hy + uy * w - ny * hh, z0], [hx - nx * hh, hy - ny * hh, z0],
           [hx + nx * hh, hy + ny * hh, z1], [hx + ux * w + nx * hh, hy + uy * w + ny * hh, z1], [hx + ux * w - nx * hh, hy + uy * w - ny * hh, z1], [hx - nx * hh, hy - ny * hh, z1]].map(function (q) { return [r6(q[0]), r6(q[1]), r6(q[2])]; });
         var m = P.Solid.box(V);
-        els.push({ guid: id, class: P.ifcType('doorswing').ifc_class, storey: 'Level 1', vertices: m.vertices, faces: m.faces, handle: a.handle, layer: a.layer, sheet: ps.name, kind: 'doorswing', prov: 'derived',
-          ifc: P.ifcType('doorswing', 'Door ' + r6(w) + ' m', null), mark: null, z0: r6(z0), z1: r6(z1), height_source: hseen, size: { w: { number: r6(w), source: 'drawn' }, t: { number: r6(t), source: tsrc }, d: { number: r6(H), source: hsrc } }, members: [a.handle] });
+        els.push(D.P.trace('dxf2doors:doorswing', { guid: id, class: P.ifcType('doorswing').ifc_class, storey: 'Level 1', vertices: m.vertices, faces: m.faces, handle: a.handle, layer: a.layer, sheet: ps.name, kind: 'doorswing', prov: 'derived',
+          ifc: P.ifcType('doorswing', 'Door ' + r6(w) + ' m', null), mark: null, z0: r6(z0), z1: r6(z1), height_source: hseen, size: { w: { number: r6(w), source: 'drawn' }, t: { number: r6(t), source: tsrc }, d: { number: r6(H), source: hsrc } }, members: [a.handle] }));
       });
     });
     return { els: els, gaps: gaps, defaults: own ? DF.rows() : [] };

@@ -46,8 +46,8 @@
         var ox = x0 * k, oy = y0 * k, V = pm.vertices.map(function (v) { return [r6(ox + nx * v[0] + ux * v[2]), r6(oy + ny * v[0] + uy * v[2]), r6(top + v[1])]; }), zs = V.map(function (v) { return v[2]; }), z0 = Math.min.apply(null, zs), z1 = Math.max.apply(null, zs), lv = levels.filter(function (l) { return l <= z1; }).pop(); if (lv === undefined) lv = levels[0];
         if (DF) { if (DF.has('steel.label_reach')) DF.use('steel.label_reach'); if (pf.source === 'table' && DF.has('steel.section_table')) DF.use('steel.section_table'); }
         report.built++;
-        els.push({ guid: 'body-steel-' + pi + '-' + lab.handle, class: pf.cls, storey: 'Level ' + (levels.indexOf(lv) + 1), vertices: V, faces: pm.faces, handle: lab.handle, layer: lab.layer, sheet: ps.name, kind: 'steel', mark: lab.t, members: run.members, z0: z0, z1: z1,
-          size: { profile: { value: lab.t, sizes: pf.sizes, source: pf.source }, length: { value: r6(len), source: 'drawn' }, top: { value: top, source: tos ? 'TOS label' : 'plan level' }, line_layer: s.layer }, height_source: tos ? 'label' : 'plan', prov: 'derived', ifc: Object.assign(P.ifcType(pf.cls === 'IfcBeam' ? 'beam' : 'member', lab.t, null), {}) });
+        els.push(D.P.trace('dxf2steel:steel', { guid: 'body-steel-' + pi + '-' + lab.handle, class: pf.cls, storey: 'Level ' + (levels.indexOf(lv) + 1), vertices: V, faces: pm.faces, handle: lab.handle, layer: lab.layer, sheet: ps.name, kind: 'steel', mark: lab.t, members: run.members, z0: z0, z1: z1,
+          size: { profile: { value: lab.t, sizes: pf.sizes, source: pf.source }, length: { value: r6(len), source: 'drawn' }, top: { value: top, source: tos ? 'TOS label' : 'plan level' }, line_layer: s.layer }, height_source: tos ? 'label' : 'plan', prov: 'derived', ifc: Object.assign(P.ifcType(pf.cls === 'IfcBeam' ? 'beam' : 'member', lab.t, null), {}) }));
       });
     });
     return { els: els, gaps: gaps, report: report };

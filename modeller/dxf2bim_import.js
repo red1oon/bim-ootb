@@ -18,6 +18,8 @@
   'use strict';
   var TAG = '§DXF-IMPORT';
   var DxfParser = L.DxfParser, B = L.B, MK = L.MK, E = L.E, M = L.M, T = L.T, S = L.S, C = L.C, Q = L.Q;
+  // F.21 slice 1: the ONE trace helper is Dxf2Prep.trace; this file loads before dxf2prep.js on the page's lazy list, so it is looked up when a body is built (as PR at :147 is)
+  function _trace(key, el) { var P = (typeof self !== 'undefined' && self.Dxf2Prep) || (typeof require === 'function' ? require('./dxf2prep.js') : null); return P ? P.trace(key, el) : el; }
   // F6 D11: a plan states the thinnest wall piece it reads as a wall (@WALLMIN, metres); without it the set config stands
   function exOf(desc) { return desc && desc.excludes && desc.excludes.length ? desc.excludes : undefined; }   // §D58 the user's @EXCLUDE rectangles reach every plan run (absent when none: run_id unchanged)
   function cfgFor(desc) { var w = desc && desc.wallmin !== undefined ? Number(desc.wallmin) : NaN; return isFinite(w) && w > 0 ? Object.assign({}, C.CFG, { wall: Object.assign({}, C.CFG.wall, { min_thickness: w }) }) : C.CFG; }
@@ -489,46 +491,46 @@
       var wallOps = st.meshWalls.concat(st.infill);
       var m = M.meshFromOps(wallOps, { level: st.level, hashHex: hashHex, snapTol: CFG.snap_tol });
       st.meshGaps = m.gaps;
-      m.elements.forEach(function (e) { if (e.class === 'IfcWall' && curtainLayer(SET, e.layer)) e.class = 'IfcCurtainWall'; els.push(Object.assign(e, { storey: st.name, sheet: st.sheet })); });   // §D45
+      m.elements.forEach(function (e) { if (e.class === 'IfcWall' && curtainLayer(SET, e.layer)) e.class = 'IfcCurtainWall'; els.push(_trace('dxf2bim_import:storey-element', Object.assign(e, { storey: st.name, sheet: st.sheet }))); });   // §D45
       var sz = R.slabZ[st.name];
       if (st.edge.pieces.length && (typeof sz.thickness === 'number' || st.edge.pieces.some(function (pc) { return typeof pc.top === 'number' && typeof pc.thickness === 'number'; }))) {   // §D70.1 one slab per drawn piece; §D75 at its own top and thickness when the ring states both (DXF elevation / thickness), else at the storey's slab level
         st.edge.pieces.forEach(function (pc, k) {
           var own = typeof pc.top === 'number' && typeof pc.thickness === 'number', zt = own ? pc.top : sz.top, zb = own ? r6(pc.top - pc.thickness) : sz.bottom;
           if (typeof zt !== 'number' || typeof zb !== 'number') { st.edge.gaps.push({ code: 'GAP:slab_edge_degenerate', handle: pc.handles[0], area: pc.area, reason: 'the drawn slab edge states no top and thickness and the storey has none' }); return; }
           var pm = pc.rectilinear ? S.prismRect(pc.outer, pc.holes, zb, zt) : S.prismPoly(pc.outer, pc.holes, zb, zt);
-          if (pm) els.push({ guid: hashHex('slab-edge|' + st.name + '|' + J(pc.outer)).slice(0, 32), class: 'IfcSlab', handle: pc.handles.join(','), layer: 'A-FLOR-OTLN', piece: k, vertices: pm.vertices, faces: pm.faces, storey: st.name, sheet: st.sheet });
+          if (pm) els.push(_trace('dxf2bim_import:slab-edge', { guid: hashHex('slab-edge|' + st.name + '|' + J(pc.outer)).slice(0, 32), class: 'IfcSlab', handle: pc.handles.join(','), layer: 'A-FLOR-OTLN', piece: k, vertices: pm.vertices, faces: pm.faces, storey: st.name, sheet: st.sheet }));
           else st.edge.gaps.push({ code: 'GAP:slab_edge_degenerate', handle: pc.handles[0], area: pc.area, reason: 'the drawn slab edge makes no body (degenerate ring or no slab thickness)' });
         });
       }
       else if (st.ring.outline && typeof sz.thickness === 'number') {
         var pm = S.prismRect(st.ring.outline, [], sz.bottom, sz.top);
-        if (pm) els.push({ guid: hashHex('slab|' + st.name + '|' + J(st.ring.outline)).slice(0, 32), class: 'IfcSlab', handle: (st.ring.members || []).join(','), layer: 'A-WALL-*', piece: 0, vertices: pm.vertices, faces: pm.faces, storey: st.name, sheet: st.sheet });
+        if (pm) els.push(_trace('dxf2bim_import:slab', { guid: hashHex('slab|' + st.name + '|' + J(st.ring.outline)).slice(0, 32), class: 'IfcSlab', handle: (st.ring.members || []).join(','), layer: 'A-WALL-*', piece: 0, vertices: pm.vertices, faces: pm.faces, storey: st.name, sheet: st.sheet }));
       }
       else if (typeof sz.thickness === 'number' && (st.ring.gaps || []).some(function (x) { return x.code === 'GAP:slab_outline_not_rectangular'; }) && slabOutlineSetting(sheets, opts) === 'walls_bounded') {
         // §D51 best effort: the cells the walls bound on both axes, amber (derived), stated as a default with the setting that turns it off
         var bc = S.boundedCells(st.after, CFG, { bridges: st.ringBridges }), pe = bc && S.prismCells(bc.X, bc.Y, bc.solid, sz.bottom, sz.top);
         if (pe) {
-          els.push({ guid: hashHex('slab-est|' + st.name + '|' + bc.area).slice(0, 32), class: 'IfcSlab', handle: 'estimated', layer: 'A-WALL-*', piece: 0, vertices: pe.vertices, faces: pe.faces, storey: st.name, sheet: st.sheet, prov: 'derived' });
+          els.push(_trace('dxf2bim_import:slab-estimated', { guid: hashHex('slab-est|' + st.name + '|' + bc.area).slice(0, 32), class: 'IfcSlab', handle: 'estimated', layer: 'A-WALL-*', piece: 0, vertices: pe.vertices, faces: pe.faces, storey: st.name, sheet: st.sheet, prov: 'derived' }));
           st.ring.gaps = st.ring.gaps.map(function (x) { return x.code !== 'GAP:slab_outline_not_rectangular' ? x : Object.assign({}, x, { code: 'GAP:slab_outline_estimated', estimated_m2: bc.area, setting: SLAB_OUTLINE_KEY,
             reason: 'the walls do not draw a rectangle: a best-effort slab of ' + bc.area + ' m2 (the area the walls bound on both axes) was made, amber; the rectangle would be ' + x.rect_m2 + ' m2. Turn it off with @DEFAULT=' + SLAB_OUTLINE_KEY + ',none or in element_defaults.json' }); });
         }
       }
-      st.fills.elements.forEach(function (e) { els.push(Object.assign(e, { storey: st.name, sheet: st.sheet })); });
+      st.fills.elements.forEach(function (e) { els.push(_trace('dxf2bim_import:fill', Object.assign(e, { storey: st.name, sheet: st.sheet }))); });
     });
     // §L36 @BODYZ=column,z0,z1 on a plan: its closed rectangles on the column layers are columns. Without the mark they stay excluded, as before
     ST.forEach(function (st) { var bz = (st.sh.desc.bodyz || []).filter(function (q) { return q.kind === 'column'; })[0]; if (!bz) return; ((st.sh.dxf && st.sh.dxf.entities) || []).forEach(function (e) {
       if ((e.layer !== 'A-COLS' && e.layer !== 'S-COLS') || e.type !== 'LWPOLYLINE' || !e.shape) return; var k = st.sh.factor, xs = e.vertices.map(function (v) { return v.x * k; }), ys = e.vertices.map(function (v) { return v.y * k; }), a0 = Math.min.apply(null, xs), a1 = Math.max.apply(null, xs), b0 = Math.min.apply(null, ys), b1 = Math.max.apply(null, ys);
-      var pc = S.prismRect([[a0, b0], [a1, b0], [a1, b1], [a0, b1]], [], bz.z0, bz.z1); if (pc) els.push({ guid: hashHex('column|' + J([a0, b0, a1, b1, bz.z0])).slice(0, 32), class: 'IfcColumn', handle: e.handle, layer: e.layer, piece: 0, vertices: pc.vertices, faces: pc.faces, storey: st.name, sheet: st.sheet }); }); });
+      var pc = S.prismRect([[a0, b0], [a1, b0], [a1, b1], [a0, b1]], [], bz.z0, bz.z1); if (pc) els.push(_trace('dxf2bim_import:column', { guid: hashHex('column|' + J([a0, b0, a1, b1, bz.z0])).slice(0, 32), class: 'IfcColumn', handle: e.handle, layer: e.layer, piece: 0, vertices: pc.vertices, faces: pc.faces, storey: st.name, sheet: st.sheet })); }); });
     R.roofForm = null;
     if (typeof roofSh.desc.pitch === 'number' && R.roofPlan.ok) {   // §L36 the sheet states a pitched roof: the highest plane at every point; no @PITCH = the prism below, exactly as before
       var rT = Number(settingOf(sheets, opts, 'synth.roof.sheet_thickness', 0.05));
       R.roofForm = S.gableRoof(roofSh.dxf.entities, roofSh.factor, roofSh.desc.pitch, rT, 0.03); R.roofForm.thickness = rT;
-      R.roofForm.planes.forEach(function (p) { els.push({ guid: hashHex('roofplane|' + J(p.box) + '|' + p.s).slice(0, 32), class: 'IfcRoof', handle: p.handle, layer: 'A-ROOF-GABLE', piece: 0, vertices: p.mesh.vertices, faces: p.mesh.faces, storey: 'Roof', sheet: roofSh.name }); });
-      if (R.roofForm.planes.length) { var gw = S.gableWalls(roofSh.dxf.entities, roofSh.factor, R.roofForm, R.roofZ.bottom); gw.gaps.forEach(function (x) { R.roofForm.gaps.push(x); }); gw.walls.forEach(function (w) { els.push({ guid: hashHex('gablewall|' + J(w.rect)).slice(0, 32), class: 'IfcWall', handle: w.handle, layer: 'A-WALL-GABLE', piece: 0, vertices: w.mesh.vertices, faces: w.mesh.faces, storey: 'Roof', sheet: roofSh.name }); }); R.roofForm.gableWalls = gw.walls.length; }
+      R.roofForm.planes.forEach(function (p) { els.push(_trace('dxf2bim_import:roofplane', { guid: hashHex('roofplane|' + J(p.box) + '|' + p.s).slice(0, 32), class: 'IfcRoof', handle: p.handle, layer: 'A-ROOF-GABLE', piece: 0, vertices: p.mesh.vertices, faces: p.mesh.faces, storey: 'Roof', sheet: roofSh.name })); });
+      if (R.roofForm.planes.length) { var gw = S.gableWalls(roofSh.dxf.entities, roofSh.factor, R.roofForm, R.roofZ.bottom); gw.gaps.forEach(function (x) { R.roofForm.gaps.push(x); }); gw.walls.forEach(function (w) { els.push(_trace('dxf2bim_import:gablewall', { guid: hashHex('gablewall|' + J(w.rect)).slice(0, 32), class: 'IfcWall', handle: w.handle, layer: 'A-WALL-GABLE', piece: 0, vertices: w.mesh.vertices, faces: w.mesh.faces, storey: 'Roof', sheet: roofSh.name })); }); R.roofForm.gableWalls = gw.walls.length; }
       console.log('§DXF-ROOF pitched planes=' + R.roofForm.planes.length + ' gable walls=' + (R.roofForm.gableWalls || 0) + ' pitch=' + roofSh.desc.pitch + ' thickness=' + rT + ' (default) gaps=' + R.roofForm.gaps.length);
     } else if (TOP.ring.outline && R.roofPlan.ok && typeof R.roofZ.thickness === 'number') {
       var rpm = S.prismRect(TOP.ring.outline, R.roofPlan.holes.map(function (h) { return h.ring; }), R.roofZ.bottom, R.roofZ.top);
-      if (rpm) els.push({ guid: hashHex('roof|' + J(TOP.ring.outline)).slice(0, 32), class: 'IfcRoof', handle: R.roofPlan.roof_handle, layer: 'A-ROOF', piece: 0, vertices: rpm.vertices, faces: rpm.faces, storey: 'Roof', sheet: roofSh.name });
+      if (rpm) els.push(_trace('dxf2bim_import:roof', { guid: hashHex('roof|' + J(TOP.ring.outline)).slice(0, 32), class: 'IfcRoof', handle: R.roofPlan.roof_handle, layer: 'A-ROOF', piece: 0, vertices: rpm.vertices, faces: rpm.faces, storey: 'Roof', sheet: roofSh.name }));
     }
     els.forEach(function (e) { if (e.volume === undefined) { e.volume = r6(M.volume(e)); e.watertight = M.watertight(e); } });
     applyMaterials(els, opts);   // §D53 best-effort materials (reference by class, a firm catalogue by thickness)

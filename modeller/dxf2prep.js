@@ -214,5 +214,14 @@
     return { BOX: BOX, vol: vol, outward: outward, box: box };
   })();
 
-  return { hasLineWork: hasLineWork, synthRects: synthRects, skewOutline: skewOutline, SNAP_TOL_DEFAULT: 0.01, prepare: prepare, isLineWork: isLineWork, segmentsOf: segmentsOf, bodyId: bodyId, assertUniqueIds: assertUniqueIds, lineLoops: lineLoops, Defaults: Defaults, PROV: PROV, PROV_COLOUR: PROV_COLOUR, ifcType: ifcType, KIND: KIND, BODY_KINDS: BODY_KINDS, Solid: Solid };
+  // F.21 slice 1 (bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md, decision F-15): the DEV trace switch. OFF unless a dev run puts a Map at globalThis.__DXF_TRACE
+  //   (the CLI's --trace); then it records body guid -> the literal key of the ONE line that built the body, so a hover / a witness can name that line. Returns el unchanged,
+  //   so the model is byte-identical with the switch off or on. Witness: W-DXF-TRACE (tests/witness_dxf_trace.js).
+  function trace(key, el) {
+    var m = typeof globalThis !== 'undefined' ? globalThis.__DXF_TRACE : null;
+    if (m && el && el.guid != null) { var was = m.get(el.guid); m.set(el.guid, was == null ? key : (was.split(' > ').indexOf(key) >= 0 ? was : was + ' > ' + key)); }   // the FIRST key is the builder; a later stamp (a pass-through) is appended, never replaces it
+    return el;
+  }
+
+  return { trace: trace, hasLineWork: hasLineWork, synthRects: synthRects, skewOutline: skewOutline, SNAP_TOL_DEFAULT: 0.01, prepare: prepare, isLineWork: isLineWork, segmentsOf: segmentsOf, bodyId: bodyId, assertUniqueIds: assertUniqueIds, lineLoops: lineLoops, Defaults: Defaults, PROV: PROV, PROV_COLOUR: PROV_COLOUR, ifcType: ifcType, KIND: KIND, BODY_KINDS: BODY_KINDS, Solid: Solid };
 });

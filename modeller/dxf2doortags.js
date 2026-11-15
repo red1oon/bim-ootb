@@ -54,8 +54,8 @@
           var z0 = ps.level, z1 = r6(ps.level + row.h * 0.001), mesh = P.Solid.box(ring.map(function (c) { return [c[0], c[1], z0]; }).concat(ring.map(function (c) { return [c[0], c[1], z1]; })));
           if (DF) { if (DF.has('door.tag_reach')) DF.use('door.tag_reach'); if (DF.has('door.thickness')) DF.use('door.thickness'); }
           report.leaves++;
-          els.push({ guid: 'body-doortag-' + pi + '-' + lab.handle + '-' + ai, class: 'IfcDoor', storey: 'Level ' + (levels.indexOf(ps.level) + 1), vertices: mesh.vertices, faces: mesh.faces, handle: lab.handle, layer: lab.layer, sheet: ps.name, kind: 'door', mark: lab.t, members: [String(a.handle)], z0: z0, z1: z1,
-            size: { w: { value: r6(leafW), source: 'schedule' + (pick.length > 1 ? ' (half of a pair)' : '') }, h: { value: row.h * 0.001, source: 'schedule' }, t: { value: thick, source: 'default' }, swing_radius: r6(a.radius * k) }, height_source: 'schedule', prov: 'generated', ifc: P.ifcType('doortag', lab.t, null) });
+          els.push(D.P.trace('dxf2doortags:door', { guid: 'body-doortag-' + pi + '-' + lab.handle + '-' + ai, class: 'IfcDoor', storey: 'Level ' + (levels.indexOf(ps.level) + 1), vertices: mesh.vertices, faces: mesh.faces, handle: lab.handle, layer: lab.layer, sheet: ps.name, kind: 'door', mark: lab.t, members: [String(a.handle)], z0: z0, z1: z1,
+            size: { w: { value: r6(leafW), source: 'schedule' + (pick.length > 1 ? ' (half of a pair)' : '') }, h: { value: row.h * 0.001, source: 'schedule' }, t: { value: thick, source: 'default' }, swing_radius: r6(a.radius * k) }, height_source: 'schedule', prov: 'generated', ifc: P.ifcType('doortag', lab.t, null) }));
         });
       });
     });
