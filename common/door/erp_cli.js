@@ -958,6 +958,35 @@ async function ninjaExport(O, a) {
 // ── mis.diff (bim-compiler prompts/ERP_MIS_WINDOW_FROM_CSV.md §12.13): a CSV against the table it would be loaded into: which lines are new, which differ (old and new value), which are the same, which records of the table the sheet does not mention.
 // READ ONLY. The key is the kind's number column as mis.update reads it (DocumentNo, else Name, else Value) or key=<column>; a lookup header (X_ID, or X_ID>Alt) is compared by the NAME (or the Alt column) of the record the stored id points at, the way the loader reads the cell.
 const DIFF_BREAK = process.env.MISDIFF_BREAK || '';   // W-MIS-DIFF falsifiers: nokey | nonumeric | writes
+// ── mis.menu (bim-compiler prompts/CLI_ERP_IVR.md §21): the menu as the page builds it — erp/ad_parser.js getMenuTree + erp/idmp_session.js scopeMenu with the role's grant sets
+// (idempiere.html buildMenu L1613-1622). Nothing re-derived here: this only adds, for a window leaf, the kind its first tab shows (what the list screen opens on), and the find filter.
+const MENU_BREAK = process.env.MENU_BREAK || '';   // W-MIS-MENU falsifiers: noscope | wrongtab
+function menuOf(O, a) {
+  const quiet = (f) => { const log = console.log; console.log = (...x) => say(x.join(' ')); try { return f(); } finally { console.log = log; } };   // the modules' § lines go to stderr; stdout is the answer
+  const ADP = quiet(() => require(path.join(ROOT, 'erp', 'ad_parser.js'))), SES = quiet(() => require(path.join(ROOT, 'erp', 'idmp_session.js'))), AC = require(path.join(ROOT, 'erp', 'ad_access.js'));
+  // idmp_session finds the MRole port as window.AdAccess (its page hook, L42); the page loads ad_access.js first. Here the same module is lent for these calls only, and taken back.
+  const withAccess = (f) => quiet(() => { const had = Object.prototype.hasOwnProperty.call(globalThis, 'window'), w0 = globalThis.window; globalThis.window = Object.assign({}, had ? w0 : {}, { AdAccess: AC }); try { return f(); } finally { if (had) globalThis.window = w0; else delete globalThis.window; } });
+  let role = null;
+  if (a.role != null) { role = O.rows('SELECT ad_role_id AS id, name FROM ad_role WHERE ad_role_id=?', [Number(a.role)])[0]; if (!role) refuse('unknown role ' + a.role + ': no AD_Role with that id'); }
+  const roots = quiet(() => ADP.getMenuTree(O.db));
+  const tree = role && MENU_BREAK !== 'noscope' ? withAccess(() => SES.scopeMenu(roots, SES.accessibleWindows(O.db, role.id), SES.accessibleProcesses(O.db, role.id), SES.accessibleForms(O.db, role.id))).tree : roots;
+  const tabOf = {}, kindOf = (w) => { if (w == null) return null; if (w in tabOf) return tabOf[w];
+    const r = O.rows("SELECT tb.tablename AS t FROM ad_tab t JOIN ad_table tb ON tb.ad_table_id=t.ad_table_id WHERE t.ad_window_id=? AND t.isactive='Y' ORDER BY t.tablevel" + (MENU_BREAK === 'wrongtab' ? ' DESC, t.seqno DESC' : ', t.seqno'), [Number(w)])[0]; return (tabOf[w] = r ? r.t : null); };
+  let leaves = 0, folders = 0, windows = 0;
+  const slim = (n) => { const kids = (n.children || []).map(slim).filter(Boolean), folder = n.isSummary || kids.length > 0;
+    if (folder) { if (!kids.length) return null; folders++; return { id: n.id, name: n.name, isSummary: true, children: kids }; }
+    leaves++; if (n.action === 'W') windows++; return { id: n.id, name: n.name, action: n.action, windowId: n.windowId == null ? null : Number(n.windowId), processId: n.processId == null ? null : Number(n.processId), formId: n.formId == null ? null : Number(n.formId), kind: n.action === 'W' ? kindOf(n.windowId) : null }; };
+  const out = { role: role ? { id: role.id, name: role.name } : null, tree: tree.map(slim).filter(Boolean) };
+  out.leaves = leaves; out.folders = folders; out.windows = windows;
+  if (a.find != null && String(a.find).trim()) {
+    const t = String(a.find).trim().toLowerCase(), items = [];
+    const walk = (n, p) => { if (n.children) n.children.forEach(c => walk(c, p.concat(n.name))); else if (String(n.name).toLowerCase().indexOf(t) >= 0) items.push(Object.assign({ path: p.join(' > ') }, n)); };
+    out.tree.forEach(n => walk(n, [])); out.find = String(a.find); out.items = items;
+    out.summary = items.length + ' menu entr' + (items.length === 1 ? 'y' : 'ies') + ' match "' + a.find + '"' + (role ? ' for role ' + role.name : '');
+  } else out.summary = 'the menu: ' + folders + ' folders, ' + leaves + ' entries (' + windows + ' windows)' + (role ? ' that role ' + role.name + ' may open' : ', no role filter');
+  say('menu role=' + (role ? role.id : 'none') + ' folders=' + folders + ' leaves=' + leaves + ' windows=' + windows + (out.items ? ' find=' + JSON.stringify(out.find) + ' items=' + out.items.length : '') + (MENU_BREAK ? ' BREAK=' + MENU_BREAK : ''));
+  return out;
+}
 function misDiff(O, a) {
   if (!a.kind) refuse('--kind is required'); if (!a.file) refuse('--file is required (a .csv)');
   if (!/\.csv$/i.test(String(a.file))) refuse('the file must be a .csv: ' + a.file);
@@ -994,10 +1023,10 @@ function misDiff(O, a) {
 async function main(argv) {
   const cmd = argv[0], a = {};
   for (let i = 1; i < argv.length; i++) { const m = /^--(\w+)$/.exec(argv[i]); if (!m || i + 1 >= argv.length) { say('FAIL usage: ' + argv[i]); return 2; } if (m[1] === 'where') (a.where = a.where || []).push(argv[++i]); else a[m[1]] = argv[++i]; }
-  if (['find', 'actions', 'describe', 'read', 'list', 'sum', 'group', 'new', 'update', 'delete', 'load', 'add_window', 'ninja_exec', 'ninja_workflow', 'ninja_rollback', 'ninja_export', 'diff'].concat(Object.keys(ACT)).indexOf(cmd) < 0) { say('FAIL usage: erp_cli.js find|actions|complete|void|close|reverse|describe|read|list|sum|group --kind K (--number N | --id I) [--role R]'); return 2; }
+  if (['find', 'actions', 'describe', 'read', 'list', 'sum', 'group', 'new', 'update', 'delete', 'load', 'add_window', 'ninja_exec', 'ninja_workflow', 'ninja_rollback', 'ninja_export', 'diff', 'menu'].concat(Object.keys(ACT)).indexOf(cmd) < 0) { say('FAIL usage: erp_cli.js find|actions|complete|void|close|reverse|describe|read|list|sum|group --kind K (--number N | --id I) [--role R]'); return 2; }
   try {
     const O = await boot(a); O.actor = a.user == null ? 101 : Number(a.user);   // the session user: stated, default 101 (the same default the callout context takes), until sign-in exists
-    const out = await (ACT[cmd] ? act(O, a, ACT[cmd]) : ({ find, actions, describe, read, list: OC.list, sum: OC.sum, group: OC.group, new: createRecord, update: updateRecord, delete: deleteRecord, load: loadRecords, add_window: addWindow, ninja_exec: ninjaExec, ninja_workflow: ninjaWorkflow, ninja_rollback: ninjaRollback, ninja_export: ninjaExport, diff: misDiff })[cmd](O, a));
+    const out = await (ACT[cmd] ? act(O, a, ACT[cmd]) : ({ find, actions, describe, read, list: OC.list, sum: OC.sum, group: OC.group, new: createRecord, update: updateRecord, delete: deleteRecord, load: loadRecords, add_window: addWindow, ninja_exec: ninjaExec, ninja_workflow: ninjaWorkflow, ninja_rollback: ninjaRollback, ninja_export: ninjaExport, diff: misDiff, menu: menuOf })[cmd](O, a));
     process.stdout.write(JSON.stringify(out) + '\n'); return 0;
   } catch (e) {
     if (e instanceof Refused || e instanceof OC.Refused) { say('REFUSED ' + e.message); process.stdout.write(JSON.stringify({ refused: true, reason: e.message }) + '\n'); return 3; }

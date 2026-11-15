@@ -460,6 +460,13 @@ if (require.main === module) {
     // the readable forms live in render.js (beside this file in a download, else in the repo); a missing one is named with its curl line
     const needRender = form !== 'json' || outFile || script || (rest.length === 1 && /^\s*(!help|help|\?)(\s|$)/.test(rest[0]));
     let R = null; if (needRender) { if (missingFiles(['render.js']).length) { console.error('§DOOR FAIL render.js is not beside door.js. Fetch it:\n' + curlFor(['render.js'])); process.exit(1); } R = require(locate('render.js')); }
+    // §21 /M: the terminal menu (mis.js --menu, the list screen's driver). It is a front end only: every step it takes is a door line. `/M role=102` or `/M` then role=102 as its own word
+    if (rest.length && /^\/m(\s|$)/i.test(rest[0])) {
+      const words = rest[0].trim().split(/\s+/).slice(1).concat(rest.slice(1)), mis = path.join(__dirname, 'mis.js');
+      if (!fs.existsSync(mis)) { console.error('§DOOR FAIL /M needs mis.js beside door.js (a bim-ootb checkout)'); process.exit(1); }
+      const r = require('child_process').spawnSync(process.execPath, [mis, '--menu'].concat(words), { stdio: 'inherit', env: process.env });
+      process.exit(r.status == null ? 1 : r.status);
+    }
     if (rest.length === 1 && R && R.isHelp(rest[0])) {   // reads nothing, runs nothing, not journalled; the same text for every actor
       let vocab; try { vocab = loadVocab(); } catch (e) { console.error('§DOOR FAIL ' + e.message); process.exit(1); }
       const h = R.help(vocab, rest[0]); (h.ok ? process.stdout : process.stderr).write(h.text); console.error('§DOOR help topic=' + JSON.stringify(rest[0].replace(/^\s*(!help|help|\?)/, '').trim()) + ' ok=' + h.ok); process.exit(h.ok ? 0 : 1);
