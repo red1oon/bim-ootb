@@ -29,4 +29,14 @@ function sites(repoRoot) {
   return out;
 }
 
-module.exports = { sites };
+// defaultSites(repoRoot) -> { key: 'modeller/element_defaults.json:<line>' } for every key of its "defaults" object (F.23 layer 3: the yellow row a user can change).
+//   A parse (espree over the JSON as an expression, with locations), not a text search: a key named inside a "basis" string is not a row.
+function defaultSites(repoRoot) {
+  const E = espree(); if (!E) throw new Error('trace_sites: espree not resolvable (npm i in bim-ootb)');
+  const rel = 'modeller/element_defaults.json', ast = E.parse('(' + fs.readFileSync(path.join(repoRoot, rel), 'utf8') + '\n)', { ecmaVersion: 'latest', loc: true }), out = {};
+  const top = ast.body[0].expression, D = top.properties.find(p => (p.key.value || p.key.name) === 'defaults');
+  (D ? D.value.properties : []).forEach(p => { out[p.key.value || p.key.name] = rel + ':' + p.key.loc.start.line; });
+  return out;
+}
+
+module.exports = { sites, defaultSites };

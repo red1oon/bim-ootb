@@ -8,6 +8,8 @@
 //   H2 THE PAGE (headless Modeller, SwiftShader, as witness_dxf_props_panel.js): open the marked shed, Complete, load the overlay, Convert, then REAL mouse moves over a grid of
 //      canvas points. For every body the page's own pick hovered: tooltip key = the page's trace map = the Node CLI's trace.json (an independent run) for that guid; its
 //      file:line = the index; the V link = vscode://file/<root>/<file:line>
+//   H2b (§F.23, the provenance hover): for every hovered body the tooltip's six layer counts = dxf_hover.layersFor in Node on the same page-shaped model
+//      (devtools/hover/tests/shed_ctx.js, ids from the page's own logged commit nextId)
 //   H3 RED CONTROL: a second page converts BEFORE the overlay loads: every hovered body says "convert again", 0 lines claimed
 // INCONCLUSIVE (exit 2) if a sweep hovered 0 bodies or the marked shed is missing. Run it alone, at low priority (two of these at once saturate the machine):
 //   nice -n 19 ionice -c3 node devtools/hover/tests/witness_dxf_hover.js < /dev/null > <log>      (NODE_PATH=~/bim-compiler/node_modules; SHED_MARKED overrides the input)
@@ -44,7 +46,7 @@ const H = require(path.join(ROOT, 'devtools', 'hover', 'dxf_hover.js'));
   async function session(overlayFirst) {
     const bc = await br.createBrowserContext(), pg = await bc.newPage(), errs = [], hov = [];   // a fresh context per session: no storage shared between H2 and H3 await pg.setViewport({ width: 1440, height: 900 });
     pg.on('pageerror', e => errs.push(String(e).slice(0, 160)));
-    pg.on('console', m => { const t = m.text(); if (/^§DXF_HOVER /.test(t)) hov.push(t); });
+    let nextId = null; pg.on('console', m => { const t = m.text(); if (/^§DXF_HOVER /.test(t)) hov.push(t); const n = /commit nextId=(\d+)/.exec(t); if (n) nextId = Number(n[1]); });
     await pg.goto('http://127.0.0.1:' + srv.address().port + '/modeller/modeller.html', { waitUntil: 'load', timeout: 120000 });
     await pg.waitForFunction('window.__sceneReady===true && window.DxfImportUI', { timeout: 120000 }); await pg.evaluate(() => { window.DxfImportUI.state.arrangeOnOpen = false; });
     const loadOverlay = async () => { await pg.evaluate(BOOKMARKLET); await pg.waitForFunction('window.__DXF_HOVER && window.__DXF_HOVER.state', { timeout: 30000 }); await pg.evaluate(() => window.__DXF_HOVER.ready); };
@@ -60,11 +62,11 @@ const H = require(path.join(ROOT, 'devtools', 'hover', 'dxf_hover.js'));
     const seen = {};
     for (let j = 1; j < 18; j++) for (let i = 1; i < 26; i++) {
       await pg.mouse.move(box.x + box.w * i / 26, box.y + box.h * j / 18);
-      const s = await pg.evaluate(() => { const c = window.__DXF_HOVER.state.cur, t = document.getElementById('dxf-hover-tip'); return c && !c.other ? { fid: c.fid, guid: c.guid, key: c.key, at: c.at, link: c.link, text: t.textContent, pageKey: c.guid ? String(window.__DXF_TRACE.get(c.guid) || '').split(' > ')[0] || null : null } : null; });
+      const s = await pg.evaluate(() => { const c = window.__DXF_HOVER.state.cur, t = document.getElementById('dxf-hover-tip'); return c && !c.other ? { fid: c.fid, guid: c.guid, key: c.key, at: c.at, link: c.link, text: t.textContent, counts: t.dataset.counts || '', pageKey: c.guid ? String(window.__DXF_TRACE.get(c.guid) || '').split(' > ')[0] || null : null } : null; });
       if (s && seen[s.fid] == null) seen[s.fid] = s;
     }
     await bc.close();
-    return { seen: Object.values(seen), errs, hov };
+    return { seen: Object.values(seen), errs, hov, nextId };
   }
 
   try {
@@ -77,6 +79,12 @@ const H = require(path.join(ROOT, 'devtools', 'hover', 'dxf_hover.js'));
     bad.slice(0, 5).forEach(s => console.log('  §DXF_HOVER_W H2 WRONG ' + JSON.stringify(s)));
     if (!A.seen.length) { console.log('§DXF_HOVER_W VERDICT INCONCLUSIVE the sweep hovered 0 bodies'); process.exit(2); }
     ok('H2 every hovered body shows its key = page map = Node CLI trace, its file:line = the index, and the V link', bad.length === 0, A.seen.length + ' bodies, ' + Object.keys(keys).length + ' keys');
+    // H2b — the six layer counts on screen = layersFor in Node on the same page-shaped model (the page's own nextId)
+    const SC = require(path.join(ROOT, 'devtools', 'hover', 'tests', 'shed_ctx.js')).shedCtx(ROOT, files, A.nextId || 1);
+    const diff = A.seen.filter(s => { const n = H.layersFor(s.fid, SC.ctx(IX)); return !n || !n.counts || n.counts.join(',') !== s.counts; });
+    A.seen.slice(0, 4).forEach(s => console.log('  §DXF_HOVER_W H2b fid=' + s.fid + ' page_counts=' + s.counts + ' node_counts=' + ((H.layersFor(s.fid, SC.ctx(IX)) || {}).counts || []).join(',')));
+    console.log('§DXF_HOVER_W H2b nextId=' + A.nextId + ' hovered=' + A.seen.length + ' counts_differ=' + diff.length);
+    ok('H2b every hovered body: the tooltip layer counts = layersFor in Node', A.nextId != null && diff.length === 0, A.seen.length + ' bodies');
 
     // H3 — red control: Convert before the overlay: no line may be claimed
     const B = await session(false);
