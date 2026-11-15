@@ -12,7 +12,7 @@
     var words = o.words.words, choices = o.words.choices || {}, verbs = {}, tokenize = o.tokenize, pick = o.pickColumns, brk = o.brk || '', Menu = o.menuCore || null, interactive = !!o.interactive;
     o.vocab.verbs.forEach(function (v) { verbs[v.verb] = v; });
     var buildings = (o.buildings || []).slice();
-    function init() { return { building: null, kind: null, columns: null, erp: null, ecolumns: null, role: null, pending: null, last: null, menu: null, pickFor: null }; }
+    function init() { return { building: null, kind: null, columns: null, props: null, erp: null, ecolumns: null, eprops: null, role: null, pending: null, last: null, menu: null, pickFor: null }; }
     function prompt(st) {
       var where = st.erp ? st.erp : (st.building ? st.building + (st.kind ? '/' + st.kind : '') : '');
       return 'red1' + (st.role ? ' [' + st.role + ']' : '') + (where ? ' ' + where : '') + '> ';
@@ -23,6 +23,8 @@
       var order = names.filter(function (n) { return args[n] != null; }).concat(keys.filter(function (k) { return names.indexOf(k) < 0; }));
       return verb + order.map(function (k) { return ' ' + k + '=' + quote(args[k]); }).join('');
     }
+    // §1d.1: the kind's properties, as the type assist needs them (name, label, type, list values), kept from the describe answer cd already read
+    function slim(ps) { return (ps || []).map(function (q) { return { name: q.name, label: q.label || q.name, type: q.type, values: q.values || null }; }); }
     function where(st) { return st.erp ? 'erp' : (st.kind ? 'kind' : (st.building ? 'building' : 'any')); }
     function fits(form, w) { return form.in === 'any' || form.in === w || (form.in === 'building' && w === 'kind'); }
     function ctxArgs(st, e, args) {   // §22.4: the context fills only an input the verb has and the line did not give
@@ -73,12 +75,12 @@
           Menu.plain(Menu.render(st.menu)).forEach(function (l) { screen.push(l); }); return out();
         }
         if (p === 'cd-kind') {
-          if (ok) { st.kind = env.answer.kind; st.columns = pick(env.answer.properties || []).cols; screen.push(st.building + '/' + st.kind + ': ' + (env.answer.properties || []).length + ' properties; ls shows ' + st.columns.join(', ')); return out(); }
+          if (ok) { st.kind = env.answer.kind; st.columns = pick(env.answer.properties || []).cols; st.props = slim(env.answer.properties); screen.push(st.building + '/' + st.kind + ': ' + (env.answer.properties || []).length + ' properties; ls shows ' + st.columns.join(', ')); return out(); }
           effects.push({ line: lineOf('mis.describe', { kind: st.pendingCd }), purpose: 'cd-erp' }); return out();
         }
         if (p === 'cd-erp') {
           var name = st.pendingCd; st.pendingCd = null;
-          if (ok) { st.erp = env.answer.kind || name; st.ecolumns = pick(env.answer.properties || []).cols; st.building = null; st.kind = null; st.columns = null; screen.push(st.erp + ': ' + (env.answer.properties || []).length + ' properties; ls shows ' + st.ecolumns.join(', ')); return out(); }
+          if (ok) { st.erp = env.answer.kind || name; st.ecolumns = pick(env.answer.properties || []).cols; st.eprops = slim(env.answer.properties); st.building = null; st.kind = null; st.columns = null; screen.push(st.erp + ': ' + (env.answer.properties || []).length + ' properties; ls shows ' + st.ecolumns.join(', ')); return out(); }
           screen.push('cd: no building, kind or ERP window is named "' + name + '"' + (buildings.length ? ' (buildings: ' + buildings.join(', ') + ')' : '')); return out();
         }
         return out();

@@ -58,7 +58,7 @@ const PATCH = SJ('buildings/patches/Duplex_extracted.db.sql');
 
   // ════ C3 wrong names are errors that name them; a wrong value shape is refused ════
   const uc = await door('object.count building=Duplex kind=Room floor=1');
-  k.chk('C3 an unknown column is an error naming it and listing the kind\'s properties', uc.j && uc.j.status === 'error' && /no property "floor"/.test(uc.j.why) && /storey/.test(uc.j.why), uc.j && uc.j.why);
+  k.chk('C3 an unknown column is REFUSED naming it, and (none being close) listing the kind\'s properties (bim-compiler CLI_ERP_IVR.md §1d.1: a refusal, the nearest when close)', uc.j && uc.j.status === 'refused' && /no property "floor"/.test(uc.j.why) && /storey/.test(uc.j.why), uc.j && uc.j.why);
   const uk = await door('object.count building=Duplex kind=Rum');
   k.chk('C3 an unknown kind is an error naming it and listing the kinds (Room among them)', uk.j && uk.j.status === 'error' && /unknown kind "Rum"/.test(uk.j.why) && /Room/.test(uk.j.why), uk.j && uk.j.why);
   const bn = await door('object.count building=Duplex kind=Room center_x=abc');

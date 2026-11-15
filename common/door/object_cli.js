@@ -21,6 +21,9 @@ const ROOT = path.join(__dirname, '..', '..');
 const say = (s) => process.stderr.write('§OBJECT ' + s + '\n');
 class Refused extends Error {}
 const refuse = (m) => { throw new Refused(m); };
+// §1d.1 a wrong column name: a REFUSAL (nothing runs) naming the 1-3 nearest (assist_core.nearest, the ONE nearest-name reader), never all the columns, never a silent fix
+const noProperty = (kind, name, names, what) => { const nb = require('./assist_core.js').nearest(name, names, 3).map(x => x.name);
+  return 'kind ' + kind + ' has no property "' + name + '"' + (what ? ' for ' + what : '') + (nb.length ? '; nearest: ' + nb.join(', ') : '; none is close, its properties: ' + names.join(', ')); };   // nothing close: the whole list is the only help (still no guess)
 const NAME = /^[A-Za-z0-9_-]{1,64}$/;
 // ad_attachment.js builds and reads its zip with the browser's CompressionStream('deflate-raw'); Node before 20.x lacks that format. Same bytes from zlib, only where the host lacks it.
 (function shim() {
@@ -308,7 +311,7 @@ function filtersOf(t, cols, a, O) {   // the shared filter reader: --where colum
     const m = /^([A-Za-z_]\w*)=([\s\S]*)$/.exec(w); if (!m) refuse('a filter is column=value, got "' + w + '"');
     if (O && m[1].toLowerCase() === 'master' && !cols.some(x => x.columnname.toLowerCase() === 'master')) { const mf = masterFilter(O, t, cols, m[2]); if (filters.some(f => f.column === mf.column)) refuse('filter ' + mf.column + ' given twice'); filters.push(mf); if (MB() !== 'nofilter') { where.push(mf.column + ' = CAST(? AS NUMERIC)'); params.push(mf.value); } return; }
     const c = cols.filter(x => x.columnname.toLowerCase() === m[1].toLowerCase())[0];
-    if (!c) throw new Error('kind ' + t.name + ' has no property "' + m[1] + '" (its properties: ' + cols.map(x => x.columnname).join(', ') + ')');
+    if (!c) refuse(noProperty(t.name, m[1], cols.map(x => x.columnname)));
     if (filters.some(f => f.column === c.columnname)) refuse('filter ' + c.columnname + ' given twice');
     const type = REF[c.ad_reference_id], num = type === 'number' || type === 'integer' || type === 'amount' || type === 'quantity';
     if (num && !/^[+-]?\d+(\.\d+)?$/.test(m[2].trim())) refuse(c.columnname + ' is a number; "' + m[2] + '" is not');
@@ -331,7 +334,7 @@ function count(O, a) {
 const LIST_MAX = 1000, LIST_DEFAULT = 50, RB = () => process.env.ROWS_BREAK || '';   // W-DOOR-ROWS falsifiers: nofilter | floatsum | capoff
 function colOf(t, cols, name, what) {
   const c = cols.filter(x => x.columnname.toLowerCase() === String(name).toLowerCase())[0];
-  if (!c) throw new Error('kind ' + t.name + ' has no property "' + name + '" for ' + what + ' (its properties: ' + cols.map(x => x.columnname).join(', ') + ')');
+  if (!c) refuse(noProperty(t.name, name, cols.map(x => x.columnname), what));
   return c;
 }
 const isNum = (c) => ['number', 'integer', 'amount', 'quantity'].indexOf(REF[c.ad_reference_id]) >= 0;
@@ -423,4 +426,4 @@ async function main(argv) {
   }
 }
 if (require.main === module) main(process.argv.slice(2)).then(c => process.exit(c));
-module.exports = { tabsOf, roleFor, roleCtx, accessOf, main, describe, read, update, attach, history, count, list, sum, group, decSum, boot, open, kindOf, columnsOf, childTabs, applyOp, loadChunker, Refused, oplogFile, readOps };
+module.exports = { noProperty, tabsOf, roleFor, roleCtx, accessOf, main, describe, read, update, attach, history, count, list, sum, group, decSum, boot, open, kindOf, columnsOf, childTabs, applyOp, loadChunker, Refused, oplogFile, readOps };
