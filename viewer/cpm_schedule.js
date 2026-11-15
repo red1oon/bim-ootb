@@ -54,10 +54,16 @@
   })();
   var SS = 0, FS = 1;
 
-  // contactGraph(items) — same algorithm, same shipped ScheduleGate CELL/EPS/GAP constants as
-  // time_machine.js _contactGraph (the judge). This module is the destined single home of the
-  // relation (§CPM_SPEC stage 4); until retirement, probe_cpm_schedule.js §CPM_PARITY asserts the
-  // two copies agree contact-for-contact so they cannot drift unnoticed.
+  // contactGraph(items) — THE owner of the physical support relation (bim-compiler prompts/4D_MODEL_INTEGRITY.md
+  // §I.1a, 2026-10-06). support_sweep.js's contactGraph/designatedSupport delegate here; there is no second copy.
+  // contactGraph(items) — the one place the physical world is derived. Both the repair below and
+  // the LOCK-GATE audit (_midairAudit → verifyGanttIntegrity) build on this single definition, so a
+  // planner's own edit is judged by exactly the rule the generator enforced. items need bbox
+  // (x0,x1,y0,y1,bz,tz) — times are read later, never here: geometry does not move — plus
+  // seq/phase for the §GROUND_CONNECTED classification seeds (absent ⇒ NOT exempt, never looser;
+  // a population carrying none at all takes the ground-band fallback, see below).
+  // Returns { contacts: [idx[]|null], grounded: Uint8Array, orphans, groundedN, ok,
+  //           groundConnected: Uint8Array, groundConnectedN, groundSeeds, groundSeedMode }.
   function contactGraph(items) {
     var SG = (typeof global.ScheduleGate !== 'undefined') ? global.ScheduleGate
       : (typeof ScheduleGate !== 'undefined' ? ScheduleGate : null);
@@ -96,13 +102,46 @@
       contacts[i] = list;
       if (grounded[i]) groundedN++;
     }
-    // §GROUND_CONNECTED (2026-09-12, bim-compiler prompts/4D_MODEL_INTEGRITY.md §N) — byte-identical
-    // twin of support_sweep.js _contactGraph's block; the full doctrine comment lives THERE (one
-    // home), probe_cpm_schedule.js §CPM_PARITY diffs the two verdicts element-for-element. Summary:
-    // the orphan exemption is classification + DIRECTED reachability (supporter -> supported) over
-    // the contacts just built, seeded from seq===1 / phase==='Substructure'; a population with no
-    // classified ground at all falls back to footprint-grounded elements within
-    // ScheduleGate.GROUND_BAND of its 1st-percentile base. `grounded[i]` is never the exemption.
+    // §GROUND_CONNECTED (2026-09-12, bim-compiler prompts/4D_MODEL_INTEGRITY.md §N) — the orphan
+    // exemption is DERIVED from classification and graph reachability, never from `grounded[i]`.
+    // `grounded[i]` answers "is nothing beneath me in my own XY column" (footprint-local; correct
+    // for "rests on soil in its footprint", §I.2) and was reused on this line as "is this element
+    // allowed to be unsupported" — a different question whose answer §I.2 already names: seq===1.
+    // Two failure shapes, one root line: (a) an element with ZERO contacts and nothing below it
+    // defaulted into "grounded" by the absence of any comparison; (b) the bottom of a stack that
+    // never reaches real ground read grounded=1 because "nothing below me in my column" is locally
+    // true (HHS's three 7m Stahlbalkon brackets at bz 3.74: contacts=0, grounded=1 — absorbed into
+    // groundedN, never an orphan, revealed alone in the bake). Fix: a DIRECTED walk along the
+    // support edges this function already built (contacts[i] = "what supports i"; the walk goes
+    // supporter -> supported), seeded from the true-ground population. An element is ground-
+    // connected iff it is a seed or something ground-connected supports it; everything else is an
+    // orphan REGARDLESS of grounded[i]. Directed, not undirected: the segment resting ON a floating
+    // bracket lists the bracket as its bearing contact, and an undirected walk would let that
+    // segment "rescue" the bracket — the backward "I depend on the thing resting on me" edge
+    // §GROUNDED_NEVER_HANGS already rejects (measured: undirected reaches all 6839 of HHS).
+    //   seeds (classification, §I.2): seq===1 (IfcFooting/IfcPile/§SLAB_ON_GRADE_RECLASS) OR
+    //   phase==='Substructure' (§GROUNDWORK_SLAB reclassifies slab-on-grade by mutating phase ONLY,
+    //   seq stays 4 — JKR's 16 are its whole classified ground, reachable no other way). A missing
+    //   .seq/.phase is NOT a seed — stricter, never looser.
+    //   fallback (ONLY when the population carries no classified ground at all — schedule_gate's
+    //   own buildingModelsSubstructure=false, "this building never modeled a foundation layer",
+    //   HHS today): footprint-grounded elements within ScheduleGate.GROUND_BAND of the building's
+    //   1st-percentile base — the same ground datum witness_true_orphan_floating.js (PR #1712)
+    //   exempts. Without it a building with no substructure would be 100% orphans; with it a stack
+    //   bottom metres above the datum (the HHS brackets) still cannot seed itself. The mode is
+    //   RETURNED, never silent.
+    // MEASURED on the 7 shipped buildings (2026-09-12, extracted DBs, before -> after):
+    //   Duplex 1->0 (the one old "orphan" was a seq===1 slab-on-grade — §I.2's own example, wrongly
+    //   flagged before) · Clinic 27->27 · HHS 36->44 (+3 brackets, +5 that rest only on them) ·
+    //   JKR 1->2 · Hospital 35->69 (+a 30-railing island with NOTHING beneath its lowest member) ·
+    //   Terminal 7->14 · LTU_AHouse 51->1096 (a ground-floor MEP network with no modelled substrate;
+    //   PR #1712's engine-blind detector already reports 2548 true orphans on this building).
+    //   W-MZ-4's lock (meta DBs where they exist) moves further on the two patched-elevation files:
+    //   Terminal_meta 25->2740 (2711 co-planar "Metal Deck" IfcPlate roof sheets with 18.7m of
+    //   nothing beneath them in that DB) and LTU_AHouse_meta 865->3288 — data findings the old
+    //   exemption hid, recorded in baselines/midair.json `_relocked_2026_09_12`.
+    // `grounded`/`groundedN` keep their footprint-local meaning (designatedSupport's cls=2
+    // rejection still reads them). Return fields are additive; `orphans` now counts !groundConnected.
     var reach = new Uint8Array(n), stack = new Int32Array(n), sp = 0, seeds = 0, seedMode = 'classification';
     for (i = 0; i < n; i++) {
       T = items[i];
@@ -163,7 +202,7 @@
   function designatedSupport(items, G) {
     var SG = (typeof global.ScheduleGate !== 'undefined') ? global.ScheduleGate : ScheduleGate;
     var EPS = SG.EPS, GAP = SG.GAP;
-    var n = items.length, out = new Int32Array(n);
+    var n = items.length, out = new Int32Array(n), noSup = [], noSupGrounded = 0;
     for (var i = 0; i < n; i++) {
       out[i] = -1;
       var list = G.contacts[i]; if (!list) continue;
@@ -176,9 +215,19 @@
       // touches — W-MZ-2 went 0 -> 2,781 on LTU, 0 -> 107 on Hospital. So the same classification
       // elects TWICE: the pool winner when one exists, else the unrestricted winner. Nothing loses
       // its support edge; a real structural support simply outranks a pipe.
+      // §D2_STRUCT_NO_CARRIER (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.6 D2, 2026-11-14) — a
+      // STRUCTURAL element (T itself in supportPool) never hangs from what it carries: for such T
+      // carrier-above is NOT eligible and ONLY pool contacts are eligible. Measured before: every
+      // beam whose pool winner was carrier-above was midair by construction (Hospital 30/30,
+      // Terminal 26/26, Duplex 4/4 — §Q.3 Gap 1: R1 puts the slab after the beam it "hangs" from).
+      // No eligible contact ⇒ -1 and the element is COUNTED and NAMED (out.structNoSupport,
+      // §STRUCT_NO_SUPPORT) — a model gap, never hidden and never called midair. Non-structural T
+      // (services, ceilings, fit-out): election unchanged, §S26.2 pool override included. Without a
+      // supportPool no T is structural — the old behaviour, exactly.
       var T = items[i], bestJ = -1, bestCls = 9, bestScore = Infinity;
       var poolJ = -1, poolCls = 9, poolScore = Infinity;
       var inPool = SG.supportPool || function () { return true; };
+      var tStruct = !!(SG.supportPool && SG.supportPool(T));
       for (var k = 0; k < list.length; k++) {
         var j = list[k], S = items[j], cls, score;
         if (S.bz < T.bz - EPS && S.tz >= T.bz - GAP) { cls = 0; score = -S.tz; }
@@ -188,15 +237,32 @@
             (score === bestScore && (bestJ < 0 || String(S.guid) < String(items[bestJ].guid)))))) {
           bestCls = cls; bestScore = score; bestJ = j;
         }
+        if (tStruct && cls === 2) continue;                   // §D2: structure is not hung from what it carries
         if (inPool(S) && (cls < poolCls || (cls === poolCls && (score < poolScore ||
             (score === poolScore && (poolJ < 0 || String(S.guid) < String(items[poolJ].guid))))))) {
           poolCls = cls; poolScore = score; poolJ = j;
         }
       }
+      if (tStruct) {                                          // §D2: only a pool contact below/embedded
+        if (poolJ < 0) {
+          // ground seeds (§I.2 / §GROUND_CONNECTED: seq===1 or Substructure) rest on soil — not a gap
+          if (!(T.seq === 1 || T.phase === 'Substructure')) { noSup.push(i); if (G.grounded[i]) noSupGrounded++; }
+          continue;
+        }
+        out[i] = poolJ; continue;
+      }
       if (poolJ >= 0) { bestJ = poolJ; bestCls = poolCls; }   // §S26.2 structure outranks contact
       if (bestCls === 2 && G.grounded[i]) continue;   // carrier-above rejected ONLY when grounded
       out[i] = bestJ;
     }
+    // §STRUCT_NO_SUPPORT — counted and named on every call (PRIMAL LAW 4: the count is printed even at 0)
+    var byCls = {};
+    for (var q = 0; q < noSup.length; q++) byCls[items[noSup[q]].cls] = (byCls[items[noSup[q]].cls] || 0) + 1;
+    console.log('§STRUCT_NO_SUPPORT n=' + noSup.length + ' footprintGrounded=' + noSupGrounded +
+      ' structural=' + (SG.supportPool ? 'supportPool' : 'NONE (no pool loaded — rule inactive)') +
+      ' byCls=' + JSON.stringify(byCls) +
+      ' guids=' + noSup.slice(0, 20).map(function (x) { return items[x].guid; }).join(',') + (noSup.length > 20 ? ',…' : ''));
+    out.structNoSupport = noSup;
     return out;
   }
 
@@ -754,7 +820,7 @@
       else refused++;
     }
     var total = intra + ok + refused;
-    return { lvl2: lvl2, loc2: loc2, promoted: promoted,
+    return { lvl2: lvl2, loc2: loc2, promoted: promoted, des: des,
              e1Total: total, intra: intra, representable: ok, refused: refused,
              repr: total ? (intra + ok) / total : 1 };
   }
@@ -782,14 +848,51 @@
     function poolOf(resource) {
       return pools[resource] || (pools[resource] = new Array(crewCapFor(resource)).fill(base));
     }
+    // §D5_FLOOR_SLAB_FIRST (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.7 D5, 2026-11-14) — the floor
+    // a column stands on is built before it, whatever its class sequence. R1 ("column 2, beam 3,
+    // slab 4") is true only of the slab ON TOP; measured before: Hospital 57 of 58 columns standing on
+    // a slab of their own (level, Superstructure task) were drawn before it, all on Level 1.
+    // Rule, read from the elected edge as EXTRACTION (the way §S47.3's hang filing above reads it —
+    // not a new relation, not a class rule): an IfcSlab that is the elected BEARING-BELOW support of a
+    // structural element (supportPool) of the SAME final level is that level's FLOOR, and its cell
+    // runs before sequence 2 of that level (FLOOR_TRD, between Substructure 1 and the vertical
+    // bearers 2; a same-level holder of the floor runs before it, HOLDER_TRD). Phase, task, trade, rate and the gate quantity (_cellFiling) are untouched — only
+    // the order inside the level moves. Counted on §D5_FLOOR_SLAB.
+    var FLOOR_TRD = 1.5, HOLDER_TRD = 1.25;
+    var SGd = (typeof global.ScheduleGate !== 'undefined') ? global.ScheduleGate : ScheduleGate;
+    var trdOf = new Array(n), floorN = 0, floorBy = {}, heldN = 0;
+    for (i = 0; i < n; i++) trdOf[i] = _trdOf(items[i]);
+    if (filing.des && SGd && SGd.supportPool) {
+      for (i = 0; i < n; i++) {
+        var fs = filing.des[i]; if (fs < 0) continue;
+        var F = items[fs], Tn = items[i];
+        if (F.cls !== 'IfcSlab' || !SGd.supportPool(Tn)) continue;
+        if (filing.lvl2[fs] !== filing.lvl2[i]) continue;
+        if (!(F.bz < Tn.bz - SGd.EPS && F.tz >= Tn.bz - SGd.GAP)) continue;   // bearing-below, the election's own clause
+        if (trdOf[fs] <= FLOOR_TRD) continue;                                 // already ahead of the bearers (or counted)
+        // "the slab a column HOLDS UP is built after it" (§Q.7, same practice line): when the floor slab
+        // is itself carried by structure of this level (Hospital: a Level-1 pier under the Level-1
+        // floor), that HOLDER goes first — pier → floor → bearers (HOLDER_TRD). One hop, owner ruling
+        // 2026-11-14 (§Q.7 RESULTS, variant B); moving the floor alone put it before its pier.
+        var fh = filing.des[fs];
+        if (fh >= 0 && filing.lvl2[fh] === filing.lvl2[fs] && SGd.supportPool(items[fh]) &&
+            items[fh].bz < F.bz - SGd.EPS && items[fh].tz >= F.bz - SGd.GAP &&
+            trdOf[fh] > HOLDER_TRD) { trdOf[fh] = HOLDER_TRD; heldN++; }
+        trdOf[fs] = FLOOR_TRD; floorN++; floorBy[Tn.cls] = (floorBy[Tn.cls] || 0) + 1;
+      }
+    }
+    console.log('§D5_FLOOR_SLAB floorSlabs=' + floorN + ' holdersMovedFirst=' + heldN + ' firstCarriedBy=' + JSON.stringify(floorBy) +
+      ' trd=' + FLOOR_TRD + (filing.des ? '' : ' INACTIVE — no election passed to the cell solve'));
     // group members per cell
     var SEP = '';
     var cellMem = {}, cellMeta = {}, keyOf = new Array(n);
     for (i = 0; i < n; i++) {
-      var k = filing.lvl2[i] + SEP + _trdOf(items[i]) + SEP + filing.loc2[i];
-      keyOf[i] = k;
+      var k = filing.lvl2[i] + SEP + trdOf[i] + SEP + filing.loc2[i];
+      // the REPORTED cell identity (gate.cellKeys → the Gantt's §S51 per-cell grouping) keeps the
+      // element's own sequence: D5 moves the order inside the level, never a bar
+      keyOf[i] = (trdOf[i] === FLOOR_TRD || trdOf[i] === HOLDER_TRD) ? filing.lvl2[i] + SEP + _trdOf(items[i]) + SEP + filing.loc2[i] : k;
       (cellMem[k] || (cellMem[k] = [])).push(i);
-      cellMeta[k] || (cellMeta[k] = { lvl: filing.lvl2[i], trd: _trdOf(items[i]), loc: filing.loc2[i] });
+      cellMeta[k] || (cellMeta[k] = { lvl: filing.lvl2[i], trd: trdOf[i], loc: filing.loc2[i] });
     }
     var keys = Object.keys(cellMem).sort(function (x, y) {
       var a = cellMeta[x], b = cellMeta[y];

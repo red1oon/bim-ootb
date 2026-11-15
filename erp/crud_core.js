@@ -61,10 +61,11 @@
     return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) +
            ' ' + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
   }
-  // localDay — today's LOCAL date yyyy-MM-dd (legacy #Date). The ONE implementation every "today" uses (was toISOString = the UTC date:
+  // localDay(ms) — the LOCAL date yyyy-MM-dd of an instant the CALLER supplies (legacy #Date). The ONE implementation every "today" uses (was toISOString = the UTC date:
   //   a document created between 00:00 and 08:00 at +08:00 was dated yesterday).
   function localDay(ms) {
-    var d = new Date(ms == null ? Date.now() : Number(ms)); function p(x) { return (x < 10 ? '0' : '') + x; }
+    if (ms == null) { console.log('§ENV_NO_DATE localDay needs the instant (the edge passes the current instant; core never reads a wall clock)'); throw new Error('localDay: no instant (A-3)'); }
+    var d = new Date(Number(ms)); function p(x) { return (x < 10 ? '0' : '') + x; }
     return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
   }
 

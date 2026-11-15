@@ -66,7 +66,7 @@
     ImportInvoice.prototype.doIt = function () {
       var self = this, trx = this.get_TrxName(), A = X.A, ctx = this.getCtx(), C = this.m_AD_Client_ID, O = this.m_AD_Org_ID;
       try { trx.q('SELECT 1 AS x FROM i_invoice LIMIT 1'); } catch (e) { throw new Error('I_Invoice has no physical table on this host (AdImportTables.ensure, ENGINE-SPEC E3b)'); }
-      var nowTs = trx.env.now || (trx.env.nowMillis != null ? new Date(trx.env.nowMillis).toISOString().slice(0, 19).replace('T', ' ') : new Date().toISOString().slice(0, 19).replace('T', ' '));   // getDate()
+      var nowTs = A.Env.nowStamp(trx.env);   // getDate()
       var R = [];                                                                                          // working copies of the I_Invoice rows: { id, base, cur }
       function load() { R = trx.find('i_invoice', {}, null, self.m_deleteOldImported ? undefined : { exclude: { i_isimported: 'Y' } }).map(function (r) { return { id: r.i_invoice_id, base: Object.assign({}, r), cur: Object.assign({}, r) }; }); }
       function flush() {                                                                                    // the raw UPDATEs reach the Trx (no model events, like DB.executeUpdate)

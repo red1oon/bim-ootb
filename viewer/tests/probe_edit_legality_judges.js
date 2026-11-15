@@ -59,13 +59,15 @@ const SS = require(path.join(V, 'support_sweep.js'));
 //    unpatched variant and reporting "no change".
 const BEARING_CG = 'if ((S.bz < T.bz - EPS && S.tz >= T.bz - GAP) ||';
 const BEARING_DS = 'if (S.bz < T.bz - EPS && S.tz >= T.bz - GAP) { cls = 0; score = -S.tz; }';
+// §I.1a (2026-11-14): the relation's ONE owner is cpm_schedule.js (support_sweep.js delegates), so the
+// verbatim replacement is made in THAT file's bytes and support_sweep.js is evaluated beside it, unpatched.
 function boundedSupportSweep() {
-  const src = fs.readFileSync(path.join(V, 'support_sweep.js'), 'utf8');
+  const src = fs.readFileSync(path.join(V, 'cpm_schedule.js'), 'utf8');
   const nA = src.split(BEARING_CG).length - 1, nB = src.split(BEARING_DS).length - 1;
   if (nA !== 1 || nB !== 1) {
     throw new Error('§EDIT_LEGALITY ABORT — expected exactly one contactGraph and one ' +
       'designatedSupport bearing clause, found ' + nA + '/' + nB + '. The predicate moved; re-read ' +
-      'support_sweep.js before trusting this probe.');
+      'cpm_schedule.js before trusting this probe.');
   }
   const patched = src
     .split(BEARING_CG).join('if ((S.bz < T.bz - EPS && S.tz >= T.bz - GAP && S.tz <= T.bz + GAP) ||')
@@ -74,7 +76,9 @@ function boundedSupportSweep() {
     Array: Array, Int32Array: Int32Array, Uint8Array: Uint8Array, Number: Number, isFinite: isFinite,
     module: { exports: {} }, window: undefined };
   sb.globalThis = sb; vm.createContext(sb);
-  vm.runInContext(patched, sb);
+  vm.runInContext(patched, sb);                                                  // sets sb.CpmSchedule (bounded)
+  vm.runInContext(fs.readFileSync(path.join(V, 'support_sweep.js'), 'utf8'), sb); // delegates to it
+  if (!sb.CpmSchedule || sb.module.exports.contactGraph === undefined) throw new Error('§EDIT_LEGALITY ABORT — bounded owner not wired into the sandbox');
   return sb.module.exports;
 }
 const SSB = boundedSupportSweep();

@@ -711,7 +711,7 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
     registerHandler('reportview:rv_openitem', function (ctx, info) {
       var p = (info && info.params) || {}, q = ctx.query;
       if (typeof q !== 'function') return { ok: false, message: 'RV_OpenItem: no data accessor', rows: 0 };
-      var today = ctx.today || _CC().localDay();
+      var today = ctx.today; if (!today) return { ok: false, message: '§ENV_NO_DATE no ctx.today (the host passes the session day; core never reads a wall clock)', rows: 0 };
       var has = function (x) { return x != null && x !== ''; };
       var bp = _pv(p, 'C_BPartner_ID').v, so = _pv(p, 'IsSOTrx').v, ict = _pv(p, 'InvoiceCollectionType').v, dd = _pv(p, 'DaysDue');
       var rows = openItems(q, { today: today, clientId: ctx.clientId }).filter(function (oi) {
@@ -732,7 +732,7 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
       if (typeof q !== 'function') return { ok: false, message: 'Aging: no data accessor', rows: 0 };
       if (String(p.DateAcct || 'N') === 'Y') return { ok: false, message: 'Aging DateAcct=Y (RV_OpenItemToDate / invoiceOpenToDate) is not ported — run without it', rows: 0 };
       if (idSet(p.ConvertAmountsInCurrency_ID)) return { ok: false, message: 'Aging ConvertAmountsInCurrency_ID (currencyConvertInvoice) is not ported — run without it', rows: 0 };
-      var today = ctx.today || _CC().localDay();   // §LOCAL-TIME
+      var today = ctx.today; if (!today) return { ok: false, message: '§ENV_NO_DATE no ctx.today (the host passes the session day; core never reads a wall clock)', rows: 0 };   // §LOCAL-TIME
       var stmt = p.StatementDate ? String(p.StatementDate).slice(0, 10) : today;
       var offset = _agDay(stmt) - _agDay(today);                         // Aging.prepare :96-99 getDaysBetween(now, StatementDate)
       var so = String(p.IsSOTrx == null ? 'Y' : p.IsSOTrx) === 'Y' ? 'Y' : 'N';

@@ -62,7 +62,7 @@
         if (!(ML().idSet(this.p_C_AcctSchema_ID))) throw new Error('Accounting Schema required!'); if (!(ML().idSet(this.p_M_CostType_ID))) throw new Error('Cost Type required!'); if (!(ML().idSet(this.p_M_CostElement_ID))) throw new Error('Cost Element required!');
         acctSchema = trx.get('c_acctschema', this.p_C_AcctSchema_ID); if (!acctSchema) throw new Error('Accounting Schema required!');
       }
-      var nowTs = trx.env.now || (trx.env.nowMillis != null ? new Date(trx.env.nowMillis).toISOString().slice(0, 19).replace('T', ' ') : new Date().toISOString().slice(0, 19).replace('T', ' '));
+      var nowTs = A.Env.nowStamp(trx.env);
       var today = String(trx.env.date || nowTs).slice(0, 10);
       var R = [];
       function load() { R = trx.find('i_inventory', {}).map(function (r) { return { id: r.i_inventory_id, base: Object.assign({}, r), cur: Object.assign({}, r) }; }); }

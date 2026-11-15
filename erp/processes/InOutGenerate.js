@@ -34,7 +34,7 @@
         else X.A.RUNTIME.log('§PROC-UNKNOWN-PARA InOutGenerate ' + name);
       }
       if (this.p_DateShipped != null) this.p_DateShipped = iso(this.p_DateShipped);
-      if (this.p_DateShipped == null) { this.m_movementDate = X.A.Env.getContextAsDate ? iso(X.A.Env.getContextAsDate(this.getCtx(), 'Date')) : null; if (this.m_movementDate == null) this.m_movementDate = new Date().toISOString().slice(0, 10); }
+      if (this.p_DateShipped == null) { this.m_movementDate = X.A.Env.getContextAsDate ? iso(X.A.Env.getContextAsDate(this.getCtx(), 'Date')) : null; if (this.m_movementDate == null) this.m_movementDate = X.A.Env.nowStamp(this.get_TrxName().env).slice(0, 10); }
       else this.m_movementDate = this.p_DateShipped;
     };
     InOutGenerate.prototype.doIt = function () {                                         // :136-205

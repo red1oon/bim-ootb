@@ -9,7 +9,7 @@
 
 A building is a manufactured product with coordinates. Drop an IFC file into a browser tab and watch it become what it always should have been — a thing you can query, cost, schedule, and *own*. No installer. No seat license. No server to rent. No salesman to call.
 
-Beside it runs a full ERP kernel, folded from the Compiere → ADempiere → iDempiere lineage, that reproduces a real ERP's books **to the cent** — serverless, offline, in the same tab. The building becomes a procurement order. The order becomes accounts. All of it from one signed log you can replay and verify yourself.
+Beside it runs a full ERP kernel, folded from the Compiere → ADempiere → iDempiere lineage, that reproduces a real ERP's books **to the cent on every scenario compared against a live iDempiere** ([what is and is not measured](https://red1oon.github.io/BIMCompiler/FeatureComparison/#how-closely-the-kernel-matches-legacy-idempiere)) — serverless, offline, in the same tab. The building becomes a procurement order. The order becomes accounts. All of it from one signed log you can replay and verify yourself.
 
 **Why this exists, plainly.** The big tools are cathedrals — and cathedrals are worth building. They house real work, they employ brilliant engineers, they carry decades of hard-won domain knowledge. This stands on all of that, gratefully. What it adds is a **bazaar beside the cathedral** — open, composable, running in a browser tab — because the best ideas in this industry deserve to reach the widest possible hands. The ambition is to become the first truly unified BIM-ERP platform: not by displacing what came before, but by taking the next step nobody has taken yet.
 

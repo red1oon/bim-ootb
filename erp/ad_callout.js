@@ -123,6 +123,16 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
       return { day: pad(d.getFullYear(), 4) + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()),
                now: pad(d.getFullYear(), 4) + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds()), millis: ms };
     },
+    //   nowStamp(env) / nowMs(env): how CORE reads "now" from a transaction env (A-3: core never falls back to a wall clock). env.now wins; else the local stamp of env.nowMillis; else §ENV_NO_DATE + throw.
+    nowStamp: function (env) {
+      if (env && env.now) return env.now;
+      if (env && env.nowMillis != null) return Env.stamp(env.nowMillis).now;
+      RUNTIME.log('§ENV_NO_DATE trx env has neither now nor nowMillis (core never reads a wall clock)'); throw new Error('no session clock in the transaction env (A-3)');
+    },
+    nowMs: function (env) {
+      if (env && env.nowMillis != null) return env.nowMillis;
+      RUNTIME.log('§ENV_NO_DATE trx env has no nowMillis (core never reads a wall clock)'); throw new Error('no session clock in the transaction env (A-3)');
+    },
     //   modelEnv(ctx, edge): the transaction env {client, org, user, role, date, now, nowMillis, uuid, perfMs, elapsed}. date = ctx '#Date' (legacy's session date) when set, else the edge's local day;
     //   with neither it THROWS and logs §ENV_NO_DATE (A-3: core never falls back to a wall clock). elapsed(t0) is the timing seam (A-4): the only way core may time a pass.
     modelEnv: function (ctx, edge) {
