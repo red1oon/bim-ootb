@@ -22,15 +22,8 @@
       }
     };
     function nz(v) { return v != null && v !== '' && Number(v) !== 0; }
-    // ProjectGenOrder.getProject :120-132
-    function getProject(trx, id) {
-      var p = nz(id) ? trx.get('c_project', id) : null;
-      if (!p) throw new Error('Project not found C_Project_ID=' + id);
-      if (!nz(p.m_pricelist_version_id)) throw new Error('Project has no Price List');
-      if (!nz(p.m_warehouse_id)) throw new Error('Project has no Warehouse');
-      if (!nz(p.c_bpartner_id) || !nz(p.c_bpartner_location_id)) throw new Error('Project has no Business Partner/Location');
-      return p;
-    }
+    // ProjectGenOrder.getProject :120-132 (static protected, called at :73): the ONE body is in processes/ProjectGenOrder.js
+    function getProject(trx, id) { return P.PSUP.projectGenOrder.getProject(trx, id); }
     ProjectPhaseGenOrder.prototype.doIt = function () {                                // :66-150
       var A = X.A, trx = this.get_TrxName(), D = G().T().D;
       this.m_C_ProjectPhase_ID = this.getRecord_ID();
@@ -42,21 +35,11 @@
       order.set('description', (order.get('description') == null ? 'null' : order.get('description')) + ' - ' + phase.name);   // :75
       MO().MOrder_beforeSaveNew(trx, order, this.getCtx());
       if (!order.save()) throw new Error('Could not create Order');                                                             // :76-77
-      var ctx = this.getCtx(), cur = nz(order.get('c_currency_id')) ? trx.get('c_currency', order.get('c_currency_id')) : null, prec = cur && cur.stdprecision != null ? Number(cur.stdprecision) : 2;
       var logged = [];
-      function addLine(line, descr, productId, qty, fixedPrice, withDiscount) {
-        var ol = MO().MOrderLine_new(trx, order);
-        ol.set('line', line).set('description', descr);
-        if (nz(productId)) { var pr = trx.get('m_product', productId); ol.set('m_product_id', productId); if (pr && nz(pr.c_uom_id)) ol.set('c_uom_id', pr.c_uom_id); }   // setM_Product_ID(id, true) :101
-        ol.set('m_attributesetinstance_id', 0);
-        var q = A.toBD(String(qty == null ? 0 : qty));
-        ol.set('qtyentered', q).set('qtyordered', q);                                                                           // setQty
-        MO().MOrderLine_setPrice(trx, ol);                                                                                      // setPrice()
-        if (fixedPrice != null && D(fixedPrice).signum() !== 0) ol.set('priceentered', A.toBD(String(fixedPrice))).set('priceactual', A.toBD(String(fixedPrice)));   // setPrice(BigDecimal)
-        if (withDiscount) { var list = D(ol.get('pricelist')); if (list.signum() !== 0) ol.set('discount', list.subtract(D(ol.get('priceactual'))).multiply(D('100')).divide(list, prec, A.RoundingMode.HALF_UP)); }   // setDiscount() :681-691
-        var ok = ol.save();                                                                                                     // setTax() runs in the C_OrderLine beforeSave (setTaxIfMissing)
-        if (ok) { var r = trx.get('c_orderline', ol.id()); logged.push(r); }
-        return ok;
+      function addLine(line, descr, productId, qty, fixedPrice, withDiscount) {                                                  // the order line :90-99 / :103-121 / :126-143: ONE body, ModelOrder.MOrderLine_fromProject
+        var r = MO().MOrderLine_fromProject(trx, order, { line: line, description: descr, productId: productId, qty: qty, fixedPrice: fixedPrice, withDiscount: withDiscount });
+        if (r.ok) logged.push(trx.get('c_orderline', r.po.id()));
+        return r.ok;
       }
       var count = 0, msg;
       if (nz(phase.m_product_id)) {                                                                                             // :80-99 an order on Phase level

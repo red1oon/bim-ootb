@@ -11,9 +11,9 @@ The ERP's DocActions and processes from the application dictionary (`erp/ad_seed
 | N_doc = 54 document tables × 13 DocActions + 1 plugin table(s) × their family's offered actions | 704 |
 | N_proc = active AD_Process rows (25 inactive, not in N) | 453 |
 | (b) doc pairs with a registered handler | 67 |
-| (b) processes whose resolved class name has a handler | 40 |
+| (b) processes whose resolved class name has a handler | 97 |
 | of which from built-in plugins (doc pairs / processes) | 2 / 2 |
-| NOT IMPLEMENTED (doc / process) | 637 / 413 |
+| NOT IMPLEMENTED (doc / process) | 637 / 356 |
 | handlers without a dictionary row (doc / process) | 1 / 0 |
 | **(c) X offered to actors** | 4 |
 
@@ -23,7 +23,7 @@ Basis for X: pairs of erp/actor_verbs.json that are dictionary pairs AND have a 
 
 ## Built-in plugins counted (source column below)
 
-The dictionary rows each BUILT-IN plugin (`erp/plugin_overlay.js` BUILTINS) stages at activation are staged into the in-memory dictionary by the host's own registry (`stageManifestDictionary` → `ctx.dict.insert`) before counting. ColumnSQL (virtual) columns are properties of a record, not actions: not counted. A plugin's DocAction class and process class are registered through the plugin context (`registerDocAction`, `defineProcess`), not `K.register` / `registerHandler('…')`; rule (b) also reads those two calls in the staged plugin files (a DocAction class implements an action when it has the action's method; a process class by its class name), evidence file:line. A plugin document table with a DocAction family counts the family's OFFERED actions only (union of `FAMILY.allow`; owner ruling 2026-11-09: RE is set by a newer revision, never offered), not the 13 of reference 135; a seed table counts all 13.
+The dictionary rows each BUILT-IN plugin (`erp/plugin_overlay.js` BUILTINS) stages at activation are staged into the in-memory dictionary by the host's own registry (`stageManifestDictionary` → `ctx.dict.insert`) before counting. ColumnSQL (virtual) columns are properties of a record, not actions: not counted. A plugin's DocAction class and process class are registered through the plugin context (`registerDocAction`, `defineProcess`), not `K.register` / `registerHandler('…')`; rule (b) also reads those two calls in the staged plugin files and every `defineProcess(<class>, …)` in `erp/processes/*.js` (the verbatim SvrProcess ports; they register no REGISTRY handler, so before 2026-11-16 they were not counted) (a DocAction class implements an action when it has the action's method; a process class by its class name), evidence file:line. A plugin document table with a DocAction family counts the family's OFFERED actions only (union of `FAMILY.allow`; owner ruling 2026-11-09: RE is set by a newer revision, never offered), not the 13 of reference 135; a seed table counts all 13.
 
 | plugin | file | rows staged | new processes | new document tables | doc pairs | family offers | ColumnSQL properties (not counted) |
 |---|---|---:|---|---|---:|---|---:|
@@ -36,7 +36,7 @@ The dictionary rows each BUILT-IN plugin (`erp/plugin_overlay.js` BUILTINS) stag
 | site | kind | pairs | how resolved |
 |---|---|---:|---|
 | `erp/erp_picker.js:396` | DYNAMIC (NOT COUNTED) | 0 | docType/action come from the events of a chain file loaded at run time (ev.d) |
-| `erp/kanban_host.js:73` | LOOP | 52 | tables ← erp/idempiere.html:6309 KDOC_TABLES; actions ← erp/manifest.json wfmc.transitions (13) |
+| `erp/kanban_host.js:73` | LOOP | 52 | tables ← erp/idempiere.html:6333 KDOC_TABLES; actions ← erp/manifest.json wfmc.transitions (13) |
 | `erp/kanban_lens.html:254` | LOOP | 52 | tables ← erp/kanban_lens.html:249 tables; actions ← erp/manifest.json wfmc.transitions (13) |
 | `erp/mfg_snapshot.js:100` | LITERAL | 1 | literal arguments |
 | `erp/odoo_agent/agent.js:89` | DYNAMIC (NOT COUNTED) | 0 | docType/action come from the events of a chain file loaded at run time (ev.d) |
@@ -128,16 +128,16 @@ The dictionary rows each BUILT-IN plugin (`erp/plugin_overlay.js` BUILTINS) stag
 
 Class rules (first match wins): **sends** ← class/name says it mails or notifies (`mail|notice|\brequest\b|mailing|\bsms\b|broadcast`); **posts** ← class/name says it posts, allocates, costs or generates documents (`fact_?acct|\bposting\b|\bpost\b|doc\.?post|invoicegenerate|allocat|bankstatementpayment|paymentgenerate|payselect|paymentprint|costing|inventorycount|imputation|storageclean|periodclose|openclose|reval`); IsReport=Y → **read**; else **writes**, basis "no rule matched, assumed writes".
 
-Classes: read 111, writes 312, posts 21, sends 9. Implemented 40 of 453.
+Classes: read 111, writes 312, posts 21, sends 9. Implemented 97 of 453.
 
 | id | source | value | name | class name → resolved | handler | class | basis |
 |---:|---|---|---|---|---|---|---|
-| 100 | seed | C_Year Create Periods | Create Periods  | `org.compiere.process.YearCreatePeriods` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
+| 100 | seed | C_Year Create Periods | Create Periods  | `org.compiere.process.YearCreatePeriods` | `erp/processes/YearCreatePeriods.js:10` | writes | no rule matched, assumed writes |
 | 101 | seed | M_DiscountSchema_ReSeq | Renumber | `org.compiere.process.DiscountSchemaReSeq` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
-| 103 | seed | M_PriceList Create | Create Price List  | `org.compiere.process.M_PriceList_Create` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
+| 103 | seed | M_PriceList Create | Create Price List  | `org.compiere.process.M_PriceList_Create` | `erp/processes/M_PriceList_Create.js:14` | writes | no rule matched, assumed writes |
 | 104 | seed | C_Order Process | Process Order | — | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
-| 105 | seed | M_Inventory Create | Create Inventory Count List  | `org.compiere.process.InventoryCountCreate` | **NOT IMPLEMENTED** | posts | class/name says it posts, allocates, costs or generates documents |
-| 106 | seed | M_Inventory Update  | Update Quantity | `org.compiere.process.InventoryCountUpdate` | **NOT IMPLEMENTED** | posts | class/name says it posts, allocates, costs or generates documents |
+| 105 | seed | M_Inventory Create | Create Inventory Count List  | `org.compiere.process.InventoryCountCreate` | `erp/processes/InventoryCountCreate.js:8` | posts | class/name says it posts, allocates, costs or generates documents |
+| 106 | seed | M_Inventory Update  | Update Quantity | `org.compiere.process.InventoryCountUpdate` | `erp/processes/InventoryCountUpdate.js:10` | posts | class/name says it posts, allocates, costs or generates documents |
 | 107 | seed | M_Inventory Process | Process Inventory Count  | — | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 108 | seed | C_AcctSchema_Default_Copy | Add or Copy Accounts | `org.compiere.process.AcctSchemaDefaultCopy` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 109 | seed | M_InOut Process | Process Shipment  | — | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
@@ -149,8 +149,8 @@ Classes: read 111, writes 312, posts 21, sends 9. Implemented 40 of 453.
 | 115 | seed | M_Product_PO | Vendor Selection | — | **NOT IMPLEMENTED** | read | IsReport=Y (a report process) |
 | 116 | seed | Rpt C_Invoice | Invoice Print  | — → `report:c_invoice` | `erp/ad_process.js:122` | read | IsReport=Y (a report process) |
 | 117 | seed | Rpt M_InOut | Delivery Note / Shipment Print  | — → `report:m_inout` | `erp/ad_process.js:128` | read | IsReport=Y (a report process) |
-| 118 | seed | M_InOut_Generate | Generate Shipments | `org.compiere.process.InOutGenerate` | `erp/ad_process.js:427` | writes | no rule matched, assumed writes |
-| 119 | seed | C_Invoice_Generate | Generate Invoices | `org.compiere.process.InvoiceGenerate` | `erp/ad_process.js:393` | posts | class/name says it posts, allocates, costs or generates documents |
+| 118 | seed | M_InOut_Generate | Generate Shipments | `org.compiere.process.InOutGenerate` | `erp/ad_process.js:360` | writes | no rule matched, assumed writes |
+| 119 | seed | C_Invoice_Generate | Generate Invoices | `org.compiere.process.InvoiceGenerate` | `erp/ad_process.js:326` | posts | class/name says it posts, allocates, costs or generates documents |
 | 120 | seed | RV_PP_Order_Transactions | Order Transactions | — | **NOT IMPLEMENTED** | read | IsReport=Y (a report process) |
 | 121 | seed | RV_Order_Open | Open Orders | — | **NOT IMPLEMENTED** | read | IsReport=Y (a report process) |
 | 122 | seed | M_Movement_Process | Process Movements | — | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
@@ -163,16 +163,16 @@ Classes: read 111, writes 312, posts 21, sends 9. Implemented 40 of 453.
 | 131 | seed | RV_C_Invoice_ProdWeek | Weekly Invoice Prod Cat | — → `report:c_invoice` | `erp/ad_process.js:122` | read | IsReport=Y (a report process) |
 | 132 | seed | RV_C_Invoice_ProdMonth | Monthly Invoice Prod Cat | — → `report:c_invoice` | `erp/ad_process.js:122` | read | IsReport=Y (a report process) |
 | 133 | seed | RV_C_Invoice_VendorMonth | Monthly Invoice Vendor | — → `report:c_invoice` | `erp/ad_process.js:122` | read | IsReport=Y (a report process) |
-| 134 | seed | C_Invoice_Generate (manual) | Generate Invoices (manual)  | `org.compiere.process.InvoiceGenerate` | `erp/ad_process.js:393` | posts | class/name says it posts, allocates, costs or generates documents |
+| 134 | seed | C_Invoice_Generate (manual) | Generate Invoices (manual)  | `org.compiere.process.InvoiceGenerate` | `erp/ad_process.js:326` | posts | class/name says it posts, allocates, costs or generates documents |
 | 135 | seed | AD_ImpFormat Copy | Copy Lines | `org.compiere.impexp.CopyImportFormat` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 136 | seed | PP_Product_BOM | Verify BOM | `org.eevolution.process.PP_Product_BOM_Check` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 137 | seed | M_Production | Create/Post Production | `org.compiere.process.M_Production_Run` | **NOT IMPLEMENTED** | posts | class/name says it posts, allocates, costs or generates documents |
 | 138 | seed | RV_C_Invoice_CustomerProdQtr | Quarterly Invoice Customer by Product | — → `report:c_invoice` | `erp/ad_process.js:122` | read | IsReport=Y (a report process) |
 | 139 | seed | RV_C_Invoice_CustomerVendQtr | Quarterly Invoice Customer by Vendor | — → `report:c_invoice` | `erp/ad_process.js:122` | read | IsReport=Y (a report process) |
 | 140 | seed | M_Product_Category_Acct_Copy | Copy Accounts | `org.compiere.process.ProductCategoryAcctCopy` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
-| 142 | seed | C_Invoice_CreateInOut | Generate Receipt from Invoice | `org.compiere.process.InvoiceCreateInOut` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
+| 142 | seed | C_Invoice_CreateInOut | Generate Receipt from Invoice | `org.compiere.process.InvoiceCreateInOut` | `erp/processes/InvoiceCreateInOut.js:8` | writes | no rule matched, assumed writes |
 | 144 | seed | C_Cash Process | Process Cash | — | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
-| 145 | seed | RV_Open Items | Open Items (Aging) | — → `reportview:rv_openitem` | `erp/ad_process.js:711` | read | IsReport=Y (a report process) |
+| 145 | seed | RV_Open Items | Open Items (Aging) | — → `reportview:rv_openitem` | `erp/ad_process.js:609` | read | IsReport=Y (a report process) |
 | 146 | seed | RV_UnReconciled Payments | UnReconciled Payments | — | **NOT IMPLEMENTED** | read | IsReport=Y (a report process) |
 | 147 | seed | C_BankStatement_Process | Process Statement | — | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 148 | seed | RV_Payment_Allocation | Allocation | — | **NOT IMPLEMENTED** | read | IsReport=Y (a report process) |
@@ -180,17 +180,17 @@ Classes: read 111, writes 312, posts 21, sends 9. Implemented 40 of 453.
 | 150 | seed | C_Allocation_Process | Process Allocation | — | **NOT IMPLEMENTED** | posts | class/name says it posts, allocates, costs or generates documents |
 | 151 | seed | RV_C_Invoice (Trx) | Invoice Transactions (Doc) | — → `report:c_invoice` | `erp/ad_process.js:122` | read | IsReport=Y (a report process) |
 | 152 | seed | RV_C_InvoiceLine | Invoice Detail and Margin | — → `report:c_invoice` | `erp/ad_process.js:122` | read | IsReport=Y (a report process) |
-| 153 | seed | C_Payment Online | Online Process | `org.compiere.process.PaymentOnline` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
-| 154 | seed | M_InOut_CreateInvoice | Generate Invoice from Receipt | `org.compiere.process.InOutCreateInvoice` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
-| 155 | seed | C_PaySelection_CreatePayment | Prepare Payment | `org.compiere.process.PaySelectionCreateCheck` | **NOT IMPLEMENTED** | posts | class/name says it posts, allocates, costs or generates documents |
-| 156 | seed | C_PaySelection_CreateFrom | Create From ... | `org.compiere.process.PaySelectionCreateFrom` | **NOT IMPLEMENTED** | posts | class/name says it posts, allocates, costs or generates documents |
+| 153 | seed | C_Payment Online | Online Process | `org.compiere.process.PaymentOnline` | `erp/processes/PaymentOnline.js:13` | writes | no rule matched, assumed writes |
+| 154 | seed | M_InOut_CreateInvoice | Generate Invoice from Receipt | `org.compiere.process.InOutCreateInvoice` | `erp/processes/InOutCreateInvoice.js:8` | writes | no rule matched, assumed writes |
+| 155 | seed | C_PaySelection_CreatePayment | Prepare Payment | `org.compiere.process.PaySelectionCreateCheck` | `erp/processes/PaySelectionCreateCheck.js:9` | posts | class/name says it posts, allocates, costs or generates documents |
+| 156 | seed | C_PaySelection_CreateFrom | Create From ... | `org.compiere.process.PaySelectionCreateFrom` | `erp/processes/PaySelectionCreateFrom.js:11` | posts | class/name says it posts, allocates, costs or generates documents |
 | 159 | seed | Rpt C_Dunning | Dunning Letter | — | **NOT IMPLEMENTED** | read | IsReport=Y (a report process) |
 | 161 | seed | RV_M_Transaction | Product Transaction Value | — | **NOT IMPLEMENTED** | read | IsReport=Y (a report process) |
-| 164 | seed | C_Project_Generate | Generate Order | `org.compiere.process.ProjectGenOrder` | `erp/ad_process.js:464` | writes | no rule matched, assumed writes |
+| 164 | seed | C_Project_Generate | Generate Order | `org.compiere.process.ProjectGenOrder` | `erp/processes/ProjectGenOrder.js:23` | writes | no rule matched, assumed writes |
 | 165 | seed | C_Commission_Copy | Copy Lines | `org.compiere.process.CommissionCopy` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
-| 166 | seed | C_CommissionRun_Process | Create Invoice | `org.compiere.process.CommissionAPInvoice` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
-| 167 | seed | C_Period_Process | Open/Close All | `org.compiere.process.PeriodStatus` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
-| 168 | seed | C_PeriodControl_Process | Open/Close | `org.compiere.process.PeriodControlStatus` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
+| 166 | seed | C_CommissionRun_Process | Create Invoice | `org.compiere.process.CommissionAPInvoice` | `erp/processes/CommissionAPInvoice.js:11` | writes | no rule matched, assumed writes |
+| 167 | seed | C_Period_Process | Open/Close All | `org.compiere.process.PeriodStatus` | `erp/processes/PeriodStatus.js:9` | writes | no rule matched, assumed writes |
+| 168 | seed | C_PeriodControl_Process | Open/Close | `org.compiere.process.PeriodControlStatus` | `erp/processes/PeriodControlStatus.js:8` | writes | no rule matched, assumed writes |
 | 169 | seed | GL_Journal_Process | Process Journal | — | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 171 | seed | C_Invoice_WriteOff | Receivables Write-Off | `org.compiere.process.InvoiceWriteOff` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 172 | seed | AD_Synchronize | Synchronize Terminology | `org.compiere.process.SynchronizeTerminology` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
@@ -212,38 +212,38 @@ Classes: read 111, writes 312, posts 21, sends 9. Implemented 40 of 453.
 | 191 | seed | AD_PrintPaper_Default | Set Print Format | `org.compiere.process.AD_PrintPaper_Default` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 192 | seed | AD_PrintFormat_Copy | Copy/Create | `org.compiere.print.MPrintFormatProcess` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 193 | seed | C_Order PO_Create | Generate PO from Sales Order | `org.compiere.process.OrderPOCreate` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
-| 194 | seed | Import_BPartner | Import Business Partners | `org.compiere.process.ImportBPartner` | `erp/ad_process.js:852` | writes | no rule matched, assumed writes |
+| 194 | seed | Import_BPartner | Import Business Partners | `org.compiere.process.ImportBPartner` | `erp/ad_process.js:750` | writes | no rule matched, assumed writes |
 | 195 | seed | R_Request_ReOpen | Reopen Request | `org.compiere.process.RequestReOpen` | **NOT IMPLEMENTED** | sends | class/name says it mails or notifies |
-| 196 | seed | Import_Product | Import Products  | `org.compiere.process.ImportProduct` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
+| 196 | seed | Import_Product | Import Products  | `org.compiere.process.ImportProduct` | `erp/processes/ImportProduct.js:17` | writes | no rule matched, assumed writes |
 | 197 | seed | Import_Account | Import Accounts | `org.compiere.process.ImportAccount` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 198 | seed | Import_ReportLine | Import Report Line Set | `org.compiere.process.ImportReportLine` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
-| 199 | seed | M_InOut_Generate (manual) | Generate Shipments (manual) | `org.compiere.process.InOutGenerate` | `erp/ad_process.js:427` | writes | no rule matched, assumed writes |
+| 199 | seed | M_InOut_Generate (manual) | Generate Shipments (manual) | `org.compiere.process.InOutGenerate` | `erp/ad_process.js:360` | writes | no rule matched, assumed writes |
 | 200 | seed | C_Invoice_Print | Print Invoices | `org.compiere.process.InvoicePrint` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 201 | seed | Asset_Delivery | Deliver Assets | `org.compiere.process.AssetDelivery` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 202 | seed | FinReport | Create Report | `org.compiere.report.FinReport` | `erp/ad_process.js:102` | read | IsReport=Y (a report process) |
 | 204 | seed | FinStatement | Statement of Accounts | `org.compiere.report.FinStatement` | **NOT IMPLEMENTED** | read | IsReport=Y (a report process) |
 | 205 | seed | Cache Reset | Cache Reset | `org.compiere.process.CacheReset` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
-| 206 | seed | Import_Order | Import Orders | `org.compiere.process.ImportOrder` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
-| 207 | seed | Import_Invoice | Import Invoice | `org.compiere.process.ImportInvoice` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
+| 206 | seed | Import_Order | Import Orders | `org.compiere.process.ImportOrder` | `erp/processes/ImportOrder.js:27` | writes | no rule matched, assumed writes |
+| 207 | seed | Import_Invoice | Import Invoice | `org.compiere.process.ImportInvoice` | `erp/processes/ImportInvoice.js:28` | writes | no rule matched, assumed writes |
 | 209 | seed | R_MailText Send | Send Mail Text | `org.compiere.process.SendMailText` | **NOT IMPLEMENTED** | sends | class/name says it mails or notifies |
-| 210 | seed | C_Invoice CopyFrom | Copy Lines | `org.compiere.process.CopyFromInvoice` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
-| 211 | seed | C_Order CopyFrom | Copy Lines | `org.compiere.process.CopyFromOrder` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
-| 212 | seed | C_Project CopyFrom | Copy Details | `org.compiere.process.CopyFromProject` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
-| 213 | seed | C_Recurring Run | Start Process | `org.compiere.process.Recurring` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
-| 214 | seed | GL_JournalBatch CopyFrom | Copy Details | `org.compiere.process.CopyFromJournal` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
-| 215 | seed | C_Project_SetType | Set Project Type | `org.compiere.process.ProjectSetType` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
-| 216 | seed | C_ProjectPhase_Generate | Generate Order | `org.compiere.process.ProjectPhaseGenOrder` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
+| 210 | seed | C_Invoice CopyFrom | Copy Lines | `org.compiere.process.CopyFromInvoice` | `erp/processes/CopyFromInvoice.js:8` | writes | no rule matched, assumed writes |
+| 211 | seed | C_Order CopyFrom | Copy Lines | `org.compiere.process.CopyFromOrder` | `erp/processes/CopyFromOrder.js:8` | writes | no rule matched, assumed writes |
+| 212 | seed | C_Project CopyFrom | Copy Details | `org.compiere.process.CopyFromProject` | `erp/processes/CopyFromProject.js:10` | writes | no rule matched, assumed writes |
+| 213 | seed | C_Recurring Run | Start Process | `org.compiere.process.Recurring` | `erp/processes/Recurring.js:105` | writes | no rule matched, assumed writes |
+| 214 | seed | GL_JournalBatch CopyFrom | Copy Details | `org.compiere.process.CopyFromJournal` | `erp/processes/CopyFromJournal.js:8` | writes | no rule matched, assumed writes |
+| 215 | seed | C_Project_SetType | Set Project Type | `org.compiere.process.ProjectSetType` | `erp/processes/ProjectSetType.js:10` | writes | no rule matched, assumed writes |
+| 216 | seed | C_ProjectPhase_Generate | Generate Order | `org.compiere.process.ProjectPhaseGenOrder` | `erp/processes/ProjectPhaseGenOrder.js:12` | writes | no rule matched, assumed writes |
 | 217 | seed | Rpt C_Project | Project Print | — → `report:c_project` | `erp/ad_process.js:149` | read | IsReport=Y (a report process) |
 | 218 | seed | RV_ProjectCycle | Project Cycle Report | — | **NOT IMPLEMENTED** | read | IsReport=Y (a report process) |
-| 219 | seed | Import_Inventory | Import Inventory | `org.compiere.process.ImportInventory` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
-| 220 | seed | Import_GLJournal | Import Journal | `org.compiere.process.ImportGLJournal` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
-| 221 | seed | Import_BankStatement | Import Bank Statement | `org.compiere.process.ImportBankStatement` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
+| 219 | seed | Import_Inventory | Import Inventory | `org.compiere.process.ImportInventory` | `erp/processes/ImportInventory.js:14` | writes | no rule matched, assumed writes |
+| 220 | seed | Import_GLJournal | Import Journal | `org.compiere.process.ImportGLJournal` | `erp/processes/ImportGLJournal.js:26` | writes | no rule matched, assumed writes |
+| 221 | seed | Import_BankStatement | Import Bank Statement | `org.compiere.process.ImportBankStatement` | `erp/processes/ImportBankStatement.js:25` | writes | no rule matched, assumed writes |
 | 222 | seed | RV_Asset_Customer | Customer Assets | — | **NOT IMPLEMENTED** | read | IsReport=Y (a report process) |
 | 223 | seed | RV_Asset_Delivery | Asset Delivery Details | — | **NOT IMPLEMENTED** | read | IsReport=Y (a report process) |
 | 224 | seed | C_Project_Issue | Issue to Project | `org.compiere.process.ProjectIssue` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
-| 225 | seed | C_Project_GeneratePO | Generate PO from Project | `org.compiere.process.ProjectGenPO` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
+| 225 | seed | C_Project_GeneratePO | Generate PO from Project | `org.compiere.process.ProjectGenPO` | `erp/processes/ProjectGenPO.js:12` | writes | no rule matched, assumed writes |
 | 226 | seed | RV_Project Accounting | Project Detail Accounting Report | — | **NOT IMPLEMENTED** | read | IsReport=Y (a report process) |
-| 227 | seed | C_Project Close | Close Project | `org.compiere.process.ProjectClose` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
+| 227 | seed | C_Project Close | Close Project | `org.compiere.process.ProjectClose` | `erp/processes/ProjectClose.js:10` | writes | no rule matched, assumed writes |
 | 228 | seed | RV_ProjectLine Not Issued | Project Lines not Issued | — | **NOT IMPLEMENTED** | read | IsReport=Y (a report process) |
 | 229 | seed | RV_ProjectLine Not Received POs | Project POs not Issued | — | **NOT IMPLEMENTED** | read | IsReport=Y (a report process) |
 | 230 | seed | C_ProjectLine Pricing | Get Price | `org.compiere.process.ProjectLinePricing` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
@@ -254,9 +254,9 @@ Classes: read 111, writes 312, posts 21, sends 9. Implemented 40 of 453.
 | 235 | seed | AD_Tree Verify | Verify Tree | `org.compiere.process.TreeMaintenance` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 236 | seed | RV_Storage | Storage Detail | — | **NOT IMPLEMENTED** | read | IsReport=Y (a report process) |
 | 237 | seed | RV_Transaction | Transaction Detail | — | **NOT IMPLEMENTED** | read | IsReport=Y (a report process) |
-| 238 | seed | RV_T_Aging | Aging | `org.compiere.process.Aging` | `erp/ad_process.js:730` | read | IsReport=Y (a report process) |
+| 238 | seed | RV_T_Aging | Aging | `org.compiere.process.Aging` | `erp/ad_process.js:628` | read | IsReport=Y (a report process) |
 | 241 | seed | AD_NoteDelete | Delete Notices | `org.compiere.process.NoteDelete` | **NOT IMPLEMENTED** | sends | class/name says it mails or notifies |
-| 242 | seed | C_InvoicePaySchedule Validate | Validate | `org.compiere.process.InvoicePayScheduleValidate` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
+| 242 | seed | C_InvoicePaySchedule Validate | Validate | `org.compiere.process.InvoicePayScheduleValidate` | `erp/processes/InvoicePayScheduleValidate.js:8` | writes | no rule matched, assumed writes |
 | 243 | seed | C_PaymentTerm Validate | Validate | `org.compiere.process.PaymentTermValidate` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 244 | seed | OrgOwnership Warehouse | Warehouse Organization | `org.compiere.process.OrgOwnership` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 245 | seed | OrgOwnership Product | Product Organization | `org.compiere.process.OrgOwnership` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
@@ -270,7 +270,7 @@ Classes: read 111, writes 312, posts 21, sends 9. Implemented 40 of 453.
 | 253 | seed | RV_Fact_Acct_Day | Accounting Fact Daily | — | **NOT IMPLEMENTED** | read | IsReport=Y (a report process) |
 | 254 | seed | RV_Fact_Acct_Period | Accounting Fact Period | — | **NOT IMPLEMENTED** | read | IsReport=Y (a report process) |
 | 255 | seed | C_Order Open | Reopen Order | `org.compiere.process.OrderOpen` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
-| 256 | seed | C_BankStatement Match | Match Bank Statement | `org.compiere.process.BankStatementMatcher` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
+| 256 | seed | C_BankStatement Match | Match Bank Statement | `org.compiere.process.BankStatementMatcher` | `erp/processes/BankStatementMatcher.js:15` | writes | no rule matched, assumed writes |
 | 257 | seed | C_BankStatement Payment | Create Payment | `org.compiere.process.BankStatementPayment` | **NOT IMPLEMENTED** | posts | class/name says it posts, allocates, costs or generates documents |
 | 258 | seed | AD_Sequence_Check | Sequence Check | `org.compiere.process.SequenceCheck` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 259 | seed | M_DistributionList Create | Create Orders | `org.compiere.process.DistributionCreate` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
@@ -295,28 +295,28 @@ Classes: read 111, writes 312, posts 21, sends 9. Implemented 40 of 453.
 | 278 | seed | AD_WF_Activity_Manage | Manage Activity | `org.compiere.wf.WFActivityManage` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 279 | seed | AD_WF_Process_Manage | Manage Process | `org.compiere.wf.WFProcessManage` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 280 | seed | M_InOutConfirm_Process | Process Confirmation | — | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
-| 281 | seed | M_InOut_CreateConfirm | Create Confirmation | `org.compiere.process.InOutCreateConfirm` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
-| 282 | seed | M_Package_Create | Create Package | `org.compiere.process.PackageCreate` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
+| 281 | seed | M_InOut_CreateConfirm | Create Confirmation | `org.compiere.process.InOutCreateConfirm` | `erp/processes/InOutCreateConfirm.js:11` | writes | no rule matched, assumed writes |
+| 282 | seed | M_Package_Create | Create Package | `org.compiere.process.PackageCreate` | `erp/processes/PackageCreate.js:13` | writes | no rule matched, assumed writes |
 | 283 | seed | M_RMA_Process | Process RMA | — | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 284 | seed | RV_InOutLineConfirm Open | Open Confirmation Details | — | **NOT IMPLEMENTED** | read | IsReport=Y (a report process) |
 | 285 | seed | RV_InOutConfirm Open | Open Confirmations | — | **NOT IMPLEMENTED** | read | IsReport=Y (a report process) |
 | 286 | seed | M_MovementConfirm_Process | Process Confirmation | — | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 287 | seed | RV_PrintFormatDetail | Print Format Detail | — | **NOT IMPLEMENTED** | read | IsReport=Y (a report process) |
-| 289 | seed | C_DunningRun_Create | Create Dunning Run | `org.compiere.process.DunningRunCreate` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
+| 289 | seed | C_DunningRun_Create | Create Dunning Run | `org.compiere.process.DunningRunCreate` | `erp/processes/DunningRunCreate.js:13` | writes | no rule matched, assumed writes |
 | 290 | seed | Rpt M_Movement | Inventory Move Print | — → `report:m_movement` | `erp/ad_process.js:138` | read | IsReport=Y (a report process) |
 | 291 | seed | Rpt M_Inventory | Physical Inventory Print | — → `report:m_inventory` | `erp/ad_process.js:142` | read | IsReport=Y (a report process) |
 | 292 | seed | Rpt M_InOutConfirm | Shipment Confirmation | — → `report:m_inoutconfirm` | `erp/ad_process.js:134` | read | IsReport=Y (a report process) |
 | 293 | seed | RV_InOutDetails Receive | Material Receipt Details | — | **NOT IMPLEMENTED** | read | IsReport=Y (a report process) |
 | 294 | seed | RV_InOutDetails Ship | Shipment Details | — | **NOT IMPLEMENTED** | read | IsReport=Y (a report process) |
-| 295 | seed | AD_Role_AccessUpdate | Role Access Update | `org.compiere.process.RoleAccessUpdate` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
+| 295 | seed | AD_Role_AccessUpdate | Role Access Update | `org.compiere.process.RoleAccessUpdate` | `erp/processes/RoleAccessUpdate.js:11` | writes | no rule matched, assumed writes |
 | 296 | seed | Import_InOutConfirm | Import Confirmations | `org.compiere.process.ImportInOutConfirm` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 297 | seed | PA_SLA_Goal_Calculate | Capture + Calculate Measures | `org.compiere.sla.SLAGoalProcess` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 298 | seed | PA_SLA_Measure_Calculate | Calculate Measures | `org.compiere.sla.SLAMeasureProcess` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 299 | seed | GL_Distribution_Verify | Verify | `org.compiere.process.DistributionVerify` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
-| 300 | seed | M_MatchInv_Delete | Delete | `org.compiere.process.MatchInvDelete` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
-| 301 | seed | M_MatchPO_Delete | Delete | `org.compiere.process.MatchPODelete` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
+| 300 | seed | M_MatchInv_Delete | Delete | `org.compiere.process.MatchInvDelete` | `erp/processes/MatchInvDelete.js:10` | writes | no rule matched, assumed writes |
+| 301 | seed | M_MatchPO_Delete | Delete | `org.compiere.process.MatchPODelete` | `erp/processes/MatchPODelete.js:10` | writes | no rule matched, assumed writes |
 | 302 | seed | C_Allocation_Auto | Auto Allocation | `org.compiere.process.AllocationAuto` | **NOT IMPLEMENTED** | posts | class/name says it posts, allocates, costs or generates documents |
-| 303 | seed | C_Allocation_Reset | Reset Allocation | `org.compiere.process.AllocationReset` | **NOT IMPLEMENTED** | posts | class/name says it posts, allocates, costs or generates documents |
+| 303 | seed | C_Allocation_Reset | Reset Allocation | `org.compiere.process.AllocationReset` | `erp/processes/AllocationReset.js:8` | posts | class/name says it posts, allocates, costs or generates documents |
 | 304 | seed | AD_Workflow_Validate | Validate Workflow | `org.compiere.wf.WorkflowValidate` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 305 | seed | AD_Workflow DocValue | Document Value based Workflows | — | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 306 | seed | AD_ChangeLog_UnDo | Un-Do Changes | `org.compiere.process.ChangeLogProcess` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
@@ -346,28 +346,28 @@ Classes: read 111, writes 312, posts 21, sends 9. Implemented 40 of 453.
 | 332 | seed | C_LandedCost_Distribution | Distribute Costs | `org.compiere.process.LandedCostDistribute` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 333 | seed | RV_OrderDetail | Order Detail | — | **NOT IMPLEMENTED** | read | IsReport=Y (a report process) |
 | 334 | seed | RV_BPartner | Business Partner Detail | — | **NOT IMPLEMENTED** | read | IsReport=Y (a report process) |
-| 335 | seed | M_Cost Create | Create Costing Records | `org.compiere.process.CostCreate` | **NOT IMPLEMENTED** | posts | class/name says it posts, allocates, costs or generates documents |
+| 335 | seed | M_Cost Create | Create Costing Records | `org.compiere.process.CostCreate` | `erp/processes/CostCreate.js:10` | posts | class/name says it posts, allocates, costs or generates documents |
 | 336 | seed | C_TaxDeclaration Create | Create Tax Declaration | `org.compiere.process.TaxDeclarationCreate` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 337 | seed | M_Requisition_POCreate | Create PO from Requisition | `org.compiere.process.RequisitionPOCreate` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
-| 338 | seed | C_AcctSchema_CopyAcct | Create GL/Default | `org.compiere.process.AcctSchemaCopyAcct` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
+| 338 | seed | C_AcctSchema_CopyAcct | Create GL/Default | `org.compiere.process.AcctSchemaCopyAcct` | `erp/processes/AcctSchemaCopyAcct.js:10` | writes | no rule matched, assumed writes |
 | 339 | seed | AD_Issue Report | Report or Update Issue | `org.compiere.process.IssueReport` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 340 | seed | RV_C_Invoice_ProductMonth | Monthly Invoice Product | — → `report:c_invoice` | `erp/ad_process.js:122` | read | IsReport=Y (a report process) |
 | 341 | seed | RV_C_Invoice_ProductQtr | Quarter Invoice Product | — → `report:c_invoice` | `erp/ad_process.js:122` | read | IsReport=Y (a report process) |
 | 342 | seed | AD_System Validate Support | Validate Support | `org.compiere.process.SystemValidate` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
-| 343 | seed | Import_Payment | Import Payments | `org.compiere.process.ImportPayment` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
+| 343 | seed | Import_Payment | Import Payments | `org.compiere.process.ImportPayment` | `erp/processes/ImportPayment.js:26` | writes | no rule matched, assumed writes |
 | 344 | seed | CM_CStage_Validate | Validate | `org.compiere.cm.CStageValidate` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 347 | seed | CM_Template_Validate | Validate | `org.compiere.cm.TemplateValidate` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 348 | seed | AD_EntityType_Register | Register Extension | `org.compiere.process.EntityTypeRegister` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 349 | seed | AD_InfoWindow_Validate | Validate | `org.compiere.process.InfoWindowValidate` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 352 | seed | CM_Media_DirectDeploy | Media Direct Deploy | `org.compiere.cm.MediaDirectDeploy` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 50002 | seed | PackRoll | PackRoll | `org.adempiere.pipo.PackRoll` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
-| 50004 | seed | PackOut | PackOut | `org.adempiere.pipo.PackOut` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
+| 50004 | seed | PackOut | PackOut | `org.adempiere.pipo.PackOut` | `erp/processes/PackOut.js:10` | writes | no rule matched, assumed writes |
 | 50006 | seed | File_Select | File_Select | `com.compiere.packbuilder.Select_File` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
-| 50008 | seed | PackIn | PackIn | `org.adempiere.pipo.PackIn` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
+| 50008 | seed | PackIn | PackIn | `org.adempiere.pipo.PackIn` | `erp/processes/PackIn.js:12` | writes | no rule matched, assumed writes |
 | 50010 | seed | CopyRole | Copy Role | `org.compiere.process.CopyRole` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 50011 | seed | AD_Table_CopyColumnsFromTable | Copy Columns from Table | `org.compiere.process.CopyColumnsFromTable` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 50012 | seed | Request EMail Processor | Request EMail Processor | `org.compiere.process.RequestEMailProcessor` | **NOT IMPLEMENTED** | sends | class/name says it mails or notifies |
-| 52000 | seed | M_RMA_CreateOrder | Create Order From RMA | `org.adempiere.process.RMACreateOrder` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
+| 52000 | seed | M_RMA_CreateOrder | Create Order From RMA | `org.adempiere.process.RMACreateOrder` | `erp/processes/RMACreateOrder.js:10` | writes | no rule matched, assumed writes |
 | 52001 | seed | M_InOut_GenerateRMA (Manual) | Generate Shipments for Vendor RMA | `org.adempiere.process.InOutGenerateRMA` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 52002 | seed | C_Invoice_GenerateRMA (Manual) | Generate Invoices for RMA | `org.adempiere.process.InvoiceGenerateRMA` | **NOT IMPLEMENTED** | posts | class/name says it posts, allocates, costs or generates documents |
 | 53004 | seed | PP_Product_BOM CopyFrom | Copy BOM Lines From | `org.eevolution.process.CopyFromBOM` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
@@ -447,13 +447,13 @@ Classes: read 111, writes 312, posts 21, sends 9. Implemented 40 of 453.
 | 53166 | seed | FactAcctSummary | Recalculate Cube | `org.compiere.process.FactAcctSummary` | **NOT IMPLEMENTED** | posts | class/name says it posts, allocates, costs or generates documents |
 | 53176 | seed | RV_Order_Trx | Order Transactions | — | **NOT IMPLEMENTED** | read | IsReport=Y (a report process) |
 | 53179 | seed | CopyFromProcess | Copy From Report and Process | `org.compiere.process.CopyReportProcess` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
-| 53187 | seed | Client_Acct_Processor | Tenant Accounting Processor | `org.adempiere.process.ClientAcctProcessor` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
+| 53187 | seed | Client_Acct_Processor | Tenant Accounting Processor | `org.adempiere.process.ClientAcctProcessor` | `erp/processes/ClientAcctProcessor.js:25` | writes | no rule matched, assumed writes |
 | 53189 | seed | RV_Storage_Per_Product | Storage per Product | — | **NOT IMPLEMENTED** | read | IsReport=Y (a report process) |
 | 53197 | seed | Import_PayrollMovement | Import Payroll Movement | `org.eevolution.process.ImportPayrollMovement` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
-| 53199 | seed | C_Allocation_Reset_Direct | Reset Allocation Direct | `org.compiere.process.AllocationReset` | **NOT IMPLEMENTED** | posts | class/name says it posts, allocates, costs or generates documents |
+| 53199 | seed | C_Allocation_Reset_Direct | Reset Allocation Direct | `org.compiere.process.AllocationReset` | `erp/processes/AllocationReset.js:8` | posts | class/name says it posts, allocates, costs or generates documents |
 | 53200 | seed | Import_ProductPlanning | Import Product Planning and Forecast | `org.eevolution.process.ImportProductPlanning` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 53202 | seed | C_POSKeyGenerate | POS Key Generate | `org.compiere.process.PosKeyGenerate` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
-| 53206 | seed | M_Product CopyFrom | Copy from product | `org.compiere.process.CopyProduct` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
+| 53206 | seed | M_Product CopyFrom | Copy from product | `org.compiere.process.CopyProduct` | `erp/processes/CopyProduct.js:9` | writes | no rule matched, assumed writes |
 | 53207 | seed | A_Depreciation_Workfile_Build | Update depreciation | `org.idempiere.fa.process.A_Depreciation_Workfile_Build` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 53208 | seed | A_Asset_Adition_Process | Asset Addition Process | — | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 53210 | seed | A_Asset_Disposed_Process | Asset Disposed Process | — | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
@@ -465,10 +465,10 @@ Classes: read 111, writes 312, posts 21, sends 9. Implemented 40 of 453.
 | 53216 | seed | ImportInventoryMovement | ImportInventoryMovement | `org.eevolution.process.ImportInventoryMove` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 53220 | seed | Fact_Reconciliation | Unreconciled accounting facts | `org.compiere.process.FactReconciliation` | **NOT IMPLEMENTED** | read | IsReport=Y (a report process) |
 | 53221 | seed | Fact_Reconciliation_Auto | Automatic account reconciliation | `org.compiere.process.FactReconcile` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
-| 53226 | seed | M_Production_Create | Create Production | `org.compiere.process.ProductionCreate` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
+| 53226 | seed | M_Production_Create | Create Production | `org.compiere.process.ProductionCreate` | `erp/processes/ProductionCreate.js:10` | writes | no rule matched, assumed writes |
 | 53227 | seed | M_Production_Post | Post Production | `org.compiere.process.ProductionProcess` | **NOT IMPLEMENTED** | posts | class/name says it posts, allocates, costs or generates documents |
 | 53228 | seed | M_Product_BOM_Flag | Validate BOM Flags | `org.compiere.process.BOMFlagValidate` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
-| 53229 | seed | M_Product_BOM_Verify | Verify BOM Structure | `org.compiere.process.BOMVerify` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
+| 53229 | seed | M_Product_BOM_Verify | Verify BOM Structure | `org.compiere.process.BOMVerify` | `erp/processes/BOMVerify.js:10` | writes | no rule matched, assumed writes |
 | 53230 | seed | M_Product_BOM_Rollup | Rollup BOM Cost | `org.compiere.process.RollUpCosts` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 53245 | seed | C_OrderPaySchedule Validate | Validate | `org.compiere.process.OrderPayScheduleValidate` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 53246 | seed | C_CashPlan CopyFrom | Copy from Cash Plan | `org.globalqss.process.CopyFromCashPlan` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
@@ -483,16 +483,16 @@ Classes: read 111, writes 312, posts 21, sends 9. Implemented 40 of 453.
 | 53264 | seed | M_Production Plan | Production Plan | — | **NOT IMPLEMENTED** | read | IsReport=Y (a report process) |
 | 53265 | seed | M_Product_BOM Substitute | Universal substitution | `org.compiere.process.UniversalSubstitution` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 53266 | seed | M_ProductBOM_Indented | Indented Bill of Material | `org.compiere.process.IndentedBOM` | **NOT IMPLEMENTED** | read | IsReport=Y (a report process) |
-| 53267 | seed | RV_T_Replenish_Production | Replenish Report | `org.compiere.process.ReplenishReportProduction` | **NOT IMPLEMENTED** | read | IsReport=Y (a report process) |
+| 53267 | seed | RV_T_Replenish_Production | Replenish Report | `org.compiere.process.ReplenishReportProduction` | `erp/processes/ReplenishReportProduction.js:17` | read | IsReport=Y (a report process) |
 | 53276 | seed | AD_User Convert Lead | Convert Lead | `org.compiere.process.ConvertLead` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 53710 | seed | C_RevenueRecognition | Revenue Recognition Run | `org.compiere.process.RevenueRecognition` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 200000 | seed | FA_ProjectCreateAsset | Create Asset from Project | `org.idempiere.fa.process.ProjectCreateAsset` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
-| 200005 | seed | GL_Journal CopyFrom | Copy Details | `org.compiere.process.CopyFromJournalDoc` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
-| 200006 | seed | C_OrderLine_CreateProduction | Create Production from Order Line | `org.compiere.process.OrderLineCreateProduction` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
-| 200007 | seed | C_OrderLine_CreateShipment | Create Shipment from Order Line | `org.compiere.process.OrderLineCreateShipment` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
+| 200005 | seed | GL_Journal CopyFrom | Copy Details | `org.compiere.process.CopyFromJournalDoc` | `erp/processes/CopyFromJournalDoc.js:8` | writes | no rule matched, assumed writes |
+| 200006 | seed | C_OrderLine_CreateProduction | Create Production from Order Line | `org.compiere.process.OrderLineCreateProduction` | `erp/processes/OrderLineCreateProduction.js:10` | writes | no rule matched, assumed writes |
+| 200007 | seed | C_OrderLine_CreateShipment | Create Shipment from Order Line | `org.compiere.process.OrderLineCreateShipment` | `erp/processes/OrderLineCreateShipment.js:8` | writes | no rule matched, assumed writes |
 | 200008 | seed | AD_User_LockedAccount | Unlock Account | `org.adempiere.process.ResetLockedAccount` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 200010 | seed | GLJournalGenerate | Generate GL Journal | `org.globalqss.process.GLJournalGenerate` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
-| 200012 | seed | C_BankStatement CopyFrom | Copy Lines | `org.compiere.process.CopyFromBankStmt` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
+| 200012 | seed | C_BankStatement CopyFrom | Copy Lines | `org.compiere.process.CopyFromBankStmt` | `erp/processes/CopyFromBankStmt.js:9` | writes | no rule matched, assumed writes |
 | 200014 | seed | C_PaymentTransaction VoidIt | Void Online Authorization Payment Transaction Process | `org.compiere.process.VoidOnlineAuthorizationPaymentTransaction` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 200015 | seed | TabEditor | Tab Editor | — | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 200016 | seed | M_MatchPO_Reversal | Reverse PO Matching | `org.adempiere.process.MatchPOReverse` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
@@ -508,7 +508,7 @@ Classes: read 111, writes 312, posts 21, sends 9. Implemented 40 of 453.
 | 200026 | seed | Void_Shipment_Process | Void Shipment Online | `org.adempiere.process.VoidShipmentProcess` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 200028 | seed | M_Shipper_CreateFrom | Shipper Create From ... | `org.adempiere.process.ShipperCreateFrom` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 200029 | seed | X_Shipper_CopyFrom | Shipper Copy From ... | `org.adempiere.process.ShipperCopyFrom` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
-| 200030 | seed | Shipping_Sales_Order_Rate_Inquiry | Online Shipping Sales Order Rate Inquiry | `org.adempiere.process.SalesOrderRateInquiryProcess` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
+| 200030 | seed | Shipping_Sales_Order_Rate_Inquiry | Online Shipping Sales Order Rate Inquiry | `org.adempiere.process.SalesOrderRateInquiryProcess` | `erp/processes/SalesOrderRateInquiryProcess.js:12` | writes | no rule matched, assumed writes |
 | 200032 | seed | C_BankStatement CreateFromBatch | Bank Statement Create From Batch | — | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 200034 | seed | 1099 Extract | 1099 Extract | `org.adempiere.process.Fill1099Extract` | **NOT IMPLEMENTED** | read | IsReport=Y (a report process) |
 | 200035 | seed | BankRegister | Bank Register Report | `org.compiere.report.BankRegister` | **NOT IMPLEMENTED** | read | IsReport=Y (a report process) |
@@ -528,7 +528,7 @@ Classes: read 111, writes 312, posts 21, sends 9. Implemented 40 of 453.
 | 200066 | seed | AD_ViewComponent Drop | Drop view | `org.compiere.process.DatabaseViewDrop` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 200067 | seed | CopyInfoWindowColumns | Copy Info Window Columns | `org.compiere.process.CopyInfoWindowColumns` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 200068 | seed | M_Production Process | Process Production | — | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
-| 200074 | seed | RecurringRun | Recurring Run | `org.idempiere.process.RecurringRun` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
+| 200074 | seed | RecurringRun | Recurring Run | `org.idempiere.process.RecurringRun` | `erp/processes/RecurringRun.js:43` | writes | no rule matched, assumed writes |
 | 200076 | seed | ImportCSVProcess | Import CSV Process | `org.idempiere.process.ImportCSVProcess` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 200077 | seed | C_Project_GenerateProduction | Generate Production from Project | `org.compiere.process.ProjectGenProduction` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 200086 | seed | AD_Table_CopyComponentsFromView | Copy Components From View | `org.compiere.process.CopyComponentsFromView` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
@@ -566,11 +566,11 @@ Classes: read 111, writes 312, posts 21, sends 9. Implemented 40 of 453.
 | 200133 | seed | CopyFromPackOut | Copy from Pack Out | `org.compiere.process.CopyFromPackOut` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 200134 | seed | CreateTable | Create/Complete Table | `org.idempiere.process.CreateTable` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 200135 | seed | C_ProjectIssue Process | Process Project Issue | — | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
-| 200136 | seed | ReversePreparePayment | Reverse Prepare Payment | `org.compiere.process.PaySelectionCheckReverse` | **NOT IMPLEMENTED** | posts | class/name says it posts, allocates, costs or generates documents |
+| 200136 | seed | ReversePreparePayment | Reverse Prepare Payment | `org.compiere.process.PaySelectionCheckReverse` | `erp/processes/PaySelectionCheckReverse.js:8` | posts | class/name says it posts, allocates, costs or generates documents |
 | 200138 | seed | C_Order_CreateProduction | Create Production from Order | `org.compiere.process.OrderCreateProduction` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
-| 200141 | seed | M_InOut_CreateFromProcess | Create lines from Shipment/Receipt | `org.compiere.process.CreateFromInOut` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
+| 200141 | seed | M_InOut_CreateFromProcess | Create lines from Shipment/Receipt | `org.compiere.process.CreateFromInOut` | `erp/processes/CreateFromInOut.js:12` | writes | no rule matched, assumed writes |
 | 200142 | seed | M_RMA_CreateFromProcess | Create lines from RMA | `org.compiere.process.CreateFromRMA` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
-| 200143 | seed | C_Invoice_CreateFromProcess | Create lines from Invoice | `org.compiere.process.CreateFromInvoice` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
+| 200143 | seed | C_Invoice_CreateFromProcess | Create lines from Invoice | `org.compiere.process.CreateFromInvoice` | `erp/processes/CreateFromInvoice.js:12` | writes | no rule matched, assumed writes |
 | 200146 | seed | PrintFormatItemSync | Synchronize Print Format based on Report View | `org.idempiere.process.PrintFormatItemSync` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 200147 | seed | AD_Process_DrillRule_Validate | Validate | `org.compiere.process.DrillRuleValidate` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 200148 | seed | C_DepositBatch_Process | Process Deposit Batch | — | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |

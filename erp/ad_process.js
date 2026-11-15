@@ -188,74 +188,7 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
     }, { kind: 'docaction', action: 'Verify' });
   }
 
-  // ════════════════════════════════════════════════════════════════════════════════════════════════════════
-  // KIND-2 process handler — ProjectGenOrder (AD_Process 164 "Generate Order", classname
-  //   org.compiere.process.ProjectGenOrder, isReport=N, 0 params). The effect IS an engine verb: ASSEMBLE a
-  //   C_Order op-group via the EXISTING erp_engine.buildDoc archetype — newVerbs=0, NOT a Java port.
-  // Java home (EXTRACT, do NOT invent):
-  //   org.compiere.process.ProjectGenOrder.doIt (ProjectGenOrder.java:62-111) — generates a SALES order
-  //     (Env.setSOTrx(ctx,true); class doc "Generate Sales Order from Project"), ONE C_OrderLine per
-  //     C_ProjectLine: Qty = PlannedQty − InvoicedQty (line 96); Price = PlannedPrice when non-zero, else the
-  //     price-list price (ol.setPrice() = MProductPricing — NAMED-DEFERRED, like crud_overlay's FK membership).
-  //   org.compiere.model.MOrder(MProject,IsSOTrx,DocSubTypeSO) (MOrder.java:487-522) — the header: SO on the
-  //     On-Credit doctype (DocSubTypeSO_OnCredit="WI", MOrder.java:654); BP/BP-Loc/User/SalesRep/Campaign/
-  //     Warehouse/PriceList/PaymentTerm copied from the project; description=project name; dateordered=
-  //     datecontract, datepromised=datefinish.
-  //   ProjectGenOrder.getProject (line 120-132) — GATES on M_PriceList_Version + M_Warehouse + C_BPartner +
-  //     C_BPartner_Location, throwing IllegalArgumentException otherwise. We mirror that as an HONEST
-  //     'project-not-ready' rejection (NOT a fabricated order) — the HONESTY INVARIANT for thin/PoC seeds.
-  //   MProject.getM_PriceList_ID (MProject.java:168-178) — pricelist = the version's M_PriceList_ID (resolved
-  //     by the host fetcher, keeping this module DB-agnostic).
-  // Implementing AD_PROCESS_FOLD_LANE.md §P1 — Witness: W-PROC-GENPO
-  // ════════════════════════════════════════════════════════════════════════════════════════════════════════
-
-  // projectGenGate — ProjectGenOrder.getProject's four IllegalArgumentException checks + doIt's Service-Charge refusal, as a returnable verdict.
-  function projectGenGate(p) {
-    if (!p || !p.c_project_id)                       return { ok: false, missing: 'C_Project_ID',          message: 'Project not found' };
-    if (!p.m_pricelist_version_id)                   return { ok: false, missing: 'M_PriceList_Version_ID', message: 'Project has no Price List' };
-    if (!p.m_warehouse_id)                           return { ok: false, missing: 'M_Warehouse_ID',         message: 'Project has no Warehouse' };
-    if (!p.c_bpartner_id || !p.c_bpartner_location_id) return { ok: false, missing: 'C_BPartner(_Location)_ID', message: 'Project has no Business Partner/Location' };
-    // doIt (ProjectGenOrder.java:80-84): MProject.PROJECTCATEGORY_ServiceChargeProject ('S') throws after the
-    // order was begun inside the transaction — rolled back, nothing kept. Here the refusal precedes any op.
-    if (p.projectcategory === 'S')                   return { ok: false, missing: 'ProjectCategory',        message: 'Service Charge Projects are on the TODO List' };
-    return { ok: true };
-  }
-
-  // genOrderLines — per C_ProjectLine → the order-line shape: Qty = PlannedQty − InvoicedQty; PriceActual =
-  // PlannedPrice when non-zero (the price-list branch is named-deferred → priceactual:null = "from price list").
-  // No money arithmetic here (qty/price are carried verbatim from the source row; the kernel does the cent math
-  // via bigdecimal.js downstream) — staging only, EXTRACT-not-invent.
-  function genOrderLines(lines) {
-    return (lines || []).map(function (l) {
-      var qty = Number(l.plannedqty || 0) - Number(l.invoicedqty || 0);
-      var fromPlanned = Number(l.plannedprice || 0) !== 0;
-      return {
-        c_projectline_id: l.c_projectline_id, m_product_id: l.m_product_id,
-        qtyordered: qty, line: l.line, description: l.description,
-        priceactual: fromPlanned ? l.plannedprice : null, _priceFromPlanned: fromPlanned
-      };
-    });
-  }
-
-  // GENORDER_SPEC — the buildDoc archetype spec for a project→SalesOrder fold (table-parameterised, no new verb).
-  var GENORDER_SPEC = {
-    docTable: 'C_Order', lineTable: 'C_OrderLine',
-    parentId: 'c_project_id', lineParentId: 'c_projectline_id',
-    qtyTo: 'qtyordered', qtyFrom: 'qtyordered',
-    header: function (p) {
-      return {
-        issotrx: 'Y', docsubtypeso: 'WI',                 // SO, On-Credit (MOrder.DocSubTypeSO_OnCredit)
-        c_doctypetarget_id: p._c_doctypetarget_id || null, // resolved on-credit SO doctype (host-supplied)
-        ad_client_id: p.ad_client_id, ad_org_id: p.ad_org_id,
-        c_bpartner_id: p.c_bpartner_id, c_bpartner_location_id: p.c_bpartner_location_id,
-        ad_user_id: p.ad_user_id, salesrep_id: p.salesrep_id, c_campaign_id: p.c_campaign_id,
-        m_warehouse_id: p.m_warehouse_id, m_pricelist_id: p.m_pricelist_id,
-        c_paymentterm_id: p.c_paymentterm_id,
-        description: p.name, dateordered: p.datecontract, datepromised: p.datefinish,
-        c_project_id: p.c_project_id
-      };
-    }
-  };
+  // ProjectGenOrder (AD_Process 164) is a verbatim SvrProcess port now: erp/processes/ProjectGenOrder.js (bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md §PROJ-PROCS). The thin REGISTRY handler that stood here is deleted.
 
   // ════════════════════════════════════════════════════════════════════════════════════════════════════════
   // KIND-2 process handler — InOutGenerate (AD_Process 118/199 "Generate Shipments", classname
@@ -455,41 +388,6 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
                   crudMap: { docParent: SHIPMENT_SPEC.parentId, lineParent: SHIPMENT_SPEC.lineParentId } }
       };
     }, { kind: 'process', action: 'GenerateShipment' });
-  }
-
-  // registerProjectGenOrder(engine) — wire the KIND-2 handler; engine = erp_engine API (its buildDoc archetype).
-  // ctx the handler consumes: fetchProject(info)->project row (with m_pricelist_id + _c_doctypetarget_id
-  //   resolved), fetchProjectLines(info)->C_ProjectLine rows. info.Record_ID = the C_Project_ID (prepare()).
-  function registerProjectGenOrder(engine) {
-    registerHandler('org.compiere.process.ProjectGenOrder', function (ctx, info) {
-      var project = ctx.fetchProject ? ctx.fetchProject(info) : null;
-      var gate = projectGenGate(project);
-      if (!gate.ok) {
-        // getProject's IllegalArgumentException — honest rejection, NEVER a fabricated order.
-        return { ok: false, reason: 'project-not-ready', message: gate.message, rows: 0, result: { gate: gate } };
-      }
-      var norm = genOrderLines(ctx.fetchProjectLines ? ctx.fetchProjectLines(info) : []);
-      // KIND-2: the op-group rides the buildDoc archetype (CREATE_DOCUMENT + N CREATE_LINE), newVerbs=0.
-      var ops = engine.buildDoc(GENORDER_SPEC, project, norm);
-      // Decorate each CREATE_LINE with the source line's Line/Description/PriceActual (buildDoc carries only
-      // m_product_id + qtyordered). All EXTRACTED from the C_ProjectLine row — nothing invented.
-      var li = 0;
-      ops.forEach(function (op) {
-        if (op.op_type !== 'CREATE_LINE') return;
-        var n = norm[li++];
-        op.line = n.line; op.description = n.description; op.priceactual = n.priceactual;
-      });
-      return {
-        ok: true, rows: norm.length,
-        message: '@C_Order_ID@ generated from project (' + norm.length + ' line' + (norm.length === 1 ? '' : 's') + ')',
-        // §KIND2-READBACK (prompts/AGENT_QUEUE.md §K2RB.4) — crudMap publishes the spec's OWN engine-internal→
-        // real-column names so the commit seam can translate this op-group into the CRUD vocabulary
-        // crud_core.listTip folds. buildDoc writes `source_id`/`source_line_id` (engine names, not columns);
-        // the spec already knows the columns they stand for. EXTRACT — nothing new is decided here.
-        result: { ops: ops, lineCount: norm.length, header: ops[0], issotrx: 'Y', docsubtypeso: 'WI',
-                  crudMap: { docParent: GENORDER_SPEC.parentId, lineParent: GENORDER_SPEC.lineParentId } }
-      };
-    }, { kind: 'process', action: 'GenerateOrder' });
   }
 
   // ── Read the AD rows for a process: header + ordered params (the ProcessInfo source). ─────────────────
@@ -1344,8 +1242,7 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
   var API = {
     REGISTRY: REGISTRY, registerHandler: registerHandler, hasHandler: hasHandler,
     registeredClassnames: registeredClassnames, installDefaultHandlers: installDefaultHandlers,
-    registerProjectGenOrder: registerProjectGenOrder, projectGenGate: projectGenGate,
-    genOrderLines: genOrderLines, GENORDER_SPEC: GENORDER_SPEC,
+
     registerInOutGenerate: registerInOutGenerate, inoutGenGate: inoutGenGate,
     genShipmentLines: genShipmentLines, SHIPMENT_SPEC: SHIPMENT_SPEC,
     registerInvoiceGenerate: registerInvoiceGenerate, invoiceGenGate: invoiceGenGate,

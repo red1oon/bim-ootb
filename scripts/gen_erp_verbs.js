@@ -250,16 +250,19 @@ async function main() {
   const AP = require(path.join(ROOT, 'erp/ad_process.js'));
   const plugProc = new Map();   // classname -> { at, harm } from defineProcess in the staged built-in plugins
   for (const pl of plugins) for (const r of pl.regs.proc) if (!plugProc.has(r.classname)) plugProc.set(r.classname, { at: r.at + ' (plugin ' + pl.name + ')', harm: r.harm });
+  const portProc = new Map();   // classname -> { at } from defineProcess in erp/processes/*.js: the verbatim SvrProcess ports (bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md §CP, §PROJ-PROCS); they register no REGISTRY handler, so rule (b) never saw them
+  const portDir = path.join(ROOT, 'erp/processes');
+  if (fs.existsSync(portDir)) for (const f of fs.readdirSync(portDir).filter(f => /\.js$/.test(f)).sort()) for (const r of scanPluginRegs(path.join(portDir, f), {}, 'erp/processes/' + f).proc) if (!portProc.has(r.classname)) portProc.set(r.classname, { at: r.at });
   const procRows = procActive.map(p => {
     const cn = AP.resolveClassname({ classname: p.classname || '', isReport: p.isreport === 'Y', value: p.value, name: p.name });
     const pp = cn && plugProc.get(cn);
-    const at = cn && (procLits.get(cn) || (pp && pp.at));
+    const at = cn && (procLits.get(cn) || (pp && pp.at) || (portProc.get(cn) && portProc.get(cn).at));
     const [cls, basis] = procClass(p, cn || p.classname || '', !seedProcIds.has(p.id) && pp ? pp.harm : null);
     return { at0: at || '', src: procSrc(p.id), id: p.id, value: p.value, name: p.name, classname: p.classname || '', resolved: cn || '', at: at || '', cls, basis };
   });
   const implProc = procRows.filter(r => r.at).length;
   const procWithHandler = new Set(procRows.filter(r => r.at).map(r => r.resolved));
-  const procHandlerNoRow = [...procLits.keys(), ...[...plugProc.keys()].filter(k => !procLits.has(k))].filter(k => !procWithHandler.has(k)).sort();
+  const procHandlerNoRow = [...procLits.keys(), ...[...plugProc.keys()].filter(k => !procLits.has(k)), ...[...portProc.keys()].filter(k => !procLits.has(k) && !plugProc.has(k))].filter(k => !procWithHandler.has(k)).sort();
 
   // (c) offered to actors = X. A (table, action) pair counts ONLY when all three hold (lane B, NEURO §0.4 detail 2: "counts only for the tables where it is implemented and witnessed against legacy"):
   //   (1) it is a dictionary pair (the table is a document table above, the action is a value of reference 135);
@@ -322,7 +325,7 @@ async function main() {
   L.push(`Basis for X: ${xBasis}.`, '');
   L.push('**What "handler" means here:** a function registered under (table, action) in the kernel handler registry. The generic Kanban handler (`erp/kanban_host.js:73`) returns one `SET_STATUS` op and posts nothing, so a doc pair marked implemented by it is a status change, not the legacy Complete with its accounting; the twin check for that is §21.5 A5, not this file. Tables whose name ends `_v` are dictionary views that carry a DocAction column; they are counted because the dictionary says so.', '');
   L.push('## Built-in plugins counted (source column below)', '');
-  L.push('The dictionary rows each BUILT-IN plugin (`erp/plugin_overlay.js` BUILTINS) stages at activation are staged into the in-memory dictionary by the host\'s own registry (`stageManifestDictionary` → `ctx.dict.insert`) before counting. ColumnSQL (virtual) columns are properties of a record, not actions: not counted. A plugin\'s DocAction class and process class are registered through the plugin context (`registerDocAction`, `defineProcess`), not `K.register` / `registerHandler(\'…\')`; rule (b) also reads those two calls in the staged plugin files (a DocAction class implements an action when it has the action\'s method; a process class by its class name), evidence file:line. A plugin document table with a DocAction family counts the family\'s OFFERED actions only (union of `FAMILY.allow`; owner ruling 2026-11-09: RE is set by a newer revision, never offered), not the 13 of reference 135; a seed table counts all 13.', '');
+  L.push('The dictionary rows each BUILT-IN plugin (`erp/plugin_overlay.js` BUILTINS) stages at activation are staged into the in-memory dictionary by the host\'s own registry (`stageManifestDictionary` → `ctx.dict.insert`) before counting. ColumnSQL (virtual) columns are properties of a record, not actions: not counted. A plugin\'s DocAction class and process class are registered through the plugin context (`registerDocAction`, `defineProcess`), not `K.register` / `registerHandler(\'…\')`; rule (b) also reads those two calls in the staged plugin files and every `defineProcess(<class>, …)` in `erp/processes/*.js` (the verbatim SvrProcess ports; they register no REGISTRY handler, so before 2026-11-16 they were not counted) (a DocAction class implements an action when it has the action\'s method; a process class by its class name), evidence file:line. A plugin document table with a DocAction family counts the family\'s OFFERED actions only (union of `FAMILY.allow`; owner ruling 2026-11-09: RE is set by a newer revision, never offered), not the 13 of reference 135; a seed table counts all 13.', '');
   L.push('| plugin | file | rows staged | new processes | new document tables | doc pairs | family offers | ColumnSQL properties (not counted) |', '|---|---|---:|---|---|---:|---|---:|');
   for (const pl of pluginRows) L.push(`| ${pl.name} | ${md(pl.file)} | ${pl.staged} of ${pl.manifestRows} | ${pl.procs.map(md).join(' ') || '—'} | ${pl.docTables.map(md).join(' ') || '—'} | ${pl.pairs} | ${(pl.family || []).join(' ') || '—'} | ${pl.virtualCols} |`);
   if (!pluginRows.length) L.push('| (none staged) | | | | | | | |');
@@ -355,7 +358,7 @@ async function main() {
   L.push('| id | source | value | name | class name → resolved | handler | class | basis |', '|---:|---|---|---|---|---|---|---|');
   for (const r of procRows) L.push(`| ${r.id} | ${r.src} | ${esc(r.value)} | ${esc(r.name)} | ${r.classname ? md(r.classname) : '—'}${r.resolved && r.resolved !== r.classname ? ' → ' + md(r.resolved) : ''} | ${r.at ? md(r.at) : '**NOT IMPLEMENTED**'} | ${r.cls} | ${esc(r.basis)} |`);
   L.push('');
-  if (procHandlerNoRow.length) { L.push('## HANDLER WITHOUT DICTIONARY ROW (process)', '', 'Registered by `registerHandler`, no active AD_Process row resolves to it.', ''); for (const k of procHandlerNoRow) L.push(`- ${md(k)} at ${md(procLits.get(k) || plugProc.get(k).at)}`); L.push(''); }
+  if (procHandlerNoRow.length) { L.push('## HANDLER WITHOUT DICTIONARY ROW (process)', '', 'Registered by `registerHandler`, no active AD_Process row resolves to it.', ''); for (const k of procHandlerNoRow) L.push(`- ${md(k)} at ${md(procLits.get(k) || (plugProc.get(k) || portProc.get(k)).at)}`); L.push(''); }
   if (dynProc.length) { L.push('## DYNAMIC process registrations (NOT COUNTED)', ''); for (const d of dynProc) L.push('- ' + md(d)); L.push(''); }
   const plugDyn = plugins.flatMap(pl => pl.regs.dynamic);
   if (plugDyn.length) { L.push('## DYNAMIC plugin registrations (NOT COUNTED)', ''); for (const d of plugDyn) L.push('- ' + md(d)); L.push(''); }

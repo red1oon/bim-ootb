@@ -98,5 +98,95 @@
     trx.say('§PROJECT-SETTYPE project=' + project.c_project_id + ' type=' + type.c_projecttype_id + ' category=' + type.projectcategory + ' phases=' + c.phases + ' tasks=' + c.tasks);
     return { category: type.projectcategory, phases: c.phases, tasks: c.tasks };
   }
-  return { beforeSave: beforeSave, projectBeforeSave: projectBeforeSave, updateHeader: updateHeader, setProjectType: setProjectType, copyPhasesFrom: copyPhasesFrom };
+
+  // ── MProject readers: getLines :194-206 (ORDER BY Line,C_ProjectLine_ID, NO IsActive filter), getPhaseLines :213-223 (ORDER BY Line), getPhases :248-258 (ORDER BY SeqNo);
+  //    MProjectPhase.getTasks :125 (ORDER BY SeqNo), getLines :263-274; MProjectTask.getLines :125-136 (ORDER BY Line,C_ProjectLine_ID). bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md §PROJ-PROCS.
+  function getLines(trx, projectId) { return trx.find('c_projectline', { c_project_id: projectId }, ['line', 'c_projectline_id']); }
+  function getPhaseLines(trx, projectId, phaseId) { return trx.find('c_projectline', { c_project_id: projectId, c_projectphase_id: phaseId }, ['line', 'c_projectline_id']); }
+  function getPhases(trx, projectId) { return trx.find('c_projectphase', { c_project_id: projectId }, ['seqno', 'c_projectphase_id']); }
+  function phaseTasks(trx, phaseId) { return trx.find('c_projecttask', { c_projectphase_id: phaseId }, ['seqno', 'c_projecttask_id']); }
+  function taskLines(trx, phaseId, taskId) { return trx.find('c_projectline', { c_projectphase_id: phaseId, c_projecttask_id: taskId }, ['line', 'c_projectline_id']); }
+  function copyOf(trx, table, from, client, org) { var n = ML.newRecord(trx, table, {}); ML.copyValues(trx, table, from, n, client, org); return n; }   // new M<X>(ctx,0,trx) + PO.copyValues(from, to, client, org)
+  function saveEx(po) { if (!po.save()) throw new Error(po.error || 'SaveError'); return po; }
+
+  // MProjectTask.copyLinesFrom :144-169 - every line of the source task (its Phase+Task), no filter
+  function taskCopyLinesFrom(trx, toTask, fromTask) {
+    if (!fromTask) return 0;
+    var count = 0, ph = trx.get('c_projectphase', toTask.get('c_projectphase_id')), pid = ph ? ph.c_project_id : 0;                     // getC_Project_ID(false) :172-178: the project of the task's phase
+    taskLines(trx, fromTask.c_projectphase_id, fromTask.c_projecttask_id).forEach(function (fl) {
+      var to = copyOf(trx, 'c_projectline', fl, toTask.get('ad_client_id'), toTask.get('ad_org_id'));
+      to.set('c_project_id', pid).set('c_projectphase_id', toTask.get('c_projectphase_id')).set('c_projecttask_id', toTask.id());
+      saveEx(to); count++;
+    });
+    return count;
+  }
+  // MProjectPhase.copyLinesFrom :160-185 - the source phase's lines that have NO task (task lines come with their task)
+  function phaseCopyLinesFrom(trx, toPhase, fromPhase) {
+    if (!fromPhase) return 0;
+    var count = 0;
+    getPhaseLines(trx, fromPhase.c_project_id, fromPhase.c_projectphase_id).forEach(function (fl) {
+      if (nz(fl.c_projecttask_id)) return;                                                                                              // :170 BF 3067850
+      var to = copyOf(trx, 'c_projectline', fl, toPhase.get('ad_client_id'), toPhase.get('ad_org_id'));
+      to.set('c_project_id', toPhase.get('c_project_id')).set('c_projectphase_id', toPhase.id());
+      saveEx(to); count++;
+    });
+    return count;
+  }
+  // MProjectPhase.copyTasksFrom(MProjectPhase) :189-233 - a task whose non-zero C_Task_ID the target phase already holds (read ONCE, :196) is ignored
+  function phaseCopyTasksFrom(trx, toPhase, fromPhase) {
+    if (!fromPhase) return 0;
+    var count = 0, countLine = 0, mine = phaseTasks(trx, toPhase.id());
+    phaseTasks(trx, fromPhase.c_projectphase_id).forEach(function (ft) {
+      var exists = nz(ft.c_task_id) && mine.some(function (m) { return String(m.c_task_id) === String(ft.c_task_id); });
+      if (exists) return;                                                                                                               // :221 "Task already exists here, ignored"
+      var tt = copyOf(trx, 'c_projecttask', ft, toPhase.get('ad_client_id'), toPhase.get('ad_org_id'));
+      tt.set('c_projectphase_id', toPhase.id());
+      saveEx(tt); count++;
+      countLine += taskCopyLinesFrom(trx, tt, ft);                                                                                      // BF 3067850
+    });
+    return count + countLine;
+  }
+  // MProject.copyLinesFrom :281-307 - only lines with neither phase nor task (:290-292); Invoiced*/OrderPO/Order/Processed reset (:297-301); a refused save is logged SEVERE, not counted
+  function copyLinesFrom(trx, to, from) {
+    if (String(to.processed) === 'Y' || !from) return 0;
+    var count = 0, fromLines = getLines(trx, from.c_project_id);
+    fromLines.forEach(function (fl) {
+      if (nz(fl.c_projectphase_id) || nz(fl.c_projecttask_id)) return;
+      var line = copyOf(trx, 'c_projectline', fl, to.ad_client_id, to.ad_org_id);
+      line.set('c_project_id', to.c_project_id).set('invoicedamt', 0).set('invoicedqty', 0).set('c_orderpo_id', null).set('c_order_id', null).set('processed', 'N');
+      if (line.save()) count++;
+    });
+    if (fromLines.length !== count) trx.say('§MODEL-SEVERE MProject.copyLinesFrom Lines difference - Project=' + fromLines.length + ' <> Saved=' + count);   // :304-305 compares ALL source lines: a log line only (it also fires for the skipped phase/task lines, as in Java)
+    return count;
+  }
+  // MProject.copyPhasesFrom(MProject) :315-361 - phases the target already holds by non-zero C_Phase_ID (read ONCE at the start, :323) are ignored; returns phases + tasks + task lines + phase lines
+  function copyPhasesFromProject(trx, to, from) {
+    if (String(to.processed) === 'Y' || !from) return 0;
+    var count = 0, taskCount = 0, lineCount = 0, mine = getPhases(trx, to.c_project_id), fromPhases = getPhases(trx, from.c_project_id);
+    fromPhases.forEach(function (fp) {
+      var exists = nz(fp.c_phase_id) && mine.some(function (m) { return String(m.c_phase_id) === String(fp.c_phase_id); });
+      if (exists) return;                                                                                                               // :346 "Phase already exists here, ignored"
+      var tp = copyOf(trx, 'c_projectphase', fp, to.ad_client_id, to.ad_org_id);
+      tp.set('c_project_id', to.c_project_id).set('c_order_id', null).set('iscomplete', 'N');
+      saveEx(tp); count++;
+      taskCount += phaseCopyTasksFrom(trx, tp, fp);
+      lineCount += phaseCopyLinesFrom(trx, tp, fp);                                                                                     // BF 3067850
+    });
+    if (fromPhases.length !== count) trx.say('§MODEL-WARNING MProject.copyPhasesFrom Count difference - Project=' + fromPhases.length + ' <> Saved=' + count);   // :357-358
+    return count + taskCount + lineCount;
+  }
+  // MProject.copyDetailsFrom :267-274 - lines first, then phases/tasks
+  function copyDetailsFrom(trx, to, from) {
+    if (String(to.processed) === 'Y' || !from) return 0;
+    return copyLinesFrom(trx, to, from) + copyPhasesFromProject(trx, trx.get('c_project', to.c_project_id) || to, from);
+  }
+  // ProjectClose.doIt (org.compiere.process, org.adempiere.base/src/.../ProjectClose.java:57-85) - every line (active or not) Processed, saveEx; then the project Processed, saveEx. Returns the number of lines closed.
+  function close(trx, project) {
+    var lines = getLines(trx, project.c_project_id);
+    lines.forEach(function (l) { saveEx(ML.po(trx, 'c_projectline', trx.get('c_projectline', l.c_projectline_id)).set('processed', 'Y')); });
+    saveEx(ML.po(trx, 'c_project', trx.get('c_project', project.c_project_id)).set('processed', 'Y'));
+    return lines.length;
+  }
+  return { beforeSave: beforeSave, projectBeforeSave: projectBeforeSave, updateHeader: updateHeader, setProjectType: setProjectType, copyPhasesFrom: copyPhasesFrom,
+           getLines: getLines, getPhaseLines: getPhaseLines, getPhases: getPhases, copyLinesFrom: copyLinesFrom, copyPhasesFromProject: copyPhasesFromProject, copyDetailsFrom: copyDetailsFrom, close: close };
 });
