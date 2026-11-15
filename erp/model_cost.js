@@ -64,7 +64,8 @@
   Cost.prototype.save = function () {                                                       // PO.save of M_Cost
     var ch = {}, s = this; COST_COLS.forEach(function (c) { ch[c] = N(s[c]); });
     if (this.is_new) { this.row = this.trx.insert('m_cost', ML.newPO(this.trx, 'm_cost', Object.assign({}, this.row, ch))); this.is_new = false; }
-    else this.trx.update('m_cost', this.row, ch);
+    else { var row0 = this.row; Object.keys(ch).forEach(function (c) { if (D(row0[c]).compareTo(D(ch[c])) === 0) delete ch[c]; });   // PO.save writes only CHANGED columns: a NULL column (CurrentCostPriceLL) read as 0 and left at 0 stays NULL (measured on :8108, W-PROJ-PROCS-LEGACY SG1: legacy m_cost updates carry CurrentQty only)
+      this.trx.update('m_cost', this.row, ch); }
     return true;
   };
   Cost.prototype.precision = function () { var as = this.trx.get('c_acctschema', this.row.c_acctschema_id); return as ? costingPrecision(this.trx, as) : 6; };   // getPrecision :1764-1770
@@ -341,7 +342,7 @@
   function cdNew(trx, as, org, productId, asi, ceId, amt, qty, desc, dateAcct, refId) {
     var r = { ad_client_id: trx.env.client, ad_org_id: org, c_acctschema_id: as.c_acctschema_id, m_product_id: productId, m_attributesetinstance_id: asi || 0,
       processed: 'N', amt: N(amt == null ? Z : amt), qty: N(qty == null ? Z : qty), issotrx: 'N', deltaamt: 0, deltaqty: 0, description: desc == null ? null : desc, dateacct: dateAcct };
-    r.m_costelement_id = ceId;                                                                // setM_CostElement_ID(0) → 0 stored as given
+    r.m_costelement_id = Number(ceId) ? ceId : null;                                          // X_M_CostDetail.setM_CostElement_ID(int): < 1 -> set_ValueNoCheck(null) (measured on :8108: every legacy shipment cost detail has a NULL element)
     if (ML.idSet(refId)) r.ref_costdetail_id = refId;
     return { row: r, isNew: true };
   }
