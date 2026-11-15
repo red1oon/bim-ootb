@@ -40,7 +40,7 @@ function makeShell(o) {
   // $VIEWER_SESSION and ask it instead of opening a page per line. RED1_WARM=off: no warm page (every line opens its own, as a line run alone does).
   const warm = { building: null, child: null, file: path.join(os.tmpdir(), 'red1-' + process.pid + '-viewer.json') };
   const warmTo = (b) => {
-    if (process.env.RED1_WARM === 'off' || b === warm.building) return;
+    if (process.env.RED1_WARM === 'off' || o.warm === false || b === warm.building) return;
     if (warm.child) { try { warm.child.kill(); } catch (e) { /* gone */ } warm.child = null; }
     try { fs.unlinkSync(warm.file); } catch (e) { /* none */ }
     warm.building = b; if (!b) { delete process.env.VIEWER_SESSION; return; }
@@ -149,9 +149,9 @@ async function session(o) {
   const handle = async (raw) => {
     const line = raw.trim(); if ((!line && !sh.menuOpen()) || line.indexOf('--') === 0) return;
     typed.push(line);
-    if (R.isHelp(line) && !sh.menuOpen()) {   // help = the red1 words (from words.json); help verbs | help <app> | help <app.verb> | help all = the door's own help
-      const topic = line.replace(/^\s*(!help|help|\?)/, '').trim(), W = sh.words.words;
-      if (/^!help/.test(line.trim()) || (topic && !W[topic])) { const h = R.help(vocab, '!help' + (topic && topic !== 'verbs' ? ' ' + topic : '')); process.stdout.write(h.text); say('help topic=' + JSON.stringify(topic) + ' door=1 ok=' + h.ok); return; }
+    if (R.isHelp(line) && !sh.menuOpen()) {   // help = the red1 words (from words.json); help verbs | help <app> | help <app.verb> | help all = the door's own help (`!help` retired, §22.9)
+      const topic = line.replace(/^\s*(help|\?)/, '').trim(), W = sh.words.words;
+      if (topic && !W[topic]) { const h = R.help(vocab, 'help' + (topic !== 'verbs' ? ' ' + topic : '')); process.stdout.write(h.text); say('help topic=' + JSON.stringify(topic) + ' door=1 ok=' + h.ok); return; }
       const names = topic ? [topic] : Object.keys(W), wid = Math.max.apply(null, names.map(n => n.length));
       if (!topic) process.stdout.write('red1 words (each prints the door line it runs):\n');
       names.forEach(n => process.stdout.write('  ' + n.padEnd(wid) + '  ' + W[n].help + '   [' + W[n].forms.map(f => f.in + ' -> ' + f.verb).join(' · ') + ']\n'));
@@ -198,11 +198,24 @@ if (require.main === module) {
   if (a.indexOf('-h') >= 0 || a.indexOf('--help') >= 0) { console.log("usage: red1                         (a session, the red1> prompt)\n       red1 'app.verb key=value …'  [--json|--list|--csv] [--out FILE]\n       red1 'cd Duplex; count'      (words, ; between them)\n       red1 -f FILE [--dry]\n       red1 help [topic]"); process.exit(0); }
   const oneShot = rest.length > 0 || a.indexOf('--script') >= 0 || a.indexOf('--claims') >= 0 || a.indexOf('--confirm') >= 0;
   if (oneShot) {
-    if (rest.length === 1 && /^\s*menu(\s|$)/i.test(rest[0])) a[a.indexOf(rest[0])] = rest[0].replace(/^\s*menu/i, '/M');   // `red1 menu` = the door's terminal menu
+    if (rest.length === 1 && /^\s*menu(\s|$)/i.test(rest[0])) { /* `red1 menu` = the door's terminal menu, passed as it is */ }
     else if (rest.length === 1 && /^\s*\?/.test(rest[0])) a[a.indexOf(rest[0])] = rest[0].replace(/^\s*\?/, 'help');
-    else if (rest.length === 1 && a.indexOf('--script') < 0 && (!isDoorLine(rest[0]) || /\s\|\s/.test(rest[0])) && !/^\s*(!help|help)(\s|$)/.test(rest[0])) {   // words, or a door line with the shell's `| glob`
+    else if (rest.length === 1 && a.indexOf('--script') < 0 && (!isDoorLine(rest[0]) || /\s\|\s/.test(rest[0])) && !/^\s*(help)(\s|$)/.test(rest[0])) {   // words, or a door line with the shell's `| glob`
       wordShot(rest[0], o).then(c => process.exit(c)).catch(e => { say('FAIL ' + (e && e.stack || e)); process.exit(1); });
     } else process.exit(passThrough(a));
   } else session(o).then(c => process.exit(c)).catch(e => { say('FAIL ' + (e && e.stack || e)); process.exit(1); });
 }
-module.exports = { session, makeShell, buildingNames };
+// §22.10 THE JS FACE: an object GENERATED from verbs.json, api.<app>.<verb>({inputs}) -> the envelope of the canonical door line (the same runLine, journalled).
+// No hand-written method: a new verb appears with no code. api.words.run('clash ARC MEP', place) runs a word-line in a fresh place and returns its envelopes.
+function api(o) {
+  o = o || {};
+  const D = require(DOOR), W = require(path.join(__dirname, 'words_core.js')), vocab = D.loadVocab(), words = JSON.parse(fs.readFileSync(path.join(__dirname, 'vocab', 'words.json'), 'utf8'));
+  const core = W.create({ vocab, words, tokenize: D.tokenize, pickColumns: require(path.join(__dirname, 'mis_core.js')).pickColumns, buildings: buildingNames() }), door = D.createDoor({ journal: o.journal }), out = {};
+  vocab.verbs.forEach((e, i) => { if (process.env.API_BREAK === 'skip' && i === vocab.verbs.length - 1) return;   // W-RED1-API falsifier: one verb left out (must FAIL A1)
+    const [app, verb] = e.verb.split('.'); out[app] = out[app] || {};
+    out[app][verb] = (args) => { const line = core.lineOf(e.verb, Object.assign({}, args || {})); return door.runLine(line, { actor: o.actor || 'human' }).then(env => Object.assign(env, { line })); }; });
+  out.words = { run: async (text, place) => { const sh = makeShell(Object.assign({}, o, { interactive: false, warm: false })), envs = []; const io = { print: () => {}, arrow: () => {}, show: (e) => { envs.push(e); } };
+    for (const p of (place ? [place] : []).concat(String(text).split(';'))) await sh.run(p.trim(), io); return envs; } };
+  return out;
+}
+module.exports = { session, makeShell, buildingNames, api };

@@ -61,7 +61,7 @@ async function makeFlatFolder(local) {   // an empty folder holding only the 4 f
   for (const rel of FLAT) fs.writeFileSync(path.join(dir, path.basename(rel)), local ? fs.readFileSync(path.join(ROOT, rel)) : await get(rel));
   return dir;
 }
-// Run one command text as the page prints it. a command that names `common/door/` (door.js, dotted.js) runs in the checkout; every other command in the flat folder.
+// Run one command text as the page prints it. a command that names `common/door/` (door.js, red1.js) runs in the checkout; every other command in the flat folder.
 function runBlock(run, ctx) {   // ctx {flat, root, files:[{name,text}]}
   return new Promise((res) => {
     const cwd = run.cmd.indexOf('common/door/') >= 0 ? ctx.root : ctx.flat;   // a checkout command runs in the checkout; everything else in the 4-file folder
