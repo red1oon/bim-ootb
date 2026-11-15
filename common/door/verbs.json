@@ -2289,6 +2289,111 @@
    "witness": "common/door/tests/witness_red1_run.js"
   },
   {
+   "verb": "mis.lookup",
+   "app": "mis",
+   "title": "The legal values of a column or a process parameter",
+   "description": "List the values a column of a kind, or a parameter of a process, may take, as the window's lookup does: the reference's table (or list), narrowed by the column's validation rule and the reference's where-clause, with the record's values (id=) and any Name=value given as the context. A rule that needs a value not given answers no rows and names it. Changes nothing.",
+   "inputs": [
+    {
+     "name": "column",
+     "description": "The column or parameter, e.g. C_ProjectPhase_ID.",
+     "required": true,
+     "type": "string",
+     "example": "C_ProjectPhase_ID"
+    },
+    {
+     "name": "kind",
+     "description": "The kind the column belongs to.",
+     "required": false,
+     "type": "string",
+     "example": "Order"
+    },
+    {
+     "name": "process",
+     "description": "The process the parameter belongs to (instead of kind).",
+     "required": false,
+     "type": "string",
+     "example": "Generate PO from Project"
+    },
+    {
+     "name": "id",
+     "description": "A record of the kind whose values fill the context.",
+     "required": false,
+     "type": "string",
+     "example": "1500004"
+    },
+    {
+     "name": "limit",
+     "description": "At most this many values (default 50).",
+     "required": false,
+     "type": "number",
+     "example": "50"
+    },
+    {
+     "name": "role",
+     "description": "The role id the line runs as.",
+     "required": false,
+     "type": "string",
+     "example": "102"
+    }
+   ],
+   "harm": "read",
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "calls": {
+    "cli": "erp_cli",
+    "who": "the ERP engine",
+    "argv": [
+     "lookup",
+     "--column",
+     "{column}",
+     {
+      "if": "kind",
+      "args": [
+       "--kind",
+       "{kind}"
+      ]
+     },
+     {
+      "if": "process",
+      "args": [
+       "--process",
+       "{process}"
+      ]
+     },
+     {
+      "if": "id",
+      "args": [
+       "--id",
+       "{id}"
+      ]
+     },
+     {
+      "if": "limit",
+      "args": [
+       "--limit",
+       "{limit}"
+      ]
+     },
+     {
+      "if": "role",
+      "args": [
+       "--role",
+       "{role}"
+      ]
+     }
+    ],
+    "rest": {
+     "flag": "--where",
+     "what": "Name=value, a context value the rule may use (e.g. C_Project_ID=990000)"
+    }
+   },
+   "returns": "erp_cli JSON {column,reference,table,valRule,refWhere,unresolved,rows:[{value,name}],shown,total,why?} or {refused,reason}",
+   "witness": "common/door/tests/witness_mis_lookup.js"
+  },
+  {
    "verb": "erp.find",
    "app": "erp",
    "title": "Find a document",
