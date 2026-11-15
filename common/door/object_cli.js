@@ -15,6 +15,7 @@
 // Exit: 0 ok · 3 refused (a shape check or a missing record: an answer) · 1 error (unknown kind, no dictionary) · 2 usage.
 // Run: node common/door/object_cli.js describe --building Duplex --kind Element
 'use strict';
+const GLOB = require('./glob.js');
 const fs = require('fs'), path = require('path'), os = require('os');
 const ROOT = path.join(__dirname, '..', '..');
 const say = (s) => process.stderr.write('§OBJECT ' + s + '\n');
@@ -311,6 +312,7 @@ function filtersOf(t, cols, a, O) {   // the shared filter reader: --where colum
     if (filters.some(f => f.column === c.columnname)) refuse('filter ' + c.columnname + ' given twice');
     const type = REF[c.ad_reference_id], num = type === 'number' || type === 'integer' || type === 'amount' || type === 'quantity';
     if (num && !/^[+-]?\d+(\.\d+)?$/.test(m[2].trim())) refuse(c.columnname + ' is a number; "' + m[2] + '" is not');
+    if (!num && GLOB.isGlob(m[2])) { filters.push({ column: c.columnname, value: m[2], glob: true }); where.push('lower(CAST(' + c.columnname + ' AS TEXT)) GLOB ?'); params.push(GLOB.toSqlGlob(m[2], process.env.GLOB_BREAK)); return; }   // §22.7 a wildcard (glob.js, the one reader); no wildcard = exact, as before
     filters.push({ column: c.columnname, value: m[2] }); where.push(c.columnname + (num ? ' = CAST(? AS NUMERIC)' : ' = ?')); params.push(m[2]);
   });
   return process.env.ROWS_BREAK === 'nofilter' ? { filters, where: [], params: [] } : { filters, where, params };   // the break: the filters are named in the answer but not applied
@@ -321,7 +323,7 @@ function count(O, a) {
   let n = filters.length && CB() !== 'nofilter' ? Number(O.rows('SELECT count(*) AS n FROM ' + t.tablename + ' WHERE ' + where.join(' AND '), params)[0].n) : population;
   if (CB() === 'plus1') n += 1;
   const verdict = population === 0 && CB() !== 'zero_ok' ? 'VACUOUS' : 'OK';
-  const summary = verdict === 'VACUOUS' ? 'this model holds no ' + t.name + ' record, so nothing was counted' : n + ' ' + t.name + (filters.length ? ' where ' + filters.map(f => f.column + ' = ' + f.value).join(' and ') + ' (of ' + population + ')' : '');
+  const summary = verdict === 'VACUOUS' ? 'this model holds no ' + t.name + ' record, so nothing was counted' : n + ' ' + t.name + (filters.length ? ' where ' + filters.map(f => f.column + (f.glob ? ' matches ' : ' = ') + f.value).join(' and ') + ' (of ' + population + ')' : '');
   say('count kind=' + t.name + ' table=' + t.tablename + ' filters=' + JSON.stringify(filters) + ' count=' + n + ' population=' + population + ' verdict=' + verdict + (CB() ? ' COUNT_BREAK=' + CB() : ''));
   return { kind: t.name, table: t.tablename, filters, count: n, population, verdict, summary };
 }
