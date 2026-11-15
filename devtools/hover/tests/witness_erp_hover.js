@@ -10,7 +10,7 @@
 //   E2b every UNPORTED claim agrees with the ENGINE's own lookup (ad_callout.js getCallout; ad_process JAVA + handlers): v1 called CalloutEngine.dateAcct UNPORTED (found 2026-11-15)
 //   E3 RED CONTROL: one index entry that E2 used is removed -> the judge must count its layers as unresolved
 //   E4 THE PAGE (headless Chromium, CPU, ONE session): GardenWorld login, the Sales Order window, the overlay loaded with the bookmarklet's own code, REAL mouse hovers on form fields: the tooltip's
-//      stack (step, kind, name, line) = E2's for that column; key 1 records the vscode:// link. INCONCLUSIVE if it hovered 0 fields with a layer that names a line. WEH_PAGE=0 skips E4 (printed).
+//      stack (step, kind, name, line) = E2's for that column; EVERY number the tooltip shows is pressed (Alt+n) and must open the line printed beside it. INCONCLUSIVE if it hovered 0 fields with a layer that names a line. WEH_PAGE=0 skips E4 (printed).
 // Run it alone, at low priority:  nice -n 19 ionice -c3 node devtools/hover/tests/witness_erp_hover.js < /dev/null > <log>
 'use strict';
 const fs = require('fs'), path = require('path'), os = require('os'), cp = require('child_process');
@@ -101,22 +101,25 @@ async function page(S, IX) {
     if (!(await pg.$('[data-ad-table] input[data-col], [data-ad-table] select[data-col]'))) { const tr = await pg.$('tr[data-ad-table][data-ad-record]'); if (tr) { await tr.dblclick(); await pg.waitForTimeout(2500); } }
     const targets = await pg.evaluate(() => Array.from(document.querySelectorAll('[data-ad-table] [data-col], [data-ad-column]')).filter(e => e.offsetWidth > 0 && e.offsetHeight > 0).slice(0, 40).map(e => {
       const r = e.getBoundingClientRect(), h = e.hasAttribute('data-ad-table') ? e : e.closest('[data-ad-table]'); return { x: Math.round(r.left + Math.min(20, r.width / 2)), y: Math.round(r.top + r.height / 2), t: h.getAttribute('data-ad-table'), c: e.getAttribute('data-ad-column') || e.getAttribute('data-col') }; }));
-    const seen = [], wrong = [];
+    const seen = [], wrong = []; let keysTried = 0, keysBad = 0; const keysBadEx = [];
     for (const g of targets) {
       await pg.mouse.move(5, 5); await pg.mouse.move(g.x, g.y); await pg.waitForTimeout(120);
       const cur = await pg.evaluate(() => { const c = window.__ERP_HOVER.state.cur; return c ? { t: c.table, c: c.column, found: c.found, layers: c.layers.map(l => [l.step, l.kind, l.name, l.at]) } : null; });   // owner text may differ (the page installs validators at the first save): step, kind, name and line must not
       if (!cur || !cur.found) continue;
       const n = S[cur.t + '.' + cur.c] || S[Object.keys(S).find(k => k.toLowerCase() === (cur.t + '.' + cur.c).toLowerCase())], want = n ? n.layers.map(l => [l.step, l.kind, l.name, l.at]) : null;
       const eq = want && JSON.stringify(want) === JSON.stringify(cur.layers); seen.push({ id: cur.t + '.' + cur.c, layers: cur.layers.length, lined: cur.layers.filter(l => l[3]).length }); if (!eq) { wrong.push(cur.t + '.' + cur.c); if (!wrong.diff && want) { let i = want.findIndex((w, k) => JSON.stringify(w) !== JSON.stringify(cur.layers[k])); if (i < 0) i = Math.min(want.length, cur.layers.length); wrong.diff = cur.t + '.' + cur.c + ' first difference at layer ' + i + ': node=' + JSON.stringify(want[i]) + ' page=' + JSON.stringify(cur.layers[i]) + ' (node ' + want.length + ' layers, page ' + cur.layers.length + ')'; } }
-      if (cur.layers.some(l => l[3]) && !seen.vlink) { await pg.evaluate(() => { window.__opened = []; }); await pg.keyboard.press('1'); await pg.waitForTimeout(150); seen.vlink = (await pg.evaluate(() => window.__opened.slice()))[0] || null; seen.vfield = cur.t + '.' + cur.c; }
+      // every number the tooltip SHOWS must open the line printed next to it (v1's key map lost a number after a layer without a line: key 1 on Target Document Type did nothing)
+      const shown = await pg.evaluate(() => { const out = []; (document.getElementById('erp-hover-tip').textContent || '').split('\n').forEach(ln => { const m = /^\s*\[(\d)\] .*?\s(erp\/[^\s]+:\d+)/.exec(ln); if (m) out.push({ n: m[1], at: m[2] }); }); return out; });
+      for (const k of shown) { await pg.evaluate(() => { window.__opened = []; }); await pg.keyboard.press('Alt+' + k.n); await pg.waitForTimeout(60); const u = (await pg.evaluate(() => window.__opened.slice()))[0] || '';
+        keysTried++; if (!u.endsWith('/' + k.at)) { keysBad++; if (keysBadEx.length < 4) keysBadEx.push(cur.t + '.' + cur.c + ' [' + k.n + '] ' + k.at + ' -> ' + (u || 'nothing')); } else if (!seen.vlink) { seen.vlink = u; seen.vfield = cur.t + '.' + cur.c; } }
     }
     const lined = seen.filter(s => s.lined > 0).length, errs = LOG.filter(l => /^PAGEERR/.test(l)).length;
     console.log('§ERP_HOVER_W E4 window=143 targets=' + targets.length + ' hovered=' + seen.length + ' distinct_fields=' + new Set(seen.map(x => x.id)).size + ' with_lines=' + lined + ' same_as_node=' + (seen.length - wrong.length) + ' wrong=' + wrong.length + ' page_errors=' + errs + ' installed="' + (LOG.find(l => /§ERP_HOVER installed/.test(l)) || '') + '"');
     seen.slice(0, 6).forEach(s => console.log('  §ERP_HOVER_W E4 field=' + s.id + ' layers=' + s.layers + ' with_line=' + s.lined));
-    console.log('  §ERP_HOVER_W E4 key1 field=' + (seen.vfield || '-') + ' link=' + String(seen.vlink || '-').replace(ROOT, '<bim-ootb>'));
+    console.log('  §ERP_HOVER_W E4 keys tried=' + keysTried + ' wrong_or_dead=' + keysBad + (keysBadEx.length ? ' e.g. ' + keysBadEx.join(' | ') : '') + ' first_link=' + String(seen.vlink || '-').replace(ROOT, '<bim-ootb>'));
     wrong.slice(0, 5).forEach(w => console.log('  §ERP_HOVER_W E4 WRONG ' + w));
     if (wrong.diff) console.log('  §ERP_HOVER_W E4 FIRST_DIFF ' + wrong.diff);
     if (!lined) { console.log('§ERP_HOVER_W VERDICT INCONCLUSIVE the page hover reached 0 fields with a lined layer'); process.exit(2); }
-    ok('E4 the page: every hovered field shows the same stack as the node kernel, and key 1 opens a vscode:// line', wrong.length === 0 && /^vscode:\/\/file\/.+:\d+$/.test(seen.vlink || '') && errs === 0, seen.length + ' fields');
+    ok('E4 the page: every hovered field shows the same stack as the node kernel, and EVERY number shown (Alt+n) opens the line printed beside it', wrong.length === 0 && keysTried > 0 && keysBad === 0 && errs === 0, seen.length + ' hovers, ' + keysTried + ' keys');
   } finally { await br.close(); srv.close(); }
 }

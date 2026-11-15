@@ -90,7 +90,7 @@
       var shown = []; rows.forEach(function (g) { if (g.n > 3) shown.push(Object.assign({}, g.first, { name: g.n + ' × ' + g.names[0].replace(/\s*\(.*\)$/, '').split('.')[0] + '.* (' + g.names.slice(0, 2).map(function (x) { return x.split('.').pop().replace(/\s*\(.*\)$/, ''); }).join(', ') + ', …)' }));
         else g.names.forEach(function (nm, i) { shown.push(s.layers.filter(function (l) { return l.name === nm && l.step === g.step && l.kind === g.kind; })[0]); }); });
       shown.forEach(function (l) { if (l.step !== prev) { lines.push(l.step.toUpperCase()); prev = l.step; }
-        var key = l.at ? '[' + (++n) + '] ' : '    '; keys[n] = l.at ? l.at : null;
+        var key = l.at ? '[' + (++n) + '] ' : '    '; if (l.at) keys[n] = l.at;   // v1 also wrote keys[n] = null for a layer WITHOUT a line, wiping the number just given (key 1 dead on Target Document Type)
         lines.push('  ' + key + l.kind + ': ' + l.name + (l.owner ? '  (' + l.owner + ')' : '') + (l.at ? '  ' + l.at : '') + (l.legacy ? '  ← ' + l.legacy : '') + (l.note ? '\n        ' + l.note : '')); });
       if (n) lines.push('1-' + Math.min(n, 9) + ' (or Alt+1-' + Math.min(n, 9) + ' while typing) = open that line in VS Code');
       tip.textContent = lines.join('\n'); tip.style.left = Math.min(x + 16, win.innerWidth - 780) + 'px'; tip.style.top = (y + 16) + 'px'; tip.style.display = 'block';
