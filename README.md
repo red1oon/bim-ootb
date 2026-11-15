@@ -72,7 +72,7 @@ The ERP side has its own long sprint, in order:
 
 - **AD renderer** — `erp/erp.html`: every window, tab and field rendered live from the Application Dictionary in SQLite WASM; multi-tenant, `?login=` demo auto-login, shareable context (Share pill captures *and* restores), mobile cards ≤760px
 - **iDempiere client** — `erp/idempiere.html`: the same AD framework rendered as an iDempiere-flavoured client, with a real Odoo Client 12 tenant folded in as a second renderer
-- **Lens family** — over the one op-log: durable, drag-to-`SET_STATUS` **Kanban** (Odoo-marvel cards), chat-as-inbox **feed-fold**, **Data Globe** graph, Accts-Posted ledger lens — one-tap Graph ⇆ Kanban
+- **Lens family** — over the one op-log: durable, drag-to-`SET_STATUS` **Kanban** (Odoo-marvel cards), chat-as-inbox **feed-fold**, **Pivot**, **Data Globe** graph, Accts-Posted ledger lens — one-tap Graph ⇆ Kanban; plus the standalone **uniCenta-style till and kitchen** (`erp/till.html`, `erp/kitchen.html`). [Table of every lens, shipped vs concept](https://red1oon.github.io/BIMCompiler/ERPUserGuide/#other-views-of-the-same-log-the-lens-family)
 - **⚖ Rule pill** — *lifecycle-as-data*: "when may this Order Complete" is itself a signed, reversible op that re-folds live; client-scoped to the logged-in tenant, honest-disabled
 - **One signed op-log** — the live write path is genuinely signed; gated signed **Complete** governs the CO lifecycle; GL debits == credits self-verify on every hop
 - **Glassbowl** — `erp/glassbowl.html`: the engine rendered *from its own data* — the kernel inspecting itself
@@ -89,10 +89,10 @@ A proven kernel and architecture, not a finished ERP. The constituent techniques
 
 ## Roadmap
 
-**ERP — two big objectives.** Once migration from **both iDempiere and Odoo** is stable on the signed op-log, fold the kernel forward into two new op-log-native apps:
+**ERP — two big objectives, both built.** The kernel has been folded forward into two op-log-native apps:
 
-1. **uniCenta POS** — a new browser version, driven by **replenishment** (the POS lifecycle as folds over the same ledger).
-2. **Warehouse mobile walk** — a phone-first pick/put-away "walk the aisles" app over the same tenant.
+1. **uniCenta POS** — *landed* as a standalone till, kitchen and branch-admin screen, driven by replenishment (the POS lifecycle as folds over the same ledger). Guide: [Till & Kitchen User Guide](https://red1oon.github.io/BIMCompiler/TillUserGuide/).
+2. **Warehouse mobile walk** — *landed*: a phone-first pick/put-away "walk the aisles" app over the same tenant ([ERP guide §10](https://red1oon.github.io/BIMCompiler/ERPUserGuide/#10-warehouse-walk)).
 
 **BIM — authoring.** The DAGeVu modeller (above) now brings B-rep authoring to the browser over the op-log; next:
 
