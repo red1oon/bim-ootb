@@ -4,6 +4,55 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.90.0](https://github.com/red1oon/bim-ootb/compare/v1.89.0...v1.90.0) (2026-11-15)
+
+
+### ✨ Features
+
+* **capex:** UAT self-marking, a reference pack + check.html (CAPEX §5.87) ([#3044](https://github.com/red1oon/bim-ootb/issues/3044)) ([0c71e61](https://github.com/red1oon/bim-ootb/commit/0c71e61836129491aa0fa405b7ff75907f48abab))
+* **devtools:** hover a Modeller body to see the line that built it (F.21 slice 2) ([#3047](https://github.com/red1oon/bim-ootb/issues/3047)) ([460c6ee](https://github.com/red1oon/bim-ootb/commit/460c6eea3685e22b3bd511375d211c88124fc769)), closes [#3046](https://github.com/red1oon/bim-ootb/issues/3046)
+* **devtools:** hover an ERP field to see every layer of code behind it (F.22) ([#3055](https://github.com/red1oon/bim-ootb/issues/3055)) ([ead91b6](https://github.com/red1oon/bim-ootb/commit/ead91b69af2efa12d419e21d61a10e7e0546da19)), closes [#3054](https://github.com/red1oon/bim-ootb/issues/3054)
+* **door:** --script FILE --dry runs the whole file on a throw-away copy (W-DOOR-SCRIPT 5/0) ([#3028](https://github.com/red1oon/bim-ootb/issues/3028)) ([301773e](https://github.com/red1oon/bim-ootb/commit/301773e2ee22b9581949db88432acb8e552faa74))
+* **door:** /M terminal menu + mis.menu (W-MIS-MENU 6/0) ([#3053](https://github.com/red1oon/bim-ootb/issues/3053)) ([5aac42b](https://github.com/red1oon/bim-ootb/commit/5aac42ba8f0913b514bccc702f205c21a7bc2ab3))
+* **door:** master=Table/record on mis.list, mis.sum, mis.group - the rows of one parent (W-MIS-MASTER 4/0; bim-compiler ERP_MIS_WINDOW_FROM_CSV §12.12) ([#3004](https://github.com/red1oon/bim-ootb/issues/3004)) ([117793c](https://github.com/red1oon/bim-ootb/commit/117793c951a49cd25780efd515f07f92b6830ebb))
+* **door:** mis.diff - a CSV against the table, read only (W-MIS-DIFF 5/0; bim-compiler ERP_MIS_WINDOW_FROM_CSV §12.13) ([#3011](https://github.com/red1oon/bim-ootb/issues/3011)) ([b3fadf9](https://github.com/red1oon/bim-ootb/commit/b3fadf95f44961e32a77f11d2e6a767c78936a1d))
+* **dxf2bim:** --trace names the line that built each body (F.21 slice 1) ([#3043](https://github.com/red1oon/bim-ootb/issues/3043)) ([f7cb642](https://github.com/red1oon/bim-ootb/commit/f7cb642581921520f5ab5a77294f290e5aaa5da0)), closes [#3042](https://github.com/red1oon/bim-ootb/issues/3042)
+* **erp:** Env.setEdge - rule_fold takes its op id from the one page edge (A-5) ([#3030](https://github.com/red1oon/bim-ootb/issues/3030)) ([58376fe](https://github.com/red1oon/bim-ootb/commit/58376fe3c4e393a921b6ef1371761df2dc232f74)), closes [#3029](https://github.com/red1oon/bim-ootb/issues/3029)
+* **erp:** Env.stamp + Env.modelEnv, the login context's one clock (A1, additive) + W-ENV-VIEWS ([#3007](https://github.com/red1oon/bim-ootb/issues/3007)) ([d53b1fa](https://github.com/red1oon/bim-ootb/commit/d53b1fab943807dcd2829dc83a3bcaf32563e825))
+* **erp:** Pack In reads DateProcessed from the page edge (A-5) ([#3033](https://github.com/red1oon/bim-ootb/issues/3033)) ([51438e7](https://github.com/red1oon/bim-ootb/commit/51438e7e5aaa7af85e57fa13101fb7800830cde6)), closes [#3032](https://github.com/red1oon/bim-ootb/issues/3032)
+* **modeller:** model.open/convert/addbay/undo/close session lines (W-MODEL-SESSION 10/0) ([#3017](https://github.com/red1oon/bim-ootb/issues/3017)) ([27ac46c](https://github.com/red1oon/bim-ootb/commit/27ac46cc01e36cfe6dbd6f4564676b1ceff62313))
+* **modeller:** model.save + save on close for the CLI Modeller session (W-MODEL-SAVE 7/0) ([#3051](https://github.com/red1oon/bim-ootb/issues/3051)) ([b26fd30](https://github.com/red1oon/bim-ootb/commit/b26fd30ebbf73c9631dee21ea478006bf7e22726))
+* **ninja:** ninja.exec file=&lt;Table&gt;.csv - a CSV whose header is the model, as legacy Ninja (W-NINJA-CSV 6/0) ([#3036](https://github.com/red1oon/bim-ootb/issues/3036)) ([41175f5](https://github.com/red1oon/bim-ootb/commit/41175f58b4196760f7bcf2f9851c2e224de39558))
+* **scripts:** ERP legacy-parity gate in bump.js (F-16) ([#3050](https://github.com/red1oon/bim-ootb/issues/3050)) ([f536709](https://github.com/red1oon/bim-ootb/commit/f53670923ba9726811bd5d91516191f06928a3aa))
+
+
+### 🐛 Fixes
+
+* **4d:** D2 — a structural element never elects what it carries (§STRUCT_NO_SUPPORT) ([#3022](https://github.com/red1oon/bim-ootb/issues/3022)) ([15523bc](https://github.com/red1oon/bim-ootb/commit/15523bc0e52ab516eeab3aa3dfce4619f25f88b2))
+* **4d:** D5 — the floor slab a structural element stands on runs before sequence 2 of its level; its same-level holder first (§D5_FLOOR_SLAB) ([#3023](https://github.com/red1oon/bim-ootb/issues/3023)) ([a60d381](https://github.com/red1oon/bim-ootb/commit/a60d381f4ef5c57762151ae8b7c145d62f42f6de))
+* **devtools:** ERP hover - every number in the tooltip opens its line; E4 presses them all ([#3059](https://github.com/red1oon/bim-ootb/issues/3059)) ([b71c15f](https://github.com/red1oon/bim-ootb/commit/b71c15fe6ec0647e60c6013b54391c0103c1b2ef)), closes [#3058](https://github.com/red1oon/bim-ootb/issues/3058)
+* **devtools:** ERP hover asks the engine whether a callout exists (no false UNPORTED); Alt+1-9 ([#3057](https://github.com/red1oon/bim-ootb/issues/3057)) ([e82064f](https://github.com/red1oon/bim-ootb/commit/e82064f4a5044a7e2aaaddd3d42e79797e8140af)), closes [#3056](https://github.com/red1oon/bim-ootb/issues/3056)
+* **door:** mis.new/mis.update refuse a foreign key that names no record, as legacy's web service (W-VALRULE-PARITY 5/0) ([#3041](https://github.com/red1oon/bim-ootb/issues/3041)) ([dbe4f52](https://github.com/red1oon/bim-ootb/commit/dbe4f52679a3079f1b32c8e286500ff3fc57ac52))
+* **erp:** ws_kernel session date is the LOCAL day like legacy (A2 first file) ([#3010](https://github.com/red1oon/bim-ootb/issues/3010)) ([614bb12](https://github.com/red1oon/bim-ootb/commit/614bb12103a71115a057ab221c05bbe6c748b1ad))
+* **modeller:** Exclude box on a shifted plan sheet + W-UAT-B0 raw Shed sheets -&gt; marked set (CAPEX §5.84) ([#3031](https://github.com/red1oon/bim-ootb/issues/3031)) ([9bd61fb](https://github.com/red1oon/bim-ootb/commit/9bd61fb3f806f0636f593a098d3baaae936bae1a))
+* **modeller:** Keep / Accept all clear the reading modules' own assumptions (W-DXF-KEEP 4/0, v22, sw v274); prompts §D103 + §5.83 close ([#3019](https://github.com/red1oon/bim-ootb/issues/3019)) ([4f7a7db](https://github.com/red1oon/bim-ootb/commit/4f7a7db75aa3f135f0cf162bb746fa0120ce9019))
+
+
+### 📝 Documentation
+
+* **README:** architecture size line replaced by measured counts ([#3035](https://github.com/red1oon/bim-ootb/issues/3035)) ([4fc558b](https://github.com/red1oon/bim-ootb/commit/4fc558bb1f071911c3c19665a122ab244ef43dcd))
+* **README:** roadmap objectives are landed (till, warehouse walk); lens family links ([#3037](https://github.com/red1oon/bim-ootb/issues/3037)) ([620ee01](https://github.com/red1oon/bim-ootb/commit/620ee01edad6e7068b8c88ddd8408b4fd54efd39))
+* **README:** scope the 'to the cent' ERP parity claim to the scenarios compared ([#3027](https://github.com/red1oon/bim-ootb/issues/3027)) ([06e7eb0](https://github.com/red1oon/bim-ootb/commit/06e7eb0ab7b23f86e87447118e8ae1009bd8e744))
+
+
+### ♻️ Refactors
+
+* **4d:** one owner for the support relation — support_sweep delegates to cpm_schedule (§I.1a, step 0) ([#3018](https://github.com/red1oon/bim-ootb/issues/3018)) ([039d2e2](https://github.com/red1oon/bim-ootb/commit/039d2e2eabed5e7f48ea65f0d120e94124284853))
+* **erp:** crud_core.localDay takes the caller's instant; report handlers refuse a missing ctx.today (A2) ([#3026](https://github.com/red1oon/bim-ootb/issues/3026)) ([33263ed](https://github.com/red1oon/bim-ootb/commit/33263ed2d323a2888972a6c39fb5a76cdc4e05ed))
+* **erp:** Import* + ClientAcctProcessor read now from the env, never a wall clock (A2) ([#3013](https://github.com/red1oon/bim-ootb/issues/3013)) ([393bb69](https://github.com/red1oon/bim-ootb/commit/393bb69116eb81a246d369e7abbd70977b96e25c))
+* **erp:** InvoiceGenerate + InOutGenerate date fallback = the env's local day, not the UTC wall clock (A2) ([#3016](https://github.com/red1oon/bim-ootb/issues/3016)) ([190e92d](https://github.com/red1oon/bim-ootb/commit/190e92d1b274b9cce151382b7d2ce3d5999eb900))
+* **erp:** model_asi + doc_poster never read a wall clock; the ASI dialog day is local (A2) ([#3021](https://github.com/red1oon/bim-ootb/issues/3021)) ([d784c6c](https://github.com/red1oon/bim-ootb/commit/d784c6c0e5539e37df4f8962d33efbeee81b4760))
+
 ## [1.89.0](https://github.com/red1oon/bim-ootb/compare/v1.88.0...v1.89.0) (2026-11-14)
 
 
