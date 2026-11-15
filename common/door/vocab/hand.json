@@ -2196,6 +2196,97 @@
     ]
    },
    "witness": "modeller/tests/witness_model_session.js"
+  },
+{
+   "verb": "erp.process",
+   "app": "erp",
+   "title": "Run a dictionary process",
+   "description": "Run one process of the ERP's dictionary (AD_Process), as its window button or menu entry does: name = its search key, name or id; record = the record it runs on (an id, or a number/name; kind= when the process is on no single window); then its own parameters as Name=value. Only a process that has a JS port runs; any other is refused naming its class. A wrong process or parameter name is refused naming the nearest. dry=Y runs it and keeps nothing.",
+   "inputs": [
+    {
+     "name": "name",
+     "description": "The process: its search key, name or id, e.g. \"Set Project Type\".",
+     "required": true,
+     "type": "string",
+     "example": "Set Project Type"
+    },
+    {
+     "name": "record",
+     "description": "The record it runs on: an id, or its number/name.",
+     "required": false,
+     "type": "string",
+     "example": "990000"
+    },
+    {
+     "name": "kind",
+     "description": "The kind of the record, when the process is not on one window.",
+     "required": false,
+     "type": "string",
+     "example": "Project"
+    },
+    {
+     "name": "dry",
+     "description": "Y = run it and keep nothing.",
+     "required": false,
+     "type": "string",
+     "example": "Y"
+    },
+    {
+     "name": "role",
+     "description": "The role id the line runs as.",
+     "required": false,
+     "type": "string",
+     "example": "102"
+    }
+   ],
+   "harm": "writes",
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "calls": {
+    "cli": "erp_cli",
+    "who": "the ERP engine",
+    "argv": [
+     "process",
+     "--name",
+     "{name}",
+     {
+      "if": "record",
+      "args": [
+       "--record",
+       "{record}"
+      ]
+     },
+     {
+      "if": "kind",
+      "args": [
+       "--kind",
+       "{kind}"
+      ]
+     },
+     {
+      "if": "dry",
+      "args": [
+       "--dry",
+       "{dry}"
+      ]
+     },
+     {
+      "if": "role",
+      "args": [
+       "--role",
+       "{role}"
+      ]
+     }
+    ],
+    "rest": {
+     "flag": "--where",
+     "what": "Name=value, a parameter of the process (AD_Process_Para.ColumnName) and its value"
+    }
+   },
+   "returns": "erp_cli JSON {process:{id,value,name,classname},record,params,message,dry,ops,opSummary,planned} or {refused,reason}",
+   "witness": "common/door/tests/witness_red1_run.js"
   }
  ]
 }
