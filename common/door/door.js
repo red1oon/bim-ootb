@@ -92,7 +92,10 @@ function loadVocab(file) {
 function validate(entry, args) {
   args = args || {};
   const names = entry.inputs.map(i => i.name), miss = entry.inputs.filter(i => i.required && (args[i.name] === undefined || args[i.name] === null || args[i.name] === '')).map(i => i.name);
-  if (miss.length) return 'missing input: ' + miss.join(', ');
+  if (miss.length) {   // §1d.1: a key typed close to a missing input is named as a misspelling (never applied)
+    const near = Object.keys(args).filter(k => names.indexOf(k) < 0).map(k => ({ k, n: require('./assist_core.js').nearest(k, miss, 1)[0] })).filter(x => x.n);
+    return 'missing input: ' + miss.join(', ') + (near.length ? ' (you typed ' + near.map(x => x.k + '=, nearest: ' + x.n.name).join('; ') + ')' : '');
+  }
   const extra = Object.keys(args).filter(k => names.indexOf(k) < 0);
   // §0.13: a verb that declares calls.rest takes further column=value inputs; the ENGINE checks each column against the dictionary (reflection). The door only checks the shape.
   if (extra.length && entry.calls && entry.calls.rest) { const bad = extra.filter(k => typeof args[k] !== 'string' || !TYPES.string.re.test(args[k]) || !/^[A-Za-z_]\w{0,63}$/.test(k)); return bad.length ? 'input ' + bad[0] + ' must be ' + TYPES.string.what : shapeOf(entry, args); }
@@ -166,7 +169,7 @@ function parseLine(line) {
   const kv = [], seen = {};
   for (const t of toks.slice(i + 1)) {
     const m = /^([A-Za-z_]\w*)=([\s\S]*)$/.exec(t.text);
-    if (!m) throw new Error('"' + t.text + '" is not key=value');
+    if (!m) throw new Error('"' + t.text + '" is not key=value' + (/^[A-Za-z_][\w-]*=/.test(t.text) ? ' (a key has letters, digits and _: ' + t.text.split('=')[0].replace(/-/g, '_') + '= ?)' : ''));
     if (seen[m[1]]) throw new Error('input ' + m[1] + ' given twice');
     seen[m[1]] = 1; kv.push({ k: m[1], raw: m[2], quoted: t.quoted });
   }

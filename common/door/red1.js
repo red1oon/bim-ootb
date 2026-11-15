@@ -9,7 +9,7 @@
 //   red1 'app.verb key=value …'       one door line, then exit (the door's own run; --json|--list|--csv|--out FILE|--actor|--journal pass through)
 //   red1 'cd Duplex; count'           word-lines, `;` between them: each printed `→ line` on stderr, each envelope as JSON on stdout (as a door line's)
 //   red1 -f FILE [--dry]              a file of door lines (the door's --script; --dry on a throw-away copy)
-// Session words: help [topic] | ? · bim · mis · erp (§24) · menu [role=R] · history · exit | quit; cd <building|kind|ERP kind> · cd .. · cd · pwd · role <id>. The rest: vocab/words.json, or a door line.
+// Session words: help [topic] | ? · bim · mis · erp (§24) · grey suggestions while typing, Tab/→ takes one (§1d.1) · menu [role=R] · history · exit | quit; cd <building|kind|ERP kind> · cd .. · cd · pwd · role <id>. The rest: vocab/words.json, or a door line.
 // Exit: as door.js (0 ok · 3 refused/claim/inconclusive · 1 error · 2 usage). A session exits 0 on `exit`/end of input, whatever its lines answered.
 'use strict';
 const fs = require('fs'), path = require('path'), os = require('os'), cp = require('child_process'), readline = require('readline');
@@ -109,9 +109,32 @@ async function session(o) {
   const { R, vocab } = sh, Dr = require(path.join(__dirname, 'draw_core.js')), tty = !!process.stdin.isTTY, histFile = process.env.RED1_HISTORY || path.join(os.homedir(), '.red1_history');
   let history = []; if (tty) { try { history = fs.readFileSync(histFile, 'utf8').split('\n').filter(Boolean).reverse().slice(0, 1000); } catch (e) { /* first run */ } }
   const names = vocab.verbs.map(v => v.verb).concat(sh.core.wordList().map(w => w.word), ['help', 'bim', 'mis', 'erp', 'exit', 'quit', 'history', 'menu', 'cd', 'pwd', 'role']);
-  const completer = (line) => { const w = line.split(/\s+/).pop(), hits = names.filter(v => v.indexOf(w) === 0); return [hits.length ? hits : names, w]; };
+  // §1d.1 THE TYPE ASSIST: assist_core proposes what may come next at the end of the line; shown grey after the cursor (it extends what was typed) or as a dim hint
+  // `▸ Name` (another spelling: case, -, a typo). Tab takes it (→ takes a grey one). Enter NEVER applies it: the line runs as typed. Not on a pipe, not in a menu.
+  const AS = require(path.join(__dirname, 'assist_core.js')), VB = {}, BLD = buildingNames(), DOF = ((sh.words.words.do || {}).forms || [{}])[0] || {};
+  vocab.verbs.forEach(v => { VB[v.verb] = v; });
+  const actx = () => { const s = sh.state(); return { words: names.filter(n => n.indexOf('.') < 0), verbs: VB, buildings: BLD, props: s.kind ? s.props : (s.erp ? s.eprops : null), codes: DOF.codes || {} }; };
+  let hint = null;
+  const completer = (line) => {
+    if (hint && hint.ghost) return [[hint.token + hint.ghost], hint.token];
+    if (hint && hint.replace && line.slice(-hint.replace.from.length) === hint.replace.from) { const to = line.slice(0, line.length - hint.replace.from.length) + hint.replace.to;   // readline completes by APPENDING; a different spelling replaces the token: clear the line, write it again
+      say('assist take from=' + JSON.stringify(hint.replace.from) + ' to=' + JSON.stringify(hint.replace.to)); setImmediate(() => { rl.write(null, { ctrl: true, name: 'u' }); rl.write(to); }); return [[], line]; }
+    const w = line.split(/\s+/).pop(), hits = names.filter(v => v.indexOf(w) === 0); return [hits.length ? hits : names, w];
+  };
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: tty, completer: tty ? completer : undefined, history, historySize: 1000, prompt: tty ? sh.prompt() : '' });
   const typed = [];
+  const drawHint = () => {
+    if (!tty || closed || sh.menuOpen()) { hint = null; return; }
+    const line = rl.line || '', r = rl.cursor === line.length && line.trim() ? AS.suggest(actx(), line) : null; hint = r && (r.ghost || r.replace) ? r : null;
+    let t = !hint ? '' : hint.ghost ? hint.ghost : '   ▸ ' + hint.replace.to + (hint.candidates[0] && hint.candidates[0].reason ? '  (' + hint.candidates[0].reason + ')' : '');
+    const room = (process.stdout.columns || 80) - sh.prompt().length - line.length - 1; if (t.length > room) t = room > 0 ? t.slice(0, room) : '';
+    process.stdout.write('\x1b[0K' + (t ? '\x1b[90m' + t + '\x1b[0m\x1b[' + t.length + 'D' : ''));
+  };
+  if (tty) process.stdin.on('keypress', (c, key) => {
+    if (key && (key.name === 'return' || key.name === 'enter')) return;
+    if (key && key.name === 'right' && hint && hint.ghost && rl.cursor === (rl.line || '').length) { const g = hint.ghost; hint = null; say('assist take ghost=' + JSON.stringify(g)); rl.write(g); return; }
+    setImmediate(drawHint);
+  });
   say('session tty=' + tty + ' journal=' + sh.door.journalFile + ' verbs=' + vocab.verbs.length + ' words=' + sh.core.wordList().length);
   // a pick menu on a terminal is redrawn in place (no scroll): the lines it took are cleared first; anything else printed ends that
   let menuH = 0;
@@ -178,7 +201,8 @@ async function session(o) {
     if (!sh.menuOpen() || !key || ['up', 'down', 'escape'].indexOf(key.name) < 0) return;
     setImmediate(() => { rl.write(null, { ctrl: true, name: 'u' }); busy = busy.then(() => sh.run({ key: key.name === 'up' ? 'Up' : key.name === 'down' ? 'Down' : 'Esc' }, io)).then(() => { if (!closed) { rl.setPrompt(sh.prompt()); rl.prompt(); } }); });
   });
-  rl.on('line', (l) => { busy = busy.then(() => handle(l)).then(() => { if (!closed && tty) { rl.setPrompt(sh.prompt()); rl.prompt(); } }).catch(err => { say('FAIL ' + (err && err.stack || err)); }); });
+  rl.on('line', (l) => { if (process.env.ASSIST_BREAK === 'autoapply' && hint && hint.replace && l.slice(-hint.replace.from.length) === hint.replace.from) l = l.slice(0, l.length - hint.replace.from.length) + hint.replace.to;   // W-RED1-ASSIST falsifier: Enter applies the hint (must FAIL A3)
+    if (tty && hint) say('assist not-taken line=' + JSON.stringify(l) + ' hint=' + JSON.stringify(hint.ghost || hint.replace)); hint = null; busy = busy.then(() => handle(l)).then(() => { if (!closed && tty) { rl.setPrompt(sh.prompt()); rl.prompt(); } }).catch(err => { say('FAIL ' + (err && err.stack || err)); }); });
   if (tty) rl.prompt();
   await new Promise((res) => rl.on('close', () => { closed = true; busy.then(res); }));
   if (tty) { try { fs.appendFileSync(histFile, typed.map(l => l + '\n').join('')); } catch (e) { /* no home */ } }

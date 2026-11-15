@@ -497,7 +497,7 @@ function createRecord(O, a) {
     const st = A.openTab(tab.id, { ctx, windowNo: W, tabNo: parent ? 1 : 0, parentTab: parent });
     const bycol = {}; st.fields.forEach(f => { bycol[f.vo.ColumnName.toLowerCase()] = f; });
     const unknown = Object.keys(given).filter(k => !bycol[k]);
-    if (unknown.length) refuse('kind ' + K.name + ' has no property "' + unknown[0] + '" (its properties: ' + st.fields.map(f => f.vo.ColumnName).join(', ') + ')' + alsoIn(O, K, tab));
+    if (unknown.length) refuse(OC.noProperty(K.name, unknown[0], st.fields.map(f => f.vo.ColumnName)) + alsoIn(O, K, tab));
     // a window that opens as Sales or Purchase takes IsSOTrx from the menu; "Order" alone does not say which
     const dry = String(a.dry || '').toUpperCase() === 'Y', needs = [];   // dry=Y (CLI_ERP_IVR §15): everything but the save; what the engine cannot fill is REPORTED instead of refused
     const iso = bycol.issotrx; if (iso && /@IsSOTrx@/i.test(iso.vo.DefaultValue || '') && !('issotrx' in given)) { if (!dry) refuse('kind ' + K.name + ' is a Sales or a Purchase document: say issotrx=Y or issotrx=N'); needs.push({ name: 'IsSOTrx', why: 'Sales (Y) or Purchase (N): the menu entry decides in the window' }); given.issotrx = 'Y'; }
@@ -564,7 +564,7 @@ function updateRecord(O, a) {
     });
     const st = A.openTab(tab.id, { ctx, windowNo: W, tabNo: parent ? 1 : 0, parentTab: parent }), bycol = {}; st.fields.forEach(f => { bycol[f.vo.ColumnName.toLowerCase()] = f; });
     const unknown = Object.keys(given).filter(k => !bycol[k]);
-    if (unknown.length) refuse('kind ' + K.name + ' has no property "' + unknown[0] + '" (its properties: ' + st.fields.map(f => f.vo.ColumnName).join(', ') + ')' + alsoIn(O, K, tab));
+    if (unknown.length) refuse(OC.noProperty(K.name, unknown[0], st.fields.map(f => f.vo.ColumnName)) + alsoIn(O, K, tab));
     st.load(r, false); const before = st.snapshot(), set = [];
     Object.keys(given).forEach(k => {
       const f = bycol[k]; let v = given[k] === '<null>' ? '' : given[k];   // <null> clears a column (a door line cannot carry an empty value)
