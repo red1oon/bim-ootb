@@ -13,7 +13,7 @@
 //   node model_session.js close                         stop the session
 // stdout: JSON only. Exit 0 ok · 3 refused (a rule said no) · 1 failed. The port binds 127.0.0.1 only and every request carries the token.
 'use strict';
-const fs = require('fs'), path = require('path'), http = require('http'), cp = require('child_process'), crypto = require('crypto'), os = require('os');
+const fs = require('fs'), path = require('path'), http = require('http'), cp = require('child_process'), crypto = require('crypto'), os = require('os'), { Buffer } = require('buffer');
 const BRK = process.env.MODELSES_BREAK || '';   // W-MODEL-SESSION falsifiers: notype | stale | nounder
 const STATE = path.resolve(process.cwd(), '.model_session.json'), ROOT = path.join(__dirname, '..', '..');
 const kv = {}; const argv = process.argv.slice(2), cmd = argv[0]; argv.slice(1).forEach(a => { const m = /^([A-Za-z_]\w*)=([\s\S]*)$/.exec(a); if (m) kv[m[1]] = m[2]; });

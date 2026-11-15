@@ -9,3 +9,4 @@
   ✅ S4 with no building type stated, convert says add-a-bay is NOT offered and model.addbay is refused saying so (the rule is the type's row, never assumed)  offered=false · addbay=refused the building type General declares no bay_repeat
   ✅ S6 the vocabulary holds model.open, model.convert, model.addbay, model.undo, model.close (harm trial, they name this witness)  model.open model.convert model.addbay model.undo model.close
 §WITNESS_MODEL_SESSION pass=10 fail=0 inconclusive=0 verdict=PASS
+exit=0
