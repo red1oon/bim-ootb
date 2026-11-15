@@ -155,7 +155,7 @@ async function session(o) {
     const errW = process.stderr.write.bind(process.stderr);   // every § line of the session (the door's §DOOR too) goes to the same file; anything else (a real error) stays on screen
     process.stderr.write = (c, ...r) => { const t = String(c); if (/^§/.test(t)) { RING.push(t.replace(/\n$/, '')); if (RING.length > 200) RING.shift(); } if (sayTo && /^§/.test(t)) { try { fs.appendFileSync(sayTo, new Date().toISOString() + ' ' + t); return true; } catch (e) { /* fall through */ } } return errW(c, ...r); };
   } catch (e) { /* stays on stderr */ } }
-  if (tty || process.env.WELCOME_BREAK === 'pipe') { const g = welcome(); process.stdout.write(g.lines.join('\n') + '\n\n'); say('welcome lines=' + g.lines.length + ' version=' + JSON.stringify(g.version)); }   // §26: a terminal only (pipe: W-RED1-WELCOME falsifier, must FAIL W2)
+  if (tty || process.env.WELCOME_BREAK === 'pipe') { const g = welcome(), tips = o.fast ? [] : [msgCore().t('words.tip_level')]; process.stdout.write(g.lines.concat(tips).join('\n') + '\n\n'); say('welcome lines=' + g.lines.length + ' tips=' + tips.length + (o.fast ? ' fast=1' : '') + ' version=' + JSON.stringify(g.version)); }   // the tip: VOCAB_MESSAGE_CATALOG.md §4 P3a-1 (owner: shown on opening, --fast skips it);   // §26: a terminal only (pipe: W-RED1-WELCOME falsifier, must FAIL W2)
   say('session tty=' + tty + ' journal=' + sh.door.journalFile + ' verbs=' + vocab.verbs.length + ' words=' + sh.core.wordList().length);
   // a pick menu on a terminal is redrawn in place (no scroll): the lines it took are cleared first; anything else printed ends that
   let menuH = 0;
@@ -261,11 +261,11 @@ async function wordShot(text, o) {
 if (require.main === module) {
   const a = process.argv.slice(2);
   const fi = a.indexOf('-f'); if (fi >= 0) a[fi] = '--script';
-  const flags = new Set(['--json', '--list', '--csv', '--dry', '--claims']), withArg = new Set(['--out', '--actor', '--journal', '--request', '--script', '--confirm', '--level']);
-  const rest = []; const o = { actor: 'human' };
+  const flags = new Set(['--json', '--list', '--csv', '--dry', '--claims', '--fast']), withArg = new Set(['--out', '--actor', '--journal', '--request', '--script', '--confirm', '--level']);
+  const rest = []; const o = { actor: 'human', fast: a.indexOf('--fast') >= 0 };
   for (let i = 0; i < a.length; i++) { if (withArg.has(a[i])) { if (a[i] === '--actor') o.actor = a[i + 1]; if (a[i] === '--journal') o.journal = a[i + 1]; if (a[i] === '--request') o.request = a[i + 1]; if (a[i] === '--level') o.level = a[i + 1]; i++; } else if (!flags.has(a[i])) rest.push(a[i]); }
   if (a.indexOf('--version') >= 0) { console.log(welcome().version); process.exit(0); }
-  if (a.indexOf('-h') >= 0 || a.indexOf('--help') >= 0) { console.log("usage: red1                         (a session, the red1> prompt)\n       red1 'app.verb key=value …'  [--json|--list|--csv] [--out FILE]\n       red1 'cd Duplex; count'      (words, ; between them)\n       red1 -f FILE [--dry]\n       red1 help [topic]"); process.exit(0); }
+  if (a.indexOf('-h') >= 0 || a.indexOf('--help') >= 0) { console.log("usage: red1                         (a session, the red1> prompt)\n       red1 'app.verb key=value …'  [--json|--list|--csv] [--out FILE]\n       red1 'cd Duplex; count'      (words, ; between them)\n       red1 -f FILE [--dry]\n       red1 help [topic]   [--level student]\n       red1 --fast                  (a session with no tips)"); process.exit(0); }
   const oneShot = rest.length > 0 || a.indexOf('--script') >= 0 || a.indexOf('--claims') >= 0 || a.indexOf('--confirm') >= 0;
   if (oneShot) {
     if (rest.length === 1 && /^\s*menu(\s|$)/i.test(rest[0])) { /* `red1 menu` = the door's terminal menu, passed as it is */ }

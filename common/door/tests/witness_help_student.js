@@ -8,6 +8,7 @@
 //   S5 ISSUE (the level does not reach the person, or sticks): a session `level student`, `help clash`, `level`, `help clash` prints the Student block, then the short text;
 //      one-shot `--level student 'help clash'` prints the session's Student bytes; `level xyz` is refused naming the levels.
 //   A placeholder pair <Key>=<value> in an example is read as Key=value (the spec's rule, applied here apart from the core).
+//   S6 ISSUE (a tip that nags or never shows): on opening a terminal the tip follows the greeting; `red1 --fast` drops it (the greeting stays); a pipe shows no tip.
 //   Falsifiers: WORDS_BREAK=swapdesc (another verb's description: must FAIL S2) · WORDS_BREAK=dropctx (the worked line loses its building: must FAIL S3).
 //   Run: node common/door/tests/witness_help_student.js > common/door/tests/logs/help_student.log 2>&1
 'use strict';
@@ -91,4 +92,13 @@ const refused = ses.out.indexOf(T('words.level_bad', 'xyz', 'short, student')) >
 k.L('S5 one-shot student bytes=' + one.out.length + ' short bytes=' + short1.out.length + ' session bytes=' + ses.out.length + ' student at=' + iStu + ' short after at=' + iShort + ' refused=' + refused + ' oneshot-bad exit=' + bad.code);
 if (one.out.length <= short1.out.length) k.incon('S5', 'the one-shot Student text is not longer than the short one: nothing to judge');
 else k.chk('S5 `level student` then `help clash` prints the one-shot `--level student` bytes; `level` returns to the short text; `level xyz` is refused (session and one-shot)', iStu >= 0 && iShort > iStu && refused, 'student at ' + iStu + ', short at ' + iShort + ', refused ' + refused);
+// ── S6 (P3a-1): the tip on opening, skipped by --fast, never on a pipe ──
+const TIP = T('words.tip_level'), pty = (flag) => (cp.spawnSync('bash', ['-c', "(sleep 2; printf 'exit\\r') | script -qc \"stty cols 200; node " + RED1 + (flag ? ' ' + flag : '') + "\" /dev/null"], { encoding: 'utf8', env: Object.assign({}, process.env, { RED1_WARM: 'off' }) }).stdout || '').replace(/\x1b\[[0-9;]*[A-Za-z]/g, '').replace(/\r/g, '');
+if (cp.spawnSync('bash', ['-c', 'command -v script']).status !== 0) k.incon('S6', 'no `script` for a terminal');
+else {
+  const t1 = pty(''), t2 = pty('--fast'), pipe = run([RED1], 'exit\n').out, iTip = t1.indexOf(TIP), iHelp = t1.indexOf('Type help for the list of commands'), iP = t1.indexOf('red1> ');
+  k.L('S6 terminal tip@' + iTip + ' after-greeting@' + iHelp + ' prompt@' + iP + ' · --fast tip=' + (t2.indexOf(TIP) >= 0) + ' greeting=' + (t2.indexOf('Welcome to red1') >= 0) + ' · pipe tip=' + (pipe.indexOf(TIP) >= 0));
+  if (iHelp < 0) k.incon('S6', 'no greeting on the terminal: nothing to judge');
+  else k.chk('S6 on opening, the tip follows the greeting and comes before the prompt; `--fast` keeps the greeting and drops the tip; a pipe shows neither', iTip > iHelp && iP > iTip && t2.indexOf(TIP) < 0 && t2.indexOf('Welcome to red1') >= 0 && pipe.indexOf(TIP) < 0, 'tip@' + iTip);
+}
 k.end();
