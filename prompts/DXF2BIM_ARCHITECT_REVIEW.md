@@ -1128,3 +1128,15 @@ Step `PLANE` joins `KEY_ORDER`; the sheet tints yellow as any default; a centred
 **Witness:** `modeller/tests/witness_dxf_setcheck.js`. Each finding appears when the fault is planted and goes when it is not. With `PRIVATE_SET_DXF`, a real set by invariants only: every listed sheet is held or absent with a statement.
 **Correction to #2665:** `dxf2tables.js` went in with two inline thresholds and broke W-GUARD G3, which no CI runs. The numbers moved to the registry; the baseline was not raised. W-GUARD PASS, W-DEFAULTS, W-CLI (table now 99), W-YELLOW-RULES 250/0, W-SHED-UNCHANGED PASS. W-YELLOW-PAGE needs the published page regenerated, on BIMCompiler.
 **Measured (private set, 12 folders):** 267 listed, 90 held; absent: 117 at an older revision, 2 at the current revision, 58 with no statement. 2 repeated tags of 345 judged. 3 of 33 sums off (one of them a printed number the export cut short). Sheet-number matching for "held" is by the file name or `@SHEETNO`.
+
+## §D113 Two findings from the provenance hover, for the owner's pick (2026-11-15; raised by the code-design lane, bim-compiler `prompts/CODE_ARCHITECTURE_DESIGN.md` §F.21 / §F.23)
+Nothing here is built: both are proposals, like the RESUME list. Measured on `main` with the shed recipe (`--complete --pack pwd2024_bd`).
+- **P-DK — every default-sourced size names its default.** The provenance hover (bim-ootb #3064, `devtools/hover/dxf_hover.js` layer 3) links a size whose `source` is `default` to its row in
+  `element_defaults.json`, but only when the body records the key. W-BIM-LAYERS (`devtools/hover/tests/witness_bim_layers.js`) over the 511 inserts:
+  `§BIM_LAYERS_W L3 inserts=511 wrong=0 by_source={"label":376,"default":122,"inherited":98,"drawn":25,"schedule":64}` and `§BIM_LAYERS_W L3 default_sides linked=12 not_recorded=110`.
+  The 12 are the column tops (`modeller/dxf2structure.js:27` writes `key: 'column.top_under_beam'`). The 110 without a key are mostly truss bar widths (91), plus fan depth, net / slab / roof thickness
+  (e.g. `modeller/dxf2synth.js:47` slab `t`, `:89` roof `t`: `source: 'default'`, no key). Proposal: wherever a builder calls `DF.use(<key>)` for a size, stamp `key: <key>` beside `source`. Effect: the
+  hover links every yellow default; the change touches `bodies.json` (a new field), not the geometry. Watch landmine (a) and the CLI byte-identity witnesses.
+- **P-TS — the truss is half the model and rests on one default.** The section is drawn once at cut AA and copied to 13 stations (`modeller/dxf2section.js:42-44`); 252 of 512 bodies are `assumed`
+  (144/156 bars + 108/117 plates), spaced by ONE default, `section.spacing` (= the column pitch) unless the user states it. Not an error, but the largest single assumption in the shed: worth a line in the
+  gap guide (§D110) or the yellow-rules panel so a user sees it first.
