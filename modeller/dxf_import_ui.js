@@ -99,8 +99,9 @@
   function placeOf(s, plans, env, Cf) {
     var MK = window.Dxf2Marks, k = s.factor || 1;
     if (s.role === 'plan' || s.role === 'roof') { var z = s.role === 'plan' ? s.level : s.roofZ, off = planOff(s, plans);
-      if (off && off.ok && (off.x || off.y)) { var ox = off.x, oy = off.y; return { k: k, z: z, off: off, w: function (x, y) { return [x * k + ox, y * k + oy, z]; } }; }
-      return { k: k, z: z, off: off, w: function (x, y) { return [x * k, y * k, z]; } }; }
+      // CAPEX §5.84: the inverse (d) beside the placement (w), so a tool that turns a canvas point back into drawing units cannot drop the shift
+      if (off && off.ok && (off.x || off.y)) { var ox = off.x, oy = off.y; return { k: k, z: z, off: off, w: function (x, y) { return [x * k + ox, y * k + oy, z]; }, d: function (wx, wy) { return [(wx - ox) / k, (wy - oy) / k]; } }; }
+      return { k: k, z: z, off: off, w: function (x, y) { return [x * k, y * k, z]; }, d: function (wx, wy) { return [wx / k, wy / k]; } }; }
     if (s.role === 'elev' && plans.length) {
       var al = MK.align(plans[0].desc, s.desc, Cf.MARK_ALIGN_TOL), fp = faceOf(s.face, plans, env, s.desc);
       if (!fp) return { k: k, w: null, why: 'not drawn (role=elev): no wall envelope and no grid on the face side of the base plan' };
@@ -150,7 +151,7 @@
         var ls = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: pl.faceDefault ? new THREE.Color(COL[s.role]).lerp(new THREE.Color(YEL), 0.75) : COL[s.role] || COL.none, transparent: true, opacity: pair[1], depthWrite: false }));
         ls.name = 'dxf:' + s.name + (pair[1] < 0.5 ? ':dim' : ''); ls.userData.dxfSheet = s.name; ls.userData.segHandles = pair[2]; ls.renderOrder = 2; g.add(ls);
       });
-      state.canvas[s.name] = { role: s.role, bright: bright.length / 6, dim: dim.length / 6, typeBox: typeBox, face: s.face || null, cut: s.cutPlane || null, toWorld: w, segOf: segOf, k: k, z: z };
+      state.canvas[s.name] = { role: s.role, bright: bright.length / 6, dim: dim.length / 6, typeBox: typeBox, face: s.face || null, cut: s.cutPlane || null, toWorld: w, toDrawing: pl.d || null, segOf: segOf, k: k, z: z };
       if (pl.faceDefault) state.canvas[s.name].faceDefault = 'panel.plane';
       if (pl.off && pl.off.ok && (pl.off.x || pl.off.y)) state.canvas[s.name].offset = [pl.off.x, pl.off.y];
       console.log(TAG + ' canvas sheet=' + s.name + ' role=' + s.role + ' segments read-layers=' + (bright.length / 6) + ' other=' + (dim.length / 6) + ' notDrawn=' + JSON.stringify(skipped) +
