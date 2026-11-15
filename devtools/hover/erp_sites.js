@@ -20,6 +20,7 @@ const KINDS = {
   defineProcess: a => lit(a[0]) && [{ kind: 'process', key: lit(a[0]), name: lit(a[0]) }],
   registerModel: a => lit(a[0]) && [{ kind: 'model', key: lit(a[0]).toLowerCase(), name: lit(a[0]) }],
   registerDocAction: a => lit(a[0]) && [{ kind: 'docaction', key: lit(a[0]).toLowerCase(), name: lit(a[0]) }],
+  registerHandler: a => lit(a[0]) && [{ kind: 'handler', key: lit(a[0]), name: lit(a[0]) }],   // ad_process.js:76 / ad_callout.js registerHandler: a class served by a handler, not defineProcess / defineCallout
   registerValidator: a => lit(a[0]) && lit(a[2]) ? [{ kind: 'validator', key: lit(a[0]).toLowerCase(), name: lit(a[2]), timing: lit(a[1]) }] : null   // a name that is not readable (a loop over [name, fn] pairs) is indexed from the pairs below
 };
 const SPEC_KEYS = ['init', 'before', 'afterNew', 'afterChange', 'afterDelete', 'beforeSave', 'afterSave', 'initialDefaults', 'beforeDelete'];
@@ -54,6 +55,15 @@ function sites(repoRoot) {
     const nearest = (ln, span) => { let best = null; for (const c of cites) if (c.line <= ln && ln - c.line <= (span || 3) && (!best || c.line > best.line)) best = c; return best ? best.text : null; };   // a citation ON the line or just above it; none = null (never a citation from elsewhere in the file)
     const add = (e, ln, endLn) => entries.push(Object.assign(e, { file: rel, line: ln, legacy: nearest(endLn || ln, endLn ? endLn - ln + 3 : 3) }));
     const calleeName = n => n.callee.type === 'MemberExpression' ? n.callee.property && n.callee.property.name : n.callee.type === 'Identifier' ? n.callee.name : null;
+    // a callout class put straight into the registry (ad_callout.js:512 CLASSES['org.compiere.model.CalloutEngine'] = CalloutEngine): the class line, and its Ctor.prototype.<m> = function lines
+    const direct = {}, protos = [];
+    (function dw(n) { if (!n || typeof n.type !== 'string') return;
+      if (n.type === 'AssignmentExpression' && n.left.type === 'MemberExpression' && n.left.object.type === 'Identifier' && n.left.object.name === 'CLASSES' && n.left.computed && lit(n.left.property) && lit(n.left.property).indexOf('.') > 0 && n.right.type === 'Identifier') {
+        direct[n.right.name] = lit(n.left.property); add({ kind: 'callout', key: lit(n.left.property), name: lit(n.left.property) }, n.loc.start.line); }
+      if (n.type === 'AssignmentExpression' && n.left.type === 'MemberExpression' && n.left.object.type === 'MemberExpression' && n.left.object.object.type === 'Identifier' && n.left.object.property && n.left.object.property.name === 'prototype' && n.left.property && n.left.property.name)
+        protos.push({ ctor: n.left.object.object.name, m: n.left.property.name, line: n.loc.start.line });
+      for (const k in n) { if (k === 'loc' || k === 'range' || k === 'comments') continue; const v = n[k]; if (Array.isArray(v)) v.forEach(dw); else if (v && typeof v === 'object') dw(v); } })(ast);
+    protos.forEach(p => { if (direct[p.ctor]) add({ kind: 'callout-method', key: direct[p.ctor] + '.' + p.m, name: p.m }, p.line); });
     (function walk(n) {
       if (!n || typeof n.type !== 'string') return;
       if (n.type === 'CallExpression') { const nm = calleeName(n);

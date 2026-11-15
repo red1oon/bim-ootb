@@ -37,12 +37,14 @@
     var C = ctx.callouts, cdesc = C && C.describe ? C.describe() : { classes: {}, handlers: {} };
     String(row.callout || '').split(/[;,]/).map(function (s) { return s.trim(); }).filter(Boolean).forEach(function (cmd) {
       var i = cmd.lastIndexOf('.'), cls = cmd.slice(0, i), meth = cmd.slice(i + 1), short = cls.split('.').pop();
-      var owners = cdesc.classes[cls] || cdesc.classes[short] || null, handler = cdesc.handlers && cdesc.handlers[cmd];
-      if (owners) { var at = sitesOf(ix, 'callout-method', function (e) { return e.key === cls + '.' + meth || (e.key.split('.').slice(-2).join('.') === short + '.' + meth); });
+      // presence is the ENGINE's own answer (ad_callout.js getCallout :442: the class registry, base classes put in directly, legacy handlers), never describe() alone:
+      //   describe() lists only the layered registrations and missed CalloutEngine (put in directly at :512), so v1 of this hover called its dateAcct UNPORTED (2026-11-15)
+      var present = C && C.getCallout ? !!C.getCallout(cls, meth) : null, owners = cdesc.classes[cls] || cdesc.classes[short] || (present ? ['core (base class)'] : null), handler = cdesc.handlers && cdesc.handlers[cmd];
+      if (owners && present !== false) { var at = sitesOf(ix, 'callout-method', function (e) { return e.key === cls + '.' + meth || (e.key.split('.').slice(-2).join('.') === short + '.' + meth); });
         if (!at.length) at = sitesOf(ix, 'callout', function (e) { return e.key === cls || e.key.split('.').pop() === short; });
         out.push(layer(ix, 'on change', 'callout', short + '.' + meth, owners.join(' > '), at[0], at.length > 1 ? 'also at ' + at.slice(1).join(', ') : (at.length ? null : 'line not in the index: run node devtools/hover/gen_erp_index.js'))); }
       else if (handler) out.push(layer(ix, 'on change', 'handler', cmd, handler.join(' > '), null, 'a registered handler (registerHandler), its line is not indexed'));
-      else out.push(layer(ix, 'on change', 'callout', short + '.' + meth, null, null, 'UNPORTED: no class registered for ' + cls));
+      else { var u = layer(ix, 'on change', 'callout', short + '.' + meth, null, null, 'UNPORTED: no class registered for ' + cls); u.cmd = cmd; out.push(u); }
     });
     ((C && C.findColumnCallouts ? C.findColumnCallouts(table, row.columnname) : []) || []).forEach(function (cc) {
       var at = sitesOf(ix, 'column-callout', function (e) { return e.key === (t + '|' + String(row.columnname).toLowerCase()) && (e.name === cc.name || e.name === '?'); });
@@ -64,9 +66,10 @@
       out.push(layer(ix, 'on save', 'model validator', e.name + ' (' + e.timing + ')', 'base, installed at the first save', e.file + ':' + e.line, null)); });
     // BUTTON: the column's process
     if (row.ad_process_id) { var pr = (ctx.q('SELECT value, classname FROM ad_process WHERE ad_process_id = ?', [row.ad_process_id]) || [])[0], cn = pr && pr.classname;
-      var pd = ctx.processes && ctx.processes.describe ? ctx.processes.describe().processes : {}, at = cn ? sitesOf(ix, 'process', function (e) { return e.key === cn; }) : [];
+      var pdd = ctx.processes && ctx.processes.describe ? ctx.processes.describe() : { processes: {}, handlers: {} }, pd = {}, at = cn ? sitesOf(ix, 'process', function (e) { return e.key === cn; }).concat(sitesOf(ix, 'handler', function (e) { return e.key === cn; })) : [];
+      Object.keys(pdd.processes || {}).forEach(function (k) { pd[k] = pdd.processes[k]; }); Object.keys(pdd.handlers || {}).forEach(function (k) { if (!pd[k]) pd[k] = pdd.handlers[k].map(function (o) { return o + ' (handler)'; }); });   // a class served by registerHandler (ad_process.js:76) is present too
       var wf = !cn ? (ctx.q('SELECT w.name FROM ad_process p JOIN ad_workflow w ON w.ad_workflow_id = p.ad_workflow_id WHERE p.ad_process_id = ?', [row.ad_process_id]) || [])[0] : null;
-      out.push(layer(ix, 'button', 'process', (pr && pr.value) + (cn ? ' (' + cn + ')' : ''), cn && pd[cn] ? pd[cn].join(' > ') : null, at[0], cn && !pd[cn] ? 'UNPORTED: no process registered for ' + cn : (!cn ? (wf ? 'no Java class: runs the workflow ' + wf.name : 'no Java class and no workflow') : null))); }
+      var pl = layer(ix, 'button', 'process', (pr && pr.value) + (cn ? ' (' + cn + ')' : ''), cn && pd[cn] ? pd[cn].join(' > ') : null, at[0], cn && !pd[cn] ? 'UNPORTED: no process registered for ' + cn : (!cn ? (wf ? 'no Java class: runs the workflow ' + wf.name : 'no Java class and no workflow') : null)); pl.classname = cn || null; out.push(pl); }
     return { table: table, column: row.columnname, found: true, layers: out };
   }
   function link(index, at) { return at && index && index.root ? 'vscode://file' + (String(index.root).charAt(0) === '/' ? '' : '/') + index.root + '/' + at : null; }
@@ -89,7 +92,7 @@
       shown.forEach(function (l) { if (l.step !== prev) { lines.push(l.step.toUpperCase()); prev = l.step; }
         var key = l.at ? '[' + (++n) + '] ' : '    '; keys[n] = l.at ? l.at : null;
         lines.push('  ' + key + l.kind + ': ' + l.name + (l.owner ? '  (' + l.owner + ')' : '') + (l.at ? '  ' + l.at : '') + (l.legacy ? '  ← ' + l.legacy : '') + (l.note ? '\n        ' + l.note : '')); });
-      if (n) lines.push('1-' + Math.min(n, 9) + ' = open that line in VS Code');
+      if (n) lines.push('1-' + Math.min(n, 9) + ' (or Alt+1-' + Math.min(n, 9) + ' while typing) = open that line in VS Code');
       tip.textContent = lines.join('\n'); tip.style.left = Math.min(x + 16, win.innerWidth - 780) + 'px'; tip.style.top = (y + 16) + 'px'; tip.style.display = 'block';
     }
     doc.addEventListener('mouseover', function (e) {
@@ -103,8 +106,9 @@
       if (state.last !== id) { state.last = id; console.log('§ERP_HOVER table=' + t + ' column=' + c + ' layers=' + s.layers.length + ' ' + s.layers.map(function (l) { return l.step.replace(' ', '_') + ':' + l.kind.replace(' ', '_') + ':' + l.name.replace(/\s+/g, '_') + (l.at ? '@' + l.at : ''); }).join(' ')); }
     }, true);
     win.addEventListener('keydown', function (e) {
-      if (!state.cur || !/^[1-9]$/.test(e.key) || /^(INPUT|TEXTAREA|SELECT)$/.test((e.target && e.target.tagName) || '')) return;
-      var at = state.keys && state.keys[Number(e.key)], u = at && link(state.index, at); if (u) win.open(u);
+      var dg = /^Digit([1-9])$/.exec(e.code || '') || (/^[1-9]$/.test(e.key) ? [0, e.key] : null);   // Alt+1-9 works with the focus in a field (plain digits there would type)
+      if (!state.cur || !dg || (!e.altKey && /^(INPUT|TEXTAREA|SELECT)$/.test((e.target && e.target.tagName) || ''))) return; if (e.altKey) e.preventDefault();
+      var at = state.keys && state.keys[Number(dg[1])], u = at && link(state.index, at); if (u) win.open(u);
     });
     var api = { stackFor: stackFor, state: state, link: link, ready: null };
     api.ready = win.fetch('/devtools/hover/erp_index.json?' + Date.now()).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }).then(function (ix) {
