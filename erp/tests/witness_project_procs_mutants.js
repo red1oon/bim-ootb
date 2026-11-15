@@ -1,0 +1,52 @@
+// Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
+// SPDX-License-Identifier: MIT
+// ⚠ DO NOT REMOVE — mutant table of W-PROJ-PROCS (witness_project_procs.js, PROJPROCS_MUTANTS=1). Each entry rewrites the SHIPPED source in a mirror of COPIES (found exactly `count` times else NOT-APPLIED), then the witness re-runs in a child;
+//   one named check (case.key) must print FAIL. A child that crashes without its § verdict is NOT a kill. READ THE LOG: §PROJPROCS-MUTANT lines. Each `what` names the legacy rule the mutant removes.
+'use strict';
+var GO = 'processes/ProjectGenOrder.js', GP = 'processes/ProjectGenPO.js', MP = 'model_project.js', MO = 'model_order.js';
+module.exports = [
+ { name: 'M01-genorder-qty-planned-only', kills: ['G.G1-hoe'], what: 'Qty = PlannedQty only, InvoicedQty not subtracted (ProjectGenOrder.java:96)',
+   edits: [{ file: GO, from: ".subtract(X.A.toBD(String(l.invoicedqty == null ? 0 : l.invoicedqty))), fixedPrice", to: ", fixedPrice" }] },
+ { name: 'M02-genorder-no-price-override', kills: ['G.G1-oak'], what: 'the PlannedPrice override of the list price is dropped (:97-99)',
+   edits: [{ file: GO, from: "fixedPrice: l.plannedprice, withDiscount: true", to: "fixedPrice: null, withDiscount: true" }] },
+ { name: 'M03-genorder-service-charge-allowed', kills: ['G.G3-service'], what: 'the Service Charge refusal (:80-84) is dropped',
+   edits: [{ file: GO, from: "if (String(fromProject.projectcategory) === 'S')", to: "if (false)" }] },
+ { name: 'M04-genorder-no-warehouse-test', kills: ['G.G2-no-warehouse'], what: 'getProject no longer refuses a project without a warehouse (:127-128)',
+   edits: [{ file: GO, from: "if (!nz(p.m_warehouse_id)) throw new Error('Project has no Warehouse');", to: "" }] },
+ { name: 'M05-genorder-standard-doctype', kills: ['G.G1-header'], what: 'the order takes the Standard Order type instead of On Credit (DocSubTypeSO_OnCredit, :72)',
+   edits: [{ file: GO, from: "MOrder_fromProject(trx, fromProject, true, 'WI')", to: "MOrder_fromProject(trx, fromProject, true, 'SO')" }] },
+ { name: 'M06-genorder-unproducted-line', kills: ['PH.PH1-line', 'G.G1-oak'], what: 'the order line is built without its product (setM_Product_ID(id,true), :95)',
+   edits: [{ file: MO, from: "    S.MOrderLine_setProduct(trx, ol, spec.productId);\n    var q = a.toBD", to: "    var q = a.toBD" }] },
+ { name: 'M07-genpo-no-consolidation', kills: ['O.O1-two-pos'], what: 'a PO made in this run is never reused for the same vendor (:139-148)',
+   edits: [{ file: GP, from: "if (String(this.m_pos[i].get('c_bpartner_id')) === String(pos[0].c_bpartner_id))", to: "if (false)" }] },
+ { name: 'M08-genpo-no-writeback', kills: ['O.O1-writeback'], what: 'the project line does not get C_OrderPO_ID (:205-207)',
+   edits: [{ file: GP, from: "lineChanges.c_orderpo_id = order.id();", to: "lineChanges.c_orderpo_id = projectLine.c_orderpo_id;" }] },
+ { name: 'M09-genpo-chain-skips-lastpo', kills: ['O.O4-PriceLastPO'], what: 'the PO price chain skips PriceLastPO (:186-187)',
+   edits: [{ file: GP, from: "if (poPrice == null || D(poPrice).signum() === 0) poPrice = pos[0].pricelastpo;", to: "" }] },
+ { name: 'M10-genpo-no-currency-conversion', kills: ['O.O4-currency'], what: 'the PO price is not converted to the order currency (MConversionRate.convert, :192-197)',
+   edits: [{ file: GP, from: "if (String(oh.c_currency_id) !== String(cur)) poPrice", to: "if (false) poPrice" }] },
+ { name: 'M11-genpo-ordered-line-reordered', kills: ['O.O1-skipped', 'O.O1-skip-messages'], what: 'a line already ordered (C_OrderPO_ID set) is ordered again (:124-128)',
+   edits: [{ file: GP, from: "if (nz(projectLine.c_orderpo_id)) {", to: "if (false) {" }] },
+ { name: 'M12-genpo-inactive-lines-ordered', kills: ['O.O1-skipped'], what: 'the IsActive filter of the line loops is dropped (:96, :105)',
+   edits: [{ file: GP, from: "if (l.isactive !== 'N') self.createPO(trx, project, l);", to: "self.createPO(trx, project, l);", count: 2 }] },
+ { name: 'M13-close-skips-lines', kills: ['C.C1-closed'], what: 'the project lines are not closed (:79-81)',
+   edits: [{ file: MP, from: "lines.forEach(function (l) { saveEx(ML.po(trx, 'c_projectline', trx.get('c_projectline', l.c_projectline_id)).set('processed', 'Y')); });", to: "" }] },
+ { name: 'M14-close-skips-project', kills: ['C.C1-closed'], what: 'the project itself is not set Processed (:83-84)',
+   edits: [{ file: MP, from: "saveEx(ML.po(trx, 'c_project', trx.get('c_project', project.c_project_id)).set('processed', 'Y'));", to: "" }] },
+ { name: 'M15-close-only-active-lines', kills: ['C.C1-closed'], what: 'only active lines are closed (getLines has no IsActive filter, MProject.java:194-206)',
+   edits: [{ file: MP, from: "var lines = getLines(trx, project.c_project_id);", to: "var lines = getLines(trx, project.c_project_id).filter(function (x) { return x.isactive !== 'N'; });" }] },
+ { name: 'M16-copy-lines-with-phase-copied-plain', kills: ['K.K1-count', 'K.K5-phase-line-not-plain'], what: 'copyLinesFrom also copies lines that have a phase or task (MProject.java:290-291)',
+   edits: [{ file: MP, from: "if (nz(fl.c_projectphase_id) || nz(fl.c_projecttask_id)) return;", to: "if (false) return;" }] },
+ { name: 'M17-copy-keeps-invoiced', kills: ['K.K1-plain-lines'], what: 'a copied plain line keeps InvoicedQty/InvoicedAmt (:295-296)',
+   edits: [{ file: MP, from: ".set('invoicedamt', 0).set('invoicedqty', 0)", to: "" }] },
+ { name: 'M18-copy-ignores-processed-target', kills: ['K.K3-processed-target'], what: 'a Processed target is copied into (:269-270, :283-284, :317-318)',
+   edits: [{ file: MP, from: "if (String(to.processed) === 'Y' || !from) return 0;", to: "if (false) return 0;", count: 3 }] },
+ { name: 'M19-copy-existing-phase-copied', kills: ['K.K4-existing-phase'], what: 'a phase whose C_Phase_ID the target holds is copied again (:327-346)',
+   edits: [{ file: MP, from: "var exists = nz(fp.c_phase_id) && mine.some(", to: "var exists = false && mine.some(" }] },
+ { name: 'M20-copy-task-lines-in-phase-lines', kills: ['K.K1-count', 'K.K5-phase-line-not-plain'], what: 'the phase-line copy also takes lines that belong to a task (MProjectPhase.java:170)',
+   edits: [{ file: MP, from: "if (nz(fl.c_projecttask_id)) return;                                                                                              // :170 BF 3067850", to: "// mutated" }] },
+ { name: 'M21-copy-not-wired', kills: ['P0.wiring-CopyFromProject'], what: 'idempiere.html does not load processes/CopyFromProject.js',
+   edits: [{ file: 'idempiere.html', from: '<script src="processes/CopyFromProject.js?v=1"></script>\n', to: '' }] },
+ { name: 'M22-old-handler-back', kills: ['P0.old-handler-gone'], what: 'the old REGISTRY handler comes back in the exports (a second engine beside the port)',
+   edits: [{ file: 'ad_process.js', from: "SvrProcess: SvrProcess, ProcessInfoParameter:", to: "registerProjectGenOrder: function () {}, SvrProcess: SvrProcess, ProcessInfoParameter:" }] }
+];

@@ -546,7 +546,7 @@
 <!-- B-5/C-5 process dispatch (MULTI_LANE_LAUNCH Lane A) — AD_Process spine (W-PROC). Its report handlers
      resolve to report_overlay's PURE CORE folds, loaded below AFTER bigdecimal.js (the folds are BigDecimal-exact
      and BD must exist at parse time — glassbowl.html load-order parity). -->
-<script src="ad_process.js?v=20"></script>
+<script src="ad_process.js?v=21"></script>
 <script src="ad_find.js?v=2"></script>
 <script src="ad_recent.js?v=1"></script>
 <script src="ad_toolbar.js?v=1"></script>
@@ -656,15 +656,15 @@
 <script src="fk_rules.js?v=1"></script>
 <script src="ad_ddl_notnull.js?v=1"></script><script src="model_layer.js?v=13"></script>
 <script src="model_initial_defaults.js?v=1"></script><!-- GENERATED setInitialDefaults of every model class (bim-compiler MIGRATE_INSTALL_TENANT.md §G1-SPEC, W-GENESIS-COMPLETE) -->
-<script src="model_trade.js?v=5"></script>
+<script src="model_trade.js?v=6"></script>
 <script src="model_ctor.js?v=1"></script>
 <script src="model_cost.js?v=1"></script>
 <script src="model_match.js?v=1"></script>
-<script src="model_order.js?v=7"></script>
+<script src="model_order.js?v=8"></script>
 <script src="model_invoice.js?v=6"></script>
 <script src="model_master.js?v=3"></script>
 <script src="model_rma.js?v=2"></script>
-<script src="model_project.js?v=2"></script>
+<script src="model_project.js?v=3"></script>
 <script src="model_projectissue.js?v=1"></script>
 <script src="model_asi.js?v=2"></script>
 <script src="model_dd.js?v=1"></script>
@@ -726,6 +726,7 @@
 <script src="processes/CopyFromJournal.js?v=1"></script>
 <script src="processes/CopyFromJournalDoc.js?v=1"></script>
 <script src="processes/CopyFromOrder.js?v=1"></script>
+<script src="processes/CopyFromProject.js?v=1"></script>
 <script src="processes/CopyProduct.js?v=1"></script>
 <script src="processes/CostCreate.js?v=1"></script>
 <script src="processes/DunningRunCreate.js?v=1"></script>
@@ -766,8 +767,11 @@
 <script src="processes/ProductionCreate.js?v=1"></script>
 <script src="processes/ReplenishReportProduction.js?v=2"></script>
 <script src="processes/RMACreateOrder.js?v=1"></script>
+<script src="processes/ProjectClose.js?v=1"></script>
+<script src="processes/ProjectGenOrder.js?v=1"></script>
+<script src="processes/ProjectGenPO.js?v=1"></script>
 <script src="processes/ProjectSetType.js?v=1"></script>
-<script src="processes/ProjectPhaseGenOrder.js?v=1"></script>
+<script src="processes/ProjectPhaseGenOrder.js?v=2"></script>
 <script src="processes/SalesOrderRateInquiryProcess.js?v=1"></script>
 <script src="processes/YearCreatePeriods.js?v=1"></script>
 <script src="processes/support_docgen.js?v=1"></script>
@@ -3524,10 +3528,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     if (_procHandlersInstalled || !window.AdProcess) return;
     var core = (window.__report && window.__report.core) ? window.__report.core : null;
     window.AdProcess.installDefaultHandlers(core);
-    // §GENPO-LIVE — the KIND-2 ProjectGenOrder handler (AD_Process 164) rides the EXISTING erp_engine.buildDoc
-    // archetype (newVerbs=0). Implementing AD_PROCESS_FOLD_LANE.md §P1 — Witness: W-PROC-GENPO-LIVE.
-    if (window.ERPEngine && typeof window.AdProcess.registerProjectGenOrder === 'function')
-      window.AdProcess.registerProjectGenOrder(window.ERPEngine);
+    // AD_Process 164 ProjectGenOrder is a verbatim SvrProcess port (processes/ProjectGenOrder.js, §PROJ-PROCS); the old buildDoc handler registered here is deleted.
     _procHandlersInstalled = true;
     console.log('§AD-PROC-LIVE handlers=[' + window.AdProcess.registeredClassnames().join(',') + '] reportCore=' + (core ? 'Y' : 'N') + ' engine=' + (window.ERPEngine ? 'Y' : 'N'));
   }

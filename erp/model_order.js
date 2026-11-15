@@ -1038,6 +1038,34 @@
     if (!T.nz(l.get('c_uom_id'))) l.set('c_uom_id', pp.getC_UOM_ID());
   };
 
+  // MOrderLine.setM_Product_ID(id, true) :453-460 -> setProduct :432-446: the product and ITS UOM, the ASI cleared (a product-less line keeps no UOM)
+  S.MOrderLine_setProduct = function (trx, ol, productId) {
+    if (nz(productId)) { var pr = trx.get('m_product', productId); ol.set('m_product_id', productId); if (pr && nz(pr.c_uom_id)) ol.set('c_uom_id', pr.c_uom_id); }
+    ol.set('m_attributesetinstance_id', 0);
+  };
+  // MOrderLine.setTax() :346-361 - the tax of a line the process builds (the registered beforeSave only fills a line that arrives without one)
+  S.MOrderLine_setTax = function (trx, l, orderRow) {
+    var ctx = (trx.env.ctx && typeof trx.env.ctx.getProperty === 'function') ? trx.env.ctx : A().sessionContext(trx.env);
+    return olSetTax(trx, ctx, l, orderRow);
+  };
+  // The order line ProjectGenOrder.doIt :88-104 / ProjectPhaseGenOrder.doIt :103-143 build from a project line, phase or task (ONE body, the Java has it twice):
+  //   new MOrderLine(order); setLine; setDescription; setM_Product_ID(id,true); setQty(qty) (QtyEntered then QtyOrdered, raw); setPrice(); setPrice(fixedPrice) when non-zero;
+  //   setDiscount() when asked (a project LINE; :681-691); setTax(); save(). Returns { ok, po }: a refused save is false (the caller counts only the saved ones).
+  S.MOrderLine_fromProject = function (trx, order, spec) {
+    var a = A(), ol = S.MOrderLine_new(trx, order), o = trx.get('c_order', order.id());
+    ol.set('line', spec.line).set('description', spec.description);
+    S.MOrderLine_setProduct(trx, ol, spec.productId);
+    var q = a.toBD(String(spec.qty == null ? 0 : spec.qty));
+    ol.set('qtyentered', q).set('qtyordered', q);                                                                                  // setQty :714-718
+    S.MOrderLine_setPrice(trx, ol);                                                                                                // setPrice()
+    if (spec.fixedPrice != null && D(spec.fixedPrice).signum() !== 0) ol.set('priceentered', a.toBD(String(spec.fixedPrice))).set('priceactual', a.toBD(String(spec.fixedPrice)));   // setPrice(BigDecimal) :269-273
+    if (spec.withDiscount) {                                                                                                       // setDiscount() :681-691
+      var list = D(ol.get('pricelist')), prec = T.precisionOf(trx, o.c_currency_id);
+      if (list.signum() !== 0) ol.set('discount', list.subtract(D(ol.get('priceactual'))).multiply(D('100')).divide(list, prec, a.RoundingMode.HALF_UP));
+    }
+    S.MOrderLine_setTax(trx, ol, o);                                                                                               // setTax()
+    return { ok: ol.save(), po: ol };
+  };
   // MRequisitionLine.setPrice() :234-267 - pp.setRequisitionLine + setM_PriceList_ID -> PriceActual = getPriceStd (a Charge line takes the charge amount first)
   S.MRequisitionLine_setPrice = function (trx, l, priceListId) {
     if (nz(l.get('c_charge_id'))) { var ch = trx.get('c_charge', l.get('c_charge_id')); if (ch) l.set('priceactual', ch.chargeamt); }

@@ -314,6 +314,15 @@
     var r = trx.q("SELECT multiplyrate AS m FROM c_conversion_rate WHERE c_currency_id=? AND c_currency_id_to=? AND c_conversiontype_id=? AND date(validfrom)<=date(?) AND date(validto)>=date(?) AND ad_client_id IN (0,?) AND ad_org_id IN (0,?) AND isactive='Y' ORDER BY ad_client_id DESC, ad_org_id DESC, validfrom DESC", [from, to, ct, String(date || '').slice(0, 10), String(date || '').slice(0, 10), trx.env.client, nz(org) ? org : (trx.env.org || 0)])[0];
     return r ? D(r.m) : null;
   }
+  // MConversionRate.convert(ctx, Amt, CurFrom, CurTo, ConvDate, C_ConversionType_ID, client, org) :113-152 (isCosting=false): same currency or a zero amount is the identity, no rate -> null,
+  //   else rate x amt, HALF_UP to the currency's STANDARD precision only when the scale exceeds it. (ProjectGenPO.createPO uses it.)
+  function convert(trx, amt, from, to, date, convType, org) {
+    if (amt == null) throw new Error('Required parameter missing - Amt');
+    if (String(from) === String(to) || D(amt).signum() === 0) return D(amt);
+    var r = rate(trx, from, to, date, convType, org); if (!r) return null;
+    var v = r.multiply(D(amt)), p = precisionOf(trx, to);
+    return v.scale() > p ? v.setScale(p, HU) : v;
+  }
   // currencyBase(amt, cur, date, client, org) (PG function) — into the client's accounting currency (AD_ClientInfo.C_AcctSchema1_ID)
   function currencyBase(trx, amt, cur, date) {
     var ci = trx.q('SELECT c_acctschema1_id AS a FROM ad_clientinfo WHERE ad_client_id=?', [trx.env.client])[0], as = ci ? trx.get('c_acctschema', ci.a) : null;
@@ -894,7 +903,7 @@
   })(PXT);
   PXS_ = PXS;
 
-  return Object.assign({}, PXT, PXS, { rate: rate, currencyBase: currencyBase, msgText: msgText, addDescription: addDescription, D: D, N: N, Y: Y, id: id, nz: nz, one: one, msg: msg, dt: dt, product: product, isItem: isItem, isStocked: isStocked,
+  return Object.assign({}, PXT, PXS, { rate: rate, convert: convert, currencyBase: currencyBase, msgText: msgText, addDescription: addDescription, D: D, N: N, Y: Y, id: id, nz: nz, one: one, msg: msg, dt: dt, product: product, isItem: isItem, isStocked: isStocked,
     precisionOf: precisionOf, tax: tax, calcTax: calcTax, taxGet: taxGet, periodOpen: periodOpen, nextDocNo: nextDocNo, getDocumentNoByDocType: getDocumentNoByDocType, getDocumentNoByTable: getDocumentNoByTable, getDocumentNoFromSeq: getDocumentNoFromSeq, parseVariable: parseVariable, decimalFormat: decimalFormat, storageAdd: storageAdd,
     reservationAdd: reservationAdd, invoiceOpen: invoiceOpen, paymentAvailable: paymentAvailable, bpOpenBalance: bpOpenBalance,
     creditStatus: creditStatus, toBase: toBase, setTotalOpenBalance: setTotalOpenBalance, HU: HU, Z: Z, periodOf: periodOf });
