@@ -18,7 +18,8 @@ const BREAK = () => process.env.RED1_BREAK || '';
 // §26 the § log: stderr (pipes, one-shot, -f: what scripts and witnesses read); in a session on a terminal it goes to a FILE so the person's screen stays clean
 // ($RED1_LOG = a path, default ~/.cache/red1/red1.log; RED1_LOG=stderr keeps it on the screen). The log is kept, never dropped (the Log Mandate).
 let sayTo = null;
-const say = (s) => { if (sayTo) { try { fs.appendFileSync(sayTo, new Date().toISOString() + ' §RED1 ' + s + '\n'); return; } catch (e) { sayTo = null; } } process.stderr.write('§RED1 ' + s + '\n'); };
+const RING = [];   // §28: the last § lines of this session, for `report` (what the person could read in the log file)
+const say = (s) => { RING.push('§RED1 ' + s); if (RING.length > 200) RING.shift(); if (sayTo) { try { fs.appendFileSync(sayTo, new Date().toISOString() + ' §RED1 ' + s + '\n'); return; } catch (e) { sayTo = null; } } process.stderr.write('§RED1 ' + s + '\n'); };
 
 function passThrough(argv) {   // a door line and -f: the door's own command line, unchanged (one implementation of a run, a file and a dry run)
   const r = cp.spawnSync(process.execPath, [DOOR].concat(argv), { stdio: 'inherit', env: process.env });
@@ -120,7 +121,7 @@ async function session(o) {
   let sh; try { sh = makeShell(Object.assign({}, o, { interactive: true })); } catch (e) { say('FAIL ' + e.message); return 1; }
   const { R, vocab } = sh, Dr = require(path.join(__dirname, 'draw_core.js')), tty = !!process.stdin.isTTY, histFile = process.env.RED1_HISTORY || path.join(os.homedir(), '.red1_history');
   let history = []; if (tty) { try { history = fs.readFileSync(histFile, 'utf8').split('\n').filter(Boolean).reverse().slice(0, 1000); } catch (e) { /* first run */ } }
-  const names = vocab.verbs.map(v => v.verb).concat(sh.core.wordList().map(w => w.word), ['help', 'bim', 'mis', 'erp', 'exit', 'quit', 'history', 'menu', 'cd', 'pwd', 'role']);
+  const names = vocab.verbs.map(v => v.verb).concat(sh.core.wordList().map(w => w.word), ['help', 'bim', 'mis', 'erp', 'report', 'exit', 'quit', 'history', 'menu', 'cd', 'pwd', 'role']);
   // §1d.1 THE TYPE ASSIST: assist_core proposes what may come next at the end of the line; shown grey after the cursor (it extends what was typed) or as a dim hint
   // `▸ Name` (another spelling: case, -, a typo). Tab takes it (→ takes a grey one). Enter NEVER applies it: the line runs as typed. Not on a pipe, not in a menu.
   const AS = require(path.join(__dirname, 'assist_core.js')), VB = {}, BLD = buildingNames(), DOF = ((sh.words.words.do || {}).forms || [{}])[0] || {};
@@ -135,6 +136,7 @@ async function session(o) {
   };
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: tty, completer: tty ? completer : undefined, history, historySize: 1000, prompt: tty ? sh.prompt() : '' });
   const typed = [];
+  let lastArrow = null, lastGap = null, lastBad = null, pendingReport = null, hintDue = false;   // §28
   const drawHint = () => {
     if (!tty || closed || sh.menuOpen()) { hint = null; return; }
     const line = rl.line || '', r = rl.cursor === line.length && line.trim() ? AS.suggest(actx(), line) : null; hint = r && (r.ghost || r.replace) ? r : null;
@@ -149,7 +151,7 @@ async function session(o) {
   });
   if (tty && process.env.RED1_LOG !== 'stderr') { const f = process.env.RED1_LOG || path.join(os.homedir(), '.cache', 'red1', 'red1.log'); try { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.appendFileSync(f, ''); sayTo = f;
     const errW = process.stderr.write.bind(process.stderr);   // every § line of the session (the door's §DOOR too) goes to the same file; anything else (a real error) stays on screen
-    process.stderr.write = (c, ...r) => { const t = String(c); if (sayTo && /^§/.test(t)) { try { fs.appendFileSync(sayTo, new Date().toISOString() + ' ' + t); return true; } catch (e) { /* fall through */ } } return errW(c, ...r); };
+    process.stderr.write = (c, ...r) => { const t = String(c); if (/^§/.test(t)) { RING.push(t.replace(/\n$/, '')); if (RING.length > 200) RING.shift(); } if (sayTo && /^§/.test(t)) { try { fs.appendFileSync(sayTo, new Date().toISOString() + ' ' + t); return true; } catch (e) { /* fall through */ } } return errW(c, ...r); };
   } catch (e) { /* stays on stderr */ } }
   if (tty || process.env.WELCOME_BREAK === 'pipe') { const g = welcome(); process.stdout.write(g.lines.join('\n') + '\n\n'); say('welcome lines=' + g.lines.length + ' version=' + JSON.stringify(g.version)); }   // §26: a terminal only (pipe: W-RED1-WELCOME falsifier, must FAIL W2)
   say('session tty=' + tty + ' journal=' + sh.door.journalFile + ' verbs=' + vocab.verbs.length + ' words=' + sh.core.wordList().length);
@@ -158,9 +160,13 @@ async function session(o) {
   const w = (t) => { menuH = 0; process.stdout.write(t); };
   const io = {
     print: (t) => w(t + '\n'),
-    arrow: (l) => w('→ ' + l + '\n'),
+    arrow: (l) => { lastArrow = l; w('→ ' + l + '\n'); },
     menu: (lines) => { if (tty && menuH) process.stdout.write('\r\x1b[' + menuH + 'A\x1b[0J'); process.stdout.write(lines.join('\n') + '\n'); menuH = lines.length + (tty ? 1 : 0); },
     show: async (e, view, draw) => {
+      { const gap = (e.answer && e.answer.gap) || e.status === 'error' || (process.env.REPORT_BREAK === 'allgaps' && e.status !== 'ok');   // §28: a gap = marked by the engine (answer.gap) or the engine could not answer (status error); allgaps: W-RED1-REPORT falsifier
+        const rec = { line: lastArrow, why: e.why, status: e.status, gapKind: (e.answer && e.answer.gapKind) || (e.status === 'error' ? 'engine-error' : null) };
+        if (e.status !== 'ok') lastBad = rec;
+        if (gap) { lastGap = rec; hintDue = true; say('gap line=' + JSON.stringify(lastArrow) + ' kind=' + rec.gapKind); } }
       menuH = 0;
       const a = e.answer || {}, rows = Array.isArray(a.rows) && view !== 'summary' ? a.rows : null;
       if (draw === 'tree' && e.status === 'ok') {   // §22.8 R6: a document's next steps, from erp.actions' own answer
@@ -204,6 +210,20 @@ async function session(o) {
     if ((R.isHelp(line) || GROUP_WORD.test(line)) && !sh.menuOpen()) {   // §24: help / bim / mis / erp / help <word> = words_core.helpText (the SAME bytes as a one-shot `red1 help`); help verbs | help <app> | help <app.verb> = the door's own help
       const h = helpOf(line, sh.core, vocab); process.stdout.write(h.text); say('help topic=' + JSON.stringify(h.topic) + (h.door ? ' door=1' : ' words=1')); return;
     }
+    if (pendingReport && !sh.menuOpen()) {   // §28: the choice after `report`
+      const g = pendingReport; pendingReport = null; const RC = require(path.join(__dirname, 'report_core.js'));
+      if (!/^[12]$/.test(line)) { process.stdout.write('report cancelled: nothing was sent\n'); return; }
+      const url = line === '1' ? RC.github(g) : RC.email(g); process.stdout.write((line === '1' ? 'GitHub issue' : 'Email') + ' (' + url.length + ' chars), open it to send:\n' + url + '\n');
+      say('report via=' + (line === '1' ? 'github' : 'email') + ' chars=' + url.length);
+      if (tty && process.env.RED1_NO_OPEN !== '1') { const op = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'start' : 'xdg-open'; try { cp.spawn(op, [url], { detached: true, stdio: 'ignore' }).on('error', () => {}).unref(); } catch (e) { /* the URL is printed */ } }
+      return;
+    }
+    if (/^\s*report\s*$/i.test(line) && !sh.menuOpen()) {   // §28: the last gap (else the last line that did not answer ok) as a draft for the owner
+      const g0 = lastGap || lastBad; if (!g0) { process.stdout.write('nothing to report: every line answered ok\n'); return; }
+      const g = Object.assign({}, g0, { env: [['red1', welcome().version.replace(/^.*· red1 /, 'red1 ')], ['Platform', process.platform + ' ' + os.release()], ['Node', process.version], ['Place', sh.prompt().trim()]], logs: RING.slice(-50) });
+      process.stdout.write('Draft (nothing is sent until you open it):\n' + require(path.join(__dirname, 'report_core.js')).draft(g) + '\nSend by: 1 GitHub issue · 2 email · q cancel\n');
+      pendingReport = g; say('report draft gap=' + !!lastGap); return;
+    }
     const sw = sh.menuOpen() ? null : SESSION_WORD.exec(line);
     if (sw) {
       const w = sw[1].toLowerCase();
@@ -219,7 +239,7 @@ async function session(o) {
     setImmediate(() => { rl.write(null, { ctrl: true, name: 'u' }); busy = busy.then(() => sh.run({ key: key.name === 'up' ? 'Up' : key.name === 'down' ? 'Down' : 'Esc' }, io)).then(() => { if (!closed) { rl.setPrompt(sh.prompt()); rl.prompt(); } }); });
   });
   rl.on('line', (l) => { if (process.env.ASSIST_BREAK === 'autoapply' && hint && hint.replace && l.slice(-hint.replace.from.length) === hint.replace.from) l = l.slice(0, l.length - hint.replace.from.length) + hint.replace.to;   // W-RED1-ASSIST falsifier: Enter applies the hint (must FAIL A3)
-    if (tty && hint) say('assist not-taken line=' + JSON.stringify(l) + ' hint=' + JSON.stringify(hint.ghost || hint.replace)); hint = null; busy = busy.then(() => handle(l)).then(() => { if (!closed && tty) { rl.setPrompt(sh.prompt()); rl.prompt(); } }).catch(err => { say('FAIL ' + (err && err.stack || err)); }); });
+    if (tty && hint) say('assist not-taken line=' + JSON.stringify(l) + ' hint=' + JSON.stringify(hint.ghost || hint.replace)); hint = null; busy = busy.then(() => handle(l)).then(() => { if (hintDue) { hintDue = false; process.stdout.write('This is a gap in red1, not your mistake. Type report to send it to us (email or GitHub issue).\n'); } if (!closed && tty) { rl.setPrompt(sh.prompt()); rl.prompt(); } }).catch(err => { say('FAIL ' + (err && err.stack || err)); }); });
   if (tty) rl.prompt();
   await new Promise((res) => rl.on('close', () => { closed = true; busy.then(res); }));
   if (tty) { try { fs.appendFileSync(histFile, typed.map(l => l + '\n').join('')); } catch (e) { /* no home */ } }

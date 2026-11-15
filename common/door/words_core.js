@@ -62,7 +62,7 @@
         var PR = st.paras; if (!PR || PR.name !== args.name) return { params: { name: args.name } };
         var nx = PR.rows.filter(function (q) { var c = q.ColumnName; return c && !Object.keys(args).some(function (k2) { return k2.toLowerCase() === c.toLowerCase(); }) && PR.skipped.indexOf(c) < 0; });
         if (brk === 'paramorder' && nx.length > 1) nx = nx.slice().reverse();   // W-RED1-RUN falsifier: the questions out of SeqNo order (must FAIL R2)
-        if (nx.length) return { ask: nx[0] };
+        if (nx.length) return { ask: nx[0], args: args, verb: verb };
       }
       // §22.8 R5: a required input still missing opens a pick menu of its legal values (interactive sessions only; elsewhere the door refuses, naming it)
       var miss = e.inputs.filter(function (i) { return i.required && args[i.name] == null; })[0];
@@ -90,8 +90,8 @@
         }
         if (p === 'lookup') {   // a table-direct parameter: its legal records as a pick list (value = the id, shown with its name)
           var lf = st.pickFor, lr = ok && Array.isArray(env.answer.rows) ? env.answer.rows : [];
-          if (!lr.length) { st.pickFor = null; st.asking = lf.ask; screen.push(lf.ask.label + ' (' + lf.input + '): no record to pick from; type it (Enter: ' + (lf.ask.def || 'none') + ')'); return out(); }
-          st.menu = Menu.create({ items: (lf.ask.mandatory ? [] : [{ name: '(leave it out)', value: SKIP }]).concat(lr.map(function (r) { var ks = Object.keys(r); return { name: (r.Name != null ? r.Name + ' · ' : '') + r[ks[0]], value: r[ks[0]] }; })), title: 'run: pick ' + lf.ask.label + ' (' + lf.input + ', ' + lr.length + ')' });
+          if (!lr.length) { st.pickFor = null; st.asking = lf.ask; screen.push(lf.ask.label + ' (' + lf.input + '): nothing to pick from' + (env.answer && env.answer.why ? ' (' + env.answer.why + ')' : env.why ? ' (' + env.why + ')' : '') + '; type it (Enter: ' + (lf.ask.def || (lf.ask.mandatory ? 'needed' : 'none')) + ')'); return out(); }
+          st.menu = Menu.create({ items: (lf.ask.mandatory ? [] : [{ name: '(leave it out)', value: SKIP }]).concat(lr.map(function (r) { var ks = Object.keys(r); return r.value !== undefined ? { name: r.name + ' · ' + r.value, value: r.value } : { name: (r.Name != null ? r.Name + ' · ' : '') + r[ks[0]], value: r[ks[0]] }; })), title: 'run: pick ' + lf.ask.label + ' (' + lf.input + ', ' + lr.length + ')' });
           Menu.plain(Menu.render(st.menu)).forEach(function (l) { screen.push(l); }); return out();
         }
         if (p === 'cd-kind') {
@@ -164,7 +164,10 @@
         if (ctxDef) { st.paras.skipped.push(qq.input); var cs = step(st, { text: text }); cs.screen = screen.concat(cs.screen); return cs; }   // a context default (@…@): the engine fills it, as the dialog does
         if (Number(a1.AD_Reference_ID) === 19 && Menu && /_ID$/i.test(qq.input)) {   // table direct: the table is the column name without _ID (the dictionary's own rule)
           var tb = qq.input.replace(/_ID$/i, '');
-          st.pickFor = { text: text, input: qq.input, word: 'run', ask: qq }; effects.push({ line: lineOf('mis.list', { kind: tb, columns: qq.input + ',Name', limit: '50' }), purpose: 'lookup' }); return out();
+          // §27: the legal values through mis.lookup (the parameter's validation rule), with the parameters already answered as its context
+          var la = { process: x.args.name, column: qq.input, limit: '50' }, vins = (verbs[x.verb] || { inputs: [] }).inputs.map(function (i) { return i.name; });
+          Object.keys(x.args).forEach(function (k3) { if (vins.indexOf(k3) < 0) la[k3] = x.args[k3]; });
+          st.pickFor = { text: text, input: qq.input, word: 'run', ask: qq }; effects.push({ line: lineOf('mis.lookup', la), purpose: 'lookup' }); return out();
         }
         st.asking = qq; screen.push(qq.question); return out();
       }

@@ -25,6 +25,8 @@ class Refused extends Error {}
 // server does. toISOString() alone is UTC: before 08:00 in Kuala Lumpur it names yesterday (the defect of bim-ootb prompts/CAPEX_DASHBOARD.md §5.24, which had not reached this file). An op's own `t` stays an instant in UTC.
 const localIso = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString(), stamp = () => localIso().replace('T', ' ').slice(0, 19), today = () => localIso().slice(0, 10);
 const refuse = (m) => { throw new Refused(m); };
+// §28 a GAP: the system lacks something (not the person's mistake); marked at the source so red1 can offer `report`, never guessed from the text
+const refuseGap = (m, kind) => { const e = new Refused(m); e.gap = kind; throw e; };
 
 // ── the host glue every ERP host needs once: model classes, callout runtime, SQL functions ──
 function loadEngine(O) {
@@ -372,7 +374,7 @@ function act(O, a, code) {
   if (!a.kind) refuse('--kind is required');
   const aname = (O.rows('SELECT name FROM ad_ref_list WHERE ad_reference_id=135 AND value=?', [code])[0] || { name: code }).name;
   const K = docKind(O, a.kind), r = recordOf(O, K, a), id = r[K.key], before = r.docstatus;
-  if (!O.ML.docActionFor(K.table)) refuse(aname + ' was not done: ' + K.name + ' has the document columns but no document class yet, so nothing says what ' + aname + ' does on it (DocStatus stays ' + before + ')');
+  if (!O.ML.docActionFor(K.table)) refuseGap(aname + ' was not done: ' + K.name + ' has the document columns but no document class yet, so nothing says what ' + aname + ' does on it (DocStatus stays ' + before + ')', 'no-doc-class');
   if (a.role != null && BREAK !== 'norole') {   // the UI never offers what the role's Document Action Access withholds (WDocActionPanel.java:185-205); the twin refuses it at the same place
     const res = actionsOf(O, K, r, a);
     if (!res.walked) refuse(res.why);
@@ -1058,22 +1060,73 @@ function runProcess(O, a) {
   const log = console.log; console.log = () => {};
   let res; try { res = AP.dispatch(dbS, { AD_Process_ID: P.id, Record_ID: r ? r[K.key] : 0, Table_ID: K ? K.id : 0, params: given }, ctx); } finally { console.log = log; }
   say('process name=' + JSON.stringify(P.name) + ' id=' + P.id + ' class=' + P.classname + ' record=' + (r ? K.table + '/' + r[K.key] : '-') + ' dispatched=' + res.dispatched + ' ok=' + res.ok + ' reason=' + res.reason + ' ops=' + (jr && jr.ops ? jr.ops.length : 0) + (a.dry === 'Y' ? ' dry=Y' : ''));
-  if (!res.dispatched) refuse(P.name + ' was not run: ' + (res.reason === 'absent-handler' ? 'it has no JS port yet (class ' + (P.classname || 'none') + ')' : res.message));
+  if (!res.dispatched) { if (res.reason === 'absent-handler') refuseGap(P.name + ' was not run: it has no JS port yet (class ' + (P.classname || 'none') + ')', 'no-port'); refuse(P.name + ' was not run: ' + res.message); }
   if (!res.ok) refuse(P.name + ' failed: ' + (res.message || res.reason) + ' (nothing was kept)');
   const ops = a.dry === 'Y' || RUN_BREAK === 'skipcommit' ? [] : persistGroup(O, (res.result && res.result.commitOps) || []);
   return { process: { id: P.id, value: P.value, name: P.name, classname: P.classname }, record: r ? brief(K, O.rows('SELECT * FROM ' + K.table + ' WHERE ' + K.key + '=?', [r[K.key]])[0] || r) : null,
     params: given, message: res.message, dry: a.dry === 'Y', ops: ops.map(o => ({ op_type: o.op_type, table: o.table })), opSummary: sum(ops), planned: ((res.result && res.result.commitOps) || []).length };
 }
+// ── mis.lookup (bim-compiler prompts/CLI_ERP_IVR.md §27; §1d TA2): the legal values of a column or a process parameter, from the dictionary as MLookupFactory/MLookup read it ──
+const LOOKUP_BREAK = process.env.LOOKUP_BREAK || '';   // W-MIS-LOOKUP falsifiers: norule (the val rule not applied: must FAIL L1) · unfiltered (an unresolved token shows all rows: must FAIL L2)
+function lookup(O, a) {
+  if (!a.column) refuse('--column is required');
+  if (!a.kind && !a.process) refuse('say where the column is: kind=<kind> or process=<process>');
+  const VR = require(path.join(ROOT, 'erp', 'ad_valrule.js')), lo = String(a.column).toLowerCase(), near = (n, names) => require('./assist_core.js').nearest(n, names, 3).map(x => x.name);
+  let def, K = null, rec = null;
+  if (a.process) {
+    const P = processOf(O, a.process), ps = O.rows("SELECT columnname AS c, ad_reference_id AS ref, ad_reference_value_id AS refv, ad_val_rule_id AS vr FROM ad_process_para WHERE ad_process_id=? AND isactive='Y' ORDER BY seqno", [P.id]);
+    def = ps.filter(x => x.c.toLowerCase() === lo)[0]; if (!def) refuse(P.name + ' has no parameter "' + a.column + '"; nearest: ' + near(a.column, ps.map(x => x.c)).join(', '));
+  } else {
+    K = kindRef(O, a.kind); const cs = O.rows("SELECT columnname AS c, ad_reference_id AS ref, ad_reference_value_id AS refv, ad_val_rule_id AS vr FROM ad_column WHERE ad_table_id=? AND isactive='Y'", [K.id]);
+    def = cs.filter(x => x.c.toLowerCase() === lo)[0]; if (!def) refuse(OC.noProperty(K.name, a.column, cs.map(x => x.c)));
+    if (a.id != null) { rec = O.rows('SELECT * FROM ' + K.table + ' WHERE ' + K.key + '=?', [Number(a.id)])[0]; if (!rec) refuse('no ' + K.name + ' ' + a.id); }
+  }
+  // the context: the record's columns, the typed Name=value, the record's client/org as the login context
+  const ctx = {}; if (rec) Object.keys(rec).forEach(k => { ctx[k] = rec[k]; });
+  (a.where || []).forEach(w => { const m = /^([A-Za-z_]\w*)=([\s\S]*)$/.exec(w); if (m) ctx[m[1]] = m[2]; });
+  const ci = {}; Object.keys(ctx).forEach(k => { ci[k.toLowerCase()] = ctx[k]; });
+  const ctxOf = (code) => { const c = {}; String(code || '').replace(/@([#$]?)([A-Za-z0-9_]+)@/g, (w, g, n) => { const v = ci[n.toLowerCase()]; if (v != null && v !== '') c[g + n] = v; return w; }); return c; };
+  const ref = Number(def.ref), out = { column: def.c, reference: ref, valRule: null, refWhere: null, unresolved: [] };
+  let table, key, disp = [], where = ["isactive='Y'"], order = null;
+  if (ref === 17) {   // List: AD_Ref_List of the reference value, in its order
+    const byValue = (O.rows('SELECT isorderbyvalue AS v FROM ad_reference WHERE ad_reference_id=?', [def.refv])[0] || {}).v === 'Y';   // MLookupFactory.getLookup_List: ORDER BY Value when IsOrderByValue, else Name
+    const L = O.rows("SELECT value, name FROM ad_ref_list WHERE ad_reference_id=? AND isactive='Y' ORDER BY " + (byValue ? 'value' : 'name'), [def.refv]);
+    return Object.assign(out, { table: 'ad_ref_list', rows: L.map(r => ({ value: r.value, name: r.name })), shown: L.length, total: L.length });
+  }
+  if ((ref === 18 || ref === 30) && def.refv) {
+    const rt = O.rows('SELECT t.tablename AS tn, k.columnname AS kc, d.columnname AS dc, rt.whereclause AS w, rt.orderbyclause AS ob FROM ad_ref_table rt JOIN ad_table t ON t.ad_table_id=rt.ad_table_id JOIN ad_column k ON k.ad_column_id=rt.ad_key LEFT JOIN ad_column d ON d.ad_column_id=rt.ad_display WHERE rt.ad_reference_id=?', [def.refv])[0];
+    if (!rt) refuse(def.c + ': its reference ' + def.refv + ' has no AD_Ref_Table row');
+    table = rt.tn; key = rt.kc; if (rt.dc) disp = [rt.dc]; order = rt.ob || null;
+    if (rt.w) { const sub = VR.substitute(rt.w, ctxOf(rt.w)); out.refWhere = { code: rt.w, sql: sub.sql }; if (sub.unresolved.length) out.unresolved = out.unresolved.concat(sub.unresolved); else where.push('(' + sub.sql + ')'); }
+  } else if (ref === 19 || ref === 30 || /_id$/i.test(def.c)) { table = def.c.replace(/_ID$/i, ''); key = def.c; }   // TableDir: the column name without _ID (MLookupFactory.getLookup_TableDir)
+  else refuse(def.c + ' is not a lookup (reference ' + ref + '): type its value');
+  const T = O.rows("SELECT ad_table_id AS id, tablename AS tn FROM ad_table WHERE lower(tablename)=lower(?)", [table])[0]; if (!T) refuse(def.c + ': no table ' + table);
+  if (!disp.length) disp = O.rows("SELECT columnname AS c FROM ad_column WHERE ad_table_id=? AND isidentifier='Y' AND isactive='Y' ORDER BY seqno", [T.id]).map(x => x.c);   // the identifier columns (MLookupFactory: the display = the identifiers)
+  if (!disp.length && O.rows("SELECT 1 AS x FROM ad_column WHERE ad_table_id=? AND lower(columnname)='name'", [T.id]).length) disp = ['Name'];
+  if (def.vr && LOOKUP_BREAK !== 'norule') {
+    const v = O.rows('SELECT ad_val_rule_id AS id, code, type FROM ad_val_rule WHERE ad_val_rule_id=?', [def.vr])[0];
+    if (v && v.code) { const sub = VR.substitute(v.code, ctxOf(v.code)); out.valRule = { id: v.id, code: v.code, sql: sub.sql }; if (sub.unresolved.length) out.unresolved = out.unresolved.concat(sub.unresolved); else where.push('(' + sub.sql + ')'); }
+  }
+  if (out.unresolved.length && LOOKUP_BREAK !== 'unfiltered') {   // Env.java:1641-1645 + MLookup.java:1128-1140: an unresolved token clears the lookup (no rows), never an unfiltered list
+    say('lookup column=' + def.c + ' table=' + T.tn + ' unresolved=' + out.unresolved.join(','));
+    return Object.assign(out, { table: T.tn, rows: [], shown: 0, total: 0, why: 'the rule needs ' + out.unresolved.map(t => '@' + t + '@').join(', ') + ' (give ' + out.unresolved.map(t => t.replace(/^[#$]/, '') + '=').join(' ') + ')' });
+  }
+  const limit = Math.min(Number(a.limit) || 50, 1000), cols = [key].concat(disp.filter(d => d.toLowerCase() !== String(key).toLowerCase()));
+  const total = Number(O.rows('SELECT count(*) AS n FROM ' + T.tn + ' WHERE ' + where.join(' AND '))[0].n);
+  const rows = O.rows('SELECT ' + cols.join(', ') + ' FROM ' + T.tn + ' WHERE ' + where.join(' AND ') + ' ORDER BY ' + (order || (disp[0] || key)) + ' LIMIT ' + limit);
+  say('lookup column=' + def.c + ' table=' + T.tn + ' rule=' + (out.valRule ? out.valRule.sql : '-') + ' refWhere=' + (out.refWhere ? out.refWhere.sql : '-') + ' total=' + total + (LOOKUP_BREAK ? ' LOOKUP_BREAK=' + LOOKUP_BREAK : ''));
+  return Object.assign(out, { table: T.tn, rows: rows.map(r => { const ks = Object.keys(r); return { value: r[ks[0]], name: ks.slice(1).map(k2 => r[k2]).filter(v => v != null && v !== '').join(' · ') || String(r[ks[0]]) }; }), shown: rows.length, total });
+}
 async function main(argv) {
   const cmd = argv[0], a = {};
   for (let i = 1; i < argv.length; i++) { const m = /^--(\w+)$/.exec(argv[i]); if (!m || i + 1 >= argv.length) { say('FAIL usage: ' + argv[i]); return 2; } if (m[1] === 'where') (a.where = a.where || []).push(argv[++i]); else a[m[1]] = argv[++i]; }
-  if (['find', 'actions', 'describe', 'read', 'list', 'sum', 'group', 'new', 'update', 'delete', 'load', 'add_window', 'ninja_exec', 'ninja_workflow', 'ninja_rollback', 'ninja_export', 'diff', 'menu', 'process'].concat(Object.keys(ACT)).indexOf(cmd) < 0) { say('FAIL usage: erp_cli.js find|actions|complete|void|close|reverse|describe|read|list|sum|group --kind K (--number N | --id I) [--role R]'); return 2; }
+  if (['find', 'actions', 'describe', 'read', 'list', 'sum', 'group', 'new', 'update', 'delete', 'load', 'add_window', 'ninja_exec', 'ninja_workflow', 'ninja_rollback', 'ninja_export', 'diff', 'menu', 'process', 'lookup'].concat(Object.keys(ACT)).indexOf(cmd) < 0) { say('FAIL usage: erp_cli.js find|actions|complete|void|close|reverse|describe|read|list|sum|group --kind K (--number N | --id I) [--role R]'); return 2; }
   try {
     const O = await boot(a); O.actor = a.user == null ? 101 : Number(a.user);   // the session user: stated, default 101 (the same default the callout context takes), until sign-in exists
-    const out = await (ACT[cmd] ? act(O, a, ACT[cmd]) : ({ find, actions, describe, read, list: OC.list, sum: OC.sum, group: OC.group, new: createRecord, update: updateRecord, delete: deleteRecord, load: loadRecords, add_window: addWindow, ninja_exec: ninjaExec, ninja_workflow: ninjaWorkflow, ninja_rollback: ninjaRollback, ninja_export: ninjaExport, diff: misDiff, menu: menuOf, process: runProcess })[cmd](O, a));
+    const out = await (ACT[cmd] ? act(O, a, ACT[cmd]) : ({ find, actions, describe, read, list: OC.list, sum: OC.sum, group: OC.group, new: createRecord, update: updateRecord, delete: deleteRecord, load: loadRecords, add_window: addWindow, ninja_exec: ninjaExec, ninja_workflow: ninjaWorkflow, ninja_rollback: ninjaRollback, ninja_export: ninjaExport, diff: misDiff, menu: menuOf, process: runProcess, lookup })[cmd](O, a));
     process.stdout.write(JSON.stringify(out) + '\n'); return 0;
   } catch (e) {
-    if (e instanceof Refused || e instanceof OC.Refused) { say('REFUSED ' + e.message); process.stdout.write(JSON.stringify({ refused: true, reason: e.message }) + '\n'); return 3; }
+    if (e instanceof Refused || e instanceof OC.Refused) { say('REFUSED ' + e.message); process.stdout.write(JSON.stringify(Object.assign({ refused: true, reason: e.message }, e.gap ? { gap: true, gapKind: e.gap } : {})) + '\n'); return 3; }
     say('FAIL ' + (e && e.message !== undefined ? e.message : String(e))); if (process.env.ERP_DEBUG) console.error(e.stack); return 1;
   }
 }

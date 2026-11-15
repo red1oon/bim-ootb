@@ -27,7 +27,7 @@
   "mis": { "title": "records, tables, files, Ninja",   "start": "cd Order",  "apps": ["mis", "ninja"], "session": [["menu", "the ERP menu"]] },
   "erp": { "title": "document actions (CO VO CL RC)",  "start": "cd Order",  "apps": ["erp"] }
  },
- "everywhere": [["cd <place>", "go to a building, a kind of it, or an ERP kind (cd .. back, cd alone: nowhere)"], ["pwd", "where you are"], ["role <id>", "a role on every line"], ["history", "the lines you typed"], ["exit", "leave red1"]],
+ "everywhere": [["cd <place>", "go to a building, a kind of it, or an ERP kind (cd .. back, cd alone: nowhere)"], ["pwd", "where you are"], ["role <id>", "a role on every line"], ["history", "the lines you typed"], ["report", "send the last gap to us (email or GitHub issue)"], ["exit", "leave red1"]],
  "words": {
   "ls":      { "help": "list what is here",                      "forms": [
                { "in": "kind", "ex": "ls element_name=*bath*",     "verb": "object.list",   "args": [], "defaults": { "columns": "$columns", "limit": "20" } },

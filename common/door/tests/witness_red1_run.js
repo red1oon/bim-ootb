@@ -31,8 +31,8 @@ const mask = (a) => JSON.stringify(a, (key, v) => (key === 'request' || key === 
   // R2 questions in SeqNo order (independent SQL on the seed)
   let want = null; try { const SQL = await require('sql.js')(), db = new SQL.Database(fs.readFileSync(path.join(ROOT, 'erp/ad_seed.db')));
     const q = db.exec("SELECT pp.columnname, pp.defaultvalue FROM ad_process_para pp JOIN ad_process p ON p.ad_process_id=pp.ad_process_id WHERE p.name='Generate PO from Project' AND pp.isactive='Y' ORDER BY pp.seqno"); want = q.length ? q[0].values : []; } catch (e) { k.L('R2 sql: ' + e.message); }
-  const s2 = run([RED1], fresh(), 'cd Project\nrun "Generate PO from Project"\n3\n1\n\n\nexit\n').out;
-  const asked = []; s2.split('\n').forEach(l => { let m = /^→ mis\.list kind=(?!AD_Process_Para)(\w+) columns=(\w+),Name/.exec(l); if (m) asked.push(m[2]); m = /\((\w+)\)\? \[/.exec(l); if (m) asked.push(m[1]); m = /^(\w+) \((\w+)\): no record to pick from/.exec(l); if (m && asked[asked.length - 1] !== m[2]) asked.push(m[2]); });
+  const s2 = run([RED1], fresh(), 'cd Project\nrun "Generate PO from Project"\n1\n1\n1\n\nexit\n').out;
+  const asked = []; s2.split('\n').forEach(l => { let m = /^→ mis\.lookup column=(\w+) /.exec(l); if (m) asked.push(m[1]); /* §27: a table-direct parameter pick list is read by mis.lookup */ m = /\((\w+)\)\? \[/.exec(l); if (m) asked.push(m[1]); m = /^(\w+) \((\w+)\): nothing to pick from/.exec(l); if (m && asked[asked.length - 1] !== m[2]) asked.push(m[2]); });
   const def = /\(ConsolidateDocument\)\? \[(\w+)\]/.exec(s2), fin = (s2.match(/^→ erp\.process .*$/m) || [''])[0];
   k.L('R2 asked=' + JSON.stringify(asked) + ' want=' + JSON.stringify(want) + ' default shown=' + (def && def[1]) + ' final=' + fin);
   if (!want || !want.length) k.incon('R2', 'no AD_Process_Para rows read');
