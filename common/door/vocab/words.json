@@ -8,6 +8,10 @@
  },
  "summary": "a form marked summary shows only its summary; the next `ls` (no values) is the SAME line, served from the answer the session holds (§22.6)",
  "fill": "the context fills an input the verb has and the line did not give: building <- the building, kind <- the BIM kind (object.*) or the ERP kind (mis.* / erp.*), role <- the role, columns <- the columns the kind's list screen shows (mis_core pickColumns)",
+ "choices": {
+  "_": "a value a word needs and the line did not give opens a pick menu of the legal values, read by ONE door line (by the input's type); in a one-shot run or for an AI there is no menu: the door refuses, naming the missing input (§22.8)",
+  "discipline": { "verb": "viewer.counts", "args": { "by": "discipline" }, "col": 0 }
+ },
  "words": {
   "ls":      { "help": "list what is here",                      "forms": [
                { "in": "kind",     "verb": "object.list",   "args": [], "defaults": { "columns": "$columns", "limit": "20" } },
@@ -27,7 +31,7 @@
                { "in": "kind",     "verb": "object.group",  "args": ["by"] },
                { "in": "erp",      "verb": "mis.group",     "args": ["by"] } ] },
   "clash":   { "help": "clashes between two disciplines: clash <A> <B>", "forms": [
-               { "in": "building", "verb": "viewer.clashes", "args": ["discA", "discB"], "defaults": { "rows": "all" }, "summary": true } ] },
+               { "in": "building", "verb": "viewer.clashes", "args": ["discA", "discB"], "defaults": { "rows": "all" }, "summary": true, "draw": "funnel" } ] },
   "grid":    { "help": "the building's grid lines",              "forms": [
                { "in": "building", "verb": "modeller.lines", "args": [] } ] },
   "walk":    { "help": "walk a discipline: walk <discipline>",   "forms": [
