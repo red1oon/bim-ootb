@@ -74,6 +74,8 @@
                { "in": "erp", "ex": "rm 1500004",      "verb": "mis.delete",    "args": ["id"] } ] },
   "do":      { "help": "a document action: do <CO|VO|CL|RC> <number> (or complete, void, close, reverse)", "forms": [
                { "in": "erp", "ex": "do CO 50000", "codes": { "CO": "complete", "VO": "void", "CL": "close", "RC": "reverse" },      "verb": "erp.{1}",       "args": ["number"], "pick": ["complete", "void", "close", "reverse"] } ] },
+  "run":     { "help": "run a process of the dictionary: run \"<process>\" [record] [Param=value …]", "forms": [
+               { "in": "erp", "ex": "run \"Set Project Type\" 990000 C_ProjectType_ID=103", "verb": "erp.process", "args": ["name", "record"], "ask": "params" } ] },
   "next":    { "help": "what a document may do next: next <number>", "forms": [
                { "in": "erp", "ex": "next 50000",      "verb": "erp.actions",   "args": ["number"], "draw": "tree" } ] },
   "load":    { "help": "load rows from a file: load <file>",     "forms": [

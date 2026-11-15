@@ -199,7 +199,7 @@ async function session(o) {
   };
   let busy = Promise.resolve(), closed = false;
   const handle = async (raw) => {
-    const line = raw.trim(); if ((!line && !sh.menuOpen()) || line.indexOf('--') === 0) return;
+    const line = raw.trim(); if ((!line && !sh.menuOpen() && !sh.state().asking) || line.indexOf('--') === 0) return;
     typed.push(line);
     if ((R.isHelp(line) || GROUP_WORD.test(line)) && !sh.menuOpen()) {   // §24: help / bim / mis / erp / help <word> = words_core.helpText (the SAME bytes as a one-shot `red1 help`); help verbs | help <app> | help <app.verb> = the door's own help
       const h = helpOf(line, sh.core, vocab); process.stdout.write(h.text); say('help topic=' + JSON.stringify(h.topic) + (h.door ? ' door=1' : ' words=1')); return;
