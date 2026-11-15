@@ -5,6 +5,7 @@
 //   the rule that made it (the 2D -> BIM accuracy question). The dev trace switch (Dxf2Prep.trace, CLI --trace) must name ONE source line per body and leave the model untouched.
 //   T1 the switch changes no data: bodies.json, ops.json, verdict.json sha-256 identical with --trace off and on
 //   T2 coverage: every body of the shed has a key (untraced=0); a body no builder claimed is listed by §DXF_TRACE_UNTRACED in the CLI log
+//   T2b the same for every GEOM_INSERT in ops.json (what the canvas shows): toOps joins wall pieces into NEW bodies (found by W-DXF-HOVER, 2026-11-15)
 //   T3 every key resolves to exactly ONE trace('<key>', ...) call in modeller/*.js (espree parse, not text search): printed as §DXF_TRACE_KEY key= bodies= at=<file>:<line>
 //   T4 RED CONTROL: the T2 judge given the map with one key's bodies removed must report untraced > 0 (a judge that always says 0 is not a judge)
 //   T5 OFF: with no map installed, Dxf2Prep.trace returns the body unchanged and installs nothing
@@ -37,22 +38,15 @@ const un = judge(bodies, trace), cliLine = ((rOn.stdout || '').match(/§DXF_TRAC
 console.log('§DXF_TRACE_W T2 bodies=' + bodies.length + ' untraced=' + un.length + ' cli="' + cliLine + '"');
 if (!bodies.length) { console.log('§DXF_TRACE_W VERDICT INCONCLUSIVE no bodies judged'); process.exit(2); }
 ok('T2 every body names the line that built it (untraced=0)', un.length === 0, un.slice(0, 5).map(b => b.guid + '/' + b.class).join(' '));
+const insLine = ((rOn.stdout || '').match(/§DXF_TRACE inserts=(\d+) inserts_untraced=(\d+)/) || []);
+console.log('§DXF_TRACE_W T2b inserts=' + (insLine[1] || '?') + ' inserts_untraced=' + (insLine[2] || '?'));
+ok('T2b every INSERT the canvas shows names its line too (toOps joins wall pieces into new bodies)', insLine.length === 3 && Number(insLine[1]) > 0 && insLine[2] === '0');
 
-// T3 — every key resolves to exactly one trace('<key>', ...) call (espree AST over modeller/*.js)
-const espree = (() => { for (const m of ['espree', path.join(M, '..', 'node_modules', 'espree'), path.join(os.homedir(), 'bim-ootb', 'node_modules', 'espree')]) { try { return require(m); } catch (e) {} } return null; })();
-const sites = {};
-if (espree) {
-  fs.readdirSync(M).filter(f => /\.js$/.test(f)).forEach(f => {
-    let ast; try { ast = espree.parse(fs.readFileSync(path.join(M, f), 'utf8'), { ecmaVersion: 'latest', loc: true }); } catch (e) { return; }
-    (function walk(n) {
-      if (!n || typeof n.type !== 'string') return;
-      if (n.type === 'CallExpression' && n.arguments.length >= 2 && n.arguments[0].type === 'Literal' && typeof n.arguments[0].value === 'string' &&
-          ((n.callee.type === 'MemberExpression' && n.callee.property.name === 'trace') || (n.callee.type === 'Identifier' && n.callee.name === '_trace')))
-        (sites[n.arguments[0].value] = sites[n.arguments[0].value] || []).push(f + ':' + n.loc.start.line);
-      for (const k in n) { if (k === 'loc' || k === 'range') continue; const v = n[k]; if (Array.isArray(v)) v.forEach(walk); else if (v && typeof v === 'object') walk(v); }
-    })(ast);
-  });
-}
+// T3 — every key resolves to exactly one trace('<key>', ...) call: the ONE scan (devtools/hover/trace_sites.js, espree AST over modeller/*.js) the hover index also uses
+let sites = {}, espree = true;
+try { sites = require(path.join(M, '..', 'devtools', 'hover', 'trace_sites.js')).sites(path.join(M, '..')); } catch (e) { espree = false; console.log('§DXF_TRACE_W T3 scan error ' + e.message); }
+const rel = f => f.replace(/^modeller\//, '');
+Object.keys(sites).forEach(k => { sites[k] = sites[k].map(rel); });
 const used = {}; Object.values(trace).forEach(k => { const first = String(k).split(' > ')[0]; used[first] = (used[first] || 0) + 1; });
 let resolved = 0; Object.keys(used).sort().forEach(k => { const at = sites[k] || []; if (at.length === 1) resolved++; console.log('§DXF_TRACE_KEY key=' + k + ' bodies=' + used[k] + ' at=' + (at.join(',') || 'NOT-FOUND')); });
 console.log('§DXF_TRACE_W T3 keys=' + Object.keys(used).length + ' resolved=' + resolved + ' stamp_sites=' + Object.values(sites).reduce((a, s) => a + s.length, 0) + ' parser=' + (espree ? 'espree' : 'MISSING'));

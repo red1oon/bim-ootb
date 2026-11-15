@@ -713,6 +713,7 @@
         var as = asset(gid, pm.vertices, pm.faces, ncut), Pm = { realGeomHash: as.hash, bbox: as.bbox, placement: { x: r6(as.centre[0]), y: r6(as.centre[1]), z: r6(as.centre[2] - as.halfZ), rot: 0 }, ifc_class: P0.ifc_class, storey: P0.storey, provenance: prov };
         if (typeof P0.storey_elev === 'number') Pm.storey_elev = P0.storey_elev;
         if (typed.color != null) Pm.color = typed.color; else if (P0.color != null) Pm.color = P0.color;
+        _trace('dxf2bim_import:wall-line', { guid: gid });   // F.21: a NEW body (its members' panels joined into one wall line) exists only as this insert, so it is stamped here
         remap[q] = newIns.length; newIns.push({ op_type: 'GEOM_INSERT', params: Pm, outputGuid: 'dxf-' + gid }); newAs.push(as); merged += L.length;
       }
       cuts.forEach(function (c) { c.params.parent = remap[c.params.parent]; });

@@ -157,7 +157,14 @@ function writeTrace(res, dir, map) {
   fs.writeFileSync(path.join(dir, 'trace.json'), JSON.stringify({ format: 'dxf2bim-trace/1', trace: T.trace }, null, 1));
   console.log('§DXF_TRACE elements=' + T.elements + ' traced=' + (T.elements - T.untraced.length) + ' untraced=' + T.untraced.length + ' keys=' + Object.keys(T.keys).length);
   T.untraced.forEach(e => console.log('§DXF_TRACE_UNTRACED guid=' + e.guid + ' class=' + e.class + ' kind=' + (e.kind || '-') + ' handle=' + e.handle + ' layer=' + (e.layer || '-')));
-  return T;
+  // the canvas shows the INSERTS (ops.json), not R.els: toOps joins wall pieces into new bodies, so the inserts are judged too
+  const opsF = path.join(dir, 'ops.json'), ins = fs.existsSync(opsF) ? (JSON.parse(fs.readFileSync(opsF, 'utf8')).inserts || []) : [];
+  const unIns = ins.filter(o => !map.get(String(o.outputGuid || '').replace(/^dxf-/, '')));
+  ins.forEach(o => { const gd = String(o.outputGuid || '').replace(/^dxf-/, ''); if (map.get(gd) && !T.trace[gd]) T.trace[gd] = map.get(gd); });
+  fs.writeFileSync(path.join(dir, 'trace.json'), JSON.stringify({ format: 'dxf2bim-trace/1', trace: T.trace }, null, 1));
+  console.log('§DXF_TRACE inserts=' + ins.length + ' inserts_untraced=' + unIns.length);
+  unIns.forEach(o => console.log('§DXF_TRACE_UNTRACED insert=' + o.outputGuid + ' class=' + ((o.params || {}).ifc_class || '-') + ' handle=' + (((o.params || {}).provenance || {}).dxf_handle || '-')));
+  T.inserts = ins.length; T.untracedInserts = unIns; return T;
 }
 
 function webIfc() {
@@ -180,8 +187,9 @@ if (require.main === module) {
     const args = parseArgs(process.argv.slice(2));
     if (args.ifcIn) { const m = await analyticalFromIfc(new Uint8Array(fs.readFileSync(args.ifcIn)), registryValues(), path.resolve(args.out)); process.exit(m.refused ? 2 : 0); }
     if (args.trace) globalThis.__DXF_TRACE = new Map();   // F.21 slice 1: ON only for this run
-    const res = run(args), traced = globalThis.__DXF_TRACE; delete globalThis.__DXF_TRACE;
-    const bodies = write(res, path.resolve(args.out)), g = res.out.gate;
+    const res = run(args), traced = globalThis.__DXF_TRACE;
+    const bodies = write(res, path.resolve(args.out)), g = res.out.gate;   // write() runs toOps, which builds the joined wall lines: the trace stays on through it
+    delete globalThis.__DXF_TRACE;
     if (traced) writeTrace(res, path.resolve(args.out), traced);
     if (args.ifc && g.ok) { const r = await writeIfc(res, path.resolve(args.out)); console.log('§CLI ifc seeded=' + r.seeded + ' typed=' + r.typed + ' coloured=' + r.coloured + ' psets=' + r.withPset + ' styles=' + r.styles + ' byClass=' + JSON.stringify(r.byClass) + ' storeys=' + JSON.stringify(r.storeys)); }
     if (args.report && g.ok) await writeReport(res, path.resolve(args.out), args);
