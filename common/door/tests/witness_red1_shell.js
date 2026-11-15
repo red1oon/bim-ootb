@@ -1,7 +1,7 @@
 // ⚠ DO NOT REMOVE — W-RED1-SHELL (bim-compiler prompts/CLI_ERP_IVR.md §22.11 step R0: the `red1` command). READ THE LOG; an exit code is not evidence.
 //   S1 ISSUE (`red1 'line'` answers differently from `door.js 'line'`: a second engine path) · S2 ISSUE (a session line is run or journalled more or less than once,
 //   so a session writes differently from the same lines run one by one) · S3 ISSUE (`red1 -f FILE --dry` changes the real op-log) · S4 ISSUE (`help verbs` in a session is not the
-//   door's help, `help` misses a word, or it journals/runs something) · S5 ISSUE (a refused line ends the session, so the lines after it never run).
+//   door's help, `help` with bim/mis/erp misses a word, or it journals/runs something) · S5 ISSUE (a refused line ends the session, so the lines after it never run).
 //   Falsifier: RED1_BREAK=twice (the session runs a line twice: must FAIL S2). A claim with nothing to judge says INCONCLUSIVE, never PASS.
 //   Run: node common/door/tests/witness_red1_shell.js > common/door/tests/logs/red1_shell.log 2>&1
 'use strict';
@@ -61,8 +61,8 @@ const k = kit('W-RED1-SHELL'), RED1 = path.join(ROOT, 'common/door/red1.js'), BR
 
   // S4 help in a session = the door's help text; the journal does not move
   const eD = fresh('S4'), dh = await run(DOOR, eD, ['help']), jBefore = lines(jOf('S4')).length;
-  const sh = await run(RED1, eD, [], 'help verbs\n'), sw = await run(RED1, eD, [], 'help\n'), WN = Object.keys(JSON.parse(fs.readFileSync(path.join(ROOT, 'common/door/vocab/words.json'), 'utf8')).words), missing = WN.filter(w => !new RegExp('^  ' + w + ' ', 'm').test(sw.out));
-  k.chk('S4 `help verbs` in a session prints exactly the door\'s `help` text, `help` lists every word of words.json, and neither journals anything', dh.out.length > 50 && sh.out === dh.out && !missing.length && WN.length > 10 && lines(jOf('S4')).length === jBefore,
+  const sh = await run(RED1, eD, [], 'help verbs\n'), sw = await run(RED1, eD, [], 'help\nbim\nmis\nerp\n'), WN = Object.keys(JSON.parse(fs.readFileSync(path.join(ROOT, 'common/door/vocab/words.json'), 'utf8')).words), missing = WN.filter(w => !new RegExp('^  ' + w.replace(/[$]/g, '\\$') + '(\\s|$)', 'm').test(sw.out));   // §24: help shows the groups; bim, mis, erp list the words, each line starting with its example
+  k.chk('S4 `help verbs` in a session prints exactly the door\'s `help` text, `help` + `bim` `mis` `erp` list every word of words.json (§24), and neither journals anything', dh.out.length > 50 && sh.out === dh.out && !missing.length && WN.length > 10 && lines(jOf('S4')).length === jBefore,
     'door help bytes=' + dh.out.length + ' session bytes=' + sh.out.length + ' words listed=' + (WN.length - missing.length) + '/' + WN.length + ' journal ' + jBefore + '→' + lines(jOf('S4')).length);
 
   // S5 a refused line does not end the session
