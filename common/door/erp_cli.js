@@ -17,7 +17,7 @@
 'use strict';
 const fs = require('fs'), path = require('path');
 const ROOT = path.join(__dirname, '..', '..');
-const OC = require('./object_cli.js');
+const OC = require('./object_cli.js'), DP = require('./door_plugins.js');
 const say = (s) => process.stderr.write('§ERP ' + s + '\n');
 const BREAK = process.env.ERP_BREAK || '';   // witness falsifiers: 'actor' (the answer depends on who asks) · 'norole' (the role filter is skipped) · 'wrongcode' (close runs the void action) · 'firstmatch' (an ambiguous number takes the first) · 'neighbour' (a number resolves to the next record)
 class Refused extends Error {}
@@ -95,13 +95,15 @@ function writeImage(O, dir, key, opfile, raw, nOps) {
 async function boot(a) {
   const seed = a.db || process.env.ERP_SEED_DB || path.join(ROOT, 'erp', 'ad_seed.db'), t0 = Date.now(), off = process.env.ERP_SNAPSHOT === 'off';
   // the page's self-heal patch comes BEFORE the op-log replay (an op may write a table only the patch creates, e.g. m_storagereservationlog)
-  let O, how = 'off', key = '-', img = null, raw = null;
+  let O, how = 'off', key = '-', imgKey = '-', img = null, raw = null, staged = false, snap1 = null;
   const opfile = OC.oplogFile({ oplog: a.oplog }, seed), dir = process.env.ERP_SNAPSHOT_DIR || path.join(require('os').homedir(), '.cache', 'bim_erp');
   const inTmp = path.resolve(opfile).indexOf(path.resolve(require('os').tmpdir()) + path.sep) === 0, imgOn = !off && process.env.ERP_OPIMAGE !== 'off' && (!inTmp || process.env.ERP_OPIMAGE === 'on'), IMG_MIN = Math.max(1, Number(process.env.ERP_OPIMAGE_MIN || 200));
   if (!off) {
-    key = snapshotKey(seed); const snap = path.join(dir, path.basename(seed).replace(/\.db$/, '') + '-' + key + '.db');
-    if (imgOn) { try { raw = fs.readFileSync(opfile); } catch (e) { raw = Buffer.alloc(0); } img = findImage(dir, key, opfile, raw); }
-    if (img) { O = await OC.open({ db: img.file }); O.file = seed; how = 'image'; }
+    key = snapshotKey(seed); imgKey = key + (DP.enabled() ? '-p' + DP.digest() : ''); const snap = path.join(dir, path.basename(seed).replace(/\.db$/, '') + '-' + key + '.db');
+    if (DP.enabled()) snap1 = snap.replace(/\.db$/, '-p' + DP.digest() + '.db');   // the patched seed WITH the core plugins started (§29.6 P3a): a cache of seed + patch + bundles, keyed on their bytes; the seed, the op-log and every shipped db stay as they were
+    if (imgOn) { try { raw = fs.readFileSync(opfile); } catch (e) { raw = Buffer.alloc(0); } img = findImage(dir, imgKey, opfile, raw); }
+    if (img) { O = await OC.open({ db: img.file }); O.file = seed; how = 'image'; staged = DP.enabled(); }
+    else if (snap1 && fs.existsSync(snap1)) { O = await OC.open({ db: snap1 }); O.file = seed; how = 'hit+plugins'; staged = true; }
     else if (fs.existsSync(snap)) { O = await OC.open({ db: snap }); O.file = seed; how = 'hit'; }
     else {
       O = await OC.open({ db: seed }); const r = applyPatch(O, seed); how = 'miss';
@@ -110,6 +112,10 @@ async function boot(a) {
     }
   } else { O = await OC.open({ db: seed }); const r = applyPatch(O, seed); say('patch statements=' + r.pOk + ' failed=' + r.pFail); }
   say('snapshot=' + how + ' key=' + key + ' ms=' + (Date.now() - t0));
+  // §29.6 P3a: the core plugins start HERE, on the opened image, before the op-log replays (an op may write a table a bundle makes). Their dictionary goes to this in-memory db only.
+  const tp = Date.now(); await DP.startBuiltins(O, { staged });
+  if (snap1 && !staged) { try { const tmp = snap1 + '.' + process.pid + '.tmp'; fs.writeFileSync(tmp, Buffer.from(O.db.export())); fs.renameSync(tmp, snap1); say('plugin-snapshot=written'); } catch (e) { say('plugin-snapshot=unsaved ' + e.message); } }
+  say('plugins ms=' + (Date.now() - tp) + ' staged=' + staged + ' boot_so_far_ms=' + (Date.now() - t0));
   O.opfile = opfile; O.ops = raw ? (() => { try { return raw.toString('utf8').split('\n').filter(Boolean).map(l => JSON.parse(l)); } catch (e) { return []; } })() : OC.readOps(O.opfile);   // the same bytes the image was checked against
   const skip = img ? img.ops : 0;
   const known = {}; O.rows("SELECT lower(name) AS n FROM sqlite_master WHERE type='table'").forEach(r => { known[r.n] = 1; });
@@ -117,7 +123,7 @@ async function boot(a) {
   O.ops.forEach((o, i) => { if (i < skip) return; const t = String(o.table || '').toLowerCase(); if (t === 'ad_column') colDirty = true; else if (t && (!known[t] || (colDirty && t.slice(0, 3) !== 'ad_'))) { ensureTables(O).forEach(n => { known[n] = 1; }); known[t] = 1; colDirty = false; } OC.applyOp(O.db, O.rows, o); });   // an op on a table a staged window brought: its physical table is made first (§10)
   ensureTables(O);
   if (imgOn && raw && O.ops.length - skip >= IMG_MIN && raw.length && raw[raw.length - 1] === 10) {   // enough was applied after the last image: keep the result (before the engine binds its SQL functions: an export drops them)
-    try { const t1 = Date.now(), w = writeImage(O, dir, key, opfile, raw, O.ops.length); say('opimage=written ops=' + O.ops.length + ' bytes=' + raw.length + ' swept=' + w.swept + ' ms=' + (Date.now() - t1)); } catch (e) { say('opimage=unsaved ' + e.message); }
+    try { const t1 = Date.now(), w = writeImage(O, dir, imgKey, opfile, raw, O.ops.length); say('opimage=written ops=' + O.ops.length + ' bytes=' + raw.length + ' swept=' + w.swept + ' ms=' + (Date.now() - t1)); } catch (e) { say('opimage=unsaved ' + e.message); }
   }
   O.ML = require(path.join(ROOT, 'erp', 'model_layer.js')); O.dbId = 'model:' + path.basename(O.file);
   O.trx = () => new O.ML.Trx((sql, p) => O.rows(sql, p), { db: O.dbId, now: stamp(), uuid: () => require('crypto').randomUUID() });
