@@ -91,7 +91,7 @@
   }
   // commit ONE SET_RULE op (the edit), then seal (sign) + verify the whole chain.
   async function commitEdit(opDb, R, fromT, toT, crossedIds) {
-    var uuid = (global.crypto && global.crypto.randomUUID) ? global.crypto.randomUUID() : ('rule:' + nextTs());
+    var uuid = global.AdCallout.Env.edge().uuid();     // A-5: the id comes from the ONE edge the page installs (no own RNG, no colliding 'rule:'+N fallback); W-RULE-FOLD-EDGE
     global.KernelOps.commitOp(opDb, 'SET_RULE',
       { rule: R.id, layer: R.layer, attribute: R.attr, op: R.cmp, gate: R.gate, T: toT, from: fromT },
       crossedIds || [], 'RULE:' + R.id, uuid, nextTs());
