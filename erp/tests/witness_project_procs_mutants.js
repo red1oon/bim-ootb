@@ -65,6 +65,12 @@ module.exports = [
    edits: [{ file: MO, from: ".setID('bill_user_id', project.ad_user_id)", to: "" }] },
  { name: 'M31-ws-docaction-workflow', kills: ['P0.ws-docaction-direct'], what: 'the web-service set_docaction runs the workflow again (twin-only AD_WF rows)',
    edits: [{ file: 'ws_adinterface.js', from: "var out = ML.processIt(trx, t.t, id, act);", to: "var out = ML.runWorkflow(trx, t.t, id, act);" }] },
+ { name: 'M32-costdetail-element-zero', kills: ['G.G11-costdetail-element-null'], what: 'a shipment cost detail stores M_CostElement_ID 0 instead of NULL (X_M_CostDetail.setM_CostElement_ID)',
+   edits: [{ file: 'model_cost.js', from: "r.m_costelement_id = Number(ceId) ? ceId : null;", to: "r.m_costelement_id = ceId;" }] },
+ { name: 'M33-noproduct-invoice-not-posted', kills: ['G.G11-invoice-posted'], what: 'an invoice line with no product and no charge is not posted (the twin named it "not ported")',
+   edits: [{ file: 'model_post.js', from: ": ACCT.revenueNoProduct(trx, as.c_acctschema_id), cur,", to: ": null, cur," }] },
+ { name: 'M34-noproduct-revenue-schema-default', kills: ['G.G11-noproduct-revenue'], what: 'the product-less revenue account comes from C_AcctSchema_Default, not from the default product category',
+   edits: [{ file: 'model_post.js', from: "revenueNoProduct: function (t, s) { var r = t.q('SELECT pca.p_revenue_acct AS a FROM m_product_category pc, m_product_category_acct pca WHERE pc.m_product_category_id=pca.m_product_category_id AND pca.c_acctschema_id=? ORDER BY pc.isdefault DESC, pc.created', [s])[0];", to: "revenueNoProduct: function (t, s) { var r = t.q('SELECT p_expense_acct AS a FROM c_acctschema_default WHERE c_acctschema_id=?', [s])[0];" }] },
  { name: 'M22-old-handler-back', kills: ['P0.old-handler-gone'], what: 'the old REGISTRY handler comes back in the exports (a second engine beside the port)',
    edits: [{ file: 'ad_process.js', from: "SvrProcess: SvrProcess, ProcessInfoParameter:", to: "registerProjectGenOrder: function () {}, SvrProcess: SvrProcess, ProcessInfoParameter:" }] }
 ];
