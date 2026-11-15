@@ -6,6 +6,7 @@
   "erp": "an ERP kind (after cd \"Business Partner\")",
   "any": "anywhere"
  },
+ "summary": "a form marked summary shows only its summary; the next `ls` (no values) is the SAME line, served from the answer the session holds (§22.6)",
  "fill": "the context fills an input the verb has and the line did not give: building <- the building, kind <- the BIM kind (object.*) or the ERP kind (mis.* / erp.*), role <- the role, columns <- the columns the kind's list screen shows (mis_core pickColumns)",
  "words": {
   "ls":      { "help": "list what is here",                      "forms": [
@@ -26,7 +27,7 @@
                { "in": "kind",     "verb": "object.group",  "args": ["by"] },
                { "in": "erp",      "verb": "mis.group",     "args": ["by"] } ] },
   "clash":   { "help": "clashes between two disciplines: clash <A> <B>", "forms": [
-               { "in": "building", "verb": "viewer.clashes", "args": ["discA", "discB"] } ] },
+               { "in": "building", "verb": "viewer.clashes", "args": ["discA", "discB"], "defaults": { "rows": "all" }, "summary": true } ] },
   "grid":    { "help": "the building's grid lines",              "forms": [
                { "in": "building", "verb": "modeller.lines", "args": [] } ] },
   "walk":    { "help": "walk a discipline: walk <discipline>",   "forms": [
