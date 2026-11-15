@@ -66,8 +66,8 @@ jobs:
           set -u; failed=""; mkdir -p logs
           for w in isolation lens deploy_cost appdef context; do
             f=devtools/vscode/x0-navigator/tests/witness_x0_$w.js; log=logs/ci_x0_$w.log
-            node "$f" < /dev/null > "$log" 2>&1; rc=$?
-            v=$(grep -E 'verdict=[A-Z]+' "$log" | tail -1)
+            rc=0; node "$f" < /dev/null > "$log" 2>&1 || rc=$?
+            v=$(grep -E 'verdict=[A-Z]+' "$log" | tail -1 || true)
             echo "§X0_CI $w exit=$rc :: $v"
             if [ "$rc" -ne 0 ] || ! printf '%s' "$v" | grep -q 'verdict=PASS'; then failed="$failed $w"; tail -20 "$log"; fi
           done
