@@ -36,7 +36,7 @@
             var bytesP = ent.data ? Promise.resolve(ent.data) : (AT.bytes ? AT.bytes(ent) : Promise.reject(new Error('attachment entry has no bytes')));
             return bytesP.then(function (bytes) {
               return PE.packInClient({ name: name || ent.name, bytes: bytes, clientId: client, orgId: org, userId: user, roleId: role, procId: id }).then(function (r) {
-                var d = new Date(), pd = function (n) { return ('0' + n).slice(-2); }, now = d.getFullYear() + '-' + pd(d.getMonth() + 1) + '-' + pd(d.getDate()) + ' ' + pd(d.getHours()) + ':' + pd(d.getMinutes()) + ':' + pd(d.getSeconds());   // local clock (new Timestamp(System.currentTimeMillis()) on the server; never the UTC day, §5.33)
+                var now = A.Env.stamp(A.Env.edge().nowMs()).now;   // A-5: the clock of the ONE page edge (Env.setEdge), stamped as the LOCAL wall clock (new Timestamp(System.currentTimeMillis()) on the server; never the UTC day, §5.33)
                 // :144-150 / :152-155: DateProcessed + P_Msg on the record, success or not (the record is a window row: one signed update through the host)
                 var ops = [{ op_type: 'CRUD_UPDATE', key: 'ad_package_imp_proc', table: 'ad_package_imp_proc', verb: 'update', id: id,
                   changes: { dateprocessed: { old: oldDate, new: r.ok ? now : oldDate }, p_msg: { old: oldMsg, new: r.summary } } }];
