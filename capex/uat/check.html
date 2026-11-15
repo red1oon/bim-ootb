@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UAT Run Checker</title>
+<link rel="stylesheet" href="../dash.css">
+<!-- Plain files, no build step. Spec: prompts/CAPEX_DASHBOARD.md §5.87. The comparisons live in uat_compare.js (the same code the witness W-UAT-CHAIN runs). -->
+<style>
+body{display:block;padding:20px 16px;max-width:980px;margin:0 auto}
+h1{font-size:22px;margin:0 0 4px}.sub{color:var(--mut);margin:0 0 16px}
+.step{display:grid;grid-template-columns:44px 1fr;gap:10px;align-items:start;margin-bottom:12px}
+.step .n{font-weight:700;color:var(--acc);font-size:13px;padding-top:2px}
+.step label{font-weight:600;display:block;margin-bottom:4px}.step small{display:block;color:var(--mut);margin-top:3px}
+input[type=text]{width:100%;font:inherit;padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink)}
+button{font:inherit;font-weight:600;padding:9px 16px;border-radius:8px;border:1px solid var(--acc);background:var(--acc);color:#fff;cursor:pointer}
+button.sec{background:var(--card);color:var(--acc)}button:disabled{opacity:.5;cursor:default}
+table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;padding:8px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--mut);font-weight:600;font-size:12px}td.v{font-weight:700;white-space:nowrap}
+.PASS{color:var(--ok)}.FAIL{color:var(--bad)}.NOTGIVEN,.INCONCLUSIVE{color:var(--mut)}.PARTIALPASS{color:var(--warn)}
+.det{color:var(--mut);font-size:12px;margin-top:3px;word-break:break-word}
+#verdict{font-size:20px;font-weight:700;margin:4px 0 10px}#packinfo{font-size:12px;color:var(--mut)}
+@media (max-width:640px){.step{grid-template-columns:1fr}.hide-sm{display:none}}
+</style>
+</head>
+<body>
+<h1>UAT Run Checker</h1>
+<p class="sub">Marks your run of the UAT guide's chapter B against the reference pack. Nothing leaves this page: the files are read in your browser.</p>
+
+<div class="card">
+  <div class="step"><div class="n">1</div><div><label for="pack">Reference pack (.zip)</label><input id="pack" type="file" accept=".zip"><small>The <code>Shed_UAT_pack_….zip</code> named in the guide's "What you need".</small><div id="packinfo"></div></div></div>
+  <div class="step"><div class="n">2</div><div><label for="marked">Your nine marked sheets (B0.9)</label><input id="marked" type="file" accept=".dxf" multiple><small>The nine <code>…_marked.dxf</code> files <b>Save marked copies</b> downloaded. Select all nine at once.</small></div></div>
+  <div class="step"><div class="n">3</div><div><label for="db">Your Viewer database (B2.8)</label><input id="db" type="file" accept=".db"><small>The <code>SHED_extracted.db</code> that <b>Export ▸ Viewer database</b> downloaded.</small></div></div>
+  <div class="step"><div class="n">4</div><div><label for="vline">The Viewer's status line (B2.9)</label><input id="vline" type="text" placeholder="DONE — SHED … elements …"><small>Copy it as the Viewer shows it after <b>Ctrl+O</b>.</small></div></div>
+  <div class="step"><div class="n">5</div><div><label for="cline">The total cost (B3.1)</label><input id="cline" type="text" placeholder="… — total building cost"><small>The Find box's answer to <code>total cost</code>, before you edit any rate.</small></div></div>
+  <button id="go" disabled>Mark my run</button>
+</div>
+
+<div class="card" id="out" style="margin-top:14px;display:none">
+  <div id="verdict"></div>
+  <table><thead><tr><th>Guide row</th><th>Stage</th><th class="hide-sm">Expected</th><th>Result</th></tr></thead><tbody id="rows"></tbody></table>
+  <p style="margin:12px 0 0"><button class="sec" id="dl">Download result (uat_result.json)</button> <small style="color:var(--mut)">Attach it to the sign-off.</small></p>
+</div>
+
+<script src="../../modeller/lib/dxf-parser.js"></script>
+<script src="../../modeller/dxf2bim/dxf2marks.js"></script>
+<script src="../../erp/pipo_packin.js"></script>
+<script src="../../common/lib/sql-wasm.js"></script>
+<script src="uat_compare.js"></script>
+<script>
+(function () {
+  'use strict';
+  var TAG = '§UATCHECK', $ = function (id) { return document.getElementById(id); }, pack = null, SQL = null, last = null;
+  var hex = function (buf) { return Array.prototype.map.call(new Uint8Array(buf), function (b) { return ('0' + b.toString(16)).slice(-2); }).join(''); };
+  function sqlReady() { return SQL ? Promise.resolve(SQL) : initSqlJs({ locateFile: function (f) { return '../../common/lib/' + f; } }).then(function (s) { SQL = s; return s; }); }
+  function summarize(bytes) { return sqlReady().then(function (S) { var db = new S.Database(bytes); try { return UatCompare.summarizeDb(function (q) { var r = db.exec(q); return r.length ? r[0].values : []; }); } finally { db.close(); } }); }
+  function readFile(f) { return f.arrayBuffer().then(function (b) { return new Uint8Array(b); }); }
+  $('pack').onchange = function () {
+    var f = this.files[0]; pack = null; $('go').disabled = true; $('packinfo').textContent = f ? 'Reading the pack…' : '';
+    if (!f) return;
+    readFile(f).then(PipoPackIn.readZip).then(function (files) {
+      if (!files['manifest.json']) throw new Error('no manifest.json in this zip');
+      var man = JSON.parse(new TextDecoder().decode(files['manifest.json']));
+      if (man.format !== UatCompare.FORMAT) throw new Error('not a UAT pack (format ' + man.format + ')');
+      var names = Object.keys(man.sha256);
+      return Promise.all(names.map(function (n) { return files[n] ? crypto.subtle.digest('SHA-256', files[n]).then(hex) : Promise.resolve(null); })).then(function (h) {
+        var bad = names.filter(function (n, i) { return h[i] !== man.sha256[n]; });
+        if (bad.length) throw new Error('the pack is damaged: ' + bad.join(', '));
+        var refMarked = {}; names.filter(function (n) { return /^marked\/.+\.dxf$/i.test(n); }).forEach(function (n) { refMarked[n.split('/').pop()] = new TextDecoder().decode(files[n]); });
+        return summarize(files['reference/SHED_extracted.db']).then(function (refDb) {
+          pack = { manifest: man, refMarked: refMarked, refDb: refDb };
+          $('packinfo').textContent = 'Pack intact: ' + names.length + ' files checked, built ' + man.built.slice(0, 10) + ' from commit ' + man.commit.slice(0, 8) + '.';
+          console.log(TAG + ' pack ok files=' + names.length + ' marked=' + Object.keys(refMarked).length + ' refElements=' + refDb.rows.length + ' commit=' + man.commit);
+          $('go').disabled = false;
+        });
+      });
+    }).catch(function (e) { $('packinfo').textContent = 'Cannot use this file: ' + e.message; console.log(TAG + ' pack refused ' + e.message); });
+  };
+  $('go').onclick = function () {
+    if (!pack) return; $('go').disabled = true;
+    var mf = Array.prototype.slice.call($('marked').files), dbf = $('db').files[0];
+    Promise.all([Promise.all(mf.map(function (f) { return f.text().then(function (t) { return [f.name, t]; }); })), dbf ? readFile(dbf).then(summarize) : Promise.resolve(null)]).then(function (r) {
+      var marked = {}; r[0].forEach(function (p) { marked[p[0]] = p[1]; });
+      var res = UatCompare.judge(pack.manifest, { marked: r[0].length ? marked : null, refMarked: pack.refMarked, db: r[1], refDb: pack.refDb, viewerLine: $('vline').value, costLine: $('cline').value }, { DxfParser: window.DxfParser, Dxf2Marks: window.Dxf2Marks });
+      res.checked = new Date().toISOString(); last = res; window.__uatResult = res; render(res);
+      res.rows.forEach(function (x) { console.log(TAG + ' ' + x.row + ' ' + x.verdict + ' ' + JSON.stringify(x.detail).slice(0, 300)); });
+      console.log(TAG + '_VERDICT ' + res.verdict);
+    }).catch(function (e) { $('verdict').textContent = 'Could not read your files: ' + e.message; $('out').style.display = ''; console.log(TAG + ' error ' + e.message); })
+      .then(function () { $('go').disabled = false; });
+  };
+  function esc(s) { return String(s === undefined || s === null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function why(x) {
+    var d = x.detail || {};
+    if (x.verdict === 'NOT GIVEN') return 'not given';
+    if (x.row === 'B0.9') return d.sheets + ' of ' + d.of + ' sheets compared' + (d.diffs && d.diffs.length ? '; ' + d.diffs.slice(0, 5).join('; ') + (d.diffs.length > 5 ? ' … (' + d.diffs.length + ' in all)' : '') : '; every mark equal') + (d.exclude && d.exclude.length ? '; exclude box ' + (d.exclude[0].inside ? 'inside the tolerance' : 'OUTSIDE the tolerance') : '');
+    if (x.row === 'B2.8') return d.elements + ' element rows (the reference has ' + d.reference + ')' + (d.onlyYours && d.onlyYours.length ? '; ' + d.onlyYours.length + ' of yours not in the reference, first: ' + d.onlyYours[0].slice(0, 2).join(' ') : '') + (d.onlyReference && d.onlyReference.length ? '; ' + d.onlyReference.length + ' of the reference missing, first: ' + d.onlyReference[0].slice(0, 2).join(' ') : '') + (d.tables && d.tables.length ? '; tables differ: ' + d.tables.map(function (t) { return t.table + ' ' + t.yours + ' vs ' + t.reference; }).join(', ') : '');
+    return 'yours: ' + d.yours;
+  }
+  function render(res) {
+    $('out').style.display = ''; $('verdict').innerHTML = 'Your run: <span class="' + res.verdict.replace(/\s/g, '') + '">' + esc(res.verdict) + '</span>';
+    $('rows').innerHTML = res.rows.map(function (x) { return '<tr><td>' + esc(x.row) + '</td><td>' + esc(x.stage) + '<div class="det">' + esc(why(x)) + '</div></td><td class="hide-sm">' + esc(x.expected) + '</td><td class="v ' + x.verdict.replace(/\s/g, '') + '">' + esc(x.verdict) + '</td></tr>'; }).join('');
+  }
+  $('dl').onclick = function () { if (!last) return; var a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(last, null, 1)], { type: 'application/json' })); a.download = 'uat_result.json'; document.body.appendChild(a); a.click(); setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 3000); };
+})();
+</script>
+</body>
+</html>
