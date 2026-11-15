@@ -27,8 +27,8 @@
         var v = mostNamed(cnt); if (!v.length) return;
         var t = Number(v[0]) * 0.001, tv = mostNamed(toc), top = tv.length ? Number(tv[0]) : ps.level, pm = S.prismPoly(raft.outline, [], r6(top - t), r6(top)); if (!pm) return;
         built[ps.level] = 1; report.slabs++; if (DF && DF.has('slab.ground_on_raft')) DF.use('slab.ground_on_raft');
-        els.push({ guid: 'body-slab-' + pi + '-' + ri, class: 'IfcSlab', storey: 'Level ' + (levels.indexOf(ps.level) + 1), vertices: pm.vertices, faces: pm.faces, handle: raft.handle, layer: raft.layer, sheet: ps.name, kind: 'slab', mark: null, members: [], z0: r6(top - t), z1: r6(top),
-          size: { t: { value: t, source: 'label', others: v.slice(1).map(function (q) { return cnt[q] + 'x ' + q + ' mm'; }) }, top: { value: r6(top), source: tv.length ? 'TOC label' : 'plan level' }, outline: { source: 'the raft under it' } }, height_source: tv.length ? 'label' : 'plan', prov: 'derived', ifc: Object.assign(P.ifcType('slab', null, null), { PredefinedType: 'FLOOR' }) });
+        els.push(D.P.trace('dxf2slabs:slab', { guid: 'body-slab-' + pi + '-' + ri, class: 'IfcSlab', storey: 'Level ' + (levels.indexOf(ps.level) + 1), vertices: pm.vertices, faces: pm.faces, handle: raft.handle, layer: raft.layer, sheet: ps.name, kind: 'slab', mark: null, members: [], z0: r6(top - t), z1: r6(top),
+          size: { t: { value: t, source: 'label', others: v.slice(1).map(function (q) { return cnt[q] + 'x ' + q + ' mm'; }) }, top: { value: r6(top), source: tv.length ? 'TOC label' : 'plan level' }, outline: { source: 'the raft under it' } }, height_source: tv.length ? 'label' : 'plan', prov: 'derived', ifc: Object.assign(P.ifcType('slab', null, null), { PredefinedType: 'FLOOR' }) }));
       });
     });
     levels.forEach(function (l) { report.levels++; if (built[l]) report.built_levels++; else gaps.push({ code: 'GAP:slab_no_outline', kind: 'slab', detail: 'level ' + l + ': no closed floor outline on the sheets; a floor is not guessed' }); });

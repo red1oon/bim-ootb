@@ -53,8 +53,8 @@
           var zEnd = z + (order.length - 1) * rise, hd = String(order[0].h);
           if (DF && DF.has('stair.flights')) DF.use('stair.flights');
           report.flights++; report.treads += order.length - 1; built[name] = 1;
-          els.push({ guid: 'body-stair-' + pi + '-' + hd, class: 'IfcStairFlight', storey: 'Level ' + (levels.indexOf(ps.level) + 1), vertices: V, faces: Fa, handle: hd, layer: ly[0], sheet: ps.name, kind: 'stair', mark: name, members: order.map(function (q) { return q.h; }), z0: r6(z), z1: r6(zEnd),
-            size: { treads: order.length - 1, tread: { value: r6(step), source: 'drawn' }, width: { value: r6(w), source: 'drawn' }, rise: { value: r6(rise), source: '(blondel_m - tread) / 2' } }, height_source: 'plans', prov: 'generated', ifc: P.ifcType('stairlines', name, null) });
+          els.push(D.P.trace('dxf2stairs:stair', { guid: 'body-stair-' + pi + '-' + hd, class: 'IfcStairFlight', storey: 'Level ' + (levels.indexOf(ps.level) + 1), vertices: V, faces: Fa, handle: hd, layer: ly[0], sheet: ps.name, kind: 'stair', mark: name, members: order.map(function (q) { return q.h; }), z0: r6(z), z1: r6(zEnd),
+            size: { treads: order.length - 1, tread: { value: r6(step), source: 'drawn' }, width: { value: r6(w), source: 'drawn' }, rise: { value: r6(rise), source: '(blondel_m - tread) / 2' } }, height_source: 'plans', prov: 'generated', ifc: P.ifcType('stairlines', name, null) }));
           z = zEnd + rise; at = endOf(order[order.length - 1]);
         }
         report.short_m[name + '@' + ps.level] = r6(top - z);
