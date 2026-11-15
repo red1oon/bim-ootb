@@ -9,10 +9,10 @@
 (function (root) {
   'use strict';
   function create(o) {
-    var words = o.words.words, verbs = {}, tokenize = o.tokenize, pick = o.pickColumns, brk = o.brk || '';
+    var words = o.words.words, choices = o.words.choices || {}, verbs = {}, tokenize = o.tokenize, pick = o.pickColumns, brk = o.brk || '', Menu = o.menuCore || null, interactive = !!o.interactive;
     o.vocab.verbs.forEach(function (v) { verbs[v.verb] = v; });
     var buildings = (o.buildings || []).slice();
-    function init() { return { building: null, kind: null, columns: null, erp: null, ecolumns: null, role: null, pending: null, last: null }; }
+    function init() { return { building: null, kind: null, columns: null, erp: null, ecolumns: null, role: null, pending: null, last: null, menu: null, pickFor: null }; }
     function prompt(st) {
       var where = st.erp ? st.erp : (st.building ? st.building + (st.kind ? '/' + st.kind : '') : '');
       return 'red1' + (st.role ? ' [' + st.role + ']' : '') + (where ? ' ' + where : '') + '> ';
@@ -53,7 +53,10 @@
       var e = verbs[verb]; ctxArgs(st, e, args);
       var colsHere = verb.indexOf('object.') === 0 ? st.columns : st.ecolumns;
       Object.keys(form.defaults || {}).forEach(function (k) { if (args[k] != null) return; var v = form.defaults[k]; if (v === '$columns') { if (colsHere && colsHere.length) args[k] = colsHere.join(','); } else args[k] = v; });
-      return { line: lineOf(verb, args), verb: verb, args: args, confirm: !!def.confirm, view: form.summary ? 'summary' : null };
+      // §22.8 R5: a required input still missing opens a pick menu of its legal values (interactive sessions only; elsewhere the door refuses, naming it)
+      var miss = e.inputs.filter(function (i) { return i.required && args[i.name] == null; })[0];
+      if (miss && interactive && Menu && choices[miss.type]) return { pick: { input: miss.name, type: miss.type, word: w, verb: verb } };
+      return { line: lineOf(verb, args), verb: verb, args: args, confirm: !!def.confirm, view: form.summary ? 'summary' : null, draw: form.draw || null };
     }
     function step(st, input) {
       st = JSON.parse(JSON.stringify(st || init()));
@@ -61,6 +64,13 @@
       var out = function () { return { state: st, effects: effects, screen: screen, prompt: prompt(st) }; };
       if (input.result) {
         var p = input.result.purpose, env = input.result.envelope || {}, ok = env.status === 'ok' && env.answer;
+        if (p === 'choices') {
+          var pf = st.pickFor, ch = choices[pf.type], rows = ok && Array.isArray(env.answer.rows) ? env.answer.rows : [];
+          var vals = rows.map(function (r) { return Array.isArray(r) ? r[ch.col] : r[Object.keys(r)[ch.col]]; }).filter(function (v) { return v != null && v !== ''; });
+          if (!vals.length) { st.pickFor = null; screen.push(pf.word + ': no ' + pf.input + ' to pick from (' + (env.why || 'the answer has no rows') + ')'); return out(); }
+          st.menu = Menu.create({ items: vals.map(function (v) { return { name: String(v) }; }), title: pf.word + ': pick ' + pf.input + ' (' + vals.length + ')' });
+          Menu.plain(Menu.render(st.menu)).forEach(function (l) { screen.push(l); }); return out();
+        }
         if (p === 'cd-kind') {
           if (ok) { st.kind = env.answer.kind; st.columns = pick(env.answer.properties || []).cols; screen.push(st.building + '/' + st.kind + ': ' + (env.answer.properties || []).length + ' properties; ls shows ' + st.columns.join(', ')); return out(); }
           effects.push({ line: lineOf('mis.describe', { kind: st.pendingCd }), purpose: 'cd-erp' }); return out();
@@ -71,6 +81,22 @@
           screen.push('cd: no building, kind or ERP window is named "' + name + '"' + (buildings.length ? ' (buildings: ' + buildings.join(', ') + ')' : '')); return out();
         }
         return out();
+      }
+      if (st.menu && (input.key != null || input.text != null)) {   // the pick menu has the keys: {key}, or (a piped session) a line of key names / a digit; an empty line = Enter
+        var keys = input.key != null ? [input.key] : (String(input.text).trim() ? String(input.text).trim().split(/\s+/) : ['Enter']), picked = null;
+        for (var ki = 0; ki < keys.length && st.menu; ki++) {
+          var kk = keys[ki], km = { q: 'Esc', esc: 'Esc', enter: 'Enter', up: 'Up', down: 'Down' }[kk.toLowerCase()] || kk;
+          var mr = Menu.step(st.menu, { key: km }); st.menu = mr.state;
+          mr.effects.forEach(function (ef) { if (ef.picked) picked = ef.picked; });
+          if (picked) { if (brk === 'pickwrong') { var it = st.menu.tree, ix = it.map(function (x) { return x.name; }).indexOf(picked.name); picked = it[(ix + 1) % it.length]; }   // W-RED1-MENU falsifier
+            st.menu = null; }
+          else if (st.menu.phase === 'quit') { st.menu = null; var cf = st.pickFor; st.pickFor = null; screen.push('cancelled: nothing was run (' + cf.word + ' needs ' + cf.input + ')'); return out(); }
+        }
+        if (st.menu) { Menu.plain(Menu.render(st.menu)).forEach(function (l) { screen.push(l); }); return out(); }
+        var pf2 = st.pickFor; st.pickFor = null;
+        screen.push(pf2.input + ' = ' + picked.name);
+        var again = step(st, { text: pf2.text + ' ' + pf2.input + '=' + quote(picked.value) });   // the picked value goes on the line as key=value: the line then says what was chosen
+        again.screen = screen.concat(again.screen); return again;
       }
       var text = String(input.text || '').trim();
       if (st.pending) {   // a y/N question is open
@@ -99,14 +125,16 @@
       if (w === 'role') { var rr = toks[1] ? toks[1].text : ''; if (rr && !/^\d+$/.test(rr)) { screen.push('role is a number (an AD_Role id), got ' + rr); return out(); } st.role = rr || null; screen.push(rr ? 'role ' + rr + ' on every line' : 'no role'); return out(); }
       var x; try { x = expand(st, toks); } catch (err) { x = { error: err.message }; }
       if (x.error) { screen.push(x.error); return out(); }
-      var eff = { line: x.line, purpose: 'run', view: x.view || null, match: x.match || null };
+      if (x.pick) { st.pickFor = { text: text, input: x.pick.input, type: x.pick.type, word: x.pick.word }; var c0 = choices[x.pick.type], ca = JSON.parse(JSON.stringify(c0.args || {})); ctxArgs(st, verbs[c0.verb], ca);
+        effects.push({ line: lineOf(c0.verb, ca), purpose: 'choices' }); return out(); }
+      var eff = { line: x.line, purpose: 'run', view: x.view || null, match: x.match || null, draw: x.draw || null };
       if (x.view === 'summary') st.last = { line: x.line, verb: x.verb, args: x.args }; else if (x.view !== 'rows') st.last = null;
       if (brk === 'dropkey' && x.args.building) eff.shown = x.line.replace(/ building=\S+/, '');   // W-RED1-WORDS falsifier: the printed line lacks the context key
       if (x.confirm) { st.pending = x.line; screen.push(x.line + '   run it? y/N'); return out(); }
       effects.push(eff); return out();
     }
     function wordList() { return Object.keys(words).map(function (w) { return { word: w, help: words[w].help, forms: words[w].forms }; }); }
-    return { init: init, step: step, prompt: prompt, expand: expand, lineOf: lineOf, wordList: wordList };
+    return { init: init, step: step, prompt: prompt, expand: expand, lineOf: lineOf, wordList: wordList, menuOpen: function (st) { return !!(st && st.menu); } };
   }
   var API = { create: create };
   if (typeof module !== 'undefined' && module.exports) module.exports = API; else root.WordsCore = API;

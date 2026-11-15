@@ -11,8 +11,11 @@
   var PAGE = 15;
   function create(o) {
     o = o || {};
-    return { v: 1, opts: { role: o.role == null || o.role === '' ? null : String(o.role), brk: o.brk || '' }, phase: 'new', tree: [], path: [], cursor: 0, top: 0,
+    var st = { v: 1, opts: { role: o.role == null || o.role === '' ? null : String(o.role), brk: o.brk || '' }, phase: 'new', tree: [], path: [], cursor: 0, top: 0,
       find: null, findText: '', found: null, note: '', counts: null };
+    // PICK mode (red1 §22.8, R5): a flat list of legal values {name, value} handed in; Enter on one = the effect {picked:{name, value}}, Esc = cancelled. No door line is read.
+    if (o.items) { st.opts.pick = true; st.opts.title = o.title || 'Pick one'; st.tree = o.items.map(function (x) { return { name: String(x.name), value: x.value == null ? String(x.name) : x.value }; }); st.phase = 'ready'; }
+    return st;
   }
   function rl(st, line) { return st.opts.role == null ? line : line + ' role=' + st.opts.role; }
   function here(st) { if (st.found) return st.found; var n = st.path.length ? st.path[st.path.length - 1].children || [] : st.tree; return n; }
@@ -21,6 +24,7 @@
   function enter(st, effects) {
     var n = here(st)[st.cursor]; if (!n) return;
     if (!st.found && isFolder(n)) { st.path.push(n); st.cursor = 0; st.top = 0; st.note = ''; return; }
+    if (st.opts.pick) { st.phase = 'picked'; effects.push({ picked: { name: n.name, value: n.value } }); return; }
     if (n.action === 'W' && n.kind) { st.phase = 'opened'; st.note = ''; effects.push({ open: { kind: n.kind, name: n.name, windowId: n.windowId } }); return; }
     if (n.action === 'W') { st.note = n.name + ': its window has no tab with a table here, so there is no list to show'; return; }
     st.note = n.name + ' is a ' + ({ P: 'process', R: 'report', X: 'form', F: 'workflow', T: 'task' }[n.action] || 'menu item') + ': it opens in the browser ERP (no terminal screen for it yet); nothing was run';
@@ -58,8 +62,8 @@
   }
   function render(st) {
     var L = [], seg = function (t, s) { return { t: String(t), s: s }; };
-    var where = st.found ? 'find "' + st.findText + '"' : ['Menu'].concat(st.path.map(function (n) { return n.name; })).join(' > ');
-    L.push([seg(where + (st.opts.role ? '   (role ' + st.opts.role + ')' : '   (no role: the whole menu)') + (st.counts ? '   ' + st.counts.windows + ' windows' : ''), 'head')]);
+    var where = st.found ? 'find "' + st.findText + '"' : [st.opts.pick ? st.opts.title : 'Menu'].concat(st.path.map(function (n) { return n.name; })).join(' > ');
+    L.push([seg(where + (st.opts.pick ? '' : (st.opts.role ? '   (role ' + st.opts.role + ')' : '   (no role: the whole menu)')) + (st.counts ? '   ' + st.counts.windows + ' windows' : ''), 'head')]);
     if (st.phase === 'loading' || st.phase === 'new') { L.push([seg('reading the menu…', 'dim')]); return L; }
     var rows = here(st);
     rows.slice(st.top, st.top + PAGE).forEach(function (n, j) {
@@ -70,7 +74,7 @@
     if (!rows.length) L.push([seg('(nothing here)', 'dim')]);
     if (rows.length > PAGE) L.push([seg('  ' + (st.top + 1) + '-' + Math.min(rows.length, st.top + PAGE) + ' of ' + rows.length + '  (PageDown / PageUp)', 'dim')]);
     if (st.phase === 'find') L.push([seg('find: ' + st.findText + '_   (Enter search, Esc cancel)', 'note')]);
-    else L.push([seg(st.note || 'Enter open · Esc back · / find · ? keys · q quit', st.note ? 'note' : 'dim')]);
+    else L.push([seg(st.note || (st.opts.pick ? 'Up/Down or 1-9 pick · Enter choose · Esc cancel' : 'Enter open · Esc back · / find · ? keys · q quit'), st.note ? 'note' : 'dim')]);
     return L;
   }
   function plain(screen) { return screen.map(function (l) { return l.map(function (g) { return g.t; }).join(''); }); }

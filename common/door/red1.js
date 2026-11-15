@@ -34,7 +34,7 @@ const SESSION_WORD = /^\s*(exit|quit|history|menu)(\s|$)/i;
 function makeShell(o) {
   const D = require(DOOR), R = require(path.join(__dirname, 'render.js')), W = require(path.join(__dirname, 'words_core.js')), M = require(path.join(__dirname, 'mis_core.js'));
   const door = D.createDoor({ journal: o.journal }), vocab = D.loadVocab(), words = JSON.parse(fs.readFileSync(path.join(__dirname, 'vocab', 'words.json'), 'utf8'));
-  const core = W.create({ vocab, words, tokenize: D.tokenize, pickColumns: M.pickColumns, buildings: buildingNames(), brk: process.env.WORDS_BREAK || '' });
+  const core = W.create({ vocab, words, tokenize: D.tokenize, pickColumns: M.pickColumns, menuCore: require(path.join(__dirname, 'menu_core.js')), interactive: !!o.interactive, buildings: buildingNames(), brk: process.env.WORDS_BREAK || '' });
   let st = core.init(), n = 0; const held = new Map(), G = require(path.join(__dirname, 'glob.js'));
   // §22.8 / R7 the warm page: while the session is in a building, ONE headless Viewer page of it stays open (viewer_verbs.js __serve); the verbs find it through
   // $VIEWER_SESSION and ask it instead of opening a page per line. RED1_WARM=off: no warm page (every line opens its own, as a line run alone does).
@@ -60,7 +60,7 @@ function makeShell(o) {
     return Object.assign({}, e, { match, answer: Object.assign({}, e.answer, { rows, matched: rows.length, rowsBefore: e.answer.rows.length }) });
   };
   // one word-line (or door line): returns the envelopes of the lines it ran. print(text) for the screen, shown(line) for the `→` line
-  async function run(text, io) {
+  async function run(text, io) {   // text: a word-line or a door line; or {key: 'Up'} while a pick menu is open
     const envs = [];
     const exec = async (line, shownLine, match) => {
       io.arrow((shownLine || line) + (match ? ' | ' + match : ''));
@@ -74,25 +74,26 @@ function makeShell(o) {
       if (e) say('line verb=' + (e.verb || '-') + ' status=' + e.status + ' request=' + e.request + ' line=' + JSON.stringify(line));
       return e;
     };
-    if (isDoorLine(text)) {   // a door line, maybe with the shell's row filter after a bar: `app.verb k=v | *Pipe*` (§22.7)
+    const asKey = typeof text === 'object';
+    if (!asKey && !core.menuOpen(st) && isDoorLine(text)) {   // a door line, maybe with the shell's row filter after a bar: `app.verb k=v | *Pipe*` (§22.7)
       const pm = /^(.*?\S)\s+\|\s+(\S+)\s*$/.exec(text.trim()), line = pm ? pm[1] : text.trim(), match = pm ? pm[2] : null;
       const e = await exec(line, null, match); if (e) { envs.push(e); io.show(viewOf(e, match)); } return envs; }
-    let r = core.step(st, { text });
+    let r = core.step(st, asKey ? text : { text });
     for (;;) {
-      st = r.state; r.screen.forEach(io.print); warmTo(st.building);
+      st = r.state; if (core.menuOpen(st) && io.menu) io.menu(r.screen); else r.screen.forEach(io.print); warmTo(st.building);
       if (!r.effects.length) break;
       const ef = r.effects[0], e = await exec(ef.line, ef.shown, ef.match);
       if (!e) break;
-      if (ef.purpose === 'run') { const v = viewOf(e, ef.match); envs.push(v); io.show(v, ef.view); r = { state: st, effects: r.effects.slice(1), screen: [] }; continue; }
+      if (ef.purpose === 'run') { const v = viewOf(e, ef.match); envs.push(v); io.show(v, ef.view, ef.draw); r = { state: st, effects: r.effects.slice(1), screen: [] }; continue; }
       r = core.step(st, { result: { purpose: ef.purpose, envelope: e } });
     }
     return envs;
   }
-  return { run, prompt: () => core.prompt(st), state: () => st, core, vocab, R, door };
+  return { run, prompt: () => core.prompt(st), state: () => st, menuOpen: () => core.menuOpen(st), core, vocab, R, door, words };
 }
 
 async function session(o) {
-  let sh; try { sh = makeShell(o); } catch (e) { say('FAIL ' + e.message); return 1; }
+  let sh; try { sh = makeShell(Object.assign({}, o, { interactive: true })); } catch (e) { say('FAIL ' + e.message); return 1; }
   const { R, vocab } = sh, Dr = require(path.join(__dirname, 'draw_core.js')), tty = !!process.stdin.isTTY, histFile = process.env.RED1_HISTORY || path.join(os.homedir(), '.red1_history');
   let history = []; if (tty) { try { history = fs.readFileSync(histFile, 'utf8').split('\n').filter(Boolean).reverse().slice(0, 1000); } catch (e) { /* first run */ } }
   const names = vocab.verbs.map(v => v.verb).concat(sh.core.wordList().map(w => w.word), ['help', 'exit', 'quit', 'history', 'menu', 'cd', 'pwd', 'role']);
@@ -100,11 +101,20 @@ async function session(o) {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: tty, completer: tty ? completer : undefined, history, historySize: 1000, prompt: tty ? sh.prompt() : '' });
   const typed = [];
   say('session tty=' + tty + ' journal=' + sh.door.journalFile + ' verbs=' + vocab.verbs.length + ' words=' + sh.core.wordList().length);
+  // a pick menu on a terminal is redrawn in place (no scroll): the lines it took are cleared first; anything else printed ends that
+  let menuH = 0;
+  const w = (t) => { menuH = 0; process.stdout.write(t); };
   const io = {
-    print: (t) => process.stdout.write(t + '\n'),
-    arrow: (l) => process.stdout.write('→ ' + l + '\n'),
-    show: (e, view) => {
+    print: (t) => w(t + '\n'),
+    arrow: (l) => w('→ ' + l + '\n'),
+    menu: (lines) => { if (tty && menuH) process.stdout.write('\r\x1b[' + menuH + 'A\x1b[0J'); process.stdout.write(lines.join('\n') + '\n'); menuH = lines.length + (tty ? 1 : 0); },
+    show: (e, view, draw) => {
+      menuH = 0;
       const a = e.answer || {}, rows = Array.isArray(a.rows) && view !== 'summary' ? a.rows : null;
+      if (draw === 'funnel' && view === 'summary' && e.status === 'ok') {   // §22.8 R6: the clash funnel, drawn from the answer's own value
+        const f = Dr.funnel(a.value, { ascii: process.env.RED1_ASCII === '1', brk: process.env.DRAW_BREAK || '' }); process.stdout.write(e.status + ' · ' + e.verb + (e.held ? ' · held' : ' · ' + e.ms + ' ms') + '\n');
+        if (f) { f.forEach(l => process.stdout.write(l + '\n')); say('draw funnel lines=' + f.length + ' value=' + JSON.stringify(a.value)); if (Array.isArray(a.rows)) process.stdout.write('ls lists the ' + a.rows.length + ' rows\n'); return; }
+      }
       process.stdout.write(e.status + (e.verb ? ' · ' + e.verb : '') + (e.held ? ' · held' : (e.ms != null ? ' · ' + e.ms + ' ms' : '')) + (e.why ? ' · ' + e.why : '') + '\n');
       if (a.summary) process.stdout.write(a.summary + '\n');
       if (e.match && !rows) process.stdout.write('no row matches ' + e.match + '\n');
@@ -115,10 +125,18 @@ async function session(o) {
   };
   let busy = Promise.resolve(), closed = false;
   const handle = async (raw) => {
-    const line = raw.trim(); if (!line || line.indexOf('--') === 0) return;
+    const line = raw.trim(); if ((!line && !sh.menuOpen()) || line.indexOf('--') === 0) return;
     typed.push(line);
-    if (R.isHelp(line)) { const h = R.help(vocab, line); process.stdout.write(h.text); say('help topic=' + JSON.stringify(line.replace(/^\s*(!help|help|\?)/, '').trim()) + ' ok=' + h.ok); return; }
-    const sw = SESSION_WORD.exec(line);
+    if (R.isHelp(line) && !sh.menuOpen()) {   // help = the red1 words (from words.json); help verbs | help <app> | help <app.verb> | help all = the door's own help
+      const topic = line.replace(/^\s*(!help|help|\?)/, '').trim(), W = sh.words.words;
+      if (/^!help/.test(line.trim()) || (topic && !W[topic])) { const h = R.help(vocab, '!help' + (topic && topic !== 'verbs' ? ' ' + topic : '')); process.stdout.write(h.text); say('help topic=' + JSON.stringify(topic) + ' door=1 ok=' + h.ok); return; }
+      const names = topic ? [topic] : Object.keys(W), wid = Math.max.apply(null, names.map(n => n.length));
+      if (!topic) process.stdout.write('red1 words (each prints the door line it runs):\n');
+      names.forEach(n => process.stdout.write('  ' + n.padEnd(wid) + '  ' + W[n].help + '   [' + W[n].forms.map(f => f.in + ' -> ' + f.verb).join(' · ') + ']\n'));
+      if (!topic) process.stdout.write('  ' + 'cd'.padEnd(wid) + '  go to a building, a kind of it, or an ERP kind (cd .. back, cd alone: nowhere)\n  ' + 'pwd'.padEnd(wid) + '  where you are, as door keys\n  ' + 'role'.padEnd(wid) + '  role <id> on every line\n  ' + 'menu'.padEnd(wid) + '  the ERP menu\nhelp <word> for one; help verbs for every door verb (app.verb key=value).\n');
+      say('help topic=' + JSON.stringify(topic) + ' words=' + names.length); return;
+    }
+    const sw = sh.menuOpen() ? null : SESSION_WORD.exec(line);
     if (sw) {
       const w = sw[1].toLowerCase();
       if (w === 'exit' || w === 'quit') { rl.close(); return; }
@@ -128,6 +146,10 @@ async function session(o) {
     await sh.run(line, io);
     say('typed n=' + typed.length + ' where=' + JSON.stringify(sh.prompt().trim()));
   };
+  if (tty) process.stdin.on('keypress', (str, key) => {   // while a pick menu is open, Up/Down/Esc move it (readline would recall history); digits and Enter arrive as a line
+    if (!sh.menuOpen() || !key || ['up', 'down', 'escape'].indexOf(key.name) < 0) return;
+    setImmediate(() => { rl.write(null, { ctrl: true, name: 'u' }); busy = busy.then(() => sh.run({ key: key.name === 'up' ? 'Up' : key.name === 'down' ? 'Down' : 'Esc' }, io)).then(() => { if (!closed) { rl.setPrompt(sh.prompt()); rl.prompt(); } }); });
+  });
   rl.on('line', (l) => { busy = busy.then(() => handle(l)).then(() => { if (!closed && tty) { rl.setPrompt(sh.prompt()); rl.prompt(); } }).catch(err => { say('FAIL ' + (err && err.stack || err)); }); });
   if (tty) rl.prompt();
   await new Promise((res) => rl.on('close', () => { closed = true; busy.then(res); }));
