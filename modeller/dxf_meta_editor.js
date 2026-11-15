@@ -285,7 +285,8 @@
   function onMove(ev) { if (!drag) return; var p = planeHit(rayFrom(ev), drag.c.z); if (p) { drag.p1 = p; drawBox(); } ev.stopPropagation(); }
   function onUp(ev) {
     if (!drag) return; var d = drag; drag = null; window.A.controls.enabled = true;
-    var k = d.c.k, r = [Math.min(d.p0.x, d.p1.x) / k, Math.min(d.p0.y, d.p1.y) / k, Math.max(d.p0.x, d.p1.x) / k, Math.max(d.p0.y, d.p1.y) / k].map(function (v) { return Number(v.toFixed(3)); });
+    var k = d.c.k, inv = d.c.toDrawing || function (wx, wy) { return [wx / k, wy / k]; }, q0 = inv(Math.min(d.p0.x, d.p1.x), Math.min(d.p0.y, d.p1.y)), q1 = inv(Math.max(d.p0.x, d.p1.x), Math.max(d.p0.y, d.p1.y));   // CAPEX §5.84: the sheet's own inverse (a plan after the first is drawn shifted)
+    var r = [q0[0], q0[1], q1[0], q1[1]].map(function (v) { return Number(v.toFixed(3)); });
     if (exBox) { window.A.scene.remove(exBox); exBox = null; }
     if (r[2] - r[0] <= 0 || r[3] - r[1] <= 0) { console.log(TAG + ' exclude: empty box, nothing written'); return; }
     var sh = S.sheets.filter(function (s) { return s.name === S.exSheet; })[0];
