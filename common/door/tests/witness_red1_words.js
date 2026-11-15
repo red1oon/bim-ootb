@@ -14,7 +14,7 @@ const run = (argv, env) => new Promise((res) => { let o = '', e = ''; const p = 
 const mask = (x) => JSON.stringify(x, (key, v) => (key === 'request' || key === 'ms' ? undefined : v));
 (async () => {
   // R1 + R2: every word, every form, in a place that fits it, with a sample value per positional input (the vocabulary's example, else a type-shaped value)
-  const core = W.create({ vocab, words, tokenize: D.tokenize, pickColumns: M.pickColumns, buildings: ['Duplex'] });
+  const core = W.create({ vocab, words, msg: require(path.join(ROOT, 'common/door/msg_core.js')).create(JSON.parse(fs.readFileSync(path.join(ROOT, 'common/door/vocab/messages.json'), 'utf8'))), tokenize: D.tokenize, pickColumns: M.pickColumns, buildings: ['Duplex'] });
   const place = { kind: { building: 'Duplex', kind: 'Element', columns: ['guid'] }, building: { building: 'Duplex' }, erp: { erp: 'Business Partner', ecolumns: ['Value'] }, any: {} };
   const APPS = { kind: ['object', 'viewer', 'modeller'], building: ['object', 'viewer', 'modeller'], erp: ['mis', 'erp'], any: ['model', 'ninja'] };
   const sample = (inp) => (inp && inp.example != null ? String(inp.example) : (inp && inp.type === 'number' ? '1' : 'x1'));

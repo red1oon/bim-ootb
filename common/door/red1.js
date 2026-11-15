@@ -51,15 +51,17 @@ function welcome() {
   const f = (l) => l.replace('{version}', version).replace('{verbs}', nVerbs).replace('{words}', nWords).replace('{commit}', commit);
   return { lines: W.lines.map(f), version: W.lines.map(f).filter(l => l.indexOf('red1 ' + version) >= 0)[0] || ('red1 ' + version) };
 }
+// the person's text: ONE catalog (vocab/messages.json) read by msg_core.js, handed to words_core (bim-compiler prompts/VOCAB_MESSAGE_CATALOG.md §3)
+function msgCore() { return require(path.join(__dirname, 'msg_core.js')).create(JSON.parse(fs.readFileSync(path.join(__dirname, 'vocab', 'messages.json'), 'utf8'))); }
 function wordsCore() {   // the expander alone, enough to print help (no door, no shell)
   const D = require(DOOR), vocab = D.loadVocab(), words = JSON.parse(fs.readFileSync(path.join(__dirname, 'vocab', 'words.json'), 'utf8'));
-  return { vocab, core: require(path.join(__dirname, 'words_core.js')).create({ vocab, words, tokenize: D.tokenize, pickColumns: require(path.join(__dirname, 'mis_core.js')).pickColumns, buildings: [], brk: process.env.WORDS_BREAK || '' }) };
+  return { vocab, core: require(path.join(__dirname, 'words_core.js')).create({ vocab, words, msg: msgCore(), tokenize: D.tokenize, pickColumns: require(path.join(__dirname, 'mis_core.js')).pickColumns, buildings: [], brk: process.env.WORDS_BREAK || '' }) };
 }
 
 function makeShell(o) {
   const D = require(DOOR), R = require(path.join(__dirname, 'render.js')), W = require(path.join(__dirname, 'words_core.js')), M = require(path.join(__dirname, 'mis_core.js'));
   const door = D.createDoor({ journal: o.journal }), vocab = D.loadVocab(), words = JSON.parse(fs.readFileSync(path.join(__dirname, 'vocab', 'words.json'), 'utf8'));
-  const core = W.create({ vocab, words, tokenize: D.tokenize, pickColumns: M.pickColumns, menuCore: require(path.join(__dirname, 'menu_core.js')), interactive: !!o.interactive, buildings: buildingNames(), brk: process.env.WORDS_BREAK || '' });
+  const core = W.create({ vocab, words, msg: msgCore(), tokenize: D.tokenize, pickColumns: M.pickColumns, menuCore: require(path.join(__dirname, 'menu_core.js')), interactive: !!o.interactive, buildings: buildingNames(), brk: process.env.WORDS_BREAK || '' });
   let st = core.init(), n = 0; const held = new Map(), G = require(path.join(__dirname, 'glob.js'));
   // §22.8 / R7 the warm page: while the session is in a building, ONE headless Viewer page of it stays open (viewer_verbs.js __serve); the verbs find it through
   // $VIEWER_SESSION and ask it instead of opening a page per line. RED1_WARM=off: no warm page (every line opens its own, as a line run alone does).
@@ -281,7 +283,7 @@ if (require.main === module) {
 function api(o) {
   o = o || {};
   const D = require(DOOR), W = require(path.join(__dirname, 'words_core.js')), vocab = D.loadVocab(), words = JSON.parse(fs.readFileSync(path.join(__dirname, 'vocab', 'words.json'), 'utf8'));
-  const core = W.create({ vocab, words, tokenize: D.tokenize, pickColumns: require(path.join(__dirname, 'mis_core.js')).pickColumns, buildings: buildingNames() }), door = D.createDoor({ journal: o.journal }), out = {};
+  const core = W.create({ vocab, words, msg: msgCore(), tokenize: D.tokenize, pickColumns: require(path.join(__dirname, 'mis_core.js')).pickColumns, buildings: buildingNames() }), door = D.createDoor({ journal: o.journal }), out = {};
   vocab.verbs.forEach((e, i) => { if (process.env.API_BREAK === 'skip' && i === vocab.verbs.length - 1) return;   // W-RED1-API falsifier: one verb left out (must FAIL A1)
     const [app, verb] = e.verb.split('.'); out[app] = out[app] || {};
     out[app][verb] = (args) => { const line = core.lineOf(e.verb, Object.assign({}, args || {})); return door.runLine(line, { actor: o.actor || 'human' }).then(env => Object.assign(env, { line })); }; });
