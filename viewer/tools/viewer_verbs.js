@@ -39,20 +39,64 @@ async function resolveLive(building) {
   return url;
 }
 const target = async (building) => (VD.isLive() ? { dbUrl: await resolveLive(building) } : { db: resolveDb(building) });
-async function ask(building, tpl, slots, text) {
-  const tg = await target(building), db = tg.db || tg.dbUrl, pageLog = [], t0 = Date.now();
+// one page, opened and ready for Ask (the Viewer's own load, then Find mounted)
+async function openPage(building) {
+  const tg = await target(building), db = tg.db || tg.dbUrl, pageLog = [];
   const d = await VD.start(Object.assign({ pageLog }, tg));
   say('page=' + d.pageUrl + ' mode=' + (d.live ? 'live' : 'checkout'));
-  try {
-    await d.open(); await d.waitLoaded();
-    await d.page.evaluate(() => window.APP.loadNavigate());
-    await d.page.waitForFunction(() => typeof window.APP.askRun === 'function', { timeout: 120000 });
-    const ans = await d.page.evaluate((tpl, slots, text) => window.APP.askRun({ tpl, slots, text }).then(a => JSON.parse(JSON.stringify(a))), tpl, slots, text);
-    const line = pageLog.filter(l => l.indexOf('§ASK_ANSWER id=' + tpl + ' ') === 0).pop() || null;
-    const lines = pageLog.filter(l => /^§(ASK_|CLASH_QUERY|CLASH_NARROW)/.test(l)).map(l => l.slice(0, 300));
-    say(tpl + ' building=' + building + ' verdict=' + ans.verdict + ' ms=' + (Date.now() - t0));
-    return { ans, line, lines, pageErrors: d.pageErrors.slice(), db, page: d.live ? 'live' : 'checkout' };
-  } finally { await d.close(); }
+  await d.open(); await d.waitLoaded();
+  await d.page.evaluate(() => window.APP.loadNavigate());
+  await d.page.waitForFunction(() => typeof window.APP.askRun === 'function', { timeout: 120000 });
+  return { d, db, pageLog };
+}
+async function askOn(P, building, tpl, slots, text) {
+  const from = P.pageLog.length, e0 = P.d.pageErrors.length;
+  const ans = await P.d.page.evaluate((tpl, slots, text) => window.APP.askRun({ tpl, slots, text }).then(a => JSON.parse(JSON.stringify(a))), tpl, slots, text);
+  if (process.env.VIEWER_WARM_BREAK === 'lie' && process.env.__VIEWER_SERVING === '1' && ans.value && typeof ans.value.meshClashes === 'number') ans.value.meshClashes += 1;   // W-RED1-WARM falsifier: the warm page answers another number (must FAIL W1)
+  const log = P.pageLog.slice(from), line = log.filter(l => l.indexOf('§ASK_ANSWER id=' + tpl + ' ') === 0).pop() || null;
+  const lines = log.filter(l => /^§(ASK_|CLASH_QUERY|CLASH_NARROW)/.test(l)).map(l => l.slice(0, 300));
+  return { ans, line, lines, pageErrors: P.d.pageErrors.slice(e0), db: P.db, page: P.d.live ? 'live' : 'checkout' };
+}
+// THE WARM PAGE (bim-compiler prompts/CLI_ERP_IVR.md §22.8, step R7): the red1 shell keeps ONE page per building open and names its state file in $VIEWER_SESSION
+// ({building, port, token, pid, ready}). A verb asks that page when it holds the same building; otherwise, or when the page is gone, it opens a fresh page as before.
+// The answer is the page's own (the same askRun); only the wait for the load is saved.
+function warmOf(building) {
+  const f = process.env.VIEWER_SESSION; if (!f || VD.isLive()) return null;
+  let st = null; try { st = JSON.parse(fs.readFileSync(f, 'utf8')); } catch (e) { return null; }
+  return st && st.building === building ? st : null;
+}
+async function askWarm(st, f, building, tpl, slots, text) {
+  for (let i = 0; i < 600 && st && !st.ready; i++) { await new Promise(r => setTimeout(r, 500)); try { st = JSON.parse(fs.readFileSync(f, 'utf8')); } catch (e) { return null; } if (st.building !== building) return null; }
+  if (!st || !st.ready) return null;
+  return new Promise((res) => { const body = JSON.stringify({ tpl, slots, text }); const rq = require('http').request({ host: '127.0.0.1', port: st.port, method: 'POST', headers: { 'x-token': st.token, 'content-length': Buffer.byteLength(body) }, timeout: 1800000 },
+    (x) => { let b = ''; x.on('data', d => { b += d; }); x.on('end', () => { try { const j = JSON.parse(b); res(x.statusCode === 200 ? j : null); } catch (e) { res(null); } }); });
+    rq.on('error', () => res(null)); rq.end(body); });
+}
+async function ask(building, tpl, slots, text) {
+  const t0 = Date.now(), st = warmOf(building);
+  if (st) { const r = await askWarm(st, process.env.VIEWER_SESSION, building, tpl, slots, text); if (r) { say(tpl + ' building=' + building + ' verdict=' + r.ans.verdict + ' ms=' + (Date.now() - t0) + ' page=warm'); return r; } say('warm page not reachable; a fresh page'); }
+  const P = await openPage(building);
+  try { const r = await askOn(P, building, tpl, slots, text); say(tpl + ' building=' + building + ' verdict=' + r.ans.verdict + ' ms=' + (Date.now() - t0) + ' page=fresh'); return r; }
+  finally { await P.d.close(); }
+}
+// the daemon: node viewer_verbs.js __serve --building B --state FILE (started by red1; stopped by a POST {close:true} or by killing it)
+async function serve(building, file) {
+  process.env.__VIEWER_SERVING = '1';
+  const t0 = Date.now(), P = await openPage(building), token = require('crypto').randomBytes(16).toString('hex'); let busy = Promise.resolve();
+  const srv = require('http').createServer((q, s) => { let body = ''; q.on('data', d => { body += d; }); q.on('end', () => {
+    const reply = (c, o) => { s.writeHead(c, { 'Content-Type': 'application/json' }); s.end(JSON.stringify(o)); };
+    if (q.headers['x-token'] !== token) return reply(403, { error: 'bad token' });
+    let r; try { r = JSON.parse(body); } catch (e) { return reply(400, { error: 'bad request' }); }
+    if (r.close) { reply(200, { closed: true }); setTimeout(async () => { await P.d.close(); try { const st = JSON.parse(fs.readFileSync(file, 'utf8')); if (st.pid === process.pid) fs.unlinkSync(file); } catch (e) { /* gone */ } process.exit(0); }, 50); return; }
+    busy = busy.then(async () => { const t1 = Date.now(); try { const a = await askOn(P, building, r.tpl, r.slots, r.text); say('serve ' + r.tpl + ' ms=' + (Date.now() - t1)); reply(200, a); } catch (e) { reply(500, { error: String(e.message || e) }); } });
+  }); });
+  await new Promise(z => srv.listen(0, '127.0.0.1', z));
+  // it never outlives the shell that started it: SIGTERM, or the parent gone (checked every 2 s), closes the page and exits
+  const stop = async () => { try { await P.d.close(); } catch (e) { /* gone */ } try { const st = JSON.parse(fs.readFileSync(file, 'utf8')); if (st.pid === process.pid) fs.unlinkSync(file); } catch (e) { /* gone */ } process.exit(0); };
+  process.on('SIGTERM', stop); process.on('SIGINT', stop);
+  const parent = Number(process.env.__VIEWER_PARENT || 0); if (parent) setInterval(() => { try { process.kill(parent, 0); } catch (e) { say('serve parent ' + parent + ' gone; closing'); stop(); } }, 2000).unref();
+  fs.writeFileSync(file, JSON.stringify({ building, port: srv.address().port, token, pid: process.pid, ready: true, load_ms: Date.now() - t0 }));
+  say('serve ready building=' + building + ' load_ms=' + (Date.now() - t0));
 }
 
 // VOLATILE inputs are checked before any browser starts.
@@ -91,6 +135,7 @@ module.exports = { viewerCounts, viewerClashes, resolveDb };
 
 if (require.main === module) {
   const argv = process.argv.slice(2), verb = argv[0], arg = (k) => { const i = argv.indexOf('--' + k); return i >= 0 ? argv[i + 1] : undefined; };
+  if (verb === '__serve') { serve(arg('building'), arg('state')).catch(e => { console.error('§VIEWER_VERB FAIL ' + (e && e.message || e)); process.exit(1); }); return; }
   const f = verb === 'counts' ? () => viewerCounts({ building: arg('building'), by: arg('by') })
     : verb === 'clashes' ? () => viewerClashes({ building: arg('building'), discA: arg('a'), discB: arg('b'), rows: arg('rows') }) : null;
   if (!f) { console.error('usage: node viewer/tools/viewer_verbs.js counts --building B [--by discipline|storey] | clashes --building B --a ARC --b MEP'); process.exit(2); }
