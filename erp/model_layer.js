@@ -303,8 +303,22 @@
   PO.prototype.setReplication = function (b) { this.m_isReplication = !!b; return this; };
   PO.prototype.isReplication = function () { return this.m_isReplication; };
   PO.prototype.saveReplica = function (isFromReplication) { this.m_isReplication = isFromReplication == null ? true : !!isFromReplication; return this.saveEx(); };
+  // The generated set<X>_ID(int) setter: an id < 1 is set_Value(col, null); PO.set_Value on a MANDATORY column (AD_Column.IsMandatory) with null remembers the error (PO.java:997-1004
+  //   log.saveError("FillMandatory", ColumnName); m_setErrors[index]) and the next save() refuses it (PO.java:2438-2451). Used where a ported constructor/setter chain sets an id that can be 0.
+  var _mand = {};
+  function isMandatoryCol(trx, table, col) {
+    var dk = ck(trx.dbId, table + '.' + col); if (_mand[dk] !== undefined) return _mand[dk];
+    var r = trx.q("SELECT c.ismandatory AS m FROM ad_column c JOIN ad_table t ON t.ad_table_id=c.ad_table_id WHERE lower(t.tablename)=? AND lower(c.columnname)=? AND c.isactive='Y'", [table, col.toLowerCase()])[0];
+    return (_mand[dk] = !!(r && r.m === 'Y'));
+  }
+  PO.prototype.setID = function (c, v) {
+    var id = v == null || v === '' || Number(v) === 0 ? null : v;   // Java: < 1; the twin's id law (a row made through the op log has a NEGATIVE synthetic key): 'no id' = null or 0
+    if (id == null && isMandatoryCol(this.trx, this.table, c)) { (this.setErrors = this.setErrors || []).push('FillMandatory - ' + c); this.trx.say('§MODEL-SEVERE ' + this.table + '.saveError: FillMandatory - ' + c); }
+    return this.set(c, id);
+  };
   PO.prototype.save = function () {
     var repl = this.m_isReplication; this.m_isReplication = false;
+    if (this.setErrors && this.setErrors.length) { this.error = this.setErrors[0]; this.setErrors = null; return false; }   // PO.save :2438-2451 m_setErrorsFilled
     var r = save(this.trx, this.table, this.row, this.ch, repl ? { isReplication: true } : null);
     if (!r.ok) { this.trx.say('§MODEL-PO save ' + this.table + ' refused: ' + r.error); this.error = r.error; return false; }
     this.row = r.row; this.ch = {}; return true;

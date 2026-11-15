@@ -514,7 +514,10 @@
         if (legal && legal.indexOf(act) < 0) return std(id, true, 'java.lang.IllegalStateException: Status=' + cur.docstatus + ' - Invalid Actions: Process=' + act + ', Doc=' + act);
       }
       var r = K.inTrx(l.session, { ws: 'set_docaction', type: a.type.value, id: id, action: act }, function (trx, ML) {
-        var out = ML.runWorkflow(trx, t.t, id, act);                                                                                                                       // :249-279 save DocAction, processIt, save
+        // ModelADServiceImpl.setDocAction :249-279: po.setDocAction(act); po.processIt(act); po.saveEx() - DIRECTLY, no workflow (legacy writes no AD_WF_Process / AD_WF_Activity / AD_WF_EventAudit rows for a web-service
+        //   doc action; the window's button does, through the workflow). Measured on :8108, W-PROJ-PROCS-LEGACY SG1: the twin's runWorkflow wrote 3 workflow rows legacy does not.
+        var d0 = trx.get(t.t, id); if (d0) trx.update(t.t, d0, { docaction: act });
+        var out = ML.processIt(trx, t.t, id, act);
         return out.ok ? { ok: true } : { ok: false, error: out.msg || 'processIt failed' };
       });
       if (process.env.WS_DEBUG && r.log) console.log('§WS-DEBUG set_docaction log\n' + r.log.join('\n'));

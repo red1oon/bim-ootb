@@ -22,7 +22,11 @@
     ProjectClose.prototype.doIt = function () {                                         // :64-87
       var trx = this.get_TrxName();
       var project = this.m_C_Project_ID ? trx.get('c_project', this.m_C_Project_ID) : null;           // new MProject(ctx, id, trx): an id that is no project is a NEW project, which saveEx refuses (mandatory Value/Name)
-      if (!project) throw new Error('Project not found C_Project_ID=' + this.m_C_Project_ID);
+      if (!project) {   // legacy: an id that is no project is a NEW empty MProject (client 0); project.saveEx() on a session of client > 0 is refused by PO.checkCrossTenant (PO.java:6094-6113, CrossTenantException text) - measured on :8108, W-PROJ-PROCS-LEGACY SC2
+        var A = X.A, env = trx.env || {}, sess = A.Env.getContext(this.getCtx(), '#AD_Session_ID');
+        if (Number(env.client) > 0) throw new Error('Cross tenant PO writing request detected from session ' + (sess == null ? '' : sess) + ' for table C_Project Record_ID=0');
+        throw new Error('Project not found C_Project_ID=' + this.m_C_Project_ID);
+      }
       var n = MP().close(trx, project);                                                               // :69-84
       trx.say('§PROJECT-CLOSE project=' + project.c_project_id + ' lines=' + n);
       return '';

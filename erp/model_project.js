@@ -14,11 +14,31 @@
   function sum(rows, col) { var s = D(0); rows.forEach(function (r) { s = s.add(D(r[col])); }); return s; }
   function changed(l, old, col) { return !old || !same(l[col], old[col]); }   // PO.is_ValueChanged
 
+  // MProjectLine.getLimitPrice :170-182 - the price LIMIT of the product on the project's price list (IProductPricing.setProjectLine, the project's partner, qty = PlannedQty); the planned price itself when
+  //   there is no product, no project or the price is not calculated. The pricing runtime reads through the Trx for the call and is put back afterwards (as MOrderLine's, model_order.js).
+  function getLimitPrice(trx, l) {
+    var limit = D(l.plannedprice);
+    if (!nz(l.m_product_id)) return limit;
+    var pj = nz(l.c_project_id) ? trx.get('c_project', l.c_project_id) : null; if (!pj) return limit;
+    var node = typeof module !== 'undefined' && module.exports, a = node ? require('./ad_callout.js') : (typeof window !== 'undefined' ? window : globalThis).AdCallout, RT = a.RUNTIME;
+    if (node && !RT.M.MProductPricing) ['support', 'support_stock', 'views', 'currency', 'uom', 'pricing', 'tax', 'sqlfn'].forEach(function (m) { require('./callouts/' + m + '.js'); });
+    if (!RT.M.MProductPricing) { trx.say('§MODEL-UNPORTED-DEP MProjectLine.getLimitPrice :170-182 needs callouts/pricing.js, not loaded on this host: PlannedMarginAmt left as entered'); return limit; }
+    var sDB = RT.DB, sPO = RT.PO, sNow = RT.now, sEnvNow = a.Env.now;
+    a.bind(function (sql, params) { return trx.q(sql, params); });
+    try {
+      var plv = nz(pj.m_pricelist_version_id) ? trx.q('SELECT m_pricelist_id AS p FROM m_pricelist_version WHERE m_pricelist_version_id=?', [pj.m_pricelist_version_id])[0] : null;   // MProject.getM_PriceList_ID :168-178
+      var pp = RT.M.Core.getProductPricing();
+      pp.setProjectLine({ getM_Product_ID: function () { return Number(l.m_product_id) || 0; }, getC_Project_ID: function () { return Number(l.c_project_id) || 0; }, getPlannedQty: function () { return D(l.plannedqty); } }, trx);
+      pp.setM_PriceList_ID(plv && nz(plv.p) ? Number(plv.p) : 0);
+      var calc = pp.calculatePrice(); if (calc) limit = pp.getPriceLimit();
+    } finally { RT.DB = sDB; RT.PO = sPO; RT.now = sNow; a.Env.now = sEnvNow; }
+    return limit;
+  }
   function beforeSave(trx, l, isNew, old) {
     if (!nz(l.line)) { var mx = 0; trx.find('c_projectline', { c_project_id: l.c_project_id }).forEach(function (x) { mx = Math.max(mx, Number(x.line || 0)); }); l.line = mx + 10; }   // :208-209 setLine
     l.plannedamt = N(D(l.plannedqty).multiply(D(l.plannedprice)));                                                                                                                  // :212
     if (changed(l, old, 'm_product_id') || changed(l, old, 'm_product_category_id') || changed(l, old, 'plannedqty') || changed(l, old, 'plannedprice')) {                         // :215-216
-      if (nz(l.m_product_id)) trx.say('§MODEL-UNPORTED-DEP MProjectLine.getLimitPrice :170-182: IProductPricing.setProjectLine not ported; PlannedMarginAmt left as entered');
+      if (nz(l.m_product_id)) l.plannedmarginamt = N(D(l.plannedprice).subtract(getLimitPrice(trx, l)).multiply(D(l.plannedqty)));   // :222-225 marginEach = PlannedPrice - getLimitPrice(); x PlannedQty
       else if (nz(l.m_product_category_id)) { var cat = trx.get('m_product_category', l.m_product_category_id);
         l.plannedmarginamt = N(D(cat ? cat.plannedmargin : 0).multiply(D(l.plannedqty))); }
     }

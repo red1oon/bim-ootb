@@ -97,7 +97,7 @@
       var lr = trx.get('c_orderline', ol.id());
       lineChanges.c_orderpo_id = order.id();                                                                                        // :205-206 update ProjectLine
       M.saveEx(trx, 'c_projectline', trx.get('c_projectline', projectLine.c_projectline_id), lineChanges);                           // :207 saveEx
-      this.addBufferLog(order.id(), oh.dateordered, A.toBD(String(lr.line)), A.Msg.getElement(this.getCtx(), 'C_Order_ID') + ':' + oh.documentno, 259, order.id());   // :208-213 MOrder.Table_ID 259
+      this.addBufferLog(order.id(), oh.dateordered, A.toBD(String(lr.line)), A.Msg.getElement(this.getCtx(), 'C_Order_ID', false) + ':' + oh.documentno, 259, order.id());   // :208-213 MOrder.Table_ID 259
       trx.say('§PROJECT-GENPO line=' + line + ' order=' + order.id() + ' documentno=' + oh.documentno + ' vendor=' + oh.c_bpartner_id + ' product=' + lr.m_product_id + ' qty=' + lr.qtyordered + ' price=' + lr.priceactual + ' amount=' + lr.linenetamt);
     };
     return ProjectGenPO;
