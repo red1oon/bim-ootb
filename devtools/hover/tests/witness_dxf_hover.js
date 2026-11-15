@@ -10,6 +10,7 @@
 //      file:line = the index; the V link = vscode://file/<root>/<file:line>
 //   H2b (§F.23, the provenance hover): for every hovered body the tooltip's six layer counts = dxf_hover.layersFor in Node on the same page-shaped model
 //      (devtools/hover/tests/shed_ctx.js, ids from the page's own logged commit nextId)
+//   H2c every hovered body's tooltip lies wholly inside the 1440x900 window (the layered tooltip is tall: unclamped, it ran off the bottom; film 3's first page run, 2026-11-15)
 //   H3 RED CONTROL: a second page converts BEFORE the overlay loads: every hovered body says "convert again", 0 lines claimed
 // INCONCLUSIVE (exit 2) if a sweep hovered 0 bodies or the marked shed is missing. Run it alone, at low priority (two of these at once saturate the machine):
 //   nice -n 19 ionice -c3 node devtools/hover/tests/witness_dxf_hover.js < /dev/null > <log>      (NODE_PATH=~/bim-compiler/node_modules; SHED_MARKED overrides the input)
@@ -44,7 +45,8 @@ const H = require(path.join(ROOT, 'devtools', 'hover', 'dxf_hover.js'));
   const br = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
 
   async function session(overlayFirst) {
-    const bc = await br.createBrowserContext(), pg = await bc.newPage(), errs = [], hov = [];   // a fresh context per session: no storage shared between H2 and H3 await pg.setViewport({ width: 1440, height: 900 });
+    const bc = await br.createBrowserContext(), pg = await bc.newPage(), errs = [], hov = [];   // a fresh context per session: no storage shared between H2 and H3
+    await pg.setViewport({ width: 1440, height: 900 });   // was inside the comment above until 2026-11-15 (the page ran at puppeteer's default 800x600; found by H2c's red run)
     pg.on('pageerror', e => errs.push(String(e).slice(0, 160)));
     let nextId = null; pg.on('console', m => { const t = m.text(); if (/^§DXF_HOVER /.test(t)) hov.push(t); const n = /commit nextId=(\d+)/.exec(t); if (n) nextId = Number(n[1]); });
     await pg.goto('http://127.0.0.1:' + srv.address().port + '/modeller/modeller.html', { waitUntil: 'load', timeout: 120000 });
@@ -62,7 +64,7 @@ const H = require(path.join(ROOT, 'devtools', 'hover', 'dxf_hover.js'));
     const seen = {};
     for (let j = 1; j < 18; j++) for (let i = 1; i < 26; i++) {
       await pg.mouse.move(box.x + box.w * i / 26, box.y + box.h * j / 18);
-      const s = await pg.evaluate(() => { const c = window.__DXF_HOVER.state.cur, t = document.getElementById('dxf-hover-tip'); return c && !c.other ? { fid: c.fid, guid: c.guid, key: c.key, at: c.at, link: c.link, text: t.textContent, counts: t.dataset.counts || '', pageKey: c.guid ? String(window.__DXF_TRACE.get(c.guid) || '').split(' > ')[0] || null : null } : null; });
+      const s = await pg.evaluate(() => { const c = window.__DXF_HOVER.state.cur, t = document.getElementById('dxf-hover-tip'); return c && !c.other ? { fid: c.fid, guid: c.guid, key: c.key, at: c.at, link: c.link, text: t.textContent, counts: t.dataset.counts || '', rect: (function (r) { return { x: r.left, y: r.top, r: r.right, b: r.bottom }; })(t.getBoundingClientRect()), vw: innerWidth, vh: innerHeight, pageKey: c.guid ? String(window.__DXF_TRACE.get(c.guid) || '').split(' > ')[0] || null : null } : null; });
       if (s && seen[s.fid] == null) seen[s.fid] = s;
     }
     await bc.close();
@@ -85,6 +87,9 @@ const H = require(path.join(ROOT, 'devtools', 'hover', 'dxf_hover.js'));
     A.seen.slice(0, 4).forEach(s => console.log('  §DXF_HOVER_W H2b fid=' + s.fid + ' page_counts=' + s.counts + ' node_counts=' + ((H.layersFor(s.fid, SC.ctx(IX)) || {}).counts || []).join(',')));
     console.log('§DXF_HOVER_W H2b nextId=' + A.nextId + ' hovered=' + A.seen.length + ' counts_differ=' + diff.length);
     ok('H2b every hovered body: the tooltip layer counts = layersFor in Node', A.nextId != null && diff.length === 0, A.seen.length + ' bodies');
+    const outV = A.seen.filter(s => !(s.rect.x >= 0 && s.rect.y >= 0 && s.rect.r <= s.vw && s.rect.b <= s.vh));
+    console.log('§DXF_HOVER_W H2c hovered=' + A.seen.length + ' tip_out_of_window=' + outV.length + (outV.length ? ' first=' + JSON.stringify(outV[0].rect) : '') + ' lowest_tip_bottom=' + Math.max.apply(null, A.seen.map(s => Math.round(s.rect.b))) + ' of ' + (A.seen[0] || {}).vh);
+    ok('H2c every hovered body: the tooltip is wholly inside the window', outV.length === 0);
 
     // H3 — red control: Convert before the overlay: no line may be claimed
     const B = await session(false);

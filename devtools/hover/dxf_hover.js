@@ -132,7 +132,14 @@
       'font:12px/1.4 ui-monospace,monospace;background:rgba(20,24,30,.92);color:#e8eef5;box-shadow:0 2px 8px rgba(0,0,0,.4);white-space:pre-wrap';
     doc.body.appendChild(tip);
     var mx = 0, my = 0;
-    win.addEventListener('pointermove', function (e) { mx = e.clientX; my = e.clientY; if (tip.style.display !== 'none') { tip.style.left = (mx + 14) + 'px'; tip.style.top = (my + 14) + 'px'; } }, true);
+    // F.23 fix: the layered tooltip is tall; keep it inside the window (beside the cursor, flipped above / left of it near an edge). Film 3's first page run found it 6 px past the bottom.
+    function place() {
+      var W = win.innerWidth, Hh = win.innerHeight, w = tip.offsetWidth, h = tip.offsetHeight, x = mx + 14, y = my + 14;
+      if (x + w > W - 4) x = Math.max(4, mx - 14 - w);
+      if (y + h > Hh - 4) y = Math.max(4, Math.min(Hh - 4 - h, my - 14 - h));
+      tip.style.left = x + 'px'; tip.style.top = y + 'px';
+    }
+    win.addEventListener('pointermove', function (e) { mx = e.clientX; my = e.clientY; if (tip.style.display !== 'none') place(); }, true);
     function ctx() {
       var U = win.DxfImportUI && win.DxfImportUI.state, R = U && U.gate && U.gate.R;
       var O = win.Bonsai && win.Bonsai.oplog && win.Bonsai.oplog._geomOps ? win.Bonsai.oplog._geomOps() : [], byId = {};
@@ -145,7 +152,7 @@
       state.cur = info;
       if (!info) { tip.style.display = 'none'; return; }
       tip.textContent = render(info); tip.dataset.key = info.key || ''; tip.dataset.at = info.at || ''; tip.dataset.link = info.link || ''; tip.dataset.counts = (info.counts || []).join(',');
-      tip.style.left = (mx + 14) + 'px'; tip.style.top = (my + 14) + 'px'; tip.style.display = 'block';
+      tip.style.display = 'block'; place();
       if (state.last !== info.fid) { state.last = info.fid; console.log('§DXF_HOVER fid=' + info.fid + ' guid=' + (info.guid || '-') + ' key=' + (info.key || '-') + ' at=' + (info.at || '-') + ' layers=' + (info.counts || []).join(',')); }
     }
     win.addEventListener('dagevu:hover', function (e) { show(layersFor(e && e.detail ? e.detail.fid : null, ctx())); });
@@ -162,7 +169,7 @@
       return ix;
     }).then(function (ix) {   // layer 5 asks EditDelta.netEdits (the one owner); a page without it gets it once from the same server (dev overlay only)
       if (win.EditDelta) return ix;
-      return new Promise(function (z) { var sc = doc.createElement('script'); sc.src = '/viewer/edit_delta.js'; sc.onload = function () { z(ix); }; sc.onerror = function () { console.log('§DXF_HOVER edit_delta=MISSING (layer 5 shows none)'); z(ix); }; doc.head.appendChild(sc); });
+      return new Promise(function (z) { var sc = doc.createElement('script'); sc.src = '/viewer/edit_delta.js'; sc.onload = function () { console.log('§DXF_HOVER edit_delta=' + (win.EditDelta && win.EditDelta.netEdits ? 'Y' : 'N')); z(ix); }; sc.onerror = function () { console.log('§DXF_HOVER edit_delta=MISSING (layer 5 shows none)'); z(ix); }; doc.head.appendChild(sc); });
     });
     win.__DXF_HOVER = api;
     return api;
