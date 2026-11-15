@@ -3463,7 +3463,7 @@
    "verb": "ninja.exec",
    "app": "ninja",
    "title": "Run a Ninja workbook",
-   "description": "Make every table of a Ninja workbook (.xlsx or .xls) in one line: its windows, detail tabs, lists, menu entries and role access, then load the rows of its data sheets. The model is read from the sheet 2_RO_ModelMaker (one row per table: Master, Name, ColumnSet), else ModelMakerSource. A table whose Master is another table of the workbook becomes a tab of that window. A sheet named exactly after a table is a data sheet (row 1 the column names). The file must be in the folder the line is run from. dry=Y reads the workbook, lists what it would make and writes nothing. Run a second time with the same file it writes nothing. A table name that already exists, or a workbook that would change tables another workbook staged, is refused and nothing is written. Afterwards every table works with the mis.* verbs.",
+   "description": "Make every table of a Ninja workbook (.xlsx or .xls) in one line: its windows, detail tabs, lists, menu entries and role access, then load the rows of its data sheets. The model is read from the sheet 2_RO_ModelMaker (one row per table: Master, Name, ColumnSet), else ModelMakerSource. A table whose Master is another table of the workbook becomes a tab of that window. A sheet named exactly after a table is a data sheet (row 1 the column names). A .csv instead of a workbook is ONE table whose header is the model, as legacy Ninja reads one: the table is the file name (or table=), each header cell takes its type by the seven name rules (Date, Qty, Amount, Is/In = Yes/No, _ID = a lookup, a=b/c = a list, else text), the lines are its rows; a line whose first two columns are there already is skipped, so running it again adds only new lines, and a table that exists keeps its columns and gets the lines. The file must be in the folder the line is run from. dry=Y reads the workbook, lists what it would make and writes nothing. Run a second time with the same file it writes nothing. A table name that already exists, or a workbook that would change tables another workbook staged, is refused and nothing is written. Afterwards every table works with the mis.* verbs.",
    "inputs": [
     {
      "name": "file",
@@ -3485,6 +3485,13 @@
      "required": false,
      "type": "string",
      "example": "N"
+    },
+    {
+     "name": "table",
+     "description": "Optional, for a .csv only: the table, when it is not the file name.",
+     "required": false,
+     "type": "string",
+     "example": "CL_Client"
     }
    ],
    "harm": "writes",
@@ -3508,6 +3515,13 @@
       "args": [
        "--data",
        "{data}"
+      ]
+     },
+     {
+      "if": "table",
+      "args": [
+       "--table",
+       "{table}"
       ]
      }
     ]

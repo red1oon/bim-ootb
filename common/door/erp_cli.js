@@ -349,7 +349,7 @@ function persistGroup(O, ops) {   // each op is resolved against the rows the ea
   try { ops.forEach((op, i) => { at = op; const o = resolveOne(O, op, ids, i, cols); OC.applyOp(O.db, O.rows, o); res.push(o); }); O.db.run('RELEASE erp_group'); }
   catch (e) { if (at) e = new Error(String(e && e.message || e) + ' [op ' + at.op_type + ' on ' + at.table + ']'); O.db.run('ROLLBACK TO erp_group'); O.db.run('RELEASE erp_group'); throw e; }
   fs.mkdirSync(path.dirname(O.opfile), { recursive: true });
-  res.forEach(o => { o.t = o.t || new Date().toISOString(); fs.appendFileSync(O.opfile, JSON.stringify(o) + '\n'); O.ops.push(o); });
+  res.forEach(o => { o.t = o.t || new Date().toISOString(); if (O.defer) O.defer.push(o); else { fs.appendFileSync(O.opfile, JSON.stringify(o) + '\n'); O.ops.push(o); } });   // O.defer: a line that is one transaction (§12.15) keeps its groups until it commits
   return res;
 }
 // ── complete | void | close | reverse: ONE function; the subcommand only picks the DocumentEngine action code (DocumentEngine.java ACTION_Complete CO, ACTION_Void VO, ACTION_Close CL, ACTION_Reverse_Correct RC) ──
@@ -659,20 +659,75 @@ const listItems = (c, where) => {   // VALUE=Name as stated; a bare name follows
   items.forEach(it => { if (seen[it.value]) refuse('list ' + where + c.name + ': "' + seen[it.value] + '" and "' + it.name + '" both get the value "' + it.value + '" (a name alone takes its first two characters, as Ninja does); write them as VALUE=Name. Nothing was written'); seen[it.value] = it.name; });
   return { col: c.name, items };
 };
+// ── ninja.exec file=<Table>.csv (bim-compiler prompts/ERP_MIS_WINDOW_FROM_CSV.md §12.15): a CSV whose header is the model, as legacy Ninja's HandleCSVImport reads one.
+// The header becomes a ColumnSet by its seven name rules, the rows a data sheet named after the table; the rest is the workbook path above (one stager, one loader).
+const CSV_BREAK = process.env.NINJACSV_BREAK || '';   // W-NINJA-CSV falsifiers: norules | nofirsttwo
+function csvToken(cell) {   // HandleCSVImport.processCSV L132-147, first match wins; the quirks are legacy's own (Income is Yes/No by rule 4)
+  const e = String(cell), U = e.toUpperCase();
+  if (CSV_BREAK === 'norules') return e.replace(/\s+/g, '');
+  if (U.indexOf('DATE') >= 0) return 'D#' + e;
+  if (U.indexOf('QTY') >= 0) return 'Q#' + e;
+  if (U.indexOf('AMOUNT') >= 0) return 'A#' + e;
+  if (e.indexOf('Is') === 0 || e.indexOf('In') === 0) return 'Y#' + e;
+  if (/_ID$/.test(e)) return e;
+  if (e.indexOf('/') >= 0 && e.indexOf('=') >= 0) return 'L#' + e;
+  return e.replace(/\s+/g, '');
+}
+const csvColumn = (cell) => String(cell).split('>')[0].split('=')[0].replace(/\s+/g, '');   // the column a header cell loads (L164-176: the part before > and =)
+function csvModel(O, XL, buf, a) {
+  const table = String(a.table || path.basename(String(a.file)).replace(/\.csv$/i, '')).replace(/\s+/g, '');
+  const grid0 = XL.utils.sheet_to_json((function (w) { return w.Sheets[w.SheetNames[0]]; })(XL.read(buf.toString('utf8'), { type: 'string', raw: true })), { header: 1, raw: true, defval: '' }).map(r => r.map(c => String(c)));
+  const blank = (r) => !r || r.every(c => String(c).trim() === '');   // L118-119: empty lines and lines of commas before the header are skipped
+  let h = 0; while (h < grid0.length && blank(grid0[h])) h++;
+  if (h >= grid0.length) refuse('the file is empty: ' + a.file + '. Nothing was written');
+  const header = grid0[h].map(c => String(c).trim()); while (header.length && header[header.length - 1] === '') header.pop();
+  if (header.length < 2) refuse('the header of ' + a.file + ' has fewer than two columns (legacy Ninja: "NO comma separated values"). Nothing was written');
+  const cols = header.map(csvColumn), tokens = header.map(csvToken), lines = grid0.slice(h + 1).filter(r => !blank(r)).map(r => header.map((_, j) => r[j] == null ? '' : String(r[j])));
+  const T = O.rows("SELECT ad_table_id AS id, tablename AS tn FROM ad_table WHERE isactive='Y' AND lower(tablename)=lower(?) ORDER BY ad_table_id DESC", [table])[0];
+  // existedUpdate L396-412: a line whose FIRST TWO columns equal a record (or an earlier line of the file) is not inserted ("EXISTED NOT UPDATED")
+  const norm = (x) => { let t = String(x == null ? '' : x).trim(); const dm = /^(\d{4}-\d{2}-\d{2})[ T]00:00:00(\.0+)?$/.exec(t); if (dm) t = dm[1]; return /^[+-]?\d+(\.\d+)?$/.test(t) ? t.replace(/^\+/, '').replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '') : t; };
+  const seen = {}, keyOf = (v0, v1) => norm(v0) + '\u0001' + norm(v1);
+  if (T) {
+    const dcols = O.rows("SELECT columnname FROM ad_column WHERE ad_table_id=? AND isactive='Y'", [T.id]).map(c => c.columnname), real = (n) => dcols.filter(c => c.toLowerCase() === n.toLowerCase())[0];
+    const missing = cols.filter(c => !real(c)); if (missing.length) refuse('the header names ' + missing.join(', ') + ', which ' + (missing.length > 1 ? 'are not columns' : 'is not a column') + ' of ' + T.tn + ' (the table is there already; its columns are left as they are). Nothing was written');
+    const shown = (c, v) => { if (v == null) return ''; if (!/_id$/i.test(c) || !/^\d+$/.test(String(v))) return String(v); const tn = c.slice(0, -3); try { const r = O.rows('SELECT name AS x FROM ' + tn + ' WHERE ' + c + '=?', [v])[0]; return r && r.x != null ? String(r.x) : String(v); } catch (e) { return String(v); } };
+    O.rows('SELECT * FROM ' + T.tn).forEach(r => { const g = (c) => r[c.toLowerCase()]; seen[keyOf(shown(cols[0], g(cols[0])), shown(cols[1], g(cols[1])))] = 'a record of ' + T.tn; });
+  }
+  const kept = [], skipped = [];
+  lines.forEach((r, i) => { const k = keyOf(r[0], r[1]); if (seen[k] && CSV_BREAK !== 'nofirsttwo') { skipped.push({ line: i + 1, first: r[0], second: r[1], why: 'its first two columns equal ' + seen[k] + ' (legacy: EXISTED NOT UPDATED)' }); return; } seen[k] = 'line ' + (i + 1) + ' of the file'; kept.push(r); });
+  const report = { table: T ? T.tn : table, header: header.map((c, j) => ({ header: c, column: cols[j], token: tokens[j] })), lines: lines.length, toLoad: kept.length, skipped, tableExisted: !!T };
+  say('ninja_csv table=' + report.table + ' exists=' + !!T + ' tokens=' + JSON.stringify(tokens) + ' lines=' + lines.length + ' load=' + kept.length + ' skipped=' + skipped.length + (CSV_BREAK ? ' BREAK=' + CSV_BREAK : ''));
+  if (T) return { exists: true, table: T.tn, cols, kept, report };
+  const wb = { SheetNames: ['2_RO_ModelMaker', table], Sheets: { '2_RO_ModelMaker': XL.utils.aoa_to_sheet([['Name', 'ColumnSet'], [table, tokens.join(',')]]), [table]: XL.utils.aoa_to_sheet([cols].concat(kept)) } };
+  return { exists: false, table, wb, report };
+}
+async function csvIntoTable(O, C, a, t0) {   // the table is there (handleModel resumes, MRO_ModelMaker L285-330): its model is left as it is; only the new lines load
+  const dry = String(a.dry || '').toUpperCase() === 'Y', out = { file: a.file, table: C.table, csv: C.report, ops: 0, loaded: 0 };
+  if (!C.kept.length) { out.summary = 'every line of ' + a.file + ' is there already (' + C.report.skipped.length + ' skipped); nothing was written'; out.ms = Date.now() - t0; return out; }
+  if (dry) { out.dry = true; out.summary = C.table + ' is there already: ' + C.kept.length + ' line' + (C.kept.length > 1 ? 's' : '') + ' would load, ' + C.report.skipped.length + ' skipped; nothing was written'; out.ms = Date.now() - t0; return out; }
+  const K = kindRef(O, C.table), L = await runLoader(O, K, [C.cols].concat(C.kept)), badRows = Object.keys(L.bad).map(Number).filter(n => n > 0).sort((x, y) => x - y);
+  if (!L.r || !L.r.ok) refuse('nothing was loaded: ' + (badRows.length ? badRows.length + ' of ' + C.kept.length + ' lines are rejected (the loader is all or nothing): ' + badRows.slice(0, 5).map(n => 'line ' + n + ' ' + L.bad[n].join(' | ')).join('; ') : String(L.r && L.r.summary || 'the loader gave no answer')));
+  const res = persistGroup(O, L.tx.groupOps()); out.loaded = res.filter(o => o.table === K.table && o.op_type === 'CRUD_CREATE').length; out.ops = res.length; out.opSummary = sum(res);
+  out.summary = out.loaded + ' line' + (out.loaded === 1 ? '' : 's') + ' loaded into ' + C.table + ', ' + C.report.skipped.length + ' skipped (already there)'; out.ms = Date.now() - t0;
+  say('ninja_csv loaded table=' + C.table + ' lines=' + out.loaded + ' ops=' + out.ops); return out;
+}
 async function ninjaExec(O, a) {
   const t0 = Date.now(), NM = require(path.join(ROOT, 'erp', 'ninja_model.js')), NCr = require(path.join(ROOT, 'erp', 'ninja_create.js')), NS = require(path.join(ROOT, 'erp', 'ninja_stage.js')), XL = require(path.join(ROOT, 'erp', 'xlsx.mini.min.js'));
-  if (!a.file) refuse('--file is required (a Ninja workbook, .xlsx or .xls)');
-  if (!/\.xlsx?$/i.test(String(a.file))) refuse('the file must be a workbook (.xlsx or .xls): ' + a.file);
+  if (!a.file) refuse('--file is required (a Ninja workbook, .xlsx or .xls, or a .csv whose header is the model)');
+  if (!/\.(xlsx?|csv)$/i.test(String(a.file))) refuse('the file must be a workbook (.xlsx or .xls) or a .csv: ' + a.file);
   const base = process.cwd(), abs = path.resolve(base, String(a.file)), rel = path.relative(base, abs);
   if (rel.startsWith('..') || path.isAbsolute(rel)) refuse('the file must be in the folder the line is run from (' + base + '); "' + a.file + '" leaves it. Nothing was written');
   let buf; try { buf = fs.readFileSync(abs); } catch (e) { refuse('cannot read ' + a.file + ': ' + (e.code || e.message)); }
   const sha = require('crypto').createHash('sha256').update(buf).digest('hex');
-  let wb; try { wb = XL.read(buf, { type: 'buffer' }); } catch (e) { refuse('cannot open ' + a.file + ' as a workbook: ' + e.message); }
+  let wb, csvT = null;
+  if (/\.csv$/i.test(String(a.file))) { csvT = csvModel(O, XL, buf, a); if (csvT.exists) return csvIntoTable(O, csvT, a, t0); wb = csvT.wb; }
+  else if (a.table != null) refuse('table= names the table of a .csv; a workbook names its tables in its model sheet. Nothing was written');
+  else { try { wb = XL.read(buf, { type: 'buffer' }); } catch (e) { refuse('cannot open ' + a.file + ' as a workbook: ' + e.message); } }
   const pick = NCr.pickModelSheet(wb);
   if (!pick || !pick.name) refuse('no model sheet in ' + a.file + ' (it needs 2_RO_ModelMaker or ModelMakerSource). Nothing was written');
   const hdr = wb.Sheets['1_RO_ModelHeader'] ? sheetGrid(XL, wb.Sheets['1_RO_ModelHeader']) : [];
   const P = NM.parseSheet(sheetGrid(XL, wb.Sheets[pick.name]), { format: pick.format, bundleName: hdr[1] && hdr[1][0] ? String(hdr[1][0]).trim() : '' }), model = P.model || P, warnings = P.warnings || model.warnings || [];
-  if (!model.bundleName) model.bundleName = path.basename(abs).replace(/\.xlsx?$/i, '');
+  if (!model.bundleName) model.bundleName = path.basename(abs).replace(/\.(xlsx?|csv)$/i, '');
   if (!model.tables || !model.tables.length) refuse('the model sheet ' + pick.name + ' names no table. Nothing was written');
   if (warnings.length) refuse(warnings.length + ' fault' + (warnings.length > 1 ? 's' : '') + ' in the model sheet ' + pick.name + ': ' + warnings.map(w => typeof w === 'string' ? w : JSON.stringify(w)).join(' | ') + '. Nothing was written');
   const two = {}; model.tables.forEach(t => { two[t.name] = (two[t.name] || 0) + 1; }); const dup = Object.keys(two).filter(n => two[n] > 1);
@@ -709,7 +764,7 @@ async function ninjaExec(O, a) {
   });
   // the data sheets, in the workbook's order
   const names = {}; model.tables.forEach(t => { names[t.name] = 1; });
-  const sheets = wb.SheetNames.filter(DATA_SHEET).map(n => {
+  const sheets = wb.SheetNames.filter(n => DATA_SHEET(n) || (csvT && n === csvT.table)).map(n => {
     const known = names[n] || !!O.rows("SELECT 1 AS x FROM ad_table WHERE tablename=? AND isactive='Y'", [n])[0], grid = known ? sheetGrid(XL, wb.Sheets[n]).map(r => r.map(c => String(c))) : [];
     return { sheet: n, known, grid, rows: Math.max(0, grid.length - 1) };
   });
@@ -719,9 +774,12 @@ async function ninjaExec(O, a) {
   const shape = model.tables.map(t => ({ table: t.name, master: t.master || null, columns: t.columns.filter(c => !c.isStandard).length, lists: ((meta[t.name] || {}).lists || []).map(l => l.col) }));
   if (reused.length) notChecked.push('a reused table keeps its own rules: a record of ' + reused.map(x => x.name).join(', ') + ' must still fill that table\'s own mandatory columns');
   const out = { bundle: model.bundleName, file: a.file, sha256: sha, sheet: pick.name, tables: shape, attached: EXEC_BREAK === 'noattach' ? [] : attached, reused: reused.map(x => ({ table: x.ext.name, entityType: x.ext.entity, why: 'the dictionary already holds it: the workbook\'s columns are added to it and it gets a tab here' })), leftAlone: leftAlone.map(x => ({ table: x.ext.name, why: 'the dictionary already holds it and the workbook gives it no master: Ninja leaves it as it is' })), dataSheets: sheets.filter(s => s.known).map(s => ({ sheet: s.sheet, rows: s.rows })), skipped, notChecked };
+  if (csvT) out.csv = csvT.report;
   if (dry) { say('ninja_exec DRY bundle=' + model.bundleName + ' tables=' + shape.length + ' data_sheets=' + out.dataSheets.length + ' skipped=' + skipped.length + ' sha256=' + sha.slice(0, 12)); return Object.assign(out, { dry: true, alreadyStaged: !!again, ops: [] }); }
   if (again) { say('ninja_exec ALREADY bundle=' + model.bundleName + ' tables=' + shape.length + ' sha256=' + sha.slice(0, 12) + ' ops=0'); return Object.assign(out, { alreadyStaged: true, dataSheets: [], opSummary: {}, ops: 0, summary: 'this workbook is already staged (' + shape.length + ' tables); nothing was written' }); }
   if (EXEC_BREAK === 'nodetail') model.tables.forEach(t => { t.master = ''; });
+  // a .csv is ONE transaction, as legacy's (processCSV: handleModel and the INSERTs share trxName; a failing line rolls the model back too): the groups are held until the rows load
+  if (csvT) { O.db.run('SAVEPOINT ninja_csv'); O.defer = []; }
   const S = revive ? await reviveBundle(O, model.bundleName, model.tables.map(t => t.name)) : await stageAtDoor(O, model, { scope: (tn) => tn, bundleScope: 'bundle:' + model.bundleName, meta, nodeDescription: 'Ninja bundle: ' + model.bundleName + ' (' + mark + '; tables ' + model.tables.map(t => t.name).join(',') + ')' });
   out.windows = S.made.ad_window.map(w => ({ id: w.ad_window_id, name: w.name })); out.detailTabs = S.counts.details || 0; out.opSummary = sum(S.res); out.ops = S.res.length; out.tablesMade = S.tables.length;
   const loads = [];
@@ -733,6 +791,11 @@ async function ninjaExec(O, a) {
     const res = persistGroup(O, L.tx.groupOps()); loads.push({ sheet: s.sheet, rows: s.rows, loaded: res.filter(o => o.table === K.table && o.op_type === 'CRUD_CREATE').length, ops: res.length });
   }
   out.dataSheets = withData ? loads : []; if (!withData) out.notChecked.push('data=N: the data sheets were left out');
+  if (csvT) {
+    const bad = loads.filter(l => !(l.loaded > 0) && l.rows > 0)[0];
+    if (bad && CSV_BREAK !== 'keepmodel') { O.db.run('ROLLBACK TO ninja_csv'); O.db.run('RELEASE ninja_csv'); O.defer = null; refuse('nothing was written: the table was not made because its lines do not load (' + bad.why + (bad.rejected && bad.rejected.length ? ': ' + bad.rejected.slice(0, 5).map(r => 'line ' + r.row + ' ' + r.why.join(' | ')).join('; ') : '') + '). Legacy Ninja makes the table and its lines in one transaction'); }
+    O.db.run('RELEASE ninja_csv'); const held = O.defer; O.defer = null; held.forEach(o => { fs.appendFileSync(O.opfile, JSON.stringify(o) + '\n'); O.ops.push(o); });
+  }
   const mem = process.memoryUsage();
   say('ninja_exec bundle=' + model.bundleName + ' tables=' + shape.length + ' windows=' + out.windows.length + ' detail_tabs=' + out.detailTabs + ' ops=' + out.ops + ' ' + JSON.stringify(out.opSummary) + ' tables_made=' + out.tablesMade + ' data=' + loads.map(l => l.sheet.trim() + ':' + l.loaded + '/' + l.rows).join(',') + ' skipped=' + skipped.length + ' sha256=' + sha.slice(0, 12) + ' ms=' + (Date.now() - t0) + ' rss_mb=' + Math.round(mem.rss / 1048576) + ' heap_mb=' + Math.round(mem.heapUsed / 1048576));
   out.ms = Date.now() - t0;
