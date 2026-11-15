@@ -1,0 +1,6 @@
+{
+  "mode": "block",
+  "applies_to": ["erp/"],
+  "bridge": "~/bim-compiler/scripts/bridge/run_all.sh",
+  "known": ["DD:FAIL", "CTX:FAIL", "DDS:HARNESS-FAIL"]
+}
