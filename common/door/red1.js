@@ -77,14 +77,14 @@ function makeShell(o) {
     const asKey = typeof text === 'object';
     if (!asKey && !core.menuOpen(st) && isDoorLine(text)) {   // a door line, maybe with the shell's row filter after a bar: `app.verb k=v | *Pipe*` (§22.7)
       const pm = /^(.*?\S)\s+\|\s+(\S+)\s*$/.exec(text.trim()), line = pm ? pm[1] : text.trim(), match = pm ? pm[2] : null;
-      const e = await exec(line, null, match); if (e) { envs.push(e); io.show(viewOf(e, match)); } return envs; }
+      const e = await exec(line, null, match); if (e) { const v = viewOf(e, match); envs.push(v); await io.show(v); } return envs; }
     let r = core.step(st, asKey ? text : { text });
     for (;;) {
       st = r.state; if (core.menuOpen(st) && io.menu) io.menu(r.screen); else r.screen.forEach(io.print); warmTo(st.building);
       if (!r.effects.length) break;
       const ef = r.effects[0], e = await exec(ef.line, ef.shown, ef.match);
       if (!e) break;
-      if (ef.purpose === 'run') { const v = viewOf(e, ef.match); envs.push(v); io.show(v, ef.view, ef.draw); r = { state: st, effects: r.effects.slice(1), screen: [] }; continue; }
+      if (ef.purpose === 'run') { const v = viewOf(e, ef.match); envs.push(v); await io.show(v, ef.view, ef.draw); r = { state: st, effects: r.effects.slice(1), screen: [] }; continue; }
       r = core.step(st, { result: { purpose: ef.purpose, envelope: e } });
     }
     return envs;
@@ -108,9 +108,14 @@ async function session(o) {
     print: (t) => w(t + '\n'),
     arrow: (l) => w('→ ' + l + '\n'),
     menu: (lines) => { if (tty && menuH) process.stdout.write('\r\x1b[' + menuH + 'A\x1b[0J'); process.stdout.write(lines.join('\n') + '\n'); menuH = lines.length + (tty ? 1 : 0); },
-    show: (e, view, draw) => {
+    show: async (e, view, draw) => {
       menuH = 0;
       const a = e.answer || {}, rows = Array.isArray(a.rows) && view !== 'summary' ? a.rows : null;
+      if (draw === 'tree' && e.status === 'ok') {   // §22.8 R6: a document's next steps, from erp.actions' own answer
+        const inv = {}; try { const ACT = require(path.join(__dirname, 'erp_cli.js')).ACT; Object.keys(ACT).forEach(v => { inv[ACT[v]] = v; }); } catch (x) { /* no erp_cli: codes only */ }
+        const t = Dr.nextTree(a, inv, { ascii: process.env.RED1_ASCII === '1', brk: process.env.DRAW_BREAK || '' });
+        if (t) { process.stdout.write(e.status + ' · ' + e.verb + ' · ' + e.ms + ' ms\n'); t.forEach(l => process.stdout.write(l + '\n')); say('draw tree lines=' + t.length + ' legal=' + JSON.stringify(a.legal)); return; }
+      }
       if (draw === 'funnel' && view === 'summary' && e.status === 'ok') {   // §22.8 R6: the clash funnel, drawn from the answer's own value
         const f = Dr.funnel(a.value, { ascii: process.env.RED1_ASCII === '1', brk: process.env.DRAW_BREAK || '' }); process.stdout.write(e.status + ' · ' + e.verb + (e.held ? ' · held' : ' · ' + e.ms + ' ms') + '\n');
         if (f) { f.forEach(l => process.stdout.write(l + '\n')); say('draw funnel lines=' + f.length + ' value=' + JSON.stringify(a.value)); if (Array.isArray(a.rows)) process.stdout.write('ls lists the ' + a.rows.length + ' rows\n'); return; }
@@ -119,7 +124,24 @@ async function session(o) {
       if (a.summary) process.stdout.write(a.summary + '\n');
       if (e.match && !rows) process.stdout.write('no row matches ' + e.match + '\n');
       if (view === 'summary' && Array.isArray(a.rows)) process.stdout.write('ls lists the ' + a.rows.length + ' rows\n');
-      if (rows && rows.length) { const cols = Array.isArray(a.cols) ? a.cols : (Array.isArray(a.columns) ? a.columns : Object.keys(rows[0])); Dr.table(cols, rows).forEach(l => process.stdout.write(l + '\n')); if (e.match) process.stdout.write('(' + rows.length + ' of ' + a.rowsBefore + ' rows match ' + e.match + ')\n'); else if (a.rowsTotal > rows.length) process.stdout.write('(' + rows.length + ' of ' + a.rowsTotal + ' rows)\n'); }
+      if (rows && rows.length) { const cols = Array.isArray(a.cols) ? a.cols : (Array.isArray(a.columns) ? a.columns : Object.keys(rows[0])), T = Dr.table(cols, rows);
+        // §22.6 paging: on a terminal, a table taller than the screen stops each page (Space or Return = the next page, q = stop); a pipe gets every row
+        const H = tty && process.stdout.rows ? Math.max(5, process.stdout.rows - 3) : 0;
+        let shown = T.length;
+        if (H && T.length > H) {
+          shown = 0;
+          for (let i = 0; i < T.length; i += H - 1) {
+            const page = (i === 0 ? T.slice(0, H) : [T[0]].concat(T.slice(i + 1, i + H))); page.forEach(l => process.stdout.write(l + '\n')); shown = Math.min(T.length, i === 0 ? H : i + H);
+            if (shown >= T.length) break;
+            process.stdout.write('-- ' + (shown - 1) + ' of ' + (T.length - 1) + ' rows: Space next page, q stop --');
+            const echo = rl._writeToOutput; rl._writeToOutput = () => {};   // the pager's key is not typed into the prompt (readline would echo it and redraw the prompt)
+            const k = await new Promise(res => { const h = (str, key) => { process.stdin.removeListener('keypress', h); res(key && key.name); }; process.stdin.on('keypress', h); });
+            await new Promise(r => setImmediate(r)); rl.line = ''; rl.cursor = 0; rl._writeToOutput = echo;
+            process.stdout.write('\r\x1b[0K');
+            if ((k === 'q' || k === 'escape') && process.env.PAGE_BREAK !== 'nostop') break;   // nostop: W-RED1-PAGE falsifier (q ignored: must FAIL P1)
+          }
+          say('page rows=' + (T.length - 1) + ' shown=' + (shown - 1) + ' height=' + H);
+        } else T.forEach(l => process.stdout.write(l + '\n')); if (e.match) process.stdout.write('(' + rows.length + ' of ' + a.rowsBefore + ' rows match ' + e.match + ')\n'); else if (a.rowsTotal > rows.length) process.stdout.write('(' + rows.length + ' of ' + a.rowsTotal + ' rows)\n'); }
       else if (e.answer != null && !a.summary) process.stdout.write((e.status === 'ok' && R.render(e, 'list')) || JSON.stringify(e.answer, null, 1).split('\n').slice(0, 40).join('\n') + '\n');
     }
   };

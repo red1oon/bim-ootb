@@ -59,7 +59,7 @@
   "do":      { "help": "a document action: do <complete|void|close|reverse> <number>", "forms": [
                { "in": "erp",      "verb": "erp.{1}",       "args": ["number"], "pick": ["complete", "void", "close", "reverse"] } ] },
   "next":    { "help": "what a document may do next: next <number>", "forms": [
-               { "in": "erp",      "verb": "erp.actions",   "args": ["number"] } ] },
+               { "in": "erp",      "verb": "erp.actions",   "args": ["number"], "draw": "tree" } ] },
   "load":    { "help": "load rows from a file: load <file>",     "forms": [
                { "in": "erp",      "verb": "mis.load",      "args": ["file"] } ] },
   "diff":    { "help": "compare a file with the records: diff <file>", "forms": [
