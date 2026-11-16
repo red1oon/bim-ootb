@@ -26,6 +26,8 @@ const P_EXPORT = 9541002, P_EXPORT_CLASS = 'org.kernel.bim.process.BIMDocumentRe
 const P_FOLD = 9541003, P_FOLD_CLASS = 'org.kernel.bim.process.BIMDocumentFoldFromBIM';
 const P_VO = 9541004, P_VO_CLASS = 'org.kernel.bim.process.BIMDocumentVariationOrder';   // §VARIATION-ORDER (bim-compiler prompts/CLI_ERP_IVR.md §29.4, P6): the priced difference between the model and the Project Order, issued as a Variation Order (a draft C_Order)
 export const VO_CLASS = P_VO_CLASS;
+const P_CLAIM = 9541005, P_CLAIM_CLASS = 'org.kernel.bim.process.BIMDocumentProgressClaim';   // §PROGRESS-CLAIM (CLI_ERP_IVR.md §29.4, P7): the phases marked complete and not yet billed -> an AP invoice DRAFT + the preview of its accounting
+export const CLAIM_CLASS = P_CLAIM_CLASS;
 export const FOLD_CLASS = P_FOLD_CLASS;   // the door reads the process row of this class (erp_cli orderState): the name of the process is the dictionary's, not typed twice   // §FOLD-FROM-BIM (bim-compiler prompts/CLI_ERP_IVR.md §29.6 P3b): a building's priced selection becomes its ERP Project Order
 const P_OPEN = 9541001, P_OPEN_CLASS = 'org.kernel.bim.process.BIMDocumentOpen', VCOL0 = 9541251, VFLD0 = 9541451, T_TASK = 584, T_PHASE = 576, TAB_TASK = 490, TAB_PHASE = 478;
 export const TABLE = 'BIM_Document';
@@ -155,6 +157,9 @@ const procFold = Object.assign({}, procOpen, { ad_process_id: P_FOLD, value: 'BI
 const procVo = Object.assign({}, procOpen, { ad_process_id: P_VO, value: 'BIM_Document_Variation_Order', name: 'Variation Order', description: 'Issue the change between the model and the Project Order as a Variation Order',
   help: 'The building\'s priced selection is compared with what its Project Order holds, class by class (the same fold, run on a scratch copy, so the basis is the post\'s own); the priced difference becomes a Variation Order, a DRAFT purchase-side C_Order linked to the Project (viewer/vo_fold.js through viewer/proj_order_state.js issueVO), one line per class that changed, signed. A model that prices as the order holds gives no Variation Order. Approval is the order\'s own DocAction. The class has no VO logic of its own.',
   classname: P_VO_CLASS, ad_process_uu: 'bimdoc-process-' + P_VO });
+const procClaim = Object.assign({}, procOpen, { ad_process_id: P_CLAIM, value: 'BIM_Document_Progress_Claim', name: 'Progress Claim', description: 'Bill the phases of a Project that are complete and not yet billed',
+  help: 'Run on a Project: each phase marked complete (IsComplete=Y) that no progress claim has billed yet becomes one line of ONE draft AP invoice (viewer/proj_claim.js progressClaim: LineNetAmt = the phase\'s planned amount, the project\'s InvoicedAmt moves, so earned-value AC and CPI become computable); the answer carries the preview of the invoice\'s accounting (Dr cost / WIP, Cr accounts payable) which does NOT write Fact_Acct: posting stays the accountant\'s DocAction. A phase already billed is never billed twice. The class has no claim logic of its own.',
+  classname: P_CLAIM_CLASS, ad_process_uu: 'bimdoc-process-' + P_CLAIM });
 // [id, name, columnname, seq, ref, mandatory, length]
 const FOLD_PARA = [[9541011, 'Building', 'Building', 10, 10, 'Y', 60], [9541012, 'Selection', 'Selection', 20, 10, 'N', 255]]
   .map((r) => Object.assign({ ad_process_para_id: r[0], ad_process_id: P_FOLD, name: r[1], columnname: r[2], seqno: r[3], ad_reference_id: r[4], ad_val_rule_id: null, ismandatory: r[5], fieldlength: r[6],
@@ -173,7 +178,7 @@ export const manifest = {
     { table: 'ad_reference', idCol: 'ad_reference_id', rows: refRows },
     { table: 'ad_ref_list', idCol: 'ad_ref_list_id', rows: lists },
     { table: 'ad_ref_table', idCol: 'ad_ref_table_uu', rows: [refTable] },
-    { table: 'ad_process', idCol: 'ad_process_id', rows: [procOpen, procExport, procFold, procVo] },
+    { table: 'ad_process', idCol: 'ad_process_id', rows: [procOpen, procExport, procFold, procVo, procClaim] },
     { table: 'ad_process_para', idCol: 'ad_process_para_id', rows: FOLD_PARA.concat(VO_PARA) },
     { table: 'ad_table', idCol: 'ad_table_id', rows: [table] },
     { table: 'ad_column', idCol: 'ad_column_id', rows: columns.concat(vcolumns, tcolumns) },
@@ -419,6 +424,35 @@ export async function activate(ctx) {
       return cap.ops.length ? 'Variation Order ' + r.docNo + ' issued: ' + r.grandTotal + ' on ' + inp.key + ', ' + (r.created && r.created.lines) + ' line(s), draft' : 'Nothing issued: the Variation Order of this change exists already (' + (r.digest || '') + ')';
     };
     return BIMDocumentVariationOrder;
+  }, { harm: 'writes' });
+  // §PROGRESS-CLAIM: "Progress Claim" (AD_Process P_CLAIM, run on a Project record). NO claim logic here: ProjClaim.progressClaim writes the draft invoice on a SCRATCH copy of the host db, ProjClaim.postingPreview reads the
+  //   accounting it WOULD post (Dr cost/WIP, Cr AP) from the same copy, and WriteCapture hands the host the diff as ONE group of ops. The preview must balance (sum Dr = sum Cr) or the process refuses: a claim whose books do not
+  //   balance is not issued. Nothing is posted: Fact_Acct is the accountant's DocAction.
+  const CLAIM_BREAK = (typeof process !== 'undefined' && process.env && process.env.CLAIM_BREAK) || '';   // W-RED1-CLAIM falsifiers: unbalance (a cent added to the first credit: must FAIL C2) · shortline (the last invoice line is lost: must FAIL C1)
+  if (ctx.process && ctx.process.defineProcess) ctx.process.defineProcess(P_CLAIM_CLASS, function (SvrProcess) {
+    function BIMDocumentProgressClaim() { SvrProcess.call(this); }
+    BIMDocumentProgressClaim.prototype = Object.create(SvrProcess.prototype);
+    BIMDocumentProgressClaim.prototype.prepare = function () {};
+    BIMDocumentProgressClaim.prototype.doIt = function () {
+      const H = globalThis.BimOrderHost;
+      if (!H || !H.ProjClaim) throw new Error('Progress Claim: this host gives the process no claim engine (globalThis.BimOrderHost.ProjClaim); the door does');
+      const pid = this.getRecord_ID(); if (!pid) throw new Error('Progress Claim: run it on a Project (cd Project <name>, then claim)');
+      const trx = this.get_TrxName(), PC = H.ProjClaim, WC = H.WriteCapture, now = H.clock ? H.clock() : undefined;
+      const cap = WC.capture(H.hostDb, H.Database, (scratch) => { const r = PC.progressClaim(scratch, pid, { now }); r.preview = r.ok && r.invoiceId != null ? PC.postingPreview(scratch, r.invoiceId) : null; return r; });
+      const r = cap.result;
+      if (!r.ok) throw new Error('Progress Claim: ' + (r.reason || 'refused') + (r.notes && r.notes.length ? ' (' + r.notes.join('; ') + ')' : ''));
+      if (r.invoiceId == null) { this.getProcessInfo().serializableObject = { projectId: pid, ops: 0, notes: r.notes || [] }; return 'Nothing to claim: no phase is newly complete (mark one in the Phase tab with set <id> IsComplete=Y)'; }
+      const pv = r.preview; if (CLAIM_BREAK === 'unbalance' && pv && pv.lines.length) { const l = pv.lines.filter((x) => Number(x.cr) > 0)[0]; if (l) { l.cr = String(Number(l.cr) + 0.01); pv.sumCr = String(Number(pv.sumCr) + 0.01); pv.balances = false; } }
+      if (!pv || !pv.ok || !pv.balances) throw new Error('Progress Claim: the preview of its accounting does not balance (Dr ' + (pv && pv.sumDr) + ' / Cr ' + (pv && pv.sumCr) + '): nothing was issued');
+      const ops = CLAIM_BREAK === 'shortline' ? cap.ops.filter((o, i, a) => !(o.table === 'c_invoiceline' && a.slice(i + 1).every((x) => x.table !== 'c_invoiceline'))) : cap.ops;
+      ops.forEach((o) => trx.ops.push(o));
+      const tally = {}; ops.forEach((o) => { const k = o.op_type.replace('CRUD_', '').toLowerCase() + ':' + o.table; tally[k] = (tally[k] || 0) + 1; });
+      this.getProcessInfo().serializableObject = { projectId: pid, invoiceId: r.invoiceId, documentNo: r.documentNo, claimAmt: r.claimAmt, grandTotal: r.grandTotal, phasesClaimed: r.phasesClaimed, preview: pv, notes: r.notes || [], tables: cap.tables, ops: ops.length, opSummary: tally,
+        offer: { key: 'see_status', line: 'status' } };   // §29.3: after a claim the earned value (AC now booked, CPI defined) is the natural next look
+      console.log('§PROGRESS-CLAIM project=' + pid + ' invoice=' + r.invoiceId + ' doc=' + r.documentNo + ' claim=' + r.claimAmt + ' phases=' + r.phasesClaimed + ' sumDr=' + pv.sumDr + ' sumCr=' + pv.sumCr + ' ops=' + ops.length + ' ' + JSON.stringify(tally));
+      return 'Progress claim ' + r.documentNo + ' (draft): ' + r.claimAmt + ' for ' + r.phasesClaimed + ' phase(s)\naccounting preview, nothing posted: ' + pv.lines.map((l) => (Number(l.dr) ? 'Dr ' + l.acctValue + ' ' + l.dr : 'Cr ' + l.acctValue + ' ' + l.cr)).join(' · ') + ' · Σ Dr ' + pv.sumDr + ' = Σ Cr ' + pv.sumCr;
+    };
+    return BIMDocumentProgressClaim;
   }, { harm: 'writes' });
   console.log('§BIMDOC-PLUGIN start table=' + T_ID + ' cols=' + COLS.length + ' window=' + W_ID + ' doctypes=' + dtN + ' clients=[' + clients.join(',') + '] windowAccess=host family=' + FAMILY.name + ' (dictionary staged by the host, refcounted)');
 }
