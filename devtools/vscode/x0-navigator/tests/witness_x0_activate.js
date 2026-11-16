@@ -4,7 +4,7 @@
 // # ⚠ DO NOT REMOVE — WITNESS §X0_ACTIVATE (bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md §F.4 "Glue check",
 // issue #2920). Read the log after every run: exit code is not evidence.
 // ISSUE THIS PROVES OR DISPROVES: "the pure modules are right but the extension never wires them into VS Code" —
-//   activate() must register exactly 1 definition provider and 2 hover providers for `javascript`, and those
+//   activate() must register exactly 2 definition providers and 3 hover providers for `javascript` (F-19 added one of each, §F.28), and those
 //   providers, called the way VS Code calls them on a document, must give the answers the pure modules give.
 // HOW: a fixture-side stub of the few `vscode` calls extension.js uses (no VS Code, no npm). The workspace folder
 //   is this real checkout, so the providers read the real internal/APP_SURFACE.md and the real specs.
@@ -31,8 +31,8 @@ const committedFile = api.indexFile();
 
 const isJs = r => r.sel && r.sel.language === 'javascript';
 const nDef = reg.definition.filter(isJs).length, nHover = reg.hover.filter(isJs).length;
-check('activate() registered 1 definition provider for javascript (n=' + nDef + ')', nDef === 1 && reg.definition.length === 1);
-check('activate() registered 2 hover providers for javascript (n=' + nHover + ')', nHover === 2 && reg.hover.length === 2);
+check('activate() registered 2 definition providers for javascript (n=' + nDef + '; APP field + F-19 catalog, §F.28)', nDef === 2 && reg.definition.length === 2);
+check('activate() registered 3 hover providers for javascript (n=' + nHover + '; APP field + F-19 catalog + §TAG, §F.28)', nHover === 3 && reg.hover.length === 3);
 
 // Call the providers the way VS Code does. The sample lines are assembled from pieces so this file adds no
 // field to the real index (scripts/gen_app_surface.js reads string literals too).
@@ -85,17 +85,17 @@ check('made-up ' + SEC + 'TAG → hover says "no spec found" (never silent)', h5
   const mine = ap ? ap.p.provideCodeActions(adoc, null, { diagnostics: [{ code: 'x0.bump' }] }) : [];
   const other = ap ? ap.p.provideCodeActions(adoc, null, { diagnostics: [{ code: 'no-undef' }] }) : ['x'];
   check('quick fix: 2 actions for X0\'s own warning (' + mine.map(a => a.title.slice(0, 28)).join(' | ') + '), write then dry run, both bound to x0Navigator.bumpThisFile with the file',
-    !!reg.diag && reg.diag.name === 'x0-bump' && (reg.actions || []).length === 1 && mine.length === 2 && mine.every(a => a.command.command === 'x0Navigator.bumpThisFile' && a.command.arguments[0] === 'viewer/scene.js') &&
+    !!reg.diags['x0-bump'] && reg.diags['x0-bump'].name === 'x0-bump' && (reg.actions || []).length === 1 && mine.length === 2 && mine.every(a => a.command.command === 'x0Navigator.bumpThisFile' && a.command.arguments[0] === 'viewer/scene.js') &&
     mine[0].command.arguments[1] === true && mine[1].command.arguments[1] === false && mine[0].isPreferred === true);
   check('red control: another tool\'s warning gets no X0 action', other.length === 0);
   // on this checkout as it is, saving a file must not raise the warning unless the rule says so: compare with the lib's own answer
   const Sh = require(path.join(EXT, 'lib', 'ship.js'));
   reg.onSave(adoc);
-  const flagged = reg.diag.m.has(some) && reg.diag.m.get(some).length === 1;
+  const flagged = reg.diags['x0-bump'].m.has(some) && reg.diags['x0-bump'].m.get(some).length === 1;
   check('on save the warning is set exactly when the lib\'s rule says so (flagged=' + flagged + ')', flagged === !!Sh.needsBump(ROOT, 'viewer/scene.js', 'origin/main'));
 }
 check('1 reference provider registered for javascript (Find All References)', (reg.refs || []).length === 1 && reg.refs[0].sel.language === 'javascript');
-check('commands registered: ' + reg.commands.join(', '), reg.commands.length === 8 && reg.commands.includes('x0Navigator.bumpThisFile') && reg.commands.includes('x0Navigator.contextForFile') && ['x0Navigator.shipRunLocal', 'x0Navigator.shipCheck', 'x0Navigator.shipFetchBack'].every(c => reg.commands.includes(c)) && reg.commands.includes('x0Navigator.costIfDeployed') && reg.commands.includes('x0Navigator.openLogLine') && reg.saves === 3);
+check('commands registered: ' + reg.commands.join(', '), reg.commands.length === 9 && reg.commands.includes('x0Navigator.newWitnessForFile') && reg.commands.includes('x0Navigator.bumpThisFile') && reg.commands.includes('x0Navigator.contextForFile') && ['x0Navigator.shipRunLocal', 'x0Navigator.shipCheck', 'x0Navigator.shipFetchBack'].every(c => reg.commands.includes(c)) && reg.commands.includes('x0Navigator.costIfDeployed') && reg.commands.includes('x0Navigator.openLogLine') && reg.saves === 4 /* +1 F-19 catalog warnings, §F.28 */);
 // Run and ship (§F.12c): the side-bar list and the Check step, through the registered wiring, on this real checkout
 {
   const items = reg.tree ? reg.tree.p.getChildren().map(s => reg.tree.p.getTreeItem(s)) : [];

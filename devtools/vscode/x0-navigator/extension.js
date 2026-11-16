@@ -16,6 +16,8 @@ const ship = require('./lib/ship');
 const fileContext = require('./lib/file_context');
 const appRefs = require('./lib/app_refs');
 const buildStamp = require('./lib/build_stamp');
+const witnessStub = require('./lib/witness_stub');
+const catalogIndex = require('./lib/catalog_index');
 
 const JS = { language: 'javascript' };
 const MARKER = path.join('internal', 'APP_SURFACE.md'); // a folder holding this file is the bim-ootb root
@@ -120,6 +122,60 @@ function activate(context) {
     }
   }));
 
+  // F-19 (§F.28, W-X0-CATALOG): message keys and door verbs. Hover = the key's text and {n} count, or the verb's entry; F12 = its JSON
+  // line; warnings in a catalog user. The scanner is the open folder's own common/door/msg_keys.js. Dev-side only.
+  let catalogLoad = null, catalogRoot = null;
+  function catalogState() {
+    const sourceRoot = findSourceRoot(context);
+    if (!sourceRoot) return null;
+    if (!catalogLoad || catalogRoot !== sourceRoot) { catalogLoad = catalogIndex.create(sourceRoot); catalogRoot = sourceRoot; }
+    return catalogLoad();
+  }
+  function catalogHit(document, position) {
+    const st = catalogState();
+    if (!st || !document.uri || !document.uri.fsPath) return null;
+    const rel = path.relative(st.root, document.uri.fsPath).split(path.sep).join('/');
+    const k = catalogIndex.keyAt(st, document.getText(), rel, position.line + 1, position.character);
+    if (k) return { st, hit: k, kind: 'key' };
+    const v = catalogIndex.verbAt(st, document.lineAt(position.line).text, position.character);
+    return v ? { st, hit: v, kind: 'verb' } : null;
+  }
+  context.subscriptions.push(vscode.languages.registerHoverProvider(JS, {
+    provideHover(document, position) {
+      const h = catalogHit(document, position);
+      if (!h) return null;
+      return new vscode.Hover(new vscode.MarkdownString(h.kind === 'key' ? catalogIndex.formatKey(h.st, h.hit, link) : catalogIndex.formatVerb(h.st, h.hit, link)));
+    }
+  }));
+  context.subscriptions.push(vscode.languages.registerDefinitionProvider(JS, {
+    provideDefinition(document, position) {
+      const h = catalogHit(document, position);
+      const d = h && catalogIndex.definition(h.st, h.hit);
+      return d ? new vscode.Location(vscode.Uri.file(d.abs), new vscode.Position(d.line - 1, 0)) : null;
+    }
+  }));
+  const catalogDiag = vscode.languages.createDiagnosticCollection('x0-catalog');
+  context.subscriptions.push(catalogDiag);
+  function judgeCatalog(document) {
+    const st = catalogState();
+    if (!st || !document || !document.uri || typeof document.getText !== 'function' || document.uri.scheme !== 'file' || !/\.js$/.test(document.uri.fsPath) || !document.uri.fsPath.startsWith(st.root + path.sep)) return null;
+    const rel = path.relative(st.root, document.uri.fsPath).split(path.sep).join('/');
+    let f;
+    try { f = catalogIndex.findings(st, document.getText(), rel); } catch (e) { out.appendLine('§X0_CATALOG judge failed ' + rel + ': ' + e.message); return null; }   // a save handler never throws
+    if (!f.length) { catalogDiag.delete(document.uri); return f; }
+    catalogDiag.set(document.uri, f.map(x => {
+      const d = new vscode.Diagnostic(new vscode.Range(x.line - 1, Math.max(0, x.col - 1), x.line - 1, Math.max(0, x.col - 1) + 1),
+        (x.kind === 'unknown-key' ? 'Message key ' + x.key + ' is not in ' + catalogIndex.PATHS.messages + ': msg_core throws here when this line runs'
+          : x.kind === 'arg-count' ? 'Message key ' + x.key + ': ' + x.detail : 'A message key must be a literal string (W-MSG-CATALOG M3)'),
+        vscode.DiagnosticSeverity.Warning);
+      d.source = 'X0 Navigator'; d.code = 'x0.' + x.kind;
+      return d;
+    }));
+    return f;
+  }
+  context.subscriptions.push(vscode.workspace.onDidSaveTextDocument(doc => { judgeCatalog(doc); }));
+  if (vscode.workspace.onDidOpenTextDocument) context.subscriptions.push(vscode.workspace.onDidOpenTextDocument(doc => { judgeCatalog(doc); }));
+
   // X0-2: hover on a §TAG → its spec places and the code that prints it.
   context.subscriptions.push(vscode.languages.registerHoverProvider(JS, {
     provideHover(document, position) {
@@ -208,6 +264,26 @@ function activate(context) {
       vscode.window.showInformationMessage('X0 Navigator: context for ' + rel + ' copied');
     } catch (e) { out.appendLine(r.text); out.show(true); }
     return r.text;
+  }));
+  // New witness for this file (§F.26, W-X0-NEWWIT): the ONE `witness` snippet, pre-filled with FACTS only (header spec, § tags with
+  // their last values, APP fields written). The claim, population and red control stay empty, so it FAILs until a person fills them.
+  context.subscriptions.push(vscode.commands.registerCommand('x0Navigator.newWitnessForFile', async () => {
+    const sourceRoot = findSourceRoot(context);
+    const editor = vscode.window.activeTextEditor;
+    if (!sourceRoot || !editor || !editor.document.uri.fsPath.startsWith(sourceRoot + path.sep)) {
+      vscode.window.showInformationMessage('X0 Navigator: open a file of the bim-ootb folder first');
+      return null;
+    }
+    const rel = path.relative(sourceRoot, editor.document.uri.fsPath).split(path.sep).join('/');
+    const ctx = fileContext.build(sourceRoot, rel, { fields: getFields(), tagIndex: getTags(), costNow: measureNow(), extraLogDirs: extraLogDirs() });
+    const r = witnessStub.make(sourceRoot, rel, ctx.facts);
+    if (r.refused) { vscode.window.showInformationMessage('X0 Navigator: no witness made: ' + r.refused); return null; }
+    const abs = path.join(sourceRoot, r.path);
+    fs.mkdirSync(path.dirname(abs), { recursive: true });
+    fs.writeFileSync(abs, r.text, { flag: 'wx' });   // wx: never overwrite (make() already picked a free name)
+    out.appendLine('§X0_NEWWIT file=' + rel + ' witness=' + r.path + ' spec=' + (r.spec ? 'Y' : 'N') + ' tags=' + r.tags.length);
+    try { const doc = await vscode.workspace.openTextDocument(abs); await vscode.window.showTextDocument(doc); } catch (e) { out.appendLine('open failed: ' + e.message); }
+    return r.path;
   }));
   // Status bar: how the open file reaches a user. "start-up" = every user pays for it when the page opens.
   const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 90);
@@ -391,7 +467,8 @@ function activate(context) {
     costIfDeployed, statusText, lenses, shipRunLocal, shipCheck, shipFetchBack, steps: () => STEPS,
     whenFresh: () => firstRefresh,
     indexFile: () => { const f = getFields(); return f ? f.file : null; },
-    refreshRuns: () => (refresher ? refresher.runs() : 0)
+    refreshRuns: () => (refresher ? refresher.runs() : 0),
+    judgeCatalog
   };
 }
 

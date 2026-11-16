@@ -8,23 +8,24 @@
 const Module = require('module');
 
 function install(ROOT) {
-  const reg = { definition: [], hover: [], commands: [], saves: 0, warnings: [], lines: [] };
+  const reg = { definition: [], hover: [], commands: [], commandFns: {}, saves: 0, warnings: [], lines: [], infos: [], opened: [], shown: [] };
   const vscodeStub = {
     languages: {
       registerDefinitionProvider(sel, p) { reg.definition.push({ sel, p }); return { dispose() {} }; },
       registerHoverProvider(sel, p) { reg.hover.push({ sel, p }); return { dispose() {} }; },
-      createDiagnosticCollection(name) { reg.diag = { name, m: new Map(), set(u, d) { this.m.set(u.fsPath, d); }, delete(u) { this.m.delete(u.fsPath); }, dispose() {} }; return reg.diag; },
+      createDiagnosticCollection(name) { reg.diags = reg.diags || {}; reg.diag = reg.diags[name] = { name, m: new Map(), set(u, d) { this.m.set(u.fsPath, d); }, delete(u) { this.m.delete(u.fsPath); }, dispose() {} }; return reg.diag; },
       registerCodeActionsProvider(sel, p, meta) { reg.actions = (reg.actions || []).concat([{ sel, p, meta }]); return { dispose() {} }; },
       registerReferenceProvider(sel, p) { reg.refs = (reg.refs || []).concat([{ sel, p }]); return { dispose() {} }; },
       registerCodeLensProvider(sel, p) { reg.lens = (reg.lens || []).concat([{ sel, p }]); return { dispose() {} }; }
     },
     workspace: {
+      openTextDocument(x) { reg.opened.push(x); return Promise.resolve({ uri: { fsPath: typeof x === 'string' ? x : '' } }); },
       workspaceFolders: [{ uri: { fsPath: ROOT } }],
       getConfiguration() { return { get() { return ''; } }; },
       onDidSaveTextDocument(fn) { reg.saves++; reg.saveFns = (reg.saveFns || []).concat([fn]); reg.onSave = d => reg.saveFns.forEach(f => f(d)); return { dispose() {} }; }
     },
-    commands: { registerCommand(id) { reg.commands.push(id); return { dispose() {} }; } },
-    window: { showInformationMessage() {}, showWarningMessage(m) { reg.warnings.push(m); return Promise.resolve(undefined); }, activeTextEditor: undefined,
+    commands: { registerCommand(id, fn) { reg.commands.push(id); reg.commandFns[id] = fn; return { dispose() {} }; } },
+    window: { showInformationMessage(m) { reg.infos.push(m); return Promise.resolve(undefined); }, showTextDocument(d) { reg.shown.push(d); return Promise.resolve(undefined); }, showWarningMessage(m) { reg.warnings.push(m); return Promise.resolve(undefined); }, activeTextEditor: undefined,
       createOutputChannel() { reg.channels = (reg.channels || 0) + 1; return { appendLine(s) { reg.lines.push(String(s)); }, show() {}, dispose() {} }; },
       createStatusBarItem() { reg.status = { show() { this.shown = true; }, hide() { this.shown = false; }, dispose() {} }; return reg.status; },
       onDidChangeActiveTextEditor(fn) { reg.onEditor = fn; return { dispose() {} }; },

@@ -49,7 +49,7 @@
   "clash":   { "help": "clashes between two disciplines: clash <A> <B>", "forms": [
                { "in": "building", "ex": "clash ARC MEP", "verb": "viewer.clashes", "args": ["discA", "discB"], "defaults": { "rows": "all" }, "summary": true, "draw": "funnel" } ] },
   "cost":    { "help": "the cost of a selection: cost [phase|task|storey|discipline|class] [column=value …]", "forms": [
-               { "in": "building", "ex": "cost discipline", "verb": "viewer.cost", "args": ["by"] } ] },
+               { "in": "building", "ex": "cost discipline", "verb": "viewer.cost", "args": ["by"], "summary": true, "draw": "groups" } ] },
   "post":    { "help": "post the building's priced selection to its ERP Project Order: post [column=value …]  (asks y/N; the selection words are cost's)", "forms": [
                { "in": "building", "ex": "post discipline=ARC", "verb": "erp.process", "args": [], "fixed": { "name": "Fold from BIM" }, "fill": { "Building": "building" }, "fold": "Selection", "confirm": "session" } ] },
   "grid":    { "help": "the building's grid lines",              "forms": [

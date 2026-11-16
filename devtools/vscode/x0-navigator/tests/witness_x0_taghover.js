@@ -88,6 +88,19 @@ check('hover shows at most ' + T.SHOWN + ' spec places and ' + T.SHOWN + ' print
 check('tagAt finds the tag under the cursor and nothing beside it',
   T.tagAt("  console.log('" + KNOWN + " n=' + n);", 20) === KNOWN && T.tagAt("  console.log('" + KNOWN + "');", 3) === null);
 
+// §F.27 (#3098): the grammar reads hyphen-joined and §4D_-style tags whole, and leaves section numbers and lone letters alone.
+// Red control: the same judge on the OLD grammar must fail (run in the same process, so the judge is the one that sees a PASS).
+const GRAMMAR_WHOLE = ['§CRUD-PERSIST', '§W-EMPTY-POP', '§4D_RECV', '§MODEL-PA', '§GOAL_STORE'];
+const GRAMMAR_NONE = ['§F.24', '§5.24', '§4b', '§4D', '§W', '§ x'];
+const grammarOk = re => {
+  const read = l => { re.lastIndex = 0; const o = []; let m; while ((m = re.exec(l))) o.push(m[0]); return o; };
+  return GRAMMAR_WHOLE.every(t => { const g = read("console.log('" + t + " n=' + n);"); return g.length === 1 && g[0] === t; })
+    && GRAMMAR_NONE.every(t => read('see ' + t + ' here').length === 0)
+    && read('§CUT-MOVE- x')[0] === '§CUT-MOVE';
+};
+check('tag grammar reads ' + GRAMMAR_WHOLE.join(' ') + ' whole; nothing for ' + GRAMMAR_NONE.join(' '), grammarOk(T.TAG_RE));
+check('red control: the old grammar /§[A-Z][A-Z0-9_]+/g fails the same judge', !grammarOk(/§[A-Z][A-Z0-9_]+/g));
+
 console.log('--- hover text for ' + KNOWN + ' ---');
 console.log(T.formatHover(known));
 console.log('--- hover text for ' + FAKE + ' ---');
