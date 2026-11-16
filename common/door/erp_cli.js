@@ -375,8 +375,8 @@ function persistGroup(O, ops) {   // each op is resolved against the rows the ea
   res.forEach(o => { o.t = o.t || new Date().toISOString(); if (O.defer) O.defer.push(o); else { fs.appendFileSync(O.opfile, JSON.stringify(o) + '\n'); O.ops.push(o); } });   // O.defer: a line that is one transaction (§12.15) keeps its groups until it commits
   return res;
 }
-// ── complete | void | close | reverse: ONE function; the subcommand only picks the DocumentEngine action code (DocumentEngine.java ACTION_Complete CO, ACTION_Void VO, ACTION_Close CL, ACTION_Reverse_Correct RC) ──
-const ACT = { complete: 'CO', void: 'VO', close: 'CL', reverse: 'RC' };
+// ── complete | void | close | reverse | prepare: ONE function; the subcommand only picks the DocumentEngine action code (DocumentEngine.java ACTION_Complete CO, ACTION_Void VO, ACTION_Close CL, ACTION_Reverse_Correct RC) ──
+const ACT = { complete: 'CO', void: 'VO', close: 'CL', reverse: 'RC', prepare: 'PR' };   // prepare: DocumentEngine ACTION_Prepare (bim-compiler prompts/CLI_ERP_IVR.md §33)
 const sum = (ops) => { const m = {}; ops.forEach(o => { const k = o.op_type.replace('CRUD_', '').toLowerCase() + ':' + o.table; m[k] = (m[k] || 0) + 1; }); return m; };
 function relatedDocs(O, K, id) {   // other document tables whose rows point at this one by its key column (from the dictionary)
   return O.rows("SELECT t.tablename AS tn, t.name AS nm FROM ad_table t WHERE t.isactive='Y' AND t.isview<>'Y' AND lower(t.tablename)<>? " +
