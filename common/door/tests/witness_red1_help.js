@@ -50,7 +50,8 @@ let n3 = 0; const bad3 = [];
 GROUPS.forEach(g => listed[g].forEach(r => {
   if (SESSION[r.ex]) return;
   const text = r.ex.replace(/<Column>=<value>/g, 'Name=x1').replace(/<[^>]+>/g, 'x1');
-  const st = Object.assign(core.init(), PLACE[r.place]), x = core.expand(st, D.tokenize(text)); n3++;
+  const fr = Object.keys(words.words).reduce((a, w) => a.concat(words.words[w].forms), []).filter(f => f.ex === r.ex && f.for)[0];   // a form that names its window as data (form.for) is judged IN that window
+  const st = Object.assign(core.init(), PLACE[r.place], fr ? { erp: fr.for } : {}), x = core.expand(st, D.tokenize(text)); n3++;
   if (x.error) { bad3.push(g + ' ' + JSON.stringify(r.ex) + ': ' + x.error); return; }
   const pl = D.parseLine(x.line), e = byVerb[pl.verb], args = {};
   pl.kv.forEach(kv => { const inp = e.inputs.filter(i => i.name === kv.k)[0]; args[kv.k] = inp ? D.coerce(inp, kv.raw) : kv.raw; });
