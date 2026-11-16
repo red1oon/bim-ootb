@@ -23,6 +23,7 @@ const T_ID = 9541001, W_ID = 9541001, TAB_OWN = 9541001, TAB_PRJ = 9541002, TAB_
 const R_STATUS = 9541001, R_DISC = 9541002, R_KIND = 9541003, R_REV = 9541004;
 const COL0 = 9541201, FLD_OWN0 = 9541301, FLD_PRJ0 = 9541401, FLD_PRJ1_0 = 9541601, LIST0 = 9541101, DT0 = 9541500;
 const P_EXPORT = 9541002, P_EXPORT_CLASS = 'org.kernel.bim.process.BIMDocumentRegisterExport';   // §REGISTER-EXPORT (bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md)
+const P_FOLD = 9541003, P_FOLD_CLASS = 'org.kernel.bim.process.BIMDocumentFoldFromBIM';   // §FOLD-FROM-BIM (bim-compiler prompts/CLI_ERP_IVR.md §29.6 P3b): a building's priced selection becomes its ERP Project Order
 const P_OPEN = 9541001, P_OPEN_CLASS = 'org.kernel.bim.process.BIMDocumentOpen', VCOL0 = 9541251, VFLD0 = 9541451, T_TASK = 584, T_PHASE = 576, TAB_TASK = 490, TAB_PHASE = 478;
 export const TABLE = 'BIM_Document';
 
@@ -145,6 +146,13 @@ const procOpen = Object.assign({ ad_process_id: P_OPEN, value: 'BIM_Document_Ope
 const procExport = Object.assign({}, procOpen, { ad_process_id: P_EXPORT, value: 'BIM_Document_Register_Export', name: 'Export Register (JSON)', description: 'The BIM Document register of this document\'s project as a JSON file',
   help: 'Every deliverable of the project at its latest revision, plus the superseded revisions: no, rev, status, discipline, filekind, sha256 of the attached file, name. Read only.',
   classname: P_EXPORT_CLASS, ad_process_uu: 'bimdoc-process-' + P_EXPORT });
+const procFold = Object.assign({}, procOpen, { ad_process_id: P_FOLD, value: 'BIM_Document_Fold_From_BIM', name: 'Fold from BIM', description: 'Post a building\'s priced selection to its ERP Project Order',
+  help: 'The building\'s priced selection (the Viewer cost of Building [Selection]) is folded into the Project Order of the building: project, phases and tasks with the dates of the persisted 4D run, one line per class. Idempotent by the model version tag: posting the same model again changes nothing. The class has no fold logic of its own: it reads the state, asks the engine what is legal, and runs it (viewer/proj_order_state.js).',
+  classname: P_FOLD_CLASS, ad_process_uu: 'bimdoc-process-' + P_FOLD });
+// [id, name, columnname, seq, ref, mandatory, length]
+const FOLD_PARA = [[9541011, 'Building', 'Building', 10, 10, 'Y', 60], [9541012, 'Selection', 'Selection', 20, 10, 'N', 255]]
+  .map((r) => Object.assign({ ad_process_para_id: r[0], ad_process_id: P_FOLD, name: r[1], columnname: r[2], seqno: r[3], ad_reference_id: r[4], ad_val_rule_id: null, ismandatory: r[5], fieldlength: r[6],
+    iscentrallymaintained: 'N', isrange: 'N', description: r[2] === 'Building' ? 'The building (its Viewer name, e.g. Duplex)' : 'Elements to post: column=value pairs separated by spaces (value may be a wildcard), e.g. discipline=ARC storey=*1. Empty = the whole building' }, STD));
 const menu = Object.assign({ ad_menu_id: MENU_ID, name: 'BIM Document', description: 'The deliverables of a project', issummary: 'N', issotrx: 'Y', isreadonly: 'N', action: 'W', ad_window_id: W_ID, iscentrallymaintained: 'Y', ad_menu_uu: 'bimdoc-menu-' + MENU_ID }, STD);
 const node = { ad_tree_id: TREE, node_id: MENU_ID, parent_id: MENU_PARENT, seqno: 4, ad_client_id: 0, ad_org_id: 0, isactive: 'Y', created: NOW, createdby: 100, updated: NOW, updatedby: 100 };
 
@@ -158,7 +166,8 @@ export const manifest = {
     { table: 'ad_reference', idCol: 'ad_reference_id', rows: refRows },
     { table: 'ad_ref_list', idCol: 'ad_ref_list_id', rows: lists },
     { table: 'ad_ref_table', idCol: 'ad_ref_table_uu', rows: [refTable] },
-    { table: 'ad_process', idCol: 'ad_process_id', rows: [procOpen, procExport] },
+    { table: 'ad_process', idCol: 'ad_process_id', rows: [procOpen, procExport, procFold] },
+    { table: 'ad_process_para', idCol: 'ad_process_para_id', rows: FOLD_PARA },
     { table: 'ad_table', idCol: 'ad_table_id', rows: [table] },
     { table: 'ad_column', idCol: 'ad_column_id', rows: columns.concat(vcolumns, tcolumns) },
     { table: 'ad_window', idCol: 'ad_window_id', rows: [window_] },
@@ -342,6 +351,36 @@ export async function activate(ctx) {
     };
     return BIMDocumentRegisterExport;
   }, { harm: 'read' });
+  // §FOLD-FROM-BIM: "Fold from BIM" (AD_Process P_FOLD). NO fold logic here: read the Project Order state, ask the engine what is legal (ProjOrderState.decide), run the engine
+  //   (ProjOrderState.generate = ProjFold.foldProjectOrder, idempotent by the model version tag) on a SCRATCH copy of the host db, and hand the host the diff as ONE group of ops
+  //   (WriteCapture, the one bridge from plain SQL writes to CRUD ops). The host (the door) provides the BIM inputs (priced rows, the persisted 4D run as the schedule, the building key)
+  //   through globalThis.BimOrderHost; a host without it refuses, naming it. The answer object (ProcessInfo.setSerializableObject) carries the decision and what was written.
+  if (ctx.process && ctx.process.defineProcess) ctx.process.defineProcess(P_FOLD_CLASS, function (SvrProcess) {
+    function BIMDocumentFoldFromBIM() { SvrProcess.call(this); this.building = null; this.selection = ''; }
+    BIMDocumentFoldFromBIM.prototype = Object.create(SvrProcess.prototype);
+    BIMDocumentFoldFromBIM.prototype.prepare = function () {
+      const para = this.getParameter();
+      for (let i = 0; i < para.length; i++) { const n = para[i].getParameterName(); if (para[i].getParameter() == null) continue; if (n === 'Building') this.building = String(para[i].getParameter()); else if (n === 'Selection') this.selection = String(para[i].getParameter()); }
+    };
+    BIMDocumentFoldFromBIM.prototype.doIt = function () {
+      const H = globalThis.BimOrderHost;
+      if (!H) throw new Error('Fold from BIM: this host gives the process no BIM inputs (globalThis.BimOrderHost); the door does');
+      if (!this.building) throw new Error('Fold from BIM: no Building');
+      const trx = this.get_TrxName(), PS = H.ProjOrderState, WC = H.WriteCapture, inp = H.inputs({ building: this.building, selection: this.selection });
+      const before = PS.readState(H.hostDb, inp.key, inp.classes, inp.env), dec = PS.decide(before, false);
+      // `generate` is legal when the order is absent; when it is present and the model is the same the fold's version tag makes it a no-op, when the model changed it is replaced (or refused when
+      //   actuals exist): the engine decides inside the fold, so the legal action of an UNEDITED selection is always generate. An EDITED part (deleteReissue / issueVO) needs the Modeller's edits: not at the door.
+      const cap = WC.capture(H.hostDb, H.Database, (scratch) => PS.generate(scratch, inp.key, inp.rows, inp.env, inp.now, inp.cur));
+      cap.ops.forEach((o) => trx.ops.push(o));
+      const r = cap.result, tally = {}; cap.ops.forEach((o) => { const k = o.op_type.replace('CRUD_', '').toLowerCase() + ':' + o.table; tally[k] = (tally[k] || 0) + 1; });
+      this.getProcessInfo().serializableObject = { building: this.building, key: inp.key, selection: this.selection, selected: inp.selected, elements: inp.elements, decision: { kind: dec.kind, actions: dec.actions },
+        stateBefore: { generated: before.generated, projectId: before.projectId || null, plannedAmt: before.plannedAmt || null }, projectId: r.projectId, plannedAmt: String(r.plannedAmt), version: r.version, created: r.created,
+        phases: r.seqLog || [], notes: r.notes || [], tables: cap.tables, ops: cap.ops.length, opSummary: tally, schedule: inp.scheduleSource, captureMs: cap.ms };
+      console.log('§FOLD-FROM-BIM building=' + this.building + ' key=' + inp.key + ' decision=' + dec.kind + ' version=' + (r.version && r.version.state) + ' plannedAmt=' + r.plannedAmt + ' ops=' + cap.ops.length + ' ' + JSON.stringify(tally));
+      return cap.ops.length ? 'Posted ' + this.building + ': Project ' + r.projectId + ', PlannedAmt ' + r.plannedAmt + ', ' + cap.ops.length + ' change(s)' : 'Nothing to post: ' + this.building + ' is already in its Project Order (model ' + (r.version && r.version.tag) + ')';
+    };
+    return BIMDocumentFoldFromBIM;
+  }, { harm: 'writes' });
   console.log('§BIMDOC-PLUGIN start table=' + T_ID + ' cols=' + COLS.length + ' window=' + W_ID + ' doctypes=' + dtN + ' clients=[' + clients.join(',') + '] windowAccess=host family=' + FAMILY.name + ' (dictionary staged by the host, refcounted)');
 }
 export async function deactivate() { console.log('§BIMDOC-PLUGIN stop table=' + T_ID); }   // the scope removes the DocAction class, the process class and the staged rows by owner

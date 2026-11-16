@@ -236,13 +236,13 @@ async function scheduleCompare(a) {
 //   the rate pack = rates.js RATES (the Find panel's default when no pack is chosen: nf_highlight_cost.js _pack() 'hardcoded'),
 //   the phase / task of an element = the PERSISTED 4D run's task grid (cachedRun: the owner's answer, §I "what phase is this element?", PRIMAL LAW 5),
 //   a selection = `col=glob` over elements_meta columns, compiled by common/door/glob.js (the ONE wildcard reader).
-async function cost(a) {
-  const BY = ['phase', 'task', 'storey', 'discipline', 'class'], by = a.by || 'phase';
-  if (BY.indexOf(by) < 0) throw bad('by must be one of: ' + BY.join(', '));
-  const c = cachedRun(a.building); if (!c.run) return { verb: 'cost', building: a.building, verdict: 'INCONCLUSIVE', summary: 'no 4D run for ' + a.building + ': ' + c.why, groups: [], rows: [] };
-  const SQL = await getSQL(), bdb = new SQL.Database(fs.readFileSync(c.dbf.path));   // the SAME database the 4D run was built from (cachedRun resolves it)
+// selectionOf(a, SQL) - the SAME selection + pricing environment `cost` and the post-to-ERP fold both use (bim-compiler prompts/CLI_ERP_IVR.md §29.2, §29.6 P3b): the persisted 4D run, the building db it
+//   was built from, the rate pack's RATES, and the guids a `col=glob` selection matches. SYNC once sql.js is up (the door's process has it). Returns {c, bdb, env, PS, rt, guids}, or {inconclusive}.
+function selectionOf(a, SQL) {
+  const c = cachedRun(a.building); if (!c.run) return { inconclusive: 'no 4D run for ' + a.building + ': ' + c.why };
+  const bdb = new SQL.Database(fs.readFileSync(c.dbf.path));   // the SAME database the 4D run was built from (cachedRun resolves it)
   const vm = require('vm'), V = path.join(ROOT, 'viewer'), rt = {};
-  vm.runInNewContext(__readSrc(path.join(V, 'rates.js')) + '\n;__o.RATES=RATES;', { __o: rt, console: { log() {}, warn() {} }, window: undefined });
+  vm.runInNewContext(__readSrc(path.join(V, 'rates.js')) + '\n;__o.RATES=RATES;__o.SEQUENCE_RULES=typeof SEQUENCE_RULES!=="undefined"?SEQUENCE_RULES:undefined;', { __o: rt, console: { log() {}, warn() {} }, window: undefined });
   const PS = require(path.join(V, 'proj_order_state.js')), env = { EditDelta: require(path.join(V, 'edit_delta.js')), RATES: rt.RATES };
   const G = require(path.join(ROOT, 'common', 'door', 'glob.js'));
   const cols = bdb.exec('PRAGMA table_info(elements_meta)')[0].values.map(r => r[1]);
@@ -252,7 +252,13 @@ async function cost(a) {
     if (!col) { const nb = require(path.join(ROOT, 'common', 'door', 'assist_core.js')).nearest(m[1], cols, 3).map(x => x.name); throw bad('elements have no column "' + m[1] + '"' + (nb.length ? '; nearest: ' + nb.join(', ') : '; columns: ' + cols.join(', '))); }
     if (G.isGlob(m[2])) { where.push('lower(CAST(m.' + col + ' AS TEXT)) GLOB ?'); params.push(G.toSqlGlob(m[2])); } else { where.push('m.' + col + ' = ?'); params.push(m[2]); } });
   const sel = bdb.exec('SELECT m.guid FROM elements_meta m' + (where.length ? ' WHERE ' + where.join(' AND ') : ''), params);
-  const guids = sel.length ? sel[0].values.map(r => r[0]) : [];
+  return { c, bdb, env, PS, rt, guids: sel.length ? sel[0].values.map(r => r[0]) : [] };
+}
+async function cost(a) {
+  const BY = ['phase', 'task', 'storey', 'discipline', 'class'], by = a.by || 'phase';
+  if (BY.indexOf(by) < 0) throw bad('by must be one of: ' + BY.join(', '));
+  const S = selectionOf(a, await getSQL()); if (S.inconclusive) return { verb: 'cost', building: a.building, verdict: 'INCONCLUSIVE', summary: S.inconclusive, groups: [], rows: [] };
+  const { c, bdb, env, PS, guids } = S;
   const g2t = {}; (c.run.tasks || []).forEach(t => (t.guids || []).forEach(g => { g2t[g] = t; }));
   const keyOf = { phase: (g) => (g2t[g] ? g2t[g].phase : '(not in the 4D run)'), task: (g) => (g2t[g] ? g2t[g].phase + ' — ' + g2t[g].storey : '(not in the 4D run)') };
   const groups = [], all = { elements: 0, cost: 0, rows: [] };
@@ -275,7 +281,7 @@ async function cost(a) {
     summary: verdict === 'OK' ? all.elements + ' elements · ' + all.cost + ' total' + (unpriced ? ' (' + unpriced + ' with no rate)' : '') + (nosize ? '; ' + nosize + ' with no size, not priced' : '') : 'the selection matched no element', groups, rows: all.rows, cache: c.status };
 }
 
-module.exports = { scheduleAt, scheduleCompare, cost, stateAt, stateOf, cachedRun };
+module.exports = { scheduleAt, scheduleCompare, cost, stateAt, stateOf, cachedRun, selectionOf, getSQL };
 
 if (require.main === module) {
   const argv = process.argv.slice(2), verb = argv[0], arg = (k) => { const i = argv.indexOf('--' + k); return i >= 0 ? argv[i + 1] : undefined; };

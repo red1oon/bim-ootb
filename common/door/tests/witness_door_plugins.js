@@ -1,7 +1,7 @@
 // ⚠ DO NOT REMOVE — W-DOOR-PLUGINS (bim-compiler prompts/CLI_ERP_IVR.md §29.6 P3a: the door starts the core plugins, headless). READ THE LOG (§DOOR_PLUGIN lines on stderr, §W-DOOR-PLUGINS here); an exit code is not evidence.
 //   D1 ISSUE (a window the page has does not exist at the prompt): `mis.describe kind=BIM_Document` answers ok with its AD_Table, and `mis.menu` holds the menu leaf 9541001 "BIM Document" (it did neither on main)
 //   D2 ISSUE (two lists drift apart): the bundles the door started == erp/plugins/builtins.json `builtin` (every one ACTIVE or named with its reason), and plugin_overlay.js holds no literal list any more (the page reads the same file)
-//   D3 ISSUE (a plugin process is a dictionary row nobody can run): `erp.process` finds BOTH BIM Document processes (9541001 Open, 9541002 Export Register) by name and reaches their classes (refused by the CLASS, "no-document", never "no process")
+//   D3 ISSUE (a plugin process is a dictionary row nobody can run): `erp.process` finds ALL THREE BIM Document processes (9541001 Open, 9541002 Export Register, 9541003 Fold from BIM) by name and reaches their classes (refused by the CLASS, "no-document", never "no process")
 //   D4 ISSUE (the staged dictionary leaks): after every boot of this witness the op-log file does not exist, and erp/ad_seed.db is byte-equal to its sha256 before (the dictionary is in memory only)
 //   D5 ISSUE (the cached start differs from the full start): a cold boot (ERP_SNAPSHOT=off, a full start) and a warm boot (the cache of seed + patch + bundles) give the same `mis.describe`, the same rows for the plugin in AD_Table/AD_Column/AD_Process/AD_Menu/*_Access (counts), and the menu leaf for role 102
 //   D6 (measured, not a pass bar) boot cost: wall ms of one door line with the plugins off and on, cold and warm → §DOOR_PLUGIN_COST
@@ -33,10 +33,11 @@ const walk = (n, f) => { if (!n) return null; if (f(n)) return n; for (const c o
   if (!list.length) k.incon('D2', 'builtins.json lists nothing');
   else k.chk('D2 the door handled exactly the ' + list.length + ' bundles of builtins.json (' + act + ' started, ' + named + ' named as not startable headless), and plugin_overlay.js holds none of their paths as a literal', JSON.stringify(started) === JSON.stringify(list) && act + named === list.length && act >= 1 && literal.length === 0 && /builtins\.json/.test(ovl), 'handled=' + started.length + ' active=' + act + ' literals=' + literal.length);
   // D3
-  const p1 = door('erp.process name="Open in Modeller / Viewer"'), p2 = door('erp.process name="Export Register (JSON)"'), p3 = door('erp.process name=9541002');
+  const p1 = door('erp.process name="Open in Modeller / Viewer"'), p2 = door('erp.process name="Export Register (JSON)"'), p3 = door('erp.process name=9541002'), p4 = door('erp.process name="Fold from BIM"');
   const byClass = (p, re) => !!p.j && p.j.status === 'refused' && re.test(p.j.why || '') && !/no process/.test(p.j.why || '');
   k.L('D3 open=' + (p1.j && p1.j.why) + ' | export=' + (p2.j && p2.j.why) + ' | by-id 9541002=' + (p3.j && p3.j.why));
-  k.chk('D3 `erp.process` finds both plugin processes (by name, and by id 9541002) and reaches their classes: refused by the class ("no-document"), not by the dictionary ("no process")', byClass(p1, /Open: no-document/) && byClass(p2, /Export Register: no document/) && byClass(p3, /Export Register: no document/), 'open=' + (p1.j && p1.j.why) + ' export=' + (p2.j && p2.j.why));
+  k.L('D3 fold (no Building)=' + (p4.j && p4.j.why));
+  k.chk('D3 `erp.process` finds all three plugin processes (by name, and by id 9541002) and reaches their classes: refused by the class ("no-document"; Fold from BIM by its mandatory parameter), not by the dictionary ("no process")', byClass(p1, /Open: no-document/) && byClass(p2, /Export Register: no document/) && byClass(p3, /Export Register: no document/) && !!p4.j && p4.j.status === 'refused' && /missing parameter: Building/.test(p4.j.why || ''), 'open=' + (p1.j && p1.j.why) + ' export=' + (p2.j && p2.j.why) + ' fold=' + (p4.j && p4.j.why));
   // D5 cold vs warm
   const cold = cli(['describe', '--kind', 'BIM_Document'], { ERP_SNAPSHOT: 'off' }), warm = cli(['describe', '--kind', 'BIM_Document']), warm2 = cli(['describe', '--kind', 'BIM_Document']);
   const norm = (r) => r.j ? JSON.stringify(r.j) : 'none';
@@ -53,7 +54,7 @@ const walk = (n, f) => { if (!n) return null; if (f(n)) return n; for (const c o
   const warmHit = /snapshot=(hit|image) /.test(warm2.err) && /staged=true/.test(warm2.err), coldFull = /staged=false/.test(cold.err);
   k.L('D5 cold-counts=' + JSON.stringify(cC) + ' warm-counts=' + JSON.stringify(cW) + ' cold-full-start=' + coldFull + ' warm-staged=' + warmHit + ' describe equal=' + (norm(cold) === norm(warm2)));
   if (!coldFull || !warmHit) k.incon('D5', 'cold was not a full start or warm was not the cache (coldFull=' + coldFull + ' warmStaged=' + warmHit + ')');
-  else k.chk('D5 the cache of seed + patch + bundles equals a full start: same `mis.describe`, same rows (' + Object.keys(cC).map(x => x + '=' + cC[x]).join(', ') + ')', norm(cold) !== 'none' && norm(cold) === norm(warm2) && JSON.stringify(cC) === JSON.stringify(cW) && cC.ad_process === 2 && cC.ad_window_access > 0 && cC.ad_process_access > 0, 'cold ' + JSON.stringify(cC) + ' warm ' + JSON.stringify(cW));
+  else k.chk('D5 the cache of seed + patch + bundles equals a full start: same `mis.describe`, same rows (' + Object.keys(cC).map(x => x + '=' + cC[x]).join(', ') + ')', norm(cold) !== 'none' && norm(cold) === norm(warm2) && JSON.stringify(cC) === JSON.stringify(cW) && cC.ad_process === 3 && cC.ad_window_access > 0 && cC.ad_process_access > 0, 'cold ' + JSON.stringify(cC) + ' warm ' + JSON.stringify(cW));
   // D4
   const leaked = fs.existsSync(oplog) ? fs.statSync(oplog).size : 0, nowSha = sha(path.join(ROOT, 'erp/ad_seed.db'));
   k.L('D4 op-log bytes=' + leaked + ' seed sha before=' + seedSha.slice(0, 12) + ' after=' + nowSha.slice(0, 12));

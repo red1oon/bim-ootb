@@ -7,12 +7,12 @@ The ERP's DocActions and processes from the application dictionary (`erp/ad_seed
 
 | | |
 |---|---:|
-| **N** (N_doc + N_proc) | 1157 |
+| **N** (N_doc + N_proc) | 1158 |
 | N_doc = 54 document tables × 13 DocActions + 1 plugin table(s) × their family's offered actions | 704 |
-| N_proc = active AD_Process rows (25 inactive, not in N) | 453 |
+| N_proc = active AD_Process rows (25 inactive, not in N) | 454 |
 | (b) doc pairs with a registered handler | 67 |
-| (b) processes whose resolved class name has a handler | 97 |
-| of which from built-in plugins (doc pairs / processes) | 2 / 2 |
+| (b) processes whose resolved class name has a handler | 98 |
+| of which from built-in plugins (doc pairs / processes) | 2 / 3 |
 | NOT IMPLEMENTED (doc / process) | 637 / 356 |
 | handlers without a dictionary row (doc / process) | 1 / 0 |
 | **(c) X offered to actors** | 4 |
@@ -29,7 +29,7 @@ The dictionary rows each BUILT-IN plugin (`erp/plugins/builtins.json` builtin) s
 |---|---|---:|---|---|---:|---|---:|
 | ninja_excel | `erp/plugins/ninja_excel.mjs` | 0 of 0 | — | — | 0 | — | 0 |
 | ninja_create | `erp/plugins/ninja_create.mjs` | 0 of 0 | — | — | 0 | — | 0 |
-| bim_document | `erp/plugins/bim_document.mjs` | 145 of 115 | `BIM_Document_Open` `BIM_Document_Register_Export` | `BIM_Document` | 2 | CO PR | 7 |
+| bim_document | `erp/plugins/bim_document.mjs` | 158 of 118 | `BIM_Document_Open` `BIM_Document_Register_Export` `BIM_Document_Fold_From_BIM` | `BIM_Document` | 2 | CO PR | 7 |
 
 ## Handler registration sites (`K.register`, outside tests/)
 
@@ -70,7 +70,7 @@ The dictionary rows each BUILT-IN plugin (`erp/plugins/builtins.json` builtin) s
 | `A_Asset_Reval` | seed | **NOT IMPLEMENTED** | — |
 | `A_Asset_Transfer` | seed | **NOT IMPLEMENTED** | — |
 | `A_Depreciation_Entry` | seed | **NOT IMPLEMENTED** | — |
-| `BIM_Document` | plugin bim_document | CO PR | `erp/plugins/bim_document.mjs:309 (plugin bim_document)` |
+| `BIM_Document` | plugin bim_document | CO PR | `erp/plugins/bim_document.mjs:318 (plugin bim_document)` |
 | `C_AllocationHdr` | seed | **NOT IMPLEMENTED** | — |
 | `C_BankStatement` | seed | **NOT IMPLEMENTED** | — |
 | `C_BankTransfer` | seed | **NOT IMPLEMENTED** | — |
@@ -128,7 +128,7 @@ The dictionary rows each BUILT-IN plugin (`erp/plugins/builtins.json` builtin) s
 
 Class rules (first match wins): **sends** ← class/name says it mails or notifies (`mail|notice|\brequest\b|mailing|\bsms\b|broadcast`); **posts** ← class/name says it posts, allocates, costs or generates documents (`fact_?acct|\bposting\b|\bpost\b|doc\.?post|invoicegenerate|allocat|bankstatementpayment|paymentgenerate|payselect|paymentprint|costing|inventorycount|imputation|storageclean|periodclose|openclose|reval`); IsReport=Y → **read**; else **writes**, basis "no rule matched, assumed writes".
 
-Classes: read 111, writes 312, posts 21, sends 9. Implemented 97 of 453.
+Classes: read 111, writes 313, posts 21, sends 9. Implemented 98 of 454.
 
 | id | source | value | name | class name → resolved | handler | class | basis |
 |---:|---|---|---|---|---|---|---|
@@ -583,8 +583,9 @@ Classes: read 111, writes 312, posts 21, sends 9. Implemented 97 of 453.
 | 200157 | seed | AD_Table CreatePartition | Create/Update Table Partition | `org.idempiere.tablepartition.process.CreatePartition` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 200158 | seed | DetachOrReAttachPartition | Detach/re-attach Table Partition | `org.idempiere.tablepartition.process.ChangePartitionStatus` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 200162 | seed | CustomizeGridViewWindowCustomization | Customize Grid View | — | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
-| 9541001 | plugin bim_document | BIM_Document_Open | Open in Modeller / Viewer | `org.kernel.bim.process.BIMDocumentOpen` | `erp/plugins/bim_document.mjs:313 (plugin bim_document)` | writes | declared by the process definition (defineProcess opts.harm) |
-| 9541002 | plugin bim_document | BIM_Document_Register_Export | Export Register (JSON) | `org.kernel.bim.process.BIMDocumentRegisterExport` | `erp/plugins/bim_document.mjs:328 (plugin bim_document)` | read | declared by the process definition (defineProcess opts.harm) |
+| 9541001 | plugin bim_document | BIM_Document_Open | Open in Modeller / Viewer | `org.kernel.bim.process.BIMDocumentOpen` | `erp/plugins/bim_document.mjs:322 (plugin bim_document)` | writes | declared by the process definition (defineProcess opts.harm) |
+| 9541002 | plugin bim_document | BIM_Document_Register_Export | Export Register (JSON) | `org.kernel.bim.process.BIMDocumentRegisterExport` | `erp/plugins/bim_document.mjs:337 (plugin bim_document)` | read | declared by the process definition (defineProcess opts.harm) |
+| 9541003 | plugin bim_document | BIM_Document_Fold_From_BIM | Fold from BIM | `org.kernel.bim.process.BIMDocumentFoldFromBIM` | `erp/plugins/bim_document.mjs:358 (plugin bim_document)` | writes | declared by the process definition (defineProcess opts.harm) |
 
 ## DYNAMIC process registrations (NOT COUNTED)
 

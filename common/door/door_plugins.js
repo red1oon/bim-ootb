@@ -54,6 +54,7 @@ async function startBuiltins(O, opts) {
       rec.ms = Date.now() - t1; out.push(rec);
     }
     O.plugins = { registry: reg, started: out };
+    require('./bim_order_host.js').install(O, () => { const d = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString(); return d.replace('T', ' ').slice(0, 19); });   // the BIM inputs of "Fold from BIM" (P3b): the process asks the host for them
   } finally { console.log = log; }
   out.forEach(r => say((r.state === 'ACTIVE' ? 'started' : 'not-started') + ' id=' + r.id + ' file=' + r.file + ' ms=' + r.ms + (r.error ? ' reason=' + r.error : '')));
   say('builtins=' + out.length + ' staged=' + staged + ' active=' + out.filter(r => r.state === 'ACTIVE').length + ' ms=' + (Date.now() - t0));

@@ -1064,14 +1064,14 @@ function runProcess(O, a) {
   const dbS = { prepare: (sql) => ({ get: (...p) => O.rows(sql, p)[0], all: (...p) => O.rows(sql, p) }) };
   const env = { db: O.dbId, client: r ? r.ad_client_id : 11, org: r ? r.ad_org_id : 0, date: today() + ' 00:00:00', now: stamp(), uuid: () => require('crypto').randomUUID() };
   let jr = null; const ctx = { runInTrx: (fn) => { jr = fn((s, p) => O.rows(s, p), env); return jr; } };
-  const log = console.log; console.log = () => {};
-  let res; try { res = AP.dispatch(dbS, { AD_Process_ID: P.id, Record_ID: r ? r[K.key] : 0, Table_ID: K ? K.id : 0, params: given }, ctx); } finally { console.log = log; }
+  const log = console.log, kept = []; console.log = (...x) => { const l = x.join(' '); if (l.charAt(0) === '§' && kept.length < 400) kept.push(l); };   // stdout carries only the answer; the process's own § lines are the evidence and go to stderr below, none dropped
+  let res; try { res = AP.dispatch(dbS, { AD_Process_ID: P.id, Record_ID: r ? r[K.key] : 0, Table_ID: K ? K.id : 0, params: given }, ctx); } finally { console.log = log; kept.forEach(l => process.stderr.write(l + '\n')); }
   say('process name=' + JSON.stringify(P.name) + ' id=' + P.id + ' class=' + P.classname + ' record=' + (r ? K.table + '/' + r[K.key] : '-') + ' dispatched=' + res.dispatched + ' ok=' + res.ok + ' reason=' + res.reason + ' ops=' + (jr && jr.ops ? jr.ops.length : 0) + (a.dry === 'Y' ? ' dry=Y' : ''));
   if (!res.dispatched) { if (res.reason === 'absent-handler') refuseGap(P.name + ' was not run: it has no JS port yet (class ' + (P.classname || 'none') + ')', 'no-port'); refuse(P.name + ' was not run: ' + res.message); }
   if (!res.ok) refuse(P.name + ' failed: ' + (res.message || res.reason) + ' (nothing was kept)');
   const ops = a.dry === 'Y' || RUN_BREAK === 'skipcommit' ? [] : persistGroup(O, (res.result && res.result.commitOps) || []);
   return { process: { id: P.id, value: P.value, name: P.name, classname: P.classname }, record: r ? brief(K, O.rows('SELECT * FROM ' + K.table + ' WHERE ' + K.key + '=?', [r[K.key]])[0] || r) : null,
-    params: given, message: res.message, dry: a.dry === 'Y', ops: ops.map(o => ({ op_type: o.op_type, table: o.table })), opSummary: sum(ops), planned: ((res.result && res.result.commitOps) || []).length };
+    params: given, message: res.message, object: (res.result && res.result.object) || undefined, dry: a.dry === 'Y', ops: ops.map(o => ({ op_type: o.op_type, table: o.table })), opSummary: sum(ops), planned: ((res.result && res.result.commitOps) || []).length };
 }
 // ── mis.lookup (bim-compiler prompts/CLI_ERP_IVR.md §27; §1d TA2): the legal values of a column or a process parameter, from the dictionary as MLookupFactory/MLookup read it ──
 const LOOKUP_BREAK = process.env.LOOKUP_BREAK || '';   // W-MIS-LOOKUP falsifiers: norule (the val rule not applied: must FAIL L1) · unfiltered (an unresolved token shows all rows: must FAIL L2)
