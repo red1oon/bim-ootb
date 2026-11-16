@@ -1031,7 +1031,14 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
       if ((m = /^INSERT\s+INTO\s+([\w.]+)\s*\(([^)]*)\)\s*(VALUES\s*\((.*)\)|SELECT .*)$/i.exec(S))) {
         var t3 = m[1].toLowerCase(), cols = m[2].split(',').map(function (c) { return c.trim().toLowerCase(); }), rs3;
         if (/^VALUES/i.test(m[3])) rs3 = trx.q('SELECT ' + _splitTop(m[4]).map(function (e, i) { return '(' + e + ') AS __v' + i; }).join(', '), params);
-        else rs3 = trx.q(m[3], params).map(function (r) { var o = {}, ks = Object.keys(r); ks.forEach(function (kk, i) { o['__v' + i] = r[kk]; }); return o; });
+        else {   // #3146: alias every top-level SELECT expression by POSITION (as PostgreSQL maps an INSERT … SELECT). Was Object.keys(row): duplicate result names
+                 //   (`0`, `getDate()`) collapsed and an integer-like name (`0`) sorted first, so every value after it landed in the wrong column.
+          var sb = m[3].replace(/^SELECT\s+/i, ''), dm = /^DISTINCT\s+/i.exec(sb), sl = dm ? sb.slice(dm[0].length) : sb, sfi = _topIdx(sl, /\sFROM\s/i);
+          var slst = _splitTop(sfi < 0 ? sl : sl.slice(0, sfi)), srest = sfi < 0 ? '' : sl.slice(sfi);
+          if (slst.some(function (e) { return /(^|\.)\*$/.test(e.trim()); }))   // a star list: a table's own (distinct, non-numeric) column names, in its order
+            rs3 = trx.q(m[3], params).map(function (r) { var o = {}; Object.keys(r).forEach(function (kk, i) { o['__v' + i] = r[kk]; }); return o; });
+          else rs3 = trx.q('SELECT ' + (dm ? 'DISTINCT ' : '') + slst.map(function (e, i) { return '(' + e.trim() + ') AS __v' + i; }).join(', ') + srest, params);
+        }
         rs3.forEach(function (r) { var f = {}; cols.forEach(function (c, i) { f[c] = r['__v' + i]; }); trx.insert(t3, f); });
         return rs3.length;
       }
@@ -1087,11 +1094,18 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
     var A = _A(), ML = _ML(), C = JAVA[pi.className];
     if (!C) return { ok: false, dispatched: false, summary: 'Failed to create new process instance for ' + pi.className };
     var shared = !!pi.trx, trx = shared ? pi.trx : new ML.Trx(query, env || {}), RT0 = A.RUNTIME, kept = shared ? { DB: RT0.DB, PO: RT0.PO, now: RT0.now, log: RT0.log, envNow: A.Env.now } : null;
+    var keptNow = { now: RT0.now, envNow: A.Env.now };
     env = env || trx.env || {};
-    A.bind(function (sql, params) { return trx.q(sql, params); }, { now: env && env.nowMillis ? function () { return env.nowMillis; } : undefined, log: function (l) { trx.say(l); } });
+    // A3-CLOCK-1 (bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md, bim-ootb #3145): the process's SQL clock (getdate()/SYSDATE, @SysDate@) is the env's LOCAL stamp in the twin's Timestamp
+    //   form (wall-clock fields as UTC ms, ad_callout.js Timestamp). Was env.nowMillis, a true epoch: at +08 SYSDATE inside a process read the UTC wall clock (the previous day before 08:00).
+    var procNow = env && (env.now || env.nowMillis != null) ? new A.Timestamp(A.Env.nowStamp(env)).ms : null;
+    A.bind(function (sql, params) { return trx.q(sql, params); }, { now: procNow != null ? function () { return procNow; } : undefined, log: function (l) { trx.say(l); } });
     try {
       return _runJavaIn(A, C, trx, env, query, pi, shared);
-    } finally { if (kept) { RT0.DB = kept.DB; RT0.PO = kept.PO; RT0.now = kept.now; RT0.log = kept.log; A.Env.now = kept.envNow; } }
+    } finally {
+      if (kept) { RT0.DB = kept.DB; RT0.PO = kept.PO; RT0.log = kept.log; }
+      RT0.now = keptNow.now; A.Env.now = keptNow.envNow;   // A3-CLOCK-1: the page's clock comes back after EVERY run (was: only in a caller's trx, so a stand-alone process froze the page's SYSDATE)
+    }
   }
   function _runJavaIn(A, C, trx, env, query, pi, shared) {
     var ctx = pi.ctx || A.sessionContext(env);                     // Env.getCtx(): the session's context, built at login (HS1), not rebuilt per process
