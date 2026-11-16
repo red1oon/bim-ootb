@@ -43,7 +43,7 @@
                { "in": "erp", "ex": "count",      "verb": "mis.list",      "args": [], "master": "filter", "defaults": { "columns": "$columns", "limit": "1" } } ] },
   "cat":     { "help": "one record: cat <uu|id>",                "forms": [
                { "in": "kind", "ex": "cat 2O2Fr$t4X7Zf8NOew3FKau",     "verb": "object.read",   "args": ["uu"] },
-               { "in": "erp", "ex": "cat 1500004",      "verb": "mis.read",      "args": ["id"], "draw": "record" } ] },
+               { "in": "erp", "ex": "cat 1500004",      "verb": "mis.read",      "args": ["id"], "draw": "record", "ctx": true } ] },
   "sum":     { "help": "add a column: sum <column>",             "forms": [
                { "in": "kind", "ex": "sum <column>",     "verb": "object.sum",    "args": ["column"] },
                { "in": "erp", "ex": "sum GrandTotal",      "verb": "mis.sum",       "args": ["column"], "master": "filter" } ] },

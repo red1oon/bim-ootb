@@ -21,9 +21,10 @@
       var lo = String(name).toLowerCase(), ts = st.etabs || [], hit = ts.filter(function (t) { return String(t.tab).toLowerCase() === lo || String(t.kind).toLowerCase() === lo; })[0];
       if (hit) return hit; var pre = ts.filter(function (t) { return String(t.tab).toLowerCase().indexOf(lo) === 0 || String(t.kind).toLowerCase().indexOf(lo) === 0; }); return pre.length === 1 ? pre[0] : null;
     }
+    function pcName(p) { return typeof p === 'string' ? p : p.name; }
     function got(obj, path) { return String(path).split('.').reduce(function (a, k) { return a == null ? null : a[k]; }, obj); }
     var LEVELS = ['short', 'student'];   // §0: Student is a LEVEL beside the language (VOCAB_MESSAGE_CATALOG.md)   // §25: the pick-list item that leaves an optional parameter out (never a value a record can have)
-    function init() { return { building: null, kind: null, columns: null, props: null, erp: null, ecolumns: null, eprops: null, ekey: null, etabs: null, rec: null, master: null, up: [], role: null, pending: null, last: null, menu: null, pickFor: null, paras: null, runFor: null, asking: null }; }
+    function init() { return { building: null, kind: null, columns: null, props: null, erp: null, ecolumns: null, eprops: null, role: null, pending: null, last: null, menu: null, pickFor: null, paras: null, runFor: null, asking: null }; }
     function prompt(st) {
       // §29.1: a record is a place: the path is each place above (a record, then a tab of it) and this one: Project/BIM: Hospital/Project Phase
       var seg = function (s) { return s.erp + (s.rec ? '/' + s.rec.label : ''); };
@@ -37,7 +38,7 @@
       return verb + order.map(function (k) { return ' ' + k + '=' + quote(args[k]); }).join('');
     }
     // §1d.1: the kind's properties, as the type assist needs them (name, label, type, list values), kept from the describe answer cd already read
-    function slim(ps) { return (ps || []).map(function (q) { return { name: q.name, label: q.label || q.name, type: q.type, values: q.values || null, seq: q.seq == null ? null : q.seq, displayed: q.displayed !== false }; }); }   // seq + displayed: the record view orders and filters by the window's own fields (§29.1)
+    function slim(ps) { return (ps || []).map(function (q) { var o2 = { name: q.name, label: q.label || q.name, type: q.type, values: q.values || null }; if (q.seq != null) o2.seq = q.seq; if (q.displayed === false) o2.displayed = false; return o2; }); }   // seq + displayed=false kept only when the dictionary says them: the record view orders and filters by the window's own fields (§29.1)
     function where(st) { return st.erp ? 'erp' : (st.kind ? 'kind' : (st.building ? 'building' : 'any')); }
     function fits(form, w) { return form.in === 'any' || form.in === w || (form.in === 'building' && w === 'kind'); }
     function ctxArgs(st, e, args) {   // §22.4: the context fills only an input the verb has and the line did not give
@@ -99,7 +100,7 @@
       // §22.8 R5: a required input still missing opens a pick menu of its legal values (interactive sessions only; elsewhere the door refuses, naming it)
       var miss = e.inputs.filter(function (i) { return i.required && args[i.name] == null; })[0];
       if (miss && live && Menu && choices[miss.type]) return { pick: { input: miss.name, type: miss.type, word: w, verb: verb } };
-      return { line: lineOf(verb, args), verb: verb, args: args, confirm: (!!def.confirm || (form.confirm === 'session' && live)) && brk !== 'noconfirm', view: form.summary ? 'summary' : null, draw: form.draw || null, ctx: form.draw ? { props: st.eprops, key: st.ekey, kind: st.erp } : null };
+      return { line: lineOf(verb, args), verb: verb, args: args, confirm: (!!def.confirm || (form.confirm === 'session' && live)) && brk !== 'noconfirm', view: form.summary ? 'summary' : null, draw: form.draw || null, ctx: form.ctx ? { props: st.eprops, key: st.ekey, kind: st.erp } : null };
     }
     function step(st, input) {
       st = JSON.parse(JSON.stringify(st || init()));
@@ -135,13 +136,13 @@
         }
         if (p === 'cd-kind') {
           if (ok) { st.kind = env.answer.kind; st.columns = pick(env.answer.properties || []).cols; st.props = slim(env.answer.properties); screen.push(M('words.cd_kind_ok', st.building, st.kind, (env.answer.properties || []).length, st.columns.join(', '))); return out(); }
-          effects.push({ line: lineOf('mis.describe', { kind: st.pendingCd.name }), purpose: 'cd-erp' }); return out();
+          effects.push({ line: lineOf('mis.describe', { kind: pcName(st.pendingCd) }), purpose: 'cd-erp' }); return out();
         }
         if (p === 'cd-erp') {
-          var pc = st.pendingCd;
+          var pc = typeof st.pendingCd === 'string' ? { name: st.pendingCd } : st.pendingCd;   // a plain `cd X` keeps its text (string); a record or alternative reading is an object
           if (ok) {
-            st.pendingCd = null; st.erp = env.answer.kind || pc.name; st.ecolumns = pick(env.answer.properties || []).cols; st.eprops = slim(env.answer.properties); st.ekey = env.answer.key || null; st.etabs = env.answer.childTabs || [];
-            st.building = null; st.kind = null; st.columns = null; st.rec = null; st.master = null; st.up = pc.up || [];
+            st.pendingCd = null; st.erp = env.answer.kind || pc.name; st.ecolumns = pick(env.answer.properties || []).cols; st.eprops = slim(env.answer.properties); if (env.answer.key) st.ekey = env.answer.key; if (env.answer.childTabs) st.etabs = env.answer.childTabs;
+            st.building = null; st.kind = null; st.columns = null; if (st.rec) st.rec = null; if (st.master) st.master = null; if (pc.up) st.up = pc.up; else if (st.up && st.up.length) st.up = [];   // (a field is touched only when it holds something: the state of a plain `cd` stays what P2a made, W-MSG-CATALOG M1)
             if (pc.id != null || pc.ref != null) {   // §29.1: a record named with the kind: its row is read next (by id from a link, by number or name as typed)
               st.pendingRead = { ref: pc.ref != null ? pc.ref : null, id: pc.id != null ? pc.id : null, by: pc.id != null ? 'id' : 'number' };
               var ra = pc.id != null ? { kind: st.erp, id: pc.id } : { kind: st.erp, number: pc.ref }; ctxArgs(st, verbs['mis.read'], ra);
@@ -227,13 +228,13 @@
           return out();
         }
         var b = buildings.filter(function (x) { return x.toLowerCase() === arg.toLowerCase(); })[0];
-        if (b) { st.building = b; st.kind = null; st.columns = null; st.erp = null; st.ecolumns = null; st.rec = null; st.master = null; st.up = []; screen.push(M('words.cd_building', b)); return out(); }
+        if (b) { st.building = b; st.kind = null; st.columns = null; st.erp = null; st.ecolumns = null; if (st.rec) st.rec = null; if (st.master) st.master = null; if (st.up && st.up.length) st.up = []; screen.push(M('words.cd_building', b)); return out(); }
         if (st.erp && st.rec) { var tb = tabOf(st, arg); if (tb) { st.pendingCd = { tab: tb }; effects.push({ line: lineOf('mis.describe', { kind: tb.kind }), purpose: 'cd-tab' }); return out(); } }   // §29.1: a tab of the record
         var LK = LINKS[arg.toLowerCase()];
         if (LK && LK.in === 'building' && st.building && brk !== 'kindfirst') { st.pendingCd = { link: LK }; effects.push({ line: lineOf(LK.verb, { building: st.building }), purpose: 'link' }); return out(); }   // §29.1: a link word is never a kind of the building (the film's "no such table: c_project")
         var tk = toks.slice(1), pcd = { name: arg, first: arg };
         if (tk.length > 1) { var rest = tk.slice(1).map(function (t) { return t.text; }).join(' '); if (tk[0].quoted) pcd = { name: tk[0].text, ref: rest, first: arg }; else pcd.alt = { name: tk[0].text, ref: rest }; }   // `cd "Business Partner" Joe`: the first word is the kind; `cd Project Hospital`: the whole text first, then the first word
-        st.pendingCd = pcd;
+        st.pendingCd = (pcd.alt || pcd.ref != null) ? pcd : arg;
         if (st.building) effects.push({ line: lineOf('object.describe', { building: st.building, kind: pcd.name }), purpose: 'cd-kind' });
         else effects.push({ line: lineOf('mis.describe', { kind: pcd.name }), purpose: 'cd-erp' });
         return out();
@@ -263,7 +264,7 @@
       }
       if (x.pick) { st.pickFor = { text: text, input: x.pick.input, type: x.pick.type, word: x.pick.word }; var c0 = choices[x.pick.type], ca = JSON.parse(JSON.stringify(c0.args || {})); ctxArgs(st, verbs[c0.verb], ca);
         effects.push({ line: lineOf(c0.verb, ca), purpose: 'choices' }); return out(); }
-      var eff = { line: x.line, purpose: 'run', view: x.view || null, match: x.match || null, draw: x.draw || null, ctx: x.ctx || null };
+      var eff = { line: x.line, purpose: 'run', view: x.view || null, match: x.match || null, draw: x.draw || null }; if (x.ctx) eff.ctx = x.ctx;   // ctx only when a drawing needs the kind's dictionary rows (§29.1)
       if (x.view === 'summary') st.last = { line: x.line, verb: x.verb, args: x.args }; else if (x.view !== 'rows') st.last = null;
       if (brk === 'dropkey' && x.args.building) eff.shown = x.line.replace(/ building=\S+/, '');   // W-RED1-WORDS falsifier: the printed line lacks the context key
       if (x.verb === 'erp.process') st.paras = null;   // the questions are done: the next run reads its parameters again
