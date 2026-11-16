@@ -659,7 +659,43 @@
     var docs = {}; DOCS_L.keys().sort().forEach(function (t) { docs[t] = DOCS_L.layers(t).map(function (r) { return r.owner + '@' + r.rank; }); });
     return { models: models, docs: docs };
   }
-  function docActionFor(table) { return DOCS[(table || '').toLowerCase()] || null; }
+  // ── the generic DocAction class (bim-compiler prompts/CLI_ERP_IVR.md §34, owner 2026-11-17): what legacy Ninja's Code Maker writes for a table with a DocAction column
+  //    (MRO_CodeMaker.generateMClassJavaFile → the generic M<model> template SampleDocAction.txt). Its bodies = what two stock DocAction classes share, table-specific lines removed:
+  //    MRequisition.java (prepareIt :260-306, approveIt/rejectIt :318-330, completeIt :342-378, voidIt/closeIt :401-470, reverse*/reActivateIt :480-535 → false) and MJournal.java
+  //    (completeIt :640-, voidIt :704- / closeIt :750-: Processed=Y, DocAction=--). The validators fire in processIt (ev 'DOC:…'), not here. No books.
+  //    Only for a table a Ninja line made (AD_Table_ID >= NinjaStage.NINJA_BASE, the test ninja.workflow uses) that has DocStatus, DocAction and Processed and NO registered class:
+  //    a core or module table without a class keeps "no document class" (its legacy class has business logic this one would fake). A registered class always wins.
+  var NINJA_DOC_BREAK = (typeof process !== 'undefined' && process.env && process.env.NINJA_DOC_BREAK) || '';   // W-NINJA-DOC falsifier: off (no generic class)
+  function _ninjaBase() { try { if (typeof module !== 'undefined' && module.exports) return require('./ninja_stage').NINJA_BASE; } catch (e) { /* the browser */ } var g = typeof window !== 'undefined' ? window : globalThis; return g.NinjaStage && g.NinjaStage.NINJA_BASE; }
+  var _generic = {};
+  function genericDocAction(table) {
+    if (_generic[table]) return _generic[table];
+    function cur(trx, d) { return trx.get(table, d[trx.idCol(table)]) || d; }
+    function set(trx, d, ch) { var c = cur(trx, d), out = {}; Object.keys(ch).forEach(function (k) { if (k in c) out[k] = ch[k]; }); if (Object.keys(out).length) trx.update(table, c, out); }   // only the columns the table has (IsApproved is optional)
+    _generic[table] = {
+      generic: true,
+      prepareIt: function (trx, d) { return 'IP'; },                                                        // MRequisition :260-306 / MJournal :463-: the line and period checks are the table's own; DocAction untouched (legacy leaves PR)
+      approveIt: function (trx, d) { set(trx, d, { isapproved: 'Y' }); return true; },                     // MRequisition :318-323
+      rejectIt: function (trx, d) { set(trx, d, { isapproved: 'N' }); return true; },                      // MRequisition :325-330
+      completeIt: function (trx, d) { if (cur(trx, d).isapproved !== 'Y') set(trx, d, { isapproved: 'Y' }); set(trx, d, { processed: 'Y', docaction: 'CL' }); return 'CO'; },   // :342-378 implicit approval, Processed, DocAction Close
+      voidIt: function (trx, d) { set(trx, d, { processed: 'Y', docaction: '--', docstatus: 'VO' }); return true; },   // MJournal :704-: Processed=Y, DocAction=None; DocStatus as DocumentEngine.voidIt sets it
+      closeIt: function (trx, d) { set(trx, d, { processed: 'Y', docaction: '--', docstatus: 'CL' }); return true; },  // MJournal :750-
+      reverseCorrectIt: function (trx, d) { T_msg(trx, 'the generic document class does not reverse (MRequisition.reverseCorrectIt :480-490 returns false)'); return false; },
+      reverseAccrualIt: function (trx, d) { T_msg(trx, 'the generic document class does not reverse (MRequisition.reverseAccrualIt :501-511 returns false)'); return false; },
+      reActivateIt: function (trx, d) { T_msg(trx, 'the generic document class does not re-activate (MRequisition.reActivateIt :522-535 returns false)'); return false; }
+    };
+    return _generic[table];
+  }
+  function T_msg(trx, m) { trx._msg = m; }
+  function isNinjaDocTable(q, table) {
+    if (NINJA_DOC_BREAK === 'off' || typeof q !== 'function') return false;
+    var nb = _ninjaBase(); if (!(Number(nb) > 0)) return false;
+    var r; try { r = q("SELECT t.ad_table_id AS id, (SELECT count(*) FROM ad_column c WHERE c.ad_table_id=t.ad_table_id AND c.isactive='Y' AND lower(c.columnname) IN ('docstatus','docaction','processed')) AS n FROM ad_table t WHERE lower(t.tablename)=?", [table])[0]; } catch (e) { return false; }
+    return !!r && Number(r.id) >= Number(nb) && Number(r.n) === 3;
+  }
+  // docImpl: the registered class, else the generic one for a Ninja table (q = the query of the db at hand), else null
+  function docImpl(table, q) { table = (table || '').toLowerCase(); return DOCS[table] || (isNinjaDocTable(q, table) ? genericDocAction(table) : null); }
+  function docActionFor(table, q) { return docImpl(table, q); }
 
   // DocumentEngine.processIt(action) — process/DocumentEngine.java:301-360 + prepareIt :489-498 + completeIt.
   // The document's DocStatus is written by the ENGINE (setDocStatus after each step), DocAction by the class.
@@ -678,8 +714,9 @@
   }
   function processIt(trx, table, id, action) {
     table = table.toLowerCase();
-    var impl = DOCS[table], doc = trx.get(table, id);
+    var impl = docImpl(table, function (s, p) { return trx.q(s, p); }), doc = trx.get(table, id);
     if (!impl) return { ok: false, status: doc && doc.docstatus, msg: 'no DocAction class registered for ' + table };
+    if (impl.generic) trx.say('§MODEL-GENERIC-DOC table=' + table + ' id=' + id + ' action=' + action + ' (CLI_ERP_IVR §34: the Ninja Code Maker\'s generic M class)');
     if (!doc) return { ok: false, status: null, msg: table + ' ' + id + ' not found' };
     // DocumentEngine.processIt(processAction, docAction) :248-296: the requested (workflow) action when valid for the status, else the document's own DocAction, else nothing / refused
     var eng = engineActions(doc.docstatus || 'DR'), docAct = doc.docaction;
@@ -788,7 +825,7 @@
   //   MWFProcess :138-142/:487-545 and MWFActivity.setResponsible (wfStartResp/wfNodeResp). The DocAction path keeps its earlier responsible rule (named gap, CAPEX_DASHBOARD.md §11.2).
   function runWorkflow(trx, table, id, action, opts) {
     table = table.toLowerCase();
-    var dv = !!(opts && opts.wf), wf = dv ? opts.wf : workflowOf(trx, table), doc = trx.get(table, id), impl = DOCS[table];
+    var dv = !!(opts && opts.wf), wf = dv ? opts.wf : workflowOf(trx, table), doc = trx.get(table, id), impl = docImpl(table, function (s, p) { return trx.q(s, p); });
     if (doc && action) trx.update(table, doc, { docaction: action });   // the user's selection is saved first
     if (!wf) { trx.say('§MODEL-WF table=' + table + ' workflow=absent → direct DocumentEngine.processIt'); return processIt(trx, table, id, action); }
     var env = trx.env, tid = tableIdOf(trx, table);

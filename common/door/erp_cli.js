@@ -395,7 +395,7 @@ function act(O, a, code) {
   if (!a.kind) refuse('--kind is required');
   const aname = (O.rows('SELECT name FROM ad_ref_list WHERE ad_reference_id=135 AND value=?', [code])[0] || { name: code }).name;
   const K = docKind(O, a.kind), r = recordOf(O, K, a), id = r[K.key], before = r.docstatus;
-  if (!O.ML.docActionFor(K.table)) refuseGap(aname + ' was not done: ' + K.name + ' has the document columns but no document class yet, so nothing says what ' + aname + ' does on it (DocStatus stays ' + before + ')', 'no-doc-class');
+  if (!O.ML.docActionFor(K.table, (s, p) => O.rows(s, p))) refuseGap(aname + ' was not done: ' + K.name + ' has the document columns but no document class yet, so nothing says what ' + aname + ' does on it (DocStatus stays ' + before + ')', 'no-doc-class');
   if (a.role != null && BREAK !== 'norole') {   // the UI never offers what the role's Document Action Access withholds (WDocActionPanel.java:185-205); the twin refuses it at the same place
     const res = actionsOf(O, K, r, a);
     if (!res.walked) refuse(res.why);
@@ -927,7 +927,7 @@ async function workflowOn(O, tn, dry) {   // the one function: ninja.workflow, a
       ops.push({ op_type: 'CRUD_CREATE', table: 'ad_field', idCol: 'ad_field_id', fields: f }); fieldsAdded.push(tab.id + ':' + c.name);
     }
   }
-  const notMade = ['the AD_Workflow, its nodes and the AD_Process the older Ninja makes (this dictionary has no table to hold the first two yet)', 'the document class: Complete, Void, Close stay refused on this table until it has one'];
+  const notMade = ['the AD_Workflow, its nodes and the AD_Process the older Ninja makes (this dictionary has no table to hold the first two yet; the engine\'s direct path is the same Start → Prepare → Complete)'];   // the document class is the generic one (model_layer genericDocAction, bim-compiler prompts/CLI_ERP_IVR.md §34)
   const out = { table: T.tn, added, corrected, fields: fieldsAdded.length, notMade };
   if (WF_BREAK === 'again' && !ops.length) { ops.push({ op_type: 'CRUD_UPDATE', table: 'ad_table', idCol: 'ad_table_id', id: T.id, changes: { description: { old: null, new: 'Ninja: ' + T.tn } } }); }
   if (dry) return Object.assign(out, { dry: true, rowsToFill: 0, ops: [] });
