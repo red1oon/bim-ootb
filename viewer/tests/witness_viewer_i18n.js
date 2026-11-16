@@ -123,7 +123,8 @@ async function collectStrings(page) {
       out.push({ kind, text, hidden, tm: !!(el && el.closest && el.closest('#time-machine-panel')), wi: !!(el && el.closest && el.closest('#whatif-panel')), hp: !!(el && el.closest && el.closest('#cmd-palette')), sel: el && el.nodeType === 1 ? (el.id ? '#' + el.id : el.tagName.toLowerCase() + (el.className && typeof el.className === 'string' ? '.' + el.className.split(' ')[0] : '')) : '' });
     };
     const skip = 'script,style,noscript,template,svg,canvas,#walk-log,#ootb-locale-toast,.hub-card .nm,#s-current-element,#load-elapsed,#tl-label,#section-val,#site-cam-time,#load-items,' +
-      '#whatif-panel .wi-name,#whatif-panel h3 > span,#whatif-panel .wi-d';   // S226 §R2b: What-if phase names + project name are DB data (erp/ad_seed.db), the ±Nd steppers are numbers
+      '#whatif-panel .wi-name,#whatif-panel h3 > span,#whatif-panel .wi-d,' +
+      '#cmd-palette .cmd-howto-cli-line';   // VOCAB_MESSAGE_CATALOG §14.3: a door verb line (viewer.counts building=<building>) is a pinned command, English by the §0 rule   // S226 §R2b: What-if phase names + project name are DB data (erp/ad_seed.db), the ±Nd steppers are numbers
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
     while (walker.nextNode()) { const n = walker.currentNode, p = n.parentElement; if (!p || p.closest(skip)) continue; push('text', n.textContent, p); }
     document.querySelectorAll('[title]').forEach(el => { if (!el.closest(skip)) push('title', el.getAttribute('title'), el); });

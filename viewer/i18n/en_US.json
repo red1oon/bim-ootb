@@ -6,9 +6,9 @@
    "ad_message_base.csv",
    "AD_Message_Trl_en_US.xml"
   ],
-  "rows": 1025,
+  "rows": 1028,
   "translated": 13,
-  "untranslated": 1012
+  "untranslated": 1015
  },
  "labels": {
   "source_app": "BIM OOTB — Frictionless BIM",
@@ -1035,6 +1035,9 @@
   "ifcdef_IfcSensorType": "A sensor is a device that measures a physical quantity and converts it into a signal which can be read by an observer or by an instrument.",
   "ifcdef_IfcSensorType_lang": "EN",
   "ifcdef_IfcSensorType_of": "IfcSensor",
-  "ui_cls_ifcdef_of": "IFC definition of {cls}"
+  "ui_cls_ifcdef_of": "IFC definition of {cls}",
+  "ui_howto_guide": "Guide",
+  "ui_howto_guide_en": "Guide (English)",
+  "ui_howto_cli": "Same at the CLI"
  }
 }

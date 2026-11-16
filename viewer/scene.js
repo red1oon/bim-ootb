@@ -2904,6 +2904,18 @@ async function setupScene(A) {
   // §S282: _paletteEntries DELETED — Help reads from _mainPillActions (ONE source in panels.js)
   var _ic = function(d) { return '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + d + '</svg>'; };
 
+  // bim-compiler VOCAB_MESSAGE_CATALOG §14.3 — How To per pill: its BIM User Guide section + the same answer at the CLI.
+  // help/howto.json is GENERATED (viewer/tools/build_howto.js), fetched once on the first palette open; the palette renders
+  // without it and re-renders when it lands. A failed load leaves the palette as it was (logged, never an error box).
+  var _howto = null, _howtoLoading = false;
+  function _loadHowto(cb) {
+    if (_howto) { cb(); return; }
+    if (_howtoLoading) return; _howtoLoading = true;
+    fetch('help/howto.json').then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(function (d) { _howto = d; console.log('§HOWTO_LOAD pills=' + Object.keys(d.pills || {}).length); cb(); })
+      .catch(function (e) { _howto = { pills: {} }; console.log('§HOWTO_LOAD fail ' + e.message); cb(); });
+  }
+
   function showCommandPalette() {
     var existing = document.getElementById('cmd-palette');
     if (existing) { existing.remove(); console.log('§KBD_HELP close'); return; }
@@ -2989,7 +3001,8 @@ async function setupScene(A) {
             name: act.name || (act.id.charAt(0).toUpperCase() + act.id.slice(1)),
             icon: act.icon ? _ic(act.icon) : (act.img ? '<img src="' + act.img + '" width="16" height="16">' : ''),
             action: act.fn,
-            children: act.children || null
+            children: act.children || null,
+            howto: (_howto && _howto.pills && _howto.pills[act.id]) || null
           });
         });
       }
@@ -3007,8 +3020,15 @@ async function setupScene(A) {
       // Dead key on some international layouts (US-Intl, ES, PT, FR-CA) — fails harmlessly there.
       if (!window._isMobile) all.push({ seq: "'", name: _hT('ui_cmd_hover_name', 'Hover Name'), icon: '', action: function() { if (A.toggleHoverName) A.toggleHoverName('key'); }, children: null });
       var matches = all.filter(function(e) {
-        return e.name.toLowerCase().indexOf(f) >= 0 || e.seq.toLowerCase().indexOf(f) >= 0;
+        if (e.name.toLowerCase().indexOf(f) >= 0 || e.seq.toLowerCase().indexOf(f) >= 0) return true;
+        if (!f) return false;
+        // §14.3: a word that is only in a bullet or a CLI title still finds its pill (shown opened, so the reason is visible)
+        var inBody = (e.children || []).some(function (c) { return String(c.name || '').toLowerCase().indexOf(f) >= 0; }) ||
+          ((e.howto && e.howto.cli) || []).some(function (c) { return String(c.title).toLowerCase().indexOf(f) >= 0 || c.verb.indexOf(f) >= 0; });
+        if (inBody) e._openForMatch = true;
+        return inBody;
       });
+      var _hGuide = 0, _hCli = 0, _en = /^en\b/i.test(document.documentElement.lang || 'en');
       listEl.innerHTML = '';
       matches.forEach(function(entry, i) {
         var row = document.createElement('div');
@@ -3042,25 +3062,50 @@ async function setupScene(A) {
         });
         listEl.appendChild(row);
         // S265 P10: expandable children (+/−) inline tree
-        if (entry.children && entry.children.length) {
+        var _ht = entry.howto, _hasHt = !!(_ht && (_ht.guide || (_ht.cli && _ht.cli.length)));
+        if ((entry.children && entry.children.length) || _hasHt) {
           var childDiv = document.createElement('div');
-          childDiv.style.cssText = 'display:none;padding:2px 14px 4px 28px;background:rgba(255,255,255,0.03);border-left:2px solid rgba(79,195,247,0.15);margin-left:14px';
-          entry.children.forEach(function(c) {
+          childDiv.style.cssText = 'display:' + (entry._openForMatch ? 'block' : 'none') + ';padding:2px 14px 4px 28px;background:rgba(255,255,255,0.03);border-left:2px solid rgba(79,195,247,0.15);margin-left:14px';
+          (entry.children || []).forEach(function(c) {
             var ch = document.createElement('div');
             ch.style.cssText = 'font-size:12px;color:#aaa;padding:3px 0;display:flex;align-items:center;gap:6px';
             ch.innerHTML = (c.icon ? _ic(c.icon) : '') + '<span>' + c.name + '</span>';
             childDiv.appendChild(ch);
           });
+          if (_ht && _ht.guide) {   // §14.3 the guide section that explains this tool (the guide is English only — said so)
+            _hGuide++;
+            var g = document.createElement('div'); g.className = 'cmd-howto-guide';
+            g.style.cssText = 'font-size:12px;padding:3px 0';
+            g.innerHTML = '<a href="' + _howto.guide + '#' + _ht.guide.anchor + '" target="_blank" rel="noopener" title="' + _hA('ui_howto_guide', 'Guide') + ': ' +
+              String(_ht.guide.heading).replace(/"/g, '&quot;') + '" style="color:#4fc3f7">' + _ic(ICONS.lightbulb.svg) + ' ' +
+              (_en ? _hT('ui_howto_guide', 'Guide') : _hT('ui_howto_guide_en', 'Guide (English)')) + '</a>';
+            g.addEventListener('click', function (ev) { ev.stopPropagation(); console.log('§HOWTO_GUIDE_OPEN pill=' + entry.name + ' anchor=' + _ht.guide.anchor); });
+            childDiv.appendChild(g);
+          }
+          if (_ht && _ht.cli && _ht.cli.length) {   // §14.3 the same answer at the CLI: door verbs stay English (§0)
+            _hCli++;
+            var c0 = document.createElement('div'); c0.className = 'cmd-howto-cli';
+            c0.style.cssText = 'font-size:11px;color:#888;padding:4px 0 2px';
+            c0.textContent = _hT('ui_howto_cli', 'Same at the CLI');
+            childDiv.appendChild(c0);
+            _ht.cli.forEach(function (c) {
+              var l = document.createElement('div');
+              l.className = 'cmd-howto-cli-line'; l.style.cssText = 'font-size:11px;padding:1px 0';
+              l.innerHTML = '<code style="color:#c5e1a5;background:#1a1a2a;padding:1px 4px;border-radius:3px">' + String(c.line).replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</code>';
+              childDiv.appendChild(l);
+            });
+          }
           // Red bar in left margin — whole row toggles children
           row.style.position = 'relative';
           var bar = document.createElement('span');
-          bar.style.cssText = 'position:absolute;left:4px;top:50%;transform:translateY(-50%);width:3px;height:16px;background:#4fc3f7;border-radius:1px';
+          bar.style.cssText = 'position:absolute;left:4px;top:50%;transform:translateY(-50%);width:3px;height:16px;background:' + (entry._openForMatch ? '#f44336' : '#4fc3f7') + ';border-radius:1px';
           row.appendChild(bar);
           entry._childDiv = childDiv;
           entry._bar = bar;
           listEl.appendChild(childDiv);
         }
       });
+      console.log('§HOWTO_PALETTE entries=' + matches.length + ' guide=' + _hGuide + ' cli=' + _hCli + ' loaded=' + !!_howto + ' filter="' + f + '"');
       return matches;
     }
 
@@ -3072,6 +3117,7 @@ async function setupScene(A) {
     }
 
     var currentMatches = renderList('');
+    _loadHowto(function () { if (document.getElementById('cmd-palette') === pal) currentMatches = renderList(searchInput.value); });
     // §G5: no auto-focus on mobile — soft keyboard is premature
     if (!window._isMobile) searchInput.focus();
 

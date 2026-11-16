@@ -19,7 +19,7 @@
   // sources viewer/i18n/ad_message_base.csv (AD_Message) ⋈ viewer/i18n/AD_Message_Trl_<lang>.xml. locales/<code>.js
   // keeps only the COST data (currency, rate attribution, rates). Never edit the JSON — edit the XML and rebuild.
   var I18N_BASE = _thisScript.src.replace(/[^/]*$/, '') + 'i18n/';
-  var LOCALE_VERSION = 10; // bump to invalidate cached locale packs (v7 = S226 §R2 split: labels JSON + cost .js; v8 = §R2d Help + §R3 Modeller rows; v9 = VOCAB_MESSAGE_CATALOG §14.1 class text; v10 = §14.2 types + 10 locales)
+  var LOCALE_VERSION = 11; // bump to invalidate cached locale packs (v7 = S226 §R2 split: labels JSON + cost .js; v8 = §R2d Help + §R3 Modeller rows; v9 = VOCAB_MESSAGE_CATALOG §14.1 class text; v10 = §14.2 types + 10 locales; v11 = §14.3 How To words)
 
   // ── Locale mapping: navigator.language → locale file code ──
   var LOCALE_MAP = {
