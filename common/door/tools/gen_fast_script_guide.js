@@ -81,10 +81,11 @@ if (require.main === module) (async () => {
   const a = process.argv.slice(2), page = a[a.indexOf('--page') + 1], L = (m) => console.log('§FAST_GUIDE_GEN ' + m);
   if (!page || a.indexOf('--page') < 0) { console.error('usage: --page FILE (--write | --refresh | --check)'); process.exit(2); }
   let md = fs.readFileSync(page, 'utf8'); const vocab = loadVocab(), g = GEN(md);
-  if (!g) { L('FAIL no <!-- GEN:verbs --> markers in ' + page); process.exit(1); }
-  const table = '\n' + verbTable(vocab) + '\n';
+  const refOnly = !g && a.indexOf('--refresh') >= 0 && a.indexOf('--only') >= 0;   // a reference page has run blocks and no verb table: --refresh --only <id> still works
+  if (!g && !refOnly) { L('FAIL no <!-- GEN:verbs --> markers in ' + page); process.exit(1); }
+  const table = g ? '\n' + verbTable(vocab) + '\n' : '';
   if (a.indexOf('--check') >= 0) { const same = md.slice(g.a, g.b) === table; L('verb table ' + (same ? 'equals' : 'DIFFERS from') + ' verbs.json (' + vocab.verbs.length + ' verbs)'); process.exit(same ? 0 : 1); }
-  if (a.indexOf('--write') >= 0 || a.indexOf('--refresh') >= 0) {
+  if (g && (a.indexOf('--write') >= 0 || a.indexOf('--refresh') >= 0)) {
     md = md.slice(0, g.a) + table + md.slice(g.b); L('verb table written: ' + vocab.verbs.length + ' verbs');
     // the coverage sentence's counts come from the vocabulary too (the witness's K1, K2, K5 read them back)
     const real = vocab.verbs.filter(v => !v.alias_of), n = (app) => real.filter(v => v.verb.indexOf(app + '.') === 0).length, nAlias = vocab.verbs.length - real.length;   // distinct verbs: an old name kept as an alias is counted on its own (CLI_ERP_IVR §11)
