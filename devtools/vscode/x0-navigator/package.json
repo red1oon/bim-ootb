@@ -28,6 +28,10 @@
         "title": "X0 Navigator: Cost if deployed (start-up and offline-cache bytes vs main)"
       },
       {
+        "command": "x0Navigator.heapImpact",
+        "title": "X0 Navigator: Memory of the three pages (headless, vs main)"
+      },
+      {
         "command": "x0Navigator.contextForFile",
         "title": "X0 Navigator: Context for this file (what the indexes say about it; copied for an assistant)"
       },
@@ -78,6 +82,12 @@
           "type": "string",
           "default": "origin/main",
           "description": "The git ref \"Cost if deployed\" compares the working tree against."
+        },
+        "bimDevtools.heapPages": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["viewer/viewer.html", "erp/idempiere.html", "modeller/modeller.html"],
+          "description": "The pages \"Memory of the three pages\" boots headless (no building beyond each page's own default sample) and compares against the cost base ref."
         },
         "bimDevtools.liveSite": {
           "type": "string",
