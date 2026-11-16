@@ -14,50 +14,10 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
-const Module = require('module');
 
 const ROOT = path.resolve(__dirname, '..', '..', '..', '..');
 const EXT = path.resolve(__dirname, '..');
-const reg = { definition: [], hover: [], commands: [], saves: 0 };
-const vscodeStub = {
-  languages: {
-    registerDefinitionProvider(sel, p) { reg.definition.push({ sel, p }); return { dispose() {} }; },
-    registerHoverProvider(sel, p) { reg.hover.push({ sel, p }); return { dispose() {} }; },
-    createDiagnosticCollection(name) { reg.diag = { name, m: new Map(), set(u, d) { this.m.set(u.fsPath, d); }, delete(u) { this.m.delete(u.fsPath); }, dispose() {} }; return reg.diag; },
-    registerCodeActionsProvider(sel, p, meta) { reg.actions = (reg.actions || []).concat([{ sel, p, meta }]); return { dispose() {} }; },
-    registerReferenceProvider(sel, p) { reg.refs = (reg.refs || []).concat([{ sel, p }]); return { dispose() {} }; },
-    registerCodeLensProvider(sel, p) { reg.lens = (reg.lens || []).concat([{ sel, p }]); return { dispose() {} }; }
-  },
-  workspace: {
-    workspaceFolders: [{ uri: { fsPath: ROOT } }],
-    getConfiguration() { return { get() { return ''; } }; },
-    onDidSaveTextDocument(fn) { reg.saves++; reg.saveFns = (reg.saveFns || []).concat([fn]); reg.onSave = d => reg.saveFns.forEach(f => f(d)); return { dispose() {} }; }
-  },
-  commands: { registerCommand(id) { reg.commands.push(id); return { dispose() {} }; } },
-  window: { showInformationMessage() {}, activeTextEditor: undefined,
-    createOutputChannel() { reg.channels = (reg.channels || 0) + 1; return { appendLine() {}, show() {}, dispose() {} }; },
-    createStatusBarItem() { reg.status = { show() { this.shown = true; }, hide() { this.shown = false; }, dispose() {} }; return reg.status; },
-    onDidChangeActiveTextEditor(fn) { reg.onEditor = fn; return { dispose() {} }; },
-    registerTreeDataProvider(id, p) { reg.tree = { id, p }; return { dispose() {} }; } },
-  TreeItem: function (label) { this.label = label; },
-  tasks: { fetchTasks: async () => [{ name: 'Serve repo (http://localhost:8000)' }], executeTask: async t => { reg.taskRun = t.name; } },
-  StatusBarAlignment: { Left: 1, Right: 2 },
-  EventEmitter: function () { this.event = function () {}; this.fire = function () {}; this.dispose = function () {}; },
-  CodeLens: function (range, command) { this.range = range; this.command = command; },
-  Diagnostic: function (range, message, severity) { this.range = range; this.message = message; this.severity = severity; },
-  DiagnosticSeverity: { Error: 0, Warning: 1, Information: 2, Hint: 3 },
-  CodeAction: function (title, kind) { this.title = title; this.kind = kind; },
-  CodeActionKind: { QuickFix: 'quickfix' },
-  Range: function (a, b, c, d) { this.start = { line: a, character: b }; this.end = { line: c, character: d }; },
-  Selection: function (a, b) { this.active = a; },
-  Uri: { file(p) { return { fsPath: p, with(o) { return { toString() { return 'file://' + p + '#' + o.fragment; } }; } }; } },
-  Location: function (uri, position) { this.uri = uri; this.position = position; },
-  Position: function (line, character) { this.line = line; this.character = character; },
-  MarkdownString: function (value) { this.value = value; },
-  Hover: function (contents) { this.contents = contents; }
-};
-const realLoad = Module._load;
-Module._load = function (request) { return request === 'vscode' ? vscodeStub : realLoad.apply(this, arguments); };
+const { reg, restore } = require('./vscode_stub').install(ROOT);   // the shared stub (§F.25); was inline here
 
 let fail = 0;
 function check(label, cond) { console.log('  ' + (cond ? 'PASS ' : 'FAIL ') + label); if (!cond) fail++; }
@@ -211,7 +171,7 @@ api.whenFresh().then(async r => {
   check('Run local starts the repo\'s own serve task and lists each app (' + reg.taskRun + ')', /^Serve repo/.test(reg.taskRun || '') && runLines.filter(l => /SHIP_RUN app=/.test(l)).length >= 3);
   context.subscriptions.forEach(d => d.dispose());
   fs.rmSync(STORE, { recursive: true, force: true });
-  Module._load = realLoad;
+  restore();
   console.log('§X0_ACTIVATE definition=' + nDef + ' hover=' + nHover + ' commands=' + reg.commands.length
     + ' fresh=' + (fresh ? 'Y' : 'N') + ' checks_failed=' + fail + ' verdict=' + (fail === 0 ? 'PASS' : 'FAIL'));
   if (fail) process.exitCode = 1;
