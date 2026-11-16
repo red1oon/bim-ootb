@@ -83,6 +83,17 @@
   #idmp-burger { display:flex; }   /* shown on desktop too: lets the permanent left menu be collapsed so it never blocks the bottom history scrubber */
   /* ── Body split ── */
   #idmp-body { flex:1; display:flex; min-height:0; }
+  /* ── Right (east) help panel: legacy DefaultDesktop East + HelpController's Tool Tip widget (VOCAB_MESSAGE_CATALOG §7 P1b) ── */
+  #idmp-help { flex:0 0 240px; background:var(--idmp-panel); border-left:1px solid var(--idmp-border); display:flex; flex-direction:column; min-height:0; overflow:auto; }
+  #idmp-help .idmp-help-title { font-weight:600; padding:6px 10px; border-bottom:1px solid var(--idmp-border); cursor:pointer; user-select:none; }
+  #idmp-help .idmp-help-title::before { content:'\25BE  '; }
+  #idmp-help.closed .idmp-help-title::before { content:'\25B8  '; }
+  #idmp-help.closed #idmp-help-tooltip { display:none; }
+  #idmp-help-tooltip { padding:6px 10px; font-size:12px; line-height:1.4; overflow-wrap:anywhere; }
+  #idmp-help-tooltip p { margin:0 0 6px; }
+  #idmp-help-tooltip .help-entitytype { color:#888; }
+  [dir=rtl] #idmp-help { border-left:none; border-right:1px solid var(--idmp-border); }
+  @media (max-width:900px){ #idmp-help { display:none; } }
   /* ── Left menu panel ── */
   #idmp-menu {
     flex:0 0 262px; background:var(--idmp-panel); border-right:1px solid var(--idmp-border);
@@ -526,13 +537,15 @@
     </div>
     <div id="idmp-status"><span id="idmp-status-main">Ready</span><span class="spacer" style="flex:1"></span><span id="idmp-status-info" data-statusline=""></span><span class="seal" id="idmp-status-src"></span></div>
   </main>
+  <aside id="idmp-help" style="display:none"><div class="idmp-help-title" id="idmp-help-title">Tool Tip</div><div id="idmp-help-tooltip"></div></aside><!-- §7 P1b: legacy East panel, Tool Tip widget (HelpController.java:136-150) -->
 </div>
 
 <script src="error_beacon.js?v=1" onerror="console.warn('§LOAD_FAIL error_beacon.js — field-error capture disabled')"></script><!-- SYSTEM_MONITOR_WIDGETS §H — minimal field-error beacon (G2 seed); loads early to catch boot errors -->
 <script src="vfs_detect.js?v=1"></script>
 <script src="seed_key.js?v=1"></script><!-- SEAM F10 — the ONE seed IDB key owner (window.ERP_SEED_KEY); before first idb use + system_monitor -->
 <script src="erp_i18n.js?v=2"></script><!-- UI locales (bim-compiler prompts/ERP_UI_LOCALES.md) — W-ERP-I18N -->
-<script src="ad_parser.js?v=26"></script>
+<script src="ad_parser.js?v=27"></script>
+<script src="field_help.js?v=1"></script><!-- VOCAB_MESSAGE_CATALOG §7 P1b: ONE field tooltip setter + the Tool Tip panel (legacy WEditor / HelpController) — W-FIELD-HELP -->
 <!-- UI_UNPARK_RESUME.md — proven AD engines (source of truth: bim-compiler build/erp/): logic evaluator
      (W-LOGIC-EVAL 3044/3044) · DocAction FSM (W-*-FSM, 22 tables) · beforeSave hooks (W-*-SAVE, 12 installers). -->
 <script src="ad_evaluator.js?v=24"></script>
@@ -546,7 +559,7 @@
 <!-- B-5/C-5 process dispatch (MULTI_LANE_LAUNCH Lane A) — AD_Process spine (W-PROC). Its report handlers
      resolve to report_overlay's PURE CORE folds, loaded below AFTER bigdecimal.js (the folds are BigDecimal-exact
      and BD must exist at parse time — glassbowl.html load-order parity). -->
-<script src="ad_process.js?v=21"></script>
+<script src="ad_process.js?v=22"></script>
 <script src="ad_find.js?v=2"></script>
 <script src="ad_recent.js?v=1"></script>
 <script src="ad_toolbar.js?v=1"></script>
@@ -817,7 +830,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
 <script src="erp_shard.js?v=1"></script>
 <!-- §S60 physical split: the pure CORE (window.CrudCore) — MUST load before crud_overlay.js -->
 <script src="crud_core.js?v=11"></script>
-<script src="crud_overlay.js?v=43"></script>
+<script src="crud_overlay.js?v=44"></script>
 <!-- TEAMWORK_FRAMEWORK.md §13.1 (W1, W-TEAM-SO): the local comm layer + erp/team_sync.js — written ONLY when the page is opened with ?team=1
      (otherwise no script tag, no DOM, no global: the page is byte-for-byte what it was). Parser-blocking so TeamSync exists before the first commit. -->
 <script src="../common/comm/team_defaults.js?v=1"></script><script src="../common/comm/team_trial.js?v=1"></script><script src="../common/comm/team_avatars.js?v=1"></script><script src="../common/comm/team_panel.js?v=4"></script><!-- §13.8: setup values + trial rule + the Team pill's panel (inert until opened) -->
@@ -920,6 +933,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   //   synthetic pk current (GridTable.dataSave). Supersedes W-SO-CHILD-BIND's _lastFoldCreated guess (removed).
   var _curKeyByTab = {};     // tabIndex -> current record key (this window)
   var _curQ = null;          // the active tab's query contract { tm, q, where } — the op-log fold admits created rows through it
+  var _procMenuIds = {};    // AD_Process ids on the role's menu (W-FIELD-HELP F5)
   var _winByName = {};       // AD window name (lowercased) -> windowId — built as the menu renders; drives IdmpHost.focus
 
   function $(id) { return document.getElementById(id); }
@@ -1527,6 +1541,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     };
     console.log('§ACTOR login user=' + _session.user.id + ' app.actor=' + window.APP.actor + ' client=' + window.APP.clientId + ' org=' + window.APP.orgId + ' role=' + window.APP.roleId);
     _buildUserNameMap();   // Task 2 — AD_User_ID → Name for the change-log (iDempiere shows names, not ids)
+    _helpPanelBind();      // §7 P1b — the East Tool Tip panel (W-FIELD-HELP F3)
     // header context bar — live Client · Role · Org (replaces the old static string)
     var orgLabel = _session.org ? _session.org.name.replace(/\s*\(.*\)/, '') : '—';
     $('idmp-ctx').textContent = _session.client.name + ' · ' + _session.role.name + ' · ' + orgLabel;
@@ -1648,6 +1663,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     } else {
       leaves++;
       if (node.action === 'W' && node.windowId) _winByName[(node._en || node.name || '').toLowerCase()] = Number(node.windowId);  // name->id for IdmpHost.focus (English key, locale-proof)
+      if ((node.action === 'P' || node.action === 'R') && node.processId) _procMenuIds[Number(node.processId)] = 1;   // §7 the role's menu processes (W-FIELD-HELP F5 denominator)
       row.addEventListener('click', function () {
         document.querySelectorAll('.idmp-row.leaf.active').forEach(function (e) { e.classList.remove('active'); });
         row.classList.add('active');
@@ -3054,6 +3070,32 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var g = window.AdGridTab && AdGridTab.gridFields ? AdGridTab.gridFields(tab.fields || [], { mobile: mobile, maxMobile: mx && mx.v, custom: cu && cu.custom }) : null;
     if (g) console.log('§GRID-COLS tab=' + tab.name + ' cols=' + g.length + ' mobile=' + mobile + (cu ? ' custom=' + cu.custom : '') + ' [' + g.map(function (f) { return f.columnName; }).join(',') + ']');
     return g || _displayFields(tab);
+  }
+  // _helpPanelBind — the legacy East panel's Tool Tip widget. Shown unless the user's HelpCollapsed preference is Y
+  //   (UserPreference.P_HELP_COLLAPSED, DEFAULT 'N'; DefaultDesktop.java e.setVisible(!helpCollapsed)); title = AD_Message ToolTip;
+  //   with no field focused = PlaceCursorIntoField; entity type only with P|IsShowTechnicalInfOnHelp (Env.java:887-898).
+  function _helpPanelBind() {
+    var aside = $('idmp-help'); if (!aside || !window.FieldHelp) return;
+    var pref = function (attr) { try { var r = _sqlRows("SELECT value FROM ad_preference WHERE attribute='" + attr + "' AND isactive='Y' AND ad_user_id=" + Number(_session.user.id) + " AND ad_window_id IS NULL")[0]; return r ? String(r.value) : null; } catch (e) { return null; } };
+    var collapsed = pref('HelpCollapsed') === 'Y', tech = pref('IsShowTechnicalInfOnHelp') === 'Y';
+    aside.style.display = collapsed ? 'none' : '';
+    $('idmp-help-title').textContent = _findMsg('ToolTip', 'Tool Tip');
+    if (!aside.__fhTitle) { aside.__fhTitle = true; $('idmp-help-title').addEventListener('click', function () { aside.classList.toggle('closed'); }); }   // Panel.setCollapsible(true)
+    FieldHelp.bindPanel($('idmp-help-tooltip'), document.body, { tech: tech, place: _findMsg('PlaceCursorIntoField', 'Place your cursor into a field on the screen') });
+    console.log('§FIELD_HELP panel bound collapsed=' + collapsed + ' tech=' + tech);
+  }
+  // W-FIELD-HELP's handle on the REAL render paths (no second renderer): the role's menu windows/processes, the read-only form, the parameter form.
+  window.__idmpFieldHelp = {
+    menu: function () { var w = {}; Object.keys(_winByName).forEach(function (k) { w[_winByName[k]] = 1; }); return { windows: Object.keys(w).map(Number), processes: Object.keys(_procMenuIds).map(Number) }; },
+    windowModel: function (wid) { return ADP.getWindow(db, wid); },
+    readonlyForm: function (tab, rec) { var f = el('div', 'idmp-form'); _appendReadonlyFields(f, tab, rec || null); return f; },
+    procForm: function (pid) { var proc = window.AdProcess.readProcess(_b3(window.__idmpDb), pid); if (!proc.paras.length) return null; _procRecord = null; renderProcParamForm(proc); return proc; }
+  };
+  // _adFieldOf(tab, col): the tab's AD field model for a column (case-insensitive) — the ONE source of a field's Description/Help on screen (§7 P1b)
+  function _adFieldOf(tab, col) {
+    if (!tab || !tab.fields || col == null) return null; var lc = String(col).toLowerCase();
+    for (var i = 0; i < tab.fields.length; i++) if (String(tab.fields[i].columnName).toLowerCase() === lc) return tab.fields[i];
+    return null;
   }
   function _displayFields(tab) {
     return (tab.fields || []).filter(function (f) { return f.isDisplayed && !f.isKey; });
@@ -4793,7 +4835,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var curVals = function () { var v = {}; Object.keys(defaults).forEach(function (k) { v[k] = defaults[k]; }); proc.paras.forEach(function (q) { var i = pane.querySelector('[data-proc-param="' + q.columnName + '"]'); if (i) v[q.columnName] = i.value; }); return v; };
     proc.paras.forEach(function (pp) {
       var fld = el('div', 'fld' + (pp.mandatory ? ' mand' : ''));
-      fld.appendChild(el('label', null, pp.name));
+      var plb = el('label', null, pp.name); fld.appendChild(plb);
       var inp;
       if (pp.type === 'yesno') {
         inp = document.createElement('select');
@@ -4826,7 +4868,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         inp.value = defaults[pp.columnName];
       }
       inp.setAttribute('data-proc-param', pp.columnName);
-      inp.title = pp.columnName + ' · ' + pp.type + (pp.mandatory ? ' · mandatory' : '');
+      if (window.FieldHelp) { FieldHelp.attach(plb, pp); FieldHelp.attach(inp, pp); }   // §7 F5: a parameter is a WEditor too (ProcessParameterPanel.java:443) -> tooltip = AD_Process_Para.Description
       fld.appendChild(inp);
       flds[pp.columnName] = fld;
       pane.appendChild(fld);
@@ -5153,6 +5195,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       // UI locale (ERP_UI_LOCALES.md §L1): a curated crud spec carries its own ENGLISH labels ("Price List (ID)"); in
       //   another locale the field label is the AD field's translated name (same column, same tab). English: null →
       //   the curated label stays byte-identical.
+      fieldFor: function (col) { return _adFieldOf(_curTab(), col); },   // §7 P1b: the AD field behind an inline editor row (tooltip + Tool Tip panel)
       labelFor: function (col) {
         if (!window.ErpI18n || ErpI18n.lang === ErpI18n.BASE) return null;
         var t = _curTab(); if (!t || !t.fields) return null; col = String(col).toLowerCase();
@@ -5196,6 +5239,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var prevHtml = td.innerHTML;
     _withFoldedEntry(tn, 'update', function () {
       window.__crud.editCell(tn, pk, col, td, {
+        fieldFor: function (c) { return _adFieldOf(tab, c); },   // §7 P1b: the grid editor's tooltip + Tool Tip panel
         onUnsupported: function () { td.classList.remove('idmp-cell-edit'); td.innerHTML = prevHtml; console.log('§GRID-CLICK-RO table=' + tab.tableName + ' col=' + col + ' (read-only: stays in the grid)'); },
         onCancel: function () { td.classList.remove('idmp-cell-edit'); td.innerHTML = prevHtml; },
         onCommit: function () { /* overlay:committed → renderBody repaints the grid with the new value */ }
@@ -5318,9 +5362,9 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     flds.forEach(function (f) {
       var fld = el('div', 'idmp-fld' + (f.isMandatory ? ' mand' : ''));
       fld.setAttribute('data-ad-table', tab.tableName); fld.setAttribute('data-ad-column', f.columnName);
-      fld.appendChild(el('label', null, f.name));
+      var lb = el('label', null, f.name); fld.appendChild(lb);
       var v = el('div', 'val' + (f.referenceType === 'yesno' ? ' bool' : ''), fmt(f, recVal(rec, f.columnName)));
-      v.title = f.columnName + ' · ' + f.referenceType;
+      if (window.FieldHelp) { FieldHelp.attach(lb, f); FieldHelp.attach(v, f, true); }   // §7 P1b: tooltip = AD_Field.Description on label + editor (WEditor.java:333/339-340), focus -> Tool Tip panel
       fld.appendChild(v);
       form.appendChild(fld);
     });

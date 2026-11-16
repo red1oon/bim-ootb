@@ -281,7 +281,7 @@
     // column's AD_Ref_List key), ReadOnlyLogic and MandatoryLogic — field over column, the same precedence this
     // function already applies to DefaultValue. A seed without those columns falls back to the legacy shape
     // (logged), so an older dictionary never breaks the renderer.
-    var BASE = 'SELECT f.AD_Field_ID, f.Name, f.Description, f.SeqNo, ' +
+    var BASE = 'SELECT f.AD_Field_ID, f.Name, f.Description, f.Help, f.EntityType, f.SeqNo, ' +   // §7 P1b: the FIELD's own text, as AD_Field_v (W-FIELD-HELP F4)
       '       f.IsDisplayed, f.DisplayLogic, f.IsMandatory, f.IsReadOnly, f.DefaultValue, ' +
       '       c.AD_Column_ID, c.ColumnName, c.AD_Reference_ID, c.FieldLength, ' +
       '       c.IsMandatory as ColMandatory, c.IsKey, c.IsIdentifier, c.IsUpdateable, ' +
@@ -324,7 +324,7 @@
       if (o.AD_Column_ID == null) return null;
       var refId = (o.FieldRef != null && o.FieldRef !== '') ? o.FieldRef : o.AD_Reference_ID;   // §P2.1: AD_Field override wins (GridFieldVO precedence)
       return {
-        id: o.AD_Field_ID, name: o.Name, description: o.Description, seqNo: o.SeqNo,
+        id: o.AD_Field_ID, name: o.Name, description: o.Description, help: o.Help, entityType: o.EntityType, seqNo: o.SeqNo,
         isDisplayed: o.IsDisplayed === 'Y',
         displayLogic: o.DisplayLogic,
         readOnlyLogic: o.ROLogic || null,                    // §P2.1 — now reaches foldCrudSpec → effectiveFlags
