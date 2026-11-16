@@ -1070,7 +1070,15 @@ function runProcess(O, a) {
   if (!res.dispatched) { if (res.reason === 'absent-handler') refuseGap(P.name + ' was not run: it has no JS port yet (class ' + (P.classname || 'none') + ')', 'no-port'); refuse(P.name + ' was not run: ' + res.message); }
   if (!res.ok) refuse(P.name + ' failed: ' + (res.message || res.reason) + ' (nothing was kept)');
   const ops = a.dry === 'Y' || RUN_BREAK === 'skipcommit' ? [] : persistGroup(O, (res.result && res.result.commitOps) || []);
-  return { process: { id: P.id, value: P.value, name: P.name, classname: P.classname }, record: r ? brief(K, O.rows('SELECT * FROM ' + K.table + ' WHERE ' + K.key + '=?', [r[K.key]])[0] || r) : null,
+  // what a person reads first (legacy's process dialog: the message, then the log, AD_PInstance_Log): the documents made (their numbers, from the ops) and the log lines
+  const made = ops.filter(o => o.op_type === 'CRUD_CREATE' && o.fields && o.fields.documentno != null).map(o => ({ table: o.table, number: String(o.fields.documentno) }));
+  const plog = ((res.result && res.result.logs) || []).map(l => [l.msg, l.number].filter(x => x != null && x !== '' && x !== 'null').join(' ')).filter(Boolean);
+  if (RUN_BREAK === 'nolog') plog.length = 0;   // W-RED1-RUN falsifier: the process log dropped (must FAIL R7)
+  const plogShown = []; { const n = {}; plog.forEach(l => { if (!n[l]) { n[l] = 0; plogShown.push(l); } n[l]++; }); for (let i = 0; i < plogShown.length; i++) if (n[plogShown[i]] > 1) plogShown[i] += '  (×' + n[plogShown[i]] + ')'; }   // repeats folded for the reader; `log` keeps every line
+  const byT = {}; made.forEach(m => { (byT[m.table] = byT[m.table] || []).push(m.number); });
+  const summary = (res.message && res.message !== 'OK' ? res.message : P.name + (a.dry === 'Y' ? ': dry run, nothing kept' : ': done')) + (made.length ? ' · made ' + Object.keys(byT).map(t => t + ' ' + byT[t].join(', ')).join('; ') : ' · no document made') +
+    (plogShown.length ? '\n' + plogShown.map(l => '  ' + l).join('\n') : '') + (ops.length ? '\n' + ops.length + ' change(s) kept: ' + Object.keys(sum(ops)).map(k2 => k2 + ' ' + sum(ops)[k2]).join(', ') : '');
+  return { summary, documents: made, log: plog, process: { id: P.id, value: P.value, name: P.name, classname: P.classname }, record: r ? brief(K, O.rows('SELECT * FROM ' + K.table + ' WHERE ' + K.key + '=?', [r[K.key]])[0] || r) : null,
     params: given, message: res.message, object: (res.result && res.result.object) || undefined, dry: a.dry === 'Y', ops: ops.map(o => ({ op_type: o.op_type, table: o.table })), opSummary: sum(ops), planned: ((res.result && res.result.commitOps) || []).length };
 }
 // ── mis.lookup (bim-compiler prompts/CLI_ERP_IVR.md §27; §1d TA2): the legal values of a column or a process parameter, from the dictionary as MLookupFactory/MLookup read it ──

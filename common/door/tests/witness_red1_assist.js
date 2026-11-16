@@ -5,7 +5,9 @@
 //   A4 ISSUE (Tab or → takes something other than what was shown): on a terminal, Tab on a typo and → on a grey text give exactly the shown name, and the printed → line carries it
 //   A5 ISSUE (one-shot / scripts get a suggestion or a different answer): `red1 'cd Project; ls Valu=Hospital'` prints no hint and the same refusal
 //   A6 ISSUE (cd cannot be completed to an ERP kind, or a name with a space breaks): on a terminal `cd Busi` + Tab gives `cd "Business Partner"` and the prompt becomes red1 Business Partner>; the kinds come from ONE door line (§RED1 assist kinds=N)
-//   Falsifier: ASSIST_BREAK=autoapply (Enter applies the hint: must FAIL A3). A1 FAILs if assist_core offers a hand name. Needs `script` for A3/A4 (else INCONCLUSIVE).
+//   A7 ISSUE (a suggestion drawn while a question is open: the film's stale hint after report): typing at run's ConsolidateDocument question draws no grey text
+//   A8 ISSUE (a private local building shown): with an empty history `cd Dup` suggests nothing; once `cd Duplex` is in the history it suggests Duplex
+//   Falsifiers: ASSIST_BREAK=noquiet (must FAIL A7) · RED1_ASSIST_BUILDINGS=all (must FAIL A8) · ASSIST_BREAK=autoapply (Enter applies the hint: must FAIL A3). A1 FAILs if assist_core offers a hand name. Needs `script` for A3/A4 (else INCONCLUSIVE).
 //   Run: node common/door/tests/witness_red1_assist.js > common/door/tests/logs/red1_assist.log 2>&1
 'use strict';
 const path = require('path'), cp = require('child_process'), fs = require('fs'), os = require('os');
@@ -77,6 +79,20 @@ const envOf = (out) => out.split('\n').filter(l => l.charAt(0) === '{').map(l =>
     const nk = /§RED1 assist kinds=(\d+)/.exec(o6), took6 = /§RED1 assist take from="Busi" to="\\"Business Partner\\""/.test(o6), pw = /^kind="Business Partner"/m.test(o6);
     k.L('A6 kinds=' + (nk && nk[1]) + ' took=' + took6 + ' pwd=' + pw);
     k.chk('A6 on a terminal `cd Busi` + Tab takes `cd "Business Partner"` (the kinds read by one door line), and pwd then reads kind="Business Partner"', !!nk && Number(nk[1]) > 100 && took6 && pw, 'kinds=' + (nk && nk[1]) + ' took=' + took6 + ' pwd=' + pw);
+  }
+  // A7 quiet while a question is open; A8 buildings only once opened (raw screen bytes: the grey is ESC[90m)
+  if (!hasScript) { k.incon('A7', 'no `script`'); k.incon('A8', 'no `script`'); }
+  else {
+    const raw = (keys, histTxt) => { const d = fs.mkdtempSync(path.join(os.tmpdir(), 'r1a7_')), h = path.join(d, 'h'); fs.writeFileSync(h, histTxt || ''); return sh(keys + " | script -qc \"stty rows 40 cols 200; RED1_HISTORY=" + h + " node " + RED1 + "\" /dev/null", 90000); };
+    const o7 = await raw("(sleep 6; printf 'cd Project\\r'; sleep 3; printf 'run \\\"Generate PO from Project\\\"\\r'; sleep 9; printf '1\\r'; sleep 4; printf '1\\r'; sleep 4; printf '1\\r'; sleep 4; printf 'c'; sleep 2; printf '\\177\\r'; sleep 9; printf 'exit\\r')");
+    const qAt = o7.indexOf('(ConsolidateDocument)?'), seg = qAt >= 0 ? o7.slice(qAt, qAt + 400) : '', grey = /\x1b\[90m/.test(seg);
+    k.L('A7 question seen=' + (qAt >= 0) + ' grey after it=' + grey);
+    if (qAt < 0) k.incon('A7', 'the ConsolidateDocument question did not come up');
+    else k.chk('A7 typing at an open question (run\'s ConsolidateDocument) draws no grey suggestion', !grey, 'grey=' + grey);
+    const ghost = (o) => { const i = o.lastIndexOf('cd Dup'); return i >= 0 && /\x1b\[90mlex/.test(o.slice(i, i + 120)); };
+    const e8 = await raw("(sleep 6; printf 'cd Dup'; sleep 2; printf '\\025exit\\r')", ''), h8 = await raw("(sleep 6; printf 'cd Dup'; sleep 2; printf '\\025exit\\r')", 'cd Duplex\n');
+    k.L('A8 empty history ghost=' + ghost(e8) + ' · history with cd Duplex ghost=' + ghost(h8));
+    k.chk('A8 `cd Dup` suggests no building with an empty history, and suggests Duplex once `cd Duplex` is in the history', !ghost(e8) && ghost(h8), 'empty=' + ghost(e8) + ' withHistory=' + ghost(h8));
   }
   // A5: one-shot words: no hint, the same refusal
   const o5 = await sh('node ' + RED1 + " 'cd Project; ls Valu=Hospital'", 60000);
