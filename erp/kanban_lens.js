@@ -151,18 +151,25 @@
   // A drag of a card from its current column `from` to column `to` is the ACTION whose wfmc transition
   // [from, action, to] exists. null ⇒ no edge ⇒ illegal at the board (snap back). The engine state
   // machine re-checks on dispatch — the board's refusal is a fast mirror, NOT the authority.
+  // bim-compiler prompts/CLI_ERP_IVR.md §38 K1 — legacy's Kanban picks the action from the TARGET status alone
+  //   (MKanbanBoard.java:100-113, org.red1.ninja kanban.jar), then DocAction.processIt decides; every column takes the drop.
+  //   'DR' is in legacy's map but is not a DocAction, so the engine refuses it (as processIt does).
+  var LEGACY_TARGET_ACTION = { DR: 'DR', IN: 'IN', '??': 'XL', WC: 'WC', WP: 'WP', CO: 'CO', NA: 'RJ', VO: 'VO', AP: 'AP', RE: 'RC', CL: 'CL', IP: 'PR' };
+  var KDB_INVALID_TRANSITION = 'This status transition is not allowed.';   // AD_Message KDB_InvalidTransition (org.red1.ninja 2Pack_2.0.0)
+  function _break() { try { return (typeof process !== 'undefined' && process.env && process.env.KANBAN_BREAK) || (typeof window !== 'undefined' && window.KANBAN_BREAK) || ''; } catch (e) { return ''; } }
   function resolveDrag(board, cardKey, toStatus, wfmc) {
     var card = (board.cards || []).filter(function (c) { return c.key === cardKey; })[0];
     if (!card) return { legal: false, reason: 'no-card', from: null, to: toStatus, action: null };
     var from = card.status;
     if (from === toStatus) return { legal: false, reason: 'same-column', from: from, to: toStatus, action: null };
-    var hit = (wfmc.transitions || []).filter(function (tr) {
-      return tr[0] === from && tr[2] === toStatus;
-    });
-    var action = hit.length ? hit[0][1] : null;
+    var action;
+    if (_break() === 'wfmc') {   // W-KANBAN-LEGACY KL1 falsifier: the old first-wfmc-edge search (must FAIL KL1)
+      var hit = ((wfmc && wfmc.transitions) || []).filter(function (tr) { return tr[0] === from && tr[2] === toStatus; });
+      action = hit.length ? hit[0][1] : null;
+    } else action = Object.prototype.hasOwnProperty.call(LEGACY_TARGET_ACTION, toStatus) ? LEGACY_TARGET_ACTION[toStatus] : null;
     return {
       legal: !!action,
-      reason: action ? 'ok' : 'no-edge',
+      reason: action ? 'ok' : 'no-action',
       from: from, to: toStatus, action: action,
       table: card.table, id: card.id, key: card.key
     };
@@ -308,12 +315,21 @@
         console.log('§KANBAN-CHROME dispatch absent (TODO STEP-0) — card holds, no write');
         _snapBack(cardKey); if (opts.onResult) opts.onResult(res, { pending: true }); return;
       }
-      var dr;
-      try { dr = opts.dispatch(intent, opts.ctx || {}); } catch (e) { dr = { ok: false, error: e.message }; }
-      if (dr && dr.ok) { _moveCardDom(cardKey, res.from, toStatus, res.to); }
-      else { _snapBack(cardKey); }   // engine rejected → board obeys (legality is engine-owned)
-      console.log('§KANBAN-CHROME dispatched verb=' + intent.action + ' ok=' + (dr && dr.ok));
-      if (opts.onResult) opts.onResult(res, dr);
+      // §38 K2: a host whose engine runs later (dispatch answers {ok, async:true}) calls `settled` with the engine's verdict;
+      //   the card moves ONLY when the action succeeded and the document's status is the target column (legacy: processIt, then DocStatus == target).
+      var done = false;
+      function settle(v) {
+        if (done) return; done = true;
+        var ok = _break() === 'optimistic' ? !!(dr0 && dr0.ok) : (!!(v && v.ok) && (v.to == null || v.to === toStatus));   // KANBAN_BREAK=optimistic: the old move-on-the-state-machine's-word (W-KANBAN-LEGACY KL3 must FAIL)
+        if (ok) _moveCardDom(cardKey, res.from, toStatus, res.to);
+        else { _snapBack(cardKey); console.log('§KANBAN-LEGACY refused key=' + cardKey + ' action=' + intent.action + ' to=' + toStatus + ' engine_to=' + (v && v.to) + ' why=' + JSON.stringify(KDB_INVALID_TRANSITION + ((v && (v.reason || v.error)) ? ' ' + (v.reason || v.error) : ''))); }
+        console.log('§KANBAN-CHROME settled verb=' + intent.action + ' ok=' + ok);
+        if (opts.onResult) opts.onResult(res, ok ? v : { ok: false, reason: KDB_INVALID_TRANSITION + ((v && (v.reason || v.error)) ? ' ' + (v.reason || v.error) : ''), to: v && v.to });
+      }
+      var dr, dr0 = null;
+      try { dr = dr0 = opts.dispatch(intent, opts.ctx || {}, settle); } catch (e) { dr = { ok: false, error: e.message }; }
+      console.log('§KANBAN-CHROME dispatched verb=' + intent.action + ' ok=' + (dr && dr.ok) + ' async=' + !!(dr && dr.async));
+      if (!(dr && dr.ok && dr.async)) settle(dr);   // a synchronous host: its answer is the verdict
     }
 
     function _snapBack(cardKey) {
@@ -342,6 +358,7 @@
   var KanbanLens = {
     buildBoard: buildBoard,
     resolveDrag: resolveDrag,
+    LEGACY_TARGET_ACTION: LEGACY_TARGET_ACTION,
     dragIntent: dragIntent,
     mount: mount,
     // shared status colour language — Graph + Kanban use ONE palette for consistent L&F (KANBAN_MARVEL_SPEC)
