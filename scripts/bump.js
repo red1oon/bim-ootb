@@ -170,7 +170,7 @@ function parityGate() {
   try { h.update(git(['rev-parse', 'HEAD'])); h.update(git(['diff', 'HEAD'])); }
   catch (e) { h.update('nogit'); for (const f of [...listFiles('.html'), ...listFiles('.js'), ...listFiles('.json')].sort()) h.update(f).update(fs.readFileSync(path.join(ROOT, f))); }
   const key = h.digest('hex'), cacheFile = path.join(home, 'bump_parity', key + '.json');
-  const say = (verdict, o) => console.log(`§BUMP_PARITY mode=${mode} verdicts=${o.verdicts.length} new=[${o.nw.join(',')}] known=[${o.kn.join(',')}] log=${o.log} cached=${o.cached ? 'Y' : 'N'} verdict=${verdict}${o.why ? ' why=' + o.why : ''}`);
+  const say = (verdict, o) => console.log(`§BUMP_PARITY mode=${mode} verdicts=${o.verdicts.length} new=[${o.nw.join(',')}] known=[${o.kn.join(',')}] log=${o.log} cached=${o.cached ? 'Y' : 'N'} tree=${ROOT} scoped=partial verdict=${verdict}${o.why ? ' why=' + o.why : ''}`);
   try {
     const c = JSON.parse(fs.readFileSync(cacheFile, 'utf8'));
     if (c.key === key && c.verdict === 'PASS') { say('PASS', { verdicts: c.verdicts, nw: [], kn: c.kn, log: c.log, cached: true }); return; }
@@ -179,7 +179,10 @@ function parityGate() {
   let out = '', why = '';
   if (!bridge || !fs.existsSync(bridge)) why = `bridge_missing(${bridge}) set BUMP_PARITY_BRIDGE or bridge in bump_parity.json`;
   else {
-    const r = cp.spawnSync('bash', [bridge], { cwd: path.dirname(bridge), encoding: 'utf8', maxBuffer: 1 << 28, timeout: 15 * 60 * 1000 });
+    // §F.30 (#3111): the bridge judges the tree being BUMPED, not the shared ~/bim-ootb. These are the settings its witnesses read; the ones that
+    // read only ~/bim-ootb are the parity lane's (bim-compiler prompts/SQLiteIDEMPIERE.md note), hence scoped=partial on the § line.
+    const env = Object.assign({}, process.env, { OOTB: ROOT, BRIDGE_OOTB: ROOT, BRIDGE_UI_DB: path.join(ROOT, 'erp', 'ad_seed.db') });
+    const r = cp.spawnSync('bash', [bridge], { cwd: path.dirname(bridge), env, encoding: 'utf8', maxBuffer: 1 << 28, timeout: 15 * 60 * 1000 });
     out = (r.stdout || '') + (r.stderr || '');
     if (r.error) why = `bridge_error(${r.error.message})`;
   }

@@ -40,7 +40,8 @@ fs.mkdirSync(path.join(root, 'scripts'), { recursive: true });
 const writeCfg = c => fs.writeFileSync(path.join(root, 'scripts', 'bump_parity.json'), JSON.stringify(c));
 writeCfg(CFG);
 const LINES = path.join(stubDir, 'lines.txt'), MARK = path.join(stubDir, 'ran.txt'), STUB = path.join(stubDir, 'stub_bridge.sh');
-fs.writeFileSync(STUB, '#!/bin/bash\necho run >> "$STUB_MARK"\ncat "$STUB_LINES"\n');
+const ENVREC = path.join(stubDir, 'env.txt');
+fs.writeFileSync(STUB, '#!/bin/bash\necho run >> "$STUB_MARK"\necho "OOTB=$OOTB|BRIDGE_OOTB=$BRIDGE_OOTB|BRIDGE_UI_DB=$BRIDGE_UI_DB" > "' + ENVREC + '"\ncat "$STUB_LINES"\n');
 const runs = () => fs.existsSync(MARK) ? fs.readFileSync(MARK, 'utf8').split('\n').filter(Boolean).length : 0;
 const restore = () => { for (const f of FILES) fs.writeFileSync(path.join(root, f), orig[f]); fs.rmSync(MARK, { force: true }); fs.rmSync(path.join(home, 'bump_parity'), { recursive: true, force: true }); writeCfg(CFG); };
 const snap = () => JSON.stringify(FILES.map(f => fs.readFileSync(path.join(root, f), 'utf8')));
@@ -130,6 +131,14 @@ try {
   const r8c = run([ERP, '--write']);
   check('P8-same-tree-cached', r8a.code === 0 && field(r8a.out, 'cached') === 'N' && r8b.code === 0 && field(r8b.out, 'cached') === 'Y' && field(r8b.out, 'verdict') === 'PASS' && n8 === 1 && field(r8c.out, 'cached') === 'N' && runs() === 2,
     `first cached=${field(r8a.out, 'cached')} second cached=${field(r8b.out, 'cached')} bridge_runs_after_2nd=${n8} (want 1) changed_tree cached=${field(r8c.out, 'cached')} runs=${runs()} (want 2)`);
+
+  // P9 (§F.30, #3111) — the bridge is told WHICH tree it judges: the bumped root, not the shared ~/bim-ootb (scope-blind before)
+  restore(); setLines([...KNOWN_FAILS, ...OTHERS]); fs.rmSync(ENVREC, { force: true });
+  const r9 = run([ERP, '--write'], { OOTB: '', BRIDGE_OOTB: '', BRIDGE_UI_DB: '' });
+  const rec = fs.existsSync(ENVREC) ? fs.readFileSync(ENVREC, 'utf8').trim() : '';
+  const want = 'OOTB=' + root + '|BRIDGE_OOTB=' + root + '|BRIDGE_UI_DB=' + path.join(root, 'erp', 'ad_seed.db');
+  check('P9-bridge-judges-the-bumped-tree', r9.code === 0 && rec === want && field(r9.out, 'tree') === root && field(r9.out, 'scoped') === 'partial',
+    `bridge saw "${rec || '(nothing)'}" (want the bumped root) · § line tree=${field(r9.out, 'tree')} scoped=${field(r9.out, 'scoped')}`);
 
   // R — REAL bridge (opt-in; ~70 s; writes throwaway clients to the local pilot)
   if (process.env.BUMP_PARITY_REAL === '1') {
