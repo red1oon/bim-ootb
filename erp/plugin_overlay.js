@@ -227,12 +227,16 @@
 
   // Built-in bundles (§27): shipped with the page like the bundles of a default OSGi distribution. A builtin this browser has never seen is installed + started ONCE and
   //   remembered (kv 'builtins_seen'); from then on the user's Install/Start/Stop/Uninstall decide - a stopped or uninstalled builtin is never brought back.
-  var BUILTINS = ['plugins/ninja_excel.mjs', 'plugins/ninja_create.mjs', 'plugins/bim_document.mjs'];   // + the BIM Document core plugin (ERP_IDEMPIERE_UX_PARITY §BIMDOC): window, tab under Project Task, DocAction family, computed progress
-  // INSTALLED BUT NOT STARTED: legacy ships these bundles in the stack with nothing reachable until an admin switches them on (Plugins & Releases -> Enable). Web Services = ERP_WS_API.md S6.
-  var INSTALL_ONLY = ['plugins/webservices.mjs', 'plugins/pos_integration.mjs', 'plugins/mf_lens.mjs', 'plugins/ninja_migrate.mjs', 'plugins/odoo_migrate.mjs', 'plugins/bc_migrate.mjs', 'plugins/sap_migrate.mjs', 'plugins/idempiere_migrate.mjs', 'plugins/hba_demo.mjs'];   // + the head-office POS integration (POS_PLUGIN_LOCAL_FIRST.md §11): installed, stopped; the System Administrator enables it; + Ninja data migration (bim-compiler MIGRATE_INSTALL_TENANT.md §NINJA-LOADER-SPEC)
+  // The list of builtins is DATA, one file both hosts read (plugins/builtins.json: 'builtin' = installed + started once, 'installOnly' = installed, not started; the door reads it in
+  //   common/door/door_plugins.js). It used to be two literals here. Why the BIM Document core plugin is in it: ERP_IDEMPIERE_UX_PARITY §BIMDOC (window, tab under Project Task, DocAction family).
+  function _builtinList() {
+    return fetch(new URL('plugins/builtins.json', location.href)).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .catch(function (e) { console.warn('§PLUGIN-BUILTIN list plugins/builtins.json unreadable: ' + e.message); return { builtin: [], installOnly: [] }; });
+  }
   function _builtins() {
     if (typeof location === 'undefined') return Promise.resolve();
-    return _kvGet('builtins_seen', []).then(function (seen) {
+    return Promise.all([_kvGet('builtins_seen', []), _builtinList()]).then(function (both) {
+      var seen = both[0], BUILTINS = both[1].builtin || [], INSTALL_ONLY = both[1].installOnly || [];
       var abs = function (u) { return new URL(u, location.href).href; };
       var offTodo = INSTALL_ONLY.map(abs).filter(function (u) { return seen.indexOf(u) < 0; });
       var todo = BUILTINS.map(abs).filter(function (u) { return seen.indexOf(u) < 0; });

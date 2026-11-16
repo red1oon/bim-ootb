@@ -133,7 +133,7 @@ function verdict(cs) { var c = CASES[cs] || { judged: 0, failed: 0 }, v = !c.jud
   // ═══ WIRING ═══
   var rd = function (f) { try { return fs.readFileSync(path.join(ERP, f), 'utf8'); } catch (e) { return ''; } };
   check('WIRING', 'precache', 'sw.js precaches the bundle, its form and the converter; plugin_overlay installs it stopped', ['sap_migrate.mjs', 'sap_migrate_form.mjs', 'sap_migrate_convert.mjs'].every(function (f) { return rd('sw.js').indexOf("'plugins/" + f + "'") >= 0; }) &&
-    /INSTALL_ONLY = \[[^\]]*'plugins\/sap_migrate\.mjs'/.test(rd('plugin_overlay.js')), {});
+    (JSON.parse(rd('plugins/builtins.json') || '{}').installOnly || []).indexOf('plugins/sap_migrate.mjs') >= 0 && /plugins\/builtins\.json/.test(rd('plugin_overlay.js')), {});
   check('WIRING', 'agent-zip', 'erp/sap_agent.zip exists and holds the agent (build_agent_zips.js bundle)', fs.existsSync(path.join(ERP, 'sap_agent.zip')) && fs.readFileSync(path.join(ERP, 'sap_agent.zip')).indexOf('sap_agent/agent.js') >= 0, {});
   verdict('WIRING');
   say('§SAPM-CONN verdict=INCONCLUSIVE — no live SAP Business One here: the mock answers as SAP\'s guide describes, with the guide\'s own example records. A tester running the agent on a real Service Layer closes this.');

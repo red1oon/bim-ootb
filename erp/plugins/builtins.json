@@ -1,0 +1,5 @@
+{
+  "_about": "ONE list of the bundles the ERP ships with, read by BOTH hosts: the page (plugin_overlay.js _builtins) and the door (common/door/door_plugins.js startBuiltins). Paths are relative to erp/. 'builtin' = installed and STARTED once, like the bundles of a default OSGi distribution (bim-compiler prompts/ERP_FRIENDLY_OPS_LENS.md §27). 'installOnly' = installed, NOT started: legacy ships these in the stack with nothing reachable until an admin switches them on (Plugins & Releases -> Enable). Change the list here only.",
+  "builtin": ["plugins/ninja_excel.mjs", "plugins/ninja_create.mjs", "plugins/bim_document.mjs"],
+  "installOnly": ["plugins/webservices.mjs", "plugins/pos_integration.mjs", "plugins/mf_lens.mjs", "plugins/ninja_migrate.mjs", "plugins/odoo_migrate.mjs", "plugins/bc_migrate.mjs", "plugins/sap_migrate.mjs", "plugins/idempiere_migrate.mjs", "plugins/hba_demo.mjs"]
+}

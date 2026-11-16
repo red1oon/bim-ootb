@@ -70,7 +70,7 @@ var TABLES = ['C_UOM', 'C_PaymentTerm', 'M_Product_Category', 'C_ElementValue', 
   check('PLUG', 'paras', 'the AD_Process_Para are exactly what prepare() reads (X of N = ' + X + ' of ' + paras.length + ', the Java reads 4)', paras.length === 4 && X === 4 && used.length === 4, { paras: paras, used: used });
   var rd = function (f) { try { return fs.readFileSync(path.join(ERP, f), 'utf8'); } catch (e) { return ''; } };
   check('PLUG', 'wiring', 'the host ships both plugin files (sw.js precache) and installs the bundle STOPPED for the System Administrator (plugin_overlay.js INSTALL_ONLY) - file names only',
-    /'plugins\/ninja_migrate\.mjs'/.test(rd('sw.js')) && /'plugins\/ninja_migrate_process\.mjs'/.test(rd('sw.js')) && /INSTALL_ONLY = \[[^\]]*'plugins\/ninja_migrate\.mjs'/.test(rd('plugin_overlay.js')), {});
+    /'plugins\/ninja_migrate\.mjs'/.test(rd('sw.js')) && /'plugins\/ninja_migrate_process\.mjs'/.test(rd('sw.js')) && (JSON.parse(rd('plugins/builtins.json') || '{}').installOnly || []).indexOf('plugins/ninja_migrate.mjs') >= 0 && /plugins\/builtins\.json/.test(rd('plugin_overlay.js')), {});
   verdict('PLUG');
 
   function run(file, wb, opts) {
