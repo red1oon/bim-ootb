@@ -58,6 +58,8 @@
                { "in": "building", "ex": "post discipline=ARC", "verb": "erp.process", "args": [], "fixed": { "name": "Fold from BIM" }, "fill": { "Building": "building" }, "fold": "Selection", "confirm": "session" } ] },
   "status":  { "help": "a Project's earned value (PV, EV, AC, SPI, CPI per phase): status [<project>] [asof=YYYY-MM-DD]", "forms": [
                { "in": "erp", "for": "Project", "ex": "status", "verb": "erp.project_status", "args": ["id"], "draw": "status" } ] },
+  "vo":      { "help": "issue the change between the model and the Project Order as a Variation Order: vo [column=value …]  (asks y/N; the selection words are cost's; approve it with do CO <number>)", "forms": [
+               { "in": "building", "ex": "vo discipline=ARC", "verb": "erp.process", "args": [], "fixed": { "name": "Variation Order" }, "fill": { "Building": "building" }, "fold": "Selection", "confirm": "session" } ] },
   "grid":    { "help": "the building's grid lines",              "forms": [
                { "in": "building", "ex": "grid", "verb": "modeller.lines", "args": [] } ] },
   "walk":    { "help": "walk a discipline: walk <discipline>",   "forms": [

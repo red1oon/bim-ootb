@@ -247,6 +247,12 @@
   "words.here_nowhere": {
    "en": "nowhere yet"
   },
+  "words.offer_issue_vo": {
+   "en": "The model differs from the Project Order: issue a Variation Order? y/N → {0}"
+  },
+  "words.offer_approve_vo": {
+   "en": "Approve the Variation Order? y/N → {0}"
+  },
   "door.division_by_zero": {
    "en": "division by zero"
   },

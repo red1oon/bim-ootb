@@ -24,6 +24,8 @@ const R_STATUS = 9541001, R_DISC = 9541002, R_KIND = 9541003, R_REV = 9541004;
 const COL0 = 9541201, FLD_OWN0 = 9541301, FLD_PRJ0 = 9541401, FLD_PRJ1_0 = 9541601, LIST0 = 9541101, DT0 = 9541500;
 const P_EXPORT = 9541002, P_EXPORT_CLASS = 'org.kernel.bim.process.BIMDocumentRegisterExport';   // §REGISTER-EXPORT (bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md)
 const P_FOLD = 9541003, P_FOLD_CLASS = 'org.kernel.bim.process.BIMDocumentFoldFromBIM';
+const P_VO = 9541004, P_VO_CLASS = 'org.kernel.bim.process.BIMDocumentVariationOrder';   // §VARIATION-ORDER (bim-compiler prompts/CLI_ERP_IVR.md §29.4, P6): the priced difference between the model and the Project Order, issued as a Variation Order (a draft C_Order)
+export const VO_CLASS = P_VO_CLASS;
 export const FOLD_CLASS = P_FOLD_CLASS;   // the door reads the process row of this class (erp_cli orderState): the name of the process is the dictionary's, not typed twice   // §FOLD-FROM-BIM (bim-compiler prompts/CLI_ERP_IVR.md §29.6 P3b): a building's priced selection becomes its ERP Project Order
 const P_OPEN = 9541001, P_OPEN_CLASS = 'org.kernel.bim.process.BIMDocumentOpen', VCOL0 = 9541251, VFLD0 = 9541451, T_TASK = 584, T_PHASE = 576, TAB_TASK = 490, TAB_PHASE = 478;
 export const TABLE = 'BIM_Document';
@@ -150,10 +152,14 @@ const procExport = Object.assign({}, procOpen, { ad_process_id: P_EXPORT, value:
 const procFold = Object.assign({}, procOpen, { ad_process_id: P_FOLD, value: 'BIM_Document_Fold_From_BIM', name: 'Fold from BIM', description: 'Post a building\'s priced selection to its ERP Project Order',
   help: 'The building\'s priced selection (the Viewer cost of Building [Selection]) is folded into the Project Order of the building: project, phases and tasks with the dates of the persisted 4D run, one line per class. Idempotent by the model version tag: posting the same model again changes nothing. The class has no fold logic of its own: it reads the state, asks the engine what is legal, and runs it (viewer/proj_order_state.js).',
   classname: P_FOLD_CLASS, ad_process_uu: 'bimdoc-process-' + P_FOLD });
+const procVo = Object.assign({}, procOpen, { ad_process_id: P_VO, value: 'BIM_Document_Variation_Order', name: 'Variation Order', description: 'Issue the change between the model and the Project Order as a Variation Order',
+  help: 'The building\'s priced selection is compared with what its Project Order holds, class by class (the same fold, run on a scratch copy, so the basis is the post\'s own); the priced difference becomes a Variation Order, a DRAFT purchase-side C_Order linked to the Project (viewer/vo_fold.js through viewer/proj_order_state.js issueVO), one line per class that changed, signed. A model that prices as the order holds gives no Variation Order. Approval is the order\'s own DocAction. The class has no VO logic of its own.',
+  classname: P_VO_CLASS, ad_process_uu: 'bimdoc-process-' + P_VO });
 // [id, name, columnname, seq, ref, mandatory, length]
 const FOLD_PARA = [[9541011, 'Building', 'Building', 10, 10, 'Y', 60], [9541012, 'Selection', 'Selection', 20, 10, 'N', 255]]
   .map((r) => Object.assign({ ad_process_para_id: r[0], ad_process_id: P_FOLD, name: r[1], columnname: r[2], seqno: r[3], ad_reference_id: r[4], ad_val_rule_id: null, ismandatory: r[5], fieldlength: r[6],
     iscentrallymaintained: 'N', isrange: 'N', description: r[2] === 'Building' ? 'The building (its Viewer name, e.g. Duplex)' : 'Elements to post: column=value pairs separated by spaces (value may be a wildcard), e.g. discipline=ARC storey=*1. Empty = the whole building' }, STD));
+const VO_PARA = FOLD_PARA.map((r, i) => Object.assign({}, r, { ad_process_para_id: 9541013 + i, ad_process_id: P_VO }));   // the same two parameters as Fold from BIM: Building, Selection
 const menu = Object.assign({ ad_menu_id: MENU_ID, name: 'BIM Document', description: 'The deliverables of a project', issummary: 'N', issotrx: 'Y', isreadonly: 'N', action: 'W', ad_window_id: W_ID, iscentrallymaintained: 'Y', ad_menu_uu: 'bimdoc-menu-' + MENU_ID }, STD);
 const node = { ad_tree_id: TREE, node_id: MENU_ID, parent_id: MENU_PARENT, seqno: 4, ad_client_id: 0, ad_org_id: 0, isactive: 'Y', created: NOW, createdby: 100, updated: NOW, updatedby: 100 };
 
@@ -167,8 +173,8 @@ export const manifest = {
     { table: 'ad_reference', idCol: 'ad_reference_id', rows: refRows },
     { table: 'ad_ref_list', idCol: 'ad_ref_list_id', rows: lists },
     { table: 'ad_ref_table', idCol: 'ad_ref_table_uu', rows: [refTable] },
-    { table: 'ad_process', idCol: 'ad_process_id', rows: [procOpen, procExport, procFold] },
-    { table: 'ad_process_para', idCol: 'ad_process_para_id', rows: FOLD_PARA },
+    { table: 'ad_process', idCol: 'ad_process_id', rows: [procOpen, procExport, procFold, procVo] },
+    { table: 'ad_process_para', idCol: 'ad_process_para_id', rows: FOLD_PARA.concat(VO_PARA) },
     { table: 'ad_table', idCol: 'ad_table_id', rows: [table] },
     { table: 'ad_column', idCol: 'ad_column_id', rows: columns.concat(vcolumns, tcolumns) },
     { table: 'ad_window', idCol: 'ad_window_id', rows: [window_] },
@@ -382,6 +388,37 @@ export async function activate(ctx) {
       return cap.ops.length ? 'Posted ' + this.building + ': Project ' + r.projectId + ', PlannedAmt ' + r.plannedAmt + ', ' + cap.ops.length + ' change(s)' : 'Nothing to post: ' + this.building + ' is already in its Project Order (model ' + (r.version && r.version.tag) + ')';
     };
     return BIMDocumentFoldFromBIM;
+  }, { harm: 'writes' });
+  // §VARIATION-ORDER: "Variation Order" (AD_Process P_VO). NO VO logic here: the host (the door) prices the selection and finds the difference to the order (BimOrderHost.voInputs: the SAME fold on a scratch copy,
+  //   per class), the engine issues it (ProjOrderState.issueVO = VoFold.foldVariationOrder) on a SCRATCH copy of the host db, and WriteCapture hands the host the diff as ONE group of ops. decide(state, edited) says
+  //   whether a Variation Order is the legal action. The answer carries the offer to approve it: the order's own DocAction (`do CO <VO no>`).
+  if (ctx.process && ctx.process.defineProcess) ctx.process.defineProcess(P_VO_CLASS, function (SvrProcess) {
+    function BIMDocumentVariationOrder() { SvrProcess.call(this); this.building = null; this.selection = ''; }
+    BIMDocumentVariationOrder.prototype = Object.create(SvrProcess.prototype);
+    BIMDocumentVariationOrder.prototype.prepare = function () {
+      const para = this.getParameter();
+      for (let i = 0; i < para.length; i++) { const n = para[i].getParameterName(); if (para[i].getParameter() == null) continue; if (n === 'Building') this.building = String(para[i].getParameter()); else if (n === 'Selection') this.selection = String(para[i].getParameter()); }
+    };
+    BIMDocumentVariationOrder.prototype.doIt = function () {
+      const H = globalThis.BimOrderHost;
+      if (!H || !H.voInputs) throw new Error('Variation Order: this host gives the process no BIM inputs (globalThis.BimOrderHost.voInputs); the door does');
+      if (!this.building) throw new Error('Variation Order: no Building');
+      const trx = this.get_TrxName(), PS = H.ProjOrderState, WC = H.WriteCapture, inp = H.voInputs({ building: this.building, selection: this.selection });
+      if (!inp.state.generated || !inp.state.inPO.length) throw new Error('Variation Order: ' + this.building + ' has no Project Order for this selection yet; post it first (the word post)');
+      const dec = PS.decide(inp.state, inp.voRows.length > 0);
+      console.log('§VARIATION-ORDER building=' + this.building + ' key=' + inp.key + ' decision=' + dec.kind + ' actions=[' + dec.actions + '] deltaClasses=' + inp.voRows.length + ' orderTotal=' + inp.orderTotal + ' modelTotal=' + inp.modelTotal);
+      if (!inp.voRows.length) { this.getProcessInfo().serializableObject = { building: this.building, key: inp.key, selection: this.selection, decision: dec, delta: [], orderTotal: inp.orderTotal, modelTotal: inp.modelTotal, ops: 0 }; return 'No Variation Order: the model prices as the Project Order of ' + this.building + ' holds (' + inp.orderTotal + ')'; }
+      if (dec.actions.indexOf('issueVO') < 0) throw new Error('Variation Order: the engine does not offer one (' + dec.kind + ')');
+      const cap = WC.capture(H.hostDb, H.Database, (scratch) => PS.issueVO(scratch, inp.key, inp.voRows, inp.env, inp.now, inp.cur));
+      cap.ops.forEach((o) => trx.ops.push(o));
+      const r = cap.result, tally = {}; cap.ops.forEach((o) => { const k = o.op_type.replace('CRUD_', '').toLowerCase() + ':' + o.table; tally[k] = (tally[k] || 0) + 1; });
+      this.getProcessInfo().serializableObject = { building: this.building, key: inp.key, selection: this.selection, decision: dec, delta: inp.voRows, orderTotal: inp.orderTotal, modelTotal: inp.modelTotal, docNo: r.docNo || null, orderId: r.orderId, projectId: r.projectId,
+        grandTotal: String(r.grandTotal), lines: r.created ? r.created.lines : 0, digest: r.digest || null, notes: r.notes || [], tables: cap.tables, ops: cap.ops.length, opSummary: tally,
+        offer: cap.ops.length && r.docNo ? { key: 'approve_vo', line: 'erp.complete kind=Order number=' + r.docNo } : null };   // §29.3: after a Variation Order the natural next step is its approval, the order's own DocAction (the door line the word `do CO <number>` expands to)
+      console.log('§VARIATION-ORDER issued doc=' + r.docNo + ' order=' + r.orderId + ' grandTotal=' + r.grandTotal + ' lines=' + (r.created && r.created.lines) + ' ops=' + cap.ops.length + ' ' + JSON.stringify(tally));
+      return cap.ops.length ? 'Variation Order ' + r.docNo + ' issued: ' + r.grandTotal + ' on ' + inp.key + ', ' + (r.created && r.created.lines) + ' line(s), draft' : 'Nothing issued: the Variation Order of this change exists already (' + (r.digest || '') + ')';
+    };
+    return BIMDocumentVariationOrder;
   }, { harm: 'writes' });
   console.log('§BIMDOC-PLUGIN start table=' + T_ID + ' cols=' + COLS.length + ' window=' + W_ID + ' doctypes=' + dtN + ' clients=[' + clients.join(',') + '] windowAccess=host family=' + FAMILY.name + ' (dictionary staged by the host, refcounted)');
 }

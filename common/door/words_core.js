@@ -131,7 +131,7 @@
         }
         if (p === 'offer') {   // §29.3 (D16): a run answer carries the engine's next step {key, line}; a SESSION asks it (y runs the exact line, anything else runs nothing); one-shot and AI get no question, the line is in the envelope's `next`
           var of0 = env.offer; if (!interactive || !of0 || !of0.line) return out();
-          var said = of0.key === 'generate' ? M('words.offer_generate', of0.line) : of0.key === 'open_project' ? M('words.offer_open_project', of0.line) : null;   // a closed set: an offer with no catalog text is not asked, never invented
+          var said = of0.key === 'generate' ? M('words.offer_generate', of0.line) : of0.key === 'open_project' ? M('words.offer_open_project', of0.line) : of0.key === 'issue_vo' ? M('words.offer_issue_vo', of0.line) : of0.key === 'approve_vo' ? M('words.offer_approve_vo', of0.line) : null;   // a closed set: an offer with no catalog text is not asked, never invented
           if (said == null) return out();
           st.offer = { key: of0.key, line: of0.line }; screen.push(said); return out();
         }
