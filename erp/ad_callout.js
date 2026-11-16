@@ -142,6 +142,11 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
       RUNTIME.log('§ENV_EDGE set nowMs=Y uuid=Y perfMs=' + (typeof edge.perfMs === 'function' ? 'Y' : 'N') + ' replaced=' + (replaced ? 'Y' : 'N'));
       return edge;
     },
+    //   perfMs() / elapsed(t0): A-4 (2026-11-14), the ONE timing seam for a core pass that only feeds a § line (A2-TIMING-1, bim-ootb #3109). The installed edge's
+    //   perfMs, or null when no edge (or no perfMs) is installed; never a wall clock and never a throw: a missing timer only means the line cannot say how long it took.
+    perfMs: function () { return _edge && typeof _edge.perfMs === 'function' ? _edge.perfMs() : null; },
+    elapsed: function (t0) { var n = Env.perfMs(); return n == null || t0 == null ? null : n - t0; },
+    msText: function (t0) { var d = Env.elapsed(t0); return d == null ? '?' : String(Math.round(d)); },
     edge: function () {
       if (_edge) return _edge;
       RUNTIME.log('§ENV_NO_DATE no edge installed (Env.setEdge was never called by the page; core never reads a wall clock)'); throw new Error('Env.edge: no edge installed (A-5)');
@@ -1020,9 +1025,9 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
     var o = { client: env.client, org: env.org, role: env.role || 0, user: env.user, wh: env.wh, date: env.date, language: env.language };
     var key = [o.client, o.org, o.role, o.user, o.wh == null ? '' : o.wh, o.language || '', d].join('|'), e = SESSIONS.get(holder);
     if (e && e.key === key) return e.ctx;
-    var t0 = Date.now(), ctx = loginContext(o);
+    var t0 = Env.perfMs(), ctx = loginContext(o);   // A-4: timed through the edge (A2-TIMING-1); ms=? where no edge is installed
     SESSIONS.set(holder, { key: key, ctx: ctx });
-    console.log('§LOGINCTX build client=' + o.client + ' org=' + o.org + ' role=' + o.role + ' user=' + o.user + ' wh=' + (o.wh == null ? '' : o.wh) + ' day=' + d + ' keys=' + ctx.keys().length + ' ms=' + (Date.now() - t0));
+    console.log('§LOGINCTX build client=' + o.client + ' org=' + o.org + ' role=' + o.role + ' user=' + o.user + ' wh=' + (o.wh == null ? '' : o.wh) + ' day=' + d + ' keys=' + ctx.keys().length + ' ms=' + Env.msText(t0));
     return ctx;
   }
   function resetSession(holder) { if (holder) SESSIONS.delete(holder); }

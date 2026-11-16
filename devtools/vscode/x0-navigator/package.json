@@ -54,6 +54,10 @@
       {
         "command": "x0Navigator.shipFetchBack",
         "title": "X0 Navigator: Fetch back (is the live site on main? uses the network)"
+      },
+      {
+        "command": "x0Navigator.shipDeploy",
+        "title": "X0 Navigator: Deploy main now (GitHub Pages, with your gh login on this machine)"
       }
     ],
     "configuration": {

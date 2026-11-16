@@ -3,7 +3,8 @@
 //   P2 ISSUE (a draft that would not open, or loses the facts): `report` builds a GitHub URL on red1oon/bim-ootb/issues/new <= 8000 chars and a mailto: <= 1800 chars, both holding the line and the reason
 //   P3 ISSUE (a third report shape): the GitHub body has the Viewer reporter's sections (## What happened?, ## Environment, the log in <details>, label bug)
 //   P4 ISSUE (a script or an AI gets a prompt, or loses the mark): one-shot `erp.process` on a no-port process carries gap:true in the envelope and prints no hint
-//   Falsifier: REPORT_BREAK=allgaps (every refusal called a gap: must FAIL P1).
+//   P5 ISSUE (a report leaks local paths): neither draft holds a /tmp, /home or C:\\Users path
+//   Falsifiers: REPORT_BREAK=allgaps (every refusal called a gap: must FAIL P1) · REPORT_BREAK=nomask (paths left in: must FAIL P5).
 //   Run: node common/door/tests/witness_red1_report.js > common/door/tests/logs/red1_report.log 2>&1
 'use strict';
 const path = require('path'), cp = require('child_process'), fs = require('fs'), os = require('os');
@@ -39,5 +40,6 @@ k.chk('P3 the GitHub body has the Viewer reporter\'s sections (What happened?, E
 // P4: one-shot
 const o = run([DOOR, 'erp.process name="' + NP + '" record=990000 kind=Project']), e = o.split('\n').filter(l => l.charAt(0) === '{').map(l => JSON.parse(l)).pop();
 k.chk('P4 one-shot: the envelope carries gap:true (no-port) and no hint is printed', !!e && e.status === 'refused' && e.answer && e.answer.gap === true && e.answer.gapKind === 'no-port' && !o.includes(HINT), JSON.stringify(e && e.answer));
+k.chk('P5 neither draft holds a local path (/tmp, /home, C:\\Users)', u1.length > 0 && !/\/tmp\/|\/home\/|[A-Z]:\\Users/.test(b1 + b2), (b1 + b2).match(/\/tmp\/\S{0,30}|\/home\/\S{0,30}/) ? String((b1 + b2).match(/\/tmp\/\S{0,30}|\/home\/\S{0,30}/)[0]) : 'none');
 k.end();
 })().catch(e => { console.log('§W-RED1-REPORT FAIL ' + (e && e.stack || e)); process.exit(1); });

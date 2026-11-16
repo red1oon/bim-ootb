@@ -217,6 +217,12 @@
   "words.tip_level": {
    "en": "Tip: type level student for fuller help on each word (red1 --fast opens without tips)."
   },
+  "words.offer_generate": {
+   "en": "Ready to post to ERP Project Order? y/N → {0}"
+  },
+  "words.offer_open_project": {
+   "en": "Open the project? y/N → {0}"
+  },
   "door.division_by_zero": {
    "en": "division by zero"
   },

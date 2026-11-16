@@ -195,4 +195,32 @@ async function fetchBack(root, opts) {
   return { ok: verdict === 'PASS', verdict, lines };
 }
 
-module.exports = { apps, runLocalLines, check, needsBump, bump, liveSite, fetchBack, httpGet };
+// ── Deploy main now (§F.29, #3105, W-X0-DEPLOY): publish main to GitHub Pages with the person's OWN gh login on this machine.
+//    No key is stored on GitHub (the owner withdrew F-12 step 2). Every precondition says in words what to do when it fails;
+//    nothing is run unless all hold. The workflow file must declare workflow_dispatch (read from the file, never assumed).
+const DEPLOY_WORKFLOW = 'deploy-pages.yml';
+function deployMain(root, opts) {
+  opts = opts || {};
+  const gh = opts.gh || process.env.X0_GH || 'gh', run = args =>   // X0_GH: the witness's fake gh, so a test never reaches GitHub
+    cp.spawnSync(gh, args, { cwd: root, encoding: 'utf8', timeout: 60000 });
+  const no = why => ({ started: false, why, lines: [SEC + 'SHIP_DEPLOY started=N why=' + why] });
+  const url = git(root, ['remote', 'get-url', 'origin']).out;
+  const m = /github\.com[:/]([^/]+)\/([^/]+?)(\.git)?$/.exec(url);
+  if (!m) return no('the origin of this checkout is not a GitHub repo (' + (url || 'none') + ')');
+  const repo = m[1] + '/' + m[2], wf = path.join(root, '.github', 'workflows', DEPLOY_WORKFLOW);
+  let text = '';
+  try { text = fs.readFileSync(wf, 'utf8'); } catch (e) { return no('no .github/workflows/' + DEPLOY_WORKFLOW + ' in this checkout'); }
+  if (!/^\s*workflow_dispatch\s*:/m.test(text)) return no('.github/workflows/' + DEPLOY_WORKFLOW + ' has no workflow_dispatch: it can only start on a push to main');
+  const v = run(['--version']);
+  if (v.error || v.status !== 0) return no('install the GitHub CLI (https://cli.github.com), then run gh auth login');
+  const a = run(['auth', 'status']);
+  if (a.status !== 0) return no('the GitHub CLI is not logged in: run gh auth login (an account with write access to ' + repo + ')');
+  const r = run(['workflow', 'run', DEPLOY_WORKFLOW, '--ref', 'main', '-R', repo]);
+  if (r.status !== 0) return no('gh workflow run failed: ' + String(r.stderr || r.stdout || '').trim().split('\n')[0]);
+  const l = run(['run', 'list', '--workflow', DEPLOY_WORKFLOW, '--limit', '1', '-R', repo, '--json', 'url', '-q', '.[0].url']);
+  const link = l.status === 0 ? String(l.stdout || '').trim() : '';
+  return { started: true, repo, link, lines: [SEC + 'SHIP_DEPLOY started=Y repo=' + repo + ' ref=main workflow=' + DEPLOY_WORKFLOW + (link ? ' run=' + link : ''),
+    'GitHub builds main and publishes it (1 to 2 minutes). Then press 4 · Fetch back: it says whether the live site is on main.'] };
+}
+
+module.exports = { apps, runLocalLines, check, needsBump, bump, liveSite, fetchBack, httpGet, deployMain, DEPLOY_WORKFLOW };

@@ -78,11 +78,13 @@ function chain(v, label, st0, inputs) {
     so = ro ? ro.state : so; sn = rn ? rn.state : sn;
   });
 }
+// a word whose form uses an option a LATER phase added (fixed / fill / fold, §29.6 P3c) cannot be expanded by the P2a-era core at all: judged by that phase's witness (W-RED1-POST P5), named here, not by M1
+const NEWFORM = (w) => (wordsX.words[w].forms || []).some(f => f.fixed || f.fill || f.fold);
 const S = (o) => Object.assign(C.plain.n.init(), o || {});
 const PLACES = { any: {}, building: { building: 'Duplex' }, kind: { building: 'Duplex', kind: 'Element', columns: ['guid', 'Name'] }, erp: { erp: 'Order', ecolumns: ['DocumentNo', 'Name'] } };
 // (1) every word, every place, a few shapes of arguments, in each core variant (expand: not a word, works in/nowhere, needs one of, too many values, usage, confirm, ls filter, lines)
 Object.keys(VARIANTS).forEach(v => Object.keys(PLACES).forEach(p => {
-  Object.keys(wordsX.words).concat(['zzzz']).forEach(w => ['', ' X', ' X Y Z W V', ' CO 7', ' zz 7', ' abc'].forEach(a => chain(v, v + '/' + p + '/' + w + a, S(PLACES[p]), [{ text: w + a }])));
+  Object.keys(wordsX.words).filter(w => !NEWFORM(w)).concat(['zzzz']).forEach(w => ['', ' X', ' X Y Z W V', ' CO 7', ' zz 7', ' abc'].forEach(a => chain(v, v + '/' + p + '/' + w + a, S(PLACES[p]), [{ text: w + a }])));
   ['pwd', 'role abc', 'role 102', 'role', 'cd Duplex', 'cd Element', 'cd ..', 'cd', 'cd "Business Partner"'].forEach(t => chain(v, v + '/' + p + '/' + t, S(PLACES[p]), [{ text: t }]));
 }));
 chain('plain', 'quote-in-value', S({ building: 'Duplex', kind: 'El"x', columns: ['guid'] }), [{ text: 'count' }]);
@@ -144,8 +146,8 @@ k.L('M1 base=' + BASE + (oldSrc ? '' : ' (git show failed: ' + String(baseR.stde
 diffs.slice(0, 12).forEach(d => k.L('M1 DIFF ' + d));
 if (!oldSrc) k.incon('M1', 'no baseline words_core.js from git at ' + BASE);
 else k.chk('M1 the pre-change and the new words_core.js answer the same corpus byte for byte (' + (steps - diffs.length) + ' of ' + steps + ' steps)', diffs.length === 0, diffs.length ? 'first: ' + diffs[0].slice(0, 200) : '');
-// keys a LATER phase added are judged by that phase's witness, named here (M2's scope is the P2a move): words.level_*, words.student.* and words.tip_* -> W-HELP-STUDENT (S5, S6) (VOCAB_MESSAGE_CATALOG.md §4)
-const LATER = (x) => /^words\.(level_|student\.|tip_)/.test(x), handed = catWords.filter(LATER);
+// keys a LATER phase added are judged by that phase's witness, named here (M2's scope is the P2a move): words.level_*, words.student.* and words.tip_* -> W-HELP-STUDENT (S5, S6); words.offer_* -> W-RED1-POST (P3) (VOCAB_MESSAGE_CATALOG.md §4)
+const LATER = (x) => /^words\.(level_|student\.|tip_|offer_)/.test(x), handed = catWords.filter(LATER);
 const used = MSG.used(), reached = catWords.filter(x => !LATER(x) && used[x]), unreached = catWords.filter(x => !LATER(x) && !used[x]);
 k.L('M2 handed to W-HELP-STUDENT: ' + handed.length + ' keys ' + JSON.stringify(handed));
 k.L('M2 reached ' + reached.length + ' of ' + catWords.length + ' keys; uses=' + JSON.stringify(used));

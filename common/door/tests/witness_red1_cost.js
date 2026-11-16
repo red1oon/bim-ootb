@@ -4,6 +4,7 @@
 //   C3 ISSUE (a phase that is not the 4D run's): the elements in each phase group == the persisted run's task guids of that phase ∩ the selection
 //   C4 ISSUE (a selection that is not what was typed): `storey=*Level*` selects exactly the elements an independent SQL GLOB selects
 //   C5 ISSUE (a typo runs): an unknown column is refused naming the nearest
+//   C6 ISSUE (the film's cost printed 32 priced rows, not its summary): in a session `cost discipline` shows the groups table (one row per group, == the answer's groups) and `ls` then lists the priced rows
 //   Falsifier: COST_BREAK=dropgroup (one group lost: must FAIL C1). A selection that matches nothing is INCONCLUSIVE.
 //   Run: node common/door/tests/witness_red1_cost.js > common/door/tests/logs/red1_cost.log 2>&1
 'use strict';
@@ -38,5 +39,11 @@ const door = (line) => { const r = cp.spawnSync(process.execPath, [DOOR, line], 
   // C5 a typo
   const T = door('viewer.cost building=' + B + ' storye=Level1');
   k.chk('C5 an unknown column is refused naming the nearest (storey)', !!T && T.status !== 'ok' && /nearest: storey/.test(T.why || ''), T && (T.status + ' ' + T.why));
+  // C6 the session screen: the groups first, ls = the rows
+  { const r6 = cp.spawnSync(process.execPath, [path.join(ROOT, 'common/door/red1.js')], { input: 'cd ' + B + '\ncost discipline\nls\nexit\n', encoding: 'utf8', env: Object.assign({}, process.env, { RED1_WARM: 'off' }), timeout: 300000 }), out6 = r6.stdout || '';
+    const lines6 = out6.split('\n'), hi = lines6.findIndex(l => /^discipline\s+elements\s+cost/.test(l)), grows = hi >= 0 ? lines6.slice(hi + 1).filter((l, j, arr) => j < D.answer.groups.length) : [];
+    const same = D.answer.groups.every((g, j) => grows[j] && grows[j].split(/\s+/)[0] === String(g.key) && Number(grows[j].split(/\s+/).pop()) === g.cost), lsNote = /ls lists the (\d+) priced rows/.exec(out6);
+    k.L('C6 header at ' + hi + ' group rows=' + JSON.stringify(grows) + ' ls note=' + (lsNote && lsNote[1]));
+    k.chk('C6 a session `cost discipline` prints the ' + D.answer.groups.length + ' groups (== the answer), not the rows, and says ls lists the ' + D.answer.rows.length + ' priced rows', hi >= 0 && same && !!lsNote && Number(lsNote[1]) === D.answer.rows.length, 'header=' + hi + ' same=' + same); }
   k.end();
 })().catch(e => { console.log('§W-RED1-COST FAIL ' + (e && e.stack || e)); process.exit(1); });

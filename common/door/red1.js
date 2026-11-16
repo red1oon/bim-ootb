@@ -101,17 +101,19 @@ function makeShell(o) {
       if (e) say('line verb=' + (e.verb || '-') + ' status=' + e.status + ' request=' + e.request + ' line=' + JSON.stringify(line));
       return e;
     };
+    // §29.3 (D16): an answer that carries the engine's next step {key, line}: a session asks it (the pure core holds the question and the y/N), a one-shot or AI run asks nothing (the line is in the envelope's `next`)
+    const offerOf = (v) => { if (!v || !v.offer || BREAK() === 'nooffer') return; const o2 = core.step(st, { result: { purpose: 'offer', envelope: v } }); st = o2.state; o2.screen.forEach(io.print); };
     const asKey = typeof text === 'object';
     if (!asKey && !core.menuOpen(st) && isDoorLine(text)) {   // a door line, maybe with the shell's row filter after a bar: `app.verb k=v | *Pipe*` (§22.7)
       const pm = /^(.*?\S)\s+\|\s+(\S+)\s*$/.exec(text.trim()), line = pm ? pm[1] : text.trim(), match = pm ? pm[2] : null;
-      const e = await exec(line, null, match); if (e) { const v = viewOf(e, match); envs.push(v); await io.show(v); } return envs; }
+      const e = await exec(line, null, match); if (e) { const v = viewOf(e, match); envs.push(v); await io.show(v); offerOf(v); } return envs; }
     let r = core.step(st, asKey ? text : { text });
     for (;;) {
       st = r.state; if (core.menuOpen(st) && io.menu) io.menu(r.screen); else r.screen.forEach(io.print); warmTo(st.building);
       if (!r.effects.length) break;
       const ef = r.effects[0], e = await exec(ef.line, ef.shown, ef.match);
       if (!e) break;
-      if (ef.purpose === 'run') { const v = viewOf(e, ef.match); envs.push(v); await io.show(v, ef.view, ef.draw); r = { state: st, effects: r.effects.slice(1), screen: [] }; continue; }
+      if (ef.purpose === 'run') { const v = viewOf(e, ef.match); envs.push(v); await io.show(v, ef.view, ef.draw); offerOf(v); r = { state: st, effects: r.effects.slice(1), screen: [] }; continue; }
       r = core.step(st, { result: { purpose: ef.purpose, envelope: e } });
     }
     return envs;
@@ -126,7 +128,11 @@ async function session(o) {
   const names = vocab.verbs.map(v => v.verb).concat(sh.core.wordList().map(w => w.word), ['help', 'bim', 'mis', 'erp', 'report', 'exit', 'quit', 'history', 'menu', 'cd', 'pwd', 'role']);
   // §1d.1 THE TYPE ASSIST: assist_core proposes what may come next at the end of the line; shown grey after the cursor (it extends what was typed) or as a dim hint
   // `▸ Name` (another spelling: case, -, a typo). Tab takes it (→ takes a grey one). Enter NEVER applies it: the line runs as typed. Not on a pipe, not in a menu.
-  const AS = require(path.join(__dirname, 'assist_core.js')), VB = {}, BLD = buildingNames(), DOF = ((sh.words.words.do || {}).forms || [{}])[0] || {};
+  // film finding 4: a LOCAL folder can hold a private building; the assist offers only buildings this person has already opened (`cd <name>` in their history)
+  //   that also exist here — `cd` itself still takes any name (RED1_ASSIST_BUILDINGS=all: every local one, the old behaviour)
+  const BLD_ALL = buildingNames(), opened = (b) => history.concat(typed || []).some(h => new RegExp('^\\s*cd\\s+"?' + b.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '"?(\\s|;|$)').test(h));
+  const BLD = () => (process.env.RED1_ASSIST_BUILDINGS === 'all' ? BLD_ALL : BLD_ALL.filter(opened));
+  const AS = require(path.join(__dirname, 'assist_core.js')), VB = {}, DOF = ((sh.words.words.do || {}).forms || [{}])[0] || {};
   vocab.verbs.forEach(v => { VB[v.verb] = v; });
   // §1d.1 the ERP kinds `cd` can name, read ONCE per terminal session by one door line (journalled like any read), those with a window first
   let KINDS = [];
@@ -135,7 +141,7 @@ async function session(o) {
     KINDS = rows.filter(r => r.Name).map(r => ({ name: r.Name, window: r.AD_Window_ID != null })).sort((x, y) => (y.window - x.window) || (x.name < y.name ? -1 : 1));
     say('assist kinds=' + KINDS.length + ' with-window=' + KINDS.filter(k => k.window).length);
   }).catch(err => say('assist kinds FAIL ' + (err && err.message)));
-  const actx = () => { const s = sh.state(); return { words: names.filter(n => n.indexOf('.') < 0), verbs: VB, buildings: BLD, kinds: KINDS, props: s.kind ? s.props : (s.erp ? s.eprops : null), codes: DOF.codes || {} }; };
+  const actx = () => { const s = sh.state(); return { words: names.filter(n => n.indexOf('.') < 0), verbs: VB, buildings: BLD(), kinds: KINDS, props: s.kind ? s.props : (s.erp ? s.eprops : null), codes: DOF.codes || {} }; };
   let hint = null;
   const completer = (line) => {
     if (hint && hint.ghost) return [[hint.token + hint.ghost], hint.token];
@@ -147,7 +153,7 @@ async function session(o) {
   const typed = [];
   let lastArrow = null, lastGap = null, lastBad = null, pendingReport = null, hintDue = false;   // §28
   const drawHint = () => {
-    if (!tty || closed || sh.menuOpen()) { hint = null; return; }
+    if (!tty || closed || sh.menuOpen() || (process.env.ASSIST_BREAK !== 'noquiet' && (pendingReport || (sh.state() || {}).asking || (sh.state() || {}).pending || (sh.state() || {}).offer))) { /* + an open next-step offer (§29.3; film rc2 finding) */ if (hint) process.stdout.write('\x1b[0K'); hint = null; return; }   // a question is open: no suggestion (film finding 3)
     const line = rl.line || '', r = rl.cursor === line.length && line.trim() ? AS.suggest(actx(), line) : null; hint = r && (r.ghost || r.replace) ? r : null;
     let t = !hint ? '' : hint.ghost ? hint.ghost : '   ▸ ' + hint.replace.to + (hint.candidates[0] && hint.candidates[0].reason ? '  (' + hint.candidates[0].reason + ')' : '');
     const room = (process.stdout.columns || 80) - sh.prompt().length - line.length - 1; if (t.length > room) t = room > 0 ? t.slice(0, room) : '';
@@ -183,6 +189,11 @@ async function session(o) {
         const t = Dr.nextTree(a, inv, { ascii: process.env.RED1_ASCII === '1', brk: process.env.DRAW_BREAK || '' });
         if (t) { process.stdout.write(e.status + ' · ' + e.verb + ' · ' + e.ms + ' ms\n'); t.forEach(l => process.stdout.write(l + '\n')); say('draw tree lines=' + t.length + ' legal=' + JSON.stringify(a.legal)); return; }
       }
+      if (draw === 'groups' && view === 'summary' && e.status === 'ok' && Array.isArray(a.groups)) {   // §29.2 cost: the groups first (the answer's own), `ls` = its rows (the held answer)
+        process.stdout.write(e.status + ' · ' + e.verb + (e.held ? ' · held' : ' · ' + e.ms + ' ms') + '\n' + (a.summary ? a.summary + '\n' : ''));
+        Dr.table([a.by || 'group', 'elements', 'cost'], a.groups.map(g => ({ [a.by || 'group']: g.key, elements: g.elements, cost: g.cost }))).forEach(l => process.stdout.write(l + '\n'));
+        if (Array.isArray(a.rows)) process.stdout.write('ls lists the ' + a.rows.length + ' priced rows\n'); say('draw groups n=' + a.groups.length + ' total=' + a.total); return;
+      }
       if (draw === 'funnel' && view === 'summary' && e.status === 'ok') {   // §22.8 R6: the clash funnel, drawn from the answer's own value
         const f = Dr.funnel(a.value, { ascii: process.env.RED1_ASCII === '1', brk: process.env.DRAW_BREAK || '' }); process.stdout.write(e.status + ' · ' + e.verb + (e.held ? ' · held' : ' · ' + e.ms + ' ms') + '\n');
         if (f) { f.forEach(l => process.stdout.write(l + '\n')); say('draw funnel lines=' + f.length + ' value=' + JSON.stringify(a.value)); if (Array.isArray(a.rows)) process.stdout.write('ls lists the ' + a.rows.length + ' rows\n'); return; }
@@ -214,7 +225,7 @@ async function session(o) {
   };
   let busy = Promise.resolve(), closed = false;
   const handle = async (raw) => {
-    const line = raw.trim(); if ((!line && !sh.menuOpen() && !sh.state().asking) || line.indexOf('--') === 0) return;
+    const line = raw.trim(); if ((!line && !sh.menuOpen() && !sh.state().asking && !sh.state().offer) || line.indexOf('--') === 0) return;   // an empty Return answers an open offer (n)
     typed.push(line);
     if ((R.isHelp(line) || GROUP_WORD.test(line)) && !sh.menuOpen()) {   // §24: help / bim / mis / erp / help <word> = words_core.helpText (the SAME bytes as a one-shot `red1 help`); help verbs | help <app> | help <app.verb> = the door's own help
       const h = helpOf(line, sh.core, vocab, sh.state().level); process.stdout.write(h.text); say('help topic=' + JSON.stringify(h.topic) + (h.door ? ' door=1' : ' words=1')); return;
@@ -229,7 +240,7 @@ async function session(o) {
     }
     if (/^\s*report\s*$/i.test(line) && !sh.menuOpen()) {   // §28: the last gap (else the last line that did not answer ok) as a draft for the owner
       const g0 = lastGap || lastBad; if (!g0) { process.stdout.write('nothing to report: every line answered ok\n'); return; }
-      const g = Object.assign({}, g0, { env: [['red1', welcome().version.replace(/^.*· red1 /, 'red1 ')], ['Platform', process.platform + ' ' + os.release()], ['Node', process.version], ['Place', sh.prompt().trim()]], logs: RING.slice(-50) });
+      const g = Object.assign({}, g0, { env: [['red1', welcome().version.replace(/^.*· red1 /, 'red1 ')], ['Platform', process.platform + ' ' + os.release()], ['Node', process.version], ['Place', sh.prompt().trim()]], logs: RING.slice(-50).map(l => process.env.REPORT_BREAK === 'nomask' ? String(l) : String(l).replace(/(\/tmp|\/home|\/Users|[A-Z]:\\Users)[^\s"',)]*/g, '<path>')) });   // film finding 5: no local path leaves in a report
       process.stdout.write('Draft (nothing is sent until you open it):\n' + require(path.join(__dirname, 'report_core.js')).draft(g) + '\nSend by: 1 GitHub issue · 2 email · q cancel\n');
       pendingReport = g; say('report draft gap=' + !!lastGap); return;
     }

@@ -67,8 +67,12 @@ function runBlock(run, ctx) {   // ctx {flat, root, files:[{name,text}]}
   return new Promise((res) => {
     const cwd = run.cmd.indexOf('common/door/') >= 0 ? ctx.root : ctx.flat;   // a checkout command runs in the checkout; everything else in the 6-file folder
     (ctx.files || []).forEach(f => { if (run.cmd.indexOf(f.name) >= 0) fs.writeFileSync(path.join(cwd, f.name), f.text + '\n'); });
-    const env = Object.assign({}, process.env, { BIM_DOOR_JOURNAL: path.join(ctx.flat, 'journal_' + run.id + '.jsonl') });
-    const p = spawn('bash', ['-c', run.cmd], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] }); let o = '', e = '';
+    // ISOLATION (coordinator 2026-11-16: the shared ~/.cache/bim_object op-log was polluted by other agents' runs, so a block that read it was not byte-stable, and two runs of this witness at once shared /tmp/fast_guide_*):
+    // every block gets its OWN op-log and journal in this run's folder; a command that names its own BIM_OBJECT_OPLOG (the blocks that build on each other) still wins, and
+    // the page's /tmp/fast_guide_ scratch names are mapped into this run's folder (the page prints /tmp/…, what a reader types; the run keeps no file outside its folder).
+    const cmd = run.cmd.split('/tmp/fast_guide_').join(path.join(ctx.flat, 'fast_guide_'));
+    const env = Object.assign({}, process.env, { BIM_DOOR_JOURNAL: path.join(ctx.flat, 'journal_' + run.id + '.jsonl'), BIM_OBJECT_OPLOG: path.join(ctx.flat, 'oplog_' + run.id + '.jsonl') });
+    const p = spawn('bash', ['-c', cmd], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] }); let o = '', e = '';
     p.stdout.on('data', d => { o += d; }); p.stderr.on('data', d => { e += d; }); const t = setTimeout(() => p.kill(), 420000); p.on('close', code => { clearTimeout(t); res({ code, out: o.trim(), err: e.trim() }); });   // the timer is cleared when the command ends (it kept every --refresh alive for 7 minutes)
   });
 }

@@ -37,6 +37,9 @@ function loadEngine(O) {
     ['model_initial_defaults', 'model_trade', 'model_ctor', 'model_cost', 'model_match', 'model_order', 'model_invoice', 'model_master', 'model_rma', 'model_project', 'model_asi', 'model_dd', 'model_movement', 'model_inventory', 'model_pa', 'model_post']
       .forEach(m => { try { require(path.join(E, m + '.js')); } catch (e) { say('LOAD-SKIP ' + m + ': ' + e.message); } });
     const A = require(path.join(E, 'ad_callout.js'));
+    // A-5 (code-design lane, bim-ootb #3110): the door is the SHELL here, so it installs the ONE edge (clock, id, perf timer) the core asks; without it §LOGINCTX prints ms=? (the page installs its own, idempiere.html:686)
+    let hasEdge = false; try { hasEdge = !!(A.Env && A.Env.edge && A.Env.edge()); } catch (e) { hasEdge = false; }   // Env.edge() throws when none is installed
+    if (A.Env && typeof A.Env.setEdge === 'function' && !hasEdge) A.Env.setEdge({ nowMs: Date.now, uuid: () => require('crypto').randomUUID(), perfMs: () => require('perf_hooks').performance.now() });
     ['support', 'support_stock', 'views', 'currency', 'uom', 'pricing', 'tax', 'sqlfn'].forEach(m => { try { require(path.join(E, 'callouts', m + '.js')); } catch (e) { say('LOAD-SKIP callouts/' + m + ': ' + e.message); } });
     fs.readdirSync(path.join(E, 'callouts')).filter(f => /^(Callout|CostAdj|InOutFreight)/.test(f)).forEach(f => { try { require(path.join(E, 'callouts', f)); } catch (e) { say('LOAD-SKIP callouts/' + f + ': ' + e.message); } });
     let udf = 0; require(path.join(E, 'db_export_safe.js')).register(O.db, 'core-udf', d => A.RUNTIME.registerSqlFunctions((nm, f) => { d.create_function(nm, f); udf++; }));   // §EXPORTSAFE: re-bound after every db.export() (the snapshot below)   // the page does the same (idempiere.html :1175); sql.js takes the arity from f.length
@@ -332,6 +335,12 @@ function resolveOne(O, op, ids, i, cols) {
   const colsOf = (t) => cols[t] || (cols[t] = O.rows('PRAGMA table_info(' + t + ')').map(c => c.name.toLowerCase()));
   const o = JSON.parse(JSON.stringify(op, (k, v) => v instanceof Uint8Array ? undefined : v)), t = o.table, idc = o.idCol || t + '_id', phys = colsOf(t).indexOf(idc) >= 0;
   const ref = (v) => (v && typeof v === 'object' && v.__opRef !== undefined) ? ids[v.__opRef] : v;
+  // a VIRTUAL column (AD_Column.ColumnSQL, e.g. the BIM Document plugin's computed Phase/Task columns) is never written: legacy POInfo.isVirtualColumn leaves it out of
+  //   saveNew/saveUpdate. Found by the Fast Script ERP film rc2 once the door started the core plugins (CLI_ERP_IVR §29.6 P3a): mis.new on Project Phase failed "no column bim_deliverables".
+  if (process.env.VIRTUAL_BREAK !== 'keep') {
+    const vk = '__virt_' + t, virt = cols[vk] || (cols[vk] = O.rows("SELECT lower(c.columnname) AS c FROM ad_column c JOIN ad_table x ON x.ad_table_id=c.ad_table_id WHERE lower(x.tablename)=lower(?) AND c.columnsql IS NOT NULL AND c.columnsql<>''", [t]).map(r => r.c).filter(c => colsOf(t).indexOf(c) < 0));
+    if (virt.length) { if (o.fields) virt.forEach(c => { delete o.fields[c]; }); if (o.changes) virt.forEach(c => { delete o.changes[c]; }); }
+  }
   if (o.op_type === 'CRUD_CREATE') {
     Object.keys(o.fields).forEach(k => { o.fields[k] = ref(o.fields[k]); });
     if (phys) { if (o.fields[idc] == null) { const m = O.rows('SELECT max(' + idc + ') AS m FROM ' + t)[0]; o.fields[idc] = Math.max(1, Number(m && m.m || 0) + 1); } ids[i] = o.fields[idc]; o.idCol = idc; }
@@ -1070,7 +1079,15 @@ function runProcess(O, a) {
   if (!res.dispatched) { if (res.reason === 'absent-handler') refuseGap(P.name + ' was not run: it has no JS port yet (class ' + (P.classname || 'none') + ')', 'no-port'); refuse(P.name + ' was not run: ' + res.message); }
   if (!res.ok) refuse(P.name + ' failed: ' + (res.message || res.reason) + ' (nothing was kept)');
   const ops = a.dry === 'Y' || RUN_BREAK === 'skipcommit' ? [] : persistGroup(O, (res.result && res.result.commitOps) || []);
-  return { process: { id: P.id, value: P.value, name: P.name, classname: P.classname }, record: r ? brief(K, O.rows('SELECT * FROM ' + K.table + ' WHERE ' + K.key + '=?', [r[K.key]])[0] || r) : null,
+  // what a person reads first (legacy's process dialog: the message, then the log, AD_PInstance_Log): the documents made (their numbers, from the ops) and the log lines
+  const made = ops.filter(o => o.op_type === 'CRUD_CREATE' && o.fields && o.fields.documentno != null).map(o => ({ table: o.table, number: String(o.fields.documentno) }));
+  const plog = ((res.result && res.result.logs) || []).map(l => [l.msg, l.number].filter(x => x != null && x !== '' && x !== 'null').join(' ')).filter(Boolean);
+  if (RUN_BREAK === 'nolog') plog.length = 0;   // W-RED1-RUN falsifier: the process log dropped (must FAIL R7)
+  const plogShown = []; { const n = {}; plog.forEach(l => { if (!n[l]) { n[l] = 0; plogShown.push(l); } n[l]++; }); for (let i = 0; i < plogShown.length; i++) if (n[plogShown[i]] > 1) plogShown[i] += '  (×' + n[plogShown[i]] + ')'; }   // repeats folded for the reader; `log` keeps every line
+  const byT = {}; made.forEach(m => { (byT[m.table] = byT[m.table] || []).push(m.number); });
+  const summary = (res.message && res.message !== 'OK' ? res.message : P.name + (a.dry === 'Y' ? ': dry run, nothing kept' : ': done')) + (made.length ? ' · made ' + Object.keys(byT).map(t => t + ' ' + byT[t].join(', ')).join('; ') : ' · no document made') +
+    (plogShown.length ? '\n' + plogShown.map(l => '  ' + l).join('\n') : '') + (ops.length ? '\n' + ops.length + ' change(s) kept: ' + Object.keys(sum(ops)).map(k2 => k2 + ' ' + sum(ops)[k2]).join(', ') : '');
+  return { summary, documents: made, log: plog, process: { id: P.id, value: P.value, name: P.name, classname: P.classname }, record: r ? brief(K, O.rows('SELECT * FROM ' + K.table + ' WHERE ' + K.key + '=?', [r[K.key]])[0] || r) : null,
     params: given, message: res.message, object: (res.result && res.result.object) || undefined, dry: a.dry === 'Y', ops: ops.map(o => ({ op_type: o.op_type, table: o.table })), opSummary: sum(ops), planned: ((res.result && res.result.commitOps) || []).length };
 }
 // ── mis.lookup (bim-compiler prompts/CLI_ERP_IVR.md §27; §1d TA2): the legal values of a column or a process parameter, from the dictionary as MLookupFactory/MLookup read it ──
@@ -1128,13 +1145,29 @@ function lookup(O, a) {
   say('lookup column=' + def.c + ' table=' + T.tn + ' rule=' + (out.valRule ? out.valRule.sql : '-') + ' refWhere=' + (out.refWhere ? out.refWhere.sql : '-') + ' total=' + total + (LOOKUP_BREAK ? ' LOOKUP_BREAK=' + LOOKUP_BREAK : ''));
   return Object.assign(out, { table: T.tn, rows: rows.map(r => { const ks = Object.keys(r); return { value: r[ks[0]], name: ks.slice(1).map(k2 => r[k2]).filter(v => v != null && v !== '').join(' · ') || String(r[ks[0]]) }; }), shown: rows.length, total });
 }
+// ── erp.order_state (bim-compiler prompts/CLI_ERP_IVR.md §29.3, P3c): what the ERP holds for a building's selection and what the ENGINE says is legal next ──
+// ProjOrderState.readState + decide, read-only; the offer is the engine's own `generate` action, never a rule of ours. The line offered runs the plugin's "Fold from BIM" process (its name read from
+// the dictionary row of the class the plugin exports); the door adds nothing to it.
+async function orderState(O, a) {
+  if (!a.building) refuse('--building is required');
+  const H = globalThis.BimOrderHost; if (!H) refuseGap('the ERP order state needs the BIM Document plugin, which this door did not start (DOOR_PLUGINS=off?)', 'no-plugin');
+  const sel = (a.where || []).map(w => { const m = /^([A-Za-z_]\w*)=([\s\S]*)$/.exec(w); return m && /\s/.test(m[2]) ? m[1] + '="' + m[2] + '"' : w; }).join(' '), inp = H.inputs({ building: a.building, selection: sel }), PS = H.ProjOrderState;
+  const st = PS.readState(O.db, inp.key, inp.classes, inp.env), dec = PS.decide(st, false);
+  const cls = (await import(require('url').pathToFileURL(path.join(ROOT, 'erp', 'plugins', 'bim_document.mjs')).href)).FOLD_CLASS, pr = O.rows('SELECT name FROM ad_process WHERE classname=? AND isactive=?', [cls, 'Y'])[0];
+  const q = (v) => (/[\s=;]/.test(v) || v === '' ? '"' + v + '"' : v), line = pr ? 'erp.process name=' + q(pr.name) + ' Building=' + q(a.building) + (sel ? ' Selection=' + q(sel) : '') : null;
+  const offer = line && dec.actions.indexOf('generate') >= 0 ? { key: 'generate', line } : null;
+  say('order_state building=' + a.building + ' key=' + inp.key + ' generated=' + st.generated + ' decision=' + dec.kind + ' actions=[' + dec.actions + '] offer=' + (offer ? offer.key : '-') + (process.env.OFFER_BREAK ? ' OFFER_BREAK=' + process.env.OFFER_BREAK : ''));
+  const state = { generated: st.generated, projectId: st.projectId || null, plannedAmt: st.plannedAmt || null };
+  if (process.env.OFFER_BREAK === 'always' && line) return { building: a.building, key: inp.key, state, decision: dec, offer: { key: 'generate', line } };   // W-RED1-POST falsifier: offered whatever the engine said (must FAIL P2)
+  return { building: a.building, key: inp.key, state, decision: { kind: dec.kind, actions: dec.actions }, offer };
+}
 async function main(argv) {
   const cmd = argv[0], a = {};
   for (let i = 1; i < argv.length; i++) { const m = /^--(\w+)$/.exec(argv[i]); if (!m || i + 1 >= argv.length) { say('FAIL usage: ' + argv[i]); return 2; } if (m[1] === 'where') (a.where = a.where || []).push(argv[++i]); else a[m[1]] = argv[++i]; }
-  if (['find', 'actions', 'describe', 'read', 'list', 'sum', 'group', 'new', 'update', 'delete', 'load', 'add_window', 'ninja_exec', 'ninja_workflow', 'ninja_rollback', 'ninja_export', 'diff', 'menu', 'process', 'lookup'].concat(Object.keys(ACT)).indexOf(cmd) < 0) { say('FAIL usage: erp_cli.js find|actions|complete|void|close|reverse|describe|read|list|sum|group --kind K (--number N | --id I) [--role R]'); return 2; }
+  if (['find', 'actions', 'describe', 'read', 'list', 'sum', 'group', 'new', 'update', 'delete', 'load', 'add_window', 'ninja_exec', 'ninja_workflow', 'ninja_rollback', 'ninja_export', 'diff', 'menu', 'process', 'lookup', 'order_state'].concat(Object.keys(ACT)).indexOf(cmd) < 0) { say('FAIL usage: erp_cli.js find|actions|complete|void|close|reverse|describe|read|list|sum|group --kind K (--number N | --id I) [--role R]'); return 2; }
   try {
     const O = await boot(a); O.actor = a.user == null ? 101 : Number(a.user);   // the session user: stated, default 101 (the same default the callout context takes), until sign-in exists
-    const out = await (ACT[cmd] ? act(O, a, ACT[cmd]) : ({ find, actions, describe, read, list: OC.list, sum: OC.sum, group: OC.group, new: createRecord, update: updateRecord, delete: deleteRecord, load: loadRecords, add_window: addWindow, ninja_exec: ninjaExec, ninja_workflow: ninjaWorkflow, ninja_rollback: ninjaRollback, ninja_export: ninjaExport, diff: misDiff, menu: menuOf, process: runProcess, lookup })[cmd](O, a));
+    const out = await (ACT[cmd] ? act(O, a, ACT[cmd]) : ({ find, actions, describe, read, list: OC.list, sum: OC.sum, group: OC.group, new: createRecord, update: updateRecord, delete: deleteRecord, load: loadRecords, add_window: addWindow, ninja_exec: ninjaExec, ninja_workflow: ninjaWorkflow, ninja_rollback: ninjaRollback, ninja_export: ninjaExport, diff: misDiff, menu: menuOf, process: runProcess, lookup, order_state: orderState })[cmd](O, a));
     process.stdout.write(JSON.stringify(out) + '\n'); return 0;
   } catch (e) {
     if (e instanceof Refused || e instanceof OC.Refused) { say('REFUSED ' + e.message); process.stdout.write(JSON.stringify(Object.assign({ refused: true, reason: e.message }, e.gap ? { gap: true, gapKind: e.gap } : {})) + '\n'); return 3; }
