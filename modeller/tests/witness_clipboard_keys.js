@@ -115,7 +115,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       const b1 = window.__bb(pw), d1 = window.__bb(pd), s1 = window.__bb(sd); return { axis: 'xy'[k], wall: +(b1[k] - b0[k]).toFixed(3), door: +(d1[k] - d0[k]).toFixed(3), source: +(s1[k] - s0[k]).toFixed(3) }; }, pw, pd, pick.door);
     ok('K2 the pasted door rides a 0.5 m move of the pasted wall; the source door stays', K.wall === 0.5 && K.door === 0.5 && K.source === 0, JSON.stringify(K));
     const K7 = await pg.evaluate(async () => { const h = document.getElementById('m-help'); if (!h) return { err: 'no Help pill' }; h.click(); await new Promise(r => setTimeout(r, 400));
-      const rows = Array.from(document.querySelectorAll('#m-help-panel .hp-row')).map(r => r.textContent.replace(/\s+/g, ' ').trim()); h.click(); return { rows: rows.filter(t => /Copy|Paste/.test(t)) }; });
+      const rows = Array.from(document.querySelectorAll('#cmd-palette .cmd-row')).map(r => r.textContent.replace(/\s+/g, ' ').trim()); h.click(); return { rows: rows.filter(t => /Copy|Paste/.test(t)) }; });
     ok('K7 ? Help lists Copy Ctrl+C and Paste Ctrl+V', !K7.err && K7.rows.some(t => /^Copy.*Ctrl\+C/.test(t)) && K7.rows.some(t => /^Paste.*Ctrl\+V/.test(t)), JSON.stringify(K7));
     ok('K4 no page errors', errs.length === 0, 'errors=' + errs.length + (errs[0] ? ' ' + errs[0] : ''));
   } catch (e) { if (!/no pick/.test(String(e && e.message))) ok('K run', false, 'threw ' + String(e && e.stack || e).slice(0, 300)); }

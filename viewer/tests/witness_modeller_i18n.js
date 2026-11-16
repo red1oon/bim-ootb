@@ -145,7 +145,7 @@ async function walk(page, plog) {   // the trailer's screens, real clicks
     const sw = plog.slice(n0).filter(l => /§TRL_SWITCH/.test(l)).pop() || 'NO §TRL_SWITCH', kept = await page.evaluate(() => window.__mark).catch(() => null);
     const j1 = judge('de_DE', await page.evaluate(COLLECT, null));
     await page.locator('#m-help').click().catch(() => {}); await page.waitForTimeout(800);
-    const jh = judge('de_DE', await page.evaluate(COLLECT, '#m-help-panel'));
+    const jh = judge('de_DE', await page.evaluate(COLLECT, '#cmd-palette'));
     say('  §MDL_INPLACE ' + sw.replace(/^.*§/, '§') + ' navs=' + (kept === 'kept' ? 0 : 1) + ' leaks=' + j1.leaks + ' helpAfterSwitch slots=' + jh.slots + ' translated=' + jh.translated + ' leaks=' + jh.leaks +
       (j1.leaks + jh.leaks ? ' [' + j1.wiring.concat(j1.uncat, jh.wiring, jh.uncat).join(' · ') + ']' : ''));
     W(/§TRL_SWITCH .*to=de_DE/.test(sw) && kept === 'kept' && j1.leaks === 0, '(4) in-place en_MY→de_DE via #header-flag-btn: no navigation, leaks=' + j1.leaks);

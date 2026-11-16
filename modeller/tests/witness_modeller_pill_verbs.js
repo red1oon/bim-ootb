@@ -63,9 +63,10 @@ function serve() {
   await page.click('#b-guide');
   await page.waitForTimeout(150);
   var guide = await page.evaluate(function () {
-    var p = document.getElementById('m-guide-panel');
-    if (!p || p.style.display !== 'block') return { open: false };
-    var secs = [].slice.call(p.querySelectorAll('.mg-sec')).map(function (d) { return (d.firstChild && d.firstChild.textContent || '').trim(); });
+    // §14.5 (VOCAB_MESSAGE_CATALOG): the guide sections are the How To paragraphs of the ONE help panel (#cmd-palette); a title is its row
+    var p = document.getElementById('cmd-palette');
+    if (!p) return { open: false };
+    var secs = [].slice.call(p.querySelectorAll('.cmd-howto-text')).map(function (d) { var row = d.parentElement && d.parentElement.previousElementSibling; return (row && row.textContent || '').replace(/\s+/g, ' ').trim(); });
     return { open: true, count: secs.length, secs: secs };
   });
   // §NET-AUDIT (2026-09-26): expected = the entries of the page's OWN guide SECTIONS array (read from modeller.html),
