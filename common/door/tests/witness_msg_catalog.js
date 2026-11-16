@@ -7,6 +7,7 @@
 //   M4 ISSUE (half-moved text, the deletion budget): the person-facing literals of words_core.js (screen.push('…, error: '…, throw new Error('…, title: '…, the helpText sentences) before and after; after must be 0.
 //   M5 ISSUE (a wording change slips in unrecorded): the live catalog differs from the P2a catalog (git MSG_P2A) only by the LEDGER of deliberate changes, each exactly its new text.
 //   Falsifiers: MSG_BREAK=unledgered (one key changed with no ledger entry: must FAIL M5) · MSG_BREAK=edittemplate (one template changed by one character in a copy of the catalog: must FAIL M1 naming the key) ·
+//               MSG_BREAK=extraarg (one call passes an argument too many: must FAIL M3, arg-count) · MSG_BREAK=computedkey (a key built at run time: must FAIL M3) ·
 //               MSG_BREAK=renamekey (one key renamed in a copy of words_core.js only: must FAIL M3, and M1 where the corpus reaches it).
 //   Run: node common/door/tests/witness_msg_catalog.js > common/door/tests/logs/msg_catalog.log 2>&1
 'use strict';
@@ -26,6 +27,8 @@ if (BRK === 'unledgered') { live.messages['words.pwd_nowhere'].en += ' '; k.L('B
 LEDGER.forEach(c => { if (catalog.messages[c.key]) catalog.messages[c.key] = { en: c.from }; });   // `catalog` is now the P2a wording for M1
 let newSrc = fs.readFileSync(path.join(DD, 'words_core.js'), 'utf8');
 if (BRK === 'edittemplate') { catalog = JSON.parse(JSON.stringify(catalog)); catalog.messages['words.cd_unknown'].en = catalog.messages['words.cd_unknown'].en.replace('cd:', 'cd;'); k.L('BREAK edittemplate words.cd_unknown -> ' + JSON.stringify(catalog.messages['words.cd_unknown'].en)); }
+if (BRK === 'extraarg') { newSrc = newSrc.replace("M('words.not_done', pend)", "M('words.not_done', pend, pend)"); k.L('BREAK extraarg words.not_done gets one argument too many in a copy of words_core.js'); }
+if (BRK === 'computedkey') { newSrc = newSrc.replace("M('words.cd_building', b)", "M('words.cd_' + 'building', b)"); k.L('BREAK computedkey words.cd_building built at run time in a copy of words_core.js'); }
 if (BRK === 'renamekey') { newSrc = newSrc.replace("M('words.not_done'", "M('words.not_donee'"); k.L('BREAK renamekey words.not_done -> words.not_donee in a copy of words_core.js'); }
 const newFile = path.join(tmpd, 'words_core_new.js'); fs.writeFileSync(newFile, newSrc);
 const baseR = cp.spawnSync('git', ['-C', ROOT, 'show', BASE + ':common/door/words_core.js'], { encoding: 'utf8' });
@@ -37,13 +40,15 @@ const wordsX = JSON.parse(JSON.stringify(words0)); wordsX.words.zzbad = { help: 
 // ── M3 / M4 static: read the code ──
 // the code that reads the catalog: words_core.js (M('…')) and red1.js (.t('…'), the greeting's tip and the --level refusal)
 const red1Src = fs.readFileSync(path.join(DD, 'red1.js'), 'utf8');
-const codeKeys = Array.from(new Set((newSrc.match(/\bM\('([^']+)'/g) || []).map(s => s.slice(3, -1)).concat((red1Src.match(/\.t\('([^']+)'/g) || []).map(s => s.slice(4, -1)))));
+// M3 reads the code through the ONE key scanner, common/door/msg_keys.js (VOCAB_MESSAGE_CATALOG.md §5; the X0 Navigator reads it too)
+const MK = require(path.join(DD, 'msg_keys.js'));
+const uses = MK.scan(newSrc, 'common/door/words_core.js').concat(MK.scan(red1Src, 'common/door/red1.js'));
+const codeKeys = Array.from(new Set(uses.filter(u => u.key !== null).map(u => u.key)));
 const catKeys = Object.keys(catalog.messages), catWords = catKeys.filter(x => x.indexOf('words.') === 0);
-const notInCat = codeKeys.filter(x => catKeys.indexOf(x) < 0), notInCode = catWords.filter(x => codeKeys.indexOf(x) < 0);
-const tplBad = [];
-catKeys.forEach(key => { const t = catalog.messages[key].en; const ns = (t.match(/\{(\d+)\}/g) || []).map(s => +s.slice(1, -1)), max = ns.length ? Math.max.apply(null, ns) : -1;
-  for (let i = 0; i <= max; i++) if (ns.indexOf(i) < 0) tplBad.push(key + ' gap {' + i + '}');
-  if (/[{}]/.test(t.replace(/\{\d+\}/g, ''))) tplBad.push(key + ' stray brace'); });
+const findings = MK.check(live, uses, { prefixes: ['words.'] });
+const notInCat = findings.filter(f => f.kind === 'unknown-key').map(f => f.key), notInCode = findings.filter(f => f.kind === 'unused-key').map(f => f.key);
+const tplBad = findings.filter(f => f.kind === 'template').map(f => f.key + ' ' + f.detail);
+const argBad = findings.filter(f => f.kind === 'arg-count' || f.kind === 'computed-key').map(f => f.kind + ' ' + (f.key || '?') + ' ' + f.file.split('/').pop() + ':' + f.line + ' ' + f.detail);
 const strip = (src) => src.split('\n').map(l => l.replace(/\s\/\/ .*$/, '')).filter(l => !/^\s*\/\//.test(l)).join('\n');
 const LIT = [/screen\.push\(\s*'[^']*[A-Za-z]{2,}/g, /error:\s*'[^']*[A-Za-z]{2,}/g, /error:\s*'"'/g, /throw new Error\(\s*'[^']*[A-Za-z]{2,}/g, /title:\s*'[^']*[A-Za-z]{2,}/g, /title:\s*pf\.word \+ '/g, /name:\s*'\([a-z]/g, /'red1: type a short word/g, /'Type bim, mis or erp/g, /'  everywhere: /g, /' \(start with: '/g, /'start with: '/g, /' properties; ls shows '/g, /': nothing to pick from'/g, /' works '/g, /' is needed: '/g, /'   run it\? y\/N'/g, /'   codes: '/g, /'   → '/g, /'<action>'/g, /\{ building: 'in a building'/g];
 const lits = (src) => { const s = strip(src), hits = []; LIT.forEach(re => { (s.match(re) || []).forEach(h => hits.push(h.slice(0, 50))); }); return hits; };
@@ -146,10 +151,10 @@ k.L('M2 handed to W-HELP-STUDENT: ' + handed.length + ' keys ' + JSON.stringify(
 k.L('M2 reached ' + reached.length + ' of ' + catWords.length + ' keys; uses=' + JSON.stringify(used));
 if (unreached.length) k.incon('M2', 'keys the corpus never reached: ' + unreached.join(', '));
 else k.chk('M2 every P2a words.* key was reached by the corpus (' + reached.length + ' of ' + (catWords.length - handed.length) + '; ' + handed.length + ' later keys handed on)', reached.length > 0 && reached.length === catWords.length - handed.length);
-k.L('M3 code keys=' + codeKeys.length + ' catalog words.* keys=' + catWords.length + ' notInCatalog=' + JSON.stringify(notInCat) + ' notInCode=' + JSON.stringify(notInCode) + ' templates bad=' + JSON.stringify(tplBad) + ' extra-argument calls=' + JSON.stringify(Array.from(new Set(extra))));
+k.L('M3 code keys=' + codeKeys.length + ' catalog words.* keys=' + catWords.length + ' notInCatalog=' + JSON.stringify(notInCat) + ' notInCode=' + JSON.stringify(notInCode) + ' templates bad=' + JSON.stringify(tplBad) + ' extra-argument calls (run)=' + JSON.stringify(Array.from(new Set(extra))) + ' static arg/computed=' + JSON.stringify(argBad) + ' uses=' + uses.length);
 if (!codeKeys.length) k.incon('M3', 'no M(\'…\') key found in words_core.js');
-else k.chk('M3 keys both ways: ' + (codeKeys.length - notInCat.length) + ' of ' + codeKeys.length + ' code keys in the catalog, ' + (catWords.length - notInCode.length) + ' of ' + catWords.length + ' catalog keys in code; templates {0}..{n-1}, no stray brace; no call drops an argument',
-  !notInCat.length && !notInCode.length && !tplBad.length && !extra.length, (notInCat.length ? 'missing in catalog: ' + notInCat.join(', ') : '') + (notInCode.length ? ' unused: ' + notInCode.join(', ') : ''));
+else k.chk('M3 keys both ways: ' + (codeKeys.length - notInCat.length) + ' of ' + codeKeys.length + ' code keys in the catalog, ' + (catWords.length - notInCode.length) + ' of ' + catWords.length + ' catalog keys in code; templates {0}..{n-1}, no stray brace; every call passes what its template takes; no computed key (msg_keys.js, ' + uses.length + ' uses)',
+  !notInCat.length && !notInCode.length && !tplBad.length && !extra.length && !argBad.length, (notInCat.length ? 'missing in catalog: ' + notInCat.join(', ') : '') + (notInCode.length ? ' unused: ' + notInCode.join(', ') : '') + (argBad.length ? ' ' + argBad.join('; ') : ''));
 // NAMED exemption: the create() guard is a developer's wiring error, thrown when the catalog itself is missing, so it cannot come from the catalog
 const EXEMPT = ["throw new Error('words_core: no message catalog ha"];
 const before = oldSrc ? lits(oldSrc) : null, after = lits(newSrc).filter(h => EXEMPT.indexOf(h) < 0);

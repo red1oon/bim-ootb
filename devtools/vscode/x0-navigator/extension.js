@@ -16,6 +16,7 @@ const ship = require('./lib/ship');
 const fileContext = require('./lib/file_context');
 const appRefs = require('./lib/app_refs');
 const buildStamp = require('./lib/build_stamp');
+const witnessStub = require('./lib/witness_stub');
 
 const JS = { language: 'javascript' };
 const MARKER = path.join('internal', 'APP_SURFACE.md'); // a folder holding this file is the bim-ootb root
@@ -208,6 +209,26 @@ function activate(context) {
       vscode.window.showInformationMessage('X0 Navigator: context for ' + rel + ' copied');
     } catch (e) { out.appendLine(r.text); out.show(true); }
     return r.text;
+  }));
+  // New witness for this file (§F.26, W-X0-NEWWIT): the ONE `witness` snippet, pre-filled with FACTS only (header spec, § tags with
+  // their last values, APP fields written). The claim, population and red control stay empty, so it FAILs until a person fills them.
+  context.subscriptions.push(vscode.commands.registerCommand('x0Navigator.newWitnessForFile', async () => {
+    const sourceRoot = findSourceRoot(context);
+    const editor = vscode.window.activeTextEditor;
+    if (!sourceRoot || !editor || !editor.document.uri.fsPath.startsWith(sourceRoot + path.sep)) {
+      vscode.window.showInformationMessage('X0 Navigator: open a file of the bim-ootb folder first');
+      return null;
+    }
+    const rel = path.relative(sourceRoot, editor.document.uri.fsPath).split(path.sep).join('/');
+    const ctx = fileContext.build(sourceRoot, rel, { fields: getFields(), tagIndex: getTags(), costNow: measureNow(), extraLogDirs: extraLogDirs() });
+    const r = witnessStub.make(sourceRoot, rel, ctx.facts);
+    if (r.refused) { vscode.window.showInformationMessage('X0 Navigator: no witness made: ' + r.refused); return null; }
+    const abs = path.join(sourceRoot, r.path);
+    fs.mkdirSync(path.dirname(abs), { recursive: true });
+    fs.writeFileSync(abs, r.text, { flag: 'wx' });   // wx: never overwrite (make() already picked a free name)
+    out.appendLine('§X0_NEWWIT file=' + rel + ' witness=' + r.path + ' spec=' + (r.spec ? 'Y' : 'N') + ' tags=' + r.tags.length);
+    try { const doc = await vscode.workspace.openTextDocument(abs); await vscode.window.showTextDocument(doc); } catch (e) { out.appendLine('open failed: ' + e.message); }
+    return r.path;
   }));
   // Status bar: how the open file reaches a user. "start-up" = every user pays for it when the page opens.
   const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 90);

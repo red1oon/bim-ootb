@@ -11,7 +11,9 @@
 const fs = require('fs');
 const path = require('path');
 
-const TAG_RE = /§[A-Z][A-Z0-9_]+/g;
+// The ONE § tag grammar (§F.27, #3098): hyphen-joined parts (§CRUD-PERSIST was read as §CRUD), and a digit-first tag only in the
+// §4D_X form, so section numbers (§5.24, §4b) stay prose. 2 characters minimum; a trailing '-' is not part of a tag.
+const TAG_RE = /§(?:[A-Z](?:[A-Z0-9_]+(?:-[A-Z0-9_]+)*|(?:-[A-Z0-9_]+)+)|[0-9]+[A-Z][A-Z0-9]*_[A-Z0-9_]+(?:-[A-Z0-9_]+)*)/g;
 const HEADING_RE = /^#{1,6}\s+(.*)$/;
 const SKIP_DIRS = new Set(['node_modules', '.git', '.claude', 'logs', 'out', 'build']);
 const MAX_JS_BYTES = 2 * 1024 * 1024;
