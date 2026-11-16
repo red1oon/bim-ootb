@@ -42,8 +42,7 @@ const J = genJson();
 // ── independent staging: the BUILTINS list is read by a line grep, each manifest.dictionary row is INSERTed by plain SQL (sqlite3 CLI) into a temp copy of the seed ──
 const T0 = fs.mkdtempSync(path.join(os.tmpdir(), 'ev-stage-'));
 const SDB = path.join(T0, 'staged.db'); fs.copyFileSync(DB, SDB);
-const overlay = fs.readFileSync(path.join(ROOT, 'erp/plugin_overlay.js'), 'utf8').split('\n').find(l => /^\s*var BUILTINS = \[/.test(l)) || '';
-const BUILT = [...overlay.replace(/\].*$/, '').matchAll(/'([^']+)'/g)].map(x => x[1]);
+const BUILT = (() => { try { return JSON.parse(fs.readFileSync(path.join(ROOT, 'erp/plugins/builtins.json'), 'utf8')).builtin || []; } catch (e) { return []; } })();   // the one list both hosts read (was a literal in plugin_overlay.js)
 const lit = v => v == null ? 'NULL' : typeof v === 'number' ? String(v) : "'" + String(v).replace(/'/g, "''") + "'";
 let stagedSql = 0, plugTabs = 0, plugPairs = 0;   // plugin document tables, and their (table, offered action) pairs
 const stagePromise = (async () => {

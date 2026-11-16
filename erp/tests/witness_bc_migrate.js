@@ -134,7 +134,7 @@ function verdict(cs) { var c = CASES[cs] || { judged: 0, failed: 0 }, v = !c.jud
   // ═══ WIRING + CONN ═══
   var rd = function (f) { try { return fs.readFileSync(path.join(ERP, f), 'utf8'); } catch (e) { return ''; } };
   check('WIRING', 'precache', 'sw.js precaches the bundle, its form, the converter and the model; plugin_overlay installs it stopped', ['bc_migrate.mjs', 'bc_migrate_form.mjs', 'bc_migrate_convert.mjs', 'bc_model.mjs'].every(function (f) { return rd('sw.js').indexOf("'plugins/" + f + "'") >= 0; }) &&
-    /INSTALL_ONLY = \[[^\]]*'plugins\/bc_migrate\.mjs'/.test(rd('plugin_overlay.js')), {});
+    (JSON.parse(rd('plugins/builtins.json') || '{}').installOnly || []).indexOf('plugins/bc_migrate.mjs') >= 0 && /plugins\/builtins\.json/.test(rd('plugin_overlay.js')), {});
   verdict('WIRING');
   say('§BCM-CONN verdict=INCONCLUSIVE — no live Business Central here: the package is built in BC\'s layout from Microsoft\'s source, not exported by a running BC. An alpha tester\'s file closes this.');
 
