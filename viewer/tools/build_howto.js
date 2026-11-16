@@ -7,7 +7,7 @@
 // --check writes nothing and exits 1 if the shipped file differs (W-HOWTO H1). Live guide unreachable → exit 2 (inconclusive).
 // Read the §HOWTO_BUILD lines after a run; exit code is not evidence.
 'use strict';
-const fs = require('fs'), path = require('path');
+const fs = require('fs'), path = require('path'), { Buffer } = require('buffer');
 const ROOT = path.join(__dirname, '..', '..');
 const GUIDE = 'https://red1oon.github.io/BIMCompiler/BIMUserGuide/';
 const OUT = path.join(ROOT, 'viewer', 'help', 'howto.json');
