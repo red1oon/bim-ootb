@@ -11,7 +11,7 @@
 'use strict';
 const path = require('path');
 const ROOT = path.join(__dirname, '..', '..');
-const BREAK = process.env.POST_BREAK || '';   // W-POST-FOLD falsifiers: retag (the model differs at every post: F2 must FAIL) · shift (the schedule is a day late: F4 must FAIL) · droprow (one priced row is lost: F3 must FAIL)
+const BREAK = process.env.POST_BREAK || '';   // W-RED1-VO falsifier: novo (the difference is lost: must FAIL V2) · W-POST-FOLD falsifiers: retag (the model differs at every post: F2 must FAIL) · shift (the schedule is a day late: F4 must FAIL) · droprow (one priced row is lost: F3 must FAIL)
 const say = (s) => process.stderr.write('§BIM_ORDER_HOST ' + s + '\n');
 // "discipline=ARC storey=*1" or 'storey="Level 1"' -> ['discipline=ARC', 'storey=*1']  (the same col=glob words `viewer.cost` takes)
 function selectionWords(text) { const out = [], re = /([A-Za-z_]\w*)=("([^"]*)"|\S+)/g; let m; while ((m = re.exec(String(text || '')))) out.push(m[1] + '=' + (m[3] != null ? m[3] : m[2])); return out; }
@@ -39,6 +39,35 @@ function install(O, now) {
         const classes = Array.from(new Set(priced.rows.map((r) => r.cls)));
         say('inputs building=' + a.building + ' key=' + key + ' selection=' + JSON.stringify(selectionWords(a.selection)) + ' selected=' + S.guids.length + ' priced=' + priced.elements + ' rows=' + priced.rows.length + ' schedule=' + (sched ? sched.tasks.length + ' tasks from ' + sched.source : 'none') + ' run=' + S.c.status + ' ms=' + (Date.now() - t0));
         return { key, rows: priced.rows, classes, env, now: process.env.BIM_ORDER_NOW || now(), cur: 'RM', selected: S.guids.length, elements: priced.elements, scheduleSource: sched ? sched.source : null };
+      } finally { console.log = log; }
+    },
+    // §29.4 P6 (the Variation Order): what the MODEL now prices at, against what the Project Order HOLDS, class by class. The model's side is the SAME fold the post runs (the same rows per 4D task,
+    //   the same line rules), run on a SCRATCH copy under a probe key, so the two sides are on ONE basis and an unchanged model gives a difference of exactly 0 (no second pricing, no rounding gap).
+    //   voRows = one signed CHANGED row per class whose total differs, the shape ProjOrderState.issueVO folds (rate = the priced difference, count 1; vo_fold.js with the neutral config).
+    voInputs(a, inp0) {
+      const inp = inp0 || this.inputs(a), PS = this.ProjOrderState, BD = inp.env.BigDecimal, log = console.log;
+      console.log = () => {};
+      try {
+        const state = PS.readState(O.db, inp.key, inp.classes, inp.env), probe = inp.key + ' (probe)';
+        const total = (st) => { const m = {}; (st.lines || []).forEach((l) => { m[l.cls] = (m[l.cls] || BD.ZERO).add(BD.of(String(l.amt))); }); return m; };
+        const orderBy = total(state);
+        // what the order holds is its lines AND the Variation Orders already issued on it (a pending or approved VO; not a reversed or voided one): a change a VO already carries is not a new difference
+        const voBy = {}; (state.vos || []).filter((v) => v.status !== 'RE' && v.status !== 'VO').forEach((v) => {
+          const r = O.db.exec('SELECT p.Value, ol.LineNetAmt FROM C_OrderLine ol JOIN M_Product p ON p.M_Product_ID=ol.M_Product_ID WHERE ol.C_Order_ID=' + Number(v.orderId));
+          (r.length ? r[0].values : []).forEach((x) => { voBy[x[0]] = (voBy[x[0]] || BD.ZERO).add(BD.of(String(x[1]))); });
+        });
+        Object.keys(voBy).forEach((c) => { orderBy[c] = (orderBy[c] || BD.ZERO).add(voBy[c]); });
+        const scratch = new O.SQL.Database(O.db.export()); let modelBy = {}, modelTotal = '0', ok = false;
+        try { PS.generate(scratch, probe, inp.rows, inp.env, inp.now, inp.cur); const ms = PS.readState(scratch, probe, inp.classes, inp.env); modelBy = total(ms); modelTotal = ms.plannedAmt; ok = true; } finally { scratch.close(); }
+        const disc = {}; inp.rows.forEach((r) => { if (disc[r.cls] == null) disc[r.cls] = r.disc; });
+        const voRows = [];
+        Object.keys(modelBy).concat(Object.keys(orderBy)).filter((c, i, arr) => arr.indexOf(c) === i).sort().forEach((c) => {
+          let d = (modelBy[c] || BD.ZERO).subtract(orderBy[c] || BD.ZERO); if (BREAK === 'novo') d = BD.ZERO;
+          if (d.abs().compareTo(BD.of('0.005')) > 0)   // a difference of half a cent or less is nothing: a VO line is a cent amount, so the cent rounding of a VO already issued leaves up to that much
+            voRows.push({ status: 'CHANGED', cls: c, disc: disc[c] || '_', count: 1, rate: d.toString(), unit: 'EA' });
+        });
+        say('vo-inputs building=' + a.building + ' key=' + inp.key + ' generated=' + state.generated + ' orderTotal=' + state.plannedAmt + ' modelTotal=' + modelTotal + ' classes=' + Object.keys(modelBy).length + ' delta=' + voRows.length + (ok ? '' : ' MODEL-FOLD-FAILED'));
+        return { key: inp.key, state, voRows, env: inp.env, now: inp.now, cur: inp.cur, selected: inp.selected, elements: inp.elements, orderTotal: state.plannedAmt || '0', modelTotal };
       } finally { console.log = log; }
     }
   };

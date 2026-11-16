@@ -1156,14 +1156,16 @@ async function orderState(O, a) {
   if (!a.building) refuse('--building is required');
   const H = globalThis.BimOrderHost; if (!H) refuseGap('the ERP order state needs the BIM Document plugin, which this door did not start (DOOR_PLUGINS=off?)', 'no-plugin');
   const sel = (a.where || []).map(w => { const m = /^([A-Za-z_]\w*)=([\s\S]*)$/.exec(w); return m && /\s/.test(m[2]) ? m[1] + '="' + m[2] + '"' : w; }).join(' '), inp = H.inputs({ building: a.building, selection: sel }), PS = H.ProjOrderState;
-  const st = PS.readState(O.db, inp.key, inp.classes, inp.env), dec = PS.decide(st, false);
-  const cls = (await import(require('url').pathToFileURL(path.join(ROOT, 'erp', 'plugins', 'bim_document.mjs')).href)).FOLD_CLASS, pr = O.rows('SELECT name FROM ad_process WHERE classname=? AND isactive=?', [cls, 'Y'])[0];
-  const q = (v) => (/[\s=;]/.test(v) || v === '' ? '"' + v + '"' : v), line = pr ? 'erp.process name=' + q(pr.name) + ' Building=' + q(a.building) + (sel ? ' Selection=' + q(sel) : '') : null;
-  const offer = line && dec.actions.indexOf('generate') >= 0 ? { key: 'generate', line } : null;
-  say('order_state building=' + a.building + ' key=' + inp.key + ' generated=' + st.generated + ' decision=' + dec.kind + ' actions=[' + dec.actions + '] offer=' + (offer ? offer.key : '-') + (process.env.OFFER_BREAK ? ' OFFER_BREAK=' + process.env.OFFER_BREAK : ''));
+  const st = PS.readState(O.db, inp.key, inp.classes, inp.env), dec0 = PS.decide(st, false);
+  // §29.4 P6: once the selection is in the order, the engine is asked whether the MODEL now differs from it (the host's voInputs: the same fold on a scratch copy, per class); decide(state, edited) then names the legal actions
+  const vo = st.generated && st.inPO.length && H.voInputs ? H.voInputs({ building: a.building, selection: sel }, inp) : null, dec = vo ? PS.decide(st, vo.voRows.length > 0) : dec0;
+  const cls = (await import(require('url').pathToFileURL(path.join(ROOT, 'erp', 'plugins', 'bim_document.mjs')).href)), pr = O.rows('SELECT name FROM ad_process WHERE classname=? AND isactive=?', [cls.FOLD_CLASS, 'Y'])[0], prVo = O.rows('SELECT name FROM ad_process WHERE classname=? AND isactive=?', [cls.VO_CLASS, 'Y'])[0];
+  const q = (v) => (/[\s=;]/.test(v) || v === '' ? '"' + v + '"' : v), lineOf = (p) => 'erp.process name=' + q(p.name) + ' Building=' + q(a.building) + (sel ? ' Selection=' + q(sel) : '');
+  const offer = pr && dec.actions.indexOf('generate') >= 0 ? { key: 'generate', line: lineOf(pr) } : (prVo && dec.actions.indexOf('issueVO') >= 0 ? { key: 'issue_vo', line: lineOf(prVo) } : null);
+  say('order_state building=' + a.building + ' key=' + inp.key + ' generated=' + st.generated + ' decision=' + dec.kind + ' actions=[' + dec.actions + '] delta=' + (vo ? vo.voRows.length : '-') + ' offer=' + (offer ? offer.key : '-') + (process.env.OFFER_BREAK ? ' OFFER_BREAK=' + process.env.OFFER_BREAK : ''));
   const state = { generated: st.generated, projectId: st.projectId || null, plannedAmt: st.plannedAmt || null };
-  if (process.env.OFFER_BREAK === 'always' && line) return { building: a.building, key: inp.key, state, decision: dec, offer: { key: 'generate', line } };   // W-RED1-POST falsifier: offered whatever the engine said (must FAIL P2)
-  return { building: a.building, key: inp.key, state, decision: { kind: dec.kind, actions: dec.actions }, offer };
+  if (process.env.OFFER_BREAK === 'always' && pr) return { building: a.building, key: inp.key, state, decision: dec, offer: { key: 'generate', line: lineOf(pr) } };   // W-RED1-POST falsifier: offered whatever the engine said (must FAIL P2)
+  return { building: a.building, key: inp.key, state, decision: { kind: dec.kind, actions: dec.actions }, delta: vo ? { classes: vo.voRows.length, orderTotal: vo.orderTotal, modelTotal: vo.modelTotal } : null, offer };
 }
 // ── erp.project_status (bim-compiler prompts/CLI_ERP_IVR.md §29.4, P5): the PM's earned-value picture of a Project, read-only ──
 // viewer/proj_control.js is the ONE owner (contractSum, evm, evmByPhase, evmMetrics): nothing is computed here. A READ VERB (like erp.order_state), not a process: it changes nothing,
