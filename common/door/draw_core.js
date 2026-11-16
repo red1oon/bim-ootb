@@ -69,6 +69,20 @@
     var rows = ctx.tabs.map(function (t) { return [t.tab, n[t.kind] == null ? '-' : n[t.kind], t.link || '']; });
     return [(ctx.kind || '') + ' ' + (ctx.label || '') + ': ' + rows.length + ' tabs, cd <tab> opens one'].concat(rows.length ? table(['tab', 'records', 'link'], rows) : []);
   }
-  var API = { table: table, cell: cell, funnel: funnel, nextTree: nextTree, record: record, tabs: tabs };
+  // THE PROJECT'S EARNED-VALUE STATUS (§29.4, P5): erp.project_status' answer as a table, phase by phase, then the project's own total row (the engine's figures; the sum is
+  // NOT computed here, so a table whose phases do not add to the project shows it). A figure the answer does not hold (a phase's CPI) is a dash, never a zero.
+  function status(a) {
+    if (!a || !a.evm || !Array.isArray(a.phases) || !a.contract) return null;
+    var e = a.evm, c = a.contract, n = function (v) { return v == null ? '-' : v; };
+    var rows = a.phases.map(function (p) { return [p.name, p.bac, p.pv, p.ev, p.sv, n(p.spi)]; });
+    rows.push(['PROJECT', e.bac, e.pv, e.ev, e.sv, n(e.spi)]);
+    var out = [(a.project.name || a.project.value) + '  status as of ' + a.asOf,
+      'contract  original ' + c.original + ' · approved VOs ' + c.approvedVOs + ' · pending VOs ' + c.pendingVOs + ' · revised ' + c.revised, ''];
+    table(['phase', 'BAC', 'PV', 'EV', 'SV', 'SPI'], rows).forEach(function (l) { out.push(l); });
+    out.push('', 'AC ' + e.ac + ' · CV ' + e.cv + ' · CPI ' + n(e.cpi) + ' · complete ' + n(e.percentComplete) + ' · planned ' + n(e.percentPlanned));
+    if (a.note) out.push(a.note);
+    return out;
+  }
+  var API = { table: table, cell: cell, funnel: funnel, nextTree: nextTree, record: record, tabs: tabs, status: status };
   if (typeof module !== 'undefined' && module.exports) module.exports = API; else root.DrawCore = API;
 })(this);
