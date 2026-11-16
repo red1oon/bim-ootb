@@ -17,6 +17,11 @@
 'use strict';
 const GLOB = require('./glob.js');
 const fs = require('fs'), path = require('path'), os = require('os');
+// The door's ONE clock for what a record stores (Created, Updated, a document's dates): LOCAL day and time, as the page writes them and as legacy's server does
+// (bim-compiler prompts/CLI_ERP_IVR.md §20, W-DOOR-STAMP). Built on erp/crud_core.js (fmtKernelTs = the local yyyy-MM-dd HH:mm:ss, localDay = THE local-day reader);
+// erp_cli.js uses these same two. toISOString() alone is UTC (before 08:00 at +08:00 it names yesterday). STAMP_BREAK=utc: W-DOOR-STAMP T7 falsifier (must FAIL).
+const CC = require('../../erp/crud_core.js');
+const stamp = () => (process.env.STAMP_BREAK === 'utc' ? new Date().toISOString().replace('T', ' ').slice(0, 19) : CC.fmtKernelTs(Date.now())), today = () => CC.localDay(Date.now());
 const ROOT = path.join(__dirname, '..', '..');
 const say = (s) => process.stderr.write('§OBJECT ' + s + '\n');
 class Refused extends Error {}
@@ -209,7 +214,7 @@ async function boot(a) {
   O.ops.forEach(o => applyOp(O.db, O.rows, o));
   const ML = require('../../erp/model_layer.js');
   O.ML = ML; O.dbId = 'model:' + path.basename(O.file);
-  O.trx = () => new ML.Trx((sql, p) => O.rows(sql, p), { db: O.dbId, now: new Date().toISOString().replace('T', ' ').slice(0, 19), uuid: () => require('crypto').randomUUID() });
+  O.trx = () => new ML.Trx((sql, p) => O.rows(sql, p), { db: O.dbId, now: stamp(), uuid: () => require('crypto').randomUUID() });
   say('replay ops=' + O.ops.length + ' oplog=' + O.opfile);
   return O;
 }
@@ -426,4 +431,4 @@ async function main(argv) {
   }
 }
 if (require.main === module) main(process.argv.slice(2)).then(c => process.exit(c));
-module.exports = { noProperty, roleRows, tabsOf, roleFor, roleCtx, accessOf, main, describe, read, update, attach, history, count, list, sum, group, decSum, boot, open, kindOf, columnsOf, childTabs, applyOp, loadChunker, Refused, oplogFile, readOps };
+module.exports = { stamp, today, noProperty, roleRows, tabsOf, roleFor, roleCtx, accessOf, main, describe, read, update, attach, history, count, list, sum, group, decSum, boot, open, kindOf, columnsOf, childTabs, applyOp, loadChunker, Refused, oplogFile, readOps };

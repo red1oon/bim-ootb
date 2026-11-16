@@ -23,7 +23,7 @@ const BREAK = process.env.ERP_BREAK || '';   // witness falsifiers: 'actor' (the
 class Refused extends Error {}
 // The door's clock for what a record stores (Created, Updated, a document's dates): the LOCAL day and time, as the page writes them (crud_core.js localDay; ad_callout.js RUNTIME.now) and as legacy's
 // server does. toISOString() alone is UTC: before 08:00 in Kuala Lumpur it names yesterday (the defect of bim-ootb prompts/CAPEX_DASHBOARD.md §5.24, which had not reached this file). An op's own `t` stays an instant in UTC.
-const localIso = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString(), stamp = () => localIso().replace('T', ' ').slice(0, 19), today = () => localIso().slice(0, 10);
+const stamp = () => OC.stamp(), today = () => OC.today();   // the ONE door clock (object_cli.js, on crud_core fmtKernelTs / localDay): was a second local-day helper here
 const refuse = (m) => { throw new Refused(m); };
 // §28 a GAP: the system lacks something (not the person's mistake); marked at the source so red1 can offer `report`, never guessed from the text
 const refuseGap = (m, kind) => { const e = new Refused(m); e.gap = kind; throw e; };
