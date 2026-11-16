@@ -84,20 +84,8 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/jav
 const serve = () => new Promise((r) => { const s = http.createServer((req, res) => { const p = decodeURIComponent(req.url.split('?')[0]); fs.readFile(path.join(ROOT, p), (e, b) => { if (e) { res.writeHead(404); res.end(); return; } res.writeHead(200, { 'Content-Type': MIME[path.extname(p)] || 'application/octet-stream' }); res.end(b); }); }); s.listen(0, () => r(s)); });
 // §12 S6: Chinese questions (and one English, which must still work with 中文 chosen) -> what a person means. 「作废」 (void) is NOT here: the zh_CN pack has no such word
 //   (it names Void 空白 and Voided 空虚), so it would test a known gap of the pack, not the matcher; the spec says so.
-const QUESTIONS_ZH = [
-  { q: '如何关闭销售订单？', w: 143, a: 'CL' }, { q: '怎样结束销售订单？', w: 143, a: 'CL' }, { q: '怎样完成一张发票？', w: 167, a: 'CO' },
-  { q: '如何重新激活销售订单？', w: 143, a: 'RE' }, { q: '怎么记录客户付款？', w: 195, a: null }, { q: '如何创建出货单？', w: 169, a: null },
-  { q: 'How do I close a Sales Order?', w: 143, a: 'CL' } ];
-const QUESTIONS = [   // real phrasings -> the window and the DocAction a person means (fixture: what is asked, not how it is found)
-  { q: 'How do I close a Sales Order?', w: 143, a: 'CL' },
-  { q: 'what does complete do on a sales order', w: 143, a: 'CO' },
-  { q: 'complete an invoice', w: 167, a: 'CO' },
-  { q: 'How can I void a payment?', w: 195, a: 'VO' },
-  { q: 'how to record a customer payment', w: 195, a: null },
-  { q: 'How do I create a shipment?', w: 169, a: null },
-  { q: 'reactivate a sales order', w: 143, a: 'RE' },
-  { q: 'Re-activate a Sales Order', w: 143, a: 'RE' },
-];
+const FIXTURE = JSON.parse(fs.readFileSync(path.join(ERP, 'tests', 'fixtures', 'help_questions.json'), 'utf8')), QUESTIONS_ZH = FIXTURE.zh;   // ONE fixture with the CLI's W-ERP-ASK
+const QUESTIONS = FIXTURE.en;
 async function browser() {
   let chromium; try { ({ chromium } = require(PW)); } catch (e) { k.incon('S2,S3,S4', 'playwright not found at ' + PW); return; }
   const srv = await serve(), port = srv.address().port, b = await chromium.launch({ headless: true }), page = await b.newPage();
