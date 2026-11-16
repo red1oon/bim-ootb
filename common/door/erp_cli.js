@@ -37,6 +37,9 @@ function loadEngine(O) {
     ['model_initial_defaults', 'model_trade', 'model_ctor', 'model_cost', 'model_match', 'model_order', 'model_invoice', 'model_master', 'model_rma', 'model_project', 'model_asi', 'model_dd', 'model_movement', 'model_inventory', 'model_pa', 'model_post']
       .forEach(m => { try { require(path.join(E, m + '.js')); } catch (e) { say('LOAD-SKIP ' + m + ': ' + e.message); } });
     const A = require(path.join(E, 'ad_callout.js'));
+    // A-5 (code-design lane, bim-ootb #3110): the door is the SHELL here, so it installs the ONE edge (clock, id, perf timer) the core asks; without it §LOGINCTX prints ms=? (the page installs its own, idempiere.html:686)
+    let hasEdge = false; try { hasEdge = !!(A.Env && A.Env.edge && A.Env.edge()); } catch (e) { hasEdge = false; }   // Env.edge() throws when none is installed
+    if (A.Env && typeof A.Env.setEdge === 'function' && !hasEdge) A.Env.setEdge({ nowMs: Date.now, uuid: () => require('crypto').randomUUID(), perfMs: () => require('perf_hooks').performance.now() });
     ['support', 'support_stock', 'views', 'currency', 'uom', 'pricing', 'tax', 'sqlfn'].forEach(m => { try { require(path.join(E, 'callouts', m + '.js')); } catch (e) { say('LOAD-SKIP callouts/' + m + ': ' + e.message); } });
     fs.readdirSync(path.join(E, 'callouts')).filter(f => /^(Callout|CostAdj|InOutFreight)/.test(f)).forEach(f => { try { require(path.join(E, 'callouts', f)); } catch (e) { say('LOAD-SKIP callouts/' + f + ': ' + e.message); } });
     let udf = 0; require(path.join(E, 'db_export_safe.js')).register(O.db, 'core-udf', d => A.RUNTIME.registerSqlFunctions((nm, f) => { d.create_function(nm, f); udf++; }));   // §EXPORTSAFE: re-bound after every db.export() (the snapshot below)   // the page does the same (idempiere.html :1175); sql.js takes the arity from f.length
