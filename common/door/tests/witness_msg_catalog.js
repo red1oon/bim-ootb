@@ -85,6 +85,7 @@ const PLACES = { any: {}, building: { building: 'Duplex' }, kind: { building: 'D
 // (1) every word, every place, a few shapes of arguments, in each core variant (expand: not a word, works in/nowhere, needs one of, too many values, usage, confirm, ls filter, lines)
 Object.keys(VARIANTS).forEach(v => Object.keys(PLACES).forEach(p => {
   Object.keys(wordsX.words).filter(w => !NEWFORM(w)).concat(['zzzz']).forEach(w => ['', ' X', ' X Y Z W V', ' CO 7', ' zz 7', ' abc'].forEach(a => chain(v, v + '/' + p + '/' + w + a, S(PLACES[p]), [{ text: w + a }])));
+  // `role 102` runs (it reaches words.role_set) but its M1 difference is excused: since §30 L1 it asks the door the role's client (one read line), by design: judged by W-RED1-LOGIN G1 / G5
   ['pwd', 'role abc', 'role 102', 'role', 'cd Duplex', 'cd Element', 'cd ..', 'cd', 'cd "Business Partner"'].forEach(t => chain(v, v + '/' + p + '/' + t, S(PLACES[p]), [{ text: t }]));
 }));
 chain('plain', 'quote-in-value', S({ building: 'Duplex', kind: 'El"x', columns: ['guid'] }), [{ text: 'count' }]);
@@ -142,12 +143,13 @@ Object.keys(VARIANTS).forEach(v => ['', 'bim', 'mis', 'erp', 'verbs', 'zzz', '_'
 }));
 
 // ── verdicts ──
+{ const ex = diffs.filter(d => /\/role 102#/.test(d)); if (ex.length) { k.L('M1 excused ' + ex.length + ' role 102 step(s): the new role-client read line (§30 L1, W-RED1-LOGIN)'); for (let i = diffs.length - 1; i >= 0; i--) if (/\/role 102#/.test(diffs[i])) diffs.splice(i, 1); } }
 k.L('M1 base=' + BASE + (oldSrc ? '' : ' (git show failed: ' + String(baseR.stderr).trim().slice(0, 120) + ')') + ' steps=' + steps + ' (helpText ' + helps + ') diffs=' + diffs.length);
 diffs.slice(0, 12).forEach(d => k.L('M1 DIFF ' + d));
 if (!oldSrc) k.incon('M1', 'no baseline words_core.js from git at ' + BASE);
 else k.chk('M1 the pre-change and the new words_core.js answer the same corpus byte for byte (' + (steps - diffs.length) + ' of ' + steps + ' steps)', diffs.length === 0, diffs.length ? 'first: ' + diffs[0].slice(0, 200) : '');
-// keys a LATER phase added are judged by that phase's witness, named here (M2's scope is the P2a move): words.level_*, words.student.* and words.tip_* -> W-HELP-STUDENT (S5, S6); words.offer_* -> W-RED1-POST (P3), words.cd_record_* / cd_tab_* / link_* -> W-RED1-RECORD (R1, R3, R8), works_for / here_nowhere -> W-RED1-STATUS (S4) (VOCAB_MESSAGE_CATALOG.md §4)
-const LATER = (x) => /^words\.(level_|student\.|tip_|offer_|cd_record_|cd_tab_|link_|works_for|here_nowhere)/.test(x), handed = catWords.filter(LATER);
+// keys a LATER phase added are judged by that phase's witness, named here (M2's scope is the P2a move): words.level_*, words.student.* and words.tip_* -> W-HELP-STUDENT (S5, S6); words.offer_* -> W-RED1-POST (P3), words.login_* / role_unknown -> W-RED1-LOGIN (§30), words.cd_record_* / cd_tab_* / link_* -> W-RED1-RECORD (R1, R3, R8), works_for / here_nowhere -> W-RED1-STATUS (S4) (VOCAB_MESSAGE_CATALOG.md §4)
+const LATER = (x) => /^words\.(level_|student\.|tip_|offer_|cd_record_|cd_tab_|link_|works_for|here_nowhere|login_|role_unknown)/.test(x), handed = catWords.filter(LATER);
 const used = MSG.used(), reached = catWords.filter(x => !LATER(x) && used[x]), unreached = catWords.filter(x => !LATER(x) && !used[x]);
 k.L('M2 handed to W-HELP-STUDENT: ' + handed.length + ' keys ' + JSON.stringify(handed));
 k.L('M2 reached ' + reached.length + ' of ' + catWords.length + ' keys; uses=' + JSON.stringify(used));

@@ -29,7 +29,7 @@
       // §29.1: a record is a place: the path is each place above (a record, then a tab of it) and this one: Project/BIM: Hospital/Project Phase
       var seg = function (s) { return s.erp + (s.rec ? '/' + s.rec.label : ''); };
       var where = st.erp ? (st.up || []).filter(function (s) { return s.erp; }).map(seg).concat([seg(st)]).join('/') : (st.building ? st.building + (st.kind ? '/' + st.kind : '') : '');
-      return 'red1' + (st.role ? ' [' + st.role + ']' : '') + (where ? ' ' + where : '') + '> ';
+      return 'red1' + (st.role || st.user ? ' [' + [st.role, st.user ? st.user.name : null].filter(Boolean).join(' ') + ']' : '') + (where ? ' ' + where : '') + '> ';   // §30 L3: the logged-in user beside the role
     }
     function quote(v) { v = String(v); if (v.indexOf('"') >= 0) throw new Error(M('words.quote_in_value', v)); return /[\s=;]/.test(v) || v === '' ? '"' + v + '"' : v; }
     function lineOf(verb, args) {   // the canonical door line: inputs in the vocabulary's order, then the rest (filters) as typed
@@ -103,12 +103,37 @@
       if (miss && live && Menu && choices[miss.type]) return { pick: { input: miss.name, type: miss.type, word: w, verb: verb } };
       return { line: lineOf(verb, args), verb: verb, args: args, confirm: (!!def.confirm || (form.confirm === 'session' && live)) && brk !== 'noconfirm', view: form.summary ? 'summary' : null, draw: form.draw || null, ctx: form.ctx ? { props: st.eprops, key: st.ekey, kind: st.erp } : null };
     }
+    // §30 LOGIN (bim-compiler prompts/CLI_ERP_IVR.md, owner 2026-11-16): a session in a NEW client (AD_Client_ID > 11) whose AD_User rows carry more than one EMail needs a login
+    var LOGIN_OPEN = ['pwd', 'role', 'login', 'level', 'help', 'history', 'report', 'exit', 'quit', 'bim', 'mis', 'erp'];
+    function loginResult(st, p, env, ok, effects, screen, out) {
+      var rows = ok && Array.isArray(env.answer.rows) ? env.answer.rows : [];
+      if (p === 'role-client') { var c = rows[0] ? Number(rows[0].AD_Client_ID) : null;
+        if (c == null || isNaN(c)) { screen.push(M('words.role_unknown', st.role)); return out(); }
+        if (c > 11) effects.push({ line: lineOf('mis.list', { kind: 'AD_User', columns: 'AD_User_ID,Name,EMail', AD_Client_ID: String(c), limit: '1000' }), purpose: 'role-users' });
+        st.roleClient = c; return out(); }
+      if (p === 'role-users') { var n = rows.filter(function (r) { return r.EMail != null && String(r.EMail).trim() !== ''; }).length;
+        if (n > 1) { st.needLogin = { client: st.roleClient, n: n }; if (!st.user) screen.push(M('words.login_needed', st.roleClient, n)); } return out(); }
+      if (p === 'login-find') { var wq = String(st.pendingLogin && st.pendingLogin.who || '').toLowerCase();
+        var hits = rows.filter(function (r) { return [r.AD_User_ID, r.Name, r.Value, r.EMail].some(function (v) { return v != null && String(v).toLowerCase() === wq; }); });
+        var mine = st.roleClient != null ? hits.filter(function (r) { return Number(r.AD_Client_ID) === st.roleClient; }) : [];   // a name repeats across clients (GardenAdmin is 101 in client 11 and 1300101 in 13): the session's client first, as legacy's login picks the client
+        var u = hits.length === 1 ? hits[0] : (mine.length === 1 ? mine[0] : null), asked = st.pendingLogin.who;
+        if (!u) { delete st.pendingLogin; screen.push(hits.length ? M('words.login_which', asked, hits.map(function (r) { return r.AD_User_ID + ' (client ' + r.AD_Client_ID + ')'; }).join(', ')) : M('words.login_no_user', asked)); return out(); }
+        st.pendingLogin = { who: st.pendingLogin.who, id: Number(u.AD_User_ID), name: u.Name };
+        effects.push({ line: lineOf('mis.list', { kind: 'AD_User_Roles', columns: 'AD_Role_ID', AD_User_ID: String(u.AD_User_ID), IsActive: 'Y', limit: '1000' }), purpose: 'login-roles' }); return out(); }
+      // login-roles: legacy offers only the user's roles
+      var pl = st.pendingLogin; delete st.pendingLogin; var roles = rows.map(function (r) { return Number(r.AD_Role_ID); });
+      if (st.role && roles.indexOf(Number(st.role)) < 0) { screen.push(M('words.login_not_role', pl.name, st.role, roles.join(', ') || '-')); return out(); }
+      st.user = { id: pl.id, name: pl.name, roles: roles }; screen.push(M('words.login_ok', pl.name, pl.id));
+      if (!st.role) { if (roles.length === 1) { var one = step(st, { text: 'role ' + roles[0] }); one.screen = screen.concat(one.screen); return one; } if (roles.length) screen.push(M('words.login_roles', pl.name, roles.join(', '))); }
+      return out();
+    }
     function step(st, input) {
       st = JSON.parse(JSON.stringify(st || init()));
       var effects = [], screen = [];
       var out = function () { return { state: st, effects: effects, screen: screen, prompt: prompt(st) }; };
       if (input.result) {
         var p = input.result.purpose, env = input.result.envelope || {}, ok = env.status === 'ok' && env.answer;
+        if (p === 'role-client' || p === 'role-users' || p === 'login-find' || p === 'login-roles') return loginResult(st, p, env, ok, effects, screen, out);   // §30 L1, L3
         if (p === 'choices') {
           var pf = st.pickFor, ch = choices[pf.type], rows = ok && Array.isArray(env.answer.rows) ? env.answer.rows : [];
           var vals = rows.map(function (r) { return Array.isArray(r) ? r[ch.col] : r[Object.keys(r)[ch.col]]; }).filter(function (v) { return v != null && v !== ''; });
@@ -218,6 +243,12 @@
       }
       var toks = tokenize(text); if (!toks.length) return out();
       var w = toks[0].text;
+      if (w === 'login') {   // §30 L3: the legacy login without a password: WHO (the stamps), found by id, Name, Value or EMail
+        var who = toks.slice(1).map(function (t) { return t.text; }).join(' ');
+        if (!who) { screen.push(st.user ? M('words.login_who', st.user.name, st.user.id) : M('words.login_nobody')); if (st.needLogin) screen.push(M('words.login_needed', st.needLogin.client, st.needLogin.n)); return out(); }
+        st.pendingLogin = { who: who }; effects.push({ line: lineOf('mis.list', { kind: 'AD_User', columns: 'AD_User_ID,Name,Value,EMail,AD_Client_ID', limit: '1000' }), purpose: 'login-find' }); return out();
+      }
+      if (st.needLogin && !st.user && LOGIN_OPEN.indexOf(w) < 0 && brk !== 'nogate') { screen.push(M('words.login_first', st.needLogin.client, st.needLogin.n)); return out(); }   // §30 L2 the gate; nogate: W-RED1-LOGIN falsifier (must FAIL G2)
       if (w === 'cd') {
         st.last = null;
         var arg = toks.slice(1).map(function (t) { return t.text; }).join(' ');
@@ -244,7 +275,10 @@
         var k = []; if (st.building) k.push('building=' + quote(st.building)); if (st.kind) k.push('kind=' + quote(st.kind)); if (st.erp) k.push('kind=' + quote(st.erp)); if (st.rec) k.push('id=' + quote(st.rec.id)); if (st.master) k.push('master=' + quote(st.master.kind + '/' + st.master.id)); if (st.role) k.push('role=' + st.role);
         screen.push(k.length ? k.join(' ') : M('words.pwd_nowhere')); return out();
       }
-      if (w === 'role') { var rr = toks[1] ? toks[1].text : ''; if (rr && !/^\d+$/.test(rr)) { screen.push(M('words.role_not_number', rr)); return out(); } st.role = rr || null; screen.push(rr ? M('words.role_set', rr) : M('words.role_none')); return out(); }
+      if (w === 'role') { var rr = toks[1] ? toks[1].text : ''; if (rr && !/^\d+$/.test(rr)) { screen.push(M('words.role_not_number', rr)); return out(); } st.role = rr || null; screen.push(rr ? M('words.role_set', rr) : M('words.role_none'));
+        delete st.needLogin; if (st.user && rr && st.user.roles && st.user.roles.indexOf(Number(rr)) < 0) { screen.push(M('words.login_role_left', st.user.name, rr)); delete st.user; }
+        if (rr) effects.push({ line: lineOf('mis.list', { kind: 'AD_Role', columns: 'AD_Client_ID', AD_Role_ID: rr }), purpose: 'role-client' });   // §30 L1: the role's client, then its users with an email
+        return out(); }
       if (w === 'level') { var lv = toks[1] ? toks[1].text.toLowerCase() : 'short'; if (LEVELS.indexOf(lv) < 0) { screen.push(M('words.level_bad', toks[1].text, LEVELS.join(', '))); return out(); }
         if (lv === 'short') delete st.level; else st.level = lv; screen.push(lv === 'short' ? M('words.level_short') : M('words.level_student')); return out(); }   // §4 P3a: a person's setting beside the language
       var x; try { x = expand(st, toks); } catch (err) { x = { error: err.message }; }
@@ -330,7 +364,8 @@
       return null;
     }
     function wordList() { return Object.keys(words).map(function (w) { return { word: w, help: words[w].help, forms: words[w].forms }; }); }
-    return { init: init, step: step, prompt: prompt, expand: expand, lineOf: lineOf, wordList: wordList, helpText: helpText, groupOf: groupOf, menuOpen: function (st) { return !!(st && st.menu); } };
+    return { init: init, step: step, prompt: prompt, expand: expand, lineOf: lineOf, wordList: wordList, helpText: helpText, groupOf: groupOf, menuOpen: function (st) { return !!(st && st.menu); },
+      loginGate: function (st) { return st && st.needLogin && !st.user && brk !== 'nogate' ? M('words.login_first', st.needLogin.client, st.needLogin.n) : null; } };   // §30 L2 for a door line typed at the prompt (it does not pass step)
   }
   var API = { create: create };
   if (typeof module !== 'undefined' && module.exports) module.exports = API; else root.WordsCore = API;

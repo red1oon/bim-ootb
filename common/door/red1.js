@@ -55,13 +55,13 @@ function welcome() {
 function msgCore() { return require(path.join(__dirname, 'msg_core.js')).create(JSON.parse(fs.readFileSync(path.join(__dirname, 'vocab', 'messages.json'), 'utf8'))); }
 function wordsCore() {   // the expander alone, enough to print help (no door, no shell)
   const D = require(DOOR), vocab = D.loadVocab(), words = JSON.parse(fs.readFileSync(path.join(__dirname, 'vocab', 'words.json'), 'utf8'));
-  return { vocab, core: require(path.join(__dirname, 'words_core.js')).create({ vocab, words, msg: msgCore(), tokenize: D.tokenize, pickColumns: require(path.join(__dirname, 'mis_core.js')).pickColumns, buildings: [], brk: process.env.WORDS_BREAK || '' }) };
+  return { vocab, core: require(path.join(__dirname, 'words_core.js')).create({ vocab, words, msg: msgCore(), tokenize: D.tokenize, pickColumns: require(path.join(__dirname, 'mis_core.js')).pickColumns, buildings: [], brk: (process.env.LOGIN_BREAK === 'nogate' ? 'nogate' : process.env.WORDS_BREAK) || '' }) };
 }
 
 function makeShell(o) {
   const D = require(DOOR), R = require(path.join(__dirname, 'render.js')), W = require(path.join(__dirname, 'words_core.js')), M = require(path.join(__dirname, 'mis_core.js'));
   const door = D.createDoor({ journal: o.journal }), vocab = D.loadVocab(), words = JSON.parse(fs.readFileSync(path.join(__dirname, 'vocab', 'words.json'), 'utf8'));
-  const core = W.create({ vocab, words, msg: msgCore(), tokenize: D.tokenize, pickColumns: M.pickColumns, menuCore: require(path.join(__dirname, 'menu_core.js')), interactive: !!o.interactive, buildings: buildingNames(), brk: process.env.WORDS_BREAK || '' });
+  const core = W.create({ vocab, words, msg: msgCore(), tokenize: D.tokenize, pickColumns: M.pickColumns, menuCore: require(path.join(__dirname, 'menu_core.js')), interactive: !!o.interactive, buildings: buildingNames(), brk: (process.env.LOGIN_BREAK === 'nogate' ? 'nogate' : process.env.WORDS_BREAK) || '' });
   let st = core.init(), n = 0; const held = new Map(), G = require(path.join(__dirname, 'glob.js'));
   // §22.8 / R7 the warm page: while the session is in a building, ONE headless Viewer page of it stays open (viewer_verbs.js __serve); the verbs find it through
   // $VIEWER_SESSION and ask it instead of opening a page per line. RED1_WARM=off: no warm page (every line opens its own, as a line run alone does).
@@ -94,6 +94,8 @@ function makeShell(o) {
       // §22.6 the held answer: a READ line the session already ran is served from its answer (said so), never re-run; any line that is not a read forgets them all
       const key = BREAK() === 'stale' && held.size ? held.keys().next().value : line;   // W-RED1-LS falsifier: serve the answer of another line (must FAIL L1)
       if (held.has(key)) { io.print('(answer of the line above, not re-run)'); say('held line=' + JSON.stringify(line)); return Object.assign({}, held.get(key), { held: true }); }
+      // §30 L4: the logged-in user is the stamp of every engine this line starts (door.js passes its environment on); red1 alone sets it, nothing without a login
+      if (st.user && process.env.LOGIN_BREAK !== 'nostamp') process.env.BIM_DOOR_USER = String(st.user.id); else delete process.env.BIM_DOOR_USER;   // nostamp: W-RED1-LOGIN falsifier (must FAIL G3)
       const e = await door.runLine(line, { actor: o.actor, request: o.request ? o.request + '.' + (++n) : undefined });
       const ent = e && vocab.byVerb.get(e.verb);
       if (e && e.status === 'ok' && ent && ent.harm === 'read') held.set(line, e); else if (e && !(ent && ent.harm === 'read')) held.clear();
@@ -104,6 +106,7 @@ function makeShell(o) {
     // §29.3 (D16): an answer that carries the engine's next step {key, line}: a session asks it (the pure core holds the question and the y/N), a one-shot or AI run asks nothing (the line is in the envelope's `next`)
     const offerOf = (v) => { if (!v || !v.offer || BREAK() === 'nooffer') return; const o2 = core.step(st, { result: { purpose: 'offer', envelope: v } }); st = o2.state; o2.screen.forEach(io.print); };
     const asKey = typeof text === 'object';
+    if (!asKey && !core.menuOpen(st) && isDoorLine(text) && core.loginGate(st)) { io.print(core.loginGate(st)); say('login gate line=' + JSON.stringify(text)); return envs; }   // §30 L2
     if (!asKey && !core.menuOpen(st) && isDoorLine(text)) {   // a door line, maybe with the shell's row filter after a bar: `app.verb k=v | *Pipe*` (§22.7)
       const pm = /^(.*?\S)\s+\|\s+(\S+)\s*$/.exec(text.trim()), line = pm ? pm[1] : text.trim(), match = pm ? pm[2] : null;
       const e = await exec(line, null, match); if (e) { const v = viewOf(e, match); envs.push(v); await io.show(v); offerOf(v); } return envs; }
@@ -125,7 +128,7 @@ async function session(o) {
   let sh; try { sh = makeShell(Object.assign({}, o, { interactive: true })); } catch (e) { say('FAIL ' + e.message); return 1; }
   const { R, vocab } = sh, Dr = require(path.join(__dirname, 'draw_core.js')), tty = !!process.stdin.isTTY, histFile = process.env.RED1_HISTORY || path.join(os.homedir(), '.red1_history');
   let history = []; if (tty) { try { history = fs.readFileSync(histFile, 'utf8').split('\n').filter(Boolean).reverse().slice(0, 1000); } catch (e) { /* first run */ } }
-  const names = vocab.verbs.map(v => v.verb).concat(sh.core.wordList().map(w => w.word), ['help', 'bim', 'mis', 'erp', 'report', 'exit', 'quit', 'history', 'menu', 'cd', 'pwd', 'role']);
+  const names = vocab.verbs.map(v => v.verb).concat(sh.core.wordList().map(w => w.word), ['help', 'bim', 'mis', 'erp', 'report', 'exit', 'quit', 'history', 'menu', 'cd', 'pwd', 'role', 'login']);
   // §1d.1 THE TYPE ASSIST: assist_core proposes what may come next at the end of the line; shown grey after the cursor (it extends what was typed) or as a dim hint
   // `▸ Name` (another spelling: case, -, a typo). Tab takes it (→ takes a grey one). Enter NEVER applies it: the line runs as typed. Not on a pipe, not in a menu.
   // film finding 4: a LOCAL folder can hold a private building; the assist offers only buildings this person has already opened (`cd <name>` in their history)
