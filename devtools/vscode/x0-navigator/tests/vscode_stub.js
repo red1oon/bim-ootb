@@ -13,7 +13,7 @@ function install(ROOT) {
     languages: {
       registerDefinitionProvider(sel, p) { reg.definition.push({ sel, p }); return { dispose() {} }; },
       registerHoverProvider(sel, p) { reg.hover.push({ sel, p }); return { dispose() {} }; },
-      createDiagnosticCollection(name) { reg.diag = { name, m: new Map(), set(u, d) { this.m.set(u.fsPath, d); }, delete(u) { this.m.delete(u.fsPath); }, dispose() {} }; return reg.diag; },
+      createDiagnosticCollection(name) { reg.diags = reg.diags || {}; reg.diag = reg.diags[name] = { name, m: new Map(), set(u, d) { this.m.set(u.fsPath, d); }, delete(u) { this.m.delete(u.fsPath); }, dispose() {} }; return reg.diag; },
       registerCodeActionsProvider(sel, p, meta) { reg.actions = (reg.actions || []).concat([{ sel, p, meta }]); return { dispose() {} }; },
       registerReferenceProvider(sel, p) { reg.refs = (reg.refs || []).concat([{ sel, p }]); return { dispose() {} }; },
       registerCodeLensProvider(sel, p) { reg.lens = (reg.lens || []).concat([{ sel, p }]); return { dispose() {} }; }
