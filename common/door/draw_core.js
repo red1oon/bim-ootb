@@ -45,6 +45,30 @@
     codes.forEach(function (c, i) { var v = verbOf[c]; out.push((i === codes.length - 1 ? E : T) + ' ' + c + (v ? '  → do ' + v + ' ' + no : '  (no red1 word for it yet)')); });
     return out;
   }
-  var API = { table: table, cell: cell, funnel: funnel, nextTree: nextTree };
+  // THE RECORD, READABLE (§29.1, D15; the film found `cat` printing raw JSON): the answer of mis.read + the kind's own properties (mis.describe, handed in as ctx.props: name,
+  // label, type, seq, displayed). The identifier first, then the BOTTOM-LINE columns (the window's amount columns, in the window's field order: for Project PlannedAmt,
+  // PlannedMarginAmt, CommittedAmt, InvoicedAmt, ProjectBalanceAmt; for an Order TotalLines, GrandTotal), then every other shown column that holds a value as a two-column table.
+  // Nothing is computed: each value is the record's own cell. A column the window does not show (ids, audit columns) is left out; the count of empty ones is said.
+  function record(a, ctx, o) {
+    o = o || {}; var R = a && a.record; if (!R || !ctx || !Array.isArray(ctx.props)) return null;
+    var key = String(ctx.key || '').toLowerCase(), idv = R[key], lab = R.documentno != null ? R.documentno : (R.name != null ? R.name : (R.value != null ? R.value : idv));
+    var shown = ctx.props.filter(function (p) { return p.displayed !== false && p.name.toLowerCase() !== key; }).sort(function (x, y) { return (x.seq == null ? 1e9 : x.seq) - (y.seq == null ? 1e9 : y.seq); });
+    var val = function (p) { return R[p.name.toLowerCase()]; }, none = function (v) { return v == null || v === ''; };
+    var money = shown.filter(function (p) { return p.type === 'amount'; }), rest = shown.filter(function (p) { return p.type !== 'amount' && !none(val(p)); });
+    if (o.brk === 'json') return JSON.stringify(a.record, null, 1).split('\n');   // W-RED1-RECORD falsifier: the raw JSON back (must FAIL R6)
+    var out = [(ctx.kind || a.kind || '') + ' ' + lab + '  (' + (ctx.key || 'id') + ' ' + idv + ')', ''];
+    if (money.length) { table(['bottom line', 'value'], money.map(function (p) { return [p.name, none(val(p)) ? '(none)' : val(p)]; })).forEach(function (l) { out.push(l); }); out.push(''); }
+    table(['column', 'value'], rest.map(function (p) { return [p.name, val(p)]; })).forEach(function (l) { out.push(l); });
+    var empty = shown.length - money.length - rest.length; if (empty) out.push('(' + empty + ' more columns are empty)');
+    return out;
+  }
+  // THE TABS OF A RECORD (§29.1): the kind's child tabs (mis.describe childTabs, handed in) with the number of rows each holds under this record (mis.read children)
+  function tabs(a, ctx) {
+    if (!a || !Array.isArray(a.children) || !ctx || !Array.isArray(ctx.tabs)) return null;
+    var n = {}; a.children.forEach(function (c) { n[c.kind] = Array.isArray(c.rows) ? c.rows.length : null; });
+    var rows = ctx.tabs.map(function (t) { return [t.tab, n[t.kind] == null ? '-' : n[t.kind], t.link || '']; });
+    return [(ctx.kind || '') + ' ' + (ctx.label || '') + ': ' + rows.length + ' tabs, cd <tab> opens one'].concat(rows.length ? table(['tab', 'records', 'link'], rows) : []);
+  }
+  var API = { table: table, cell: cell, funnel: funnel, nextTree: nextTree, record: record, tabs: tabs };
   if (typeof module !== 'undefined' && module.exports) module.exports = API; else root.DrawCore = API;
 })(this);

@@ -223,6 +223,24 @@
   "words.offer_open_project": {
    "en": "Open the project? y/N → {0}"
   },
+  "words.cd_record_ok": {
+   "en": "{0} {1}: {2} tabs ({3}); ls shows them, cd <tab> opens one, cat reads the record"
+  },
+  "words.cd_record_none": {
+   "en": "cd: no {0} \"{1}\": {2}"
+  },
+  "words.cd_tab_ok": {
+   "en": "{0} of {1} {2} (filtered by {3}); ls shows {4}"
+  },
+  "words.cd_tab_fail": {
+   "en": "cd: the tab \"{0}\" did not open: {1}"
+  },
+  "words.link_fail": {
+   "en": "cd: the {0} of {1} could not be read: {2}"
+  },
+  "words.link_none": {
+   "en": "cd: there is no {0} for {1} yet; {2} puts it there"
+  },
   "door.division_by_zero": {
    "en": "division by zero"
   },
