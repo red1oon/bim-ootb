@@ -253,6 +253,9 @@
   "words.offer_approve_vo": {
    "en": "Approve the Variation Order? y/N → {0}"
   },
+  "words.offer_see_status": {
+   "en": "See the earned value now? y/N → {0}"
+  },
   "door.division_by_zero": {
    "en": "division by zero"
   },

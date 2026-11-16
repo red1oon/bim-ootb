@@ -1059,7 +1059,19 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
 <script src="wizard_storeys.js?v=1" onerror="console.warn('§LOAD_FAIL wizard_storeys.js')"></script>
 <script src="wizard_classify.js?v=1" onerror="console.warn('§LOAD_FAIL wizard_classify.js')"></script>
 <script src="precision_cam.js?v=8" onerror="console.warn('§LOAD_FAIL precision_cam.js')"></script>
-<script src="schedule_gate.js?v=4" onerror="console.warn('§LOAD_FAIL schedule_gate.js')"></script>
+<script>/* A-6 (bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md Part A, A2-TIMING-2): the viewer's EDGE installs the one clock + id + timer source ONCE as
+   window.CoreEdge (the same holder erp/ad_callout.js Env.setEdge fills); core files (schedule_gate.js, cpm_schedule.js) read it and never call Date / performance
+   themselves. uuid: crypto.randomUUID in a secure context, else an RFC 4122 v4 id from getRandomValues. Never replaces an edge already installed. */
+(function () {
+  if (window.CoreEdge) return;
+  var C = window.crypto;
+  function v4() { var b = C.getRandomValues(new Uint8Array(16)); b[6] = (b[6] & 15) | 64; b[8] = (b[8] & 63) | 128; var h = Array.prototype.map.call(b, function (x) { return (x + 256).toString(16).slice(1); }).join('');
+    return h.slice(0, 8) + '-' + h.slice(8, 12) + '-' + h.slice(12, 16) + '-' + h.slice(16, 20) + '-' + h.slice(20); }
+  window.CoreEdge = { nowMs: function () { return Date.now(); }, uuid: function () { return C.randomUUID ? C.randomUUID() : v4(); }, perfMs: function () { return performance.now(); } };
+  console.log('§CORE_EDGE set by=viewer.html nowMs=Y uuid=Y perfMs=Y');
+})();
+</script>
+<script src="schedule_gate.js?v=5" onerror="console.warn('§LOAD_FAIL schedule_gate.js')"></script>
 <!-- §S50 cell-grain schedule (4D_GANTT_TM_REFACTOR.md §S50): location axis before the engine that
      gates on it. room_walker load here is idempotent with navigate_find's lazy loader (it checks
      window.RoomWalker first). If any of the three fail, cpm_schedule logs §CELL_GATE unavailable
@@ -1067,7 +1079,7 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
 <script src="lib/room_walker.js?v=3" onerror="console.warn('§LOAD_FAIL lib/room_walker.js — compiled rooms unavailable, schedule falls back to graph engine')"></script>
 <script src="lib/level_deriver.js?v=2" onerror="console.warn('§LOAD_FAIL lib/level_deriver.js — level axis unavailable, schedule falls back to graph engine')"></script>
 <script src="location_axis.js?v=1" onerror="console.warn('§LOAD_FAIL location_axis.js — cell gate unavailable, schedule falls back to graph engine')"></script>
-<script src="cpm_schedule.js?v=3" onerror="console.warn('§LOAD_FAIL cpm_schedule.js')"></script>
+<script src="cpm_schedule.js?v=4" onerror="console.warn('§LOAD_FAIL cpm_schedule.js')"></script>
 <!-- §S53 (F3, 4D_GANTT_TM_REFACTOR.md): the Gantt bar MODEL, extracted out of time_machine.js.
      Must load BEFORE time_machine.js — its computeDays/buildGanttTasks wrappers call it. -->
 <script src="gantt_model.js?v=1" onerror="console.warn('§LOAD_FAIL gantt_model.js — Gantt bars and timeline bounds unavailable')"></script>

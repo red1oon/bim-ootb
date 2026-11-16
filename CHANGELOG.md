@@ -4,6 +4,31 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.91.0](https://github.com/red1oon/bim-ootb/compare/v1.90.0...v1.91.0) (2026-11-16)
+
+
+### ✨ Features
+
+* **devtools:** provenance hover - six layers behind a BIM body (F.23) ([#3064](https://github.com/red1oon/bim-ootb/issues/3064)) ([ab1e6e9](https://github.com/red1oon/bim-ootb/commit/ab1e6e9e5d9e1061f543932460e071ab0b4f5e79)), closes [#3063](https://github.com/red1oon/bim-ootb/issues/3063)
+* **devtools:** the installed X0 Navigator knows when it is stale (W-X0-STAMP) ([#3092](https://github.com/red1oon/bim-ootb/issues/3092)) ([186d80a](https://github.com/red1oon/bim-ootb/commit/186d80ae1c0803e997dca8f2de10ac84f5620dee)), closes [#3091](https://github.com/red1oon/bim-ootb/issues/3091)
+* **devtools:** X0 'Deploy main now' - publish main to Pages with this machine's gh login (W-X0-DEPLOY) ([#3106](https://github.com/red1oon/bim-ootb/issues/3106)) ([c41cdd7](https://github.com/red1oon/bim-ootb/commit/c41cdd788e5a26d0dd9ca12f6bc81ad43e239729)), closes [#3105](https://github.com/red1oon/bim-ootb/issues/3105)
+* **devtools:** X0 'New witness for this file' - facts pre-filled, FAILs until filled (W-X0-NEWWIT) ([#3100](https://github.com/red1oon/bim-ootb/issues/3100)) ([9d4f81d](https://github.com/red1oon/bim-ootb/commit/9d4f81d6217654fa4821f46b1a1fea45e3925cba))
+* **devtools:** X0 hover, F12 and warnings for message keys and door verbs (F-19, W-X0-CATALOG) ([#3103](https://github.com/red1oon/bim-ootb/issues/3103)) ([f541cde](https://github.com/red1oon/bim-ootb/commit/f541cde7cb60acabdce24ee86c9a9c3551b09892)), closes [#3101](https://github.com/red1oon/bim-ootb/issues/3101)
+
+
+### 🐛 Fixes
+
+* a form that needs one window says so as data (form.for) - W-RED1-WORDS R1, W-HELP-STUDENT S4, W-RED1-HELP H3 ([#3119](https://github.com/red1oon/bim-ootb/issues/3119)) ([752b51d](https://github.com/red1oon/bim-ootb/commit/752b51dcf27c62843169ee0718afd10760c6796e))
+* **devtools:** keep the layered BIM hover tooltip inside the window; W-DXF-HOVER at its real viewport ([#3069](https://github.com/red1oon/bim-ootb/issues/3069)) ([5e01bc3](https://github.com/red1oon/bim-ootb/commit/5e01bc3d91437e61a2c250802f791963d38611aa)), closes [#3068](https://github.com/red1oon/bim-ootb/issues/3068)
+* **devtools:** the § tag grammar reads hyphen-joined and §4D_-style tags whole ([#3099](https://github.com/red1oon/bim-ootb/issues/3099)) ([2c6e65d](https://github.com/red1oon/bim-ootb/commit/2c6e65d4e2825c78548ed2934006c950ff326f33)), closes [#3098](https://github.com/red1oon/bim-ootb/issues/3098)
+* **scripts:** the bump parity gate judges the tree it bumps, not ~/bim-ootb (scope-blind before) ([#3112](https://github.com/red1oon/bim-ootb/issues/3112)) ([8cd2645](https://github.com/red1oon/bim-ootb/commit/8cd2645e9f1f9977ba6cb4554656584e1b4e0393)), closes [#3111](https://github.com/red1oon/bim-ootb/issues/3111)
+
+
+### ♻️ Refactors
+
+* **erp:** sessionContext and model_pa storeDue time their § line through Env.elapsed (A-4, W-CORE-TIMING) ([#3110](https://github.com/red1oon/bim-ootb/issues/3110)) ([e77fec1](https://github.com/red1oon/bim-ootb/commit/e77fec1695821c3393bd587421283d6c0b15cd5c)), closes [#3109](https://github.com/red1oon/bim-ootb/issues/3109)
+* **viewer:** the 4D pair times its § lines through one shared edge, CoreEdge (A-6, W-CORE-TIMING) ([#3122](https://github.com/red1oon/bim-ootb/issues/3122)) ([80397d6](https://github.com/red1oon/bim-ootb/commit/80397d69a06c57037c3e68856cff05559f18deb8)), closes [#3121](https://github.com/red1oon/bim-ootb/issues/3121)
+
 ## [1.90.0](https://github.com/red1oon/bim-ootb/compare/v1.89.0...v1.90.0) (2026-11-15)
 
 

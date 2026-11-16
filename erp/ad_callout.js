@@ -110,7 +110,8 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
     if (v instanceof BD) return v.toString();
     return String(v);
   }
-  var _edge = null;                                       // A-5: the one edge the shell installs (Env.setEdge)
+  // A-5/A-6: the one edge the shell installs lives in global.CoreEdge (A-6, 2026-11-16: one holder for the ERP, the viewer and common/ code; the viewer's shell sets it directly).
+  function _edge() { return global.CoreEdge || null; }
   var Env = {
     ZERO: BD.ZERO, ONE: BD.ONE, ONEHUNDRED: BD.of(100),
     AD_CLIENT_ID: '#AD_Client_ID', AD_ORG_ID: '#AD_Org_ID', AD_USER_ID: '#AD_User_ID', AD_ROLE_ID: '#AD_Role_ID',
@@ -138,17 +139,17 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
     //   (erp/idempiere.html, right after this file loads); core asks Env.edge(). No edge installed = §ENV_NO_DATE + throw (A-3: core never reaches a wall clock or the RNG itself). Witness: W-RULE-FOLD-EDGE.
     setEdge: function (edge) {
       if (!edge || typeof edge.nowMs !== 'function' || typeof edge.uuid !== 'function') throw new Error('Env.setEdge: the edge needs nowMs() and uuid() functions (A-5)');
-      var replaced = _edge != null; _edge = edge;
+      var replaced = _edge() != null; global.CoreEdge = edge;
       RUNTIME.log('§ENV_EDGE set nowMs=Y uuid=Y perfMs=' + (typeof edge.perfMs === 'function' ? 'Y' : 'N') + ' replaced=' + (replaced ? 'Y' : 'N'));
       return edge;
     },
     //   perfMs() / elapsed(t0): A-4 (2026-11-14), the ONE timing seam for a core pass that only feeds a § line (A2-TIMING-1, bim-ootb #3109). The installed edge's
     //   perfMs, or null when no edge (or no perfMs) is installed; never a wall clock and never a throw: a missing timer only means the line cannot say how long it took.
-    perfMs: function () { return _edge && typeof _edge.perfMs === 'function' ? _edge.perfMs() : null; },
+    perfMs: function () { var e = _edge(); return e && typeof e.perfMs === 'function' ? e.perfMs() : null; },
     elapsed: function (t0) { var n = Env.perfMs(); return n == null || t0 == null ? null : n - t0; },
     msText: function (t0) { var d = Env.elapsed(t0); return d == null ? '?' : String(Math.round(d)); },
     edge: function () {
-      if (_edge) return _edge;
+      var e = _edge(); if (e) return e;
       RUNTIME.log('§ENV_NO_DATE no edge installed (Env.setEdge was never called by the page; core never reads a wall clock)'); throw new Error('Env.edge: no edge installed (A-5)');
     },
     //   modelEnv(ctx, edge): the transaction env {client, org, user, role, date, now, nowMillis, uuid, perfMs, elapsed}. date = ctx '#Date' (legacy's session date) when set, else the edge's local day;
