@@ -254,34 +254,49 @@ function selectionOf(a, SQL) {
   const sel = bdb.exec('SELECT m.guid FROM elements_meta m' + (where.length ? ' WHERE ' + where.join(' AND ') : ''), params);
   return { c, bdb, env, PS, rt, guids: sel.length ? sel[0].values.map(r => r[0]) : [] };
 }
+// §29.6 CENTS (bim-compiler prompts/CLI_ERP_IVR.md, owner 2026-11-16 "Cents"): the post's currency (the rate pack's symbol; bim_order_host reads it from here) and its precision,
+//   C_Currency.StdPrecision found as the fold finds the currency (ISO_Code, else CurSymbol: 'RM' -> MYR), read once from the seed. Not found -> null: cost then shows every digit.
+const ORDER_CURRENCY = 'RM';
+let _prec = null;
+function currencyPrecision(SQL, code) {
+  if (_prec && _prec.code === code) return _prec;
+  let r = { code, iso: null, precision: null };
+  try { const db = new SQL.Database(fs.readFileSync(path.join(ROOT, 'erp', 'ad_seed.db'))); const q = db.exec('SELECT ISO_Code, StdPrecision FROM C_Currency WHERE ISO_Code=? OR CurSymbol=? ORDER BY (ISO_Code=?) DESC, C_Currency_ID LIMIT 1', [code, code, code]); db.close();
+    if (q.length) r = { code, iso: q[0].values[0][0], precision: q[0].values[0][1] == null ? null : Number(q[0].values[0][1]) }; } catch (e) { r.why = e.message; }
+  _prec = r; return r;
+}
+// cost(a): the selection priced on the ORDER's basis (§29.6 CENTS K2): split per 4D task as the post does (ProjFold.scheduleFromRun + pricedPerTask), each row's share of its order line
+//   (ProjFold.lineAmounts: rate × round3(Σ qty) per (line key, task), exact), a group = Σ its rows' shares. totalExact == the posted PlannedAmt; total / cost are shown at the currency's precision.
 async function cost(a) {
   const BY = ['phase', 'task', 'storey', 'discipline', 'class'], by = a.by || 'phase';
   if (BY.indexOf(by) < 0) throw bad('by must be one of: ' + BY.join(', '));
-  const S = selectionOf(a, await getSQL()); if (S.inconclusive) return { verb: 'cost', building: a.building, verdict: 'INCONCLUSIVE', summary: S.inconclusive, groups: [], rows: [] };
-  const { c, bdb, env, PS, guids } = S;
-  const g2t = {}; (c.run.tasks || []).forEach(t => (t.guids || []).forEach(g => { g2t[g] = t; }));
-  const keyOf = { phase: (g) => (g2t[g] ? g2t[g].phase : '(not in the 4D run)'), task: (g) => (g2t[g] ? g2t[g].phase + ' — ' + g2t[g].storey : '(not in the 4D run)') };
-  const groups = [], all = { elements: 0, cost: 0, rows: [] };
-  if (by === 'phase' || by === 'task') {
-    const order = []; const bucket = {}; guids.forEach(g => { const k = keyOf[by](g); if (!bucket[k]) { bucket[k] = []; order.push(k); } bucket[k].push(g); });
-    const seq = {}; (c.run.tasks || []).forEach(t => { const k = by === 'phase' ? t.phase : t.phase + ' — ' + t.storey; if (seq[k] == null || t.sDays < seq[k]) seq[k] = t.sDays; });   // programme order: the earliest start of the phase / task
-    order.sort((x, y) => (seq[x] == null ? 1e9 : seq[x]) - (seq[y] == null ? 1e9 : seq[y]));
-    order.forEach(k => { const p = PS.pricedRowsFor(bdb, bucket[k], env, null); const sum = p.rows.reduce((s, r) => s + r.cost, 0);
-      groups.push({ key: k, elements: p.elements, cost: sum }); all.elements += p.elements; all.cost += sum; all.rows = all.rows.concat(p.rows.map(r => Object.assign({ [by]: k }, r))); });
-  } else {
-    const p = PS.pricedRowsFor(bdb, guids, env, null), f = { storey: 'storey', discipline: 'disc', class: 'cls' }[by], acc = {}, order = [];
-    p.rows.forEach(r => { const k = r[f]; if (!acc[k]) { acc[k] = { key: k, elements: 0, cost: 0 }; order.push(k); } acc[k].elements += r.count; acc[k].cost += r.cost; });
-    order.sort((x, y) => acc[y].cost - acc[x].cost).forEach(k => groups.push(acc[k])); all.elements = p.elements; all.cost = p.rows.reduce((s, r) => s + r.cost, 0); all.rows = p.rows;
-  }
+  const SQL = await getSQL(), S = selectionOf(a, SQL); if (S.inconclusive) return { verb: 'cost', building: a.building, verdict: 'INCONCLUSIVE', summary: S.inconclusive, groups: [], rows: [] };
+  const { c, bdb, env, PS, guids } = S, V = path.join(ROOT, 'viewer');
+  const BD = require(path.join(ROOT, 'erp', 'bigdecimal.js')), CACHE = require(path.join(ROOT, 'scripts', 'cache_4d_run.js'));
+  // proj_fold loads schedule_author, whose load line goes to stdout: the door reads this process's stdout as the answer, so the fold's own § lines are kept off it here
+  const _log = console.log; let PF, sched; console.log = () => {}; try { PF = require(path.join(V, 'proj_fold.js')); sched = PF.scheduleFromRun(c.run, require(path.join(V, 'rates', '4D_template.json')), CACHE.PROJECT_START); } finally { console.log = _log; }
+  const price = (g) => PS.pricedRowsFor(bdb, g, env, null), priced = sched ? PF.pricedPerTask(guids, sched, price) : price(guids);
+  if (process.env.COST_BREAK === 'introws') priced.rows.forEach(r => { r.qty = r.rate ? Math.round(r.rate * r.qty) / r.rate : r.qty; });   // W-RED1-COST falsifier: back to whole units per row (must FAIL C2)
+  const LA = PF.lineAmounts(priced.rows), cur = currencyPrecision(SQL, ORDER_CURRENCY), P = cur.precision;
+  const shown = (d) => (P == null ? d.toString() : d.setScale(P, BD.RoundingMode.HALF_UP).toString()), num = (d) => Number(shown(d));
+  const tById = {}; ((sched && sched.tasks) || []).forEach(t => { tById[t.id] = t; });
+  const OUT = '(not in the 4D run)', keyOf = { phase: (r) => (tById[r.taskId] ? tById[r.taskId].phase : OUT), task: (r) => (tById[r.taskId] ? tById[r.taskId].phase + ' — ' + tById[r.taskId].storey : OUT), storey: (r) => r.storey, discipline: (r) => r.disc, class: (r) => r.cls }[by];
+  const acc = {}, order = [], rows = [];
+  priced.rows.forEach(r => { const k = keyOf(r), sh = LA.share(r); if (!acc[k]) { acc[k] = { key: k, elements: 0, exact: BD.ZERO, start: null }; order.push(k); }
+    acc[k].elements += r.count; acc[k].exact = acc[k].exact.add(sh); const t = tById[r.taskId]; if (t && (acc[k].start == null || t.sDays < acc[k].start)) acc[k].start = t.sDays;
+    const row = Object.assign({}, r, { cost: num(sh) }); delete row.taskId; if (by === 'phase' || by === 'task') row[by] = k; rows.push(row); });
+  if (by === 'phase' || by === 'task') order.sort((x, y) => (acc[x].start == null ? 1e9 : acc[x].start) - (acc[y].start == null ? 1e9 : acc[y].start));   // programme order: the earliest start
+  else order.sort((x, y) => acc[y].exact.compareTo(acc[x].exact));
+  const groups = order.map(k => ({ key: k, elements: acc[k].elements, cost: num(acc[k].exact), costExact: acc[k].exact.toString() }));
   if (process.env.COST_BREAK === 'dropgroup' && groups.length > 1) groups.pop();   // W-RED1-COST falsifier: one group lost (must FAIL C1)
-  const unpriced = all.rows.filter(r => !r.rate).reduce((s, r) => s + r.count, 0), nosize = guids.length - all.elements;   // no size = no element_transforms bbox: cannot be measured
-  say('§COST building=' + a.building + ' by=' + by + ' selection=' + JSON.stringify(a.where || []) + ' selected=' + guids.length + ' priced=' + all.elements + ' unpriced=' + unpriced + ' nosize=' + nosize + ' total=' + all.cost + ' groups=' + groups.length + ' run=' + c.status);
+  const unpriced = rows.filter(r => !r.rate).reduce((s, r) => s + r.count, 0), nosize = guids.length - priced.elements, totalExact = LA.total.toString(), total = num(LA.total);
+  say('§COST building=' + a.building + ' by=' + by + ' selection=' + JSON.stringify(a.where || []) + ' selected=' + guids.length + ' priced=' + priced.elements + ' unpriced=' + unpriced + ' nosize=' + nosize + ' total=' + shown(LA.total) + ' totalExact=' + totalExact + ' lines=' + LA.lines.length + ' currency=' + (cur.iso || cur.code) + ' precision=' + P + ' groups=' + groups.length + ' run=' + c.status);
   const verdict = guids.length ? 'OK' : 'INCONCLUSIVE';
-  return { verb: 'cost', building: a.building, by, selection: a.where || [], verdict, selected: guids.length, elements: all.elements, unpriced, nosize, total: all.cost, pack: 'rates.js (the Find panel default)',
-    summary: verdict === 'OK' ? all.elements + ' elements · ' + all.cost + ' total' + (unpriced ? ' (' + unpriced + ' with no rate)' : '') + (nosize ? '; ' + nosize + ' with no size, not priced' : '') : 'the selection matched no element', groups, rows: all.rows, cache: c.status };
+  return { verb: 'cost', building: a.building, by, selection: a.where || [], verdict, selected: guids.length, elements: priced.elements, unpriced, nosize, total, totalExact, currency: cur.iso || cur.code, precision: P, lines: LA.lines.length, pack: 'rates.js (the Find panel default)',
+    summary: verdict === 'OK' ? priced.elements + ' elements · ' + shown(LA.total) + ' total' + (unpriced ? ' (' + unpriced + ' with no rate)' : '') + (nosize ? '; ' + nosize + ' with no size, not priced' : '') : 'the selection matched no element', groups, rows, cache: c.status };
 }
 
-module.exports = { scheduleAt, scheduleCompare, cost, stateAt, stateOf, cachedRun, selectionOf, getSQL };
+module.exports = { scheduleAt, scheduleCompare, cost, stateAt, stateOf, cachedRun, selectionOf, getSQL, ORDER_CURRENCY };
 
 if (require.main === module) {
   const argv = process.argv.slice(2), verb = argv[0], arg = (k) => { const i = argv.indexOf('--' + k); return i >= 0 ? argv[i + 1] : undefined; };

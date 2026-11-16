@@ -40,7 +40,7 @@ function install(O, now) {
         const key = PS.projectKey(a.building, S.bdb);
         const classes = Array.from(new Set(priced.rows.map((r) => r.cls)));
         say('inputs building=' + a.building + ' key=' + key + ' selection=' + JSON.stringify(selectionWords(a.selection)) + ' selected=' + S.guids.length + ' priced=' + priced.elements + ' rows=' + priced.rows.length + ' schedule=' + (sched ? sched.tasks.length + ' tasks from ' + sched.source : 'none') + ' run=' + S.c.status + ' ms=' + (Date.now() - t0));
-        return { key, rows: priced.rows, classes, env, now: process.env.BIM_ORDER_NOW || now(), cur: 'RM', selected: S.guids.length, elements: priced.elements, scheduleSource: sched ? sched.source : null };
+        return { key, rows: priced.rows, classes, env, now: process.env.BIM_ORDER_NOW || now(), cur: SV.ORDER_CURRENCY, selected: S.guids.length, elements: priced.elements, scheduleSource: sched ? sched.source : null };
       } finally { console.log = log; }
     },
     // §29.4 P6 (the Variation Order): what the MODEL now prices at, against what the Project Order HOLDS, class by class. The model's side is the SAME fold the post runs (the same rows per 4D task,
