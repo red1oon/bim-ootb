@@ -3,7 +3,7 @@
 //   S3 ISSUE (a plain question does not find the window and the action) · S4 ISSUE (a how-to link that goes nowhere, or a card link that does not open)
 //   S5 ISSUE (how-to text that the guide does not say)
 //   §12: S1 also covers the pack's names · S6 ISSUE (a Chinese question finds nothing: words split on spaces) · S7 ISSUE (with 中文 chosen, the how-to is still English, or its links go nowhere)
-//   Falsifiers: HS_BREAK=tamper FAILs S1 · nophrase FAILs S3 · deadlink FAILs S4 · nocjk FAILs S6. Each claim can say VACUOUS / INCONCLUSIVE.
+//   Falsifiers: HS_BREAK=tamper FAILs S1 · nophrase FAILs S3 · deadlink FAILs S4 · nocjk FAILs S6 · nomsgtrl FAILs S2c. Each claim can say VACUOUS / INCONCLUSIVE.
 // Run: node erp/tests/witness_help_showcase.js   (after node erp/tools/build_help_pack.js; ERP_TRL_CACHE / PW / GUIDE override paths)
 'use strict';
 const fs = require('fs'), os = require('os'), path = require('path'), http = require('http'), cp = require('child_process');
@@ -146,6 +146,13 @@ async function browser() {
     }
     const same = JSON.stringify(enBefore.out) === JSON.stringify(enAfter.out);
     k.chk('S2 back to English: tooltips and panel byte-identical to before the switch', same, enBefore.out.length + ' fields');
+    // §12 S2c: the panel's own words follow the language (AD_Message_Trl of the pack, legacy Msg.getMsg): idle = the de_DE PlaceCursorIntoField; back to English = the base row
+    const deMsg = (JSON.parse(fs.readFileSync(path.join(ERP, 'i18n', 'de_DE.json'), 'utf8')).AD_Message_Trl || {}).PlaceCursorIntoField;
+    const idleIn = (lang) => page.evaluate(async (lang) => { await ErpI18n.set(lang); return document.getElementById('idmp-help-tooltip').innerText.trim(); }, lang);
+    const idleDe = await idleIn('de_DE'), idleEn = await idleIn('en_US');
+    k.L('S2c idle de_DE=' + JSON.stringify(idleDe) + ' en_US=' + JSON.stringify(idleEn) + ' (pack: ' + JSON.stringify(deMsg) + ')');
+    if (!deMsg) k.incon('S2c', 'VACUOUS: the de_DE pack has no PlaceCursorIntoField');
+    else k.chk('S2c the Tool Tip panel\'s idle words are the pack\'s German, and English again after the switch back', idleDe === '(' + deMsg.trim() + ')' && idleEn === '(Place your cursor into a field on the screen)', JSON.stringify(idleDe));
     // §12 S6 + S7: 中文 chosen -> the index in that language (its § line), the Chinese question set, the Sales Order how-to in Chinese with live links
     const nz = logs.length; await page.evaluate(() => ErpI18n.set('zh_CN'));
     for (let i = 0; i < 60 && !logs.slice(nz).some((l) => /^§HELP_SEARCH index lang=zh_CN/.test(l)); i++) await page.waitForTimeout(250);
