@@ -4,7 +4,7 @@
  * ISSUE: the Fast Script User Guide's commands may not work for an outsider, its numbers may be stale or invented, and its verb table may not be the vocabulary.
  * Pattern of W-PROPOSER-GUIDE (modeller/tests/witness_proposer_guide.js). Every command in a run block is run as the page prints it:
  * `node door.js …` from an empty folder holding only the 6-file download (live site; --local = this tree), `node common/door/door.js …` from this checkout.
- *   node witness_fast_script_guide.js --page FILE             the source page: table, every run block, every number
+ *   node witness_fast_script_guide.js --page FILE[,FILE2]      the source page (a comma list: the guide, then its reference page; run in that order): table, every run block, every number
  *   node witness_fast_script_guide.js --page FILE --live      also fetch the PUBLISHED page and the diagram, and repeat the table and number checks on the served bytes
  *   --local   take the 6 files from this tree instead of the live site (before a merge)      --no-run   skip the commands (reported as NOT checked)
  *   T  the verb table on the page equals common/door/verbs.json, name for name and cell for cell, in order
@@ -32,7 +32,7 @@ const decimals = (s) => (String(s).match(/\d+\.\d+/g) || []);
 
 (async () => {
   const pageFile = arg('--page'); if (!pageFile) { console.error('usage: --page FILE [--live] [--local] [--no-run]'); process.exit(2); }
-  const md = fs.readFileSync(pageFile, 'utf8'), vocab = G.loadVocab(), { runs, files } = G.parsePage(md);
+  const pagesList = pageFile.split(','), md = pagesList.map(f => fs.readFileSync(f, 'utf8')).join('\n'), vocab = G.loadVocab(), { runs, files } = G.parsePage(md);   // a comma list: the guide first, then the reference page with the long walk-throughs (the run order)
   k.L('page ' + pageFile + ': ' + runs.length + ' run blocks, ' + files.length + ' file blocks, vocabulary ' + vocab.verbs.length + ' verbs');
 
   // T: the verb table
@@ -135,8 +135,9 @@ const decimals = (s) => (String(s).match(/\d+\.\d+/g) || []);
     k.chk('L1 the published page names every verb of verbs.json', missing.length === 0, missing.length ? 'missing: ' + missing.join(', ') : vocab.verbs.length + ' verbs found');
     const rowsLive = (html.match(/<td><code>[a-z]+\.[a-z_]+<\/code><\/td>/g) || []).map(s => s.replace(/<[^>]+>/g, ''));
     k.chk('L2 the published table rows, in order, are the vocabulary names', JSON.stringify(rowsLive) === JSON.stringify(vocab.verbs.map(v => v.verb)), rowsLive.length + ' rows');
-    const cmds = runs.map(r => r.cmd).filter(c => t.indexOf(c) < 0);
-    k.chk('L3 the published page prints every command', cmds.length === 0, cmds.length ? 'missing: ' + cmds[0] : runs.length + ' commands');
+    const guideRuns = G.parsePage(fs.readFileSync(pagesList[0], 'utf8')).runs;   // the published page is the FIRST file; the others are published as their own pages
+    const cmds = guideRuns.map(r => r.cmd).filter(c => t.indexOf(c) < 0);
+    k.chk('L3 the published page prints every command', cmds.length === 0, cmds.length ? 'missing: ' + cmds[0] : guideRuns.length + ' commands');
     const unk = [...new Set(decimals(t))].filter(d => !known.has(d) && d !== '1.0');
     k.chk('L4 every decimal on the published page is accounted for', Object.keys(got).length > 0 && unk.length === 0, unk.length ? 'NOT in any run: ' + unk.join(', ') : '');
     const img = /<img[^>]+src="([^"]*one_door\.svg)"/.exec(html);

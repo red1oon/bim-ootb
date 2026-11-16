@@ -73,7 +73,7 @@ function runBlock(run, ctx) {   // ctx {flat, root, files:[{name,text}]}
     const cmd = run.cmd.split('/tmp/fast_guide_').join(path.join(ctx.flat, 'fast_guide_'));
     const env = Object.assign({}, process.env, { BIM_DOOR_JOURNAL: path.join(ctx.flat, 'journal_' + run.id + '.jsonl'), BIM_OBJECT_OPLOG: path.join(ctx.flat, 'oplog_' + run.id + '.jsonl') });
     const p = spawn('bash', ['-c', cmd], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] }); let o = '', e = '';
-    p.stdout.on('data', d => { o += d; }); p.stderr.on('data', d => { e += d; }); const t = setTimeout(() => p.kill(), 420000); p.on('close', code => { clearTimeout(t); res({ code, out: o.trim(), err: e.trim() }); });   // the timer is cleared when the command ends (it kept every --refresh alive for 7 minutes)
+    p.stdout.on('data', d => { o += d; }); p.stderr.on('data', d => { e += d; }); const t = setTimeout(() => p.kill(), 420000); p.on('close', code => { clearTimeout(t); const back = (x) => x.split(path.join(ctx.flat, 'fast_guide_')).join('/tmp/fast_guide_'); res({ code, out: back(o).trim(), err: back(e).trim() }); });   // the run's own folder is printed as the /tmp/ path the page shows   // the timer is cleared when the command ends (it kept every --refresh alive for 7 minutes)
   });
 }
 module.exports = { parsePage, verbTable, needs, normalise, cutLines, runBlock, makeFlatFolder, loadVocab, GEN, FLAT };
@@ -82,10 +82,11 @@ if (require.main === module) (async () => {
   const a = process.argv.slice(2), page = a[a.indexOf('--page') + 1], L = (m) => console.log('§FAST_GUIDE_GEN ' + m);
   if (!page || a.indexOf('--page') < 0) { console.error('usage: --page FILE (--write | --refresh | --check)'); process.exit(2); }
   let md = fs.readFileSync(page, 'utf8'); const vocab = loadVocab(), g = GEN(md);
-  if (!g) { L('FAIL no <!-- GEN:verbs --> markers in ' + page); process.exit(1); }
-  const table = '\n' + verbTable(vocab) + '\n';
+  const refOnly = !g && a.indexOf('--refresh') >= 0 && a.indexOf('--only') >= 0;   // a reference page has run blocks and no verb table: --refresh --only <id> still works
+  if (!g && !refOnly) { L('FAIL no <!-- GEN:verbs --> markers in ' + page); process.exit(1); }
+  const table = g ? '\n' + verbTable(vocab) + '\n' : '';
   if (a.indexOf('--check') >= 0) { const same = md.slice(g.a, g.b) === table; L('verb table ' + (same ? 'equals' : 'DIFFERS from') + ' verbs.json (' + vocab.verbs.length + ' verbs)'); process.exit(same ? 0 : 1); }
-  if (a.indexOf('--write') >= 0 || a.indexOf('--refresh') >= 0) {
+  if (g && (a.indexOf('--write') >= 0 || a.indexOf('--refresh') >= 0)) {
     md = md.slice(0, g.a) + table + md.slice(g.b); L('verb table written: ' + vocab.verbs.length + ' verbs');
     // the coverage sentence's counts come from the vocabulary too (the witness's K1, K2, K5 read them back)
     const real = vocab.verbs.filter(v => !v.alias_of), n = (app) => real.filter(v => v.verb.indexOf(app + '.') === 0).length, nAlias = vocab.verbs.length - real.length;   // distinct verbs: an old name kept as an alias is counted on its own (CLI_ERP_IVR §11)
