@@ -152,6 +152,21 @@ for (const w of want) {   // mentions the exact-path rule could not resolve (e.g
 }
 
 // ---- ERP parity gate (F-16) -------------------------------------------------------------------------------------------
+// §F.32: the witnesses the bridge script names (`witness_x` with a witness_x.js beside it) and those whose source, or a local module it requires
+//   (transitively), reads a setting the gate hands in (OOTB / BRIDGE_OOTB / BRIDGE_UI_DB): those are the ones that judge the bumped tree.
+function bridgeSelect(bridge) {
+  const dir = path.dirname(bridge), READS = /\b(BRIDGE_OOTB|BRIDGE_UI_DB)\b|\benv\.OOTB\b/;
+  let src = ''; try { src = fs.readFileSync(bridge, 'utf8'); } catch (e) { return { names: [], tree: [] }; }
+  const names = [...new Set(src.match(/\bwitness_[a-z0-9_]+/g) || [])].filter(n => fs.existsSync(path.join(dir, n + '.js')));
+  const reads = (f, seen) => {
+    f = path.resolve(f); if (seen.has(f) || !fs.existsSync(f)) return false; seen.add(f);
+    const s = fs.readFileSync(f, 'utf8'); if (READS.test(s)) return true;
+    for (const m of s.matchAll(/require\(\s*['"](\.{1,2}\/[^'"]+)['"]\s*\)/g)) { let q = path.resolve(path.dirname(f), m[1]); if (!/\.js$/.test(q)) q += '.js'; if (reads(q, seen)) return true; }
+    return false;
+  };
+  return { names, tree: names.filter(n => reads(path.join(dir, n + '.js'), new Set())) };
+}
+
 function parityGate() {
   const cfgPath = [path.join(ROOT, 'scripts', 'bump_parity.json'), path.join(__dirname, 'bump_parity.json')].find(p => fs.existsSync(p));
   let cfg = { mode: 'block', applies_to: ['erp/'], bridge: '~/bim-compiler/scripts/bridge/run_all.sh', known: [] };
@@ -170,21 +185,37 @@ function parityGate() {
   try { h.update(git(['rev-parse', 'HEAD'])); h.update(git(['diff', 'HEAD'])); }
   catch (e) { h.update('nogit'); for (const f of [...listFiles('.html'), ...listFiles('.js'), ...listFiles('.json')].sort()) h.update(f).update(fs.readFileSync(path.join(ROOT, f))); }
   const key = h.digest('hex'), cacheFile = path.join(home, 'bump_parity', key + '.json');
-  const say = (verdict, o) => console.log(`§BUMP_PARITY mode=${mode} verdicts=${o.verdicts.length} new=[${o.nw.join(',')}] known=[${o.kn.join(',')}] log=${o.log} cached=${o.cached ? 'Y' : 'N'} tree=${ROOT} scoped=partial verdict=${verdict}${o.why ? ' why=' + o.why : ''}`);
+  const say = (verdict, o) => console.log(`§BUMP_PARITY mode=${mode} verdicts=${o.verdicts.length} new=[${o.nw.join(',')}] known=[${o.kn.join(',')}] log=${o.log} cached=${o.cached ? 'Y' : 'N'} tree=${ROOT} scoped=${o.scope || scope} verdict=${verdict}${o.why ? ' why=' + o.why : ''}`);
   try {
     const c = JSON.parse(fs.readFileSync(cacheFile, 'utf8'));
-    if (c.key === key && c.verdict === 'PASS') { say('PASS', { verdicts: c.verdicts, nw: [], kn: c.kn, log: c.log, cached: true }); return; }
+    if (c.key === key && c.verdict === 'PASS') { say('PASS', { verdicts: c.verdicts, nw: [], kn: c.kn, log: c.log, cached: true, scope: c.scope }); return; }
   } catch (e) { /* no cache */ }
   const bridge = (process.env.BUMP_PARITY_BRIDGE || cfg.bridge || '').replace(/^~(?=\/|$)/, os.homedir());
-  let out = '', why = '';
+  let out = '', why = '', scope = 'none';
   if (!bridge || !fs.existsSync(bridge)) why = `bridge_missing(${bridge}) set BUMP_PARITY_BRIDGE or bridge in bump_parity.json`;
   else {
     // §F.30 (#3111): the bridge judges the tree being BUMPED, not the shared ~/bim-ootb. These are the settings its witnesses read; the ones that
     // read only ~/bim-ootb are the parity lane's (bim-compiler prompts/SQLiteIDEMPIERE.md note), hence scoped=partial on the § line.
     const env = Object.assign({}, process.env, { OOTB: ROOT, BRIDGE_OOTB: ROOT, BRIDGE_UI_DB: path.join(ROOT, 'erp', 'ad_seed.db') });
-    const r = cp.spawnSync('bash', [bridge], { cwd: path.dirname(bridge), env, encoding: 'utf8', maxBuffer: 1 << 28, timeout: 15 * 60 * 1000 });
-    out = (r.stdout || '') + (r.stderr || '');
-    if (r.error) why = `bridge_error(${r.error.message})`;
+    // §F.32: run only the bridge witnesses that READ one of those settings (directly or through a local require); the others judge the parity lane's own
+    //   engine and DBs, a change to this tree cannot move them, and the whole bridge outgrew the gate (~25 min, W-FA grows every run). The bridge script stays
+    //   the list of record; a script that names no witness file (a stub, a custom runner) is run whole, as before.
+    const sel = bridgeSelect(bridge);
+    if (!sel.names.length) {
+      scope = 'script';
+      const r = cp.spawnSync('bash', [bridge], { cwd: path.dirname(bridge), env, encoding: 'utf8', maxBuffer: 1 << 28, timeout: 15 * 60 * 1000 });
+      out = (r.stdout || '') + (r.stderr || '');
+      if (r.error) why = `bridge_error(${r.error.message})`;
+    } else {
+      scope = `tree witnesses=${sel.tree.length} skipped=${sel.names.length - sel.tree.length}`;
+      for (const w of sel.tree) {
+        const t0 = Date.now(), r = cp.spawnSync('node', [w + '.js'], { cwd: path.dirname(bridge), env, encoding: 'utf8', maxBuffer: 1 << 28, timeout: 10 * 60 * 1000 });
+        const o1 = `=== ${w}\n` + (r.stdout || '') + (r.stderr || '');
+        out += o1;
+        console.log(`§BUMP_PARITY_RUN w=${w} secs=${Math.round((Date.now() - t0) / 1000)} verdicts=${(o1.match(/^\s*§\w+?_VERDICT\s/mg) || []).length}${r.error ? ' error=' + r.error.message : ''}`);
+        if (r.error) why = why || `bridge_error(${w}: ${r.error.message})`;
+      }
+    }
   }
   fs.mkdirSync(home, { recursive: true });
   const log = path.join(home, `bump_parity_${new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14)}_${process.pid}.log`);
@@ -198,7 +229,7 @@ function parityGate() {
   }
   const bad = verdicts.filter(v => /:(FAIL|HARNESS-FAIL)$/.test(v));
   const nw = [...new Set(bad.filter(v => !known.has(v)))], kn = [...new Set(bad.filter(v => known.has(v)))];
-  const o = { verdicts, nw, kn, log, cached: false };
+  const o = { verdicts, nw, kn, log, cached: false, scope };
   if (!verdicts.length) {
     why = why || 'bridge printed 0 verdicts (is the legacy pilot up? docker postgres :5432 idempiere_pilot + pilot :8088; see ' + log + ')';
     o.why = why;
@@ -210,7 +241,7 @@ function parityGate() {
     say('WARN', o); return;
   }
   fs.mkdirSync(path.dirname(cacheFile), { recursive: true });
-  fs.writeFileSync(cacheFile, JSON.stringify({ key, verdict: 'PASS', verdicts, kn, log, at: new Date().toISOString() }));
+  fs.writeFileSync(cacheFile, JSON.stringify({ key, verdict: 'PASS', verdicts, kn, log, scope, at: new Date().toISOString() }));
   say('PASS', o);
 }
 
