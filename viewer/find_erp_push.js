@@ -246,6 +246,7 @@
       }
       P.render(A, guid);
       try { if (global.InfoDxf2Bim) global.InfoDxf2Bim.render(A, guid); } catch (e) {}   // §L28: same pick, the drawing-set provenance block
+      try { if (global.InfoClassHelp) global.InfoClassHelp.render(A, guid); } catch (e) { console.log('§CLASS_HELP_ERR ' + e.message); }   // VOCAB_MESSAGE_CATALOG §14.1: what this kind of element is
     }
 
     // BIM→Project: every › ERP push outcome gets audio + a clear status (user: "good practice — a status
