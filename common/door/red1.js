@@ -231,7 +231,11 @@ async function session(o) {
           }
           say('page rows=' + (T.length - 1) + ' shown=' + (shown - 1) + ' height=' + H);
         } else T.forEach(l => process.stdout.write(l + '\n')); if (e.match) process.stdout.write('(' + rows.length + ' of ' + a.rowsBefore + ' rows match ' + e.match + ')\n'); else if (a.rowsTotal > rows.length) process.stdout.write('(' + rows.length + ' of ' + a.rowsTotal + ' rows)\n'); }
-      else if (e.answer != null && !a.summary) process.stdout.write((e.status === 'ok' && R.render(e, 'list')) || JSON.stringify(e.answer, null, 1).split('\n').slice(0, 40).join('\n') + '\n');
+      else if (e.answer != null && !a.summary) {
+        // §29.7 S1: a refusal is drawn once — the status line above already says refused + the reason (e.why); the gap marks are said by the gap line. Any OTHER key the engine sent is still drawn.
+        const SAID = ['refused', 'reason', 'gap', 'gapKind'], rest = e.status === 'ok' || BREAK() === 'refusaljson' ? a : Object.keys(a).filter(k2 => SAID.indexOf(k2) < 0).reduce((o2, k2) => { o2[k2] = a[k2]; return o2; }, {});   // refusaljson: W-RED1-SHELL S6 falsifier
+        if (e.status === 'ok' || Object.keys(rest).length) process.stdout.write((e.status === 'ok' && R.render(e, 'list')) || JSON.stringify(rest, null, 1).split('\n').slice(0, 40).join('\n') + '\n');
+      }
     }
   };
   let busy = Promise.resolve(), closed = false;
