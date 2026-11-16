@@ -48,7 +48,7 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
   Timestamp.prototype.after = function (o) { return this.ms > o.ms; };
   // TimeUtil (U/TimeUtil.java) — the day arithmetic the callouts use
   var TimeUtil = {
-    getDay: function (t) { if (t == null) t = new Timestamp(Date.now()); var d = new Date(Timestamp.of(t).ms); return new Timestamp(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())); },
+    getDay: function (t) { if (t == null) t = new Timestamp(RUNTIME.now());   /* A3-CLOCK-1: legacy TimeUtil.java:61 = the local clock (was Date.now(), the UTC day) */ var d = new Date(Timestamp.of(t).ms); return new Timestamp(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())); },
     addDays: function (t, n) { if (t == null) return null; return new Timestamp(TimeUtil.getDay(t).ms + n * 86400000); },
     trunc: function (t) { return TimeUtil.getDay(t); },
     isSameDay: function (a, b) { return TimeUtil.getDay(a).ms === TimeUtil.getDay(b).ms; },
@@ -205,7 +205,7 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
     getContextAsDate: function (ctx, a, b) {                                         // :970-1003
       var w = typeof a === 'string' ? 0 : a, k = typeof a === 'string' ? a : b;
       var s = Env.getContext(ctx, w, k, false);
-      if (isEmpty(s)) return new Timestamp(Env.now ? Env.now() : Date.now());
+      if (isEmpty(s)) return new Timestamp(RUNTIME.now());   // A3-CLOCK-1: legacy Env.java:989 = the local clock (was Date.now() before a bind, the UTC wall clock)
       return Timestamp.of(s);
     },
     setContext: function (ctx, a, b, c, d) {                                          // :322-530
