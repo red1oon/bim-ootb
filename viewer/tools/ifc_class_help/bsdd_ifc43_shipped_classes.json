@@ -1,0 +1,1847 @@
+{
+ "IfcAirTerminal": {
+  "EN": {
+   "name": "Air Terminal",
+   "definition": "An air terminal is a terminating or origination point for the transfer of air between distribution system(s) and one or more spaces. It can also be used for the transfer of air between adjacent spaces.",
+   "status": "Active"
+  },
+  "de-DE": {
+   "name": "Air Terminal",
+   "definition": "An air terminal is a terminating or origination point for the transfer of air between distribution system(s) and one or more spaces. It can also be used for the transfer of air between adjacent spaces.",
+   "status": "Active"
+  },
+  "es-ES": {
+   "name": "Terminal de Aire",
+   "definition": "Un terminal de aire es donde empieza o finaliza la transferencia de aire entre el sistema(s) de distribución y uno o más espacios. También se puede utilizar para la transferencia de aire entre espacios adyacentes.",
+   "status": "Active"
+  },
+  "zh-CN": {
+   "name": "Air Terminal",
+   "definition": "An air terminal is a terminating or origination point for the transfer of air between distribution system(s) and one or more spaces. It can also be used for the transfer of air between adjacent spaces.",
+   "status": "Active"
+  },
+  "ja-JP": {
+   "name": "Air Terminal",
+   "definition": "An air terminal is a terminating or origination point for the transfer of air between distribution system(s) and one or more spaces. It can also be used for the transfer of air between adjacent spaces.",
+   "status": "Active"
+  },
+  "pt-BR": {
+   "name": "Terminal de Ar",
+   "definition": "Um terminal de ar é um ponto de término ou origem para a transferência de ar entre sistema(s) de distribuição e um ou mais espaços. Também pode ser usado para a transferência de ar entre espaços adjacentes.",
+   "status": "Active"
+  },
+  "fr-FR": {
+   "name": "Air Terminal",
+   "definition": "An air terminal is a terminating or origination point for the transfer of air between distribution system(s) and one or more spaces. It can also be used for the transfer of air between adjacent spaces.",
+   "status": "Active"
+  }
+ },
+ "IfcAlarm": {
+  "EN": {
+   "name": "Alarm",
+   "definition": "An alarm is a device that signals the existence of a condition or situation that is outside the boundaries of normal expectation or that activates such a device.",
+   "status": "Active"
+  },
+  "de-DE": {
+   "name": "Alarm",
+   "definition": "An alarm is a device that signals the existence of a condition or situation that is outside the boundaries of normal expectation or that activates such a device.",
+   "status": "Active"
+  },
+  "es-ES": {
+   "name": "Alarm",
+   "definition": "An alarm is a device that signals the existence of a condition or situation that is outside the boundaries of normal expectation or that activates such a device.",
+   "status": "Active"
+  },
+  "zh-CN": {
+   "name": "Alarm",
+   "definition": "An alarm is a device that signals the existence of a condition or situation that is outside the boundaries of normal expectation or that activates such a device.",
+   "status": "Active"
+  },
+  "ja-JP": {
+   "name": "Alarm",
+   "definition": "An alarm is a device that signals the existence of a condition or situation that is outside the boundaries of normal expectation or that activates such a device.",
+   "status": "Active"
+  },
+  "pt-BR": {
+   "name": "Alarme",
+   "definition": "Um alarme é um dispositivo que sinaliza a existência de uma condição ou situação que está fora dos limites normais de expectativa ou que ativa tal dispositivo.",
+   "status": "Active"
+  },
+  "fr-FR": {
+   "name": "Alarm",
+   "definition": "An alarm is a device that signals the existence of a condition or situation that is outside the boundaries of normal expectation or that activates such a device.",
+   "status": "Active"
+  }
+ },
+ "IfcBeam": {
+  "EN": {
+   "name": "Beam",
+   "definition": "An [[IfcBeam]] is typically a horizontal, or nearly horizontal, structural member that is capable of withstanding load primarily by resisting bending. It may also represent such a member from an architectural point of view. It is not required to be load bearing.",
+   "status": "Active"
+  },
+  "de-DE": {
+   "name": "Balken - Unterzug",
+   "definition": "Ein [[IfcBeam]] ist typischerweise ein horizontales oder nahezu horizontales Bauteil, welches in der Lage ist, Belastungen in erster Linie durch Biegesteifigkeit auszuhalten. Das Element wird aus einer architektonischen Sichtweise repräsentiert, deswegen können einwirkende Kräfte vernachlässigt werden.",
+   "status": "Active"
+  },
+  "es-ES": {
+   "name": "Viga",
+   "definition": "Un [[IfcBeam]] es típicamente un elemento estructural horizontal, o casi horizontal, que es capaz de soportar la carga principalmente resistiendo a flexión. También puede representar a una parte desde el punto de vista arquitectónico. No es necesario que soporte carga.",
+   "status": "Active"
+  },
+  "zh-CN": {
+   "name": "Beam",
+   "definition": "An [[IfcBeam]] is typically a horizontal, or nearly horizontal, structural member that is capable of withstanding load primarily by resisting bending. It may also represent such a member from an architectural point of view. It is not required to be load bearing.",
+   "status": "Active"
+  },
+  "ja-JP": {
+   "name": "梁",
+   "definition": "[[IfcBeam]] とは、主に曲げに耐えることによって荷重に耐えることができる水平な、あるいはほぼ水平な構造部材のことである。建築的な観点からこのような部材を表すこともある。耐荷重である必要はない。",
+   "status": "Active"
+  },
+  "pt-BR": {
+   "name": "Viga",
+   "definition": "Um membro estrutural [[IfcBeam]] é tipicamente um membro horizontal (viga), ou quase horizontal, capaz de resistir a carga, principalmente flexão. Também pode representar tal membro do ponto de vista arquitetônico, de modo que, em geral, não é mandatório que suporte cargas.",
+   "status": "Active"
+  },
+  "fr-FR": {
+   "name": "Beam",
+   "definition": "An [[IfcBeam]] is typically a horizontal, or nearly horizontal, structural member that is capable of withstanding load primarily by resisting bending. It may also represent such a member from an architectural point of view. It is not required to be load bearing.",
+   "status": "Active"
+  }
+ },
+ "IfcBuildingElementPart": {
+  "EN": {
+   "name": "Building Element Part",
+   "definition": "[[IfcBuildingElementPart]] represents major components as subordinate parts of a building element. Typical usage examples include precast concrete sandwich walls, where the layers may have different geometry representations. In this case the layered material representation does not sufficiently describe the element. Each layer is represented by an own instance of the [[IfcBuildingElementPart]] with its own geometry description.",
+   "status": "Active"
+  },
+  "de-DE": {
+   "name": "Building Element Part",
+   "definition": "[[IfcBuildingElementPart]] represents major components as subordinate parts of a building element. Typical usage examples include precast concrete sandwich walls, where the layers may have different geometry representations. In this case the layered material representation does not sufficiently describe the element. Each layer is represented by an own instance of the [[IfcBuildingElementPart]] with its own geometry description.",
+   "status": "Active"
+  },
+  "es-ES": {
+   "name": "Building Element Part",
+   "definition": "[[IfcBuildingElementPart]] represents major components as subordinate parts of a building element. Typical usage examples include precast concrete sandwich walls, where the layers may have different geometry representations. In this case the layered material representation does not sufficiently describe the element. Each layer is represented by an own instance of the [[IfcBuildingElementPart]] with its own geometry description.",
+   "status": "Active"
+  },
+  "zh-CN": {
+   "name": "Building Element Part",
+   "definition": "[[IfcBuildingElementPart]] represents major components as subordinate parts of a building element. Typical usage examples include precast concrete sandwich walls, where the layers may have different geometry representations. In this case the layered material representation does not sufficiently describe the element. Each layer is represented by an own instance of the [[IfcBuildingElementPart]] with its own geometry description.",
+   "status": "Active"
+  },
+  "ja-JP": {
+   "name": "Building Element Part",
+   "definition": "[[IfcBuildingElementPart]] represents major components as subordinate parts of a building element. Typical usage examples include precast concrete sandwich walls, where the layers may have different geometry representations. In this case the layered material representation does not sufficiently describe the element. Each layer is represented by an own instance of the [[IfcBuildingElementPart]] with its own geometry description.",
+   "status": "Active"
+  },
+  "pt-BR": {
+   "name": "Parte do Elemento de Construção",
+   "definition": "[[IfcBuildingElementPart]] representa componentes principais como partes subordinadas de um elemento de construção. Exemplos típicos de uso incluem paredes de concreto pré-moldadas, onde as camadas podem ter representações geométricas diferentes. Nesse caso, a representação do material em camadas não descreve suficientemente o elemento. Cada camada é representada por uma instância própria do [[IfcBuildingElementPart]] com sua própria descrição geométrica.",
+   "status": "Active"
+  },
+  "fr-FR": {
+   "name": "Building Element Part",
+   "definition": "[[IfcBuildingElementPart]] represents major components as subordinate parts of a building element. Typical usage examples include precast concrete sandwich walls, where the layers may have different geometry representations. In this case the layered material representation does not sufficiently describe the element. Each layer is represented by an own instance of the [[IfcBuildingElementPart]] with its own geometry description.",
+   "status": "Active"
+  }
+ },
+ "IfcBuildingElementProxy": {
+  "EN": {
+   "name": "Building Element Proxy",
+   "definition": "The [[IfcBuildingElementProxy]] is a proxy definition that provides the same functionality as subtypes of [[IfcBuiltElement]], but without having a predefined meaning of the special type of building element it represents.",
+   "status": "Active"
+  },
+  "de-DE": {
+   "name": "Building Element Proxy",
+   "definition": "The [[IfcBuildingElementProxy]] is a proxy definition that provides the same functionality as subtypes of [[IfcBuiltElement]], but without having a predefined meaning of the special type of building element it represents.",
+   "status": "Active"
+  },
+  "es-ES": {
+   "name": "Elemento Constructivo Indeterminado",
+   "definition": "[[IfcBuildingElementProxy]] es un elemento constructivo que proporciona la misma funcionalidad que los subtipos de [[IfcBuiltElement]], pero sin tener un significado predeterminado del tipo de elemento constructivo que representa.",
+   "status": "Active"
+  },
+  "zh-CN": {
+   "name": "Building Element Proxy",
+   "definition": "The [[IfcBuildingElementProxy]] is a proxy definition that provides the same functionality as subtypes of [[IfcBuiltElement]], but without having a predefined meaning of the special type of building element it represents.",
+   "status": "Active"
+  },
+  "ja-JP": {
+   "name": "Building Element Proxy",
+   "definition": "The [[IfcBuildingElementProxy]] is a proxy definition that provides the same functionality as subtypes of [[IfcBuiltElement]], but without having a predefined meaning of the special type of building element it represents.",
+   "status": "Active"
+  },
+  "pt-BR": {
+   "name": "Elemento Construtivo Genérico",
+   "definition": "Definição genérica que fornece as mesmas funcionalidades que os subtipos de [[IfcBuiltElement]], porém sem ter um significado definido quanto ao tipo específico de elemento que representa.",
+   "status": "Active"
+  },
+  "fr-FR": {
+   "name": "Building Element Proxy",
+   "definition": "The [[IfcBuildingElementProxy]] is a proxy definition that provides the same functionality as subtypes of [[IfcBuiltElement]], but without having a predefined meaning of the special type of building element it represents.",
+   "status": "Active"
+  }
+ },
+ "IfcCableCarrierFitting": {
+  "EN": {
+   "name": "Cable Carrier Fitting",
+   "definition": "A cable carrier fitting is a fitting that is placed at junction or transition in a cable carrier system.",
+   "status": "Active"
+  },
+  "de-DE": {
+   "name": "Cable Carrier Fitting",
+   "definition": "A cable carrier fitting is a fitting that is placed at junction or transition in a cable carrier system.",
+   "status": "Active"
+  },
+  "es-ES": {
+   "name": "Unión de Soporte de Cables",
+   "definition": "Una unión de soporte de cables es un accesorio que se coloca en la unión o transición de un sistema de soporte de cables.",
+   "status": "Active"
+  },
+  "zh-CN": {
+   "name": "Cable Carrier Fitting",
+   "definition": "A cable carrier fitting is a fitting that is placed at junction or transition in a cable carrier system.",
+   "status": "Active"
+  },
+  "ja-JP": {
+   "name": "Cable Carrier Fitting",
+   "definition": "A cable carrier fitting is a fitting that is placed at junction or transition in a cable carrier system.",
+   "status": "Active"
+  },
+  "pt-BR": {
+   "name": "Conexão de Esteira Porta-Cabos",
+   "definition": "Uma conexão de esteira porta-cabos é uma conexão colocada em pontos de junção ou transição em um sistema de esteira porta-cabos.",
+   "status": "Active"
+  },
+  "fr-FR": {
+   "name": "Cable Carrier Fitting",
+   "definition": "A cable carrier fitting is a fitting that is placed at junction or transition in a cable carrier system.",
+   "status": "Active"
+  }
+ },
+ "IfcCableCarrierSegment": {
+  "EN": {
+   "name": "Cable Carrier Segment",
+   "definition": "A cable carrier segment is a flow segment that is specifically used to carry and support cabling.",
+   "status": "Active"
+  },
+  "de-DE": {
+   "name": "Cable Carrier Segment",
+   "definition": "A cable carrier segment is a flow segment that is specifically used to carry and support cabling.",
+   "status": "Active"
+  },
+  "es-ES": {
+   "name": "Tramo de Soporte de Cables",
+   "definition": "Un tramo de soporte de cables es un segmento de flujo que se utiliza específicamente para transportar y soportar cableado.",
+   "status": "Active"
+  },
+  "zh-CN": {
+   "name": "Cable Carrier Segment",
+   "definition": "A cable carrier segment is a flow segment that is specifically used to carry and support cabling.",
+   "status": "Active"
+  },
+  "ja-JP": {
+   "name": "Cable Carrier Segment",
+   "definition": "A cable carrier segment is a flow segment that is specifically used to carry and support cabling.",
+   "status": "Active"
+  },
+  "pt-BR": {
+   "name": "Segmento de Esteira Porta-Cabos",
+   "definition": "Um segmento de esteira porta-cabos é um segmento de fluxo usado especificamente para transportar e suportar cabos.",
+   "status": "Active"
+  },
+  "fr-FR": {
+   "name": "Cable Carrier Segment",
+   "definition": "A cable carrier segment is a flow segment that is specifically used to carry and support cabling.",
+   "status": "Active"
+  }
+ },
+ "IfcColumn": {
+  "EN": {
+   "name": "Column",
+   "definition": "An [[IfcColumn]] is a vertical structural or architectural member which often is aligned with a structural grid intersection. In most cases it represents a vertical, or nearly vertical, structural member that transmits, through compression, the weight of the structure above to other structural elements below. It may also represent such a member from an architectural point of view in which case it may represent a non load bearing element. Whether it is a structural load bearing element or a non-load bearing element is determined by the [[Pset_ColumnCommon]].[[LoadBearing]] property.",
+   "status": "Active"
+  },
+  "de-DE": {
+   "name": "Stütze",
+   "definition": "Eine [[IfcColumn]] ist ein vertikales tragendes oder architektonisches Element, das häufig an einem Rasterpunkt der Tragstruktur ausgerichtet ist. In den meisten Fällen handelt es sich um ein vertikales oder nahezu vertikales Bauteil, das das Gewicht der darüber liegenden Bauteile durch Druck auf andere darunter liegende Bauteile überträgt. Aus architektonischer Sicht kann es sich auch um ein Bauteil handeln, das nicht tragend ist. Ob es sich um ein tragendes oder ein nicht tragendes Element handelt, wird durch die Eigenschaft [[Pset_ColumnCommon]].[[LoadBearing]] bestimmt.",
+   "status": "Active"
+  },
+  "es-ES": {
+   "name": "Pilar",
+   "definition": "Un [[IfcColumn]] es un elemento estructural o arquitectónico vertical que, a menudo está alineado con una intersección de una rejilla estructural. En la mayoría de los casos representa a un componente estructural vertical, o casi vertical, que transmite, mediante compresión, el peso de la estructura superior a otros elementos estructurales inferiores. También puede representar a dicho componente desde un punto de vista arquitectónico, en cuyo caso no es necesario que soporte carga. La propiedad [[Pset_ColumnCommon]].[[LoadBearing]] determina si es un elemento con capacidad portante o no.",
+   "status": "Active"
+  },
+  "zh-CN": {
+   "name": "Column",
+   "definition": "An [[IfcColumn]] is a vertical structural or architectural member which often is aligned with a structural grid intersection. In most cases it represents a vertical, or nearly vertical, structural member that transmits, through compression, the weight of the structure above to other structural elements below. It may also represent such a member from an architectural point of view in which case it may represent a non load bearing element. Whether it is a structural load bearing element or a non-load bearing element is determined by the [[Pset_ColumnCommon]].[[LoadBearing]] property.",
+   "status": "Active"
+  },
+  "ja-JP": {
+   "name": "柱",
+   "definition": "[[IfcColumn]] は垂直な構造部材または建築部材であり、多くの場合構造格子の交点に整列している。多くの場合、垂直またはほぼ垂直の構造部材を表し、圧縮によって上部の構造物の重量を下部の他の構造要素に伝える。また、建築的見地からこのような部材を表すこともあり、その場合は非耐力要素を表すこともある。構造耐力要素か非耐力要素かは、[[Pset_ColumnCommon]] の[[LoadBearing]] プロパティによって決定される。",
+   "status": "Active"
+  },
+  "pt-BR": {
+   "name": "Coluna",
+   "definition": "Uma [[IfcColumn]] é um elemento vertical estrutural ou arquitetônico que frequentemente está alinhado com a interseção de uma malha estrutural. Na maioria dos casos, representa um membro estrutural vertical, ou quase vertical, que transmite, através de compressão, o peso da estrutura acima para outros elementos estruturais abaixo. Também pode ser a representção de tal membro apenas do ponto de vista arquitetônico, podendo ser, nesse caso, um elemento não suportante de carga. Ser ou não um elemento estrutural suportante de carga é determinado pela propriedade [[Pset_ColumnCommon]].[[LoadBearing]].",
+   "status": "Active"
+  },
+  "fr-FR": {
+   "name": "Column",
+   "definition": "An [[IfcColumn]] is a vertical structural or architectural member which often is aligned with a structural grid intersection. In most cases it represents a vertical, or nearly vertical, structural member that transmits, through compression, the weight of the structure above to other structural elements below. It may also represent such a member from an architectural point of view in which case it may represent a non load bearing element. Whether it is a structural load bearing element or a non-load bearing element is determined by the [[Pset_ColumnCommon]].[[LoadBearing]] property.",
+   "status": "Active"
+  }
+ },
+ "IfcController": {
+  "EN": {
+   "name": "Controller",
+   "definition": "A controller is a device that monitors inputs and controls outputs within a building automation system.",
+   "status": "Active"
+  },
+  "de-DE": {
+   "name": "Controller",
+   "definition": "A controller is a device that monitors inputs and controls outputs within a building automation system.",
+   "status": "Active"
+  },
+  "es-ES": {
+   "name": "Controller",
+   "definition": "A controller is a device that monitors inputs and controls outputs within a building automation system.",
+   "status": "Active"
+  },
+  "zh-CN": {
+   "name": "Controller",
+   "definition": "A controller is a device that monitors inputs and controls outputs within a building automation system.",
+   "status": "Active"
+  },
+  "ja-JP": {
+   "name": "Controller",
+   "definition": "A controller is a device that monitors inputs and controls outputs within a building automation system.",
+   "status": "Active"
+  },
+  "pt-BR": {
+   "name": "Controlador",
+   "definition": "Um controlador é um dispositivo que monitora entradas e controla saídas em um sistema de automação de edificação.",
+   "status": "Active"
+  },
+  "fr-FR": {
+   "name": "Controller",
+   "definition": "A controller is a device that monitors inputs and controls outputs within a building automation system.",
+   "status": "Active"
+  }
+ },
+ "IfcCovering": {
+  "EN": {
+   "name": "Covering",
+   "definition": "A covering is an element which covers some part of another element and is fully dependent on that other element. The [[IfcCovering]] defines the occurrence of a covering type, that (if given) is expressed by the IfcCoveringType.",
+   "status": "Active"
+  },
+  "de-DE": {
+   "name": "Covering",
+   "definition": "A covering is an element which covers some part of another element and is fully dependent on that other element. The [[IfcCovering]] defines the occurrence of a covering type, that (if given) is expressed by the IfcCoveringType.",
+   "status": "Active"
+  },
+  "es-ES": {
+   "name": "Revestimiento",
+   "definition": "Un tipo de revestimiento es un elemento que cubre alguna parte de otro elemento y es totalmente dependiente de ese otro elemento. El CoveringType define la categoría de un tipo de revestimiento, que (si se da) se expresa mediante el IfcCoveringType.",
+   "status": "Active"
+  },
+  "zh-CN": {
+   "name": "Covering",
+   "definition": "A covering is an element which covers some part of another element and is fully dependent on that other element. The [[IfcCovering]] defines the occurrence of a covering type, that (if given) is expressed by the IfcCoveringType.",
+   "status": "Active"
+  },
+  "ja-JP": {
+   "name": "Covering",
+   "definition": "A covering is an element which covers some part of another element and is fully dependent on that other element. The [[IfcCovering]] defines the occurrence of a covering type, that (if given) is expressed by the IfcCoveringType.",
+   "status": "Active"
+  },
+  "pt-BR": {
+   "name": "Revestimento",
+   "definition": "Um revestimento é um elemento que cobre alguma parte de outro elemento e depende totalmente desse outro elemento. O [[IfcCovering]] define a ocorrência de um tipo de revestimento, que (se fornecido) é expresso pelo IfcCoveringType.",
+   "status": "Active"
+  },
+  "fr-FR": {
+   "name": "Covering",
+   "definition": "A covering is an element which covers some part of another element and is fully dependent on that other element. The [[IfcCovering]] defines the occurrence of a covering type, that (if given) is expressed by the IfcCoveringType.",
+   "status": "Active"
+  }
+ },
+ "IfcCurtainWall": {
+  "EN": {
+   "name": "Curtain Wall",
+   "definition": "A curtain wall is a wall of a building which is an assembly of components, hung from the edge of the floor/roof structure rather than bearing on a floor. Curtain wall is represented as a building element assembly and implemented as a subtype of [[IfcBuiltElement]] that uses an IfcRelAggregates relationship. A curtain wall is often external, but using [[Pset_CurtainWallCommon]].[[IsExternal]] can be used to define interior curtain walls.",
+   "status": "Active"
+  },
+  "de-DE": {
+   "name": "Curtain Wall",
+   "definition": "A curtain wall is a wall of a building which is an assembly of components, hung from the edge of the floor/roof structure rather than bearing on a floor. Curtain wall is represented as a building element assembly and implemented as a subtype of [[IfcBuiltElement]] that uses an IfcRelAggregates relationship. A curtain wall is often external, but using [[Pset_CurtainWallCommon]].[[IsExternal]] can be used to define interior curtain walls.",
+   "status": "Active"
+  },
+  "es-ES": {
+   "name": "Pared de cortina",
+   "definition": "Grupo de propiedades comunes de muro cortina.",
+   "status": "Active"
+  },
+  "zh-CN": {
+   "name": "Curtain Wall",
+   "definition": "A curtain wall is a wall of a building which is an assembly of components, hung from the edge of the floor/roof structure rather than bearing on a floor. Curtain wall is represented as a building element assembly and implemented as a subtype of [[IfcBuiltElement]] that uses an IfcRelAggregates relationship. A curtain wall is often external, but using [[Pset_CurtainWallCommon]].[[IsExternal]] can be used to define interior curtain walls.",
+   "status": "Active"
+  },
+  "ja-JP": {
+   "name": "Curtain Wall",
+   "definition": "A curtain wall is a wall of a building which is an assembly of components, hung from the edge of the floor/roof structure rather than bearing on a floor. Curtain wall is represented as a building element assembly and implemented as a subtype of [[IfcBuiltElement]] that uses an IfcRelAggregates relationship. A curtain wall is often external, but using [[Pset_CurtainWallCommon]].[[IsExternal]] can be used to define interior curtain walls.",
+   "status": "Active"
+  },
+  "pt-BR": {
+   "name": "Parede Cortina",
+   "definition": "Uma parede cortina é uma parede de um edifício que consiste em um conjunto de componentes, suspensa a partir da borda da estrutura do piso/teto, em vez de se apoiar em um piso. A parede cortina é representada como um conjunto de elementos de construção e implementada como um subtipo de [[IfcBuiltElement]], que utiliza uma relação IfcRelAggregates. Uma parede cortina é frequentemente externa, mas ao se utilizar [[Pset_CurtainWallCommon]].[[IsExternal]], pode-se definir cortinas internas.",
+   "status": "Active"
+  },
+  "fr-FR": {
+   "name": "Curtain Wall",
+   "definition": "A curtain wall is a wall of a building which is an assembly of components, hung from the edge of the floor/roof structure rather than bearing on a floor. Curtain wall is represented as a building element assembly and implemented as a subtype of [[IfcBuiltElement]] that uses an IfcRelAggregates relationship. A curtain wall is often external, but using [[Pset_CurtainWallCommon]].[[IsExternal]] can be used to define interior curtain walls.",
+   "status": "Active"
+  }
+ },
+ "IfcDistributionControlElement": {
+  "EN": {
+   "name": "Distribution Control Element",
+   "definition": "The distribution element [[IfcDistributionControlElement]] defines occurrence elements of a building automation control system that are used to impart control over elements of a distribution system.",
+   "status": "Active"
+  },
+  "de-DE": {
+   "name": "Distribution Control Element",
+   "definition": "The distribution element [[IfcDistributionControlElement]] defines occurrence elements of a building automation control system that are used to impart control over elements of a distribution system.",
+   "status": "Active"
+  },
+  "es-ES": {
+   "name": "Distribution Control Element",
+   "definition": "The distribution element [[IfcDistributionControlElement]] defines occurrence elements of a building automation control system that are used to impart control over elements of a distribution system.",
+   "status": "Active"
+  },
+  "zh-CN": {
+   "name": "Distribution Control Element",
+   "definition": "The distribution element [[IfcDistributionControlElement]] defines occurrence elements of a building automation control system that are used to impart control over elements of a distribution system.",
+   "status": "Active"
+  },
+  "ja-JP": {
+   "name": "Distribution Control Element",
+   "definition": "The distribution element [[IfcDistributionControlElement]] defines occurrence elements of a building automation control system that are used to impart control over elements of a distribution system.",
+   "status": "Active"
+  },
+  "pt-BR": {
+   "name": "Elemento de Controle da Distribuição",
+   "definition": "O elemento de distribuição [[IfcDistributionControlElement]] define elementos de ocorrência de um sistema de controle de automação de edifícios usados para transmitir controle sobre elementos de um sistema de distribuição.",
+   "status": "Active"
+  },
+  "fr-FR": {
+   "name": "Distribution Control Element",
+   "definition": "The distribution element [[IfcDistributionControlElement]] defines occurrence elements of a building automation control system that are used to impart control over elements of a distribution system.",
+   "status": "Active"
+  }
+ },
+ "IfcDoor": {
+  "EN": {
+   "name": "Door",
+   "definition": "The door is a built element that is predominately used to provide controlled access for people, goods, animals and vehicles. It includes constructions with hinged, pivoted, sliding, and additionally revolving and folding operations.",
+   "status": "Active"
+  },
+  "de-DE": {
+   "name": "Tür",
+   "definition": "Die Tür ist ein Bauelement, das vorwiegend dazu dient, einen kontrollierten Zugang für Personen, Güter, Tiere und Fahrzeuge zu ermöglichen. Sie umfasst Konstruktionen mit (Anschlag)Dreh-, Schwenk-, Schiebe- und zusätzlich mit (Karussell)Dreh- und Faltfunktionen.",
+   "status": "Active"
+  },
+  "es-ES": {
+   "name": "Door",
+   "definition": "La puerta es un elemento constructivo que se utiliza fundamentalmente para proporcionar acceso controlado a personas, bienes, animales y vehículos. Incluye elementos constructivos con mecanismos de apertura con bisagras, elementos pivotantes, deslizantes o mecanismos suplementarios de plegado o giratorios.",
+   "status": "Active"
+  },
+  "zh-CN": {
+   "name": "Door",
+   "definition": "The door is a built element that is predominately used to provide controlled access for people, goods, animals and vehicles. It includes constructions with hinged, pivoted, sliding, and additionally revolving and folding operations.",
+   "status": "Active"
+  },
+  "ja-JP": {
+   "name": "ドア",
+   "definition": "ドアは、主に人、物品、動物、車両の出入りを制御するために用いられる建築要素である。ヒンジ式、回動式、スライド式、さらに回転式や折りたたみ式のものも含む。",
+   "status": "Active"
+  },
+  "pt-BR": {
+   "name": "Porta",
+   "definition": "A porta é um elemento construído predominantemente utilizado para proporcionar acesso controlado de pessoas, mercadorias, animais e veículos. Inclui construções com operações articuladas, pivotantes, deslizantes e, adicionalmente, giratórias e dobráveis.",
+   "status": "Active"
+  },
+  "fr-FR": {
+   "name": "Door",
+   "definition": "The door is a built element that is predominately used to provide controlled access for people, goods, animals and vehicles. It includes constructions with hinged, pivoted, sliding, and additionally revolving and folding operations.",
+   "status": "Active"
+  }
+ },
+ "IfcDuctFitting": {
+  "EN": {
+   "name": "Duct Fitting",
+   "definition": "A duct fitting is a junction or transition in a ducted flow distribution system or used to connect duct segments, resulting in changes in flow characteristics to the fluid such as direction and flow rate.",
+   "status": "Active"
+  },
+  "de-DE": {
+   "name": "Duct Fitting",
+   "definition": "A duct fitting is a junction or transition in a ducted flow distribution system or used to connect duct segments, resulting in changes in flow characteristics to the fluid such as direction and flow rate.",
+   "status": "Active"
+  },
+  "es-ES": {
+   "name": "Conexión de Conducto",
+   "definition": "Una conexión de conductos es una unión o transición en un sistema de distribución de flujo canalizado o usado para conectar tramos de conductos, lo que resulta en cambios en las características de flujo del fluido, tales como la dirección y el caudal.",
+   "status": "Active"
+  },
+  "zh-CN": {
+   "name": "Duct Fitting",
+   "definition": "A duct fitting is a junction or transition in a ducted flow distribution system or used to connect duct segments, resulting in changes in flow characteristics to the fluid such as direction and flow rate.",
+   "status": "Active"
+  },
+  "ja-JP": {
+   "name": "Duct Fitting",
+   "definition": "A duct fitting is a junction or transition in a ducted flow distribution system or used to connect duct segments, resulting in changes in flow characteristics to the fluid such as direction and flow rate.",
+   "status": "Active"
+  },
+  "pt-BR": {
+   "name": "Conexão de Duto",
+   "definition": "Uma conexão de duto é uma junção ou transição em um sistema de distribuição de fluxo em dutos, ou usada para conectar segmentos de dutos, resultando em alterações nas características do fluxo do fluido, como direção e taxa de fluxo.",
+   "status": "Active"
+  },
+  "fr-FR": {
+   "name": "Duct Fitting",
+   "definition": "A duct fitting is a junction or transition in a ducted flow distribution system or used to connect duct segments, resulting in changes in flow characteristics to the fluid such as direction and flow rate.",
+   "status": "Active"
+  }
+ },
+ "IfcDuctSegment": {
+  "EN": {
+   "name": "Duct Segment",
+   "definition": "A duct segment is used to typically join two sections of duct network.",
+   "status": "Active"
+  },
+  "de-DE": {
+   "name": "Duct Segment",
+   "definition": "A duct segment is used to typically join two sections of duct network.",
+   "status": "Active"
+  },
+  "es-ES": {
+   "name": "Tramo de Conducto",
+   "definition": "Un tramo de conducto se utiliza normalmente para unir dos secciones de la red de conductos.",
+   "status": "Active"
+  },
+  "zh-CN": {
+   "name": "Duct Segment",
+   "definition": "A duct segment is used to typically join two sections of duct network.",
+   "status": "Active"
+  },
+  "ja-JP": {
+   "name": "Duct Segment",
+   "definition": "A duct segment is used to typically join two sections of duct network.",
+   "status": "Active"
+  },
+  "pt-BR": {
+   "name": "Segmento de Duto",
+   "definition": "Um segmento de duto é usado tipicamente para unir duas seções da rede de dutos.",
+   "status": "Active"
+  },
+  "fr-FR": {
+   "name": "Duct Segment",
+   "definition": "A duct segment is used to typically join two sections of duct network.",
+   "status": "Active"
+  }
+ },
+ "IfcElectricAppliance": {
+  "EN": {
+   "name": "Electric Appliance",
+   "definition": "An electric appliance is a device intended for consumer usage that is powered by electricity.",
+   "status": "Active"
+  },
+  "de-DE": {
+   "name": "Electric Appliance",
+   "definition": "An electric appliance is a device intended for consumer usage that is powered by electricity.",
+   "status": "Active"
+  },
+  "es-ES": {
+   "name": "Aparato Eléctrico",
+   "definition": "Un aparato eléctrico es un dispositivo destinado al empleo por el usuario que funciona con electricidad.",
+   "status": "Active"
+  },
+  "zh-CN": {
+   "name": "Electric Appliance",
+   "definition": "An electric appliance is a device intended for consumer usage that is powered by electricity.",
+   "status": "Active"
+  },
+  "ja-JP": {
+   "name": "Electric Appliance",
+   "definition": "An electric appliance is a device intended for consumer usage that is powered by electricity.",
+   "status": "Active"
+  },
+  "pt-BR": {
+   "name": "Aparelho Elétrico",
+   "definition": "Um equipamento elétrico é um dispositivo alimentado por eletricidade destinado ao uso do consumidor.",
+   "status": "Active"
+  },
+  "fr-FR": {
+   "name": "Electric Appliance",
+   "definition": "An electric appliance is a device intended for consumer usage that is powered by electricity.",
+   "status": "Active"
+  }
+ },
+ "IfcEnergyConversionDevice": {
+  "EN": {
+   "name": "Energy Conversion Device",
+   "definition": "The distribution flow element [[IfcEnergyConversionDevice]] defines the occurrence of a device used to perform energy conversion or heat transfer and typically participates in a flow distribution system. Its type is defined by IfcEnergyConversionDeviceType or its subtypes.",
+   "status": "Active"
+  },
+  "de-DE": {
+   "name": "Energy Conversion Device",
+   "definition": "The distribution flow element [[IfcEnergyConversionDevice]] defines the occurrence of a device used to perform energy conversion or heat transfer and typically participates in a flow distribution system. Its type is defined by IfcEnergyConversionDeviceType or its subtypes.",
+   "status": "Active"
+  },
+  "es-ES": {
+   "name": "Energy Conversion Device",
+   "definition": "The distribution flow element [[IfcEnergyConversionDevice]] defines the occurrence of a device used to perform energy conversion or heat transfer and typically participates in a flow distribution system. Its type is defined by IfcEnergyConversionDeviceType or its subtypes.",
+   "status": "Active"
+  },
+  "zh-CN": {
+   "name": "Energy Conversion Device",
+   "definition": "The distribution flow element [[IfcEnergyConversionDevice]] defines the occurrence of a device used to perform energy conversion or heat transfer and typically participates in a flow distribution system. Its type is defined by IfcEnergyConversionDeviceType or its subtypes.",
+   "status": "Active"
+  },
+  "ja-JP": {
+   "name": "Energy Conversion Device",
+   "definition": "The distribution flow element [[IfcEnergyConversionDevice]] defines the occurrence of a device used to perform energy conversion or heat transfer and typically participates in a flow distribution system. Its type is defined by IfcEnergyConversionDeviceType or its subtypes.",
+   "status": "Active"
+  },
+  "pt-BR": {
+   "name": "Dispositivo de Conversão de Energia",
+   "definition": "O elemento de distribuição de fluxo [[IfcEnergyConversionDevice]] define a ocorrência de um dispositivo utilizado para executar a conversão de energia ou a transferência de calor e que normalmente participa num sistema de distribuição de fluxo. O seu tipo é definido por IfcEnergyConversionDeviceType ou pelos seus subtipos.",
+   "status": "Active"
+  },
+  "fr-FR": {
+   "name": "Energy Conversion Device",
+   "definition": "The distribution flow element [[IfcEnergyConversionDevice]] defines the occurrence of a device used to perform energy conversion or heat transfer and typically participates in a flow distribution system. Its type is defined by IfcEnergyConversionDeviceType or its subtypes.",
+   "status": "Active"
+  }
+ },
+ "IfcFireSuppressionTerminal": {
+  "EN": {
+   "name": "Fire Suppression Terminal",
+   "definition": "A fire suppression terminal has the purpose of delivering a fluid (gas or liquid) that will suppress a fire.",
+   "status": "Active"
+  },
+  "de-DE": {
+   "name": "Fire Suppression Terminal",
+   "definition": "A fire suppression terminal has the purpose of delivering a fluid (gas or liquid) that will suppress a fire.",
+   "status": "Active"
+  },
+  "es-ES": {
+   "name": "Fire Suppression Terminal",
+   "definition": "A fire suppression terminal has the purpose of delivering a fluid (gas or liquid) that will suppress a fire.",
+   "status": "Active"
+  },
+  "zh-CN": {
+   "name": "Fire Suppression Terminal",
+   "definition": "A fire suppression terminal has the purpose of delivering a fluid (gas or liquid) that will suppress a fire.",
+   "status": "Active"
+  },
+  "ja-JP": {
+   "name": "Fire Suppression Terminal",
+   "definition": "A fire suppression terminal has the purpose of delivering a fluid (gas or liquid) that will suppress a fire.",
+   "status": "Active"
+  },
+  "pt-BR": {
+   "name": "Terminal Hidráulico de Combate a Incêndio",
+   "definition": "Um terminal hidráulico de combate a incêndio tem o objetivo de extinguir ou controlar o fogo por meio do lançamento de um fluido extintor (gás ou líquido).",
+   "status": "Active"
+  },
+  "fr-FR": {
+   "name": "Fire Suppression Terminal",
+   "definition": "A fire suppression terminal has the purpose of delivering a fluid (gas or liquid) that will suppress a fire.",
+   "status": "Active"
+  }
+ },
+ "IfcFlowController": {
+  "EN": {
+   "name": "Flow Controller",
+   "definition": "The distribution flow element [[IfcFlowController]] defines the occurrence of elements of a distribution system that are used to regulate flow through a distribution system. Examples include dampers, valves, switches, and relays. Its type is defined by IfcFlowControllerType or subtypes.",
+   "status": "Active"
+  },
+  "de-DE": {
+   "name": "Flow Controller",
+   "definition": "The distribution flow element [[IfcFlowController]] defines the occurrence of elements of a distribution system that are used to regulate flow through a distribution system. Examples include dampers, valves, switches, and relays. Its type is defined by IfcFlowControllerType or subtypes.",
+   "status": "Active"
+  },
+  "es-ES": {
+   "name": "Flow Controller",
+   "definition": "The distribution flow element [[IfcFlowController]] defines the occurrence of elements of a distribution system that are used to regulate flow through a distribution system. Examples include dampers, valves, switches, and relays. Its type is defined by IfcFlowControllerType or subtypes.",
+   "status": "Active"
+  },
+  "zh-CN": {
+   "name": "Flow Controller",
+   "definition": "The distribution flow element [[IfcFlowController]] defines the occurrence of elements of a distribution system that are used to regulate flow through a distribution system. Examples include dampers, valves, switches, and relays. Its type is defined by IfcFlowControllerType or subtypes.",
+   "status": "Active"
+  },
+  "ja-JP": {
+   "name": "Flow Controller",
+   "definition": "The distribution flow element [[IfcFlowController]] defines the occurrence of elements of a distribution system that are used to regulate flow through a distribution system. Examples include dampers, valves, switches, and relays. Its type is defined by IfcFlowControllerType or subtypes.",
+   "status": "Active"
+  },
+  "pt-BR": {
+   "name": "Controlador de Fluxo",
+   "definition": "O elemento de distribuição de fluxo [[IfcFlowController]] define a ocorrência de elementos de um sistema de distribuição que são utilizados para regular o fluxo através de um sistema de distribuição. Exemplos incluem amortecedores, válvulas, interruptores e relés. O seu tipo é definido por IfcFlowControllerType ou subtipos.",
+   "status": "Active"
+  },
+  "fr-FR": {
+   "name": "Flow Controller",
+   "definition": "The distribution flow element [[IfcFlowController]] defines the occurrence of elements of a distribution system that are used to regulate flow through a distribution system. Examples include dampers, valves, switches, and relays. Its type is defined by IfcFlowControllerType or subtypes.",
+   "status": "Active"
+  }
+ },
+ "IfcFlowFitting": {
+  "EN": {
+   "name": "Flow Fitting",
+   "definition": "The distribution flow element [[IfcFlowFitting]] defines the occurrence of a junction or transition in a flow distribution system, such as an elbow or tee. Its type is defined by IfcFlowFittingType or its subtypes.",
+   "status": "Active"
+  },
+  "de-DE": {
+   "name": "Flow Fitting",
+   "definition": "The distribution flow element [[IfcFlowFitting]] defines the occurrence of a junction or transition in a flow distribution system, such as an elbow or tee. Its type is defined by IfcFlowFittingType or its subtypes.",
+   "status": "Active"
+  },
+  "es-ES": {
+   "name": "Flow Fitting",
+   "definition": "The distribution flow element [[IfcFlowFitting]] defines the occurrence of a junction or transition in a flow distribution system, such as an elbow or tee. Its type is defined by IfcFlowFittingType or its subtypes.",
+   "status": "Active"
+  },
+  "zh-CN": {
+   "name": "Flow Fitting",
+   "definition": "The distribution flow element [[IfcFlowFitting]] defines the occurrence of a junction or transition in a flow distribution system, such as an elbow or tee. Its type is defined by IfcFlowFittingType or its subtypes.",
+   "status": "Active"
+  },
+  "ja-JP": {
+   "name": "Flow Fitting",
+   "definition": "The distribution flow element [[IfcFlowFitting]] defines the occurrence of a junction or transition in a flow distribution system, such as an elbow or tee. Its type is defined by IfcFlowFittingType or its subtypes.",
+   "status": "Active"
+  },
+  "pt-BR": {
+   "name": "Ajuste de Fluxo",
+   "definition": "O elemento de distribuição de fluxo [[IfcFlowFitting]] define a ocorrência de uma junção ou transição num sistema de distribuição de fluxo, como uma curva ou um tê. O seu tipo é definido por IfcFlowFittingType ou pelos seus subtipos.",
+   "status": "Active"
+  },
+  "fr-FR": {
+   "name": "Flow Fitting",
+   "definition": "The distribution flow element [[IfcFlowFitting]] defines the occurrence of a junction or transition in a flow distribution system, such as an elbow or tee. Its type is defined by IfcFlowFittingType or its subtypes.",
+   "status": "Active"
+  }
+ },
+ "IfcFlowInstrumentType": {
+  "EN": {
+   "error": "HTTP Error 400: Bad Request"
+  },
+  "de-DE": {
+   "error": "HTTP Error 400: Bad Request"
+  },
+  "es-ES": {
+   "error": "HTTP Error 400: Bad Request"
+  },
+  "zh-CN": {
+   "error": "HTTP Error 400: Bad Request"
+  },
+  "ja-JP": {
+   "error": "HTTP Error 400: Bad Request"
+  },
+  "pt-BR": {
+   "error": "HTTP Error 400: Bad Request"
+  },
+  "fr-FR": {
+   "error": "HTTP Error 400: Bad Request"
+  }
+ },
+ "IfcFlowMovingDevice": {
+  "EN": {
+   "name": "Flow Moving Device",
+   "definition": "The distribution flow element [[IfcFlowMovingDevice]] defines the occurrence of an apparatus used to distribute, circulate or perform conveyance of fluids, including liquids and gases (such as a pump or fan), and typically participates in a flow distribution system. Its type is defined by IfcFlowMovingDeviceType or its subtypes.",
+   "status": "Active"
+  },
+  "de-DE": {
+   "name": "Flow Moving Device",
+   "definition": "The distribution flow element [[IfcFlowMovingDevice]] defines the occurrence of an apparatus used to distribute, circulate or perform conveyance of fluids, including liquids and gases (such as a pump or fan), and typically participates in a flow distribution system. Its type is defined by IfcFlowMovingDeviceType or its subtypes.",
+   "status": "Active"
+  },
+  "es-ES": {
+   "name": "Flow Moving Device",
+   "definition": "The distribution flow element [[IfcFlowMovingDevice]] defines the occurrence of an apparatus used to distribute, circulate or perform conveyance of fluids, including liquids and gases (such as a pump or fan), and typically participates in a flow distribution system. Its type is defined by IfcFlowMovingDeviceType or its subtypes.",
+   "status": "Active"
+  },
+  "zh-CN": {
+   "name": "Flow Moving Device",
+   "definition": "The distribution flow element [[IfcFlowMovingDevice]] defines the occurrence of an apparatus used to distribute, circulate or perform conveyance of fluids, including liquids and gases (such as a pump or fan), and typically participates in a flow distribution system. Its type is defined by IfcFlowMovingDeviceType or its subtypes.",
+   "status": "Active"
+  },
+  "ja-JP": {
+   "name": "Flow Moving Device",
+   "definition": "The distribution flow element [[IfcFlowMovingDevice]] defines the occurrence of an apparatus used to distribute, circulate or perform conveyance of fluids, including liquids and gases (such as a pump or fan), and typically participates in a flow distribution system. Its type is defined by IfcFlowMovingDeviceType or its subtypes.",
+   "status": "Active"
+  },
+  "pt-BR": {
+   "name": "Dispositivo de Movimentação de Fluxo",
+   "definition": "O elemento de distribuição de fluxo [[IfcFlowMovingDevice]] define a ocorrência de um aparelho utilizado para distribuir, fazer circular ou efetuar o transporte de fluidos, incluindo líquidos e gases (como uma bomba ou um ventilador), e normalmente participa num sistema de distribuição de fluxo. O seu tipo é definido por IfcFlowMovingDeviceType ou pelos seus subtipos.",
+   "status": "Active"
+  },
+  "fr-FR": {
+   "name": "Flow Moving Device",
+   "definition": "The distribution flow element [[IfcFlowMovingDevice]] defines the occurrence of an apparatus used to distribute, circulate or perform conveyance of fluids, including liquids and gases (such as a pump or fan), and typically participates in a flow distribution system. Its type is defined by IfcFlowMovingDeviceType or its subtypes.",
+   "status": "Active"
+  }
+ },
+ "IfcFlowSegment": {
+  "EN": {
+   "name": "Flow Segment",
+   "definition": "The distribution flow element [[IfcFlowSegment]] defines the occurrence of a segment of a flow distribution system.",
+   "status": "Active"
+  },
+  "de-DE": {
+   "name": "Flow Segment",
+   "definition": "The distribution flow element [[IfcFlowSegment]] defines the occurrence of a segment of a flow distribution system.",
+   "status": "Active"
+  },
+  "es-ES": {
+   "name": "Flow Segment",
+   "definition": "The distribution flow element [[IfcFlowSegment]] defines the occurrence of a segment of a flow distribution system.",
+   "status": "Active"
+  },
+  "zh-CN": {
+   "name": "Flow Segment",
+   "definition": "The distribution flow element [[IfcFlowSegment]] defines the occurrence of a segment of a flow distribution system.",
+   "status": "Active"
+  },
+  "ja-JP": {
+   "name": "Flow Segment",
+   "definition": "The distribution flow element [[IfcFlowSegment]] defines the occurrence of a segment of a flow distribution system.",
+   "status": "Active"
+  },
+  "pt-BR": {
+   "name": "Segmento de Fluxo",
+   "definition": "O elemento de distribuição de fluxo [[IfcFlowSegment]] define a ocorrência de um segmento de um sistema de distribuição de fluxo.",
+   "status": "Active"
+  },
+  "fr-FR": {
+   "name": "Flow Segment",
+   "definition": "The distribution flow element [[IfcFlowSegment]] defines the occurrence of a segment of a flow distribution system.",
+   "status": "Active"
+  }
+ },
+ "IfcFlowStorageDevice": {
+  "EN": {
+   "name": "Flow Storage Device",
+   "definition": "The distribution flow element [[IfcFlowStorageDevice]] defines the occurrence of a device that participates in a distribution system and is used for temporary storage (such as a tank). Its type is defined by IfcFlowStorageDeviceType or its subtypes.",
+   "status": "Active"
+  },
+  "de-DE": {
+   "name": "Flow Storage Device",
+   "definition": "The distribution flow element [[IfcFlowStorageDevice]] defines the occurrence of a device that participates in a distribution system and is used for temporary storage (such as a tank). Its type is defined by IfcFlowStorageDeviceType or its subtypes.",
+   "status": "Active"
+  },
+  "es-ES": {
+   "name": "Flow Storage Device",
+   "definition": "The distribution flow element [[IfcFlowStorageDevice]] defines the occurrence of a device that participates in a distribution system and is used for temporary storage (such as a tank). Its type is defined by IfcFlowStorageDeviceType or its subtypes.",
+   "status": "Active"
+  },
+  "zh-CN": {
+   "name": "Flow Storage Device",
+   "definition": "The distribution flow element [[IfcFlowStorageDevice]] defines the occurrence of a device that participates in a distribution system and is used for temporary storage (such as a tank). Its type is defined by IfcFlowStorageDeviceType or its subtypes.",
+   "status": "Active"
+  },
+  "ja-JP": {
+   "name": "Flow Storage Device",
+   "definition": "The distribution flow element [[IfcFlowStorageDevice]] defines the occurrence of a device that participates in a distribution system and is used for temporary storage (such as a tank). Its type is defined by IfcFlowStorageDeviceType or its subtypes.",
+   "status": "Active"
+  },
+  "pt-BR": {
+   "name": "Dispositivo de Armazenamento de Fluxo",
+   "definition": "O elemento de distribuição de fluxo [[IfcFlowStorageDevice]] define a ocorrência de um dispositivo que participa num sistema de distribuição, e é utilizado para armazenamento temporário (como um tanque). O seu tipo é definido por IfcFlowStorageDeviceType ou pelos seus subtipos.",
+   "status": "Active"
+  },
+  "fr-FR": {
+   "name": "Flow Storage Device",
+   "definition": "The distribution flow element [[IfcFlowStorageDevice]] defines the occurrence of a device that participates in a distribution system and is used for temporary storage (such as a tank). Its type is defined by IfcFlowStorageDeviceType or its subtypes.",
+   "status": "Active"
+  }
+ },
+ "IfcFlowTerminal": {
+  "EN": {
+   "name": "Flow Terminal",
+   "definition": "The distribution flow element [[IfcFlowTerminal]] defines the occurrence of a permanently attached element that acts as a terminus or beginning of a distribution system (such as an air outlet, drain, water closet, or sink). A terminal is typically a point at which a system interfaces with an external environment. Its type is defined by IfcFlowTerminalType or its subtypes.",
+   "status": "Active"
+  },
+  "de-DE": {
+   "name": "Flow Terminal",
+   "definition": "The distribution flow element [[IfcFlowTerminal]] defines the occurrence of a permanently attached element that acts as a terminus or beginning of a distribution system (such as an air outlet, drain, water closet, or sink). A terminal is typically a point at which a system interfaces with an external environment. Its type is defined by IfcFlowTerminalType or its subtypes.",
+   "status": "Active"
+  },
+  "es-ES": {
+   "name": "Flow Terminal",
+   "definition": "The distribution flow element [[IfcFlowTerminal]] defines the occurrence of a permanently attached element that acts as a terminus or beginning of a distribution system (such as an air outlet, drain, water closet, or sink). A terminal is typically a point at which a system interfaces with an external environment. Its type is defined by IfcFlowTerminalType or its subtypes.",
+   "status": "Active"
+  },
+  "zh-CN": {
+   "name": "Flow Terminal",
+   "definition": "The distribution flow element [[IfcFlowTerminal]] defines the occurrence of a permanently attached element that acts as a terminus or beginning of a distribution system (such as an air outlet, drain, water closet, or sink). A terminal is typically a point at which a system interfaces with an external environment. Its type is defined by IfcFlowTerminalType or its subtypes.",
+   "status": "Active"
+  },
+  "ja-JP": {
+   "name": "Flow Terminal",
+   "definition": "The distribution flow element [[IfcFlowTerminal]] defines the occurrence of a permanently attached element that acts as a terminus or beginning of a distribution system (such as an air outlet, drain, water closet, or sink). A terminal is typically a point at which a system interfaces with an external environment. Its type is defined by IfcFlowTerminalType or its subtypes.",
+   "status": "Active"
+  },
+  "pt-BR": {
+   "name": "Terminal de Fluxo",
+   "definition": "O elemento de distribuição de fluxo [[IfcFlowTerminal]] define a ocorrência de um elemento fixado de forma permanente que atua como início ou fim de um sistema de distribuição (como uma saída de ar, um ralo, um vaso sanitário ou um lavatório). Um terminal normalmente é um ponto em que um sistema se conecta com um ambiente externo. O seu tipo é definido por IfcFlowTerminalType ou pelos seus subtipos.",
+   "status": "Active"
+  },
+  "fr-FR": {
+   "name": "Flow Terminal",
+   "definition": "The distribution flow element [[IfcFlowTerminal]] defines the occurrence of a permanently attached element that acts as a terminus or beginning of a distribution system (such as an air outlet, drain, water closet, or sink). A terminal is typically a point at which a system interfaces with an external environment. Its type is defined by IfcFlowTerminalType or its subtypes.",
+   "status": "Active"
+  }
+ },
+ "IfcFlowTreatmentDevice": {
+  "EN": {
+   "name": "Flow Treatment Device",
+   "definition": "The distribution flow element [[IfcFlowTreatmentDevice]] defines the occurrence of a device typically used to remove unwanted matter from a fluid, either liquid or gas, and typically participates in a flow distribution system. Its type is defined by IfcFlowTreatmentDeviceType or its subtypes.",
+   "status": "Active"
+  },
+  "de-DE": {
+   "name": "Flow Treatment Device",
+   "definition": "The distribution flow element [[IfcFlowTreatmentDevice]] defines the occurrence of a device typically used to remove unwanted matter from a fluid, either liquid or gas, and typically participates in a flow distribution system. Its type is defined by IfcFlowTreatmentDeviceType or its subtypes.",
+   "status": "Active"
+  },
+  "es-ES": {
+   "name": "Flow Treatment Device",
+   "definition": "The distribution flow element [[IfcFlowTreatmentDevice]] defines the occurrence of a device typically used to remove unwanted matter from a fluid, either liquid or gas, and typically participates in a flow distribution system. Its type is defined by IfcFlowTreatmentDeviceType or its subtypes.",
+   "status": "Active"
+  },
+  "zh-CN": {
+   "name": "Flow Treatment Device",
+   "definition": "The distribution flow element [[IfcFlowTreatmentDevice]] defines the occurrence of a device typically used to remove unwanted matter from a fluid, either liquid or gas, and typically participates in a flow distribution system. Its type is defined by IfcFlowTreatmentDeviceType or its subtypes.",
+   "status": "Active"
+  },
+  "ja-JP": {
+   "name": "Flow Treatment Device",
+   "definition": "The distribution flow element [[IfcFlowTreatmentDevice]] defines the occurrence of a device typically used to remove unwanted matter from a fluid, either liquid or gas, and typically participates in a flow distribution system. Its type is defined by IfcFlowTreatmentDeviceType or its subtypes.",
+   "status": "Active"
+  },
+  "pt-BR": {
+   "name": "Dispositivo de Tratamento de Fluxo",
+   "definition": "O elemento de distribuição de fluxo [[IfcFlowTreatmentDevice]] define a ocorrência de um dispositivo normalmente utilizado para remover matérias indesejadas de um fluido, líquido ou gasoso, e normalmente participa num sistema de distribuição de fluxo. O seu tipo é definido por IfcFlowTreatmentDeviceType ou pelos seus subtipos.",
+   "status": "Active"
+  },
+  "fr-FR": {
+   "name": "Flow Treatment Device",
+   "definition": "The distribution flow element [[IfcFlowTreatmentDevice]] defines the occurrence of a device typically used to remove unwanted matter from a fluid, either liquid or gas, and typically participates in a flow distribution system. Its type is defined by IfcFlowTreatmentDeviceType or its subtypes.",
+   "status": "Active"
+  }
+ },
+ "IfcFooting": {
+  "EN": {
+   "name": "Footing",
+   "definition": "A footing is a part of the foundation of a structure that spreads and transmits the load to the soil. A footing is also characterized as shallow foundation, where the loads are transferred to the ground near the surface.",
+   "status": "Active"
+  },
+  "de-DE": {
+   "name": "Footing",
+   "definition": "A footing is a part of the foundation of a structure that spreads and transmits the load to the soil. A footing is also characterized as shallow foundation, where the loads are transferred to the ground near the surface.",
+   "status": "Active"
+  },
+  "es-ES": {
+   "name": "Footing",
+   "definition": "A footing is a part of the foundation of a structure that spreads and transmits the load to the soil. A footing is also characterized as shallow foundation, where the loads are transferred to the ground near the surface.",
+   "status": "Active"
+  },
+  "zh-CN": {
+   "name": "Footing",
+   "definition": "A footing is a part of the foundation of a structure that spreads and transmits the load to the soil. A footing is also characterized as shallow foundation, where the loads are transferred to the ground near the surface.",
+   "status": "Active"
+  },
+  "ja-JP": {
+   "name": "Footing",
+   "definition": "A footing is a part of the foundation of a structure that spreads and transmits the load to the soil. A footing is also characterized as shallow foundation, where the loads are transferred to the ground near the surface.",
+   "status": "Active"
+  },
+  "pt-BR": {
+   "name": "Sapata",
+   "definition": "A footing is a part of the foundation of a structure that spreads and transmits the load to the soil. A footing is also characterized as shallow foundation, where the loads are transferred to the ground near the surface.",
+   "status": "Active"
+  },
+  "fr-FR": {
+   "name": "Footing",
+   "definition": "A footing is a part of the foundation of a structure that spreads and transmits the load to the soil. A footing is also characterized as shallow foundation, where the loads are transferred to the ground near the surface.",
+   "status": "Active"
+  }
+ },
+ "IfcFurnishingElement": {
+  "EN": {
+   "name": "Furnishing Element",
+   "definition": "A furnishing element is a generalization of all furniture related objects. Furnishing objects are characterized as being",
+   "status": "Active"
+  },
+  "de-DE": {
+   "name": "Furnishing Element",
+   "definition": "A furnishing element is a generalization of all furniture related objects. Furnishing objects are characterized as being",
+   "status": "Active"
+  },
+  "es-ES": {
+   "name": "Elemento de Mobiliario",
+   "definition": "Un elemento de mobiliario es una generalización de todos los objetos relacionados con los muebles.",
+   "status": "Active"
+  },
+  "zh-CN": {
+   "name": "Furnishing Element",
+   "definition": "A furnishing element is a generalization of all furniture related objects. Furnishing objects are characterized as being",
+   "status": "Active"
+  },
+  "ja-JP": {
+   "name": "Furnishing Element",
+   "definition": "A furnishing element is a generalization of all furniture related objects. Furnishing objects are characterized as being",
+   "status": "Active"
+  },
+  "pt-BR": {
+   "name": "Elemento de Mobiliário",
+   "definition": "Um elemento de mobiliário é uma generalização de todos os objetos relacionados à mobília. Os objetos de mobília são caracterizados como sendo",
+   "status": "Active"
+  },
+  "fr-FR": {
+   "name": "Furnishing Element",
+   "definition": "A furnishing element is a generalization of all furniture related objects. Furnishing objects are characterized as being",
+   "status": "Active"
+  }
+ },
+ "IfcFurniture": {
+  "EN": {
+   "name": "Furniture",
+   "definition": "Furniture defines complete furnishings such as a table, desk, chair, or cabinet, which may or may not be permanently attached to a building structure.",
+   "status": "Active"
+  },
+  "de-DE": {
+   "name": "Möbel",
+   "definition": "Möbel sind Einrichtungsgegenstände wie Tische, Schreibtische, Stühle oder Schränke, die freistehend oder fest eingebaut in einem Gebäude sein können.",
+   "status": "Active"
+  },
+  "es-ES": {
+   "name": "Furniture",
+   "definition": "Furniture defines complete furnishings such as a table, desk, chair, or cabinet, which may or may not be permanently attached to a building structure.",
+   "status": "Active"
+  },
+  "zh-CN": {
+   "name": "Furniture",
+   "definition": "Furniture defines complete furnishings such as a table, desk, chair, or cabinet, which may or may not be permanently attached to a building structure.",
+   "status": "Active"
+  },
+  "ja-JP": {
+   "name": "家具",
+   "definition": "家具とは、テーブル、机、椅子、キャビネットなどの家具一式を定義するもので、建築構造物に恒久的に取り付けられているかどうかは問わない。",
+   "status": "Active"
+  },
+  "pt-BR": {
+   "name": "Mobiliário",
+   "definition": "Mobiliário define peças de mobiliário completas, como uma mesa, escrivaninha, cadeira ou armário, que podem ou não estar permanentemente fixadas à estrutura do edifício.",
+   "status": "Active"
+  },
+  "fr-FR": {
+   "name": "Furniture",
+   "definition": "Furniture defines complete furnishings such as a table, desk, chair, or cabinet, which may or may not be permanently attached to a building structure.",
+   "status": "Active"
+  }
+ },
+ "IfcLightFixture": {
+  "EN": {
+   "name": "Light Fixture",
+   "definition": "A light fixture is a container that is designed for the purpose of housing one or more lamps and optionally devices that control, restrict or vary their emission.",
+   "status": "Active"
+  },
+  "de-DE": {
+   "name": "Light Fixture",
+   "definition": "A light fixture is a container that is designed for the purpose of housing one or more lamps and optionally devices that control, restrict or vary their emission.",
+   "status": "Active"
+  },
+  "es-ES": {
+   "name": "Luminaria",
+   "definition": "Una luminaria es un contenedor diseñado para albergar una o más lámparas y opcionalmente dispositivos que controlan restringen o varían su emisión.",
+   "status": "Active"
+  },
+  "zh-CN": {
+   "name": "Light Fixture",
+   "definition": "A light fixture is a container that is designed for the purpose of housing one or more lamps and optionally devices that control, restrict or vary their emission.",
+   "status": "Active"
+  },
+  "ja-JP": {
+   "name": "Light Fixture",
+   "definition": "A light fixture is a container that is designed for the purpose of housing one or more lamps and optionally devices that control, restrict or vary their emission.",
+   "status": "Active"
+  },
+  "pt-BR": {
+   "name": "Luminária",
+   "definition": "Uma luminária é um recipiente concebido para o uso de uma ou mais lâmpadas e opcionalmente dispositivos que controlam, restringem ou variam suas emissões.",
+   "status": "Active"
+  },
+  "fr-FR": {
+   "name": "Light Fixture",
+   "definition": "A light fixture is a container that is designed for the purpose of housing one or more lamps and optionally devices that control, restrict or vary their emission.",
+   "status": "Active"
+  }
+ },
+ "IfcMember": {
+  "EN": {
+   "name": "Member",
+   "definition": "An [[IfcMember]] is a structural member designed to carry loads between or beyond points of support. It is not required to be load bearing. The orientation of the member (being horizontal, vertical or sloped) is not relevant to its definition (in contrary to [[IfcBeam]] and [[IfcColumn]]). An [[IfcMember]] represents a linear structural element from an architectural or structural modeling point of view and shall be used if it cannot be expressed more specifically as either an [[IfcBeam]] or an [[IfcColumn]].",
+   "status": "Active"
+  },
+  "de-DE": {
+   "name": "Member",
+   "definition": "An [[IfcMember]] is a structural member designed to carry loads between or beyond points of support. It is not required to be load bearing. The orientation of the member (being horizontal, vertical or sloped) is not relevant to its definition (in contrary to [[IfcBeam]] and [[IfcColumn]]). An [[IfcMember]] represents a linear structural element from an architectural or structural modeling point of view and shall be used if it cannot be expressed more specifically as either an [[IfcBeam]] or an [[IfcColumn]].",
+   "status": "Active"
+  },
+  "es-ES": {
+   "name": "Elemento de Estructura",
+   "definition": "Un [[IfcMember]] es un miembro estructural diseñado para llevar cargas entre o más allá de los puntos de apoyo. No es necesario ser portador de carga. La orientación del miembro (siendo horizontal, vertical o pendiente) no es relevante para su definición (en contra de [[IfcBeam]] y [[IfcColumn]]). Un [[IfcMember]] representa un elemento estructural lineal desde un punto de vista de modelado arquitectónico o estructural y se utilizará si no puede expresarse más específicamente como [[IfcBeam]] o como [[IfcColumn]].",
+   "status": "Active"
+  },
+  "zh-CN": {
+   "name": "Member",
+   "definition": "An [[IfcMember]] is a structural member designed to carry loads between or beyond points of support. It is not required to be load bearing. The orientation of the member (being horizontal, vertical or sloped) is not relevant to its definition (in contrary to [[IfcBeam]] and [[IfcColumn]]). An [[IfcMember]] represents a linear structural element from an architectural or structural modeling point of view and shall be used if it cannot be expressed more specifically as either an [[IfcBeam]] or an [[IfcColumn]].",
+   "status": "Active"
+  },
+  "ja-JP": {
+   "name": "Member",
+   "definition": "An [[IfcMember]] is a structural member designed to carry loads between or beyond points of support. It is not required to be load bearing. The orientation of the member (being horizontal, vertical or sloped) is not relevant to its definition (in contrary to [[IfcBeam]] and [[IfcColumn]]). An [[IfcMember]] represents a linear structural element from an architectural or structural modeling point of view and shall be used if it cannot be expressed more specifically as either an [[IfcBeam]] or an [[IfcColumn]].",
+   "status": "Active"
+  },
+  "pt-BR": {
+   "name": "Membro",
+   "definition": "Um [[IfcMember]] é um membro estrutural projetado para transportar cargas entre ou além dos pontos de suporte. Não é necessário suportar carga. A orientação da barra (ser horizontal, vertical ou inclinada) não é relevante para a sua definição (ao contrário de [[IfcBeam]] e [[IfcColumn]]). Um [[IfcMember]] representa um elemento estrutural linear do ponto de vista de modelagem arquitetônica ou estrutural e deve ser usado se não puder ser expresso mais especificamente como um [[IfcBeam]] ou um [[IfcColumn]].",
+   "status": "Active"
+  },
+  "fr-FR": {
+   "name": "Member",
+   "definition": "An [[IfcMember]] is a structural member designed to carry loads between or beyond points of support. It is not required to be load bearing. The orientation of the member (being horizontal, vertical or sloped) is not relevant to its definition (in contrary to [[IfcBeam]] and [[IfcColumn]]). An [[IfcMember]] represents a linear structural element from an architectural or structural modeling point of view and shall be used if it cannot be expressed more specifically as either an [[IfcBeam]] or an [[IfcColumn]].",
+   "status": "Active"
+  }
+ },
+ "IfcOpeningElement": {
+  "EN": {
+   "name": "Opening Element",
+   "definition": "The opening element stands for opening, recess or chase, all reflecting voids. It represents a void within any element that has physical manifestation. Openings can be inserted into walls, slabs, beams, columns, or other elements.",
+   "status": "Active"
+  },
+  "de-DE": {
+   "name": "Opening Element",
+   "definition": "The opening element stands for opening, recess or chase, all reflecting voids. It represents a void within any element that has physical manifestation. Openings can be inserted into walls, slabs, beams, columns, or other elements.",
+   "status": "Active"
+  },
+  "es-ES": {
+   "name": "Hueco",
+   "definition": "El hueco es un elemento de abertura, rebaje o marco, que refleja vacíos. Representa un vacío en cualquier elemento con manifestación física. Las aberturas pueden insertarse en muros, losas, vigas, columnas u otros elementos.",
+   "status": "Active"
+  },
+  "zh-CN": {
+   "name": "Opening Element",
+   "definition": "The opening element stands for opening, recess or chase, all reflecting voids. It represents a void within any element that has physical manifestation. Openings can be inserted into walls, slabs, beams, columns, or other elements.",
+   "status": "Active"
+  },
+  "ja-JP": {
+   "name": "Opening Element",
+   "definition": "The opening element stands for opening, recess or chase, all reflecting voids. It represents a void within any element that has physical manifestation. Openings can be inserted into walls, slabs, beams, columns, or other elements.",
+   "status": "Active"
+  },
+  "pt-BR": {
+   "name": "Elemento de Abertura",
+   "definition": "O elemento de abertura representa abertura, recuo ou entalhe, todos refletindo vazios. Representa um vazio dentro de qualquer elemento que tenha manifestação física. As aberturas podem ser inseridas em paredes, lajes, vigas, pilares ou outros elementos.",
+   "status": "Active"
+  },
+  "fr-FR": {
+   "name": "Opening Element",
+   "definition": "The opening element stands for opening, recess or chase, all reflecting voids. It represents a void within any element that has physical manifestation. Openings can be inserted into walls, slabs, beams, columns, or other elements.",
+   "status": "Active"
+  }
+ },
+ "IfcPipeFitting": {
+  "EN": {
+   "name": "Pipe Fitting",
+   "definition": "A pipe fitting is a junction or transition in a piping flow distribution system used to connect pipe segments, resulting in changes in flow characteristics to the fluid such as direction or flow rate.",
+   "status": "Active"
+  },
+  "de-DE": {
+   "name": "Pipe Fitting",
+   "definition": "A pipe fitting is a junction or transition in a piping flow distribution system used to connect pipe segments, resulting in changes in flow characteristics to the fluid such as direction or flow rate.",
+   "status": "Active"
+  },
+  "es-ES": {
+   "name": "Accesorio de Tubería",
+   "definition": "Un accesorio de tubería es una unión o transición en un sistema de distribución de flujos usado para conectar tramos de tuberías, lo que produce cambios en las características de flujo del fluido, tales como dirección o caudal.",
+   "status": "Active"
+  },
+  "zh-CN": {
+   "name": "Pipe Fitting",
+   "definition": "A pipe fitting is a junction or transition in a piping flow distribution system used to connect pipe segments, resulting in changes in flow characteristics to the fluid such as direction or flow rate.",
+   "status": "Active"
+  },
+  "ja-JP": {
+   "name": "Pipe Fitting",
+   "definition": "A pipe fitting is a junction or transition in a piping flow distribution system used to connect pipe segments, resulting in changes in flow characteristics to the fluid such as direction or flow rate.",
+   "status": "Active"
+  },
+  "pt-BR": {
+   "name": "Conexão de Tubulação",
+   "definition": "Uma conexão de tubulação é uma junção ou transição em um sistema de distribuição de fluxo de tubulação usado para conectar segmentos de tubulação, resultando em mudanças nas características do fluxo do fluido, como direção ou vazão.",
+   "status": "Active"
+  },
+  "fr-FR": {
+   "name": "Pipe Fitting",
+   "definition": "A pipe fitting is a junction or transition in a piping flow distribution system used to connect pipe segments, resulting in changes in flow characteristics to the fluid such as direction or flow rate.",
+   "status": "Active"
+  }
+ },
+ "IfcPipeSegment": {
+  "EN": {
+   "name": "Pipe Segment",
+   "definition": "A pipe segment is used to typically join two sections of a piping network.",
+   "status": "Active"
+  },
+  "de-DE": {
+   "name": "Pipe Segment",
+   "definition": "A pipe segment is used to typically join two sections of a piping network.",
+   "status": "Active"
+  },
+  "es-ES": {
+   "name": "Tramo de Tubería",
+   "definition": "Un tramo de tubería se utiliza normalmente para unir dos secciones de una red de tuberías.",
+   "status": "Active"
+  },
+  "zh-CN": {
+   "name": "Pipe Segment",
+   "definition": "A pipe segment is used to typically join two sections of a piping network.",
+   "status": "Active"
+  },
+  "ja-JP": {
+   "name": "Pipe Segment",
+   "definition": "A pipe segment is used to typically join two sections of a piping network.",
+   "status": "Active"
+  },
+  "pt-BR": {
+   "name": "Segmento de Tubulação",
+   "definition": "Um segmento de tubo é usado para normalmente juntar duas seções de uma rede de canalização.",
+   "status": "Active"
+  },
+  "fr-FR": {
+   "name": "Pipe Segment",
+   "definition": "A pipe segment is used to typically join two sections of a piping network.",
+   "status": "Active"
+  }
+ },
+ "IfcPlate": {
+  "EN": {
+   "name": "Plate",
+   "definition": "An [[IfcPlate]] is a planar and often flat part with constant thickness. A plate may carry loads between or beyond points of support, or provide stiffening. The location of the plate (being horizontal, vertical or sloped) is not relevant to its definition.",
+   "status": "Active"
+  },
+  "de-DE": {
+   "name": "Plate",
+   "definition": "An [[IfcPlate]] is a planar and often flat part with constant thickness. A plate may carry loads between or beyond points of support, or provide stiffening. The location of the plate (being horizontal, vertical or sloped) is not relevant to its definition.",
+   "status": "Active"
+  },
+  "es-ES": {
+   "name": "Placa",
+   "definition": "Una [[IfcPlate]] es un elemento plano, a menudo con espesor constante. Una placa puede portar cargas entre o más allá de los puntos de apoyo, o proporcionar resistencia. La ubicación de la placa (horizontal, vertical o inclinada) no es relevante para su definición.",
+   "status": "Active"
+  },
+  "zh-CN": {
+   "name": "Plate",
+   "definition": "An [[IfcPlate]] is a planar and often flat part with constant thickness. A plate may carry loads between or beyond points of support, or provide stiffening. The location of the plate (being horizontal, vertical or sloped) is not relevant to its definition.",
+   "status": "Active"
+  },
+  "ja-JP": {
+   "name": "Plate",
+   "definition": "An [[IfcPlate]] is a planar and often flat part with constant thickness. A plate may carry loads between or beyond points of support, or provide stiffening. The location of the plate (being horizontal, vertical or sloped) is not relevant to its definition.",
+   "status": "Active"
+  },
+  "pt-BR": {
+   "name": "Placa",
+   "definition": "Um [[IfcPlate]] é uma peça plana e geralmente com espessura constante. Uma placa pode suportar cargas entre, ou além, dos pontos de suporte ou fornecer rigidez. A localização da placa (sendo horizontal, vertical ou inclinada) não é relevante para a sua definição.",
+   "status": "Active"
+  },
+  "fr-FR": {
+   "name": "Plate",
+   "definition": "An [[IfcPlate]] is a planar and often flat part with constant thickness. A plate may carry loads between or beyond points of support, or provide stiffening. The location of the plate (being horizontal, vertical or sloped) is not relevant to its definition.",
+   "status": "Active"
+  }
+ },
+ "IfcRailing": {
+  "EN": {
+   "name": "Railing",
+   "definition": "The railing is a frame assembly adjacent to human or vehicle circulation spaces and at some space boundaries where it is used in lieu of walls or to complement walls. Designed as an optional physical support, or to prevent injury or damage, either by falling or collision.",
+   "status": "Active"
+  },
+  "de-DE": {
+   "name": "Railing",
+   "definition": "The railing is a frame assembly adjacent to human or vehicle circulation spaces and at some space boundaries where it is used in lieu of walls or to complement walls. Designed as an optional physical support, or to prevent injury or damage, either by falling or collision.",
+   "status": "Active"
+  },
+  "es-ES": {
+   "name": "Barandilla",
+   "definition": "Una barandilla es un conjunto estructural adyacente a espacios de circulación humana o vehicular y utilizado como límite en algunos espacios, donde se utiliza en lugar de paredes o como complemento de estas. Está diseñada como soporte físico opcional, o para prevenir lesiones o daños, ya sea por caída o por colisión.",
+   "status": "Active"
+  },
+  "zh-CN": {
+   "name": "Railing",
+   "definition": "The railing is a frame assembly adjacent to human or vehicle circulation spaces and at some space boundaries where it is used in lieu of walls or to complement walls. Designed as an optional physical support, or to prevent injury or damage, either by falling or collision.",
+   "status": "Active"
+  },
+  "ja-JP": {
+   "name": "Railing",
+   "definition": "The railing is a frame assembly adjacent to human or vehicle circulation spaces and at some space boundaries where it is used in lieu of walls or to complement walls. Designed as an optional physical support, or to prevent injury or damage, either by falling or collision.",
+   "status": "Active"
+  },
+  "pt-BR": {
+   "name": "Guarda-corpo",
+   "definition": "O guarda-corpo é um conjunto de armações adjacentes aos espaços de circulação de pessoas ou veículos e em alguns limites de espaço onde é usado em vez de paredes ou para complementar paredes. Projetado como um suporte físico opcional, ou para evitar ferimentos ou danos, seja por queda ou colisão.",
+   "status": "Active"
+  },
+  "fr-FR": {
+   "name": "Railing",
+   "definition": "The railing is a frame assembly adjacent to human or vehicle circulation spaces and at some space boundaries where it is used in lieu of walls or to complement walls. Designed as an optional physical support, or to prevent injury or damage, either by falling or collision.",
+   "status": "Active"
+  }
+ },
+ "IfcRamp": {
+  "EN": {
+   "name": "Ramp",
+   "definition": "A ramp is a vertical passageway which provides a human or vehicle circulation link between one floor level and another floor level at a different elevation. It may include a landing as an intermediate floor slab. A ramp normally does not include steps.",
+   "status": "Active"
+  },
+  "de-DE": {
+   "name": "Ramp",
+   "definition": "A ramp is a vertical passageway which provides a human or vehicle circulation link between one floor level and another floor level at a different elevation. It may include a landing as an intermediate floor slab. A ramp normally does not include steps.",
+   "status": "Active"
+  },
+  "es-ES": {
+   "name": "Rampa",
+   "definition": "Una rampa es un plano vertical que permite la circulación humana o vehicular entre dos niveles situados a diferente altura. Puede incluir un descansillo como losa intermedia. Una rampa no suele incluir peldaños.",
+   "status": "Active"
+  },
+  "zh-CN": {
+   "name": "Ramp",
+   "definition": "A ramp is a vertical passageway which provides a human or vehicle circulation link between one floor level and another floor level at a different elevation. It may include a landing as an intermediate floor slab. A ramp normally does not include steps.",
+   "status": "Active"
+  },
+  "ja-JP": {
+   "name": "Ramp",
+   "definition": "A ramp is a vertical passageway which provides a human or vehicle circulation link between one floor level and another floor level at a different elevation. It may include a landing as an intermediate floor slab. A ramp normally does not include steps.",
+   "status": "Active"
+  },
+  "pt-BR": {
+   "name": "Rampa",
+   "definition": "Uma rampa é uma passagem vertical que proporciona uma ligação de circulação para pessoas ou veículos entre um nível de piso e outro em elevações diferentes. Pode incluir um patamar como uma laje intermediária. Uma rampa normalmente não inclui degraus.",
+   "status": "Active"
+  },
+  "fr-FR": {
+   "name": "Ramp",
+   "definition": "A ramp is a vertical passageway which provides a human or vehicle circulation link between one floor level and another floor level at a different elevation. It may include a landing as an intermediate floor slab. A ramp normally does not include steps.",
+   "status": "Active"
+  }
+ },
+ "IfcRampFlight": {
+  "EN": {
+   "name": "Ramp Flight",
+   "definition": "A ramp comprises a single inclined segment, or several inclined segments that are connected by a horizontal segment, referred to as a landing. A ramp flight is the single inclined segment and part of the ramp construction. In case of single flight ramps, the ramp flight and the ramp are identical.",
+   "status": "Active"
+  },
+  "de-DE": {
+   "name": "Ramp Flight",
+   "definition": "A ramp comprises a single inclined segment, or several inclined segments that are connected by a horizontal segment, referred to as a landing. A ramp flight is the single inclined segment and part of the ramp construction. In case of single flight ramps, the ramp flight and the ramp are identical.",
+   "status": "Active"
+  },
+  "es-ES": {
+   "name": "Tramo de Rampa",
+   "definition": "Una rampa incluye un único tramo inclinado, o varios tramos inclinados conectados por un tramo horizontal llamado descansillo. Un tramo de rampa es el elemento inclinado que forma parte de la construcción de una rampa. En el caso de rampas de un único tramo, el tramo de la rampa y la rampa coinciden.",
+   "status": "Active"
+  },
+  "zh-CN": {
+   "name": "Ramp Flight",
+   "definition": "A ramp comprises a single inclined segment, or several inclined segments that are connected by a horizontal segment, referred to as a landing. A ramp flight is the single inclined segment and part of the ramp construction. In case of single flight ramps, the ramp flight and the ramp are identical.",
+   "status": "Active"
+  },
+  "ja-JP": {
+   "name": "Ramp Flight",
+   "definition": "A ramp comprises a single inclined segment, or several inclined segments that are connected by a horizontal segment, referred to as a landing. A ramp flight is the single inclined segment and part of the ramp construction. In case of single flight ramps, the ramp flight and the ramp are identical.",
+   "status": "Active"
+  },
+  "pt-BR": {
+   "name": "Trecho de Rampa",
+   "definition": "Uma rampa é composta por um único segmento inclinado, ou vários segmentos inclinados conectados por um segmento horizontal, denominado patamar. Um trecho de rampa é um único segmento inclinado e parte da construção da rampa. No caso de rampas de um único trecho, o trecho de rampa e a rampa são idênticos.",
+   "status": "Active"
+  },
+  "fr-FR": {
+   "name": "Ramp Flight",
+   "definition": "A ramp comprises a single inclined segment, or several inclined segments that are connected by a horizontal segment, referred to as a landing. A ramp flight is the single inclined segment and part of the ramp construction. In case of single flight ramps, the ramp flight and the ramp are identical.",
+   "status": "Active"
+  }
+ },
+ "IfcReinforcingBar": {
+  "EN": {
+   "name": "Reinforcing Bar",
+   "definition": "A reinforcing bar is usually made of steel with manufactured deformations in the surface, and used in concrete and masonry construction to provide additional strength. A single instance of this class may represent one or many of actual rebars, for example a row of rebars.",
+   "status": "Active"
+  },
+  "de-DE": {
+   "name": "Reinforcing Bar",
+   "definition": "A reinforcing bar is usually made of steel with manufactured deformations in the surface, and used in concrete and masonry construction to provide additional strength. A single instance of this class may represent one or many of actual rebars, for example a row of rebars.",
+   "status": "Active"
+  },
+  "es-ES": {
+   "name": "Reinforcing Bar",
+   "definition": "A reinforcing bar is usually made of steel with manufactured deformations in the surface, and used in concrete and masonry construction to provide additional strength. A single instance of this class may represent one or many of actual rebars, for example a row of rebars.",
+   "status": "Active"
+  },
+  "zh-CN": {
+   "name": "Reinforcing Bar",
+   "definition": "A reinforcing bar is usually made of steel with manufactured deformations in the surface, and used in concrete and masonry construction to provide additional strength. A single instance of this class may represent one or many of actual rebars, for example a row of rebars.",
+   "status": "Active"
+  },
+  "ja-JP": {
+   "name": "Reinforcing Bar",
+   "definition": "A reinforcing bar is usually made of steel with manufactured deformations in the surface, and used in concrete and masonry construction to provide additional strength. A single instance of this class may represent one or many of actual rebars, for example a row of rebars.",
+   "status": "Active"
+  },
+  "pt-BR": {
+   "name": "Barra de Armadura",
+   "definition": "A armadura é geralmente feita de aço com saliências na superfície, e utilizada em construções de concreto e de alvenaria para fornecer força adicional. Uma instância única desta classe pode representar uma ou muitas barras individuais, como por exemplo, uma sequência de barras.",
+   "status": "Active"
+  },
+  "fr-FR": {
+   "name": "Reinforcing Bar",
+   "definition": "A reinforcing bar is usually made of steel with manufactured deformations in the surface, and used in concrete and masonry construction to provide additional strength. A single instance of this class may represent one or many of actual rebars, for example a row of rebars.",
+   "status": "Active"
+  }
+ },
+ "IfcRoof": {
+  "EN": {
+   "name": "Roof",
+   "definition": "A roof is the covering of the top part of a building, it protects the building against the effects of weather.",
+   "status": "Active"
+  },
+  "de-DE": {
+   "name": "Dach",
+   "definition": "Ein Dach ist die Abdeckung des oberen Teils eines Gebäudes; es schützt das Gebäude vor Witterungseinflüssen.",
+   "status": "Active"
+  },
+  "es-ES": {
+   "name": "Cubierta",
+   "definition": "Una cubierta es el elemento que cubre la parte superior de un edificio y lo protege de los efectos meteorológicos.",
+   "status": "Active"
+  },
+  "zh-CN": {
+   "name": "Roof",
+   "definition": "A roof is the covering of the top part of a building, it protects the building against the effects of weather.",
+   "status": "Active"
+  },
+  "ja-JP": {
+   "name": "屋根",
+   "definition": "屋根は建物の上部を覆うもので、天候の影響から建物を保護する。",
+   "status": "Active"
+  },
+  "pt-BR": {
+   "name": "Cobertura",
+   "definition": "Uma cobertura é a parte superior de um edifício, que o protege contra os efeitos do clima.",
+   "status": "Active"
+  },
+  "fr-FR": {
+   "name": "Roof",
+   "definition": "A roof is the covering of the top part of a building, it protects the building against the effects of weather.",
+   "status": "Active"
+  }
+ },
+ "IfcSensorType": {
+  "EN": {
+   "error": "HTTP Error 400: Bad Request"
+  },
+  "de-DE": {
+   "error": "HTTP Error 400: Bad Request"
+  },
+  "es-ES": {
+   "error": "HTTP Error 400: Bad Request"
+  },
+  "zh-CN": {
+   "error": "HTTP Error 400: Bad Request"
+  },
+  "ja-JP": {
+   "error": "HTTP Error 400: Bad Request"
+  },
+  "pt-BR": {
+   "error": "HTTP Error 400: Bad Request"
+  },
+  "fr-FR": {
+   "error": "HTTP Error 400: Bad Request"
+  }
+ },
+ "IfcSlab": {
+  "EN": {
+   "name": "Slab",
+   "definition": "A slab is a component of the construction that may enclose a space vertically. The slab may provide the lower support (floor) or upper construction (roof slab) in any space in a building.",
+   "status": "Active"
+  },
+  "de-DE": {
+   "name": "Stufe",
+   "definition": "Eine Decke ist ein Bauelement, das einen Raum vertikal abschließen kann. Die Decke kann die untere Konstruktion (Boden) oder die obere Konstruktion (Decke) eines beliebigen Raums in einem Gebäude bilden.",
+   "status": "Active"
+  },
+  "es-ES": {
+   "name": "Losa",
+   "definition": "Una losa es un elemento de construcción que puede cerrar un espacio verticalmente. La losa puede proporcionar soporte inferior (suelo) o cerramiento superior (techo) en cualquier espacio de un edificio.",
+   "status": "Active"
+  },
+  "zh-CN": {
+   "name": "Slab",
+   "definition": "A slab is a component of the construction that may enclose a space vertically. The slab may provide the lower support (floor) or upper construction (roof slab) in any space in a building.",
+   "status": "Active"
+  },
+  "ja-JP": {
+   "name": "スラブ",
+   "definition": "スラブは、空間を垂直に囲む可能性のある建築物の構成要素である。スラブは、建物のどの空間においても、下部支持(床) または上部構造(屋根スラブ) を提供することがある。",
+   "status": "Active"
+  },
+  "pt-BR": {
+   "name": "Laje",
+   "definition": "Elemento construtivo, geralmente horizontal, que define os limites inferiores (pisos) ou superiores de espaços (lajes de cobertura, pisos de pavimentos acima).",
+   "status": "Active"
+  },
+  "fr-FR": {
+   "name": "Slab",
+   "definition": "A slab is a component of the construction that may enclose a space vertically. The slab may provide the lower support (floor) or upper construction (roof slab) in any space in a building.",
+   "status": "Active"
+  }
+ },
+ "IfcStair": {
+  "EN": {
+   "name": "Stair",
+   "definition": "A stair is a vertical passageway allowing occupants to walk (step) from one floor level to another floor level at a different elevation. It may include a landing as an intermediate floor slab.",
+   "status": "Active"
+  },
+  "de-DE": {
+   "name": "Treppe",
+   "definition": "Eine Treppe ist eine vertikale (geneigte) Verbindung, die es den Bewohnern ermöglicht, von einem Stockwerk zu einem anderen Stockwerk auf einer anderen Höhe zu gehen. Sie kann ein Podest als Zwischendecke enthalten.",
+   "status": "Active"
+  },
+  "es-ES": {
+   "name": "Escalera",
+   "definition": "Una escalera es una conexión vertical que permite a los ocupantes caminar, utilizando escalones, entre niveles de planta situados a diferente altura. Puede incluir un rellano como nivel intermedio.",
+   "status": "Active"
+  },
+  "zh-CN": {
+   "name": "Stair",
+   "definition": "A stair is a vertical passageway allowing occupants to walk (step) from one floor level to another floor level at a different elevation. It may include a landing as an intermediate floor slab.",
+   "status": "Active"
+  },
+  "ja-JP": {
+   "name": "階段",
+   "definition": "階段は、居住者がある階から別の高さの階へ歩行することを可能にする垂直通路である。中間床スラブとして踊り場を含む場合もある。",
+   "status": "Active"
+  },
+  "pt-BR": {
+   "name": "Escada",
+   "definition": "Uma escada é uma circulação vertical que permite que os ocupantes caminhem (subam ou desçam) de um nível de piso para outro em elevações diferentes. Pode incluir um patamar como uma laje intermediária.",
+   "status": "Active"
+  },
+  "fr-FR": {
+   "name": "Stair",
+   "definition": "A stair is a vertical passageway allowing occupants to walk (step) from one floor level to another floor level at a different elevation. It may include a landing as an intermediate floor slab.",
+   "status": "Active"
+  }
+ },
+ "IfcStairFlight": {
+  "EN": {
+   "name": "Stair Flight",
+   "definition": "A stair flight is an assembly of building components in a single 'run' of stair steps (not interrupted by a landing). The stair steps and any stringers are included in the stair flight. A winder is also regarded a part of a stair flight.",
+   "status": "Active"
+  },
+  "de-DE": {
+   "name": "Stair Flight",
+   "definition": "A stair flight is an assembly of building components in a single 'run' of stair steps (not interrupted by a landing). The stair steps and any stringers are included in the stair flight. A winder is also regarded a part of a stair flight.",
+   "status": "Active"
+  },
+  "es-ES": {
+   "name": "Tramo de Escalera",
+   "definition": "Un tramo de escalera es un conjunto de elementos constructivos en una única sucesión de escalones (no interrumpida por un rellano intermedio). Los escalones y zancas están incluidos en el tramo de escalera.",
+   "status": "Active"
+  },
+  "zh-CN": {
+   "name": "Stair Flight",
+   "definition": "A stair flight is an assembly of building components in a single 'run' of stair steps (not interrupted by a landing). The stair steps and any stringers are included in the stair flight. A winder is also regarded a part of a stair flight.",
+   "status": "Active"
+  },
+  "ja-JP": {
+   "name": "Stair Flight",
+   "definition": "A stair flight is an assembly of building components in a single 'run' of stair steps (not interrupted by a landing). The stair steps and any stringers are included in the stair flight. A winder is also regarded a part of a stair flight.",
+   "status": "Active"
+  },
+  "pt-BR": {
+   "name": "Lance de Escada",
+   "definition": "Um lance de escada é uma montagem de componentes de construção em uma única 'corrida' de degraus da escada (não interrompida por um patamar). Os degraus da escada e quaisquer vigas laterais estão incluídos no lance de escada. Uma escada em espiral também é considerado um lance de escada.",
+   "status": "Active"
+  },
+  "fr-FR": {
+   "name": "Stair Flight",
+   "definition": "A stair flight is an assembly of building components in a single 'run' of stair steps (not interrupted by a landing). The stair steps and any stringers are included in the stair flight. A winder is also regarded a part of a stair flight.",
+   "status": "Active"
+  }
+ },
+ "IfcSwitchingDevice": {
+  "EN": {
+   "name": "Switching Device",
+   "definition": "A switch is used in a cable distribution system (electrical circuit) to control or modulate the flow of electricity.",
+   "status": "Active"
+  },
+  "de-DE": {
+   "name": "Switching Device",
+   "definition": "A switch is used in a cable distribution system (electrical circuit) to control or modulate the flow of electricity.",
+   "status": "Active"
+  },
+  "es-ES": {
+   "name": "Interruptor",
+   "definition": "Un interruptor se utiliza en un sistema de distribución de cables (circuito eléctrico) para controlar o modular el flujo de electricidad.",
+   "status": "Active"
+  },
+  "zh-CN": {
+   "name": "Switching Device",
+   "definition": "A switch is used in a cable distribution system (electrical circuit) to control or modulate the flow of electricity.",
+   "status": "Active"
+  },
+  "ja-JP": {
+   "name": "Switching Device",
+   "definition": "A switch is used in a cable distribution system (electrical circuit) to control or modulate the flow of electricity.",
+   "status": "Active"
+  },
+  "pt-BR": {
+   "name": "Switching Device",
+   "definition": "A switch is used in a cable distribution system (electrical circuit) to control or modulate the flow of electricity.",
+   "status": "Active"
+  },
+  "fr-FR": {
+   "name": "Switching Device",
+   "definition": "A switch is used in a cable distribution system (electrical circuit) to control or modulate the flow of electricity.",
+   "status": "Active"
+  }
+ },
+ "IfcSystemFurnitureElement": {
+  "EN": {
+   "name": "System Furniture Element",
+   "definition": "A system furniture element defines components of modular furniture which are not directly placed in a building structure but aggregated inside furniture.",
+   "status": "Active"
+  },
+  "de-DE": {
+   "name": "System Furniture Element",
+   "definition": "A system furniture element defines components of modular furniture which are not directly placed in a building structure but aggregated inside furniture.",
+   "status": "Active"
+  },
+  "es-ES": {
+   "name": "System Furniture Element",
+   "definition": "A system furniture element defines components of modular furniture which are not directly placed in a building structure but aggregated inside furniture.",
+   "status": "Active"
+  },
+  "zh-CN": {
+   "name": "System Furniture Element",
+   "definition": "A system furniture element defines components of modular furniture which are not directly placed in a building structure but aggregated inside furniture.",
+   "status": "Active"
+  },
+  "ja-JP": {
+   "name": "System Furniture Element",
+   "definition": "A system furniture element defines components of modular furniture which are not directly placed in a building structure but aggregated inside furniture.",
+   "status": "Active"
+  },
+  "pt-BR": {
+   "name": "Elemento do sistema de mobiliário",
+   "definition": "Um elemento de mobiliário modular define componentes de mobiliário modulado, que não são colocados diretamente na estrutura do edifício, mas sim agregados dentro de um mobiliário.",
+   "status": "Active"
+  },
+  "fr-FR": {
+   "name": "System Furniture Element",
+   "definition": "A system furniture element defines components of modular furniture which are not directly placed in a building structure but aggregated inside furniture.",
+   "status": "Active"
+  }
+ },
+ "IfcTransportElement": {
+  "EN": {
+   "name": "Transport Element",
+   "definition": "A transport element is a generalization of all transport related objects that move people, animals or goods within a Facility. The [[IfcTransportElement]] defines the occurrence of a transport element, that (if given), is expressed by the IfcTransportElementType.",
+   "status": "Active"
+  },
+  "de-DE": {
+   "name": "Transport Element",
+   "definition": "A transport element is a generalization of all transport related objects that move people, animals or goods within a Facility. The [[IfcTransportElement]] defines the occurrence of a transport element, that (if given), is expressed by the IfcTransportElementType.",
+   "status": "Active"
+  },
+  "es-ES": {
+   "name": "Elemento de Transporte",
+   "definition": "Un elemento de transporte es una generalización de todos los objetos relacionados con el transporte que desplazan personas, animales o mercancías dentro de una instalación. El [[IfcTransportElement]] define la instancia de un elemento de transporte, que (si se da) se expresa con el IfcTransportElementType.",
+   "status": "Active"
+  },
+  "zh-CN": {
+   "name": "Transport Element",
+   "definition": "A transport element is a generalization of all transport related objects that move people, animals or goods within a Facility. The [[IfcTransportElement]] defines the occurrence of a transport element, that (if given), is expressed by the IfcTransportElementType.",
+   "status": "Active"
+  },
+  "ja-JP": {
+   "name": "Transport Element",
+   "definition": "A transport element is a generalization of all transport related objects that move people, animals or goods within a Facility. The [[IfcTransportElement]] defines the occurrence of a transport element, that (if given), is expressed by the IfcTransportElementType.",
+   "status": "Active"
+  },
+  "pt-BR": {
+   "name": "Elemento de Transporte",
+   "definition": "Um elemento de transporte é uma generalização de todos os transportes relacionados com a circulação de pessoas, animais ou mercadorias dentro de uma instalação. O [[IfcTransportElement]] define a ocorrência de um elemento de transporte, que (se fornecido), é expresso pelo IfcTransportElementType.",
+   "status": "Active"
+  },
+  "fr-FR": {
+   "name": "Transport Element",
+   "definition": "A transport element is a generalization of all transport related objects that move people, animals or goods within a Facility. The [[IfcTransportElement]] defines the occurrence of a transport element, that (if given), is expressed by the IfcTransportElementType.",
+   "status": "Active"
+  }
+ },
+ "IfcValve": {
+  "EN": {
+   "name": "Valve",
+   "definition": "A valve is used in a building services piping distribution system to control or modulate the flow of the fluid.",
+   "status": "Active"
+  },
+  "de-DE": {
+   "name": "Valve",
+   "definition": "A valve is used in a building services piping distribution system to control or modulate the flow of the fluid.",
+   "status": "Active"
+  },
+  "es-ES": {
+   "name": "Válvula",
+   "definition": "Una válvula se utiliza en un sistema de distribución de tuberías de servicios de un edificio para controlar o modular el flujo del fluido.",
+   "status": "Active"
+  },
+  "zh-CN": {
+   "name": "Valve",
+   "definition": "A valve is used in a building services piping distribution system to control or modulate the flow of the fluid.",
+   "status": "Active"
+  },
+  "ja-JP": {
+   "name": "Valve",
+   "definition": "A valve is used in a building services piping distribution system to control or modulate the flow of the fluid.",
+   "status": "Active"
+  },
+  "pt-BR": {
+   "name": "Válvula",
+   "definition": "Uma válvula é usada num sistema de distribuição de canalização para serviços de construção para controlar ou modular o fluxo do fluido.",
+   "status": "Active"
+  },
+  "fr-FR": {
+   "name": "Valve",
+   "definition": "A valve is used in a building services piping distribution system to control or modulate the flow of the fluid.",
+   "status": "Active"
+  }
+ },
+ "IfcWall": {
+  "EN": {
+   "name": "Wall",
+   "definition": "The wall represents a vertical construction that may bound or subdivide spaces. Wall are usually vertical, or nearly vertical, planar elements, often designed to bear structural loads. A wall is however not required to be load bearing.",
+   "status": "Active"
+  },
+  "de-DE": {
+   "name": "Wand",
+   "definition": "Vertikale Konstruktion zur Abgrenzung oder Unterteilung von Räumen. In der Regel handelt es sich um senkrechte oder nahezu senkrechte Flächenelemente, die häufig zur Aufnahme von Bauwerkslasten dienen. Sie müssen jedoch nicht tragend sein. \r\nAnmerkung: Nach ISO 6707-1 ist eine vertikale Konstruktion in der Regel aus Mauerwerk oder Beton, die ein Bauwerk begrenzt oder unterteilt und eine tragende oder stützende Funktion erfüllt.",
+   "status": "Active"
+  },
+  "es-ES": {
+   "name": "Muro",
+   "definition": "Un muro representa una construcción vertical que puede enlazar o subdividir espacios. Los muros son normalmente elementos planos, verticales, o casi verticales, a menudo diseñados para soportar cargas estructurales. No obstante, un muro no tiene por qué ser portante.",
+   "status": "Active"
+  },
+  "zh-CN": {
+   "name": "Wall",
+   "definition": "The wall represents a vertical construction that may bound or subdivide spaces. Wall are usually vertical, or nearly vertical, planar elements, often designed to bear structural loads. A wall is however not required to be load bearing.",
+   "status": "Active"
+  },
+  "ja-JP": {
+   "name": "壁",
+   "definition": "壁とは、空間を仕切ったり、分割したりする垂直な構造物を表す。壁は通常垂直、または垂直に近い平面要素で、構造荷重に耐えるように設計されることが多い。ただし、耐力壁である必要はない。",
+   "status": "Active"
+  },
+  "pt-BR": {
+   "name": "Parede",
+   "definition": "A parede representa uma construção vertical que pode delimitar ou subdividir espaços. Paredes são geralmente elementos planos verticais, ou quase verticais, frequentemente projetados para suportar cargas estruturais. No entanto, uma parede não precisa obrigatoriamente suportar carga.",
+   "status": "Active"
+  },
+  "fr-FR": {
+   "name": "Wall",
+   "definition": "The wall represents a vertical construction that may bound or subdivide spaces. Wall are usually vertical, or nearly vertical, planar elements, often designed to bear structural loads. A wall is however not required to be load bearing.",
+   "status": "Active"
+  }
+ },
+ "IfcWallStandardCase": {
+  "EN": {
+   "error": "HTTP Error 400: Bad Request"
+  },
+  "de-DE": {
+   "error": "HTTP Error 400: Bad Request"
+  },
+  "es-ES": {
+   "error": "HTTP Error 400: Bad Request"
+  },
+  "zh-CN": {
+   "error": "HTTP Error 400: Bad Request"
+  },
+  "ja-JP": {
+   "error": "HTTP Error 400: Bad Request"
+  },
+  "pt-BR": {
+   "error": "HTTP Error 400: Bad Request"
+  },
+  "fr-FR": {
+   "error": "HTTP Error 400: Bad Request"
+  }
+ },
+ "IfcWindow": {
+  "EN": {
+   "name": "Window",
+   "definition": "The window is a building element that is predominately used to provide natural light and fresh air. It includes vertical opening but also horizontal opening such as skylights or light domes. It includes constructions with swinging, pivoting, sliding, or revolving panels and fixed panels. A window consists of a lining and one or several panels.",
+   "status": "Active"
+  },
+  "de-DE": {
+   "name": "Fenster",
+   "definition": "Das Fenster ist ein Bauelement, das in erster Linie dazu dient, natürliches Licht und frische Luft zuzuführen. Es umfasst vertikale Öffnungen, aber auch horizontale Öffnungen wie Dachflächenfenster oder Lichtkuppeln. Es umfasst Konstruktionen mit schwingbaren, schwenkbaren, schiebbaren oder drehbaren Flügeln und festen Flügeln. Ein Fenster besteht aus einem Rahmen und einem oder mehreren Flügeln.",
+   "status": "Active"
+  },
+  "es-ES": {
+   "name": "Ventana",
+   "definition": "Una ventana es un elemento de construcción que se utiliza principalmente para proporcionar luz natural y aire fresco. Incluye apertura vertical pero también apertura horizontal como claraboyas o cúpulas de luz. Incluye construcciones con paneles oscilobatientes, pivotantes, deslizantes o giratorios y paneles fijos. Una ventana consta de un revestimiento y uno o varios paneles.",
+   "status": "Active"
+  },
+  "zh-CN": {
+   "name": "Window",
+   "definition": "The window is a building element that is predominately used to provide natural light and fresh air. It includes vertical opening but also horizontal opening such as skylights or light domes. It includes constructions with swinging, pivoting, sliding, or revolving panels and fixed panels. A window consists of a lining and one or several panels.",
+   "status": "Active"
+  },
+  "ja-JP": {
+   "name": "窓",
+   "definition": "窓は、主に自然光と新鮮な空気を提供するために使用される建築要素である。垂直開口だけでなく、天窓やライトドームのような水平開口も含まれる。スイング式、回転式、スライド式、回転式のパネルや固定式のパネルを持つ構造も含まれる。窓は、裏地と1枚または数枚のパネルで構成される。",
+   "status": "Active"
+  },
+  "pt-BR": {
+   "name": "Janela",
+   "definition": "A janela é um elemento de construção predominantemente utilizado para fornecer luz natural e ar fresco. Além das aberturas verticais, também inclui aberturas horizontais, como claraboias ou domos de luz. Engloba construções como painéis basculantes, pivotantes, de correr, giratórios ou fixos. Uma janela é composta por uma estrutura e um ou vários painéis.",
+   "status": "Active"
+  },
+  "fr-FR": {
+   "name": "Window",
+   "definition": "The window is a building element that is predominately used to provide natural light and fresh air. It includes vertical opening but also horizontal opening such as skylights or light domes. It includes constructions with swinging, pivoting, sliding, or revolving panels and fixed panels. A window consists of a lining and one or several panels.",
+   "status": "Active"
+  }
+ }
+}

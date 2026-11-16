@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<!--BIM OOTB Viewer — AD_Message_Trl id_ID — format: org.compiere.install.Translation export (iDempiere). Rows 1000000-1000308 source=viewer/locales/id_ID.js @4cd440ae (S225/S226 sessions, machine translation, extracted 2026-10-03, not retranslated); rows 1000309-1000492 and every row listed in viewer/tools/trl_batch_2026-10-03*.js source=machine (Claude, Anthropic, 2026-10-03); rows 1000493-1000655 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_tm.js; rows 1000656-1000671 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_info.js; rows 1000672-1000752 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_help.js; rows 1000753-1000862 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_modeller.js — NOT from a published iDempiere language pack. trl="N" = not translated (English kept, counted apart). Base rows: viewer/i18n/ad_message_base.csv. Edit THIS file, then run: node viewer/tools/build_trl.js-->
+<!--BIM OOTB Viewer — AD_Message_Trl id_ID — format: org.compiere.install.Translation export (iDempiere). Rows 1000000-1000308 source=viewer/locales/id_ID.js @4cd440ae (S225/S226 sessions, machine translation, extracted 2026-10-03, not retranslated); rows 1000309-1000492 and every row listed in viewer/tools/trl_batch_2026-10-03*.js source=machine (Claude, Anthropic, 2026-10-03); rows 1000493-1000655 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_tm.js; rows 1000656-1000671 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_info.js; rows 1000672-1000752 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_help.js; rows 1000753-1000862 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_modeller.js; rows 1000867-1000962 source=buildingSMART bSDD IFC 4.3 (CC BY-ND 4.0), verbatim official text — viewer/tools/trl_batch_2026-11-17_ifcdef.js; rows 1000963-1001017 source=machine (Claude, Anthropic, 2026-11-17), English class sentences written for this app — viewer/tools/trl_batch_2026-11-17_ifccls.js — NOT from a published iDempiere language pack. trl="N" = not translated (English kept, counted apart). Base rows: viewer/i18n/ad_message_base.csv. Edit THIS file, then run: node viewer/tools/build_trl.js-->
 <!--<!DOCTYPE idempiereTrl PUBLIC "-//iDempiere//DTD iDempiere Translation 1.0//EN" "https://raw.githubusercontent.com/idempiere/idempiere/refs/heads/master/utils_dev/trl/idempiereTrl.dtd">-->
 <idempiereTrl language="id_ID" table="AD_Message">
  <row id="1000000" trl="Y">
@@ -3461,6 +3461,626 @@ CPM membaca tanggal hasil seretan — tidak pernah mengubahnya.</value>
  </row>
  <row id="1000862" trl="Y">
   <value column="MsgText" original="Read / generate / open the ERP Project Order of the selected parts">Baca / buat / buka Pesanan Proyek ERP dari bagian terpilih</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000863" trl="N">
+  <value column="MsgText" original="Road standards">Road standards</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000864" trl="N">
+  <value column="MsgText" original="Sign codes vs ATJ 2A/85">Sign codes vs ATJ 2A/85</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000865" trl="N">
+  <value column="MsgText" original="OK / UNKNOWN / MISSING tree">OK / UNKNOWN / MISSING tree</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000866" trl="N">
+  <value column="MsgText" original="Click a sign: zoom + standard">Click a sign: zoom + standard</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000867" trl="N">
+  <value column="MsgText" original="An air terminal is a terminating or origination point for the transfer of air between distribution system(s) and one or more spaces. It can also be used for the transfer of air between adjacent spaces.">An air terminal is a terminating or origination point for the transfer of air between distribution system(s) and one or more spaces. It can also be used for the transfer of air between adjacent spaces.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000868" trl="N">
+  <value column="MsgText" original="EN">EN</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000869" trl="N">
+  <value column="MsgText" original="An alarm is a device that signals the existence of a condition or situation that is outside the boundaries of normal expectation or that activates such a device.">An alarm is a device that signals the existence of a condition or situation that is outside the boundaries of normal expectation or that activates such a device.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000870" trl="N">
+  <value column="MsgText" original="EN">EN</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000871" trl="N">
+  <value column="MsgText" original="An [[IfcBeam]] is typically a horizontal, or nearly horizontal, structural member that is capable of withstanding load primarily by resisting bending. It may also represent such a member from an architectural point of view. It is not required to be load bearing.">An [[IfcBeam]] is typically a horizontal, or nearly horizontal, structural member that is capable of withstanding load primarily by resisting bending. It may also represent such a member from an architectural point of view. It is not required to be load bearing.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000872" trl="N">
+  <value column="MsgText" original="EN">EN</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000873" trl="N">
+  <value column="MsgText" original="[[IfcBuildingElementPart]] represents major components as subordinate parts of a building element. Typical usage examples include precast concrete sandwich walls, where the layers may have different geometry representations. In this case the layered material representation does not sufficiently describe the element. Each layer is represented by an own instance of the [[IfcBuildingElementPart]] with its own geometry description.">[[IfcBuildingElementPart]] represents major components as subordinate parts of a building element. Typical usage examples include precast concrete sandwich walls, where the layers may have different geometry representations. In this case the layered material representation does not sufficiently describe the element. Each layer is represented by an own instance of the [[IfcBuildingElementPart]] with its own geometry description.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000874" trl="N">
+  <value column="MsgText" original="EN">EN</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000875" trl="N">
+  <value column="MsgText" original="The [[IfcBuildingElementProxy]] is a proxy definition that provides the same functionality as subtypes of [[IfcBuiltElement]], but without having a predefined meaning of the special type of building element it represents.">The [[IfcBuildingElementProxy]] is a proxy definition that provides the same functionality as subtypes of [[IfcBuiltElement]], but without having a predefined meaning of the special type of building element it represents.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000876" trl="N">
+  <value column="MsgText" original="EN">EN</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000877" trl="N">
+  <value column="MsgText" original="A cable carrier fitting is a fitting that is placed at junction or transition in a cable carrier system.">A cable carrier fitting is a fitting that is placed at junction or transition in a cable carrier system.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000878" trl="N">
+  <value column="MsgText" original="EN">EN</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000879" trl="N">
+  <value column="MsgText" original="A cable carrier segment is a flow segment that is specifically used to carry and support cabling.">A cable carrier segment is a flow segment that is specifically used to carry and support cabling.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000880" trl="N">
+  <value column="MsgText" original="EN">EN</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000881" trl="N">
+  <value column="MsgText" original="An [[IfcColumn]] is a vertical structural or architectural member which often is aligned with a structural grid intersection. In most cases it represents a vertical, or nearly vertical, structural member that transmits, through compression, the weight of the structure above to other structural elements below. It may also represent such a member from an architectural point of view in which case it may represent a non load bearing element. Whether it is a structural load bearing element or a non-load bearing element is determined by the [[Pset_ColumnCommon]].[[LoadBearing]] property.">An [[IfcColumn]] is a vertical structural or architectural member which often is aligned with a structural grid intersection. In most cases it represents a vertical, or nearly vertical, structural member that transmits, through compression, the weight of the structure above to other structural elements below. It may also represent such a member from an architectural point of view in which case it may represent a non load bearing element. Whether it is a structural load bearing element or a non-load bearing element is determined by the [[Pset_ColumnCommon]].[[LoadBearing]] property.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000882" trl="N">
+  <value column="MsgText" original="EN">EN</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000883" trl="N">
+  <value column="MsgText" original="A controller is a device that monitors inputs and controls outputs within a building automation system.">A controller is a device that monitors inputs and controls outputs within a building automation system.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000884" trl="N">
+  <value column="MsgText" original="EN">EN</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000885" trl="N">
+  <value column="MsgText" original="A covering is an element which covers some part of another element and is fully dependent on that other element. The [[IfcCovering]] defines the occurrence of a covering type, that (if given) is expressed by the IfcCoveringType.">A covering is an element which covers some part of another element and is fully dependent on that other element. The [[IfcCovering]] defines the occurrence of a covering type, that (if given) is expressed by the IfcCoveringType.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000886" trl="N">
+  <value column="MsgText" original="EN">EN</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000887" trl="N">
+  <value column="MsgText" original="A curtain wall is a wall of a building which is an assembly of components, hung from the edge of the floor/roof structure rather than bearing on a floor. Curtain wall is represented as a building element assembly and implemented as a subtype of [[IfcBuiltElement]] that uses an IfcRelAggregates relationship. A curtain wall is often external, but using [[Pset_CurtainWallCommon]].[[IsExternal]] can be used to define interior curtain walls.">A curtain wall is a wall of a building which is an assembly of components, hung from the edge of the floor/roof structure rather than bearing on a floor. Curtain wall is represented as a building element assembly and implemented as a subtype of [[IfcBuiltElement]] that uses an IfcRelAggregates relationship. A curtain wall is often external, but using [[Pset_CurtainWallCommon]].[[IsExternal]] can be used to define interior curtain walls.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000888" trl="N">
+  <value column="MsgText" original="EN">EN</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000889" trl="N">
+  <value column="MsgText" original="The distribution element [[IfcDistributionControlElement]] defines occurrence elements of a building automation control system that are used to impart control over elements of a distribution system.">The distribution element [[IfcDistributionControlElement]] defines occurrence elements of a building automation control system that are used to impart control over elements of a distribution system.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000890" trl="N">
+  <value column="MsgText" original="EN">EN</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000891" trl="N">
+  <value column="MsgText" original="The door is a built element that is predominately used to provide controlled access for people, goods, animals and vehicles. It includes constructions with hinged, pivoted, sliding, and additionally revolving and folding operations.">The door is a built element that is predominately used to provide controlled access for people, goods, animals and vehicles. It includes constructions with hinged, pivoted, sliding, and additionally revolving and folding operations.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000892" trl="N">
+  <value column="MsgText" original="EN">EN</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000893" trl="N">
+  <value column="MsgText" original="A duct fitting is a junction or transition in a ducted flow distribution system or used to connect duct segments, resulting in changes in flow characteristics to the fluid such as direction and flow rate.">A duct fitting is a junction or transition in a ducted flow distribution system or used to connect duct segments, resulting in changes in flow characteristics to the fluid such as direction and flow rate.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000894" trl="N">
+  <value column="MsgText" original="EN">EN</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000895" trl="N">
+  <value column="MsgText" original="A duct segment is used to typically join two sections of duct network.">A duct segment is used to typically join two sections of duct network.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000896" trl="N">
+  <value column="MsgText" original="EN">EN</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000897" trl="N">
+  <value column="MsgText" original="An electric appliance is a device intended for consumer usage that is powered by electricity.">An electric appliance is a device intended for consumer usage that is powered by electricity.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000898" trl="N">
+  <value column="MsgText" original="EN">EN</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000899" trl="N">
+  <value column="MsgText" original="The distribution flow element [[IfcEnergyConversionDevice]] defines the occurrence of a device used to perform energy conversion or heat transfer and typically participates in a flow distribution system. Its type is defined by IfcEnergyConversionDeviceType or its subtypes.">The distribution flow element [[IfcEnergyConversionDevice]] defines the occurrence of a device used to perform energy conversion or heat transfer and typically participates in a flow distribution system. Its type is defined by IfcEnergyConversionDeviceType or its subtypes.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000900" trl="N">
+  <value column="MsgText" original="EN">EN</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000901" trl="N">
+  <value column="MsgText" original="A fire suppression terminal has the purpose of delivering a fluid (gas or liquid) that will suppress a fire.">A fire suppression terminal has the purpose of delivering a fluid (gas or liquid) that will suppress a fire.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000902" trl="N">
+  <value column="MsgText" original="EN">EN</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000903" trl="N">
+  <value column="MsgText" original="The distribution flow element [[IfcFlowController]] defines the occurrence of elements of a distribution system that are used to regulate flow through a distribution system. Examples include dampers, valves, switches, and relays. Its type is defined by IfcFlowControllerType or subtypes.">The distribution flow element [[IfcFlowController]] defines the occurrence of elements of a distribution system that are used to regulate flow through a distribution system. Examples include dampers, valves, switches, and relays. Its type is defined by IfcFlowControllerType or subtypes.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000904" trl="N">
+  <value column="MsgText" original="EN">EN</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000905" trl="N">
+  <value column="MsgText" original="The distribution flow element [[IfcFlowFitting]] defines the occurrence of a junction or transition in a flow distribution system, such as an elbow or tee. Its type is defined by IfcFlowFittingType or its subtypes.">The distribution flow element [[IfcFlowFitting]] defines the occurrence of a junction or transition in a flow distribution system, such as an elbow or tee. Its type is defined by IfcFlowFittingType or its subtypes.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000906" trl="N">
+  <value column="MsgText" original="EN">EN</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000907" trl="N">
+  <value column="MsgText" original="The distribution flow element [[IfcFlowMovingDevice]] defines the occurrence of an apparatus used to distribute, circulate or perform conveyance of fluids, including liquids and gases (such as a pump or fan), and typically participates in a flow distribution system. Its type is defined by IfcFlowMovingDeviceType or its subtypes.">The distribution flow element [[IfcFlowMovingDevice]] defines the occurrence of an apparatus used to distribute, circulate or perform conveyance of fluids, including liquids and gases (such as a pump or fan), and typically participates in a flow distribution system. Its type is defined by IfcFlowMovingDeviceType or its subtypes.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000908" trl="N">
+  <value column="MsgText" original="EN">EN</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000909" trl="N">
+  <value column="MsgText" original="The distribution flow element [[IfcFlowSegment]] defines the occurrence of a segment of a flow distribution system.">The distribution flow element [[IfcFlowSegment]] defines the occurrence of a segment of a flow distribution system.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000910" trl="N">
+  <value column="MsgText" original="EN">EN</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000911" trl="N">
+  <value column="MsgText" original="The distribution flow element [[IfcFlowStorageDevice]] defines the occurrence of a device that participates in a distribution system and is used for temporary storage (such as a tank). Its type is defined by IfcFlowStorageDeviceType or its subtypes.">The distribution flow element [[IfcFlowStorageDevice]] defines the occurrence of a device that participates in a distribution system and is used for temporary storage (such as a tank). Its type is defined by IfcFlowStorageDeviceType or its subtypes.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000912" trl="N">
+  <value column="MsgText" original="EN">EN</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000913" trl="N">
+  <value column="MsgText" original="The distribution flow element [[IfcFlowTerminal]] defines the occurrence of a permanently attached element that acts as a terminus or beginning of a distribution system (such as an air outlet, drain, water closet, or sink). A terminal is typically a point at which a system interfaces with an external environment. Its type is defined by IfcFlowTerminalType or its subtypes.">The distribution flow element [[IfcFlowTerminal]] defines the occurrence of a permanently attached element that acts as a terminus or beginning of a distribution system (such as an air outlet, drain, water closet, or sink). A terminal is typically a point at which a system interfaces with an external environment. Its type is defined by IfcFlowTerminalType or its subtypes.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000914" trl="N">
+  <value column="MsgText" original="EN">EN</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000915" trl="N">
+  <value column="MsgText" original="The distribution flow element [[IfcFlowTreatmentDevice]] defines the occurrence of a device typically used to remove unwanted matter from a fluid, either liquid or gas, and typically participates in a flow distribution system. Its type is defined by IfcFlowTreatmentDeviceType or its subtypes.">The distribution flow element [[IfcFlowTreatmentDevice]] defines the occurrence of a device typically used to remove unwanted matter from a fluid, either liquid or gas, and typically participates in a flow distribution system. Its type is defined by IfcFlowTreatmentDeviceType or its subtypes.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000916" trl="N">
+  <value column="MsgText" original="EN">EN</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000917" trl="N">
+  <value column="MsgText" original="A footing is a part of the foundation of a structure that spreads and transmits the load to the soil. A footing is also characterized as shallow foundation, where the loads are transferred to the ground near the surface.">A footing is a part of the foundation of a structure that spreads and transmits the load to the soil. A footing is also characterized as shallow foundation, where the loads are transferred to the ground near the surface.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000918" trl="N">
+  <value column="MsgText" original="EN">EN</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000919" trl="N">
+  <value column="MsgText" original="A furnishing element is a generalization of all furniture related objects. Furnishing objects are characterized as being">A furnishing element is a generalization of all furniture related objects. Furnishing objects are characterized as being</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000920" trl="N">
+  <value column="MsgText" original="EN">EN</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000921" trl="N">
+  <value column="MsgText" original="Furniture defines complete furnishings such as a table, desk, chair, or cabinet, which may or may not be permanently attached to a building structure.">Furniture defines complete furnishings such as a table, desk, chair, or cabinet, which may or may not be permanently attached to a building structure.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000922" trl="N">
+  <value column="MsgText" original="EN">EN</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000923" trl="N">
+  <value column="MsgText" original="A light fixture is a container that is designed for the purpose of housing one or more lamps and optionally devices that control, restrict or vary their emission.">A light fixture is a container that is designed for the purpose of housing one or more lamps and optionally devices that control, restrict or vary their emission.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000924" trl="N">
+  <value column="MsgText" original="EN">EN</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000925" trl="N">
+  <value column="MsgText" original="An [[IfcMember]] is a structural member designed to carry loads between or beyond points of support. It is not required to be load bearing. The orientation of the member (being horizontal, vertical or sloped) is not relevant to its definition (in contrary to [[IfcBeam]] and [[IfcColumn]]). An [[IfcMember]] represents a linear structural element from an architectural or structural modeling point of view and shall be used if it cannot be expressed more specifically as either an [[IfcBeam]] or an [[IfcColumn]].">An [[IfcMember]] is a structural member designed to carry loads between or beyond points of support. It is not required to be load bearing. The orientation of the member (being horizontal, vertical or sloped) is not relevant to its definition (in contrary to [[IfcBeam]] and [[IfcColumn]]). An [[IfcMember]] represents a linear structural element from an architectural or structural modeling point of view and shall be used if it cannot be expressed more specifically as either an [[IfcBeam]] or an [[IfcColumn]].</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000926" trl="N">
+  <value column="MsgText" original="EN">EN</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000927" trl="N">
+  <value column="MsgText" original="The opening element stands for opening, recess or chase, all reflecting voids. It represents a void within any element that has physical manifestation. Openings can be inserted into walls, slabs, beams, columns, or other elements.">The opening element stands for opening, recess or chase, all reflecting voids. It represents a void within any element that has physical manifestation. Openings can be inserted into walls, slabs, beams, columns, or other elements.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000928" trl="N">
+  <value column="MsgText" original="EN">EN</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000929" trl="N">
+  <value column="MsgText" original="A pipe fitting is a junction or transition in a piping flow distribution system used to connect pipe segments, resulting in changes in flow characteristics to the fluid such as direction or flow rate.">A pipe fitting is a junction or transition in a piping flow distribution system used to connect pipe segments, resulting in changes in flow characteristics to the fluid such as direction or flow rate.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000930" trl="N">
+  <value column="MsgText" original="EN">EN</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000931" trl="N">
+  <value column="MsgText" original="A pipe segment is used to typically join two sections of a piping network.">A pipe segment is used to typically join two sections of a piping network.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000932" trl="N">
+  <value column="MsgText" original="EN">EN</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000933" trl="N">
+  <value column="MsgText" original="An [[IfcPlate]] is a planar and often flat part with constant thickness. A plate may carry loads between or beyond points of support, or provide stiffening. The location of the plate (being horizontal, vertical or sloped) is not relevant to its definition.">An [[IfcPlate]] is a planar and often flat part with constant thickness. A plate may carry loads between or beyond points of support, or provide stiffening. The location of the plate (being horizontal, vertical or sloped) is not relevant to its definition.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000934" trl="N">
+  <value column="MsgText" original="EN">EN</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000935" trl="N">
+  <value column="MsgText" original="The railing is a frame assembly adjacent to human or vehicle circulation spaces and at some space boundaries where it is used in lieu of walls or to complement walls. Designed as an optional physical support, or to prevent injury or damage, either by falling or collision.">The railing is a frame assembly adjacent to human or vehicle circulation spaces and at some space boundaries where it is used in lieu of walls or to complement walls. Designed as an optional physical support, or to prevent injury or damage, either by falling or collision.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000936" trl="N">
+  <value column="MsgText" original="EN">EN</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000937" trl="N">
+  <value column="MsgText" original="A ramp is a vertical passageway which provides a human or vehicle circulation link between one floor level and another floor level at a different elevation. It may include a landing as an intermediate floor slab. A ramp normally does not include steps.">A ramp is a vertical passageway which provides a human or vehicle circulation link between one floor level and another floor level at a different elevation. It may include a landing as an intermediate floor slab. A ramp normally does not include steps.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000938" trl="N">
+  <value column="MsgText" original="EN">EN</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000939" trl="N">
+  <value column="MsgText" original="A ramp comprises a single inclined segment, or several inclined segments that are connected by a horizontal segment, referred to as a landing. A ramp flight is the single inclined segment and part of the ramp construction. In case of single flight ramps, the ramp flight and the ramp are identical.">A ramp comprises a single inclined segment, or several inclined segments that are connected by a horizontal segment, referred to as a landing. A ramp flight is the single inclined segment and part of the ramp construction. In case of single flight ramps, the ramp flight and the ramp are identical.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000940" trl="N">
+  <value column="MsgText" original="EN">EN</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000941" trl="N">
+  <value column="MsgText" original="A reinforcing bar is usually made of steel with manufactured deformations in the surface, and used in concrete and masonry construction to provide additional strength. A single instance of this class may represent one or many of actual rebars, for example a row of rebars.">A reinforcing bar is usually made of steel with manufactured deformations in the surface, and used in concrete and masonry construction to provide additional strength. A single instance of this class may represent one or many of actual rebars, for example a row of rebars.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000942" trl="N">
+  <value column="MsgText" original="EN">EN</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000943" trl="N">
+  <value column="MsgText" original="A roof is the covering of the top part of a building, it protects the building against the effects of weather.">A roof is the covering of the top part of a building, it protects the building against the effects of weather.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000944" trl="N">
+  <value column="MsgText" original="EN">EN</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000945" trl="N">
+  <value column="MsgText" original="A slab is a component of the construction that may enclose a space vertically. The slab may provide the lower support (floor) or upper construction (roof slab) in any space in a building.">A slab is a component of the construction that may enclose a space vertically. The slab may provide the lower support (floor) or upper construction (roof slab) in any space in a building.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000946" trl="N">
+  <value column="MsgText" original="EN">EN</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000947" trl="N">
+  <value column="MsgText" original="A stair is a vertical passageway allowing occupants to walk (step) from one floor level to another floor level at a different elevation. It may include a landing as an intermediate floor slab.">A stair is a vertical passageway allowing occupants to walk (step) from one floor level to another floor level at a different elevation. It may include a landing as an intermediate floor slab.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000948" trl="N">
+  <value column="MsgText" original="EN">EN</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000949" trl="N">
+  <value column="MsgText" original="A stair flight is an assembly of building components in a single 'run' of stair steps (not interrupted by a landing). The stair steps and any stringers are included in the stair flight. A winder is also regarded a part of a stair flight.">A stair flight is an assembly of building components in a single 'run' of stair steps (not interrupted by a landing). The stair steps and any stringers are included in the stair flight. A winder is also regarded a part of a stair flight.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000950" trl="N">
+  <value column="MsgText" original="EN">EN</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000951" trl="N">
+  <value column="MsgText" original="A switch is used in a cable distribution system (electrical circuit) to control or modulate the flow of electricity.">A switch is used in a cable distribution system (electrical circuit) to control or modulate the flow of electricity.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000952" trl="N">
+  <value column="MsgText" original="EN">EN</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000953" trl="N">
+  <value column="MsgText" original="A system furniture element defines components of modular furniture which are not directly placed in a building structure but aggregated inside furniture.">A system furniture element defines components of modular furniture which are not directly placed in a building structure but aggregated inside furniture.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000954" trl="N">
+  <value column="MsgText" original="EN">EN</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000955" trl="N">
+  <value column="MsgText" original="A transport element is a generalization of all transport related objects that move people, animals or goods within a Facility. The [[IfcTransportElement]] defines the occurrence of a transport element, that (if given), is expressed by the IfcTransportElementType.">A transport element is a generalization of all transport related objects that move people, animals or goods within a Facility. The [[IfcTransportElement]] defines the occurrence of a transport element, that (if given), is expressed by the IfcTransportElementType.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000956" trl="N">
+  <value column="MsgText" original="EN">EN</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000957" trl="N">
+  <value column="MsgText" original="A valve is used in a building services piping distribution system to control or modulate the flow of the fluid.">A valve is used in a building services piping distribution system to control or modulate the flow of the fluid.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000958" trl="N">
+  <value column="MsgText" original="EN">EN</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000959" trl="N">
+  <value column="MsgText" original="The wall represents a vertical construction that may bound or subdivide spaces. Wall are usually vertical, or nearly vertical, planar elements, often designed to bear structural loads. A wall is however not required to be load bearing.">The wall represents a vertical construction that may bound or subdivide spaces. Wall are usually vertical, or nearly vertical, planar elements, often designed to bear structural loads. A wall is however not required to be load bearing.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000960" trl="N">
+  <value column="MsgText" original="EN">EN</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000961" trl="N">
+  <value column="MsgText" original="The window is a building element that is predominately used to provide natural light and fresh air. It includes vertical opening but also horizontal opening such as skylights or light domes. It includes constructions with swinging, pivoting, sliding, or revolving panels and fixed panels. A window consists of a lining and one or several panels.">The window is a building element that is predominately used to provide natural light and fresh air. It includes vertical opening but also horizontal opening such as skylights or light domes. It includes constructions with swinging, pivoting, sliding, or revolving panels and fixed panels. A window consists of a lining and one or several panels.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000962" trl="N">
+  <value column="MsgText" original="EN">EN</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000963" trl="N">
+  <value column="MsgText" original="An air outlet or inlet, such as a grille or diffuser, where ducted air enters or leaves a room.">An air outlet or inlet, such as a grille or diffuser, where ducted air enters or leaves a room.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000964" trl="N">
+  <value column="MsgText" original="A device that warns people of fire or another danger by sound or light, such as a bell, siren or beacon.">A device that warns people of fire or another danger by sound or light, such as a bell, siren or beacon.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000965" trl="N">
+  <value column="MsgText" original="A horizontal or nearly horizontal structural member that carries loads across a span, usually onto columns or walls.">A horizontal or nearly horizontal structural member that carries loads across a span, usually onto columns or walls.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000966" trl="N">
+  <value column="MsgText" original="One part of a larger building element, such as a single layer or piece of a wall or slab, kept as its own object.">One part of a larger building element, such as a single layer or piece of a wall or slab, kept as its own object.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000967" trl="N">
+  <value column="MsgText" original="An element that the source model did not give a specific type, so it is kept as a general building element.">An element that the source model did not give a specific type, so it is kept as a general building element.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000968" trl="N">
+  <value column="MsgText" original="A fitting that joins, bends or branches cable trays, cable ladders or trunking.">A fitting that joins, bends or branches cable trays, cable ladders or trunking.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000969" trl="N">
+  <value column="MsgText" original="A straight run of cable tray, cable ladder, trunking or conduit that carries and protects cables.">A straight run of cable tray, cable ladder, trunking or conduit that carries and protects cables.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000970" trl="N">
+  <value column="MsgText" original="A vertical structural member that carries loads from beams and slabs down towards the foundations.">A vertical structural member that carries loads from beams and slabs down towards the foundations.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000971" trl="N">
+  <value column="MsgText" original="A device that controls a system from the signals it receives, such as a thermostat, timer or control panel.">A device that controls a system from the signals it receives, such as a thermostat, timer or control panel.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000972" trl="N">
+  <value column="MsgText" original="A finishing layer over another element, such as a ceiling, floor finish, cladding or insulation.">A finishing layer over another element, such as a ceiling, floor finish, cladding or insulation.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000973" trl="N">
+  <value column="MsgText" original="An outer wall of panels, often glass, hung on a frame fixed to the building; it carries no floor loads.">An outer wall of panels, often glass, hung on a frame fixed to the building; it carries no floor loads.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000974" trl="N">
+  <value column="MsgText" original="A control or sensing device of a building system, such as a sensor or actuator, with no more specific type.">A control or sensing device of a building system, such as a sensor or actuator, with no more specific type.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000975" trl="N">
+  <value column="MsgText" original="A door: a leaf in its frame that opens to let people pass through a wall or partition.">A door: a leaf in its frame that opens to let people pass through a wall or partition.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000976" trl="N">
+  <value column="MsgText" original="A duct piece that joins, bends, branches or changes the size of air ducts.">A duct piece that joins, bends, branches or changes the size of air ducts.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000977" trl="N">
+  <value column="MsgText" original="A straight length of air duct that carries air between equipment and rooms.">A straight length of air duct that carries air between equipment and rooms.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000978" trl="N">
+  <value column="MsgText" original="An electrical appliance connected to the building supply, such as a fridge, oven or water heater.">An electrical appliance connected to the building supply, such as a fridge, oven or water heater.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000979" trl="N">
+  <value column="MsgText" original="Equipment that turns one form of energy into another, such as a boiler, chiller or transformer, with no more specific type.">Equipment that turns one form of energy into another, such as a boiler, chiller or transformer, with no more specific type.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000980" trl="N">
+  <value column="MsgText" original="A fire-fighting outlet, such as a sprinkler head, hose reel or fire hydrant.">A fire-fighting outlet, such as a sprinkler head, hose reel or fire hydrant.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000981" trl="N">
+  <value column="MsgText" original="A device that regulates flow in a pipe, duct or circuit, such as a valve, damper or switch, with no more specific type.">A device that regulates flow in a pipe, duct or circuit, such as a valve, damper or switch, with no more specific type.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000982" trl="N">
+  <value column="MsgText" original="A fitting that joins, bends or branches pipes, ducts or cable runs, with no more specific type.">A fitting that joins, bends or branches pipes, ducts or cable runs, with no more specific type.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000983" trl="N">
+  <value column="MsgText" original="A type of gauge or meter, such as a pressure gauge, thermometer or voltmeter.">A type of gauge or meter, such as a pressure gauge, thermometer or voltmeter.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000984" trl="N">
+  <value column="MsgText" original="Equipment that moves a fluid, such as a pump, fan or compressor, with no more specific type.">Equipment that moves a fluid, such as a pump, fan or compressor, with no more specific type.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000985" trl="N">
+  <value column="MsgText" original="A straight run of pipe, duct or cable carrier, with no more specific type.">A straight run of pipe, duct or cable carrier, with no more specific type.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000986" trl="N">
+  <value column="MsgText" original="Equipment that stores a fluid or energy, such as a tank or battery, with no more specific type.">Equipment that stores a fluid or energy, such as a tank or battery, with no more specific type.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000987" trl="N">
+  <value column="MsgText" original="The end point where a system serves a room or a person, such as a tap, light or socket, with no more specific type.">The end point where a system serves a room or a person, such as a tap, light or socket, with no more specific type.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000988" trl="N">
+  <value column="MsgText" original="Equipment that cleans or treats a fluid, such as a filter or separator, with no more specific type.">Equipment that cleans or treats a fluid, such as a filter or separator, with no more specific type.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000989" trl="N">
+  <value column="MsgText" original="A foundation element, such as a pad or strip footing, that spreads the load of the building into the ground.">A foundation element, such as a pad or strip footing, that spreads the load of the building into the ground.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000990" trl="N">
+  <value column="MsgText" original="A piece of furniture or equipment placed in a room, with no more specific type.">A piece of furniture or equipment placed in a room, with no more specific type.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000991" trl="N">
+  <value column="MsgText" original="Furniture, such as a table, chair, bed, desk or cabinet.">Furniture, such as a table, chair, bed, desk or cabinet.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000992" trl="N">
+  <value column="MsgText" original="A light fitting (luminaire) that holds lamps and lights a space.">A light fitting (luminaire) that holds lamps and lights a space.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000993" trl="N">
+  <value column="MsgText" original="A structural or framing piece that is not a main beam or column, such as a brace, stud, mullion or purlin.">A structural or framing piece that is not a main beam or column, such as a brace, stud, mullion or purlin.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000994" trl="N">
+  <value column="MsgText" original="A void cut into a wall, slab or other element, usually for a door or window or to let services pass.">A void cut into a wall, slab or other element, usually for a door or window or to let services pass.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000995" trl="N">
+  <value column="MsgText" original="A pipe piece that joins, bends, branches or changes the size of pipes, such as an elbow, tee or reducer.">A pipe piece that joins, bends, branches or changes the size of pipes, such as an elbow, tee or reducer.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000996" trl="N">
+  <value column="MsgText" original="A straight length of pipe that carries water, gas or another fluid.">A straight length of pipe that carries water, gas or another fluid.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000997" trl="N">
+  <value column="MsgText" original="A thin flat element, such as a steel plate or a glass panel in a curtain wall.">A thin flat element, such as a steel plate or a glass panel in a curtain wall.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000998" trl="N">
+  <value column="MsgText" original="A guard rail, handrail or balustrade, for example along a stair, ramp or balcony edge.">A guard rail, handrail or balustrade, for example along a stair, ramp or balcony edge.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000999" trl="N">
+  <value column="MsgText" original="A sloped walkway joining two levels, made of one or more ramp flights and landings.">A sloped walkway joining two levels, made of one or more ramp flights and landings.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001000" trl="N">
+  <value column="MsgText" original="One sloped run of a ramp between two landings.">One sloped run of a ramp between two landings.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001001" trl="N">
+  <value column="MsgText" original="A steel reinforcing bar (rebar) set inside concrete to carry tension.">A steel reinforcing bar (rebar) set inside concrete to carry tension.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001002" trl="N">
+  <value column="MsgText" original="The roof: the top covering of a building, made of slabs, beams and other parts.">The roof: the top covering of a building, made of slabs, beams and other parts.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001003" trl="N">
+  <value column="MsgText" original="A type of sensor that detects a condition, such as smoke, heat, temperature or movement.">A type of sensor that detects a condition, such as smoke, heat, temperature or movement.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001004" trl="N">
+  <value column="MsgText" original="A flat horizontal or nearly horizontal element, such as a floor, roof slab or landing, usually of concrete.">A flat horizontal or nearly horizontal element, such as a floor, roof slab or landing, usually of concrete.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001005" trl="N">
+  <value column="MsgText" original="A stair joining two levels, made of one or more flights and landings.">A stair joining two levels, made of one or more flights and landings.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001006" trl="N">
+  <value column="MsgText" original="One run of steps of a stair between two landings.">One run of steps of a stair between two landings.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001007" trl="N">
+  <value column="MsgText" original="A device that turns an electrical circuit on or off, such as a switch, circuit breaker or contactor.">A device that turns an electrical circuit on or off, such as a switch, circuit breaker or contactor.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001008" trl="N">
+  <value column="MsgText" original="A part of a modular office furniture system, such as a screen panel, work surface or storage unit.">A part of a modular office furniture system, such as a screen panel, work surface or storage unit.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001009" trl="N">
+  <value column="MsgText" original="Equipment that moves people or goods, such as a lift (elevator), escalator or moving walkway.">Equipment that moves people or goods, such as a lift (elevator), escalator or moving walkway.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001010" trl="N">
+  <value column="MsgText" original="A valve that opens, closes or regulates the flow in a pipe.">A valve that opens, closes or regulates the flow in a pipe.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001011" trl="N">
+  <value column="MsgText" original="A wall: a vertical element that divides or encloses spaces; it may or may not carry load.">A wall: a vertical element that divides or encloses spaces; it may or may not carry load.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001012" trl="N">
+  <value column="MsgText" original="A wall of even thickness along its length (an older IFC name, treated today as a plain wall).">A wall of even thickness along its length (an older IFC name, treated today as a plain wall).</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001013" trl="N">
+  <value column="MsgText" original="A window: a framed opening, usually glazed, that lets in light and air.">A window: a framed opening, usually glazed, that lets in light and air.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001014" trl="Y">
+  <value column="MsgText" original="What this is">Apa ini</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001015" trl="Y">
+  <value column="MsgText" original="IFC definition">Definisi IFC</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001016" trl="Y">
+  <value column="MsgText" original="English: no official translation in your language">Bahasa Inggris: belum ada terjemahan resmi dalam bahasa Anda</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001017" trl="N">
+  <value column="MsgText" original="buildingSMART IFC 4.3 (bSDD), CC BY-ND 4.0">buildingSMART IFC 4.3 (bSDD), CC BY-ND 4.0</value>
   <value column="MsgTip" original=""/>
  </row>
 </idempiereTrl>

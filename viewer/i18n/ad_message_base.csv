@@ -875,3 +875,154 @@ CPM reads the dates the drag produced — it never changes one.",I
 1000864,pillc_roadstd_1,Sign codes vs ATJ 2A/85,I
 1000865,pillc_roadstd_2,OK / UNKNOWN / MISSING tree,I
 1000866,pillc_roadstd_3,Click a sign: zoom + standard,I
+1000867,ifcdef_IfcAirTerminal,An air terminal is a terminating or origination point for the transfer of air between distribution system(s) and one or more spaces. It can also be used for the transfer of air between adjacent spaces.,I
+1000868,ifcdef_IfcAirTerminal_lang,EN,I
+1000869,ifcdef_IfcAlarm,An alarm is a device that signals the existence of a condition or situation that is outside the boundaries of normal expectation or that activates such a device.,I
+1000870,ifcdef_IfcAlarm_lang,EN,I
+1000871,ifcdef_IfcBeam,"An [[IfcBeam]] is typically a horizontal, or nearly horizontal, structural member that is capable of withstanding load primarily by resisting bending. It may also represent such a member from an architectural point of view. It is not required to be load bearing.",I
+1000872,ifcdef_IfcBeam_lang,EN,I
+1000873,ifcdef_IfcBuildingElementPart,"[[IfcBuildingElementPart]] represents major components as subordinate parts of a building element. Typical usage examples include precast concrete sandwich walls, where the layers may have different geometry representations. In this case the layered material representation does not sufficiently describe the element. Each layer is represented by an own instance of the [[IfcBuildingElementPart]] with its own geometry description.",I
+1000874,ifcdef_IfcBuildingElementPart_lang,EN,I
+1000875,ifcdef_IfcBuildingElementProxy,"The [[IfcBuildingElementProxy]] is a proxy definition that provides the same functionality as subtypes of [[IfcBuiltElement]], but without having a predefined meaning of the special type of building element it represents.",I
+1000876,ifcdef_IfcBuildingElementProxy_lang,EN,I
+1000877,ifcdef_IfcCableCarrierFitting,A cable carrier fitting is a fitting that is placed at junction or transition in a cable carrier system.,I
+1000878,ifcdef_IfcCableCarrierFitting_lang,EN,I
+1000879,ifcdef_IfcCableCarrierSegment,A cable carrier segment is a flow segment that is specifically used to carry and support cabling.,I
+1000880,ifcdef_IfcCableCarrierSegment_lang,EN,I
+1000881,ifcdef_IfcColumn,"An [[IfcColumn]] is a vertical structural or architectural member which often is aligned with a structural grid intersection. In most cases it represents a vertical, or nearly vertical, structural member that transmits, through compression, the weight of the structure above to other structural elements below. It may also represent such a member from an architectural point of view in which case it may represent a non load bearing element. Whether it is a structural load bearing element or a non-load bearing element is determined by the [[Pset_ColumnCommon]].[[LoadBearing]] property.",I
+1000882,ifcdef_IfcColumn_lang,EN,I
+1000883,ifcdef_IfcController,A controller is a device that monitors inputs and controls outputs within a building automation system.,I
+1000884,ifcdef_IfcController_lang,EN,I
+1000885,ifcdef_IfcCovering,"A covering is an element which covers some part of another element and is fully dependent on that other element. The [[IfcCovering]] defines the occurrence of a covering type, that (if given) is expressed by the IfcCoveringType.",I
+1000886,ifcdef_IfcCovering_lang,EN,I
+1000887,ifcdef_IfcCurtainWall,"A curtain wall is a wall of a building which is an assembly of components, hung from the edge of the floor/roof structure rather than bearing on a floor. Curtain wall is represented as a building element assembly and implemented as a subtype of [[IfcBuiltElement]] that uses an IfcRelAggregates relationship. A curtain wall is often external, but using [[Pset_CurtainWallCommon]].[[IsExternal]] can be used to define interior curtain walls.",I
+1000888,ifcdef_IfcCurtainWall_lang,EN,I
+1000889,ifcdef_IfcDistributionControlElement,The distribution element [[IfcDistributionControlElement]] defines occurrence elements of a building automation control system that are used to impart control over elements of a distribution system.,I
+1000890,ifcdef_IfcDistributionControlElement_lang,EN,I
+1000891,ifcdef_IfcDoor,"The door is a built element that is predominately used to provide controlled access for people, goods, animals and vehicles. It includes constructions with hinged, pivoted, sliding, and additionally revolving and folding operations.",I
+1000892,ifcdef_IfcDoor_lang,EN,I
+1000893,ifcdef_IfcDuctFitting,"A duct fitting is a junction or transition in a ducted flow distribution system or used to connect duct segments, resulting in changes in flow characteristics to the fluid such as direction and flow rate.",I
+1000894,ifcdef_IfcDuctFitting_lang,EN,I
+1000895,ifcdef_IfcDuctSegment,A duct segment is used to typically join two sections of duct network.,I
+1000896,ifcdef_IfcDuctSegment_lang,EN,I
+1000897,ifcdef_IfcElectricAppliance,An electric appliance is a device intended for consumer usage that is powered by electricity.,I
+1000898,ifcdef_IfcElectricAppliance_lang,EN,I
+1000899,ifcdef_IfcEnergyConversionDevice,The distribution flow element [[IfcEnergyConversionDevice]] defines the occurrence of a device used to perform energy conversion or heat transfer and typically participates in a flow distribution system. Its type is defined by IfcEnergyConversionDeviceType or its subtypes.,I
+1000900,ifcdef_IfcEnergyConversionDevice_lang,EN,I
+1000901,ifcdef_IfcFireSuppressionTerminal,A fire suppression terminal has the purpose of delivering a fluid (gas or liquid) that will suppress a fire.,I
+1000902,ifcdef_IfcFireSuppressionTerminal_lang,EN,I
+1000903,ifcdef_IfcFlowController,"The distribution flow element [[IfcFlowController]] defines the occurrence of elements of a distribution system that are used to regulate flow through a distribution system. Examples include dampers, valves, switches, and relays. Its type is defined by IfcFlowControllerType or subtypes.",I
+1000904,ifcdef_IfcFlowController_lang,EN,I
+1000905,ifcdef_IfcFlowFitting,"The distribution flow element [[IfcFlowFitting]] defines the occurrence of a junction or transition in a flow distribution system, such as an elbow or tee. Its type is defined by IfcFlowFittingType or its subtypes.",I
+1000906,ifcdef_IfcFlowFitting_lang,EN,I
+1000907,ifcdef_IfcFlowMovingDevice,"The distribution flow element [[IfcFlowMovingDevice]] defines the occurrence of an apparatus used to distribute, circulate or perform conveyance of fluids, including liquids and gases (such as a pump or fan), and typically participates in a flow distribution system. Its type is defined by IfcFlowMovingDeviceType or its subtypes.",I
+1000908,ifcdef_IfcFlowMovingDevice_lang,EN,I
+1000909,ifcdef_IfcFlowSegment,The distribution flow element [[IfcFlowSegment]] defines the occurrence of a segment of a flow distribution system.,I
+1000910,ifcdef_IfcFlowSegment_lang,EN,I
+1000911,ifcdef_IfcFlowStorageDevice,The distribution flow element [[IfcFlowStorageDevice]] defines the occurrence of a device that participates in a distribution system and is used for temporary storage (such as a tank). Its type is defined by IfcFlowStorageDeviceType or its subtypes.,I
+1000912,ifcdef_IfcFlowStorageDevice_lang,EN,I
+1000913,ifcdef_IfcFlowTerminal,"The distribution flow element [[IfcFlowTerminal]] defines the occurrence of a permanently attached element that acts as a terminus or beginning of a distribution system (such as an air outlet, drain, water closet, or sink). A terminal is typically a point at which a system interfaces with an external environment. Its type is defined by IfcFlowTerminalType or its subtypes.",I
+1000914,ifcdef_IfcFlowTerminal_lang,EN,I
+1000915,ifcdef_IfcFlowTreatmentDevice,"The distribution flow element [[IfcFlowTreatmentDevice]] defines the occurrence of a device typically used to remove unwanted matter from a fluid, either liquid or gas, and typically participates in a flow distribution system. Its type is defined by IfcFlowTreatmentDeviceType or its subtypes.",I
+1000916,ifcdef_IfcFlowTreatmentDevice_lang,EN,I
+1000917,ifcdef_IfcFooting,"A footing is a part of the foundation of a structure that spreads and transmits the load to the soil. A footing is also characterized as shallow foundation, where the loads are transferred to the ground near the surface.",I
+1000918,ifcdef_IfcFooting_lang,EN,I
+1000919,ifcdef_IfcFurnishingElement,A furnishing element is a generalization of all furniture related objects. Furnishing objects are characterized as being,I
+1000920,ifcdef_IfcFurnishingElement_lang,EN,I
+1000921,ifcdef_IfcFurniture,"Furniture defines complete furnishings such as a table, desk, chair, or cabinet, which may or may not be permanently attached to a building structure.",I
+1000922,ifcdef_IfcFurniture_lang,EN,I
+1000923,ifcdef_IfcLightFixture,"A light fixture is a container that is designed for the purpose of housing one or more lamps and optionally devices that control, restrict or vary their emission.",I
+1000924,ifcdef_IfcLightFixture_lang,EN,I
+1000925,ifcdef_IfcMember,"An [[IfcMember]] is a structural member designed to carry loads between or beyond points of support. It is not required to be load bearing. The orientation of the member (being horizontal, vertical or sloped) is not relevant to its definition (in contrary to [[IfcBeam]] and [[IfcColumn]]). An [[IfcMember]] represents a linear structural element from an architectural or structural modeling point of view and shall be used if it cannot be expressed more specifically as either an [[IfcBeam]] or an [[IfcColumn]].",I
+1000926,ifcdef_IfcMember_lang,EN,I
+1000927,ifcdef_IfcOpeningElement,"The opening element stands for opening, recess or chase, all reflecting voids. It represents a void within any element that has physical manifestation. Openings can be inserted into walls, slabs, beams, columns, or other elements.",I
+1000928,ifcdef_IfcOpeningElement_lang,EN,I
+1000929,ifcdef_IfcPipeFitting,"A pipe fitting is a junction or transition in a piping flow distribution system used to connect pipe segments, resulting in changes in flow characteristics to the fluid such as direction or flow rate.",I
+1000930,ifcdef_IfcPipeFitting_lang,EN,I
+1000931,ifcdef_IfcPipeSegment,A pipe segment is used to typically join two sections of a piping network.,I
+1000932,ifcdef_IfcPipeSegment_lang,EN,I
+1000933,ifcdef_IfcPlate,"An [[IfcPlate]] is a planar and often flat part with constant thickness. A plate may carry loads between or beyond points of support, or provide stiffening. The location of the plate (being horizontal, vertical or sloped) is not relevant to its definition.",I
+1000934,ifcdef_IfcPlate_lang,EN,I
+1000935,ifcdef_IfcRailing,"The railing is a frame assembly adjacent to human or vehicle circulation spaces and at some space boundaries where it is used in lieu of walls or to complement walls. Designed as an optional physical support, or to prevent injury or damage, either by falling or collision.",I
+1000936,ifcdef_IfcRailing_lang,EN,I
+1000937,ifcdef_IfcRamp,A ramp is a vertical passageway which provides a human or vehicle circulation link between one floor level and another floor level at a different elevation. It may include a landing as an intermediate floor slab. A ramp normally does not include steps.,I
+1000938,ifcdef_IfcRamp_lang,EN,I
+1000939,ifcdef_IfcRampFlight,"A ramp comprises a single inclined segment, or several inclined segments that are connected by a horizontal segment, referred to as a landing. A ramp flight is the single inclined segment and part of the ramp construction. In case of single flight ramps, the ramp flight and the ramp are identical.",I
+1000940,ifcdef_IfcRampFlight_lang,EN,I
+1000941,ifcdef_IfcReinforcingBar,"A reinforcing bar is usually made of steel with manufactured deformations in the surface, and used in concrete and masonry construction to provide additional strength. A single instance of this class may represent one or many of actual rebars, for example a row of rebars.",I
+1000942,ifcdef_IfcReinforcingBar_lang,EN,I
+1000943,ifcdef_IfcRoof,"A roof is the covering of the top part of a building, it protects the building against the effects of weather.",I
+1000944,ifcdef_IfcRoof_lang,EN,I
+1000945,ifcdef_IfcSlab,A slab is a component of the construction that may enclose a space vertically. The slab may provide the lower support (floor) or upper construction (roof slab) in any space in a building.,I
+1000946,ifcdef_IfcSlab_lang,EN,I
+1000947,ifcdef_IfcStair,A stair is a vertical passageway allowing occupants to walk (step) from one floor level to another floor level at a different elevation. It may include a landing as an intermediate floor slab.,I
+1000948,ifcdef_IfcStair_lang,EN,I
+1000949,ifcdef_IfcStairFlight,A stair flight is an assembly of building components in a single 'run' of stair steps (not interrupted by a landing). The stair steps and any stringers are included in the stair flight. A winder is also regarded a part of a stair flight.,I
+1000950,ifcdef_IfcStairFlight_lang,EN,I
+1000951,ifcdef_IfcSwitchingDevice,A switch is used in a cable distribution system (electrical circuit) to control or modulate the flow of electricity.,I
+1000952,ifcdef_IfcSwitchingDevice_lang,EN,I
+1000953,ifcdef_IfcSystemFurnitureElement,A system furniture element defines components of modular furniture which are not directly placed in a building structure but aggregated inside furniture.,I
+1000954,ifcdef_IfcSystemFurnitureElement_lang,EN,I
+1000955,ifcdef_IfcTransportElement,"A transport element is a generalization of all transport related objects that move people, animals or goods within a Facility. The [[IfcTransportElement]] defines the occurrence of a transport element, that (if given), is expressed by the IfcTransportElementType.",I
+1000956,ifcdef_IfcTransportElement_lang,EN,I
+1000957,ifcdef_IfcValve,A valve is used in a building services piping distribution system to control or modulate the flow of the fluid.,I
+1000958,ifcdef_IfcValve_lang,EN,I
+1000959,ifcdef_IfcWall,"The wall represents a vertical construction that may bound or subdivide spaces. Wall are usually vertical, or nearly vertical, planar elements, often designed to bear structural loads. A wall is however not required to be load bearing.",I
+1000960,ifcdef_IfcWall_lang,EN,I
+1000961,ifcdef_IfcWindow,"The window is a building element that is predominately used to provide natural light and fresh air. It includes vertical opening but also horizontal opening such as skylights or light domes. It includes constructions with swinging, pivoting, sliding, or revolving panels and fixed panels. A window consists of a lining and one or several panels.",I
+1000962,ifcdef_IfcWindow_lang,EN,I
+1000963,ifccls_IfcAirTerminal,"An air outlet or inlet, such as a grille or diffuser, where ducted air enters or leaves a room.",I
+1000964,ifccls_IfcAlarm,"A device that warns people of fire or another danger by sound or light, such as a bell, siren or beacon.",I
+1000965,ifccls_IfcBeam,"A horizontal or nearly horizontal structural member that carries loads across a span, usually onto columns or walls.",I
+1000966,ifccls_IfcBuildingElementPart,"One part of a larger building element, such as a single layer or piece of a wall or slab, kept as its own object.",I
+1000967,ifccls_IfcBuildingElementProxy,"An element that the source model did not give a specific type, so it is kept as a general building element.",I
+1000968,ifccls_IfcCableCarrierFitting,"A fitting that joins, bends or branches cable trays, cable ladders or trunking.",I
+1000969,ifccls_IfcCableCarrierSegment,"A straight run of cable tray, cable ladder, trunking or conduit that carries and protects cables.",I
+1000970,ifccls_IfcColumn,A vertical structural member that carries loads from beams and slabs down towards the foundations.,I
+1000971,ifccls_IfcController,"A device that controls a system from the signals it receives, such as a thermostat, timer or control panel.",I
+1000972,ifccls_IfcCovering,"A finishing layer over another element, such as a ceiling, floor finish, cladding or insulation.",I
+1000973,ifccls_IfcCurtainWall,"An outer wall of panels, often glass, hung on a frame fixed to the building; it carries no floor loads.",I
+1000974,ifccls_IfcDistributionControlElement,"A control or sensing device of a building system, such as a sensor or actuator, with no more specific type.",I
+1000975,ifccls_IfcDoor,A door: a leaf in its frame that opens to let people pass through a wall or partition.,I
+1000976,ifccls_IfcDuctFitting,"A duct piece that joins, bends, branches or changes the size of air ducts.",I
+1000977,ifccls_IfcDuctSegment,A straight length of air duct that carries air between equipment and rooms.,I
+1000978,ifccls_IfcElectricAppliance,"An electrical appliance connected to the building supply, such as a fridge, oven or water heater.",I
+1000979,ifccls_IfcEnergyConversionDevice,"Equipment that turns one form of energy into another, such as a boiler, chiller or transformer, with no more specific type.",I
+1000980,ifccls_IfcFireSuppressionTerminal,"A fire-fighting outlet, such as a sprinkler head, hose reel or fire hydrant.",I
+1000981,ifccls_IfcFlowController,"A device that regulates flow in a pipe, duct or circuit, such as a valve, damper or switch, with no more specific type.",I
+1000982,ifccls_IfcFlowFitting,"A fitting that joins, bends or branches pipes, ducts or cable runs, with no more specific type.",I
+1000983,ifccls_IfcFlowInstrumentType,"A type of gauge or meter, such as a pressure gauge, thermometer or voltmeter.",I
+1000984,ifccls_IfcFlowMovingDevice,"Equipment that moves a fluid, such as a pump, fan or compressor, with no more specific type.",I
+1000985,ifccls_IfcFlowSegment,"A straight run of pipe, duct or cable carrier, with no more specific type.",I
+1000986,ifccls_IfcFlowStorageDevice,"Equipment that stores a fluid or energy, such as a tank or battery, with no more specific type.",I
+1000987,ifccls_IfcFlowTerminal,"The end point where a system serves a room or a person, such as a tap, light or socket, with no more specific type.",I
+1000988,ifccls_IfcFlowTreatmentDevice,"Equipment that cleans or treats a fluid, such as a filter or separator, with no more specific type.",I
+1000989,ifccls_IfcFooting,"A foundation element, such as a pad or strip footing, that spreads the load of the building into the ground.",I
+1000990,ifccls_IfcFurnishingElement,"A piece of furniture or equipment placed in a room, with no more specific type.",I
+1000991,ifccls_IfcFurniture,"Furniture, such as a table, chair, bed, desk or cabinet.",I
+1000992,ifccls_IfcLightFixture,A light fitting (luminaire) that holds lamps and lights a space.,I
+1000993,ifccls_IfcMember,"A structural or framing piece that is not a main beam or column, such as a brace, stud, mullion or purlin.",I
+1000994,ifccls_IfcOpeningElement,"A void cut into a wall, slab or other element, usually for a door or window or to let services pass.",I
+1000995,ifccls_IfcPipeFitting,"A pipe piece that joins, bends, branches or changes the size of pipes, such as an elbow, tee or reducer.",I
+1000996,ifccls_IfcPipeSegment,"A straight length of pipe that carries water, gas or another fluid.",I
+1000997,ifccls_IfcPlate,"A thin flat element, such as a steel plate or a glass panel in a curtain wall.",I
+1000998,ifccls_IfcRailing,"A guard rail, handrail or balustrade, for example along a stair, ramp or balcony edge.",I
+1000999,ifccls_IfcRamp,"A sloped walkway joining two levels, made of one or more ramp flights and landings.",I
+1001000,ifccls_IfcRampFlight,One sloped run of a ramp between two landings.,I
+1001001,ifccls_IfcReinforcingBar,A steel reinforcing bar (rebar) set inside concrete to carry tension.,I
+1001002,ifccls_IfcRoof,"The roof: the top covering of a building, made of slabs, beams and other parts.",I
+1001003,ifccls_IfcSensorType,"A type of sensor that detects a condition, such as smoke, heat, temperature or movement.",I
+1001004,ifccls_IfcSlab,"A flat horizontal or nearly horizontal element, such as a floor, roof slab or landing, usually of concrete.",I
+1001005,ifccls_IfcStair,"A stair joining two levels, made of one or more flights and landings.",I
+1001006,ifccls_IfcStairFlight,One run of steps of a stair between two landings.,I
+1001007,ifccls_IfcSwitchingDevice,"A device that turns an electrical circuit on or off, such as a switch, circuit breaker or contactor.",I
+1001008,ifccls_IfcSystemFurnitureElement,"A part of a modular office furniture system, such as a screen panel, work surface or storage unit.",I
+1001009,ifccls_IfcTransportElement,"Equipment that moves people or goods, such as a lift (elevator), escalator or moving walkway.",I
+1001010,ifccls_IfcValve,"A valve that opens, closes or regulates the flow in a pipe.",I
+1001011,ifccls_IfcWall,A wall: a vertical element that divides or encloses spaces; it may or may not carry load.,I
+1001012,ifccls_IfcWallStandardCase,"A wall of even thickness along its length (an older IFC name, treated today as a plain wall).",I
+1001013,ifccls_IfcWindow,"A window: a framed opening, usually glazed, that lets in light and air.",I
+1001014,ui_cls_about,What this is,I
+1001015,ui_cls_ifcdef,IFC definition,I
+1001016,ui_cls_no_official,English: no official translation in your language,I
+1001017,ui_cls_credit,"buildingSMART IFC 4.3 (bSDD), CC BY-ND 4.0",I
