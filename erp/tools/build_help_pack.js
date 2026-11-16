@@ -105,6 +105,28 @@ function buildHowto(windows) {
   });
   return rows;
 }
+// §12 H1b: the names of the language, from its own published XML (first source wins, translated = present and not the English original):
+//   windows (AD_Window_Trl), tables (AD_Table_Trl), actions (AD_Ref_List_Trl of DocAction 135, by code), statuses (AD_Ref_List_Trl of DocStatus 131, by code).
+function buildNames(lang) {
+  const read = (table) => SOURCES[lang].map((d) => parseTrl(findFile(d, table, lang) || ''));
+  const pick = (srcs, id) => { for (const s of srcs) { const r = s[String(id)]; if (r && translated(r.Name)) return r.Name[0].trim(); } return null; };
+  const W = read('AD_Window'), T = read('AD_Table'), R = read('AD_Ref_List'), out = { windows: {}, tables: {}, actions: {}, statuses: {} };
+  q("SELECT ad_window_id wid FROM ad_window WHERE isactive='Y'").forEach((r) => { const n = pick(W, r.wid); if (n) out.windows[r.wid] = n; });
+  q("SELECT ad_table_id tid FROM ad_table WHERE isactive='Y' AND ad_window_id IS NOT NULL").forEach((r) => { const n = pick(T, r.tid); if (n) out.tables[r.tid] = n; });
+  q("SELECT ad_ref_list_id rid, ad_reference_id ref, value v FROM ad_ref_list WHERE ad_reference_id IN (131,135) AND isactive='Y' AND value<>'--'").forEach((r) => { const n = pick(R, r.rid); if (n) out[r.ref === 135 ? 'actions' : 'statuses'][r.v] = n; });
+  return out;
+}
+// §12 H1b: the how-to rows of a language = the build session's translation file erp/tools/help_howto_<lang>.json, linked by the SAME linker with that language's window names
+function buildHowtoLang(lang, names, enRows) {
+  const f = path.join(__dirname, 'help_howto_' + lang + '.json'); if (!fs.existsSync(f)) return [];
+  const src = JSON.parse(fs.readFileSync(f, 'utf8')), link = linker(Object.keys(names.windows).map((id) => ({ id: Number(id), name: names.windows[id], whole: /[\u3040-\u30ff\u3400-\u9fff]/.test(names.windows[id]) })));   // CJK has no case: a name links only as a whole bold term (菜单 'menu' and 产品 'product' are words, not the Menu / Product windows)
+  return src.rows.map((r, k) => {
+    const en = enRows.find((e) => e.ad_window_id === r.window); if (!en) throw new Error(lang + ' how-to row for window ' + r.window + ' has no English row');
+    return { id: en.id, ctxtype: 'W', ad_window_id: r.window, name: r.name, window: names.windows[r.window] || en.window, kind: en.kind, table: en.table, translated: src.translated,
+      source: { guide: en.source.guide, heading: en.source.heading, url: en.source.url, sentences: en.source.sentences, translation: r.sentences },
+      html: r.sentences.map((p) => '<p>' + link(md(p)) + '</p>').join('') };
+  });
+}
 function buildActions() {
   const fsm = require(path.join(ERP, 'ad_docfsm.js'));
   const st = {}; q("SELECT value v, name n FROM ad_ref_list WHERE ad_reference_id=131 AND isactive='Y'").forEach((r) => { st[r.v] = r.n; });
@@ -133,7 +155,9 @@ function buildActions() {
     // each distinct text once: fields[id] = [descIndex, helpIndex] into texts (-1 = none) — 3,374 distinct texts carry 14,961 German fields (PERF BUDGET: no duplicate buffers)
     const texts = [], ix = new Map(), fields = {};
     Object.keys(b.fields).forEach((id) => { fields[id] = b.fields[id].map((t) => { if (t == null) return -1; if (!ix.has(t)) { ix.set(t, texts.length); texts.push(t); } return ix.get(t); }); });
-    fs.writeFileSync(f, JSON.stringify({ lang, spec: en.spec, sources: SOURCES[lang], texts, fields }));
-    console.log('§HELP_PACK ' + lang + ' fields=' + b.n + ' of ' + b.total + ' texts=' + texts.length + ' stale-original=' + b.stale + ' bytes=' + fs.statSync(f).size);
+    const names = buildNames(lang), hl = buildHowtoLang(lang, names, howto);
+    fs.writeFileSync(f, JSON.stringify(Object.assign({ lang, spec: en.spec, sources: SOURCES[lang], texts, fields, names }, hl.length ? { howto: hl } : {})));
+    console.log('§HELP_PACK ' + lang + ' fields=' + b.n + ' of ' + b.total + ' texts=' + texts.length + ' stale-original=' + b.stale + ' names windows=' + Object.keys(names.windows).length + ' tables=' + Object.keys(names.tables).length +
+      ' actions=' + Object.keys(names.actions).length + ' statuses=' + Object.keys(names.statuses).length + ' howto=' + hl.length + ' links=' + hl.reduce((a, r) => a + (r.html.match(/data-help-win=/g) || []).length, 0) + ' bytes=' + fs.statSync(f).size);
   });
 })();

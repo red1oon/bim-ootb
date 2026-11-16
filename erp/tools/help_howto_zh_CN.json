@@ -1,0 +1,14 @@
+{
+ "note": "VOCAB_MESSAGE_CATALOG §12 H1b: the zh_CN how-to rows. Each row is the build session's translation of the English row with the same window (docs/ERPUserGuide.md, 'The standard flow' §1-§4); NOT reviewed by a native speaker (shown in the widget). Window names are written as the zh_CN pack names them (AD_Window_Trl), so the build-time linker links them; inline code stays as in the guide. build_help_pack.js refuses a row whose window has no English row.",
+ "translated": "build session, not reviewed by a native speaker",
+ "rows": [
+  { "window": 143, "name": "1 · 销售订单",
+    "sentences": ["从菜单（⌂ → 销售）打开**销售订单**，建一两行，然后按**处理**按钮（§6）→ **完成**。完成不只是改变状态：`completeIt` 会在同一个已签名的操作组里，接着生成后面的出货单和发票。"] },
+  { "window": 169, "name": "2 · 出货",
+    "sentences": ["完成时生成的**物料出货(客户/公司)**（`M_InOut`）是一个独立的窗口（⌂ → 库存 → 出货）——打开它，从仓库一侧看同一张单据。每个已出货产品的现有库存立即减少；出货单还带有自己的总账分录（销货成本对库存），而不只是纸面上的移动。"] },
+  { "window": 167, "name": "3 · 客户发票 → 应收",
+    "sentences": ["同一次完成生成的**发票(客户/公司)**记账：借**应收账款** / 贷**收入**（按行）/ 贷**应交税金**。在发票上打开**记账预览**（任何已完成的单据都有）——先看这张分录，再相信我们的说法；它和指南里的记账预览面板实时运行的是同一个推导，不是单独的报表计算。"] },
+  { "window": 195, "name": "4 · 收款与分配",
+    "sentences": ["针对发票记录客户的**付款**（⌂ → 销售 → 付款），然后运行**分配**，把付款和发票对上。真实的分配很少正好相等——它可以带折扣、核销，以及（因为税也跟着折扣部分走）增值税调整，全部在同一笔记账里。"] }
+ ]
+}

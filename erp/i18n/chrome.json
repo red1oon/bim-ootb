@@ -561,6 +561,62 @@
     "ms_MY": "● belum disimpan",
     "th_TH": "● ยังไม่บันทึก"
    }
+  },
+  "help.ask": {
+   "en": "Ask: How do I close a Sales Order?",
+   "machine": {
+    "zh_CN": "提问：如何关闭销售订单？"
+   }
+  },
+  "help.window": {
+   "en": "Window",
+   "ref": "el:143"
+  },
+  "help.action": {
+   "en": "Action",
+   "ref": "el:287"
+  },
+  "help.allowed": {
+   "en": "Allowed when the document is",
+   "machine": {
+    "zh_CN": "单据处于以下状态时可用"
+   }
+  },
+  "help.also": {
+   "en": "Also",
+   "machine": {
+    "zh_CN": "另见"
+   }
+  },
+  "help.guide": {
+   "en": "Guide",
+   "machine": {
+    "zh_CN": "指南"
+   }
+  },
+  "help.none": {
+   "en": "No match in the dictionary or the how-to rows.",
+   "machine": {
+    "zh_CN": "字典和操作说明里都没有找到匹配。"
+   }
+  },
+  "help.english": {
+   "en": "(English)",
+   "machine": {
+    "zh_CN": "（英文）"
+   }
+  },
+  "help.translated": {
+   "en": "Translated by the build session, not reviewed by a native speaker",
+   "machine": {
+    "zh_CN": "由构建会话翻译，未经母语者审校"
+   }
+  },
+  "help.cliNote": {
+   "en": "{0} is offered for {1}, not for {2}",
+   "machine": {
+    "zh_CN": "{0} 目前只支持 {1}，不支持 {2}"
+   }
   }
  }
 }
