@@ -1,7 +1,7 @@
 // ⚠ DO NOT REMOVE — W-NINJA-WORKFLOW (bim-compiler prompts/ERP_MIS_WINDOW_FROM_CSV.md §12.3: ninja.workflow, the document columns on one staged table). READ THE LOG; an exit code is not evidence.
 //   F1 ISSUE (the document columns are made with other values than the system's own documents carry) · F2 ISSUE (a record has no status: made before the verb, or after it)
 //   F3 ISSUE (a second run stages again) · F4 ISSUE (the columns or the values are gone after a restart) · F5 ISSUE (a table that came with the system is changed; a refusal writes)
-//   F6 ISSUE (mis.add_window workflow=Y gives other columns than the verb: two implementations) · F7 ISSUE (the answer hides what is NOT made; an AI adds it without a person)
+//   F6 ISSUE (mis.add_window workflow=Y gives other columns than the verb: two implementations) · F7 ISSUE (the answer hides what is NOT made; Complete on a staged table does not run the generic class, §34; an AI adds it without a person)
 //   Falsifiers: NINJAWF_BREAK=nodefault (must FAIL F1, F2) · again (must FAIL F3). A claim with nothing to judge says INCONCLUSIVE, never PASS.
 //   Run: node common/door/tests/witness_ninja_workflow.js > common/door/tests/logs/ninja_workflow.log 2>&1
 'use strict';
@@ -60,8 +60,8 @@ const k = kit('W-NINJA-WORKFLOW'), BRK = process.env.NINJAWF_BREAK || '';
   // ── F7 what is not made is named; Complete is refused in plain words; an AI's line is a claim; the vocabulary entry
   const co = await door('erp.complete kind=PR_Visit id=1'), E3 = envOf('ai'), ai = await doorE(E3, 'ai')('ninja.workflow table=PR_Visit'), V = JSON.parse(fs.readFileSync(path.join(ROOT, 'common/door/verbs.json'), 'utf8')).verbs.filter(v => v.verb === 'ninja.workflow')[0];
   if (!Array.isArray(wf.answer.notMade)) k.incon('F7', 'the answer carries no list of what is not made');
-  else k.chk('F7 the answer names what is NOT made (the workflow and its process; the document class); Complete is refused saying the table has no document class, the status stays DR; an AI\'s line is a claim; the vocabulary entry is generated, harm writes, dictionary true',
-    wf.answer.notMade.length === 2 && /AD_Workflow/.test(wf.answer.notMade[0]) && /document class/.test(wf.answer.notMade[1]) && ref(co, /no document class yet/) && /stays DR/.test(co.why) && ai.status === 'claim' && nops(E3) === 0 && !!V && V.harm === 'writes' && V.dictionary === true,
-    'notMade=' + wf.answer.notMade.length + ' · complete: ' + co.status + ' "' + String(co.why || '').slice(0, 110) + '" · ai=' + ai.status + ' ops=' + nops(E3) + ' · entry=' + JSON.stringify(V && { harm: V.harm, dictionary: V.dictionary }));
+  else k.chk('F7 the answer names what is NOT made (the workflow and its process); Complete runs the generic document class (bim-compiler prompts/CLI_ERP_IVR.md §34, owner 2026-11-17; was: refused, no class) and the record reads CO; an AI\'s line is a claim; the vocabulary entry is generated, harm writes, dictionary true',
+    wf.answer.notMade.length === 1 && /AD_Workflow/.test(wf.answer.notMade[0]) && ok(co) && !!co.answer && !!co.answer.after && co.answer.after.docStatus === 'CO' && ai.status === 'claim' && nops(E3) === 0 && !!V && V.harm === 'writes' && V.dictionary === true,
+    'notMade=' + wf.answer.notMade.length + ' · complete: ' + co.status + ' ' + ((co.answer && co.answer.after) ? co.answer.after.docStatus : '') + ' "' + String(co.why || '').slice(0, 110) + '" · ai=' + ai.status + ' ops=' + nops(E3) + ' · entry=' + JSON.stringify(V && { harm: V.harm, dictionary: V.dictionary }));
   k.end();
 })().catch(e => { console.log('§W-NINJA-WORKFLOW ERROR ' + e.stack); process.exit(2); });
