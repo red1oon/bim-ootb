@@ -1,0 +1,14 @@
+{
+ "note": "VOCAB_MESSAGE_CATALOG §12 H1b: the de_DE how-to rows. Each row is the build session's translation of the English row with the same window (docs/ERPUserGuide.md, 'The standard flow' §1-§4); NOT reviewed by a native speaker (shown in the widget). Window names are written as the de_DE pack names them (AD_Window_Trl) and in bold, so the build-time linker links them; inline code stays as in the guide.",
+ "translated": "build session, not reviewed by a native speaker",
+ "rows": [
+  { "window": 143, "name": "1 · Auftrag",
+    "sentences": ["Öffnen Sie **Auftrag** im Menü (⌂ → Vertrieb), legen Sie eine oder zwei Positionen an und drücken Sie die Schaltfläche **Verarbeiten** (§6) → **Fertigstellen**. Fertigstellen ist mehr als ein Statuswechsel: `completeIt` erzeugt die folgende Lieferung und Rechnung in DERSELBEN signierten Operationsgruppe."] },
+  { "window": 169, "name": "2 · Lieferung",
+    "sentences": ["Die **Lieferung (Kunde)** (`M_InOut`), die Fertigstellen erzeugt hat, ist ein eigenes Fenster (⌂ → Lager → Lieferung) — öffnen Sie es, um denselben Beleg von der Lagerseite zu sehen. Der Bestand jedes gelieferten Produkts sinkt sofort; die Lieferung hat außerdem eine eigene Buchung (Wareneinsatz gegen Lagerbestand), nicht nur eine Papierbewegung."] },
+  { "window": 167, "name": "3 · Kundenrechnung → Forderungen",
+    "sentences": ["Die **Rechnung (Kunde)**, die dasselbe Fertigstellen erzeugt hat, bucht Soll **Forderungen** / Haben **Erlöse** (je Position) / Haben **Umsatzsteuer**. Öffnen Sie die **Buchungsvorschau** der Rechnung (jeder fertiggestellte Beleg hat sie), um genau diese Buchung zu sehen, bevor Sie uns glauben — es ist DIESELBE Herleitung, die die Buchungsvorschau des Leitfadens live ausführt, keine separate Berichtsberechnung."] },
+  { "window": 195, "name": "4 · Zahlungseingang und Zuordnung",
+    "sentences": ["Erfassen Sie die **Zahlung** des Kunden (⌂ → Vertrieb → Zahlung) zur Rechnung und führen Sie dann die **Zuordnung** aus, um Zahlung und Rechnung abzugleichen. Eine echte Zuordnung passt selten genau — sie kann einen Skonto, eine Abschreibung und (weil die Steuer auch auf den Skontoanteil entfällt) eine Umsatzsteuerkorrektur enthalten, alles in derselben Buchung."] }
+ ]
+}
