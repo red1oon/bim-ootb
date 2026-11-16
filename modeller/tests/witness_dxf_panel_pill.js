@@ -56,7 +56,7 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/jav
   const on = id => pg.evaluate(i => document.getElementById(i).classList.contains('on'), id), oPanel = () => pg.evaluate(() => { const p = document.getElementById('m-open-panel'); return !!p && p.style.display === 'block'; });
   await key('o'); const o1 = [await oPanel(), await on('b-open')]; await key('o'); const o2 = [await oPanel(), await on('b-open')];
   ok('P6b O toggles the Open chooser and lights its pill', o1[0] && o1[1] && !o2[0] && !o2[1], JSON.stringify([o1, o2]));
-  await key('?', 'Shift'); const h1 = await pg.evaluate(() => { const p = document.getElementById('m-help-panel'); return { open: p.style.display === 'block', t: p.innerText }; });
+  await key('?', 'Shift'); const h1 = await pg.evaluate(() => { const p = document.getElementById('cmd-palette'); return { open: !!p, t: p ? p.innerText : '' }; });   // §14.5: the ONE help panel
   ok('P8 ? opens Help, which lists O, E, D (only pills in the rail), Shift+D and ?', h1.open && /\bO\b/.test(h1.t) && /\bD\b/.test(h1.t) && /Shift\+D/.test(h1.t) && /\?/.test(h1.t) && /Export[\s\S]{0,12}\bE\b/.test(h1.t), h1.t.split('\n').filter(l => /^(O|E|D|\?|Shift\+D)$/.test(l.trim())).join(','));
   await key('?', 'Shift');
   const ex = await pg.evaluate(() => document.getElementById('b-export').disabled); await key('e'); const eOn = await on('b-export');

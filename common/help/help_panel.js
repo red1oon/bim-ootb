@@ -14,7 +14,7 @@
 //   id:'cmd-palette', T(k,en), icon(svg)->html, isMobile, place()->{left,top,width,height},
 //   entries()->[{seq,name,icon,action,children:[{name,icon}],hkey,howto:{guide:{anchor,heading},cli:[{line,title,verb}]}}],
 //   guideBase, guideIcon, runSeq(seq), makeDraggable(el), storageKey, state:{filter,open},
-//   headerExtra (html), footer (html), onMount(pal, api), onOpen(pal), onClose(pal, why), onDrop(rect)
+//   headerExtra (html), footer (html), onMount(pal, api), onOpen(pal), onClose(pal, why), onDrop(rect), noAutoFocus (bool)
 // }
 (function (root) {
   'use strict';
@@ -62,7 +62,9 @@
         if (!f) return false;
         // §14.3: a word that is only in a bullet or a CLI title still finds its entry (shown opened, so the reason is visible)
         var inBody = (e.children || []).some(function (c) { return String(c.name || '').toLowerCase().indexOf(f) >= 0; }) ||
-          ((e.howto && e.howto.cli) || []).some(function (c) { return String(c.title).toLowerCase().indexOf(f) >= 0 || c.verb.indexOf(f) >= 0; });
+          ((e.howto && e.howto.cli) || []).some(function (c) { return String(c.title).toLowerCase().indexOf(f) >= 0 || c.verb.indexOf(f) >= 0; }) ||
+          // §14.5: a word in an in-app guide paragraph (the Modeller's guide sections) finds its section; tags are not words
+          !!(e.howto && e.howto.text && String(e.howto.text).replace(/<[^>]*>/g, ' ').replace(/&#39;/g, "'").replace(/&amp;/g, '&').toLowerCase().indexOf(f) >= 0);
         if (inBody) e._openForMatch = true;
         return inBody;
       });
@@ -165,7 +167,9 @@
     var pr = pal.getBoundingClientRect();
     console.log('§HELP_DOCK open left=' + Math.round(pr.left) + ' top=' + Math.round(pr.top) + ' w=' + Math.round(pr.width) + ' h=' + Math.round(pr.height) +
       ' mobile=' + !!cfg.isMobile + ' filter="' + st.filter + '" open=' + Object.keys(st.open).filter(function (k) { return st.open[k]; }).length);
-    if (!cfg.isMobile) searchInput.focus();   // §G5: no auto-focus on a phone (the soft keyboard is premature)
+    // §G5: no auto-focus on a phone (the soft keyboard is premature). §14.5 cfg.noAutoFocus: an app whose single letters are
+    // shortcuts (the Modeller: ? toggles help, O/E/D run pills) keeps them working while the panel is open; click the box to search.
+    if (!cfg.isMobile && !cfg.noAutoFocus) searchInput.focus();
     searchInput.addEventListener('input', function () { cursor = 0; st.filter = this.value; currentMatches = renderList(this.value); });
     searchInput.addEventListener('keydown', function (e) {
       if (e.key === 'Escape' || e.key === 'F1') { e.preventDefault(); close(e.key); return; }

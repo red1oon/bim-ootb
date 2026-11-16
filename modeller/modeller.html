@@ -71,20 +71,7 @@
   #bar button .ic { width: 20px; height: 20px; }
   #hist { right: 70px !important; }                                    /* clear the bottom-right ⋯ trigger */
 
-  /* ? Help — the pill registry: every tool's icon + name (built from the live toolbar). */
-  #m-help-panel { position: fixed; bottom: 74px; right: 70px; z-index: 40; width: 232px;
-    max-height: calc(100vh - 150px); overflow: auto; display: none; padding: 10px;
-    background: rgba(20,22,30,0.92); border: 1px solid #2c303a; border-radius: 12px; color: #c7cdd8;
-    font: 12px system-ui, sans-serif; backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
-    box-shadow: 0 8px 30px rgba(0,0,0,0.5); }
-  #m-help-panel .hp-title { font-size: 10px; letter-spacing: .14em; color: #5b6473; margin: 2px 4px 8px; }
-  #m-help-panel .hp-row { display: flex; align-items: center; gap: 10px; padding: 5px 6px; border-radius: 7px; }
-  #m-help-panel .hp-row:hover { background: #23262e; }
-  #m-help-panel .hp-ic { width: 30px; height: 30px; flex: 0 0 auto; display: flex; align-items: center;
-    justify-content: center; background: rgba(22,24,32,0.5); border: 1px solid rgba(255,255,255,0.10);
-    border-radius: 9px; color: #cdd6e4; }
-  #m-help-panel .hp-ic svg { width: 16px; height: 16px; }
-  #m-help-panel .hp-name { color: #c7cdd8; }
+  /* ? Help — the panel is common/help/help_panel.js (#cmd-palette), shared with the Viewer (VOCAB_MESSAGE_CATALOG §14.5). */
 
   /* ── Collapsible Outliner (Bonsai-style left panel): chevron collapses it, a tab reopens. Persisted. ──
      §MAT-PARITY Task 2 (MODELLER_RENDER_MATERIAL_PARITY.md): the toggle WORKED (verified — clicking it always
@@ -262,6 +249,9 @@ if (window.WholeHistory && WholeHistory.mount) WholeHistory.mount({ page: 'model
 <!-- §MODELLER-GIT-HISTORY (MODELLER_GIT_FAITHFUL_HISTORY.md Phase 2): the SAME git-faithful fork/undo/redo
      tree engine the Viewer runs (common/history_bar.js), reused — not a second branch mechanism. The
      adapter wraps Bonsai.oplog.commit/commitGesture so every real edit lands as one tree node. -->
+<!-- §14.5 (bim-compiler VOCAB_MESSAGE_CATALOG.md): THE help panel + THE drag helper, the same files the Viewer loads. -->
+<script src="../common/drag.js?v=1" onerror="console.warn('§HELP LOAD_FAIL drag.js')"></script>
+<script src="../common/help/help_panel.js?v=2" onerror="console.warn('§HELP LOAD_FAIL help_panel.js')"></script>
 <script src="../common/history_bar.js?v=3" onerror="console.warn('§MHIST LOAD_FAIL history_bar.js')"></script>
 <script src="modeller_history.js?v=8" onerror="console.warn('§MHIST LOAD_FAIL modeller_history.js')"></script>
 <!-- Bonsai IFC export: the authored op-log -> a standards IFC4 file via web-ifc (author->sign->export). -->
@@ -6362,9 +6352,9 @@ window.__ensureDiscWalker = async function () {
   });
 })();
 
-// ── MODELLER USER GUIDE (W-UX-5): a self-contained overlay (no viewer/OCI dependency — §101 Drift Law)
-// describing the REAL modeller verbs the rest of this UX shipped. Prose only; no fabricated data. Toggled
-// from the #b-guide pill. RESUME_MODELLER_UX_OUTLINER_PILL §W-UX-5.
+// ── MODELLER USER GUIDE (W-UX-5): in-app guide text (no viewer/OCI dependency — §101 Drift Law)
+// describing the REAL modeller verbs the rest of this UX shipped. Prose only; no fabricated data. Shown in the
+// help panel from the #b-guide pill (§14.5). RESUME_MODELLER_UX_OUTLINER_PILL §W-UX-5.
 (function initGuide() {
   const bGuide = document.getElementById('b-guide');
   if (!bGuide) return;
@@ -6381,31 +6371,14 @@ window.__ensureDiscWalker = async function () {
     ['Save / Export', 'Your edits auto-save to the signed op-log (restored on your next visit, per building). Pill ▸ Export offers Native .db (the full-fidelity signed op-log, conventionally saved into IFC/BimDB/ — re-opens via Open ▸ local .db), Viewer database (.db — opens in the Viewer), IFC4, a BCF 2.1 issue, or 2D drawings (DXF).'],
     ['Teams', 'Pill ▸ Teams (top-right of the bar) — click to see who else is editing THIS MODEL right now: presence dots + a blame/chat pane over the design op-log. Off by default; first click turns it on, same as ?teams=1. This is <i>authoring</i> collaboration (Modeller + ERP chrome) — a different feature from "HBA" (tenancy/IoT/occupancy pills), which is a separate <i>Viewer-only</i> operations overlay for a live building and does not exist in the Modeller. <b>v1 scope:</b> presence works across tabs/windows of the <i>same browser profile</i> only (it rides a same-profile broadcast channel) — a genuinely different person on a different device will not see your presence yet; that needs a server relay, not yet built.']
   ];
-  let panel = null;
-  function build() {
-    panel = document.createElement('div'); panel.id = 'm-guide-panel';
-    panel.style.cssText = 'position:fixed;bottom:74px;right:70px;z-index:42;width:320px;max-height:calc(100vh - 150px);' +
-      'overflow:auto;display:none;padding:14px 16px;background:rgba(20,22,30,0.95);border:1px solid #2c303a;' +
-      'border-radius:12px;color:#c7cdd8;font:12.5px/1.55 system-ui,sans-serif;' +
-      'backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);box-shadow:0 8px 30px rgba(0,0,0,0.55)';
-    let h = '<div style="font-size:10px;letter-spacing:.14em;color:#5b6473;margin-bottom:10px">MODELLER · USER GUIDE</div>';
-    SECTIONS.forEach(function (s) {
-      h += '<div class="mg-sec" style="margin-bottom:11px"><div style="color:#9fd4f7;font-weight:600;margin-bottom:2px">' + s[0] + '</div>' +
-        '<div style="color:#aab3c2">' + s[1] + '</div></div>';
-    });
-    panel.innerHTML = h;
-    document.body.appendChild(panel);
-  }
+  // §14.5 (bim-compiler VOCAB_MESSAGE_CATALOG.md): the sections are no longer their own overlay — they are the Guide entries of
+  // THE help panel (common/help/help_panel.js, Modeller adapter in the rail block below). The Guide pill opens it with them open.
+  window.__modellerGuideSections = SECTIONS;
   bGuide.onclick = function (e) {
     e.stopPropagation();
-    if (!panel) build();
-    const open = panel.style.display !== 'block';
-    panel.style.display = open ? 'block' : 'none'; bGuide.classList.toggle('on', open);
-    console.log('§MODELLER-GUIDE open=' + open + ' sections=' + SECTIONS.length);
+    if (window.__modellerHelp) window.__modellerHelp.toggle('guide');
+    console.log('§MODELLER-GUIDE open=' + !!document.getElementById('cmd-palette') + ' sections=' + SECTIONS.length);
   };
-  document.addEventListener('pointerdown', function (e) {
-    if (panel && panel.style.display === 'block' && !panel.contains(e.target) && !bGuide.contains(e.target)) { panel.style.display = 'none'; bGuide.classList.remove('on'); }
-  });
 })();
 
 // §ARC-MESH (GAP 2): read-only pixel probe — fit camera to the seeded scene, render ONE frame, gl.readPixels →
@@ -6584,37 +6557,78 @@ console.log('§MODELLER scene ready supported=' + (window.Bonsai ? window.Bonsai
     help.innerHTML = '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" x2="12.01" y1="17" y2="17"/></svg>';
     bar.insertBefore(help, bar.firstChild);   // ? is the FIRST button IN the rail (in line, nearest the ⋯), not floating outside
     layoutRail();                             // position the newly-added ? along the L-path
-    const hpanel = document.createElement('div'); hpanel.id = 'm-help-panel'; document.body.appendChild(hpanel);
-    const _kbd = k => '<span style="margin-left:auto;font:10px ui-monospace,monospace;color:#9aa3b2;background:#13151a;border:1px solid #2c303a;border-radius:5px;padding:2px 7px">' + k + '</span>';
-    function buildHelp() {
-      let h = '<div class="hp-title">TOOLBAR · PILL REGISTRY</div>';
+    // §14.5 (bim-compiler prompts/VOCAB_MESSAGE_CATALOG.md): ? and the Guide pill open THE help panel (common/help/help_panel.js,
+    // the same one the Viewer uses). This is the MODELLER ADAPTER: entries = the live #bar pills (icon, name, SHORTCUTS key) + the
+    // keyboard-only rows + the guide SECTIONS (initGuide) as How To text. Place = the outliner's strip (0..240 px, so #bar at
+    // 252 px stays clear). The outliner is HIDDEN with visibility, never body.ol-collapsed — that class also slides #hist/#stat/
+    // #ins-panel/#dim-row to left:12px, under the panel — so closing help hands the outliner back exactly as the user left it.
+    // Dragged off the strip (left ≥ 240) the outliner comes back; dragged onto it, it hides again. Witness: W-HELP-DOCK-M.
+    const OL_W = 240, _hpState = { filter: '', open: {} };
+    const _svg = d => '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto">' + d + '</svg>';
+    const _icon = el => { if (!el) return ''; const c = el.cloneNode(true); c.setAttribute('width', '16'); c.setAttribute('height', '16'); c.style.cssText = 'width:16px;height:16px;flex:0 0 auto'; return c.outerHTML; };
+    // keyboard-only verbs (no pill button): Undo/Redo retreat via the history scrubber's keys, Cancel, §CLIPBOARD copy/paste,
+    // §L32 the 2D Drawings key with no pill, §P7 G (snap-to-geometry while moving), §V8 T/S arm the Move gizmo's rotate/scale.
+    const KEY_ROWS = [
+      ['<path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/>', 'Undo', 'Ctrl+Z'],
+      ['<path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3L21 13"/>', 'Redo', 'Ctrl+⇧Z'],
+      ['<path d="M18 6 6 18M6 6l12 12"/>', 'Cancel current mode', 'Esc'],
+      ['<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>', 'Copy', 'Ctrl+C'],
+      ['<rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/><path d="M16 4h2a2 2 0 0 1 2 2v4"/><path d="M21 14H11"/><path d="m15 10-4 4 4 4"/>', 'Paste (click to place)', 'Ctrl+V'],
+      ['<rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/><path d="M16 4h2a2 2 0 0 1 2 2v4"/><path d="M21 14H11"/><path d="m15 10-4 4 4 4"/>', 'Drawing metadata', 'Shift+D'],
+      ['<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" x2="12.01" y1="17" y2="17"/>', 'This help', '?'],
+      ['<path d="M12 2v4M12 18v4M2 12h4M18 12h4"/><circle cx="12" cy="12" r="3"/>', 'Snap-to-geometry on/off (while moving)', 'G'],
+      ['<path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/>', 'Arm rotate ring (turn, in Move)', 'T'],
+      ['<rect x="4" y="4" width="16" height="16" rx="1"/><path d="M14 4v6h6"/>', 'Arm scale cubes (in Move)', 'S']
+    ];
+    function _helpEntries() {
+      const all = [];
       bar.querySelectorAll('button').forEach(b => {
         const ic = b.querySelector('.ic'); if (!ic || b.style.display === 'none' || b.id === 'm-help') return;   // skip hidden tools + self
-        const s = b.querySelector('span'); const name = s ? s.textContent.trim() : (b.title || b.id);
-        h += '<div class="hp-row"><span class="hp-ic">' + ic.outerHTML + '</span><span class="hp-name">' + name + '</span>' +
-          (SHORTCUTS[b.id] ? _kbd(SHORTCUTS[b.id]) : '') + '</div>';
+        const s = b.querySelector('span');
+        all.push({ seq: SHORTCUTS[b.id] || '', name: s ? s.textContent.trim() : (b.title || b.id), icon: _icon(ic), hkey: b.id, action: () => b.click() });
       });
-      // keyboard-only verbs (no pill button) — Undo/Redo retreat via the history scrubber's keys, plus Cancel.
-      h += '<div class="hp-title" style="margin-top:9px">KEYBOARD</div>';
-      h += '<div class="hp-row" style="opacity:.85"><span class="hp-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg></span><span class="hp-name">Undo</span>' + _kbd('Ctrl+Z') + '</div>';
-      h += '<div class="hp-row" style="opacity:.85"><span class="hp-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3L21 13"/></svg></span><span class="hp-name">Redo</span>' + _kbd('Ctrl+⇧Z') + '</div>';
-      h += '<div class="hp-row" style="opacity:.85"><span class="hp-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg></span><span class="hp-name">Cancel current mode</span>' + _kbd('Esc') + '</div>';
-      // §CLIPBOARD copy / paste (paste places at the pointer, click to drop, Esc cancels)
-      h += '<div class="hp-row" style="opacity:.85"><span class="hp-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg></span><span class="hp-name">Copy</span>' + _kbd('Ctrl+C') + '</div>';
-      h += '<div class="hp-row" style="opacity:.85"><span class="hp-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/><path d="M16 4h2a2 2 0 0 1 2 2v4"/><path d="M21 14H11"/><path d="m15 10-4 4 4 4"/></svg></span><span class="hp-name">Paste (click to place)</span>' + _kbd('Ctrl+V') + '</div>';
-      // §L32: the 2D Drawings keys that have no pill of their own
-      h += '<div class="hp-row" style="opacity:.85"><span class="hp-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/><path d="M16 4h2a2 2 0 0 1 2 2v4"/><path d="M21 14H11"/><path d="m15 10-4 4 4 4"/></svg></span><span class="hp-name">Drawing metadata</span>' + _kbd('Shift+D') + '</div>';
-      h += '<div class="hp-row" style="opacity:.85"><span class="hp-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" x2="12.01" y1="17" y2="17"/></svg></span><span class="hp-name">This help</span>' + _kbd('?') + '</div>';
-      // §P7: G (snap-to-geometry toggle while moving) was a real, working shortcut the panel never listed.
-      h += '<div class="hp-row" style="opacity:.85"><span class="hp-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/><circle cx="12" cy="12" r="3"/></svg></span><span class="hp-name">Snap-to-geometry on/off (while moving)</span>' + _kbd('G') + '</div>';
-      // §V8: T/S arm the Move gizmo's rotate-ring / scale-cube sub-modes (R stays Insert — decided 2026-07-03).
-      h += '<div class="hp-row" style="opacity:.85"><span class="hp-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg></span><span class="hp-name">Arm rotate ring (turn, in Move)</span>' + _kbd('T') + '</div>';
-      h += '<div class="hp-row" style="opacity:.85"><span class="hp-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="1"/><path d="M14 4v6h6"/></svg></span><span class="hp-name">Arm scale cubes (in Move)</span>' + _kbd('S') + '</div>';
-      hpanel.innerHTML = h;
+      KEY_ROWS.forEach(k => all.push({ seq: k[2], name: k[1], icon: _svg(k[0]), hkey: 'key:' + k[1] }));
+      const gIc = _icon(document.querySelector('#b-guide .ic'));
+      // a guide paragraph is put on the page only while its section is open or a search is typed (it is searched then): folded, a
+      // section is its title alone, so the page holds no hidden English paragraphs (W-MODELLER-I18N counts every text node)
+      (window.__modellerGuideSections || []).forEach(sec => {
+        const hk = 'guide:' + sec[0], shown = !!_hpState.open[hk] || !!_hpState.filter;
+        const e = { seq: '', name: sec[0], icon: gIc, hkey: hk, howto: shown ? { text: sec[1] } : null };
+        e.action = () => { _hpState.open[hk] = !(e._childDiv && e._childDiv.style.display !== 'none'); if (_api) _api.rerender(); };   // a click on a guide row opens / closes it
+        all.push(e);
+      });
+      return all;
     }
-    help.onclick = e => { e.stopPropagation(); const open = hpanel.style.display !== 'block'; if (open) buildHelp();
-      hpanel.style.display = open ? 'block' : 'none'; help.classList.toggle('on', open); console.log('§MODELLER help open=' + open); };
-    document.addEventListener('pointerdown', e => { if (hpanel.style.display === 'block' && !hpanel.contains(e.target) && !help.contains(e.target)) { hpanel.style.display = 'none'; help.classList.remove('on'); } });
+    const _strip = (show, why) => {
+      ['bonsai-outliner', 'ol-show'].forEach(id => { const el = document.getElementById(id); if (el) el.style.visibility = show ? '' : 'hidden'; });
+      console.log('§HELP_DOCK_M outliner=' + (show ? 'shown' : 'hidden') + ' collapsed=' + document.body.classList.contains('ol-collapsed') + ' why=' + why);
+    };
+    let _via = null, _api = null;
+    const _lit = on => { help.classList.toggle('on', on && _via !== 'guide'); const g = document.getElementById('b-guide'); if (g) g.classList.toggle('on', on && _via === 'guide'); };
+    const _guideOpen = () => { _hpState.filter = ''; (window.__modellerGuideSections || []).forEach(sec => { _hpState.open['guide:' + sec[0]] = true; }); };
+    const _helpCfg = {
+      id: 'cmd-palette', state: _hpState, icon: _svg, entries: _helpEntries, noAutoFocus: true,   // ? / O / E / D stay keys while it is open (as the old overlay)
+      isMobile: ('ontouchstart' in window || navigator.maxTouchPoints > 0) && window.screen.width < 1024,   // the Viewer's rule (viewer/config.js _isMobile)
+      place: () => ({ left: 0, top: 0, width: OL_W - 2, height: window.innerHeight - 2 }),   // − its 1 px border each side (help_panel.js)
+      makeDraggable: window.CommonDrag ? window.CommonDrag.make : null, storageKey: 'dagevu_modeller_help_dock_pos',
+      onOpen: pal => { _strip(pal.getBoundingClientRect().left >= OL_W, 'open'); _lit(true); },
+      onDrop: r => _strip(r.left >= OL_W, 'drop'),
+      onClose: (pal, why) => { _strip(true, 'close:' + why); _api = null; _lit(false); }
+    };
+    function helpToggle(via) {
+      if (!window.HelpPanel) { console.warn('§HELP LOAD_FAIL HelpPanel missing'); return; }
+      const isOpen = !!document.getElementById('cmd-palette');
+      if (isOpen && _api && via === 'guide' && _via !== 'guide') {   // ? panel open, then the Guide pill: show the guide in it
+        _via = via; _guideOpen(); const si = document.getElementById('cmd-search'); if (si) si.value = ''; _api.rerender(); _lit(true);
+      } else {
+        if (!isOpen) { _via = via; if (via === 'guide') _guideOpen(); }
+        _api = window.HelpPanel.toggle(_helpCfg);
+      }
+      if (_api && via === 'guide') { const r = document.querySelector('#cmd-palette .cmd-howto-text'); if (r && r.parentElement.previousElementSibling) r.parentElement.previousElementSibling.scrollIntoView({ block: 'start' }); }
+      console.log('§MODELLER help open=' + !!document.getElementById('cmd-palette') + ' via=' + via);
+    }
+    window.__modellerHelp = { toggle: helpToggle };
+    help.onclick = e => { e.stopPropagation(); helpToggle('?'); };
   }
   const ol = document.getElementById('bonsai-outliner');
   if (ol && !document.getElementById('ol-collapse')) {

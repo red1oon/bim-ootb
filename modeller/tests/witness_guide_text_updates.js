@@ -3,7 +3,7 @@
  * # ⚠ DO NOT REMOVE — W-GUIDE-TEXT-UPDATES scope
  * SCOPE: prompts/SCALE_AND_UX_SWEEP.md §3.1 (green/orange ctrl+click discoverability) + §2 (Teams v1 scope
  * decision — settled: ship same-tab-multi-profile as an honestly-labeled narrower v1). Both land as real text
- * in the SAME in-app Modeller guide panel (#b-guide → #m-guide-panel) PR #661 already touched — this proves
+ * in the SAME in-app Modeller guide panel (#b-guide → #m-guide-panel, since §14.5 the help panel #cmd-palette) PR #661 already touched — this proves
  * the text actually RENDERS in the live DOM (not just present in the source), and that it doesn't reintroduce
  * the Teams/HBA confusion #661 fixed (that sentence must still be present verbatim).
  *
@@ -33,7 +33,7 @@ const server = http.createServer((q, r) => { let p = decodeURIComponent(q.url.sp
   await pg.waitForFunction('window.__sceneReady === true', { timeout: 30000 });
   await pg.click('#b-guide');
   await sleep(200);
-  const html = await pg.evaluate(() => { const p = document.getElementById('m-guide-panel'); return p ? p.innerHTML : null; });
+  const html = await pg.evaluate(() => { const p = document.getElementById('cmd-palette'); return p ? p.innerHTML : null; /* §14.5: the guide is in the ONE help panel */ });
 
   chk('G0 guide panel opened', !!html, 'panelExists=' + !!html);
   chk('G1 ctrl+click green/orange opt-out sentence present (§3.1 discoverability)',
