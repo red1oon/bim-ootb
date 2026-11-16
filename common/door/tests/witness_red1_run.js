@@ -5,7 +5,8 @@
 //   R4 ISSUE (one-shot asks, or runs half-filled): `red1 'cd Project; run "Set Project Type" 990000'` asks nothing and is refused naming C_ProjectType_ID
 //   R5 ISSUE (a process with no port pretends): a process with no JS port (picked from the dictionary, not named) is refused naming its class; the count of ported processes on the Project table is logged (X of N)
 //   R6 ISSUE (a typo runs or is unhelpful): a misspelt process and a misspelt parameter are refused naming the nearest
-//   Falsifiers: RUN_BREAK=skipcommit (the ops are not kept: must FAIL R1) · WORDS_BREAK=paramorder (the questions reversed: must FAIL R2).
+//   R7 ISSUE (a process says ok and nothing else: the film's Generate PO made 0 orders with an empty message): the answer's summary names what was made (or 'no document made') and the process's own log, as legacy's dialog shows it; Generate PO on the seed's 990000 logs 'Product has no PO record' once per line whose product has no M_Product_PO (independent SQL)
+//   Falsifiers: RUN_BREAK=nolog (must FAIL R7) · RUN_BREAK=skipcommit (the ops are not kept: must FAIL R1) · WORDS_BREAK=paramorder (the questions reversed: must FAIL R2).
 //   Run: node common/door/tests/witness_red1_run.js > common/door/tests/logs/red1_run.log 2>&1
 'use strict';
 const path = require('path'), cp = require('child_process'), fs = require('fs'), os = require('os');
@@ -60,5 +61,13 @@ async function noPortProcess() {
   // R6 typos
   const t1 = envs(run([DOOR, 'erp.process name="Set Projct Type" record=990000'], fresh()).out).pop(), t2 = envs(run([DOOR, 'erp.process name="Set Project Type" record=990000 C_ProjectTyp=103'], fresh()).out).pop();
   k.chk('R6 a misspelt process and a misspelt parameter are refused naming the nearest (Set Project Type, C_ProjectType_ID)', !!t1 && t1.status === 'refused' && /nearest: Set Project Type/.test(t1.why) && !!t2 && t2.status === 'refused' && /nearest: C_ProjectType_ID/.test(t2.why), (t1 && t1.why) + ' | ' + (t2 && t2.why));
+  // R7 the summary: what was made and the process log (independent: project lines of 990000 whose product has no M_Product_PO row)
+  { const SQLj = await require('sql.js')(), dbj = new SQLj.Database(fs.readFileSync(path.join(ROOT, 'erp/ad_seed.db')));
+    const qn = dbj.exec("SELECT count(*) FROM c_projectline pl WHERE pl.c_project_id=990000 AND pl.isactive='Y' AND pl.m_product_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM m_product_po po WHERE po.m_product_id=pl.m_product_id AND po.isactive='Y')")[0].values[0][0];
+    const r7 = envs(run([DOOR, 'erp.process name="Generate PO from Project" C_Project_ID=990000 ConsolidateDocument=Y'], fresh()).out).pop(), a7 = r7 && r7.answer || {};
+    const n7 = (a7.log || []).filter(l => /Product has no PO record/.test(l)).length;
+    k.L('R7 summary=' + JSON.stringify(a7.summary) + ' log=' + (a7.log || []).length + ' no-PO lines (sql)=' + qn);
+    if (!qn) k.incon('R7', 'every project line of 990000 has a PO record: no log to show');
+    else k.chk('R7 Generate PO on 990000 answers a summary ("no document made" + the log) and logs "Product has no PO record" for each of the ' + qn + ' lines with no M_Product_PO', !!r7 && r7.status === 'ok' && /no document made/.test(a7.summary || '') && /Product has no PO record/.test(a7.summary || '') && n7 === qn, 'log=' + n7 + ' sql=' + qn + ' summary=' + JSON.stringify(a7.summary).slice(0, 120)); }
   k.end();
 })().catch(e => { console.log('§W-RED1-RUN FAIL ' + (e && e.stack || e)); process.exit(1); });
