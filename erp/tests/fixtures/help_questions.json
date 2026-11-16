@@ -1,5 +1,5 @@
 {
- "note": "VOCAB_MESSAGE_CATALOG §10/§12/§13: real phrasings -> the window and the DocAction a person means (what is asked, not how it is found). ONE fixture for the page (W-HELP-SHOWCASE S3/S6) and the CLI (W-ERP-ASK A1/A2). 作废 (void) is not in zh: the zh_CN pack has no such word (Void 空白, Voided 空虚).",
+ "note": "VOCAB_MESSAGE_CATALOG §10/§12/§13: real phrasings -> the window and the DocAction a person means (what is asked, not how it is found). ONE fixture (en, zh, de) for the page (W-HELP-SHOWCASE S3/S6) and the CLI (W-ERP-ASK A1/A2). 作废 (void) is not in zh: the zh_CN pack has no such word (Void 空白, Voided 空虚).",
  "en": [
   {
    "q": "How do I close a Sales Order?",
@@ -71,6 +71,33 @@
   {
    "q": "如何创建出货单？",
    "w": 169,
+   "a": null
+  },
+  {
+   "q": "How do I close a Sales Order?",
+   "w": 143,
+   "a": "CL"
+  }
+ ],
+ "de": [
+  {
+   "q": "Wie kann ich einen Auftrag schließen?",
+   "w": 143,
+   "a": "CL"
+  },
+  {
+   "q": "Wie kann ich eine Rechnung fertigstellen?",
+   "w": 167,
+   "a": "CO"
+  },
+  {
+   "q": "Auftrag reaktivieren",
+   "w": 143,
+   "a": "RE"
+  },
+  {
+   "q": "Wie erfasse ich eine Zahlung?",
+   "w": 195,
    "a": null
   },
   {
