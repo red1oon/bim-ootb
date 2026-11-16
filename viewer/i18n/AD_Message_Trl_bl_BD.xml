@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<!--BIM OOTB Viewer — AD_Message_Trl bl_BD — format: org.compiere.install.Translation export (iDempiere). Rows 1000000-1000308 source=viewer/locales/bl_BD.js @4cd440ae (S225/S226 sessions, machine translation, extracted 2026-10-03, not retranslated); rows 1000309-1000492 and every row listed in viewer/tools/trl_batch_2026-10-03*.js source=machine (Claude, Anthropic, 2026-10-03); rows 1000493-1000655 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_tm.js; rows 1000656-1000671 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_info.js; rows 1000672-1000752 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_help.js; rows 1000753-1000862 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_modeller.js; rows 1000867-1000962 source=buildingSMART bSDD IFC 4.3 (CC BY-ND 4.0), verbatim official text — viewer/tools/trl_batch_2026-11-17_ifcdef.js; rows 1000963-1001017 source=machine (Claude, Anthropic, 2026-11-17), English class sentences written for this app — viewer/tools/trl_batch_2026-11-17_ifccls.js — NOT from a published iDempiere language pack. trl="N" = not translated (English kept, counted apart). Base rows: viewer/i18n/ad_message_base.csv. Edit THIS file, then run: node viewer/tools/build_trl.js-->
+<!--BIM OOTB Viewer — AD_Message_Trl bl_BD — format: org.compiere.install.Translation export (iDempiere). Rows 1000000-1000308 source=viewer/locales/bl_BD.js @4cd440ae (S225/S226 sessions, machine translation, extracted 2026-10-03, not retranslated); rows 1000309-1000492 and every row listed in viewer/tools/trl_batch_2026-10-03*.js source=machine (Claude, Anthropic, 2026-10-03); rows 1000493-1000655 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_tm.js; rows 1000656-1000671 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_info.js; rows 1000672-1000752 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_help.js; rows 1000753-1000862 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_modeller.js; rows 1000867-1000962 source=buildingSMART bSDD IFC 4.3 (CC BY-ND 4.0), verbatim official text — viewer/tools/trl_batch_2026-11-17_ifcdef.js; rows 1000963-1001017 source=machine (Claude, Anthropic, 2026-11-17), English class sentences written for this app — viewer/tools/trl_batch_2026-11-17_ifccls.js; rows 1001018-1001024 source=buildingSMART bSDD IFC 4.3 (CC BY-ND 4.0) verbatim, type -> occurrence per its IFC page; ui_cls_ifcdef_of machine (Claude, 2026-11-17) — viewer/tools/trl_batch_2026-11-17_ifcdef_types.js; rows 1000963-1001013 (51 filled) source=machine (Claude, Anthropic, 2026-11-17), class sentences in 10 more locales — viewer/tools/trl_batch_2026-11-17_ifccls_fill.js — NOT from a published iDempiere language pack. trl="N" = not translated (English kept, counted apart). Base rows: viewer/i18n/ad_message_base.csv. Edit THIS file, then run: node viewer/tools/build_trl.js-->
 <!--<!DOCTYPE idempiereTrl PUBLIC "-//iDempiere//DTD iDempiere Translation 1.0//EN" "https://raw.githubusercontent.com/idempiere/idempiere/refs/heads/master/utils_dev/trl/idempiereTrl.dtd">-->
 <idempiereTrl language="bl_BD" table="AD_Message">
  <row id="1000000" trl="Y">
@@ -3863,208 +3863,208 @@ CPM tanar fole toiri tarikh-gulo pore — kokhono kono-ta bodlay na.</value>
   <value column="MsgText" original="EN">EN</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000963" trl="N">
-  <value column="MsgText" original="An air outlet or inlet, such as a grille or diffuser, where ducted air enters or leaves a room.">An air outlet or inlet, such as a grille or diffuser, where ducted air enters or leaves a room.</value>
+ <row id="1000963" trl="Y">
+  <value column="MsgText" original="An air outlet or inlet, such as a grille or diffuser, where ducted air enters or leaves a room.">Batas dhokar ba berovar mukh, jemon grille ba diffuser, jekhane duct diye asha batas kokkhe dhoke ba kokkh theke berhoy.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000964" trl="N">
-  <value column="MsgText" original="A device that warns people of fire or another danger by sound or light, such as a bell, siren or beacon.">A device that warns people of fire or another danger by sound or light, such as a bell, siren or beacon.</value>
+ <row id="1000964" trl="Y">
+  <value column="MsgText" original="A device that warns people of fire or another danger by sound or light, such as a bell, siren or beacon.">Ekti jantra ja shobdo ba alo diye manushke agun ba onno biponer shotorko kore, jemon bell, siren ba beacon.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000965" trl="N">
-  <value column="MsgText" original="A horizontal or nearly horizontal structural member that carries loads across a span, usually onto columns or walls.">A horizontal or nearly horizontal structural member that carries loads across a span, usually onto columns or walls.</value>
+ <row id="1000965" trl="Y">
+  <value column="MsgText" original="A horizontal or nearly horizontal structural member that carries loads across a span, usually onto columns or walls.">Ekti ovumi ba proy ovumi kathamo-gato ongsho ja duiyer majhe bhar bohon kore, shadharonoto column ba deyaler opor.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000966" trl="N">
-  <value column="MsgText" original="One part of a larger building element, such as a single layer or piece of a wall or slab, kept as its own object.">One part of a larger building element, such as a single layer or piece of a wall or slab, kept as its own object.</value>
+ <row id="1000966" trl="Y">
+  <value column="MsgText" original="One part of a larger building element, such as a single layer or piece of a wall or slab, kept as its own object.">Boro ekti building upadan-er ekti ongsho, jemon deyal ba slab-er ekti stor ba tukro, ja alada object hishebe rakha hoy.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000967" trl="N">
-  <value column="MsgText" original="An element that the source model did not give a specific type, so it is kept as a general building element.">An element that the source model did not give a specific type, so it is kept as a general building element.</value>
+ <row id="1000967" trl="Y">
+  <value column="MsgText" original="An element that the source model did not give a specific type, so it is kept as a general building element.">Ekti upadan jake mul model-e kono nirdishto dhoron deya hoyni, tai take shadharon building upadan hishebe rakha hoy.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000968" trl="N">
-  <value column="MsgText" original="A fitting that joins, bends or branches cable trays, cable ladders or trunking.">A fitting that joins, bends or branches cable trays, cable ladders or trunking.</value>
+ <row id="1000968" trl="Y">
+  <value column="MsgText" original="A fitting that joins, bends or branches cable trays, cable ladders or trunking.">Ekti fitting ja cable tray, cable ladder ba trunking jora dey, bnak kore ba shakha kore.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000969" trl="N">
-  <value column="MsgText" original="A straight run of cable tray, cable ladder, trunking or conduit that carries and protects cables.">A straight run of cable tray, cable ladder, trunking or conduit that carries and protects cables.</value>
+ <row id="1000969" trl="Y">
+  <value column="MsgText" original="A straight run of cable tray, cable ladder, trunking or conduit that carries and protects cables.">Cable tray, cable ladder, trunking ba conduit-er shoja ongsho ja cable bohon kore ebong shurokkha dey.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000970" trl="N">
-  <value column="MsgText" original="A vertical structural member that carries loads from beams and slabs down towards the foundations.">A vertical structural member that carries loads from beams and slabs down towards the foundations.</value>
+ <row id="1000970" trl="Y">
+  <value column="MsgText" original="A vertical structural member that carries loads from beams and slabs down towards the foundations.">Ekti ulombo kathamo-gato ongsho ja beam ar slab-er bhar niche foundation-er dike niye jay.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000971" trl="N">
-  <value column="MsgText" original="A device that controls a system from the signals it receives, such as a thermostat, timer or control panel.">A device that controls a system from the signals it receives, such as a thermostat, timer or control panel.</value>
+ <row id="1000971" trl="Y">
+  <value column="MsgText" original="A device that controls a system from the signals it receives, such as a thermostat, timer or control panel.">Ekti jantra ja pawa signal theke kono byabostha niyontron kore, jemon thermostat, timer ba control panel.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000972" trl="N">
-  <value column="MsgText" original="A finishing layer over another element, such as a ceiling, floor finish, cladding or insulation.">A finishing layer over another element, such as a ceiling, floor finish, cladding or insulation.</value>
+ <row id="1000972" trl="Y">
+  <value column="MsgText" original="A finishing layer over another element, such as a ceiling, floor finish, cladding or insulation.">Onno upadan-er opor shesh ostor, jemon ceiling, floor finish, cladding ba insulation.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000973" trl="N">
-  <value column="MsgText" original="An outer wall of panels, often glass, hung on a frame fixed to the building; it carries no floor loads.">An outer wall of panels, often glass, hung on a frame fixed to the building; it carries no floor loads.</value>
+ <row id="1000973" trl="Y">
+  <value column="MsgText" original="An outer wall of panels, often glass, hung on a frame fixed to the building; it carries no floor loads.">Panel-er bahiri deyal, proyoi kach-er, ja building-e lagano kathamoy jhulano thake; eta tola-r bhar bohon kore na.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000974" trl="N">
-  <value column="MsgText" original="A control or sensing device of a building system, such as a sensor or actuator, with no more specific type.">A control or sensing device of a building system, such as a sensor or actuator, with no more specific type.</value>
+ <row id="1000974" trl="Y">
+  <value column="MsgText" original="A control or sensing device of a building system, such as a sensor or actuator, with no more specific type.">Building byabosthar ekti niyontron ba sensing jantra, jemon sensor ba actuator, ja aro nirdishto dhoron chhara.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000975" trl="N">
-  <value column="MsgText" original="A door: a leaf in its frame that opens to let people pass through a wall or partition.">A door: a leaf in its frame that opens to let people pass through a wall or partition.</value>
+ <row id="1000975" trl="Y">
+  <value column="MsgText" original="A door: a leaf in its frame that opens to let people pass through a wall or partition.">Dorja: kathamo-r moddhe ekti palla ja khule deyal ba partition diye manush jete dey.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000976" trl="N">
-  <value column="MsgText" original="A duct piece that joins, bends, branches or changes the size of air ducts.">A duct piece that joins, bends, branches or changes the size of air ducts.</value>
+ <row id="1000976" trl="Y">
+  <value column="MsgText" original="A duct piece that joins, bends, branches or changes the size of air ducts.">Duct-er ekti ongsho ja batas-er duct jora dey, bnak kore, shakha kore ba akar bodol kore.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000977" trl="N">
-  <value column="MsgText" original="A straight length of air duct that carries air between equipment and rooms.">A straight length of air duct that carries air between equipment and rooms.</value>
+ <row id="1000977" trl="Y">
+  <value column="MsgText" original="A straight length of air duct that carries air between equipment and rooms.">Batas-er duct-er shoja lomba ongsho ja jantrapati ar kokkher majhe batas bohon kore.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000978" trl="N">
-  <value column="MsgText" original="An electrical appliance connected to the building supply, such as a fridge, oven or water heater.">An electrical appliance connected to the building supply, such as a fridge, oven or water heater.</value>
+ <row id="1000978" trl="Y">
+  <value column="MsgText" original="An electrical appliance connected to the building supply, such as a fridge, oven or water heater.">Building-er biddut shorbaraho-e songjukto biddut jantra, jemon fridge, oven ba water heater.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000979" trl="N">
-  <value column="MsgText" original="Equipment that turns one form of energy into another, such as a boiler, chiller or transformer, with no more specific type.">Equipment that turns one form of energy into another, such as a boiler, chiller or transformer, with no more specific type.</value>
+ <row id="1000979" trl="Y">
+  <value column="MsgText" original="Equipment that turns one form of energy into another, such as a boiler, chiller or transformer, with no more specific type.">Jantra ja ek dhoroner shokti onno dhoroner shoktite bodle, jemon boiler, chiller ba transformer, aro nirdishto dhoron chhara.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000980" trl="N">
-  <value column="MsgText" original="A fire-fighting outlet, such as a sprinkler head, hose reel or fire hydrant.">A fire-fighting outlet, such as a sprinkler head, hose reel or fire hydrant.</value>
+ <row id="1000980" trl="Y">
+  <value column="MsgText" original="A fire-fighting outlet, such as a sprinkler head, hose reel or fire hydrant.">Agun nibhanor berovar mukh, jemon sprinkler head, hose reel ba fire hydrant.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000981" trl="N">
-  <value column="MsgText" original="A device that regulates flow in a pipe, duct or circuit, such as a valve, damper or switch, with no more specific type.">A device that regulates flow in a pipe, duct or circuit, such as a valve, damper or switch, with no more specific type.</value>
+ <row id="1000981" trl="Y">
+  <value column="MsgText" original="A device that regulates flow in a pipe, duct or circuit, such as a valve, damper or switch, with no more specific type.">Ekti jantra ja pipe, duct ba circuit-e pravah niyontron kore, jemon valve, damper ba switch, aro nirdishto dhoron chhara.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000982" trl="N">
-  <value column="MsgText" original="A fitting that joins, bends or branches pipes, ducts or cable runs, with no more specific type.">A fitting that joins, bends or branches pipes, ducts or cable runs, with no more specific type.</value>
+ <row id="1000982" trl="Y">
+  <value column="MsgText" original="A fitting that joins, bends or branches pipes, ducts or cable runs, with no more specific type.">Ekti fitting ja pipe, duct ba cable-er path jora dey, bnak kore ba shakha kore, aro nirdishto dhoron chhara.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000983" trl="N">
-  <value column="MsgText" original="A type of gauge or meter, such as a pressure gauge, thermometer or voltmeter.">A type of gauge or meter, such as a pressure gauge, thermometer or voltmeter.</value>
+ <row id="1000983" trl="Y">
+  <value column="MsgText" original="A type of gauge or meter, such as a pressure gauge, thermometer or voltmeter.">Gauge ba meter-er ekti dhoron, jemon pressure gauge, thermometer ba voltmeter.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000984" trl="N">
-  <value column="MsgText" original="Equipment that moves a fluid, such as a pump, fan or compressor, with no more specific type.">Equipment that moves a fluid, such as a pump, fan or compressor, with no more specific type.</value>
+ <row id="1000984" trl="Y">
+  <value column="MsgText" original="Equipment that moves a fluid, such as a pump, fan or compressor, with no more specific type.">Jantra ja tarol bastu nore chore, jemon pump, fan ba compressor, aro nirdishto dhoron chhara.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000985" trl="N">
-  <value column="MsgText" original="A straight run of pipe, duct or cable carrier, with no more specific type.">A straight run of pipe, duct or cable carrier, with no more specific type.</value>
+ <row id="1000985" trl="Y">
+  <value column="MsgText" original="A straight run of pipe, duct or cable carrier, with no more specific type.">Pipe, duct ba cable carrier-er shoja ongsho, aro nirdishto dhoron chhara.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000986" trl="N">
-  <value column="MsgText" original="Equipment that stores a fluid or energy, such as a tank or battery, with no more specific type.">Equipment that stores a fluid or energy, such as a tank or battery, with no more specific type.</value>
+ <row id="1000986" trl="Y">
+  <value column="MsgText" original="Equipment that stores a fluid or energy, such as a tank or battery, with no more specific type.">Jantra ja tarol bastu ba shokti jomiye rakhe, jemon tank ba battery, aro nirdishto dhoron chhara.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000987" trl="N">
-  <value column="MsgText" original="The end point where a system serves a room or a person, such as a tap, light or socket, with no more specific type.">The end point where a system serves a room or a person, such as a tap, light or socket, with no more specific type.</value>
+ <row id="1000987" trl="Y">
+  <value column="MsgText" original="The end point where a system serves a room or a person, such as a tap, light or socket, with no more specific type.">Shesh bindu jekhane byabostha kokkh ba manushke seba dey, jemon tap, alo ba socket, aro nirdishto dhoron chhara.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000988" trl="N">
-  <value column="MsgText" original="Equipment that cleans or treats a fluid, such as a filter or separator, with no more specific type.">Equipment that cleans or treats a fluid, such as a filter or separator, with no more specific type.</value>
+ <row id="1000988" trl="Y">
+  <value column="MsgText" original="Equipment that cleans or treats a fluid, such as a filter or separator, with no more specific type.">Jantra ja tarol bastu poriskar ba shodhon kore, jemon filter ba separator, aro nirdishto dhoron chhara.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000989" trl="N">
-  <value column="MsgText" original="A foundation element, such as a pad or strip footing, that spreads the load of the building into the ground.">A foundation element, such as a pad or strip footing, that spreads the load of the building into the ground.</value>
+ <row id="1000989" trl="Y">
+  <value column="MsgText" original="A foundation element, such as a pad or strip footing, that spreads the load of the building into the ground.">Bhitti-r upadan, jemon pad ba strip footing, ja building-er bhar matir moddhe chhoriye dey.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000990" trl="N">
-  <value column="MsgText" original="A piece of furniture or equipment placed in a room, with no more specific type.">A piece of furniture or equipment placed in a room, with no more specific type.</value>
+ <row id="1000990" trl="Y">
+  <value column="MsgText" original="A piece of furniture or equipment placed in a room, with no more specific type.">Kokkhe rakha ashbab ba shorjam-er ekti ongsho, aro nirdishto dhoron chhara.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000991" trl="N">
-  <value column="MsgText" original="Furniture, such as a table, chair, bed, desk or cabinet.">Furniture, such as a table, chair, bed, desk or cabinet.</value>
+ <row id="1000991" trl="Y">
+  <value column="MsgText" original="Furniture, such as a table, chair, bed, desk or cabinet.">Ashbab, jemon table, chair, bed, desk ba cabinet.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000992" trl="N">
-  <value column="MsgText" original="A light fitting (luminaire) that holds lamps and lights a space.">A light fitting (luminaire) that holds lamps and lights a space.</value>
+ <row id="1000992" trl="Y">
+  <value column="MsgText" original="A light fitting (luminaire) that holds lamps and lights a space.">Ekti alor fitting (luminaire) ja lamp dhore rakhe ebong jayga alokito kore.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000993" trl="N">
-  <value column="MsgText" original="A structural or framing piece that is not a main beam or column, such as a brace, stud, mullion or purlin.">A structural or framing piece that is not a main beam or column, such as a brace, stud, mullion or purlin.</value>
+ <row id="1000993" trl="Y">
+  <value column="MsgText" original="A structural or framing piece that is not a main beam or column, such as a brace, stud, mullion or purlin.">Ekti kathamo ba framing-er tukro ja mukhya beam ba column noy, jemon brace, stud, mullion ba purlin.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000994" trl="N">
-  <value column="MsgText" original="A void cut into a wall, slab or other element, usually for a door or window or to let services pass.">A void cut into a wall, slab or other element, usually for a door or window or to let services pass.</value>
+ <row id="1000994" trl="Y">
+  <value column="MsgText" original="A void cut into a wall, slab or other element, usually for a door or window or to let services pass.">Deyal, slab ba onno upadan-e kata ekti phnaka jayga, shadharonoto dorja ba janalar jonno ba service jaowar jonno.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000995" trl="N">
-  <value column="MsgText" original="A pipe piece that joins, bends, branches or changes the size of pipes, such as an elbow, tee or reducer.">A pipe piece that joins, bends, branches or changes the size of pipes, such as an elbow, tee or reducer.</value>
+ <row id="1000995" trl="Y">
+  <value column="MsgText" original="A pipe piece that joins, bends, branches or changes the size of pipes, such as an elbow, tee or reducer.">Pipe-er ekti ongsho ja pipe jora dey, bnak kore, shakha kore ba akar bodol kore, jemon elbow, tee ba reducer.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000996" trl="N">
-  <value column="MsgText" original="A straight length of pipe that carries water, gas or another fluid.">A straight length of pipe that carries water, gas or another fluid.</value>
+ <row id="1000996" trl="Y">
+  <value column="MsgText" original="A straight length of pipe that carries water, gas or another fluid.">Pipe-er shoja lomba ongsho ja pani, gas ba onno tarol bohon kore.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000997" trl="N">
-  <value column="MsgText" original="A thin flat element, such as a steel plate or a glass panel in a curtain wall.">A thin flat element, such as a steel plate or a glass panel in a curtain wall.</value>
+ <row id="1000997" trl="Y">
+  <value column="MsgText" original="A thin flat element, such as a steel plate or a glass panel in a curtain wall.">Patla chapta upadan, jemon steel plate ba curtain wall-er kach-er panel.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000998" trl="N">
-  <value column="MsgText" original="A guard rail, handrail or balustrade, for example along a stair, ramp or balcony edge.">A guard rail, handrail or balustrade, for example along a stair, ramp or balcony edge.</value>
+ <row id="1000998" trl="Y">
+  <value column="MsgText" original="A guard rail, handrail or balustrade, for example along a stair, ramp or balcony edge.">Pahara rail, handrail ba balustrade, jemon siri, ramp ba balcony-r kinara-y.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000999" trl="N">
-  <value column="MsgText" original="A sloped walkway joining two levels, made of one or more ramp flights and landings.">A sloped walkway joining two levels, made of one or more ramp flights and landings.</value>
+ <row id="1000999" trl="Y">
+  <value column="MsgText" original="A sloped walkway joining two levels, made of one or more ramp flights and landings.">Dhalu hantar path ja duti stor jora dey, ek ba ekadhik ramp flight ar landing diye toiri.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1001000" trl="N">
-  <value column="MsgText" original="One sloped run of a ramp between two landings.">One sloped run of a ramp between two landings.</value>
+ <row id="1001000" trl="Y">
+  <value column="MsgText" original="One sloped run of a ramp between two landings.">Duti landing-er majhe ramp-er ekti dhalu ongsho.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1001001" trl="N">
-  <value column="MsgText" original="A steel reinforcing bar (rebar) set inside concrete to carry tension.">A steel reinforcing bar (rebar) set inside concrete to carry tension.</value>
+ <row id="1001001" trl="Y">
+  <value column="MsgText" original="A steel reinforcing bar (rebar) set inside concrete to carry tension.">Concrete-er bhitore rakha ekti steel reinforcing bar (rebar) ja tension sohno kore.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1001002" trl="N">
-  <value column="MsgText" original="The roof: the top covering of a building, made of slabs, beams and other parts.">The roof: the top covering of a building, made of slabs, beams and other parts.</value>
+ <row id="1001002" trl="Y">
+  <value column="MsgText" original="The roof: the top covering of a building, made of slabs, beams and other parts.">Chhad: building-er upor-er acchadon, slab, beam ar onno ongsho diye toiri.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1001003" trl="N">
-  <value column="MsgText" original="A type of sensor that detects a condition, such as smoke, heat, temperature or movement.">A type of sensor that detects a condition, such as smoke, heat, temperature or movement.</value>
+ <row id="1001003" trl="Y">
+  <value column="MsgText" original="A type of sensor that detects a condition, such as smoke, heat, temperature or movement.">Sensor-er ekti dhoron ja kono obostha dhore, jemon dhoa, tap, temperature ba nora-chora.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1001004" trl="N">
-  <value column="MsgText" original="A flat horizontal or nearly horizontal element, such as a floor, roof slab or landing, usually of concrete.">A flat horizontal or nearly horizontal element, such as a floor, roof slab or landing, usually of concrete.</value>
+ <row id="1001004" trl="Y">
+  <value column="MsgText" original="A flat horizontal or nearly horizontal element, such as a floor, roof slab or landing, usually of concrete.">Ekti chapta ovumi ba proy ovumi upadan, jemon tola, chhader slab ba landing, shadharonoto concrete-er.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1001005" trl="N">
-  <value column="MsgText" original="A stair joining two levels, made of one or more flights and landings.">A stair joining two levels, made of one or more flights and landings.</value>
+ <row id="1001005" trl="Y">
+  <value column="MsgText" original="A stair joining two levels, made of one or more flights and landings.">Siri ja duti stor jora dey, ek ba ekadhik flight ar landing diye toiri.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1001006" trl="N">
-  <value column="MsgText" original="One run of steps of a stair between two landings.">One run of steps of a stair between two landings.</value>
+ <row id="1001006" trl="Y">
+  <value column="MsgText" original="One run of steps of a stair between two landings.">Duti landing-er majhe siri-r dhaper ekti dhara.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1001007" trl="N">
-  <value column="MsgText" original="A device that turns an electrical circuit on or off, such as a switch, circuit breaker or contactor.">A device that turns an electrical circuit on or off, such as a switch, circuit breaker or contactor.</value>
+ <row id="1001007" trl="Y">
+  <value column="MsgText" original="A device that turns an electrical circuit on or off, such as a switch, circuit breaker or contactor.">Ekti jantra ja biddut circuit chalu ba bondho kore, jemon switch, circuit breaker ba contactor.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1001008" trl="N">
-  <value column="MsgText" original="A part of a modular office furniture system, such as a screen panel, work surface or storage unit.">A part of a modular office furniture system, such as a screen panel, work surface or storage unit.</value>
+ <row id="1001008" trl="Y">
+  <value column="MsgText" original="A part of a modular office furniture system, such as a screen panel, work surface or storage unit.">Modular office ashbab byabosthar ekti ongsho, jemon screen panel, kajer tebil ba storage unit.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1001009" trl="N">
-  <value column="MsgText" original="Equipment that moves people or goods, such as a lift (elevator), escalator or moving walkway.">Equipment that moves people or goods, such as a lift (elevator), escalator or moving walkway.</value>
+ <row id="1001009" trl="Y">
+  <value column="MsgText" original="Equipment that moves people or goods, such as a lift (elevator), escalator or moving walkway.">Jantra ja manush ba mal bohon kore, jemon lift (elevator), escalator ba moving walkway.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1001010" trl="N">
-  <value column="MsgText" original="A valve that opens, closes or regulates the flow in a pipe.">A valve that opens, closes or regulates the flow in a pipe.</value>
+ <row id="1001010" trl="Y">
+  <value column="MsgText" original="A valve that opens, closes or regulates the flow in a pipe.">Ekti valve ja pipe-e pravah khole, bondho kore ba niyontron kore.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1001011" trl="N">
-  <value column="MsgText" original="A wall: a vertical element that divides or encloses spaces; it may or may not carry load.">A wall: a vertical element that divides or encloses spaces; it may or may not carry load.</value>
+ <row id="1001011" trl="Y">
+  <value column="MsgText" original="A wall: a vertical element that divides or encloses spaces; it may or may not carry load.">Deyal: ekti ulombo upadan ja jayga bhag kore ba ghere rakhe; eta bhar bohon korte pare ba nao pare.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1001012" trl="N">
-  <value column="MsgText" original="A wall of even thickness along its length (an older IFC name, treated today as a plain wall).">A wall of even thickness along its length (an older IFC name, treated today as a plain wall).</value>
+ <row id="1001012" trl="Y">
+  <value column="MsgText" original="A wall of even thickness along its length (an older IFC name, treated today as a plain wall).">Dorghyo jure shoman pholon-er ekti deyal (ekti purono IFC naam, ekhon shadharon deyal hishebe dhora hoy).</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1001013" trl="N">
-  <value column="MsgText" original="A window: a framed opening, usually glazed, that lets in light and air.">A window: a framed opening, usually glazed, that lets in light and air.</value>
+ <row id="1001013" trl="Y">
+  <value column="MsgText" original="A window: a framed opening, usually glazed, that lets in light and air.">Janala: ekti kathamo-yukto phnaka jayga, proyoi kach-er, ja alo ar batas dhukte dey.</value>
   <value column="MsgTip" original=""/>
  </row>
  <row id="1001014" trl="Y">
@@ -4081,6 +4081,34 @@ CPM tanar fole toiri tarikh-gulo pore — kokhono kono-ta bodlay na.</value>
  </row>
  <row id="1001017" trl="N">
   <value column="MsgText" original="buildingSMART IFC 4.3 (bSDD), CC BY-ND 4.0">buildingSMART IFC 4.3 (bSDD), CC BY-ND 4.0</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001018" trl="N">
+  <value column="MsgText" original="A flow instrument reads and displays the value of a particular property of a system at a point, or displays the difference in the value of a property between two points.">A flow instrument reads and displays the value of a particular property of a system at a point, or displays the difference in the value of a property between two points.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001019" trl="N">
+  <value column="MsgText" original="EN">EN</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001020" trl="N">
+  <value column="MsgText" original="IfcFlowInstrument">IfcFlowInstrument</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001021" trl="N">
+  <value column="MsgText" original="A sensor is a device that measures a physical quantity and converts it into a signal which can be read by an observer or by an instrument.">A sensor is a device that measures a physical quantity and converts it into a signal which can be read by an observer or by an instrument.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001022" trl="N">
+  <value column="MsgText" original="EN">EN</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001023" trl="N">
+  <value column="MsgText" original="IfcSensor">IfcSensor</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001024" trl="Y">
+  <value column="MsgText" original="IFC definition of {cls}">{cls}-er IFC songga</value>
   <value column="MsgTip" original=""/>
  </row>
 </idempiereTrl>

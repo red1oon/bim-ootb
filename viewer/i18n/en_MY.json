@@ -6,7 +6,7 @@
   "from": [
    "ad_message_base.csv"
   ],
-  "rows": 1018,
+  "rows": 1025,
   "translated": 0,
   "untranslated": 0
  },
@@ -1028,6 +1028,13 @@
   "ui_cls_about": "What this is",
   "ui_cls_ifcdef": "IFC definition",
   "ui_cls_no_official": "English: no official translation in your language",
-  "ui_cls_credit": "buildingSMART IFC 4.3 (bSDD), CC BY-ND 4.0"
+  "ui_cls_credit": "buildingSMART IFC 4.3 (bSDD), CC BY-ND 4.0",
+  "ifcdef_IfcFlowInstrumentType": "A flow instrument reads and displays the value of a particular property of a system at a point, or displays the difference in the value of a property between two points.",
+  "ifcdef_IfcFlowInstrumentType_lang": "EN",
+  "ifcdef_IfcFlowInstrumentType_of": "IfcFlowInstrument",
+  "ifcdef_IfcSensorType": "A sensor is a device that measures a physical quantity and converts it into a signal which can be read by an observer or by an instrument.",
+  "ifcdef_IfcSensorType_lang": "EN",
+  "ifcdef_IfcSensorType_of": "IfcSensor",
+  "ui_cls_ifcdef_of": "IFC definition of {cls}"
  }
 }

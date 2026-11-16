@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<!--BIM OOTB Viewer — AD_Message_Trl pt_BR — format: org.compiere.install.Translation export (iDempiere). Rows 1000000-1000308 source=viewer/locales/pt_BR.js @4cd440ae (S225/S226 sessions, machine translation, extracted 2026-10-03, not retranslated); rows 1000309-1000492 and every row listed in viewer/tools/trl_batch_2026-10-03*.js source=machine (Claude, Anthropic, 2026-10-03); rows 1000493-1000655 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_tm.js; rows 1000656-1000671 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_info.js; rows 1000672-1000752 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_help.js; rows 1000753-1000862 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_modeller.js; rows 1000867-1000962 source=buildingSMART bSDD IFC 4.3 (CC BY-ND 4.0), verbatim official text — viewer/tools/trl_batch_2026-11-17_ifcdef.js; rows 1000963-1001017 source=machine (Claude, Anthropic, 2026-11-17), English class sentences written for this app — viewer/tools/trl_batch_2026-11-17_ifccls.js — NOT from a published iDempiere language pack. trl="N" = not translated (English kept, counted apart). Base rows: viewer/i18n/ad_message_base.csv. Edit THIS file, then run: node viewer/tools/build_trl.js-->
+<!--BIM OOTB Viewer — AD_Message_Trl pt_BR — format: org.compiere.install.Translation export (iDempiere). Rows 1000000-1000308 source=viewer/locales/pt_BR.js @4cd440ae (S225/S226 sessions, machine translation, extracted 2026-10-03, not retranslated); rows 1000309-1000492 and every row listed in viewer/tools/trl_batch_2026-10-03*.js source=machine (Claude, Anthropic, 2026-10-03); rows 1000493-1000655 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_tm.js; rows 1000656-1000671 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_info.js; rows 1000672-1000752 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_help.js; rows 1000753-1000862 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_modeller.js; rows 1000867-1000962 source=buildingSMART bSDD IFC 4.3 (CC BY-ND 4.0), verbatim official text — viewer/tools/trl_batch_2026-11-17_ifcdef.js; rows 1000963-1001017 source=machine (Claude, Anthropic, 2026-11-17), English class sentences written for this app — viewer/tools/trl_batch_2026-11-17_ifccls.js; rows 1001018-1001024 source=buildingSMART bSDD IFC 4.3 (CC BY-ND 4.0) verbatim, type -> occurrence per its IFC page; ui_cls_ifcdef_of machine (Claude, 2026-11-17) — viewer/tools/trl_batch_2026-11-17_ifcdef_types.js; rows 1000963-1001013 (51 filled) source=machine (Claude, Anthropic, 2026-11-17), class sentences in 10 more locales — viewer/tools/trl_batch_2026-11-17_ifccls_fill.js — NOT from a published iDempiere language pack. trl="N" = not translated (English kept, counted apart). Base rows: viewer/i18n/ad_message_base.csv. Edit THIS file, then run: node viewer/tools/build_trl.js-->
 <!--<!DOCTYPE idempiereTrl PUBLIC "-//iDempiere//DTD iDempiere Translation 1.0//EN" "https://raw.githubusercontent.com/idempiere/idempiere/refs/heads/master/utils_dev/trl/idempiereTrl.dtd">-->
 <idempiereTrl language="pt_BR" table="AD_Message">
  <row id="1000000" trl="Y">
@@ -3863,208 +3863,208 @@ O CPM lê as datas produzidas pelo arrastar — nunca altera nenhuma.</value>
   <value column="MsgText" original="EN">pt-BR</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000963" trl="N">
-  <value column="MsgText" original="An air outlet or inlet, such as a grille or diffuser, where ducted air enters or leaves a room.">An air outlet or inlet, such as a grille or diffuser, where ducted air enters or leaves a room.</value>
+ <row id="1000963" trl="Y">
+  <value column="MsgText" original="An air outlet or inlet, such as a grille or diffuser, where ducted air enters or leaves a room.">Uma saída ou entrada de ar, como uma grelha ou um difusor, por onde o ar dos dutos entra ou sai de um ambiente.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000964" trl="N">
-  <value column="MsgText" original="A device that warns people of fire or another danger by sound or light, such as a bell, siren or beacon.">A device that warns people of fire or another danger by sound or light, such as a bell, siren or beacon.</value>
+ <row id="1000964" trl="Y">
+  <value column="MsgText" original="A device that warns people of fire or another danger by sound or light, such as a bell, siren or beacon.">Um dispositivo que avisa as pessoas de incêndio ou de outro perigo por som ou luz, como uma campainha, uma sirene ou um sinalizador luminoso.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000965" trl="N">
-  <value column="MsgText" original="A horizontal or nearly horizontal structural member that carries loads across a span, usually onto columns or walls.">A horizontal or nearly horizontal structural member that carries loads across a span, usually onto columns or walls.</value>
+ <row id="1000965" trl="Y">
+  <value column="MsgText" original="A horizontal or nearly horizontal structural member that carries loads across a span, usually onto columns or walls.">Um elemento estrutural horizontal ou quase horizontal que suporta cargas ao longo de um vão, em geral apoiado em pilares ou paredes.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000966" trl="N">
-  <value column="MsgText" original="One part of a larger building element, such as a single layer or piece of a wall or slab, kept as its own object.">One part of a larger building element, such as a single layer or piece of a wall or slab, kept as its own object.</value>
+ <row id="1000966" trl="Y">
+  <value column="MsgText" original="One part of a larger building element, such as a single layer or piece of a wall or slab, kept as its own object.">Uma parte de um elemento de construção maior, como uma única camada ou peça de uma parede ou laje, mantida como objeto próprio.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000967" trl="N">
-  <value column="MsgText" original="An element that the source model did not give a specific type, so it is kept as a general building element.">An element that the source model did not give a specific type, so it is kept as a general building element.</value>
+ <row id="1000967" trl="Y">
+  <value column="MsgText" original="An element that the source model did not give a specific type, so it is kept as a general building element.">Um elemento ao qual o modelo de origem não atribuiu um tipo específico, por isso é mantido como elemento de construção genérico.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000968" trl="N">
-  <value column="MsgText" original="A fitting that joins, bends or branches cable trays, cable ladders or trunking.">A fitting that joins, bends or branches cable trays, cable ladders or trunking.</value>
+ <row id="1000968" trl="Y">
+  <value column="MsgText" original="A fitting that joins, bends or branches cable trays, cable ladders or trunking.">Uma conexão que une, curva ou ramifica bandejas de cabos, eletrocalhas ou canaletas.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000969" trl="N">
-  <value column="MsgText" original="A straight run of cable tray, cable ladder, trunking or conduit that carries and protects cables.">A straight run of cable tray, cable ladder, trunking or conduit that carries and protects cables.</value>
+ <row id="1000969" trl="Y">
+  <value column="MsgText" original="A straight run of cable tray, cable ladder, trunking or conduit that carries and protects cables.">Um trecho reto de bandeja de cabos, eletrocalha, canaleta ou eletroduto que sustenta e protege os cabos.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000970" trl="N">
-  <value column="MsgText" original="A vertical structural member that carries loads from beams and slabs down towards the foundations.">A vertical structural member that carries loads from beams and slabs down towards the foundations.</value>
+ <row id="1000970" trl="Y">
+  <value column="MsgText" original="A vertical structural member that carries loads from beams and slabs down towards the foundations.">Um elemento estrutural vertical que leva as cargas das vigas e lajes para baixo, em direção às fundações.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000971" trl="N">
-  <value column="MsgText" original="A device that controls a system from the signals it receives, such as a thermostat, timer or control panel.">A device that controls a system from the signals it receives, such as a thermostat, timer or control panel.</value>
+ <row id="1000971" trl="Y">
+  <value column="MsgText" original="A device that controls a system from the signals it receives, such as a thermostat, timer or control panel.">Um dispositivo que controla um sistema a partir dos sinais que recebe, como um termostato, um temporizador ou um painel de controle.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000972" trl="N">
-  <value column="MsgText" original="A finishing layer over another element, such as a ceiling, floor finish, cladding or insulation.">A finishing layer over another element, such as a ceiling, floor finish, cladding or insulation.</value>
+ <row id="1000972" trl="Y">
+  <value column="MsgText" original="A finishing layer over another element, such as a ceiling, floor finish, cladding or insulation.">Uma camada de acabamento sobre outro elemento, como um forro, um acabamento de piso, um revestimento ou um isolamento.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000973" trl="N">
-  <value column="MsgText" original="An outer wall of panels, often glass, hung on a frame fixed to the building; it carries no floor loads.">An outer wall of panels, often glass, hung on a frame fixed to the building; it carries no floor loads.</value>
+ <row id="1000973" trl="Y">
+  <value column="MsgText" original="An outer wall of panels, often glass, hung on a frame fixed to the building; it carries no floor loads.">Uma parede externa feita de painéis, muitas vezes de vidro, fixados em uma estrutura presa ao edifício; ela não suporta cargas dos pisos.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000974" trl="N">
-  <value column="MsgText" original="A control or sensing device of a building system, such as a sensor or actuator, with no more specific type.">A control or sensing device of a building system, such as a sensor or actuator, with no more specific type.</value>
+ <row id="1000974" trl="Y">
+  <value column="MsgText" original="A control or sensing device of a building system, such as a sensor or actuator, with no more specific type.">Um dispositivo de controle ou de medição de um sistema da edificação, como um sensor ou um atuador, sem um tipo mais específico.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000975" trl="N">
-  <value column="MsgText" original="A door: a leaf in its frame that opens to let people pass through a wall or partition.">A door: a leaf in its frame that opens to let people pass through a wall or partition.</value>
+ <row id="1000975" trl="Y">
+  <value column="MsgText" original="A door: a leaf in its frame that opens to let people pass through a wall or partition.">Uma porta: uma folha em seu batente que abre para dar passagem às pessoas por uma parede ou divisória.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000976" trl="N">
-  <value column="MsgText" original="A duct piece that joins, bends, branches or changes the size of air ducts.">A duct piece that joins, bends, branches or changes the size of air ducts.</value>
+ <row id="1000976" trl="Y">
+  <value column="MsgText" original="A duct piece that joins, bends, branches or changes the size of air ducts.">Uma peça de duto que une, curva, ramifica ou muda o tamanho dos dutos de ar.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000977" trl="N">
-  <value column="MsgText" original="A straight length of air duct that carries air between equipment and rooms.">A straight length of air duct that carries air between equipment and rooms.</value>
+ <row id="1000977" trl="Y">
+  <value column="MsgText" original="A straight length of air duct that carries air between equipment and rooms.">Um trecho reto de duto de ar que leva o ar entre os equipamentos e os ambientes.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000978" trl="N">
-  <value column="MsgText" original="An electrical appliance connected to the building supply, such as a fridge, oven or water heater.">An electrical appliance connected to the building supply, such as a fridge, oven or water heater.</value>
+ <row id="1000978" trl="Y">
+  <value column="MsgText" original="An electrical appliance connected to the building supply, such as a fridge, oven or water heater.">Um aparelho elétrico ligado à rede elétrica do edifício, como uma geladeira, um forno ou um aquecedor de água.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000979" trl="N">
-  <value column="MsgText" original="Equipment that turns one form of energy into another, such as a boiler, chiller or transformer, with no more specific type.">Equipment that turns one form of energy into another, such as a boiler, chiller or transformer, with no more specific type.</value>
+ <row id="1000979" trl="Y">
+  <value column="MsgText" original="Equipment that turns one form of energy into another, such as a boiler, chiller or transformer, with no more specific type.">Um equipamento que transforma uma forma de energia em outra, como uma caldeira, um resfriador (chiller) ou um transformador, sem um tipo mais específico.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000980" trl="N">
-  <value column="MsgText" original="A fire-fighting outlet, such as a sprinkler head, hose reel or fire hydrant.">A fire-fighting outlet, such as a sprinkler head, hose reel or fire hydrant.</value>
+ <row id="1000980" trl="Y">
+  <value column="MsgText" original="A fire-fighting outlet, such as a sprinkler head, hose reel or fire hydrant.">Um ponto de combate a incêndio, como um bico de sprinkler, um carretel de mangueira ou um hidrante.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000981" trl="N">
-  <value column="MsgText" original="A device that regulates flow in a pipe, duct or circuit, such as a valve, damper or switch, with no more specific type.">A device that regulates flow in a pipe, duct or circuit, such as a valve, damper or switch, with no more specific type.</value>
+ <row id="1000981" trl="Y">
+  <value column="MsgText" original="A device that regulates flow in a pipe, duct or circuit, such as a valve, damper or switch, with no more specific type.">Um dispositivo que regula o fluxo em uma tubulação, um duto ou um circuito, como uma válvula, um damper ou um interruptor, sem um tipo mais específico.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000982" trl="N">
-  <value column="MsgText" original="A fitting that joins, bends or branches pipes, ducts or cable runs, with no more specific type.">A fitting that joins, bends or branches pipes, ducts or cable runs, with no more specific type.</value>
+ <row id="1000982" trl="Y">
+  <value column="MsgText" original="A fitting that joins, bends or branches pipes, ducts or cable runs, with no more specific type.">Uma conexão que une, curva ou ramifica tubulações, dutos ou linhas de cabos, sem um tipo mais específico.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000983" trl="N">
-  <value column="MsgText" original="A type of gauge or meter, such as a pressure gauge, thermometer or voltmeter.">A type of gauge or meter, such as a pressure gauge, thermometer or voltmeter.</value>
+ <row id="1000983" trl="Y">
+  <value column="MsgText" original="A type of gauge or meter, such as a pressure gauge, thermometer or voltmeter.">Um tipo de manômetro ou medidor, como um manômetro de pressão, um termômetro ou um voltímetro.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000984" trl="N">
-  <value column="MsgText" original="Equipment that moves a fluid, such as a pump, fan or compressor, with no more specific type.">Equipment that moves a fluid, such as a pump, fan or compressor, with no more specific type.</value>
+ <row id="1000984" trl="Y">
+  <value column="MsgText" original="Equipment that moves a fluid, such as a pump, fan or compressor, with no more specific type.">Um equipamento que movimenta um fluido, como uma bomba, um ventilador ou um compressor, sem um tipo mais específico.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000985" trl="N">
-  <value column="MsgText" original="A straight run of pipe, duct or cable carrier, with no more specific type.">A straight run of pipe, duct or cable carrier, with no more specific type.</value>
+ <row id="1000985" trl="Y">
+  <value column="MsgText" original="A straight run of pipe, duct or cable carrier, with no more specific type.">Um trecho reto de tubulação, duto ou suporte de cabos, sem um tipo mais específico.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000986" trl="N">
-  <value column="MsgText" original="Equipment that stores a fluid or energy, such as a tank or battery, with no more specific type.">Equipment that stores a fluid or energy, such as a tank or battery, with no more specific type.</value>
+ <row id="1000986" trl="Y">
+  <value column="MsgText" original="Equipment that stores a fluid or energy, such as a tank or battery, with no more specific type.">Um equipamento que armazena um fluido ou energia, como um tanque ou uma bateria, sem um tipo mais específico.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000987" trl="N">
-  <value column="MsgText" original="The end point where a system serves a room or a person, such as a tap, light or socket, with no more specific type.">The end point where a system serves a room or a person, such as a tap, light or socket, with no more specific type.</value>
+ <row id="1000987" trl="Y">
+  <value column="MsgText" original="The end point where a system serves a room or a person, such as a tap, light or socket, with no more specific type.">O ponto final em que um sistema atende um ambiente ou uma pessoa, como uma torneira, uma luminária ou uma tomada, sem um tipo mais específico.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000988" trl="N">
-  <value column="MsgText" original="Equipment that cleans or treats a fluid, such as a filter or separator, with no more specific type.">Equipment that cleans or treats a fluid, such as a filter or separator, with no more specific type.</value>
+ <row id="1000988" trl="Y">
+  <value column="MsgText" original="Equipment that cleans or treats a fluid, such as a filter or separator, with no more specific type.">Um equipamento que limpa ou trata um fluido, como um filtro ou um separador, sem um tipo mais específico.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000989" trl="N">
-  <value column="MsgText" original="A foundation element, such as a pad or strip footing, that spreads the load of the building into the ground.">A foundation element, such as a pad or strip footing, that spreads the load of the building into the ground.</value>
+ <row id="1000989" trl="Y">
+  <value column="MsgText" original="A foundation element, such as a pad or strip footing, that spreads the load of the building into the ground.">Um elemento de fundação, como uma sapata isolada ou corrida, que distribui a carga do edifício para o solo.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000990" trl="N">
-  <value column="MsgText" original="A piece of furniture or equipment placed in a room, with no more specific type.">A piece of furniture or equipment placed in a room, with no more specific type.</value>
+ <row id="1000990" trl="Y">
+  <value column="MsgText" original="A piece of furniture or equipment placed in a room, with no more specific type.">Um móvel ou equipamento colocado em um ambiente, sem um tipo mais específico.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000991" trl="N">
-  <value column="MsgText" original="Furniture, such as a table, chair, bed, desk or cabinet.">Furniture, such as a table, chair, bed, desk or cabinet.</value>
+ <row id="1000991" trl="Y">
+  <value column="MsgText" original="Furniture, such as a table, chair, bed, desk or cabinet.">Mobiliário, como uma mesa, uma cadeira, uma cama, uma escrivaninha ou um armário.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000992" trl="N">
-  <value column="MsgText" original="A light fitting (luminaire) that holds lamps and lights a space.">A light fitting (luminaire) that holds lamps and lights a space.</value>
+ <row id="1000992" trl="Y">
+  <value column="MsgText" original="A light fitting (luminaire) that holds lamps and lights a space.">Uma luminária que abriga lâmpadas e ilumina um espaço.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000993" trl="N">
-  <value column="MsgText" original="A structural or framing piece that is not a main beam or column, such as a brace, stud, mullion or purlin.">A structural or framing piece that is not a main beam or column, such as a brace, stud, mullion or purlin.</value>
+ <row id="1000993" trl="Y">
+  <value column="MsgText" original="A structural or framing piece that is not a main beam or column, such as a brace, stud, mullion or purlin.">Uma peça estrutural ou de estrutura que não é uma viga ou um pilar principal, como um contraventamento, um montante, um travessão ou uma terça.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000994" trl="N">
-  <value column="MsgText" original="A void cut into a wall, slab or other element, usually for a door or window or to let services pass.">A void cut into a wall, slab or other element, usually for a door or window or to let services pass.</value>
+ <row id="1000994" trl="Y">
+  <value column="MsgText" original="A void cut into a wall, slab or other element, usually for a door or window or to let services pass.">Um vazio feito em uma parede, laje ou outro elemento, em geral para uma porta ou janela ou para a passagem de instalações.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000995" trl="N">
-  <value column="MsgText" original="A pipe piece that joins, bends, branches or changes the size of pipes, such as an elbow, tee or reducer.">A pipe piece that joins, bends, branches or changes the size of pipes, such as an elbow, tee or reducer.</value>
+ <row id="1000995" trl="Y">
+  <value column="MsgText" original="A pipe piece that joins, bends, branches or changes the size of pipes, such as an elbow, tee or reducer.">Uma peça de tubulação que une, curva, ramifica ou muda o tamanho dos tubos, como um cotovelo, um tê ou uma redução.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000996" trl="N">
-  <value column="MsgText" original="A straight length of pipe that carries water, gas or another fluid.">A straight length of pipe that carries water, gas or another fluid.</value>
+ <row id="1000996" trl="Y">
+  <value column="MsgText" original="A straight length of pipe that carries water, gas or another fluid.">Um trecho reto de tubo que leva água, gás ou outro fluido.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000997" trl="N">
-  <value column="MsgText" original="A thin flat element, such as a steel plate or a glass panel in a curtain wall.">A thin flat element, such as a steel plate or a glass panel in a curtain wall.</value>
+ <row id="1000997" trl="Y">
+  <value column="MsgText" original="A thin flat element, such as a steel plate or a glass panel in a curtain wall.">Um elemento fino e plano, como uma chapa de aço ou um painel de vidro em uma parede cortina.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000998" trl="N">
-  <value column="MsgText" original="A guard rail, handrail or balustrade, for example along a stair, ramp or balcony edge.">A guard rail, handrail or balustrade, for example along a stair, ramp or balcony edge.</value>
+ <row id="1000998" trl="Y">
+  <value column="MsgText" original="A guard rail, handrail or balustrade, for example along a stair, ramp or balcony edge.">Um guarda-corpo, um corrimão ou uma balaustrada, por exemplo ao longo de uma escada, uma rampa ou a borda de uma sacada.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000999" trl="N">
-  <value column="MsgText" original="A sloped walkway joining two levels, made of one or more ramp flights and landings.">A sloped walkway joining two levels, made of one or more ramp flights and landings.</value>
+ <row id="1000999" trl="Y">
+  <value column="MsgText" original="A sloped walkway joining two levels, made of one or more ramp flights and landings.">Uma passagem inclinada que liga dois níveis, formada por um ou mais lances de rampa e patamares.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1001000" trl="N">
-  <value column="MsgText" original="One sloped run of a ramp between two landings.">One sloped run of a ramp between two landings.</value>
+ <row id="1001000" trl="Y">
+  <value column="MsgText" original="One sloped run of a ramp between two landings.">Um lance inclinado de uma rampa entre dois patamares.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1001001" trl="N">
-  <value column="MsgText" original="A steel reinforcing bar (rebar) set inside concrete to carry tension.">A steel reinforcing bar (rebar) set inside concrete to carry tension.</value>
+ <row id="1001001" trl="Y">
+  <value column="MsgText" original="A steel reinforcing bar (rebar) set inside concrete to carry tension.">Uma barra de aço de reforço (vergalhão) colocada dentro do concreto para resistir à tração.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1001002" trl="N">
-  <value column="MsgText" original="The roof: the top covering of a building, made of slabs, beams and other parts.">The roof: the top covering of a building, made of slabs, beams and other parts.</value>
+ <row id="1001002" trl="Y">
+  <value column="MsgText" original="The roof: the top covering of a building, made of slabs, beams and other parts.">O telhado: a cobertura superior de um edifício, feita de lajes, vigas e outras partes.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1001003" trl="N">
-  <value column="MsgText" original="A type of sensor that detects a condition, such as smoke, heat, temperature or movement.">A type of sensor that detects a condition, such as smoke, heat, temperature or movement.</value>
+ <row id="1001003" trl="Y">
+  <value column="MsgText" original="A type of sensor that detects a condition, such as smoke, heat, temperature or movement.">Um tipo de sensor que detecta uma condição, como fumaça, calor, temperatura ou movimento.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1001004" trl="N">
-  <value column="MsgText" original="A flat horizontal or nearly horizontal element, such as a floor, roof slab or landing, usually of concrete.">A flat horizontal or nearly horizontal element, such as a floor, roof slab or landing, usually of concrete.</value>
+ <row id="1001004" trl="Y">
+  <value column="MsgText" original="A flat horizontal or nearly horizontal element, such as a floor, roof slab or landing, usually of concrete.">Um elemento plano, horizontal ou quase horizontal, como um piso, uma laje de cobertura ou um patamar, em geral de concreto.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1001005" trl="N">
-  <value column="MsgText" original="A stair joining two levels, made of one or more flights and landings.">A stair joining two levels, made of one or more flights and landings.</value>
+ <row id="1001005" trl="Y">
+  <value column="MsgText" original="A stair joining two levels, made of one or more flights and landings.">Uma escada que liga dois níveis, formada por um ou mais lances e patamares.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1001006" trl="N">
-  <value column="MsgText" original="One run of steps of a stair between two landings.">One run of steps of a stair between two landings.</value>
+ <row id="1001006" trl="Y">
+  <value column="MsgText" original="One run of steps of a stair between two landings.">Um lance de degraus de uma escada entre dois patamares.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1001007" trl="N">
-  <value column="MsgText" original="A device that turns an electrical circuit on or off, such as a switch, circuit breaker or contactor.">A device that turns an electrical circuit on or off, such as a switch, circuit breaker or contactor.</value>
+ <row id="1001007" trl="Y">
+  <value column="MsgText" original="A device that turns an electrical circuit on or off, such as a switch, circuit breaker or contactor.">Um dispositivo que liga ou desliga um circuito elétrico, como um interruptor, um disjuntor ou um contator.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1001008" trl="N">
-  <value column="MsgText" original="A part of a modular office furniture system, such as a screen panel, work surface or storage unit.">A part of a modular office furniture system, such as a screen panel, work surface or storage unit.</value>
+ <row id="1001008" trl="Y">
+  <value column="MsgText" original="A part of a modular office furniture system, such as a screen panel, work surface or storage unit.">Uma parte de um sistema de mobiliário de escritório modular, como um painel divisor, uma bancada de trabalho ou um módulo de armazenamento.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1001009" trl="N">
-  <value column="MsgText" original="Equipment that moves people or goods, such as a lift (elevator), escalator or moving walkway.">Equipment that moves people or goods, such as a lift (elevator), escalator or moving walkway.</value>
+ <row id="1001009" trl="Y">
+  <value column="MsgText" original="Equipment that moves people or goods, such as a lift (elevator), escalator or moving walkway.">Um equipamento que movimenta pessoas ou cargas, como um elevador, uma escada rolante ou uma esteira rolante.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1001010" trl="N">
-  <value column="MsgText" original="A valve that opens, closes or regulates the flow in a pipe.">A valve that opens, closes or regulates the flow in a pipe.</value>
+ <row id="1001010" trl="Y">
+  <value column="MsgText" original="A valve that opens, closes or regulates the flow in a pipe.">Uma válvula que abre, fecha ou regula o fluxo em uma tubulação.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1001011" trl="N">
-  <value column="MsgText" original="A wall: a vertical element that divides or encloses spaces; it may or may not carry load.">A wall: a vertical element that divides or encloses spaces; it may or may not carry load.</value>
+ <row id="1001011" trl="Y">
+  <value column="MsgText" original="A wall: a vertical element that divides or encloses spaces; it may or may not carry load.">Uma parede: um elemento vertical que divide ou fecha espaços; pode ou não suportar cargas.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1001012" trl="N">
-  <value column="MsgText" original="A wall of even thickness along its length (an older IFC name, treated today as a plain wall).">A wall of even thickness along its length (an older IFC name, treated today as a plain wall).</value>
+ <row id="1001012" trl="Y">
+  <value column="MsgText" original="A wall of even thickness along its length (an older IFC name, treated today as a plain wall).">Uma parede de espessura constante ao longo de seu comprimento (um nome IFC mais antigo, tratado hoje como uma parede comum).</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1001013" trl="N">
-  <value column="MsgText" original="A window: a framed opening, usually glazed, that lets in light and air.">A window: a framed opening, usually glazed, that lets in light and air.</value>
+ <row id="1001013" trl="Y">
+  <value column="MsgText" original="A window: a framed opening, usually glazed, that lets in light and air.">Uma janela: uma abertura com caixilho, em geral com vidro, que deixa entrar luz e ar.</value>
   <value column="MsgTip" original=""/>
  </row>
  <row id="1001014" trl="Y">
@@ -4081,6 +4081,34 @@ O CPM lê as datas produzidas pelo arrastar — nunca altera nenhuma.</value>
  </row>
  <row id="1001017" trl="N">
   <value column="MsgText" original="buildingSMART IFC 4.3 (bSDD), CC BY-ND 4.0">buildingSMART IFC 4.3 (bSDD), CC BY-ND 4.0</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001018" trl="Y">
+  <value column="MsgText" original="A flow instrument reads and displays the value of a particular property of a system at a point, or displays the difference in the value of a property between two points.">Um instrumento de fluxo lê e exibe o valor de uma propriedade específica de um sistema em um certo ponto, ou exibe a diferença no valor de uma propriedade entre dois pontos.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001019" trl="Y">
+  <value column="MsgText" original="EN">pt-BR</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001020" trl="N">
+  <value column="MsgText" original="IfcFlowInstrument">IfcFlowInstrument</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001021" trl="Y">
+  <value column="MsgText" original="A sensor is a device that measures a physical quantity and converts it into a signal which can be read by an observer or by an instrument.">Um sensor é um dispositivo que mede uma quantidade física e a converte em um sinal que pode ser lido por um observador ou por um instrumento.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001022" trl="Y">
+  <value column="MsgText" original="EN">pt-BR</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001023" trl="N">
+  <value column="MsgText" original="IfcSensor">IfcSensor</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001024" trl="Y">
+  <value column="MsgText" original="IFC definition of {cls}">Definição IFC de {cls}</value>
   <value column="MsgTip" original=""/>
  </row>
 </idempiereTrl>

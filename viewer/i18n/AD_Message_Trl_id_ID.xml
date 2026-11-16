@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<!--BIM OOTB Viewer — AD_Message_Trl id_ID — format: org.compiere.install.Translation export (iDempiere). Rows 1000000-1000308 source=viewer/locales/id_ID.js @4cd440ae (S225/S226 sessions, machine translation, extracted 2026-10-03, not retranslated); rows 1000309-1000492 and every row listed in viewer/tools/trl_batch_2026-10-03*.js source=machine (Claude, Anthropic, 2026-10-03); rows 1000493-1000655 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_tm.js; rows 1000656-1000671 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_info.js; rows 1000672-1000752 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_help.js; rows 1000753-1000862 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_modeller.js; rows 1000867-1000962 source=buildingSMART bSDD IFC 4.3 (CC BY-ND 4.0), verbatim official text — viewer/tools/trl_batch_2026-11-17_ifcdef.js; rows 1000963-1001017 source=machine (Claude, Anthropic, 2026-11-17), English class sentences written for this app — viewer/tools/trl_batch_2026-11-17_ifccls.js — NOT from a published iDempiere language pack. trl="N" = not translated (English kept, counted apart). Base rows: viewer/i18n/ad_message_base.csv. Edit THIS file, then run: node viewer/tools/build_trl.js-->
+<!--BIM OOTB Viewer — AD_Message_Trl id_ID — format: org.compiere.install.Translation export (iDempiere). Rows 1000000-1000308 source=viewer/locales/id_ID.js @4cd440ae (S225/S226 sessions, machine translation, extracted 2026-10-03, not retranslated); rows 1000309-1000492 and every row listed in viewer/tools/trl_batch_2026-10-03*.js source=machine (Claude, Anthropic, 2026-10-03); rows 1000493-1000655 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_tm.js; rows 1000656-1000671 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_info.js; rows 1000672-1000752 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_help.js; rows 1000753-1000862 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_modeller.js; rows 1000867-1000962 source=buildingSMART bSDD IFC 4.3 (CC BY-ND 4.0), verbatim official text — viewer/tools/trl_batch_2026-11-17_ifcdef.js; rows 1000963-1001017 source=machine (Claude, Anthropic, 2026-11-17), English class sentences written for this app — viewer/tools/trl_batch_2026-11-17_ifccls.js; rows 1001018-1001024 source=buildingSMART bSDD IFC 4.3 (CC BY-ND 4.0) verbatim, type -> occurrence per its IFC page; ui_cls_ifcdef_of machine (Claude, 2026-11-17) — viewer/tools/trl_batch_2026-11-17_ifcdef_types.js; rows 1000963-1001013 (51 filled) source=machine (Claude, Anthropic, 2026-11-17), class sentences in 10 more locales — viewer/tools/trl_batch_2026-11-17_ifccls_fill.js — NOT from a published iDempiere language pack. trl="N" = not translated (English kept, counted apart). Base rows: viewer/i18n/ad_message_base.csv. Edit THIS file, then run: node viewer/tools/build_trl.js-->
 <!--<!DOCTYPE idempiereTrl PUBLIC "-//iDempiere//DTD iDempiere Translation 1.0//EN" "https://raw.githubusercontent.com/idempiere/idempiere/refs/heads/master/utils_dev/trl/idempiereTrl.dtd">-->
 <idempiereTrl language="id_ID" table="AD_Message">
  <row id="1000000" trl="Y">
@@ -3863,208 +3863,208 @@ CPM membaca tanggal hasil seretan — tidak pernah mengubahnya.</value>
   <value column="MsgText" original="EN">EN</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000963" trl="N">
-  <value column="MsgText" original="An air outlet or inlet, such as a grille or diffuser, where ducted air enters or leaves a room.">An air outlet or inlet, such as a grille or diffuser, where ducted air enters or leaves a room.</value>
+ <row id="1000963" trl="Y">
+  <value column="MsgText" original="An air outlet or inlet, such as a grille or diffuser, where ducted air enters or leaves a room.">Lubang keluar atau masuk udara, seperti kisi-kisi atau diffuser, tempat udara dari saluran udara masuk atau keluar dari sebuah ruangan.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000964" trl="N">
-  <value column="MsgText" original="A device that warns people of fire or another danger by sound or light, such as a bell, siren or beacon.">A device that warns people of fire or another danger by sound or light, such as a bell, siren or beacon.</value>
+ <row id="1000964" trl="Y">
+  <value column="MsgText" original="A device that warns people of fire or another danger by sound or light, such as a bell, siren or beacon.">Alat yang memperingatkan orang akan kebakaran atau bahaya lain dengan bunyi atau cahaya, seperti bel, sirene, atau lampu isyarat.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000965" trl="N">
-  <value column="MsgText" original="A horizontal or nearly horizontal structural member that carries loads across a span, usually onto columns or walls.">A horizontal or nearly horizontal structural member that carries loads across a span, usually onto columns or walls.</value>
+ <row id="1000965" trl="Y">
+  <value column="MsgText" original="A horizontal or nearly horizontal structural member that carries loads across a span, usually onto columns or walls.">Elemen struktur horizontal atau hampir horizontal yang menahan beban sepanjang bentangannya, biasanya ke kolom atau dinding.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000966" trl="N">
-  <value column="MsgText" original="One part of a larger building element, such as a single layer or piece of a wall or slab, kept as its own object.">One part of a larger building element, such as a single layer or piece of a wall or slab, kept as its own object.</value>
+ <row id="1000966" trl="Y">
+  <value column="MsgText" original="One part of a larger building element, such as a single layer or piece of a wall or slab, kept as its own object.">Satu bagian dari elemen bangunan yang lebih besar, seperti satu lapisan atau potongan dari dinding atau pelat lantai, yang disimpan sebagai objek tersendiri.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000967" trl="N">
-  <value column="MsgText" original="An element that the source model did not give a specific type, so it is kept as a general building element.">An element that the source model did not give a specific type, so it is kept as a general building element.</value>
+ <row id="1000967" trl="Y">
+  <value column="MsgText" original="An element that the source model did not give a specific type, so it is kept as a general building element.">Elemen yang tidak diberi jenis khusus oleh model sumber, sehingga disimpan sebagai elemen bangunan umum.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000968" trl="N">
-  <value column="MsgText" original="A fitting that joins, bends or branches cable trays, cable ladders or trunking.">A fitting that joins, bends or branches cable trays, cable ladders or trunking.</value>
+ <row id="1000968" trl="Y">
+  <value column="MsgText" original="A fitting that joins, bends or branches cable trays, cable ladders or trunking.">Sambungan yang menyambung, membelokkan, atau mencabangkan rak kabel, tangga kabel, atau trunking.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000969" trl="N">
-  <value column="MsgText" original="A straight run of cable tray, cable ladder, trunking or conduit that carries and protects cables.">A straight run of cable tray, cable ladder, trunking or conduit that carries and protects cables.</value>
+ <row id="1000969" trl="Y">
+  <value column="MsgText" original="A straight run of cable tray, cable ladder, trunking or conduit that carries and protects cables.">Bagian lurus dari rak kabel, tangga kabel, trunking, atau konduit yang menopang dan melindungi kabel.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000970" trl="N">
-  <value column="MsgText" original="A vertical structural member that carries loads from beams and slabs down towards the foundations.">A vertical structural member that carries loads from beams and slabs down towards the foundations.</value>
+ <row id="1000970" trl="Y">
+  <value column="MsgText" original="A vertical structural member that carries loads from beams and slabs down towards the foundations.">Elemen struktur vertikal yang menyalurkan beban dari balok dan pelat lantai ke arah pondasi.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000971" trl="N">
-  <value column="MsgText" original="A device that controls a system from the signals it receives, such as a thermostat, timer or control panel.">A device that controls a system from the signals it receives, such as a thermostat, timer or control panel.</value>
+ <row id="1000971" trl="Y">
+  <value column="MsgText" original="A device that controls a system from the signals it receives, such as a thermostat, timer or control panel.">Alat yang mengatur suatu sistem berdasarkan sinyal yang diterimanya, seperti termostat, pewaktu, atau panel kontrol.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000972" trl="N">
-  <value column="MsgText" original="A finishing layer over another element, such as a ceiling, floor finish, cladding or insulation.">A finishing layer over another element, such as a ceiling, floor finish, cladding or insulation.</value>
+ <row id="1000972" trl="Y">
+  <value column="MsgText" original="A finishing layer over another element, such as a ceiling, floor finish, cladding or insulation.">Lapisan penutup di atas elemen lain, seperti langit-langit, finishing lantai, pelapis dinding, atau insulasi.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000973" trl="N">
-  <value column="MsgText" original="An outer wall of panels, often glass, hung on a frame fixed to the building; it carries no floor loads.">An outer wall of panels, often glass, hung on a frame fixed to the building; it carries no floor loads.</value>
+ <row id="1000973" trl="Y">
+  <value column="MsgText" original="An outer wall of panels, often glass, hung on a frame fixed to the building; it carries no floor loads.">Dinding luar dari panel-panel, sering kali kaca, yang digantung pada rangka yang dipasang ke bangunan; dinding ini tidak menahan beban lantai.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000974" trl="N">
-  <value column="MsgText" original="A control or sensing device of a building system, such as a sensor or actuator, with no more specific type.">A control or sensing device of a building system, such as a sensor or actuator, with no more specific type.</value>
+ <row id="1000974" trl="Y">
+  <value column="MsgText" original="A control or sensing device of a building system, such as a sensor or actuator, with no more specific type.">Alat kontrol atau pendeteksi pada sistem bangunan, seperti sensor atau aktuator, tanpa jenis yang lebih spesifik.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000975" trl="N">
-  <value column="MsgText" original="A door: a leaf in its frame that opens to let people pass through a wall or partition.">A door: a leaf in its frame that opens to let people pass through a wall or partition.</value>
+ <row id="1000975" trl="Y">
+  <value column="MsgText" original="A door: a leaf in its frame that opens to let people pass through a wall or partition.">Pintu: daun pintu dalam kusennya yang dibuka agar orang dapat melewati dinding atau sekat.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000976" trl="N">
-  <value column="MsgText" original="A duct piece that joins, bends, branches or changes the size of air ducts.">A duct piece that joins, bends, branches or changes the size of air ducts.</value>
+ <row id="1000976" trl="Y">
+  <value column="MsgText" original="A duct piece that joins, bends, branches or changes the size of air ducts.">Potongan saluran yang menyambung, membelokkan, mencabangkan, atau mengubah ukuran saluran udara.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000977" trl="N">
-  <value column="MsgText" original="A straight length of air duct that carries air between equipment and rooms.">A straight length of air duct that carries air between equipment and rooms.</value>
+ <row id="1000977" trl="Y">
+  <value column="MsgText" original="A straight length of air duct that carries air between equipment and rooms.">Bagian lurus saluran udara yang mengalirkan udara antara peralatan dan ruangan.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000978" trl="N">
-  <value column="MsgText" original="An electrical appliance connected to the building supply, such as a fridge, oven or water heater.">An electrical appliance connected to the building supply, such as a fridge, oven or water heater.</value>
+ <row id="1000978" trl="Y">
+  <value column="MsgText" original="An electrical appliance connected to the building supply, such as a fridge, oven or water heater.">Peralatan listrik yang tersambung ke pasokan listrik bangunan, seperti kulkas, oven, atau pemanas air.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000979" trl="N">
-  <value column="MsgText" original="Equipment that turns one form of energy into another, such as a boiler, chiller or transformer, with no more specific type.">Equipment that turns one form of energy into another, such as a boiler, chiller or transformer, with no more specific type.</value>
+ <row id="1000979" trl="Y">
+  <value column="MsgText" original="Equipment that turns one form of energy into another, such as a boiler, chiller or transformer, with no more specific type.">Peralatan yang mengubah satu bentuk energi menjadi bentuk lain, seperti boiler, chiller, atau trafo, tanpa jenis yang lebih spesifik.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000980" trl="N">
-  <value column="MsgText" original="A fire-fighting outlet, such as a sprinkler head, hose reel or fire hydrant.">A fire-fighting outlet, such as a sprinkler head, hose reel or fire hydrant.</value>
+ <row id="1000980" trl="Y">
+  <value column="MsgText" original="A fire-fighting outlet, such as a sprinkler head, hose reel or fire hydrant.">Titik keluaran pemadam kebakaran, seperti kepala sprinkler, hose reel, atau hidran kebakaran.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000981" trl="N">
-  <value column="MsgText" original="A device that regulates flow in a pipe, duct or circuit, such as a valve, damper or switch, with no more specific type.">A device that regulates flow in a pipe, duct or circuit, such as a valve, damper or switch, with no more specific type.</value>
+ <row id="1000981" trl="Y">
+  <value column="MsgText" original="A device that regulates flow in a pipe, duct or circuit, such as a valve, damper or switch, with no more specific type.">Alat yang mengatur aliran dalam pipa, saluran, atau sirkuit, seperti katup, damper, atau sakelar, tanpa jenis yang lebih spesifik.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000982" trl="N">
-  <value column="MsgText" original="A fitting that joins, bends or branches pipes, ducts or cable runs, with no more specific type.">A fitting that joins, bends or branches pipes, ducts or cable runs, with no more specific type.</value>
+ <row id="1000982" trl="Y">
+  <value column="MsgText" original="A fitting that joins, bends or branches pipes, ducts or cable runs, with no more specific type.">Sambungan yang menyambung, membelokkan, atau mencabangkan pipa, saluran, atau jalur kabel, tanpa jenis yang lebih spesifik.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000983" trl="N">
-  <value column="MsgText" original="A type of gauge or meter, such as a pressure gauge, thermometer or voltmeter.">A type of gauge or meter, such as a pressure gauge, thermometer or voltmeter.</value>
+ <row id="1000983" trl="Y">
+  <value column="MsgText" original="A type of gauge or meter, such as a pressure gauge, thermometer or voltmeter.">Jenis alat ukur atau meter, seperti pengukur tekanan, termometer, atau voltmeter.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000984" trl="N">
-  <value column="MsgText" original="Equipment that moves a fluid, such as a pump, fan or compressor, with no more specific type.">Equipment that moves a fluid, such as a pump, fan or compressor, with no more specific type.</value>
+ <row id="1000984" trl="Y">
+  <value column="MsgText" original="Equipment that moves a fluid, such as a pump, fan or compressor, with no more specific type.">Peralatan yang menggerakkan fluida, seperti pompa, kipas, atau kompresor, tanpa jenis yang lebih spesifik.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000985" trl="N">
-  <value column="MsgText" original="A straight run of pipe, duct or cable carrier, with no more specific type.">A straight run of pipe, duct or cable carrier, with no more specific type.</value>
+ <row id="1000985" trl="Y">
+  <value column="MsgText" original="A straight run of pipe, duct or cable carrier, with no more specific type.">Bagian lurus dari pipa, saluran, atau pembawa kabel, tanpa jenis yang lebih spesifik.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000986" trl="N">
-  <value column="MsgText" original="Equipment that stores a fluid or energy, such as a tank or battery, with no more specific type.">Equipment that stores a fluid or energy, such as a tank or battery, with no more specific type.</value>
+ <row id="1000986" trl="Y">
+  <value column="MsgText" original="Equipment that stores a fluid or energy, such as a tank or battery, with no more specific type.">Peralatan yang menyimpan fluida atau energi, seperti tangki atau baterai, tanpa jenis yang lebih spesifik.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000987" trl="N">
-  <value column="MsgText" original="The end point where a system serves a room or a person, such as a tap, light or socket, with no more specific type.">The end point where a system serves a room or a person, such as a tap, light or socket, with no more specific type.</value>
+ <row id="1000987" trl="Y">
+  <value column="MsgText" original="The end point where a system serves a room or a person, such as a tap, light or socket, with no more specific type.">Titik akhir tempat suatu sistem melayani ruangan atau orang, seperti keran, lampu, atau stop kontak, tanpa jenis yang lebih spesifik.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000988" trl="N">
-  <value column="MsgText" original="Equipment that cleans or treats a fluid, such as a filter or separator, with no more specific type.">Equipment that cleans or treats a fluid, such as a filter or separator, with no more specific type.</value>
+ <row id="1000988" trl="Y">
+  <value column="MsgText" original="Equipment that cleans or treats a fluid, such as a filter or separator, with no more specific type.">Peralatan yang membersihkan atau mengolah fluida, seperti filter atau separator, tanpa jenis yang lebih spesifik.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000989" trl="N">
-  <value column="MsgText" original="A foundation element, such as a pad or strip footing, that spreads the load of the building into the ground.">A foundation element, such as a pad or strip footing, that spreads the load of the building into the ground.</value>
+ <row id="1000989" trl="Y">
+  <value column="MsgText" original="A foundation element, such as a pad or strip footing, that spreads the load of the building into the ground.">Elemen pondasi, seperti pondasi telapak atau pondasi menerus, yang menyebarkan beban bangunan ke dalam tanah.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000990" trl="N">
-  <value column="MsgText" original="A piece of furniture or equipment placed in a room, with no more specific type.">A piece of furniture or equipment placed in a room, with no more specific type.</value>
+ <row id="1000990" trl="Y">
+  <value column="MsgText" original="A piece of furniture or equipment placed in a room, with no more specific type.">Perabot atau peralatan yang ditempatkan di dalam ruangan, tanpa jenis yang lebih spesifik.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000991" trl="N">
-  <value column="MsgText" original="Furniture, such as a table, chair, bed, desk or cabinet.">Furniture, such as a table, chair, bed, desk or cabinet.</value>
+ <row id="1000991" trl="Y">
+  <value column="MsgText" original="Furniture, such as a table, chair, bed, desk or cabinet.">Furnitur, seperti meja, kursi, tempat tidur, meja kerja, atau lemari.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000992" trl="N">
-  <value column="MsgText" original="A light fitting (luminaire) that holds lamps and lights a space.">A light fitting (luminaire) that holds lamps and lights a space.</value>
+ <row id="1000992" trl="Y">
+  <value column="MsgText" original="A light fitting (luminaire) that holds lamps and lights a space.">Perlengkapan lampu (luminer) yang memegang lampu dan menerangi suatu ruang.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000993" trl="N">
-  <value column="MsgText" original="A structural or framing piece that is not a main beam or column, such as a brace, stud, mullion or purlin.">A structural or framing piece that is not a main beam or column, such as a brace, stud, mullion or purlin.</value>
+ <row id="1000993" trl="Y">
+  <value column="MsgText" original="A structural or framing piece that is not a main beam or column, such as a brace, stud, mullion or purlin.">Bagian struktur atau rangka yang bukan balok atau kolom utama, seperti bracing, stud, mullion, atau gording.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000994" trl="N">
-  <value column="MsgText" original="A void cut into a wall, slab or other element, usually for a door or window or to let services pass.">A void cut into a wall, slab or other element, usually for a door or window or to let services pass.</value>
+ <row id="1000994" trl="Y">
+  <value column="MsgText" original="A void cut into a wall, slab or other element, usually for a door or window or to let services pass.">Rongga yang dipotong pada dinding, pelat lantai, atau elemen lain, biasanya untuk pintu atau jendela atau untuk jalur instalasi.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000995" trl="N">
-  <value column="MsgText" original="A pipe piece that joins, bends, branches or changes the size of pipes, such as an elbow, tee or reducer.">A pipe piece that joins, bends, branches or changes the size of pipes, such as an elbow, tee or reducer.</value>
+ <row id="1000995" trl="Y">
+  <value column="MsgText" original="A pipe piece that joins, bends, branches or changes the size of pipes, such as an elbow, tee or reducer.">Potongan pipa yang menyambung, membelokkan, mencabangkan, atau mengubah ukuran pipa, seperti elbow, tee, atau reducer.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000996" trl="N">
-  <value column="MsgText" original="A straight length of pipe that carries water, gas or another fluid.">A straight length of pipe that carries water, gas or another fluid.</value>
+ <row id="1000996" trl="Y">
+  <value column="MsgText" original="A straight length of pipe that carries water, gas or another fluid.">Bagian lurus pipa yang mengalirkan air, gas, atau fluida lain.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000997" trl="N">
-  <value column="MsgText" original="A thin flat element, such as a steel plate or a glass panel in a curtain wall.">A thin flat element, such as a steel plate or a glass panel in a curtain wall.</value>
+ <row id="1000997" trl="Y">
+  <value column="MsgText" original="A thin flat element, such as a steel plate or a glass panel in a curtain wall.">Elemen datar yang tipis, seperti pelat baja atau panel kaca pada dinding tirai.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000998" trl="N">
-  <value column="MsgText" original="A guard rail, handrail or balustrade, for example along a stair, ramp or balcony edge.">A guard rail, handrail or balustrade, for example along a stair, ramp or balcony edge.</value>
+ <row id="1000998" trl="Y">
+  <value column="MsgText" original="A guard rail, handrail or balustrade, for example along a stair, ramp or balcony edge.">Pagar pengaman, pegangan tangan, atau balustrade, misalnya di sepanjang tangga, ramp, atau tepi balkon.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000999" trl="N">
-  <value column="MsgText" original="A sloped walkway joining two levels, made of one or more ramp flights and landings.">A sloped walkway joining two levels, made of one or more ramp flights and landings.</value>
+ <row id="1000999" trl="Y">
+  <value column="MsgText" original="A sloped walkway joining two levels, made of one or more ramp flights and landings.">Jalur miring yang menghubungkan dua lantai, terdiri dari satu atau lebih bentang ramp dan bordes.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1001000" trl="N">
-  <value column="MsgText" original="One sloped run of a ramp between two landings.">One sloped run of a ramp between two landings.</value>
+ <row id="1001000" trl="Y">
+  <value column="MsgText" original="One sloped run of a ramp between two landings.">Satu bentang miring dari ramp di antara dua bordes.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1001001" trl="N">
-  <value column="MsgText" original="A steel reinforcing bar (rebar) set inside concrete to carry tension.">A steel reinforcing bar (rebar) set inside concrete to carry tension.</value>
+ <row id="1001001" trl="Y">
+  <value column="MsgText" original="A steel reinforcing bar (rebar) set inside concrete to carry tension.">Batang baja tulangan (besi beton) yang dipasang di dalam beton untuk menahan tarikan.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1001002" trl="N">
-  <value column="MsgText" original="The roof: the top covering of a building, made of slabs, beams and other parts.">The roof: the top covering of a building, made of slabs, beams and other parts.</value>
+ <row id="1001002" trl="Y">
+  <value column="MsgText" original="The roof: the top covering of a building, made of slabs, beams and other parts.">Atap: penutup bagian atas bangunan, terdiri dari pelat, balok, dan bagian lainnya.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1001003" trl="N">
-  <value column="MsgText" original="A type of sensor that detects a condition, such as smoke, heat, temperature or movement.">A type of sensor that detects a condition, such as smoke, heat, temperature or movement.</value>
+ <row id="1001003" trl="Y">
+  <value column="MsgText" original="A type of sensor that detects a condition, such as smoke, heat, temperature or movement.">Jenis sensor yang mendeteksi suatu kondisi, seperti asap, panas, suhu, atau gerakan.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1001004" trl="N">
-  <value column="MsgText" original="A flat horizontal or nearly horizontal element, such as a floor, roof slab or landing, usually of concrete.">A flat horizontal or nearly horizontal element, such as a floor, roof slab or landing, usually of concrete.</value>
+ <row id="1001004" trl="Y">
+  <value column="MsgText" original="A flat horizontal or nearly horizontal element, such as a floor, roof slab or landing, usually of concrete.">Elemen datar horizontal atau hampir horizontal, seperti lantai, pelat atap, atau bordes, biasanya dari beton.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1001005" trl="N">
-  <value column="MsgText" original="A stair joining two levels, made of one or more flights and landings.">A stair joining two levels, made of one or more flights and landings.</value>
+ <row id="1001005" trl="Y">
+  <value column="MsgText" original="A stair joining two levels, made of one or more flights and landings.">Tangga yang menghubungkan dua lantai, terdiri dari satu atau lebih bentang tangga dan bordes.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1001006" trl="N">
-  <value column="MsgText" original="One run of steps of a stair between two landings.">One run of steps of a stair between two landings.</value>
+ <row id="1001006" trl="Y">
+  <value column="MsgText" original="One run of steps of a stair between two landings.">Satu bentang anak tangga dari sebuah tangga di antara dua bordes.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1001007" trl="N">
-  <value column="MsgText" original="A device that turns an electrical circuit on or off, such as a switch, circuit breaker or contactor.">A device that turns an electrical circuit on or off, such as a switch, circuit breaker or contactor.</value>
+ <row id="1001007" trl="Y">
+  <value column="MsgText" original="A device that turns an electrical circuit on or off, such as a switch, circuit breaker or contactor.">Alat yang menyalakan atau mematikan sirkuit listrik, seperti sakelar, pemutus sirkuit (MCB), atau kontaktor.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1001008" trl="N">
-  <value column="MsgText" original="A part of a modular office furniture system, such as a screen panel, work surface or storage unit.">A part of a modular office furniture system, such as a screen panel, work surface or storage unit.</value>
+ <row id="1001008" trl="Y">
+  <value column="MsgText" original="A part of a modular office furniture system, such as a screen panel, work surface or storage unit.">Bagian dari sistem furnitur kantor modular, seperti panel sekat, permukaan kerja, atau unit penyimpanan.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1001009" trl="N">
-  <value column="MsgText" original="Equipment that moves people or goods, such as a lift (elevator), escalator or moving walkway.">Equipment that moves people or goods, such as a lift (elevator), escalator or moving walkway.</value>
+ <row id="1001009" trl="Y">
+  <value column="MsgText" original="Equipment that moves people or goods, such as a lift (elevator), escalator or moving walkway.">Peralatan yang memindahkan orang atau barang, seperti lift, eskalator, atau jalan berjalan (moving walkway).</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1001010" trl="N">
-  <value column="MsgText" original="A valve that opens, closes or regulates the flow in a pipe.">A valve that opens, closes or regulates the flow in a pipe.</value>
+ <row id="1001010" trl="Y">
+  <value column="MsgText" original="A valve that opens, closes or regulates the flow in a pipe.">Katup yang membuka, menutup, atau mengatur aliran dalam pipa.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1001011" trl="N">
-  <value column="MsgText" original="A wall: a vertical element that divides or encloses spaces; it may or may not carry load.">A wall: a vertical element that divides or encloses spaces; it may or may not carry load.</value>
+ <row id="1001011" trl="Y">
+  <value column="MsgText" original="A wall: a vertical element that divides or encloses spaces; it may or may not carry load.">Dinding: elemen vertikal yang membagi atau melingkupi ruang; dapat menahan beban atau tidak.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1001012" trl="N">
-  <value column="MsgText" original="A wall of even thickness along its length (an older IFC name, treated today as a plain wall).">A wall of even thickness along its length (an older IFC name, treated today as a plain wall).</value>
+ <row id="1001012" trl="Y">
+  <value column="MsgText" original="A wall of even thickness along its length (an older IFC name, treated today as a plain wall).">Dinding dengan ketebalan yang sama sepanjang bentangnya (nama IFC lama, kini diperlakukan sebagai dinding biasa).</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1001013" trl="N">
-  <value column="MsgText" original="A window: a framed opening, usually glazed, that lets in light and air.">A window: a framed opening, usually glazed, that lets in light and air.</value>
+ <row id="1001013" trl="Y">
+  <value column="MsgText" original="A window: a framed opening, usually glazed, that lets in light and air.">Jendela: bukaan berbingkai, biasanya berkaca, yang memasukkan cahaya dan udara.</value>
   <value column="MsgTip" original=""/>
  </row>
  <row id="1001014" trl="Y">
@@ -4081,6 +4081,34 @@ CPM membaca tanggal hasil seretan — tidak pernah mengubahnya.</value>
  </row>
  <row id="1001017" trl="N">
   <value column="MsgText" original="buildingSMART IFC 4.3 (bSDD), CC BY-ND 4.0">buildingSMART IFC 4.3 (bSDD), CC BY-ND 4.0</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001018" trl="N">
+  <value column="MsgText" original="A flow instrument reads and displays the value of a particular property of a system at a point, or displays the difference in the value of a property between two points.">A flow instrument reads and displays the value of a particular property of a system at a point, or displays the difference in the value of a property between two points.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001019" trl="N">
+  <value column="MsgText" original="EN">EN</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001020" trl="N">
+  <value column="MsgText" original="IfcFlowInstrument">IfcFlowInstrument</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001021" trl="N">
+  <value column="MsgText" original="A sensor is a device that measures a physical quantity and converts it into a signal which can be read by an observer or by an instrument.">A sensor is a device that measures a physical quantity and converts it into a signal which can be read by an observer or by an instrument.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001022" trl="N">
+  <value column="MsgText" original="EN">EN</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001023" trl="N">
+  <value column="MsgText" original="IfcSensor">IfcSensor</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001024" trl="Y">
+  <value column="MsgText" original="IFC definition of {cls}">Definisi IFC untuk {cls}</value>
   <value column="MsgTip" original=""/>
  </row>
 </idempiereTrl>
