@@ -11,6 +11,8 @@ const initSqlJs = require(path.join(__dirname, '..', '..', 'modeller', 'lib', 's
 let pass = 0, fail = 0;
 function assert(cond, msg) { if (cond) { pass++; console.log('  PASS ' + msg); } else { fail++; console.log('  FAIL ' + msg); } }
 
+// A-6 (bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md A2-VALUE-1): this runner is an EDGE, so it installs the one clock/id/timer source the core reads.
+if (!globalThis.CoreEdge) globalThis.CoreEdge = { nowMs: () => Date.now(), uuid: () => require('crypto').randomUUID(), perfMs: () => performance.now() };
 const ScheduleAuthor = require(path.join(__dirname, '..', 'schedule_author.js'));
 const ScheduleGate = require(path.join(__dirname, '..', 'schedule_gate.js'));
 

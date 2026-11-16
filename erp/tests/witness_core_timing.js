@@ -15,7 +15,8 @@
 // A2-TIMING-3: T8 common/room_graph.js _legalizePath (graph._legalizeStats.ms) and T9 its REAL reader, viewer/egress_sanity.js on buildings/Clinic_meta.db
 //   (no raster, so §PATH_LEGAL_NO_RASTER prints; ms must be exactly 42 x calls); T10 viewer/schedule_inject.js inject (§SCHED_INJECT … ms=, materializeMs/persistMs);
 //   T11 neither file has a clock call left. ? / null with no edge. RED CONTROL: CORE_TIMING_COMMON_DIR=<main>/common and CORE_TIMING_VIEWER_DIR=<main>/viewer
-//   must FAIL T8-T11. Clinic_meta.db from CORE_TIMING_BUILDINGS (default ~/bim-ootb/buildings) or CORE_TIMING_EGRESS_DB; absent = INCONCLUSIVE.
+//   must FAIL T8-T11. A2-VALUE-1: T12 setBaseline setAt, T13 persistDb recency stamp, T14 ScheduleSync tab id come from CoreEdge (no edge: §ENV_NO_DATE,
+//   nothing guessed); T15 no clock/RNG call left; main's copies must FAIL T12-T15. Clinic_meta.db from CORE_TIMING_BUILDINGS (default ~/bim-ootb/buildings) or CORE_TIMING_EGRESS_DB; absent = INCONCLUSIVE.
 // Command: node erp/tests/witness_core_timing.js
 'use strict';
 const fs = require('fs'), path = require('path'), vm = require('vm');
@@ -185,10 +186,76 @@ for (const [dir, f] of [[COMMON, 'room_graph.js'], [VIEWER, 'schedule_inject.js'
   check('T11 ' + path.basename(dir) + '/' + f + ' has no Date.now / performance.now call left (found ' + n + ')', n === 0);
 }
 
+// ── A2-VALUE-1: the VALUE reads (a stored baseline stamp, the cache recency stamp, a tab id) ──────────────────────────────────────────────
+const NOW_MS = Date.parse('2026-11-16T03:00:00Z'), FIXED_UUID = '11111111-2222-4333-8444-555555555555';
+const valueEdge = { nowMs: () => NOW_MS, uuid: () => FIXED_UUID, perfMs: () => 0 };
+const freshRequire = f => { const p = path.join(VIEWER, f); delete require.cache[require.resolve(p)]; return require(p); };
+// T12: setBaseline on a real in-memory db with 3 tasks.
+async function t12() {
+  if (!initSql) { console.log('  §CORE_TIMING T12 INCONCLUSIVE: sql.js not found'); return 'INCONCLUSIVE'; }
+  const SQL = await initSql();
+  const SA = freshRequire('schedule_author.js');
+  const mk = () => { const db = new SQL.Database(); db.run('CREATE TABLE tasks (task_id TEXT, schedule_id TEXT, schedule_start TEXT, schedule_finish TEXT, schedule_duration TEXT)');
+    for (let i = 1; i <= 3; i++) db.run('INSERT INTO tasks VALUES (?,?,?,?,?)', ['T' + i, 'S1', '2026-01-0' + i, '2026-01-1' + i, '10']); return db; };
+  const rowsOf = db => { try { const r = db.exec("SELECT set_at FROM task_baseline WHERE schedule_id='S1'"); return r.length ? r[0].values.map(v => v[0]) : []; } catch (e) { return []; } };
+  globalThis.CoreEdge = valueEdge;
+  let db = mk(), res; let lines = capture(() => { res = SA.setBaseline(db, 'S1'); });
+  const stamps = rowsOf(db), line = lines.find(l => l.startsWith('§GANTT_SET_BASELINE')) || '(none)';
+  check('T12 fake edge: setBaseline setAt=' + (res && res.setAt) + ', set_at x' + stamps.length + ' = ' + JSON.stringify(Array.from(new Set(stamps))) + ' (expected 2026-11-16T03:00:00.000Z on all 3 and on the § line)',
+    res && res.ok && res.setAt === '2026-11-16T03:00:00.000Z' && stamps.length === 3 && stamps.every(s => s === res.setAt) && / setAt=2026-11-16T03:00:00\.000Z$/.test(line));
+  db = mk(); capture(() => { res = SA.setBaseline(db, 'S1', { setAt: '2026-01-01T00:00:00.000Z' }); });
+  check('T12 a recorded opts.setAt wins over the edge: ' + (res && res.setAt), res && res.ok && res.setAt === '2026-01-01T00:00:00.000Z' && rowsOf(db).every(s => s === res.setAt));
+  delete globalThis.CoreEdge;
+  db = mk(); lines = capture(() => { try { res = SA.setBaseline(db, 'S1'); } catch (e) { res = { threw: e.message }; } });
+  check('T12 no edge: ' + JSON.stringify(res) + ', ' + rowsOf(db).length + ' rows written, §ENV_NO_DATE=' + lines.some(l => /^§ENV_NO_DATE setBaseline/.test(l)),
+    res && res.ok === false && res.reason === 'no_clock' && rowsOf(db).length === 0 && lines.some(l => /^§ENV_NO_DATE setBaseline/.test(l)));
+  return 'ran';
+}
+// T13: persistDb through the APP.openCacheDB seam with a fake IndexedDB; the 'timestamps' put must be the edge's instant.
+async function t13() {
+  const SA = freshRequire('schedule_author.js');
+  async function run(withEdge) {
+    const puts = [];
+    const fakeIdb = { objectStoreNames: { contains: () => true },
+      transaction() { const tx = { objectStore: n => ({ put: (v, k) => puts.push({ store: n, v, k }) }) }; setTimeout(() => tx.oncomplete && tx.oncomplete(), 0); return tx; } };
+    const prevApp = globalThis.APP; globalThis.APP = { openCacheDB: () => Promise.resolve(fakeIdb) };
+    if (withEdge) globalThis.CoreEdge = valueEdge; else delete globalThis.CoreEdge;
+    let ok; const lines = [], log = console.log; console.log = (...a) => lines.push(a.join(' '));
+    try { ok = await SA.persistDb({ export: () => new Uint8Array(1024) }, 'buildings/X.db', { immediate: true }); } finally { console.log = log; globalThis.APP = prevApp; delete globalThis.CoreEdge; }
+    return { ok, puts, lines };
+  }
+  const P1 = await run(true), P0 = await run(false);
+  const ts1 = P1.puts.filter(p => p.store === 'timestamps'), ts0 = P0.puts.filter(p => p.store === 'timestamps');
+  check('T13 fake edge: persistDb ok=' + P1.ok + ', timestamps put=' + JSON.stringify(ts1.map(p => p.v)) + ' (expected [' + NOW_MS + '])', P1.ok === true && ts1.length === 1 && ts1[0].v === NOW_MS);
+  check('T13 no edge: ok=' + P0.ok + ', blob puts=' + P0.puts.filter(p => p.store === 'dbs').length + ', timestamp puts=' + ts0.length + ', §ENV_NO_DATE=' + P0.lines.some(l => /^§ENV_NO_DATE persistDb/.test(l)),
+    P0.ok === true && P0.puts.filter(p => p.store === 'dbs').length === 1 && ts0.length === 0 && P0.lines.some(l => /^§ENV_NO_DATE persistDb/.test(l)));
+}
+// T14: ScheduleSync.create() tab id.
+function t14() {
+  const SS = freshRequire('schedule_sync.js');
+  globalThis.CoreEdge = valueEdge;
+  let a; capture(() => { a = SS.create(); });
+  delete globalThis.CoreEdge;
+  let threw = null, c = null; const lines = capture(() => { try { c = SS.create(); } catch (e) { threw = e.message; } });
+  let b = null; capture(() => { try { b = SS.create({ tabId: 'tabA' }); } catch (e) { b = { threw: e.message }; } });
+  for (const h of [a, b, c]) if (h && typeof h.close === 'function') h.close();   // an open BroadcastChannel keeps node alive
+  check('T14 fake edge: tabId=' + (a && a.tabId) + ' (expected tab_' + FIXED_UUID + ')', a && a.tabId === 'tab_' + FIXED_UUID);
+  check('T14 no edge: create() throws (' + threw + '), §ENV_NO_DATE=' + lines.some(l => /^§ENV_NO_DATE newTabId/.test(l)) + '; create({tabId}) still works (' + (b && b.tabId) + ')',
+    !!threw && lines.some(l => /^§ENV_NO_DATE newTabId/.test(l)) && b && b.tabId === 'tabA');
+}
+for (const f of ['schedule_author.js', 'schedule_sync.js']) {
+  const v = fs.readFileSync(path.join(VIEWER, f), 'utf8').replace(/\/\/.*$/gm, '');
+  const n = (v.match(/\bDate\.now\(|\bperformance\.now\(|\bMath\.random\(|\bnew Date\(\s*\)/g) || []).length;
+  check('T15 viewer/' + f + ' has no Date.now / performance.now / Math.random / new Date() left (found ' + n + ')', n === 0);
+}
+
 (async () => {
 const t9state = await t9();
 await t10();
-const verdict = judged === 0 ? 'INCONCLUSIVE' : fail === 0 ? (t9state === 'INCONCLUSIVE' ? 'INCONCLUSIVE' : 'PASS') : 'FAIL';
+const t12state = await t12();
+await t13();
+t14();
+const verdict = judged === 0 ? 'INCONCLUSIVE' : fail === 0 ? (t9state === 'INCONCLUSIVE' || t12state === 'INCONCLUSIVE' ? 'INCONCLUSIVE' : 'PASS') : 'FAIL';
 console.log('§CORE_TIMING checks=' + judged + ' failed=' + fail + ' verdict=' + verdict);
 if (verdict !== 'PASS') process.exitCode = 1;
 })();
