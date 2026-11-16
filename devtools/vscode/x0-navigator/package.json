@@ -28,6 +28,10 @@
         "title": "X0 Navigator: Cost if deployed (start-up and offline-cache bytes vs main)"
       },
       {
+        "command": "x0Navigator.bumpButton",
+        "title": "X0 Navigator: Bump (check the changed files in the background, then press again to write)"
+      },
+      {
         "command": "x0Navigator.heapImpact",
         "title": "X0 Navigator: Memory of the three pages (headless, vs main)"
       },

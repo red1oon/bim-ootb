@@ -9,7 +9,7 @@
 // A stub bridge (BUMP_PARITY_BRIDGE) prints chosen `§TAG_VERDICT WORD` lines and appends to a marker file, so "not run" is
 // provable (marker empty), not assumed. Rows: P1 new FAIL blocks · P2 only known FAILs pass · P3 warn · P4 off · P5 non-ERP
 // target never runs it · P6 --no-parity needs a reason / OVERRIDE · P7 0 verdicts = INCONCLUSIVE, blocked · P8 same tree =
-// cached, changed tree = not · P9 the bridge judges the bumped tree · P10/P11 (§F.32) only the witnesses that read the tree run · T1-T5 (§F.33) the changed file's own witnesses, new failures only. R (opt-in BUMP_PARITY_REAL=1): the REAL bridge (BUMP_PARITY_BRIDGE, default /tmp/wt-bridge/...)
+// cached, changed tree = not · P9 the bridge judges the bumped tree · P10/P11 (§F.32) only the witnesses that read the tree run · T1-T6 (§F.33) the changed file's own witnesses, new failures only · C1-C3 (§F.34) --check then --write, --changed. R (opt-in BUMP_PARITY_REAL=1): the REAL bridge (BUMP_PARITY_BRIDGE, default /tmp/wt-bridge/...)
 // with the repo's real config gives verdict=PASS. Prints §BUMP_PARITY_W <row> PASS|FAIL and §BUMP_PARITY_W_VERDICT;
 // INCONCLUSIVE (never PASS) when nothing was judged.
 // Usage: nice -n 19 ionice -c3 node tests/witness_bump_parity.js > log 2>&1
@@ -163,7 +163,7 @@ try {
   const base = path.join(tmp, 'base'), TM = path.join(tmp, 'touch_ran.txt'), FLK = path.join(tmp, 'flaky.txt');
   const req = `if (false) require('../${em[1]}');\n`, mark = n => `require('fs').appendFileSync(${JSON.stringify(TM)}, '${n}\\n');\n`;
   const put = (tree, n, body) => { fs.mkdirSync(path.join(tree, 'erp', 'tests'), { recursive: true }); fs.writeFileSync(path.join(tree, 'erp', 'tests', n + '.js'), body); };
-  const touchClear = () => { fs.rmSync(path.join(root, 'erp', 'tests'), { recursive: true, force: true }); fs.rmSync(base, { recursive: true, force: true }); fs.rmSync(TM, { force: true }); fs.rmSync(FLK, { force: true }); };
+  const touchClear = () => { fs.rmSync(path.join(home, 'touch_pass'), { recursive: true, force: true }); fs.rmSync(path.join(root, 'erp', 'tests'), { recursive: true, force: true }); fs.rmSync(base, { recursive: true, force: true }); fs.rmSync(TM, { force: true }); fs.rmSync(FLK, { force: true }); };
   const tran = () => fs.existsSync(TM) ? fs.readFileSync(TM, 'utf8').split('\n').filter(Boolean) : [];
   const touch = out => (out.split('\n').find(l => l.startsWith('§BUMP_TOUCH ')) || '');
   restore(); touchClear(); setLines([...KNOWN_FAILS, ...OTHERS]);
@@ -199,6 +199,35 @@ try {
     `exit=${t6.code} ran=[${tran().join(',')}] (want t6a only) ${touch(t6.out).replace('§BUMP_TOUCH ', '')}`);
   fs.rmSync(path.join(home, 'touch_durations.json'), { force: true });
   touchClear();
+
+  // C1-C3 (§F.34, decision F-24) — check first, write later. C1: --check runs both gates and writes nothing; --write on the SAME tree re-runs neither
+  //   (bridge marker 1, touch marker 1). C2: an edit between them re-runs both. C3: --changed picks the changed file a page loads, skips a changed .md.
+  restore(); touchClear(); setLines([...KNOWN_FAILS, ...OTHERS]);
+  put(root, 'witness_c1', req + mark('c1') + "process.exit(0);\n");
+  const sc = snap(), c1a = run([ERP, '--check'], { BUMP_TOUCH_BASE: base });
+  const c1aSame = snap() === sc, c1aOk = c1a.code === 0 && c1aSame && /§BUMP_CHECK verdict=PASS/.test(c1a.out) && runs() === 1 && tran().join(',') === 'c1' && /§BUMP_PARITY_PLAN|§BUMP_TOUCH_PLAN witnesses=1/.test(c1a.out);
+  const c1b = run([ERP, '--write'], { BUMP_TOUCH_BASE: base });
+  check('C1-check-writes-nothing-and-a-write-after-it-reruns-nothing', c1aOk && c1b.code === 0 && pageHas(V + 1) && runs() === 1 && tran().join(',') === 'c1' && /cached=Y verdict=PASS/.test(touch(c1b.out)) && field(c1b.out, 'cached') === 'Y',
+    `check exit=${c1a.code} unchanged=${c1aSame} · write exit=${c1b.code} written=${pageHas(V + 1)} bridge_runs=${runs()} (want 1) touch_ran=[${tran().join(',')}] (want c1 once)`);
+  restore(); touchClear(); setLines([...KNOWN_FAILS, ...OTHERS]);
+  put(root, 'witness_c1', req + mark('c1') + "process.exit(0);\n");
+  const c2a = run([ERP, '--check'], { BUMP_TOUCH_BASE: base });
+  fs.appendFileSync(path.join(root, ERP), '\n// edited after the check\n');
+  const c2b = run([ERP, '--write'], { BUMP_TOUCH_BASE: base });
+  if (process.env.WBP_DEBUG) console.log('C2DBG\n' + c2b.out);
+  check('C2-an-edit-after-the-check-reruns-both-gates', c2a.code === 0 && c2b.code === 0 && runs() === 2 && tran().join(',') === 'c1,c1',
+    `bridge_runs=${runs()} (want 2) touch_ran=[${tran().join(',')}] (want c1 twice)`);
+  touchClear();
+  // C3: a real temp git repo whose origin/main is its first commit
+  const g3 = path.join(tmp, 'git3'); fs.cpSync(root, g3, { recursive: true });
+  const git3 = a => cp.execFileSync('git', a, { cwd: g3, stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8' });
+  git3(['init', '-q']); git3(['-c', 'user.email=w@x', '-c', 'user.name=w', 'add', '-A']); git3(['-c', 'user.email=w@x', '-c', 'user.name=w', 'commit', '-qm', 'base']); git3(['update-ref', 'refs/remotes/origin/main', 'HEAD']);
+  fs.appendFileSync(path.join(g3, ERP), '\n// a feature edit\n'); fs.writeFileSync(path.join(g3, 'NOTES.md'), 'not loaded by any page\n');
+  const rc3 = cp.spawnSync('node', [BUMP, '--changed', '--root', g3], { encoding: 'utf8', env: { ...process.env, BUMP_PARITY_HOME: home } }), o3 = rc3.stdout + rc3.stderr;
+  const l3 = o3.split('\n').find(l => l.startsWith('§BUMP_CHANGED ')) || '';
+  if (process.env.WBP_DEBUG) console.log('C3DBG\n' + o3);
+  check('C3-changed-picks-the-loaded-file-and-skips-the-rest', rc3.status === 0 && /changed=2 bumpable=1 skipped=1/.test(l3) && new RegExp('files=' + ERP.replace(/[.]/g, '\\.') + '$').test(l3) && /mode=dry-run/.test(o3),
+    `exit=${rc3.status} ${l3.replace('§BUMP_CHANGED ', '')}`);
 
   // R — REAL bridge (opt-in; ~70 s; writes throwaway clients to the local pilot)
   if (process.env.BUMP_PARITY_REAL === '1') {
