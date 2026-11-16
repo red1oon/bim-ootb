@@ -91,9 +91,14 @@ async function run() {
         const acts = diags[0] ? await vscode.commands.executeCommand('vscode.executeCodeActionProvider', bdoc.uri, diags[0].range, 'quickfix') : [];
         x.bumpActions = (acts || []).filter(a => a.command && a.command.command === 'x0Navigator.bumpThisFile').map(a => ({ title: a.title, write: a.command.arguments[1] }));
         x.bumpDry = await vscode.commands.executeCommand('x0Navigator.bumpThisFile', plan.extras.bumpRel, false);
+        // §F.34: a REAL press of the Bump button with that edit saved: the real bump.js --changed --check runs as an async child of VS Code.
+        //   It returns its lines when the check ends; nothing is written (run.js checks git status after).
+        const tb = Date.now(); x.button = await withTimeout(vscode.commands.executeCommand('x0Navigator.bumpButton'), 300000); x.buttonSecs = Math.round((Date.now() - tb) / 1000);
         await bed.edit(e => e.delete(new vscode.Range(0, 0, 1, 0)));
         await bdoc.save(); await sleep(1500);
         x.bumpRestored = mineOf().length;
+        // §F.34: the restore was a save, so the button is idle again; a second press finds nothing changed to bump
+        x.buttonAfter = await withTimeout(vscode.commands.executeCommand('x0Navigator.bumpButton'), 300000);
       }
       // §F.16: "Context for this file", run as a VS Code command on the open file. It copies the block and opens it beside.
       await vscode.window.showTextDocument(doc);
