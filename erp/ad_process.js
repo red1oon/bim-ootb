@@ -789,7 +789,7 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
       (jr.log || []).forEach(function (l) { if (typeof console !== 'undefined') console.log(l); });
       return { ad_process_id: proc.AD_Process_ID, name: proc.name, classname: classname, kind: 'java', dispatched: true,
         ok: !!jr.ok, reason: jr.ok ? 'ok' : 'process-error', validate: validate, rows: (jr.ops || []).length, message: jr.summary,
-        result: { commitOps: jr.ops || [], observed: jr.observed || [], logs: jr.logs || [], summary: jr.summary, isError: !!jr.isError, then: jr.then || null } };
+        result: { commitOps: jr.ops || [], observed: jr.observed || [], logs: jr.logs || [], summary: jr.summary, isError: !!jr.isError, then: jr.then || null, object: jr.object || null } };   // object = ProcessInfo.getSerializableObject (a process's own answer, beside its summary)
     }
     // Core.getProcess(className) == null branch (ProcessUtil:166-170): explicit absent-handler, NOT a no-op.
     if (!classname || !hasHandler(classname)) {
@@ -1124,7 +1124,7 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
     var ops = ok && !shared ? trx.groupOps() : [];
     var observed = (ok && !pi.isError && !shared) ? (trx._observed || []) : [];        // the process's saves' post* events: delivered by the host after the group commits (a refused process delivers none)
     observed.opMap = (ok && !pi.isError && !shared) ? trx._opMap || null : null;
-    return { ok: ok && !pi.isError, dispatched: true, summary: pi.summary, isError: !!pi.isError, logs: proc.logs, ops: ops, observed: observed, log: trx.log, trx: trx,
+    return { ok: ok && !pi.isError, dispatched: true, summary: pi.summary, isError: !!pi.isError, logs: proc.logs, ops: ops, observed: observed, log: trx.log, trx: trx, object: pi.serializableObject || null,
       then: (ok && !pi.isError && typeof pi.then === 'function') ? pi.then : null };   // a process's ASYNC continuation (bim-ootb CAPEX_DASHBOARD.md §5.70): () -> Promise<{ok, summary, commitOps}>, awaited by the host before it shows the result
   }
   // runInTrx(trx, ref, opts) - run the ported process <ref> (AD_Process_ID or Value) inside the caller's Trx: the AD_Process row names the classname (ProcessUtil.startJavaProcess :145-205).

@@ -504,6 +504,28 @@ function _scalar(db, sql, params) {
     return { projectId: projId, created: created };
   }
 
+  // phase -> sequence: the template's own, else the rank of the phase's earliest start (100+i), the same rule for the building db's schedule and for a persisted 4D run
+  function _phaseSeqOf(tasks, template) {
+    var phaseSeq = {}, fromStart = false;
+    ((template && template.phases) || []).forEach(function (p) { phaseSeq[p.name] = p.sequence; });
+    var missing = tasks.some(function (t) { return phaseSeq[t.phase] == null; });
+    if (missing) {
+      fromStart = true;
+      var first = {}; tasks.forEach(function (t) { if (first[t.phase] == null || t.sDays < first[t.phase]) first[t.phase] = t.sDays; });
+      Object.keys(first).sort(function (a, b) { return first[a] - first[b] || (a < b ? -1 : 1); }).forEach(function (ph, i) { if (phaseSeq[ph] == null) phaseSeq[ph] = 100 + i; });
+    }
+    return { phaseSeq: phaseSeq, fromStart: fromStart };
+  }
+  // scheduleFromRun(run, template, start) - the PERSISTED 4D run (scripts/cache_4d_run.js: run.tasks = [{id, phase, storey, sDays, eDays, guids}], days from `start`) as foldProjectOrder's opts.schedule
+  //   (bim-compiler prompts/CLI_ERP_IVR.md §29.6 P3b). The run IS the programme (PRIMAL LAW 5, 4D_MODEL_INTEGRITY.md §I): nothing is recomputed here. Reads only; null when the run holds no task.
+  function scheduleFromRun(run, template, start) {
+    var tasks = ((run && run.tasks) || []).filter(function (t) { return t && t.phase && t.sDays != null && t.eDays != null; }).map(function (t) { return { id: t.id, phase: t.phase, storey: t.storey, sDays: t.sDays, eDays: t.eDays, guids: t.guids || [] }; });
+    if (!tasks.length) { console.log('§PROJ_FOLD_SCHEDULE none — the persisted 4D run holds no dated task'); return null; }
+    var ps = _phaseSeqOf(tasks, template);
+    console.log('§PROJ_FOLD_SCHEDULE source=persisted-4d-run tasks=' + tasks.length + ' start=' + start + ' lastDay=' + Math.max.apply(null, tasks.map(function (t) { return t.eDays; })) + (ps.fromStart ? ' PHASE_SEQ_FROM_START' : ''));
+    return { start: start, tasks: tasks, phaseSeq: ps.phaseSeq, source: 'persisted 4D run' };
+  }
+
   // ── scheduleFromDb(bdb, template, SA) — the programme the viewer already holds, as foldProjectOrder's opts.schedule (prompts/CAPEX_DASHBOARD.md §5.5 R1-f).
   // Which schedule: the owner's ScheduleAuthor.activeSchedule(db) (authored first, else imported). Rows: what materializeZones / the import wrote (tasks + task_elements).
   // phase = the template phase prefixing the task name as "<phase> — <storey>" (the name _writeTemplateSchedule writes), else the WBS parent summary's name (not the root),
@@ -531,14 +553,7 @@ function _scalar(db, sql, params) {
       if (!phase) unknown++;
       return { id: t.id, phase: phase || 'Unsequenced', storey: storey, sDays: dnum(t.s) - s0, eDays: dnum(t.f != null ? t.f : t.s) - s0, guids: gOf[t.id] || [] };
     }).filter(function (t) { return t.phase !== 'Unsequenced'; });
-    var phaseSeq = {}, fromStart = false;
-    ((template && template.phases) || []).forEach(function (p) { phaseSeq[p.name] = p.sequence; });
-    var missing = tasks.some(function (t) { return phaseSeq[t.phase] == null; });
-    if (missing) {
-      fromStart = true;
-      var first = {}; tasks.forEach(function (t) { if (first[t.phase] == null || t.sDays < first[t.phase]) first[t.phase] = t.sDays; });
-      Object.keys(first).sort(function (a, b) { return first[a] - first[b] || (a < b ? -1 : 1); }).forEach(function (ph, i) { if (phaseSeq[ph] == null) phaseSeq[ph] = 100 + i; });
-    }
+    var ps = _phaseSeqOf(tasks, template), phaseSeq = ps.phaseSeq, fromStart = ps.fromStart;
     console.log('§PROJ_FOLD_SCHEDULE schedule=' + act.id + ' name="' + (act.name || act.id) + '" tasks=' + tasks.length + ' start=' + start +
       ' lastDay=' + Math.max.apply(null, tasks.map(function (t) { return t.eDays; })) + (unknown ? ' TASK_PHASE_UNKNOWN=' + unknown : '') + (fromStart ? ' PHASE_SEQ_FROM_START' : ''));
     return { start: start, tasks: tasks, phaseSeq: phaseSeq, source: 'building db ' + act.id };
@@ -559,7 +574,7 @@ function _scalar(db, sql, params) {
     return { rows: out, elements: elements, parts: order.length };
   }
 
-  var API = { _modelTag: _modelTag, _allocator: _allocator, foldProjectOrder: foldProjectOrder, foldAuthoredPhases: foldAuthoredPhases, scheduleFromDb: scheduleFromDb, pricedPerTask: pricedPerTask, BIM_BASE: BIM_BASE };
+  var API = { _modelTag: _modelTag, _allocator: _allocator, foldProjectOrder: foldProjectOrder, foldAuthoredPhases: foldAuthoredPhases, scheduleFromDb: scheduleFromDb, scheduleFromRun: scheduleFromRun, pricedPerTask: pricedPerTask, BIM_BASE: BIM_BASE };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   else global.ProjFold = API;
 })(typeof self !== 'undefined' ? self : this);
