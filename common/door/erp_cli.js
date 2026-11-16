@@ -529,6 +529,25 @@ function parseGiven(a) {   // the column=value pairs of a line (--where, repeate
   const given = {}; (Array.isArray(a.where) ? a.where : (a.where ? [a.where] : [])).forEach(w => { const m = /^([A-Za-z_]\w*)=([\s\S]*)$/.exec(w); if (!m) refuse('a column is column=value, got "' + w + '"'); if (m[1].toLowerCase() in given) refuse('column ' + m[1] + ' given twice'); given[m[1].toLowerCase()] = m[2]; });
   return given;
 }
+// ── the session a new record is made in (bim-compiler prompts/CLI_ERP_IVR.md §31): legacy's login sets #AD_Client_ID = the role's client, #AD_Org_ID and #M_Warehouse_ID = the ones picked.
+//    No role: the door's standing login (client 11, organisation 11, warehouse 103 = the parallel run's). A role: its AD_Role.AD_Client_ID; the organisations Login.getOrgs (Login.java:208-280) offers,
+//    by Name, the standing 11 kept when offered (RolePanel.java:688-707: the saved preference, when listed), else the first (:710-712); the warehouse the same way over Login.getWarehouses(org), none = 0.
+const CLIENT_BREAK = process.env.CLIENT_BREAK || '';   // W-MIS-CLIENT falsifier: fixed (every record in client 11, the defect)
+function loginOf(O, roleId) {
+  const STAND = { client: 11, org: 11, wh: 103, orgs: '-' };
+  if (roleId == null || CLIENT_BREAK === 'fixed') return STAND;
+  const r = O.rows('SELECT ad_client_id AS c, isaccessallorgs AS a, isuseuserorgaccess AS u, ad_tree_org_id AS tree FROM ad_role WHERE ad_role_id=?', [Number(roleId)])[0];
+  if (!r) refuse('unknown role ' + roleId);
+  const access = r.a === 'Y' ? '' : r.u === 'Y' ? null : " AND o.ad_org_id IN (SELECT ad_org_id FROM ad_role_orgaccess WHERE ad_role_id=" + Number(roleId) + " AND isactive='Y')";
+  if (access === null) refuse('role ' + roleId + ' takes its organisations from the user (IsUseUserOrgAccess=Y), which the door has no login user for; nothing was written');
+  const orgs = O.rows("SELECT o.ad_org_id AS id, o.issummary AS s FROM ad_org o WHERE o.isactive='Y' AND o.ad_client_id IN (0, ?)" + access + ' ORDER BY o.name', [r.c]);
+  if (orgs.some(o => o.s === 'Y') && r.tree) refuse('role ' + roleId + ' has an organisation tree (AD_Tree_Org_ID ' + r.tree + '): the summary organisations\' children (Login.getOrgsAddSummary) are not ported; nothing was written');
+  const list = orgs.filter(o => o.s !== 'Y').map(o => Number(o.id));   // a summary organisation adds only its tree children, and with no tree nothing (getOrgsAddSummary)
+  if (!list.length) refuse('role ' + roleId + ' is offered no organisation at login (Login.getOrgs: "No org for Role"); nothing was written');
+  const org = list.indexOf(STAND.org) >= 0 ? STAND.org : list[0];
+  const whs = O.rows("SELECT m_warehouse_id AS id FROM m_warehouse WHERE ad_org_id=? AND isactive='Y' AND isintransit='N' ORDER BY name", [org]).map(w => Number(w.id));
+  return { client: Number(r.c), org, wh: whs.indexOf(STAND.wh) >= 0 ? STAND.wh : (whs[0] || 0), orgs: list.join(',') };
+}
 function createRecord(O, a) {
   if (!a.kind) refuse('--kind is required');
   const t0 = Date.now(), K = kindRef(O, a.kind), R = roleOf(O, K, a), tab = tabFor(O, K, R, a), A = require(path.join(ROOT, 'erp', 'ad_callout.js'));
@@ -537,8 +556,9 @@ function createRecord(O, a) {
   const log = console.log; console.log = () => {};   // the engine prints its own § lines to stdout; stdout here carries only the answer
   try {
     A.bind((sql, p) => O.rows(sql, p));
-    const day = (a.date || today()), client = 11, org = Number(given.ad_org_id || 11), holder = {};
-    const ctx = A.sessionContext({ client, org, role: Number(a.role || 102), user: Number(a.user || 101), wh: 103, date: day, session: holder });
+    const S = loginOf(O, a.role), day = (a.date || today()), client = S.client, org = Number(given.ad_org_id || S.org), holder = {};
+    const ctx = A.sessionContext({ client, org, role: Number(a.role || 102), user: Number(a.user || 101), wh: S.wh, date: day, session: holder });
+    say('new login role=' + (a.role == null ? '-' : a.role) + ' client=' + client + ' org=' + org + ' wh=' + S.wh + ' orgs=' + S.orgs);
     const W = 1; let parent = null;
     const field0 = A.openTab(tab.id, { ctx, windowNo: W, tabNo: 0 });   // the target tab, to know its columns before choosing parents
     const link = field0.fields.filter(f => f.vo.IsParent).map(f => f.vo.ColumnName);
