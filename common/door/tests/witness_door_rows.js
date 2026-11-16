@@ -58,10 +58,10 @@ const DUP = [process.env.FIXTURE_DB, path.join(os.homedir(), 'bim-ootb', 'buildi
   k.chk('R4b a value with a quote is bound, not run (matches 0 rows)', !!inj && inj.total === 0, inj ? 'total=' + inj.total : 'no answer');
 
   // R5
-  const scaled = all(E, "SELECT CAST(ROUND(grandtotal*10000) AS INTEGER) FROM c_order WHERE docstatus='CO' AND grandtotal IS NOT NULL").reduce((x, r) => x + BigInt(r[0]), 0n);
+  const scaled = all(E, "SELECT CAST(ROUND(grandtotal*10000) AS INTEGER) FROM c_order WHERE c_currency_id=100 AND grandtotal IS NOT NULL").reduce((x, r) => x + BigInt(r[0]), 0n);
   const wantSum = (() => { const neg = scaled < 0n, d = (neg ? -scaled : scaled).toString().padStart(5, '0'); return (neg ? '-' : '') + (d.slice(0, -4) + '.' + d.slice(-4)).replace(/0+$/, '').replace(/\.$/, ''); })();
-  const a5 = ans(await door('erp.sum kind=Order column=GrandTotal docstatus=CO'));
-  k.chk('R5a erp.sum GrandTotal (CO) = independent scaled-integer sum ' + wantSum, !!a5 && a5.sum === wantSum, a5 ? 'sum=' + a5.sum + ' n=' + a5.n : 'no answer');
+  const a5 = ans(await door('erp.sum kind=Order column=GrandTotal C_Currency_ID=100')   /* one currency: §35 (CLI_ERP_IVR) never adds two; R5 is the exact adder */);
+  k.chk('R5a erp.sum GrandTotal (USD: one currency, §35) = independent scaled-integer sum ' + wantSum, !!a5 && a5.sum === wantSum, a5 ? 'sum=' + a5.sum + ' n=' + a5.n : 'no answer');
   const OC = require('../object_cli.js');
   k.chk('R5b the exact adder: 0.1+0.2+0.3 = 0.6 (floats: ' + (0.1 + 0.2 + 0.3) + ')', OC.decSum(['0.1', '0.2', '0.3']) === '0.6' && (0.1 + 0.2 + 0.3) !== 0.6, OC.decSum(['0.1', '0.2', '0.3']));
   // R6

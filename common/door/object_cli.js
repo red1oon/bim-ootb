@@ -340,7 +340,8 @@ function count(O, a) {
   return { kind: t.name, table: t.tablename, filters, count: n, population, verdict, summary };
 }
 // ── §R.V item 5: rows, a sum and group counts. Every column comes from the dictionary (reflection); values are bound, never spliced into SQL. ──
-const LIST_MAX = 1000, LIST_DEFAULT = 50, RB = () => process.env.ROWS_BREAK || '';   // W-DOOR-ROWS falsifiers: nofilter | floatsum | capoff
+const LIST_MAX = 1000, LIST_DEFAULT = 50, RB = () => process.env.ROWS_BREAK || '';
+const MONEY_REF = { 12: 'Amount', 37: 'Costs+Prices' }, SUM_BREAK = () => process.env.SUM_BREAK || '';   // §35; W-MIS-SUM-CUR falsifier: mixcur (the plain SUM)   // W-DOOR-ROWS falsifiers: nofilter | floatsum | capoff
 function colOf(t, cols, name, what) {
   const c = cols.filter(x => x.columnname.toLowerCase() === String(name).toLowerCase())[0];
   if (!c) refuse(noProperty(t.name, name, cols.map(x => x.columnname), what));
@@ -395,10 +396,20 @@ function sum(O, a) {
   if (!a.column) refuse('sum needs --column');
   const c = colOf(t, cols, a.column, 'sum'); if (!isNum(c)) refuse(c.columnname + ' is not a number column (' + (REF[c.ad_reference_id] || 'reference ' + c.ad_reference_id) + '), so it cannot be summed');
   const population = popOf(O, t, RR); w.where = w.where.concat(RR.and);
-  const vals = O.rows('SELECT CAST(' + c.columnname + ' AS TEXT) AS v FROM ' + t.tablename + whereSql(w) + (w.where.length ? ' AND ' : ' WHERE ') + c.columnname + ' IS NOT NULL', w.params).map(r => r.v);
-  const total = RB() === 'floatsum' ? String(vals.reduce((x, v) => x + Number(v), 0)) : decSum(vals), verdict = population === 0 ? 'VACUOUS' : 'OK';
-  say('sum kind=' + t.name + ' column=' + c.columnname + ' filters=' + JSON.stringify(w.filters) + roleSay(RR) + ' n=' + vals.length + ' sum=' + total + ' population=' + population + ' ms=' + (Date.now() - t0) + ' verdict=' + verdict);
-  return { kind: t.name, table: t.tablename, column: c.columnname, filters: w.filters, n: vals.length, sum: total, population, verdict, summary: verdict === 'VACUOUS' ? 'this model holds no ' + t.name + ' record, so nothing was summed' : total + ' = sum of ' + c.columnname + ' over ' + vals.length + ' ' + t.name, ...(R ? { role: R.info } : {}) };
+  // §35 (bim-compiler prompts/CLI_ERP_IVR.md, owner 2026-11-17 "Per currency"): an Amount (12) or Costs+Prices (37) column of a table with C_Currency_ID is summed per currency; two currencies are never added (capex/tiles.js:4)
+  const money = MONEY_REF[c.ad_reference_id] && SUM_BREAK() !== 'mixcur' && columnsOf(O.rows, t).some(x => x.columnname.toLowerCase() === 'c_currency_id');
+  const rows = O.rows('SELECT CAST(' + c.columnname + ' AS TEXT) AS v' + (money ? ', CAST(C_Currency_ID AS TEXT) AS cur' : '') + ' FROM ' + t.tablename + whereSql(w) + (w.where.length ? ' AND ' : ' WHERE ') + c.columnname + ' IS NOT NULL', w.params), vals = rows.map(r => r.v);
+  let byCurrency = null, currency;
+  if (money) {
+    const g = {}; rows.forEach(r => { const k = r.cur == null || r.cur === '' ? 'none' : String(Number(r.cur)); (g[k] = g[k] || []).push(r.v); });
+    const iso = {}; try { O.rows('SELECT C_Currency_ID AS id, ISO_Code AS iso FROM C_Currency').forEach(r => { iso[String(r.id)] = r.iso; }); } catch (e) { /* a model with no currency table: ids only */ }
+    byCurrency = Object.keys(g).sort((x, y) => (x === 'none') - (y === 'none') || Number(x) - Number(y)).map(k => ({ currency: k === 'none' ? null : Number(k), iso: k === 'none' ? null : (iso[k] || null), n: g[k].length, sum: decSum(g[k]) }));
+    if (byCurrency.length === 1) { currency = byCurrency[0].iso || byCurrency[0].currency; byCurrency = null; }
+  }
+  const total = byCurrency ? null : RB() === 'floatsum' ? String(vals.reduce((x, v) => x + Number(v), 0)) : decSum(vals), verdict = population === 0 ? 'VACUOUS' : 'OK';
+  say('sum kind=' + t.name + ' column=' + c.columnname + ' filters=' + JSON.stringify(w.filters) + roleSay(RR) + ' n=' + vals.length + ' sum=' + total + (money ? ' currencies=' + (byCurrency ? byCurrency.map(b => (b.iso || b.currency) + ':' + b.sum).join(',') : currency) : '') + ' population=' + population + ' ms=' + (Date.now() - t0) + ' verdict=' + verdict);
+  const many = byCurrency ? 'amounts in ' + byCurrency.length + ' currencies are not added: ' + byCurrency.map(b => (b.iso || b.currency || 'no currency') + ' ' + b.sum + ' (' + b.n + ')').join(' · ') + '; one currency: add C_Currency_ID=<id>' : null;
+  return { kind: t.name, table: t.tablename, column: c.columnname, filters: w.filters, n: vals.length, sum: total, ...(currency != null ? { currency } : {}), ...(byCurrency ? { byCurrency } : {}), population, verdict, summary: verdict === 'VACUOUS' ? 'this model holds no ' + t.name + ' record, so nothing was summed' : many || (total + (currency != null ? ' ' + currency : '') + ' = sum of ' + c.columnname + ' over ' + vals.length + ' ' + t.name), ...(R ? { role: R.info } : {}) };
 }
 function group(O, a) {
   const t0 = Date.now(), t = kindOf(O.rows, a.kind), RR = roleRows(O, t, columnsOf(O.rows, t), a), cols = RR.cols, w = filtersOf(t, cols, a, O), R = RR.R;
