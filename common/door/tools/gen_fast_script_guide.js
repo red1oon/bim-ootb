@@ -16,11 +16,11 @@
 const fs = require('fs'), os = require('os'), path = require('path'), https = require('https'), { spawn } = require('child_process');
 const ROOT = path.join(__dirname, '..', '..', '..');
 const LIVE = 'https://red1oon.github.io/bim-ootb/';
-const FLAT = ['modeller/tools/edit_cli.js', 'modeller/tools/bim_mcp.js', 'common/door/door.js', 'common/door/verbs.json', 'common/door/render.js', 'viewer/tools/viewer_verbs.js', 'viewer/tools/viewer_driver.js'];   // the 4-file download + the 2 Viewer files (NEURO §0.15)
+const FLAT = ['modeller/tools/edit_cli.js', 'modeller/tools/bim_mcp.js', 'common/door/door.js', 'common/door/verbs.json', 'common/door/msg_core.js', 'common/door/vocab/messages.json', 'common/door/render.js', 'viewer/tools/viewer_verbs.js', 'viewer/tools/viewer_driver.js'];   // the 6-file download (msg_core.js + messages.json since VOCAB_MESSAGE_CATALOG.md §6) + the 2 Viewer files (NEURO §0.15)
 
 const loadVocab = (file) => JSON.parse(fs.readFileSync(file || path.join(ROOT, 'common', 'door', 'verbs.json'), 'utf8'));
 
-// Which download does a verb need? A verb whose program is edit_cli (or a composed verb whose lines all are) runs from the 4 files; any other needs a bim-ootb checkout.
+// Which download does a verb need? A verb whose program is edit_cli (or a composed verb whose lines all are) runs from the 6 files; any other needs a bim-ootb checkout.
 function needs(entry, vocab) {
   const byVerb = new Map(vocab.verbs.map(v => [v.verb, v]));
   const clis = (e, seen) => {
@@ -28,7 +28,7 @@ function needs(entry, vocab) {
     return [e.calls.cli];
   };
   const all = clis(entry, [entry.verb]);
-  return all.length && all.every(c => c === 'edit_cli') ? 'the 4-file download' : all.length && all.every(c => c === 'edit_cli' || c === 'viewer_verbs') ? 'the 4 files + the 2 Viewer files' : 'a bim-ootb checkout';
+  return all.length && all.every(c => c === 'edit_cli') ? 'the 6-file download' : all.length && all.every(c => c === 'edit_cli' || c === 'viewer_verbs') ? 'the 6 files + the 2 Viewer files' : 'a bim-ootb checkout';
 }
 const UNIT = { m: 'metres', h: 'hours', day: 'day number' };
 const inputText = (i) => '`' + i.name + '`' + (i.unit ? ' (' + (UNIT[i.unit] || i.unit) + ')' : '') + (i.required ? '' : ' (optional)');
@@ -52,11 +52,12 @@ function parsePage(md) {
   return { runs, files };
 }
 // the only fields that differ between two real runs of the same command: the request id and the milliseconds
-const normalise = (s) => String(s).replace(/"request":"[^"]*"/g, '"request":"R"').replace(/"ms":\d+/g, '"ms":0');
+// a CSV ends its lines with CRLF (render.js, RFC 4180); a markdown page cannot show a CR, so the page holds LF and both sides compare with CRLF read as LF
+const normalise = (s) => String(s).replace(/\r\n/g, '\n').replace(/"request":"[^"]*"/g, '"request":"R"').replace(/"ms":\d+/g, '"ms":0');
 const cutLines = (s, n) => (n ? s.split('\n').map(l => (l.length > n ? l.slice(0, n) + '…' : l)).join('\n') : s);
 
 function get(rel) { return new Promise((res, rej) => https.get(LIVE + rel + '?nc=' + Date.now(), (r) => { if (r.statusCode !== 200) { rej(new Error('HTTP ' + r.statusCode + ' ' + rel)); r.resume(); return; } const c = []; r.on('data', d => c.push(d)); r.on('end', () => res(Buffer.concat(c))); }).on('error', rej)); }
-async function makeFlatFolder(local) {   // an empty folder holding only the 4 files, from the live site (or from this tree when local)
+async function makeFlatFolder(local) {   // an empty folder holding only the 6 files, from the live site (or from this tree when local)
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fast_script_flat_'));
   for (const rel of FLAT) fs.writeFileSync(path.join(dir, path.basename(rel)), local ? fs.readFileSync(path.join(ROOT, rel)) : await get(rel));
   return dir;
@@ -64,7 +65,7 @@ async function makeFlatFolder(local) {   // an empty folder holding only the 4 f
 // Run one command text as the page prints it. a command that names `common/door/` (door.js, red1.js) runs in the checkout; every other command in the flat folder.
 function runBlock(run, ctx) {   // ctx {flat, root, files:[{name,text}]}
   return new Promise((res) => {
-    const cwd = run.cmd.indexOf('common/door/') >= 0 ? ctx.root : ctx.flat;   // a checkout command runs in the checkout; everything else in the 4-file folder
+    const cwd = run.cmd.indexOf('common/door/') >= 0 ? ctx.root : ctx.flat;   // a checkout command runs in the checkout; everything else in the 6-file folder
     (ctx.files || []).forEach(f => { if (run.cmd.indexOf(f.name) >= 0) fs.writeFileSync(path.join(cwd, f.name), f.text + '\n'); });
     // ISOLATION (coordinator 2026-11-16: the shared ~/.cache/bim_object op-log was polluted by other agents' runs, so a block that read it was not byte-stable, and two runs of this witness at once shared /tmp/fast_guide_*):
     // every block gets its OWN op-log and journal in this run's folder; a command that names its own BIM_OBJECT_OPLOG (the blocks that build on each other) still wins, and
@@ -104,7 +105,7 @@ if (require.main === module) (async () => {
       const x = await runBlock(r, { flat, root: ROOT, files }), cut = r.opts.cut ? +r.opts.cut : 0;
       L('run ' + r.id + ' exit=' + x.code + ' stdout=' + x.out.length + ' bytes' + (x.out ? '' : ' EMPTY'));
       if (!x.out) continue;
-      edits.push({ r, block: r.head + '\n```text\n$ ' + r.cmd + '\n' + cutLines(x.out, cut) + '\n```' });
+      edits.push({ r, block: r.head + '\n```text\n$ ' + r.cmd + '\n' + cutLines(x.out.replace(/\r\n/g, '\n'), cut) + '\n```' });
     }
     edits.reverse().forEach(e => { md = md.slice(0, e.r.index) + e.block + md.slice(e.r.index + e.r.len); });   // applied last-first so earlier offsets stay valid
   }

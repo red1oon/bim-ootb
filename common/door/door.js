@@ -23,6 +23,7 @@ const ROOT = path.join(__dirname, '..', '..');
 const LIVE = 'https://red1oon.github.io/bim-ootb/';
 const FILES = {   // name -> [repo path from the repo root, name beside door.js]
   'door.js': ['common/door/door.js'], 'render.js': ['common/door/render.js'], 'verbs.json': ['common/door/verbs.json'], 'edit_cli.js': ['modeller/tools/edit_cli.js'], 'model_session.js': ['modeller/tools/model_session.js'],
+  'msg_core.js': ['common/door/msg_core.js'], 'messages.json': ['common/door/vocab/messages.json'],
   'bim_mcp.js': ['modeller/tools/bim_mcp.js'], 'viewer_verbs.js': ['viewer/tools/viewer_verbs.js'], 'viewer_driver.js': ['viewer/tools/viewer_driver.js'], 'film_path_vis.js': ['viewer/tools/film_path_vis.js'], 'schedule_verbs.js': ['viewer/tools/schedule_verbs.js'], 'object_cli.js': ['common/door/object_cli.js'], 'erp_cli.js': ['common/door/erp_cli.js'], 'walk_cli.js': ['modeller/tools/walk_cli.js'], 'ops_cli.js': ['common/door/ops_cli.js'], 'legacy_cli.js': ['common/door/legacy_cli.js']
 };
 function locate(name) {
@@ -31,6 +32,16 @@ function locate(name) {
 }
 const curlFor = (names) => names.map(n => 'curl -O ' + LIVE + FILES[n][0]).join('\n');
 function missingFiles(names) { return names.filter(n => !fs.existsSync(locate(n))); }
+// The text a person or an AI reads as an ANSWER lives in the message catalog (vocab/messages.json, keys door.*), read by msg_core.js through the resolver above
+// (bim-compiler prompts/VOCAB_MESSAGE_CATALOG.md §6, P2b; witness W-MSG-DOOR). PINNED TO ENGLISH: the envelope, the journal and what an AI receives never change;
+// a person's terminal translates, the door does not. Read once, on the first message. No built-in English is kept as a fallback: a missing catalog is named with its curl line.
+const CATALOG = ['msg_core.js', 'messages.json'];
+const catalogMissing = (miss) => 'the message catalog is not beside door.js (' + miss.join(', ') + '). Fetch it:\n' + curlFor(miss);   // the one literal left (named exemption: it cannot come from a missing catalog)
+let MSG = null;
+const M = function () {
+  if (!MSG) { const miss = missingFiles(CATALOG); if (miss.length) throw new Error(catalogMissing(miss)); MSG = require(locate('msg_core.js')).create(JSON.parse(fs.readFileSync(locate('messages.json'), 'utf8'))); }
+  return MSG.t.apply(null, arguments);
+};
 // The ONLY programs a verb may call. A vocabulary entry names one of these keys; it never names a path or a program (W-VOCAB-NOESCAPE).
 const CLI_TABLE = { edit_cli: locate('edit_cli.js'), model_session: locate('model_session.js'), viewer_verbs: locate('viewer_verbs.js'), film_path_vis: locate('film_path_vis.js'), schedule_verbs: locate('schedule_verbs.js'), object_cli: locate('object_cli.js'), erp_cli: locate('erp_cli.js'), walk_cli: locate('walk_cli.js'), ops_cli: locate('ops_cli.js'), legacy_cli: locate('legacy_cli.js') };
 const HARM = ['read', 'trial', 'writes', 'posts', 'sends'];
@@ -59,7 +70,7 @@ class Dec {
   sub(o) { const [x, y, s] = Dec.align(this, o); return new Dec(x - y, s); }
   mul(o) { return new Dec(this.big * o.big, this.scale + o.scale); }
   div(o) {
-    if (o.big === 0n) throw new Error('division by zero');
+    if (o.big === 0n) throw new Error(M('door.division_by_zero'));
     const neg = (this.big < 0n) !== (o.big < 0n), n = (this.big < 0n ? -this.big : this.big) * 10n ** BigInt(o.scale + DIV_DIGITS), d = (o.big < 0n ? -o.big : o.big) * 10n ** BigInt(this.scale);
     const q = (2n * n + d) / (2n * d);
     return new Dec(neg ? -q : q, DIV_DIGITS);
@@ -73,19 +84,19 @@ class Dec {
 
 // ───────────────────────── vocabulary and the generated validator ─────────────────────────
 const TYPES = {   // door-side shape checks; the engine checks meaning (does the grid line exist?). `number` is handled apart.
-  building: { re: /^[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}$/, what: 'a building name (letters, digits, _ . -; up to 64)' },
-  grid_line: { re: /^[A-Za-z][A-Za-z0-9_]{0,15}$/, what: 'a grid line id such as gx6' },
-  discipline: { re: /^[A-Za-z0-9_]{1,16}$/, what: 'a discipline code such as ARC or MEP' },
-  string: { re: /^[^\u0000-\u001f]{1,200}$/, what: 'a short text' },
-  file: { re: /^[^\u0000-\u001f]{1,500}$/, what: 'a file path' }
+  building: { re: /^[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}$/, get what() { return M('door.type.building'); } },
+  grid_line: { re: /^[A-Za-z][A-Za-z0-9_]{0,15}$/, get what() { return M('door.type.grid_line'); } },
+  discipline: { re: /^[A-Za-z0-9_]{1,16}$/, get what() { return M('door.type.discipline'); } },
+  string: { re: /^[^\u0000-\u001f]{1,200}$/, get what() { return M('door.type.string'); } },
+  file: { re: /^[^\u0000-\u001f]{1,500}$/, get what() { return M('door.type.file'); } }
 };
 const jsType = (t) => (t === 'number' ? 'number' : 'string');
 function loadVocab(file) {
   const j = JSON.parse(fs.readFileSync(file || locate('verbs.json'), 'utf8')), byVerb = new Map();
-  for (const e of j.verbs) { if (byVerb.has(e.verb)) throw new Error('verbs.json: duplicate verb ' + e.verb); byVerb.set(e.verb, e); }
+  for (const e of j.verbs) { if (byVerb.has(e.verb)) throw new Error(M('door.vocab_duplicate', e.verb)); byVerb.set(e.verb, e); }
   // an ALIAS (CLI_ERP_IVR §11) is the canonical entry under an old name: it may not differ in harm, inputs, calls, actors, returns or witness (W-VOCAB-COMPOSE C4)
   const AL = ['verb', 'app', 'title', 'alias_of', 'deprecated', 'mcp_name'], sig = (e) => JSON.stringify(Object.keys(e).filter(k => AL.indexOf(k) < 0).sort().map(k => [k, e[k]]));
-  for (const e of j.verbs) if (e.alias_of) { const c = byVerb.get(e.alias_of); if (!c) throw new Error('verbs.json: alias ' + e.verb + ' names no verb ' + e.alias_of); if (!process.env.DOOR_BREAK && sig(e) !== sig(c)) throw new Error('verbs.json: alias ' + e.verb + ' differs from ' + e.alias_of + ' (an alias may not change harm, inputs, calls, actors or witness)'); }
+  for (const e of j.verbs) if (e.alias_of) { const c = byVerb.get(e.alias_of); if (!c) throw new Error(M('door.vocab_alias_none', e.verb, e.alias_of)); if (!process.env.DOOR_BREAK && sig(e) !== sig(c)) throw new Error(M('door.vocab_alias_differs', e.verb, e.alias_of)); }
   return { verbs: j.verbs, byVerb, raw: j };
 }
 // The one validator. `args` is typed: a number input is a finite JS number or a Dec; every other input a string. Returns null (fine) or the reason.
@@ -94,23 +105,23 @@ function validate(entry, args) {
   const names = entry.inputs.map(i => i.name), miss = entry.inputs.filter(i => i.required && (args[i.name] === undefined || args[i.name] === null || args[i.name] === '')).map(i => i.name);
   if (miss.length) {   // §1d.1: a key typed close to a missing input is named as a misspelling (never applied)
     const near = Object.keys(args).filter(k => names.indexOf(k) < 0).map(k => ({ k, n: require('./assist_core.js').nearest(k, miss, 1)[0] })).filter(x => x.n);
-    return 'missing input: ' + miss.join(', ') + (near.length ? ' (you typed ' + near.map(x => x.k + '=, nearest: ' + x.n.name).join('; ') + ')' : '');
+    return near.length ? M('door.missing_input_near', miss.join(', '), near.map(x => M('door.near_item', x.k, x.n.name)).join('; ')) : M('door.missing_input', miss.join(', '));
   }
   const extra = Object.keys(args).filter(k => names.indexOf(k) < 0);
   // §0.13: a verb that declares calls.rest takes further column=value inputs; the ENGINE checks each column against the dictionary (reflection). The door only checks the shape.
-  if (extra.length && entry.calls && entry.calls.rest) { const bad = extra.filter(k => typeof args[k] !== 'string' || !TYPES.string.re.test(args[k]) || !/^[A-Za-z_]\w{0,63}$/.test(k)); return bad.length ? 'input ' + bad[0] + ' must be ' + TYPES.string.what : shapeOf(entry, args); }
-  if (extra.length) return 'unknown input: ' + extra.join(', ') + ' (the verb ' + entry.verb + ' takes: ' + names.join(', ') + ')';
+  if (extra.length && entry.calls && entry.calls.rest) { const bad = extra.filter(k => typeof args[k] !== 'string' || !TYPES.string.re.test(args[k]) || !/^[A-Za-z_]\w{0,63}$/.test(k)); return bad.length ? M('door.input_must_be', bad[0], TYPES.string.what) : shapeOf(entry, args); }
+  if (extra.length) return M('door.unknown_input', extra.join(', '), entry.verb, names.join(', '));
   return shapeOf(entry, args);
 }
 function shapeOf(entry, args) {
   if (BREAK() === 'shape') return null;
   for (const i of entry.inputs) {
     const v = args[i.name]; if (v === undefined) continue;
-    if (i.type === 'number') { if (!(v instanceof Dec) && !(typeof v === 'number' && isFinite(v))) return 'input ' + i.name + ' must be a number'; continue; }
-    if (typeof v !== 'string') return 'input ' + i.name + ' must be a string';
-    const T = TYPES[i.type]; if (!T) return 'vocabulary error: input ' + i.name + ' has unknown type ' + i.type;
-    if (!T.re.test(v)) return 'input ' + i.name + ' must be ' + T.what + ', got "' + v.slice(0, 60) + '"';
-    if (i.enum && i.enum.indexOf(v) < 0) return 'input ' + i.name + ' must be one of ' + i.enum.join(', ') + ', got "' + v + '"';
+    if (i.type === 'number') { if (!(v instanceof Dec) && !(typeof v === 'number' && isFinite(v))) return M('door.input_number', i.name); continue; }
+    if (typeof v !== 'string') return M('door.input_string', i.name);
+    const T = TYPES[i.type]; if (!T) return M('door.input_unknown_type', i.name, i.type);
+    if (!T.re.test(v)) return M('door.input_type_got', i.name, T.what, v.slice(0, 60));
+    if (i.enum && i.enum.indexOf(v) < 0) return M('door.input_enum_got', i.name, i.enum.join(', '), v);
   }
   return null;
 }
@@ -119,7 +130,7 @@ function coerce(inp, raw) {
   if (inp.type === 'number') {
     if (raw instanceof Dec || typeof raw === 'number') return raw;
     const d = Dec.parse(raw);
-    if (!d) throw new Error('input ' + inp.name + ' must be a plain number' + (inp.unit ? ' in ' + inp.unit : '') + ', got "' + raw + '"' + (/^-?\d+(\.\d+)?[A-Za-z]+$/.test(String(raw)) ? ' (units come from the vocabulary, not the line)' : ''));
+    if (!d) { const hint = /^-?\d+(\.\d+)?[A-Za-z]+$/.test(String(raw)); throw new Error(inp.unit ? (hint ? M('door.plain_number_unit_hint', inp.name, inp.unit, raw) : M('door.plain_number_unit', inp.name, inp.unit, raw)) : (hint ? M('door.plain_number_hint', inp.name, raw) : M('door.plain_number', inp.name, raw))); }
     return d;
   }
   return raw instanceof Dec ? raw.toString() : (typeof raw === 'number' ? String(raw) : raw);
@@ -154,8 +165,8 @@ function tokenize(line) {
     if (!cur) cur = { text: '', quoted: false };
     cur.text += c; if (c === '{') depth++;
   }
-  if (q) throw new Error('unclosed quote');
-  if (depth > 0) throw new Error('unclosed { in expression');
+  if (q) throw new Error(M('door.unclosed_quote'));
+  if (depth > 0) throw new Error(M('door.unclosed_brace', '{'));
   push(); return toks;
 }
 // -> {blank:true} | {question:true} | {name, verb, kv:[{k, raw, quoted}]} ; throws for a malformed command
@@ -169,8 +180,8 @@ function parseLine(line) {
   const kv = [], seen = {};
   for (const t of toks.slice(i + 1)) {
     const m = /^([A-Za-z_]\w*)=([\s\S]*)$/.exec(t.text);
-    if (!m) throw new Error('"' + t.text + '" is not key=value' + (/^[A-Za-z_][\w-]*=/.test(t.text) ? ' (a key has letters, digits and _: ' + t.text.split('=')[0].replace(/-/g, '_') + '= ?)' : ''));
-    if (seen[m[1]]) throw new Error('input ' + m[1] + ' given twice');
+    if (!m) throw new Error(/^[A-Za-z_][\w-]*=/.test(t.text) ? M('door.not_key_value_key', t.text, t.text.split('=')[0].replace(/-/g, '_')) : M('door.not_key_value', t.text));
+    if (seen[m[1]]) throw new Error(M('door.input_twice', m[1]));
     seen[m[1]] = 1; kv.push({ k: m[1], raw: m[2], quoted: t.quoted });
   }
   return { name, verb: head.text, kv };
@@ -188,39 +199,39 @@ function evalExpr(src, scope, vocab) {
     if (m) { toks.push({ t: 'num', v: Dec.parse(m[0]) }); i += m[0].length; continue; }
     m = /^[A-Za-z_]\w*(?:\.[A-Za-z_]\w*|\[[^\]]*\])*/.exec(src.slice(i));
     if (m) { toks.push({ t: 'ref', v: m[0] }); i += m[0].length; continue; }
-    throw new Error('cannot read "' + src.slice(i, i + 12) + '" in {' + src + '}');
+    throw new Error(M('door.expr_cannot_read', src.slice(i, i + 12), '{' + src + '}'));
   }
   let p = 0;
   const peek = () => toks[p] && toks[p].t, take = () => toks[p++];
   const ref = (text) => {
     const segs = []; const re = /([A-Za-z_]\w*)|\[([^\]]*)\]/g; let m; while ((m = re.exec(text))) segs.push(m[1] !== undefined ? { key: m[1] } : { idx: m[2].replace(/^["']|["']$/g, '') });
-    const root = scope.get(segs[0].key); if (!root) throw new Error('"' + segs[0].key + '" is not an input or a named result in {' + src + '}');
-    if (segs.length === 1) { if (root.kind === 'input') return root.value; throw new Error('"' + segs[0].key + '" is a whole result; name a field of it, e.g. ' + segs[0].key + '.' + ((root.verbEntry && root.verbEntry.returns.fields[0] && root.verbEntry.returns.fields[0].path) || 'field')); }
-    if (root.kind !== 'result') throw new Error('"' + segs[0].key + '" is an input; it has no fields');
+    const root = scope.get(segs[0].key); if (!root) throw new Error(M('door.expr_unknown_name', segs[0].key, '{' + src + '}'));
+    if (segs.length === 1) { if (root.kind === 'input') return root.value; throw new Error(M('door.expr_whole_result', segs[0].key, (root.verbEntry && root.verbEntry.returns.fields[0] && root.verbEntry.returns.fields[0].path) || M('door.word_field'))); }
+    if (root.kind !== 'result') throw new Error(M('door.expr_input_no_fields', segs[0].key));
     const decl = segs.slice(1).map(s => (s.key !== undefined ? '.' + s.key : '[*]')).join('').replace(/^\./, ''), fields = (root.verbEntry.returns.fields || []).map(f => f.path);
-    if (fields.indexOf(decl) < 0) throw new Error('field "' + decl + '" is not declared in the returns of ' + root.verb + ' (declared: ' + fields.join(', ') + ')');
+    if (fields.indexOf(decl) < 0) throw new Error(M('door.expr_field_undeclared', decl, root.verb, fields.join(', ')));
     let node = root.answer;
     for (const s of segs.slice(1)) {
-      if (s.key !== undefined) { if (node == null || typeof node !== 'object' || !(s.key in node)) throw new Error('the ' + root.verb + ' answer has no ' + s.key + ' (in ' + text + ')'); node = node[s.key]; }
+      if (s.key !== undefined) { if (node == null || typeof node !== 'object' || !(s.key in node)) throw new Error(M('door.expr_answer_no_key', root.verb, s.key, text)); node = node[s.key]; }
       else {
         const e = scope.get(s.idx), key = e && e.kind === 'input' ? String(e.value) : s.idx;
-        if (!Array.isArray(node)) throw new Error('not a list at [' + s.idx + '] in ' + text);
-        const hit = node.filter(x => x && x.id === key)[0]; if (!hit) throw new Error('the ' + root.verb + ' answer has no element with id ' + key + ' (in ' + text + ')');
+        if (!Array.isArray(node)) throw new Error(M('door.expr_not_list', s.idx, text));
+        const hit = node.filter(x => x && x.id === key)[0]; if (!hit) throw new Error(M('door.expr_no_id', root.verb, key, text));
         node = hit;
       }
     }
     if (typeof node === 'number') return Dec.of(node);
     if (typeof node === 'string') return node;
-    throw new Error('field ' + decl + ' is not a number or text');
+    throw new Error(M('door.expr_field_type', decl));
   };
-  const num = (v) => { if (v instanceof Dec) return v; throw new Error('"' + v + '" is text, not a number, in {' + src + '}'); };
+  const num = (v) => { if (v instanceof Dec) return v; throw new Error(M('door.expr_text', v, '{' + src + '}')); };
   const atom = () => {
-    const t = take(); if (!t) throw new Error('unexpected end of {' + src + '}');
+    const t = take(); if (!t) throw new Error(M('door.expr_end', '{' + src + '}'));
     if (t.t === 'num') return t.v;
     if (t.t === 'ref') return ref(t.v);
     if (t.t === '-') return num(atom()).neg();
-    if (t.t === '(') { const v = sum(); if (peek() !== ')') throw new Error('missing ) in {' + src + '}'); take(); return v; }
-    throw new Error('unexpected "' + t.t + '" in {' + src + '}');
+    if (t.t === '(') { const v = sum(); if (peek() !== ')') throw new Error(M('door.expr_paren', '{' + src + '}')); take(); return v; }
+    throw new Error(M('door.expr_unexpected', t.t, '{' + src + '}'));
   };
   const prod = () => { let v = atom(); while (peek() === '*' || peek() === '/') { const o = take().t, r = atom(); v = bin(o, v, r); } return v; };
   const sum = () => { let v = prod(); while (peek() === '+' || peek() === '-') { const o = take().t, r = prod(); v = bin(o, v, r); } return v; };
@@ -229,7 +240,7 @@ function evalExpr(src, scope, vocab) {
     if (BREAK() === 'float') { const x = +a.toString(), y = +b.toString(); return Dec.parse(String(o === '+' ? x + y : o === '-' ? x - y : o === '*' ? x * y : x / y)) || a; }   // falsifier: floating point
     return o === '+' ? a.add(b) : o === '-' ? a.sub(b) : o === '*' ? a.mul(b) : a.div(b);
   };
-  const v = sum(); if (p < toks.length) throw new Error('unexpected "' + toks[p].t + '" in {' + src + '}');
+  const v = sum(); if (p < toks.length) throw new Error(M('door.expr_unexpected', toks[p].t, '{' + src + '}'));
   if (BREAK() === 'halve' && v instanceof Dec) return v.div(Dec.parse('2'));   // falsifier: the arithmetic is wrong
   return v;
 }
@@ -254,17 +265,17 @@ function createDoor(opts) {
     const state = {};
     const visit = (e, chain) => {
       if (!e.body) return;
-      if (chain.indexOf(e.verb) >= 0) throw new Error('verbs.json: composed verb ' + e.verb + ' calls itself (' + chain.concat(e.verb).join(' > ') + ')');
+      if (chain.indexOf(e.verb) >= 0) throw new Error(M('door.vocab_cycle', e.verb, chain.concat(e.verb).join(' > ')));
       let top = 0, allowed = e.actors.slice();
       e.body.forEach((ln, n) => {
-        const pl = parseLine(ln); if (pl.question || pl.blank) throw new Error('verbs.json: ' + e.verb + ' line ' + (n + 1) + ' is not a command');
-        const t = vocab.byVerb.get(pl.verb); if (!t) throw new Error('verbs.json: ' + e.verb + ' line ' + (n + 1) + ' calls unknown verb ' + pl.verb);
-        pl.kv.forEach(x => { if (!t.inputs.some(i => i.name === x.k) && !(t.calls && t.calls.rest)) throw new Error('verbs.json: ' + e.verb + ' line ' + (n + 1) + ' gives ' + pl.verb + ' an unknown input ' + x.k); });
+        const pl = parseLine(ln); if (pl.question || pl.blank) throw new Error(M('door.vocab_body_not_command', e.verb, n + 1));
+        const t = vocab.byVerb.get(pl.verb); if (!t) throw new Error(M('door.vocab_body_unknown_verb', e.verb, n + 1, pl.verb));
+        pl.kv.forEach(x => { if (!t.inputs.some(i => i.name === x.k) && !(t.calls && t.calls.rest)) throw new Error(M('door.vocab_body_unknown_input', e.verb, n + 1, pl.verb, x.k)); });
         visit(t, chain.concat(e.verb));
         top = Math.max(top, HARM.indexOf(t.harm)); allowed = allowed.filter(a => t.actors.indexOf(a) >= 0);
       });
-      if (HARM[top] !== e.harm) throw new Error('verbs.json: ' + e.verb + ' declares harm ' + e.harm + ' but its lines reach ' + HARM[top]);
-      if (allowed.length !== e.actors.length) throw new Error('verbs.json: ' + e.verb + ' lists actors that a line of its body does not allow');
+      if (HARM[top] !== e.harm) throw new Error(M('door.vocab_body_harm', e.verb, e.harm, HARM[top]));
+      if (allowed.length !== e.actors.length) throw new Error(M('door.vocab_body_actors', e.verb));
     };
     vocab.verbs.forEach(e => visit(e, []));
   }
@@ -281,7 +292,7 @@ function createDoor(opts) {
   function spawnCli(key, argv) {
     return new Promise((res) => {
       const file = cli[key];
-      if (!file || !fs.existsSync(file)) return res({ code: 1, out: '', err: key + ' is not at ' + file + '. ' + (key === 'edit_cli' ? 'Download it beside door.js: ' + curlFor(['edit_cli.js']) : key === 'viewer_verbs' ? 'Download the two Viewer files beside door.js: ' + curlFor(['viewer_verbs.js', 'viewer_driver.js']) : 'This verb needs a bim-ootb checkout.') });
+      if (!file || !fs.existsSync(file)) return res({ code: 1, out: '', err: key === 'edit_cli' ? M('door.cli_missing_edit', key, file, curlFor(['edit_cli.js'])) : key === 'viewer_verbs' ? M('door.cli_missing_viewer', key, file, curlFor(['viewer_verbs.js', 'viewer_driver.js'])) : M('door.cli_missing_checkout', key, file) });
       door.spawned++;
       let out = '', err = '';
       const p = spawn(process.execPath, [file].concat(argv), { env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -290,28 +301,28 @@ function createDoor(opts) {
     });
   }
   function engineResult(entry, base, r) {   // each engine's own exit contract -> the envelope's status; its JSON stays inside, unchanged
-    const who = entry.calls.who || 'the app', fail = (why, status) => envelope(base, status || 'error', { why });
+    const who = entry.calls.who || M('door.who_default'), fail = (why, status) => envelope(base, status || 'error', { why });
     const parse = () => { try { return JSON.parse(r.out); } catch (e) { return undefined; } };
     if (entry.calls.cli === 'edit_cli') {   // exit 0 every edit reported · 3 refused or stopped (an answer) · 2 usage · 1 failed
       if ((r.code === 0 || r.code === 3) && r.out) {
-        const a = parse(); if (a === undefined) return fail('the ' + who.replace(/^the /, '') + ' answered with text that is not JSON');
+        const a = parse(); if (a === undefined) return fail(M('door.not_json', who.replace(/^the /, '')));
         const edit = (a.edits || []).filter(x => x.refused)[0] || (a.edits || [])[0] || {}, nc = (edit.report && edit.report.notChecked) || [];
-        return envelope(base, r.code === 3 ? 'refused' : 'ok', { answer: a, raw: r.out, why: r.code === 3 ? (edit.reason || 'refused') : null, notChecked: nc });
+        return envelope(base, r.code === 3 ? 'refused' : 'ok', { answer: a, raw: r.out, why: r.code === 3 ? (edit.reason || M('door.refused')) : null, notChecked: nc });
       }
-      return fail('the app could not answer (exit ' + r.code + '): ' + (r.err || r.out || 'no output').split('\n').slice(-3).join(' '));
+      return fail(M('door.app_failed', r.code, (r.err || r.out || M('door.no_output')).split('\n').slice(-3).join(' ')));
     }
     if (entry.calls.cli === 'viewer_verbs') {   // exit 0 the Viewer answered · 1 an error with the reason on stderr (INCONCLUSIVE/VACUOUS arrive here) · 2 usage
-      if (r.code === 0 && r.out) { const a = parse(); return a === undefined ? fail('the Viewer answered with text that is not JSON') : envelope(base, a.verdict === 'OK' ? 'ok' : 'inconclusive', { answer: a, raw: r.out, why: a.verdict === 'OK' ? null : a.summary }); }
-      const msg = (r.err.split('\n').filter(l => /VIEWER_VERB FAIL|viewer/.test(l)).pop() || r.err || r.out || 'no output').replace(/^§VIEWER_VERB FAIL /, '');
-      return fail('the Viewer could not answer (exit ' + r.code + '): ' + msg, /the Viewer says (INCONCLUSIVE|VACUOUS)/.test(msg) ? 'inconclusive' : 'error');
+      if (r.code === 0 && r.out) { const a = parse(); return a === undefined ? fail(M('door.viewer_not_json')) : envelope(base, a.verdict === 'OK' ? 'ok' : 'inconclusive', { answer: a, raw: r.out, why: a.verdict === 'OK' ? null : a.summary }); }
+      const msg = (r.err.split('\n').filter(l => /VIEWER_VERB FAIL|viewer/.test(l)).pop() || r.err || r.out || M('door.no_output')).replace(/^§VIEWER_VERB FAIL /, '');
+      return fail(M('door.viewer_failed', r.code, msg), /the Viewer says (INCONCLUSIVE|VACUOUS)/.test(msg) ? 'inconclusive' : 'error');
     }
     if (entry.calls.cli === 'film_path_vis') {   // exit 0 judged · 3 INCONCLUSIVE (nothing judged) · 1 failed · 2 usage
       const a = parse();
       if ((r.code === 0 || r.code === 3) && a !== undefined) {
         const nc = (a.log || []).filter(l => /not-checked:/.test(l)).map(l => l.replace(/^.*not-checked:\s*/, '')), inc = r.code === 3 || a.verdict === 'INCONCLUSIVE';
-        return envelope(base, inc ? 'inconclusive' : 'ok', { answer: a, raw: r.out, why: inc ? ((a.log || []).filter(l => /verdict=INCONCLUSIVE/.test(l))[0] || 'nothing was judged') : null, notChecked: nc });
+        return envelope(base, inc ? 'inconclusive' : 'ok', { answer: a, raw: r.out, why: inc ? ((a.log || []).filter(l => /verdict=INCONCLUSIVE/.test(l))[0] || M('door.nothing_judged')) : null, notChecked: nc });
       }
-      return fail('the Viewer could not answer (exit ' + r.code + '): ' + (r.err || r.out || 'no output').split('\n').slice(-3).join(' '));
+      return fail(M('door.viewer_failed', r.code, (r.err || r.out || M('door.no_output')).split('\n').slice(-3).join(' ')));
     }
     if (entry.calls.cli === 'schedule_verbs') {   // exit 0 answered (OK | PASS | FAIL are answers) · 3 INCONCLUSIVE (nothing judged) · 1 failed (unknown building) · 2 usage
       const a = parse();
@@ -319,43 +330,43 @@ function createDoor(opts) {
         const inc = r.code === 3 || a.verdict === 'INCONCLUSIVE' || a.verdict === 'VACUOUS';
         return envelope(base, inc ? 'inconclusive' : 'ok', { answer: a, raw: r.out, why: inc ? a.summary : null, notChecked: a.notChecked || [] });
       }
-      return fail('the Viewer could not answer (exit ' + r.code + '): ' + (r.err.split('\n').filter(l => /SCHED_VERB (FAIL|USAGE)/.test(l)).pop() || r.err || r.out || 'no output').replace(/^§SCHED_VERB (FAIL|USAGE) /, ''));
+      return fail(M('door.viewer_failed', r.code, (r.err.split('\n').filter(l => /SCHED_VERB (FAIL|USAGE)/.test(l)).pop() || r.err || r.out || M('door.no_output')).replace(/^§SCHED_VERB (FAIL|USAGE) /, '')));
     }
     if (entry.calls.cli === 'object_cli') {   // exit 0 answered · 3 refused (a dictionary rule or a missing record: an answer) · 1 failed (unknown kind, no dictionary) · 2 usage
       const a = parse();
-      if ((r.code === 0 || r.code === 3) && a !== undefined) return r.code === 3 ? envelope(base, 'refused', { answer: a, raw: r.out, why: a.reason || 'refused' }) : a.verdict === 'VACUOUS' ? envelope(base, 'inconclusive', { answer: a, raw: r.out, why: a.summary }) : envelope(base, 'ok', { answer: a, raw: r.out, ops: a.ops || [] });
-      return fail('the object engine could not answer (exit ' + r.code + '): ' + (r.err.split('\n').filter(l => /§OBJECT FAIL/.test(l)).pop() || r.err || r.out || 'no output').replace(/^§OBJECT FAIL /, ''));
+      if ((r.code === 0 || r.code === 3) && a !== undefined) return r.code === 3 ? envelope(base, 'refused', { answer: a, raw: r.out, why: a.reason || M('door.refused') }) : a.verdict === 'VACUOUS' ? envelope(base, 'inconclusive', { answer: a, raw: r.out, why: a.summary }) : envelope(base, 'ok', { answer: a, raw: r.out, ops: a.ops || [] });
+      return fail(M('door.object_failed', r.code, (r.err.split('\n').filter(l => /§OBJECT FAIL/.test(l)).pop() || r.err || r.out || M('door.no_output')).replace(/^§OBJECT FAIL /, '')));
     }
     if (entry.calls.cli === 'erp_cli') {   // exit 0 answered · 3 refused (not found, not offered, the engine said no: an answer) · 1 failed · 2 usage. `next` = the legal actions the engine reports (verbs(ctx))
       const a = parse();
       if ((r.code === 0 || r.code === 3) && a !== undefined) {
-        const e = r.code === 3 ? envelope(base, 'refused', { answer: a, raw: r.out, why: a.reason || 'refused' }) : a.verdict === 'VACUOUS' ? envelope(base, 'inconclusive', { answer: a, raw: r.out, why: a.summary }) : envelope(base, 'ok', { answer: a, raw: r.out, ops: a.ops || [], notChecked: a.notChecked || [] });
+        const e = r.code === 3 ? envelope(base, 'refused', { answer: a, raw: r.out, why: a.reason || M('door.refused') }) : a.verdict === 'VACUOUS' ? envelope(base, 'inconclusive', { answer: a, raw: r.out, why: a.summary }) : envelope(base, 'ok', { answer: a, raw: r.out, ops: a.ops || [], notChecked: a.notChecked || [] });
         const nx = a.actions && a.actions.actions ? a.actions.actions : a.actions; if (Array.isArray(nx)) e.next = nx.slice();
         if (a.object && a.object.offer && a.object.offer.line && !a.dry) { e.offer = a.object.offer; e.next = (e.next || []).concat([a.object.offer.line]); }   // a process may offer its own next step (ProcessInfo answer object); §29.3 after a post: open the project
         return e;
       }
-      return fail('the ERP engine could not answer (exit ' + r.code + '): ' + (r.err.split('\n').filter(l => /§ERP FAIL/.test(l)).pop() || r.err || r.out || 'no output').replace(/^§ERP FAIL /, ''));
+      return fail(M('door.erp_failed', r.code, (r.err.split('\n').filter(l => /§ERP FAIL/.test(l)).pop() || r.err || r.out || M('door.no_output')).replace(/^§ERP FAIL /, '')));
     }
     if (entry.calls.cli === 'ops_cli' || entry.calls.cli === 'legacy_cli') {   // exit 0 answered (a FAIL witness or a DIFFERENT comparison is an answer) · 3 refused (answer.refused) or INCONCLUSIVE (answer.verdict) · 1 failed · 2 usage
       const a = parse();
       if ((r.code === 0 || r.code === 3) && a !== undefined) {
-        if (r.code === 3 && a.refused) return envelope(base, 'refused', { answer: a, raw: r.out, why: a.reason || 'refused' });
+        if (r.code === 3 && a.refused) return envelope(base, 'refused', { answer: a, raw: r.out, why: a.reason || M('door.refused') });
         if (r.code === 3 || a.verdict === 'INCONCLUSIVE' || a.verdict === 'VACUOUS') return envelope(base, 'inconclusive', { answer: a, raw: r.out, why: a.summary });
         return envelope(base, 'ok', { answer: a, raw: r.out, notChecked: a.notChecked || [] });
       }
-      return fail('the ops program could not answer (exit ' + r.code + '): ' + (r.err.split('\n').filter(l => /§OPS FAIL/.test(l)).pop() || r.err || r.out || 'no output').replace(/^§OPS FAIL /, ''));
+      return fail(M('door.ops_failed', r.code, (r.err.split('\n').filter(l => /§OPS FAIL/.test(l)).pop() || r.err || r.out || M('door.no_output')).replace(/^§OPS FAIL /, '')));
     }
     if (entry.calls.cli === 'walk_cli') {   // exit 0 answered (verdict OK; VACUOUS = the walk placed nothing, so nothing was counted) · 1 failed (unknown building or discipline, named) · 2 usage
       const a = parse();
       if (r.code === 0 && a !== undefined) return envelope(base, a.verdict === 'OK' ? 'ok' : 'inconclusive', { answer: a, raw: r.out, why: a.verdict === 'OK' ? null : a.summary, notChecked: a.notChecked || [] });
-      return fail('the Modeller\'s walker could not answer (exit ' + r.code + '): ' + (r.err.split('\n').filter(l => /§WALK (FAIL|USAGE)/.test(l)).pop() || r.err || r.out || 'no output').replace(/^§WALK (FAIL|USAGE) /, ''));
+      return fail(M('door.walk_failed', r.code, (r.err.split('\n').filter(l => /§WALK (FAIL|USAGE)/.test(l)).pop() || r.err || r.out || M('door.no_output')).replace(/^§WALK (FAIL|USAGE) /, '')));
     }
     if (entry.calls.cli === 'model_session') {   // exit 0 answered · 3 refused (a rule of the app or no session: an answer) · 1 failed · 2 usage. One Modeller page is kept open in the folder between lines (modeller/tools/model_session.js)
       const a = parse();
-      if ((r.code === 0 || r.code === 3) && a !== undefined) return r.code === 3 ? envelope(base, 'refused', { answer: a, raw: r.out, why: a.error || a.reason || 'refused' }) : envelope(base, 'ok', { answer: a, raw: r.out, ops: [] });
-      return fail('the Modeller session could not answer (exit ' + r.code + '): ' + (r.err || r.out || 'no output').split('\n').slice(-3).join(' '));
+      if ((r.code === 0 || r.code === 3) && a !== undefined) return r.code === 3 ? envelope(base, 'refused', { answer: a, raw: r.out, why: a.error || a.reason || M('door.refused') }) : envelope(base, 'ok', { answer: a, raw: r.out, ops: [] });
+      return fail(M('door.session_failed', r.code, (r.err || r.out || M('door.no_output')).split('\n').slice(-3).join(' ')));
     }
-    return fail('no result mapping for ' + entry.calls.cli);
+    return fail(M('door.no_mapping', entry.calls.cli));
   }
   // one command through the whole stack. args are typed. scope is given only for composed bodies and scripts.
   async function execArgs(o) {
@@ -376,15 +387,15 @@ function createDoor(opts) {
     try { return await p; } finally { inflight.delete(request); }
   }
   async function decide(entry, base, o, prior) {
-    if (!entry) return envelope(base, 'error', { why: 'unknown verb: ' + base.verb + '. Verbs: ' + vocab.verbs.map(v => v.verb).join(', ') });
+    if (!entry) return envelope(base, 'error', { why: M('door.unknown_verb', base.verb, vocab.verbs.map(v => v.verb).join(', ')) });
     const bad = validate(entry, o.args); if (bad) return envelope(base, 'error', { why: bad });
     const A = ACTORS[base.actor] || NO_PROOF;
-    if (A.allow.indexOf(entry.harm) < 0) return envelope(base, 'claim', { why: 'actor ' + base.actor + ' has proof "' + A.proof + '", which allows ' + A.allow.join('/') + ' verbs; ' + entry.verb + ' is ' + entry.harm + '. Held as a claim, not run. A person confirms it with: door.js --confirm ' + base.request });
-    if (entry.actors.indexOf(base.actor) < 0) return envelope(base, 'refused', { why: 'actor ' + base.actor + ' is not allowed to use ' + entry.verb + ' (allowed: ' + entry.actors.join(', ') + ')' });
-    if (prior && HARM.indexOf(entry.harm) > 1) return envelope(base, 'refused', { why: 'request ' + base.request + ' started earlier and no result was recorded; a ' + entry.harm + ' verb is not re-run on a guess' });
+    if (A.allow.indexOf(entry.harm) < 0) return envelope(base, 'claim', { why: M('door.claim', base.actor, A.proof, A.allow.join('/'), entry.verb, entry.harm, base.request) });
+    if (entry.actors.indexOf(base.actor) < 0) return envelope(base, 'refused', { why: M('door.actor_not_allowed', base.actor, entry.verb, entry.actors.join(', ')) });
+    if (prior && HARM.indexOf(entry.harm) > 1) return envelope(base, 'refused', { why: M('door.not_rerun', base.request, entry.harm) });
     if (entry.body) return composed(entry, base, o);
-    if (opts.dry && entry.harm !== 'read' && OPLOG_CLIS.indexOf(entry.calls.cli) < 0) return envelope(base, 'refused', { why: 'a dry run cannot hold back this line: ' + entry.verb + ' (' + entry.harm + ') is answered by ' + entry.calls.cli + ', which does not keep its writes in the op-log. The file stops here; nothing of it was kept' });
-    if (!Object.prototype.hasOwnProperty.call(cli, entry.calls.cli)) return envelope(base, 'error', { why: 'verb ' + entry.verb + ' names a program (' + entry.calls.cli + ') that is not in the door\'s table; not run' });
+    if (opts.dry && entry.harm !== 'read' && OPLOG_CLIS.indexOf(entry.calls.cli) < 0) return envelope(base, 'refused', { why: M('door.dry_cannot_hold', entry.verb, entry.harm, entry.calls.cli) });
+    if (!Object.prototype.hasOwnProperty.call(cli, entry.calls.cli)) return envelope(base, 'error', { why: M('door.not_in_table', entry.verb, entry.calls.cli) });
     const env = engineResult(entry, base, await spawnCli(entry.calls.cli, buildArgv(entry, o.args)));
     if (entry.offer && env.status === 'ok') await offerOf(entry, base, o, env);
     return env;
@@ -405,7 +416,7 @@ function createDoor(opts) {
     for (let n = 0; n < entry.body.length; n++) {
       const e = await runLine(entry.body[n], { scope, actor: base.actor, request: base.request + '.' + (n + 1) });
       rec.push({ n: n + 1, line: entry.body[n], envelope: e }); last = e;
-      if (e.status !== 'ok') return envelope(base, e.status, { answer: { lines: rec }, why: 'line ' + (n + 1) + ' (' + e.verb + '): ' + e.why, notChecked: e.notChecked, raw: JSON.stringify({ lines: rec }) });
+      if (e.status !== 'ok') return envelope(base, e.status, { answer: { lines: rec }, why: M('door.composed_line', n + 1, e.verb, e.why), notChecked: e.notChecked, raw: JSON.stringify({ lines: rec }) });
     }
     return envelope(base, 'ok', { answer: { lines: rec }, notChecked: last ? last.notChecked : [], raw: JSON.stringify({ lines: rec }) });
   }
@@ -413,11 +424,11 @@ function createDoor(opts) {
   async function runLine(text, ctx) {
     ctx = ctx || {}; const actor = ctx.actor || 'human', request = ctx.request || newId(), base = { request, verb: null, actor, t0: Date.now() };
     let pl;
-    try { pl = parseLine(text); } catch (e) { return journalled(base, text, envelope(base, 'error', { why: 'cannot read the line: ' + e.message })); }
+    try { pl = parseLine(text); } catch (e) { return journalled(base, text, envelope(base, 'error', { why: M('door.cannot_read_line', e.message) })); }
     if (pl.blank) return null;
-    if (pl.question) return journalled(base, text, envelope(base, 'refused', { why: 'not a command: "' + pl.text.slice(0, 80) + '"', answer: { question: 'I could not read that as a command. A command is app.verb key=value … Which one do you mean? Type help.', verbs: vocab.verbs.map(v => v.verb) } }));
+    if (pl.question) return journalled(base, text, envelope(base, 'refused', { why: M('door.not_a_command', pl.text.slice(0, 80)), answer: { question: M('door.question'), verbs: vocab.verbs.map(v => v.verb) } }));
     const entry = vocab.byVerb.get(pl.verb); base.verb = pl.verb;
-    if (!entry) return journalled(base, text, envelope(base, 'error', { why: 'unknown verb: ' + pl.verb + '. Verbs: ' + vocab.verbs.map(v => v.verb).join(', ') }));
+    if (!entry) return journalled(base, text, envelope(base, 'error', { why: M('door.unknown_verb', pl.verb, vocab.verbs.map(v => v.verb).join(', ')) }));
     const scope = ctx.scope || new Map(), args = {};
     try {
       for (const x of pl.kv) { const inp = entry.inputs.filter(i => i.name === x.k)[0]; if (!inp) { args[x.k] = x.raw; continue; } args[x.k] = coerce(inp, evalValue(x.raw, x.quoted, scope, vocab)); }
@@ -452,10 +463,10 @@ function createDoor(opts) {
     ctx = ctx || {}; const actor = ctx.actor || 'human', base = { request: id + CONF, verb: null, actor, t0: Date.now() }, all = jread();
     const st = all.filter(x => x.request === id && x.state === 'started')[0], dn = all.filter(x => x.request === id && x.state === 'done')[0];
     const out = (status, why) => { const e = envelope(base, status, { why }); e.confirms = id; say('confirm=' + id + ' actor=' + actor + ' status=' + status + ' why=' + JSON.stringify(why.slice(0, 120))); return e; };
-    if (!st || !dn) return out('error', 'no request "' + id + '" in the journal ' + journalFile + ' (held claims: ' + (door.claims().map(c => c.request).join(', ') || 'none') + ')');
+    if (!st || !dn) return out('error', M('door.confirm_no_request', id, journalFile, door.claims().map(c => c.request).join(', ') || M('door.none')));
     base.verb = st.verb || null;
-    if (!dn.envelope || dn.envelope.status !== 'claim') return out('refused', 'request ' + id + ' was ' + (dn.envelope ? dn.envelope.status : 'never answered') + '; only a held claim is confirmed');
-    if (actor !== 'human' && BREAK() !== 'confirm_ai') return out('refused', 'a claim is confirmed by a person at a local session; actor ' + actor + ' cannot confirm. The claim stays held.');
+    if (!dn.envelope || dn.envelope.status !== 'claim') return out('refused', M('door.confirm_not_claim', id, dn.envelope ? dn.envelope.status : M('door.never_answered')));
+    if (actor !== 'human' && BREAK() !== 'confirm_ai') return out('refused', M('door.confirm_not_person', actor));
     const env = await runLine(st.line, { actor: 'human', request: id + CONF + (BREAK() === 'confirm_twice' ? '-' + Date.now() : '') });
     env.confirms = id; return env;
   };
@@ -473,13 +484,14 @@ if (require.main === module) {
       else if (a[i] === '--script') script = a[++i]; else if (a[i] === '--dry') o.dry = true; else if (a[i] === '--confirm') o.confirm = a[++i]; else if (a[i] === '--claims') o.claims = true;
       else if (a[i] === '--list') form = 'list'; else if (a[i] === '--csv') form = 'csv'; else if (a[i] === '--json') form = 'json'; else if (a[i] === '--out') outFile = a[++i]; else rest.push(a[i]);
     }
+    { const miss = missingFiles(CATALOG); if (miss.length) { console.error('§DOOR FAIL ' + catalogMissing(miss)); process.exit(1); } }   // every answer's text is in the catalog (§6 P2b)
     // the readable forms live in render.js (beside this file in a download, else in the repo); a missing one is named with its curl line
     const needRender = form !== 'json' || outFile || script || (rest.length === 1 && /^\s*(help|\?)(\s|$)/.test(rest[0]));
-    let R = null; if (needRender) { if (missingFiles(['render.js']).length) { console.error('§DOOR FAIL render.js is not beside door.js. Fetch it:\n' + curlFor(['render.js'])); process.exit(1); } R = require(locate('render.js')); }
+    let R = null; if (needRender) { if (missingFiles(['render.js']).length) { console.error('§DOOR FAIL ' + M('door.render_missing', curlFor(['render.js']))); process.exit(1); } R = require(locate('render.js')); }
     // §21 the terminal menu (mis.js --menu, the list screen's driver): `menu` (was `/M`, retired 2026-11-15, CLI_ERP_IVR §22.9). A front end only: every step it takes is a door line. `menu role=102`
     if (rest.length && /^menu(\s|$)/i.test(rest[0])) {
       const words = rest[0].trim().split(/\s+/).slice(1).concat(rest.slice(1)), mis = path.join(__dirname, 'mis.js');
-      if (!fs.existsSync(mis)) { console.error('§DOOR FAIL menu needs mis.js beside door.js (a bim-ootb checkout)'); process.exit(1); }
+      if (!fs.existsSync(mis)) { console.error('§DOOR FAIL ' + M('door.menu_needs_mis')); process.exit(1); }
       const r = require('child_process').spawnSync(process.execPath, [mis, '--menu'].concat(words), { stdio: 'inherit', env: process.env });
       process.exit(r.status == null ? 1 : r.status);
     }
@@ -487,13 +499,13 @@ if (require.main === module) {
       let vocab; try { vocab = loadVocab(); } catch (e) { console.error('§DOOR FAIL ' + e.message); process.exit(1); }
       const h = R.help(vocab, rest[0]); (h.ok ? process.stdout : process.stderr).write(h.text); console.error('§DOOR help topic=' + JSON.stringify(rest[0].replace(/^\s*(help|\?)/, '').trim()) + ' ok=' + h.ok); process.exit(h.ok ? 0 : 1);
     }
-    if (!script && !o.confirm && !o.claims && rest.length !== 1) { console.error('usage: node common/door/door.js [--actor human|ai] [--request ID] [--journal FILE] [--json|--list|--csv] [--out FILE] \'app.verb key=value …\'   |   --script FILE|- [--dry]   |   --claims   |   --confirm REQUEST_ID   |   \'help\''); process.exit(2); }
+    if (!script && !o.confirm && !o.claims && rest.length !== 1) { console.error(M('door.usage')); process.exit(2); }
     // §12.14 --dry: the whole file runs on a COPY (the op-log named by BIM_OBJECT_OPLOG, this folder's own files, a new journal) in a temp folder; a later line sees an earlier line's write; the copy is deleted at the end
     let dry = null;
     if (o.dry) {
-      if (!script) { console.error('§DOOR FAIL --dry is for a file of lines (--script FILE --dry); one line takes its verb\'s own dry=Y'); process.exit(2); }
+      if (!script) { console.error('§DOOR FAIL ' + M('door.dry_needs_script')); process.exit(2); }
       const real = process.env.BIM_OBJECT_OPLOG;
-      if (!real) { const why = 'a dry run needs the op-log named (BIM_OBJECT_OPLOG): the door cannot copy a log it does not know (without it each program picks its own log). No line was run'; console.error('§DOOR dry refused ' + why); console.log(JSON.stringify({ request: null, verb: null, actor: o.actor, status: 'refused', why, dry: true })); process.exit(3); }
+      if (!real) { const why = M('door.dry_needs_oplog'); console.error('§DOOR dry refused ' + why); console.log(JSON.stringify({ request: null, verb: null, actor: o.actor, status: 'refused', why, dry: true })); process.exit(3); }
       const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'door-dry-')), here = process.cwd(); let files = 0, bytes = 0;
       fs.readdirSync(here).forEach(n => { const s = path.join(here, n); let st; try { st = fs.statSync(s); } catch (e) { return; } if (st.isFile()) { fs.copyFileSync(s, path.join(tmp, n)); files++; bytes += st.size; } });
       const log = path.join(tmp, '.door_dry_oplog.jsonl'); if (fs.existsSync(real)) fs.copyFileSync(real, log); else fs.writeFileSync(log, '');
