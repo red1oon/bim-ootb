@@ -170,7 +170,7 @@ const fakeOk = check('red control: a made-up tag → "no spec found"', /no spec 
 
 // §F.12 first versions, inside the real editor
 const x = res.extras || {};
-const WANT = ['bumpThisFile', 'contextForFile', 'costIfDeployed', 'openLogLine', 'rebuildIndexes', 'shipCheck', 'shipFetchBack', 'shipRunLocal'].map(c => 'x0Navigator.' + c);
+const WANT = ['bumpButton', 'bumpThisFile', 'contextForFile', 'costIfDeployed', 'openLogLine', 'rebuildIndexes', 'shipCheck', 'shipFetchBack', 'shipRunLocal'].map(c => 'x0Navigator.' + c);
 const cmdOk = check('VS Code knows all ' + WANT.length + ' X0 commands', WANT.every(c => (x.commands || []).includes(c)));
 const costLines = (x.cost || []).filter(l => l.startsWith(SEC + 'DEPLOY_COST app='));
 const costOk = check('"Cost if deployed" run as a VS Code command → ' + costLines.length + ' app lines (' + (costLines[0] || '').slice(0, 80) + '…)', costLines.length >= 3);
@@ -192,6 +192,20 @@ else {
     x.bumpBefore === 0 && x.bumpAfter === 1 && /offline cache and was edited, but \S+\/sw\.js is still v\d+/.test(x.bumpMessage || '') &&
     (x.bumpActions || []).length === 2 && x.bumpActions[0].write === true && x.bumpActions[1].write === false &&
     dry.some(l => /BUMP sw=\S+ CACHE_VERSION v\d+->v\d+/.test(l)) && /mode=dry exit=0 verdict=PASS/.test(dry[dry.length - 1] || '') && x.bumpRestored === 0 &&
+    cp.spawnSync('git', ['status', '--porcelain', '--', '*/sw.js', '*.html'], { cwd: ROOT, encoding: 'utf8' }).stdout.trim() === '');
+}
+
+// §F.34: the Bump button, pressed in the real editor (the edit above was saved): a background check of the changed file, then idle again after the restore
+let buttonOk = true;
+if (!bumpClean) console.log('  NOTE  the Bump button is not judged either (same reason)');
+else {
+  const bl = Array.isArray(x.button) ? x.button : [], ba = Array.isArray(x.buttonAfter) ? x.buttonAfter : [];
+  const ch = bl.find(l => l.startsWith(SEC + 'BUMP_CHANGED ')) || '', ch2 = ba.find(l => l.startsWith(SEC + 'BUMP_CHANGED ')) || '';
+  console.log('  button press 1 (' + x.buttonSecs + ' s): ' + ch.slice(0, 140) + ' | ' + (bl.find(l => l.startsWith(SEC + 'BUMP_CHECK ')) || '(no check line)'));
+  console.log('  button press 2 (after the restore): ' + ch2.slice(0, 140));
+  buttonOk = check('Bump button pressed in the real editor: the real bump.js --changed --check found the edited file (' + bumpRel + ') and passed, wrote nothing; after the restore a press finds nothing to bump',
+    new RegExp('bumpable=1 .*files=' + bumpRel.replace(/[.]/g, '\\.') + '$').test(ch) && bl.some(l => /^§BUMP_CHECK verdict=PASS/.test(l)) &&
+    /bumpable=0/.test(ch2) && ba.some(l => /§BUMP_DONE targets=0/.test(l)) &&
     cp.spawnSync('git', ['status', '--porcelain', '--', '*/sw.js', '*.html'], { cwd: ROOT, encoding: 'utf8' }).stdout.trim() === '');
 }
 
@@ -225,5 +239,5 @@ const ctxOk = check('"Context for this file" run as a VS Code command on ' + tag
 
 if (KEEP) console.log('  kept: ' + TMP); else fs.rmSync(TMP, { recursive: true, force: true });
 line({ vscode: res.vscode, active: yn(active), fresh: yn(fresh), def: yn(defOk), hover: yn(hovOk), phantom: yn(phOk), unknown_silent: yn(unkOk),
-  tag: yn(tagOk), fake_tag: yn(fakeOk), commands: yn(cmdOk), cost: yn(costOk), check: yn(checkOk), status: yn(statusOk), lens: yn(lensOk), refs: yn(refsOk), bump: yn(bumpOk), refs_red: yn(refsRedOk), last_value: yn(lastOk), last_value_red: yn(lastRedOk), context: yn(ctxOk), builtin_ready: yn(pr.ready), builtin_defs: pr.ready ? builtin : '?', seconds: secs }, fail === 0 ? 'PASS' : 'FAIL');
+  tag: yn(tagOk), fake_tag: yn(fakeOk), commands: yn(cmdOk), cost: yn(costOk), check: yn(checkOk), status: yn(statusOk), lens: yn(lensOk), refs: yn(refsOk), bump: yn(bumpOk), bump_button: yn(buttonOk), refs_red: yn(refsRedOk), last_value: yn(lastOk), last_value_red: yn(lastRedOk), context: yn(ctxOk), builtin_ready: yn(pr.ready), builtin_defs: pr.ready ? builtin : '?', seconds: secs }, fail === 0 ? 'PASS' : 'FAIL');
 if (fail) process.exitCode = 1;
