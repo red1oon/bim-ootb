@@ -57,6 +57,7 @@ async function device(SQL, label) {        // one device = its own copy of the s
     (trx.lines || trx.log || []).forEach(function (l) { if (/§MODEL-SEQ/.test(l)) says.push(String(l)); });
     apply(trx.ops.filter(Boolean)); return dn; }
   var AC = require(path.join(ERP, 'ad_callout.js')), ctxs = {};
+  if (!AC.Env.hasEdge()) AC.Env.setEdge({ nowMs: () => Date.now(), uuid: () => require('crypto').randomUUID(), perfMs: () => require('perf_hooks').performance.now() });   // A-6 / A3-CLOCK-2: this Node shell installs the one edge the ERP core reads
   function login(user, org) { var k = user + '|' + org; if (!ctxs[k]) { AC.bind(q); ctxs[k] = AC.loginContext({ client: 11, org: org, role: 102, user: user }); } return ctxs[k]; }
   function drawDT(dtId, po, user) {                           // the shipped path: MSequence.getDocumentNo(C_DocType_ID) with the LOGIN context (Env.getCtx) of `user`
     var trx = new ML.Trx(q, { client: 11, org: po.ad_org_id, user: user, role: 102, ctx: login(user, po.ad_org_id), date: '2026-10-31', now: '2026-10-31 09:00:00', nowMillis: Date.now(), uuid: function () { return nodeCrypto.randomUUID(); } });

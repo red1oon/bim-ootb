@@ -83,6 +83,21 @@ const SESSION = { clientId: 11, orgId: 11, userId: 100, roleId: 102, warehouseId
   say('§PROC_SYSDATE_S3 getDay_null=' + day + ' getContextAsDate_empty=' + cad);
   check('S3', 'TimeUtil.getDay(null) is the local day 2026-11-13 and getContextAsDate on an empty context is 2026-11-13 00:30 local', day.slice(0, 10) === '2026-11-13' && /^2026-11-13 00:3\d:\d\d$/.test(cad), 'getDay=' + day + ' ctxDate=' + cad);
 
+  // S4/S5 (A3-CLOCK-2): the ERP SQL clock and generate_uuid() read the INSTALLED EDGE, not a wall clock: under a fake edge whose clock says 2026-11-20 10:15 local
+  //   and whose ids are fixed, getdate() is that local stamp and generate_uuid() carries that instant's ms and the fake id's random hex. Main reads Date: S4/S5 FAIL.
+  const FMS = new Real(2026, 10, 20, 10, 15, 0).getTime(), FID = 'abcdef01-2345-4678-9abc-def012345678';
+  const keepEdge = A.Env.hasEdge && A.Env.hasEdge() ? A.Env.edge() : null, fake = { nowMs: () => FMS, uuid: () => FID, perfMs: () => 0 };
+  if (A.Env.setEdge) A.Env.setEdge(fake); else globalThis.CoreEdge = fake;   // through the ONE holder (Env.setEdge), never a guessed global
+  A.bind(function (sql, p) { return k.q(sql, p); });
+    let gd = '?', gu = '?';
+  try { gd = String(q("SELECT getdate() AS d")[0].d); } catch (e) { gd = 'error ' + e.message; }
+  try { gu = String(q("SELECT generate_uuid() AS u")[0].u); } catch (e) { gu = 'error ' + e.message; }
+  if (keepEdge && A.Env.setEdge) A.Env.setEdge(keepEdge);
+  const msHex = FMS.toString(16).padStart(12, '0'), gh = gu.replace(/-/g, '');
+  say('§PROC_SYSDATE_S4 getdate_under_fake_edge=' + gd + ' · S5 generate_uuid=' + gu + ' ms_prefix_want=' + msHex);
+  check('S4', 'SQL getdate() under a fake edge (2026-11-20 10:15 local) is that LOCAL stamp, not the wall clock', /^2026-11-20 10:15:00/.test(gd), gd);
+  check('S5', 'generate_uuid() under the fake edge: its 48-bit time prefix is the edge\'s ms and its random part is the edge id\'s random hex (v7, variant 10)',
+    gh.slice(0, 12) === msHex && gh.charAt(12) === '7' && gh.slice(13, 16) === FID.replace(/-/g, '').slice(1, 4) && /^[89ab]$/.test(gh.charAt(16)), gu);
   const failed = checks.filter(c => !c.ok).length;
   const verdict = inconclusive ? 'INCONCLUSIVE' : failed ? 'FAIL' : 'PASS';
   say('§PROC_SYSDATE checks=' + checks.length + ' failed=' + failed + ' inserted=' + rows.length + ' verdict=' + verdict);

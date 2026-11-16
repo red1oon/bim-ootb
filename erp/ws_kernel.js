@@ -23,6 +23,9 @@ function load(extraSql) {
 }
 function build(db) {
   const A = require('./ad_callout.js');
+  // A-6 / A3-CLOCK-2 (bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md): this headless kernel is a SHELL, so it installs the one edge (clock + ids) its core
+  //   reads; a caller that installed its own first (a witness with a fixed clock) keeps it.
+  if (!A.Env.hasEdge()) A.Env.setEdge({ nowMs: () => Date.now(), uuid: () => require('crypto').randomUUID(), perfMs: () => require('perf_hooks').performance.now() });
   ['support', 'support_stock', 'views', 'currency', 'uom', 'pricing', 'tax', 'sqlfn'].forEach(function (m) { require('./callouts/' + m + '.js'); });
   require('./db_export_safe.js').registerCoreUdfs(db, A);   // §EXPORTSAFE: re-bound after every db.export()
   const ML = require('./model_layer.js');
