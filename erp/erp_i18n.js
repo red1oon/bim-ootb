@@ -51,16 +51,26 @@
     if (_packs[code]) return Promise.resolve(_packs[code]);
     return _fetchJson('i18n/' + code + '.json').then(function (p) { _packs[code] = p; return p; });
   }
+  // §10 H1 (bim-compiler prompts/VOCAB_MESSAGE_CATALOG.md, D1): the help pack is a SEPARATE lazy file per language, fetched through THIS loader
+  //   when the language is chosen (i18n/help/<lang>/help.json, built by tools/build_help_pack.js from the same published packs), never in ad_seed.db.
+  //   Pilot languages only (D2); en_US carries the how-to rows. A missing pack leaves the English help (logged), as legacy shows untranslated text.
+  var HELP_LANGS = { fr_FR: 1, de_DE: 1, ja_JP: 1, zh_CN: 1 }, _helps = {}, _help = null;
+  function loadHelp(code) {
+    if (code !== 'en_US' && !HELP_LANGS[code]) return Promise.resolve(null);
+    if (_helps[code]) return Promise.resolve(_helps[code]);
+    return _fetchJson('i18n/help/' + code + '/help.json').then(function (p) { _helps[code] = p; console.log('§HELP_PACK loaded lang=' + code + ' fields=' + Object.keys(p.fields || {}).length + ' howto=' + (p.howto || []).length); return p; })
+      .catch(function (e) { console.warn('§HELP_PACK load-fail lang=' + code + ' ' + e.message); return null; });
+  }
   function preload(codes) {
     codes = codes || LOCALES.map(function (l) { return l.code; });
     return Promise.all([loadCatalogue()].concat(codes.map(function (c) { return loadPack(c).catch(function () {}); })));
   }
 
   // ── stats: every label resolution is counted per switch so the §I18N line is measured, not asserted ──
-  function _resetStats() { _stats = { menu: [0, 0], window: [0, 0], tab: [0, 0], field: [0, 0], chrome: [0, 0], pack: 0, machine: 0 }; }
+  function _resetStats() { _stats = { menu: [0, 0], window: [0, 0], tab: [0, 0], field: [0, 0], chrome: [0, 0], help: [0, 0], pack: 0, machine: 0 }; }
   _resetStats();
   function _count(kind, translated, src) {
-    var s = _stats[kind]; if (!s) return; s[1]++; if (translated) { s[0]++; if (src === 'machine') _stats.machine++; else _stats.pack++; }
+    var s = _stats[kind]; if (!s) return; s[1]++; if (kind === 'help') { if (translated) s[0]++; return; } if (translated) { s[0]++; if (src === 'machine') _stats.machine++; else _stats.pack++; }
   }
 
   // ── pack lookups (raw _Trl rows) ──
@@ -136,6 +146,12 @@
         if (f._en == null) f._en = f.name;
         var fv = (_pack && f.id != null) ? fieldName(win.id, f) : null;
         f.name = fv || f._en;
+        // §10 H1: the field's translated Description/Help from the help pack; English kept on _enDesc/_enHelp (P1b setter + panel read f.description/f.help)
+        if (f._enDesc === undefined) { f._enDesc = f.description; f._enHelp = f.help; }
+        var hx = (_help && _help.fields && f.id != null) ? _help.fields[String(f.id)] : null, tx = _help && _help.texts;   // [descIndex, helpIndex] into texts, -1 = none
+        var hv = hx ? [hx[0] >= 0 ? tx[hx[0]] : null, hx[1] >= 0 ? tx[hx[1]] : null] : null;
+        f.description = hv && hv[0] != null ? hv[0] : f._enDesc; f.help = hv && hv[1] != null ? hv[1] : f._enHelp;
+        if (f.isDisplayed && !f.isKey) _count('help', !!hv, 'pack');
         if (f.isDisplayed && !f.isKey) _count('field', !!fv, _src);
       });
     });
@@ -186,15 +202,15 @@
     var t0 = (global.performance ? performance.now() : Date.now());
     var L = _loc(code);
     if (!L) { console.warn('§I18N unknown-locale ' + code); return Promise.resolve(null); }
-    return Promise.all([loadCatalogue(), loadPack(code)]).then(function (res) {
-      _lang = code; _pack = res[1]; _resetStats();
+    return Promise.all([loadCatalogue(), loadPack(code), loadHelp(code)]).then(function (res) {
+      _lang = code; _pack = res[1]; _help = code === BASE ? null : res[2]; _resetStats();
       var de = document.documentElement; de.lang = L.html; de.dir = L.dir;
       if (!(opts && opts.noPersist)) _persist(code);
       _listeners.forEach(function (fn) { try { fn(code, L); } catch (e) { console.warn('§I18N listener-err ' + e.message); } });
       var ms = Math.round((global.performance ? performance.now() : Date.now()) - t0);
       var s = _stats, tr = s.menu[0] + s.window[0] + s.tab[0] + s.field[0] + s.chrome[0], tot = s.menu[1] + s.window[1] + s.tab[1] + s.field[1] + s.chrome[1];
       console.log('§I18N lang=' + code + ' labels=' + tr + '/' + tot + ' dir=' + L.dir + ' ms=' + ms +
-        ' menu=' + s.menu.join('/') + ' window=' + s.window.join('/') + ' tab=' + s.tab.join('/') + ' field=' + s.field.join('/') +
+        ' menu=' + s.menu.join('/') + ' window=' + s.window.join('/') + ' tab=' + s.tab.join('/') + ' field=' + s.field.join('/') + ' help=' + s.help.join('/') +
         ' chrome=' + s.chrome.join('/') + ' src=pack:' + s.pack + ',machine:' + s.machine +
         ' packRows=' + (_pack ? Object.keys(_pack.counts || {}).map(function (k) { return k.replace('AD_', '') + ':' + _pack.counts[k]; }).join(',') : 'base'));
       return { lang: code, dir: L.dir, ms: ms, stats: JSON.parse(JSON.stringify(s)) };
@@ -217,6 +233,6 @@
     initial: initial, set: set, preload: preload, onChange: onChange, picker: picker, bindDb: bindDb,
     t: t, has: function (k) { return !!(_cat && _cat[k]); }, msg: msg, element: element, refList: refList, applyDom: applyDom,
     applyMenuTree: applyMenuTree, applyWindow: applyWindow, windowName: windowName, menuName: menuName, fieldName: fieldName,
-    loadCatalogue: loadCatalogue, stats: function () { return JSON.parse(JSON.stringify(_stats)); }
+    loadCatalogue: loadCatalogue, loadHelp: loadHelp, get help() { return _help; }, stats: function () { return JSON.parse(JSON.stringify(_stats)); }
   };
 })(typeof window !== 'undefined' ? window : this);
