@@ -543,6 +543,9 @@
   },
   "words.login_which": {
    "en": "{0} is more than one user: {1}; type login <id>"
+  },
+  "words.bang_none": {
+   "en": "nothing in history matches {0}: nothing was run"
   }
  }
 }
