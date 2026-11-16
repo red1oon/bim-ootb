@@ -1,5 +1,5 @@
 {
- "_": "The message catalog: text meant for a PERSON, one key per message, read by msg_core.js (bim-compiler prompts/VOCAB_MESSAGE_CATALOG.md §3). Templates take {0} {1} … (legacy MessageFormat). English only, the keys of words_core.js (P2a; P3a adds the Student level labels, words.student.*, and the level setting); the bytes a person sees are the literals the code printed before (W-MSG-CATALOG M1). Never the envelope, the journal or verbs.json.",
+ "_": "The message catalog: text meant for a PERSON, one key per message, read by msg_core.js (bim-compiler prompts/VOCAB_MESSAGE_CATALOG.md §3). Templates take {0} {1} … (legacy MessageFormat). English only, the keys of words_core.js and (P2b, §6) door.js: door.* is the text of the door's answers, read pinned to English so the envelope never changes (P2a; P3a adds the Student level labels, words.student.*, and the level setting); the bytes a person sees are the literals the code printed before (W-MSG-CATALOG M1). Never the envelope, the journal or verbs.json.",
  "messages": {
   "words.quote_in_value": {
    "en": "a value may not hold a double quote: {0}"
@@ -252,6 +252,261 @@
   },
   "words.offer_approve_vo": {
    "en": "Approve the Variation Order? y/N → {0}"
+  },
+  "door.division_by_zero": {
+   "en": "division by zero"
+  },
+  "door.type.building": {
+   "en": "a building name (letters, digits, _ . -; up to 64)"
+  },
+  "door.type.grid_line": {
+   "en": "a grid line id such as gx6"
+  },
+  "door.type.discipline": {
+   "en": "a discipline code such as ARC or MEP"
+  },
+  "door.type.string": {
+   "en": "a short text"
+  },
+  "door.type.file": {
+   "en": "a file path"
+  },
+  "door.vocab_duplicate": {
+   "en": "verbs.json: duplicate verb {0}"
+  },
+  "door.vocab_alias_none": {
+   "en": "verbs.json: alias {0} names no verb {1}"
+  },
+  "door.vocab_alias_differs": {
+   "en": "verbs.json: alias {0} differs from {1} (an alias may not change harm, inputs, calls, actors or witness)"
+  },
+  "door.missing_input": {
+   "en": "missing input: {0}"
+  },
+  "door.missing_input_near": {
+   "en": "missing input: {0} (you typed {1})"
+  },
+  "door.near_item": {
+   "en": "{0}=, nearest: {1}"
+  },
+  "door.input_must_be": {
+   "en": "input {0} must be {1}"
+  },
+  "door.unknown_input": {
+   "en": "unknown input: {0} (the verb {1} takes: {2})"
+  },
+  "door.input_number": {
+   "en": "input {0} must be a number"
+  },
+  "door.input_string": {
+   "en": "input {0} must be a string"
+  },
+  "door.input_unknown_type": {
+   "en": "vocabulary error: input {0} has unknown type {1}"
+  },
+  "door.input_type_got": {
+   "en": "input {0} must be {1}, got \"{2}\""
+  },
+  "door.input_enum_got": {
+   "en": "input {0} must be one of {1}, got \"{2}\""
+  },
+  "door.plain_number": {
+   "en": "input {0} must be a plain number, got \"{1}\""
+  },
+  "door.plain_number_unit": {
+   "en": "input {0} must be a plain number in {1}, got \"{2}\""
+  },
+  "door.plain_number_hint": {
+   "en": "input {0} must be a plain number, got \"{1}\" (units come from the vocabulary, not the line)"
+  },
+  "door.plain_number_unit_hint": {
+   "en": "input {0} must be a plain number in {1}, got \"{2}\" (units come from the vocabulary, not the line)"
+  },
+  "door.unclosed_quote": {
+   "en": "unclosed quote"
+  },
+  "door.unclosed_brace": {
+   "en": "unclosed {0} in expression"
+  },
+  "door.not_key_value": {
+   "en": "\"{0}\" is not key=value"
+  },
+  "door.not_key_value_key": {
+   "en": "\"{0}\" is not key=value (a key has letters, digits and _: {1}= ?)"
+  },
+  "door.input_twice": {
+   "en": "input {0} given twice"
+  },
+  "door.expr_cannot_read": {
+   "en": "cannot read \"{0}\" in {1}"
+  },
+  "door.expr_unknown_name": {
+   "en": "\"{0}\" is not an input or a named result in {1}"
+  },
+  "door.expr_whole_result": {
+   "en": "\"{0}\" is a whole result; name a field of it, e.g. {0}.{1}"
+  },
+  "door.word_field": {
+   "en": "field"
+  },
+  "door.expr_input_no_fields": {
+   "en": "\"{0}\" is an input; it has no fields"
+  },
+  "door.expr_field_undeclared": {
+   "en": "field \"{0}\" is not declared in the returns of {1} (declared: {2})"
+  },
+  "door.expr_answer_no_key": {
+   "en": "the {0} answer has no {1} (in {2})"
+  },
+  "door.expr_not_list": {
+   "en": "not a list at [{0}] in {1}"
+  },
+  "door.expr_no_id": {
+   "en": "the {0} answer has no element with id {1} (in {2})"
+  },
+  "door.expr_field_type": {
+   "en": "field {0} is not a number or text"
+  },
+  "door.expr_text": {
+   "en": "\"{0}\" is text, not a number, in {1}"
+  },
+  "door.expr_end": {
+   "en": "unexpected end of {0}"
+  },
+  "door.expr_paren": {
+   "en": "missing ) in {0}"
+  },
+  "door.expr_unexpected": {
+   "en": "unexpected \"{0}\" in {1}"
+  },
+  "door.vocab_cycle": {
+   "en": "verbs.json: composed verb {0} calls itself ({1})"
+  },
+  "door.vocab_body_not_command": {
+   "en": "verbs.json: {0} line {1} is not a command"
+  },
+  "door.vocab_body_unknown_verb": {
+   "en": "verbs.json: {0} line {1} calls unknown verb {2}"
+  },
+  "door.vocab_body_unknown_input": {
+   "en": "verbs.json: {0} line {1} gives {2} an unknown input {3}"
+  },
+  "door.vocab_body_harm": {
+   "en": "verbs.json: {0} declares harm {1} but its lines reach {2}"
+  },
+  "door.vocab_body_actors": {
+   "en": "verbs.json: {0} lists actors that a line of its body does not allow"
+  },
+  "door.cli_missing_edit": {
+   "en": "{0} is not at {1}. Download it beside door.js: {2}"
+  },
+  "door.cli_missing_viewer": {
+   "en": "{0} is not at {1}. Download the two Viewer files beside door.js: {2}"
+  },
+  "door.cli_missing_checkout": {
+   "en": "{0} is not at {1}. This verb needs a bim-ootb checkout."
+  },
+  "door.who_default": {
+   "en": "the app"
+  },
+  "door.not_json": {
+   "en": "the {0} answered with text that is not JSON"
+  },
+  "door.refused": {
+   "en": "refused"
+  },
+  "door.app_failed": {
+   "en": "the app could not answer (exit {0}): {1}"
+  },
+  "door.no_output": {
+   "en": "no output"
+  },
+  "door.viewer_not_json": {
+   "en": "the Viewer answered with text that is not JSON"
+  },
+  "door.viewer_failed": {
+   "en": "the Viewer could not answer (exit {0}): {1}"
+  },
+  "door.nothing_judged": {
+   "en": "nothing was judged"
+  },
+  "door.object_failed": {
+   "en": "the object engine could not answer (exit {0}): {1}"
+  },
+  "door.erp_failed": {
+   "en": "the ERP engine could not answer (exit {0}): {1}"
+  },
+  "door.ops_failed": {
+   "en": "the ops program could not answer (exit {0}): {1}"
+  },
+  "door.walk_failed": {
+   "en": "the Modeller's walker could not answer (exit {0}): {1}"
+  },
+  "door.session_failed": {
+   "en": "the Modeller session could not answer (exit {0}): {1}"
+  },
+  "door.no_mapping": {
+   "en": "no result mapping for {0}"
+  },
+  "door.unknown_verb": {
+   "en": "unknown verb: {0}. Verbs: {1}"
+  },
+  "door.claim": {
+   "en": "actor {0} has proof \"{1}\", which allows {2} verbs; {3} is {4}. Held as a claim, not run. A person confirms it with: door.js --confirm {5}"
+  },
+  "door.actor_not_allowed": {
+   "en": "actor {0} is not allowed to use {1} (allowed: {2})"
+  },
+  "door.not_rerun": {
+   "en": "request {0} started earlier and no result was recorded; a {1} verb is not re-run on a guess"
+  },
+  "door.dry_cannot_hold": {
+   "en": "a dry run cannot hold back this line: {0} ({1}) is answered by {2}, which does not keep its writes in the op-log. The file stops here; nothing of it was kept"
+  },
+  "door.not_in_table": {
+   "en": "verb {0} names a program ({1}) that is not in the door's table; not run"
+  },
+  "door.composed_line": {
+   "en": "line {0} ({1}): {2}"
+  },
+  "door.cannot_read_line": {
+   "en": "cannot read the line: {0}"
+  },
+  "door.not_a_command": {
+   "en": "not a command: \"{0}\""
+  },
+  "door.question": {
+   "en": "I could not read that as a command. A command is app.verb key=value … Which one do you mean? Type help."
+  },
+  "door.confirm_no_request": {
+   "en": "no request \"{0}\" in the journal {1} (held claims: {2})"
+  },
+  "door.none": {
+   "en": "none"
+  },
+  "door.confirm_not_claim": {
+   "en": "request {0} was {1}; only a held claim is confirmed"
+  },
+  "door.never_answered": {
+   "en": "never answered"
+  },
+  "door.confirm_not_person": {
+   "en": "a claim is confirmed by a person at a local session; actor {0} cannot confirm. The claim stays held."
+  },
+  "door.render_missing": {
+   "en": "render.js is not beside door.js. Fetch it:\n{0}"
+  },
+  "door.menu_needs_mis": {
+   "en": "menu needs mis.js beside door.js (a bim-ootb checkout)"
+  },
+  "door.usage": {
+   "en": "usage: node common/door/door.js [--actor human|ai] [--request ID] [--journal FILE] [--json|--list|--csv] [--out FILE] 'app.verb key=value …'   |   --script FILE|- [--dry]   |   --claims   |   --confirm REQUEST_ID   |   'help'"
+  },
+  "door.dry_needs_script": {
+   "en": "--dry is for a file of lines (--script FILE --dry); one line takes its verb's own dry=Y"
+  },
+  "door.dry_needs_oplog": {
+   "en": "a dry run needs the op-log named (BIM_OBJECT_OPLOG): the door cannot copy a log it does not know (without it each program picks its own log). No line was run"
   }
  }
 }

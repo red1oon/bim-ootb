@@ -3,16 +3,16 @@
  * # ⚠ DO NOT REMOVE — W-FAST-SCRIPT-GUIDE (bim-compiler prompts/NEURO_SYMBOLIC_ORDER_CONTRACT.md §R.3 Lane A). READ THE §-LOG after every run.
  * ISSUE: the Fast Script User Guide's commands may not work for an outsider, its numbers may be stale or invented, and its verb table may not be the vocabulary.
  * Pattern of W-PROPOSER-GUIDE (modeller/tests/witness_proposer_guide.js). Every command in a run block is run as the page prints it:
- * `node door.js …` from an empty folder holding only the 4-file download (live site; --local = this tree), `node common/door/door.js …` from this checkout.
+ * `node door.js …` from an empty folder holding only the 6-file download (live site; --local = this tree), `node common/door/door.js …` from this checkout.
  *   node witness_fast_script_guide.js --page FILE[,FILE2]      the source page (a comma list: the guide, then its reference page; run in that order): table, every run block, every number
  *   node witness_fast_script_guide.js --page FILE --live      also fetch the PUBLISHED page and the diagram, and repeat the table and number checks on the served bytes
- *   --local   take the 4 files from this tree instead of the live site (before a merge)      --no-run   skip the commands (reported as NOT checked)
+ *   --local   take the 6 files from this tree instead of the live site (before a merge)      --no-run   skip the commands (reported as NOT checked)
  *   T  the verb table on the page equals common/door/verbs.json, name for name and cell for cell, in order
  *   R  each run block: the command's real stdout equals the page's block (only "ms" and "request" differ between real runs and are masked)
  *   C  the numbers the story rests on, recomputed from the runs with exact decimals: 11.176, 1.824, 0.824, the statuses of the five kinds of reply
  *   N  every decimal number on the page is in some run's output, or is computed from one, or is on a named list (the Node version)
  *   K  the counts the page states (verbs, viewer verbs, viewer actions, ERP N) equal verbs.json and the committed internal reports
- *   F  no command on the page is outside a run block; the 4 curl lines name exactly the 4 files
+ *   F  no command on the page is outside a run block; the curl lines name exactly the downloaded files (G.FLAT)
  * Falsifier: GUIDE_BREAK=1 (one expected number is wrong AND one verb is dropped from the compared set) must FAIL.
  * INCONCLUSIVE (exit 2), never a pass, when no command ran or a site cannot be reached.
  */
@@ -52,7 +52,7 @@ const decimals = (s) => (String(s).match(/\d+\.\d+/g) || []);
   const loose = fenced.filter(b => b.lang !== 'text' && /door\.js/.test(b.body.replace(/curl -O \S+/g, '')));
   k.chk('F1 no `door.js` command sits in a code block that is not a run block', loose.length === 0, loose.length ? loose[0].body.split('\n')[0] : '');
   const curls = [...md.matchAll(/curl -O https:\/\/red1oon\.github\.io\/bim-ootb\/(\S+)/g)].map(m => m[1]);
-  k.chk('F2 the page\'s curl lines name exactly the 4 downloaded files', JSON.stringify(curls.slice().sort()) === JSON.stringify(G.FLAT.slice().sort()), curls.length + ' lines');
+  k.chk('F2 the page\'s curl lines name exactly the downloaded files (FLAT)', JSON.stringify(curls.slice().sort()) === JSON.stringify(G.FLAT.slice().sort()), curls.length + ' lines');
   const proposerLink = /ProposerGuide\.md#connect-your-ai/.test(md);
   k.chk('F3 the page links the Proposer Guide for the AI connection (not duplicated)', proposerLink);
 
@@ -75,8 +75,8 @@ const decimals = (s) => (String(s).match(/\d+\.\d+/g) || []);
   if (A.indexOf('--no-run') >= 0) k.incon('R', 'the commands were NOT run (--no-run); a pass here would judge only the table and the counts');
   else if (!runs.length) k.incon('R0', 'the page has no run block');
   else {
-    let flat; try { flat = await G.makeFlatFolder(A.indexOf('--local') >= 0); } catch (e) { k.incon('FETCH', 'the 4-file download failed: ' + e.message); return k.end(); }
-    k.L('4-file download ' + (A.indexOf('--local') >= 0 ? '(this tree)' : '(live site)') + ' in an empty folder ' + flat + ': ' + fs.readdirSync(flat).join(','));
+    let flat; try { flat = await G.makeFlatFolder(A.indexOf('--local') >= 0); } catch (e) { k.incon('FETCH', 'the 6-file download failed: ' + e.message); return k.end(); }
+    k.L('6-file download ' + (A.indexOf('--local') >= 0 ? '(this tree)' : '(live site)') + ' in an empty folder ' + flat + ': ' + fs.readdirSync(flat).join(','));
     for (const r of runs) {
       const x = await G.runBlock(r, { flat, root: ROOT, files }); got[r.id] = x;
       const cut = r.opts.cut ? +r.opts.cut : 0, real = G.normalise(G.cutLines(x.out, cut)), shown = G.normalise(r.out);
