@@ -101,6 +101,7 @@ function build(root, rel, deps) {
   const printed = lens.explain(root, rel, text, scan, new Map());
   facts.tags = printed.map(p => p.tag);
   facts.tagStates = printed.map(p => p.state);
+  facts.tagInfo = [];   // per tag: line, spec, last value (§F.26: the New-witness stub quotes these, so it adds no lookup of its own)
   if (!printed.length) L.push('prints no § tag');
   for (const p of printed) {
     let spec = 'spec index not available';
@@ -109,8 +110,10 @@ function build(root, rel, deps) {
       spec = r.found ? r.spec[0].root + ' ' + r.spec[0].file + ':' + r.spec[0].line + (r.spec[0].heading ? ' — ' + r.spec[0].heading : '') +
         (r.spec.length > 1 ? ' (+' + (r.spec.length - 1) + ' more)' : '') : 'no spec found';
     }
+    const last = p.state === 'shown' ? '`' + p.value + '` [' + p.logName + ':' + p.logLine + ' @ ' + p.commit.slice(0, 7) + ']' : 'not shown: ' + p.why;
+    facts.tagInfo.push({ tag: p.tag, line: p.line + 1, spec, last });
     L.push('- line ' + (p.line + 1) + ' `' + p.tag + '` — spec: ' + spec);
-    L.push('  - last value: ' + (p.state === 'shown' ? '`' + p.value + '` [' + p.logName + ':' + p.logLine + ' @ ' + p.commit.slice(0, 7) + ']' : 'not shown: ' + p.why));
+    L.push('  - last value: ' + last);
   }
   L.push('');
 
