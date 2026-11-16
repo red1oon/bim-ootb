@@ -23,7 +23,8 @@ const T_ID = 9541001, W_ID = 9541001, TAB_OWN = 9541001, TAB_PRJ = 9541002, TAB_
 const R_STATUS = 9541001, R_DISC = 9541002, R_KIND = 9541003, R_REV = 9541004;
 const COL0 = 9541201, FLD_OWN0 = 9541301, FLD_PRJ0 = 9541401, FLD_PRJ1_0 = 9541601, LIST0 = 9541101, DT0 = 9541500;
 const P_EXPORT = 9541002, P_EXPORT_CLASS = 'org.kernel.bim.process.BIMDocumentRegisterExport';   // §REGISTER-EXPORT (bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md)
-const P_FOLD = 9541003, P_FOLD_CLASS = 'org.kernel.bim.process.BIMDocumentFoldFromBIM';   // §FOLD-FROM-BIM (bim-compiler prompts/CLI_ERP_IVR.md §29.6 P3b): a building's priced selection becomes its ERP Project Order
+const P_FOLD = 9541003, P_FOLD_CLASS = 'org.kernel.bim.process.BIMDocumentFoldFromBIM';
+export const FOLD_CLASS = P_FOLD_CLASS;   // the door reads the process row of this class (erp_cli orderState): the name of the process is the dictionary's, not typed twice   // §FOLD-FROM-BIM (bim-compiler prompts/CLI_ERP_IVR.md §29.6 P3b): a building's priced selection becomes its ERP Project Order
 const P_OPEN = 9541001, P_OPEN_CLASS = 'org.kernel.bim.process.BIMDocumentOpen', VCOL0 = 9541251, VFLD0 = 9541451, T_TASK = 584, T_PHASE = 576, TAB_TASK = 490, TAB_PHASE = 478;
 export const TABLE = 'BIM_Document';
 
@@ -375,7 +376,8 @@ export async function activate(ctx) {
       const r = cap.result, tally = {}; cap.ops.forEach((o) => { const k = o.op_type.replace('CRUD_', '').toLowerCase() + ':' + o.table; tally[k] = (tally[k] || 0) + 1; });
       this.getProcessInfo().serializableObject = { building: this.building, key: inp.key, selection: this.selection, selected: inp.selected, elements: inp.elements, decision: { kind: dec.kind, actions: dec.actions },
         stateBefore: { generated: before.generated, projectId: before.projectId || null, plannedAmt: before.plannedAmt || null }, projectId: r.projectId, plannedAmt: String(r.plannedAmt), version: r.version, created: r.created,
-        phases: r.seqLog || [], notes: r.notes || [], tables: cap.tables, ops: cap.ops.length, opSummary: tally, schedule: inp.scheduleSource, captureMs: cap.ms };
+        phases: r.seqLog || [], notes: r.notes || [], tables: cap.tables, ops: cap.ops.length, opSummary: tally, schedule: inp.scheduleSource, captureMs: cap.ms,
+        offer: r.projectId != null ? { key: 'open_project', line: 'cd project' } : null };   // §29.3: after a post the natural next step is the project itself
       console.log('§FOLD-FROM-BIM building=' + this.building + ' key=' + inp.key + ' decision=' + dec.kind + ' version=' + (r.version && r.version.state) + ' plannedAmt=' + r.plannedAmt + ' ops=' + cap.ops.length + ' ' + JSON.stringify(tally));
       return cap.ops.length ? 'Posted ' + this.building + ': Project ' + r.projectId + ', PlannedAmt ' + r.plannedAmt + ', ' + cap.ops.length + ' change(s)' : 'Nothing to post: ' + this.building + ' is already in its Project Order (model ' + (r.version && r.version.tag) + ')';
     };

@@ -16,7 +16,7 @@
     var M = o.msg.t;   // the person's text comes from the catalog (bim-compiler prompts/VOCAB_MESSAGE_CATALOG.md §3, W-MSG-CATALOG)
     var SKIP = '\u0000leave-out';
     var LEVELS = ['short', 'student'];   // §0: Student is a LEVEL beside the language (VOCAB_MESSAGE_CATALOG.md)   // §25: the pick-list item that leaves an optional parameter out (never a value a record can have)
-    function init() { return { building: null, kind: null, columns: null, props: null, erp: null, ecolumns: null, eprops: null, role: null, pending: null, last: null, menu: null, pickFor: null, paras: null, runFor: null, asking: null }; }
+    function init() { return { building: null, kind: null, columns: null, props: null, erp: null, ecolumns: null, eprops: null, role: null, pending: null, last: null, menu: null, pickFor: null, paras: null, runFor: null, asking: null, offer: null }; }
     function prompt(st) {
       var where = st.erp ? st.erp : (st.building ? st.building + (st.kind ? '/' + st.kind : '') : '');
       return 'red1' + (st.role ? ' [' + st.role + ']' : '') + (where ? ' ' + where : '') + '> ';
@@ -59,6 +59,13 @@
       if (!verbs[verb]) return { error: M('words.verb_not_in_vocab', w, verb) };
       if (pos.length > form.args.length) return { error: M('words.too_many_values', w, pos.join(' '), usage(w)) };
       pos.forEach(function (v, i) { if (args[form.args[i]] == null) args[form.args[i]] = v; });
+      // §29.6 P3c: a form may carry fixed inputs (data), take an input from the context by NAME (fill: {input: state field}), and fold the key=value words the person typed that the verb has no input for
+      // into ONE text input (fold: its name): `post discipline=ARC` -> erp.process name="Fold from BIM" Building=<b> Selection="discipline=ARC"
+      Object.keys(form.fixed || {}).forEach(function (k2) { args[k2] = form.fixed[k2]; });
+      Object.keys(form.fill || {}).forEach(function (k2) { var v2 = st[form.fill[k2]]; if (v2 != null && args[k2] == null) args[k2] = v2; });
+      if (form.fold && verbs[verb]) { var vin = verbs[verb].inputs.map(function (i) { return i.name; }), parts = [];
+        Object.keys(args).forEach(function (k2) { if (vin.indexOf(k2) >= 0 || (form.fill && form.fill[k2] != null) || (form.fixed && form.fixed[k2] != null) || k2 === form.fold) return; parts.push(k2 + '=' + (/\s/.test(args[k2]) ? '"' + args[k2] + '"' : args[k2])); delete args[k2]; });
+        if (parts.length) args[form.fold] = parts.join(' '); }
       var e = verbs[verb]; ctxArgs(st, e, args);
       var colsHere = verb.indexOf('object.') === 0 ? st.columns : st.ecolumns;
       Object.keys(form.defaults || {}).forEach(function (k) { if (args[k] != null) return; var v = form.defaults[k]; if (v === '$columns') { if (colsHere && colsHere.length) args[k] = colsHere.join(','); } else args[k] = v; });
@@ -72,7 +79,7 @@
       // §22.8 R5: a required input still missing opens a pick menu of its legal values (interactive sessions only; elsewhere the door refuses, naming it)
       var miss = e.inputs.filter(function (i) { return i.required && args[i.name] == null; })[0];
       if (miss && live && Menu && choices[miss.type]) return { pick: { input: miss.name, type: miss.type, word: w, verb: verb } };
-      return { line: lineOf(verb, args), verb: verb, args: args, confirm: !!def.confirm, view: form.summary ? 'summary' : null, draw: form.draw || null };
+      return { line: lineOf(verb, args), verb: verb, args: args, confirm: (!!def.confirm || (form.confirm === 'session' && live)) && brk !== 'noconfirm', view: form.summary ? 'summary' : null, draw: form.draw || null };
     }
     function step(st, input) {
       st = JSON.parse(JSON.stringify(st || init()));
@@ -99,6 +106,10 @@
             screen.push(lw ? M('words.lookup_none_why', lf.ask.label, lf.input, lw, le) : M('words.lookup_none', lf.ask.label, lf.input, le)); return out(); }
           st.menu = Menu.create({ items: (lf.ask.mandatory ? [] : [{ name: M('words.leave_out_item'), value: SKIP }]).concat(lr.map(function (r) { var ks = Object.keys(r); return r.value !== undefined ? { name: r.name + ' · ' + r.value, value: r.value } : { name: (r.Name != null ? r.Name + ' · ' : '') + r[ks[0]], value: r[ks[0]] }; })), title: M('words.run_pick_title', lf.ask.label, lf.input, lr.length) });
           Menu.plain(Menu.render(st.menu)).forEach(function (l) { screen.push(l); }); return out();
+        }
+        if (p === 'offer') {   // §29.3 (D16): a run answer carries the engine's next step {key, line}; a SESSION asks it (y runs the exact line, anything else runs nothing); one-shot and AI get no question, the line is in the envelope's `next`
+          var of0 = env.offer; if (!interactive || !of0 || !of0.line) return out();
+          st.offer = { key: of0.key, line: of0.line }; screen.push(M('words.offer_' + of0.key, of0.line)); return out();
         }
         if (p === 'cd-kind') {
           if (ok) { st.kind = env.answer.kind; st.columns = pick(env.answer.properties || []).cols; st.props = slim(env.answer.properties); screen.push(M('words.cd_kind_ok', st.building, st.kind, (env.answer.properties || []).length, st.columns.join(', '))); return out(); }
@@ -136,6 +147,13 @@
         if (val == null && q.mandatory) { st.asking = q; screen.push(M('words.param_needed', q.label, q.input, q.question)); return out(); }
         if (val == null) { st.paras.skipped.push(q.input); var sk = step(st, { text: q.text }); sk.screen = screen.concat(sk.screen); return sk; }
         var an = step(st, { text: q.text + ' ' + q.input + '=' + quote(val) }); an.screen = screen.concat(an.screen); return an;
+      }
+      if (st.offer) {   // the offer's y/N is open: y runs its line (a door line, or a word such as `cd project`); anything else runs nothing
+        var ofr = st.offer; st.offer = null;
+        if (/^y(es)?$/i.test(text)) { if (verbs[ofr.line.split(/\s/)[0]]) effects.push({ line: ofr.line, purpose: 'run' }); else { var fw = step(st, { text: ofr.line }); fw.screen = screen.concat(fw.screen); return fw; } return out(); }
+        screen.push(M('words.not_done', ofr.line));
+        if (/^(n|no)?$/i.test(text)) return out();   // n, no or an empty Return is the answer: nothing runs. Anything else is a new command: the offer lapses (nothing runs for it) and the command goes on as typed
+        var nx2 = step(st, { text: text }); nx2.screen = screen.concat(nx2.screen); return nx2;
       }
       if (st.pending) {   // a y/N question is open
         var pend = st.pending; st.pending = null;

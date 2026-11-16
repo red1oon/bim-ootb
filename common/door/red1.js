@@ -101,17 +101,19 @@ function makeShell(o) {
       if (e) say('line verb=' + (e.verb || '-') + ' status=' + e.status + ' request=' + e.request + ' line=' + JSON.stringify(line));
       return e;
     };
+    // §29.3 (D16): an answer that carries the engine's next step {key, line}: a session asks it (the pure core holds the question and the y/N), a one-shot or AI run asks nothing (the line is in the envelope's `next`)
+    const offerOf = (v) => { if (!v || !v.offer || BREAK() === 'nooffer') return; const o2 = core.step(st, { result: { purpose: 'offer', envelope: v } }); st = o2.state; o2.screen.forEach(io.print); };
     const asKey = typeof text === 'object';
     if (!asKey && !core.menuOpen(st) && isDoorLine(text)) {   // a door line, maybe with the shell's row filter after a bar: `app.verb k=v | *Pipe*` (§22.7)
       const pm = /^(.*?\S)\s+\|\s+(\S+)\s*$/.exec(text.trim()), line = pm ? pm[1] : text.trim(), match = pm ? pm[2] : null;
-      const e = await exec(line, null, match); if (e) { const v = viewOf(e, match); envs.push(v); await io.show(v); } return envs; }
+      const e = await exec(line, null, match); if (e) { const v = viewOf(e, match); envs.push(v); await io.show(v); offerOf(v); } return envs; }
     let r = core.step(st, asKey ? text : { text });
     for (;;) {
       st = r.state; if (core.menuOpen(st) && io.menu) io.menu(r.screen); else r.screen.forEach(io.print); warmTo(st.building);
       if (!r.effects.length) break;
       const ef = r.effects[0], e = await exec(ef.line, ef.shown, ef.match);
       if (!e) break;
-      if (ef.purpose === 'run') { const v = viewOf(e, ef.match); envs.push(v); await io.show(v, ef.view, ef.draw); r = { state: st, effects: r.effects.slice(1), screen: [] }; continue; }
+      if (ef.purpose === 'run') { const v = viewOf(e, ef.match); envs.push(v); await io.show(v, ef.view, ef.draw); offerOf(v); r = { state: st, effects: r.effects.slice(1), screen: [] }; continue; }
       r = core.step(st, { result: { purpose: ef.purpose, envelope: e } });
     }
     return envs;
@@ -214,7 +216,7 @@ async function session(o) {
   };
   let busy = Promise.resolve(), closed = false;
   const handle = async (raw) => {
-    const line = raw.trim(); if ((!line && !sh.menuOpen() && !sh.state().asking) || line.indexOf('--') === 0) return;
+    const line = raw.trim(); if ((!line && !sh.menuOpen() && !sh.state().asking && !sh.state().offer) || line.indexOf('--') === 0) return;   // an empty Return answers an open offer (n)
     typed.push(line);
     if ((R.isHelp(line) || GROUP_WORD.test(line)) && !sh.menuOpen()) {   // §24: help / bim / mis / erp / help <word> = words_core.helpText (the SAME bytes as a one-shot `red1 help`); help verbs | help <app> | help <app.verb> = the door's own help
       const h = helpOf(line, sh.core, vocab, sh.state().level); process.stdout.write(h.text); say('help topic=' + JSON.stringify(h.topic) + (h.door ? ' door=1' : ' words=1')); return;

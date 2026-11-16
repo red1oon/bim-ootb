@@ -1127,13 +1127,28 @@ function lookup(O, a) {
   say('lookup column=' + def.c + ' table=' + T.tn + ' rule=' + (out.valRule ? out.valRule.sql : '-') + ' refWhere=' + (out.refWhere ? out.refWhere.sql : '-') + ' total=' + total + (LOOKUP_BREAK ? ' LOOKUP_BREAK=' + LOOKUP_BREAK : ''));
   return Object.assign(out, { table: T.tn, rows: rows.map(r => { const ks = Object.keys(r); return { value: r[ks[0]], name: ks.slice(1).map(k2 => r[k2]).filter(v => v != null && v !== '').join(' · ') || String(r[ks[0]]) }; }), shown: rows.length, total });
 }
+// ── erp.order_state (bim-compiler prompts/CLI_ERP_IVR.md §29.3, P3c): what the ERP holds for a building's selection and what the ENGINE says is legal next ──
+// ProjOrderState.readState + decide, read-only; the offer is the engine's own `generate` action, never a rule of ours. The line offered runs the plugin's "Fold from BIM" process (its name read from
+// the dictionary row of the class the plugin exports); the door adds nothing to it.
+async function orderState(O, a) {
+  if (!a.building) refuse('--building is required');
+  const H = globalThis.BimOrderHost; if (!H) refuseGap('the ERP order state needs the BIM Document plugin, which this door did not start (DOOR_PLUGINS=off?)', 'no-plugin');
+  const sel = (a.where || []).map(w => { const m = /^([A-Za-z_]\w*)=([\s\S]*)$/.exec(w); return m && /\s/.test(m[2]) ? m[1] + '="' + m[2] + '"' : w; }).join(' '), inp = H.inputs({ building: a.building, selection: sel }), PS = H.ProjOrderState;
+  const st = PS.readState(O.db, inp.key, inp.classes, inp.env), dec = PS.decide(st, false);
+  const cls = (await import(require('url').pathToFileURL(path.join(ROOT, 'erp', 'plugins', 'bim_document.mjs')).href)).FOLD_CLASS, pr = O.rows('SELECT name FROM ad_process WHERE classname=? AND isactive=?', [cls, 'Y'])[0];
+  const q = (v) => (/[\s=;]/.test(v) || v === '' ? '"' + v + '"' : v), line = pr ? 'erp.process name=' + q(pr.name) + ' Building=' + q(a.building) + (sel ? ' Selection=' + q(sel) : '') : null;
+  const offer = line && dec.actions.indexOf('generate') >= 0 ? { key: 'generate', line } : null;
+  say('order_state building=' + a.building + ' key=' + inp.key + ' generated=' + st.generated + ' decision=' + dec.kind + ' actions=[' + dec.actions + '] offer=' + (offer ? offer.key : '-') + (process.env.OFFER_BREAK ? ' OFFER_BREAK=' + process.env.OFFER_BREAK : ''));
+  if (process.env.OFFER_BREAK === 'always' && line) return { building: a.building, key: inp.key, state: { generated: st.generated, projectId: st.projectId || null, plannedAmt: st.plannedAmt || null }, decision: dec, offer: { key: 'generate', line } };   // W-RED1-POST falsifier: offered whatever the engine said (must FAIL P2)
+  return { building: a.building, key: inp.key, state: { generated: st.generated, projectId: st.projectId || null, plannedAmt: st.plannedAmt || null }, decision: { kind: dec.kind, actions: dec.actions }, offer };
+}
 async function main(argv) {
   const cmd = argv[0], a = {};
   for (let i = 1; i < argv.length; i++) { const m = /^--(\w+)$/.exec(argv[i]); if (!m || i + 1 >= argv.length) { say('FAIL usage: ' + argv[i]); return 2; } if (m[1] === 'where') (a.where = a.where || []).push(argv[++i]); else a[m[1]] = argv[++i]; }
-  if (['find', 'actions', 'describe', 'read', 'list', 'sum', 'group', 'new', 'update', 'delete', 'load', 'add_window', 'ninja_exec', 'ninja_workflow', 'ninja_rollback', 'ninja_export', 'diff', 'menu', 'process', 'lookup'].concat(Object.keys(ACT)).indexOf(cmd) < 0) { say('FAIL usage: erp_cli.js find|actions|complete|void|close|reverse|describe|read|list|sum|group --kind K (--number N | --id I) [--role R]'); return 2; }
+  if (['find', 'actions', 'describe', 'read', 'list', 'sum', 'group', 'new', 'update', 'delete', 'load', 'add_window', 'ninja_exec', 'ninja_workflow', 'ninja_rollback', 'ninja_export', 'diff', 'menu', 'process', 'lookup', 'order_state'].concat(Object.keys(ACT)).indexOf(cmd) < 0) { say('FAIL usage: erp_cli.js find|actions|complete|void|close|reverse|describe|read|list|sum|group --kind K (--number N | --id I) [--role R]'); return 2; }
   try {
     const O = await boot(a); O.actor = a.user == null ? 101 : Number(a.user);   // the session user: stated, default 101 (the same default the callout context takes), until sign-in exists
-    const out = await (ACT[cmd] ? act(O, a, ACT[cmd]) : ({ find, actions, describe, read, list: OC.list, sum: OC.sum, group: OC.group, new: createRecord, update: updateRecord, delete: deleteRecord, load: loadRecords, add_window: addWindow, ninja_exec: ninjaExec, ninja_workflow: ninjaWorkflow, ninja_rollback: ninjaRollback, ninja_export: ninjaExport, diff: misDiff, menu: menuOf, process: runProcess, lookup })[cmd](O, a));
+    const out = await (ACT[cmd] ? act(O, a, ACT[cmd]) : ({ find, actions, describe, read, list: OC.list, sum: OC.sum, group: OC.group, new: createRecord, update: updateRecord, delete: deleteRecord, load: loadRecords, add_window: addWindow, ninja_exec: ninjaExec, ninja_workflow: ninjaWorkflow, ninja_rollback: ninjaRollback, ninja_export: ninjaExport, diff: misDiff, menu: menuOf, process: runProcess, lookup, order_state: orderState })[cmd](O, a));
     process.stdout.write(JSON.stringify(out) + '\n'); return 0;
   } catch (e) {
     if (e instanceof Refused || e instanceof OC.Refused) { say('REFUSED ' + e.message); process.stdout.write(JSON.stringify(Object.assign({ refused: true, reason: e.message }, e.gap ? { gap: true, gapKind: e.gap } : {})) + '\n'); return 3; }
