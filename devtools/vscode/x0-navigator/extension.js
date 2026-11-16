@@ -447,11 +447,21 @@ function activate(context) {
   context.subscriptions.push(vscode.commands.registerCommand('x0Navigator.shipRunLocal', shipRunLocal));
   context.subscriptions.push(vscode.commands.registerCommand('x0Navigator.shipCheck', shipCheck));
   context.subscriptions.push(vscode.commands.registerCommand('x0Navigator.shipFetchBack', shipFetchBack));
+  // §F.29 (#3105): publish main with this machine's own gh login. Asks first; nothing runs without the Deploy click.
+  async function shipDeploy() {
+    const sourceRoot = findSourceRoot(context);
+    if (!sourceRoot) return say(['X0 Navigator: bim-ootb root not found']);
+    const pick = await vscode.window.showInformationMessage('X0 Navigator: deploy main to the live site now? (GitHub Pages, with your gh login on this machine)', 'Deploy');
+    if (pick !== 'Deploy') return say(['\u00a7SHIP_DEPLOY started=N why=not confirmed']);
+    return say(ship.deployMain(sourceRoot).lines);
+  }
+  context.subscriptions.push(vscode.commands.registerCommand('x0Navigator.shipDeploy', shipDeploy));
   const STEPS = [
     ['1 · Run local', 'serve the repo, show each app\'s URL and version on disk', 'x0Navigator.shipRunLocal'],
     ['2 · Check', 'syntax, precache audit, cache-version bump', 'x0Navigator.shipCheck'],
     ['3 · Cost if deployed', 'start-up and offline-cache bytes vs main', 'x0Navigator.costIfDeployed'],
-    ['4 · Fetch back', 'is the live site on main? (uses the network)', 'x0Navigator.shipFetchBack']
+    ['4 · Fetch back', 'is the live site on main? (uses the network)', 'x0Navigator.shipFetchBack'],
+    ['5 · Deploy main now', 'publish main to the live site with your gh login (asks first)', 'x0Navigator.shipDeploy']
   ];
   context.subscriptions.push(vscode.window.registerTreeDataProvider('x0RunShip', {
     getChildren(el) { return el ? [] : STEPS; },
@@ -464,7 +474,7 @@ function activate(context) {
 
   // For the node witness: when the first fresh copy is ready, and which index file the providers read now.
   return {
-    costIfDeployed, statusText, lenses, shipRunLocal, shipCheck, shipFetchBack, steps: () => STEPS,
+    costIfDeployed, statusText, lenses, shipRunLocal, shipCheck, shipFetchBack, shipDeploy, steps: () => STEPS,
     whenFresh: () => firstRefresh,
     indexFile: () => { const f = getFields(); return f ? f.file : null; },
     refreshRuns: () => (refresher ? refresher.runs() : 0),
