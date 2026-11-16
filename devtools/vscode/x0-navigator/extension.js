@@ -15,6 +15,7 @@ const lensIndex = require('./lib/lens_index');
 const ship = require('./lib/ship');
 const fileContext = require('./lib/file_context');
 const appRefs = require('./lib/app_refs');
+const buildStamp = require('./lib/build_stamp');
 
 const JS = { language: 'javascript' };
 const MARKER = path.join('internal', 'APP_SURFACE.md'); // a folder holding this file is the bim-ootb root
@@ -152,6 +153,12 @@ function activate(context) {
   // ── Cost if deployed (§F.12a): start-up and offline-cache bytes of the working tree vs a git ref. Raw bytes, no browser. ──
   const out = vscode.window.createOutputChannel('X0 Navigator');
   context.subscriptions.push(out);
+  // ── Is this installed copy older than the source in the open folder? (§F.25, W-X0-STAMP). Quiet unless stale. ──
+  try {
+    const st = buildStamp.compare(context.extensionPath, findSourceRoot(context));
+    out.appendLine('§X0_STAMP state=' + st.state + ' built=' + String(st.built || '').slice(0, 12) + ' source=' + String(st.source || '').slice(0, 12) + (st.reason ? ' reason=' + st.reason : ''));
+    if (st.state === 'stale') vscode.window.showWarningMessage('X0 Navigator is older than ' + buildStamp.SOURCE.split(path.sep).join('/') + ' in this folder: run node devtools/vscode/pack.js --install, then reload the window.');
+  } catch (e) { out.appendLine('§X0_STAMP state=unknown reason=' + e.message); }
   let costNow = null, costAt = 0;
   function measureNow() {
     const sourceRoot = findSourceRoot(context);

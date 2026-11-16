@@ -15,6 +15,7 @@ const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
 const cp = require('child_process');
+const stamp = require('./x0-navigator/lib/build_stamp');   // the ONE packing rule + the source hash (§F.25, W-X0-STAMP)
 
 const CRC = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
 function crc32(buf) { let c = 0xFFFFFFFF; for (let i = 0; i < buf.length; i++) c = CRC[(c ^ buf[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
@@ -44,18 +45,10 @@ function zip(entries) {
 }
 
 const xml = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-function listFiles(dir, base, out) {
-  for (const e of fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : 1))) {
-    const rel = base ? base + '/' + e.name : e.name;
-    if (e.isDirectory()) { if (e.name !== 'tests' && e.name !== 'node_modules' && !e.name.startsWith('.')) listFiles(path.join(dir, e.name), rel, out); } else if (e.isFile()) out.push(rel);
-  }
-  return out;
-}
-
-/** Pack `extDir`. Returns { file, files, bytes, id, version }. */
+/** Pack `extDir`. Returns { file, files, bytes, id, version, sourceHash }. */
 function pack(extDir, outDir) {
   const pkg = JSON.parse(fs.readFileSync(path.join(extDir, 'package.json'), 'utf8'));
-  const files = listFiles(extDir, '', []);
+  const files = stamp.listFiles(extDir, '', []).filter(f => f !== stamp.STAMP);
   const manifest = '<?xml version="1.0" encoding="utf-8"?>\n'
     + '<PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011">\n <Metadata>\n'
     + '  <Identity Language="en-US" Id="' + xml(pkg.name) + '" Version="' + xml(pkg.version) + '" Publisher="' + xml(pkg.publisher) + '"/>\n'
@@ -69,12 +62,13 @@ function pack(extDir, outDir) {
   const ct = '<?xml version="1.0" encoding="utf-8"?>\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
     + exts.concat(['vsixmanifest']).map(x => '<Default Extension="' + x + '" ContentType="' + (types[x] || 'application/octet-stream') + '"/>').join('') + '</Types>\n';
   const entries = [{ name: 'extension.vsixmanifest', data: Buffer.from(manifest) }, { name: '[Content_Types].xml', data: Buffer.from(ct) }]
-    .concat(files.map(f => ({ name: 'extension/' + f, data: fs.readFileSync(path.join(extDir, f)) })));
+    .concat(files.map(f => ({ name: 'extension/' + f, data: fs.readFileSync(path.join(extDir, f)) })))
+    .concat([{ name: 'extension/' + stamp.STAMP, data: Buffer.from(JSON.stringify({ sourceHash: stamp.sourceHash(extDir) }) + '\n') }]);   // §F.25: lets the installed copy say it is stale
   const buf = zip(entries);
   fs.mkdirSync(outDir, { recursive: true });
   const file = path.join(outDir, pkg.name + '-' + pkg.version + '.vsix');
   fs.writeFileSync(file, buf);
-  return { file, files, bytes: buf.length, id: pkg.publisher + '.' + pkg.name, version: pkg.version };
+  return { file, files, bytes: buf.length, id: pkg.publisher + '.' + pkg.name, version: pkg.version, sourceHash: stamp.sourceHash(extDir) };
 }
 
 module.exports = { pack, zip, crc32 };
@@ -84,7 +78,7 @@ if (require.main === module) {
   const outDir = oi >= 0 ? path.resolve(a[oi + 1]) : path.join(__dirname, 'dist');
   const extDir = path.resolve(a.find((x, i) => !x.startsWith('--') && (oi < 0 || i !== oi + 1)) || path.join(__dirname, 'x0-navigator'));
   const r = pack(extDir, outDir);
-  console.log('§X0_PACK id=' + r.id + ' version=' + r.version + ' files=' + r.files.length + ' bytes=' + r.bytes + ' file=' + r.file);
+  console.log('§X0_PACK id=' + r.id + ' version=' + r.version + ' files=' + r.files.length + ' bytes=' + r.bytes + ' source=' + r.sourceHash.slice(0, 12) + ' file=' + r.file);
   if (a.includes('--install')) {
     const i = cp.spawnSync('code', ['--install-extension', r.file, '--force'], { stdio: 'inherit' });
     console.log('§X0_PACK_INSTALL exit=' + i.status + (i.status === 0 ? '  → reload VS Code (Developer: Reload Window)' : '  → is `code` on your PATH? Otherwise: Extensions view ▸ … ▸ Install from VSIX'));

@@ -50,7 +50,7 @@ const walk = (n, f) => { if (!n) return null; if (f(n)) return n; for (const c o
       ad_doc_action_access: n('SELECT count(*) AS n FROM ad_document_action_access WHERE c_doctype_id BETWEEN 9541500 AND 9541999'), bim_document: n("SELECT count(*) AS n FROM sqlite_master WHERE name='bim_document'") }; return o; }
     finally { process.stderr.write = wr; void logE; Object.keys(saved).forEach(x => { if (saved[x] === undefined) delete process.env[x]; else process.env[x] = saved[x]; }); } };
   const cC = await counts({ ERP_SNAPSHOT: 'off' }), cW = await counts({});
-  const warmHit = /snapshot=hit\+plugins|snapshot=image/.test(warm2.err) && /staged=true/.test(warm2.err), coldFull = /staged=false/.test(cold.err);
+  const warmHit = /snapshot=(hit|image) /.test(warm2.err) && /staged=true/.test(warm2.err), coldFull = /staged=false/.test(cold.err);
   k.L('D5 cold-counts=' + JSON.stringify(cC) + ' warm-counts=' + JSON.stringify(cW) + ' cold-full-start=' + coldFull + ' warm-staged=' + warmHit + ' describe equal=' + (norm(cold) === norm(warm2)));
   if (!coldFull || !warmHit) k.incon('D5', 'cold was not a full start or warm was not the cache (coldFull=' + coldFull + ' warmStaged=' + warmHit + ')');
   else k.chk('D5 the cache of seed + patch + bundles equals a full start: same `mis.describe`, same rows (' + Object.keys(cC).map(x => x + '=' + cC[x]).join(', ') + ')', norm(cold) !== 'none' && norm(cold) === norm(warm2) && JSON.stringify(cC) === JSON.stringify(cW) && cC.ad_process === 2 && cC.ad_window_access > 0 && cC.ad_process_access > 0, 'cold ' + JSON.stringify(cC) + ' warm ' + JSON.stringify(cW));
