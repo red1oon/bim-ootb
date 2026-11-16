@@ -1901,15 +1901,18 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
       return out;
     };
   }
+  // A-2/A-6 (bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md A2-EDGE-2): the trx env is a VIEW of the one edge clock. The instant and the id come from the edge
+  // the page installs (Env.edge(): erp/idempiere.html); the text from Env.stamp (the one local-stamp implementation). No edge = §ENV_NO_DATE + throw (A-3).
   function _modelEnv() {
-    var A = global.APP || {}, d = new Date(), pad = function (n) { return ('0' + n).slice(-2); };
-    var day = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+    var A = global.APP || {}, E = global.AdCallout && global.AdCallout.Env;
+    if (!E) { console.log('§ENV_NO_DATE crud_overlay._modelEnv: AdCallout.Env not loaded'); throw new Error('crud_overlay._modelEnv: no AdCallout.Env (A-3)'); }
+    var edge = E.edge(), ms = edge.nowMs(), st = E.stamp(ms);
     return { client: A.clientId != null ? Number(A.clientId) : null, org: A.orgId != null ? Number(A.orgId) : 0, user: A.actor != null ? A.actor : null, role: A.roleId || 0,
-             date: day + ' 00:00:00', now: day + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds()), nowMillis: d.getTime(),
+             date: st.day + ' 00:00:00', now: st.now, nowMillis: ms,
              session: _modelSession,   // the holder of this tab's login context (ad_callout sessionContext: built once per login identity, HS1)
              std: (A.actor != null || A.clientId != null) ? { actor: A.actor, clientId: A.clientId, orgId: A.orgId != null ? A.orgId : 0 } : null,
              eventSeq: !!global.__eventSeq,   // §EVENT_SEQ trace (ERP_FRIENDLY_OPS_LENS.md §15.6): off unless a witness sets window.__eventSeq
-             uuid: function () { return (global.crypto && global.crypto.randomUUID) ? global.crypto.randomUUID() : null; } };
+             uuid: function () { return edge.uuid(); } };
   }
   // _needThen(table, run) - the OSGi lazy-activation seam (Host work H2): if a lazy plugin bundle declares `table` as a trigger and is still STARTING, activate it FIRST (async, before the synchronous model layer runs), then run.
   //   Nothing pending => run() synchronously, exactly as before. An activation failure is atomic in the registry and is logged here; the run proceeds without that bundle (legacy: a bundle that failed to activate registers no factory).

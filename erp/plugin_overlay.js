@@ -111,11 +111,14 @@
   // A CLIENT ADMIN's data Pack In (window 50005 Pack In -> AD_Process 50008 PackInProcess, erp/processes/PackIn.js; bim-ootb prompts/CAPEX_DASHBOARD.md §5.70): the same atomic walk as a bundle's packs on a recording
   //   of the base DB, under the session client with the model layer (pipo_packin client-data path, §5.69), AD_Package_Imp in the session client/org; the zip bytes + the delta are kept in the SAME store as
   //   the plugin packs under 'client:<AD_Client_ID>:<name>' and replayed at every load (owner: base DB + replay; Teamwork sync does not carry them, each site packs the zip in, as on legacy).
-  function _localNow() { var d = new Date(), p = function (n) { return ('0' + n).slice(-2); }; return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds()); }   // the local clock, as crud_overlay._modelEnv (never the UTC day: §5.33)
-  function _clientEnv(r) {   // the model layer's session env for a kept client pack (the env the walk ran under, today's clock)
-    var now = _localNow();
-    return { client: r.client, org: r.org || 0, user: r.user != null ? r.user : 0, role: r.role || 0, date: now.slice(0, 10) + ' 00:00:00', now: now, nowMillis: Date.now(),
-      uuid: function () { return (global.crypto && global.crypto.randomUUID) ? global.crypto.randomUUID() : null; } };
+  // A-2/A-6 (bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md A2-EDGE-2): the clock and the id come from the edge the page installs (AdCallout.Env.edge()), the text from
+  // Env.stamp (the one local-stamp implementation; never the UTC day, §5.33). No edge = §ENV_NO_DATE + throw (A-3).
+  function _edgeEnv() { var E = global.AdCallout && global.AdCallout.Env; if (!E) { console.log('§ENV_NO_DATE plugin_overlay: AdCallout.Env not loaded'); throw new Error('plugin_overlay: no AdCallout.Env (A-3)'); } return E; }
+  function _localNow() { var E = _edgeEnv(); return E.stamp(E.edge().nowMs()).now; }
+  function _clientEnv(r) {   // the model layer's session env for a kept client pack (the env the walk ran under, today's clock): ONE read of the edge, so now and nowMillis agree
+    var E = _edgeEnv(), edge = E.edge(), ms = edge.nowMs(), now = E.stamp(ms).now;
+    return { client: r.client, org: r.org || 0, user: r.user != null ? r.user : 0, role: r.role || 0, date: now.slice(0, 10) + ' 00:00:00', now: now, nowMillis: ms,
+      uuid: function () { return edge.uuid(); } };
   }
   function _clientWalk(rdb, db, r, xml) {
     if (global.__crud && global.__crud.bindUdf) { try { global.__crud.bindUdf(db); } catch (e) { /* the UDFs are already bound */ } }
