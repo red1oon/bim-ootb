@@ -2918,263 +2918,80 @@ async function setupScene(A) {
       .catch(function (e) { _howto = { pills: {} }; console.log('§HOWTO_LOAD fail ' + e.message); cb(); });
   }
 
+  // §14.5: the panel itself is common/help/help_panel.js (shared with the Modeller). This is the VIEWER ADAPTER: its entries
+  // (the pill registry + keyboard-only rows), its place (left, below the HUD), the install badge, the Report / Guide footer.
   function showCommandPalette() {
-    var existing = document.getElementById('cmd-palette');
-    if (existing) { existing.remove(); console.log('§KBD_HELP close via=toggle'); return; }
-    console.log('§KBD_HELP open');
-    // S226 §R2d: the palette's own strings through the dictionary — rebuilt on every open, so always in the current language
+    // S226 §R2d: the panel's own strings through the dictionary — rebuilt on every open, so always in the current language
     var _hT = function (k, en) { return (typeof _trl === 'function') ? _trl(k, null, en) : en; };
     var _hA = function (k, en) { return String(_hT(k, en)).replace(/&/g, '&amp;').replace(/"/g, '&quot;'); };   // into an attribute
-
-    var pal = document.createElement('div');
-    pal.id = 'cmd-palette';
-    // §14.4 (owner 2026-11-17): a LEFT column below the HUD that stays open while you work, warm AMBER glass (data panels are
-    // cool blue), 85% solid so white/#d0d0d0 text keeps WCAG 4.5:1 over the white background too; draggable by its header via the
-    // ONE drag helper (A._makeDraggable) with its remember + keep-on-screen switches. Phone: a full-screen sheet, not draggable.
-    var _hud = document.getElementById('hud'), _hudB = _hud && _hud.offsetWidth ? Math.round(_hud.getBoundingClientRect().bottom) : 0;
-    var _top = Math.max(16, _hudB + 8), _h = Math.max(240, window.innerHeight - _top - 16);
-    pal.style.cssText = (window._isMobile
-      ? 'position:fixed;left:0;top:0;right:0;bottom:0;border-radius:0;'
-      : 'position:fixed;left:16px;top:' + _top + 'px;width:320px;height:' + _h + 'px;border-radius:12px;') +
-      'z-index:10001;background:rgba(48,30,6,0.85);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);' +
-      'border:1px solid rgba(255,183,77,0.35);box-shadow:0 8px 32px rgba(0,0,0,0.6);display:flex;flex-direction:column;' +
-      'font-family:\'Segoe UI\',sans-serif;overflow:hidden';
-
-    // §S283: Blue/Green triangle badge — always visible
-    // Blue (#4fc3f7) = not installed, Green (#4caf50) = installed/standalone
+    if (document.getElementById('cmd-palette')) { window.HelpPanel.toggle({ id: 'cmd-palette', state: _helpState }); return; }
+    // §S283: Blue/Green triangle badge — always visible. Blue (#4fc3f7) = not installed, Green (#4caf50) = installed/standalone
     var _pwaInstalled = _isStandalone || window._pwaAccepted;
     var _badgeColor = _pwaInstalled ? '#4caf50' : '#4fc3f7';
     var _badgeTitle = _pwaInstalled ? _hA('ui_cmd_installed', 'Installed \u2714') : _hA('ui_cmd_download_offline', 'Download · Run Offline');
     var _badgeIcon = _pwaInstalled
       ? '<polyline points="20 6 9 17 4 12"/>'  // checkmark
       : '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>';  // download arrow
-    console.log('§PWA_BADGE state=' + (_pwaInstalled ? 'green' : 'blue') +
-      ' standalone=' + _isStandalone + ' accepted=' + !!window._pwaAccepted +
-      ' prompt=' + !!window._installPrompt);
+    console.log('§PWA_BADGE state=' + (_pwaInstalled ? 'green' : 'blue') + ' standalone=' + _isStandalone + ' accepted=' + !!window._pwaAccepted + ' prompt=' + !!window._installPrompt);
     var badgeHtml =
       '<div id="cmd-install-badge" title="' + _badgeTitle + '" style="position:absolute;top:0;right:0;' +
       'width:0;height:0;border-style:solid;border-width:0 48px 48px 0;' +
       'border-color:transparent ' + _badgeColor + ' transparent transparent;cursor:pointer;z-index:1;border-radius:0 12px 0 0">' +
       '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" ' +
-      'stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" ' +
-      'style="position:absolute;top:4px;right:-42px">' +
+      'stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="position:absolute;top:4px;right:-42px">' +
       _badgeIcon + '</svg></div>';
-
-    var html = '<div id="cmd-head" style="flex:0 0 auto;display:flex;align-items:center;gap:10px;padding:8px 56px 8px 14px;color:#ffb74d;font-weight:bold;font-size:13px;cursor:grab;border-bottom:1px solid rgba(255,183,77,0.25)">' +
-      '<span>' + _hT('pill_help', 'Help') + '</span>' +
-      '<span id="cmd-close" class="bim-panel-close" title="' + _hA('ui_close', 'Close') + '" style="margin-left:auto;cursor:pointer;color:#d0d0d0;font-size:16px;line-height:1">\u00d7</span></div>' +
-      badgeHtml +
-      '<div style="flex:0 0 auto;padding:10px 14px;border-bottom:1px solid rgba(255,183,77,0.25)">' +
-      '<input id="cmd-search" type="text" placeholder="' + _hA('ui_cmd_placeholder', 'Type a command...') + '" ' +
-      'style="width:100%;background:#222;color:#eee;border:1px solid #555;border-radius:6px;' +
-      'padding:8px 10px;font-size:13px;outline:none;box-sizing:border-box">' +
-      '</div>' +
-      '<div id="cmd-list" style="flex:1 1 auto;min-height:0;overflow-y:auto;padding:4px 0"></div>' +
-      '<div style="flex:0 0 auto;padding:8px 14px;border-top:1px solid rgba(255,183,77,0.25);text-align:center;display:flex;align-items:center;justify-content:center;gap:14px">' +
+    var footer = '<div style="flex:0 0 auto;padding:8px 14px;border-top:1px solid rgba(255,183,77,0.25);text-align:center;display:flex;align-items:center;justify-content:center;gap:14px">' +
       '<span id="cmd-report" title="' + _hA('ui_report_bug', 'Report Bug') + '" style="color:#ff8a65;cursor:pointer;line-height:0">' + _ic(ICONS.circleHelp.svg) + '</span>' +
       '<a id="cmd-docs" href="https://red1oon.github.io/BIMCompiler/BIMUserGuide/" target="_blank" title="' + _hA('ui_cmd_user_guide', 'Viewer User Guide') + '" ' +
       'style="color:#4fc3f7;line-height:0">' + _ic(ICONS.lightbulb.svg) + '</a></div>';
-    pal.innerHTML = html;
-    document.body.appendChild(pal);
-
-    // §S283: Wire badge click — blue=download, green=check update
-    var badge = document.getElementById('cmd-install-badge');
-    if (badge) {
-      badge.addEventListener('click', function(e) {
-        e.stopPropagation();
-        pal.remove();
-        if (_pwaInstalled) {
-          console.log('§PWA_BADGE click=update (green)');
-          _checkUpdate();
-        } else {
-          // ABOUT_BOX_CONSOLIDATE.md — the corner download triangle opens the shared
-          // About/DIY modal (its DIY tab is the self-host installer). Help pill keeps the
-          // shortcuts palette. Fallback to the raw offline download if AboutDIY is absent.
-          console.log('§PWA_BADGE click=about-diy (blue)');
-          if (window.AboutDIY) window.AboutDIY.open(); else _startOfflineDownload();
-        }
-      });
-      console.log('§PWA_BADGE rendered color=' + _badgeColor);
-    }
-
-    var searchInput = document.getElementById('cmd-search');
-    var listEl = document.getElementById('cmd-list');
-    var cursor = 0;
-
-    function renderList(filter) {
-      var f = (filter || '').toLowerCase();
-      // §S282: ONE source — read all entries from _mainPillActions (panels.js _actions)
-      var all = [];
-      if (window._mainPillActions) {
-        window._mainPillActions.forEach(function(act) {
-          all.push({
-            seq: (act.key || '').toUpperCase(),
-            name: act.name || (act.id.charAt(0).toUpperCase() + act.id.slice(1)),
+    var cfg = {
+      id: 'cmd-palette', T: _hT, icon: _ic, isMobile: !!window._isMobile, state: _helpState,
+      place: function () {   // §14.4: a LEFT column below the HUD
+        var hud = document.getElementById('hud'), hudB = hud && hud.offsetWidth ? Math.round(hud.getBoundingClientRect().bottom) : 0;
+        var top = Math.max(16, hudB + 8);
+        return { left: 16, top: top, width: 320, height: Math.max(240, window.innerHeight - top - 16) };
+      },
+      headerExtra: badgeHtml, footer: footer,
+      guideBase: _howto && _howto.guide, guideIcon: ICONS.lightbulb.svg, howtoLoaded: !!_howto,
+      makeDraggable: (typeof A._makeDraggable === 'function') ? A._makeDraggable : null, storageKey: 'bim_help_dock_pos',
+      runSeq: function (seq) { if (_shortcuts[seq]) _shortcuts[seq](); },
+      entries: function () {
+        // §S282: ONE source — the pill registry (panels.js _actions), plus the keyboard-only rows
+        var all = [];
+        (window._mainPillActions || []).forEach(function (act) {
+          all.push({ seq: (act.key || '').toUpperCase(), name: act.name || (act.id.charAt(0).toUpperCase() + act.id.slice(1)),
             icon: act.icon ? _ic(act.icon) : (act.img ? '<img src="' + act.img + '" width="16" height="16">' : ''),
-            action: act.fn,
-            children: act.children || null,
-            hkey: act.id,
-            howto: (_howto && _howto.pills && _howto.pills[act.id]) || null
+            action: act.fn, children: act.children || null, hkey: act.id, howto: (_howto && _howto.pills && _howto.pills[act.id]) || null });
+        });
+        // §ZOOM: keyboard-only shortcuts (NOT pills) — surfaced in the Help listing for discoverability
+        all.push({ seq: '+', name: _hT('ui_cmd_zoom_in', 'Zoom In'), icon: '', action: function () { _shortcuts['+'](); }, children: null });
+        all.push({ seq: '-', name: _hT('ui_cmd_zoom_out', 'Zoom Out'), icon: '', action: function () { _shortcuts['-'](); }, children: null });
+        // §CINEMA_SHORTCUT (2026-07-17): Cinema Orbit lives as a row inside the Sunglass panel, not its own pill
+        all.push({ seq: 'ALT+C', name: _hT('ui_cmd_maxq', 'MaxQ Movie'), icon: '', action: function () { if (typeof A.startMaxQualityOrbit === 'function') A.startMaxQualityOrbit(); else if (typeof A.startCinemaOrbit === 'function') A.startCinemaOrbit(); }, children: null });
+        // §PHOTO_POPULATE (2026-07-17): Alt+P adds fabricated staffage (people + trees) for the presentation shot
+        all.push({ seq: 'ALT+P', name: _hT('ui_cmd_populate', 'Populate (people + trees)'), icon: '', action: function () { if (typeof A.togglePopulate === 'function') A.togglePopulate(); }, children: null });
+        // §HOVER_NAME: a Find-panel checkbox, not a pill. Dead key on some international layouts — fails harmlessly there.
+        if (!window._isMobile) all.push({ seq: "'", name: _hT('ui_cmd_hover_name', 'Hover Name'), icon: '', action: function () { if (A.toggleHoverName) A.toggleHoverName('key'); }, children: null });
+        return all;
+      },
+      onMount: function (pal, api) {
+        // §S283: badge click — blue = About/DIY (ABOUT_BOX_CONSOLIDATE.md), green = check for an update
+        var badge = pal.querySelector('#cmd-install-badge');
+        if (badge) {
+          badge.addEventListener('click', function (e) {
+            e.stopPropagation(); pal.remove();
+            if (_pwaInstalled) { console.log('§PWA_BADGE click=update (green)'); _checkUpdate(); }
+            else { console.log('§PWA_BADGE click=about-diy (blue)'); if (window.AboutDIY) window.AboutDIY.open(); else _startOfflineDownload(); }
           });
-        });
-      }
-      // §ZOOM: keyboard-only shortcuts (NOT pills) — surfaced in the Help listing for discoverability
-      all.push({ seq: '+', name: _hT('ui_cmd_zoom_in', 'Zoom In'),  icon: '', action: function() { _shortcuts['+'](); }, children: null });
-      all.push({ seq: '-', name: _hT('ui_cmd_zoom_out', 'Zoom Out'), icon: '', action: function() { _shortcuts['-'](); }, children: null });
-      // §CINEMA_SHORTCUT (2026-07-17, user: "Cinema has no shortcut and not in Help box among the
-      // others"): same keyboard-only pattern as Zoom above — Cinema Orbit lives as a row inside the
-      // Sunglass panel, not its own pill, so it was never in _mainPillActions and never surfaced here.
-      all.push({ seq: 'ALT+C', name: _hT('ui_cmd_maxq', 'MaxQ Movie'), icon: '', action: function() { if (typeof A.startMaxQualityOrbit === 'function') A.startMaxQualityOrbit(); else if (typeof A.startCinemaOrbit === 'function') A.startCinemaOrbit(); }, children: null });
-      // §PHOTO_POPULATE (2026-07-17): Alt+P adds fabricated staffage (people + trees) for the
-      // presentation shot — its own toggle, separate from Alt+S's clean extract-only still.
-      all.push({ seq: 'ALT+P', name: _hT('ui_cmd_populate', 'Populate (people + trees)'), icon: '', action: function() { if (typeof A.togglePopulate === 'function') A.togglePopulate(); }, children: null });
-      // §HOVER_NAME: same keyboard-only pattern — lives as a Find-panel checkbox, not a pill.
-      // Dead key on some international layouts (US-Intl, ES, PT, FR-CA) — fails harmlessly there.
-      if (!window._isMobile) all.push({ seq: "'", name: _hT('ui_cmd_hover_name', 'Hover Name'), icon: '', action: function() { if (A.toggleHoverName) A.toggleHoverName('key'); }, children: null });
-      var matches = all.filter(function(e) {
-        if (e.name.toLowerCase().indexOf(f) >= 0 || e.seq.toLowerCase().indexOf(f) >= 0) return true;
-        if (!f) return false;
-        // §14.3: a word that is only in a bullet or a CLI title still finds its pill (shown opened, so the reason is visible)
-        var inBody = (e.children || []).some(function (c) { return String(c.name || '').toLowerCase().indexOf(f) >= 0; }) ||
-          ((e.howto && e.howto.cli) || []).some(function (c) { return String(c.title).toLowerCase().indexOf(f) >= 0 || c.verb.indexOf(f) >= 0; });
-        if (inBody) e._openForMatch = true;
-        return inBody;
-      });
-      var _hGuide = 0, _hCli = 0, _en = /^en\b/i.test(document.documentElement.lang || 'en');
-      listEl.innerHTML = '';
-      matches.forEach(function(entry, i) {
-        var row = document.createElement('div');
-        row.className = 'cmd-row';
-        row.setAttribute('data-idx', String(i));
-        row.style.cssText = 'padding:8px 14px;cursor:pointer;display:flex;align-items:center;' +
-          'justify-content:space-between;font-size:13px;color:#e0e0e0;' +
-          (i === cursor ? 'background:rgba(255,183,77,0.18)' : '');
-        row.innerHTML = '<span style="display:flex;align-items:center;gap:8px">' +
-          (entry.icon || '') + entry.name + '</span>' +
-          (entry.seq ? '<kbd style="background:#333;color:#4fc3f7;padding:2px 8px;border-radius:4px;font-family:monospace;font-size:12px;border:1px solid #555">' + entry.seq + '</kbd>' : '');
-        row.addEventListener('click', function(e) {
-          // S265 P10: left zone (bar+icon, <36px) toggles children; right zone launches action
-          if (entry._childDiv) {
-            var rect = row.getBoundingClientRect();
-            if (e.clientX - rect.left < 36) {
-              var open = entry._childDiv.style.display !== 'none';
-              entry._childDiv.style.display = open ? 'none' : 'block';
-              if (entry._bar) entry._bar.style.background = open ? '#4fc3f7' : '#f44336';
-              _helpState.open[entry.hkey || entry.name] = !open;   // §14.4 reopen as left
-              return;
-            }
-          }
-          // §14.4: the panel stays open while the tool runs (it sits on the free left side)
-          if (entry.action) { entry.action(); }
-          else { var seq = entry.seq.toLowerCase(); if (_shortcuts[seq]) _shortcuts[seq](); }
-          console.log('§KBD_PALETTE_RUN name=' + entry.name + ' seq=' + entry.seq);
-        });
-        row.addEventListener('mouseenter', function() {
-          cursor = i;
-          highlightRows();
-        });
-        listEl.appendChild(row);
-        // S265 P10: expandable children (+/−) inline tree
-        var _ht = entry.howto, _hasHt = !!(_ht && (_ht.guide || (_ht.cli && _ht.cli.length)));
-        if ((entry.children && entry.children.length) || _hasHt) {
-          var childDiv = document.createElement('div');
-          var _wasOpen = !!(entry._openForMatch || _helpState.open[entry.hkey || entry.name]);
-          childDiv.style.cssText = 'display:' + (_wasOpen ? 'block' : 'none') + ';padding:2px 14px 4px 28px;background:rgba(255,255,255,0.03);border-left:2px solid rgba(255,183,77,0.25);margin-left:14px';
-          (entry.children || []).forEach(function(c) {
-            var ch = document.createElement('div');
-            ch.style.cssText = 'font-size:12px;color:#d0d0d0;padding:3px 0;display:flex;align-items:center;gap:6px';
-            ch.innerHTML = (c.icon ? _ic(c.icon) : '') + '<span>' + c.name + '</span>';
-            childDiv.appendChild(ch);
-          });
-          if (_ht && _ht.guide) {   // §14.3 the guide section that explains this tool (the guide is English only — said so)
-            _hGuide++;
-            var g = document.createElement('div'); g.className = 'cmd-howto-guide';
-            g.style.cssText = 'font-size:12px;padding:3px 0';
-            g.innerHTML = '<a href="' + _howto.guide + '#' + _ht.guide.anchor + '" target="_blank" rel="noopener" title="' + _hA('ui_howto_guide', 'Guide') + ': ' +
-              String(_ht.guide.heading).replace(/"/g, '&quot;') + '" style="color:#ffb74d">' + _ic(ICONS.lightbulb.svg) + ' ' +
-              (_en ? _hT('ui_howto_guide', 'Guide') : _hT('ui_howto_guide_en', 'Guide (English)')) + '</a>';
-            g.addEventListener('click', function (ev) { ev.stopPropagation(); console.log('§HOWTO_GUIDE_OPEN pill=' + entry.name + ' anchor=' + _ht.guide.anchor); });
-            childDiv.appendChild(g);
-          }
-          if (_ht && _ht.cli && _ht.cli.length) {   // §14.3 the same answer at the CLI: door verbs stay English (§0)
-            _hCli++;
-            var c0 = document.createElement('div'); c0.className = 'cmd-howto-cli';
-            c0.style.cssText = 'font-size:11px;color:#d0d0d0;padding:4px 0 2px';
-            c0.textContent = _hT('ui_howto_cli', 'Same at the CLI');
-            childDiv.appendChild(c0);
-            _ht.cli.forEach(function (c) {
-              var l = document.createElement('div');
-              l.className = 'cmd-howto-cli-line'; l.style.cssText = 'font-size:11px;padding:1px 0';
-              l.innerHTML = '<code style="color:#c5e1a5;background:#1a1a2a;padding:1px 4px;border-radius:3px">' + String(c.line).replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</code>';
-              childDiv.appendChild(l);
-            });
-          }
-          // Red bar in left margin — whole row toggles children
-          row.style.position = 'relative';
-          var bar = document.createElement('span');
-          bar.style.cssText = 'position:absolute;left:4px;top:50%;transform:translateY(-50%);width:3px;height:16px;background:' + (_wasOpen ? '#f44336' : '#4fc3f7') + ';border-radius:1px';
-          row.appendChild(bar);
-          entry._childDiv = childDiv;
-          entry._bar = bar;
-          listEl.appendChild(childDiv);
+          console.log('§PWA_BADGE rendered color=' + _badgeColor);
         }
-      });
-      console.log('§HOWTO_PALETTE entries=' + matches.length + ' guide=' + _hGuide + ' cli=' + _hCli + ' loaded=' + !!_howto + ' filter="' + f + '"');
-      return matches;
-    }
-
-    function highlightRows() {
-      var rows = listEl.querySelectorAll('.cmd-row');
-      for (var i = 0; i < rows.length; i++) {
-        rows[i].style.background = (i === cursor) ? 'rgba(255,183,77,0.18)' : '';
+        // Report Bug — calls the existing APP.reportBug() (helpers.js)
+        pal.querySelector('#cmd-report').addEventListener('click', function () { pal.remove(); if (A.reportBug) A.reportBug(); });
+        // §14.3: help/howto.json lands after the first render — then the How To rows appear
+        _loadHowto(function () { cfg.guideBase = _howto && _howto.guide; cfg.howtoLoaded = !!_howto; api.rerender(); });
       }
-    }
-
-    searchInput.value = _helpState.filter;   // §14.4 reopen as left
-    var currentMatches = renderList(_helpState.filter);
-    _loadHowto(function () { if (document.getElementById('cmd-palette') === pal) currentMatches = renderList(searchInput.value); });
-    function _closeHelp(why) { pal.remove(); console.log('§KBD_HELP close via=' + why); }
-    document.getElementById('cmd-close').addEventListener('click', function (e) { e.stopPropagation(); _closeHelp('x'); });
-    if (!window._isMobile && typeof A._makeDraggable === 'function') {
-      pal._dragStrip = document.getElementById('cmd-head').offsetHeight || 34;
-      pal._dragRemember = 'bim_help_dock_pos'; pal._dragClamp = true;
-      A._makeDraggable(pal);
-    }
-    var _pr = pal.getBoundingClientRect();
-    console.log('§HELP_DOCK open left=' + Math.round(_pr.left) + ' top=' + Math.round(_pr.top) + ' w=' + Math.round(_pr.width) + ' h=' + Math.round(_pr.height) +
-      ' mobile=' + !!window._isMobile + ' filter="' + _helpState.filter + '" open=' + Object.keys(_helpState.open).filter(function (k) { return _helpState.open[k]; }).length);
-    // §G5: no auto-focus on mobile — soft keyboard is premature
-    if (!window._isMobile) searchInput.focus();
-
-    searchInput.addEventListener('input', function() {
-      cursor = 0;
-      _helpState.filter = this.value;
-      currentMatches = renderList(this.value);
-    });
-
-    searchInput.addEventListener('keydown', function(e) {
-      if (e.key === 'Escape' || e.key === 'F1') { e.preventDefault(); _closeHelp(e.key); return; }
-      if (e.key === 'ArrowDown') { e.preventDefault(); cursor = Math.min(cursor + 1, currentMatches.length - 1); highlightRows(); }
-      if (e.key === 'ArrowUp')   { e.preventDefault(); cursor = Math.max(cursor - 1, 0); highlightRows(); }
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        var entry = currentMatches[cursor];
-        if (entry) {
-          if (entry.action) { entry.action(); }
-          else { var seq = entry.seq.toLowerCase(); if (_shortcuts[seq]) _shortcuts[seq](); }
-          console.log('§KBD_PALETTE_RUN name=' + entry.name + ' seq=' + entry.seq);
-        }
-      }
-    });
-
-    // Report Bug link — calls existing APP.reportBug() (helpers.js)
-    document.getElementById('cmd-report').addEventListener('click', function() {
-      pal.remove();
-      if (A.reportBug) A.reportBug();
-    });
-
-    // §14.4: a click in the 3D view no longer closes it — it stays open while you work (Esc, F1, ? or × close it)
-    pal.addEventListener('click', function(e) { e.stopPropagation(); });
+    };
+    window.HelpPanel.toggle(cfg);
   }
 
   // Expose for 🛟 button

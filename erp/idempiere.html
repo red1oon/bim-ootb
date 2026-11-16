@@ -659,7 +659,7 @@
 <script src="erp_attrib.js?v=1"></script>
 <script src="erp_kernel.js?v=1"></script>
 <script src="erp_seam.js?v=1"></script>
-<script src="kanban_lens.js?v=4"></script>
+<script src="kanban_lens.js?v=5"></script>
 <script src="kanban_host.js?v=1"></script>
 <!-- The ONE gesture — edit one rule → K records re-fold live, signed + reversible (docs/RULE_EDIT_SPEC.md). -->
 <script src="bigdecimal.js?v=2"></script>
@@ -839,7 +839,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
 <script src="erp_shard.js?v=1"></script>
 <!-- §S60 physical split: the pure CORE (window.CrudCore) — MUST load before crud_overlay.js -->
 <script src="crud_core.js?v=11"></script>
-<script src="crud_overlay.js?v=45"></script>
+<script src="crud_overlay.js?v=46"></script>
 <!-- TEAMWORK_FRAMEWORK.md §13.1 (W1, W-TEAM-SO): the local comm layer + erp/team_sync.js — written ONLY when the page is opened with ?team=1
      (otherwise no script tag, no DOM, no global: the page is byte-for-byte what it was). Parser-blocking so TeamSync exists before the first commit. -->
 <script src="../common/comm/team_defaults.js?v=1"></script><script src="../common/comm/team_trial.js?v=1"></script><script src="../common/comm/team_avatars.js?v=1"></script><script src="../common/comm/team_panel.js?v=4"></script><!-- §13.8: setup values + trial rule + the Team pill's panel (inert until opened) -->
@@ -3593,7 +3593,9 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       //   (commitProcess → completeFanout → signed commitGroup → persist). The ring NEVER opens. The persisted
       //   status survives reload via the readTip overlay (_overlayDocTip); a DOC_ACTION commit refolds the view.
       //   Returns the FSM result {ok,from,to,reason}.
-      dispatch: function (act) {
+      // bim-compiler prompts/CLI_ERP_IVR.md §38 K2: settled(v) (optional) gets the ENGINE's verdict once __crud.process has run: {ok:true, to} on commit, {ok:false, reason}
+      //   on a model refusal / gate refusal / no commit. On a refusal the optimistic status is put back for EVERY caller (legacy saves only when processIt succeeds).
+      dispatch: function (act, settled) {
         var opts = null;
         if (tid === 259 && doctypeId) {
           var dt = b.prepare('SELECT docsubtypeso FROM c_doctype WHERE c_doctype_id=?').get(doctypeId);
@@ -3601,14 +3603,21 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         }
         var res = (tid === 259) ? window.AdDocFsm.dispatchOrder(b, fsmRec, act, opts)
                                 : window.AdDocFsm.dispatchFor(b, tid, fsmRec, act);
+        var dsKey = _recKey(rec, 'DocStatus'), was = rec[dsKey];
+        var verdict = function (v) {   // the engine's answer: a refusal puts the status back (KDB_InvalidTransition / processIt == false)
+          if (!(v && v.ok)) { rec[dsKey] = was; console.log('§FSM-CTX refused table=' + tab.tableName + ' rec=' + theRecId + ' action=' + act + ' status_back=' + was + ' why=' + JSON.stringify(String((v && v.reason) || '?').slice(0, 160))); }
+          else if (v.to) rec[dsKey] = v.to;
+          if (typeof settled === 'function') settled(v);
+        };
         if (res.ok) {
-          rec[_recKey(rec, 'DocStatus')] = res.to;          // optimistic in-memory advance (immediate UI feedback)
+          rec[dsKey] = res.to;          // optimistic in-memory advance (immediate UI feedback); undone by verdict() on a refusal
           if (window.__crud && typeof window.__crud.process === 'function') {
             try {
               window.__crud.process(tab.tableName, theRecId, act,
                 { from: res.from, to: res.to, doctypeId: doctypeId,
-                  outcome: (act === 'RC' || act === 'RA') ? 'reversal' : 'success' });
-            } catch (e) { console.log('§FSM-CTX signed-process error table=' + tab.tableName + ' rec=' + theRecId + ' ' + (e && e.message)); }
+                  outcome: (act === 'RC' || act === 'RA') ? 'reversal' : 'success', settled: verdict });
+              res.async = true;
+            } catch (e) { console.log('§FSM-CTX signed-process error table=' + tab.tableName + ' rec=' + theRecId + ' ' + (e && e.message)); verdict({ ok: false, reason: 'process error: ' + (e && e.message) }); res.async = true; }
           } else {
             console.log('§FSM-CTX signed-process SKIPPED (__crud.process absent) — in-memory preview only rec=' + theRecId);
           }
@@ -3627,7 +3636,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       var btn = el('button', null, _famLbl(ctx.tid, 'action', act));
       btn.setAttribute('data-doc-action', act);
       btn.addEventListener('click', function () {
-        var res = ctx.dispatch(act);
+        var res = ctx.dispatch(act, function (v) { if (!(v && v.ok)) { refreshForm(); renderToolbar(); } });   // §38 K2: a refusal by the engine shows the status it kept
         console.log('§AD-DOCFSM-LIVE table=' + ctx.tid + '(' + tab.tableName + ') record=' + ctx.recId +
           ' clicked=' + act + (res.ok ? ' from=' + res.from + ' to=' + res.to : ' REJECTED=' + res.reason));
         if (res.ok) { refreshForm(); renderToolbar(); }   // toolbar too: a lens bar / enabled buttons follow the new DocStatus (ADWindowToolbar.enableButtons after a DocAction)
@@ -7291,18 +7300,20 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         " title='" + _m.title + "' amount='" + (_m.amount == null ? '' : _m.amount) + "' date='" + (_m.date == null ? '' : _m.date) +
         "' color=" + window.KanbanLens.statusColor(_sc.status)); }
     // §KANBAN-GROUPBY: extract dispatch+onResult so the group-by re-mount shares the same write path
-    var _kbDispatch = function (intent) {
+    var _kbDispatch = function (intent, _ctx, settled) {   // §38 K2: answers {ok, async:true}; the board moves the card on settled()
       var rec = _records.filter(function (r) { return String(recVal(r, kc)) === String(intent.id); })[0];
       if (!rec) { console.log('§KANBAN-WRITE no-rec id=' + intent.id); return { ok: false, reason: 'no-rec' }; }
       var fc = _fsmCtx(tab, rec);
       if (!fc) { console.log('§KANBAN-WRITE no-fsm table=' + T + ' id=' + intent.id); return { ok: false, reason: 'no-fsm' }; }
-      var res = fc.dispatch(intent.action);   // AdDocFsm legality + __crud.process on the SHARED signed lane
-      if (res && res.ok) console.log('§KANBAN-WRITE ok ' + T + '#' + intent.id + ' action=' + intent.action +
-        ' from=' + res.from + ' to=' + res.to + ' via=__crud.process store=shared(__crud)');
-      else console.log('§KANBAN-WRITE rejected ' + T + '#' + intent.id + ' action=' + intent.action + ' why=' + (res && res.reason));
-      return { ok: !!(res && res.ok), to: res && res.to, reason: res && res.reason };
+      var res = fc.dispatch(intent.action, function (v) {   // AdDocFsm legality + __crud.process on the SHARED signed lane; v = the engine's verdict
+        console.log('§KANBAN-WRITE ' + (v && v.ok ? 'ok' : 'refused') + ' ' + T + '#' + intent.id + ' action=' + intent.action + ' to=' + (v && v.to) + (v && v.ok ? ' via=__crud.process store=shared(__crud)' : ' why=' + JSON.stringify(String((v && v.reason) || '?').slice(0, 160))));
+        if (typeof settled === 'function') settled(v);
+      });
+      if (!(res && res.ok)) console.log('§KANBAN-WRITE rejected ' + T + '#' + intent.id + ' action=' + intent.action + ' why=' + (res && res.reason));
+      return { ok: !!(res && res.ok), async: !!(res && res.async), to: res && res.to, reason: res && res.reason };
     };
     var _kbOnResult = function (res, dr) {
+      if (dr && dr.ok === false && dr.reason) status(dr.reason);   // §38: legacy's KDB_InvalidTransition text + the engine's reason; the card is back where it was
       if (dr && dr.ok && window.__crud && typeof window.__crud.withSidecar === 'function') {
         setTimeout(function () { window.__crud.withSidecar(function () {
           try { console.log('§KANBAN-WRITE settled ' + res.table + '#' + res.id +
