@@ -97,6 +97,8 @@
   "diff":    { "help": "compare a file with the records: diff <file>", "forms": [
                { "in": "erp", "ex": "diff suppliers.csv",      "verb": "mis.diff",      "args": ["file"] } ] },
   "ninja":   { "help": "stage a workbook or CSV: ninja <file>",  "forms": [
-               { "in": "any", "ex": "ninja Ninja_HRMIS.xlsx",      "verb": "ninja.exec",    "args": ["file"] } ] }
+               { "in": "any", "ex": "ninja Ninja_HRMIS.xlsx",      "verb": "ninja.exec",    "args": ["file"] } ] },
+  "ask":     { "help": "ask the help a question, in your language: ask \"<question>\"", "forms": [
+               { "in": "erp", "ex": "ask \"How do I close a Sales Order?\"", "verb": "erp.ask",       "args": ["question"] } ] }
  }
 }

@@ -1,0 +1,82 @@
+{
+ "note": "VOCAB_MESSAGE_CATALOG §10/§12/§13: real phrasings -> the window and the DocAction a person means (what is asked, not how it is found). ONE fixture for the page (W-HELP-SHOWCASE S3/S6) and the CLI (W-ERP-ASK A1/A2). 作废 (void) is not in zh: the zh_CN pack has no such word (Void 空白, Voided 空虚).",
+ "en": [
+  {
+   "q": "How do I close a Sales Order?",
+   "w": 143,
+   "a": "CL"
+  },
+  {
+   "q": "what does complete do on a sales order",
+   "w": 143,
+   "a": "CO"
+  },
+  {
+   "q": "complete an invoice",
+   "w": 167,
+   "a": "CO"
+  },
+  {
+   "q": "How can I void a payment?",
+   "w": 195,
+   "a": "VO"
+  },
+  {
+   "q": "how to record a customer payment",
+   "w": 195,
+   "a": null
+  },
+  {
+   "q": "How do I create a shipment?",
+   "w": 169,
+   "a": null
+  },
+  {
+   "q": "reactivate a sales order",
+   "w": 143,
+   "a": "RE"
+  },
+  {
+   "q": "Re-activate a Sales Order",
+   "w": 143,
+   "a": "RE"
+  }
+ ],
+ "zh": [
+  {
+   "q": "如何关闭销售订单？",
+   "w": 143,
+   "a": "CL"
+  },
+  {
+   "q": "怎样结束销售订单？",
+   "w": 143,
+   "a": "CL"
+  },
+  {
+   "q": "怎样完成一张发票？",
+   "w": 167,
+   "a": "CO"
+  },
+  {
+   "q": "如何重新激活销售订单？",
+   "w": 143,
+   "a": "RE"
+  },
+  {
+   "q": "怎么记录客户付款？",
+   "w": 195,
+   "a": null
+  },
+  {
+   "q": "如何创建出货单？",
+   "w": 169,
+   "a": null
+  },
+  {
+   "q": "How do I close a Sales Order?",
+   "w": 143,
+   "a": "CL"
+  }
+ ]
+}

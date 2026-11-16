@@ -8,6 +8,7 @@
 //     find     --kind K --number N        the window's Find by document number (else Name/Value): key, number, DocStatus, DocAction, doctype
 //     actions  --kind K --id I [--role R] the legal actions of that record's state (DocumentEngine.getValidActions), then the role's Document Action Access when --role is given (erp/doc_actions.js)
 //     describe --kind K                   reflection over the dictionary: properties, child tabs (object_cli's describe, over the ERP's AD rows; any AD table, document or not)
+//     ask      --question Q [--lang L] [--role R]   the help question box at the terminal, in the chosen language (VOCAB_MESSAGE_CATALOG.md §13; erp/help_search.js, lang_rule.js)
 //     read     --kind K (--id I | --number N)   one record by its key or its number (the one resolver, recordOf), with its single-row child tabs (object_cli's read)
 //     complete|void|close|reverse --kind K --id I [--role R]   DocAction CO|VO|CL|RC (DocumentEngine constants) through ModelLayer.run (DocumentEngine.processIt) = the twin of legacy's action; --role refuses what that role is not offered
 //   Writes never touch the .db: each op is appended to the op-log (JSONL; --oplog, else $BIM_OBJECT_OPLOG, else ~/.cache/bim_object/<db>.ops.jsonl, the object layer's own log) and replayed on every run.
@@ -414,6 +415,43 @@ function act(O, a, code) {
 const complete = (O, a) => act(O, a, ACT.complete);
 // the generic object layer over ERP tables = object_cli's own describe/read run over the ERP's booted handle (no per-table code; the same AD rows)
 function describe(O, a) { if (!a.kind) refuse('--kind is required'); return OC.describe(O, { kind: a.kind, uu: a.id, role: a.role }); }
+// ask --question Q [--lang L] [--role R] [--user U]: the help question box at the terminal (bim-compiler prompts/VOCAB_MESSAGE_CATALOG.md §13, witness W-ERP-ASK). The SAME index the page's How To box
+//   builds (erp/help_search.js indexFrom) over this dictionary and the help pack of the chosen language (lang_rule.js: --lang, the stated user's preference, LANG, client 0). Reads only.
+//   --role: only the windows that role may open (AD_Window_Access), and its client for the language; without it every active window.
+function ask(O, a) {
+  if (!a.question || !String(a.question).trim()) refuse('--question is required');
+  const E = path.join(ROOT, 'erp'), LR = require('./lang_rule.js'), HS = require(path.join(E, 'help_search.js'));
+  const roleId = a.role != null ? Number(a.role) : null;
+  if (roleId != null && !O.rows('SELECT 1 AS x FROM ad_role WHERE ad_role_id=?', [roleId]).length) refuse('unknown role ' + a.role);
+  const client = roleId != null ? (O.rows('SELECT ad_client_id AS c FROM ad_role WHERE ad_role_id=?', [roleId])[0] || {}).c : null;
+  const L = LR.chosen((sql) => O.rows(sql), { lang: BREAK === 'nolang' ? null : a.lang, user: a.user != null ? a.user : process.env.BIM_DOOR_USER, client, env: BREAK === 'nolang' ? {} : process.env });
+  const packOf = (lang) => { const f = path.join(E, 'i18n', 'help', lang, 'help.json'); return fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, 'utf8')) : null; };
+  const en = packOf('en_US'); if (!en) refuse('the help pack erp/i18n/help/en_US/help.json is missing');
+  const pk = L.lang === 'en_US' ? null : packOf(L.lang);
+  const log = console.log; console.log = () => {}; let fsm; try { fsm = require(path.join(E, 'ad_docfsm.js')); } finally { console.log = log; }
+  const ids = (roleId != null ? O.rows("SELECT DISTINCT a.ad_window_id AS w FROM ad_window_access a JOIN ad_window w ON w.ad_window_id=a.ad_window_id WHERE a.ad_role_id=? AND a.isactive='Y' AND w.isactive='Y'", [roleId])
+    : O.rows("SELECT ad_window_id AS w FROM ad_window WHERE isactive='Y'")).map((r) => Number(r.w));
+  const idx = HS.indexFrom({ q: (sql) => O.rows(sql), en, pack: pk, fsm, windowIds: ids }), c = idx.ask(String(a.question));
+  const text = (h) => String(h || '').replace(/<[^>]+>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
+  say('ASK lang=' + L.lang + ' by=' + L.by + ' pack=' + (pk ? L.lang : 'en_US') + ' howto=' + (idx.localHowto ? L.lang : 'en_US') + ' windows=' + ids.length + ' window=' + (c.window ? c.window.id : 'none') + ' action=' + (c.action ? c.action.code : 'none') + ' matched=' + JSON.stringify(c.matched));
+  // the card as lines for a person (red1 prints an answer's summary): the labels the page uses (erp/i18n/chrome.json help.*), resolved as ErpI18n.t resolves them in the page:
+  //   the dictionary's element name for that language (ref el:<id>, erp/i18n/<lang>.json AD_Element_Trl) when there is one, else the labelled machine entry, else English
+  const cat = (() => { try { return JSON.parse(fs.readFileSync(path.join(E, 'i18n', 'chrome.json'), 'utf8')).keys || {}; } catch (e) { return {}; } })();
+  const ui = L.lang === 'en_US' ? null : (() => { try { return JSON.parse(fs.readFileSync(path.join(E, 'i18n', L.lang + '.json'), 'utf8')); } catch (e) { return null; } })();
+  const T = (key, en, args) => { const k = cat[key]; let v = null;
+    if (k && L.lang !== 'en_US') { const m = /^el:(\d+)$/.exec(k.ref || ''); const el = m && ui && ui.AD_Element_Trl && ui.AD_Element_Trl[m[1]]; v = (el && el[0]) || (k.machine && k.machine[L.lang]) || null; }
+    v = v || (k && k.en) || en; return args ? v.replace(/\{(\d)\}/g, (x, i) => (args[i] != null ? args[i] : '')) : v; };
+  const lines = [];
+  if (c.window) lines.push(T('help.window', 'Window') + ': ' + c.window.name);
+  if (c.action) { lines.push(T('help.action', 'Action') + ': ' + c.action.name + ' — ' + (c.action.description || '')); lines.push('  ' + T('help.allowed', 'Allowed when the document is') + ': ' + c.action.allowedFrom.join(', '));
+    if (c.action.alternatives.length) lines.push('  ' + T('help.also', 'Also') + ': ' + c.action.alternatives.map((x) => x.name).join(', ')); }
+  if (c.cli) lines.push('CLI: ' + (c.cli.line || T('help.cliNote', '{0} is offered for {1}, not for {2}', [c.cli.verb, c.cli.offeredFor || '-', c.cli.kind || '-'])));
+  if (c.guide) lines.push(T('help.guide', 'Guide') + ': ' + c.guide.title + ' ' + c.guide.url);
+  if (c.howto) { lines.push(''); if (!idx.localHowto && L.lang !== 'en_US') lines.push(T('help.english', '(English)')); lines.push(text(c.howto.html)); if (c.howto.translated) lines.push('(' + T('help.translated', 'Translated by the build session, not reviewed by a native speaker') + ')'); }
+  if (!c.window && !c.action && !c.howto) lines.push(T('help.none', 'No match in the dictionary or the how-to rows.'));
+  return { question: c.question, lang: L.lang, langBy: L.by, howtoLang: idx.localHowto ? L.lang : 'en_US', window: c.window, action: c.action, cli: c.cli, guide: c.guide,
+    howto: c.howto ? { name: c.howto.name, window: c.howto.ad_window_id, text: text(c.howto.html), translated: c.howto.translated || null } : null, matched: c.matched, summary: lines.join('\n') };
+}
 function read(O, a) {   // by --id: unchanged. By --number: the resolver names the record, then the same read by its key
   if (!a.kind) refuse('--kind is required');
   if (a.number == null) { if (a.id == null) refuse('a record is named by --id or --number'); return OC.read(O, { kind: a.kind, uu: a.id, role: a.role }); }
@@ -1185,10 +1223,10 @@ function projectStatus(O, a) {
 async function main(argv) {
   const cmd = argv[0], a = {};
   for (let i = 1; i < argv.length; i++) { const m = /^--(\w+)$/.exec(argv[i]); if (!m || i + 1 >= argv.length) { say('FAIL usage: ' + argv[i]); return 2; } if (m[1] === 'where') (a.where = a.where || []).push(argv[++i]); else a[m[1]] = argv[++i]; }
-  if (['find', 'actions', 'describe', 'read', 'list', 'sum', 'group', 'new', 'update', 'delete', 'load', 'add_window', 'ninja_exec', 'ninja_workflow', 'ninja_rollback', 'ninja_export', 'diff', 'menu', 'process', 'lookup', 'order_state', 'project_status'].concat(Object.keys(ACT)).indexOf(cmd) < 0) { say('FAIL usage: erp_cli.js find|actions|complete|void|close|reverse|describe|read|list|sum|group --kind K (--number N | --id I) [--role R]'); return 2; }
+  if (['find', 'actions', 'describe', 'ask', 'read', 'list', 'sum', 'group', 'new', 'update', 'delete', 'load', 'add_window', 'ninja_exec', 'ninja_workflow', 'ninja_rollback', 'ninja_export', 'diff', 'menu', 'process', 'lookup', 'order_state', 'project_status'].concat(Object.keys(ACT)).indexOf(cmd) < 0) { say('FAIL usage: erp_cli.js find|actions|complete|void|close|reverse|describe|read|list|sum|group --kind K (--number N | --id I) [--role R]'); return 2; }
   try {
     const O = await boot(a); O.actor = a.user != null ? Number(a.user) : (process.env.BIM_DOOR_USER ? Number(process.env.BIM_DOOR_USER) : 101);   // the session user: stated, else red1's login (§30 L4, BIM_DOOR_USER), else 101 (the default the callout context takes)
-    const out = await (ACT[cmd] ? act(O, a, ACT[cmd]) : ({ find, actions, describe, read, list: OC.list, sum: OC.sum, group: OC.group, new: createRecord, update: updateRecord, delete: deleteRecord, load: loadRecords, add_window: addWindow, ninja_exec: ninjaExec, ninja_workflow: ninjaWorkflow, ninja_rollback: ninjaRollback, ninja_export: ninjaExport, diff: misDiff, menu: menuOf, process: runProcess, lookup, order_state: orderState, project_status: projectStatus })[cmd](O, a));
+    const out = await (ACT[cmd] ? act(O, a, ACT[cmd]) : ({ find, actions, describe, ask, read, list: OC.list, sum: OC.sum, group: OC.group, new: createRecord, update: updateRecord, delete: deleteRecord, load: loadRecords, add_window: addWindow, ninja_exec: ninjaExec, ninja_workflow: ninjaWorkflow, ninja_rollback: ninjaRollback, ninja_export: ninjaExport, diff: misDiff, menu: menuOf, process: runProcess, lookup, order_state: orderState, project_status: projectStatus })[cmd](O, a));
     process.stdout.write(JSON.stringify(out) + '\n'); return 0;
   } catch (e) {
     if (e instanceof Refused || e instanceof OC.Refused) { say('REFUSED ' + e.message); process.stdout.write(JSON.stringify(Object.assign({ refused: true, reason: e.message }, e.gap ? { gap: true, gapKind: e.gap } : {})) + '\n'); return 3; }
@@ -1196,4 +1234,4 @@ async function main(argv) {
   }
 }
 if (require.main === module) main(process.argv.slice(2)).then(c => process.exit(c));
-module.exports = { misDiff, ninjaRollback, ninjaExport, ninjaWorkflow, workflowOn, ninjaExec, stageAtDoor, runLoader, sheetGrid, addWindow, ensureTables, tabFor, main, boot, loadRecords, find, actions, complete, act, ACT, describe, read, persistGroup, resolveOne, docKind, kindRef, byNumber, recordOf, loadEngine, b3 };
+module.exports = { ask, misDiff, ninjaRollback, ninjaExport, ninjaWorkflow, workflowOn, ninjaExec, stageAtDoor, runLoader, sheetGrid, addWindow, ensureTables, tabFor, main, boot, loadRecords, find, actions, complete, act, ACT, describe, read, persistGroup, resolveOne, docKind, kindRef, byNumber, recordOf, loadEngine, b3 };
