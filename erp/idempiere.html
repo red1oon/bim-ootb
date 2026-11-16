@@ -92,6 +92,14 @@
   #idmp-help-tooltip { padding:6px 10px; font-size:12px; line-height:1.4; overflow-wrap:anywhere; }
   #idmp-help-tooltip p { margin:0 0 6px; }
   #idmp-help-tooltip .help-entitytype { color:#888; }
+  /* §10 H2/H4: the How To widget (legacy's Context Help place) + the question box, a twin extra (D3) */
+  #idmp-help.howto-closed #idmp-howto { display:none; }
+  #idmp-howto { padding:6px 10px; font-size:12px; line-height:1.4; overflow-wrap:anywhere; }
+  #idmp-howto-q { width:100%; box-sizing:border-box; margin:0 0 6px; padding:4px 6px; font-size:12px; }
+  #idmp-howto p { margin:0 0 6px; }
+  #idmp-howto .hs-card { border:1px solid var(--idmp-border); border-radius:4px; padding:6px; margin-bottom:8px; }
+  #idmp-howto .hs-row { margin:0 0 5px; } #idmp-howto .hs-k { font-weight:600; margin-right:4px; }
+  #idmp-howto .hs-sub, #idmp-howto .hs-lang { color:#888; } #idmp-howto code { font-size:11px; }
   [dir=rtl] #idmp-help { border-left:none; border-right:1px solid var(--idmp-border); }
   @media (max-width:900px){ #idmp-help { display:none; } }
   /* ── Left menu panel ── */
@@ -537,15 +545,16 @@
     </div>
     <div id="idmp-status"><span id="idmp-status-main">Ready</span><span class="spacer" style="flex:1"></span><span id="idmp-status-info" data-statusline=""></span><span class="seal" id="idmp-status-src"></span></div>
   </main>
-  <aside id="idmp-help" style="display:none"><div class="idmp-help-title" id="idmp-help-title">Tool Tip</div><div id="idmp-help-tooltip"></div></aside><!-- §7 P1b: legacy East panel, Tool Tip widget (HelpController.java:136-150) -->
+  <aside id="idmp-help" style="display:none"><div class="idmp-help-title" id="idmp-help-title">Tool Tip</div><div id="idmp-help-tooltip"></div><div class="idmp-help-title" id="idmp-howto-title">How To</div><div id="idmp-howto"><input id="idmp-howto-q" type="search" autocomplete="off"><div id="idmp-howto-card"></div><div id="idmp-howto-ctx"></div></div></aside><!-- §7 P1b: legacy East panel, Tool Tip widget (HelpController.java:136-150) -->
 </div>
 
 <script src="error_beacon.js?v=1" onerror="console.warn('§LOAD_FAIL error_beacon.js — field-error capture disabled')"></script><!-- SYSTEM_MONITOR_WIDGETS §H — minimal field-error beacon (G2 seed); loads early to catch boot errors -->
 <script src="vfs_detect.js?v=1"></script>
 <script src="seed_key.js?v=1"></script><!-- SEAM F10 — the ONE seed IDB key owner (window.ERP_SEED_KEY); before first idb use + system_monitor -->
-<script src="erp_i18n.js?v=2"></script><!-- UI locales (bim-compiler prompts/ERP_UI_LOCALES.md) — W-ERP-I18N -->
+<script src="erp_i18n.js?v=3"></script><!-- UI locales (bim-compiler prompts/ERP_UI_LOCALES.md) — W-ERP-I18N -->
 <script src="ad_parser.js?v=27"></script>
-<script src="field_help.js?v=1"></script><!-- VOCAB_MESSAGE_CATALOG §7 P1b: ONE field tooltip setter + the Tool Tip panel (legacy WEditor / HelpController) — W-FIELD-HELP -->
+<script src="field_help.js?v=1"></script>
+<script src="help_search.js?v=1"></script><!-- VOCAB_MESSAGE_CATALOG §10 H2: the How To question box (deterministic, no AI inside) — W-HELP-SHOWCASE S3 --><!-- VOCAB_MESSAGE_CATALOG §7 P1b: ONE field tooltip setter + the Tool Tip panel (legacy WEditor / HelpController) — W-FIELD-HELP -->
 <!-- UI_UNPARK_RESUME.md — proven AD engines (source of truth: bim-compiler build/erp/): logic evaluator
      (W-LOGIC-EVAL 3044/3044) · DocAction FSM (W-*-FSM, 22 tables) · beforeSave hooks (W-*-SAVE, 12 installers). -->
 <script src="ad_evaluator.js?v=24"></script>
@@ -1771,6 +1780,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   }
   function renderWinTabs() {
     var bar = $('idmp-wintabs'); bar.innerHTML = '';
+    _howtoCtx();   // §10 H4: the How To widget follows the window in view (legacy renderCtxHelp on window activation)
     Object.keys(_openWins).forEach(function (idStr) {
       var id = Number(idStr), o = _openWins[id];
       var t = el('div', 'idmp-wintab' + (id === _activeWin ? ' active' : ''));
@@ -3083,7 +3093,67 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     if (!aside.__fhTitle) { aside.__fhTitle = true; $('idmp-help-title').addEventListener('click', function () { aside.classList.toggle('closed'); }); }   // Panel.setCollapsible(true)
     FieldHelp.bindPanel($('idmp-help-tooltip'), document.body, { tech: tech, place: _findMsg('PlaceCursorIntoField', 'Place your cursor into a field on the screen') });
     console.log('§FIELD_HELP panel bound collapsed=' + collapsed + ' tech=' + tech);
+    _howtoBind();
   }
+  // §10 H2/H4 (VOCAB_MESSAGE_CATALOG.md): the How To widget — legacy's Context Help (HelpController.renderCtxHelp, ctxtype W) for the window in
+  //   view, from the help pack's AD_CtxHelp-shaped rows, and a question box over the dictionary (HelpSearch). Links open windows on the role's menu.
+  var _howtoIdx = null, _howtoPack = null;
+  function escH(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+  function _howtoBind() {
+    var title = $('idmp-howto-title'), qbox = $('idmp-howto-q'); if (!title || !window.HelpSearch || !window.ErpI18n || !ErpI18n.loadHelp) return;
+    title.textContent = _findMsg('HowTo', 'How To');
+    qbox.placeholder = _T('help.ask', 'Ask: How do I close a Sales Order?');
+    if (!title.__hb) {
+      title.__hb = true;
+      title.addEventListener('click', function () { $('idmp-help').classList.toggle('howto-closed'); });
+      qbox.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') _howtoAsk(qbox.value); });
+      $('idmp-howto').addEventListener('click', function (ev) {
+        var a = ev.target.closest ? ev.target.closest('a[data-help-win]') : null; if (!a) return; ev.preventDefault();
+        var wid = Number(a.getAttribute('data-help-win')), on = window.__idmpFieldHelp.menu().windows.indexOf(wid) >= 0;
+        console.log('§HELP_LINK window=' + wid + ' onMenu=' + on);
+        if (on) openWindow(wid); else status('Not on this role\'s menu (window ' + wid + ')');
+      });
+    }
+    ErpI18n.loadHelp('en_US').then(function (p) {
+      if (!p) return; _howtoPack = p;
+      var ids = window.__idmpFieldHelp.menu().windows, idset = {}; ids.forEach(function (i) { idset[i] = 1; });
+      var wins = ids.length ? _sqlRows('SELECT ad_window_id AS wid, name AS wnm FROM ad_window WHERE ad_window_id IN (' + ids.join(',') + ')').map(function (r) { return { id: Number(r.wid), name: String(r.wnm) }; }) : [];
+      var tabs = _sqlRows("SELECT name AS tn, ad_window_id AS tw FROM ad_table WHERE isactive='Y' AND ad_window_id IS NOT NULL AND accesslevel<>'4'").filter(function (t) { return idset[Number(t.tw)]; }).map(function (t) { return { name: String(t.tn), windowId: Number(t.tw) }; });
+      var kindOf = function (wid) { var r = _sqlRows('SELECT tb.name AS tn, tb.tablename AS tt FROM ad_tab t JOIN ad_table tb ON tb.ad_table_id=t.ad_table_id WHERE t.tablevel=0 AND t.ad_window_id=' + Number(wid) + ' ORDER BY t.seqno LIMIT 1')[0]; return r ? { name: String(r.tn), table: String(r.tt) } : null; };
+      _howtoIdx = HelpSearch.makeIndex({ windows: wins, tables: tabs, actions: p.actions, howto: p.howto, kindOf: kindOf });
+      console.log('§HELP_SEARCH index windows=' + wins.length + ' tables=' + tabs.length + ' actions=' + Object.keys(p.actions || {}).length + ' howto=' + (p.howto || []).length + ' phrases=' + _howtoIdx.size.phrases);
+      _howtoCtx();
+    });
+  }
+  function _howtoLinks(html) {   // the pack's links, as built; HS_BREAK=deadlink points them nowhere (W-HELP-SHOWCASE S4 falsifier)
+    return (window.__HS_BREAK === 'deadlink') ? String(html).replace(/data-help-win="\d+"/g, 'data-help-win="999999"') : String(html);
+  }
+  function _howtoEnglish() { return (window.ErpI18n && ErpI18n.lang !== 'en_US') ? '<p class="hs-lang">(English)</p>' : ''; }   // how-to rows are English only in this slice (§10)
+  function _howtoCtx() {
+    var box = $('idmp-howto-ctx'); if (!box || !_howtoPack) return;
+    var row = null; (_howtoPack.howto || []).forEach(function (r) { if (r.ad_window_id === _activeWin) row = r; });
+    box.innerHTML = row ? '<div class="hs-row"><b>' + escH(row.name) + '</b></div>' + _howtoEnglish() + _howtoLinks(row.html) + '<div class="hs-sub"><a href="' + escH(row.source.url) + '" target="_blank" rel="noopener">' + escH(row.source.guide) + ' · ' + escH(row.name) + '</a></div>' : '';
+    console.log('§HELP_CTX window=' + _activeWin + ' howto=' + (row ? row.id : 'none'));
+  }
+  function _howtoAsk(question) {
+    var box = $('idmp-howto-card'); if (!box || !_howtoIdx) return null;
+    if (!String(question).trim()) { box.innerHTML = ''; return null; }
+    var c = _howtoIdx.ask(question), h = '<div class="hs-card">';
+    if (c.window) h += '<div class="hs-row"><span class="hs-k">' + escH(_T('help.window', 'Window')) + '</span><a href="#" data-help-win="' + c.window.id + '">' + escH(c.window.name) + '</a></div>';
+    if (c.action) {
+      h += '<div class="hs-row"><span class="hs-k">' + escH(_T('help.action', 'Action')) + '</span>' + escH(c.action.name) + ' — ' + escH(c.action.description || '') +
+        '<div class="hs-sub">' + escH(_T('help.allowed', 'Allowed when the document is')) + ': ' + escH(c.action.allowedFrom.join(', ')) + '</div>' +
+        (c.action.alternatives.length ? '<div class="hs-sub">' + escH(_T('help.also', 'Also')) + ': ' + escH(c.action.alternatives.map(function (a) { return a.name; }).join(', ')) + '</div>' : '') + '</div>';
+    }
+    if (c.cli) h += '<div class="hs-row"><span class="hs-k">CLI</span>' + (c.cli.line ? '<code>' + escH(c.cli.line) + '</code>' : '<span class="hs-sub">' + escH(c.cli.note) + '</span>') + '</div>';
+    if (c.guide) h += '<div class="hs-row"><span class="hs-k">' + escH(_T('help.guide', 'Guide')) + '</span><a href="' + escH(c.guide.url) + '" target="_blank" rel="noopener">' + escH(c.guide.title) + '</a></div>';
+    if (c.howto) h += _howtoEnglish() + _howtoLinks(c.howto.html);
+    if (!c.window && !c.action && !c.howto) h += '<div class="hs-sub">' + escH(_T('help.none', 'No match in the dictionary or the how-to rows.')) + '</div>';
+    box.innerHTML = h + '</div>';
+    console.log('§HELP_SEARCH ask=' + JSON.stringify(String(question)) + ' window=' + (c.window ? c.window.id : 'none') + ' action=' + (c.action ? c.action.code : 'none') + ' cli=' + (c.cli ? JSON.stringify(c.cli.line || c.cli.note) : 'none') + ' howto=' + (c.howto ? c.howto.id : 'none') + ' matched=' + JSON.stringify(c.matched));
+    return c;
+  }
+  window.__idmpHowto = { ask: _howtoAsk, ctx: _howtoCtx };   // W-HELP-SHOWCASE's handle (the real widget, no second renderer)
   // W-FIELD-HELP's handle on the REAL render paths (no second renderer): the role's menu windows/processes, the read-only form, the parameter form.
   window.__idmpFieldHelp = {
     menu: function () { var w = {}; Object.keys(_winByName).forEach(function (k) { w[_winByName[k]] = 1; }); return { windows: Object.keys(w).map(Number), processes: Object.keys(_procMenuIds).map(Number) }; },
