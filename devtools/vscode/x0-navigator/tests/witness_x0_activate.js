@@ -95,7 +95,7 @@ check('made-up ' + SEC + 'TAG → hover says "no spec found" (never silent)', h5
   check('on save the warning is set exactly when the lib\'s rule says so (flagged=' + flagged + ')', flagged === !!Sh.needsBump(ROOT, 'viewer/scene.js', 'origin/main'));
 }
 check('1 reference provider registered for javascript (Find All References)', (reg.refs || []).length === 1 && reg.refs[0].sel.language === 'javascript');
-check('commands registered: ' + reg.commands.join(', '), reg.commands.length === 8 && reg.commands.includes('x0Navigator.bumpThisFile') && reg.commands.includes('x0Navigator.contextForFile') && ['x0Navigator.shipRunLocal', 'x0Navigator.shipCheck', 'x0Navigator.shipFetchBack'].every(c => reg.commands.includes(c)) && reg.commands.includes('x0Navigator.costIfDeployed') && reg.commands.includes('x0Navigator.openLogLine') && reg.saves === 3);
+check('commands registered: ' + reg.commands.join(', '), reg.commands.length === 9 && reg.commands.includes('x0Navigator.newWitnessForFile') && reg.commands.includes('x0Navigator.bumpThisFile') && reg.commands.includes('x0Navigator.contextForFile') && ['x0Navigator.shipRunLocal', 'x0Navigator.shipCheck', 'x0Navigator.shipFetchBack'].every(c => reg.commands.includes(c)) && reg.commands.includes('x0Navigator.costIfDeployed') && reg.commands.includes('x0Navigator.openLogLine') && reg.saves === 3);
 // Run and ship (§F.12c): the side-bar list and the Check step, through the registered wiring, on this real checkout
 {
   const items = reg.tree ? reg.tree.p.getChildren().map(s => reg.tree.p.getTreeItem(s)) : [];
