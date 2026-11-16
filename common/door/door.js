@@ -376,7 +376,7 @@ function createDoor(opts) {
     if (done) { const e = Object.assign({}, done.envelope); Object.defineProperty(e, '_raw', { value: e.answer === null ? null : JSON.stringify(e.answer), enumerable: false }); say('request=' + request + ' actor=' + actor + ' verb=' + base.verb + ' status=' + e.status + ' replayed=1'); return e; }
     const p = (async () => {
       const entry = vocab.byVerb.get(o.verb), prior = jread().filter(x => x.request === request && x.state === 'started')[0];
-      jwrite({ request, state: 'started', t: new Date().toISOString(), actor, proof: (ACTORS[actor] || NO_PROOF).proof, line, verb: o.verb || null, inputs: serial(o.args) });
+      jwrite(Object.assign({ request, state: 'started', t: new Date().toISOString(), actor, proof: (ACTORS[actor] || NO_PROOF).proof, line, verb: o.verb || null, inputs: serial(o.args) }, process.env.BIM_DOOR_USER ? { user: Number(process.env.BIM_DOOR_USER) } : {}));   // §30 L4: who, when red1 has a login
       let env;
       try { env = await decide(entry, base, o, prior); } catch (e) { env = envelope(base, 'error', { why: String(e && e.message || e) }); }
       jwrite({ request, state: 'done', t: new Date().toISOString(), envelope: env });
@@ -438,7 +438,7 @@ function createDoor(opts) {
     return env;
   }
   function journalled(base, line, env) {   // a line that never reached execArgs is still recorded, and still answered once per request id
-    jwrite({ request: base.request, state: 'started', t: new Date().toISOString(), actor: base.actor, proof: (ACTORS[base.actor] || NO_PROOF).proof, line, verb: base.verb });
+    jwrite(Object.assign({ request: base.request, state: 'started', t: new Date().toISOString(), actor: base.actor, proof: (ACTORS[base.actor] || NO_PROOF).proof, line, verb: base.verb }, process.env.BIM_DOOR_USER ? { user: Number(process.env.BIM_DOOR_USER) } : {}));   // §30 L4: who, when red1 has a login
     jwrite({ request: base.request, state: 'done', t: new Date().toISOString(), envelope: env });
     say('request=' + base.request + ' actor=' + base.actor + ' verb=' + base.verb + ' status=' + env.status + ' why=' + JSON.stringify(String(env.why).slice(0, 120)));
     return env;

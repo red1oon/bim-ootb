@@ -510,6 +510,39 @@
   },
   "door.dry_needs_oplog": {
    "en": "a dry run needs the op-log named (BIM_OBJECT_OPLOG): the door cannot copy a log it does not know (without it each program picks its own log). No line was run"
+  },
+  "words.role_unknown": {
+   "en": "role {0}: no such role in the dictionary"
+  },
+  "words.login_needed": {
+   "en": "client {0} has {1} users with an email: a login is needed, type login <user>"
+  },
+  "words.login_first": {
+   "en": "login first: client {0} has {1} users with an email (type login <user>)"
+  },
+  "words.login_ok": {
+   "en": "logged in as {0} ({1}); new records are stamped with this user"
+  },
+  "words.login_no_user": {
+   "en": "no user {0} (give an id, a name, a search key or an email)"
+  },
+  "words.login_not_role": {
+   "en": "{0} has no role {1}; their roles: {2}"
+  },
+  "words.login_roles": {
+   "en": "{0} has the roles {1}: type role <id>"
+  },
+  "words.login_role_left": {
+   "en": "{0} has no role {1}: logged out"
+  },
+  "words.login_who": {
+   "en": "logged in as {0} ({1})"
+  },
+  "words.login_nobody": {
+   "en": "nobody is logged in"
+  },
+  "words.login_which": {
+   "en": "{0} is more than one user: {1}; type login <id>"
   }
  }
 }
