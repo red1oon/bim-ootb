@@ -9,8 +9,9 @@
 //   W-FIN-VO-APPROVE-1  a folded VO is born DR; before approval revised==original, no commitment.
 //   W-FIN-VO-APPROVE-2  approve → the DocAction FSM transitions DR→CO (gated, not a blind UPDATE);
 //                       the VO is signed (IsApproved=Y + who/when) and carries its content signature.
-//   W-FIN-VO-APPROVE-3  the commitment MOVES: C_Project.CommittedAmt += GrandTotal, IsCommitment='Y',
-//                       and the Revised Contract Sum = original + VO (proj_control.contractSum).
+//   W-FIN-VO-APPROVE-3  the Revised Contract Sum = original + VO (proj_control.contractSum), and the header is NOT written: C_Project.CommittedAmt
+//                       stays == Σ C_ProjectLine.CommittedAmt (legacy MProjectLine.updateHeader) and IsCommitment unchanged (owner 2026-11-16, TWIN RULE,
+//                       bim-compiler prompts/CLI_ERP_IVR.md §29.4 P6 DECIDED). Falsifier VOA_BREAK=headerwrite (the old direct write) must FAIL 3.
 //   W-FIN-VO-APPROVE-4  a SECOND approve is idempotent — no double-commit, revised unchanged.
 //   W-FIN-VO-APPROVE-5  FALSIFIER — approving an already-CO order is rejected by the FSM (illegal-action),
 //                       proving the transition is gated by the FSM, not a blind write.
@@ -78,6 +79,7 @@ function eq(a, b) { return BD.of(String(a)).compareTo(BD.of(String(b))) === 0; }
   const status0 = scalar(edb, "SELECT DocStatus FROM C_Order WHERE C_Order_ID=" + vo.orderId);
   const cs0 = PC.contractSum(edb, projId);
   const commit0 = scalar(edb, "SELECT COALESCE(CommittedAmt,0) FROM C_Project WHERE C_Project_ID=" + projId);
+  const isCommit0 = scalar(edb, "SELECT IsCommitment FROM C_Project WHERE C_Project_ID=" + projId);
   const c1 = status0 === 'DR' && eq(cs0.revised, original) && eq(cs0.approvedVOs, '0') && eq(commit0, '0');
   console.log('§FIN_VOA_1 status=' + status0 + ' revised=' + cs0.revised + ' approved=' + cs0.approvedVOs + ' committed=' + commit0 + ' ok=' + c1);
 
@@ -87,17 +89,19 @@ function eq(a, b) { return BD.of(String(a)).compareTo(BD.of(String(b))) === 0; }
   const c2 = a1.ok && a1.from === 'DR' && a1.to === 'CO' && rowAfter[0] === 'CO' && rowAfter[1] === 'Y' && rowAfter[2] === 100 && !!rowAfter[3] && !!a1.signature;
   console.log('§FIN_VOA_2 approve from=' + a1.from + ' to=' + a1.to + ' isApproved=' + rowAfter[1] + ' by=' + rowAfter[2] + ' at=' + rowAfter[3] + ' sig=' + a1.signature + ' ok=' + c2);
 
-  // W-FIN-VO-APPROVE-3 — commitment moves; revised = original + VO.
+  // W-FIN-VO-APPROVE-3 — revised = original + VO; the header stays the roll-up of its lines (legacy), IsCommitment untouched.
   const cs1 = PC.contractSum(edb, projId);
-  const commit1 = scalar(edb, "SELECT CommittedAmt FROM C_Project WHERE C_Project_ID=" + projId);
+  const commit1 = scalar(edb, "SELECT COALESCE(CommittedAmt,0) FROM C_Project WHERE C_Project_ID=" + projId);
   const isCommit1 = scalar(edb, "SELECT IsCommitment FROM C_Project WHERE C_Project_ID=" + projId);
-  const c3 = eq(cs1.approvedVOs, voTotal) && eq(cs1.revised, BD.of(String(original)).add(BD.of(String(voTotal))).toString()) && eq(commit1, voTotal) && isCommit1 === 'Y';
+  const lineSum = scalar(edb, "SELECT COALESCE(SUM(CommittedAmt),0) FROM C_ProjectLine WHERE C_Project_ID=" + projId + " AND IsActive='Y'");
+  const c3 = eq(cs1.approvedVOs, voTotal) && eq(cs1.revised, BD.of(String(original)).add(BD.of(String(voTotal))).toString()) && eq(commit1, lineSum) && isCommit1 === isCommit0;
+  console.log('§FIN_VOA_3_ROLLUP header CommittedAmt=' + commit1 + ' Σ lines=' + lineSum + ' IsCommitment before=' + isCommit0 + ' after=' + isCommit1);
   console.log('§FIN_VOA_3 approved=' + cs1.approvedVOs + ' revised=' + cs1.revised + ' (orig ' + original + '+vo ' + voTotal + ') committed=' + commit1 + ' isCommit=' + isCommit1 + ' ok=' + c3);
 
   // W-FIN-VO-APPROVE-4 — 2nd approve idempotent (no double commit).
   const a2 = VoApprove.approveVariationOrder(edb, vo.orderId, { user: 100, now: now });
   const cs2 = PC.contractSum(edb, projId);
-  const commit2 = scalar(edb, "SELECT CommittedAmt FROM C_Project WHERE C_Project_ID=" + projId);
+  const commit2 = scalar(edb, "SELECT COALESCE(CommittedAmt,0) FROM C_Project WHERE C_Project_ID=" + projId);
   const c4 = a2.ok && a2.idempotent === true && eq(cs2.revised, cs1.revised) && eq(commit2, commit1);
   console.log('§FIN_VOA_4 2nd-approve idempotent=' + a2.idempotent + ' revised=' + cs2.revised + ' committed=' + commit2 + ' ok=' + c4);
 
@@ -115,7 +119,7 @@ function eq(a, b) { return BD.of(String(a)).compareTo(BD.of(String(b))) === 0; }
   console.log('§FIN_VOA_6 contract (reuses ad_docfsm dispatchOrder) ok=' + c6);
 
   const pass = c1 && c2 && c3 && c4 && c5 && c6;
-  console.log('§FIN_VOA ' + (pass ? 'PASS' : 'FAIL') + ' — W-FIN-VO-APPROVE: DR→CO via FSM, commitment moves, idempotent, gated; building=' + building);
+  console.log('§FIN_VOA ' + (pass ? 'PASS' : 'FAIL') + ' — W-FIN-VO-APPROVE: DR→CO via FSM, header stays the roll-up of its lines (legacy), idempotent, gated; building=' + building);
   bdb.close(); edb.close();
   process.exit(pass ? 0 : 1);
 })();
