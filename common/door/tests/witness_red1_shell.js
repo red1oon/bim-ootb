@@ -1,8 +1,8 @@
 // ⚠ DO NOT REMOVE — W-RED1-SHELL (bim-compiler prompts/CLI_ERP_IVR.md §22.11 step R0: the `red1` command). READ THE LOG; an exit code is not evidence.
 //   S1 ISSUE (`red1 'line'` answers differently from `door.js 'line'`: a second engine path) · S2 ISSUE (a session line is run or journalled more or less than once,
 //   so a session writes differently from the same lines run one by one) · S3 ISSUE (`red1 -f FILE --dry` changes the real op-log) · S4 ISSUE (`help verbs` in a session is not the
-//   door's help, `help` with bim/mis/erp misses a word, or it journals/runs something) · S5 ISSUE (a refused line ends the session, so the lines after it never run).
-//   Falsifier: RED1_BREAK=twice (the session runs a line twice: must FAIL S2). A claim with nothing to judge says INCONCLUSIVE, never PASS.
+//   door's help, `help` with bim/mis/erp misses a word, or it journals/runs something) · S5 ISSUE (a refused line ends the session, so the lines after it never run) · S6 ISSUE (a refusal is drawn twice: its reason on the refused line and again as raw JSON, §29.7 S1).
+//   Falsifiers: RED1_BREAK=twice (the session runs a line twice: must FAIL S2) · RED1_BREAK=refusaljson (the refusal's JSON drawn again: must FAIL S6). A claim with nothing to judge says INCONCLUSIVE, never PASS.
 //   Run: node common/door/tests/witness_red1_shell.js > common/door/tests/logs/red1_shell.log 2>&1
 'use strict';
 const fs = require('fs'), path = require('path'), cp = require('child_process'), crypto = require('crypto');
@@ -70,5 +70,11 @@ const k = kit('W-RED1-SHELL'), RED1 = path.join(ROOT, 'common/door/red1.js'), BR
   const st5 = (s5.err.match(/^§RED1 line verb=.*$/mg) || []);
   k.chk('S5 after a line that is not ok, the next line of the session still runs and answers ok', st5.length === 2 && !/status=ok/.test(st5[0]) && /status=ok/.test(st5[1]),
     st5.map(l => l.replace(/ request=.*/, '')).join(' | '));
+
+  // S6 (§29.7 S1) a refusal is drawn once: its reason on the status line, never again as JSON
+  const eF = fresh('S6'), s6 = await run(RED1, eF, [], 'cd Project\nls Valu=Hospital\n', BRK === 'refusaljson' ? 'refusaljson' : ''), REASON = 'kind Project has no property "Valu"';
+  const said = s6.out.split(REASON).length - 1, brace = /^\{/m.test(s6.out);
+  k.L('S6 out=' + JSON.stringify(s6.out.split('\n').filter(l => /refused|\{|Valu/.test(l))));
+  k.chk('S6 a session refusal says its reason once (on the refused line) and draws no JSON', said === 1 && !brace && /^refused · mis\.list · /m.test(s6.out), 'reason said ' + said + 'x, json=' + brace);
   k.end();
 })().catch(e => { console.log('§W-RED1-SHELL FAIL ' + (e && e.stack || e)); process.exit(1); });
