@@ -6,7 +6,7 @@
 // red1's flow (2026-09-30): a part with NO Project Order -> Generate one. A part that HAS one and is EDITED is a VARIANT item inside that SAME
 // Project Order, and the user has two options: A) delete & re-issue (only while NOT committed) or B) a Variation Order (required once committed).
 // "Committed" is READ FROM RECORDS, never guessed: a purchase C_Order (IsSOTrx='N') on that project (Ref: 'BIM PO: <building>' or C_Project_ID) whose
-// DocStatus is CO/CL, or C_Project.IsCommitment='Y' / CommittedAmt>0 (what vo_approve.js moves when a VO is approved).
+// DocStatus is CO/CL, or C_Project.IsCommitment='Y' / CommittedAmt>0 (typed by a person or rolled up from the lines, as legacy; vo_approve.js no longer writes them, CLI_ERP_IVR §29.4 P6).
 // Pure + DOM-free apart from the OPFS helpers; node-testable. `env` = {ProjFold, VoFold, ProjControl, BigDecimal, RATES, SEQUENCE_RULES, LABOR_RATES}.
 (function (global) {
   'use strict';

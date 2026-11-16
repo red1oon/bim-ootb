@@ -10,8 +10,10 @@
 //     already-completed VO can't be re-approved (CO offers only CL/VO), which makes approval idempotent.
 //   - on success the VO is "signed" with who/when governance (IsApproved=Y, UpdatedBy, Updated) and the
 //     content signature it already carries (POReference = the delta digest from vo_fold).
-//   - the approval MOVES the commitment: C_Project.CommittedAmt += GrandTotal, IsCommitment='Y'; the
-//     Revised Contract Sum (proj_control.contractSum: original + Σ CO-VO GrandTotal) then reflects it.
+//   - the approval does NOT write C_Project.CommittedAmt / IsCommitment (owner 2026-11-16, TWIN RULE; bim-compiler prompts/CLI_ERP_IVR.md §29.4 P6
+//     DECIDED): in legacy the header's CommittedAmt is only the roll-up Σ C_ProjectLine.CommittedAmt (MProjectLine.updateHeader :280-292), a line's
+//     CommittedAmt is typed by a person (no legacy code writes it), and it is the (legal) commitment to the client, not purchase spend. The
+//     Revised Contract Sum (proj_control.contractSum: original + Σ CO-VO GrandTotal) reflects the approval without it.
 // EXTRACT-only — amounts come from the VO's own GrandTotal (BigDecimal); nothing is invented.
 (function (global) {
   'use strict';
@@ -45,14 +47,11 @@
     db.run("UPDATE C_Order SET DocStatus=?,DocAction='CL',IsApproved='Y',Processed='Y',Updated=?,UpdatedBy=? WHERE C_Order_ID=?",
       [d.to, now, U, orderId]);
 
-    // MOVE the commitment onto the project (BigDecimal).
+    // no header write (see the top): the project's CommittedAmt stays the roll-up of its lines, as legacy
     var committed = false;
-    if (projId != null) {
+    if (process.env.VOA_BREAK === 'headerwrite' && projId != null) {   // W-FIN-VO-APPROVE-3 falsifier: the old direct write (must FAIL 3)
       var cur = BD.of(String(_scalar(db, "SELECT COALESCE(CommittedAmt,0) FROM C_Project WHERE C_Project_ID=?", [projId]) || 0));
-      var next = cur.add(BD.of(String(grand)));
-      db.run("UPDATE C_Project SET CommittedAmt=?,IsCommitment='Y',Updated=?,UpdatedBy=? WHERE C_Project_ID=?",
-        [next.toString(), now, U, projId]);
-      committed = true;
+      db.run("UPDATE C_Project SET CommittedAmt=?,IsCommitment='Y',Updated=?,UpdatedBy=? WHERE C_Project_ID=?", [cur.add(BD.of(String(grand))).toString(), now, U, projId]); committed = true;
     }
     return {
       ok: true, idempotent: false, orderId: orderId, from: status, to: d.to, status: d.to,
