@@ -85,8 +85,8 @@ check('D2 RED: an origin that is not GitHub → refused, nothing run (' + rG.why
   const STORE = fs.mkdtempSync(path.join(TMP, 'store-'));
   const api = ext.activate({ subscriptions: [], extensionPath: EXT, storageUri: { fsPath: STORE } });
   const fn = reg.commandFns['x0Navigator.shipDeploy'];
-  check('D3 the command x0Navigator.shipDeploy is registered and Run & Ship lists 5 steps, the 5th = Deploy (' + api.steps().map(s => s[0]).join(' / ') + ')',
-    typeof fn === 'function' && api.steps().length === 5 && /^5 · Deploy main now$/.test(api.steps()[4][0]) && api.steps()[4][2] === 'x0Navigator.shipDeploy');
+  check('D3 the command x0Navigator.shipDeploy is registered and Run & Ship lists 6 steps (3m = memory, §F.31), the last = Deploy (' + api.steps().map(s => s[0]).join(' / ') + ')',
+    typeof fn === 'function' && api.steps().length === 6 && /^5 · Deploy main now$/.test(api.steps()[5][0]) && api.steps()[5][2] === 'x0Navigator.shipDeploy');
   reset();
   const noClick = typeof fn === 'function' ? await fn() : null;
   check('D3 RED: without the Deploy click nothing runs (' + (noClick || []).join(' ') + ')', !ran() && /started=N why=not confirmed/.test((noClick || []).join(' ')));

@@ -95,12 +95,12 @@ check('made-up ' + SEC + 'TAG → hover says "no spec found" (never silent)', h5
   check('on save the warning is set exactly when the lib\'s rule says so (flagged=' + flagged + ')', flagged === !!Sh.needsBump(ROOT, 'viewer/scene.js', 'origin/main'));
 }
 check('1 reference provider registered for javascript (Find All References)', (reg.refs || []).length === 1 && reg.refs[0].sel.language === 'javascript');
-check('commands registered: ' + reg.commands.join(', '), reg.commands.length === 10 && reg.commands.includes('x0Navigator.shipDeploy') && reg.commands.includes('x0Navigator.newWitnessForFile') && reg.commands.includes('x0Navigator.bumpThisFile') && reg.commands.includes('x0Navigator.contextForFile') && ['x0Navigator.shipRunLocal', 'x0Navigator.shipCheck', 'x0Navigator.shipFetchBack'].every(c => reg.commands.includes(c)) && reg.commands.includes('x0Navigator.costIfDeployed') && reg.commands.includes('x0Navigator.openLogLine') && reg.saves === 4 /* +1 F-19 catalog warnings, §F.28 */);
+check('commands registered: ' + reg.commands.join(', '), reg.commands.length === 11 && reg.commands.includes('x0Navigator.heapImpact') /* §F.31 */ && reg.commands.includes('x0Navigator.shipDeploy') && reg.commands.includes('x0Navigator.newWitnessForFile') && reg.commands.includes('x0Navigator.bumpThisFile') && reg.commands.includes('x0Navigator.contextForFile') && ['x0Navigator.shipRunLocal', 'x0Navigator.shipCheck', 'x0Navigator.shipFetchBack'].every(c => reg.commands.includes(c)) && reg.commands.includes('x0Navigator.costIfDeployed') && reg.commands.includes('x0Navigator.openLogLine') && reg.saves === 4 /* +1 F-19 catalog warnings, §F.28 */);
 // Run and ship (§F.12c): the side-bar list and the Check step, through the registered wiring, on this real checkout
 {
   const items = reg.tree ? reg.tree.p.getChildren().map(s => reg.tree.p.getTreeItem(s)) : [];
-  check('the "Run & Ship" list has 5 steps (5 = Deploy main now, §F.29), each bound to a registered command (' + items.map(i => i.label).join(' | ') + ')',
-    reg.tree && reg.tree.id === 'x0RunShip' && items.length === 5 && items.every(i => reg.commands.includes(i.command.command)));
+  check('the "Run & Ship" list has 6 steps (5 = Deploy main now, §F.29; 3m = memory, §F.31), each bound to a registered command (' + items.map(i => i.label).join(' | ') + ')',
+    reg.tree && reg.tree.id === 'x0RunShip' && items.length === 6 && items.every(i => reg.commands.includes(i.command.command)));
   const chk = api.shipCheck();
   check('Check prints its three steps and a verdict (' + (chk[chk.length - 1] || '').slice(0, 60) + ')',
     chk.some(l => l.startsWith(SEC + 'SHIP_SYNTAX')) && chk.some(l => l.startsWith(SEC + 'SHIP_AUDIT verdict=PASS')) && /SHIP_CHECK verdict=(PASS|FAIL)/.test(chk[chk.length - 1]));

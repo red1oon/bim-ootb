@@ -25,6 +25,13 @@ step. It never calls a model or the network, and nothing in `devtools/` is loade
   uses the network, and only when you press it.
 - **Cost if deployed** counts raw bytes: *start-up* = the scripts the app's pages load, *offline cache* = the files its service
   worker stores, for your working tree against `origin/main`. **Not yet:** minified sizes, budgets, memory estimates, browser timings.
+- **Memory of the three pages** (Run & Ship `3m`, §F.31) boots `viewer/viewer.html`, `erp/idempiere.html` and `modeller/modeller.html` headless,
+  your working tree and `origin/main` side by side, 3 runs each (service worker blocked, software GL, a forced GC), and prints the JS heap after
+  boot: `§HEAP_IMPACT_DELTA page=… jsMB=+0.0 … verdict=SAME|GREW|SHRANK`. The status bar keeps the last result (`MB V 18.4 · E 4.2 · M 10.9`) and
+  adds `(stale)` after you save. It runs **only when you press it** (a few minutes), and never installs a browser: it uses the Playwright that
+  `tests/` already installs (`npm install` in `tests/` once), or `$PLAYWRIGHT`. Both sides serve the same building data, so the delta is the
+  code's. The viewer downloads its default Duplex sample from the project's object store, so its row needs the network. No budget is applied
+  (decision F-2, until 2026-11-30). Same thing in a terminal: `node devtools/vscode/x0-navigator/lib/heap_impact.js . origin/main`.
 - **Values beside the code** shows a logged value only when it can be proven current: the log names its commit, and the file that
   prints the tag is unchanged since. Otherwise it shows nothing. It reads the checkout's `logs/` and the folders in the setting
   `bimDevtools.extraLogDirs` (default `~/.cache/bim4d`, where bake logs are kept; read-only, sub-folders included). A log counts

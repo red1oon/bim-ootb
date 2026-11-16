@@ -6,6 +6,7 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
+const cp = require('child_process');   // §F.31: the memory run is a child node process
 const vscode = require('vscode');
 const tagIndex = require('./lib/tag_index');
 const surface = require('./lib/app_surface_index');
@@ -246,6 +247,57 @@ function activate(context) {
     out.show(true);
     return lines;
   }));
+  // ── Memory of the three pages (§F.31; owner F-20 code only, F-21 button only, F-22 X0 panel + PR body). A headless browser runs only when
+  // this command is pressed, in a child node process (lib/heap_impact.js), so VS Code never waits on it. The status-bar item and the save
+  // listener that marks the result stale are created on the first run, never at activation.
+  let heapItem = null, heapRunning = false;
+  function heapImpact() {
+    const sourceRoot = findSourceRoot(context);
+    if (!sourceRoot) return Promise.resolve(say(['X0 Navigator: bim-ootb root not found']));
+    if (heapRunning) return Promise.resolve(say(['§HEAP_IMPACT busy=Y (a run is in progress)']));
+    heapRunning = true;
+    const cfg = vscode.workspace.getConfiguration('bimDevtools');
+    const pages = cfg.get('heapPages');
+    const args = [path.join(__dirname, 'lib', 'heap_impact.js'), sourceRoot, baseRef()].concat(Array.isArray(pages) && pages.length ? ['--pages', pages.join(',')] : []);
+    const lines = [];
+    out.show(true);
+    return new Promise(resolve => {
+      const child = cp.spawn(process.execPath, args, { cwd: sourceRoot, env: Object.assign({}, process.env, { ELECTRON_RUN_AS_NODE: '1' }) });
+      let buf = '';
+      const take = d => { buf += d; let i; while ((i = buf.indexOf('\n')) >= 0) { const l = buf.slice(0, i); buf = buf.slice(i + 1); if (l) { lines.push(l); out.appendLine(l); } } };
+      child.stdout.on('data', take); child.stderr.on('data', take);
+      child.on('close', () => {
+        heapRunning = false;
+        if (buf) { lines.push(buf); out.appendLine(buf); }
+        const text = heapStatusText(lines);
+        if (text) {
+          if (!heapItem) {
+            heapItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 89);
+            heapItem.command = 'x0Navigator.heapImpact';
+            context.subscriptions.push(heapItem);
+            context.subscriptions.push(vscode.workspace.onDidSaveTextDocument(doc => {
+              if (heapItem && doc.uri.fsPath.startsWith(sourceRoot + path.sep) && !/\(stale\)$/.test(heapItem.text)) heapItem.text += ' (stale)';
+            }));
+          }
+          heapItem.text = '$(pulse) ' + text;
+          heapItem.tooltip = 'X0 Navigator: JS heap of each page after boot, working tree vs ' + baseRef() + ' (median of 3 headless runs). Click to measure again.';
+          heapItem.show();
+        }
+        resolve(lines);
+      });
+    });
+  }
+  // the status line from the § lines the child printed (the same text lib/heap_impact.js statusText() gives)
+  function heapStatusText(lines) {
+    const work = {}, delta = {};
+    for (const l of lines) {
+      let m = l.match(/^§HEAP_IMPACT page=(\S+) tree=work jsMB=(\S+)/); if (m) work[m[1]] = m[2];
+      m = l.match(/^§HEAP_IMPACT_DELTA page=(\S+) jsMB=(\S+) .* verdict=(GREW|SHRANK)$/); if (m) delta[m[1]] = m[2];
+    }
+    const pages = Object.keys(work);
+    return pages.length ? 'MB ' + pages.map(p => p.split('/')[0].charAt(0).toUpperCase() + ' ' + work[p] + (delta[p] ? ' (' + delta[p] + ')' : '')).join(' · ') : null;
+  }
+  context.subscriptions.push(vscode.commands.registerCommand('x0Navigator.heapImpact', heapImpact));
   // Context for this file (§F.16, F-3 (a)): what the indexes say about the open file, as markdown, for whatever assistant the
   // developer chose. Opened beside the code and copied. X0 calls no model: the developer pastes it where they like.
   context.subscriptions.push(vscode.commands.registerCommand('x0Navigator.contextForFile', async () => {
@@ -460,6 +512,7 @@ function activate(context) {
     ['1 · Run local', 'serve the repo, show each app\'s URL and version on disk', 'x0Navigator.shipRunLocal'],
     ['2 · Check', 'syntax, precache audit, cache-version bump', 'x0Navigator.shipCheck'],
     ['3 · Cost if deployed', 'start-up and offline-cache bytes vs main', 'x0Navigator.costIfDeployed'],
+    ['3m · Memory of the three pages', 'JS heap after boot, viewer / ERP / Modeller, vs main (headless, runs only when pressed)', 'x0Navigator.heapImpact'],
     ['4 · Fetch back', 'is the live site on main? (uses the network)', 'x0Navigator.shipFetchBack'],
     ['5 · Deploy main now', 'publish main to the live site with your gh login (asks first)', 'x0Navigator.shipDeploy']
   ];
@@ -474,7 +527,7 @@ function activate(context) {
 
   // For the node witness: when the first fresh copy is ready, and which index file the providers read now.
   return {
-    costIfDeployed, statusText, lenses, shipRunLocal, shipCheck, shipFetchBack, shipDeploy, steps: () => STEPS,
+    costIfDeployed, heapImpact, heapStatusText, statusText, lenses, shipRunLocal, shipCheck, shipFetchBack, shipDeploy, steps: () => STEPS,
     whenFresh: () => firstRefresh,
     indexFile: () => { const f = getFields(); return f ? f.file : null; },
     refreshRuns: () => (refresher ? refresher.runs() : 0),
