@@ -12,6 +12,10 @@
 // A2-TIMING-2 (decision A-6, one global CoreEdge): T4 the ERP Env and the viewer read ONE holder (globalThis.CoreEdge); T5 viewer/cpm_schedule.js run() and
 //   T6 viewer/schedule_gate.js computeSchedule time their § lines (§CPM_RUN ms={…}, §GEO_ORDER orderMs=) from it, '?' / null with no edge; T7 neither file
 //   has a clock call left. RED CONTROL: CORE_TIMING_VIEWER_DIR=<main>/viewer (the pre-A-6 copies) must FAIL T5-T7.
+// A2-TIMING-3: T8 common/room_graph.js _legalizePath (graph._legalizeStats.ms) and T9 its REAL reader, viewer/egress_sanity.js on buildings/Clinic_meta.db
+//   (no raster, so §PATH_LEGAL_NO_RASTER prints; ms must be exactly 42 x calls); T10 viewer/schedule_inject.js inject (§SCHED_INJECT … ms=, materializeMs/persistMs);
+//   T11 neither file has a clock call left. ? / null with no edge. RED CONTROL: CORE_TIMING_COMMON_DIR=<main>/common and CORE_TIMING_VIEWER_DIR=<main>/viewer
+//   must FAIL T8-T11. Clinic_meta.db from CORE_TIMING_BUILDINGS (default ~/bim-ootb/buildings) or CORE_TIMING_EGRESS_DB; absent = INCONCLUSIVE.
 // Command: node erp/tests/witness_core_timing.js
 'use strict';
 const fs = require('fs'), path = require('path'), vm = require('vm');
@@ -110,6 +114,81 @@ for (const f of ['cpm_schedule.js', 'schedule_gate.js']) {
   check('T7 viewer/' + f + ' has no Date.now / performance.now call left (found ' + n + ')', n === 0);
 }
 
-const verdict = judged === 0 ? 'INCONCLUSIVE' : fail === 0 ? 'PASS' : 'FAIL';
+// ── A2-TIMING-3 ───────────────────────────────────────────────────────────────────────────────────────────────────
+const COMMON = process.env.CORE_TIMING_COMMON_DIR ? path.resolve(process.env.CORE_TIMING_COMMON_DIR) : path.join(__dirname, '..', '..', 'common');
+console.log('  common files: ' + COMMON);
+const RG = require(path.join(COMMON, 'room_graph.js'));
+// T8: two rooms on different storeys (a vertical hop: _legalizePath tests no chord, so the only timer reads are its own start + end).
+function twoRooms() {
+  const n = (g, s, x) => ({ guid: g, kind: 'room', storey: s, cx: x, cy: 0, name: g });
+  const g = { nodes: [n('r1', 'L1', 0), n('r2', 'L2', 5)], edges: [{ a: 'r1', b: 'r2', kind: 'E1', doorGuid: 'd1', doorName: 'D1' }] };
+  g.nodesByGuid = { r1: g.nodes[0], r2: g.nodes[1] };
+  return g;
+}
+function legStats() { const g = twoRooms(); capture(() => { for (let i = 0; i < 3; i++) RG.shortestPath(g, 'r1', 'r2'); }); return g._legalizeStats || {}; }
+tick = 958; globalThis.CoreEdge = fakeEdge;
+const L1 = legStats();
+check('T8 fake edge: room_graph _legalizeStats after 3 routes = {calls:' + L1.calls + ', ms:' + L1.ms + '} (expected calls:3, ms:126)', L1.calls === 3 && L1.ms === 126);
+delete globalThis.CoreEdge;
+const L0 = legStats();
+check('T8 no edge: _legalizeStats.ms=' + L0.ms + ' (null, never a wall clock) calls=' + L0.calls, L0.calls === 3 && L0.ms === null);
+
+// T9: the REAL reader, EgressSanity.evaluate on a building with no storey_walkable_raster (so §PATH_LEGAL_NO_RASTER prints).
+const BLD = process.env.CORE_TIMING_BUILDINGS || path.join(require('os').homedir(), 'bim-ootb', 'buildings');
+const DUPLEX = process.env.CORE_TIMING_EGRESS_DB || path.join(BLD, 'Clinic_meta.db');   // a building with NO storey_walkable_raster
+let initSql = null;
+try { initSql = require(path.join(__dirname, '..', '..', 'tests', '_sqljs.js')).requireSqlJs(); } catch (e) { initSql = null; }
+async function egressLine(withEdge) {
+  const SQL = await initSql();
+  const db = new SQL.Database(new Uint8Array(fs.readFileSync(DUPLEX)));
+  const q = (sql, p) => { const r = p ? db.exec(sql, p) : db.exec(sql); return r.length ? r[0].values : []; };
+  const rules = JSON.parse(fs.readFileSync(path.join(VIEWER, 'rates', 'egress_rules.json'), 'utf8'));
+  const ES = require(path.join(VIEWER, 'egress_sanity.js'));
+  const logs = []; let threw = null;
+  tick = 958; if (withEdge) globalThis.CoreEdge = fakeEdge; else delete globalThis.CoreEdge;
+  capture(() => { try { ES.evaluate(q, rules, { log: m => logs.push(m) }); } catch (e) { threw = e.message; } });
+  delete globalThis.CoreEdge; db.close();
+  return { line: logs.find(l => /§PATH_LEGAL_NO_RASTER/.test(l)) || null, threw };
+}
+async function t9() {
+  if (!initSql || !fs.existsSync(DUPLEX)) { console.log('  §CORE_TIMING T9 INCONCLUSIVE: ' + (initSql ? DUPLEX + ' absent' : 'sql.js not found')); return 'INCONCLUSIVE'; }
+  const E1 = await egressLine(true), E0 = await egressLine(false);
+  if (!E1.line && !E1.threw) { console.log('  §CORE_TIMING T9 INCONCLUSIVE: no §PATH_LEGAL_NO_RASTER line (nothing judged)'); return 'INCONCLUSIVE'; }
+  const m = E1.line && E1.line.match(/ calls=(\d+) ms=(\S+)/);
+  check('T9 fake edge, Clinic egress: ' + (E1.line ? E1.line.replace(/^.*(legalizations=)/, '$1') : 'threw ' + E1.threw) + ' (ms must be 42 x calls)',
+    !!m && Number(m[2]) === 42 * Number(m[1]));
+  check('T9 no edge, Clinic egress: ' + (E0.line ? E0.line.replace(/^.*(legalizations=)/, '$1') : 'threw ' + E0.threw) + ' (ms=?, no throw)',
+    !E0.threw && !!E0.line && / ms=\?( |$)/.test(E0.line));
+  return 'ran';
+}
+
+// T10: ScheduleInject.inject with stubs (the timing is all this judges; the stub's materialize/persist do nothing).
+async function injectRun(withEdge) {
+  const SI = require(path.join(VIEWER, 'schedule_inject.js'));
+  const A = { db: { exec: () => [], run() {} }, DB_URL: 'stub.db' };
+  const SA = { activeSchedule: () => null, materializeZones: () => ({ ok: true, scheduleId: 'SCH_AUTHORED', zoneCount: 3, templateVersion: 't' }), persistDb: () => Promise.resolve(true) };
+  const progress = { stage() {}, fail() {}, done() {} };
+  tick = 958; if (withEdge) globalThis.CoreEdge = fakeEdge; else delete globalThis.CoreEdge;
+  const lines = [], log = console.log; console.log = (...a) => lines.push(a.join(' '));
+  let res; try { res = await SI.inject(A, { scheduleAuthor: SA, progress, template: null }); } finally { console.log = log; delete globalThis.CoreEdge; }
+  return { mat: lines.find(l => l.startsWith('§SCHED_INJECT materialized')) || '(none)', result: lines.find(l => l.startsWith('§SCHED_INJECT_RESULT')) || '(none)', res };
+}
+async function t10() {
+  const I1 = await injectRun(true), I0 = await injectRun(false);
+  const say = I => I.mat.replace(/^.*(tasks=)/, '$1') + ' | ' + I.result.replace(/^§SCHED_INJECT_RESULT /, '') + ' | res ' + (I.res && I.res.materializeMs) + '/' + (I.res && I.res.persistMs);
+  check('T10 fake edge: ' + say(I1), / ms=42$/.test(I1.mat) && / materializeMs=42 persistMs=42$/.test(I1.result) && I1.res && I1.res.materializeMs === 42 && I1.res.persistMs === 42);
+  check('T10 no edge: ' + say(I0), / ms=\?$/.test(I0.mat) && / materializeMs=\? persistMs=\?$/.test(I0.result) && I0.res && I0.res.materializeMs === null && I0.res.persistMs === null);
+}
+for (const [dir, f] of [[COMMON, 'room_graph.js'], [VIEWER, 'schedule_inject.js']]) {
+  const v = fs.readFileSync(path.join(dir, f), 'utf8').replace(/\/\/.*$/gm, '');
+  const n = (v.match(/\bDate\.now\(|\bperformance\.now\(/g) || []).length;
+  check('T11 ' + path.basename(dir) + '/' + f + ' has no Date.now / performance.now call left (found ' + n + ')', n === 0);
+}
+
+(async () => {
+const t9state = await t9();
+await t10();
+const verdict = judged === 0 ? 'INCONCLUSIVE' : fail === 0 ? (t9state === 'INCONCLUSIVE' ? 'INCONCLUSIVE' : 'PASS') : 'FAIL';
 console.log('§CORE_TIMING checks=' + judged + ' failed=' + fail + ' verdict=' + verdict);
 if (verdict !== 'PASS') process.exitCode = 1;
+})();
