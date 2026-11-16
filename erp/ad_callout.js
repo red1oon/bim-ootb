@@ -936,7 +936,7 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
       'f.DisplayLogic AS dl, COALESCE(f.ReadOnlyLogic, c.ReadOnlyLogic) AS rl, COALESCE(f.MandatoryLogic, c.MandatoryLogic) AS ml, ' +
       'COALESCE(f.IsMandatory, c.IsMandatory) AS mand, c.IsEncrypted AS enc, f.IsDisplayed AS disp, f.SeqNo AS seq, COALESCE(f.DefaultValue, c.DefaultValue) AS dv ' +
       "FROM AD_Field f JOIN AD_Column c ON c.AD_Column_ID=f.AD_Column_ID WHERE f.AD_Tab_ID=? AND f.IsActive='Y' AND c.IsActive='Y' " +
-      'ORDER BY f.IsDisplayed DESC, f.SeqNo', [AD_Tab_ID]);
+      'ORDER BY f.IsDisplayed DESC, f.SeqNo, f.AD_Field_ID', [AD_Tab_ID]);   // AD_Field_ID breaks SeqNo ties (hidden fields share SeqNo): the order no longer depends on which index the planner picks (bim-compiler prompts/CLI_ERP_IVR.md §37 X3)
     var vrCache = {};
     return rows.map(function (r) {
       var dt = Number(r.dt), vo = { ColumnName: r.cn, displayType: dt, AD_Reference_Value_ID: r.rv == null ? null : Number(r.rv),
