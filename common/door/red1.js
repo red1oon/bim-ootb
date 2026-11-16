@@ -127,7 +127,7 @@ function makeShell(o) {
 async function session(o) {
   let sh; try { sh = makeShell(Object.assign({}, o, { interactive: true })); } catch (e) { say('FAIL ' + e.message); return 1; }
   const { R, vocab } = sh, Dr = require(path.join(__dirname, 'draw_core.js')), tty = !!process.stdin.isTTY, histFile = process.env.RED1_HISTORY || path.join(os.homedir(), '.red1_history');
-  let history = []; if (tty) { try { history = fs.readFileSync(histFile, 'utf8').split('\n').filter(Boolean).reverse().slice(0, 1000); } catch (e) { /* first run */ } }
+  let history = [], saved = []; if (tty || process.env.RED1_HISTORY) { try { saved = fs.readFileSync(histFile, 'utf8').split('\n').filter(Boolean).slice(-1000); history = saved.slice().reverse(); } catch (e) { /* first run */ } }   // §39 H4: saved = oldest first (the `history` numbering); RED1_HISTORY set = read without a terminal too
   const names = vocab.verbs.map(v => v.verb).concat(sh.core.wordList().map(w => w.word), ['help', 'bim', 'mis', 'erp', 'report', 'exit', 'quit', 'history', 'menu', 'cd', 'pwd', 'role', 'login']);
   // §1d.1 THE TYPE ASSIST: assist_core proposes what may come next at the end of the line; shown grey after the cursor (it extends what was typed) or as a dim hint
   // `▸ Name` (another spelling: case, -, a typo). Tab takes it (→ takes a grey one). Enter NEVER applies it: the line runs as typed. Not on a pipe, not in a menu.
@@ -239,8 +239,14 @@ async function session(o) {
     }
   };
   let busy = Promise.resolve(), closed = false;
+  const MC = msgCore();
   const handle = async (raw) => {
-    const line = raw.trim(); if ((!line && !sh.menuOpen() && !sh.state().asking && !sh.state().offer) || line.indexOf('--') === 0) return;   // an empty Return answers an open offer (n)
+    let line = raw.trim(); if ((!line && !sh.menuOpen() && !sh.state().asking && !sh.state().offer) || line.indexOf('--') === 0) return;   // an empty Return answers an open offer (n)
+    if (!sh.menuOpen()) {   // §39 H2-H3: `!` history, expanded and echoed BEFORE it runs; history keeps the expanded line; no match runs nothing
+      const bx = require(path.join(__dirname, 'words_core.js')).expandBang(saved.concat(typed), line, BREAK());
+      if (bx && bx.none) { process.stdout.write(MC.t('words.bang_none', bx.asked) + '\n'); say('bang asked=' + JSON.stringify(bx.asked) + ' none=1'); return; }
+      if (bx) { process.stdout.write('→ ' + bx.line + '\n'); say('bang asked=' + JSON.stringify(bx.asked) + ' line=' + JSON.stringify(bx.line)); line = bx.line; }
+    }
     typed.push(line);
     if ((R.isHelp(line) || GROUP_WORD.test(line)) && !sh.menuOpen()) {   // §24: help / bim / mis / erp / help <word> = words_core.helpText (the SAME bytes as a one-shot `red1 help`); help verbs | help <app> | help <app.verb> = the door's own help
       const h = helpOf(line, sh.core, vocab, sh.state().level); process.stdout.write(h.text); say('help topic=' + JSON.stringify(h.topic) + (h.door ? ' door=1' : ' words=1')); return;
@@ -263,7 +269,7 @@ async function session(o) {
     if (sw) {
       const w = sw[1].toLowerCase();
       if (w === 'exit' || w === 'quit') { rl.close(); return; }
-      if (w === 'history') { typed.slice(0, -1).forEach((l, i) => process.stdout.write(String(i + 1).padStart(4) + '  ' + l + '\n')); return; }
+      if (w === 'history') { const all = saved.concat(typed.slice(0, -1)), nArg = Number((line.split(/\s+/)[1] || '').trim()), from = nArg > 0 ? Math.max(0, all.length - nArg) : 0; all.slice(from).forEach((l, i) => process.stdout.write(String(from + i + 1).padStart(4) + '  ' + l + '\n')); say('history saved=' + saved.length + ' session=' + (typed.length - 1) + ' shown=' + (all.length - from)); return; }   // §39 H1: earlier sessions too, numbered oldest first (the !n numbers)
       if (w === 'menu') { rl.pause(); const r = cp.spawnSync(process.execPath, [path.join(__dirname, 'mis.js'), '--menu'].concat(line.split(/\s+/).slice(1)), { stdio: 'inherit', env: process.env }); say('menu exit=' + r.status); rl.resume(); return; }
     }
     await sh.run(line, io);

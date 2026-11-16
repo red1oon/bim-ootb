@@ -367,6 +367,19 @@
     return { init: init, step: step, prompt: prompt, expand: expand, lineOf: lineOf, wordList: wordList, helpText: helpText, groupOf: groupOf, menuOpen: function (st) { return !!(st && st.menu); },
       loginGate: function (st) { return st && st.needLogin && !st.user && brk !== 'nogate' ? M('words.login_first', st.needLogin.client, st.needLogin.n) : null; } };   // §30 L2 for a door line typed at the prompt (it does not pass step)
   }
-  var API = { create: create };
+  // bim-compiler prompts/CLI_ERP_IVR.md §39 H2-H4: `!` history at the start of a line, as bash. PURE: hist = the lines, oldest first (the same numbering `history` prints).
+  //   !! the last · !n line n · !-n the n-th back · !text the newest line starting with text. Returns null (not a history line), {line, asked} or {none: true, asked}.
+  //   A `!` later in the line or inside quotes is left as typed. brk 'nobang' (W-RED1-BANG falsifier) turns it off.
+  function expandBang(hist, raw, brk) {
+    var line = String(raw || '').replace(/^\s+/, ''), m = /^!(\S+)/.exec(line);
+    if (brk === 'nobang' || !m || line === '!') return null;
+    var tok = m[1], rest = line.slice(m[0].length), h = hist || [], hit = null, n;
+    if (tok === '!') hit = h[h.length - 1];
+    else if (/^-\d+$/.test(tok)) { n = Number(tok.slice(1)); hit = n > 0 ? h[h.length - n] : null; }
+    else if (/^\d+$/.test(tok)) { n = Number(tok); hit = n > 0 ? h[n - 1] : null; }
+    else for (var i = h.length - 1; i >= 0; i--) if (h[i].indexOf(tok) === 0) { hit = h[i]; break; }
+    return hit == null ? { none: true, asked: '!' + tok } : { line: hit + rest, asked: '!' + tok };
+  }
+  var API = { create: create, expandBang: expandBang };
   if (typeof module !== 'undefined' && module.exports) module.exports = API; else root.WordsCore = API;
 })(this);
