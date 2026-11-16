@@ -245,7 +245,75 @@ function parityGate() {
   say('PASS', o);
 }
 
+// §F.33 (decision F-23): the CHANGED files' own witnesses. Every node witness under */tests/ that requires a bumped target runs on this tree; one that
+//   fails is re-run once (a flake is not a failure) and then run on the BASE (merge-base with origin/main, a cached detached worktree; BUMP_TOUCH_BASE=<dir>
+//   names a ready one). Blocks only on pass-on-base / fail-on-change. Judged by exit code (the signal all witnesses share); the last verdict line is printed.
+function touchGate() {
+  const cfgPath = [path.join(ROOT, 'scripts', 'bump_parity.json'), path.join(__dirname, 'bump_parity.json')].find(p => fs.existsSync(p));
+  let cfg = { mode: 'block', applies_to: ['erp/'] };
+  if (cfgPath) { try { cfg = Object.assign(cfg, JSON.parse(fs.readFileSync(cfgPath, 'utf8'))); } catch (e) { /* parityGate already refused it */ } }
+  const changed = [...want].filter(w => (cfg.applies_to || []).some(a => w.startsWith(a)) && w.endsWith('.js'));
+  if (!changed.length || NO_PARITY) return;
+  const mode = process.env.BUMP_PARITY || cfg.mode;
+  if (mode === 'off') return;
+  const t0 = Date.now(), names = changed.map(f => path.basename(f, '.js'));
+  const esc = n => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const REQ = new RegExp(`require\\([^)]*['"/](${names.map(esc).join('|')})(\\.js)?['"]`);
+  let all = [];
+  try { all = cp.execFileSync('git', ['ls-files', '*/tests/witness_*.js'], { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).split('\n').filter(Boolean); }
+  catch (e) { all = listFiles('.js').filter(f => /(^|\/)tests\/witness_[^/]*\.js$/.test(f)); }
+  const loads = all.filter(f => REQ.test(fs.readFileSync(path.join(ROOT, f), 'utf8')));
+  const browser = loads.filter(f => /playwright|chromium|puppeteer/.test(fs.readFileSync(path.join(ROOT, f), 'utf8')));
+  const ws = loads.filter(f => !browser.includes(f));
+  const runOne = (tree, f) => {
+    const s0 = Date.now(), r = cp.spawnSync('node', [path.join(tree, f)], { cwd: path.join(tree, path.dirname(path.dirname(f))), encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 1 << 28, timeout: 5 * 60 * 1000 });
+    const lines = ((r.stdout || '') + (r.stderr || '')).split('\n').filter(l => /VERDICT|verdict=/.test(l));
+    return { code: r.status === 0 ? 0 : 1, secs: Math.round((Date.now() - s0) / 1000), last: (lines[lines.length - 1] || '').trim().slice(0, 160) };
+  };
+  const home = process.env.BUMP_PARITY_HOME || path.join(os.homedir(), '.cache', 'bim_bridge');
+  let base = process.env.BUMP_TOUCH_BASE || null, baseSha = base ? 'dir' : null, baseWhy = '', cache = {}, cacheFile = null;
+  const ensureBase = () => {
+    if (base || baseWhy) return base;
+    try {
+      baseSha = cp.execFileSync('git', ['merge-base', 'HEAD', 'origin/main'], { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+      const dir = path.join(home, 'touch_base', baseSha);
+      if (!fs.existsSync(path.join(dir, '.git'))) { fs.mkdirSync(path.dirname(dir), { recursive: true }); cp.execFileSync('git', ['worktree', 'add', '--detach', dir, baseSha], { cwd: ROOT, stdio: 'ignore' }); }
+      if (fs.existsSync(path.join(ROOT, 'node_modules')) && !fs.existsSync(path.join(dir, 'node_modules'))) fs.symlinkSync(fs.realpathSync(path.join(ROOT, 'node_modules')), path.join(dir, 'node_modules'));
+      base = dir; cacheFile = path.join(home, 'touch_base', baseSha + '.json');
+      try { cache = JSON.parse(fs.readFileSync(cacheFile, 'utf8')); } catch (e) { cache = {}; }
+    } catch (e) { baseWhy = 'base_unavailable(' + (e.message || e).toString().split('\n')[0].slice(0, 120) + ')'; }
+    return base;
+  };
+  const newFail = [], preFail = [], unjudged = [], unrun = [];
+  // F-23b (owner 2026-11-17, "10-min budget"): fastest first by the durations recorded on earlier runs (never-measured ones first, to learn them); no new
+  //   witness starts once the budget is spent, and every one not reached is NAMED (unrun=[...]); it is not a failure.
+  const budget = 1000 * (+process.env.BUMP_TOUCH_BUDGET_S || 600), durFile = path.join(home, 'touch_durations.json');
+  let dur = {}; try { dur = JSON.parse(fs.readFileSync(durFile, 'utf8')); } catch (e) { dur = {}; }
+  ws.sort((a, b) => (dur[a] == null ? -1 : dur[a]) - (dur[b] == null ? -1 : dur[b]) || (a < b ? -1 : 1));
+  for (const f of ws) {
+    if (Date.now() - t0 >= budget) { unrun.push(path.basename(f, '.js')); continue; }
+    // base FIRST (cached per base commit): a witness already failing on the base cannot be a new fail, so it needs no flake re-run (measured 2026-11-17:
+    //   re-running the 9 pre-failing ad_callout.js witnesses was ~20 of the 34 min). Only a fail-on-change / pass-on-base is re-run once.
+    let c = runOne(ROOT, f), b = null;
+    if (c.code && ensureBase()) {
+      b = cache[f] && baseSha !== 'dir' ? cache[f] : runOne(base, f);
+      if (baseSha !== 'dir') cache[f] = b;
+      if (!b.code) { const c2 = runOne(ROOT, f); if (!c2.code) c = Object.assign(c2, { flake: true }); }
+      if (c.code) (b.code ? preFail : newFail).push(path.basename(f, '.js'));
+    } else if (c.code) unjudged.push(path.basename(f, '.js'));
+    dur[f] = c.secs;
+    console.log(`§BUMP_TOUCH_RUN w=${f} change=${c.code}${c.flake ? '(flake)' : ''} base=${b ? b.code : '-'} secs=${c.secs} last=${JSON.stringify(c.last)}`);
+  }
+  if (cacheFile) try { fs.writeFileSync(cacheFile, JSON.stringify(cache)); } catch (e) { /* cache is a convenience */ }
+  try { fs.mkdirSync(home, { recursive: true }); fs.writeFileSync(durFile, JSON.stringify(dur)); } catch (e) { /* durations are a convenience */ }
+  // a witness failing on the change with no base to compare is NOT judged: INCONCLUSIVE, never a silent pass
+  const verdict = newFail.length ? (mode === 'block' ? 'BLOCKED' : 'WARN') : unjudged.length ? (mode === 'block' ? 'INCONCLUSIVE' : 'WARN') : 'PASS';
+  console.log(`§BUMP_TOUCH files=${changed.join(',')} witnesses=${ws.length} browser_skipped=${browser.length} new_fail=[${newFail.join(',')}] pre_fail=[${preFail.join(',')}] unjudged=[${unjudged.join(',')}] unrun=[${unrun.join(',')}] budget_s=${budget / 1000} base=${baseSha ? baseSha.slice(0, 12) : '-'} secs=${Math.round((Date.now() - t0) / 1000)} verdict=${verdict}${baseWhy ? ' why=' + baseWhy : ''}`);
+  if (mode === 'block' && (verdict === 'BLOCKED' || verdict === 'INCONCLUSIVE')) { console.log('§BUMP_BLOCKED a changed file\'s own witness fails only on this change, nothing written (exit 3). Fix it, or: --no-parity "<reason>", or BUMP_PARITY=warn'); process.exit(3); }
+}
+
 if (WRITE) parityGate();
+if (WRITE) touchGate();
 
 if (WRITE) for (const [f, t] of edits) fs.writeFileSync(path.join(ROOT, f), t);
 console.log(`§BUMP_DONE targets=${want.size} pages=${[...edits.keys()].filter(f => f.endsWith('.html')).length} loaders=${[...edits.keys()].filter(f => f.endsWith('.js') && !/(^|\/)sw\.js$/.test(f)).length} sw=${swBump.size} mode=${WRITE ? 'write' : 'dry-run'} written=${WRITE ? edits.size : 0}`);
