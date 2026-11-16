@@ -14,7 +14,7 @@
 'use strict';
 const fs = require('fs'), path = require('path'), os = require('os'), cp = require('child_process');
 const { kit, ROOT } = require('./_kit');
-const k = kit('W-MSG-DOOR'), BRK = process.env.MSG_BREAK || '', BASE = process.env.DOOR_BASE || 'f541cde7';
+const k = kit('W-MSG-DOOR'), BRK = process.env.MSG_BREAK || '', BASE = process.env.DOOR_BASE || '304a30a0';
 const DD = path.join(ROOT, 'common/door'), MK = require(path.join(DD, 'msg_keys.js')), CATF = path.join(DD, 'vocab/messages.json');
 const tmpd = fs.mkdtempSync(path.join(os.tmpdir(), 'msgdoor_')), TAG = '.w_msgdoor_' + process.pid;
 const sib = { old: path.join(DD, TAG + '_old.js'), new: path.join(DD, TAG + '_new.js') };
@@ -161,10 +161,11 @@ function cliRuns(which) {
   if (!uses.length) k.incon('D3', 'no M(\'door.…\') use found in door.js');
   else k.chk('D3 keys both ways through msg_keys.js (prefix door.): ' + uses.length + ' uses, ' + doorKeys.length + ' catalog keys, ' + findings.length + ' findings', findings.length === 0, findings.map(f => f.kind + ' ' + f.key).join(', '));
   // ── D4 the deletion budget ──
+  // a §DOOR line or a say() call (say writes '§DOOR ' + its text) is the log: it stays in code by rule
   const CODES = ['ok', 'refused', 'claim', 'error', 'inconclusive', 'human', 'ai'];   // a status or an actor is a CODE the envelope carries, not a word a person reads
   const strip = (src) => src.split('\n').map((l, i) => [i + 1, l.replace(/\s\/\/ .*$/, '')]).filter(([, l]) => !/^\s*\/\//.test(l));
   const lits = (src, guard) => { const hits = [], logs = []; strip(src).forEach(([n, l]) => { const m = (l.match(/'(?:[^'\\\n]|\\.)*'/g) || []).filter(x => x !== "'use strict'" && CODES.indexOf(x.slice(1, -1)) < 0 && (/[A-Za-z]{2,} [A-Za-z]{2,}/.test(x) || new RegExp("\\|\\| " + x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).test(l) && /^'[a-z ]{3,}'$/.test(x)));
-    if (!m.length) return; if (/§DOOR/.test(l)) { logs.push(n); return; } if (guard && /catalogMissing = /.test(l)) return; m.forEach(x => hits.push(n + ':' + x.slice(0, 60))); }); return { hits, logs }; };
+    if (!m.length) return; if (/§DOOR|\bsay\(/.test(l)) { logs.push(n); return; } if (guard && /catalogMissing = /.test(l)) return; m.forEach(x => hits.push(n + ':' + x.slice(0, 60))); }); return { hits, logs }; };
   const before = oldSrc ? lits(oldSrc, false) : null, after = lits(newSrc, true);
   k.L('D4 person-facing literals in door.js: before=' + (before ? before.hits.length : '?') + ' after=' + after.hits.length + (after.hits.length ? ' left: ' + JSON.stringify(after.hits) : '') + '; §DOOR log lines left by rule: ' + after.logs.length + ' (lines ' + after.logs.join(',') + '); named guard: catalogMissing');
   if (!before) k.incon('D4', 'no baseline to count against');
