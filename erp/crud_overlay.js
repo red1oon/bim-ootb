@@ -757,7 +757,7 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
       var raw = v; v = normDateValue('date', v);
       console.log('§CRUD-DATE col=' + f.col + ' raw="' + raw + '" normalized="' + v + '" widget=date');
     }
-    return '<input class=cfi type="' + t + '" data-col="' + f.col + '" value="' + esc(v) + '"' + ro + (f.readonly ? ' title="derived — read-only"' : '') + '>';
+    return '<input class=cfi type="' + t + '" data-col="' + f.col + '" value="' + esc(v) + '"' + ro +  + '>';
   }
   // ══ FS-13 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2k — Witness: W-ERP-FIRST-SETUP S10b) — the Location
   // editor. iDempiere's WLocationEditor shows the address text and opens WLocationDialog (Address1..4, City, Postal,
@@ -1553,6 +1553,7 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
       h += '<label class=cfrow data-row="' + f.col + '" data-ad-table="' + esc(e.key) + '" data-ad-column="' + esc(f.col) + '"><span class=cfl>' + esc(lbl) + ' <i class=req data-req="' + f.col + '" style="display:none">*</i></span>' + fieldInput(f, vals[f.col]) + '<span class="cfe" data-col="' + f.col + '"></span></label>';
     });
     host.innerHTML = h; host.classList.add('idmp-inline-crud');
+    if (window.FieldHelp) window.FieldHelp.attachIn(host, _inlineOpts.fieldFor);   // §7 P1b: tooltip = the AD field's Description + the Tool Tip panel (W-FIELD-HELP F1/F3)
     populateRefs(e, orig);                                      // §P3 — see renderForm
     applyAdLogic(e);
     // §CP — bind the GridTab (and on New run the dataNew callout fan) BEFORE the baseline: iDempiere's dataNew ends with
@@ -1691,6 +1692,7 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
         // render ONE inline editor into the cell, reusing the form's fieldInput + populateRefs (borrow fhost, restore)
         var prevFhost = fhost; fhost = hostTd;
         hostTd.innerHTML = '<div class="ic-cell">' + fieldInput(f, orig[f.col]) + '<span class="cfe" data-col="' + esc(f.col) + '"></span></div>';
+        if (window.FieldHelp) window.FieldHelp.attachIn(hostTd, opts.fieldFor);   // §7 P1b: a grid editor on focus = the same tooltip + panel (GridTabRowRenderer.java:637-641)
         hostTd.classList.add('idmp-cell-edit');
         populateRefs(e, orig);                               // list/fk options (every col but ours → el null → skipped)
         var input = hostTd.querySelector('[data-col="' + f.col + '"]');
