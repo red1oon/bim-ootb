@@ -68,7 +68,7 @@
   function _packOpts(db) {
     return { say: function (l) { console.log(l); }, convertSql: global.AdCallout && global.AdCallout.convertSql,
       hasFunction: function (n) { try { db.exec('SELECT ' + n + '()'); return true; } catch (e) { return !/no such function/i.test(e.message); } },
-      uuid: function () { return (global.crypto && global.crypto.randomUUID) ? global.crypto.randomUUID() : null; } };
+      uuid: function () { return _edgeEnv().edge().uuid(); } };   // A2-PIPO: the edge's id, never the RNG directly
   }
   // §24: a pack's stored functions. The module's bodies are bound on the dictionary DB like core's sqlfn.js UDFs (AdCallout.RUNTIME.bindSqlFunctions) - at Start BEFORE the Pack In
   //   (so its CREATE FUNCTION statements are provided and views over them compile) and at every load BEFORE the replay, for every kept pack, whatever the bundle's state.
