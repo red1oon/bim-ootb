@@ -282,7 +282,11 @@ function docKind(O, kind) {   // a document = an AD table with a DocAction colum
 // THE resolver (NEURO §R.V.1): "the record a line means". Every verb that takes --id or --number comes through here; find lists the same rows.
 function byNumber(O, K, number, and) {
   if (!K.numCol) refuse('kind ' + K.name + ' has no DocumentNo, Name or Value column to find by; name the record with --id');
-  return O.rows('SELECT * FROM ' + K.table + ' WHERE ' + K.numCol + '=?' + (and || '') + ' ORDER BY ' + K.key, [String(number)]);
+  const by = (c) => O.rows('SELECT * FROM ' + K.table + ' WHERE ' + c + '=?' + (and || '') + ' ORDER BY ' + K.key, [String(number)]);
+  let rs = by(K.numCol);
+  // the window's Find takes any identifier: what the first column (DocumentNo, else Name, else Value) does not hold, a later one may (Project "Hospital" is its Value, "BIM: Hospital" its Name) — CLI_ERP_IVR §29.1 `cd <kind> <number|name>`
+  if (!rs.length && process.env.RECORD_BREAK !== 'oneidentifier') ['documentno', 'name', 'value'].filter(c => c !== K.numCol && K.has(c)).some(c => { rs = by(c); return rs.length > 0; });
+  return rs;
 }
 function recordOf(O, K, a, R) {   // R (a role, roleOf): the record is looked for among the role's rows only, so one outside them answers as one that does not exist
   if (a.id == null && a.number == null) refuse('a record is named by --id or --number');
