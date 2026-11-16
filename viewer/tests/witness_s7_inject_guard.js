@@ -43,6 +43,8 @@ const initSqlJs = (function () {
     }
   }
 })();
+// A-6 (bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md A2-VALUE-1): this runner is an EDGE, so it installs the one clock/id/timer source the core reads.
+if (!globalThis.CoreEdge) globalThis.CoreEdge = { nowMs: () => Date.now(), uuid: () => require('crypto').randomUUID(), perfMs: () => performance.now() };
 const ScheduleAuthor = require('../schedule_author.js');
 const ScheduleGate = require('../schedule_gate.js');
 const ScheduleInject = require('../schedule_inject.js');

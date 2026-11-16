@@ -32,8 +32,12 @@
     }
   }
 
+  // A-3/A-6 (bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md A2-VALUE-1): the id comes from the edge the shell installs (CoreEdge.uuid), never
+  // Math.random, and there is no colliding fallback: no edge = a loud throw. create({ tabId }) needs no edge.
   function newTabId() {
-    try { return 'tab_' + Math.random().toString(36).slice(2, 9); } catch (e) { return 'tab_x'; }
+    var G = (typeof globalThis !== 'undefined') ? globalThis : global, e = G.CoreEdge;
+    if (!e || typeof e.uuid !== 'function') { console.log('§ENV_NO_DATE newTabId: no edge installed'); throw new Error('ScheduleSync.newTabId: no CoreEdge installed (pass opts.tabId)'); }
+    return 'tab_' + e.uuid();
   }
 
   // create({tabId?}) → a sync handle bound to BroadcastChannel('bim_4d').
