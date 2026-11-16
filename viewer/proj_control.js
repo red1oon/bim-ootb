@@ -79,29 +79,36 @@
   }
 
   // EVM at a data ("as-of") date — defaults to today.
-  function evm(db, projectId, asOfDate) {
-    var asOf = _days(asOfDate || (function () { try { return new Date().toISOString().slice(0, 10); } catch (e) { return '2026-01-01'; } })());
-    var phases = db.exec("SELECT PlannedAmt,StartDate,EndDate,IsComplete FROM C_ProjectPhase WHERE C_Project_ID=" + Number(projectId));
+  // evmByPhase: the SAME per-phase arithmetic evm() sums (one implementation; CLI_ERP_IVR §29.4 P5 `status` shows the phases and their sum is the project): for each phase
+  //   BAC = PlannedAmt, PV = BAC x planned fraction at the data date (linear over StartDate..EndDate, rounded to cents per phase), EV = BAC when IsComplete='Y', SV = EV - PV, SPI = EV/PV.
+  //   AC is booked on the PROJECT (InvoicedAmt), not per phase, so a phase carries no AC/CPI (null: not known, never a fake 0).
+  function _asOfDays(asOfDate) { return _days(asOfDate || (function () { try { return new Date().toISOString().slice(0, 10); } catch (e) { return '2026-01-01'; } })()); }
+  function evmByPhase(db, projectId, asOfDate) {
+    var asOf = _asOfDays(asOfDate);
+    var phases = db.exec("SELECT PlannedAmt,StartDate,EndDate,IsComplete,C_ProjectPhase_ID,Name,SeqNo FROM C_ProjectPhase WHERE C_Project_ID=" + Number(projectId) + " ORDER BY SeqNo, C_ProjectPhase_ID");
     var rows = phases.length ? phases[0].values : [];
-    var bac = BD.ZERO, pv = BD.ZERO, ev = BD.ZERO, nComplete = 0;
-    rows.forEach(function (r) {
+    return rows.map(function (r) {
       var amt = _bd(r[0]), sd = _days(r[1]), ed = _days(r[2]), done = (r[3] === 'Y');
-      bac = bac.add(amt);
       // planned fraction at the data date (linear over the phase window)
       var frac = BD.ZERO;
       if (asOf != null && ed != null && asOf >= ed) frac = BD.of('1');
       else if (asOf != null && sd != null && ed != null && asOf > sd && ed > sd) {
         frac = BD.of(String(asOf - sd)).divide(BD.of(String(ed - sd)), 6, HALF_UP);
       }
-      pv = pv.add(amt.multiply(frac).setScale(2, HALF_UP));
-      if (done) { ev = ev.add(amt); nComplete++; }
+      var pv = amt.multiply(frac).setScale(2, HALF_UP), ev = done ? amt : BD.ZERO;
+      return { id: r[4], name: r[5], seq: r[6], start: r[1], end: r[2], complete: done, bac: amt.toString(), pv: pv.toString(), ev: ev.toString(), sv: ev.subtract(pv).toString(),
+        spi: pv.compareTo(BD.ZERO) === 0 ? null : ev.divide(pv, 4, HALF_UP).toString() };
     });
+  }
+  function evm(db, projectId, asOfDate) {
+    var bac = BD.ZERO, pv = BD.ZERO, ev = BD.ZERO, nComplete = 0, ph = evmByPhase(db, projectId, asOfDate);
+    ph.forEach(function (p) { bac = bac.add(_bd(p.bac)); pv = pv.add(_bd(p.pv)); if (p.complete) { ev = ev.add(_bd(p.ev)); nComplete++; } });
     var ac = _bd(_scalar(db, "SELECT InvoicedAmt FROM C_Project WHERE C_Project_ID=?", [projectId]));
     var m = evmMetrics(pv, ev, ac);
     var pctComplete = bac.compareTo(BD.ZERO) === 0 ? null : ev.divide(bac, 4, HALF_UP).toString();
     var pctPlanned = bac.compareTo(BD.ZERO) === 0 ? null : pv.divide(bac, 4, HALF_UP).toString();
     return {
-      asOf: asOfDate || null, bac: bac.toString(), phases: rows.length, phasesComplete: nComplete,
+      asOf: asOfDate || null, bac: bac.toString(), phases: ph.length, phasesComplete: nComplete,
       pv: m.pv, ev: m.ev, ac: m.ac, cv: m.cv, sv: m.sv, cpi: m.cpi, spi: m.spi,
       percentComplete: pctComplete, percentPlanned: pctPlanned,
       acIsZero: ac.compareTo(BD.ZERO) === 0
@@ -116,7 +123,7 @@
     return { projectId: projectId, contract: cs, evm: e, note: note };
   }
 
-  var API = { evmMetrics: evmMetrics, contractSum: contractSum, evm: evm, projectControl: projectControl };
+  var API = { evmMetrics: evmMetrics, contractSum: contractSum, evm: evm, evmByPhase: evmByPhase, projectControl: projectControl };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   else global.ProjControl = API;
 })(typeof self !== 'undefined' ? self : this);

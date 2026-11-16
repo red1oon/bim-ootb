@@ -1165,13 +1165,28 @@ async function orderState(O, a) {
   if (process.env.OFFER_BREAK === 'always' && line) return { building: a.building, key: inp.key, state, decision: dec, offer: { key: 'generate', line } };   // W-RED1-POST falsifier: offered whatever the engine said (must FAIL P2)
   return { building: a.building, key: inp.key, state, decision: { kind: dec.kind, actions: dec.actions }, offer };
 }
+// ── erp.project_status (bim-compiler prompts/CLI_ERP_IVR.md §29.4, P5): the PM's earned-value picture of a Project, read-only ──
+// viewer/proj_control.js is the ONE owner (contractSum, evm, evmByPhase, evmMetrics): nothing is computed here. A READ VERB (like erp.order_state), not a process: it changes nothing,
+// so it needs no process log, no op group and no confirmation, and any caller (a person, an AI, the Project window's own panel) can ask it at any time.
+const STATUS_BREAK = process.env.STATUS_BREAK || '';   // W-RED1-STATUS falsifiers: evdrift (EV one unit high: must FAIL S1) · skipphase (the first phase left out of the table: must FAIL S2)
+function projectStatus(O, a) {
+  const K = kindRef(O, 'Project'), r = recordOf(O, K, { id: a.id, number: a.number }), pid = r[K.key];
+  const PC = require(path.join(ROOT, 'viewer', 'proj_control.js')), asOf = a.asof || today();
+  const contract = PC.contractSum(O.db, pid), project = PC.evm(O.db, pid, asOf), phases = PC.evmByPhase(O.db, pid, asOf);
+  if (STATUS_BREAK === 'evdrift') project.ev = String(Number(project.ev) + 1);
+  const shown = STATUS_BREAK === 'skipphase' ? phases.slice(1) : phases;
+  const note = project.acIsZero ? 'AC=0: nothing is invoiced yet, so CPI is not defined (a claim books it)' : null;
+  say('project_status project=' + pid + ' asOf=' + asOf + ' phases=' + phases.length + ' bac=' + project.bac + ' pv=' + project.pv + ' ev=' + project.ev + ' ac=' + project.ac + ' spi=' + project.spi + ' cpi=' + project.cpi + (STATUS_BREAK ? ' STATUS_BREAK=' + STATUS_BREAK : ''));
+  return { project: { id: pid, value: r.value, name: r.name, currency: r.c_currency_id }, asOf, contract, evm: project, phases: shown, note,
+    summary: (r.name || r.value) + ' as of ' + asOf + ': BAC ' + project.bac + ', PV ' + project.pv + ', EV ' + project.ev + ', AC ' + project.ac + ', SPI ' + (project.spi == null ? 'n/a' : project.spi) + ', CPI ' + (project.cpi == null ? 'n/a' : project.cpi) };
+}
 async function main(argv) {
   const cmd = argv[0], a = {};
   for (let i = 1; i < argv.length; i++) { const m = /^--(\w+)$/.exec(argv[i]); if (!m || i + 1 >= argv.length) { say('FAIL usage: ' + argv[i]); return 2; } if (m[1] === 'where') (a.where = a.where || []).push(argv[++i]); else a[m[1]] = argv[++i]; }
-  if (['find', 'actions', 'describe', 'read', 'list', 'sum', 'group', 'new', 'update', 'delete', 'load', 'add_window', 'ninja_exec', 'ninja_workflow', 'ninja_rollback', 'ninja_export', 'diff', 'menu', 'process', 'lookup', 'order_state'].concat(Object.keys(ACT)).indexOf(cmd) < 0) { say('FAIL usage: erp_cli.js find|actions|complete|void|close|reverse|describe|read|list|sum|group --kind K (--number N | --id I) [--role R]'); return 2; }
+  if (['find', 'actions', 'describe', 'read', 'list', 'sum', 'group', 'new', 'update', 'delete', 'load', 'add_window', 'ninja_exec', 'ninja_workflow', 'ninja_rollback', 'ninja_export', 'diff', 'menu', 'process', 'lookup', 'order_state', 'project_status'].concat(Object.keys(ACT)).indexOf(cmd) < 0) { say('FAIL usage: erp_cli.js find|actions|complete|void|close|reverse|describe|read|list|sum|group --kind K (--number N | --id I) [--role R]'); return 2; }
   try {
     const O = await boot(a); O.actor = a.user == null ? 101 : Number(a.user);   // the session user: stated, default 101 (the same default the callout context takes), until sign-in exists
-    const out = await (ACT[cmd] ? act(O, a, ACT[cmd]) : ({ find, actions, describe, read, list: OC.list, sum: OC.sum, group: OC.group, new: createRecord, update: updateRecord, delete: deleteRecord, load: loadRecords, add_window: addWindow, ninja_exec: ninjaExec, ninja_workflow: ninjaWorkflow, ninja_rollback: ninjaRollback, ninja_export: ninjaExport, diff: misDiff, menu: menuOf, process: runProcess, lookup, order_state: orderState })[cmd](O, a));
+    const out = await (ACT[cmd] ? act(O, a, ACT[cmd]) : ({ find, actions, describe, read, list: OC.list, sum: OC.sum, group: OC.group, new: createRecord, update: updateRecord, delete: deleteRecord, load: loadRecords, add_window: addWindow, ninja_exec: ninjaExec, ninja_workflow: ninjaWorkflow, ninja_rollback: ninjaRollback, ninja_export: ninjaExport, diff: misDiff, menu: menuOf, process: runProcess, lookup, order_state: orderState, project_status: projectStatus })[cmd](O, a));
     process.stdout.write(JSON.stringify(out) + '\n'); return 0;
   } catch (e) {
     if (e instanceof Refused || e instanceof OC.Refused) { say('REFUSED ' + e.message); process.stdout.write(JSON.stringify(Object.assign({ refused: true, reason: e.message }, e.gap ? { gap: true, gapKind: e.gap } : {})) + '\n'); return 3; }

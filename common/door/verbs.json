@@ -2336,6 +2336,82 @@
    "witness": "common/door/tests/witness_red1_post.js"
   },
   {
+   "verb": "erp.project_status",
+   "app": "erp",
+   "title": "The earned-value status of a Project",
+   "description": "Read a Project's control picture as the BIM Project lane holds it (viewer/proj_control.js): the contract sum (original, approved and pending Variation Orders, revised) and the earned value at a date, in total and phase by phase: budget at completion, planned value (the schedule), earned value (the phases marked complete), actual cost (what is invoiced), the variances and the indices. A phase has no actual cost of its own, so CPI is a project figure; SPI = EV / PV is given for each phase. Changes nothing.",
+   "inputs": [
+    {
+     "name": "id",
+     "description": "The Project's key (C_Project_ID).",
+     "required": false,
+     "type": "string",
+     "example": "990000"
+    },
+    {
+     "name": "number",
+     "description": "The Project's search key or name, as mis.read finds it; if two carry it, name one with id.",
+     "required": false,
+     "type": "string",
+     "example": "Hospital"
+    },
+    {
+     "name": "asof",
+     "description": "The data date, YYYY-MM-DD (default: today). The planned value is the schedule up to this date.",
+     "required": false,
+     "type": "string",
+     "example": "2026-12-31"
+    }
+   ],
+   "harm": "read",
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "calls": {
+    "cli": "erp_cli",
+    "who": "the ERP engine",
+    "argv": [
+     "project_status",
+     {
+      "if": "id",
+      "args": [
+       "--id",
+       "{id}"
+      ]
+     },
+     {
+      "if": "number",
+      "args": [
+       "--number",
+       "{number}"
+      ]
+     },
+     {
+      "if": "asof",
+      "args": [
+       "--asof",
+       "{asof}"
+      ]
+     }
+    ]
+   },
+   "returns": {
+    "shape": "erp_cli JSON {project:{id,value,name},asOf,contract:{original,approvedVOs,pendingVOs,revised,whatIfRevised},evm:{bac,pv,ev,ac,cv,sv,cpi,spi,percentComplete,percentPlanned},phases:[{id,name,seq,bac,pv,ev,sv,spi,complete}],note,summary} or {refused,reason}",
+    "fields": [
+     {
+      "path": "evm.ev",
+      "type": "string"
+     },
+     {
+      "path": "phases",
+      "type": "array"
+     }
+    ]
+   },
+   "witness": "common/door/tests/witness_red1_status.js"
+  },
+  {
    "verb": "mis.lookup",
    "app": "mis",
    "title": "The legal values of a column or a process parameter",
