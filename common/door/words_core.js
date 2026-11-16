@@ -16,7 +16,7 @@
     var M = o.msg.t;   // the person's text comes from the catalog (bim-compiler prompts/VOCAB_MESSAGE_CATALOG.md §3, W-MSG-CATALOG)
     var SKIP = '\u0000leave-out';
     var LEVELS = ['short', 'student'];   // §0: Student is a LEVEL beside the language (VOCAB_MESSAGE_CATALOG.md)   // §25: the pick-list item that leaves an optional parameter out (never a value a record can have)
-    function init() { return { building: null, kind: null, columns: null, props: null, erp: null, ecolumns: null, eprops: null, role: null, pending: null, last: null, menu: null, pickFor: null, paras: null, runFor: null, asking: null, offer: null }; }
+    function init() { return { building: null, kind: null, columns: null, props: null, erp: null, ecolumns: null, eprops: null, role: null, pending: null, last: null, menu: null, pickFor: null, paras: null, runFor: null, asking: null }; }
     function prompt(st) {
       var where = st.erp ? st.erp : (st.building ? st.building + (st.kind ? '/' + st.kind : '') : '');
       return 'red1' + (st.role ? ' [' + st.role + ']' : '') + (where ? ' ' + where : '') + '> ';
@@ -109,7 +109,9 @@
         }
         if (p === 'offer') {   // §29.3 (D16): a run answer carries the engine's next step {key, line}; a SESSION asks it (y runs the exact line, anything else runs nothing); one-shot and AI get no question, the line is in the envelope's `next`
           var of0 = env.offer; if (!interactive || !of0 || !of0.line) return out();
-          st.offer = { key: of0.key, line: of0.line }; screen.push(M('words.offer_' + of0.key, of0.line)); return out();
+          var said = of0.key === 'generate' ? M('words.offer_generate', of0.line) : of0.key === 'open_project' ? M('words.offer_open_project', of0.line) : null;   // a closed set: an offer with no catalog text is not asked, never invented
+          if (said == null) return out();
+          st.offer = { key: of0.key, line: of0.line }; screen.push(said); return out();
         }
         if (p === 'cd-kind') {
           if (ok) { st.kind = env.answer.kind; st.columns = pick(env.answer.properties || []).cols; st.props = slim(env.answer.properties); screen.push(M('words.cd_kind_ok', st.building, st.kind, (env.answer.properties || []).length, st.columns.join(', '))); return out(); }

@@ -73,11 +73,13 @@ function chain(v, label, st0, inputs) {
     so = ro ? ro.state : so; sn = rn ? rn.state : sn;
   });
 }
+// a word whose form uses an option a LATER phase added (fixed / fill / fold, §29.6 P3c) cannot be expanded by the P2a-era core at all: judged by that phase's witness (W-RED1-POST P5), named here, not by M1
+const NEWFORM = (w) => (wordsX.words[w].forms || []).some(f => f.fixed || f.fill || f.fold);
 const S = (o) => Object.assign(C.plain.n.init(), o || {});
 const PLACES = { any: {}, building: { building: 'Duplex' }, kind: { building: 'Duplex', kind: 'Element', columns: ['guid', 'Name'] }, erp: { erp: 'Order', ecolumns: ['DocumentNo', 'Name'] } };
 // (1) every word, every place, a few shapes of arguments, in each core variant (expand: not a word, works in/nowhere, needs one of, too many values, usage, confirm, ls filter, lines)
 Object.keys(VARIANTS).forEach(v => Object.keys(PLACES).forEach(p => {
-  Object.keys(wordsX.words).concat(['zzzz']).forEach(w => ['', ' X', ' X Y Z W V', ' CO 7', ' zz 7', ' abc'].forEach(a => chain(v, v + '/' + p + '/' + w + a, S(PLACES[p]), [{ text: w + a }])));
+  Object.keys(wordsX.words).filter(w => !NEWFORM(w)).concat(['zzzz']).forEach(w => ['', ' X', ' X Y Z W V', ' CO 7', ' zz 7', ' abc'].forEach(a => chain(v, v + '/' + p + '/' + w + a, S(PLACES[p]), [{ text: w + a }])));
   ['pwd', 'role abc', 'role 102', 'role', 'cd Duplex', 'cd Element', 'cd ..', 'cd', 'cd "Business Partner"'].forEach(t => chain(v, v + '/' + p + '/' + t, S(PLACES[p]), [{ text: t }]));
 }));
 chain('plain', 'quote-in-value', S({ building: 'Duplex', kind: 'El"x', columns: ['guid'] }), [{ text: 'count' }]);
