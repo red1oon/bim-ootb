@@ -331,6 +331,7 @@ function createDoor(opts) {
       if ((r.code === 0 || r.code === 3) && a !== undefined) {
         const e = r.code === 3 ? envelope(base, 'refused', { answer: a, raw: r.out, why: a.reason || 'refused' }) : a.verdict === 'VACUOUS' ? envelope(base, 'inconclusive', { answer: a, raw: r.out, why: a.summary }) : envelope(base, 'ok', { answer: a, raw: r.out, ops: a.ops || [], notChecked: a.notChecked || [] });
         const nx = a.actions && a.actions.actions ? a.actions.actions : a.actions; if (Array.isArray(nx)) e.next = nx.slice();
+        if (a.object && a.object.offer && a.object.offer.line && !a.dry) { e.offer = a.object.offer; e.next = (e.next || []).concat([a.object.offer.line]); }   // a process may offer its own next step (ProcessInfo answer object); §29.3 after a post: open the project
         return e;
       }
       return fail('the ERP engine could not answer (exit ' + r.code + '): ' + (r.err.split('\n').filter(l => /§ERP FAIL/.test(l)).pop() || r.err || r.out || 'no output').replace(/^§ERP FAIL /, ''));
@@ -384,7 +385,19 @@ function createDoor(opts) {
     if (entry.body) return composed(entry, base, o);
     if (opts.dry && entry.harm !== 'read' && OPLOG_CLIS.indexOf(entry.calls.cli) < 0) return envelope(base, 'refused', { why: 'a dry run cannot hold back this line: ' + entry.verb + ' (' + entry.harm + ') is answered by ' + entry.calls.cli + ', which does not keep its writes in the op-log. The file stops here; nothing of it was kept' });
     if (!Object.prototype.hasOwnProperty.call(cli, entry.calls.cli)) return envelope(base, 'error', { why: 'verb ' + entry.verb + ' names a program (' + entry.calls.cli + ') that is not in the door\'s table; not run' });
-    return engineResult(entry, base, await spawnCli(entry.calls.cli, buildArgv(entry, o.args)));
+    const env = engineResult(entry, base, await spawnCli(entry.calls.cli, buildArgv(entry, o.args)));
+    if (entry.offer && env.status === 'ok') await offerOf(entry, base, o, env);
+    return env;
+  }
+  // §29.3 the next-step offer (bim-compiler prompts/CLI_ERP_IVR.md D16): a verb with `offer.via` asks that read verb, with its own building and selection words, and carries the answer's `offer` {key, line}
+  // on its envelope (and the line in `next`). Nothing is decided here: the probe's answer is the engine's (ProjOrderState.decide). A probe that cannot answer offers nothing, and says why.
+  async function offerOf(entry, base, o, env) {
+    const via = vocab.byVerb.get(entry.offer.via); if (!via) { say('offer via=' + entry.offer.via + ' is not a verb: no offer'); return; }
+    const pa = {}; via.inputs.forEach(i => { if (o.args[i.name] !== undefined) pa[i.name] = o.args[i.name]; });
+    Object.keys(o.args).filter(k => !entry.inputs.some(i => i.name === k) && !via.inputs.some(i => i.name === k)).forEach(k => { pa[k] = o.args[k]; });   // the selection words
+    const r = engineResult(via, Object.assign({}, base, { verb: via.verb }), await spawnCli(via.calls.cli, buildArgv(via, pa))), off = r.status === 'ok' && r.answer && r.answer.offer;
+    say('offer from=' + entry.verb + ' via=' + via.verb + ' status=' + r.status + ' offer=' + (off ? off.key + ' ' + JSON.stringify(off.line) : 'none') + (r.status === 'ok' ? '' : ' why=' + JSON.stringify(String(r.why).slice(0, 100))));
+    if (off) { env.offer = off; env.next = [off.line]; }
   }
   async function composed(entry, base, o) {   // tier 2: every line is a door command; the first line that is not ok stops the body
     const scope = new Map(); entry.inputs.forEach(i => { if (o.args[i.name] !== undefined) scope.set(i.name, { kind: 'input', value: o.args[i.name] }); });

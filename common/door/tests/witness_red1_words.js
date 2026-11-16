@@ -1,5 +1,5 @@
 // ⚠ DO NOT REMOVE — W-RED1-WORDS (bim-compiler prompts/CLI_ERP_IVR.md §22.11 step R1: the short words). READ THE LOG; an exit code is not evidence.
-//   R1 ISSUE (a word expands to a line the door would refuse: a word that cannot work) · R2 ISSUE (a word in a BIM place reaches an ERP verb or the reverse)
+//   R1 ISSUE (a word expands to a line the door would refuse: a word that cannot work) · R2 ISSUE (a word in a BIM place reaches an ERP verb or the reverse; the one bridge: a building form that fills an ERP input from the building, `post`, §29.6)
 //   R3 ISSUE (the printed `→` line is not the line that ran: run alone, with no session, it answers differently, so the shell teaches a wrong line)
 //   Falsifier: WORDS_BREAK=dropkey (the printed line lacks the context's building: must FAIL R3). A claim with nothing to judge says INCONCLUSIVE, never PASS.
 //   Run: node common/door/tests/witness_red1_words.js > common/door/tests/logs/red1_words.log 2>&1
@@ -29,7 +29,9 @@ const mask = (x) => JSON.stringify(x, (key, v) => (key === 'request' || key === 
     const pl = D.parseLine(x.line), e = byVerb[pl.verb], args = {};
     pl.kv.forEach(kv => { const inp = e.inputs.filter(i => i.name === kv.k)[0]; args[kv.k] = inp ? D.coerce(inp, kv.raw) : kv.raw; });
     const v = D.validate(e, args); if (v) bad1.push(w + '@' + f.in + ' → ' + x.line + ': ' + v);
-    if (APPS[f.in].indexOf(pl.verb.split('.')[0]) < 0) bad2.push(w + '@' + f.in + ' → ' + pl.verb);
+    // §29.1 / §29.6 P3c, the ONE rule change: a word in a building may reach that building's ERP project, but only a form that FILLS an input from the building (fill: {Building: "building"}); any other ERP verb in a BIM place is still a defect
+    const bridge = f.in === 'building' && f.fill && Object.keys(f.fill).some(k2 => f.fill[k2] === 'building') && pl.verb.split('.')[0] === 'erp';
+    if (APPS[f.in].indexOf(pl.verb.split('.')[0]) < 0 && !bridge) bad2.push(w + '@' + f.in + ' → ' + pl.verb);
     k.L('expand ' + JSON.stringify(text) + ' @' + f.in + ' → ' + x.line + (v ? '  REFUSED: ' + v : ''));
   }));
   if (!judged) k.incon('R1', 'words.json has no form'); else k.chk('R1 every word in every place it names expands to a line the door\'s own validator accepts (' + judged + ' word-forms)', !bad1.length, bad1.slice(0, 5).join(' | '));

@@ -2197,7 +2197,7 @@
    },
    "witness": "modeller/tests/witness_model_session.js"
   },
-{
+  {
    "verb": "erp.process",
    "app": "erp",
    "title": "Run a dictionary process",
@@ -2288,7 +2288,54 @@
    "returns": "erp_cli JSON {process:{id,value,name,classname},record,params,message,dry,ops,opSummary,planned} or {refused,reason}",
    "witness": "common/door/tests/witness_red1_run.js"
   },
-{
+  {
+   "verb": "erp.order_state",
+   "app": "erp",
+   "title": "What the ERP holds for a building's selection, and what is legal next",
+   "description": "Read the Project Order of a building as the ERP holds it (ProjOrderState.readState) and ask the engine what is legal for the selection (decide): not posted yet -> generate, which is offered as the exact line that posts it (the \"Fold from BIM\" process). A selection is column=value (wildcards allowed), the same words as viewer.cost. Changes nothing.",
+   "inputs": [
+    {
+     "name": "building",
+     "description": "The building name, e.g. \"Duplex\".",
+     "required": true,
+     "type": "building",
+     "example": "Duplex"
+    }
+   ],
+   "harm": "read",
+   "actors": [
+    "human",
+    "ai"
+   ],
+   "calls": {
+    "cli": "erp_cli",
+    "who": "the ERP engine",
+    "argv": [
+     "order_state",
+     "--building",
+     "{building}"
+    ],
+    "rest": {
+     "flag": "--where",
+     "what": "column=value over the elements (wildcards allowed), the same selection words as viewer.cost"
+    }
+   },
+   "returns": {
+    "shape": "erp_cli JSON {building,key,state:{generated,projectId,plannedAmt},decision:{kind,actions},offer:{key,line}|null} or {refused,reason}",
+    "fields": [
+     {
+      "path": "decision.actions",
+      "type": "array"
+     },
+     {
+      "path": "offer.line",
+      "type": "string"
+     }
+    ]
+   },
+   "witness": "common/door/tests/witness_red1_post.js"
+  },
+  {
    "verb": "mis.lookup",
    "app": "mis",
    "title": "The legal values of a column or a process parameter",
@@ -2393,7 +2440,7 @@
    "returns": "erp_cli JSON {column,reference,table,valRule,refWhere,unresolved,rows:[{value,name}],shown,total,why?} or {refused,reason}",
    "witness": "common/door/tests/witness_mis_lookup.js"
   },
-{
+  {
    "verb": "viewer.cost",
    "app": "viewer",
    "title": "The cost of a selection of a building",
@@ -2456,7 +2503,11 @@
      }
     ]
    },
-   "witness": "common/door/tests/witness_red1_cost.js"
+   "witness": "common/door/tests/witness_red1_cost.js",
+   "offer": {
+    "via": "erp.order_state",
+    "what": "after an ok answer the door asks erp.order_state (same building and selection) and carries its offer on the envelope: the exact line that posts the selection to the ERP Project Order when the engine says generate"
+   }
   }
  ]
 }
