@@ -3,6 +3,9 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches: [main]
+  # A person can publish main from their own machine (X0 Navigator "5 · Deploy main now", gh workflow run): a CI-bot merge
+  # starts no workflow, so this is how it goes live (bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md §F.29, #3105).
+  workflow_dispatch:
 
 permissions:
   contents: read
