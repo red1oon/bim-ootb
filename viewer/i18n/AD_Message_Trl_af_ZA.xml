@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<!--BIM OOTB Viewer — AD_Message_Trl af_ZA — format: org.compiere.install.Translation export (iDempiere). Rows 1000000-1000308 source=viewer/locales/af_ZA.js @4cd440ae (S225/S226 sessions, machine translation, extracted 2026-10-03, not retranslated); rows 1000309-1000492 and every row listed in viewer/tools/trl_batch_2026-10-03*.js source=machine (Claude, Anthropic, 2026-10-03); rows 1000493-1000655 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_tm.js; rows 1000656-1000671 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_info.js; rows 1000672-1000752 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_help.js; rows 1000753-1000862 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_modeller.js; rows 1000867-1000962 source=buildingSMART bSDD IFC 4.3 (CC BY-ND 4.0), verbatim official text — viewer/tools/trl_batch_2026-11-17_ifcdef.js; rows 1000963-1001017 source=machine (Claude, Anthropic, 2026-11-17), English class sentences written for this app — viewer/tools/trl_batch_2026-11-17_ifccls.js — NOT from a published iDempiere language pack. trl="N" = not translated (English kept, counted apart). Base rows: viewer/i18n/ad_message_base.csv. Edit THIS file, then run: node viewer/tools/build_trl.js-->
+<!--BIM OOTB Viewer — AD_Message_Trl af_ZA — format: org.compiere.install.Translation export (iDempiere). Rows 1000000-1000308 source=viewer/locales/af_ZA.js @4cd440ae (S225/S226 sessions, machine translation, extracted 2026-10-03, not retranslated); rows 1000309-1000492 and every row listed in viewer/tools/trl_batch_2026-10-03*.js source=machine (Claude, Anthropic, 2026-10-03); rows 1000493-1000655 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_tm.js; rows 1000656-1000671 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_info.js; rows 1000672-1000752 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_help.js; rows 1000753-1000862 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_modeller.js; rows 1000867-1000962 source=buildingSMART bSDD IFC 4.3 (CC BY-ND 4.0), verbatim official text — viewer/tools/trl_batch_2026-11-17_ifcdef.js; rows 1000963-1001017 source=machine (Claude, Anthropic, 2026-11-17), English class sentences written for this app — viewer/tools/trl_batch_2026-11-17_ifccls.js; rows 1001018-1001024 source=buildingSMART bSDD IFC 4.3 (CC BY-ND 4.0) verbatim, type -> occurrence per its IFC page; ui_cls_ifcdef_of machine (Claude, 2026-11-17) — viewer/tools/trl_batch_2026-11-17_ifcdef_types.js; rows 1000963-1001013 (51 filled) source=machine (Claude, Anthropic, 2026-11-17), class sentences in 10 more locales — viewer/tools/trl_batch_2026-11-17_ifccls_fill.js — NOT from a published iDempiere language pack. trl="N" = not translated (English kept, counted apart). Base rows: viewer/i18n/ad_message_base.csv. Edit THIS file, then run: node viewer/tools/build_trl.js-->
 <!--<!DOCTYPE idempiereTrl PUBLIC "-//iDempiere//DTD iDempiere Translation 1.0//EN" "https://raw.githubusercontent.com/idempiere/idempiere/refs/heads/master/utils_dev/trl/idempiereTrl.dtd">-->
 <idempiereTrl language="af_ZA" table="AD_Message">
  <row id="1000000" trl="Y">
@@ -3863,208 +3863,208 @@ CPM lees die datums wat die sleep opgelewer het — dit verander nooit een nie.<
   <value column="MsgText" original="EN">EN</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000963" trl="N">
-  <value column="MsgText" original="An air outlet or inlet, such as a grille or diffuser, where ducted air enters or leaves a room.">An air outlet or inlet, such as a grille or diffuser, where ducted air enters or leaves a room.</value>
+ <row id="1000963" trl="Y">
+  <value column="MsgText" original="An air outlet or inlet, such as a grille or diffuser, where ducted air enters or leaves a room.">’n Luguitlaat of -inlaat, soos ’n rooster of diffuser, waar kanaallug ’n vertrek binnekom of verlaat.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000964" trl="N">
-  <value column="MsgText" original="A device that warns people of fire or another danger by sound or light, such as a bell, siren or beacon.">A device that warns people of fire or another danger by sound or light, such as a bell, siren or beacon.</value>
+ <row id="1000964" trl="Y">
+  <value column="MsgText" original="A device that warns people of fire or another danger by sound or light, such as a bell, siren or beacon.">’n Toestel wat mense met klank of lig teen brand of ander gevaar waarsku, soos ’n klok, sirene of flitslig.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000965" trl="N">
-  <value column="MsgText" original="A horizontal or nearly horizontal structural member that carries loads across a span, usually onto columns or walls.">A horizontal or nearly horizontal structural member that carries loads across a span, usually onto columns or walls.</value>
+ <row id="1000965" trl="Y">
+  <value column="MsgText" original="A horizontal or nearly horizontal structural member that carries loads across a span, usually onto columns or walls.">’n Horisontale of byna horisontale struktuurelement wat laste oor ’n span dra, gewoonlik na kolomme of mure.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000966" trl="N">
-  <value column="MsgText" original="One part of a larger building element, such as a single layer or piece of a wall or slab, kept as its own object.">One part of a larger building element, such as a single layer or piece of a wall or slab, kept as its own object.</value>
+ <row id="1000966" trl="Y">
+  <value column="MsgText" original="One part of a larger building element, such as a single layer or piece of a wall or slab, kept as its own object.">Een deel van ’n groter boue-element, soos ’n enkele laag of stuk van ’n muur of plaat, wat as sy eie voorwerp gehou word.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000967" trl="N">
-  <value column="MsgText" original="An element that the source model did not give a specific type, so it is kept as a general building element.">An element that the source model did not give a specific type, so it is kept as a general building element.</value>
+ <row id="1000967" trl="Y">
+  <value column="MsgText" original="An element that the source model did not give a specific type, so it is kept as a general building element.">’n Element aan wie die bronmodel nie ’n spesifieke tipe gegee het nie, en wat daarom as ’n algemene boue-element gehou word.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000968" trl="N">
-  <value column="MsgText" original="A fitting that joins, bends or branches cable trays, cable ladders or trunking.">A fitting that joins, bends or branches cable trays, cable ladders or trunking.</value>
+ <row id="1000968" trl="Y">
+  <value column="MsgText" original="A fitting that joins, bends or branches cable trays, cable ladders or trunking.">’n Passtuk wat kabelladders, kabelbakke of kabelgeute verbind, buig of vertak.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000969" trl="N">
-  <value column="MsgText" original="A straight run of cable tray, cable ladder, trunking or conduit that carries and protects cables.">A straight run of cable tray, cable ladder, trunking or conduit that carries and protects cables.</value>
+ <row id="1000969" trl="Y">
+  <value column="MsgText" original="A straight run of cable tray, cable ladder, trunking or conduit that carries and protects cables.">’n Reguit stuk kabelbak, kabelleer, kabelgeut of leiding wat kabels dra en beskerm.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000970" trl="N">
-  <value column="MsgText" original="A vertical structural member that carries loads from beams and slabs down towards the foundations.">A vertical structural member that carries loads from beams and slabs down towards the foundations.</value>
+ <row id="1000970" trl="Y">
+  <value column="MsgText" original="A vertical structural member that carries loads from beams and slabs down towards the foundations.">’n Vertikale struktuurelement wat laste van balke en plate af na die fondamente dra.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000971" trl="N">
-  <value column="MsgText" original="A device that controls a system from the signals it receives, such as a thermostat, timer or control panel.">A device that controls a system from the signals it receives, such as a thermostat, timer or control panel.</value>
+ <row id="1000971" trl="Y">
+  <value column="MsgText" original="A device that controls a system from the signals it receives, such as a thermostat, timer or control panel.">’n Toestel wat ’n stelsel beheer volgens die seine wat dit ontvang, soos ’n termostaat, tydskakelaar of beheerpaneel.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000972" trl="N">
-  <value column="MsgText" original="A finishing layer over another element, such as a ceiling, floor finish, cladding or insulation.">A finishing layer over another element, such as a ceiling, floor finish, cladding or insulation.</value>
+ <row id="1000972" trl="Y">
+  <value column="MsgText" original="A finishing layer over another element, such as a ceiling, floor finish, cladding or insulation.">’n Afwerkingslaag oor ’n ander element, soos ’n plafon, vloerafwerking, bekleding of isolasie.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000973" trl="N">
-  <value column="MsgText" original="An outer wall of panels, often glass, hung on a frame fixed to the building; it carries no floor loads.">An outer wall of panels, often glass, hung on a frame fixed to the building; it carries no floor loads.</value>
+ <row id="1000973" trl="Y">
+  <value column="MsgText" original="An outer wall of panels, often glass, hung on a frame fixed to the building; it carries no floor loads.">’n Buitemuur van panele, dikwels glas, wat aan ’n raam hang wat aan die gebou vas is; dit dra geen vloerlaste nie.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000974" trl="N">
-  <value column="MsgText" original="A control or sensing device of a building system, such as a sensor or actuator, with no more specific type.">A control or sensing device of a building system, such as a sensor or actuator, with no more specific type.</value>
+ <row id="1000974" trl="Y">
+  <value column="MsgText" original="A control or sensing device of a building system, such as a sensor or actuator, with no more specific type.">’n Beheer- of waarnemingstoestel van ’n gebou-stelsel, soos ’n sensor of aktueerder, sonder ’n meer spesifieke tipe.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000975" trl="N">
-  <value column="MsgText" original="A door: a leaf in its frame that opens to let people pass through a wall or partition.">A door: a leaf in its frame that opens to let people pass through a wall or partition.</value>
+ <row id="1000975" trl="Y">
+  <value column="MsgText" original="A door: a leaf in its frame that opens to let people pass through a wall or partition.">’n Deur: ’n vlerk in sy kosyn wat oopgaan sodat mense deur ’n muur of skeiding kan loop.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000976" trl="N">
-  <value column="MsgText" original="A duct piece that joins, bends, branches or changes the size of air ducts.">A duct piece that joins, bends, branches or changes the size of air ducts.</value>
+ <row id="1000976" trl="Y">
+  <value column="MsgText" original="A duct piece that joins, bends, branches or changes the size of air ducts.">’n Kanaalstuk wat lugkanale verbind, buig, vertak of van grootte verander.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000977" trl="N">
-  <value column="MsgText" original="A straight length of air duct that carries air between equipment and rooms.">A straight length of air duct that carries air between equipment and rooms.</value>
+ <row id="1000977" trl="Y">
+  <value column="MsgText" original="A straight length of air duct that carries air between equipment and rooms.">’n Reguit lengte lugkanaal wat lug tussen toerusting en vertrekke dra.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000978" trl="N">
-  <value column="MsgText" original="An electrical appliance connected to the building supply, such as a fridge, oven or water heater.">An electrical appliance connected to the building supply, such as a fridge, oven or water heater.</value>
+ <row id="1000978" trl="Y">
+  <value column="MsgText" original="An electrical appliance connected to the building supply, such as a fridge, oven or water heater.">’n Elektriese toestel wat aan die gebou se kragtoevoer gekoppel is, soos ’n yskas, oond of warmwaterstel.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000979" trl="N">
-  <value column="MsgText" original="Equipment that turns one form of energy into another, such as a boiler, chiller or transformer, with no more specific type.">Equipment that turns one form of energy into another, such as a boiler, chiller or transformer, with no more specific type.</value>
+ <row id="1000979" trl="Y">
+  <value column="MsgText" original="Equipment that turns one form of energy into another, such as a boiler, chiller or transformer, with no more specific type.">Toerusting wat een vorm van energie in ’n ander omskakel, soos ’n stoomketel, koeler of transformator, sonder ’n meer spesifieke tipe.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000980" trl="N">
-  <value column="MsgText" original="A fire-fighting outlet, such as a sprinkler head, hose reel or fire hydrant.">A fire-fighting outlet, such as a sprinkler head, hose reel or fire hydrant.</value>
+ <row id="1000980" trl="Y">
+  <value column="MsgText" original="A fire-fighting outlet, such as a sprinkler head, hose reel or fire hydrant.">’n Brandbestrydingsuitlaat, soos ’n sproeierkop, slanghaspel of brandkraan.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000981" trl="N">
-  <value column="MsgText" original="A device that regulates flow in a pipe, duct or circuit, such as a valve, damper or switch, with no more specific type.">A device that regulates flow in a pipe, duct or circuit, such as a valve, damper or switch, with no more specific type.</value>
+ <row id="1000981" trl="Y">
+  <value column="MsgText" original="A device that regulates flow in a pipe, duct or circuit, such as a valve, damper or switch, with no more specific type.">’n Toestel wat vloei in ’n pyp, kanaal of kring reguleer, soos ’n klep, demper of skakelaar, sonder ’n meer spesifieke tipe.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000982" trl="N">
-  <value column="MsgText" original="A fitting that joins, bends or branches pipes, ducts or cable runs, with no more specific type.">A fitting that joins, bends or branches pipes, ducts or cable runs, with no more specific type.</value>
+ <row id="1000982" trl="Y">
+  <value column="MsgText" original="A fitting that joins, bends or branches pipes, ducts or cable runs, with no more specific type.">’n Passtuk wat pype, kanale of kabelrigtings verbind, buig of vertak, sonder ’n meer spesifieke tipe.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000983" trl="N">
-  <value column="MsgText" original="A type of gauge or meter, such as a pressure gauge, thermometer or voltmeter.">A type of gauge or meter, such as a pressure gauge, thermometer or voltmeter.</value>
+ <row id="1000983" trl="Y">
+  <value column="MsgText" original="A type of gauge or meter, such as a pressure gauge, thermometer or voltmeter.">’n Tipe meter of wyser, soos ’n drukmeter, termometer of voltmeter.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000984" trl="N">
-  <value column="MsgText" original="Equipment that moves a fluid, such as a pump, fan or compressor, with no more specific type.">Equipment that moves a fluid, such as a pump, fan or compressor, with no more specific type.</value>
+ <row id="1000984" trl="Y">
+  <value column="MsgText" original="Equipment that moves a fluid, such as a pump, fan or compressor, with no more specific type.">Toerusting wat ’n vloeistof of gas beweeg, soos ’n pomp, waaier of kompressor, sonder ’n meer spesifieke tipe.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000985" trl="N">
-  <value column="MsgText" original="A straight run of pipe, duct or cable carrier, with no more specific type.">A straight run of pipe, duct or cable carrier, with no more specific type.</value>
+ <row id="1000985" trl="Y">
+  <value column="MsgText" original="A straight run of pipe, duct or cable carrier, with no more specific type.">’n Reguit stuk pyp, kanaal of kabeldraer, sonder ’n meer spesifieke tipe.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000986" trl="N">
-  <value column="MsgText" original="Equipment that stores a fluid or energy, such as a tank or battery, with no more specific type.">Equipment that stores a fluid or energy, such as a tank or battery, with no more specific type.</value>
+ <row id="1000986" trl="Y">
+  <value column="MsgText" original="Equipment that stores a fluid or energy, such as a tank or battery, with no more specific type.">Toerusting wat ’n vloeistof of energie stoor, soos ’n tenk of battery, sonder ’n meer spesifieke tipe.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000987" trl="N">
-  <value column="MsgText" original="The end point where a system serves a room or a person, such as a tap, light or socket, with no more specific type.">The end point where a system serves a room or a person, such as a tap, light or socket, with no more specific type.</value>
+ <row id="1000987" trl="Y">
+  <value column="MsgText" original="The end point where a system serves a room or a person, such as a tap, light or socket, with no more specific type.">Die eindpunt waar ’n stelsel ’n vertrek of ’n persoon bedien, soos ’n kraan, lig of kragpunt, sonder ’n meer spesifieke tipe.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000988" trl="N">
-  <value column="MsgText" original="Equipment that cleans or treats a fluid, such as a filter or separator, with no more specific type.">Equipment that cleans or treats a fluid, such as a filter or separator, with no more specific type.</value>
+ <row id="1000988" trl="Y">
+  <value column="MsgText" original="Equipment that cleans or treats a fluid, such as a filter or separator, with no more specific type.">Toerusting wat ’n vloeistof of gas skoonmaak of behandel, soos ’n filter of skeier, sonder ’n meer spesifieke tipe.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000989" trl="N">
-  <value column="MsgText" original="A foundation element, such as a pad or strip footing, that spreads the load of the building into the ground.">A foundation element, such as a pad or strip footing, that spreads the load of the building into the ground.</value>
+ <row id="1000989" trl="Y">
+  <value column="MsgText" original="A foundation element, such as a pad or strip footing, that spreads the load of the building into the ground.">’n Fondamentelement, soos ’n poot- of stroomfondament, wat die gebou se las in die grond versprei.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000990" trl="N">
-  <value column="MsgText" original="A piece of furniture or equipment placed in a room, with no more specific type.">A piece of furniture or equipment placed in a room, with no more specific type.</value>
+ <row id="1000990" trl="Y">
+  <value column="MsgText" original="A piece of furniture or equipment placed in a room, with no more specific type.">’n Stuk meubel of toerusting wat in ’n vertrek geplaas word, sonder ’n meer spesifieke tipe.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000991" trl="N">
-  <value column="MsgText" original="Furniture, such as a table, chair, bed, desk or cabinet.">Furniture, such as a table, chair, bed, desk or cabinet.</value>
+ <row id="1000991" trl="Y">
+  <value column="MsgText" original="Furniture, such as a table, chair, bed, desk or cabinet.">Meubels, soos ’n tafel, stoel, bed, lessenaar of kas.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000992" trl="N">
-  <value column="MsgText" original="A light fitting (luminaire) that holds lamps and lights a space.">A light fitting (luminaire) that holds lamps and lights a space.</value>
+ <row id="1000992" trl="Y">
+  <value column="MsgText" original="A light fitting (luminaire) that holds lamps and lights a space.">’n Ligtoebehoor (armatuur) wat lampe hou en ’n ruimte verlig.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000993" trl="N">
-  <value column="MsgText" original="A structural or framing piece that is not a main beam or column, such as a brace, stud, mullion or purlin.">A structural or framing piece that is not a main beam or column, such as a brace, stud, mullion or purlin.</value>
+ <row id="1000993" trl="Y">
+  <value column="MsgText" original="A structural or framing piece that is not a main beam or column, such as a brace, stud, mullion or purlin.">’n Struktuur- of raamstuk wat nie ’n hoofbalk of -kolom is nie, soos ’n windskoor, regop stut, middelstyl of gordingbalk.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000994" trl="N">
-  <value column="MsgText" original="A void cut into a wall, slab or other element, usually for a door or window or to let services pass.">A void cut into a wall, slab or other element, usually for a door or window or to let services pass.</value>
+ <row id="1000994" trl="Y">
+  <value column="MsgText" original="A void cut into a wall, slab or other element, usually for a door or window or to let services pass.">’n Leemte wat in ’n muur, plaat of ander element gesny is, gewoonlik vir ’n deur of venster of om dienste deur te laat.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000995" trl="N">
-  <value column="MsgText" original="A pipe piece that joins, bends, branches or changes the size of pipes, such as an elbow, tee or reducer.">A pipe piece that joins, bends, branches or changes the size of pipes, such as an elbow, tee or reducer.</value>
+ <row id="1000995" trl="Y">
+  <value column="MsgText" original="A pipe piece that joins, bends, branches or changes the size of pipes, such as an elbow, tee or reducer.">’n Pypstuk wat pype verbind, buig, vertak of van grootte verander, soos ’n elmboog, T-stuk of vernouer.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000996" trl="N">
-  <value column="MsgText" original="A straight length of pipe that carries water, gas or another fluid.">A straight length of pipe that carries water, gas or another fluid.</value>
+ <row id="1000996" trl="Y">
+  <value column="MsgText" original="A straight length of pipe that carries water, gas or another fluid.">’n Reguit lengte pyp wat water, gas of ’n ander vloeistof dra.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000997" trl="N">
-  <value column="MsgText" original="A thin flat element, such as a steel plate or a glass panel in a curtain wall.">A thin flat element, such as a steel plate or a glass panel in a curtain wall.</value>
+ <row id="1000997" trl="Y">
+  <value column="MsgText" original="A thin flat element, such as a steel plate or a glass panel in a curtain wall.">’n Dun plat element, soos ’n staalplaat of ’n glaspaneel in ’n gordynmuur.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000998" trl="N">
-  <value column="MsgText" original="A guard rail, handrail or balustrade, for example along a stair, ramp or balcony edge.">A guard rail, handrail or balustrade, for example along a stair, ramp or balcony edge.</value>
+ <row id="1000998" trl="Y">
+  <value column="MsgText" original="A guard rail, handrail or balustrade, for example along a stair, ramp or balcony edge.">’n Leuning, handreling of balustrade, byvoorbeeld langs ’n trap, skuinspad of balkonrand.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000999" trl="N">
-  <value column="MsgText" original="A sloped walkway joining two levels, made of one or more ramp flights and landings.">A sloped walkway joining two levels, made of one or more ramp flights and landings.</value>
+ <row id="1000999" trl="Y">
+  <value column="MsgText" original="A sloped walkway joining two levels, made of one or more ramp flights and landings.">’n Skuins loopvlak wat twee vlakke verbind, gemaak van een of meer skuinspadvlugte en bordesse.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1001000" trl="N">
-  <value column="MsgText" original="One sloped run of a ramp between two landings.">One sloped run of a ramp between two landings.</value>
+ <row id="1001000" trl="Y">
+  <value column="MsgText" original="One sloped run of a ramp between two landings.">Een skuins stuk van ’n skuinspad tussen twee bordesse.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1001001" trl="N">
-  <value column="MsgText" original="A steel reinforcing bar (rebar) set inside concrete to carry tension.">A steel reinforcing bar (rebar) set inside concrete to carry tension.</value>
+ <row id="1001001" trl="Y">
+  <value column="MsgText" original="A steel reinforcing bar (rebar) set inside concrete to carry tension.">’n Staalversterkingstaaf (wapeningsstaal) binne beton om trekkrag te dra.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1001002" trl="N">
-  <value column="MsgText" original="The roof: the top covering of a building, made of slabs, beams and other parts.">The roof: the top covering of a building, made of slabs, beams and other parts.</value>
+ <row id="1001002" trl="Y">
+  <value column="MsgText" original="The roof: the top covering of a building, made of slabs, beams and other parts.">Die dak: die boonste bedekking van ’n gebou, gemaak van plate, balke en ander dele.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1001003" trl="N">
-  <value column="MsgText" original="A type of sensor that detects a condition, such as smoke, heat, temperature or movement.">A type of sensor that detects a condition, such as smoke, heat, temperature or movement.</value>
+ <row id="1001003" trl="Y">
+  <value column="MsgText" original="A type of sensor that detects a condition, such as smoke, heat, temperature or movement.">’n Tipe sensor wat ’n toestand optel, soos rook, hitte, temperatuur of beweging.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1001004" trl="N">
-  <value column="MsgText" original="A flat horizontal or nearly horizontal element, such as a floor, roof slab or landing, usually of concrete.">A flat horizontal or nearly horizontal element, such as a floor, roof slab or landing, usually of concrete.</value>
+ <row id="1001004" trl="Y">
+  <value column="MsgText" original="A flat horizontal or nearly horizontal element, such as a floor, roof slab or landing, usually of concrete.">’n Plat horisontale of byna horisontale element, soos ’n vloer, dakplaat of bordes, gewoonlik van beton.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1001005" trl="N">
-  <value column="MsgText" original="A stair joining two levels, made of one or more flights and landings.">A stair joining two levels, made of one or more flights and landings.</value>
+ <row id="1001005" trl="Y">
+  <value column="MsgText" original="A stair joining two levels, made of one or more flights and landings.">’n Trap wat twee vlakke verbind, gemaak van een of meer vlugte en bordesse.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1001006" trl="N">
-  <value column="MsgText" original="One run of steps of a stair between two landings.">One run of steps of a stair between two landings.</value>
+ <row id="1001006" trl="Y">
+  <value column="MsgText" original="One run of steps of a stair between two landings.">Een reeks trappe van ’n trap tussen twee bordesse.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1001007" trl="N">
-  <value column="MsgText" original="A device that turns an electrical circuit on or off, such as a switch, circuit breaker or contactor.">A device that turns an electrical circuit on or off, such as a switch, circuit breaker or contactor.</value>
+ <row id="1001007" trl="Y">
+  <value column="MsgText" original="A device that turns an electrical circuit on or off, such as a switch, circuit breaker or contactor.">’n Toestel wat ’n elektriese kring aan- of afskakel, soos ’n skakelaar, stroombreker of kontaktor.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1001008" trl="N">
-  <value column="MsgText" original="A part of a modular office furniture system, such as a screen panel, work surface or storage unit.">A part of a modular office furniture system, such as a screen panel, work surface or storage unit.</value>
+ <row id="1001008" trl="Y">
+  <value column="MsgText" original="A part of a modular office furniture system, such as a screen panel, work surface or storage unit.">’n Deel van ’n modulêre kantoormeubelstelsel, soos ’n skermpaneel, werkblad of bergeenheid.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1001009" trl="N">
-  <value column="MsgText" original="Equipment that moves people or goods, such as a lift (elevator), escalator or moving walkway.">Equipment that moves people or goods, such as a lift (elevator), escalator or moving walkway.</value>
+ <row id="1001009" trl="Y">
+  <value column="MsgText" original="Equipment that moves people or goods, such as a lift (elevator), escalator or moving walkway.">Toerusting wat mense of goedere beweeg, soos ’n hysbak (lift), roltrap of loopband.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1001010" trl="N">
-  <value column="MsgText" original="A valve that opens, closes or regulates the flow in a pipe.">A valve that opens, closes or regulates the flow in a pipe.</value>
+ <row id="1001010" trl="Y">
+  <value column="MsgText" original="A valve that opens, closes or regulates the flow in a pipe.">’n Klep wat die vloei in ’n pyp oopmaak, toemaak of reguleer.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1001011" trl="N">
-  <value column="MsgText" original="A wall: a vertical element that divides or encloses spaces; it may or may not carry load.">A wall: a vertical element that divides or encloses spaces; it may or may not carry load.</value>
+ <row id="1001011" trl="Y">
+  <value column="MsgText" original="A wall: a vertical element that divides or encloses spaces; it may or may not carry load.">’n Muur: ’n vertikale element wat ruimtes skei of omsluit; dit kan las dra of nie.</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1001012" trl="N">
-  <value column="MsgText" original="A wall of even thickness along its length (an older IFC name, treated today as a plain wall).">A wall of even thickness along its length (an older IFC name, treated today as a plain wall).</value>
+ <row id="1001012" trl="Y">
+  <value column="MsgText" original="A wall of even thickness along its length (an older IFC name, treated today as a plain wall).">’n Muur met dieselfde dikte oor sy hele lengte (’n ouer IFC-naam wat vandag as ’n gewone muur hanteer word).</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1001013" trl="N">
-  <value column="MsgText" original="A window: a framed opening, usually glazed, that lets in light and air.">A window: a framed opening, usually glazed, that lets in light and air.</value>
+ <row id="1001013" trl="Y">
+  <value column="MsgText" original="A window: a framed opening, usually glazed, that lets in light and air.">’n Venster: ’n omraamde opening, gewoonlik beglaas, wat lig en lug inlaat.</value>
   <value column="MsgTip" original=""/>
  </row>
  <row id="1001014" trl="Y">
@@ -4081,6 +4081,34 @@ CPM lees die datums wat die sleep opgelewer het — dit verander nooit een nie.<
  </row>
  <row id="1001017" trl="N">
   <value column="MsgText" original="buildingSMART IFC 4.3 (bSDD), CC BY-ND 4.0">buildingSMART IFC 4.3 (bSDD), CC BY-ND 4.0</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001018" trl="N">
+  <value column="MsgText" original="A flow instrument reads and displays the value of a particular property of a system at a point, or displays the difference in the value of a property between two points.">A flow instrument reads and displays the value of a particular property of a system at a point, or displays the difference in the value of a property between two points.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001019" trl="N">
+  <value column="MsgText" original="EN">EN</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001020" trl="N">
+  <value column="MsgText" original="IfcFlowInstrument">IfcFlowInstrument</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001021" trl="N">
+  <value column="MsgText" original="A sensor is a device that measures a physical quantity and converts it into a signal which can be read by an observer or by an instrument.">A sensor is a device that measures a physical quantity and converts it into a signal which can be read by an observer or by an instrument.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001022" trl="N">
+  <value column="MsgText" original="EN">EN</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001023" trl="N">
+  <value column="MsgText" original="IfcSensor">IfcSensor</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001024" trl="Y">
+  <value column="MsgText" original="IFC definition of {cls}">IFC-definisie van {cls}</value>
   <value column="MsgTip" original=""/>
  </row>
 </idempiereTrl>

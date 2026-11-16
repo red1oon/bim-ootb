@@ -1,0 +1,76 @@
+{
+ "IfcSensor": {
+  "EN": {
+   "name": "Sensor",
+   "definition": "A sensor is a device that measures a physical quantity and converts it into a signal which can be read by an observer or by an instrument.",
+   "status": "Active"
+  },
+  "de-DE": {
+   "name": "Sensor",
+   "definition": "A sensor is a device that measures a physical quantity and converts it into a signal which can be read by an observer or by an instrument.",
+   "status": "Active"
+  },
+  "es-ES": {
+   "name": "Sensor",
+   "definition": "A sensor is a device that measures a physical quantity and converts it into a signal which can be read by an observer or by an instrument.",
+   "status": "Active"
+  },
+  "zh-CN": {
+   "name": "Sensor",
+   "definition": "A sensor is a device that measures a physical quantity and converts it into a signal which can be read by an observer or by an instrument.",
+   "status": "Active"
+  },
+  "ja-JP": {
+   "name": "Sensor",
+   "definition": "A sensor is a device that measures a physical quantity and converts it into a signal which can be read by an observer or by an instrument.",
+   "status": "Active"
+  },
+  "pt-BR": {
+   "name": "Sensor",
+   "definition": "Um sensor é um dispositivo que mede uma quantidade física e a converte em um sinal que pode ser lido por um observador ou por um instrumento.",
+   "status": "Active"
+  },
+  "fr-FR": {
+   "name": "Sensor",
+   "definition": "A sensor is a device that measures a physical quantity and converts it into a signal which can be read by an observer or by an instrument.",
+   "status": "Active"
+  }
+ },
+ "IfcFlowInstrument": {
+  "EN": {
+   "name": "Flow Instrument",
+   "definition": "A flow instrument reads and displays the value of a particular property of a system at a point, or displays the difference in the value of a property between two points.",
+   "status": "Active"
+  },
+  "de-DE": {
+   "name": "Flow Instrument",
+   "definition": "A flow instrument reads and displays the value of a particular property of a system at a point, or displays the difference in the value of a property between two points.",
+   "status": "Active"
+  },
+  "es-ES": {
+   "name": "Flow Instrument",
+   "definition": "A flow instrument reads and displays the value of a particular property of a system at a point, or displays the difference in the value of a property between two points.",
+   "status": "Active"
+  },
+  "zh-CN": {
+   "name": "Flow Instrument",
+   "definition": "A flow instrument reads and displays the value of a particular property of a system at a point, or displays the difference in the value of a property between two points.",
+   "status": "Active"
+  },
+  "ja-JP": {
+   "name": "Flow Instrument",
+   "definition": "A flow instrument reads and displays the value of a particular property of a system at a point, or displays the difference in the value of a property between two points.",
+   "status": "Active"
+  },
+  "pt-BR": {
+   "name": "Instrumento de Fluxo",
+   "definition": "Um instrumento de fluxo lê e exibe o valor de uma propriedade específica de um sistema em um certo ponto, ou exibe a diferença no valor de uma propriedade entre dois pontos.",
+   "status": "Active"
+  },
+  "fr-FR": {
+   "name": "Flow Instrument",
+   "definition": "A flow instrument reads and displays the value of a particular property of a system at a point, or displays the difference in the value of a property between two points.",
+   "status": "Active"
+  }
+ }
+}

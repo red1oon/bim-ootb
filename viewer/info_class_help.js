@@ -7,7 +7,9 @@
 // `#info-panel`: what this KIND of element is.
 //   (b) ifccls_<C>  — our own plain sentence, always shown when the row exists;
 //   (a) ifcdef_<C>  — buildingSMART's IFC 4.3 definition, VERBATIM (bSDD, CC BY-ND 4.0), folded under "IFC definition",
-//                     with the credit line; ifcdef_<C>_lang says which language that text is in ('EN' or e.g. 'de-DE').
+//                     with the credit line; ifcdef_<C>_lang says which language that text is in ('EN' or e.g. 'de-DE');
+//                     a TYPE class (bSDD has none) carries ifcdef_<C>_of = the occurrence class whose text it shows, named in
+//                     the heading "IFC definition of {cls}" and in the link (§14.2).
 // THE LABEL RULE (one place): (a) carries "English: no official translation…" iff its _lang is 'EN' and the page is not
 // English. All text comes through the ONE label loader (_trl, viewer/i18n/<code>.json); this file holds no text.
 // A class with neither row leaves the block hidden: never an empty box. Dual-mode (browser global + require()), the
@@ -17,7 +19,10 @@
   var BSDD = 'https://identifier.buildingsmart.org/uri/buildingsmart/ifc/4.3/class/';
   function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
   // '' when the key is absent from the loaded pack (the _trl default) — that is how "no row" is told apart.
-  function t(k, d) { return (typeof global._trl === 'function') ? global._trl(k, null, d) : d; }
+  function t(k, d, r) {
+    if (typeof global._trl === 'function') return global._trl(k, r || null, d);
+    var s = d; if (r) for (var x in r) s = s.replace('{' + x + '}', r[x]); return s;
+  }
   function pageLang() {
     var l = (typeof document !== 'undefined' && document.documentElement && document.documentElement.lang) || 'en';
     return String(l);
@@ -28,11 +33,12 @@
   function model(cls, lang) {
     if (!cls) return null;
     var ours = t('ifccls_' + cls, ''), def = t('ifcdef_' + cls, ''), defLang = def ? t('ifcdef_' + cls + '_lang', 'EN') : '';
+    var of = def ? t('ifcdef_' + cls + '_of', '') : '';
     if (!ours && !def) return null;
     return {
-      cls: cls, ours: ours, def: def, defLang: defLang,
+      cls: cls, ours: ours, def: def, defLang: defLang, of: of,
       fallback: !!def && defLang === 'EN' && !isEnglish(lang),
-      link: def ? BSDD + cls : ''
+      link: def ? BSDD + (of || cls) : ''
     };
   }
 
@@ -41,7 +47,7 @@
     if (m.ours) h += '<div style="color:#4fc3f7;font-weight:bold;margin-bottom:3px">' + esc(t('ui_cls_about', 'What this is')) + '</div>' +
       '<div class="value" data-cls-part="ours">' + esc(m.ours) + '</div>';
     if (m.def) {
-      h += '<details data-cls-part="ifc" style="margin-top:4px"><summary class="label" style="cursor:pointer">' + esc(t('ui_cls_ifcdef', 'IFC definition')) + '</summary>' +
+      h += '<details data-cls-part="ifc" style="margin-top:4px"><summary class="label" style="cursor:pointer">' + esc(m.of ? t('ui_cls_ifcdef_of', 'IFC definition of {cls}', { cls: m.of }) : t('ui_cls_ifcdef', 'IFC definition')) + '</summary>' +
         (m.fallback ? '<div class="label" data-cls-part="fallback" style="font-style:italic">' + esc(t('ui_cls_no_official', 'English: no official translation in your language')) + '</div>' : '') +
         '<div class="value" lang="' + esc(m.defLang === 'EN' ? 'en' : m.defLang) + '" style="white-space:pre-line">' + esc(m.def) + '</div>' +
         '<div class="label" data-cls-part="credit" style="font-size:10px;margin-top:2px"><a href="' + esc(m.link) + '" target="_blank" rel="noopener" style="color:#888">' +
@@ -70,7 +76,7 @@
     if (!m) { console.log('§CLASS_HELP guid="' + guid + '" class=' + (cls || '-') + ' skip reason=no_row locale=' + lang); return false; }
     box.innerHTML = html(m); box.style.display = 'block';
     console.log('§CLASS_HELP guid="' + guid + '" class=' + cls + ' ours=' + (m.ours ? 'Y' : 'N') + ' ifc=' + (m.def ? 'Y' : 'N') +
-      ' ifc_lang=' + (m.defLang || '-') + ' fallback=' + (m.fallback ? 'Y' : 'N') + ' locale=' + lang);
+      ' ifc_lang=' + (m.defLang || '-') + (m.of ? ' ifc_of=' + m.of : '') + ' fallback=' + (m.fallback ? 'Y' : 'N') + ' locale=' + lang);
     return true;
   }
 

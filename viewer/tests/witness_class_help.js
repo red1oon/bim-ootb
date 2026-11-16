@@ -12,6 +12,13 @@
 //                   page is not English; credit line always under (a). Rendered through the shipped html().
 //   C5 PAGE       — "the block never appears on a real pick": viewer.html + Duplex, a Find pick of an IfcWall in de_DE and
 //                   zh_CN logs §CLASS_HELP and shows the block (German bSI text in de_DE; the fallback line in zh_CN).
+//   C6 TYPES      — (§14.2) "a type class shows a text that is not its occurrence's, or hides which class it is": IfcSensorType /
+//                   IfcFlowInstrumentType show the bSDD text of the class their own IFC page names (type_of.json, the cited
+//                   sentence present in the saved page), with that class in the heading and the link.
+//   C7 LANGUAGES  — (§14.2) "our sentence is still English in a language we serve": every non-English locale has all shipped
+//                   ifccls_ rows trl="Y" in its XML; the three English variants have none.
+//   C8 FILL TOOL  — (§14.2) "trl_fill_batch.js overwrites a translation": re-running the shipped fill batch fills 0; a batch that
+//                   changes one existing translation is REFUSED and leaves every XML byte-identical.
 //   RED CONTROL   — one changed character in one bSI text, and a zh card without its fallback line, must FAIL (contract kit).
 // usage: NODE_PATH=~/bim-ootb/node_modules:~/bim-compiler/node_modules node viewer/tests/witness_class_help.js
 //        [BUILDINGS=<dir of *_extracted.db>, default ~/bim-ootb/viewer/buildings]  [--no-page]
@@ -22,6 +29,9 @@ const Database = require('better-sqlite3');
 const { Witness } = require(path.join(ROOT, 'witness_kit', 'contract.js'));
 const BLD = process.env.BUILDINGS || path.join(process.env.HOME, 'bim-ootb', 'viewer', 'buildings');
 const ORACLE = require(path.join(ROOT, 'viewer', 'tools', 'ifc_class_help', 'bsdd_ifc43_shipped_classes.json'));
+const ORACLE_OF = require(path.join(ROOT, 'viewer', 'tools', 'ifc_class_help', 'bsdd_ifc43_type_of_classes.json'));
+const TYPE_OF = JSON.parse(fs.readFileSync(path.join(ROOT, 'viewer', 'tools', 'ifc_class_help', 'type_of.json'), 'utf8'));
+const srcOf = c => (TYPE_OF[c] && c[0] !== '_') ? { cls: TYPE_OF[c].of, o: ORACLE_OF } : { cls: c, o: ORACLE };   // whose bSDD text a class shows
 const T = require(path.join(ROOT, 'viewer', 'tools', 'trl_common.js'));
 const BSDD = { de_DE: 'de-DE', es_ES: 'es-ES', ja_JP: 'ja-JP', zh_CN: 'zh-CN', pt_BR: 'pt-BR', fr_FR: 'fr-FR' };
 const HTML_LANG = l => l === 'bl_BD' ? 'bn-Latn' : l.split('_')[0];   // locale_loader.js applyLangDir rule
@@ -51,26 +61,31 @@ for (const loc of T.LOCALES) {
   for (const c of classes) {
     const m = P.model(c, HTML_LANG(loc));
     const html = m ? P.html(m) : '';
-    rows.push({ loc, cls: c, ours: m ? m.ours : '', def: m ? m.def : '', defLang: m ? m.defLang : '', fallback: !!(m && m.fallback),
+    const so = srcOf(c);
+    rows.push({ loc, cls: c, ours: m ? m.ours : '', def: m ? m.def : '', defLang: m ? m.defLang : '', fallback: !!(m && m.fallback), of: m ? (m.of || '') : '',
       showsFallbackLine: /data-cls-part="fallback"/.test(html), showsCredit: /data-cls-part="credit"/.test(html),
-      inBsdd: !!(ORACLE[c] && ORACLE[c].EN && !ORACLE[c].EN.error) });
+      headingNamesOf: !!(m && m.of) && html.indexOf(m.of) > html.indexOf('<summary') && html.indexOf('/class/' + m.of + '"') > 0,
+      inBsdd: !!(so.o[so.cls] && so.o[so.cls].EN && !so.o[so.cls].EN.error) });
   }
 }
 console.log = log;
 
 const sch = { type: 'object', required: ['loc', 'cls', 'ours', 'def', 'defLang', 'fallback'],
   properties: { loc: { type: 'string' }, cls: { type: 'string', pattern: '^Ifc' }, ours: { type: 'string' }, def: { type: 'string' }, defLang: { type: 'string' }, fallback: { type: 'boolean' } } };
-const oracleText = (c, code) => { const x = ORACLE[c] && ORACLE[c][code]; return x && !x.error ? x.definition : null; };
+const oracleText = (c, code) => { const so = srcOf(c), x = so.o[so.cls] && so.o[so.cls][code]; return x && !x.error ? x.definition : null; };
 const officialIn = (c, loc) => { const code = BSDD[loc]; if (!code) return false; const t = oracleText(c, code), en = oracleText(c, 'EN'); return !!(t && en && t !== en); };
 
 const res = Witness('CLASS_HELP')
   .population(() => rows)
   .schema(sch)
-  .invariant('C1 coverage: (b) for every shipped class in every pack; (a) iff the class is in bSDD', rs => rs.every(r => r.ours.length > 0 && (r.def.length > 0) === r.inBsdd))
+  .invariant('C1 coverage: (b) for every shipped class in every pack; (a) iff the class (or its cited occurrence class) is in bSDD', rs => rs.every(r => r.ours.length > 0 && (r.def.length > 0) === r.inBsdd))
   .invariant('C2 verbatim: every (a) text == bSDD text of its declared language', rs => rs.every(r => !r.def || r.def === oracleText(r.cls, r.defLang === 'EN' ? 'EN' : r.defLang)))
   .invariant('C3 honest: non-English (a) exactly where bSDD has an official translation', rs => rs.every(r => !r.def || ((r.defLang !== 'EN') === officialIn(r.cls, r.loc))))
   .invariant('C4 label: fallback line iff EN text on a non-English page; credit under every (a)', rs => rs.every(r => r.showsFallbackLine === (!!r.def && r.defLang === 'EN' && !/^en/.test(HTML_LANG(r.loc))) && (!r.def || r.showsCredit)))
+  .invariant('C6 types: a type shows its cited occurrence class, named in heading + link', rs => rs.every(r => !TYPE_OF[r.cls] || (r.of === TYPE_OF[r.cls].of && r.headingNamesOf &&
+     fs.readFileSync(path.join(ROOT, 'viewer', 'tools', 'ifc_class_help', TYPE_OF[r.cls].file), 'utf8').indexOf(TYPE_OF[r.cls].cite) >= 0)))
   .redControl(rs => rs.map(r => {
+    if (r.loc === 'ja_JP' && r.cls === 'IfcSensorType') return Object.assign(r, { headingNamesOf: false });                   // a type hiding its source class
     if (r.loc === 'de_DE' && r.cls === 'IfcWall') return Object.assign(r, { def: r.def.replace('Räumen', 'Raeumen') });       // one character changed
     if (r.loc === 'zh_CN' && r.cls === 'IfcWall') return Object.assign(r, { showsFallbackLine: false });                       // zh card claims translated
     return r;
@@ -90,6 +105,30 @@ ck('C4b', one('zh_CN', 'IfcWall').defLang === 'EN' && one('zh_CN', 'IfcWall').sh
 ck('C4c', shipped.has('IfcWallStandardCase') ? (one('fr_FR', 'IfcWallStandardCase').ours && !one('fr_FR', 'IfcWallStandardCase').def) : false, 'IfcWallStandardCase: (b) only, no (a)');
 PACK = JSON.parse(fs.readFileSync(path.join(ROOT, 'viewer', 'i18n', 'de_DE.json'), 'utf8')).labels;
 ck('C4d', P.model('IfcNoSuchThing', 'de') === null, 'unknown class: no block');
+// C7 — read the XML (the source), not the built pack: trl="Y" per locale for the shipped ifccls_ rows
+{ const base = new Map(T.readBase().map(r => [r.value, r.id])); const want = classes.map(c => base.get('ifccls_' + c)); const bad = [];
+  for (const loc of T.LOCALES.filter(l => l !== T.BASE)) {
+    const x = T.parseTrlXml(fs.readFileSync(T.xmlFile(loc), 'utf8')), y = new Map(x.rows.map(r => [r.id, r.trl]));
+    const n = want.filter(id => y.get(id) === 'Y').length, english = /^en_/.test(loc);
+    log('§CLASS_HELP_TRL locale=' + loc + ' ours_translated=' + n + '/' + want.length);
+    if (english ? n !== 0 : n !== want.length) bad.push(loc + '=' + n);
+  }
+  ck('C7', !bad.length && want.every(Boolean), 'our sentence translated in every non-English locale, none in en_*' + (bad.length ? ' BAD ' + bad.join(',') : '')); }
+// C8 — the fill tool: idempotent, and it refuses to overwrite a translation (files untouched)
+{ const cp = require('child_process'), crypto = require('crypto');
+  const hash = () => crypto.createHash('sha1').update(T.LOCALES.filter(l => l !== T.BASE).map(l => fs.readFileSync(T.xmlFile(l))).join('')).digest('hex');
+  const tool = path.join(ROOT, 'viewer', 'tools', 'trl_fill_batch.js'), shipped = path.join(ROOT, 'viewer', 'tools', 'trl_batch_2026-11-17_ifccls_fill.js');
+  const h0 = hash();
+  const r1 = cp.spawnSync('node', [tool, shipped], { encoding: 'utf8' });
+  const again = r1.status === 0 && /filled=0/.test(r1.stdout) && !/filled=[1-9]/.test(r1.stdout) && hash() === h0;
+  const tmp = path.join(require('os').tmpdir(), 'w_class_help_bad_fill_' + process.pid + '.js');
+  fs.writeFileSync(tmp, "module.exports = { LABEL: 'witness', FILL: { de_DE: { ifccls_IfcWall: 'Eine andere Wand' } } };");
+  const r2 = cp.spawnSync('node', [tool, tmp], { encoding: 'utf8' }); fs.unlinkSync(tmp);
+  const refused = r2.status === 1 && /REFUSED/.test(r2.stdout) && /already translated with other text/.test(r2.stdout) && hash() === h0;
+  ck('C8', again && refused, 'fill tool re-run fills 0 (' + again + '), overwrite REFUSED with XML untouched (' + refused + ')'); }
+{ const t = rows.find(r => r.loc === 'pt_BR' && r.cls === 'IfcSensorType') || {}, j = rows.find(r => r.loc === 'ja_JP' && r.cls === 'IfcSensorType') || {};
+  ck('C6a', t.of === 'IfcSensor' && t.defLang === 'pt-BR' && !t.showsFallbackLine && j.defLang === 'EN' && j.showsFallbackLine && j.headingNamesOf,
+    'IfcSensorType: pt_BR official IfcSensor text; ja_JP English IfcSensor text + fallback line; heading/link name IfcSensor'); }
 if (res.fail) fails += res.fail;
 
 if (process.argv.includes('--no-page')) { log('§CLASS_HELP_PAGE not judged (--no-page)'); log('§W-CLASS-HELP ' + (fails ? 'FAIL ' + fails : 'PASS (page not judged)')); process.exit(fails ? 1 : 0); }

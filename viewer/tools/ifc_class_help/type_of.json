@@ -1,0 +1,5 @@
+{
+ "_source": "buildingSMART IFC 4.3 schema docs, github.com/buildingSMART/IFC4.3.x-development docs/schemas/domain/IfcBuildingControlsDomain/Entities/<Type>.md (copies beside this file, fetched 2026-11-17). bSDD has no ...Type classes, so a type shows the definition of the class its own page names as its occurrence.",
+ "IfcSensorType": { "of": "IfcSensor", "cite": "Occurrences of **IfcSensorType** are represented by instances of _IfcSensor_", "file": "bsi_IfcSensorType.md" },
+ "IfcFlowInstrumentType": { "of": "IfcFlowInstrument", "cite": "Occurrences of **IfcFlowInstrumentType** are represented by instances of _IfcFlowInstrument_", "file": "bsi_IfcFlowInstrumentType.md" }
+}

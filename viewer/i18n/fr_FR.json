@@ -6,9 +6,9 @@
    "ad_message_base.csv",
    "AD_Message_Trl_fr_FR.xml"
   ],
-  "rows": 1018,
-  "translated": 917,
-  "untranslated": 101
+  "rows": 1025,
+  "translated": 918,
+  "untranslated": 107
  },
  "labels": {
   "source_app": "BIM OOTB — Frictionless BIM",
@@ -1028,6 +1028,13 @@
   "ui_cls_about": "De quoi s'agit-il",
   "ui_cls_ifcdef": "Définition IFC",
   "ui_cls_no_official": "Anglais : pas de traduction officielle dans votre langue",
-  "ui_cls_credit": "buildingSMART IFC 4.3 (bSDD), CC BY-ND 4.0"
+  "ui_cls_credit": "buildingSMART IFC 4.3 (bSDD), CC BY-ND 4.0",
+  "ifcdef_IfcFlowInstrumentType": "A flow instrument reads and displays the value of a particular property of a system at a point, or displays the difference in the value of a property between two points.",
+  "ifcdef_IfcFlowInstrumentType_lang": "EN",
+  "ifcdef_IfcFlowInstrumentType_of": "IfcFlowInstrument",
+  "ifcdef_IfcSensorType": "A sensor is a device that measures a physical quantity and converts it into a signal which can be read by an observer or by an instrument.",
+  "ifcdef_IfcSensorType_lang": "EN",
+  "ifcdef_IfcSensorType_of": "IfcSensor",
+  "ui_cls_ifcdef_of": "Définition IFC de {cls}"
  }
 }
