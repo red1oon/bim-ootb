@@ -27,7 +27,7 @@ function install(ROOT) {
     commands: { registerCommand(id, fn) { reg.commands.push(id); reg.commandFns[id] = fn; return { dispose() {} }; } },
     window: { showInformationMessage(m) { reg.infos.push(m); return Promise.resolve(undefined); }, showTextDocument(d) { reg.shown.push(d); return Promise.resolve(undefined); }, showWarningMessage(m) { reg.warnings.push(m); return Promise.resolve(undefined); }, activeTextEditor: undefined,
       createOutputChannel() { reg.channels = (reg.channels || 0) + 1; return { appendLine(s) { reg.lines.push(String(s)); }, show() {}, dispose() {} }; },
-      createStatusBarItem() { reg.status = { show() { this.shown = true; }, hide() { this.shown = false; }, dispose() {} }; return reg.status; },
+      createStatusBarItem() { reg.status = { show() { this.shown = true; }, hide() { this.shown = false; }, dispose() {} }; (reg.statusItems = reg.statusItems || []).push(reg.status); return reg.status; },
       onDidChangeActiveTextEditor(fn) { reg.onEditor = fn; return { dispose() {} }; },
       registerTreeDataProvider(id, p) { reg.tree = { id, p }; return { dispose() {} }; } },
     TreeItem: function (label) { this.label = label; },

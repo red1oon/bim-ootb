@@ -461,13 +461,21 @@ function activate(context) {
     bumpDiag.set(document.uri, [d]);
     return need;
   }
-  context.subscriptions.push(vscode.workspace.onDidSaveTextDocument(doc => { judgeBump(doc); }));
+  context.subscriptions.push(vscode.workspace.onDidSaveTextDocument(doc => {
+    judgeBump(doc);
+    const sr = findSourceRoot(context);   // §F.34: an edit after the check makes the result stale (it is keyed on the exact tree)
+    if (sr && doc && doc.uri && doc.uri.fsPath.startsWith(sr + path.sep) && (bumpState === 'ready' || bumpState === 'failed')) bumpShow('idle', '$(circle-outline) Bump', 'X0 Navigator: changed since the check. ' + IDLE_TIP);
+  }));
   context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(ed => { if (ed) judgeBump(ed.document); }));
   async function bumpThisFile(rel, write) {
     const sourceRoot = findSourceRoot(context);
     const ed = vscode.window.activeTextEditor;
     const at = rel ? { sourceRoot, rel } : (ed ? relIn(ed.document) : null);
     if (!at || !at.sourceRoot) return say(['X0 Navigator: open a file of the bim-ootb folder first']);
+    if (bumpGateRoots().some(a => at.rel.startsWith(a))) {   // §F.34: a gated (ERP) bump runs minutes; ship.bump's spawnSync (60 s) froze VS Code and failed
+      out.appendLine('§BUMP_BUTTON from=quickfix file=' + at.rel + ' (gated: the checks run in the background, then press Bump ✓ to write)');
+      return bumpButton();
+    }
     if (write === undefined) {                       // from the palette: show the dry run, then ask once
       const dry = ship.bump(at.sourceRoot, at.rel, false);
       say(dry.lines);
@@ -482,6 +490,64 @@ function activate(context) {
     return r.lines;
   }
   context.subscriptions.push(vscode.commands.registerCommand('x0Navigator.bumpThisFile', bumpThisFile));
+  // ── The Bump button (§F.34, decision F-24): the author presses it when the feature is complete. One background check (scripts/bump.js
+  //    --changed --check: the parity bridge + the changed files' own witnesses, async spawn, never spawnSync) of every changed file of the branch;
+  //    solid when it passes, a second press writes (the same tree reuses the stored result). A save puts it back to idle. Text only, no timer.
+  const bumpBtn = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 50);
+  bumpBtn.command = 'x0Navigator.bumpButton';
+  context.subscriptions.push(bumpBtn);
+  let bumpState = 'idle', bumpChild = null;
+  const IDLE_TIP = 'X0 Navigator: press when the feature is complete. Checks every changed file of this branch in the background (legacy parity + each file\'s own witnesses); press again when it shows ✓ to write the cache bump.';
+  function bumpShow(state, text, tip) { bumpState = state; bumpBtn.text = text; bumpBtn.tooltip = tip; bumpBtn.show(); }
+  bumpShow('idle', '$(circle-outline) Bump', IDLE_TIP);
+  function bumpRun(args, onLine) {
+    const sourceRoot = findSourceRoot(context);
+    return new Promise(resolve => {
+      const child = bumpChild = cp.spawn(process.execPath, [path.join(sourceRoot, 'scripts', 'bump.js'), '--changed', ...args, '--root', sourceRoot],
+        { cwd: sourceRoot, env: Object.assign({}, process.env, { ELECTRON_RUN_AS_NODE: '1' }) });
+      const lines = []; let buf = '';
+      const take = d => { buf += d; let i; while ((i = buf.indexOf('\n')) >= 0) { const l = buf.slice(0, i); buf = buf.slice(i + 1); if (l) { lines.push(l); out.appendLine(l); if (onLine) onLine(l); } } };
+      child.stdout.on('data', take); child.stderr.on('data', take);
+      child.on('close', code => { bumpChild = null; if (buf) { lines.push(buf); out.appendLine(buf); } resolve({ code, lines }); });
+    });
+  }
+  async function bumpButton() {
+    const sourceRoot = findSourceRoot(context);
+    if (!sourceRoot) return say(['X0 Navigator: bim-ootb root not found']);
+    if (bumpChild) { out.show(true); return ['§BUMP_BUTTON busy=Y state=' + bumpState]; }
+    if (bumpState === 'ready') {
+      bumpShow('writing', '$(sync~spin) Bump: writing', 'X0 Navigator: writing the cache bump (the checks already passed for this tree)');
+      const r = await bumpRun(['--write']);
+      bumpShow('idle', '$(circle-outline) Bump', IDLE_TIP);
+      for (const e of vscode.window.visibleTextEditors || []) judgeBump(e.document);
+      out.appendLine('§BUMP_BUTTON step=write exit=' + r.code);
+      return r.lines;
+    }
+    out.show(true);
+    let plan = 0, done = 0, phase = 'bridge';
+    bumpShow('checking', '$(sync~spin) Bump: checking', 'X0 Navigator: checking in the background; you can keep working');
+    const r = await bumpRun(['--check'], l => {
+      let m;
+      if ((m = /^§BUMP_PARITY_PLAN witnesses=(\d+)/.exec(l))) { phase = 'bridge'; plan = +m[1]; done = 0; }
+      else if ((m = /^§BUMP_TOUCH_PLAN witnesses=(\d+)/.exec(l))) { phase = 'witnesses'; plan = +m[1]; done = 0; }
+      else if (/^§BUMP_(PARITY|TOUCH)_RUN /.test(l)) done++;
+      else return;
+      bumpBtn.text = '$(sync~spin) Bump: ' + phase + ' ' + done + '/' + plan;
+    });
+    const touch = r.lines.find(l => l.startsWith('§BUMP_TOUCH ')) || '', parity = r.lines.find(l => l.startsWith('§BUMP_PARITY ')) || '';
+    if (r.code === 0 && r.lines.some(l => l.startsWith('§BUMP_CHECK verdict=PASS'))) {
+      const unrun = (/unrun=\[([^\]]*)\]/.exec(touch) || [])[1];
+      bumpShow('ready', '$(pass-filled) Bump ✓', 'X0 Navigator: the checks passed for this tree' + (unrun ? ' (not reached in the 10-min budget: ' + unrun + ')' : '') + '. Press to write the cache bump.');
+    } else if (r.code === 0) bumpShow('idle', '$(circle-outline) Bump', 'X0 Navigator: nothing to bump (no changed file is loaded by a page). ' + IDLE_TIP);
+    else {
+      const nf = (/new_fail=\[([^\],]+)/.exec(touch) || /new=\[([^\],]+)/.exec(parity) || [])[1] || (/verdict=(\w+)/.exec(touch || parity) || [])[1] || ('exit ' + r.code);
+      bumpShow('failed', '$(error) Bump ✗ ' + nf, 'X0 Navigator: the check did not pass (' + nf + '). The lines are in the X0 Navigator output. Fix it, then press again.');
+    }
+    out.appendLine('§BUMP_BUTTON step=check exit=' + r.code + ' state=' + bumpState);
+    return r.lines;
+  }
+  context.subscriptions.push(vscode.commands.registerCommand('x0Navigator.bumpButton', bumpButton));
+  const bumpGateRoots = () => { try { return JSON.parse(fs.readFileSync(path.join(findSourceRoot(context), 'scripts', 'bump_parity.json'), 'utf8')).applies_to || ['erp/']; } catch (e) { return ['erp/']; } };
   context.subscriptions.push(vscode.languages.registerCodeActionsProvider({ scheme: 'file' }, {
     provideCodeActions(document, range, ctx) {
       const mine = ((ctx && ctx.diagnostics) || []).filter(d => d.code === BUMP_CODE);

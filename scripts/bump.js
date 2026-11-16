@@ -13,6 +13,7 @@
 //        is: a not-precached file gets a NOTE (normal for lazy modules), never an edit to PRECACHE_ASSETS.
 //        DRY RUN by default — prints what it would change. --write applies. Touches nothing else.
 // USE:   node scripts/bump.js viewer/still_fault.js            (dry run)
+//        node scripts/bump.js --changed [--check|--write]     (§F.34: every changed file a page loads; --check = both gates, nothing written)
 //        node scripts/bump.js viewer/still_fault.js --write    (apply; then run tests/audit_sw_precache.js)
 //        --root DIR   operate on another tree (the witness uses a temp copy)
 // PARITY GATE (W-BUMP-PARITY, F-16; bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md "F-16 BUILD SPEC"):
@@ -45,7 +46,7 @@ if (npi >= 0) {
   NO_PARITY = r.trim();
 }
 const targets = argv.filter((a, i) => !a.startsWith('--') && !(ri >= 0 && i === ri + 1) && !(npi >= 0 && i === npi + 1));
-if (!targets.length) { console.error('usage: node scripts/bump.js <file…> [--write] [--root DIR]'); process.exit(1); }
+if (!targets.length && !argv.includes('--changed')) { console.error('usage: node scripts/bump.js <file…> | --changed [--check | --write] [--root DIR]'); process.exit(1); }
 
 function listFiles(ext) {
   try {
@@ -64,6 +65,29 @@ function listFiles(ext) {
 }
 const rel = p => path.relative(ROOT, p).split(path.sep).join('/');
 
+// LAZY LOADING IS KEPT AS IS (bim-compiler prompts/EDITOR_MAINTAINABILITY_STUDY.md §14 N2): a lazy module's ?v= lives in a
+// .js loader's string list (viewer/main.js modules[]: 'nf_room.js?v=1'), not in a page. Those literals are bumped too —
+// resolved from the loader's own folder, exact path only — and nothing is ever added to PRECACHE_ASSETS.
+const pages = listFiles('.html').filter(h => !/\/lib\//.test(h));
+const loaders = listFiles('.js').filter(f => !/^scripts\/|\/(lib|node_modules|tests)\/|\.min\.js$|witness|(^|\/)sw\.js$/.test(f));   // scripts/ = tooling, never loaded by a page
+const PAGE_REF = /((?:src|href)\s*=\s*")([^"?#]+)\?v=(\d+)(")/g;
+const JS_REF = /((['"]))([^'"\s?#]+\.(?:js|css|json|wasm))\?v=(\d+)(\2)/g;
+// §F.34 --changed (decision F-24): the targets are every file changed against the merge-base with origin/main (committed, working tree, untracked)
+//   that a page or loader references with ?v= (the files a bump can raise); the rest (prompts, tests, tools) are counted and skipped.
+const CHANGED = argv.includes('--changed'), CHECK = argv.includes('--check');
+if (CHANGED) {
+  const g = a => { try { return cp.execFileSync('git', a, { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }); } catch (e) { return null; } };
+  const mb = (g(['merge-base', 'HEAD', 'origin/main']) || '').trim();
+  if (!mb) { console.log('§BUMP_ERR changed_needs_git_and_origin_main written=0'); process.exit(1); }
+  const files = [...new Set(((g(['diff', '--name-only', mb]) || '') + (g(['ls-files', '--others', '--exclude-standard']) || '')).split('\n').filter(f => f && fs.existsSync(path.join(ROOT, f))))];
+  const refd = new Set();
+  for (const h of pages) for (const m of fs.readFileSync(path.join(ROOT, h), 'utf8').matchAll(PAGE_REF)) if (!/^[a-z]+:|^\/\//i.test(m[2])) refd.add(path.relative(ROOT, path.resolve(ROOT, path.dirname(h), m[2])).split(path.sep).join('/'));
+  for (const l of loaders) for (const m of fs.readFileSync(path.join(ROOT, l), 'utf8').matchAll(JS_REF)) refd.add(path.relative(ROOT, path.resolve(ROOT, path.dirname(l), m[3])).split(path.sep).join('/'));
+  const pick = files.filter(f => refd.has(f));
+  console.log(`§BUMP_CHANGED base=${mb.slice(0, 12)} changed=${files.length} bumpable=${pick.length} skipped=${files.length - pick.length} files=${pick.join(',')}`);
+  if (!pick.length) { console.log('§BUMP_DONE targets=0 nothing to bump (no changed file is loaded with ?v=)'); process.exit(0); }
+  targets.push(...pick);
+}
 const want = new Set();
 for (const t of targets) {
   const abs = path.resolve(ROOT, t);
@@ -89,13 +113,6 @@ function needSw(f, besideOnly) {
   if (sw) { if (!swBump.has(sw)) swBump.set(sw, []); swBump.get(sw).push(f); }
   else console.log(`§BUMP_NOTE file=${f} has no sw.js for it (no cache to bump)`);
 }
-// LAZY LOADING IS KEPT AS IS (bim-compiler prompts/EDITOR_MAINTAINABILITY_STUDY.md §14 N2): a lazy module's ?v= lives in a
-// .js loader's string list (viewer/main.js modules[]: 'nf_room.js?v=1'), not in a page. Those literals are bumped too —
-// resolved from the loader's own folder, exact path only — and nothing is ever added to PRECACHE_ASSETS.
-const pages = listFiles('.html').filter(h => !/\/lib\//.test(h));
-const loaders = listFiles('.js').filter(f => !/^scripts\/|\/(lib|node_modules|tests)\/|\.min\.js$|witness|(^|\/)sw\.js$/.test(f));   // scripts/ = tooling, never loaded by a page
-const PAGE_REF = /((?:src|href)\s*=\s*")([^"?#]+)\?v=(\d+)(")/g;
-const JS_REF = /((['"]))([^'"\s?#]+\.(?:js|css|json|wasm))\?v=(\d+)(\2)/g;
 let queue = [...want]; const done = new Set();
 for (let depth = 0; queue.length && depth < 4; depth++) {
   const round = new Set(queue.filter(q => !done.has(q))); queue = [];
@@ -167,6 +184,17 @@ function bridgeSelect(bridge) {
   return { names, tree: names.filter(n => reads(path.join(dir, n + '.js'), new Set())) };
 }
 
+// tree identity = HEAD + git diff (a non-git temp copy: hash of every file). One function: the bridge cache, the touch cache and --check share it.
+let _treeKey = null;
+function treeKey() {
+  if (_treeKey) return _treeKey;
+  const h = crypto.createHash('sha256');
+  const git = a => cp.execFileSync('git', a, { cwd: ROOT, stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 1 << 28 });
+  try { h.update(git(['rev-parse', 'HEAD'])); h.update(git(['diff', 'HEAD'])); }
+  catch (e) { h.update('nogit'); for (const f of [...listFiles('.html'), ...listFiles('.js'), ...listFiles('.json')].sort()) h.update(f).update(fs.readFileSync(path.join(ROOT, f))); }
+  return (_treeKey = h.digest('hex'));
+}
+
 function parityGate() {
   const cfgPath = [path.join(ROOT, 'scripts', 'bump_parity.json'), path.join(__dirname, 'bump_parity.json')].find(p => fs.existsSync(p));
   let cfg = { mode: 'block', applies_to: ['erp/'], bridge: '~/bim-compiler/scripts/bridge/run_all.sh', known: [] };
@@ -179,12 +207,7 @@ function parityGate() {
   if (mode === 'off') { console.log('§BUMP_PARITY mode=off verdict=OFF (parity not run)'); return; }
   const home = process.env.BUMP_PARITY_HOME || path.join(os.homedir(), '.cache', 'bim_bridge');
   const known = new Set(cfg.known || []);
-  // tree identity = HEAD + git diff (a non-git temp copy: hash of every file)
-  const h = crypto.createHash('sha256');
-  const git = a => cp.execFileSync('git', a, { cwd: ROOT, stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 1 << 28 });
-  try { h.update(git(['rev-parse', 'HEAD'])); h.update(git(['diff', 'HEAD'])); }
-  catch (e) { h.update('nogit'); for (const f of [...listFiles('.html'), ...listFiles('.js'), ...listFiles('.json')].sort()) h.update(f).update(fs.readFileSync(path.join(ROOT, f))); }
-  const key = h.digest('hex'), cacheFile = path.join(home, 'bump_parity', key + '.json');
+  const key = treeKey(), cacheFile = path.join(home, 'bump_parity', key + '.json');
   const say = (verdict, o) => console.log(`§BUMP_PARITY mode=${mode} verdicts=${o.verdicts.length} new=[${o.nw.join(',')}] known=[${o.kn.join(',')}] log=${o.log} cached=${o.cached ? 'Y' : 'N'} tree=${ROOT} scoped=${o.scope || scope} verdict=${verdict}${o.why ? ' why=' + o.why : ''}`);
   try {
     const c = JSON.parse(fs.readFileSync(cacheFile, 'utf8'));
@@ -208,6 +231,7 @@ function parityGate() {
       if (r.error) why = `bridge_error(${r.error.message})`;
     } else {
       scope = `tree witnesses=${sel.tree.length} skipped=${sel.names.length - sel.tree.length}`;
+      console.log(`§BUMP_PARITY_PLAN witnesses=${sel.tree.length}`);
       for (const w of sel.tree) {
         const t0 = Date.now(), r = cp.spawnSync('node', [w + '.js'], { cwd: path.dirname(bridge), env, encoding: 'utf8', maxBuffer: 1 << 28, timeout: 10 * 60 * 1000 });
         const o1 = `=== ${w}\n` + (r.stdout || '') + (r.stderr || '');
@@ -284,6 +308,9 @@ function touchGate() {
     } catch (e) { baseWhy = 'base_unavailable(' + (e.message || e).toString().split('\n')[0].slice(0, 120) + ')'; }
     return base;
   };
+  const passFile = path.join(home, 'touch_pass', crypto.createHash('sha256').update(treeKey() + '|' + changed.slice().sort().join(',')).digest('hex') + '.json');
+  try { const c = JSON.parse(fs.readFileSync(passFile, 'utf8')); if (c.verdict === 'PASS') { console.log(c.line.replace(/ verdict=PASS/, ' cached=Y verdict=PASS')); return; } } catch (e) { /* not checked yet */ }
+  console.log(`§BUMP_TOUCH_PLAN witnesses=${ws.length} budget_s=${+process.env.BUMP_TOUCH_BUDGET_S || 600}`);
   const newFail = [], preFail = [], unjudged = [], unrun = [];
   // F-23b (owner 2026-11-17, "10-min budget"): fastest first by the durations recorded on earlier runs (never-measured ones first, to learn them); no new
   //   witness starts once the budget is spent, and every one not reached is NAMED (unrun=[...]); it is not a failure.
@@ -308,12 +335,15 @@ function touchGate() {
   try { fs.mkdirSync(home, { recursive: true }); fs.writeFileSync(durFile, JSON.stringify(dur)); } catch (e) { /* durations are a convenience */ }
   // a witness failing on the change with no base to compare is NOT judged: INCONCLUSIVE, never a silent pass
   const verdict = newFail.length ? (mode === 'block' ? 'BLOCKED' : 'WARN') : unjudged.length ? (mode === 'block' ? 'INCONCLUSIVE' : 'WARN') : 'PASS';
-  console.log(`§BUMP_TOUCH files=${changed.join(',')} witnesses=${ws.length} browser_skipped=${browser.length} new_fail=[${newFail.join(',')}] pre_fail=[${preFail.join(',')}] unjudged=[${unjudged.join(',')}] unrun=[${unrun.join(',')}] budget_s=${budget / 1000} base=${baseSha ? baseSha.slice(0, 12) : '-'} secs=${Math.round((Date.now() - t0) / 1000)} verdict=${verdict}${baseWhy ? ' why=' + baseWhy : ''}`);
+  const touchLine = `§BUMP_TOUCH files=${changed.join(',')} witnesses=${ws.length} browser_skipped=${browser.length} new_fail=[${newFail.join(',')}] pre_fail=[${preFail.join(',')}] unjudged=[${unjudged.join(',')}] unrun=[${unrun.join(',')}] budget_s=${budget / 1000} base=${baseSha ? baseSha.slice(0, 12) : '-'} secs=${Math.round((Date.now() - t0) / 1000)} verdict=${verdict}${baseWhy ? ' why=' + baseWhy : ''}`;
+  console.log(touchLine);
+  if (verdict === 'PASS') try { fs.mkdirSync(path.dirname(passFile), { recursive: true }); fs.writeFileSync(passFile, JSON.stringify({ verdict, line: touchLine, at: new Date().toISOString() })); } catch (e) { /* cache is a convenience */ }
   if (mode === 'block' && (verdict === 'BLOCKED' || verdict === 'INCONCLUSIVE')) { console.log('§BUMP_BLOCKED a changed file\'s own witness fails only on this change, nothing written (exit 3). Fix it, or: --no-parity "<reason>", or BUMP_PARITY=warn'); process.exit(3); }
 }
 
-if (WRITE) parityGate();
-if (WRITE) touchGate();
+if (WRITE || CHECK) parityGate();
+if (WRITE || CHECK) touchGate();
+if (CHECK) { console.log(`§BUMP_CHECK verdict=PASS key=${treeKey().slice(0, 12)} targets=${want.size} (nothing written; --write on the same tree reuses this result)`); process.exit(0); }
 
 if (WRITE) for (const [f, t] of edits) fs.writeFileSync(path.join(ROOT, f), t);
 console.log(`§BUMP_DONE targets=${want.size} pages=${[...edits.keys()].filter(f => f.endsWith('.html')).length} loaders=${[...edits.keys()].filter(f => f.endsWith('.js') && !/(^|\/)sw\.js$/.test(f)).length} sw=${swBump.size} mode=${WRITE ? 'write' : 'dry-run'} written=${WRITE ? edits.size : 0}`);
