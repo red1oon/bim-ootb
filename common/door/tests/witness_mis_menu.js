@@ -2,8 +2,8 @@
 //   U1 ISSUE (the menu at the door is not the page's menu: entries, windows or order differ) · U2 ISSUE (a role sees an entry its grant rows do not allow, or misses one they allow)
 //   U3 ISSUE (find keeps a non-matching entry or loses its folder path) · U4 ISSUE (the screen opens a window on another kind than its first tab, runs a line that is not a door line, or Esc does not come back)
 //   U5 ISSUE (an unknown role is answered with a menu) · U6 ISSUE (the vocabulary entry is not generated)
-//   Oracles: U1/U2 plain SQL over erp/ad_seed.db (AD_Menu + AD_TreeNodeMM tree 10; AD_Window/Process/Form_Access), independent of the two functions the verb calls; U1's order is the page's own getMenuTree.
-//   Falsifiers: MENU_BREAK=noscope (must FAIL U2) · wrongtab (must FAIL U4). A claim with nothing to judge says INCONCLUSIVE, never PASS.
+//   Oracles: U1/U2 plain SQL over erp/ad_seed.db + the built-in bundles' staged dictionary (the page's menu; AD_Menu + AD_TreeNodeMM tree 10; AD_Window/Process/Form_Access), independent of the two functions the verb calls; U1's order is the page's own getMenuTree.
+//   Falsifiers: MENU_BREAK=noscope (must FAIL U2) · wrongtab (must FAIL U4) · noplugins (the door starts no plugin: must FAIL U1, the page's menu holds BIM Document). A claim with nothing to judge says INCONCLUSIVE, never PASS.
 //   Run: node common/door/tests/witness_mis_menu.js > common/door/tests/logs/mis_menu.log 2>&1
 'use strict';
 const fs = require('fs'), path = require('path'), cp = require('child_process');
@@ -11,16 +11,21 @@ const { kit, tmp, ROOT, DOOR } = require('./_kit');
 const k = kit('W-MIS-MENU');
 (async () => {
   const dir = path.dirname(tmp('mm_')), env = { BIM_OBJECT_OPLOG: path.join(dir, 'm.ops.jsonl'), BIM_DOOR_JOURNAL: path.join(dir, 'm.j.jsonl') };
-  Object.assign(process.env, env);
+  Object.assign(process.env, env); if (process.env.MENU_BREAK === 'noplugins') process.env.DOOR_PLUGINS = 'off';   // falsifier: the door without its plugins (must FAIL U1)
   const door = (line) => new Promise((res) => { let o = ''; const p = cp.spawn(process.execPath, [DOOR, '--actor', 'human', line], { cwd: dir, env: process.env, stdio: ['ignore', 'pipe', 'ignore'] }); p.stdout.on('data', d => { o += d; });
     p.on('close', () => { let j = null; try { j = JSON.parse(o.split('\n').filter(l => l.charAt(0) === '{').pop()); } catch (x) { /* null */ } res(j || { status: 'unparseable', why: o.slice(-300) }); }); });
-  const sq = (q) => JSON.parse(cp.spawnSync('sqlite3', ['-readonly', '-json', path.join(ROOT, 'erp/ad_seed.db'), q], { encoding: 'utf8' }).stdout || '[]');
+  // the oracle's database = the page's menu source: the seed WITH its built-in bundles' dictionary staged by the page's own registry (the BIM Document window is one; the door starts them too, §29.6 P3a).
+  // Plain SQL over it stays independent of the two functions the verb calls. DOOR_PLUGINS=off in the door's env (the door as it was) must then FAIL U1: the page lists a window the door does not.
+  const SQL = await require(path.join(ROOT, 'common', 'lib', 'sql-wasm.js'))({ wasmBinary: fs.readFileSync(path.join(ROOT, 'common', 'lib', 'sql-wasm.wasm')) }), db = new SQL.Database(fs.readFileSync(path.join(ROOT, 'erp/ad_seed.db')));
+  { const REG = require(path.join(ROOT, 'erp/plugin_registry.js')), wdb = { run: (q, p) => { db.run(q, p || []); }, query: (q, p) => { const st = db.prepare(q); st.bind(p || []); const o = []; while (st.step()) o.push(st.getAsObject()); st.free(); return o; } };
+    const reg = REG.create({ db: wdb }), lg = console.log; console.log = () => {};
+    try { for (const f of JSON.parse(fs.readFileSync(path.join(ROOT, 'erp/plugins/builtins.json'), 'utf8')).builtin) { const mod = await import(require('url').pathToFileURL(path.join(ROOT, 'erp', f)).href); reg.stageManifestDictionary(mod.manifest); } } finally { console.log = lg; } }
+  const sq = (q) => { const r = db.exec(q); return r.length ? r[0].values.map(v => { const o = {}; r[0].columns.forEach((c, i) => { o[c] = v[i]; }); return o; }) : []; };
   const leavesOf = (tree) => { const out = []; const w = (n) => { if (n.children && n.children.length) n.children.forEach(w); else if (!n.isSummary) out.push(n); }; (tree || []).forEach(w); return out; };   // the page's nodes carry children: [] on a leaf too
   const MENU = "FROM ad_menu m JOIN ad_treenodemm n ON n.node_id=m.ad_menu_id AND n.ad_tree_id=10 AND n.isactive='Y' WHERE m.isactive='Y' AND m.issummary='N'";
   // U1
   const all = await door('mis.menu'), L = leavesOf(all.answer && all.answer.tree), sqlLeaves = sq('SELECT count(DISTINCT m.ad_menu_id) AS n ' + MENU)[0].n, sqlWin = sq("SELECT DISTINCT m.ad_window_id AS w " + MENU + " AND m.action='W'").map(r => r.w).sort((a, b) => a - b);
   const ADP = (() => { const log = console.log; console.log = () => {}; try { return require(path.join(ROOT, 'erp/ad_parser.js')); } finally { console.log = log; } })();
-  const SQL = await require(path.join(ROOT, 'common', 'lib', 'sql-wasm.js'))({ wasmBinary: fs.readFileSync(path.join(ROOT, 'common', 'lib', 'sql-wasm.wasm')) }), db = new SQL.Database(fs.readFileSync(path.join(ROOT, 'erp/ad_seed.db')));
   const pageOrder = (() => { const log = console.log; console.log = () => {}; try { return leavesOf(ADP.getMenuTree(db)).map(n => n.id); } finally { console.log = log; } })();
   const doorWin = Array.from(new Set(L.filter(n => n.action === 'W').map(n => n.windowId))).sort((a, b) => a - b);
   k.chk('U1 mis.menu (no role) is the page\'s menu: ' + sqlLeaves + ' entries and the window set by plain SQL over AD_Menu + AD_TreeNodeMM (tree 10), in the order the page\'s getMenuTree gives',

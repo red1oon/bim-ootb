@@ -52,7 +52,7 @@ function verdict(cs) { var c = CASES[cs] || { judged: 0, failed: 0 }, v = !c.jud
   check('PLUG', 'dictionary', 'AD_Form 9542001 names the class the form engine has; the menu leaf opens it (action X); roles 0 and 102 have access', !!F && F.c === 'org.kernel.odoo.MigrateFromOdoo' && !!AF.get(F.c) && !!M && M.a === 'X' && M.f === 9542001 && acc === 2, { F: F, M: M, acc: acc });
   var rd = function (f) { try { return fs.readFileSync(path.join(ERP, f), 'utf8'); } catch (e) { return ''; } };
   check('PLUG', 'wiring', 'sw.js precaches both files and plugin_overlay installs the bundle stopped (file names only); the renderer has the generic file / text-cell / locked / current extensions',
-    /'plugins\/odoo_migrate\.mjs'/.test(rd('sw.js')) && /'plugins\/odoo_migrate_form\.mjs'/.test(rd('sw.js')) && /INSTALL_ONLY = \[[^\]]*'plugins\/odoo_migrate\.mjs'/.test(rd('plugin_overlay.js')) &&
+    /'plugins\/odoo_migrate\.mjs'/.test(rd('sw.js')) && /'plugins\/odoo_migrate_form\.mjs'/.test(rd('sw.js')) && (JSON.parse(rd('plugins/builtins.json') || '{}').installOnly || []).indexOf('plugins/odoo_migrate.mjs') >= 0 && /plugins\/builtins\.json/.test(rd('plugin_overlay.js')) &&
     /p\.type === 'file'/.test(rd('idempiere.html')) && /data-gform-cell-type/.test(rd('idempiere.html')) && /data-gform-locked/.test(rd('idempiere.html')) && /desc\.rows\(trx, params, current\)/.test(rd('idempiere.html')), {});
   verdict('PLUG');
 

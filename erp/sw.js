@@ -10,7 +10,7 @@
 // init-bubble must be INSTANT, ERP_INIT_BUBBLE_INSTANT.md); network-first for non-precached .js (fresh on
 // deploy); cache-first for precached assets/.wasm/images. Freshness on deploy is carried by the SW version
 // bump (skipWaiting+clients.claim precache the new shell), so SWR strands a user at most one load post-deploy.
-const CACHE_VERSION = 'v1081';   // bump on each deploy; detail goes in the commit message. History to v1063: SW_VERSION_HISTORY.md
+const CACHE_VERSION = 'v1082';   // bump on each deploy; detail goes in the commit message. History to v1063: SW_VERSION_HISTORY.md
 // v810 (2026-10-03) UI locales: a machine-catalogue entry gets the same fmt as a pack hit (de/ms login title lost its
 //   'Kernel-ERP — ' prefix — found by fetching the live page, ERP_UI_LOCALES.md §L7).
 // v809 (2026-10-03) UI locales (bim-compiler prompts/ERP_UI_LOCALES.md, W-ERP-I18N): erp_i18n.js + i18n/chrome.json +
@@ -309,6 +309,7 @@ const PRECACHE_ASSETS = [
   'plugins/production_validator.mjs',// example bundle — M_Production BEFORE_SAVE qty<0 reject (C-2)
   'plugins/wip_token.mjs',          // example bundle — {Production.WIP} token from seed (C-3)
   'plugins/webservices.mjs',        // built-in, INSTALLED BUT STOPPED (default off, ERP_WS_API.md S6)
+  'plugins/builtins.json',          // the ONE list of built-in / install-only bundles, read by the page and by the door (common/door/door_plugins.js)
   'plugins/ninja_excel.mjs',        // built-in bundle: the Excel Report pill (ERP_FRIENDLY_OPS_LENS.md §27)
   'plugins/ninja_create.mjs',       // built-in bundle: the Ninja pill + the Plugin Engine's Create face (§27)
   'plugins/friendly_ops.mjs',       // friendly-ops lens bundle — Save & Complete, related form from the record (ERP_FRIENDLY_OPS_LENS.md §15)
