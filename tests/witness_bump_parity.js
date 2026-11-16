@@ -9,7 +9,7 @@
 // A stub bridge (BUMP_PARITY_BRIDGE) prints chosen `§TAG_VERDICT WORD` lines and appends to a marker file, so "not run" is
 // provable (marker empty), not assumed. Rows: P1 new FAIL blocks · P2 only known FAILs pass · P3 warn · P4 off · P5 non-ERP
 // target never runs it · P6 --no-parity needs a reason / OVERRIDE · P7 0 verdicts = INCONCLUSIVE, blocked · P8 same tree =
-// cached, changed tree = not · P9 the bridge judges the bumped tree · P10/P11 (§F.32) only the witnesses that read the tree run. R (opt-in BUMP_PARITY_REAL=1): the REAL bridge (BUMP_PARITY_BRIDGE, default /tmp/wt-bridge/...)
+// cached, changed tree = not · P9 the bridge judges the bumped tree · P10/P11 (§F.32) only the witnesses that read the tree run · T1-T5 (§F.33) the changed file's own witnesses, new failures only. R (opt-in BUMP_PARITY_REAL=1): the REAL bridge (BUMP_PARITY_BRIDGE, default /tmp/wt-bridge/...)
 // with the repo's real config gives verdict=PASS. Prints §BUMP_PARITY_W <row> PASS|FAIL and §BUMP_PARITY_W_VERDICT;
 // INCONCLUSIVE (never PASS) when nothing was judged.
 // Usage: nice -n 19 ionice -c3 node tests/witness_bump_parity.js > log 2>&1
@@ -158,6 +158,48 @@ try {
   check('P11-a-witness-that-cannot-judge-the-tree-never-blocks', r11.code === 0 && field(r11.out, 'verdict') === 'PASS' && ran().join(',') === 'sa' && pageHas(V + 1),
     `exit=${r11.code} ran=[${ran().join(',')}] written=${pageHas(V + 1)} ${par(r11.out).replace('§BUMP_PARITY ', '')}`);
 
+  // T1-T4 (§F.33, decision F-23) — the CHANGED file's own witnesses: stub witnesses in the bumped tree's erp/tests/ (each spells a require of the changed
+  //   file, never executed) and a stub BASE tree (BUMP_TOUCH_BASE). Main's bump.js prints no §BUMP_TOUCH line at all: the red control.
+  const base = path.join(tmp, 'base'), TM = path.join(tmp, 'touch_ran.txt'), FLK = path.join(tmp, 'flaky.txt');
+  const req = `if (false) require('../${em[1]}');\n`, mark = n => `require('fs').appendFileSync(${JSON.stringify(TM)}, '${n}\\n');\n`;
+  const put = (tree, n, body) => { fs.mkdirSync(path.join(tree, 'erp', 'tests'), { recursive: true }); fs.writeFileSync(path.join(tree, 'erp', 'tests', n + '.js'), body); };
+  const touchClear = () => { fs.rmSync(path.join(root, 'erp', 'tests'), { recursive: true, force: true }); fs.rmSync(base, { recursive: true, force: true }); fs.rmSync(TM, { force: true }); fs.rmSync(FLK, { force: true }); };
+  const tran = () => fs.existsSync(TM) ? fs.readFileSync(TM, 'utf8').split('\n').filter(Boolean) : [];
+  const touch = out => (out.split('\n').find(l => l.startsWith('§BUMP_TOUCH ')) || '');
+  restore(); touchClear(); setLines([...KNOWN_FAILS, ...OTHERS]);
+  put(root, 'witness_t1', req + mark('t1:change') + "console.log('§T1_VERDICT FAIL'); process.exit(1);\n");
+  put(base, 'witness_t1', req + mark('t1:base') + "console.log('§T1_VERDICT PASS');\n");
+  put(root, 'witness_t3', mark('t3') + "process.exit(1);\n");   // does not load the changed file
+  const t1 = run([ERP, '--write'], { BUMP_TOUCH_BASE: base });
+  check('T1-new-fail-on-the-changed-files-witness-blocks', t1.code === 3 && /new_fail=\[witness_t1\]/.test(touch(t1.out)) && /verdict=BLOCKED/.test(touch(t1.out)) && tran().join(',') === 't1:change,t1:base,t1:change' && pageHas(V),
+    `exit=${t1.code} ran=[${tran().join(',')}] (want change, base, change re-run; t3 never) ${touch(t1.out).replace('§BUMP_TOUCH ', '')}`);
+  restore(); touchClear(); setLines([...KNOWN_FAILS, ...OTHERS]);
+  put(root, 'witness_t2', req + mark('t2:change') + "process.exit(1);\n"); put(base, 'witness_t2', req + mark('t2:base') + "process.exit(1);\n");
+  const t2 = run([ERP, '--write'], { BUMP_TOUCH_BASE: base });
+  check('T2-a-failure-that-main-already-has-does-not-block', t2.code === 0 && /pre_fail=\[witness_t2\]/.test(touch(t2.out)) && /new_fail=\[\]/.test(touch(t2.out)) && /verdict=PASS/.test(touch(t2.out)) && pageHas(V + 1) && tran().join(',') === 't2:change,t2:base',
+    `exit=${t2.code} ran=[${tran().join(',')}] (want no re-run: main already fails it) ${touch(t2.out).replace('§BUMP_TOUCH ', '')}`);
+  restore(); touchClear(); setLines([...KNOWN_FAILS, ...OTHERS]);
+  put(root, 'witness_t4', req + mark('t4') + `const f = ${JSON.stringify(FLK)}, fs2 = require('fs'); if (!fs2.existsSync(f)) { fs2.writeFileSync(f, '1'); process.exit(1); }\n`);
+  put(base, 'witness_t4', req + mark('t4:base') + "process.exit(0);\n");
+  const t4 = run([ERP, '--write'], { BUMP_TOUCH_BASE: base });
+  check('T4-a-flake-is-not-a-new-fail', t4.code === 0 && /new_fail=\[\]/.test(touch(t4.out)) && /change=0\(flake\)/.test(t4.out) && tran().join(',') === 't4,t4:base,t4',
+    `exit=${t4.code} ran=[${tran().join(',')}] ${touch(t4.out).replace('§BUMP_TOUCH ', '')}`);
+  restore(); touchClear(); setLines([...KNOWN_FAILS, ...OTHERS]);
+  put(root, 'witness_t5', req + "process.exit(1);\n");
+  const t5 = run([ERP, '--write'], { BUMP_TOUCH_BASE: '' });   // no base: the temp tree is not a git checkout
+  check('T5-a-failure-with-no-base-is-inconclusive-not-a-pass', t5.code === 3 && /unjudged=\[witness_t5\]/.test(touch(t5.out)) && /verdict=INCONCLUSIVE/.test(touch(t5.out)) && pageHas(V),
+    `exit=${t5.code} ${touch(t5.out).replace('§BUMP_TOUCH ', '')}`);
+  // T6 (F-23b) — the budget: two witnesses, the one recorded as slow comes last and is NOT started once the budget is spent; it is named, not failed
+  restore(); touchClear(); setLines([...KNOWN_FAILS, ...OTHERS]); fs.rmSync(path.join(home, 'touch_durations.json'), { force: true });
+  put(root, 'witness_t6a', req + mark('t6a') + "const e = Date.now() + 1500; while (Date.now() < e) {}\n");
+  put(root, 'witness_t6b', req + mark('t6b') + "process.exit(0);\n");
+  fs.mkdirSync(home, { recursive: true }); fs.writeFileSync(path.join(home, 'touch_durations.json'), JSON.stringify({ 'erp/tests/witness_t6a.js': 1, 'erp/tests/witness_t6b.js': 999 }));
+  const t6 = run([ERP, '--write'], { BUMP_TOUCH_BASE: base, BUMP_TOUCH_BUDGET_S: '1' });
+  check('T6-budget-runs-fastest-first-and-names-the-unrun', t6.code === 0 && tran().join(',') === 't6a' && /unrun=\[witness_t6b\]/.test(touch(t6.out)) && /budget_s=1 /.test(touch(t6.out)) && /verdict=PASS/.test(touch(t6.out)),
+    `exit=${t6.code} ran=[${tran().join(',')}] (want t6a only) ${touch(t6.out).replace('§BUMP_TOUCH ', '')}`);
+  fs.rmSync(path.join(home, 'touch_durations.json'), { force: true });
+  touchClear();
+
   // R — REAL bridge (opt-in; ~70 s; writes throwaway clients to the local pilot)
   if (process.env.BUMP_PARITY_REAL === '1') {
     // §F.32: the real witnesses READ the tree they judge (erp/tests/dd_common.js, the models, ...), so this row bumps an OVERLAY of the repo: the edited
@@ -176,7 +218,7 @@ try {
     overlay('');
     const real = process.env.BUMP_PARITY_BRIDGE || '/tmp/wt-bridge/scripts/bridge/run_all.sh';
     const rr = cp.spawnSync('node', [BUMP, ERP, '--write', '--root', rootR], { encoding: 'utf8', timeout: 20 * 60 * 1000,
-      env: { ...process.env, BUMP_PARITY: '', BUMP_PARITY_BRIDGE: real, BUMP_PARITY_HOME: path.join(tmp, 'real_home') } });
+      env: { ...process.env, BUMP_PARITY: '', BUMP_PARITY_BRIDGE: real, BUMP_PARITY_HOME: path.join(tmp, 'real_home'), BUMP_TOUCH_BASE: REPO } });   // the repo as base: this row judges the bridge
     rr.out = rr.stdout + rr.stderr; rr.code = rr.status;
     const pageHasR = v => fs.readFileSync(path.join(rootR, 'erp/idempiere.html'), 'utf8').includes(`${em[1]}?v=${v}"`);
     const nv = +field(rr.out, 'verdicts');
