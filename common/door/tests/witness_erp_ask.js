@@ -33,6 +33,11 @@ async function ask(q, extra, env, actor) {
   for (const x of FX.zh) { const r = await ask(x.q, 'lang=zh_CN'); n2++; const res = r.res || {}; const w = res.window && res.window.id, a = res.action ? res.action.code : null, good = w === x.w && a === x.a && res.lang === 'zh_CN'; if (good) ok2++;
     k.L('A2 ' + (good ? 'ok ' : 'WRONG ') + JSON.stringify(x.q) + ' -> window=' + w + ' ' + JSON.stringify(res.window && res.window.name) + ' action=' + a + ' ' + JSON.stringify(res.action && res.action.name) + ' howto=' + JSON.stringify(res.howto && res.howto.name) + ' howtoLang=' + res.howtoLang); }
   if (!n2) k.incon('A2', 'VACUOUS'); else k.chk('A2 the Chinese set (lang=zh_CN) finds the window and the action, answered in zh_CN', ok2 === n2, ok2 + '/' + n2);
+  // A2de: the German set, lang=de_DE (whole words), answered with the de_DE how-to
+  let okd = 0, nd = 0;
+  for (const x of FX.de || []) { const r = await ask(x.q, 'lang=de_DE'); nd++; const res = r.res || {}; const w = res.window && res.window.id, a = res.action ? res.action.code : null, good = w === x.w && a === x.a && res.lang === 'de_DE' && res.howtoLang === 'de_DE'; if (good) okd++;
+    k.L('A2de ' + (good ? 'ok ' : 'WRONG ') + JSON.stringify(x.q) + ' -> window=' + w + ' ' + JSON.stringify(res.window && res.window.name) + ' action=' + a + ' ' + JSON.stringify(res.action && res.action.name) + ' howto=' + JSON.stringify(res.howto && res.howto.name) + ' howtoLang=' + res.howtoLang); }
+  if (!nd) k.incon('A2de', 'VACUOUS'); else k.chk('A2de the German set (lang=de_DE) finds the window and the action, with the de_DE how-to', okd === nd, okd + '/' + nd);
   // L: the order, through the door (flag, LANG, the fallback) and on the rule itself for the preference step (the seed holds no AD_Preference 'Language' row: measured)
   const q = FX.zh[0].q;
   const lLang = await ask(q, '', { LANG: 'zh_CN.UTF-8' }), lFlag = await ask(q, 'lang=de_DE', { LANG: 'zh_CN.UTF-8' }), lNone = await ask(q, '', { LANG: 'C' });

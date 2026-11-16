@@ -119,7 +119,7 @@ function buildNames(lang) {
 // §12 H1b: the how-to rows of a language = the build session's translation file erp/tools/help_howto_<lang>.json, linked by the SAME linker with that language's window names
 function buildHowtoLang(lang, names, enRows) {
   const f = path.join(__dirname, 'help_howto_' + lang + '.json'); if (!fs.existsSync(f)) return [];
-  const src = JSON.parse(fs.readFileSync(f, 'utf8')), link = linker(Object.keys(names.windows).map((id) => ({ id: Number(id), name: names.windows[id], whole: /[\u3040-\u30ff\u3400-\u9fff]/.test(names.windows[id]) })));   // CJK has no case: a name links only as a whole bold term (菜单 'menu' and 产品 'product' are words, not the Menu / Product windows)
+  const src = JSON.parse(fs.readFileSync(f, 'utf8')), link = linker(Object.keys(names.windows).map((id) => ({ id: Number(id), name: names.windows[id], whole: true })));   // a TRANSLATED row links a window name only as a whole bold term, in every language (CJK has no case: 菜单 'menu'; German nouns are all capitalised: 'Produkt')
   return src.rows.map((r, k) => {
     const en = enRows.find((e) => e.ad_window_id === r.window); if (!en) throw new Error(lang + ' how-to row for window ' + r.window + ' has no English row');
     return { id: en.id, ctxtype: 'W', ad_window_id: r.window, name: r.name, window: names.windows[r.window] || en.window, kind: en.kind, table: en.table, translated: src.translated,

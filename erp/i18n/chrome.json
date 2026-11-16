@@ -565,7 +565,8 @@
   "help.ask": {
    "en": "Ask: How do I close a Sales Order?",
    "machine": {
-    "zh_CN": "提问：如何关闭销售订单？"
+    "zh_CN": "提问：如何关闭销售订单？",
+    "de_DE": "Fragen: Wie kann ich einen Auftrag schließen?"
    }
   },
   "help.window": {
@@ -579,43 +580,50 @@
   "help.allowed": {
    "en": "Allowed when the document is",
    "machine": {
-    "zh_CN": "单据处于以下状态时可用"
+    "zh_CN": "单据处于以下状态时可用",
+    "de_DE": "Erlaubt, wenn der Beleg diesen Status hat"
    }
   },
   "help.also": {
    "en": "Also",
    "machine": {
-    "zh_CN": "另见"
+    "zh_CN": "另见",
+    "de_DE": "Auch"
    }
   },
   "help.guide": {
    "en": "Guide",
    "machine": {
-    "zh_CN": "指南"
+    "zh_CN": "指南",
+    "de_DE": "Leitfaden"
    }
   },
   "help.none": {
    "en": "No match in the dictionary or the how-to rows.",
    "machine": {
-    "zh_CN": "字典和操作说明里都没有找到匹配。"
+    "zh_CN": "字典和操作说明里都没有找到匹配。",
+    "de_DE": "Kein Treffer im Wörterbuch oder in den Anleitungen."
    }
   },
   "help.english": {
    "en": "(English)",
    "machine": {
-    "zh_CN": "（英文）"
+    "zh_CN": "（英文）",
+    "de_DE": "(Englisch)"
    }
   },
   "help.translated": {
    "en": "Translated by the build session, not reviewed by a native speaker",
    "machine": {
-    "zh_CN": "由构建会话翻译，未经母语者审校"
+    "zh_CN": "由构建会话翻译，未经母语者审校",
+    "de_DE": "Von der Build-Sitzung übersetzt, nicht von Muttersprachlern geprüft"
    }
   },
   "help.cliNote": {
    "en": "{0} is offered for {1}, not for {2}",
    "machine": {
-    "zh_CN": "{0} 目前只支持 {1}，不支持 {2}"
+    "zh_CN": "{0} 目前只支持 {1}，不支持 {2}",
+    "de_DE": "{0} gibt es nur für {1}, nicht für {2}"
    }
   }
  }

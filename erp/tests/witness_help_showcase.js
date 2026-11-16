@@ -2,7 +2,7 @@
 //   S1 ISSUE (a help pack text that no published pack holds = invented) · S2 ISSUE (the chosen language does not reach the tooltip / panel, or English drifts)
 //   S3 ISSUE (a plain question does not find the window and the action) · S4 ISSUE (a how-to link that goes nowhere, or a card link that does not open)
 //   S5 ISSUE (how-to text that the guide does not say)
-//   §12: S1 also covers the pack's names · S6 ISSUE (a Chinese question finds nothing: words split on spaces) · S7 ISSUE (with 中文 chosen, the how-to is still English, or its links go nowhere)
+//   §12: S1 also covers the pack's names · S6 ISSUE (a Chinese question finds nothing: words split on spaces) · S7 ISSUE (with 中文 chosen, the how-to is still English, or its links go nowhere) · S6de/S7de the same in Deutsch
 //   Falsifiers: HS_BREAK=tamper FAILs S1 · nophrase FAILs S3 · deadlink FAILs S4 · nocjk FAILs S6 · nomsgtrl FAILs S2c. Each claim can say VACUOUS / INCONCLUSIVE.
 // Run: node erp/tests/witness_help_showcase.js   (after node erp/tools/build_help_pack.js; ERP_TRL_CACHE / PW / GUIDE override paths)
 'use strict';
@@ -170,6 +170,19 @@ async function browser() {
     k.L('S7 ' + c7 + ' head=' + JSON.stringify(s7.head) + ' links=' + s7.onMenu + '/' + s7.links + ' translated-note=' + s7.note);
     k.chk('S7 with 中文 chosen, Sales Order shows the zh_CN how-to row (marked as the build session\'s translation)', /lang=zh_CN/.test(c7) && /销售订单/.test(s7.head) && s7.note, c7 || 'no §HELP_CTX window=143');
     if (!s7.links) k.incon('S7-links', 'VACUOUS: no link in the zh_CN row'); else k.chk('S7 every link in the zh_CN how-to points at a window on the role\'s menu', s7.onMenu === s7.links, s7.onMenu + '/' + s7.links);
+    // §12 S6de + S7de: Deutsch chosen -> the German question set (whole words; the fixture's de set), the Sales Order how-to in German
+    const nd = logs.length; await page.evaluate(() => ErpI18n.set('de_DE'));
+    for (let i = 0; i < 60 && !logs.slice(nd).some((l) => /^§HELP_SEARCH index lang=de_DE/.test(l)); i++) await page.waitForTimeout(250);
+    const dline = logs.slice(nd).find((l) => /^§HELP_SEARCH index lang=de_DE/.test(l)); k.L('S6de ' + (dline || 'NO §HELP_SEARCH index lang=de_DE line'));
+    const rd = await page.evaluate((Q) => Q.map((x) => { const c = window.__idmpHowto.ask(x.q); return c ? { w: c.window && c.window.id, a: c.action && c.action.code, an: c.action && c.action.name, m: c.matched } : null; }), FIXTURE.de);
+    let okd = 0; FIXTURE.de.forEach((x, i) => { const r = rd[i] || {}, good = r.w === x.w && (r.a || null) === x.a; if (good) okd++; k.L('S6de ' + (good ? 'ok ' : 'WRONG ') + JSON.stringify(x.q) + ' -> window=' + r.w + ' action=' + r.a + ' ' + JSON.stringify(r.an) + ' (want ' + x.w + '/' + x.a + ')'); });
+    if (!dline) k.incon('S6de', 'the index was not rebuilt in de_DE'); else k.chk('S6de the German question set finds the window and the action', okd === FIXTURE.de.length, okd + '/' + FIXTURE.de.length);
+    await page.evaluate(() => window.__idmpHowto.ask('Wie kann ich einen Auftrag schließen?')); const n8 = logs.length;
+    await page.click('#idmp-howto-card .hs-card > .hs-row a[data-help-win]', { timeout: 3000 }).catch(() => {});
+    for (let i = 0; i < 40 && !logs.slice(n8).some((l) => /^§HELP_CTX window=143/.test(l)); i++) await page.waitForTimeout(250);
+    const c8 = logs.slice(n8).filter((l) => /^§HELP_CTX window=143/.test(l)).pop() || '';
+    const s8 = await page.evaluate(() => { const box = document.getElementById('idmp-howto-ctx'); return { head: (box.querySelector('.hs-row b') || {}).textContent || '', note: /Build-Sitzung/.test(box.textContent) }; });
+    k.chk('S7de with Deutsch chosen, Sales Order shows the de_DE how-to row (marked as the build session\'s translation)', /lang=de_DE/.test(c8) && /Auftrag/.test(s8.head) && s8.note, (c8 || 'no §HELP_CTX window=143') + ' head=' + JSON.stringify(s8.head));
     await page.evaluate(() => ErpI18n.set('en_US'));
   } finally { await b.close(); srv.close(); }
 }
