@@ -1,0 +1,440 @@
+{
+ "spec": "bim-compiler prompts/VOCAB_MESSAGE_CATALOG.md §14.3",
+ "guide": "https://red1oon.github.io/BIMCompiler/BIMUserGuide/",
+ "pills": {
+  "save": {
+   "name": "Save Building",
+   "guide": {
+    "anchor": "save-open-a-building",
+    "heading": "Save & Open a building",
+    "in_heading": false,
+    "mentions": 1
+   },
+   "cli": []
+  },
+  "lod400": {
+   "name": "LOD400 Upgrade",
+   "guide": null,
+   "cli": []
+  },
+  "open": {
+   "name": "Open Building",
+   "guide": {
+    "anchor": "save-open-a-building",
+    "heading": "Save & Open a building",
+    "in_heading": false,
+    "mentions": 1
+   },
+   "cli": []
+  },
+  "find": {
+   "name": "Find / Navigate",
+   "guide": {
+    "anchor": "find-panel-search-voice-query-and-axis-lenses",
+    "heading": "Find panel — search, voice query, and axis lenses",
+    "in_heading": false,
+    "mentions": 2
+   },
+   "cli": [
+    {
+     "verb": "viewer.counts",
+     "title": "Count elements",
+     "line": "viewer.counts building=<building>",
+     "cite": "the same answer the Viewer's Find panel gives"
+    },
+    {
+     "verb": "viewer.clashes",
+     "title": "List clashes between two disciplines",
+     "line": "viewer.clashes building=<building> discA=<discA> discB=<discB>",
+     "cite": "the same answer the Viewer's Find panel gives"
+    },
+    {
+     "verb": "viewer.cost",
+     "title": "The cost of a selection of a building",
+     "line": "viewer.cost building=<building>",
+     "cite": "as the Viewer's Find panel does"
+    }
+   ]
+  },
+  "roleFilter": {
+   "name": "Role View",
+   "guide": {
+    "anchor": "find-panel-search-voice-query-and-axis-lenses",
+    "heading": "Find panel — search, voice query, and axis lenses",
+    "in_heading": false,
+    "mentions": 1
+   },
+   "cli": []
+  },
+  "help": {
+   "name": "Help",
+   "guide": {
+    "anchor": "keyboard-mouse-cheat-sheet",
+    "heading": "Keyboard & Mouse Cheat-Sheet",
+    "in_heading": false,
+    "mentions": 1
+   },
+   "cli": []
+  },
+  "worldhist": {
+   "name": "World History",
+   "guide": {
+    "anchor": "the-rest-of-the-navigate-drawer-world-history-page-history-home",
+    "heading": "The rest of the Navigate drawer — World History, Page History & Home",
+    "in_heading": true,
+    "mentions": 1
+   },
+   "cli": []
+  },
+  "docHist": {
+   "name": "Page History",
+   "guide": {
+    "anchor": "the-rest-of-the-navigate-drawer-world-history-page-history-home",
+    "heading": "The rest of the Navigate drawer — World History, Page History & Home",
+    "in_heading": true,
+    "mentions": 1
+   },
+   "cli": []
+  },
+  "walk": {
+   "name": "Walk",
+   "guide": null,
+   "cli": []
+  },
+  "whwalk": {
+   "name": "Pick Walk",
+   "guide": {
+    "anchor": "pick-walk-warehouse-logistics-buildings",
+    "heading": "Pick Walk — warehouse / logistics buildings",
+    "in_heading": true,
+    "mentions": 0
+   },
+   "cli": []
+  },
+  "share": {
+   "name": "Share",
+   "guide": {
+    "anchor": "share",
+    "heading": "Share",
+    "in_heading": true,
+    "mentions": 2
+   },
+   "cli": []
+  },
+  "hbaFM": {
+   "name": "Human-Asset",
+   "guide": null,
+   "cli": []
+  },
+  "measure": {
+   "name": "Measure",
+   "guide": {
+    "anchor": "inspect-drawer-measure-clash-x-ray-section-time-machine-4d5d-fly-tour",
+    "heading": "Inspect drawer — Measure, Clash, X-Ray, Section, Time Machine, 4D/5D, Fly Tour",
+    "in_heading": true,
+    "mentions": 2
+   },
+   "cli": []
+  },
+  "roadstd": {
+   "name": "Road standards",
+   "guide": {
+    "anchor": "inspect-drawer-measure-clash-x-ray-section-time-machine-4d5d-fly-tour",
+    "heading": "Inspect drawer — Measure, Clash, X-Ray, Section, Time Machine, 4D/5D, Fly Tour",
+    "in_heading": false,
+    "mentions": 1
+   },
+   "cli": []
+  },
+  "roadreport": {
+   "name": "Road report",
+   "guide": {
+    "anchor": "inspect-drawer-measure-clash-x-ray-section-time-machine-4d5d-fly-tour",
+    "heading": "Inspect drawer — Measure, Clash, X-Ray, Section, Time Machine, 4D/5D, Fly Tour",
+    "in_heading": false,
+    "mentions": 1
+   },
+   "cli": []
+  },
+  "ew": {
+   "name": "Earthworks",
+   "guide": {
+    "anchor": "inspect-drawer-measure-clash-x-ray-section-time-machine-4d5d-fly-tour",
+    "heading": "Inspect drawer — Measure, Clash, X-Ray, Section, Time Machine, 4D/5D, Fly Tour",
+    "in_heading": false,
+    "mentions": 1
+   },
+   "cli": []
+  },
+  "rw": {
+   "name": "Roadworks",
+   "guide": {
+    "anchor": "inspect-drawer-measure-clash-x-ray-section-time-machine-4d5d-fly-tour",
+    "heading": "Inspect drawer — Measure, Clash, X-Ray, Section, Time Machine, 4D/5D, Fly Tour",
+    "in_heading": false,
+    "mentions": 1
+   },
+   "cli": []
+  },
+  "clash": {
+   "name": "Clash Matrix",
+   "guide": {
+    "anchor": "inspect-drawer-measure-clash-x-ray-section-time-machine-4d5d-fly-tour",
+    "heading": "Inspect drawer — Measure, Clash, X-Ray, Section, Time Machine, 4D/5D, Fly Tour",
+    "in_heading": false,
+    "mentions": 2
+   },
+   "cli": []
+  },
+  "sanity": {
+   "name": "Sanity",
+   "guide": null,
+   "cli": []
+  },
+  "egress": {
+   "name": "Egress",
+   "guide": null,
+   "cli": []
+  },
+  "xray": {
+   "name": "X-Ray / Bbox",
+   "guide": {
+    "anchor": "inspect-drawer-measure-clash-x-ray-section-time-machine-4d5d-fly-tour",
+    "heading": "Inspect drawer — Measure, Clash, X-Ray, Section, Time Machine, 4D/5D, Fly Tour",
+    "in_heading": false,
+    "mentions": 2
+   },
+   "cli": []
+  },
+  "bbox": {
+   "name": "Bounding Boxes",
+   "guide": {
+    "anchor": "viewer-features",
+    "heading": "Viewer Features",
+    "in_heading": false,
+    "mentions": 2
+   },
+   "cli": []
+  },
+  "tm": {
+   "name": "Time Machine",
+   "guide": {
+    "anchor": "inspect-drawer-measure-clash-x-ray-section-time-machine-4d5d-fly-tour",
+    "heading": "Inspect drawer — Measure, Clash, X-Ray, Section, Time Machine, 4D/5D, Fly Tour",
+    "in_heading": true,
+    "mentions": 5
+   },
+   "cli": [
+    {
+     "verb": "viewer.schedule_at",
+     "title": "Schedule state at a day",
+     "line": "viewer.schedule_at building=<building> day=<day>",
+     "cite": "the Time Machine scrubber"
+    }
+   ]
+  },
+  "sched4d": {
+   "name": "4D Window",
+   "guide": null,
+   "cli": []
+  },
+  "section": {
+   "name": "Section Cut",
+   "guide": {
+    "anchor": "inspect-drawer-measure-clash-x-ray-section-time-machine-4d5d-fly-tour",
+    "heading": "Inspect drawer — Measure, Clash, X-Ray, Section, Time Machine, 4D/5D, Fly Tour",
+    "in_heading": false,
+    "mentions": 2
+   },
+   "cli": []
+  },
+  "background": {
+   "name": "Background",
+   "guide": {
+    "anchor": "display-options-palette-night-shadow-ground-background-sound-fx",
+    "heading": "Display options — Palette, Night, Shadow + Ground, Background, Sound FX",
+    "in_heading": true,
+    "mentions": 1
+   },
+   "cli": []
+  },
+  "night": {
+   "name": "Night",
+   "guide": {
+    "anchor": "display-options-palette-night-shadow-ground-background-sound-fx",
+    "heading": "Display options — Palette, Night, Shadow + Ground, Background, Sound FX",
+    "in_heading": true,
+    "mentions": 1
+   },
+   "cli": []
+  },
+  "palette": {
+   "name": "Palette",
+   "guide": {
+    "anchor": "display-options-palette-night-shadow-ground-background-sound-fx",
+    "heading": "Display options — Palette, Night, Shadow + Ground, Background, Sound FX",
+    "in_heading": true,
+    "mentions": 1
+   },
+   "cli": []
+  },
+  "shadow": {
+   "name": "Shadow + Ground",
+   "guide": {
+    "anchor": "display-options-palette-night-shadow-ground-background-sound-fx",
+    "heading": "Display options — Palette, Night, Shadow + Ground, Background, Sound FX",
+    "in_heading": true,
+    "mentions": 1
+   },
+   "cli": []
+  },
+  "gi-preview": {
+   "name": "GI Preview (AO)",
+   "guide": null,
+   "cli": []
+  },
+  "fly": {
+   "name": "Fly Tour",
+   "guide": {
+    "anchor": "inspect-drawer-measure-clash-x-ray-section-time-machine-4d5d-fly-tour",
+    "heading": "Inspect drawer — Measure, Clash, X-Ray, Section, Time Machine, 4D/5D, Fly Tour",
+    "in_heading": true,
+    "mentions": 2
+   },
+   "cli": []
+  },
+  "dlodnav": {
+   "name": "Nav LOD (large bldgs)",
+   "guide": null,
+   "cli": []
+  },
+  "report": {
+   "name": "4D / 5D",
+   "guide": {
+    "anchor": "your-own-4d-5d-references-rates-durations-sequence",
+    "heading": "Your own 4D / 5D references: rates, durations, sequence",
+    "in_heading": true,
+    "mentions": 2
+   },
+   "cli": []
+  },
+  "issues": {
+   "name": "Issues",
+   "guide": null,
+   "cli": []
+  },
+  "fullscreen": {
+   "name": "Fullscreen",
+   "guide": {
+    "anchor": "3d-navigation",
+    "heading": "3D Navigation",
+    "in_heading": false,
+    "mentions": 2
+   },
+   "cli": []
+  },
+  "precision": {
+   "name": "Precision (Fine)",
+   "guide": {
+    "anchor": "camera-view-drawer",
+    "heading": "Camera / View drawer",
+    "in_heading": false,
+    "mentions": 1
+   },
+   "cli": []
+  },
+  "cam-reset": {
+   "name": "Reset Camera",
+   "guide": {
+    "anchor": "camera-view-drawer",
+    "heading": "Camera / View drawer",
+    "in_heading": false,
+    "mentions": 1
+   },
+   "cli": []
+  },
+  "cam-pivot": {
+   "name": "Auto-Pivot",
+   "guide": {
+    "anchor": "camera-view-drawer",
+    "heading": "Camera / View drawer",
+    "in_heading": false,
+    "mentions": 1
+   },
+   "cli": []
+  },
+  "home": {
+   "name": "Home",
+   "guide": {
+    "anchor": "the-rest-of-the-navigate-drawer-world-history-page-history-home",
+    "heading": "The rest of the Navigate drawer — World History, Page History & Home",
+    "in_heading": true,
+    "mentions": 1
+   },
+   "cli": []
+  },
+  "audio": {
+   "name": "Sound FX",
+   "guide": {
+    "anchor": "display-options-palette-night-shadow-ground-background-sound-fx",
+    "heading": "Display options — Palette, Night, Shadow + Ground, Background, Sound FX",
+    "in_heading": true,
+    "mentions": 1
+   },
+   "cli": []
+  },
+  "settings": {
+   "name": "Settings",
+   "guide": {
+    "anchor": "settings",
+    "heading": "Settings",
+    "in_heading": true,
+    "mentions": 1
+   },
+   "cli": []
+  },
+  "navigate": {
+   "name": "Navigate",
+   "guide": {
+    "anchor": "the-rest-of-the-navigate-drawer-world-history-page-history-home",
+    "heading": "The rest of the Navigate drawer — World History, Page History & Home",
+    "in_heading": true,
+    "mentions": 2
+   },
+   "cli": []
+  },
+  "inspect": {
+   "name": "Inspect",
+   "guide": {
+    "anchor": "inspect-drawer-measure-clash-x-ray-section-time-machine-4d5d-fly-tour",
+    "heading": "Inspect drawer — Measure, Clash, X-Ray, Section, Time Machine, 4D/5D, Fly Tour",
+    "in_heading": true,
+    "mentions": 1
+   },
+   "cli": []
+  },
+  "camview": {
+   "name": "Camera / View",
+   "guide": {
+    "anchor": "camera-view-drawer",
+    "heading": "Camera / View drawer",
+    "in_heading": true,
+    "mentions": 1
+   },
+   "cli": []
+  }
+ },
+ "gaps": [
+  "lod400",
+  "hbaFM",
+  "sanity",
+  "egress",
+  "sched4d",
+  "gi-preview",
+  "dlodnav",
+  "issues"
+ ],
+ "excluded": {
+  "walk": "the guide names \"Walk\" only in the Cinema Film-Maker walk-mode sections, a different feature from the mobile Walk pill"
+ }
+}

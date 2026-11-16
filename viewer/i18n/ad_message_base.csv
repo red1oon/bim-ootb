@@ -1033,3 +1033,6 @@ CPM reads the dates the drag produced — it never changes one.",I
 1001022,ifcdef_IfcSensorType_lang,EN,I
 1001023,ifcdef_IfcSensorType_of,IfcSensor,I
 1001024,ui_cls_ifcdef_of,IFC definition of {cls},I
+1001025,ui_howto_guide,Guide,I
+1001026,ui_howto_guide_en,Guide (English),I
+1001027,ui_howto_cli,Same at the CLI,I

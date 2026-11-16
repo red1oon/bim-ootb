@@ -6,8 +6,8 @@
    "ad_message_base.csv",
    "AD_Message_Trl_ar_SA.xml"
   ],
-  "rows": 1025,
-  "translated": 918,
+  "rows": 1028,
+  "translated": 921,
   "untranslated": 107
  },
  "labels": {
@@ -1035,6 +1035,9 @@
   "ifcdef_IfcSensorType": "A sensor is a device that measures a physical quantity and converts it into a signal which can be read by an observer or by an instrument.",
   "ifcdef_IfcSensorType_lang": "EN",
   "ifcdef_IfcSensorType_of": "IfcSensor",
-  "ui_cls_ifcdef_of": "تعريف IFC لـ {cls}"
+  "ui_cls_ifcdef_of": "تعريف IFC لـ {cls}",
+  "ui_howto_guide": "الدليل",
+  "ui_howto_guide_en": "الدليل (بالإنجليزية)",
+  "ui_howto_cli": "الشيء نفسه في سطر الأوامر"
  }
 }
