@@ -9,7 +9,7 @@
 // A stub bridge (BUMP_PARITY_BRIDGE) prints chosen `§TAG_VERDICT WORD` lines and appends to a marker file, so "not run" is
 // provable (marker empty), not assumed. Rows: P1 new FAIL blocks · P2 only known FAILs pass · P3 warn · P4 off · P5 non-ERP
 // target never runs it · P6 --no-parity needs a reason / OVERRIDE · P7 0 verdicts = INCONCLUSIVE, blocked · P8 same tree =
-// cached, changed tree = not. R (opt-in BUMP_PARITY_REAL=1): the REAL bridge (BUMP_PARITY_BRIDGE, default /tmp/wt-bridge/...)
+// cached, changed tree = not · P9 the bridge judges the bumped tree · P10/P11 (§F.32) only the witnesses that read the tree run. R (opt-in BUMP_PARITY_REAL=1): the REAL bridge (BUMP_PARITY_BRIDGE, default /tmp/wt-bridge/...)
 // with the repo's real config gives verdict=PASS. Prints §BUMP_PARITY_W <row> PASS|FAIL and §BUMP_PARITY_W_VERDICT;
 // INCONCLUSIVE (never PASS) when nothing was judged.
 // Usage: nice -n 19 ionice -c3 node tests/witness_bump_parity.js > log 2>&1
@@ -137,18 +137,52 @@ try {
   const r9 = run([ERP, '--write'], { OOTB: '', BRIDGE_OOTB: '', BRIDGE_UI_DB: '' });
   const rec = fs.existsSync(ENVREC) ? fs.readFileSync(ENVREC, 'utf8').trim() : '';
   const want = 'OOTB=' + root + '|BRIDGE_OOTB=' + root + '|BRIDGE_UI_DB=' + path.join(root, 'erp', 'ad_seed.db');
-  check('P9-bridge-judges-the-bumped-tree', r9.code === 0 && rec === want && field(r9.out, 'tree') === root && field(r9.out, 'scoped') === 'partial',
+  check('P9-bridge-judges-the-bumped-tree', r9.code === 0 && rec === want && field(r9.out, 'tree') === root && field(r9.out, 'scoped') === 'script',
     `bridge saw "${rec || '(nothing)'}" (want the bumped root) · § line tree=${field(r9.out, 'tree')} scoped=${field(r9.out, 'scoped')}`);
+
+  // P10/P11 (§F.32) — a bridge script that NAMES witnesses: the gate runs only those that read a tree setting (here witness_sa, through a local require),
+  //   never the others (witness_sb). Main's gate ran the whole script, so P11 (SB fails, SA passes) was BLOCKED there: the red control.
+  const wdir = path.join(tmp, 'wbridge'); fs.mkdirSync(wdir, { recursive: true });
+  const WRA = path.join(wdir, 'run_all.sh'), WMARK = path.join(wdir, 'ran.txt');
+  fs.writeFileSync(WRA, '#!/bin/sh\ncd "$(dirname "$0")"\nfor w in witness_sa witness_sb; do echo "=== $w"; node "$w.js"; done\n');
+  fs.writeFileSync(path.join(wdir, 'tree_cfg.js'), "module.exports = () => process.env.BRIDGE_OOTB || '';\n");
+  fs.writeFileSync(path.join(wdir, 'witness_sa.js'), "require('fs').appendFileSync(" + JSON.stringify(WMARK) + ", 'sa\\n'); require('./tree_cfg')(); console.log(process.env.SA_LINE);\n");
+  fs.writeFileSync(path.join(wdir, 'witness_sb.js'), "require('fs').appendFileSync(" + JSON.stringify(WMARK) + ", 'sb\\n'); console.log(process.env.SB_LINE);\n");
+  const ran = () => fs.existsSync(WMARK) ? fs.readFileSync(WMARK, 'utf8').split('\n').filter(Boolean) : [];
+  restore(); fs.rmSync(WMARK, { force: true });
+  const r10 = run([ERP, '--write'], { BUMP_PARITY_BRIDGE: WRA, SA_LINE: '§SA_VERDICT FAIL x=1', SB_LINE: '§SB_VERDICT FAIL y=1' });
+  check('P10-runs-only-tree-witnesses-and-blocks-on-them', r10.code === 3 && /new=\[SA:FAIL\]/.test(par(r10.out)) && ran().join(',') === 'sa' && field(r10.out, 'scoped') === 'tree' && /witnesses=1 skipped=1/.test(par(r10.out)) && /§BUMP_PARITY_RUN w=witness_sa /.test(r10.out),
+    `exit=${r10.code} ran=[${ran().join(',')}] (want sa) ${par(r10.out).replace('§BUMP_PARITY ', '')}`);
+  restore(); fs.rmSync(WMARK, { force: true });
+  const r11 = run([ERP, '--write'], { BUMP_PARITY_BRIDGE: WRA, SA_LINE: '§SA_VERDICT PASS x=1', SB_LINE: '§SB_VERDICT FAIL y=1' });
+  check('P11-a-witness-that-cannot-judge-the-tree-never-blocks', r11.code === 0 && field(r11.out, 'verdict') === 'PASS' && ran().join(',') === 'sa' && pageHas(V + 1),
+    `exit=${r11.code} ran=[${ran().join(',')}] written=${pageHas(V + 1)} ${par(r11.out).replace('§BUMP_PARITY ', '')}`);
 
   // R — REAL bridge (opt-in; ~70 s; writes throwaway clients to the local pilot)
   if (process.env.BUMP_PARITY_REAL === '1') {
-    restore();
-    fs.copyFileSync(path.join(REPO, 'scripts/bump_parity.json'), path.join(root, 'scripts/bump_parity.json'));
+    // §F.32: the real witnesses READ the tree they judge (erp/tests/dd_common.js, the models, ...), so this row bumps an OVERLAY of the repo: the edited
+    //   files are copies, everything else is a link to the real file (a 6-file copy made them crash in 0 s: "Cannot find module .../erp/tests/dd_common.js").
+    const rootR = path.join(tmp, 'rootR'), keep = new Set(FILES.concat(['scripts/bump_parity.json']));
+    const overlay = (rel) => {
+      const src = path.join(REPO, rel), dst = path.join(rootR, rel); fs.mkdirSync(dst, { recursive: true });
+      for (const e of fs.readdirSync(src)) {
+        if (e === '.git') continue;
+        const r = rel ? rel + '/' + e : e;
+        if (keep.has(r)) fs.copyFileSync(path.join(REPO, r), path.join(rootR, r));
+        else if ([...keep].some(k => k.startsWith(r + '/'))) overlay(r);
+        else fs.symlinkSync(path.join(src, e), path.join(dst, e));
+      }
+    };
+    overlay('');
     const real = process.env.BUMP_PARITY_BRIDGE || '/tmp/wt-bridge/scripts/bridge/run_all.sh';
-    const rr = run([ERP, '--write'], { BUMP_PARITY_BRIDGE: real, BUMP_PARITY_HOME: path.join(tmp, 'real_home') }, { timeout: 20 * 60 * 1000 });
+    const rr = cp.spawnSync('node', [BUMP, ERP, '--write', '--root', rootR], { encoding: 'utf8', timeout: 20 * 60 * 1000,
+      env: { ...process.env, BUMP_PARITY: '', BUMP_PARITY_BRIDGE: real, BUMP_PARITY_HOME: path.join(tmp, 'real_home') } });
+    rr.out = rr.stdout + rr.stderr; rr.code = rr.status;
+    const pageHasR = v => fs.readFileSync(path.join(rootR, 'erp/idempiere.html'), 'utf8').includes(`${em[1]}?v=${v}"`);
     const nv = +field(rr.out, 'verdicts');
-    check('R-real-bridge-passes-with-todays-known', rr.code === 0 && field(rr.out, 'verdict') === 'PASS' && nv > 0 && field(rr.out, 'cached') === 'N' && pageHas(V + 1),
+    check('R-real-bridge-passes-with-todays-known', rr.code === 0 && field(rr.out, 'verdict') === 'PASS' && nv > 0 && field(rr.out, 'cached') === 'N' && pageHasR(V + 1) && field(rr.out, 'scoped') === 'tree',
       `bridge=${real} exit=${rr.code} ${par(rr.out).replace('§BUMP_PARITY ', '')}`);
+    rr.out.split('\n').filter(l => l.startsWith('§BUMP_PARITY_RUN ')).forEach(l => console.log(l));
     if (rr.code !== 0) console.log(rr.out.split('\n').slice(0, 20).join('\n'));
   } else console.log('§BUMP_PARITY_W R-real-bridge SKIPPED (opt-in: BUMP_PARITY_REAL=1; ~70 s, writes throwaway clients to the pilot)');
 } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
