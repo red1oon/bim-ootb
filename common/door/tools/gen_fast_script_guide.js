@@ -72,7 +72,7 @@ function runBlock(run, ctx) {   // ctx {flat, root, files:[{name,text}]}
     const cmd = run.cmd.split('/tmp/fast_guide_').join(path.join(ctx.flat, 'fast_guide_'));
     const env = Object.assign({}, process.env, { BIM_DOOR_JOURNAL: path.join(ctx.flat, 'journal_' + run.id + '.jsonl'), BIM_OBJECT_OPLOG: path.join(ctx.flat, 'oplog_' + run.id + '.jsonl') });
     const p = spawn('bash', ['-c', cmd], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] }); let o = '', e = '';
-    p.stdout.on('data', d => { o += d; }); p.stderr.on('data', d => { e += d; }); const t = setTimeout(() => p.kill(), 420000); p.on('close', code => { clearTimeout(t); res({ code, out: o.trim(), err: e.trim() }); });   // the timer is cleared when the command ends (it kept every --refresh alive for 7 minutes)
+    p.stdout.on('data', d => { o += d; }); p.stderr.on('data', d => { e += d; }); const t = setTimeout(() => p.kill(), 420000); p.on('close', code => { clearTimeout(t); const back = (x) => x.split(path.join(ctx.flat, 'fast_guide_')).join('/tmp/fast_guide_'); res({ code, out: back(o).trim(), err: back(e).trim() }); });   // the run's own folder is printed as the /tmp/ path the page shows   // the timer is cleared when the command ends (it kept every --refresh alive for 7 minutes)
   });
 }
 module.exports = { parsePage, verbTable, needs, normalise, cutLines, runBlock, makeFlatFolder, loadVocab, GEN, FLAT };
