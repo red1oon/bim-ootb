@@ -19,6 +19,9 @@ const __readSrc = require('../viewer/tests/_split_families.js').readSource;   //
 const fs = require('fs');
 const path = require('path');
 const initSqlJs = require(path.join(__dirname, '..', 'modeller', 'lib', 'sql-wasm.js'));
+// A-6 (bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md A2-TIMING-2): this Node runner is an EDGE. It installs the one clock + id + timer source the
+// core files read (globalThis.CoreEdge), so their § timings are measured here, never by a wall clock inside the core. Kept if one is already installed.
+if (!globalThis.CoreEdge) globalThis.CoreEdge = { nowMs: () => Date.now(), uuid: () => require('crypto').randomUUID(), perfMs: () => require('perf_hooks').performance.now() };
 const ScheduleGate = require(path.join(__dirname, '..', 'viewer', 'schedule_gate.js'));
 const ScheduleAuthor = require(path.join(__dirname, '..', 'viewer', 'schedule_author.js'));
 const CpmSchedule = require(path.join(__dirname, '..', 'viewer', 'cpm_schedule.js'));

@@ -70,6 +70,9 @@ const __readSrc = require('../viewer/tests/_split_families.js').readSource;   //
 'use strict';
 const fs = require('fs'), path = require('path'), vm = require('vm'), os = require('os'), crypto = require('crypto');
 const HOME = os.homedir();
+// A-6 (bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md A2-TIMING-2): this Node runner is an EDGE. It installs the one clock + id + timer source the
+// core files read (globalThis.CoreEdge), so their § timings are measured here, never by a wall clock inside the core. Kept if one is already installed.
+if (!globalThis.CoreEdge) globalThis.CoreEdge = { nowMs: () => Date.now(), uuid: () => require('crypto').randomUUID(), perfMs: () => require('perf_hooks').performance.now() };
 const V = path.join(__dirname, '..', 'viewer');
 // The schedule's day 0. The run's task grid (sDays/eDays) and every played instant count from here; viewer/tools/schedule_verbs.js reads it from here (one owner).
 const PROJECT_START = '2026-01-01';

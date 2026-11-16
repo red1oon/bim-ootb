@@ -846,7 +846,9 @@
     // grid the roof wasn't in yet) is REMOVED as subsumed: wall→roof and roof→hanger are DAG edges
     // now, so the placement order guarantees it for free — witnessed green with the plain-seq
     // tiebreak before removal (witness_geometric_support_order.js + witness_default_engine_quality.js).
-    var _t0 = Date.now();
+    // A-4/A-6 (CODE_ARCHITECTURE_DESIGN.md A2-TIMING-2): timed through the shell's edge (global.CoreEdge); no edge = orderMs=? (never a wall clock)
+    var _ce = global.CoreEdge, _perf = (_ce && typeof _ce.perfMs === 'function') ? function () { return _ce.perfMs(); } : null;
+    var _t0 = _perf ? _perf() : null;
     var N = elements.length, t, si;
     // static support pools (whole element set, not the incremental placement grids) — the same
     // pools auditFloating scans, so scheduler order and audit test the same physics
@@ -1004,7 +1006,7 @@
       console.log('§SUPPORT_CYCLE cycles=' + _cyc.length +
         (_cyc.length ? ' sample=[' + _cyc.slice(0, 5).map(function (x) { return elements[x].guid; }).join(',') + ']' : ''));
       console.log('§GEO_ORDER n=' + N + ' edges=' + _edges + ' hangNearest=' + _hangNearest +
-        ' hostEdges=' + _hostEdges + ' orderMs=' + (Date.now() - _t0));
+        ' hostEdges=' + _hostEdges + ' orderMs=' + (_perf ? Math.round(_perf() - _t0) : '?'));
       // §S58 (§S58.1b) — §HOSTED_BEFORE_HOST's own proof line. hostEdges above is the numerator
       // only; this is the denominator and the miss breakdown, so "did the outlets-appear-early fix
       // actually cover this building" is readable from the log instead of inferred. Same shape as

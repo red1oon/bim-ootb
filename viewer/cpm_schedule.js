@@ -957,14 +957,20 @@
              makespanDays: (isFinite(makespanE) && isFinite(makespanS)) ? (makespanE - makespanS) / 86400000 : 0 };
   }
 
+  // A-4/A-6 (bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md A2-TIMING-2): the ONE timer is the edge the shell installs (global.CoreEdge).
+  // No edge = null, and the § line says '?', never a wall clock. Timing only: no result reads these values.
+  function _perf() { var e = global.CoreEdge; return e && typeof e.perfMs === 'function' ? e.perfMs() : null; }
+  function _dt(a, b) { return a == null || b == null ? null : Math.round(b - a); }
+  function _ms(v) { return v == null ? '?' : v; }
+
   // run(items, opts) — §S50: location axis + gate, THEN either the cell schedule (>= mark) or
   // the retained graph engine (< mark, or no db/LocationAxis — every legacy caller lands there
   // unchanged). opts.maxCrews: per-resource crew caps, same shape computeSchedule takes.
   // opts.db: the building DB; defaults to APP.db (the viewer's live app object) when present.
   function run(items, opts) {
-    var t0 = Date.now();
+    var t0 = _perf();
     var G = contactGraph(items);
-    var t1 = Date.now();
+    var t1 = _perf();
     if (!G.ok) return { ok: false, error: 'ScheduleGate not loaded' };
     var LA = (typeof global.LocationAxis !== 'undefined') ? global.LocationAxis
       : (typeof LocationAxis !== 'undefined' ? LocationAxis : null);
@@ -987,13 +993,13 @@
         ' [gate quantity: §S47b formula, level grain, designatedSupport unchanged — a rule, not a dictionary]');
       if (path === 'CELL') {
         var solC = solveCells(items, filing, opts);
-        var t2c = Date.now();
+        var t2c = _perf();
         console.log('§CELL_RUN n=' + items.length + ' cells=' + solC.cells +
           ' levels=' + solC.levels + ' trades=' + solC.trades +
           ' roomsUsed=' + (axis.stats ? axis.stats.inRoom : '?') + ' promoted=' + filing.promoted +
           ' refusedE1=' + filing.refused + ' (arrows-as-exception surface, NOT enforced — §S26.11 leg 4)' +
           ' makespanDays=' + solC.makespanDays.toFixed(1) +
-          ' ms={contact:' + (t1 - t0) + ',axis+solve:' + (t2c - t1) + ',total:' + (t2c - t0) + '}');
+          ' ms={contact:' + _ms(_dt(t0, t1)) + ',axis+solve:' + _ms(_dt(t1, t2c)) + ',total:' + _ms(_dt(t0, t2c)) + '}');
         var nEl = items.length;
         var stub = { out: new Array(nEl), nElements: nEl, nNodes: nEl, msMeta: [],
                      stragglerOf: new Uint8Array(nEl),
@@ -1008,7 +1014,7 @@
                  gate: { path: 'CELL', repr: filing.repr, mark: CELL_GATE_MARK,
                          promoted: filing.promoted, refused: filing.refused,
                          cellKeys: solC.keyOf },
-                 ms: { contact: t1 - t0, build: 0, solve: t2c - t1, total: t2c - t0 } };
+                 ms: { contact: _dt(t0, t1), build: 0, solve: _dt(t1, t2c), total: _dt(t0, t2c) } };
       }
       // fall through to the graph engine — today's schedule, unchanged, for this building
     } else {
@@ -1016,9 +1022,9 @@
         ') path=GRAPH — legacy caller or module not loaded; the graph engine runs unchanged');
     }
     var graph = buildGraph(items, G);
-    var t2 = Date.now();
+    var t2 = _perf();
     var sol = solve(items, graph, opts);
-    var t3 = Date.now();
+    var t3 = _perf();
     console.log('§CPM_RUN n=' + items.length + ' nodes=' + graph.nNodes +
       ' edges={E1:' + graph.counts.e1 + ',E2host:' + graph.counts.e2h + ',E2open:' + graph.counts.e2o +
       ',E3:' + graph.counts.e3 + ',E4:' + graph.counts.e4 + ',member:' + graph.counts.member + '}' +
@@ -1028,9 +1034,9 @@
       ',fsViolInScc:' + sol.drops.fsViolInScc + '}' +
       ' crewOverCapScc=' + sol.drops.crewOverCapScc +
       ' makespanDays=' + sol.makespanDays.toFixed(1) +
-      ' ms={contact:' + (t1 - t0) + ',build:' + (t2 - t1) + ',solve:' + (t3 - t2) + ',total:' + (t3 - t0) + '}');
+      ' ms={contact:' + _ms(_dt(t0, t1)) + ',build:' + _ms(_dt(t1, t2)) + ',solve:' + _ms(_dt(t2, t3)) + ',total:' + _ms(_dt(t0, t3)) + '}');
     return { ok: true, G: G, graph: graph, solution: sol,
-             ms: { contact: t1 - t0, build: t2 - t1, solve: t3 - t2, total: t3 - t0 } };
+             ms: { contact: _dt(t0, t1), build: _dt(t1, t2), solve: _dt(t2, t3), total: _dt(t0, t3) } };
   }
 
   var API = { contactGraph: contactGraph, designatedSupport: designatedSupport,
