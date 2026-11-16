@@ -88,8 +88,12 @@ function childTabs(rows, t, tabId) {
   // the tabs one level below the tab that shows this table, in the same window (GridWindow tab levels); the link is the child's IsParent column. tabId: the tab a role opens (roleFor), else the first.
   const mine = (tabId != null ? rows("SELECT tb.ad_tab_id AS id, tb.ad_window_id AS win, tb.tablevel AS lvl, tb.seqno AS seq FROM ad_tab tb WHERE tb.ad_tab_id=?", [tabId]) : tabsOf(rows, t.ad_table_id))[0];
   if (!mine) return [];
+  // the link: the child's IsParent column that names THIS table's key (GridTab.initTab; the same rule as masterFilter), else its first IsParent column. A child with two parent columns (Order Tax: C_Order_ID and C_Tax_ID) otherwise
+  // took the first, and a parent's child rows were read through the wrong column (27 "tax rows" under an order with one) — found by W-RED1-RECORD R2, CLI_ERP_IVR §29.1.
+  const mk = String((rows('SELECT columnname FROM ad_column WHERE ad_table_id=? AND iskey=\'Y\' AND isactive=\'Y\'', [t.ad_table_id])[0] || {}).columnname || '').toLowerCase();
   return rows('SELECT tb.name, tb.issinglerow, tb.isreadonly, tb.tablevel, tb.seqno, t2.name AS kind, t2.tablename, t2.ad_table_id FROM ad_tab tb JOIN ad_table t2 ON t2.ad_table_id=tb.ad_table_id WHERE tb.ad_window_id=? AND tb.isactive=\'Y\' AND tb.tablevel=? AND tb.seqno>? ORDER BY tb.seqno', [mine.win, mine.lvl + 1, mine.seq])
-    .map(c => ({ kind: c.kind, table: c.tablename, tab: c.name, single: c.issinglerow === 'Y', readonly: c.isreadonly === 'Y', link: (rows('SELECT columnname FROM ad_column WHERE ad_table_id=? AND isparent=\'Y\' AND isactive=\'Y\'', [c.ad_table_id])[0] || {}).columnname || null }));
+    .map(c => { const ps = rows('SELECT columnname FROM ad_column WHERE ad_table_id=? AND isparent=\'Y\' AND isactive=\'Y\' ORDER BY ad_column_id', [c.ad_table_id]), pick = process.env.RECORD_BREAK === 'firstparent' ? ps[0] : (ps.filter(x => String(x.columnname).toLowerCase() === mk)[0] || ps[0]);
+      return { kind: c.kind, table: c.tablename, tab: c.name, single: c.issinglerow === 'Y', readonly: c.isreadonly === 'Y', link: (pick || {}).columnname || null }; });
 }
 function listValues(rows, refId) { return rows("SELECT value, name FROM ad_ref_list WHERE ad_reference_id=? AND isactive='Y' ORDER BY value", [refId]); }
 

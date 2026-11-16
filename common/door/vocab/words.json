@@ -12,6 +12,10 @@
   "_": "a value a word needs and the line did not give opens a pick menu of the legal values, read by ONE door line (by the input's type); in a one-shot run or for an AI there is no menu: the door refuses, naming the missing input (§22.8)",
   "discipline": { "verb": "viewer.counts", "args": { "by": "discipline" }, "col": 0 }
  },
+ "links": {
+  "_": "§29.1: a LINK word in a building takes the session to that building's record in another app. DATA: `in` the place it works, `kind` the ERP window it opens, `verb` the door line that says WHICH record (the answer's `id` path), `then` the word that makes the record when there is none. Zero code per link.",
+  "project": { "in": "building", "kind": "Project", "verb": "erp.order_state", "id": "state.projectId", "then": "post" }
+ },
  "welcome": {
   "_": "§26: printed once when `red1` opens on a terminal (never on a pipe, a one-shot line or -f); {version} {verbs} {words} {commit} are read, never typed",
   "lines": [
@@ -27,25 +31,25 @@
   "mis": { "title": "records, tables, files, Ninja",   "start": "cd Order",  "apps": ["mis", "ninja"], "session": [["menu", "the ERP menu"]] },
   "erp": { "title": "document actions (CO VO CL RC)",  "start": "cd Order",  "apps": ["erp"] }
  },
- "everywhere": [["cd <place>", "go to a building, a kind of it, or an ERP kind (cd .. back, cd alone: nowhere)"], ["pwd", "where you are"], ["role <id>", "a role on every line"], ["history", "the lines you typed"], ["report", "send the last gap to us (email or GitHub issue)"], ["exit", "leave red1"]],
+ "everywhere": [["cd <place>", "go to a building, a kind of it, an ERP kind or one record of it (cd Order 50000; cd .. back, cd alone: nowhere)"], ["pwd", "where you are"], ["role <id>", "a role on every line"], ["history", "the lines you typed"], ["report", "send the last gap to us (email or GitHub issue)"], ["exit", "leave red1"]],
  "words": {
   "ls":      { "help": "list what is here",                      "forms": [
                { "in": "kind", "ex": "ls element_name=*bath*",     "verb": "object.list",   "args": [], "defaults": { "columns": "$columns", "limit": "20" } },
                { "in": "building", "ex": "ls", "verb": "viewer.counts", "args": [], "defaults": { "by": "discipline" } },
-               { "in": "erp", "ex": "ls DocumentNo=5000*",      "verb": "mis.list",      "args": [], "defaults": { "columns": "$columns", "names": "Y", "limit": "20" } } ] },
+               { "in": "erp", "ex": "ls DocumentNo=5000*",      "verb": "mis.list",      "args": [], "master": "filter", "defaults": { "columns": "$columns", "names": "Y", "limit": "20" } } ] },
   "count":   { "help": "how many",                               "forms": [
                { "in": "kind", "ex": "count",     "verb": "object.count",  "args": [] },
                { "in": "building", "ex": "count storey", "verb": "viewer.counts", "args": ["by"], "defaults": { "by": "discipline" } },
-               { "in": "erp", "ex": "count",      "verb": "mis.list",      "args": [], "defaults": { "columns": "$columns", "limit": "1" } } ] },
+               { "in": "erp", "ex": "count",      "verb": "mis.list",      "args": [], "master": "filter", "defaults": { "columns": "$columns", "limit": "1" } } ] },
   "cat":     { "help": "one record: cat <uu|id>",                "forms": [
                { "in": "kind", "ex": "cat 2O2Fr$t4X7Zf8NOew3FKau",     "verb": "object.read",   "args": ["uu"] },
-               { "in": "erp", "ex": "cat 1500004",      "verb": "mis.read",      "args": ["id"] } ] },
+               { "in": "erp", "ex": "cat 1500004",      "verb": "mis.read",      "args": ["id"], "draw": "record" } ] },
   "sum":     { "help": "add a column: sum <column>",             "forms": [
                { "in": "kind", "ex": "sum <column>",     "verb": "object.sum",    "args": ["column"] },
-               { "in": "erp", "ex": "sum GrandTotal",      "verb": "mis.sum",       "args": ["column"] } ] },
+               { "in": "erp", "ex": "sum GrandTotal",      "verb": "mis.sum",       "args": ["column"], "master": "filter" } ] },
   "group":   { "help": "count by a column: group <column>",      "forms": [
                { "in": "kind", "ex": "group storey",     "verb": "object.group",  "args": ["by"] },
-               { "in": "erp", "ex": "group DocStatus",      "verb": "mis.group",     "args": ["by"] } ] },
+               { "in": "erp", "ex": "group DocStatus",      "verb": "mis.group",     "args": ["by"], "master": "filter" } ] },
   "clash":   { "help": "clashes between two disciplines: clash <A> <B>", "forms": [
                { "in": "building", "ex": "clash ARC MEP", "verb": "viewer.clashes", "args": ["discA", "discB"], "defaults": { "rows": "all" }, "summary": true, "draw": "funnel" } ] },
   "cost":    { "help": "the cost of a selection: cost [phase|task|storey|discipline|class] [column=value …]", "forms": [
@@ -71,7 +75,7 @@
   "close":   { "help": "close the model",                        "forms": [
                { "in": "any", "ex": "close",      "verb": "model.close",   "args": [] } ] },
   "new":     { "help": "a new record: new Column=value …",       "forms": [
-               { "in": "erp", "ex": "new <Column>=<value>",      "verb": "mis.new",       "args": [] } ] },
+               { "in": "erp", "ex": "new <Column>=<value>",      "verb": "mis.new",       "args": [], "master": "link" } ] },
   "set":     { "help": "change a record: set <id> Column=value …", "forms": [
                { "in": "erp", "ex": "set 1500004 Description=Rush",      "verb": "mis.update",    "args": ["id"] } ] },
   "rm":      { "help": "delete a record: rm <id> (asks y/N)",    "confirm": true, "forms": [

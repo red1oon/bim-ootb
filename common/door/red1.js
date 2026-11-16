@@ -113,7 +113,7 @@ function makeShell(o) {
       if (!r.effects.length) break;
       const ef = r.effects[0], e = await exec(ef.line, ef.shown, ef.match);
       if (!e) break;
-      if (ef.purpose === 'run') { const v = viewOf(e, ef.match); envs.push(v); await io.show(v, ef.view, ef.draw); offerOf(v); r = { state: st, effects: r.effects.slice(1), screen: [] }; continue; }
+      if (ef.purpose === 'run') { const v = viewOf(e, ef.match); envs.push(v); await io.show(v, ef.view, ef.draw, ef.ctx); offerOf(v); r = { state: st, effects: r.effects.slice(1), screen: [] }; continue; }
       r = core.step(st, { result: { purpose: ef.purpose, envelope: e } });
     }
     return envs;
@@ -177,7 +177,7 @@ async function session(o) {
     print: (t) => w(t + '\n'),
     arrow: (l) => { lastArrow = l; w('→ ' + l + '\n'); },
     menu: (lines) => { if (tty && menuH) process.stdout.write('\r\x1b[' + menuH + 'A\x1b[0J'); process.stdout.write(lines.join('\n') + '\n'); menuH = lines.length + (tty ? 1 : 0); },
-    show: async (e, view, draw) => {
+    show: async (e, view, draw, ctx) => {
       { const gap = (e.answer && e.answer.gap) || e.status === 'error' || (process.env.REPORT_BREAK === 'allgaps' && e.status !== 'ok');   // §28: a gap = marked by the engine (answer.gap) or the engine could not answer (status error); allgaps: W-RED1-REPORT falsifier
         const rec = { line: lastArrow, why: e.why, status: e.status, gapKind: (e.answer && e.answer.gapKind) || (e.status === 'error' ? 'engine-error' : null) };
         if (e.status !== 'ok') lastBad = rec;
@@ -188,6 +188,10 @@ async function session(o) {
         const inv = {}; try { const ACT = require(path.join(__dirname, 'erp_cli.js')).ACT; Object.keys(ACT).forEach(v => { inv[ACT[v]] = v; }); } catch (x) { /* no erp_cli: codes only */ }
         const t = Dr.nextTree(a, inv, { ascii: process.env.RED1_ASCII === '1', brk: process.env.DRAW_BREAK || '' });
         if (t) { process.stdout.write(e.status + ' · ' + e.verb + ' · ' + e.ms + ' ms\n'); t.forEach(l => process.stdout.write(l + '\n')); say('draw tree lines=' + t.length + ' legal=' + JSON.stringify(a.legal)); return; }
+      }
+      if ((draw === 'record' || draw === 'tabs') && e.status === 'ok' && ctx) {   // §29.1: a record read as a record (not JSON), its tabs with their counts; both from the answer + the kind's own dictionary rows
+        const t = draw === 'record' ? Dr.record(a, ctx, { brk: process.env.RECORD_BREAK || '' }) : Dr.tabs(a, ctx);
+        if (t) { process.stdout.write(e.status + ' · ' + e.verb + (e.held ? ' · held' : ' · ' + e.ms + ' ms') + '\n'); t.forEach(l => process.stdout.write(l + '\n')); say('draw ' + draw + ' lines=' + t.length); return; }
       }
       if (draw === 'groups' && view === 'summary' && e.status === 'ok' && Array.isArray(a.groups)) {   // §29.2 cost: the groups first (the answer's own), `ls` = its rows (the held answer)
         process.stdout.write(e.status + ' · ' + e.verb + (e.held ? ' · held' : ' · ' + e.ms + ' ms') + '\n' + (a.summary ? a.summary + '\n' : ''));
