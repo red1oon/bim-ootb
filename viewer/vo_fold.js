@@ -125,11 +125,15 @@
     var docNo = 'VO-' + building + '-' + ('00' + voSeq).slice(-3);
     orderId = id('C_Order', 'C_Order_ID');
     // signed amendment: DR draft, IsSOTrx=N (purchase-side change), references the base PO + the project.
+    // the order's own DocAction (`do CO <number>`, CLI_ERP_IVR §29.4 P6) needs what legacy's header carries: the purchase document type (find-only, never made up: the client's DocBaseType POO) and the accounting date
+    // (the order date). A vendor is NOT invented: a VO is born without one and the person names it (legacy: "No Business Partner") before it completes.
+    var dtId = _scalar(db, "SELECT C_DocType_ID FROM C_DocType WHERE DocBaseType='POO' AND AD_Client_ID=? AND IsActive='Y' ORDER BY (DocSubTypeSO IS NULL OR DocSubTypeSO='') DESC, C_DocType_ID LIMIT 1", [CL]);
     db.run("INSERT INTO C_Order (C_Order_ID,AD_Client_ID,AD_Org_ID,IsActive,Created,CreatedBy,Updated,UpdatedBy," +
       "DocumentNo,Description,POReference,IsSOTrx,DocStatus,DocAction,Processed,IsApproved,GrandTotal,TotalLines," +
-      "C_Currency_ID,DateOrdered,C_Project_ID,Ref_Order_ID,C_Order_UU) " +
-      "VALUES (?,?,?,'Y',?,?,?,?,?,?,?,'N','DR','CO','N','N',0,0,?,?,?,?,?)",
-      [orderId, CL, OG, now, U, now, U, docNo, 'BIM VO: ' + building + ' #' + voSeq, digest, curId, now, projId, refOrderId, _uu()]);
+      "C_Currency_ID,DateOrdered,DateAcct,C_DocType_ID,C_DocTypeTarget_ID,C_Project_ID,Ref_Order_ID,C_Order_UU) " +
+      "VALUES (?,?,?,'Y',?,?,?,?,?,?,?,'N','DR','CO','N','N',0,0,?,?,?,?,?,?,?,?)",
+      [orderId, CL, OG, now, U, now, U, docNo, 'BIM VO: ' + building + ' #' + voSeq, digest, curId, now, now, dtId, dtId, projId, refOrderId, _uu()]);
+    if (dtId == null) notes.push('NO_DOCTYPE no purchase document type (POO) for client ' + CL + ' (the VO cannot be completed by the order\'s DocAction until one exists)');
     created.orders = 1;
 
     // ── lines: one per (status × IFC class), signed; loaded unit price keeps qty×price == net ──
