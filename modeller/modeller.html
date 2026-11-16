@@ -218,6 +218,19 @@
 <div id="title">DAGeVu · MODELLER</div>
 <div id="stat">booting…</div>
 
+<script>/* A-6 (bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md Part A, A2-TIMING-3): the Modeller's EDGE installs the one clock + id + timer source ONCE as
+   window.CoreEdge, the same holder viewer.html installs; core files it loads (../common/room_graph.js) read it and never call Date / performance
+   themselves. uuid: crypto.randomUUID in a secure context, else an RFC 4122 v4 id from getRandomValues. Never replaces an edge already installed. */
+(function () {
+  if (window.CoreEdge) return;
+  var C = window.crypto;
+  function v4() { var b = C.getRandomValues(new Uint8Array(16)); b[6] = (b[6] & 15) | 64; b[8] = (b[8] & 63) | 128; var h = Array.prototype.map.call(b, function (x) { return (x + 256).toString(16).slice(1); }).join('');
+    return h.slice(0, 8) + '-' + h.slice(8, 12) + '-' + h.slice(12, 16) + '-' + h.slice(16, 20) + '-' + h.slice(20); }
+  window.CoreEdge = { nowMs: function () { return Date.now(); }, uuid: function () { return C.randomUUID ? C.randomUUID() : v4(); }, perfMs: function () { return performance.now(); } };
+  console.log('§CORE_EDGE set by=modeller.html nowMs=Y uuid=Y perfMs=Y');
+})();
+</script>
+
 <!-- Bonsai kernel host (classic global window.Bonsai) — author() spawns the worker lazily. -->
 <!-- §CUT-MOVE (prompts/SPEC_GEOM_CUT_MOVE.md): the ONE definition of GEOM_CUT_MOVE — zero deps, loaded first; the
      module worker imports the SAME file (self.CutMove); bonsai_ifc / gridmove / itemdrag read window.CutMove at call time. -->
