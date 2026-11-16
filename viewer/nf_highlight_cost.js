@@ -534,12 +534,13 @@
       });
       return { capped: false, elements: elements, rows: priced };
     }
+    // the bar's cost = what its own push would post (bim-compiler prompts/CLI_ERP_IVR.md §32, owner 2026-11-17 "Same as its push"): find_erp_push.js basisAmount
+    //   (the push's rows, split per the page's 4D schedule when there is one, ProjFold.lineAmounts) — exact; shown at the order currency's precision.
     function _selectionCost(set) {
-      var p = _selectionPriced(set);
+      var t0 = Date.now(), p = _erpPush && _erpPush.basisAmount ? _erpPush.basisAmount(set) : null;
       if (!p) return null;
       if (p.capped) { console.log('[RP-C] §FIND_COST_SKIP elems=' + p.elements + ' > cap=' + _SELCOST_CAP); return { capped: true, elements: p.elements, cost: 0, cur: _cur(), pack: _pack() }; }
-      var cost = p.rows.reduce(function (s, r) { return s + r.cost; }, 0);
-      return { capped: false, elements: p.elements, cost: cost, cur: _cur(), pack: _pack() };
+      return { capped: false, elements: p.elements, costExact: p.totalExact, lines: p.lines, tasks: p.tasks, cur: _cur(), pack: _pack(), ms: Date.now() - t0 };
     }
     function _updateSelCost(set, scopeLabel) {
       NF._lastSelSet = (set && set.size) ? set : null;            // remember selection for the > to ERP push
@@ -557,10 +558,16 @@
         var res = _selectionCost(set);
         if (!res) { el.textContent = ''; return; }
         if (res.capped) { el.textContent = '~ ' + res.cur; el.title = 'Selection too large for indicative cost (' + res.elements + ' elements)'; return; }
-        el.textContent = res.cur + ' ' + res.cost.toLocaleString(undefined, { maximumFractionDigits: 0 });
-        el.title = 'Indicative 5D cost · ' + res.elements + ' elements · pack ' + res.pack;
-        console.log('[RP-C] §FIND_COST scope="' + (scopeLabel || '') + '" elements=' + res.elements +
-          ' cost=' + res.cost + ' cur=' + res.cur + ' pack=' + res.pack);
+        el.title = 'Cost as the push would post it · ' + res.elements + ' elements · ' + res.lines + ' lines · ' + (res.tasks ? res.tasks + ' 4D tasks' : 'no 4D schedule') + ' · pack ' + res.pack;
+        var paint = function (prec) {
+          if (NF._lastSelSet !== set) return;   // the selection moved on while the precision was read
+          el.textContent = _erpPush.centsText(res.cur, res.costExact, prec);
+          console.log('[RP-C] §FIND_COST scope="' + (scopeLabel || '') + '" elements=' + res.elements + ' cost=' + el.textContent.replace(/^\S+\s/, '').replace(/,/g, '') +
+            ' costExact=' + res.costExact + ' basis=' + (res.tasks ? 'tasks:' + res.tasks : 'none') + ' lines=' + res.lines + ' precision=' + prec + ' cur=' + res.cur + ' pack=' + res.pack + ' ms=' + res.ms);
+        };
+        var known = _erpPush.precisionNow(res.cur);
+        if (known !== undefined) paint(known);   // the precision is read once per currency from the ERP db; until then every digit, then the rounded figure
+        else { paint(null); _erpPush.precision(res.cur).then(function (prec) { if (prec != null) paint(prec); }).catch(function () {}); }
       } catch (e) { el.textContent = ''; console.log('[RP-C] §FIND_COST_ERR ' + e.message); }
     }
 

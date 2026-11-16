@@ -47,6 +47,8 @@
 (function (global) {
   'use strict';
 
+  var _CENTS_BREAK = (typeof process !== 'undefined' && process.env && process.env.FIND_COST_BREAK) || '';   // W-FIND-CENTS falsifiers (Node only): nosplit | introws
+  function _BD() { return global.BigDecimal || (typeof module !== 'undefined' && module.exports ? require('../erp/bigdecimal.js') : null); }   // the page loads erp/bigdecimal.js as window.BigDecimal (proj_fold.js reads it the same way)
   function create(D) {
     var A = D.A;
     var elErpOpen = D.elErpOpen || null;
@@ -335,18 +337,49 @@
         return null;
       });
     }
+    // pushBasis(set): the rows the push folds (bim-compiler prompts/CLI_ERP_IVR.md §32 F1) — ONE place, used by the push and by the Find bar's cost.
+    // the programme the viewer already holds (prompts/CAPEX_DASHBOARD.md §5.5 R1-f): the active schedule in the building db, if any — the order then carries the
+    // Gantt's own dates, one task per bar, rows split per bar; none → the fold writes no dates (NO_4D_SCHEDULE). Never a computed schedule.
+    function _pushBasis(set) {
+      var PF = global.ProjFold, sched4D = null;
+      try { sched4D = (PF && PF.scheduleFromDb && A.db) ? PF.scheduleFromDb(A.db, global._4dTemplate || null, global.ScheduleAuthor) : null; } catch (e) { sched4D = null; console.log('[RP-C] §PROJ_PUSH_SCHEDULE_ERR ' + e.message); }
+      if (_CENTS_BREAK === 'nosplit') sched4D = null;   // W-FIND-CENTS falsifier: the bar ignores the schedule (must FAIL B2)
+      var priced = D.selectionPriced(set);   // the whole selection first: keeps _selectionPriced's size cap (a capped result is refused below, as before)
+      if (sched4D && priced && !priced.capped && priced.rows.length)
+        priced = PF.pricedPerTask(Array.from(set), sched4D, function (sub) { return D.selectionPriced(new Set(sub)); });
+      return { sched4D: sched4D, priced: priced };
+    }
+    // basisAmount(set): what the push would post for this selection — ProjFold.lineAmounts over the push's own rows (§32 F1); null = nothing to price; capped = too large
+    function _basisAmount(set) {
+      var PF = global.ProjFold; if (!PF || !PF.lineAmounts || !set || !set.size) return null;
+      var b = _pushBasis(set), p = b.priced; if (!p) return null;
+      if (p.capped) return { capped: true, elements: p.elements };
+      if (_CENTS_BREAK === 'introws') return { capped: false, elements: p.elements, totalExact: String(p.rows.reduce(function (s, r) { return s + r.cost; }, 0)), lines: p.rows.length, tasks: b.sched4D ? b.sched4D.tasks.length : 0 };   // falsifier: the old whole units per row (must FAIL B1, B3)
+      var LA = PF.lineAmounts(p.rows);
+      return { capped: false, elements: p.elements, totalExact: LA.total.toString(), lines: LA.lines.length, tasks: b.sched4D ? b.sched4D.tasks.length : 0 };
+    }
+    // the order currency's precision (C_Currency.StdPrecision), found as the fold finds the currency (ISO_Code, else CurSymbol: 'RM' -> MYR), read once from the ERP db the push opens; null = not known yet / not found
+    var _precOf = {};
+    function _precision(code) {
+      if (code in _precOf) return Promise.resolve(_precOf[code]);
+      return _ensureErpDb().then(function (db) {
+        var p = null; try { var r = db ? db.exec('SELECT StdPrecision FROM C_Currency WHERE ISO_Code=? OR CurSymbol=? ORDER BY (ISO_Code=?) DESC, C_Currency_ID LIMIT 1', [code, code, code]) : []; if (r.length && r[0].values.length && r[0].values[0][0] != null) p = Number(r[0].values[0][0]); } catch (e) { p = null; }
+        if (db) _precOf[code] = p; return p;
+      });
+    }
+    // the bar's text: every digit when the precision is not known; else HALF_UP at it, with thousands separators (en: 1,054,482.23)
+    function _centsText(cur, exact, prec) {
+      var s = String(exact), BD = _BD();
+      if (prec != null && BD) s = BD.of(s).setScale(prec, BD.RoundingMode.HALF_UP).toString();
+      var m = /^(-?)(\d+)(\.\d+)?$/.exec(s); if (!m) return cur + ' ' + s;
+      return cur + ' ' + m[1] + m[2].replace(/\B(?=(\d{3})+(?!\d))/g, ',') + (m[3] || '');
+    }
     function _pushToErp() {
       var set = D.getLastSelSet();
       if (!set || !set.size) { _pushReject('Select something to push to ERP'); return; }
       if (!window.ProjFold) { _pushReject('ERP push engine not loaded'); console.log('[RP-C] §PROJ_PUSH_DEFER ProjFold absent'); return; }
       var building = A.activeBuilding;
-      // the programme the viewer already holds (prompts/CAPEX_DASHBOARD.md §5.5 R1-f): the active schedule in the building db, if any — the order then carries the
-      // Gantt's own dates, one task per bar, rows split per bar; none → the fold writes no dates (NO_4D_SCHEDULE). Never a computed schedule.
-      var sched4D = null;
-      try { sched4D = (window.ProjFold.scheduleFromDb && A.db) ? window.ProjFold.scheduleFromDb(A.db, window._4dTemplate || null, window.ScheduleAuthor) : null; } catch (e) { sched4D = null; console.log('[RP-C] §PROJ_PUSH_SCHEDULE_ERR ' + e.message); }
-      var priced = D.selectionPriced(set);   // the whole selection first: keeps _selectionPriced's size cap (a capped result is refused below, as before)
-      if (sched4D && priced && !priced.capped && priced.rows.length)
-        priced = window.ProjFold.pricedPerTask(Array.from(set), sched4D, function (sub) { return D.selectionPriced(new Set(sub)); });
+      var basis = _pushBasis(set), sched4D = basis.sched4D, priced = basis.priced;
       console.log('[RP-C] §PROJ_PUSH_SCHEDULE ' + (sched4D ? 'from=' + sched4D.source + ' tasks=' + sched4D.tasks.length + ' start=' + sched4D.start + ' parts=' + (priced && priced.parts) : 'none → NO_4D_SCHEDULE'));
       // no priced rows = nothing costable (e.g. a single element, or an old-schema model whose transforms
       // carry no bbox sizes). Say so + a low cue, instead of looking like the push silently did nothing.
@@ -422,7 +455,9 @@
     return { ensureErpDb: _ensureErpDb, persistErpDb: _persistErpDb, money: _money,
              foldClassTwin: _foldClassTwin, surfaceExistingOrder: _surfaceExistingOrder,
              surfaceConstructionLink: _surfaceConstructionLink, showClassCost: _showClassCost,
-             show4DWindow: _show4DWindow, pushToErp: _pushToErp, pushLegacy: _pushLegacy };
+             show4DWindow: _show4DWindow, pushToErp: _pushToErp, pushLegacy: _pushLegacy,
+             pushBasis: _pushBasis, basisAmount: _basisAmount, precision: _precision, centsText: _centsText,
+             precisionNow: function (code) { return code in _precOf ? _precOf[code] : undefined; } };
   }
 
   var API = { create: create };
