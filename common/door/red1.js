@@ -199,7 +199,7 @@ async function session(o) {
       }
       if (draw === 'groups' && view === 'summary' && e.status === 'ok' && Array.isArray(a.groups)) {   // §29.2 cost: the groups first (the answer's own), `ls` = its rows (the held answer)
         process.stdout.write(e.status + ' · ' + e.verb + (e.held ? ' · held' : ' · ' + e.ms + ' ms') + '\n' + (a.summary ? a.summary + '\n' : ''));
-        Dr.table([a.by || 'group', 'elements', 'cost'], a.groups.map(g => ({ [a.by || 'group']: g.key, elements: g.elements, cost: g.cost }))).forEach(l => process.stdout.write(l + '\n'));
+        Dr.table([a.by || 'group', 'elements', 'cost'], a.groups.map(g => ({ [a.by || 'group']: g.key, elements: g.elements, cost: (a.precision != null && typeof g.cost === 'number' && process.env.COST_BREAK !== 'nopad') ? g.cost.toFixed(a.precision) : g.cost }))).forEach(l => process.stdout.write(l + '\n'));
         if (Array.isArray(a.rows)) process.stdout.write('ls lists the ' + a.rows.length + ' priced rows\n'); say('draw groups n=' + a.groups.length + ' total=' + a.total); return;
       }
       if (draw === 'funnel' && view === 'summary' && e.status === 'ok') {   // §22.8 R6: the clash funnel, drawn from the answer's own value
