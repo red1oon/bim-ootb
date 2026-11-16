@@ -17,6 +17,13 @@
   else root.PipoPackIn = factory();
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
+  // A-3/A-6 + the twin rule (bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md A2-PIPO): legacy stamps Created/Updated with the server's LOCAL clock
+  // (PO.java:1985/:3341 through DB_PostgreSQL TO_DATE = Timestamp.toString(), the JVM's default zone), never UTC. The instant and the id come from the edge
+  // the page installs (AdCallout.Env.edge()), the text from Env.stamp (the one local-stamp implementation). No edge = §ENV_NO_DATE + throw.
+  function _env() { var G = typeof globalThis !== 'undefined' ? globalThis : {}, E = G.AdCallout && G.AdCallout.Env;
+    if (!E) { if (typeof console !== 'undefined') console.log('§ENV_NO_DATE pipo_packin: AdCallout.Env not loaded'); throw new Error('pipo_packin: no AdCallout.Env (A-3)'); } return E; }
+  function _localNow() { var E = _env(); return E.stamp(E.edge().nowMs()).now; }
+  function _edgeUuid() { return _env().edge().uuid(); }
   var MAX_OFFICIAL_ID = 999999;
   var OFFICIAL_ET = { D: 1, EE01: 1, EE02: 1, EE04: 1, EE05: 1 };
   var EXCLUDE = { ad_client_id: 1, created: 1, createdby: 1, updated: 1, updatedby: 1 };
@@ -52,7 +59,7 @@
   // ── the walk ──
   function apply(db, xmlText, opts) {
     opts = opts || {};
-    var say = opts.say || function () {}, convert = opts.convertSql || function (s) { return s; }, now = opts.now || new Date().toISOString().slice(0, 19).replace('T', ' ');
+    var say = opts.say || function () {}, convert = opts.convertSql || function (s) { return s; }, now = opts.now || _localNow();
     var q = function (sql, p) { var st = db.prepare(sql), rows = []; try { if (p) st.bind(p); while (st.step()) rows.push(st.getAsObject()); } finally { st.free(); } return rows; };
     var doc = new DOMParser().parseFromString(xmlText, 'application/xml');
     var rootEl = doc.documentElement;
@@ -145,7 +152,7 @@
         return n;
       }
     };
-    function uuid() { return opts.uuid ? opts.uuid() : (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : null); }
+    function uuid() { return opts.uuid ? opts.uuid() : _edgeUuid(); }
     function afterNew(t, vals) {
       if (AFTER_NEW[t]) { stat.afterSave[t] = (stat.afterSave[t] || 0) + AFTER_NEW[t](vals); return; }
       stat.afterSaveNotPorted[t] = (stat.afterSaveNotPorted[t] || 0) + 1;
@@ -267,7 +274,7 @@
   // ── AD_Package_Imp (+ _Inst, _Detail): what Packages Installed shows ──
   //   o (optional, a client admin's Pack In, PackInHandler.java:171-207): { clientId, orgId, procId } -> AD_Package_Imp / _Inst in the session client and org, AD_Package_Imp_Proc_ID = the Pack In record; default 0/0, none
   function recordImport(db, bundle, version, stat, now, o) {
-    now = now || new Date().toISOString().slice(0, 19).replace('T', ' '); o = o || {};
+    now = now || _localNow(); o = o || {};
     var oc = Number(o.clientId) || 0, oo = Number(o.orgId) || 0;
     var has = function (t) { try { db.exec('SELECT 1 FROM ' + t + ' LIMIT 1'); return true; } catch (e) { return false; } };
     if (!has('ad_package_imp')) return null;
