@@ -20,6 +20,8 @@ function install(O, now) {
     hostDb: O.db, Database: O.SQL.Database,
     get ProjOrderState() { return require(path.join(ROOT, 'viewer', 'proj_order_state.js')); },
     get WriteCapture() { return require(path.join(ROOT, 'erp', 'write_capture.js')); },
+    get ProjClaim() { return require(path.join(ROOT, 'viewer', 'proj_claim.js')); },
+    clock: () => process.env.BIM_ORDER_NOW || now(),   // the door's one local clock (also the posts')
     inputs(a) {
       const t0 = Date.now(), V = path.join(ROOT, 'viewer'), SV = require(path.join(V, 'tools', 'schedule_verbs.js')), CACHE = require(path.join(ROOT, 'scripts', 'cache_4d_run.js'));
       const log = console.log; console.log = () => {};   // the pipeline modules' own § lines are re-said below, on stderr, not lost
