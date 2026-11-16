@@ -10,6 +10,7 @@
 'use strict';
 const path = require('path'), cp = require('child_process'), fs = require('fs'), os = require('os'), crypto = require('crypto');
 const { kit, ROOT, DOOR } = require('./_kit');
+// D6 falsifier: VIRTUAL_BREAK=keep (virtual columns written: must FAIL D6)
 const k = kit('W-DOOR-PLUGINS'), BREAK = process.env.PLUG_BREAK || '';
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dplug_')), oplog = path.join(dir, 'ops.jsonl');
 const env0 = Object.assign({}, process.env, { BIM_OBJECT_OPLOG: oplog, BIM_DOOR_JOURNAL: path.join(dir, 'j.jsonl'), RED1_WARM: 'off' }, BREAK === 'off' || BREAK === 'noaccess' ? { DOOR_PLUGINS: BREAK } : {});
@@ -64,6 +65,10 @@ const walk = (n, f) => { if (!n) return null; if (f(n)) return n; for (const c o
   const off = t({ DOOR_PLUGINS: 'off' }), on = t({}), coldMs = cli(['describe', '--kind', 'Business Partner'], { ERP_SNAPSHOT: 'off' }).ms;
   const pl = /§ERP plugins ms=(\d+)/.exec(warm2.err), plc = /§ERP plugins ms=(\d+)/.exec(cold.err);
   k.L('§DOOR_PLUGIN_COST one CLI call wall ms (best of 3, process start included): plugins off=' + off + ' on(warm cache)=' + on + ' delta=' + (on - off) + ' cold-no-cache=' + coldMs + ' | start inside boot: warm=' + (pl && pl[1]) + ' ms, cold full start=' + (plc && plc[1]) + ' ms');
+  // D6 (Fast Script ERP film rc2): a started plugin's VIRTUAL columns (ColumnSQL on C_ProjectPhase) are never written: mis.new on Project Phase saves and reads back
+  { const d6 = door('mis.new kind="Project Phase" C_Project_ID=101 Name=D6Phase SeqNo=10', process.env.VIRTUAL_BREAK ? { VIRTUAL_BREAK: process.env.VIRTUAL_BREAK } : {}).j, back = d6 && d6.status === 'ok' ? door('mis.list kind="Project Phase" C_Project_ID=101 Name=D6Phase columns=Name').j : null;
+    k.L('D6 new=' + (d6 && d6.status) + ' why=' + (d6 && d6.why) + ' back=' + (back && back.answer && back.answer.rows && back.answer.rows.length));
+    k.chk('D6 with the plugins started, mis.new on Project Phase saves (the BIM Document plugin\'s virtual columns are left out, as legacy POInfo does) and reads back', !!d6 && d6.status === 'ok' && !!back && back.answer.rows.length === 1, d6 && (d6.status + ' ' + (d6.why || ''))); }
   k.end();
   process.exit(k.fail ? 1 : (k.inc ? 3 : 0));
 })();

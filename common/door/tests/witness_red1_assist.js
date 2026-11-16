@@ -6,6 +6,7 @@
 //   A5 ISSUE (one-shot / scripts get a suggestion or a different answer): `red1 'cd Project; ls Valu=Hospital'` prints no hint and the same refusal
 //   A6 ISSUE (cd cannot be completed to an ERP kind, or a name with a space breaks): on a terminal `cd Busi` + Tab gives `cd "Business Partner"` and the prompt becomes red1 Business Partner>; the kinds come from ONE door line (§RED1 assist kinds=N)
 //   A7 ISSUE (a suggestion drawn while a question is open: the film's stale hint after report): typing at run's ConsolidateDocument question draws no grey text
+//   A7b ISSUE (the film rc2 saw a grey hint while 'Ready to post to ERP Project Order? y/N' waited): typing at an open offer draws no grey text
 //   A8 ISSUE (a private local building shown): with an empty history `cd Dup` suggests nothing; once `cd Duplex` is in the history it suggests Duplex
 //   Falsifiers: ASSIST_BREAK=noquiet (must FAIL A7) · RED1_ASSIST_BUILDINGS=all (must FAIL A8) · ASSIST_BREAK=autoapply (Enter applies the hint: must FAIL A3). A1 FAILs if assist_core offers a hand name. Needs `script` for A3/A4 (else INCONCLUSIVE).
 //   Run: node common/door/tests/witness_red1_assist.js > common/door/tests/logs/red1_assist.log 2>&1
@@ -89,6 +90,11 @@ const envOf = (out) => out.split('\n').filter(l => l.charAt(0) === '{').map(l =>
     k.L('A7 question seen=' + (qAt >= 0) + ' grey after it=' + grey);
     if (qAt < 0) k.incon('A7', 'the ConsolidateDocument question did not come up');
     else k.chk('A7 typing at an open question (run\'s ConsolidateDocument) draws no grey suggestion', !grey, 'grey=' + grey);
+    const o7b = await raw("(sleep 6; printf 'cd Duplex\\r'; sleep 3; printf 'cost discipline\\r'; sleep 12; printf 'b'; sleep 2; printf '\\177\\r'; sleep 3; printf 'exit\\r')", 'cd Duplex\n');
+    const qb = o7b.indexOf('Ready to post'), segb = qb >= 0 ? o7b.slice(qb, qb + 400) : '', greyb = /\x1b\[90m/.test(segb);
+    k.L('A7b offer seen=' + (qb >= 0) + ' grey after it=' + greyb);
+    if (qb < 0) k.incon('A7b', 'the post offer did not come up (the building may already be posted in this op-log)');
+    else k.chk('A7b typing at an open next-step offer (Ready to post to ERP Project Order?) draws no grey suggestion', !greyb, 'grey=' + greyb);
     const ghost = (o) => { const i = o.lastIndexOf('cd Dup'); return i >= 0 && /\x1b\[90mlex/.test(o.slice(i, i + 120)); };
     const e8 = await raw("(sleep 6; printf 'cd Dup'; sleep 2; printf '\\025exit\\r')", ''), h8 = await raw("(sleep 6; printf 'cd Dup'; sleep 2; printf '\\025exit\\r')", 'cd Duplex\n');
     k.L('A8 empty history ghost=' + ghost(e8) + ' · history with cd Duplex ghost=' + ghost(h8));

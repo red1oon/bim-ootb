@@ -332,6 +332,12 @@ function resolveOne(O, op, ids, i, cols) {
   const colsOf = (t) => cols[t] || (cols[t] = O.rows('PRAGMA table_info(' + t + ')').map(c => c.name.toLowerCase()));
   const o = JSON.parse(JSON.stringify(op, (k, v) => v instanceof Uint8Array ? undefined : v)), t = o.table, idc = o.idCol || t + '_id', phys = colsOf(t).indexOf(idc) >= 0;
   const ref = (v) => (v && typeof v === 'object' && v.__opRef !== undefined) ? ids[v.__opRef] : v;
+  // a VIRTUAL column (AD_Column.ColumnSQL, e.g. the BIM Document plugin's computed Phase/Task columns) is never written: legacy POInfo.isVirtualColumn leaves it out of
+  //   saveNew/saveUpdate. Found by the Fast Script ERP film rc2 once the door started the core plugins (CLI_ERP_IVR §29.6 P3a): mis.new on Project Phase failed "no column bim_deliverables".
+  if (process.env.VIRTUAL_BREAK !== 'keep') {
+    const vk = '__virt_' + t, virt = cols[vk] || (cols[vk] = O.rows("SELECT lower(c.columnname) AS c FROM ad_column c JOIN ad_table x ON x.ad_table_id=c.ad_table_id WHERE lower(x.tablename)=lower(?) AND c.columnsql IS NOT NULL AND c.columnsql<>''", [t]).map(r => r.c).filter(c => colsOf(t).indexOf(c) < 0));
+    if (virt.length) { if (o.fields) virt.forEach(c => { delete o.fields[c]; }); if (o.changes) virt.forEach(c => { delete o.changes[c]; }); }
+  }
   if (o.op_type === 'CRUD_CREATE') {
     Object.keys(o.fields).forEach(k => { o.fields[k] = ref(o.fields[k]); });
     if (phys) { if (o.fields[idc] == null) { const m = O.rows('SELECT max(' + idc + ') AS m FROM ' + t)[0]; o.fields[idc] = Math.max(1, Number(m && m.m || 0) + 1); } ids[i] = o.fields[idc]; o.idCol = idc; }
