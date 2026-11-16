@@ -8,7 +8,7 @@
 //      are C_ProjectTask rows; the only phase beyond the run is 'Unsequenced' (elements outside it) and it carries no dates
 //   F5 ISSUE (the offer would not follow the engine): ProjOrderState.decide says `generate` before the post and `in-po` (no action) after, read on the replayed database
 //   F6 ISSUE (a refused post writes or is silent): an unknown building, a selection matching nothing, and a missing Building are refused naming the reason, and the op-log is byte-equal after
-//   Falsifiers: POST_BREAK=retag (F2 FAIL) · shift (F4 FAIL) · droprow (F3 FAIL) · CAPTURE_BREAK=lasttable (F1 FAIL) · CAPTURE_BREAK=skipupdate (F2 changed-selection part FAIL)
+//   Falsifiers: POST_BREAK=retag (F2 FAIL) · shift (F4 FAIL) · droprow (F3 FAIL) · CAPTURE_BREAK=lasttable (F1 FAIL) · CAPTURE_BREAK=skipupdate (F2 FAIL: the project row's new tag and PlannedAmt are an UPDATE op)
 //   Run: node common/door/tests/witness_post_fold.js > common/door/tests/logs/post_fold.log 2>&1
 'use strict';
 const path = require('path'), cp = require('child_process'), fs = require('fs'), os = require('os'), crypto = require('crypto');
@@ -86,8 +86,11 @@ const changed = (a, b) => Object.keys(a).filter(t => !b[t] || a[t].rows.length !
   const same0 = !!a2 && a2.planned === 0 && nops() === n1 && Buffer.compare(before2, bytes()) === 0 && a2.object.version.state === 'same';
   const p3 = door('erp.process name="Fold from BIM" Building=' + BUILDING + ' Selection="discipline=ARC"'), a3 = p3.j && p3.j.answer;
   k.L('F2 post 3 (a changed selection, discipline=ARC): status=' + (p3.j && p3.j.status) + ' planned ops=' + (a3 && a3.planned) + ' ' + sumOps(a3) + ' version=' + JSON.stringify(a3 && a3.object && a3.object.version) + ' op-log lines now ' + nops());
-  k.chk('F2 posting the same model again adds 0 ops (op-log byte-equal, version tag `same`); a different selection is a different model and DOES write (' + (a3 && a3.planned) + ' ops, version ' + (a3 && a3.object && a3.object.version && a3.object.version.state) + ')',
-    same0 && !!a3 && a3.planned > 0 && nops() > n1, 'same-model ops=' + (a2 && a2.planned) + ' changed-selection ops=' + (a3 && a3.planned));
+  const O3 = await quiet(() => EC.boot({ oplog })), pr3 = q(O3.db, 'SELECT description, plannedamt FROM c_project WHERE c_project_id=' + pid)[0], tag3 = a3 && a3.object && a3.object.version && a3.object.version.tag;
+  const upd3 = !!pr3 && !!tag3 && String(pr3[0]).indexOf(tag3) >= 0 && Number(pr3[1]) === Number(a3.object.plannedAmt);
+  k.L('F2 after post 3 the replayed C_Project holds description=' + JSON.stringify(pr3 && pr3[0]) + ' plannedamt=' + (pr3 && pr3[1]) + ' (the new model ' + tag3 + ', plannedAmt ' + (a3 && a3.object && a3.object.plannedAmt) + ') -> ' + upd3);
+  k.chk('F2 posting the same model again adds 0 ops (op-log byte-equal, version tag `same`); a different selection is a different model and DOES write (' + (a3 && a3.planned) + ' ops, version ' + (a3 && a3.object && a3.object.version && a3.object.version.state) + '), and the replayed C_Project carries the new tag and PlannedAmt (an UPDATE op)',
+    same0 && !!a3 && a3.planned > 0 && nops() > n1 && upd3, 'same-model ops=' + (a2 && a2.planned) + ' changed-selection ops=' + (a3 && a3.planned));
   // F6
   const snap = bytes(), r1 = door('erp.process name="Fold from BIM" Building=NoSuchBuilding').j, r2 = door('erp.process name="Fold from BIM" Building=' + BUILDING + ' Selection="discipline=ZZZ"').j, r3 = door('erp.process name="Fold from BIM"').j;
   k.L('F6 unknown building: ' + (r1 && r1.status) + ' ' + (r1 && r1.why) + ' | empty selection: ' + (r2 && r2.status) + ' ' + (r2 && r2.why) + ' | no Building: ' + (r3 && r3.status) + ' ' + (r3 && r3.why));

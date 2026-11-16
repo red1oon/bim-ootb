@@ -2,7 +2,8 @@
 //   T1 ISSUE (a new record has no Created/CreatedBy/Updated/UpdatedBy and no UU) · T2 ISSUE (the stamp is made again on every start, so a record's Created and UU change)
 //   T3 ISSUE (one path was fixed, the others not: every create op of a new order, its line and its completion) · T4 ISSUE (an edit loses Created or the UU, or Updated goes backwards)
 //   T5 ISSUE (a value the caller gave is overwritten) · T6 ISSUE (the door stores the UTC day and time, so before 08:00 local a record is dated yesterday)
-//   Falsifier: STAMP_BREAK=off must FAIL T1, T3. Each claim can say VACUOUS / INCONCLUSIVE.
+//   T7 ISSUE (two clocks: object_cli stamped its model Trx in UTC while erp_cli stamped local, §20): the object model Trx's `now`, object_cli's stamp and erp_cli's stamp are ONE local clock
+//   Falsifier: STAMP_BREAK=off must FAIL T1, T3; STAMP_BREAK=utc must FAIL T7 (on a machine whose zone is not UTC; on UTC it is INCONCLUSIVE). Each claim can say VACUOUS / INCONCLUSIVE.
 'use strict';
 const fs = require('fs'), path = require('path'), cp = require('child_process');
 const { kit, tmp, ROOT, DOOR } = require('./_kit');
@@ -42,5 +43,15 @@ const k = kit('W-DOOR-STAMP');
   const n5 = ops().length, aw = await door('mis.add_window file=AST_Asset.csv'), dict = ops().slice(n5).filter(x => x.op_type === 'CRUD_CREATE' && x.table === 'ad_column'), V5 = /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-/;
   if (!ok(aw) || !dict.length) k.incon('T5', 'the window could not be staged: ' + aw.why);
   else k.chk('T5 a value the caller gave is kept: the ' + dict.length + ' staged AD_Column rows keep their version-5 UUs and gain created', dict.every(x => V5.test(String(x.fields.ad_column_uu)) && TS.test(String(x.fields.created))), 'v5=' + dict.filter(x => V5.test(String(x.fields.ad_column_uu))).length + '/' + dict.length + ' created=' + dict.filter(x => TS.test(String(x.fields.created))).length + '/' + dict.length);
+  // T7 one clock: object_cli's Trx now / stamp vs an independent local reading (getHours etc., not crud_core), and erp_cli delegating to it
+  {
+    const p2 = (x) => (x < 10 ? '0' : '') + x, loc = (d) => d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate()) + ' ' + p2(d.getHours()) + ':' + p2(d.getMinutes()) + ':' + p2(d.getSeconds());
+    const OC = require(path.join(ROOT, 'common/door/object_cli.js')), b = new Date(), O7 = await OC.boot({ building: 'Duplex', oplog: path.join(dir, 'ops7.jsonl') }), now7 = O7.trx().env.now, st = OC.stamp(), a2 = new Date();
+    const within = (v) => v >= loc(new Date(b.getTime() - 1000)) && v <= loc(new Date(a2.getTime() + 1000));
+    const ecSrc = fs.readFileSync(path.join(ROOT, 'common/door/erp_cli.js'), 'utf8'), delegates = /const stamp = \(\) => OC\.stamp\(\), today = \(\) => OC\.today\(\)/.test(ecSrc) && !/getTimezoneOffset/.test(ecSrc);
+    k.L('T7 object trx now=' + now7 + ' stamp=' + st + ' local window ' + loc(b) + '..' + loc(a2) + ' tzOffsetMin=' + b.getTimezoneOffset() + ' erp_cli delegates=' + delegates);
+    if (b.getTimezoneOffset() === 0) k.incon('T7', 'this machine is on UTC: local and UTC are the same clock here');
+    else k.chk('T7 one local clock: the object model Trx now (' + now7 + ') and object_cli stamp lie in the local window, and erp_cli\'s stamp/today are object_cli\'s (no second helper)', within(now7) && within(st) && delegates, 'now=' + now7 + ' stamp=' + st + ' delegates=' + delegates);
+  }
   return k.end();
 })().catch(e => { console.log('§W-DOOR-STAMP ERROR ' + e.stack); process.exit(2); });

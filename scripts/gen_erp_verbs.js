@@ -73,10 +73,8 @@ async function openDb(file) {
   return new SQL.Database(new Uint8Array(fs.readFileSync(file)));
 }
 // ── built-in plugins: the host's own staging (erp/plugin_registry.js) over an in-memory writable wrapper ──
-function builtinPlugins() {
-  const src = fs.readFileSync(path.join(ROOT, 'erp/plugin_overlay.js'), 'utf8');
-  const m = /\bvar\s+BUILTINS\s*=\s*\[([^\]]*)\]/.exec(src);
-  return m ? [...m[1].matchAll(/'([^']+)'/g)].map(x => x[1]) : [];
+function builtinPlugins() {   // the ONE list both hosts read (erp/plugins/builtins.json; the page: plugin_overlay.js _builtinList, the door: common/door/door_plugins.js)
+  try { return JSON.parse(fs.readFileSync(path.join(ROOT, 'erp/plugins/builtins.json'), 'utf8')).builtin || []; } catch (e) { return []; }
 }
 async function stagePlugins(db) {
   const REG = require(path.join(ROOT, 'erp/plugin_registry.js'));
@@ -325,7 +323,7 @@ async function main() {
   L.push(`Basis for X: ${xBasis}.`, '');
   L.push('**What "handler" means here:** a function registered under (table, action) in the kernel handler registry. The generic Kanban handler (`erp/kanban_host.js:73`) returns one `SET_STATUS` op and posts nothing, so a doc pair marked implemented by it is a status change, not the legacy Complete with its accounting; the twin check for that is §21.5 A5, not this file. Tables whose name ends `_v` are dictionary views that carry a DocAction column; they are counted because the dictionary says so.', '');
   L.push('## Built-in plugins counted (source column below)', '');
-  L.push('The dictionary rows each BUILT-IN plugin (`erp/plugin_overlay.js` BUILTINS) stages at activation are staged into the in-memory dictionary by the host\'s own registry (`stageManifestDictionary` → `ctx.dict.insert`) before counting. ColumnSQL (virtual) columns are properties of a record, not actions: not counted. A plugin\'s DocAction class and process class are registered through the plugin context (`registerDocAction`, `defineProcess`), not `K.register` / `registerHandler(\'…\')`; rule (b) also reads those two calls in the staged plugin files and every `defineProcess(<class>, …)` in `erp/processes/*.js` (the verbatim SvrProcess ports; they register no REGISTRY handler, so before 2026-11-16 they were not counted) (a DocAction class implements an action when it has the action\'s method; a process class by its class name), evidence file:line. A plugin document table with a DocAction family counts the family\'s OFFERED actions only (union of `FAMILY.allow`; owner ruling 2026-11-09: RE is set by a newer revision, never offered), not the 13 of reference 135; a seed table counts all 13.', '');
+  L.push('The dictionary rows each BUILT-IN plugin (`erp/plugins/builtins.json` builtin) stages at activation are staged into the in-memory dictionary by the host\'s own registry (`stageManifestDictionary` → `ctx.dict.insert`) before counting. ColumnSQL (virtual) columns are properties of a record, not actions: not counted. A plugin\'s DocAction class and process class are registered through the plugin context (`registerDocAction`, `defineProcess`), not `K.register` / `registerHandler(\'…\')`; rule (b) also reads those two calls in the staged plugin files and every `defineProcess(<class>, …)` in `erp/processes/*.js` (the verbatim SvrProcess ports; they register no REGISTRY handler, so before 2026-11-16 they were not counted) (a DocAction class implements an action when it has the action\'s method; a process class by its class name), evidence file:line. A plugin document table with a DocAction family counts the family\'s OFFERED actions only (union of `FAMILY.allow`; owner ruling 2026-11-09: RE is set by a newer revision, never offered), not the 13 of reference 135; a seed table counts all 13.', '');
   L.push('| plugin | file | rows staged | new processes | new document tables | doc pairs | family offers | ColumnSQL properties (not counted) |', '|---|---|---:|---|---|---:|---|---:|');
   for (const pl of pluginRows) L.push(`| ${pl.name} | ${md(pl.file)} | ${pl.staged} of ${pl.manifestRows} | ${pl.procs.map(md).join(' ') || '—'} | ${pl.docTables.map(md).join(' ') || '—'} | ${pl.pairs} | ${(pl.family || []).join(' ') || '—'} | ${pl.virtualCols} |`);
   if (!pluginRows.length) L.push('| (none staged) | | | | | | | |');
@@ -368,7 +366,7 @@ async function main() {
   for (const l of pluginLines) console.log(l);
   for (const r of xRows) console.log(`§ERP_VERBS_X verb=${r.verb} table=${r.table} action=${r.action} counted=${r.counted ? 'Y' : 'N'} registerDocAction=${r.site || 'none'}${r.why ? ' why=' + r.why : ''}`);
   console.log(`§ERP_VERBS_X_BASIS ${xBasis}`);
-  if (!NO_PLUGINS && !seedEmpty && !plugins.length) console.log('§ERP_VERBS_PLUGINS INCONCLUSIVE no built-in plugin found in erp/plugin_overlay.js BUILTINS');
+  if (!NO_PLUGINS && !seedEmpty && !plugins.length) console.log('§ERP_VERBS_PLUGINS INCONCLUSIVE no built-in plugin found in erp/plugins/builtins.json');
   for (const s of unresolved) console.log(`§ERP_VERBS_UNRESOLVED ${s.file}:${s.line} register site not classified`);
   if (empty) process.exit(2);
   if (unresolved.length) process.exit(1);

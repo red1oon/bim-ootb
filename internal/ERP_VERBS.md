@@ -7,12 +7,12 @@ The ERP's DocActions and processes from the application dictionary (`erp/ad_seed
 
 | | |
 |---|---:|
-| **N** (N_doc + N_proc) | 1157 |
+| **N** (N_doc + N_proc) | 1158 |
 | N_doc = 54 document tables × 13 DocActions + 1 plugin table(s) × their family's offered actions | 704 |
-| N_proc = active AD_Process rows (25 inactive, not in N) | 453 |
+| N_proc = active AD_Process rows (25 inactive, not in N) | 454 |
 | (b) doc pairs with a registered handler | 67 |
-| (b) processes whose resolved class name has a handler | 97 |
-| of which from built-in plugins (doc pairs / processes) | 2 / 2 |
+| (b) processes whose resolved class name has a handler | 98 |
+| of which from built-in plugins (doc pairs / processes) | 2 / 3 |
 | NOT IMPLEMENTED (doc / process) | 637 / 356 |
 | handlers without a dictionary row (doc / process) | 1 / 0 |
 | **(c) X offered to actors** | 4 |
@@ -23,13 +23,13 @@ Basis for X: pairs of erp/actor_verbs.json that are dictionary pairs AND have a 
 
 ## Built-in plugins counted (source column below)
 
-The dictionary rows each BUILT-IN plugin (`erp/plugin_overlay.js` BUILTINS) stages at activation are staged into the in-memory dictionary by the host's own registry (`stageManifestDictionary` → `ctx.dict.insert`) before counting. ColumnSQL (virtual) columns are properties of a record, not actions: not counted. A plugin's DocAction class and process class are registered through the plugin context (`registerDocAction`, `defineProcess`), not `K.register` / `registerHandler('…')`; rule (b) also reads those two calls in the staged plugin files and every `defineProcess(<class>, …)` in `erp/processes/*.js` (the verbatim SvrProcess ports; they register no REGISTRY handler, so before 2026-11-16 they were not counted) (a DocAction class implements an action when it has the action's method; a process class by its class name), evidence file:line. A plugin document table with a DocAction family counts the family's OFFERED actions only (union of `FAMILY.allow`; owner ruling 2026-11-09: RE is set by a newer revision, never offered), not the 13 of reference 135; a seed table counts all 13.
+The dictionary rows each BUILT-IN plugin (`erp/plugins/builtins.json` builtin) stages at activation are staged into the in-memory dictionary by the host's own registry (`stageManifestDictionary` → `ctx.dict.insert`) before counting. ColumnSQL (virtual) columns are properties of a record, not actions: not counted. A plugin's DocAction class and process class are registered through the plugin context (`registerDocAction`, `defineProcess`), not `K.register` / `registerHandler('…')`; rule (b) also reads those two calls in the staged plugin files and every `defineProcess(<class>, …)` in `erp/processes/*.js` (the verbatim SvrProcess ports; they register no REGISTRY handler, so before 2026-11-16 they were not counted) (a DocAction class implements an action when it has the action's method; a process class by its class name), evidence file:line. A plugin document table with a DocAction family counts the family's OFFERED actions only (union of `FAMILY.allow`; owner ruling 2026-11-09: RE is set by a newer revision, never offered), not the 13 of reference 135; a seed table counts all 13.
 
 | plugin | file | rows staged | new processes | new document tables | doc pairs | family offers | ColumnSQL properties (not counted) |
 |---|---|---:|---|---|---:|---|---:|
 | ninja_excel | `erp/plugins/ninja_excel.mjs` | 0 of 0 | — | — | 0 | — | 0 |
 | ninja_create | `erp/plugins/ninja_create.mjs` | 0 of 0 | — | — | 0 | — | 0 |
-| bim_document | `erp/plugins/bim_document.mjs` | 145 of 115 | `BIM_Document_Open` `BIM_Document_Register_Export` | `BIM_Document` | 2 | CO PR | 7 |
+| bim_document | `erp/plugins/bim_document.mjs` | 158 of 118 | `BIM_Document_Open` `BIM_Document_Register_Export` `BIM_Document_Fold_From_BIM` | `BIM_Document` | 2 | CO PR | 7 |
 
 ## Handler registration sites (`K.register`, outside tests/)
 
@@ -70,7 +70,7 @@ The dictionary rows each BUILT-IN plugin (`erp/plugin_overlay.js` BUILTINS) stag
 | `A_Asset_Reval` | seed | **NOT IMPLEMENTED** | — |
 | `A_Asset_Transfer` | seed | **NOT IMPLEMENTED** | — |
 | `A_Depreciation_Entry` | seed | **NOT IMPLEMENTED** | — |
-| `BIM_Document` | plugin bim_document | CO PR | `erp/plugins/bim_document.mjs:309 (plugin bim_document)` |
+| `BIM_Document` | plugin bim_document | CO PR | `erp/plugins/bim_document.mjs:318 (plugin bim_document)` |
 | `C_AllocationHdr` | seed | **NOT IMPLEMENTED** | — |
 | `C_BankStatement` | seed | **NOT IMPLEMENTED** | — |
 | `C_BankTransfer` | seed | **NOT IMPLEMENTED** | — |
@@ -128,7 +128,7 @@ The dictionary rows each BUILT-IN plugin (`erp/plugin_overlay.js` BUILTINS) stag
 
 Class rules (first match wins): **sends** ← class/name says it mails or notifies (`mail|notice|\brequest\b|mailing|\bsms\b|broadcast`); **posts** ← class/name says it posts, allocates, costs or generates documents (`fact_?acct|\bposting\b|\bpost\b|doc\.?post|invoicegenerate|allocat|bankstatementpayment|paymentgenerate|payselect|paymentprint|costing|inventorycount|imputation|storageclean|periodclose|openclose|reval`); IsReport=Y → **read**; else **writes**, basis "no rule matched, assumed writes".
 
-Classes: read 111, writes 312, posts 21, sends 9. Implemented 97 of 453.
+Classes: read 111, writes 313, posts 21, sends 9. Implemented 98 of 454.
 
 | id | source | value | name | class name → resolved | handler | class | basis |
 |---:|---|---|---|---|---|---|---|
@@ -583,8 +583,9 @@ Classes: read 111, writes 312, posts 21, sends 9. Implemented 97 of 453.
 | 200157 | seed | AD_Table CreatePartition | Create/Update Table Partition | `org.idempiere.tablepartition.process.CreatePartition` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 200158 | seed | DetachOrReAttachPartition | Detach/re-attach Table Partition | `org.idempiere.tablepartition.process.ChangePartitionStatus` | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
 | 200162 | seed | CustomizeGridViewWindowCustomization | Customize Grid View | — | **NOT IMPLEMENTED** | writes | no rule matched, assumed writes |
-| 9541001 | plugin bim_document | BIM_Document_Open | Open in Modeller / Viewer | `org.kernel.bim.process.BIMDocumentOpen` | `erp/plugins/bim_document.mjs:313 (plugin bim_document)` | writes | declared by the process definition (defineProcess opts.harm) |
-| 9541002 | plugin bim_document | BIM_Document_Register_Export | Export Register (JSON) | `org.kernel.bim.process.BIMDocumentRegisterExport` | `erp/plugins/bim_document.mjs:328 (plugin bim_document)` | read | declared by the process definition (defineProcess opts.harm) |
+| 9541001 | plugin bim_document | BIM_Document_Open | Open in Modeller / Viewer | `org.kernel.bim.process.BIMDocumentOpen` | `erp/plugins/bim_document.mjs:322 (plugin bim_document)` | writes | declared by the process definition (defineProcess opts.harm) |
+| 9541002 | plugin bim_document | BIM_Document_Register_Export | Export Register (JSON) | `org.kernel.bim.process.BIMDocumentRegisterExport` | `erp/plugins/bim_document.mjs:337 (plugin bim_document)` | read | declared by the process definition (defineProcess opts.harm) |
+| 9541003 | plugin bim_document | BIM_Document_Fold_From_BIM | Fold from BIM | `org.kernel.bim.process.BIMDocumentFoldFromBIM` | `erp/plugins/bim_document.mjs:358 (plugin bim_document)` | writes | declared by the process definition (defineProcess opts.harm) |
 
 ## DYNAMIC process registrations (NOT COUNTED)
 
