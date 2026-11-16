@@ -2832,6 +2832,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   //   window.AdFind (ad_find.js), judged against the real MQuery in the pilot JVM. Named gaps: child-tab/attribute rows, default + share.
   var _findByTab = {}, _findBase = {};
   function _findKey() { return _activeWin + ':' + _activeTabIdx; }
+  function _msgL(v, en) { var t = (window.ErpI18n && ErpI18n.lang !== ErpI18n.BASE && window.__HS_BREAK !== 'nomsgtrl') ? ErpI18n.msg(v) : null;   // HS_BREAK=nomsgtrl: the pack ignored (W-HELP-SHOWCASE S2c falsifier)
+    return t ? String(t).trim() : _findMsg(v, en); }   // an AD_Message in the screen language (AD_Message_Trl, the pack), else the base row
   function _findMsg(v, en) { var r = _sqlRows("SELECT msgtext FROM ad_message WHERE value='" + String(v).replace(/'/g, "''") + "'")[0]; return r && r.msgtext ? String(r.msgtext).trim() : en; }
   function _findUdf() { try { if (window.__idmpDb && window.AdFind && window.ErpExportSafe && !window.ErpExportSafe.has(window.__idmpDb, 'pgcollate')) { window.ErpExportSafe.register(window.__idmpDb, 'pgcollate', function (d) { d.create_function('pgcollate', AdFind.collate); }); } } catch (e) { console.log('§UDP3-FIND udf failed ' + e); } }
   function _findFieldMeta(tab) {   // the tab's fields in GridTab order: AD_Field_v ORDER BY IsDisplayed DESC, SeqNo (GridFieldVO.getSQL :68-75) then a stable sort by SeqNo (GridTabVO.createFields :463)
@@ -3089,9 +3091,11 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var pref = function (attr) { try { var r = _sqlRows("SELECT value FROM ad_preference WHERE attribute='" + attr + "' AND isactive='Y' AND ad_user_id=" + Number(_session.user.id) + " AND ad_window_id IS NULL")[0]; return r ? String(r.value) : null; } catch (e) { return null; } };
     var collapsed = pref('HelpCollapsed') === 'Y', tech = pref('IsShowTechnicalInfOnHelp') === 'Y';
     aside.style.display = collapsed ? 'none' : '';
-    $('idmp-help-title').textContent = _findMsg('ToolTip', 'Tool Tip');
+    // §12: the panel's own words are AD_Message rows, in the screen language when its pack has them (legacy Msg.getMsg(ctx, …) reads AD_Message_Trl); English otherwise, as legacy
+    var helpWords = function () { $('idmp-help-title').textContent = _msgL('ToolTip', 'Tool Tip'); FieldHelp.bindPanel($('idmp-help-tooltip'), document.body, { tech: tech, place: _msgL('PlaceCursorIntoField', 'Place your cursor into a field on the screen') }); };
+    helpWords();
+    if (!aside.__fhLang && window.ErpI18n) { aside.__fhLang = true; ErpI18n.onChange(function () { helpWords(); console.log('§FIELD_HELP panel words lang=' + ErpI18n.lang + ' place=' + JSON.stringify(_msgL('PlaceCursorIntoField', 'Place your cursor into a field on the screen'))); }); }
     if (!aside.__fhTitle) { aside.__fhTitle = true; $('idmp-help-title').addEventListener('click', function () { aside.classList.toggle('closed'); }); }   // Panel.setCollapsible(true)
-    FieldHelp.bindPanel($('idmp-help-tooltip'), document.body, { tech: tech, place: _findMsg('PlaceCursorIntoField', 'Place your cursor into a field on the screen') });
     console.log('§FIELD_HELP panel bound collapsed=' + collapsed + ' tech=' + tech);
     _howtoBind();
   }
@@ -3101,7 +3105,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   function escH(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
   function _howtoBind() {
     var title = $('idmp-howto-title'), qbox = $('idmp-howto-q'); if (!title || !window.HelpSearch || !window.ErpI18n || !ErpI18n.loadHelp) return;
-    title.textContent = _findMsg('HowTo', 'How To');
+    title.textContent = _msgL('HowTo', 'How To');
     qbox.placeholder = _T('help.ask', 'Ask: How do I close a Sales Order?');
     if (!title.__hb) {
       title.__hb = true;
@@ -3114,7 +3118,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         if (on) openWindow(wid); else status('Not on this role\'s menu (window ' + wid + ')');
       });
     }
-    if (!_howtoLangBound) { _howtoLangBound = true; ErpI18n.onChange(function () { qbox.placeholder = _T('help.ask', 'Ask: How do I close a Sales Order?'); _howtoBuild(); }); }   // §12: the index follows the screen language
+    if (!_howtoLangBound) { _howtoLangBound = true; ErpI18n.onChange(function () { title.textContent = _msgL('HowTo', 'How To'); qbox.placeholder = _T('help.ask', 'Ask: How do I close a Sales Order?'); _howtoBuild(); }); }   // §12: the index follows the screen language
     _howtoBuild();
   }
   // §12 H2b: ONE index builder (HelpSearch.indexFrom, the same the witness and the CLI's erp.ask call): the screen language's names + the English ones, its how-to rows when the pack has them
