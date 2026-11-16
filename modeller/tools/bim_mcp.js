@@ -29,12 +29,12 @@ const INSTRUCTIONS = [
 // ── The verb list is common/door/verbs.json (D1): tools/list is generated from it, and every call goes through the door (common/door/door.js, D4),
 // the same path a person's terminal takes. Names, descriptions and schemas are the published ones, byte for byte (W-VOCAB-FRESH). Spec §0.7.
 let DOOR = null, TOOLS = [];
-const LIVE_DL = 'https://red1oon.github.io/bim-ootb/', DL = ['modeller/tools/edit_cli.js', 'common/door/door.js', 'common/door/verbs.json'];
+const LIVE_DL = 'https://red1oon.github.io/bim-ootb/', DL = ['modeller/tools/edit_cli.js', 'common/door/door.js', 'common/door/verbs.json', 'common/door/msg_core.js', 'common/door/vocab/messages.json'];   // msg_core.js + messages.json: the door's answers are in the message catalog (bim-compiler prompts/VOCAB_MESSAGE_CATALOG.md §6)
 const failStart = (why, files) => { say('FAIL ' + why + '. Put these files in one folder with bim_mcp.js (or use a bim-ootb checkout):\n' + files.map(f => '  curl -O ' + LIVE_DL + f).join('\n')); process.exit(1); };
 try {
   const beside = path.join(__dirname, 'door.js'), doorFile = fs.existsSync(beside) ? beside : path.join(__dirname, '..', '..', 'common', 'door', 'door.js');   // beside first, then the repo layout
   if (!fs.existsSync(doorFile)) failStart('door.js is not beside bim_mcp.js', DL);
-  const D = require(doorFile), miss = D.missingFiles(['verbs.json', 'edit_cli.js']);
+  const D = require(doorFile), miss = D.missingFiles(['verbs.json', 'edit_cli.js', 'msg_core.js', 'messages.json']);
   if (miss.length) failStart('missing beside bim_mcp.js: ' + miss.join(', '), DL.filter(f => miss.indexOf(path.basename(f)) >= 0));
   DOOR = D.createDoor(); TOOLS = DOOR.mcpTools();
 } catch (e) { failStart('the door is not available (' + (e && e.message || e) + ')', DL); }

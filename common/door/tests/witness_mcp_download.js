@@ -6,7 +6,7 @@
  *   node witness_mcp_download.js            the LIVE site (green only after GitHub Pages serves the fix)
  *   node witness_mcp_download.js --local    a static copy of THIS tree served on localhost (the same layout Pages serves)
  *   D1 initialize + tools/list from the flat folder give the 4 published tools   D2 one bim_lines call answers (live Modeller, ok, grid lines)
- *   D3 with ONE file removed (each of door.js, verbs.json, edit_cli.js) the connector fails (exit 1) and names that file with its curl line
+ *   D3 with ONE file removed (each of door.js, verbs.json, edit_cli.js, msg_core.js, messages.json) the connector fails (exit 1) and names that file with its curl line
  * Falsifier: --drop bim_mcp.js-less list is not needed; D3 is the falsifier (a connector that starts without its file fails D3).
  */
 'use strict';
@@ -14,7 +14,7 @@ require('dns').setDefaultResultOrder('ipv4first');   // a machine with no IPv6 r
 const fs = require('fs'), os = require('os'), path = require('path'), http = require('http'), https = require('https'), { spawn } = require('child_process');
 const { kit, ROOT } = require('./_kit');
 const k = kit('W-MCP-DOWNLOAD'), LOCAL = process.argv.indexOf('--local') >= 0;
-const LISTED = ['modeller/tools/bim_mcp.js', 'modeller/tools/edit_cli.js', 'common/door/door.js', 'common/door/verbs.json'];   // the guide's download lines
+const LISTED = ['modeller/tools/bim_mcp.js', 'modeller/tools/edit_cli.js', 'common/door/door.js', 'common/door/verbs.json', 'common/door/msg_core.js', 'common/door/vocab/messages.json'];   // the guide's download lines (msg_core.js + messages.json since VOCAB_MESSAGE_CATALOG.md §6 P2b: the door's answers are in the catalog)
 const get = (base, rel) => new Promise((res, rej) => (base.startsWith('https') ? https : http).get(base + rel + '?nc=' + Date.now(), (r) => { if (r.statusCode !== 200) { rej(new Error('HTTP ' + r.statusCode + ' ' + base + rel)); r.resume(); return; } const c = []; r.on('data', d => c.push(d)); r.on('end', () => res(Buffer.concat(c))); }).on('error', rej));
 function folder(files) { const d = fs.mkdtempSync(path.join(os.tmpdir(), 'mcp_dl_')); files.forEach(([rel, buf]) => fs.writeFileSync(path.join(d, path.basename(rel)), buf)); return d; }
 function runConn(dir, calls) {
@@ -38,7 +38,7 @@ function runConn(dir, calls) {
   k.chk('D1 flat download: initialize + tools/list give the 4 published tools', !!r.got[1] && names === 'bim_lines,bim_try_shift,viewer_counts,viewer_clashes', 'tools=' + names + ' exit=' + r.code + (names ? '' : ' stderr=' + r.err.split('\n').slice(0, 2).join(' | ')));
   let lj = null; try { lj = JSON.parse(r.got[3].result.content[0].text); } catch (e) {}
   k.chk('D2 flat download: bim_lines answers from the live Modeller (ok, grid lines)', !!lj && lj.ok === true && lj.model && lj.model.lines.length > 5 && r.got[3].result.isError === false, 'lines=' + (lj && lj.model && lj.model.lines.length) + (lj ? '' : ' result=' + JSON.stringify(r.got[3] && r.got[3].result).slice(0, 200) + ' err=' + r.err.split('\n').slice(-3).join(' | ')));
-  for (const rel of ['common/door/door.js', 'common/door/verbs.json', 'modeller/tools/edit_cli.js']) {
+  for (const rel of ['common/door/door.js', 'common/door/verbs.json', 'modeller/tools/edit_cli.js', 'common/door/msg_core.js', 'common/door/vocab/messages.json']) {
     const d = folder(files.filter(f => f[0] !== rel)), x = await runConn(d, [{ id: 1, method: 'initialize', params: {} }]), b = path.basename(rel);
     k.chk('D3 without ' + b + ': exit 1, names it and prints its curl line', x.code === 1 && x.err.indexOf('curl -O https://red1oon.github.io/bim-ootb/' + rel) >= 0, 'exit=' + x.code + ' ' + x.err.split('\n')[0].slice(0, 100));
   }
