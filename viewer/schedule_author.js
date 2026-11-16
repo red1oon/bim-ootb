@@ -3107,12 +3107,18 @@
   // user confirmed 2026-08-05: re-running this OVERWRITES the prior baseline, it does not version it.
   // Snapshots EVERY task row for the schedule (including summaries) so project-level rollup variance
   // is available too, not just leaf tasks.
-  function setBaseline(db, scheduleId) {
+  // A-3/A-6 (bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md A2-VALUE-1): the ONE clock is the edge the shell installs (CoreEdge). globalThis
+  // first: in Node this file's wrapper passes module.exports as `global`. No edge = null, and the caller says so (never a wall clock).
+  function _edgeNowMs() { var G = (typeof globalThis !== 'undefined') ? globalThis : global, e = G.CoreEdge; return e && typeof e.nowMs === 'function' ? e.nowMs() : null; }
+  function setBaseline(db, scheduleId, opts) {
+    opts = opts || {};
+    var _ms = opts.setAt ? null : _edgeNowMs();
+    if (!opts.setAt && _ms == null) { console.log('§ENV_NO_DATE setBaseline: no edge installed and no opts.setAt; nothing written'); return { ok: false, reason: 'no_clock' }; }
     db.run('CREATE TABLE IF NOT EXISTS task_baseline (task_id TEXT PRIMARY KEY, schedule_id TEXT, ' +
       'baseline_start TEXT, baseline_finish TEXT, baseline_duration TEXT, set_at TEXT)');
     var tr = db.exec('SELECT task_id, schedule_start, schedule_finish, schedule_duration FROM tasks WHERE schedule_id=?', [scheduleId]);
     if (!tr.length || !tr[0].values.length) { console.log('§GANTT_SET_BASELINE_FAIL reason=no_tasks'); return { ok: false, reason: 'no_tasks' }; }
-    var setAt = new Date().toISOString();
+    var setAt = opts.setAt || new Date(_ms).toISOString();   // the same UTC ISO text as before, from the edge's instant
     db.run('BEGIN');
     db.run('DELETE FROM task_baseline WHERE schedule_id=?', [scheduleId]);
     var st = db.prepare('INSERT INTO task_baseline VALUES (?,?,?,?,?,?)');
@@ -3445,7 +3451,9 @@
             var _hasTs = idb.objectStoreNames.contains('timestamps');
             var tx = idb.transaction(_hasTs ? ['dbs', 'timestamps'] : ['dbs'], 'readwrite');
             tx.objectStore('dbs').put(buf, key);
-            if (_hasTs) tx.objectStore('timestamps').put(Date.now(), key);
+            var _stamp = _hasTs ? _edgeNowMs() : null;   // A2-VALUE-1: the edge's clock; no edge = no new stamp (the blob is still saved)
+            if (_hasTs && _stamp == null) console.log('§ENV_NO_DATE persistDb timestamps: no edge installed, key=' + key + ' saved without a new recency stamp');
+            if (_hasTs && _stamp != null) tx.objectStore('timestamps').put(_stamp, key);
             tx.oncomplete = function () {
               console.log('§SCHED_PERSIST url=' + url + ' key=' + key + ' size=' + (buf.byteLength / 1024).toFixed(0) + 'KB');
               // SEAM-W3A F4: flag the slot as holding user edits so the LRU never evicts it (the ONE helper lives in scene.js).
