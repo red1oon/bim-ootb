@@ -9,11 +9,11 @@ nothing. This index is the missing "go to definition".
 
 | | |
 |---|---:|
-| files scanned | 3251 |
-| distinct fields | 1856 |
-| written only as `A.x`/`app.x` (invisible to an `APP.` grep) | 1595 |
-| read but never written (phantom) | 171 |
-| — of those, read from production code | 107 |
+| files scanned | 3374 |
+| distinct fields | 1862 |
+| written only as `A.x`/`app.x` (invisible to an `APP.` grep) | 1596 |
+| read but never written (phantom) | 176 |
+| — of those, read from production code | 110 |
 | — of those, with an untied write: NOT proven dead (R11) | 11 |
 
 ## Phantom fields — read, never written
@@ -138,6 +138,7 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP.fault` | `viewer/tests/witness_light_field_db.js:98` | no |
 | `APP.faultGi` | `viewer/tests/witness_light_field_db.js:103` | no |
 | `APP.fieldSweepMs` | `viewer/tests/witness_light_field_db.js:96` | no |
+| `APP.forEach` | `capex/tests/witness_uat_chain.js:135` | no |
 | `APP.freezePerfBuild` | `viewer/maxq_start.js:906` | **yes** |
 | `APP.freezePerfCompositeOntoCanvas` | `viewer/lp_hud.js:829` | **yes** |
 | `APP.giBlown` | `viewer/tests/witness_light_field_db.js:104` | no |
@@ -147,6 +148,8 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP.kernelOps` | `viewer/tm_lifecycle_api.js:713` | **yes** |
 | `APP.load` | `erp/tests/witness_bimdoc_live.js:311` | no |
 | `APP.lookup` | `erp/tests/witness_bimdoc_live.js:309` | no |
+| `APP.lvl` | `erp/ninja_stage.js:224` | **yes** |
+| `APP.master` | `erp/ninja_stage.js:225` | **yes** |
 | `APP.materializeZones` | `optics_hud.js:34` | **yes** |
 | `APP.n` | `modeller/dxf2analytical.js:28` | **yes** |
 | `APP.onSectionOff` | `viewer/tools.js:519` | **yes** |
@@ -154,12 +157,13 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP.openTab` | `erp/crud_overlay.js:491` | **yes** |
 | `APP.order` | `erp/tests/gen_idempiere_identity.js:58` | no |
 | `APP.pageErrors` | `viewer/tests/witness_colour_truth_gpu.js:151` | no |
-| `APP.paramsToParas` | `erp/idempiere.html:4719` | **yes** |
-| `APP.parasToParams` | `erp/idempiere.html:4738` | **yes** |
-| `APP.pinstanceList` | `erp/idempiere.html:4703` | **yes** |
+| `APP.paramsToParas` | `erp/idempiere.html:4851` | **yes** |
+| `APP.parasToParams` | `erp/idempiere.html:4870` | **yes** |
+| `APP.pinstanceList` | `erp/idempiere.html:4835` | **yes** |
 | `APP.poses` | `viewer/tests/witness_colour_truth_gpu.js:141` | no |
 | `APP.probeGradeHdr` | `scripts/probe_grade_hdr.js:20` | no |
 | `APP.probes` | `capex/tests/witness_td_pack_dash.js:142` | no |
+| `APP.requestRender` | `capex/tests/witness_uat_chain.js:100` | no |
 | `APP.resident` | `viewer/tests/witness_light_field_db.js:106` | no |
 | `APP.rowBytes` | `viewer/tests/witness_light_field_db.js:94` | no |
 | `APP.rowFileDelta` | `viewer/tests/witness_light_field_db.js:94` | no |
@@ -189,6 +193,7 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP.vacuous` | `viewer/tests/witness_speed_zones.js:370` | no |
 | `APP.viewer` | `scripts/probe_drag_scale.js:39` | no |
 | `APP.walkSpeed` | `tests/specs/03-walk-sitecam-cycle.spec.js:227` | no |
+| `APP.win` | `erp/ninja_stage.js:222` | **yes** |
 | `APP.x0` | `viewer/chainage_grid.js:39` | **yes** |
 | `APP.x1` | `viewer/chainage_grid.js:39` | **yes** |
 | `APP.y0` | `viewer/chainage_grid.js:39` | **yes** |
@@ -285,8 +290,8 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP._applyPendingPatch` | `viewer/scene.js:2111` *(as `A.`)* | 1 | 6 |
 | `APP._applyViewFilter` | — *phantom* | 0 | 4 |
 | `APP._archGroundZ` | `viewer/city.js:274` *(as `A.`)* | 1 | 3 |
-| `APP._areaBackups` | `viewer/measure.js:1282` *(as `A.`)* | 2 | 5 |
-| `APP._areaCache` | `viewer/measure.js:1500` *(as `A.`)* | 1 | 4 |
+| `APP._areaBackups` | `viewer/measure.js:1307` *(as `A.`)* | 2 | 5 |
+| `APP._areaCache` | `viewer/measure.js:1525` *(as `A.`)* | 1 | 4 |
 | `APP._bakeCameraPoseAt` | `viewer/maxq_start.js:420` *(as `A.`)* | 1 | 7 |
 | `APP._bakeOwned` | `viewer/scene.js:547` *(as `A.`)* | 1 | 8 |
 | `APP._bareMetalKey` | `viewer/streaming.js:772` *(as `A.`)* | 1 | 2 |
@@ -319,7 +324,7 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP._bsDrawErrLogged` | `viewer/maxq_capture_stitch.js:450` *(as `A.`)* | 1 | 2 |
 | `APP._buildBillboardArt` | `viewer/fx_props_staffage.js:1806` *(as `A.`)* | 1 | 3 |
 | `APP._buildBillboardNamePlate` | `viewer/fx_props_staffage.js:1927` *(as `A.`)* | 1 | 3 |
-| `APP._buildClashDeepLink` | `viewer/measure.js:834` *(as `A.`)* | 1 | 9 |
+| `APP._buildClashDeepLink` | `viewer/measure.js:859` *(as `A.`)* | 1 | 9 |
 | `APP._buildExportHtml` | `viewer/clash_report.js:97` *(as `A.`)* | 1 | 5 |
 | `APP._buildGraphRoute` | `viewer/tour.js:471` *(as `A.`)* | 1 | 3 |
 | `APP._buildGraphRouteInner` | `viewer/tour.js:482` *(as `A.`)* | 1 | 2 |
@@ -432,44 +437,44 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP._civilSection` | `viewer/civil_sections.js:169` *(as `A.`)* | 2 | 11 |
 | `APP._civilSectionPoll` | `viewer/civil_sections.js:682` *(as `A.`)* | 1 | 1 |
 | `APP._civilStd` | `viewer/chainage_grid.js:269` *(as `A.`)* | 3 | 7 |
-| `APP._clashBackups` | `viewer/measure.js:625` *(as `A.`)* | 2 | 3 |
-| `APP._clashBboxCloud` | `viewer/measure.js:1828` *(as `A.`)* | 2 | 8 |
-| `APP._clashBboxMap` | `viewer/measure.js:1880` *(as `A.`)* | 1 | 6 |
+| `APP._clashBackups` | `viewer/measure.js:650` *(as `A.`)* | 2 | 3 |
+| `APP._clashBboxCloud` | `viewer/measure.js:1853` *(as `A.`)* | 2 | 8 |
+| `APP._clashBboxMap` | `viewer/measure.js:1905` *(as `A.`)* | 1 | 6 |
 | `APP._clashDiscCache` | `viewer/clash_matrix.js:13` *(as `A.`)* | 1 | 7 |
 | `APP._clashEnvelopes` | `viewer/clash_matrix.js:342` *(as `A.`)* | 3 | 5 |
-| `APP._clashExistsPerPair` | `viewer/measure.js:243` *(as `A.`)* | 1 | 1 |
+| `APP._clashExistsPerPair` | `viewer/measure.js:268` *(as `A.`)* | 1 | 1 |
 | `APP._clashFilmUpdateWarned` | `viewer/maxq_start.js:1711` *(as `A.`)* | 1 | 2 |
 | `APP._clashHighlights` | `viewer/issues.js:176` *(as `A.`)* | 5 | 18 |
 | `APP._clashHudHighlightLast` | `viewer/maxq_start.js:1159` *(as `A.`)* | 5 | 9 |
-| `APP._clashIgnoreSet` | `viewer/measure.js:197` *(as `A.`)* | 1 | 4 |
-| `APP._clashIndexesReady` | `viewer/measure.js:101` *(as `A.`)* | 2 | 3 |
+| `APP._clashIgnoreSet` | `viewer/measure.js:222` *(as `A.`)* | 1 | 4 |
+| `APP._clashIndexesReady` | `viewer/measure.js:126` *(as `A.`)* | 2 | 3 |
 | `APP._clashLblDrawErrLogged` | `viewer/maxq_capture_stitch.js:262` *(as `A.`)* | 1 | 2 |
 | `APP._clashLblErrLogged` | `viewer/maxq_start.js:1703` *(as `A.`)* | 1 | 2 |
 | `APP._clashLblStopped` | `viewer/maxq_start.js:856` *(as `A.`)* | 2 | 3 |
-| `APP._clashListDiv` | `viewer/measure.js:977` *(as `A.`)* | 5 | 56 |
+| `APP._clashListDiv` | `viewer/measure.js:1002` *(as `A.`)* | 5 | 56 |
 | `APP._clashListNav` | `viewer/scene.js:2811` *(as `A.`)* | 1 | 4 |
-| `APP._clashLodUpdateFreq` | `viewer/measure.js:1829` *(as `A.`)* | 1 | 2 |
+| `APP._clashLodUpdateFreq` | `viewer/measure.js:1854` *(as `A.`)* | 1 | 2 |
 | `APP._clashMatrixDiv` | `viewer/clash_matrix.js:248` *(as `A.`)* | 7 | 38 |
-| `APP._clashModeActive` | `viewer/measure.js:1827` *(as `A.`)* | 3 | 11 |
-| `APP._clashPair` | `viewer/measure.js:648` *(as `A.`)* | 1 | 3 |
-| `APP._clashPairBoxTotal` | `viewer/measure.js:507` *(as `A.`)* | 3 | 10 |
-| `APP._clashPairKey` | `viewer/measure.js:687` *(as `A.`)* | 2 | 15 |
+| `APP._clashModeActive` | `viewer/measure.js:1852` *(as `A.`)* | 3 | 11 |
+| `APP._clashPair` | `viewer/measure.js:673` *(as `A.`)* | 1 | 3 |
+| `APP._clashPairBoxTotal` | `viewer/measure.js:532` *(as `A.`)* | 3 | 10 |
+| `APP._clashPairKey` | `viewer/measure.js:712` *(as `A.`)* | 2 | 15 |
 | `APP._clashPairOffset` | `viewer/clash_matrix.js:291` *(as `A.`)* | 7 | 8 |
-| `APP._clashProxMeshes` | `viewer/measure.js:1832` *(as `A.`)* | 4 | 8 |
-| `APP._clashProxSet` | `viewer/measure.js:1831` *(as `A.`)* | 3 | 7 |
-| `APP._clashRevealActive` | `viewer/measure.js:624` *(as `A.`)* | 4 | 13 |
-| `APP._clashRtreeBuilding` | `viewer/measure.js:103` *(as `A.`)* | 6 | 7 |
-| `APP._clashRtreeReady` | `viewer/measure.js:102` *(as `A.`)* | 4 | 25 |
-| `APP._clashRuleFamily` | `viewer/measure.js:196` *(as `A.`)* | 1 | 5 |
-| `APP._clashRules` | `viewer/measure.js:73` *(as `A.`)* | 2 | 4 |
-| `APP._clashRulesLoading` | `viewer/measure.js:74` *(as `A.`)* | 4 | 5 |
-| `APP._clashSeverity` | `viewer/measure.js:616` *(as `A.`)* | 1 | 7 |
-| `APP._clashStatusCycle` | `viewer/measure.js:628` *(as `A.`)* | 1 | 2 |
-| `APP._clashStatusKey` | `viewer/measure.js:637` *(as `A.`)* | 1 | 4 |
-| `APP._clashStatusStyles` | `viewer/measure.js:629` *(as `A.`)* | 1 | 2 |
-| `APP._clashStatuses` | `viewer/measure.js:640` *(as `A.`)* | 4 | 21 |
-| `APP._clashTolerance` | `viewer/measure.js:224` *(as `A.`)* | 1 | 6 |
-| `APP._clashWhereParts` | `viewer/measure.js:226` *(as `A.`)* | 1 | 12 |
+| `APP._clashProxMeshes` | `viewer/measure.js:1857` *(as `A.`)* | 4 | 8 |
+| `APP._clashProxSet` | `viewer/measure.js:1856` *(as `A.`)* | 3 | 7 |
+| `APP._clashRevealActive` | `viewer/measure.js:649` *(as `A.`)* | 4 | 13 |
+| `APP._clashRtreeBuilding` | `viewer/measure.js:128` *(as `A.`)* | 6 | 7 |
+| `APP._clashRtreeReady` | `viewer/measure.js:127` *(as `A.`)* | 4 | 25 |
+| `APP._clashRuleFamily` | `viewer/measure.js:221` *(as `A.`)* | 1 | 5 |
+| `APP._clashRules` | `viewer/measure.js:98` *(as `A.`)* | 2 | 4 |
+| `APP._clashRulesLoading` | `viewer/measure.js:99` *(as `A.`)* | 4 | 5 |
+| `APP._clashSeverity` | `viewer/measure.js:641` *(as `A.`)* | 1 | 7 |
+| `APP._clashStatusCycle` | `viewer/measure.js:653` *(as `A.`)* | 1 | 2 |
+| `APP._clashStatusKey` | `viewer/measure.js:662` *(as `A.`)* | 1 | 4 |
+| `APP._clashStatusStyles` | `viewer/measure.js:654` *(as `A.`)* | 1 | 2 |
+| `APP._clashStatuses` | `viewer/measure.js:665` *(as `A.`)* | 4 | 21 |
+| `APP._clashTolerance` | `viewer/measure.js:249` *(as `A.`)* | 1 | 6 |
+| `APP._clashWhereParts` | `viewer/measure.js:251` *(as `A.`)* | 1 | 12 |
 | `APP._clearBboxPlaceholders` | `viewer/streaming.js:600` *(as `A.`)* | 1 | 5 |
 | `APP._cloudPlane` | `viewer/scene.js:399` *(as `A.`)* | 1 | 1 |
 | `APP._cloudTex` | `viewer/scene.js:400` *(as `A.`)* | 1 | 1 |
@@ -487,7 +492,7 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP._consolidateOpaqueOnly` | `viewer/maxq_start.js:135` *(as `A.`)* | 1 | 2 |
 | `APP._costOdometerFinalFired` | `viewer/cpe_resource_panel.js:233` *(as `A.`)* | 2 | 3 |
 | `APP._costOdometerOn` | `viewer/maxq_start.js:964` *(as `A.`)* | 1 | 3 |
-| `APP._countClashesAsync` | `viewer/measure.js:495` *(as `A.`)* | 1 | 4 |
+| `APP._countClashesAsync` | `viewer/measure.js:520` *(as `A.`)* | 1 | 4 |
 | `APP._countClashesRtree` | `viewer/clash_matrix.js:15` *(as `A.`)* | 1 | 4 |
 | `APP._cpeAimFreezeOff` | `witness/witness_cpe_corr_brush.js:152` *(as `A.`)* | 6 | 7 |
 | `APP._cpeBeat3GazeDebug` | `viewer/fx_cinema_path_plan.js:826` *(as `A.`)* | 1 | 10 |
@@ -502,16 +507,16 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP._cpeRevealSavedHidden` | `viewer/fx_cpe_reveal_bands.js:482` *(as `A.`)* | 3 | 6 |
 | `APP._cpeRevealVisualKey` | `viewer/fx_cpe_reveal_bands.js:483` *(as `A.`)* | 2 | 7 |
 | `APP._cpeViewfinderRender` | — *phantom* | 0 | 6 |
-| `APP._createIsSOTrx` | `erp/idempiere.html:5244` | 1 | 1 |
-| `APP._createMovementType` | `erp/idempiere.html:5252` | 1 | 1 |
+| `APP._createIsSOTrx` | `erp/idempiere.html:5378` | 1 | 1 |
+| `APP._createMovementType` | `erp/idempiere.html:5386` | 1 | 1 |
 | `APP._csmLastFit` | `viewer/fx_sun_shadow.js:1044` *(as `A.`)* | 1 | 1 |
 | `APP._csmNearFix` | — *phantom* | 0 | 1 |
 | `APP._csmUncovered` | `viewer/fx_sun_shadow.js:974` *(as `A.`)* | 2 | 4 |
 | `APP._csvExportInProgress` | `viewer/clash_report.js:9` *(as `A.`)* | 4 | 5 |
 | `APP._currentClashPairLabel` | `viewer/clash_matrix.js:313` *(as `A.`)* | 3 | 6 |
 | `APP._currentClashRules` | `viewer/issues.js:174` *(as `A.`)* | 5 | 12 |
-| `APP._currentClashStorey` | `viewer/measure.js:1721` *(as `A.`)* | 2 | 7 |
-| `APP._currentClashViewIdx` | `viewer/measure.js:693` *(as `A.`)* | 1 | 3 |
+| `APP._currentClashStorey` | `viewer/measure.js:1746` *(as `A.`)* | 2 | 7 |
+| `APP._currentClashViewIdx` | `viewer/measure.js:718` *(as `A.`)* | 1 | 3 |
 | `APP._currentClashes` | `viewer/clash_matrix.js:312` *(as `A.`)* | 10 | 43 |
 | `APP._dbPersistUrl` | `viewer/streaming.js:3841` *(as `A.`)* | 2 | 14 |
 | `APP._debugForceGhostLensOwned` | `viewer/nf_highlight_cost.js:443` *(as `A.`)* | 1 | 7 |
@@ -523,7 +528,7 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP._dimNaNLogged` | `viewer/cpe_flythru_cues.js:422` *(as `A.`)* | 1 | 2 |
 | `APP._dimPickTargets` | `scripts/probe_dim_cue_demo.js:75` *(as `A.`)* | 1 | 2 |
 | `APP._dimTargetFor` | `scripts/probe_dim_cue_demo.js:42` *(as `A.`)* | 1 | 4 |
-| `APP._dismissClashes` | `viewer/measure.js:1206` *(as `A.`)* | 1 | 12 |
+| `APP._dismissClashes` | `viewer/measure.js:1231` *(as `A.`)* | 1 | 12 |
 | `APP._dlodBboxGeo` | `viewer/scene.js:477` *(as `A.`)* | 1 | 2 |
 | `APP._dlodEnabled` | `viewer/dlod.js:14` *(as `A.`)* | 4 | 30 |
 | `APP._dlodFrame` | `viewer/dlod.js:15` *(as `A.`)* | 9 | 11 |
@@ -531,7 +536,7 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP._dlodSlots` | `viewer/streaming.js:20` *(as `A.`)* | 1 | 4 |
 | `APP._dlodStillHold` | `viewer/fx_photo_staging.js:78` *(as `A.`)* | 2 | 4 |
 | `APP._dlodStillWanted` | `viewer/dlod.js:113` *(as `A.`)* | 3 | 6 |
-| `APP._doMeasureClick` | `viewer/measure.js:1318` *(as `A.`)* | 1 | 2 |
+| `APP._doMeasureClick` | `viewer/measure.js:1343` *(as `A.`)* | 1 | 2 |
 | `APP._doReportBug` | `viewer/helpers.js:241` *(as `A.`)* | 1 | 6 |
 | `APP._docEnv` | `viewer/doc_canvas.js:566` *(as `A.`)* | 1 | 32 |
 | `APP._downloadClashSnag` | `viewer/clash_snag.js:244` *(as `A.`)* | 1 | 4 |
@@ -546,12 +551,12 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP._editedKeys` | `viewer/scene.js:664` *(as `A.`)* | 1 | 2 |
 | `APP._egressRulesCache` | — *phantom* | 0 | 2 |
 | `APP._egressRulesSource` | — *phantom* | 0 | 1 |
-| `APP._elementOverlay` | `viewer/measure.js:1403` *(as `A.`)* | 1 | 4 |
+| `APP._elementOverlay` | `viewer/measure.js:1428` *(as `A.`)* | 1 | 4 |
 | `APP._elementVariant` | `viewer/streaming.js:819` *(as `A.`)* | 1 | 4 |
 | `APP._emberEnabled` | `viewer/fx_still_refine.js:750` *(as `A.`)* | 1 | 2 |
-| `APP._ensureClashIndexes` | `viewer/measure.js:107` *(as `A.`)* | 1 | 8 |
+| `APP._ensureClashIndexes` | `viewer/measure.js:132` *(as `A.`)* | 1 | 8 |
 | `APP._ensureRoomsInflight` | `viewer/nf_tree_lens.js:446` *(as `A.`)* | 2 | 8 |
-| `APP._enterClashMode` | `viewer/measure.js:1836` *(as `A.`)* | 1 | 2 |
+| `APP._enterClashMode` | `viewer/measure.js:1861` *(as `A.`)* | 1 | 2 |
 | `APP._entourageVariant` | `viewer/streaming.js:627` *(as `A.`)* | 1 | 5 |
 | `APP._envCache` | — *phantom* | 0 | 2 |
 | `APP._envMap` | `viewer/fx_photo_staging.js:159` *(as `A.`)* | 4 | 31 |
@@ -566,7 +571,7 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP._evictOldest` | `viewer/scene.js:692` *(as `A.`)* | 1 | 3 |
 | `APP._ewInfer` | `viewer/earthworks_overlay.js:148` *(as `A.`)* | 1 | 1 |
 | `APP._ewRowSets` | `viewer/earthworks_overlay.js:193` *(as `A.`)* | 1 | 1 |
-| `APP._exitClashMode` | `viewer/measure.js:1927` *(as `A.`)* | 1 | 8 |
+| `APP._exitClashMode` | `viewer/measure.js:1952` *(as `A.`)* | 1 | 8 |
 | `APP._exportBuildingDb` | `viewer/scene.js:988` *(as `A.`)* | 2 | 19 |
 | `APP._exportCSVBackground` | `viewer/clash_report.js:391` *(as `A.`)* | 1 | 5 |
 | `APP._exportClashReport` | `viewer/clash_report.js:16` *(as `A.`)* | 1 | 4 |
@@ -609,7 +614,7 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP._flushBboxBatched` | `viewer/streaming.js:3410` *(as `A.`)* | 1 | 2 |
 | `APP._flushInstanced` | `viewer/streaming.js:2823` *(as `A.`)* | 1 | 3 |
 | `APP._flyPreparing` | `viewer/tour.js:70` *(as `A.`)* | 3 | 6 |
-| `APP._flyToClash` | `viewer/measure.js:690` *(as `A.`)* | 1 | 10 |
+| `APP._flyToClash` | `viewer/measure.js:715` *(as `A.`)* | 1 | 10 |
 | `APP._flyoutBeatsWarned` | `viewer/maxq_capture_stitch.js:226` *(as `A.`)* | 1 | 2 |
 | `APP._flythruCueWarned` | `viewer/maxq_start.js:1674` *(as `A.`)* | 1 | 2 |
 | `APP._flythruCuesLast` | `viewer/cpe_flythru_cues.js:553` *(as `A.`)* | 1 | 4 |
@@ -667,7 +672,7 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP._groundUserPicked` | `viewer/tools.js:187` *(as `A.`)* | 2 | 3 |
 | `APP._groundWetnessOverride` | `viewer/fx_sun_shadow.js:1518` *(as `A.`)* | 2 | 9 |
 | `APP._groupBy` | `viewer/tools.js:727` *(as `A.`)* | 1 | 17 |
-| `APP._guidToMesh` | `viewer/measure.js:1293` *(as `A.`)* | 1 | 1 |
+| `APP._guidToMesh` | `viewer/measure.js:1318` *(as `A.`)* | 1 | 1 |
 | `APP._hasBbox` | `viewer/streaming.js:384` *(as `A.`)* | 6 | 21 |
 | `APP._hasBuildingCol` | `viewer/streaming.js:258` *(as `A.`)* | 1 | 14 |
 | `APP._hasMatNameCol` | `viewer/streaming.js:289` *(as `A.`)* | 1 | 2 |
@@ -689,7 +694,7 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP._hbaSpaceClass` | `viewer/hba_lens.js:206` *(as `A.`)* | 1 | 2 |
 | `APP._hbaStoreyOf` | `viewer/hba_lens.js:225` *(as `A.`)* | 2 | 11 |
 | `APP._hbaTenancySpec` | `viewer/hba_lens.js:298` *(as `A.`)* | 2 | 16 |
-| `APP._highlightMesh` | `viewer/measure.js:1551` *(as `A.`)* | 1 | 2 |
+| `APP._highlightMesh` | `viewer/measure.js:1576` *(as `A.`)* | 1 | 2 |
 | `APP._historyOpened` | `viewer/streaming.js:2522` *(as `A.`)* | 1 | 4 |
 | `APP._hoverNameState` | `viewer/hover_name.js:221` *(as `A.`)* | 1 | 4 |
 | `APP._hrCost` | `viewer/tm_lifecycle_api.js:421` *(as `app.`)* | 2 | 24 |
@@ -710,7 +715,7 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP._inLoadPathComposite` | `viewer/maxq_capture_stitch.js:528` *(as `A.`)* | 2 | 2 |
 | `APP._indoorBeatsAtWarned` | `viewer/maxq_start.js:1670` *(as `A.`)* | 1 | 2 |
 | `APP._indoorBeatsWarned` | `viewer/maxq_capture_stitch.js:220` *(as `A.`)* | 1 | 2 |
-| `APP._infoCardDiv` | `viewer/measure.js:1294` *(as `A.`)* | 6 | 11 |
+| `APP._infoCardDiv` | `viewer/measure.js:1319` *(as `A.`)* | 6 | 11 |
 | `APP._initMarkupListeners` | `viewer/sitecam.js:400` *(as `A.`)* | 1 | 3 |
 | `APP._initSnagTable` | `viewer/helpers.js:462` *(as `A.`)* | 1 | 3 |
 | `APP._instDiscMixed` | `viewer/streaming.js:3060` *(as `A.`)* | 1 | 6 |
@@ -751,10 +756,10 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP._lampZoneTableCache` | `viewer/tools.js:2427` *(as `A.`)* | 1 | 2 |
 | `APP._lampZoneView` | `viewer/tools.js:2440` *(as `A.`)* | 1 | 2 |
 | `APP._lampsSum` | `viewer/maxq_start.js:45` *(as `A.`)* | 3 | 5 |
-| `APP._lastClashLodUpdate` | `viewer/measure.js:1830` *(as `A.`)* | 2 | 3 |
+| `APP._lastClashLodUpdate` | `viewer/measure.js:1855` *(as `A.`)* | 2 | 3 |
 | `APP._lastFlushIdx` | `viewer/streaming.js:433` *(as `A.`)* | 4 | 6 |
 | `APP._lastGoodFrameBlob` | `viewer/maxq_start.js:2358` *(as `A.`)* | 1 | 3 |
-| `APP._lastMeasureItem` | `viewer/measure.js:1492` *(as `A.`)* | 1 | 1 |
+| `APP._lastMeasureItem` | `viewer/measure.js:1517` *(as `A.`)* | 1 | 1 |
 | `APP._lastMeasureTap` | `viewer/picking.js:178` *(as `A.`)* | 2 | 4 |
 | `APP._lastPickCenter` | `viewer/picking.js:235` *(as `A.`)* | 4 | 4 |
 | `APP._lastPickGuid` | `viewer/picking.js:235` *(as `A.`)* | 5 | 7 |
@@ -765,8 +770,8 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP._lightFieldByBuilding` | `viewer/scene.js:2077` *(as `A.`)* | 1 | 3 |
 | `APP._lightZoneInnerR` | `viewer/tests/witness_sourced_stack.js:51` | 1 | 3 |
 | `APP._linearBeatWarned` | `viewer/maxq_capture_stitch.js:205` *(as `A.`)* | 1 | 2 |
-| `APP._loadClashRules` | `viewer/measure.js:76` *(as `A.`)* | 1 | 13 |
-| `APP._loadClashStatuses` | `viewer/measure.js:668` *(as `A.`)* | 1 | 2 |
+| `APP._loadClashRules` | `viewer/measure.js:101` *(as `A.`)* | 1 | 13 |
+| `APP._loadClashStatuses` | `viewer/measure.js:693` *(as `A.`)* | 1 | 2 |
 | `APP._loadGroundConfig` | `viewer/tools.js:190` *(as `A.`)* | 1 | 3 |
 | `APP._loadNightFixtures` | `viewer/tools.js:1778` *(as `A.`)* | 1 | 3 |
 | `APP._loadPathAllElseObjects` | `viewer/lp_geom_pick.js:536` *(as `A.`)* | 1 | 1 |
@@ -852,9 +857,9 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP._loadPathVisualRev` | `viewer/lp_apply_restore.js:70` *(as `A.`)* | 3 | 8 |
 | `APP._loadPathWindow` | `viewer/lp_build.js:163` *(as `A.`)* | 4 | 16 |
 | `APP._loadPrebake` | `viewer/scene.js:2060` *(as `A.`)* | 1 | 3 |
-| `APP._loadRemainingStoreys` | `viewer/measure.js:447` *(as `A.`)* | 1 | 3 |
-| `APP._longPressFired` | `viewer/measure.js:1260` *(as `A.`)* | 4 | 5 |
-| `APP._longPressTimer` | `viewer/measure.js:1259` *(as `A.`)* | 7 | 15 |
+| `APP._loadRemainingStoreys` | `viewer/measure.js:472` *(as `A.`)* | 1 | 3 |
+| `APP._longPressFired` | `viewer/measure.js:1285` *(as `A.`)* | 4 | 5 |
+| `APP._longPressTimer` | `viewer/measure.js:1284` *(as `A.`)* | 7 | 15 |
 | `APP._lp129BackdropApplyLogCount` | `viewer/lp_backdrop_diag.js:197` *(as `A.`)* | 1 | 4 |
 | `APP._lp129PostReleaseFrameCount` | `viewer/maxq_capture_stitch.js:577` *(as `A.`)* | 2 | 13 |
 | `APP._lpCamDirN` | `viewer/maxq_start.js:2337` *(as `A.`)* | 1 | 5 |
@@ -863,7 +868,7 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP._lpStackOnly` | `viewer/lp_apply_restore.js:283` *(as `A.`)* | 2 | 3 |
 | `APP._lpTwins` | — *phantom* | 0 | 2 |
 | `APP._mainPillActions` | — *phantom* | 0 | 1 |
-| `APP._makeDraggable` | `viewer/measure.js:13` *(as `A.`)* | 1 | 21 |
+| `APP._makeDraggable` | `viewer/measure.js:13` *(as `A.`)* | 1 | 23 |
 | `APP._markupActive` | `viewer/sitecam.js:332` *(as `A.`)* | 4 | 6 |
 | `APP._markupBaseImage` | `viewer/clash_snag.js:102` *(as `A.`)* | 3 | 4 |
 | `APP._markupCanvas` | `viewer/sitecam.js:404` *(as `A.`)* | 1 | 2 |
@@ -877,10 +882,10 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP._maxqActive` | `viewer/maxq_start.js:44` *(as `A.`)* | 10 | 93 |
 | `APP._measureBoxWarned` | `viewer/maxq_capture_stitch.js:281` *(as `A.`)* | 1 | 2 |
 | `APP._measureCardLast` | `viewer/maxq_start.js:855` *(as `A.`)* | 2 | 3 |
-| `APP._measureClickTimer` | `viewer/measure.js:1258` *(as `A.`)* | 6 | 14 |
-| `APP._measureFirstHit` | `viewer/measure.js:1337` *(as `A.`)* | 1 | 2 |
-| `APP._measureFirstMesh` | `viewer/measure.js:1336` *(as `A.`)* | 3 | 3 |
-| `APP._measureItem` | `viewer/measure.js:1428` *(as `A.`)* | 1 | 4 |
+| `APP._measureClickTimer` | `viewer/measure.js:1283` *(as `A.`)* | 6 | 14 |
+| `APP._measureFirstHit` | `viewer/measure.js:1362` *(as `A.`)* | 1 | 2 |
+| `APP._measureFirstMesh` | `viewer/measure.js:1361` *(as `A.`)* | 3 | 3 |
+| `APP._measureItem` | `viewer/measure.js:1453` *(as `A.`)* | 1 | 4 |
 | `APP._mepDiscAlbedo` | `viewer/streaming.js:914` *(as `A.`)* | 1 | 10 |
 | `APP._mepHueClasses` | `viewer/streaming.js:708` *(as `A.`)* | 1 | 5 |
 | `APP._mepHueCounts` | `viewer/streaming.js:1881` *(as `A.`)* | 2 | 5 |
@@ -908,9 +913,9 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP._mergedIndex` | `viewer/streaming.js:2719` *(as `A.`)* | 2 | 10 |
 | `APP._mergedMeta` | `viewer/streaming.js:2718` *(as `A.`)* | 2 | 44 |
 | `APP._mergedRayStats` | `viewer/streaming.js:2722` *(as `A.`)* | 1 | 6 |
-| `APP._meshArea` | `viewer/measure.js:1501` *(as `A.`)* | 1 | 4 |
+| `APP._meshArea` | `viewer/measure.js:1526` *(as `A.`)* | 1 | 4 |
 | `APP._meshSlimLoadLogged` | `viewer/streaming.js:2619` *(as `A.`)* | 1 | 2 |
-| `APP._meshVolume` | `viewer/measure.js:1542` *(as `A.`)* | 1 | 1 |
+| `APP._meshVolume` | `viewer/measure.js:1567` *(as `A.`)* | 1 | 1 |
 | `APP._metaGen` | `viewer/city.js:164` *(as `A.`)* | 5 | 24 |
 | `APP._metalPbrLogged` | `viewer/streaming.js:1830` *(as `A.`)* | 1 | 2 |
 | `APP._metalPbrOff` | `viewer/streaming.js:832` *(as `A.`)* | 1 | 8 |
@@ -973,9 +978,9 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP._paletteMeshY` | `viewer/tools.js:742` *(as `A.`)* | 1 | 2 |
 | `APP._pbShotCheck` | `viewer/lp_build.js:221` *(as `A.`)* | 1 | 2 |
 | `APP._pendingBboxBuckets` | `viewer/streaming.js:2390` *(as `A.`)* | 2 | 9 |
-| `APP._pendingClashArgs` | `viewer/measure.js:297` *(as `A.`)* | 2 | 3 |
+| `APP._pendingClashArgs` | `viewer/measure.js:322` *(as `A.`)* | 2 | 3 |
 | `APP._pendingClashSnag` | `viewer/clash_snag.js:8` *(as `A.`)* | 7 | 13 |
-| `APP._pendingClashStoreys` | `viewer/measure.js:296` *(as `A.`)* | 3 | 6 |
+| `APP._pendingClashStoreys` | `viewer/measure.js:321` *(as `A.`)* | 3 | 6 |
 | `APP._pendingInstances` | `viewer/streaming.js:2664` *(as `A.`)* | 3 | 10 |
 | `APP._pendingSnagInfo` | `viewer/sitecam.js:215` *(as `A.`)* | 1 | 3 |
 | `APP._photoAutoStageOn` | `viewer/fx_still_refine.js:1213` *(as `A.`)* | 1 | 3 |
@@ -1011,11 +1016,11 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP._proxySubstance` | `viewer/streaming.js:801` *(as `A.`)* | 1 | 2 |
 | `APP._proxySubstanceOff` | `viewer/streaming.js:796` *(as `A.`)* | 1 | 3 |
 | `APP._proxyVariant` | `viewer/streaming.js:808` *(as `A.`)* | 1 | 3 |
-| `APP._qualifyClashRows` | `viewer/measure.js:1199` *(as `A.`)* | 1 | 6 |
-| `APP._queryClashes` | `viewer/measure.js:592` *(as `A.`)* | 1 | 1 |
-| `APP._queryClashesPair` | `viewer/measure.js:293` *(as `A.`)* | 1 | 5 |
-| `APP._queryClashesPairAll` | `viewer/measure.js:555` *(as `A.`)* | 1 | 3 |
-| `APP._queryClashesPairRtree` | `viewer/measure.js:360` *(as `A.`)* | 1 | 8 |
+| `APP._qualifyClashRows` | `viewer/measure.js:1224` *(as `A.`)* | 1 | 6 |
+| `APP._queryClashes` | `viewer/measure.js:617` *(as `A.`)* | 1 | 1 |
+| `APP._queryClashesPair` | `viewer/measure.js:318` *(as `A.`)* | 1 | 5 |
+| `APP._queryClashesPairAll` | `viewer/measure.js:580` *(as `A.`)* | 1 | 3 |
+| `APP._queryClashesPairRtree` | `viewer/measure.js:385` *(as `A.`)* | 1 | 8 |
 | `APP._r10BuildGeo` | `viewer/streaming.js:1159` *(as `A.`)* | 1 | 2 |
 | `APP._r10Cost` | `viewer/streaming.js:1288` *(as `A.`)* | 1 | 3 |
 | `APP._r10DepthCompiled` | `viewer/streaming.js:1242` *(as `A.`)* | 1 | 3 |
@@ -1038,12 +1043,12 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP._reassertPhotoSparkles` | `viewer/fx_still_refine.js:717` *(as `A.`)* | 1 | 1 |
 | `APP._recolorMesh` | `viewer/tools.js:717` *(as `A.`)* | 1 | 8 |
 | `APP._redrawMarkup` | `viewer/sitecam.js:358` *(as `A.`)* | 1 | 4 |
-| `APP._refreshClashList` | `viewer/measure.js:1190` *(as `A.`)* | 1 | 7 |
+| `APP._refreshClashList` | `viewer/measure.js:1215` *(as `A.`)* | 1 | 7 |
 | `APP._refreshGroundBtns` | `viewer/panels.js:1738` *(as `A.`)* | 1 | 5 |
 | `APP._registerBatchSlot` | `viewer/streaming.js:2739` *(as `A.`)* | 1 | 4 |
 | `APP._registerInstanceSlot` | `viewer/streaming.js:2815` *(as `A.`)* | 1 | 3 |
-| `APP._registerPanel` | `viewer/scene.js:3595` *(as `A.`)* | 1 | 1 |
-| `APP._renderClashList` | `viewer/measure.js:884` *(as `A.`)* | 1 | 8 |
+| `APP._registerPanel` | `viewer/scene.js:3659` *(as `A.`)* | 1 | 1 |
+| `APP._renderClashList` | `viewer/measure.js:909` *(as `A.`)* | 1 | 8 |
 | `APP._renderIssueList` | `viewer/issues.js:95` *(as `A.`)* | 1 | 4 |
 | `APP._renderPass` | `viewer/fx_composer.js:199` *(as `A.`)* | 1 | 1 |
 | `APP._renderSnagStamps` | `viewer/helpers.js:481` *(as `A.`)* | 1 | 3 |
@@ -1071,7 +1076,7 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP._restoreStaffageInstances` | `viewer/fx_props_staffage.js:1284` *(as `A.`)* | 1 | 2 |
 | `APP._restoreSunglass` | `viewer/tools.js:695` *(as `A.`)* | 1 | 2 |
 | `APP._revalidateCache` | `viewer/scene.js:1696` *(as `A.`)* | 1 | 2 |
-| `APP._revealClashes` | `viewer/measure.js:856` *(as `A.`)* | 1 | 5 |
+| `APP._revealClashes` | `viewer/measure.js:881` *(as `A.`)* | 1 | 5 |
 | `APP._revealTrapN` | `viewer/fx_cpe_reveal_bands.js:610` *(as `A.`)* | 1 | 5 |
 | `APP._riN` | `viewer/maxq_capture_stitch.js:94` *(as `A.`)* | 1 | 4 |
 | `APP._roadPanelTn` | `viewer/maxq_start.js:1489` *(as `A.`)* | 3 | 5 |
@@ -1099,7 +1104,7 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP._ruleTintMeshes` | `viewer/rule_checklist.js:529` *(as `A.`)* | 3 | 11 |
 | `APP._runSqlChunked` | `viewer/scene.js:2017` *(as `A.`)* | 1 | 4 |
 | `APP._saveClashIssue` | `viewer/clash_snag.js:260` *(as `A.`)* | 1 | 4 |
-| `APP._saveClashStatuses` | `viewer/measure.js:684` *(as `A.`)* | 1 | 2 |
+| `APP._saveClashStatuses` | `viewer/measure.js:709` *(as `A.`)* | 1 | 2 |
 | `APP._saveIssueToLog` | `viewer/issues.js:24` *(as `A.`)* | 1 | 3 |
 | `APP._savedClearColor` | `viewer/tools.js:1188` *(as `A.`)* | 2 | 4 |
 | `APP._savedGroundColor` | `viewer/tools.js:1196` *(as `A.`)* | 1 | 3 |
@@ -1124,9 +1129,9 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP._shareClashSnag` | `viewer/clash_snag.js:115` *(as `A.`)* | 1 | 4 |
 | `APP._shareLoaded` | `viewer/import.js:614` *(as `A.`)* | 1 | 2 |
 | `APP._shellTrace` | — *phantom* | 0 | 1 |
-| `APP._show4DWindow` | `viewer/nf_highlight_cost.js:591` *(as `A.`)* | 1 | 8 |
+| `APP._show4DWindow` | `viewer/nf_highlight_cost.js:598` *(as `A.`)* | 1 | 8 |
 | `APP._showClashMatrix` | `viewer/clash_matrix.js:88` *(as `A.`)* | 1 | 5 |
-| `APP._showClassCost` | `viewer/nf_highlight_cost.js:590` *(as `A.`)* | 1 | 1 |
+| `APP._showClassCost` | `viewer/nf_highlight_cost.js:597` *(as `A.`)* | 1 | 1 |
 | `APP._showIssueDetail` | `viewer/issues.js:130` *(as `A.`)* | 1 | 2 |
 | `APP._showMergeModal` | `viewer/scene.js:1077` *(as `A.`)* | 1 | 3 |
 | `APP._singleBuildingName` | `viewer/streaming.js:276` *(as `A.`)* | 1 | 8 |
@@ -1284,7 +1289,7 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP._tmSnapshotCaption` | `viewer/share.js:358` *(as `A.`)* | 1 | 2 |
 | `APP._tmState` | — *phantom* | 0 | 3 |
 | `APP._tmUnmergeTried` | `viewer/tm_lifecycle_api.js:308` *(as `app.`)* | 1 | 2 |
-| `APP._toggleClashStatus` | `viewer/measure.js:1136` *(as `A.`)* | 1 | 3 |
+| `APP._toggleClashStatus` | `viewer/measure.js:1161` *(as `A.`)* | 1 | 3 |
 | `APP._toolbarNav` | `viewer/panels.js:668` *(as `A.`)* | 1 | 3 |
 | `APP._tourCacheBust` | `viewer/tour.js:274` *(as `A.`)* | 1 | 7 |
 | `APP._tourCachedRoute` | `viewer/tour.js:91` *(as `A.`)* | 3 | 8 |
@@ -1304,7 +1309,7 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP._triplanarTexCache` | `viewer/streaming.js:2028` *(as `A.`)* | 1 | 5 |
 | `APP._updateCamLight` | `viewer/fx_composer.js:454` *(as `A.`)* | 1 | 3 |
 | `APP._updateCamTorch` | `viewer/fx_composer.js:466` *(as `A.`)* | 1 | 4 |
-| `APP._updateClashLOD` | `viewer/measure.js:1965` *(as `A.`)* | 1 | 3 |
+| `APP._updateClashLOD` | `viewer/measure.js:1990` *(as `A.`)* | 1 | 3 |
 | `APP._updateFacadeFacing` | — *phantom* | 0 | 2 |
 | `APP._updateFogDensity` | `viewer/scene.js:145` *(as `A.`)* | 1 | 9 |
 | `APP._useDlodPath` | `viewer/streaming.js:19` *(as `A.`)* | 3 | 7 |
@@ -1327,7 +1332,7 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP._walkUnlocked` | `viewer/walk.js:112` *(as `A.`)* | 2 | 4 |
 | `APP._webglContextLost` | `viewer/scene.js:497` *(as `A.`)* | 2 | 3 |
 | `APP._whiteBg` | `viewer/tools.js:1187` *(as `A.`)* | 2 | 11 |
-| `APP._winCtx` | `erp/idempiere.html:5542` | 1 | 1 |
+| `APP._winCtx` | `erp/idempiere.html:5676` | 1 | 1 |
 | `APP._windBuckets` | `viewer/streaming.js:1501` *(as `A.`)* | 1 | 4 |
 | `APP._windFlip` | `viewer/still_fault.js:186` | 1 | 2 |
 | `APP._windFlipAny` | `viewer/streaming.js:1501` *(as `A.`)* | 1 | 4 |
@@ -1345,7 +1350,7 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP.activeBuildingTotal` | `viewer/city.js:794` *(as `A.`)* | 9 | 20 |
 | `APP.activeGuidFilter` | `viewer/panels.js:863` *(as `A.`)* | 1 | 14 |
 | `APP.activeStoreyFilter` | `viewer/main.js:1208` | 4 | 30 |
-| `APP.actor` | `erp/idempiere.html:1501` | 3 | 54 |
+| `APP.actor` | `erp/idempiere.html:1537` | 3 | 54 |
 | `APP.addQRBorder` | `viewer/helpers.js:412` *(as `A.`)* | 1 | 2 |
 | `APP.advanceNavStep` | `viewer/navigate_engine.js:259` *(as `A.`)* | 1 | 6 |
 | `APP.advanceWalkStep` | `viewer/walk.js:458` *(as `A.`)* | 1 | 5 |
@@ -1399,12 +1404,12 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP.bytes` | — *phantom* | 0 | 1 |
 | `APP.cacheStoreyLevels` | `viewer/walk.js:243` *(as `A.`)* | 1 | 8 |
 | `APP.cachedFetch` | `viewer/scene.js:1742` *(as `A.`)* | 1 | 21 |
-| `APP.camera` | `viewer/grid_views.js:83` *(as `A.`)* | 4 | 1242 |
+| `APP.camera` | `viewer/grid_views.js:83` *(as `A.`)* | 4 | 1247 |
 | `APP.cancelMaxQualityOrbit` | `viewer/maxq_start.js:2686` | 1 | 4 |
 | `APP.cancelWalkAnchor` | `viewer/walk.js:33` *(as `A.`)* | 1 | 2 |
 | `APP.canvas` | `viewer/scene.js:10` *(as `A.`)* | 1 | 76 |
 | `APP.chainage` | `viewer/chainage_grid.js:519` *(as `A.`)* | 1 | 35 |
-| `APP.checkUpdate` | `viewer/scene.js:3519` *(as `A.`)* | 1 | 1 |
+| `APP.checkUpdate` | `viewer/scene.js:3583` *(as `A.`)* | 1 | 1 |
 | `APP.cinemaBandFlow` | `viewer/fx_cpe_reveal_bands.js:737` *(as `A.`)* | 1 | 10 |
 | `APP.cinemaBandWaypoints` | `viewer/fx_cpe_reveal_bands.js:664` *(as `A.`)* | 1 | 2 |
 | `APP.cinemaFan` | `viewer/fx_cinema_orbit.js:310` *(as `A.`)* | 1 | 5 |
@@ -1457,10 +1462,10 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP.clearCinemaPath` | `viewer/fx_cinema_orbit.js:142` *(as `A.`)* | 1 | 1 |
 | `APP.clearFocusElement` | `viewer/nf_panel_search.js:959` *(as `A.`)* | 1 | 12 |
 | `APP.clearHighlight` | `viewer/nf_panel_search.js:870` *(as `A.`)* | 1 | 1 |
-| `APP.clearMeasures` | `viewer/measure.js:1268` *(as `A.`)* | 1 | 5 |
+| `APP.clearMeasures` | `viewer/measure.js:1293` *(as `A.`)* | 1 | 5 |
 | `APP.clearRouteCache` | `viewer/navigate_grid.js:252` *(as `A.`)* | 1 | 3 |
 | `APP.clearStreamed` | `viewer/streaming.js:4315` *(as `A.`)* | 1 | 3 |
-| `APP.clientId` | `erp/idempiere.html:1502` | 1 | 54 |
+| `APP.clientId` | `erp/idempiere.html:1538` | 1 | 55 |
 | `APP.clientName` | — *phantom* | 0 | 2 |
 | `APP.closeFindPanel` | `viewer/nf_panel_search.js:163` *(as `A.`)* | 1 | 7 |
 | `APP.closeSiteCamera` | `viewer/sitecam.js:179` *(as `A.`)* | 1 | 11 |
@@ -1472,7 +1477,7 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP.computeDiff` | `viewer/diff.js:18` *(as `A.`)* | 1 | 4 |
 | `APP.computePathLength` | `viewer/tour.js:2380` *(as `A.`)* | 1 | 2 |
 | `APP.contributeBuilding` | — *phantom* | 0 | 2 |
-| `APP.controls` | `viewer/scene.js:186` *(as `A.`)* | 2 | 688 |
+| `APP.controls` | `viewer/scene.js:186` *(as `A.`)* | 2 | 690 |
 | `APP.costOdometerAt` | `viewer/cpe_resource_panel.js:169` *(as `A.`)* | 1 | 2 |
 | `APP.costOdometerTick` | `viewer/cpe_resource_panel.js:205` *(as `A.`)* | 1 | 3 |
 | `APP.counts` | — *phantom* | 0 | 4 |
@@ -1500,8 +1505,8 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP.dayCounterLiveStart` | `viewer/cpe_day_counter.js:147` *(as `A.`)* | 1 | 1 |
 | `APP.dayCounterLiveStop` | `viewer/cpe_day_counter.js:171` *(as `A.`)* | 1 | 1 |
 | `APP.dayCounterLiveTick` | `viewer/cpe_day_counter.js:156` *(as `A.`)* | 1 | 1 |
-| `APP.db` | `viewer/city.js:717` *(as `A.`)* | 14 | 851 |
-| `APP.dbQuery` | `viewer/helpers.js:116` *(as `A.`)* | 2 | 709 |
+| `APP.db` | `viewer/city.js:717` *(as `A.`)* | 14 | 855 |
+| `APP.dbQuery` | `viewer/helpers.js:116` *(as `A.`)* | 2 | 710 |
 | `APP.dbQueryFirst` | `viewer/helpers.js:130` *(as `A.`)* | 1 | 11 |
 | `APP.deleteImported` | `viewer/import.js:599` *(as `A.`)* | 1 | 4 |
 | `APP.diffDb` | `viewer/main.js:1074` | 1 | 18 |
@@ -1652,11 +1657,12 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP.flythruSetScale` | `viewer/cpe_flythru_dims.js:48` *(as `A.`)* | 1 | 4 |
 | `APP.flythruShouldShow` | `viewer/cpe_flythru_dims.js:877` *(as `A.`)* | 1 | 1 |
 | `APP.focusElement` | `viewer/nf_panel_search.js:884` *(as `A.`)* | 1 | 31 |
+| `APP.forEach` | — *phantom* | 0 | 1 |
 | `APP.freezePerfBuild` | — *phantom* | 0 | 2 |
 | `APP.freezePerfCompositeOntoCanvas` | — *phantom* | 0 | 2 |
 | `APP.friendlyName` | `viewer/nf_panel_search.js:873` *(as `A.`)* | 1 | 15 |
 | `APP.fromCell` | `viewer/navigate_grid.js:531` *(as `A.`)* | 1 | 2 |
-| `APP.gateRecordFor` | `erp/idempiere.html:1512` | 1 | 1 |
+| `APP.gateRecordFor` | `erp/idempiere.html:1548` | 1 | 1 |
 | `APP.gazeAcquireCap` | `viewer/fx_cpe_reveal_bands.js:1122` *(as `A.`)* | 1 | 6 |
 | `APP.gazeAcquireStep` | `viewer/fx_cpe_reveal_bands.js:1123` *(as `A.`)* | 1 | 3 |
 | `APP.generateQR` | `viewer/helpers.js:391` *(as `A.`)* | 1 | 4 |
@@ -1677,9 +1683,9 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP.groundIfcZ` | `viewer/tools.js:156` *(as `A.`)* | 1 | 12 |
 | `APP.guidForHit` | `viewer/hover_name.js:72` *(as `A.`)* | 1 | 4 |
 | `APP.guidMap` | `viewer/city.js:827` *(as `A.`)* | 4 | 333 |
-| `APP.handleMeasureClick` | `viewer/measure.js:1307` *(as `A.`)* | 1 | 2 |
-| `APP.handleMeasureDblClick` | `viewer/measure.js:1572` *(as `A.`)* | 1 | 4 |
-| `APP.handleMeasureRightClick` | `viewer/measure.js:1595` *(as `A.`)* | 1 | 3 |
+| `APP.handleMeasureClick` | `viewer/measure.js:1332` *(as `A.`)* | 1 | 2 |
+| `APP.handleMeasureDblClick` | `viewer/measure.js:1597` *(as `A.`)* | 1 | 4 |
+| `APP.handleMeasureRightClick` | `viewer/measure.js:1620` *(as `A.`)* | 1 | 3 |
 | `APP.handleWallXray` | `viewer/walk.js:474` *(as `A.`)* | 1 | 2 |
 | `APP.hemi` | `viewer/scene.js:222` *(as `A.`)* | 1 | 78 |
 | `APP.hiddenDiscs` | `viewer/panels.js:751` *(as `A.`)* | 1 | 53 |
@@ -1736,16 +1742,18 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP.loadRuleSet` | `viewer/rule_checklist.js:810` *(as `A.`)* | 1 | 3 |
 | `APP.loadWizard` | `viewer/main.js:293` | 1 | 2 |
 | `APP.lookup` | — *phantom* | 0 | 1 |
+| `APP.lvl` | — *phantom* | 0 | 1 |
 | `APP.markDirty` | `viewer/fx_still_refine.js:442` *(as `A.`)* | 4 | 462 |
 | `APP.markEdited` | `viewer/scene.js:678` *(as `A.`)* | 1 | 4 |
+| `APP.master` | — *phantom* | 0 | 1 |
 | `APP.matchStairsToStoreys` | `viewer/navigate_grid.js:535` *(as `A.`)* | 1 | 2 |
 | `APP.materializeZones` | — *phantom* | 0 | 2 |
 | `APP.maxqStatusDayRoomSegs` | `viewer/maxq_start.js:2710` | 1 | 13 |
 | `APP.measureActive` | `viewer/main.js:1154` | 4 | 28 |
-| `APP.measureFirstMarker` | `viewer/measure.js:1279` *(as `A.`)* | 5 | 9 |
-| `APP.measureFirstPoint` | `viewer/measure.js:1278` *(as `A.`)* | 5 | 8 |
+| `APP.measureFirstMarker` | `viewer/measure.js:1304` *(as `A.`)* | 5 | 9 |
+| `APP.measureFirstPoint` | `viewer/measure.js:1303` *(as `A.`)* | 5 | 8 |
 | `APP.measureGroup` | `viewer/picking.js:66` *(as `A.`)* | 1 | 23 |
-| `APP.measureLabels` | `viewer/measure.js:1277` *(as `A.`)* | 3 | 24 |
+| `APP.measureLabels` | `viewer/measure.js:1302` *(as `A.`)* | 3 | 24 |
 | `APP.mepSmoothNormals` | `viewer/streaming.js:84` *(as `A.`)* | 1 | 9 |
 | `APP.meshCache` | `viewer/scene.js:476` *(as `A.`)* | 2 | 46 |
 | `APP.meshSolidVolume` | `viewer/cpe_road_panels.js:16` *(as `A.`)* | 1 | 4 |
@@ -1765,14 +1773,14 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP.onSectionOff` | — *phantom* | 0 | 2 |
 | `APP.onSectionSliderChange` | — *phantom* | 0 | 2 |
 | `APP.openCacheDB` | `viewer/scene.js:613` *(as `A.`)* | 1 | 27 |
-| `APP.openFindPanel` | `viewer/main.js:290` | 2 | 66 |
+| `APP.openFindPanel` | `viewer/main.js:290` | 2 | 68 |
 | `APP.openImported` | `viewer/import.js:539` *(as `A.`)* | 1 | 13 |
-| `APP.openModelDb` | `viewer/scene.js:1637` *(as `A.`)* | 1 | 12 |
+| `APP.openModelDb` | `viewer/scene.js:1637` *(as `A.`)* | 1 | 15 |
 | `APP.openShareSheet` | `viewer/import.js:610` *(as `A.`)* | 2 | 5 |
 | `APP.openSiteCamera` | `viewer/sitecam.js:73` *(as `A.`)* | 1 | 7 |
 | `APP.openTab` | — *phantom* | 0 | 2 |
 | `APP.order` | — *phantom* | 0 | 2 |
-| `APP.orgId` | `erp/idempiere.html:1503` | 1 | 26 |
+| `APP.orgId` | `erp/idempiere.html:1539` | 1 | 26 |
 | `APP.pageErrors` | — *phantom* | 0 | 1 |
 | `APP.paramsToParas` | — *phantom* | 0 | 1 |
 | `APP.parasToParams` | — *phantom* | 0 | 1 |
@@ -1800,9 +1808,10 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP.realAt` | `viewer/chainage_grid.js:209` *(as `A.`)* | 1 | 1 |
 | `APP.refreshSectionModes` | `viewer/tools.js:486` *(as `A.`)* | 1 | 8 |
 | `APP.renderImportCards` | `viewer/import.js:623` *(as `A.`)* | 1 | 10 |
-| `APP.renderer` | `viewer/scene.js:139` *(as `A.`)* | 1 | 621 |
+| `APP.renderer` | `viewer/scene.js:139` *(as `A.`)* | 1 | 622 |
 | `APP.reportBug` | `viewer/helpers.js:204` *(as `A.`)* | 1 | 6 |
 | `APP.reportError` | `viewer/error_reporter.js:112` *(as `A.`)* | 2 | 10 |
+| `APP.requestRender` | — *phantom* | 0 | 2 |
 | `APP.resetCinemaGhostLens` | `viewer/nf_panel_search.js:174` *(as `A.`)* | 1 | 7 |
 | `APP.resetToStart` | `viewer/navigate_engine.js:468` *(as `A.`)* | 1 | 1 |
 | `APP.resident` | — *phantom* | 0 | 4 |
@@ -1822,8 +1831,8 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP.roadReportOpen` | `viewer/road_report.js:151` *(as `A.`)* | 1 | 4 |
 | `APP.roadStandardsOpen` | `viewer/road_standards.js:125` *(as `A.`)* | 1 | 4 |
 | `APP.roadworksPanelOpen` | `viewer/earthworks_overlay.js:191` *(as `A.`)* | 1 | 4 |
-| `APP.roleId` | `erp/idempiere.html:1504` | 5 | 41 |
-| `APP.roleOrgWhere` | `erp/idempiere.html:2699` | 1 | 1 |
+| `APP.roleId` | `erp/idempiere.html:1540` | 5 | 41 |
+| `APP.roleOrgWhere` | `erp/idempiere.html:2738` | 1 | 1 |
 | `APP.roomTitleApplyHold` | `viewer/cpe_room_title.js:799` *(as `A.`)* | 1 | 10 |
 | `APP.roomTitleApplyLead` | `viewer/cpe_room_title.js:747` *(as `A.`)* | 1 | 12 |
 | `APP.roomTitleBandSize` | `viewer/cpe_room_title.js:859` *(as `A.`)* | 1 | 1 |
@@ -1867,6 +1876,7 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP.sectionModes` | `viewer/tools.js:483` *(as `A.`)* | 1 | 14 |
 | `APP.sectionOn` | `viewer/civil_sections.js:165` *(as `A.`)* | 8 | 29 |
 | `APP.sectionPlane` | `viewer/tools.js:477` *(as `A.`)* | 3 | 35 |
+| `APP.seq` | `erp/ninja_stage.js:222` *(as `A.`)* | 1 | 3 |
 | `APP.sessionContext` | — *phantom* | 0 | 1 |
 | `APP.setGroundTexture` | `viewer/tools.js:355` *(as `A.`)* | 1 | 3 |
 | `APP.setMarkupColor` | `viewer/sitecam.js:344` *(as `A.`)* | 1 | 2 |
@@ -1874,13 +1884,13 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP.setOutline` | `viewer/fx_composer.js:111` *(as `A.`)* | 2 | 30 |
 | `APP.setSectionAxis` | `viewer/tools.js:524` *(as `A.`)* | 1 | 4 |
 | `APP.setWalkAnchor` | `viewer/walk.js:37` *(as `A.`)* | 1 | 2 |
-| `APP.shareProject` | `viewer/scene.js:3520` *(as `A.`)* | 1 | 1 |
+| `APP.shareProject` | `viewer/scene.js:3584` *(as `A.`)* | 1 | 1 |
 | `APP.shareSitePhoto` | `viewer/sitecam.js:456` *(as `A.`)* | 1 | 4 |
 | `APP.shareUrl` | `viewer/share.js:294` *(as `A.`)* | 1 | 5 |
 | `APP.sheets` | — *phantom* | 0 | 3 |
 | `APP.shellPassMs` | — *phantom* | 0 | 1 |
-| `APP.showAdvanced` | `erp/idempiere.html:1505` | 2 | 4 |
-| `APP.showCommandPalette` | `viewer/scene.js:3117` *(as `A.`)* | 1 | 1 |
+| `APP.showAdvanced` | `erp/idempiere.html:1541` | 2 | 4 |
+| `APP.showCommandPalette` | `viewer/scene.js:3181` *(as `A.`)* | 1 | 1 |
 | `APP.showDiffSummary` | `viewer/diff.js:293` *(as `A.`)* | 1 | 2 |
 | `APP.showEarthworksPanel` | `viewer/earthworks_overlay.js:170` *(as `A.`)* | 1 | 3 |
 | `APP.showEgressSanity` | `viewer/rule_checklist.js:852` *(as `A.`)* | 1 | 4 |
@@ -1914,13 +1924,13 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP.startMaxQ` | — *phantom* | 0 | 2 |
 | `APP.startMaxQualityOrbit` | `viewer/maxq_start.js:2685` | 1 | 86 |
 | `APP.startNavigation` | `viewer/navigate_engine.js:465` *(as `A.`)* | 1 | 4 |
-| `APP.startOfflineDownload` | `viewer/scene.js:3521` *(as `A.`)* | 1 | 3 |
+| `APP.startOfflineDownload` | `viewer/scene.js:3585` *(as `A.`)* | 1 | 3 |
 | `APP.startStepDetection` | `viewer/walk.js:354` *(as `A.`)* | 1 | 1 |
 | `APP.startStillRefine` | `viewer/fx_still_refine.js:927` *(as `A.`)* | 1 | 58 |
 | `APP.startStillSSGIPhase` | `viewer/effects_gi_poc.js:542` *(as `A.`)* | 1 | 3 |
 | `APP.startStreaming` | `viewer/streaming.js:333` *(as `A.`)* | 1 | 2 |
 | `APP.startWalkGpsTracking` | `viewer/walk.js:260` *(as `A.`)* | 1 | 2 |
-| `APP.status` | `viewer/scene.js:484` *(as `A.`)* | 1 | 325 |
+| `APP.status` | `viewer/scene.js:484` *(as `A.`)* | 1 | 327 |
 | `APP.std` | — *phantom* | 0 | 1 |
 | `APP.stillExit` | `viewer/fx_still_refine.js:1358` *(as `A.`)* | 1 | 3 |
 | `APP.stopCinemaOrbit` | `viewer/fx_cinema_orbit.js:556` *(as `A.`)* | 1 | 1 |
@@ -1979,7 +1989,7 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP.toCell` | `viewer/navigate_grid.js:530` *(as `A.`)* | 1 | 3 |
 | `APP.toast` | — *phantom* | 0 | 2 |
 | `APP.toggleBackground` | `viewer/tools.js:1189` *(as `A.`)* | 1 | 2 |
-| `APP.toggleClashMode` | `viewer/measure.js:2094` *(as `A.`)* | 1 | 1 |
+| `APP.toggleClashMode` | `viewer/measure.js:2119` *(as `A.`)* | 1 | 1 |
 | `APP.toggleDisc` | `viewer/panels.js:755` *(as `A.`)* | 1 | 2 |
 | `APP.toggleEarthworksPanel` | `viewer/earthworks_overlay.js:184` *(as `A.`)* | 1 | 3 |
 | `APP.toggleFlyAround` | `viewer/tour.js:8` *(as `A.`)* | 1 | 10 |
@@ -1988,7 +1998,7 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP.toggleGridOverlay` | `viewer/grid_overlay.js:1583` *(as `A.`)* | 1 | 28 |
 | `APP.toggleHoverName` | `viewer/hover_name.js:198` *(as `A.`)* | 1 | 14 |
 | `APP.toggleIssues` | `viewer/issues.js:243` *(as `A.`)* | 1 | 2 |
-| `APP.toggleMeasure` | `viewer/measure.js:1233` *(as `A.`)* | 1 | 8 |
+| `APP.toggleMeasure` | `viewer/measure.js:1258` *(as `A.`)* | 1 | 8 |
 | `APP.toggleNightMode` | `viewer/tools.js:2112` *(as `A.`)* | 1 | 22 |
 | `APP.toggleNlp` | `viewer/nlp.js:676` *(as `A.`)* | 1 | 9 |
 | `APP.togglePanel` | `viewer/panels.js:508` *(as `A.`)* | 1 | 2 |
@@ -2019,7 +2029,7 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP.updateHUD` | `viewer/panels.js:955` *(as `A.`)* | 1 | 7 |
 | `APP.updateHash` | `viewer/streaming.js:4297` *(as `A.`)* | 1 | 2 |
 | `APP.updateLighting` | `viewer/tools.js:997` *(as `A.`)* | 1 | 2 |
-| `APP.updateMeasureLabels` | `viewer/measure.js:1795` *(as `A.`)* | 1 | 2 |
+| `APP.updateMeasureLabels` | `viewer/measure.js:1820` *(as `A.`)* | 1 | 2 |
 | `APP.updateSectionPlane` | `viewer/tools.js:586` *(as `A.`)* | 1 | 4 |
 | `APP.updateSky` | `viewer/scene.js:275` *(as `A.`)* | 1 | 20 |
 | `APP.v` | — *phantom* | 0 | 2 |
@@ -2060,6 +2070,7 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP.wallXrayActive` | `viewer/picking.js:54` *(as `A.`)* | 3 | 4 |
 | `APP.wallXrayMepHighlights` | `viewer/picking.js:62` *(as `A.`)* | 2 | 4 |
 | `APP.wallXrayOriginals` | `viewer/picking.js:55` *(as `A.`)* | 2 | 5 |
+| `APP.win` | — *phantom* | 0 | 3 |
 | `APP.wing2dClose` | `viewer/wing_2d.js:326` *(as `A.`)* | 1 | 1 |
 | `APP.wing2dExport` | `viewer/wing_2d.js:231` *(as `A.`)* | 1 | 5 |
 | `APP.wing2dSet` | `viewer/wing_2d.js:324` *(as `A.`)* | 1 | 6 |

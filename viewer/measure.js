@@ -45,9 +45,34 @@ function setupMeasure(A) {
       sx = rect.left; sy = rect.top;
       pid = e.pointerId;
     });
+    // bim-compiler VOCAB_MESSAGE_CATALOG §14.4 — two OPT-IN switches (a panel that sets neither behaves as before):
+    //   el._dragClamp = true      keep the whole panel inside the window when it fits (else its top-left at 0,0), on drop and on resize;
+    //   el._dragRemember = '<key>' save left/top on drop (browser storage, a per-viewer convenience) and restore it here.
+    function _clamp() {
+      if (!el._dragClamp) return;
+      var r = el.getBoundingClientRect(), W = window.innerWidth, H = window.innerHeight;
+      var l = Math.max(0, Math.min(r.left, W - r.width)), t = Math.max(0, Math.min(r.top, H - r.height));
+      if (l !== r.left || t !== r.top) { el.style.left = l + 'px'; el.style.top = t + 'px'; el.style.right = 'auto'; el.style.bottom = 'auto'; console.log('§DRAG_CLAMP id=' + (el.id || '-') + ' left=' + Math.round(l) + ' top=' + Math.round(t)); }
+    }
+    if (el._dragRemember) {
+      try {
+        var _saved = JSON.parse(localStorage.getItem(el._dragRemember) || 'null');
+        if (_saved && isFinite(_saved.left) && isFinite(_saved.top)) { el.style.left = _saved.left + 'px'; el.style.top = _saved.top + 'px'; el.style.right = 'auto'; el.style.bottom = 'auto'; console.log('§DRAG_RESTORE key=' + el._dragRemember + ' left=' + _saved.left + ' top=' + _saved.top); }
+      } catch (err) { /* storage unavailable: default place */ }
+      _clamp();
+    }
+    if (el._dragClamp) window.addEventListener('resize', _clamp);
     function _endDrag() {
+      var wasMoved = moved;
       if (pid != null) { try { if (el.hasPointerCapture(pid)) el.releasePointerCapture(pid); } catch (err) {} }
       pending = false; dragging = false; moved = false; pid = null;
+      if (!wasMoved) return;
+      _clamp();
+      if (el._dragRemember) {
+        var r = el.getBoundingClientRect();
+        try { localStorage.setItem(el._dragRemember, JSON.stringify({ left: Math.round(r.left), top: Math.round(r.top) })); } catch (err) { /* storage unavailable */ }
+        console.log('§DRAG_SAVE key=' + el._dragRemember + ' left=' + Math.round(r.left) + ' top=' + Math.round(r.top));
+      }
     }
     el.addEventListener('pointermove', function(e) {
       if (!pending) return;
