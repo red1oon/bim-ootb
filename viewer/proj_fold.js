@@ -354,7 +354,7 @@ function _scalar(db, sql, params) {
       var byCls = {};
       // §PROXY_BY_DISC: the generic IfcBuildingElementProxy says nothing about WHAT it is (every civil element is one) —
       // its identity is the DISCIPLINE, so a proxy with a discipline gets one line per discipline. Other classes unchanged.
-      function _lineKey(r) { return (r.cls === 'IfcBuildingElementProxy' && r.disc && r.disc.charAt(0) !== '_') ? r.cls + ':' + r.disc : r.cls; }
+      var _lineKey = lineKey;   // ONE line key, shared with lineAmounts (viewer.cost) — bim-compiler prompts/CLI_ERP_IVR.md §29.6 CENTS K1
       // with a programme a line is (product, 4D task): every line sits in exactly one Gantt bar
       P.rows.forEach(function (r) { var k = _lineKey(r) + (SCH ? '#' + (taskOfRow.get(r) ? taskOfRow.get(r).id : '') : ''); (byCls[k] || (byCls[k] = [])).push(r); });
       var lineNo = 10;
@@ -405,7 +405,7 @@ function _scalar(db, sql, params) {
         var lnId = SCH
           ? _scalar(db, "SELECT c_projectline_id FROM C_ProjectLine WHERE c_project_id=? AND m_product_id=? AND c_projectphase_id=? AND COALESCE(c_projecttask_id,-1)=?", [projId, prodId, phId, lnTask == null ? -1 : lnTask])
           : _scalar(db, "SELECT c_projectline_id FROM C_ProjectLine WHERE c_project_id=? AND m_product_id=?", [projId, prodId]);
-        var amtStr = amt.toString(), qtyStr = String(Math.round(qty * 1000) / 1000), rateStr = String(rate);
+        var amtStr = amt.toString(), qtyStr = String(lineQty(qty)), rateStr = String(rate);
         if (lnId == null) {
           lnId = id('C_ProjectLine', 'c_projectline_id');
           db.run("INSERT INTO C_ProjectLine (c_projectline_id,c_project_id,ad_client_id,ad_org_id,isactive,created,createdby,updated,updatedby," +
@@ -561,6 +561,27 @@ function _scalar(db, sql, params) {
 
   // ── pricedPerTask(guids, schedule, priceFn) — split a selection by its elements' 4D task and price each part with the CALLER's own producer
   // (priceFn(guidArray) → {rows, elements}), tagging rows with taskId, so no row spans two Gantt bars. Elements in no task are priced once, untagged.
+  // ── the order's line rule, ONE owner (bim-compiler prompts/CLI_ERP_IVR.md §29.6 CENTS K1; Witness: W-RED1-COST C2, W-POST-FOLD F3) ──
+  // A line is (class — class:discipline for a proxy, §PROXY_BY_DISC — × 4D task): PlannedQty = lineQty(Σ qty) (3 dp), and the twin's legacy line rule makes
+  // PlannedAmt = PlannedQty × PlannedPrice, exact (MProjectLine.beforeSave, _legacyProjectRules). foldProjectOrder groups its lines with the same lineKey/lineQty.
+  function lineKey(r) { return (r.cls === 'IfcBuildingElementProxy' && r.disc && r.disc.charAt(0) !== '_') ? r.cls + ':' + r.disc : r.cls; }
+  function lineQty(q) { return Math.round(q * 1000) / 1000; }
+  // rows: pricedPerTask's rows (each with taskId when it is in a 4D task). Returns { lines:[{key, taskId, rate, qty, amount:BigDecimal, rows}], total:BigDecimal, share(row) -> BigDecimal }.
+  // share(row) = the row's part of its line, amount × qty_row / Σ qty_line (10 dp), so any grouping of rows adds up to the lines' exact total.
+  function lineAmounts(rows) {
+    var by = {}, order = [];
+    (rows || []).forEach(function (r) { var k = lineKey(r) + '#' + (r.taskId == null ? '' : r.taskId); if (!by[k]) { by[k] = { key: lineKey(r), taskId: r.taskId == null ? null : r.taskId, rate: r.rate, q: 0, rows: [] }; order.push(k); } by[k].q += r.qty; by[k].rows.push(r); });
+    var total = BD.ZERO, of = new Map(), lines = order.map(function (k) {
+      var L = by[k], qty = lineQty(L.q), amount = BD.of(String(L.rate)).multiply(BD.of(String(qty)));
+      total = total.add(amount);
+      var given = BD.ZERO;   // each row's share = amount × qty_row / Σ qty (10 dp); the LAST row takes the remainder, so the shares of a line add up to its amount exactly
+      L.rows.forEach(function (r, i) { var sh = i === L.rows.length - 1 ? amount.subtract(given) : (L.q ? amount.multiply(BD.of(String(r.qty))).divide(BD.of(String(L.q)), 10, HALF_UP) : BD.ZERO); given = given.add(sh); of.set(r, sh); });
+      return { key: L.key, taskId: L.taskId, rate: L.rate, qty: qty, amount: amount, rows: L.rows };
+    });
+    function share(r) { return of.get(r) || BD.ZERO; }
+    return { lines: lines, total: total, share: share };
+  }
+
   function pricedPerTask(guids, schedule, priceFn) {
     var g2t = {}, parts = {}, order = [];
     (schedule && schedule.tasks || []).forEach(function (t) { t.guids.forEach(function (g) { g2t[g] = t.id; }); });
@@ -574,7 +595,7 @@ function _scalar(db, sql, params) {
     return { rows: out, elements: elements, parts: order.length };
   }
 
-  var API = { _modelTag: _modelTag, _allocator: _allocator, foldProjectOrder: foldProjectOrder, foldAuthoredPhases: foldAuthoredPhases, scheduleFromDb: scheduleFromDb, scheduleFromRun: scheduleFromRun, pricedPerTask: pricedPerTask, BIM_BASE: BIM_BASE };
+  var API = { _modelTag: _modelTag, _allocator: _allocator, foldProjectOrder: foldProjectOrder, foldAuthoredPhases: foldAuthoredPhases, scheduleFromDb: scheduleFromDb, scheduleFromRun: scheduleFromRun, pricedPerTask: pricedPerTask, lineKey: lineKey, lineQty: lineQty, lineAmounts: lineAmounts, BIM_BASE: BIM_BASE };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   else global.ProjFold = API;
 })(typeof self !== 'undefined' ? self : this);
