@@ -288,7 +288,7 @@
     // §4 P3a: the Student block of one form, every fact from the vocabulary: the verb's description and its inputs (verbs.json), the example expanded in the sample place
     var SAMPLE = { building: { building: 'Duplex' }, kind: { building: 'Duplex', kind: 'Element', columns: ['guid'] }, erp: { erp: 'Order', ecolumns: ['DocumentNo'] }, any: {} };
     function studentBlock(w, f) {
-      var sp = SAMPLE[f.in] || {}, st = Object.assign(init(), sp), x, lines = [];
+      var sp = Object.assign({}, SAMPLE[f.in] || {}, f.for ? { erp: f.for } : {}), st = Object.assign(init(), sp), x, lines = [];   // a form of one window (form.for, data) is shown in THAT window
       var exT = String(f.ex || w).replace(/<([A-Za-z_]\w*)>=<([^<>\s]+)>/g, '$1=$2');   // a placeholder pair <Key>=<value> is read as Key=value, the shape the word's own help shows (new Column=value …)
       try { x = expand(st, tokenize(exT), { plain: true }); } catch (err) { x = { error: err.message }; }
       if (brk === 'dropctx' && x.args) { delete x.args.building; x.line = lineOf(x.verb, x.args); }   // W-HELP-STUDENT falsifier: the worked line loses its building (must FAIL S3)

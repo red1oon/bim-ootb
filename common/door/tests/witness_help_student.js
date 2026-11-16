@@ -58,7 +58,7 @@ Object.keys(words.words).forEach(w => {
     const want = {
       does: e.description || null,
       you: (function () { const parts = (f.pick ? [T('words.student.action', f.pick.join(', '))] : []).concat((f.args || []).map(n => { const i = e.inputs.filter(x => x.name === n)[0]; return i && i.description ? n + ' (' + i.description + ')' : n; })); return parts.length ? parts.join(' · ') : 'nothing more'; })(),
-      from: (function () { const sp = SAMPLE[f.in], app = verb.split('.')[0], has = (n) => e.inputs.some(i => i.name === n), typed = toks.slice(1).map(t => (/^([A-Za-z_]\w*)=/.exec(t.text) || [])[1]).filter(Boolean), out = [];
+      from: (function () { const sp = Object.assign({}, SAMPLE[f.in], f.for ? { erp: f.for } : {}), app = verb.split('.')[0], has = (n) => e.inputs.some(i => i.name === n), typed = toks.slice(1).map(t => (/^([A-Za-z_]\w*)=/.exec(t.text) || [])[1]).filter(Boolean), out = [];
         if (sp.building && has('building') && typed.indexOf('building') < 0) out.push('building');
         const kv = app === 'object' ? sp.kind : (app === 'mis' || app === 'erp') ? sp.erp : null; if (kv && has('kind') && typed.indexOf('kind') < 0) out.push('kind');
         return out.length ? out.join(', ') : null; })()
@@ -67,10 +67,10 @@ Object.keys(words.words).forEach(w => {
     ['does', 'you', 'from'].forEach(x => { if (got[x] !== want[x]) bad2.push(id + ' ' + x + ': got ' + JSON.stringify(String(got[x]).slice(0, 90)) + ' want ' + JSON.stringify(String(want[x]).slice(0, 90))); });
     // S3 the worked line: its place, the door's validator, and the line the shell itself prints for the same example in the same place
     const m = /^ {4}e\.g\.(?: in (.+?))?: (.+)$/.exec(exLine), place = m && m[1] || null, line = m && m[2];
-    if (place !== PLACE_NAME[f.in]) bad3.push(id + ' place ' + place + ' want ' + PLACE_NAME[f.in]);
+    const wantPlace = f.for || PLACE_NAME[f.in]; if (place !== wantPlace) bad3.push(id + ' place ' + place + ' want ' + wantPlace);
     let v = 'unparsed'; try { const pl = D.parseLine(line), args = {}; pl.kv.forEach(kv2 => { const inp = e.inputs.filter(i => i.name === kv2.k)[0]; args[kv2.k] = inp ? D.coerce(inp, kv2.raw) : kv2.raw; }); v = pl.verb !== verb ? 'verb ' + pl.verb + ' want ' + verb : D.validate(e, args); } catch (er) { v = er.message; }
     if (v) bad3.push(id + ' → ' + line + ': ' + v);
-    const s = plainCore.step(Object.assign(plainCore.init(), SAMPLE[f.in]), { text: ex }), shown = (s.effects[0] && s.effects[0].line) || s.state.pending || null;
+    const s = plainCore.step(Object.assign(plainCore.init(), SAMPLE[f.in], f.for ? { erp: f.for } : {}), { text: ex }), shown = (s.effects[0] && s.effects[0].line) || s.state.pending || null;
     if (shown !== line) bad3.push(id + ' worked=' + line + ' shell=' + shown);
   });
 });

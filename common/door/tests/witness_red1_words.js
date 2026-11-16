@@ -20,7 +20,7 @@ const mask = (x) => JSON.stringify(x, (key, v) => (key === 'request' || key === 
   const sample = (inp) => (inp && inp.example != null ? String(inp.example) : (inp && inp.type === 'number' ? '1' : 'x1'));
   let judged = 0; const bad1 = [], bad2 = [];
   Object.keys(words.words).forEach(w => words.words[w].forms.forEach(f => {
-    const st = Object.assign(core.init(), place[f.in]);
+    const st = Object.assign(core.init(), place[f.in], f.for ? { erp: f.for } : {});   // a form that names its window as data (form.for) is judged IN that window
     const verb0 = f.verb.replace('{1}', (f.pick || [''])[0]), e0 = byVerb[verb0];
     const vals = (f.pick ? [f.pick[0]] : []).concat(f.args.map(a => sample(e0 && e0.inputs.filter(i => i.name === a)[0])));
     const text = [w].concat(vals.map(v => /\s/.test(v) ? '"' + v + '"' : v)).join(' ');
