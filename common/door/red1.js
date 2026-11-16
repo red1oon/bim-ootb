@@ -153,7 +153,7 @@ async function session(o) {
   const typed = [];
   let lastArrow = null, lastGap = null, lastBad = null, pendingReport = null, hintDue = false;   // §28
   const drawHint = () => {
-    if (!tty || closed || sh.menuOpen() || (process.env.ASSIST_BREAK !== 'noquiet' && (pendingReport || (sh.state() || {}).asking || (sh.state() || {}).pending))) { if (hint) process.stdout.write('\x1b[0K'); hint = null; return; }   // a question is open: no suggestion (film finding 3)
+    if (!tty || closed || sh.menuOpen() || (process.env.ASSIST_BREAK !== 'noquiet' && (pendingReport || (sh.state() || {}).asking || (sh.state() || {}).pending || (sh.state() || {}).offer))) { /* + an open next-step offer (§29.3; film rc2 finding) */ if (hint) process.stdout.write('\x1b[0K'); hint = null; return; }   // a question is open: no suggestion (film finding 3)
     const line = rl.line || '', r = rl.cursor === line.length && line.trim() ? AS.suggest(actx(), line) : null; hint = r && (r.ghost || r.replace) ? r : null;
     let t = !hint ? '' : hint.ghost ? hint.ghost : '   ▸ ' + hint.replace.to + (hint.candidates[0] && hint.candidates[0].reason ? '  (' + hint.candidates[0].reason + ')' : '');
     const room = (process.stdout.columns || 80) - sh.prompt().length - line.length - 1; if (t.length > room) t = room > 0 ? t.slice(0, room) : '';
