@@ -359,6 +359,7 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
                  action: action, from: from, to: to, outcome: outcome, unmet: [],
                  oracle: opts.oracle || (e && e.docAction && e.docAction.oracle) || null };
       if (action === 'RC' || action === 'RA') op.reversal = true;
+      if (typeof opts.settled === 'function') Object.defineProperty(op, 'settled', { value: opts.settled, enumerable: false, writable: true, configurable: true });   // bim-compiler prompts/CLI_ERP_IVR.md §38 K2: the engine's verdict goes back to the caller
       console.log('§CRUD-HOSTPROCESS table=' + key + ' id=' + op.id + ' action=' + action + ' from=' + from + ' to=' + to + ' outcome=' + outcome + ' ownerGated=' + op.ownerGated);
       applyOp(op);
     });
@@ -2528,6 +2529,7 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
   // SEALS ONCE from the tip (the I-D win — not a whole-log reseal). T1 (W-SO-COMPLETE-UI): a c_order
   // Complete now carries the engine's consequence ops (ship + invoice creates) ahead of SET_STATUS; the
   // committed op is stamped with the gid so the history MOMENT carries the WHOLE group (Part B).
+  function _settleProcess(op, v) { if (op && typeof op.settled === 'function') { var f = op.settled; op.settled = null; try { f(v); } catch (e) { console.log('§CRUD process settled-callback error ' + (e && e.message)); } } }   // §38 K2, once per op
   function commitProcess(op) {
     var K = kernel();
     withSidecar(function (db) {
@@ -2539,17 +2541,17 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
       // gate owner+CAS BEFORE the seal; a non-owner / stale-CAS process is REJECTED (toast, no dot, no
       // fan-out), never silently sealed. Non-gated doctypes pass through unchanged.
       _gateForOwnedWrite(op.ownerGated ? op : { ownerGated: false }, freshDb, function (gate) {
-        if (!gate.ok) { _gateReject(op, gate); done(); return; }
+        if (!gate.ok) { _gateReject(op, gate); _settleProcess(op, { ok: false, reason: 'refused: ' + gate.reason }); done(); return; }
       completeFanout(op, function (fanout) {
       if (fanout && fanout.abort) {                             // DocumentEngine.processIt returned false → nothing is written (trx rollback)
         console.log('§CRUD process key=' + op.key + ' id=' + op.id + ' action=' + op.action + ' REFUSED by the model: ' + fanout.abort);
-        toast('PROCESS ' + fname(op.key) + ' — ' + fanout.abort); done(); return;
+        toast('PROCESS ' + fname(op.key) + ' — ' + fanout.abort); _settleProcess(op, { ok: false, reason: String(fanout.abort) }); done(); return;
       }
       _serializeCommit(function () {                            // EXCLUSIVE: no interleaved async seal (batch-safe, same-tab)
         if (fanout && (fanout.docs || fanout.model)) fanout.ops = _resolveOpRefs(freshDb, fanout.ops);   // FS-15/model: FK = the creating op's synthetic pk
         var groupOps = CORE.buildDocActionGroup(op, fanout);   // PURE assembly: engine consequences + SET_STATUS last
         return Promise.resolve(K.commitGroup(freshDb, groupOps, _commitMeta())).then(function (res) {
-          if (!res || res.committed !== true) { console.warn('§CRUD process commitGroup not-committed reason=' + (res && res.reason || '?')); dryProcess(op); return; }
+          if (!res || res.committed !== true) { console.warn('§CRUD process commitGroup not-committed reason=' + (res && res.reason || '?')); _settleProcess(op, { ok: false, reason: 'not committed: ' + (res && res.reason || '?') }); dryProcess(op); return; }
           // T7 fix 2 (W-T7-INC): hot-path verify is tip-cached incremental (first call of a session is full).
           return Promise.resolve((K.verifyChainIncremental || K.verifyChain)(freshDb)).then(function (v) {
             return _sidePersist(K, freshDb, res.ids).then(function () {
@@ -2569,6 +2571,8 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
               if (fanout && fanout.observed) _deliverObserved(fanout.observed, res, 0, groupOps);   // post* of the saves the DocAction made, after its group committed
               setDocStatus(op.key, op.to, op.outcome, op.unmet);
               docDot(CORE.docLabel(op, fname(op.key)), op);
+              var _tip = null; try { _tip = CORE.readTip(freshDb, String(op.key), op.id, _readBranch()); } catch (e) {}   // the status the committed group wrote (the op-log tip), else the op's own
+              _settleProcess(op, { ok: true, to: _tip || op.to, gid: res.gid });
               toast('PROCESS ' + fname(op.key) + ' → ' + op.to + (op.outcome === 'in-progress' ? ' (In Progress)' : ' (Completed)') + ' — signed' + (v && v.ok ? '' : ' (verify FAIL!)'));
               // S1/J5 — announce the committed DOCUMENT action so a host (iDempiere chrome) re-reads the now-signed
               // DocStatus through its readTip overlay: the persisted CO shows + survives reload (op-log is the truth).
@@ -2576,8 +2580,8 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
                 { detail: { table: op.table, op_type: 'DOC_ACTION', id: op.id == null ? null : op.id, to: op.to, action: op.action } })); } catch (ev) {}
             });
           });
-        }).catch(function (er) { console.warn('§CRUD process commitGroup/verify error', er && er.message); dryProcess(op); });
-      }).catch(function (er) { console.warn('§CRUD process commit error', er && er.message); dryProcess(op); }).then(function () { done(); }, function () { done(); });
+        }).catch(function (er) { console.warn('§CRUD process commitGroup/verify error', er && er.message); _settleProcess(op, { ok: false, reason: 'not committed: ' + (er && er.message) }); dryProcess(op); });
+      }).catch(function (er) { console.warn('§CRUD process commit error', er && er.message); _settleProcess(op, { ok: false, reason: 'not committed: ' + (er && er.message) }); dryProcess(op); }).then(function () { done(); }, function () { done(); });
       });
       });
       });

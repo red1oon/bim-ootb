@@ -7,8 +7,8 @@
 //        glassbowl_data.db via wfmc; handAuthored=0 (no column or card invented).
 //     2. §KANBAN-CHROME-DRAG    — a card drag resolves (resolveDrag) to the proven dispatch op, and
 //        that op is BYTE-IDENTICAL to the chat-SEND op for the same record+action (SEND==DRAG==VERB).
-//     3. §KANBAN-CHROME-LEGALITY — an illegal drag (CO→DR, no wfmc edge) is refused AT THE BOARD
-//        (snap-back) AND, if forced, by the ENGINE state-machine — legality is engine-owned.
+//     3. §KANBAN-CHROME-LEGALITY — an illegal drag (CO→DR) takes legacy's target action "DR" (CLI_ERP_IVR §38) and is refused
+//        by the ENGINE state-machine — legality is engine-owned (the board no longer pre-filters by wfmc edge).
 //   §-log first — READ tests/poc_kanban_chrome.log before any conclusion.
 // Run:  node tests/poc_kanban_chrome.js 2>&1 | tee tests/poc_kanban_chrome.log   (cwd = bim-ootb/erp)
 'use strict';
@@ -145,7 +145,11 @@ function rows(db, sql, p) {
   console.log('§KANBAN-CHROME-LEGALITY illegalDrag(CO→DR)=blocked(' + illegal.reason + ') snapBack=' +
     (!illegal.legal ? 'Y' : 'N') + ' engineRejects=' + (!rIllegal.ok ? 'Y' : 'N') +
     ' engineOwned=Y stage=' + rIllegal.stage);
-  ok(!illegal.legal && illegal.action === null && illegal.reason === 'no-edge', 'illegal drag CO→DR refused at the board (no wfmc edge → snap-back)', 'action=' + illegal.action);
+  // bim-compiler prompts/CLI_ERP_IVR.md §38 K1 (2026-11-17): legacy's Kanban (MKanbanBoard.java:100-113) gives every column a drop and takes the action from the TARGET
+  //   status alone: the DR column's entry is "DR", which is no DocAction, so the ENGINE refuses it (processIt false). The board no longer pre-filters by wfmc edge.
+  var rDR = K.dispatch(dbCO, { wfmc: wfmc, guards: [], query: q(dbCO), actor: ACTOR, baseTs: BASE },
+    { docType: 'C_Invoice', table: 'C_Invoice', id: INV, uuid: docGuid, status: 'CO', action: illegal.action });
+  ok(illegal.action === 'DR' && !rDR.ok, 'a drag CO→DR takes legacy\'s target action DR and the ENGINE refuses it (no DocAction "DR"; §38 K1)', 'action=' + illegal.action + ' engine=' + (rDR.ok ? 'APPLIED' : rDR.stage + ':' + rDR.reason));
   ok(!rIllegal.ok && rIllegal.stage === 'state-machine', 'the engine state-machine rejects the illegal move — same guard both lenses funnel through', rIllegal.stage + ':' + rIllegal.reason);
 
   console.log('\n═══ ' + (fails === 0 ? '✅ POC-KANBAN-CHROME ALL PASS' : '❌ POC-KANBAN-CHROME ' + fails + ' FAIL') +
