@@ -189,6 +189,10 @@ async function session(o) {
         const t = Dr.nextTree(a, inv, { ascii: process.env.RED1_ASCII === '1', brk: process.env.DRAW_BREAK || '' });
         if (t) { process.stdout.write(e.status + ' · ' + e.verb + ' · ' + e.ms + ' ms\n'); t.forEach(l => process.stdout.write(l + '\n')); say('draw tree lines=' + t.length + ' legal=' + JSON.stringify(a.legal)); return; }
       }
+      if (draw === 'status' && e.status === 'ok') {   // §29.4 P5: the earned-value table, from erp.project_status' own answer
+        const t = Dr.status(a);
+        if (t) { process.stdout.write(e.status + ' · ' + e.verb + (e.held ? ' · held' : ' · ' + e.ms + ' ms') + '\n'); t.forEach(l => process.stdout.write(l + '\n')); say('draw status lines=' + t.length + ' phases=' + a.phases.length); return; }
+      }
       if ((draw === 'record' || draw === 'tabs') && e.status === 'ok' && ctx) {   // §29.1: a record read as a record (not JSON), its tabs with their counts; both from the answer + the kind's own dictionary rows
         const t = draw === 'record' ? Dr.record(a, ctx, { brk: process.env.RECORD_BREAK || '' }) : Dr.tabs(a, ctx);
         if (t) { process.stdout.write(e.status + ' · ' + e.verb + (e.held ? ' · held' : ' · ' + e.ms + ' ms') + '\n'); t.forEach(l => process.stdout.write(l + '\n')); say('draw ' + draw + ' lines=' + t.length); return; }

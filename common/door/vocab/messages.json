@@ -240,6 +240,12 @@
   },
   "words.link_none": {
    "en": "cd: there is no {0} for {1} yet; {2} puts it there"
+  },
+  "words.works_for": {
+   "en": "{0} works in a {1} (cd {1} <name>); you are in {2}"
+  },
+  "words.here_nowhere": {
+   "en": "nowhere yet"
   }
  }
 }

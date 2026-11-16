@@ -40,7 +40,7 @@
     // §1d.1: the kind's properties, as the type assist needs them (name, label, type, list values), kept from the describe answer cd already read
     function slim(ps) { return (ps || []).map(function (q) { var o2 = { name: q.name, label: q.label || q.name, type: q.type, values: q.values || null }; if (q.seq != null) o2.seq = q.seq; if (q.displayed === false) o2.displayed = false; return o2; }); }   // seq + displayed=false kept only when the dictionary says them: the record view orders and filters by the window's own fields (§29.1)
     function where(st) { return st.erp ? 'erp' : (st.kind ? 'kind' : (st.building ? 'building' : 'any')); }
-    function fits(form, w) { return form.in === 'any' || form.in === w || (form.in === 'building' && w === 'kind'); }
+    function fits(form, w, st) { return (!form.for || (st && String(st.erp).toLowerCase() === String(form.for).toLowerCase())) && (form.in === 'any' || form.in === w || (form.in === 'building' && w === 'kind')); }   // form.for: a form of one ERP window only (status: Project)
     function ctxArgs(st, e, args) {   // §22.4: the context fills only an input the verb has and the line did not give
       var has = function (n) { return e.inputs.some(function (i) { return i.name === n; }); }, app = e.verb.split('.')[0];
       var put = function (n, v) { if (v != null && has(n) && (args[n] == null || brk === 'ctxwins')) args[n] = v; };   // ctxwins: W-RED1-CD falsifier, the context beats a typed key (must FAIL C2)
@@ -67,7 +67,8 @@
       if (w === 'ls' && toks.length > 1 && toks.slice(1).some(function (t) { return t.text.indexOf('=') < 0; }) && (st.kind || st.erp))
         return { error: M('words.ls_filters_column', ((st.kind ? st.columns : st.ecolumns) || ['Name']).slice(-1)[0], toks[1].text, ((st.kind ? st.columns : st.ecolumns) || []).join(', ')) };
       if (w === 'ls' && st.rec && st.erp && toks.length === 1) { var ta = { kind: st.erp, id: st.rec.id }; ctxArgs(st, verbs['mis.read'], ta); return { line: lineOf('mis.read', ta), verb: 'mis.read', args: ta, draw: 'tabs', ctx: { tabs: st.etabs, label: st.rec.label, kind: st.erp } }; }   // §29.1: ls in a record = its child tabs with their counts
-      var here = where(st), form = def.forms.filter(function (f) { return fits(f, here); })[0];
+      var here = where(st), form = def.forms.filter(function (f) { return fits(f, here, st); })[0];
+      if (!form && def.forms.some(function (f) { return f.for; })) return { error: M('words.works_for', w, def.forms.filter(function (f) { return f.for; })[0].for, here === 'any' ? M('words.here_nowhere') : (st.erp ? st.erp + (st.rec ? '/' + st.rec.label : '') : st.building + (st.kind ? '/' + st.kind : ''))) };   // a word of one window (status: Project): say which
       if (!form) { var WP = { kind: M('words.works_place.kind'), building: M('words.works_place.building'), erp: M('words.works_place.erp'), any: M('words.works_place.any') }, wk = def.forms.map(function (f) { return f.in === 'kind' || f.in === 'building' || f.in === 'erp' ? WP[f.in] : WP.any; }).join(M('words.works_list_or'));
         return { error: here === 'any' ? M('words.works_nowhere', w, wk) : M('words.works_in', w, wk, here === 'erp' ? st.erp : st.building + (st.kind ? '/' + st.kind : '')) }; }
       var pos = [], args = {};
