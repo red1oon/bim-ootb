@@ -1688,8 +1688,11 @@
   // matches, left untouched per this spec's own fence) and splicing in a visibility-graph detour
   // wherever a chord fails. Never touches WHICH rooms/doors the route uses (`doors` list
   // untouched) — only the polyline's intermediate points, exactly per the spec's scope fence.
+  // A-4/A-6 (bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md A2-TIMING-3): the ONE timer is the edge the shell installs (CoreEdge on the
+  // global: viewer.html / modeller.html, or a Node runner on globalThis). No edge = null: the timing is unknown, never a wall clock.
+  function _perf() { var G = (typeof globalThis !== 'undefined') ? globalThis : ROOT, e = G.CoreEdge; return e && typeof e.perfMs === 'function' ? e.perfMs() : null; }
   function _legalizePath(graph, path) {
-    var _legT0 = (typeof Date !== 'undefined') ? Date.now() : 0;
+    var _legT0 = _perf();
     var legalized = 0, detoured = 0;
     var out = [path[0]];
     for (var i = 0; i + 1 < path.length; i++) {
@@ -1770,7 +1773,8 @@
     if (graph) {
       var _legSt = graph._legalizeStats || (graph._legalizeStats = { calls: 0, legalized: 0, detoured: 0, ms: 0 });
       _legSt.calls++; _legSt.legalized += legalized; _legSt.detoured += detoured;
-      _legSt.ms += (typeof Date !== 'undefined') ? (Date.now() - _legT0) : 0;
+      var _legT1 = _perf();   // one untimed call makes the sum unknown (null), it is never guessed
+      _legSt.ms = (_legSt.ms == null || _legT0 == null || _legT1 == null) ? null : _legSt.ms + (_legT1 - _legT0);
     }
     return out;
   }

@@ -554,7 +554,7 @@
         var _bnRows = dbQuery("SELECT value FROM project_metadata WHERE key='building_name'") || [];
         var _bname = (_bnRows[0] && _bnRows[0][0]) || 'unknown';
         log('§PATH_LEGAL_NO_RASTER building=' + _bname + ' legalizations=' + _lgSt.legalized +
-          ' calls=' + _lgSt.calls + ' ms=' + _lgSt.ms.toFixed(1));
+          ' calls=' + _lgSt.calls + ' ms=' + (_lgSt.ms == null ? '?' : _lgSt.ms.toFixed(1)));   // ? = no edge timer (A2-TIMING-3)
       }
     }
 

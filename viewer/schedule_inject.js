@@ -52,7 +52,11 @@
   var GEN_NAME = 'Default Programme (auto-generated)';        // see HONESTY above
   var _busy = false;                                          // re-entrancy guard — one tap, not N
 
-  function _now() { return (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now(); }
+  // A-4/A-6 (bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md A2-TIMING-3): timed through the shell's edge (global.CoreEdge); no edge = null / ms=?
+  // globalThis first: in Node this file's wrapper gets module.exports as `global`, not the real global (A2-TIMING-3 T10 found it).
+  function _perf() { var G = (typeof globalThis !== 'undefined') ? globalThis : global, e = G.CoreEdge; return e && typeof e.perfMs === 'function' ? e.perfMs() : null; }
+  function _since(t0) { var t = _perf(); return (t0 == null || t == null) ? null : t - t0; }
+  function _ms(v) { return v == null ? '?' : v.toFixed(0); }
   // Let one frame paint between a DOM update and the next heavy synchronous call. materializeZones
   // is SYNCHRONOUS and measured up to 2,515ms (§S7-INJECT-COST, Hospital) — without this the
   // "Materializing…" stage would never actually be painted before the tab freezes to compute it.
@@ -128,7 +132,7 @@
 
     _busy = true;
     progress.stage('materializing');
-    var t0 = _now();
+    var t0 = _perf();
     return _yield().then(function () { return _resolveTemplate(opts); }).then(function (tpl) {
       var rules = opts.rules || global.SEQUENCE_RULES || {};
       var res;
@@ -144,11 +148,11 @@
       } catch (e) {
         res = { ok: false, reason: 'exception: ' + (e && e.message) };
       }
-      var materializeMs = _now() - t0;
+      var materializeMs = _since(t0);
       if (!res || !res.ok) {
         _busy = false;
         var reason = (res && res.reason) || 'unknown';
-        console.log('§SCHED_INJECT_FAIL reason=' + reason + ' ms=' + materializeMs.toFixed(0));
+        console.log('§SCHED_INJECT_FAIL reason=' + reason + ' ms=' + _ms(materializeMs));
         // Honest degrade, never the dead-end "needs a baked schedule" message (§S7-INJECT rule 3).
         progress.fail('Could not generate a construction programme (' + reason + ').');
         return { ok: false, reason: reason, materializeMs: materializeMs };
@@ -160,7 +164,7 @@
       console.log('§SCHED_INJECT materialized schedule=' + schedId +
         ' tasks=' + (res.zoneCount != null ? res.zoneCount : '?') +
         ' templateVersion=' + (res.templateVersion || 'legacy(no-template)') +
-        ' ms=' + materializeMs.toFixed(0));
+        ' ms=' + _ms(materializeMs));
       progress.stage('saving');
       return _yield().then(function () {
         if (!A.DB_URL) {
@@ -171,18 +175,18 @@
           progress.done(outNoUrl);
           return outNoUrl;
         }
-        var tp0 = _now();
+        var tp0 = _perf();
         // immediate:true — a deliberate one-time commit, same as schedule_author_ui.js's Apply-to-4D
         // (§SE-6); do not let the default 1200ms debounce delay the honest result the UI reports.
         // §PERSIST_TARGET: split mode keys the META url (A._dbPersistUrl) — a raw A.DB_URL slot is never read back.
         return SA.persistDb(d, (SA.persistUrlFor ? SA.persistUrlFor(A) : A.DB_URL), { immediate: true }).then(function (saved) {
-          var persistMs = _now() - tp0;
+          var persistMs = _since(tp0);
           _busy = false;
           var out = { ok: true, scheduleId: schedId, persisted: !!saved,
             materializeMs: materializeMs, persistMs: persistMs,
             taskCount: res.zoneCount, templateVersion: res.templateVersion };
           console.log('§SCHED_INJECT_RESULT persisted=' + !!saved +
-            ' materializeMs=' + materializeMs.toFixed(0) + ' persistMs=' + persistMs.toFixed(0));
+            ' materializeMs=' + _ms(materializeMs) + ' persistMs=' + _ms(persistMs));
           progress.done(out);
           return out;
         });

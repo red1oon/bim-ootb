@@ -202,7 +202,7 @@ async function initViewer() {
         // rooms are tagged too (the door-exempt display default missed them); exclude CORRIDOR_ROOM nodes.
         // v8 (ROOM_GRAPH_REAL_AABB.md §4 item 3, 2026-09-18): buildGraph() gains an OPTIONAL
         // opts.doorRealXY — no behaviour change unless a caller passes one (see below).
-        '../common/room_graph.js?v=13',
+        '../common/room_graph.js?v=14',
         // ROOM_GRAPH_REAL_AABB.md §4 item 3 — real_geometry.js is the SAME module cross_edges.js
         // (modeller) already uses; the Viewer never loaded it before this. Pure DB read, no THREE/DOM
         // dep (see its own header) — safe alongside room_graph.js's lazy-load discipline. Must load

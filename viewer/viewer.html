@@ -952,7 +952,7 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
      (dual-mode, see its own header); in the browser it reads window.RoomGraph, which is lazy-
      loaded on demand by APP.loadNavigate() (see rule_checklist.js's A.showEgressSanity) — this
      tag only needs to load before A.showEgressSanity() can run, same as structural_sanity.js. -->
-<script src="egress_sanity.js?v=3" onerror="console.warn('§LOAD_FAIL egress_sanity.js')"></script>
+<script src="egress_sanity.js?v=4" onerror="console.warn('§LOAD_FAIL egress_sanity.js')"></script>
 <!-- §PLACE (GEOREF_SUNPATH_COMPASS.md §13) — offline place lookup. Pure + inert on load:
      it defines window.PlaceLookup and does nothing until a caller hands it the table text. -->
 <script src="place_lookup.js?v=1" onerror="console.warn('§LOAD_FAIL place_lookup.js')"></script>
@@ -1119,7 +1119,7 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
      call time, window.tm4DTemplate (time_machine.js) / window._4dTemplate — never loads a second
      copy of the template (§S7-GRAIN/§S7-INJECT-WHERE). Order vs schedule_author_ui.js does not
      matter (lazy global lookups, never load-time). -->
-<script src="schedule_inject.js?v=3" onerror="console.warn('§LOAD_FAIL schedule_inject.js — the sched4d pill will not be able to generate a programme')"></script>
+<script src="schedule_inject.js?v=4" onerror="console.warn('§LOAD_FAIL schedule_inject.js — the sched4d pill will not be able to generate a programme')"></script>
 <script src="schedule_sync.js?v=3" onerror="console.warn('§LOAD_FAIL schedule_sync.js')"></script>
 <script src="schedule_author_ui.js?v=11" onerror="console.warn('§LOAD_FAIL schedule_author_ui.js')"></script>
 <script src="error_reporter.js?v=1" onerror="console.warn('§LOAD_FAIL error_reporter.js')"></script>
@@ -1169,7 +1169,7 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
 <!-- Connect Scene broker (prompts/CONNECT_SCENE_SPEC.md): the viewer joins the shared cross-surface context
      as surface 'viewer' — selection/timeline/identity over the one signed op-log. Opt-in (toggle / ?connect=1). -->
 <script src="connect_scene.js?v=2" onerror="console.warn('§CONNECT LOAD_FAIL connect_scene.js')"></script>
-<script src="main.js?v=61"></script>
+<script src="main.js?v=62"></script>
 <!-- §S8 EDIT→Δ (TM_4D5D_VARIANCE_LANE §S8): ONE pure Δ function + the Viewer's Connect 'identity' subscriber (P3). -->
 <script src="edit_delta.js?v=4" onerror="console.warn('§LOAD_FAIL edit_delta.js')"></script>
 <script src="edit_delta_viewer.js?v=2" onerror="console.warn('§LOAD_FAIL edit_delta_viewer.js')"></script>
