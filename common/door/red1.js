@@ -144,13 +144,15 @@ async function session(o) {
     KINDS = rows.filter(r => r.Name).map(r => ({ name: r.Name, window: r.AD_Window_ID != null })).sort((x, y) => (y.window - x.window) || (x.name < y.name ? -1 : 1));
     say('assist kinds=' + KINDS.length + ' with-window=' + KINDS.filter(k => k.window).length);
   }).catch(err => say('assist kinds FAIL ' + (err && err.message)));
-  const actx = () => { const s = sh.state(); return { words: names.filter(n => n.indexOf('.') < 0), verbs: VB, buildings: BLD(), kinds: KINDS, props: s.kind ? s.props : (s.erp ? s.eprops : null), codes: DOF.codes || {} }; };
+  const narrowVB = (s) => { const off = sh.core.offered(s, [], Object.keys(VB)), o = {}; off.verbs.forEach(v => { o[v] = VB[v]; }); return o; };   // §40 C1: offers narrowed to the group, never what runs
+  const actx = () => { const s = sh.state(); return { words: sh.core.offered(s, names.filter(n => n.indexOf('.') < 0), []).words, verbs: narrowVB(s), buildings: BLD(), kinds: KINDS, props: s.kind ? s.props : (s.erp ? s.eprops : null), codes: DOF.codes || {} }; };
   let hint = null;
   const completer = (line) => {
     if (hint && hint.ghost) return [[hint.token + hint.ghost], hint.token];
     if (hint && hint.replace && line.slice(-hint.replace.from.length) === hint.replace.from) { const to = line.slice(0, line.length - hint.replace.from.length) + hint.replace.to;   // readline completes by APPENDING; a different spelling replaces the token: clear the line, write it again
       say('assist take from=' + JSON.stringify(hint.replace.from) + ' to=' + JSON.stringify(hint.replace.to)); setImmediate(() => { rl.write(null, { ctrl: true, name: 'u' }); rl.write(to); }); return [[], line]; }
-    const w = line.split(/\s+/).pop(), hits = names.filter(v => v.indexOf(w) === 0); return [hits.length ? hits : names, w];
+    const s0 = sh.state(), off = sh.core.offered(s0, names.filter(n => n.indexOf('.') < 0), names.filter(n => n.indexOf('.') >= 0)), here = off.words.concat(off.verbs);   // §40 C1
+    const w = line.split(/\s+/).pop(), hits = here.filter(v => v.indexOf(w) === 0); return [hits.length ? hits : here, w];
   };
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: tty, completer: tty ? completer : undefined, history, historySize: 1000, prompt: tty ? sh.prompt() : '' });
   const typed = [];
@@ -248,8 +250,8 @@ async function session(o) {
       if (bx) { process.stdout.write('→ ' + bx.line + '\n'); say('bang asked=' + JSON.stringify(bx.asked) + ' line=' + JSON.stringify(bx.line)); line = bx.line; }
     }
     typed.push(line);
-    if ((R.isHelp(line) || GROUP_WORD.test(line)) && !sh.menuOpen()) {   // §24: help / bim / mis / erp / help <word> = words_core.helpText (the SAME bytes as a one-shot `red1 help`); help verbs | help <app> | help <app.verb> = the door's own help
-      const h = helpOf(line, sh.core, vocab, sh.state().level); process.stdout.write(h.text); say('help topic=' + JSON.stringify(h.topic) + (h.door ? ' door=1' : ' words=1')); return;
+    if (R.isHelp(line) && !sh.menuOpen()) {   // §40 C1: `bim` / `mis` / `erp` ALONE now enter the group (words_core step); `help <g>` is the group's help   // §24: help / bim / mis / erp / help <word> = words_core.helpText (the SAME bytes as a one-shot `red1 help`); help verbs | help <app> | help <app.verb> = the door's own help
+      const h = helpOf(sh.state().group && /^\s*(help|\?)\s*$/.test(line) ? 'help ' + sh.state().group : line, sh.core, vocab, sh.state().level); process.stdout.write(h.text); say('help topic=' + JSON.stringify(h.topic) + (h.door ? ' door=1' : ' words=1')); return;   // §40 C1: a bare help inside a group = that group
     }
     if (pendingReport && !sh.menuOpen()) {   // §28: the choice after `report`
       const g = pendingReport; pendingReport = null; const RC = require(path.join(__dirname, 'report_core.js'));
@@ -272,6 +274,7 @@ async function session(o) {
       if (w === 'history') { const all = saved.concat(typed.slice(0, -1)), nArg = Number((line.split(/\s+/)[1] || '').trim()), from = nArg > 0 ? Math.max(0, all.length - nArg) : 0; all.slice(from).forEach((l, i) => process.stdout.write(String(from + i + 1).padStart(4) + '  ' + l + '\n')); say('history saved=' + saved.length + ' session=' + (typed.length - 1) + ' shown=' + (all.length - from)); return; }   // §39 H1: earlier sessions too, numbered oldest first (the !n numbers)
       if (w === 'menu') { rl.pause(); const r = cp.spawnSync(process.execPath, [path.join(__dirname, 'mis.js'), '--menu'].concat(line.split(/\s+/).slice(1)), { stdio: 'inherit', env: process.env }); say('menu exit=' + r.status); rl.resume(); return; }
     }
+    if (BREAK() === 'gatecontainer' && sh.state().group && /^\w+\.\w+/.test(line) && sh.core.groupOf(line.split(/\s/)[0]) !== sh.state().group) { process.stdout.write('refused: not in this group\n'); return; }   // W-RED1-CONTAINER X2 falsifier only
     await sh.run(line, io);
     say('typed n=' + typed.length + ' where=' + JSON.stringify(sh.prompt().trim()));
   };
@@ -281,6 +284,13 @@ async function session(o) {
   });
   rl.on('line', (l) => { if (process.env.ASSIST_BREAK === 'autoapply' && hint && hint.replace && l.slice(-hint.replace.from.length) === hint.replace.from) l = l.slice(0, l.length - hint.replace.from.length) + hint.replace.to;   // W-RED1-ASSIST falsifier: Enter applies the hint (must FAIL A3)
     if (tty && hint) say('assist not-taken line=' + JSON.stringify(l) + ' hint=' + JSON.stringify(hint.ghost || hint.replace)); hint = null; busy = busy.then(() => handle(l)).then(() => { if (hintDue) { hintDue = false; process.stdout.write('This is a gap in red1, not your mistake. Type report to send it to us (email or GitHub issue).\n'); } if (!closed && tty) { rl.setPrompt(sh.prompt()); rl.prompt(); } }).catch(err => { say('FAIL ' + (err && err.stack || err)); }); });
+  if (tty) {   // §40 C4: Shift+Tab (ESC [ Z, decoded as tab+shift) = one place back; it prints the line it stands for, so the session replays as text. Readline would complete on it: taken first.
+    const tw = rl._ttyWrite.bind(rl);
+    rl._ttyWrite = (str, key) => {
+      if (key && key.name === 'tab' && key.shift && !sh.menuOpen()) { const b = sh.core.backLine(sh.state()); if (b) { rl.write(null, { ctrl: true, name: 'u' }); process.stdout.write('\n→ ' + b + '\n'); say('shift-tab line=' + JSON.stringify(b)); busy = busy.then(() => handle(b)).then(() => { if (!closed) { rl.setPrompt(sh.prompt()); rl.prompt(); } }); } return; }
+      return tw(str, key);
+    };
+  }
   if (tty) rl.prompt();
   await new Promise((res) => rl.on('close', () => { closed = true; busy.then(res); }));
   if (tty) { try { fs.appendFileSync(histFile, typed.map(l => l + '\n').join('')); } catch (e) { /* no home */ } }
