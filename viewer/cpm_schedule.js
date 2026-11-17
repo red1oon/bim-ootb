@@ -203,6 +203,24 @@
     var SG = (typeof global.ScheduleGate !== 'undefined') ? global.ScheduleGate : ScheduleGate;
     var EPS = SG.EPS, GAP = SG.GAP;
     var n = items.length, out = new Int32Array(n), noSup = [], noSupGrounded = 0;
+    // §D3_MAIN_BEFORE_SECONDARY (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.6 D3, §Q.12 — 2026-11-17).
+    // Practice: girders that span bearer to bearer go first; the beams that frame into them follow. Two boxes of
+    // the same depth are EMBEDDED in each other both ways (§Q.3 Gap 3: Hospital 73 of 73), so which one "supports"
+    // which was the guid tie-break. bearsOnPool(j) = j has a bearing-below contact inside the pool (memoised);
+    // it is the extracted fact that tells the main beam from the one framing into it. Where NEITHER bears on
+    // structure the election is unchanged — the pair elects each other and the solve places it as one lift
+    // (GRAPH: the contracted SCC's shared start; CELL: solveCells' lift, below). Nothing is left unelected by D3.
+    var bearMemo = new Int8Array(n), d3Demoted = 0;
+    function bearsOnPool(j) {
+      if (bearMemo[j]) return bearMemo[j] === 1;
+      var lj = G.contacts[j], Tj = items[j], hit = false;
+      if (lj && SG.supportPool) for (var q2 = 0; q2 < lj.length; q2++) {
+        var Sj = items[lj[q2]];
+        if (SG.supportPool(Sj) && Sj.bz < Tj.bz - EPS && Sj.tz >= Tj.bz - GAP) { hit = true; break; }
+      }
+      bearMemo[j] = hit ? 1 : 2;
+      return hit;
+    }
     for (var i = 0; i < n; i++) {
       out[i] = -1;
       var list = G.contacts[i]; if (!list) continue;
@@ -231,7 +249,12 @@
       for (var k = 0; k < list.length; k++) {
         var j = list[k], S = items[j], cls, score;
         if (S.bz < T.bz - EPS && S.tz >= T.bz - GAP) { cls = 0; score = -S.tz; }
-        else if (S.bz <= T.bz + EPS && S.tz >= T.tz - EPS) { cls = 1; score = Math.abs(S.bz - T.bz); }
+        else if (S.bz <= T.bz + EPS && S.tz >= T.tz - EPS) {
+          cls = 1; score = Math.abs(S.bz - T.bz);
+          // §D3_MAIN_BEFORE_SECONDARY: for a structural T, an embedded contact that itself bears on structure
+          // (the main beam) outranks one that does not (cls 1 vs 1.5). The old order was the tie-break alone.
+          if (tStruct && !bearsOnPool(j)) { cls = 1.5; d3Demoted++; }
+        }
         else { cls = 2; score = S.bz; }
         if (cls < bestCls || (cls === bestCls && (score < bestScore ||
             (score === bestScore && (bestJ < 0 || String(S.guid) < String(items[bestJ].guid)))))) {
@@ -262,7 +285,9 @@
       ' structural=' + (SG.supportPool ? 'supportPool' : 'NONE (no pool loaded — rule inactive)') +
       ' byCls=' + JSON.stringify(byCls) +
       ' guids=' + noSup.slice(0, 20).map(function (x) { return items[x].guid; }).join(',') + (noSup.length > 20 ? ',…' : ''));
+    console.log('§D3_MAIN_BEFORE_SECONDARY embeddedContactsRankedBehindABearingOne=' + d3Demoted + (SG.supportPool ? '' : ' (no pool loaded — rule inactive)'));
     out.structNoSupport = noSup;
+    out.d3Demoted = d3Demoted;
     return out;
   }
 
@@ -886,14 +911,32 @@
     // group members per cell
     var SEP = '';
     var cellMem = {}, cellMeta = {}, keyOf = new Array(n);
+    var grpOf = new Array(n), liftOf = {}, d3Lifts = 0, d3LiftMembers = 0, d3LiftOverCap = 0, d3InGroup = 0, d3Held = 0, d3Pulled = 0;
+    function supIn(u) { var a2 = filing.des ? filing.des[u] : -1; return (a2 >= 0 && grpOf[a2] === grpOf[u]) ? a2 : -1; }
     for (i = 0; i < n; i++) {
       var k = filing.lvl2[i] + SEP + trdOf[i] + SEP + filing.loc2[i];
       // the REPORTED cell identity (gate.cellKeys → the Gantt's §S51 per-cell grouping) keeps the
       // element's own sequence: D5 moves the order inside the level, never a bar
       keyOf[i] = (trdOf[i] === FLOOR_TRD || trdOf[i] === HOLDER_TRD) ? filing.lvl2[i] + SEP + _trdOf(items[i]) + SEP + filing.loc2[i] : k;
       (cellMem[k] || (cellMem[k] = [])).push(i);
+      grpOf[i] = filing.lvl2[i] + SEP + trdOf[i];
       cellMeta[k] || (cellMeta[k] = { lvl: filing.lvl2[i], trd: trdOf[i], loc: filing.loc2[i] });
     }
+    // rings of the in-(level, trade) election (each element elects at most one support, so a ring is a simple cycle)
+    (function () {
+      var state = new Uint8Array(n);
+      for (var r0 = 0; r0 < n; r0++) {
+        if (state[r0]) continue;
+        var walk = [], u = r0;
+        while (u >= 0 && !state[u]) { state[u] = 1; walk.push(u); u = supIn(u); }
+        if (u >= 0 && state[u] === 1) {
+          var ring = walk.slice(walk.indexOf(u));
+          ring.forEach(function (m) { liftOf[m] = ring; });
+          d3Lifts++; d3LiftMembers += ring.length;
+        }
+        walk.forEach(function (m) { state[m] = 2; });
+      }
+    })();
     var keys = Object.keys(cellMem).sort(function (x, y) {
       var a = cellMeta[x], b = cellMeta[y];
       if (a.lvl !== b.lvl) return a.lvl - b.lvl;
@@ -931,27 +974,60 @@
       var pl = prevLevelsByTrade[c.trd];
       if (pl != null && pl > es) es = pl;
       if (es < base) es = base;
+      // §D3_CELL_SUPPORT_ORDER (4D_MODEL_INTEGRITY.md §Q.6 D3 + §Q.11.3 item 1 + §Q.12). Inside one (level, trade)
+      // the elected support binds, per element. The packing order stays what it was — cell by cell, members by
+      // (bz, guid) — EXCEPT that before a member is placed its in-(level, trade) elected support is placed first,
+      // and the member starts no earlier than that support STARTS. Order of processing is not order of start (each
+      // member starts at its own crew's free slot — measured: Hospital columns on a wall of another crew, §Q.11.2),
+      // so both halves are needed. The (level, trade) grain, not the room cell: rooms of one level are parallel
+      // locations with the SAME earliest start, and a beam's bearer is routinely filed in the next room (first D3
+      // run, room grain: Hospital bearing <- beam 42 -> 42, untouched). A ring of elements that elect each other
+      // (same-depth beams) is ONE LIFT: one shared start, one slot each. Across (level, trade) the product order
+      // stands exactly as it was.
       var mem = cellMem[k].slice().sort(function (a, b) {
         if (items[a].bz !== items[b].bz) return items[a].bz - items[b].bz;
         var ga = String(items[a].guid), gb = String(items[b].guid);
         return ga < gb ? -1 : (ga > gb ? 1 : 0);
       });
       var fin = es;
-      mem.forEach(function (u) {
-        var pool = poolOf(items[u].resource);
-        var idx = 0;
-        for (var q = 1; q < pool.length; q++) if (pool[q] < pool[idx]) idx = q;
-        var st = Math.max(es, pool[idx]);
-        var dur = Math.max(0, items[u].e - items[u].s);
-        var en = st + dur;
-        pool[idx] = en;
+      function commit(u, st, pool, idx) {
+        var en = st + Math.max(0, items[u].e - items[u].s);
+        if (en > pool[idx]) pool[idx] = en;
         times[u] = { s: st, e: en };
         if (st < makespanS) makespanS = st;
         if (en > makespanE) makespanE = en;
         if (en > fin) fin = en;
+      }
+      function placeLift(ring) {                              // reserve a slot per member, shared start = the latest
+        var picks = [], used = {}, shared = es, q;
+        ring.forEach(function (m) {
+          var r1 = items[m].resource, p2 = poolOf(r1), us = used[r1] || (used[r1] = {}), i2 = -1;
+          for (q = 0; q < p2.length; q++) if (!us[q] && (i2 < 0 || p2[q] < p2[i2])) i2 = q;
+          if (i2 < 0) { i2 = 0; for (q = 1; q < p2.length; q++) if (p2[q] < p2[i2]) i2 = q; d3LiftOverCap++; }
+          else { us[i2] = 1; if (p2[i2] > shared) shared = p2[i2]; }
+          picks.push({ m: m, pool: p2, idx: i2 });
+        });
+        picks.forEach(function (pk) { commit(pk.m, shared, pk.pool, pk.idx); });
+      }
+      function placeOne(u) {
+        var pool = poolOf(items[u].resource), idx = 0, q;
+        for (q = 1; q < pool.length; q++) if (pool[q] < pool[idx]) idx = q;
+        var st = Math.max(es, pool[idx]), sp = supIn(u);
+        if (sp >= 0) { d3InGroup++; if (times[sp].s > st) { st = times[sp].s; d3Held++; } }
+        commit(u, st, pool, idx);
+      }
+      mem.forEach(function (u0) {
+        if (times[u0]) return;                                // already placed: pulled forward as a support, or with its lift
+        var chain = [], u = u0;                               // u0, its support, that support's support … until one is placed
+        while (u >= 0 && !times[u] && !liftOf[u]) { chain.push(u); u = supIn(u); }
+        if (u >= 0 && !times[u]) placeLift(liftOf[u]);
+        if (chain.length > 1) d3Pulled += chain.length - 1;
+        for (var c2 = chain.length - 1; c2 >= 0; c2--) placeOne(chain[c2]);
       });
       if (!(c.trd in thisLevelByTrade) || fin > thisLevelByTrade[c.trd]) thisLevelByTrade[c.trd] = fin;
     });
+    console.log('§D3_CELL_SUPPORT_ORDER grain=(level,trade) electedPairsInside=' + d3InGroup + ' supportsPulledForward=' + d3Pulled + ' heldForSupportStart=' + d3Held + ' lifts=' + d3Lifts +
+      ' liftMembers=' + d3LiftMembers + ' liftOverCrewCap=' + d3LiftOverCap + (filing.des ? '' : ' INACTIVE — no election passed to the cell solve'));
     return { times: times, cells: keys.length, keyOf: keyOf,
              levels: Object.keys(lvlSet).length, trades: Object.keys(trdSet).length,
              makespanDays: (isFinite(makespanE) && isFinite(makespanS)) ? (makespanE - makespanS) / 86400000 : 0 };
