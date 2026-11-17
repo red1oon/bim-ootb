@@ -2619,6 +2619,10 @@ async function setupScene(A) {
   }
   A._roomCycle = { list: function() { return _roomCycleList; }, idx: function() { return _roomCycleIdx; } }; // exposed for tests
 
+  // §14.7 (bim-compiler prompts/VOCAB_MESSAGE_CATALOG.md): a key that opens a pill's tool runs THE PILL'S OWN fn, read from the live pill list at press time, so the key,
+  // the pill and the F1 chip cannot diverge (Sanity's printed key was once the screenshot's). On A so InputReg.checkShortcuts resolves it; the audits read `A._pillRun('<id>')` in the handler's source.
+  A._pillRun = function(id) { var acts = window._mainPillActions || []; for (var i = 0; i < acts.length; i++) { if (acts[i].id === id) { if (typeof acts[i].fn === 'function') acts[i].fn(); return; } } console.warn('§PILLKEY_RUN no pill id=' + id); };
+
   var _shortcuts = {
     '+':  function() { _zoomStep(1); },             // zoom in
     '-':  function() { _zoomStep(-1); },            // zoom out
@@ -2849,7 +2853,12 @@ async function setupScene(A) {
     '.':  function() { // §S281 P2: ⋯ toggle — prefer the live mobile pill, fall back to legacy overflow
       if (typeof window.toggleMobilePill === 'function') window.toggleMobilePill();
       else if (typeof window.toggleOverflow === 'function') window.toggleOverflow();
-    }
+    },
+    'y':  function() { A._pillRun('sanity'); },     // §14.7: Sanity (its printed key was 's' = screenshot)
+    'e':  function() { A._pillRun('egress'); },      // §14.7: Egress (printed 'e', no handler)
+    'd':  function() { A._pillRun('roleFilter'); },  // §14.7: Role View, discipline filter (printed 'r', which is Road report / room cycle)
+    'u':  function() { A._pillRun('ew'); },          // §14.7: Earthworks (civil-only; printed 'u', no handler)
+    'k':  function() { A._pillRun('rw'); }           // §14.7: Roadworks (civil-only; printed 'k', no handler)
   };
 
   // §S281 Layer 2: press-time shortcut firing — single place all dispatch routes through.

@@ -1347,7 +1347,7 @@ function setupPanels(A) {
       // as the Role/Profession view filter — cycles All -> Plumber -> Electrician -> ACMV Tech ->
       // Structural -> Cleaner -> All, each tap calling A.filterDiscs (§NAV_FIND_002), the ONLY
       // filtering mechanism reused here. Convenience view toggle, NOT access control (no auth).
-      { id: 'roleFilter', name: 'Role View',       key: 'r', pill: false, icon: I.eye.svg,
+      { id: 'roleFilter', name: 'Role View',       key: 'd', pill: false, icon: I.eye.svg,
         fn: function() { if (typeof A.cycleRoleFilter === 'function') A.cycleRoleFilter(); },
         isActive: function() { return typeof A._roleFilterIdx === 'number' && A._roleFilterIdx !== -1; },
         stateLabel: function() { return typeof A._roleFilterLabel === 'function' ? A._roleFilterLabel() : 'All'; },
@@ -1420,7 +1420,7 @@ function setupPanels(A) {
         fn: function() { if (window._shortcuts && window._shortcuts['c']) window._shortcuts['c'](); },
         children: [ { name: 'Discipline pair grid' }, { name: 'Tolerance 1–100mm' }, { name: 'Status: Review/Resolve/Accept' }, { name: 'HTML Report + CSV export' } ] },
       // STRUCTURAL_SANITY.md T4 — rule-based load-path sanity checklist (generic A.showRuleChecklist chassis, shared with Egress later).
-      { id: 'sanity',     name: 'Sanity',          key: 's', pill: false, icon: I.shieldAlert.svg,
+      { id: 'sanity',     name: 'Sanity',          key: 'y', pill: false, icon: I.shieldAlert.svg,
         fn: function() { if (A.showStructuralSanity) A.showStructuralSanity(); },
         children: [ { name: 'Floating Member (STR beams)' }, { name: 'Span/Depth (advisory)' }, { name: 'Column Continuity' } ] },
       // EGRESS_SANITY.md T4 — reuses the SAME generic A.showRuleChecklist chassis as Sanity, zero new panel code.
