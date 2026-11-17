@@ -982,6 +982,54 @@
   // the time it looks. LevelDeriver (viewer/lib/level_deriver.js) answers the same question from the
   // FROZEN DB instead and is not exposed to that rewrite (see _deriverLevelAxis's header for the
   // read-path proof). Default stays the old path until the swap is deliberately flipped.
+  // ══ §D6_HANG_FILING (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.9 F4a, §Q.9.4 D6 — 2026-11-17) ══
+  // ONE FILING. The owner's §S47.3 ruling (2026-08-21): an element suspended from above is filed by what it hangs
+  // from. The cell solve obeys it (cpm_schedule.js _cellFiling); the task grid filed the same element by its own
+  // storey, so its bar could END before the bar of the structure it hangs from STARTED, and the played layer —
+  // which re-tiles inside the TASK window — threw the solve's order away (measured: Terminal 2,180 elements,
+  // 723 of them services in one ceiling-level bar hanging from a roof built 18 days later).
+  // Rule, read from the ELECTION as extraction (CpmSchedule.contactGraph / designatedSupport — the owners, §I;
+  // nothing is re-derived): an element whose elected support is a CARRIER ABOVE it, on a level that ranks higher
+  // than its own, takes that level in the task grid. Its phase, trade, rate and install time do not change — it
+  // moves from (its phase, its storey) to (its phase, its carrier's storey). Per element, never a task edge.
+  // Returns a levelAxis with keyOf only (rankOf stays the grid's own), or null when nothing can be judged.
+  function _hangFilingAxis(elements, collapse, bandRank) {
+    var g = (typeof globalThis !== 'undefined') ? globalThis : {};
+    var CP = (global && global.CpmSchedule) || g.CpmSchedule || (typeof window !== 'undefined' && window.CpmSchedule) || null;
+    if (!CP || !CP.contactGraph || !CP.designatedSupport) {
+      console.log('§D6_HANG_FILING INACTIVE — CpmSchedule not loaded; the grid files by storey alone');
+      return null;
+    }
+    collapse = collapse || function (x) { return x; };
+    var items = elements.map(function (e) {
+      return { guid: e.guid, cls: e.cls, seq: e.seq, phase: e.phase, x0: e.x0, x1: e.x1, y0: e.y0, y1: e.y1, bz: e.base_z, tz: e.top_z };
+    });
+    var G = CP.contactGraph(items);
+    if (!G.ok) { console.log('§D6_HANG_FILING INACTIVE — contact graph unavailable'); return null; }
+    var des = CP.designatedSupport(items, G), SG = g.ScheduleGate || (global && global.ScheduleGate);
+    var EPS = SG.EPS, GAP = SG.GAP, rank = function (k) { return (bandRank && bandRank[k] != null) ? bandRank[k] : null; };
+    var hung = {}, moved = 0, byPhase = {}, toLevel = {}, otherRel = 0, unranked = 0, judged = 0;
+    for (var i = 0; i < items.length; i++) {
+      var a = des[i]; if (a < 0) continue;
+      var T2 = items[i], S = items[a], ki = collapse(elements[i].storey), ka = collapse(elements[a].storey);
+      if (ki === ka) continue;
+      var ri = rank(ki), ra = rank(ka);
+      if (ri == null || ra == null) { unranked++; continue; }
+      if (ra <= ri) continue;
+      judged++;
+      var below = S.bz < T2.bz - EPS && S.tz >= T2.bz - GAP, embedded = S.bz <= T2.bz + EPS && S.tz >= T2.tz - EPS;
+      if (below || embedded) { otherRel++; continue; }        // not hung: a bearing/embedded support on a higher-ranked label
+      hung[T2.guid] = ka; moved++;
+      byPhase[elements[i].phase || '_'] = (byPhase[elements[i].phase || '_'] || 0) + 1;
+      toLevel[ka] = (toLevel[ka] || 0) + 1;
+    }
+    console.log('§D6_HANG_FILING elements=' + items.length + ' electedSupportOnAHigherLevel=' + judged + ' movedToCarrierLevel=' + moved +
+      ' notHung(bearing/embedded, left)=' + otherRel + ' unrankedLevel(left)=' + unranked +
+      ' byPhase=' + JSON.stringify(byPhase) + ' toLevels=' + Object.keys(toLevel).length);
+    if (!moved) return null;
+    return { keyOf: function (el) { return hung[el.guid] || collapse(el.storey); }, hangMoved: moved };
+  }
+
   function instantiateTemplate(elements, T, laborRates, shiftHours, bandRank, collapse, levelAxis) {
     laborRates = laborRates || {};
     var shiftSecs = (shiftHours > 0 ? shiftHours : (T.calendar && T.calendar.hours_per_shift) || 24) * 3600;
@@ -1918,7 +1966,10 @@
     // what it was before this change (the flag-off identity the witnesses check).
     if (_wantProbe) console.log('§TPL_LEVEL_SOURCE requested=' + (_srcOpt || 'storey') +
       ' effective=' + (_useAxis ? 'deriver' : 'storey') + ' probe=on');
-    var inst = instantiateTemplate(elements, T, laborRates, opts.shiftHours, bandRank, collapse, _useAxis);
+    // §D6_HANG_FILING (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.9.4 D6, §Q.12) — only on the default storey axis;
+    // the opt-in deriver axis is left exactly as it was.
+    var _gridAxis = _useAxis || _hangFilingAxis(elements, collapse, bandRank);
+    var inst = instantiateTemplate(elements, T, laborRates, opts.shiftHours, bandRank, collapse, _gridAxis);
     if (!inst.tasks.length) { console.log('§AUTHOR_TPL_FAIL reason=no_tasks'); return { ok: false, reason: 'no_tasks' }; }
 
     // Absence is REPORTED, never silent — 4D_template.json's own instantiation rule, and the
