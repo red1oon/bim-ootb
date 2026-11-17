@@ -640,9 +640,17 @@
                     promoted: isPromotedSlab(el) };
         (recsByGuid[el.guid] = recsByGuid[el.guid] || []).push(rec); prec = rec;
         cs = cellsOf(el); for (c = 0; c < cs.length; c++) (grid[cs[c]] = grid[cs[c]] || []).push(rec); }
-      else if (el.cls && el.cls.indexOf('IfcWall') === 0) {   // §4D_WALLS_BEFORE_ROOF M5
-        var wrec = { x0: el.x0, x1: el.x1, y0: el.y0, y1: el.y1, base_z: el.base_z, top_z: el.top_z, end: end, guid: el.guid };
-        (recsByGuid[el.guid] = recsByGuid[el.guid] || []).push(wrec); prec = wrec;
+      // §4D_WALLS_BEFORE_ROOF M5 — every wall is an opening HOST, structural or not. This was an `else if`, so a wall
+      // inside the structure pool (a name-override foundation wall, and since §BEARING_WALL every promoted bearing
+      // wall) never reached wallGrid and the doors and windows IN it lost their host gate (bim-compiler prompts/
+      // 4D_MODEL_INTEGRITY.md §Q.13: after D1 §CURTAIN_WALL_OPENING stillUngated went 0 -> 40 Hospital, 31 Duplex,
+      // 137 Clinic, and the generative timeline inverted 5 + 22 openings). A structural wall reuses its ONE rec.
+      if (el.cls && el.cls.indexOf('IfcWall') === 0) {
+        var wrec = prec;
+        if (!wrec) {
+          wrec = { x0: el.x0, x1: el.x1, y0: el.y0, y1: el.y1, base_z: el.base_z, top_z: el.top_z, end: end, guid: el.guid };
+          (recsByGuid[el.guid] = recsByGuid[el.guid] || []).push(wrec); prec = wrec;
+        }
         cs = cellsOf(el); for (c = 0; c < cs.length; c++) (wallGrid[cs[c]] = wallGrid[cs[c]] || []).push(wrec); }
       // §CURTAIN_WALL_OPENING — a SECOND INDEX over records that already exist, not a second pool
       // membership: the mullion/glazing rec is the SAME object the structure grid holds, so a

@@ -551,10 +551,10 @@
 <script src="error_beacon.js?v=1" onerror="console.warn('§LOAD_FAIL error_beacon.js — field-error capture disabled')"></script><!-- SYSTEM_MONITOR_WIDGETS §H — minimal field-error beacon (G2 seed); loads early to catch boot errors -->
 <script src="vfs_detect.js?v=1"></script>
 <script src="seed_key.js?v=1"></script><!-- SEAM F10 — the ONE seed IDB key owner (window.ERP_SEED_KEY); before first idb use + system_monitor -->
-<script src="erp_i18n.js?v=4"></script><!-- UI locales (bim-compiler prompts/ERP_UI_LOCALES.md) — W-ERP-I18N -->
+<script src="erp_i18n.js?v=5"></script><!-- UI locales (bim-compiler prompts/ERP_UI_LOCALES.md) — W-ERP-I18N -->
 <script src="ad_parser.js?v=27"></script>
 <script src="field_help.js?v=1"></script>
-<script src="help_search.js?v=2"></script><!-- VOCAB_MESSAGE_CATALOG §10 H2: the How To question box (deterministic, no AI inside) — W-HELP-SHOWCASE S3 --><!-- VOCAB_MESSAGE_CATALOG §7 P1b: ONE field tooltip setter + the Tool Tip panel (legacy WEditor / HelpController) — W-FIELD-HELP -->
+<script src="../common/help/help_query.js?v=1"></script><script src="help_records_core.js?v=1"></script><script src="help_search.js?v=3"></script><!-- VOCAB_MESSAGE_CATALOG §10 H2: the How To question box (deterministic, no AI inside) — W-HELP-SHOWCASE S3 --><!-- VOCAB_MESSAGE_CATALOG §7 P1b: ONE field tooltip setter + the Tool Tip panel (legacy WEditor / HelpController) — W-FIELD-HELP -->
 <!-- UI_UNPARK_RESUME.md — proven AD engines (source of truth: bim-compiler build/erp/): logic evaluator
      (W-LOGIC-EVAL 3044/3044) · DocAction FSM (W-*-FSM, 22 tables) · beforeSave hooks (W-*-SAVE, 12 installers). -->
 <script src="ad_evaluator.js?v=24"></script>
@@ -3104,7 +3104,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   var _howtoIdx = null, _howtoPack = null;
   function escH(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
   function _howtoBind() {
-    var title = $('idmp-howto-title'), qbox = $('idmp-howto-q'); if (!title || !window.HelpSearch || !window.ErpI18n || !ErpI18n.loadHelp) return;
+    var title = $('idmp-howto-title'), qbox = $('idmp-howto-q'); if (!title || !window.HelpSearch || !window.HelpQuery || !window.HelpRecords || !window.ErpI18n || !ErpI18n.loadHelp) return;
     title.textContent = _msgL('HowTo', 'How To');
     qbox.placeholder = _T('help.ask', 'Ask: How do I close a Sales Order?');
     if (!title.__hb) {
@@ -3125,11 +3125,11 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   var _howtoLangBound = false, _howtoLocal = false, _howtoRows = [];
   function _howtoBuild() {
     var lang = ErpI18n.lang;
-    return Promise.all([ErpI18n.loadHelp('en_US'), lang === 'en_US' ? Promise.resolve(null) : ErpI18n.loadHelp(lang)]).then(function (r) {
+    return Promise.all([ErpI18n.loadHelp('en_US'), lang === 'en_US' ? Promise.resolve(null) : ErpI18n.loadHelp(lang), ErpI18n.loadHelpIndex(lang)]).then(function (r) {
       if (!r[0]) return; _howtoPack = r[0];
-      _howtoIdx = HelpSearch.indexFrom({ q: _sqlRows, en: r[0], pack: r[1], fsm: window.AdDocFsm, windowIds: window.__idmpFieldHelp.menu().windows });
+      _howtoIdx = HelpSearch.indexFrom({ q: _sqlRows, en: r[0], pack: r[1], fsm: window.AdDocFsm, windowIds: window.__idmpFieldHelp.menu().windows, hq: r[2] });
       _howtoLocal = _howtoIdx.localHowto; _howtoRows = (_howtoLocal ? r[1].howto : r[0].howto) || [];
-      console.log('§HELP_SEARCH index lang=' + lang + ' windows=' + _howtoIdx.counts.windows + ' tables=' + _howtoIdx.counts.tables + ' actions=' + _howtoIdx.counts.actions + ' statuses=' + _howtoIdx.counts.statuses + ' howto=' + _howtoIdx.counts.howto + (_howtoLocal ? ' (' + lang + ')' : ' (en_US)') + ' phrases=' + _howtoIdx.size.phrases);
+      console.log('§HELP_SEARCH index lang=' + lang + ' windows=' + _howtoIdx.counts.windows + ' records=' + _howtoIdx.counts.records + ' actions=' + _howtoIdx.counts.actions + ' statuses=' + _howtoIdx.counts.statuses + ' howto=' + _howtoIdx.counts.howto + (_howtoLocal ? ' (' + lang + ')' : ' (en_US)') + ' phrases=' + _howtoIdx.size.phrases + ' vocab=' + ((r[2] && r[2].vocab) ? r[2].vocab.length : 'none'));
       _howtoCtx();
     });
   }
@@ -3160,10 +3160,10 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     if (c.howto) h += _howtoEnglish() + _howtoLinks(c.howto.html) + _howtoTrlNote(c.howto);
     if (!c.window && !c.action && !c.howto) h += '<div class="hs-sub">' + escH(_T('help.none', 'No match in the dictionary or the how-to rows.')) + '</div>';
     box.innerHTML = h + '</div>';
-    console.log('§HELP_SEARCH ask=' + JSON.stringify(String(question)) + ' lang=' + ErpI18n.lang + ' window=' + (c.window ? c.window.id : 'none') + ' action=' + (c.action ? c.action.code : 'none') + ' cli=' + (c.cli ? JSON.stringify(c.cli.line || c.cli.note) : 'none') + ' howto=' + (c.howto ? c.howto.id : 'none') + ' matched=' + JSON.stringify(c.matched));
+    console.log('§HELP_SEARCH ask=' + JSON.stringify(String(question)) + ' lang=' + ErpI18n.lang + ' window=' + (c.window ? c.window.id : 'none') + ' action=' + (c.action ? c.action.code : 'none') + ' cli=' + (c.cli ? JSON.stringify(c.cli.line || c.cli.note) : 'none') + ' howto=' + (c.howto ? c.howto.id : 'none') + ' matched=' + JSON.stringify(c.matched) + ' hits=' + c.hits.map(function (h) { return h.id; }).join(','));
     return c;
   }
-  window.__idmpHowto = { ask: _howtoAsk, ctx: _howtoCtx };   // W-HELP-SHOWCASE's handle (the real widget, no second renderer)
+  window.__idmpHowto = { ask: _howtoAsk, ctx: _howtoCtx, index: function () { return _howtoIdx; } };   // W-HELP-SHOWCASE's handle (the real widget, no second renderer)
   // W-FIELD-HELP's handle on the REAL render paths (no second renderer): the role's menu windows/processes, the read-only form, the parameter form.
   window.__idmpFieldHelp = {
     menu: function () { var w = {}; Object.keys(_winByName).forEach(function (k) { w[_winByName[k]] = 1; }); return { windows: Object.keys(w).map(Number), processes: Object.keys(_procMenuIds).map(Number) }; },

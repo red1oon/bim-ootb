@@ -69,6 +69,7 @@ const ZoneIndex = require(path.join(VIEWER_DIR, 'zone_index.js'));   // §S62
 const DB_FILE = { LTU_AHouse: 'LTU_AHouse_meta.db' };
 const BUILDINGS = (process.env.ONLY || 'Terminal,Hospital,Duplex,HHS_Office_Federated,Clinic,LTU_AHouse,JKR').split(',');
 
+const { bxeDeps: __bxeDeps } = require(require('path').join(__dirname, '_bxe_deps.js'));   // §Q.10: the element build's delegates, one list
 function sliceFn(src, name, which) {
   let from = 0;
   for (let pass = 0; pass <= (which || 0); pass++) {
@@ -90,6 +91,7 @@ function sliceFn(src, name, which) {
 function makeCtx(src, db, bld, counters) {
   const parts = [
     sliceFn(src, '_promoteRoofLoadPath'),
+    __bxeDeps(src),
     sliceFn(src, '_buildXrayElements'),
     // §S62 follow-on: _buildXrayElements' real dependency closure — matchRule() calls _classifyRule,
     // which calls _classifyNameOverride. Neither was ever in this slice set (the same undeclared-

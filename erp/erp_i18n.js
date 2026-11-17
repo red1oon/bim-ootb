@@ -61,6 +61,14 @@
     return _fetchJson('i18n/help/' + code + '/help.json').then(function (p) { _helps[code] = p; console.log('§HELP_PACK loaded lang=' + code + ' fields=' + Object.keys(p.fields || {}).length + ' howto=' + (p.howto || []).length); return p; })
       .catch(function (e) { console.warn('§HELP_PACK load-fail lang=' + code + ' ' + e.message); return null; });
   }
+  // §19.3: the language's help INDEX (i18n/help/<lang>/index.json, built by common/help/tools/build_help_index.js): the page reads its header (vocab, bm25, weights) for HelpQuery; null when absent (the name tiers still work)
+  var _hIdx = {};
+  function loadHelpIndex(code) {
+    if (code !== 'en_US' && !HELP_LANGS[code]) return Promise.resolve(null);
+    if (_hIdx[code]) return Promise.resolve(_hIdx[code]);
+    return _fetchJson('i18n/help/' + code + '/index.json').then(function (p) { _hIdx[code] = p; console.log('§HELP_PACK index loaded lang=' + code + ' records=' + (p.records || []).length + ' vocab=' + (p.vocab || []).length); return p; })
+      .catch(function (e) { console.warn('§HELP_PACK index load-fail lang=' + code + ' ' + e.message); return null; });
+  }
   function preload(codes) {
     codes = codes || LOCALES.map(function (l) { return l.code; });
     return Promise.all([loadCatalogue()].concat(codes.map(function (c) { return loadPack(c).catch(function () {}); })));
@@ -233,6 +241,6 @@
     initial: initial, set: set, preload: preload, onChange: onChange, picker: picker, bindDb: bindDb,
     t: t, has: function (k) { return !!(_cat && _cat[k]); }, msg: msg, element: element, refList: refList, applyDom: applyDom,
     applyMenuTree: applyMenuTree, applyWindow: applyWindow, windowName: windowName, menuName: menuName, fieldName: fieldName,
-    loadCatalogue: loadCatalogue, loadHelp: loadHelp, get help() { return _help; }, stats: function () { return JSON.parse(JSON.stringify(_stats)); }
+    loadCatalogue: loadCatalogue, loadHelp: loadHelp, loadHelpIndex: loadHelpIndex, get help() { return _help; }, stats: function () { return JSON.parse(JSON.stringify(_stats)); }
   };
 })(typeof window !== 'undefined' ? window : this);
