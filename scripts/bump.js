@@ -131,12 +131,11 @@ for (let depth = 0; queue.length && depth < 4; depth++) {
     if (changed) { edits.set(h, out); needSw(h, true); }
   }
   for (const f of loaders) {
-    if (round.has(f)) continue;   // a file never bumps a reference to itself
     let changed = false;
     const out = text(f).replace(JS_REF, (m, a, q, p, n, z) => {
       if (/^[a-z]+:|^\/\//i.test(p)) return m;
       const r = rel(path.resolve(ROOT, path.dirname(f), p));
-      if (!round.has(r)) return m;
+      if (!round.has(r) || r === f) return m;   // a file never bumps a reference to itself; its OTHER entries are still read (#3201)
       if (hits.has(r)) hits.set(r, hits.get(r) + 1); changed = true;
       console.log(`§BUMP loader=${f} ref=${p} v=${n}->${+n + 1} (lazy load list)`);
       return a + p + '?v=' + (+n + 1) + z;
