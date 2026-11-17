@@ -388,6 +388,21 @@
 
   // ── Dashboard drawer ──
   var _dashLogTick = 0; // §S260d: throttle dashboard logs
+  // §D8_COST_IS_WORK (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.9 F8, §Q.9.4 D8 — 2026-11-17). What one op costs.
+  // A stretched bar does not cost more: cost is WORK CONTENT x rate — the op's own install seconds (`_secs`, written
+  // by injectGantt from the scheduler's installSecs) over the productivity basis, x crew_size x rate_per_day. That is
+  // §HR_COST's formula per element (tm_gantt_build.js), so the donut's total and the 5D headline are one number.
+  // Before this the donut priced the PLAYED duration, so re-ordering inside a bar or resizing a bar changed the cost
+  // with no change in work. An op that carries no `_secs` (a schedule cached before this change, or an imported
+  // native one) keeps the old duration pricing and is COUNTED as such on §DASH_DONUTS — never silently mixed.
+  function _dashOpCost(params, durMs, LR) {
+    var p = params || {}, lr = LR[p.resource || ''], lab = LR.LABORER;
+    // §FUTURE-5A B5: the literal 95 fires only if LABORER itself is absent from LR.
+    var dailyRate = lr ? lr.rate_per_day * (lr.crew_size || 1) : (lab ? lab.rate_per_day * (lab.crew_size || 1) : 95);
+    if (typeof p._secs === 'number' && isFinite(p._secs) && p._secs >= 0)
+      return { cost: dailyRate * p._secs / (LR._productivity_basis_secs || 28800), basis: 'work' };
+    return { cost: dailyRate * durMs / 86400000, basis: 'duration' };
+  }
   function drawDashboard() {
     var _L = (typeof TMS._tmTrl === 'function') ? TMS._tmTrl : function (k, en, r) { var s = en; if (r) for (var q in r) s = s.replace('{' + q + '}', r[q]); return s; };   // S226 §R2b — sliced into vm sandboxes by witnesses
     if (!TMS._ops.length) return;
@@ -402,22 +417,15 @@
     // Cost donut — weighted by rate_per_day × install duration per op
     // Each op accrues cost proportionally between start and end (not binary done/not-done).
     var LR = window.LABOR_RATES || {};
-    var totalCost = 0, doneCost = 0;
+    var totalCost = 0, doneCost = 0, _costByWork = 0, _costByDuration = 0;
     for (var ci2 = 0; ci2 < TMS._ops.length; ci2++) {
       var op2 = TMS._ops[ci2];
-      var opRes = (op2.parameters || {}).resource || '';
-      var lr = LR[opRes];
-      // §FUTURE-5A B5 (applied 2026-09-02, queue item B-3): the bare "95" was an undocumented
-      // duplicate of sequence_rules.json LABOR_RATES.LABORER (rate_per_day 95, crew_size 1) — read
-      // that entry directly; the literal 95 now fires only if LABORER itself is absent from LR.
-      var _laborerLR = LR.LABORER;
-      var dailyRate = lr ? lr.rate_per_day * (lr.crew_size || 1)
-        : (_laborerLR ? _laborerLR.rate_per_day * (_laborerLR.crew_size || 1) : 95);
       var opStart = op2.start_ts || TMS._projectStart;
       var realEnd = op2.end_ts || TMS._projectEnd;
       var durMs = Math.max(1, realEnd - opStart);
-      var durDays = durMs / 86400000;
-      var cost = dailyRate * durDays;
+      var _oc = _dashOpCost(op2.parameters, durMs, LR);
+      var cost = _oc.cost;
+      if (_oc.basis === 'work') _costByWork++; else _costByDuration++;
       totalCost += cost;
       // Proportional: how much of this op's duration has elapsed at cursor
       if (TMS._cursor >= realEnd) {
@@ -432,7 +440,8 @@
                   : doneCost >= 1000 ? '$' + Math.round(doneCost/1000) + 'K'
                   : '$' + Math.round(doneCost);
     drawDonut('tm-dash-cost-pie', costPct, costLabel, costPct + '% spent', '#44cc44');
-    if (_dashLogTick % 20 === 0) console.log('§DASH_DONUTS time=' + timePct + '% cost=' + costPct + '%');
+    if (_dashLogTick % 20 === 0) console.log('§DASH_DONUTS time=' + timePct + '% cost=' + costPct + '% total=' + Math.round(totalCost) +
+      ' costBasis: work=' + _costByWork + ' ops, duration(fallback, op carries no install time)=' + _costByDuration + ' ops');
 
     // Phase progress
     var phaseTotals = {};
@@ -685,5 +694,9 @@
   // elevation rows won over the 7 world-frame center_z rows by emptiness) — 1 band, 7 tasks, 509 d
   // instead of 8/42/318. schedule_author.js now picks the ladder whose span contains the element
   // base-Z median; a persisted v38 grid still carries the collapsed ladder, so regenerate.
-  var _GANTT_CACHE_VERSION = 42;   // §ARCH_AREA_WEIGHT/§VOL_WEIGHT/§FOOTING_M3 (PR #1317): install DURATIONS moved — a persisted v41 grid replays the old flat times, so regenerate
+  // 42→43 (2026-11-17, bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.12): D1/D2/D3/D5/D6/D7 changed which support is elected,
+  // the order inside a bar and which bar a hung element is filed in, and D8 puts each element's install seconds on its op
+  // (`_secs`). A persisted v42 grid replays the old order and carries no `_secs` (the cost donut would fall back to
+  // duration pricing), so regenerate.
+  var _GANTT_CACHE_VERSION = 43;   // was 42: §ARCH_AREA_WEIGHT/§VOL_WEIGHT/§FOOTING_M3 (PR #1317): install DURATIONS moved — a persisted v41 grid replays the old flat times, so regenerate
 };
