@@ -1390,13 +1390,87 @@
   // Measured on Duplex (§S26.2): support = anything below gives 4,706 bearing relations and 761
   // physics-vs-phase contradictions; support = load-bearing classes gives 702 and 1. The 760
   // difference is the engine insisting a pipe must be installed before the wall above it.
+  // ══ §BEARING_WALL (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.6 D1, §Q.8 item 3, §Q.11 — 2026-11-17) ══
+  // bearingWalls(els) -> { guid: 1 } for every IfcWall* that is STRUCTURE by NECESSITY: a structural
+  // element (supportPool) rests on the wall's TOP and has NO bearing-below contact inside the pool.
+  // Practice: a bearing wall goes up with the frame of its level, before the floor above; an infill
+  // wall is built after the frame and merely touches the soffit. Contact alone never promotes — every
+  // full-height partition touches a slab; a beam that also lands on a column leaves its wall Envelope.
+  // NOT a class whitelist (BIMEyes §S3: all walls into the pool = +207 contradictions on HHS).
+  //   bearing-below — the election's own clause (cpm_schedule.js designatedSupport cls 0)
+  //   wall-at-its-top — §S64's bound, the one auditFloating's wall pool already applies: a wall
+  //     carries what sits AT ITS TOP, never something embedded metres below its crown (§I.1).
+  // FIXPOINT: a promoted wall is itself structure, so a wall that is the only thing under IT is
+  // promoted next (wall on wall). Same shared-pure-function status as groundworkSlabs: one
+  // definition, every element recipe applies it. Pure geometry — no timing read. Walls only: a pipe
+  // or railing under a beam is §E row 1 and is never promoted.
+  function bearingWalls(els) {
+    var out = {}, n = els.length, t, c, k, cs, e, S;
+    var wallIdx = {}, poolIdx = {}, isWall = new Uint8Array(n), inPool = new Uint8Array(n);
+    for (t = 0; t < n; t++) {
+      e = els[t];
+      isWall[t] = (e.cls && e.cls.indexOf('IfcWall') === 0) ? 1 : 0;
+      inPool[t] = supportPool(e) ? 1 : 0;
+      cs = cellsOf(e);
+      if (isWall[t] && !inPool[t]) for (c = 0; c < cs.length; c++) (wallIdx[cs[c]] = wallIdx[cs[c]] || []).push(t);
+      if (inPool[t]) for (c = 0; c < cs.length; c++) (poolIdx[cs[c]] = poolIdx[cs[c]] || []).push(t);
+    }
+    function below(S2, T2) { return S2.base_z < T2.base_z - EPS && S2.top_z >= T2.base_z - GAP; }
+    function hasPoolBelow(ti) {
+      var T2 = els[ti], cs2 = cellsOf(T2), a, b, arr, j;
+      for (a = 0; a < cs2.length; a++) {
+        arr = poolIdx[cs2[a]]; if (!arr) continue;
+        for (b = 0; b < arr.length; b++) { j = arr[b]; if (j !== ti && overlap(els[j], T2) && below(els[j], T2)) return true; }
+      }
+      return false;
+    }
+    var queue = [], rounds = 0, byNeed = {};
+    for (t = 0; t < n; t++) if (inPool[t]) queue.push(t);
+    while (queue.length) {
+      var next = [];
+      for (k = 0; k < queue.length; k++) {
+        t = queue[k]; e = els[t];
+        if (e.seq === 1 || e.phase === 'Substructure') continue;      // rests on soil (§I.2) — needs no wall
+        if (hasPoolBelow(t)) continue;                                // something structural already carries it
+        cs = cellsOf(e);
+        var seen = {};
+        for (c = 0; c < cs.length; c++) {
+          var arr = wallIdx[cs[c]]; if (!arr) continue;
+          for (var q = 0; q < arr.length; q++) {
+            var w = arr[q]; if (seen[w] || inPool[w]) continue; seen[w] = 1;
+            S = els[w];
+            if (!overlap(S, e) || !below(S, e) || !(S.top_z <= e.base_z + GAP)) continue;
+            inPool[w] = 1; out[S.guid] = 1; next.push(w);
+            byNeed[e.cls] = (byNeed[e.cls] || 0) + 1;
+            var cw = cellsOf(S); for (var z = 0; z < cw.length; z++) (poolIdx[cw[z]] = poolIdx[cw[z]] || []).push(w);
+          }
+        }
+      }
+      queue = next; if (next.length) rounds++;
+    }
+    Object.defineProperty(out, '__census', { enumerable: false, value: { rounds: rounds, neededBy: byNeed } });
+    return out;
+  }
+  // applyBearingWalls(els, who) — the ONE mutation every element recipe calls: a bearing wall takes
+  // phase Superstructure, sequence 2 (a vertical bearer, like a column). Trade/resource, rate and
+  // install time are NOT changed. Prints §BEARING_WALL on every call (0 is said aloud).
+  function applyBearingWalls(els, who) {
+    var bw = bearingWalls(els), n = 0, levels = {};
+    for (var t = 0; t < els.length; t++) {
+      if (bw[els[t].guid]) { els[t].phase = 'Superstructure'; els[t].seq = 2; n++; levels[els[t].storey || '_'] = 1; }
+    }
+    console.log('§BEARING_WALL recipe=' + who + ' n=' + n + ' rounds=' + bw.__census.rounds +
+      ' neededBy=' + JSON.stringify(bw.__census.neededBy) + ' levels=' + Object.keys(levels).length +
+      ' — a wall that is the only structure under a structural element is Superstructure seq 2 (rate, trade, install time unchanged)');
+    return n;
+  }
   function supportPool(e) {
     return e.seq <= 4 ||                                   // PASS-A structure
            (e.cls === 'IfcSlab' && e.seq > 4) ||           // §DEQ_V1 promoted roof slab
            e.cls === 'IfcStairFlight';                     // §STAIR_FLIGHT_GRID_VISIBILITY
   }
 
-  var API = { supportPool: supportPool, computeSchedule: computeSchedule, collapsePhase: collapsePhase, elementsInPhase: elementsInPhase, auditFloating: auditFloating, deriveBandRanks: deriveBandRanks, deriveZones: deriveZones, deriveStoreyMergeMap: deriveStoreyMergeMap, hostPairs: hostPairs, openingPairs: openingPairs, groundworkSlabs: groundworkSlabs, CELL: CELL, EPS: EPS, GAP: GAP, GROUND_BAND: GROUND_BAND, BIG_ELEMENT_VOL: BIG_ELEMENT_VOL, MAX_CREWS_DEFAULT: MAX_CREWS_DEFAULT, SHIFT_MS: SHIFT_MS, DAY_MS: DAY_MS, toProductive: toProductive, toWall: toWall };
+  var API = { supportPool: supportPool, computeSchedule: computeSchedule, collapsePhase: collapsePhase, elementsInPhase: elementsInPhase, auditFloating: auditFloating, deriveBandRanks: deriveBandRanks, deriveZones: deriveZones, deriveStoreyMergeMap: deriveStoreyMergeMap, hostPairs: hostPairs, openingPairs: openingPairs, groundworkSlabs: groundworkSlabs, bearingWalls: bearingWalls, applyBearingWalls: applyBearingWalls, CELL: CELL, EPS: EPS, GAP: GAP, GROUND_BAND: GROUND_BAND, BIG_ELEMENT_VOL: BIG_ELEMENT_VOL, MAX_CREWS_DEFAULT: MAX_CREWS_DEFAULT, SHIFT_MS: SHIFT_MS, DAY_MS: DAY_MS, toProductive: toProductive, toWall: toWall };
   global.ScheduleGate = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
 })(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this));
