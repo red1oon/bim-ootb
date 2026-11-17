@@ -6,7 +6,7 @@
   "Terminal": 759,
   "Hospital": 1414,
   "Duplex": 7,
-  "HHS_Office_Federated": 404,
+  "HHS_Office_Federated": 244,
   "Clinic": 171,
   "LTU_AHouse": 3110,
   "JKR": 433
@@ -16,7 +16,7 @@
   "Terminal": 533,
   "Hospital": 33,
   "Duplex": 1,
-  "HHS_Office_Federated": 22,
+  "HHS_Office_Federated": 23,
   "Clinic": 50,
   "LTU_AHouse": 541,
   "JKR": 23
@@ -56,5 +56,6 @@
   "LTU_AHouse": 0,
   "JKR": 0
  },
- "_relocked_2026_11_18": "float_after_cpm + midair re-locked ONCE and midair_unnamed added, read off the FAIL lines of a -1 placeholder run. Cause and per-building numbers: bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.10 (bisect of the stale locks), §Q.12, §Q.13 (D-steps, graph engine everywhere) and §Q.14.1 (this re-lock)."
+ "_relocked_2026_11_18": "float_after_cpm + midair re-locked ONCE and midair_unnamed added, read off the FAIL lines of a -1 placeholder run. Cause and per-building numbers: bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.10 (bisect of the stale locks), §Q.12, §Q.13 (D-steps, graph engine everywhere) and §Q.14.1 (this re-lock).",
+ "_relocked_2026_11_18b": "HHS_Office_Federated + JKR only, read off a -1 placeholder run: the ground-band seed rule (owner 2026-11-18; bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.17). In this witness's pipeline both carry no classified ground."
 }

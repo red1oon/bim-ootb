@@ -142,7 +142,7 @@
     //   exemption hid, recorded in baselines/midair.json `_relocked_2026_09_12`.
     // `grounded`/`groundedN` keep their footprint-local meaning (designatedSupport's cls=2
     // rejection still reads them). Return fields are additive; `orphans` now counts !groundConnected.
-    var reach = new Uint8Array(n), stack = new Int32Array(n), sp = 0, seeds = 0, seedMode = 'classification';
+    var reach = new Uint8Array(n), stack = new Int32Array(n), sp = 0, seeds = 0, seedMode = 'classification', groundDatum = null;
     for (i = 0; i < n; i++) {
       T = items[i];
       if (T.seq === 1 || T.phase === 'Substructure') { reach[i] = 1; stack[sp++] = i; seeds++; }
@@ -152,7 +152,7 @@
       var zs = new Float64Array(n);
       for (i = 0; i < n; i++) zs[i] = items[i].bz;
       zs.sort();                                                   // typed-array sort is numeric
-      var datum = zs[Math.floor(n * 0.01)] + SG.GROUND_BAND;
+      var datum = zs[Math.floor(n * 0.01)] + SG.GROUND_BAND; groundDatum = datum;
       for (i = 0; i < n; i++) if (grounded[i] && items[i].bz <= datum) { reach[i] = 1; stack[sp++] = i; seeds++; }
     }
     var deg = new Int32Array(n + 1);                               // CSR of the REVERSE edges: supporter -> supported
@@ -165,7 +165,7 @@
     for (i = 0; i < n; i++) if (reach[i]) groundConnectedN++;
     orphans = n - groundConnectedN;
     return { ok: true, contacts: contacts, grounded: grounded, orphans: orphans, groundedN: groundedN,
-             groundConnected: reach, groundConnectedN: groundConnectedN, groundSeeds: seeds, groundSeedMode: seedMode };
+             groundConnected: reach, groundConnectedN: groundConnectedN, groundSeeds: seeds, groundSeedMode: seedMode, groundDatum: groundDatum };
   }
 
   // designatedSupport(items, G) -> Int32Array: for each element with contacts, the ONE support
@@ -245,6 +245,18 @@
     // (the contracted SCC's shared start). Nothing is left unelected by D3.
     var bearMemo = new Int8Array(n), d3Demoted = 0;
     var contactOnly = [], d7Contacts = 0, d7Reelected = 0, seedSkipped = 0;
+    // §GROUND_BAND_RESTS_ON_SOIL (owner 2026-11-18, bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.16.4 item 3 / §Q.17):
+    // a building that models NO foundations (no sequence-1 / Substructure element: contactGraph's own groundSeedMode
+    // 'ground-band') still stands on soil. There a STRUCTURAL element whose base is inside the ground band (the same
+    // datum the orphan walk seeds from) is a ground seed for the election. Not `grounded[i]`: that is footprint-local
+    // (§I.2) — one buried pipe under a 3,400 m2 ground slab voided it and the slab was elected onto a stair flight.
+    var bandMode = G.groundSeedMode === 'ground-band' && typeof G.groundDatum === 'number', bandSeeds = 0;
+    function isSeed(X, xStruct) {
+      // real structure only: a pool member admitted for visibility (sequence > 4 — a stair flight, a promoted roof slab) is
+      // not what a building stands on (the same line §STRUCTURE_BEARS_ON_STRUCTURE draws below)
+      return X.seq === 1 || X.phase === 'Substructure' ||
+        (bandMode && xStruct && typeof X.seq === 'number' && X.seq <= 4 && X.bz <= G.groundDatum);
+    }
     function bearsOnPool(j) {
       if (bearMemo[j]) return bearMemo[j] === 1;
       var lj = G.contacts[j], Tj = items[j], hit = false;
@@ -281,7 +293,8 @@
       var inPool = SG.supportPool || function () { return true; };
       var tStruct = !!(SG.supportPool && SG.supportPool(T));
       var skippedLater = 0;
-      var tSeed = tStruct && (T.seq === 1 || T.phase === 'Substructure');
+      var tSeed = tStruct && isSeed(T, true);
+      if (tSeed && bandMode && !(T.seq === 1 || T.phase === 'Substructure')) bandSeeds++;
       for (var k = 0; k < list.length; k++) {
         var j = list[k], S = items[j], cls, score;
         if (S.bz < T.bz - EPS && S.tz >= T.bz - GAP) { cls = 0; score = -S.tz; }
@@ -310,7 +323,7 @@
         // (sequence 1 or phase Substructure) rests on soil. It may elect another ground seed, never something of a
         // later phase — a column or wall whose box runs down through its footing was elected as the footing's "bearer"
         // (LTU 236, Hospital 8, Clinic 6), so the footing was judged against the frame it carries.
-        if (tSeed && !(S.seq === 1 || S.phase === 'Substructure')) { seedSkipped++; continue; }
+        if (tSeed && !isSeed(S, inPool(S))) { seedSkipped++; continue; }
         // §STRUCTURE_BEARS_ON_STRUCTURE (§Q.13): a contact that is in the pool only for VISIBILITY (sequence > 4: a
         // stair flight, a promoted roof slab) and is built later than the structural T ranks behind any bearer that is
         // real structure (cls +0.25). A slab with a beam under it no longer elects the stair flight beside the beam.
@@ -323,7 +336,7 @@
       if (tStruct) {                                          // §D2: only a pool contact below/embedded
         if (poolJ < 0) {
           // ground seeds (§I.2 / §GROUND_CONNECTED: seq===1 or Substructure) rest on soil — not a gap
-          if (!(T.seq === 1 || T.phase === 'Substructure')) { noSup.push(i); if (G.grounded[i]) noSupGrounded++; }
+          if (!tSeed) { noSup.push(i); if (G.grounded[i]) noSupGrounded++; }
           continue;
         }
         out[i] = poolJ; continue;
@@ -348,7 +361,8 @@
       ' electedFromRemainingContacts(hadALaterContactIgnored)=' + d7Reelected + ' byCls=' + JSON.stringify(coCls) +
       ' guids=' + contactOnly.slice(0, 20).map(function (x) { return items[x].guid; }).join(',') + (contactOnly.length > 20 ? ',…' : ''));
     out.contactOnly = contactOnly;
-    console.log('§GROUND_RESTS_ON_SOIL laterPhaseContactsIgnoredForGroundSeeds=' + seedSkipped);
+    console.log('§GROUND_RESTS_ON_SOIL laterPhaseContactsIgnoredForGroundSeeds=' + seedSkipped +
+      ' groundSeedMode=' + (G.groundSeedMode || '?') + (bandMode ? ' groundBandDatum=' + G.groundDatum.toFixed(2) + 'm structuralSeedsInBand=' + bandSeeds : ''));
     out.structNoSupport = noSup;
     out.d3Demoted = d3Demoted;
     return out;

@@ -24,7 +24,8 @@
 //                      the lowest Superstructure band). No Architecture, no Finishes, no MEP.
 //   C3 DAY-0 SUPPORT   nothing on screen during DAY 0 is hanging: every non-exempt element has a
 //                      bearing/embedded support already placed.
-//   C4 NO EARLY MEP    no MEP phase appears in the opening window (default 3 days).
+//   C4 NO EARLY MEP    no MEP in the opening window (default 3 days) is OUT OF ORDER (starts before its elected support is done).
+//                      Buried / under-slab pipework that follows its footings is counted and printed, not failed (§Q.17).
 //
 // The judge is REQUIRED from viewer/support_sweep.js and never re-derived here (4D_MODEL_INTEGRITY
 // §G.0). The ground exemption is the SHIPPED one, schedule_gate.js:1210 `T.seq !== 1`.
@@ -187,7 +188,10 @@ function run(bld) {
     else if (!okSeq) { promoted++; promoCls[els[i].cls + '(seq' + els[i].seq + '/' + els[i].resource + ')'] =
       (promoCls[els[i].cls + '(seq' + els[i].seq + '/' + els[i].resource + ')'] || 0) + 1; }
   }
-  out.push(claim('C2_DAY0_PURITY', bld, onScreen, impure + promoted,
+  // Owner ruling 2026-11-18 (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.16.4 item 2, §Q.17): a ground slab or foundation
+  // beam the owner rule files as Substructure is NOT an intruder because its sequence number was left behind. The verdict
+  // reads PHASE; the promoted count stays on the line (it is the crew question of §J.6.4 item 1, not a day-0 defect).
+  out.push(claim('C2_DAY0_PURITY', bld, onScreen, impure,
     'modelsSubstructure=' + modelsSub + ' byPhase=' + impure + ' bySeqOnly=' + promoted + ' phases{' +
     Object.entries(phaseHist).sort((a, b) => b[1] - a[1]).map(([k, n]) => k + ':' + n).join(' ') + '}' +
     (impure ? '  INTRUDERS{' + Object.entries(impureCls).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([k, n]) => k + ':' + n).join(' ') + '}' : '') +
@@ -242,6 +246,15 @@ function run(bld) {
   // ── C4 NO EARLY MEP ────────────────────────────────────────────────────────────────────────
   const mepCur = t0 + MEP_WINDOW_D * DAY_MS;
   let inWin = 0, mep = 0, firstMep = Infinity; const mepCls = {}, mepStorey = {};
+  // Owner ruling 2026-11-18 (§Q.16.4 item 1, §Q.17): MEP in the opening days is a defect only when it is OUT OF ORDER — it
+  // starts before its elected support is done (the shipped judge, SupportSweep.midairAudit, §I owner). Buried and
+  // under-slab pipework that follows its footings is industry practice. The window only selects WHICH MEP is looked at.
+  const _judged = els.filter(e => sched[e.guid]).map(e => Object.assign({}, e, { s: sched[e.guid].s, e: sched[e.guid].e }));
+  const _q = console.log; let _aud; console.log = () => {}; try { _aud = SS.midairAudit(_judged); } finally { console.log = _q; }
+  const _mid = new Set(_aud.guids || []);
+  const _seedTops = els.filter(e => e.seq === 1 || e.phase === 'Substructure').map(e => e.tz).sort((a, b) => a - b);
+  const _groundTop = _seedTops.length ? _seedTops[Math.floor(_seedTops.length / 2)] : null;
+  let mepOut = 0, mepBelow = 0;
   let progEnd = t0;
   for (const g in sched) if (sched[g].e > progEnd) progEnd = sched[g].e;
   for (let i = 0; i < els.length; i++) {
@@ -251,6 +264,8 @@ function run(bld) {
     inWin++;
     if (/^MEP/.test(els[i].phase || '')) {
       mep++; mepCls[els[i].cls] = (mepCls[els[i].cls] || 0) + 1;
+      if (_mid.has(els[i].guid)) mepOut++;
+      if (_groundTop != null && els[i].bz < _groundTop) mepBelow++;
       mepStorey[els[i].storey || '_'] = (mepStorey[els[i].storey || '_'] || 0) + 1;
     }
   }
@@ -260,7 +275,8 @@ function run(bld) {
   // should be is the square peg) — it is a reason for the claim to PRINT the scale it is judging at,
   // so a reader can see whether a FAIL means "MEP is early" or "the programme is short".
   const progDays = (progEnd - t0) / DAY_MS;
-  out.push(claim('C4_NO_EARLY_MEP', bld, inWin, mep, 'window=' + MEP_WINDOW_D + 'd' +
+  out.push(claim('C4_NO_EARLY_MEP', bld, inWin, mepOut, 'earlyMEP=' + mep + ' OUT_OF_ORDER(shipped judge)=' + mepOut +
+    ' baseBelowGroundTop=' + (_groundTop == null ? 'n/a(no ground seeds)' : mepBelow + '/' + mep + '@' + _groundTop.toFixed(2) + 'm') + ' window=' + MEP_WINDOW_D + 'd' +
     ' programmeDays=' + progDays.toFixed(2) + ' windowIs=' + (MEP_WINDOW_D / progDays * 100).toFixed(1) + '%ofProgramme' +
     ' firstMEP=+' + (firstMep === Infinity ? 'none' : ((firstMep - t0) / DAY_MS).toFixed(2) + 'd') +
     (mep ? ' MEP{' + Object.entries(mepCls).map(([k, n]) => k + ':' + n).join(' ') + '}' +
