@@ -1422,8 +1422,12 @@
     var wallIdx = {}, poolIdx = {}, isWall = new Uint8Array(n), inPool = new Uint8Array(n);
     for (t = 0; t < n; t++) {
       e = els[t];
-      isWall[t] = (e.cls && e.cls.indexOf('IfcWall') === 0) ? 1 : 0;
-      inPool[t] = supportPool(e) ? 1 : 0;
+      // §Q.13: a STAIR FLIGHT is a candidate too. It is in supportPool for visibility only (sequence > 4, Envelope);
+      // when a slab or beam rests on its top and nothing structural else carries it, the flight is cast with the
+      // frame — the same necessity rule as the wall (JKR: 41 slabs and beams resting on flights built days later).
+      var visFlight = (e.cls === 'IfcStairFlight' && e.seq > 4);
+      isWall[t] = ((e.cls && e.cls.indexOf('IfcWall') === 0) || visFlight) ? 1 : 0;
+      inPool[t] = (supportPool(e) && !visFlight) ? 1 : 0;
       cs = cellsOf(e);
       if (isWall[t] && !inPool[t]) for (c = 0; c < cs.length; c++) (wallIdx[cs[c]] = wallIdx[cs[c]] || []).push(t);
       if (inPool[t]) for (c = 0; c < cs.length; c++) (poolIdx[cs[c]] = poolIdx[cs[c]] || []).push(t);
