@@ -441,6 +441,7 @@
     // ── Desktop keyboard handler (also used by navigate_controls.js) ──
     function navKeyHandler(e) {
       if (!nav.active) return;
+      if (window._kbdEditable && window._kbdEditable(e.target)) return;   // §S-G4b: keys typed into a field are text, not walk commands
       switch (e.key) {
         case 'ArrowUp': case 'w': case 'W': case 'Enter': case ' ':
           e.preventDefault();

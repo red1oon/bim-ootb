@@ -245,7 +245,7 @@ async function initViewer() {
         'navigate_find.js?v=65',
         'navigate_grid.js?v=1',
         'navigate_path.js?v=1',
-        'navigate_engine.js?v=1',
+        'navigate_engine.js?v=2',
         'navigate_controls.js?v=2',
         'navigate.js?v=10'
       ];
@@ -1320,7 +1320,7 @@ async function initViewer() {
         if (ppN && ppN[0] && ppN[0][0] > 0) {
           var ppReady = new Promise(function(res, rej) {
             if (window.setupPartsView) return res();
-            var s = document.createElement('script'); s.src = new URL('parts_view.js?v=1', document.baseURI).href;
+            var s = document.createElement('script'); s.src = new URL('parts_view.js?v=2', document.baseURI).href;
             s.onload = res; s.onerror = function() { rej(new Error('load failed parts_view.js')); }; document.head.appendChild(s);
           });
           var ppChecks = 0, ppTimer = setInterval(function() {

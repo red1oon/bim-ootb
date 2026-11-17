@@ -926,7 +926,7 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP._meterPrimed` | `viewer/sourced_light.js:1560` *(as `A.`)* | 1 | 2 |
 | `APP._mirrorOwnMats` | `viewer/fx_sun_shadow.js:326` *(as `A.`)* | 2 | 5 |
 | `APP._mobileRenderSkip` | `viewer/main.js:1001` | 2 | 4 |
-| `APP._nav` | `viewer/navigate_engine.js:469` *(as `A.`)* | 1 | 37 |
+| `APP._nav` | `viewer/navigate_engine.js:470` *(as `A.`)* | 1 | 37 |
 | `APP._navLoadedBy` | `viewer/fx_cinema_orbit.js:375` *(as `A.`)* | 3 | 8 |
 | `APP._navigateLoaded` | `viewer/main.js:154` | 3 | 43 |
 | `APP._navigatePromise` | `viewer/main.js:157` | 1 | 4 |
@@ -1587,7 +1587,7 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP.filmBoxesStatusRows` | `viewer/cpe_film_boxes.js:119` *(as `A.`)* | 1 | 5 |
 | `APP.filmLayer` | `viewer/maxq_start.js:958` *(as `A.`)* | 1 | 16 |
 | `APP.filterBatchedMesh` | `viewer/helpers.js:62` *(as `A.`)* | 1 | 4 |
-| `APP.filterByGuids` | `viewer/panels.js:862` *(as `A.`)* | 1 | 55 |
+| `APP.filterByGuids` | `viewer/panels.js:862` *(as `A.`)* | 2 | 59 |
 | `APP.filterDisc` | `viewer/panels.js:765` *(as `A.`)* | 1 | 19 |
 | `APP.filterDiscs` | `viewer/panels.js:770` *(as `A.`)* | 1 | 7 |
 | `APP.filterInstancedMesh` | `viewer/helpers.js:36` *(as `A.`)* | 1 | 5 |
@@ -1678,7 +1678,7 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP.giBlown` | — *phantom* | 0 | 2 |
 | `APP.glassMs` | — *phantom* | 0 | 1 |
 | `APP.glassReflDark` | — *phantom* | 0 | 1 |
-| `APP.goBackStep` | `viewer/navigate_engine.js:467` *(as `A.`)* | 1 | 1 |
+| `APP.goBackStep` | `viewer/navigate_engine.js:468` *(as `A.`)* | 1 | 1 |
 | `APP.graphAStar` | `viewer/navigate_grid.js:537` *(as `A.`)* | 1 | 2 |
 | `APP.graphPathToWaypoints` | `viewer/navigate_grid.js:539` *(as `A.`)* | 1 | 2 |
 | `APP.ground` | `viewer/scene.js:463` *(as `A.`)* | 1 | 175 |
@@ -1786,8 +1786,8 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP.pageErrors` | — *phantom* | 0 | 1 |
 | `APP.paramsToParas` | — *phantom* | 0 | 1 |
 | `APP.parasToParams` | — *phantom* | 0 | 1 |
-| `APP.partsView` | `viewer/parts_view.js:41` *(as `A.`)* | 1 | 3 |
-| `APP.partsViewRows` | `viewer/parts_view.js:55` *(as `A.`)* | 1 | 1 |
+| `APP.partsView` | `viewer/parts_view.js:55` *(as `A.`)* | 1 | 3 |
+| `APP.partsViewRows` | `viewer/parts_view.js:69` *(as `A.`)* | 1 | 1 |
 | `APP.pathOverviewCompositeOntoCanvas` | `viewer/cpe_path_overview.js:170` *(as `A.`)* | 1 | 8 |
 | `APP.pathOverviewLastBox` | `viewer/cpe_path_overview.js:183` *(as `A.`)* | 2 | 4 |
 | `APP.pathOverviewPrepare` | `viewer/cpe_path_overview.js:76` *(as `A.`)* | 1 | 13 |
@@ -1817,7 +1817,7 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP.reportError` | `viewer/error_reporter.js:112` *(as `A.`)* | 2 | 10 |
 | `APP.requestRender` | — *phantom* | 0 | 2 |
 | `APP.resetCinemaGhostLens` | `viewer/nf_panel_search.js:174` *(as `A.`)* | 1 | 7 |
-| `APP.resetToStart` | `viewer/navigate_engine.js:468` *(as `A.`)* | 1 | 1 |
+| `APP.resetToStart` | `viewer/navigate_engine.js:469` *(as `A.`)* | 1 | 1 |
 | `APP.resident` | — *phantom* | 0 | 4 |
 | `APP.resourcePanelAt` | `viewer/cpe_resource_panel.js:50` *(as `A.`)* | 1 | 8 |
 | `APP.resourcePanelCompositeOntoCanvas` | `viewer/cpe_resource_panel.js:1347` *(as `A.`)* | 1 | 4 |
@@ -1927,7 +1927,7 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP.startFlyTour` | — *phantom* | 0 | 2 |
 | `APP.startMaxQ` | — *phantom* | 0 | 2 |
 | `APP.startMaxQualityOrbit` | `viewer/maxq_start.js:2685` | 1 | 86 |
-| `APP.startNavigation` | `viewer/navigate_engine.js:465` *(as `A.`)* | 1 | 4 |
+| `APP.startNavigation` | `viewer/navigate_engine.js:466` *(as `A.`)* | 1 | 4 |
 | `APP.startOfflineDownload` | `viewer/scene.js:3415` *(as `A.`)* | 1 | 3 |
 | `APP.startStepDetection` | `viewer/walk.js:354` *(as `A.`)* | 1 | 1 |
 | `APP.startStillRefine` | `viewer/fx_still_refine.js:927` *(as `A.`)* | 1 | 58 |
@@ -1939,7 +1939,7 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP.stillExit` | `viewer/fx_still_refine.js:1358` *(as `A.`)* | 1 | 3 |
 | `APP.stopCinemaOrbit` | `viewer/fx_cinema_orbit.js:556` *(as `A.`)* | 1 | 1 |
 | `APP.stopDriveThru` | `viewer/walk.js:447` *(as `A.`)* | 1 | 2 |
-| `APP.stopNavigation` | `viewer/navigate_engine.js:466` *(as `A.`)* | 1 | 5 |
+| `APP.stopNavigation` | `viewer/navigate_engine.js:467` *(as `A.`)* | 1 | 5 |
 | `APP.stopStepDetection` | `viewer/walk.js:383` *(as `A.`)* | 1 | 2 |
 | `APP.stopStillRefine` | `viewer/fx_still_refine.js:1151` *(as `A.`)* | 1 | 30 |
 | `APP.stopStillSSGIPhase` | `viewer/effects_gi_poc.js:563` *(as `A.`)* | 1 | 3 |
