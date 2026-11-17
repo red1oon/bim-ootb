@@ -189,23 +189,11 @@ assert(/ok:\s*n <= base\.floating && ma\.midair <= base\.midair/.test(_vgiBody),
   'W-MZ-6b the lock gate REFUSES on a midair INCREASE (§GANTT_LOCK_DELTA: ok requires BOTH audits no worse ' +
   'than the edit-start baseline — absolute zero was the old contract and it refused the lock on 4 of 7 ' +
   'buildings for an unedited schedule)');
-// W-S51 — item d wiring (4D_GANTT_TM_REFACTOR.md §S51): the display reads the cell schedule.
-// Three links, each checked by source text so a one-file edit cannot go green on unwired code:
-// authoring remembers cells -> injectGantt stamps them into ops -> buildGanttTasks groups by them.
-assert(_dtBody.indexOf('_displayTimeline._lastCell = { map:') > 0 && _dtBody.indexOf('_displayTimeline._lastCell = null') > 0,
-  'W-S51a _displayTimeline remembers cell identity on a CELL-path authoring and NULLs it on a GRAPH-path one');
-assert(/_cell:\s*_cellMap \? _cellMap\[el\.guid\] : undefined/.test(tmSrc),
-  'W-S51b injectGantt stamps _cell into every op parameters JSON when the cell map covers the elements');
-// W-S51c — §S53 (F3): was a REGEX over buildGanttTasks' source text ("does the body contain
-// 'C:' + cellId"). Now the real rule is a real module, so this asserts the BEHAVIOUR instead: the
-// grouping precedence is exercised, not pattern-matched. A source regex would still pass against a
-// body that computes the key and then throws it away.
+// The drawer's grouping rule, exercised as behaviour (GanttModel is the real module): task identity, else storey|phase.
 {
   const gk = GanttModel.groupKeyOf;
-  assert(gk('T7', 'L1\u00b7Arch\u00b70', 'L1', 'Architecture') === 'T:T7' &&
-         gk(null, 'L1\u00b7Arch\u00b70', 'L1', 'Architecture') === 'C:L1\u00b7Arch\u00b70' &&
-         gk(null, null, 'L1', 'Architecture') === 'L1|Architecture',
-    'W-S51c the drawer groups bars by the cell stamp BETWEEN real task identity and the storey|phase fallback');
+  assert(gk('T7', 'L1', 'Architecture') === 'T:T7' && gk(null, 'L1', 'Architecture') === 'L1|Architecture',
+    'W-S51c the drawer groups bars by real task identity, else the storey|phase fallback');
 }
 
 function loadRatesTable() {
@@ -517,52 +505,12 @@ function census(items) {
         const k = keyFn(it, i2); (m[k] || (m[k] = [])).push(i2); }); return m; };
       const dispG = groupBy(it => (it.storey || '_UNKNOWN') + '|' + (it.phase || 'Architecture'));
       const wide50Disp = Object.keys(dispG).filter(k => frac(dispG[k]) > 0.5).length;
-      const gate = dtResult && dtResult.stats && dtResult.stats.gate;
-      let wide50Cell = 'n/a(GRAPH path — no cells exist)';
-      if (gate && gate.cellKeys) {
-        const cellG = groupBy((it, i2) => gate.cellKeys[i2]);
-        wide50Cell = Object.keys(cellG).filter(k => frac(cellG[k]) > 0.5).length +
-          '/' + Object.keys(cellG).length + 'cells';
-      }
-      console.log('§S50_FOURAXIS ' + bld + ' path=' + (gate ? gate.path : 'GRAPH') +
+      console.log('§S50_FOURAXIS ' + bld + ' path=GRAPH' +
         ' population=' + items.length + ' (all scheduled geo elements)' +
         ' days=' + (span / D).toFixed(1) + ' [span of _displayTimeline output]' +
         ' wide50display=' + wide50Disp + '/' + Object.keys(dispG).length + 'bars [storey|phase hull, time_machine.js:6074 grouping]' +
-        ' wide50cell=' + wide50Cell + ' [cell bars, CpmSchedule gate.cellKeys]' +
         ' float=' + floatPost + ' [ScheduleGate.auditFloating]' +
         ' midair=' + after.midair + ' [this witness\'s own census(), independent judge]');
-    }
-    // ── §S51_SCREEN — what the Gantt DRAWS, before vs after item d, measured on this witness's own
-    // items by THE DRAWER'S OWN MODEL. §S53 (F3): this block used to re-implement buildGanttTasks'
-    // grouping and slice `_tukeyBound` out of time_machine.js by source text; it now feeds items to
-    // GanttModel.buildTasks — the exact function time_machine.js's buildGanttTasks() wrapper calls —
-    // so a change to the drawer's grouping or trim shows up HERE instead of leaving this instrument
-    // silently measuring the retired rule. BEFORE = storey|phase grouping (pre-§S51 display, ops with
-    // no _cell stamp). AFTER = the cell stamp (the shipped §S51 grouping rule).
-    {
-      let lo = Infinity, hi = -Infinity;
-      items.forEach(it => { if (it.s < lo) lo = it.s; if (it.e > hi) hi = it.e; });
-      const span = hi - lo;
-      // Items -> the ELEMENT_PLACE op shape buildTasks consumes. idx=null: no authored task index in
-      // this witness, so the task-identity branch is inert and the cell/storey|phase rule is what runs.
-      const asOps = cellOf => items.map((it, i2) => ({ op_type: 'ELEMENT_PLACE', start_ts: it.s, end_ts: it.e,
-        output_guid: it.guid, parameters: { storey: it.storey || '_UNKNOWN', phase: it.phase || 'Architecture',
-          _cell: cellOf ? cellOf(i2) : undefined } }));
-      const barW50 = ops => {
-        const bars = GanttModel.buildTasks(ops, null, SR).tasks;
-        let wide = 0;
-        bars.forEach(b => { if (span && (b.endTs - b.startTs) / span > 0.5) wide++; });
-        return { wide, n: bars.length };
-      };
-      const gate = dtResult && dtResult.stats && dtResult.stats.gate;
-      const beforeG = barW50(asOps(null));
-      const afterG = gate && gate.cellKeys
-        ? barW50(asOps(i2 => gate.cellKeys[i2]))
-        : beforeG;   // graph path: the display is UNCHANGED by construction (no stamp exists)
-      console.log('§S51_SCREEN ' + bld + ' path=' + (gate ? gate.path : 'GRAPH') +
-        ' wide50screen BEFORE=' + beforeG.wide + '/' + beforeG.n + 'bars (storey|phase, tukey-trimmed — the pre-§S51 drawer)' +
-        ' AFTER=' + afterG.wide + '/' + afterG.n + 'bars (' + (gate && gate.cellKeys ? 'cell stamp — the §S51 drawer' : 'IDENTICAL: graph path, no stamp') + ')' +
-        ' [instrument: GanttModel.buildTasks — the drawer\'s own grouping+trim, on the same items]');
     }
     // ── §S51_RESIDUE — the ACCEPTANCE SPLIT on the locked midair residue (user: "within walls or
     // last"). General rule only — element class plays no part, no per-building constants:

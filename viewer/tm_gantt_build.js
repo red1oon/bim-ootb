@@ -572,18 +572,6 @@
     for (var _sg in _disp) if (_disp[_sg].end > _schedEnd) _schedEnd = _disp[_sg].end;
     if (_noGeoN) console.log('§4D_NOGEO parked=' + _noGeoN + ' at project end (no transform/zero bbox — cannot bear, hang, or be witnessed)');
 
-    // §S51 item d — cell identity for the Gantt: stamped into each op so buildGanttTasks groups
-    // bars by CELL on cell-path buildings (GRAPH-path authoring set _lastCell = null above, so
-    // those buildings' ops carry no stamp and group exactly as before). Coverage-checked the same
-    // way as _displayTimeline._last: a different building's guids miss and the stamp is skipped.
-    var _cellMap = null;
-    if (TMS._displayTimeline._lastCell && TMS._displayTimeline._lastCell.map) {
-      var _chit = 0, _cmiss = 0, _cmap0 = TMS._displayTimeline._lastCell.map;
-      _twItems.forEach(function (it) { if (_cmap0[it.guid]) _chit++; else _cmiss++; });
-      if (_chit > 0 && _chit >= 0.999 * (_chit + _cmiss)) _cellMap = _cmap0;
-      console.log('§S51_CELL_STAMP coverage=' + _chit + '/' + (_chit + _cmiss) +
-        ' stamping=' + (_cellMap ? 'YES — bars group by cell' : 'NO — coverage below 99.9%, bars stay storey|phase this generation'));
-    }
     // §TM_ELEMENT_WINDOW_BIND (2026-08-25, bim-compiler prompts/4D_GANTT_TM_REFACTOR.md "Two clocks"
     // recurring bug class) — `_disp[el.guid]` comes from CpmSchedule.run(), a pure relative CPM
     // solver with NO epoch concept anywhere in cpm_schedule.js. `_cap.win[taskId]` is the one thing
@@ -665,8 +653,7 @@
       s = bound;
       _gStmt.run([s.start, 'ELEMENT_PLACE',
          JSON.stringify({phase:el.phase, cls:el.cls, name:el.name, storey:el.storey,
-           resource:el.resource, _secs:el.installSecs, _end_ts:s.end, _genVersion:TMS._GANTT_CACHE_VERSION,   // _secs: §D8_COST_IS_WORK (tm_dash.js)
-           _cell: _cellMap ? _cellMap[el.guid] : undefined}),
+           resource:el.resource, _secs:el.installSecs, _end_ts:s.end, _genVersion:TMS._GANTT_CACHE_VERSION}),   // _secs: §D8_COST_IS_WORK (tm_dash.js)
          JSON.stringify([el.guid]), el.guid]);
       count++;
       if (s.end > _projEnd) _projEnd = s.end;

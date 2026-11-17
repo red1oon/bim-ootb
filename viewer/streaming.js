@@ -2453,6 +2453,9 @@ function setupStreaming(A) {
                 ' rendered=' + JSON.stringify(_mcOwn) +
                 ' centres=' + _mcC + ' pending=' + _mcPend + ' verdict=' + _mcVerdict);
               if (_mcVerdict === 'COMPLETE' && !A.CITY_URL && A._findRefreshTree) A._findRefreshTree('merge-complete');
+              // An active isolate (Find, parts view, drawn-only) must survive the merge: merged meshes are new objects that filterByGuids never saw.
+              // Same re-apply as dlod_nav.js:1885. (VIEWER_ELEMENT_PARTS.md RESULT)
+              if (A.activeGuidFilter && A.filterByGuids) { A.filterByGuids(A.activeGuidFilter); console.log('§MERGE_ISOLATE_REAPPLY isolate=' + A.activeGuidFilter.size); }
             } catch (e) { console.warn('§MERGE_CONTRACT_FAIL ' + e.message); }
           }
         }
