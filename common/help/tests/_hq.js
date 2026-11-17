@@ -31,10 +31,10 @@ function pack(lang) {
 // the integers a pack's records use, as an object {i: text}, to send to a page (it has no file system)
 function textsUsed(p) { const t = {}; p.index.records.forEach((r) => ['d', 'h'].forEach((f) => { if (typeof r[f] === 'number') t[r[f]] = p.text(r[f]); })); return t; }
 // the query list of W-HQ-RANK-TWIN / W-HQ-BM25, from the pack's own records: every window, process, action and status name, each how-to title, and each multi-word name's first word alone
-function queries(p) {
-  const kinds = ['window', 'process', 'action', 'status', 'howto'], seen = new Set(), out = [];
+function queries(p, allKinds) {
+  const kinds = allKinds ? null : ['window', 'process', 'action', 'status', 'howto'], seen = new Set(), out = [];
   const add = (s) => { s = String(s).replace(/\s+/g, ' ').trim(); if (s && !seen.has(s)) { seen.add(s); out.push(s); } };
-  p.index.records.forEach((r) => { if (kinds.indexOf(r.k) < 0) return; add(r.n); const w = String(r.n).replace(/\s+/g, ' ').trim().split(' '); if (w.length > 1) add(w[0]); });
+  p.index.records.forEach((r) => { if (kinds && kinds.indexOf(r.k) < 0) return; add(r.n); const w = String(r.n).replace(/\s+/g, ' ').trim().split(' '); if (w.length > 1) add(w[0]); });
   return out;
 }
 async function page(breakValue) {
@@ -45,6 +45,11 @@ async function page(breakValue) {
 }
 // run the core in Node, the way the page will: one handle per pack, a list of queries -> the lines "id|tier|score,..." per query (integers, so a text compare is exact)
 function lines(HQ, p, qs) { const h = HQ.create(p.index, { text: p.text }); return qs.map((s) => h.query(s).map((x) => x.id + '|' + x.tier + '|' + x.score).join(',')); }
+// §19.4 (VOCAB_MESSAGE_CATALOG.md): the Viewer and Modeller packs, one per Viewer locale (the 18 of viewer/i18n), made by the ONE builder from viewer/ and modeller/ tools/help_records.js.
+// Their records hold their own strings (no integer text list), so text() is empty.
+const BIM_APPS = ['viewer', 'modeller'], BIM_LOCALES = require(path.join(ROOT, 'viewer', 'tools', 'trl_common')).LOCALES;
+const bimFile = (app, lang) => path.join(ROOT, app, 'help', 'index', lang + '.json');
+function bimPack(app, lang) { return { app, lang, index: JSON.parse(fs.readFileSync(bimFile(app, lang), 'utf8')), text: () => '' }; }
 // the REAL ERP page (erp/idempiere.html, logged in as GardenAdmin) served from the repo root, in headless chromium (--disable-gpu): the box the people use, not a copy.
 // br = {HQ: value for window.__HQ_BREAK, HS: value for window.__HS_BREAK} set in the PAGE only. setLang(lang) -> waits for that language's `§HELP_SEARCH index` line.
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json', '.db': 'application/octet-stream', '.css': 'text/css', '.wasm': 'application/wasm', '.sql': 'text/plain', '.png': 'image/png' };
@@ -60,4 +65,4 @@ async function erpPage(br) {
   return { pg, logs, errs, firstIndexLine: first, waitIndex, version: b.version(), close: async () => { await b.close(); srv.close(); },
     setLang: async (lang) => { const n = logs.length; await pg.evaluate((l) => ErpI18n.set(l), lang); return waitIndex(lang, n); } };
 }
-module.exports = { erpPage, kit, q, seedOk, pack, textsUsed, queries, page, lines, LANGS, ROOT, CORE, ERP, SEED };
+module.exports = { erpPage, kit, q, seedOk, pack, textsUsed, queries, page, lines, LANGS, ROOT, CORE, ERP, SEED, BIM_APPS, BIM_LOCALES, bimFile, bimPack };
