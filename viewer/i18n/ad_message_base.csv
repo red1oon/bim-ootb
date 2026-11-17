@@ -1074,3 +1074,23 @@ CPM reads the dates the drag produced — it never changes one.",I
 1001063,pillc_gi_preview_2,Desktop only — disabled on mobile (memory),I
 1001064,ui_export_bcf,Export BCF,I
 1001065,wi_store_changed,What-if: the project store changed since you opened this — reopen What-if,I
+1001066,howto_gh_save_open_a_building,Save & Open a building,I
+1001067,howto_gh_lod400_upgrade,LOD400 Upgrade,I
+1001068,howto_gh_find_panel_search_voice_query_and_axis_lenses,"Find panel — search, voice query, and axis lenses",I
+1001069,howto_gh_help_f1_the_info_panel_and_the_command_line_live,"Help — F1, the info panel, and the command line (LIVE)",I
+1001070,howto_gh_the_rest_of_the_navigate_drawer_world_history_page_history_home,"The rest of the Navigate drawer — World History, Page History & Home",I
+1001071,howto_gh_pick_walk_warehouse_logistics_buildings,Pick Walk — warehouse / logistics buildings,I
+1001072,howto_gh_share,Share,I
+1001073,howto_gh_fm_operate_lenses_hr_bim_asset_alpha,FM / Operate lenses — HR_BIM_Asset (ALPHA),I
+1001074,howto_gh_inspect_drawer_measure_clash_x_ray_section_time_machine_4d5d_fly_tour,"Inspect drawer — Measure, Clash, X-Ray, Section, Time Machine, 4D/5D, Fly Tour",I
+1001075,howto_gh_sanity_and_egress_rule_checks,Sanity and Egress — rule checks,I
+1001076,howto_gh_viewer_features,Viewer Features,I
+1001077,howto_gh_4d_window,4D Window,I
+1001078,howto_gh_display_options_palette_night_shadow_ground_background_sound_fx,"Display options — Palette, Night, Shadow + Ground, Background, Sound FX",I
+1001079,howto_gh_gi_preview_ao,GI Preview (AO),I
+1001080,howto_gh_nav_lod_large_bldgs,Nav LOD (large bldgs),I
+1001081,howto_gh_your_own_4d_5d_references_rates_durations_sequence,"Your own 4D / 5D references: rates, durations, sequence",I
+1001082,howto_gh_issues,Issues,I
+1001083,howto_gh_3d_navigation,3D Navigation,I
+1001084,howto_gh_camera_view_drawer,Camera / View drawer,I
+1001085,howto_gh_settings,Settings,I

@@ -20,6 +20,8 @@
   'use strict';
   function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;'); }
   function attr(s) { return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;'); }
+  // §14.8.1 (VOCAB_MESSAGE_CATALOG.md): a guide section heading's dictionary key; the same rule is in W-HOWTO H6 and trl_batch_2026-11-17_howto_headings.js
+  function ghKey(anchor) { return 'howto_gh_' + String(anchor).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, ''); }
 
   function toggle(cfg) {
     var id = cfg.id || 'cmd-palette', T = cfg.T || function (k, en) { return en; }, ic = cfg.icon || function () { return ''; };
@@ -116,7 +118,7 @@
             var g = document.createElement('div'); g.className = 'cmd-howto-guide';
             g.style.cssText = 'font-size:12px;padding:3px 0';
             g.innerHTML = '<a href="' + cfg.guideBase + '#' + ht.guide.anchor + '" target="_blank" rel="noopener" title="' + attr(T('ui_howto_guide', 'Guide')) + ': ' +
-              attr(ht.guide.heading) + '" style="color:#ffb74d">' + (cfg.guideIcon ? ic(cfg.guideIcon) : '') + ' ' +
+              attr(T(ghKey(ht.guide.anchor), ht.guide.heading)) + '" style="color:#ffb74d">' + (cfg.guideIcon ? ic(cfg.guideIcon) : '') + ' ' +
               (en ? T('ui_howto_guide', 'Guide') : T('ui_howto_guide_en', 'Guide (English)')) + '</a>';
             g.addEventListener('click', function (ev) { ev.stopPropagation(); console.log('§HOWTO_GUIDE_OPEN pill=' + entry.name + ' anchor=' + ht.guide.anchor); });
             childDiv.appendChild(g);

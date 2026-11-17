@@ -6,8 +6,8 @@
    "ad_message_base.csv",
    "AD_Message_Trl_ar_SA.xml"
   ],
-  "rows": 1066,
-  "translated": 963,
+  "rows": 1086,
+  "translated": 983,
   "untranslated": 103
  },
  "labels": {
@@ -1076,6 +1076,26 @@
   "pillc_gi_preview_1": "الإظلال المحيطي N8AO (نموذج بحثي)",
   "pillc_gi_preview_2": "سطح المكتب فقط — معطل على الجوال (الذاكرة)",
   "ui_export_bcf": "تصدير BCF",
-  "wi_store_changed": "ماذا-لو: تغيّر مخزن المشروع منذ أن فتحته — أعد فتح ماذا-لو"
+  "wi_store_changed": "ماذا-لو: تغيّر مخزن المشروع منذ أن فتحته — أعد فتح ماذا-لو",
+  "howto_gh_save_open_a_building": "حفظ مبنى وفتحه",
+  "howto_gh_lod400_upgrade": "ترقية LOD400",
+  "howto_gh_find_panel_search_voice_query_and_axis_lenses": "لوحة البحث — البحث والاستعلام الصوتي وعدسات المحاور",
+  "howto_gh_help_f1_the_info_panel_and_the_command_line_live": "مساعدة — F1 ولوحة المعلومات وسطر الأوامر (LIVE)",
+  "howto_gh_the_rest_of_the_navigate_drawer_world_history_page_history_home": "بقية درج التنقل — السجل العام وسجل الصفحة والرئيسية",
+  "howto_gh_pick_walk_warehouse_logistics_buildings": "مسار الالتقاط — مباني المستودعات / اللوجستيات",
+  "howto_gh_share": "مشاركة",
+  "howto_gh_fm_operate_lenses_hr_bim_asset_alpha": "FM / عدسات التشغيل — HR_BIM_Asset (ALPHA)",
+  "howto_gh_inspect_drawer_measure_clash_x_ray_section_time_machine_4d5d_fly_tour": "درج الفحص — قياس، تعارضات، أشعة سينية، قطاع، آلة الزمن، 4D/5D، جولة طيران",
+  "howto_gh_sanity_and_egress_rule_checks": "فحص السلامة ومسار الإخلاء — فحوص القواعد",
+  "howto_gh_viewer_features": "ميزات العارض",
+  "howto_gh_4d_window": "نافذة 4D",
+  "howto_gh_display_options_palette_night_shadow_ground_background_sound_fx": "خيارات العرض — لوحة الألوان، ليل، الظل + الأرض، الخلفية، المؤثرات الصوتية",
+  "howto_gh_gi_preview_ao": "معاينة GI (AO)",
+  "howto_gh_nav_lod_large_bldgs": "LOD التنقل (المباني الكبيرة)",
+  "howto_gh_your_own_4d_5d_references_rates_durations_sequence": "مراجع 4D / 5D الخاصة بك: المعدلات والمدد والتسلسل",
+  "howto_gh_issues": "مشاكل",
+  "howto_gh_3d_navigation": "التنقل ثلاثي الأبعاد",
+  "howto_gh_camera_view_drawer": "درج الكاميرا / العرض",
+  "howto_gh_settings": "الإعدادات"
  }
 }
