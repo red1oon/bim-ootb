@@ -76,6 +76,18 @@ jobs:
           if [ -n "$failed" ]; then echo "§X0_CI verdict=FAIL failed=${failed# }"; exit 1; fi
           echo "§X0_CI checked=3 verdict=PASS"
 
+      # W-CORE-PURE (bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md Part A, A3; #3180): no core file (ERP processes, callouts,
+      # models, posting, the 4D schedule maths) calls a clock, random numbers or the network itself; it asks the installed edge.
+      # A parser scan over the core list by pathspec, with its own red control. Exit 0 alone is not a pass: it must print verdict=PASS.
+      - name: Core files stay pure (W-CORE-PURE)
+        run: |
+          set -u; mkdir -p logs; rc=0
+          node erp/tests/witness_core_pure.js < /dev/null > logs/ci_core_pure.log 2>&1 || rc=$?
+          grep -E '§CORE_PURE_HIT|§CORE_PURE_RED|§CORE_PURE_PARSE_FAIL|FAIL ' logs/ci_core_pure.log || true
+          v=$(grep -E '^§CORE_PURE files=' logs/ci_core_pure.log | tail -1 || true)
+          echo "$v"
+          if [ "$rc" -ne 0 ] || ! printf '%s' "$v" | grep -q 'verdict=PASS'; then exit 1; fi
+
   e2e-tests:
     runs-on: ubuntu-latest
     needs: fast-checks
