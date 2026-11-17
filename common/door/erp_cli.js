@@ -60,10 +60,14 @@ function b3(O) {
 // §0.16 the patched image (seed + the page's self-heal patch) is the same for every call until the seed or a patch file changes: it is computed once and kept under a key of their bytes.
 // ERP_SNAPSHOT=off restores the per-call patch. The op-log replay and everything after it are unchanged. Witness: common/door/tests/witness_erp_snapshot.js (W-ERP-SNAPSHOT).
 const SNAP_VERSION = 'erp-snapshot/1 split=;\\s*\\n strip=--line run=one-by-one failing=skipped';   // the apply loop's contract; change it when the loop below changes
+// bim-compiler prompts/CLI_ERP_IVR.md §37 I-c: the door runs the SAME boot index overlay as the page (idempiere.html:1237), legacy's official dictionary indexes; ERP_BREAK=noindex skips it (W-SEED-INDEX X2 falsifier)
+const INDEX_FILES = ['ad_official_indexes.js', 'ad_index_overlay.js'].map(f => path.join(ROOT, 'erp', f));
+function ensureIndexes(O) { if ((process.env.ERP_BREAK || '') === 'noindex') { say('index-overlay skipped (ERP_BREAK=noindex)'); return; } const log = console.log; console.log = (m) => say(String(m).replace(/^§/, '')); try { require(INDEX_FILES[0]); require(INDEX_FILES[1]).ensure(O.db); } catch (e) { say('index-overlay error ' + e.message); } finally { console.log = log; } }
 function patchFiles(seed) { return [path.basename(seed) + '.sql', 'mfg.sql'].map(f => path.join(path.dirname(seed), 'patches', f)).filter(f => fs.existsSync(f)); }
 function snapshotKey(seed) {
   const h = require('crypto').createHash('sha256'); h.update(SNAP_VERSION); h.update(fs.readFileSync(seed));
   if ((process.env.ERP_BREAK || '') !== 'stalesnap') patchFiles(seed).forEach(f => { h.update('\n' + path.basename(f) + '\n'); h.update(fs.readFileSync(f)); });   // falsifier: a key blind to the patch
+  INDEX_FILES.forEach(f => { h.update('\n' + path.basename(f) + '\n'); h.update(fs.readFileSync(f)); });   // §37 I-c: a new index list rebuilds the image once
   return h.digest('hex').slice(0, 32);
 }
 function applyPatch(O, seed) {   // same loop as idempiere.html :1160-1169: statements one by one, a failing one never blocks (the bundled wasm cannot take the file in one run)
@@ -111,11 +115,11 @@ async function boot(a) {
     if (img) { O = await OC.open({ db: img.file }); O.file = seed; how = 'image'; staged = DP.enabled(); }
     else if (fs.existsSync(snap)) { O = await OC.open({ db: snap }); O.file = seed; how = 'hit'; staged = DP.enabled(); }
     else {
-      O = await OC.open({ db: seed }); const r = applyPatch(O, seed); how = 'miss';
+      O = await OC.open({ db: seed }); const r = applyPatch(O, seed); how = 'miss'; ensureIndexes(O);
       if (DP.enabled()) snapLater = snap; else { try { keep(snap); } catch (e) { how = 'miss-unsaved:' + e.message; } }
       say('patch statements=' + r.pOk + ' failed=' + r.pFail);
     }
-  } else { O = await OC.open({ db: seed }); const r = applyPatch(O, seed); say('patch statements=' + r.pOk + ' failed=' + r.pFail); }
+  } else { O = await OC.open({ db: seed }); const r = applyPatch(O, seed); say('patch statements=' + r.pOk + ' failed=' + r.pFail); ensureIndexes(O); }
   say('snapshot=' + how + ' key=' + key + ' ms=' + (Date.now() - t0));
   // §29.6 P3a: the core plugins start HERE, on the opened image, before the op-log replays (an op may write a table a bundle makes). Their dictionary goes to this in-memory db only.
   const tp = Date.now(); await DP.startBuiltins(O, { staged });

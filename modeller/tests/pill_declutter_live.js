@@ -44,7 +44,7 @@ const server = http.createServer((q, r) => {
     out.afterRedo = O.length;
     // help panel lists Undo/Redo with their shortcut
     const help = document.getElementById('m-help'); if (help) help.click();
-    const hp = document.getElementById('m-help-panel');
+    const hp = document.getElementById('cmd-palette');   // §14.5: the ONE help panel
     const htext = hp ? hp.innerHTML : '';
     out.helpHasUndo = /Undo/.test(htext) && /Ctrl\+Z/.test(htext);
     out.helpHasRedo = /Redo/.test(htext) && /Ctrl\+⇧Z/.test(htext);

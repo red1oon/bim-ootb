@@ -29,7 +29,7 @@
       // §29.1: a record is a place: the path is each place above (a record, then a tab of it) and this one: Project/BIM: Hospital/Project Phase
       var seg = function (s) { return s.erp + (s.rec ? '/' + s.rec.label : ''); };
       var where = st.erp ? (st.up || []).filter(function (s) { return s.erp; }).map(seg).concat([seg(st)]).join('/') : (st.building ? st.building + (st.kind ? '/' + st.kind : '') : '');
-      return 'red1' + (st.role || st.user ? ' [' + [st.role, st.user ? st.user.name : null].filter(Boolean).join(' ') + ']' : '') + (where ? ' ' + where : '') + '> ';   // §30 L3: the logged-in user beside the role
+      return 'red1' + (st.role || st.user ? ' [' + [st.role, st.user ? st.user.name : null].filter(Boolean).join(' ') + ']' : '') + (st.group ? ' ' + st.group : '') + (where ? ' ' + where : '') + '> ';   // §40 C1: the group the person entered   // §30 L3: the logged-in user beside the role
     }
     function quote(v) { v = String(v); if (v.indexOf('"') >= 0) throw new Error(M('words.quote_in_value', v)); return /[\s=;]/.test(v) || v === '' ? '"' + v + '"' : v; }
     function lineOf(verb, args) {   // the canonical door line: inputs in the vocabulary's order, then the rest (filters) as typed
@@ -249,6 +249,7 @@
         st.pendingLogin = { who: who }; effects.push({ line: lineOf('mis.list', { kind: 'AD_User', columns: 'AD_User_ID,Name,Value,EMail,AD_Client_ID', limit: '1000' }), purpose: 'login-find' }); return out();
       }
       if (st.needLogin && !st.user && LOGIN_OPEN.indexOf(w) < 0 && brk !== 'nogate') { screen.push(M('words.login_first', st.needLogin.client, st.needLogin.n)); return out(); }   // §30 L2 the gate; nogate: W-RED1-LOGIN falsifier (must FAIL G2)
+      if (toks.length === 1 && G[w] && w !== '_' && brk !== 'nogroup') { st.group = w; screen.push(helpText(w, st.level || null).replace(/\n$/, '')); return out(); }   // §40 C1/C2: `bim` / `mis` / `erp` alone enter (or switch to) that group, listing its words once; `help <g>` stays help
       if (w === 'cd') {
         st.last = null;
         var arg = toks.slice(1).map(function (t) { return t.text; }).join(' ');
@@ -256,7 +257,7 @@
         if (arg === '..') {
           if (st.erp && st.rec) st.rec = null;   // a record is below its list
           else if (st.erp && st.up && st.up.length) { var top = st.up.pop(); SNAP.forEach(function (k) { st[k] = top[k]; }); }   // a tab goes back to its record; a record reached by a link, to the building
-          else if (st.kind) { st.kind = null; st.columns = null; } else if (st.building) st.building = null; else if (st.erp) { st.erp = null; st.ecolumns = null; }
+          else if (st.kind) { st.kind = null; st.columns = null; } else if (st.building) st.building = null; else if (st.erp) { st.erp = null; st.ecolumns = null; } else if (st.group) st.group = null;   // §40 C2: out of the group after the last place
           return out();
         }
         var b = buildings.filter(function (x) { return x.toLowerCase() === arg.toLowerCase(); })[0];
@@ -364,7 +365,18 @@
       return null;
     }
     function wordList() { return Object.keys(words).map(function (w) { return { word: w, help: words[w].help, forms: words[w].forms }; }); }
-    return { init: init, step: step, prompt: prompt, expand: expand, lineOf: lineOf, wordList: wordList, helpText: helpText, groupOf: groupOf, menuOpen: function (st) { return !!(st && st.menu); },
+    // §40 C1: a group narrows what is OFFERED (help, Tab, the grey suggestion), never what runs. Pure. names: the red1 words; verbList: the door verb names.
+    //   brk 'nonarrow' (W-RED1-CONTAINER X1 falsifier) offers everything inside a group.
+    function offered(st, names, verbList) {
+      if (!st || !st.group || !G[st.group] || brk === 'nonarrow') return { words: names, verbs: verbList };
+      var g = st.group, keep = {}; formsOf(g).forEach(function (r) { keep[r.word] = 1; });
+      EV.forEach(function (e) { keep[String(e[0]).split(' ')[0]] = 1; }); (G[g].session || []).forEach(function (e) { keep[String(e[0]).split(' ')[0]] = 1; });
+      var plain = names.filter(function (n) { return keep[n] || !words[n]; });   // the shell's own session words (help, cd, exit, the group words …) are not forms: kept
+      return { words: plain, verbs: verbList.filter(function (v) { return groupOf(v) === g; }) };
+    }
+    // §40 C4: what Shift+Tab stands for: one place back (the printed line), or nothing at the top
+    function backLine(st) { return st && (st.rec || st.erp || st.kind || st.building || st.group || (st.up && st.up.length)) ? 'cd ..' : null; }
+    return { init: init, step: step, prompt: prompt, offered: offered, backLine: backLine, expand: expand, lineOf: lineOf, wordList: wordList, helpText: helpText, groupOf: groupOf, menuOpen: function (st) { return !!(st && st.menu); },
       loginGate: function (st) { return st && st.needLogin && !st.user && brk !== 'nogate' ? M('words.login_first', st.needLogin.client, st.needLogin.n) : null; } };   // §30 L2 for a door line typed at the prompt (it does not pass step)
   }
   // bim-compiler prompts/CLI_ERP_IVR.md §39 H2-H4: `!` history at the start of a line, as bash. PURE: hist = the lines, oldest first (the same numbering `history` prints).

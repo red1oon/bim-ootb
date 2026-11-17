@@ -29,8 +29,12 @@
       if (cs.indexOf(t.toLowerCase() + '_id') < 0) return;
       try { db.run('CREATE INDEX IF NOT EXISTS "' + idx + '" ON "' + t + '" ("' + t.toLowerCase() + '_id")'); keyed++; } catch (x) {} }); } catch (e) {}
     made += keyed;
-    var out = { created: made, present: have, skipped: skip, ms: Date.now() - t0 };
-    log('§INDEX_OVERLAY ensure created=' + made + ' present=' + have + ' skipped=' + skip + ' ms=' + out.ms + ' (legacy official dictionary indexes, IDEMPIERE-1132; boot overlay, outside the team base hash)');
+    // bim-compiler prompts/CLI_ERP_IVR.md §37 I-b: the planner reads an index only well with statistics (keyColsOf 45 -> 2.2 ms per table, §36.2). Whole database, so no table is named;
+    //   run when an index was made or no statistics exist yet (a host whose image already carries both pays nothing).
+    var an = -1, ta = Date.now();
+    try { var st = db.exec("SELECT count(*) FROM sqlite_master WHERE name='sqlite_stat1'"); if (made > 0 || !(st.length && st[0].values[0][0] > 0)) { db.run('ANALYZE'); an = Date.now() - ta; } } catch (e) { an = -2; }
+    var out = { created: made, present: have, skipped: skip, analyze_ms: an, ms: Date.now() - t0 };
+    log('§INDEX_OVERLAY ensure created=' + made + ' present=' + have + ' skipped=' + skip + ' analyze_ms=' + an + ' ms=' + out.ms + ' (legacy official dictionary indexes, IDEMPIERE-1132; boot overlay, outside the team base hash)');
     return out;
   }
   var API = { ensure: ensure, list: list };

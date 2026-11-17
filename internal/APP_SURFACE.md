@@ -9,7 +9,7 @@ nothing. This index is the missing "go to definition".
 
 | | |
 |---|---:|
-| files scanned | 3377 |
+| files scanned | 3381 |
 | distinct fields | 1862 |
 | written only as `A.x`/`app.x` (invisible to an `APP.` grep) | 1596 |
 | read but never written (phantom) | 176 |
@@ -22,13 +22,13 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 
 | field | first read site | prod? |
 |---|---|---|
-| `APP.Ctx` | `erp/crud_overlay.js:484` | **yes** |
-| `APP.Env` | `erp/crud_overlay.js:489` | **yes** |
+| `APP.Ctx` | `erp/crud_overlay.js:485` | **yes** |
+| `APP.Env` | `erp/crud_overlay.js:490` | **yes** |
 | `APP.KernelOps` | `viewer/cpe_ledger_ticker.js:62` | **yes** |
 | `APP.L` | `viewer/tests/witness_colour_truth_gpu.js:153` | no |
 | `APP.LABOR_RATES` | `viewer/cpe_resource_panel.js:43` | **yes** |
 | `APP.LIB_URL` | `tests/specs/10-deploy-integrity.spec.js:78` | no |
-| `APP.RUNTIME` | `erp/crud_overlay.js:432` | **yes** |
+| `APP.RUNTIME` | `erp/crud_overlay.js:433` | **yes** |
 | `APP.__cease3DProbe` | `viewer/tests/witness_drawn_film_frame.js:109` | no |
 | `APP._allRoomVolumes` | `scripts/probe_buildpass_v2.js:80` | no |
 | `APP._applyViewFilter` | `viewer/panels.js:2532` | **yes** |
@@ -123,7 +123,7 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP.askRun` | `viewer/tests/witness_find_ask_answers.js:127` | **yes** |
 | `APP.askSuggest` | `viewer/tests/witness_find_ask_answers.js:105` | no |
 | `APP.b` | `modeller/dxf2analytical.js:25` | **yes** |
-| `APP.bind` | `erp/crud_overlay.js:427` | **yes** |
+| `APP.bind` | `erp/crud_overlay.js:428` | **yes** |
 | `APP.budget` | `capex/tests/witness_td_pack_dash.js:124` | no |
 | `APP.buildingName` | `viewer/hba_iot.js:268` | **yes** |
 | `APP.bytes` | `erp/tests/witness_bimdoc_live.js:312` | no |
@@ -154,12 +154,12 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP.n` | `modeller/dxf2analytical.js:28` | **yes** |
 | `APP.onSectionOff` | `viewer/tools.js:519` | **yes** |
 | `APP.onSectionSliderChange` | `viewer/tools.js:591` | **yes** |
-| `APP.openTab` | `erp/crud_overlay.js:491` | **yes** |
+| `APP.openTab` | `erp/crud_overlay.js:492` | **yes** |
 | `APP.order` | `erp/tests/gen_idempiere_identity.js:58` | no |
 | `APP.pageErrors` | `viewer/tests/witness_colour_truth_gpu.js:151` | no |
-| `APP.paramsToParas` | `erp/idempiere.html:4851` | **yes** |
-| `APP.parasToParams` | `erp/idempiere.html:4870` | **yes** |
-| `APP.pinstanceList` | `erp/idempiere.html:4835` | **yes** |
+| `APP.paramsToParas` | `erp/idempiere.html:4860` | **yes** |
+| `APP.parasToParams` | `erp/idempiere.html:4879` | **yes** |
+| `APP.pinstanceList` | `erp/idempiere.html:4844` | **yes** |
 | `APP.poses` | `viewer/tests/witness_colour_truth_gpu.js:141` | no |
 | `APP.probeGradeHdr` | `scripts/probe_grade_hdr.js:20` | no |
 | `APP.probes` | `capex/tests/witness_td_pack_dash.js:142` | no |
@@ -174,7 +174,7 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP.saveWallMs` | `viewer/tests/witness_light_field_db.js:94` | no |
 | `APP.savedBytes` | `viewer/tests/witness_light_field_db.js:94` | no |
 | `APP.sched` | `capex/tests/witness_td_pack_dash.js:137` | no |
-| `APP.sessionContext` | `erp/crud_overlay.js:452` | **yes** |
+| `APP.sessionContext` | `erp/crud_overlay.js:453` | **yes** |
 | `APP.sheets` | `erp/tests/gen_idempiere_identity.js:58` | no |
 | `APP.shellPassMs` | `viewer/tests/witness_light_field_db.js:96` | no |
 | `APP.showInfoPanel` | `viewer/navigate_engine.js:325` | **yes** |
@@ -507,8 +507,8 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP._cpeRevealSavedHidden` | `viewer/fx_cpe_reveal_bands.js:482` *(as `A.`)* | 3 | 6 |
 | `APP._cpeRevealVisualKey` | `viewer/fx_cpe_reveal_bands.js:483` *(as `A.`)* | 2 | 7 |
 | `APP._cpeViewfinderRender` | — *phantom* | 0 | 6 |
-| `APP._createIsSOTrx` | `erp/idempiere.html:5378` | 1 | 1 |
-| `APP._createMovementType` | `erp/idempiere.html:5386` | 1 | 1 |
+| `APP._createIsSOTrx` | `erp/idempiere.html:5387` | 1 | 1 |
+| `APP._createMovementType` | `erp/idempiere.html:5395` | 1 | 1 |
 | `APP._csmLastFit` | `viewer/fx_sun_shadow.js:1044` *(as `A.`)* | 1 | 1 |
 | `APP._csmNearFix` | — *phantom* | 0 | 1 |
 | `APP._csmUncovered` | `viewer/fx_sun_shadow.js:974` *(as `A.`)* | 2 | 4 |
@@ -1332,7 +1332,7 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP._walkUnlocked` | `viewer/walk.js:112` *(as `A.`)* | 2 | 4 |
 | `APP._webglContextLost` | `viewer/scene.js:497` *(as `A.`)* | 2 | 3 |
 | `APP._whiteBg` | `viewer/tools.js:1187` *(as `A.`)* | 2 | 11 |
-| `APP._winCtx` | `erp/idempiere.html:5676` | 1 | 1 |
+| `APP._winCtx` | `erp/idempiere.html:5685` | 1 | 1 |
 | `APP._windBuckets` | `viewer/streaming.js:1501` *(as `A.`)* | 1 | 4 |
 | `APP._windFlip` | `viewer/still_fault.js:186` | 1 | 2 |
 | `APP._windFlipAny` | `viewer/streaming.js:1501` *(as `A.`)* | 1 | 4 |
