@@ -2,16 +2,16 @@
  "buildings": {
   "Hospital": {
    "dbFile": "Hospital_meta.db",
-   "codeKey": "539d4cb385be",
-   "midair": 429,
-   "filingParity": 105,
+   "codeKey": "c4f676bef900",
+   "midair": 306,
+   "filingParity": 115,
    "classes": {
     "IfcBeam": {
-     "midair": 89,
+     "midair": 1,
      "unjudgedStruct": 30
     },
     "IfcBuildingElementProxy": {
-     "midair": 34,
+     "midair": 33,
      "unjudgedStruct": 0
     },
     "IfcColumn": {
@@ -19,35 +19,35 @@
      "unjudgedStruct": 14
     },
     "IfcDuctFitting": {
-     "midair": 31,
+     "midair": 25,
      "unjudgedStruct": 0
     },
     "IfcDuctSegment": {
-     "midair": 30,
+     "midair": 31,
      "unjudgedStruct": 0
     },
     "IfcFireSuppressionTerminal": {
-     "midair": 6,
+     "midair": 8,
      "unjudgedStruct": 0
     },
     "IfcFooting": {
-     "midair": 21,
+     "midair": 12,
      "unjudgedStruct": 0
     },
     "IfcMember": {
-     "midair": 61,
+     "midair": 63,
      "unjudgedStruct": 0
     },
     "IfcPipeFitting": {
-     "midair": 73,
+     "midair": 57,
      "unjudgedStruct": 0
     },
     "IfcPipeSegment": {
-     "midair": 48,
+     "midair": 41,
      "unjudgedStruct": 0
     },
     "IfcPlate": {
-     "midair": 9,
+     "midair": 7,
      "unjudgedStruct": 0
     },
     "IfcRailing": {
@@ -59,7 +59,7 @@
      "unjudgedStruct": 2
     },
     "IfcWall": {
-     "midair": 4,
+     "midair": 5,
      "unjudgedStruct": 0
     },
     "IfcWallStandardCase": {
@@ -70,24 +70,16 @@
   },
   "Terminal": {
    "dbFile": "Terminal_meta.db",
-   "codeKey": "539d4cb385be",
-   "midair": 2395,
-   "filingParity": 2180,
+   "codeKey": "c4f676bef900",
+   "midair": 423,
+   "filingParity": 381,
    "classes": {
-    "IfcAirTerminal": {
-     "midair": 11,
-     "unjudgedStruct": 0
-    },
-    "IfcAlarm": {
-     "midair": 5,
-     "unjudgedStruct": 0
-    },
     "IfcBeam": {
-     "midair": 41,
+     "midair": 14,
      "unjudgedStruct": 26
     },
     "IfcBuildingElementProxy": {
-     "midair": 141,
+     "midair": 20,
      "unjudgedStruct": 0
     },
     "IfcColumn": {
@@ -98,40 +90,28 @@
      "midair": 8,
      "unjudgedStruct": 0
     },
-    "IfcDuctFitting": {
-     "midair": 137,
-     "unjudgedStruct": 0
-    },
     "IfcDuctSegment": {
-     "midair": 74,
-     "unjudgedStruct": 0
-    },
-    "IfcFireSuppressionTerminal": {
-     "midair": 175,
+     "midair": 4,
      "unjudgedStruct": 0
     },
     "IfcFlowController": {
-     "midair": 3,
+     "midair": 2,
      "unjudgedStruct": 0
     },
     "IfcFlowTerminal": {
-     "midair": 11,
-     "unjudgedStruct": 0
-    },
-    "IfcLightFixture": {
-     "midair": 76,
+     "midair": 1,
      "unjudgedStruct": 0
     },
     "IfcMember": {
-     "midair": 10,
+     "midair": 4,
      "unjudgedStruct": 38
     },
     "IfcPipeFitting": {
-     "midair": 795,
+     "midair": 42,
      "unjudgedStruct": 0
     },
     "IfcPipeSegment": {
-     "midair": 590,
+     "midair": 52,
      "unjudgedStruct": 0
     },
     "IfcPlate": {
@@ -155,24 +135,24 @@
      "unjudgedStruct": 0
     },
     "IfcValve": {
-     "midair": 16,
+     "midair": 2,
      "unjudgedStruct": 0
     },
     "IfcWall": {
-     "midair": 30,
+     "midair": 12,
      "unjudgedStruct": 0
     },
     "IfcWindow": {
-     "midair": 39,
+     "midair": 29,
      "unjudgedStruct": 0
     }
    }
   },
   "Duplex": {
    "dbFile": "Duplex_extracted.db",
-   "codeKey": "539d4cb385be",
-   "midair": 247,
-   "filingParity": 245,
+   "codeKey": "c4f676bef900",
+   "midair": 240,
+   "filingParity": 238,
    "classes": {
     "IfcBeam": {
      "midair": 0,
@@ -187,7 +167,7 @@
      "unjudgedStruct": 0
     },
     "IfcFlowSegment": {
-     "midair": 100,
+     "midair": 95,
      "unjudgedStruct": 0
     },
     "IfcFlowTerminal": {
@@ -207,7 +187,7 @@
      "unjudgedStruct": 1
     },
     "IfcWallStandardCase": {
-     "midair": 4,
+     "midair": 2,
      "unjudgedStruct": 0
     },
     "IfcWindow": {
@@ -218,12 +198,12 @@
   },
   "HHS_Office_Federated": {
    "dbFile": "HHS_Office_Federated_extracted.db",
-   "codeKey": "539d4cb385be",
-   "midair": 144,
-   "filingParity": 83,
+   "codeKey": "c4f676bef900",
+   "midair": 133,
+   "filingParity": 76,
    "classes": {
     "IfcBuildingElementProxy": {
-     "midair": 3,
+     "midair": 1,
      "unjudgedStruct": 0
     },
     "IfcColumn": {
@@ -243,16 +223,12 @@
      "unjudgedStruct": 0
     },
     "IfcMember": {
-     "midair": 15,
+     "midair": 13,
      "unjudgedStruct": 21
     },
     "IfcPlate": {
-     "midair": 6,
+     "midair": 4,
      "unjudgedStruct": 1
-    },
-    "IfcRailing": {
-     "midair": 3,
-     "unjudgedStruct": 0
     },
     "IfcSlab": {
      "midair": 29,
@@ -261,10 +237,6 @@
     "IfcStairFlight": {
      "midair": 0,
      "unjudgedStruct": 2
-    },
-    "IfcWallStandardCase": {
-     "midair": 2,
-     "unjudgedStruct": 0
     }
    }
   }

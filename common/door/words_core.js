@@ -29,6 +29,7 @@
       // §29.1: a record is a place: the path is each place above (a record, then a tab of it) and this one: Project/BIM: Hospital/Project Phase
       var seg = function (s) { return s.erp + (s.rec ? '/' + s.rec.label : ''); };
       var where = st.erp ? (st.up || []).filter(function (s) { return s.erp; }).map(seg).concat([seg(st)]).join('/') : (st.building ? st.building + (st.kind ? '/' + st.kind : '') : '');
+      if (st.mwalk) { var mw = ['menu'].concat(st.mwalk.path).join('/'); where = where ? mw + '/' + where : mw; }   // §40 C5: the menu path is part of the place
       return 'red1' + (st.role || st.user ? ' [' + [st.role, st.user ? st.user.name : null].filter(Boolean).join(' ') + ']' : '') + (st.group ? ' ' + st.group : '') + (where ? ' ' + where : '') + '> ';   // §40 C1: the group the person entered   // §30 L3: the logged-in user beside the role
     }
     function quote(v) { v = String(v); if (v.indexOf('"') >= 0) throw new Error(M('words.quote_in_value', v)); return /[\s=;]/.test(v) || v === '' ? '"' + v + '"' : v; }
@@ -38,7 +39,7 @@
       return verb + order.map(function (k) { return ' ' + k + '=' + quote(args[k]); }).join('');
     }
     // §1d.1: the kind's properties, as the type assist needs them (name, label, type, list values), kept from the describe answer cd already read
-    function slim(ps) { return (ps || []).map(function (q) { var o2 = { name: q.name, label: q.label || q.name, type: q.type, values: q.values || null }; if (q.seq != null) o2.seq = q.seq; if (q.displayed === false) o2.displayed = false; return o2; }); }   // seq + displayed=false kept only when the dictionary says them: the record view orders and filters by the window's own fields (§29.1)
+    function slim(ps) { return (ps || []).map(function (q) { var o2 = { name: q.name, label: q.label || q.name, type: q.type, values: q.values || null }; if (q.seq != null) o2.seq = q.seq; if (q.displayed === false) o2.displayed = false; if (q.process) o2.process = q.process; return o2; }); }   // §40 C3: a Button field's process (describe)   // seq + displayed=false kept only when the dictionary says them: the record view orders and filters by the window's own fields (§29.1)
     function where(st) { return st.erp ? 'erp' : (st.kind ? 'kind' : (st.building ? 'building' : 'any')); }
     function fits(form, w, st) { return (!form.for || (st && String(st.erp).toLowerCase() === String(form.for).toLowerCase())) && (form.in === 'any' || form.in === w || (form.in === 'building' && w === 'kind')); }   // form.for: a form of one ERP window only (status: Project)
     function ctxArgs(st, e, args) {   // §22.4: the context fills only an input the verb has and the line did not give
@@ -168,6 +169,7 @@
           var pc = typeof st.pendingCd === 'string' ? { name: st.pendingCd } : st.pendingCd;   // a plain `cd X` keeps its text (string); a record or alternative reading is an object
           if (ok) {
             st.pendingCd = null; st.erp = env.answer.kind || pc.name; st.ecolumns = pick(env.answer.properties || []).cols; st.eprops = slim(env.answer.properties); if (env.answer.key) st.ekey = env.answer.key; if (env.answer.childTabs) st.etabs = env.answer.childTabs;
+            if (st.mwalk && !pc.menu) st.mwalk = null;   // §40 C5: a kind named from anywhere but the walk leaves the walk
             st.building = null; st.kind = null; st.columns = null; if (st.rec) st.rec = null; if (st.master) st.master = null; if (pc.up) st.up = pc.up; else if (st.up && st.up.length) st.up = [];   // (a field is touched only when it holds something: the state of a plain `cd` stays what P2a made, W-MSG-CATALOG M1)
             if (pc.id != null || pc.ref != null) {   // §29.1: a record named with the kind: its row is read next (by id from a link, by number or name as typed)
               st.pendingRead = { ref: pc.ref != null ? pc.ref : null, id: pc.id != null ? pc.id : null, by: pc.id != null ? 'id' : 'number' };
@@ -183,9 +185,20 @@
           if (R0) {
             st.pendingRead = null; var kc = String(st.ekey || '').toLowerCase(), no = R0.documentno != null ? String(R0.documentno) : null, lab = R0.documentno != null ? R0.documentno : (R0.name != null ? R0.name : (R0.value != null ? R0.value : R0[kc]));
             st.rec = { id: R0[kc], label: String(lab), number: no };
-            screen.push(M('words.cd_record_ok', st.erp, st.rec.label, (st.etabs || []).length, (st.etabs || []).map(function (t) { return t.tab; }).join(', '))); return out(); }
+            screen.push(M('words.cd_record_ok', st.erp, st.rec.label, (st.etabs || []).length, (st.etabs || []).map(function (t) { return t.tab; }).join(', ')));
+            if ((st.eprops || []).some(function (q) { return q.name === 'DocStatus'; }) && verbs['erp.actions']) { var aa = { kind: st.erp, id: String(st.rec.id) }; ctxArgs(st, verbs['erp.actions'], aa); effects.push({ line: lineOf('erp.actions', aa), purpose: 'rec-actions' }); }   // §40 C3: a document's legal actions for the role, read once on entry
+            return out(); }
           if (pr.by === 'number' && pr.ref != null && /^\d+$/.test(String(pr.ref))) { pr.by = 'id'; pr.why = env.why || null; var rb = { kind: st.erp, id: pr.ref }; ctxArgs(st, verbs['mis.read'], rb); effects.push({ line: lineOf('mis.read', rb), purpose: 'rec-read' }); return out(); }   // a whole number is a DocumentNo first, then an id
           st.pendingRead = null; screen.push(M('words.cd_record_none', st.erp, pr.ref != null ? pr.ref : pr.id, (pr.why || env.why || M('words.answer_no_rows')))); return out();   // the first refusal (as a number) is the one that says why, e.g. two records carry it
+        }
+        if (p === 'rec-actions') {   // §40 C3: what the record may do next, kept to offer (never to gate what runs)
+          if (st.rec) st.rec.actions = ok && Array.isArray(env.answer.actions) ? env.answer.actions.slice() : [];
+          if (st.rec && st.rec.actions.length) screen.push(M('words.rec_actions', st.rec.actions.join(', '))); return out();
+        }
+        if (p === 'menu-walk') {   // §40 C5: the menu, walked as places from its root
+          if (!ok || !Array.isArray(env.answer.tree)) { screen.push(M('words.menu_walk_fail', env.why || M('words.answer_no_rows'))); return out(); }
+          st.mwalk = { tree: env.answer.tree, path: [] }; st.erp = null; st.ecolumns = null; st.rec = null; st.building = null; st.kind = null; st.master = null; st.up = [];
+          menuList(st, screen); return out();
         }
         if (p === 'cd-tab') {   // §29.1: a tab of the record = that tab's window, FILTERED BY ITS LINK to the record (the master= filter every list word then carries)
           var ptb = st.pendingCd; st.pendingCd = null;
@@ -257,11 +270,22 @@
         if (arg === '..') {
           if (st.erp && st.rec) st.rec = null;   // a record is below its list
           else if (st.erp && st.up && st.up.length) { var top = st.up.pop(); SNAP.forEach(function (k) { st[k] = top[k]; }); }   // a tab goes back to its record; a record reached by a link, to the building
-          else if (st.kind) { st.kind = null; st.columns = null; } else if (st.building) st.building = null; else if (st.erp) { st.erp = null; st.ecolumns = null; } else if (st.group) st.group = null;   // §40 C2: out of the group after the last place
+          else if (st.kind) { st.kind = null; st.columns = null; } else if (st.building) st.building = null;
+          else if (st.erp) { st.erp = null; st.ecolumns = null; if (st.mwalk) { if (brk === 'menuskip') st.mwalk.path = []; menuList(st, screen); } }   // §40 C5: a window entered from the menu goes back to its folder (menuskip: W-RED1-CONTAINER X8 falsifier)
+          else if (st.mwalk && st.mwalk.path.length) { st.mwalk.path.pop(); menuList(st, screen); } else if (st.mwalk) st.mwalk = null;   // §40 C5: up one menu node, then out of the walk
+          else if (st.group) st.group = null;   // §40 C2: out of the group after the last place
           return out();
         }
+        if (st.mwalk && !st.erp && !st.building) {   // §40 C5: in the walk, cd names a child of the node (exact, case-blind, then ONE prefix)
+          var mc = menuChild(st, arg);
+          if (mc && mc.children) { st.mwalk.path.push(mc.name); menuList(st, screen); return out(); }
+          if (mc && mc.action === 'W' && mc.kind) { st.pendingCd = { name: mc.kind, first: mc.name, menu: true }; effects.push({ line: lineOf('mis.describe', { kind: mc.kind }), purpose: 'cd-erp' }); return out(); }
+          if (mc && (mc.action === 'P' || mc.action === 'R')) { screen.push(M('words.menu_leaf_run', mc.name)); return out(); }
+          if (mc) { screen.push(M('words.menu_leaf_page', mc.name)); return out(); }
+          st.mwalk = null;   // not a child: the cd goes on as typed and the walk is left
+        }
         var b = buildings.filter(function (x) { return x.toLowerCase() === arg.toLowerCase(); })[0];
-        if (b) { st.building = b; st.kind = null; st.columns = null; st.erp = null; st.ecolumns = null; if (st.rec) st.rec = null; if (st.master) st.master = null; if (st.up && st.up.length) st.up = []; screen.push(M('words.cd_building', b)); return out(); }
+        if (b) { if (st.mwalk) st.mwalk = null; st.building = b; st.kind = null; st.columns = null; st.erp = null; st.ecolumns = null; if (st.rec) st.rec = null; if (st.master) st.master = null; if (st.up && st.up.length) st.up = []; screen.push(M('words.cd_building', b)); return out(); }
         if (st.erp && st.rec) { var tb = tabOf(st, arg); if (tb) { st.pendingCd = { tab: tb }; effects.push({ line: lineOf('mis.describe', { kind: tb.kind }), purpose: 'cd-tab' }); return out(); } }   // §29.1: a tab of the record
         var LK = LINKS[arg.toLowerCase()];
         if (LK && LK.in === 'building' && st.building && brk !== 'kindfirst') { st.pendingCd = { link: LK }; effects.push({ line: lineOf(LK.verb, { building: st.building }), purpose: 'link' }); return out(); }   // §29.1: a link word is never a kind of the building (the film's "no such table: c_project")
@@ -272,8 +296,12 @@
         else effects.push({ line: lineOf('mis.describe', { kind: pcd.name }), purpose: 'cd-erp' });
         return out();
       }
+      if (w === 'menu') {   // §40 C5: the menu walked as places (`red1 menu` one-shot stays the full-screen menu, §21)
+        var ma = {}; toks.slice(1).forEach(function (t) { var m2 = /^role=(\d+)$/.exec(t.text); if (m2) ma.role = m2[1]; }); if (ma.role == null && st.role) ma.role = st.role;
+        effects.push({ line: lineOf('mis.menu', ma), purpose: 'menu-walk' }); return out();
+      }
       if (w === 'pwd') {
-        var k = []; if (st.building) k.push('building=' + quote(st.building)); if (st.kind) k.push('kind=' + quote(st.kind)); if (st.erp) k.push('kind=' + quote(st.erp)); if (st.rec) k.push('id=' + quote(st.rec.id)); if (st.master) k.push('master=' + quote(st.master.kind + '/' + st.master.id)); if (st.role) k.push('role=' + st.role);
+        var k = []; if (st.building) k.push('building=' + quote(st.building)); if (st.kind) k.push('kind=' + quote(st.kind)); if (st.erp) k.push('kind=' + quote(st.erp)); if (st.rec) k.push('id=' + quote(st.rec.id)); if (st.master) k.push('master=' + quote(st.master.kind + '/' + st.master.id)); if (st.role) k.push('role=' + st.role); if (st.mwalk) k.unshift('menu=' + quote(st.mwalk.path.join('/') || '/'));
         screen.push(k.length ? k.join(' ') : M('words.pwd_nowhere')); return out();
       }
       if (w === 'role') { var rr = toks[1] ? toks[1].text : ''; if (rr && !/^\d+$/.test(rr)) { screen.push(M('words.role_not_number', rr)); return out(); } st.role = rr || null; screen.push(rr ? M('words.role_set', rr) : M('words.role_none'));
@@ -368,6 +396,28 @@
     // §40 C1: a group narrows what is OFFERED (help, Tab, the grey suggestion), never what runs. Pure. names: the red1 words; verbList: the door verb names.
     //   brk 'nonarrow' (W-RED1-CONTAINER X1 falsifier) offers everything inside a group.
     function offered(st, names, verbList) {
+      var res = offeredGroup(st, names, verbList);
+      if (st && st.erp && st.rec) {   // §40 C3: in a record, what is offered is the record's (its legal actions, tabs, process buttons, fields): all from the dictionary
+        var DC = (((words.do || {}).forms || [{}])[0] || {}).codes || {}, acts = st.rec.actions || null;
+        res.places = (st.etabs || []).map(function (t) { return t.tab; });
+        res.actions = brk === 'allactions' ? Object.keys(DC) : acts;
+        if (res.actions) { res.codes = {}; Object.keys(DC).forEach(function (c) { if (res.actions.indexOf(c) >= 0) res.codes[c] = DC[c]; }); }
+        res.processes = recProcesses(st.eprops); res.props = st.eprops || [];
+      } else if (st && st.mwalk && !st.erp && !st.building) res.places = (menuNode(st) || []).map(function (n) { return n.name; });   // §40 C5: the node's children
+      return res;
+    }
+    // §40 C3: the record's processes = its displayed Button fields with a process, minus the columns legacy's dispatcher never runs as one
+    //   (AbstractADWindowContent.actionButton0 :3766 DocAction, :3818 CreateFrom, :3857 Posted)
+    function recProcesses(props) { var seen = {}, out2 = []; (props || []).forEach(function (q) { if (!q.process || q.displayed === false || ['DocAction', 'CreateFrom', 'Posted'].indexOf(q.name) >= 0 || seen[q.process.name]) return; seen[q.process.name] = 1; out2.push(q.process.name); }); return out2; }
+    // §40 C5: the walk's node (its children), a child by name, and the listing
+    function menuNode(st) { var kids = st.mwalk.tree; for (var i = 0; i < st.mwalk.path.length; i++) { var n = kids.filter(function (x) { return x.name === st.mwalk.path[i]; })[0]; if (!n || !n.children) return null; kids = n.children; } return kids; }
+    function menuChild(st, name) { var kids = menuNode(st) || [], lc = String(name).toLowerCase(); var hit = kids.filter(function (x) { return x.name === name; })[0] || kids.filter(function (x) { return x.name.toLowerCase() === lc; })[0]; if (hit) return hit; var pre = kids.filter(function (x) { return x.name.toLowerCase().indexOf(lc) === 0; }); return pre.length === 1 ? pre[0] : null; }
+    function menuList(st, screen) {
+      var kids = menuNode(st) || [];
+      screen.push(M('words.menu_walk_head', st.mwalk.path.length ? st.mwalk.path.join('/') : 'menu', kids.length));
+      kids.forEach(function (n) { screen.push(n.children ? M('words.menu_walk_folder', n.name, n.children.length) : (n.kind ? M('words.menu_walk_window', n.action, n.name, n.kind) : M('words.menu_walk_leaf', n.action, n.name))); });
+    }
+    function offeredGroup(st, names, verbList) {
       if (!st || !st.group || !G[st.group] || brk === 'nonarrow') return { words: names, verbs: verbList };
       var g = st.group, keep = {}; formsOf(g).forEach(function (r) { keep[r.word] = 1; });
       EV.forEach(function (e) { keep[String(e[0]).split(' ')[0]] = 1; }); (G[g].session || []).forEach(function (e) { keep[String(e[0]).split(' ')[0]] = 1; });
@@ -375,7 +425,7 @@
       return { words: plain, verbs: verbList.filter(function (v) { return groupOf(v) === g; }) };
     }
     // §40 C4: what Shift+Tab stands for: one place back (the printed line), or nothing at the top
-    function backLine(st) { return st && (st.rec || st.erp || st.kind || st.building || st.group || (st.up && st.up.length)) ? 'cd ..' : null; }
+    function backLine(st) { return st && (st.rec || st.erp || st.kind || st.building || st.mwalk || st.group || (st.up && st.up.length)) ? 'cd ..' : null; }   // §40 C5: the walk too
     return { init: init, step: step, prompt: prompt, offered: offered, backLine: backLine, expand: expand, lineOf: lineOf, wordList: wordList, helpText: helpText, groupOf: groupOf, menuOpen: function (st) { return !!(st && st.menu); },
       loginGate: function (st) { return st && st.needLogin && !st.user && brk !== 'nogate' ? M('words.login_first', st.needLogin.client, st.needLogin.n) : null; } };   // §30 L2 for a door line typed at the prompt (it does not pass step)
   }
