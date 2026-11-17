@@ -17,6 +17,7 @@ var log = function (s) { console.log(s); };
   var L = JSON.parse(fs.readFileSync(LEG, 'utf8')), SQL = await initSqlJs();
   var norm = function (v) { return typeof v === 'string' && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d/.test(v) ? v.replace('T', ' ').replace(/(\.\d+)?([+-]\d\d(:\d\d)?|Z)?$/, '') : (v && typeof v === 'object' ? JSON.stringify(v) : v); };
   var A = require(path.join(ERP, 'ad_callout.js'));
+  if (!A.Env.hasEdge()) A.Env.setEdge({ nowMs: () => Date.now(), uuid: () => require('crypto').randomUUID(), perfMs: () => require('perf_hooks').performance.now() });   // A-6 / A3-CLOCK-2: this Node shell installs the one edge the ERP core reads
   ['support', 'support_stock', 'views', 'currency', 'uom', 'pricing', 'tax', 'sqlfn'].forEach(function (m) { require(path.join(ERP, 'callouts', m + '.js')); });
   var ML = require(path.join(ERP, 'model_layer.js')), MT = require(path.join(ERP, 'model_trade.js'));
   var lit = function (v, t) { return v === null ? 'NULL' : t === 's' ? "'" + String(v).replace(/'/g, "''") + "'" : t === 't' ? "'" + v + "'" : String(v); };

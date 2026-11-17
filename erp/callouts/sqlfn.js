@@ -437,10 +437,13 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
   };
   // generate_uuid(ts) - UUIDv7: 48-bit unix ms + version 7 + variant 10 + random (the random part cannot equal the pilot's; W-FN-PARITY judges timestamp prefix, version and variant)
   F.generate_uuid = function (ts) {
-    var ms = ts == null ? Date.now() : (typeof ts === 'number' ? ts : Date.parse(String(ts).replace(' ', 'T').replace(/([+-]\d\d)$/, '$1:00').replace(/^(\d{4}-\d\d-\d\dT[\d:.]+)$/, '$1Z')));
+    var E = ts == null ? R.Env.edge() : null;   // A3-CLOCK-2: the instant from the installed edge (no edge = §ENV_NO_DATE + throw, A-3)
+    var ms = ts == null ? E.nowMs() : (typeof ts === 'number' ? ts : Date.parse(String(ts).replace(' ', 'T').replace(/([+-]\d\d)$/, '$1:00').replace(/^(\d{4}-\d\d-\d\dT[\d:.]+)$/, '$1Z')));
     var b = new Uint8Array(16), hex = Math.floor(ms).toString(16).padStart(12, '0').slice(-12); for (var i = 0; i < 6; i++) b[i] = parseInt(hex.substr(i * 2, 2), 16);
-    var R = (typeof crypto !== 'undefined' && crypto.getRandomValues) ? crypto.getRandomValues(new Uint8Array(10)) : Array.from({ length: 10 }, function () { return Math.floor(Math.random() * 256); });
-    for (var j = 0; j < 10; j++) b[6 + j] = R[j]; b[6] = (b[6] & 15) | 112; b[8] = (b[8] & 63) | 128;
+    // A3-CLOCK-2: the 10 random bytes come from the edge's own id (a v4 uuid: hex 0-11 and 18-25 are random), never crypto / Math.random here
+    var u = String((E || R.Env.edge()).uuid()).replace(/-/g, ''), rh = u.slice(0, 12) + u.slice(18, 26);
+    var RB = []; for (var k = 0; k < 10; k++) RB.push(parseInt(rh.substr(k * 2, 2), 16) || 0);
+    for (var j = 0; j < 10; j++) b[6 + j] = RB[j]; b[6] = (b[6] & 15) | 112; b[8] = (b[8] & 63) | 128;
     var h = Array.from(b).map(function (x) { return x.toString(16).padStart(2, '0'); }).join(''); return h.slice(0, 8) + '-' + h.slice(8, 12) + '-' + h.slice(12, 16) + '-' + h.slice(16, 20) + '-' + h.slice(20);
   };
   F.charat = function (str, i) { if (str == null || i == null) return null; var a = Array.from(String(str)), k = Math.trunc(Number(i)); return k >= 1 && k <= a.length ? a[k - 1] : ''; };      // SUBSTR($1, $2, 1)

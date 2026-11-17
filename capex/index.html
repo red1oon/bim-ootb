@@ -43,8 +43,18 @@
 <script src="../erp/layered_registry.js?v=1"></script>
 <script src="../erp/bigdecimal.js?v=2"></script>
 <script src="../erp/db_export_safe.js?v=1"></script>
-<script src="../erp/ad_callout.js?v=10"></script>
-<script src="../erp/callouts/sqlfn.js?v=2"></script>
+<script src="../erp/ad_callout.js?v=11"></script>
+<script>/* A-6 / A3-CLOCK-2 (bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md): this page is a shell for the ERP core it loads, so it installs the one edge (clock + ids)
+   that core reads, as erp/idempiere.html does; the core never calls Date / crypto itself. */
+(function () {
+  if (window.CoreEdge) return;
+  var C = window.crypto;
+  function v4() { var b = C.getRandomValues(new Uint8Array(16)); b[6] = (b[6] & 15) | 64; b[8] = (b[8] & 63) | 128; var h = Array.prototype.map.call(b, function (x) { return (x + 256).toString(16).slice(1); }).join('');
+    return h.slice(0, 8) + '-' + h.slice(8, 12) + '-' + h.slice(12, 16) + '-' + h.slice(16, 20) + '-' + h.slice(20); }
+  window.AdCallout.Env.setEdge({ nowMs: function () { return Date.now(); }, uuid: function () { return C.randomUUID ? C.randomUUID() : v4(); }, perfMs: function () { return performance.now(); } });
+})();
+</script>
+<script src="../erp/callouts/sqlfn.js?v=3"></script>
 <script src="../erp/goal_engine.js?v=3"></script>
 <script src="pa_tiles.js"></script>
 <script src="adapters.js"></script>

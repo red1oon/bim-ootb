@@ -148,6 +148,7 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
     perfMs: function () { var e = _edge(); return e && typeof e.perfMs === 'function' ? e.perfMs() : null; },
     elapsed: function (t0) { var n = Env.perfMs(); return n == null || t0 == null ? null : n - t0; },
     msText: function (t0) { var d = Env.elapsed(t0); return d == null ? '?' : String(Math.round(d)); },
+    hasEdge: function () { return _edge() != null; },   // A3-CLOCK-2: a host asks the ONE holder (window.CoreEdge when a window exists, else globalThis) before installing its own
     edge: function () {
       var e = _edge(); if (e) return e;
       RUNTIME.log('§ENV_NO_DATE no edge installed (Env.setEdge was never called by the page; core never reads a wall clock)'); throw new Error('Env.edge: no edge installed (A-5)');
@@ -893,7 +894,9 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
     //   the JVM's timezone), and the twin's model env already uses the local day (crud_overlay _modelEnv). Was Date.now() = the UTC wall clock: east of UTC, between local midnight and the offset, every
     //   default date, the login date and SQL SYSDATE were YESTERDAY (bim-ootb prompts/CAPEX_DASHBOARD.md §5.24: Average Delay 189 vs legacy 190 at 00:11 +08).
     //   Same rule as bim-compiler prompts/ERP_DEPTH_FILM.md §LOCAL-TIME (crud_core.js localDay / local stamps, W-LOCAL-TIME), which did not reach this clock.
-    now: function () { var d = new Date(); return d.getTime() - d.getTimezoneOffset() * 60000; },
+    //   A3-CLOCK-2 (bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md): the instant comes from the ONE installed edge (Env.edge(), A-5/A-6), not a wall-clock read here; no edge =
+    //   §ENV_NO_DATE + throw (A-3). new Date(ms) with an argument reads no clock: it only gives that instant's zone offset.
+    now: function () { var ms = Env.edge().nowMs(); return ms - new Date(ms).getTimezoneOffset() * 60000; },
     log: function (s) { if (typeof console !== 'undefined') console.log(s); },
     fired: function (cmd) { _stats.fired[cmd] = (_stats.fired[cmd] || 0) + 1; },
     unported: function (cmd, table, col) {

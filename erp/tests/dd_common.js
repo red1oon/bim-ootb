@@ -20,6 +20,7 @@ async function boot(opts) {
   ['ad_seed.db.sql', 'mfg.sql'].forEach(function (pf) { fs.readFileSync(path.join(ERP, 'patches', pf), 'utf8').split(/;\s*\n/).forEach(function (st) { st = st.replace(/^\s*--[^\n]*\n?/gm, '').trim(); if (!st) return; try { db.run(st); ok++; } catch (e) { bad++; } }); });
   var H = { db: db, ERP: ERP, TODAY: TODAY, DAY: DAY, oracle: oracle, lc: lc, patchOk: ok, patchBad: bad };
   var A = require(path.join(ERP, 'ad_callout.js'));
+  if (!A.Env.hasEdge()) A.Env.setEdge({ nowMs: () => Date.now(), uuid: () => require('crypto').randomUUID(), perfMs: () => require('perf_hooks').performance.now() });   // A-6 / A3-CLOCK-2: this Node shell installs the one edge the ERP core reads
   ['support', 'support_stock', 'views', 'currency', 'uom', 'pricing', 'tax', 'sqlfn'].forEach(function (m) { require(path.join(ERP, 'callouts', m + '.js')); });
   A.RUNTIME.registerSqlFunctions(function (n, f) { db.create_function(n, f); });   // crud_overlay.js:364 - the host registers the PL/pgSQL ports
   var ML = require(path.join(ERP, 'model_layer.js')), MV = require(path.join(ERP, 'ad_modelval.js')), PR = require(path.join(ERP, 'plugin_registry.js'));
