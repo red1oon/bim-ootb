@@ -13,6 +13,7 @@
 //   A1  per class: midair does not RISE above its locked number            (viewer/tests/baselines/assembly_order.json)
 //   A2  per class: structural elements with NO elected support (unjudged) do not RISE
 //   A3  filing parity: elements whose elected support's TASK starts at/after their own task ENDS do not RISE
+//   A4  per class: services whose every contact is a later-built non-structural box (§CONTACT_ONLY, D7 — not judged) do not RISE
 // A number that FELL is printed as IMPROVED with the line to re-lock; it is never silently absorbed.
 // A cache miss, an absent layer or an absent lock prints INCONCLUSIVE, never PASS. IfcBeam / IfcColumn
 // absent from a building prints VACUOUS.
@@ -47,13 +48,14 @@ function measure(bld) {
   const G = quiet(() => SS.contactGraph(items));
   if (!G.ok) { console.log('§ASM ' + bld + ' JUDGE_UNAVAILABLE  INCONCLUSIVE'); return null; }
   const des = quiet(() => SS.designatedSupport(items, G)), ma = quiet(() => SS.midairAudit(items));
-  const mid = new Set(ma.guids), noSup = new Set(des.structNoSupport || []);
+  const mid = new Set(ma.guids), noSup = new Set(des.structNoSupport || []), conOnly = new Set(des.contactOnly || []);
   const persisted = r.playStats ? r.playStats.midairPlayed : null;
   const by = {}; let parity = 0;
-  const row = c => by[c] || (by[c] = { bld: bld, cls: c, total: 0, midair: 0, sameTask: 0, crossTask: 0, unjudgedStruct: 0 });
+  const row = c => by[c] || (by[c] = { bld: bld, cls: c, total: 0, midair: 0, sameTask: 0, crossTask: 0, unjudgedStruct: 0, contactOnly: 0 });
   items.forEach((x, i) => {
     const o = row(x.cls || '?'); o.total++;
     if (noSup.has(i)) o.unjudgedStruct++;
+    if (conOnly.has(i)) o.contactOnly++;
     const a = des[i]; if (a < 0) return;
     const A = items[a], tx = taskOf[x.guid], ta = taskOf[A.guid];
     if (mid.has(x.guid)) { o.midair++; if (tx === ta) o.sameTask++; else o.crossTask++; }
@@ -70,7 +72,7 @@ const say = (bld, claim, verdict, text) => { verdicts.push(verdict); console.log
 if (process.env.LOCK === '1') {
   measured.forEach(m => {
     if (!m.match) { console.log('§ASM_LOCK ' + m.bld + ' REFUSED — self-check MISMATCH, a lock is never taken from a run that does not recount'); return; }
-    const cls = {}; m.rows.forEach(o => { if (o.midair || o.unjudgedStruct) cls[o.cls] = { midair: o.midair, unjudgedStruct: o.unjudgedStruct }; });
+    const cls = {}; m.rows.forEach(o => { if (o.midair || o.unjudgedStruct || o.contactOnly) cls[o.cls] = { midair: o.midair, unjudgedStruct: o.unjudgedStruct, contactOnly: o.contactOnly }; });
     lock.buildings[m.bld] = { dbFile: m.dbFile, codeKey: path.basename(m.dir).split('_')[0], midair: m.midair, filingParity: m.parity, classes: cls };
     console.log('§ASM_LOCK ' + m.bld + ' locked midair=' + m.midair + ' filingParity=' + m.parity + ' classes=' + Object.keys(cls).length);
   });
@@ -87,15 +89,16 @@ measured.forEach(m => {
   NAMED.forEach(c => { if (!m.rows.some(o => o.cls === c)) console.log('  VACUOUS ' + c + ' ' + m.bld + ' — the building has none; nothing judged for this class'); });
   if (!B) { say(m.bld, 'A1-A3', 'INCONCLUSIVE', 'no lock for this building in baselines/assembly_order.json'); return; }
   if (B.dbFile !== m.dbFile) { say(m.bld, 'A1-A3', 'INCONCLUSIVE', 'lock was taken on ' + B.dbFile + ', this run is ' + m.dbFile); return; }
-  const rose = [], fell = [], roseU = [], fellU = [];
+  const rose = [], fell = [], roseU = [], fellU = [], roseC = [], fellC = [];
   const names = new Set(m.rows.map(o => o.cls).concat(Object.keys(B.classes)));
   names.forEach(c => {
-    const o = m.rows.find(x => x.cls === c) || { bld: m.bld, cls: c, total: 0, midair: 0, sameTask: 0, crossTask: 0, unjudgedStruct: 0 };
-    const b = B.classes[c] || { midair: 0, unjudgedStruct: 0 };
+    const o = m.rows.find(x => x.cls === c) || { bld: m.bld, cls: c, total: 0, midair: 0, sameTask: 0, crossTask: 0, unjudgedStruct: 0, contactOnly: 0 };
+    const b = Object.assign({ midair: 0, unjudgedStruct: 0, contactOnly: 0 }, B.classes[c] || {});
     rows.push(Object.assign({}, o, { lockMidair: b.midair, lockUnjudged: b.unjudgedStruct }));
     if (o.midair > b.midair) rose.push(c + ' ' + b.midair + '->' + o.midair); else if (o.midair < b.midair) fell.push(c + ' ' + b.midair + '->' + o.midair);
     if (o.unjudgedStruct > b.unjudgedStruct) roseU.push(c + ' ' + b.unjudgedStruct + '->' + o.unjudgedStruct);
     else if (o.unjudgedStruct < b.unjudgedStruct) fellU.push(c + ' ' + b.unjudgedStruct + '->' + o.unjudgedStruct);
+    if (o.contactOnly > b.contactOnly) roseC.push(c + ' ' + b.contactOnly + '->' + o.contactOnly); else if (o.contactOnly < b.contactOnly) fellC.push(c + ' ' + b.contactOnly + '->' + o.contactOnly);
   });
   const top = m.rows.filter(o => o.midair).sort((a, b) => b.midair - a.midair).slice(0, 8)
     .map(o => o.cls + ' ' + o.midair + ' (same ' + o.sameTask + ' / cross ' + o.crossTask + ')').join(' · ') || 'none';
@@ -104,8 +107,10 @@ measured.forEach(m => {
   say(m.bld, 'A2', roseU.length ? 'FAIL' : 'PASS', roseU.length ? 'unjudged structural ROSE: ' + roseU.join(' · ')
     : 'unjudged structural did not rise (' + (m.rows.filter(o => o.unjudgedStruct).map(o => o.cls + ' ' + o.unjudgedStruct).join(' · ') || '0') + ')');
   say(m.bld, 'A3', m.parity > B.filingParity ? 'FAIL' : 'PASS', '§FILING_PARITY ' + B.filingParity + ' -> ' + m.parity);
-  if (fell.length || fellU.length || m.parity < B.filingParity)
-    console.log('  IMPROVED ' + m.bld + ' — ' + fell.concat(fellU.map(x => 'unjudged ' + x)).concat(m.parity < B.filingParity ? ['filingParity ' + B.filingParity + '->' + m.parity] : []).join(' · ') +
+  say(m.bld, 'A4', roseC.length ? 'FAIL' : 'PASS', roseC.length ? '§CONTACT_ONLY ROSE: ' + roseC.join(' · ')
+    : '§CONTACT_ONLY did not rise (' + m.rows.reduce((t, o) => t + o.contactOnly, 0) + ' services with no support but a later-built box)');
+  if (fell.length || fellU.length || fellC.length || m.parity < B.filingParity)
+    console.log('  IMPROVED ' + m.bld + ' — ' + fell.concat(fellU.map(x => 'unjudged ' + x)).concat(fellC.map(x => 'contactOnly ' + x)).concat(m.parity < B.filingParity ? ['filingParity ' + B.filingParity + '->' + m.parity] : []).join(' · ') +
       ' — re-lock with LOCK=1 and a written reason');
 });
 

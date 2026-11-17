@@ -211,6 +211,7 @@
     // structure the election is unchanged — the pair elects each other and the solve places it as one lift
     // (GRAPH: the contracted SCC's shared start; CELL: solveCells' lift, below). Nothing is left unelected by D3.
     var bearMemo = new Int8Array(n), d3Demoted = 0;
+    var contactOnly = [], d7Contacts = 0, d7Reelected = 0;
     function bearsOnPool(j) {
       if (bearMemo[j]) return bearMemo[j] === 1;
       var lj = G.contacts[j], Tj = items[j], hit = false;
@@ -246,6 +247,7 @@
       var poolJ = -1, poolCls = 9, poolScore = Infinity;
       var inPool = SG.supportPool || function () { return true; };
       var tStruct = !!(SG.supportPool && SG.supportPool(T));
+      var skippedLater = 0;
       for (var k = 0; k < list.length; k++) {
         var j = list[k], S = items[j], cls, score;
         if (S.bz < T.bz - EPS && S.tz >= T.bz - GAP) { cls = 0; score = -S.tz; }
@@ -256,6 +258,15 @@
           if (tStruct && !bearsOnPool(j)) { cls = 1.5; d3Demoted++; }
         }
         else { cls = 2; score = S.bz; }
+        // §D7_CONTACT_ONLY (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.9 F4b, §Q.9.4 D7 — 2026-11-17). Practice and the
+        // template agree: services go in before ceilings and floor finishes. For a NON-structural T, a contact that
+        // is outside the pool and that the class sequence builds LATER than T (a ceiling tile under a duct, a floor
+        // finish under a pipe) is a contact, not a support — §E row 1. It is not eligible; the best of the remaining
+        // contacts is elected as before. If nothing remains T has no elected support and is COUNTED and NAMED on
+        // §CONTACT_ONLY — never hidden, never called midair. Structural T is untouched (§D2 governs it).
+        var laterContact = !tStruct && SG.supportPool && !SG.supportPool(S) &&
+          typeof S.seq === 'number' && typeof T.seq === 'number' && S.seq > T.seq;
+        if (laterContact) { skippedLater++; continue; }
         if (cls < bestCls || (cls === bestCls && (score < bestScore ||
             (score === bestScore && (bestJ < 0 || String(S.guid) < String(items[bestJ].guid)))))) {
           bestCls = cls; bestScore = score; bestJ = j;
@@ -275,6 +286,8 @@
         out[i] = poolJ; continue;
       }
       if (poolJ >= 0) { bestJ = poolJ; bestCls = poolCls; }   // §S26.2 structure outranks contact
+      if (bestJ < 0) { if (skippedLater) { contactOnly.push(i); d7Contacts += skippedLater; } continue; }   // §D7: only later-built contacts
+      if (skippedLater) d7Reelected++;
       if (bestCls === 2 && G.grounded[i]) continue;   // carrier-above rejected ONLY when grounded
       out[i] = bestJ;
     }
@@ -286,6 +299,12 @@
       ' byCls=' + JSON.stringify(byCls) +
       ' guids=' + noSup.slice(0, 20).map(function (x) { return items[x].guid; }).join(',') + (noSup.length > 20 ? ',…' : ''));
     console.log('§D3_MAIN_BEFORE_SECONDARY embeddedContactsRankedBehindABearingOne=' + d3Demoted + (SG.supportPool ? '' : ' (no pool loaded — rule inactive)'));
+    var coCls = {};
+    for (var q3 = 0; q3 < contactOnly.length; q3++) coCls[items[contactOnly[q3]].cls] = (coCls[items[contactOnly[q3]].cls] || 0) + 1;
+    console.log('§CONTACT_ONLY n=' + contactOnly.length + ' (non-structural, every contact is a later-built non-structural box)' +
+      ' electedFromRemainingContacts(hadALaterContactIgnored)=' + d7Reelected + ' byCls=' + JSON.stringify(coCls) +
+      ' guids=' + contactOnly.slice(0, 20).map(function (x) { return items[x].guid; }).join(',') + (contactOnly.length > 20 ? ',…' : ''));
+    out.contactOnly = contactOnly;
     out.structNoSupport = noSup;
     out.d3Demoted = d3Demoted;
     return out;
