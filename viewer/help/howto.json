@@ -14,7 +14,12 @@
   },
   "lod400": {
    "name": "LOD400 Upgrade",
-   "guide": null,
+   "guide": {
+    "anchor": "lod400-upgrade",
+    "heading": "LOD400 Upgrade",
+    "in_heading": true,
+    "mentions": 1
+   },
    "cli": []
   },
   "open": {
@@ -123,7 +128,12 @@
   },
   "hbaFM": {
    "name": "Human-Asset",
-   "guide": null,
+   "guide": {
+    "anchor": "fm-operate-lenses-hr_bim_asset-alpha",
+    "heading": "FM / Operate lenses — HR_BIM_Asset (ALPHA)",
+    "in_heading": false,
+    "mentions": 1
+   },
    "cli": []
   },
   "measure": {
@@ -188,12 +198,22 @@
   },
   "sanity": {
    "name": "Sanity",
-   "guide": null,
+   "guide": {
+    "anchor": "sanity-and-egress-rule-checks",
+    "heading": "Sanity and Egress — rule checks",
+    "in_heading": true,
+    "mentions": 2
+   },
    "cli": []
   },
   "egress": {
    "name": "Egress",
-   "guide": null,
+   "guide": {
+    "anchor": "sanity-and-egress-rule-checks",
+    "heading": "Sanity and Egress — rule checks",
+    "in_heading": true,
+    "mentions": 3
+   },
    "cli": []
   },
   "xray": {
@@ -235,7 +255,12 @@
   },
   "sched4d": {
    "name": "4D Window",
-   "guide": null,
+   "guide": {
+    "anchor": "4d-window",
+    "heading": "4D Window",
+    "in_heading": true,
+    "mentions": 2
+   },
    "cli": []
   },
   "section": {
@@ -290,7 +315,12 @@
   },
   "gi-preview": {
    "name": "GI Preview (AO)",
-   "guide": null,
+   "guide": {
+    "anchor": "gi-preview-ao",
+    "heading": "GI Preview (AO)",
+    "in_heading": true,
+    "mentions": 1
+   },
    "cli": []
   },
   "fly": {
@@ -305,7 +335,12 @@
   },
   "dlodnav": {
    "name": "Nav LOD (large bldgs)",
-   "guide": null,
+   "guide": {
+    "anchor": "nav-lod-large-bldgs",
+    "heading": "Nav LOD (large bldgs)",
+    "in_heading": true,
+    "mentions": 1
+   },
    "cli": []
   },
   "report": {
@@ -320,7 +355,12 @@
   },
   "issues": {
    "name": "Issues",
-   "guide": null,
+   "guide": {
+    "anchor": "issues",
+    "heading": "Issues",
+    "in_heading": true,
+    "mentions": 1
+   },
    "cli": []
   },
   "fullscreen": {
@@ -424,16 +464,7 @@
    "cli": []
   }
  },
- "gaps": [
-  "lod400",
-  "hbaFM",
-  "sanity",
-  "egress",
-  "sched4d",
-  "gi-preview",
-  "dlodnav",
-  "issues"
- ],
+ "gaps": [],
  "excluded": {
   "walk": "the guide names \"Walk\" only in the Cinema Film-Maker walk-mode sections, a different feature from the mobile Walk pill"
  }
