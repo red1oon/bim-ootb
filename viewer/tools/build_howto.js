@@ -2,7 +2,8 @@
 // build_howto.js — BUILD viewer/help/howto.json: per main-pill How To links for the `?` palette. Spec: bim-compiler
 // prompts/VOCAB_MESSAGE_CATALOG.md §14.3. Generated, never hand-edited: re-run when the guide, panels.js or verbs.json change.
 //   guide — the BIM User Guide section (h2-h4 of the LIVE page) whose HEADING names the pill's English name; else the one whose
-//           body names it most often (ties: first in the page).
+//           body names it most often; an EQUAL count goes to the section whose heading shares the most words with the pill's name,
+//           and only if that ties too, the first in the page; a shared word alone never links (§14.3.2: a new 'Help' section, first in the page, had taken Save/Open).
 //   cli   — door verbs attached ONLY by a phrase quoted from the verb's own description (VERB_LINKS below; refused if missing).
 // --check writes nothing and exits 1 if the shipped file differs (W-HOWTO H1). Live guide unreachable → exit 2 (inconclusive).
 // Read the §HOWTO_BUILD lines after a run; exit code is not evidence.
@@ -34,6 +35,8 @@ function sections(html) {   // [{anchor, heading, body}] for every h2-h4 with an
   while ((m = re.exec(html))) hs.push({ anchor: m[2], heading: unhtml(m[3]).replace(/¶/g, '').trim(), start: m.index, end: re.lastIndex });
   return hs.map((h, i) => ({ anchor: h.anchor, heading: h.heading, body: unhtml(html.slice(h.end, i + 1 < hs.length ? hs[i + 1].start : html.length)) }));
 }
+const words = s => new Set(String(s).toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length >= 3));
+function shared(heading, name) { const a = words(heading); let n = 0; words(name).forEach(w => { if (a.has(w)) n++; }); return n; }   // < 1000 always: mentions dominate
 function count(hay, needle) { let n = 0, i = 0; while ((i = hay.indexOf(needle, i)) >= 0) { n++; i += needle.length; } return n; }
 
 function build(html, panelsSrc, verbs) {
@@ -44,8 +47,8 @@ function build(html, panelsSrc, verbs) {
     if (EXCLUDE[p.id]) out.excluded[p.id] = EXCLUDE[p.id];
     else {
       let best = null;
-      secs.forEach(s => { const h = s.heading.indexOf(p.name) >= 0, n = count(s.body, p.name), score = (h ? 1e6 : 0) + n;
-        if (score > 0 && (!best || score > best.score)) best = { anchor: s.anchor, heading: s.heading, n, h, score }; });
+      secs.forEach(s => { const h = s.heading.indexOf(p.name) >= 0, n = count(s.body, p.name), score = (h ? 1e6 : 0) + n * 1000 + shared(s.heading, p.name);
+        if ((h || n > 0) && (!best || score > best.score)) best = { anchor: s.anchor, heading: s.heading, n, h, score }; });
       if (best) rec.guide = { anchor: best.anchor, heading: best.heading, in_heading: best.h, mentions: best.n }; else out.gaps.push(p.id);
     }
     (VERB_LINKS[p.id] || []).forEach(([verb, cite]) => {
@@ -76,5 +79,5 @@ async function main() {
   }
   fs.mkdirSync(path.dirname(OUT), { recursive: true }); fs.writeFileSync(OUT, text); log('written ' + path.relative(ROOT, OUT));
 }
-module.exports = { build, pills, sections, GUIDE, EXCLUDE, VERB_LINKS };
+module.exports = { build, pills, sections, shared, GUIDE, EXCLUDE, VERB_LINKS };
 if (require.main === module) main().catch(e => { log('ERROR ' + e.message); process.exit(1); });
