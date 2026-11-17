@@ -134,7 +134,9 @@ function contrastProbe(bgHex, alphaOverride) {   // the same maths as viewer/tes
     const search = async w => { await pg.evaluate(w => { const i = document.getElementById('cmd-search'); i.value = w; i.dispatchEvent(new Event('input')); }, w); await new Promise(r => setTimeout(r, 300));
       return pg.evaluate(() => [...document.querySelectorAll('#cmd-palette .cmd-row')].map(r => r.textContent.replace(/\s+/g, ' ').trim())); };
     const hit = await search('turns green'), none = await search('zqxwv');
-    ck('M6c', hit.length === 1 && hit[0] === '3D Grid' && none.length === 0, '"turns green" (only in the 3D Grid paragraph) finds ' + JSON.stringify(hit) + '; falsifier "zqxwv" finds ' + none.length);
+    // §19.4 (VOCAB_MESSAGE_CATALOG.md): the search is the shared query core (ranked, any-term), not a whole-phrase substring. "turns green" is a phrase only the 3D Grid paragraph has, but the Teams paragraph
+    // holds the word "turns" ("click turns it on"), so the list is [3D Grid, Teams]: 3D Grid FIRST (both words), the weaker hit after. OLD expectation: exactly ["3D Grid"]. NEW: 3D Grid first, the nonsense word still finds 0.
+    ck('M6c', hit.length >= 1 && hit[0] === '3D Grid' && hit.every(x => SRC_TITLES.indexOf(x) >= 0) && none.length === 0, '"turns green" (both words only in the 3D Grid paragraph) finds ' + JSON.stringify(hit) + ' (3D Grid first); falsifier "zqxwv" finds ' + none.length);
     await search('');
     await closeX(pg);
     await pg.evaluate(() => document.getElementById('b-guide').click()); await new Promise(r => setTimeout(r, 400));

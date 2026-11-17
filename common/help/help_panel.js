@@ -6,7 +6,7 @@
 // common/help/help_panel.js — THE help panel, shared by the Viewer and the Modeller (bim-compiler
 // prompts/VOCAB_MESSAGE_CATALOG.md §14.3-§14.5). Moved out of viewer/scene.js showCommandPalette; nothing app-specific here.
 // It owns: the dock (warm AMBER glass, 85% solid so #e0e0e0/#d0d0d0 text keeps WCAG 4.5:1 over a white background too),
-// stays open (Esc / F1 / × close it), search over names + bullets + CLI titles, the How To blocks (guide link, CLI lines),
+// stays open (Esc / F1 / × close it), search = the shared query core over the app's per-locale index (names, shortcuts, sub-rows, CLI titles, guide text), the How To blocks (guide link, CLI lines),
 // reopen-as-left state (filter + opened entries, per app, in memory), drag through the ONE helper the app passes in.
 // The app gives an adapter (cfg): entries(), placement, header/footer extras, hooks. Log lines are the ones the witnesses
 // read: §KBD_HELP · §HOWTO_PALETTE · §HELP_DOCK · §KBD_PALETTE_RUN · §HOWTO_GUIDE_OPEN.
@@ -14,7 +14,8 @@
 //   id:'cmd-palette', T(k,en), icon(svg)->html, isMobile, place()->{left,top,width,height},
 //   entries()->[{seq,name,icon,action,children:[{name,icon}],hkey,howto:{guide:{anchor,heading},cli:[{line,title,verb}]}}],
 //   guideBase, guideIcon, runSeq(seq), makeDraggable(el), storageKey, state:{filter,open},
-//   headerExtra (html), footer (html), onMount(pal, api), onOpen(pal), onClose(pal, why), onDrop(rect), noAutoFocus (bool)
+//   headerExtra (html), footer (html), onMount(pal, api), onOpen(pal), onClose(pal, why), onDrop(rect), noAutoFocus (bool),
+//   index:{url()->string, rec?(entry)->record}  the per-locale query index (common/help/help_query.js pack; §19.4); an entry's hkey joins it to its record's go.hkey
 // }
 (function (root) {
   'use strict';
@@ -22,6 +23,8 @@
   function attr(s) { return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;'); }
   // §14.8.1 (VOCAB_MESSAGE_CATALOG.md): a guide section heading's dictionary key; the same rule is in W-HOWTO H6 and trl_batch_2026-11-17_howto_headings.js
   function ghKey(anchor) { return 'howto_gh_' + String(anchor).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, ''); }
+
+  var packs = {};   // url -> {state:'loading'|'ok'|'fail', pack, waiting[]}: one fetch per index file per page session
 
   function toggle(cfg) {
     var id = cfg.id || 'cmd-palette', T = cfg.T || function (k, en) { return en; }, ic = cfg.icon || function () { return ''; };
@@ -56,20 +59,55 @@
       if (entry.action) entry.action(); else if (cfg.runSeq) cfg.runSeq(String(entry.seq || '').toLowerCase());
       console.log('§KBD_PALETTE_RUN name=' + entry.name + ' seq=' + entry.seq);
     }
+    // §19.4 (bim-compiler prompts/VOCAB_MESSAGE_CATALOG.md): the search is the ONE query core (common/help/help_query.js, window.HelpQuery) over the app's per-locale index
+    // (cfg.index.url(): built by the one builder from the app's adapter, fetched on the first typed query, cached). The substring filter that stood here is DELETED. A live entry the
+    // pack holds no record for (a pill another module added later) is indexed from itself (cfg.index.rec(entry) or liveRec below) so nothing findable is lost; while the pack is on its
+    // way the list stays whole and re-renders when it lands. A hit joins its entry through record.go.hkey; go.via marks a secondary record (a how-to heading), which never opens a row by itself.
+    function entryKey(e) { return String(e.hkey || e.name); }
+    function liveRec(e, kind) {   // an entry as a record: name, shortcut, sub-rows (d), CLI titles + verbs + guide paragraph (h) = every field the old filter read
+      var d = (e.children || []).map(function (c) { return c.name; }).join('\n'), ht = e.howto || {};
+      var h = ((ht.cli || []).map(function (c) { return c.title + '\n' + c.verb; }).concat(ht.text ? [String(ht.text).replace(/<[^>]*>/g, ' ').replace(/&#39;/g, "'").replace(/&amp;/g, '&')] : [])).join('\n');
+      var r = { id: 'live/' + entryKey(e), k: kind || 'pill', n: String(e.name), go: { hkey: entryKey(e) } };
+      if (e.seq) r.a = [String(e.seq)]; if (d) r.d = d; if (h) r.h = h;
+      return r;
+    }
+    var hqCur = null;   // the last handle: {sig, h}; rebuilt only when the extra records change
+    function hqHandle(all) {
+      var HQ = root.HelpQuery, ix = cfg.index; if (!HQ || !ix || typeof ix.url !== 'function') return null;
+      var url = ix.url(), pk = packs[url];
+      if (!pk) {
+        pk = packs[url] = { state: 'loading', pack: null, waiting: [] };
+        fetch(url).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+          .then(function (j) { pk.pack = j; pk.state = 'ok'; console.log('§HELP_QUERY_LOAD url=' + url + ' records=' + (j.records || []).length + ' vocab=' + (j.vocab || []).length); })
+          .catch(function (e) { pk.state = 'fail'; console.log('§HELP_QUERY_LOAD fail url=' + url + ' ' + e.message); })
+          .then(function () { var w = pk.waiting; pk.waiting = []; w.forEach(function (f) { f(); }); });
+      }
+      if (pk.state === 'loading') { if (pk.waiting.indexOf(rerenderLater) < 0) pk.waiting.push(rerenderLater); return null; }
+      var pack = pk.pack || { kinds: [], vocab: [], nospace: '', records: [] }, have = {};
+      (pack.records || []).forEach(function (r) { if (r.go && r.go.hkey != null) have[String(r.go.hkey)] = 1; });
+      var extra = all.filter(function (e) { return !have[entryKey(e)]; }).map(function (e) { return (ix.rec || liveRec)(e, (pack.kinds || [])[0]); });
+      var sig = url + '|' + pk.state + '|' + extra.map(function (r) { return r.id + '\u0001' + r.n + '\u0001' + (r.d || '') + '\u0001' + (r.h || ''); }).join('\u0002');
+      if (!hqCur || hqCur.sig !== sig) hqCur = { sig: sig, h: HQ.create(pack, { extra: extra }), extra: extra.length, state: pk.state };
+      return hqCur;
+    }
+    function rerenderLater() { if (api && document.getElementById(id) === pal) currentMatches = renderList(searchInput.value); }
     function renderList(filter) {
-      var f = (filter || '').toLowerCase(), all = cfg.entries ? cfg.entries() : [];
-      var matches = all.filter(function (e) {
-        e.seq = e.seq || '';
-        if (String(e.name).toLowerCase().indexOf(f) >= 0 || e.seq.toLowerCase().indexOf(f) >= 0) return true;
-        if (!f) return false;
-        // §14.3: a word that is only in a bullet or a CLI title still finds its entry (shown opened, so the reason is visible)
-        var inBody = (e.children || []).some(function (c) { return String(c.name || '').toLowerCase().indexOf(f) >= 0; }) ||
-          ((e.howto && e.howto.cli) || []).some(function (c) { return String(c.title).toLowerCase().indexOf(f) >= 0 || c.verb.indexOf(f) >= 0; }) ||
-          // §14.5: a word in an in-app guide paragraph (the Modeller's guide sections) finds its section; tags are not words
-          !!(e.howto && e.howto.text && String(e.howto.text).replace(/<[^>]*>/g, ' ').replace(/&#39;/g, "'").replace(/&amp;/g, '&').toLowerCase().indexOf(f) >= 0);
-        if (inBody) e._openForMatch = true;
-        return inBody;
-      });
+      var f = (filter || '').toLowerCase(), all = cfg.entries ? cfg.entries() : [], matches = all, how = 'all';
+      all.forEach(function (e) { e.seq = e.seq || ''; e._openForMatch = false; });
+      if (f.trim()) {
+        var cur = hqHandle(all);
+        if (cur) {
+          var byKey = {}, seen = {}, prim = {}, res = cur.h.query(f); matches = []; how = 'core:' + cur.state;
+          all.forEach(function (e) { byKey[entryKey(e)] = e; });
+          res.forEach(function (hit) {
+            var g = hit.rec.go, e = g && byKey[String(g.hkey)]; if (!e) return;
+            if (hit.tier < 3 && !g.via) prim[entryKey(e)] = 1;   // the entry's own name / shortcut matched: nothing to open to show why
+            if (!seen[entryKey(e)]) { seen[entryKey(e)] = 1; matches.push(e); }
+          });
+          // §14.3: a word that is only in a bullet, a CLI title or a guide paragraph finds its entry, shown opened so the reason is visible
+          matches.forEach(function (e) { if (!prim[entryKey(e)]) e._openForMatch = true; });
+        } else how = 'wait';
+      }
       var nGuide = 0, nCli = 0, en = /^en\b/i.test(document.documentElement.lang || 'en');
       listEl.innerHTML = '';
       matches.forEach(function (entry, i) {
@@ -144,7 +182,7 @@
           listEl.appendChild(childDiv);
         }
       });
-      console.log('§HOWTO_PALETTE entries=' + matches.length + ' guide=' + nGuide + ' cli=' + nCli + ' loaded=' + !!cfg.howtoLoaded + ' filter="' + f + '"');
+      console.log('§HOWTO_PALETTE entries=' + matches.length + ' guide=' + nGuide + ' cli=' + nCli + ' loaded=' + !!cfg.howtoLoaded + ' filter="' + f + '" via=' + how);
       return matches;
     }
     function highlightRows() {
