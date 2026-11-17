@@ -303,6 +303,9 @@ const CPM_FLOAT_AFTER_BASELINE = baseline('float_after_cpm');
 // §S50 measured (run 1 FAIL lines, 2026-08-21): Terminal 684 · Hospital 218 · Clinic 422 —
 // the leg-4 exception surface, on the same order as §S48.1's level-grain grid (687/179/373).
 const CPM_MIDAIR_BASELINE = baseline('midair');
+// §Q.14.1 (bim-compiler prompts/4D_MODEL_INTEGRITY.md): the part of the census midair that is NOT in either set the engine
+// names as having no elected support. Locked beside the total.
+const CPM_MIDAIR_UNNAMED_BASELINE = baseline('midair_unnamed');
 // Orphans (W-MZ-4) are purely geometric (x0/x1/y0/y1/bz/tz contact only, never reads .s/.e) so they
 // are independent of which display-authoring path produced the times — MEASURED to be IDENTICAL to
 // the retired legacy-chain baseline (Terminal 7, Hospital 35, Duplex 1, HHS 36, Clinic 27,
@@ -340,8 +343,12 @@ function census(items) {
   // §GROUND_CONNECTED (2026-09-12) — per-element supporter lists and the footprint-local ground
   // flag, kept for the orphan walk below (midair/grounded/ok counts are untouched by it).
   const supporters = new Array(items.length), groundLocal = new Uint8Array(items.length);
+  // §Q.14.1 — the two named sets, RE-DERIVED here from this census's own contacts (never read from the engine).
+  const pool = ScheduleGate.supportPool, structNoSup = new Set(), contactOnly = new Set(), midairIdx = [];
   items.forEach((T, i) => {
     let lowest = Infinity, firstContact = Infinity, contacts = 0, embHit = false;
+    const tStruct = pool(T), tSeed = T.seq === 1 || T.phase === 'Substructure';
+    let poolBearer = false, allLater = true;
     const seen = {};
     for (const c of cellsOf(T)) {
       const arr = grid[c]; if (!arr) continue;
@@ -360,6 +367,10 @@ function census(items) {
         const embedded = S.bz <= T.bz + EPS && S.tz >= T.tz - EPS;
         if (!bearing && !carrier && !embedded) continue;
         if (embedded) embHit = true;   // §S51 — the judge's own enclosure clause, recorded per element
+        const sPool = pool(S);
+        // bearing wins over embedded wins over carrier, as one relation per contact
+        if (sPool && (bearing || embedded)) poolBearer = true;
+        if (!(!sPool && typeof S.seq === 'number' && typeof T.seq === 'number' && S.seq > T.seq)) allLater = false;
         contacts++;
         (supporters[i] || (supporters[i] = [])).push(j);
         if (S.s < firstContact) firstContact = S.s;
@@ -367,11 +378,13 @@ function census(items) {
     }
     const isGround = !(lowest < T.bz - GAP);
     groundLocal[i] = isGround ? 1 : 0;
+    if (contacts && tStruct && !tSeed && !poolBearer) structNoSup.add(i);
+    if (contacts && !tStruct && allLater) contactOnly.add(i);
     if (!contacts) { if (isGround) grounded++; return; }   // orphan-or-not is the walk's verdict below, never isGround's
     if (!isGround && !probe && firstContact > 0) probe = { i, guid: T.guid, firstContact };
     if (firstContact <= T.s + 1) { ok++; return; }
     if (isGround) { grounded++; return; }
-    midair++;
+    midair++; midairIdx.push(i);
     worst.push({ cls: T.cls, seq: T.seq, phase: T.phase, bz: T.bz, start: T.s / D, sup: firstContact / D, emb: embHit });
   });
   worst.sort((a, b) => (b.sup - b.start) - (a.sup - a.start));
@@ -395,7 +408,7 @@ function census(items) {
   while (stack.length) { const u = stack.pop(); for (const v of supportedBy[u]) if (!reach[v]) { reach[v] = 1; stack.push(v); } }
   let orphan = 0; const orphanGuids = [];
   for (let i = 0; i < n; i++) if (!reach[i]) { orphan++; orphanGuids.push(items[i].guid); }
-  return { midair, orphan, grounded, ok, worst, probe, seedMode, seeds, orphanGuids };
+  return { midair, orphan, grounded, ok, worst, probe, seedMode, seeds, orphanGuids, structNoSup, contactOnly, midairIdx };
 }
 
 (async () => {
@@ -607,21 +620,49 @@ function census(items) {
       '; auditFloating ' + floatPre + ' -> ' + floatPost + ') — CPM authoring can leave a dependent starting ' +
       'before its own support FINISHES (auditFloating\'s measure), a DIFFERENT invariant than midair (starting ' +
       'before a support APPEARS). Deliberate and named, never silent.');
+    // ── §Q.14.1 W-MZ-2n / §MZ_SPLIT — the census midair, split by the two sets the engine NAMES as having no elected support.
+    let unnamedNow = -1;
+    {
+      const q = console.log; let des; console.log = () => {};
+      try { des = CpmSchedule.designatedSupport(items, SupportSweep.contactGraph(items)); } finally { console.log = q; }
+      const engNS = new Set(des.structNoSupport || []), engCO = new Set(des.contactOnly || []);
+      const diff = (a, b) => { let d = 0; a.forEach(x => { if (!b.has(x)) d++; }); return d; };
+      const nsOnlyW = diff(after.structNoSup, engNS), nsOnlyE = diff(engNS, after.structNoSup);
+      const coOnlyW = diff(after.contactOnly, engCO), coOnlyE = diff(engCO, after.contactOnly);
+      // A ground seed rests on soil (the §I owner rule: sequence 1 / Substructure) — it waits for nothing, so it is named too.
+      let inNS = 0, inCO = 0, inSeed = 0, unnamed = 0; const unCls = {}, unGuids = [];
+      after.midairIdx.forEach(i2 => {
+        if (after.structNoSup.has(i2)) inNS++; else if (after.contactOnly.has(i2)) inCO++;
+        else if (items[i2].seq === 1 || items[i2].phase === 'Substructure') inSeed++;
+        else { unnamed++; unCls[items[i2].cls] = (unCls[items[i2].cls] || 0) + 1; unGuids.push(items[i2].guid); }
+      });
+      unnamedNow = unnamed;
+      console.log('§MZ_SPLIT ' + bld + ' censusMidair=' + after.midair + ' namedStructNoSupport=' + inNS + ' namedContactOnly=' + inCO + ' namedGroundSeed=' + inSeed +
+        ' UNNAMED=' + unnamed + ' unnamedByCls=' + JSON.stringify(unCls) + ' unnamedGuids=' + JSON.stringify(unGuids.slice(0, 20)) +
+        ' | sets: witnessStructNoSupport=' + after.structNoSup.size + ' engine=' + engNS.size + ' (onlyWitness=' + nsOnlyW + ' onlyEngine=' + nsOnlyE + ')' +
+        ' witnessContactOnly=' + after.contactOnly.size + ' engine=' + engCO.size + ' (onlyWitness=' + coOnlyW + ' onlyEngine=' + coOnlyE + ')' +
+        (after.structNoSup.size + after.contactOnly.size === 0 ? ' VACUOUS(no named element on this building)' : ''));
+      assert(nsOnlyW + nsOnlyE + coOnlyW + coOnlyE === 0,
+        'W-MZ-2n ' + bld + ' the two named sets re-derived by this witness equal the engine\'s, member for member (struct-no-support ' +
+        after.structNoSup.size + ' vs ' + engNS.size + ', contact-only ' + after.contactOnly.size + ' vs ' + engCO.size + ')');
+      assert(unnamed === CPM_MIDAIR_UNNAMED_BASELINE[bld],
+        'W-MZ-2u ' + bld + ' census midair OUTSIDE the named sets (struct-no-support, contact-only, ground seed) locked at ' + CPM_MIDAIR_UNNAMED_BASELINE[bld] + ' (got ' + unnamed + ')');
+    }
     assert(after.midair === CPM_MIDAIR_BASELINE[bld],
       'W-MZ-2 ' + bld + ' strict midair locked at ' + CPM_MIDAIR_BASELINE[bld] + ' (got ' + after.midair +
       (after.worst.length ? ', worst ' + after.worst[0].cls + ' start=' + after.worst[0].start.toFixed(1) +
-      'd firstSupport=' + after.worst[0].sup.toFixed(1) + 'd' : '') + ') — 0 on GRAPH-path buildings ' +
-      '(unchanged engine); on CELL-path buildings this is the §S26.11 leg-4 declared-exception ' +
-      'surface, locked so it can never drift silently (§S49.3: midair-0 and low float are mutually ' +
-      'exclusive under a cyclic support graph — the user chose the grid, §S50)');
+      'd firstSupport=' + after.worst[0].sup.toFixed(1) + 'd' : '') + ') — every building runs the graph engine (§GRAPH_EVERYWHERE); the split by named set is on §MZ_SPLIT');
     // W-MZ-7 — a test that can fail: drag one element back before everything it touches (what a
     // planner's bar-drag does to its elements) and the lock-gate judge must SEE it.
     if (after.probe) {
       const it = items[after.probe.i], keepS = it.s, keepE = it.e;
       it.s = after.probe.firstContact - 5 * D; it.e = it.s + (keepE - keepS);
       const reAudit = census(items);
-      assert(reAudit.midair >= 1,
-        'W-MZ-7 ' + bld + ' judge catches a re-introduced hanging (moved 1 element 5d before its first contact, got midair=' + reAudit.midair + ')');
+      const caught = reAudit.midairIdx.indexOf(after.probe.i) >= 0;
+      const probeNamed = reAudit.structNoSup.has(after.probe.i) || reAudit.contactOnly.has(after.probe.i) || it.seq === 1 || it.phase === 'Substructure';
+      assert(reAudit.midair >= 1 && caught,
+        'W-MZ-7 ' + bld + ' judge catches a re-introduced hanging (moved 1 element 5d before its first contact, got midair=' + reAudit.midair +
+        ', the moved element itself flagged=' + caught + ', it is ' + (probeNamed ? 'a NAMED element' : 'UNNAMED — it raises the locked unnamed count') + ')');
       it.s = keepS; it.e = keepE;
     } else { assert(false, 'W-MZ-7 ' + bld + ' no probe candidate found — census produced nothing to test with'); }
     assert(after.orphan === CPM_ORPHAN_BASELINE[bld],
