@@ -34,7 +34,10 @@
 //   W-RWB-4  contiguous tiles: first start == wS, last end == wE, each start == the previous end (±1 ms).
 //   W-RWB-5  the acceptance shape ("a whole floor slab should not appear all at once"): every
 //            (task,class) group (n>=5) has distinctStarts == n, and the number of groups with one decile
-//            holding >50% of the group is <= the affine's count (both reported).
+//            holding >50% of the group is <= the affine's count (both reported). A group whose whole extent
+//            (first start to last end) is under one tenth of its bar lies in at most two adjacent deciles, so
+//            one of them holds half of it whatever the layout: those are counted apart as FORCED and are not
+//            in the comparison (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.14.3). §W_RWB_CLUMP names every one.
 //   W-RWB-6  fallback: an unmapped guid gets the affine result unchanged; displayAuthored=false returns
 //            null and logs the §TM_REVEAL_TILED skip.
 //   W-RWB-7  wiring (source text): injectGantt calls _tmTilePlayWithinTasks before the write loop;
@@ -192,7 +195,9 @@ async function runBuilding(bld, SQL, R) {
     const rows = [];
     for (const k in gr) { const gs = gr[k]; if (gs.length < 5) continue; const tid = k.split('||')[0], w = win[tid], span = w.e - w.s;
       const dec = deciles(gs.map(g => (map[g].s - w.s) / span)); const maxDec = Math.max.apply(null, dec) / gs.length * 100;
-      rows.push({ k, n: gs.length, maxDec, distinct: new Set(gs.map(g => map[g].s)).size }); }
+      // share = the group's own played time over its bar; extent = first start to last end of the group over its bar
+      let own = 0, lo = Infinity, hi = -Infinity; gs.forEach(g => { own += map[g].e - map[g].s; if (map[g].s < lo) lo = map[g].s; if (map[g].e > hi) hi = map[g].e; });
+      rows.push({ k, n: gs.length, maxDec, distinct: new Set(gs.map(g => map[g].s)).size, share: own / span, extent: (hi - lo) / span }); }
     return rows;
   }
   function judges(map, label) {
@@ -243,12 +248,14 @@ async function runBuilding(bld, SQL, R) {
     claim('W-RWB-4', pop, bad, bld + ' tile boundaries: first==wS, last==wE, each start==previous end (±1 ms)'); }
 
   // W-RWB-5 acceptance shape
-  { const grT = groups(map); const over50T = grT.filter(r => r.maxDec > 50).length;
+  { const grT = groups(map); const over50All = grT.filter(r => r.maxDec > 50).length;
+    const forcedT = grT.filter(r => r.maxDec > 50 && r.extent < 0.1).length, over50T = over50All - forcedT;
+    grT.filter(r => r.maxDec > 50).forEach(r => console.log('§W_RWB_CLUMP ' + bld + ' ' + r.k + ' n=' + r.n + ' maxDecile=' + r.maxDec.toFixed(0) + '% ownShareOfBar=' + (100 * r.share).toFixed(1) + '% extentOfBar=' + (100 * r.extent).toFixed(1) + '% ' + (r.extent < 0.1 ? 'FORCED(extent under one decile)' : 'FREE')));
     let bad = 0; const offenders = []; grT.forEach(r => { if (r.distinct !== r.n) { bad++; offenders.push(r.k + ' n=' + r.n + ' distinct=' + r.distinct); } });
     if (over50T > over50A) bad++;
     const slabs = grT.filter(r => /IfcSlab|IfcFooting/.test(r.k)).map(r => r.k.replace('TASK_', '') + ' n=' + r.n + ' maxDecile=' + r.maxDec.toFixed(0) + '% distinct=' + r.distinct);
     claim('W-RWB-5', grT.length, bad, bld + ' (task,class) groups n>=5: distinctStarts==n for all (offenders=' + (offenders.length ? offenders.slice(0, 3).join('; ') : 'none') +
-      ') groups>50%InOneDecile ' + over50A + ' -> ' + over50T + ' | slabs/footings: ' + slabs.join(' | ')); }
+      ') groups>50%InOneDecile affine=' + over50A + ' tiled=' + over50All + ' of which FORCED(extent<1 decile)=' + forcedT + ' FREE=' + over50T + ' (gate: FREE <= affine) | slabs/footings: ' + slabs.join(' | ')); }
 
   // W-RWB-6 fallback
   { let bad = 0;
