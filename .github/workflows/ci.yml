@@ -88,6 +88,19 @@ jobs:
           echo "$v"
           if [ "$rc" -ne 0 ] || ! printf '%s' "$v" | grep -q 'verdict=PASS'; then exit 1; fi
 
+      # W-MANIFEST-ROUNDTRIP (bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md Part B, B0; #3195): one manifest per app (viewer, erp, modeller)
+      # is built from the pages, lazy lists and service workers, and every one of those files must regenerate from it byte-identical.
+      # A hand edit in a spelling the generator cannot write (a script tag with an extra attribute, a non-literal precache entry) fails here,
+      # with the file, the line and the canonical form. Check only: nothing is written. --skip-c7 leaves out the 1-minute bump.js dry run.
+      - name: Module lists rebuild from one manifest per app (W-MANIFEST-ROUNDTRIP)
+        run: |
+          set -u; mkdir -p logs; rc=0
+          node scripts/tests/witness_manifest_roundtrip.js --skip-c7 < /dev/null > logs/ci_manifest_roundtrip.log 2>&1 || rc=$?
+          grep -E '§MANIFEST_(FAIL|NONCANONICAL|CLAIM|RED|INCONCLUSIVE|C[0-9]_MISS)|FAIL ' logs/ci_manifest_roundtrip.log || true
+          v=$(grep -E '^§MANIFEST_ROUNDTRIP ' logs/ci_manifest_roundtrip.log | tail -1 || true)
+          echo "$v"
+          if [ "$rc" -ne 0 ] || ! printf '%s' "$v" | grep -q 'verdict=PASS'; then exit 1; fi
+
   e2e-tests:
     runs-on: ubuntu-latest
     needs: fast-checks
