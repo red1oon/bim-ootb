@@ -64,18 +64,23 @@ function Witness(name) {
      * Executes the witness: population → schema → invariants → redControl, in that order,
      * printing PASS/FAIL lines plus one `§WITNESS_<NAME> pass=.. fail=.. ran=..` summary line.
      * Sets `process.exitCode = 1` if anything failed.
+     * @param {(line: string) => void} [sink] where every line goes; default `console.log`. Pass the witness's own
+     *   logger so the PASS/FAIL lines reach its `.log` file, not stdout only (VOCAB_MESSAGE_CATALOG §14.8.2).
      * @throws {Error} if `.population()`, `.schema()`, or `.redControl()` was never called.
-     * @returns {{ pass: number, fail: number, ran: number }} counts from this run.
+     * @returns {{ pass: number, fail: number, ran: number, lines: string[] }} counts and every line printed.
      */
-    run() {
+    run(sink) {
       if (!spec._population) throw new Error(`Witness(${name}): .population() is required`);
       if (!spec._schema) throw new Error(`Witness(${name}): .schema() is required`);
       if (!spec._redControl) throw new Error(
         `Witness(${name}): .redControl() is required — a witness that cannot fail is not a witness`);
 
       let pass = 0, fail = 0;
-      function ok(label) { pass++; console.log('  PASS ' + label); }
-      function bad(label, detail) { fail++; console.log('  FAIL ' + label + (detail ? ' — ' + detail : '')); }
+      const lines = [];
+      const out = (typeof sink === 'function' && process.env.SINK_BREAK !== 'drop') ? sink : (l) => console.log(l);
+      function say(line) { lines.push(line); out(line); }
+      function ok(label) { pass++; say('  PASS ' + label); }
+      function bad(label, detail) { fail++; say('  FAIL ' + label + (detail ? ' — ' + detail : '')); }
 
       const ajv = new Ajv({ allErrors: true });
       const validate = ajv.compile(spec._schema);
@@ -105,7 +110,7 @@ function Witness(name) {
         rows.forEach((row, i) => {
           if (!validate(row)) {
             schemaFails++;
-            console.log('    schema error row[' + i + ']: ' + ajv.errorsText(validate.errors));
+            say('    schema error row[' + i + ']: ' + ajv.errorsText(validate.errors));
           }
         });
         if (schemaFails === 0) ok(`schema-valid (all ${rows.length} rows)`);
@@ -133,9 +138,9 @@ function Witness(name) {
 
       // 5. one summary line — ran>0 is baked in, can't be omitted the way run_witness_suite.js's
       //    audit found 12+ files omitting it (WITNESS_CONTRACT_AUDIT.md §RESULTS 2026-08-24).
-      console.log(`§WITNESS_${name.toUpperCase()} pass=${pass} fail=${fail} ran=${(rows || []).length}`);
+      say(`§WITNESS_${name.toUpperCase()} pass=${pass} fail=${fail} ran=${(rows || []).length}`);
       if (fail > 0) process.exitCode = 1;
-      return { pass, fail, ran: (rows || []).length };
+      return { pass, fail, ran: (rows || []).length, lines };
     }
   };
   return api;

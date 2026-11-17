@@ -509,7 +509,7 @@ function finish(ROWS, onlyInplace) {
     .invariant('no-page-errors', rs => rs.every(r => r.errs === 0))
     .invariant('locale-toast-in-locale', rs => rs.every(r => !r.toastBad))
     .redControl(rs => rs.map(r => Object.assign({}, r, { carry: false, leaks: r.leaks + 3 })))
-    .run();
+    .run(say);
 
   const slots = ROWS.reduce((a, r) => a + r.slots, 0);
   const verdict = (slots === 0 || judged.length === 0) ? 'INCONCLUSIVE' : ((fail + res.fail) ? 'FAIL' : 'PASS');

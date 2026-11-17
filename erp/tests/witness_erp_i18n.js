@@ -302,7 +302,7 @@ async function switchVia(page, sel, lang) {
     .invariant('switch within budget', rs => rs.every(r => r.maxMs <= BUDGET_MS))
     .invariant('zero page errors', rs => rs.every(r => r.errs === 0))
     .redControl(rs => rs.map(r => r.lang === 'ar' ? Object.assign(r, { dir: 'ltr', mismatches: 3 }) : r))
-    .run();
+    .run(say);
   fs.writeFileSync(LOGF, OUT.join('\n') + '\n'); fs.writeFileSync(PAGELOGF, PAGELOG.join('\n') + '\n');
   await browser.close(); server.close();
 })().catch(e => { console.error('§W-ERP-I18N HARNESS-FATAL ' + (e && e.stack || e)); fs.writeFileSync(LOGF, OUT.join('\n') + '\nFATAL ' + e + '\n'); fs.writeFileSync(PAGELOGF, PAGELOG.join('\n')); process.exit(2); });
