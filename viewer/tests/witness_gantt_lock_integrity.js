@@ -105,6 +105,8 @@ assert(got.length === 1 && got[0] === 'WALL', 'G-LI-1b collector names the offen
 
 /* ── G-LI-2: verify core, sliced + driven on real Duplex ───────────────────────────────────── */
 const BLD_DIR = process.env.BLD_DIR || path.join(require('os').homedir(), 'bim-ootb', 'buildings');
+// LI_BLD=<building> runs G-LI-2 (verify, bad drag, undo) on another building — Duplex by default (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.15.3).
+const LI_BLD = process.env.LI_BLD || 'Duplex';
 
 (async () => {
   let sliced;
@@ -169,8 +171,8 @@ const BLD_DIR = process.env.BLD_DIR || path.join(require('os').homedir(), 'bim-o
     finish();
     return;
   }
-  const dbPath = path.join(BLD_DIR, 'Duplex_extracted.db');
-  if (!fs.existsSync(dbPath)) { console.log('§LI_SKIP Duplex fixture missing at ' + dbPath); finish(); return; }
+  const dbPath = path.join(BLD_DIR, LI_BLD + '_extracted.db');
+  if (!fs.existsSync(dbPath)) { console.log('§LI_SKIP ' + LI_BLD + ' fixture missing at ' + dbPath + ' — INCONCLUSIVE, G-LI-2 judged nothing'); fail++; finish(); return; }
   const SQL = await initSqlJs({ wasmBinary: __readSrc(path.join(__dirname, '..', '..', 'modeller', 'lib', 'sql-wasm.wasm')) });
   const db = new SQL.Database(__readSrc(dbPath));
   const rulesJson = JSON.parse(__readSrc(path.join(__dirname, '..', 'rates', 'sequence_rules.json'), 'utf8'));
@@ -254,7 +256,7 @@ const BLD_DIR = process.env.BLD_DIR || path.join(require('os').homedir(), 'bim-o
     if (!breach.ok) { brokeGuid = op.output_guid; break; }
     op.timestamp = saved.t; op.end_ts = saved.e; saved = null;
   }
-  assert(brokeGuid !== null, 'G-LI-2c a real bad drag is constructible on Duplex (moved ' + brokeGuid + ' to t=0)');
+  assert(brokeGuid !== null, 'G-LI-2c a real bad drag is constructible on ' + LI_BLD + ' (moved ' + brokeGuid + ' to t=0)');
   assert(breach && breach.ok === false && (breach.dFloating > 0 || breach.dMidair > 0),
     'G-LI-2d breach detected on lock-back verify (floating=' + (breach && breach.floating) + ' +' +
     (breach && breach.dFloating) + ', midair=' + (breach && breach.midair) + ' +' + (breach && breach.dMidair) + ')');
