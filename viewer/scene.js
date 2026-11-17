@@ -3500,6 +3500,29 @@ async function setupScene(A) {
   // input registry facade + focusOnlyLatest. _focusStack only holds PREVIOUS focuses.
   window._getFocusedPanel = function() { return _focusedPanel; };
 
+  // §KBD_EDITABLE_BEGIN (prompts/VIEWER_ELEMENT_PARTS.md §S-G4b) — read as text by viewer/tests/witness_kbd_editable_route.js: keep this block self-contained.
+  // A key aimed at an editable field is TEXT, not a command: a router must not consume it (typing `Fin plate` into Find lost the space).
+  function _kbdEditable(t) {
+    if (!t) return false;
+    var n = t.tagName;
+    return n === 'INPUT' || n === 'TEXTAREA' || n === 'SELECT' || t.isContentEditable === true;
+  }
+  // The panel-focused routing condition (arrows, space, ctrl+space, paging, Home/End, select-all, Enter). The ONLY change vs before: a plain space
+  // typed into an editable field is not routed. Every other key keeps its routing.
+  function _kbdPanelRouteConsumes(e, noMod) {
+    if (e.key === ' ' && noMod && _kbdEditable(e.target)) return false;
+    return ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].indexOf(e.key) >= 0 ||
+      (e.key === ' ' && noMod) ||
+      (e.ctrlKey && e.key === ' ') ||
+      (e.key === 'PageUp') || (e.key === 'PageDown') ||
+      (e.key === 'Home') || (e.key === 'End') ||
+      (e.shiftKey && ['ArrowUp', 'ArrowDown'].indexOf(e.key) >= 0) ||
+      (e.ctrlKey && e.key === 'a') ||
+      (e.key === 'Enter');
+  }
+  window._kbdEditable = _kbdEditable;
+  // §KBD_EDITABLE_END
+
   // ── Keyboard handler ──────────────────────────────────────────
   // ORIGINAL shortcuts preserved. Sequence engine + panel focus added on top.
   window.addEventListener('keydown', function(e) {
@@ -3536,7 +3559,7 @@ async function setupScene(A) {
     if ((e.ctrlKey || e.metaKey) && (e.key === 'o' || e.key === 'O')) { e.preventDefault(); console.log('§KBD_ROUTE Ctrl+O → open'); if (A.openModelDb) A.openModelDb(); return; }
 
     var noMod = !e.ctrlKey && !e.altKey && !e.metaKey;
-    var notInput = e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA';
+    var notInput = !_kbdEditable(e.target);
 
     // §S280 / §HSF-5b: Backspace = undo, \ = redo — now route through the ONE universal timeline
     // (skip-audit + replay + read-only picks), not the retired raw scene-undo.
@@ -3563,14 +3586,7 @@ async function setupScene(A) {
 
     // Panel-focused keys: arrows, space, ctrl+space, escape, typeahead
     if (_focusedPanel && _focusedPanel.nav) {
-      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].indexOf(e.key) >= 0 ||
-          (e.key === ' ' && noMod) ||
-          (e.ctrlKey && e.key === ' ') ||
-          (e.key === 'PageUp') || (e.key === 'PageDown') ||
-          (e.key === 'Home') || (e.key === 'End') ||
-          (e.shiftKey && ['ArrowUp', 'ArrowDown'].indexOf(e.key) >= 0) ||
-          (e.ctrlKey && e.key === 'a') ||
-          (e.key === 'Enter')) {
+      if (_kbdPanelRouteConsumes(e, noMod)) {
         e.preventDefault();
         console.log('§KBD_ROUTE panel=' + _focusedPanel.id + ' key=' + e.key + ' shift=' + e.shiftKey + ' ctrl=' + e.ctrlKey);
         _focusedPanel.nav.onKey(e);

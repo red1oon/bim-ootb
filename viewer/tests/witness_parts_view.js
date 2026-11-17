@@ -4,8 +4,8 @@
 // # ⚠ DO NOT REMOVE — W-PARTS-VIEW, prompts/VIEWER_ELEMENT_PARTS.md. Read the log after every run; exit code is not evidence.
 // ISSUE IT EXPOSES: "a host and its parts are drawn in the same place, so the parts are invisible" (the viewer never read element_parts).
 // P1 HIDE (hosts out of the keep set, parts + unrelated in) · P2 ORPHAN (child absent -> parent stays, orphanLinks) · P3 VACUOUS (no table -> says so, hides nothing)
-// P4 RESTORE (partsView(false) returns the previous isolate object) · P5 REAL ($PARTS_REAL_DB, read-only, optional).
-// PARTS_VIEW_BREAK=1 puts the hosts back into the keep set: P1 (and P5) must FAIL. Node only, no browser. Verdict is INCONCLUSIVE, never PASS, when a leg judged nothing.
+// P4 RESTORE (partsView(false) returns the previous isolate object) · P6 BASE-RESTORE (S-G4a: filterByGuids(null) while on keeps the parts keep set) · P5 REAL ($PARTS_REAL_DB, read-only, optional).
+// PARTS_VIEW_BREAK=1 puts the hosts back into the keep set: P1 (and P5) must FAIL, and removes the base-restore wrapper: P6 must FAIL. Node only, no browser. Verdict is INCONCLUSIVE, never PASS, when a leg judged nothing.
 // Usage: NODE_PATH=~/bim-compiler/node_modules node viewer/tests/witness_parts_view.js > log 2>&1
 'use strict';
 const path = require('path'), fs = require('fs');
@@ -24,7 +24,7 @@ const eqSet = (s, arr) => s.size === arr.length && arr.every(g => s.has(g));
   console.log('§W-PARTS-VIEW start break=' + BREAK);
   const SQL = await initSqlJs();
   // a stub of the one thing parts_view.js needs from the viewer: A.db, A.filterByGuids, A.activeGuidFilter (filterByGuids sets it, as panels.js:862-863 does)
-  const mk = (db) => { const A = { db, activeGuidFilter: null, calls: [] }; A.filterByGuids = g => { A.activeGuidFilter = g; A.calls.push(g); }; PV.setupPartsView(A); return A; };
+  const mk = (db) => { const A = { db, activeGuidFilter: null, calls: [] }; A.filterByGuids = g => { A.activeGuidFilter = g; A.calls.push(g); }; const stub = A.filterByGuids; PV.setupPartsView(A); if (BREAK) A.filterByGuids = stub; return A; };   // BREAK: the base-restore wrapper (S-G4a) is taken off
   const logs = []; const _l = console.log; const cap = fn => { console.log = (...a) => { logs.push(a.join(' ')); _l(...a); }; try { return fn(); } finally { console.log = _l; } };
   const build = (elems, parts) => {
     const db = new SQL.Database();
@@ -69,6 +69,21 @@ const eqSet = (s, arr) => s.size === arr.length && arr.every(g => s.has(g));
     cap(() => A.partsView(false));
     ok('P4 RESTORE', during !== prev && A.activeGuidFilter === prev && A.calls.length === 2 /* on once (2nd on ignored) + off */, 'restored the SAME previous object=' + (A.activeGuidFilter === prev) + ' calls=' + A.calls.length);
     const B = mk(build(E, P)); cap(() => { B.partsView(true); B.partsView(false); }); ok('P4 RESTORE-ALL', B.activeGuidFilter === null, 'no previous isolate -> null (all)');
+  }
+
+  // P6 BASE-RESTORE (S-G4a): Find opening calls filterByGuids(null); with the parts view on that must re-apply the parts keep set, not show the hosts
+  { const A = mk(build(E, P)); logs.length = 0; cap(() => A.partsView(true));
+    const keep = A.activeGuidFilter; const before = keep ? keep.size : -1;
+    logs.length = 0; cap(() => A.filterByGuids(null));
+    const after = A.activeGuidFilter;
+    ok('P6 BASE-RESTORE', after instanceof Set && after.size === 8 && ['H1', 'H2', 'H3'].every(h => !after.has(h)) && /§PARTS_VIEW base-restore isolate=8/.test(logs.join('\n')),
+      'isolate before clear=' + before + ' after filterByGuids(null)=' + (after ? after.size : 'null') + ' (want 8, hosts hidden)' + (BREAK ? ' [BREAK: wrapper off]' : ''));
+    const other = new Set(['U1']); cap(() => A.filterByGuids(other));
+    ok('P6 NONNULL-UNCHANGED', A.activeGuidFilter === other, 'a Find-made isolate is applied as given');
+    cap(() => A.filterByGuids(null)); ok('P6 CLEAR-FIND-ISOLATE', A.activeGuidFilter instanceof Set && A.activeGuidFilter.size === 8, 'clearing a Find isolate falls back to the parts keep set, size=' + (A.activeGuidFilter ? A.activeGuidFilter.size : 'null'));
+    cap(() => A.partsView(false)); cap(() => A.filterByGuids(null));
+    ok('P6 OFF-MEANS-ALL', A.activeGuidFilter === null, 'after partsView(false) a null clear is really all');
+    const B = mk(build([['U1', 'IfcDoor']], null)); cap(() => B.filterByGuids(null)); ok('P6 NO-PARTS-DB-UNCHANGED', B.activeGuidFilter === null, 'a DB without parts: null stays null');
   }
 
   // P5 REAL (optional)

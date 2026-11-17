@@ -38,9 +38,23 @@ function setupPartsView(A) {
   function _rows(sql) {
     try { var r = A.db.exec(sql); if (!r || !r.length) return []; return r[0].values.map(function (v) { var o = {}; r[0].columns.forEach(function (c, i) { o[c] = v[i]; }); return o; }); } catch (e) { return []; }
   }
+  // S-G4a: while the parts view is on it is the BASE filter. A null (clear / restore-all, e.g. Find opening, nf_panel_search.js) applies the parts keep set
+  // instead of showing every host again; a non-null isolate passes through unchanged.
+  var _orig = A.filterByGuids;
+  if (_orig && !_orig._partsBase) {
+    A.filterByGuids = function (g) {
+      if (g === null && _on) {
+        console.log(TAG + ' base-restore isolate=' + _on.res.keep.size);
+        g = _on.res.keep;
+      }
+      return _orig.call(A, g);
+    };
+    A.filterByGuids._partsBase = true;
+    if (typeof window !== 'undefined' && window.filterByGuids === _orig) window.filterByGuids = A.filterByGuids;
+  }
   A.partsView = function (on) {
     if (!A.db || !A.filterByGuids) { console.log(TAG + ' INCONCLUSIVE no db/filter'); return null; }
-    if (!on) { if (_on) { A.filterByGuids(_on.prev || null); console.log(TAG + ' off restored=' + (_on.prev ? 'previous isolate' : 'all')); _on = null; } return null; }
+    if (!on) { if (_on) { var _p = _on; _on = null; A.filterByGuids(_p.prev || null); console.log(TAG + ' off restored=' + (_p.prev ? 'previous isolate' : 'all')); } return null; }
     if (_on) return _on.res;   // already on: keep the FIRST previous isolate, never stack
     var rows = _hasTable('element_parts') ? _rows('SELECT parent_guid, child_guid, parent_class FROM element_parts') : [];
     if (!rows.length) { console.log(TAG + ' VACUOUS (no element_parts rows: nothing hidden)'); return null; }
