@@ -106,7 +106,7 @@ A proven kernel and architecture, not a finished ERP. The constituent techniques
 
 ## Architecture
 
-About 1,050 JS and HTML files of app code, ~353K lines (viewer 313, modeller 150, erp 335, common 73, teams 40, capex 37, plus others; measured 2026-11-18 on `main`, excluding every `tests/` folder, witnesses, sandbox, scripts and the third-party `lib/` folders). The whole repo holds ~3,480 JS and HTML files, ~1.08M lines; most of the difference is tests and witnesses. Vanilla JS: no framework, no build step, no server dependency.
+About 1,100 JS and HTML files of app code: 1,034 JS files (316,459 lines) and 63 HTML pages (38,665 lines), measured 2026-11-18 with bim-compiler's `scripts/code_arch/size_stack.sh` (the same tool that counts the witnesses: 2,151 files, 288,521 lines; and the third-party libraries: 131 files, 421,186 lines). Vanilla JS: no framework, no build step, no server dependency.
 
 Application state lives in **two SQLite databases** queried via sql-wasm — one for the BIM model, one for the ERP Application Dictionary. Three.js r184 ESM handles rendering with BatchedMesh and distance-based LOD; IFC files are parsed client-side by web-ifc and stored in IndexedDB. Both engines share one signed operation log.
 
