@@ -6,8 +6,8 @@
    "ad_message_base.csv",
    "AD_Message_Trl_fr_FR.xml"
   ],
-  "rows": 1028,
-  "translated": 921,
+  "rows": 1036,
+  "translated": 929,
   "untranslated": 107
  },
  "labels": {
@@ -1038,6 +1038,14 @@
   "ui_cls_ifcdef_of": "Définition IFC de {cls}",
   "ui_howto_guide": "Guide",
   "ui_howto_guide_en": "Guide (anglais)",
-  "ui_howto_cli": "La même chose en CLI"
+  "ui_howto_cli": "La même chose en CLI",
+  "mdl_m_guide_title_2d": "Dessins 2D → modèle",
+  "mdl_m_guide_title_outliner": "Explorateur — ARC en tête, UN seul onglet Disc",
+  "mdl_m_guide_title_walker": "Disc = walker",
+  "mdl_m_guide_title_conformity": "Porte de conformité",
+  "mdl_m_guide_title_author": "Créer",
+  "mdl_m_guide_title_move": "Déplacer et manipuler",
+  "mdl_m_guide_title_3dgrid": "Grille 3D",
+  "mdl_m_guide_title_export": "Enregistrer / Exporter"
  }
 }

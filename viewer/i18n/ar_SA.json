@@ -6,8 +6,8 @@
    "ad_message_base.csv",
    "AD_Message_Trl_ar_SA.xml"
   ],
-  "rows": 1028,
-  "translated": 921,
+  "rows": 1036,
+  "translated": 929,
   "untranslated": 107
  },
  "labels": {
@@ -1038,6 +1038,14 @@
   "ui_cls_ifcdef_of": "تعريف IFC لـ {cls}",
   "ui_howto_guide": "الدليل",
   "ui_howto_guide_en": "الدليل (بالإنجليزية)",
-  "ui_howto_cli": "الشيء نفسه في سطر الأوامر"
+  "ui_howto_cli": "الشيء نفسه في سطر الأوامر",
+  "mdl_m_guide_title_2d": "رسومات 2D → النموذج",
+  "mdl_m_guide_title_outliner": "المخطط — ARC أولاً، تبويب Disc واحد",
+  "mdl_m_guide_title_walker": "Disc = walker",
+  "mdl_m_guide_title_conformity": "بوابة المطابقة",
+  "mdl_m_guide_title_author": "إنشاء",
+  "mdl_m_guide_title_move": "نقل وتعديل",
+  "mdl_m_guide_title_3dgrid": "شبكة ثلاثية الأبعاد",
+  "mdl_m_guide_title_export": "حفظ / تصدير"
  }
 }

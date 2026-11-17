@@ -6,8 +6,8 @@
    "ad_message_base.csv",
    "AD_Message_Trl_bn_BD.xml"
   ],
-  "rows": 1028,
-  "translated": 921,
+  "rows": 1036,
+  "translated": 929,
   "untranslated": 107
  },
  "labels": {
@@ -1038,6 +1038,14 @@
   "ui_cls_ifcdef_of": "{cls}-এর IFC সংজ্ঞা",
   "ui_howto_guide": "নির্দেশিকা",
   "ui_howto_guide_en": "নির্দেশিকা (ইংরেজি)",
-  "ui_howto_cli": "CLI-তে একই কাজ"
+  "ui_howto_cli": "CLI-তে একই কাজ",
+  "mdl_m_guide_title_2d": "২ডি অঙ্কন → মডেল",
+  "mdl_m_guide_title_outliner": "আউটলাইনার — ARC আগে, একটিমাত্র Disc ট্যাব",
+  "mdl_m_guide_title_walker": "Disc = walker",
+  "mdl_m_guide_title_conformity": "সামঞ্জস্য গেট",
+  "mdl_m_guide_title_author": "তৈরি",
+  "mdl_m_guide_title_move": "সরানো ও পরিচালনা",
+  "mdl_m_guide_title_3dgrid": "৩ডি গ্রিড",
+  "mdl_m_guide_title_export": "সংরক্ষণ / রপ্তানি"
  }
 }

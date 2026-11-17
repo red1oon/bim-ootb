@@ -6,9 +6,9 @@
    "ad_message_base.csv",
    "AD_Message_Trl_en_US.xml"
   ],
-  "rows": 1028,
+  "rows": 1036,
   "translated": 13,
-  "untranslated": 1015
+  "untranslated": 1023
  },
  "labels": {
   "source_app": "BIM OOTB — Frictionless BIM",
@@ -1038,6 +1038,14 @@
   "ui_cls_ifcdef_of": "IFC definition of {cls}",
   "ui_howto_guide": "Guide",
   "ui_howto_guide_en": "Guide (English)",
-  "ui_howto_cli": "Same at the CLI"
+  "ui_howto_cli": "Same at the CLI",
+  "mdl_m_guide_title_2d": "2D drawings → model",
+  "mdl_m_guide_title_outliner": "Outliner — ARC leads, ONE Disc tab",
+  "mdl_m_guide_title_walker": "Disc = walker",
+  "mdl_m_guide_title_conformity": "Conformity Gate",
+  "mdl_m_guide_title_author": "Author",
+  "mdl_m_guide_title_move": "Move & Manipulate",
+  "mdl_m_guide_title_3dgrid": "3D Grid",
+  "mdl_m_guide_title_export": "Save / Export"
  }
 }
