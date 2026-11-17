@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<!--BIM OOTB Viewer — AD_Message_Trl de_DE — format: org.compiere.install.Translation export (iDempiere). Rows 1000000-1000308 source=viewer/locales/de_DE.js @4cd440ae (S225/S226 sessions, machine translation, extracted 2026-10-03, not retranslated); rows 1000309-1000492 and every row listed in viewer/tools/trl_batch_2026-10-03*.js source=machine (Claude, Anthropic, 2026-10-03); rows 1000493-1000655 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_tm.js; rows 1000656-1000671 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_info.js; rows 1000672-1000752 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_help.js; rows 1000753-1000862 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_modeller.js; rows 1000867-1000962 source=buildingSMART bSDD IFC 4.3 (CC BY-ND 4.0), verbatim official text — viewer/tools/trl_batch_2026-11-17_ifcdef.js; rows 1000963-1001017 source=machine (Claude, Anthropic, 2026-11-17), English class sentences written for this app — viewer/tools/trl_batch_2026-11-17_ifccls.js; rows 1001018-1001024 source=buildingSMART bSDD IFC 4.3 (CC BY-ND 4.0) verbatim, type -> occurrence per its IFC page; ui_cls_ifcdef_of machine (Claude, 2026-11-17) — viewer/tools/trl_batch_2026-11-17_ifcdef_types.js; rows 1001025-1001027 source=machine (Claude, Anthropic, 2026-11-17), How To palette words — viewer/tools/trl_batch_2026-11-17_howto.js; rows 1001028-1001033 source=machine (Claude, Anthropic, 2026-11-17), Modeller guide section titles — viewer/tools/trl_batch_2026-11-17_modeller_guide_titles.js; rows 1001034-1001035 source=machine (Claude, Anthropic, 2026-11-17), Modeller guide section titles — viewer/tools/trl_batch_2026-11-17_modeller_guide_titles.js; rows 1001036-1001045 source=machine (Claude, Anthropic, 2026-11-17), ten older uncatalogued Modeller strings — viewer/tools/trl_batch_2026-11-17_modeller_uncat10.js — NOT from a published iDempiere language pack. trl="N" = not translated (English kept, counted apart). Base rows: viewer/i18n/ad_message_base.csv. Edit THIS file, then run: node viewer/tools/build_trl.js-->
+<!--BIM OOTB Viewer — AD_Message_Trl de_DE — format: org.compiere.install.Translation export (iDempiere). Rows 1000000-1000308 source=viewer/locales/de_DE.js @4cd440ae (S225/S226 sessions, machine translation, extracted 2026-10-03, not retranslated); rows 1000309-1000492 and every row listed in viewer/tools/trl_batch_2026-10-03*.js source=machine (Claude, Anthropic, 2026-10-03); rows 1000493-1000655 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_tm.js; rows 1000656-1000671 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_info.js; rows 1000672-1000752 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_help.js; rows 1000753-1000862 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_modeller.js; rows 1000867-1000962 source=buildingSMART bSDD IFC 4.3 (CC BY-ND 4.0), verbatim official text — viewer/tools/trl_batch_2026-11-17_ifcdef.js; rows 1000963-1001017 source=machine (Claude, Anthropic, 2026-11-17), English class sentences written for this app — viewer/tools/trl_batch_2026-11-17_ifccls.js; rows 1001018-1001024 source=buildingSMART bSDD IFC 4.3 (CC BY-ND 4.0) verbatim, type -> occurrence per its IFC page; ui_cls_ifcdef_of machine (Claude, 2026-11-17) — viewer/tools/trl_batch_2026-11-17_ifcdef_types.js; rows 1001025-1001027 source=machine (Claude, Anthropic, 2026-11-17), How To palette words — viewer/tools/trl_batch_2026-11-17_howto.js; rows 1001028-1001033 source=machine (Claude, Anthropic, 2026-11-17), Modeller guide section titles — viewer/tools/trl_batch_2026-11-17_modeller_guide_titles.js; rows 1001034-1001035 source=machine (Claude, Anthropic, 2026-11-17), Modeller guide section titles — viewer/tools/trl_batch_2026-11-17_modeller_guide_titles.js; rows 1001036-1001045 source=machine (Claude, Anthropic, 2026-11-17), ten older uncatalogued Modeller strings — viewer/tools/trl_batch_2026-11-17_modeller_uncat10.js; rows 1001046-1001065 source=machine (Claude, Anthropic, 2026-11-17), Viewer pills added after S226 + Export BCF + What-if stale note — viewer/tools/trl_batch_2026-11-17_viewer_uncat.js; rows 1000863-1000866 (4 filled) source=machine (Claude, Anthropic, 2026-11-17), Road standards rows filled — viewer/tools/trl_batch_2026-11-17_roadstd_fill.js — NOT from a published iDempiere language pack. trl="N" = not translated (English kept, counted apart). Base rows: viewer/i18n/ad_message_base.csv. Edit THIS file, then run: node viewer/tools/build_trl.js-->
 <!--<!DOCTYPE idempiereTrl PUBLIC "-//iDempiere//DTD iDempiere Translation 1.0//EN" "https://raw.githubusercontent.com/idempiere/idempiere/refs/heads/master/utils_dev/trl/idempiereTrl.dtd">-->
 <idempiereTrl language="de_DE" table="AD_Message">
  <row id="1000000" trl="Y">
@@ -3463,20 +3463,20 @@ CPM liest die Termine, die das Ziehen erzeugt hat — es ändert keinen.</value>
   <value column="MsgText" original="Read / generate / open the ERP Project Order of the selected parts">Den ERP-Projektauftrag der gewählten Teile lesen / erzeugen / öffnen</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000863" trl="N">
-  <value column="MsgText" original="Road standards">Road standards</value>
+ <row id="1000863" trl="Y">
+  <value column="MsgText" original="Road standards">Straßennormen</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000864" trl="N">
-  <value column="MsgText" original="Sign codes vs ATJ 2A/85">Sign codes vs ATJ 2A/85</value>
+ <row id="1000864" trl="Y">
+  <value column="MsgText" original="Sign codes vs ATJ 2A/85">Schildcodes vs. ATJ 2A/85</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000865" trl="N">
-  <value column="MsgText" original="OK / UNKNOWN / MISSING tree">OK / UNKNOWN / MISSING tree</value>
+ <row id="1000865" trl="Y">
+  <value column="MsgText" original="OK / UNKNOWN / MISSING tree">Baum OK / UNKNOWN / MISSING</value>
   <value column="MsgTip" original=""/>
  </row>
- <row id="1000866" trl="N">
-  <value column="MsgText" original="Click a sign: zoom + standard">Click a sign: zoom + standard</value>
+ <row id="1000866" trl="Y">
+  <value column="MsgText" original="Click a sign: zoom + standard">Schild anklicken: Zoom + Norm</value>
   <value column="MsgTip" original=""/>
  </row>
  <row id="1000867" trl="N">
@@ -4194,6 +4194,86 @@ Anmerkung: Nach ISO 6707-1 ist eine vertikale Konstruktion in der Regel aus Maue
  </row>
  <row id="1001045" trl="Y">
   <value column="MsgText" original="Open 2D drawings from PDF drawing (.pdf)…">2D-Zeichnungen aus PDF-Zeichnung öffnen (.pdf)…</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001046" trl="Y">
+  <value column="MsgText" original="LOD400 Upgrade">LOD400-Aufwertung</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001047" trl="Y">
+  <value column="MsgText" original="Weld duplicate vertices + smooth curved surfaces">Doppelte Eckpunkte verschweißen + gekrümmte Flächen glätten</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001048" trl="Y">
+  <value column="MsgText" original="Same triangles, area and size; fewer vertices">Gleiche Dreiecke, Fläche und Größe; weniger Eckpunkte</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001049" trl="Y">
+  <value column="MsgText" original="Counted, logged; Save to keep it">Gezählt, protokolliert; Speichern, um es zu behalten</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001050" trl="Y">
+  <value column="MsgText" original="Road report">Straßenbericht</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001051" trl="Y">
+  <value column="MsgText" original="Alignment &amp; Drift">Trassierung &amp; Abweichung</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001052" trl="Y">
+  <value column="MsgText" original="Earthworks">Erdarbeiten</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001053" trl="Y">
+  <value column="MsgText" original="Geometric Health">Geometrischer Zustand</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001054" trl="Y">
+  <value column="MsgText" original="Signs · Environment">Schilder · Umwelt</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001055" trl="Y">
+  <value column="MsgText" original="Copy / .txt / PDF">Kopieren / .txt / PDF</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001056" trl="Y">
+  <value column="MsgText" original="Earthworks">Erdarbeiten</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001057" trl="Y">
+  <value column="MsgText" original="Cut &amp; Fill overlay (inferred)">Abtrag-&amp;-Auftrag-Overlay (abgeleitet)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001058" trl="Y">
+  <value column="MsgText" original="Cost · duration · plant: pending">Kosten · Dauer · Geräte: ausstehend</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001059" trl="Y">
+  <value column="MsgText" original="Roadworks">Straßenbau</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001060" trl="Y">
+  <value column="MsgText" original="Sight distance · radius · furniture: pending">Sichtweite · Radius · Ausstattung: ausstehend</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001061" trl="Y">
+  <value column="MsgText" original="GI Preview (AO)">GI-Vorschau (AO)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001062" trl="Y">
+  <value column="MsgText" original="N8AO ambient occlusion (research spike)">N8AO-Umgebungsverdeckung (Forschungsprototyp)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001063" trl="Y">
+  <value column="MsgText" original="Desktop only — disabled on mobile (memory)">Nur Desktop — auf Mobilgeräten deaktiviert (Speicher)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001064" trl="Y">
+  <value column="MsgText" original="Export BCF">BCF exportieren</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001065" trl="Y">
+  <value column="MsgText" original="What-if: the project store changed since you opened this — reopen What-if">Was-wäre-wenn: Der Projektspeicher hat sich seit dem Öffnen geändert — Was-wäre-wenn neu öffnen</value>
   <value column="MsgTip" original=""/>
  </row>
 </idempiereTrl>

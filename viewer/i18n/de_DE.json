@@ -6,9 +6,9 @@
    "ad_message_base.csv",
    "AD_Message_Trl_de_DE.xml"
   ],
-  "rows": 1046,
-  "translated": 957,
-  "untranslated": 89
+  "rows": 1066,
+  "translated": 981,
+  "untranslated": 85
  },
  "labels": {
   "source_app": "BIM OOTB — Frictionless BIM",
@@ -874,10 +874,10 @@
   "mdl_bo_trees_tt_4": "ALLE Gewerke durchlaufen",
   "mdl_s9_erp_btn": "ERP ▸ Projektauftrag",
   "mdl_s9_erp_btn_tt": "Den ERP-Projektauftrag der gewählten Teile lesen / erzeugen / öffnen",
-  "pill_roadstd": "Road standards",
-  "pillc_roadstd_1": "Sign codes vs ATJ 2A/85",
-  "pillc_roadstd_2": "OK / UNKNOWN / MISSING tree",
-  "pillc_roadstd_3": "Click a sign: zoom + standard",
+  "pill_roadstd": "Straßennormen",
+  "pillc_roadstd_1": "Schildcodes vs. ATJ 2A/85",
+  "pillc_roadstd_2": "Baum OK / UNKNOWN / MISSING",
+  "pillc_roadstd_3": "Schild anklicken: Zoom + Norm",
   "ifcdef_IfcAirTerminal": "An air terminal is a terminating or origination point for the transfer of air between distribution system(s) and one or more spaces. It can also be used for the transfer of air between adjacent spaces.",
   "ifcdef_IfcAirTerminal_lang": "EN",
   "ifcdef_IfcAlarm": "An alarm is a device that signals the existence of a condition or situation that is outside the boundaries of normal expectation or that activates such a device.",
@@ -1056,6 +1056,26 @@
   "mdl_m_drawing_meta": "Zeichnungs-Metadaten",
   "mdl_m_this_help": "Diese Hilfe",
   "mdl_m_open_dxf": "2D-Zeichnungen öffnen (.dxf)…",
-  "mdl_m_open_pdf": "2D-Zeichnungen aus PDF-Zeichnung öffnen (.pdf)…"
+  "mdl_m_open_pdf": "2D-Zeichnungen aus PDF-Zeichnung öffnen (.pdf)…",
+  "pill_lod400": "LOD400-Aufwertung",
+  "pillc_lod400_1": "Doppelte Eckpunkte verschweißen + gekrümmte Flächen glätten",
+  "pillc_lod400_2": "Gleiche Dreiecke, Fläche und Größe; weniger Eckpunkte",
+  "pillc_lod400_3": "Gezählt, protokolliert; Speichern, um es zu behalten",
+  "pill_roadreport": "Straßenbericht",
+  "pillc_roadreport_1": "Trassierung & Abweichung",
+  "pillc_roadreport_2": "Erdarbeiten",
+  "pillc_roadreport_3": "Geometrischer Zustand",
+  "pillc_roadreport_4": "Schilder · Umwelt",
+  "pillc_roadreport_5": "Kopieren / .txt / PDF",
+  "pill_ew": "Erdarbeiten",
+  "pillc_ew_1": "Abtrag-&-Auftrag-Overlay (abgeleitet)",
+  "pillc_ew_2": "Kosten · Dauer · Geräte: ausstehend",
+  "pill_rw": "Straßenbau",
+  "pillc_rw_1": "Sichtweite · Radius · Ausstattung: ausstehend",
+  "pill_gi_preview": "GI-Vorschau (AO)",
+  "pillc_gi_preview_1": "N8AO-Umgebungsverdeckung (Forschungsprototyp)",
+  "pillc_gi_preview_2": "Nur Desktop — auf Mobilgeräten deaktiviert (Speicher)",
+  "ui_export_bcf": "BCF exportieren",
+  "wi_store_changed": "Was-wäre-wenn: Der Projektspeicher hat sich seit dem Öffnen geändert — Was-wäre-wenn neu öffnen"
  }
 }

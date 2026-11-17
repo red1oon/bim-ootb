@@ -1054,3 +1054,23 @@ CPM reads the dates the drag produced — it never changes one.",I
 1001043,mdl_m_this_help,This help,I
 1001044,mdl_m_open_dxf,Open 2D drawings (.dxf)…,I
 1001045,mdl_m_open_pdf,Open 2D drawings from PDF drawing (.pdf)…,I
+1001046,pill_lod400,LOD400 Upgrade,I
+1001047,pillc_lod400_1,Weld duplicate vertices + smooth curved surfaces,I
+1001048,pillc_lod400_2,"Same triangles, area and size; fewer vertices",I
+1001049,pillc_lod400_3,"Counted, logged; Save to keep it",I
+1001050,pill_roadreport,Road report,I
+1001051,pillc_roadreport_1,Alignment & Drift,I
+1001052,pillc_roadreport_2,Earthworks,I
+1001053,pillc_roadreport_3,Geometric Health,I
+1001054,pillc_roadreport_4,Signs · Environment,I
+1001055,pillc_roadreport_5,Copy / .txt / PDF,I
+1001056,pill_ew,Earthworks,I
+1001057,pillc_ew_1,Cut & Fill overlay (inferred),I
+1001058,pillc_ew_2,Cost · duration · plant: pending,I
+1001059,pill_rw,Roadworks,I
+1001060,pillc_rw_1,Sight distance · radius · furniture: pending,I
+1001061,pill_gi_preview,GI Preview (AO),I
+1001062,pillc_gi_preview_1,N8AO ambient occlusion (research spike),I
+1001063,pillc_gi_preview_2,Desktop only — disabled on mobile (memory),I
+1001064,ui_export_bcf,Export BCF,I
+1001065,wi_store_changed,What-if: the project store changed since you opened this — reopen What-if,I

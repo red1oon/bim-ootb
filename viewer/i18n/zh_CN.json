@@ -6,9 +6,9 @@
    "ad_message_base.csv",
    "AD_Message_Trl_zh_CN.xml"
   ],
-  "rows": 1046,
-  "translated": 939,
-  "untranslated": 107
+  "rows": 1066,
+  "translated": 963,
+  "untranslated": 103
  },
  "labels": {
   "source_app": "BIM OOTB — Frictionless BIM",
@@ -874,10 +874,10 @@
   "mdl_bo_trees_tt_4": "遍历全部服务",
   "mdl_s9_erp_btn": "ERP ▸ 项目订单",
   "mdl_s9_erp_btn_tt": "读取 / 生成 / 打开所选部件的 ERP 项目订单",
-  "pill_roadstd": "Road standards",
-  "pillc_roadstd_1": "Sign codes vs ATJ 2A/85",
-  "pillc_roadstd_2": "OK / UNKNOWN / MISSING tree",
-  "pillc_roadstd_3": "Click a sign: zoom + standard",
+  "pill_roadstd": "道路标准",
+  "pillc_roadstd_1": "标志代码对照 ATJ 2A/85",
+  "pillc_roadstd_2": "OK / UNKNOWN / MISSING 树",
+  "pillc_roadstd_3": "点击标志：缩放 + 标准",
   "ifcdef_IfcAirTerminal": "An air terminal is a terminating or origination point for the transfer of air between distribution system(s) and one or more spaces. It can also be used for the transfer of air between adjacent spaces.",
   "ifcdef_IfcAirTerminal_lang": "EN",
   "ifcdef_IfcAlarm": "An alarm is a device that signals the existence of a condition or situation that is outside the boundaries of normal expectation or that activates such a device.",
@@ -1056,6 +1056,26 @@
   "mdl_m_drawing_meta": "图纸元数据",
   "mdl_m_this_help": "本帮助",
   "mdl_m_open_dxf": "打开 2D 图纸 (.dxf)…",
-  "mdl_m_open_pdf": "从 PDF 图纸打开 2D 图纸 (.pdf)…"
+  "mdl_m_open_pdf": "从 PDF 图纸打开 2D 图纸 (.pdf)…",
+  "pill_lod400": "LOD400 升级",
+  "pillc_lod400_1": "焊接重复顶点 + 平滑曲面",
+  "pillc_lod400_2": "三角形、面积和尺寸不变；顶点更少",
+  "pillc_lod400_3": "已计数、已记录；保存以保留",
+  "pill_roadreport": "道路报告",
+  "pillc_roadreport_1": "线形与偏移",
+  "pillc_roadreport_2": "土方工程",
+  "pillc_roadreport_3": "几何健康",
+  "pillc_roadreport_4": "标志 · 环境",
+  "pillc_roadreport_5": "复制 / .txt / PDF",
+  "pill_ew": "土方工程",
+  "pillc_ew_1": "挖填方叠加（推断）",
+  "pillc_ew_2": "成本 · 工期 · 机械：待定",
+  "pill_rw": "道路工程",
+  "pillc_rw_1": "视距 · 半径 · 道路设施：待定",
+  "pill_gi_preview": "GI 预览 (AO)",
+  "pillc_gi_preview_1": "N8AO 环境光遮蔽（研究原型）",
+  "pillc_gi_preview_2": "仅限桌面 — 移动端已禁用（内存）",
+  "ui_export_bcf": "导出 BCF",
+  "wi_store_changed": "假设分析：项目存储自您打开后已更改 — 请重新打开假设分析"
  }
 }
