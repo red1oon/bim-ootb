@@ -152,6 +152,9 @@ const sliced = ['var _CPM_DISPLAY = true;',   // §S20: the only branch left rea
   (zoneParts.length === 2 ? 'var _zoneMemo = [];' : ''), zoneParts[0] || '', zoneParts[1] || '',
   sliceFn(tmSrc, '_zoneOf', 0, true) || '',
   classifyParts[0] || '', classifyParts[1] || '',
+  // §Q.9.3 item 1 (bim-compiler prompts/4D_MODEL_INTEGRITY.md, 2026-11-17): _buildXrayElements calls _scheduledWhere
+  // since #1890; it was never sliced, the ReferenceError was swallowed, and every building "produced nothing".
+  sliceFn(tmSrc, '_scheduledWhere', 0, true) || '', sliceFn(tmSrc, '_civilRule', 0, true) || '',
   sliceFn(tmSrc, '_promoteRoofLoadPath'), sliceFn(tmSrc, '_buildXrayElements'),
   'var _contactGraph = SupportSweep.contactGraph, _designatedSupport = SupportSweep.designatedSupport, _midairAudit = SupportSweep.midairAudit;',   // §S58: real module, not a slice
   sliceFn(tmSrc, '_displayTimelineRemember'), sliceFn(tmSrc, '_displayTimeline')].join('\n');
@@ -227,7 +230,13 @@ const BLD_DIR = process.env.BLD_DIR || path.join(require('os').homedir(), 'bim-o
 function resolveDbFile(bld) {
   const meta = path.join(BLD_DIR, bld + '_meta.db');
   const extracted = path.join(BLD_DIR, bld + '_extracted.db');
-  if (fs.existsSync(meta)) return { path: meta, kind: 'meta', deprecatedAlso: fs.existsSync(extracted) };
+  // Same rule as scripts/cache_4d_run.js resolveDbFile (§CACHE_DB_KIND) and the viewer (§SPLIT_PAIR_REQUIRED): META only when
+  // the PAIR exists and the meta half is a real SQLite file. buildings/Duplex_meta.db is a 0-byte file with no _geo half —
+  // picking it made Duplex judge nothing (bim-compiler prompts/4D_MODEL_INTEGRITY.md §M.0 item 3, §Q.10).
+  const geo = path.join(BLD_DIR, bld + '_geo.db');
+  const metaOk = fs.existsSync(meta) && fs.existsSync(geo) && fs.statSync(meta).size >= 100 &&
+    fs.readFileSync(meta, { encoding: 'latin1', flag: 'r' }).slice(0, 15) === 'SQLite format 3';
+  if (metaOk) return { path: meta, kind: 'meta', deprecatedAlso: fs.existsSync(extracted) };
   return { path: extracted, kind: 'extracted', deprecatedAlso: false };
 }
 const BUILDINGS = (process.env.ONLY || 'Terminal,Hospital,Duplex,HHS_Office_Federated,Clinic,LTU_AHouse,JKR').split(',');
@@ -408,8 +417,9 @@ function census(items) {
     // browser exposes (rates.js declares `var LABOR_RATES` at module scope, i.e. window.LABOR_RATES),
     // so _displayTimeline's own §S6_CREW_PASS max_crews_fixed/max_crews lookup sees real per-resource
     // caps instead of running crew-unconstrained.
-    const sandbox = { console: { log: () => {}, warn: () => {} }, performance: { now: () => Date.now() },
-      window: { SEQUENCE_RULES: SR, SEQUENCE_DEFAULT: SD, SEQUENCE_NAME_OVERRIDES: NO,
+    // §XRAY_BUILD_EMPTY is never silenced (PRIMAL LAW 3): it is the only line that says WHY the build was empty.
+    const sandbox = { console: { log: (m) => { if (/^§XRAY_BUILD_EMPTY/.test(String(m))) console.log('   ' + m); }, warn: () => {} }, performance: { now: () => Date.now() },
+      window: { ScheduleAuthor: ScheduleAuthor, SEQUENCE_RULES: SR, SEQUENCE_DEFAULT: SD, SEQUENCE_NAME_OVERRIDES: NO,
                 LABOR_RATES: RATES.LABOR_RATES, GanttModel: GanttModel },   // §S53: sliced code's delegates read window.GanttModel
       ZoneIndex: ZoneIndex,
       ScheduleGate: ScheduleGate, SupportSweep: SupportSweep, Math: Math, A: () => ({ db: db }),   // §S58
@@ -417,7 +427,7 @@ function census(items) {
     vm.createContext(sandbox);
     vm.runInContext(sliced + '\nthis.__bxe = _buildXrayElements; this.__dt = _displayTimeline;', sandbox);
     const els = sandbox.__bxe();
-    if (!els || !els.length) { assert(false, 'W-MZ ' + bld + ' element build produced nothing'); db.close(); continue; }
+    if (!els || !els.length) { console.log('§MZ_INCONCLUSIVE ' + bld + ' judged NOTHING — element build returned empty (see §XRAY_BUILD_EMPTY above)'); assert(false, 'W-MZ ' + bld + ' element build produced nothing — INCONCLUSIVE, not a midair verdict'); db.close(); continue; }
 
     const nameOf = {};
     const nr = db.exec("SELECT guid, ifc_class, COALESCE(element_name,'') FROM elements_meta");
