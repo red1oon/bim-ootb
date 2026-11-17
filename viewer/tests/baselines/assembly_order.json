@@ -2,8 +2,8 @@
  "buildings": {
   "Hospital": {
    "dbFile": "Hospital_meta.db",
-   "codeKey": "59a5cb188e66",
-   "midair": 260,
+   "codeKey": "6aaa8052c877",
+   "midair": 245,
    "filingParity": 23,
    "classes": {
     "IfcBeam": {
@@ -17,7 +17,7 @@
      "contactOnly": 13
     },
     "IfcColumn": {
-     "midair": 14,
+     "midair": 6,
      "unjudgedStruct": 14,
      "contactOnly": 0
     },
@@ -52,7 +52,7 @@
      "contactOnly": 0
     },
     "IfcPipeSegment": {
-     "midair": 32,
+     "midair": 33,
      "unjudgedStruct": 0,
      "contactOnly": 0
     },
@@ -62,17 +62,17 @@
      "contactOnly": 0
     },
     "IfcRailing": {
-     "midair": 2,
+     "midair": 1,
      "unjudgedStruct": 0,
      "contactOnly": 0
     },
     "IfcWall": {
-     "midair": 7,
+     "midair": 3,
      "unjudgedStruct": 0,
      "contactOnly": 0
     },
     "IfcWallStandardCase": {
-     "midair": 25,
+     "midair": 22,
      "unjudgedStruct": 1,
      "contactOnly": 0
     }
@@ -80,8 +80,8 @@
   },
   "Terminal": {
    "dbFile": "Terminal_meta.db",
-   "codeKey": "59a5cb188e66",
-   "midair": 346,
+   "codeKey": "6aaa8052c877",
+   "midair": 343,
    "filingParity": 293,
    "classes": {
     "IfcBeam": {
@@ -130,7 +130,7 @@
      "contactOnly": 2
     },
     "IfcPlate": {
-     "midair": 216,
+     "midair": 213,
      "unjudgedStruct": 491,
      "contactOnly": 0
     },
@@ -173,7 +173,7 @@
   },
   "Duplex": {
    "dbFile": "Duplex_extracted.db",
-   "codeKey": "59a5cb188e66",
+   "codeKey": "6aaa8052c877",
    "midair": 135,
    "filingParity": 131,
    "classes": {
@@ -221,8 +221,8 @@
   },
   "HHS_Office_Federated": {
    "dbFile": "HHS_Office_Federated_extracted.db",
-   "codeKey": "59a5cb188e66",
-   "midair": 69,
+   "codeKey": "6aaa8052c877",
+   "midair": 40,
    "filingParity": 9,
    "classes": {
     "IfcBuildingElementProxy": {
@@ -231,7 +231,7 @@
      "contactOnly": 1
     },
     "IfcColumn": {
-     "midair": 3,
+     "midair": 0,
      "unjudgedStruct": 5,
      "contactOnly": 0
     },
@@ -246,7 +246,7 @@
      "contactOnly": 14
     },
     "IfcFlowTerminal": {
-     "midair": 5,
+     "midair": 4,
      "unjudgedStruct": 0,
      "contactOnly": 3
     },
@@ -261,18 +261,13 @@
      "contactOnly": 0
     },
     "IfcSlab": {
-     "midair": 30,
+     "midair": 6,
      "unjudgedStruct": 1,
      "contactOnly": 0
     },
     "IfcStairFlight": {
      "midair": 0,
      "unjudgedStruct": 2,
-     "contactOnly": 0
-    },
-    "IfcWallStandardCase": {
-     "midair": 1,
-     "unjudgedStruct": 0,
      "contactOnly": 0
     }
    }
