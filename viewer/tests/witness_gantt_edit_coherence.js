@@ -162,6 +162,11 @@ var initSqlJs = require(path.join(__dirname, '..', '..', 'modeller', 'lib', 'sql
 var ScheduleAuthor = require(path.join(__dirname, '..', 'schedule_author.js'));
 var ScheduleGate = require(path.join(__dirname, '..', 'schedule_gate.js'));
 var GanttModel = require(path.join(__dirname, '..', 'gantt_model.js'));
+// The grid under test must be the SHIPPED grid: materializeZones reads these two off the global, and without them it files by
+// storey alone and leaves task interiors in solve order (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.13.3, §Q.14.4).
+global.ScheduleGate = ScheduleGate;
+global.SupportSweep = require(path.join(__dirname, '..', 'support_sweep.js'));
+global.CpmSchedule = require(path.join(__dirname, '..', 'cpm_schedule.js'));
 
 function sliceNamed(src, name) {
   var idx = src.indexOf('function ' + name + '(');
@@ -213,6 +218,12 @@ function sliceNamed(src, name) {
   // VACUOUS-aware: if the fork emitted nothing at all we cannot say which model ran, and that is
   // an INCONCLUSIVE state, not a pass. It is reported as a FAIL because a witness that cannot see
   // its own subject is exactly the §CRISIS this claim exists to prevent recurring.
+  var _d6Line = _seen.filter(function (l) { return l.indexOf('§D6_HANG_FILING') === 0; }).pop() || '(no §D6_HANG_FILING line)';
+  var _layerLine = _seen.filter(function (l) { return l.indexOf('§TPL_LAYER_SELFCHECK') === 0; }).pop() || '(no §TPL_LAYER_SELFCHECK line)';
+  var _inactive = _seen.filter(function (l) { return /§D6_HANG_FILING INACTIVE|§TPL_LAYER_ORDER_FAIL|pass did not run/.test(l); });
+  check('G-COH-11 the-grid-under-test-is-the-SHIPPED-grid-hang-filing-and-layer-order-both-ran',
+    _inactive.length === 0 && /^§D6_HANG_FILING elements=/.test(_d6Line) && /^§TPL_LAYER_SELFCHECK applied=/.test(_layerLine),
+    _inactive.length ? 'INACTIVE: ' + _inactive.join(' | ').slice(0, 300) : (_d6Line.slice(0, 160) + ' || ' + _layerLine.slice(0, 120)));
   check('G-COH-10 the-model-under-test-is-the-CANONICAL-template-path',
     _isCanonical,
     _modelLine ? _modelLine.slice(0, 120)
