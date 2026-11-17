@@ -446,6 +446,9 @@
     out.orphanGuids = [];
     if (G.groundConnected) for (var oi = 0; oi < items.length; oi++) if (!G.groundConnected[oi]) out.orphanGuids.push(items[oi].guid);
     var des = _designatedSupport(items, G);
+    var _CPj = _cpm();                                       // the same owner resolution _contactGraph uses
+    var _bound = (_CPj && _CPj.supportBound) || null;
+    out.finishJudged = !!_bound;
     for (var i = 0; i < items.length; i++) {
       var sIdx = des[i]; if (sIdx < 0) continue;
       // §S73 — collect EVERY midair guid, do not cap here. The old `if (out.guids.length < 20)` kept
@@ -455,7 +458,13 @@
       // touched. Sampling is the CALLER's decision (it ranks newly-broken elements first, then caps
       // at 20); an audit that silently truncates its own findings cannot be ranked at all.
       // Cost is one guid string per offender on a count that is already being computed.
-      if (items[sIdx].s > items[i].s + 1) { out.midair++; out.guids.push(items[i].guid); }
+      // §D4_SUPPORT_FINISHED (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.6 D4): midair <=> the elected support is not
+      // yet FINISHED when the element starts (bearing-below, carrier-above), or not yet STARTED (embedded — a cast-in
+      // item goes in with its host). The bound is the owner's (CpmSchedule.supportBound) — the same call the solve makes.
+      // A caller that passes no end time is judged on the start (said in out.finishJudged = false), never guessed.
+      var _S = items[sIdx], _b = _S.s;
+      if (_bound && typeof _S.e === 'number') _b = _bound(_S, items[i], _S.s, _S.e); else out.finishJudged = false;
+      if (_b > items[i].s + 1) { out.midair++; out.guids.push(items[i].guid); }
     }
     out.ok = out.midair === 0;
     return out;

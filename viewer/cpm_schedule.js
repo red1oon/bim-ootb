@@ -199,6 +199,19 @@
   // original fix) would discard that real relationship, repeating §GROUNDED_OVERRIDE_FIX's exact
   // mistake. Fix: run the same classification loop unconditionally; only reject the RESULT if it
   // landed on cls=2 AND the element is grounded. A genuine cls=0/cls=1 match always survives.
+  // §D4_SUPPORT_FINISHED (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.6 D4, §Q.12 — 2026-11-17). "Supported" means the
+  // support is FINISHED: nothing is landed on a half-built column, nothing is hung from a half-built slab. A cast-in or
+  // same-pour item goes in WITH its host. So bearing-below and carrier-above are FINISH-to-start; embedded stays
+  // START-to-start. supportBound(S, T, sS, eS) is the ONE place that says which instant of the support binds T — the
+  // graph edge (buildGraph E1), the cell packing (solveCells) and the judge (support_sweep.js midairAudit) all call it,
+  // so the generator and the lock gate cannot drift apart. Curing time is not modelled — no data, none invented.
+  function supportIsEmbedded(S, T) {
+    var SG = (typeof global.ScheduleGate !== 'undefined') ? global.ScheduleGate : ScheduleGate;
+    if (S.bz < T.bz - SG.EPS && S.tz >= T.bz - SG.GAP) return false;        // bearing-below (the election's own first clause)
+    return S.bz <= T.bz + SG.EPS && S.tz >= T.tz - SG.EPS;                  // embedded; anything else is carrier-above
+  }
+  function supportBound(S, T, sS, eS) { return supportIsEmbedded(S, T) ? sS : eS; }
+
   function designatedSupport(items, G) {
     var SG = (typeof global.ScheduleGate !== 'undefined') ? global.ScheduleGate : ScheduleGate;
     var EPS = SG.EPS, GAP = SG.GAP;
@@ -337,7 +350,14 @@
 
     // E1 — designated physical support, SS
     var des = designatedSupport(items, G);
-    for (i = 0; i < n; i++) if (des[i] >= 0) addEdge(des[i], i, SS, 1, 'e1');
+    // E1 kind: FS for bearing-below / carrier-above, SS for embedded (§D4_SUPPORT_FINISHED)
+    var e1fs = 0;
+    for (i = 0; i < n; i++) if (des[i] >= 0) {
+      var _emb = supportIsEmbedded(items[des[i]], items[i]);
+      if (!_emb) e1fs++;
+      addEdge(des[i], i, _emb ? SS : FS, 1, 'e1');
+    }
+    counts.e1fs = e1fs;
 
     // E2 — host/opening pairs, FS (same element shape ScheduleGate's own pairs functions take)
     var gateEls = items.map(function (it) {
@@ -1032,7 +1052,11 @@
         var pool = poolOf(items[u].resource), idx = 0, q;
         for (q = 1; q < pool.length; q++) if (pool[q] < pool[idx]) idx = q;
         var st = Math.max(es, pool[idx]), sp = supIn(u);
-        if (sp >= 0) { d3InGroup++; if (times[sp].s > st) { st = times[sp].s; d3Held++; } }
+        if (sp >= 0) {                                        // §D4: the support's END binds, its START when embedded
+          d3InGroup++;
+          var bnd = supportBound(items[sp], items[u], times[sp].s, times[sp].e);
+          if (bnd > st) { st = bnd; d3Held++; }
+        }
         commit(u, st, pool, idx);
       }
       mem.forEach(function (u0) {
@@ -1045,7 +1069,7 @@
       });
       if (!(c.trd in thisLevelByTrade) || fin > thisLevelByTrade[c.trd]) thisLevelByTrade[c.trd] = fin;
     });
-    console.log('§D3_CELL_SUPPORT_ORDER grain=(level,trade) electedPairsInside=' + d3InGroup + ' supportsPulledForward=' + d3Pulled + ' heldForSupportStart=' + d3Held + ' lifts=' + d3Lifts +
+    console.log('§D3_CELL_SUPPORT_ORDER grain=(level,trade) bound=finish(bearing,hanging)/start(embedded) electedPairsInside=' + d3InGroup + ' supportsPulledForward=' + d3Pulled + ' heldForSupportStart=' + d3Held + ' lifts=' + d3Lifts +
       ' liftMembers=' + d3LiftMembers + ' liftOverCrewCap=' + d3LiftOverCap + (filing.des ? '' : ' INACTIVE — no election passed to the cell solve'));
     return { times: times, cells: keys.length, keyOf: keyOf,
              levels: Object.keys(lvlSet).length, trades: Object.keys(trdSet).length,
@@ -1121,7 +1145,7 @@
     var sol = solve(items, graph, opts);
     var t3 = _perf();
     console.log('§CPM_RUN n=' + items.length + ' nodes=' + graph.nNodes +
-      ' edges={E1:' + graph.counts.e1 + ',E2host:' + graph.counts.e2h + ',E2open:' + graph.counts.e2o +
+      ' edges={E1:' + graph.counts.e1 + '(FS ' + (graph.counts.e1fs || 0) + ')' + ',E2host:' + graph.counts.e2h + ',E2open:' + graph.counts.e2o +
       ',E3:' + graph.counts.e3 + ',E4:' + graph.counts.e4 + ',member:' + graph.counts.member + '}' +
       ' stragglers=' + graph.counts.stragglers +
       ' cycleDrops={E3:' + sol.drops.e3 + ',E4:' + sol.drops.e4 + ',member:' + sol.drops.member +
@@ -1134,7 +1158,7 @@
              ms: { contact: _dt(t0, t1), build: _dt(t1, t2), solve: _dt(t2, t3), total: _dt(t0, t3) } };
   }
 
-  var API = { contactGraph: contactGraph, designatedSupport: designatedSupport,
+  var API = { contactGraph: contactGraph, designatedSupport: designatedSupport, supportBound: supportBound, supportIsEmbedded: supportIsEmbedded,
               buildGraph: buildGraph, solve: solve, run: run, TIER1_ORDER: TIER1_ORDER };
   global.CpmSchedule = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
