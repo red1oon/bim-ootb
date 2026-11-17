@@ -26,7 +26,7 @@
     names.forEach(function (nm) { if (nm.toLowerCase() === lo) add(nm, 'case'); });
     names.forEach(function (nm) { var l = nm.toLowerCase(); if (l === rule || l === rule + '_id' || l === rule.replace(/_id$/, '') + '_id') add(nm, 'rule'); });
     names.forEach(function (nm) { if (lo && nm.toLowerCase().indexOf(rule) === 0) add(nm, 'prefix'); });
-    var lim = Math.max(2, Math.floor(name.length / 3));
+    var lim = Math.min(Math.max(2, Math.floor(name.length / 3)), name.length - 1);   // §42 S3 (bim-compiler prompts/CLI_ERP_IVR.md): a 1-2 character name may differ by fewer edits than it has characters (2 edits reach ANY 2-character name); W-ASSIST-NEAREST
     names.map(function (nm) { return { nm: nm, d: lev(rule, nm) }; }).filter(function (x) { return x.d <= lim; })
       .sort(function (x, y) { return x.d - y.d || (x.nm < y.nm ? -1 : 1); }).forEach(function (x) { add(x.nm, 'nearest'); });
     return out.slice(0, n);
