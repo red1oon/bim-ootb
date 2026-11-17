@@ -173,10 +173,13 @@ function roleRows(O, t, cols, a) {
 function describe(O, a) {
   const t = kindOf(O.rows, a.kind), all = columnsOf(O.rows, t), R = roleFor(O, t, all, a), cols = R ? R.cols : all, tabs = childTabs(O.rows, t, R ? R.tab : null);
   const X = edit(O.rows, t, cols, R ? R.tab : null);
+  // §40 C3: a Button column's process (AD_Column.AD_Process_ID, as legacy's WButtonEditor runs it); a model without AD_Process simply has none
+  const BP = {}; try { O.rows("SELECT c.ad_column_id AS c, p.ad_process_id AS id, p.value, p.name FROM ad_column c JOIN ad_process p ON p.ad_process_id=c.ad_process_id WHERE c.ad_table_id=? AND c.ad_reference_id=28 AND c.isactive='Y'", [t.ad_table_id]).forEach(r => { BP[r.c] = { id: r.id, value: r.value, name: r.name }; }); } catch (e) { /* no ad_process here */ }
   const props = cols.map(c => {
     const p = { name: c.columnname, label: c.name, type: REF[c.ad_reference_id] || 'ref:' + c.ad_reference_id, mandatory: c.ismandatory === 'Y', updateable: c.isupdateable === 'Y', key: c.iskey === 'Y', parent: c.isparent === 'Y', length: c.fieldlength };
     if (c.valuemin != null) p.min = c.valuemin; if (c.valuemax != null) p.max = c.valuemax;
     if (c.ad_reference_id === 17 && c.ad_reference_value_id != null) p.values = listValues(O.rows, c.ad_reference_value_id).map(v => v.value);
+    if (BP[c.ad_column_id]) p.process = BP[c.ad_column_id];
     if (R && (!R.window.readWrite || !R.canWrite(c))) p.roleReadOnly = true;   // GridField.isEditable L518-526: the role may read it, not write it
     if (!process.env.ERP_BREAK_DESCFIELD) Object.assign(p, X(c)); else Object.assign(p, { displayed: false, seq: 0, displayLogic: '', readOnlyLogic: '', help: '' });   // ERP_BREAK_DESCFIELD: the falsifier of W-ERP-VERBS-DOOR D4 (empty cells filled with defaults)
     return p;
