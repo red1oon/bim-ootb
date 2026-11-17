@@ -30,3 +30,9 @@ Built: `viewer/parts_view.js` (pure `partsKeepSet(rows, all)` + `A.partsView(on)
 - **P5 with `$PARTS_REAL_DB` (read-only, a layer-split model DB):** `§P5 real db: element_parts rows=220 elements=6828 hostsHidden=88 partsShown=220 orphanLinks=0 byHostClass={"IfcWallStandardCase":52,"IfcSlab":16,"IfcCovering":20} hostsStillInKeep=0 (SQL says hosts=88 parts=220)`, `§PASS P5 REAL`, verdict `PASS pass=9`. Same DB with the break: `§FAIL P5 REAL` (hosts still in keep).
 - **SW audit:** `§SW_AUDIT_SUMMARY 296 found, 0 missing, 0 known-missing, 296 total`; `§SW_AUDIT_UNLISTED_SUMMARY 219 precached, 0 unlisted`.
 - Not witnessed here: the browser wiring in `main.js` (timing + lazy load) is Node-untestable under the no-browser rule; the witness drives `A.partsView` against a stub of `A.db`/`A.filterByGuids`.
+
+### Review fix 2026-11-18 (before merge)
+- `A.filterByGuids` (panels.js:862) only touches meshes that exist when it runs, and `streaming.js` never reads `activeGuidFilter`. So a host streamed AFTER the hook fired would be drawn again. The hook now waits for `APP.streaming === false` (cap 180 s, logged), not `streamedCount > 10`.
+- The merge step builds new merged meshes after streaming. `streaming.js` §MERGE_CONTRACT now re-applies any active isolate (`§MERGE_ISOLATE_REAPPLY isolate=N`), the same re-apply as dlod_nav.js:1885. This is generic: it also fixes a Find isolate set during streaming.
+- Re-run after the fix: W-PARTS-VIEW pass=8 fail=0; P5 on the layer-split DB hostsHidden=88 partsShown=220 orphanLinks=0; SW audit 296/0. Browser timing still not witnessed (no browser run).
+- Known trade-off, owner call: any isolate turns nav-DLOD off (dlod_nav.js:397), so a DB with parts runs without DLOD while the parts view is on.

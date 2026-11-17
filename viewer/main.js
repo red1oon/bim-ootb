@@ -1313,7 +1313,7 @@ async function initViewer() {
         console.log('§SCENE_STATE_RESTORE none (no scene_state table)');
       }
       // §PARTS_VIEW (prompts/VIEWER_ELEMENT_PARTS.md): a DB whose element_parts has rows shows the PARTS instead of their host. parts_view.js is lazy: it loads only for such a DB.
-      // Waits for the same streamed-count gate as the scene-state restore plus its 1500ms; a Find isolate the restore (or the user) already set is never overridden.
+      // Waits until streaming has finished (+1500 ms for consolidation); the merge step re-applies any active isolate (streaming.js §MERGE_CONTRACT). A Find isolate already set is never overridden.
       try {
         var ppT = APP.dbQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='element_parts'");
         var ppN = (ppT && ppT.length) ? APP.dbQuery("SELECT COUNT(*) FROM element_parts") : null;
@@ -1325,7 +1325,9 @@ async function initViewer() {
           });
           var ppChecks = 0, ppTimer = setInterval(function() {
             ppChecks++;
-            if (APP.streamedCount > 10 || ppChecks > 20) {
+            // wait for the stream to FINISH (A.streaming false): filterByGuids only touches meshes that exist when it runs (panels.js:862).
+            if ((APP.streaming === false && APP.streamedCount > 0) || ppChecks > 120) {
+              if (ppChecks > 120) console.warn('§PARTS_VIEW late: stream still running after 180 s, applying anyway');
               clearInterval(ppTimer);
               setTimeout(function() {
                 ppReady.then(function() {
