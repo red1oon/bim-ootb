@@ -1055,7 +1055,7 @@ function menuOf(O, a) {
   const roots = quiet(() => ADP.getMenuTree(O.db));
   const tree = role && MENU_BREAK !== 'noscope' ? withAccess(() => SES.scopeMenu(roots, SES.accessibleWindows(O.db, role.id), SES.accessibleProcesses(O.db, role.id), SES.accessibleForms(O.db, role.id))).tree : roots;
   const tabOf = {}, kindOf = (w) => { if (w == null) return null; if (w in tabOf) return tabOf[w];
-    const r = O.rows("SELECT tb.tablename AS t FROM ad_tab t JOIN ad_table tb ON tb.ad_table_id=t.ad_table_id WHERE t.ad_window_id=? AND t.isactive='Y' ORDER BY t.tablevel" + (MENU_BREAK === 'wrongtab' ? ' DESC, t.seqno DESC' : ', t.seqno'), [Number(w)])[0]; return (tabOf[w] = r ? r.t : null); };
+    const ts = OC.windowTabs(O.rows, Number(w)), r = MENU_BREAK === 'wrongtab' ? ts[ts.length - 1] : ts[0]; return (tabOf[w] = r ? r.tablename : null); };   // the window's first tab in THE window order (object_cli windowTabs); wrongtab = its last
   let leaves = 0, folders = 0, windows = 0;
   const slim = (n) => { const kids = (n.children || []).map(slim).filter(Boolean), folder = n.isSummary || kids.length > 0;
     if (folder) { if (!kids.length) return null; folders++; return { id: n.id, name: n.name, isSummary: true, children: kids }; }

@@ -2,7 +2,7 @@
  "buildings": {
   "Hospital": {
    "dbFile": "Hospital_meta.db",
-   "codeKey": "e5ae37bb26b1",
+   "codeKey": "179e774fade5",
    "midair": 54,
    "filingParity": 23,
    "classes": {
@@ -75,7 +75,7 @@
   },
   "Terminal": {
    "dbFile": "Terminal_meta.db",
-   "codeKey": "e5ae37bb26b1",
+   "codeKey": "179e774fade5",
    "midair": 324,
    "filingParity": 293,
    "classes": {
@@ -163,47 +163,22 @@
   },
   "Duplex": {
    "dbFile": "Duplex_extracted.db",
-   "codeKey": "e5ae37bb26b1",
-   "midair": 135,
-   "filingParity": 131,
+   "codeKey": "179e774fade5",
+   "midair": 6,
+   "filingParity": 2,
    "classes": {
-    "IfcFlowController": {
-     "midair": 4,
-     "unjudgedStruct": 0,
-     "contactOnly": 0
-    },
-    "IfcFlowFitting": {
-     "midair": 60,
-     "unjudgedStruct": 0,
-     "contactOnly": 0
-    },
     "IfcFlowSegment": {
-     "midair": 48,
+     "midair": 0,
      "unjudgedStruct": 0,
      "contactOnly": 2
-    },
-    "IfcFlowTerminal": {
-     "midair": 13,
-     "unjudgedStruct": 0,
-     "contactOnly": 0
     },
     "IfcFooting": {
      "midair": 2,
      "unjudgedStruct": 0,
      "contactOnly": 0
     },
-    "IfcFurnishingElement": {
-     "midair": 2,
-     "unjudgedStruct": 0,
-     "contactOnly": 0
-    },
     "IfcWallStandardCase": {
-     "midair": 5,
-     "unjudgedStruct": 0,
-     "contactOnly": 0
-    },
-    "IfcWindow": {
-     "midair": 1,
+     "midair": 4,
      "unjudgedStruct": 0,
      "contactOnly": 0
     }
@@ -211,7 +186,7 @@
   },
   "HHS_Office_Federated": {
    "dbFile": "HHS_Office_Federated_extracted.db",
-   "codeKey": "e5ae37bb26b1",
+   "codeKey": "179e774fade5",
    "midair": 40,
    "filingParity": 9,
    "classes": {
@@ -264,7 +239,7 @@
   },
   "Clinic": {
    "dbFile": "Clinic_meta.db",
-   "codeKey": "e5ae37bb26b1",
+   "codeKey": "179e774fade5",
    "midair": 53,
    "filingParity": 6,
    "classes": {
@@ -327,7 +302,7 @@
   },
   "JKR": {
    "dbFile": "JKR_extracted.db",
-   "codeKey": "e5ae37bb26b1",
+   "codeKey": "179e774fade5",
    "midair": 52,
    "filingParity": 23,
    "classes": {
@@ -375,7 +350,7 @@
   },
   "LTU_AHouse": {
    "dbFile": "LTU_AHouse_meta.db",
-   "codeKey": "e5ae37bb26b1",
+   "codeKey": "179e774fade5",
    "midair": 6680,
    "filingParity": 4062,
    "classes": {
