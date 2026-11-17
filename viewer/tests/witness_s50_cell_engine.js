@@ -38,6 +38,8 @@ const sliced = ['var _CPM_DISPLAY = true;',
   (zoneParts.length === 2 ? 'var _zoneMemo = [];' : ''), zoneParts[0] || '', zoneParts[1] || '',
   sliceFn(tmSrc, '_zoneOf', 0, true) || '',
   classifyParts[0] || '', classifyParts[1] || '',
+  // same dead-slice class as gate 4 (bim-compiler 4D_MODEL_INTEGRITY.md §Q.10): _buildXrayElements calls these two since #1890
+  sliceFn(tmSrc, '_scheduledWhere', 0, true) || '', sliceFn(tmSrc, '_civilRule', 0, true) || '',
   sliceFn(tmSrc, '_promoteRoofLoadPath'), sliceFn(tmSrc, '_buildXrayElements')].join('\n');
 
 function loadRatesTable() {
@@ -50,7 +52,8 @@ function loadRatesTable() {
 const BLD_DIR = process.env.BLD_DIR || path.join(require('os').homedir(), 'bim-ootb', 'buildings');
 function resolveDbFile(bld) {
   const meta = path.join(BLD_DIR, bld + '_meta.db');
-  if (fs.existsSync(meta)) return meta;
+  // META only when the split PAIR exists and the meta half is non-empty (the viewer's own rule; buildings/Duplex_meta.db is a 0-byte trap — §Q.10)
+  if (fs.existsSync(meta) && fs.statSync(meta).size >= 100 && fs.existsSync(path.join(BLD_DIR, bld + '_geo.db'))) return meta;
   return path.join(BLD_DIR, bld + '_extracted.db');
 }
 const BUILDINGS = (process.env.ONLY || 'Clinic,Duplex').split(',');
@@ -73,6 +76,7 @@ const BUILDINGS = (process.env.ONLY || 'Clinic,Duplex').split(',');
     vm.createContext(sandbox);
     vm.runInContext(sliced + '\nthis.__bxe = _buildXrayElements;', sandbox);
     const els = sandbox.__bxe();
+    if (!els || !els.length) { console.log('  FAIL W-S50 ' + bld + ' element build produced nothing — INCONCLUSIVE, nothing judged (' + path.basename(dbPath) + ')'); bad++; continue; }
     const geoEls = els.filter(e => !(e.x0 === e.x1 && e.y0 === e.y1 && e.base_z === e.top_z));
     const nameOf = {};
     const nr = db.exec("SELECT guid, COALESCE(element_name,'') FROM elements_meta");
