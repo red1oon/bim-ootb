@@ -54,7 +54,12 @@
       if (!st.rec || !st.erp || brk === 'norecfill') return;   // norecfill: W-RED1-RECORD falsifier (the context is not filled: must FAIL R5)
       if (args.kind != null && String(args.kind).toLowerCase() !== String(st.erp).toLowerCase()) return;
       (form.args || []).forEach(function (n) { if (args[n] != null) return;
-        if (n === 'id' || n === 'record') args[n] = st.rec.id; else if (n === 'number') { if (st.rec.number != null) args[n] = st.rec.number; else if (verbs[verb] && verbs[verb].inputs.some(function (i) { return i.name === 'id'; }) && args.id == null) args.id = st.rec.id; } });
+        if (n === 'id' || n === 'record') args[n] = st.rec.id;
+        else if (n === 'number') {   // §45 K1: the record is named by its id, as legacy's window acts on GridTab.getRecord_ID() (AbstractADWindowContent.java:3739); a DocumentNo can be shared (two tenants carry 80000)
+          var hasId = verbs[verb] && verbs[verb].inputs.some(function (i) { return i.name === 'id'; });
+          if (hasId && args.id == null && brk !== 'recnumber') args.id = st.rec.id;   // recnumber: W-RED1-RECORD falsifier (the old number-first fill: must FAIL R9)
+          else if (args.id == null && st.rec.number != null) args[n] = st.rec.number;
+          else if (hasId && args.id == null) args.id = st.rec.id; } });
       if (verb === 'erp.process' && st.paras && st.paras.name === args.name && st.ekey && st.paras.rows.some(function (q) { return String(q.ColumnName).toLowerCase() === st.ekey.toLowerCase(); }) && !Object.keys(args).some(function (k) { return k.toLowerCase() === st.ekey.toLowerCase(); })) args[st.ekey] = st.rec.id;
     }
     function usage(w) { return M('words.usage', w, words[w].help, words[w].forms.map(function (f) { return f.in; }).join(', ')); }
@@ -177,6 +182,8 @@
               effects.push({ line: lineOf('mis.read', ra), purpose: 'rec-read' }); return out(); }
             screen.push(M('words.cd_erp_ok', st.erp, (env.answer.properties || []).length, st.ecolumns.join(', '))); return out(); }
           if (pc.alt) { st.pendingCd = { name: pc.alt.name, ref: pc.alt.ref, first: pc.first }; effects.push({ line: lineOf('mis.describe', { kind: pc.alt.name }), purpose: 'cd-erp' }); return out(); }   // `cd Project Hospital`: the whole text is no kind, so the first word is
+          if (st.erp && !st.rec && typeof st.pendingCd === 'string' && brk !== 'nokindrec') {   // §45 K3: in a kind, a name that is no building, kind or window is a record of that kind (`cd 100` = `cd Order 100`); the walk is kept (nokindrec: W-RED1-RECORD falsifier, must FAIL R10)
+            var kr = st.pendingCd; st.pendingCd = null; st.pendingRead = { ref: kr, id: null, by: 'number', unknown: kr }; var ka = { kind: st.erp, number: kr }; ctxArgs(st, verbs['mis.read'], ka); effects.push({ line: lineOf('mis.read', ka), purpose: 'rec-read' }); return out(); }
           st.pendingCd = null; var nm = pc.first || pc.name;
           screen.push(buildings.length ? M('words.cd_unknown_buildings', nm, buildings.join(', ')) : M('words.cd_unknown', nm)); return out();
         }
@@ -189,7 +196,11 @@
             if ((st.eprops || []).some(function (q) { return q.name === 'DocStatus'; }) && verbs['erp.actions']) { var aa = { kind: st.erp, id: String(st.rec.id) }; ctxArgs(st, verbs['erp.actions'], aa); effects.push({ line: lineOf('erp.actions', aa), purpose: 'rec-actions' }); }   // §40 C3: a document's legal actions for the role, read once on entry
             return out(); }
           if (pr.by === 'number' && pr.ref != null && /^\d+$/.test(String(pr.ref))) { pr.by = 'id'; pr.why = env.why || null; var rb = { kind: st.erp, id: pr.ref }; ctxArgs(st, verbs['mis.read'], rb); effects.push({ line: lineOf('mis.read', rb), purpose: 'rec-read' }); return out(); }   // a whole number is a DocumentNo first, then an id
+          if (pr.unknown != null && !pr.why) { st.pendingRead = null; screen.push(buildings.length ? M('words.cd_unknown_buildings', pr.unknown, buildings.join(', ')) : M('words.cd_unknown', pr.unknown)); return out(); }   // §45 K3: not a record either: the message of before (a whole number that was refused as a number keeps that reason, e.g. two records carry it)
           st.pendingRead = null; screen.push(M('words.cd_record_none', st.erp, pr.ref != null ? pr.ref : pr.id, (pr.why || env.why || M('words.answer_no_rows')))); return out();   // the first refusal (as a number) is the one that says why, e.g. two records carry it
+        }
+        if (p === 'ran') {   // §46 A4: an action run on THIS record answers what it may do now; the offers follow it (staleacts: W-RED1-ACT falsifier, must FAIL A4)
+          var RA = ok && env.answer; if (brk !== 'staleacts' && st.rec && RA && RA.document && String(RA.document.id) === String(st.rec.id) && Array.isArray(RA.actions)) st.rec.actions = RA.actions.slice(); return out();
         }
         if (p === 'rec-actions') {   // §40 C3: what the record may do next, kept to offer (never to gate what runs)
           if (st.rec) st.rec.actions = ok && Array.isArray(env.answer.actions) ? env.answer.actions.slice() : [];
@@ -401,7 +412,7 @@
         var DC = (((words.do || {}).forms || [{}])[0] || {}).codes || {}, acts = st.rec.actions || null;
         res.places = (st.etabs || []).map(function (t) { return t.tab; });
         res.actions = brk === 'allactions' ? Object.keys(DC) : acts;
-        if (res.actions) { res.codes = {}; Object.keys(DC).forEach(function (c) { if (res.actions.indexOf(c) >= 0) res.codes[c] = DC[c]; }); }
+        if (res.actions) { res.codes = {}; (brk === 'codeorder' ? Object.keys(DC) : res.actions).forEach(function (c) { if (DC[c] && res.actions.indexOf(c) >= 0) res.codes[c] = DC[c]; }); }   // §46 A3: in the record's own order (erp.actions = legacy's DocAction list), not the word's (codeorder: falsifier, must FAIL A3)
         res.processes = recProcesses(st.eprops); res.props = st.eprops || [];
       } else if (st && st.mwalk && !st.erp && !st.building) res.places = (menuNode(st) || []).map(function (n) { return n.name; });   // §40 C5: the node's children
       return res;
