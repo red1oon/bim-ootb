@@ -6,8 +6,8 @@
    "ad_message_base.csv",
    "AD_Message_Trl_ja_JP.xml"
   ],
-  "rows": 1066,
-  "translated": 981,
+  "rows": 1086,
+  "translated": 1001,
   "untranslated": 85
  },
  "labels": {
@@ -1076,6 +1076,26 @@
   "pillc_gi_preview_1": "N8AO アンビエントオクルージョン（研究試作）",
   "pillc_gi_preview_2": "デスクトップのみ — モバイルでは無効（メモリ）",
   "ui_export_bcf": "BCF をエクスポート",
-  "wi_store_changed": "What-if：開いた後にプロジェクトストアが変更されました — What-if を開き直してください"
+  "wi_store_changed": "What-if：開いた後にプロジェクトストアが変更されました — What-if を開き直してください",
+  "howto_gh_save_open_a_building": "建物の保存と読み込み",
+  "howto_gh_lod400_upgrade": "LOD400 アップグレード",
+  "howto_gh_find_panel_search_voice_query_and_axis_lenses": "検索パネル — 検索、音声クエリ、軸レンズ",
+  "howto_gh_help_f1_the_info_panel_and_the_command_line_live": "ヘルプ — F1、情報パネル、コマンドライン（LIVE）",
+  "howto_gh_the_rest_of_the_navigate_drawer_world_history_page_history_home": "ナビゲートドロワーのその他 — 全体履歴、ページ履歴、ホーム",
+  "howto_gh_pick_walk_warehouse_logistics_buildings": "ピッキング経路 — 倉庫 / 物流建物",
+  "howto_gh_share": "共有",
+  "howto_gh_fm_operate_lenses_hr_bim_asset_alpha": "FM / 運用レンズ — HR_BIM_Asset（ALPHA）",
+  "howto_gh_inspect_drawer_measure_clash_x_ray_section_time_machine_4d5d_fly_tour": "検査ドロワー — 計測、干渉、X線、断面、タイムマシン、4D/5D、フライツアー",
+  "howto_gh_sanity_and_egress_rule_checks": "整合性チェックと避難経路 — ルールチェック",
+  "howto_gh_viewer_features": "ビューアーの機能",
+  "howto_gh_4d_window": "4D ウィンドウ",
+  "howto_gh_display_options_palette_night_shadow_ground_background_sound_fx": "表示オプション — パレット、夜間、影 + 地面、背景、効果音",
+  "howto_gh_gi_preview_ao": "GI プレビュー (AO)",
+  "howto_gh_nav_lod_large_bldgs": "ナビ LOD（大規模建物）",
+  "howto_gh_your_own_4d_5d_references_rates_durations_sequence": "独自の 4D / 5D 参照：単価、工期、順序",
+  "howto_gh_issues": "問題",
+  "howto_gh_3d_navigation": "3D ナビゲーション",
+  "howto_gh_camera_view_drawer": "カメラ / ビュードロワー",
+  "howto_gh_settings": "設定"
  }
 }

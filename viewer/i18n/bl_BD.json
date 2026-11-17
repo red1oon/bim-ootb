@@ -6,8 +6,8 @@
    "ad_message_base.csv",
    "AD_Message_Trl_bl_BD.xml"
   ],
-  "rows": 1066,
-  "translated": 963,
+  "rows": 1086,
+  "translated": 983,
   "untranslated": 103
  },
  "labels": {
@@ -1076,6 +1076,26 @@
   "pillc_gi_preview_1": "N8AO ambient occlusion (gobeshona nomuna)",
   "pillc_gi_preview_2": "Shudhu desktop — mobile-e bondho (memory)",
   "ui_export_bcf": "BCF ropttani",
-  "wi_store_changed": "What-if: kholar por prokolper store bodleche — What-if abar khulun"
+  "wi_store_changed": "What-if: kholar por prokolper store bodleche — What-if abar khulun",
+  "howto_gh_save_open_a_building": "Bhobon songrokkhon o khulun",
+  "howto_gh_lod400_upgrade": "LOD400 unnitokoron",
+  "howto_gh_find_panel_search_voice_query_and_axis_lenses": "Khujun panel — onusondhan, voice proshno o okkho lens",
+  "howto_gh_help_f1_the_info_panel_and_the_command_line_live": "Shahajjo — F1, tothyo panel o command line (LIVE)",
+  "howto_gh_the_rest_of_the_navigate_drawer_world_history_page_history_home": "Navigate drawer-er baki onsho — Shamogrik Itihash, Pata-r Itihash o Home",
+  "howto_gh_pick_walk_warehouse_logistics_buildings": "Picking Poth — gudam / logistics bhobon",
+  "howto_gh_share": "Share",
+  "howto_gh_fm_operate_lenses_hr_bim_asset_alpha": "FM / Poricholona lens — HR_BIM_Asset (ALPHA)",
+  "howto_gh_inspect_drawer_measure_clash_x_ray_section_time_machine_4d5d_fly_tour": "Poridorshon drawer — Porimop, Clash, X-Ray, Section Cut, Time Machine, 4D/5D, Fly Tour",
+  "howto_gh_sanity_and_egress_rule_checks": "Sanity Check o Nirgomon — niyom porikkha",
+  "howto_gh_viewer_features": "Viewer-er boishishtyo",
+  "howto_gh_4d_window": "4D Window",
+  "howto_gh_display_options_palette_night_shadow_ground_background_sound_fx": "Prodorshon bikolpo — Palette, Raat, Chhaya + Mati, Background, Shobdo Effect",
+  "howto_gh_gi_preview_ao": "GI preview (AO)",
+  "howto_gh_nav_lod_large_bldgs": "Nav LOD (boro building)",
+  "howto_gh_your_own_4d_5d_references_rates_durations_sequence": "Apnar nijer 4D / 5D reference: har, somoykal, krom",
+  "howto_gh_issues": "Somotsha",
+  "howto_gh_3d_navigation": "3D Navigation",
+  "howto_gh_camera_view_drawer": "Camera / View drawer",
+  "howto_gh_settings": "Settings"
  }
 }

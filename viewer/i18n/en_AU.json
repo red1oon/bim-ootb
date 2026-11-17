@@ -6,9 +6,9 @@
    "ad_message_base.csv",
    "AD_Message_Trl_en_AU.xml"
   ],
-  "rows": 1066,
+  "rows": 1086,
   "translated": 10,
-  "untranslated": 1056
+  "untranslated": 1076
  },
  "labels": {
   "source_app": "BIM OOTB — Frictionless BIM",
@@ -1076,6 +1076,26 @@
   "pillc_gi_preview_1": "N8AO ambient occlusion (research spike)",
   "pillc_gi_preview_2": "Desktop only — disabled on mobile (memory)",
   "ui_export_bcf": "Export BCF",
-  "wi_store_changed": "What-if: the project store changed since you opened this — reopen What-if"
+  "wi_store_changed": "What-if: the project store changed since you opened this — reopen What-if",
+  "howto_gh_save_open_a_building": "Save & Open a building",
+  "howto_gh_lod400_upgrade": "LOD400 Upgrade",
+  "howto_gh_find_panel_search_voice_query_and_axis_lenses": "Find panel — search, voice query, and axis lenses",
+  "howto_gh_help_f1_the_info_panel_and_the_command_line_live": "Help — F1, the info panel, and the command line (LIVE)",
+  "howto_gh_the_rest_of_the_navigate_drawer_world_history_page_history_home": "The rest of the Navigate drawer — World History, Page History & Home",
+  "howto_gh_pick_walk_warehouse_logistics_buildings": "Pick Walk — warehouse / logistics buildings",
+  "howto_gh_share": "Share",
+  "howto_gh_fm_operate_lenses_hr_bim_asset_alpha": "FM / Operate lenses — HR_BIM_Asset (ALPHA)",
+  "howto_gh_inspect_drawer_measure_clash_x_ray_section_time_machine_4d5d_fly_tour": "Inspect drawer — Measure, Clash, X-Ray, Section, Time Machine, 4D/5D, Fly Tour",
+  "howto_gh_sanity_and_egress_rule_checks": "Sanity and Egress — rule checks",
+  "howto_gh_viewer_features": "Viewer Features",
+  "howto_gh_4d_window": "4D Window",
+  "howto_gh_display_options_palette_night_shadow_ground_background_sound_fx": "Display options — Palette, Night, Shadow + Ground, Background, Sound FX",
+  "howto_gh_gi_preview_ao": "GI Preview (AO)",
+  "howto_gh_nav_lod_large_bldgs": "Nav LOD (large bldgs)",
+  "howto_gh_your_own_4d_5d_references_rates_durations_sequence": "Your own 4D / 5D references: rates, durations, sequence",
+  "howto_gh_issues": "Issues",
+  "howto_gh_3d_navigation": "3D Navigation",
+  "howto_gh_camera_view_drawer": "Camera / View drawer",
+  "howto_gh_settings": "Settings"
  }
 }
