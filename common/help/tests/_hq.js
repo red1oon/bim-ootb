@@ -45,4 +45,19 @@ async function page(breakValue) {
 }
 // run the core in Node, the way the page will: one handle per pack, a list of queries -> the lines "id|tier|score,..." per query (integers, so a text compare is exact)
 function lines(HQ, p, qs) { const h = HQ.create(p.index, { text: p.text }); return qs.map((s) => h.query(s).map((x) => x.id + '|' + x.tier + '|' + x.score).join(',')); }
-module.exports = { kit, q, seedOk, pack, textsUsed, queries, page, lines, LANGS, ROOT, CORE, ERP, SEED };
+// the REAL ERP page (erp/idempiere.html, logged in as GardenAdmin) served from the repo root, in headless chromium (--disable-gpu): the box the people use, not a copy.
+// br = {HQ: value for window.__HQ_BREAK, HS: value for window.__HS_BREAK} set in the PAGE only. setLang(lang) -> waits for that language's `§HELP_SEARCH index` line.
+const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json', '.db': 'application/octet-stream', '.css': 'text/css', '.wasm': 'application/wasm', '.sql': 'text/plain', '.png': 'image/png' };
+const serve = () => new Promise((r) => { const s = require('http').createServer((req, res) => { const p = decodeURIComponent(req.url.split('?')[0]); fs.readFile(path.join(ROOT, p), (e, b) => { if (e) { res.writeHead(404); res.end(); return; } res.writeHead(200, { 'Content-Type': MIME[path.extname(p)] || 'application/octet-stream' }); res.end(b); }); }); s.listen(0, () => r(s)); });
+async function erpPage(br) {
+  const { chromium } = require(PW), srv = await serve(), b = await chromium.launch({ headless: true, args: ['--disable-gpu'] }), pg = await b.newPage(), logs = [], errs = [];
+  pg.on('console', (m) => logs.push(m.text())); pg.on('pageerror', (e) => errs.push(e.message));
+  if (br && (br.HQ || br.HS)) await pg.addInitScript((v) => { if (v.HQ) window.__HQ_BREAK = v.HQ; if (v.HS) window.__HS_BREAK = v.HS; }, br);
+  await pg.goto('http://localhost:' + srv.address().port + '/erp/idempiere.html?seed=ad_seed.db&login=GardenAdmin', { waitUntil: 'networkidle', timeout: 60000 });
+  await pg.waitForFunction(() => window.__idmpHowto && window.__idmpFieldHelp && window.__idmpFieldHelp.menu().windows.length > 0, null, { timeout: 30000 });
+  const waitIndex = async (lang, from) => { for (let i = 0; i < 120 && !logs.slice(from).some((l) => l.indexOf('§HELP_SEARCH index lang=' + lang) === 0); i++) await pg.waitForTimeout(250); return logs.slice(from).find((l) => l.indexOf('§HELP_SEARCH index lang=' + lang) === 0) || null; };
+  const first = await waitIndex('en_US', 0);
+  return { pg, logs, errs, firstIndexLine: first, waitIndex, version: b.version(), close: async () => { await b.close(); srv.close(); },
+    setLang: async (lang) => { const n = logs.length; await pg.evaluate((l) => ErpI18n.set(l), lang); return waitIndex(lang, n); } };
+}
+module.exports = { erpPage, kit, q, seedOk, pack, textsUsed, queries, page, lines, LANGS, ROOT, CORE, ERP, SEED };
