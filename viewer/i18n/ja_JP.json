@@ -6,8 +6,8 @@
    "ad_message_base.csv",
    "AD_Message_Trl_ja_JP.xml"
   ],
-  "rows": 1036,
-  "translated": 947,
+  "rows": 1046,
+  "translated": 957,
   "untranslated": 89
  },
  "labels": {
@@ -1046,6 +1046,16 @@
   "mdl_m_guide_title_author": "作成",
   "mdl_m_guide_title_move": "移動と操作",
   "mdl_m_guide_title_3dgrid": "3D グリッド",
-  "mdl_m_guide_title_export": "保存 / エクスポート"
+  "mdl_m_guide_title_export": "保存 / エクスポート",
+  "mdl_m_rules": "ルール",
+  "mdl_m_tt_2d_panel": "2D 図面：パネルの表示/非表示 (D)",
+  "mdl_m_tt_team": "チーム — クリックしてチームを開始または参加",
+  "mdl_m_tt_walker_rules": "Walker ルール (JSON)：この建物タイプで walker が使うルールを読み取り・編集",
+  "mdl_m_copy": "コピー",
+  "mdl_m_paste": "貼り付け（クリックして配置）",
+  "mdl_m_drawing_meta": "図面メタデータ",
+  "mdl_m_this_help": "このヘルプ",
+  "mdl_m_open_dxf": "2D 図面を開く (.dxf)…",
+  "mdl_m_open_pdf": "PDF 図面から 2D 図面を開く (.pdf)…"
  }
 }

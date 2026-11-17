@@ -5,6 +5,7 @@
 //   (W-MODELLER-I18N de_DE showed 6 such strings after #3171). N is read from the live source, never counted by hand.
 //   G1 BASE  — every SECTIONS title has a base row whose msgtext equals it exactly (the Modeller matches by exact on-screen English).
 //   G2 TRL   — for each of those rows, each of the 14 non-English locales has a trl="Y" row with a non-empty text. (en_* locales keep the English by design.)
+//   G3 BATCH — §14.5.2: every base row added by this lane's 2026-11-17 Modeller batches (ids >= 1001028) is a trl="Y" row with text in the 14 non-English locales (X of N, N read from the base file).
 //   RED CONTROL — a title with no base row and a locale row marked trl="N" must FAIL, or the invariants prove nothing.
 // usage: node viewer/tests/witness_modeller_guide_titles.js
 'use strict';
@@ -19,13 +20,16 @@ const TITLES = eval(src.slice(i + 'const SECTIONS = '.length, j + 4)).map(s => s
 const NON_EN = T.LOCALES.filter(l => !/^en_/.test(l));
 const base = T.readBase(), byText = new Map(base.map(r => [r.msgtext, r]));
 const trl = {}; NON_EN.forEach(l => { trl[l] = new Map((T.parseTrlXml(fs.readFileSync(T.xmlFile(l), 'utf8')).rows || T.parseTrlXml(fs.readFileSync(T.xmlFile(l), 'utf8'))).map(r => [String(r.id), r])); });
+const BATCH = base.filter(r => Number(r.id) >= 1001028);
 console.log('§GUIDE_TITLES titles=' + TITLES.length + ' locales=' + NON_EN.length + ' [' + TITLES.join(' | ') + ']');
 const rows = []; TITLES.forEach(t => { const b = byText.get(t); NON_EN.forEach(l => { const r = b && trl[l].get(String(b.id)); rows.push({ title: t, locale: l, hasBase: !!b, trl: r ? r.trl : '-', text: r ? r.text : '' }); }); });
+BATCH.forEach(b => NON_EN.forEach(l => { const r = trl[l].get(String(b.id)); rows.push({ title: b.msgtext, locale: l, hasBase: true, trl: r ? r.trl : '-', text: r ? r.text : '', g3: true }); }));
 const res = Witness('MODELLER-GUIDE-TITLES')
   .population(() => rows)
   .schema({ type: 'object', required: ['title', 'locale', 'hasBase', 'trl', 'text'], properties: { title: { type: 'string' }, locale: { type: 'string' } } })
   .invariant('G1 every guide title has a base row (exact English)', rs => { const miss = [...new Set(rs.filter(r => !r.hasBase).map(r => r.title))]; if (miss.length) console.log('  missing base rows: ' + miss.join(' | ')); return !miss.length; })
   .invariant('G2 every title x non-English locale is a trl="Y" row with text (' + TITLES.length + ' x ' + NON_EN.length + ' = ' + TITLES.length * NON_EN.length + ')', rs => { const bad = rs.filter(r => r.trl !== 'Y' || !r.text); if (bad.length) console.log('  not translated: ' + bad.slice(0, 12).map(r => r.title + '@' + r.locale + ':' + r.trl).join(', ')); return !bad.length; })
-  .redControl(rs => rs.map((r, k) => k === 0 ? Object.assign({}, r, { hasBase: false }) : (k === 1 ? Object.assign({}, r, { trl: 'N' }) : r)))
+  .invariant('G3 every batch row (ids >= 1001028: ' + BATCH.length + ' rows x ' + NON_EN.length + ' locales = ' + BATCH.length * NON_EN.length + ') is trl="Y" with text', rs => { const bad = rs.filter(r => r.g3 && (r.trl !== 'Y' || !r.text)); if (bad.length) console.log('  batch rows not translated: ' + bad.slice(0, 12).map(r => r.title + '@' + r.locale + ':' + r.trl).join(', ')); return !bad.length && rs.filter(r => r.g3).length === BATCH.length * NON_EN.length; })
+  .redControl(rs => rs.map((r, k) => k === 0 ? Object.assign({}, r, { hasBase: false }) : (k === 1 ? Object.assign({}, r, { trl: 'N' }) : (r.g3 && k % 7 === 0 ? Object.assign({}, r, { text: '' }) : r))))
   .run();
 process.exit(res.fail ? 1 : 0);

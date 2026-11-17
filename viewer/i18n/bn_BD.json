@@ -6,8 +6,8 @@
    "ad_message_base.csv",
    "AD_Message_Trl_bn_BD.xml"
   ],
-  "rows": 1036,
-  "translated": 929,
+  "rows": 1046,
+  "translated": 939,
   "untranslated": 107
  },
  "labels": {
@@ -1046,6 +1046,16 @@
   "mdl_m_guide_title_author": "তৈরি",
   "mdl_m_guide_title_move": "সরানো ও পরিচালনা",
   "mdl_m_guide_title_3dgrid": "৩ডি গ্রিড",
-  "mdl_m_guide_title_export": "সংরক্ষণ / রপ্তানি"
+  "mdl_m_guide_title_export": "সংরক্ষণ / রপ্তানি",
+  "mdl_m_rules": "নিয়ম",
+  "mdl_m_tt_2d_panel": "২ডি অঙ্কন: প্যানেল দেখান বা লুকান (D)",
+  "mdl_m_tt_team": "দল — ক্লিক করে দল শুরু করুন বা যোগ দিন",
+  "mdl_m_tt_walker_rules": "Walker নিয়ম (JSON): এই ভবনের ধরনের জন্য walker যে নিয়ম ব্যবহার করে তা পড়ুন ও সম্পাদনা করুন",
+  "mdl_m_copy": "অনুলিপি",
+  "mdl_m_paste": "আটকান (বসাতে ক্লিক করুন)",
+  "mdl_m_drawing_meta": "অঙ্কনের মেটাডেটা",
+  "mdl_m_this_help": "এই সহায়তা",
+  "mdl_m_open_dxf": "২ডি অঙ্কন খুলুন (.dxf)…",
+  "mdl_m_open_pdf": "PDF অঙ্কন থেকে ২ডি অঙ্কন খুলুন (.pdf)…"
  }
 }

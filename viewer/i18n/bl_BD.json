@@ -6,8 +6,8 @@
    "ad_message_base.csv",
    "AD_Message_Trl_bl_BD.xml"
   ],
-  "rows": 1036,
-  "translated": 929,
+  "rows": 1046,
+  "translated": 939,
   "untranslated": 107
  },
  "labels": {
@@ -1046,6 +1046,16 @@
   "mdl_m_guide_title_author": "Toiri",
   "mdl_m_guide_title_move": "Sarano o porichalona",
   "mdl_m_guide_title_3dgrid": "3D grid",
-  "mdl_m_guide_title_export": "Songrokkhon / Roptani"
+  "mdl_m_guide_title_export": "Songrokkhon / Roptani",
+  "mdl_m_rules": "Niyom",
+  "mdl_m_tt_2d_panel": "2D okkon: panel dekhan ba lukan (D)",
+  "mdl_m_tt_team": "Dol — click kore dol shuru korun ba jog din",
+  "mdl_m_tt_walker_rules": "Walker niyom (JSON): ei bhoboner dhoroner jonno walker je niyom byabohar kore ta porun o somponadona korun",
+  "mdl_m_copy": "Onulipi",
+  "mdl_m_paste": "Atkan (boshate click korun)",
+  "mdl_m_drawing_meta": "Okkoner metadata",
+  "mdl_m_this_help": "Ei sohayota",
+  "mdl_m_open_dxf": "2D okkon kholun (.dxf)…",
+  "mdl_m_open_pdf": "PDF okkon theke 2D okkon kholun (.pdf)…"
  }
 }

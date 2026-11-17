@@ -6,8 +6,8 @@
    "ad_message_base.csv",
    "AD_Message_Trl_de_DE.xml"
   ],
-  "rows": 1036,
-  "translated": 947,
+  "rows": 1046,
+  "translated": 957,
   "untranslated": 89
  },
  "labels": {
@@ -1046,6 +1046,16 @@
   "mdl_m_guide_title_author": "Erstellen",
   "mdl_m_guide_title_move": "Verschieben & Bearbeiten",
   "mdl_m_guide_title_3dgrid": "3D-Raster",
-  "mdl_m_guide_title_export": "Speichern / Exportieren"
+  "mdl_m_guide_title_export": "Speichern / Exportieren",
+  "mdl_m_rules": "Regeln",
+  "mdl_m_tt_2d_panel": "2D-Zeichnungen: Bereich ein- oder ausblenden (D)",
+  "mdl_m_tt_team": "Team — klicken, um ein Team zu starten oder beizutreten",
+  "mdl_m_tt_walker_rules": "Walker-Regeln (JSON): die Regeln lesen und bearbeiten, die der Walker für diesen Gebäudetyp verwendet",
+  "mdl_m_copy": "Kopieren",
+  "mdl_m_paste": "Einfügen (zum Platzieren klicken)",
+  "mdl_m_drawing_meta": "Zeichnungs-Metadaten",
+  "mdl_m_this_help": "Diese Hilfe",
+  "mdl_m_open_dxf": "2D-Zeichnungen öffnen (.dxf)…",
+  "mdl_m_open_pdf": "2D-Zeichnungen aus PDF-Zeichnung öffnen (.pdf)…"
  }
 }
