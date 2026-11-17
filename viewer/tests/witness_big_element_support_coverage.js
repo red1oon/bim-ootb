@@ -128,10 +128,13 @@ const BUILDINGS = [
   // latent by construction (no shipped building models the class; Terminal's real piles arrive
   // via the IfcSlab name-override). TOTAL 250→246.
   { file: 'Terminal_extracted.db',             name: 'Terminal', bms: true,  expectedUnchecked: 36 },   // was bms:false/279; 32->36 §S64
-  { file: 'Hospital_extracted.db',             name: 'Hospital', bms: true,  expectedUnchecked: 177 },  // was 503
+  // RE-LOCK 2026-11-18 — Hospital 177 -> 172 (big 4314 -> 4290), Clinic 22 -> 21 (big 440 -> 425). Bisected to bim-ootb #1551
+  // (name overrides, 2026-09-02): 28 Hospital foundation walls became Substructure — 24 are big and now exempt, and the 5
+  // partitions standing on them gained a bearing candidate. Evidence: bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.14.2.
+  { file: 'Hospital_extracted.db',             name: 'Hospital', bms: true,  expectedUnchecked: 172 },  // was 503
   { file: 'Duplex_extracted.db',               name: 'Duplex',   bms: true,  expectedUnchecked: 2 },    // was 6 — SoG override, see above
   { file: 'HHS_Office_Federated_extracted.db', name: 'HHS',      bms: false, expectedUnchecked: 14 },   // was 21; 13->17 §S64; 17->14 §STAIR_FLIGHT_GRID_VISIBILITY audit twin (see below)
-  { file: 'Clinic_extracted.db',               name: 'Clinic',   bms: true,  expectedUnchecked: 22 },   // count HELD, mix changed (see 3)
+  { file: 'Clinic_extracted.db',               name: 'Clinic',   bms: true,  expectedUnchecked: 21 },   // count HELD, mix changed (see 3)
   // Coverage extended 2026-08-11 (chase-to-zero pass) — first witness coverage for these two; the
   // 5-building locked set above is UNTOUCHED (its 246 total stands; these rows are additive).
   // LTU_AHouse: the LIVE-SERVED vintage (_meta.db — streaming.js §6.9 serves the split pair to real
