@@ -44,7 +44,7 @@ A browser-native IFC viewer — no server, no cloud subscription, no install. Op
 - **4D Time Machine** — construction sequence playback from BOM data
 - **5D Cost Estimation** — 17 country rate templates, Excel export
 - **BOM Engine** — Bill of Materials extraction and verb expansion, fully in JavaScript
-- **Rosetta Stone benchmarks** — every geometry claim verified to 0.000 mm against the original IFC extraction; position, rotation and facing each have a named witness script that must pass before a commit lands
+- **Rosetta Stone benchmarks** — every geometry claim verified to 0.000 mm against the original IFC extraction; position, rotation and facing each have a named witness script, run before a commit lands (a working habit: CI checks syntax, lint and wiring, not the witness suite)
 - **System Monitor** — live health dashboard under the System login: service-worker version, release row linked to the auto-cut GitHub release, op-log gauge, field vitals that animate on open
 - **PWA** — works offline after first visit
 - **18 Languages** — auto-detected from browser locale
@@ -106,7 +106,7 @@ A proven kernel and architecture, not a finished ERP. The constituent techniques
 
 ## Architecture
 
-About 2,600 JS and HTML files of app code (viewer 729, modeller 643, erp 843, common 135, plus teams, capex and others; measured 2026-11-15 on `main`, excluding tests, witnesses, sandbox and scripts; `common/lib` holds third-party code). Vanilla JS: no framework, no build step, no server dependency.
+About 1,050 JS and HTML files of app code, ~353K lines (viewer 313, modeller 150, erp 335, common 73, teams 40, capex 37, plus others; measured 2026-11-18 on `main`, excluding every `tests/` folder, witnesses, sandbox, scripts and the third-party `lib/` folders). The whole repo holds ~3,480 JS and HTML files, ~1.08M lines; most of the difference is tests and witnesses. Vanilla JS: no framework, no build step, no server dependency.
 
 Application state lives in **two SQLite databases** queried via sql-wasm — one for the BIM model, one for the ERP Application Dictionary. Three.js r184 ESM handles rendering with BatchedMesh and distance-based LOD; IFC files are parsed client-side by web-ifc and stored in IndexedDB. Both engines share one signed operation log.
 
@@ -115,8 +115,6 @@ index.html            — Landing page (gallery + IFC import)
 index2.html           — Morpheus front door ("choose your door" launcher)
 viewer/               — BIM engine
   viewer.html         — 3D viewer (read-only)
-  modeller.html       — DAGeVu B-rep authoring surface
-  bonsai_kernel.js    — occt-wasm B-rep kernel (ops → mesh)
   connect_scene.js    — cross-surface op-log bus (selection/timeline/identity)
   scene.js            — Renderer, camera, lighting
   streaming.js        — DB streaming + mesh construction
@@ -126,6 +124,9 @@ viewer/               — BIM engine
   lib/                — Three.js, sql-wasm, web-ifc
   locales/            — 18 language packs
   rates/              — 17 country rate templates
+modeller/             — DAGeVu authoring engine
+  modeller.html       — DAGeVu B-rep authoring surface
+  bonsai_kernel.js    — occt-wasm B-rep kernel (ops → mesh)
 erp/                  — Kernel-ERP engine
   erp.html            — ERP OOTB (Application Dictionary app)
   idempiere.html      — Kernel-ERP — iDempiere-faithful client, folded from SQLite WASM
@@ -189,7 +190,7 @@ cd tests && npm install && npx playwright test
 
 This project is the browser frontend of [BIMCompiler](https://github.com/red1oon/BIMCompiler) — a BOM-based building compilation engine that began in **October 2025** (concept), became a **Java/Python compiler in January 2026** (21 buildings, 9 verification gates, 1000+ commits), and pivoted to browser-first at **S200 in April 2026** when the viewer outgrew the backend. That parent browser sprint (S200–S271, April 20 — May 23) produced 552 commits and 92 JS modules in 33 days.
 
-Then the browser outgrew the parent: **`bim-ootb` was split into its own repo on 23 May 2026** and has run as one continuous sprint since — **1,274 commits across 966 merged PRs through July 2026**, now **208 vanilla JS modules** (119 BIM + 89 ERP). The BIM viewer hardened (universal history timeline, typed natural-language query, Find/Revit+ lenses, City Mode) and grew an **authoring counterpart — the DAGeVu B-rep modeller** — while the **ERP engine emerged beside it** as **Kernel-ERP**: the iDempiere Application Dictionary folded into the same browser in JavaScript rather than the original Java, made indistinguishable from real iDempiere — with stored processes themselves re-expressed as op-log folds — then extended to fold a live Odoo tenant through the same signed op-log.
+Then the browser outgrew the parent: **`bim-ootb` was split into its own repo on 23 May 2026** and has run as one continuous sprint since — **1,274 commits across 966 merged PRs through July 2026**, when it held **208 vanilla JS modules** (119 BIM + 89 ERP); by 18 November 2026 it had **3,501 commits**. The BIM viewer hardened (universal history timeline, typed natural-language query, Find/Revit+ lenses, City Mode) and grew an **authoring counterpart — the DAGeVu B-rep modeller** — while the **ERP engine emerged beside it** as **Kernel-ERP**: the iDempiere Application Dictionary folded into the same browser in JavaScript rather than the original Java, made indistinguishable from real iDempiere — with stored processes themselves re-expressed as op-log folds — then extended to fold a live Odoo tenant through the same signed op-log.
 
 The BOM algebra, IFC extraction pipeline, Rosetta Stone verification, and building database that power the viewer were built over the preceding 6 months in the parent project.
 
