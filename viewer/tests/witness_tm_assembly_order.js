@@ -14,6 +14,7 @@
 //   A2  per class: structural elements with NO elected support (unjudged) do not RISE
 //   A3  filing parity: elements whose elected support's TASK starts at/after their own task ENDS do not RISE
 //   A4  per class: services whose every contact is a later-built non-structural box (§CONTACT_ONLY, D7 — not judged) do not RISE
+//   A5  the run's OWN §TPL_LAYER_SELFCHECK line reads PASS (authored map: no element laid out before a support in its own task)
 // A number that FELL is printed as IMPROVED with the line to re-lock; it is never silently absorbed.
 // A cache miss, an absent layer or an absent lock prints INCONCLUSIVE, never PASS. IfcBeam / IfcColumn
 // absent from a building prints VACUOUS.
@@ -109,6 +110,10 @@ measured.forEach(m => {
   say(m.bld, 'A3', m.parity > B.filingParity ? 'FAIL' : 'PASS', '§FILING_PARITY ' + B.filingParity + ' -> ' + m.parity);
   say(m.bld, 'A4', roseC.length ? 'FAIL' : 'PASS', roseC.length ? '§CONTACT_ONLY ROSE: ' + roseC.join(' · ')
     : '§CONTACT_ONLY did not rise (' + m.rows.reduce((t, o) => t + o.contactOnly, 0) + ' services with no support but a later-built box)');
+  { // A5 — read from the persisted log, never re-derived (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.15.2)
+    const rr = CACHE.read(m.bld), line = ((rr && rr.log) || '').split('\n').filter(l => l.indexOf('§TPL_LAYER_SELFCHECK') === 0).pop();
+    say(m.bld, 'A5', !line ? 'INCONCLUSIVE' : (/\) PASS$| PASS$/.test(line.trim()) ? 'PASS' : 'FAIL'),
+      line ? line.replace(/ e\.g\. .*\)/, ')').slice(0, 230) : 'no §TPL_LAYER_SELFCHECK line in this run\'s log'); }
   if (fell.length || fellU.length || fellC.length || m.parity < B.filingParity)
     console.log('  IMPROVED ' + m.bld + ' — ' + fell.concat(fellU.map(x => 'unjudged ' + x)).concat(fellC.map(x => 'contactOnly ' + x)).concat(m.parity < B.filingParity ? ['filingParity ' + B.filingParity + '->' + m.parity] : []).join(' · ') +
       ' — re-lock with LOCK=1 and a written reason');
