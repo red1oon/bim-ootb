@@ -109,13 +109,17 @@ function oldLocalePath(loc) {   // the code before the fix, the Viewer as it was
   const ctx = page(OLD, { locale: loc }); return ready(ctx).then(() => tables(ctx));
 }
 async function rp23(read) {
-  const r = { prodOff: [], rdefOff: [] };
+  const r = { prodOff: [], rdefOff: [], added: {} };
   for (const loc of LOCALES) {
     const A = await oldLocalePath(loc), off = [];
     for (const order of ['language-first', 'pack-first']) { const B = await viewer(read, loc, order);
     for (const k of new Set([...Object.keys(A.L), ...Object.keys(B.L)])) {
       const a = A.L[k] || {}, b = B.L[k] || {};
-      for (const c of new Set([...Object.keys(a.productivity || {}), ...Object.keys(b.productivity || {})])) if ((a.productivity || {})[c] !== (b.productivity || {})[c]) off.push(k + '.' + c + ' ' + (a.productivity || {})[c] + '->' + (b.productivity || {})[c]);
+      // A key the reference revision did not carry at all is a rate ADDED since (counted and printed), not a number the pack
+      // path changed: this claim is "the move kept the old numbers", not "no rate may ever be added".
+      for (const c of new Set([...Object.keys(a.productivity || {}), ...Object.keys(b.productivity || {})])) if ((a.productivity || {})[c] !== (b.productivity || {})[c]) {
+        if ((a.productivity || {})[c] === undefined && A.L[k]) { r.added[k + '.' + c] = (b.productivity || {})[c]; continue; }
+        off.push(k + '.' + c + ' ' + (a.productivity || {})[c] + '->' + (b.productivity || {})[c]); }
       if (a.crew_size !== b.crew_size) off.push(k + '.crew_size'); if (a.max_crews !== b.max_crews) off.push(k + '.max_crews');
     }
     const want = localeData(read, loc).rates_default; if (B.D.rate !== want.rate || B.D.unit !== want.unit) r.rdefOff.push(loc + '/' + order + ' ' + B.D.rate + ' want ' + want.rate);
@@ -155,7 +159,8 @@ process.on('exit', () => { if (!verdict) { console.log('§W-RATES-PACK INCONCLUS
     'off now=' + a.bad + ' ' + a.first + ' | before (' + REF + ') off=' + aOld.bad + ' e.g. ' + aOld.first);
   const b = await rp23(NOW), bOld = await rp23(OLD_DATA);
   ok('RP2 4D labour numbers on the pack path = the old locale path (' + LOCALES.length + ' locales)', b.prodOff.length === 0 && bOld.prodOff.length > 0,
-    'differ now=' + b.prodOff.length + ' ' + b.prodOff.slice(0, 2).join(' ') + ' | packs before the move: ' + bOld.prodOff.length + ' [' + bOld.prodOff.map(s => s.split('(')[0]).join(' ') + ']');
+    'differ now=' + b.prodOff.length + ' ' + b.prodOff.slice(0, 2).join(' ') + ' | packs before the move: ' + bOld.prodOff.length + ' [' + bOld.prodOff.map(s => s.split('(')[0]).join(' ') + ']' +
+    ' | rates added since ' + REF + ' (not judged): ' + JSON.stringify(b.added));
   ok('RP3 the misc-element price = the locale file\'s, via its pack (' + LOCALES.length + ' locales)', b.rdefOff.length === 0 && bOld.rdefOff.length > 0,
     'differ now=' + b.rdefOff.length + ' ' + b.rdefOff.slice(0, 2).join(', ') + ' | packs before the move: ' + bOld.rdefOff.length + ' e.g. ' + bOld.rdefOff.slice(0, 2).join(', '));
   const c = await rp4(NOW), cOld = await rp4(OLD);
