@@ -8,6 +8,7 @@
 //   2 phrase match, longest first: window names, table Names -> the table's own window (AD_Table.AD_Window_ID); DocAction names; DocStatus names -> the action reaching that status.
 //     Several window phrases: the last one wins (the English head noun; the Chinese one too: 客户付款 is a payment). A one-word action shared by two actions names both.
 //     No exact window phrase: the best-ranked window of the core's list (HelpQuery: tiers, then BM25), the role's windows only; in one tier a window with a how-to row first.
+//   §19.5 card.dym = up to 3 names (HelpDym over the role's record names) when the top ranked hit is not tier 0; the box shows them as one separate line, a pick searches, nothing runs.
 //   3 the how-to: the matched window's own row first, else the core's best-ranked how-to row. card.hits = the core's top 5 (after the role gate) = what W-HQ-BOX compares to HelpQuery directly.
 // Falsifiers: HS_BREAK=nophrase (no dictionary phrase matching -> S3 FAILs) · nocjk (CJK read as words, not characters -> S6 FAILs) · revhits (card.hits reversed in this environment -> W-HQ-BOX FAILs).
 (function (root) {
@@ -59,7 +60,7 @@
       if (win) howto.forEach(function (r) { if (!own && r.ad_window_id === win.id) own = r; });   // the matched window's own row first (a lookup, not a score)
       hits.forEach(function (x) { if (!top && x.k === 'howto' && howById[x.id]) top = howById[x.id]; });
       var shown = hits.slice(0, 5).map(function (x) { return { id: x.id, k: x.k, tier: x.tier, score: x.score }; }); if (BREAK === 'revhits') shown.reverse();
-      var card = { question: String(question), words: ws, cjk: cjk, matched: matched, window: win ? { id: win.id, name: win.name } : null, action: null, cli: null, guide: null, howto: own || top, hits: shown };
+      var card = { question: String(question), words: ws, cjk: cjk, matched: matched, window: win ? { id: win.id, name: win.name } : null, action: null, cli: null, guide: null, howto: own || top, hits: shown, dym: o.dym ? o.dym(String(question), hits) : [] };   // §19.5 the "Did you mean" names (common/help/help_dym.js): [] when the top result is tier 0
       if (act) {
         var a = act.a, kind = win && o.kindOf ? o.kindOf(win.id) : null;
         card.action = { code: act.code, name: a.name, description: a.description, allowedFrom: a.allowedFrom || [], alternatives: act.alt || [] };   // 'reverse' = Reverse - Accrual AND Reverse - Correct: both named
@@ -103,7 +104,9 @@
     var howto = (pk && pk.howto && pk.howto.length) ? pk.howto : (en.howto || []);
     var kindOf = function (wid) { var r = q('SELECT tb.name AS tn, tb.tablename AS tt FROM ad_tab t JOIN ad_table tb ON tb.ad_table_id=t.ad_table_id WHERE t.tablevel=0 AND t.ad_window_id=' + Number(wid) + ' ORDER BY t.seqno LIMIT 1')[0]; return r ? { name: String(r.tn), table: String(r.tt) } : null; };
     var search = function (question) { return handle.query(String(question), allowed); };
-    var idx = makeIndex({ windows: wins, actions: acts, statuses: statuses, reach: reach, howto: howto, kindOf: kindOf, search: search });
+    var DYM = dep('HelpDym', '../common/help/help_dym.js'), dymNames = null;   // §19.5: the names of the role's records (the language's + the English `a`), made on the first miss, never at load (D8)
+    var dym = function (question, hits) { if (!dymNames) dymNames = DYM.names(built.records, { alt: true, allowed: allowed }); return DYM.suggest(question, dymNames, hits.length ? hits[0].tier : 3); };
+    var idx = makeIndex({ windows: wins, actions: acts, statuses: statuses, reach: reach, howto: howto, kindOf: kindOf, search: search, dym: dym });
     idx.search = search; idx.core = handle; idx.records = built.records;   // W-HQ-BOX / W-HQ-COST read these; the card's own list is card.hits
     idx.localHowto = !!(pk && pk.howto && pk.howto.length); idx.counts = { windows: wins.length, records: built.records.length, actions: Object.keys(acts).length, statuses: Object.keys(statuses).length, howto: howto.length };
     return idx;

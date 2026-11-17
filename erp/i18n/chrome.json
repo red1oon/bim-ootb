@@ -625,6 +625,19 @@
     "zh_CN": "{0} 目前只支持 {1}，不支持 {2}",
     "de_DE": "{0} gibt es nur für {1}, nicht für {2}"
    }
+  },
+  "help.dym": {
+   "en": "Did you mean",
+   "machine": {
+    "fr_FR": "Vouliez-vous dire",
+    "es_ES": "Quizás quiso decir",
+    "de_DE": "Meinten Sie",
+    "ar": "هل تقصد",
+    "zh_CN": "您是不是想找",
+    "ja_JP": "もしかして",
+    "ms_MY": "Adakah maksud anda",
+    "th_TH": "คุณหมายถึง"
+   }
   }
  }
 }
