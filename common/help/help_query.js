@@ -8,10 +8,10 @@
 //   terms(text, pack)        the words of a text: spaced runs split on non-letters; no-space runs (pack.nospace) by the longest pack.vocab word at each position + character pairs for the gaps.
 //                            Intl.Segmenter is NEVER called here (it ran once, at build time, to make pack.vocab).
 //   create(pack, opts)       -> a handle; the index is made on the first query, never at create() (D8).  pack = a parsed index.json; opts = {text:(i)->string, extra:[records]}
-//   handle.query(q, allowed) -> [{id,k,tier,score,rec}]  tiers 0-3, integer BM25 scores, the total tie-break of §4; allowed(gate, rec) is the role gate, applied AFTER ranking
+//   handle.query(q, allowed) -> [{id,k,tier,score,rec}]  tiers 0-3, integer BM25 scores, the total tie-break of §4 (inside tiers 1 and 2: label hits first in legacy's label order, then alias-only hits by score, §19.7); allowed(gate, rec) is the role gate, applied AFTER ranking
 //   legacyFilter(names, typed) = MenuSearchController.java:586-607 + :187-190 exactly (labels only, startsWith under 3 characters else contains, accents deleted, sorted by label).
 // BM25 (k1, b from the pack header) is computed ONCE when the index is made, by + - * / only (own ln(), no Math.log), as an INTEGER weight per (term, record); a query only ADDS integers.
-// Falsifiers (HQ_BREAK=): noname (tier 0-2 never match a name) · nolegacytier (tiers 1 and 2 off, W-HQ-LEGACY-SUPERSET) · nodict (the vocab ignored: pairs only) · k1 (k1 changed) · revtie (the last tie-break key reversed) · eager (index made in create()).
+// Falsifiers (HQ_BREAK=): noname (tier 0-2 never match a name) · nolegacytier (tiers 1 and 2 off, W-HQ-LEGACY-SUPERSET) · nodict (the vocab ignored: pairs only) · k1 (k1 changed) · revtie (the last tie-break key reversed) · scoretier (§19.7 off: the score orders tiers 1 and 2, as before; W-HQ-LEGACY-SUPERSET L3) · eager (index made in create()).
 (function (root) {
   'use strict';
   function brk() { return (typeof process !== 'undefined' && process.env && process.env.HQ_BREAK) || (root && root.__HQ_BREAK) || ''; }
@@ -73,7 +73,7 @@
     var k1 = (brk() === 'k1') ? 2.0 : B.k1, b = B.b, scale = B.scale;
     var recs = (pack.records || []).concat((opts && opts.extra) || []), N = recs.length, text = (opts && opts.text) || function () { return ''; };
     var kinds = pack.kinds || [], kindOrder = {}; kinds.forEach(function (k, i) { kindOrder[k] = i; });
-    var lens = [], lists = {}, names = [], dnames = [], fnames = [], total = 0, i, r;
+    var lens = [], lists = {}, names = [], dnames = [], fnames = [], labels = [], total = 0, i, r;
     function str(v) { return typeof v === 'number' ? text(v) : (v == null ? '' : String(v)); }
     for (i = 0; i < N; i++) {
       r = recs[i]; var cnt = {}, ln_ = 0;
@@ -83,7 +83,7 @@
       });
       lens.push(ln_); total += ln_;
       Object.keys(cnt).forEach(function (t) { var l = lists[t] || (lists[t] = { r: [], f: [] }); l.r.push(i); l.f.push(cnt[t]); });
-      var nl = [tidy(r.n == null ? '' : r.n)].concat((r.a || []).map(tidy)); names.push(nl); dnames.push(nl.map(deleteAccents)); fnames.push(nl[0]);
+      var nl = [tidy(r.n == null ? '' : r.n)].concat((r.a || []).map(tidy)); names.push(nl); dnames.push(nl.map(deleteAccents)); fnames.push(nl[0]); labels.push(str(r.n));
     }
     var avg = N ? total / N : 0, post = {}, np = 0;
     Object.keys(lists).forEach(function (t) {
@@ -92,21 +92,22 @@
       post[t] = { r: Int32Array.from(l.r), w: ws }; np += dft;
     });
     builds++;
-    return { recs: recs, N: N, names: names, dnames: dnames, fnames: fnames, kindOrder: kindOrder, kindsN: kinds.length, post: post, ctx: c, stats: { records: N, terms: Object.keys(post).length, postings: np, ms: now() - t0 } };
+    return { recs: recs, N: N, names: names, dnames: dnames, fnames: fnames, labels: labels, kindOrder: kindOrder, kindsN: kinds.length, post: post, ctx: c, stats: { records: N, terms: Object.keys(post).length, postings: np, ms: now() - t0 } };
   }
   // tier 0 compares the folded names; tiers 1 and 2 are legacy's menu filter, so they compare the way legacy compares: the accent-deleted (NFD) text, startsWith under 3 units, else contains
   // (MenuSearchController.java:593-607). That is why a typed "ケーシ" is inside "ケーシ" + dakuten of "パッケージ": legacy shows it, and the twin must too.
+  // returns tier * 2 + (1 when that tier came only from an alias, not from the label nl[0]): legacy matches the label only, so a label hit is legacy's own row (§19.7)
   function tierOf(q, nl, qd, dl, br, long) {
-    if (br === 'noname') return 3;
-    var best = 3, j, f;
+    if (br === 'noname') return 6;
+    var best = 3, lab = 3, j, f, t;
     for (j = 0; j < nl.length; j++) {
-      if (nl[j] === q) return 0;
+      if (nl[j] === q) return j === 0 ? 0 : 1;
       if (br === 'nolegacytier') continue;   // falsifier: tiers 1 and 2 (legacy's menu filter) off
-      f = dl[j];
-      if (f.indexOf(qd) === 0) best = Math.min(best, 1);
-      else if (long && f.indexOf(qd) >= 0) best = Math.min(best, 2);
+      f = dl[j]; t = f.indexOf(qd) === 0 ? 1 : (long && f.indexOf(qd) >= 0) ? 2 : 3;
+      if (t < best) best = t;
+      if (j === 0) lab = t;
     }
-    return best;
+    return best * 2 + (lab === best ? 0 : 1);
   }
   function run(ix, q, allowed) {
     var fq = tidy(q); if (!fq) return [];
@@ -115,10 +116,16 @@
       if (seen[t]) return; seen[t] = 1;
       var p = ix.post[t]; if (p) for (var k = 0; k < p.r.length; k++) sc[p.r[k]] += p.w[k];
     });
-    for (i = 0; i < ix.N; i++) { var tr = tierOf(fq, ix.names[i], qd, ix.dnames[i], br, long); if (tr < 3 || sc[i] > 0) hits.push({ i: i, tier: tr, score: sc[i] }); }
-    var rev = br === 'revtie';
+    for (i = 0; i < ix.N; i++) { var tl = tierOf(fq, ix.names[i], qd, ix.dnames[i], br, long), tr = tl >> 1; if (tr < 3 || sc[i] > 0) hits.push({ i: i, tier: tr, alias: tl & 1, score: sc[i] }); }
+    var rev = br === 'revtie', byLabel = br !== 'scoretier';
     hits.sort(function (x, y) {
       if (x.tier !== y.tier) return x.tier - y.tier;
+      // tiers 1 and 2 are legacy's menu filter: the rows matched by their own label come first, in legacy's order (the raw label by String.compareTo,
+      // MenuSearchController.java:186-191); rows matched only by an alias (legacy would not show them) follow, by score. Tiers 0 and 3: by score. (§19.7)
+      if (byLabel && (x.tier === 1 || x.tier === 2)) {
+        if (x.alias !== y.alias) return x.alias - y.alias;
+        if (!x.alias) { var lx = ix.labels[x.i], ly = ix.labels[y.i]; if (lx !== ly) return lt(lx, ly); }
+      }
       if (x.score !== y.score) return y.score - x.score;
       var rx = ix.recs[x.i], ry = ix.recs[y.i], kx = ix.kindOrder[rx.k], ky = ix.kindOrder[ry.k];
       if (kx === undefined) kx = ix.kindsN; if (ky === undefined) ky = ix.kindsN;
