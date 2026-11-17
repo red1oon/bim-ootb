@@ -74,6 +74,17 @@ try {
       /§BUMP_NOTE not_precached/.test(r5.out) && !/§BUMP_WARN/.test(r5.out);
     check('C5-lazy-module-kept-lazy', ok, `lazy=${LAZY} exit=${r5.code} main_lines=${dm.length} page_lines=${dh.length} (main.js ?v=) sw_lines=${ds5.length} precache_unchanged=${pre(sw0) === pre(sw5)} note=${/§BUMP_NOTE not_precached/.test(r5.out)} warn=${/§BUMP_WARN/.test(r5.out)}`);
   }
+  // C6 (bim-ootb #3201) — a loader AND a lazy module it lists are bumped together (what --changed does when a PR touches both):
+  // the loader's list entry goes up and the page's reference to the loader goes up ONCE. The old code skipped the whole loader in
+  // the round where it was itself a target and stopped with §BUMP_ERR not_loaded_by_any_page_or_loader (exit 2): that is the red run.
+  if (!LAZY) { check('C6-loader-with-its-lazy-module', false, 'INCONCLUSIVE no lazy module found in viewer/main.js'); }
+  else {
+    const r6 = run(['viewer/main.js', LAZY]);
+    const listLine = (r6.out.match(new RegExp('^§BUMP loader=viewer/main\\.js ref=' + lz[1].replace('.', '\\.') + ' ', 'mg')) || []).length;
+    const pageLine = (r6.out.match(/^§BUMP page=viewer\/viewer\.html ref=main\.js /mg) || []).length;
+    check('C6-loader-with-its-lazy-module', r6.code === 0 && listLine === 1 && pageLine === 1 && !/§BUMP_ERR/.test(r6.out),
+      `targets=viewer/main.js+${LAZY} exit=${r6.code} list_line=${listLine} page_line=${pageLine} err=${/§BUMP_ERR/.test(r6.out)}`);
+  }
 } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
-console.log(`§BUMP_W_VERDICT ${fails ? 'FAIL' : 'PASS'} judged=5 failed=${fails}`);
+console.log(`§BUMP_W_VERDICT ${fails ? 'FAIL' : 'PASS'} judged=6 failed=${fails}`);
 process.exit(fails ? 1 : 0);

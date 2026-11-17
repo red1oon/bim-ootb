@@ -129,25 +129,17 @@ claim('C5', driven === drivenOf && drivenOf > 0, `driven=${driven}/${drivenOf}`)
   }
 }
 
-// C7: a bump.js dry run of every target. bump skips a loader's own list in the round where that loader is itself a target, so: the non-loaders in one run,
+// C7: one bump.js dry run of every target (the stop on "a loader and a lazy module it lists" that once needed batches here was fixed in #3201).
 if (SKIP_C7) say('  §MANIFEST_CLAIM id=C7 ok=- NOT-RUN (--skip-c7: the bump.js dry run of every target takes about a minute; run without the flag before a merge that touches the generator)');
 else {
-  const owned = new Set(), want = new Set(), loaderSet = new Set();
+  const owned = new Set(), want = new Set();
   for (const a of r.apps) {
-    a.manifest.loaders.forEach(l => loaderSet.add(l)); for (const f of a.frames.keys()) owned.add(f);
+    for (const f of a.frames.keys()) owned.add(f);
     a.manifest.modules.forEach(m => m.sites.forEach(s => { if (s.v != null && s.kind !== 'inline' && /\.(js|css|json|wasm)$/.test(s.as)) want.add(s.in + '|' + s.as + '|' + s.v); }));
   }
   const targets = new Set(); r.apps.forEach(a => a.manifest.modules.forEach(m => { if (m.sites.some(s => s.v != null && s.kind !== 'inline') && fs.existsSync(path.join(ROOT, m.file))) targets.add(m.file); }));
   const got = new Set(); let lines = 0, errs = '';
-  // then the loaders, batched so that no batch holds a loader AND a loader that lists it: with both as targets bump stops with §BUMP_ERR not_loaded (bim-ootb #3195 finding)
-  const refBy = new Map();   // loader target -> the loaders that list it
-  r.apps.forEach(a => a.manifest.modules.forEach(m => m.sites.forEach(s => { if (loaderSet.has(s.in) && loaderSet.has(m.file)) { if (!refBy.has(m.file)) refBy.set(m.file, new Set()); refBy.get(m.file).add(s.in); } })));
-  const batches = [];
-  for (const t of [...targets].filter(t => loaderSet.has(t))) {
-    const clash = b => b.some(o => (refBy.get(t) || new Set()).has(o) || (refBy.get(o) || new Set()).has(t));
-    const b = batches.find(x => !clash(x)); if (b) b.push(t); else batches.push([t]);
-  }
-  for (const part of [[...targets].filter(t => !loaderSet.has(t)), ...batches]) {
+  for (const part of [[...targets]]) {
     if (!part.length) continue;
     const o = cp.spawnSync('node', [path.join(ROOT, 'scripts', 'bump.js'), ...part], { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 1 << 26 }).stdout || '';
     for (const m of o.matchAll(/^§BUMP (?:page|loader)=(\S+) ref=(\S+) v=(\d+)->/mg)) { lines++; if (owned.has(m[1])) got.add(m[1] + '|' + m[2] + '|' + m[3]); }
@@ -157,7 +149,7 @@ else {
   const missing = [...want].filter(x => !got.has(x)), extra = [...got].filter(x => !want.has(x));
   missing.slice(0, 10).forEach(x => say('  §MANIFEST_C7_MISS manifest_site_bump_did_not_print=' + x));
   extra.slice(0, 10).forEach(x => say('  §MANIFEST_C7_EXTRA bump_line_with_no_manifest_site=' + x));
-  claim('C7', lines > 0 && !missing.length && !extra.length, `bump_runs=${1 + batches.length} bump_lines=${lines} in_owned_files=${got.size} manifest_sites=${want.size} missing=${missing.length} extra=${extra.length}` + (errs ? ' bump_err=' + JSON.stringify(errs.slice(0, 160)) : ''));
+  claim('C7', lines > 0 && !missing.length && !extra.length, `bump_lines=${lines} in_owned_files=${got.size} manifest_sites=${want.size} missing=${missing.length} extra=${extra.length}` + (errs ? ' bump_err=' + JSON.stringify(errs.slice(0, 160)) : ''));
 }
 
 // red controls
