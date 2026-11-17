@@ -6,8 +6,8 @@
    "ad_message_base.csv",
    "AD_Message_Trl_ms_MY.xml"
   ],
-  "rows": 1066,
-  "translated": 963,
+  "rows": 1086,
+  "translated": 983,
   "untranslated": 103
  },
  "labels": {
@@ -1076,6 +1076,26 @@
   "pillc_gi_preview_1": "Oklusi ambien N8AO (kajian awal)",
   "pillc_gi_preview_2": "Desktop sahaja — dimatikan pada mudah alih (memori)",
   "ui_export_bcf": "Eksport BCF",
-  "wi_store_changed": "Bagaimana-jika: stor projek telah berubah sejak anda membukanya — buka semula Bagaimana-jika"
+  "wi_store_changed": "Bagaimana-jika: stor projek telah berubah sejak anda membukanya — buka semula Bagaimana-jika",
+  "howto_gh_save_open_a_building": "Simpan & Buka bangunan",
+  "howto_gh_lod400_upgrade": "Naik taraf LOD400",
+  "howto_gh_find_panel_search_voice_query_and_axis_lenses": "Panel Cari — carian, pertanyaan suara dan lensa paksi",
+  "howto_gh_help_f1_the_info_panel_and_the_command_line_live": "Bantuan — F1, panel maklumat dan baris arahan (LIVE)",
+  "howto_gh_the_rest_of_the_navigate_drawer_world_history_page_history_home": "Bahagian lain laci Navigasi — Sejarah Dunia, Sejarah Halaman & Laman Utama",
+  "howto_gh_pick_walk_warehouse_logistics_buildings": "Laluan Kutipan — bangunan gudang / logistik",
+  "howto_gh_share": "Kongsi",
+  "howto_gh_fm_operate_lenses_hr_bim_asset_alpha": "FM / Lensa operasi — HR_BIM_Asset (ALPHA)",
+  "howto_gh_inspect_drawer_measure_clash_x_ray_section_time_machine_4d5d_fly_tour": "Laci Periksa — Ukur, Pertembungan, X-Ray, Keratan Rentas, Mesin Masa, 4D/5D, Lawatan Terbang",
+  "howto_gh_sanity_and_egress_rule_checks": "Semakan Waras dan Laluan Keluar — semakan peraturan",
+  "howto_gh_viewer_features": "Ciri Pemapar",
+  "howto_gh_4d_window": "Tetingkap 4D",
+  "howto_gh_display_options_palette_night_shadow_ground_background_sound_fx": "Pilihan paparan — Palet, Malam, Bayang + Tanah, Latar Belakang, Kesan Bunyi",
+  "howto_gh_gi_preview_ao": "Pratonton GI (AO)",
+  "howto_gh_nav_lod_large_bldgs": "LOD navigasi (bangunan besar)",
+  "howto_gh_your_own_4d_5d_references_rates_durations_sequence": "Rujukan 4D / 5D anda sendiri: kadar, tempoh, urutan",
+  "howto_gh_issues": "Isu",
+  "howto_gh_3d_navigation": "Navigasi 3D",
+  "howto_gh_camera_view_drawer": "Laci Kamera / Paparan",
+  "howto_gh_settings": "Tetapan"
  }
 }

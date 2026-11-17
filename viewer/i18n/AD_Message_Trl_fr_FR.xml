@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<!--BIM OOTB Viewer — AD_Message_Trl fr_FR — format: org.compiere.install.Translation export (iDempiere). Rows 1000000-1000308 source=viewer/locales/fr_FR.js @4cd440ae (S225/S226 sessions, machine translation, extracted 2026-10-03, not retranslated); rows 1000309-1000492 and every row listed in viewer/tools/trl_batch_2026-10-03*.js source=machine (Claude, Anthropic, 2026-10-03); rows 1000493-1000655 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_tm.js; rows 1000656-1000671 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_info.js; rows 1000672-1000752 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_help.js; rows 1000753-1000862 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_modeller.js; rows 1000867-1000962 source=buildingSMART bSDD IFC 4.3 (CC BY-ND 4.0), verbatim official text — viewer/tools/trl_batch_2026-11-17_ifcdef.js; rows 1000963-1001017 source=machine (Claude, Anthropic, 2026-11-17), English class sentences written for this app — viewer/tools/trl_batch_2026-11-17_ifccls.js; rows 1001018-1001024 source=buildingSMART bSDD IFC 4.3 (CC BY-ND 4.0) verbatim, type -> occurrence per its IFC page; ui_cls_ifcdef_of machine (Claude, 2026-11-17) — viewer/tools/trl_batch_2026-11-17_ifcdef_types.js; rows 1001025-1001027 source=machine (Claude, Anthropic, 2026-11-17), How To palette words — viewer/tools/trl_batch_2026-11-17_howto.js; rows 1001028-1001033 source=machine (Claude, Anthropic, 2026-11-17), Modeller guide section titles — viewer/tools/trl_batch_2026-11-17_modeller_guide_titles.js; rows 1001034-1001035 source=machine (Claude, Anthropic, 2026-11-17), Modeller guide section titles — viewer/tools/trl_batch_2026-11-17_modeller_guide_titles.js; rows 1001036-1001045 source=machine (Claude, Anthropic, 2026-11-17), ten older uncatalogued Modeller strings — viewer/tools/trl_batch_2026-11-17_modeller_uncat10.js; rows 1001046-1001065 source=machine (Claude, Anthropic, 2026-11-17), Viewer pills added after S226 + Export BCF + What-if stale note — viewer/tools/trl_batch_2026-11-17_viewer_uncat.js; rows 1000863-1000866 (4 filled) source=machine (Claude, Anthropic, 2026-11-17), Road standards rows filled — viewer/tools/trl_batch_2026-11-17_roadstd_fill.js — NOT from a published iDempiere language pack. trl="N" = not translated (English kept, counted apart). Base rows: viewer/i18n/ad_message_base.csv. Edit THIS file, then run: node viewer/tools/build_trl.js-->
+<!--BIM OOTB Viewer — AD_Message_Trl fr_FR — format: org.compiere.install.Translation export (iDempiere). Rows 1000000-1000308 source=viewer/locales/fr_FR.js @4cd440ae (S225/S226 sessions, machine translation, extracted 2026-10-03, not retranslated); rows 1000309-1000492 and every row listed in viewer/tools/trl_batch_2026-10-03*.js source=machine (Claude, Anthropic, 2026-10-03); rows 1000493-1000655 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_tm.js; rows 1000656-1000671 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_info.js; rows 1000672-1000752 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_help.js; rows 1000753-1000862 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_modeller.js; rows 1000867-1000962 source=buildingSMART bSDD IFC 4.3 (CC BY-ND 4.0), verbatim official text — viewer/tools/trl_batch_2026-11-17_ifcdef.js; rows 1000963-1001017 source=machine (Claude, Anthropic, 2026-11-17), English class sentences written for this app — viewer/tools/trl_batch_2026-11-17_ifccls.js; rows 1001018-1001024 source=buildingSMART bSDD IFC 4.3 (CC BY-ND 4.0) verbatim, type -> occurrence per its IFC page; ui_cls_ifcdef_of machine (Claude, 2026-11-17) — viewer/tools/trl_batch_2026-11-17_ifcdef_types.js; rows 1001025-1001027 source=machine (Claude, Anthropic, 2026-11-17), How To palette words — viewer/tools/trl_batch_2026-11-17_howto.js; rows 1001028-1001033 source=machine (Claude, Anthropic, 2026-11-17), Modeller guide section titles — viewer/tools/trl_batch_2026-11-17_modeller_guide_titles.js; rows 1001034-1001035 source=machine (Claude, Anthropic, 2026-11-17), Modeller guide section titles — viewer/tools/trl_batch_2026-11-17_modeller_guide_titles.js; rows 1001036-1001045 source=machine (Claude, Anthropic, 2026-11-17), ten older uncatalogued Modeller strings — viewer/tools/trl_batch_2026-11-17_modeller_uncat10.js; rows 1001046-1001065 source=machine (Claude, Anthropic, 2026-11-17), Viewer pills added after S226 + Export BCF + What-if stale note — viewer/tools/trl_batch_2026-11-17_viewer_uncat.js; rows 1000863-1000866 (4 filled) source=machine (Claude, Anthropic, 2026-11-17), Road standards rows filled — viewer/tools/trl_batch_2026-11-17_roadstd_fill.js; rows 1001066-1001085 source=machine (Claude, Anthropic, 2026-11-17), How To guide section headings (13 new, 7 reused from existing rows) — viewer/tools/trl_batch_2026-11-17_howto_headings.js — NOT from a published iDempiere language pack. trl="N" = not translated (English kept, counted apart). Base rows: viewer/i18n/ad_message_base.csv. Edit THIS file, then run: node viewer/tools/build_trl.js-->
 <!--<!DOCTYPE idempiereTrl PUBLIC "-//iDempiere//DTD iDempiere Translation 1.0//EN" "https://raw.githubusercontent.com/idempiere/idempiere/refs/heads/master/utils_dev/trl/idempiereTrl.dtd">-->
 <idempiereTrl language="fr_FR" table="AD_Message">
  <row id="1000000" trl="Y">
@@ -4273,6 +4273,86 @@ Le CPM lit les dates produites par le glisser — il n’en change aucune.</valu
  </row>
  <row id="1001065" trl="Y">
   <value column="MsgText" original="What-if: the project store changed since you opened this — reopen What-if">« Et si » : le stockage du projet a changé depuis l’ouverture — rouvrez « Et si »</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001066" trl="Y">
+  <value column="MsgText" original="Save &amp; Open a building">Enregistrer &amp; ouvrir un bâtiment</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001067" trl="Y">
+  <value column="MsgText" original="LOD400 Upgrade">Mise à niveau LOD400</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001068" trl="Y">
+  <value column="MsgText" original="Find panel — search, voice query, and axis lenses">Panneau Rechercher — recherche, requête vocale et lentilles d’axe</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001069" trl="Y">
+  <value column="MsgText" original="Help — F1, the info panel, and the command line (LIVE)">Aide — F1, le panneau d’informations et la ligne de commande (LIVE)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001070" trl="Y">
+  <value column="MsgText" original="The rest of the Navigate drawer — World History, Page History &amp; Home">Le reste du tiroir Naviguer — Historique global, Historique de la page &amp; Accueil</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001071" trl="Y">
+  <value column="MsgText" original="Pick Walk — warehouse / logistics buildings">Parcours de picking — bâtiments d’entrepôt / logistique</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001072" trl="Y">
+  <value column="MsgText" original="Share">Partager</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001073" trl="Y">
+  <value column="MsgText" original="FM / Operate lenses — HR_BIM_Asset (ALPHA)">FM / Lentilles d’exploitation — HR_BIM_Asset (ALPHA)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001074" trl="Y">
+  <value column="MsgText" original="Inspect drawer — Measure, Clash, X-Ray, Section, Time Machine, 4D/5D, Fly Tour">Tiroir Inspecter — Mesurer, Conflits, Rayons X, Coupe, Machine à remonter le temps, 4D/5D, Survol</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001075" trl="Y">
+  <value column="MsgText" original="Sanity and Egress — rule checks">Cohérence et Évacuation — contrôles de règles</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001076" trl="Y">
+  <value column="MsgText" original="Viewer Features">Fonctions du visualiseur</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001077" trl="Y">
+  <value column="MsgText" original="4D Window">Fenêtre 4D</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001078" trl="Y">
+  <value column="MsgText" original="Display options — Palette, Night, Shadow + Ground, Background, Sound FX">Options d’affichage — Palette, Nuit, Ombre + Sol, Arrière-plan, Effets sonores</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001079" trl="Y">
+  <value column="MsgText" original="GI Preview (AO)">Aperçu GI (AO)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001080" trl="Y">
+  <value column="MsgText" original="Nav LOD (large bldgs)">LOD nav (grands bâtiments)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001081" trl="Y">
+  <value column="MsgText" original="Your own 4D / 5D references: rates, durations, sequence">Vos propres références 4D / 5D : taux, durées, séquence</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001082" trl="Y">
+  <value column="MsgText" original="Issues">Problèmes</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001083" trl="Y">
+  <value column="MsgText" original="3D Navigation">Navigation 3D</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001084" trl="Y">
+  <value column="MsgText" original="Camera / View drawer">Tiroir Caméra / Vue</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001085" trl="Y">
+  <value column="MsgText" original="Settings">Paramètres</value>
   <value column="MsgTip" original=""/>
  </row>
 </idempiereTrl>

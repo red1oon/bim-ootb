@@ -6,8 +6,8 @@
    "ad_message_base.csv",
    "AD_Message_Trl_zh_CN.xml"
   ],
-  "rows": 1066,
-  "translated": 963,
+  "rows": 1086,
+  "translated": 983,
   "untranslated": 103
  },
  "labels": {
@@ -1076,6 +1076,26 @@
   "pillc_gi_preview_1": "N8AO 环境光遮蔽（研究原型）",
   "pillc_gi_preview_2": "仅限桌面 — 移动端已禁用（内存）",
   "ui_export_bcf": "导出 BCF",
-  "wi_store_changed": "假设分析：项目存储自您打开后已更改 — 请重新打开假设分析"
+  "wi_store_changed": "假设分析：项目存储自您打开后已更改 — 请重新打开假设分析",
+  "howto_gh_save_open_a_building": "保存和打开建筑",
+  "howto_gh_lod400_upgrade": "LOD400 升级",
+  "howto_gh_find_panel_search_voice_query_and_axis_lenses": "查找面板 — 搜索、语音查询和轴向透镜",
+  "howto_gh_help_f1_the_info_panel_and_the_command_line_live": "帮助 — F1、信息面板和命令行（LIVE）",
+  "howto_gh_the_rest_of_the_navigate_drawer_world_history_page_history_home": "导航抽屉的其余部分 — 全局历史、页面历史和主页",
+  "howto_gh_pick_walk_warehouse_logistics_buildings": "拣货路线 — 仓库 / 物流建筑",
+  "howto_gh_share": "分享",
+  "howto_gh_fm_operate_lenses_hr_bim_asset_alpha": "FM / 运营透镜 — HR_BIM_Asset（ALPHA）",
+  "howto_gh_inspect_drawer_measure_clash_x_ray_section_time_machine_4d5d_fly_tour": "检查抽屉 — 测量、碰撞、透视、剖切、时光机、4D/5D、飞行巡览",
+  "howto_gh_sanity_and_egress_rule_checks": "合理性检查和疏散 — 规则检查",
+  "howto_gh_viewer_features": "查看器功能",
+  "howto_gh_4d_window": "4D 窗口",
+  "howto_gh_display_options_palette_night_shadow_ground_background_sound_fx": "显示选项 — 调色板、夜间、阴影 + 地面、背景、音效",
+  "howto_gh_gi_preview_ao": "GI 预览 (AO)",
+  "howto_gh_nav_lod_large_bldgs": "导航 LOD（大型建筑）",
+  "howto_gh_your_own_4d_5d_references_rates_durations_sequence": "您自己的 4D / 5D 参考：费率、工期、顺序",
+  "howto_gh_issues": "问题",
+  "howto_gh_3d_navigation": "3D 导航",
+  "howto_gh_camera_view_drawer": "相机 / 视图抽屉",
+  "howto_gh_settings": "设置"
  }
 }
