@@ -6,9 +6,9 @@
    "ad_message_base.csv",
    "AD_Message_Trl_en_AU.xml"
   ],
-  "rows": 1087,
+  "rows": 1091,
   "translated": 10,
-  "untranslated": 1077
+  "untranslated": 1081
  },
  "labels": {
   "source_app": "BIM OOTB — Frictionless BIM",
@@ -1097,6 +1097,10 @@
   "howto_gh_3d_navigation": "3D Navigation",
   "howto_gh_camera_view_drawer": "Camera / View drawer",
   "howto_gh_settings": "Settings",
-  "ui_help_dym": "Did you mean"
+  "ui_help_dym": "Did you mean",
+  "ui_help_doc_usage": "Type # then at least 4 characters of an element GlobalId",
+  "ui_help_doc_none": "No element",
+  "ui_help_doc_more": "more",
+  "ui_help_reserved": "@ is reserved and does nothing yet"
  }
 }

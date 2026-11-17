@@ -554,7 +554,7 @@
 <script src="erp_i18n.js?v=5"></script><!-- UI locales (bim-compiler prompts/ERP_UI_LOCALES.md) — W-ERP-I18N -->
 <script src="ad_parser.js?v=27"></script>
 <script src="field_help.js?v=1"></script>
-<script src="../common/help/help_query.js?v=1"></script><script src="../common/door/assist_core.js?v=1"></script><script src="../common/help/help_dym.js?v=1"></script><script src="help_records_core.js?v=1"></script><script src="help_search.js?v=4"></script><!-- VOCAB_MESSAGE_CATALOG §10 H2: the How To question box (deterministic, no AI inside) — W-HELP-SHOWCASE S3 --><!-- VOCAB_MESSAGE_CATALOG §7 P1b: ONE field tooltip setter + the Tool Tip panel (legacy WEditor / HelpController) — W-FIELD-HELP -->
+<script src="../common/help/help_query.js?v=1"></script><script src="../common/door/assist_core.js?v=1"></script><script src="../common/help/help_dym.js?v=1"></script><script src="help_records_core.js?v=1"></script><script src="help_search.js?v=4"></script><script src="../common/help/help_grammar.js?v=1"></script><script src="help_actions.js?v=1"></script><!-- VOCAB_MESSAGE_CATALOG §10 H2: the How To question box (deterministic, no AI inside) — W-HELP-SHOWCASE S3 --><!-- VOCAB_MESSAGE_CATALOG §7 P1b: ONE field tooltip setter + the Tool Tip panel (legacy WEditor / HelpController) — W-FIELD-HELP -->
 <!-- UI_UNPARK_RESUME.md — proven AD engines (source of truth: bim-compiler build/erp/): logic evaluator
      (W-LOGIC-EVAL 3044/3044) · DocAction FSM (W-*-FSM, 22 tables) · beforeSave hooks (W-*-SAVE, 12 installers). -->
 <script src="ad_evaluator.js?v=24"></script>
@@ -2627,12 +2627,23 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   }
   function _gtFor(tab) { var w = _curWin(); var i = w ? (w.tabs || []).indexOf(tab) : -1; return i >= 0 ? _gtModel(i) : null; }
   var _isSOTrxCache = {};
-  function _winIsSOTrx() {
-    if (_activeWin == null) return null;
-    if (!(_activeWin in _isSOTrxCache)) { var v = null; try { var r = db.exec('SELECT IsSOTrx FROM AD_Window WHERE AD_Window_ID=?', [_activeWin]); v = r.length && r[0].values.length ? r[0].values[0][0] : null; } catch (e) {} _isSOTrxCache[_activeWin] = v; }
-    return _isSOTrxCache[_activeWin];
+  function _winIsSOTrx(wid) {   // wid: a window that is not the active one (the How To box's #<number> reads each candidate window's own query, §19.6)
+    if (wid == null) wid = _activeWin;
+    if (wid == null) return null;
+    if (!(wid in _isSOTrxCache)) { var v = null; try { var r = db.exec('SELECT IsSOTrx FROM AD_Window WHERE AD_Window_ID=?', [wid]); v = r.length && r[0].values.length ? r[0].values[0][0] : null; } catch (e) {} _isSOTrxCache[wid] = v; }
+    return _isSOTrxCache[wid];
   }
-  function _ctxGetFor(level) {
+  // MRole.addAccessSQL for a tab table: the client and the role's org access (ONE place: renderActiveTab and the How To box's #<number> both build the window query with it)
+  function _tabAccessClauses(tableName) {
+    var access = [];
+    if (_session) {
+      if (_session.client && _colExists(tableName, 'AD_Client_ID')) access.push('AD_Client_ID IN (0,' + _session.client.id + ')');
+      var ow = _roleOrgWhere(); if (ow && _colExists(tableName, 'AD_Org_ID')) access.push(ow);
+      try { window.APP = window.APP || {}; window.APP.roleOrgWhere = ow; } catch (eO) {}   // the FK lookups take the same org access
+    }
+    return access;
+  }
+  function _ctxGetFor(level, wid) {
     return function (name) {
       var g = String(name).charAt(0) === '#' || String(name).charAt(0) === '$', n = String(name).replace(/^[#$]/, ''), v;
       if (!g) for (var L = level - 1; L >= 0; L--) { v = _recByLevel[L] ? recVal(_recByLevel[L], n) : ''; if (v != null && String(v) !== '') return v; }
@@ -2642,7 +2653,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       if (ln === 'ad_user_id') return _session && _session.user ? _session.user.id : null;
       if (ln === 'ad_role_id') return _session && _session.role ? _session.role.id : null;
       if (ln === 'date') return CrudCore.localDay(Date.now());   // §LOCAL-TIME
-      if (ln === 'issotrx') return _winIsSOTrx();
+      if (ln === 'issotrx') return _winIsSOTrx(wid);
       if (ln === 'showadvanced') return window.APP && window.APP.showAdvanced ? window.APP.showAdvanced : null;   // Login.java:531 (AD_UserQuery tab WhereClause uses it)
       return null;
     };
@@ -2731,12 +2742,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     // ── §GT — the tab's query is the GridTab contract (ad_gridtab.js, AD-driven, identical for every window): WhereClause
     //    (@ctx@ parsed, unresolved → 1 = 2), the detail LINK (AD_Tab.AD_Column_ID / IsParent, value from the window context,
     //    empty → 2=3 + parentNeedSave), then MRole.addAccessSQL: client + the role's org access list (when the column exists).
-    var access = [];
-    if (_session) {
-      if (_session.client && _colExists(tab.tableName, 'AD_Client_ID')) access.push('AD_Client_ID IN (0,' + _session.client.id + ')');
-      var ow = _roleOrgWhere(); if (ow && _colExists(tab.tableName, 'AD_Org_ID')) access.push(ow);
-      try { window.APP = window.APP || {}; window.APP.roleOrgWhere = ow; } catch (eO) {}   // the FK lookups take the same org access
-    }
+    var access = _tabAccessClauses(tab.tableName);
     var level = tab.tabLevel || 0, mdNote = '';
     var tm = _gtModel(_activeTabIdx), gq = window.AdGridTab && tm ? AdGridTab.query(tm, _ctxGetFor(level), access) : { where: access.join(' AND ') || null, orderBy: null, note: 'no-gridtab' };
     var clauses = gq.where ? [gq.where] : [];
@@ -3112,6 +3118,10 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       title.addEventListener('click', function () { $('idmp-help').classList.toggle('howto-closed'); });
       qbox.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') _howtoAsk(qbox.value); });
       $('idmp-howto').addEventListener('click', function (ev) {
+        var d = ev.target.closest ? ev.target.closest('a[data-help-doc]') : null;   // §19.6: a listed document opens read-only
+        if (d) { ev.preventDefault(); var dp = d.getAttribute('data-help-doc').split('|'); _docOpen(Number(dp[0]), dp.slice(1).join('|')); return; }
+        var nw = ev.target.closest ? ev.target.closest('a[data-help-new]') : null;   // §19.6: New on a window result
+        if (nw) { ev.preventDefault(); _howtoNew(Number(nw.getAttribute('data-help-new'))); return; }
         var a = ev.target.closest ? ev.target.closest('a[data-help-win]') : null; if (!a) return; ev.preventDefault();
         var wid = Number(a.getAttribute('data-help-win')), on = window.__idmpFieldHelp.menu().windows.indexOf(wid) >= 0;
         console.log('§HELP_LINK window=' + wid + ' onMenu=' + on);
@@ -3153,11 +3163,71 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     HelpDym.render(host, names || [], _T('help.dym', 'Did you mean'), function (nm) { var q = $('idmp-howto-q'); q.value = nm; _howtoAsk(nm); });
     if (names && names.length) console.log('§HELP_DYM line=' + JSON.stringify(names) + ' lang=' + ErpI18n.lang);
   }
+  // §19.6 step 6a (VOCAB_MESSAGE_CATALOG.md; design D4/D6): the box reads its input through the ONE grammar (common/help/help_grammar.js). `?` is dropped and the rest searched, `@` is refused (catalog words),
+  //   `#<number>` opens a document: the DocumentNo of every table the dictionary gives a window (erp/help_actions.js TARGETS_SQL), only on windows the role's menu holds, each read through that window's OWN query
+  //   (GridTab WhereClause + client/org access, so a Sales Order number is not found in the Purchase Order window). READ ONLY: one hit opens that record (the ?record= zoom path), several are listed, none is refused naming the number.
+  //   New (every window result, only where the role holds the window read-write, winSet[w].rw) opens the window on an UNSAVED row through the toolbar's own New (_openCreate); nothing is written until the person saves.
+  var _docTargetsCache = null;
+  function _docTargets() { if (!_docTargetsCache) _docTargetsCache = HelpActions.targets(_sqlRows(HelpActions.TARGETS_SQL)); return _docTargetsCache; }
+  function _howtoWinName(id) { var n = null; if (_howtoIdx) _howtoIdx.records.forEach(function (r) { if (n == null && r.k === 'window' && r.gate[1] === id) n = r.n; }); return n || ('#' + id); }
+  function _docFind(number) {
+    var on = {}; window.__idmpFieldHelp.menu().windows.forEach(function (w) { on[w] = 1; });
+    var gate = !HelpActions.nogate(), rows = [], seen = { targets: 0, reachable: 0, tables: 0, probed: 0 };
+    _docTargets().forEach(function (t) {
+      seen.targets++; if (gate && !on[t.win]) return; seen.reachable++;
+      if (!_tableExists(t.table)) return; seen.tables++;
+      var pre = _sqlRows(HelpActions.probeSql(t, number)); if (!pre || !pre.length) return; seen.probed++;
+      var win = null, tm = null, where = null; try { win = ADP.getWindow(db, t.win); } catch (e) {}
+      if (!win || !win.tabs || !win.tabs[0]) return;
+      var access = _tabAccessClauses(t.table);
+      if (window.AdGridTab) { tm = AdGridTab.open(db, win.tabs, 0); where = tm ? AdGridTab.query(tm, _ctxGetFor(0, t.win), access).where : null; } else where = access.join(' AND ') || null;
+      _sqlRows(HelpActions.hitSql(t, _keyCol(win.tabs[0]), where, number)).forEach(function (r) { rows.push({ win: t.win, table: t.table, pk: r.pk != null ? r.pk : r.PK, docno: r.docno != null ? r.docno : r.DOCNO }); });
+    });
+    var out = HelpActions.rank(rows, number, _howtoWinName); out.seen = seen; return out;
+  }
+  function _docOpen(win, pk) {
+    var ok = _zoom(win, null, pk, 'help-doc'); console.log('§HELP_DOC open window=' + win + ' pk=' + pk + ' zoomed=' + ok); return ok;
+  }
+  function _howtoDoc(number) {
+    var box = $('idmp-howto-card'), h = '<div class="hs-card">', res = { number: number, usage: false, none: false, hits: [], total: 0, more: 0, opened: null };
+    _howtoDym([]);
+    if (!number) { res.usage = true; h += '<div class="hs-sub">' + escH(_T('help.doc.usage', 'Type # then a document number')) + '</div>'; console.log('§HELP_DOC usage'); }
+    else {
+      var r = _docFind(number); res.hits = r.hits; res.total = r.total; res.more = r.more;
+      if (!r.hits.length) { res.none = true; h += '<div class="hs-sub">' + escH(_T('help.doc.none', 'No document #{0}', [number])) + '</div>'; }
+      else if (r.hits.length === 1) { var o = r.hits[0]; res.opened = _docOpen(o.win, o.pk) ? { win: o.win, pk: o.pk } : null; h += '<div class="hs-row"><span class="hs-k">' + escH(_howtoWinName(o.win)) + '</span>' + escH(o.docno) + '</div>'; }
+      else {
+        r.hits.forEach(function (o) { h += '<div class="hs-row"><a href="#" data-help-doc="' + o.win + '|' + escH(o.pk) + '">' + escH(_howtoWinName(o.win)) + '</a> ' + escH(o.docno) + '</div>'; });
+        if (r.more) h += '<div class="hs-sub">' + r.more + ' ' + escH(_T('help.doc.more', 'more')) + '</div>';
+      }
+      console.log('§HELP_DOC number=' + JSON.stringify(number) + ' targets=' + r.seen.targets + ' reachable=' + r.seen.reachable + ' tables=' + r.seen.tables + ' withNumber=' + r.seen.probed + ' hits=' + r.hits.length + ' total=' + r.total + ' exact=' + r.exact + ' opened=' + (res.opened ? res.opened.win + ':' + res.opened.pk : 'no') + ' windows=' + JSON.stringify(r.hits.map(function (x) { return x.win; })));
+    }
+    box.innerHTML = h + '</div>'; window.__idmpHowto.lastDoc = res; return { doc: res, hits: [] };
+  }
+  // New is the toolbar's own New for the window's HEADER tab: the tab can create (a view, a read-only tab or one with no editable field cannot: _foldableTab) and GridTab.isInsertRecord (AdGridTab.canInsert) —
+  //   legacy's New on a window result does nothing on such a tab, so it is not offered there; the role's read-write grant is HelpActions.canNew (winSet[w].rw).
+  var _winNewCache = {};
+  function _winNewable(w) {
+    if (!(w in _winNewCache)) { var ok = false; try { var win = ADP.getWindow(db, w); if (win && win.tabs && win.tabs[0] && window.AdGridTab) ok = !!(_foldableTab(win.tabs[0]) && AdGridTab.canInsert(AdGridTab.open(db, win.tabs, 0), { parentNeedSave: false })); } catch (e) {} _winNewCache[w] = ok; }
+    return _winNewCache[w];
+  }
+  function _howtoNew(w) {
+    var on = window.__idmpFieldHelp.menu().windows.indexOf(w) >= 0, ok = (on || HelpActions.nogate()) && HelpActions.canNew(_session && _session.winSet, w) && _winNewable(w);
+    console.log('§HELP_NEW window=' + w + ' onMenu=' + on + ' newable=' + _winNewable(w) + ' readWrite=' + !!(_session && _session.winSet && _session.winSet[w] && _session.winSet[w].rw) + ' allowed=' + ok);
+    if (!ok) { status('Not offered for this role (window ' + w + ')'); return false; }
+    _needBundles(_windowTriggers(w), function () { _openWindowNow(w); _openCreate(); console.log('§HELP_NEW opened window=' + w + ' unsaved=' + !!_newMode); });
+    return true;
+  }
   function _howtoAsk(question) {
     var box = $('idmp-howto-card'); if (!box || !_howtoIdx) return null;
+    var g = window.HelpGrammar ? HelpGrammar.parse(question) : { kind: 'text', rest: question };
+    if (g.kind === 'reserved') { box.innerHTML = '<div class="hs-card"><div class="hs-sub">' + escH(_T('help.reserved', '@ is reserved and does nothing yet')) + '</div></div>'; _howtoDym([]); console.log('§HELP_DOC reserved'); return { reserved: true, hits: [] }; }
+    if (g.kind === 'doc' && window.HelpActions) return _howtoDoc(g.number);
+    if (g.kind === 'help') question = g.rest;   // a help box accepts `?` and drops it
     if (!String(question).trim()) { box.innerHTML = ''; _howtoDym([]); return null; }
     var c = _howtoIdx.ask(question), h = '<div class="hs-card">';
-    if (c.window) h += '<div class="hs-row"><span class="hs-k">' + escH(_T('help.window', 'Window')) + '</span><a href="#" data-help-win="' + c.window.id + '">' + escH(c.window.name) + '</a></div>';
+    if (c.window) h += '<div class="hs-row"><span class="hs-k">' + escH(_T('help.window', 'Window')) + '</span><a href="#" data-help-win="' + c.window.id + '">' + escH(c.window.name) + '</a>' +
+      (window.HelpActions && HelpActions.canNew(_session && _session.winSet, c.window.id) && _winNewable(c.window.id) ? ' <a href="#" class="hs-new" data-help-new="' + c.window.id + '">' + escH(_T('tb.new', 'New')) + '</a>' : '') + '</div>';
     if (c.action) {
       h += '<div class="hs-row"><span class="hs-k">' + escH(_T('help.action', 'Action')) + '</span>' + escH(c.action.name) + ' — ' + escH(c.action.description || '') +
         '<div class="hs-sub">' + escH(_T('help.allowed', 'Allowed when the document is')) + ': ' + escH(c.action.allowedFrom.join(', ')) + '</div>' +
@@ -3172,7 +3242,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     console.log('§HELP_SEARCH ask=' + JSON.stringify(String(question)) + ' lang=' + ErpI18n.lang + ' window=' + (c.window ? c.window.id : 'none') + ' action=' + (c.action ? c.action.code : 'none') + ' cli=' + (c.cli ? JSON.stringify(c.cli.line || c.cli.note) : 'none') + ' howto=' + (c.howto ? c.howto.id : 'none') + ' matched=' + JSON.stringify(c.matched) + ' hits=' + c.hits.map(function (h) { return h.id; }).join(','));
     return c;
   }
-  window.__idmpHowto = { ask: _howtoAsk, ctx: _howtoCtx, index: function () { return _howtoIdx; } };   // W-HELP-SHOWCASE's handle (the real widget, no second renderer)
+  window.__idmpHowto = { ask: _howtoAsk, ctx: _howtoCtx, index: function () { return _howtoIdx; }, newFor: _howtoNew, lastDoc: null,   // §19.6: newFor = the New link's own handler; state = what the window in view shows (W-HQ-DOC / W-HQ-NEW read STATE, not the screen)
+  state: function () { var tab = _curTab(), rec = _records[_recIdx]; return { win: _activeWin, openWins: Object.keys(_openWins).length, table: tab ? tab.tableName : null, key: tab && rec ? recVal(rec, _keyCol(tab)) : null, docno: rec ? recVal(rec, 'DocumentNo') : null, newMode: !!_newMode, inlineForm: !!document.getElementById('idmp-inline-mount'), roleOrgWhere: (window.APP && window.APP.roleOrgWhere) || null, roleId: _session && _session.role ? _session.role.id : null, userId: _session && _session.user ? _session.user.id : null, clientId: _session && _session.client ? _session.client.id : null, rw: _session && _session.winSet ? Object.keys(_session.winSet).filter(function (k) { return _session.winSet[k].rw; }).map(Number) : [] }; } };   // W-HELP-SHOWCASE's handle (the real widget, no second renderer)
   // W-FIELD-HELP's handle on the REAL render paths (no second renderer): the role's menu windows/processes, the read-only form, the parameter form.
   window.__idmpFieldHelp = {
     menu: function () { var w = {}; Object.keys(_winByName).forEach(function (k) { w[_winByName[k]] = 1; }); return { windows: Object.keys(w).map(Number), processes: Object.keys(_procMenuIds).map(Number) }; },

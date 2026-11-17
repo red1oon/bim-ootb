@@ -638,6 +638,58 @@
     "ms_MY": "Adakah maksud anda",
     "th_TH": "คุณหมายถึง"
    }
+  },
+  "help.doc.usage": {
+   "en": "Type # then a document number",
+   "machine": {
+    "fr_FR": "Tapez # puis un numéro de document",
+    "es_ES": "Escriba # y un número de documento",
+    "de_DE": "# eingeben, dann eine Belegnummer",
+    "ar": "اكتب # ثم رقم المستند",
+    "zh_CN": "输入 # 然后输入单据编号",
+    "ja_JP": "# に続けて伝票番号を入力してください",
+    "ms_MY": "Taip # kemudian nombor dokumen",
+    "th_TH": "พิมพ์ # แล้วตามด้วยเลขที่เอกสาร"
+   }
+  },
+  "help.doc.none": {
+   "en": "No document #{0}",
+   "machine": {
+    "fr_FR": "Aucun document #{0}",
+    "es_ES": "Ningún documento #{0}",
+    "de_DE": "Kein Beleg #{0}",
+    "ar": "لا يوجد مستند #{0}",
+    "zh_CN": "没有单据 #{0}",
+    "ja_JP": "伝票 #{0} はありません",
+    "ms_MY": "Tiada dokumen #{0}",
+    "th_TH": "ไม่พบเอกสาร #{0}"
+   }
+  },
+  "help.doc.more": {
+   "en": "more",
+   "machine": {
+    "fr_FR": "de plus",
+    "es_ES": "más",
+    "de_DE": "weitere",
+    "ar": "أخرى",
+    "zh_CN": "更多",
+    "ja_JP": "件あります",
+    "ms_MY": "lagi",
+    "th_TH": "เพิ่มเติม"
+   }
+  },
+  "help.reserved": {
+   "en": "@ is reserved and does nothing yet",
+   "machine": {
+    "fr_FR": "@ est réservé et ne fait rien pour l'instant",
+    "es_ES": "@ está reservado y aún no hace nada",
+    "de_DE": "@ ist reserviert und tut noch nichts",
+    "ar": "@ محجوز ولا يفعل شيئًا بعد",
+    "zh_CN": "@ 为保留字符，暂无作用",
+    "ja_JP": "@ は予約済みで、まだ何もしません",
+    "ms_MY": "@ dikhaskan dan belum berfungsi",
+    "th_TH": "@ ถูกสงวนไว้และยังไม่ทำอะไร"
+   }
   }
  }
 }

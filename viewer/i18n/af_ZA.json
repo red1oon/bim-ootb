@@ -6,8 +6,8 @@
    "ad_message_base.csv",
    "AD_Message_Trl_af_ZA.xml"
   ],
-  "rows": 1087,
-  "translated": 984,
+  "rows": 1091,
+  "translated": 988,
   "untranslated": 103
  },
  "labels": {
@@ -1097,6 +1097,10 @@
   "howto_gh_3d_navigation": "3D-navigasie",
   "howto_gh_camera_view_drawer": "Kamera- / Aansig-laai",
   "howto_gh_settings": "Instellings",
-  "ui_help_dym": "Bedoel jy"
+  "ui_help_dym": "Bedoel jy",
+  "ui_help_doc_usage": "Tik # en dan minstens 4 karakters van 'n element se GlobalId",
+  "ui_help_doc_none": "Geen element",
+  "ui_help_doc_more": "meer",
+  "ui_help_reserved": "@ is gereserveer en doen nog niks"
  }
 }

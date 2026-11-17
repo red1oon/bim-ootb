@@ -6,8 +6,8 @@
    "ad_message_base.csv",
    "AD_Message_Trl_bn_BD.xml"
   ],
-  "rows": 1087,
-  "translated": 984,
+  "rows": 1091,
+  "translated": 988,
   "untranslated": 103
  },
  "labels": {
@@ -1097,6 +1097,10 @@
   "howto_gh_3d_navigation": "3D নেভিগেশন",
   "howto_gh_camera_view_drawer": "ক্যামেরা / ভিউ ড্রয়ার",
   "howto_gh_settings": "সেটিংস",
-  "ui_help_dym": "আপনি কি বোঝাতে চেয়েছেন"
+  "ui_help_dym": "আপনি কি বোঝাতে চেয়েছেন",
+  "ui_help_doc_usage": "# লিখে তারপর উপাদানের GlobalId-এর অন্তত ৪টি অক্ষর লিখুন",
+  "ui_help_doc_none": "কোনো উপাদান নেই",
+  "ui_help_doc_more": "আরও",
+  "ui_help_reserved": "@ সংরক্ষিত এবং এখনও কিছু করে না"
  }
 }

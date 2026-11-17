@@ -263,7 +263,8 @@
 // v1726 (2026-11-17) §14.8.1 (bim-compiler VOCAB_MESSAGE_CATALOG.md): help_panel.js?v=3 — the How To guide link's tooltip heading goes through the dictionary (howto_gh_<anchor>); i18n/<code>.json rebuilt with the 20 heading keys
 // v1731 (2026-11-17) §19.4 (bim-compiler VOCAB_MESSAGE_CATALOG.md): the help panel searches through the shared query core — help_panel.js?v=4, common/help/help_query.js?v=1, help/index/<locale>.json (18 packs)
 // v1734 (2026-11-17) §19.5 (bim-compiler VOCAB_MESSAGE_CATALOG.md): the help panel's "Did you mean" line — help_panel.js?v=5, common/help/help_dym.js?v=1, common/door/assist_core.js?v=1, dictionary key ui_help_dym
-const CACHE_VERSION = 'v1734';
+// v1735 (2026-11-17) §19.6 (bim-compiler VOCAB_MESSAGE_CATALOG.md): `#<GlobalId prefix>` in the help panel — help_panel.js?v=6, common/help/help_grammar.js?v=1, help_guid.js?v=1, scene.js?v=81, nf_panel_search.js?v=3, dictionary ui_help_doc_usage/_none/_more/ui_help_reserved
+const CACHE_VERSION = 'v1735';
 // v1637 (rebase of PR #1191/#1196) §CLASS_UNMATCHED_INHERITED + §EXACT_LOOKUP_BLINDSPOT: rates/ifc_schema_hierarchy.json added to PRECACHE_ASSETS; schedule_author.js/proj_fold.js/boq_charts.html/schedule_read_4d.js/tm_sched_xray.js classify via the schema hierarchy.
 // v1636 (rebase of PR #1317) §ARCH_AREA_WEIGHT/§VOL_WEIGHT/§FOOTING_M3: schedule_author.js, time_machine parts, rates.js and rates/*.json changed install DURATIONS (area/volume weighting, IfcFooting priced M3); all precached cache-first, so a client holding the old cache would keep the flat times forever.
 // v1635 (rebase of PR #676, BCF half only) §BCF_EXPORT: bcf_export.js added to PRECACHE_ASSETS; viewer.html loads it + Export BCF button in the Issues toolbar; main.js wires setupBcfExport/exportIssuesBcf. The Open-button IFC half of #676 was superseded by main's A._openIfcFiles.
@@ -1207,6 +1208,8 @@ const PRECACHE_ASSETS = [
   '../common/drag.js',
   '../common/help/help_panel.js',
   '../common/help/help_query.js',   // §19.4 the shared query core (the help panel's search)
+  '../common/help/help_grammar.js',  // §19.6 the ONE reading of the leading ? # @
+  '../common/help/help_guid.js',     // §19.6 #<GlobalId prefix>
   '../common/help/help_dym.js',     // §19.5 the "Did you mean" line (shared with the ERP box)
   '../common/door/assist_core.js',  // the ONE suggester AssistCore.nearest (the CLI session's file; loaded by the page for §19.5)
   'help/howto.json',

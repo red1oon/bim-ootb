@@ -240,7 +240,7 @@ async function initViewer() {
         'nf_room.js?v=1',
         'nf_trees.js?v=1',
         'nf_isolate_drill.js?v=2',
-        'nf_panel_search.js?v=2',
+        'nf_panel_search.js?v=3',
         // navigate_find.js is now the setup shell for the nf_*.js parts above (move-only split, scripts/split_closure.js)
         'navigate_find.js?v=65',
         'navigate_grid.js?v=1',

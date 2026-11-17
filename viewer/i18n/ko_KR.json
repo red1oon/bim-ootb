@@ -6,8 +6,8 @@
    "ad_message_base.csv",
    "AD_Message_Trl_ko_KR.xml"
   ],
-  "rows": 1087,
-  "translated": 984,
+  "rows": 1091,
+  "translated": 988,
   "untranslated": 103
  },
  "labels": {
@@ -1097,6 +1097,10 @@
   "howto_gh_3d_navigation": "3D 탐색",
   "howto_gh_camera_view_drawer": "카메라 / 보기 서랍",
   "howto_gh_settings": "설정",
-  "ui_help_dym": "혹시 찾으시는 것은"
+  "ui_help_dym": "혹시 찾으시는 것은",
+  "ui_help_doc_usage": "# 다음에 요소 GlobalId의 4자 이상을 입력하세요",
+  "ui_help_doc_none": "요소 없음",
+  "ui_help_doc_more": "개 더",
+  "ui_help_reserved": "@는 예약되어 있으며 아직 아무 기능이 없습니다"
  }
 }
