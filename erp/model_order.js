@@ -316,6 +316,25 @@
     // MOrder.closeIt :2881-2935 - Close = cancel the not-delivered quantity. DocumentEngine.closeIt :618-636: an order can be closed in any status (no isValidAction), then STATUS_Closed.
     //   refused while a shipment of this order is In Progress (:2889-2905); QtyLostSales = ordered - delivered, QtyOrdered := QtyDelivered, description "Close (old)" (literal, :2927); reservations cleared;
     //   Processed, DocAction -- ; calculateTaxTotal (IDEMPIERE-966) rebuilds the tax rows from the lines.
+    // MOrder.reActivateIt :3044-3090 (CLI_ERP_IVR §44) — BEFORE_REACTIVATE; MPeriod.testPeriodOpen; DocumentEngine.canReactivateThisDocType (= C_DocType.IsCanBeReactivated);
+    // a PO: nothing touched; an SO of subtype WI/WP/WR: createReversals (its shipment and invoice); any other SO: nothing touched; MFactAcct.deleteEx + Posted=N;
+    // AFTER_REACTIVATE; DocAction CO, Processed N (MOrder.setProcessed clears the lines and taxes too). DocumentEngine.reActivateIt then sets DocStatus IP.
+    reActivateIt: function (trx, o) {
+      var m = fire(trx, 'BEFORE_REACTIVATE', 'c_order', o); if (m) { T.msg(trx, m); return false; }                            // :3048-3050
+      var d = T.dt(trx, o.c_doctype_id);
+      if (!T.periodOpen(trx, o.dateacct, d.docbasetype, o.ad_org_id)) { T.msg(trx, '@PeriodClosed@'); return false; }             // :3053 testPeriodOpen (throws)
+      if (!(Number(o.c_doctype_id) > 0) || !Y(d.iscanbereactivated)) { T.msg(trx, String(T.msgText(trx, 'DocTypeCannotBeReactivated')).replace('{0}', d.name)); return false; }   // :3056-3059
+      var sub = d.docsubtypeso;
+      if (Y(o.issotrx) && (sub === 'WI' || sub === 'WP' || sub === 'WR')) { if (!createReversals(trx, o)) return false; }          // :3062-3070 OnCredit / Warehouse / POS
+      o = trx.get('c_order', o.c_order_id);
+      trx.find('fact_acct', { ad_table_id: 259, record_id: o.c_order_id }).forEach(function (f) { trx.del('fact_acct', f); });   // :3077 MFactAcct.deleteEx
+      trx.update('c_order', o, { posted: 'N' });                                                                                  // :3078
+      m = fire(trx, 'AFTER_REACTIVATE', 'c_order', trx.get('c_order', o.c_order_id)); if (m) { T.msg(trx, m); return false; }     // :3080-3082
+      trx.update('c_order', trx.get('c_order', o.c_order_id), { docaction: 'CO' });                                              // :3084
+      setProcessed(trx, trx.get('c_order', o.c_order_id), 'N');                                                                   // :3085
+      trx.update('c_order', trx.get('c_order', o.c_order_id), { docstatus: 'IP' });                                              // DocumentEngine.reActivateIt → STATUS_InProgress
+      return true;
+    },
     closeIt: function (trx, o) {
       var m = fire(trx, 'BEFORE_CLOSE', 'c_order', o); if (m) { T.msg(trx, m); return false; }
       var ip = trx.q("SELECT DISTINCT io.documentno AS dn FROM m_inout io JOIN m_inoutline iol ON io.m_inout_id=iol.m_inout_id JOIN c_orderline ol ON iol.c_orderline_id=ol.c_orderline_id " +
