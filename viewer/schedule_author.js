@@ -1735,18 +1735,28 @@
         // solveStart) — elements genuinely tied in the solve have no real "before" relationship, so
         // any deterministic order is equally valid; matching the witness's tie-break avoids a
         // false-positive reorder verdict on ties that are not a real order violation.
-        var ordered = grp.slice().sort(function (x, y) { return solve[x].start - solve[y].start || (x < y ? -1 : 1); });
+        // §TIE_ORDER: equal solve starts fall back to the solve's own finalisation rank (supports first) before the guid
+        var ordered = grp.slice().sort(function (x, y) { return solve[x].start - solve[y].start || ((solve[x].ord || 0) - (solve[y].ord || 0)) || (x < y ? -1 : 1); });
         var durs = ordered.map(function (g) { return Math.max(1, solve[g].end - solve[g].start); });
         var durTotal = durs.reduce(function (a, b) { return a + b; }, 0);
-        var cum = 0;
+        // §ONE_LIFT (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.13): members of one election ring (the `lift` id the
+        // display map carries) are ONE slot — same start, same end, the slot as wide as their durations together. The
+        // tiling is a single lane, so without this a ring's members were laid end to end in guid order and the first
+        // one always "started before its support": 88-95 % of every building's remaining out-of-order count was this,
+        // minutes apart. Band width, order and every other element's share are unchanged.
+        var cum = 0, liftSlot = {};
         for (var q3 = 0; q3 < ordered.length; q3++) {
-          var gg = ordered[q3];
+          var gg = ordered[q3], lf = solve[gg].lift;
+          if (lf != null && lf >= 0 && liftSlot[lf]) { out[gg] = { start: liftSlot[lf].start, end: liftSlot[lf].end }; mapped++; continue; }
+          var w3 = durs[q3];
+          if (lf != null && lf >= 0) for (var q4 = q3 + 1; q4 < ordered.length; q4++) if (solve[ordered[q4]].lift === lf) w3 += durs[q4];
           var ns2 = Math.round(bS + (cum / durTotal) * (bE - bS));
-          cum += durs[q3];
+          cum += w3;
           var ne2 = Math.round(bS + (cum / durTotal) * (bE - bS));
           if (ne2 <= ns2) ne2 = ns2 + 1;            // never a zero-width element
           if (ne2 > bE) ne2 = Math.round(bE);
           out[gg] = { start: ns2, end: ne2 };
+          if (lf != null && lf >= 0) liftSlot[lf] = out[gg];
           mapped++;
         }
         cursor = bE;

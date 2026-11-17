@@ -211,6 +211,26 @@
     return S.bz <= T.bz + SG.EPS && S.tz >= T.tz - SG.EPS;                  // embedded; anything else is carrier-above
   }
   function supportBound(S, T, sS, eS) { return supportIsEmbedded(S, T) ? sS : eS; }
+  // §ONE_LIFT (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.6 D3 "a tie is one lift", §Q.13 — 2026-11-17).
+  // electionRings(des) -> Int32Array: a ring id for every element that sits on a RING of the election (A elects B,
+  // B elects A — a pipe run and its fitting, two same-depth beams, a footing pair), -1 otherwise. Each element elects
+  // at most one support, so a ring is a simple cycle. A ring is ONE LIFT: its members go in together, so between ring
+  // members the bound is always the START, whatever the relation. The graph edge (buildGraph), the judge
+  // (support_sweep midairAudit) and the within-bar tiler (schedule_author remapSolveToTasks, via the `lift` field the
+  // display map carries) all read this one definition.
+  function electionRings(des) {
+    var n = des.length, ring = new Int32Array(n), st = new Uint8Array(n), next = 0;
+    ring.fill(-1);
+    for (var i = 0; i < n; i++) {
+      if (st[i]) continue;
+      var walk = [], u = i;
+      while (u >= 0 && !st[u]) { st[u] = 1; walk.push(u); u = des[u]; }
+      if (u >= 0 && st[u] === 1) { for (var k = walk.indexOf(u); k < walk.length; k++) ring[walk[k]] = next; next++; }
+      for (var w = 0; w < walk.length; w++) st[walk[w]] = 2;
+    }
+    ring.count = next;
+    return ring;
+  }
 
   function designatedSupport(items, G) {
     var SG = (typeof global.ScheduleGate !== 'undefined') ? global.ScheduleGate : ScheduleGate;
@@ -224,7 +244,7 @@
     // structure the election is unchanged — the pair elects each other and the solve places it as one lift
     // (GRAPH: the contracted SCC's shared start; CELL: solveCells' lift, below). Nothing is left unelected by D3.
     var bearMemo = new Int8Array(n), d3Demoted = 0;
-    var contactOnly = [], d7Contacts = 0, d7Reelected = 0;
+    var contactOnly = [], d7Contacts = 0, d7Reelected = 0, seedSkipped = 0;
     function bearsOnPool(j) {
       if (bearMemo[j]) return bearMemo[j] === 1;
       var lj = G.contacts[j], Tj = items[j], hit = false;
@@ -261,6 +281,7 @@
       var inPool = SG.supportPool || function () { return true; };
       var tStruct = !!(SG.supportPool && SG.supportPool(T));
       var skippedLater = 0;
+      var tSeed = tStruct && (T.seq === 1 || T.phase === 'Substructure');
       for (var k = 0; k < list.length; k++) {
         var j = list[k], S = items[j], cls, score;
         if (S.bz < T.bz - EPS && S.tz >= T.bz - GAP) { cls = 0; score = -S.tz; }
@@ -285,6 +306,15 @@
           bestCls = cls; bestScore = score; bestJ = j;
         }
         if (tStruct && cls === 2) continue;                   // §D2: structure is not hung from what it carries
+        // §GROUND_RESTS_ON_SOIL (bim-compiler prompts/4D_MODEL_INTEGRITY.md §I.2, §Q.13 — 2026-11-17): a ground seed
+        // (sequence 1 or phase Substructure) rests on soil. It may elect another ground seed, never something of a
+        // later phase — a column or wall whose box runs down through its footing was elected as the footing's "bearer"
+        // (LTU 236, Hospital 8, Clinic 6), so the footing was judged against the frame it carries.
+        if (tSeed && !(S.seq === 1 || S.phase === 'Substructure')) { seedSkipped++; continue; }
+        // §STRUCTURE_BEARS_ON_STRUCTURE (§Q.13): a contact that is in the pool only for VISIBILITY (sequence > 4: a
+        // stair flight, a promoted roof slab) and is built later than the structural T ranks behind any bearer that is
+        // real structure (cls +0.25). A slab with a beam under it no longer elects the stair flight beside the beam.
+        if (tStruct && cls < 2 && typeof S.seq === 'number' && typeof T.seq === 'number' && S.seq > 4 && S.seq > T.seq) cls += 0.25;
         if (inPool(S) && (cls < poolCls || (cls === poolCls && (score < poolScore ||
             (score === poolScore && (poolJ < 0 || String(S.guid) < String(items[poolJ].guid))))))) {
           poolCls = cls; poolScore = score; poolJ = j;
@@ -318,6 +348,7 @@
       ' electedFromRemainingContacts(hadALaterContactIgnored)=' + d7Reelected + ' byCls=' + JSON.stringify(coCls) +
       ' guids=' + contactOnly.slice(0, 20).map(function (x) { return items[x].guid; }).join(',') + (contactOnly.length > 20 ? ',…' : ''));
     out.contactOnly = contactOnly;
+    console.log('§GROUND_RESTS_ON_SOIL laterPhaseContactsIgnoredForGroundSeeds=' + seedSkipped);
     out.structNoSupport = noSup;
     out.d3Demoted = d3Demoted;
     return out;
@@ -352,8 +383,9 @@
     var des = designatedSupport(items, G);
     // E1 kind: FS for bearing-below / carrier-above, SS for embedded (§D4_SUPPORT_FINISHED)
     var e1fs = 0;
+    var ring = electionRings(des);
     for (i = 0; i < n; i++) if (des[i] >= 0) {
-      var _emb = supportIsEmbedded(items[des[i]], items[i]);
+      var _emb = supportIsEmbedded(items[des[i]], items[i]) || (ring[i] >= 0 && ring[i] === ring[des[i]]);   // §ONE_LIFT: ring members bind at the START
       if (!_emb) e1fs++;
       addEdge(des[i], i, _emb ? SS : FS, 1, 'e1');
     }
@@ -570,7 +602,7 @@
     });
 
     return { out: out, nElements: n, nNodes: n + msMeta.length, msMeta: msMeta, stragglerOf: stragglerOf,
-             levels: levels, counts: counts, designated: des };
+             levels: levels, counts: counts, designated: des, ring: ring };
   }
 
   // tarjanScc(total, out) — iterative Tarjan (no recursion; LTU_AHouse is 122k nodes). Returns
@@ -748,6 +780,10 @@
       return top;
     }
     var processed = 0;
+    // §TIE_ORDER (§Q.13): the rank at which the solve finalised each element — supports always before what they
+    // support. Two elements may share a start (a start-to-start edge allows it); the within-bar tiler broke that tie
+    // by guid and could lay the dependent first. The display map carries this rank (`ord`) so the tie is the solve's.
+    var order = new Int32Array(n);
     for (i = 0; i < nComp; i++) if (!indeg[i]) heapPush(i);
     function memberOrder(a, b) {   // deterministic within-component claim order
       if (items[a].bz !== items[b].bz) return items[a].bz - items[b].bz;
@@ -756,6 +792,7 @@
     }
     while (heap.length) {
       var cu = heapPop(); processed++;
+      for (var _oi = 0; _oi < compNodes[cu].length; _oi++) if (compNodes[cu][_oi] < n) order[compNodes[cu][_oi]] = processed;   // §TIE_ORDER
       var members = compNodes[cu], contracted = members.length > 1;
       var es = compES[cu];
       if (!contracted) {
@@ -830,7 +867,7 @@
       if (s < makespanS) makespanS = s;
       if (en > makespanE) makespanE = en;
     }
-    return { times: times, drops: drops, processed: processed, total: nComp, comp: comp,
+    return { times: times, drops: drops, processed: processed, total: nComp, comp: comp, order: order,
              makespanDays: (makespanE - makespanS) / 86400000 };
   }
 
@@ -1166,7 +1203,7 @@
              ms: { contact: _dt(t0, t1), build: _dt(t1, t2), solve: _dt(t2, t3), total: _dt(t0, t3) } };
   }
 
-  var API = { contactGraph: contactGraph, designatedSupport: designatedSupport, supportBound: supportBound, supportIsEmbedded: supportIsEmbedded,
+  var API = { contactGraph: contactGraph, designatedSupport: designatedSupport, supportBound: supportBound, supportIsEmbedded: supportIsEmbedded, electionRings: electionRings,
               buildGraph: buildGraph, solve: solve, run: run, TIER1_ORDER: TIER1_ORDER };
   global.CpmSchedule = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
