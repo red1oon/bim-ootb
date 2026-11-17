@@ -175,6 +175,35 @@
       return dead;
     },
 
+    // §14.7 (bim-compiler prompts/VOCAB_MESSAGE_CATALOG.md): the audit that sees "the key the help prints is not that tool's key". checkShortcuts asks only whether a handler's target
+    // exists, and panels.js's own audit only whether the key is in _shortcuts; both passed for Sanity's `s` (a screenshot). Per keyed pill, one line:
+    //   §PILLKEY id=<id> key=<k> status=ok|missing|clash|other-tool|own-listener
+    // clash = two pills share the key · missing = no handler · other-tool = the handler is neither an A._pillRun('<this pill>') nor nor shares a called tool name with the pill's fn
+    // (and the pill's fn does not itself defer to _shortcuts[key]) · own-listener = a modifier/function key (Alt+Z, F1 ...) with its own listener, not judged here.
+    // Returns {ok,missing,clash,otherTool,ownListener,bad:[ids]}; log-only, behaviour unchanged.
+    checkPillKeys: function () {
+      var acts = window._mainPillActions || [], map = window._shortcuts || {}, byKey = {}, out = { ok: 0, missing: 0, clash: 0, otherTool: 0, ownListener: 0, bad: [] };
+      var SKIP = /^(if|typeof|function|then|else|for|while|return|catch|switch|getElementById|querySelector|querySelectorAll|click|log|warn|forEach|indexOf)$/;
+      var names = function (f) { var t = Function.prototype.toString.call(f), r = /(?:\b(?:window|A|APP)\.)?([A-Za-z_$][\w$]*)\s*\(/g, m, o = {}; while ((m = r.exec(t)) !== null) if (!SKIP.test(m[1])) o[m[1]] = 1; return o; };
+      acts.forEach(function (a) { if (a.key && a.key.length === 1) (byKey[a.key] = byKey[a.key] || []).push(a.id); });
+      acts.forEach(function (a) {
+        if (!a.key) return;
+        var k = a.key, st;
+        if (k.length > 1) { st = 'own-listener'; out.ownListener++; }
+        else if (byKey[k].length > 1) { st = 'clash'; out.clash++; out.bad.push(a.id); }
+        else if (typeof map[k] !== 'function') { st = 'missing'; out.missing++; out.bad.push(a.id); }
+        else if (Function.prototype.toString.call(map[k]).indexOf("_pillRun('" + a.id + "')") >= 0) { st = 'ok'; out.ok++; }
+        else if (typeof a.fn === 'function' && Function.prototype.toString.call(a.fn).indexOf("_shortcuts['" + k + "']") >= 0) { st = 'ok'; out.ok++; }
+        else {
+          var n1 = typeof a.fn === 'function' ? names(a.fn) : {}, n2 = names(map[k]), hit = Object.keys(n1).filter(function (n) { return n2[n]; });
+          if (hit.length) { st = 'ok'; out.ok++; } else { st = 'other-tool'; out.otherTool++; out.bad.push(a.id); }
+        }
+        (st === 'ok' || st === 'own-listener' ? console.log : console.warn)('§PILLKEY id=' + a.id + ' key=' + k + ' status=' + st);
+      });
+      console.log('§PILLKEY_AUDIT keyed=' + (out.ok + out.missing + out.clash + out.otherTool + out.ownListener) + ' ok=' + out.ok + ' missing=' + out.missing + ' clash=' + out.clash + ' other-tool=' + out.otherTool + ' own-listener=' + out.ownListener + (out.bad.length ? ' bad=' + out.bad.join(',') : ''));
+      return out;
+    },
+
     // §SCRIPT_DUP (F2, 4D_SCHEDULE_PERFECTION.md 2026-08-10): the same script loaded twice under
     // different paths lets LOAD ORDER silently pick the winner — the live log printed BOTH
     // "§KERNEL_OPS_LOADED v13" and "v8" banners and nothing flagged it; the stale v8 clobbered v13
@@ -216,6 +245,7 @@
     if (window._shortcuts && Object.keys(window._shortcuts).length) {
       try { InputReg.checkShortcuts(); } catch (e) { console.warn('§SHORTCUT_AUDIT error=' + e.message); }
       try { InputReg.checkScriptDups(); } catch (e) { console.warn('§SCRIPT_DUP_AUDIT error=' + e.message); }
+      (function pollPills(n) { if (window._mainPillActions && window._mainPillActions.length) { try { InputReg.checkPillKeys(); } catch (e) { console.warn('§PILLKEY_AUDIT error=' + e.message); } return; } if (n > 0) setTimeout(function () { pollPills(n - 1); }, 1000); else console.warn('§PILLKEY_AUDIT error=_mainPillActions never appeared'); })(30);
       return;
     }
     if (tries <= 0) { console.warn('§SHORTCUT_AUDIT error=_shortcuts never appeared (scene init incomplete)'); return; }

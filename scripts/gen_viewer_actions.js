@@ -119,6 +119,7 @@ for (const f of files) { const raw = fs.readFileSync(f, 'utf8'); SRC.set(rel(f),
 // ── R4: which keydown listener files are scanned, which excluded and why ──
 const SCANNED = ['viewer/scene.js', 'viewer/panels.js', 'viewer/gi_still.js', 'viewer/precision_cam.js', 'common/history_bar.js'];
 const EXCLUDED = {
+  'common/help/help_panel.js': 'Escape/F1 close, arrows move, Enter runs the highlighted entry, inside the help panel\'s own search box (panel-local)',
   'common/comm/team_people_ui.js': 'Enter/Space on a person row inside the Team panel (panel-local)',
   'viewer/cinema_path_editor.js': 'keys while the Cinema Path Editor is open (mode-local, capture listener)',
   'viewer/cpe_walk.js': 'walk keys while a CPE walk is active (mode-local)',
@@ -239,7 +240,8 @@ const tailComment = (raw, line) => { const ln = raw.split('\n')[line - 1] || '';
     const fo = S.mask.indexOf('{', a + km[0].length), fc = match(S.mask, fo);
     const line = lineOf(S.raw, a + km[0].search(/\S/));
     rows.push({ source: '_shortcuts', file: 'viewer/scene.js', line, lineEnd: lineOf(S.raw, fc), key, pill: '',
-      paletteLabel: PALETTE.has(key.toLowerCase()), label: PALETTE.get(key.toLowerCase()) || tailComment(S.raw, line), calls: callees(S.raw, S.code, S.mask, fo + 1, fc) });
+      paletteLabel: PALETTE.has(key.toLowerCase()), label: PALETTE.get(key.toLowerCase()) || tailComment(S.raw, line), calls: callees(S.raw, S.code, S.mask, fo + 1, fc),
+      pillRun: ((S.code.slice(fo, fc).match(/_pillRun\(\s*(['"])([^'"]+)\1\s*\)/) || [])[2]) || '' });   // §14.7: A._pillRun('<id>') = the key runs that pill's own fn
   }
 }
 
@@ -357,7 +359,7 @@ for (const r of rows.filter(x => x.source === '_actions' && x.key)) {
   if (!bound.length) { conflicts.push({ pill: r.pill, key: r.key, kind: 'UNBOUND', note: 'no keydown table binds this key' }); r.action = r.pill; continue; }
   const pillSet = sameSet(r.calls);
   const delegated = r.calls.filter(c => c.startsWith('→key ')).map(c => c.slice(5));
-  const same = bound.filter(k => delegated.includes(k.key) || [...sameSet(k.calls)].some(c => pillSet.has(c)));
+  const same = bound.filter(k => delegated.includes(k.key) || k.pillRun === r.pill || [...sameSet(k.calls)].some(c => pillSet.has(c)));
   if (!same.length) conflicts.push({ pill: r.pill, key: r.key, kind: 'DIFFERENT', note: 'key fires ' + bound.map(k => `${k.source} ${k.key} → ${k.calls.join(', ') || '(no call)'}`).join(' | ') });
   r.action = r.pill;
   for (const k of same) k.action = k.action || r.pill;
