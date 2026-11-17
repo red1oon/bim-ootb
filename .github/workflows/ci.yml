@@ -102,7 +102,9 @@ jobs:
           if [ "$rc" -ne 0 ] || ! printf '%s' "$v" | grep -q 'verdict=PASS'; then exit 1; fi
 
   e2e-tests:
-    runs-on: ubuntu-latest
+    # pinned: ubuntu-latest is rolling to 26.04, where `playwright install chromium` fails
+    # ("Playwright does not support chromium on ubuntu26.04-x64", bim-ootb #3220 run 44147388376)
+    runs-on: ubuntu-24.04
     needs: fast-checks
     steps:
       - uses: actions/checkout@v4
