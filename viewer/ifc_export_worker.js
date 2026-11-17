@@ -24,23 +24,65 @@ self.onmessage = function(e) {
 var IFC64 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_$';
 
 function newGuid() {
-  var c = [];
-  for (var i = 0; i < 22; i++) c.push(IFC64[Math.floor(Math.random() * 64)]);
+  // VIEWER_IFC_EXPORT_GUID.md: 128 bits in 22 base-64 digits, so the first digit carries 2 bits (0-3).
+  var c = [IFC64[Math.floor(Math.random() * 4)]];
+  for (var i = 1; i < 22; i++) c.push(IFC64[Math.floor(Math.random() * 64)]);
   return c.join('');
 }
 
-// Convert element GUID (hex or IFC) to valid 22-char IFC GlobalId
-function toIfcGuid(guid) {
-  if (!guid) return newGuid();
-  if (guid.length === 22 && /^[0-9A-Za-z_$]+$/.test(guid)) return guid;
-  // Hex GUID → pad/convert to 22 chars
-  var result = '';
-  for (var i = 0; i < guid.length && result.length < 22; i++) {
-    var v = parseInt(guid[i], 16);
-    if (!isNaN(v)) result += IFC64[v] + IFC64[(v * 7 + i) % 64];
+// 16 bytes -> 22-char GlobalId, the IFC definition (same as ifcopenshell.guid.compress).
+function compressBytes(bs) {
+  function b64(v, l) { var o = ''; for (var i = l - 1; i >= 0; i--) o += IFC64[Math.floor(v / Math.pow(64, i)) % 64]; return o; }
+  var out = b64(bs[0], 2);
+  for (var i = 1; i < 16; i += 3) out += b64((bs[i] << 16) + (bs[i + 1] << 8) + bs[i + 2], 4);
+  return out;
+}
+
+// Deterministic 128-bit hash of the WHOLE string (cyrb128), as 16 bytes.
+function hash128(str) {
+  var h1 = 1779033703, h2 = 3144134277, h3 = 1013904242, h4 = 2773480762;
+  for (var i = 0, k; i < str.length; i++) {
+    k = str.charCodeAt(i);
+    h1 = h2 ^ Math.imul(h1 ^ k, 597399067);
+    h2 = h3 ^ Math.imul(h2 ^ k, 2869860233);
+    h3 = h4 ^ Math.imul(h3 ^ k, 951274213);
+    h4 = h1 ^ Math.imul(h4 ^ k, 2716044179);
   }
-  while (result.length < 22) result += IFC64[result.length % 64];
-  return result.substring(0, 22);
+  h1 = Math.imul(h3 ^ (h1 >>> 18), 597399067);
+  h2 = Math.imul(h4 ^ (h2 >>> 22), 2869860233);
+  h3 = Math.imul(h1 ^ (h3 >>> 17), 951274213);
+  h4 = Math.imul(h2 ^ (h4 >>> 19), 2716044179);
+  h1 ^= (h2 ^ h3 ^ h4); h2 ^= h1; h3 ^= h1; h4 ^= h1;
+  var words = [h1, h2, h3, h4], bs = [];
+  for (var w = 0; w < 4; w++) for (var b = 3; b >= 0; b--) bs.push((words[w] >>> (b * 8)) & 255);
+  return bs;
+}
+
+var GUID22 = /^[0-3][0-9A-Za-z_$]{21}$/;
+
+// Convert an element id to a valid 22-char IFC GlobalId (VIEWER_IFC_EXPORT_GUID.md §Rule).
+// `stats` (optional) counts which path was taken: passthrough / uuid / hashed / random.
+function toIfcGuid(guid, stats) {
+  stats = stats || {};
+  if (!guid) { stats.random = (stats.random || 0) + 1; return newGuid(); }
+  guid = String(guid);
+  if (guid.length === 22 && GUID22.test(guid)) { stats.passthrough = (stats.passthrough || 0) + 1; return guid; }
+  var hex = guid.replace(/-/g, '');
+  if (/^[0-9a-fA-F]{32}$/.test(hex)) {
+    var bs = [];
+    for (var i = 0; i < 32; i += 2) bs.push(parseInt(hex.substr(i, 2), 16));
+    stats.uuid = (stats.uuid || 0) + 1;
+    return compressBytes(bs);
+  }
+  stats.hashed = (stats.hashed || 0) + 1;
+  return compressBytes(hash128(guid));
+}
+
+// No two products share a GlobalId within one export: a repeat is re-derived from id#n and counted.
+function uniqueGuid(g, srcId, used, stats) {
+  for (var n = 1; used[g]; n++) { g = compressBytes(hash128(String(srcId) + '#' + n)); if (n === 1) stats.rederived++; }
+  used[g] = 1;
+  return g;
 }
 
 function stepStr(s) {
@@ -264,6 +306,8 @@ function buildIFC(data) {
   // ── Phase 2: Elements — reference RepresentationMap via IfcMappedItem ──
   var storeyElements = {};  // storeyId → [elementId]
   var exportedCount = 0;
+  var guidStats = { passthrough: 0, uuid: 0, hashed: 0, random: 0, rederived: 0 };
+  var usedGuids = {};
 
   for (var i = 0; i < elements.length; i++) {
     var el = elements[i];
@@ -324,7 +368,7 @@ function buildIFC(data) {
     // Element entity
     var ifcClass = el.ifcClass || 'IfcBuildingElementProxy';
     var stepType = ifcClassToStep(ifcClass);
-    var elGuid = toIfcGuid(el.guid);
+    var elGuid = uniqueGuid(toIfcGuid(el.guid, guidStats), el.guid, usedGuids, guidStats);
     var elName = el.name || el.guid || '';
 
     var idElement = next();
@@ -368,6 +412,9 @@ function buildIFC(data) {
     "ENDSEC;\n" +
     "END-ISO-10303-21;\n";
 
+  console.log('[S229] §IFC_EXPORT_GUID elements=' + exportedCount + ' unique=' + Object.keys(usedGuids).length +
+    ' passthrough=' + guidStats.passthrough + ' uuid=' + guidStats.uuid + ' hashed=' + guidStats.hashed +
+    ' random=' + guidStats.random + ' rederived=' + guidStats.rederived);
   console.log('[S229] §EXPORT_BUILD elements=' + exportedCount + '/' + elements.length + ' lines=' + lines.length);
 
   return header + lines.join('\n') + '\n' + footer;
