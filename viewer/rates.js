@@ -174,7 +174,11 @@ var LABOR_RATES = {
     // IfcWall/IfcWallStandardCase to CONCRETE_GANG, which carried neither — same silent 120s-floor
     // loss §S65 defect 5 hit. Values COPIED VERBATIM from MASON, those classes' own canonical
     // trade (IfcWall:12, IfcWallStandardCase:12) — extracted, not invented.
-    productivity: {IfcSlab:35,IfcFooting:6,IfcPile:4,IfcReinforcingBar:50,IfcRamp:3,IfcRampFlight:3,IfcWall:12,IfcWallStandardCase:12}
+    // IfcBeam:9.4 — cast-in-place concrete beams (routed here by concrete_beam_concrete_gang below). Derived, not typed in:
+    // Spon's section E, reinforced in situ ready-mixed concrete, "Beams; isolated" 3.70 labour hours/m3; this gang
+    // (6 x 8 h = 48 h/day) -> 12.97 m3/day; / the median concrete beam of the fleet, 1.378 m3 (n=578). Placing only.
+    // Source status and the hand-mix alternative (IS 7272): bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.18.
+    productivity: {IfcSlab:35,IfcFooting:6,IfcPile:4,IfcReinforcingBar:50,IfcRamp:3,IfcRampFlight:3,IfcWall:12,IfcWallStandardCase:12,IfcBeam:9.4}
   },
   MASON: {
     rate_per_day: 155, crew_size: 3, max_crews: 2, trade: 'Mason (Skilled) + Laborers',
@@ -577,6 +581,17 @@ var SEQUENCE_NAME_OVERRIDES = [
   // stay in the pool across the move (verified before/after on the cache: 4 in, 4 in). The
   // "moves IfcSlab out of supportPool" premise that held this change back was wrong; the removal
   // consequence is real for IfcMember (seq 3 -> 6 crosses the `<= 4` clause) and only for IfcMember.
+  // A beam NAMED concrete is cast by the concrete gang, not erected by the steel crew (owner 2026-11-18, §Q.18).
+  // Phase and sequence are the class's own (Superstructure / 3); only the crew changes. Fleet reach is measured in §Q.18.
+  {
+    id: 'concrete_beam_concrete_gang',
+    classes: ['IfcBeam'],
+    pattern: '(^|[^a-z])concrete([^a-z]|$)',   // not \\b: Revit family names read "M_Concrete-…" and _ is a word character
+    flags: 'i',
+    phase: 'Superstructure',
+    sequence: 3,
+    resource: 'CONCRETE_GANG'
+  },
   {
     id: 'stair_member_architecture',
     classes: ['IfcMember', 'IfcSlab'],
