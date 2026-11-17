@@ -751,7 +751,7 @@ function setupImport(A) {
     var status = _importStatusEl();
     if (status) status.textContent = 'Exporting IFC (' + elements.length + ' elements)...';
 
-    var worker = new Worker(new URL('ifc_export_worker.js?v=1', location.href).href);
+    var worker = new Worker(new URL('ifc_export_worker.js?v=2', location.href).href);
     worker.onmessage = function(e) {
       var msg = e.data;
       if (msg.type === 'progress') {
