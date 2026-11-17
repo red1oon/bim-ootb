@@ -1,0 +1,29 @@
+§W-RED1-PREFIX SQL #80001 client 11 [{"id":101,"n":"80001","so":"Y"}] · #80000 [{"id":100,"n":"80000","so":"Y"},{"id":104,"n":"800000","so":"N"},{"id":105,"n":"800001","so":"N"},{"id":106,"n":"800002","so":"N"}] · BP Joe [{"id":114}]
+§W-RED1-PREFIX lines []
+§W-RED1-PREFIX places ["red1>","red1>","red1>","red1>","red1>","red1>","red1>","red1>","red1>","red1>","red1>","red1>","red1>"]
+§W-RED1-PREFIX screen
+    | "#80001" is not a word of red1 (type help) nor a door line (app.verb key=value)
+    | (nowhere: cd <building> or cd <ERP kind>)
+    | "#80000" is not a word of red1 (type help) nor a door line (app.verb key=value)
+    | (nowhere: cd <building> or cd <ERP kind>)
+    | "#99999999" is not a word of red1 (type help) nor a door line (app.verb key=value)
+    | "@x" is not a word of red1 (type help) nor a door line (app.verb key=value)
+    | "#" is not a word of red1 (type help) nor a door line (app.verb key=value)
+    | "#O" is not a word of red1 (type help) nor a door line (app.verb key=value)
+    | (nowhere: cd <building> or cd <ERP kind>)
+    | "#BP" is not a word of red1 (type help) nor a door line (app.verb key=value)
+    | (nowhere: cd <building> or cd <ERP kind>)
+    | 
+§W-RED1-PREFIX pwd lines ["(nowhere: cd <building> or cd <ERP kind>)","(nowhere: cd <building> or cd <ERP kind>)","(nowhere: cd <building> or cd <ERP kind>)","(nowhere: cd <building> or cd <ERP kind>)"]
+  ❌ P1 `#80001` runs erp.search text=80001 and enters the one order the SQL finds (id 101)  undefined · (nowhere: cd <building> or cd <ERP kind>)
+  ❌ P2 `#80000` lists the 4 client-11 hits of the SQL (sales 1, purchase 3) each with its line, in two windows, and enters nothing  listed [] head=false windows=false/false pwd (nowhere: cd <building> or cd <ERP kind>)
+  ❌ P4 `#99999999` is refused naming 99999999 and the definition searched (Order Search)  (none)
+  ❌ P5 `@x` is refused as reserved, nothing runs for it; `#` alone prints its use  (none)
+  ❌ P6 `#O 80001` = P1 (order 101); `#BP Joe` enters business partner 114 (the BP query through its user)  ["(nowhere: cd <building> or cd <ERP kind>)","(nowhere: cd <building> or cd <ERP kind>)"]
+§W-RED1-PREFIX P3 lines ["mis.describe kind=Order","mis.describe kind=\"Order 100\"","mis.describe kind=Order","mis.read kind=Order number=100","mis.read kind=Order id=100","erp.actions kind=Order id=100"] pwd ["kind=Order","kind=Order id=100"] (orders numbered 80001 across clients: 2)
+  ❌ P3 inside `cd Order`, `#80001` still enters order 101 (the login's client; 2 tenants carry 80001); inside record 100, `#80002` enters 102  ["kind=Order","kind=Order id=100"]
+§W-RED1-PREFIX P7 lines ["mis.list kind=AD_Role columns=AD_Client_ID AD_Role_ID=1300102","mis.list kind=AD_User columns=AD_User_ID,Name,EMail limit=1000 AD_Client_ID=13","mis.list kind=AD_User columns=AD_User_ID,Name,Value,EMail,AD_Client_ID limit=1000","mis.list kind=AD_User_Roles columns=AD_Role_ID limit=1000 AD_User_ID=1300101 IsActive=Y"] pwd [] SQL client 13 [{"id":1300101,"n":"80001","so":"Y"}]
+  ❌ P7 role 1300102: `#80001` before the login is held by the gate (no erp.search); after the login it enters the client-13 order 1300101  searches=0 · undefined
+§W-RED1-PREFIX P8 screen "" pwd ["role=50004"] (role 50004 grants on 143/181: 0)
+  ❌ P8 role 50004 (no order window granted) finds nothing, and the refusal names the windows  (none)
+§WITNESS_RED1_PREFIX pass=0 fail=8 inconclusive=0 verdict=FAIL

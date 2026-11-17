@@ -152,10 +152,12 @@ else k.chk('M1 the pre-change and the new words_core.js answer the same corpus b
 const LATER = (x) => /^words\.(level_|student\.|tip_|offer_|cd_record_|cd_tab_|link_|works_for|here_nowhere|login_|role_unknown)/.test(x), handed = catWords.filter(LATER);
 const SHELL_ONLY = (x) => /^words\.bang_/.test(x), handedShell = catWords.filter(SHELL_ONLY);   // printed by red1.js, not words_core.js (the corpus' core): proven by W-RED1-BANG B3 (bim-compiler prompts/CLI_ERP_IVR.md §39)
 const CONTAINER = (x) => /^words\.(rec_actions|menu_walk_|menu_leaf_)/.test(x), handedCont = catWords.filter(CONTAINER);   // reached only with a real door answer (erp.actions, mis.menu): proven by W-RED1-CONTAINER X10 (bim-compiler prompts/CLI_ERP_IVR.md §40 C3/C5)
+const PREFIX = (x) => /^words\.(hash_|at_reserved)/.test(x), handedPfx = catWords.filter(PREFIX);   // reached only with a real erp.search answer: proven by W-RED1-PREFIX P2/P4/P5/P8 (bim-compiler prompts/CLI_ERP_IVR.md §41)
+handedCont.push.apply(handedCont, handedPfx);
 handed.push.apply(handed, handedShell); handed.push.apply(handed, handedCont);
-const own = (x) => !LATER(x) && !SHELL_ONLY(x) && !CONTAINER(x);
+const own = (x) => !LATER(x) && !SHELL_ONLY(x) && !CONTAINER(x) && !PREFIX(x);
 const used = MSG.used(), reached = catWords.filter(x => own(x) && used[x]), unreached = catWords.filter(x => own(x) && !used[x]);
-k.L('M2 handed to W-HELP-STUDENT: ' + (handed.length - handedShell.length - handedCont.length) + ' keys ' + JSON.stringify(handed.filter(x => handedShell.indexOf(x) < 0 && handedCont.indexOf(x) < 0)) + ' · to W-RED1-BANG: ' + JSON.stringify(handedShell) + ' · to W-RED1-CONTAINER: ' + JSON.stringify(handedCont));
+k.L('M2 handed to W-HELP-STUDENT: ' + (handed.length - handedShell.length - handedCont.length) + ' keys ' + JSON.stringify(handed.filter(x => handedShell.indexOf(x) < 0 && handedCont.indexOf(x) < 0)) + ' · to W-RED1-BANG: ' + JSON.stringify(handedShell) + ' · to W-RED1-CONTAINER: ' + JSON.stringify(handedCont.filter(x => handedPfx.indexOf(x) < 0)) + ' · to W-RED1-PREFIX: ' + JSON.stringify(handedPfx));
 k.L('M2 reached ' + reached.length + ' of ' + catWords.length + ' keys; uses=' + JSON.stringify(used));
 if (unreached.length) k.incon('M2', 'keys the corpus never reached: ' + unreached.join(', '));
 else k.chk('M2 every P2a words.* key was reached by the corpus (' + reached.length + ' of ' + (catWords.length - handed.length) + '; ' + handed.length + ' later keys handed on)', reached.length > 0 && reached.length === catWords.length - handed.length);

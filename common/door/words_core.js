@@ -187,6 +187,15 @@
           st.pendingCd = null; var nm = pc.first || pc.name;
           screen.push(buildings.length ? M('words.cd_unknown_buildings', nm, buildings.join(', ')) : M('words.cd_unknown', nm)); return out();
         }
+        if (p === 'hash-search') {   // §41 H3: ONE record found is entered (by its id, as a link enters); several are listed per window with the line that enters each; none says why
+          var hq = st.pendingHash; delete st.pendingHash; var HA = ok && env.answer, all = [];
+          if (!HA || !Array.isArray(HA.hits)) { screen.push(M('words.hash_none', hq, env.why || M('words.answer_no_rows'))); return out(); }
+          HA.hits.forEach(function (h) { h.records.forEach(function (r) { all.push({ h: h, r: r }); }); });
+          if (all.length === 1) { if (st.mwalk) st.mwalk = null; st.pendingCd = { name: all[0].h.kind, id: all[0].r.id }; effects.push({ line: lineOf('mis.describe', { kind: all[0].h.kind }), purpose: 'cd-erp' }); return out(); }
+          screen.push(M('words.hash_many', hq, all.length, HA.hits.length));
+          HA.hits.forEach(function (h) { screen.push(M('words.hash_window', h.window.name, h.kind, h.definition)); h.records.forEach(function (r) { screen.push(M('words.hash_record', h.kind, r.number, quote(h.kind), r.id)); }); });
+          return out();
+        }
         if (p === 'rec-read') {   // the record named by `cd <kind> <number|name>` (or by a link): its row
           var pr = st.pendingRead, R0 = ok && env.answer && env.answer.record;
           if (R0) {
@@ -273,6 +282,11 @@
         st.pendingLogin = { who: who }; effects.push({ line: lineOf('mis.list', { kind: 'AD_User', columns: 'AD_User_ID,Name,Value,EMail,AD_Client_ID', limit: '1000' }), purpose: 'login-find' }); return out();
       }
       if (st.needLogin && !st.user && LOGIN_OPEN.indexOf(w) < 0 && brk !== 'nogate') { screen.push(M('words.login_first', st.needLogin.client, st.needLogin.n)); return out(); }   // §30 L2 the gate; nogate: W-RED1-LOGIN falsifier (must FAIL G2)
+      if (/^[#@]/.test(text) && brk !== 'nohash') {   // §41 H3 (bim-compiler prompts/CLI_ERP_IVR.md): `#` = legacy's Document Search (`/text` in its Global Search, the same in any window), `@` reserved (nohash: W-RED1-PREFIX falsifier, must FAIL P1)
+        if (text.charAt(0) === '@') { screen.push(M('words.at_reserved', text)); return out(); }
+        var hs = text.slice(1).trim(); if (!hs) { screen.push(M('words.hash_use')); return out(); }
+        var hsa = { text: hs }; ctxArgs(st, verbs['erp.search'], hsa); st.pendingHash = hs; effects.push({ line: lineOf('erp.search', hsa), purpose: 'hash-search' }); return out();
+      }
       if (toks.length === 1 && G[w] && w !== '_' && brk !== 'nogroup') { st.group = w; screen.push(helpText(w, st.level || null).replace(/\n$/, '')); return out(); }   // §40 C1/C2: `bim` / `mis` / `erp` alone enter (or switch to) that group, listing its words once; `help <g>` stays help
       if (w === 'cd') {
         st.last = null;
