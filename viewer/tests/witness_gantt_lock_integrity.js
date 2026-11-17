@@ -112,7 +112,14 @@ const BLD_DIR = process.env.BLD_DIR || path.join(require('os').homedir(), 'bim-o
     // _promoteRoofLoadPath: _buildXrayElements calls it since the #1272 consolidation — slice it
     // too when present (same both-commits pattern as witness_tm_geo_order_cycles.js; without this
     // the witness crashed ReferenceError on every post-#1272 run).
+    // §Q.9.3 item 1 (bim-compiler prompts/4D_MODEL_INTEGRITY.md, 2026-11-17): #1890 made _buildXrayElements call
+    // _scheduledWhere and this list never picked it up — the ReferenceError was swallowed by a bare catch, so
+    // G-LI-2a read n=0 on every run since 2026-10-06. Sliced when present; the owner it delegates to
+    // (ScheduleAuthor.scheduledWhere) is given to the sandbox below, never a second copy of the clause.
     const _names = ['_buildXrayElements', 'verifyGanttIntegrity'];
+    ['_scheduledWhere', '_civilRule'].forEach(function (h) {   // both are one-line delegates to ScheduleAuthor
+      if (new RegExp('^[ \\t]*function ' + h + '\\(', 'm').test(tmSrc)) _names.unshift(h);
+    });
     if (tmSrc.indexOf('function _promoteRoofLoadPath(') >= 0) _names.unshift('_promoteRoofLoadPath');
     // §S20 Part B (2026-08-17) — found, not in this stage's named scope but the SAME dead-witness
     // failure class §DAY_GAP_TAIL/§S17 already fixed elsewhere in this codebase: §ZONE_INDEX (#1313)
@@ -173,7 +180,7 @@ const BLD_DIR = process.env.BLD_DIR || path.join(require('os').homedir(), 'bim-o
     performance: { now: () => Date.now() },
     ZoneIndex: ZoneIndex,
     ScheduleGate: ScheduleGate,
-    window: { SEQUENCE_RULES: rulesJson.SEQUENCE_RULES, SEQUENCE_DEFAULT: rulesJson.SEQUENCE_DEFAULT, SEQUENCE_NAME_OVERRIDES: rulesJson.SEQUENCE_NAME_OVERRIDES || rulesJson.NAME_OVERRIDES || [] },
+    window: { ScheduleAuthor: require(path.join(__dirname, '..', 'schedule_author.js')), SEQUENCE_RULES: rulesJson.SEQUENCE_RULES, SEQUENCE_DEFAULT: rulesJson.SEQUENCE_DEFAULT, SEQUENCE_NAME_OVERRIDES: rulesJson.SEQUENCE_NAME_OVERRIDES || rulesJson.NAME_OVERRIDES || [] },
     ZoneIndex: ZoneIndex,
     // §S73: §S58 moved _contactGraph/_designatedSupport/_midairAudit into support_sweep.js and left
     // one-line delegating wrappers behind, so the sliced wrappers need the real module — the same
@@ -190,6 +197,7 @@ const BLD_DIR = process.env.BLD_DIR || path.join(require('os').homedir(), 'bim-o
 
   // Seed _ops from the REAL scheduler on the REAL geometry — the clean, engine-produced state.
   const els = sandbox.__bxe();
+  if (!els || !els.length) console.log('§LI_INCONCLUSIVE G-LI-2 judged NOTHING — the element build returned empty (see §XRAY_BUILD_EMPTY above); no lock verdict below was exercised');
   assert(els && els.length > 500, 'G-LI-2a _buildXrayElements yields real geometry (n=' + (els ? els.length : 0) + ')');
   const geoEls = els.filter(e => !(e.x0 === e.x1 && e.y0 === e.y1 && e.base_z === e.top_z));
   geoEls.forEach(e => { e.resource = e.cls; e.installSecs = 120; });

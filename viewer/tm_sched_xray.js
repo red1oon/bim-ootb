@@ -287,7 +287,8 @@
   // fast path (§GANTT_CACHE_HIT) where injectGantt() never runs at all.
   function _buildXrayElements() {
     var app = TMS.A();
-    if (!app || !app.db) return null;
+    // §XRAY_BUILD_EMPTY (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.9.3 item 1): every empty return says why.
+    if (!app || !app.db) { console.log('§XRAY_BUILD_EMPTY reason=no-db'); return null; }
     var db = app.db;
     var SR = window.SEQUENCE_RULES || {};
     var SD = window.SEQUENCE_DEFAULT || { phase: 'Architecture', sequence: 6, resource: null };
@@ -308,8 +309,8 @@
         'LEFT JOIN element_transforms t ON t.guid = m.guid ' +
         "WHERE " + _scheduledWhere('m')
       );
-    } catch (e) { return null; }
-    if (!r.length || !r[0].values.length) return null;
+    } catch (e) { console.log('§XRAY_BUILD_EMPTY reason=query-threw ' + (e && e.message)); return null; }
+    if (!r.length || !r[0].values.length) { console.log('§XRAY_BUILD_EMPTY reason=no-scheduled-rows'); return null; }
 
     // §ZONE_INDEX (2026-08-12) — was an inline copy of the median-Z banding, byte-identical to
     // injectGantt's own except for the column index its SELECT put `cz` at. One shared index now;
