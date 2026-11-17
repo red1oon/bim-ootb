@@ -262,7 +262,8 @@
 // v1725 (2026-11-17) §14.8 (bim-compiler VOCAB_MESSAGE_CATALOG.md): i18n/<code>.json rebuilt — 20 new keys (pills lod400/roadreport/ew/rw/gi-preview + sub-rows, ui_export_bcf, wi_store_changed) + the 4 Road standards rows translated; the packs are precached cache-first, so the bump is what reaches installed clients
 // v1726 (2026-11-17) §14.8.1 (bim-compiler VOCAB_MESSAGE_CATALOG.md): help_panel.js?v=3 — the How To guide link's tooltip heading goes through the dictionary (howto_gh_<anchor>); i18n/<code>.json rebuilt with the 20 heading keys
 // v1731 (2026-11-17) §19.4 (bim-compiler VOCAB_MESSAGE_CATALOG.md): the help panel searches through the shared query core — help_panel.js?v=4, common/help/help_query.js?v=1, help/index/<locale>.json (18 packs)
-const CACHE_VERSION = 'v1731';
+// v1732 (2026-11-17) §19.5 (bim-compiler VOCAB_MESSAGE_CATALOG.md): the help panel's "Did you mean" line — help_panel.js?v=5, common/help/help_dym.js?v=1, common/door/assist_core.js?v=1, dictionary key ui_help_dym
+const CACHE_VERSION = 'v1732';
 // v1637 (rebase of PR #1191/#1196) §CLASS_UNMATCHED_INHERITED + §EXACT_LOOKUP_BLINDSPOT: rates/ifc_schema_hierarchy.json added to PRECACHE_ASSETS; schedule_author.js/proj_fold.js/boq_charts.html/schedule_read_4d.js/tm_sched_xray.js classify via the schema hierarchy.
 // v1636 (rebase of PR #1317) §ARCH_AREA_WEIGHT/§VOL_WEIGHT/§FOOTING_M3: schedule_author.js, time_machine parts, rates.js and rates/*.json changed install DURATIONS (area/volume weighting, IfcFooting priced M3); all precached cache-first, so a client holding the old cache would keep the flat times forever.
 // v1635 (rebase of PR #676, BCF half only) §BCF_EXPORT: bcf_export.js added to PRECACHE_ASSETS; viewer.html loads it + Export BCF button in the Issues toolbar; main.js wires setupBcfExport/exportIssuesBcf. The Open-button IFC half of #676 was superseded by main's A._openIfcFiles.
@@ -1206,6 +1207,8 @@ const PRECACHE_ASSETS = [
   '../common/drag.js',
   '../common/help/help_panel.js',
   '../common/help/help_query.js',   // §19.4 the shared query core (the help panel's search)
+  '../common/help/help_dym.js',     // §19.5 the "Did you mean" line (shared with the ERP box)
+  '../common/door/assist_core.js',  // the ONE suggester AssistCore.nearest (the CLI session's file; loaded by the page for §19.5)
   'help/howto.json',
   // §19.4: the help panel's per-locale search index (viewer/tools/help_records.js via common/help/tools/build_help_index.js); ~13-27 KB each, lazy-fetched on the first typed query, precached for offline
   'help/index/en_MY.json', 'help/index/en_US.json', 'help/index/en_GB.json', 'help/index/en_AU.json', 'help/index/ms_MY.json', 'help/index/de_DE.json',

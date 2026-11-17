@@ -6,8 +6,8 @@
    "ad_message_base.csv",
    "AD_Message_Trl_zh_CN.xml"
   ],
-  "rows": 1086,
-  "translated": 983,
+  "rows": 1087,
+  "translated": 984,
   "untranslated": 103
  },
  "labels": {
@@ -1096,6 +1096,7 @@
   "howto_gh_issues": "问题",
   "howto_gh_3d_navigation": "3D 导航",
   "howto_gh_camera_view_drawer": "相机 / 视图抽屉",
-  "howto_gh_settings": "设置"
+  "howto_gh_settings": "设置",
+  "ui_help_dym": "您是不是想找"
  }
 }

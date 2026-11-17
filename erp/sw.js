@@ -10,7 +10,8 @@
 // init-bubble must be INSTANT, ERP_INIT_BUBBLE_INSTANT.md); network-first for non-precached .js (fresh on
 // deploy); cache-first for precached assets/.wasm/images. Freshness on deploy is carried by the SW version
 // bump (skipWaiting+clients.claim precache the new shell), so SWR strands a user at most one load post-deploy.
-const CACHE_VERSION = 'v1099';   // bump on each deploy; detail goes in the commit message. History to v1063: SW_VERSION_HISTORY.md
+// v1100 (2026-11-17) §19.5 (bim-compiler VOCAB_MESSAGE_CATALOG.md): the How To box's "Did you mean" line — help_search.js?v=4, common/help/help_dym.js?v=1, common/door/assist_core.js?v=1, chrome.json help.dym
+const CACHE_VERSION = 'v1100';   // bump on each deploy; detail goes in the commit message. History to v1063: SW_VERSION_HISTORY.md
 // v810 (2026-10-03) UI locales: a machine-catalogue entry gets the same fmt as a pack hit (de/ms login title lost its
 //   'Kernel-ERP — ' prefix — found by fetching the live page, ERP_UI_LOCALES.md §L7).
 // v809 (2026-10-03) UI locales (bim-compiler prompts/ERP_UI_LOCALES.md, W-ERP-I18N): erp_i18n.js + i18n/chrome.json +
@@ -105,6 +106,8 @@ const PRECACHE_ASSETS = [
   'help_search.js',    // VOCAB_MESSAGE_CATALOG §10 H2 — the How To question box (help packs i18n/help/<lang>/help.json and index.json are lazy, cached on first fetch)
   'help_records_core.js', // VOCAB_MESSAGE_CATALOG §19.3 — the ONE pure builder of the help records (page + build tool)
   '../common/help/help_query.js', // VOCAB_MESSAGE_CATALOG §19.2 — the ONE help query core (HelpQuery); help_search.js ranks through it
+  '../common/help/help_dym.js', // VOCAB_MESSAGE_CATALOG §19.5 — the "Did you mean" line (shared with the help panel)
+  '../common/door/assist_core.js', // the ONE suggester AssistCore.nearest, loaded by the page for §19.5
   'ad_form_generic.js', // generic AD_Form engine (window.AdFormGeneric): a bundle describes a form, ONE renderer draws it
   'ad_lens.js',         // opt-in operations lens registry (window.AdLens): a bundle contributes record actions, ONE lens bar (bim-compiler ERP_FRIENDLY_OPS_LENS.md §15)
   'ad_attachment.js', // §ATT window Attachment (window.AdAttachment), loaded on first use, W-ATTACH

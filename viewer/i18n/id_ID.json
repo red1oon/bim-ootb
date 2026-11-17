@@ -6,8 +6,8 @@
    "ad_message_base.csv",
    "AD_Message_Trl_id_ID.xml"
   ],
-  "rows": 1086,
-  "translated": 983,
+  "rows": 1087,
+  "translated": 984,
   "untranslated": 103
  },
  "labels": {
@@ -1096,6 +1096,7 @@
   "howto_gh_issues": "Masalah",
   "howto_gh_3d_navigation": "Navigasi 3D",
   "howto_gh_camera_view_drawer": "Laci Kamera / Tampilan",
-  "howto_gh_settings": "Pengaturan"
+  "howto_gh_settings": "Pengaturan",
+  "ui_help_dym": "Maksud Anda"
  }
 }

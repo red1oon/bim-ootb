@@ -16,6 +16,7 @@
 //   guideBase, guideIcon, runSeq(seq), makeDraggable(el), storageKey, state:{filter,open},
 //   headerExtra (html), footer (html), onMount(pal, api), onOpen(pal), onClose(pal, why), onDrop(rect), noAutoFocus (bool),
 //   index:{url()->string, rec?(entry)->record}  the per-locale query index (common/help/help_query.js pack; §19.4); an entry's hkey joins it to its record's go.hkey
+//   §19.5: under the list ONE "Did you mean: A · B · C" line (common/help/help_dym.js + common/door/assist_core.js, loaded before this file), shown when the top result is not tier 0; a click fills the box and searches.
 // }
 (function (root) {
   'use strict';
@@ -51,10 +52,11 @@
       'style="width:100%;background:#222;color:#eee;border:1px solid #555;border-radius:6px;padding:8px 10px;font-size:13px;outline:none;box-sizing:border-box">' +
       '</div>' +
       '<div id="cmd-list" style="flex:1 1 auto;min-height:0;overflow-y:auto;padding:4px 0"></div>' +
+      '<div id="cmd-dym" style="flex:0 0 auto;display:none;padding:6px 14px;font-size:12px;color:#d0d0d0;border-top:1px solid rgba(255,183,77,0.25)"></div>' +
       (cfg.footer || '');
     document.body.appendChild(pal);
 
-    var searchInput = pal.querySelector('#cmd-search'), listEl = pal.querySelector('#cmd-list'), cursor = 0, currentMatches = [];
+    var searchInput = pal.querySelector('#cmd-search'), listEl = pal.querySelector('#cmd-list'), dymEl = pal.querySelector('#cmd-dym'), cursor = 0, currentMatches = [];
     function run(entry) {
       if (entry.action) entry.action(); else if (cfg.runSeq) cfg.runSeq(String(entry.seq || '').toLowerCase());
       console.log('§KBD_PALETTE_RUN name=' + entry.name + ' seq=' + entry.seq);
@@ -87,12 +89,12 @@
       (pack.records || []).forEach(function (r) { if (r.go && r.go.hkey != null) have[String(r.go.hkey)] = 1; });
       var extra = all.filter(function (e) { return !have[entryKey(e)]; }).map(function (e) { return (ix.rec || liveRec)(e, (pack.kinds || [])[0]); });
       var sig = url + '|' + pk.state + '|' + extra.map(function (r) { return r.id + '\u0001' + r.n + '\u0001' + (r.d || '') + '\u0001' + (r.h || ''); }).join('\u0002');
-      if (!hqCur || hqCur.sig !== sig) hqCur = { sig: sig, h: HQ.create(pack, { extra: extra }), extra: extra.length, state: pk.state };
+      if (!hqCur || hqCur.sig !== sig) hqCur = { sig: sig, h: HQ.create(pack, { extra: extra }), extra: extra.length, state: pk.state, recs: (pack.records || []).concat(extra), names: null };
       return hqCur;
     }
     function rerenderLater() { if (api && document.getElementById(id) === pal) currentMatches = renderList(searchInput.value); }
     function renderList(filter) {
-      var f = (filter || '').toLowerCase(), all = cfg.entries ? cfg.entries() : [], matches = all, how = 'all';
+      var f = (filter || '').toLowerCase(), all = cfg.entries ? cfg.entries() : [], matches = all, how = 'all', dym = [];
       all.forEach(function (e) { e.seq = e.seq || ''; e._openForMatch = false; });
       if (f.trim()) {
         var cur = hqHandle(all);
@@ -106,10 +108,19 @@
           });
           // §14.3: a word that is only in a bullet, a CLI title or a guide paragraph finds its entry, shown opened so the reason is visible
           matches.forEach(function (e) { if (!prim[entryKey(e)]) e._openForMatch = true; });
+          // §19.5: ONE separate line "Did you mean: A · B · C" (common/help/help_dym.js, shared with the ERP box) when the top result is not tier 0. The pack's names; `a` here is the shortcut key, not a name.
+          if (root.HelpDym) { if (!cur.names) cur.names = root.HelpDym.names(cur.recs, { alt: false }); dym = root.HelpDym.suggest(f, cur.names, res.length ? res[0].tier : 3); }
         } else how = 'wait';
       }
       var nGuide = 0, nCli = 0, en = /^en\b/i.test(document.documentElement.lang || 'en');
       listEl.innerHTML = '';
+      if (dymEl) {   // a pick puts the name in the box and searches (the person's act); nothing runs
+        if (root.HelpDym) root.HelpDym.render(dymEl, dym, T('ui_help_dym', 'Did you mean'), function (nm) {
+          searchInput.value = nm; st.filter = nm; cursor = 0; currentMatches = renderList(nm); if (!cfg.isMobile && !cfg.noAutoFocus) searchInput.focus();
+        });
+        dymEl.style.display = dym.length ? 'block' : 'none';
+        if (dym.length) console.log('§HELP_DYM line=' + JSON.stringify(dym) + ' filter="' + f + '"');
+      }
       matches.forEach(function (entry, i) {
         var row = document.createElement('div');
         row.className = 'cmd-row';

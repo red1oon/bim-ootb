@@ -554,7 +554,7 @@
 <script src="erp_i18n.js?v=5"></script><!-- UI locales (bim-compiler prompts/ERP_UI_LOCALES.md) — W-ERP-I18N -->
 <script src="ad_parser.js?v=27"></script>
 <script src="field_help.js?v=1"></script>
-<script src="../common/help/help_query.js?v=1"></script><script src="help_records_core.js?v=1"></script><script src="help_search.js?v=3"></script><!-- VOCAB_MESSAGE_CATALOG §10 H2: the How To question box (deterministic, no AI inside) — W-HELP-SHOWCASE S3 --><!-- VOCAB_MESSAGE_CATALOG §7 P1b: ONE field tooltip setter + the Tool Tip panel (legacy WEditor / HelpController) — W-FIELD-HELP -->
+<script src="../common/help/help_query.js?v=1"></script><script src="../common/door/assist_core.js?v=1"></script><script src="../common/help/help_dym.js?v=1"></script><script src="help_records_core.js?v=1"></script><script src="help_search.js?v=4"></script><!-- VOCAB_MESSAGE_CATALOG §10 H2: the How To question box (deterministic, no AI inside) — W-HELP-SHOWCASE S3 --><!-- VOCAB_MESSAGE_CATALOG §7 P1b: ONE field tooltip setter + the Tool Tip panel (legacy WEditor / HelpController) — W-FIELD-HELP -->
 <!-- UI_UNPARK_RESUME.md — proven AD engines (source of truth: bim-compiler build/erp/): logic evaluator
      (W-LOGIC-EVAL 3044/3044) · DocAction FSM (W-*-FSM, 22 tables) · beforeSave hooks (W-*-SAVE, 12 installers). -->
 <script src="ad_evaluator.js?v=24"></script>
@@ -3145,9 +3145,17 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     box.innerHTML = row ? '<div class="hs-row"><b>' + escH(row.name) + '</b></div>' + _howtoEnglish() + _howtoLinks(row.html) + _howtoTrlNote(row) + '<div class="hs-sub"><a href="' + escH(row.source.url) + '" target="_blank" rel="noopener">' + escH(row.source.guide) + ' · ' + escH(row.source.heading.replace(/^#+\s*/, '')) + '</a></div>' : '';
     console.log('§HELP_CTX window=' + _activeWin + ' howto=' + (row ? row.id : 'none') + ' lang=' + (row && row.translated ? ErpI18n.lang : 'en_US'));
   }
+  // §19.5 (VOCAB_MESSAGE_CATALOG.md): ONE separate line "Did you mean: A · B · C" under the card (HelpDym, common/help/help_dym.js, shared with the help panel). A pick fills the box and asks; nothing opens or runs.
+  function _howtoDym(names) {
+    var card = $('idmp-howto-card'), host = $('idmp-howto-dym');
+    if (!host && card) { host = document.createElement('div'); host.id = 'idmp-howto-dym'; host.className = 'hs-sub'; card.insertAdjacentElement('afterend', host); }
+    if (!host || !window.HelpDym) return;
+    HelpDym.render(host, names || [], _T('help.dym', 'Did you mean'), function (nm) { var q = $('idmp-howto-q'); q.value = nm; _howtoAsk(nm); });
+    if (names && names.length) console.log('§HELP_DYM line=' + JSON.stringify(names) + ' lang=' + ErpI18n.lang);
+  }
   function _howtoAsk(question) {
     var box = $('idmp-howto-card'); if (!box || !_howtoIdx) return null;
-    if (!String(question).trim()) { box.innerHTML = ''; return null; }
+    if (!String(question).trim()) { box.innerHTML = ''; _howtoDym([]); return null; }
     var c = _howtoIdx.ask(question), h = '<div class="hs-card">';
     if (c.window) h += '<div class="hs-row"><span class="hs-k">' + escH(_T('help.window', 'Window')) + '</span><a href="#" data-help-win="' + c.window.id + '">' + escH(c.window.name) + '</a></div>';
     if (c.action) {
@@ -3160,6 +3168,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     if (c.howto) h += _howtoEnglish() + _howtoLinks(c.howto.html) + _howtoTrlNote(c.howto);
     if (!c.window && !c.action && !c.howto) h += '<div class="hs-sub">' + escH(_T('help.none', 'No match in the dictionary or the how-to rows.')) + '</div>';
     box.innerHTML = h + '</div>';
+    _howtoDym(c.dym);
     console.log('§HELP_SEARCH ask=' + JSON.stringify(String(question)) + ' lang=' + ErpI18n.lang + ' window=' + (c.window ? c.window.id : 'none') + ' action=' + (c.action ? c.action.code : 'none') + ' cli=' + (c.cli ? JSON.stringify(c.cli.line || c.cli.note) : 'none') + ' howto=' + (c.howto ? c.howto.id : 'none') + ' matched=' + JSON.stringify(c.matched) + ' hits=' + c.hits.map(function (h) { return h.id; }).join(','));
     return c;
   }
