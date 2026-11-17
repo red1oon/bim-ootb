@@ -33,7 +33,7 @@ function buildingNames() {
   return out.sort();
 }
 const isDoorLine = (l) => /^\s*([A-Za-z_]\w*\s*=\s*)?[a-z][a-z0-9]*\.[a-z][a-z0-9_]*(\s|$)/.test(l);
-const SESSION_WORD = /^\s*(exit|quit|history|menu)(\s|$)/i;
+const SESSION_WORD = /^\s*(exit|quit|history)(\s|$)/i;
 const GROUP_WORD = /^\s*(bim|mis|erp)\s*$/i;
 // §24 the one help reader: `help`, `?`, `bim|mis|erp`, `help <group|word>` -> words_core.helpText; anything else after help -> the door's own help (render.js help)
 function helpOf(line, core, vocab, level) {   // level: the person's setting (VOCAB_MESSAGE_CATALOG.md §4 P3a), null = short
@@ -145,14 +145,17 @@ async function session(o) {
     say('assist kinds=' + KINDS.length + ' with-window=' + KINDS.filter(k => k.window).length);
   }).catch(err => say('assist kinds FAIL ' + (err && err.message)));
   const narrowVB = (s) => { const off = sh.core.offered(s, [], Object.keys(VB)), o = {}; off.verbs.forEach(v => { o[v] = VB[v]; }); return o; };   // §40 C1: offers narrowed to the group, never what runs
-  const actx = () => { const s = sh.state(); return { words: sh.core.offered(s, names.filter(n => n.indexOf('.') < 0), []).words, verbs: narrowVB(s), buildings: BLD(), kinds: KINDS, props: s.kind ? s.props : (s.erp ? s.eprops : null), codes: DOF.codes || {} }; };
+  const actx = () => { const s = sh.state(), off = sh.core.offered(s, names.filter(n => n.indexOf('.') < 0), []);   // §40 C3/C5: in a record or the menu walk, cd / do / run offer the place's own
+    return { words: off.words, verbs: narrowVB(s), buildings: off.places ? [] : BLD(), kinds: off.places ? [] : KINDS, places: off.places || null, props: s.kind ? s.props : (s.erp ? s.eprops : null), codes: off.codes || DOF.codes || {}, processes: off.processes || null }; };
   let hint = null;
   const completer = (line) => {
     if (hint && hint.ghost) return [[hint.token + hint.ghost], hint.token];
     if (hint && hint.replace && line.slice(-hint.replace.from.length) === hint.replace.from) { const to = line.slice(0, line.length - hint.replace.from.length) + hint.replace.to;   // readline completes by APPENDING; a different spelling replaces the token: clear the line, write it again
       say('assist take from=' + JSON.stringify(hint.replace.from) + ' to=' + JSON.stringify(hint.replace.to)); setImmediate(() => { rl.write(null, { ctrl: true, name: 'u' }); rl.write(to); }); return [[], line]; }
     const s0 = sh.state(), off = sh.core.offered(s0, names.filter(n => n.indexOf('.') < 0), names.filter(n => n.indexOf('.') >= 0)), here = off.words.concat(off.verbs);   // §40 C1
-    const w = line.split(/\s+/).pop(), hits = here.filter(v => v.indexOf(w) === 0); return [hits.length ? hits : here, w];
+    const parts = line.split(/\s+/), w = parts.pop(), q = (n) => (/\s/.test(n) ? '"' + n + '"' : n);
+    const arg = parts.length === 1 ? ({ cd: off.places ? off.places.map(q) : null, do: off.codes ? Object.keys(off.codes) : null, run: off.processes ? off.processes.map(q) : null })[parts[0]] : null;   // §40 C3/C5
+    const pool = arg || here, hits = pool.filter(v => v.indexOf(w) === 0); return [hits.length ? hits : pool, w];
   };
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: tty, completer: tty ? completer : undefined, history, historySize: 1000, prompt: tty ? sh.prompt() : '' });
   const typed = [];
@@ -272,7 +275,7 @@ async function session(o) {
       const w = sw[1].toLowerCase();
       if (w === 'exit' || w === 'quit') { rl.close(); return; }
       if (w === 'history') { const all = saved.concat(typed.slice(0, -1)), nArg = Number((line.split(/\s+/)[1] || '').trim()), from = nArg > 0 ? Math.max(0, all.length - nArg) : 0; all.slice(from).forEach((l, i) => process.stdout.write(String(from + i + 1).padStart(4) + '  ' + l + '\n')); say('history saved=' + saved.length + ' session=' + (typed.length - 1) + ' shown=' + (all.length - from)); return; }   // §39 H1: earlier sessions too, numbered oldest first (the !n numbers)
-      if (w === 'menu') { rl.pause(); const r = cp.spawnSync(process.execPath, [path.join(__dirname, 'mis.js'), '--menu'].concat(line.split(/\s+/).slice(1)), { stdio: 'inherit', env: process.env }); say('menu exit=' + r.status); rl.resume(); return; }
+      // §40 C5: `menu` in a session is the menu WALKED as places (words_core); `red1 menu` one-shot stays the full-screen menu (§21)
     }
     if (BREAK() === 'gatecontainer' && sh.state().group && /^\w+\.\w+/.test(line) && sh.core.groupOf(line.split(/\s/)[0]) !== sh.state().group) { process.stdout.write('refused: not in this group\n'); return; }   // W-RED1-CONTAINER X2 falsifier only
     await sh.run(line, io);

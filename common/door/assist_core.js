@@ -6,7 +6,7 @@
 // Sources are only what it is handed (the vocabulary, the red1 words, the buildings, the properties of the kind the session is in, from a describe answer): no hand list, no guess.
 //   nearest(name, names, n) -> [{name, how}]   how = 'case' | 'rule' (- read as _, _ID added) | 'prefix' | 'nearest' (edit distance)
 //   suggest(ctx, text) -> null | {token, candidates:[{name, reason, how}], ghost, replace}
-//     ctx = {words:[…], verbs:{verb:entry}, buildings:[…], props:[{name,label,type,values}], kind, codes:{CO:'complete',…}, actions:[…]}
+//     ctx = {words:[…], verbs:{verb:entry}, buildings:[…], props:[{name,label,type,values}], kind, codes:{CO:'complete',…}, actions:[…], places:[…] (§40: a record's tabs, a menu node's children), processes:[…] (§40 C3)}
 //     ghost   = the text to show after the cursor when the first candidate EXTENDS what was typed (a prefix match)
 //     replace = {from, to} when the first candidate is a different spelling of the token (a typo): the driver shows it as a hint, Tab replaces the token
 (function (root) {
@@ -61,7 +61,7 @@
     // 2. after cd: the buildings, the kinds this session knows
     if (first === 'cd' && words.length === 1) {   // §1d.1: the buildings, then the ERP kinds (those with a window first); a name with a space is completed in quotes
       if (!tok) return null;
-      var raw = tok.replace(/^"/, ''), cl2 = (ctx.buildings || []).map(function (b) { return { name: b, reason: 'building' }; }).concat((ctx.kinds || []).map(function (k4) { return { name: k4.name, reason: k4.window ? 'ERP kind · window' : 'ERP kind' }; }));
+      var raw = tok.replace(/^"/, ''), cl2 = (ctx.places || []).map(function (p0) { return { name: p0, reason: 'here' }; }).concat((ctx.buildings || []).map(function (b) { return { name: b, reason: 'building' }; })).concat((ctx.kinds || []).map(function (k4) { return { name: k4.name, reason: k4.window ? 'ERP kind · window' : 'ERP kind' }; }));   // §40 C3/C5: the place's own first (a record's tabs, a menu node's children)
       var r2 = answer(raw, cands(raw, cl2)); if (!r2 || !r2.candidates.length) return r2;
       var c0 = r2.candidates[0].name;
       if (/\s/.test(c0) || /^"/.test(tok)) { r2.token = tok; r2.ghost = ''; r2.replace = { from: tok, to: '"' + c0 + '"' }; }
@@ -71,6 +71,13 @@
     if (first === 'do' && words.length === 1) {
       var cl = Object.keys(ctx.codes || {}).map(function (c) { return { name: c, reason: ctx.codes[c] }; }).concat(Object.keys(ctx.codes || {}).map(function (c) { return { name: ctx.codes[c], reason: c }; }));
       return tok ? answer(tok, cands(tok, cl)) : null;
+    }
+    // §40 C3: after run, the record's own process buttons (quoted when the name has a space)
+    if (first === 'run' && words.length === 1 && ctx.processes && ctx.processes.length) {
+      if (!tok) return null;
+      var raw3 = tok.replace(/^"/, ''), r3 = answer(raw3, cands(raw3, ctx.processes.map(function (p3) { return { name: p3, reason: 'process of this record' }; })));
+      if (r3 && r3.candidates.length && (/\s/.test(r3.candidates[0].name) || /^"/.test(tok))) { r3.token = tok; r3.ghost = ''; r3.replace = { from: tok, to: '"' + r3.candidates[0].name + '"' }; }
+      return r3;
     }
     var props = ctx.props || [];
     var eq = tok.indexOf('=');

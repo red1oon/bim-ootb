@@ -546,6 +546,30 @@
   },
   "words.bang_none": {
    "en": "nothing in history matches {0}: nothing was run"
+  },
+  "words.rec_actions": {
+   "en": "it may do: {0} (do <code>; next shows the tree)"
+  },
+  "words.menu_walk_fail": {
+   "en": "menu: the menu did not open: {0}"
+  },
+  "words.menu_walk_head": {
+   "en": "{0}: {1} entries; cd <name> goes in, cd .. goes back"
+  },
+  "words.menu_walk_folder": {
+   "en": "  ▸ {0} ({1})"
+  },
+  "words.menu_walk_leaf": {
+   "en": "  {0} {1}"
+  },
+  "words.menu_leaf_run": {
+   "en": "{0} is a process: run \"{0}\""
+  },
+  "words.menu_leaf_page": {
+   "en": "{0} opens in the page, not at the prompt"
+  },
+  "words.menu_walk_window": {
+   "en": "  {0} {1} · {2}"
   }
  }
 }
