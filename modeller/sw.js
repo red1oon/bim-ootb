@@ -25,7 +25,8 @@
 // v254 (2026-11-09) §11a on-roof surface = the highest roof-classified element on the deck (disc_walker.js?v=18)
 // v255 (2026-11-09) drawn services reach the film: viewer_db_export.js?v=3 writes drawn_walk_line / drawn_walk_marker
 // v257 (2026-11-09) §NARROW_BUILD the overlap row's real-shape check: common/lib/three-mesh-bvh.module.js + viewer/clash_narrow.js stored for offline; modeller.html?, edit_report.js?v=4, edit_report_panel.js?v=3, edit_shapes.js
-const CACHE_VERSION = 'v282';   // bump on each deploy; per-change detail is the git commit message.
+// v283 (2026-11-17) §19.4 (bim-compiler VOCAB_MESSAGE_CATALOG.md): the help panel searches through the shared query core — help_panel.js?v=4, common/help/help_query.js?v=1, help/index/<locale>.json
+const CACHE_VERSION = 'v283';   // bump on each deploy; per-change detail is the git commit message.
 const CACHE_PREFIX = 'bim-modeller-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -59,6 +60,7 @@ const PRECACHE_ASSETS = [
   'rules_editor.js',                 // prompts/MODELLER_RULES_EDITOR.md (lazy, first click of #b-rules)
   '../common/drag.js',               // §14.5 THE drag helper (shared with the Viewer)
   '../common/help/help_panel.js',    // §14.5 THE help panel (shared with the Viewer); ? and Guide open it
+  '../common/help/help_query.js',    // §19.4 the shared query core (the panel's search); help/index/<locale>.json is cached on first use, like the i18n packs
   '../common/settings_editor.js',    // the project's ONE JSON editor (moved from viewer/)
   // Modeller engine (the bonsai_* kernel + outliners + walkers)
   'bonsai_kernel.js',

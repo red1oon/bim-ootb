@@ -2962,6 +2962,8 @@ async function setupScene(A) {
       },
       headerExtra: badgeHtml, footer: footer,
       guideBase: _howto && _howto.guide, guideIcon: ICONS.lightbulb.svg, howtoLoaded: !!_howto,
+      // §19.4: the search runs through the ONE query core over this locale's index (built by viewer/tools/help_records.js; lazy, first typed query)
+      index: { url: function () { var l = (window._TRL_LOADER && window._TRL_LOADER.detectLocale) ? window._TRL_LOADER.detectLocale() : 'en_MY'; return 'help/index/' + l + '.json'; } },
       makeDraggable: (typeof A._makeDraggable === 'function') ? A._makeDraggable : null, storageKey: 'bim_help_dock_pos',
       runSeq: function (seq) { if (_shortcuts[seq]) _shortcuts[seq](); },
       entries: function () {
@@ -2973,14 +2975,14 @@ async function setupScene(A) {
             action: act.fn, children: act.children || null, hkey: act.id, howto: (_howto && _howto.pills && _howto.pills[act.id]) || null });
         });
         // §ZOOM: keyboard-only shortcuts (NOT pills) — surfaced in the Help listing for discoverability
-        all.push({ seq: '+', name: _hT('ui_cmd_zoom_in', 'Zoom In'), icon: '', action: function () { _shortcuts['+'](); }, children: null });
-        all.push({ seq: '-', name: _hT('ui_cmd_zoom_out', 'Zoom Out'), icon: '', action: function () { _shortcuts['-'](); }, children: null });
+        all.push({ seq: '+', hkey: 'key:+', name: _hT('ui_cmd_zoom_in', 'Zoom In'), icon: '', action: function () { _shortcuts['+'](); }, children: null });
+        all.push({ seq: '-', hkey: 'key:-', name: _hT('ui_cmd_zoom_out', 'Zoom Out'), icon: '', action: function () { _shortcuts['-'](); }, children: null });
         // §CINEMA_SHORTCUT (2026-07-17): Cinema Orbit lives as a row inside the Sunglass panel, not its own pill
-        all.push({ seq: 'ALT+C', name: _hT('ui_cmd_maxq', 'MaxQ Movie'), icon: '', action: function () { if (typeof A.startMaxQualityOrbit === 'function') A.startMaxQualityOrbit(); else if (typeof A.startCinemaOrbit === 'function') A.startCinemaOrbit(); }, children: null });
+        all.push({ seq: 'ALT+C', hkey: 'key:ALT+C', name: _hT('ui_cmd_maxq', 'MaxQ Movie'), icon: '', action: function () { if (typeof A.startMaxQualityOrbit === 'function') A.startMaxQualityOrbit(); else if (typeof A.startCinemaOrbit === 'function') A.startCinemaOrbit(); }, children: null });
         // §PHOTO_POPULATE (2026-07-17): Alt+P adds fabricated staffage (people + trees) for the presentation shot
-        all.push({ seq: 'ALT+P', name: _hT('ui_cmd_populate', 'Populate (people + trees)'), icon: '', action: function () { if (typeof A.togglePopulate === 'function') A.togglePopulate(); }, children: null });
+        all.push({ seq: 'ALT+P', hkey: 'key:ALT+P', name: _hT('ui_cmd_populate', 'Populate (people + trees)'), icon: '', action: function () { if (typeof A.togglePopulate === 'function') A.togglePopulate(); }, children: null });
         // §HOVER_NAME: a Find-panel checkbox, not a pill. Dead key on some international layouts — fails harmlessly there.
-        if (!window._isMobile) all.push({ seq: "'", name: _hT('ui_cmd_hover_name', 'Hover Name'), icon: '', action: function () { if (A.toggleHoverName) A.toggleHoverName('key'); }, children: null });
+        if (!window._isMobile) all.push({ seq: "'", hkey: "key:'", name: _hT('ui_cmd_hover_name', 'Hover Name'), icon: '', action: function () { if (A.toggleHoverName) A.toggleHoverName('key'); }, children: null });
         return all;
       },
       onMount: function (pal, api) {

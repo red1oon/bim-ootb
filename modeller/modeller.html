@@ -251,7 +251,8 @@ if (window.WholeHistory && WholeHistory.mount) WholeHistory.mount({ page: 'model
      adapter wraps Bonsai.oplog.commit/commitGesture so every real edit lands as one tree node. -->
 <!-- §14.5 (bim-compiler VOCAB_MESSAGE_CATALOG.md): THE help panel + THE drag helper, the same files the Viewer loads. -->
 <script src="../common/drag.js?v=1" onerror="console.warn('§HELP LOAD_FAIL drag.js')"></script>
-<script src="../common/help/help_panel.js?v=3" onerror="console.warn('§HELP LOAD_FAIL help_panel.js')"></script>
+<script src="../common/help/help_query.js?v=1" onerror="console.warn('§HELP LOAD_FAIL help_query.js')"></script>
+<script src="../common/help/help_panel.js?v=4" onerror="console.warn('§HELP LOAD_FAIL help_panel.js')"></script>
 <script src="../common/history_bar.js?v=3" onerror="console.warn('§MHIST LOAD_FAIL history_bar.js')"></script>
 <script src="modeller_history.js?v=8" onerror="console.warn('§MHIST LOAD_FAIL modeller_history.js')"></script>
 <!-- Bonsai IFC export: the authored op-log -> a standards IFC4 file via web-ifc (author->sign->export). -->
@@ -6607,6 +6608,8 @@ console.log('§MODELLER scene ready supported=' + (window.Bonsai ? window.Bonsai
     const _lit = on => { help.classList.toggle('on', on && _via !== 'guide'); const g = document.getElementById('b-guide'); if (g) g.classList.toggle('on', on && _via === 'guide'); };
     const _guideOpen = () => { _hpState.filter = ''; (window.__modellerGuideSections || []).forEach(sec => { _hpState.open['guide:' + sec[0]] = true; }); };
     const _helpCfg = {
+      // §19.4: the search runs through the ONE query core over this locale's index (built by modeller/tools/help_records.js; lazy, first typed query)
+      index: { url: () => 'help/index/' + ((window._TRL_LOADER && window._TRL_LOADER.detectLocale) ? window._TRL_LOADER.detectLocale() : 'en_MY') + '.json' },
       id: 'cmd-palette', state: _hpState, icon: _svg, entries: _helpEntries, noAutoFocus: true,   // ? / O / E / D stay keys while it is open (as the old overlay)
       isMobile: ('ontouchstart' in window || navigator.maxTouchPoints > 0) && window.screen.width < 1024,   // the Viewer's rule (viewer/config.js _isMobile)
       place: () => ({ left: 0, top: 0, width: OL_W - 2, height: window.innerHeight - 2 }),   // − its 1 px border each side (help_panel.js)
