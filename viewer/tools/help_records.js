@@ -30,10 +30,10 @@ function pillsOf(src) {
     return { id: s.id, name: unq(nm[1]), key: k && k[1] ? unq(k[1]) : '', kids };
   });
 }
-// the keyboard-only rows of showCommandPalette in viewer/scene.js: all.push({ seq: 'X', name: _hT('key', 'English'), ... })
+// the keyboard-only rows of showCommandPalette in viewer/scene.js: all.push({ seq: 'X', hkey: 'key:X', name: _hT('key', 'English'), ... })
 function keyRowsOf(src) {
   const a = src.indexOf('function showCommandPalette'), b = src.indexOf('window.HelpPanel.toggle(cfg)', a), blk = src.slice(a, b), out = [];
-  const re = /seq: (?:'((?:[^'\\]|\\.)*)'|"((?:[^"\\]|\\.)*)"), name: _hT\('([A-Za-z0-9_]+)', '((?:[^'\\]|\\.)*)'\)/g; let m;
+  const re = /seq: (?:'((?:[^'\\]|\\.)*)'|"((?:[^"\\]|\\.)*)"), hkey: (?:'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"), name: _hT\('([A-Za-z0-9_]+)', '((?:[^'\\]|\\.)*)'\)/g; let m;
   while ((m = re.exec(blk))) out.push({ seq: unq(m[1] != null ? m[1] : m[2]), key: m[3], en: unq(m[4]) });
   return out;
 }
@@ -52,6 +52,8 @@ function load(lang) {
     if (ht.guide) recs.push({ id: 'howto/' + p.id, k: 'howto', n: tidy(lab(ghKey(ht.guide.anchor), ht.guide.heading)), go: { hkey: p.id, via: 'howto' } });
   });
   keys.forEach((r) => recs.push({ id: 'pill/key:' + r.seq, k: 'pill', n: tidy(lab(r.key, r.en)), a: [r.seq.toUpperCase()], go: { hkey: 'key:' + r.seq } }));
+  const order = {}; KINDS.forEach((k, i) => { order[k] = i; });
+  recs.sort((a, b) => order[a.k] - order[b.k] || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));   // the builder no longer sorts: the file is deterministic by kind order, then id (the adapter's duty)
   return { records: recs, kinds: KINDS, ntexts: 0, resolve: () => '' };
 }
 module.exports = { app: 'viewer', kinds: KINDS, langs: T.LOCALES, load, pillsOf, keyRowsOf, ghKey, outFile: (lang) => path.join(VIEWER, 'help', 'index', lang + '.json') };

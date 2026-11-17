@@ -42,6 +42,8 @@ function load(lang) {
     recs.push(Object.assign({ id: 'pill/' + b.id, k: 'pill', n }, a.length ? { a } : {}, { go: { hkey: b.id } })); });
   S.KEYS.forEach((r) => { const n = tidy(tr(r[1])), a = alias(r[1], n, r[2]); recs.push(Object.assign({ id: 'pill/key:' + r[1], k: 'pill', n }, a.length ? { a } : {}, { go: { hkey: 'key:' + r[1] } })); });
   S.SECTIONS.forEach((sec, i) => { const n = tidy(tr(sec[0])), a = alias(sec[0], n); recs.push(Object.assign({ id: 'guide/' + String(i).padStart(2, '0'), k: 'guide', n }, a.length ? { a } : {}, { h: strip(sec[1]), go: { hkey: 'guide:' + sec[0] } })); });
+  const order = {}; KINDS.forEach((k, i) => { order[k] = i; });
+  recs.sort((a, b) => order[a.k] - order[b.k] || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));   // the builder no longer sorts: the file is deterministic by kind order, then id (the adapter's duty)
   return { records: recs, kinds: KINDS, ntexts: 0, resolve: () => '' };
 }
 module.exports = { app: 'modeller', kinds: KINDS, langs: T.LOCALES, load, sourceOf, barButtons, strip, outFile: (lang) => path.join(MODELLER, 'help', 'index', lang + '.json') };
