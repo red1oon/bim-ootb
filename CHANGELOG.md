@@ -4,6 +4,40 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.92.0](https://github.com/red1oon/bim-ootb/compare/v1.91.0...v1.92.0) (2026-11-17)
+
+
+### ✨ Features
+
+* **devtools:** X0 "Memory of the three pages" — browser heap of viewer/ERP/Modeller vs main (§F.31, W-HEAP-IMPACT) ([#3131](https://github.com/red1oon/bim-ootb/issues/3131)) ([e37d101](https://github.com/red1oon/bim-ootb/commit/e37d10129e239c76e9d9dcee1aa82ca1a1da3c65)), closes [#3130](https://github.com/red1oon/bim-ootb/issues/3130)
+* **howto:** the 8 tools without a guide link now have one - gaps empty, 43 of 44 linked (W-HOWTO PASS incl. H1/H2/H4b, W-HELP-DOCK D4 43 == 43) ([#3175](https://github.com/red1oon/bim-ootb/issues/3175)) ([16e44c1](https://github.com/red1oon/bim-ootb/commit/16e44c1cad9445352b607db42f398d21a0ec0323))
+* **modeller-help:** the guide section titles join the dictionary - 8 titles x 14 locales, W-MODELLER-GUIDE-TITLES 154/154 (de_DE leaks 16 -&gt; 10) ([#3173](https://github.com/red1oon/bim-ootb/issues/3173)) ([fa00554](https://github.com/red1oon/bim-ootb/commit/fa00554ef0e61962559594e298ce87d4d8f35a91))
+* **modeller:** help in THE shared panel - ? and Guide open common/help/help_panel.js on the outliner's strip (W-HELP-DOCK-M 20/20) ([#3171](https://github.com/red1oon/bim-ootb/issues/3171)) ([d68e0f7](https://github.com/red1oon/bim-ootb/commit/d68e0f714a250312ec3e2528b8ed540d097c1a47))
+* **modeller:** the ten older uncatalogued Modeller strings join the dictionary - W-MODELLER-I18N PASS 15/0 (de_DE, ja_JP, ar_SA leaks 0) ([#3174](https://github.com/red1oon/bim-ootb/issues/3174)) ([f9e2c6c](https://github.com/red1oon/bim-ootb/commit/f9e2c6cfa3f8944c6d768a6d3f010d689393cc50))
+* **viewer:** class text for type classes + our sentence in 10 more languages (W-CLASS-HELP C6-C8) ([#3152](https://github.com/red1oon/bim-ootb/issues/3152)) ([18e2eba](https://github.com/red1oon/bim-ootb/commit/18e2eba36a0a4b69ff726b0fb65a46e5dfe66e88))
+* **viewer:** class text in the info panel - our sentence + buildingSMART IFC definition verbatim (W-CLASS-HELP) ([#3150](https://github.com/red1oon/bim-ootb/issues/3150)) ([a4a1de6](https://github.com/red1oon/bim-ootb/commit/a4a1de6740a186bea376a0a819d34d100e8d5095))
+* **viewer:** help becomes a left panel - stays open, amber glass, draggable (W-HELP-DOCK) ([#3160](https://github.com/red1oon/bim-ootb/issues/3160)) ([9f7e88c](https://github.com/red1oon/bim-ootb/commit/9f7e88c6dc7efe06de9c1ce01160c317b4b88310))
+* **viewer:** How To in the ? palette - guide section + CLI line per tool (W-HOWTO) ([#3156](https://github.com/red1oon/bim-ootb/issues/3156)) ([44b102f](https://github.com/red1oon/bim-ootb/commit/44b102f9470f8be677d32961616ed513b3d60bdd))
+
+
+### 🐛 Fixes
+
+* **4d:** D1 — a wall that is the only structure under a beam or slab is structure (§BEARING_WALL) ([#3184](https://github.com/red1oon/bim-ootb/issues/3184)) ([43e88eb](https://github.com/red1oon/bim-ootb/commit/43e88eb6b9459dee09d96ea2685f6ead3b03f1ca))
+* **4d:** D3 — main beams before the beams they carry; inside a (level, trade) the elected support is placed first and bounds the start; a ring is one lift (§D3_MAIN_BEFORE_SECONDARY, §D3_CELL_SUPPORT_ORDER) ([#3182](https://github.com/red1oon/bim-ootb/issues/3182)) ([1375ebe](https://github.com/red1oon/bim-ootb/commit/1375ebe98987b883c9b79509819f3b5f0322e60c))
+* **4d:** D6 — one filing: a hung element takes its carrier's level in the task grid (§D6_HANG_FILING) ([#3183](https://github.com/red1oon/bim-ootb/issues/3183)) ([0add6f6](https://github.com/red1oon/bim-ootb/commit/0add6f60f5d93c1b0482858d9410742ce045bd3d))
+* **4d:** gate-4 witnesses judge real elements again — slice _scheduledWhere/_civilRule, pick the DB the viewer loads; §XRAY_BUILD_EMPTY says why a build is empty ([#3177](https://github.com/red1oon/bim-ootb/issues/3177)) ([5c77adf](https://github.com/red1oon/bim-ootb/commit/5c77adf616ba3222a2b0955861d7843c01ffec49))
+* bundle Pack In stamps rows in UTC; legacy stamps local time (pipo_packin fallback, A2-PIPO, W-PIPO-LOCAL) ([#3143](https://github.com/red1oon/bim-ootb/issues/3143)) ([3359e18](https://github.com/red1oon/bim-ootb/commit/3359e18c4d042bc15f3d2a4aa3978abd80fa6963)), closes [#3142](https://github.com/red1oon/bim-ootb/issues/3142)
+* **howto:** a tie goes to the section whose heading shares a word with the tool, not to the first in the page (W-HOWTO H5; H1 passes again) ([#3172](https://github.com/red1oon/bim-ootb/issues/3172)) ([a62d401](https://github.com/red1oon/bim-ootb/commit/a62d401bfd344617442282e30afde333f84caa3d))
+* **keys:** Sanity y, Egress e, Role View d, Earthworks u, Roadworks k are real keys; the audit that missed them; the action inventory is current (W-PILL-KEYS, W-VIEWER-ACTIONS PASS) ([#3176](https://github.com/red1oon/bim-ootb/issues/3176)) ([92b7019](https://github.com/red1oon/bim-ootb/commit/92b7019afc05a9fb53cd43d96ffdbb1f129bde36))
+
+
+### ♻️ Refactors
+
+* 4D baseline stamp, cache recency stamp and tab id through CoreEdge (A2-VALUE-1, W-CORE-TIMING) ([#3135](https://github.com/red1oon/bim-ootb/issues/3135)) ([14ade15](https://github.com/red1oon/bim-ootb/commit/14ade155e7e97681a030665e1d3cf82d7673ba17)), closes [#3134](https://github.com/red1oon/bim-ootb/issues/3134)
+* ERP env producers (crud_overlay._modelEnv, plugin_overlay env) through the one edge clock (A2-EDGE-2, W-EDGE-PRODUCERS) ([#3140](https://github.com/red1oon/bim-ootb/issues/3140)) ([7100588](https://github.com/red1oon/bim-ootb/commit/71005880170ec84666492e686fea913d021dfc8a)), closes [#3139](https://github.com/red1oon/bim-ootb/issues/3139)
+* **help:** the help panel and the drag helper move to common/ (one implementation, ready for the Modeller) ([#3165](https://github.com/red1oon/bim-ootb/issues/3165)) ([d2c7b26](https://github.com/red1oon/bim-ootb/commit/d2c7b26f34887b39bb7d18759b22bc172e5876ce))
+* room router + 4D inject time their § lines through CoreEdge (A2-TIMING-3, W-CORE-TIMING) ([#3124](https://github.com/red1oon/bim-ootb/issues/3124)) ([9b7d2f8](https://github.com/red1oon/bim-ootb/commit/9b7d2f86876c328d7b4c74c62129bc257405bba8)), closes [#3123](https://github.com/red1oon/bim-ootb/issues/3123)
+
 ## [1.91.0](https://github.com/red1oon/bim-ootb/compare/v1.90.0...v1.91.0) (2026-11-16)
 
 

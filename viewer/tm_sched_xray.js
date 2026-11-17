@@ -337,6 +337,9 @@
     // looser wall-bears check) matches what actually got scheduled — the exact scenario this whole
     // feature exists for ("roof before its walls"). Counts unused here: only injectGantt logs
     // §GANTT_OVERRIDE.
+    // §BEARING_WALL (4D_MODEL_INTEGRITY.md §Q.6 D1) — same shared mutation the other two recipes call, so the
+    // lock gate judges the walls the schedule promoted.
+    if (typeof ScheduleGate !== 'undefined' && ScheduleGate.applyBearingWalls) ScheduleGate.applyBearingWalls(elements, 'xray');
     var _lp = _promoteRoofLoadPath(elements);
     return elements;
   }

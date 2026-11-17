@@ -881,6 +881,7 @@
       };
     }).filter(function (e) { return !e.noGeo; });
     _reclassGroundworkSlabs(_bseList, 'schedule_author');
+    _applyBearingWalls(_bseList, 'schedule_author');
     // §STOREY_DATUM — SAY WHICH PATH RAN AND WHAT IT COST. A pass that cannot report a no-op is
     // not a pass (CLAUDE.md PRIMAL LAW clause 4): `relabelled` counts elements whose level differs
     // from the label they arrived with, so 0 in datum mode means the declared datums changed
@@ -935,6 +936,15 @@
   // (ScheduleGate.groundworkSlabs), applied identically by both element recipes (this one and
   // time_machine.js's inline builder) so authored zones/tasks and the movie reclassify the SAME
   // slabs. Mutates phase in place; seq/resource unchanged (CONCRETE_GANG already).
+  // §BEARING_WALL (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.6 D1) — ONE shared definition and ONE mutation
+  // (ScheduleGate.applyBearingWalls), called by all three element recipes (this one, tm_gantt_build's inline
+  // builder, tm_sched_xray's _buildXrayElements) so the task grid, the movie and the lock gate promote the SAME walls.
+  function _applyBearingWalls(list, who) {
+    var SG = (global && global.ScheduleGate) ||
+             (typeof globalThis !== 'undefined' && globalThis.ScheduleGate) ||
+             (typeof window !== 'undefined' && window.ScheduleGate) || null;
+    if (SG && SG.applyBearingWalls) SG.applyBearingWalls(list, who);
+  }
   function _reclassGroundworkSlabs(list, who) {
     // schedule_gate.js self-registers on its own wrapper global (globalThis in node, window in the
     // browser) — this module's IIFE param is self||this, which in node is NOT globalThis, so check both.
