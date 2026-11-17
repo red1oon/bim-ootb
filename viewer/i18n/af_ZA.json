@@ -6,9 +6,9 @@
    "ad_message_base.csv",
    "AD_Message_Trl_af_ZA.xml"
   ],
-  "rows": 1046,
-  "translated": 939,
-  "untranslated": 107
+  "rows": 1066,
+  "translated": 963,
+  "untranslated": 103
  },
  "labels": {
   "source_app": "BIM OOTB — Frictionless BIM",
@@ -874,10 +874,10 @@
   "mdl_bo_trees_tt_4": "Loop alle dienste",
   "mdl_s9_erp_btn": "ERP ▸ Projekbestelling",
   "mdl_s9_erp_btn_tt": "Lees / genereer / maak die ERP-projekbestelling van die gekose dele oop",
-  "pill_roadstd": "Road standards",
-  "pillc_roadstd_1": "Sign codes vs ATJ 2A/85",
-  "pillc_roadstd_2": "OK / UNKNOWN / MISSING tree",
-  "pillc_roadstd_3": "Click a sign: zoom + standard",
+  "pill_roadstd": "Padstandaarde",
+  "pillc_roadstd_1": "Tekenkodes teenoor ATJ 2A/85",
+  "pillc_roadstd_2": "OK / UNKNOWN / MISSING-boom",
+  "pillc_roadstd_3": "Klik op 'n teken: zoem + standaard",
   "ifcdef_IfcAirTerminal": "An air terminal is a terminating or origination point for the transfer of air between distribution system(s) and one or more spaces. It can also be used for the transfer of air between adjacent spaces.",
   "ifcdef_IfcAirTerminal_lang": "EN",
   "ifcdef_IfcAlarm": "An alarm is a device that signals the existence of a condition or situation that is outside the boundaries of normal expectation or that activates such a device.",
@@ -1056,6 +1056,26 @@
   "mdl_m_drawing_meta": "Tekeningmetadata",
   "mdl_m_this_help": "Hierdie hulp",
   "mdl_m_open_dxf": "Maak 2D-tekeninge oop (.dxf)…",
-  "mdl_m_open_pdf": "Maak 2D-tekeninge oop vanaf PDF-tekening (.pdf)…"
+  "mdl_m_open_pdf": "Maak 2D-tekeninge oop vanaf PDF-tekening (.pdf)…",
+  "pill_lod400": "LOD400-opgradering",
+  "pillc_lod400_1": "Sweis duplikaat-hoekpunte + maak geboë oppervlaktes glad",
+  "pillc_lod400_2": "Dieselfde driehoeke, oppervlakte en grootte; minder hoekpunte",
+  "pillc_lod400_3": "Getel, aangeteken; Stoor om dit te hou",
+  "pill_roadreport": "Padverslag",
+  "pillc_roadreport_1": "Belyning & Drif",
+  "pillc_roadreport_2": "Grondwerke",
+  "pillc_roadreport_3": "Geometriese gesondheid",
+  "pillc_roadreport_4": "Tekens · Omgewing",
+  "pillc_roadreport_5": "Kopieer / .txt / PDF",
+  "pill_ew": "Grondwerke",
+  "pillc_ew_1": "Sny-&-vul-oorleg (afgelei)",
+  "pillc_ew_2": "Koste · duur · toerusting: hangende",
+  "pill_rw": "Padwerke",
+  "pillc_rw_1": "Sigafstand · radius · padmeubels: hangende",
+  "pill_gi_preview": "GI-voorskou (AO)",
+  "pillc_gi_preview_1": "N8AO-omgewingsokklusie (navorsingsprototipe)",
+  "pillc_gi_preview_2": "Slegs rekenaar — gedeaktiveer op selfoon (geheue)",
+  "ui_export_bcf": "Voer BCF uit",
+  "wi_store_changed": "Wat-as: die projekwinkel het verander sedert jy dit oopgemaak het — maak Wat-as weer oop"
  }
 }

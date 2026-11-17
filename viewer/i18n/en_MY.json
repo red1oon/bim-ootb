@@ -6,7 +6,7 @@
   "from": [
    "ad_message_base.csv"
   ],
-  "rows": 1046,
+  "rows": 1066,
   "translated": 0,
   "untranslated": 0
  },
@@ -1056,6 +1056,26 @@
   "mdl_m_drawing_meta": "Drawing metadata",
   "mdl_m_this_help": "This help",
   "mdl_m_open_dxf": "Open 2D drawings (.dxf)…",
-  "mdl_m_open_pdf": "Open 2D drawings from PDF drawing (.pdf)…"
+  "mdl_m_open_pdf": "Open 2D drawings from PDF drawing (.pdf)…",
+  "pill_lod400": "LOD400 Upgrade",
+  "pillc_lod400_1": "Weld duplicate vertices + smooth curved surfaces",
+  "pillc_lod400_2": "Same triangles, area and size; fewer vertices",
+  "pillc_lod400_3": "Counted, logged; Save to keep it",
+  "pill_roadreport": "Road report",
+  "pillc_roadreport_1": "Alignment & Drift",
+  "pillc_roadreport_2": "Earthworks",
+  "pillc_roadreport_3": "Geometric Health",
+  "pillc_roadreport_4": "Signs · Environment",
+  "pillc_roadreport_5": "Copy / .txt / PDF",
+  "pill_ew": "Earthworks",
+  "pillc_ew_1": "Cut & Fill overlay (inferred)",
+  "pillc_ew_2": "Cost · duration · plant: pending",
+  "pill_rw": "Roadworks",
+  "pillc_rw_1": "Sight distance · radius · furniture: pending",
+  "pill_gi_preview": "GI Preview (AO)",
+  "pillc_gi_preview_1": "N8AO ambient occlusion (research spike)",
+  "pillc_gi_preview_2": "Desktop only — disabled on mobile (memory)",
+  "ui_export_bcf": "Export BCF",
+  "wi_store_changed": "What-if: the project store changed since you opened this — reopen What-if"
  }
 }

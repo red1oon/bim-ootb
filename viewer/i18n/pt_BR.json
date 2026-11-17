@@ -6,9 +6,9 @@
    "ad_message_base.csv",
    "AD_Message_Trl_pt_BR.xml"
   ],
-  "rows": 1046,
-  "translated": 1035,
-  "untranslated": 11
+  "rows": 1066,
+  "translated": 1059,
+  "untranslated": 7
  },
  "labels": {
   "source_app": "BIM OOTB — Frictionless BIM",
@@ -874,10 +874,10 @@
   "mdl_bo_trees_tt_4": "Percorrer TODOS os serviços",
   "mdl_s9_erp_btn": "ERP ▸ Pedido de projeto",
   "mdl_s9_erp_btn_tt": "Ler / gerar / abrir o pedido de projeto ERP das partes selecionadas",
-  "pill_roadstd": "Road standards",
-  "pillc_roadstd_1": "Sign codes vs ATJ 2A/85",
-  "pillc_roadstd_2": "OK / UNKNOWN / MISSING tree",
-  "pillc_roadstd_3": "Click a sign: zoom + standard",
+  "pill_roadstd": "Normas viárias",
+  "pillc_roadstd_1": "Códigos de placas vs ATJ 2A/85",
+  "pillc_roadstd_2": "Árvore OK / UNKNOWN / MISSING",
+  "pillc_roadstd_3": "Clique em uma placa: zoom + norma",
   "ifcdef_IfcAirTerminal": "Um terminal de ar é um ponto de término ou origem para a transferência de ar entre sistema(s) de distribuição e um ou mais espaços. Também pode ser usado para a transferência de ar entre espaços adjacentes.",
   "ifcdef_IfcAirTerminal_lang": "pt-BR",
   "ifcdef_IfcAlarm": "Um alarme é um dispositivo que sinaliza a existência de uma condição ou situação que está fora dos limites normais de expectativa ou que ativa tal dispositivo.",
@@ -1056,6 +1056,26 @@
   "mdl_m_drawing_meta": "Metadados do desenho",
   "mdl_m_this_help": "Esta ajuda",
   "mdl_m_open_dxf": "Abrir desenhos 2D (.dxf)…",
-  "mdl_m_open_pdf": "Abrir desenhos 2D a partir de um desenho PDF (.pdf)…"
+  "mdl_m_open_pdf": "Abrir desenhos 2D a partir de um desenho PDF (.pdf)…",
+  "pill_lod400": "Atualização LOD400",
+  "pillc_lod400_1": "Soldar vértices duplicados + suavizar superfícies curvas",
+  "pillc_lod400_2": "Mesmos triângulos, área e tamanho; menos vértices",
+  "pillc_lod400_3": "Contado, registrado; Salve para manter",
+  "pill_roadreport": "Relatório da via",
+  "pillc_roadreport_1": "Alinhamento e desvio",
+  "pillc_roadreport_2": "Terraplenagem",
+  "pillc_roadreport_3": "Saúde geométrica",
+  "pillc_roadreport_4": "Placas · Ambiente",
+  "pillc_roadreport_5": "Copiar / .txt / PDF",
+  "pill_ew": "Terraplenagem",
+  "pillc_ew_1": "Sobreposição de corte e aterro (inferida)",
+  "pillc_ew_2": "Custo · duração · equipamentos: pendente",
+  "pill_rw": "Obras viárias",
+  "pillc_rw_1": "Distância de visibilidade · raio · mobiliário: pendente",
+  "pill_gi_preview": "Pré-visualização GI (AO)",
+  "pillc_gi_preview_1": "Oclusão ambiente N8AO (protótipo de pesquisa)",
+  "pillc_gi_preview_2": "Somente desktop — desativado no celular (memória)",
+  "ui_export_bcf": "Exportar BCF",
+  "wi_store_changed": "E-se: o armazenamento do projeto mudou desde que você o abriu — reabra o E-se"
  }
 }
