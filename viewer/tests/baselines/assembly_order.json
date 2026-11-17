@@ -2,8 +2,8 @@
  "buildings": {
   "Hospital": {
    "dbFile": "Hospital_meta.db",
-   "codeKey": "88aa55d280e7",
-   "midair": 39,
+   "codeKey": "233051edc00f",
+   "midair": 8,
    "filingParity": 8,
    "classes": {
     "IfcBeam": {
@@ -21,37 +21,7 @@
      "unjudgedStruct": 14,
      "contactOnly": 0
     },
-    "IfcDuctFitting": {
-     "midair": 3,
-     "unjudgedStruct": 0,
-     "contactOnly": 0
-    },
-    "IfcDuctSegment": {
-     "midair": 12,
-     "unjudgedStruct": 0,
-     "contactOnly": 0
-    },
     "IfcFooting": {
-     "midair": 5,
-     "unjudgedStruct": 0,
-     "contactOnly": 0
-    },
-    "IfcMember": {
-     "midair": 1,
-     "unjudgedStruct": 0,
-     "contactOnly": 0
-    },
-    "IfcPipeFitting": {
-     "midair": 4,
-     "unjudgedStruct": 0,
-     "contactOnly": 0
-    },
-    "IfcPipeSegment": {
-     "midair": 6,
-     "unjudgedStruct": 0,
-     "contactOnly": 0
-    },
-    "IfcRailing": {
      "midair": 1,
      "unjudgedStruct": 0,
      "contactOnly": 0
@@ -65,12 +35,12 @@
   },
   "Terminal": {
    "dbFile": "Terminal_meta.db",
-   "codeKey": "88aa55d280e7",
-   "midair": 47,
+   "codeKey": "233051edc00f",
+   "midair": 5,
    "filingParity": 3,
    "classes": {
     "IfcBeam": {
-     "midair": 3,
+     "midair": 1,
      "unjudgedStruct": 19,
      "contactOnly": 0
     },
@@ -90,17 +60,17 @@
      "contactOnly": 0
     },
     "IfcPipeFitting": {
-     "midair": 7,
+     "midair": 0,
      "unjudgedStruct": 0,
      "contactOnly": 1
     },
     "IfcPipeSegment": {
-     "midair": 25,
+     "midair": 0,
      "unjudgedStruct": 0,
      "contactOnly": 2
     },
     "IfcPlate": {
-     "midair": 8,
+     "midair": 0,
      "unjudgedStruct": 491,
      "contactOnly": 0
     }
@@ -108,8 +78,8 @@
   },
   "Duplex": {
    "dbFile": "Duplex_extracted.db",
-   "codeKey": "88aa55d280e7",
-   "midair": 6,
+   "codeKey": "233051edc00f",
+   "midair": 2,
    "filingParity": 2,
    "classes": {
     "IfcFlowSegment": {
@@ -117,13 +87,8 @@
      "unjudgedStruct": 0,
      "contactOnly": 2
     },
-    "IfcFooting": {
-     "midair": 2,
-     "unjudgedStruct": 0,
-     "contactOnly": 0
-    },
     "IfcWallStandardCase": {
-     "midair": 4,
+     "midair": 2,
      "unjudgedStruct": 0,
      "contactOnly": 0
     }
@@ -131,8 +96,8 @@
   },
   "HHS_Office_Federated": {
    "dbFile": "HHS_Office_Federated_extracted.db",
-   "codeKey": "88aa55d280e7",
-   "midair": 36,
+   "codeKey": "233051edc00f",
+   "midair": 7,
    "filingParity": 4,
    "classes": {
     "IfcBuildingElementProxy": {
@@ -146,12 +111,12 @@
      "contactOnly": 0
     },
     "IfcFlowFitting": {
-     "midair": 6,
+     "midair": 0,
      "unjudgedStruct": 0,
      "contactOnly": 9
     },
     "IfcFlowSegment": {
-     "midair": 8,
+     "midair": 0,
      "unjudgedStruct": 0,
      "contactOnly": 14
     },
@@ -161,12 +126,12 @@
      "contactOnly": 3
     },
     "IfcMember": {
-     "midair": 11,
+     "midair": 0,
      "unjudgedStruct": 18,
      "contactOnly": 0
     },
     "IfcPlate": {
-     "midair": 4,
+     "midair": 0,
      "unjudgedStruct": 1,
      "contactOnly": 0
     },
@@ -184,12 +149,12 @@
   },
   "Clinic": {
    "dbFile": "Clinic_meta.db",
-   "codeKey": "88aa55d280e7",
-   "midair": 53,
+   "codeKey": "233051edc00f",
+   "midair": 10,
    "filingParity": 6,
    "classes": {
     "IfcBeam": {
-     "midair": 1,
+     "midair": 0,
      "unjudgedStruct": 47,
      "contactOnly": 0
     },
@@ -204,27 +169,22 @@
      "contactOnly": 1
     },
     "IfcFlowFitting": {
-     "midair": 12,
+     "midair": 0,
      "unjudgedStruct": 0,
      "contactOnly": 3
     },
     "IfcFlowSegment": {
-     "midair": 16,
+     "midair": 0,
      "unjudgedStruct": 0,
      "contactOnly": 3
     },
-    "IfcFlowTerminal": {
-     "midair": 2,
-     "unjudgedStruct": 0,
-     "contactOnly": 0
-    },
     "IfcFooting": {
-     "midair": 15,
+     "midair": 4,
      "unjudgedStruct": 0,
      "contactOnly": 0
     },
     "IfcMember": {
-     "midair": 5,
+     "midair": 4,
      "unjudgedStruct": 0,
      "contactOnly": 0
     },
@@ -247,8 +207,8 @@
   },
   "JKR": {
    "dbFile": "JKR_extracted.db",
-   "codeKey": "88aa55d280e7",
-   "midair": 51,
+   "codeKey": "233051edc00f",
+   "midair": 44,
    "filingParity": 22,
    "classes": {
     "IfcBeam": {
@@ -262,7 +222,7 @@
      "contactOnly": 11
     },
     "IfcColumn": {
-     "midair": 6,
+     "midair": 2,
      "unjudgedStruct": 49,
      "contactOnly": 0
     },
@@ -277,45 +237,35 @@
      "contactOnly": 0
     },
     "IfcSlab": {
-     "midair": 38,
+     "midair": 36,
      "unjudgedStruct": 4,
-     "contactOnly": 0
-    },
-    "IfcWall": {
-     "midair": 1,
-     "unjudgedStruct": 0,
      "contactOnly": 0
     }
    }
   },
   "LTU_AHouse": {
    "dbFile": "LTU_AHouse_meta.db",
-   "codeKey": "88aa55d280e7",
-   "midair": 2794,
+   "codeKey": "233051edc00f",
+   "midair": 286,
    "filingParity": 246,
    "classes": {
     "IfcBeam": {
-     "midair": 3,
+     "midair": 0,
      "unjudgedStruct": 93,
      "contactOnly": 0
     },
-    "IfcBuildingElementPart": {
-     "midair": 1,
-     "unjudgedStruct": 0,
-     "contactOnly": 0
-    },
     "IfcBuildingElementProxy": {
-     "midair": 17,
+     "midair": 0,
      "unjudgedStruct": 0,
      "contactOnly": 24
     },
     "IfcColumn": {
-     "midair": 5,
+     "midair": 0,
      "unjudgedStruct": 275,
      "contactOnly": 0
     },
     "IfcCovering": {
-     "midair": 555,
+     "midair": 19,
      "unjudgedStruct": 0,
      "contactOnly": 0
     },
@@ -324,33 +274,28 @@
      "unjudgedStruct": 0,
      "contactOnly": 1
     },
-    "IfcEnergyConversionDevice": {
-     "midair": 2,
-     "unjudgedStruct": 0,
-     "contactOnly": 0
-    },
     "IfcFlowController": {
-     "midair": 212,
+     "midair": 17,
      "unjudgedStruct": 0,
      "contactOnly": 60
     },
     "IfcFlowFitting": {
-     "midair": 575,
+     "midair": 0,
      "unjudgedStruct": 0,
      "contactOnly": 282
     },
     "IfcFlowSegment": {
-     "midair": 1001,
+     "midair": 0,
      "unjudgedStruct": 0,
      "contactOnly": 567
     },
     "IfcFlowTerminal": {
-     "midair": 128,
+     "midair": 1,
      "unjudgedStruct": 0,
      "contactOnly": 8
     },
     "IfcFlowTreatmentDevice": {
-     "midair": 4,
+     "midair": 0,
      "unjudgedStruct": 0,
      "contactOnly": 1
     },
@@ -360,7 +305,7 @@
      "contactOnly": 0
     },
     "IfcMember": {
-     "midair": 12,
+     "midair": 0,
      "unjudgedStruct": 68,
      "contactOnly": 0
     },
@@ -375,7 +320,7 @@
      "contactOnly": 0
     },
     "IfcSlab": {
-     "midair": 26,
+     "midair": 12,
      "unjudgedStruct": 74,
      "contactOnly": 0
     },
@@ -390,12 +335,12 @@
      "contactOnly": 0
     },
     "IfcWallStandardCase": {
-     "midair": 16,
+     "midair": 1,
      "unjudgedStruct": 24,
      "contactOnly": 18
     },
     "IfcWindow": {
-     "midair": 1,
+     "midair": 0,
      "unjudgedStruct": 0,
      "contactOnly": 16
     }

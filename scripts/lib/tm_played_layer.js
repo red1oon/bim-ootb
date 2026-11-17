@@ -152,7 +152,7 @@ function mirrorInjectGantt(o) {
   });
   const dt = sb._displayTimeline(twItems);   // mutates .s/.e in place, exactly as injectGantt relies on
   const disp = {};
-  twItems.forEach(it => { disp[it.guid] = { start: it.s, end: it.e }; });
+  twItems.forEach(it => { disp[it.guid] = { start: it.s, end: it.e, lift: it.lift }; });   // lift: §ONE_LIFT, same as injectGantt
   let schedEnd = baseMs;
   for (const g in disp) if (disp[g].end > schedEnd) schedEnd = disp[g].end;
 
