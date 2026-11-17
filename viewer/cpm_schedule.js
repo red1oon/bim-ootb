@@ -211,6 +211,26 @@
     return S.bz <= T.bz + SG.EPS && S.tz >= T.tz - SG.EPS;                  // embedded; anything else is carrier-above
   }
   function supportBound(S, T, sS, eS) { return supportIsEmbedded(S, T) ? sS : eS; }
+  // §ONE_LIFT (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.6 D3 "a tie is one lift", §Q.13 — 2026-11-17).
+  // electionRings(des) -> Int32Array: a ring id for every element that sits on a RING of the election (A elects B,
+  // B elects A — a pipe run and its fitting, two same-depth beams, a footing pair), -1 otherwise. Each element elects
+  // at most one support, so a ring is a simple cycle. A ring is ONE LIFT: its members go in together, so between ring
+  // members the bound is always the START, whatever the relation. The graph edge (buildGraph), the judge
+  // (support_sweep midairAudit) and the within-bar tiler (schedule_author remapSolveToTasks, via the `lift` field the
+  // display map carries) all read this one definition.
+  function electionRings(des) {
+    var n = des.length, ring = new Int32Array(n), st = new Uint8Array(n), next = 0;
+    ring.fill(-1);
+    for (var i = 0; i < n; i++) {
+      if (st[i]) continue;
+      var walk = [], u = i;
+      while (u >= 0 && !st[u]) { st[u] = 1; walk.push(u); u = des[u]; }
+      if (u >= 0 && st[u] === 1) { for (var k = walk.indexOf(u); k < walk.length; k++) ring[walk[k]] = next; next++; }
+      for (var w = 0; w < walk.length; w++) st[walk[w]] = 2;
+    }
+    ring.count = next;
+    return ring;
+  }
 
   function designatedSupport(items, G) {
     var SG = (typeof global.ScheduleGate !== 'undefined') ? global.ScheduleGate : ScheduleGate;
@@ -352,8 +372,9 @@
     var des = designatedSupport(items, G);
     // E1 kind: FS for bearing-below / carrier-above, SS for embedded (§D4_SUPPORT_FINISHED)
     var e1fs = 0;
+    var ring = electionRings(des);
     for (i = 0; i < n; i++) if (des[i] >= 0) {
-      var _emb = supportIsEmbedded(items[des[i]], items[i]);
+      var _emb = supportIsEmbedded(items[des[i]], items[i]) || (ring[i] >= 0 && ring[i] === ring[des[i]]);   // §ONE_LIFT: ring members bind at the START
       if (!_emb) e1fs++;
       addEdge(des[i], i, _emb ? SS : FS, 1, 'e1');
     }
@@ -570,7 +591,7 @@
     });
 
     return { out: out, nElements: n, nNodes: n + msMeta.length, msMeta: msMeta, stragglerOf: stragglerOf,
-             levels: levels, counts: counts, designated: des };
+             levels: levels, counts: counts, designated: des, ring: ring };
   }
 
   // tarjanScc(total, out) — iterative Tarjan (no recursion; LTU_AHouse is 122k nodes). Returns
@@ -1166,7 +1187,7 @@
              ms: { contact: _dt(t0, t1), build: _dt(t1, t2), solve: _dt(t2, t3), total: _dt(t0, t3) } };
   }
 
-  var API = { contactGraph: contactGraph, designatedSupport: designatedSupport, supportBound: supportBound, supportIsEmbedded: supportIsEmbedded,
+  var API = { contactGraph: contactGraph, designatedSupport: designatedSupport, supportBound: supportBound, supportIsEmbedded: supportIsEmbedded, electionRings: electionRings,
               buildGraph: buildGraph, solve: solve, run: run, TIER1_ORDER: TIER1_ORDER };
   global.CpmSchedule = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;

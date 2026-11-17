@@ -448,6 +448,7 @@
     var des = _designatedSupport(items, G);
     var _CPj = _cpm();                                       // the same owner resolution _contactGraph uses
     var _bound = (_CPj && _CPj.supportBound) || null;
+    var _ring = (_CPj && _CPj.electionRings) ? _CPj.electionRings(des) : null;   // §ONE_LIFT: ring members go in together
     out.finishJudged = !!_bound;
     for (var i = 0; i < items.length; i++) {
       var sIdx = des[i]; if (sIdx < 0) continue;
@@ -463,7 +464,8 @@
       // item goes in with its host). The bound is the owner's (CpmSchedule.supportBound) — the same call the solve makes.
       // A caller that passes no end time is judged on the start (said in out.finishJudged = false), never guessed.
       var _S = items[sIdx], _b = _S.s;
-      if (_bound && typeof _S.e === 'number') _b = _bound(_S, items[i], _S.s, _S.e); else out.finishJudged = false;
+      if (_ring && _ring[i] >= 0 && _ring[i] === _ring[sIdx]) _b = _S.s;         // one lift: judged on the START, whatever the relation
+      else if (_bound && typeof _S.e === 'number') _b = _bound(_S, items[i], _S.s, _S.e); else out.finishJudged = false;
       if (_b > items[i].s + 1) { out.midair++; out.guids.push(items[i].guid); }
     }
     out.ok = out.midair === 0;
