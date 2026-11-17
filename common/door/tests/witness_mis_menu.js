@@ -48,7 +48,7 @@ const k = kit('W-MIS-MENU');
   const pick = items.slice(0, 9).filter(i => i.action === 'W' && i.kind && tabsOf(i.windowId) > 1)[0], idx = items.indexOf(pick);
   if (!pick) k.incon('U4', 'no window entry with several tabs among the first nine "partner" matches to open');
   else {
-    const first = sq("SELECT tb.tablename AS t FROM ad_tab t JOIN ad_table tb ON tb.ad_table_id=t.ad_table_id WHERE t.ad_window_id=" + pick.windowId + " AND t.isactive='Y' ORDER BY t.tablevel, t.seqno LIMIT 1")[0].t;
+    const first = sq("SELECT tb.tablename AS t FROM ad_tab t JOIN ad_table tb ON tb.ad_table_id=t.ad_table_id WHERE t.ad_window_id=" + pick.windowId + " AND t.isactive='Y' ORDER BY t.seqno, t.ad_tab_id LIMIT 1")[0].t;   // legacy GridTabVO.getSQL L536: a window's tabs ORDER BY SeqNo
     const keys = ['/', { text: 'partner' }, 'Enter', String(idx + 1), 'Esc', 'Esc', 'q'], screens = [];
     const r = await MIS.menuSession({ menu: true, role: '102', limit: 5 }, () => Promise.resolve(keys.length ? keys.shift() : null), (s) => screens.push(s), createDoor({ journal: env.BIM_DOOR_JOURNAL }));
     const lines = r.lines, vocab = JSON.parse(fs.readFileSync(path.join(ROOT, 'common/door/verbs.json'), 'utf8')).verbs.map(v => v.verb);
