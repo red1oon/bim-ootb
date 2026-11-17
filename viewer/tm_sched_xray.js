@@ -662,23 +662,6 @@
         for (var i = 0; i < items.length; i++) { items[i].s = r.solution.times[i].s; items[i].e = r.solution.times[i].e; items[i].lift = (_lring && _lring[i] >= 0) ? _lring[i] : undefined; items[i].ord = r.solution.order ? r.solution.order[i] : undefined; }
         var aud = _midairAudit(items);
         _displayTimelineRemember(items, r.graph.stragglerOf);
-        // §S51 item d (4D_GANTT_TM_REFACTOR.md §S51): when the CELL path authored this timeline,
-        // remember each element's cell identity so injectGantt stamps it into the ops and the
-        // Gantt groups bars BY CELL — the display reads the schedule's own grain instead of
-        // re-deriving a coarser one. NOT one-shot (the partner consumer of the same generation
-        // cycle replays via the REUSE branch above and still needs it); overwritten on every
-        // fresh authoring, and set NULL on a GRAPH-path authoring so a building switch can never
-        // leak one building's cells onto another's bars.
-        if (r.gate && r.gate.cellKeys) {
-          var _cm = {};
-          for (var _cki = 0; _cki < items.length; _cki++) {
-            var _ckp = String(r.gate.cellKeys[_cki]).split('\u0001');
-            _cm[items[_cki].guid] = 'L' + _ckp[0] + '\u00b7T' + _ckp[1] + '\u00b7' + _ckp[2];
-          }
-          _displayTimeline._lastCell = { map: _cm, n: items.length };
-        } else {
-          _displayTimeline._lastCell = null;
-        }
         console.log('§CPM_DISPLAY on — one-DAG schedule authored the display timeline' +
           ' midair=' + aud.midair + ' orphans=' + aud.orphans +
           ' stragglers=' + r.graph.counts.stragglers + ' (0 midair = nothing appears before what it touches)');
