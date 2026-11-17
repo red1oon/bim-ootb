@@ -125,7 +125,7 @@
         // §PROMOTED_CARRIER_POOL (2026-08-11): pool aligned with auditFloating's — seq<=4 ∪
         // promoted slabs (see _buildXraySupportCache for the full finding-A note; guard and judge
         // MUST stay one physics or §XRAY_EDGES staged>0 comes back).
-        if (e.seq <= 4 || (e.cls === 'IfcSlab' && e.seq > 4)) _ogCellsBuild(e).forEach(function (c) { (_ogStructGrid[c] = _ogStructGrid[c] || []).push(e); });
+        if (e.seq <= 4 || (e.cls === 'IfcSlab' && e.seq > 4 && e.phase !== 'Finishes')) _ogCellsBuild(e).forEach(function (c) { (_ogStructGrid[c] = _ogStructGrid[c] || []).push(e); });
         else if (e.cls.indexOf('IfcWall') === 0) _ogCellsBuild(e).forEach(function (c) { (_ogWallGrid[c] = _ogWallGrid[c] || []).push(e); });
       });
       _allScheduled.sort(function (a, b) { return a.bz - b.bz; });
@@ -143,7 +143,7 @@
       for (; _ogSweeps < 16; _ogSweeps++) {
         var _ogMoved = 0;
         _allScheduled.forEach(function (T) {
-          var promotedSlab = (T.cls === 'IfcSlab' && T.seq > 4);
+          var promotedSlab = (T.cls === 'IfcSlab' && T.seq > 4 && T.phase !== 'Finishes');
           var cells = _ogCellsQuery(T), seen = {}, lastEnd = 0, hasBearing = false;
           // §OG_BEARING_BOUND (2026-08-11, Part 2 Option C — bim-compiler
           // prompts/4D_SCHEDULE_PERFECTION.md closure pass. Witness:

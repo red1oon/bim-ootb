@@ -231,7 +231,7 @@
     var out = {}, idx = {}, t, e, cs, c, k, S;
     function isStructBearing(s2) {
       return s2.seq <= 4 || (s2.cls && s2.cls.indexOf('IfcWall') === 0) ||
-             (s2.cls === 'IfcSlab' && s2.seq > 4) || s2.cls === 'IfcStairFlight';
+             (s2.cls === 'IfcSlab' && s2.seq > 4 && s2.phase !== 'Finishes') || s2.cls === 'IfcStairFlight';
     }
     function isCand(e2) {
       return (e2.cls === 'IfcSlab' || e2.cls === 'IfcBeam') && e2.phase === 'Superstructure';
@@ -609,7 +609,12 @@
     // to roof role (seq>4) is REAL STRUCTURE — the ceiling everything beneath it hangs from — so it
     // joins the same support grid as PASS-A structure. As a support it sits ABOVE what it carries, so
     // the bearing-below predicate almost never matches it; only hangGate reads it upward.
-    function isPromotedSlab(e) { return e.cls === 'IfcSlab' && e.seq > 4; }
+    // §FINISH_SLAB_NOT_STRUCTURE (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.12.2 item 2, §Q.13 — 2026-11-17): the
+    // "promoted slab" pool clause was written for the ROOF slab the load-path pass moves to sequence 8. `seq > 4` also
+    // admitted a FLOOR FINISH (the name override files `Finish Floor` as Finishes, seq 11), so the tile under a pipe
+    // outranked every real support — Duplex: 125 services "resting" on a finish laid days after them. A finish is not
+    // structure. The test stays a self-contained literal at every site (this function is sliced as raw text, see :64).
+    function isPromotedSlab(e) { return e.cls === 'IfcSlab' && e.seq > 4 && e.phase !== 'Finishes'; }
     // §STAIR_FLIGHT_GRID_VISIBILITY (2026-08-14, 4D_SCHEDULE_PERFECTION.md SESSION 6): a flight is
     // real structure but routes through placeNonst (seq=6), so it was never inserted into
     // structIdxGrid/grid — invisible AS SUPPORT to anything resting on it (a mid-landing, a floor
@@ -1229,7 +1234,7 @@
     for (i = 0; i < elements.length; i++) { var T = elements[i];
       if (classFilter && !classFilter(T)) continue;
       var se = 0, hasBearing = false, hasHang = false, seen = {}; cs = cellsOf(T);
-      var pools = (T.cls === 'IfcSlab' && T.seq > 4) ? [structGrid, wallGrid] : [structGrid];
+      var pools = (T.cls === 'IfcSlab' && T.seq > 4 && T.phase !== 'Finishes') ? [structGrid, wallGrid] : [structGrid];
       for (var p = 0; p < pools.length; p++) {
         for (c = 0; c < cs.length; c++) { arr = pools[p][cs[c]]; if (!arr) continue;
           for (k = 0; k < arr.length; k++) { S = arr[k]; if (seen[S.guid] || S.guid === T.guid) continue; seen[S.guid] = 1;
@@ -1258,14 +1263,14 @@
         // a stair flight on the landing it sits below, and the audit hangs it there anyway — 17
         // fleet-wide false "floating" verdicts (Terminal 4, HHS 4, LTU_AHouse 9), deficits as small
         // as 0.006 d. elPool's exact test, one concept, both sides.
-        var tPool = (T.cls === 'IfcSlab' && T.seq > 4) || T.cls === 'IfcStairFlight';
+        var tPool = (T.cls === 'IfcSlab' && T.seq > 4 && T.phase !== 'Finishes') || T.cls === 'IfcStairFlight';
         var tWall = T.cls.indexOf('IfcWall') === 0;
         var seenH = {};
         for (c = 0; c < cs.length; c++) { arr = structGrid[cs[c]]; if (!arr) continue;
           for (k = 0; k < arr.length; k++) { S = arr[k]; if (seenH[S.guid] || S.guid === T.guid) continue; seenH[S.guid] = 1;
             if (S.base_z >= T.top_z - GAP && S.base_z <= T.top_z + GAP && S.top_z > T.top_z + EPS &&
                 !(tPool && T.base_z < S.base_z - EPS) &&
-                !(tWall && S.cls === 'IfcSlab' && S.seq > 4 &&
+                !(tWall && S.cls === 'IfcSlab' && S.seq > 4 && S.phase !== 'Finishes' &&
                   T.base_z < S.base_z - EPS && T.top_z >= S.base_z - GAP) &&
                 overlap(S, T)) {
               hasHang = true;
@@ -1493,7 +1498,7 @@
   }
   function supportPool(e) {
     return e.seq <= 4 ||                                   // PASS-A structure
-           (e.cls === 'IfcSlab' && e.seq > 4) ||           // §DEQ_V1 promoted roof slab
+           (e.cls === 'IfcSlab' && e.seq > 4 && e.phase !== 'Finishes') ||           // §DEQ_V1 promoted roof slab
            e.cls === 'IfcStairFlight';                     // §STAIR_FLIGHT_GRID_VISIBILITY
   }
 
