@@ -31,7 +31,7 @@ const { Witness } = require(path.join(ROOT, 'witness_kit', 'contract.js'));
 
 const LOCK_FILE = path.join(__dirname, 'baselines', 'assembly_order.json');
 const BUILDINGS = process.argv.slice(2).filter(a => a[0] !== '-').length
-  ? process.argv.slice(2).filter(a => a[0] !== '-') : ['Hospital', 'Terminal', 'Duplex', 'HHS_Office_Federated'];
+  ? process.argv.slice(2).filter(a => a[0] !== '-') : ['Hospital', 'Terminal', 'Duplex', 'HHS_Office_Federated', 'Clinic', 'JKR', 'LTU_AHouse'];   // the whole fleet (§Q.13: three buildings were unmeasured through D1-D8 and two of them flipped engine unseen)
 const NAMED = ['IfcBeam', 'IfcColumn'];                    // the classes the lane is named after: absent ⇒ VACUOUS, said aloud
 const lock = fs.existsSync(LOCK_FILE) ? JSON.parse(fs.readFileSync(LOCK_FILE, 'utf8')) : { buildings: {} };
 const quiet = fn => { const l = console.log; console.log = () => {}; try { return fn(); } finally { console.log = l; } };   // the owners' own § lines are in witness.log already

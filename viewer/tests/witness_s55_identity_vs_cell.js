@@ -186,10 +186,14 @@ function authoredRowCounts(db) {
       finally { delete globalThis.APP; }
       const gate = dtResult && dtResult.stats && dtResult.stats.gate;
       // ── W-S55-0b: this building takes the CELL path (the surface §S51 locked) ──
-      assert(gate && gate.path === 'CELL' && gate.cellKeys,
-        'W-S55-0b ' + bld + ' routes to the CELL path with cellKeys (path=' + (gate ? gate.path : 'none') +
-        ') — the §S51 surface this witness measures');
-      if (!gate || !gate.cellKeys) { db.close(); continue; }
+      // §GRAPH_EVERYWHERE (owner ruling 2026-11-17, bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.13): the cell engine no
+      // longer runs on any building, so the §S51 per-cell surface this witness measures has NO population. That is said
+      // aloud as INCONCLUSIVE — never a PASS on nothing, and no longer a FAIL for a path the owner retired.
+      if (!gate || gate.path !== 'CELL' || !gate.cellKeys) {
+        console.log('  INCONCLUSIVE W-S55-0b ' + bld + ' does not take the CELL path (path=' + (gate ? gate.path : 'none') +
+          ') — the §S51 per-cell surface is retired with the cell engine (§GRAPH_EVERYWHERE); nothing below is judged for this building');
+        db.close(); continue;
+      }
 
       // ── ops: what injectGantt writes — display times + the _cell stamp (§S51.2 links 1+2) ──
       const ops = items.map((it, i) => ({ op_type: 'ELEMENT_PLACE', start_ts: it.s, end_ts: it.e,

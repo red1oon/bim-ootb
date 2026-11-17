@@ -1103,12 +1103,20 @@
       // files by HEIGHT levels — measured on a road + bridge + ground works merge: lamps below the road's height band were
       // placed before the pavement. Any item with a chainage section → graph. No building item carries lvlSec → unchanged.
       var _chainN = 0; for (var _ci = 0; _ci < items.length; _ci++) if (typeof items[_ci].lvlSec === 'number') _chainN++;
-      var path = (_chainN > 0) ? 'GRAPH' : (filing.repr >= CELL_GATE_MARK ? 'CELL' : 'GRAPH');
+      // §GRAPH_EVERYWHERE (owner ruling 2026-11-17, bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.13 — it REVERSES the
+      // 2026-08-21 §S50 ruling that made the cell engine the live precedence carrier). With D1-D7 in, both engines were
+      // forced on the same code and judged on the played layer: Hospital 245 (cell) vs 54 (graph) · Terminal 343 vs 324 ·
+      // Clinic 160 vs 53 · JKR 213 vs 52 · HHS 468 vs 40 · Duplex equal; programme length and stacking identical.
+      // The cell solve enforces an elected support only inside one (level, trade); the graph enforces every one.
+      // The representability gate is still MEASURED and printed (wouldHaveBeen=), it no longer chooses.
+      var _wouldBe = (_chainN > 0) ? 'GRAPH' : (filing.repr >= CELL_GATE_MARK ? 'CELL' : 'GRAPH');
+      var path = 'GRAPH';
       console.log('§CELL_GATE n=' + items.length + ' (whole scheduled population, §S46 discipline)' +
         ' E1edges=' + filing.e1Total + ' insideLT=' + filing.intra +
         ' representable=' + filing.representable + ' REFUSED=' + filing.refused +
         ' repr=' + (100 * filing.repr).toFixed(2) + '% mark=' + (100 * CELL_GATE_MARK) + '%' +
-        ' promoted=' + filing.promoted + ' path=' + path + (_chainN ? ' reason=chainage(' + _chainN + ' items carry a section)' : '') +
+        ' promoted=' + filing.promoted + ' path=' + path + ' wouldHaveBeen=' + _wouldBe + ' (§GRAPH_EVERYWHERE: the graph engine runs on every building)' +
+        (_chainN ? ' reason=chainage(' + _chainN + ' items carry a section)' : '') +
         ' [gate quantity: §S47b formula, level grain, designatedSupport unchanged — a rule, not a dictionary]');
       if (path === 'CELL') {
         var solC = solveCells(items, filing, opts);
