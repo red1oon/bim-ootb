@@ -1448,20 +1448,39 @@
       }
       queue = next; if (next.length) rounds++;
     }
-    Object.defineProperty(out, '__census', { enumerable: false, value: { rounds: rounds, neededBy: byNeed } });
+    // A promoted wall that itself STANDS ON a beam (a wall on a transfer beam) takes the beam's sequence (3), not
+    // the columns' (2): sequence follows the bearer, and inside one (level, trade) the cell solve then places
+    // beam -> wall -> what the wall carries (§D3_CELL_SUPPORT_ORDER). Measured without this (§Q.12): Hospital 25
+    // promoted walls were drawn before the beam under them. out[guid] carries the sequence (2 or 3).
+    var onBeam = 0;
+    for (t = 0; t < n; t++) {
+      if (!out[els[t].guid]) continue;
+      e = els[t]; cs = cellsOf(e);
+      var best = null, seenB = {};
+      for (c = 0; c < cs.length; c++) {
+        var arrB = poolIdx[cs[c]]; if (!arrB) continue;
+        for (k = 0; k < arrB.length; k++) {
+          var jb = arrB[k]; if (jb === t || seenB[jb]) continue; seenB[jb] = 1;
+          S = els[jb];
+          if (overlap(S, e) && below(S, e) && (!best || S.top_z > best.top_z)) best = S;
+        }
+      }
+      if (best && best.seq === 3 && !out[best.guid]) { out[e.guid] = 3; onBeam++; } else out[e.guid] = 2;
+    }
+    Object.defineProperty(out, '__census', { enumerable: false, value: { rounds: rounds, neededBy: byNeed, onBeam: onBeam } });
     return out;
   }
   // applyBearingWalls(els, who) — the ONE mutation every element recipe calls: a bearing wall takes
-  // phase Superstructure, sequence 2 (a vertical bearer, like a column). Trade/resource, rate and
+  // phase Superstructure, sequence 2 (a vertical bearer, like a column) — or 3 when it stands on a beam. Trade/resource, rate and
   // install time are NOT changed. Prints §BEARING_WALL on every call (0 is said aloud).
   function applyBearingWalls(els, who) {
     var bw = bearingWalls(els), n = 0, levels = {};
     for (var t = 0; t < els.length; t++) {
-      if (bw[els[t].guid]) { els[t].phase = 'Superstructure'; els[t].seq = 2; n++; levels[els[t].storey || '_'] = 1; }
+      if (bw[els[t].guid]) { els[t].phase = 'Superstructure'; els[t].seq = bw[els[t].guid]; n++; levels[els[t].storey || '_'] = 1; }
     }
-    console.log('§BEARING_WALL recipe=' + who + ' n=' + n + ' rounds=' + bw.__census.rounds +
+    console.log('§BEARING_WALL recipe=' + who + ' n=' + n + ' onTransferBeam(seq3)=' + bw.__census.onBeam + ' rounds=' + bw.__census.rounds +
       ' neededBy=' + JSON.stringify(bw.__census.neededBy) + ' levels=' + Object.keys(levels).length +
-      ' — a wall that is the only structure under a structural element is Superstructure seq 2 (rate, trade, install time unchanged)');
+      ' — a wall that is the only structure under a structural element is Superstructure, seq 2 like a column or seq 3 when it stands on a beam (rate, trade, install time unchanged)');
     return n;
   }
   function supportPool(e) {
