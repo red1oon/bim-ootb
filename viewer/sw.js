@@ -264,7 +264,7 @@
 // v1731 (2026-11-17) §19.4 (bim-compiler VOCAB_MESSAGE_CATALOG.md): the help panel searches through the shared query core — help_panel.js?v=4, common/help/help_query.js?v=1, help/index/<locale>.json (18 packs)
 // v1734 (2026-11-17) §19.5 (bim-compiler VOCAB_MESSAGE_CATALOG.md): the help panel's "Did you mean" line — help_panel.js?v=5, common/help/help_dym.js?v=1, common/door/assist_core.js?v=1, dictionary key ui_help_dym
 // v1735 (2026-11-17) §19.6 (bim-compiler VOCAB_MESSAGE_CATALOG.md): `#<GlobalId prefix>` in the help panel — help_panel.js?v=6, common/help/help_grammar.js?v=1, help_guid.js?v=1, scene.js?v=81, nf_panel_search.js?v=3, dictionary ui_help_doc_usage/_none/_more/ui_help_reserved
-const CACHE_VERSION = 'v1735';
+const CACHE_VERSION = 'v1736';
 // v1637 (rebase of PR #1191/#1196) §CLASS_UNMATCHED_INHERITED + §EXACT_LOOKUP_BLINDSPOT: rates/ifc_schema_hierarchy.json added to PRECACHE_ASSETS; schedule_author.js/proj_fold.js/boq_charts.html/schedule_read_4d.js/tm_sched_xray.js classify via the schema hierarchy.
 // v1636 (rebase of PR #1317) §ARCH_AREA_WEIGHT/§VOL_WEIGHT/§FOOTING_M3: schedule_author.js, time_machine parts, rates.js and rates/*.json changed install DURATIONS (area/volume weighting, IfcFooting priced M3); all precached cache-first, so a client holding the old cache would keep the flat times forever.
 // v1635 (rebase of PR #676, BCF half only) §BCF_EXPORT: bcf_export.js added to PRECACHE_ASSETS; viewer.html loads it + Export BCF button in the Issues toolbar; main.js wires setupBcfExport/exportIssuesBcf. The Open-button IFC half of #676 was superseded by main's A._openIfcFiles.
