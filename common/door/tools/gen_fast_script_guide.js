@@ -10,6 +10,7 @@
 //      --refresh re-runs every run block and pastes the real stdout (each line cut to N characters if cut=N, marked with "…"). Nothing is retyped.
 //   node gen_fast_script_guide.js --page docs/FastScriptGuide.md --write      rebuild the verb table
 //   node gen_fast_script_guide.js --page docs/FastScriptGuide.md --refresh    re-run every run block, paste its stdout (slow: opens the Modeller)
+//   ... --refresh --only id1,id2   only those blocks, in page order, in one folder (a block that reads a file an earlier block wrote needs both)
 //   node gen_fast_script_guide.js --page docs/FastScriptGuide.md --check      exit 1 if the table is not what verbs.json gives
 // Exports (used by the witness): parsePage, verbTable, needs, normalise, runBlock, makeFlatFolder.
 'use strict';
@@ -55,6 +56,17 @@ function parsePage(md) {
 // a CSV ends its lines with CRLF (render.js, RFC 4180); a markdown page cannot show a CR, so the page holds LF and both sides compare with CRLF read as LF
 const normalise = (s) => String(s).replace(/\r\n/g, '\n').replace(/"request":"[^"]*"/g, '"request":"R"').replace(/"ms":\d+/g, '"ms":0');
 const cutLines = (s, n) => (n ? s.split('\n').map(l => (l.length > n ? l.slice(0, n) + '…' : l)).join('\n') : s);
+// W-FAST-SCRIPT-GUIDE R: a run's stdout equals its block. A cut line was cut at N characters of ITS OWN run, whose "request" id carries a process id of varying length,
+// so the cut point moves with that length: a cut line matches when the page line is exactly N characters + "…" and, masked, is a prefix of the real (masked) full line.
+// Every other line, and the line count, must be equal once masked. (Fixed 2026-11-17: the old check cut first and masked after, so a 6-digit vs 7-digit pid failed it.)
+function sameOut(realOut, pageOut, n) {
+  const R = String(realOut).replace(/\r\n/g, '\n').split('\n'), P = String(pageOut).replace(/\r\n/g, '\n').split('\n');
+  if (!n) return normalise(R.join('\n')) === normalise(P.join('\n'));
+  if (R.length !== P.length) return false;
+  return R.every((r, i) => { const p = P[i];
+    if (r.length > n && p.slice(-1) === '…') return p.length === n + 1 && normalise(r).indexOf(normalise(p.slice(0, -1))) === 0;
+    return normalise(r) === normalise(p); });
+}
 
 function get(rel) { return new Promise((res, rej) => https.get(LIVE + rel + '?nc=' + Date.now(), (r) => { if (r.statusCode !== 200) { rej(new Error('HTTP ' + r.statusCode + ' ' + rel)); r.resume(); return; } const c = []; r.on('data', d => c.push(d)); r.on('end', () => res(Buffer.concat(c))); }).on('error', rej)); }
 async function makeFlatFolder(local) {   // an empty folder holding only the 6 files, from the live site (or from this tree when local)
@@ -76,7 +88,7 @@ function runBlock(run, ctx) {   // ctx {flat, root, files:[{name,text}]}
     p.stdout.on('data', d => { o += d; }); p.stderr.on('data', d => { e += d; }); const t = setTimeout(() => p.kill(), 420000); p.on('close', code => { clearTimeout(t); const back = (x) => x.split(path.join(ctx.flat, 'fast_guide_')).join('/tmp/fast_guide_'); res({ code, out: back(o).trim(), err: back(e).trim() }); });   // the run's own folder is printed as the /tmp/ path the page shows   // the timer is cleared when the command ends (it kept every --refresh alive for 7 minutes)
   });
 }
-module.exports = { parsePage, verbTable, needs, normalise, cutLines, runBlock, makeFlatFolder, loadVocab, GEN, FLAT };
+module.exports = { parsePage, verbTable, needs, normalise, cutLines, sameOut, runBlock, makeFlatFolder, loadVocab, GEN, FLAT };
 
 if (require.main === module) (async () => {
   const a = process.argv.slice(2), page = a[a.indexOf('--page') + 1], L = (m) => console.log('§FAST_GUIDE_GEN ' + m);
@@ -101,7 +113,7 @@ if (require.main === module) (async () => {
     const flat = await makeFlatFolder(a.indexOf('--local') >= 0), { runs, files } = parsePage(md); L('flat folder ' + flat + ', ' + runs.length + ' run blocks');
     const edits = [];
     for (const r of runs) {   // in page order: later blocks read files that earlier ones wrote
-      if (a.indexOf('--only') >= 0 && a[a.indexOf('--only') + 1] !== r.id) continue;
+      if (a.indexOf('--only') >= 0 && String(a[a.indexOf('--only') + 1]).split(',').indexOf(r.id) < 0) continue;   // --only a,b: dependent blocks (one reads a file the other wrote) refresh together, in page order, in ONE flat folder
       const x = await runBlock(r, { flat, root: ROOT, files }), cut = r.opts.cut ? +r.opts.cut : 0;
       L('run ' + r.id + ' exit=' + x.code + ' stdout=' + x.out.length + ' bytes' + (x.out ? '' : ' EMPTY'));
       if (!x.out) continue;
