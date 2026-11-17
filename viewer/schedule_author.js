@@ -2130,7 +2130,10 @@
           for (var i3 = 0; i3 < items.length; i3++) {
             if (lay[i3] >= 0) continue;
             var ready = true;
-            for (var r = 0; r < below[i3].length; r++) if (lay[below[i3][r]] < 0) { ready = false; break; }
+            // A support placed in THIS round does not make its load ready: the load goes one layer later. Without `=== cur`
+            // an element whose support sits earlier in the scan landed in the support's own layer (§TPL_LAYER_SELFCHECK
+            // supportedInSAMElayer; bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.15.2).
+            for (var r = 0; r < below[i3].length; r++) { var lb = lay[below[i3][r]]; if (lb < 0 || lb === cur) { ready = false; break; } }
             if (ready) { lay[i3] = cur; left--; progressed = true; }
           }
           if (!progressed) break;                  // cycle: everything remaining shares one layer
@@ -2162,7 +2165,7 @@
       for (var _g in _rm.schedule) if (!_no[_g] || _no[_g].start !== _rm.schedule[_g].start) _mv++;
       var _taskOf = {};
       inst.tasks.forEach(function (tk) { tk.guids.forEach(function (g) { _taskOf[g] = tk.id || tk.taskId || tk.name; }); });
-      var _inv = 0, _byG = {};
+      var _inv = 0, _byG = {}, _invSameLayer = 0, _invLowerLayer = 0, _invHigherLayer = 0, _invSameLift = 0, _invMaxMs = 0, _invNames = [];
       elements.forEach(function (e) { _byG[e.guid] = e; });
       var _SSc = (global && global.SupportSweep) ||
                  (typeof globalThis !== 'undefined' && globalThis.SupportSweep) || null;
@@ -2181,12 +2184,22 @@
             // §I.5c FIX — same narrowing dropped as above, so the self-check judges the SAME
             // population the pass now actually lays out, not a pre-filtered subset of it.
             if (!(_S.bz < _T.bz - SG.EPS && _S.tz >= _T.bz - SG.GAP)) continue;
-            if (_ts.start < _ss.end - 1) _inv++;
+            if (_ts.start < _ss.end - 1) {
+              _inv++;
+              // WHICH kind of pair: the support's layer against the supported element's, and whether the solve put them in one lift
+              var _lS = _layerOf ? _layerOf[_S.guid] : null, _lT = _layerOf ? _layerOf[_T.guid] : null;
+              if (_lS === _lT) _invSameLayer++; else if (_lT < _lS) _invLowerLayer++; else _invHigherLayer++;
+              var _fS = schedule[_S.guid] && schedule[_S.guid].lift, _fT = schedule[_T.guid] && schedule[_T.guid].lift;
+              if (_fS != null && _fS >= 0 && _fS === _fT) _invSameLift++;
+              if (_ss.end - _ts.start > _invMaxMs) _invMaxMs = _ss.end - _ts.start;
+              if (_invNames.length < 5) _invNames.push(_T.cls + '<-' + _S.cls + ' L' + _lT + '/' + _lS + ' ' + _taskOf[_T.guid]);
+            }
           }
         }
       }
       console.log('§TPL_LAYER_SELFCHECK applied=' + (_layerOf ? 1 : 0) + ' moved=' + _mv + '/' + _rm.mapped +
-        ' stillInverted=' + _inv + ' ' +
+        ' stillInverted=' + _inv + ' (supportedInSAMElayer=' + _invSameLayer + ' inLOWERlayer=' + _invLowerLayer + ' inHIGHERlayer=' + _invHigherLayer +
+        ' sameLift=' + _invSameLift + ' maxOverlapMs=' + _invMaxMs + (_invNames.length ? ' e.g. ' + _invNames.join(' | ') : '') + ') ' +
         (!_layerOf ? 'FAIL pass did not run'
          : _mv === 0 ? 'FAIL pass ran but moved nothing — a no-op that looks like a success'
          : _inv === 0 ? 'PASS' : 'FAIL support order still violated inside a task'));
