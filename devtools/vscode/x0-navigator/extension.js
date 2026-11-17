@@ -177,6 +177,41 @@ function activate(context) {
   context.subscriptions.push(vscode.workspace.onDidSaveTextDocument(doc => { judgeCatalog(doc); }));
   if (vscode.workspace.onDidOpenTextDocument) context.subscriptions.push(vscode.workspace.onDidOpenTextDocument(doc => { judgeCatalog(doc); }));
 
+  // §F.35 (W-X0-CORE-PURE): a core file (Part A, decision A-1) that calls a clock, random numbers or the network itself is underlined on
+  // open and on save, before CI's W-CORE-PURE fails the PR. The scanner and the list are the open folder's own scripts/lib/core_pure.js
+  // (ONE scanner, shared with the CI witness). No parser in that folder (no node_modules) → no warning and one output line, never a guess.
+  const pureDiag = vscode.languages.createDiagnosticCollection('x0-core-pure');
+  context.subscriptions.push(pureDiag);
+  let pureLib = null, pureRoot = null, pureSaid = false;
+  function corePure(sourceRoot) {
+    if (pureRoot === sourceRoot) return pureLib;
+    pureRoot = sourceRoot; pureLib = null;
+    try { pureLib = require(path.join(sourceRoot, 'scripts', 'lib', 'core_pure.js')); }
+    catch (e) { if (!pureSaid) { pureSaid = true; out.appendLine('§X0_CORE_PURE unavailable (' + String(e.message).split('\n')[0] + '): no core-purity warnings in this window'); } }
+    return pureLib;
+  }
+  function judgeCorePure(document) {
+    const sourceRoot = findSourceRoot(context);
+    if (!sourceRoot || !document || !document.uri || typeof document.getText !== 'function' || document.uri.scheme !== 'file' || !/\.js$/.test(document.uri.fsPath) || !document.uri.fsPath.startsWith(sourceRoot + path.sep)) return null;
+    const lib = corePure(sourceRoot);
+    if (!lib) return null;
+    const rel = path.relative(sourceRoot, document.uri.fsPath).split(path.sep).join('/');
+    if (!lib.isCore(rel)) { pureDiag.delete(document.uri); return null; }
+    let r;
+    try { r = lib.scan(document.getText()); } catch (e) { out.appendLine('§X0_CORE_PURE judge failed ' + rel + ': ' + e.message); return null; }   // a save handler never throws
+    if (!r.parsed || !r.hits.length) { pureDiag.delete(document.uri); return r.parsed ? [] : null; }   // a file that does not parse mid-edit: say nothing
+    pureDiag.set(document.uri, r.hits.map(h => {
+      const d = new vscode.Diagnostic(new vscode.Range(h.line - 1, h.col, h.endLine - 1, h.endCol),
+        'Core file: ' + h.call + ' reads the ' + h.kind + ' itself, so a replay or a test gets a different value. Instead, ' + lib.ADVICE[h.kind] + '. CI fails this PR (W-CORE-PURE).',
+        vscode.DiagnosticSeverity.Warning);
+      d.source = 'X0 Navigator'; d.code = 'x0.core-pure.' + h.kind;
+      return d;
+    }));
+    return r.hits;
+  }
+  context.subscriptions.push(vscode.workspace.onDidSaveTextDocument(doc => { judgeCorePure(doc); }));
+  if (vscode.workspace.onDidOpenTextDocument) context.subscriptions.push(vscode.workspace.onDidOpenTextDocument(doc => { judgeCorePure(doc); }));
+
   // X0-2: hover on a §TAG → its spec places and the code that prints it.
   context.subscriptions.push(vscode.languages.registerHoverProvider(JS, {
     provideHover(document, position) {
@@ -597,7 +632,8 @@ function activate(context) {
     whenFresh: () => firstRefresh,
     indexFile: () => { const f = getFields(); return f ? f.file : null; },
     refreshRuns: () => (refresher ? refresher.runs() : 0),
-    judgeCatalog
+    judgeCatalog,
+    judgeCorePure
   };
 }
 

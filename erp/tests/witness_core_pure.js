@@ -19,60 +19,14 @@
 'use strict';
 const fs = require('fs'), path = require('path'), cp = require('child_process');
 const HERE = path.join(__dirname, '..', '..'), ROOT = process.env.OOTB ? path.resolve(process.env.OOTB) : HERE, say = s => process.stdout.write(s + '\n');
-const espree = require(path.join(HERE, 'node_modules', 'espree'));
-
-const CORE = ['erp/processes/*.js', 'erp/callouts/*.js', 'erp/ad_callout.js', 'erp/doc_poster.js', 'erp/model_*.js', 'erp/rule_fold.js', 'erp/crud_core.js',
-  'viewer/cpm_schedule.js', 'viewer/schedule_*.js', 'common/room_graph.js'];
+// the ONE scanner and the ONE list (also used by X0 Navigator's editor warning, §F.35)
+const { CORE, scan } = require(path.join(HERE, 'scripts', 'lib', 'core_pure.js'));
 const files = cp.execSync('git ls-files ' + CORE.map(p => "'" + p + "'").join(' '), { cwd: ROOT }).toString().split('\n')
   .filter(f => f && !/(^|\/)tests?\//.test(f) && !/(^|\/)witness_[^/]*\.js$/.test(f));
 
-// Sets, not plain objects: a plain object also answers to 'constructor', 'toString', 'valueOf' (the first run counted those as storage).
-const BAN_CALL = new Set(['Date.now', 'performance.now', 'Math.random', 'crypto.randomUUID', 'crypto.getRandomValues', 'navigator.sendBeacon', 'fetch', 'Date']);
-const BAN_NEW = new Set(['XMLHttpRequest', 'WebSocket', 'EventSource']);
-const HOSTS = new Set(['window', 'globalThis', 'self', 'global']);   // window.fetch(), globalThis.crypto.randomUUID() are the same calls
-const STORE = new Set(['localStorage', 'sessionStorage', 'indexedDB']);
-
-/**
- * Parse one source text and report its forbidden calls and its INFO counts.
- * @param {string} src - JavaScript source.
- * @returns {{parsed:boolean, hits:Array<[string,number]>, storage:number, document:number, console:number}}
- */
-function scan(src) {
-  if (src.startsWith('#!')) src = '//' + src;
-  let ast = null;
-  for (const sourceType of ['script', 'module']) {
-    try { ast = espree.parse(src, { ecmaVersion: 'latest', sourceType, loc: true }); break; } catch (e) { ast = null; }
-  }
-  const r = { parsed: !!ast, hits: [], storage: 0, document: 0, console: 0 };
-  if (!ast) return r;
-  // a.b.c with no computed step -> "a.b.c"; anything else -> ''
-  const chain = n => n.type === 'Identifier' ? n.name
-    : (n.type === 'MemberExpression' && !n.computed && n.property.type === 'Identifier' && chain(n.object)) ? chain(n.object) + '.' + n.property.name : '';
-  const bare = c => { const p = c.split('.'); while (p.length > 1 && HOSTS.has(p[0])) p.shift(); return p.join('.'); };
-  (function walk(n) {
-    if (!n || typeof n.type !== 'string') return;
-    if (n.type === 'CallExpression') {
-      const m = bare(chain(n.callee));
-      if (BAN_CALL.has(m)) r.hits.push([m + '()', n.loc.start.line]);
-    } else if (n.type === 'NewExpression') {
-      const m = bare(chain(n.callee));
-      if (m === 'Date' && n.arguments.length === 0) r.hits.push(['new Date()', n.loc.start.line]);
-      else if (BAN_NEW.has(m)) r.hits.push(['new ' + m, n.loc.start.line]);
-    } else if (n.type === 'Identifier') {
-      if (STORE.has(n.name)) r.storage++; else if (n.name === 'document') r.document++; else if (n.name === 'console') r.console++;
-    }
-    if (n.type === 'MemberExpression' && !n.computed) {            // x.document is a field of x, x.localStorage is the store
-      walk(n.object); if (n.property.type === 'Identifier' && STORE.has(n.property.name)) r.storage++; return;
-    }
-    if (n.type === 'Property' && !n.computed) { walk(n.value); return; }   // { console: 1 } is a key, not a use
-    for (const k in n) { if (k === 'loc' || k === 'range') continue; const v = n[k]; if (Array.isArray(v)) v.forEach(walk); else if (v && typeof v === 'object') walk(v); }
-  })(ast);
-  return r;
-}
-
 const rows = files.map(f => {
   const r = scan(fs.readFileSync(path.join(ROOT, f), 'utf8'));
-  r.hits.forEach(h => say('  §CORE_PURE_HIT file=' + f + ' line=' + h[1] + ' call=' + h[0]));
+  r.hits.forEach(h => say('  §CORE_PURE_HIT file=' + f + ' line=' + h.line + ' call=' + h.call));
   say('  §CORE_PURE_INFO file=' + f + ' storage=' + r.storage + ' document=' + r.document + ' console=' + r.console + (r.parsed ? '' : ' PARSE_FAIL'));
   return { file: f, parsed: r.parsed, forbidden: r.hits.length, storage: r.storage, document: r.document, console: r.console };
 });
