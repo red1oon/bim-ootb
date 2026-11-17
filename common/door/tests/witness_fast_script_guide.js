@@ -80,8 +80,9 @@ const decimals = (s) => (String(s).match(/\d+\.\d+/g) || []);
     for (const r of runs) {
       const x = await G.runBlock(r, { flat, root: ROOT, files }); got[r.id] = x;
       const cut = r.opts.cut ? +r.opts.cut : 0, real = G.normalise(G.cutLines(x.out, cut)), shown = G.normalise(r.out);
-      k.chk('R ' + r.id + ': the real stdout equals the page\'s block', !!x.out && real === shown, 'exit=' + x.code + ' bytes=' + x.out.length);
-      if (!!x.out && real !== shown) { let i = 0; while (real[i] === shown[i]) i++; k.L('  first difference at ' + i + ': real=' + JSON.stringify(real.slice(Math.max(0, i - 40), i + 60)) + ' page=' + JSON.stringify(shown.slice(Math.max(0, i - 40), i + 60))); }
+      const same = !!x.out && G.sameOut(x.out, r.out, cut);   // a cut line is judged as a prefix once masked (gen_fast_script_guide.js sameOut)
+      k.chk('R ' + r.id + ': the real stdout equals the page\'s block', same, 'exit=' + x.code + ' bytes=' + x.out.length);
+      if (!!x.out && !same) { let i = 0; while (real[i] === shown[i]) i++; k.L('  first difference at ' + i + ': real=' + JSON.stringify(real.slice(Math.max(0, i - 40), i + 60)) + ' page=' + JSON.stringify(shown.slice(Math.max(0, i - 40), i + 60))); }
     }
   }
 
