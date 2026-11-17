@@ -6,8 +6,8 @@
    "ad_message_base.csv",
    "AD_Message_Trl_zh_CN.xml"
   ],
-  "rows": 1087,
-  "translated": 984,
+  "rows": 1091,
+  "translated": 988,
   "untranslated": 103
  },
  "labels": {
@@ -1097,6 +1097,10 @@
   "howto_gh_3d_navigation": "3D 导航",
   "howto_gh_camera_view_drawer": "相机 / 视图抽屉",
   "howto_gh_settings": "设置",
-  "ui_help_dym": "您是不是想找"
+  "ui_help_dym": "您是不是想找",
+  "ui_help_doc_usage": "输入 # 然后至少 4 个构件 GlobalId 字符",
+  "ui_help_doc_none": "没有构件",
+  "ui_help_doc_more": "更多",
+  "ui_help_reserved": "@ 为保留字符，暂无作用"
  }
 }

@@ -2964,6 +2964,8 @@ async function setupScene(A) {
       guideBase: _howto && _howto.guide, guideIcon: ICONS.lightbulb.svg, howtoLoaded: !!_howto,
       // §19.4: the search runs through the ONE query core over this locale's index (built by viewer/tools/help_records.js; lazy, first typed query)
       index: { url: function () { var l = (window._TRL_LOADER && window._TRL_LOADER.detectLocale) ? window._TRL_LOADER.detectLocale() : 'en_MY'; return 'help/index/' + l + '.json'; } },
+      // §19.6 step 6b: `#<GlobalId prefix>` — the panel builds the query (common/help/help_guid.js); this adapter only runs it over the open building and selects + frames through the ONE existing path (A._bimHighlight -> A.focusElement)
+      doc: { query: function (sql, params) { return A.dbQuery(sql, params); }, select: function (guid) { return A._bimHighlight ? A._bimHighlight({ guid: guid }) : 0; } },
       makeDraggable: (typeof A._makeDraggable === 'function') ? A._makeDraggable : null, storageKey: 'bim_help_dock_pos',
       runSeq: function (seq) { if (_shortcuts[seq]) _shortcuts[seq](); },
       entries: function () {

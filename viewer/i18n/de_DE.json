@@ -6,8 +6,8 @@
    "ad_message_base.csv",
    "AD_Message_Trl_de_DE.xml"
   ],
-  "rows": 1087,
-  "translated": 1002,
+  "rows": 1091,
+  "translated": 1006,
   "untranslated": 85
  },
  "labels": {
@@ -1097,6 +1097,10 @@
   "howto_gh_3d_navigation": "3D-Navigation",
   "howto_gh_camera_view_drawer": "Kamera- / Ansicht-Leiste",
   "howto_gh_settings": "Einstellungen",
-  "ui_help_dym": "Meinten Sie"
+  "ui_help_dym": "Meinten Sie",
+  "ui_help_doc_usage": "# eingeben, dann mindestens 4 Zeichen der GlobalId eines Elements",
+  "ui_help_doc_none": "Kein Element",
+  "ui_help_doc_more": "weitere",
+  "ui_help_reserved": "@ ist reserviert und tut noch nichts"
  }
 }

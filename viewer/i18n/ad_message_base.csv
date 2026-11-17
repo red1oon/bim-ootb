@@ -1095,3 +1095,7 @@ CPM reads the dates the drag produced — it never changes one.",I
 1001084,howto_gh_camera_view_drawer,Camera / View drawer,I
 1001085,howto_gh_settings,Settings,I
 1001086,ui_help_dym,Did you mean,I
+1001087,ui_help_doc_usage,Type # then at least 4 characters of an element GlobalId,I
+1001088,ui_help_doc_none,No element,I
+1001089,ui_help_doc_more,more,I
+1001090,ui_help_reserved,@ is reserved and does nothing yet,I

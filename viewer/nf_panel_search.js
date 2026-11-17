@@ -942,6 +942,7 @@
       var zoomed = false;
       if (opts.frame !== false) zoomed = (opts.item === false) ? NF._zoomToGroup(set) : NF._zoomToGuids(set, 1.1);
       if (A.markDirty) A.markDirty();
+      A.focusedGuids = Array.from(set);   // §19.6: the focus as STATE (witness W-HQ-GUID reads which guid is selected; cleared by clearFocusElement)
       console.log('[RP-TB] §FOCUS_ELEM guids=' + set.size + ' lit=' + lit + ' outline=' + _ovMeshes.length +
         ' frame=' + (opts.frame !== false) + ' zoom=' + (zoomed ? 'fit' : 'none') + ' xray=' + (A.xrayOn ? 'on' : 'off') +
         ' mode=' + (_bigBuilding ? 'filter-cheap(>50k)' : 'xray-dim'));
@@ -957,6 +958,7 @@
     // just tear down the focus highlight. Scoped here (not in _highlightLensReset itself) so the
     // other lens-reset call sites keep their existing manual-toggle-preserving behavior.
     A.clearFocusElement = function () {
+      A.focusedGuids = [];
       NF._highlightLensReset();
       if (A.xrayOn && A.toggleXray) { A.toggleXray(); console.log('[RP-TB] §SHAKE_OUT xray→off'); }
       if (typeof window.ghostXrayOn === 'function' && window.ghostXrayOn() && window.toggleGhostXray) {

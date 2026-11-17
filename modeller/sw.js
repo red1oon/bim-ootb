@@ -27,7 +27,8 @@
 // v257 (2026-11-09) §NARROW_BUILD the overlap row's real-shape check: common/lib/three-mesh-bvh.module.js + viewer/clash_narrow.js stored for offline; modeller.html?, edit_report.js?v=4, edit_report_panel.js?v=3, edit_shapes.js
 // v283 (2026-11-17) §19.4 (bim-compiler VOCAB_MESSAGE_CATALOG.md): the help panel searches through the shared query core — help_panel.js?v=4, common/help/help_query.js?v=1, help/index/<locale>.json
 // v284 (2026-11-17) §19.5 (bim-compiler VOCAB_MESSAGE_CATALOG.md): the help panel's "Did you mean" line — help_panel.js?v=5, common/help/help_dym.js?v=1, common/door/assist_core.js?v=1
-const CACHE_VERSION = 'v284';   // bump on each deploy; per-change detail is the git commit message.
+// v285 (2026-11-17) §19.6 (bim-compiler VOCAB_MESSAGE_CATALOG.md): `#<GlobalId prefix>` in the help panel — help_panel.js?v=6, common/help/help_grammar.js?v=1, help_guid.js?v=1, Bonsai.selectByGuid
+const CACHE_VERSION = 'v285';   // bump on each deploy; per-change detail is the git commit message.
 const CACHE_PREFIX = 'bim-modeller-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -62,6 +63,8 @@ const PRECACHE_ASSETS = [
   '../common/drag.js',               // §14.5 THE drag helper (shared with the Viewer)
   '../common/help/help_panel.js',    // §14.5 THE help panel (shared with the Viewer); ? and Guide open it
   '../common/help/help_query.js',    // §19.4 the shared query core (the panel's search); help/index/<locale>.json is cached on first use, like the i18n packs
+  '../common/help/help_grammar.js',  // §19.6 the ONE reading of the leading ? # @
+  '../common/help/help_guid.js',     // §19.6 #<GlobalId prefix>
   '../common/help/help_dym.js',      // §19.5 the "Did you mean" line (shared with the ERP box)
   '../common/door/assist_core.js',   // the ONE suggester AssistCore.nearest (loaded by the page for §19.5)
   '../common/settings_editor.js',    // the project's ONE JSON editor (moved from viewer/)

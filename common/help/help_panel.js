@@ -16,6 +16,8 @@
 //   guideBase, guideIcon, runSeq(seq), makeDraggable(el), storageKey, state:{filter,open},
 //   headerExtra (html), footer (html), onMount(pal, api), onOpen(pal), onClose(pal, why), onDrop(rect), noAutoFocus (bool),
 //   index:{url()->string, rec?(entry)->record}  the per-locale query index (common/help/help_query.js pack; §19.4); an entry's hkey joins it to its record's go.hkey
+//   §19.6 (cfg.doc, optional): {query(sql, params) -> rows | Promise<rows>, select(guid)} the app's read of its building DB and its ONE select+frame path. With it, `#<typed>` (common/help/help_grammar.js `doc`) lists the elements whose GlobalId
+//   starts with the typed run (common/help/help_guid.js: case-sensitive, 4+ characters, at most 20 + "N more"); Enter on one hit, or a click, selects + frames it (the person's act; nothing runs while typing). `?` is dropped, `@` is refused.
 //   §19.5: under the list ONE "Did you mean: A · B · C" line (common/help/help_dym.js + common/door/assist_core.js, loaded before this file), shown when the top result is not tier 0; a click fills the box and searches.
 // }
 (function (root) {
@@ -93,7 +95,50 @@
       return hqCur;
     }
     function rerenderLater() { if (api && document.getElementById(id) === pal) currentMatches = renderList(searchInput.value); }
+    // §19.6 step 6b (bim-compiler prompts/VOCAB_MESSAGE_CATALOG.md): the leading character through the ONE grammar. `?` is dropped, `@` is refused (the catalog's words), `#<run>` is a GlobalId prefix when the app gave cfg.doc.
+    var docTok = 0;
+    // each word the dictionary owns is its OWN text node (the Modeller's dictionary observer translates exact whole nodes only); the typed run / the count are separate nodes
+    function note(msg, cls, tail) {
+      listEl.innerHTML = ''; if (dymEl) { dymEl.innerHTML = ''; dymEl.style.display = 'none'; }
+      var d = document.createElement('div'); d.className = 'cmd-doc-note ' + (cls || ''); d.style.cssText = 'padding:8px 14px;font-size:12px;color:#d0d0d0';
+      var a = document.createElement('span'); a.textContent = msg; d.appendChild(a);
+      if (tail) { var b = document.createElement('span'); b.textContent = tail; d.appendChild(b); }
+      listEl.appendChild(d);
+      return d;
+    }
+    function renderDoc(number) {
+      var HG = root.HelpGuid, p = HG.plan(number), tok = ++docTok;
+      if (p.kind === 'usage') { note(T('ui_help_doc_usage', 'Type # then at least 4 characters of an element GlobalId'), 'cmd-doc-usage'); console.log('§HELP_DOC usage typed=' + JSON.stringify(number)); return []; }
+      var out = [];
+      note('…', 'cmd-doc-wait');
+      Promise.resolve(cfg.doc.query(p.sql, p.params)).then(function (rows) {
+        return Promise.resolve(cfg.doc.query(p.countSql, p.params)).then(function (c) { return { rows: rows || [], total: c && c[0] ? c[0][0] : 0 }; });
+      }).then(function (r) {
+        if (tok !== docTok) return;   // a newer keystroke owns the list
+        var a = HG.answer(r.rows, r.total); listEl.innerHTML = '';
+        if (!a.hits.length) { note(T('ui_help_doc_none', 'No element'), 'cmd-doc-none', ' #' + number); console.log('§HELP_DOC none typed=' + JSON.stringify(number)); return; }
+        a.hits.forEach(function (h, i) {
+          var entry = { seq: '', name: h.cls + ' · ' + (h.name || '-') + ' · ' + h.guid, guid: h.guid, action: function () { cfg.doc.select(h.guid); console.log('§HELP_DOC select guid=' + h.guid); } };
+          out.push(entry);
+          var row = document.createElement('div'); row.className = 'cmd-row cmd-doc-row'; row.setAttribute('data-idx', String(i)); row.setAttribute('data-guid', h.guid);
+          row.style.cssText = 'padding:8px 14px;cursor:pointer;font-size:13px;color:#e0e0e0;overflow-wrap:anywhere;' + (i === cursor ? 'background:rgba(255,183,77,0.18)' : '');
+          row.textContent = entry.name;
+          row.addEventListener('click', function () { run(entry); });
+          row.addEventListener('mouseenter', function () { cursor = i; highlightRows(); });
+          listEl.appendChild(row);
+        });
+        if (a.more) { var m = document.createElement('div'); m.className = 'cmd-doc-more'; m.style.cssText = 'padding:6px 14px;font-size:12px;color:#d0d0d0'; var mc = document.createElement('span'); mc.textContent = a.more + ' '; var ml = document.createElement('span'); ml.textContent = T('ui_help_doc_more', 'more'); m.appendChild(mc); m.appendChild(ml); listEl.appendChild(m); }
+        currentMatches = out;
+        console.log('§HELP_DOC hits=' + a.hits.length + ' total=' + a.total + ' more=' + a.more + ' typed=' + JSON.stringify(number));
+      }).catch(function (e) { if (tok === docTok) note(String(e && e.message || e)); console.log('§HELP_DOC fail ' + (e && e.message)); });
+      return out;
+    }
     function renderList(filter) {
+      var g = root.HelpGrammar ? root.HelpGrammar.parse(filter || '') : null;
+      if (g && g.kind === 'reserved') { docTok++; note(T('ui_help_reserved', '@ is reserved and does nothing yet'), 'cmd-doc-reserved'); console.log('§HELP_DOC reserved typed=' + JSON.stringify(filter)); return []; }
+      if (g && g.kind === 'doc' && cfg.doc && root.HelpGuid) return renderDoc(g.number);
+      docTok++;
+      if (g && g.kind === 'help') filter = g.rest;   // a help box accepts `?` and drops it (HELP_QUERY_CORE_DESIGN D4)
       var f = (filter || '').toLowerCase(), all = cfg.entries ? cfg.entries() : [], matches = all, how = 'all', dym = [];
       all.forEach(function (e) { e.seq = e.seq || ''; e._openForMatch = false; });
       if (f.trim()) {

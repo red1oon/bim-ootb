@@ -254,7 +254,9 @@ if (window.WholeHistory && WholeHistory.mount) WholeHistory.mount({ page: 'model
 <script src="../common/help/help_query.js?v=1" onerror="console.warn('§HELP LOAD_FAIL help_query.js')"></script>
 <script src="../common/door/assist_core.js?v=1" onerror="console.warn('§HELP LOAD_FAIL assist_core.js')"></script>
 <script src="../common/help/help_dym.js?v=1" onerror="console.warn('§HELP LOAD_FAIL help_dym.js')"></script>
-<script src="../common/help/help_panel.js?v=5" onerror="console.warn('§HELP LOAD_FAIL help_panel.js')"></script>
+<script src="../common/help/help_grammar.js?v=1" onerror="console.warn('§HELP LOAD_FAIL help_grammar.js')"></script>
+<script src="../common/help/help_guid.js?v=1" onerror="console.warn('§HELP LOAD_FAIL help_guid.js')"></script>
+<script src="../common/help/help_panel.js?v=6" onerror="console.warn('§HELP LOAD_FAIL help_panel.js')"></script>
 <script src="../common/history_bar.js?v=3" onerror="console.warn('§MHIST LOAD_FAIL history_bar.js')"></script>
 <script src="modeller_history.js?v=8" onerror="console.warn('§MHIST LOAD_FAIL modeller_history.js')"></script>
 <!-- Bonsai IFC export: the authored op-log -> a standards IFC4 file via web-ifc (author->sign->export). -->
@@ -1602,6 +1604,13 @@ window.Bonsai.frameElementByGuid = (guid) => {
     return _frameTo(c, diag, 'guid=' + String(guid).slice(0, 10));
   } catch (e) { console.warn('§FRAME_GUID fail ' + (e && e.message)); return false; }
   finally { if (db) { try { db.close(); } catch (e) { } } }
+};
+// §19.6 step 6b (bim-compiler VOCAB_MESSAGE_CATALOG.md): the help panel's `#<GlobalId prefix>` selects + frames through the SAME two seams an Outliner leaf click uses (bonsai_outliner.js:752-777):
+// an ARC-seeded element has a featureId (select + frameFeature), any other element of the open building is framed from its real element_transforms row (frameElementByGuid). Witness state: selectedId / __lastGuidFrame.
+window.Bonsai.selectByGuid = (guid) => {
+  const fid = window.__arcFidByGuid && window.__arcFidByGuid[guid], anchor = window.__arcAnchorGuids && window.__arcAnchorGuids.has(guid);
+  if (fid != null && !anchor) { const sel = window.Bonsai.select(fid); if (window.Bonsai.frameFeature) window.Bonsai.frameFeature(fid); window.__lastGuidSelect = { guid, fid, sel, via: 'feature' }; return true; }
+  const ok = !!window.Bonsai.frameElementByGuid(guid); window.__lastGuidSelect = { guid, fid: null, via: ok ? 'frame' : 'none' }; return ok;
 };
 function inSelectCtx() { return !(sketching || routing || edgePicking || gridMoving || moving || inserting || roomMoving || itemDragging || pasting); }
 // §Q2 (RESUME_MODELLER_POLISH2.md — Witness: W-E2E-INSTPICK): walked fixtures live as InstancedMesh buckets
@@ -6612,6 +6621,8 @@ console.log('§MODELLER scene ready supported=' + (window.Bonsai ? window.Bonsai
     const _helpCfg = {
       // §19.4: the search runs through the ONE query core over this locale's index (built by modeller/tools/help_records.js; lazy, first typed query)
       index: { url: () => 'help/index/' + ((window._TRL_LOADER && window._TRL_LOADER.detectLocale) ? window._TRL_LOADER.detectLocale() : 'en_MY') + '.json' },
+      // §19.6 step 6b: `#<GlobalId prefix>` over the open building's elements_meta (OpenBuildingDb, the one reader); select + frame through Bonsai.selectByGuid
+      doc: { query: async (sql, params) => { const db = window.OpenBuildingDb ? await window.OpenBuildingDb.get() : null; if (!db) return []; try { const r = db.exec(sql, params || []); return r.length ? r[0].values : []; } catch (e) { return []; } }, select: g => window.Bonsai.selectByGuid(g) },
       id: 'cmd-palette', state: _hpState, icon: _svg, entries: _helpEntries, noAutoFocus: true,   // ? / O / E / D stay keys while it is open (as the old overlay)
       isMobile: ('ontouchstart' in window || navigator.maxTouchPoints > 0) && window.screen.width < 1024,   // the Viewer's rule (viewer/config.js _isMobile)
       place: () => ({ left: 0, top: 0, width: OL_W - 2, height: window.innerHeight - 2 }),   // − its 1 px border each side (help_panel.js)

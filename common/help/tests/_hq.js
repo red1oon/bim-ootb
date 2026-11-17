@@ -53,9 +53,9 @@ function bimPack(app, lang) { return { app, lang, index: JSON.parse(fs.readFileS
 // the REAL ERP page (erp/idempiere.html, logged in as GardenAdmin) served from the repo root, in headless chromium (--disable-gpu): the box the people use, not a copy.
 // br = {HQ: value for window.__HQ_BREAK, HS: value for window.__HS_BREAK} set in the PAGE only. setLang(lang) -> waits for that language's `§HELP_SEARCH index` line.
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json', '.db': 'application/octet-stream', '.css': 'text/css', '.wasm': 'application/wasm', '.sql': 'text/plain', '.png': 'image/png' };
-const serve = () => new Promise((r) => { const s = require('http').createServer((req, res) => { const p = decodeURIComponent(req.url.split('?')[0]); fs.readFile(path.join(ROOT, p), (e, b) => { if (e) { res.writeHead(404); res.end(); return; } res.writeHead(200, { 'Content-Type': MIME[path.extname(p)] || 'application/octet-stream' }); res.end(b); }); }); s.listen(0, () => r(s)); });
-async function erpPage(br) {
-  const { chromium } = require(PW), srv = await serve(), b = await chromium.launch({ headless: true, args: ['--disable-gpu'] }), pg = await b.newPage(), logs = [], errs = [];
+const serve = (over) => new Promise((r) => { const s = require('http').createServer((req, res) => { const p = decodeURIComponent(req.url.split('?')[0]); fs.readFile((over && over[p]) || path.join(ROOT, p), (e, b) => { if (e) { res.writeHead(404); res.end(); return; } res.writeHead(200, { 'Content-Type': MIME[path.extname(p)] || 'application/octet-stream' }); res.end(b); }); }); s.listen(0, () => r(s)); });
+async function erpPage(br, over) {   // over = {'/erp/ad_seed.db': '/path/to/patched.db'}: the page is served a different file at that URL (W-HQ-DOC / W-HQ-NEW build a role with read-only and unreachable windows)
+  const { chromium } = require(PW), srv = await serve(over), b = await chromium.launch({ headless: true, args: ['--disable-gpu'] }), pg = await b.newPage(), logs = [], errs = [];
   pg.on('console', (m) => logs.push(m.text())); pg.on('pageerror', (e) => errs.push(e.message));
   if (br && (br.HQ || br.HS)) await pg.addInitScript((v) => { if (v.HQ) window.__HQ_BREAK = v.HQ; if (v.HS) window.__HS_BREAK = v.HS; }, br);
   await pg.goto('http://localhost:' + srv.address().port + '/erp/idempiere.html?seed=ad_seed.db&login=GardenAdmin', { waitUntil: 'networkidle', timeout: 60000 });
@@ -65,4 +65,19 @@ async function erpPage(br) {
   return { pg, logs, errs, firstIndexLine: first, waitIndex, version: b.version(), close: async () => { await b.close(); srv.close(); },
     setLang: async (lang) => { const n = logs.length; await pg.evaluate((l) => ErpI18n.set(l), lang); return waitIndex(lang, n); } };
 }
-module.exports = { erpPage, kit, q, seedOk, pack, textsUsed, queries, page, lines, LANGS, ROOT, CORE, ERP, SEED, BIM_APPS, BIM_LOCALES, bimFile, bimPack };
+
+// §19.6 (W-HQ-DOC, W-HQ-NEW): the shipped seed gives every role read-write on every window, so a copy of ad_seed.db is made with a role that has the three kinds of window the claims need, deterministically:
+//   UNREACHABLE = every window whose header table is every 3rd (sorted) DocumentNo table that holds rows (their ad_window_access rows are deleted for every role);
+//   READ-ONLY   = of the remaining windows, those with an even AD_Window_ID (isreadwrite='N' for every role); the rest stay read-write. The page is served the copy at /erp/ad_seed.db (erpPage(br, over)).
+function roleSeed() {
+  const A = require(path.join(ERP, 'help_actions.js')), tmp = path.join(os.tmpdir(), 'hq_role_seed_' + process.pid + '.db');
+  fs.copyFileSync(SEED, tmp);
+  const sh = (sql) => { const r = cp.spawnSync('sqlite3', [tmp, sql], { encoding: 'utf8', maxBuffer: 1 << 28 }); if (r.status !== 0) throw new Error(r.stderr); return r.stdout; };
+  const tg = A.targets(q(A.TARGETS_SQL)), have = new Set(q("SELECT name FROM sqlite_master WHERE type='table'").map((r) => String(r.name).toLowerCase())), withRows = [];
+  Array.from(new Set(tg.map((t) => t.table))).sort().forEach((t) => { if (have.has(t.toLowerCase()) && Number(q('SELECT count(*) AS n FROM ' + t)[0].n) > 0) withRows.push(t); });
+  const unTables = withRows.filter((t, i) => i % 3 === 2), unWins = Array.from(new Set(tg.filter((t) => unTables.indexOf(t.table) >= 0).map((t) => t.win))).sort((a, b) => a - b);
+  if (unWins.length) sh('DELETE FROM ad_window_access WHERE ad_window_id IN (' + unWins.join(',') + ')');
+  sh("UPDATE ad_window_access SET isreadwrite='N' WHERE ad_window_id % 2 = 0");
+  return { file: tmp, targets: tg, tablesWithRows: withRows, unTables, unWins, cleanup: () => { try { fs.unlinkSync(tmp); } catch (e) {} } };
+}
+module.exports = { PW, roleSeed, erpPage, kit, q, seedOk, pack, textsUsed, queries, page, lines, LANGS, ROOT, CORE, ERP, SEED, BIM_APPS, BIM_LOCALES, bimFile, bimPack };
