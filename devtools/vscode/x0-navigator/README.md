@@ -13,6 +13,7 @@ step. It never calls a model or the network, and nothing in `devtools/` is loade
 | Status bar note + command *Cost if deployed* | What does this file, or my change, add to what every user downloads? | `sw.js` cache lists and the pages' script tags |
 | A grey line above code that prints a `§TAG` | What did this line last print? | `logs/*.log` that start with a `§LOG_STAMP` |
 | A warning on line 1 of an edited file the offline cache serves, with a quick fix (the light bulb, Ctrl+.) | Did I forget the cache bump? Do it for me, when I say so | the *Check* step's own bump rule for this one file; the fix runs the repo's `scripts/bump.js` (dry run, or `--write` on your click) |
+| A warning under a clock, random or network call in a core file (ERP processes, callouts, models, posting; the 4D schedule maths), on open and on save | Am I breaking replay? What do I call instead? | the repo's own `scripts/lib/core_pure.js`: the same scanner and list CI's W-CORE-PURE uses |
 | Command *Context for this file* | What do the indexes say about this file, as one block I can paste to an assistant? | all of the above, for the open file (X0 itself calls no model) |
 
 **First versions (2026-11-13), and what each does not do yet:**
