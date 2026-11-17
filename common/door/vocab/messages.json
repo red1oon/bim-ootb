@@ -570,6 +570,24 @@
   },
   "words.menu_walk_window": {
    "en": "  {0} {1} · {2}"
+  },
+  "words.hash_use": {
+   "en": "#<text> is legacy's Document Search, the same in any place: #80000 (the default search: orders), #O 80000 orders, #BP Joe business partners; one document found is opened. In a kind, cd <number> finds its record. In bash, quote it: red1 '#80000'"
+  },
+  "words.at_reserved": {
+   "en": "{0}: @ is reserved and does nothing yet"
+  },
+  "words.hash_none": {
+   "en": "#{0}: {1}"
+  },
+  "words.hash_many": {
+   "en": "#{0}: {1} documents in {2} window(s); none is opened, enter one with its line:"
+  },
+  "words.hash_window": {
+   "en": "  {0} window ({1}, {2}):"
+  },
+  "words.hash_record": {
+   "en": "    {0} {1}  →  cd {2} {3}"
   }
  }
 }

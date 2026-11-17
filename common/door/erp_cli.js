@@ -64,10 +64,14 @@ const SNAP_VERSION = 'erp-snapshot/1 split=;\\s*\\n strip=--line run=one-by-one 
 const INDEX_FILES = ['ad_official_indexes.js', 'ad_index_overlay.js'].map(f => path.join(ROOT, 'erp', f));
 function ensureIndexes(O) { if ((process.env.ERP_BREAK || '') === 'noindex') { say('index-overlay skipped (ERP_BREAK=noindex)'); return; } const log = console.log; console.log = (m) => say(String(m).replace(/^§/, '')); try { require(INDEX_FILES[0]); require(INDEX_FILES[1]).ensure(O.db); } catch (e) { say('index-overlay error ' + e.message); } finally { console.log = log; } }
 function patchFiles(seed) { return [path.basename(seed) + '.sql', 'mfg.sql'].map(f => path.join(path.dirname(seed), 'patches', f)).filter(f => fs.existsSync(f)); }
+// bim-compiler prompts/CLI_ERP_IVR.md §41 H1: legacy's AD_SearchDefinition (the seed has none), the same kind of boot overlay; ERP_BREAK=nosearchdef skips it (W-RED1-PREFIX falsifier)
+const SEARCH_FILES = ['ad_search_definitions.js', 'ad_search_overlay.js'].map(f => path.join(ROOT, 'erp', f));
+function ensureSearchDefs(O) { if ((process.env.ERP_BREAK || '') === 'nosearchdef') { say('searchdef-overlay skipped (ERP_BREAK=nosearchdef)'); return; } const log = console.log; console.log = (m) => say(String(m).replace(/^§/, '')); try { require(SEARCH_FILES[0]); require(SEARCH_FILES[1]).ensure(O.db); } catch (e) { say('searchdef-overlay error ' + e.message); } finally { console.log = log; } }
 function snapshotKey(seed) {
   const h = require('crypto').createHash('sha256'); h.update(SNAP_VERSION); h.update(fs.readFileSync(seed));
   if ((process.env.ERP_BREAK || '') !== 'stalesnap') patchFiles(seed).forEach(f => { h.update('\n' + path.basename(f) + '\n'); h.update(fs.readFileSync(f)); });   // falsifier: a key blind to the patch
   INDEX_FILES.forEach(f => { h.update('\n' + path.basename(f) + '\n'); h.update(fs.readFileSync(f)); });   // §37 I-c: a new index list rebuilds the image once
+  if ((process.env.ERP_BREAK || '') !== 'nosearchdef') SEARCH_FILES.forEach(f => { h.update('\n' + path.basename(f) + '\n'); h.update(fs.readFileSync(f)); });   // §41 H1: the same for the search definitions (nosearchdef: an image without them, never the shared one)
   return h.digest('hex').slice(0, 32);
 }
 function applyPatch(O, seed) {   // same loop as idempiere.html :1160-1169: statements one by one, a failing one never blocks (the bundled wasm cannot take the file in one run)
@@ -115,11 +119,11 @@ async function boot(a) {
     if (img) { O = await OC.open({ db: img.file }); O.file = seed; how = 'image'; staged = DP.enabled(); }
     else if (fs.existsSync(snap)) { O = await OC.open({ db: snap }); O.file = seed; how = 'hit'; staged = DP.enabled(); }
     else {
-      O = await OC.open({ db: seed }); const r = applyPatch(O, seed); how = 'miss'; ensureIndexes(O);
+      O = await OC.open({ db: seed }); const r = applyPatch(O, seed); how = 'miss'; ensureIndexes(O); ensureSearchDefs(O);
       if (DP.enabled()) snapLater = snap; else { try { keep(snap); } catch (e) { how = 'miss-unsaved:' + e.message; } }
       say('patch statements=' + r.pOk + ' failed=' + r.pFail);
     }
-  } else { O = await OC.open({ db: seed }); const r = applyPatch(O, seed); say('patch statements=' + r.pOk + ' failed=' + r.pFail); ensureIndexes(O); }
+  } else { O = await OC.open({ db: seed }); const r = applyPatch(O, seed); say('patch statements=' + r.pOk + ' failed=' + r.pFail); ensureIndexes(O); ensureSearchDefs(O); }
   say('snapshot=' + how + ' key=' + key + ' ms=' + (Date.now() - t0));
   // §29.6 P3a: the core plugins start HERE, on the opened image, before the op-log replays (an op may write a table a bundle makes). Their dictionary goes to this in-memory db only.
   const tp = Date.now(); await DP.startBuiltins(O, { staged });
@@ -320,6 +324,50 @@ function find(O, a) {
   say('find kind=' + K.name + ' by=' + K.numCol + ' number=' + a.number + ' matches=' + rs.length);
   if (!rs.length) refuse('no ' + K.name + ' with ' + K.numCol + ' ' + a.number);
   return { kind: K.name, by: K.numCol, matches: rs.map(r => brief(K, r)) };
+}
+// ── search (bim-compiler prompts/CLI_ERP_IVR.md §41 H2): legacy's Document Search, `/text` in the Global Search box (GlobalSearch.java:216-218) = AbstractDocumentSearch.openDocumentsByDocumentNo
+//    (:68-123) + getID (:130-278), line for line over the dictionary's AD_SearchDefinition (ad_search_overlay.js). A window "opens" = its hits are answered. Nothing is changed. ──
+function search(O, a) {
+  const text0 = a.text == null ? '' : String(a.text);
+  if (!O.rows("SELECT 1 AS x FROM sqlite_master WHERE type='table' AND name='ad_searchdefinition'").length) refuse('this dictionary has no AD_SearchDefinition table, so there is nothing to search with');
+  const words = text0.trim().replace(/  /g, ' ').split(' ').filter(w => w !== ''), codes = [], rest = [];   // :77 split on spaces; :86-96 leading transaction codes, then the search text
+  let codeSearch = true;
+  const isCode = (w) => O.rows("SELECT 1 AS x FROM ad_searchdefinition WHERE upper(transactioncode)=? AND isactive='Y'", [w.toUpperCase()]).length > 0;   // MSearchDefinition.isValidTransactionCode :133-150
+  words.forEach(w => { if (codeSearch && isCode(w)) codes.push(w); else { codeSearch = false; rest.push(w); } });
+  const str = rest.join(' ');
+  if (!str.trim()) refuse('nothing to search: give the text after # (a document number, or a code and the text, e.g. O 80000)');   // the window would open on a new record (:227-230); the shell has no empty window to open
+  const login = loginOf(O, a.role), client = (process.env.ERP_BREAK || '') === 'noclient' ? null : login.client;   // @#AD_Client_ID@ = the login's client (§31 loginOf); noclient: W-RED1-PREFIX P2 falsifier
+  const rc = a.role != null ? OC.roleCtx(O, { role: a.role }) : null, mayOpen = (w) => !rc || rc.gateWindow(Number(w)).allowed;   // role.getWindowAccess :206, :229; no role = the door's standing login, no window gate (as its other reads)
+  const defs = codes.length ? [].concat.apply([], codes.map(c => O.rows("SELECT * FROM ad_searchdefinition WHERE isactive='Y' AND upper(transactioncode)=? ORDER BY ad_searchdefinition_id", [c.toUpperCase()])))
+    : O.rows("SELECT * FROM ad_searchdefinition WHERE isactive='Y' AND isdefault='Y' ORDER BY ad_searchdefinition_id");   // getForCode :94-111 (one per code, :106-111; no code = IsDefault)
+  const like = (s) => s.endsWith('%') ? s : s + '%', intOf = (s) => Number(String(s).replace(/\D/g, ''));
+  const hits = [], searched = [], blocked = [];
+  defs.forEach(d => {
+    const T = O.rows('SELECT tablename, name FROM ad_table WHERE ad_table_id=?', [d.ad_table_id])[0]; if (!T) return;
+    const tn = T.tablename, isInt = d.datatype === 'I', val = isInt ? intOf(str) : like(str); searched.push(d.name);
+    let sqlSO, sqlPO = null, nParams = 1;
+    if (d.searchtype === 'T') {   // :147-181 a table and a column
+      const col = (O.rows('SELECT columnname FROM ad_column WHERE ad_column_id=?', [d.ad_column_id])[0] || {}).columnname; if (!col) return;
+      sqlSO = 'SELECT ' + tn + '_ID AS id FROM ' + tn + ' ' + (isInt ? 'WHERE ' + col + '=?' : 'WHERE UPPER(' + col + ') LIKE UPPER(?)') + (client != null ? ' AND AD_Client_ID=' + Number(client) : '');
+      // the sales/purchase split :158-167: IsSOTrx, the payment table's IsReceipt; read here from the table's own columns (DocumentSearchController.doSearch :681-686 asks columnExistsInDictionary("IsSOTrx")
+      //   first), so no table is named (AD-LAYER LAW). A table with neither is not split (the newer controller's arm; the older one would fail on the missing column).
+      const TK = kindRef(O, tn), trx = TK.has('issotrx') ? 'IsSOTrx' : TK.has('isreceipt') ? 'IsReceipt' : null;
+      if (Number(d.po_window_id || 0) !== 0 && trx) { sqlPO = sqlSO + ' AND ' + trx + "='N'"; sqlSO += ' AND ' + trx + "='Y'"; }
+    } else if (d.searchtype === 'Q') {   // :182-198 the definition's own query, every ? bound to the text; @#AD_Client_ID@ is the login's (Env.parseContext)
+      sqlSO = String(d.query || '').replace(/@#AD_Client_ID@/gi, client != null ? String(Number(client)) : 'AD_Client_ID'); nParams = (sqlSO.match(/\?/g) || []).length;
+      if (/@[^@]+@/.test(sqlSO)) refuse('the search definition "' + d.name + '" names a context value the door has no login for: ' + /@[^@]+@/.exec(sqlSO)[0]);
+    } else return;
+    const run = (sql) => { const seen = {}; return O.rows(sql, Array(nParams).fill(val)).map(r => Number(r.id != null ? r.id : r[Object.keys(r)[0]])).filter(id => !seen[id] && (seen[id] = 1)); };   // IN (...) of openWindow :282-301: one record once
+    const K = kindRef(O, tn), recs = (ids) => ids.map(id => { const r = O.rows('SELECT ' + K.key + ' AS id' + (K.numCol ? ', ' + K.numCol + ' AS n' : '') + ' FROM ' + K.table + ' WHERE ' + K.key + '=?', [id])[0] || { id }; return { id: Number(r.id), number: r.n != null ? String(r.n) : null }; });
+    const win = (w) => ({ id: Number(w), name: (O.rows('SELECT name FROM ad_window WHERE ad_window_id=?', [Number(w)])[0] || {}).name || null });
+    const add = (w, ids) => { if (!ids.length) return; if (!mayOpen(w)) { blocked.push(win(w).name || String(w)); say('search window=' + w + ' role=' + a.role + ' not allowed (AD_Window_Access): ' + ids.length + ' hit(s) not shown'); return; } hits.push({ definition: d.name, code: d.transactioncode || null, window: win(w), kind: K.name, table: tn, records: recs(ids) }); };
+    add(d.ad_window_id, run(sqlSO)); if (sqlPO) add(d.po_window_id, run(sqlPO));
+  });
+  const count = hits.reduce((n, h) => n + h.records.length, 0);
+  say('search text=' + JSON.stringify(text0) + ' codes=[' + codes + '] search=' + JSON.stringify(str) + ' client=' + client + ' role=' + (a.role == null ? '-' : a.role) + ' definitions=[' + searched + '] hits=' + hits.map(h => h.window.id + ':' + h.records.length).join(',') + ' count=' + count);
+  if (!count && blocked.length) refuse('no document found for "' + str + '" that role ' + a.role + ' may open: its windows ' + blocked.join(', ') + ' are not granted to it (AD_Window_Access)');
+  if (!count) refuse('no document found for "' + str + '" (' + (searched.length ? searched.join(', ') : 'no search definition') + (codes.length ? '' : '; a code picks another: ' + O.rows("SELECT transactioncode AS c, name FROM ad_searchdefinition WHERE isactive='Y' AND transactioncode IS NOT NULL ORDER BY transactioncode").map(r => r.c + ' ' + r.name).join(', ')) + ')');
+  return { text: text0, codes, search: str, client, hits, count };
 }
 // ── actions ──
 function actionsOf(O, K, r, a) {
@@ -1251,10 +1299,10 @@ function projectStatus(O, a) {
 async function main(argv) {
   const cmd = argv[0], a = {};
   for (let i = 1; i < argv.length; i++) { const m = /^--(\w+)$/.exec(argv[i]); if (!m || i + 1 >= argv.length) { say('FAIL usage: ' + argv[i]); return 2; } if (m[1] === 'where') (a.where = a.where || []).push(argv[++i]); else a[m[1]] = argv[++i]; }
-  if (['find', 'actions', 'describe', 'ask', 'read', 'list', 'sum', 'group', 'new', 'update', 'delete', 'load', 'add_window', 'ninja_exec', 'ninja_workflow', 'ninja_rollback', 'ninja_export', 'diff', 'menu', 'process', 'lookup', 'order_state', 'project_status'].concat(Object.keys(ACT)).indexOf(cmd) < 0) { say('FAIL usage: erp_cli.js find|actions|complete|void|close|reverse|describe|read|list|sum|group --kind K (--number N | --id I) [--role R]'); return 2; }
+  if (['find', 'search', 'actions', 'describe', 'ask', 'read', 'list', 'sum', 'group', 'new', 'update', 'delete', 'load', 'add_window', 'ninja_exec', 'ninja_workflow', 'ninja_rollback', 'ninja_export', 'diff', 'menu', 'process', 'lookup', 'order_state', 'project_status'].concat(Object.keys(ACT)).indexOf(cmd) < 0) { say('FAIL usage: erp_cli.js find|actions|complete|void|close|reverse|describe|read|list|sum|group --kind K (--number N | --id I) [--role R]'); return 2; }
   try {
     const O = await boot(a); O.actor = a.user != null ? Number(a.user) : (process.env.BIM_DOOR_USER ? Number(process.env.BIM_DOOR_USER) : 101);   // the session user: stated, else red1's login (§30 L4, BIM_DOOR_USER), else 101 (the default the callout context takes)
-    const out = await (ACT[cmd] ? act(O, a, ACT[cmd]) : ({ find, actions, describe, ask, read, list: OC.list, sum: OC.sum, group: OC.group, new: createRecord, update: updateRecord, delete: deleteRecord, load: loadRecords, add_window: addWindow, ninja_exec: ninjaExec, ninja_workflow: ninjaWorkflow, ninja_rollback: ninjaRollback, ninja_export: ninjaExport, diff: misDiff, menu: menuOf, process: runProcess, lookup, order_state: orderState, project_status: projectStatus })[cmd](O, a));
+    const out = await (ACT[cmd] ? act(O, a, ACT[cmd]) : ({ find, search, actions, describe, ask, read, list: OC.list, sum: OC.sum, group: OC.group, new: createRecord, update: updateRecord, delete: deleteRecord, load: loadRecords, add_window: addWindow, ninja_exec: ninjaExec, ninja_workflow: ninjaWorkflow, ninja_rollback: ninjaRollback, ninja_export: ninjaExport, diff: misDiff, menu: menuOf, process: runProcess, lookup, order_state: orderState, project_status: projectStatus })[cmd](O, a));
     process.stdout.write(JSON.stringify(out) + '\n'); return 0;
   } catch (e) {
     if (e instanceof Refused || e instanceof OC.Refused) { say('REFUSED ' + e.message); process.stdout.write(JSON.stringify(Object.assign({ refused: true, reason: e.message }, e.gap ? { gap: true, gapKind: e.gap } : {})) + '\n'); return 3; }
@@ -1262,4 +1310,4 @@ async function main(argv) {
   }
 }
 if (require.main === module) main(process.argv.slice(2)).then(c => process.exit(c));
-module.exports = { ask, misDiff, ninjaRollback, ninjaExport, ninjaWorkflow, workflowOn, ninjaExec, stageAtDoor, runLoader, sheetGrid, addWindow, ensureTables, tabFor, main, boot, loadRecords, find, actions, complete, act, ACT, describe, read, persistGroup, resolveOne, docKind, kindRef, byNumber, recordOf, loadEngine, b3 };
+module.exports = { ask, misDiff, ninjaRollback, ninjaExport, ninjaWorkflow, workflowOn, ninjaExec, stageAtDoor, runLoader, sheetGrid, addWindow, ensureTables, tabFor, main, boot, loadRecords, find, search, actions, complete, act, ACT, describe, read, persistGroup, resolveOne, docKind, kindRef, byNumber, recordOf, loadEngine, b3 };

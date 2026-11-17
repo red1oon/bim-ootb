@@ -1,0 +1,53 @@
+§W-RED1-PREFIX SQL #80001 client 11 [{"id":101,"n":"80001","so":"Y"}] · #80000 [{"id":100,"n":"80000","so":"Y"},{"id":104,"n":"800000","so":"N"},{"id":105,"n":"800001","so":"N"},{"id":106,"n":"800002","so":"N"}] · BP Joe [{"id":114}]
+§W-RED1-PREFIX lines ["erp.search text=80001","mis.describe kind=Order","mis.read kind=Order id=101","erp.actions kind=Order id=101","erp.search text=80000","erp.search text=99999999","erp.search text=\"O 80001\"","mis.describe kind=Order","mis.read kind=Order id=101","erp.actions kind=Order id=101","erp.search text=\"BP Joe\"","mis.describe kind=\"Business Partner\"","mis.read kind=\"Business Partner\" id=114"]
+§W-RED1-PREFIX places ["red1 Order/80001>","red1 Order/80001>","red1>","red1>","red1>","red1>","red1>","red1>","red1 Order/80001>","red1 Order/80001>","red1>","red1 Business Partner/Tree Farm Inc.>","red1 Business Partner/Tree Farm Inc.>"]
+§W-RED1-PREFIX screen
+    | → erp.search text=80001
+    | → mis.describe kind=Order
+    | → mis.read kind=Order id=101
+    | Order 80001: 4 tabs (Order Line, Order Tax, Payment Schedule, POS Payment); ls shows them, cd <tab> opens one, cat reads the record
+    | → erp.actions kind=Order id=101
+    | it may do: CL, VO, RE (do <code>; next shows the tree)
+    | kind=Order id=101
+    | → erp.search text=80000
+    | #80000: 4 documents in 2 window(s); none is opened, enter one with its line:
+    |   Sales Order window (Order, Order Search):
+    |     Order 80000  →  cd Order 100
+    |   Purchase Order window (Order, Order Search):
+    |     Order 800000  →  cd Order 104
+    |     Order 800001  →  cd Order 105
+    |     Order 800002  →  cd Order 106
+    | (nowhere: cd <building> or cd <ERP kind>)
+    | → erp.search text=99999999
+    | #99999999: no document found for "99999999" (Order Search; a code picks another: BP Business Partner Search, O Order Search)
+    | @x: @ is reserved and does nothing yet
+    | #<text> is legacy's Document Search, the same in any place: #80000 (the default search: orders), #O 80000 orders, #BP Joe business partners; one document found is opened. In a kind, cd <number> finds its record. In bash, quote it: red1 '#80000'
+    | → erp.search text="O 80001"
+    | → mis.describe kind=Order
+    | (answer of the line above, not re-run)
+    | → mis.read kind=Order id=101
+    | (answer of the line above, not re-run)
+    | Order 80001: 4 tabs (Order Line, Order Tax, Payment Schedule, POS Payment); ls shows them, cd <tab> opens one, cat reads the record
+    | → erp.actions kind=Order id=101
+    | (answer of the line above, not re-run)
+    | it may do: CL, VO, RE (do <code>; next shows the tree)
+    | kind=Order id=101
+    | → erp.search text="BP Joe"
+    | → mis.describe kind="Business Partner"
+    | → mis.read kind="Business Partner" id=114
+    | Business Partner Tree Farm Inc.: 6 tabs (Contact (User), Location, Bank Account, Shipping Accounts, Customer Accounting, Vendor Accounting); ls shows them, cd <tab> opens one, cat reads the record
+    | kind="Business Partner" id=114
+    | 
+§W-RED1-PREFIX pwd lines ["kind=Order id=101","(nowhere: cd <building> or cd <ERP kind>)","kind=Order id=101","kind=\"Business Partner\" id=114"]
+  ✅ P1 `#80001` runs erp.search text=80001 and enters the one order the SQL finds (id 101)  erp.search text=80001 · kind=Order id=101
+  ✅ P2 `#80000` lists the 4 client-11 hits of the SQL (sales 1, purchase 3) each with its line, in two windows, and enters nothing  listed [100,104,105,106] head=true windows=true/true pwd (nowhere: cd <building> or cd <ERP kind>)
+  ✅ P4 `#99999999` is refused naming 99999999 and the definition searched (Order Search)  #99999999: no document found for "99999999" (Order Search; a code picks another: BP Business Partner Search, O Order Search)
+  ✅ P5 `@x` is refused as reserved, nothing runs for it; `#` alone prints its use  @x: @ is reserved and does nothing yet
+  ✅ P6 `#O 80001` = P1 (order 101); `#BP Joe` enters business partner 114 (the BP query through its user)  ["kind=Order id=101","kind=\"Business Partner\" id=114"]
+§W-RED1-PREFIX P3 lines ["mis.describe kind=Order","erp.search text=80001","mis.describe kind=Order","mis.read kind=Order id=101","erp.actions kind=Order id=101","mis.describe kind=\"Order 100\"","mis.describe kind=Order","mis.read kind=Order number=100","mis.read kind=Order id=100","erp.actions kind=Order id=100","erp.search text=80002","mis.describe kind=Order","mis.read kind=Order id=102","erp.actions kind=Order id=102"] pwd ["kind=Order id=101","kind=Order id=102"] (orders numbered 80001 across clients: 2)
+  ✅ P3 inside `cd Order`, `#80001` still enters order 101 (the login's client; 2 tenants carry 80001); inside record 100, `#80002` enters 102  ["kind=Order id=101","kind=Order id=102"]
+§W-RED1-PREFIX P7 lines ["mis.list kind=AD_Role columns=AD_Client_ID AD_Role_ID=1300102","mis.list kind=AD_User columns=AD_User_ID,Name,EMail limit=1000 AD_Client_ID=13","mis.list kind=AD_User columns=AD_User_ID,Name,Value,EMail,AD_Client_ID limit=1000","mis.list kind=AD_User_Roles columns=AD_Role_ID limit=1000 AD_User_ID=1300101 IsActive=Y","erp.search text=80001 role=1300102","mis.describe kind=Order","mis.read kind=Order id=1300101 role=1300102","erp.actions kind=Order id=1300101 role=1300102"] pwd ["kind=Order id=1300101 role=1300102"] SQL client 13 [{"id":1300101,"n":"80001","so":"Y"}]
+  ✅ P7 role 1300102: `#80001` before the login is held by the gate (no erp.search); after the login it enters the client-13 order 1300101  searches=1 · kind=Order id=1300101 role=1300102
+§W-RED1-PREFIX P8 screen "#80001: no document found for \"80001\" that role 50004 may open: its windows Sales Order are not granted to it (AD_Window_Access)" pwd ["role=50004"] (role 50004 grants on 143/181: 0)
+  ✅ P8 role 50004 (no order window granted) finds nothing, and the refusal names the windows  #80001: no document found for "80001" that role 50004 may open: its windows Sales Order are not granted to it (AD_Window_Access)
+§WITNESS_RED1_PREFIX pass=8 fail=0 inconclusive=0 verdict=PASS
