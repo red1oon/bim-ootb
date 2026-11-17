@@ -22,9 +22,7 @@ function vocabOf(lang, recs, resolve) {
   return Array.from(set).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 }
 function build(adapter, lang) {
-  const t0 = Date.now(), d = adapter.load(lang), recs = d.records.slice();
-  const order = {}; d.kinds.forEach((k, i) => { order[k] = i; });
-  recs.sort((a, b) => order[a.k] - order[b.k] || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));   // deterministic file: kind order, then id
+  const t0 = Date.now(), d = adapter.load(lang), recs = d.records;   // the adapter's records are already in the deterministic order (kind order, then id), made by the one pure builder
   const idx = Object.assign({ v: 1, app: adapter.app, lang, spec: 'bim-compiler prompts/HELP_QUERY_CORE_DESIGN.md', built: { tool: 'build_help_index.js', node: process.versions.node, icu: process.versions.icu } },
     HEADER, { kinds: d.kinds, ntexts: d.ntexts, nospace: NOSPACE, vocab: vocabOf(lang, recs, d.resolve), records: recs });
   const text = JSON.stringify(idx);

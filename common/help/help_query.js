@@ -11,7 +11,7 @@
 //   handle.query(q, allowed) -> [{id,k,tier,score,rec}]  tiers 0-3, integer BM25 scores, the total tie-break of §4; allowed(gate, rec) is the role gate, applied AFTER ranking
 //   legacyFilter(names, typed) = MenuSearchController.java:586-607 + :187-190 exactly (labels only, startsWith under 3 characters else contains, accents deleted, sorted by label).
 // BM25 (k1, b from the pack header) is computed ONCE when the index is made, by + - * / only (own ln(), no Math.log), as an INTEGER weight per (term, record); a query only ADDS integers.
-// Falsifiers (HQ_BREAK=): noname (tier 0-2 never match a name) · nodict (the vocab ignored: pairs only) · k1 (k1 changed) · revtie (the last tie-break key reversed) · eager (index made in create()).
+// Falsifiers (HQ_BREAK=): noname (tier 0-2 never match a name) · nolegacytier (tiers 1 and 2 off, W-HQ-LEGACY-SUPERSET) · nodict (the vocab ignored: pairs only) · k1 (k1 changed) · revtie (the last tie-break key reversed) · eager (index made in create()).
 (function (root) {
   'use strict';
   function brk() { return (typeof process !== 'undefined' && process.env && process.env.HQ_BREAK) || (root && root.__HQ_BREAK) || ''; }
@@ -73,7 +73,7 @@
     var k1 = (brk() === 'k1') ? 2.0 : B.k1, b = B.b, scale = B.scale;
     var recs = (pack.records || []).concat((opts && opts.extra) || []), N = recs.length, text = (opts && opts.text) || function () { return ''; };
     var kinds = pack.kinds || [], kindOrder = {}; kinds.forEach(function (k, i) { kindOrder[k] = i; });
-    var lens = [], lists = {}, names = [], fnames = [], total = 0, i, r;
+    var lens = [], lists = {}, names = [], dnames = [], fnames = [], total = 0, i, r;
     function str(v) { return typeof v === 'number' ? text(v) : (v == null ? '' : String(v)); }
     for (i = 0; i < N; i++) {
       r = recs[i]; var cnt = {}, ln_ = 0;
@@ -83,7 +83,7 @@
       });
       lens.push(ln_); total += ln_;
       Object.keys(cnt).forEach(function (t) { var l = lists[t] || (lists[t] = { r: [], f: [] }); l.r.push(i); l.f.push(cnt[t]); });
-      var nl = [tidy(r.n == null ? '' : r.n)].concat((r.a || []).map(tidy)); names.push(nl); fnames.push(nl[0]);
+      var nl = [tidy(r.n == null ? '' : r.n)].concat((r.a || []).map(tidy)); names.push(nl); dnames.push(nl.map(deleteAccents)); fnames.push(nl[0]);
     }
     var avg = N ? total / N : 0, post = {}, np = 0;
     Object.keys(lists).forEach(function (t) {
@@ -92,28 +92,31 @@
       post[t] = { r: Int32Array.from(l.r), w: ws }; np += dft;
     });
     builds++;
-    return { recs: recs, N: N, names: names, fnames: fnames, kindOrder: kindOrder, kindsN: kinds.length, post: post, ctx: c, stats: { records: N, terms: Object.keys(post).length, postings: np, ms: now() - t0 } };
+    return { recs: recs, N: N, names: names, dnames: dnames, fnames: fnames, kindOrder: kindOrder, kindsN: kinds.length, post: post, ctx: c, stats: { records: N, terms: Object.keys(post).length, postings: np, ms: now() - t0 } };
   }
-  function tierOf(q, nl) {
-    if (brk() === 'noname') return 3;
+  // tier 0 compares the folded names; tiers 1 and 2 are legacy's menu filter, so they compare the way legacy compares: the accent-deleted (NFD) text, startsWith under 3 units, else contains
+  // (MenuSearchController.java:593-607). That is why a typed "ケーシ" is inside "ケーシ" + dakuten of "パッケージ": legacy shows it, and the twin must too.
+  function tierOf(q, nl, qd, dl, br, long) {
+    if (br === 'noname') return 3;
     var best = 3, j, f;
     for (j = 0; j < nl.length; j++) {
-      f = nl[j];
-      if (f === q) return 0;
-      if (f.indexOf(q) === 0) best = Math.min(best, 1);
-      else if (q.length >= 3 && f.indexOf(q) >= 0) best = Math.min(best, 2);
+      if (nl[j] === q) return 0;
+      if (br === 'nolegacytier') continue;   // falsifier: tiers 1 and 2 (legacy's menu filter) off
+      f = dl[j];
+      if (f.indexOf(qd) === 0) best = Math.min(best, 1);
+      else if (long && f.indexOf(qd) >= 0) best = Math.min(best, 2);
     }
     return best;
   }
   function run(ix, q, allowed) {
     var fq = tidy(q); if (!fq) return [];
-    var sc = new Float64Array(ix.N), seen = {}, i, hits = [];
+    var sc = new Float64Array(ix.N), seen = {}, i, hits = [], br = brk(), qd = deleteAccents(fq), long = qd.length >= 3;   // 'contains' from 3 characters, counted as legacy counts them: Java String.length() of the accent-deleted (NFD) text, so a kana with a dakuten is 2 (MenuSearchController.java:593-607)
     termsOf(q, ix.ctx).forEach(function (t) {
       if (seen[t]) return; seen[t] = 1;
       var p = ix.post[t]; if (p) for (var k = 0; k < p.r.length; k++) sc[p.r[k]] += p.w[k];
     });
-    for (i = 0; i < ix.N; i++) { var tr = tierOf(fq, ix.names[i]); if (tr < 3 || sc[i] > 0) hits.push({ i: i, tier: tr, score: sc[i] }); }
-    var rev = brk() === 'revtie';
+    for (i = 0; i < ix.N; i++) { var tr = tierOf(fq, ix.names[i], qd, ix.dnames[i], br, long); if (tr < 3 || sc[i] > 0) hits.push({ i: i, tier: tr, score: sc[i] }); }
+    var rev = br === 'revtie';
     hits.sort(function (x, y) {
       if (x.tier !== y.tier) return x.tier - y.tier;
       if (x.score !== y.score) return y.score - x.score;
