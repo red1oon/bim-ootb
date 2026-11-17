@@ -15,6 +15,9 @@
 //   H5 TIE     — "a new section that merely comes first steals a tool's link" (§14.3.2): an equal mention count goes to the
 //                 section whose heading shares a word with the pill's name, in either page order; mentions still dominate; a tie with no
 //                 shared word keeps the first. Offline, synthetic page. Red control: the OLD rule (1e6+n, first wins) must FAIL H5a.
+//   H6 DICT    — "the guide link's tooltip shows the English section name to every language" (§14.8.1): every distinct
+//                 guide.anchor of howto.json has a base row howto_gh_<anchor> whose msgtext == its heading (X of N, N from the file);
+//                 every such row is trl="Y" in the 14 non-English locales. Red control: a heading changed in a copy must FAIL. Offline.
 //   RED CONTROL — a made-up anchor, a section that does not name its pill, and a phrase not in the verb must FAIL (contract kit).
 // usage: NODE_PATH=~/bim-ootb/node_modules:~/bim-compiler/node_modules node viewer/tests/witness_howto.js [--no-page]
 //        [BUILDINGS=<dir with Duplex_extracted.db>, default ~/bim-ootb/viewer/buildings]
@@ -50,6 +53,25 @@ let fails = 0; const ck = (id, ok, msg) => { log((ok ? '§PASS ' : '§FAIL ') + 
     const o = oldRule(HELP + SAVE); ck('H5-red the OLD rule (1e6+n, first wins) picks the wrong one on H5a, so H5a can fail', o === 'help' && o !== a, 'old rule picked ' + o + ', new rule ' + a);
     { const zero = B.build(sec('only', 'Save and open a building', 'Nothing about the tool by name here.'), pill, []).pills.save; ck('H5f a section that only SHARES a word but never names the pill is not linked', zero.guide === null, 'guide=' + JSON.stringify(zero.guide)); }
     ck('H5e shared() counts words of 3+ letters in both', B.shared('Save and open a building', 'Save Building') === 2 && B.shared('Help - F1', 'Save Building') === 0, 'shared=' + B.shared('Save and open a building', 'Save Building')); }
+
+  // H6 DICT (§14.8.1) — offline: the heading of every distinct guide section has its dictionary row (help_panel.js ghKey rule)
+  {
+    const TC = require(path.join(ROOT, 'viewer', 'tools', 'trl_common.js'));
+    const ghKey = a => 'howto_gh_' + String(a).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+    const base = new Map(TC.readBase().map(r => [r.value, r]));
+    const secs = new Map(); Object.values(H.pills).forEach(p => { if (p.guide && !secs.has(p.guide.anchor)) secs.set(p.guide.anchor, p.guide.heading); });
+    const judge = m => [...m].filter(([a, hd]) => { const r = base.get(ghKey(a)); return r && r.msgtext === hd; }).length;
+    const ok = judge(secs), N = secs.size;
+    if (!N) { log('§W-HOWTO INCONCLUSIVE H6 0 guide sections in howto.json — nothing judged'); fails++; }
+    else ck('H6a every guide section heading has its base row howto_gh_<anchor> == heading', ok === N, ok + ' of ' + N);
+    const others = TC.LOCALES.filter(l => l !== TC.BASE && !/^en_/.test(l));
+    let cells = 0, yes = 0;
+    others.forEach(l => { const x = TC.parseTrlXml(fs.readFileSync(TC.xmlFile(l), 'utf8')); const byId = new Map(x.rows.map(r => [r.id, r]));
+      [...secs.keys()].forEach(a => { const r = base.get(ghKey(a)); cells++; const t = r && byId.get(r.id); if (t && t.trl === 'Y' && t.text) yes++; }); });
+    ck('H6b each heading row is trl="Y" with text in the ' + others.length + ' non-English locales', cells > 0 && yes === cells, yes + ' of ' + cells);
+    const red = new Map(secs); const first = [...red.keys()][0]; red.set(first, red.get(first) + ' (renamed)');
+    ck('H6-red a heading changed in a copy of howto.json is caught, so H6a can fail', judge(red) === N - 1, 'red judged ' + judge(red) + ' of ' + N);
+  }
 
   // population: one row per pill, judged against the LIVE guide
   const html = await (await fetch(H.guide + '?nc=' + Date.now())).text();

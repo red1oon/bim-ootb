@@ -6,8 +6,8 @@
    "ad_message_base.csv",
    "AD_Message_Trl_bn_BD.xml"
   ],
-  "rows": 1066,
-  "translated": 963,
+  "rows": 1086,
+  "translated": 983,
   "untranslated": 103
  },
  "labels": {
@@ -1076,6 +1076,26 @@
   "pillc_gi_preview_1": "N8AO অ্যাম্বিয়েন্ট অক্লুশন (গবেষণা নমুনা)",
   "pillc_gi_preview_2": "শুধু ডেস্কটপ — মোবাইলে বন্ধ (মেমরি)",
   "ui_export_bcf": "BCF রপ্তানি",
-  "wi_store_changed": "হোয়াট-ইফ: খোলার পর প্রকল্পের স্টোর বদলেছে — হোয়াট-ইফ আবার খুলুন"
+  "wi_store_changed": "হোয়াট-ইফ: খোলার পর প্রকল্পের স্টোর বদলেছে — হোয়াট-ইফ আবার খুলুন",
+  "howto_gh_save_open_a_building": "ভবন সংরক্ষণ ও খুলুন",
+  "howto_gh_lod400_upgrade": "LOD400 উন্নীতকরণ",
+  "howto_gh_find_panel_search_voice_query_and_axis_lenses": "খুঁজুন প্যানেল — অনুসন্ধান, ভয়েস প্রশ্ন ও অক্ষ লেন্স",
+  "howto_gh_help_f1_the_info_panel_and_the_command_line_live": "সাহায্য — F1, তথ্য প্যানেল ও কমান্ড লাইন (LIVE)",
+  "howto_gh_the_rest_of_the_navigate_drawer_world_history_page_history_home": "নেভিগেট ড্রয়ারের বাকি অংশ — সামগ্রিক ইতিহাস, পাতার ইতিহাস ও হোম",
+  "howto_gh_pick_walk_warehouse_logistics_buildings": "পিকিং পথ — গুদাম / লজিস্টিক ভবন",
+  "howto_gh_share": "শেয়ার",
+  "howto_gh_fm_operate_lenses_hr_bim_asset_alpha": "FM / পরিচালনা লেন্স — HR_BIM_Asset (ALPHA)",
+  "howto_gh_inspect_drawer_measure_clash_x_ray_section_time_machine_4d5d_fly_tour": "পরিদর্শন ড্রয়ার — পরিমাপ, সংঘর্ষ, এক্স-রে, সেকশন কাট, টাইম মেশিন, 4D/5D, উড়ন্ত ভ্রমণ",
+  "howto_gh_sanity_and_egress_rule_checks": "যৌক্তিকতা পরীক্ষা ও নির্গমন — নিয়ম পরীক্ষা",
+  "howto_gh_viewer_features": "ভিউয়ারের বৈশিষ্ট্য",
+  "howto_gh_4d_window": "4D উইন্ডো",
+  "howto_gh_display_options_palette_night_shadow_ground_background_sound_fx": "প্রদর্শন বিকল্প — প্যালেট, রাত, ছায়া + মাটি, পটভূমি, শব্দ প্রভাব",
+  "howto_gh_gi_preview_ao": "GI প্রিভিউ (AO)",
+  "howto_gh_nav_lod_large_bldgs": "নেভ LOD (বড় ভবন)",
+  "howto_gh_your_own_4d_5d_references_rates_durations_sequence": "আপনার নিজের 4D / 5D রেফারেন্স: হার, সময়কাল, ক্রম",
+  "howto_gh_issues": "সমস্যা",
+  "howto_gh_3d_navigation": "3D নেভিগেশন",
+  "howto_gh_camera_view_drawer": "ক্যামেরা / ভিউ ড্রয়ার",
+  "howto_gh_settings": "সেটিংস"
  }
 }
