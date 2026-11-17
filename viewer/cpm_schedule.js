@@ -203,7 +203,7 @@
   // support is FINISHED: nothing is landed on a half-built column, nothing is hung from a half-built slab. A cast-in or
   // same-pour item goes in WITH its host. So bearing-below and carrier-above are FINISH-to-start; embedded stays
   // START-to-start. supportBound(S, T, sS, eS) is the ONE place that says which instant of the support binds T — the
-  // graph edge (buildGraph E1), the cell packing (solveCells) and the judge (support_sweep.js midairAudit) all call it,
+  // graph edge (buildGraph E1) and the judge (support_sweep.js midairAudit) all call it,
   // so the generator and the lock gate cannot drift apart. Curing time is not modelled — no data, none invented.
   function supportIsEmbedded(S, T) {
     var SG = (typeof global.ScheduleGate !== 'undefined') ? global.ScheduleGate : ScheduleGate;
@@ -242,7 +242,7 @@
     // which was the guid tie-break. bearsOnPool(j) = j has a bearing-below contact inside the pool (memoised);
     // it is the extracted fact that tells the main beam from the one framing into it. Where NEITHER bears on
     // structure the election is unchanged — the pair elects each other and the solve places it as one lift
-    // (GRAPH: the contracted SCC's shared start; CELL: solveCells' lift, below). Nothing is left unelected by D3.
+    // (the contracted SCC's shared start). Nothing is left unelected by D3.
     var bearMemo = new Int8Array(n), d3Demoted = 0;
     var contactOnly = [], d7Contacts = 0, d7Reelected = 0, seedSkipped = 0;
     function bearsOnPool(j) {
@@ -927,194 +927,6 @@
   }
   function _trdOf(it) { return (typeof it.seq === 'number' ? it.seq : 99); }
 
-  // solveCells(items, filing, opts) — the two ordered lists, scheduled. Cells in product order:
-  // ES(L, loc, T) = max(epoch, finish of every cell (L, *, T'<T), finish of every cell (L'<L, *, T)).
-  // Trade order is LEVEL-scoped (a room's own slab/walls are filed at the level location —
-  // room-scoped order would leave slab->fit-out unrepresented, §S47.2's refused class); rooms at
-  // one level are PARALLEL locations — global per-resource crew pools are what serialize them.
-  // Packing inside a cell: members by (bz, guid), each claims the earliest slot of its GLOBAL
-  // resource pool (same caps + default-3 as computeSchedule §CREW-CAP). Deterministic throughout.
-  function solveCells(items, filing, opts) {
-    var maxCrews = opts && opts.maxCrews;
-    var n = items.length, i;
-    var base = Infinity;
-    for (i = 0; i < n; i++) if (items[i].s < base) base = items[i].s;
-    if (!isFinite(base)) base = 0;
-    function crewCapFor(resource) {
-      if (typeof maxCrews === 'number') return maxCrews;
-      if (maxCrews && maxCrews[resource]) return maxCrews[resource];
-      return 3;   // schedule_gate.js MAX_CREWS_DEFAULT, mirrored not invented
-    }
-    var pools = {};
-    function poolOf(resource) {
-      return pools[resource] || (pools[resource] = new Array(crewCapFor(resource)).fill(base));
-    }
-    // §D5_FLOOR_SLAB_FIRST (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.7 D5, 2026-11-14) — the floor
-    // a column stands on is built before it, whatever its class sequence. R1 ("column 2, beam 3,
-    // slab 4") is true only of the slab ON TOP; measured before: Hospital 57 of 58 columns standing on
-    // a slab of their own (level, Superstructure task) were drawn before it, all on Level 1.
-    // Rule, read from the elected edge as EXTRACTION (the way §S47.3's hang filing above reads it —
-    // not a new relation, not a class rule): an IfcSlab that is the elected BEARING-BELOW support of a
-    // structural element (supportPool) of the SAME final level is that level's FLOOR, and its cell
-    // runs before sequence 2 of that level (FLOOR_TRD, between Substructure 1 and the vertical
-    // bearers 2; a same-level holder of the floor runs before it, HOLDER_TRD). Phase, task, trade, rate and the gate quantity (_cellFiling) are untouched — only
-    // the order inside the level moves. Counted on §D5_FLOOR_SLAB.
-    var FLOOR_TRD = 1.5, HOLDER_TRD = 1.25;
-    var SGd = (typeof global.ScheduleGate !== 'undefined') ? global.ScheduleGate : ScheduleGate;
-    var trdOf = new Array(n), floorN = 0, floorBy = {}, heldN = 0;
-    for (i = 0; i < n; i++) trdOf[i] = _trdOf(items[i]);
-    if (filing.des && SGd && SGd.supportPool) {
-      for (i = 0; i < n; i++) {
-        var fs = filing.des[i]; if (fs < 0) continue;
-        var F = items[fs], Tn = items[i];
-        if (F.cls !== 'IfcSlab' || !SGd.supportPool(Tn)) continue;
-        if (filing.lvl2[fs] !== filing.lvl2[i]) continue;
-        if (!(F.bz < Tn.bz - SGd.EPS && F.tz >= Tn.bz - SGd.GAP)) continue;   // bearing-below, the election's own clause
-        if (trdOf[fs] <= FLOOR_TRD) continue;                                 // already ahead of the bearers (or counted)
-        // "the slab a column HOLDS UP is built after it" (§Q.7, same practice line): when the floor slab
-        // is itself carried by structure of this level (Hospital: a Level-1 pier under the Level-1
-        // floor), that HOLDER goes first — pier → floor → bearers (HOLDER_TRD). One hop, owner ruling
-        // 2026-11-14 (§Q.7 RESULTS, variant B); moving the floor alone put it before its pier.
-        var fh = filing.des[fs];
-        if (fh >= 0 && filing.lvl2[fh] === filing.lvl2[fs] && SGd.supportPool(items[fh]) &&
-            items[fh].bz < F.bz - SGd.EPS && items[fh].tz >= F.bz - SGd.GAP &&
-            trdOf[fh] > HOLDER_TRD) { trdOf[fh] = HOLDER_TRD; heldN++; }
-        trdOf[fs] = FLOOR_TRD; floorN++; floorBy[Tn.cls] = (floorBy[Tn.cls] || 0) + 1;
-      }
-    }
-    console.log('§D5_FLOOR_SLAB floorSlabs=' + floorN + ' holdersMovedFirst=' + heldN + ' firstCarriedBy=' + JSON.stringify(floorBy) +
-      ' trd=' + FLOOR_TRD + (filing.des ? '' : ' INACTIVE — no election passed to the cell solve'));
-    // group members per cell
-    var SEP = '';
-    var cellMem = {}, cellMeta = {}, keyOf = new Array(n);
-    var grpOf = new Array(n), liftOf = {}, d3Lifts = 0, d3LiftMembers = 0, d3LiftOverCap = 0, d3InGroup = 0, d3Held = 0, d3Pulled = 0;
-    function supIn(u) { var a2 = filing.des ? filing.des[u] : -1; return (a2 >= 0 && grpOf[a2] === grpOf[u]) ? a2 : -1; }
-    for (i = 0; i < n; i++) {
-      var k = filing.lvl2[i] + SEP + trdOf[i] + SEP + filing.loc2[i];
-      // the REPORTED cell identity (gate.cellKeys → the Gantt's §S51 per-cell grouping) keeps the
-      // element's own sequence: D5 moves the order inside the level, never a bar
-      keyOf[i] = (trdOf[i] === FLOOR_TRD || trdOf[i] === HOLDER_TRD) ? filing.lvl2[i] + SEP + _trdOf(items[i]) + SEP + filing.loc2[i] : k;
-      (cellMem[k] || (cellMem[k] = [])).push(i);
-      grpOf[i] = filing.lvl2[i] + SEP + trdOf[i];
-      cellMeta[k] || (cellMeta[k] = { lvl: filing.lvl2[i], trd: trdOf[i], loc: filing.loc2[i] });
-    }
-    // rings of the in-(level, trade) election (each element elects at most one support, so a ring is a simple cycle)
-    (function () {
-      var state = new Uint8Array(n);
-      for (var r0 = 0; r0 < n; r0++) {
-        if (state[r0]) continue;
-        var walk = [], u = r0;
-        while (u >= 0 && !state[u]) { state[u] = 1; walk.push(u); u = supIn(u); }
-        if (u >= 0 && state[u] === 1) {
-          var ring = walk.slice(walk.indexOf(u));
-          ring.forEach(function (m) { liftOf[m] = ring; });
-          d3Lifts++; d3LiftMembers += ring.length;
-        }
-        walk.forEach(function (m) { state[m] = 2; });
-      }
-    })();
-    var keys = Object.keys(cellMem).sort(function (x, y) {
-      var a = cellMeta[x], b = cellMeta[y];
-      if (a.lvl !== b.lvl) return a.lvl - b.lvl;
-      if (a.trd !== b.trd) return a.trd - b.trd;
-      return a.loc < b.loc ? -1 : (a.loc > b.loc ? 1 : 0);
-    });
-    var times = new Array(n);
-    var prevLevelsByTrade = {};   // trd -> max finish over all LOWER levels
-    var thisLevelByTrade = {};    // trd -> max finish at the CURRENT level
-    var earlierTradesMax = base;  // max finish of this level's already-processed (strictly lower) trades
-    var curLvl = null, curTrd = null;
-    var lvlSet = {}, trdSet = {};
-    var makespanS = Infinity, makespanE = -Infinity;
-    function foldLevel() {
-      for (var t in thisLevelByTrade) {
-        if (!(t in prevLevelsByTrade) || thisLevelByTrade[t] > prevLevelsByTrade[t])
-          prevLevelsByTrade[t] = thisLevelByTrade[t];
-      }
-      thisLevelByTrade = {};
-      earlierTradesMax = base;
-      curTrd = null;
-    }
-    function foldTrade(t) {
-      if (thisLevelByTrade[t] != null && thisLevelByTrade[t] > earlierTradesMax)
-        earlierTradesMax = thisLevelByTrade[t];
-    }
-    keys.forEach(function (k) {
-      var c = cellMeta[k];
-      lvlSet[c.lvl] = 1; trdSet[c.trd] = 1;
-      if (curLvl === null) { curLvl = c.lvl; }
-      else if (c.lvl !== curLvl) { foldLevel(); curLvl = c.lvl; }
-      if (curTrd === null) curTrd = c.trd;
-      else if (c.trd !== curTrd) { foldTrade(curTrd); curTrd = c.trd; }
-      var es = earlierTradesMax;
-      var pl = prevLevelsByTrade[c.trd];
-      if (pl != null && pl > es) es = pl;
-      if (es < base) es = base;
-      // §D3_CELL_SUPPORT_ORDER (4D_MODEL_INTEGRITY.md §Q.6 D3 + §Q.11.3 item 1 + §Q.12). Inside one (level, trade)
-      // the elected support binds, per element. The packing order stays what it was — cell by cell, members by
-      // (bz, guid) — EXCEPT that before a member is placed its in-(level, trade) elected support is placed first,
-      // and the member starts no earlier than that support STARTS. Order of processing is not order of start (each
-      // member starts at its own crew's free slot — measured: Hospital columns on a wall of another crew, §Q.11.2),
-      // so both halves are needed. The (level, trade) grain, not the room cell: rooms of one level are parallel
-      // locations with the SAME earliest start, and a beam's bearer is routinely filed in the next room (first D3
-      // run, room grain: Hospital bearing <- beam 42 -> 42, untouched). A ring of elements that elect each other
-      // (same-depth beams) is ONE LIFT: one shared start, one slot each. Across (level, trade) the product order
-      // stands exactly as it was.
-      var mem = cellMem[k].slice().sort(function (a, b) {
-        if (items[a].bz !== items[b].bz) return items[a].bz - items[b].bz;
-        var ga = String(items[a].guid), gb = String(items[b].guid);
-        return ga < gb ? -1 : (ga > gb ? 1 : 0);
-      });
-      var fin = es;
-      function commit(u, st, pool, idx) {
-        var en = st + Math.max(0, items[u].e - items[u].s);
-        if (en > pool[idx]) pool[idx] = en;
-        times[u] = { s: st, e: en };
-        if (st < makespanS) makespanS = st;
-        if (en > makespanE) makespanE = en;
-        if (en > fin) fin = en;
-      }
-      function placeLift(ring) {                              // reserve a slot per member, shared start = the latest
-        var picks = [], used = {}, shared = es, q;
-        ring.forEach(function (m) {
-          var r1 = items[m].resource, p2 = poolOf(r1), us = used[r1] || (used[r1] = {}), i2 = -1;
-          for (q = 0; q < p2.length; q++) if (!us[q] && (i2 < 0 || p2[q] < p2[i2])) i2 = q;
-          if (i2 < 0) { i2 = 0; for (q = 1; q < p2.length; q++) if (p2[q] < p2[i2]) i2 = q; d3LiftOverCap++; }
-          else { us[i2] = 1; if (p2[i2] > shared) shared = p2[i2]; }
-          picks.push({ m: m, pool: p2, idx: i2 });
-        });
-        picks.forEach(function (pk) { commit(pk.m, shared, pk.pool, pk.idx); });
-      }
-      function placeOne(u) {
-        var pool = poolOf(items[u].resource), idx = 0, q;
-        for (q = 1; q < pool.length; q++) if (pool[q] < pool[idx]) idx = q;
-        var st = Math.max(es, pool[idx]), sp = supIn(u);
-        if (sp >= 0) {                                        // §D4: the support's END binds, its START when embedded
-          d3InGroup++;
-          var bnd = supportBound(items[sp], items[u], times[sp].s, times[sp].e);
-          if (bnd > st) { st = bnd; d3Held++; }
-        }
-        commit(u, st, pool, idx);
-      }
-      mem.forEach(function (u0) {
-        if (times[u0]) return;                                // already placed: pulled forward as a support, or with its lift
-        var chain = [], u = u0;                               // u0, its support, that support's support … until one is placed
-        while (u >= 0 && !times[u] && !liftOf[u]) { chain.push(u); u = supIn(u); }
-        if (u >= 0 && !times[u]) placeLift(liftOf[u]);
-        if (chain.length > 1) d3Pulled += chain.length - 1;
-        for (var c2 = chain.length - 1; c2 >= 0; c2--) placeOne(chain[c2]);
-      });
-      if (!(c.trd in thisLevelByTrade) || fin > thisLevelByTrade[c.trd]) thisLevelByTrade[c.trd] = fin;
-    });
-    console.log('§D3_CELL_SUPPORT_ORDER grain=(level,trade) bound=finish(bearing,hanging)/start(embedded) electedPairsInside=' + d3InGroup + ' supportsPulledForward=' + d3Pulled + ' heldForSupportStart=' + d3Held + ' lifts=' + d3Lifts +
-      ' liftMembers=' + d3LiftMembers + ' liftOverCrewCap=' + d3LiftOverCap + (filing.des ? '' : ' INACTIVE — no election passed to the cell solve'));
-    return { times: times, cells: keys.length, keyOf: keyOf,
-             levels: Object.keys(lvlSet).length, trades: Object.keys(trdSet).length,
-             makespanDays: (isFinite(makespanE) && isFinite(makespanS)) ? (makespanE - makespanS) / 86400000 : 0 };
-  }
-
-  // A-4/A-6 (bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md A2-TIMING-2): the ONE timer is the edge the shell installs (global.CoreEdge).
-  // No edge = null, and the § line says '?', never a wall clock. Timing only: no result reads these values.
   function _perf() { var e = global.CoreEdge; return e && typeof e.perfMs === 'function' ? e.perfMs() : null; }
   function _dt(a, b) { return a == null || b == null ? null : Math.round(b - a); }
   function _ms(v) { return v == null ? '?' : v; }
@@ -1155,32 +967,7 @@
         ' promoted=' + filing.promoted + ' path=' + path + ' wouldHaveBeen=' + _wouldBe + ' (§GRAPH_EVERYWHERE: the graph engine runs on every building)' +
         (_chainN ? ' reason=chainage(' + _chainN + ' items carry a section)' : '') +
         ' [gate quantity: §S47b formula, level grain, designatedSupport unchanged — a rule, not a dictionary]');
-      if (path === 'CELL') {
-        var solC = solveCells(items, filing, opts);
-        var t2c = _perf();
-        console.log('§CELL_RUN n=' + items.length + ' cells=' + solC.cells +
-          ' levels=' + solC.levels + ' trades=' + solC.trades +
-          ' roomsUsed=' + (axis.stats ? axis.stats.inRoom : '?') + ' promoted=' + filing.promoted +
-          ' refusedE1=' + filing.refused + ' (arrows-as-exception surface, NOT enforced — §S26.11 leg 4)' +
-          ' makespanDays=' + solC.makespanDays.toFixed(1) +
-          ' ms={contact:' + _ms(_dt(t0, t1)) + ',axis+solve:' + _ms(_dt(t1, t2c)) + ',total:' + _ms(_dt(t0, t2c)) + '}');
-        var nEl = items.length;
-        var stub = { out: new Array(nEl), nElements: nEl, nNodes: nEl, msMeta: [],
-                     stragglerOf: new Uint8Array(nEl),
-                     counts: { e1: 0, e2h: 0, e2o: 0, e3: 0, e4: 0, member: 0, stragglers: 0 },
-                     designated: des0, cellPath: true };
-        for (var si = 0; si < nEl; si++) stub.out[si] = null;
-        return { ok: true, G: G, graph: stub,
-                 solution: { times: solC.times, makespanDays: solC.makespanDays,
-                             drops: { e3: 0, e4: 0, member: 0, contractedSccs: 0, contractedNodes: 0,
-                                      fsViolInScc: 0, crewOverCapScc: 0 },
-                             cells: solC.cells },
-                 gate: { path: 'CELL', repr: filing.repr, mark: CELL_GATE_MARK,
-                         promoted: filing.promoted, refused: filing.refused,
-                         cellKeys: solC.keyOf },
-                 ms: { contact: _dt(t0, t1), build: 0, solve: _dt(t1, t2c), total: _dt(t0, t2c) } };
-      }
-      // fall through to the graph engine — today's schedule, unchanged, for this building
+      // The cell solver is deleted (owner ruling §GRAPH_EVERYWHERE, 2026-11-17): the graph engine below is the one solve.
     } else {
       console.log('§CELL_GATE unavailable (LocationAxis=' + !!LA + ' db=' + !!db +
         ') path=GRAPH — legacy caller or module not loaded; the graph engine runs unchanged');
