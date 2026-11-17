@@ -264,7 +264,17 @@
       : '(' + ARC_CLASSES.map(function (c) { return "m.ifc_class='" + c + "'"; }).join(' OR ') + ')';
     // §M3B-REST (MODELLER_MASTER §RESUME 2026-11-02 "M-3(b) SPEC"): opts.rest = the COMPLEMENT of the ARC seed, with the SAME resolve/refuse rules per row — the authored non-ARC bodies
     // (STR members/footings, ACMV fans, any discipline). ONE owner of "which rows are ARC" (this `where`); Export > Viewer database carries these rows through (viewer_db_export.js), they are never seeded into the op-log.
-    var rest = !!opts.rest; if (rest) where = 'NOT (' + where + ')';
+    // §MOD_PARTS_VIEW (prompts/DXF2BIM_MODELLER_LANE.md §S-G2 fix): the seeded set = ARC rows UNION every element_parts CHILD (any discipline) UNION every row stamped
+    // transform_source 'generated:*' (add-on parts that are not aggregate children, e.g. connection plates/bolts), MINUS every element_parts PARENT with a child present
+    // (its geometry IS its parts, same decision as §NOGEO_COMPOSE and viewer/parts_view.js). A DB without the table / column keeps the SQL byte-identical.
+    var _has = function (t) { try { return db.exec("SELECT 1 FROM sqlite_master WHERE type='table' AND name='" + t + "'").length > 0; } catch (e) { return false; } };
+    var hasParts = _has('element_parts');
+    var hasGenSrc = (function () { try { var c = db.exec("PRAGMA table_info(element_transforms)"); return c.length > 0 && c[0].values.some(function (x) { return x[1] === 'transform_source'; }); } catch (e) { return false; } })();
+    if (hasParts) where = '(' + where + ' OR m.guid IN (SELECT child_guid FROM element_parts WHERE child_guid IS NOT NULL))';
+    if (hasGenSrc) where = '(' + where + " OR COALESCE(t.transform_source, '') LIKE 'generated:%')";
+    var seedWhere = where;
+    var hostSql = hasParts ? "SELECT p.parent_guid FROM element_parts p JOIN elements_meta c ON c.guid = p.child_guid WHERE p.parent_guid IS NOT NULL" : null;   // parents with >= 1 child present
+    var rest = !!opts.rest; if (rest) where = 'NOT (' + seedWhere + ')'; else if (hostSql) where = seedWhere + ' AND m.guid NOT IN (' + hostSql + ')';
     var hasId = _hasIdColumn(db);
     if (!hasId) _log(TAG + ' §ARC-SEED-SCHEMA elements_meta has no id column — ORDER BY guid fallback (stable, guid-keyed bridge unaffected)');
     // §ANCHOR: select the is_anchor flag when the column exists (else a constant 0 — identical SQL shape,
@@ -438,6 +448,20 @@
       }
       ops.push({ op_type: 'GEOM_INSERT', params: params, outputGuid: guid });
     });
+    // §MOD_PARTS_VIEW honesty line (not for the rest complement): H = distinct parents with a present child; hostsHidden = of those, the ones the seed would have drawn and now does not.
+    var partsView = null;
+    if (!rest && hasParts) {
+      try {
+        var hq = db.exec("SELECT COUNT(DISTINCT p.parent_guid) FROM (" + hostSql + ") p WHERE p.parent_guid IN (SELECT guid FROM elements_meta)"), hN = hq.length ? hq[0].values[0][0] : 0;
+        var hh = db.exec("SELECT COUNT(*) FROM elements_meta m JOIN element_transforms t ON t.guid = m.guid WHERE " + seedWhere + ' AND m.guid IN (' + hostSql + ')'), hiddenN = hh.length ? hh[0].values[0][0] : 0;
+        var kids = db.exec("SELECT DISTINCT child_guid FROM element_parts"), kidSet = {}; if (kids.length) kids[0].values.forEach(function (v) { kidSet[v[0]] = 1; });
+        var pN = 0, gN = 0; ops.forEach(function (o) { if (o.params && o.params.anchorOnly) return; if (kidSet[o.outputGuid]) pN++; });
+        if (hasGenSrc) { var gq = db.exec("SELECT guid FROM element_transforms WHERE transform_source LIKE 'generated:%'"), gSet = {}; if (gq.length) gq[0].values.forEach(function (v) { gSet[v[0]] = 1; }); ops.forEach(function (o) { if (!(o.params && o.params.anchorOnly) && gSet[o.outputGuid] && !kidSet[o.outputGuid]) gN++; }); }
+        partsView = { hosts: hN, hostsHidden: hiddenN, partsSeeded: pN, generatedSeeded: gN };
+        if (!hN) _log(TAG + ' §MOD_PARTS_VIEW VACUOUS (element_parts has no row with a present child: nothing hidden)');
+        else _log(TAG + ' §MOD_PARTS_VIEW hosts=' + hN + ' hostsHidden=' + hiddenN + ' partsSeeded=' + pN + ' generatedSeeded=' + gN + ' (a host with present parts is not seeded: its geometry IS its parts; non-ARC parts of any discipline are seeded)');
+      } catch (e) { _log(TAG + ' §MOD_PARTS_VIEW probe failed: ' + (e && e.message)); }
+    }
     if (gmAudit) {
       var gmRate = gmAudit.checked ? Math.round(1000 * (gmAudit.checked - gmAudit.flagged.length) / gmAudit.checked) / 1000 : null;
       if (gmAudit.flagged.length > GM_FLAG_LOG_CAP) {
@@ -466,7 +490,7 @@
     var aggParts = rest ? null : _aggregatePartsDrawn(db, ops, skipped, opts.building);   // §AGG-PARTS-DRAWN (M-2, measure only)
     return { ops: ops, skipped: skipped, aggParts: aggParts, discipline: hasDisc ? 'ARC' : 'fallback', matched: matched, unmatched: unmatched, tilted: tilted, colorN: colorN,
       geomAssets: geomAssets, realResolved: realResolved, hardfail: hardfail, noSubstrate: noSubstrate, geomTable: geomIdx.table, geomap: gmAudit,
-      anchorN: anchorOps.length, layerGate: layerGate.armed ? { multiLayer: layerGate.nMulti, layeredHashes: layerGate.nHashes } : null,
+      partsView: partsView, anchorN: anchorOps.length, layerGate: layerGate.armed ? { multiLayer: layerGate.nMulti, layeredHashes: layerGate.nHashes } : null,
       layerRefused: layerRefused,
       slide: { hosts: slideHostN, hostGuids: slideSeeded, openings: slide.openings, tableHosts: Object.keys(slide.hosts).length } };   // §SLIDE-SEED
   }

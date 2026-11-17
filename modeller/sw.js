@@ -28,7 +28,9 @@
 // v283 (2026-11-17) §19.4 (bim-compiler VOCAB_MESSAGE_CATALOG.md): the help panel searches through the shared query core — help_panel.js?v=4, common/help/help_query.js?v=1, help/index/<locale>.json
 // v284 (2026-11-17) §19.5 (bim-compiler VOCAB_MESSAGE_CATALOG.md): the help panel's "Did you mean" line — help_panel.js?v=5, common/help/help_dym.js?v=1, common/door/assist_core.js?v=1
 // v285 (2026-11-17) §19.6 (bim-compiler VOCAB_MESSAGE_CATALOG.md): `#<GlobalId prefix>` in the help panel — help_panel.js?v=6, common/help/help_grammar.js?v=1, help_guid.js?v=1, Bonsai.selectByGuid
-const CACHE_VERSION = 'v286';   // bump on each deploy; per-change detail is the git commit message.
+// v286 (2026-11-18) §S-G2 (prompts/DXF2BIM_MODELLER_LANE.md): the ARC seed draws element_parts children of any discipline + generated: parts and not a host whose parts are present — arc_editable.js?v=9, §MOD_PARTS_VIEW
+// v287 (2026-11-18) §19.7 (bim-compiler VOCAB_MESSAGE_CATALOG.md): legacy's label order inside the help core's tiers 1 and 2 — common/help/help_query.js?v=2
+const CACHE_VERSION = 'v287';   // bump on each deploy; per-change detail is the git commit message.
 const CACHE_PREFIX = 'bim-modeller-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
