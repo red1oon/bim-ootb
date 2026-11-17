@@ -4,6 +4,7 @@
 # stamped log and prints one table. CPU only: no browser, no GPU. Read the log, not the exit code:
 #   logs/4d_gates_<UTC time>.log      (override the folder with LOG_DIR)
 # Usage: scripts/run_4d_gates.sh [Building ...]      default: all seven
+#        LARGE=1 scripts/run_4d_gates.sh            also the edit chain on Clinic and Hospital
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BLDS=("$@"); [ ${#BLDS[@]} -eq 0 ] && BLDS=(Duplex HHS_Office_Federated Hospital Terminal Clinic JKR LTU_AHouse)
@@ -28,6 +29,19 @@ for g in "${GATES[@]}"; do
   [ -z "$last" ] && last="$(grep -v '^$' "$tmp" | tail -1 | cut -c1-90)"
   ROWS+=("$g|rc=$rc|${last:-no output} inconclusiveOrVacuousLines=$inc"); rm -f "$tmp"
 done
+# LARGE=1 — the edit chain again on two large buildings (minutes each): bar move/resize re-times its elements, and
+# verify -> bad drag refused -> undo clean. §Q.15.3. Off by default so the everyday run stays short.
+if [ "${LARGE:-0}" = 1 ]; then
+  for b in Clinic Hospital; do for pair in "witness_gantt_edit_coherence COH_BLD" "witness_gantt_lock_integrity LI_BLD"; do
+    set -- $pair; g=$1; var=$2
+    echo "§GATES_STEP $g $b" >> "$LOG"; tmp="$(mktemp)"
+    (cd "$ROOT/viewer" && env "$var=$b" node "tests/$g.js") > "$tmp" 2>&1; rc=$?
+    cat "$tmp" >> "$LOG"; echo "§GATES_STEP_EXIT $g $b rc=$rc" >> "$LOG"
+    last="$(grep -E 'pass=[0-9]+ +fail=[0-9]+' "$tmp" | tail -1 | grep -oE 'pass=[0-9]+ +fail=[0-9]+')"
+    [ $rc -ne 0 ] && red=$((red+1))
+    ROWS+=("$g@$b|rc=$rc|${last:-no pass/fail line}"); rm -f "$tmp"
+  done; done
+fi
 { echo "§GATES_TABLE buildings=${BLDS[*]} cacheRc=$cacheRc"
   for r in "${ROWS[@]}"; do IFS='|' read -r n c t <<< "$r"; printf '§GATES_ROW %-40s %-8s %s\n' "$n" "$c" "$t"; done
   verdict=GREEN; [ $red -ne 0 ] || [ $cacheRc -ne 0 ] && verdict=RED; [ $missing -ne 0 ] && [ $verdict = GREEN ] && verdict=INCONCLUSIVE
