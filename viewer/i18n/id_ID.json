@@ -6,8 +6,8 @@
    "ad_message_base.csv",
    "AD_Message_Trl_id_ID.xml"
   ],
-  "rows": 1036,
-  "translated": 929,
+  "rows": 1046,
+  "translated": 939,
   "untranslated": 107
  },
  "labels": {
@@ -1046,6 +1046,16 @@
   "mdl_m_guide_title_author": "Buat",
   "mdl_m_guide_title_move": "Pindah & Manipulasi",
   "mdl_m_guide_title_3dgrid": "Grid 3D",
-  "mdl_m_guide_title_export": "Simpan / Ekspor"
+  "mdl_m_guide_title_export": "Simpan / Ekspor",
+  "mdl_m_rules": "Aturan",
+  "mdl_m_tt_2d_panel": "Gambar 2D: tampilkan atau sembunyikan panel (D)",
+  "mdl_m_tt_team": "Tim — klik untuk memulai atau bergabung dengan tim",
+  "mdl_m_tt_walker_rules": "Aturan walker (JSON): baca dan ubah aturan yang digunakan walker untuk jenis bangunan ini",
+  "mdl_m_copy": "Salin",
+  "mdl_m_paste": "Tempel (klik untuk menempatkan)",
+  "mdl_m_drawing_meta": "Metadata gambar",
+  "mdl_m_this_help": "Bantuan ini",
+  "mdl_m_open_dxf": "Buka gambar 2D (.dxf)…",
+  "mdl_m_open_pdf": "Buka gambar 2D dari gambar PDF (.pdf)…"
  }
 }

@@ -6,8 +6,8 @@
    "ad_message_base.csv",
    "AD_Message_Trl_es_ES.xml"
   ],
-  "rows": 1036,
-  "translated": 991,
+  "rows": 1046,
+  "translated": 1001,
   "untranslated": 45
  },
  "labels": {
@@ -1046,6 +1046,16 @@
   "mdl_m_guide_title_author": "Crear",
   "mdl_m_guide_title_move": "Mover y manipular",
   "mdl_m_guide_title_3dgrid": "Cuadrícula 3D",
-  "mdl_m_guide_title_export": "Guardar / Exportar"
+  "mdl_m_guide_title_export": "Guardar / Exportar",
+  "mdl_m_rules": "Reglas",
+  "mdl_m_tt_2d_panel": "Planos 2D: mostrar u ocultar el panel (D)",
+  "mdl_m_tt_team": "Equipo — haga clic para iniciar o unirse a un equipo",
+  "mdl_m_tt_walker_rules": "Reglas del walker (JSON): leer y editar las reglas que el walker usa para este tipo de edificio",
+  "mdl_m_copy": "Copiar",
+  "mdl_m_paste": "Pegar (clic para colocar)",
+  "mdl_m_drawing_meta": "Metadatos del dibujo",
+  "mdl_m_this_help": "Esta ayuda",
+  "mdl_m_open_dxf": "Abrir planos 2D (.dxf)…",
+  "mdl_m_open_pdf": "Abrir planos 2D desde un dibujo PDF (.pdf)…"
  }
 }

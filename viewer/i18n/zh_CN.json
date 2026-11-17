@@ -6,8 +6,8 @@
    "ad_message_base.csv",
    "AD_Message_Trl_zh_CN.xml"
   ],
-  "rows": 1036,
-  "translated": 929,
+  "rows": 1046,
+  "translated": 939,
   "untranslated": 107
  },
  "labels": {
@@ -1046,6 +1046,16 @@
   "mdl_m_guide_title_author": "创作",
   "mdl_m_guide_title_move": "移动与操作",
   "mdl_m_guide_title_3dgrid": "3D 网格",
-  "mdl_m_guide_title_export": "保存 / 导出"
+  "mdl_m_guide_title_export": "保存 / 导出",
+  "mdl_m_rules": "规则",
+  "mdl_m_tt_2d_panel": "2D 图纸：显示或隐藏面板 (D)",
+  "mdl_m_tt_team": "团队 — 点击以创建或加入团队",
+  "mdl_m_tt_walker_rules": "Walker 规则 (JSON)：读取并编辑 walker 为此类建筑使用的规则",
+  "mdl_m_copy": "复制",
+  "mdl_m_paste": "粘贴（点击放置）",
+  "mdl_m_drawing_meta": "图纸元数据",
+  "mdl_m_this_help": "本帮助",
+  "mdl_m_open_dxf": "打开 2D 图纸 (.dxf)…",
+  "mdl_m_open_pdf": "从 PDF 图纸打开 2D 图纸 (.pdf)…"
  }
 }

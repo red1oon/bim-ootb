@@ -6,8 +6,8 @@
    "ad_message_base.csv",
    "AD_Message_Trl_fr_FR.xml"
   ],
-  "rows": 1036,
-  "translated": 929,
+  "rows": 1046,
+  "translated": 939,
   "untranslated": 107
  },
  "labels": {
@@ -1046,6 +1046,16 @@
   "mdl_m_guide_title_author": "Créer",
   "mdl_m_guide_title_move": "Déplacer et manipuler",
   "mdl_m_guide_title_3dgrid": "Grille 3D",
-  "mdl_m_guide_title_export": "Enregistrer / Exporter"
+  "mdl_m_guide_title_export": "Enregistrer / Exporter",
+  "mdl_m_rules": "Règles",
+  "mdl_m_tt_2d_panel": "Dessins 2D : afficher ou masquer le panneau (D)",
+  "mdl_m_tt_team": "Équipe — cliquez pour créer ou rejoindre une équipe",
+  "mdl_m_tt_walker_rules": "Règles du walker (JSON) : lire et modifier les règles que le walker utilise pour ce type de bâtiment",
+  "mdl_m_copy": "Copier",
+  "mdl_m_paste": "Coller (cliquez pour placer)",
+  "mdl_m_drawing_meta": "Métadonnées du dessin",
+  "mdl_m_this_help": "Cette aide",
+  "mdl_m_open_dxf": "Ouvrir des dessins 2D (.dxf)…",
+  "mdl_m_open_pdf": "Ouvrir des dessins 2D depuis un dessin PDF (.pdf)…"
  }
 }

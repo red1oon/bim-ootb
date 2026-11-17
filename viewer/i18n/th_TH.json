@@ -6,8 +6,8 @@
    "ad_message_base.csv",
    "AD_Message_Trl_th_TH.xml"
   ],
-  "rows": 1036,
-  "translated": 929,
+  "rows": 1046,
+  "translated": 939,
   "untranslated": 107
  },
  "labels": {
@@ -1046,6 +1046,16 @@
   "mdl_m_guide_title_author": "สร้าง",
   "mdl_m_guide_title_move": "ย้ายและปรับแต่ง",
   "mdl_m_guide_title_3dgrid": "กริด 3 มิติ",
-  "mdl_m_guide_title_export": "บันทึก / ส่งออก"
+  "mdl_m_guide_title_export": "บันทึก / ส่งออก",
+  "mdl_m_rules": "กฎ",
+  "mdl_m_tt_2d_panel": "แบบ 2D: แสดงหรือซ่อนแผง (D)",
+  "mdl_m_tt_team": "ทีม — คลิกเพื่อเริ่มหรือเข้าร่วมทีม",
+  "mdl_m_tt_walker_rules": "กฎของ Walker (JSON): อ่านและแก้ไขกฎที่ walker ใช้กับอาคารประเภทนี้",
+  "mdl_m_copy": "คัดลอก",
+  "mdl_m_paste": "วาง (คลิกเพื่อวางตำแหน่ง)",
+  "mdl_m_drawing_meta": "เมตาดาตาของแบบ",
+  "mdl_m_this_help": "วิธีใช้นี้",
+  "mdl_m_open_dxf": "เปิดแบบ 2D (.dxf)…",
+  "mdl_m_open_pdf": "เปิดแบบ 2D จากแบบ PDF (.pdf)…"
  }
 }

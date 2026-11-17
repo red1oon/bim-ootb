@@ -6,8 +6,8 @@
    "ad_message_base.csv",
    "AD_Message_Trl_af_ZA.xml"
   ],
-  "rows": 1036,
-  "translated": 929,
+  "rows": 1046,
+  "translated": 939,
   "untranslated": 107
  },
  "labels": {
@@ -1046,6 +1046,16 @@
   "mdl_m_guide_title_author": "Skep",
   "mdl_m_guide_title_move": "Skuif en manipuleer",
   "mdl_m_guide_title_3dgrid": "3D-rooster",
-  "mdl_m_guide_title_export": "Stoor / Voer uit"
+  "mdl_m_guide_title_export": "Stoor / Voer uit",
+  "mdl_m_rules": "Reëls",
+  "mdl_m_tt_2d_panel": "2D-tekeninge: wys of versteek die paneel (D)",
+  "mdl_m_tt_team": "Span — klik om 'n span te begin of by te sluit",
+  "mdl_m_tt_walker_rules": "Walker-reëls (JSON): lees en wysig die reëls wat die walker vir hierdie geboutipe gebruik",
+  "mdl_m_copy": "Kopieer",
+  "mdl_m_paste": "Plak (klik om te plaas)",
+  "mdl_m_drawing_meta": "Tekeningmetadata",
+  "mdl_m_this_help": "Hierdie hulp",
+  "mdl_m_open_dxf": "Maak 2D-tekeninge oop (.dxf)…",
+  "mdl_m_open_pdf": "Maak 2D-tekeninge oop vanaf PDF-tekening (.pdf)…"
  }
 }

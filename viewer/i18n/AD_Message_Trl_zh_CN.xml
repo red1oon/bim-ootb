@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<!--BIM OOTB Viewer — AD_Message_Trl zh_CN — format: org.compiere.install.Translation export (iDempiere). Rows 1000000-1000308 source=viewer/locales/zh_CN.js @4cd440ae (S225/S226 sessions, machine translation, extracted 2026-10-03, not retranslated); rows 1000309-1000492 and every row listed in viewer/tools/trl_batch_2026-10-03*.js source=machine (Claude, Anthropic, 2026-10-03); rows 1000493-1000655 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_tm.js; rows 1000656-1000671 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_info.js; rows 1000672-1000752 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_help.js; rows 1000753-1000862 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_modeller.js; rows 1000867-1000962 source=buildingSMART bSDD IFC 4.3 (CC BY-ND 4.0), verbatim official text — viewer/tools/trl_batch_2026-11-17_ifcdef.js; rows 1000963-1001017 source=machine (Claude, Anthropic, 2026-11-17), English class sentences written for this app — viewer/tools/trl_batch_2026-11-17_ifccls.js; rows 1001018-1001024 source=buildingSMART bSDD IFC 4.3 (CC BY-ND 4.0) verbatim, type -> occurrence per its IFC page; ui_cls_ifcdef_of machine (Claude, 2026-11-17) — viewer/tools/trl_batch_2026-11-17_ifcdef_types.js; rows 1001025-1001027 source=machine (Claude, Anthropic, 2026-11-17), How To palette words — viewer/tools/trl_batch_2026-11-17_howto.js; rows 1001028-1001033 source=machine (Claude, Anthropic, 2026-11-17), Modeller guide section titles — viewer/tools/trl_batch_2026-11-17_modeller_guide_titles.js; rows 1001034-1001035 source=machine (Claude, Anthropic, 2026-11-17), Modeller guide section titles — viewer/tools/trl_batch_2026-11-17_modeller_guide_titles.js — NOT from a published iDempiere language pack. trl="N" = not translated (English kept, counted apart). Base rows: viewer/i18n/ad_message_base.csv. Edit THIS file, then run: node viewer/tools/build_trl.js-->
+<!--BIM OOTB Viewer — AD_Message_Trl zh_CN — format: org.compiere.install.Translation export (iDempiere). Rows 1000000-1000308 source=viewer/locales/zh_CN.js @4cd440ae (S225/S226 sessions, machine translation, extracted 2026-10-03, not retranslated); rows 1000309-1000492 and every row listed in viewer/tools/trl_batch_2026-10-03*.js source=machine (Claude, Anthropic, 2026-10-03); rows 1000493-1000655 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_tm.js; rows 1000656-1000671 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_info.js; rows 1000672-1000752 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_help.js; rows 1000753-1000862 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_modeller.js; rows 1000867-1000962 source=buildingSMART bSDD IFC 4.3 (CC BY-ND 4.0), verbatim official text — viewer/tools/trl_batch_2026-11-17_ifcdef.js; rows 1000963-1001017 source=machine (Claude, Anthropic, 2026-11-17), English class sentences written for this app — viewer/tools/trl_batch_2026-11-17_ifccls.js; rows 1001018-1001024 source=buildingSMART bSDD IFC 4.3 (CC BY-ND 4.0) verbatim, type -> occurrence per its IFC page; ui_cls_ifcdef_of machine (Claude, 2026-11-17) — viewer/tools/trl_batch_2026-11-17_ifcdef_types.js; rows 1001025-1001027 source=machine (Claude, Anthropic, 2026-11-17), How To palette words — viewer/tools/trl_batch_2026-11-17_howto.js; rows 1001028-1001033 source=machine (Claude, Anthropic, 2026-11-17), Modeller guide section titles — viewer/tools/trl_batch_2026-11-17_modeller_guide_titles.js; rows 1001034-1001035 source=machine (Claude, Anthropic, 2026-11-17), Modeller guide section titles — viewer/tools/trl_batch_2026-11-17_modeller_guide_titles.js; rows 1001036-1001045 source=machine (Claude, Anthropic, 2026-11-17), ten older uncatalogued Modeller strings — viewer/tools/trl_batch_2026-11-17_modeller_uncat10.js — NOT from a published iDempiere language pack. trl="N" = not translated (English kept, counted apart). Base rows: viewer/i18n/ad_message_base.csv. Edit THIS file, then run: node viewer/tools/build_trl.js-->
 <!--<!DOCTYPE idempiereTrl PUBLIC "-//iDempiere//DTD iDempiere Translation 1.0//EN" "https://raw.githubusercontent.com/idempiere/idempiere/refs/heads/master/utils_dev/trl/idempiereTrl.dtd">-->
 <idempiereTrl language="zh_CN" table="AD_Message">
  <row id="1000000" trl="Y">
@@ -4153,6 +4153,46 @@ CPM 只读取拖动产生的日期 — 从不更改日期。</value>
  </row>
  <row id="1001035" trl="Y">
   <value column="MsgText" original="Save / Export">保存 / 导出</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001036" trl="Y">
+  <value column="MsgText" original="Rules">规则</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001037" trl="Y">
+  <value column="MsgText" original="2D Drawings: show or hide the panel (D)">2D 图纸：显示或隐藏面板 (D)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001038" trl="Y">
+  <value column="MsgText" original="Team — click to start or join a team">团队 — 点击以创建或加入团队</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001039" trl="Y">
+  <value column="MsgText" original="Walker rules (JSON): read and edit the rules the walker uses for this building type">Walker 规则 (JSON)：读取并编辑 walker 为此类建筑使用的规则</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001040" trl="Y">
+  <value column="MsgText" original="Copy">复制</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001041" trl="Y">
+  <value column="MsgText" original="Paste (click to place)">粘贴（点击放置）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001042" trl="Y">
+  <value column="MsgText" original="Drawing metadata">图纸元数据</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001043" trl="Y">
+  <value column="MsgText" original="This help">本帮助</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001044" trl="Y">
+  <value column="MsgText" original="Open 2D drawings (.dxf)…">打开 2D 图纸 (.dxf)…</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1001045" trl="Y">
+  <value column="MsgText" original="Open 2D drawings from PDF drawing (.pdf)…">从 PDF 图纸打开 2D 图纸 (.pdf)…</value>
   <value column="MsgTip" original=""/>
  </row>
 </idempiereTrl>

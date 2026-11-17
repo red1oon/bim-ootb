@@ -6,8 +6,8 @@
    "ad_message_base.csv",
    "AD_Message_Trl_ar_SA.xml"
   ],
-  "rows": 1036,
-  "translated": 929,
+  "rows": 1046,
+  "translated": 939,
   "untranslated": 107
  },
  "labels": {
@@ -1046,6 +1046,16 @@
   "mdl_m_guide_title_author": "إنشاء",
   "mdl_m_guide_title_move": "نقل وتعديل",
   "mdl_m_guide_title_3dgrid": "شبكة ثلاثية الأبعاد",
-  "mdl_m_guide_title_export": "حفظ / تصدير"
+  "mdl_m_guide_title_export": "حفظ / تصدير",
+  "mdl_m_rules": "القواعد",
+  "mdl_m_tt_2d_panel": "رسومات 2D: إظهار اللوحة أو إخفاؤها (D)",
+  "mdl_m_tt_team": "الفريق — انقر لبدء فريق أو الانضمام إليه",
+  "mdl_m_tt_walker_rules": "قواعد Walker (JSON): قراءة وتعديل القواعد التي يستخدمها walker لهذا النوع من المباني",
+  "mdl_m_copy": "نسخ",
+  "mdl_m_paste": "لصق (انقر للوضع)",
+  "mdl_m_drawing_meta": "بيانات وصفية للرسم",
+  "mdl_m_this_help": "هذه المساعدة",
+  "mdl_m_open_dxf": "فتح رسومات 2D (.dxf)…",
+  "mdl_m_open_pdf": "فتح رسومات 2D من رسم PDF (.pdf)…"
  }
 }
