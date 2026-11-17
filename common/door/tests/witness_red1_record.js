@@ -11,6 +11,10 @@
 //   R7 ISSUE (record/tab handling is per window): the SAME words give Order -> its lines/tax and Business Partner -> its locations, counts equal an independent SQL on the seed (Order Tax under an order was 27 on main:
 //      the tab's link was the table's FIRST IsParent column, C_Tax_ID, not the one that names the order)
 //   R8 ISSUE (`cd <kind> <number|name>` finds the wrong record, or a miss is silent): "BIM: Hospital" (Name), Hospital (Value) and 990000 (id) are ONE record; a number that is no record is refused with the reason and the session stays in the kind
+//   R9 ISSUE (§45: in a record, `do`/`next` name it by a DocumentNo that two records share, so every action is refused): on the seed, `cd Order 100` then `do RE` runs erp.reactivate with id=100 and answers ok (IP),
+//      `do CO` brings it back to CO; the precondition (two Order records carry 80000) is read by an independent SQL, else INCONCLUSIVE. Falsifier WORDS_BREAK=recnumber (the old number-first fill): must FAIL R9
+//   R10 ISSUE (§45 K3: in a kind, `cd <number>` is refused, so a menu walk cannot step into a record): menu -> Quote -> "Sales Orders" -> "Sales Order" -> `cd 100` enters order 100 (mis.read id=100) and the prompt keeps
+//      the menu path (`.../Sales Orders/Order/80000>`); `cd ..` returns to `.../Order>`; in the kind `cd Foo` still says no building, kind or window is named "Foo". Falsifier WORDS_BREAK=nokindrec: must FAIL R10
 //   Falsifiers: WORDS_BREAK=kindfirst (the link word tries the building kinds first: must FAIL R1) · WORDS_BREAK=nomaster (a tab is not filtered by its link: must FAIL R3) · WORDS_BREAK=norecfill (the record is not filled in: must FAIL R5)
 //      · RECORD_BREAK=json (cat prints the record as JSON: must FAIL R6) · RECORD_BREAK=firstparent (a tab's link is the first IsParent column: must FAIL R7) · RECORD_BREAK=oneidentifier (only the first identifier column finds a record: must FAIL R8)
 //   A claim with nothing to judge says INCONCLUSIVE, never PASS. Run: node common/door/tests/witness_red1_record.js > common/door/tests/logs/red1_record.log 2>&1
@@ -89,8 +93,8 @@ const tabRows = (out) => { const L = out.split('\n'), i = L.findIndex(l => /^tab
     const fin = (text) => { const a = core.step(pj({ paras: JSON.parse(JSON.stringify(paras)) }), { text }), q = a.state.asking && a.state.asking.input || '', b = a.state.asking ? core.step(a.state, { text: '' }) : a; return { first: q, line: (b.effects[0] && b.effects[0].line) || '' }; };   // the questions, then Return keeps the default: the line that would run
     const rn = fin('run "Generate PO from Project"'), rl = rn.line, ask = rn.first, tp = fin('run "Generate PO from Project" C_Project_ID=990001'), tl = tp.line;
     k.L('R5 do=' + dO.line + ' cat=' + cat.line + ' set=' + set.line + ' typed=' + typed.line + ' run=' + rl + ' first question=' + ask + ' typed key=' + tl);
-    k.chk('R5 in a record the words leave out what it already says: `do CO` -> number=S00023 (the record\'s own), `cat` and `set Description=x` -> id=1200001, `run "Generate PO from Project"` -> record=990000 + C_Project_ID=990000, the first question is not the project; a typed number/key wins',
-      dO.line === 'erp.complete kind=Order number=S00023' && cat.line === 'mis.read kind=Order id=1200001' && set.line === 'mis.update kind=Order id=1200001 Description=x' && typed.line === 'erp.complete kind=Order number=80000'
+    k.chk('R5 in a record the words leave out what it already says: `do CO` -> id=1200001 (the record\'s own key, §45 K1), `cat` and `set Description=x` -> id=1200001, `run "Generate PO from Project"` -> record=990000 + C_Project_ID=990000, the first question is not the project; a typed number/key wins',
+      dO.line === 'erp.complete kind=Order id=1200001' && cat.line === 'mis.read kind=Order id=1200001' && set.line === 'mis.update kind=Order id=1200001 Description=x' && typed.line === 'erp.complete kind=Order number=80000'
         && !!rl && / record=990000/.test(rl) && / C_Project_ID=990000/.test(rl) && ask !== 'C_Project_ID' && / C_Project_ID=990001/.test(tl) && !/ C_Project_ID=990000/.test(tl), rl);
   }
   // R7 + R8 on the seed (a clean op-log): Order -> lines and tax, Business Partner -> locations, by the SAME words
@@ -112,6 +116,28 @@ const tabRows = (out) => { const L = out.split('\n'), i = L.findIndex(l => /^tab
     k.L('R8 prompts ' + JSON.stringify(W3) + ' pwd ' + JSON.stringify(pw));
     k.chk('R8 `cd Project "BIM: Hospital"` (Name), `cd Project Hospital` (Value) and `cd Project 990000` (id) are ONE record (id 990000); `cd Project NoSuchProject` is refused with the reason and the session stays in the Project list',
       pw.length === 3 && pw.every(l => l === 'kind=Project id=990000') && W3[10] === 'red1 Project>' && /cd: no Project "NoSuchProject"/.test(S3.out), pw.join(' | ') + ' · last ' + W3[10]);
+  }
+  // R9 (§45): a record whose DocumentNo is shared is still acted on, by its id
+  {
+    const twins = sq("SELECT c_order_id AS id FROM c_order WHERE documentno = (SELECT documentno FROM c_order WHERE c_order_id = 100) ORDER BY 1");
+    if (twins.length < 2) k.incon('R9', 'the seed holds no second Order with order 100\'s number: nothing to judge (' + JSON.stringify(twins) + ')');
+    else {
+      const E9 = fresh(), S9 = session(['cd Order 100', 'do RE', 'do CO', 'exit'], E9), A9 = arrows(S9.out);
+      const st9 = (S9.err.match(/^§DOOR .*verb=erp\.(reactivate|complete) status=\w+/mg) || []).map(l => l.replace(/^.*verb=/, ''));
+      const re = A9.find(l => /^erp\.reactivate /.test(l)) || '', co = A9.find(l => /^erp\.complete /.test(l)) || '';
+      k.L('R9 twins=' + JSON.stringify(twins.map(t => t.id)) + ' lines ' + JSON.stringify([re, co]) + ' door ' + JSON.stringify(st9));
+      k.chk('R9 in `cd Order 100` (its number 80000 is also order ' + twins.filter(t => t.id !== 100).map(t => t.id).join(',') + '\'s) `do RE` -> erp.reactivate kind=Order id=100 ok, then `do CO` -> erp.complete kind=Order id=100 ok',
+        re === 'erp.reactivate kind=Order id=100' && co === 'erp.complete kind=Order id=100' && JSON.stringify(st9) === JSON.stringify(['erp.reactivate status=ok', 'erp.complete status=ok']), re + ' | ' + co + ' | ' + st9.join(','));
+    }
+  }
+  // R10 (§45 K3): a record named inside its kind, from the menu walk
+  {
+    const S10 = session(['menu', 'cd Quote', 'cd "Sales Orders"', 'cd "Sales Order"', 'cd 100', 'cd ..', 'cd Foo', 'exit'], fresh()), W10 = wheres(S10.err), A10 = arrows(S10.out);
+    const base = 'red1 menu/Quote-to-Invoice (Sales)/Sales Orders/Order>', inRec = 'red1 menu/Quote-to-Invoice (Sales)/Sales Orders/Order/80000>';
+    k.L('R10 prompts ' + JSON.stringify(W10) + ' lines ' + JSON.stringify(A10.filter(l => /^mis\.read /.test(l))));
+    if (!W10.length) k.incon('R10', 'the session logged no place (no §RED1 typed line): nothing to judge');
+    else k.chk('R10 in the walk at Order, `cd 100` enters order 100 (mis.read kind=Order id=100) and the prompt keeps the menu path (' + inRec + '); `cd ..` -> ' + base + '; `cd Foo` there is refused as before',
+      W10[3] === base && W10[4] === inRec && W10[5] === base && W10[6] === base && A10.indexOf('mis.read kind=Order id=100') >= 0 && /no building, kind or ERP window is named "Foo"/.test(S10.out), JSON.stringify(W10.slice(3, 7)));
   }
   k.end();
 })().catch(e => { console.log('§W-RED1-RECORD FAIL ' + (e && e.stack || e)); process.exit(1); });

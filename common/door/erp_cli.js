@@ -413,7 +413,11 @@ function act(O, a, code) {
   if (!run.ok) refuse(aname + ' was not done: ' + (run.msg || ('status ' + run.status)) + ' (DocStatus stays ' + before + ')');
   const ops = persistGroup(O, run.ops), after = O.rows('SELECT * FROM ' + K.table + ' WHERE ' + K.key + '=?', [id])[0], rel = relatedDocs(O, K, id), facts = factsOf(O, K, id);
   say('act-done ' + code + ' id=' + id + ' docStatus=' + after.docstatus + ' related=' + rel.map(x => x.kind + ':' + x.rows.length).join(',') + ' facts=' + (facts == null ? 'no-fact-table' : facts.length));
-  return { document: brief(K, after), before: { docStatus: before }, after: { docStatus: after.docstatus, docAction: after.docaction, processed: after.processed, grandTotal: after.grandtotal == null ? null : after.grandtotal }, ops: ops.map(o => ({ op_type: o.op_type, table: o.table, id: o.op_type === 'CRUD_CREATE' ? (o.fields && o.fields[o.idCol]) : o.id })), opSummary: sum(ops), related: rel, facts: facts == null ? 'no-fact-table' : facts, engine: lines, actions: actionsOf(O, K, after, {}).offered };
+  const offeredNow = actionsOf(O, K, after, {}).offered, stName = (O.rows('SELECT name FROM ad_ref_list WHERE ad_reference_id=131 AND value=?', [after.docstatus])[0] || { name: after.docstatus }).name;
+  const relLine = rel.map(x => { const c = {}; x.rows.forEach(rw => { c[rw.docStatus] = (c[rw.docStatus] || 0) + 1; }); return x.kind + ' ' + x.rows.length + ' (' + Object.keys(c).map(k2 => k2 + ' ' + c[k2]).join(', ') + ')'; }).join(' · ');
+  const summary = BREAK === 'nosummary' ? undefined : aname + ': done · ' + K.name + ' ' + (K.numCol && after[K.numCol] != null ? after[K.numCol] : id) + ' ' + before + ' → ' + after.docstatus + ' (' + stName + ')' + (after.grandtotal != null ? ' · grand total ' + after.grandtotal : '') +   // §46 A1: what a person reads first (nosummary: W-RED1-ACT falsifier, must FAIL A1)
+    (relLine ? '\n  related: ' + relLine : '') + '\n' + ops.length + ' change(s) kept · it may do: ' + (offeredNow.join(', ') || 'nothing');
+  return { summary, document: brief(K, after), before: { docStatus: before }, after: { docStatus: after.docstatus, docAction: after.docaction, processed: after.processed, grandTotal: after.grandtotal == null ? null : after.grandtotal }, ops: ops.map(o => ({ op_type: o.op_type, table: o.table, id: o.op_type === 'CRUD_CREATE' ? (o.fields && o.fields[o.idCol]) : o.id })), opSummary: sum(ops), related: rel, facts: facts == null ? 'no-fact-table' : facts, engine: lines, actions: offeredNow };
 }
 
 const complete = (O, a) => act(O, a, ACT.complete);

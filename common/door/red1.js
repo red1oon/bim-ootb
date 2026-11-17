@@ -116,7 +116,7 @@ function makeShell(o) {
       if (!r.effects.length) break;
       const ef = r.effects[0], e = await exec(ef.line, ef.shown, ef.match);
       if (!e) break;
-      if (ef.purpose === 'run') { const v = viewOf(e, ef.match); envs.push(v); await io.show(v, ef.view, ef.draw, ef.ctx); offerOf(v); r = { state: st, effects: r.effects.slice(1), screen: [] }; continue; }
+      if (ef.purpose === 'run') { const v = viewOf(e, ef.match); envs.push(v); await io.show(v, ef.view, ef.draw, ef.ctx); offerOf(v); st = core.step(st, { result: { purpose: 'ran', envelope: v } }).state; r = { state: st, effects: r.effects.slice(1), screen: [] }; continue; }   // §46 A4: the record's offers follow the answer
       r = core.step(st, { result: { purpose: ef.purpose, envelope: e } });
     }
     return envs;
@@ -167,6 +167,9 @@ async function session(o) {
     const room = (process.stdout.columns || 80) - sh.prompt().length - line.length - 1; if (t.length > room) t = room > 0 ? t.slice(0, room) : '';
     process.stdout.write('\x1b[0K' + (t ? '\x1b[90m' + t + '\x1b[0m\x1b[' + t.length + 'D' : ''));
   };
+  if (tty) process.stdin.prependListener('keypress', (c, key) => {   // §46 A2: the grey suggestion is erased BEFORE readline ends the line (readline's own keypress handler runs first otherwise, and the grey text stayed on the finished line: film rc1 Found 5)
+    if (key && (key.name === 'return' || key.name === 'enter') && hint && process.env.ASSIST_BREAK !== 'keephint') { process.stdout.write('\x1b[0K'); say('assist erased on return'); }   // keephint: W-RED1-ASSIST falsifier (must FAIL A9)
+  });
   if (tty) process.stdin.on('keypress', (c, key) => {
     if (key && (key.name === 'return' || key.name === 'enter')) return;
     if (key && key.name === 'right' && hint && hint.ghost && rl.cursor === (rl.line || '').length) { const g = hint.ghost; hint = null; say('assist take ghost=' + JSON.stringify(g)); rl.write(g); return; }
