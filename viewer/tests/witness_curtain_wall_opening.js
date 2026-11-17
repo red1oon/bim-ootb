@@ -118,6 +118,7 @@ function gate(name, pass, detail) {
   console.log(`${pass ? 'PASS' : 'FAIL'}  ${name}  ${detail}`);
 }
 
+const { bxeDeps: __bxeDeps } = require(require('path').join(__dirname, '_bxe_deps.js'));   // §Q.10: the element build's delegates, one list
 function sliceFn(src, name, which) {
   let from = 0;
   for (let pass = 0; pass <= (which || 0); pass++) {
@@ -214,7 +215,7 @@ function countEarly(pairs, getS, getE, sccOf) {
     // §SCHEDULE_CLASSIFY_DEDUP (2026-08-15): _buildXrayElements' local matchNameOverride/matchRule
     // now delegate to this shared pair — rides along verbatim, same idiom as the zone helpers above.
     sliceFn(tmSrc, '_classifyNameOverride'), sliceFn(tmSrc, '_classifyRule'),
-    sliceFn(tmSrc, '_promoteRoofLoadPath'), sliceFn(tmSrc, '_buildXrayElements'),
+    __bxeDeps(tmSrc), sliceFn(tmSrc, '_promoteRoofLoadPath'), sliceFn(tmSrc, '_buildXrayElements'),
     'var _contactGraph = SupportSweep.contactGraph, _designatedSupport = SupportSweep.designatedSupport, _midairAudit = SupportSweep.midairAudit;',   // §S58: real module, not source-text slices
     sliceFn(tmSrc, '_displayTimelineRemember'), sliceFn(tmSrc, '_displayTimeline')].filter(Boolean).join('\n');
 

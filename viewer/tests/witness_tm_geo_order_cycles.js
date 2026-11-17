@@ -75,6 +75,9 @@ const BLD_DIR = process.env.BLD_DIR || path.join(require('os').homedir(), 'bim-o
   // Pre-refactor: _promoteRoofLoadPath doesn't exist yet — _buildXrayElements carries the inline
   // copy. Same witness runs on both commits (the invariance harness, ISSUE 2 above).
   const names = ['_buildXrayElements'];
+  for (const dep of require(require('path').join(__dirname, '_bxe_deps.js')).DEPS) {   // §Q.10: the element build's delegates
+    if (new RegExp('^[ \\t]*function ' + dep + '\\(', 'm').test(tmSrc)) names.push(dep);
+  }
   const hasPromote = tmSrc.indexOf('function _promoteRoofLoadPath(') >= 0;
   if (hasPromote) names.unshift('_promoteRoofLoadPath');
   // §S62: _buildXrayElements' real dependency closure. It calls _classifyRule (which calls
