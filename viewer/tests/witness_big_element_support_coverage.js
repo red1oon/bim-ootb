@@ -154,6 +154,9 @@ const BUILDINGS = [
   const BIG = ScheduleGate.BIG_ELEMENT_VOL;
 
   const names = ['_buildXrayElements'];
+  for (const dep of require(require('path').join(__dirname, '_bxe_deps.js')).DEPS) {   // §Q.10: the element build's delegates
+    if (new RegExp('^[ \\t]*function ' + dep + '\\(', 'm').test(tmSrc)) names.push(dep);
+  }
   if (tmSrc.indexOf('function _promoteRoofLoadPath(') >= 0) names.unshift('_promoteRoofLoadPath');
   // §S62: _buildXrayElements' real dependency closure. It calls _classifyRule (which calls
   // _classifyNameOverride) and _zoneIndex — none of which were in this slice set, so the witness

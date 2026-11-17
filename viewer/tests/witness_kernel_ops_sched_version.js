@@ -64,6 +64,7 @@ const tmSrc = __readSrc(path.join(__dirname, '..', 'time_machine.js'), 'utf8');
 // §DAY_GAP_TAIL discipline, applied here 2026-08-12 (§ARCH_START_TEMPO / M1): `optional` lets a
 // helper that a newer time_machine.js introduced be sliced without breaking on a revision that
 // predates it — same shape witness_midair_zero.js and bim-compiler/scripts/probe_arch_start.js use.
+const { bxeDeps: __bxeDeps } = require(require('path').join(__dirname, '_bxe_deps.js'));   // §Q.10: the element build's delegates, one list
 function sliceFn(src, name, optional) {
   const idx = src.indexOf('function ' + name + '(');
   if (idx < 0) { if (optional) return null; throw new Error(name + ' not found'); }
@@ -115,6 +116,7 @@ const sliced = ['var _CPM_DISPLAY = true;',   // §S20: the only branch left rea
   classifyParts[0] || '', classifyParts[1] || '',
   sliceFn(tmSrc, '_kernelOpsSchedStale'),
   sliceFn(tmSrc, '_promoteRoofLoadPath'),
+  __bxeDeps(tmSrc),
   sliceFn(tmSrc, '_buildXrayElements'),
   'var _contactGraph = SupportSweep.contactGraph, _designatedSupport = SupportSweep.designatedSupport, _midairAudit = SupportSweep.midairAudit;',   // §S58: real module, not source-text slices
   sliceFn(tmSrc, '_displayTimelineRemember'), sliceFn(tmSrc, '_displayTimeline')

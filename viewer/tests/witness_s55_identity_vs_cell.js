@@ -70,6 +70,7 @@ let pass = 0, fail = 0;
 function assert(cond, msg) { if (cond) { pass++; console.log('  PASS ' + msg); } else { fail++; console.log('  FAIL ' + msg); } }
 function finish() { console.log('\n§S55_SUMMARY pass=' + pass + ' fail=' + fail); process.exit(fail ? 1 : 0); }
 
+const { bxeDeps: __bxeDeps } = require(require('path').join(__dirname, '_bxe_deps.js'));   // §Q.10: the element build's delegates, one list
 function sliceFn(src, name, which, optional) {
   let from = 0;
   for (let p = 0; p <= (which || 0); p++) {
@@ -94,7 +95,7 @@ const sliced = ['var _CPM_DISPLAY = true;',
   (zoneParts.length === 2 ? 'var _zoneMemo = [];' : ''), zoneParts[0] || '', zoneParts[1] || '',
   sliceFn(tmSrc, '_zoneOf', 0, true) || '',
   classifyParts[0] || '', classifyParts[1] || '',
-  sliceFn(tmSrc, '_promoteRoofLoadPath'), sliceFn(tmSrc, '_buildXrayElements'),
+  __bxeDeps(tmSrc), sliceFn(tmSrc, '_promoteRoofLoadPath'), sliceFn(tmSrc, '_buildXrayElements'),
   'var _contactGraph = SupportSweep.contactGraph, _designatedSupport = SupportSweep.designatedSupport, _midairAudit = SupportSweep.midairAudit;',   // §S58: real module, not source-text slices
   sliceFn(tmSrc, '_displayTimelineRemember'), sliceFn(tmSrc, '_displayTimeline')].join('\n');
 
@@ -111,7 +112,8 @@ const BLD_DIR = process.env.BLD_DIR || path.join(require('os').homedir(), 'bim-o
 // §S39/§S37-A2 rule: prefer <bld>_meta.db when it exists, else <bld>_extracted.db — and LOG it.
 function resolveDbFile(bld) {
   const meta = path.join(BLD_DIR, bld + '_meta.db');
-  if (fs.existsSync(meta)) return { path: meta, kind: 'meta' };
+  // META only when the split PAIR exists and the meta half is non-empty (the viewer's rule; Duplex_meta.db is a 0-byte trap — §Q.10)
+  if (fs.existsSync(meta) && fs.statSync(meta).size >= 100 && fs.existsSync(path.join(BLD_DIR, bld + '_geo.db'))) return { path: meta, kind: 'meta' };
   return { path: path.join(BLD_DIR, bld + '_extracted.db'), kind: 'extracted' };
 }
 const BUILDINGS = (process.env.ONLY || 'Hospital,Terminal,Clinic').split(',');
