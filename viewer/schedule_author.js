@@ -1018,23 +1018,49 @@
     if (!G.ok) { console.log('§D6_HANG_FILING INACTIVE — contact graph unavailable'); return null; }
     var des = CP.designatedSupport(items, G), SG = g.ScheduleGate || (global && global.ScheduleGate);
     var EPS = SG.EPS, GAP = SG.GAP, rank = function (k) { return (bandRank && bandRank[k] != null) ? bandRank[k] : null; };
-    var hung = {}, moved = 0, byPhase = {}, toLevel = {}, otherRel = 0, unranked = 0, judged = 0;
-    for (var i = 0; i < items.length; i++) {
-      var a = des[i]; if (a < 0) continue;
-      var T2 = items[i], S = items[a], ki = collapse(elements[i].storey), ka = collapse(elements[a].storey);
-      if (ki === ka) continue;
-      var ri = rank(ki), ra = rank(ka);
-      if (ri == null || ra == null) { unranked++; continue; }
-      if (ra <= ri) continue;
+    var hung = {}, moved = 0, byPhase = {}, toLevel = {}, otherRel = 0, unranked = 0, judged = 0, chained = 0;
+    // §Q.13 (2026-11-17): ANY elected relation, and TRANSITIVE. (1) The first cut moved hung elements only and left an
+    // element whose BEARER is filed on a higher-ranked label where it was (Terminal 363: 205 roof plates in
+    // `Ceiling Level 03` resting on members filed in `04 THIRD FLOOR`, a bar that starts later). An element cannot be
+    // built before what it stands on any more than before what it hangs from. (2) One pass is not closed: when T moves
+    // up to its support's level, whatever T supports is left in a bar that now ends before T's (measured, single pass:
+    // LTU 6,680 -> 6,947). So the level an element is filed on is the highest level along its chain of elected supports:
+    // eff(i) = max(own, eff(support(i))). Each element elects at most one support, so the chain is a simple walk; a
+    // ring of mutual supports takes the ring's highest level.
+    var n = items.length, effKey = new Array(n), effRank = new Float64Array(n), st = new Uint8Array(n), i, k;
+    for (i = 0; i < n; i++) {
+      effKey[i] = collapse(elements[i].storey);
+      var r0 = rank(effKey[i]); effRank[i] = (r0 == null) ? NaN : r0;
+    }
+    for (i = 0; i < n; i++) {
+      if (st[i]) continue;
+      var walk = [], u = i;
+      while (u >= 0 && !st[u]) { st[u] = 1; walk.push(u); u = des[u]; }
+      if (u >= 0 && st[u] === 1) {                             // a ring: every member takes the ring's highest level
+        var at = walk.indexOf(u), bk = null, br = -Infinity;
+        for (k = at; k < walk.length; k++) if (effRank[walk[k]] > br) { br = effRank[walk[k]]; bk = effKey[walk[k]]; }
+        for (k = at; k < walk.length; k++) if (bk != null && !isNaN(effRank[walk[k]])) { effRank[walk[k]] = br; effKey[walk[k]] = bk; }
+      }
+      for (k = walk.length - 1; k >= 0; k--) {                 // supports first, back down the walk
+        var w = walk[k], a = des[w];
+        if (a >= 0 && !isNaN(effRank[w]) && !isNaN(effRank[a]) && effRank[a] > effRank[w]) { effRank[w] = effRank[a]; effKey[w] = effKey[a]; }
+        st[w] = 2;
+      }
+    }
+    for (i = 0; i < n; i++) {
+      var own = collapse(elements[i].storey);
+      if (des[i] >= 0 && (rank(own) == null || isNaN(effRank[i]))) { unranked++; continue; }
+      if (effKey[i] === own) continue;
       judged++;
-      var below = S.bz < T2.bz - EPS && S.tz >= T2.bz - GAP, embedded = S.bz <= T2.bz + EPS && S.tz >= T2.tz - EPS;
-      if (below || embedded) { otherRel++; continue; }        // not hung: a bearing/embedded support on a higher-ranked label
-      hung[T2.guid] = ka; moved++;
+      var S = items[des[i]], T2 = items[i];
+      if (effKey[i] !== collapse(elements[des[i]].storey)) chained++;      // moved further than its direct support's own label
+      if ((S.bz < T2.bz - EPS && S.tz >= T2.bz - GAP) || (S.bz <= T2.bz + EPS && S.tz >= T2.tz - EPS)) otherRel++;
+      hung[T2.guid] = effKey[i]; moved++;
       byPhase[elements[i].phase || '_'] = (byPhase[elements[i].phase || '_'] || 0) + 1;
-      toLevel[ka] = (toLevel[ka] || 0) + 1;
+      toLevel[effKey[i]] = (toLevel[effKey[i]] || 0) + 1;
     }
     console.log('§D6_HANG_FILING elements=' + items.length + ' electedSupportOnAHigherLevel=' + judged + ' movedToCarrierLevel=' + moved +
-      ' notHung(bearing/embedded, left)=' + otherRel + ' unrankedLevel(left)=' + unranked +
+      ' ofWhichBearingOrEmbedded=' + otherRel + ' viaChain=' + chained + ' unrankedLevel(left)=' + unranked +
       ' byPhase=' + JSON.stringify(byPhase) + ' toLevels=' + Object.keys(toLevel).length);
     if (!moved) return null;
     return { keyOf: function (el) { return hung[el.guid] || collapse(el.storey); }, hangMoved: moved };
