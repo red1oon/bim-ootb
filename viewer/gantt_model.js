@@ -77,12 +77,10 @@
     return FALLBACK_PHASE_ORDER.slice();
   }
 
-  // §S51 item d (PR #1444) — the drawer groups bars BY THE SCHEDULE'S OWN CELLS. Precedence, in
-  // order: a real authored task id (exact, by guid) → the cell stamp the cell-path engine wrote →
-  // the un-authored storey|phase fallback. Ops with no task stay non-editable.
-  function groupKeyOf(taskId, cellId, storey, phase) {
-    return taskId ? ('T:' + taskId)
-         : (cellId ? ('C:' + cellId) : (storey + '|' + phase));
+  // Grouping precedence: a real authored task id (exact, by guid), else the un-authored storey|phase
+  // fallback. Ops with no task stay non-editable.
+  function groupKeyOf(taskId, storey, phase) {
+    return taskId ? ('T:' + taskId) : (storey + '|' + phase);
   }
 
   // buildTasks() — the storey|phase rollup, task-identity-aware (K0). Grouping key is the REAL
@@ -105,15 +103,12 @@
       var p = op.parameters || {};
       var storey = p.storey || '_UNKNOWN';
       var phase = p.phase || 'Architecture';
-      // Real task identity first (exact, by guid); then §S51's cell stamp (the schedule's own
-      // grain, present only on cell-path generations); storey|phase only as the un-authored
-      // fallback — graph-path buildings and pre-§S51 ops group exactly as before.
+      // Real task identity first (exact, by guid); storey|phase only as the un-authored fallback.
       var tid = idx && op.output_guid ? idx.guidTask[op.output_guid] : null;
       if (tid) _idN++; else _noIdN++;
-      var cellId = (!tid && p._cell) ? String(p._cell) : null;
-      var key = groupKeyOf(tid, cellId, storey, phase);
-      if (!groups[key]) groups[key] = { storey: cellId ? (cellId.split('\u00b7')[2] || storey) : storey,
-        phase: phase, cell: cellId || null, taskId: tid || null,
+      var key = groupKeyOf(tid, storey, phase);
+      if (!groups[key]) groups[key] = { storey: storey,
+        phase: phase, taskId: tid || null,
         taskName: tid && idx.tasks[tid] ? idx.tasks[tid].name : null,
         starts: [], ends: [], count: 0, cap: 0, guids: [] };
       var g = groups[key];

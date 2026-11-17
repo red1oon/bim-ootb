@@ -16,7 +16,7 @@
 // building numbers are the other witness's job (witness_midair_zero.js, 7 buildings, locked
 // baselines) — this one pins the rules those numbers are produced BY.
 //
-//   W-GM-1  grouping precedence: task id > cell stamp > storey|phase (the §S51 rule)
+//   W-GM-1  grouping precedence: task id > storey|phase; a leftover _cell stamp is ignored
 //   W-GM-2  one outlier member cannot define a bar's span (§GANTT_MINI_TRIM), n=1 stays non-negative
 //   W-GM-3  row order is DERIVED from SEQUENCE_RULES, not a hardcoded copy (§GANTT_ROW_ORDER)
 //   W-GM-4  an unknown phase sorts AFTER the known ones, never at position 0
@@ -39,24 +39,21 @@ function op(day, len, storey, phase, extra) {
            output_guid: 'g' + (++_g), parameters: p };
 }
 
-// ── W-GM-1 — grouping precedence. The SAME three ops, differing only in what identity they carry.
-// If the cell stamp were dropped (the §S51 item-d regression this guards), all three collapse into
-// one storey|phase bar and the count silently drops from 3 to 1 — visible here, not on a screen.
+// ── W-GM-1 — grouping precedence: a real task id, else storey|phase. The per-cell key went with the cell
+// solver (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.15.1); a leftover _cell parameter on an old op is ignored.
 {
-  assert(GM.groupKeyOf('T7', 'L1·Arch·0', 'L1', 'Architecture') === 'T:T7',
-    'W-GM-1a a real authored task id wins over both the cell stamp and storey|phase');
-  assert(GM.groupKeyOf(null, 'L1·Arch·0', 'L1', 'Architecture') === 'C:L1·Arch·0',
-    'W-GM-1b with no task id, the schedule\'s own cell stamp is the grain');
-  assert(GM.groupKeyOf(null, null, 'L1', 'Architecture') === 'L1|Architecture',
-    'W-GM-1c with neither, the un-authored storey|phase fallback (graph-path buildings)');
+  assert(GM.groupKeyOf('T7', 'L1', 'Architecture') === 'T:T7',
+    'W-GM-1a a real authored task id wins over storey|phase');
+  assert(GM.groupKeyOf(null, 'L1', 'Architecture') === 'L1|Architecture',
+    'W-GM-1c with no task id, the un-authored storey|phase fallback');
 
-  const cells = GM.buildTasks([op(0, 1, 'L1', 'Architecture', { _cell: 'L1·Arch·0' }),
+  const stale = GM.buildTasks([op(0, 1, 'L1', 'Architecture', { _cell: 'L1·Arch·0' }),
                                op(1, 1, 'L1', 'Architecture', { _cell: 'L1·Arch·1' }),
                                op(2, 1, 'L1', 'Architecture', { _cell: 'L1·Arch·2' })], null, null).tasks;
   const flat = GM.buildTasks([op(0, 1, 'L1', 'Architecture'), op(1, 1, 'L1', 'Architecture'),
                               op(2, 1, 'L1', 'Architecture')], null, null).tasks;
-  assert(cells.length === 3 && flat.length === 1,
-    'W-GM-1d end to end: three cell stamps make three bars, the same ops without stamps make one');
+  assert(stale.length === 1 && flat.length === 1 && stale[0].startTs === flat[0].startTs && stale[0].endTs === flat[0].endTs && stale[0].cell === undefined,
+    'W-GM-1d a leftover _cell stamp on old ops is ignored: the same one storey|phase bar with or without it');
 
   // The identity counters are what the §GANTT_BAR_IDENTITY log line reports as editable/not.
   const idx = { guidTask: {}, tasks: { T1: { name: 'Pour L1' } } };
