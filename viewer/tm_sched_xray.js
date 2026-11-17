@@ -371,14 +371,14 @@
       // Terminal's 24k wall-carried cone) but were INVISIBLE here, so their dependents were never
       // staged/gated against them — the guard (_ogSupportSweep) applies the IDENTICAL pool, the
       // pair stays one physics (witness_og_guard_bearing_bound W-OGB-3).
-      if (e.seq <= 4 || (e.cls === 'IfcSlab' && e.seq > 4)) { cs = cellsOf(e); for (c = 0; c < cs.length; c++) (structGrid[cs[c]] = structGrid[cs[c]] || []).push(e); }
+      if (e.seq <= 4 || (e.cls === 'IfcSlab' && e.seq > 4 && e.phase !== 'Finishes')) { cs = cellsOf(e); for (c = 0; c < cs.length; c++) (structGrid[cs[c]] = structGrid[cs[c]] || []).push(e); }
       else if (e.cls && e.cls.indexOf('IfcWall') === 0) { cs = cellsOf(e); for (c = 0; c < cs.length; c++) (wallGrid[cs[c]] = wallGrid[cs[c]] || []).push(e); }
     }
     var eCount = 0;
     for (i = 0; i < elements.length; i++) {
       T = elements[i];
       var sc = schedMap[T.guid]; if (!sc) continue;
-      var promotedSlab = (T.cls === 'IfcSlab' && T.seq > 4);
+      var promotedSlab = (T.cls === 'IfcSlab' && T.seq > 4 && T.phase !== 'Finishes');
       cs = cellsOf(T);
       // §OG_BEARING_BOUND (2026-08-11) — the judge half of the guard's two-tier bearing rule (see
       // §PHASE_OVERLAP_SUPPORT_GUARD below for the full ruling): carriers topping within T's own
