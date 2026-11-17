@@ -1,0 +1,15 @@
+{
+ "_about": "Reinforcement rule rows for the LOD Upgrade pack 'Rebar from schedule' (bim-ootb prompts/MODELLER_LOD_UPGRADE_PILL.md section 3; ported from bim-compiler scripts/lod/rebar_defaults.json). Every row: value, unit, source. source = 'stated: <where the drawing says it>' | 'default: ours (...)' | 'default: <standard and table>' | 'unset: ...' (no value read yet). A stated schedule value read from the model always wins over a row here, and a row filled in with a 'stated:' source wins over a default. Change a row, re-run; no code change. No project values are kept in this file.",
+ "footing_cover_mm": {"value": 75, "unit": "mm", "source": "default: ours (concrete cast against earth, practice; no clause read)"},
+ "column_cover_mm": {"value": 40, "unit": "mm", "source": "default: ours (practice; no clause read)"},
+ "tie_hooks_modelled": {"value": "no", "unit": "-", "source": "default: ours (hooks not modelled; logged)"},
+ "cross_ties_modelled": {"value": "no", "unit": "-", "source": "default: ours (no cross-ties; logged)"},
+ "laps_modelled": {"value": "no", "unit": "-", "source": "default: ours (no laps; every bar is checked against the stock length)"},
+ "stock_length_mm": {"value": 12000, "unit": "mm", "source": "default: ours (12 m stock bar length used only for the no-lap check)"},
+ "column_zone_A_stated_in": {"value": null, "unit": "in", "source": "unset: no stated end-zone length read yet (enter the length the drawing writes next to (A), with a 'stated:' source, and it wins)"},
+ "column_zone_A_rule": {"value": "max(stated, L/6)", "unit": "-", "source": "default: ours (reading of the two labels on a typical column long section: a stated length and 'L/6'; L = clear height, footing top to beam soffit)"},
+ "bar_sides": {"value": 8, "unit": "no.", "source": "default: ours (facets of a bar prism)"},
+ "inside_tol_mm": {"value": 1.0, "unit": "mm", "source": "default: ours (INSIDE witness tolerance, from the spec: cover - 1 mm)"},
+ "footing_bottom_layer": {"value": "L_Bar", "unit": "-", "source": "default: ours (layer order is not on the schedule; long-side bars lowest)"},
+ "column_bar_face_normal_axis": {"value": "x", "unit": "-", "source": "default: ours (which two opposite faces carry the 3 + 3 main bars is not drawn)"}
+}
