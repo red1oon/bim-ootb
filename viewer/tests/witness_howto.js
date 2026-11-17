@@ -12,6 +12,9 @@
 //   H4 PAGE     — "the user never sees it": viewer.html + Duplex, F1 → the palette shows a guide link on X of N entries
 //                 (N = the page's own pill list, which must equal the file's); a word only in a bullet finds its pill, opened;
 //                 Find shows its 3 CLI lines; in de_DE the bullets are German and the label says the guide is English.
+//   H5 TIE     — "a new section that merely comes first steals a tool's link" (§14.3.2): an equal mention count goes to the
+//                 section whose heading shares a word with the pill's name, in either page order; mentions still dominate; a tie with no
+//                 shared word keeps the first. Offline, synthetic page. Red control: the OLD rule (1e6+n, first wins) must FAIL H5a.
 //   RED CONTROL — a made-up anchor, a section that does not name its pill, and a phrase not in the verb must FAIL (contract kit).
 // usage: NODE_PATH=~/bim-ootb/node_modules:~/bim-compiler/node_modules node viewer/tests/witness_howto.js [--no-page]
 //        [BUILDINGS=<dir with Duplex_extracted.db>, default ~/bim-ootb/viewer/buildings]
@@ -32,6 +35,21 @@ let fails = 0; const ck = (id, ok, msg) => { log((ok ? '§PASS ' : '§FAIL ') + 
   (r.stdout || '').split('\n').filter(Boolean).forEach(l => log('  ' + l));
   if (r.status === 2) { log('§W-HOWTO INCONCLUSIVE live guide unreachable — nothing judged'); process.exit(2); }
   ck('H1', r.status === 0 && /check same/.test(r.stdout), 'howto.json == generator output on today\'s inputs');
+
+  // H5 — the tie rule, on synthetic pages (no fetch). One pill 'Save Building'; the page order and the mention counts are the variables.
+  { const pill = "var _actions = [\n      { id: 'save',      name: 'Save Building', children: [] }\n    ];";
+    const sec = (id, head, body) => '<h2 id="' + id + '">' + head + '</h2><p>' + body + '</p>';
+    const pick = html => { const o = B.build(html, pill, []); return o.pills.save.guide && o.pills.save.guide.anchor; };
+    const HELP = sec('help', 'Help and the command line', 'Press F1. Save Building is in the list.'), SAVE = sec('save-open', 'Save and open a building', 'Use Save Building to keep the model.');
+    const oldRule = html => { let best = null; B.sections(html).forEach(s => { let n = 0, i = 0; while ((i = s.body.indexOf('Save Building', i)) >= 0) { n++; i += 13; } const score = (s.heading.indexOf('Save Building') >= 0 ? 1e6 : 0) + n; if (score > 0 && (!best || score > best.score)) best = { anchor: s.anchor, score }; }); return best && best.anchor; };
+    const a = pick(HELP + SAVE), b = pick(SAVE + HELP), d = pick(sec('x', 'Overview', 'Save Building once.') + sec('y', 'Appendix', 'Save Building once.'));
+    ck('H5a tie, the sharing section is SECOND in the page -> it wins', a === 'save-open', 'picked ' + a);
+    ck('H5b same page, sections swapped -> the same one wins (order does not decide)', b === 'save-open', 'picked ' + b);
+    ck('H5c a section naming it twice beats a sharing section naming it once', pick(sec('twice', 'Appendix', 'Save Building. Save Building.') + SAVE) === 'twice', 'picked ' + pick(sec('twice', 'Appendix', 'Save Building. Save Building.') + SAVE));
+    ck('H5d a tie with no shared word keeps the first in the page', d === 'x', 'picked ' + d);
+    const o = oldRule(HELP + SAVE); ck('H5-red the OLD rule (1e6+n, first wins) picks the wrong one on H5a, so H5a can fail', o === 'help' && o !== a, 'old rule picked ' + o + ', new rule ' + a);
+    { const zero = B.build(sec('only', 'Save and open a building', 'Nothing about the tool by name here.'), pill, []).pills.save; ck('H5f a section that only SHARES a word but never names the pill is not linked', zero.guide === null, 'guide=' + JSON.stringify(zero.guide)); }
+    ck('H5e shared() counts words of 3+ letters in both', B.shared('Save and open a building', 'Save Building') === 2 && B.shared('Help - F1', 'Save Building') === 0, 'shared=' + B.shared('Save and open a building', 'Save Building')); }
 
   // population: one row per pill, judged against the LIVE guide
   const html = await (await fetch(H.guide + '?nc=' + Date.now())).text();
