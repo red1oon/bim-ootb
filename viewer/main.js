@@ -1312,6 +1312,32 @@ async function initViewer() {
       } else {
         console.log('§SCENE_STATE_RESTORE none (no scene_state table)');
       }
+      // §PARTS_VIEW (prompts/VIEWER_ELEMENT_PARTS.md): a DB whose element_parts has rows shows the PARTS instead of their host. parts_view.js is lazy: it loads only for such a DB.
+      // Waits for the same streamed-count gate as the scene-state restore plus its 1500ms; a Find isolate the restore (or the user) already set is never overridden.
+      try {
+        var ppT = APP.dbQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='element_parts'");
+        var ppN = (ppT && ppT.length) ? APP.dbQuery("SELECT COUNT(*) FROM element_parts") : null;
+        if (ppN && ppN[0] && ppN[0][0] > 0) {
+          var ppReady = new Promise(function(res, rej) {
+            if (window.setupPartsView) return res();
+            var s = document.createElement('script'); s.src = new URL('parts_view.js?v=1', document.baseURI).href;
+            s.onload = res; s.onerror = function() { rej(new Error('load failed parts_view.js')); }; document.head.appendChild(s);
+          });
+          var ppChecks = 0, ppTimer = setInterval(function() {
+            ppChecks++;
+            if (APP.streamedCount > 10 || ppChecks > 20) {
+              clearInterval(ppTimer);
+              setTimeout(function() {
+                ppReady.then(function() {
+                  if (!APP.partsView) window.setupPartsView(APP);
+                  if (APP.activeGuidFilter) { console.log('§PARTS_VIEW SKIP (an isolate is already active: not overridden)'); return; }
+                  APP.partsView(true);
+                }).catch(function(e) { console.warn('§PARTS_VIEW_FAIL ' + e.message); });
+              }, 1500);
+            }
+          }, 1500);
+        }
+      } catch (ePV) { console.warn('§PARTS_VIEW_FAIL ' + ePV.message); }
       // §LIGHT_FIELD_DB (light_zones.js SPEC S4): read the saved Alt+S light field out of the .db now, off the press path, so the
       // first Alt+S restores it (cache=hit src=db) instead of building it. Async; prime() at staging joins the same read.
       // §FILM_FIELD_BY_BUILDING: a db without its own row first borrows the building's baked sidecar (scene.js), then primes.
