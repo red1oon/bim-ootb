@@ -6,8 +6,8 @@
    "ad_message_base.csv",
    "AD_Message_Trl_ja_JP.xml"
   ],
-  "rows": 1028,
-  "translated": 939,
+  "rows": 1036,
+  "translated": 947,
   "untranslated": 89
  },
  "labels": {
@@ -1038,6 +1038,14 @@
   "ui_cls_ifcdef_of": "{cls} の IFC 定義",
   "ui_howto_guide": "ガイド",
   "ui_howto_guide_en": "ガイド（英語）",
-  "ui_howto_cli": "CLI での同じ操作"
+  "ui_howto_cli": "CLI での同じ操作",
+  "mdl_m_guide_title_2d": "2D 図面 → モデル",
+  "mdl_m_guide_title_outliner": "アウトライナー — ARC が先頭、Disc タブは 1 つ",
+  "mdl_m_guide_title_walker": "Disc = walker",
+  "mdl_m_guide_title_conformity": "適合ゲート",
+  "mdl_m_guide_title_author": "作成",
+  "mdl_m_guide_title_move": "移動と操作",
+  "mdl_m_guide_title_3dgrid": "3D グリッド",
+  "mdl_m_guide_title_export": "保存 / エクスポート"
  }
 }

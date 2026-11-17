@@ -6,8 +6,8 @@
    "ad_message_base.csv",
    "AD_Message_Trl_ko_KR.xml"
   ],
-  "rows": 1028,
-  "translated": 921,
+  "rows": 1036,
+  "translated": 929,
   "untranslated": 107
  },
  "labels": {
@@ -1038,6 +1038,14 @@
   "ui_cls_ifcdef_of": "{cls}의 IFC 정의",
   "ui_howto_guide": "가이드",
   "ui_howto_guide_en": "가이드(영어)",
-  "ui_howto_cli": "CLI에서 같은 작업"
+  "ui_howto_cli": "CLI에서 같은 작업",
+  "mdl_m_guide_title_2d": "2D 도면 → 모델",
+  "mdl_m_guide_title_outliner": "아웃라이너 — ARC 우선, Disc 탭은 하나",
+  "mdl_m_guide_title_walker": "Disc = walker",
+  "mdl_m_guide_title_conformity": "적합성 게이트",
+  "mdl_m_guide_title_author": "작성",
+  "mdl_m_guide_title_move": "이동 및 조작",
+  "mdl_m_guide_title_3dgrid": "3D 그리드",
+  "mdl_m_guide_title_export": "저장 / 내보내기"
  }
 }

@@ -1036,3 +1036,11 @@ CPM reads the dates the drag produced — it never changes one.",I
 1001025,ui_howto_guide,Guide,I
 1001026,ui_howto_guide_en,Guide (English),I
 1001027,ui_howto_cli,Same at the CLI,I
+1001028,mdl_m_guide_title_2d,2D drawings → model,I
+1001029,mdl_m_guide_title_outliner,"Outliner — ARC leads, ONE Disc tab",I
+1001030,mdl_m_guide_title_walker,Disc = walker,I
+1001031,mdl_m_guide_title_conformity,Conformity Gate,I
+1001032,mdl_m_guide_title_author,Author,I
+1001033,mdl_m_guide_title_move,Move & Manipulate,I
+1001034,mdl_m_guide_title_3dgrid,3D Grid,I
+1001035,mdl_m_guide_title_export,Save / Export,I

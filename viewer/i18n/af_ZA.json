@@ -6,8 +6,8 @@
    "ad_message_base.csv",
    "AD_Message_Trl_af_ZA.xml"
   ],
-  "rows": 1028,
-  "translated": 921,
+  "rows": 1036,
+  "translated": 929,
   "untranslated": 107
  },
  "labels": {
@@ -1038,6 +1038,14 @@
   "ui_cls_ifcdef_of": "IFC-definisie van {cls}",
   "ui_howto_guide": "Gids",
   "ui_howto_guide_en": "Gids (Engels)",
-  "ui_howto_cli": "Dieselfde in die CLI"
+  "ui_howto_cli": "Dieselfde in die CLI",
+  "mdl_m_guide_title_2d": "2D-tekeninge → model",
+  "mdl_m_guide_title_outliner": "Outliner — ARC voorop, EEN Disc-oortjie",
+  "mdl_m_guide_title_walker": "Disc = walker",
+  "mdl_m_guide_title_conformity": "Konformiteitspoort",
+  "mdl_m_guide_title_author": "Skep",
+  "mdl_m_guide_title_move": "Skuif en manipuleer",
+  "mdl_m_guide_title_3dgrid": "3D-rooster",
+  "mdl_m_guide_title_export": "Stoor / Voer uit"
  }
 }
