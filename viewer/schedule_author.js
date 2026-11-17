@@ -1735,7 +1735,8 @@
         // solveStart) — elements genuinely tied in the solve have no real "before" relationship, so
         // any deterministic order is equally valid; matching the witness's tie-break avoids a
         // false-positive reorder verdict on ties that are not a real order violation.
-        var ordered = grp.slice().sort(function (x, y) { return solve[x].start - solve[y].start || (x < y ? -1 : 1); });
+        // §TIE_ORDER: equal solve starts fall back to the solve's own finalisation rank (supports first) before the guid
+        var ordered = grp.slice().sort(function (x, y) { return solve[x].start - solve[y].start || ((solve[x].ord || 0) - (solve[y].ord || 0)) || (x < y ? -1 : 1); });
         var durs = ordered.map(function (g) { return Math.max(1, solve[g].end - solve[g].start); });
         var durTotal = durs.reduce(function (a, b) { return a + b; }, 0);
         // §ONE_LIFT (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.13): members of one election ring (the `lift` id the

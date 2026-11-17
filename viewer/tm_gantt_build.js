@@ -567,7 +567,7 @@
     var _twStats = TMS._displayTimeline(_twItems).stats;   // §CPM_DISPLAY (or legacy §TIER_SERIAL+§MIDAIR_REPAIR via ?cpm4d=0)
     _s4Mark('displayTimeline');
     var _disp = {};
-    _twItems.forEach(function (it) { _disp[it.guid] = { start: it.s, end: it.e, lift: it.lift }; });   // lift: §ONE_LIFT
+    _twItems.forEach(function (it) { _disp[it.guid] = { start: it.s, end: it.e, lift: it.lift, ord: it.ord }; });   // lift: §ONE_LIFT · ord: §TIE_ORDER
     var _schedEnd = baseMs;
     for (var _sg in _disp) if (_disp[_sg].end > _schedEnd) _schedEnd = _disp[_sg].end;
     if (_noGeoN) console.log('§4D_NOGEO parked=' + _noGeoN + ' at project end (no transform/zero bbox — cannot bear, hang, or be witnessed)');

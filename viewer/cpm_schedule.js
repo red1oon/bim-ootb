@@ -244,7 +244,7 @@
     // structure the election is unchanged — the pair elects each other and the solve places it as one lift
     // (GRAPH: the contracted SCC's shared start; CELL: solveCells' lift, below). Nothing is left unelected by D3.
     var bearMemo = new Int8Array(n), d3Demoted = 0;
-    var contactOnly = [], d7Contacts = 0, d7Reelected = 0;
+    var contactOnly = [], d7Contacts = 0, d7Reelected = 0, seedSkipped = 0;
     function bearsOnPool(j) {
       if (bearMemo[j]) return bearMemo[j] === 1;
       var lj = G.contacts[j], Tj = items[j], hit = false;
@@ -281,6 +281,7 @@
       var inPool = SG.supportPool || function () { return true; };
       var tStruct = !!(SG.supportPool && SG.supportPool(T));
       var skippedLater = 0;
+      var tSeed = tStruct && (T.seq === 1 || T.phase === 'Substructure');
       for (var k = 0; k < list.length; k++) {
         var j = list[k], S = items[j], cls, score;
         if (S.bz < T.bz - EPS && S.tz >= T.bz - GAP) { cls = 0; score = -S.tz; }
@@ -305,6 +306,15 @@
           bestCls = cls; bestScore = score; bestJ = j;
         }
         if (tStruct && cls === 2) continue;                   // §D2: structure is not hung from what it carries
+        // §GROUND_RESTS_ON_SOIL (bim-compiler prompts/4D_MODEL_INTEGRITY.md §I.2, §Q.13 — 2026-11-17): a ground seed
+        // (sequence 1 or phase Substructure) rests on soil. It may elect another ground seed, never something of a
+        // later phase — a column or wall whose box runs down through its footing was elected as the footing's "bearer"
+        // (LTU 236, Hospital 8, Clinic 6), so the footing was judged against the frame it carries.
+        if (tSeed && !(S.seq === 1 || S.phase === 'Substructure')) { seedSkipped++; continue; }
+        // §STRUCTURE_BEARS_ON_STRUCTURE (§Q.13): a contact that is in the pool only for VISIBILITY (sequence > 4: a
+        // stair flight, a promoted roof slab) and is built later than the structural T ranks behind any bearer that is
+        // real structure (cls +0.25). A slab with a beam under it no longer elects the stair flight beside the beam.
+        if (tStruct && cls < 2 && typeof S.seq === 'number' && typeof T.seq === 'number' && S.seq > 4 && S.seq > T.seq) cls += 0.25;
         if (inPool(S) && (cls < poolCls || (cls === poolCls && (score < poolScore ||
             (score === poolScore && (poolJ < 0 || String(S.guid) < String(items[poolJ].guid))))))) {
           poolCls = cls; poolScore = score; poolJ = j;
@@ -338,6 +348,7 @@
       ' electedFromRemainingContacts(hadALaterContactIgnored)=' + d7Reelected + ' byCls=' + JSON.stringify(coCls) +
       ' guids=' + contactOnly.slice(0, 20).map(function (x) { return items[x].guid; }).join(',') + (contactOnly.length > 20 ? ',…' : ''));
     out.contactOnly = contactOnly;
+    console.log('§GROUND_RESTS_ON_SOIL laterPhaseContactsIgnoredForGroundSeeds=' + seedSkipped);
     out.structNoSupport = noSup;
     out.d3Demoted = d3Demoted;
     return out;
@@ -769,6 +780,10 @@
       return top;
     }
     var processed = 0;
+    // §TIE_ORDER (§Q.13): the rank at which the solve finalised each element — supports always before what they
+    // support. Two elements may share a start (a start-to-start edge allows it); the within-bar tiler broke that tie
+    // by guid and could lay the dependent first. The display map carries this rank (`ord`) so the tie is the solve's.
+    var order = new Int32Array(n);
     for (i = 0; i < nComp; i++) if (!indeg[i]) heapPush(i);
     function memberOrder(a, b) {   // deterministic within-component claim order
       if (items[a].bz !== items[b].bz) return items[a].bz - items[b].bz;
@@ -777,6 +792,7 @@
     }
     while (heap.length) {
       var cu = heapPop(); processed++;
+      for (var _oi = 0; _oi < compNodes[cu].length; _oi++) if (compNodes[cu][_oi] < n) order[compNodes[cu][_oi]] = processed;   // §TIE_ORDER
       var members = compNodes[cu], contracted = members.length > 1;
       var es = compES[cu];
       if (!contracted) {
@@ -851,7 +867,7 @@
       if (s < makespanS) makespanS = s;
       if (en > makespanE) makespanE = en;
     }
-    return { times: times, drops: drops, processed: processed, total: nComp, comp: comp,
+    return { times: times, drops: drops, processed: processed, total: nComp, comp: comp, order: order,
              makespanDays: (makespanE - makespanS) / 86400000 };
   }
 

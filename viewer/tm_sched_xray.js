@@ -633,7 +633,7 @@
         for (_ri = 0; _ri < items.length; _ri++) {
           var _rc = _cache.map[items[_ri].guid];
           if (_rc) {
-            items[_ri].s = _rc.start + _delta; items[_ri].e = _rc.end + _delta; items[_ri].lift = _rc.lift;
+            items[_ri].s = _rc.start + _delta; items[_ri].e = _rc.end + _delta; items[_ri].lift = _rc.lift; items[_ri].ord = _rc.ord;
             if (_rc.str) _rstrag[items[_ri].guid] = 1;
           }
         }
@@ -659,7 +659,7 @@
       var r = CpmSchedule.run(items, { maxCrews: _dtMaxCrews });
       if (r && r.ok) {
         var _lring = r.graph && r.graph.ring;   // §ONE_LIFT: the election's rings, carried to the within-bar tiler
-        for (var i = 0; i < items.length; i++) { items[i].s = r.solution.times[i].s; items[i].e = r.solution.times[i].e; items[i].lift = (_lring && _lring[i] >= 0) ? _lring[i] : undefined; }
+        for (var i = 0; i < items.length; i++) { items[i].s = r.solution.times[i].s; items[i].e = r.solution.times[i].e; items[i].lift = (_lring && _lring[i] >= 0) ? _lring[i] : undefined; items[i].ord = r.solution.order ? r.solution.order[i] : undefined; }
         var aud = _midairAudit(items);
         _displayTimelineRemember(items, r.graph.stragglerOf);
         // §S51 item d (4D_GANTT_TM_REFACTOR.md §S51): when the CELL path authored this timeline,
@@ -709,7 +709,7 @@
   function _displayTimelineRemember(items, stragglerOf) {
     var map = {}, minS = Infinity;
     for (var i = 0; i < items.length; i++) {
-      map[items[i].guid] = { start: items[i].s, end: items[i].e, str: stragglerOf ? stragglerOf[i] : 0, lift: items[i].lift };   // lift: §ONE_LIFT ring id
+      map[items[i].guid] = { start: items[i].s, end: items[i].e, str: stragglerOf ? stragglerOf[i] : 0, lift: items[i].lift, ord: items[i].ord };   // lift: §ONE_LIFT ring id
       if (items[i].s < minS) minS = items[i].s;
     }
     _displayTimeline._last = { map: map, n: items.length, minS: minS };
