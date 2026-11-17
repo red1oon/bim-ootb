@@ -665,7 +665,7 @@
       s = bound;
       _gStmt.run([s.start, 'ELEMENT_PLACE',
          JSON.stringify({phase:el.phase, cls:el.cls, name:el.name, storey:el.storey,
-           resource:el.resource, _end_ts:s.end, _genVersion:TMS._GANTT_CACHE_VERSION,
+           resource:el.resource, _secs:el.installSecs, _end_ts:s.end, _genVersion:TMS._GANTT_CACHE_VERSION,   // _secs: §D8_COST_IS_WORK (tm_dash.js)
            _cell: _cellMap ? _cellMap[el.guid] : undefined}),
          JSON.stringify([el.guid]), el.guid]);
       count++;
