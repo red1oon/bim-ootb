@@ -313,7 +313,8 @@ function build(bld, force, want, hooks) {   // hooks.onDb(db, res) — READ-ONLY
       const flat = {};
       for (const g in sched) flat[g] = { s: sched[g].start, e: sched[g].end };
       fs.mkdirSync(d, { recursive: true });
-      fs.writeFileSync(path.join(d, 'witness.log'), lines.join('\n') + '\n');
+      // §LOG_STAMP first: which code produced this log (bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md §F.7). Not a cache-key input.
+      fs.writeFileSync(path.join(d, 'witness.log'), require('./log_stamp').stampLine(path.join(__dirname, '..'), 'cache_4d_run ' + bld) + '\n' + lines.join('\n') + '\n');
       fs.writeFileSync(path.join(d, 'run.json'), JSON.stringify({ bld: bld, builtAt: new Date().toISOString(),
         codeKey: codeKey(), dbFile: path.basename(file), dbKind: dbf.kind, dbReason: dbf.reason, els: els,
         sched: flat, play: play, playStats: playStats, storeys: storeys, tasks: tasks }));
