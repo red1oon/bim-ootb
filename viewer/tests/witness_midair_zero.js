@@ -333,9 +333,18 @@ function census(items) {
   const supporters = new Array(items.length), groundLocal = new Uint8Array(items.length);
   // §Q.14.1 — the two named sets, RE-DERIVED here from this census's own contacts (never read from the engine).
   const pool = ScheduleGate.supportPool, structNoSup = new Set(), contactOnly = new Set(), midairIdx = [];
+  // Ground seeds, re-derived here: classified ground (sequence 1 / Substructure); and ONLY in a population that carries none,
+  // real structure (pool, sequence <= 4) whose base is within ScheduleGate.GROUND_BAND of the 1st-percentile base — a building
+  // that models no foundations still stands on soil (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.17).
+  const anyClassified = items.some(T => T.seq === 1 || T.phase === 'Substructure');
+  const bandDatum = (!anyClassified && items.length) ? items.map(it => it.bz).sort((a, b) => a - b)[Math.floor(items.length * 0.01)] + ScheduleGate.GROUND_BAND : null;
+  const isSeed = T => T.seq === 1 || T.phase === 'Substructure' ||
+    (bandDatum != null && pool(T) && typeof T.seq === 'number' && T.seq <= 4 && T.bz <= bandDatum);
+  const seedIdx = new Set();
   items.forEach((T, i) => {
     let lowest = Infinity, firstContact = Infinity, contacts = 0, embHit = false;
-    const tStruct = pool(T), tSeed = T.seq === 1 || T.phase === 'Substructure';
+    const tStruct = pool(T), tSeed = isSeed(T);
+    if (tSeed) seedIdx.add(i);
     let poolBearer = false, allLater = true;
     const seen = {};
     for (const c of cellsOf(T)) {
@@ -396,7 +405,7 @@ function census(items) {
   while (stack.length) { const u = stack.pop(); for (const v of supportedBy[u]) if (!reach[v]) { reach[v] = 1; stack.push(v); } }
   let orphan = 0; const orphanGuids = [];
   for (let i = 0; i < n; i++) if (!reach[i]) { orphan++; orphanGuids.push(items[i].guid); }
-  return { midair, orphan, grounded, ok, worst, probe, seedMode, seeds, orphanGuids, structNoSup, contactOnly, midairIdx };
+  return { midair, orphan, grounded, ok, worst, probe, seedMode, seeds, orphanGuids, structNoSup, contactOnly, midairIdx, seedIdx, bandDatum };
 }
 
 (async () => {
@@ -581,11 +590,11 @@ function census(items) {
       let inNS = 0, inCO = 0, inSeed = 0, unnamed = 0; const unCls = {}, unGuids = [];
       after.midairIdx.forEach(i2 => {
         if (after.structNoSup.has(i2)) inNS++; else if (after.contactOnly.has(i2)) inCO++;
-        else if (items[i2].seq === 1 || items[i2].phase === 'Substructure') inSeed++;
+        else if (after.seedIdx.has(i2)) inSeed++;
         else { unnamed++; unCls[items[i2].cls] = (unCls[items[i2].cls] || 0) + 1; unGuids.push(items[i2].guid); }
       });
       unnamedNow = unnamed;
-      console.log('§MZ_SPLIT ' + bld + ' censusMidair=' + after.midair + ' namedStructNoSupport=' + inNS + ' namedContactOnly=' + inCO + ' namedGroundSeed=' + inSeed +
+      console.log('§MZ_SPLIT ' + bld + ' censusMidair=' + after.midair + ' namedStructNoSupport=' + inNS + ' namedContactOnly=' + inCO + ' namedGroundSeed=' + inSeed + (after.bandDatum != null ? '(ground-band seeds, datum ' + after.bandDatum.toFixed(2) + 'm)' : '') +
         ' UNNAMED=' + unnamed + ' unnamedByCls=' + JSON.stringify(unCls) + ' unnamedGuids=' + JSON.stringify(unGuids.slice(0, 20)) +
         ' | sets: witnessStructNoSupport=' + after.structNoSup.size + ' engine=' + engNS.size + ' (onlyWitness=' + nsOnlyW + ' onlyEngine=' + nsOnlyE + ')' +
         ' witnessContactOnly=' + after.contactOnly.size + ' engine=' + engCO.size + ' (onlyWitness=' + coOnlyW + ' onlyEngine=' + coOnlyE + ')' +
@@ -607,7 +616,7 @@ function census(items) {
       it.s = after.probe.firstContact - 5 * D; it.e = it.s + (keepE - keepS);
       const reAudit = census(items);
       const caught = reAudit.midairIdx.indexOf(after.probe.i) >= 0;
-      const probeNamed = reAudit.structNoSup.has(after.probe.i) || reAudit.contactOnly.has(after.probe.i) || it.seq === 1 || it.phase === 'Substructure';
+      const probeNamed = reAudit.structNoSup.has(after.probe.i) || reAudit.contactOnly.has(after.probe.i) || reAudit.seedIdx.has(after.probe.i);
       assert(reAudit.midair >= 1 && caught,
         'W-MZ-7 ' + bld + ' judge catches a re-introduced hanging (moved 1 element 5d before its first contact, got midair=' + reAudit.midair +
         ', the moved element itself flagged=' + caught + ', it is ' + (probeNamed ? 'a NAMED element' : 'UNNAMED — it raises the locked unnamed count') + ')');

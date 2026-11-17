@@ -2,7 +2,7 @@
  "buildings": {
   "Hospital": {
    "dbFile": "Hospital_meta.db",
-   "codeKey": "f2dbf86b4a0f",
+   "codeKey": "6933c0e9b6e7",
    "midair": 0,
    "filingParity": 0,
    "classes": {
@@ -30,7 +30,7 @@
   },
   "Terminal": {
    "dbFile": "Terminal_meta.db",
-   "codeKey": "f2dbf86b4a0f",
+   "codeKey": "6933c0e9b6e7",
    "midair": 0,
    "filingParity": 0,
    "classes": {
@@ -68,7 +68,7 @@
   },
   "Duplex": {
    "dbFile": "Duplex_extracted.db",
-   "codeKey": "f2dbf86b4a0f",
+   "codeKey": "6933c0e9b6e7",
    "midair": 2,
    "filingParity": 2,
    "classes": {
@@ -86,19 +86,14 @@
   },
   "HHS_Office_Federated": {
    "dbFile": "HHS_Office_Federated_extracted.db",
-   "codeKey": "f2dbf86b4a0f",
-   "midair": 1,
-   "filingParity": 1,
+   "codeKey": "6933c0e9b6e7",
+   "midair": 0,
+   "filingParity": 0,
    "classes": {
     "IfcBuildingElementProxy": {
      "midair": 0,
      "unjudgedStruct": 0,
      "contactOnly": 1
-    },
-    "IfcColumn": {
-     "midair": 0,
-     "unjudgedStruct": 5,
-     "contactOnly": 0
     },
     "IfcFlowFitting": {
      "midair": 0,
@@ -117,7 +112,7 @@
     },
     "IfcMember": {
      "midair": 0,
-     "unjudgedStruct": 18,
+     "unjudgedStruct": 14,
      "contactOnly": 0
     },
     "IfcPlate": {
@@ -126,7 +121,7 @@
      "contactOnly": 0
     },
     "IfcSlab": {
-     "midair": 1,
+     "midair": 0,
      "unjudgedStruct": 1,
      "contactOnly": 0
     },
@@ -139,7 +134,7 @@
   },
   "Clinic": {
    "dbFile": "Clinic_meta.db",
-   "codeKey": "f2dbf86b4a0f",
+   "codeKey": "6933c0e9b6e7",
    "midair": 0,
    "filingParity": 0,
    "classes": {
@@ -182,7 +177,7 @@
   },
   "JKR": {
    "dbFile": "JKR_extracted.db",
-   "codeKey": "f2dbf86b4a0f",
+   "codeKey": "6933c0e9b6e7",
    "midair": 0,
    "filingParity": 0,
    "classes": {
@@ -215,7 +210,7 @@
   },
   "LTU_AHouse": {
    "dbFile": "LTU_AHouse_meta.db",
-   "codeKey": "f2dbf86b4a0f",
+   "codeKey": "6933c0e9b6e7",
    "midair": 1,
    "filingParity": 0,
    "classes": {
