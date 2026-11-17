@@ -1,0 +1,12 @@
+§W-ASSIST-NEAREST mutant (the old limit) applied=true exports=nearest,suggest,lev
+§W-ASSIST-NEAREST pool zh_CN names=1578 two-char=49
+§W-ASSIST-NEAREST pool ja_JP names=1611 two-char=15
+§W-ASSIST-NEAREST pool shell names=117 two-char=5
+§W-ASSIST-NEAREST NEW probes=69 nearest-hits=76 at-distance-2=0 meant-first=65
+§W-ASSIST-NEAREST OLD probes=69 nearest-hits=2758 at-distance-2=2682 meant-first=65 e.g. 引〇→产品/付款/任务 ; 消〇→产品/付款/任务 ; 菜〇→产品/付款/任务
+  ✅ N1 no 2-character probe gets a nearest hit at edit distance 2: 0 (the old limit: 2682 over 69 probes, 2758 hits)  new hits=76
+  ✅ N2 the meant name is still first: 65 of 69 (the old limit: 65)
+  ✅ M1 falsifier: the OLD limit fails N1 (distance-2 hits > 0)  old far=2682
+  ✅ N3 from 3 characters on nothing changes: 6426 of 6426 probes answer the same, name for name
+  ✅ N4 the shell's 5 short names (ls, vo, rm, do, cd) keep their case/prefix answers and answer themselves first
+§WITNESS_ASSIST_NEAREST pass=5 fail=0 inconclusive=0 verdict=PASS
