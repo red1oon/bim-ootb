@@ -8,6 +8,9 @@
 //   A7 ISSUE (a suggestion drawn while a question is open: the film's stale hint after report): typing at run's ConsolidateDocument question draws no grey text
 //   A7b ISSUE (the film rc2 saw a grey hint while 'Ready to post to ERP Project Order? y/N' waited): typing at an open offer draws no grey text
 //   A8 ISSUE (a private local building shown): with an empty history `cd Dup` suggests nothing; once `cd Duplex` is in the history it suggests Duplex
+//   A9 ISSUE (§46 A2: the grey suggestion stays on the finished line, film rc1 Found 5 and the sequel's dry run: `do CO   ▸ CL (close)`): on a terminal, in the menu walk `cd Quote` draws the hint
+//      `▸ "Quote-to-Invoice (Sales)"`, and in the RAW bytes between that hint and the line break of Return there is an erase to the end of the line (ESC[0K), so the terminal shows the line without it.
+//      Falsifier ASSIST_BREAK=keephint (must FAIL A9)
 //   Falsifiers: ASSIST_BREAK=noquiet (must FAIL A7) · RED1_ASSIST_BUILDINGS=all (must FAIL A8) · ASSIST_BREAK=autoapply (Enter applies the hint: must FAIL A3). A1 FAILs if assist_core offers a hand name. Needs `script` for A3/A4 (else INCONCLUSIVE).
 //   Run: node common/door/tests/witness_red1_assist.js > common/door/tests/logs/red1_assist.log 2>&1
 'use strict';
@@ -104,5 +107,16 @@ const envOf = (out) => out.split('\n').filter(l => l.charAt(0) === '{').map(l =>
   const o5 = await sh('node ' + RED1 + " 'cd Project; ls Valu=Hospital'", 60000);
   const e5 = envOf(o5).pop();
   k.chk('A5 one-shot `cd Project; ls Valu=Hospital` prints no hint and is refused naming Value', !/▸/.test(o5) && !!e5 && e5.status === 'refused' && /nearest: Value/.test(e5.why || ''), 'status=' + (e5 && e5.status) + ' why=' + (e5 && e5.why));
+  // A9 (§46 A2) on a pseudo-terminal, RAW bytes (the escapes are the claim)
+  if (!hasScript) k.incon('A9', 'no `script`');
+  else {
+    const d9 = fs.mkdtempSync(path.join(os.tmpdir(), 'r1a9_')), env9 = 'RED1_HISTORY=' + path.join(d9, 'h') + ' BIM_OBJECT_OPLOG=' + path.join(d9, 'o.jsonl') + ' BIM_DOOR_JOURNAL=' + path.join(d9, 'j.jsonl') + ' RED1_WARM=off';
+    const raw = await sh("(sleep 2; printf 'menu\\r'; sleep 4; printf 'cd Quote'; sleep 2; printf '\\r'; sleep 3; printf 'exit\\r') | script -qc \"stty rows 40 cols 200; " + env9 + " node " + RED1 + "\" /dev/null", 60000);
+    const P9 = raw.indexOf('red1 menu/Quote-to-Invoice (Sales)>'), hi = P9 < 0 ? -1 : raw.lastIndexOf('▸ "Quote-to-Invoice (Sales)"', P9), nl = hi < 0 ? -1 : raw.indexOf('\n', hi), between = hi < 0 || nl < 0 ? '' : raw.slice(hi, nl);
+    const erased = /\x1b\[0K/.test(between.slice(between.lastIndexOf('\x1b[0m') + 1)), entered = /red1 menu\/Quote-to-Invoice \(Sales\)>/.test(raw.replace(/\x1b\[[0-9;]*[A-Za-z]/g, ''));
+    k.L('A9 hint_at=' + hi + ' bytes_to_line_break=' + JSON.stringify(between.slice(-60)) + ' erased=' + erased + ' entered=' + entered);
+    if (hi < 0) k.incon('A9', 'the hint was never drawn (nothing to judge)');
+    else k.chk('A9 on Return the drawn hint ▸ "Quote-to-Invoice (Sales)" is erased (ESC[0K after it, before the line break) and the line still runs (the prompt enters the folder)', erased && entered, JSON.stringify(between.slice(-60)));
+  }
   k.end();
 })().catch(e => { console.log('§W-RED1-ASSIST FAIL ' + (e && e.stack || e)); process.exit(1); });
