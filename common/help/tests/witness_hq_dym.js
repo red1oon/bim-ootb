@@ -2,6 +2,7 @@
 // ISSUE it proves or disproves: a misspelled query ("Sales Ordr", "Rechnug") gives the help boxes nothing useful; ONE separate line "Did you mean: A · B · C" (common/help/help_dym.js, the ERP box AND the shared
 // help panel, through AssistCore.nearest, the one suggester) must name what was meant, must not make things up, must not suggest 2-character names while the guard is on, must not run anything, and must not
 // be a second edit-distance function.
+//   D1c (§19.5 refined 2026-11-17): a typo that itself STARTS 3+ other names is not judged by D1 (nearest() puts completions first, by design); counted per pack and printed.
 //   D1  for every pack name of 3+ characters, the name with its MIDDLE character deleted shows that name in the line. X of N, N = names per pack (ERP: 5 languages, names = the language's + the English ones;
 //       Viewer and Modeller: 18 locales each, the pack's own names). Not judged, and PRINTED per pack with the reason: the typo is itself an exact name (the top result is tier 0, so the line is not shown by rule);
 //       a 3-character name (its typo has 2 characters: the §42 S3 territory, reported as D1b, never hidden). Then the same on the REAL ERP box and the REAL Viewer/Modeller panel (typed text, DOM read).
@@ -31,22 +32,24 @@ function load() {
   H.BIM_APPS.forEach((app) => H.BIM_LOCALES.forEach((lang) => { const p = H.bimPack(app, lang); packs.push({ id: app + ' ' + lang, app, lang, recs: p.index.records, alt: false, h: HQ.create(p.index, { text: p.text }) }); }));
   packs.forEach((p) => { p.names = D.names(p.recs, { alt: p.alt }); });
 }
+const ambOf = (names) => (typo, n) => { const t = typo.toLowerCase(); let c = 0; for (const x of names) if (x !== n && x.toLowerCase().startsWith(t) && ++c >= 3) return true; return false; };   // D1c rule, the same in Node and in the pages
 const seen = [];   // every suggestion list any run produced, for D3
 
 function d1() {
   const fam = {};   // app -> {X, N, ex, short, shortX, shortMiss}
   packs.forEach((p) => {
     const f = fam[p.app] || (fam[p.app] = { X: 0, N: 0, tn: 0, sh: 0, shX: 0, miss: [], shMiss: [] });
-    let N = 0, X = 0, tn = 0, sh = 0, shX = 0;
+    let N = 0, X = 0, tn = 0, sh = 0, shX = 0, am = 0;
     p.names.filter((n) => chars(n) >= 3).forEach((n) => {
       const typo = mid(n), top = p.h.query(typo)[0], tier = top ? top.tier : 3;
       if (tier === 0) { tn++; return; }   // the typo is itself a name: the rule says no line
+      if (ambOf(p.names)(typo, n)) { am++; return; }   // D1c (§19.5): the typo STARTS 3+ other names, so nearest() fills its 3 slots with those completions by design ('prefix' before 'nearest'); counted apart, never hidden
       const s = D.suggest(typo, p.names, tier); seen.push(s);
       if (chars(typo) <= 2) { sh++; if (s.indexOf(n) >= 0) shX++; else if (f.shMiss.length < 4) f.shMiss.push(p.id + ' "' + n + '" -> "' + typo + '" => ' + JSON.stringify(s)); return; }
       N++; if (s.indexOf(n) >= 0) X++; else if (f.miss.length < 4) f.miss.push(p.id + ' "' + n + '" -> "' + typo + '" => ' + JSON.stringify(s));
     });
     f.X += X; f.N += N; f.tn += tn; f.sh += sh; f.shX += shX;
-    k.L('D1 pack=' + p.id + ' names=' + p.names.length + ' (3+ chars ' + p.names.filter((n) => chars(n) >= 3).length + ') judged=' + N + ' source-in-line=' + X + ' not-judged: typo-is-a-name=' + tn + ' 3-char-names=' + sh + ' (D1b: ' + shX + ' of ' + sh + ')');
+    k.L('D1 pack=' + p.id + ' names=' + p.names.length + ' (3+ chars ' + p.names.filter((n) => chars(n) >= 3).length + ') judged=' + N + ' source-in-line=' + X + ' not-judged: typo-is-a-name=' + tn + ' 3-char-names=' + sh + ' (D1b: ' + shX + ' of ' + sh + ') D1c-ambiguous-prefix=' + am);
   });
   Object.keys(fam).forEach((app) => { const f = fam[app];
     if (!f.N) { k.incon('D1 ' + app, 'VACUOUS: no name judged'); return; }
@@ -107,11 +110,13 @@ async function erpPages() {
       if (!line) { k.incon('D1p-erp ' + lang, 'the page did not build its index'); continue; }
       const r = await page.pg.evaluate(() => {
         const recs = window.__idmpHowto.index().records, set = new Set(window.__idmpFieldHelp.menu().windows), allowed = (g) => g[0] === 'window' && set.has(g[1]);
-        const names = HelpDym.names(recs, { alt: true, allowed }), chars = (s) => Array.from(s).length, out = { names: names.length, N: 0, X: 0, tn: 0, sh: 0, miss: [], label: null, labelOf: [] };
+        const names = HelpDym.names(recs, { alt: true, allowed }), chars = (s) => Array.from(s).length, out = { names: names.length, N: 0, X: 0, tn: 0, am: 0, sh: 0, miss: [], label: null, labelOf: [] };
+        const amb = ((names) => (typo, n) => { const t = typo.toLowerCase(); let c = 0; for (const x of names) if (x !== n && x.toLowerCase().startsWith(t) && ++c >= 3) return true; return false; })(names);
         names.filter((n) => chars(n) >= 3).forEach((n) => {
           const c = Array.from(n), i = Math.floor(c.length / 2), typo = c.slice(0, i).concat(c.slice(i + 1)).join('');
           const card = window.__idmpHowto.ask(typo), top = card.hits[0] ? card.hits[0].tier : 3, host = document.getElementById('idmp-howto-dym'), items = host ? [...host.querySelectorAll('.hq-dym-item')].map((a) => a.getAttribute('data-dym')) : [];
           if (top === 0) { out.tn++; return; }
+          if (amb(typo, n)) { out.am++; return; }   // D1c
           if (chars(typo) <= 2) { out.sh++; return; }
           out.N++; if (items.indexOf(n) >= 0) out.X++; else if (out.miss.length < 3) out.miss.push('"' + n + '" -> "' + typo + '" => ' + JSON.stringify(items));
           if (!out.label && host && host.querySelector('.hq-dym-label')) out.label = host.querySelector('.hq-dym-label').textContent;
@@ -169,10 +174,12 @@ async function panelPages() {
             const sleep = (ms) => new Promise((x) => setTimeout(x, ms)), inp = document.getElementById('cmd-search'), type = (v) => { inp.value = v; inp.dispatchEvent(new Event('input')); };
             const pack = await (await fetch(u)).json(), h = HelpQuery.create(pack, {}), names = HelpDym.names(pack.records, { alt: false }), chars = (s) => Array.from(s).length;
             type('zzz'); await sleep(300); type('zzzz'); await sleep(300);   // the first typed query starts the index fetch; wait for it
-            const out = { names: names.length, N: 0, X: 0, tn: 0, sh: 0, miss: [], label: null, short: 0 };
+            const out = { names: names.length, N: 0, X: 0, tn: 0, am: 0, sh: 0, miss: [], label: null, short: 0 };
+            const amb = ((names) => (typo, n) => { const t = typo.toLowerCase(); let c = 0; for (const x of names) if (x !== n && x.toLowerCase().startsWith(t) && ++c >= 3) return true; return false; })(names);
             for (const n of names.filter((x) => chars(x) >= 3)) {
               const c = Array.from(n), i = Math.floor(c.length / 2), typo = c.slice(0, i).concat(c.slice(i + 1)).join(''), tp = h.query(typo)[0];
               if (tp && tp.tier === 0) { out.tn++; continue; }
+              if (amb(typo, n)) { out.am++; continue; }   // D1c
               if (chars(typo) <= 2) { out.sh++; continue; }
               type(typo); const host = document.getElementById('cmd-dym'), items = [...host.querySelectorAll('.hq-dym-item')].map((a) => a.getAttribute('data-dym'));
               out.N++; if (items.indexOf(n) >= 0) out.X++; else if (out.miss.length < 3) out.miss.push('"' + n + '" -> "' + typo + '" => ' + JSON.stringify(items));
