@@ -9,10 +9,11 @@
 // A gusset part is attached to its brace, not an aggregate child of it (element_parts would hide the brace on reload): parents = [], attach = [brace].
 // The eccentricity (the brace gravity axis against the support axis, AISC 360-16 J1.1) is MEASURED and REPORTED per end, never corrected. Configuration only, capacity not checked.
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory(require('./joint_pack.js'));
-  else root.LodGussetPack = factory(root.LodJointPack);
-})(typeof self !== 'undefined' ? self : this, function (JP) {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./joint_pack.js'), require('./lod_registry.js'));
+  else root.LodGussetPack = factory(root.LodJointPack, root.LodRegistry);
+})(typeof self !== 'undefined' ? self : this, function (JP, REG) {
   'use strict';
+  var YK = REG.kit;   // the yield kit (lod_registry.js, P7)
   if (!JP || !JP.kit) throw new Error('§LODUP_GUSSET gusset_pack.js needs joint_pack.js loaded first (lod/packs.json lists joints before gussets)');
   var K = JP.kit, sub = K.sub, add = K.add, mul = K.mul, dot = K.dot, cross = K.cross, norm = K.norm, unit = K.unit, fx = K.fx, fmtG = K.fmtG, median = K.median, rayFirst = K.rayFirst, nowMs = K.nowMs;
   var RGBA = { PL: '0.55,0.57,0.60,1', BT: '0.32,0.33,0.36,1', WD: '0.40,0.34,0.30,1' }, CLS = { PL: 'IfcPlate', BT: 'IfcMechanicalFastener', WD: 'IfcFastener' }, LABEL = K.LABEL;
@@ -280,10 +281,12 @@
 
   // ---- the independent re-check on the WRITTEN parts: every part's surface (triangle centroids, nudged 2 % to the inside except welds) must lie inside no other solid.
   // items: [{guid, beam, support, kind:'PL'|'BT'|'WD', atype, tris: Float64Array (world)}]. The brace is exempt (bolted angle); the support only where welded (the welds; a lap plate; a T plate is judged by the exact test before writing).
-  function clearPost(inp, RULES, items, log, extraParts) {
+  function clearPost(inp, RULES, items, log, extraParts) { return YK.drain(clearPostSteps(inp, RULES, items, log, extraParts)); }
+  function* clearPostSteps(inp, RULES, items, log, extraParts) {
     var cx = K.makeCtx(inp, RULES, log), M = cx.meshes, idx = K.indexOf(inp), pmax = cx.rv('parity_max_triangles'), fails = [], skippedSet = {}, boxOf = {}, allX = items.concat(extraParts || []);   // extraParts (P6): live generated parts of other packs
     allX.forEach(function (it) { boxOf[it.guid] = bboxOf(it.tris); });
-    items.forEach(function (it) {
+    for (var ii0 = 0; ii0 < items.length; ii0++) {
+      var it = items[ii0]; YK.state.prog = { label: 'Gussets: checking part', done: ii0, total: items.length };
       var b = boxOf[it.guid], lo = b[0], hi = b[1], A = it.tris, base = it.guid.replace(/-(PL|BT|WD)$/, '');
       var others = idx.query(lo, hi).filter(function (g) { return g !== it.beam && !startsAny(g, ['GEN-LY-', 'GEN-RB-']) && g.indexOf(base + '-') !== 0; });
       var extra = allX.filter(function (o) { return o.guid.indexOf(base + '-') !== 0 && boxOf[o.guid][0][0] <= hi[0] && boxOf[o.guid][0][1] <= hi[1] && boxOf[o.guid][0][2] <= hi[2] && boxOf[o.guid][1][0] >= lo[0] && boxOf[o.guid][1][1] >= lo[1] && boxOf[o.guid][1][2] >= lo[2]; });
@@ -291,30 +294,33 @@
       for (q = 0; q < A.length; q += 3) { cen[0] += A[q]; cen[1] += A[q + 1]; cen[2] += A[q + 2]; } cen = [cen[0] / (A.length / 3), cen[1] / (A.length / 3), cen[2] / (A.length / 3)];
       var step = Math.max(1, Math.floor(nTr / 400));
       for (q = 0; q < nTr; q += step) { var p = [(A[9 * q] + A[9 * q + 3] + A[9 * q + 6]) / 3, (A[9 * q + 1] + A[9 * q + 4] + A[9 * q + 7]) / 3, (A[9 * q + 2] + A[9 * q + 5] + A[9 * q + 8]) / 3]; if (it.kind !== 'WD') p = [p[0] + (cen[0] - p[0]) * 0.02, p[1] + (cen[1] - p[1]) * 0.02, p[2] + (cen[2] - p[2]) * 0.02]; pts.push(p); }
-      others.forEach(function (g) {
-        if (bad) return;
-        if (g === it.support && it.kind === 'WD') return; if (g === it.support && it.kind === 'PL') return;   // lap: bears on the flange face by design; T: judged by the exact test with the contact strip removed
-        var nT2 = M.ntri(g); if (!nT2) return; if (nT2 > pmax) { skippedSet[g] = 1; return; }
+      for (var oi = 0; oi < others.length; oi++) {
+        var g = others[oi]; if (YK.due()) yield YK.state.prog;
+        if (bad) continue;
+        if (g === it.support && it.kind === 'WD') continue; if (g === it.support && it.kind === 'PL') continue;   // lap: bears on the flange face by design; T: judged by the exact test with the contact strip removed
+        var nT2 = M.ntri(g); if (!nT2) continue; if (nT2 > pmax) { skippedSet[g] = 1; continue; }
         var bx = idx.box(g), Tg = null;   // a point outside a neighbour's own box is not inside it
-        for (u = 0; u < pts.length; u++) { var P = pts[u]; if (!(P[0] >= bx[0][0] && P[1] >= bx[0][1] && P[2] >= bx[0][2] && P[0] <= bx[1][0] && P[1] <= bx[1][1] && P[2] <= bx[1][2])) continue; if (!Tg) Tg = M.soup(g); if (K.inside(P, Tg)) { bad = [it.guid, g]; return; } }
-      });
-      extra.forEach(function (o) { if (bad) return; if (o.tris.length / 9 > pmax) return; for (u = 0; u < pts.length; u++) if (K.inside(pts[u], o.tris)) { bad = [it.guid, o.guid]; return; } });
+        for (u = 0; u < pts.length; u++) { var P = pts[u]; if (!(P[0] >= bx[0][0] && P[1] >= bx[0][1] && P[2] >= bx[0][2] && P[0] <= bx[1][0] && P[1] <= bx[1][1] && P[2] <= bx[1][2])) continue; if (!Tg) Tg = M.soup(g); if (K.inside(P, Tg)) { bad = [it.guid, g]; break; } if (YK.due()) yield YK.state.prog; }
+      }
+      for (var xi = 0; xi < extra.length; xi++) { var o = extra[xi]; if (bad) break; if (o.tris.length / 9 > pmax) continue; for (u = 0; u < pts.length; u++) { if (K.inside(pts[u], o.tris)) { bad = [it.guid, o.guid]; break; } if (YK.due()) yield YK.state.prog; } }
       if (bad) fails.push(bad);
-    });
+      if (YK.due()) yield YK.state.prog;
+    }
     return { fails: fails, checked: items.length, skipped: Object.keys(skippedSet).sort() };
   }
 
-  function run(inp, RULES, opts) {
+  function run(inp, RULES, opts) { return YK.drain(runSteps(inp, RULES, opts)); }
+  function* runSteps(inp, RULES, opts) {
     opts = opts || {}; var LOG = opts.log || function () { }, t0 = nowMs(), cx = K.makeCtx(inp, RULES, function (l) { LOG(String(l).replace('§LODUP_JOINT_', '§LODUP_GUSSET_')); }), rv = cx.rv, meta = cx.meta;
     LOG('§LODUP_GUSSET_MODE clash_check=' + (opts.noClash ? 'OFF(break)' : 'on') + ' bolts=' + rv('bolts_min') + ' x M' + rv('bolt_diameter_mm') + ' pitch=' + rv('bolt_pitch_mm') + ' edge=' + rv('edge_used_mm') + ' filler_max=' + rv('filler_max_mm') + ' filler_flag=' + rv('filler_flag_mm') + ' plane_tol_deg=' + rv('plane_tol_deg') + ' reach=' + rv('support_reach_mm') + ' flange_fraction=' + rv('flange_interval_max_fraction'));
-    var S = K.survey(cx), t1 = nowMs(), ends = S.rows.filter(function (r) { return r.cls === 'STEEL_SKEW'; }), FLAG = rv('filler_flag_mm');
+    var S = yield* K.surveySteps(cx), t1 = nowMs(), ends = S.rows.filter(function (r) { return r.cls === 'STEEL_SKEW'; }), FLAG = rv('filler_flag_mm');
     LOG('§LODUP_GUSSET_JUDGED judged=' + ends.length + ' (STEEL_SKEW ends of the survey)' + (ends.length ? '' : ' INCONCLUSIVE (no angle brace end: nothing was judged)'));
     var parts = [], CH = [], out = [], reasons = {}, clashBy = {}, G = K.seedGenerated(inp, opts, 'GEN-GU-'), ruleFail = [], addedVerts = 0, judged = 0, skippedAll = {}, gen = [], eccAll = [];
     LOG('§LODUP_GUSSET_NEIGHBOURS model_as_read + live_parts_of_other_packs=' + Object.keys(G).length + (opts.noGenerated ? ' (OFF: the old behaviour, break switch)' : '') + ' (op-log parts seeded as clash neighbours, the same rule for every pack)');
     var bump = function (k) { reasons[k] = (reasons[k] || 0) + 1; };
     var change = function (kind, guid, cls, host, rule, detail) { CH.push({ kind: kind, guid: guid, cls: cls, host: host, rule: rule, detail: detail }); };
     var RULE = 'Gusset connection: AISC 360-16 detailing limits (J2.4, J2.2b, J3.3, J3.4M, J3.5, J5.2 filler tag) + shared fin-plate rows + gusset rows [' + RULES.filler_max_mm.source + ']; configuration only, capacity not checked';
-    ends.forEach(function (j) {
+    yield* YK.each(ends, function (j) {
       var endL = j.end > 0 ? 'B' : 'A', hostM = meta[j.guid], r = genEnd(cx, j, G, opts);
       if (r.ecc !== undefined) eccAll.push(r.ecc);
       (r.skipped || []).forEach(function (g) { skippedAll[g] = 1; }); if (r.judged) judged++;
@@ -336,8 +342,8 @@
         change('ADDED', base + '-' + kd[0], CLS[kd[0]], j.guid, RULE, 'brace "' + hostM.name + '" end ' + endL + ' -> support ' + j.support + ' "' + j.support_name + '" | ' + kd[2].split(' (rules')[0] + ' | attach ' + r.atype + ' | brace-support axis eccentricity ' + fx(r.ecc, 1) + ' mm (J1.1, measured not corrected) | storey ' + r.storey);
       });
       out.push(Object.assign({}, j, r, { Fp: undefined, Fb: undefined, Fw: undefined })); gen.push(out[out.length - 1]); bump('generated');
-    });
-    var t2 = nowMs(), items = parts.map(function (p) { return { guid: p.guid, beam: p.beam, support: p.support, kind: p.kind, atype: p.atype, tris: p.tris }; }), post = clearPost(inp, RULES, items, function () { }, K.seededItems(G));
+    }, 'Gussets: brace end');
+    var t2 = nowMs(), items = parts.map(function (p) { return { guid: p.guid, beam: p.beam, support: p.support, kind: p.kind, atype: p.atype, tris: p.tris }; }), post = yield* clearPostSteps(inp, RULES, items, function () { }, K.seededItems(G));
     post.skipped.forEach(function (g) { skippedAll[g] = 1; });
     var nClash = reasons.REFUSED_CLASH || 0, skNames = Object.keys(skippedAll).sort().map(function (g) { return tname(meta[g].name); }).filter(function (v, i2, a) { return a.indexOf(v) === i2; });
     LOG('§LODUP_GUSSET_RULES joints=' + gen.length + ' clause_failures=' + ruleFail.length + ' (measured on the built meshes; checks per joint=14) -> ' + (!gen.length ? 'INCONCLUSIVE' : (ruleFail.length ? 'FAIL ' + JSON.stringify(ruleFail.slice(0, 3)) : 'PASS')));
@@ -370,7 +376,7 @@
     if (!rows) { var n = 0; Object.keys(inp.meta).forEach(function (g) { var c = inp.meta[g].cls; if (c === 'IfcBeam' || c === 'IfcMember') n++; }); return n; }
     try { return K.surveyCached(inp, rows).counts.STEEL_SKEW || 0; } catch (e) { return 0; }
   }
-  var API = { id: 'gussets', label: 'Bracing gussets', unit: 'brace ends', rulesFile: 'rules/gusset_defaults.json', run: run, appliesTo: appliesTo, clearPost: clearPost };
+  var API = { id: 'gussets', label: 'Bracing gussets', unit: 'brace ends', rulesFile: 'rules/gusset_defaults.json', run: run, runSteps: runSteps, appliesTo: appliesTo, clearPost: clearPost };
   if (typeof window !== 'undefined' && window.LodRegistry) window.LodRegistry.register(API);   // browser: the pack registers itself; adding a pack needs no dialog change
   return API;
 });
