@@ -13,7 +13,9 @@
     "zh_CN": "登录",
     "ja_JP": "ログイン",
     "ms_MY": "Log Masuk",
-    "th_TH": "เข้าสู่ระบบ"
+    "th_TH": "เข้าสู่ระบบ",
+    "pt_BR": "Entrar",
+    "id_ID": "Masuk"
    }
   },
   "login.sub": {
@@ -27,7 +29,9 @@
     "zh_CN": "离线演示 · 身份与上下文<b>选择</b>（无需密码）— 来自 <b>ad_seed.db</b>",
     "ja_JP": "オフラインデモ · ID とコンテキストの<b>選択</b>（パスワード不要）— <b>ad_seed.db</b> から",
     "ms_MY": "Demo luar talian · <b>pemilihan</b> identiti &amp; konteks (tanpa kata laluan) — daripada <b>ad_seed.db</b>",
-    "th_TH": "เดโมออฟไลน์ · <b>เลือก</b>ตัวตนและบริบท (ไม่ต้องใช้รหัสผ่าน) — จาก <b>ad_seed.db</b>"
+    "th_TH": "เดโมออฟไลน์ · <b>เลือก</b>ตัวตนและบริบท (ไม่ต้องใช้รหัสผ่าน) — จาก <b>ad_seed.db</b>",
+    "pt_BR": "Demonstração offline · <b>seleção</b> de identidade e contexto (sem senha) — carregada de <b>ad_seed.db</b>",
+    "id_ID": "Demo offline · <b>pemilihan</b> identitas dan konteks (tanpa kata sandi) — diambil dari <b>ad_seed.db</b>"
    }
   },
   "login.language": {
@@ -41,7 +45,9 @@
     "zh_CN": "语言",
     "ja_JP": "言語",
     "ms_MY": "Bahasa",
-    "th_TH": "ภาษา"
+    "th_TH": "ภาษา",
+    "pt_BR": "Idioma",
+    "id_ID": "Bahasa"
    }
   },
   "login.selectTenant": {
@@ -54,7 +60,9 @@
     "zh_CN": "选择租户",
     "ja_JP": "テナントを選択",
     "ms_MY": "Pilih penyewa",
-    "th_TH": "เลือกผู้เช่า"
+    "th_TH": "เลือกผู้เช่า",
+    "pt_BR": "Selecione uma empresa",
+    "id_ID": "Pilih sebuah tenant"
    }
   },
   "login.selectUser": {
@@ -67,7 +75,9 @@
     "zh_CN": "选择用户",
     "ja_JP": "ユーザーを選択",
     "ms_MY": "Pilih pengguna",
-    "th_TH": "เลือกผู้ใช้"
+    "th_TH": "เลือกผู้ใช้",
+    "pt_BR": "Selecione um usuário",
+    "id_ID": "Pilih seorang pengguna"
    }
   },
   "login.tenantsBack": {
@@ -80,7 +90,9 @@
     "zh_CN": "‹ 租户",
     "ja_JP": "‹ テナント",
     "ms_MY": "‹ Penyewa",
-    "th_TH": "‹ ผู้เช่า"
+    "th_TH": "‹ ผู้เช่า",
+    "pt_BR": "‹ Empresas",
+    "id_ID": "‹ Tenant"
    }
   },
   "login.role": {
@@ -94,7 +106,9 @@
     "zh_CN": "角色",
     "ja_JP": "ロール",
     "ms_MY": "Peranan",
-    "th_TH": "บทบาท"
+    "th_TH": "บทบาท",
+    "pt_BR": "Perfil",
+    "id_ID": "Peran"
    }
   },
   "login.client": {
@@ -108,7 +122,9 @@
     "zh_CN": "租户",
     "ja_JP": "テナント",
     "ms_MY": "Penyewa",
-    "th_TH": "ผู้เช่า"
+    "th_TH": "ผู้เช่า",
+    "pt_BR": "Empresa",
+    "id_ID": "Klien"
    }
   },
   "login.org": {
@@ -122,7 +138,9 @@
     "zh_CN": "组织",
     "ja_JP": "組織",
     "ms_MY": "Organisasi",
-    "th_TH": "องค์กร"
+    "th_TH": "องค์กร",
+    "pt_BR": "Organização",
+    "id_ID": "Organisasi"
    }
   },
   "login.back": {
@@ -135,7 +153,9 @@
     "zh_CN": "‹ 返回",
     "ja_JP": "‹ 戻る",
     "ms_MY": "‹ Kembali",
-    "th_TH": "‹ ย้อนกลับ"
+    "th_TH": "‹ ย้อนกลับ",
+    "pt_BR": "‹ Voltar",
+    "id_ID": "‹ Kembali"
    }
   },
   "login.ok": {
@@ -150,7 +170,9 @@
     "zh_CN": "登录",
     "ja_JP": "ログイン",
     "ms_MY": "Log Masuk",
-    "th_TH": "เข้าสู่ระบบ"
+    "th_TH": "เข้าสู่ระบบ",
+    "pt_BR": "Entrar",
+    "id_ID": "Masuk"
    }
   },
   "login.user1": {
@@ -163,7 +185,9 @@
     "zh_CN": "个用户",
     "ja_JP": "ユーザー",
     "ms_MY": "pengguna",
-    "th_TH": "ผู้ใช้"
+    "th_TH": "ผู้ใช้",
+    "pt_BR": "usuário",
+    "id_ID": "pengguna"
    }
   },
   "login.userN": {
@@ -176,7 +200,9 @@
     "zh_CN": "个用户",
     "ja_JP": "ユーザー",
     "ms_MY": "pengguna",
-    "th_TH": "ผู้ใช้"
+    "th_TH": "ผู้ใช้",
+    "pt_BR": "usuários",
+    "id_ID": "pengguna"
    }
   },
   "login.noRoles": {
@@ -189,7 +215,9 @@
     "zh_CN": "（无角色）",
     "ja_JP": "（ロールなし）",
     "ms_MY": "(tiada peranan)",
-    "th_TH": "(ไม่มีบทบาท)"
+    "th_TH": "(ไม่มีบทบาท)",
+    "pt_BR": "(sem perfis)",
+    "id_ID": "(tanpa peran)"
    }
   },
   "login.demoReady": {
@@ -202,7 +230,9 @@
     "zh_CN": "演示 · 就绪",
     "ja_JP": "デモ · 準備完了",
     "ms_MY": "demo · sedia",
-    "th_TH": "สาธิต · พร้อม"
+    "th_TH": "สาธิต · พร้อม",
+    "pt_BR": "demo · pronta",
+    "id_ID": "demo · siap"
    }
   },
   "login.demoPoc": {
@@ -215,7 +245,9 @@
     "zh_CN": "演示 · 概念验证",
     "ja_JP": "デモ · PoC",
     "ms_MY": "demo · PoC",
-    "th_TH": "สาธิต · PoC"
+    "th_TH": "สาธิต · PoC",
+    "pt_BR": "demo · PoC",
+    "id_ID": "demo · PoC"
    }
   },
   "hdr.search": {
@@ -228,7 +260,9 @@
     "zh_CN": "搜索菜单…",
     "ja_JP": "メニューを検索…",
     "ms_MY": "Cari menu…",
-    "th_TH": "ค้นหาเมนู…"
+    "th_TH": "ค้นหาเมนู…",
+    "pt_BR": "Pesquisar no menu…",
+    "id_ID": "Cari di menu…"
    }
   },
   "hdr.filter": {
@@ -241,7 +275,9 @@
     "zh_CN": "筛选菜单…",
     "ja_JP": "メニューを絞り込み…",
     "ms_MY": "Tapis menu…",
-    "th_TH": "กรองเมนู…"
+    "th_TH": "กรองเมนู…",
+    "pt_BR": "Filtrar menu…",
+    "id_ID": "Saring menu…"
    }
   },
   "hdr.logout": {
@@ -255,7 +291,9 @@
     "zh_CN": "注销",
     "ja_JP": "ログアウト",
     "ms_MY": "Log Keluar",
-    "th_TH": "ออกจากระบบ"
+    "th_TH": "ออกจากระบบ",
+    "pt_BR": "Sair",
+    "id_ID": "Keluar"
    }
   },
   "hdr.menu": {
@@ -269,7 +307,9 @@
     "zh_CN": "菜单",
     "ja_JP": "メニュー",
     "ms_MY": "Menu",
-    "th_TH": "เมนู"
+    "th_TH": "เมนู",
+    "pt_BR": "Menu",
+    "id_ID": "Menu"
    }
   },
   "main.placeholder": {
@@ -282,7 +322,9 @@
     "zh_CN": "请选择菜单项以打开窗口。",
     "ja_JP": "メニュー項目を選択してウィンドウを開きます。",
     "ms_MY": "Pilih item menu untuk membuka tetingkap.",
-    "th_TH": "เลือกรายการเมนูเพื่อเปิดหน้าต่าง"
+    "th_TH": "เลือกรายการเมนูเพื่อเปิดหน้าต่าง",
+    "pt_BR": "Selecione um item do menu para abrir uma janela.",
+    "id_ID": "Pilih item menu untuk membuka jendela."
    }
   },
   "tb.new": {
@@ -296,7 +338,9 @@
     "zh_CN": "新建",
     "ja_JP": "新規",
     "ms_MY": "Baru",
-    "th_TH": "ใหม่"
+    "th_TH": "ใหม่",
+    "pt_BR": "Novo",
+    "id_ID": "Baru"
    }
   },
   "tb.copy": {
@@ -310,7 +354,9 @@
     "zh_CN": "复制",
     "ja_JP": "コピー",
     "ms_MY": "Salin",
-    "th_TH": "คัดลอก"
+    "th_TH": "คัดลอก",
+    "pt_BR": "Copiar",
+    "id_ID": "Salin"
    }
   },
   "tb.save": {
@@ -324,7 +370,9 @@
     "zh_CN": "保存",
     "ja_JP": "保存",
     "ms_MY": "Simpan",
-    "th_TH": "บันทึก"
+    "th_TH": "บันทึก",
+    "pt_BR": "Salvar",
+    "id_ID": "Simpan"
    }
   },
   "tb.saveNew": {
@@ -338,7 +386,9 @@
     "zh_CN": "保存并新建",
     "ja_JP": "保存して新規",
     "ms_MY": "Simpan & Baru",
-    "th_TH": "บันทึกและสร้างใหม่"
+    "th_TH": "บันทึกและสร้างใหม่",
+    "pt_BR": "Salvar e novo",
+    "id_ID": "Simpan & baru"
    }
   },
   "tb.delete": {
@@ -352,7 +402,9 @@
     "zh_CN": "删除",
     "ja_JP": "削除",
     "ms_MY": "Padam",
-    "th_TH": "ลบ"
+    "th_TH": "ลบ",
+    "pt_BR": "Excluir",
+    "id_ID": "Hapus"
    }
   },
   "tb.ignore": {
@@ -366,7 +418,9 @@
     "zh_CN": "撤销更改",
     "ja_JP": "変更を元に戻す",
     "ms_MY": "Buat asal perubahan",
-    "th_TH": "ยกเลิกการเปลี่ยนแปลง"
+    "th_TH": "ยกเลิกการเปลี่ยนแปลง",
+    "pt_BR": "Desfazer alterações",
+    "id_ID": "Batalkan perubahan"
    }
   },
   "tb.refresh": {
@@ -380,7 +434,9 @@
     "zh_CN": "刷新",
     "ja_JP": "再表示",
     "ms_MY": "Muat semula",
-    "th_TH": "รีเฟรช"
+    "th_TH": "รีเฟรช",
+    "pt_BR": "Atualizar",
+    "id_ID": "Segarkan"
    }
   },
   "tb.process": {
@@ -394,7 +450,9 @@
     "zh_CN": "处理",
     "ja_JP": "処理",
     "ms_MY": "Proses",
-    "th_TH": "ประมวลผล"
+    "th_TH": "ประมวลผล",
+    "pt_BR": "Processar",
+    "id_ID": "Proses"
    }
   },
   "tb.print": {
@@ -408,7 +466,9 @@
     "zh_CN": "打印",
     "ja_JP": "印刷",
     "ms_MY": "Cetak",
-    "th_TH": "พิมพ์"
+    "th_TH": "พิมพ์",
+    "pt_BR": "Imprimir",
+    "id_ID": "Cetak"
    }
   },
   "tb.zoom": {
@@ -422,7 +482,9 @@
     "zh_CN": "跨窗口查询",
     "ja_JP": "ズームアクロス",
     "ms_MY": "Zum Merentas",
-    "th_TH": "ซูมข้าม"
+    "th_TH": "ซูมข้าม",
+    "pt_BR": "Zoom cruzado",
+    "id_ID": "Zoom silang"
    }
   },
   "tb.first": {
@@ -436,7 +498,9 @@
     "zh_CN": "第一条记录",
     "ja_JP": "最初のレコード",
     "ms_MY": "Rekod pertama",
-    "th_TH": "ระเบียนแรก"
+    "th_TH": "ระเบียนแรก",
+    "pt_BR": "Primeiro registro",
+    "id_ID": "Rekaman pertama"
    }
   },
   "tb.prev": {
@@ -450,7 +514,9 @@
     "zh_CN": "上一条记录",
     "ja_JP": "前のレコード",
     "ms_MY": "Rekod sebelumnya",
-    "th_TH": "ระเบียนก่อนหน้า"
+    "th_TH": "ระเบียนก่อนหน้า",
+    "pt_BR": "Registro anterior",
+    "id_ID": "Rekaman sebelumnya"
    }
   },
   "tb.next": {
@@ -464,7 +530,9 @@
     "zh_CN": "下一条记录",
     "ja_JP": "次のレコード",
     "ms_MY": "Rekod seterusnya",
-    "th_TH": "ระเบียนถัดไป"
+    "th_TH": "ระเบียนถัดไป",
+    "pt_BR": "Próximo registro",
+    "id_ID": "Rekaman berikutnya"
    }
   },
   "tb.last": {
@@ -478,7 +546,9 @@
     "zh_CN": "最后一条记录",
     "ja_JP": "最後のレコード",
     "ms_MY": "Rekod terakhir",
-    "th_TH": "ระเบียนสุดท้าย"
+    "th_TH": "ระเบียนสุดท้าย",
+    "pt_BR": "Último registro",
+    "id_ID": "Rekaman terakhir"
    }
   },
   "tb.record": {
@@ -492,7 +562,9 @@
     "zh_CN": "记录",
     "ja_JP": "レコード",
     "ms_MY": "Rekod",
-    "th_TH": "ระเบียน"
+    "th_TH": "ระเบียน",
+    "pt_BR": "Registro",
+    "id_ID": "Rekaman"
    }
   },
   "tb.of": {
@@ -506,7 +578,9 @@
     "zh_CN": "/",
     "ja_JP": "/",
     "ms_MY": "daripada",
-    "th_TH": "จาก"
+    "th_TH": "จาก",
+    "pt_BR": "de",
+    "id_ID": "dari"
    }
   },
   "tb.records": {
@@ -520,7 +594,9 @@
     "zh_CN": "条记录",
     "ja_JP": "件",
     "ms_MY": "rekod",
-    "th_TH": "ระเบียน"
+    "th_TH": "ระเบียน",
+    "pt_BR": "registros",
+    "id_ID": "rekaman"
    }
   },
   "tb.grid": {
@@ -533,7 +609,9 @@
     "zh_CN": "表格",
     "ja_JP": "グリッド",
     "ms_MY": "Grid",
-    "th_TH": "ตาราง"
+    "th_TH": "ตาราง",
+    "pt_BR": "Grade",
+    "id_ID": "Tabel"
    }
   },
   "tb.form": {
@@ -546,7 +624,9 @@
     "zh_CN": "表单",
     "ja_JP": "フォーム",
     "ms_MY": "Borang",
-    "th_TH": "แบบฟอร์ม"
+    "th_TH": "แบบฟอร์ม",
+    "pt_BR": "Formulário",
+    "id_ID": "Formulir"
    }
   },
   "inline.unsaved": {
@@ -559,7 +639,9 @@
     "zh_CN": "● 未保存",
     "ja_JP": "● 未保存",
     "ms_MY": "● belum disimpan",
-    "th_TH": "● ยังไม่บันทึก"
+    "th_TH": "● ยังไม่บันทึก",
+    "pt_BR": "● não salvo",
+    "id_ID": "● belum disimpan"
    }
   },
   "help.ask": {
@@ -644,7 +726,9 @@
     "zh_CN": "您是不是想找",
     "ja_JP": "もしかして",
     "ms_MY": "Adakah maksud anda",
-    "th_TH": "คุณหมายถึง"
+    "th_TH": "คุณหมายถึง",
+    "pt_BR": "Você quis dizer",
+    "id_ID": "Maksud Anda"
    }
   },
   "help.doc.usage": {
@@ -657,7 +741,9 @@
     "zh_CN": "输入 # 然后输入单据编号",
     "ja_JP": "# に続けて伝票番号を入力してください",
     "ms_MY": "Taip # kemudian nombor dokumen",
-    "th_TH": "พิมพ์ # แล้วตามด้วยเลขที่เอกสาร"
+    "th_TH": "พิมพ์ # แล้วตามด้วยเลขที่เอกสาร",
+    "pt_BR": "Digite # e um número de documento",
+    "id_ID": "Ketik # lalu nomor dokumen"
    }
   },
   "help.doc.none": {
@@ -670,7 +756,9 @@
     "zh_CN": "没有单据 #{0}",
     "ja_JP": "伝票 #{0} はありません",
     "ms_MY": "Tiada dokumen #{0}",
-    "th_TH": "ไม่พบเอกสาร #{0}"
+    "th_TH": "ไม่พบเอกสาร #{0}",
+    "pt_BR": "Nenhum documento #{0}",
+    "id_ID": "Tidak ada dokumen #{0}"
    }
   },
   "help.doc.more": {
@@ -683,7 +771,9 @@
     "zh_CN": "更多",
     "ja_JP": "件あります",
     "ms_MY": "lagi",
-    "th_TH": "เพิ่มเติม"
+    "th_TH": "เพิ่มเติม",
+    "pt_BR": "mais",
+    "id_ID": "lainnya"
    }
   },
   "help.reserved": {
@@ -696,7 +786,9 @@
     "zh_CN": "@ 为保留字符，暂无作用",
     "ja_JP": "@ は予約済みで、まだ何もしません",
     "ms_MY": "@ dikhaskan dan belum berfungsi",
-    "th_TH": "@ ถูกสงวนไว้และยังไม่ทำอะไร"
+    "th_TH": "@ ถูกสงวนไว้และยังไม่ทำอะไร",
+    "pt_BR": "@ é reservado e ainda não faz nada",
+    "id_ID": "@ dicadangkan dan belum melakukan apa pun"
    }
   }
  }

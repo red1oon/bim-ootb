@@ -40,7 +40,8 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'applica
   PACKS.filter(l => l !== 'en_US').forEach(l => { const o = gitJson('erp/i18n/' + l + '.json'), n = JSON.parse(fs.readFileSync(path.join(I18N, l + '.json'), 'utf8')); if (!o) { bad1.push(l + ':no-before'); return; }
     const ks = new Set(Object.keys(o).concat(Object.keys(n))); ks.delete('machineSource'); const diff = Array.from(ks).filter(k => JSON.stringify(o[k]) !== JSON.stringify(n[k])); if (diff.length) bad1.push(l + ':' + diff.slice(0, 3)); });
   const oc = gitJson('erp/i18n/chrome.json'), nc = JSON.parse(fs.readFileSync(path.join(I18N, 'chrome.json'), 'utf8')), sortKeys = (v) => Array.isArray(v) ? v.map(sortKeys) : (v && typeof v === 'object') ? Object.keys(v).sort().reduce((a, k) => (a[k] = sortKeys(v[k]), a), {}) : v, norm = (c) => JSON.stringify(sortKeys(c));   // object member order is not a label
-  const chromeEq = !!oc && norm(oc.keys) === norm(nc.keys) && oc._doc === nc._doc;
+  const ncOld = JSON.parse(JSON.stringify(nc)); Object.keys(ncOld.keys).forEach(k => { const m = ncOld.keys[k].machine; if (m) { delete m.pt_BR; delete m.id_ID; if (!Object.keys(m).length) delete ncOld.keys[k].machine; } });   // T5b added pt_BR / id_ID chrome text (W-ERP-CHROME-FILL); S1 judges the 8 languages that existed
+  const chromeEq = !!oc && norm(oc.keys) === norm(ncOld.keys) && oc._doc === nc._doc;
   chk('S1 the ' + (PACKS.length - 1) + ' built screen packs are label-equal to ' + BEFORE_REF + ' (every key and map; only `machineSource` text differs) and chrome.json is label-equal (member order normalised): ' + (PACKS.length - 1 - bad1.length) + ' of ' + (PACKS.length - 1) + ' packs, chrome ' + chromeEq, bad1.length === 0 && chromeEq, bad1.join(' | '));
   // ── S2 ──
   const left = fs.readdirSync(MACH).filter(f => /\.json$/.test(f)), eng = {};
@@ -49,7 +50,8 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'applica
   TABS.forEach(t => { perT[t] = [0, 0]; LANGS.forEach(l => { const rows = readXml(path.join(MACH, t + '_Trl_' + l + '.xml')), o = gitJson('erp/i18n/' + l + '.json'); if (!o && !rows) return;
     const exp = o ? Object.keys(o[t + '_Trl_m'] || {}).length : 0, got = rows ? rows.length : 0; perT[t][0] += got; perT[t][1] += exp; nRows += got; nExp += exp;
     const seen = new Set(); (rows || []).forEach(r => { if (seen.has(r.id)) dup++; seen.add(r.id); if ((eng[t].get(r.id) || '').trim().replace(/\s+/g, ' ') !== r.original.trim().replace(/\s+/g, ' ')) stale++; }); }); });
-  let msgRows = 0, msgExp = 0; LANGS.forEach(l => { const rows = readXml(path.join(MACH, 'AD_Message_Trl_' + l + '.xml')) || []; msgRows += rows.length; msgExp += Object.keys(oc.keys).filter(k => oc.keys[k].machine && oc.keys[k].machine[l]).length; });
+  let msgRows = 0, msgExp = 0; LANGS.slice(0, 8).forEach(l => {   // the 8 languages that had machine text at BEFORE_REF (T5b adds pt_BR / id_ID rows: judged by W-ERP-CHROME-FILL)
+    const rows = readXml(path.join(MACH, 'AD_Message_Trl_' + l + '.xml')) || []; msgRows += rows.length; msgExp += Object.keys(oc.keys).filter(k => oc.keys[k].machine && oc.keys[k].machine[l]).length; });
   L('S2 machine rows by table (XML / BEFORE _Trl_m): ' + TABS.map(t => t + ' ' + perT[t][0] + '/' + perT[t][1]).join(', ') + '; AD_Message (chrome) ' + msgRows + '/' + msgExp + '; stale=' + stale + ', duplicate ids=' + dup + '; machine/*.json left=' + left.length);
   chk('S2 the XML rows are the same rows: ' + nRows + ' of ' + nExp + ' screen-name rows and ' + msgRows + ' of ' + msgExp + ' chrome rows; stale 0, no duplicate id, no loose machine/*.json', nRows === nExp && nExp > 0 && msgRows === msgExp && msgExp > 0 && stale === 0 && dup === 0 && left.length === 0);
   // ── S3 + S5 fixtures need the pack cache ──
