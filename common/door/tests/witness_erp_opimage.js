@@ -61,7 +61,7 @@ const k = kit('W-ERP-OPIMAGE'), BRK = process.env.ERP_BREAK || '';
 
   // ── G3 it follows the log: a line added after the image is seen; an EDITED log gives the edited result
   const add = await run(ON, 'mis.new kind=PR_Patient Name=Devi'), l1 = await run(ON, 'mis.list kind=PR_Patient'), n1 = ((l1.answer || {}).rows || []).map(r => r.Name).join();
-  const txt = fs.readFileSync(LOG, 'utf8'), edited = txt.replace('"name":"Aminah"', '"name":"Zainab"'); fs.writeFileSync(LOG, edited);
+  const txt = fs.readFileSync(LOG, 'utf8'), edited = txt.replace('"name":"Aminah"', '"name":"Zainab"').replace('\\"name\\":\\"Aminah\\"', '\\"name\\":\\"Zainab\\"'); fs.writeFileSync(LOG, edited);   // a signed row holds the op as an escaped string inside parameters (the edit breaks its hash on purpose: a boot replays, it does not verify)
   const l2 = await run(ON, 'mis.list kind=PR_Patient'), n2 = ((l2.answer || {}).rows || []).map(r => r.Name).join(), l3 = await run(OFF, 'mis.list kind=PR_Patient'), n3 = ((l3.answer || {}).rows || []).map(r => r.Name).join();
   if (edited === txt) k.incon('G3', 'the op-log holds no patient named Aminah to edit');
   else k.chk('G3 it follows the op-log: a patient added after the image is listed; after an earlier line of the log is edited (Aminah becomes Zainab) the next line shows Zainab, as a full replay does', ok(add) && /Devi/.test(n1) && /Aminah/.test(n1) && /Zainab/.test(n2) && !/Aminah/.test(n2) && n2 === n3, 'after the add: ' + n1 + ' · after the edit, with the image on: ' + n2 + ' · with it off: ' + n3);

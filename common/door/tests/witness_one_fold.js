@@ -29,7 +29,7 @@ const BREAK = process.env.ONE_FOLD_BREAK || '';
   await door('erp.new kind=C_OrderLine order=' + no + ' m_product_id=137 qtyentered=3');
   const c = await door('erp.complete kind=Order number=' + no);
   k.L('door order=' + no + ' complete=' + (c && c.status) + ' ' + (c && c.answer && c.answer.after ? c.answer.after.docStatus : ''));
-  const ops = fs.readFileSync(OPS, 'utf8').split('\n').filter(Boolean).map(JSON.parse);
+  const ops = require('../ledger_sign.js').parseOps(fs.readFileSync(OPS, 'utf8'));
   const SQL = await require(path.join(ROOT, 'common/lib/sql-wasm.js'))({ wasmBinary: fs.readFileSync(path.join(ROOT, 'common/lib/sql-wasm.wasm')) });
   const seed = fs.readFileSync(path.join(ROOT, 'erp', 'ad_seed.db'));
   const rowsOf = (db) => (sql, p) => { const st = db.prepare(sql); if (p) st.bind(p); const out = []; while (st.step()) out.push(st.getAsObject()); st.free(); return out; };
@@ -49,7 +49,7 @@ const BREAK = process.env.ONE_FOLD_BREAK || '';
   { const P = new SQL.Database(seed), O = { db: P, rows: rowsOf(P), opfile: path.join(dir, 'persist.ops.jsonl'), ops: [] };
     const mk = (n) => ({ op_type: 'CRUD_CREATE', key: 'ad_attachment', table: 'ad_attachment', verb: 'create', fields: { ad_client_id: 11, ad_org_id: 11, isactive: 'Y', ad_table_id: 259, record_id: 990000 + n, title: 'W-ONE-FOLD ' + n, ad_attachment_uu: 'onefold-' + n } });
     const logOut = console.log; console.log = () => {}; try { OC.persist ? OC.persist(O, [mk(1), mk(2)]) : null; } finally { console.log = logOut; }
-    const got = fs.existsSync(O.opfile) ? fs.readFileSync(O.opfile, 'utf8').split('\n').filter(Boolean).map(JSON.parse) : [];
+    const got = fs.existsSync(O.opfile) ? require('../ledger_sign.js').parseOps(fs.readFileSync(O.opfile, 'utf8')) : [];
     if (!OC.persist) k.incon('K1b', 'object_cli does not export persist; the attach path cannot be judged in-process');
     else { const ks = got.map(o => o.fields.ad_attachment_id);
       k.chk('K1b object_cli.persist logs each create WITH its key and keyKept; two creates -> two different keys', got.length === 2 && got.every(o => o.keyKept === true && Number(o.fields.ad_attachment_id) > 0) && ks[0] !== ks[1], 'keys=' + JSON.stringify(ks) + ' keyKept=' + JSON.stringify(got.map(o => o.keyKept))); } }

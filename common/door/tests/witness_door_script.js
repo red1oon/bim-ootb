@@ -21,7 +21,7 @@ const k = kit('W-DOOR-SCRIPT'), BRK = process.env.DOOR_BREAK || '';
     p.on('close', (code) => { const envs = o.split('\n').filter(l => l.charAt(0) === '{').map(l => { try { return JSON.parse(l); } catch (x) { return { status: 'unparseable' }; } }); res({ code, envs, err: er }); }); });
   const line = (e, l) => run(e, [l]).then(r => r.envs[r.envs.length - 1] || { status: 'none' });
   const script = (e, name, lines, extra, brk) => { fs.writeFileSync(path.join(dir, name), lines.join('\n') + '\n'); return run(e, ['--script', name].concat(extra || []), brk); };
-  const ops = (n) => { try { return fs.readFileSync(logOf(n), 'utf8').split('\n').filter(Boolean); } catch (x) { return []; } };
+  const ops = (n) => { try { return require('../ledger_sign.js').parseOps(fs.readFileSync(logOf(n), 'utf8')).map(o => JSON.stringify(o)); } catch (x) { return []; } };   // the OPS of the log (a signed row carries its own uuid, hashes and signature: not part of what two runs must share)
   const sha = (f) => { try { return crypto.createHash('sha256').update(fs.readFileSync(f)).digest('hex').slice(0, 16); } catch (x) { return 'absent'; } };
   const folderSha = () => fs.readdirSync(dir).sort().map(n => n + ':' + sha(path.join(dir, n))).join(',');
   const UU = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, TS = /\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(\.\d+)?Z?/g;

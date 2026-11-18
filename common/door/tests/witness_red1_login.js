@@ -21,7 +21,7 @@ const session = (name, lines) => {
   delete env.BIM_DOOR_USER;
   const r = cp.spawnSync(process.execPath, [RED1], { input: lines.concat(['exit']).join('\n') + '\n', encoding: 'utf8', env, timeout: 300000 });
   const read = (f) => { try { return fs.readFileSync(f, 'utf8').trim().split('\n').filter(Boolean).map(l => JSON.parse(l)); } catch (e) { return []; } };
-  const out = { name, out: r.stdout || '', err: r.stderr || '', journal: read(env.BIM_DOOR_JOURNAL), ops: read(env.BIM_OBJECT_OPLOG) };
+  const out = { name, out: r.stdout || '', err: r.stderr || '', journal: read(env.BIM_DOOR_JOURNAL), ops: (() => { try { return require('../ledger_sign.js').parseOps(fs.readFileSync(env.BIM_OBJECT_OPLOG, 'utf8')); } catch (e) { return []; } })() };   // the OPS of the log (§52: a line is a signed row)
   try { fs.rmSync(d, { recursive: true, force: true }); } catch (x) { /* kept */ }
   k.L('session ' + name + ' lines=' + JSON.stringify(lines) + ' journal=' + out.journal.filter(j => j.state === 'started').map(j => j.verb + (j.user ? '@' + j.user : '')).join(',') + ' ops=' + out.ops.length);
   return out;
