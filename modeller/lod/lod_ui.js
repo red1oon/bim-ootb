@@ -172,16 +172,16 @@
   function liveGenCount() { var O = window.Bonsai && window.Bonsai.oplog, db = O && O.db; if (!db) return 0; try { var r = db.exec("SELECT COUNT(*) FROM kernel_ops WHERE undone=0 AND op_type='GEOM_INSERT' AND output_guid LIKE 'GEN-%'"); return r.length ? Number(r[0].values[0][0]) : 0; } catch (e) { return 0; } }
   function refreshIfcButton() {
     var P = state.panel, b = P && P.querySelector('.lu-ifc'); if (!b) return; var n = liveGenCount(); b.disabled = !n || state.busy;
-    b.title = n ? 'Write the ' + n + ' generated parts as an add-on IFC' : 'Run an upgrade first: the add-on IFC holds only generated parts';
+    b.title = n ? 'Exports out what was added from this upgrade (' + n + ' parts)' : 'Exports out what was added from this upgrade: run an upgrade first';   // owner 2026-11-18: the button is "Export (IFC)", this tip
   }
   function loadFrame() {
     var f = document.createElement('input'); f.type = 'file'; f.accept = '.json,application/json'; f.style.display = 'none'; document.body.appendChild(f);
     f.onchange = async function () {
       var file = f.files && f.files[0]; f.remove(); if (!file) return;
       try { var json = JSON.parse(await readFile(file)), v = window.LodIfc.validateFrame(json);
-        if (!v.ok) { log('§LODUP_IFC_FRAME REFUSED ' + file.name + ': ' + v.why); if (typeof window.setStat === 'function') window.setStat('Add-on IFC: ' + file.name + ' refused: ' + v.why); return; }
+        if (!v.ok) { log('§LODUP_IFC_FRAME REFUSED ' + file.name + ': ' + v.why); if (typeof window.setStat === 'function') window.setStat('Export (IFC): ' + file.name + ' refused: ' + v.why); return; }
         state.frame = { json: json, name: file.name, summary: v.summary }; log('§LODUP_IFC_FRAME loaded ' + file.name + ' (' + v.summary + ')');
-      } catch (e) { log('§LODUP_IFC_FRAME REFUSED ' + file.name + ': not valid JSON (' + (e && e.message) + ')'); if (typeof window.setStat === 'function') window.setStat('Add-on IFC: ' + file.name + ' is not valid JSON.'); return; }
+      } catch (e) { log('§LODUP_IFC_FRAME REFUSED ' + file.name + ': not valid JSON (' + (e && e.message) + ')'); if (typeof window.setStat === 'function') window.setStat('Export (IFC): ' + file.name + ' is not valid JSON.'); return; }
       paint();
     };
     f.click();
@@ -197,7 +197,7 @@
       var bdb = await window.OpenBuildingDb.get(), elev = {}; try { if (bdb && window.LodReader.has(bdb, 'storey_elevation')) { var re = bdb.exec('SELECT name, elevation_attr_m FROM storey_elevation'); if (re.length) re[0].values.forEach(function (v) { if (v[1] !== null) elev[v[0]] = Number(v[1]); }); } } catch (e) { /* no storey table: only a frame JSON can name the elevations */ }
       var schema = o.schema || state.schema, frame = o.frame !== undefined ? o.frame : (state.frame ? state.frame.json : null), model = modelName();
       var gradeOf = function (h) { var sc = (inp.sched || {})[h]; return sc && sc.Note_fy_MPa !== undefined && sc.Note_fy_MPa !== null ? { fy: sc.Note_fy_MPa, src: sc.NoteSource_fy_MPa === undefined || sc.NoteSource_fy_MPa === null ? 'None' : sc.NoteSource_fy_MPa } : null; };
-      var drv = await window.LodRegistry.kit.drive(Ifc.buildSteps(els, { schema: schema, frame: frame, elev: elev, gradeOf: gradeOf, fileName: model + '_addon_' + schema + '.ifc', breakGuid: !!o.breakGuid, kit: window.LodRegistry.kit }), { budgetMs: 25, onProgress: function (pr) { say(pr && pr.label ? pr.label + ' ' + pr.done + ' of ' + pr.total : 'Add-on IFC: working...'); } });
+      var drv = await window.LodRegistry.kit.drive(Ifc.buildSteps(els, { schema: schema, frame: frame, elev: elev, gradeOf: gradeOf, fileName: model + '_upgrade_' + schema + '.ifc', breakGuid: !!o.breakGuid, kit: window.LodRegistry.kit }), { budgetMs: 25, onProgress: function (pr) { say(pr && pr.label ? pr.label + ' ' + pr.done + ' of ' + pr.total : 'Export (IFC): working...'); } });
       var res = drv.value, st = res.stats;
       if (!res.ok) { log('§LODUP_IFC_REFUSED ' + res.why); say(res.why); return { ok: false, why: res.why, stats: st }; }
       log('§LODUP_IFC_SELECT schema=' + schema + ' elements=' + st.elements + ' classes=' + JSON.stringify(st.classes) + ' frame=' + st.frame + (Object.keys(st.skipped).length ? ' skipped_unsupported=' + JSON.stringify(st.skipped) : ''));
@@ -207,11 +207,11 @@
       try { var dg = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer()); sha = Array.prototype.map.call(new Uint8Array(dg), function (b) { return ('0' + b.toString(16)).slice(-2); }).join(''); } catch (e) { sha = null; }
       var ms = Math.round(performance.now() - t0), heap = performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : null;
       log('§LODUP_IFC_WRITTEN bytes=' + blob.size + ' sha256=' + sha + ' schema=' + schema + ' entities=' + st.entities + ' storeys=' + st.storeys + ' parts=' + st.parts + ' split=' + JSON.stringify(st.split) + ' ms=' + ms + ' maxSliceMs=' + Math.round(drv.stats.maxSliceMs) + ' slices=' + drv.stats.slices + ' heapMB=' + heap);
-      if (o.download !== false) download2(model + '_addon_' + schema + '.ifc', blob);
-      say('Add-on IFC (' + schema + '): ' + st.parts + ' parts, ' + (blob.size / 1048576).toFixed(1) + ' MB, ' + (frame ? 'your frame' : 'DB frame as is') + '.');
+      if (o.download !== false) download2(model + '_upgrade_' + schema + '.ifc', blob);
+      say('Export (IFC, ' + schema + '): ' + st.parts + ' parts, ' + (blob.size / 1048576).toFixed(1) + ' MB, ' + (frame ? 'your frame' : 'DB frame as is') + '.');
       state.ifcLast = { bytes: blob.size, sha: sha, stats: st, schema: schema };
       return { ok: true, bytes: blob.size, sha: sha, stats: st, schema: schema, blob: o.keepBlob ? blob : null, ms: ms, maxSliceMs: drv.stats.maxSliceMs };
-    } catch (e) { console.error(TAG + ' §LODUP_IFC failed ' + (e && e.stack || e)); say('Add-on IFC failed: ' + (e && e.message)); return { ok: false, why: String(e && e.message) }; }
+    } catch (e) { console.error(TAG + ' §LODUP_IFC failed ' + (e && e.stack || e)); say('Export (IFC) failed: ' + (e && e.message)); return { ok: false, why: String(e && e.message) }; }
     finally { state.busy = false; refreshIfcButton(); }
   }
   function download2(name, blob) { var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 60000); }
@@ -236,8 +236,8 @@
       }
       h += '</div>';
     });
-    h += '<div class="lu-s lu-ifcrow">Add-on IFC: <select class="lu-schema"><option value="IFC2X3"' + (state.schema === 'IFC2X3' ? ' selected' : '') + '>IFC2X3</option><option value="IFC4"' + (state.schema === 'IFC4' ? ' selected' : '') + '>IFC4</option></select> <button class="lu-frame">Load frame…</button> <span data-k="frame">' + (state.frame ? esc(state.frame.name) + ': ' + esc(state.frame.summary) : 'no frame: the DB frame is written as is') + '</span></div>';
-    h += '<div class="lu-dl"><button class="lu-cl">Change list (.txt)</button><button class="lu-ifc">Add-on IFC</button></div><div class="lu-s" data-st-ifc></div>';
+    h += '<div class="lu-s lu-ifcrow">Export (IFC) as <select class="lu-schema"><option value="IFC2X3"' + (state.schema === 'IFC2X3' ? ' selected' : '') + '>IFC2X3</option><option value="IFC4"' + (state.schema === 'IFC4' ? ' selected' : '') + '>IFC4</option></select> <button class="lu-frame">Load frame…</button> <span data-k="frame">' + (state.frame ? esc(state.frame.name) + ': ' + esc(state.frame.summary) : 'no frame: the DB frame is written as is') + '</span></div>';
+    h += '<div class="lu-dl"><button class="lu-cl">Change list (.txt)</button><button class="lu-ifc" title="Exports out what was added from this upgrade">Export (IFC)</button></div><div class="lu-s" data-st-ifc></div>';
     body.innerHTML = h;
     body.querySelectorAll('.lu-run').forEach(function (b) { b.onclick = function () { runPack(b.getAttribute('data-run')); }; });
     body.querySelectorAll('.lu-load').forEach(function (b) { b.onclick = function () { loadInput(b.getAttribute('data-load'), b.getAttribute('data-accept')); }; });
