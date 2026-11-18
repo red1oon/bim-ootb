@@ -231,13 +231,13 @@
     return set;
   }
 
-  // ── §19.14: the workflows / info windows the role may open (MRole.getWorkflowAccess / getInfoAccess) ──
-  // {workflow, info}: each a map keyed by id, or null when the DB has no such access table (that kind is then not judged).
+  // ── §19.14: the workflows / info windows / tasks the role may open (MRole.getWorkflowAccess / getInfoAccess / getTaskAccess; tasks §19.16 C1) ──
+  // {workflow, info, task}: each a map keyed by id, or null when the DB has no such access table (that kind is then not judged).
   function accessibleLeaves(db, roleId) {
-    var ctx = roleContextFor(db, roleId), out = { workflow: null, info: null };
-    if (!ctx) { console.log('§IDMP-SESSION accessibleLeaves role=' + roleId + ' source=NONE(no-AdAccess) workflow/info not judged'); return out; }
-    ['workflow', 'info'].forEach(function (k) { if (ctx[k]) { var set = {}; ctx[k].forEach(function (rw, id) { set[id] = { rw: !!rw }; }); out[k] = set; } });
-    console.log('§IDMP-SESSION accessibleLeaves role=' + roleId + ' workflows=' + (out.workflow ? Object.keys(out.workflow).length : 'n/a') + ' infos=' + (out.info ? Object.keys(out.info).length : 'n/a') + ' source=AdAccess');
+    var ctx = roleContextFor(db, roleId), out = { workflow: null, info: null, task: null };
+    if (!ctx) { console.log('§IDMP-SESSION accessibleLeaves role=' + roleId + ' source=NONE(no-AdAccess) workflow/info/task not judged'); return out; }
+    ['workflow', 'info', 'task'].forEach(function (k) { if (ctx[k]) { var set = {}; ctx[k].forEach(function (rw, id) { set[id] = { rw: !!rw }; }); out[k] = set; } });
+    console.log('§IDMP-SESSION accessibleLeaves role=' + roleId + ' workflows=' + (out.workflow ? Object.keys(out.workflow).length : 'n/a') + ' infos=' + (out.info ? Object.keys(out.info).length : 'n/a') + ' tasks=' + (out.task ? Object.keys(out.task).length : 'n/a') + ' source=AdAccess');
     return out;
   }
 
@@ -256,11 +256,11 @@
   // Hide action='W' leaves whose windowId ∉ winSet; with procSet/formSet given (§AD-MENU-PRF-LIVE),
   // also hide 'P'/'R' leaves whose processId ∉ procSet and 'X' leaves whose formId ∉ formSet; with leafSets
   // given (VOCAB_MESSAGE_CATALOG §19.14, MTree.java:663-670), 'F' leaves whose workflowId ∉ leafSets.workflow
-  // and 'I' leaves whose infoWindowId ∉ leafSets.info; then drop summary folders left empty. A kind whose set is
-  // null is not judged. 'T' (task) leaves stay unscoped: the seed has no AD_Task_Access table (named residual).
+  // 'I' leaves whose infoWindowId ∉ leafSets.info and 'T' leaves whose taskId ∉ leafSets.task (§19.16 C1: AD_Task_Access arrives
+  // with the ad_ctxhelp_overlay.js boot overlay); then drop summary folders left empty. A kind whose set is null is not judged.
   // Returns a new pruned tree (input is not mutated) plus visible/total counts per gated kind.
   function scopeMenu(roots, winSet, procSet, formSet, leafSets) {
-    var total = {}, visible = {}, ls = leafSets || {}, leafGate = { F: ['workflowId', ls.workflow], I: ['infoWindowId', ls.info] }, totalL = { F: {}, I: {} }, visibleL = { F: {}, I: {} };
+    var total = {}, visible = {}, ls = leafSets || {}, leafGate = { F: ['workflowId', ls.workflow], I: ['infoWindowId', ls.info], T: ['taskId', ls.task] }, totalL = { F: {}, I: {}, T: {} }, visibleL = { F: {}, I: {}, T: {} };
     var totalP = {}, visibleP = {}, totalF = {}, visibleF = {};
     function prune(node) {
       var isFolder = node.isSummary || (node.children && node.children.length);
@@ -288,7 +288,7 @@
       var lg = leafGate[node.action];
       if (lg && lg[1] && node[lg[0]] != null) {
         var lid = Number(node[lg[0]]); totalL[node.action][lid] = 1;
-        if (!lg[1][lid]) return null;                        // workflow / info window the role can't open → drop
+        if (!lg[1][lid]) return null;                        // workflow / info window / task the role can't open → drop
         visibleL[node.action][lid] = 1;
       }
       return node;
@@ -298,12 +298,14 @@
                 visibleProcs: Object.keys(visibleP).length, totalProcs: Object.keys(totalP).length,
                 visibleForms: Object.keys(visibleF).length, totalForms: Object.keys(totalF).length,
                 visibleWorkflows: Object.keys(visibleL.F).length, totalWorkflows: Object.keys(totalL.F).length,
-                visibleInfos: Object.keys(visibleL.I).length, totalInfos: Object.keys(totalL.I).length };
+                visibleInfos: Object.keys(visibleL.I).length, totalInfos: Object.keys(totalL.I).length,
+                visibleTasks: Object.keys(visibleL.T).length, totalTasks: Object.keys(totalL.T).length };
     console.log('§IDMP-SESSION scopeMenu visibleWindows=' + out.visible + '/' + out.total +
       (procSet ? ' visibleProcs=' + out.visibleProcs + '/' + out.totalProcs : '') +
       (formSet ? ' visibleForms=' + out.visibleForms + '/' + out.totalForms : '') +
       (ls.workflow ? ' visibleWorkflows=' + out.visibleWorkflows + '/' + out.totalWorkflows : '') +
       (ls.info ? ' visibleInfos=' + out.visibleInfos + '/' + out.totalInfos : '') +
+      (ls.task ? ' visibleTasks=' + out.visibleTasks + '/' + out.totalTasks : '') +
       ' roots=' + tree.length);
     return out;
   }
@@ -324,7 +326,7 @@
     var winSet = accessibleWindows(db, role.id);
     var procSet = accessibleProcesses(db, role.id);            // §AD-MENU-PRF-LIVE
     var formSet = accessibleForms(db, role.id);
-    var leafSets = accessibleLeaves(db, role.id);              // §19.14 F / I menu leaves
+    var leafSets = accessibleLeaves(db, role.id);              // §19.14 F / I menu leaves, §19.16 C1 T
     // ROLE GATE for accounting (iDempiere MRole.isShowAcct): a role WITHOUT IsShowAcct sees NO accounting —
     // no Posted column/button, no acct tabs. Read it onto the role so the host can gate the Posted affordance.
     // Defensive: some col-intersect tenant shards may lack the column → default N (hide), never throw.
