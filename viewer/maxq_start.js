@@ -30,6 +30,18 @@
       A.toggleXray();
       console.log('§CINEMA_XRAY_RESET x-ray was on, turned off before orbit');
     }
+    // §ALTC_FRESH_BUILD (bim-compiler prompts/ALTC_FOUNDATION.md §ALTC_FRESH_BUILD) — never bake an older build than the server's.
+    // A tab loaded before a deploy keeps the scripts it loaded; this compares their ?v= with the server's copy of the page.
+    var _fresh = (window.BuildFresh && window.BuildFresh.check) ? await window.BuildFresh.check(document, window.fetch && window.fetch.bind(window), location.pathname)
+      : { state: 'unknown', compared: 0, stale: [], reason: 'build_fresh.js not loaded' };
+    if (_fresh.state === 'stale') {
+      console.warn('§ALTC_STALE_BUILD files=' + _fresh.stale.length + ' [' + _fresh.stale.map(function (x) { return x.file + ':' + x.loaded + '->' + x.served; }).join(',') +
+        '] — this page is an older build than the server; not baking');
+      MQS._status('🎬 This page is an older build than the server — reload the page, then press Alt+C again');
+      return;
+    }
+    console.log('§ALTC_FRESH_BUILD ' + (_fresh.state === 'ok' ? (_fresh.compared > 0 ? 'ok' : 'INCONCLUSIVE') : 'UNKNOWN') + ' compared=' + _fresh.compared +
+      (_fresh.reason ? ' reason=' + _fresh.reason : ''));
     var nFrames = opts.frames || MQS.MAXQ_N_FRAMES, fps = opts.fps || MQS.MAXQ_FPS;
     // §DATUM_DECOUPLE (bim-compiler prompts/MEP_CLASH_REVEAL_MOVIE.md §53) — bisect-only mode. When set,
     // _captureFrame skips its own GPU render and every OTHER 2D overlay (already baked into the source
@@ -977,6 +989,7 @@
       // rather than drawing a rose it cannot justify, and this flag follows that answer so
       // _captureFrame does not have to re-ask every frame.
       A._sunCompassOn = false;
+      A._sunCompassTally = { shown: 0, held: 0 };   // §SUN_COMPASS_SHOWN — per bake, even when the rose is reused from a prior bake
       // §SUN_DAY — set BEFORE the build so the very first frame is already on the pinned day.
       if (_sunCompass && A.sunCompassSetDate) {
         try { A.sunCompassSetDate(_sunDate); } catch (eSD2) {}
@@ -2485,6 +2498,10 @@
       if (_costOdo && !A._costOdometerFinalFired) {
         console.log('§COST_ODOMETER_FINAL INCONCLUSIVE reason=no-final-frame');
       }
+      // §SUN_COMPASS_SHOWN (ALTC_FOUNDATION.md §ALTC_FRESH_BUILD item 3) — "built" is not "shown": count the frames the rose was visible.
+      { var _sct = A._sunCompassTally || { shown: 0, held: 0 };
+        console.log('§SUN_COMPASS_SHOWN on=' + (A._sunCompassOn ? 1 : 0) + ' shown=' + _sct.shown + ' held=' + _sct.held +
+          ' => ' + (!A._sunCompassOn ? 'OFF' : (_sct.shown > 0 ? 'PASS' : 'FAIL'))); }
       if (A._stillRefineActive) A.stopStillRefine(true);
       MQS._restoreRandom();
       // §CPE_BUILDUP: hand the user's Time Machine back exactly as it was. Every loop exit — normal
