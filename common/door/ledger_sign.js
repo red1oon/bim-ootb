@@ -69,7 +69,7 @@ function lock(f) {
   if (BREAK() === 'nolock') return () => {};
   const lf = f + '.lock'; let waited = 0; const t0 = Date.now();
   for (;;) {
-    try { const fd = fs.openSync(lf, 'wx'); fs.closeSync(fd); break; }
+    try { const fd = fs.openSync(lf, 'wx'); fs.writeSync(fd, 'pid:' + process.pid); fs.closeSync(fd); break; }   // the token: the page's lock (erp/ledger_file.js) reads it to tell a door's lock from its own
     catch (e) {
       if (e.code !== 'EEXIST') throw e;
       try { if (Date.now() - fs.statSync(lf).mtimeMs > 10000) { fs.unlinkSync(lf); continue; } } catch (x) { /* gone */ }
