@@ -26,8 +26,11 @@ const sha = s => crypto.createHash('sha1').update(s).digest('hex').slice(0, 12);
 const BASE_NAMES = ['_retimeSpan', 'retimeTaskElements', '_tmBusyRecording', '_tmEditLocked', '_tmEditExceptionRecover',
   'commitGanttDrag', 'shiftGanttSchedule', 'commitGanttGroupShift', 'rescheduleGanttAsap', 'linkGanttBars', 'undoLastGanttEdit'];
 const OPTIONAL = ['_tmCommitEdit', '_tmEditRefresh', '_tmEditSnapshot'];   // sliced when the revision has them
+// the lock gate (🔓→🔒): verifyGanttIntegrity and what it calls, as witness_gantt_lock_integrity.js slices them
+const LOCK_GATE = ['_promoteRoofLoadPath', '_zoneIndexBuild', '_zoneIndex', '_classifyNameOverride', '_classifyRule', '_scheduledWhere', '_civilRule',
+  '_contactGraph', '_designatedSupport', '_midairAudit', '_buildXrayElements', 'verifyGanttIntegrity', 'captureLockBaseline'];
 
-// make({ bld, extraNames, document, sandbox }) -> the fixture, or { missing: path } when the building db is absent
+// make({ bld, extraNames, document, sandbox, lockGate }) -> the fixture, or { missing: path } when the building db is absent
 async function make(o) {
   o = o || {};
   const bld = o.bld || 'Duplex';
@@ -68,7 +71,14 @@ async function make(o) {
     _ops: ops, _ganttTasks: [], _taskIndex: { scheduleId: schedId }, _lastEdit: null, _cursor: 0, _ganttCritical: {}, __steps: steps,
   }, o.sandbox || {});
   sb.window.window = sb.window; vm.createContext(sb);
-  const names = BASE_NAMES.concat(o.extraNames || []).concat(OPTIONAL.filter(n => !!FN[n]));
+  if (o.lockGate) {
+    sb.performance = { now: () => Date.now() }; sb.URLSearchParams = URLSearchParams;
+    sb.ZoneIndex = require(path.join(V, 'zone_index.js')); sb.ScheduleGate = SG; sb.SupportSweep = global.SupportSweep; sb.CpmSchedule = global.CpmSchedule;
+    sb.window.SEQUENCE_RULES = rulesJson.SEQUENCE_RULES; sb.window.SEQUENCE_DEFAULT = rulesJson.SEQUENCE_DEFAULT;
+    sb.window.SEQUENCE_NAME_OVERRIDES = rulesJson.SEQUENCE_NAME_OVERRIDES || rulesJson.NAME_OVERRIDES || [];
+    sb._zoneMemo = []; sb._lockBaseline = null;
+  }
+  const names = BASE_NAMES.concat(o.extraNames || []).concat(OPTIONAL.filter(n => !!FN[n])).concat(o.lockGate ? LOCK_GATE.filter(n => !!FN[n]) : []);
   names.forEach(n => { if (!FN[n]) throw new Error(n + ' not found in the time_machine family'); });
   vm.runInContext(names.map(n => FN[n]).join('\n') + [
     'function _tmResyncAfterRetime() { __steps.push("resync"); _ops.sort(function (a, b) { return a.start_ts - b.start_ts; }); }',
@@ -79,7 +89,9 @@ async function make(o) {
     'this.__v = { drag: commitGanttDrag, shift: shiftGanttSchedule, group: commitGanttGroupShift, asap: rescheduleGanttAsap, link: linkGanttBars, undo: undoLastGanttEdit' +
       (o.extraNames && o.extraNames.indexOf('openGanttProps') >= 0 ? ', props: openGanttProps' : '') + ' };',
     'this.__lastEdit = function () { return _lastEdit; };',
+    o.lockGate ? 'this.__gate = { capture: captureLockBaseline, verify: verifyGanttIntegrity };' : '',
   ].join('\n'), sb);
+  (o.extraNames || []).forEach(n => { sb.__v[n] = vm.runInContext(n, sb); });   // every extra verb is reachable by its own name
 
   function rebuildBars() {
     const idx = { ok: true, scheduleId: schedId, tasks: {}, guidTask: {} };
