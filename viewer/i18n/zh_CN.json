@@ -8,8 +8,8 @@
    "bim_element_base.csv",
    "BIM_Element_Trl_zh_CN.xml"
   ],
-  "rows": 1091,
-  "translated": 988,
+  "rows": 1100,
+  "translated": 997,
   "untranslated": 103
  },
  "labels": {
@@ -1103,10 +1103,19 @@
   "ui_help_doc_usage": "输入 # 然后至少 4 个构件 GlobalId 字符",
   "ui_help_doc_none": "没有构件",
   "ui_help_doc_more": "更多",
-  "ui_help_reserved": "@ 为保留字符，暂无作用"
+  "ui_help_reserved": "@ 为保留字符，暂无作用",
+  "pill_export": "导出",
+  "pillc_export_1": "建筑 (.db)：与“保存建筑”相同，Ctrl+S",
+  "pillc_export_2": "IFC（整栋建筑）：供其他 BIM 工具使用的 .ifc 文件",
+  "pillc_export_3": "BCF（问题）：已保存的问题导出为 .bcfzip，没有问题时为灰色",
+  "ui_exp_db": "建筑 (.db)",
+  "ui_exp_ifc": "IFC（整栋建筑）",
+  "ui_exp_bcf": "BCF（问题）",
+  "ui_exp_bcf_none": "没有已保存的问题",
+  "ui_exp_ifc_none": "需要带几何表的单文件建筑"
  },
  "tables": {
-  "AD_Message": 938,
+  "AD_Message": 947,
   "BIM_Element": 153
  },
  "terms": [

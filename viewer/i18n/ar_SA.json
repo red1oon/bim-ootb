@@ -8,8 +8,8 @@
    "bim_element_base.csv",
    "BIM_Element_Trl_ar_SA.xml"
   ],
-  "rows": 1091,
-  "translated": 988,
+  "rows": 1100,
+  "translated": 997,
   "untranslated": 103
  },
  "labels": {
@@ -1103,10 +1103,19 @@
   "ui_help_doc_usage": "اكتب # ثم 4 أحرف على الأقل من GlobalId للعنصر",
   "ui_help_doc_none": "لا يوجد عنصر",
   "ui_help_doc_more": "أخرى",
-  "ui_help_reserved": "@ محجوز ولا يفعل شيئًا بعد"
+  "ui_help_reserved": "@ محجوز ولا يفعل شيئًا بعد",
+  "pill_export": "تصدير",
+  "pillc_export_1": "المبنى (.db): مثل حفظ المبنى، Ctrl+S",
+  "pillc_export_2": "IFC (المبنى كاملاً): ملف .ifc لأدوات BIM الأخرى",
+  "pillc_export_3": "BCF (المشكلات): المشكلات المحفوظة بصيغة .bcfzip، معطّل حتى توجد مشكلة",
+  "ui_exp_db": "المبنى (.db)",
+  "ui_exp_ifc": "IFC (المبنى كاملاً)",
+  "ui_exp_bcf": "BCF (المشكلات)",
+  "ui_exp_bcf_none": "لا توجد مشكلات محفوظة",
+  "ui_exp_ifc_none": "يتطلب مبنى بملف واحد يحتوي على جداول الهندسة"
  },
  "tables": {
-  "AD_Message": 938,
+  "AD_Message": 947,
   "BIM_Element": 153
  },
  "terms": [

@@ -63,3 +63,24 @@ W-IFC-EXPORT-SEL (`viewer/tests/witness_ifc_export_sel.js`, node, the worker run
 4. Materials, psets, `element_parts`.
 5. IFC2X3 option + site frame + determinism.
 6. S5 parity against the §9 add-on files.
+
+## (a) SPEC — the Export menu + BCF item (2026-11-18; belongs under §0 of PR #3296, placed here so the two PRs do not collide)
+**Issue this proves or disproves:** *"a user cannot find IFC or BCF export from the toolbar."* Measured before: the toolbar pill `id:'save'` ("Save Building") writes a `.db` only; IFC is behind Share (imports only), BCF behind the Issues panel.
+**Scope:** no new writer, no IFC selection, `modeller/lod/lod_ifc.js` and what the IFC export writes are untouched.
+1. **One pill.** `id:'save'` keeps its id (`#pill-save`, the saved order, `wing_2d.js`) and its Ctrl+S binding (`scene.js` still calls `A.saveModelDb` directly). Its visible name becomes **Export** (dictionary rows `pill_export`, `pillc_export_1..3`, new rows, via a `trlKey` on the entry); a tap opens a small menu in the Modeller Export pill's idiom (`modeller.html initExportMenu`: same panel, hover row, outside-click close).
+2. **Items (exactly three):** **Building (.db)** = `A.saveModelDb` (unchanged) · **IFC (whole building)** = `A.exportIFC` (unchanged worker; step (b) replaces the writer) · **BCF (issues)** = `A.exportBcf`.
+3. **IFC input:** `A.exportIFC(key)` reads an IndexedDB import record. For a building opened from a file it gains an optional second argument `{dbBytes}` (the open single-file DB's own bytes) so the same worker runs; a split building (meta + geo) is greyed with its reason until step (b).
+4. **BCF** is greyed with the reason **no saved issues** when `A._getAllIssues()` holds none for the open building.
+5. **Log:** every user-visible action prints `§VIEWER_EXPORT_MENU open=… items=…` or `§VIEWER_EXPORT_MENU item=<db|ifc|bcf> …`.
+**Witness W-VIEWER-EXPORT-MENU** (`viewer/tests/witness_viewer_export_menu.js`, real Viewer page, software GL, § lines and page state only): E1 the menu lists exactly db / ifc / bcf; E2 Building (.db) reaches `A.saveModelDb` and writes a `.db` named for the building; E3 IFC reaches `A.exportIFC` and a `.ifc` download starts; E4 BCF is disabled with its reason with no issues, and after one issue is saved through the page's own `A._saveIssueToLog` it downloads a `.bcfzip`; E5 Ctrl+S still saves; E6 the pill name is Export in `en_US` and the label resolves in `de_DE`. INCONCLUSIVE when the page never became ready or the menu never opened. Red control: `EXPORT_MENU_RED=nobcf` hides the BCF item, so E1/E4 must FAIL.
+
+## (a) RESULT — 2026-11-18 (bim-ootb `feat/viewer-export-menu`; witness log `viewer/tests/logs/witness_viewer_export_menu.log`, read, not just the exit code)
+Built: `viewer/export_menu.js` (the menu, Modeller Export idiom), pill `id:'save'` -> name **Export** with `trlKey:'export'` (`panels.js _relabelPill`; `viewer/tools/help_records.js` and W-VIEWER-I18N (3c) read the same override), `A.exportIFC(key, {dbBytes})` (`import.js`, one optional argument; the worker and what it writes are unchanged), 9 new dictionary rows 1001091-1001099 in 14 locales (`viewer/tools/trl_batch_2026-11-18_export_menu.js`, machine, labelled), `howto.json` + 18 help indexes rebuilt, `sw.js` v1755.
+Measured (GardenWorld warehouse DB, software GL, real mouse + real Ctrl+S):
+- `§VIEWER_EXPORT_MENU open=true items=3 enabled=db,ifc blocked=bcf:no_saved_issues`
+- E1 rows = `db,ifc,bcf`; pill title `Export` · E2 `§SAVE_DONE mode=download name=GardenWorld.db bytes=81920`, file starts `SQLite format 3` · E3 `§EXPORT_IFC key=GardenWorld size=46KB`, `GardenWorld.ifc` 47560 B, `ISO-10303-21;` IFC4
+- E4a `§VIEWER_EXPORT_MENU item=bcf blocked reason=no_saved_issues` (no file) · E4b after one issue `§BCF export topics=1 withSnapshot=1 zipB=2546`, `GardenWorld.bcfzip` starts `PK`
+- E5 `§KBD_ROUTE Ctrl+S → save` -> `§SAVE_DONE mode=download` · E6 de_DE: pill `Exportieren`, `Gebäude (.db)`, `keine gespeicherten Probleme`
+- `§W-VIEWER-EXPORT-MENU PASS 8 of 8 red=none`; red control `EXPORT_MENU_RED=nobcf`: `FAIL failed=[E1,E4a,E4b] of 8`.
+Found on the way: a warehouse building auto-engages the pick-walk (`wh_walk.js §C-1`), which hides the whole pill and its trigger until the walk's X is pressed; the witness leaves the walk with its own X like a user. Not changed here.
+Known limits: IFC is greyed (reason in the row) for a split meta+geo building or one without `element_instances`/`component_geometries`; step (b) removes that. The guide link of the Export pill in the How To palette now resolves to the guide's "Issues" section (the only place the live guide says "Export" twice); the guide has no Export section yet.

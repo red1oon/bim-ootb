@@ -8,8 +8,8 @@
    "bim_element_base.csv",
    "BIM_Element_Trl_th_TH.xml"
   ],
-  "rows": 1091,
-  "translated": 988,
+  "rows": 1100,
+  "translated": 997,
   "untranslated": 103
  },
  "labels": {
@@ -1103,10 +1103,19 @@
   "ui_help_doc_usage": "พิมพ์ # แล้วตามด้วย GlobalId ของชิ้นส่วนอย่างน้อย 4 ตัวอักษร",
   "ui_help_doc_none": "ไม่พบชิ้นส่วน",
   "ui_help_doc_more": "เพิ่มเติม",
-  "ui_help_reserved": "@ ถูกสงวนไว้และยังไม่ทำอะไร"
+  "ui_help_reserved": "@ ถูกสงวนไว้และยังไม่ทำอะไร",
+  "pill_export": "ส่งออก",
+  "pillc_export_1": "อาคาร (.db): เหมือน บันทึกอาคาร, Ctrl+S",
+  "pillc_export_2": "IFC (ทั้งอาคาร): ไฟล์ .ifc สำหรับเครื่องมือ BIM อื่น",
+  "pillc_export_3": "BCF (ปัญหา): ปัญหาที่บันทึกไว้เป็น .bcfzip, เป็นสีเทาจนกว่าจะมีปัญหา",
+  "ui_exp_db": "อาคาร (.db)",
+  "ui_exp_ifc": "IFC (ทั้งอาคาร)",
+  "ui_exp_bcf": "BCF (ปัญหา)",
+  "ui_exp_bcf_none": "ไม่มีปัญหาที่บันทึกไว้",
+  "ui_exp_ifc_none": "ต้องเป็นอาคารไฟล์เดียวที่มีตารางเรขาคณิต"
  },
  "tables": {
-  "AD_Message": 938,
+  "AD_Message": 947,
   "BIM_Element": 153
  },
  "terms": [

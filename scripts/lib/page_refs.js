@@ -9,7 +9,9 @@
 // against bump.js's own regex, and with planted fixtures (R4). Dev-side only: nothing here reaches the browser.
 'use strict';
 const path = require('path');
-const espree = require(path.join(__dirname, '..', '..', 'node_modules', 'espree'));
+let espree;
+try { espree = require(path.join(__dirname, '..', '..', 'node_modules', 'espree')); }
+catch (e) { console.error('§NEED_DEPS espree is not installed: run  node scripts/setup.js'); process.exit(3); }   // §F.39: one line, not a stack trace
 
 const WHOLE = /^([^\s?#'"`<>]+\.(?:js|css|json|wasm|mjs))\?v=(\d+)$/;   // the whole value is file?v=digits
 const RAW_TEXT = new Set(['script', 'style', 'textarea', 'title']);

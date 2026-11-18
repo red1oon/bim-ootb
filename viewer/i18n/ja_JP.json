@@ -8,8 +8,8 @@
    "bim_element_base.csv",
    "BIM_Element_Trl_ja_JP.xml"
   ],
-  "rows": 1091,
-  "translated": 1006,
+  "rows": 1100,
+  "translated": 1015,
   "untranslated": 85
  },
  "labels": {
@@ -1103,10 +1103,19 @@
   "ui_help_doc_usage": "# に続けて要素の GlobalId を 4 文字以上入力してください",
   "ui_help_doc_none": "要素がありません",
   "ui_help_doc_more": "件あります",
-  "ui_help_reserved": "@ は予約済みで、まだ何もしません"
+  "ui_help_reserved": "@ は予約済みで、まだ何もしません",
+  "pill_export": "エクスポート",
+  "pillc_export_1": "建物 (.db)：「建物を保存」と同じ、Ctrl+S",
+  "pillc_export_2": "IFC（建物全体）：他の BIM ツール向けの .ifc ファイル",
+  "pillc_export_3": "BCF（課題）：保存した課題を .bcfzip で出力、課題がない間はグレー表示",
+  "ui_exp_db": "建物 (.db)",
+  "ui_exp_ifc": "IFC（建物全体）",
+  "ui_exp_bcf": "BCF（課題）",
+  "ui_exp_bcf_none": "保存された課題はありません",
+  "ui_exp_ifc_none": "ジオメトリテーブルを持つ単一ファイルの建物が必要です"
  },
  "tables": {
-  "AD_Message": 938,
+  "AD_Message": 947,
   "BIM_Element": 153
  },
  "terms": [

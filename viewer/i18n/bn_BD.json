@@ -8,8 +8,8 @@
    "bim_element_base.csv",
    "BIM_Element_Trl_bn_BD.xml"
   ],
-  "rows": 1091,
-  "translated": 988,
+  "rows": 1100,
+  "translated": 997,
   "untranslated": 103
  },
  "labels": {
@@ -1103,10 +1103,19 @@
   "ui_help_doc_usage": "# লিখে তারপর উপাদানের GlobalId-এর অন্তত ৪টি অক্ষর লিখুন",
   "ui_help_doc_none": "কোনো উপাদান নেই",
   "ui_help_doc_more": "আরও",
-  "ui_help_reserved": "@ সংরক্ষিত এবং এখনও কিছু করে না"
+  "ui_help_reserved": "@ সংরক্ষিত এবং এখনও কিছু করে না",
+  "pill_export": "রপ্তানি",
+  "pillc_export_1": "ভবন (.db): ভবন সংরক্ষণের মতোই, Ctrl+S",
+  "pillc_export_2": "IFC (পুরো ভবন): অন্য BIM টুলের জন্য একটি .ifc ফাইল",
+  "pillc_export_3": "BCF (সমস্যা): সংরক্ষিত সমস্যা .bcfzip হিসেবে, একটি না থাকলে ধূসর",
+  "ui_exp_db": "ভবন (.db)",
+  "ui_exp_ifc": "IFC (পুরো ভবন)",
+  "ui_exp_bcf": "BCF (সমস্যা)",
+  "ui_exp_bcf_none": "কোনো সংরক্ষিত সমস্যা নেই",
+  "ui_exp_ifc_none": "জ্যামিতি টেবিলসহ একক-ফাইল ভবন দরকার"
  },
  "tables": {
-  "AD_Message": 938,
+  "AD_Message": 947,
   "BIM_Element": 153
  },
  "terms": [

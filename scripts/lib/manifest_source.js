@@ -11,7 +11,7 @@
 //        inserted / removed on its own line) · check · init (one-time, from today's files) · the owner / witnesses extractors.
 //        Dev-side only: no page, loader or sw.js names modules.json, and it is not precached (claim C12).
 'use strict';
-const fs = require('fs'), path = require('path'), cp = require('child_process'), crypto = require('crypto');
+const fs = require('fs'), path = require('path'), crypto = require('crypto');
 const P = path.posix;
 const GM = () => require('../gen_manifest.js');   // lazy: gen_manifest requires this file too
 
@@ -194,7 +194,7 @@ function ownerOf(src) {
  *  inside the app's own folder or one that spells the app folder ('modeller', "modeller/…") — the app folder (a bare 'sw.js' in a devtools test is not the modeller's sw.js: measured, bim-ootb #3266 CI). */
 function witnessesOf(root, app, files) {
   const set = new Set(files), out = new Map(files.map(f => [f, new Set()]));
-  const ls = cp.execFileSync('git', ['ls-files'], { cwd: root, encoding: 'utf8', maxBuffer: 1 << 28 }).split('\n').filter(f => /(^|\/)tests?\/.*\.(m?js|cjs|py|sh)$/.test(f));
+  const ls = require('./tracked_files.js').trackedFiles(root).filter(f => /(^|\/)tests?\/.*\.(m?js|cjs|py|sh)$/.test(f));
   const STR = /(['"`])((?:(?!\1)[^\\\n]|\\.){1,300}?)\1/g;
   for (const t of ls) {
     let src; try { src = fs.readFileSync(path.join(root, t), 'utf8'); } catch (e) { continue; }

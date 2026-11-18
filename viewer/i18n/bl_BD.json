@@ -8,8 +8,8 @@
    "bim_element_base.csv",
    "BIM_Element_Trl_bl_BD.xml"
   ],
-  "rows": 1091,
-  "translated": 988,
+  "rows": 1100,
+  "translated": 997,
   "untranslated": 103
  },
  "labels": {
@@ -1103,10 +1103,19 @@
   "ui_help_doc_usage": "# likhe tarpor upadaner GlobalId-er ontoto 4ti okkhor likhun",
   "ui_help_doc_none": "Kono upadan nei",
   "ui_help_doc_more": "aro",
-  "ui_help_reserved": "@ songrokkhito ebong ekhono kichu kore na"
+  "ui_help_reserved": "@ songrokkhito ebong ekhono kichu kore na",
+  "pill_export": "Roptani",
+  "pillc_export_1": "Building (.db): Building Save korun er moto, Ctrl+S",
+  "pillc_export_2": "IFC (pura building): onno BIM tool-er jonno ekti .ifc file",
+  "pillc_export_3": "BCF (shomossha): shongrokkhito shomossha .bcfzip hishebe, ekti na thakle dhushor",
+  "ui_exp_db": "Building (.db)",
+  "ui_exp_ifc": "IFC (pura building)",
+  "ui_exp_bcf": "BCF (shomossha)",
+  "ui_exp_bcf_none": "kono shongrokkhito shomossha nei",
+  "ui_exp_ifc_none": "jyamiti table shoho ek-file building dorkar"
  },
  "tables": {
-  "AD_Message": 938,
+  "AD_Message": 947,
   "BIM_Element": 153
  },
  "terms": [

@@ -8,8 +8,8 @@
    "bim_element_base.csv",
    "BIM_Element_Trl_ko_KR.xml"
   ],
-  "rows": 1091,
-  "translated": 988,
+  "rows": 1100,
+  "translated": 997,
   "untranslated": 103
  },
  "labels": {
@@ -1103,10 +1103,19 @@
   "ui_help_doc_usage": "# 다음에 요소 GlobalId의 4자 이상을 입력하세요",
   "ui_help_doc_none": "요소 없음",
   "ui_help_doc_more": "개 더",
-  "ui_help_reserved": "@는 예약되어 있으며 아직 아무 기능이 없습니다"
+  "ui_help_reserved": "@는 예약되어 있으며 아직 아무 기능이 없습니다",
+  "pill_export": "내보내기",
+  "pillc_export_1": "건물 (.db): 건물 저장과 동일, Ctrl+S",
+  "pillc_export_2": "IFC (건물 전체): 다른 BIM 도구용 .ifc 파일",
+  "pillc_export_3": "BCF (이슈): 저장된 이슈를 .bcfzip으로, 이슈가 생길 때까지 회색",
+  "ui_exp_db": "건물 (.db)",
+  "ui_exp_ifc": "IFC (건물 전체)",
+  "ui_exp_bcf": "BCF (이슈)",
+  "ui_exp_bcf_none": "저장된 이슈 없음",
+  "ui_exp_ifc_none": "지오메트리 테이블이 있는 단일 파일 건물이 필요합니다"
  },
  "tables": {
-  "AD_Message": 938,
+  "AD_Message": 947,
   "BIM_Element": 153
  },
  "terms": [

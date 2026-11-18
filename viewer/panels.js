@@ -1330,9 +1330,11 @@ function setupPanels(A) {
     var I = ICONS; // shorthand
     var _actions = [
       // Document verbs — Save the open building / Open a saved one. Native OS dialogs, no card.
-      { id: 'save',       name: 'Save Building',  key: 'Ctrl+S', icon: I.save.svg,
-        fn: function() { if (A.saveModelDb) A.saveModelDb(); },
-        children: [ { name: 'Save the open building to a .db file' }, { name: 'Native Save As… dialog — pick name + folder' }, { name: 'Re-openable with Open (Ctrl+O)' } ] },
+      // §VIEWER_EXPORT_MENU (bim-ootb prompts/VIEWER_IFC_EXPORT_BY_DISCIPLINE.md §(a)): ONE Export pill — Building (.db) = the old Save Building (A.saveModelDb), IFC, BCF. id/#pill-save/Ctrl+S unchanged;
+      // trlKey = the dictionary key stem ('pill_export', 'pillc_export_<n>') so the saved-order id stays 'save'.
+      { id: 'save',       name: 'Export',  key: 'Ctrl+S', trlKey: 'export', icon: I.save.svg,
+        fn: function() { if (A.openExportMenu) A.openExportMenu(document.getElementById('pill-save')); },
+        children: [ { name: 'Building (.db): same as Save Building, Ctrl+S' }, { name: 'IFC (whole building): an .ifc file for other BIM tools' }, { name: 'BCF (issues): saved issues as a .bcfzip, greyed until one exists' } ] },
       // §LOD400 (bim-compiler prompts/LOD400_UPGRADER.md §H): auto-upgrader pill — step 1 weld+smooth on the open building's geometry tables.
       { id: 'lod400',     name: 'LOD400 Upgrade', icon: I.box.svg,
         fn: function() { if (window.LOD400 && window.LOD400.openPanel) window.LOD400.openPanel(A); },
@@ -1578,11 +1580,11 @@ function setupPanels(A) {
     // S226 §R2 — pill names through the AD_Message dictionary: key = 'pill_' + id (lower-case, '-' → '_'), the English
     // `name` above stays the in-code default (viewer/i18n/ad_message_base.csv msgtext). Labels land async on a cold
     // cache, so the rail is re-labelled + rebuilt on trl-ready (same rebuild verb _syncSched4dTitle already uses).
-    function _pillKey(id) { return 'pill_' + String(id).toLowerCase().replace(/-/g, '_'); }
+    function _pillKey(id) { return 'pill_' + String(id).toLowerCase().replace(/-/g, '_'); }   // id, or an entry's trlKey (§VIEWER_EXPORT_MENU)
     // S226 §R2d: the Help palette's expandable sub-rows (children) too — key 'pillc_' + id + '_' + (index+1); W-VIEWER-I18N (3c)
     // checks every child's English here == its CSV msgtext, so a reordered/edited child cannot silently show another row's text.
-    function _relabelPill() { _actions.forEach(function(a) { if (a._nameEn == null) a._nameEn = a.name; a.name = _trlD(_pillKey(a.id), a._nameEn);
-      (a.children || []).forEach(function(c, i) { if (c._nameEn == null) c._nameEn = c.name; c.name = _trlD('pillc_' + String(a.id).toLowerCase().replace(/-/g, '_') + '_' + (i + 1), c._nameEn); }); }); }
+    function _relabelPill() { _actions.forEach(function(a) { if (a._nameEn == null) a._nameEn = a.name; a.name = _trlD(_pillKey(a.trlKey || a.id), a._nameEn);
+      (a.children || []).forEach(function(c, i) { if (c._nameEn == null) c._nameEn = c.name; c.name = _trlD('pillc_' + String(a.trlKey || a.id).toLowerCase().replace(/-/g, '_') + '_' + (i + 1), c._nameEn); }); }); }
     _relabelPill();
 
     // ═══════════════════════════════════════════════════════════════════

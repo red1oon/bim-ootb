@@ -2051,6 +2051,10 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
   // <script>. If it (or sql.js) is absent we fall back to the E2 dry-run — never a silent failure.
   // ════════════════════════════════════════════════════════════════════════
   var SIDE = null, SIDE_PENDING = false, SIDE_CBS = [], _SQL = null, _IDB = null, _warnedNoLock = false;
+  var LEDGER = null;   // {dir, name} once a ledger folder is attached (bim-compiler prompts/CLI_ERP_IVR.md §55): the sidecar is then the shared JSONL file, not the IndexedDB `ops` store
+  function _LF() { return global.LedgerFile || null; }
+  function _ledgerBreak() { return global.__LEDGER_BREAK || ''; }   // witness falsifier seam (W-LEDGER-ATTACH): nolock | nojoin
+  function _unsupported(what) { console.log('§LEDGER unsupported in ledger-file mode: ' + what); return true; }
   var SIDE_DBNAME = 'glassbowl_kernel_ops', SIDE_STORE = 'log', SIDE_KEY = 'kernel_ops.db';
   // Implementing ERP_OPLOG_APPEND_ONLY_FIX.md F1/F3 — Witness: W-OPLOG-APPEND / W-COMMIT-LOCK.
   // OPS_STORE — the NEW per-op append-only object store (F1), a sibling of the legacy `log` store in the
@@ -2087,7 +2091,9 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
     if (!db || !_IDB || !K || !ids || !ids.length) return Promise.resolve();
     try {
       var rows = K.rowsByIds(db, ids);
-      return K.appendOpsRecords(_IDB, OPS_STORE, rows).then(function (keys) {
+      var _app = LEDGER ? _LF().appendRows(LEDGER.dir, LEDGER.name, rows, { tip: rows[0].prev_hash, locked: true }).then(function (r) { if (!r.ok) throw new Error('ledger file append refused: ' + r.why); return rows.map(function (x) { return 'file:' + x.id; }); })
+                        : K.appendOpsRecords(_IDB, OPS_STORE, rows);
+      return _app.then(function (keys) {
         rows.forEach(function (r, i) { console.log('§OPLOG-APPEND key=' + keys[i] + ' id=' + r.id + ' op_uuid=' + (r.op_uuid || 'null')); });
         _bimStoreSync(rows);
         return _relayPush(rows).then(function () { return _deliverCommitted(rows, db); });
@@ -2122,6 +2128,7 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
   //   new row list; written through the SAME append-only `ops` store (new snapshots of every row, plus an `undone` tombstone for each id no longer present), under the SAME cross-tab lock.
   function rebuildSide(build) {
     var K = kernel();
+    if (LEDGER && _unsupported('rebuildSide (Team rebuild)')) return Promise.resolve({ ok: false, reason: 'ledger file mode' });
     return new Promise(function (resolve) {
       withSidecar(function (db0) {
         if (!db0 || !K || !_IDB) { resolve({ ok: false, reason: 'sidecar/kernel/idb absent' }); return; }
@@ -2173,6 +2180,7 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
     }
     withSidecar(function (db) {
       if (!db) { console.log('§SYNC_RELAY syncNow SKIP sidecar-absent'); if (cb) cb({ ok: false, reason: 'sidecar absent' }); return; }
+      if (LEDGER && _unsupported('syncNow (relay rebase)')) { if (cb) cb({ ok: false, reason: 'ledger file mode' }); return; }
       _withFreshSide(K, function (freshDb, done) {
         var relayClient = RC.createRelayClient(relayUrl);
         Promise.resolve(FSM.rebase(freshDb, K, relayClient)).then(function (r) {
@@ -2205,6 +2213,7 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
   // failure along the migration path falls back straight to the (possibly-still-empty) read-all hydrate —
   // it never blocks opening the sidecar.
   function _hydrateSide(idbDb, SQL, K, cb) {
+    if (LEDGER) { _hydrateFromFile(SQL, K, cb); return; }
     function readAllAndBuild() {
       K.readAllOpsRecords(idbDb, OPS_STORE).then(function (rows) {
         var db = new SQL.Database();
@@ -2258,6 +2267,21 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
     };
     mreq.onerror = function () { readAllAndBuild(); };
   }
+  // _hydrateFromFile — §55: the sidecar built from the shared ledger file (rows verbatim, as readAllAndBuild does from IndexedDB). Peers' keys (the door's) are added to the signer first, so the verify below can pass.
+  function _hydrateFromFile(SQL, K, cb) {
+    _LF().readRows(LEDGER.dir, LEDGER.name).then(function (rows) {
+      var db = new SQL.Database(); K.ensureTable(db); K.replayRowsInto(db, rows);
+      return _addPeers(rows).then(function () { return Promise.resolve(K.verifyChain(db)); }).then(function (v) {
+        console.log('§OPLOG-HYDRATE ops=' + rows.length + ' tip=' + (v && v.tip ? v.tip : 'GENESIS') + ' source=ledger-file' + (v && v.ok === false ? ' verifyChain=FAIL(' + v.why + ')' : '')); cb(db);
+      });
+    }).catch(function (e) { console.warn('§OPLOG-HYDRATE ledger-file error', e && e.message); var db = new SQL.Database(); K.ensureTable(db); cb(db); });
+  }
+  function _addPeers(rows) {
+    var S = global.ErpSigner, seen = {}, ps = [];
+    if (!S || !S.addPeer) return Promise.resolve();
+    rows.forEach(function (r) { var k; try { k = JSON.parse(r.parameters).signed_by; } catch (e) { k = null; } if (k && k !== S.pubKeyHex && !seen[k]) { seen[k] = 1; ps.push(S.addPeer(k)); } });
+    return Promise.all(ps);
+  }
   // _withFreshSide — Implementing ERP_OPLOG_APPEND_ONLY_FIX.md F3/F4 — Witness: W-COMMIT-LOCK.
   // Re-hydrates SIDE from the ops store's CURRENT contents (a full read-all + replay via _hydrateSide —
   // correctness over micro-perf for this CORE pass; §Cross-tab coordination: "either is correct, the
@@ -2271,6 +2295,12 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
   function _withFreshSide(K, task) {
     function run(done) {
       if (!_IDB || !_SQL) { task(SIDE, done); return; }
+      if (LEDGER && _ledgerBreak() !== 'nolock') {   // §55 rule 2: the file lock spans hydrate -> seal -> append, so the door cannot land a line in between
+        _LF().lockAcquire(LEDGER.dir, LEDGER.name).then(function (lk) {
+          _hydrateSide(_IDB, _SQL, K, function (freshDb) { SIDE = freshDb; task(SIDE, function () { Promise.resolve(lk.release()).then(done, done); }); });
+        }, function (e) { console.warn('§LEDGER lock error', e && e.message); toast('The ledger file is busy - nothing was saved. Try again.'); done(); });
+        return;
+      }
       _hydrateSide(_IDB, _SQL, K, function (freshDb) { SIDE = freshDb; task(SIDE, done); });
     }
     if (typeof navigator !== 'undefined' && navigator.locks && navigator.locks.request) {
@@ -2303,6 +2333,45 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
       });
     }).catch(function () { _flushSideCbs(null); });
   }
+
+  // attachLedger — §55 (bim-compiler prompts/CLI_ERP_IVR.md): make a folder's JSONL the sidecar. Under the file lock it JOINS the page's own IndexedDB history once (rows whose op_uuid the file already holds are
+  //   dropped; an empty file takes the rows verbatim; otherwise they are rebased onto the file's tip: ids shifted, chain re-sealed by KernelOps.sealFrom, a v2 sig kept, a v1 row signed again by this device),
+  //   then hydrates from the file. The IndexedDB rows stay where they are. dir = a FileSystemDirectoryHandle (or a same-shaped fake). Resolves {ok, joined, fileRows} | {ok:false, reason}.
+  function attachLedger(dir, name) {
+    name = name || 'ops.jsonl';
+    var K = kernel(), LF = _LF();
+    return new Promise(function (resolve) {
+      if (!K || !LF) { resolve({ ok: false, reason: 'kernel or ledger_file.js absent' }); return; }
+      if (LEDGER) { resolve({ ok: false, reason: 'already attached' }); return; }
+      withSidecar(function (db0) {
+        if (!db0 || !_IDB || !_SQL) { resolve({ ok: false, reason: 'sidecar/IndexedDB absent' }); return; }
+        LF.lockAcquire(dir, name).then(function (lk) {
+          function fin(r) { Promise.resolve(lk.release()).then(function () { resolve(r); }, function () { resolve(r); }); }
+          Promise.all([LF.readRows(dir, name), K.readAllOpsRecords(_IDB, OPS_STORE)]).then(function (res) {
+            var fileRows = res[0], tmp = new _SQL.Database(); K.ensureTable(tmp); K.replayRowsInto(tmp, res[1]);
+            var have = {}; fileRows.forEach(function (r) { have[r.op_uuid] = 1; });
+            var todo = _ledgerBreak() === 'nojoin' ? [] : K.allRowsPlain(tmp).filter(function (r) { return !have[r.op_uuid]; }).sort(function (a, b) { return Number(a.id) - Number(b.id); });
+            var tip = fileRows.length ? fileRows[fileRows.length - 1].op_hash : LF.GENESIS, rows = todo;
+            var made = Promise.resolve();
+            if (todo.length && fileRows.length) {   // rebase onto the file's tip
+              var base = Number(fileRows[fileRows.length - 1].id), jdb = new _SQL.Database(); K.ensureTable(jdb); K.replayRowsInto(jdb, fileRows);
+              var shifted = todo.map(function (r, i) { var t = {}; for (var k in r) t[k] = r[k]; t.id = base + i + 1; t.prev_hash = null; t.op_hash = null; if (!K._isV2(r.parameters)) t.sig = null; return t; });
+              K.replayRowsInto(jdb, shifted);
+              made = Promise.resolve(K.sealFrom(jdb)).then(function () { rows = K.rowsByIds(jdb, shifted.map(function (r) { return r.id; })); });
+            }
+            return made.then(function () { return rows.length ? LF.appendRows(dir, name, rows, { tip: tip, locked: true }) : { ok: true }; }).then(function (r) {
+              if (!r.ok) { console.warn('§LEDGER attach append refused: ' + r.why); fin({ ok: false, reason: 'append ' + r.why }); return; }
+              LEDGER = { dir: dir, name: name };
+              _hydrateSide(_IDB, _SQL, K, function (db) { SIDE = db; console.log('§LEDGER attached name=' + name + ' fileRows=' + fileRows.length + ' joined=' + rows.length + ' rebased=' + (todo.length && fileRows.length ? 'Y' : 'N')); fin({ ok: true, joined: rows.length, fileRows: fileRows.length }); });
+            });
+          }).catch(function (e) { console.warn('§LEDGER attach error', e && e.message); fin({ ok: false, reason: e && e.message }); });
+        }, function (e) { resolve({ ok: false, reason: 'lock: ' + (e && e.message) }); });
+      });
+    });
+  }
+  // detachLedger — back to the IndexedDB sidecar. Rows written to the file after the attach stay in the file (the page does not copy them back).
+  function detachLedger() { LEDGER = null; SIDE = null; SIDE_PENDING = false; console.log('§LEDGER detached (rows made while attached stay in the file)'); return true; }
+  function ledgerInfo() { return { attached: !!LEDGER, name: LEDGER && LEDGER.name, rows: SIDE ? (SIDE.exec('SELECT COUNT(*) FROM kernel_ops')[0] || { values: [[0]] }).values[0][0] : null }; }
 
   // dryProcess — the E2 fallback (kernel/sql.js absent): log the op, paint the bar, mark dry-run.
   function dryProcess(op) {
@@ -2602,6 +2671,7 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
   // glassbowl.html's foldDocOps → crudFoldBack(key,from,to) plumbing is REUSED UNCHANGED.
   function foldBackDocOp(key, fromStatus, toStatus) {
     var K = kernel();
+    if (LEDGER && _unsupported('fold-back undo (re-appends an existing id)')) return;
     withSidecar(function (db) {
       if (db && K && typeof K.undoOp === 'function') {
         var g = CORE.foldBackGroup(db, K);
@@ -3408,12 +3478,14 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
                     foldBack: foldBackDocOp, foldForward: foldForwardDocOp,  // §A-GRAIL: fold via scrub
                     setStatus: setDocStatus, statusBar: function () { return statusBar; }, pulseProc: pulseProc,
                     kernelDb: function () { return SIDE; }, withSidecar: withSidecar,
+                    attachLedger: attachLedger, detachLedger: detachLedger, ledgerInfo: ledgerInfo,   // §55: the shared ledger file
                     // FS-17 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2o): erp_persist_ui.restore REPLACES the op-log
                     // (ErpReplicaClient.replayAndVerify DELETEs + re-seals) and then calls __crud.persist() — which did not
                     // exist, so a restore was lost on reload (poc_persist_wire W6, red on main). The append-only `ops` store is
                     // rewritten ONCE here, after a user-confirmed, signature-verified restore — the only non-append write.
                     persist: function () {
                       var K = kernel();
+                      if (LEDGER && _unsupported('persist (restore replaces the op-log)')) return Promise.resolve(false);
                       if (!K || !_IDB || !SIDE || typeof K.allRowsPlain !== 'function') return Promise.resolve(false);
                       return new Promise(function (res) {
                         try {

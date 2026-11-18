@@ -8,8 +8,8 @@
    "bim_element_base.csv",
    "BIM_Element_Trl_ms_MY.xml"
   ],
-  "rows": 1091,
-  "translated": 988,
+  "rows": 1100,
+  "translated": 997,
   "untranslated": 103
  },
  "labels": {
@@ -1103,10 +1103,19 @@
   "ui_help_doc_usage": "Taip # kemudian sekurang-kurangnya 4 aksara GlobalId elemen",
   "ui_help_doc_none": "Tiada elemen",
   "ui_help_doc_more": "lagi",
-  "ui_help_reserved": "@ dikhaskan dan belum berfungsi"
+  "ui_help_reserved": "@ dikhaskan dan belum berfungsi",
+  "pill_export": "Eksport",
+  "pillc_export_1": "Bangunan (.db): sama seperti Simpan Bangunan, Ctrl+S",
+  "pillc_export_2": "IFC (seluruh bangunan): fail .ifc untuk alat BIM lain",
+  "pillc_export_3": "BCF (isu): isu tersimpan sebagai .bcfzip, kelabu sehingga ada satu",
+  "ui_exp_db": "Bangunan (.db)",
+  "ui_exp_ifc": "IFC (seluruh bangunan)",
+  "ui_exp_bcf": "BCF (isu)",
+  "ui_exp_bcf_none": "tiada isu tersimpan",
+  "ui_exp_ifc_none": "perlukan bangunan satu fail dengan jadual geometri"
  },
  "tables": {
-  "AD_Message": 938,
+  "AD_Message": 947,
   "BIM_Element": 153
  },
  "terms": [
