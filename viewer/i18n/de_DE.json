@@ -8,8 +8,8 @@
    "bim_element_base.csv",
    "BIM_Element_Trl_de_DE.xml"
   ],
-  "rows": 1107,
-  "translated": 1022,
+  "rows": 1111,
+  "translated": 1026,
   "untranslated": 85
  },
  "labels": {
@@ -1119,10 +1119,14 @@
   "ui_exp_5d": "5D-Kosten",
   "ui_exp_5d_tip": "Kostenarbeitsmappe (Excel): Leistungsverzeichnis, Material, Arbeit, Geräte",
   "pillc_export_4": "Terminplan (MSP / PMXML / XER): der Bauablaufplan für MS Project oder Primavera P6, ausgegraut bis die Time Machine einen erstellt hat",
-  "pillc_export_5": "5D-Kosten: eine Kostenarbeitsmappe (.xlsx) von der 4D/5D-Seite"
+  "pillc_export_5": "5D-Kosten: eine Kostenarbeitsmappe (.xlsx) von der 4D/5D-Seite",
+  "ui_exp_scope_whole": "Ganzes Gebäude",
+  "ui_exp_scope_find": "Find-Auswahl ({n})",
+  "ui_exp_scope_find_tip": "die {n} Elemente, die Find isoliert hat",
+  "ui_exp_scope_none": "Zuerst mit Find isolieren"
  },
  "tables": {
-  "AD_Message": 954,
+  "AD_Message": 958,
   "BIM_Element": 153
  },
  "terms": [

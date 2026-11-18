@@ -8,8 +8,8 @@
    "bim_element_base.csv",
    "BIM_Element_Trl_fr_FR.xml"
   ],
-  "rows": 1107,
-  "translated": 1004,
+  "rows": 1111,
+  "translated": 1008,
   "untranslated": 103
  },
  "labels": {
@@ -1119,10 +1119,14 @@
   "ui_exp_5d": "Coût 5D",
   "ui_exp_5d_tip": "classeur des coûts (Excel) : bordereau des quantités, matériaux, main-d'œuvre, équipements",
   "pillc_export_4": "Planning (MSP / PMXML / XER) : le planning des travaux pour MS Project ou Primavera P6, grisé tant que la Time Machine n'en a pas créé un",
-  "pillc_export_5": "Coût 5D : un classeur des coûts (.xlsx) depuis la page 4D/5D"
+  "pillc_export_5": "Coût 5D : un classeur des coûts (.xlsx) depuis la page 4D/5D",
+  "ui_exp_scope_whole": "Bâtiment entier",
+  "ui_exp_scope_find": "Sélection Find ({n})",
+  "ui_exp_scope_find_tip": "les {n} éléments isolés par Find",
+  "ui_exp_scope_none": "Isolez d'abord avec Find"
  },
  "tables": {
-  "AD_Message": 954,
+  "AD_Message": 958,
   "BIM_Element": 153
  },
  "terms": [

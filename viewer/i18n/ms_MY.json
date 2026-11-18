@@ -8,8 +8,8 @@
    "bim_element_base.csv",
    "BIM_Element_Trl_ms_MY.xml"
   ],
-  "rows": 1107,
-  "translated": 1004,
+  "rows": 1111,
+  "translated": 1008,
   "untranslated": 103
  },
  "labels": {
@@ -1119,10 +1119,14 @@
   "ui_exp_5d": "Kos 5D",
   "ui_exp_5d_tip": "buku kerja kos (Excel): bil kuantiti, bahan, buruh, peralatan",
   "pillc_export_4": "Jadual (MSP / PMXML / XER): jadual kerja untuk MS Project atau Primavera P6, kelabu sehingga Time Machine menghasilkannya",
-  "pillc_export_5": "Kos 5D: buku kerja kos (.xlsx) dari halaman 4D/5D"
+  "pillc_export_5": "Kos 5D: buku kerja kos (.xlsx) dari halaman 4D/5D",
+  "ui_exp_scope_whole": "Seluruh bangunan",
+  "ui_exp_scope_find": "Pilihan Find ({n})",
+  "ui_exp_scope_find_tip": "{n} elemen yang diasingkan oleh Find",
+  "ui_exp_scope_none": "Gunakan Find dan asingkan dahulu"
  },
  "tables": {
-  "AD_Message": 954,
+  "AD_Message": 958,
   "BIM_Element": 153
  },
  "terms": [

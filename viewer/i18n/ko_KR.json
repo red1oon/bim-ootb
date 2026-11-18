@@ -8,8 +8,8 @@
    "bim_element_base.csv",
    "BIM_Element_Trl_ko_KR.xml"
   ],
-  "rows": 1107,
-  "translated": 1004,
+  "rows": 1111,
+  "translated": 1008,
   "untranslated": 103
  },
  "labels": {
@@ -1119,10 +1119,14 @@
   "ui_exp_5d": "5D 비용",
   "ui_exp_5d_tip": "비용 통합 문서 (Excel): 수량 내역서, 자재, 노무, 장비",
   "pillc_export_4": "공정표 (MSP / PMXML / XER): MS Project 또는 Primavera P6용 시공 공정표, Time Machine이 만들기 전까지 회색",
-  "pillc_export_5": "5D 비용: 4D/5D 페이지의 비용 통합 문서 (.xlsx)"
+  "pillc_export_5": "5D 비용: 4D/5D 페이지의 비용 통합 문서 (.xlsx)",
+  "ui_exp_scope_whole": "건물 전체",
+  "ui_exp_scope_find": "Find 선택 ({n})",
+  "ui_exp_scope_find_tip": "Find가 분리한 {n}개 요소",
+  "ui_exp_scope_none": "먼저 Find로 분리하세요"
  },
  "tables": {
-  "AD_Message": 954,
+  "AD_Message": 958,
   "BIM_Element": 153
  },
  "terms": [

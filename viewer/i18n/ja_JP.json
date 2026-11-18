@@ -8,8 +8,8 @@
    "bim_element_base.csv",
    "BIM_Element_Trl_ja_JP.xml"
   ],
-  "rows": 1107,
-  "translated": 1022,
+  "rows": 1111,
+  "translated": 1026,
   "untranslated": 85
  },
  "labels": {
@@ -1119,10 +1119,14 @@
   "ui_exp_5d": "5D コスト",
   "ui_exp_5d_tip": "コストのブック（Excel）：数量明細、材料、労務、機械",
   "pillc_export_4": "工程表（MSP / PMXML / XER）：MS Project または Primavera P6 用の施工工程表、Time Machine が作成するまでグレー表示",
-  "pillc_export_5": "5D コスト：4D/5D ページからのコストのブック (.xlsx)"
+  "pillc_export_5": "5D コスト：4D/5D ページからのコストのブック (.xlsx)",
+  "ui_exp_scope_whole": "建物全体",
+  "ui_exp_scope_find": "Find の選択 ({n})",
+  "ui_exp_scope_find_tip": "Find が分離した {n} 個の要素",
+  "ui_exp_scope_none": "先に Find で分離してください"
  },
  "tables": {
-  "AD_Message": 954,
+  "AD_Message": 958,
   "BIM_Element": 153
  },
  "terms": [

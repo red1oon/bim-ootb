@@ -8,8 +8,8 @@
    "bim_element_base.csv",
    "BIM_Element_Trl_bn_BD.xml"
   ],
-  "rows": 1107,
-  "translated": 1004,
+  "rows": 1111,
+  "translated": 1008,
   "untranslated": 103
  },
  "labels": {
@@ -1119,10 +1119,14 @@
   "ui_exp_5d": "5D খরচ",
   "ui_exp_5d_tip": "খরচের ওয়ার্কবুক (Excel): পরিমাণের তালিকা, উপকরণ, শ্রম, যন্ত্রপাতি",
   "pillc_export_4": "সময়সূচি (MSP / PMXML / XER): MS Project বা Primavera P6 এর জন্য কাজের সময়সূচি, Time Machine তৈরি না করা পর্যন্ত ধূসর",
-  "pillc_export_5": "5D খরচ: 4D/5D পাতা থেকে খরচের ওয়ার্কবুক (.xlsx)"
+  "pillc_export_5": "5D খরচ: 4D/5D পাতা থেকে খরচের ওয়ার্কবুক (.xlsx)",
+  "ui_exp_scope_whole": "পুরো ভবন",
+  "ui_exp_scope_find": "Find নির্বাচন ({n})",
+  "ui_exp_scope_find_tip": "Find যে {n}টি উপাদান আলাদা করেছে",
+  "ui_exp_scope_none": "আগে Find দিয়ে আলাদা করুন"
  },
  "tables": {
-  "AD_Message": 954,
+  "AD_Message": 958,
   "BIM_Element": 153
  },
  "terms": [
