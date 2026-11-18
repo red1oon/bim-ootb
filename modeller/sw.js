@@ -40,7 +40,8 @@
 // v295 (2026-11-18) B1 (bim-compiler CODE_ARCHITECTURE_DESIGN.md Part B; bim-ootb #3244): the modeller's module lists are written from modeller/modules.json — +2 marker lines here and in modeller.html, no list changed
 // v296 (2026-11-18) LOD Upgrade pill P5 (prompts/MODELLER_LOD_UPGRADE_PILL.md §P5 SPEC): lod/gusset_pack.js (Bracing gussets) + lod/rules/gusset_defaults.json + lod/packs.json; joint_pack.js exposes the shared kit (no ?v= literal: packs load through packs.json, precacheOrder in modules.json) — modeller.html
 // v300 (2026-11-18) LOD Upgrade P4 FIX (prompts/MODELLER_LOD_UPGRADE_PILL.md §P4 FIX SPEC): lod/joint_pack.js fin-plate weld beads wound outward and consistently (no URL change; this bump re-fetches it)
-const CACHE_VERSION = 'v300';   // §MANIFEST cacheVersion (written by gen_manifest.js; edit modeller/modules.json)
+// v301 (2026-11-18) LOD Upgrade P7 NAME FIX (prompts/MODELLER_LOD_UPGRADE_PILL.md): lod/lod_ui.js?v=6, the download names drop the opened file's .db
+const CACHE_VERSION = 'v301';   // §MANIFEST cacheVersion (written by gen_manifest.js; edit modeller/modules.json)
 const CACHE_PREFIX = 'bim-modeller-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 

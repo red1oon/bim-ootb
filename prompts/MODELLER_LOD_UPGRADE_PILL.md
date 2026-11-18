@@ -405,3 +405,6 @@ Findings: (1) a trailing `//` comment in the paused witness swallowed a closing 
 | Witness fixes | W-LODUP-YIELD SLICES now prints INCONCLUSIVE, not FAIL, when a run fits in one slice (its own header said so) |
 | Manifest | cache v300; `gen_manifest --write` + W-MANIFEST-ROUNDTRIP 13/13 |
 Logs (session scratchpad `logs/`): `ww_joints_real.log`, `ww_joints_synth.log`, `ww_joints_break.log`, `ww_ifc_joints.log`, `ww_gussets.log`, `ww_neighbours.log`, `ww_yield.log`, `ww_yield2.log`, `ww_roundtrip.log`.
+
+## P7 NAME FIX (2026-11-18, owner's film review: "The IFC file save as filename should be snapped")
+The Add-on IFC and the change list were named after the opened file with its extension kept (`JPAM_base.db_addon_IFC2X3.ifc`, `..._upgrade_changes.txt` the same way). `lod_ui.js` `modelName()` drops a trailing `.db` / `.sqlite` / `.sqlite3` / `.ifc`: `JPAM_base_addon_IFC2X3.ifc`. One function for both downloads. Witness: the film capture's own `§FILM_PILL_IFC file=` line (the real button, the browser's download folder); the six LODUP witnesses re-pin `lod_ui.js` (`03791bfb8a26caea`). Cache v301, `lod_ui.js?v=6`.
