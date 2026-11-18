@@ -47,7 +47,7 @@
   var _loaded = null, panel = null, _last = null;   // _last: the page's last built report (W-REG-REPORT-UI U7 reads it; nothing else does)
   function loadScripts() {
     if (_loaded) return _loaded;
-    var list = SCRIPTS.slice(); if (!window.LOCALE_RATE_MAP) list.push('../viewer/rates.js?v=13');   // the locale -> pack map lives in rates.js (its one owner)
+    var list = SCRIPTS.slice(); if (!window.LOCALE_RATE_MAP) list.push('../viewer/rates.js?v=14');   // the locale -> pack map lives in rates.js (its one owner)
     _loaded = list.reduce(function (p, src) {
       return p.then(function () { return new Promise(function (res, rej) { var s = document.createElement('script'); s.src = new URL(src, _base).href; s.onload = res; s.onerror = function () { rej(new Error('load failed ' + src)); }; document.head.appendChild(s); }); });
     }, Promise.resolve()).then(function () { var miss = GLOBALS.filter(function (k) { return !window[k]; }); if (miss.length) throw new Error('missing after load: ' + miss.join(',')); console.log(TAG + ' modules loaded n=' + list.length); })
