@@ -117,6 +117,20 @@ jobs:
           echo "$v"
           if [ "$rc" -ne 0 ] || ! printf '%s' "$v" | grep -q 'verdict=PASS'; then exit 1; fi
 
+      # CI FAST TIER (bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md Part E, CI-TIER; owner "Fast tier on every PR"): every headless witness that
+      # passed locally in < 10 s with no outside input (tests/ci_fast_tier.json, written by scripts/gen_ci_tier.js from the last local runs; probed
+      # without outside inputs). A red here = a witness that used to pass. Budget 10 min; a witness not reached is named. Plus W-CI-TIER itself.
+      - name: Fast witness tier (CI-TIER)
+        run: |
+          set -u; mkdir -p logs; rc=0
+          node scripts/tests/witness_ci_tier.js < /dev/null > logs/ci_tier_w.log 2>&1 || rc=$?
+          tail -1 logs/ci_tier_w.log
+          node scripts/run_ci_tier.js --budget-s 600 --timeout-s 60 < /dev/null > logs/ci_tier.log 2>&1 || rc=$?
+          grep -E 'ok=N' logs/ci_tier.log || true
+          v=$(grep -E '^§CI_TIER_RESULT ' logs/ci_tier.log | tail -1 || true)
+          echo "$v"
+          if [ "$rc" -ne 0 ] || ! printf '%s' "$v" | grep -q 'verdict=PASS'; then exit 1; fi
+
       - name: Dependency candidates agree with a real run (W-DEPS-CAND)
         run: |
           set -u; mkdir -p logs; rc=0
