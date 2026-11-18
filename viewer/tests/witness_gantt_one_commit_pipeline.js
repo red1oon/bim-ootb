@@ -23,10 +23,9 @@
 // Command: node viewer/tests/witness_gantt_one_commit_pipeline.js
 //          OCP_BLD=<building> (default Duplex);  OCP_EXPECT=<file of §W_OCP_STATE lines> makes OCP-4 a claim.
 'use strict';
-const __readSrc = require('./_split_families.js').readSource;
-const fs = require('fs'), path = require('path'), vm = require('vm'), os = require('os'), crypto = require('crypto');
-const V = path.join(__dirname, '..'), ROOT = path.join(V, '..');
-const tmSrc = __readSrc(path.join(V, 'time_machine.js'), 'utf8');
+const fs = require('fs'), path = require('path');
+const FX = require('./_gantt_edit_fixture.js');   // the building, its ops and the shipped verbs in a vm context
+const FN = FX.FN, tmSrc = FX.tmSrc, stripComments = FX.stripComments;
 const BLD = process.env.OCP_BLD || 'Duplex';
 const DAY = 86400000;
 const CANON = ['resync', 'annotate', 'persist', 'invalidate', 'computeDays', 'draw', 'render'];
@@ -37,21 +36,7 @@ function claim(id, pop, bad, detail) {
   if (v === 'PASS') pass++; else if (v === 'FAIL') fail++; else inconclusive++;
   console.log('§W_OCP ' + id.padEnd(7) + v.padEnd(13) + 'judged=' + String(pop).padEnd(5) + 'bad=' + String(bad).padEnd(4) + (detail || ''));
 }
-// every line-anchored top-level-ish function of the family: name -> body (brace matched)
-function functions(src) {
-  const out = {}, re = /^[ \t]*function (\w+)\(/gm; let m;
-  while ((m = re.exec(src))) {
-    const idx = m.index + m[0].indexOf('function'); let d = 0, open = false;
-    for (let i = idx; i < src.length; i++) {
-      if (src[i] === '{') { d++; open = true; }
-      else if (src[i] === '}') { d--; if (open && d === 0) { if (!out[m[1]]) out[m[1]] = src.slice(idx, i + 1); break; } }
-    }
-  }
-  return out;
-}
-const FN = functions(tmSrc);
 const has = n => !!FN[n];
-const stripComments = s => s.replace(/\/\/[^\n]*/g, '');
 function callers(token) {   // functions whose own code (comments stripped, nested named functions excluded) calls token
   const out = [];
   Object.keys(FN).forEach(n => {
@@ -100,70 +85,12 @@ function judgeLockTaker(name, body) {
 
 // ── OCP-3 / OCP-4: the gestures, on a real building ───────────────────────────────────────────
 (async () => {
-  const dbPath = path.join(process.env.BLD_DIR || path.join(os.homedir(), 'bim-ootb', 'buildings'), BLD + '_extracted.db');
-  if (!fs.existsSync(dbPath)) { claim('OCP-3', 0, 0, 'fixture missing at ' + dbPath); return finish(); }
-  const SG = require(path.join(V, 'schedule_gate.js')); global.ScheduleGate = SG;
-  const SA = require(path.join(V, 'schedule_author.js'));
-  global.SupportSweep = require(path.join(V, 'support_sweep.js')); global.CpmSchedule = require(path.join(V, 'cpm_schedule.js'));
-  const GM = require(path.join(V, 'gantt_model.js'));
-  const initSqlJs = require(path.join(ROOT, 'modeller', 'lib', 'sql-wasm.js'));
-  const SQL = await initSqlJs({ wasmBinary: fs.readFileSync(path.join(ROOT, 'modeller', 'lib', 'sql-wasm.wasm')) });
-  const db = new SQL.Database(new Uint8Array(fs.readFileSync(dbPath)));
-  const rulesJson = JSON.parse(__readSrc(path.join(V, 'rates', 'sequence_rules.json'), 'utf8')), RULES = rulesJson.SEQUENCE_RULES || rulesJson;
-  const TPL = JSON.parse(__readSrc(path.join(V, 'rates', '4D_template.json'), 'utf8'));
-  const mres = SA.materializeZones(db, RULES, { start: '2026-01-01', laborRates: {}, rates: {}, scheduleGate: SG, template: TPL });
-  if (!mres || !mres.ok) { claim('OCP-3', 0, 0, 'materializeZones failed: ' + JSON.stringify(mres).slice(0, 120)); return finish(); }
-  const schedId = mres.scheduleId;
-  // ops in loadOps' shape, each task's elements laid end to end across its own window
-  const q = (sql, p) => { const r = db.exec(sql, p); return r.length ? r[0].values : []; };
-  db.run('CREATE TABLE IF NOT EXISTS kernel_ops (id INTEGER PRIMARY KEY, timestamp INTEGER NOT NULL, op_type TEXT NOT NULL, parameters TEXT NOT NULL, input_guids TEXT, output_guid TEXT, undone INTEGER DEFAULT 0)');
-  db.run("DELETE FROM kernel_ops WHERE op_type='ELEMENT_PLACE'");
-  const win = {}; q("SELECT task_id, name, schedule_start, schedule_finish FROM tasks WHERE schedule_id=? AND (is_summary IS NULL OR is_summary=0)", [schedId])
-    .forEach(r => { win[r[0]] = { s: Date.parse(r[2] + 'T00:00:00Z'), e: Date.parse(r[3] + 'T00:00:00Z') }; });
-  const byTask = {}; q('SELECT task_id, guid FROM task_elements ORDER BY task_id, guid').forEach(r => { (byTask[r[0]] = byTask[r[0]] || []).push(r[1]); });
-  const ops = [], ins = db.prepare('INSERT INTO kernel_ops (timestamp,op_type,parameters,input_guids,output_guid,undone) VALUES(?,?,?,?,?,0)');
-  db.run('BEGIN');
-  Object.keys(byTask).sort().forEach(tid => { const w = win[tid]; if (!w) return; const gs = byTask[tid], step = (w.e - w.s) / gs.length;
-    gs.forEach((g, k) => { const s = Math.round(w.s + k * step), e = Math.round(w.s + (k + 1) * step), p = { _end_ts: e, storey: 'L', phase: 'Architecture' };
-      ins.run([s, 'ELEMENT_PLACE', JSON.stringify(p), '[]', g]); ops.push({ id: ops.length + 1, start_ts: s, end_ts: e, op_type: 'ELEMENT_PLACE', parameters: p, input_guids: [], output_guid: g }); }); });
-  db.run('COMMIT'); ins.free();
-  ops.sort((a, b) => a.start_ts - b.start_ts);
-
-  const steps = [], logs = [];
-  const sb = {
-    console: { log: (...a) => logs.push(a.join(' ')), warn: (...a) => logs.push(a.join(' ')) }, JSON: JSON,
-    document: { getElementById: id => (id === 'tm-gantt-tip' ? { style: {}, textContent: '' } : null) },
-    window: { ScheduleAuthor: SA, performance: null }, A: () => ({ db: db }),
-    _ops: ops, _ganttTasks: [], _taskIndex: { scheduleId: schedId }, _lastEdit: null, _cursor: 0, __steps: steps,
-  };
-  sb.window.window = sb.window; vm.createContext(sb);
-  const NAMES = ['_retimeSpan', 'retimeTaskElements', '_tmBusyRecording', '_tmEditLocked', '_tmEditExceptionRecover',
-    'commitGanttDrag', 'shiftGanttSchedule', 'commitGanttGroupShift', 'rescheduleGanttAsap', 'linkGanttBars', 'undoLastGanttEdit']
-    .concat(['_tmCommitEdit', '_tmEditRefresh'].filter(has));
-  vm.runInContext(NAMES.map(n => FN[n]).join('\n') + [
-    'function _tmResyncAfterRetime() { __steps.push("resync"); _ops.sort(function (a, b) { return a.start_ts - b.start_ts; }); }',
-    'function _tmAnnotateCpm() { __steps.push("annotate"); } function _tmPersistEdit() { __steps.push("persist"); }',
-    'function invalidateGanttModel() { __steps.push("invalidate"); } function computeDays() { __steps.push("computeDays"); }',
-    'function drawGanttMini() { __steps.push("draw"); } function renderAtTime() { __steps.push("render"); }',
-    'function _tmSay() {} function _tmSayException() {} function setTimeout() {}',
-    'this.__v = { drag: commitGanttDrag, shift: shiftGanttSchedule, group: commitGanttGroupShift, asap: rescheduleGanttAsap, link: linkGanttBars, undo: undoLastGanttEdit };',
-  ].join('\n'), sb);
-
-  function rebuildBars() {
-    const idx = { ok: true, scheduleId: schedId, tasks: {}, guidTask: {} };
-    q("SELECT task_id, name, schedule_start, schedule_finish FROM tasks WHERE schedule_id=? AND (is_summary IS NULL OR is_summary=0)", [schedId])
-      .forEach(r => { idx.tasks[r[0]] = { id: r[0], name: r[1], start: r[2], finish: r[3] }; });
-    q('SELECT te.guid, te.task_id FROM task_elements te JOIN tasks t ON t.task_id = te.task_id WHERE t.schedule_id=?', [schedId]).forEach(r => { idx.guidTask[r[0]] = r[1]; });
-    sb._ganttTasks = GM.buildTasks(sb._ops, idx, RULES).tasks;
-    return sb._ganttTasks.filter(b => b.taskId && b.guids && b.guids.length).sort((a, b) => a.startTs - b.startTs || (a.taskId < b.taskId ? -1 : 1));
-  }
-  const sha = s => crypto.createHash('sha1').update(s).digest('hex').slice(0, 12);
+  const fx = await FX.make({ bld: BLD });
+  if (fx.missing || fx.failed) { claim('OCP-3', 0, 0, 'no fixture: ' + (fx.missing || fx.failed)); return finish(); }
+  const db = fx.db, SA = fx.SA, sb = fx.sb, steps = fx.steps, logs = fx.logs, ops = fx.ops, rebuildBars = fx.rebuildBars, sha = FX.sha;
   function state() {
-    const le = sb._lastEdit;
-    return 'tasks=' + sha(JSON.stringify(q('SELECT task_id, schedule_start, schedule_finish, schedule_duration FROM tasks WHERE schedule_id=? ORDER BY task_id', [schedId]))) +
-      ' opsDb=' + sha(JSON.stringify(q("SELECT output_guid, timestamp, parameters FROM kernel_ops WHERE op_type='ELEMENT_PLACE' ORDER BY output_guid"))) +
-      ' opsMem=' + sha(JSON.stringify(sb._ops.map(o => [o.output_guid, o.start_ts, o.end_ts]).sort())) +
-      ' links=' + sha(JSON.stringify(q('SELECT predecessor_id, successor_id, sequence_type, lag_days FROM task_sequences ORDER BY 1, 2'))) +
+    const le = sb.__lastEdit(), p = fx.parts();
+    return 'tasks=' + p.tasks + ' opsDb=' + p.opsDb + ' opsMem=' + p.opsMem + ' links=' + p.links +
       ' undo=' + (le ? le.mode + ':' + Object.keys(le.tasksBefore || {}).length + ':' + sha(JSON.stringify(Object.keys(le.opsBefore || {}).sort().map(g => [g, le.opsBefore[g].start_ts, le.opsBefore[g].end_ts]))) : 'none');
   }
   const out = []; let badOrder = 0, ran = 0;

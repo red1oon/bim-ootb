@@ -819,10 +819,27 @@
     TMS.drawGanttMini();
     TMS.renderAtTime(TMS._cursor);
   }
+  // _tmEditSnapshot — (schedId): §UNDO_EVERY_EDIT (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.19.9). What an engine
+  // verb can write, read BEFORE it runs: every `tasks` row of the schedule (summary rows too — the ruler shift writes
+  // them) and every link between its tasks. One query for every verb; each used to type its own, and none held the links.
+  function _tmEditSnapshot(schedId) {
+    var db = TMS.A().db, snap = { tasks: {}, links: [] };
+    try {
+      var tb = db.exec('SELECT task_id, schedule_start, schedule_finish, schedule_duration FROM tasks WHERE schedule_id=?', [schedId]);
+      if (tb.length) tb[0].values.forEach(function (row) { snap.tasks[row[0]] = { start: row[1], finish: row[2], duration: row[3] }; });
+    } catch (e) { console.log('§GANTT_EDIT_SNAPSHOT_FAIL table=tasks error=' + (e && e.message)); }
+    try {
+      var lk = db.exec('SELECT s.predecessor_id, s.successor_id, s.sequence_type, s.lag_days FROM task_sequences s ' +
+        'JOIN tasks p ON p.task_id = s.predecessor_id WHERE p.schedule_id=?', [schedId]);
+      if (lk.length) snap.links = lk[0].values;
+    } catch (e) { snap.links = null; console.log('§GANTT_EDIT_SNAPSHOT_FAIL table=task_sequences error=' + (e && e.message)); }   // null = unknown: Undo leaves links alone
+    return snap;
+  }
   // _tmCommitEdit — one argument o: an engine verb has just written `tasks` (and/or `task_sequences`); carry it to the elements.
   //   o.moved        the verb's moved list ([{id,start,finish}]); omitted/empty = no bar moved (a link or unlink)
-  //   o.tasksBefore  the `tasks` snapshot taken BEFORE the verb (retimeTaskElements needs it for the clock delta)
-  //   o.undo         { taskId, mode } writes the single-level undo record; omitted = this edit leaves none
+  //   o.snap         _tmEditSnapshot(schedId), taken BEFORE the verb: the re-time needs its dates for the clock delta,
+  //                  and it IS the undo record's tasks and links
+  //   o.undo         { taskId, mode } — what ↺ Undo will say it took back. Every edit leaves a record (§UNDO_EVERY_EDIT)
   //   o.log          the caller's commit line, printed after the re-time and before the refresh (the order it always had)
   function _tmCommitEdit(o) {
     var app = TMS.A(), moved = o.moved || [], opsBefore = {};
@@ -839,9 +856,10 @@
           if (op) opsBefore[g] = { start_ts: op.start_ts, end_ts: op.end_ts, parameters: JSON.stringify(op.parameters) };
         });
       });
-      retimeTaskElements(app.db, barsByTask, moved, o.tasksBefore);
+      retimeTaskElements(app.db, barsByTask, moved, o.snap.tasks);
     }
-    if (o.undo) _lastEdit = { schedId: o.schedId, taskId: o.undo.taskId, mode: o.undo.mode, tasksBefore: o.tasksBefore, opsBefore: opsBefore };
+    _lastEdit = { schedId: o.schedId, taskId: o.undo.taskId, mode: o.undo.mode,
+      tasksBefore: o.snap.tasks, linksBefore: o.snap.links, opsBefore: opsBefore };
     if (o.log) console.log(o.log);
     _tmEditRefresh(o.what, o.schedId);
   }
@@ -868,14 +886,7 @@
     // §GANTT_EDIT_UNDO — snapshot BEFORE the engine verb mutates `tasks`. Cascade scope isn't known
     // until the verb returns, so this captures every leaf task in the active schedule (cheap — a
     // handful to a few hundred rows), not just the dragged one.
-    var tasksBefore = {};
-    try {
-      var tb = app.db.exec('SELECT task_id, schedule_start, schedule_finish, schedule_duration ' +
-        'FROM tasks WHERE schedule_id=? AND (is_summary IS NULL OR is_summary=0)', [schedId]);
-      if (tb.length) tb[0].values.forEach(function (row) {
-        tasksBefore[row[0]] = { start: row[1], finish: row[2], duration: row[3] };
-      });
-    } catch (e) {}
+    var snap = _tmEditSnapshot(schedId), tasksBefore = snap.tasks;
 
     // §S22_EPOCH_FIX (4D_GANTT_TM_REFACTOR.md §S22, MEASURED 2026-08-17): the target date string
     // handed to moveTaskCascade/resizeTask used to be d(bar.startTs + deltaDays*86400000) — bar.startTs
@@ -927,7 +938,7 @@
         setTimeout(function () { tip.style.display = 'none'; }, 2600);
       }
     }
-    _tmCommitEdit({ what: 'drag', schedId: schedId, moved: res.moved || [], tasksBefore: tasksBefore,
+    _tmCommitEdit({ what: 'drag', schedId: schedId, moved: res.moved || [], snap: snap,
       undo: { taskId: bar.taskId, mode: mode },
       log: '§GANTT_DRAG_COMMIT task=' + bar.taskId + ' mode=' + mode + ' deltaDays=' + deltaDays +
       ' start=' + res.start + ' clamped=' + res.clamped + ' cascaded=' + res.cascaded });
@@ -986,13 +997,7 @@
     if (!deltaDays) return;   // a click, not a drag — nothing to shift
     var schedId = (TMS._taskIndex && TMS._taskIndex.scheduleId) || 'SCH_AUTHORED';
 
-    var tasksBefore = {};
-    try {
-      var tb = app.db.exec('SELECT task_id, schedule_start, schedule_finish, schedule_duration FROM tasks WHERE schedule_id=?', [schedId]);
-      if (tb.length) tb[0].values.forEach(function (row) {
-        tasksBefore[row[0]] = { start: row[1], finish: row[2], duration: row[3] };
-      });
-    } catch (e) {}
+    var snap = _tmEditSnapshot(schedId);
 
     try {   // §TM_EDIT_EXCEPTION — engine verb through final repaint
     var res = SA.shiftSchedule(app.db, schedId, deltaDays);
@@ -1002,7 +1007,7 @@
       return;
     }
 
-    _tmCommitEdit({ what: 'rulerShift', schedId: schedId, moved: res.moved || [], tasksBefore: tasksBefore,
+    _tmCommitEdit({ what: 'rulerShift', schedId: schedId, moved: res.moved || [], snap: snap,
       undo: { taskId: '(whole schedule)', mode: 'shift' },
       log: '§TM_RULER_SHIFT_COMMIT schedule=' + schedId + ' deltaDays=' + deltaDays + ' tasks=' + res.moved.length });
     } catch (e) { _tmEditExceptionRecover('shiftGanttSchedule', e); }   // §TM_EDIT_EXCEPTION
@@ -1025,14 +1030,7 @@
     if (!deltaDays || !taskIds || !taskIds.length) return;
     var schedId = (TMS._taskIndex && TMS._taskIndex.scheduleId) || 'SCH_AUTHORED';
 
-    var tasksBefore = {};
-    try {
-      var placeholders = taskIds.map(function () { return '?'; }).join(',');
-      var tb = app.db.exec('SELECT task_id, schedule_start, schedule_finish, schedule_duration FROM tasks WHERE task_id IN (' + placeholders + ')', taskIds);
-      if (tb.length) tb[0].values.forEach(function (row) {
-        tasksBefore[row[0]] = { start: row[1], finish: row[2], duration: row[3] };
-      });
-    } catch (e) {}
+    var snap = _tmEditSnapshot(schedId);
 
     try {   // §TM_EDIT_EXCEPTION — engine verb through final repaint
     var res = SA.shiftTasks(app.db, taskIds, deltaDays);
@@ -1042,7 +1040,7 @@
       return;
     }
 
-    _tmCommitEdit({ what: 'groupShift', schedId: schedId, moved: res.moved || [], tasksBefore: tasksBefore,
+    _tmCommitEdit({ what: 'groupShift', schedId: schedId, moved: res.moved || [], snap: snap,
       undo: { taskId: '(' + taskIds.length + ' selected)', mode: 'group-shift' },
       log: '§GANTT_GROUP_SHIFT_COMMIT tasks=' + res.moved.length + ' deltaDays=' + deltaDays });
     } catch (e) { _tmEditExceptionRecover('commitGanttGroupShift', e); }   // §TM_EDIT_EXCEPTION
@@ -1080,6 +1078,15 @@
       tRestored++;
     }
     stT.free();
+    // §UNDO_EVERY_EDIT — the links, exactly as they were: the schedule's rows are replaced by the snapshot's.
+    var lRestored = -1;
+    if (edit.linksBefore) {
+      db.run('DELETE FROM task_sequences WHERE predecessor_id IN (SELECT task_id FROM tasks WHERE schedule_id=?)', [edit.schedId]);
+      var stL = db.prepare('INSERT OR REPLACE INTO task_sequences (predecessor_id, successor_id, sequence_type, lag_days) VALUES (?,?,?,?)');
+      for (var li = 0; li < edit.linksBefore.length; li++) stL.run(edit.linksBefore[li]);
+      stL.free();
+      lRestored = edit.linksBefore.length;
+    }
     var stO = db.prepare('UPDATE kernel_ops SET timestamp=?, parameters=? WHERE op_type=\'ELEMENT_PLACE\' AND output_guid=?');
     var oRestored = 0;
     // Same O(1)-per-guid hash, same reason as commitGanttDrag's opsBefore capture — a linear scan
@@ -1096,7 +1103,7 @@
     stO.free();
     db.run('COMMIT');
     console.log('§GANTT_EDIT_UNDO task=' + edit.taskId + ' mode=' + edit.mode +
-      ' tasksRestored=' + tRestored + ' opsRestored=' + oRestored);
+      ' tasksRestored=' + tRestored + ' linksRestored=' + (lRestored < 0 ? 'SKIPPED(no link snapshot)' : lRestored) + ' opsRestored=' + oRestored);
     say(_L('tm_undone', 'Undone: {mode} {task}', { mode: edit.mode, task: edit.taskId }));
     _tmEditRefresh('undo', edit.schedId);
   }
@@ -1156,14 +1163,7 @@
     // §GANTT_EDIT_UNDO — snapshot BEFORE the engine verb mutates `tasks`. This action can move MANY
     // leaf tasks, so the snapshot covers every leaf in the schedule (same scope commitGanttDrag
     // already uses for exactly this reason: "cascade scope isn't known until the verb returns").
-    var tasksBefore = {};
-    try {
-      var tb = app.db.exec('SELECT task_id, schedule_start, schedule_finish, schedule_duration ' +
-        'FROM tasks WHERE schedule_id=? AND (is_summary IS NULL OR is_summary=0)', [schedId]);
-      if (tb.length) tb[0].values.forEach(function (row) {
-        tasksBefore[row[0]] = { start: row[1], finish: row[2], duration: row[3] };
-      });
-    } catch (e) {}
+    var snap = _tmEditSnapshot(schedId);
 
     try {   // §TM_EDIT_EXCEPTION — engine verb through final repaint; a throw returns undefined = "refused" (§S73)
     var res = SA.rescheduleAsap(app.db, schedId, {});
@@ -1179,7 +1179,7 @@
       return 'nothing';
     }
 
-    _tmCommitEdit({ what: 'rescheduleAsap', schedId: schedId, moved: res.moved || [], tasksBefore: tasksBefore,
+    _tmCommitEdit({ what: 'rescheduleAsap', schedId: schedId, moved: res.moved || [], snap: snap,
       undo: { taskId: '(' + res.moved.length + ' pulled back)', mode: 'asap' },
       log: '§GANTT_RESCHEDULE_ASAP_COMMIT schedule=' + schedId + ' tasks=' + res.moved.length +
       ' daysCompressed=' + res.daysCompressed });
@@ -1469,6 +1469,8 @@
       say(_L('tm_refused_cycle', 'Refused — that link would create a cycle'));
       return;
     }
+    var schedId = (TMS._taskIndex && TMS._taskIndex.scheduleId) || 'SCH_AUTHORED';
+    var snap = _tmEditSnapshot(schedId), tasksBeforeLink = snap.tasks;   // BEFORE the edge is written: Undo takes the link back too
     var r = SA.addDependency(app.db, predBar.taskId, succBar.taskId, 'FS', 0);
     console.log('§GANTT_EDIT_LINK pred=' + predBar.taskId + ' succ=' + succBar.taskId +
       ' type=FS ok=' + JSON.stringify(r && (r.ok !== undefined ? r.ok : r)));
@@ -1476,13 +1478,8 @@
     // The new edge may make the successor illegal where it currently sits. Re-apply it through the
     // SAME constraint-aware verb so the graph and the dates agree immediately, rather than leaving a
     // freshly-created violation on screen.
-    var schedId = (TMS._taskIndex && TMS._taskIndex.scheduleId) || 'SCH_AUTHORED';
-    var linkMoved = [], tasksBeforeLink = {};
+    var linkMoved = [];
     if (SA.moveTaskCascade) {
-      try {
-        var tbL = app.db.exec('SELECT task_id, schedule_start, schedule_finish, schedule_duration FROM tasks WHERE schedule_id=?', [schedId]);
-        if (tbL.length) tbL[0].values.forEach(function (row) { tasksBeforeLink[row[0]] = { start: row[1], finish: row[2], duration: row[3] }; });
-      } catch (e) {}
       // §S22_EPOCH_FIX: succBar.startTs is the TM's OWN internal clock (kernel_ops-derived day-offset
       // solve, not a real date) — new Date(succBar.startTs) misread it as if it already were one,
       // handing moveTaskCascade a bogus target (the same clock-mismatch class §S22 found in
@@ -1507,7 +1504,8 @@
     }
     // The pipeline runs whether or not a bar moved: a new EDGE changes the graph, so it changes float and
     // criticality even when the clamp left every date exactly where it was (§GANTT_CPM_ANNOTATE, §S68).
-    _tmCommitEdit({ what: 'link', schedId: schedId, moved: linkMoved, tasksBefore: tasksBeforeLink });
+    _tmCommitEdit({ what: 'link', schedId: schedId, moved: linkMoved, snap: snap,
+      undo: { taskId: predBar.taskId + ' → ' + succBar.taskId, mode: 'link' } });
     } catch (e) { _tmEditExceptionRecover('linkGanttBars', e); }   // §TM_EDIT_EXCEPTION
   }
 
@@ -1589,9 +1587,11 @@
         if (_tmEditLocked('openGanttProps:unlink')) return;
         var x = deps[parseInt(btn.getAttribute('data-unlink'), 10)];
         if (!x || !SA.removeDependency) return;
+        var snapU = _tmEditSnapshot(schedId);
         SA.removeDependency(app.db, x.predId, x.succId);
         console.log('§GANTT_EDIT_UNLINK pred=' + x.predId + ' succ=' + x.succId);
-        _tmCommitEdit({ what: 'unlink', schedId: schedId });   // removing an edge changes float too (§S68)
+        _tmCommitEdit({ what: 'unlink', schedId: schedId, snap: snapU,   // removing an edge changes float too (§S68)
+          undo: { taskId: x.predId + ' → ' + x.succId, mode: 'unlink' } });
         openGanttProps(bar);
       };
     });
@@ -1601,14 +1601,7 @@
       var msg = document.getElementById('tmp-msg');
       // Typed dates go through the SAME constraint-aware verbs as a drag — keyin is a second input
       // surface onto one model, never a bypass around C1/C2.
-      // §S22_EPOCH_FIX: same tasksBefore snapshot commitGanttDrag/shiftGanttSchedule/
-      // commitGanttGroupShift already capture, needed here too so retimeTaskElements can convert
-      // res.moved's real calendar dates back onto the TM's own clock instead of splicing them in raw.
-      var tasksBeforeApply = {};
-      try {
-        var tbA = app.db.exec('SELECT task_id, schedule_start, schedule_finish, schedule_duration FROM tasks WHERE schedule_id=?', [schedId]);
-        if (tbA.length) tbA[0].values.forEach(function (row) { tasksBeforeApply[row[0]] = { start: row[1], finish: row[2], duration: row[3] }; });
-      } catch (e) {}
+      var snapA = _tmEditSnapshot(schedId);   // before the verb: the clock delta for the re-time, and the undo record
       // Compare against the REAL dates the panel was populated with (§S72) — comparing the typed
       // value against the TM-clock d(bar.startTs) made "start changed, finish didn't" always true,
       // so a pure finish edit was routed through moveTaskCascade as if it were a move.
@@ -1619,7 +1612,8 @@
       if (!res || !res.ok) { if (msg) msg.textContent = _L('tm_rejected', 'Rejected: {reason}', { reason: (res && res.reason) || _L('tm_unknown', 'unknown') }); return; }
       if (msg) msg.textContent = res.clamped ? _L('tm_clamped_by', 'Clamped to {start} by {by}', { start: res.start, by: res.blockedBy }) :
         _L('tm_applied_cascaded', 'Applied · {n} successor(s) cascaded', { n: res.cascaded });
-      _tmCommitEdit({ what: 'propsApply', schedId: schedId, moved: res.moved || [], tasksBefore: tasksBeforeApply,
+      _tmCommitEdit({ what: 'propsApply', schedId: schedId, moved: res.moved || [], snap: snapA,
+        undo: { taskId: bar.taskId, mode: 'dates' },
         log: '§GANTT_PROPS_APPLY task=' + bar.taskId + ' start=' + res.start + ' clamped=' + res.clamped + ' cascaded=' + res.cascaded });
       } catch (e) { _tmEditExceptionRecover('commitGanttProps', e); }   // §TM_EDIT_EXCEPTION — the typed-apply path (props panel Apply)
     };
