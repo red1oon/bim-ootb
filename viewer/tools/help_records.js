@@ -27,7 +27,8 @@ function pillsOf(src) {
     const t = block.slice(s.at, i + 1 < starts.length ? starts[i + 1].at : block.length), nm = t.match(/name: '((?:[^'\\]|\\.)*)'/), head = t.slice(0, t.search(/\bicon:/) < 0 ? t.length : t.search(/\bicon:/));
     const k = head.match(/\bkey: (?:'((?:[^'\\]|\\.)*)'|null)/), ci = t.indexOf('children: ['), kids = [];
     if (ci >= 0) { const cre = /\{ name: '((?:[^'\\]|\\.)*)' \}/g; let c; const tail = t.slice(ci); while ((c = cre.exec(tail))) kids.push(unq(c[1])); }
-    return { id: s.id, name: unq(nm[1]), key: k && k[1] ? unq(k[1]) : '', kids };
+    const tk = head.match(/\btrlKey: '([A-Za-z0-9_-]+)'/);   // §VIEWER_EXPORT_MENU: the dictionary key stem when it is not the id (panels.js _pillKey)
+    return { id: s.id, name: unq(nm[1]), key: k && k[1] ? unq(k[1]) : '', kids, tkey: tk ? tk[1] : s.id };
   });
 }
 // the keyboard-only rows of showCommandPalette in viewer/scene.js: all.push({ seq: 'X', hkey: 'key:X', name: _hT('key', 'English'), ... })
@@ -45,7 +46,7 @@ function load(lang) {
   if (!pills.length || !keys.length) throw new Error('viewer adapter: no pills (' + pills.length + ') or key rows (' + keys.length + ') read from source');
   const lab = (k, en) => (typeof L[k] === 'string' && L[k] ? L[k] : en), recs = [];
   pills.forEach((p) => {
-    const ht = howto[p.id] || {}, n = tidy(lab(pillKey(p.id), p.name)), kids = p.kids.map((c, i) => tidy(lab(childKey(p.id, i), c)));
+    const ht = howto[p.id] || {}, n = tidy(lab(pillKey(p.tkey), p.name)), kids = p.kids.map((c, i) => tidy(lab(childKey(p.tkey, i), c)));
     const cli = (ht.cli || []).map((c) => tidy(c.title) + '\n' + c.verb).join('\n');
     const a = p.key ? [p.key.toUpperCase()] : [];
     recs.push(Object.assign({ id: 'pill/' + p.id, k: 'pill', n }, a.length ? { a } : {}, kids.length ? { d: kids.join('\n') } : {}, cli ? { h: cli } : {}, { go: { hkey: p.id } }));

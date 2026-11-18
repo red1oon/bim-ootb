@@ -310,7 +310,7 @@ print(json.dumps(out))`, T.I18N], { encoding: 'utf8' });
     const re = /\{ id: '([\w-]+)',/g; let m; const ids = []; while ((m = re.exec(src))) ids.push([m[1], m.index]);
     let n = 0; const bad = [];
     ids.forEach(([id, at], k) => { const seg = src.slice(at, k + 1 < ids.length ? ids[k + 1][1] : src.length); const c = seg.match(/children: \[(.*?)\] \}/s); if (!c) return;
-      [...c[1].matchAll(/\{ name: '((?:[^'\\]|\\.)*)'/g)].forEach((x, i) => { n++; const key = 'pillc_' + id.toLowerCase().replace(/-/g, '_') + '_' + (i + 1), en = x[1].replace(/\\'/g, "'");
+      [...c[1].matchAll(/\{ name: '((?:[^'\\]|\\.)*)'/g)].forEach((x, i) => { n++; const tk = (seg.slice(0, seg.search(/\bicon:/) < 0 ? seg.length : seg.search(/\bicon:/)).match(/\btrlKey: '([\w-]+)'/) || [])[1] || id, key = 'pillc_' + tk.toLowerCase().replace(/-/g, '_') + '_' + (i + 1), en = x[1].replace(/\\'/g, "'");
         if (byValue.get(key) !== en) bad.push(key + ' code=' + JSON.stringify(en.slice(0, 40)) + ' csv=' + JSON.stringify(String(byValue.get(key)).slice(0, 40))); }); });
     W(n > 0 && bad.length === 0, '(3c) Help sub-rows: ' + n + ' children in panels.js, each English == CSV msgtext of pillc_<id>_<n>' + (bad.length ? ' MISMATCH ' + bad.slice(0, 5).join(' | ') : '') + (n ? '' : ' — INCONCLUSIVE (0 children parsed)'));
   }

@@ -3,12 +3,12 @@
  "guide": "https://red1oon.github.io/BIMCompiler/BIMUserGuide/",
  "pills": {
   "save": {
-   "name": "Save Building",
+   "name": "Export",
    "guide": {
-    "anchor": "save-open-a-building",
-    "heading": "Save & Open a building",
+    "anchor": "issues",
+    "heading": "Issues",
     "in_heading": false,
-    "mentions": 1
+    "mentions": 2
    },
    "cli": []
   },
