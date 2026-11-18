@@ -2985,15 +2985,16 @@
   // moveTaskCascade(db, scheduleId, taskId, newStart, opts) →
   //   { ok, start, finish, clamped, clampedFrom, blockedBy, moved:[{id,start,finish}], cascaded }
   // opts.dryRun — compute and report without writing (used by the drag preview and by the witness).
-  function moveTaskCascade(db, scheduleId, taskId, newStart, opts) {
-    opts = opts || {};
+  // _leafGraph(db, scheduleId) → { T:{id→{id,start,finish,dur}} in day numbers, ids, preds, succs } or { fail: reason }.
+  // The schedule's leaf tasks and the links between them, as moveTaskCascade and swapTasks both read them (one load).
+  function _leafGraph(db, scheduleId) {
     var T = {}, ids = [], preds = {}, succs = {};
     var tr;
     try {
       tr = db.exec('SELECT task_id, schedule_start, schedule_finish, schedule_duration, is_summary ' +
         'FROM tasks WHERE schedule_id=?', [scheduleId]);
-    } catch (e) { return { ok: false, reason: 'no_tasks' }; }
-    if (!tr.length || !tr[0].values.length) return { ok: false, reason: 'no_tasks' };
+    } catch (e) { return { fail: 'no_tasks' }; }
+    if (!tr.length || !tr[0].values.length) return { fail: 'no_tasks' };
     tr[0].values.forEach(function (row) {
       if (row[4] === 1) return;                       // summaries are rolled up, never moved directly
       var s = _dayNum(row[1]); if (s === null) return;
@@ -3001,7 +3002,6 @@
       T[row[0]] = { id: row[0], start: s, finish: s + dur, dur: dur };
       ids.push(row[0]);
     });
-    if (!T[taskId]) { console.log('§GANTT_EDIT_MOVE_FAIL task=' + taskId + ' reason=no_such_task'); return { ok: false, reason: 'no_such_task' }; }
     try {
       var er = db.exec('SELECT predecessor_id, successor_id, sequence_type, lag_days FROM task_sequences');
       if (er.length && er[0].values.length) er[0].values.forEach(function (row) {
@@ -3017,6 +3017,48 @@
       console.warn('§CASCADE_BLIND task_sequences unreadable — ' + (e && e.message) +
         ' — this move runs with no predecessor clamp and no successor cascade');
     }
+    return { T: T, ids: ids, preds: preds, succs: succs };
+  }
+  // _cascadePush(fromId, G, moved) — C1: push-only cascade from a task whose dates were just set in G.T. Marks every
+  // successor it had to push in `moved`. Never pulls a successor earlier.
+  function _cascadePush(fromId, G, moved) {
+    var T = G.T, queue = [fromId], guard = 0, limit = G.ids.length * 4 + 16;
+    while (queue.length) {
+      if (++guard > limit) { console.log('§GANTT_EDIT_CASCADE_ABORT task=' + fromId + ' reason=iteration_limit'); break; }
+      var cur = queue.shift(), out = G.succs[cur] || [];
+      for (var i = 0; i < out.length; i++) {
+        var sid = out[i].succ, S = T[sid]; if (!S) continue;
+        var es = _earliestStart(sid, T, G.preds);
+        if (es !== null && S.start < es) {           // push-only: never pull a successor earlier
+          S.start = es; S.finish = es + S.dur;
+          moved[sid] = true;
+          queue.push(sid);
+        }
+      }
+    }
+  }
+  // _writeMoved(db, G, moved) → [{id,start,finish,days}], written to `tasks` unless dryRun.
+  function _writeMoved(db, G, moved, dryRun, also) {
+    var list = Object.keys(moved).map(function (id) {
+      return { id: id, start: _dayStr(G.T[id].start), finish: _dayStr(G.T[id].finish), days: G.T[id].dur };
+    });
+    if (!dryRun) {
+      db.run('BEGIN');
+      var st = db.prepare('UPDATE tasks SET schedule_start=?, schedule_finish=?, schedule_duration=? WHERE task_id=?');
+      list.forEach(function (m) { st.run([m.start, m.finish, 'P' + m.days + 'D', m.id]); });
+      st.free();
+      if (also) also();
+      db.run('COMMIT');
+    }
+    return list;
+  }
+
+  function moveTaskCascade(db, scheduleId, taskId, newStart, opts) {
+    opts = opts || {};
+    var G = _leafGraph(db, scheduleId);
+    if (G.fail) return { ok: false, reason: G.fail };
+    var T = G.T, preds = G.preds;
+    if (!T[taskId]) { console.log('§GANTT_EDIT_MOVE_FAIL task=' + taskId + ' reason=no_such_task'); return { ok: false, reason: 'no_such_task' }; }
 
     // ---- C2: clamp against this task's own predecessors.
     var want = _dayNum(newStart);
@@ -3034,37 +3076,70 @@
     // ---- Apply to the in-memory model, then C1: cascade forward, push-only.
     T[taskId].start = want; T[taskId].finish = want + T[taskId].dur;
     var moved = {}; moved[taskId] = true;
-    var queue = [taskId], guard = 0, limit = ids.length * 4 + 16;
-    while (queue.length) {
-      if (++guard > limit) { console.log('§GANTT_EDIT_CASCADE_ABORT task=' + taskId + ' reason=iteration_limit'); break; }
-      var cur = queue.shift(), out = succs[cur] || [];
-      for (var i = 0; i < out.length; i++) {
-        var sid = out[i].succ, S = T[sid]; if (!S) continue;
-        var es = _earliestStart(sid, T, preds);
-        if (es !== null && S.start < es) {           // push-only: never pull a successor earlier
-          S.start = es; S.finish = es + S.dur;
-          moved[sid] = true;
-          queue.push(sid);
-        }
-      }
-    }
-
-    var movedList = Object.keys(moved).map(function (id) {
-      return { id: id, start: _dayStr(T[id].start), finish: _dayStr(T[id].finish), days: T[id].dur };
-    });
-    if (!opts.dryRun) {
-      db.run('BEGIN');
-      var st = db.prepare('UPDATE tasks SET schedule_start=?, schedule_finish=?, schedule_duration=? WHERE task_id=?');
-      movedList.forEach(function (m) { st.run([m.start, m.finish, 'P' + m.days + 'D', m.id]); });
-      st.free();
-      db.run('COMMIT');
-    }
+    _cascadePush(taskId, G, moved);
+    var movedList = _writeMoved(db, G, moved, opts.dryRun);
     console.log('§GANTT_EDIT_MOVE task=' + taskId + ' start=' + _dayStr(T[taskId].start) +
       ' finish=' + _dayStr(T[taskId].finish) + ' clamped=' + clamped +
       ' cascaded=' + (movedList.length - 1) + (opts.dryRun ? ' (dryRun)' : ''));
     return { ok: true, start: _dayStr(T[taskId].start), finish: _dayStr(T[taskId].finish),
       clamped: clamped, clampedFrom: clampedFrom, blockedBy: blockedBy,
       moved: movedList, cascaded: movedList.length - 1 };
+  }
+
+  // swapTasks(db, scheduleId, aId, bId, opts) — §GANTT_REORDER (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.19.11).
+  // Exchange two bars' places. With A the earlier and B the later: B takes A's start, A ends where B ended, both keep
+  // their durations, so the pair's envelope does not move. A direct link A→B is reversed (same type, lag). Atomic:
+  // nothing is written on a refusal. →
+  //   { ok, a:{id,start,finish}, b:{…}, reversedLink, clamped, blockedBy, moved:[{id,start,finish}], cascaded }
+  //   { ok:false, reason: same_task | no_such_task | bars_overlap | blocked | cycle, blockedBy?, task? }
+  // opts.dryRun — compute and report without writing.
+  function swapTasks(db, scheduleId, aId, bId, opts) {
+    opts = opts || {};
+    function no(reason, extra) {
+      console.log('§GANTT_REORDER_REFUSED a=' + aId + ' b=' + bId + ' reason=' + reason +
+        (extra && extra.blockedBy ? ' blockedBy=' + extra.blockedBy : '') + (opts.dryRun ? ' (dryRun)' : ''));
+      var r = { ok: false, reason: reason }; if (extra) for (var k in extra) r[k] = extra[k]; return r;
+    }
+    if (aId === bId) return no('same_task');
+    var G = _leafGraph(db, scheduleId);
+    if (G.fail) return no(G.fail);
+    var T = G.T, preds = G.preds, succs = G.succs;
+    if (!T[aId] || !T[bId]) return no('no_such_task');
+    var A = T[aId], B = T[bId];
+    if (B.start < A.start || (B.start === A.start && bId < aId)) { var t = A; A = B; B = t; }   // A = the earlier bar
+    if (A.finish > B.start) return no('bars_overlap');
+    // a direct link A→B is reversed in the model first, so every check below reads the graph as it will be
+    var direct = (succs[A.id] || []).filter(function (e) { return e.succ === B.id; })[0] || null;
+    if (direct) {
+      succs[A.id] = succs[A.id].filter(function (e) { return e !== direct; });
+      preds[B.id] = (preds[B.id] || []).filter(function (e) { return e !== direct; });
+      var rev = { pred: B.id, succ: A.id, type: direct.type, lag: direct.lag };
+      (succs[B.id] = succs[B.id] || []).push(rev); (preds[A.id] = preds[A.id] || []).push(rev);
+      // would B→A close a cycle? (is B still reachable from A)
+      var seen = {}, stack = [A.id], hit = false;
+      while (stack.length && !hit) { var c = stack.pop(); if (seen[c]) continue; seen[c] = true;
+        (succs[c] || []).forEach(function (e) { if (e.succ === B.id) hit = true; else stack.push(e.succ); }); }
+      if (hit) return no('cycle');
+    }
+    var envEnd = B.finish;
+    B.start = A.start; B.finish = B.start + B.dur;
+    A.start = envEnd - A.dur; A.finish = envEnd;
+    // B may not start before a predecessor it still has (this is also what catches A→X→B)
+    var floorB = _earliestStart(B.id, T, preds);
+    if (floorB !== null && B.start < floorB) return no('blocked', { task: B.id, blockedBy: _bindingPred(B.id, T, preds, floorB) });
+    // A obeys its own predecessors (B among them when the link was reversed), then pushes its successors — a drag's rules
+    var floorA = _earliestStart(A.id, T, preds), clamped = false, blockedBy = null;
+    if (floorA !== null && A.start < floorA) { clamped = true; blockedBy = _bindingPred(A.id, T, preds, floorA); A.start = floorA; A.finish = floorA + A.dur; }
+    var moved = {}; moved[A.id] = true; moved[B.id] = true;
+    _cascadePush(A.id, G, moved);
+    var movedList = _writeMoved(db, G, moved, opts.dryRun, direct ? function () {
+      db.run('DELETE FROM task_sequences WHERE predecessor_id=? AND successor_id=?', [A.id, B.id]);
+      db.run('INSERT OR REPLACE INTO task_sequences (predecessor_id, successor_id, sequence_type, lag_days) VALUES (?,?,?,?)', [B.id, A.id, direct.type, direct.lag]);
+    } : null);
+    console.log('§GANTT_REORDER earlier=' + A.id + ' later=' + B.id + ' nowFirst=' + B.id + '@' + _dayStr(B.start) + ' nowSecond=' + A.id + '@' + _dayStr(A.start) +
+      ' reversedLink=' + !!direct + ' clamped=' + clamped + ' cascaded=' + (movedList.length - 2) + (opts.dryRun ? ' (dryRun)' : ''));
+    return { ok: true, a: { id: A.id, start: _dayStr(A.start), finish: _dayStr(A.finish) }, b: { id: B.id, start: _dayStr(B.start), finish: _dayStr(B.finish) },
+      reversedLink: !!direct, clamped: clamped, blockedBy: blockedBy, moved: movedList, cascaded: movedList.length - 2 };
   }
 
   // resizeTask(db, scheduleId, taskId, newStart, newFinish, opts) — §GANTT_EDIT E2, the edge-pull.
@@ -3636,6 +3711,7 @@
     computeCpm: computeCpm,
     moveTask: moveTask,
     moveTaskCascade: moveTaskCascade,   // §GANTT_EDIT C1/C2 — the constraint-aware move
+    swapTasks: swapTasks,               // §GANTT_REORDER — exchange two bars' places (atomic)
     shiftSchedule: shiftSchedule,       // §TM_RULER_SHIFT — uniform whole-project date shift
     shiftTasks: shiftTasks,             // §GANTT_GROUP_MOVE — uniform date shift over an explicit task_id list
     resizeTask: resizeTask,             // §GANTT_EDIT E2 — edge-pull, duration changes
