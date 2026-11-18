@@ -577,6 +577,14 @@
    "en": "Action",
    "ref": "el:287"
   },
+  "help.process": {
+   "en": "Process",
+   "ref": "el:117"
+  },
+  "help.report": {
+   "en": "Report",
+   "ref": "el:1022"
+  },
   "help.allowed": {
    "en": "Allowed when the document is",
    "machine": {

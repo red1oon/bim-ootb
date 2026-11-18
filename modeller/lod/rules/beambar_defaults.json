@@ -1,0 +1,93 @@
+{
+ "_about": "Beam reinforcement rule rows for the LOD Upgrade pack 'Beam rebar (schedule)' (bim-ootb prompts/MODELLER_LOD_UPGRADE_PILL.md P6 SPEC; ported from bim-compiler scripts/lod/rebar_beam_defaults.json plus the three shared rows of rebar_defaults.json and the join rows the Python takes as arguments). Every row: value, unit, source. A stated schedule value always wins over a row here. No project value in this file.",
+ "beam_cover_mm": {
+  "value": 40,
+  "unit": "mm",
+  "source": "default: ours (cover to the stirrup surface; ACI 318-19 stated on S-001 but its cover clause was NOT read)"
+ },
+ "beam_min_clear_mm": {
+  "value": 25,
+  "unit": "mm",
+  "source": "default: ours (minimum clear spacing between parallel bars; the rule id R110 is the project's, the value is ours; ACI 318-19 spacing clause NOT read)"
+ },
+ "beam_layer_clear_mm": {
+  "value": 25,
+  "unit": "mm",
+  "source": "default: ours (clear distance between bar layers; same value as the minimum clear spacing; clause NOT read)"
+ },
+ "beam_sample_step_mm": {
+  "value": 10,
+  "unit": "mm",
+  "source": "default: ours (station step used to find the stretch of a bar line that lies inside the beam mesh; the end is then refined by bisection)"
+ },
+ "beam_fit_margin_mm": {
+  "value": 0.1,
+  "unit": "mm",
+  "source": "default: ours (numerical margin above the cover when a bar end or a stirrup is fitted; far below the 1 mm witness tolerance)"
+ },
+ "beam_anchorage_modelled": {
+  "value": "no",
+  "unit": "-",
+  "source": "default: ours (no anchorage into supports; bars end at cover from the modelled beam end; logged)"
+ },
+ "beam_hooks_modelled": {
+  "value": "no",
+  "unit": "-",
+  "source": "default: ours (stirrup hooks not modelled; logged)"
+ },
+ "beam_laps_modelled": {
+  "value": "no",
+  "unit": "-",
+  "source": "default: ours (no laps; a bar over the stock length is flagged 'needs lap (not modelled)')"
+ },
+ "beam_bar_order": {
+  "value": "stated column order, first layer nearest the face",
+  "unit": "-",
+  "source": "default: ours (a layer is filled in the order the schedule columns list the bars; bottom A then ADD B, top D then E)"
+ },
+ "beam_side_levels_rule": {
+  "value": "interior levels evenly between the outermost bar centres, spacing <= stated pitch; 'nTd' without a pitch = n/2 bars per face evenly spaced",
+  "unit": "-",
+  "source": "default: ours (reading of the stated string '2T12-300' as 2 bars per level, one per face, at most 300 mm apart over the web depth; spec R105)"
+ },
+ "beam_stirrup_rule": {
+  "value": "closed outer loop at the stated end-zone dia and spacing over the whole clear length, first loop at cover + d/2 from the beam end, loops that do not fit the beam mesh are skipped and counted",
+  "unit": "-",
+  "source": "default: ours (the balance-zone spacing and the inner legs are on the schedule but their zone lengths are not stated; recorded, not modelled)"
+ },
+ "beam_hanger_C_built": {
+  "value": "no",
+  "unit": "-",
+  "source": "default: ours (spec section 7 lists bottom, top, side, stirrups; the earlier hand parser also leaves column C out; each stated C value is reported as NOT_BUILT)"
+ },
+ "bar_sides": {
+  "value": 8,
+  "unit": "no.",
+  "source": "default: ours (facets of a bar prism; the same row as the rebar pack)"
+ },
+ "inside_tol_mm": {
+  "value": 1.0,
+  "unit": "mm",
+  "source": "default: ours (INSIDE witness tolerance, from the spec: cover - 1 mm)"
+ },
+ "stock_length_mm": {
+  "value": 12000,
+  "unit": "mm",
+  "source": "default: ours (12 m stock bar length used only for the no-lap flag)"
+ },
+ "host_class": {
+  "value": "IfcBeam",
+  "unit": "-",
+  "source": "default: ours (the IFC class the schedule marks are joined to)"
+ },
+ "mark_source": {
+  "value": "element_name",
+  "unit": "-",
+  "source": "default: ours (where the type mark is read: element_name, or the name of an element_dxf2bim row; a Pset Reference can be used once the model carries it)"
+ },
+ "mark_regex": {
+  "value": ":([A-Za-z]+[0-9]+)\\(",
+  "unit": "regex",
+  "source": "default: ours (group 1 = the type mark in a name like 'Beam - Concrete - Rectangular (M):GB1(300x600):<id>'; edit it for another naming)"
+ }
+}

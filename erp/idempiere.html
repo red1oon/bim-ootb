@@ -554,7 +554,7 @@
 <script src="erp_i18n.js?v=5"></script><!-- UI locales (bim-compiler prompts/ERP_UI_LOCALES.md) — W-ERP-I18N -->
 <script src="ad_parser.js?v=27"></script>
 <script src="field_help.js?v=1"></script>
-<script src="../common/help/help_query.js?v=2"></script><script src="../common/door/assist_core.js?v=1"></script><script src="../common/help/help_dym.js?v=2"></script><script src="help_records_core.js?v=1"></script><script src="help_search.js?v=4"></script><script src="../common/help/help_grammar.js?v=1"></script><script src="help_actions.js?v=1"></script><!-- VOCAB_MESSAGE_CATALOG §10 H2: the How To question box (deterministic, no AI inside) — W-HELP-SHOWCASE S3 --><!-- VOCAB_MESSAGE_CATALOG §7 P1b: ONE field tooltip setter + the Tool Tip panel (legacy WEditor / HelpController) — W-FIELD-HELP -->
+<script src="../common/help/help_query.js?v=2"></script><script src="../common/door/assist_core.js?v=1"></script><script src="../common/help/help_dym.js?v=2"></script><script src="help_records_core.js?v=1"></script><script src="help_search.js?v=5"></script><script src="../common/help/help_grammar.js?v=1"></script><script src="help_actions.js?v=1"></script><!-- VOCAB_MESSAGE_CATALOG §10 H2: the How To question box (deterministic, no AI inside) — W-HELP-SHOWCASE S3 --><!-- VOCAB_MESSAGE_CATALOG §7 P1b: ONE field tooltip setter + the Tool Tip panel (legacy WEditor / HelpController) — W-FIELD-HELP -->
 <!-- UI_UNPARK_RESUME.md — proven AD engines (source of truth: bim-compiler build/erp/): logic evaluator
      (W-LOGIC-EVAL 3044/3044) · DocAction FSM (W-*-FSM, 22 tables) · beforeSave hooks (W-*-SAVE, 12 installers). -->
 <script src="ad_evaluator.js?v=24"></script>
@@ -3122,6 +3122,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         if (d) { ev.preventDefault(); var dp = d.getAttribute('data-help-doc').split('|'); _docOpen(Number(dp[0]), dp.slice(1).join('|')); return; }
         var nw = ev.target.closest ? ev.target.closest('a[data-help-new]') : null;   // §19.6: New on a window result
         if (nw) { ev.preventDefault(); _howtoNew(Number(nw.getAttribute('data-help-new'))); return; }
+        var pr = ev.target.closest ? ev.target.closest('a[data-help-proc]') : null;   // §19.9: a process / report of the role's menu opens as from the menu
+        if (pr) { ev.preventDefault(); var pid = Number(pr.getAttribute('data-help-proc')), pon = window.__idmpFieldHelp.menu().processes.indexOf(pid) >= 0; console.log('§HELP_LINK process=' + pid + ' onMenu=' + pon); if (pon) openProcess(pid, pr.textContent); else status('Not on this role\'s menu (process ' + pid + ')'); return; }
         var a = ev.target.closest ? ev.target.closest('a[data-help-win]') : null; if (!a) return; ev.preventDefault();
         var wid = Number(a.getAttribute('data-help-win')), on = window.__idmpFieldHelp.menu().windows.indexOf(wid) >= 0;
         console.log('§HELP_LINK window=' + wid + ' onMenu=' + on);
@@ -3137,7 +3139,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var lang = ErpI18n.lang;
     return Promise.all([ErpI18n.loadHelp('en_US'), lang === 'en_US' ? Promise.resolve(null) : ErpI18n.loadHelp(lang), ErpI18n.loadHelpIndex(lang)]).then(function (r) {
       if (!r[0]) return; _howtoPack = r[0];
-      _howtoIdx = HelpSearch.indexFrom({ q: _sqlRows, en: r[0], pack: r[1], fsm: window.AdDocFsm, windowIds: window.__idmpFieldHelp.menu().windows, hq: r[2] });
+      _howtoIdx = HelpSearch.indexFrom({ q: _sqlRows, en: r[0], pack: r[1], fsm: window.AdDocFsm, windowIds: window.__idmpFieldHelp.menu().windows, processIds: window.__idmpFieldHelp.menu().processes, hq: r[2] });   // §19.9 the role's menu processes too
       _howtoLocal = _howtoIdx.localHowto; _howtoRows = (_howtoLocal ? r[1].howto : r[0].howto) || [];
       console.log('§HELP_SEARCH index lang=' + lang + ' windows=' + _howtoIdx.counts.windows + ' records=' + _howtoIdx.counts.records + ' actions=' + _howtoIdx.counts.actions + ' statuses=' + _howtoIdx.counts.statuses + ' howto=' + _howtoIdx.counts.howto + (_howtoLocal ? ' (' + lang + ')' : ' (en_US)') + ' phrases=' + _howtoIdx.size.phrases + ' vocab=' + ((r[2] && r[2].vocab) ? r[2].vocab.length : 'none'));
       _howtoCtx();
@@ -3228,6 +3230,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var c = _howtoIdx.ask(question), h = '<div class="hs-card">';
     if (c.window) h += '<div class="hs-row"><span class="hs-k">' + escH(_T('help.window', 'Window')) + '</span><a href="#" data-help-win="' + c.window.id + '">' + escH(c.window.name) + '</a>' +
       (window.HelpActions && HelpActions.canNew(_session && _session.winSet, c.window.id) && _winNewable(c.window.id) ? ' <a href="#" class="hs-new" data-help-new="' + c.window.id + '">' + escH(_T('tb.new', 'New')) + '</a>' : '') + '</div>';
+    if (c.process) h += '<div class="hs-row"><span class="hs-k">' + escH(c.process.report ? _T('help.report', 'Report') : _T('help.process', 'Process')) + '</span><a href="#" data-help-proc="' + c.process.id + '">' + escH(c.process.name) + '</a></div>';   // §19.9
     if (c.action) {
       h += '<div class="hs-row"><span class="hs-k">' + escH(_T('help.action', 'Action')) + '</span>' + escH(c.action.name) + ' — ' + escH(c.action.description || '') +
         '<div class="hs-sub">' + escH(_T('help.allowed', 'Allowed when the document is')) + ': ' + escH(c.action.allowedFrom.join(', ')) + '</div>' +
@@ -3236,10 +3239,10 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     if (c.cli) h += '<div class="hs-row"><span class="hs-k">CLI</span>' + (c.cli.line ? '<code>' + escH(c.cli.line) + '</code>' : '<span class="hs-sub">' + escH(_T('help.cliNote', '{0} is offered for {1}, not for {2}', [c.cli.verb, c.cli.offeredFor || '-', c.cli.kind || '-'])) + '</span>') + '</div>';
     if (c.guide) h += '<div class="hs-row"><span class="hs-k">' + escH(_T('help.guide', 'Guide')) + '</span><a href="' + escH(c.guide.url) + '" target="_blank" rel="noopener">' + escH(c.guide.title) + '</a></div>';
     if (c.howto) h += _howtoEnglish() + _howtoLinks(c.howto.html) + _howtoTrlNote(c.howto);
-    if (!c.window && !c.action && !c.howto) h += '<div class="hs-sub">' + escH(_T('help.none', 'No match in the dictionary or the how-to rows.')) + '</div>';
+    if (!c.window && !c.action && !c.howto && !c.process) h += '<div class="hs-sub">' + escH(_T('help.none', 'No match in the dictionary or the how-to rows.')) + '</div>';
     box.innerHTML = h + '</div>';
     _howtoDym(c.dym);
-    console.log('§HELP_SEARCH ask=' + JSON.stringify(String(question)) + ' lang=' + ErpI18n.lang + ' window=' + (c.window ? c.window.id : 'none') + ' action=' + (c.action ? c.action.code : 'none') + ' cli=' + (c.cli ? JSON.stringify(c.cli.line || c.cli.note) : 'none') + ' howto=' + (c.howto ? c.howto.id : 'none') + ' matched=' + JSON.stringify(c.matched) + ' hits=' + c.hits.map(function (h) { return h.id; }).join(','));
+    console.log('§HELP_SEARCH ask=' + JSON.stringify(String(question)) + ' lang=' + ErpI18n.lang + ' window=' + (c.window ? c.window.id : 'none') + ' action=' + (c.action ? c.action.code : 'none') + ' process=' + (c.process ? c.process.id : 'none') + ' cli=' + (c.cli ? JSON.stringify(c.cli.line || c.cli.note) : 'none') + ' howto=' + (c.howto ? c.howto.id : 'none') + ' matched=' + JSON.stringify(c.matched) + ' hits=' + c.hits.map(function (h) { return h.id; }).join(','));
     return c;
   }
   window.__idmpHowto = { ask: _howtoAsk, ctx: _howtoCtx, index: function () { return _howtoIdx; }, newFor: _howtoNew, lastDoc: null,   // §19.6: newFor = the New link's own handler; state = what the window in view shows (W-HQ-DOC / W-HQ-NEW read STATE, not the screen)
