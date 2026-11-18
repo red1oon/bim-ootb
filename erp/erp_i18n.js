@@ -26,7 +26,9 @@
     { code: 'zh_CN', native: '中文 (简体)', dir: 'ltr', html: 'zh-CN' },
     { code: 'ja_JP', native: '日本語', dir: 'ltr', html: 'ja' },
     { code: 'ms_MY', native: 'Bahasa Melayu', dir: 'ltr', html: 'ms' },
-    { code: 'th_TH', native: 'ไทย', dir: 'ltr', html: 'th' }
+    { code: 'th_TH', native: 'ไทย', dir: 'ltr', html: 'th' },
+    { code: 'pt_BR', native: 'Português', dir: 'ltr', html: 'pt-BR' },   // §19.11 step 2 (VOCAB_MESSAGE_CATALOG); this list == erp/tools/i18n_sources.json meta (W-ERP-I18N L0)
+    { code: 'id_ID', native: 'Bahasa Indonesia', dir: 'ltr', html: 'id' }
   ];
   var BASE = 'en_US', LS_KEY = 'erp.lang';
   var _lang = BASE, _pack = null, _packs = {}, _cat = null, _catP = null, _listeners = [];
@@ -197,8 +199,19 @@
     root.querySelectorAll('[data-i18n-title]').forEach(function (n) { n.title = t(n.getAttribute('data-i18n-title')); });
   }
 
-  function _persist(code) { try { localStorage.setItem(LS_KEY, code); } catch (e) {} }
+  // T1 (bim-compiler prompts/TRL_TRILOGY_STANDARD.md S-5): the choice is the Trilogy's ONE key 'bim.lang' (common/i18n/lang_choice.js, loaded before this file), not
+  //   this app's own. initial() SHOWS the nearest ERP language to it (ko_KR -> BASE) and never writes it, so a code this app lacks survives to an app that has it.
+  //   The old key erp.lang is read once and migrated by BimLang.get. Without the module the page keeps the old key (logged).
+  var LC = global.BimLang || null;
+  if (!LC) console.warn('§I18N lang-choice absent — common/i18n/lang_choice.js not loaded; the language is not shared with the Viewer / Modeller');
+  function _codes() { return LOCALES.map(function (l) { return l.code; }); }
+  function _persist(code) { if (LC) { LC.set(code); return; } try { localStorage.setItem(LS_KEY, code); } catch (e) {} }
   function initial() {
+    if (LC) {
+      var r = LC.get({ legacy: [function () { return localStorage.getItem(LS_KEY); }] }), n = r ? LC.nearest(r.code, _codes()) : null;
+      console.log('§I18N initial choice=' + (r ? r.code : '-') + ' src=' + (r ? r.src : 'none') + ' shows=' + (n || BASE) + (r && !n ? ' (no pack: nearest is the base)' : ''));
+      return n || BASE;
+    }
     var q = null; try { q = new URLSearchParams(location.search).get('lang'); } catch (e) {}
     if (q && _loc(q)) return q;
     var s = null; try { s = localStorage.getItem(LS_KEY); } catch (e) {}

@@ -23,7 +23,7 @@ const { Witness } = require('../../witness_kit/contract');
 
 const REPO = path.join(__dirname, '..', '..'), ERP = path.join(REPO, 'erp');
 const LOGF = path.join(__dirname, 'witness_erp_i18n.log'), PAGELOGF = path.join(__dirname, 'witness_erp_i18n.page.log');
-const LOCALES = ['en_US', 'fr_FR', 'es_ES', 'de_DE', 'ar', 'zh_CN', 'ja_JP', 'ms_MY', 'th_TH'];
+const LOCALES = JSON.parse(fs.readFileSync(path.join(ERP, 'i18n', 'index.json'), 'utf8')).locales.map((l) => l.code);   // §19.11 step 2 (VOCAB_MESSAGE_CATALOG): the built locales, not a copy
 const RTL = { ar: true };
 const BUDGET_MS = Number(process.env.I18N_BUDGET_MS || 1500);   // the film's on-screen budget is ~1–2 s; asserted on the in-page ms
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json',

@@ -4,6 +4,62 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.93.0](https://github.com/red1oon/bim-ootb/compare/v1.92.0...v1.93.0) (2026-11-18)
+
+
+### ✨ Features
+
+* **4d:** one Undo takes back every Gantt edit (sw v1750) ([#3262](https://github.com/red1oon/bim-ootb/issues/3262)) ([8e0a566](https://github.com/red1oon/bim-ootb/commit/8e0a566f423becc149efbfa09caa6691d6d9b7a8))
+* **4d:** reorder - swap two bars' places in one gesture (sw v1751) ([#3267](https://github.com/red1oon/bim-ootb/issues/3267)) ([3f145dc](https://github.com/red1oon/bim-ootb/commit/3f145dc6628ab1ac59c7e911cf6f8171b826f876))
+* **5d:** concrete beams take the concrete gang at 9.4 beams per gang-day (sw v1743) ([#3236](https://github.com/red1oon/bim-ootb/issues/3236)) ([d92aaa0](https://github.com/red1oon/bim-ootb/commit/d92aaa0234d13e38a7e7c0c1894780514f45eff7))
+* **devtools:** B1 dependency-candidate tool + W-DEPS-CAND ([#3245](https://github.com/red1oon/bim-ootb/issues/3245)) ([4321870](https://github.com/red1oon/bim-ootb/commit/432187014e0eb5ccd4128bb2caac9954a00d7268))
+* **devtools:** x0 session — token use + URL load change per Claude Code session (F-26) ([#3266](https://github.com/red1oon/bim-ootb/issues/3266)) ([ca609a2](https://github.com/red1oon/bim-ootb/commit/ca609a2b43529e5cd98abf45135323980aeecdd8))
+* **devtools:** x0 terminal command (F-25) + W-X0-CLI ([#3259](https://github.com/red1oon/bim-ootb/issues/3259)) ([8fceecd](https://github.com/red1oon/bim-ootb/commit/8fceecd2bf042895846d714a41f87098031261dc))
+* **help-i18n:** How To guide headings join the dictionary - W-VIEWER-I18N PASS 91/0, 0 leaks in 18 locales (VOCAB §14.8.1) ([#3193](https://github.com/red1oon/bim-ootb/issues/3193)) ([3fb4ce8](https://github.com/red1oon/bim-ootb/commit/3fb4ce8b803127f3ddb30d8764e6919da48ca2b8))
+* **help:** the shared help query core + the ERP index (VOCAB_MESSAGE_CATALOG §19.2 step 2), not wired ([#3192](https://github.com/red1oon/bim-ootb/issues/3192)) ([695d16f](https://github.com/red1oon/bim-ootb/commit/695d16fe972d237f894f0f40b53bdcab590be28a))
+* **help:** Viewer + Modeller help panels search through the shared query core (VOCAB §19.4 step 4) ([#3203](https://github.com/red1oon/bim-ootb/issues/3203)) ([f1c111d](https://github.com/red1oon/bim-ootb/commit/f1c111de60837326b6660826e0e0565ae0ffe2e5))
+* **help:** wire the ERP How To box and erp.ask to the shared help query core (VOCAB_MESSAGE_CATALOG §19.3 step 3); one record builder; W-HQ-LEGACY-SUPERSET, W-HQ-BOX, W-HQ-COST query half ([#3197](https://github.com/red1oon/bim-ootb/issues/3197)) ([2a7f080](https://github.com/red1oon/bim-ootb/commit/2a7f0801fde7b0bd3b6793d3e4167cbe44c2c4d3))
+* **modeller:** B1 — module lists written from modeller/modules.json (deps declared, one v per module) ([#3250](https://github.com/red1oon/bim-ootb/issues/3250)) ([b9b2e52](https://github.com/red1oon/bim-ootb/commit/b9b2e522539541d0686b0ca959ee72c47f04a917))
+* **viewer-i18n:** 20 missing dictionary keys + Road standards translated - W-VIEWER-I18N de_DE leaks 23 -&gt; 0 (VOCAB §14.8) ([#3190](https://github.com/red1oon/bim-ootb/issues/3190)) ([dab60f3](https://github.com/red1oon/bim-ootb/commit/dab60f3de0facda2132bb1a42ba410e194b2fa60))
+* **witness_kit:** paths.js — one resolver for the home folders witnesses hard-code (E0) + W-PATHS ([#3256](https://github.com/red1oon/bim-ootb/issues/3256)) ([f15f5db](https://github.com/red1oon/bim-ootb/commit/f15f5dbd0dd206279123f4975877c1c4f7488e68)), closes [#3255](https://github.com/red1oon/bim-ootb/issues/3255)
+* **witness_kit:** PROVES: line, last-run cache, proof map — modeller batch (Part E, E1) ([#3272](https://github.com/red1oon/bim-ootb/issues/3272)) ([6cd994b](https://github.com/red1oon/bim-ootb/commit/6cd994b5411127753ae2f2d6a8d549d3b7d096ac)), closes [#3271](https://github.com/red1oon/bim-ootb/issues/3271)
+
+
+### 🐛 Fixes
+
+* **4d:** a building with no modelled foundations stands on soil; day-0 claims follow the owner's rulings (sw v1741) ([#3228](https://github.com/red1oon/bim-ootb/issues/3228)) ([a59d056](https://github.com/red1oon/bim-ootb/commit/a59d05667eb76a7d7be7a1b173f4af4f369bb3e8))
+* **4d:** a floor finish is not structure — the promoted-slab pool clause excludes Finishes-phase slabs (§FINISH_SLAB_NOT_STRUCTURE); sw v1729 ([#3202](https://github.com/red1oon/bim-ootb/issues/3202)) ([380b495](https://github.com/red1oon/bim-ootb/commit/380b49574c4f666c2878283db90c0cbe2fef826b))
+* **4d:** a group shift obeys the links that cross the selection (sw v1753) ([#3270](https://github.com/red1oon/bim-ootb/issues/3270)) ([e89a24c](https://github.com/red1oon/bim-ootb/commit/e89a24cca2f3a368f91740656ea9cfc2d3508a88))
+* **4d:** a load goes one layer after its support — layer self-check 0 inverted on 7 buildings ([#3226](https://github.com/red1oon/bim-ootb/issues/3226)) ([7f4090d](https://github.com/red1oon/bim-ootb/commit/7f4090daeb986653fbd7221b4b204f5b695c2595))
+* **4d:** D4 — supported means the support is FINISHED: one bound for the graph edge, the cell packing and the judge (§D4_SUPPORT_FINISHED); sw v1724 ([#3188](https://github.com/red1oon/bim-ootb/issues/3188)) ([d12ab0f](https://github.com/red1oon/bim-ootb/commit/d12ab0fb84d8f88b458b2ea160c96418129a0657))
+* **4d:** D7 — a later-built ceiling or floor finish is a contact, not a support, for services (§CONTACT_ONLY); sw v1722 ([#3185](https://github.com/red1oon/bim-ootb/issues/3185)) ([c0ea15f](https://github.com/red1oon/bim-ootb/commit/c0ea15fc1328952451cb8a47f8e4cfaa524e8084))
+* **4d:** D8 — the cost donut prices work content, not played duration ([#3187](https://github.com/red1oon/bim-ootb/issues/3187)) ([c22ba2c](https://github.com/red1oon/bim-ootb/commit/c22ba2c2372a383e0cce838d61ce050ceb797211))
+* **4d:** footings rest on soil, stair flights under slabs are structure, ties follow the solve (fleet out-of-order: 4) ([#3210](https://github.com/red1oon/bim-ootb/issues/3210)) ([fd45315](https://github.com/red1oon/bim-ootb/commit/fd45315b51e4ff54fe070a62362f44984d23d5f3))
+* **4d:** needle = canvas - one day grid for slider, counter and ruler; slider follows an edit (sw v1746) ([#3247](https://github.com/red1oon/bim-ootb/issues/3247)) ([96d837e](https://github.com/red1oon/bim-ootb/commit/96d837e5e87bdc72ee5978dba37703b882c813cb))
+* **4d:** one lift — mutually supporting elements go in together (Hospital 39 -&gt; 8, LTU 2794 -&gt; 286) ([#3208](https://github.com/red1oon/bim-ootb/issues/3208)) ([0da9b64](https://github.com/red1oon/bim-ootb/commit/0da9b645337f3a9eae2222c6bcf5185a9ccffa24))
+* **4d:** seven dead witnesses judge again; a structural wall is still an opening host (sw v1727) ([#3196](https://github.com/red1oon/bim-ootb/issues/3196)) ([587d7b0](https://github.com/red1oon/bim-ootb/commit/587d7b0c5f51d676a9d45e2de892807e26d6ee71))
+* **4d:** the filing rule covers any elected support and follows the chain (§D6_HANG_FILING, transitive); sw v1730 ([#3206](https://github.com/red1oon/bim-ootb/issues/3206)) ([8cc62e4](https://github.com/red1oon/bim-ootb/commit/8cc62e4c370b76942e27b3971903246d0cc5bfc8))
+* **4d:** the Gantt lock gate reads the op's real start (start_ts) - it had judged nothing (sw v1745) ([#3242](https://github.com/red1oon/bim-ootb/issues/3242)) ([c85a37d](https://github.com/red1oon/bim-ootb/commit/c85a37dc4855e6e476c2bca1120c5702aa5d8960))
+* **4d:** the graph engine runs on every building (§GRAPH_EVERYWHERE, owner ruling 2026-11-17 — reverses §S50's cell-engine gate) ([#3199](https://github.com/red1oon/bim-ootb/issues/3199)) ([3762e2b](https://github.com/red1oon/bim-ootb/commit/3762e2bafd70cb519a4005d398615315fefa5c77))
+* **devtools:** W-X0-MCP counts a 127.0.0.1 listener apart, not as a network door ([#3254](https://github.com/red1oon/bim-ootb/issues/3254)) ([4c26081](https://github.com/red1oon/bim-ootb/commit/4c26081e31a0c303382bfb62be6911b44607617e)), closes [#3253](https://github.com/red1oon/bim-ootb/issues/3253)
+* **door/erp:** the page's fold keeps the key a door record carries (W-ONE-FOLD) ([#3269](https://github.com/red1oon/bim-ootb/issues/3269)) ([e3915c4](https://github.com/red1oon/bim-ootb/commit/e3915c49490ae0c904ca7e7be956c17b37efbcc4))
+* **tools:** bump.js reads a loader's lazy list even when the loader is itself a target ([#3201](https://github.com/red1oon/bim-ootb/issues/3201)) ([#3204](https://github.com/red1oon/bim-ootb/issues/3204)) ([c5bdc60](https://github.com/red1oon/bim-ootb/commit/c5bdc60112d9999299435a76335423dd92054a22))
+* **viewer:** Save as IFC gives every element a unique, valid, stable GlobalId ([#3219](https://github.com/red1oon/bim-ootb/issues/3219)) ([54b02fa](https://github.com/red1oon/bim-ootb/commit/54b02fa3a43a92dc23b5dae73f5db4860baf9e04))
+
+
+### 📝 Documentation
+
+* **README:** app-code count from size_stack.sh (one counting tool for every figure) ([#3237](https://github.com/red1oon/bim-ootb/issues/3237)) ([085c20a](https://github.com/red1oon/bim-ootb/commit/085c20a7f167749c55333c376197999ab0f7ec74))
+* **README:** correct app-code count, modeller tree paths, dated module count, witness wording ([#3229](https://github.com/red1oon/bim-ootb/issues/3229)) ([6d7ee87](https://github.com/red1oon/bim-ootb/commit/6d7ee87e6e1f5ba3d8184d59fca8c475a4348187))
+* **README:** exact CI witness wording (about 20 of 1,491 run in CI; geometry witnesses do not) ([#3234](https://github.com/red1oon/bim-ootb/issues/3234)) ([0d7aece](https://github.com/red1oon/bim-ootb/commit/0d7aecedd177b504f47a28c0c4e21917d35da778))
+
+
+### ♻️ Refactors
+
+* **4d:** delete the cell solver (dead since graph-everywhere); schedules identical on 7 buildings (sw v1736) ([#3218](https://github.com/red1oon/bim-ootb/issues/3218)) ([0a11cfe](https://github.com/red1oon/bim-ootb/commit/0a11cfe96929673de7c417152c7d539656512cb2))
+* **4d:** one commit pipeline for every Gantt edit - eight copies become _tmCommitEdit / _tmEditRefresh (sw v1748) ([#3251](https://github.com/red1oon/bim-ootb/issues/3251)) ([bdf0b96](https://github.com/red1oon/bim-ootb/commit/bdf0b96d4d3a33c446be8febcf0292b337099d89))
+* **4d:** remove the per-cell display stamp that only the cell solver could fill (+25/-533, sw v1737) ([#3225](https://github.com/red1oon/bim-ootb/issues/3225)) ([6bbb041](https://github.com/red1oon/bim-ootb/commit/6bbb0415ed5279bdf3e9422231dadc55760db4d4))
+
 ## [1.92.0](https://github.com/red1oon/bim-ootb/compare/v1.91.0...v1.92.0) (2026-11-17)
 
 

@@ -41,7 +41,9 @@
 // v296 (2026-11-18) LOD Upgrade pill P5 (prompts/MODELLER_LOD_UPGRADE_PILL.md §P5 SPEC): lod/gusset_pack.js (Bracing gussets) + lod/rules/gusset_defaults.json + lod/packs.json; joint_pack.js exposes the shared kit (no ?v= literal: packs load through packs.json, precacheOrder in modules.json) — modeller.html
 // v300 (2026-11-18) LOD Upgrade P4 FIX (prompts/MODELLER_LOD_UPGRADE_PILL.md §P4 FIX SPEC): lod/joint_pack.js fin-plate weld beads wound outward and consistently (no URL change; this bump re-fetches it)
 // v301 (2026-11-18) LOD Upgrade P7 NAME FIX (prompts/MODELLER_LOD_UPGRADE_PILL.md): lod/lod_ui.js?v=6, the download names drop the opened file's .db
-const CACHE_VERSION = 'v301';   // §MANIFEST cacheVersion (written by gen_manifest.js; edit modeller/modules.json)
+// v303 (2026-11-18) LOD Upgrade P8 (v302 was taken by a concurrent main change) (prompts/MODELLER_LOD_UPGRADE_PILL.md §P8 SPEC): lod/lod_schedule.js + lod/rules/schedule_formats.json; beambar_pack join from the format; lod_ui.js?v=7 (Formats link, Load schedule reads a .dxf), lod_registry.js?v=5
+// v304 (2026-11-18) LOD Upgrade EXPORT NAME (prompts/MODELLER_LOD_UPGRADE_PILL.md): lod_ui.js?v=8, the button is "Export (IFC)" with the tip "Exports out what was added from this upgrade"; file <model>_upgrade_<schema>.ifc
+const CACHE_VERSION = 'v304';   // §MANIFEST cacheVersion (written by gen_manifest.js; edit modeller/modules.json)
 const CACHE_PREFIX = 'bim-modeller-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -197,7 +199,7 @@ const PRECACHE_ASSETS = [
   'bay_add.js',          // §D89 add a bay (the planner)
   'clipboard.js',        // the ONE copy path (Ctrl+C / Ctrl+V, the bay copy)
   '../viewer/dxf_sheet_view.js',   // §D82 its renderer (shared with the Viewer's 2D wing)
-  'lod/lod_rules.js', 'lod/lod_registry.js', 'lod/lod_ops.js', 'lod/lod_reader.js', 'lod/lod_ui.js', 'lod/lod_ifc.js', 'lod/rebar_pack.js', 'lod/weld_pack.js', 'lod/layer_pack.js', 'lod/joint_pack.js', 'lod/gusset_pack.js', 'lod/beambar_pack.js', 'lod/packs.json', 'lod/rules/rebar_defaults.json',   // LOD Upgrade pill (lazy, first press)
+  'lod/lod_rules.js', 'lod/lod_registry.js', 'lod/lod_ops.js', 'lod/lod_reader.js', 'lod/lod_ui.js', 'lod/lod_ifc.js', 'lod/lod_schedule.js', 'lod/rebar_pack.js', 'lod/weld_pack.js', 'lod/layer_pack.js', 'lod/joint_pack.js', 'lod/gusset_pack.js', 'lod/beambar_pack.js', 'lod/packs.json', 'lod/rules/rebar_defaults.json',   // LOD Upgrade pill (lazy, first press)
   'lod/rules/weld_defaults.json',
   'lod/rules/layer_defaults.json',
   'lod/rules/joint_defaults.json',
@@ -209,6 +211,7 @@ const PRECACHE_ASSETS = [
   'dxf2bim/std2d.js', 'dxf2bim/std2d_scopes.js', 'dxf2bim/std2d_geom.js', 'dxf2bim/std2d_dxf.js', 'dxf2bim/std2d_marks.js', 'dxf2bim/polygon-clipping.js', 'dxf2bim/ifc_extract_core.js',
   // Cross-surface broker — lives in viewer/ (shared), precache for offline Connect.
   '../viewer/connect_scene.js',
+  '../common/i18n/lang_choice.js',
   '../viewer/locale_loader.js',  // S226 §R3 — the Modeller's UI language (shared loader; i18n/<code>.json cache on first use)
   '../viewer/lib/room_walker.js',  // §MODELLER-ROOM-INJECT — shared RoomWalker (same file the Viewer's ensureRooms uses)
   '../viewer/dagevu_catalog.json',  // §CATALOG-PATH — bonsai_library.js catalog (shared with the Viewer)

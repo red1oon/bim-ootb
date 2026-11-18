@@ -93,14 +93,17 @@ function judgeLockTaker(name, body) {
     return 'tasks=' + p.tasks + ' opsDb=' + p.opsDb + ' opsMem=' + p.opsMem + ' links=' + p.links +
       ' undo=' + (le ? le.mode + ':' + Object.keys(le.tasksBefore || {}).length + ':' + sha(JSON.stringify(Object.keys(le.opsBefore || {}).sort().map(g => [g, le.opsBefore[g].start_ts, le.opsBefore[g].end_ts]))) : 'none');
   }
-  const out = []; let badOrder = 0, ran = 0;
+  const out = []; let badOrder = 0, ran = 0, noop = 0;
   function gesture(name, fn, expectSteps) {
-    const bars = rebuildBars(); steps.length = 0; logs.length = 0;
+    const bars = rebuildBars(); steps.length = 0; logs.length = 0; const before = state();
     let ret; try { ret = fn(bars); } catch (e) { ret = 'THREW ' + e.message; }
     const commit = logs.filter(l => /_COMMIT |§GANTT_EDIT_LINK|§GANTT_EDIT_UNDO |_REJECT|§TM_EDIT_EXCEPTION|§GANTT_EDIT_CYCLE/.test(l)).map(l => l.split(' ').slice(0, 1)[0]).join(',') || '-';
     const retimed = (logs.filter(l => l.indexOf('§GANTT_RETIME ') === 0)[0] || '').replace('§GANTT_RETIME ', '').replace(/ ms=.*/, '') || 'none';
     const line = '§W_OCP_STATE ' + name.padEnd(22) + ' ret=' + String(ret).padEnd(9) + ' ' + state() + ' retime=[' + retimed + '] log=' + commit;
     out.push(line); console.log(line + ' steps=' + steps.join('>'));
+    // A verb that SAYS it had nothing to do (Pull Back on a schedule with no slack: Clinic, played layer) and wrote
+    // nothing has no refresh to order. It is named, not counted; a silent no-op without that answer still fails.
+    if (expectSteps && ret === 'nothing' && !steps.length && state() === before) { noop++; console.log('§W_OCP_NOOP ' + name + ' — the verb reported nothing to do and no state changed; not judged'); return; }
     if (expectSteps) { ran++; if (steps.join('>') !== CANON.join('>')) { badOrder++; console.log('§W_OCP_ORDER ' + name + ' ran ' + (steps.join('>') || '(nothing)') + ' — canonical is ' + CANON.join('>')); } }
   }
   const last = bars => bars.slice().sort((a, b) => b.endTs - a.endTs || (a.taskId < b.taskId ? -1 : 1))[0];
@@ -121,7 +124,7 @@ function judgeLockTaker(name, body) {
   gesture('pull back', () => sb.__v.asap(), true);
   gesture('undo (pull back)', () => sb.__v.undo(), true);
   gesture('undo again (nothing)', () => sb.__v.undo(), false);
-  claim('OCP-3', ran, badOrder, 'gestures whose refresh steps ran in the canonical order ' + CANON.join('>') + ' (' + BLD + ', ' + ops.length + ' elements)');
+  claim('OCP-3', ran, badOrder, 'gestures whose refresh steps ran in the canonical order ' + CANON.join('>') + ' (' + BLD + ', ' + ops.length + ' elements' + (noop ? '; ' + noop + ' gesture(s) had nothing to do, named on §W_OCP_NOOP' : '') + ')');
   if (process.env.OCP_EXPECT) {
     const want = fs.readFileSync(process.env.OCP_EXPECT, 'utf8').split('\n').filter(l => l.indexOf('§W_OCP_STATE') === 0).map(l => l.replace(/ steps=.*/, ''));
     let diff = 0, first = ''; out.forEach((l, i) => { if (l !== want[i]) { diff++; if (!first) first = l + '   WANT   ' + want[i]; } });

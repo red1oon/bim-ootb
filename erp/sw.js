@@ -12,7 +12,7 @@
 // bump (skipWaiting+clients.claim precache the new shell), so SWR strands a user at most one load post-deploy.
 // v1100 (2026-11-17) §19.5 (bim-compiler VOCAB_MESSAGE_CATALOG.md): the How To box's "Did you mean" line — help_search.js?v=4, common/help/help_dym.js?v=1, common/door/assist_core.js?v=1, chrome.json help.dym
 // v1101 (2026-11-17) §19.6 (bim-compiler VOCAB_MESSAGE_CATALOG.md): the How To box's `#<number>` and New — common/help/help_grammar.js?v=1, help_actions.js?v=1, chrome.json help.doc.*/help.reserved
-const CACHE_VERSION = 'v1106';   // bump on each deploy; detail goes in the commit message. History to v1063: SW_VERSION_HISTORY.md
+const CACHE_VERSION = 'v1108';   // bump on each deploy; detail goes in the commit message. History to v1063: SW_VERSION_HISTORY.md
 // v810 (2026-10-03) UI locales: a machine-catalogue entry gets the same fmt as a pack hit (de/ms login title lost its
 //   'Kernel-ERP — ' prefix — found by fetching the live page, ERP_UI_LOCALES.md §L7).
 // v809 (2026-10-03) UI locales (bim-compiler prompts/ERP_UI_LOCALES.md, W-ERP-I18N): erp_i18n.js + i18n/chrome.json +
@@ -106,6 +106,7 @@ const PRECACHE_ASSETS = [
   'field_help.js',     // VOCAB_MESSAGE_CATALOG §7 P1b — field tooltip = AD Description + the East Tool Tip panel (W-FIELD-HELP)
   'help_search.js',    // VOCAB_MESSAGE_CATALOG §10 H2 — the How To question box (help packs i18n/help/<lang>/help.json and index.json are lazy, cached on first fetch)
   'help_records_core.js', // VOCAB_MESSAGE_CATALOG §19.3 — the ONE pure builder of the help records (page + build tool)
+  '../common/i18n/lang_choice.js',   // T1 (bim-compiler TRL_TRILOGY_STANDARD.md S-5): the ONE language choice 'bim.lang' shared by ERP, Viewer, Modeller
   '../common/help/help_query.js', // VOCAB_MESSAGE_CATALOG §19.2 — the ONE help query core (HelpQuery); help_search.js ranks through it
   '../common/help/help_grammar.js', // VOCAB_MESSAGE_CATALOG §19.6 — the ONE reading of the leading ? # @ of a help line
   'help_actions.js',   // VOCAB_MESSAGE_CATALOG §19.6 — #<number> (open a document) and New in the How To box
