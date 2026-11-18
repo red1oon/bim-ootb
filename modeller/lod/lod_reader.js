@@ -67,6 +67,9 @@
     }
     // meta.rgba (host colour), read apart so a DB without the column still opens
     if (has(db, 'elements_meta')) { try { var rc = db.exec('SELECT guid, material_rgba FROM elements_meta'); if (rc.length) rc[0].values.forEach(function (v) { if (meta[v[0]]) meta[v[0]].rgba = v[1]; }); } catch (e) { /* no colour column: parts take the pack default */ } }
+    // meta.mat = the stated material (elements_meta.material_name), meta.layerMats = the materials of its layer set: what a material gate (e.g. the weld pack's steel rule) reads
+    if (has(db, 'elements_meta')) { try { var rm = db.exec('SELECT guid, material_name FROM elements_meta'); if (rm.length) rm[0].values.forEach(function (v) { if (meta[v[0]]) meta[v[0]].mat = v[1]; }); } catch (e) { /* no material column */ } }
+    if (has(db, 'rel_material_layer_set') && has(db, 'material_layers')) { try { var rl = db.exec('SELECT r.element_guid, l.material_name FROM rel_material_layer_set r JOIN material_layers l ON l.layer_set_name = r.layer_set_name ORDER BY r.element_guid, l.sequence'); if (rl.length) rl[0].values.forEach(function (v) { if (meta[v[0]]) (meta[v[0]].layerMats = meta[v[0]].layerMats || []).push(v[1]); }); } catch (e) { /* no layer materials */ } }
     return { meta: meta, sched: sched, world: world, canWorld: canWorld, layers: layerApi(db) };
   }
   return { fromDb: fromDb, has: has };

@@ -5,5 +5,6 @@
  "weld_contact_end_tol_mm": {"value": 1.0, "unit": "mm", "source": "default: ours (an overlap that reaches within this distance of a member end is an end contact)"},
  "weld_axis_parallel_max": {"value": 0.05, "unit": "-", "source": "default: ours (largest |member axis . plate normal| for a bead to be laid; above it the member lies across the plate face and the contact is refused, not welded)"},
  "plate_thickness_name_pattern": {"value": "(\\d+(?:/\\d+)?)\"\\s*Thickness", "unit": "regex on the plate name, group 1 = inches", "source": "default: ours (plate names carry 'N\" Thickness'; when absent the plate's measured thickness is used)"},
- "member_leg_name_pattern": {"value": "x(\\d+/\\d+)\"", "unit": "regex on the member name, group 1 = inches", "source": "default: ours (angle names end 'x1/4\"'; when absent only the plate thickness governs)"}
+ "member_leg_name_pattern": {"value": "x(\\d+/\\d+)\"", "unit": "regex on the member name, group 1 = inches", "source": "default: ours (angle names end 'x1/4\"'; when absent only the plate thickness governs)"},
+ "weld_material_gate": {"value": ["steel"], "unit": "words; case-insensitive 'contains' on the element's stated material (material_name or a layer material)", "source": "default: ours (the welded-truss rule applies to steel members and steel plates only)"}
 }

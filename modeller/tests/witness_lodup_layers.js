@@ -23,7 +23,7 @@ var Rules = require(path.join(ROOT, 'lod/lod_rules.js')), Pack = require(path.jo
   Ops = require(path.join(ROOT, 'lod/lod_ops.js')), Reader = require(path.join(ROOT, 'lod/lod_reader.js')), Registry = require(path.join(ROOT, 'lod/lod_registry.js'));
 var initSqlJs = require(path.join(ROOT, 'lib', 'sql-wasm.js')), wasmBinary = fs.readFileSync(path.join(ROOT, 'lib', 'sql-wasm.wasm'));
 var SRC = process.env.LODUP_SRC_DB, ORA = process.env.LODUP_ORACLE_DB, ENV = process.env.LODUP_ENVELOPE_DB, MAIN_BREAK = process.env.LODUP_BREAK === '1';
-var P1_LOD_UI_SHA = 'b5e5fe358485f51f194ad58f0b56ebba02eaa776d398bdd48ae06a7ebab1e740';   // lod/lod_ui.js as of the P3 fix (live host hide + 'not applicable here'); it was the P1 file (c6c4ac30...) until then
+var P1_LOD_UI_SHA = '703b8250e980def7551665b7bb433ffc30cf92b1de0dc86b39bd4fe1ddba685e';   // lod/lod_ui.js as of the P3 fix (live host hide + 'not applicable here'); it was the P1 file (c6c4ac30...) until then
 var FAILS = [], INCONC = [], VTOL = 1e-5;   // 0.01 mm
 function verdict(name, ok, line) { var v = ok === null ? 'INCONCLUSIVE' : ok ? 'PASS' : 'FAIL'; console.log('§LODUP_' + name + ' ' + line + ' -> ' + v); if (v === 'FAIL') FAILS.push(name); if (v === 'INCONCLUSIVE') INCONC.push(name); return v; }
 function q(db, sql, args) { var st = db.prepare(sql), out = []; if (args) st.bind(args); while (st.step()) out.push(st.get()); st.free(); return out; }
@@ -236,6 +236,10 @@ initSqlJs({ wasmBinary: wasmBinary }).then(function (SQL) {
       line.push(pk.id + ':judged=' + judged + (cheap !== judged ? '(the old row count said ' + cheap + ')' : '') + (judged === 0 ? ' not-applicable-here' : ''));
     });
     var weldDry = Weld.run(inp, rowsFor(Weld), { log: function () { } });
+    var weldOff = Weld.run(inp, rowsFor(Weld), { log: function () { }, noMaterialGate: true }), wl = []; Weld.run(inp, rowsFor(Weld), { log: function (l) { wl.push(l); } });
+    var gl = wl.filter(function (l) { return /WELD_GATE/.test(l); })[0] || '';
+    verdict('WELD_GATE_BREAK', weldOff.stats.judged === 0 && weldDry.stats.judged === 0 ? null : weldOff.stats.judged > weldDry.stats.judged,
+      'steel-steel contacts (gate on)=' + weldDry.stats.judged + ' contacts with the gate OFF (red control)=' + weldOff.stats.judged + ' | ' + gl.replace('§LODUP_WELD_GATE ', '') + (weldOff.stats.judged > weldDry.stats.judged ? ' (the gate removes pairs that are not steel-to-steel; off, they come back)' : ''));
     verdict('APPLIES', bad.length ? false : true, line.join(' ') + ' welds_contacts=' + weldDry.stats.contacts + ' mismatches=' + bad.length + (bad[0] ? ' first=' + bad[0] : '') + ' (the dry run is read only: the packs are pure)');
   })();
 

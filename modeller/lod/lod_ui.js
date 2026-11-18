@@ -15,7 +15,7 @@
   async function boot() {
     if (state.ready) return;
     var man = await (await fetch(BASE + 'packs.json')).json();
-    for (var i = 0; i < man.packs.length; i++) await load(BASE + man.packs[i].file + '?v=2');
+    for (var i = 0; i < man.packs.length; i++) await load(BASE + man.packs[i].file + '?v=3');
     var Rg = window.LodRegistry, R = window.LodRules;
     for (var j = 0; j < Rg.list().length; j++) { var p = Rg.list()[j]; state.rules[p.id] = R.load(await (await fetch(BASE + p.rulesFile)).json()); state.edits[p.id] = {}; }
     state.ready = true; log('ready packs=' + Rg.list().map(function (p) { return p.id; }).join(','));

@@ -24,7 +24,7 @@ var Rules = require(path.join(ROOT, 'lod/lod_rules.js')), Pack = require(path.jo
   Reader = require(path.join(ROOT, 'lod/lod_reader.js')), Registry = require(path.join(ROOT, 'lod/lod_registry.js'));
 var initSqlJs = require(path.join(ROOT, 'lib', 'sql-wasm.js')), wasmBinary = fs.readFileSync(path.join(ROOT, 'lib', 'sql-wasm.wasm'));
 var SRC = process.env.LODUP_SRC_DB, ORA = process.env.LODUP_ORACLE_DB, MAIN_BREAK = process.env.LODUP_BREAK === '1';
-var P1_LOD_UI_SHA = 'b5e5fe358485f51f194ad58f0b56ebba02eaa776d398bdd48ae06a7ebab1e740';   // lod/lod_ui.js as of the P3 fix (live host hide + 'not applicable here'); it was the P1 file (c6c4ac30...) until then
+var P1_LOD_UI_SHA = '703b8250e980def7551665b7bb433ffc30cf92b1de0dc86b39bd4fe1ddba685e';   // lod/lod_ui.js as of the P3 fix (live host hide + 'not applicable here'); it was the P1 file (c6c4ac30...) until then
 var FAILS = [], INCONC = [];
 function verdict(name, ok, line) { var v = ok === null ? 'INCONCLUSIVE' : ok ? 'PASS' : 'FAIL'; console.log('§LODUP_' + name + ' ' + line + ' -> ' + v); if (v === 'FAIL') FAILS.push(name); if (v === 'INCONCLUSIVE') INCONC.push(name); return v; }
 function q(db, sql) { var r = db.exec(sql); return r.length ? r[0].values : []; }
@@ -173,6 +173,15 @@ initSqlJs({ wasmBinary: wasmBinary }).then(function (SQL) {
   var sizeEdited = R2 && R2.parts.length ? (function () { var W = R2.parts[0].tris, P3 = [0, 1, 2].map(function (k) { return [W[3 * k], W[3 * k + 1], W[3 * k + 2]]; }); return Math.min.apply(null, [0, 1, 2].map(function (k) { var a = P3[k], b = P3[(k + 1) % 3]; return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) * 1000; })); })() : null;
   void w1; void w2;
   verdict('RULES', R2 ? (Math.abs(sizeEdited - 7) < 0.01 && t2.refused.length === 1 && t2.rows.weld_min_table_mm.value === '6:3, 13:7, 19:8, 999:10') : null, 'edited_table_13mm_row 5 -> 7 mm (a 6.35 mm part) gives leg=' + (sizeEdited === null ? '-' : sizeEdited.toFixed(3)) + ' mm; a default edit over the stated row refused=' + t2.refused.length + ' shipped_rows stated=' + RC.stated + ' default=' + RC.default + ' unset=' + RC.unset);
+
+  // ---- GATE: only steel members and steel plates are judged (P3 FIX SPEC 2): re-label the plates as concrete -> nothing judged; gate off (red control) -> the contacts come back
+  (function () {
+    var meta2 = {}; Object.keys(inp.meta).forEach(function (g) { meta2[g] = Object.assign({}, inp.meta[g]); if (meta2[g].cls === 'IfcPlate') meta2[g].mat = 'Concrete - Precast'; });
+    var inp2 = Object.assign({}, inp, { meta: meta2 }), on = Pack.run(inp, RULES, { log: function () { } }), cut = Pack.run(inp2, RULES, { log: function () { } }), off = Pack.run(inp2, RULES, { log: function () { }, noMaterialGate: true });
+    var asStr = Rules.merge(RULES, { weld_material_gate: { value: 'steel, iron', source: 'stated: test edit' } }).rows, viaStr = Pack.run(inp, asStr, { log: function () { } });
+    verdict('GATE', on.stats.contacts > 0 ? (cut.stats.judged === 0 && cut.parts.length === 0 && off.stats.contacts === on.stats.contacts && viaStr.stats.contacts === on.stats.contacts) : null,
+      'steel plates+members: contacts=' + on.stats.contacts + ' | plates relabelled concrete: judged=' + cut.stats.judged + ' welds=' + cut.parts.length + ' | gate off on that input: contacts=' + off.stats.contacts + ' | a comma-separated string value behaves as the list: contacts=' + viaStr.stats.contacts);
+  })();
 
   // ---- DETERMINISM: two runs, same op hash
   function opHash(rr) { var b = Ops.build(rr.parts, 'welds', inp.meta), h = crypto.createHash('sha256'); h.update(JSON.stringify(b.ops)); b.assets.forEach(function (a) { h.update(Buffer.from(a.v.buffer)); }); h.update(JSON.stringify(b.elementParts)); h.update(JSON.stringify(rr.changes)); return h.digest('hex'); }

@@ -34,7 +34,8 @@
 // v289 (2026-11-18) LOD Upgrade pill P2 (prompts/MODELLER_LOD_UPGRADE_PILL.md §P2 SPEC): lod/weld_pack.js (Truss welds) + lod/rules/weld_defaults.json + lod/packs.json + lod_ops.js?v=2 (attached_to) — modeller.html
 // v290 (2026-11-18) LOD Upgrade pill P3 (prompts/MODELLER_LOD_UPGRADE_PILL.md §P3 SPEC): lod/layer_pack.js (Layers) + lod/rules/layer_defaults.json + lod/packs.json + lod_reader.js?v=2 (layer-set inputs) — modeller.html
 // v291 (2026-11-18) LOD Upgrade pill P3 fix (prompts/MODELLER_LOD_UPGRADE_PILL.md §P3 FIX SPEC): live host hide, lod_reader.js?v=3 (base_geometries + rotation), appliesTo = what the run judges (lod_registry.js?v=2, lod_ui.js?v=2) — modeller.html
-const CACHE_VERSION = 'v291';   // bump on each deploy; per-change detail is the git commit message.
+// v292 (2026-11-18) LOD Upgrade pill P3 fix 2 (prompts/MODELLER_LOD_UPGRADE_PILL.md §P3 FIX SPEC 2): Truss welds judge steel-to-steel pairs only (weld_material_gate row, lod_reader.js?v=4 meta.mat, lod_ui.js?v=3 pack loader) — modeller.html
+const CACHE_VERSION = 'v292';   // bump on each deploy; per-change detail is the git commit message.
 const CACHE_PREFIX = 'bim-modeller-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
