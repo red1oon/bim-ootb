@@ -6,7 +6,7 @@ const fs = require('fs'), os = require('os'), path = require('path'), cp = requi
 const ROOT = path.join(__dirname, '..', '..', '..'), CORE = path.join(ROOT, 'common', 'help', 'help_query.js'), ERP = path.join(ROOT, 'erp');
 const SEED = path.join(ERP, 'ad_seed.db');
 const PW = process.env.PW || path.join(os.homedir(), 'bim-ootb', 'tests', 'node_modules', 'playwright');
-const LANGS = ['en_US', 'fr_FR', 'de_DE', 'ja_JP', 'zh_CN'];
+const LANGS = require(path.join(ERP, 'tools', 'help_records.js')).langs;   // §19.11 step 1: en_US + erp/tools/i18n_sources.json, the list the packs are built from
 function kit(tag) {
   const k = { pass: 0, fail: 0, inc: 0 }, br = process.env.HQ_BREAK || '';
   fs.mkdirSync(path.join(__dirname, 'logs'), { recursive: true });

@@ -17,12 +17,8 @@ const CACHE = process.env.ERP_TRL_CACHE || path.join(os.homedir(), '.cache', 'er
 const SEED = process.env.ERP_SEED_DB || path.join(ERP, 'ad_seed.db');
 const OUT = path.join(ERP, 'i18n', 'help');
 const GUIDE_URL = 'https://red1oon.github.io/BIMCompiler/ERPUserGuide/';
-const SOURCES = {   // the build_i18n.py SOURCES for the four pilot languages (D2), same order (first wins)
-  fr_FR: ['nmicoud_fr_FR', 'x_fr352/fr_FR'],
-  de_DE: ['bxservice_tbayen.translations/data/de_DE'],
-  ja_JP: ['JPiere_japanese-translation'],
-  zh_CN: ['x_zh_CN/zh_CN'],
-};
+// §19.11 step 1 (VOCAB_MESSAGE_CATALOG): the ONE source list, erp/tools/i18n_sources.json, also read by build_i18n.py (the screen packs): every screen language gets its help pack, no copy of the list here
+const SOURCES = (() => { const j = JSON.parse(fs.readFileSync(path.join(__dirname, 'i18n_sources.json'), 'utf8')).sources, o = {}; Object.keys(j).forEach((l) => { o[l] = j[l].map((x) => x.dir); }); return o; })();
 // H4: the trade-cycle how-to rows: window -> the guide section (heading text as in the guide, its mkdocs anchor)
 const HOWTO = [
   { window: 143, heading: '### 1 · Sales Order', anchor: '1-sales-order' },
@@ -41,10 +37,13 @@ function parseTrl(file) {
   return out;
 }
 const translated = (pair) => pair && norm(pair[0]) !== '' && norm(pair[0]) !== norm(pair[1]);
-function findFile(dir, table, lang) { const d = path.join(CACHE, dir), f = path.join(d, table + '_Trl_' + lang + '.xml'); return fs.existsSync(f) ? f : null; }
+// §19.11: a source's files are named by the PACK's own code (es_ES is served from *_es_CO.xml, ar from *_ar_DZ / *_ar_TN), so they are found as build_i18n.py finds them: <dir>/<Table>_Trl_*.xml, sorted, every match
+function trlFiles(dir, table) { const d = path.join(CACHE, dir); if (!fs.existsSync(d)) return []; const pre = table + '_Trl_'; return fs.readdirSync(d).filter((f) => f.startsWith(pre) && f.endsWith('.xml')).sort().map((f) => path.join(d, f)); }
+// every file is its own source, in order, so the 'first TRANSLATED row wins' rule (pick) runs across files as build_i18n.py's does across its glob
+const srcFiles = (lang, table) => [].concat(...SOURCES[lang].map((d) => trlFiles(d, table).map(parseTrl)));
 
 function buildFields(lang) {
-  const els = SOURCES[lang].map((d) => parseTrl(findFile(d, 'AD_Element', lang) || '')), flds = SOURCES[lang].map((d) => parseTrl(findFile(d, 'AD_Field', lang) || ''));
+  const els = srcFiles(lang, 'AD_Element'), flds = srcFiles(lang, 'AD_Field');
   const rows = q("SELECT f.ad_field_id id, f.iscentrallymaintained cm, f.description d, f.help h, c.ad_element_id e, w.issotrx so FROM ad_field f JOIN ad_column c ON c.ad_column_id=f.ad_column_id JOIN ad_tab t ON t.ad_tab_id=f.ad_tab_id JOIN ad_window w ON w.ad_window_id=t.ad_window_id WHERE f.isactive='Y'");
   const out = {}; let n = 0, stale = 0;
   const pick = (srcs, id, col) => { for (const s of srcs) { const r = s[String(id)]; if (r && translated(r[col])) return r[col]; } return null; };
@@ -108,7 +107,7 @@ function buildHowto(windows) {
 // §12 H1b: the names of the language, from its own published XML (first source wins, translated = present and not the English original):
 //   windows (AD_Window_Trl), tables (AD_Table_Trl), actions (AD_Ref_List_Trl of DocAction 135, by code), statuses (AD_Ref_List_Trl of DocStatus 131, by code).
 function buildNames(lang) {
-  const read = (table) => SOURCES[lang].map((d) => parseTrl(findFile(d, table, lang) || ''));
+  const read = (table) => srcFiles(lang, table);
   const pick = (srcs, id) => { for (const s of srcs) { const r = s[String(id)]; if (r && translated(r.Name)) return r.Name[0].trim(); } return null; };
   const W = read('AD_Window'), T = read('AD_Table'), R = read('AD_Ref_List'), P = read('AD_Process'), out = { windows: {}, tables: {}, actions: {}, statuses: {}, processes: {} };
   q("SELECT ad_window_id wid FROM ad_window WHERE isactive='Y'").forEach((r) => { const n = pick(W, r.wid); if (n) out.windows[r.wid] = n; });
