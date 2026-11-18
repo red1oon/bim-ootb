@@ -259,7 +259,10 @@ function runCase(label, SQL, mono, geoDb, rows, schemas, red) {
           if (await panelShown()) return true;
           const vis = () => page.evaluate(() => { const r = document.getElementById('pill-save').getBoundingClientRect(); return r.width > 4 && r.height > 4; });
           for (let attempt = 0; attempt < 4; attempt++) {
-            for (let i = 0; i < 40 && !(await vis()); i++) { try { await page.click('#mobile-trigger'); } catch (e) { /* not shown yet: wait */ } await sl(500); }
+            for (let i = 0; i < 40 && !(await vis()); i++) {
+              const wh = await page.evaluate(() => { const w = document.getElementById('wh-close'); return !!(w && w.getBoundingClientRect().width > 0); }); if (wh) { try { await page.click('#wh-close'); log('  [' + tag + ' step] walk engaged late -> left with its own X'); } catch (e) { /* gone */ } }
+              try { await page.click('#mobile-trigger'); } catch (e) { /* not shown yet: wait */ } await sl(500);
+            }
             if (await vis()) {
               const r = await page.evaluate(() => { const b = document.getElementById('pill-save').getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; }); await page.mouse.click(r.x, r.y);
               for (let i = 0; i < 24; i++) { await sl(250); if (await panelShown()) return true; }
