@@ -227,7 +227,16 @@ const LI_BLD = process.env.LI_BLD || 'Duplex';
       (dtResult && dtResult.cpm) + '; ' + (cpmOnLine || 'no §CPM_DISPLAY on log line captured') + ')');
     rItems.forEach(it => { sched[it.guid].start = it.s; sched[it.guid].end = it.e; });
   }
-  sandbox._ops = geoEls.map(e => ({ timestamp: sched[e.guid].start, end_ts: sched[e.guid].end, output_guid: e.guid, input_guids: [e.guid] }));
+  // The ops in the EXACT shape the viewer holds them: loadOps (tm_core.js) returns { start_ts, end_ts, … } and no `timestamp`
+  // field. This fixture used to fabricate `timestamp`, the one field the gate read — so it was green on a shape the viewer
+  // never produces while the live gate judged `undefined` starts (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.19.2).
+  // G-LI-0 reads the field names off loadOps' own source, so a rename there fails HERE instead of going silent again.
+  const _coreSrc = __readSrc(path.join(__dirname, '..', 'tm_core.js'), 'utf8');
+  const _lo = _coreSrc.slice(_coreSrc.indexOf('function loadOps()'), _coreSrc.indexOf('function loadOps()') + 1400);
+  const OP_START = (/(\w+):\s*row\[1\]/.exec(_lo) || [])[1], OP_END = (/(\w+):\s*params\._end_ts/.exec(_lo) || [])[1];
+  assert(OP_START === 'start_ts' && OP_END === 'end_ts',
+    'G-LI-0 the fixture ops carry the field names loadOps itself returns (start=' + OP_START + ' end=' + OP_END + ')');
+  sandbox._ops = geoEls.map(e => ({ [OP_START]: sched[e.guid].start, [OP_END]: sched[e.guid].end, output_guid: e.guid, input_guids: [e.guid] }));
 
   // §GANTT_LOCK_DELTA (2026-08-12): the gate compares against the state editing STARTED from, not
   // against absolute zero — `ok: n === 0` refused the lock on a freshly generated, UNEDITED
@@ -245,17 +254,20 @@ const LI_BLD = process.env.LI_BLD || 'Duplex';
   // Simulate the bad drag: take a floating-capable element (has a real bearing support that ends
   // late) and move its op to start at time 0 — before its support finishes. Find one empirically:
   // latest-starting gated elements first, stop at the first whose early-move breaks the audit.
-  const byLate = sandbox._ops.slice().sort((a, b) => b.timestamp - a.timestamp);
+  const byLate = sandbox._ops.slice().sort((a, b) => b[OP_START] - a[OP_START]);
   let brokeGuid = null, saved = null, breach = null;
   for (let i = 0; i < Math.min(byLate.length, 200); i++) {
     const op = byLate[i];
-    saved = { op: op, t: op.timestamp, e: op.end_ts };
-    const dur = op.end_ts - op.timestamp;
-    op.timestamp = 0; op.end_ts = dur;
+    saved = { op: op, t: op[OP_START], e: op[OP_END] };
+    const dur = op[OP_END] - op[OP_START];
+    op[OP_START] = 0; op[OP_END] = dur;
     breach = sandbox.__verify();
     if (!breach.ok) { brokeGuid = op.output_guid; break; }
-    op.timestamp = saved.t; op.end_ts = saved.e; saved = null;
+    op[OP_START] = saved.t; op[OP_END] = saved.e; saved = null;
   }
+  assert(clean && clean.total > 0 && clean.untimed === 0,
+    'G-LI-2b2 the baseline READ every op\'s start: judged=' + (clean && clean.total) + ' opsWithNoStart=' + (clean && clean.untimed) +
+    ' (floating=' + (clean && clean.floating) + ' midair=' + (clean && clean.midair) + ')');
   assert(brokeGuid !== null, 'G-LI-2c a real bad drag is constructible on ' + LI_BLD + ' (moved ' + brokeGuid + ' to t=0)');
   assert(breach && breach.ok === false && (breach.dFloating > 0 || breach.dMidair > 0),
     'G-LI-2d breach detected on lock-back verify (floating=' + (breach && breach.floating) + ' +' +
@@ -277,7 +289,7 @@ const LI_BLD = process.env.LI_BLD || 'Duplex';
     '(true here: floating=' + (breach && breach.floating) + '); see the comment immediately above this assert');
 
   // Undo (restore the exact pre-edit values, what undoLastGanttEdit does) → verifies clean again.
-  if (saved) { saved.op.timestamp = saved.t; saved.op.end_ts = saved.e; }
+  if (saved) { saved.op[OP_START] = saved.t; saved.op[OP_END] = saved.e; }
   const after = sandbox.__verify();
   assert(after.ok === true && after.dFloating === 0 && after.dMidair === 0,
     'G-LI-2f after Undo the lock verifies ok again (floating=' + after.floating + '/base=' + after.baseFloating +
