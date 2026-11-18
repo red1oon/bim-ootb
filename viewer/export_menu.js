@@ -17,6 +17,9 @@ function setupExportMenu(A) {
   function isoCount() { var f = A.activeGuidFilter; return (f && typeof f.has === 'function' && f.size > 0) ? f.size : 0; }
   function effScope() { return (ifcScope === 'selection' && isoCount() > 0) ? 'selection' : 'whole'; }
   A.ifcScopeChoice = effScope;
+  // the IFC row's second sub-line word (step (d)): the frame file chosen with the row's Frame control (A.setIfcFrame, kept per page) or "DB frame"
+  function frameWord() { var f = A.ifcFrameChoice ? A.ifcFrameChoice() : null; return f ? f.name + (f.summary ? ' (' + f.summary + ')' : '') : T('ui_exp_frame_db', 'DB frame'); }
+  function ifcSub(scope, n) { return (scope === 'selection' ? T('ui_exp_scope_find_tip', 'the {n} elements Find has isolated', { n: n }) : T('ui_exp_ifc_tip', 'the whole building')) + ' · .ifc · ' + frameWord(); }
   function T(key, dflt, repl) { var s = (typeof window._trl === 'function') ? window._trl(key, repl || null, dflt) : dflt; if (repl && s === dflt) for (var k in repl) s = s.replace('{' + k + '}', repl[k]); return s; }
 
   // The IFC item needs the building's element tables and a geometry table: in A.db (a monolith) or in A.libDb (a split meta+geo pair).
@@ -47,7 +50,7 @@ function setupExportMenu(A) {
     try { n = (await A._getAllIssues()).length; } catch (e) { n = 0; }
     return [
       { key: 'db', label: T('ui_exp_db', 'Building (.db)'), sub: T('pill_save', 'Save Building') + ' · Ctrl+S', enabled: !!A.db, why: A.db ? '' : 'no_building' },
-      { key: 'ifc', label: 'IFC', sub: ifc.ok ? (scope === 'selection' ? T('ui_exp_scope_find_tip', 'the {n} elements Find has isolated', { n: iso }) : T('ui_exp_ifc_tip', 'the whole building')) + ' · .ifc' : T('ui_exp_ifc_none', 'needs a building with geometry tables'), tip: scope === 'selection' ? T('ui_exp_scope_find_tip', 'the {n} elements Find has isolated', { n: iso }) : T('ui_exp_ifc_tip', 'the whole building'), schema: ifc.ok, scopes: ifc.ok, iso: iso, scope: scope, enabled: ifc.ok, why: ifc.ok ? '' : ifc.why },
+      { key: 'ifc', label: 'IFC', sub: ifc.ok ? ifcSub(scope, iso) : T('ui_exp_ifc_none', 'needs a building with geometry tables'), tip: scope === 'selection' ? T('ui_exp_scope_find_tip', 'the {n} elements Find has isolated', { n: iso }) : T('ui_exp_ifc_tip', 'the whole building'), schema: ifc.ok, scopes: ifc.ok, iso: iso, scope: scope, enabled: ifc.ok, why: ifc.ok ? '' : ifc.why },
       { key: 'bcf', label: T('ui_exp_bcf', 'BCF (issues)'), sub: n ? n + ' · .bcfzip' : T('ui_exp_bcf_none', 'no saved issues'), enabled: n > 0, why: n ? '' : 'no_saved_issues', issues: n },
       { key: 'schedule', label: T('ui_exp_sched', 'Schedule'), sub: sch.ok ? T('ui_exp_sched_tip', 'the building\'s work schedule, for MS Project or Primavera P6') : T('ui_exp_sched_none', 'open the Time Machine once to make the schedule'), tip: T('ui_exp_sched_tip', 'the building\'s work schedule, for MS Project or Primavera P6'), kinds: sch.ok, enabled: sch.ok, why: sch.ok ? '' : sch.why },
       { key: 'cost5d', label: T('ui_exp_5d', '5D cost'), sub: T('ui_exp_5d_tip', 'cost workbook (Excel): bill of quantities, materials, labour, equipment') + ' · .xlsx', tip: T('ui_exp_5d_tip', 'cost workbook (Excel): bill of quantities, materials, labour, equipment'), enabled: !!(A.db && A.activeBuilding), why: (A.db && A.activeBuilding) ? '' : 'no_building' }
@@ -58,7 +61,7 @@ function setupExportMenu(A) {
     else if (key === 'ifc') {
       var name = (A.activeBuilding || 'building'), schema = A.ifcSchemaChoice ? A.ifcSchemaChoice() : 'IFC4', scope = effScope(), nIfc = scope === 'selection' ? isoCount() : -1;
       if (scope === 'whole') { try { var rr = A.db.exec('SELECT COUNT(*) FROM elements_meta'); nIfc = rr.length ? rr[0].values[0][0] : 0; } catch (e) { nIfc = 0; } }
-      console.log('§VIEWER_EXPORT_MENU item=ifc action=exportIfcShared building=' + name + ' scope=' + scope + ' n=' + nIfc + ' schema=' + schema);
+      console.log('§VIEWER_EXPORT_MENU item=ifc action=exportIfcShared building=' + name + ' scope=' + scope + ' n=' + nIfc + ' schema=' + schema + ' frame=' + (A.ifcFrameChoice && A.ifcFrameChoice() ? A.ifcFrameChoice().name : 'db'));
       if (A.exportIfcShared) return A.exportIfcShared({ name: name, schema: schema, scope: scope });
     } else if (key === 'bcf') { console.log('§VIEWER_EXPORT_MENU item=bcf action=exportBcf'); if (A.exportBcf) return A.exportBcf(); }
     else if (key === 'schedule') {
@@ -83,8 +86,10 @@ function setupExportMenu(A) {
       return '<span class="ve-scope" data-scope="' + val + '" data-disabled="' + (off ? '1' : '0') + '"' + (off ? ' data-why="no_isolate" title="' + esc(T('ui_exp_scope_none', 'Find and isolate first')) + '"' : '') + ' aria-pressed="' + on + '" aria-disabled="' + (off ? 'true' : 'false') + '" style="padding:2px 6px;border-radius:6px;font-size:10px;margin-right:4px;display:inline-block;margin-top:3px;cursor:' + (off ? 'not-allowed' : 'pointer') + ';opacity:' + (off ? '.45' : '1') +
         ';border:1px solid ' + (on ? '#5b8def' : '#2c303a') + ';color:' + (on ? '#dfe6f5' : '#7b8494') + ';background:' + (on ? '#26324a' : 'transparent') + '">' + esc(text) + '</span>';
     }
-    var off = !it.iso;
+    var off = !it.iso, fc = A.ifcFrameChoice ? A.ifcFrameChoice() : null;
+    function fchip(cls, text, tip) { return '<span class="' + cls + '" title="' + esc(tip) + '" style="padding:2px 6px;border-radius:6px;font-size:10px;margin-right:4px;display:inline-block;margin-top:3px;cursor:pointer;border:1px solid ' + (fc ? '#5b8def' : '#2c303a') + ';color:' + (fc ? '#dfe6f5' : '#7b8494') + ';background:' + (fc ? '#26324a' : 'transparent') + '">' + esc(text) + '</span>'; }
     return '<br>' + chip('whole', T('ui_exp_scope_whole', 'Whole building'), it.scope === 'whole', false) + chip('selection', T('ui_exp_scope_find', 'Find selection ({n})', { n: it.iso }), it.scope === 'selection', off) +
+      fchip('ve-frame', T('ui_exp_frame', 'Frame…'), T('ui_exp_frame_tip', 'Place the file in your shared coordinates: choose a frame file (JSON)')) + (fc ? fchip('ve-frame-clear', '×', T('ui_exp_frame_db', 'DB frame')) : '') +
       (off ? '<br><span class="ve-hint" style="color:#5b6473;font-size:10.5px">' + esc(T('ui_exp_scope_none', 'Find and isolate first')) + '</span>' : '');
   }
   function chips(cls, attr, list, cur) {
@@ -133,9 +138,35 @@ function setupExportMenu(A) {
           ifcScope = v; console.log('§VIEWER_EXPORT_MENU ifc_scope=' + v);
           Array.prototype.forEach.call(panel.querySelectorAll('.ve-scope'), function (o) { var on = o.getAttribute('data-scope') === v; o.setAttribute('aria-pressed', on); o.style.borderColor = on ? '#5b8def' : '#2c303a'; o.style.color = on ? '#dfe6f5' : '#7b8494'; o.style.background = on ? '#26324a' : 'transparent'; });
           var sub = panel.querySelector('.ve-row[data-key="ifc"] .ve-sub'), row = panel.querySelector('.ve-row[data-key="ifc"]');
-          if (sub && row) { var tipTxt = v === 'selection' ? T('ui_exp_scope_find_tip', 'the {n} elements Find has isolated', { n: isoCount() }) : T('ui_exp_ifc_tip', 'the whole building'); sub.textContent = tipTxt + ' · .ifc'; row.setAttribute('title', tipTxt); }
+          if (sub && row) { var tipTxt = v === 'selection' ? T('ui_exp_scope_find_tip', 'the {n} elements Find has isolated', { n: isoCount() }) : T('ui_exp_ifc_tip', 'the whole building'); sub.textContent = ifcSub(v, isoCount()); row.setAttribute('title', tipTxt); }
         };
       });
+      // the Frame control (step (d)): a file read in the page like the Modeller's loadFrame, never uploaded, kept per page (A.setIfcFrame); a refused file states why and keeps the previous choice
+      function sayStat(t) { try { if (A.status) A.status.textContent = t; var el = document.getElementById('import-status'); if (el) el.textContent = t; } catch (e) { } }
+      function refreshFrame() {
+        var row = panel.querySelector('.ve-row[data-key="ifc"]'); if (!row) return; var sub = row.querySelector('.ve-sub'); if (sub) sub.textContent = ifcSub(effScope(), isoCount());
+        var fc = A.ifcFrameChoice ? A.ifcFrameChoice() : null, f = row.querySelector('.ve-frame'), x = row.querySelector('.ve-frame-clear');
+        if (f) { f.style.borderColor = fc ? '#5b8def' : '#2c303a'; f.style.color = fc ? '#dfe6f5' : '#7b8494'; f.style.background = fc ? '#26324a' : 'transparent'; f.setAttribute('aria-pressed', !!fc); }
+        if (fc && !x && f) { x = document.createElement('span'); x.className = 've-frame-clear'; x.textContent = '×'; x.title = T('ui_exp_frame_db', 'DB frame'); x.style.cssText = f.style.cssText; f.parentNode.insertBefore(x, f.nextSibling); x.onclick = clearFrame; }
+        if (!fc && x) x.remove();
+      }
+      function clearFrame(e) { if (e) e.stopPropagation(); if (A.clearIfcFrame) A.clearIfcFrame(); console.log('§VIEWER_EXPORT_MENU ifc_frame=db'); refreshFrame(); }
+      function chooseFrame(e) {
+        e.stopPropagation(); console.log('§VIEWER_EXPORT_MENU ifc_frame=choose');
+        var inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.json,application/json'; inp.style.display = 'none'; document.body.appendChild(inp);
+        inp.onchange = async function () {
+          var file = inp.files && inp.files[0]; inp.remove(); if (!file) return;
+          try {
+            var json = JSON.parse(await file.text()), r = A.setIfcFrame ? A.setIfcFrame(json, file.name) : { ok: false, why: 'the writer did not load' };
+            if (!r.ok) { sayStat('IFC: ' + file.name + ' ' + T('ui_exp_frame_refused', 'refused') + ': ' + r.why); console.log('§VIEWER_EXPORT_MENU ifc_frame=refused why=' + r.why); }
+            else { sayStat('IFC: ' + T('ui_exp_frame', 'Frame…').replace('…', '') + ' ' + file.name + ' (' + r.summary + ')'); console.log('§VIEWER_EXPORT_MENU ifc_frame=' + file.name); }
+          } catch (er) { sayStat('IFC: ' + file.name + ' ' + T('ui_exp_frame_refused', 'refused') + ': not valid JSON'); console.log('§VIEWER_EXPORT_MENU ifc_frame=refused why=not_json'); }
+          refreshFrame();
+        };
+        inp.click();
+      }
+      Array.prototype.forEach.call(panel.querySelectorAll('.ve-frame'), function (b) { b.onclick = chooseFrame; });
+      Array.prototype.forEach.call(panel.querySelectorAll('.ve-frame-clear'), function (b) { b.onclick = clearFrame; });
       Array.prototype.forEach.call(panel.querySelectorAll('.ve-kind'), function (b) {
         b.onclick = function (e) {
           e.stopPropagation(); var k = b.getAttribute('data-kind'); schedKind = k.toLowerCase(); console.log('§VIEWER_EXPORT_MENU schedule_kind=' + schedKind);

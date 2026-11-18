@@ -8,8 +8,8 @@
    "bim_element_base.csv",
    "BIM_Element_Trl_ja_JP.xml"
   ],
-  "rows": 1111,
-  "translated": 1026,
+  "rows": 1115,
+  "translated": 1030,
   "untranslated": 85
  },
  "labels": {
@@ -1123,10 +1123,14 @@
   "ui_exp_scope_whole": "建物全体",
   "ui_exp_scope_find": "Find の選択 ({n})",
   "ui_exp_scope_find_tip": "Find が分離した {n} 個の要素",
-  "ui_exp_scope_none": "先に Find で分離してください"
+  "ui_exp_scope_none": "先に Find で分離してください",
+  "ui_exp_frame": "座標枠…",
+  "ui_exp_frame_tip": "ファイルを共有座標に置く: 座標枠ファイル (JSON) を選択",
+  "ui_exp_frame_db": "DB の座標",
+  "ui_exp_frame_refused": "拒否されました"
  },
  "tables": {
-  "AD_Message": 958,
+  "AD_Message": 962,
   "BIM_Element": 153
  },
  "terms": [
