@@ -8,8 +8,8 @@
    "bim_element_base.csv",
    "BIM_Element_Trl_th_TH.xml"
   ],
-  "rows": 1111,
-  "translated": 1008,
+  "rows": 1115,
+  "translated": 1012,
   "untranslated": 103
  },
  "labels": {
@@ -1123,10 +1123,14 @@
   "ui_exp_scope_whole": "ทั้งอาคาร",
   "ui_exp_scope_find": "ที่เลือกจาก Find ({n})",
   "ui_exp_scope_find_tip": "{n} องค์ประกอบที่ Find แยกไว้",
-  "ui_exp_scope_none": "ใช้ Find แยกองค์ประกอบก่อน"
+  "ui_exp_scope_none": "ใช้ Find แยกองค์ประกอบก่อน",
+  "ui_exp_frame": "กรอบพิกัด…",
+  "ui_exp_frame_tip": "วางไฟล์ในพิกัดร่วมของคุณ: เลือกไฟล์กรอบพิกัด (JSON)",
+  "ui_exp_frame_db": "กรอบพิกัดของฐานข้อมูล",
+  "ui_exp_frame_refused": "ถูกปฏิเสธ"
  },
  "tables": {
-  "AD_Message": 958,
+  "AD_Message": 962,
   "BIM_Element": 153
  },
  "terms": [

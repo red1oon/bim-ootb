@@ -8,8 +8,8 @@
    "bim_element_base.csv",
    "BIM_Element_Trl_ar_SA.xml"
   ],
-  "rows": 1111,
-  "translated": 1008,
+  "rows": 1115,
+  "translated": 1012,
   "untranslated": 103
  },
  "labels": {
@@ -1123,10 +1123,14 @@
   "ui_exp_scope_whole": "المبنى كاملاً",
   "ui_exp_scope_find": "تحديد Find ({n})",
   "ui_exp_scope_find_tip": "العناصر الـ {n} التي عزلها Find",
-  "ui_exp_scope_none": "اعزل أولاً باستخدام Find"
+  "ui_exp_scope_none": "اعزل أولاً باستخدام Find",
+  "ui_exp_frame": "الإطار…",
+  "ui_exp_frame_tip": "ضع الملف في إحداثياتكم المشتركة: اختر ملف الإطار (JSON)",
+  "ui_exp_frame_db": "إطار قاعدة البيانات",
+  "ui_exp_frame_refused": "مرفوض"
  },
  "tables": {
-  "AD_Message": 958,
+  "AD_Message": 962,
   "BIM_Element": 153
  },
  "terms": [

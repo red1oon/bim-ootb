@@ -1,5 +1,5 @@
 {
- "app": "modeller", "schema": 1, "sw": "modeller/sw.js", "cacheVersion": "v310", "depsDeclared": true,
+ "app": "modeller", "schema": 1, "sw": "modeller/sw.js", "cacheVersion": "v311", "depsDeclared": true,
  "depsReview": {"by":"owner (B1-Q3, confirmed in one message)","on":"2026-11-18","tool":"5be36e5764e21887f547786edfcd6adb918d1b06f9e10c0a96924911c074ef2c"},
  "modules": {
   "common/comm/op_versions.js": {"v":1,"load":"lazy","lazyGroup":"modeller/modeller.html","precache":true,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/TEAMWORK_FRAMEWORK.md"},
@@ -65,13 +65,13 @@
   "modeller/ifc_open_worker.js": {"v":5,"load":"lazy","lazyGroup":"modeller/str_walker_outliner.js","precache":true,"deps":[],"uses":["common/georef_frame.js","common/ifc_grid_read.js","common/lib/sql-wasm.js","common/lib/web-ifc-api-iife.js","modeller/dxf2bim/ifc_extract_core.js","modeller/ifc_open_db.js"],"notDeps":[],"owner":"prompts/DXF2BIM_ARCHITECT_REVIEW.md"},
   "modeller/kernel_ops.js": {"v":9,"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":[],"owner":""},
   "modeller/load_summary.js": {"v":null,"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/DXF2BIM_FOUNDATION_LANE.md"},
-  "modeller/lod/lod_ifc.js": {"v":1,"load":"lazy","lazyGroup":"modeller/lod/lod_ui.js","precache":true,"deps":[],"uses":[],"notDeps":[],"owner":["prompts/MODELLER_LOD_UPGRADE_PILL.md","prompts/LOD400_DEFAULT_RULES_SCOPE.md","prompts/VIEWER_IFC_EXPORT_BY_DISCIPLINE.md"]},
+  "modeller/lod/lod_ifc.js": {"v":2,"load":"lazy","lazyGroup":"modeller/lod/lod_ui.js","precache":true,"deps":[],"uses":[],"notDeps":[],"owner":["prompts/MODELLER_LOD_UPGRADE_PILL.md","prompts/LOD400_DEFAULT_RULES_SCOPE.md","prompts/VIEWER_IFC_EXPORT_BY_DISCIPLINE.md"]},
   "modeller/lod/lod_ops.js": {"v":4,"load":"lazy","lazyGroup":"modeller/modeller.html","precache":true,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/MODELLER_LOD_UPGRADE_PILL.md"},
   "modeller/lod/lod_reader.js": {"v":7,"load":"lazy","lazyGroup":"modeller/modeller.html","precache":true,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/VIEWER_IFC_EXPORT_BY_DISCIPLINE.md"},
   "modeller/lod/lod_registry.js": {"v":5,"load":"lazy","lazyGroup":"modeller/modeller.html","precache":true,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/MODELLER_LOD_UPGRADE_PILL.md"},
   "modeller/lod/lod_rules.js": {"v":1,"load":"lazy","lazyGroup":"modeller/modeller.html","precache":true,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/MODELLER_LOD_UPGRADE_PILL.md"},
   "modeller/lod/lod_schedule.js": {"v":1,"load":"lazy","lazyGroup":"modeller/lod/lod_ui.js","precache":true,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/MODELLER_LOD_UPGRADE_PILL.md"},
-  "modeller/lod/lod_ui.js": {"v":8,"load":"lazy","lazyGroup":"modeller/modeller.html","precache":true,"deps":[],"uses":["modeller/bonsai_library.js","modeller/bonsai_oplog.js","modeller/lod/lod_ifc.js","modeller/lod/lod_ops.js","modeller/lod/lod_reader.js","modeller/lod/lod_registry.js","modeller/lod/lod_rules.js","modeller/lod/lod_schedule.js","modeller/open_building_db.js","modeller/str_walker_outliner.js"],"notDeps":[],"owner":"prompts/MODELLER_LOD_UPGRADE_PILL.md"},
+  "modeller/lod/lod_ui.js": {"v":9,"load":"lazy","lazyGroup":"modeller/modeller.html","precache":true,"deps":[],"uses":["modeller/bonsai_library.js","modeller/bonsai_oplog.js","modeller/lod/lod_ifc.js","modeller/lod/lod_ops.js","modeller/lod/lod_reader.js","modeller/lod/lod_registry.js","modeller/lod/lod_rules.js","modeller/lod/lod_schedule.js","modeller/open_building_db.js","modeller/str_walker_outliner.js"],"notDeps":[],"owner":"prompts/MODELLER_LOD_UPGRADE_PILL.md"},
   "modeller/modeller_history.js": {"v":8,"load":"boot","lazyGroup":null,"precache":false,"deps":["common/history_bar.js","modeller/bonsai_oplog.js"],"uses":["modeller/bonsai_library.js"],"notDeps":[],"owner":"prompts/MODELLER_GIT_FAITHFUL_HISTORY.md"},
   "modeller/native_props.js": {"v":1,"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/DISC_WALK_DRAWN_INTEGRATION.md"},
   "modeller/open_building_db.js": {"v":2,"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["modeller/str_walker_outliner.js"],"notDeps":[],"owner":"prompts/DXF2BIM_ARCHITECT_REVIEW.md"},

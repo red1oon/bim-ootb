@@ -19,14 +19,7 @@ const gap = (step, what, fix, soft) => { gaps.push({ step, hard: !soft }); say(`
 const run = (cmd, args, o) => { const r = cp.spawnSync(cmd, args, Object.assign({ cwd: ROOT, encoding: 'utf8', maxBuffer: 1 << 28, stdio: ['ignore', 'pipe', 'pipe'] }, o)); return { ok: r.status === 0, out: (r.stdout || '') + (r.stderr || ''), status: r.status }; };
 const which = n => { const r = cp.spawnSync('sh', ['-c', 'command -v ' + n], { encoding: 'utf8' }); return r.status === 0 ? r.stdout.trim() : null; };
 const last = t => t.trim().split('\n').slice(-1)[0].slice(0, 160);
-const jsonc = f => { const t = fs.readFileSync(f, 'utf8'); let o = '', i = 0, str = false;   // JSONC: strip // and /* */ comments and trailing commas, outside strings
-  while (i < t.length) { const c = t[i];
-    if (str) { o += c; if (c === '\\') o += t[++i]; else if (c === '"') str = false; i++; }
-    else if (c === '"') { str = true; o += c; i++; }
-    else if (c === '/' && t[i + 1] === '/') { while (i < t.length && t[i] !== '\n') i++; }
-    else if (c === '/' && t[i + 1] === '*') { i += 2; while (i < t.length && !(t[i] === '*' && t[i + 1] === '/')) i++; i += 2; }
-    else { o += c; i++; } }
-  return JSON.parse(o.replace(/,(\s*[}\]])/g, '$1')); };
+const jsonc = require('./lib/jsonc.js').read;   // JSONC (comments, trailing commas): the one reader, shared with W-VSC-OPERATIONAL
 const step = fn => { steps++; const g0 = gaps.filter(g => g.hard).length; fn(); if (gaps.filter(g => g.hard).length === g0) ok++; };
 
 const node = process.versions.node, npm = which('npm'), py = which('python3'), code = which('code');

@@ -809,7 +809,7 @@
     ensureTable(db);
     var r = db.exec(
       'SELECT id, op_type, parameters FROM kernel_ops ' +
-      'WHERE undone = 0 ORDER BY id DESC LIMIT 1'
+      "WHERE undone = 0 AND op_type NOT IN ('UNDO','REDO') ORDER BY id DESC LIMIT 1"   // a ledger marker is not a gesture (CLI_ERP_IVR §61 rule 4)
     );
     if (!r.length || !r[0].values.length) return null;
     var row = r[0].values[0];
@@ -826,13 +826,28 @@
     ensureTable(db);
     var r = db.exec(
       'SELECT id, op_type, parameters FROM kernel_ops ' +
-      'WHERE undone = 1 ORDER BY id ASC LIMIT 1'
+      "WHERE undone = 1 AND op_type NOT IN ('UNDO','REDO') ORDER BY id ASC LIMIT 1"   // undone=1 only: an untrusted ledger row is undone=2 and never redone (§61 rule 3)
     );
     if (!r.length || !r[0].values.length) return null;
     var row = r[0].values[0];
     db.run('UPDATE kernel_ops SET undone = 0 WHERE id = ?', [row[0]]);
     console.log('§KERNEL_OP redo id=' + row[0] + ' type=' + row[1]);
     return { id: row[0], op_type: row[1], parameters: JSON.parse(row[2]) };
+  }
+
+  // foldMarkers(rows) — the ONE rule for a ledger file's undo/redo (bim-compiler prompts/CLI_ERP_IVR.md §61, W-LEDGER-UNDO). An undo in the
+  //   shared, append-only file is a NEW row: op_type UNDO / REDO, parameters {targets:[op_uuid,...]}. Walk the rows in id order: an UNDO
+  //   takes its targets out, a REDO puts them back. Returns {undone:[op_uuid], markers:n}. Pure; the page (crud_overlay hydrate) and the
+  //   door (ledger_sign.parseOps) both call it. `skip(row)` (optional) = a marker not to apply (the page: one it did not admit, §59).
+  function foldMarkers(rows, skip) {
+    var out = {}, n = 0;
+    (rows || []).slice().sort(function (a, b) { return Number(a.id) - Number(b.id); }).forEach(function (r) {
+      if (r.op_type !== 'UNDO' && r.op_type !== 'REDO') return;
+      if (skip && skip(r)) return;
+      var p; try { p = typeof r.parameters === 'string' ? JSON.parse(r.parameters) : (r.parameters || {}); } catch (e) { p = {}; }
+      n++; (p.targets || []).forEach(function (u) { if (r.op_type === 'UNDO') out[u] = 1; else delete out[u]; });
+    });
+    return { undone: Object.keys(out), markers: n };
   }
 
   /**
@@ -991,6 +1006,7 @@
     ensureTable:  ensureTable,
     commitOp:     commitOp,
     undoOp:       undoOp,
+    foldMarkers:  foldMarkers,
     redoOp:       redoOp,
     replayOps:    replayOps,
     compact:      compact,

@@ -276,7 +276,8 @@
 // v1759 (2026-11-18) §IFC_EXPORT_SHARED (bim-ootb VIEWER_IFC_EXPORT_BY_DISCIPLINE.md (b)): the Export pill's IFC item and the Share sheet write IFC through the Modeller's lod_ifc.js (any element, IFC4 / IFC2X3, split meta+geo read in place); ifc_export_shared.js + ../modeller/lod/lod_ifc.js + lod_reader.js precached; export_menu.js?v=2 import.js?v=18 main.js?v=67
 // v1761 (2026-11-18) §VIEWER_EXPORT_MENU (bim-ootb VIEWER_IFC_EXPORT_BY_DISCIPLINE.md §(b2)): the Export menu gains Schedule (MSP / PMXML / XER, window.tmExportSchedule in tm_gantt_edit.js?v=10) and 5D cost (boq_charts.html writes the workbook itself on export=5d; export_5d.js?v=2, tools.js?v=78); export_menu.js?v=3 panels.js?v=54; i18n packs carry 7 new rows
 // v1763 (2026-11-19) §VIEWER_EXPORT_MENU (main was at v1762, the pipe-trades fix) (bim-ootb VIEWER_IFC_EXPORT_BY_DISCIPLINE.md §(c)): the IFC row gets scope chips Whole building | Find selection (N) (A.activeGuidFilter -> A.exportIfcShared({scope:'selection'}), file <building>_selection_<schema>.ifc); export_menu.js?v=4 ifc_export_shared.js?v=2; i18n packs carry 4 new rows
-const CACHE_VERSION = 'v1763';
+// v1765 (2026-11-19) §IFC_EXPORT_SHARED (main was at v1764) (bim-ootb VIEWER_IFC_EXPORT_BY_DISCIPLINE.md (d)): the IFC export writes generated parts through the parts path, materials, property sets, part relations (IfcRelAggregates / Pset BIMC_Part), kept source GlobalIds, and takes a frame JSON (the Frame control of the IFC row); lod_ifc.js?v=2 ifc_export_shared.js?v=3 export_menu.js?v=5; i18n packs carry 4 new rows
+const CACHE_VERSION = 'v1765';
 // v1637 (rebase of PR #1191/#1196) §CLASS_UNMATCHED_INHERITED + §EXACT_LOOKUP_BLINDSPOT: rates/ifc_schema_hierarchy.json added to PRECACHE_ASSETS; schedule_author.js/proj_fold.js/boq_charts.html/schedule_read_4d.js/tm_sched_xray.js classify via the schema hierarchy.
 // v1636 (rebase of PR #1317) §ARCH_AREA_WEIGHT/§VOL_WEIGHT/§FOOTING_M3: schedule_author.js, time_machine parts, rates.js and rates/*.json changed install DURATIONS (area/volume weighting, IfcFooting priced M3); all precached cache-first, so a client holding the old cache would keep the flat times forever.
 // v1635 (rebase of PR #676, BCF half only) §BCF_EXPORT: bcf_export.js added to PRECACHE_ASSETS; viewer.html loads it + Export BCF button in the Issues toolbar; main.js wires setupBcfExport/exportIssuesBcf. The Open-button IFC half of #676 was superseded by main's A._openIfcFiles.
@@ -1094,7 +1095,7 @@ const PRECACHE_ASSETS = [
   'glass_fresnel.js',   // §GLASS_FRESNEL: Alt+S glass reflects with Schlick Fresnel   // §SKY_OCCLUSION: covered surfaces lose the open-sky hemi/env in Alt+S   // §SKY_PORTAL: Alt+S window panes as sky light sources
   'loader.js',
   'fx_composer.js','fx_props_staffage.js','fx_sun_shadow.js','fx_photo_staging.js','fx_still_refine.js','fx_cpe_reveal_bands.js','fx_cinema_path_plan.js','fx_cinema_orbit.js','effects.js',
-  'maxq_buildup_ghost.js','maxq_infra.js','maxq_hud_layers.js','maxq_capture_stitch.js','maxq_start.js','cinema_maxq.js',
+  'maxq_buildup_ghost.js','maxq_infra.js','maxq_hud_layers.js','maxq_capture_stitch.js','build_fresh.js','maxq_start.js','cinema_maxq.js',
   'gi_still.js',  // §GI_LIVE: Alt+S bounce (desktop + WebGPU only); its two lib/gi modules cache on first use
   'cinema_path_editor.js',
   'cpe_walk.js',
