@@ -21,26 +21,20 @@
   var I18N_BASE = _thisScript.src.replace(/[^/]*$/, '') + 'i18n/';
   var LOCALE_VERSION = 11; // bump to invalidate cached locale packs (v7 = S226 §R2 split: labels JSON + cost .js; v8 = §R2d Help + §R3 Modeller rows; v9 = VOCAB_MESSAGE_CATALOG §14.1 class text; v10 = §14.2 types + 10 locales; v11 = §14.3 How To words)
 
-  // ── Locale mapping: navigator.language → locale file code ──
-  var LOCALE_MAP = {
-    'en-MY': 'en_MY', 'en-my': 'en_MY', 'en': 'en_MY',
-    'en-US': 'en_US', 'en-us': 'en_US',
-    'en-GB': 'en_GB', 'en-gb': 'en_GB',
-    'en-AU': 'en_AU', 'en-au': 'en_AU',
-    'ms': 'ms_MY', 'ms-MY': 'ms_MY', 'ms-my': 'ms_MY',
-    'de': 'de_DE', 'de-DE': 'de_DE', 'de-de': 'de_DE',
-    'fr': 'fr_FR', 'fr-FR': 'fr_FR', 'fr-fr': 'fr_FR',
-    'es': 'es_ES', 'es-ES': 'es_ES', 'es-es': 'es_ES',
-    'zh': 'zh_CN', 'zh-CN': 'zh_CN', 'zh-cn': 'zh_CN',
-    'th': 'th_TH', 'th-TH': 'th_TH', 'th-th': 'th_TH',
-    'ja': 'ja_JP', 'ja-JP': 'ja_JP', 'ja-jp': 'ja_JP',
-    'ko': 'ko_KR', 'ko-KR': 'ko_KR', 'ko-kr': 'ko_KR',
-    'ar': 'ar_SA', 'ar-SA': 'ar_SA', 'ar-sa': 'ar_SA',
-    'pt': 'pt_BR', 'pt-BR': 'pt_BR', 'pt-br': 'pt_BR',
-    'id': 'id_ID', 'id-ID': 'id_ID', 'id-id': 'id_ID',
-    'bn': 'bn_BD', 'bn-BD': 'bn_BD', 'bn-bd': 'bn_BD',
-    'af': 'af_ZA', 'af-ZA': 'af_ZA', 'af-za': 'af_ZA'
-  };
+  // ── The one language choice (bim-compiler prompts/TRL_TRILOGY_STANDARD.md S-5, T1): common/i18n/lang_choice.js owns the key 'bim.lang', the precedence and the
+  //    mapping table that used to live here as LOCALE_MAP. A page loads it BEFORE this file; without it the loader degrades to ?lang= / its old key / en_MY (logged).
+  var _lcWarned = false;
+  function _LC() {   // read at CALL time, so the script order of a page cannot break it; absent -> the loader degrades (logged once)
+    var lc = window.BimLang || null;
+    if (!lc && !_lcWarned) { _lcWarned = true; console.warn('§LANG_CHOICE absent — common/i18n/lang_choice.js not loaded before locale_loader.js; the language is not shared with the ERP / Modeller'); }
+    return lc;
+  }
+  function _legacyLocale() { try { var c = JSON.parse(localStorage.getItem('bim_ootb_config')); return c && c.locale ? c.locale : null; } catch (e) { return null; } }
+  // the Viewer's own record of the choice: bim.lang through the shared module, and bim_ootb_config.locale kept as the mirror the first-run toast and rates.js read
+  function _saveLocale(code) {
+    var lc = _LC(); if (lc) lc.set(code);
+    try { localStorage.setItem('bim_ootb_config', JSON.stringify({ locale: code })); } catch(e) { /* ignore */ }
+  }
 
   // ── Flag emoji from ISO 3166-1 alpha-2 ──
   function isoToFlag(iso) {
@@ -72,32 +66,18 @@
     { code: 'af_ZA', iso: 'ZA', name: 'Afrikaans' }
   ];
 
-  // ── Detect locale: URL param > localStorage > navigator.language > fallback ──
+  // ── Detect locale: ?lang= > bim.lang > bim_ootb_config.locale (old key, migrated once) > navigator.language > en_MY — all through LC.get (lang_choice.js) ──
   function detectLocale() {
-    var params = new URLSearchParams(window.location.search);
-    // 1. URL param override
-    var urlLang = params.get('lang');
-    if (urlLang && AVAILABLE_LOCALES.some(function(l) { return l.code === urlLang; })) {
-      return _detected('url', urlLang, urlLang);
+    var lc = _LC();
+    if (lc) {
+      var r = lc.get({ legacy: [_legacyLocale] });
+      if (r && AVAILABLE_LOCALES.some(function(l) { return l.code === r.code; })) return _detected(r.src, r.req, r.code);
+    } else {
+      var q = new URLSearchParams(window.location.search).get('lang');
+      if (q && AVAILABLE_LOCALES.some(function(l) { return l.code === q; })) return _detected('url', q, q);
+      var o = _legacyLocale(); if (o) return _detected('saved', q, o);
     }
-    // 1b. S226 §R1.2 — a ?lang= that is not an exact Viewer code (the ERP hands over 'ar') resolves through LOCALE_MAP
-    if (urlLang) {
-      var mapped = LOCALE_MAP[urlLang.replace('_', '-')] || LOCALE_MAP[urlLang.split(/[-_]/)[0]];
-      if (mapped) return _detected('url-mapped', urlLang, mapped);
-    }
-    // 2. localStorage saved config
-    try {
-      var saved = JSON.parse(localStorage.getItem('bim_ootb_config'));
-      if (saved && saved.locale) return _detected('saved', urlLang, saved.locale);
-    } catch(e) { /* ignore */ }
-    // 3. Browser language
-    var browserLang = navigator.language || navigator.userLanguage || 'en';
-    // Try exact match first, then prefix
-    if (LOCALE_MAP[browserLang]) return _detected('browser', urlLang, LOCALE_MAP[browserLang]);
-    var prefix = browserLang.split('-')[0];
-    if (LOCALE_MAP[prefix]) return _detected('browser', urlLang, LOCALE_MAP[prefix]);
-    // 4. Fallback
-    return _detected('fallback', urlLang, 'en_MY');
+    return _detected('fallback', new URLSearchParams(window.location.search).get('lang'), 'en_MY');
   }
   // §TRL_DETECT — once per page load (detectLocale is also called by the picker/flag button)
   var _detectLogged = false;
@@ -334,7 +314,7 @@
       }
       btn.onclick = function() {
         try {
-          localStorage.setItem('bim_ootb_config', JSON.stringify({ locale: loc.code }));
+          _saveLocale(loc.code);
           localStorage.removeItem('bim_ootb_locale_' + currentLocale);
           localStorage.removeItem('bim_ootb_trl_' + currentLocale);
         } catch(e) { /* ignore */ }
@@ -556,7 +536,7 @@
         if (window.__TRL_DICT_PAGE && !window.__TRL_SWITCH_NO_RETRANSLATE) _dictPage(code, labels || {});
         _curCode = code; _curLabels = labels || {};
         try {
-          localStorage.setItem('bim_ootb_config', JSON.stringify({ locale: code }));
+          _saveLocale(code);
           var u = new URL(location.href);
           if (u.searchParams.has('lang')) { u.searchParams.set('lang', code); history.replaceState(null, '', u.toString()); }
         } catch(e) { /* ignore */ }

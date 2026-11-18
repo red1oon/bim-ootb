@@ -4,7 +4,7 @@
 # stamped log and prints one table. CPU only: no browser, no GPU. Read the log, not the exit code:
 #   logs/4d_gates_<UTC time>.log      (override the folder with LOG_DIR)
 # Usage: scripts/run_4d_gates.sh [Building ...]      default: all seven
-#        LARGE=1 scripts/run_4d_gates.sh            also the edit chain on Clinic and Hospital
+#        LARGE=1 scripts/run_4d_gates.sh            also the edit chain on Clinic + Hospital, the four editor witnesses on Clinic + JKR
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BLDS=("$@"); [ ${#BLDS[@]} -eq 0 ] && BLDS=(Duplex HHS_Office_Federated Hospital Terminal Clinic JKR LTU_AHouse)
@@ -39,6 +39,19 @@ if [ "${LARGE:-0}" = 1 ]; then
     (cd "$ROOT/viewer" && env "$var=$b" node "tests/$g.js") > "$tmp" 2>&1; rc=$?
     cat "$tmp" >> "$LOG"; echo "§GATES_STEP_EXIT $g $b rc=$rc" >> "$LOG"
     last="$(grep -E 'pass=[0-9]+ +fail=[0-9]+' "$tmp" | tail -1 | grep -oE 'pass=[0-9]+ +fail=[0-9]+')"
+    [ $rc -ne 0 ] && red=$((red+1))
+    ROWS+=("$g@$b|rc=$rc|${last:-no pass/fail line}"); rm -f "$tmp"
+  done; done
+  # The four editor witnesses on the PLAYED layer (§Q.20.2): the default runs above judge them on Duplex only.
+  # Clinic + JKR, NOT Hospital: measured 2026-11-18 (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.22.3) Terminal ran past
+  # 1,500 s on every one of the four and Hospital sat >10 min inside one gesture; Clinic 198-506 s, JKR 95-236 s, all green.
+  # rc=2 (a claim judged nothing) is counted red here, the same as in the main loop.
+  for b in Clinic JKR; do for pair in "witness_gantt_one_commit_pipeline OCP_BLD" "witness_gantt_undo_every_edit UE_BLD" "witness_gantt_reorder RO_BLD" "witness_gantt_shift_links GL_BLD"; do
+    set -- $pair; g=$1; var=$2
+    echo "§GATES_STEP $g $b" >> "$LOG"; tmp="$(mktemp)"
+    (cd "$ROOT/viewer" && env "$var=$b" node "tests/$g.js") > "$tmp" 2>&1; rc=$?
+    cat "$tmp" >> "$LOG"; echo "§GATES_STEP_EXIT $g $b rc=$rc" >> "$LOG"
+    last="$(grep -E 'pass=[0-9]+ +fail=[0-9]+' "$tmp" | tail -1 | grep -oE 'pass=[0-9]+ +fail=[0-9]+( +inconclusive=[0-9]+)?')"
     [ $rc -ne 0 ] && red=$((red+1))
     ROWS+=("$g@$b|rc=$rc|${last:-no pass/fail line}"); rm -f "$tmp"
   done; done

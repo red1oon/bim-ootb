@@ -199,8 +199,19 @@
     root.querySelectorAll('[data-i18n-title]').forEach(function (n) { n.title = t(n.getAttribute('data-i18n-title')); });
   }
 
-  function _persist(code) { try { localStorage.setItem(LS_KEY, code); } catch (e) {} }
+  // T1 (bim-compiler prompts/TRL_TRILOGY_STANDARD.md S-5): the choice is the Trilogy's ONE key 'bim.lang' (common/i18n/lang_choice.js, loaded before this file), not
+  //   this app's own. initial() SHOWS the nearest ERP language to it (ko_KR -> BASE) and never writes it, so a code this app lacks survives to an app that has it.
+  //   The old key erp.lang is read once and migrated by BimLang.get. Without the module the page keeps the old key (logged).
+  var LC = global.BimLang || null;
+  if (!LC) console.warn('§I18N lang-choice absent — common/i18n/lang_choice.js not loaded; the language is not shared with the Viewer / Modeller');
+  function _codes() { return LOCALES.map(function (l) { return l.code; }); }
+  function _persist(code) { if (LC) { LC.set(code); return; } try { localStorage.setItem(LS_KEY, code); } catch (e) {} }
   function initial() {
+    if (LC) {
+      var r = LC.get({ legacy: [function () { return localStorage.getItem(LS_KEY); }] }), n = r ? LC.nearest(r.code, _codes()) : null;
+      console.log('§I18N initial choice=' + (r ? r.code : '-') + ' src=' + (r ? r.src : 'none') + ' shows=' + (n || BASE) + (r && !n ? ' (no pack: nearest is the base)' : ''));
+      return n || BASE;
+    }
     var q = null; try { q = new URLSearchParams(location.search).get('lang'); } catch (e) {}
     if (q && _loc(q)) return q;
     var s = null; try { s = localStorage.getItem(LS_KEY); } catch (e) {}
