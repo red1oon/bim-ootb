@@ -80,7 +80,7 @@ if (process.env.LOCK === '1') {
   fs.writeFileSync(LOCK_FILE, JSON.stringify(lock, null, 1) + '\n');
 }
 
-const rows = [];
+const rows = [], nolockBlds = [];
 measured.forEach(m => {
   const B = lock.buildings[m.bld];
   console.log('§ASM ' + m.bld + ' db=' + m.dbFile + ' layer=played judged=' + m.judged + ' midair=' + m.midair + ' persisted=' + m.persisted +
@@ -88,7 +88,12 @@ measured.forEach(m => {
   if (!m.match) { say(m.bld, 'A0', 'FAIL', 'recount ' + m.midair + ' != persisted ' + m.persisted + ' — nothing below may be quoted'); return; }
   say(m.bld, 'A0', 'PASS', 'recount equals the run (' + m.midair + ')');
   NAMED.forEach(c => { if (!m.rows.some(o => o.cls === c)) console.log('  VACUOUS ' + c + ' ' + m.bld + ' — the building has none; nothing judged for this class'); });
-  if (!B) { say(m.bld, 'A1-A3', 'INCONCLUSIVE', 'no lock for this building in baselines/assembly_order.json'); return; }
+  if (!B) { // §Q.22.2 item 3: a dropped-in building — report what it measures, judge nothing against a lock it does not have
+    const t = m.rows.filter(o => o.midair || o.unjudgedStruct || o.contactOnly).sort((a, b) => b.midair - a.midair)
+      .map(o => o.cls + ' midair=' + o.midair + ' (same ' + o.sameTask + ' / cross ' + o.crossTask + ') unjudged=' + o.unjudgedStruct + ' contactOnly=' + o.contactOnly);
+    console.log('  midair by class: ' + (t.join(' · ') || 'none') + ' · filingParity=' + m.parity);
+    nolockBlds.push(m.bld);
+    say(m.bld, 'A1-A5', 'INCONCLUSIVE', 'NOLOCK — no lock for this building in baselines/assembly_order.json: reported above, not judged'); return; }
   if (B.dbFile !== m.dbFile) { say(m.bld, 'A1-A3', 'INCONCLUSIVE', 'lock was taken on ' + B.dbFile + ', this run is ' + m.dbFile); return; }
   const rose = [], fell = [], roseU = [], fellU = [], roseC = [], fellC = [];
   const names = new Set(m.rows.map(o => o.cls).concat(Object.keys(B.classes)));
@@ -120,7 +125,9 @@ measured.forEach(m => {
 });
 
 // The contract (population / schema / redControl): the per-class rows are real, shaped, and the witness CAN fail.
-Witness('tm_assembly_order')
+// It judges LOCKED rows only — a run whose every building is unlocked has none, and says so instead of failing population.
+if (!rows.length && nolockBlds.length) console.log('§ASM_CONTRACT SKIPPED — no locked building in this run (' + nolockBlds.join(',') + '): nothing for the contract to judge  INCONCLUSIVE');
+else Witness('tm_assembly_order')
   .population(() => rows)
   .schema({ type: 'object', required: ['bld', 'cls', 'total', 'midair', 'unjudgedStruct', 'lockMidair', 'lockUnjudged'],
     properties: { bld: { type: 'string', minLength: 1 }, cls: { type: 'string', minLength: 1 }, total: { type: 'integer', minimum: 0 },
