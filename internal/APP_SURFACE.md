@@ -9,7 +9,7 @@ nothing. This index is the missing "go to definition".
 
 | | |
 |---|---:|
-| files scanned | 3451 |
+| files scanned | 3452 |
 | distinct fields | 1868 |
 | written only as `A.x`/`app.x` (invisible to an `APP.` grep) | 1599 |
 | read but never written (phantom) | 178 |
@@ -159,9 +159,9 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP.openTab` | `erp/crud_overlay.js:492` | **yes** |
 | `APP.order` | `erp/tests/gen_idempiere_identity.js:58` | no |
 | `APP.pageErrors` | `viewer/tests/witness_colour_truth_gpu.js:151` | no |
-| `APP.paramsToParas` | `erp/idempiere.html:4940` | **yes** |
-| `APP.parasToParams` | `erp/idempiere.html:4959` | **yes** |
-| `APP.pinstanceList` | `erp/idempiere.html:4924` | **yes** |
+| `APP.paramsToParas` | `erp/idempiere.html:4943` | **yes** |
+| `APP.parasToParams` | `erp/idempiere.html:4962` | **yes** |
+| `APP.pinstanceList` | `erp/idempiere.html:4927` | **yes** |
 | `APP.poses` | `viewer/tests/witness_colour_truth_gpu.js:141` | no |
 | `APP.probeGradeHdr` | `scripts/probe_grade_hdr.js:20` | no |
 | `APP.probes` | `capex/tests/witness_td_pack_dash.js:142` | no |
@@ -509,8 +509,8 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP._cpeRevealSavedHidden` | `viewer/fx_cpe_reveal_bands.js:482` *(as `A.`)* | 3 | 6 |
 | `APP._cpeRevealVisualKey` | `viewer/fx_cpe_reveal_bands.js:483` *(as `A.`)* | 2 | 7 |
 | `APP._cpeViewfinderRender` | — *phantom* | 0 | 6 |
-| `APP._createIsSOTrx` | `erp/idempiere.html:5467` | 1 | 1 |
-| `APP._createMovementType` | `erp/idempiere.html:5475` | 1 | 1 |
+| `APP._createIsSOTrx` | `erp/idempiere.html:5470` | 1 | 1 |
+| `APP._createMovementType` | `erp/idempiere.html:5478` | 1 | 1 |
 | `APP._csmLastFit` | `viewer/fx_sun_shadow.js:1044` *(as `A.`)* | 1 | 1 |
 | `APP._csmNearFix` | — *phantom* | 0 | 1 |
 | `APP._csmUncovered` | `viewer/fx_sun_shadow.js:974` *(as `A.`)* | 2 | 4 |
@@ -1335,7 +1335,7 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP._walkUnlocked` | `viewer/walk.js:112` *(as `A.`)* | 2 | 4 |
 | `APP._webglContextLost` | `viewer/scene.js:497` *(as `A.`)* | 2 | 3 |
 | `APP._whiteBg` | `viewer/tools.js:1187` *(as `A.`)* | 2 | 11 |
-| `APP._winCtx` | `erp/idempiere.html:5765` | 1 | 1 |
+| `APP._winCtx` | `erp/idempiere.html:5768` | 1 | 1 |
 | `APP._windBuckets` | `viewer/streaming.js:1501` *(as `A.`)* | 1 | 4 |
 | `APP._windFlip` | `viewer/still_fault.js:186` | 1 | 2 |
 | `APP._windFlipAny` | `viewer/streaming.js:1501` *(as `A.`)* | 1 | 4 |
@@ -1508,7 +1508,7 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP.dayCounterLiveStart` | `viewer/cpe_day_counter.js:147` *(as `A.`)* | 1 | 1 |
 | `APP.dayCounterLiveStop` | `viewer/cpe_day_counter.js:171` *(as `A.`)* | 1 | 1 |
 | `APP.dayCounterLiveTick` | `viewer/cpe_day_counter.js:156` *(as `A.`)* | 1 | 1 |
-| `APP.db` | `viewer/city.js:717` *(as `A.`)* | 14 | 853 |
+| `APP.db` | `viewer/city.js:717` *(as `A.`)* | 14 | 855 |
 | `APP.dbQuery` | `viewer/helpers.js:116` *(as `A.`)* | 2 | 714 |
 | `APP.dbQueryFirst` | `viewer/helpers.js:130` *(as `A.`)* | 1 | 11 |
 | `APP.deleteImported` | `viewer/import.js:599` *(as `A.`)* | 1 | 4 |
