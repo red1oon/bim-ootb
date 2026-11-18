@@ -19,7 +19,7 @@
 'use strict';
 const fs = require('fs'), path = require('path'), cp = require('child_process');
 const HERE = path.join(__dirname, '..', '..'), ROOT = process.env.OOTB ? path.resolve(process.env.OOTB) : HERE, say = s => process.stdout.write(s + '\n');
-// the ONE scanner and the ONE list (also used by X0 Navigator's editor warning, §F.35)
+// the ONE scanner and the ONE list (also used by Code Facts' editor warning, §F.35)
 const { CORE, scan } = require(path.join(HERE, 'scripts', 'lib', 'core_pure.js'));
 const files = cp.execSync('git ls-files ' + CORE.map(p => "'" + p + "'").join(' '), { cwd: ROOT }).toString().split('\n')
   .filter(f => f && !/(^|\/)tests?\//.test(f) && !/(^|\/)witness_[^/]*\.js$/.test(f));

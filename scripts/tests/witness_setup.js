@@ -16,7 +16,7 @@
 //  T6 --dry-run changes nothing in the folder                                                                                             (a "dry" run that writes)
 //  T7 a missing `code` is a loud gap line with the one-line fix; FAIL only when VS Code was asked for                                       (silent failure)
 //  T8 with node_modules removed the tools print the one §NEED_DEPS line and no stack trace                                                  (the raw "Cannot find module espree")
-//  T9 REAL VS Code: the folder opens, X0 is found + active from setup's own extensions folder, the task list equals tasks.json's labels   (the VS Code side is not just files on disk)
+//  T9 REAL VS Code: the folder opens, Code Facts is found + active from setup's own extensions folder, the task list equals tasks.json's labels   (the VS Code side is not just files on disk)
 'use strict';
 const fs = require('fs'), os = require('os'), path = require('path'), cp = require('child_process'), crypto = require('crypto');
 const ROOT = path.join(__dirname, '..', '..'), argv = process.argv.slice(2), GO = argv.includes('--go'), ti = argv.indexOf('--tree'), TREE = ti >= 0 ? path.resolve(argv[ti + 1]) : null;
@@ -83,20 +83,20 @@ check('T2', 'setup.js ends §SETUP … verdict=PASS with no gaps', /verdict=PASS
 // T9
 { const BIN = [process.env.VSCODE_BIN, '/snap/code/current/usr/share/code/code', '/usr/share/code/code', '/usr/lib/code/code', '/opt/visual-studio-code/code'].filter(Boolean).find(p => fs.existsSync(p));
   const has = n => cp.spawnSync('which', [n]).status === 0, extDir = path.join(DL, '.setup', 'vscode-ext'), userDir = path.join(DL, '.setup', 'vscode-user');
-  if (!GO) stat('T9', 'real VS Code opens the folder with X0 active and the tasks listed', 'not started: this launches VS Code. Pass --go (owner rule: no GUI run without a go)');
+  if (!GO) stat('T9', 'real VS Code opens the folder with Code Facts active and the tasks listed', 'not started: this launches VS Code. Pass --go (owner rule: no GUI run without a go)');
   else if (!BIN || !has('xvfb-run')) stat('T9', 'real VS Code …', 'VS Code program or xvfb-run not found (set VSCODE_BIN)');
-  else if (!fs.existsSync(extDir)) check('T9', 'setup left an extensions folder for the window (x0=installed)', false, extDir + ' missing');
+  else if (!fs.existsSync(extDir)) check('T9', 'setup left an extensions folder for the window (codefacts=installed)', false, extDir + ' missing');
   else {
     const out = path.join(TMP, 'vsc.json'), env = Object.assign({}, process.env, { SETUP_VSC_OUT: out }); delete env.ELECTRON_RUN_AS_NODE;
     const r = cp.spawnSync('xvfb-run', ['-a', BIN, '--no-sandbox', '--disable-gpu', '--disable-workspace-trust', '--skip-welcome', '--skip-release-notes', '--user-data-dir=' + userDir, '--extensions-dir=' + extDir,
-      '--extensionDevelopmentPath=' + path.join(ROOT, 'devtools/vscode/x0-navigator/tests/realvsc/empty_driver'), '--extensionTestsPath=' + path.join(__dirname, 'setup_vsc_suite.js'), DL], { env, encoding: 'utf8', timeout: 240000, maxBuffer: 1 << 26 });
+      '--extensionDevelopmentPath=' + path.join(ROOT, 'devtools/vscode/code-facts/tests/realvsc/empty_driver'), '--extensionTestsPath=' + path.join(__dirname, 'setup_vsc_suite.js'), DL], { env, encoding: 'utf8', timeout: 240000, maxBuffer: 1 << 26 });
     say('  VS Code run: exit=' + r.status);
     const a = fs.existsSync(out) ? JSON.parse(fs.readFileSync(out, 'utf8')) : null;
     if (!a) check('T9', 'VS Code left a result file', false, 'exit=' + r.status);
     else { const labels = [...fs.readFileSync(path.join(DL, '.vscode', 'tasks.json'), 'utf8').matchAll(/"label"\s*:\s*"([^"]+)"/g)].map(m => m[1]);
-      say('§SETUP_W_VSC ' + JSON.stringify({ vscode: a.vscode, folder: a.folder, x0_found: a.x0_found, x0_active: a.x0_active, tasks: (a.tasks || []).length }));
+      say('§SETUP_W_VSC ' + JSON.stringify({ vscode: a.vscode, folder: a.folder, codefacts_found: a.codefacts_found, codefacts_active: a.codefacts_active, tasks: (a.tasks || []).length }));
       check('T9', 'VS Code opened the setup folder', !!a.folder && fs.realpathSync(a.folder) === fs.realpathSync(DL), a.folder);
-      check('T9', 'X0 is found and active, from setup\'s own extensions folder', !!a.x0_found && !!a.x0_active && !!a.x0_path && a.x0_path.startsWith(extDir), a.x0_path);
+      check('T9', 'Code Facts is found and active, from setup\'s own extensions folder', !!a.codefacts_found && !!a.codefacts_active && !!a.codefacts_path && a.codefacts_path.startsWith(extDir), a.codefacts_path);
       check('T9', 'the task list holds exactly the ' + labels.length + ' labels of tasks.json', labels.length > 0 && JSON.stringify([...labels].sort()) === JSON.stringify([...(a.tasks || [])].sort()), 'listed=' + (a.tasks || []).length + (a.error ? ' error=' + a.error.split('\n')[0] : '')); } } }
 const verdict = fail ? 'FAIL' : inconclusive ? 'INCONCLUSIVE' : 'PASS';
 say(`§SETUP_W checks=${pass + fail} pass=${pass} fail=${fail} inconclusive=${inconclusive} verdict=${verdict}`);
