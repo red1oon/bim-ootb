@@ -2077,6 +2077,17 @@
       stmtSeq.run([e.predId, e.succId, e.type, e.lagDays]);
       if (e.kind === 'across_levels') al++; else wl++;
     });
+    // §DCMA_FINISH_MILESTONE (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.26): DCMA check 1 — every task but the programme's last needs a
+    // successor. A trade chain that simply stops (Hospital: Finishes L5, MEP Final L6, Superstructure L7) is tied to ONE zero-length
+    // "Project Complete" milestone, FS lag 0, the standard P6 project-finish milestone. It carries no elements and moves no date.
+    var _hasSucc = {}; inst.edges.forEach(function (e) { _hasSucc[e.predId] = 1; });
+    var _open = inst.tasks.filter(function (t) { return !_hasSucc[t.id]; });
+    if (_open.length > 1) {
+      db.run('INSERT INTO tasks (task_id,schedule_id,wbs_parent,name,predefined_type,is_summary,schedule_start,schedule_finish,schedule_duration,resource,status) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+        ['TASK_PROJECT_COMPLETE', schedId, rootId, 'Project Complete', 'MILESTONE', 0, _addDays(start, inst.totalDays), _addDays(start, inst.totalDays), 'P0D', null, 'PLANNED']);
+      _open.forEach(function (t) { db.run('INSERT OR IGNORE INTO task_sequences VALUES (?,?,?,?)', [t.id, 'TASK_PROJECT_COMPLETE', 'FS', 0]); });
+    }
+    console.log('§DCMA_FINISH_MILESTONE openEnds=' + _open.length + (_open.length > 1 ? ' linked' : ' (one end: none needed)'));
     stmtSeq.free();
     db.run('COMMIT');
 

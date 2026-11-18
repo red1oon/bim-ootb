@@ -40,7 +40,7 @@ const wordsX = JSON.parse(JSON.stringify(words0)); wordsX.words.zzbad = { help: 
 // ── M3 / M4 static: read the code ──
 // the code that reads the catalog: words_core.js (M('…')) and red1.js (.t('…'), the greeting's tip and the --level refusal)
 const red1Src = fs.readFileSync(path.join(DD, 'red1.js'), 'utf8');
-// M3 reads the code through the ONE key scanner, common/door/msg_keys.js (VOCAB_MESSAGE_CATALOG.md §5; the X0 Navigator reads it too)
+// M3 reads the code through the ONE key scanner, common/door/msg_keys.js (VOCAB_MESSAGE_CATALOG.md §5; the Code Facts reads it too)
 const MK = require(path.join(DD, 'msg_keys.js'));
 const uses = MK.scan(newSrc, 'common/door/words_core.js').concat(MK.scan(red1Src, 'common/door/red1.js'));
 const codeKeys = Array.from(new Set(uses.filter(u => u.key !== null).map(u => u.key)));

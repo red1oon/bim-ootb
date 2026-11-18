@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
 //
-// # ⚠ DO NOT REMOVE — SPEC (W-X0-INSTALL), bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md §F.10, bim-ootb #2938
+// # ⚠ DO NOT REMOVE — SPEC (W-CODEFACTS-INSTALL), bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md §F.10, bim-ootb #2938
 // Packs one extension folder into a standard .vsix so it installs with VS Code's own command:
-//     node devtools/vscode/pack.js                 → writes devtools/vscode/dist/x0-navigator-<version>.vsix
-//     code --install-extension devtools/vscode/dist/x0-navigator-<version>.vsix
+//     node devtools/vscode/pack.js                 → writes devtools/vscode/dist/code-facts-<version>.vsix
+//     code --install-extension devtools/vscode/dist/code-facts-<version>.vsix
 // Why not a symlink into ~/.vscode/extensions: VS Code ignores a folder that its extensions.json does not list
 // (measured, VS Code 1.146.0). Why not `vsce`: it is an npm package; this file needs only node.
 // A .vsix is a zip with the extension under extension/, a manifest and a content-types file. tests/ are left out.
@@ -15,7 +15,7 @@ const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
 const cp = require('child_process');
-const stamp = require('./x0-navigator/lib/build_stamp');   // the ONE packing rule + the source hash (§F.25, W-X0-STAMP)
+const stamp = require('./code-facts/lib/build_stamp');   // the ONE packing rule + the source hash (§F.25, W-CODEFACTS-STAMP)
 
 const CRC = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
 function crc32(buf) { let c = 0xFFFFFFFF; for (let i = 0; i < buf.length; i++) c = CRC[(c ^ buf[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
@@ -76,12 +76,12 @@ if (require.main === module) {
   const a = process.argv.slice(2);
   const oi = a.indexOf('--out');
   const outDir = oi >= 0 ? path.resolve(a[oi + 1]) : path.join(__dirname, 'dist');
-  const extDir = path.resolve(a.find((x, i) => !x.startsWith('--') && (oi < 0 || i !== oi + 1)) || path.join(__dirname, 'x0-navigator'));
+  const extDir = path.resolve(a.find((x, i) => !x.startsWith('--') && (oi < 0 || i !== oi + 1)) || path.join(__dirname, 'code-facts'));
   const r = pack(extDir, outDir);
-  console.log('§X0_PACK id=' + r.id + ' version=' + r.version + ' files=' + r.files.length + ' bytes=' + r.bytes + ' source=' + r.sourceHash.slice(0, 12) + ' file=' + r.file);
+  console.log('§CODEFACTS_PACK id=' + r.id + ' version=' + r.version + ' files=' + r.files.length + ' bytes=' + r.bytes + ' source=' + r.sourceHash.slice(0, 12) + ' file=' + r.file);
   if (a.includes('--install')) {
     const i = cp.spawnSync('code', ['--install-extension', r.file, '--force'], { stdio: 'inherit' });
-    console.log('§X0_PACK_INSTALL exit=' + i.status + (i.status === 0 ? '  → reload VS Code (Developer: Reload Window)' : '  → is `code` on your PATH? Otherwise: Extensions view ▸ … ▸ Install from VSIX'));
+    console.log('§CODEFACTS_PACK_INSTALL exit=' + i.status + (i.status === 0 ? '  → reload VS Code (Developer: Reload Window)' : '  → is `code` on your PATH? Otherwise: Extensions view ▸ … ▸ Install from VSIX'));
     process.exitCode = i.status || 0;
   } else console.log('install:  code --install-extension ' + path.relative(process.cwd(), r.file) + '      (or: Extensions view ▸ … ▸ Install from VSIX)');
 }

@@ -2051,6 +2051,7 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
   // <script>. If it (or sql.js) is absent we fall back to the E2 dry-run — never a silent failure.
   // ════════════════════════════════════════════════════════════════════════
   var SIDE = null, SIDE_PENDING = false, SIDE_CBS = [], _SQL = null, _IDB = null, _warnedNoLock = false;
+  var _ROSTER = [], _UNPINNED = [], _EXCLUDED = { rows: 0, ids: [] }, _ADMIT = {};   // §59: rows whose signature no trusted key verifies; the memo is keyed op_hash+sig   // §58: SPKI hex of the keys the owner pinned (the door's); keys seen in the file and not pinned
   var LEDGER = null;   // {dir, name} once a ledger folder is attached (bim-compiler prompts/CLI_ERP_IVR.md §55): the sidecar is then the shared JSONL file, not the IndexedDB `ops` store
   function _LF() { return global.LedgerFile || null; }
   function _ledgerBreak() { return global.__LEDGER_BREAK || ''; }   // witness falsifier seam (W-LEDGER-ATTACH): nolock | nojoin
@@ -2271,16 +2272,62 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
   function _hydrateFromFile(SQL, K, cb) {
     _LF().readRows(LEDGER.dir, LEDGER.name).then(function (rows) {
       var db = new SQL.Database(); K.ensureTable(db); K.replayRowsInto(db, rows);
-      return _addPeers(rows).then(function () { return Promise.resolve(K.verifyChain(db)); }).then(function (v) {
-        console.log('§OPLOG-HYDRATE ops=' + rows.length + ' tip=' + (v && v.tip ? v.tip : 'GENESIS') + ' source=ledger-file' + (v && v.ok === false ? ' verifyChain=FAIL(' + v.why + ')' : '')); cb(db);
+      return _addPeers(rows).then(function () { return _admit(db, rows, K); }).then(function () { return Promise.resolve(K.verifyChain(db)); }).then(function (v) {
+        console.log('§OPLOG-HYDRATE ops=' + rows.length + ' tip=' + (v && v.tip ? v.tip : 'GENESIS') + ' source=ledger-file' + (v && v.ok === false ? ' verifyChain=FAIL(' + v.why + ')' : '') + (_EXCLUDED.rows ? ' excluded=' + _EXCLUDED.rows : '')); cb(db);
       });
     }).catch(function (e) { console.warn('§OPLOG-HYDRATE ledger-file error', e && e.message); var db = new SQL.Database(); K.ensureTable(db); cb(db); });
   }
+  // _admit — §59 (bim-compiler prompts/CLI_ERP_IVR.md): per-row ADMISSION. A row counts only if its signature verifies under this device's key or a pinned peer (v2: content hash, v1: op_hash; no signature: no).
+  //   A group (gid) is admitted whole. Rows not admitted are marked undone=1 in THIS in-memory sidecar only (every fold reads undone=0), never in the file. Memoised by op_hash+sig. window.__LEDGER_BREAK='noenforce' skips it (witness falsifier).
+  function _admit(db, rows, K) {
+    _EXCLUDED = { rows: 0, ids: [] };
+    var S = global.ErpSigner; if (!S || !S.verify || _ledgerBreak() === 'noenforce') return Promise.resolve();
+    var bad = {}, byGid = {};
+    return rows.reduce(function (acc, r) {
+      return acc.then(function () {
+        if (r.undone) return;   // already out of the fold (a legacy undo): not ours to judge
+        var memo = r.op_hash + '|' + r.sig;
+        if (_ADMIT[memo] !== undefined) { if (!_ADMIT[memo]) bad[r.id] = _ADMIT[memo + 'why'] || 'untrusted'; return; }
+        var base = !r.sig ? null : (K._isV2(r.parameters) ? K._contentHash(r) : Promise.resolve(r.op_hash));
+        return Promise.resolve(base).then(function (h) { return h ? S.verify(h, r.sig) : false; }).then(function (ok) {
+          var why = !r.sig ? 'unsigned' : null; if (!ok && !why) { var k = null; try { k = JSON.parse(r.parameters).signed_by; } catch (e) {} why = (k && k !== S.pubKeyHex && _ROSTER.indexOf(k) < 0) ? 'unpinned' : 'forged'; }
+          _ADMIT[memo] = !!ok; if (!ok) { _ADMIT[memo + 'why'] = why; bad[r.id] = why; }
+        });
+      });
+    }, Promise.resolve()).then(function () {
+      rows.forEach(function (r) { if (r.gid != null && bad[r.id]) byGid[r.gid] = bad[r.id]; });
+      rows.forEach(function (r) { if (r.gid != null && byGid[r.gid] && !bad[r.id] && !r.undone) bad[r.id] = byGid[r.gid] + '-group'; });   // the torn-group rule
+      var ids = Object.keys(bad).map(Number).sort(function (a, b) { return a - b; });
+      if (ids.length) { db.run('UPDATE kernel_ops SET undone=1 WHERE id IN (' + ids.join(',') + ')'); db.__tipFoldCache = null;
+        var why = {}; ids.forEach(function (i) { var w = String(bad[i]).replace(/-group$/, ''); why[w] = (why[w] || 0) + 1; });
+        console.log('§LEDGER excluded rows=' + ids.length + ' ids=' + ids.slice(0, 20).join(',') + ' why=' + JSON.stringify(why)); }
+      _EXCLUDED = { rows: ids.length, ids: ids, why: bad };
+    });
+  }
+  // _addPeers — §58: ONLY pinned keys become peers. A key the file names (`signed_by`) that is neither this device's nor pinned is REPORTED (ledgerInfo().unpinned, §LEDGER unpinned) and its rows fail verifyChain.
+  //   LEDGER_PIN_BREAK 'tofu' (window.__LEDGER_BREAK = 'tofu') is the old add-everything rule, kept only as the witness falsifier.
+  function _fp(spkiHex) {
+    var b = new Uint8Array(spkiHex.length / 2); for (var i = 0; i < b.length; i++) b[i] = parseInt(spkiHex.substr(i * 2, 2), 16);
+    return global.crypto.subtle.digest('SHA-256', b).then(function (d) { var h = Array.prototype.map.call(new Uint8Array(d), function (x) { return ('0' + x.toString(16)).slice(-2); }).join('').slice(0, 16); return h.replace(/(.{4})(?=.)/g, '$1-'); });
+  }
   function _addPeers(rows) {
-    var S = global.ErpSigner, seen = {}, ps = [];
+    var S = global.ErpSigner, seen = {}, n = {}, ps = [];
     if (!S || !S.addPeer) return Promise.resolve();
-    rows.forEach(function (r) { var k; try { k = JSON.parse(r.parameters).signed_by; } catch (e) { k = null; } if (k && k !== S.pubKeyHex && !seen[k]) { seen[k] = 1; ps.push(S.addPeer(k)); } });
-    return Promise.all(ps);
+    rows.forEach(function (r) { var k; try { k = JSON.parse(r.parameters).signed_by; } catch (e) { k = null; } if (k && k !== S.pubKeyHex) { n[k] = (n[k] || 0) + 1; if (!seen[k]) { seen[k] = 1; if (_ROSTER.indexOf(k) >= 0 || _ledgerBreak() === 'tofu') ps.push(S.addPeer(k)); } } });
+    var unk = Object.keys(n).filter(function (k) { return _ROSTER.indexOf(k) < 0 && _ledgerBreak() !== 'tofu'; });
+    return Promise.all(ps).then(function () { return Promise.all(unk.map(function (k) { return _fp(k).then(function (fp) { console.log('§LEDGER unpinned key fp=' + fp + ' rows=' + n[k]); return { kid: k, fp: fp, rows: n[k] }; }); })); }).then(function (u) { _UNPINNED = u; });
+  }
+  function ledgerSetRoster(list) { _ROSTER = (list || []).slice(); _ADMIT = {}; return _ROSTER.length; }
+  // ledgerPin — trust one key the file named: it joins the roster, the sidecar is re-read from the file so verifyChain sees it. Resolves {ok, roster}; the caller (ledger_ui.js) saves the roster.
+  function ledgerPin(kid) {
+    var K = kernel();
+    return new Promise(function (resolve) {
+      if (!LEDGER || !K || !_SQL) { resolve({ ok: false, reason: 'not attached' }); return; }
+      if (_ROSTER.indexOf(kid) < 0) _ROSTER.push(kid);
+      _ADMIT = {};   // a pinned key re-admits the rows it signed: forget every cached refusal
+      console.log('§LEDGER pinned key ' + kid.slice(0, 16) + '...');
+      _hydrateSide(_IDB, _SQL, K, function (db) { SIDE = db; resolve({ ok: true, roster: _ROSTER.slice() }); });
+    });
   }
   // _withFreshSide — Implementing ERP_OPLOG_APPEND_ONLY_FIX.md F3/F4 — Witness: W-COMMIT-LOCK.
   // Re-hydrates SIDE from the ops store's CURRENT contents (a full read-all + replay via _hydrateSide —
@@ -2370,8 +2417,8 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
     });
   }
   // detachLedger — back to the IndexedDB sidecar. Rows written to the file after the attach stay in the file (the page does not copy them back).
-  function detachLedger() { LEDGER = null; SIDE = null; SIDE_PENDING = false; console.log('§LEDGER detached (rows made while attached stay in the file)'); return true; }
-  function ledgerInfo() { return { attached: !!LEDGER, name: LEDGER && LEDGER.name, rows: SIDE ? (SIDE.exec('SELECT COUNT(*) FROM kernel_ops')[0] || { values: [[0]] }).values[0][0] : null }; }
+  function detachLedger() { LEDGER = null; SIDE = null; SIDE_PENDING = false; _UNPINNED = []; _EXCLUDED = { rows: 0, ids: [] }; console.log('§LEDGER detached (rows made while attached stay in the file)'); return true; }
+  function ledgerInfo() { return { attached: !!LEDGER, name: LEDGER && LEDGER.name, unpinned: _UNPINNED.slice(), roster: _ROSTER.length, excluded: { rows: _EXCLUDED.rows, ids: _EXCLUDED.ids.slice() }, rows: SIDE ? (SIDE.exec('SELECT COUNT(*) FROM kernel_ops')[0] || { values: [[0]] }).values[0][0] : null }; }
 
   // dryProcess — the E2 fallback (kernel/sql.js absent): log the op, paint the bar, mark dry-run.
   function dryProcess(op) {
@@ -2695,6 +2742,7 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
   // the WHOLE gid in commit order when it is a group; the single op otherwise).
   function foldForwardDocOp(key, toStatus) {
     var K = kernel();
+    if (LEDGER && _unsupported('fold-forward redo (would resurrect rows the page excluded)')) return;
     withSidecar(function (db) {
       if (db && K && typeof K.redoOp === 'function') {
         var g = CORE.foldForwardGroup(db, K);
@@ -3478,7 +3526,7 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
                     foldBack: foldBackDocOp, foldForward: foldForwardDocOp,  // §A-GRAIL: fold via scrub
                     setStatus: setDocStatus, statusBar: function () { return statusBar; }, pulseProc: pulseProc,
                     kernelDb: function () { return SIDE; }, withSidecar: withSidecar,
-                    attachLedger: attachLedger, detachLedger: detachLedger, ledgerInfo: ledgerInfo,   // §55: the shared ledger file
+                    attachLedger: attachLedger, detachLedger: detachLedger, ledgerInfo: ledgerInfo, ledgerSetRoster: ledgerSetRoster, ledgerPin: ledgerPin,   // §55: the shared ledger file
                     // FS-17 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2o): erp_persist_ui.restore REPLACES the op-log
                     // (ErpReplicaClient.replayAndVerify DELETEs + re-seals) and then calls __crud.persist() — which did not
                     // exist, so a restore was lost on reload (poc_persist_wire W6, red on main). The append-only `ops` store is

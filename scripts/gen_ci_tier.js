@@ -47,7 +47,7 @@ if (require.main === module) {
     // run every listed witness the way CI will: no arguments, and none of the env settings that point a witness at an outside input on this
     // machine; a red goes to `exclude` with the measured reason (the CI run then confirms or adds more, from its own log)
     const { runOne } = require('./run_ci_tier.js'), env = Object.assign({}, process.env);
-    for (const k of Object.keys(env)) if (/^(SHED_|BLD_DIR$|BUILDINGS_DIR$|NODE_PATH$|BIM_COMPILER_ROOT$|DXF_DB_DIR$|X0_)/.test(k)) delete env[k];
+    for (const k of Object.keys(env)) if (/^(SHED_|BLD_DIR$|BUILDINGS_DIR$|NODE_PATH$|BIM_COMPILER_ROOT$|DXF_DB_DIR$|CODEFACTS_)/.test(k)) delete env[k];
     const l = JSON.parse(fs.readFileSync(path.join(root, LIST), 'utf8')); let moved = 0;
     for (const w of l.witnesses.slice()) {
       let r = runOne(w, 60000, env); if (!r.ok) r = runOne(w, 60000, env);

@@ -1,7 +1,7 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
 // SPDX-License-Identifier: MIT
 // ⚠ DO NOT REMOVE — msg_keys.js: the ONE scanner of message-key uses in code (bim-compiler prompts/VOCAB_MESSAGE_CATALOG.md §5).
-// Read by W-MSG-CATALOG M3 (common/door/tests/witness_msg_catalog.js) and by the X0 Navigator (CODE_ARCHITECTURE_DESIGN.md, F-19). READ THE WITNESS LOG after a change.
+// Read by W-MSG-CATALOG M3 (common/door/tests/witness_msg_catalog.js) and by the Code Facts (CODE_ARCHITECTURE_DESIGN.md, F-19). READ THE WITNESS LOG after a change.
 // PURE: no require, no fs, no process; it runs unchanged in Node, the witness and the VS Code extension.
 //   scan(sourceText, fileRel) -> [{ key, line, col, args, file }]   every call M('key', …) or .t('key', …); key null = not a literal string (computed)
 //   check(catalog, uses, opts) -> [{ kind, key, file, line, col, detail }]

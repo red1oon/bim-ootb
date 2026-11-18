@@ -28,7 +28,8 @@
     { code: 'ms_MY', native: 'Bahasa Melayu', dir: 'ltr', html: 'ms' },
     { code: 'th_TH', native: 'ไทย', dir: 'ltr', html: 'th' },
     { code: 'pt_BR', native: 'Português', dir: 'ltr', html: 'pt-BR' },   // §19.11 step 2 (VOCAB_MESSAGE_CATALOG); this list == erp/tools/i18n_sources.json meta (W-ERP-I18N L0)
-    { code: 'id_ID', native: 'Bahasa Indonesia', dir: 'ltr', html: 'id' }
+    { code: 'id_ID', native: 'Bahasa Indonesia', dir: 'ltr', html: 'id' },
+    { code: 'ko_KR', native: '한국어', dir: 'ltr', html: 'ko' }   // T5c (TRL_TRILOGY_STANDARD): no published pack; screen names are machine rows only
   ];
   var BASE = 'en_US', LS_KEY = 'erp.lang';
   var _lang = BASE, _pack = null, _packs = {}, _cat = null, _catP = null, _listeners = [];
@@ -89,9 +90,10 @@
   var _src = 'pack';
   function _trlm(table, id) { if (!_pack || id == null) return null; var t = _pack[table + '_Trl_m']; if (!t) return null; var v = t[String(Math.round(Number(id)))]; return v == null ? null : v; }
   function _orM(v, table, id) { _src = 'pack'; if (v) return v; var m = _trlm(table, id); if (m) _src = 'machine'; return m; }
-  function msg(value) { if (!_pack) return null; var t = _pack.AD_Message_Trl; return t && t[value] != null ? t[value] : null; }
+  // T5c: msg() and refList() also read the machine map (<T>_Trl_m) AFTER the published pack — the pack always wins (build_i18n.py never emits a machine row under a pack row)
+  function msg(value) { if (!_pack) return null; var t = _pack.AD_Message_Trl; if (t && t[value] != null) return t[value]; var m = _pack.AD_Message_Trl_m; return m && m[value] != null ? m[value] : null; }
   function element(id, po) { var v = _trl('AD_Element', id); if (!v) return null; return (po && v[1]) ? v[1] : v[0]; }
-  function refList(id, en) { var v = _trl('AD_Ref_List', id); return v || en; }
+  function refList(id, en) { var v = _trl('AD_Ref_List', id); return v || _trlm('AD_Ref_List', id) || en; }
   function process(id) { return _trl('AD_Process', id); }
 
   // ── dictionary facts (read once from the loaded ad_seed db) ──

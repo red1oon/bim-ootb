@@ -68,6 +68,7 @@ const judge = (id, ok, ev) => { if (ok === null) inc++; else if (ok) pass++; els
     LS.append(copy, [{ op_type: 'CRUD_UPDATE', table: 'c_order', id: 50000, changes: { description: { new: 'door-1' } }, t: new Date().toISOString() }, { op_type: 'CRUD_UPDATE', table: 'c_order', id: 50000, changes: { description: { new: 'door-2' } }, t: new Date().toISOString() }]);
     const doorText = fs.readFileSync(copy, 'utf8');
     await page.evaluate((t) => window.__write('L1', t), doorText);
+    await page.evaluate((k) => window.__crud.ledgerPin(k), LS.key().kid);   // §58: the door's key is a peer only once pinned
     await page.evaluate(() => window.__edit()); await page.waitForTimeout(600);
     const a4 = await page.evaluate(async () => ({ text: await window.__read('L1'), chain: await window.__chain() })), r4 = rows(a4.text), kids = new Set(r4.map((x) => JSON.parse(x.parameters).signed_by));
     judge('A4 the door added 2 rows; the next page op chains after them: ' + r4.length + ' rows, 2 keys, the page\'s verifyChain (door key as peer) ok', r4.length > t0 + 2 && kids.size === 2 && a4.chain.ok === true && a4.chain.len === r4.length, 'before=' + t0 + ' keys=' + kids.size + ' ' + JSON.stringify(a4.chain));

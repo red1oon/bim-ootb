@@ -11,7 +11,7 @@
 //   append(opfile, ops)   take <opfile>.lock, seal any bare line once (copy kept as <opfile>.pre-seal), chain + sign + append the ops, release. The ONLY writer of a door op-log.
 //   verify(opfile, key?)  the page's own KernelOps.verifyChain over the log
 //   Key: ~/.config/red1/door_key.json (JWK, dir 0700, file 0600; $RED1_DOOR_KEY names another). A file on disk is not a non-extractable key; that is the cost of a CLI.
-// Run: node common/door/ledger_sign.js verify <opfile> [keyfile]
+// Run: node common/door/ledger_sign.js verify <opfile> [keyfile]   |   node common/door/ledger_sign.js key   (the door key's fingerprint, to pin it in the page: §58)
 'use strict';
 const fs = require('fs'), path = require('path'), os = require('os'), vm = require('vm'), crypto = require('crypto');
 const ROOT = path.join(__dirname, '..', '..');
@@ -120,6 +120,7 @@ async function verify(opfile, keyfile) {
 module.exports = { parseOps, append, verify, key, keyFile, seal, isRow, GENESIS };
 if (require.main === module) {
   const [cmd, f, kf] = process.argv.slice(2);
-  if (cmd !== 'verify' || !f) { console.error('usage: node common/door/ledger_sign.js verify <opfile> [keyfile]'); process.exit(2); }
+  if (cmd === 'key') { const k = key(), fp = crypto.createHash('sha256').update(k.pub.export({ type: 'spki', format: 'der' })).digest('hex').slice(0, 16).replace(/(.{4})(?=.)/g, '$1-'); console.log('door key fingerprint ' + fp + '  file ' + keyFile()); process.exit(0); }   // the owner compares this with the fingerprint the page shows before pinning (bim-compiler prompts/CLI_ERP_IVR.md §58)
+  if (cmd !== 'verify' || !f) { console.error('usage: node common/door/ledger_sign.js verify <opfile> [keyfile] | key'); process.exit(2); }
   verify(f, kf).then((v) => process.exit(v.ok ? 0 : 3), (e) => { console.error('§LEDGER error ' + e.message); process.exit(1); });
 }

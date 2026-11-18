@@ -95,12 +95,14 @@
     opts = opts || {};
     return loadOrMint(opts.dbName).then(function (kp) {
       return Promise.all([subtle.exportKey('spki', kp.publicKey), subtle.exportKey('jwk', kp.publicKey)]).then(function (r) {
+        API._signer = makeSigner(kp);   // verify(hashHex, sigHex): own key, then peers (§59 admission uses it row by row)
         API.pubKeyHex = _hex(r[0]);   // stable identity string (ENGINE_CONTRACT §2) — also the S8 roster kid
         API.pubKeyJwk = r[1];         // verifiable key material for a roster-gated verifier
         KernelOps.setSigner(makeSigner(kp), API.pubKeyHex);
         console.log('§SIGN installed alg=ECDSA-P256 pubkey=' + API.pubKeyHex.slice(0, 16) + '… custody=idb-nonextractable');
         return kp;
       }).catch(function () {
+        API._signer = makeSigner(kp);
         KernelOps.setSigner(makeSigner(kp));   // pubkey export failed — still sign, just no roster kid
         console.log('§SIGN installed alg=ECDSA-P256 custody=idb-nonextractable');
         return kp;
@@ -108,7 +110,7 @@
     });
   }
 
-  var API = { mintKeypair: mintKeypair, makeSigner: makeSigner, loadOrMint: loadOrMint, installSigner: installSigner, addPeer: addPeer };
+  var API = { mintKeypair: mintKeypair, makeSigner: makeSigner, loadOrMint: loadOrMint, installSigner: installSigner, addPeer: addPeer, verify: function (h, sg) { return API._signer ? API._signer.verify(h, sg) : Promise.resolve(false); } };
   if (typeof window !== 'undefined') window.ErpSigner = API;   // browser-pure (window-only, like kernel_ops.js — no `module` global, keeps the no-undef CI gate green)
   console.log('§SIGN_LOADED erp_signer.js (W-SIGN edge keypair, ECDSA P-256)');
 })();

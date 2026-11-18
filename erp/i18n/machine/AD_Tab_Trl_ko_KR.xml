@@ -1,0 +1,3410 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!--ERP screen names (AD_Tab, by id). ERP machine source (not a published language pack) — Korean screen names written for this app by Claude (Anthropic), 2026-11-18, erp/tools/trl_batch_2026-11-18_ko_tab.py (TRL_TRILOGY_STANDARD.md T5c); no human review. Where the BIM Viewer already had a Korean text for the same English it is reused (viewer/i18n/machine/AD_Message_Trl_ko_KR.xml).-->
+<!--<!DOCTYPE idempiereTrl PUBLIC "-//iDempiere//DTD iDempiere Translation 1.0//EN" "https://raw.githubusercontent.com/idempiere/idempiere/refs/heads/master/utils_dev/trl/idempiereTrl.dtd">-->
+<idempiereTrl language="ko_KR" table="AD_Tab">
+ <row id="100" trl="Y">
+  <value column="Name" original="Table">표</value>
+ </row>
+ <row id="101" trl="Y">
+  <value column="Name" original="Column">열</value>
+ </row>
+ <row id="102" trl="Y">
+  <value column="Name" original="Reference">참조</value>
+ </row>
+ <row id="103" trl="Y">
+  <value column="Name" original="Table Validation">테이블 검증</value>
+ </row>
+ <row id="104" trl="Y">
+  <value column="Name" original="List Validation">목록 검증</value>
+ </row>
+ <row id="105" trl="Y">
+  <value column="Name" original="Window">기간</value>
+ </row>
+ <row id="106" trl="Y">
+  <value column="Name" original="Tab">탭</value>
+ </row>
+ <row id="107" trl="Y">
+  <value column="Name" original="Field">필드</value>
+ </row>
+ <row id="108" trl="Y">
+  <value column="Name" original="Validation">검증</value>
+ </row>
+ <row id="109" trl="Y">
+  <value column="Name" original="Message">메시지</value>
+ </row>
+ <row id="110" trl="Y">
+  <value column="Name" original="Menu">메뉴</value>
+ </row>
+ <row id="111" trl="Y">
+  <value column="Name" original="Translation">번역</value>
+ </row>
+ <row id="112" trl="Y">
+  <value column="Name" original="Language">언어</value>
+ </row>
+ <row id="113" trl="Y">
+  <value column="Name" original="Translation">번역</value>
+ </row>
+ <row id="115" trl="Y">
+  <value column="Name" original="Field Translation">필드 번역</value>
+ </row>
+ <row id="116" trl="Y">
+  <value column="Name" original="Tab Translation">탭 번역</value>
+ </row>
+ <row id="117" trl="Y">
+  <value column="Name" original="Window Translation">창 번역</value>
+ </row>
+ <row id="118" trl="Y">
+  <value column="Name" original="User Contact">사용자 연락처</value>
+ </row>
+ <row id="119" trl="Y">
+  <value column="Name" original="Role">역할</value>
+ </row>
+ <row id="120" trl="Y">
+  <value column="Name" original="User Assignment">사용자 지정</value>
+ </row>
+ <row id="121" trl="Y">
+  <value column="Name" original="User Roles">사용자 역할</value>
+ </row>
+ <row id="122" trl="Y">
+  <value column="Name" original="Node">노드</value>
+ </row>
+ <row id="123" trl="Y">
+  <value column="Name" original="Node Translation">노드 번역</value>
+ </row>
+ <row id="124" trl="Y">
+  <value column="Name" original="Transition">전이</value>
+ </row>
+ <row id="126" trl="Y">
+  <value column="Name" original="Task Translation">작업 번역</value>
+ </row>
+ <row id="127" trl="Y">
+  <value column="Name" original="Conversion Rates">환산율</value>
+ </row>
+ <row id="128" trl="Y">
+  <value column="Name" original="Calendar">달력</value>
+ </row>
+ <row id="129" trl="Y">
+  <value column="Name" original="Year">연도</value>
+ </row>
+ <row id="130" trl="Y">
+  <value column="Name" original="Period">기간</value>
+ </row>
+ <row id="131" trl="Y">
+  <value column="Name" original="Non Business Day">비영업일</value>
+ </row>
+ <row id="132" trl="Y">
+  <value column="Name" original="Element Value">요소 값</value>
+ </row>
+ <row id="133" trl="Y">
+  <value column="Name" original="Unit of Measure">측정 단위</value>
+ </row>
+ <row id="134" trl="Y">
+  <value column="Name" original="Conversion">환산</value>
+ </row>
+ <row id="135" trl="Y">
+  <value column="Name" original="Country">국가</value>
+ </row>
+ <row id="136" trl="Y">
+  <value column="Name" original="Region">지역</value>
+ </row>
+ <row id="143" trl="Y">
+  <value column="Name" original="Organization">조직</value>
+ </row>
+ <row id="145" trl="Y">
+  <value column="Name" original="Tenant">테넌트</value>
+ </row>
+ <row id="146" trl="Y">
+  <value column="Name" original="Sequence">순번</value>
+ </row>
+ <row id="148" trl="Y">
+  <value column="Name" original="Workflow">워크플로</value>
+ </row>
+ <row id="149" trl="Y">
+  <value column="Name" original="Workflow Translation">워크플로 번역</value>
+ </row>
+ <row id="150" trl="Y">
+  <value column="Name" original="Task">작업</value>
+ </row>
+ <row id="151" trl="Y">
+  <value column="Name" original="Currency">통화</value>
+ </row>
+ <row id="152" trl="Y">
+  <value column="Name" original="Test">테스트</value>
+ </row>
+ <row id="153" trl="Y">
+  <value column="Name" original="Element">요소</value>
+ </row>
+ <row id="154" trl="Y">
+  <value column="Name" original="Location">위치</value>
+ </row>
+ <row id="156" trl="Y">
+  <value column="Name" original="Preference">환경설정</value>
+ </row>
+ <row id="157" trl="Y">
+  <value column="Name" original="Project">프로젝트</value>
+ </row>
+ <row id="158" trl="Y">
+  <value column="Name" original="GL Category">총계정원장 분류</value>
+ </row>
+ <row id="159" trl="Y">
+  <value column="Name" original="Batch">배치</value>
+ </row>
+ <row id="160" trl="Y">
+  <value column="Name" original="Journal">분개</value>
+ </row>
+ <row id="161" trl="Y">
+  <value column="Name" original="Line">행</value>
+ </row>
+ <row id="167" trl="Y">
+  <value column="Name" original="Document Type">문서 유형</value>
+ </row>
+ <row id="169" trl="Y">
+  <value column="Name" original="Tenant Info">테넌트 정보</value>
+ </row>
+ <row id="170" trl="Y">
+  <value column="Name" original="Organization Info">조직 정보</value>
+ </row>
+ <row id="171" trl="Y">
+  <value column="Name" original="Reference Translation">참조 번역</value>
+ </row>
+ <row id="172" trl="Y">
+  <value column="Name" original="List Translation">목록 번역</value>
+ </row>
+ <row id="173" trl="Y">
+  <value column="Name" original="Attachment">첨부 파일</value>
+ </row>
+ <row id="174" trl="Y">
+  <value column="Name" original="Tax">세금</value>
+ </row>
+ <row id="176" trl="Y">
+  <value column="Name" original="Tax Category">세금 분류</value>
+ </row>
+ <row id="177" trl="Y">
+  <value column="Name" original="Warehouse">창고</value>
+ </row>
+ <row id="178" trl="Y">
+  <value column="Name" original="Locator">로케이터</value>
+ </row>
+ <row id="179" trl="Y">
+  <value column="Name" original="Storage">저장소</value>
+ </row>
+ <row id="180" trl="Y">
+  <value column="Name" original="Product">제품</value>
+ </row>
+ <row id="181" trl="Y">
+  <value column="Name" original="Substitute">대체자</value>
+ </row>
+ <row id="182" trl="Y">
+  <value column="Name" original="Replenish">보충</value>
+ </row>
+ <row id="183" trl="Y">
+  <value column="Name" original="Price">가격</value>
+ </row>
+ <row id="184" trl="Y">
+  <value column="Name" original="Payment Term">결제 조건</value>
+ </row>
+ <row id="185" trl="Y">
+  <value column="Name" original="Shipper">운송업체</value>
+ </row>
+ <row id="186" trl="Y">
+  <value column="Name" original="Order">주문</value>
+ </row>
+ <row id="187" trl="Y">
+  <value column="Name" original="Order Line">주문 행</value>
+ </row>
+ <row id="189" trl="Y">
+  <value column="Name" original="Product Category">제품 분류</value>
+ </row>
+ <row id="191" trl="Y">
+  <value column="Name" original="Price List">가격표</value>
+ </row>
+ <row id="192" trl="Y">
+  <value column="Name" original="Product Price">제품 가격</value>
+ </row>
+ <row id="193" trl="Y">
+  <value column="Name" original="Invoice Schedule">청구 일정</value>
+ </row>
+ <row id="198" trl="Y">
+  <value column="Name" original="Conversion Rate">환산율</value>
+ </row>
+ <row id="199" trl="Y">
+  <value column="Name" original="Accounting Schema">회계 스키마</value>
+ </row>
+ <row id="200" trl="Y">
+  <value column="Name" original="General Ledger">총계정원장</value>
+ </row>
+ <row id="201" trl="Y">
+  <value column="Name" original="Campaign">캠페인</value>
+ </row>
+ <row id="202" trl="Y">
+  <value column="Name" original="Channel">채널</value>
+ </row>
+ <row id="203" trl="Y">
+  <value column="Name" original="Element">요소</value>
+ </row>
+ <row id="204" trl="Y">
+  <value column="Name" original="Translation">번역</value>
+ </row>
+ <row id="205" trl="Y">
+  <value column="Name" original="Period Control">기간 통제</value>
+ </row>
+ <row id="206" trl="Y">
+  <value column="Name" original="Sales Region">판매 지역</value>
+ </row>
+ <row id="207" trl="Y">
+  <value column="Name" original="Combination">조합</value>
+ </row>
+ <row id="208" trl="Y">
+  <value column="Name" original="Budget">예산</value>
+ </row>
+ <row id="209" trl="Y">
+  <value column="Name" original="Accounting">회계</value>
+ </row>
+ <row id="210" trl="Y">
+  <value column="Name" original="Accounting">회계</value>
+ </row>
+ <row id="211" trl="Y">
+  <value column="Name" original="Accounting">회계</value>
+ </row>
+ <row id="212" trl="Y">
+  <value column="Name" original="Customer Accounting">고객 회계</value>
+ </row>
+ <row id="213" trl="Y">
+  <value column="Name" original="Vendor Accounting">공급업체 회계</value>
+ </row>
+ <row id="215" trl="Y">
+  <value column="Name" original="City">도시</value>
+ </row>
+ <row id="217" trl="Y">
+  <value column="Name" original="Account Schema Dimensions">회계 스키마 차원</value>
+ </row>
+ <row id="220" trl="Y">
+  <value column="Name" original="Business Partner">비즈니스 파트너</value>
+ </row>
+ <row id="222" trl="Y">
+  <value column="Name" original="Location">위치</value>
+ </row>
+ <row id="226" trl="Y">
+  <value column="Name" original="Bank Account">은행 계좌</value>
+ </row>
+ <row id="227" trl="Y">
+  <value column="Name" original="Bank/Cash">은행/현금</value>
+ </row>
+ <row id="228" trl="Y">
+  <value column="Name" original="Account">계정</value>
+ </row>
+ <row id="229" trl="Y">
+  <value column="Name" original="Withholding">원천징수</value>
+ </row>
+ <row id="230" trl="Y">
+  <value column="Name" original="Translation">번역</value>
+ </row>
+ <row id="231" trl="Y">
+  <value column="Name" original="Dunning">독촉</value>
+ </row>
+ <row id="232" trl="Y">
+  <value column="Name" original="Translation">번역</value>
+ </row>
+ <row id="233" trl="Y">
+  <value column="Name" original="Translation">번역</value>
+ </row>
+ <row id="235" trl="Y">
+  <value column="Name" original="Translation">번역</value>
+ </row>
+ <row id="236" trl="Y">
+  <value column="Name" original="Order Tax">주문 세금</value>
+ </row>
+ <row id="237" trl="Y">
+  <value column="Name" original="Charge">비용 항목</value>
+ </row>
+ <row id="238" trl="Y">
+  <value column="Name" original="Version">버전</value>
+ </row>
+ <row id="239" trl="Y">
+  <value column="Name" original="Purchasing">구매</value>
+ </row>
+ <row id="241" trl="Y">
+  <value column="Name" original="Withholding">원천징수</value>
+ </row>
+ <row id="242" trl="Y">
+  <value column="Name" original="Accounting">회계</value>
+ </row>
+ <row id="243" trl="Y">
+  <value column="Name" original="Tree">트리</value>
+ </row>
+ <row id="245" trl="Y">
+  <value column="Name" original="Report &amp; Process">보고서 및 프로세스</value>
+ </row>
+ <row id="246" trl="Y">
+  <value column="Name" original="Parameter">매개변수</value>
+ </row>
+ <row id="247" trl="Y">
+  <value column="Name" original="Parameter Translation">매개변수 번역</value>
+ </row>
+ <row id="248" trl="Y">
+  <value column="Name" original="Report Translation">보고서 번역</value>
+ </row>
+ <row id="249" trl="Y">
+  <value column="Name" original="Activity">활동</value>
+ </row>
+ <row id="252" trl="Y">
+  <value column="Name" original="Defaults">기본값</value>
+ </row>
+ <row id="255" trl="Y">
+  <value column="Name" original="Inventory Count">재고 수량</value>
+ </row>
+ <row id="256" trl="Y">
+  <value column="Name" original="Inventory Count Line">재고 수량 행</value>
+ </row>
+ <row id="257" trl="Y">
+  <value column="Name" original="Shipment">출하</value>
+ </row>
+ <row id="258" trl="Y">
+  <value column="Name" original="Shipment Line">출하 행</value>
+ </row>
+ <row id="259" trl="Y">
+  <value column="Name" original="Move">이동</value>
+ </row>
+ <row id="260" trl="Y">
+  <value column="Name" original="Move Line">이동 행</value>
+ </row>
+ <row id="263" trl="Y">
+  <value column="Name" original="Invoice">청구서</value>
+ </row>
+ <row id="268" trl="Y">
+  <value column="Name" original="Level">수준</value>
+ </row>
+ <row id="269" trl="Y">
+  <value column="Name" original="Translation">번역</value>
+ </row>
+ <row id="270" trl="Y">
+  <value column="Name" original="Invoice Line">청구서 행</value>
+ </row>
+ <row id="271" trl="Y">
+  <value column="Name" original="Invoice Tax">청구서 세금</value>
+ </row>
+ <row id="272" trl="Y">
+  <value column="Name" original="Revenue Recognition">수익 인식</value>
+ </row>
+ <row id="273" trl="Y">
+  <value column="Name" original="Translation">번역</value>
+ </row>
+ <row id="275" trl="Y">
+  <value column="Name" original="Perpetual Inventory">계속 기록 재고</value>
+ </row>
+ <row id="276" trl="Y">
+  <value column="Name" original="Vendor">공급업체</value>
+ </row>
+ <row id="278" trl="Y">
+  <value column="Name" original="Product Details">제품 상세</value>
+ </row>
+ <row id="282" trl="Y">
+  <value column="Name" original="Greeting">인사말</value>
+ </row>
+ <row id="283" trl="Y">
+  <value column="Name" original="Translation">번역</value>
+ </row>
+ <row id="284" trl="Y">
+  <value column="Name" original="Translation">번역</value>
+ </row>
+ <row id="288" trl="Y">
+  <value column="Name" original="Report View">보고서 보기</value>
+ </row>
+ <row id="289" trl="Y">
+  <value column="Name" original="Transactions">트랜잭션</value>
+ </row>
+ <row id="290" trl="Y">
+  <value column="Name" original="Invoice">청구서</value>
+ </row>
+ <row id="291" trl="Y">
+  <value column="Name" original="Invoice Line">청구서 행</value>
+ </row>
+ <row id="292" trl="Y">
+  <value column="Name" original="Invoice Tax">청구서 세금</value>
+ </row>
+ <row id="293" trl="Y">
+  <value column="Name" original="PO Line">구매 주문 행</value>
+ </row>
+ <row id="294" trl="Y">
+  <value column="Name" original="Purchase Order">구매 주문</value>
+ </row>
+ <row id="295" trl="Y">
+  <value column="Name" original="Order Tax">주문 세금</value>
+ </row>
+ <row id="296" trl="Y">
+  <value column="Name" original="Material Receipt">자재 입고</value>
+ </row>
+ <row id="297" trl="Y">
+  <value column="Name" original="Receipt Line">입고 행</value>
+ </row>
+ <row id="298" trl="Y">
+  <value column="Name" original="EDI Definition">EDI 정의</value>
+ </row>
+ <row id="299" trl="Y">
+  <value column="Name" original="EDI Transaction">EDI 트랜잭션</value>
+ </row>
+ <row id="300" trl="Y">
+  <value column="Name" original="EDI Log">EDI 로그</value>
+ </row>
+ <row id="302" trl="Y">
+  <value column="Name" original="Form">양식</value>
+ </row>
+ <row id="303" trl="Y">
+  <value column="Name" original="Translation">번역</value>
+ </row>
+ <row id="304" trl="Y">
+  <value column="Name" original="Window Access">창 접근</value>
+ </row>
+ <row id="305" trl="Y">
+  <value column="Name" original="Process Access">프로세스 접근</value>
+ </row>
+ <row id="306" trl="Y">
+  <value column="Name" original="Form Access">양식 접근</value>
+ </row>
+ <row id="307" trl="Y">
+  <value column="Name" original="Workflow Access">워크플로 접근</value>
+ </row>
+ <row id="308" trl="Y">
+  <value column="Name" original="Report Access">보고서 접근</value>
+ </row>
+ <row id="309" trl="Y">
+  <value column="Name" original="Access">접근</value>
+ </row>
+ <row id="310" trl="Y">
+  <value column="Name" original="Access">접근</value>
+ </row>
+ <row id="311" trl="Y">
+  <value column="Name" original="Access">접근</value>
+ </row>
+ <row id="312" trl="Y">
+  <value column="Name" original="Access">접근</value>
+ </row>
+ <row id="313" trl="Y">
+  <value column="Name" original="Task Access">작업 접근</value>
+ </row>
+ <row id="314" trl="Y">
+  <value column="Name" original="Error Message">오류 메시지</value>
+ </row>
+ <row id="315" trl="Y">
+  <value column="Name" original="Import Format">가져오기 형식</value>
+ </row>
+ <row id="316" trl="Y">
+  <value column="Name" original="Format Field">형식 필드</value>
+ </row>
+ <row id="319" trl="Y">
+  <value column="Name" original="Production Header">생산 헤더</value>
+ </row>
+ <row id="320" trl="Y">
+  <value column="Name" original="Production Plan">생산 계획</value>
+ </row>
+ <row id="321" trl="Y">
+  <value column="Name" original="Production Line">생산 행</value>
+ </row>
+ <row id="322" trl="Y">
+  <value column="Name" original="Business Partner Group">비즈니스 파트너 그룹</value>
+ </row>
+ <row id="323" trl="Y">
+  <value column="Name" original="Accounting">회계</value>
+ </row>
+ <row id="324" trl="Y">
+  <value column="Name" original="Accounting">회계</value>
+ </row>
+ <row id="325" trl="Y">
+  <value column="Name" original="Notice">통지</value>
+ </row>
+ <row id="327" trl="Y">
+  <value column="Name" original="Accounting">회계</value>
+ </row>
+ <row id="328" trl="Y">
+  <value column="Name" original="Bank/Cash Statement">은행/현금 명세서</value>
+ </row>
+ <row id="329" trl="Y">
+  <value column="Name" original="Statement Line">명세서 행</value>
+ </row>
+ <row id="330" trl="Y">
+  <value column="Name" original="Payment">결제</value>
+ </row>
+ <row id="331" trl="Y">
+  <value column="Name" original="Accounting">회계</value>
+ </row>
+ <row id="333" trl="Y">
+  <value column="Name" original="Accounting">회계</value>
+ </row>
+ <row id="334" trl="Y">
+  <value column="Name" original="Accounting">회계</value>
+ </row>
+ <row id="335" trl="Y">
+  <value column="Name" original="Custom Attribute">사용자 정의 속성</value>
+ </row>
+ <row id="336" trl="Y">
+  <value column="Name" original="Cashbook">현금 출납부</value>
+ </row>
+ <row id="337" trl="Y">
+  <value column="Name" original="Accounting">회계</value>
+ </row>
+ <row id="338" trl="Y">
+  <value column="Name" original="Cash Journal">현금 분개</value>
+ </row>
+ <row id="339" trl="Y">
+  <value column="Name" original="Cash Line">현금 행</value>
+ </row>
+ <row id="341" trl="Y">
+  <value column="Name" original="Payment Batch">결제 배치</value>
+ </row>
+ <row id="342" trl="Y">
+  <value column="Name" original="Field group">필드 그룹</value>
+ </row>
+ <row id="343" trl="Y">
+  <value column="Name" original="Translation">번역</value>
+ </row>
+ <row id="344" trl="Y">
+  <value column="Name" original="Request">요청</value>
+ </row>
+ <row id="346" trl="Y">
+  <value column="Name" original="Request Processor">요청 처리기</value>
+ </row>
+ <row id="347" trl="Y">
+  <value column="Name" original="Mail Template">메일 템플릿</value>
+ </row>
+ <row id="348" trl="Y">
+  <value column="Name" original="History">기록</value>
+ </row>
+ <row id="349" trl="Y">
+  <value column="Name" original="Allocation Line">배정 행</value>
+ </row>
+ <row id="351" trl="Y">
+  <value column="Name" original="Org Access">조직 접근</value>
+ </row>
+ <row id="352" trl="Y">
+  <value column="Name" original="Payment Selection">결제 선택</value>
+ </row>
+ <row id="353" trl="Y">
+  <value column="Name" original="Payment Selection Line">결제 선택 행</value>
+ </row>
+ <row id="354" trl="Y">
+  <value column="Name" original="Report View Column">보고서 보기 열</value>
+ </row>
+ <row id="355" trl="Y">
+  <value column="Name" original="Commission">수수료</value>
+ </row>
+ <row id="356" trl="Y">
+  <value column="Name" original="Commission Line">수수료 행</value>
+ </row>
+ <row id="358" trl="Y">
+  <value column="Name" original="Project Cycle">프로젝트 주기</value>
+ </row>
+ <row id="359" trl="Y">
+  <value column="Name" original="Cycle Phase">주기 단계</value>
+ </row>
+ <row id="361" trl="Y">
+  <value column="Name" original="Line">행</value>
+ </row>
+ <row id="362" trl="Y">
+  <value column="Name" original="Commission Run">수수료 실행</value>
+ </row>
+ <row id="363" trl="Y">
+  <value column="Name" original="Commission Amount">수수료 금액</value>
+ </row>
+ <row id="364" trl="Y">
+  <value column="Name" original="Used in Column">열에서 사용</value>
+ </row>
+ <row id="365" trl="Y">
+  <value column="Name" original="Commission Detail">수수료 상세</value>
+ </row>
+ <row id="367" trl="Y">
+  <value column="Name" original="Performance Goal">성과 목표</value>
+ </row>
+ <row id="369" trl="Y">
+  <value column="Name" original="Performance Measure Calculation">성과 측정 계산</value>
+ </row>
+ <row id="370" trl="Y">
+  <value column="Name" original="Achievement">성과</value>
+ </row>
+ <row id="371" trl="Y">
+  <value column="Name" original="Measure">측정</value>
+ </row>
+ <row id="372" trl="Y">
+  <value column="Name" original="Financial Report">재무 보고서</value>
+ </row>
+ <row id="373" trl="Y">
+  <value column="Name" original="Report Column Set">보고서 열 집합</value>
+ </row>
+ <row id="374" trl="Y">
+  <value column="Name" original="Report Column">보고서 열</value>
+ </row>
+ <row id="375" trl="Y">
+  <value column="Name" original="Report Line Set">보고서 행 집합</value>
+ </row>
+ <row id="376" trl="Y">
+  <value column="Name" original="Report Line">보고서 행</value>
+ </row>
+ <row id="377" trl="Y">
+  <value column="Name" original="Report Source">보고서 원본</value>
+ </row>
+ <row id="378" trl="Y">
+  <value column="Name" original="Revenue Recognition Plan">수익 인식 계획</value>
+ </row>
+ <row id="379" trl="Y">
+  <value column="Name" original="Revenue Recognition Run">수익 인식 실행</value>
+ </row>
+ <row id="380" trl="Y">
+  <value column="Name" original="Service Level">서비스 수준</value>
+ </row>
+ <row id="381" trl="Y">
+  <value column="Name" original="Service Level Line">서비스 수준 행</value>
+ </row>
+ <row id="382" trl="Y">
+  <value column="Name" original="Find">찾기</value>
+ </row>
+ <row id="384" trl="Y">
+  <value column="Name" original="Material Transactions">자재 트랜잭션</value>
+ </row>
+ <row id="385" trl="Y">
+  <value column="Name" original="Print Form">인쇄 양식</value>
+ </row>
+ <row id="386" trl="Y">
+  <value column="Name" original="Bank Account Document">은행 계좌 문서</value>
+ </row>
+ <row id="387" trl="Y">
+  <value column="Name" original="System Color">시스템 색상</value>
+ </row>
+ <row id="388" trl="Y">
+  <value column="Name" original="Desktop">데스크톱</value>
+ </row>
+ <row id="389" trl="Y">
+  <value column="Name" original="Translation">번역</value>
+ </row>
+ <row id="390" trl="Y">
+  <value column="Name" original="Workbench">워크벤치</value>
+ </row>
+ <row id="391" trl="Y">
+  <value column="Name" original="Image">이미지</value>
+ </row>
+ <row id="393" trl="Y">
+  <value column="Name" original="Window Customization">창 사용자 정의</value>
+ </row>
+ <row id="394" trl="Y">
+  <value column="Name" original="Tab Customization">탭 사용자 정의</value>
+ </row>
+ <row id="395" trl="Y">
+  <value column="Name" original="Field Customization">필드 사용자 정의</value>
+ </row>
+ <row id="398" trl="Y">
+  <value column="Name" original="Workbench">워크벤치</value>
+ </row>
+ <row id="399" trl="Y">
+  <value column="Name" original="Translation">번역</value>
+ </row>
+ <row id="400" trl="Y">
+  <value column="Name" original="Window">기간</value>
+ </row>
+ <row id="401" trl="Y">
+  <value column="Name" original="Routing">라우팅</value>
+ </row>
+ <row id="402" trl="Y">
+  <value column="Name" original="Request">요청</value>
+ </row>
+ <row id="403" trl="Y">
+  <value column="Name" original="History">기록</value>
+ </row>
+ <row id="404" trl="Y">
+  <value column="Name" original="Discount Schema">할인 스키마</value>
+ </row>
+ <row id="405" trl="Y">
+  <value column="Name" original="Schema Line">스키마 행</value>
+ </row>
+ <row id="406" trl="Y">
+  <value column="Name" original="Discount Break">할인 구간</value>
+ </row>
+ <row id="407" trl="Y">
+  <value column="Name" original="Assigned Products">지정된 제품</value>
+ </row>
+ <row id="408" trl="Y">
+  <value column="Name" original="Match Invoice">청구서 대응</value>
+ </row>
+ <row id="409" trl="Y">
+  <value column="Name" original="Match PO">구매 주문 대응</value>
+ </row>
+ <row id="410" trl="Y">
+  <value column="Name" original="Expense Type">경비 유형</value>
+ </row>
+ <row id="411" trl="Y">
+  <value column="Name" original="Expense Product">경비 제품</value>
+ </row>
+ <row id="412" trl="Y">
+  <value column="Name" original="Expense Report">경비 보고서</value>
+ </row>
+ <row id="413" trl="Y">
+  <value column="Name" original="Report Line">보고서 행</value>
+ </row>
+ <row id="414" trl="Y">
+  <value column="Name" original="Resource">자원</value>
+ </row>
+ <row id="415" trl="Y">
+  <value column="Name" original="Assignment">지정</value>
+ </row>
+ <row id="416" trl="Y">
+  <value column="Name" original="Unavailability">이용 불가</value>
+ </row>
+ <row id="417" trl="Y">
+  <value column="Name" original="Resource Product">자원 제품</value>
+ </row>
+ <row id="418" trl="Y">
+  <value column="Name" original="Resource Type">자원 유형</value>
+ </row>
+ <row id="419" trl="Y">
+  <value column="Name" original="Accounting">회계</value>
+ </row>
+ <row id="420" trl="Y">
+  <value column="Name" original="Price">가격</value>
+ </row>
+ <row id="421" trl="Y">
+  <value column="Name" original="Price">가격</value>
+ </row>
+ <row id="422" trl="Y">
+  <value column="Name" original="Accounting">회계</value>
+ </row>
+ <row id="423" trl="Y">
+  <value column="Name" original="Print Color">인쇄 색상</value>
+ </row>
+ <row id="424" trl="Y">
+  <value column="Name" original="Print Font">인쇄 글꼴</value>
+ </row>
+ <row id="425" trl="Y">
+  <value column="Name" original="Print Format">인쇄 형식</value>
+ </row>
+ <row id="426" trl="Y">
+  <value column="Name" original="Format Item">형식 항목</value>
+ </row>
+ <row id="427" trl="Y">
+  <value column="Name" original="Print Paper">인쇄 용지</value>
+ </row>
+ <row id="428" trl="Y">
+  <value column="Name" original="Display Order">표시 순서</value>
+ </row>
+ <row id="429" trl="Y">
+  <value column="Name" original="Sort Order">정렬 순서</value>
+ </row>
+ <row id="430" trl="Y">
+  <value column="Name" original="Field Sequence">필드 순서</value>
+ </row>
+ <row id="431" trl="Y">
+  <value column="Name" original="Customer">고객</value>
+ </row>
+ <row id="432" trl="Y">
+  <value column="Name" original="Report Line">보고서 행</value>
+ </row>
+ <row id="433" trl="Y">
+  <value column="Name" original="Item Translation">항목 번역</value>
+ </row>
+ <row id="435" trl="Y">
+  <value column="Name" original="Print Table Format">인쇄 표 형식</value>
+ </row>
+ <row id="436" trl="Y">
+  <value column="Name" original="Prepared Payment">준비된 결제</value>
+ </row>
+ <row id="437" trl="Y">
+  <value column="Name" original="Request Type">요청 유형</value>
+ </row>
+ <row id="438" trl="Y">
+  <value column="Name" original="Interest Area">관심 분야</value>
+ </row>
+ <row id="439" trl="Y">
+  <value column="Name" original="Interest Area">관심 분야</value>
+ </row>
+ <row id="440" trl="Y">
+  <value column="Name" original="System">시스템</value>
+ </row>
+ <row id="441" trl="Y">
+  <value column="Name" original="Import Business Partner">비즈니스 파트너 가져오기</value>
+ </row>
+ <row id="442" trl="Y">
+  <value column="Name" original="Import Product">제품 가져오기</value>
+ </row>
+ <row id="443" trl="Y">
+  <value column="Name" original="Import Account">계정 가져오기</value>
+ </row>
+ <row id="444" trl="Y">
+  <value column="Name" original="Import Report Line Set">보고서 행 집합 가져오기</value>
+ </row>
+ <row id="445" trl="Y">
+  <value column="Name" original="Select Language">언어 선택</value>
+ </row>
+ <row id="446" trl="Y">
+  <value column="Name" original="Element Translation">요소 번역</value>
+ </row>
+ <row id="447" trl="Y">
+  <value column="Name" original="Message Translation">메시지 번역</value>
+ </row>
+ <row id="448" trl="Y">
+  <value column="Name" original="Window Translation">창 번역</value>
+ </row>
+ <row id="449" trl="Y">
+  <value column="Name" original="Process Translation">프로세스 번역</value>
+ </row>
+ <row id="450" trl="Y">
+  <value column="Name" original="Asset">자산</value>
+ </row>
+ <row id="452" trl="Y">
+  <value column="Name" original="Asset Group">자산 그룹</value>
+ </row>
+ <row id="453" trl="Y">
+  <value column="Name" original="Training">교육</value>
+ </row>
+ <row id="454" trl="Y">
+  <value column="Name" original="Class">클래스</value>
+ </row>
+ <row id="456" trl="Y">
+  <value column="Name" original="Employee, Vendor">직원, 공급업체</value>
+ </row>
+ <row id="457" trl="Y">
+  <value column="Name" original="Report Line">보고서 행</value>
+ </row>
+ <row id="458" trl="Y">
+  <value column="Name" original="Translation">번역</value>
+ </row>
+ <row id="459" trl="Y">
+  <value column="Name" original="Daily Balances">일별 잔액</value>
+ </row>
+ <row id="460" trl="Y">
+  <value column="Name" original="Payment Schedule">결제 일정</value>
+ </row>
+ <row id="461" trl="Y">
+  <value column="Name" original="Attribute Set">속성 집합</value>
+ </row>
+ <row id="462" trl="Y">
+  <value column="Name" original="Attribute">속성</value>
+ </row>
+ <row id="463" trl="Y">
+  <value column="Name" original="Attribute Value">속성 값</value>
+ </row>
+ <row id="464" trl="Y">
+  <value column="Name" original="Lot">로트</value>
+ </row>
+ <row id="465" trl="Y">
+  <value column="Name" original="Lot Control">로트 관리</value>
+ </row>
+ <row id="466" trl="Y">
+  <value column="Name" original="Serial No Control">일련번호 관리</value>
+ </row>
+ <row id="467" trl="Y">
+  <value column="Name" original="Attribute Use">속성 사용</value>
+ </row>
+ <row id="468" trl="Y">
+  <value column="Name" original="Attribute Search">속성 검색</value>
+ </row>
+ <row id="469" trl="Y">
+  <value column="Name" original="Assigned Attributes">지정된 속성</value>
+ </row>
+ <row id="470" trl="Y">
+  <value column="Name" original="Invoice">청구서</value>
+ </row>
+ <row id="471" trl="Y">
+  <value column="Name" original="Included Lines">포함된 행</value>
+ </row>
+ <row id="472" trl="Y">
+  <value column="Name" original="Label">라벨</value>
+ </row>
+ <row id="473" trl="Y">
+  <value column="Name" original="Line">행</value>
+ </row>
+ <row id="474" trl="Y">
+  <value column="Name" original="Translation">번역</value>
+ </row>
+ <row id="475" trl="Y">
+  <value column="Name" original="Session Audit">세션 감사</value>
+ </row>
+ <row id="476" trl="Y">
+  <value column="Name" original="Project Type">프로젝트 유형</value>
+ </row>
+ <row id="477" trl="Y">
+  <value column="Name" original="Standard Phase">표준 단계</value>
+ </row>
+ <row id="478" trl="Y">
+  <value column="Name" original="Phase">단계</value>
+ </row>
+ <row id="479" trl="Y">
+  <value column="Name" original="Recurring">반복</value>
+ </row>
+ <row id="480" trl="Y">
+  <value column="Name" original="Run">실행</value>
+ </row>
+ <row id="481" trl="Y">
+  <value column="Name" original="Inventory">재고</value>
+ </row>
+ <row id="482" trl="Y">
+  <value column="Name" original="Table Access">테이블 접근</value>
+ </row>
+ <row id="483" trl="Y">
+  <value column="Name" original="Record Access">레코드 접근</value>
+ </row>
+ <row id="484" trl="Y">
+  <value column="Name" original="Column Access">열 접근</value>
+ </row>
+ <row id="485" trl="Y">
+  <value column="Name" original="Role">역할</value>
+ </row>
+ <row id="486" trl="Y">
+  <value column="Name" original="Advertisement">광고</value>
+ </row>
+ <row id="487" trl="Y">
+  <value column="Name" original="Change Audit">변경 감사</value>
+ </row>
+ <row id="488" trl="Y">
+  <value column="Name" original="Change Audit">변경 감사</value>
+ </row>
+ <row id="489" trl="Y">
+  <value column="Name" original="Cost Type">원가 유형</value>
+ </row>
+ <row id="490" trl="Y">
+  <value column="Name" original="Task">작업</value>
+ </row>
+ <row id="491" trl="Y">
+  <value column="Name" original="Step">스텝</value>
+ </row>
+ <row id="492" trl="Y">
+  <value column="Name" original="Standard Task">표준 작업</value>
+ </row>
+ <row id="495" trl="Y">
+  <value column="Name" original="Time Type">시간 유형</value>
+ </row>
+ <row id="496" trl="Y">
+  <value column="Name" original="Contact (User)">연락처(사용자)</value>
+ </row>
+ <row id="497" trl="Y">
+  <value column="Name" original="Click">클릭</value>
+ </row>
+ <row id="498" trl="Y">
+  <value column="Name" original="Individual Click">개별 클릭</value>
+ </row>
+ <row id="499" trl="Y">
+  <value column="Name" original="Count">수량 집계</value>
+ </row>
+ <row id="500" trl="Y">
+  <value column="Name" original="Individual Count">개별 집계</value>
+ </row>
+ <row id="501" trl="Y">
+  <value column="Name" original="Invoice">청구서</value>
+ </row>
+ <row id="502" trl="Y">
+  <value column="Name" original="Payment Schedule">결제 일정</value>
+ </row>
+ <row id="503" trl="Y">
+  <value column="Name" original="Schedule">공정</value>
+ </row>
+ <row id="504" trl="Y">
+  <value column="Name" original="Alert">알림</value>
+ </row>
+ <row id="505" trl="Y">
+  <value column="Name" original="Alert Rule">알림 규칙</value>
+ </row>
+ <row id="506" trl="Y">
+  <value column="Name" original="Alert Recipient">알림 수신자</value>
+ </row>
+ <row id="507" trl="Y">
+  <value column="Name" original="Bank Statement">은행 명세서</value>
+ </row>
+ <row id="508" trl="Y">
+  <value column="Name" original="General Ledger">총계정원장</value>
+ </row>
+ <row id="510" trl="Y">
+  <value column="Name" original="Invoice">청구서</value>
+ </row>
+ <row id="511" trl="Y">
+  <value column="Name" original="Payment">결제</value>
+ </row>
+ <row id="512" trl="Y">
+  <value column="Name" original="Order">주문</value>
+ </row>
+ <row id="513" trl="Y">
+  <value column="Name" original="Freight">운임</value>
+ </row>
+ <row id="514" trl="Y">
+  <value column="Name" original="Freight Category">운임 분류</value>
+ </row>
+ <row id="515" trl="Y">
+  <value column="Name" original="Business Partner Dimension">비즈니스 파트너 차원</value>
+ </row>
+ <row id="516" trl="Y">
+  <value column="Name" original="Product Dimension">제품 차원</value>
+ </row>
+ <row id="517" trl="Y">
+  <value column="Name" original="Activity Dimension">활동 차원</value>
+ </row>
+ <row id="518" trl="Y">
+  <value column="Name" original="Project Dimension">프로젝트 차원</value>
+ </row>
+ <row id="519" trl="Y">
+  <value column="Name" original="Organization Dimension">조직 차원</value>
+ </row>
+ <row id="520" trl="Y">
+  <value column="Name" original="Sales Region Dimension">판매 지역 차원</value>
+ </row>
+ <row id="521" trl="Y">
+  <value column="Name" original="Replication Target">복제 대상</value>
+ </row>
+ <row id="522" trl="Y">
+  <value column="Name" original="Replication Run">복제 실행</value>
+ </row>
+ <row id="523" trl="Y">
+  <value column="Name" original="Run Log">실행 로그</value>
+ </row>
+ <row id="524" trl="Y">
+  <value column="Name" original="Replication Strategy">복제 전략</value>
+ </row>
+ <row id="525" trl="Y">
+  <value column="Name" original="Replication Table">복제 테이블</value>
+ </row>
+ <row id="526" trl="Y">
+  <value column="Name" original="Campaign Dimension">캠페인 차원</value>
+ </row>
+ <row id="527" trl="Y">
+  <value column="Name" original="Tab Translation">탭 번역</value>
+ </row>
+ <row id="528" trl="Y">
+  <value column="Name" original="Reference List Translation">참조 목록 번역</value>
+ </row>
+ <row id="529" trl="Y">
+  <value column="Name" original="Field Translation">필드 번역</value>
+ </row>
+ <row id="530" trl="Y">
+  <value column="Name" original="Field Group Translation">필드 그룹 번역</value>
+ </row>
+ <row id="531" trl="Y">
+  <value column="Name" original="Form Translation">양식 번역</value>
+ </row>
+ <row id="532" trl="Y">
+  <value column="Name" original="Task Translation">작업 번역</value>
+ </row>
+ <row id="533" trl="Y">
+  <value column="Name" original="Workflow Translation">워크플로 번역</value>
+ </row>
+ <row id="534" trl="Y">
+  <value column="Name" original="Workflow Node Translation">워크플로 노드 번역</value>
+ </row>
+ <row id="535" trl="Y">
+  <value column="Name" original="Menu Translation">메뉴 번역</value>
+ </row>
+ <row id="536" trl="Y">
+  <value column="Name" original="Subscriptions">구독</value>
+ </row>
+ <row id="537" trl="Y">
+  <value column="Name" original="Project">프로젝트</value>
+ </row>
+ <row id="538" trl="Y">
+  <value column="Name" original="Accounting">회계</value>
+ </row>
+ <row id="539" trl="Y">
+  <value column="Name" original="Category">분류</value>
+ </row>
+ <row id="540" trl="Y">
+  <value column="Name" original="Category Value">분류 값</value>
+ </row>
+ <row id="541" trl="Y">
+  <value column="Name" original="Type">유형</value>
+ </row>
+ <row id="542" trl="Y">
+  <value column="Name" original="Topic">주제</value>
+ </row>
+ <row id="543" trl="Y">
+  <value column="Name" original="Entry">입력</value>
+ </row>
+ <row id="544" trl="Y">
+  <value column="Name" original="Category">분류</value>
+ </row>
+ <row id="545" trl="Y">
+  <value column="Name" original="Related">관련</value>
+ </row>
+ <row id="546" trl="Y">
+  <value column="Name" original="Comment">댓글</value>
+ </row>
+ <row id="547" trl="Y">
+  <value column="Name" original="Knowledge Source">지식 출처</value>
+ </row>
+ <row id="548" trl="Y">
+  <value column="Name" original="Knowledge Synonym">지식 동의어</value>
+ </row>
+ <row id="549" trl="Y">
+  <value column="Name" original="Translation">번역</value>
+ </row>
+ <row id="550" trl="Y">
+  <value column="Name" original="Partner Selection">파트너 선택</value>
+ </row>
+ <row id="551" trl="Y">
+  <value column="Name" original="Partner Orders">파트너 주문</value>
+ </row>
+ <row id="552" trl="Y">
+  <value column="Name" original="Partner Shipments">파트너 출하</value>
+ </row>
+ <row id="553" trl="Y">
+  <value column="Name" original="Partner Invoices">파트너 청구서</value>
+ </row>
+ <row id="554" trl="Y">
+  <value column="Name" original="Partner Payments">파트너 결제</value>
+ </row>
+ <row id="555" trl="Y">
+  <value column="Name" original="Partner Assets">파트너 자산</value>
+ </row>
+ <row id="556" trl="Y">
+  <value column="Name" original="Partner Requests">파트너 요청</value>
+ </row>
+ <row id="557" trl="Y">
+  <value column="Name" original="Translation">번역</value>
+ </row>
+ <row id="558" trl="Y">
+  <value column="Name" original="Issues">이슈</value>
+ </row>
+ <row id="559" trl="Y">
+  <value column="Name" original="Printer">프린터</value>
+ </row>
+ <row id="560" trl="Y">
+  <value column="Name" original="Function">함수</value>
+ </row>
+ <row id="561" trl="Y">
+  <value column="Name" original="Registration">등록</value>
+ </row>
+ <row id="562" trl="Y">
+  <value column="Name" original="Business Partner">비즈니스 파트너</value>
+ </row>
+ <row id="563" trl="Y">
+  <value column="Name" original="Company Agent">회사 대리인</value>
+ </row>
+ <row id="564" trl="Y">
+  <value column="Name" original="Orders">주문</value>
+ </row>
+ <row id="565" trl="Y">
+  <value column="Name" original="Order Lines">주문 행</value>
+ </row>
+ <row id="566" trl="Y">
+  <value column="Name" original="Invoices">청구서</value>
+ </row>
+ <row id="567" trl="Y">
+  <value column="Name" original="Invoice Line">청구서 행</value>
+ </row>
+ <row id="570" trl="Y">
+  <value column="Name" original="Conversion Type">환산 유형</value>
+ </row>
+ <row id="571" trl="Y">
+  <value column="Name" original="Statement Loader">명세서 로더</value>
+ </row>
+ <row id="572" trl="Y">
+  <value column="Name" original="Import Currency Rate">환율 가져오기</value>
+ </row>
+ <row id="573" trl="Y">
+  <value column="Name" original="User Substitute">사용자 대체자</value>
+ </row>
+ <row id="574" trl="Y">
+  <value column="Name" original="Process">프로세스</value>
+ </row>
+ <row id="575" trl="Y">
+  <value column="Name" original="Activity">활동</value>
+ </row>
+ <row id="576" trl="Y">
+  <value column="Name" original="Activity">활동</value>
+ </row>
+ <row id="577" trl="Y">
+  <value column="Name" original="Parameter">매개변수</value>
+ </row>
+ <row id="578" trl="Y">
+  <value column="Name" original="Responsible">담당자</value>
+ </row>
+ <row id="582" trl="Y">
+  <value column="Name" original="Event">이벤트</value>
+ </row>
+ <row id="583" trl="Y">
+  <value column="Name" original="Attribute">속성</value>
+ </row>
+ <row id="584" trl="Y">
+  <value column="Name" original="Registration">등록</value>
+ </row>
+ <row id="585" trl="Y">
+  <value column="Name" original="Value">값</value>
+ </row>
+ <row id="586" trl="Y">
+  <value column="Name" original="Bank Statement Matcher">은행 명세서 매처</value>
+ </row>
+ <row id="587" trl="Y">
+  <value column="Name" original="Payment">결제</value>
+ </row>
+ <row id="588" trl="Y">
+  <value column="Name" original="Org Type">조직 유형</value>
+ </row>
+ <row id="589" trl="Y">
+  <value column="Name" original="Schedule Process">프로세스 일정</value>
+ </row>
+ <row id="590" trl="Y">
+  <value column="Name" original="Parameter">매개변수</value>
+ </row>
+ <row id="591" trl="Y">
+  <value column="Name" original="Log">로그</value>
+ </row>
+ <row id="592" trl="Y">
+  <value column="Name" original="Workflow Processor">워크플로 처리기</value>
+ </row>
+ <row id="593" trl="Y">
+  <value column="Name" original="Log">로그</value>
+ </row>
+ <row id="594" trl="Y">
+  <value column="Name" original="Bid Topic">입찰 주제</value>
+ </row>
+ <row id="595" trl="Y">
+  <value column="Name" original="Bid">입찰</value>
+ </row>
+ <row id="596" trl="Y">
+  <value column="Name" original="Offer">제안</value>
+ </row>
+ <row id="597" trl="Y">
+  <value column="Name" original="Bid Funds">입찰 자금</value>
+ </row>
+ <row id="598" trl="Y">
+  <value column="Name" original="Offer Funds">제안 자금</value>
+ </row>
+ <row id="599" trl="Y">
+  <value column="Name" original="Topic Type">주제 유형</value>
+ </row>
+ <row id="600" trl="Y">
+  <value column="Name" original="Type Category">유형 분류</value>
+ </row>
+ <row id="601" trl="Y">
+  <value column="Name" original="Comments">댓글</value>
+ </row>
+ <row id="602" trl="Y">
+  <value column="Name" original="Seller">판매자</value>
+ </row>
+ <row id="603" trl="Y">
+  <value column="Name" original="Funds">자금</value>
+ </row>
+ <row id="604" trl="Y">
+  <value column="Name" original="Offer">제안</value>
+ </row>
+ <row id="605" trl="Y">
+  <value column="Name" original="Buyer">구매자</value>
+ </row>
+ <row id="606" trl="Y">
+  <value column="Name" original="Funds">자금</value>
+ </row>
+ <row id="607" trl="Y">
+  <value column="Name" original="Bid">입찰</value>
+ </row>
+ <row id="608" trl="Y">
+  <value column="Name" original="Accounting Processor">회계 처리기</value>
+ </row>
+ <row id="609" trl="Y">
+  <value column="Name" original="Log">로그</value>
+ </row>
+ <row id="612" trl="Y">
+  <value column="Name" original="Relation">관계</value>
+ </row>
+ <row id="613" trl="Y">
+  <value column="Name" original="RfQ">견적 요청</value>
+ </row>
+ <row id="614" trl="Y">
+  <value column="Name" original="Response">응답</value>
+ </row>
+ <row id="615" trl="Y">
+  <value column="Name" original="Line">행</value>
+ </row>
+ <row id="616" trl="Y">
+  <value column="Name" original="Response Line">응답 행</value>
+ </row>
+ <row id="617" trl="Y">
+  <value column="Name" original="Quantity">수량</value>
+ </row>
+ <row id="618" trl="Y">
+  <value column="Name" original="Response Quantity">응답 수량</value>
+ </row>
+ <row id="619" trl="Y">
+  <value column="Name" original="Topic">주제</value>
+ </row>
+ <row id="620" trl="Y">
+  <value column="Name" original="Subscriber">구독자</value>
+ </row>
+ <row id="621" trl="Y">
+  <value column="Name" original="Subscription">구독</value>
+ </row>
+ <row id="622" trl="Y">
+  <value column="Name" original="Delivery">인도</value>
+ </row>
+ <row id="623" trl="Y">
+  <value column="Name" original="Subscription Type">구독 유형</value>
+ </row>
+ <row id="624" trl="Y">
+  <value column="Name" original="Distribution List">배분 목록</value>
+ </row>
+ <row id="625" trl="Y">
+  <value column="Name" original="Distribution Line">배분 행</value>
+ </row>
+ <row id="626" trl="Y">
+  <value column="Name" original="Package">패키지</value>
+ </row>
+ <row id="627" trl="Y">
+  <value column="Name" original="Package Line">패키지 행</value>
+ </row>
+ <row id="628" trl="Y">
+  <value column="Name" original="Customer RMA">고객 RMA</value>
+ </row>
+ <row id="629" trl="Y">
+  <value column="Name" original="RMA Line">RMA 행</value>
+ </row>
+ <row id="630" trl="Y">
+  <value column="Name" original="Related">관련</value>
+ </row>
+ <row id="631" trl="Y">
+  <value column="Name" original="Processor">처리기</value>
+ </row>
+ <row id="632" trl="Y">
+  <value column="Name" original="Log">로그</value>
+ </row>
+ <row id="633" trl="Y">
+  <value column="Name" original="Dunning Run">독촉 실행</value>
+ </row>
+ <row id="634" trl="Y">
+  <value column="Name" original="Entry">입력</value>
+ </row>
+ <row id="635" trl="Y">
+  <value column="Name" original="Line">행</value>
+ </row>
+ <row id="638" trl="Y">
+  <value column="Name" original="Log">로그</value>
+ </row>
+ <row id="639" trl="Y">
+  <value column="Name" original="Scheduler Recipient">스케줄러 수신자</value>
+ </row>
+ <row id="640" trl="Y">
+  <value column="Name" original="Tax ZIP">세금 우편번호</value>
+ </row>
+ <row id="641" trl="Y">
+  <value column="Name" original="Requisition">구매 요청</value>
+ </row>
+ <row id="642" trl="Y">
+  <value column="Name" original="Requisition Line">구매 요청 행</value>
+ </row>
+ <row id="643" trl="Y">
+  <value column="Name" original="Note">메모</value>
+ </row>
+ <row id="644" trl="Y">
+  <value column="Name" original="Condition">조건</value>
+ </row>
+ <row id="646" trl="Y">
+  <value column="Name" original="Distribution">배분</value>
+ </row>
+ <row id="647" trl="Y">
+  <value column="Name" original="Line">행</value>
+ </row>
+ <row id="648" trl="Y">
+  <value column="Name" original="Distribution Run">배분 실행</value>
+ </row>
+ <row id="649" trl="Y">
+  <value column="Name" original="Line">행</value>
+ </row>
+ <row id="650" trl="Y">
+  <value column="Name" original="Product Assignment">제품 지정</value>
+ </row>
+ <row id="652" trl="Y">
+  <value column="Name" original="Counter Document">상대 문서</value>
+ </row>
+ <row id="653" trl="Y">
+  <value column="Name" original="Forecast">예측</value>
+ </row>
+ <row id="654" trl="Y">
+  <value column="Name" original="Line">행</value>
+ </row>
+ <row id="655" trl="Y">
+  <value column="Name" original="Demand">수요</value>
+ </row>
+ <row id="656" trl="Y">
+  <value column="Name" original="Line">행</value>
+ </row>
+ <row id="657" trl="Y">
+  <value column="Name" original="Detail">상세</value>
+ </row>
+ <row id="658" trl="Y">
+  <value column="Name" original="Confirmation">확인</value>
+ </row>
+ <row id="659" trl="Y">
+  <value column="Name" original="Line">행</value>
+ </row>
+ <row id="660" trl="Y">
+  <value column="Name" original="RMA Type">RMA 유형</value>
+ </row>
+ <row id="661" trl="Y">
+  <value column="Name" original="Allocation">배정</value>
+ </row>
+ <row id="662" trl="Y">
+  <value column="Name" original="Unposted Documents">미전기 문서</value>
+ </row>
+ <row id="663" trl="Y">
+  <value column="Name" original="Process Audit">프로세스 감사</value>
+ </row>
+ <row id="664" trl="Y">
+  <value column="Name" original="Parameter Audit">매개변수 감사</value>
+ </row>
+ <row id="665" trl="Y">
+  <value column="Name" original="Log">로그</value>
+ </row>
+ <row id="666" trl="Y">
+  <value column="Name" original="Confirmation">확인</value>
+ </row>
+ <row id="667" trl="Y">
+  <value column="Name" original="Line">행</value>
+ </row>
+ <row id="668" trl="Y">
+  <value column="Name" original="Confirmation Lines">확인 행</value>
+ </row>
+ <row id="669" trl="Y">
+  <value column="Name" original="Business Partner">비즈니스 파트너</value>
+ </row>
+ <row id="670" trl="Y">
+  <value column="Name" original="SLA Goal">SLA 목표</value>
+ </row>
+ <row id="671" trl="Y">
+  <value column="Name" original="SLA Measure">SLA 측정</value>
+ </row>
+ <row id="672" trl="Y">
+  <value column="Name" original="SLA Criteria">SLA 기준</value>
+ </row>
+ <row id="673" trl="Y">
+  <value column="Name" original="Table Translation">테이블 번역</value>
+ </row>
+ <row id="674" trl="Y">
+  <value column="Name" original="Restriction">제한</value>
+ </row>
+ <row id="675" trl="Y">
+  <value column="Name" original="Price List Schema">가격표 스키마</value>
+ </row>
+ <row id="676" trl="Y">
+  <value column="Name" original="POS Terminal">POS 단말기</value>
+ </row>
+ <row id="677" trl="Y">
+  <value column="Name" original="POS Key Layout">POS 키 레이아웃</value>
+ </row>
+ <row id="678" trl="Y">
+  <value column="Name" original="POS Key">POS 키</value>
+ </row>
+ <row id="679" trl="Y">
+  <value column="Name" original="SLA Goal">SLA 목표</value>
+ </row>
+ <row id="680" trl="Y">
+  <value column="Name" original="SLA Measure">SLA 측정</value>
+ </row>
+ <row id="681" trl="Y">
+  <value column="Name" original="Column Translation">열 번역</value>
+ </row>
+ <row id="682" trl="Y">
+  <value column="Name" original="Internal Use">내부 사용</value>
+ </row>
+ <row id="683" trl="Y">
+  <value column="Name" original="Internal Use Line">내부 사용 행</value>
+ </row>
+ <row id="684" trl="Y">
+  <value column="Name" original="Allocation">배정</value>
+ </row>
+ <row id="685" trl="Y">
+  <value column="Name" original="Allocation">배정</value>
+ </row>
+ <row id="686" trl="Y">
+  <value column="Name" original="Allocations">배정</value>
+ </row>
+ <row id="687" trl="Y">
+  <value column="Name" original="Confirmations">확인</value>
+ </row>
+ <row id="688" trl="Y">
+  <value column="Name" original="Matched POs">대응된 구매 주문</value>
+ </row>
+ <row id="689" trl="Y">
+  <value column="Name" original="Matched Invoices">대응된 청구서</value>
+ </row>
+ <row id="690" trl="Y">
+  <value column="Name" original="Matched Receipts">대응된 입고</value>
+ </row>
+ <row id="691" trl="Y">
+  <value column="Name" original="Matched POs">대응된 구매 주문</value>
+ </row>
+ <row id="692" trl="Y">
+  <value column="Name" original="Matching">대응</value>
+ </row>
+ <row id="693" trl="Y">
+  <value column="Name" original="Confirmations">확인</value>
+ </row>
+ <row id="694" trl="Y">
+  <value column="Name" original="Invoice Batch">청구서 배치</value>
+ </row>
+ <row id="695" trl="Y">
+  <value column="Name" original="Batch Line">배치 행</value>
+ </row>
+ <row id="696" trl="Y">
+  <value column="Name" original="Org Access">조직 접근</value>
+ </row>
+ <row id="697" trl="Y">
+  <value column="Name" original="Landed Costs">도착 원가</value>
+ </row>
+ <row id="698" trl="Y">
+  <value column="Name" original="Landed Cost Allocation">도착 원가 배정</value>
+ </row>
+ <row id="699" trl="Y">
+  <value column="Name" original="Cost Element">원가 요소</value>
+ </row>
+ <row id="700" trl="Y">
+  <value column="Name" original="Select Product">제품 선택</value>
+ </row>
+ <row id="701" trl="Y">
+  <value column="Name" original="Product Costs">제품 원가</value>
+ </row>
+ <row id="702" trl="Y">
+  <value column="Name" original="Request Status">요청 상태</value>
+ </row>
+ <row id="703" trl="Y">
+  <value column="Name" original="Standard Response">표준 응답</value>
+ </row>
+ <row id="704" trl="Y">
+  <value column="Name" original="Request Resolution">요청 해결</value>
+ </row>
+ <row id="705" trl="Y">
+  <value column="Name" original="Request Group">요청 그룹</value>
+ </row>
+ <row id="706" trl="Y">
+  <value column="Name" original="Request Category">요청 분류</value>
+ </row>
+ <row id="708" trl="Y">
+  <value column="Name" original="User Mail">사용자 메일</value>
+ </row>
+ <row id="709" trl="Y">
+  <value column="Name" original="User Mail">사용자 메일</value>
+ </row>
+ <row id="710" trl="Y">
+  <value column="Name" original="Web Store">웹 스토어</value>
+ </row>
+ <row id="711" trl="Y">
+  <value column="Name" original="Store Translation">스토어 번역</value>
+ </row>
+ <row id="712" trl="Y">
+  <value column="Name" original="Web Store Message">웹 스토어 메시지</value>
+ </row>
+ <row id="713" trl="Y">
+  <value column="Name" original="Message Translation">메시지 번역</value>
+ </row>
+ <row id="714" trl="Y">
+  <value column="Name" original="Update Notification">갱신 통지</value>
+ </row>
+ <row id="715" trl="Y">
+  <value column="Name" original="Update Notification">갱신 통지</value>
+ </row>
+ <row id="716" trl="Y">
+  <value column="Name" original="Request Updates">요청 갱신</value>
+ </row>
+ <row id="718" trl="Y">
+  <value column="Name" original="Update Notification">갱신 통지</value>
+ </row>
+ <row id="719" trl="Y">
+  <value column="Name" original="Update Notification">갱신 통지</value>
+ </row>
+ <row id="720" trl="Y">
+  <value column="Name" original="Update Recipients">갱신 수신자</value>
+ </row>
+ <row id="721" trl="Y">
+  <value column="Name" original="Position">직위</value>
+ </row>
+ <row id="722" trl="Y">
+  <value column="Name" original="Assignment">지정</value>
+ </row>
+ <row id="723" trl="Y">
+  <value column="Name" original="Remuneration">보수</value>
+ </row>
+ <row id="724" trl="Y">
+  <value column="Name" original="Position Category">직위 분류</value>
+ </row>
+ <row id="725" trl="Y">
+  <value column="Name" original="Remuneration">보수</value>
+ </row>
+ <row id="726" trl="Y">
+  <value column="Name" original="Position Remuneration">직위 보수</value>
+ </row>
+ <row id="727" trl="Y">
+  <value column="Name" original="Employee Remuneration">직원 보수</value>
+ </row>
+ <row id="728" trl="Y">
+  <value column="Name" original="Product">제품</value>
+ </row>
+ <row id="729" trl="Y">
+  <value column="Name" original="Alternative Groups">대체 그룹</value>
+ </row>
+ <row id="730" trl="Y">
+  <value column="Name" original="Operation">공정</value>
+ </row>
+ <row id="731" trl="Y">
+  <value column="Name" original="BOM">BOM</value>
+ </row>
+ <row id="732" trl="Y">
+  <value column="Name" original="Operation Resource">공정 자원</value>
+ </row>
+ <row id="733" trl="Y">
+  <value column="Name" original="Change Notice">변경 통지</value>
+ </row>
+ <row id="735" trl="Y">
+  <value column="Name" original="BOM Change Request">BOM 변경 요청</value>
+ </row>
+ <row id="736" trl="Y">
+  <value column="Name" original="Fixed Change Requests">해결된 변경 요청</value>
+ </row>
+ <row id="737" trl="Y">
+  <value column="Name" original="Requests (source)">요청(원본)</value>
+ </row>
+ <row id="738" trl="Y">
+  <value column="Name" original="BOM Component">BOM 구성품</value>
+ </row>
+ <row id="739" trl="Y">
+  <value column="Name" original="Updates">갱신</value>
+ </row>
+ <row id="740" trl="Y">
+  <value column="Name" original="Updates">갱신</value>
+ </row>
+ <row id="741" trl="Y">
+  <value column="Name" original="Change Notice">변경 통지</value>
+ </row>
+ <row id="742" trl="Y">
+  <value column="Name" original="Change Request">변경 요청</value>
+ </row>
+ <row id="743" trl="Y">
+  <value column="Name" original="Requests (source)">요청(원본)</value>
+ </row>
+ <row id="744" trl="Y">
+  <value column="Name" original="Fixed Change Requests">해결된 변경 요청</value>
+ </row>
+ <row id="747" trl="Y">
+  <value column="Name" original="Replenish">보충</value>
+ </row>
+ <row id="748" trl="Y">
+  <value column="Name" original="Cost Details">원가 상세</value>
+ </row>
+ <row id="749" trl="Y">
+  <value column="Name" original="Attributes">속성</value>
+ </row>
+ <row id="750" trl="Y">
+  <value column="Name" original="Attributes">속성</value>
+ </row>
+ <row id="751" trl="Y">
+  <value column="Name" original="Attributes">속성</value>
+ </row>
+ <row id="752" trl="Y">
+  <value column="Name" original="Exclude">제외</value>
+ </row>
+ <row id="753" trl="Y">
+  <value column="Name" original="Exclude">제외</value>
+ </row>
+ <row id="754" trl="Y">
+  <value column="Name" original="Exclude">제외</value>
+ </row>
+ <row id="755" trl="Y">
+  <value column="Name" original="Allocate">배정</value>
+ </row>
+ <row id="756" trl="Y">
+  <value column="Name" original="BP Access">파트너 접근</value>
+ </row>
+ <row id="757" trl="Y">
+  <value column="Name" original="Queries">쿼리</value>
+ </row>
+ <row id="758" trl="Y">
+  <value column="Name" original="Instance">인스턴스</value>
+ </row>
+ <row id="759" trl="Y">
+  <value column="Name" original="Shipment, Receipt">출하, 입고</value>
+ </row>
+ <row id="760" trl="Y">
+  <value column="Name" original="Movement">이동</value>
+ </row>
+ <row id="761" trl="Y">
+  <value column="Name" original="Invoice">청구서</value>
+ </row>
+ <row id="762" trl="Y">
+  <value column="Name" original="Cost Queue">원가 큐</value>
+ </row>
+ <row id="763" trl="Y">
+  <value column="Name" original="Declaration">신고</value>
+ </row>
+ <row id="764" trl="Y">
+  <value column="Name" original="Line">행</value>
+ </row>
+ <row id="765" trl="Y">
+  <value column="Name" original="Accounting">회계</value>
+ </row>
+ <row id="766" trl="Y">
+  <value column="Name" original="Reporting Hierarchy">보고 계층</value>
+ </row>
+ <row id="767" trl="Y">
+  <value column="Name" original="Purchase Orders">구매 주문</value>
+ </row>
+ <row id="768" trl="Y">
+  <value column="Name" original="Requisition Lines">구매 요청 행</value>
+ </row>
+ <row id="769" trl="Y">
+  <value column="Name" original="Budget Control">예산 통제</value>
+ </row>
+ <row id="770" trl="Y">
+  <value column="Name" original="Fund">자금</value>
+ </row>
+ <row id="771" trl="Y">
+  <value column="Name" original="Restriction">제한</value>
+ </row>
+ <row id="772" trl="Y">
+  <value column="Name" original="Used in Column">열에서 사용</value>
+ </row>
+ <row id="773" trl="Y">
+  <value column="Name" original="Used in Column">열에서 사용</value>
+ </row>
+ <row id="774" trl="Y">
+  <value column="Name" original="Sub Account">보조 계정</value>
+ </row>
+ <row id="775" trl="Y">
+  <value column="Name" original="Translation">번역</value>
+ </row>
+ <row id="776" trl="Y">
+  <value column="Name" original="Tenant Share">테넌트 공유</value>
+ </row>
+ <row id="777" trl="Y">
+  <value column="Name" original="System Issue">시스템 이슈</value>
+ </row>
+ <row id="778" trl="Y">
+  <value column="Name" original="Assigned Partners">지정된 파트너</value>
+ </row>
+ <row id="779" trl="Y">
+  <value column="Name" original="Color Schema">색상 스키마</value>
+ </row>
+ <row id="780" trl="Y">
+  <value column="Name" original="Restriction">제한</value>
+ </row>
+ <row id="782" trl="Y">
+  <value column="Name" original="Benchmark">벤치마크</value>
+ </row>
+ <row id="783" trl="Y">
+  <value column="Name" original="Data">데이터</value>
+ </row>
+ <row id="784" trl="Y">
+  <value column="Name" original="Ratio">비율</value>
+ </row>
+ <row id="785" trl="Y">
+  <value column="Name" original="Element">요소</value>
+ </row>
+ <row id="786" trl="Y">
+  <value column="Name" original="Issue Recommendation">이슈 권고</value>
+ </row>
+ <row id="787" trl="Y">
+  <value column="Name" original="Issue Status">이슈 상태</value>
+ </row>
+ <row id="788" trl="Y">
+  <value column="Name" original="Known Issue">알려진 이슈</value>
+ </row>
+ <row id="791" trl="Y">
+  <value column="Name" original="Issue User">이슈 사용자</value>
+ </row>
+ <row id="792" trl="Y">
+  <value column="Name" original="Issue Project">이슈 프로젝트</value>
+ </row>
+ <row id="793" trl="Y">
+  <value column="Name" original="Issue Project">이슈 프로젝트</value>
+ </row>
+ <row id="794" trl="Y">
+  <value column="Name" original="Issue System">이슈 시스템</value>
+ </row>
+ <row id="795" trl="Y">
+  <value column="Name" original="Status Category">상태 분류</value>
+ </row>
+ <row id="796" trl="Y">
+  <value column="Name" original="Task Line">작업 행</value>
+ </row>
+ <row id="797" trl="Y">
+  <value column="Name" original="Project Line">프로젝트 행</value>
+ </row>
+ <row id="799" trl="Y">
+  <value column="Name" original="Phase Line">단계 행</value>
+ </row>
+ <row id="800" trl="Y">
+  <value column="Name" original="Project">프로젝트</value>
+ </row>
+ <row id="801" trl="Y">
+  <value column="Name" original="Domain">도메인</value>
+ </row>
+ <row id="802" trl="Y">
+  <value column="Name" original="Template">템플릿</value>
+ </row>
+ <row id="804" trl="Y">
+  <value column="Name" original="Media Server">미디어 서버</value>
+ </row>
+ <row id="805" trl="Y">
+  <value column="Name" original="News Channel">뉴스 채널</value>
+ </row>
+ <row id="806" trl="Y">
+  <value column="Name" original="News Item">뉴스 항목</value>
+ </row>
+ <row id="807" trl="Y">
+  <value column="Name" original="Advertisement Category">광고 분류</value>
+ </row>
+ <row id="808" trl="Y">
+  <value column="Name" original="Advertisement">광고</value>
+ </row>
+ <row id="809" trl="Y">
+  <value column="Name" original="Media Item">미디어 항목</value>
+ </row>
+ <row id="810" trl="Y">
+  <value column="Name" original="Stage">단계</value>
+ </row>
+ <row id="811" trl="Y">
+  <value column="Name" original="Stage Translation">단계 번역</value>
+ </row>
+ <row id="812" trl="Y">
+  <value column="Name" original="Container">컨테이너</value>
+ </row>
+ <row id="813" trl="Y">
+  <value column="Name" original="Container Translation">컨테이너 번역</value>
+ </row>
+ <row id="814" trl="Y">
+  <value column="Name" original="Container Element">컨테이너 요소</value>
+ </row>
+ <row id="815" trl="Y">
+  <value column="Name" original="Container Element Translation">컨테이너 요소 번역</value>
+ </row>
+ <row id="816" trl="Y">
+  <value column="Name" original="Stage Element">단계 요소</value>
+ </row>
+ <row id="817" trl="Y">
+  <value column="Name" original="Stage Element Translation">단계 요소 번역</value>
+ </row>
+ <row id="818" trl="Y">
+  <value column="Name" original="Template">템플릿</value>
+ </row>
+ <row id="819" trl="Y">
+  <value column="Name" original="Chat Type">채팅 유형</value>
+ </row>
+ <row id="820" trl="Y">
+  <value column="Name" original="Updates">갱신</value>
+ </row>
+ <row id="821" trl="Y">
+  <value column="Name" original="Chat">채팅</value>
+ </row>
+ <row id="822" trl="Y">
+  <value column="Name" original="Chat Entry">채팅 항목</value>
+ </row>
+ <row id="823" trl="Y">
+  <value column="Name" original="Updates">갱신</value>
+ </row>
+ <row id="824" trl="Y">
+  <value column="Name" original="Media">미디어</value>
+ </row>
+ <row id="825" trl="Y">
+  <value column="Name" original="Template Table">템플릿 테이블</value>
+ </row>
+ <row id="826" trl="Y">
+  <value column="Name" original="Container T.Table">컨테이너 T.테이블</value>
+ </row>
+ <row id="827" trl="Y">
+  <value column="Name" original="Stage T.Table">단계 T.테이블</value>
+ </row>
+ <row id="828" trl="Y">
+  <value column="Name" original="Web Project">웹 프로젝트</value>
+ </row>
+ <row id="829" trl="Y">
+  <value column="Name" original="Ad Cat Template">광고 분류 템플릿</value>
+ </row>
+ <row id="830" trl="Y">
+  <value column="Name" original="Template Ad Category">템플릿 광고 분류</value>
+ </row>
+ <row id="831" trl="Y">
+  <value column="Name" original="Entity Type">엔티티 유형</value>
+ </row>
+ <row id="832" trl="Y">
+  <value column="Name" original="System Modifin">시스템 수정</value>
+ </row>
+ <row id="833" trl="Y">
+  <value column="Name" original="Web Access Profile">웹 접근 프로필</value>
+ </row>
+ <row id="834" trl="Y">
+  <value column="Name" original="List Role">역할 목록</value>
+ </row>
+ <row id="835" trl="Y">
+  <value column="Name" original="List BPartner Group">파트너 그룹 목록</value>
+ </row>
+ <row id="836" trl="Y">
+  <value column="Name" original="Access Stage">접근 단계</value>
+ </row>
+ <row id="837" trl="Y">
+  <value column="Name" original="Access Container">접근 컨테이너</value>
+ </row>
+ <row id="838" trl="Y">
+  <value column="Name" original="Access News Channel">접근 뉴스 채널</value>
+ </row>
+ <row id="839" trl="Y">
+  <value column="Name" original="Access Media">접근 미디어</value>
+ </row>
+ <row id="840" trl="Y">
+  <value column="Name" original="Deplayment">배포</value>
+ </row>
+ <row id="841" trl="Y">
+  <value column="Name" original="Server">서버</value>
+ </row>
+ <row id="842" trl="Y">
+  <value column="Name" original="Window">기간</value>
+ </row>
+ <row id="843" trl="Y">
+  <value column="Name" original="Window Translation">창 번역</value>
+ </row>
+ <row id="844" trl="Y">
+  <value column="Name" original="Column">열</value>
+ </row>
+ <row id="845" trl="Y">
+  <value column="Name" original="Column Translation">열 번역</value>
+ </row>
+ <row id="846" trl="Y">
+  <value column="Name" original="Index">인덱스</value>
+ </row>
+ <row id="847" trl="Y">
+  <value column="Name" original="Index Stop">인덱스 제외</value>
+ </row>
+ <row id="848" trl="Y">
+  <value column="Name" original="Log">로그</value>
+ </row>
+ <row id="849" trl="Y">
+  <value column="Name" original="LDAP Server">LDAP 서버</value>
+ </row>
+ <row id="850" trl="Y">
+  <value column="Name" original="LDAP Server Log">LDAP 서버 로그</value>
+ </row>
+ <row id="851" trl="Y">
+  <value column="Name" original="LDAP Access">LDAP 접근</value>
+ </row>
+ <row id="852" trl="Y">
+  <value column="Name" original="LDAP Access">LDAP 접근</value>
+ </row>
+ <row id="50001" trl="Y">
+  <value column="Name" original="Packages Installed">설치된 패키지</value>
+ </row>
+ <row id="50002" trl="Y">
+  <value column="Name" original="Object Backups">객체 백업</value>
+ </row>
+ <row id="50003" trl="Y">
+  <value column="Name" original="Package Installation Log">패키지 설치 로그</value>
+ </row>
+ <row id="50004" trl="Y">
+  <value column="Name" original="Objects Installed">설치된 객체</value>
+ </row>
+ <row id="50005" trl="Y">
+  <value column="Name" original="Export Package">내보내기 패키지</value>
+ </row>
+ <row id="50006" trl="Y">
+  <value column="Name" original="Package Details">패키지 상세</value>
+ </row>
+ <row id="50007" trl="Y">
+  <value column="Name" original="Common Details">공통 상세</value>
+ </row>
+ <row id="50008" trl="Y">
+  <value column="Name" original="PackIn">패키지 가져오기</value>
+ </row>
+ <row id="50009" trl="Y">
+  <value column="Name" original="System Configurator">시스템 구성기</value>
+ </row>
+ <row id="50010" trl="Y">
+  <value column="Name" original="Dashboard Content">대시보드 콘텐츠</value>
+ </row>
+ <row id="52000" trl="Y">
+  <value column="Name" original="Web Menu">웹 메뉴</value>
+ </row>
+ <row id="52001" trl="Y">
+  <value column="Name" original="Role Menu">역할 메뉴</value>
+ </row>
+ <row id="52002" trl="Y">
+  <value column="Name" original="Web Properties">웹 속성</value>
+ </row>
+ <row id="52003" trl="Y">
+  <value column="Name" original="BlackListCheque">블랙리스트 수표</value>
+ </row>
+ <row id="53013" trl="Y">
+  <value column="Name" original="Document Action Access">문서 동작 접근</value>
+ </row>
+ <row id="53014" trl="Y">
+  <value column="Name" original="Model Validator">모델 검증기</value>
+ </row>
+ <row id="53015" trl="Y">
+  <value column="Name" original="Manufacturing Resource">제조 자원</value>
+ </row>
+ <row id="53016" trl="Y">
+  <value column="Name" original="Product">제품</value>
+ </row>
+ <row id="53017" trl="Y">
+  <value column="Name" original="Tools">도구</value>
+ </row>
+ <row id="53019" trl="Y">
+  <value column="Name" original="Manufacturing Workflows Translation">제조 워크플로 번역</value>
+ </row>
+ <row id="53025" trl="Y">
+  <value column="Name" original="Activity">활동</value>
+ </row>
+ <row id="53026" trl="Y">
+  <value column="Name" original="Transition">전이</value>
+ </row>
+ <row id="53027" trl="Y">
+  <value column="Name" original="Manufacturing Workflows">제조 워크플로</value>
+ </row>
+ <row id="53028" trl="Y">
+  <value column="Name" original="Parent Product">상위 제품</value>
+ </row>
+ <row id="53029" trl="Y">
+  <value column="Name" original="Components of the BOM &amp; Formula">BOM 및 배합의 구성품</value>
+ </row>
+ <row id="53030" trl="Y">
+  <value column="Name" original="Data Planning">데이터 계획</value>
+ </row>
+ <row id="53031" trl="Y">
+  <value column="Name" original="Purchasing">구매</value>
+ </row>
+ <row id="53032" trl="Y">
+  <value column="Name" original="Product">제품</value>
+ </row>
+ <row id="53033" trl="Y">
+  <value column="Name" original="Replenish">보충</value>
+ </row>
+ <row id="53034" trl="Y">
+  <value column="Name" original="Transaction">트랜잭션</value>
+ </row>
+ <row id="53035" trl="Y">
+  <value column="Name" original="Notice">통지</value>
+ </row>
+ <row id="53036" trl="Y">
+  <value column="Name" original="Order Activity">주문 활동</value>
+ </row>
+ <row id="53037" trl="Y">
+  <value column="Name" original="Transition Next">다음 전이</value>
+ </row>
+ <row id="53038" trl="Y">
+  <value column="Name" original="Cost">비용</value>
+ </row>
+ <row id="53039" trl="Y">
+  <value column="Name" original="Components of the Manufacturing Order ">제조 오더의 구성품</value>
+ </row>
+ <row id="53040" trl="Y">
+  <value column="Name" original="Order Parent Product">주문 상위 제품</value>
+ </row>
+ <row id="53041" trl="Y">
+  <value column="Name" original="Workflow">워크플로</value>
+ </row>
+ <row id="53042" trl="Y">
+  <value column="Name" original="Node Product">노드 제품</value>
+ </row>
+ <row id="53043" trl="Y">
+  <value column="Name" original="Node Asset">노드 자산</value>
+ </row>
+ <row id="53044" trl="Y">
+  <value column="Name" original="Product">제품</value>
+ </row>
+ <row id="53045" trl="Y">
+  <value column="Name" original="Replenish">보충</value>
+ </row>
+ <row id="53046" trl="Y">
+  <value column="Name" original="Purchasing">구매</value>
+ </row>
+ <row id="53047" trl="Y">
+  <value column="Name" original="Business Partner">비즈니스 파트너</value>
+ </row>
+ <row id="53048" trl="Y">
+  <value column="Name" original="Translation">번역</value>
+ </row>
+ <row id="53049" trl="Y">
+  <value column="Name" original="Activity Control">활동 통제</value>
+ </row>
+ <row id="53050" trl="Y">
+  <value column="Name" original="Distribution Order Line">배분 오더 행</value>
+ </row>
+ <row id="53051" trl="Y">
+  <value column="Name" original="Quality Specifications">품질 사양</value>
+ </row>
+ <row id="53052" trl="Y">
+  <value column="Name" original="Quality Specifications Line">품질 사양 행</value>
+ </row>
+ <row id="53053" trl="Y">
+  <value column="Name" original="Collector Cost">수집 원가</value>
+ </row>
+ <row id="53054" trl="Y">
+  <value column="Name" original="Manufacturing Order">제조 오더</value>
+ </row>
+ <row id="53055" trl="Y">
+  <value column="Name" original="Distribution Order">배분 오더</value>
+ </row>
+ <row id="53056" trl="Y">
+  <value column="Name" original="Window">기간</value>
+ </row>
+ <row id="53057" trl="Y">
+  <value column="Name" original="Tab">탭</value>
+ </row>
+ <row id="53058" trl="Y">
+  <value column="Name" original="Field">필드</value>
+ </row>
+ <row id="53059" trl="Y">
+  <value column="Name" original="Process">프로세스</value>
+ </row>
+ <row id="53060" trl="Y">
+  <value column="Name" original="Process Parameter">프로세스 매개변수</value>
+ </row>
+ <row id="53061" trl="Y">
+  <value column="Name" original="Form">양식</value>
+ </row>
+ <row id="53062" trl="Y">
+  <value column="Name" original="Task">작업</value>
+ </row>
+ <row id="53063" trl="Y">
+  <value column="Name" original="Workflow">워크플로</value>
+ </row>
+ <row id="53064" trl="Y">
+  <value column="Name" original="Module">모듈</value>
+ </row>
+ <row id="53065" trl="Y">
+  <value column="Name" original="Level">수준</value>
+ </row>
+ <row id="53066" trl="Y">
+  <value column="Name" original="Tenant Level">테넌트 수준</value>
+ </row>
+ <row id="53067" trl="Y">
+  <value column="Name" original="Exceptions">예외</value>
+ </row>
+ <row id="53068" trl="Y">
+  <value column="Name" original="Rule">규칙</value>
+ </row>
+ <row id="53069" trl="Y">
+  <value column="Name" original="Table Script Validator">테이블 스크립트 검증기</value>
+ </row>
+ <row id="53071" trl="Y">
+  <value column="Name" original="Distribution Network">유통망</value>
+ </row>
+ <row id="53072" trl="Y">
+  <value column="Name" original="Network Line">네트워크 행</value>
+ </row>
+ <row id="53073" trl="Y">
+  <value column="Name" original="Migration Scripts">마이그레이션 스크립트</value>
+ </row>
+ <row id="53075" trl="Y">
+  <value column="Name" original="Tax Group">세금 그룹</value>
+ </row>
+ <row id="53076" trl="Y">
+  <value column="Name" original="Tax Definition">세금 정의</value>
+ </row>
+ <row id="53077" trl="Y">
+  <value column="Name" original="Accounting">회계</value>
+ </row>
+ <row id="53078" trl="Y">
+  <value column="Name" original="Tax Children">하위 세금</value>
+ </row>
+ <row id="53079" trl="Y">
+  <value column="Name" original="Tax Parent">상위 세금</value>
+ </row>
+ <row id="53080" trl="Y">
+  <value column="Name" original="Tax ZIP">세금 우편번호</value>
+ </row>
+ <row id="53081" trl="Y">
+  <value column="Name" original="Translation">번역</value>
+ </row>
+ <row id="53082" trl="Y">
+  <value column="Name" original="Tax Type">세금 유형</value>
+ </row>
+ <row id="53083" trl="Y">
+  <value column="Name" original="Tax Base">과세 표준</value>
+ </row>
+ <row id="53084" trl="Y">
+  <value column="Name" original="Replication Document">복제 문서</value>
+ </row>
+ <row id="53085" trl="Y">
+  <value column="Name" original="Export Format">내보내기 형식</value>
+ </row>
+ <row id="53086" trl="Y">
+  <value column="Name" original="Export Format Line">내보내기 형식 행</value>
+ </row>
+ <row id="53087" trl="Y">
+  <value column="Name" original="Export Processor">내보내기 처리기</value>
+ </row>
+ <row id="53088" trl="Y">
+  <value column="Name" original="Export Processor Parameter">내보내기 처리기 매개변수</value>
+ </row>
+ <row id="53089" trl="Y">
+  <value column="Name" original="Export Processor Type">내보내기 처리기 유형</value>
+ </row>
+ <row id="53090" trl="Y">
+  <value column="Name" original="Import Processor">가져오기 처리기</value>
+ </row>
+ <row id="53091" trl="Y">
+  <value column="Name" original="Parameter">매개변수</value>
+ </row>
+ <row id="53092" trl="Y">
+  <value column="Name" original="Log">로그</value>
+ </row>
+ <row id="53093" trl="Y">
+  <value column="Name" original="Import Processor Type">가져오기 처리기 유형</value>
+ </row>
+ <row id="53100" trl="Y">
+  <value column="Name" original="Contract">계약</value>
+ </row>
+ <row id="53101" trl="Y">
+  <value column="Name" original="Interest Area">관심 분야</value>
+ </row>
+ <row id="53102" trl="Y">
+  <value column="Name" original="Employee">직원</value>
+ </row>
+ <row id="53103" trl="Y">
+  <value column="Name" original="Attribute">속성</value>
+ </row>
+ <row id="53104" trl="Y">
+  <value column="Name" original="Business Partner">비즈니스 파트너</value>
+ </row>
+ <row id="53105" trl="Y">
+  <value column="Name" original="Employee Accounting">직원 회계</value>
+ </row>
+ <row id="53106" trl="Y">
+  <value column="Name" original="Bank Account">은행 계좌</value>
+ </row>
+ <row id="53107" trl="Y">
+  <value column="Name" original="Location">위치</value>
+ </row>
+ <row id="53108" trl="Y">
+  <value column="Name" original="Contact (User)">연락처(사용자)</value>
+ </row>
+ <row id="53109" trl="Y">
+  <value column="Name" original="Department">부서</value>
+ </row>
+ <row id="53110" trl="Y">
+  <value column="Name" original="Job">직무</value>
+ </row>
+ <row id="53111" trl="Y">
+  <value column="Name" original="Concept">개념</value>
+ </row>
+ <row id="53112" trl="Y">
+  <value column="Name" original="Concept Accounting">개념 회계</value>
+ </row>
+ <row id="53113" trl="Y">
+  <value column="Name" original="Employee Attributes">직원 속성</value>
+ </row>
+ <row id="53114" trl="Y">
+  <value column="Name" original="Process">프로세스</value>
+ </row>
+ <row id="53115" trl="Y">
+  <value column="Name" original="Payroll">급여</value>
+ </row>
+ <row id="53116" trl="Y">
+  <value column="Name" original="Periods">기간</value>
+ </row>
+ <row id="53117" trl="Y">
+  <value column="Name" original="Year">연도</value>
+ </row>
+ <row id="53118" trl="Y">
+  <value column="Name" original="Payroll Concepts">급여 개념</value>
+ </row>
+ <row id="53119" trl="Y">
+  <value column="Name" original="Concept Category">개념 분류</value>
+ </row>
+ <row id="53120" trl="Y">
+  <value column="Name" original="Table Type">테이블 유형</value>
+ </row>
+ <row id="53121" trl="Y">
+  <value column="Name" original="Payroll Table">급여 표</value>
+ </row>
+ <row id="53122" trl="Y">
+  <value column="Name" original="Payroll Table Version">급여 표 버전</value>
+ </row>
+ <row id="53123" trl="Y">
+  <value column="Name" original="Payroll Table Line">급여 표 행</value>
+ </row>
+ <row id="53124" trl="Y">
+  <value column="Name" original="Payroll Movement">급여 변동</value>
+ </row>
+ <row id="53134" trl="Y">
+  <value column="Name" original="Attributes">속성</value>
+ </row>
+ <row id="53138" trl="Y">
+  <value column="Name" original="Revaluation Entry">재평가 입력</value>
+ </row>
+ <row id="53139" trl="Y">
+  <value column="Name" original="Maintain Index">인덱스 관리</value>
+ </row>
+ <row id="53140" trl="Y">
+  <value column="Name" original="Create Asset Transfer Entry">자산 이전 입력 생성</value>
+ </row>
+ <row id="53141" trl="Y">
+  <value column="Name" original="Create Disposal Entry">처분 입력 생성</value>
+ </row>
+ <row id="53142" trl="Y">
+  <value column="Name" original="Step4 Process Asset Split">4단계 자산 분할 처리</value>
+ </row>
+ <row id="53143" trl="Y">
+  <value column="Name" original="Step1 Select an Asset">1단계 자산 선택</value>
+ </row>
+ <row id="53144" trl="Y">
+  <value column="Name" original="Step2 Select the Balance">2단계 잔액 선택</value>
+ </row>
+ <row id="53145" trl="Y">
+  <value column="Name" original="Step3 Select Accounting">3단계 회계 선택</value>
+ </row>
+ <row id="53146" trl="Y">
+  <value column="Name" original="Step1 Select an Asset">1단계 자산 선택</value>
+ </row>
+ <row id="53147" trl="Y">
+  <value column="Name" original="Step2 Asset Disposal">2단계 자산 처분</value>
+ </row>
+ <row id="53148" trl="Y">
+  <value column="Name" original="Step2 Select Accounting Setup">2단계 회계 설정 선택</value>
+ </row>
+ <row id="53149" trl="Y">
+  <value column="Name" original="Step3 Process Transfers">3단계 이전 처리</value>
+ </row>
+ <row id="53150" trl="Y">
+  <value column="Name" original="Step1 Select Asset">1단계 자산 선택</value>
+ </row>
+ <row id="53151" trl="Y">
+  <value column="Name" original="Create Split Asset Entry">자산 분할 입력 생성</value>
+ </row>
+ <row id="53152" trl="Y">
+  <value column="Name" original="Build Workfile">작업 파일 생성</value>
+ </row>
+ <row id="53153" trl="Y">
+  <value column="Name" original="Create Depreciation Entry">감가상각 입력 생성</value>
+ </row>
+ <row id="53154" trl="Y">
+  <value column="Name" original="Depreciation Forecast">감가상각 예측</value>
+ </row>
+ <row id="53155" trl="Y">
+  <value column="Name" original="Tax Information">세금 정보</value>
+ </row>
+ <row id="53156" trl="Y">
+  <value column="Name" original="Finance Information">재무 정보</value>
+ </row>
+ <row id="53157" trl="Y">
+  <value column="Name" original="Accounting Setup">회계 설정</value>
+ </row>
+ <row id="53158" trl="Y">
+  <value column="Name" original="Asset History">자산 이력</value>
+ </row>
+ <row id="53159" trl="Y">
+  <value column="Name" original="License Information">라이선스 정보</value>
+ </row>
+ <row id="53160" trl="Y">
+  <value column="Name" original="Insurance Information">보험 정보</value>
+ </row>
+ <row id="53161" trl="Y">
+  <value column="Name" original="Other Information">기타 정보</value>
+ </row>
+ <row id="53162" trl="Y">
+  <value column="Name" original="Asset Balances">자산 잔액</value>
+ </row>
+ <row id="53165" trl="Y">
+  <value column="Name" original="Group Account">그룹 계정</value>
+ </row>
+ <row id="53171" trl="Y">
+  <value column="Name" original="Depreciation Functions">감가상각 함수</value>
+ </row>
+ <row id="53172" trl="Y">
+  <value column="Name" original="Depreciation Schedules">감가상각 일정</value>
+ </row>
+ <row id="53173" trl="Y">
+  <value column="Name" original="Depreciation Schedule Details">감가상각 일정 상세</value>
+ </row>
+ <row id="53174" trl="Y">
+  <value column="Name" original="Setup Conventions">설정 관례</value>
+ </row>
+ <row id="53175" trl="Y">
+  <value column="Name" original="Define Depreciation Method">감가상각 방법 정의</value>
+ </row>
+ <row id="53176" trl="Y">
+  <value column="Name" original="Charge Type">비용 항목 유형</value>
+ </row>
+ <row id="53177" trl="Y">
+  <value column="Name" original="Charge Type by Doc Type">문서 유형별 비용 항목 유형</value>
+ </row>
+ <row id="53178" trl="Y">
+  <value column="Name" original="House Keeping">하우스키핑</value>
+ </row>
+ <row id="53179" trl="Y">
+  <value column="Name" original="BOM &amp; Formula">BOM 및 배합</value>
+ </row>
+ <row id="53180" trl="Y">
+  <value column="Name" original="Records">레코드</value>
+ </row>
+ <row id="53181" trl="Y">
+  <value column="Name" original="Terminal">단말기</value>
+ </row>
+ <row id="53185" trl="Y">
+  <value column="Name" original="Web Service">웹 서비스</value>
+ </row>
+ <row id="53186" trl="Y">
+  <value column="Name" original="Web Service Method">웹 서비스 메서드</value>
+ </row>
+ <row id="53187" trl="Y">
+  <value column="Name" original="Web Service Type">웹 서비스 유형</value>
+ </row>
+ <row id="53188" trl="Y">
+  <value column="Name" original="Web Service Parameters">웹 서비스 매개변수</value>
+ </row>
+ <row id="53189" trl="Y">
+  <value column="Name" original="Web Service Field Input">웹 서비스 필드 입력</value>
+ </row>
+ <row id="53190" trl="Y">
+  <value column="Name" original="Web Service Field Output">웹 서비스 필드 출력</value>
+ </row>
+ <row id="53191" trl="Y">
+  <value column="Name" original="Web Service Access">웹 서비스 접근</value>
+ </row>
+ <row id="53192" trl="Y">
+  <value column="Name" original="Attributes">속성</value>
+ </row>
+ <row id="53193" trl="Y">
+  <value column="Name" original="Searches">검색</value>
+ </row>
+ <row id="53197" trl="Y">
+  <value column="Name" original="Product Price Break">제품 가격 구간</value>
+ </row>
+ <row id="53198" trl="Y">
+  <value column="Name" original="Import Price List">가격표 가져오기</value>
+ </row>
+ <row id="53200" trl="Y">
+  <value column="Name" original="Concept Ordering">개념 정렬</value>
+ </row>
+ <row id="53210" trl="Y">
+  <value column="Name" original="Translation">번역</value>
+ </row>
+ <row id="53213" trl="Y">
+  <value column="Name" original="Workflow Translation">워크플로 번역</value>
+ </row>
+ <row id="53214" trl="Y">
+  <value column="Name" original="Order Activity Translation">주문 활동 번역</value>
+ </row>
+ <row id="53215" trl="Y">
+  <value column="Name" original="Parent Product Translation">상위 제품 번역</value>
+ </row>
+ <row id="53216" trl="Y">
+  <value column="Name" original="Components Translation">구성품 번역</value>
+ </row>
+ <row id="53217" trl="Y">
+  <value column="Name" original="Orden BOM Translation">오더 BOM 번역</value>
+ </row>
+ <row id="53218" trl="Y">
+  <value column="Name" original="Order Components Translation">주문 구성품 번역</value>
+ </row>
+ <row id="53219" trl="Y">
+  <value column="Name" original="Report Cube">보고서 큐브</value>
+ </row>
+ <row id="53237" trl="Y">
+  <value column="Name" original="Notice">통지</value>
+ </row>
+ <row id="53238" trl="Y">
+  <value column="Name" original="Unprocessed Documents">미처리 문서</value>
+ </row>
+ <row id="53239" trl="Y">
+  <value column="Name" original="Unprocessed Documents">미처리 문서</value>
+ </row>
+ <row id="53240" trl="Y">
+  <value column="Name" original="Included role templates">포함된 역할 템플릿</value>
+ </row>
+ <row id="53244" trl="Y">
+  <value column="Name" original="Located at">위치</value>
+ </row>
+ <row id="53246" trl="Y">
+  <value column="Name" original="UOM Conversion">측정 단위 환산</value>
+ </row>
+ <row id="53271" trl="Y">
+  <value column="Name" original="Customer Return">고객 반품</value>
+ </row>
+ <row id="53272" trl="Y">
+  <value column="Name" original="Customer Return Line">고객 반품 행</value>
+ </row>
+ <row id="53273" trl="Y">
+  <value column="Name" original="Confirmations">확인</value>
+ </row>
+ <row id="53274" trl="Y">
+  <value column="Name" original="Matched POs">대응된 구매 주문</value>
+ </row>
+ <row id="53275" trl="Y">
+  <value column="Name" original="Matched Invoices">대응된 청구서</value>
+ </row>
+ <row id="53276" trl="Y">
+  <value column="Name" original="Return to Vendor">공급업체 반품</value>
+ </row>
+ <row id="53277" trl="Y">
+  <value column="Name" original="Return to Vendor Line">공급업체 반품 행</value>
+ </row>
+ <row id="53278" trl="Y">
+  <value column="Name" original="Confirmations">확인</value>
+ </row>
+ <row id="53279" trl="Y">
+  <value column="Name" original="Attributes">속성</value>
+ </row>
+ <row id="53280" trl="Y">
+  <value column="Name" original="Vendor RMA">공급업체 RMA</value>
+ </row>
+ <row id="53281" trl="Y">
+  <value column="Name" original="RMA Line">RMA 행</value>
+ </row>
+ <row id="53282" trl="Y">
+  <value column="Name" original="User Contact">사용자 연락처</value>
+ </row>
+ <row id="53283" trl="Y">
+  <value column="Name" original="User Mail">사용자 메일</value>
+ </row>
+ <row id="53284" trl="Y">
+  <value column="Name" original="Order Source">주문 출처</value>
+ </row>
+ <row id="53285" trl="Y">
+  <value column="Name" original="Relation Type">관계 유형</value>
+ </row>
+ <row id="53286" trl="Y">
+  <value column="Name" original="BOM">BOM</value>
+ </row>
+ <row id="53287" trl="Y">
+  <value column="Name" original="Components">컴포넌트</value>
+ </row>
+ <row id="53289" trl="Y">
+  <value column="Name" original="Costs">원가</value>
+ </row>
+ <row id="53297" trl="Y">
+  <value column="Name" original="Used in Process Parameter">프로세스 매개변수에서 사용</value>
+ </row>
+ <row id="53298" trl="Y">
+  <value column="Name" original="Used in Field">필드에서 사용</value>
+ </row>
+ <row id="53306" trl="Y">
+  <value column="Name" original="Import Payroll Movement">급여 변동 가져오기</value>
+ </row>
+ <row id="53307" trl="Y">
+  <value column="Name" original="Import Product Planning">제품 계획 가져오기</value>
+ </row>
+ <row id="53311" trl="Y">
+  <value column="Name" original="Key Sequence">키 순서</value>
+ </row>
+ <row id="53320" trl="Y">
+  <value column="Name" original="Product">제품</value>
+ </row>
+ <row id="53321" trl="Y">
+  <value column="Name" original="Disposal">처분</value>
+ </row>
+ <row id="53322" trl="Y">
+  <value column="Name" original="Expense">경비</value>
+ </row>
+ <row id="53323" trl="Y">
+  <value column="Name" original="Activation/Addition">활성화/추가</value>
+ </row>
+ <row id="53324" trl="Y">
+  <value column="Name" original="Addition">추가</value>
+ </row>
+ <row id="53325" trl="Y">
+  <value column="Name" original="Asset Disposal">자산 처분</value>
+ </row>
+ <row id="53327" trl="Y">
+  <value column="Name" original="Asset Change account">자산 변경 계정</value>
+ </row>
+ <row id="53329" trl="Y">
+  <value column="Name" original="Funding Mode">조달 방식</value>
+ </row>
+ <row id="53330" trl="Y">
+  <value column="Name" original="Accounting">회계</value>
+ </row>
+ <row id="53331" trl="Y">
+  <value column="Name" original="Revaluation Asset">재평가 자산</value>
+ </row>
+ <row id="53332" trl="Y">
+  <value column="Name" original="Type">유형</value>
+ </row>
+ <row id="53333" trl="Y">
+  <value column="Name" original="Records">레코드</value>
+ </row>
+ <row id="53334" trl="Y">
+  <value column="Name" original="Fixed Asset">고정자산</value>
+ </row>
+ <row id="53335" trl="Y">
+  <value column="Name" original="Import Inventory Move">재고 이동 가져오기</value>
+ </row>
+ <row id="53339" trl="Y">
+  <value column="Name" original="Chart">차트</value>
+ </row>
+ <row id="53340" trl="Y">
+  <value column="Name" original="Datasource">데이터 소스</value>
+ </row>
+ <row id="53341" trl="Y">
+  <value column="Name" original="Reconciliation">대사</value>
+ </row>
+ <row id="53344" trl="Y">
+  <value column="Name" original="Production">생산</value>
+ </row>
+ <row id="53345" trl="Y">
+  <value column="Name" original="Production Line">생산 행</value>
+ </row>
+ <row id="53346" trl="Y">
+  <value column="Name" original="Part">부품</value>
+ </row>
+ <row id="53347" trl="Y">
+  <value column="Name" original="Bill of Materials">자재 명세서</value>
+ </row>
+ <row id="53372" trl="Y">
+  <value column="Name" original="Translation">번역</value>
+ </row>
+ <row id="53373" trl="Y">
+  <value column="Name" original="Payment Schedule">결제 일정</value>
+ </row>
+ <row id="53374" trl="Y">
+  <value column="Name" original="Payment Schedule">결제 일정</value>
+ </row>
+ <row id="53375" trl="Y">
+  <value column="Name" original="Payment Schedule">결제 일정</value>
+ </row>
+ <row id="53376" trl="Y">
+  <value column="Name" original="Cash Plan">현금 계획</value>
+ </row>
+ <row id="53377" trl="Y">
+  <value column="Name" original="Cash Plan Line">현금 계획 행</value>
+ </row>
+ <row id="53401" trl="Y">
+  <value column="Name" original="Request">요청</value>
+ </row>
+ <row id="53402" trl="Y">
+  <value column="Name" original="Meter">계량기</value>
+ </row>
+ <row id="53403" trl="Y">
+  <value column="Name" original="Job Standard">표준 직무</value>
+ </row>
+ <row id="53404" trl="Y">
+  <value column="Name" original="Task">작업</value>
+ </row>
+ <row id="53405" trl="Y">
+  <value column="Name" original="Resource">자원</value>
+ </row>
+ <row id="53406" trl="Y">
+  <value column="Name" original="Maintenance">유지보수</value>
+ </row>
+ <row id="53407" trl="Y">
+  <value column="Name" original="Tasks">작업</value>
+ </row>
+ <row id="53408" trl="Y">
+  <value column="Name" original="Resources">자원</value>
+ </row>
+ <row id="53409" trl="Y">
+  <value column="Name" original="Order">주문</value>
+ </row>
+ <row id="53410" trl="Y">
+  <value column="Name" original="Tasks">작업</value>
+ </row>
+ <row id="53411" trl="Y">
+  <value column="Name" original="Resources">자원</value>
+ </row>
+ <row id="53412" trl="Y">
+  <value column="Name" original="Asset Meter">자산 계량기</value>
+ </row>
+ <row id="53413" trl="Y">
+  <value column="Name" original="Meter Log">계량기 로그</value>
+ </row>
+ <row id="53421" trl="Y">
+  <value column="Name" original="QC Test">품질관리 검사</value>
+ </row>
+ <row id="53422" trl="Y">
+  <value column="Name" original="Test">테스트</value>
+ </row>
+ <row id="53423" trl="Y">
+  <value column="Name" original="Product">제품</value>
+ </row>
+ <row id="53424" trl="Y">
+  <value column="Name" original="Type">유형</value>
+ </row>
+ <row id="53428" trl="Y">
+  <value column="Name" original="Contact">연락처</value>
+ </row>
+ <row id="53429" trl="Y">
+  <value column="Name" original="Lead">리드</value>
+ </row>
+ <row id="53430" trl="Y">
+  <value column="Name" original="Sales Stage">영업 단계</value>
+ </row>
+ <row id="53431" trl="Y">
+  <value column="Name" original="Opportunity">영업 기회</value>
+ </row>
+ <row id="53432" trl="Y">
+  <value column="Name" original="Opportunity">영업 기회</value>
+ </row>
+ <row id="53434" trl="Y">
+  <value column="Name" original="Dashboard">대시보드</value>
+ </row>
+ <row id="53435" trl="Y">
+  <value column="Name" original="Quote/Order">견적/주문</value>
+ </row>
+ <row id="53436" trl="Y">
+  <value column="Name" original="Order Line">주문 행</value>
+ </row>
+ <row id="53437" trl="Y">
+  <value column="Name" original="Opportunities">영업 기회</value>
+ </row>
+ <row id="53438" trl="Y">
+  <value column="Name" original="Leads">리드</value>
+ </row>
+ <row id="53439" trl="Y">
+  <value column="Name" original="Opportunity">영업 기회</value>
+ </row>
+ <row id="53452" trl="Y">
+  <value column="Name" original="Activity">활동</value>
+ </row>
+ <row id="53453" trl="Y">
+  <value column="Name" original="Activity">활동</value>
+ </row>
+ <row id="53454" trl="Y">
+  <value column="Name" original="Activity">활동</value>
+ </row>
+ <row id="53455" trl="Y">
+  <value column="Name" original="Activities">활동</value>
+ </row>
+ <row id="53456" trl="Y">
+  <value column="Name" original="Customer">고객</value>
+ </row>
+ <row id="53457" trl="Y">
+  <value column="Name" original="Contacts">연락처</value>
+ </row>
+ <row id="53458" trl="Y">
+  <value column="Name" original="Activities">활동</value>
+ </row>
+ <row id="53459" trl="Y">
+  <value column="Name" original="Locations">위치</value>
+ </row>
+ <row id="53460" trl="Y">
+  <value column="Name" original="Contract Prices">계약 가격</value>
+ </row>
+ <row id="53461" trl="Y">
+  <value column="Name" original="Requests">요청</value>
+ </row>
+ <row id="53462" trl="Y">
+  <value column="Name" original="Orders">주문</value>
+ </row>
+ <row id="53463" trl="Y">
+  <value column="Name" original="Opportunities">영업 기회</value>
+ </row>
+ <row id="54010" trl="Y">
+  <value column="Name" original="Service">서비스</value>
+ </row>
+ <row id="200000" trl="Y">
+  <value column="Name" original="Cost Movement">원가 변동</value>
+ </row>
+ <row id="200001" trl="Y">
+  <value column="Name" original="Sequence No">순번 번호</value>
+ </row>
+ <row id="200002" trl="Y">
+  <value column="Name" original="ToolBar Button">도구 모음 버튼</value>
+ </row>
+ <row id="200003" trl="Y">
+  <value column="Name" original="Toolbar Button Access">도구 모음 버튼 접근</value>
+ </row>
+ <row id="200004" trl="Y">
+  <value column="Name" original="Password Rule">비밀번호 규칙</value>
+ </row>
+ <row id="200007" trl="Y">
+  <value column="Name" original="Journal">분개</value>
+ </row>
+ <row id="200008" trl="Y">
+  <value column="Name" original="Line">행</value>
+ </row>
+ <row id="200009" trl="Y">
+  <value column="Name" original="Grid Sequence">그리드 순서</value>
+ </row>
+ <row id="200010" trl="Y">
+  <value column="Name" original="Ref List">참조 목록</value>
+ </row>
+ <row id="200011" trl="Y">
+  <value column="Name" original="Preference">환경설정</value>
+ </row>
+ <row id="200014" trl="Y">
+  <value column="Name" original="POS Tender Type">POS 지불 수단 유형</value>
+ </row>
+ <row id="200015" trl="Y">
+  <value column="Name" original="POS Payment">POS 결제</value>
+ </row>
+ <row id="200016" trl="Y">
+  <value column="Name" original="POS Payment">POS 결제</value>
+ </row>
+ <row id="200019" trl="Y">
+  <value column="Name" original="Schedule">공정</value>
+ </row>
+ <row id="200020" trl="Y">
+  <value column="Name" original="GL Journal Generator">총계정원장 분개 생성기</value>
+ </row>
+ <row id="200021" trl="Y">
+  <value column="Name" original="Generator Line">생성기 행</value>
+ </row>
+ <row id="200022" trl="Y">
+  <value column="Name" original="Generator Source">생성기 원본</value>
+ </row>
+ <row id="200024" trl="Y">
+  <value column="Name" original="Payment Processor">결제 처리기</value>
+ </row>
+ <row id="200025" trl="Y">
+  <value column="Name" original="Sessions">세션</value>
+ </row>
+ <row id="200026" trl="Y">
+  <value column="Name" original="Bank Account Processor">은행 계좌 처리기</value>
+ </row>
+ <row id="200027" trl="Y">
+  <value column="Name" original="Payment Transaction">결제 트랜잭션</value>
+ </row>
+ <row id="200028" trl="Y">
+  <value column="Name" original="Toolbar Button">도구 모음 버튼</value>
+ </row>
+ <row id="200029" trl="Y">
+  <value column="Name" original="Online Transaction History">온라인 거래 내역</value>
+ </row>
+ <row id="200031" trl="Y">
+  <value column="Name" original="Setup Wizard">설정 마법사</value>
+ </row>
+ <row id="200032" trl="Y">
+  <value column="Name" original="Storage Provider">저장소 제공자</value>
+ </row>
+ <row id="200033" trl="Y">
+  <value column="Name" original="Broadcast Message">일괄 메시지</value>
+ </row>
+ <row id="200035" trl="Y">
+  <value column="Name" original="Message Log">메시지 로그</value>
+ </row>
+ <row id="200036" trl="Y">
+  <value column="Name" original="Shipping Processor">출하 처리기</value>
+ </row>
+ <row id="200037" trl="Y">
+  <value column="Name" original="Packaging">포장</value>
+ </row>
+ <row id="200038" trl="Y">
+  <value column="Name" original="Label Type">라벨 유형</value>
+ </row>
+ <row id="200039" trl="Y">
+  <value column="Name" original="Pickup Types">픽업 유형</value>
+ </row>
+ <row id="200040" trl="Y">
+  <value column="Name" original="Shipping Accounts">배송 계정</value>
+ </row>
+ <row id="200044" trl="Y">
+  <value column="Name" original="Packages">패키지</value>
+ </row>
+ <row id="200045" trl="Y">
+  <value column="Name" original="MPS Lines">MPS 행</value>
+ </row>
+ <row id="200046" trl="Y">
+  <value column="Name" original="Package Lines">패키지 행</value>
+ </row>
+ <row id="200047" trl="Y">
+  <value column="Name" original="Packages">패키지</value>
+ </row>
+ <row id="200048" trl="Y">
+  <value column="Name" original="MPS Lines">MPS 행</value>
+ </row>
+ <row id="200049" trl="Y">
+  <value column="Name" original="Package Lines">패키지 행</value>
+ </row>
+ <row id="200050" trl="Y">
+  <value column="Name" original="Commodity Shipment">상품 출하</value>
+ </row>
+ <row id="200051" trl="Y">
+  <value column="Name" original="Shipping Processor">출하 처리기</value>
+ </row>
+ <row id="200052" trl="Y">
+  <value column="Name" original="Shipper">운송업체</value>
+ </row>
+ <row id="200053" trl="Y">
+  <value column="Name" original="Packaging">포장</value>
+ </row>
+ <row id="200054" trl="Y">
+  <value column="Name" original="Label Type">라벨 유형</value>
+ </row>
+ <row id="200055" trl="Y">
+  <value column="Name" original="Pickup Types">픽업 유형</value>
+ </row>
+ <row id="200057" trl="Y">
+  <value column="Name" original="Shipper">운송업체</value>
+ </row>
+ <row id="200058" trl="Y">
+  <value column="Name" original="Packaging">포장</value>
+ </row>
+ <row id="200059" trl="Y">
+  <value column="Name" original="Label Type">라벨 유형</value>
+ </row>
+ <row id="200060" trl="Y">
+  <value column="Name" original="Pickup Types">픽업 유형</value>
+ </row>
+ <row id="200061" trl="Y">
+  <value column="Name" original="Shipping Transaction">출하 트랜잭션</value>
+ </row>
+ <row id="200062" trl="Y">
+  <value column="Name" original="Shipping Transaction Line">출하 트랜잭션 행</value>
+ </row>
+ <row id="200064" trl="Y">
+  <value column="Name" original="Info Access">정보 접근</value>
+ </row>
+ <row id="200065" trl="Y">
+  <value column="Name" original="RMA Tax">RMA 세금</value>
+ </row>
+ <row id="200066" trl="Y">
+  <value column="Name" original="RMA Tax">RMA 세금</value>
+ </row>
+ <row id="200067" trl="Y">
+  <value column="Name" original="Batch">배치</value>
+ </row>
+ <row id="200068" trl="Y">
+  <value column="Name" original="Lines">행</value>
+ </row>
+ <row id="200074" trl="Y">
+  <value column="Name" original="Context Help">상황별 도움말</value>
+ </row>
+ <row id="200075" trl="Y">
+  <value column="Name" original="Message">메시지</value>
+ </row>
+ <row id="200076" trl="Y">
+  <value column="Name" original="Translation">번역</value>
+ </row>
+ <row id="200077" trl="Y">
+  <value column="Name" original="Zoom Condition">확대 조건</value>
+ </row>
+ <row id="200078" trl="Y">
+  <value column="Name" original="1099 Box">1099 박스</value>
+ </row>
+ <row id="200079" trl="Y">
+  <value column="Name" original="Used in Field">필드에서 사용</value>
+ </row>
+ <row id="200095" trl="Y">
+  <value column="Name" original="City (Without Regions)">도시(지역 제외)</value>
+ </row>
+ <row id="200096" trl="Y">
+  <value column="Name" original="Table Index">테이블 인덱스</value>
+ </row>
+ <row id="200097" trl="Y">
+  <value column="Name" original="Index Column">인덱스 열</value>
+ </row>
+ <row id="200098" trl="Y">
+  <value column="Name" original="View Component">보기 구성요소</value>
+ </row>
+ <row id="200099" trl="Y">
+  <value column="Name" original="View Column">보기 열</value>
+ </row>
+ <row id="200100" trl="Y">
+  <value column="Name" original="Related Info Window">관련 정보 창</value>
+ </row>
+ <row id="200102" trl="Y">
+  <value column="Name" original="Cost Adjustment">원가 조정</value>
+ </row>
+ <row id="200103" trl="Y">
+  <value column="Name" original="Cost Adjustment Line">원가 조정 행</value>
+ </row>
+ <row id="200105" trl="Y">
+  <value column="Name" original="Tax Provider Configuration">세금 제공자 구성</value>
+ </row>
+ <row id="200106" trl="Y">
+  <value column="Name" original="Tax Provider">세금 제공자</value>
+ </row>
+ <row id="200107" trl="Y">
+  <value column="Name" original="Address Validation">주소 검증</value>
+ </row>
+ <row id="200108" trl="Y">
+  <value column="Name" original="Address Validation">주소 검증</value>
+ </row>
+ <row id="200109" trl="Y">
+  <value column="Name" original="Estimated Landed Cost">예상 도착 원가</value>
+ </row>
+ <row id="200110" trl="Y">
+  <value column="Name" original="Estimated Landed Cost Allocation">예상 도착 원가 배정</value>
+ </row>
+ <row id="200111" trl="Y">
+  <value column="Name" original="Address Transaction">주소 트랜잭션</value>
+ </row>
+ <row id="200112" trl="Y">
+  <value column="Name" original="Dashboard Content Access">대시보드 콘텐츠 접근</value>
+ </row>
+ <row id="200113" trl="Y">
+  <value column="Name" original="Used in Info Column">정보 열에서 사용</value>
+ </row>
+ <row id="200114" trl="Y">
+  <value column="Name" original="Status Line">상태 표시줄</value>
+ </row>
+ <row id="200115" trl="Y">
+  <value column="Name" original="Used In">사용처</value>
+ </row>
+ <row id="200116" trl="Y">
+  <value column="Name" original="Available Columns">사용 가능한 열</value>
+ </row>
+ <row id="200121" trl="Y">
+  <value column="Name" original="Translation">번역</value>
+ </row>
+ <row id="200122" trl="Y">
+  <value column="Name" original="Translation">번역</value>
+ </row>
+ <row id="200123" trl="Y">
+  <value column="Name" original="Translation">번역</value>
+ </row>
+ <row id="200124" trl="Y">
+  <value column="Name" original="Translation">번역</value>
+ </row>
+ <row id="200125" trl="Y">
+  <value column="Name" original="Translation">번역</value>
+ </row>
+ <row id="200126" trl="Y">
+  <value column="Name" original="Translation">번역</value>
+ </row>
+ <row id="200127" trl="Y">
+  <value column="Name" original="Translation">번역</value>
+ </row>
+ <row id="200128" trl="Y">
+  <value column="Name" original="Translation">번역</value>
+ </row>
+ <row id="200129" trl="Y">
+  <value column="Name" original="Translation">번역</value>
+ </row>
+ <row id="200130" trl="Y">
+  <value column="Name" original="Translation">번역</value>
+ </row>
+ <row id="200131" trl="Y">
+  <value column="Name" original="Translation">번역</value>
+ </row>
+ <row id="200132" trl="Y">
+  <value column="Name" original="Translation">번역</value>
+ </row>
+ <row id="200133" trl="Y">
+  <value column="Name" original="Translation">번역</value>
+ </row>
+ <row id="200134" trl="Y">
+  <value column="Name" original="Translation">번역</value>
+ </row>
+ <row id="200137" trl="Y">
+  <value column="Name" original="Attributes">속성</value>
+ </row>
+ <row id="200138" trl="Y">
+  <value column="Name" original="Attributes">속성</value>
+ </row>
+ <row id="200142" trl="Y">
+  <value column="Name" original="Process">프로세스</value>
+ </row>
+ <row id="200143" trl="Y">
+  <value column="Name" original="Translate">번역하기</value>
+ </row>
+ <row id="200144" trl="Y">
+  <value column="Name" original="Role Access">역할 접근</value>
+ </row>
+ <row id="200154" trl="Y">
+  <value column="Name" original="Recurring Group">반복 그룹</value>
+ </row>
+ <row id="200156" trl="Y">
+  <value column="Name" original="Country Group">국가 그룹</value>
+ </row>
+ <row id="200157" trl="Y">
+  <value column="Name" original="Country">국가</value>
+ </row>
+ <row id="200158" trl="Y">
+  <value column="Name" original="Country Group">국가 그룹</value>
+ </row>
+ <row id="200159" trl="Y">
+  <value column="Name" original="Translation">번역</value>
+ </row>
+ <row id="200167" trl="Y">
+  <value column="Name" original="Import Template">가져오기 템플릿</value>
+ </row>
+ <row id="200168" trl="Y">
+  <value column="Name" original="Import Template Access">가져오기 템플릿 접근</value>
+ </row>
+ <row id="200189" trl="Y">
+  <value column="Name" original="User Preference">사용자 환경설정</value>
+ </row>
+ <row id="200190" trl="Y">
+  <value column="Name" original="Locator Type">로케이터 유형</value>
+ </row>
+ <row id="200191" trl="Y">
+  <value column="Name" original="Package Installation">패키지 설치</value>
+ </row>
+ <row id="200209" trl="Y">
+  <value column="Name" original="Menu entries">메뉴 항목</value>
+ </row>
+ <row id="200213" trl="Y">
+  <value column="Name" original="CSS Style">CSS 스타일</value>
+ </row>
+ <row id="200214" trl="Y">
+  <value column="Name" original="Style Line">스타일 행</value>
+ </row>
+ <row id="200215" trl="Y">
+  <value column="Name" original="Suggestions">제안</value>
+ </row>
+ <row id="200216" trl="Y">
+  <value column="Name" original="Suggestion">제안</value>
+ </row>
+ <row id="200220" trl="Y">
+  <value column="Name" original="Post-it">메모지</value>
+ </row>
+ <row id="200222" trl="Y">
+  <value column="Name" original="Document Status Indicator">문서 상태 표시기</value>
+ </row>
+ <row id="200223" trl="Y">
+  <value column="Name" original="Document Status Translation">문서 상태 번역</value>
+ </row>
+ <row id="200224" trl="Y">
+  <value column="Name" original="Attributes">속성</value>
+ </row>
+ <row id="200226" trl="Y">
+  <value column="Name" original="Tenant">테넌트</value>
+ </row>
+ <row id="200227" trl="Y">
+  <value column="Name" original="User">사용자</value>
+ </row>
+ <row id="200228" trl="Y">
+  <value column="Name" original="User">사용자</value>
+ </row>
+ <row id="200230" trl="Y">
+  <value column="Name" original="Approver">승인자</value>
+ </row>
+ <row id="200231" trl="Y">
+  <value column="Name" original="Approver">승인자</value>
+ </row>
+ <row id="200234" trl="Y">
+  <value column="Name" original="Process Customization">프로세스 사용자 정의</value>
+ </row>
+ <row id="200235" trl="Y">
+  <value column="Name" original="User defined Process Parameter">사용자 정의 프로세스 매개변수</value>
+ </row>
+ <row id="200249" trl="Y">
+  <value column="Name" original="Print Header/Footer">인쇄 머리글/바닥글</value>
+ </row>
+ <row id="200255" trl="Y">
+  <value column="Name" original="Bank Transfer">은행 이체</value>
+ </row>
+ <row id="200256" trl="Y">
+  <value column="Name" original="Payments">결제</value>
+ </row>
+ <row id="200262" trl="Y">
+  <value column="Name" original="User Roles">사용자 역할</value>
+ </row>
+ <row id="200263" trl="Y">
+  <value column="Name" original="User Roles">사용자 역할</value>
+ </row>
+ <row id="200264" trl="Y">
+  <value column="Name" original="Role">역할</value>
+ </row>
+ <row id="200265" trl="Y">
+  <value column="Name" original="Role">역할</value>
+ </row>
+ <row id="200266" trl="Y">
+  <value column="Name" original="User Roles">사용자 역할</value>
+ </row>
+ <row id="200269" trl="Y">
+  <value column="Name" original="Used in Column (Lookup)">열에서 사용(조회)</value>
+ </row>
+ <row id="200271" trl="Y">
+  <value column="Name" original="Translation">번역</value>
+ </row>
+ <row id="200272" trl="Y">
+  <value column="Name" original="Translation">번역</value>
+ </row>
+ <row id="200275" trl="Y">
+  <value column="Name" original="User Queries">사용자 쿼리</value>
+ </row>
+ <row id="200279" trl="Y">
+  <value column="Name" original="Column Customization">열 사용자 정의</value>
+ </row>
+ <row id="200280" trl="Y">
+  <value column="Name" original="Info Window Customization">정보 창 사용자 정의</value>
+ </row>
+ <row id="200281" trl="Y">
+  <value column="Name" original="Related Customization">관련 사용자 정의</value>
+ </row>
+ <row id="200282" trl="Y">
+  <value column="Name" original="User favourite tree">사용자 즐겨찾기 트리</value>
+ </row>
+ <row id="200283" trl="Y">
+  <value column="Name" original="Favorite tree node">즐겨찾는 트리 노드</value>
+ </row>
+ <row id="200284" trl="Y">
+  <value column="Name" original="Authorization Provider">인증 제공자</value>
+ </row>
+ <row id="200285" trl="Y">
+  <value column="Name" original="Authorization Scope Provider">인증 범위 제공자</value>
+ </row>
+ <row id="200286" trl="Y">
+  <value column="Name" original="Authorization Credential">인증 자격 증명</value>
+ </row>
+ <row id="200287" trl="Y">
+  <value column="Name" original="Authorization Account">인증 계정</value>
+ </row>
+ <row id="200288" trl="Y">
+  <value column="Name" original="MFA Method">MFA 방법</value>
+ </row>
+ <row id="200289" trl="Y">
+  <value column="Name" original="MFA Registered Device">MFA 등록 장치</value>
+ </row>
+ <row id="200290" trl="Y">
+  <value column="Name" original="MFA Registration">MFA 등록</value>
+ </row>
+ <row id="200291" trl="Y">
+  <value column="Name" original="MFA Rule">MFA 규칙</value>
+ </row>
+ <row id="200295" trl="Y">
+  <value column="Name" original="Document Status Access">문서 상태 접근</value>
+ </row>
+ <row id="200296" trl="Y">
+  <value column="Name" original="Document Status Access">문서 상태 접근</value>
+ </row>
+ <row id="200297" trl="Y">
+  <value column="Name" original="Document Status Access">문서 상태 접근</value>
+ </row>
+ <row id="200298" trl="Y">
+  <value column="Name" original="SMTP Server">SMTP 서버</value>
+ </row>
+ <row id="200299" trl="Y">
+  <value column="Name" original="Customization of the Wlistbox">Wlistbox 사용자 정의</value>
+ </row>
+ <row id="200300" trl="Y">
+  <value column="Name" original="Reserved Quantity Log">예약 수량 로그</value>
+ </row>
+ <row id="200301" trl="Y">
+  <value column="Name" original="Ordered Quantity Log">주문 수량 로그</value>
+ </row>
+ <row id="200302" trl="Y">
+  <value column="Name" original="Tenant level messages">테넌트 수준 메시지</value>
+ </row>
+ <row id="200308" trl="Y">
+  <value column="Name" original="Drill Rule">드릴 규칙</value>
+ </row>
+ <row id="200309" trl="Y">
+  <value column="Name" original="Drill Rule Parameter">드릴 규칙 매개변수</value>
+ </row>
+ <row id="200317" trl="Y">
+  <value column="Name" original="Label Category">라벨 분류</value>
+ </row>
+ <row id="200318" trl="Y">
+  <value column="Name" original="Table Access">테이블 접근</value>
+ </row>
+ <row id="200319" trl="Y">
+  <value column="Name" original="Translation">번역</value>
+ </row>
+ <row id="200320" trl="Y">
+  <value column="Name" original="Label">라벨</value>
+ </row>
+ <row id="200321" trl="Y">
+  <value column="Name" original="Translation">번역</value>
+ </row>
+ <row id="200322" trl="Y">
+  <value column="Name" original="Drill Rule Translation">드릴 규칙 번역</value>
+ </row>
+ <row id="200324" trl="Y">
+  <value column="Name" original="Assignment">지정</value>
+ </row>
+ <row id="200328" trl="Y">
+  <value column="Name" original="SSO Configuration">SSO 구성</value>
+ </row>
+ <row id="200329" trl="Y">
+  <value column="Name" original="Datasource Translation">데이터 소스 번역</value>
+ </row>
+ <row id="200346" trl="Y">
+  <value column="Name" original="Verify Migration">마이그레이션 확인</value>
+ </row>
+ <row id="200347" trl="Y">
+  <value column="Name" original="Verify Migration Process">마이그레이션 프로세스 확인</value>
+ </row>
+ <row id="200348" trl="Y">
+  <value column="Name" original="Test UU Based Table">테스트 UU 기반 테이블</value>
+ </row>
+ <row id="200349" trl="Y">
+  <value column="Name" original="Test UU Detail">테스트 UU 상세</value>
+ </row>
+ <row id="200350" trl="Y">
+  <value column="Name" original="Test UU Detail">테스트 UU 상세</value>
+ </row>
+ <row id="200351" trl="Y">
+  <value column="Name" original="Document Base Type Group">문서 기본 유형 그룹</value>
+ </row>
+ <row id="200352" trl="Y">
+  <value column="Name" original="Document Base Type Group Line">문서 기본 유형 그룹 행</value>
+ </row>
+ <row id="200353" trl="Y">
+  <value column="Name" original="Model Generator Template">모델 생성기 템플릿</value>
+ </row>
+ <row id="200355" trl="Y">
+  <value column="Name" original="Info Window Translation">정보 창 번역</value>
+ </row>
+ <row id="200356" trl="Y">
+  <value column="Name" original="Info Column Translation">정보 열 번역</value>
+ </row>
+ <row id="200358" trl="Y">
+  <value column="Name" original="Table Translation">테이블 번역</value>
+ </row>
+ <row id="200359" trl="Y">
+  <value column="Name" original="Column Translation">열 번역</value>
+ </row>
+ <row id="200361" trl="Y">
+  <value column="Name" original="Tax Rate">세율</value>
+ </row>
+ <row id="200371" trl="Y">
+  <value column="Name" original="Test UU Based Table Trl">테스트 UU 기반 테이블 번역</value>
+ </row>
+ <row id="200381" trl="Y">
+  <value column="Name" original="Table Partition">테이블 파티션</value>
+ </row>
+ <row id="200382" trl="Y">
+  <value column="Name" original="Private Access">비공개 접근</value>
+ </row>
+ <row id="200383" trl="Y">
+  <value column="Name" original="Department">부서</value>
+ </row>
+ <row id="200384" trl="Y">
+  <value column="Name" original="Cost Center">원가 센터</value>
+ </row>
+ <row id="200385" trl="Y">
+  <value column="Name" original="Dynamic Validation per Table">테이블별 동적 검증</value>
+ </row>
+ <row id="200386" trl="Y">
+  <value column="Name" original="Theme Customization">테마 사용자 정의</value>
+ </row>
+ <row id="200387" trl="Y">
+  <value column="Name" original="Theme Customization Detail">테마 사용자 정의 상세</value>
+ </row>
+ <row id="200388" trl="Y">
+  <value column="Name" original="Table Attribute Set">테이블 속성 집합</value>
+ </row>
+ <row id="200394" trl="Y">
+  <value column="Name" original="Required Plugin">필수 플러그인</value>
+ </row>
+ <row id="200396" trl="Y">
+  <value column="Name" original="Table Attribute Set">테이블 속성 집합</value>
+ </row>
+ <row id="200397" trl="Y">
+  <value column="Name" original="Table Attribute Value">테이블 속성 값</value>
+ </row>
+ <row id="200399" trl="Y">
+  <value column="Name" original="Role">역할</value>
+ </row>
+ <row id="200402" trl="Y">
+  <value column="Name" original="Window Access">창 접근</value>
+ </row>
+ <row id="200403" trl="Y">
+  <value column="Name" original="Process Access">프로세스 접근</value>
+ </row>
+ <row id="200404" trl="Y">
+  <value column="Name" original="Form Access">양식 접근</value>
+ </row>
+ <row id="200405" trl="Y">
+  <value column="Name" original="Info Access">정보 접근</value>
+ </row>
+ <row id="200406" trl="Y">
+  <value column="Name" original="Workflow Access">워크플로 접근</value>
+ </row>
+ <row id="200407" trl="Y">
+  <value column="Name" original="Task Access">작업 접근</value>
+ </row>
+ <row id="200408" trl="Y">
+  <value column="Name" original="Document Action Access">문서 동작 접근</value>
+ </row>
+ <row id="200410" trl="Y">
+  <value column="Name" original="Document Status Access">문서 상태 접근</value>
+ </row>
+ <row id="1000000" trl="Y">
+  <value column="Name" original="Meter Log">계량기 로그</value>
+ </row>
+ <row id="7200000" trl="Y">
+  <value column="Name" original="C Attendance">C 출근</value>
+ </row>
+ <row id="7810000" trl="Y">
+  <value column="Name" original="Warehouse">창고</value>
+ </row>
+ <row id="7810001" trl="Y">
+  <value column="Name" original="Locator">로케이터</value>
+ </row>
+ <row id="7810002" trl="Y">
+  <value column="Name" original="Storage">저장소</value>
+ </row>
+ <row id="7810003" trl="Y">
+  <value column="Name" original="Replenish">보충</value>
+ </row>
+ <row id="7810004" trl="Y">
+  <value column="Name" original="Accounting">회계</value>
+ </row>
+</idempiereTrl>

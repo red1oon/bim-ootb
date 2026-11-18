@@ -133,32 +133,34 @@ def build(lang, srcs, base):
     return out, stats
 
 MSTAT = {}   # lang -> {table: [kept, shadowed, stale]} for the §I18N-BUILD machine-src lines
-def machine_fill(lang, out, db):
+def machine_fill(lang, out, db, base):
     """Labelled machine supplement (ERP_UI_LOCALES.md §L2b; T5a: legacy XML, BY ID): machine/<T>_Trl_<lang>.xml, written for this app
     (NOT from any language pack) and applied ONLY to a menu / window / tab / field label that the packs left untranslated, resolved
     with the SAME rules the page uses (erp_i18n.js menuName/fieldName). A row whose id the packs already translate is SHADOWED
     (kept in the file, counted, never used: a published row always wins); a row whose `original` is not today's English is STALE
     (counted, never used). Emitted into separate <T>_Trl_m maps so the page counts src=machine apart from src=pack."""
     tabs = ['AD_Menu', 'AD_Window', 'AD_Tab', 'AD_Field']
-    files = {t: os.path.join(MACH, '%s_Trl_%s.xml' % (t, lang)) for t in tabs}
-    if not any(os.path.exists(f) for f in files.values()): return {}
-    R = {t: trl_xml.read(files[t]) for t in tabs}
-    st = MSTAT[lang] = {t: [0, 0, 0] for t in tabs}   # kept, shadowed, stale
+    plain = ['AD_Element', 'AD_Process', 'AD_Form', 'AD_Ref_List', 'AD_Message']   # T5c: tables with no cascade; by id (AD_Message: emitted by Value, as the packs key it)
+    files = {t: os.path.join(MACH, '%s_Trl_%s.xml' % (t, lang)) for t in tabs + plain}
+    R = {t: trl_xml.read(files[t]) for t in tabs + plain}
+    live = lambda t: bool(R[t]) and (t != 'AD_Message' or any(i <= 999999 for i in R[t]))   # AD_Message rows with an app-own id (>= 1000000) are the chrome catalogue (build_chrome), not screen messages
+    if not any(os.path.exists(files[t]) for t in tabs) and not any(live(t) for t in plain): return {}   # no machine source for this language
+    st = MSTAT[lang] = {t: [0, 0, 0] for t in tabs + [t for t in plain if live(t)]}   # kept, shadowed, stale
     T = lambda t, i: out.get(t + '_Trl', {}).get(str(int(i))) if i is not None else None
-    m = {t: {} for t in tabs}
-    def put(t, i, name, packed):
+    m = {t: {} for t in tabs + plain}
+    def put(t, i, name, packed, key=None):
         r = R[t].get(int(i))
         if r is None: return
         if norm(r[1]) != norm(name or ''): st[t][2] += 1; return        # stale
         if r[0] != 'Y': return
         if packed: st[t][1] += 1; return                                  # shadowed by a published row
-        m[t][str(int(i))] = r[2]; st[t][0] += 1
+        m[t][key if key is not None else str(int(i))] = r[2]; st[t][0] += 1
     for wid, name in db.execute('SELECT AD_Window_ID, Name FROM AD_Window'): put('AD_Window', wid, name, bool(T('AD_Window', wid)))
     for tid, name in db.execute('SELECT AD_Tab_ID, Name FROM AD_Tab'): put('AD_Tab', tid, name, bool(T('AD_Tab', tid)))
     for mid, name, central, action, wid, pid, fid in db.execute('SELECT AD_Menu_ID, Name, IsCentrallyMaintained, Action, AD_Window_ID, AD_Process_ID, AD_Form_ID FROM AD_Menu'):
-        v = None
+        v = None   # T5c: the menu cascade looks at PUBLISHED rows only (as erp_i18n.js menuName does): a machine window text must not suppress the menu's own machine row
         if central == 'Y':
-            if action == 'W' and wid: v = T('AD_Window', wid) or m['AD_Window'].get(str(int(wid)))
+            if action == 'W' and wid: v = T('AD_Window', wid)
             elif action in ('P', 'R') and pid: v = T('AD_Process', pid)
             elif action == 'X' and fid: v = T('AD_Form', fid)
         v = v or T('AD_Menu', mid)
@@ -174,11 +176,19 @@ def machine_fill(lang, out, db):
                 e = T('AD_Element', el); v = (e[1] if (so == 'N' and e and e[1]) else (e[0] if e else None))
         v = v or T('AD_Field', fid)
         put('AD_Field', fid, name, bool(v))
-    for t in m: out[t + '_Trl_m'] = m[t]
-    return {t: len(v) for t, v in m.items()}
+    for t, q in (('AD_Process', 'SELECT ad_process_id, name FROM ad_process'), ('AD_Form', 'SELECT AD_Form_ID, Name FROM AD_Form'), ('AD_Ref_List', 'SELECT AD_Ref_List_ID, Name FROM AD_Ref_List')):
+        if t in st:
+            for i, name in db.execute(q): put(t, i, name, bool(T(t, i)))
+    if 'AD_Element' in st:
+        for i, name in db.execute('SELECT AD_Element_ID, Name FROM AD_Element'): put('AD_Element', i, name, bool(T('AD_Element', i)))
+    if 'AD_Message' in st:
+        for i, (value, text) in base['AD_Message'].items(): put('AD_Message', i, text, bool(out.get('AD_Message_Trl', {}).get(value)), key=value)
+    for t in tabs + plain:
+        if t in tabs or t in st: out[t + '_Trl_m'] = m[t]
+    return {t: len(m[t]) for t in tabs + plain if t in tabs or t in st}
 
 CHROME_DOC = ('App chrome catalogue for idempiere.html (bim-compiler prompts/ERP_UI_LOCALES.md §L3). Resolution per key, per locale: (1) ref "msg:<AD_Message.Value>" / "el:<AD_Element_ID>" → that locale\'s iDempiere language pack (src=pack), wrapped by fmt; (2) else machine[locale] — translated for this app by Claude (Anthropic), NOT from any iDempiere pack (src=machine); (3) else en (src=none). en is the exact English the page shows today.')
-CHROME_LANGS = ['fr_FR', 'es_ES', 'de_DE', 'ar', 'zh_CN', 'ja_JP', 'ms_MY', 'th_TH', 'pt_BR', 'id_ID']   # the order of chrome.json's machine{} objects
+CHROME_LANGS = ['fr_FR', 'es_ES', 'de_DE', 'ar', 'zh_CN', 'ja_JP', 'ms_MY', 'th_TH', 'pt_BR', 'id_ID', 'ko_KR']   # the order of chrome.json's machine{} objects
 def build_chrome():
     """T5a: erp/i18n/chrome.json is a BUILD OUTPUT: the catalogue chrome_base.csv (id, key, English, ref, fmt) + the per-language machine text of
     machine/AD_Message_Trl_<lang>.xml (app-own ids >= 1000000). The page resolves a key exactly as before: ref -> pack, else machine[locale], else English."""
@@ -215,7 +225,7 @@ def main():
         missing = [d for d, _ in srcs if not os.path.isdir(os.path.join(CACHE, d))]
         if missing: sys.exit('§I18N-BUILD FAIL lang=%s missing pack dir(s) %s — run erp/tools/fetch_i18n_packs.sh' % (lang, missing))
         out, stats = build(lang, srcs, base)
-        mstats = machine_fill(lang, out, db)
+        mstats = machine_fill(lang, out, db, base)
         dirn, native = META[lang]
         counts = {t: stats[t]['kept'] for t in TABLES}
         detail = {t: dict(stats[t]) for t in TABLES}
