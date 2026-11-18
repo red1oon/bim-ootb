@@ -47,10 +47,18 @@ function writeOwn(d, lang, table, rows) { const dir = path.join(d, 'viewer', 'i1
   const probe = git(['cat-file', '-t', BEFORE_REF]);
   if (probe.status !== 0) { incon('P1', BEFORE_REF + ' not in this clone'); return end(); }
   const rows = [], badPk = [], badXml = [];
-  T.LOCALES.forEach(l => { const b = git(['show', BEFORE_REF + ':viewer/i18n/' + l + '.json']), f = path.join(T.I18N, l + '.json'); const eq = b.status === 0 && Buffer.compare(b.stdout, fs.readFileSync(f)) === 0; rows.push(l + '=' + (eq ? 'equal' : 'DIFF')); if (!eq) badPk.push(l); });
-  NONBASE.forEach(l => ['AD_Message_Trl_', 'BIM_Element_Trl_'].forEach(p => { const b = git(['show', BEFORE_REF + ':viewer/i18n/' + p + l + '.xml']), f = path.join(T.dirOf('machine'), p + l + '.xml'); if (!(b.status === 0 && fs.existsSync(f) && Buffer.compare(b.stdout, fs.readFileSync(f)) === 0)) badXml.push(p + l); }));
+  // whole-file equality holds while no lane has added dictionary rows since BEFORE_REF; once rows were added, the packs can only be judged on the labels that existed then
+  const csvSame = ['ad_message_base.csv', 'bim_element_base.csv'].every(f => { const b = git(['show', BEFORE_REF + ':viewer/i18n/' + f]); return b.status === 0 && Buffer.compare(b.stdout, fs.readFileSync(path.join(T.I18N, f))) === 0; });
+  L('P1 mode: ' + (csvSame ? 'whole files (the base csvs are unchanged since ' + BEFORE_REF + ')' : 'labels that existed at ' + BEFORE_REF + ' (rows were added to the base csvs since, by other lanes)'));
+  T.LOCALES.forEach(l => { const b = git(['show', BEFORE_REF + ':viewer/i18n/' + l + '.json']), f = path.join(T.I18N, l + '.json'); let eq = false;
+    if (b.status === 0) { if (csvSame) eq = Buffer.compare(b.stdout, fs.readFileSync(f)) === 0; else { const o = JSON.parse(b.stdout.toString('utf8')).labels, n = JSON.parse(fs.readFileSync(f, 'utf8')).labels, sub = {}; Object.keys(o).forEach(k => { if (k in n) sub[k] = n[k]; }); eq = JSON.stringify(sub) === JSON.stringify(o); } }
+    rows.push(l + '=' + (eq ? 'equal' : 'DIFF')); if (!eq) badPk.push(l); });
+  NONBASE.forEach(l => ['AD_Message_Trl_', 'BIM_Element_Trl_'].forEach(p => { const b = git(['show', BEFORE_REF + ':viewer/i18n/' + p + l + '.xml']), f = path.join(T.dirOf('machine'), p + l + '.xml'); if (b.status !== 0 || !fs.existsSync(f)) { badXml.push(p + l); return; }
+    if (csvSame) { if (Buffer.compare(b.stdout, fs.readFileSync(f)) !== 0) badXml.push(p + l); return; }
+    const was = new Map(T.parseTrlXml(b.stdout.toString('utf8')).rows.map(r => [r.id, r])), now = new Map(T.parseTrlXml(fs.readFileSync(f, 'utf8')).rows.map(r => [r.id, r]));   // rows were added since: every earlier row must be identical
+    if (!Array.from(was.values()).every(r => { const n = now.get(r.id); return n && n.trl === r.trl && n.text === r.text && n.original === r.original; })) badXml.push(p + l); }));
   L('P1 ' + rows.join(' '));
-  chk('P1 own/ is empty and the ' + T.LOCALES.length + ' built packs are byte-equal to ' + BEFORE_REF + ' in ' + (T.LOCALES.length - badPk.length) + ' of ' + T.LOCALES.length + ' (whole files); the ' + (NONBASE.length * 2) + ' xml moved byte-identical into machine/ (' + (NONBASE.length * 2 - badXml.length) + ' of ' + NONBASE.length * 2 + ')',
+  chk('P1 own/ is empty and the ' + T.LOCALES.length + ' built packs are byte-equal to ' + BEFORE_REF + ' in ' + (T.LOCALES.length - badPk.length) + ' of ' + T.LOCALES.length + ' ('+(csvSame?'whole files':'labels')+'); the ' + (NONBASE.length * 2) + ' xml moved byte-identical into machine/ (' + (NONBASE.length * 2 - badXml.length) + ' of ' + NONBASE.length * 2 + ')',
     ownXml.length === 0 && badPk.length === 0 && badXml.length === 0 && stray.length === 0 && mach.length === NONBASE.length * 2, badPk.concat(badXml).slice(0, 4).join(',') + (ownXml.length ? ' own=' + ownXml : ''));
 
   // ── P3 on the real tree ──
