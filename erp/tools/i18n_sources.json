@@ -1,6 +1,6 @@
 {
  "spec": "bim-compiler prompts/VOCAB_MESSAGE_CATALOG.md §19.11 step 1 (one list); prompts/ERP_UI_LOCALES.md §L2 (the packs)",
- "note": "lang -> the published iDempiere/ADempiere language packs, first wins on a conflict. Read by erp/tools/build_i18n.py (screen packs) and erp/tools/build_help_pack.js (help packs); no copy anywhere else. meta = per language: writing direction, its own name, the <html lang> code (pt_BR / id_ID names as the BIM Viewer chooser shows them).",
+ "note": "lang -> the published iDempiere/ADempiere language packs, first wins on a conflict. Read by erp/tools/build_i18n.py (screen packs) and erp/tools/build_help_pack.js (help packs); no copy anywhere else. meta = per language: writing direction, its own name, the <html lang> code (pt_BR / id_ID names as the BIM Viewer chooser shows them). ko_KR (T5c, TRL_TRILOGY_STANDARD.md): NO published pack is reachable (VOCAB §19.11 step 2 lists the channels searched), so its source list is empty and its screen names are AI-written rows in erp/i18n/machine/ (lowest priority; a published row would win and shadow them).",
  "sources": {
   "fr_FR": [
    {
@@ -69,7 +69,8 @@
     "dir": "uthadehikaru_in_ID/in_ID",
     "from": "github.com/uthadehikaru/idempiere-indonesia-localization@b9273a80 in_ID (iDempiere 13 export, 2026-02-12; Java legacy code in_ID served as id_ID; no licence stated)"
    }
-  ]
+  ],
+  "ko_KR": []
  },
  "meta": {
   "en_US": {
@@ -126,6 +127,11 @@
    "dir": "ltr",
    "native": "Bahasa Indonesia",
    "html": "id"
+  },
+  "ko_KR": {
+   "dir": "ltr",
+   "native": "한국어",
+   "html": "ko"
   }
  }
 }

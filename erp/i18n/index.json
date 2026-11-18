@@ -272,6 +272,33 @@
    },
    "machineCounts": {},
    "bytes": 247262
+  },
+  {
+   "code": "ko_KR",
+   "dir": "ltr",
+   "native": "한국어",
+   "file": "i18n/ko_KR.json",
+   "sources": [],
+   "counts": {
+    "AD_Menu": 0,
+    "AD_Window": 0,
+    "AD_Tab": 0,
+    "AD_Field": 0,
+    "AD_Element": 0,
+    "AD_Process": 0,
+    "AD_Form": 0,
+    "AD_Ref_List": 0,
+    "AD_Message": 0
+   },
+   "machineCounts": {
+    "AD_Menu": 590,
+    "AD_Window": 375,
+    "AD_Tab": 1135,
+    "AD_Field": 0,
+    "AD_Process": 476,
+    "AD_Form": 49
+   },
+   "bytes": 70265
   }
  ]
 }

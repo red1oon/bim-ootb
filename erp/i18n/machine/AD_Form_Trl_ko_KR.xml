@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!--ERP screen names (AD_Form, by id). ERP machine source (not a published language pack) — Korean screen names written for this app by Claude (Anthropic), 2026-11-18, erp/tools/trl_batch_2026-11-18_ko_form.py (TRL_TRILOGY_STANDARD.md T5c); no human review. Where the BIM Viewer already had a Korean text for the same English it is reused (viewer/i18n/machine/AD_Message_Trl_ko_KR.xml).-->
+<!--<!DOCTYPE idempiereTrl PUBLIC "-//iDempiere//DTD iDempiere Translation 1.0//EN" "https://raw.githubusercontent.com/idempiere/idempiere/refs/heads/master/utils_dev/trl/idempiereTrl.dtd">-->
+<idempiereTrl language="ko_KR" table="AD_Form">
+ <row id="100" trl="Y">
+  <value column="Name" original="Generate Invoices (manual)">청구서 생성(수동)</value>
+ </row>
+ <row id="101" trl="Y">
+  <value column="Name" original="Import File Loader">가져오기 파일 로더</value>
+ </row>
+ <row id="103" trl="Y">
+  <value column="Name" original="Material Transactions">자재 트랜잭션</value>
+ </row>
+ <row id="104" trl="Y">
+  <value column="Name" original="Payment Allocation">결제 배정</value>
+ </row>
+ <row id="105" trl="Y">
+  <value column="Name" original="Generate Charges">비용 항목 생성</value>
+ </row>
+ <row id="106" trl="Y">
+  <value column="Name" original="Payment Print/Export">결제 인쇄/내보내기</value>
+ </row>
+ <row id="107" trl="Y">
+  <value column="Name" original="Payment Selection (manual)">결제 선택(수동)</value>
+ </row>
+ <row id="108" trl="Y">
+  <value column="Name" original="Matching PO-Receipt-Invoice">구매 주문-입고-청구서 대응</value>
+ </row>
+ <row id="111" trl="Y">
+  <value column="Name" original="SQL Process">SQL 프로세스</value>
+ </row>
+ <row id="112" trl="Y">
+  <value column="Name" original="Merge Entities">엔티티 병합</value>
+ </row>
+ <row id="113" trl="Y">
+  <value column="Name" original="POS">POS</value>
+ </row>
+ <row id="114" trl="Y">
+  <value column="Name" original="BOM Drop">BOM 투입</value>
+ </row>
+ <row id="115" trl="Y">
+  <value column="Name" original="Tree Maintenance">트리 관리</value>
+ </row>
+ <row id="116" trl="Y">
+  <value column="Name" original="Workflow Editor">워크플로 편집기</value>
+ </row>
+ <row id="117" trl="Y">
+  <value column="Name" original="Workflow Activities">워크플로 활동</value>
+ </row>
+ <row id="118" trl="Y">
+  <value column="Name" original="Archive Viewer">보관 문서 뷰어</value>
+ </row>
+ <row id="119" trl="Y">
+  <value column="Name" original="Performance Indicators">성과 지표</value>
+ </row>
+ <row id="120" trl="Y">
+  <value column="Name" original="Product Attribute Grid">제품 속성 그리드</value>
+ </row>
+ <row id="53001" trl="Y">
+  <value column="Name" original="BOM and Formula Info">BOM 및 배합 정보</value>
+ </row>
+ <row id="53002" trl="Y">
+  <value column="Name" original="Product Configuration BOM">제품 구성 BOM</value>
+ </row>
+ <row id="53003" trl="Y">
+  <value column="Name" original="MRP Info">MRP 정보</value>
+ </row>
+ <row id="53004" trl="Y">
+  <value column="Name" original="Planned Order Approval ">계획 오더 승인</value>
+ </row>
+ <row id="53005" trl="Y">
+  <value column="Name" original="CRP Info">CRP 정보</value>
+ </row>
+ <row id="53006" trl="Y">
+  <value column="Name" original="Resource Load View">자원 부하 보기</value>
+ </row>
+ <row id="53007" trl="Y">
+  <value column="Name" original="Order Receipt and Issue">주문 입고 및 출고</value>
+ </row>
+ <row id="53008" trl="Y">
+  <value column="Name" original="Generate Movement Manual">이동 생성(수동)</value>
+ </row>
+ <row id="53009" trl="Y">
+  <value column="Name" original="Payroll Action Notice">급여 조치 통지</value>
+ </row>
+ <row id="53012" trl="Y">
+  <value column="Name" original="Material Receipt Distribution Order">자재 입고 배분 오더</value>
+ </row>
+ <row id="53013" trl="Y">
+  <value column="Name" original="Manufacturing Workflow Editor">제조 워크플로 편집기</value>
+ </row>
+ <row id="53016" trl="Y">
+  <value column="Name" original="Accounting Fact Reconciliation (manual)">회계 사실 대사(수동)</value>
+ </row>
+ <row id="53017" trl="Y">
+  <value column="Name" original="BOM Viewer">BOM 뷰어</value>
+ </row>
+ <row id="53021" trl="Y">
+  <value column="Name" original="Generate Work Order">작업 지시 생성</value>
+ </row>
+ <row id="53023" trl="Y">
+  <value column="Name" original="Submit Maintenance Request">유지보수 요청 제출</value>
+ </row>
+ <row id="200000" trl="Y">
+  <value column="Name" original="Setup Wizard">설정 마법사</value>
+ </row>
+ <row id="200001" trl="Y">
+  <value column="Name" original="Reset Password">비밀번호 재설정</value>
+ </row>
+ <row id="200002" trl="Y">
+  <value column="Name" original="Report Wizard">보고서 마법사</value>
+ </row>
+ <row id="200005" trl="Y">
+  <value column="Name" original="Tab Editor">탭 편집기</value>
+ </row>
+ <row id="200006" trl="Y">
+  <value column="Name" original="Bank Statement Create From Batch">배치에서 은행 명세서 생성</value>
+ </row>
+ <row id="200008" trl="Y">
+  <value column="Name" original="Captured Process Parameter">캡처된 프로세스 매개변수</value>
+ </row>
+ <row id="200009" trl="Y">
+  <value column="Name" original="Compare Field Suggestion">필드 제안 비교</value>
+ </row>
+ <row id="200010" trl="Y">
+  <value column="Name" original="Compare Context Help Suggestion">상황별 도움말 제안 비교</value>
+ </row>
+ <row id="200011" trl="Y">
+  <value column="Name" original="idempiereMonitor">iDempiere 모니터</value>
+ </row>
+ <row id="200012" trl="Y">
+  <value column="Name" original="Apache Felix Web Console">Apache Felix 웹 콘솔</value>
+ </row>
+ <row id="200015" trl="Y">
+  <value column="Name" original="Plugin Manager">플러그인 관리자</value>
+ </row>
+ <row id="200016" trl="Y">
+  <value column="Name" original="Add Authorization Mail Account">인증 메일 계정 추가</value>
+ </row>
+ <row id="200017" trl="Y">
+  <value column="Name" original="Register MFA">MFA 등록</value>
+ </row>
+ <row id="200018" trl="Y">
+  <value column="Name" original="SQL Query">SQL 쿼리</value>
+ </row>
+ <row id="200019" trl="Y">
+  <value column="Name" original="Customize Grid View">그리드 보기 사용자 정의</value>
+ </row>
+ <row id="200020" trl="Y">
+  <value column="Name" original="Account Info">계정 정보</value>
+ </row>
+</idempiereTrl>

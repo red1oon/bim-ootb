@@ -1,0 +1,68 @@
+#!/usr/bin/env python3
+# trl_batch_2026-11-18_ko_process.py — T5c (bim-compiler prompts/TRL_TRILOGY_STANDARD.md), Korean screen names, table AD_Process. MACHINE translations by Claude (Anthropic), 2026-11-18, no human review; same terms as
+# trl_batch_2026-11-18_ko_window.py; code-like names (A_Asset_Split, File_Select, ImportInventoryMovement) keep their identifier with a Korean gloss only where it reads as a name. Applied ONCE, then build_i18n.py;
+# erp/i18n/machine/AD_Process_Trl_ko_KR.xml is the source.
+import os, sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import ko_apply
+KO = {
+ 'ASP Generate Fields': 'ASP 필드 생성', 'ASP Generate Level': 'ASP 수준 생성', 'A_Asset_Disposal': 'A_Asset_Disposal', 'A_Asset_Split': 'A_Asset_Split', 'A_Depreciation_Entry_Cleanup': 'A_Depreciation_Entry_Cleanup',
+ 'A_Depreciation_Transfer': 'A_Depreciation_Transfer', 'Accept Context Help Suggestion': '상황별 도움말 제안 수락', 'Accept Field Suggestion': '필드 제안 수락', 'Activate': '활성화', 'Add or Copy Accounts': '계정 추가 또는 복사',
+ 'Apply Migration Scripts': '마이그레이션 스크립트 적용', 'Asset Addition Process': '자산 추가 프로세스', 'Asset Convention Report': '자산 관례 보고서', 'Asset Depreciation Forecast': '자산 감가상각 예측',
+ 'Asset Depreciation Method': '자산 감가상각 방법', 'Asset Disposal Expense Entry Rpt': '자산 처분 비용 입력 보고서', 'Asset Disposed Process': '자산 처분 프로세스', 'Asset Group Defaults': '자산 그룹 기본값',
+ 'Asset Parent Report': '상위 자산 보고서', 'Asset Reval Process': '자산 재평가 프로세스', 'Asset Split Entry': '자산 분할 입력', 'Asset Transfer Entry': '자산 이전 입력', 'Asset Transfer Process': '자산 이전 프로세스',
+ 'Bank Statement Create From Batch': '배치에서 은행 명세서 생성', 'Bill of Material and Formula Cost Roll-Up': '자재 명세서 및 배합 원가 롤업', 'Build Depreciation Forecast File': '감가상각 예측 파일 생성',
+ 'Calculate Capacity Plan': '능력 계획 계산', 'Calculate Distribution Plan': '배분 계획 계산', 'Calculate Forecast': '예측 계산', 'Calculate Low Level': '하위 수준 계산', 'Calculate Material Plan': '자재 계획 계산',
+ 'Calculate Measures': '측정값 계산', 'Capture + Calculate Measures': '측정값 수집 + 계산', 'Captured Process Parameter': '캡처된 프로세스 매개변수', 'Cash Journal Detail': '현금 분개 상세', 'Check Complete': '완료 확인',
+ 'Clicks Monthy': '월별 클릭', 'Clicks Unprocessed': '미처리 클릭', 'Close Project': '프로젝트 마감', 'Close RfQ': '견적 요청 마감', 'Column Encryption': '열 암호화', 'Compare Context Help Suggestion': '상황별 도움말 제안 비교',
+ 'Compare Field Suggestion': '필드 제안 비교', 'Complex Fact View': '복합 회계 사실 보기', 'Component Check': '구성품 점검', 'Convert Lead': '리드 전환', 'Copy Accounts': '계정 복사', 'Copy BOM Lines From': 'BOM 행 복사 원본',
+ 'Copy Columns': '열 복사', 'Copy Columns from Table': '테이블에서 열 복사', 'Copy Components From View': '보기에서 구성요소 복사', 'Copy Details': '상세 복사', 'Copy From Report and Process': '보고서 및 프로세스에서 복사',
+ 'Copy From Standard Job': '표준 직무에서 복사', 'Copy Info Window Columns': '정보 창 열 복사', 'Copy Lines': '행 복사', 'Copy Price to Standard Cost': '가격을 표준 원가로 복사', 'Copy Tab Fields': '탭 필드 복사',
+ 'Copy Window Tabs': '창 탭 복사', 'Copy from Cash Plan': '현금 계획에서 복사', 'Copy from Pack Out': '패키지 내보내기에서 복사', 'Copy from product': '제품에서 복사', 'Copy/Create': '복사/생성',
+ 'Cost BOM Multi Level Review': '다단계 BOM 원가 검토', 'Cost Workflow and Process Details': '원가 워크플로 및 프로세스 상세', 'Create Columns from DB': 'DB에서 열 생성', 'Create Concept for Payroll': '급여 개념 생성',
+ 'Create Confirmation': '확인 생성', 'Create Credit Memo': '대변 전표 생성', 'Create Default Parameters': '기본 매개변수 생성', 'Create Depreciation Function': '감가상각 함수 생성', 'Create Doc Type to Manufacturing': '제조용 문서 유형 생성',
+ 'Create Dunning Run': '독촉 실행 생성', 'Create Element': '요소 생성', 'Create Fields': '필드 생성', 'Create From ...': '다음에서 생성…', 'Create GL/Default': '총계정원장/기본값 생성', 'Create Inventory Count List': '재고 수량 목록 생성',
+ 'Create Invoice': '청구서 생성', 'Create Invoices': '청구서 생성', 'Create Order From RMA': 'RMA에서 주문 생성', 'Create Orders': '주문 생성', 'Create Package': '패키지 생성', 'Create Payment': '결제 생성',
+ 'Create Periods': '기간 생성', 'Create Price List': '가격표 생성', 'Create Product Planning': '제품 계획 생성', 'Create Production': '생산 생성', 'Create Production from Order': '주문에서 생산 생성',
+ 'Create Production from Order Line': '주문 행에서 생산 생성', 'Create Purchase Order': '구매 주문 생성', 'Create Record MRP': 'MRP 레코드 생성', 'Create Report': '보고서 생성', 'Create Report (Jasper)': '보고서 생성(Jasper)',
+ 'Create Sales Order': '판매 주문 생성', 'Create Shipment from Order Line': '주문 행에서 출하 생성', 'Create Tax Declaration': '세금 신고 생성', 'Create Window, Tab and Field from Table': '테이블에서 창, 탭 및 필드 생성',
+ 'Create and Invite': '생성 및 초대', 'Create lines from Invoice': '청구서에서 행 생성', 'Create lines from RMA': 'RMA에서 행 생성', 'Create lines from Shipment/Receipt': '출하/입고에서 행 생성',
+ 'Create/Post Production': '생산 생성/전기', 'Customize Grid View': '그리드 보기 사용자 정의', 'DRP Details': 'DRP 상세', 'Deactivate': '비활성화', 'Delete Notices': '통지 삭제', 'Delivery Note / Shipment Print': '인도 명세서/출하 인쇄',
+ 'Deploy Web Project': '웹 프로젝트 배포', 'Deposit Batch Close': '입금 배치 마감', 'Depreciation Calculation Methods': '감가상각 계산 방법', 'Depreciation Table': '감가상각 표', 'Detach/re-attach Table Partition': '테이블 파티션 분리/재연결',
+ 'Discard this Verify Migration': '이 마이그레이션 확인 폐기', 'Distribute Costs': '원가 배분', 'Distribution Order Detail': '배분 오더 상세', 'Distribution Order Print': '배분 오더 인쇄', 'Distribution Run Orders': '배분 실행 오더',
+ 'Document Value based Workflows': '문서 값 기반 워크플로', 'Drop Database Column': '데이터베이스 열 삭제', 'Drop Database Constraint': '데이터베이스 제약조건 삭제', 'Drop Database Table': '데이터베이스 테이블 삭제',
+ 'Drop Table Index': '테이블 인덱스 삭제', 'Drop view': '뷰 삭제', 'Dunning Letter': '독촉장', 'Expire Broadcast Message': '일괄 메시지 만료', 'File_Select': '파일 선택', 'Forecast Report': '예측 보고서',
+ 'Forecast Report by Period': '기간별 예측 보고서', 'Frozen/UnFrozen Cost': '원가 동결/해제', 'Generate Commission': '수수료 생성', 'Generate GL Journal': '총계정원장 분개 생성', 'Generate Invoice from Receipt': '입고에서 청구서 생성',
+ 'Generate Invoices for RMA': 'RMA 청구서 생성', 'Generate Movement': '이동 생성', 'Generate Order': '주문 생성', 'Generate Periodic Plan': '정기 계획 생성', 'Generate Receipt from Invoice': '청구서에서 입고 생성',
+ 'Generate Shipments for Vendor RMA': '공급업체 RMA 출하 생성', 'Get Price': '가격 조회', 'HRPayroll Create Periods': '인사급여 기간 생성', 'Immediate Bank Transfer': '즉시 은행 이체', 'Import Accounts': '계정 가져오기',
+ 'Import Asset': '자산 가져오기', 'Import Business Partners': '비즈니스 파트너 가져오기', 'Import Conversion Rate': '환산율 가져오기', 'Import FA Journal': '고정자산 분개 가져오기', 'Import Fixed Assets': '고정자산 가져오기',
+ 'Import Journal': '분개 가져오기', 'Import Orders': '주문 가져오기', 'Import Payments': '결제 가져오기', 'Import Price Lists': '가격표 가져오기', 'Import Product Planning and Forecast': '제품 계획 및 예측 가져오기',
+ 'Import Products': '제품 가져오기', 'ImportInventoryMovement': '재고 이동 가져오기', 'Index Validate': '인덱스 검증', 'Inventory Move Print': '재고 이동 인쇄', 'Inventory in Process': '공정 중 재고', 'Invite and Remind': '초대 및 알림',
+ 'Invoice Print': '청구서 인쇄', 'Kill All Session': '모든 세션 종료', 'Kill Current Session': '현재 세션 종료', 'Language Maintenance': '언어 관리', 'Link Organization': '조직 연결', 'MRP Details': 'MRP 상세',
+ 'Maintenance Forecast': '유지보수 예측', 'Manage Activity': '활동 관리', 'Manage Process': '프로세스 관리', 'Manufacturing Orders Review': '제조 오더 검토', 'Match Bank Statement': '은행 명세서 대응', 'Media Direct Deploy': '미디어 직접 배포',
+ 'Multi Level BOM and Formula Detail': '다단계 BOM 및 배합 상세', 'Multiple Components Change': '다중 구성품 변경', 'Online Process': '온라인 프로세스', 'Online Shipping Rate Inquiry': '온라인 운임 조회',
+ 'Online Shipping Sales Order Rate Inquiry': '온라인 판매 주문 운임 조회', 'Open/Close': '열기/닫기', 'Open/Close All': '전체 열기/닫기', 'Order Drilldown': '주문 드릴다운', 'Order Print': '주문 인쇄', 'PackOut': '패키지 내보내기',
+ 'PackRoll': '패키지 롤', 'Payment Print': '결제 인쇄', 'Payroll Processing': '급여 처리', 'Payroll Send EMail': '급여 이메일 발송', 'Physical Inventory Print': '재고 실사 인쇄', 'Post Production': '생산 전기',
+ 'Prepare Migration Scripts': '마이그레이션 스크립트 준비', 'Prepare Payment': '결제 준비', 'Print Shipping Label': '배송 라벨 인쇄', 'Print Test Results': '테스트 결과 인쇄', 'Print and Release Order': '주문 인쇄 및 릴리스',
+ 'Process Allocation': '배정 처리', 'Process Bank Transfer': '은행 이체 처리', 'Process Batch': '배치 처리', 'Process Cash': '현금 처리', 'Process Confirmation': '확인 처리', 'Process Cost Collector': '원가 수집 처리',
+ 'Process Deposit Batch': '입금 배치 처리', 'Process Depreciation Entry': '감가상각 입력 처리', 'Process Depreciation Expense': '감가상각비 처리', 'Process Distribution Order': '배분 오더 처리', 'Process Entry': '입력 처리',
+ 'Process Expenses': '경비 처리', 'Process Inventory Count': '재고 수량 처리', 'Process Invoice': '청구서 처리', 'Process Journal': '분개 처리', 'Process Manufacturing Order': '제조 오더 처리', 'Process Movements': '이동 처리',
+ 'Process Order': '주문 처리', 'Process Payment': '결제 처리', 'Process Payroll': '급여 처리', 'Process Production': '생산 처리', 'Process Project Issue': '프로젝트 출고 처리', 'Process RMA': 'RMA 처리',
+ 'Process Requisition': '구매 요청 처리', 'Process Shipment': '출하 처리', 'Process Shipment Online': '온라인 출하 처리', 'Process Statement': '명세서 처리', 'Process Work Order': '작업 지시 처리',
+ 'ProcessRequestOT': 'OT 요청 처리', 'Product Costing': '제품 원가 계산', 'Product UOM Convert': '제품 측정 단위 환산', 'Project Print': '프로젝트 인쇄', 'Project Status Summary': '프로젝트 상태 요약',
+ 'Publish Broadcast message': '일괄 메시지 게시', 'Rank Responses': '응답 순위 지정', 'Re-Do Changes': '변경 다시 실행', 'Reapply Customizations': '사용자 정의 다시 적용', 'Rebuild Index': '인덱스 재구성',
+ 'Refresh Current Cost': '현재 원가 새로 고침', 'Register Extension': '확장 등록', 'Register Now!': '지금 등록!', 'Reject Context Help Suggestion': '상황별 도움말 제안 거부', 'Reject Field Suggestion': '필드 제안 거부',
+ 'Rename Column in Database': '데이터베이스 열 이름 변경', 'Rename Column(s) in Database': '데이터베이스 열 이름 변경(복수)', 'Rename Database Table': '데이터베이스 테이블 이름 변경', 'Renumber': '번호 다시 매기기',
+ 'Replenish Report (deprecated)': '보충 보고서(사용 중단)', 'Report or Update Issue': '이슈 보고 또는 갱신', 'Reset Allocation Direct': '배정 직접 초기화', 'Reverse Invoice Matching': '청구서 대응 취소',
+ 'Reverse PO Matching': '구매 주문 대응 취소', 'Reverse Prepare Payment': '결제 준비 취소', 'RfQ Response Print': '견적 요청 응답 인쇄', 'Set Print Format': '인쇄 형식 설정', 'Set Project Type': '프로젝트 유형 설정',
+ 'Setup Web POS': '웹 POS 설정', 'Shipment Confirmation': '출하 확인', 'Shipper Copy From ...': '운송업체 복사 원본…', 'Shipper Create From ...': '운송업체 생성 원본…', 'Shop Floor Transaction Details': '현장 트랜잭션 상세',
+ 'Spread Report': '분산 보고서', 'Start Process': '프로세스 시작', 'Start Replication Run': '복제 실행 시작', 'Switch Active Flag on this Test UU and its Details': '이 테스트 UU와 상세의 활성 플래그 전환',
+ 'Synchronize Column': '열 동기화', 'Tab Editor': '탭 편집기', 'Test Broadcast Message': '일괄 메시지 테스트', 'Test EMail': '이메일 테스트', 'TestUU Form Report': 'TestUU 양식 보고서', 'Un-Do Changes': '변경 실행 취소',
+ 'Update Accounting Balance': '회계 잔액 갱신', 'Update Quantity': '수량 갱신', 'Update Role Menu': '역할 메뉴 갱신', 'Update Sequence No': '순번 번호 갱신', 'Update depreciation': '감가상각 갱신', 'Validate': '검증',
+ 'Validate Address': '주소 검증', 'Validate Connection': '연결 검증', 'Validate Document Type': '문서 유형 검증', 'Validate Support': '지원 검증', 'Validate Workflow': '워크플로 검증', 'Verify': '확인', 'Verify BOM': 'BOM 확인',
+ 'Verify BOMs': 'BOM 확인', 'Verify Tree': '트리 확인', 'View Validate': '보기 검증', 'Void Online Authorization Payment Transaction Process': '온라인 승인 결제 트랜잭션 취소 프로세스', 'Void Shipment Online': '온라인 출하 취소',
+ 'Workflow Cost Roll-Up': '워크플로 원가 롤업',
+}
+if __name__ == '__main__':
+    miss = ko_apply.apply('AD_Process', KO, 'erp/tools/trl_batch_2026-11-18_ko_process.py')
+    if miss: print('§TRL_KO uncovered:', miss[:20])

@@ -6,7 +6,7 @@
 // ErpI18n.lang, _TRL_LOADER.current()), never by a screenshot.
 //   L1  set in the ERP (the real picker <select>) -> the Viewer and the Modeller start in it  (ERP 'ar' reaches them as ar_SA: the one mapping table)
 //   L2  set in the Modeller (the real flag picker) -> the ERP starts in it
-//   L3  a code the ERP lacks (ko_KR): the ERP shows its nearest (en_US base) and bim.lang is STILL ko_KR; the Viewer and the Modeller then open in ko_KR
+//   L3  ko_KR (a real ERP pack since T5c): the ERP opens in it, bim.lang stays ko_KR, the Viewer too; CONTROL bn_BD (still no ERP pack): the ERP shows its nearest (en_US base), bim.lang is STILL bn_BD
 //   L4  an old erp.lang / bim_ootb_config.locale migrates ONCE (a later change of the old key is ignored); ?lang= outranks bim.lang and does not overwrite it
 //   U   lang_choice.js unit facts: nearest() table, canon() table, set() rejects an unknown code
 // RED CONTROL: TRL_BREAK=ownkey (page flag window.__TRL_BREAK; each app reads only its own old key) must FAIL L1 and L2. A verdict is INCONCLUSIVE, never PASS, when a page
@@ -72,8 +72,8 @@ const brk = () => BREAK ? ' [TRL_BREAK=' + BREAK + ']' : '';
 (async () => {
   L('begin break=' + (BREAK || '-') + ' repo=' + ROOT);
   // ── U: the module, in Node (no browser) ──
-  const ERP = ['en_US', 'fr_FR', 'es_ES', 'de_DE', 'ar', 'zh_CN', 'ja_JP', 'ms_MY', 'th_TH', 'pt_BR', 'id_ID'];
-  const U = [['ko_KR', null], ['bn_BD', null], ['bl_BD', null], ['af_ZA', null], ['ar_SA', 'ar'], ['ar', 'ar'], ['en_MY', 'en_US'], ['en_GB', 'en_US'], ['en-AU', 'en_US'], ['ja_JP', 'ja_JP'], ['pt', 'pt_BR'], ['xx_YY', null]];
+  const ERP = ['en_US', 'fr_FR', 'es_ES', 'de_DE', 'ar', 'zh_CN', 'ja_JP', 'ms_MY', 'th_TH', 'pt_BR', 'id_ID', 'ko_KR'];
+  const U = [['ko_KR', 'ko_KR'], ['bn_BD', null], ['bl_BD', null], ['af_ZA', null], ['ar_SA', 'ar'], ['ar', 'ar'], ['en_MY', 'en_US'], ['en_GB', 'en_US'], ['en-AU', 'en_US'], ['ja_JP', 'ja_JP'], ['pt', 'pt_BR'], ['xx_YY', null]];
   const bad = U.filter(([c, w]) => LC.nearest(c, ERP) !== w);
   chk('U1 nearest(code, ERP codes) table: ' + (U.length - bad.length) + '/' + U.length, bad.length === 0, bad.map(([c, w]) => c + '->' + LC.nearest(c, ERP) + ' want ' + w).join('; '));
   chk('U2 CODES is the chooser\'s 18', LC.CODES.length === 18 && new Set(LC.CODES).size === 18, 'n=' + LC.CODES.length);
@@ -113,19 +113,19 @@ const brk = () => BREAK ? ' [TRL_BREAK=' + BREAK + ']' : '';
       }
       await c.close();
     }
-    // ── L3: a code the ERP lacks ──
-    {
+    // ── L3: ko_KR is a REAL ERP pack since T5c; bn_BD stays the control for a code the ERP still lacks ──
+    for (const [code, real] of [['ko_KR', true], ['bn_BD', false]]) {
       const c = await ctx(), m = await bimOpen(c, 'modeller');
-      if (!m.ok) incon('L3', 'Modeller did not reach trl-ready'); else {
-        const r = await modellerPick(m, 'ko_KR'), stored = await ls(m.pg, 'bim.lang'); L('L3 Modeller picker ' + r + ' bim.lang=' + stored + brk());
+      if (!m.ok) incon('L3 ' + code, 'Modeller did not reach trl-ready'); else {
+        const r = await modellerPick(m, code), stored = await ls(m.pg, 'bim.lang'); L('L3 Modeller picker ' + code + ' ' + r + ' bim.lang=' + stored + brk());
         const e = await erpOpen(c); const after = e.ok ? await ls(e.pg, 'bim.lang') : null;
-        if (!e.ok) incon('L3', 'ERP page did not boot'); else {
-          L('L3 ERP ' + e.init + ' lang=' + e.lang + ' html=' + e.html + ' bim.lang(after)=' + after);
-          chk('L3 ko_KR: the ERP (no ko pack) shows its nearest = en_US base', e.lang === 'en_US' && e.html === 'en' && /choice=ko_KR /.test(e.init) && /shows=en_US/.test(e.init), e.init);
-          chk('L3 ko_KR: bim.lang is STILL ko_KR after the ERP booted (nearest never overwrites)', after === 'ko_KR', 'bim.lang=' + after);
-          // the ERP user changes nothing; the choice survives to an app that has the pack
-          const v = await bimOpen(c, 'viewer'); if (!v.ok) incon('L3 viewer', 'no trl-ready'); else
-            chk('L3 ko_KR: the Viewer, opened after the ERP, is ko_KR', v.code === 'ko_KR' && v.html === 'ko', v.det);
+        if (!e.ok) incon('L3 ' + code, 'ERP page did not boot'); else {
+          L('L3 ' + code + ' ERP ' + e.init + ' lang=' + e.lang + ' html=' + e.html + ' bim.lang(after)=' + after);
+          if (real) chk('L3 ' + code + ': the ERP now has a REAL ' + code + ' pack (T5c): it opens in it, <html lang=ko>', e.lang === code && e.html === 'ko' && new RegExp('choice=' + code + ' ').test(e.init) && new RegExp('shows=' + code).test(e.init), e.init);
+          else chk('L3 control ' + code + ': the ERP (still no pack) shows its nearest = en_US base', e.lang === 'en_US' && e.html === 'en' && new RegExp('choice=' + code + ' ').test(e.init) && /shows=en_US/.test(e.init), e.init);
+          chk('L3 ' + code + ': bim.lang is STILL ' + code + ' after the ERP booted (nearest never overwrites)', after === code, 'bim.lang=' + after);
+          const v = await bimOpen(c, 'viewer'); if (!v.ok) incon('L3 viewer ' + code, 'no trl-ready'); else
+            chk('L3 ' + code + ': the Viewer, opened after the ERP, is ' + code, v.code === code, v.det);
         }
       }
       await c.close();
