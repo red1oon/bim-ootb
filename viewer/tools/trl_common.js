@@ -85,8 +85,13 @@ function unx(s) {
   return String(s).replace(/&#(\d+);/g, (m, d) => String.fromCodePoint(Number(d))).replace(/&#x([0-9a-fA-F]+);/g, (m, h) => String.fromCodePoint(parseInt(h, 16)))
     .replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
 }
-function xmlFile(lang) { return path.join(I18N, 'AD_Message_Trl_' + lang + '.xml'); }
-function elementXmlFile(lang) { return path.join(I18N, 'BIM_Element_Trl_' + lang + '.xml'); }
+// T4 (TRL_TRILOGY_STANDARD.md S-3/S-4): the source FOLDER says who wrote a row. SOURCES is the priority order, highest first: own/ (hand-checked rows, may be empty) then
+// machine/ (AI-written rows: every row the Viewer has today, no published pack exists). The base CSVs (id -> key + English) stay in i18n/: they hold no translation and are the
+// one join key every source shares. The batch tools write machine/ (the default of the two functions below).
+const SOURCES = ['own', 'machine'];
+function dirOf(src) { return path.join(I18N, src); }
+function xmlFile(lang, src) { return path.join(dirOf(src || 'machine'), 'AD_Message_Trl_' + lang + '.xml'); }
+function elementXmlFile(lang, src) { return path.join(dirOf(src || 'machine'), 'BIM_Element_Trl_' + lang + '.xml'); }
 
 /** writeTrlXml(lang, comment, rows) — rows: [{id, trl:'Y'|'N', original, text}] in id order. */
 function writeTrlXml(lang, comment, rows, table) {
@@ -129,4 +134,4 @@ function parseTrlXml(text) {
   return { language: root[1], table: root[2], rows };
 }
 
-module.exports = { VIEWER, I18N, CSV, ELEMENT_CSV, MAX_OFFICIAL_ID, BASE, LOCALES, writeCsv, parseCsv, readBase, writeElementCsv, parseElementCsv, readTerms, writeTrlXml, parseTrlXml, xmlFile, elementXmlFile, unx, isTermKey };
+module.exports = { VIEWER, I18N, SOURCES, dirOf, CSV, ELEMENT_CSV, MAX_OFFICIAL_ID, BASE, LOCALES, writeCsv, parseCsv, readBase, writeElementCsv, parseElementCsv, readTerms, writeTrlXml, parseTrlXml, xmlFile, elementXmlFile, unx, isTermKey };

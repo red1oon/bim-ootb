@@ -42,8 +42,8 @@ function judgeA(dir, K) {
   K.terms.forEach(k => { if (!elV.has(k)) bad.missingInElement.push(k); if (adV.has(k)) bad.stillInAD.push(k); });
   const adIds = new Set(K.terms.map(k => adV.get(k)).filter(Boolean)), elIds = K.terms.map(k => elV.get(k)).filter(Boolean);
   NONBASE.forEach(lang => {
-    const xe = new Set(T.parseTrlXml(fs.readFileSync(path.join(dir, 'BIM_Element_Trl_' + lang + '.xml'), 'utf8')).rows.map(r => r.id));
-    const xa = T.parseTrlXml(fs.readFileSync(path.join(dir, 'AD_Message_Trl_' + lang + '.xml'), 'utf8')).rows;
+    const xe = new Set(T.parseTrlXml(fs.readFileSync(path.join(dir, 'machine', 'BIM_Element_Trl_' + lang + '.xml'), 'utf8')).rows.map(r => r.id));
+    const xa = T.parseTrlXml(fs.readFileSync(path.join(dir, 'machine', 'AD_Message_Trl_' + lang + '.xml'), 'utf8')).rows;
     const xaIdVal = new Map(ad.map(r => [r.id, r.value])), termSet = new Set(K.terms);
     bad.xmlMissing += elIds.filter(id => !xe.has(id)).length;
     bad.xmlStillInAD += xa.filter(r => termSet.has(xaIdVal.get(r.id)) || adIds.has(r.id)).length;
@@ -101,7 +101,7 @@ function copyTree() {   // a red-control copy: the tools + the i18n dir, so a to
     const d1 = copyTree(), i1 = path.join(d1, 'viewer', 'i18n'), k1 = K.terms[0];
     { const adRows = T.parseCsv(fs.readFileSync(path.join(i1, 'ad_message_base.csv'), 'utf8')), el = T.readTerms().find(r => r.value === k1);
       adRows.push({ id: el.id, value: k1, msgtext: el.msgtext, msgtype: 'I' }); adRows.sort((a, b) => a.id - b.id); fs.writeFileSync(path.join(i1, 'ad_message_base.csv'), T.writeCsv(adRows));
-      NONBASE.forEach(lang => { const f = path.join(i1, 'AD_Message_Trl_' + lang + '.xml'), x = T.parseTrlXml(fs.readFileSync(f, 'utf8')), e = T.parseTrlXml(fs.readFileSync(path.join(i1, 'BIM_Element_Trl_' + lang + '.xml'), 'utf8')).rows.find(r => r.id === el.id);
+      NONBASE.forEach(lang => { const f = path.join(i1, 'machine', 'AD_Message_Trl_' + lang + '.xml'), x = T.parseTrlXml(fs.readFileSync(f, 'utf8')), e = T.parseTrlXml(fs.readFileSync(path.join(i1, 'machine', 'BIM_Element_Trl_' + lang + '.xml'), 'utf8')).rows.find(r => r.id === el.id);
         const rs = x.rows.map(r => ({ id: r.id, trl: r.trl, original: r.original, text: r.text })).concat([{ id: e.id, trl: e.trl, original: e.original, text: e.text }]).sort((a, b) => a.id - b.id);
         fs.writeFileSync(f, T.writeTrlXml(lang, 'red control', rs)); }); }
     const r1 = judgeA(i1, K), g1 = cp.spawnSync('node', [path.join(d1, 'viewer', 'tools', 'build_trl.js'), '--check'], { encoding: 'utf8' });
@@ -112,7 +112,7 @@ function copyTree() {   // a red-control copy: the tools + the i18n dir, so a to
     const d2 = copyTree(), i2 = path.join(d2, 'viewer', 'i18n'), k2 = K.terms[1];
     { const el = T.parseElementCsv(fs.readFileSync(path.join(i2, 'bim_element_base.csv'), 'utf8')), gone = el.find(r => r.value === k2);
       fs.writeFileSync(path.join(i2, 'bim_element_base.csv'), T.writeElementCsv(el.filter(r => r.id !== gone.id)));
-      NONBASE.forEach(lang => { const f = path.join(i2, 'BIM_Element_Trl_' + lang + '.xml'), x = T.parseTrlXml(fs.readFileSync(f, 'utf8'));
+      NONBASE.forEach(lang => { const f = path.join(i2, 'machine', 'BIM_Element_Trl_' + lang + '.xml'), x = T.parseTrlXml(fs.readFileSync(f, 'utf8'));
         fs.writeFileSync(f, T.writeTrlXml(lang, 'red control', x.rows.filter(r => r.id !== gone.id).map(r => ({ id: r.id, trl: r.trl, original: r.original, text: r.text })), 'BIM_Element')); }); }
     const g2 = cp.spawnSync('node', [path.join(d2, 'viewer', 'tools', 'build_trl.js')], { encoding: 'utf8' });
     const r2 = g2.status === 0 ? judgeB(i2, before) : null, bad2 = r2 ? r2.filter(r => !r.ok) : [];

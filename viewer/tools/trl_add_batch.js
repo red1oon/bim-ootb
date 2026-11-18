@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// T4: every row this tool writes goes to viewer/i18n/machine/ (AI-written, lowest priority); hand-checked rows live in viewer/i18n/own/ and win over them.
 // trl_add_batch.js — APPEND a labelled batch of NEW AD_Message rows (and, since T2, NEW BIM_Element term rows: see T.isTermKey) (+ their translations) to the iDempiere-format
 // sources: viewer/i18n/ad_message_base.csv (one base row per new key, ids continue above the highest existing id —
 // an id is never renumbered, it is iDempiere's join key) and every viewer/i18n/AD_Message_Trl_<lang>.xml (one <row>
