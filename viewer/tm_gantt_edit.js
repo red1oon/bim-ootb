@@ -1022,7 +1022,7 @@
     if (_tmEditLocked('commitGanttGroupShift')) return;   // §TM_BAKE_LOCK (§S69)
     var app = TMS.A();
     var SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
-    if (!app || !app.db || !SA || !SA.shiftTasks) {
+    if (!app || !app.db || !SA || !SA.shiftTasksCascade) {
       console.log('§GANTT_GROUP_SHIFT_REJECT reason=ScheduleAuthor_not_loaded');
       _tmSay(_L('tm_not_available', 'Not available'));   // §TM_SILENT_REFUSAL
       return;
@@ -1033,16 +1033,22 @@
     var snap = _tmEditSnapshot(schedId);
 
     try {   // §TM_EDIT_EXCEPTION — engine verb through final repaint
-    var res = SA.shiftTasks(app.db, taskIds, deltaDays);
+    // §GANTT_GROUP_LINKS (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.19.13): the group obeys the links that cross
+    // the selection — stopped by an outside predecessor, pushing an outside successor — as a single drag does.
+    var res = SA.shiftTasksCascade(app.db, schedId, taskIds, deltaDays, {});
     if (!res || !res.ok) {
-      console.log('§GANTT_GROUP_SHIFT_REJECT reason=' + ((res && res.reason) || 'unknown'));
-      _tmSay(_L('tm_cannot_move_group', 'Cannot move group — {reason}', { reason: (res && res.reason) || _L('tm_no_schedule', 'no schedule') }));   // §TM_SILENT_REFUSAL
+      console.log('§GANTT_GROUP_SHIFT_REJECT reason=' + ((res && res.reason) || 'unknown') + (res && res.blockedBy ? ' task=' + res.task + ' blockedBy=' + res.blockedBy : ''));
+      _tmSay(res && res.reason === 'blocked'
+        ? _L('tm_group_blocked', 'Cannot move earlier — {task} must still follow {by}', { task: res.task, by: res.blockedBy })
+        : _L('tm_cannot_move_group', 'Cannot move group — {reason}', { reason: (res && res.reason) || _L('tm_no_schedule', 'no schedule') }), 3400);   // §TM_SILENT_REFUSAL
       return;
     }
+    if (res.clamped) _tmSay(_L('tm_group_clamped', 'Moved {d}d, not {r}d — {task} must still follow {by}', { d: res.deltaDays, r: res.requested, task: res.task, by: res.blockedBy }), 3400);
 
     _tmCommitEdit({ what: 'groupShift', schedId: schedId, moved: res.moved || [], snap: snap,
       undo: { taskId: '(' + taskIds.length + ' selected)', mode: 'group-shift' },
-      log: '§GANTT_GROUP_SHIFT_COMMIT tasks=' + res.moved.length + ' deltaDays=' + deltaDays });
+      log: '§GANTT_GROUP_SHIFT_COMMIT tasks=' + res.moved.length + ' deltaDays=' + res.deltaDays + ' requested=' + deltaDays +
+        ' clamped=' + res.clamped + (res.clamped ? ' blockedBy=' + res.blockedBy : '') + ' cascaded=' + res.cascaded });
     } catch (e) { _tmEditExceptionRecover('commitGanttGroupShift', e); }   // §TM_EDIT_EXCEPTION
   }
 

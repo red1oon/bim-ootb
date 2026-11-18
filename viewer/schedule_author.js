@@ -3142,6 +3142,49 @@
       reversedLink: !!direct, clamped: clamped, blockedBy: blockedBy, moved: movedList, cascaded: movedList.length - 2 };
   }
 
+  // shiftTasksCascade(db, scheduleId, taskIds, deltaDays, opts) — §GANTT_GROUP_LINKS (bim-compiler
+  // prompts/4D_MODEL_INTEGRITY.md §Q.19.13). The marquee selection moves as ONE body and obeys the links that cross it,
+  // by a single drag's own rules: earlier, it stops at the tightest predecessor OUTSIDE the selection (the engine's
+  // floor and binding predecessor); later, successors outside it that are now too early are pushed. Links inside the
+  // selection keep their slack because every selected task moves by the same days. shiftTasks (above) stays the raw,
+  // link-blind translation. →
+  //   { ok, deltaDays (effective), requested, clamped, blockedBy, task, moved:[{id,start,finish}], cascaded }
+  //   { ok:false, reason: no_tasks | blocked, blockedBy?, task? }      opts.dryRun — compute without writing.
+  function shiftTasksCascade(db, scheduleId, taskIds, deltaDays, opts) {
+    opts = opts || {};
+    var G = _leafGraph(db, scheduleId);
+    if (G.fail) return { ok: false, reason: G.fail };
+    var T = G.T, sel = {}, ids = [];
+    (taskIds || []).forEach(function (id) { if (T[id] && !sel[id]) { sel[id] = true; ids.push(id); } });
+    if (!ids.length) { console.log('§SE_GROUP_SHIFT_FAIL reason=no_matching_tasks'); return { ok: false, reason: 'no_tasks' }; }
+    var delta = deltaDays, clamped = false, blockedBy = null, task = null;
+    if (delta < 0) {
+      // predecessors OUTSIDE the selection only: the ones inside move with it
+      var predsOut = {};
+      ids.forEach(function (id) { predsOut[id] = (G.preds[id] || []).filter(function (e) { return !sel[e.pred]; }); });
+      var room = Infinity;
+      ids.forEach(function (id) {
+        var floor = _earliestStart(id, T, predsOut); if (floor === null) return;
+        var r = Math.max(0, T[id].start - floor);
+        if (r < room) { room = r; task = id; blockedBy = _bindingPred(id, T, predsOut, floor); }
+      });
+      if (-delta > room) { clamped = true; delta = -room; }
+      else { task = null; blockedBy = null; }
+      if (delta === 0) {
+        console.log('§SE_GROUP_SHIFT_REFUSED tasks=' + ids.length + ' requested=' + deltaDays + ' reason=blocked task=' + task + ' blockedBy=' + blockedBy + (opts.dryRun ? ' (dryRun)' : ''));
+        return { ok: false, reason: 'blocked', task: task, blockedBy: blockedBy };
+      }
+    }
+    var moved = {};
+    ids.forEach(function (id) { T[id].start += delta; T[id].finish = T[id].start + T[id].dur; moved[id] = true; });
+    ids.forEach(function (id) { _cascadePush(id, G, moved); });
+    var movedList = _writeMoved(db, G, moved, opts.dryRun);
+    console.log('§SE_GROUP_SHIFT tasks=' + ids.length + ' deltaDays=' + delta + ' requested=' + deltaDays + ' clamped=' + clamped +
+      (clamped ? ' task=' + task + ' blockedBy=' + blockedBy : '') + ' cascaded=' + (movedList.length - ids.length) + (opts.dryRun ? ' (dryRun)' : ''));
+    return { ok: true, deltaDays: delta, requested: deltaDays, clamped: clamped, blockedBy: blockedBy, task: task,
+      moved: movedList, cascaded: movedList.length - ids.length };
+  }
+
   // resizeTask(db, scheduleId, taskId, newStart, newFinish, opts) — §GANTT_EDIT E2, the edge-pull.
   // moveTask/moveTaskCascade preserve duration by design, so resize needs its own verb rather than
   // overloading them. Writes the new duration, then re-runs the SAME clamp+cascade so a lengthened
@@ -3714,6 +3757,7 @@
     swapTasks: swapTasks,               // §GANTT_REORDER — exchange two bars' places (atomic)
     shiftSchedule: shiftSchedule,       // §TM_RULER_SHIFT — uniform whole-project date shift
     shiftTasks: shiftTasks,             // §GANTT_GROUP_MOVE — uniform date shift over an explicit task_id list
+    shiftTasksCascade: shiftTasksCascade,   // §GANTT_GROUP_LINKS — the same, obeying links that cross the selection
     resizeTask: resizeTask,             // §GANTT_EDIT E2 — edge-pull, duration changes
     rescheduleAsap: rescheduleAsap,     // §GANTT_RESCHEDULE_ASAP — explicit pull-back, compression only
     setBaseline: setBaseline,           // ⚑ Set Baseline — schedule variance snapshot, single baseline
