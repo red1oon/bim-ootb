@@ -252,7 +252,7 @@ if (window.WholeHistory && WholeHistory.mount) WholeHistory.mount({ page: 'model
      tree engine the Viewer runs (common/history_bar.js), reused — not a second branch mechanism. The
      adapter wraps Bonsai.oplog.commit/commitGesture so every real edit lands as one tree node. -->
 <!-- §14.5 (bim-compiler VOCAB_MESSAGE_CATALOG.md): THE help panel + THE drag helper, the same files the Viewer loads. -->
-<script src="../common/drag.js?v=1" onerror="console.warn('§HELP LOAD_FAIL drag.js')"></script>
+<script src="../common/drag.js?v=2" onerror="console.warn('§HELP LOAD_FAIL drag.js')"></script>
 <script src="../common/help/help_query.js?v=2" onerror="console.warn('§HELP LOAD_FAIL help_query.js')"></script>
 <script src="../common/door/assist_core.js?v=1" onerror="console.warn('§HELP LOAD_FAIL assist_core.js')"></script>
 <script src="../common/help/help_dym.js?v=1" onerror="console.warn('§HELP LOAD_FAIL help_dym.js')"></script>
@@ -3707,7 +3707,7 @@ let _lodupLoading = null;
 document.getElementById('b-lodup').onclick = async function () {
   try {
     const load = src => new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('load failed ' + src)); document.head.appendChild(s); });
-    if (!window.LodUI) _lodupLoading = _lodupLoading || (async () => { for (const f of ['lod/lod_rules.js?v=1', 'lod/lod_registry.js?v=2', 'lod/lod_ops.js?v=2', 'lod/lod_reader.js?v=4', 'lod/lod_ui.js?v=3']) await load(f); })().catch(e => { _lodupLoading = null; throw e; });
+    if (!window.LodUI) _lodupLoading = _lodupLoading || (async () => { for (const f of ['lod/lod_rules.js?v=1', 'lod/lod_registry.js?v=2', 'lod/lod_ops.js?v=2', 'lod/lod_reader.js?v=5', 'lod/lod_ui.js?v=3']) await load(f); })().catch(e => { _lodupLoading = null; throw e; });
     await _lodupLoading; await window.LodUI.toggle();
   } catch (err) { setStat('FAIL ' + (err && err.message || err)); console.warn('§LODUP load fail ' + err); }
 };

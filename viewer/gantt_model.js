@@ -212,13 +212,14 @@
   // Callers that omit taskWins are byte-identical to before.
   function computeDays(placeOps, taskWins) {
     var cOps = placeOps;
+    // §TM_NEEDLE_SYNC (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.19.5): the ladder is on the PROGRAMME'S day
+    // grid — 24 h steps from the first instant of work — the grid the bars, the day counter and the ruler's dN
+    // already use. It was local midnight, so outside UTC every notch straddled two programme days.
+    var origin = cOps.length ? cOps[0].start_ts : null;
     var seen = {};
-    cOps.forEach(function (op) {
-      var d = new Date(op.start_ts);
-      var key = d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate();
-      if (!seen[key]) seen[key] = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-    });
-    var out = { days: Object.values(seen).sort(function (a, b) { return a - b; }),
+    cOps.forEach(function (op) { seen[dayParts(op.start_ts, origin).day] = true; });
+    var out = { days: Object.keys(seen).map(function (k) { return origin + (+k) * DAY_MS; }).sort(function (a, b) { return a - b; }),
+                dayOrigin: origin,
                 projectStart: null, projectEnd: null, axisStart: null, axisEnd: null, n: cOps.length };
     if (cOps.length) {
       // projectStart = 1ms BEFORE first op so ⏪ = truly empty (no frontier)
@@ -235,7 +236,9 @@
     // constant, reuses the exact proven formula. Never exceeds the true max (tukeyBound's own
     // Math.min(s[n-1], ...) clamp), so this stays a qualification of the real data, never an
     // invention beyond it.
-    out.axisStart = out.projectStart;   // starts are not the observed problem; leave unqualified
+    // The axis starts ON the first instant, not on projectStart's 1 ms before it: that 1 ms put every ruler tick
+    // 1 ms before its day (§TM_NEEDLE_SYNC).
+    out.axisStart = origin;             // starts are not the observed problem; leave unqualified
     out.axisEnd = cOps.length
       ? tukeyBound(cOps.map(function (o) { return o.end_ts; }), false)
       : out.projectEnd;
@@ -253,8 +256,18 @@
     return out;
   }
 
+  // dayParts(ms, origin) — THE one owner of "which programme day, hour, minute, second is this instant".
+  // The slider's ladder, the anchor, the day counter and the ruler all read it, so they cannot name different days.
+  var DAY_MS = 86400000;
+  function dayParts(ms, origin) {
+    var el = Math.max(0, ms - (origin || 0));
+    var day = Math.floor(el / DAY_MS), inDay = el - day * DAY_MS;
+    return { day: day, hr: Math.floor(inDay / 3600000), min: Math.floor((inDay % 3600000) / 60000),
+             sec: Math.floor((inDay % 60000) / 1000), dayStart: (origin || 0) + day * DAY_MS };
+  }
+
   var API = { tukeyBound: tukeyBound, phaseOrder: phaseOrder, groupKeyOf: groupKeyOf,
-              buildTasks: buildTasks, computeDays: computeDays,
+              buildTasks: buildTasks, computeDays: computeDays, dayParts: dayParts,
               FALLBACK_PHASE_ORDER: FALLBACK_PHASE_ORDER };
   global.GanttModel = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
