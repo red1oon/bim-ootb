@@ -981,7 +981,11 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
 <script src="issues.js?v=5" onerror="console.warn('§LOAD_FAIL issues.js')"></script>
 <script src="excel.js?v=4" onerror="console.warn('§LOAD_FAIL excel.js')"></script>
 <script src="bcf_export.js?v=1" onerror="console.warn('§LOAD_FAIL bcf_export.js')"></script>
-<script src="export_menu.js?v=1" onerror="console.warn('§LOAD_FAIL export_menu.js')"></script>
+<!-- IFC export (prompts/VIEWER_IFC_EXPORT_BY_DISCIPLINE.md (b)): the Modeller's proven writer + reader (modeller/lod, UMD, no DOM) and the adapter that feeds them the open building -->
+<script src="../modeller/lod/lod_reader.js?v=7" onerror="console.warn('§LOAD_FAIL lod_reader.js - IFC export disabled')"></script>
+<script src="../modeller/lod/lod_ifc.js?v=1" onerror="console.warn('§LOAD_FAIL lod_ifc.js - IFC export disabled')"></script>
+<script src="ifc_export_shared.js?v=1" onerror="console.warn('§LOAD_FAIL ifc_export_shared.js')"></script>
+<script src="export_menu.js?v=2" onerror="console.warn('§LOAD_FAIL export_menu.js')"></script>
 <script src="walk.js?v=7" onerror="console.warn('§LOAD_FAIL walk.js')"></script>
 <!-- SPATIAL_PICKING_SPEC §S-2..§S-5 — the warehouse pick-walk addon: wh_route.js (UMD of bim-compiler
      build/erp/wh_route.js, the pure §S-2 route verb) + wh_walk.js (the data-gated lens; lazy-loads
@@ -1022,7 +1026,7 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
 <script src="diff.js?v=6"></script>
 <script src="variation_order.js?v=2"></script>
 <script src="../common/import_key.js?v=2"></script>
-<script src="import.js?v=17"></script>
+<script src="import.js?v=18"></script>
 <script src="mep_coordination.js?v=1" onerror="console.warn('§LOAD_FAIL mep_coordination.js — MEP coordination disabled')"></script>
 <script src="real_placement_resolver.js?v=1" onerror="console.warn('§RPR LOAD_FAIL real_placement_resolver.js')"></script>
 <script src="routewalker.js?v=4" onerror="console.warn('§LOAD_FAIL routewalker.js — MEP generation disabled')"></script>
@@ -1125,7 +1129,7 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
 <script src="info_dxf2bim.js?v=1" onerror="console.warn('§LOAD_FAIL info_dxf2bim.js')"></script>
 <script src="info_class_help.js?v=1" onerror="console.warn('§LOAD_FAIL info_class_help.js')"></script>
 <script src="info_4d_panel.js?v=2" onerror="console.warn('§LOAD_FAIL info_4d_panel.js — #info-4d will stay hidden')"></script>
-<script src="schedule_author.js?v=23" onerror="console.warn('§LOAD_FAIL schedule_author.js')"></script>
+<script src="schedule_author.js?v=24" onerror="console.warn('§LOAD_FAIL schedule_author.js')"></script>
 <!-- §S7-INJECT (TM_4D5D_VARIANCE_LANE §S7-INJECT): "generate the programme once, on the fly" trigger
      + honest progress/persist reporting. Depends on ScheduleAuthor (loaded above) and, lazily at
      call time, window.tm4DTemplate (time_machine.js) / window._4dTemplate — never loads a second
@@ -1181,7 +1185,7 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
 <!-- Connect Scene broker (prompts/CONNECT_SCENE_SPEC.md): the viewer joins the shared cross-surface context
      as surface 'viewer' — selection/timeline/identity over the one signed op-log. Opt-in (toggle / ?connect=1). -->
 <script src="connect_scene.js?v=2" onerror="console.warn('§CONNECT LOAD_FAIL connect_scene.js')"></script>
-<script src="main.js?v=66"></script>
+<script src="main.js?v=67"></script>
 <!-- §S8 EDIT→Δ (TM_4D5D_VARIANCE_LANE §S8): ONE pure Δ function + the Viewer's Connect 'identity' subscriber (P3). -->
 <script src="edit_delta.js?v=4" onerror="console.warn('§LOAD_FAIL edit_delta.js')"></script>
 <script src="edit_delta_viewer.js?v=2" onerror="console.warn('§LOAD_FAIL edit_delta_viewer.js')"></script>

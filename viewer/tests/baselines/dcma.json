@@ -1,0 +1,96 @@
+{
+ "_what": "W-DCMA-14PT ratchet: measured values, worse = FAIL",
+ "buildings": {
+  "Duplex": {
+   "logic": 0,
+   "leads": 0,
+   "lags": 0,
+   "nonFs": 0,
+   "constraints": 0,
+   "highFloat": 0,
+   "negFloat": 0,
+   "highDur": 0,
+   "invalid": 0,
+   "noResource": 0,
+   "noCritical": 0
+  },
+  "HHS_Office_Federated": {
+   "logic": 0,
+   "leads": 0,
+   "lags": 0,
+   "nonFs": 0,
+   "constraints": 0,
+   "highFloat": 0,
+   "negFloat": 0,
+   "highDur": 0,
+   "invalid": 0,
+   "noResource": 0,
+   "noCritical": 0
+  },
+  "JKR": {
+   "logic": 0,
+   "leads": 0,
+   "lags": 0,
+   "nonFs": 0,
+   "constraints": 0,
+   "highFloat": 0,
+   "negFloat": 0,
+   "highDur": 0,
+   "invalid": 0,
+   "noResource": 0,
+   "noCritical": 0
+  },
+  "Clinic": {
+   "logic": 0,
+   "leads": 0,
+   "lags": 0,
+   "nonFs": 0,
+   "constraints": 0,
+   "highFloat": 3,
+   "negFloat": 0,
+   "highDur": 0,
+   "invalid": 0,
+   "noResource": 0,
+   "noCritical": 0
+  },
+  "Terminal": {
+   "logic": 0,
+   "leads": 0,
+   "lags": 0,
+   "nonFs": 0,
+   "constraints": 0,
+   "highFloat": 20,
+   "negFloat": 0,
+   "highDur": 0,
+   "invalid": 0,
+   "noResource": 0,
+   "noCritical": 0
+  },
+  "Hospital": {
+   "logic": 2,
+   "leads": 0,
+   "lags": 0,
+   "nonFs": 0,
+   "constraints": 0,
+   "highFloat": 19,
+   "negFloat": 0,
+   "highDur": 2,
+   "invalid": 0,
+   "noResource": 0,
+   "noCritical": 0
+  },
+  "LTU_AHouse": {
+   "logic": 1,
+   "leads": 0,
+   "lags": 0,
+   "nonFs": 0,
+   "constraints": 0,
+   "highFloat": 54,
+   "negFloat": 0,
+   "highDur": 5,
+   "invalid": 0,
+   "noResource": 0,
+   "noCritical": 0
+  }
+ }
+}

@@ -4,6 +4,8 @@
 // meta {guid:{cls,name,storey,disc,building}}, sched {guid:{name:value}} (element_dxf2bim), world(guid) -> Float64Array (the element's MESH in world space, rotation applied; never the DB rtree, spec §5), from component_geometries or base_geometries.
 // P4 adds mesh(guid) (indexed world mesh), boxes() (TRUE per-element boxes from the meshes) and src (the DB object: the key a pack caches on).
 // Read-only. A table the DB lacks gives an empty set, never an invented one.
+// SPLIT PAIR (Viewer, prompts/VIEWER_IFC_EXPORT_BY_DISCIPLINE.md "(b) SPEC"): fromDb(metaDb, geoDb) with a distinct second DB reads element_instances + element_transforms from the first and the mesh by geometry_hash from the second
+// (world(), mesh()); no fold of the geometry tables. boxes() is not read for a pair (an empty set). With no second argument everything below is exactly the single-DB reader.
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
   else root.LodReader = factory();
@@ -47,11 +49,11 @@
   }
   // ONE reader, both schemas: component_geometries (library / split DBs) else base_geometries (extractor DBs, blobs inline)
   function geomTable(db) { return has(db, 'component_geometries') ? 'component_geometries' : has(db, 'base_geometries') ? 'base_geometries' : null; }
-  function fromDb(db) {
-    var meta = {}, sched = {};
+  function fromDb(db, geoDb) {
+    var split = !!geoDb && geoDb !== db, meta = {}, sched = {};
     if (has(db, 'elements_meta')) { var r = db.exec('SELECT guid, ifc_class, element_name, storey, discipline, building FROM elements_meta ORDER BY guid'); if (r.length) r[0].values.forEach(function (v) { meta[v[0]] = { cls: v[1], name: v[2] || '', storey: v[3], disc: v[4], building: v[5] }; }); }
     if (has(db, 'element_dxf2bim')) { var s = db.exec('SELECT guid, name, value FROM element_dxf2bim ORDER BY guid, name'); if (s.length) s[0].values.forEach(function (v) { (sched[v[0]] = sched[v[0]] || {})[v[1]] = v[2]; }); }
-    var gtbl = geomTable(db), canWorld = has(db, 'element_instances') && !!gtbl && has(db, 'element_transforms'), st = null;
+    var gtbl = geomTable(split ? geoDb : db), canWorld = has(db, 'element_instances') && !!gtbl && has(db, 'element_transforms'), st = null;
     function world(guid) {   // the element's mesh in the extractor frame: world = R(rx,ry,rz) v + centre (R as the extractor decomposed it; the identity when the angles are 0)
       if (!canWorld) return null;
       if (!st) st = db.prepare('SELECT c.vertices, t.center_x, t.center_y, t.center_z, t.rotation_x, t.rotation_y, t.rotation_z FROM element_instances i JOIN ' + gtbl + ' c USING(geometry_hash) JOIN element_transforms t USING(guid) WHERE i.guid = ?');
@@ -101,6 +103,22 @@
       st2.free(); boxC = tmp; return boxC;
     }
     function boxes() { var g = boxesSteps(null), r = g.next(); while (!r.done) r = g.next(); return r.value; }
+    if (split && canWorld) {   // the pair: the instance + transform row from db, the mesh from geoDb by hash (memo of the last hash is not kept: one element at a time)
+      var stI = null, stG = null;
+      var splitRow = function (guid, wantFaces) {
+        if (!stI) { stI = db.prepare('SELECT i.geometry_hash, t.center_x, t.center_y, t.center_z, t.rotation_x, t.rotation_y, t.rotation_z FROM element_instances i JOIN element_transforms t USING(guid) WHERE i.guid = ?'); stG = geoDb.prepare('SELECT vertices, faces FROM ' + gtbl + ' WHERE geometry_hash = ?'); }
+        stI.bind([guid]); var out = null;
+        if (stI.step()) { var r = stI.get(); stG.bind([r[0]]); if (stG.step()) { var g = stG.get(); out = { v: g[0], f: g[1], t: [0, r[1], r[2], r[3]], rx: r[4] || 0, ry: r[5] || 0, rz: r[6] || 0 }; } stG.reset(); }
+        stI.reset(); return out;
+      };
+      world = function (guid) { var r = splitRow(guid); if (!r || !r.v) return null; var b = r.v; return placeAll(new Float32Array(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength)), r.t, r.rx, r.ry, r.rz); };
+      worldMesh = function (guid) {
+        var r = splitRow(guid); if (!r || !r.v) return null; var b = r.v, fb = r.f, F = null;
+        if (fb && fb.byteLength >= 12) F = new Uint32Array(fb.buffer.slice(fb.byteOffset, fb.byteOffset + fb.byteLength));
+        return { V: placeAll(new Float32Array(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength)), r.t, r.rx, r.ry, r.rz), F: F };
+      };
+      boxesSteps = function* () { return {}; };
+    }
     // meta.rgba (host colour), read apart so a DB without the column still opens
     if (has(db, 'elements_meta')) { try { var rc = db.exec('SELECT guid, material_rgba FROM elements_meta'); if (rc.length) rc[0].values.forEach(function (v) { if (meta[v[0]]) meta[v[0]].rgba = v[1]; }); } catch (e) { /* no colour column: parts take the pack default */ } }
     // meta.mat = the stated material (elements_meta.material_name), meta.layerMats = the materials of its layer set: what a material gate (e.g. the weld pack's steel rule) reads
