@@ -97,13 +97,14 @@ assert(!!persistFn, 'W-PERS-0 _tmPersistEdit is defined in time_machine.js — w
 if (!persistFn) { console.log('§GANTT_EDIT_PERSIST_SUMMARY pass=' + pass + ' fail=' + fail + ' inconclusive=' + inconclusive); process.exit(1); }
 
 // ── W-PERS-1: every re-time path persists.
-const CALL = 'retimeTaskElements(';
+const P = require('./_gantt_pipeline.js');   // §ONE_COMMIT_PIPELINE: a verb reaches the steps through the pipeline owners
+const CALL = P.COMMIT_CALL;   // was retimeTaskElements( — every edit now commits through this one call
 const sites = [];
 for (let i = src.indexOf(CALL); i >= 0; i = src.indexOf(CALL, i + 1)) {
   if (/function\s+$/.test(src.slice(Math.max(0, i - 12), i))) continue;
   sites.push(i);
 }
-assert(sites.length >= 5, 'W-PERS-1a retimeTaskElements call sites found (n=' + sites.length +
+assert(sites.length >= 5, 'W-PERS-1a edit commit sites (_tmCommitEdit) found (n=' + sites.length +
   ') — a 0 means the function was renamed and this gate went blind, not that the wiring is clean');
 const missing = [], seen = {};
 for (const s of sites) {
@@ -111,7 +112,7 @@ for (const s of sites) {
   if (!fn) { missing.push('line ' + lineOf(s)); continue; }
   if (seen[fn.name]) continue;
   seen[fn.name] = 1;
-  if (fn.body.indexOf('_tmPersistEdit(') < 0) missing.push(fn.name + '() at line ' + lineOf(fn.start));
+  if (P.reach(fn.body, src).indexOf('_tmPersistEdit(') < 0) missing.push(fn.name + '() at line ' + lineOf(fn.start));
 }
 console.log('§GANTT_EDIT_PERSIST_WIRING retimeSites=' + sites.length + ' distinctFns=' + Object.keys(seen).length +
   ' missingPersist=' + missing.length + (missing.length ? ' [' + missing.join(' | ') + ']' : ''));
@@ -119,7 +120,7 @@ assert(missing.length === 0, 'W-PERS-1 every function that re-times elements als
   (missing.length ? 'MISSING in ' + missing.join(', ') : 'all ' + Object.keys(seen).length + ' clean'));
 
 const undoFn = FNS.find(f => f.name === 'undoLastGanttEdit');
-assert(!!undoFn && undoFn.body.indexOf('_tmPersistEdit(') >= 0,
+assert(!!undoFn && P.reach(undoFn.body, src).indexOf('_tmPersistEdit(') >= 0,
   'W-PERS-1b undoLastGanttEdit persists too — it mutates by restoring rows directly, so the wiring gate above cannot see it, and an un-persisted undo would silently come back on reload');
 
 // ── W-PERS-2: the deliberate exemption stays exempt.
