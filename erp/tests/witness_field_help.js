@@ -2,7 +2,7 @@
 //   F1 ISSUE (a field's tooltip is a developer string, not legacy's Description) · F2 ISSUE (a `<ColumnName> · …` tooltip is left anywhere)
 //   F3 ISSUE (no Help panel, or one that does not answer like HelpController) · F4 ISSUE (the twin window's text is inherited, not the field's own as AD_Field_v)
 //   F5 ISSUE (a process parameter's tooltip is not AD_Process_Para.Description)
-//   Falsifiers: FH_BREAK=devtitle FAILs F1+F2 · nohelp FAILs F3 · fallback FAILs F4 (a throwaway copy where an empty field text takes its column's, the inheritance legacy never does).
+//   Falsifiers: FH_BREAK=anywindow (§7.1: the old oracle, the first header tab of ANY window) FAILs F1-scope · devtitle FAILs F1+F2 · nohelp FAILs F3 · fallback FAILs F4 (a throwaway copy where an empty field text takes its column's, the inheritance legacy never does).
 //   Each claim can say VACUOUS / INCONCLUSIVE (F4 is INCONCLUSIVE when the legacy postgres is not running, never PASS).
 //   Population: X of N, N counted from the dictionary. Browser part: the REAL page (idempiere.html, GardenAdmin), its real render functions through window.__idmpFieldHelp.
 // Run: node erp/tests/witness_field_help.js   (ERP_SEED_DB overrides the seed; PW overrides the playwright path; LEGACY_PG=docker container name, default postgres)
@@ -161,14 +161,19 @@ async function browser() {
       if (c.mode === 'new') { await page.waitForSelector('#idmp-toolbar [data-tb="new"]', { timeout: 15000 }).catch(() => {}); await page.click('#idmp-toolbar [data-tb="new"]').catch(() => {}); }
       else { await page.waitForSelector('.idmp-grid tbody tr[data-ad-record]', { timeout: 15000 }).catch(() => {}); await page.evaluate(() => { var tr = document.querySelector('.idmp-grid tbody tr[data-ad-record]'); if (tr) tr.click(); }); }
       await page.waitForSelector('#idmp-inline-mount .cfrow', { timeout: 10000 }).catch(() => {});
-      const r = await page.evaluate(() => {
+      const r = await page.evaluate((brk) => {
         var o = { rows: 0, okE: 0, okL: 0, okP: 0, focusable: 0, disabled: 0, hidden: 0, bad: [], dev: 0, tips: 0 }, dev = /^[A-Za-z_][A-Za-z0-9_]* · /;
+        // §7.1: the oracle reads the field of the window that is OPEN (the page's own state), never 'the first header tab of any window on this table' — c_order/m_inout/c_invoice are shared by a sales and a purchase window whose header tabs tie on seqno
+        var st = window.__idmpHowto && window.__idmpHowto.state ? window.__idmpHowto.state() : null, ow = st && st.win != null ? Number(st.win) : null; o.openWin = ow; o.otherWin = 0;
         var host = document.getElementById('idmp-inline-mount'); if (!host) return o;
         var tab = window.__fhq("SELECT 1"); // keep the handle warm
         host.querySelectorAll('.cfrow[data-row]').forEach(function (row) {
           var t = row.getAttribute('data-ad-table'), col = row.getAttribute('data-row');
-          var r = window.__fhq("SELECT f.name nm, f.description d, f.help h FROM ad_field f JOIN ad_column c ON c.ad_column_id=f.ad_column_id JOIN ad_tab tb ON tb.ad_tab_id=f.ad_tab_id JOIN ad_table tt ON tt.ad_table_id=tb.ad_table_id WHERE lower(tt.tablename)='" + String(t).toLowerCase().replace(/'/g, "''") + "' AND lower(c.columnname)='" + String(col).toLowerCase().replace(/'/g, "''") + "' AND f.isactive='Y' AND tb.ad_tab_id=" + Number((document.querySelector('#idmp-tabstrip .active[data-tab-id]') || {}).getAttribute ? document.querySelector('#idmp-tabstrip .active[data-tab-id]').getAttribute('data-tab-id') : 0))[0];
-          if (!r) r = window.__fhq("SELECT f.name nm, f.description d, f.help h FROM ad_field f JOIN ad_column c ON c.ad_column_id=f.ad_column_id JOIN ad_tab tb ON tb.ad_tab_id=f.ad_tab_id JOIN ad_table tt ON tt.ad_table_id=tb.ad_table_id WHERE lower(tt.tablename)='" + String(t).toLowerCase().replace(/'/g, "''") + "' AND lower(c.columnname)='" + String(col).toLowerCase().replace(/'/g, "''") + "' AND f.isactive='Y' AND tb.tablevel=0 ORDER BY tb.seqno LIMIT 1")[0];
+          var tn = "'" + String(t).toLowerCase().replace(/'/g, "''") + "'", cn = "'" + String(col).toLowerCase().replace(/'/g, "''") + "'";
+          var sel = "SELECT f.name nm, f.description d, f.help h, tb.ad_window_id w FROM ad_field f JOIN ad_column c ON c.ad_column_id=f.ad_column_id JOIN ad_tab tb ON tb.ad_tab_id=f.ad_tab_id JOIN ad_table tt ON tt.ad_table_id=tb.ad_table_id WHERE lower(tt.tablename)=" + tn + " AND lower(c.columnname)=" + cn + " AND f.isactive='Y'";
+          var r = brk === 'anywindow' ? window.__fhq(sel + " AND tb.tablevel=0 ORDER BY tb.seqno LIMIT 1")[0]   // falsifier: the old oracle (first header tab of ANY window)
+            : (ow == null ? null : window.__fhq(sel + " AND tb.ad_window_id=" + ow + " ORDER BY tb.tablevel, tb.seqno LIMIT 1")[0]);
+          if (r && ow != null && Number(r.w) !== ow) o.otherWin++;
           if (!r) return; o.rows++;
           var d = r.d == null ? '' : String(r.d), want = d.length ? d : null;
           var ed = row.querySelector('input[data-col],select[data-col],textarea[data-col]'), lb = row.querySelector('.cfl');
@@ -183,11 +188,12 @@ async function browser() {
             if (got === window.__fhExpect(wl, r.d, r.h)) o.okP++; }
         });
         return o;
-      });
-      k.L('F1 inline window=' + c.w + ' (' + c.mode + ') rows=' + r.rows + ' editor ok=' + r.okE + ' label ok=' + r.okL + ' panel ok=' + r.okP + '/' + r.focusable + ' focusable (disabled=' + r.disabled + ' hidden=' + r.hidden + ') label != AD_Field.Name: ' + (r.labelDiff || 0) + (r.bad.length ? ' first wrong: ' + r.bad.join(' | ') : ''));
+      }, BREAK);
+      k.L('F1 inline window=' + c.w + ' (' + c.mode + ') open=' + r.openWin + ' oracle-from-another-window=' + r.otherWin + ' rows=' + r.rows + ' editor ok=' + r.okE + ' label ok=' + r.okL + ' panel ok=' + r.okP + '/' + r.focusable + ' focusable (disabled=' + r.disabled + ' hidden=' + r.hidden + ') label != AD_Field.Name: ' + (r.labelDiff || 0) + (r.bad.length ? ' first wrong: ' + r.bad.join(' | ') : ''));
       if (r.rows) inl.windows++;
-      ['rows', 'okE', 'okL', 'okP', 'focusable', 'disabled', 'hidden', 'dev', 'tips'].forEach((x) => { inl[x] += r[x]; }); inl.bad = inl.bad.concat(r.bad).slice(0, 3);
+      ['rows', 'okE', 'okL', 'okP', 'focusable', 'disabled', 'hidden', 'dev', 'tips', 'otherWin'].forEach((x) => { inl[x] = (inl[x] || 0) + (r[x] || 0); }); if (r.openWin !== c.w) inl.wrongOpen = (inl.wrongOpen || 0) + 1; inl.bad = inl.bad.concat(r.bad).slice(0, 3);
     }
+    if (inl.rows) k.chk('F1-scope every judged inline row is checked against the OPEN window\'s field (§7.1): ' + (inl.otherWin || 0) + ' rows from another window, ' + (inl.wrongOpen || 0) + ' cases where the open window was not the one driven', !(inl.otherWin || 0) && !(inl.wrongOpen || 0));
     if (!inl.rows) k.incon('F1-inline', 'VACUOUS: no inline editor row rendered');
     else {
       k.chk('F1 inline editor: editor tooltip = AD_Field.Description (' + inl.windows + ' windows)', inl.okE === inl.rows, inl.okE + '/' + inl.rows + (inl.bad.length ? ' first wrong: ' + inl.bad.join(' | ') : ''));
