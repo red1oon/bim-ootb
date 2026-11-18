@@ -6,6 +6,7 @@
  *   N1 an Order header from partner + doctype + sales rep + issotrx: the answer starts with `number`, docStatus DR, the Document No equals the row the engine stored
  *   N2 the window path filled location, price list, warehouse, payment term, bill-to and currency to the SAME values the hand-keyed draft carries
  *   N3 a line by the document's NUMBER (order=<no>): Line 10, price, tax, UOM and line amount equal the draft's line for the same facts; the header's totals follow (TotalLines = GrandTotal = draft's)
+ *   N3b the line's answer has no number key (a kind with no document number; bim-compiler prompts/CLI_ERP_IVR.md §50 (2): it printed an empty `number: `)
  *   N4 the created order completes (DR -> CO): a record the engine accepts
  *   N5 a partner and a product given by NAME resolve to the same keys as the ids; a name no record has, and an ambiguous parent number (60000 on two orders), are refused naming the reason, and write nothing
  *   N6 a mandatory column left empty (no sales rep) is refused naming it; nothing is written
@@ -43,6 +44,7 @@ const k = kit('W-ERP-NEW');
   const hdr = await read('Order', a1.number);
   k.chk('N3 line by the document number: Line 10, price, tax, amount = the draft\'s; header totals follow', !!l && l.line === 10 && Number(l.priceactual) === Number(dl.priceactual) && Number(l.c_tax_id) === Number(dl.c_tax_id) && Number(l.linenetamt) === Number(dl.linenetamt) && Number(l.qtyordered) === Number(dl.qtyordered) && !!hdr && Number(hdr.totallines) === Number(draft.totalLines) && Number(hdr.grandtotal) === Number(draft.grandTotal),
     l ? 'line=' + l.line + ' price=' + l.priceactual + ' tax=' + l.c_tax_id + ' net=' + l.linenetamt + ' | header total=' + (hdr && hdr.totallines) + '/' + (hdr && hdr.grandtotal) + ' draft=' + draft.totalLines + '/' + draft.grandTotal : (n3.j ? n3.j.status + ' ' + n3.j.why : n3.r.err.slice(-200)));
+  k.chk('N3b a line (a kind with no document number) answers no number key, and its id (§50 (2): it printed an empty `number: `)', !!a3 && !('number' in a3) && a3.id != null, a3 ? 'keys=' + Object.keys(a3).slice(0, 4).join(',') : 'no answer');
   // N4
   const n4 = await door('erp.complete kind=Order number=' + a1.number);
   k.chk('N4 the created order completes: DR -> CO', n4.j && n4.j.status === 'ok' && n4.j.answer.after.docStatus === 'CO', n4.j ? n4.j.status + ' ' + String(n4.j.why || '').slice(0, 120) : 'no json');

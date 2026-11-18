@@ -1,5 +1,6 @@
 // ⚠ DO NOT REMOVE — W-RED1-CD (bim-compiler prompts/CLI_ERP_IVR.md §22.4, §22.11 step R2: cd, pwd, the context). READ THE LOG; an exit code is not evidence.
-//   C1 ISSUE (cd takes the wrong place: a building name, a kind of the building and an ERP kind are not resolved in that order, or a name that is none of them is taken anyway)
+//   C1 ISSUE (cd takes the wrong place: a building name, a kind of the building and an ERP kind are not resolved in that order, or a name that is none of them is taken anyway). The order of the tries is read
+//      from the §RED1 log; the screen shows only the tries that answered (bim-compiler prompts/CLI_ERP_IVR.md §50 (3))
 //   C2 ISSUE (the context overrides a key typed on the line, so a person cannot ask about another kind without leaving)
 //   C3 ISSUE (pwd's keys do not replay: the same verb with pwd's keys, run alone, answers differently from the word in the session)
 //   Falsifier: WORDS_BREAK=ctxwins (the context beats a typed key: must FAIL C2). A claim with nothing to judge says INCONCLUSIVE, never PASS.
@@ -15,12 +16,14 @@ const mask = (x) => JSON.stringify(x, (key, v) => (key === 'request' || key === 
 (async () => {
   // C1: a session walks the places
   const s = await run([RED1], 'cd Duplex\ncd Element\ncd ..\ncd "Business Partner"\ncd NoSuchPlace\ncd\n', BRK ? { WORDS_BREAK: BRK } : {});
-  const w = wheres(s.err), arrows = (s.out.match(/^→ .*$/mg) || []);
-  k.L('C1 prompts=' + JSON.stringify(w) + ' lines=' + JSON.stringify(arrows));
+  // the order of the tries is read from the §RED1 log (every line run, in order); since §50 (3) a refused guess is in the log only, not on the screen
+  const w = wheres(s.err), arrows = (s.out.match(/^→ .*$/mg) || []), tries = (s.err.match(/^§RED1 line verb=\S+ status=\S+ request=\S* line=.*$/mg) || []).map(l => ({ status: /status=(\S+)/.exec(l)[1], line: JSON.parse(l.replace(/^.* line=/, '')) }));
+  k.L('C1 prompts=' + JSON.stringify(w) + ' lines=' + JSON.stringify(arrows) + ' tries=' + JSON.stringify(tries.map(t => t.status + ' ' + t.line)));
   if (w.length !== 6) k.incon('C1', 'the session did not answer 6 lines: ' + s.err.slice(-300));
   else k.chk('C1 cd Duplex = the building (no door line); cd Element there = a kind (object.describe); cd .. = back; cd "Business Partner" in the building = tried as its kind first (object.describe), then as an ERP kind (mis.describe); a name that is none = refused, the place unchanged; cd = nowhere',
     w[0] === 'red1 Duplex>' && w[1] === 'red1 Duplex/Element>' && w[2] === 'red1 Duplex>' && w[3] === 'red1 Business Partner>' && w[4] === 'red1 Business Partner>' && w[5] === 'red1>'
-      && arrows[0] === '→ object.describe building=Duplex kind=Element' && arrows[1] === '→ object.describe building=Duplex kind="Business Partner"' && arrows[2] === '→ mis.describe kind="Business Partner"' && /no building, kind or ERP window is named "NoSuchPlace"/.test(s.out),
+      && tries.length >= 3 && tries[0].line === 'object.describe building=Duplex kind=Element' && tries[0].status === 'ok' && tries[1].line === 'object.describe building=Duplex kind="Business Partner"' && tries[1].status !== 'ok' && tries[2].line === 'mis.describe kind="Business Partner"' && tries[2].status === 'ok'
+      && arrows[0] === '→ object.describe building=Duplex kind=Element' && arrows[1] === '→ mis.describe kind="Business Partner"' && /no building, kind or ERP window is named "NoSuchPlace"/.test(s.out),
     'prompts ' + w.join(' | '));
   // C2: a typed key beats the context
   const t = await run([RED1, 'cd Duplex; cd Element; count kind=Room'], null, BRK ? { WORDS_BREAK: BRK } : {});

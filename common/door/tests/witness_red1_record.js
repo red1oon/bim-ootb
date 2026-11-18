@@ -15,6 +15,8 @@
 //      `do CO` brings it back to CO; the precondition (two Order records carry 80000) is read by an independent SQL, else INCONCLUSIVE. Falsifier WORDS_BREAK=recnumber (the old number-first fill): must FAIL R9
 //   R10 ISSUE (§45 K3: in a kind, `cd <number>` is refused, so a menu walk cannot step into a record): menu -> Quote -> "Sales Orders" -> "Sales Order" -> `cd 100` enters order 100 (mis.read id=100) and the prompt keeps
 //      the menu path (`.../Sales Orders/Order/80000>`); `cd ..` returns to `.../Order>`; in the kind `cd Foo` still says no building, kind or window is named "Foo". Falsifier WORDS_BREAK=nokindrec: must FAIL R10
+//   R11 ISSUE (§50 (3): entering a record printed every guess, `→ mis.describe kind="Order 100"` and `→ mis.read kind=Order number=100` before the line that answered): `cd Order 100` prints exactly the three lines that
+//      answered, and the §RED1 log names the two refused guesses. Falsifier RED1_BREAK=probes (every guess shown): must FAIL R11
 //   Falsifiers: WORDS_BREAK=kindfirst (the link word tries the building kinds first: must FAIL R1) · WORDS_BREAK=nomaster (a tab is not filtered by its link: must FAIL R3) · WORDS_BREAK=norecfill (the record is not filled in: must FAIL R5)
 //      · RECORD_BREAK=json (cat prints the record as JSON: must FAIL R6) · RECORD_BREAK=firstparent (a tab's link is the first IsParent column: must FAIL R7) · RECORD_BREAK=oneidentifier (only the first identifier column finds a record: must FAIL R8)
 //   A claim with nothing to judge says INCONCLUSIVE, never PASS. Run: node common/door/tests/witness_red1_record.js > common/door/tests/logs/red1_record.log 2>&1
@@ -138,6 +140,14 @@ const tabRows = (out) => { const L = out.split('\n'), i = L.findIndex(l => /^tab
     if (!W10.length) k.incon('R10', 'the session logged no place (no §RED1 typed line): nothing to judge');
     else k.chk('R10 in the walk at Order, `cd 100` enters order 100 (mis.read kind=Order id=100) and the prompt keeps the menu path (' + inRec + '); `cd ..` -> ' + base + '; `cd Foo` there is refused as before',
       W10[3] === base && W10[4] === inRec && W10[5] === base && W10[6] === base && A10.indexOf('mis.read kind=Order id=100') >= 0 && /no building, kind or ERP window is named "Foo"/.test(S10.out), JSON.stringify(W10.slice(3, 7)));
+  }
+  // R11 (§50 (3)): a guess the shell makes to find a record shows no → line unless it answered
+  {
+    const S11 = session(['cd Order 100', 'exit'], fresh()), A11 = arrows(S11.out), want = ['mis.describe kind=Order', 'mis.read kind=Order id=100', 'erp.actions kind=Order id=100'];
+    const refused = (S11.err.match(/^§RED1 probe refused line=.*$/mg) || []).map(l => JSON.parse(l.replace(/^§RED1 probe refused line=/, '').replace(/ status=\S+$/, '')));
+    k.L('R11 arrows ' + JSON.stringify(A11) + ' refused ' + JSON.stringify(refused));
+    if (!/Order 80000: \d+ tabs/.test(S11.out)) k.incon('R11', 'the record was not entered, so the lines it printed cannot be judged: ' + S11.out.slice(0, 200));
+    else k.chk('R11 `cd Order 100` prints only the lines that answered (' + want.join(' · ') + '); the log names the refused guesses', JSON.stringify(A11) === JSON.stringify(want) && refused.indexOf('mis.describe kind="Order 100"') >= 0 && refused.indexOf('mis.read kind=Order number=100') >= 0, 'arrows=' + A11.length + ' refused=' + refused.length);
   }
   k.end();
 })().catch(e => { console.log('§W-RED1-RECORD FAIL ' + (e && e.stack || e)); process.exit(1); });
