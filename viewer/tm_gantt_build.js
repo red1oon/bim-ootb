@@ -8,6 +8,7 @@
   // phase 1 — publish this part's names that other parts use (same function objects; vars as live accessors)
   TMS.injectGantt = injectGantt;
   TMS.buildTaskIndex = buildTaskIndex;
+  TMS._regenStaleScheduleNow = _regenStaleScheduleNow;
   TMS.invalidateGanttModel = invalidateGanttModel;
   TMS._loadTwin = _loadTwin;
   TMS._loadShopfloor = _loadShopfloor;
@@ -1031,6 +1032,41 @@
   var _taskIndex = null;      // { guidTask:{guid→tid}, tasks:{tid→{id,name,start,finish}}, scheduleId }
   var _taskIndexFor = null;   // building key the index was built for (invalidation)
 
+  // _regenStaleScheduleNow(db, where) — §GANTT_SCHEDULE_STALE + §Q.31 (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.31): THE one
+  // stale-schedule regen. A DB that carries a stored schedule older than _GANTT_CACHE_VERSION is re-materialized in place with today's
+  // generator. Called by buildTaskIndex (the Gantt bars) AND by _activateAsync BEFORE the play order is built, so the picture and the
+  // Gantt play the same schedule (§Q.30: a film DB's stored September grid was replayed while the Gantt showed the regenerated one).
+  // Acts only when safeToRegen (stale, authored, no baseline) and never mid-bake (§TM_BAKE_LOCK). Synchronous: the caller loads the
+  // rate pack and the 4D template first when it can (_activateAsync does). Returns {ran, ok, reason, id, genVersion}.
+  function _regenStaleScheduleNow(db, where) {
+    var SA = (typeof window !== 'undefined') && window.ScheduleAuthor, sched = null;
+    try { if (SA && SA.activeSchedule) sched = SA.activeSchedule(db, { currentGenVersion: TMS._GANTT_CACHE_VERSION }); } catch (e) { sched = null; }
+    if (!sched || !sched.id) return { ran: false, ok: false, reason: 'no-schedule', id: null, genVersion: null };
+    var out = { ran: false, ok: false, reason: '', id: sched.id, genVersion: sched.genVersion };
+    if (!sched.safeToRegen) { out.reason = sched.stale ? 'not-safe(captured-or-baseline)' : 'current'; return out; }
+    if (!SA.materializeZones) { out.reason = 'no-materializeZones'; return out; }
+    if (TMS._tmEditLocked(where + ':staleRegen')) { out.reason = 'bake-lock'; return out; }
+    console.log('§GANTT_SCHEDULE_STALE_REGEN where=' + where + ' id=' + sched.id + ' genVersion=' + sched.genVersion +
+      ' current=' + TMS._GANTT_CACHE_VERSION + ' — re-materializing in place');
+    try {
+      var _SR = window.SEQUENCE_RULES || {}, _LR = window.LABOR_RATES || {}, _RT = window.RATES || {};
+      var _shGantt = (window.SHIFT_HOURS > 0) ? window.SHIFT_HOURS : 24;
+      // §FUTURE-5A B2 (applied 2026-09-02, queue item B-3): sourced from 4D_template.json
+      // calendar.project_start (same literal, '2026-01-01', as before this fix).
+      var _tplStart = (TMS._4dTemplate && TMS._4dTemplate.calendar && TMS._4dTemplate.calendar.project_start) || '2026-01-01';
+      var rres = SA.materializeZones(db, _SR, { start: _tplStart, laborRates: _LR, rates: _RT,
+        scheduleGate: window.ScheduleGate, shiftHours: _shGantt, genVersion: TMS._GANTT_CACHE_VERSION,
+        displayRemap: TMS._tmDisplayRemap, template: TMS._4dTemplate });   // §ZONE_DISPLAY_AUTHORING + §TPL_WIRED
+      if ((!rres || !rres.ok) && SA.materializeDefault) {
+        rres = SA.materializeDefault(db, _SR, { start: _tplStart, laborRates: _LR, blank: false,
+          genVersion: TMS._GANTT_CACHE_VERSION });
+      }
+      out.ran = true; out.ok = !!(rres && rres.ok);
+      console.log('§GANTT_SCHEDULE_STALE_REGEN_RESULT ok=' + out.ok);
+    } catch (e) { out.ran = true; out.reason = 'fail ' + e.message; console.log('§GANTT_SCHEDULE_STALE_REGEN_FAIL ' + e.message); }
+    return out;
+  }
+
   function buildTaskIndex() {
     var app = TMS.A();
     var key = (app && app.activeBuilding) || '';
@@ -1065,25 +1101,7 @@
     // and break the very display the film is recording. Skipping only the regen keeps the film on
     // the exact schedule it started with, and genVersion stays stale so the self-heal simply runs on
     // the next rebuild after the bake finishes. Found by W-TBL-5's derivation, not by hand.
-    if (sched.safeToRegen && SA.materializeZones && !TMS._tmEditLocked('buildTaskIndex:staleRegen')) {
-      console.log('§GANTT_SCHEDULE_STALE_REGEN id=' + sched.id + ' genVersion=' + sched.genVersion +
-        ' current=' + TMS._GANTT_CACHE_VERSION + ' — re-materializing in place');
-      try {
-        var _SR = window.SEQUENCE_RULES || {}, _LR = window.LABOR_RATES || {}, _RT = window.RATES || {};
-        var _shGantt = (window.SHIFT_HOURS > 0) ? window.SHIFT_HOURS : 24;
-        // §FUTURE-5A B2 (applied 2026-09-02, queue item B-3): sourced from 4D_template.json
-        // calendar.project_start (same literal, '2026-01-01', as before this fix).
-        var _tplStart = (TMS._4dTemplate && TMS._4dTemplate.calendar && TMS._4dTemplate.calendar.project_start) || '2026-01-01';
-        var rres = SA.materializeZones(db, _SR, { start: _tplStart, laborRates: _LR, rates: _RT,
-          scheduleGate: window.ScheduleGate, shiftHours: _shGantt, genVersion: TMS._GANTT_CACHE_VERSION,
-          displayRemap: TMS._tmDisplayRemap, template: TMS._4dTemplate });   // §ZONE_DISPLAY_AUTHORING + §TPL_WIRED
-        if ((!rres || !rres.ok) && SA.materializeDefault) {
-          rres = SA.materializeDefault(db, _SR, { start: _tplStart, laborRates: _LR, blank: false,
-            genVersion: TMS._GANTT_CACHE_VERSION });
-        }
-        console.log('§GANTT_SCHEDULE_STALE_REGEN_RESULT ok=' + !!(rres && rres.ok));
-      } catch (e) { console.log('§GANTT_SCHEDULE_STALE_REGEN_FAIL ' + e.message); }
-    }
+    _regenStaleScheduleNow(db, 'buildTaskIndex');   // §Q.31 — the ONE regen body, also run at activation before the play order is built
     try {
       var tr = db.exec('SELECT task_id, name, schedule_start, schedule_finish FROM tasks ' +
         'WHERE schedule_id=? AND (is_summary IS NULL OR is_summary=0)', [sched.id]);
