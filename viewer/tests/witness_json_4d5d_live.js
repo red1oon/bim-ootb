@@ -11,6 +11,8 @@
 //   L4 Reset in each entry discards the copy: after a reload calcCost is back to the shipped number and the template's lag to its shipped value.
 //   L5 a fresh profile with nothing picked prices from the language's own pack (LOCALE_RATE_MAP[detectLocale()]) in that pack's currency.
 //   L0 no page errors from these steps.
+// DIAGNOSIS (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.24.3): every wait is named (§LIVE_WAIT <name> ok|TIMEOUT ms=<n>); on a timeout the witness prints which of
+// getRate / loadJsonWithOverrides / _openSettingsPanel exist, plus the page's own §-console lines, pageerrors and failed requests (<=40), so a timeout says WHICH wait and WHY.
 // SAFE BY CONSTRUCTION: a fresh headless browser with its own throw-away profile (your browser and its saved settings are never touched), software GL,
 // nothing uploaded (the site is only read). VIEWER_URL overrides the page (default: the live GitHub Pages Viewer).
 // usage: NODE_PATH=~/bim-compiler/node_modules node viewer/tests/witness_json_4d5d_live.js
@@ -22,14 +24,25 @@ let fails = 0, judged = 0; const ok = (id, c, m) => { judged++; console.log((c ?
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 (async () => {
   const prof = fs.mkdtempSync(path.join(os.tmpdir(), 'json4d5d-live-'));
-  const br = await puppeteer.launch({ headless: 'new', userDataDir: prof, args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+  const br = await puppeteer.launch({ headless: 'new', userDataDir: prof, args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--enable-webgl', '--in-process-gpu', '--disable-dev-shm-usage'] });
   const errs = [], logs = [];
+  // §LIVE_GL: can this browser make a WebGL2 context at all? (first runner trial: the page's renderer could not, so panels.js never ran) probed on a blank page, before the Viewer
+  try { const g = await br.newPage(); await g.goto('about:blank'); console.log('§LIVE_GL ' + JSON.stringify(await g.evaluate(() => { const c = document.createElement('canvas'), x = c.getContext('webgl2'), e = x && x.getExtension('WEBGL_debug_renderer_info'); return { webgl2: !!x, renderer: e ? x.getParameter(e.UNMASKED_RENDERER_WEBGL) : null }; }))); await g.close(); } catch (e) { console.log('§LIVE_GL probe threw ' + String(e).slice(0, 120)); }
   try {
     const pg = await br.newPage(); await pg.setViewport({ width: 1440, height: 900 });
-    pg.on('pageerror', e => errs.push(String(e).slice(0, 200)));
-    pg.on('console', m => { const t = m.text(); if (/§RATE_OVERRIDE|§PROPSHEET_SAVE|§PROPSHEET_JSON_BAD|§JSON_/.test(t)) { logs.push(t); console.log('  ' + t.slice(0, 200)); } });
-    const load = async () => { await pg.goto(URL0 + (URL0.indexOf('?') < 0 ? '?' : '&') + 'n=' + Date.now(), { waitUntil: 'load', timeout: 180000 });
-      await pg.waitForFunction('typeof window.getRate === "function" && typeof window.loadJsonWithOverrides === "function" && typeof window._openSettingsPanel === "function"', { timeout: 180000 }); await sleep(1500); };
+    const diag = [], tail = [], dg = t => { if (diag.length < 25) diag.push(t.slice(0, 240)); };   // diag = errors/failures (first 25); tail = the page's last 15 § lines
+    pg.on('pageerror', e => { errs.push(String(e).slice(0, 200)); dg('pageerror ' + String(e).slice(0, 200)); });
+    pg.on('requestfailed', r => dg('requestfailed ' + r.url().slice(0, 160) + ' ' + ((r.failure() || {}).errorText || '?')));
+    pg.on('console', m => { const t = m.text(); if (m.type() === 'error' || m.type() === 'warning' || /§LOAD_FAIL/.test(t)) dg('console.' + m.type() + ' ' + t); if (t.charAt(0) === '§') { tail.push(t.slice(0, 200)); if (tail.length > 15) tail.shift(); } if (/§RATE_OVERRIDE|§PROPSHEET_SAVE|§PROPSHEET_JSON_BAD|§JSON_/.test(t)) { logs.push(t); console.log('  ' + t.slice(0, 200)); } });
+    // a named wait: prints §LIVE_WAIT <name> ok|TIMEOUT ms=<n>; on TIMEOUT also dumps probe() and the captured page diagnostics, then rethrows
+    const named = async (name, fn, probe) => { const t0 = Date.now();
+      try { const r = await fn(); console.log('§LIVE_WAIT ' + name + ' ok ms=' + (Date.now() - t0)); return r; }
+      catch (e) { console.log('§LIVE_WAIT ' + name + ' TIMEOUT ms=' + (Date.now() - t0) + ' (' + String(e && e.message || e).slice(0, 120) + ')');
+        if (probe) { try { console.log('§LIVE_WAIT ' + name + ' state ' + JSON.stringify(await pg.evaluate(probe))); } catch (e2) { console.log('§LIVE_WAIT ' + name + ' state unreadable ' + String(e2).slice(0, 100)); } }
+        console.log('§LIVE_WAIT diag errors=' + diag.length); diag.forEach(l => console.log('  ' + l)); console.log('§LIVE_WAIT page last § lines=' + tail.length); tail.forEach(l => console.log('  console ' + l)); throw e; } };
+    const load = async () => { await named('goto', () => pg.goto(URL0 + (URL0.indexOf('?') < 0 ? '?' : '&') + 'n=' + Date.now(), { waitUntil: 'load', timeout: 180000 }), () => ({ url: location.href, ready: document.readyState }));
+      await named('ready', () => pg.waitForFunction('typeof window.getRate === "function" && typeof window.loadJsonWithOverrides === "function" && typeof window._openSettingsPanel === "function"', { timeout: 180000 }),
+        () => ({ getRate: typeof window.getRate, loadJsonWithOverrides: typeof window.loadJsonWithOverrides, _openSettingsPanel: typeof window._openSettingsPanel, readyState: document.readyState })); await sleep(1500); };
     // the Viewer starts initRateTemplate at load (RATES_SOURCE_OF_TRUTH §6.5): wait until it has a pack; Settings ▸ 5D Rate Pack changes it live
     const waitPack = async () => { await pg.waitForFunction('typeof window.RATE_TEMPLATE_NAME === "string" && window.RATE_TEMPLATE_NAME.length > 0', { timeout: 60000 }); await sleep(300); return pg.evaluate(() => window.RATE_TEMPLATE_NAME); };
     // a Settings section header = div > span > [chevron, title]; its pointerup opens it (and builds its body the first time); already open = left open
