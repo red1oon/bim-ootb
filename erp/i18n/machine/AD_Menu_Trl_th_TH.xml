@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!--ERP screen names (AD_Menu, by id). ERP machine source (not a published language pack) — translated for this app by Claude (Anthropic), 2026-11, moved from erp/i18n/machine/th_TH.json {English: text}, applied by build_i18n.py machine_fill by erp/tools/trl_move_machine_2026-11-18.py (TRL_TRILOGY_STANDARD.md T5a); no human review.-->
+<!--<!DOCTYPE idempiereTrl PUBLIC "-//iDempiere//DTD iDempiere Translation 1.0//EN" "https://raw.githubusercontent.com/idempiere/idempiere/refs/heads/master/utils_dev/trl/idempiereTrl.dtd">-->
+<idempiereTrl language="th_TH" table="AD_Menu">
+ <row id="505" trl="Y">
+  <value column="Name" original="Print Dunning Letters">พิมพ์จดหมายทวงถาม</value>
+ </row>
+ <row id="509" trl="Y">
+  <value column="Name" original="UnAllocated Invoices">ใบแจ้งหนี้ที่ยังไม่จัดสรร</value>
+ </row>
+ <row id="510" trl="Y">
+  <value column="Name" original="UnAllocated Payments">การชำระเงินที่ยังไม่จัดสรร</value>
+ </row>
+ <row id="511" trl="Y">
+  <value column="Name" original="Payment Details">รายละเอียดการชำระเงิน</value>
+ </row>
+ <row id="515" trl="Y">
+  <value column="Name" original="Material Reference">ข้อมูลอ้างอิงวัสดุ</value>
+ </row>
+ <row id="537" trl="Y">
+  <value column="Name" original="Storage Cleanup">ล้างข้อมูลสต็อก</value>
+ </row>
+ <row id="538" trl="Y">
+  <value column="Name" original="Invoice Not Realized Gain/Loss">กำไร/ขาดทุนที่ยังไม่เกิดขึ้นของใบแจ้งหนี้</value>
+ </row>
+ <row id="50001" trl="Y">
+  <value column="Name" original="Application Packaging">การจัดแพ็กเกจแอปพลิเคชัน</value>
+ </row>
+ <row id="53133" trl="Y">
+  <value column="Name" original="Customer Service">บริการลูกค้า</value>
+ </row>
+ <row id="53139" trl="Y">
+  <value column="Name" original="Asset Transactions ">รายการเคลื่อนไหวสินทรัพย์</value>
+ </row>
+ <row id="53149" trl="Y">
+  <value column="Name" original="Depreciation Processing">ประมวลผลค่าเสื่อมราคา</value>
+ </row>
+ <row id="53171" trl="Y">
+  <value column="Name" original="Depreciation Setup">ตั้งค่าค่าเสื่อมราคา</value>
+ </row>
+ <row id="53190" trl="Y">
+  <value column="Name" original="Bank/Cash Transfer Process">ประมวลผลการโอนเงินธนาคาร/เงินสด</value>
+ </row>
+ <row id="53242" trl="Y">
+  <value column="Name" original="Returns">การคืนสินค้า</value>
+ </row>
+ <row id="53253" trl="Y">
+  <value column="Name" original="Storage per Product">สต็อกตามสินค้า</value>
+ </row>
+ <row id="53288" trl="Y">
+  <value column="Name" original="Automatic account reconciliation">กระทบยอดบัญชีอัตโนมัติ</value>
+ </row>
+ <row id="53289" trl="Y">
+  <value column="Name" original="Accounting Fact Reconciliation (manual)">กระทบยอดรายการบัญชี (ด้วยตนเอง)</value>
+ </row>
+ <row id="53290" trl="Y">
+  <value column="Name" original="Unreconciled accounting facts">รายการบัญชีที่ยังไม่กระทบยอด</value>
+ </row>
+ <row id="53296" trl="Y">
+  <value column="Name" original="Manufacturing">การผลิต</value>
+ </row>
+ <row id="53299" trl="Y">
+  <value column="Name" original="Validate BOM Flags">ตรวจสอบแฟล็กสูตรการผลิต</value>
+ </row>
+ <row id="53300" trl="Y">
+  <value column="Name" original="Verify BOM Structure">ตรวจสอบโครงสร้างสูตรการผลิต</value>
+ </row>
+ <row id="53301" trl="Y">
+  <value column="Name" original="Rollup BOM Cost">รวมต้นทุนสูตรการผลิต</value>
+ </row>
+ <row id="53302" trl="Y">
+  <value column="Name" original="BOM Viewer">ตัวดูสูตรการผลิต</value>
+ </row>
+ <row id="53314" trl="Y">
+  <value column="Name" original="Cash Flow Report">รายงานกระแสเงินสด</value>
+ </row>
+ <row id="53338" trl="Y">
+  <value column="Name" original="Maintenance Request">คำขอซ่อมบำรุง</value>
+ </row>
+ <row id="53339" trl="Y">
+  <value column="Name" original="Setup">การตั้งค่า</value>
+ </row>
+ <row id="53352" trl="Y">
+  <value column="Name" original="Universal substitution">การทดแทนสากล</value>
+ </row>
+ <row id="53353" trl="Y">
+  <value column="Name" original="Indented Bill of Material">สูตรการผลิตแบบย่อหน้า</value>
+ </row>
+ <row id="53354" trl="Y">
+  <value column="Name" original="Replenish Report">รายงานการเติมสินค้า</value>
+ </row>
+ <row id="53363" trl="Y">
+  <value column="Name" original="Sales Management">การจัดการการขาย</value>
+ </row>
+ <row id="53885" trl="Y">
+  <value column="Name" original="Revenue Recognition Run">ประมวลผลการรับรู้รายได้</value>
+ </row>
+ <row id="200043" trl="Y">
+  <value column="Name" original="Bank Register Report">รายงานทะเบียนธนาคาร</value>
+ </row>
+ <row id="200045" trl="Y">
+  <value column="Name" original="Simple Fact View">มุมมองรายการบัญชีอย่างง่าย</value>
+ </row>
+ <row id="200098" trl="Y">
+  <value column="Name" original="Generate Production from Project">สร้างการผลิตจากโครงการ</value>
+ </row>
+ <row id="200166" trl="Y">
+  <value column="Name" original="Recreate Storage Reservation">สร้างการจองสต็อกใหม่</value>
+ </row>
+ <row id="1000000" trl="Y">
+  <value column="Name" original="Office">สำนักงาน</value>
+ </row>
+ <row id="1000001" trl="Y">
+  <value column="Name" original="Work Shop">โรงซ่อม</value>
+ </row>
+</idempiereTrl>

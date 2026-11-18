@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!--ERP screen names (AD_Window, by id). ERP machine source (not a published language pack) — translated for this app by Claude (Anthropic), 2026-11, moved from erp/i18n/machine/th_TH.json {English: text}, applied by build_i18n.py machine_fill by erp/tools/trl_move_machine_2026-11-18.py (TRL_TRILOGY_STANDARD.md T5a); no human review.-->
+<!--<!DOCTYPE idempiereTrl PUBLIC "-//iDempiere//DTD iDempiere Translation 1.0//EN" "https://raw.githubusercontent.com/idempiere/idempiere/refs/heads/master/utils_dev/trl/idempiereTrl.dtd">-->
+<idempiereTrl language="th_TH" table="AD_Window">
+ <row id="320" trl="Y">
+  <value column="Name" original="Customer RMA">การอนุมัติคืนสินค้าของลูกค้า</value>
+ </row>
+ <row id="363" trl="Y">
+  <value column="Name" original="System Issue Report">รายงานปัญหาระบบ</value>
+ </row>
+ <row id="53006" trl="Y">
+  <value column="Name" original="Bill of Materials and Formula">สูตรการผลิตและสูตร</value>
+ </row>
+ <row id="53097" trl="Y">
+  <value column="Name" original="Customer Return">การคืนสินค้าของลูกค้า</value>
+ </row>
+ <row id="53098" trl="Y">
+  <value column="Name" original="Return to Vendor">คืนสินค้าให้ผู้จำหน่าย</value>
+ </row>
+ <row id="53099" trl="Y">
+  <value column="Name" original="Vendor RMA">การอนุมัติคืนสินค้าให้ผู้จำหน่าย</value>
+ </row>
+ <row id="53101" trl="Y">
+  <value column="Name" original="Order Source">แหล่งที่มาของคำสั่ง</value>
+ </row>
+ <row id="53102" trl="Y">
+  <value column="Name" original="Relation Type">ประเภทความสัมพันธ์</value>
+ </row>
+ <row id="53127" trl="Y">
+  <value column="Name" original="Production (Single Product)">การผลิต (สินค้าเดียว)</value>
+ </row>
+ <row id="53134" trl="Y">
+  <value column="Name" original="Cash Plan">แผนเงินสด</value>
+ </row>
+ <row id="53141" trl="Y">
+  <value column="Name" original="Maintenance Request">คำขอซ่อมบำรุง</value>
+ </row>
+ <row id="53149" trl="Y">
+  <value column="Name" original="Quality Test">การทดสอบคุณภาพ</value>
+ </row>
+ <row id="53150" trl="Y">
+  <value column="Name" original="Part Type">ประเภทชิ้นส่วน</value>
+ </row>
+ <row id="200005" trl="Y">
+  <value column="Name" original="GL Journal">สมุดรายวันทั่วไป</value>
+ </row>
+ <row id="200008" trl="Y">
+  <value column="Name" original="POS Payment">การชำระเงิน POS</value>
+ </row>
+ <row id="200013" trl="Y">
+  <value column="Name" original="GL Journal Generator">ตัวสร้างสมุดรายวัน</value>
+ </row>
+ <row id="200017" trl="Y">
+  <value column="Name" original="Payment Transaction">ธุรกรรมการชำระเงิน</value>
+ </row>
+ <row id="200018" trl="Y">
+  <value column="Name" original="Online Transaction History">ประวัติธุรกรรมออนไลน์</value>
+ </row>
+ <row id="200031" trl="Y">
+  <value column="Name" original="Payments into Batch">รวมการชำระเงินเป็นชุด</value>
+ </row>
+ <row id="200034" trl="Y">
+  <value column="Name" original="Context Help">ความช่วยเหลือตามบริบท</value>
+ </row>
+ <row id="200043" trl="Y">
+  <value column="Name" original="Cost Adjustment">ปรับปรุงต้นทุน</value>
+ </row>
+ <row id="200090" trl="Y">
+  <value column="Name" original="Document Status">สถานะเอกสาร</value>
+ </row>
+ <row id="200095" trl="Y">
+  <value column="Name" original="Process Customization">ปรับแต่งกระบวนการ</value>
+ </row>
+ <row id="200105" trl="Y">
+  <value column="Name" original="Bank/Cash Transfer">โอนเงินธนาคาร/เงินสด</value>
+ </row>
+ <row id="200110" trl="Y">
+  <value column="Name" original="Info Window Customization">ปรับแต่งหน้าต่างข้อมูล</value>
+ </row>
+ <row id="200120" trl="Y">
+  <value column="Name" original="Tenant level messages">ข้อความระดับผู้เช่า</value>
+ </row>
+ <row id="200128" trl="Y">
+  <value column="Name" original="Label Category">หมวดป้ายกำกับ</value>
+ </row>
+ <row id="200129" trl="Y">
+  <value column="Name" original="Label">ป้ายกำกับ</value>
+ </row>
+ <row id="200130" trl="Y">
+  <value column="Name" original="Label Assignment">การกำหนดป้ายกำกับ</value>
+ </row>
+ <row id="200148" trl="Y">
+  <value column="Name" original="Department">แผนก</value>
+ </row>
+ <row id="200149" trl="Y">
+  <value column="Name" original="Cost Center">ศูนย์ต้นทุน</value>
+ </row>
+ <row id="200151" trl="Y">
+  <value column="Name" original="Theme Customization">ปรับแต่งธีม</value>
+ </row>
+</idempiereTrl>

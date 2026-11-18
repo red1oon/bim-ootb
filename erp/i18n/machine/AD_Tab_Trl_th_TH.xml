@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!--ERP screen names (AD_Tab, by id). ERP machine source (not a published language pack) — translated for this app by Claude (Anthropic), 2026-11, moved from erp/i18n/machine/th_TH.json {English: text}, applied by build_i18n.py machine_fill by erp/tools/trl_move_machine_2026-11-18.py (TRL_TRILOGY_STANDARD.md T5a); no human review.-->
+<!--<!DOCTYPE idempiereTrl PUBLIC "-//iDempiere//DTD iDempiere Translation 1.0//EN" "https://raw.githubusercontent.com/idempiere/idempiere/refs/heads/master/utils_dev/trl/idempiereTrl.dtd">-->
+<idempiereTrl language="th_TH" table="AD_Tab">
+ <row id="628" trl="Y">
+  <value column="Name" original="Customer RMA">การอนุมัติคืนสินค้าของลูกค้า</value>
+ </row>
+ <row id="756" trl="Y">
+  <value column="Name" original="BP Access">สิทธิ์เข้าถึงคู่ค้า</value>
+ </row>
+ <row id="53109" trl="Y">
+  <value column="Name" original="Department">แผนก</value>
+ </row>
+ <row id="53271" trl="Y">
+  <value column="Name" original="Customer Return">การคืนสินค้าของลูกค้า</value>
+ </row>
+ <row id="53276" trl="Y">
+  <value column="Name" original="Return to Vendor">คืนสินค้าให้ผู้จำหน่าย</value>
+ </row>
+ <row id="53280" trl="Y">
+  <value column="Name" original="Vendor RMA">การอนุมัติคืนสินค้าให้ผู้จำหน่าย</value>
+ </row>
+ <row id="53284" trl="Y">
+  <value column="Name" original="Order Source">แหล่งที่มาของคำสั่ง</value>
+ </row>
+ <row id="53285" trl="Y">
+  <value column="Name" original="Relation Type">ประเภทความสัมพันธ์</value>
+ </row>
+ <row id="53373" trl="Y">
+  <value column="Name" original="Payment Schedule">กำหนดการชำระเงิน</value>
+ </row>
+ <row id="53374" trl="Y">
+  <value column="Name" original="Payment Schedule">กำหนดการชำระเงิน</value>
+ </row>
+ <row id="53375" trl="Y">
+  <value column="Name" original="Payment Schedule">กำหนดการชำระเงิน</value>
+ </row>
+ <row id="53376" trl="Y">
+  <value column="Name" original="Cash Plan">แผนเงินสด</value>
+ </row>
+ <row id="53377" trl="Y">
+  <value column="Name" original="Cash Plan Line">รายการแผนเงินสด</value>
+ </row>
+ <row id="200015" trl="Y">
+  <value column="Name" original="POS Payment">การชำระเงิน POS</value>
+ </row>
+ <row id="200016" trl="Y">
+  <value column="Name" original="POS Payment">การชำระเงิน POS</value>
+ </row>
+ <row id="200020" trl="Y">
+  <value column="Name" original="GL Journal Generator">ตัวสร้างสมุดรายวัน</value>
+ </row>
+ <row id="200027" trl="Y">
+  <value column="Name" original="Payment Transaction">ธุรกรรมการชำระเงิน</value>
+ </row>
+ <row id="200029" trl="Y">
+  <value column="Name" original="Online Transaction History">ประวัติธุรกรรมออนไลน์</value>
+ </row>
+ <row id="200040" trl="Y">
+  <value column="Name" original="Shipping Accounts">บัญชีการขนส่ง</value>
+ </row>
+ <row id="200074" trl="Y">
+  <value column="Name" original="Context Help">ความช่วยเหลือตามบริบท</value>
+ </row>
+ <row id="200102" trl="Y">
+  <value column="Name" original="Cost Adjustment">ปรับปรุงต้นทุน</value>
+ </row>
+ <row id="200234" trl="Y">
+  <value column="Name" original="Process Customization">ปรับแต่งกระบวนการ</value>
+ </row>
+ <row id="200280" trl="Y">
+  <value column="Name" original="Info Window Customization">ปรับแต่งหน้าต่างข้อมูล</value>
+ </row>
+ <row id="200302" trl="Y">
+  <value column="Name" original="Tenant level messages">ข้อความระดับผู้เช่า</value>
+ </row>
+ <row id="200317" trl="Y">
+  <value column="Name" original="Label Category">หมวดป้ายกำกับ</value>
+ </row>
+ <row id="200320" trl="Y">
+  <value column="Name" original="Label">ป้ายกำกับ</value>
+ </row>
+ <row id="200383" trl="Y">
+  <value column="Name" original="Department">แผนก</value>
+ </row>
+ <row id="200384" trl="Y">
+  <value column="Name" original="Cost Center">ศูนย์ต้นทุน</value>
+ </row>
+ <row id="200386" trl="Y">
+  <value column="Name" original="Theme Customization">ปรับแต่งธีม</value>
+ </row>
+</idempiereTrl>

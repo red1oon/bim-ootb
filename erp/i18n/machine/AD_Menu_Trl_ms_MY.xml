@@ -1,0 +1,209 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!--ERP screen names (AD_Menu, by id). ERP machine source (not a published language pack) — translated for this app by Claude (Anthropic), 2026-11, moved from erp/i18n/machine/ms_MY.json {English: text}, applied by build_i18n.py machine_fill by erp/tools/trl_move_machine_2026-11-18.py (TRL_TRILOGY_STANDARD.md T5a); no human review.-->
+<!--<!DOCTYPE idempiereTrl PUBLIC "-//iDempiere//DTD iDempiere Translation 1.0//EN" "https://raw.githubusercontent.com/idempiere/idempiere/refs/heads/master/utils_dev/trl/idempiereTrl.dtd">-->
+<idempiereTrl language="ms_MY" table="AD_Menu">
+ <row id="100" trl="Y">
+  <value column="Name" original="Invoice Inquiry">Pertanyaan Invois</value>
+ </row>
+ <row id="156" trl="Y">
+  <value column="Name" original="Tenant Rules">Peraturan Penyewa</value>
+ </row>
+ <row id="157" trl="Y">
+  <value column="Name" original="Data">Data</value>
+ </row>
+ <row id="158" trl="Y">
+  <value column="Name" original="Performance Measurement">Pengukuran Prestasi</value>
+ </row>
+ <row id="165" trl="Y">
+  <value column="Name" original="Business Partner Rules">Peraturan Rakan Niaga</value>
+ </row>
+ <row id="175" trl="Y">
+  <value column="Name" original="Organization Rules">Peraturan Organisasi</value>
+ </row>
+ <row id="218" trl="Y">
+  <value column="Name" original="System Admin">Pentadbir Sistem</value>
+ </row>
+ <row id="219" trl="Y">
+  <value column="Name" original="Project Setup and Use">Tetapan dan Penggunaan Projek</value>
+ </row>
+ <row id="236" trl="Y">
+  <value column="Name" original="Open Items (Financial Movements and Aging)">Item Terbuka (Pergerakan Kewangan dan Penuaan)</value>
+ </row>
+ <row id="244" trl="Y">
+  <value column="Name" original="UnReconciled Payments">Bayaran Belum Disesuaikan</value>
+ </row>
+ <row id="271" trl="Y">
+  <value column="Name" original="Service">Perkhidmatan</value>
+ </row>
+ <row id="304" trl="Y">
+  <value column="Name" original="Receivables Write-Off">Hapus Kira Penghutang</value>
+ </row>
+ <row id="357" trl="Y">
+  <value column="Name" original="Product Attributes">Atribut Produk</value>
+ </row>
+ <row id="396" trl="Y">
+  <value column="Name" original="Send Mail Text">Hantar Teks Mel</value>
+ </row>
+ <row id="398" trl="Y">
+  <value column="Name" original="Project Cycle Report">Laporan Kitaran Projek</value>
+ </row>
+ <row id="401" trl="Y">
+  <value column="Name" original="Issue to Project">Keluarkan ke Projek</value>
+ </row>
+ <row id="402" trl="Y">
+  <value column="Name" original="Generate PO from Project">Jana PO daripada Projek</value>
+ </row>
+ <row id="403" trl="Y">
+  <value column="Name" original="Project Detail Accounting Report">Laporan Perakaunan Terperinci Projek</value>
+ </row>
+ <row id="404" trl="Y">
+  <value column="Name" original="Project Lines not Issued">Baris Projek Belum Dikeluarkan</value>
+ </row>
+ <row id="405" trl="Y">
+  <value column="Name" original="Project POs not Issued">PO Projek Belum Dikeluarkan</value>
+ </row>
+ <row id="410" trl="Y">
+  <value column="Name" original="Project Margin (Work Order)">Margin Projek (Pesanan Kerja)</value>
+ </row>
+ <row id="411" trl="Y">
+  <value column="Name" original="Storage Detail">Butiran Stok</value>
+ </row>
+ <row id="413" trl="Y">
+  <value column="Name" original="Aging">Penuaan Hutang</value>
+ </row>
+ <row id="467" trl="Y">
+  <value column="Name" original="RfQ Response">Jawapan RfQ</value>
+ </row>
+ <row id="468" trl="Y">
+  <value column="Name" original="RfQ Unanswered">RfQ Belum Dijawab</value>
+ </row>
+ <row id="471" trl="Y">
+  <value column="Name" original="Open Requisitions">Permintaan Terbuka</value>
+ </row>
+ <row id="481" trl="Y">
+  <value column="Name" original="Open Confirmation Details">Butiran Pengesahan Terbuka</value>
+ </row>
+ <row id="482" trl="Y">
+  <value column="Name" original="Open Confirmations">Pengesahan Terbuka</value>
+ </row>
+ <row id="493" trl="Y">
+  <value column="Name" original="Material Receipt Details">Butiran Penerimaan Bahan</value>
+ </row>
+ <row id="496" trl="Y">
+  <value column="Name" original="Reset Allocation">Set Semula Peruntukan</value>
+ </row>
+ <row id="509" trl="Y">
+  <value column="Name" original="UnAllocated Invoices">Invois Belum Diperuntukkan</value>
+ </row>
+ <row id="510" trl="Y">
+  <value column="Name" original="UnAllocated Payments">Bayaran Belum Diperuntukkan</value>
+ </row>
+ <row id="515" trl="Y">
+  <value column="Name" original="Material Reference">Rujukan Bahan</value>
+ </row>
+ <row id="522" trl="Y">
+  <value column="Name" original="Costing">Pengekosan</value>
+ </row>
+ <row id="528" trl="Y">
+  <value column="Name" original="Request">Permintaan</value>
+ </row>
+ <row id="537" trl="Y">
+  <value column="Name" original="Storage Cleanup">Pembersihan Stok</value>
+ </row>
+ <row id="538" trl="Y">
+  <value column="Name" original="Invoice Not Realized Gain/Loss">Untung/Rugi Invois Belum Direalisasi</value>
+ </row>
+ <row id="549" trl="Y">
+  <value column="Name" original="Create PO from Requisition">Cipta PO daripada Permintaan</value>
+ </row>
+ <row id="50001" trl="Y">
+  <value column="Name" original="Application Packaging">Pembungkusan Aplikasi</value>
+ </row>
+ <row id="53133" trl="Y">
+  <value column="Name" original="Customer Service">Khidmat Pelanggan</value>
+ </row>
+ <row id="53139" trl="Y">
+  <value column="Name" original="Asset Transactions ">Transaksi Aset</value>
+ </row>
+ <row id="53149" trl="Y">
+  <value column="Name" original="Depreciation Processing">Pemprosesan Susut Nilai</value>
+ </row>
+ <row id="53171" trl="Y">
+  <value column="Name" original="Depreciation Setup">Tetapan Susut Nilai</value>
+ </row>
+ <row id="53190" trl="Y">
+  <value column="Name" original="Bank/Cash Transfer Process">Proses Pindahan Bank/Tunai</value>
+ </row>
+ <row id="53242" trl="Y">
+  <value column="Name" original="Returns">Pulangan</value>
+ </row>
+ <row id="53253" trl="Y">
+  <value column="Name" original="Storage per Product">Stok mengikut Produk</value>
+ </row>
+ <row id="53288" trl="Y">
+  <value column="Name" original="Automatic account reconciliation">Penyesuaian akaun automatik</value>
+ </row>
+ <row id="53289" trl="Y">
+  <value column="Name" original="Accounting Fact Reconciliation (manual)">Penyesuaian Fakta Perakaunan (manual)</value>
+ </row>
+ <row id="53290" trl="Y">
+  <value column="Name" original="Unreconciled accounting facts">Fakta perakaunan belum disesuaikan</value>
+ </row>
+ <row id="53296" trl="Y">
+  <value column="Name" original="Manufacturing">Pembuatan</value>
+ </row>
+ <row id="53299" trl="Y">
+  <value column="Name" original="Validate BOM Flags">Sahkan Bendera BOM</value>
+ </row>
+ <row id="53300" trl="Y">
+  <value column="Name" original="Verify BOM Structure">Semak Struktur BOM</value>
+ </row>
+ <row id="53301" trl="Y">
+  <value column="Name" original="Rollup BOM Cost">Kumpul Kos BOM</value>
+ </row>
+ <row id="53302" trl="Y">
+  <value column="Name" original="BOM Viewer">Pemapar BOM</value>
+ </row>
+ <row id="53314" trl="Y">
+  <value column="Name" original="Cash Flow Report">Laporan Aliran Tunai</value>
+ </row>
+ <row id="53338" trl="Y">
+  <value column="Name" original="Maintenance Request">Permintaan Penyelenggaraan</value>
+ </row>
+ <row id="53339" trl="Y">
+  <value column="Name" original="Setup">Tetapan</value>
+ </row>
+ <row id="53352" trl="Y">
+  <value column="Name" original="Universal substitution">Penggantian universal</value>
+ </row>
+ <row id="53353" trl="Y">
+  <value column="Name" original="Indented Bill of Material">Bil Bahan Berinden</value>
+ </row>
+ <row id="53354" trl="Y">
+  <value column="Name" original="Replenish Report">Laporan Penambahan Stok</value>
+ </row>
+ <row id="53363" trl="Y">
+  <value column="Name" original="Sales Management">Pengurusan Jualan</value>
+ </row>
+ <row id="53885" trl="Y">
+  <value column="Name" original="Revenue Recognition Run">Jalankan Pengiktirafan Hasil</value>
+ </row>
+ <row id="200043" trl="Y">
+  <value column="Name" original="Bank Register Report">Laporan Daftar Bank</value>
+ </row>
+ <row id="200045" trl="Y">
+  <value column="Name" original="Simple Fact View">Paparan Fakta Ringkas</value>
+ </row>
+ <row id="200098" trl="Y">
+  <value column="Name" original="Generate Production from Project">Jana Pengeluaran daripada Projek</value>
+ </row>
+ <row id="200166" trl="Y">
+  <value column="Name" original="Recreate Storage Reservation">Cipta Semula Tempahan Stok</value>
+ </row>
+ <row id="1000000" trl="Y">
+  <value column="Name" original="Office">Pejabat</value>
+ </row>
+ <row id="1000001" trl="Y">
+  <value column="Name" original="Work Shop">Bengkel</value>
+ </row>
+</idempiereTrl>

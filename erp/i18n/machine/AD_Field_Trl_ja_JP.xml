@@ -1,0 +1,404 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!--ERP screen names (AD_Field, by id). ERP machine source (not a published language pack) — translated for this app by Claude (Anthropic), 2026-11, moved from erp/i18n/machine/ja_JP.json {English: text}, applied by build_i18n.py machine_fill by erp/tools/trl_move_machine_2026-11-18.py (TRL_TRILOGY_STANDARD.md T5a); no human review.-->
+<!--<!DOCTYPE idempiereTrl PUBLIC "-//iDempiere//DTD iDempiere Translation 1.0//EN" "https://raw.githubusercontent.com/idempiere/idempiere/refs/heads/master/utils_dev/trl/idempiereTrl.dtd">-->
+<idempiereTrl language="ja_JP" table="AD_Field">
+ <row id="60927" trl="Y">
+  <value column="Name" original="Cash Plan">資金計画</value>
+ </row>
+ <row id="60946" trl="Y">
+  <value column="Name" original="Cash Plan Line">資金計画明細</value>
+ </row>
+ <row id="60953" trl="Y">
+  <value column="Name" original="Cash Plan">資金計画</value>
+ </row>
+ <row id="60970" trl="Y">
+  <value column="Name" original="Cash Plan Line">資金計画明細</value>
+ </row>
+ <row id="60971" trl="Y">
+  <value column="Name" original="Cash Plan Line">資金計画明細</value>
+ </row>
+ <row id="60972" trl="Y">
+  <value column="Name" original="Cash Plan Line">資金計画明細</value>
+ </row>
+ <row id="60973" trl="Y">
+  <value column="Name" original="Cash Plan Line">資金計画明細</value>
+ </row>
+ <row id="62313" trl="Y">
+  <value column="Name" original="Cash Plan Line">資金計画明細</value>
+ </row>
+ <row id="200441" trl="Y">
+  <value column="Name" original="POS Payment">POS支払</value>
+ </row>
+ <row id="200471" trl="Y">
+  <value column="Name" original="POS Payment">POS支払</value>
+ </row>
+ <row id="200524" trl="Y">
+  <value column="Name" original="GL Journal Generator">仕訳生成</value>
+ </row>
+ <row id="200527" trl="Y">
+  <value column="Name" original="GL Journal Generator">仕訳生成</value>
+ </row>
+ <row id="200702" trl="Y">
+  <value column="Name" original="Payment Transaction">支払取引</value>
+ </row>
+ <row id="200756" trl="Y">
+  <value column="Name" original="Quotation">見積</value>
+ </row>
+ <row id="200762" trl="Y">
+  <value column="Name" original="Online Transaction History">オンライン取引履歴</value>
+ </row>
+ <row id="201609" trl="Y">
+  <value column="Name" original="Privileged Rate">優遇レート</value>
+ </row>
+ <row id="201613" trl="Y">
+  <value column="Name" original="Online Shipping Sales Order Rate Inquiry">受注のオンライン配送料金照会</value>
+ </row>
+ <row id="201827" trl="Y">
+  <value column="Name" original="Privileged Rate">優遇レート</value>
+ </row>
+ <row id="207023" trl="Y">
+  <value column="Name" original="Label Category">ラベルカテゴリ</value>
+ </row>
+ <row id="207024" trl="Y">
+  <value column="Name" original="Label Category">ラベルカテゴリ</value>
+ </row>
+ <row id="207033" trl="Y">
+  <value column="Name" original="Label Category">ラベルカテゴリ</value>
+ </row>
+ <row id="207039" trl="Y">
+  <value column="Name" original="Label Category">ラベルカテゴリ</value>
+ </row>
+ <row id="207049" trl="Y">
+  <value column="Name" original="Label">ラベル</value>
+ </row>
+ <row id="207050" trl="Y">
+  <value column="Name" original="Label">ラベル</value>
+ </row>
+ <row id="207051" trl="Y">
+  <value column="Name" original="Label Category">ラベルカテゴリ</value>
+ </row>
+ <row id="207057" trl="Y">
+  <value column="Name" original="Label">ラベル</value>
+ </row>
+ <row id="207103" trl="Y">
+  <value column="Name" original="Label Assignment">ラベル割当</value>
+ </row>
+ <row id="207104" trl="Y">
+  <value column="Name" original="Label Assignment">ラベル割当</value>
+ </row>
+ <row id="207105" trl="Y">
+  <value column="Name" original="Label">ラベル</value>
+ </row>
+ <row id="208206" trl="Y">
+  <value column="Name" original="Department">部門</value>
+ </row>
+ <row id="208210" trl="Y">
+  <value column="Name" original="Cost Center">コストセンター</value>
+ </row>
+ <row id="208213" trl="Y">
+  <value column="Name" original="Department">部門</value>
+ </row>
+ <row id="208214" trl="Y">
+  <value column="Name" original="Cost Center">コストセンター</value>
+ </row>
+ <row id="208530" trl="Y">
+  <value column="Name" original="Theme Customization">テーマのカスタマイズ</value>
+ </row>
+ <row id="208538" trl="Y">
+  <value column="Name" original="Theme Customization">テーマのカスタマイズ</value>
+ </row>
+ <row id="208549" trl="Y">
+  <value column="Name" original="Department">部門</value>
+ </row>
+ <row id="208550" trl="Y">
+  <value column="Name" original="Cost Center">コストセンター</value>
+ </row>
+ <row id="208551" trl="Y">
+  <value column="Name" original="Department">部門</value>
+ </row>
+ <row id="208552" trl="Y">
+  <value column="Name" original="Cost Center">コストセンター</value>
+ </row>
+ <row id="208553" trl="Y">
+  <value column="Name" original="Department">部門</value>
+ </row>
+ <row id="208554" trl="Y">
+  <value column="Name" original="Cost Center">コストセンター</value>
+ </row>
+ <row id="208555" trl="Y">
+  <value column="Name" original="Department">部門</value>
+ </row>
+ <row id="208556" trl="Y">
+  <value column="Name" original="Cost Center">コストセンター</value>
+ </row>
+ <row id="208557" trl="Y">
+  <value column="Name" original="Department">部門</value>
+ </row>
+ <row id="208558" trl="Y">
+  <value column="Name" original="Cost Center">コストセンター</value>
+ </row>
+ <row id="208559" trl="Y">
+  <value column="Name" original="Department">部門</value>
+ </row>
+ <row id="208560" trl="Y">
+  <value column="Name" original="Cost Center">コストセンター</value>
+ </row>
+ <row id="208561" trl="Y">
+  <value column="Name" original="Department">部門</value>
+ </row>
+ <row id="208562" trl="Y">
+  <value column="Name" original="Cost Center">コストセンター</value>
+ </row>
+ <row id="208563" trl="Y">
+  <value column="Name" original="Department">部門</value>
+ </row>
+ <row id="208564" trl="Y">
+  <value column="Name" original="Cost Center">コストセンター</value>
+ </row>
+ <row id="208565" trl="Y">
+  <value column="Name" original="Department">部門</value>
+ </row>
+ <row id="208566" trl="Y">
+  <value column="Name" original="Cost Center">コストセンター</value>
+ </row>
+ <row id="208567" trl="Y">
+  <value column="Name" original="Department">部門</value>
+ </row>
+ <row id="208568" trl="Y">
+  <value column="Name" original="Cost Center">コストセンター</value>
+ </row>
+ <row id="208569" trl="Y">
+  <value column="Name" original="Department">部門</value>
+ </row>
+ <row id="208570" trl="Y">
+  <value column="Name" original="Cost Center">コストセンター</value>
+ </row>
+ <row id="208571" trl="Y">
+  <value column="Name" original="Cost Center">コストセンター</value>
+ </row>
+ <row id="208572" trl="Y">
+  <value column="Name" original="Department">部門</value>
+ </row>
+ <row id="208573" trl="Y">
+  <value column="Name" original="Cost Center">コストセンター</value>
+ </row>
+ <row id="208574" trl="Y">
+  <value column="Name" original="Department">部門</value>
+ </row>
+ <row id="208575" trl="Y">
+  <value column="Name" original="Cost Center">コストセンター</value>
+ </row>
+ <row id="208576" trl="Y">
+  <value column="Name" original="Department">部門</value>
+ </row>
+ <row id="208577" trl="Y">
+  <value column="Name" original="Cost Center">コストセンター</value>
+ </row>
+ <row id="208578" trl="Y">
+  <value column="Name" original="Department">部門</value>
+ </row>
+ <row id="208579" trl="Y">
+  <value column="Name" original="Cost Center">コストセンター</value>
+ </row>
+ <row id="208580" trl="Y">
+  <value column="Name" original="Department">部門</value>
+ </row>
+ <row id="208581" trl="Y">
+  <value column="Name" original="Cost Center">コストセンター</value>
+ </row>
+ <row id="208582" trl="Y">
+  <value column="Name" original="Department">部門</value>
+ </row>
+ <row id="208583" trl="Y">
+  <value column="Name" original="Cost Center">コストセンター</value>
+ </row>
+ <row id="208584" trl="Y">
+  <value column="Name" original="Department">部門</value>
+ </row>
+ <row id="208585" trl="Y">
+  <value column="Name" original="Cost Center">コストセンター</value>
+ </row>
+ <row id="208586" trl="Y">
+  <value column="Name" original="Department">部門</value>
+ </row>
+ <row id="208587" trl="Y">
+  <value column="Name" original="Cost Center">コストセンター</value>
+ </row>
+ <row id="208588" trl="Y">
+  <value column="Name" original="Department">部門</value>
+ </row>
+ <row id="208589" trl="Y">
+  <value column="Name" original="Cost Center">コストセンター</value>
+ </row>
+ <row id="208590" trl="Y">
+  <value column="Name" original="Department">部門</value>
+ </row>
+ <row id="208591" trl="Y">
+  <value column="Name" original="Cost Center">コストセンター</value>
+ </row>
+ <row id="208592" trl="Y">
+  <value column="Name" original="Department">部門</value>
+ </row>
+ <row id="208593" trl="Y">
+  <value column="Name" original="Cost Center">コストセンター</value>
+ </row>
+ <row id="208594" trl="Y">
+  <value column="Name" original="Department">部門</value>
+ </row>
+ <row id="208595" trl="Y">
+  <value column="Name" original="Cost Center">コストセンター</value>
+ </row>
+ <row id="208596" trl="Y">
+  <value column="Name" original="Department">部門</value>
+ </row>
+ <row id="208597" trl="Y">
+  <value column="Name" original="Cost Center">コストセンター</value>
+ </row>
+ <row id="208598" trl="Y">
+  <value column="Name" original="Department">部門</value>
+ </row>
+ <row id="208599" trl="Y">
+  <value column="Name" original="Cost Center">コストセンター</value>
+ </row>
+ <row id="208600" trl="Y">
+  <value column="Name" original="Department">部門</value>
+ </row>
+ <row id="208601" trl="Y">
+  <value column="Name" original="Cost Center">コストセンター</value>
+ </row>
+ <row id="208602" trl="Y">
+  <value column="Name" original="Department">部門</value>
+ </row>
+ <row id="208603" trl="Y">
+  <value column="Name" original="Cost Center">コストセンター</value>
+ </row>
+ <row id="208604" trl="Y">
+  <value column="Name" original="Department">部門</value>
+ </row>
+ <row id="208605" trl="Y">
+  <value column="Name" original="Cost Center">コストセンター</value>
+ </row>
+ <row id="208606" trl="Y">
+  <value column="Name" original="Department">部門</value>
+ </row>
+ <row id="208607" trl="Y">
+  <value column="Name" original="Cost Center">コストセンター</value>
+ </row>
+ <row id="208608" trl="Y">
+  <value column="Name" original="Department">部門</value>
+ </row>
+ <row id="208609" trl="Y">
+  <value column="Name" original="Cost Center">コストセンター</value>
+ </row>
+ <row id="208610" trl="Y">
+  <value column="Name" original="Department">部門</value>
+ </row>
+ <row id="208611" trl="Y">
+  <value column="Name" original="Cost Center">コストセンター</value>
+ </row>
+ <row id="208612" trl="Y">
+  <value column="Name" original="Department">部門</value>
+ </row>
+ <row id="208613" trl="Y">
+  <value column="Name" original="Cost Center">コストセンター</value>
+ </row>
+ <row id="208614" trl="Y">
+  <value column="Name" original="Department">部門</value>
+ </row>
+ <row id="208615" trl="Y">
+  <value column="Name" original="Cost Center">コストセンター</value>
+ </row>
+ <row id="208616" trl="Y">
+  <value column="Name" original="Department">部門</value>
+ </row>
+ <row id="208617" trl="Y">
+  <value column="Name" original="Cost Center">コストセンター</value>
+ </row>
+ <row id="208618" trl="Y">
+  <value column="Name" original="Department">部門</value>
+ </row>
+ <row id="208619" trl="Y">
+  <value column="Name" original="Cost Center">コストセンター</value>
+ </row>
+ <row id="208620" trl="Y">
+  <value column="Name" original="Department">部門</value>
+ </row>
+ <row id="208621" trl="Y">
+  <value column="Name" original="Cost Center">コストセンター</value>
+ </row>
+ <row id="208622" trl="Y">
+  <value column="Name" original="Department">部門</value>
+ </row>
+ <row id="208623" trl="Y">
+  <value column="Name" original="Cost Center">コストセンター</value>
+ </row>
+ <row id="208624" trl="Y">
+  <value column="Name" original="Department">部門</value>
+ </row>
+ <row id="208625" trl="Y">
+  <value column="Name" original="Cost Center">コストセンター</value>
+ </row>
+ <row id="208626" trl="Y">
+  <value column="Name" original="Department">部門</value>
+ </row>
+ <row id="208627" trl="Y">
+  <value column="Name" original="Cost Center">コストセンター</value>
+ </row>
+ <row id="208628" trl="Y">
+  <value column="Name" original="Department">部門</value>
+ </row>
+ <row id="208629" trl="Y">
+  <value column="Name" original="Cost Center">コストセンター</value>
+ </row>
+ <row id="208630" trl="Y">
+  <value column="Name" original="Department">部門</value>
+ </row>
+ <row id="208631" trl="Y">
+  <value column="Name" original="Cost Center">コストセンター</value>
+ </row>
+ <row id="208632" trl="Y">
+  <value column="Name" original="Department">部門</value>
+ </row>
+ <row id="208633" trl="Y">
+  <value column="Name" original="Cost Center">コストセンター</value>
+ </row>
+ <row id="208634" trl="Y">
+  <value column="Name" original="Department">部門</value>
+ </row>
+ <row id="208635" trl="Y">
+  <value column="Name" original="Cost Center">コストセンター</value>
+ </row>
+ <row id="208636" trl="Y">
+  <value column="Name" original="Department">部門</value>
+ </row>
+ <row id="208637" trl="Y">
+  <value column="Name" original="Cost Center">コストセンター</value>
+ </row>
+ <row id="208638" trl="Y">
+  <value column="Name" original="Department">部門</value>
+ </row>
+ <row id="208639" trl="Y">
+  <value column="Name" original="Cost Center">コストセンター</value>
+ </row>
+ <row id="208640" trl="Y">
+  <value column="Name" original="Department">部門</value>
+ </row>
+ <row id="208641" trl="Y">
+  <value column="Name" original="Cost Center">コストセンター</value>
+ </row>
+ <row id="208642" trl="Y">
+  <value column="Name" original="Department">部門</value>
+ </row>
+ <row id="208643" trl="Y">
+  <value column="Name" original="Cost Center">コストセンター</value>
+ </row>
+ <row id="208644" trl="Y">
+  <value column="Name" original="Department">部門</value>
+ </row>
+ <row id="208703" trl="Y">
+  <value column="Name" original="Department">部門</value>
+ </row>
+ <row id="208704" trl="Y">
+  <value column="Name" original="Cost Center">コストセンター</value>
+ </row>
+</idempiereTrl>

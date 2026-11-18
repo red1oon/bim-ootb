@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!--ERP screen names (AD_Window, by id). ERP machine source (not a published language pack) — translated for this app by Claude (Anthropic), 2026-11, moved from erp/i18n/machine/zh_CN.json {English: text}, applied by build_i18n.py machine_fill by erp/tools/trl_move_machine_2026-11-18.py (TRL_TRILOGY_STANDARD.md T5a); no human review.-->
+<!--<!DOCTYPE idempiereTrl PUBLIC "-//iDempiere//DTD iDempiere Translation 1.0//EN" "https://raw.githubusercontent.com/idempiere/idempiere/refs/heads/master/utils_dev/trl/idempiereTrl.dtd">-->
+<idempiereTrl language="zh_CN" table="AD_Window">
+ <row id="53097" trl="Y">
+  <value column="Name" original="Customer Return">客户退货</value>
+ </row>
+ <row id="53098" trl="Y">
+  <value column="Name" original="Return to Vendor">退货给供应商</value>
+ </row>
+ <row id="53099" trl="Y">
+  <value column="Name" original="Vendor RMA">供应商退货授权</value>
+ </row>
+ <row id="53101" trl="Y">
+  <value column="Name" original="Order Source">订单来源</value>
+ </row>
+ <row id="53102" trl="Y">
+  <value column="Name" original="Relation Type">关系类型</value>
+ </row>
+ <row id="53127" trl="Y">
+  <value column="Name" original="Production (Single Product)">生产（单一产品）</value>
+ </row>
+ <row id="53134" trl="Y">
+  <value column="Name" original="Cash Plan">现金计划</value>
+ </row>
+ <row id="53141" trl="Y">
+  <value column="Name" original="Maintenance Request">维护请求</value>
+ </row>
+ <row id="53149" trl="Y">
+  <value column="Name" original="Quality Test">质量检验</value>
+ </row>
+ <row id="53150" trl="Y">
+  <value column="Name" original="Part Type">零件类型</value>
+ </row>
+ <row id="200005" trl="Y">
+  <value column="Name" original="GL Journal">总账凭证</value>
+ </row>
+ <row id="200008" trl="Y">
+  <value column="Name" original="POS Payment">POS 付款</value>
+ </row>
+ <row id="200013" trl="Y">
+  <value column="Name" original="GL Journal Generator">凭证生成器</value>
+ </row>
+ <row id="200017" trl="Y">
+  <value column="Name" original="Payment Transaction">付款交易</value>
+ </row>
+ <row id="200018" trl="Y">
+  <value column="Name" original="Online Transaction History">在线交易历史</value>
+ </row>
+ <row id="200031" trl="Y">
+  <value column="Name" original="Payments into Batch">付款入批</value>
+ </row>
+ <row id="200034" trl="Y">
+  <value column="Name" original="Context Help">上下文帮助</value>
+ </row>
+ <row id="200043" trl="Y">
+  <value column="Name" original="Cost Adjustment">成本调整</value>
+ </row>
+ <row id="200090" trl="Y">
+  <value column="Name" original="Document Status">单据状态</value>
+ </row>
+ <row id="200095" trl="Y">
+  <value column="Name" original="Process Customization">流程定制</value>
+ </row>
+ <row id="200105" trl="Y">
+  <value column="Name" original="Bank/Cash Transfer">银行/现金转账</value>
+ </row>
+ <row id="200110" trl="Y">
+  <value column="Name" original="Info Window Customization">信息窗口定制</value>
+ </row>
+ <row id="200120" trl="Y">
+  <value column="Name" original="Tenant level messages">租户级消息</value>
+ </row>
+ <row id="200128" trl="Y">
+  <value column="Name" original="Label Category">标签类别</value>
+ </row>
+ <row id="200129" trl="Y">
+  <value column="Name" original="Label">标签</value>
+ </row>
+ <row id="200130" trl="Y">
+  <value column="Name" original="Label Assignment">标签分配</value>
+ </row>
+ <row id="200148" trl="Y">
+  <value column="Name" original="Department">部门</value>
+ </row>
+ <row id="200149" trl="Y">
+  <value column="Name" original="Cost Center">成本中心</value>
+ </row>
+ <row id="200151" trl="Y">
+  <value column="Name" original="Theme Customization">主题定制</value>
+ </row>
+</idempiereTrl>

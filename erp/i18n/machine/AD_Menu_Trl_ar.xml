@@ -1,0 +1,212 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!--ERP screen names (AD_Menu, by id). ERP machine source (not a published language pack) — translated for this app by Claude (Anthropic), 2026-11, moved from erp/i18n/machine/ar.json {English: text}, applied by build_i18n.py machine_fill by erp/tools/trl_move_machine_2026-11-18.py (TRL_TRILOGY_STANDARD.md T5a); no human review.-->
+<!--<!DOCTYPE idempiereTrl PUBLIC "-//iDempiere//DTD iDempiere Translation 1.0//EN" "https://raw.githubusercontent.com/idempiere/idempiere/refs/heads/master/utils_dev/trl/idempiereTrl.dtd">-->
+<idempiereTrl language="ar" table="AD_Menu">
+ <row id="218" trl="Y">
+  <value column="Name" original="System Admin">إدارة النظام</value>
+ </row>
+ <row id="357" trl="Y">
+  <value column="Name" original="Product Attributes">خصائص المنتج</value>
+ </row>
+ <row id="396" trl="Y">
+  <value column="Name" original="Send Mail Text">إرسال نص البريد</value>
+ </row>
+ <row id="398" trl="Y">
+  <value column="Name" original="Project Cycle Report">تقرير دورة المشروع</value>
+ </row>
+ <row id="401" trl="Y">
+  <value column="Name" original="Issue to Project">صرف إلى المشروع</value>
+ </row>
+ <row id="402" trl="Y">
+  <value column="Name" original="Generate PO from Project">إنشاء أمر شراء من المشروع</value>
+ </row>
+ <row id="403" trl="Y">
+  <value column="Name" original="Project Detail Accounting Report">تقرير محاسبة تفاصيل المشروع</value>
+ </row>
+ <row id="404" trl="Y">
+  <value column="Name" original="Project Lines not Issued">بنود المشروع غير المصروفة</value>
+ </row>
+ <row id="405" trl="Y">
+  <value column="Name" original="Project POs not Issued">أوامر شراء المشروع غير المصروفة</value>
+ </row>
+ <row id="410" trl="Y">
+  <value column="Name" original="Project Margin (Work Order)">هامش المشروع (أمر العمل)</value>
+ </row>
+ <row id="411" trl="Y">
+  <value column="Name" original="Storage Detail">تفاصيل المخزون</value>
+ </row>
+ <row id="412" trl="Y">
+  <value column="Name" original="Transaction Detail">تفاصيل الحركة</value>
+ </row>
+ <row id="413" trl="Y">
+  <value column="Name" original="Aging">أعمار الديون</value>
+ </row>
+ <row id="426" trl="Y">
+  <value column="Name" original="BOM Drop">إسقاط قائمة المواد</value>
+ </row>
+ <row id="432" trl="Y">
+  <value column="Name" original="Invoice Tax">ضريبة الفاتورة</value>
+ </row>
+ <row id="433" trl="Y">
+  <value column="Name" original="Accounting Fact Details">تفاصيل القيود المحاسبية</value>
+ </row>
+ <row id="434" trl="Y">
+  <value column="Name" original="Accounting Fact Daily">القيود المحاسبية اليومية</value>
+ </row>
+ <row id="435" trl="Y">
+  <value column="Name" original="Accounting Fact Period">القيود المحاسبية للفترة</value>
+ </row>
+ <row id="457" trl="Y">
+  <value column="Name" original="Sales Orders">أوامر البيع</value>
+ </row>
+ <row id="458" trl="Y">
+  <value column="Name" original="Sales Invoices">فواتير المبيعات</value>
+ </row>
+ <row id="459" trl="Y">
+  <value column="Name" original="Shipments">الشحنات</value>
+ </row>
+ <row id="467" trl="Y">
+  <value column="Name" original="RfQ Response">رد طلب عرض السعر</value>
+ </row>
+ <row id="468" trl="Y">
+  <value column="Name" original="RfQ Unanswered">طلبات عروض الأسعار دون رد</value>
+ </row>
+ <row id="471" trl="Y">
+  <value column="Name" original="Open Requisitions">الطلبات المفتوحة</value>
+ </row>
+ <row id="481" trl="Y">
+  <value column="Name" original="Open Confirmation Details">تفاصيل التأكيدات المفتوحة</value>
+ </row>
+ <row id="482" trl="Y">
+  <value column="Name" original="Open Confirmations">التأكيدات المفتوحة</value>
+ </row>
+ <row id="493" trl="Y">
+  <value column="Name" original="Material Receipt Details">تفاصيل استلام المواد</value>
+ </row>
+ <row id="496" trl="Y">
+  <value column="Name" original="Reset Allocation">إعادة تعيين التخصيص</value>
+ </row>
+ <row id="497" trl="Y">
+  <value column="Name" original="Auto Allocation">تخصيص تلقائي</value>
+ </row>
+ <row id="505" trl="Y">
+  <value column="Name" original="Print Dunning Letters">طباعة خطابات المطالبة</value>
+ </row>
+ <row id="509" trl="Y">
+  <value column="Name" original="UnAllocated Invoices">فواتير غير مخصصة</value>
+ </row>
+ <row id="510" trl="Y">
+  <value column="Name" original="UnAllocated Payments">مدفوعات غير مخصصة</value>
+ </row>
+ <row id="511" trl="Y">
+  <value column="Name" original="Payment Details">تفاصيل الدفع</value>
+ </row>
+ <row id="515" trl="Y">
+  <value column="Name" original="Material Reference">مرجع المواد</value>
+ </row>
+ <row id="522" trl="Y">
+  <value column="Name" original="Costing">التكاليف</value>
+ </row>
+ <row id="528" trl="Y">
+  <value column="Name" original="Request">الطلب</value>
+ </row>
+ <row id="537" trl="Y">
+  <value column="Name" original="Storage Cleanup">تنظيف المخزون</value>
+ </row>
+ <row id="538" trl="Y">
+  <value column="Name" original="Invoice Not Realized Gain/Loss">أرباح/خسائر الفواتير غير المحققة</value>
+ </row>
+ <row id="549" trl="Y">
+  <value column="Name" original="Create PO from Requisition">إنشاء أمر شراء من طلب</value>
+ </row>
+ <row id="50001" trl="Y">
+  <value column="Name" original="Application Packaging">حزم التطبيقات</value>
+ </row>
+ <row id="53133" trl="Y">
+  <value column="Name" original="Customer Service">خدمة العملاء</value>
+ </row>
+ <row id="53139" trl="Y">
+  <value column="Name" original="Asset Transactions ">حركات الأصول</value>
+ </row>
+ <row id="53149" trl="Y">
+  <value column="Name" original="Depreciation Processing">معالجة الإهلاك</value>
+ </row>
+ <row id="53171" trl="Y">
+  <value column="Name" original="Depreciation Setup">إعداد الإهلاك</value>
+ </row>
+ <row id="53190" trl="Y">
+  <value column="Name" original="Bank/Cash Transfer Process">معالجة التحويل البنكي/النقدي</value>
+ </row>
+ <row id="53242" trl="Y">
+  <value column="Name" original="Returns">المرتجعات</value>
+ </row>
+ <row id="53253" trl="Y">
+  <value column="Name" original="Storage per Product">المخزون حسب المنتج</value>
+ </row>
+ <row id="53288" trl="Y">
+  <value column="Name" original="Automatic account reconciliation">تسوية الحسابات التلقائية</value>
+ </row>
+ <row id="53289" trl="Y">
+  <value column="Name" original="Accounting Fact Reconciliation (manual)">تسوية القيود المحاسبية (يدوية)</value>
+ </row>
+ <row id="53290" trl="Y">
+  <value column="Name" original="Unreconciled accounting facts">قيود محاسبية غير مسواة</value>
+ </row>
+ <row id="53296" trl="Y">
+  <value column="Name" original="Manufacturing">التصنيع</value>
+ </row>
+ <row id="53299" trl="Y">
+  <value column="Name" original="Validate BOM Flags">التحقق من مؤشرات قائمة المواد</value>
+ </row>
+ <row id="53300" trl="Y">
+  <value column="Name" original="Verify BOM Structure">التحقق من هيكل قائمة المواد</value>
+ </row>
+ <row id="53301" trl="Y">
+  <value column="Name" original="Rollup BOM Cost">تجميع تكلفة قائمة المواد</value>
+ </row>
+ <row id="53302" trl="Y">
+  <value column="Name" original="BOM Viewer">عارض قائمة المواد</value>
+ </row>
+ <row id="53314" trl="Y">
+  <value column="Name" original="Cash Flow Report">تقرير التدفق النقدي</value>
+ </row>
+ <row id="53338" trl="Y">
+  <value column="Name" original="Maintenance Request">طلب صيانة</value>
+ </row>
+ <row id="53339" trl="Y">
+  <value column="Name" original="Setup">الإعداد</value>
+ </row>
+ <row id="53352" trl="Y">
+  <value column="Name" original="Universal substitution">البديل الشامل</value>
+ </row>
+ <row id="53353" trl="Y">
+  <value column="Name" original="Indented Bill of Material">قائمة المواد المتدرجة</value>
+ </row>
+ <row id="53354" trl="Y">
+  <value column="Name" original="Replenish Report">تقرير إعادة التزويد</value>
+ </row>
+ <row id="53363" trl="Y">
+  <value column="Name" original="Sales Management">إدارة المبيعات</value>
+ </row>
+ <row id="53885" trl="Y">
+  <value column="Name" original="Revenue Recognition Run">تشغيل الاعتراف بالإيراد</value>
+ </row>
+ <row id="200043" trl="Y">
+  <value column="Name" original="Bank Register Report">تقرير سجل البنك</value>
+ </row>
+ <row id="200045" trl="Y">
+  <value column="Name" original="Simple Fact View">عرض القيود المبسط</value>
+ </row>
+ <row id="200098" trl="Y">
+  <value column="Name" original="Generate Production from Project">إنشاء إنتاج من المشروع</value>
+ </row>
+ <row id="200166" trl="Y">
+  <value column="Name" original="Recreate Storage Reservation">إعادة إنشاء حجز المخزون</value>
+ </row>
+ <row id="1000000" trl="Y">
+  <value column="Name" original="Office">المكتب</value>
+ </row>
+ <row id="1000001" trl="Y">
+  <value column="Name" original="Work Shop">الورشة</value>
+ </row>
+</idempiereTrl>

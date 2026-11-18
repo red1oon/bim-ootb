@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!--ERP screen names (AD_Menu, by id). ERP machine source (not a published language pack) — translated for this app by Claude (Anthropic), 2026-11, moved from erp/i18n/machine/es_ES.json {English: text}, applied by build_i18n.py machine_fill by erp/tools/trl_move_machine_2026-11-18.py (TRL_TRILOGY_STANDARD.md T5a); no human review.-->
+<!--<!DOCTYPE idempiereTrl PUBLIC "-//iDempiere//DTD iDempiere Translation 1.0//EN" "https://raw.githubusercontent.com/idempiere/idempiere/refs/heads/master/utils_dev/trl/idempiereTrl.dtd">-->
+<idempiereTrl language="es_ES" table="AD_Menu">
+ <row id="219" trl="Y">
+  <value column="Name" original="Project Setup and Use">Configuración y uso de proyectos</value>
+ </row>
+ <row id="53338" trl="Y">
+  <value column="Name" original="Maintenance Request">Solicitud de mantenimiento</value>
+ </row>
+ <row id="53339" trl="Y">
+  <value column="Name" original="Setup">Configuración</value>
+ </row>
+ <row id="1000000" trl="Y">
+  <value column="Name" original="Office">Oficina</value>
+ </row>
+ <row id="1000001" trl="Y">
+  <value column="Name" original="Work Shop">Taller</value>
+ </row>
+</idempiereTrl>

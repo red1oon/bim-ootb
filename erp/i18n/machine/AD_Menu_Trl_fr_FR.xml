@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!--ERP screen names (AD_Menu, by id). ERP machine source (not a published language pack) — translated for this app by Claude (Anthropic), 2026-11, moved from erp/i18n/machine/fr_FR.json {English: text}, applied by build_i18n.py machine_fill by erp/tools/trl_move_machine_2026-11-18.py (TRL_TRILOGY_STANDARD.md T5a); no human review.-->
+<!--<!DOCTYPE idempiereTrl PUBLIC "-//iDempiere//DTD iDempiere Translation 1.0//EN" "https://raw.githubusercontent.com/idempiere/idempiere/refs/heads/master/utils_dev/trl/idempiereTrl.dtd">-->
+<idempiereTrl language="fr_FR" table="AD_Menu">
+ <row id="271" trl="Y">
+  <value column="Name" original="Service">Service</value>
+ </row>
+ <row id="357" trl="Y">
+  <value column="Name" original="Product Attributes">Attributs de produit</value>
+ </row>
+ <row id="53253" trl="Y">
+  <value column="Name" original="Storage per Product">Stock par produit</value>
+ </row>
+ <row id="53288" trl="Y">
+  <value column="Name" original="Automatic account reconciliation">Rapprochement automatique des comptes</value>
+ </row>
+ <row id="53290" trl="Y">
+  <value column="Name" original="Unreconciled accounting facts">Écritures non rapprochées</value>
+ </row>
+ <row id="53299" trl="Y">
+  <value column="Name" original="Validate BOM Flags">Valider les indicateurs de nomenclature</value>
+ </row>
+ <row id="53300" trl="Y">
+  <value column="Name" original="Verify BOM Structure">Vérifier la structure de nomenclature</value>
+ </row>
+ <row id="53301" trl="Y">
+  <value column="Name" original="Rollup BOM Cost">Cumul du coût de nomenclature</value>
+ </row>
+ <row id="53302" trl="Y">
+  <value column="Name" original="BOM Viewer">Visualiseur de nomenclature</value>
+ </row>
+ <row id="53314" trl="Y">
+  <value column="Name" original="Cash Flow Report">Rapport de flux de trésorerie</value>
+ </row>
+ <row id="53338" trl="Y">
+  <value column="Name" original="Maintenance Request">Demande de maintenance</value>
+ </row>
+ <row id="53339" trl="Y">
+  <value column="Name" original="Setup">Configuration</value>
+ </row>
+ <row id="53352" trl="Y">
+  <value column="Name" original="Universal substitution">Substitution universelle</value>
+ </row>
+ <row id="53353" trl="Y">
+  <value column="Name" original="Indented Bill of Material">Nomenclature indentée</value>
+ </row>
+ <row id="53363" trl="Y">
+  <value column="Name" original="Sales Management">Gestion des ventes</value>
+ </row>
+ <row id="53885" trl="Y">
+  <value column="Name" original="Revenue Recognition Run">Exécution de la reconnaissance des revenus</value>
+ </row>
+ <row id="200043" trl="Y">
+  <value column="Name" original="Bank Register Report">Rapport du registre bancaire</value>
+ </row>
+ <row id="200045" trl="Y">
+  <value column="Name" original="Simple Fact View">Vue simple des écritures</value>
+ </row>
+ <row id="200098" trl="Y">
+  <value column="Name" original="Generate Production from Project">Générer la production depuis le projet</value>
+ </row>
+ <row id="200166" trl="Y">
+  <value column="Name" original="Recreate Storage Reservation">Recréer les réservations de stock</value>
+ </row>
+ <row id="1000000" trl="Y">
+  <value column="Name" original="Office">Bureau</value>
+ </row>
+ <row id="1000001" trl="Y">
+  <value column="Name" original="Work Shop">Atelier</value>
+ </row>
+</idempiereTrl>

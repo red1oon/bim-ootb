@@ -1,0 +1,1685 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!--ERP screen names (AD_Field, by id). ERP machine source (not a published language pack) — translated for this app by Claude (Anthropic), 2026-11, moved from erp/i18n/machine/ar.json {English: text}, applied by build_i18n.py machine_fill by erp/tools/trl_move_machine_2026-11-18.py (TRL_TRILOGY_STANDARD.md T5a); no human review.-->
+<!--<!DOCTYPE idempiereTrl PUBLIC "-//iDempiere//DTD iDempiere Translation 1.0//EN" "https://raw.githubusercontent.com/idempiere/idempiere/refs/heads/master/utils_dev/trl/idempiereTrl.dtd">-->
+<idempiereTrl language="ar" table="AD_Field">
+ <row id="1083" trl="Y">
+  <value column="Name" original="Process Order">معالجة الطلب</value>
+ </row>
+ <row id="1323" trl="Y">
+  <value column="Name" original="Process Order">معالجة الطلب</value>
+ </row>
+ <row id="2124" trl="Y">
+  <value column="Name" original="Language">اللغة</value>
+ </row>
+ <row id="3426" trl="Y">
+  <value column="Name" original="Process Order">معالجة الطلب</value>
+ </row>
+ <row id="3445" trl="Y">
+  <value column="Name" original="Process Order">معالجة الطلب</value>
+ </row>
+ <row id="3739" trl="Y">
+  <value column="Name" original="Copy Lines">نسخ البنود</value>
+ </row>
+ <row id="3747" trl="Y">
+  <value column="Name" original="Verify BOM Structure">التحقق من هيكل قائمة المواد</value>
+ </row>
+ <row id="4465" trl="Y">
+  <value column="Name" original="Copy Lines">نسخ البنود</value>
+ </row>
+ <row id="4782" trl="Y">
+  <value column="Name" original="Copy Lines">نسخ البنود</value>
+ </row>
+ <row id="5317" trl="Y">
+  <value column="Name" original="Verify BOM Structure">التحقق من هيكل قائمة المواد</value>
+ </row>
+ <row id="5436" trl="Y">
+  <value column="Name" original="Verify BOM Structure">التحقق من هيكل قائمة المواد</value>
+ </row>
+ <row id="5534" trl="Y">
+  <value column="Name" original="Verify BOM Structure">التحقق من هيكل قائمة المواد</value>
+ </row>
+ <row id="6340" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="6342" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="6344" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="6346" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="6502" trl="Y">
+  <value column="Name" original="Self-Service">الخدمة الذاتية</value>
+ </row>
+ <row id="6504" trl="Y">
+  <value column="Name" original="Invoice Contact">جهة اتصال الفاتورة</value>
+ </row>
+ <row id="6505" trl="Y">
+  <value column="Name" original="Invoice Partner">شريك الفاتورة</value>
+ </row>
+ <row id="6506" trl="Y">
+  <value column="Name" original="Copy Lines">نسخ البنود</value>
+ </row>
+ <row id="6507" trl="Y">
+  <value column="Name" original="Invoice Location">عنوان الفاتورة</value>
+ </row>
+ <row id="6508" trl="Y">
+  <value column="Name" original="Self-Service">الخدمة الذاتية</value>
+ </row>
+ <row id="6529" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="6531" trl="Y">
+  <value column="Name" original="Self-Service">الخدمة الذاتية</value>
+ </row>
+ <row id="6532" trl="Y">
+  <value column="Name" original="Copy Lines">نسخ البنود</value>
+ </row>
+ <row id="6533" trl="Y">
+  <value column="Name" original="Self-Service">الخدمة الذاتية</value>
+ </row>
+ <row id="6534" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="6535" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="6536" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="6542" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="6552" trl="Y">
+  <value column="Name" original="Self-Service">الخدمة الذاتية</value>
+ </row>
+ <row id="6555" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="6558" trl="Y">
+  <value column="Name" original="Invoice Contact">جهة اتصال الفاتورة</value>
+ </row>
+ <row id="6559" trl="Y">
+  <value column="Name" original="Invoice Partner">شريك الفاتورة</value>
+ </row>
+ <row id="6560" trl="Y">
+  <value column="Name" original="Copy Lines">نسخ البنود</value>
+ </row>
+ <row id="6561" trl="Y">
+  <value column="Name" original="Invoice Location">عنوان الفاتورة</value>
+ </row>
+ <row id="6562" trl="Y">
+  <value column="Name" original="Self-Service">الخدمة الذاتية</value>
+ </row>
+ <row id="6564" trl="Y">
+  <value column="Name" original="Copy Lines">نسخ البنود</value>
+ </row>
+ <row id="6565" trl="Y">
+  <value column="Name" original="Self-Service">الخدمة الذاتية</value>
+ </row>
+ <row id="6566" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="6570" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="6571" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="6629" trl="Y">
+  <value column="Name" original="Project Type">نوع المشروع</value>
+ </row>
+ <row id="6639" trl="Y">
+  <value column="Name" original="Project Type">نوع المشروع</value>
+ </row>
+ <row id="6840" trl="Y">
+  <value column="Name" original="Freight Category">فئة الشحن</value>
+ </row>
+ <row id="6841" trl="Y">
+  <value column="Name" original="Freight Category">فئة الشحن</value>
+ </row>
+ <row id="6842" trl="Y">
+  <value column="Name" original="Freight Category">فئة الشحن</value>
+ </row>
+ <row id="6843" trl="Y">
+  <value column="Name" original="Freight Category">فئة الشحن</value>
+ </row>
+ <row id="6931" trl="Y">
+  <value column="Name" original="Copy Lines">نسخ البنود</value>
+ </row>
+ <row id="6932" trl="Y">
+  <value column="Name" original="Self-Service">الخدمة الذاتية</value>
+ </row>
+ <row id="7036" trl="Y">
+  <value column="Name" original="Freight Category">فئة الشحن</value>
+ </row>
+ <row id="7053" trl="Y">
+  <value column="Name" original="Freight Category">فئة الشحن</value>
+ </row>
+ <row id="7279" trl="Y">
+  <value column="Name" original="Self-Service">الخدمة الذاتية</value>
+ </row>
+ <row id="7470" trl="Y">
+  <value column="Name" original="Verify BOM Structure">التحقق من هيكل قائمة المواد</value>
+ </row>
+ <row id="7472" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="7475" trl="Y">
+  <value column="Name" original="Freight Category">فئة الشحن</value>
+ </row>
+ <row id="7485" trl="Y">
+  <value column="Name" original="Self-Service">الخدمة الذاتية</value>
+ </row>
+ <row id="7880" trl="Y">
+  <value column="Name" original="Process Order">معالجة الطلب</value>
+ </row>
+ <row id="7895" trl="Y">
+  <value column="Name" original="Process Order">معالجة الطلب</value>
+ </row>
+ <row id="7903" trl="Y">
+  <value column="Name" original="Invoice Contact">جهة اتصال الفاتورة</value>
+ </row>
+ <row id="7904" trl="Y">
+  <value column="Name" original="Invoice Partner">شريك الفاتورة</value>
+ </row>
+ <row id="7905" trl="Y">
+  <value column="Name" original="Copy Lines">نسخ البنود</value>
+ </row>
+ <row id="7906" trl="Y">
+  <value column="Name" original="Invoice Location">عنوان الفاتورة</value>
+ </row>
+ <row id="7907" trl="Y">
+  <value column="Name" original="Self-Service">الخدمة الذاتية</value>
+ </row>
+ <row id="8005" trl="Y">
+  <value column="Name" original="Copy Lines">نسخ البنود</value>
+ </row>
+ <row id="8006" trl="Y">
+  <value column="Name" original="Self-Service">الخدمة الذاتية</value>
+ </row>
+ <row id="8071" trl="Y">
+  <value column="Name" original="Self-Service">الخدمة الذاتية</value>
+ </row>
+ <row id="8147" trl="Y">
+  <value column="Name" original="Self-Service">الخدمة الذاتية</value>
+ </row>
+ <row id="8200" trl="Y">
+  <value column="Name" original="Self-Service">الخدمة الذاتية</value>
+ </row>
+ <row id="8217" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="8238" trl="Y">
+  <value column="Name" original="Credit Status">حالة الائتمان</value>
+ </row>
+ <row id="8239" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="8240" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="8345" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="8346" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="8380" trl="Y">
+  <value column="Name" original="Min Shelf Life %">الحد الأدنى لمدة الصلاحية %</value>
+ </row>
+ <row id="8400" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="8478" trl="Y">
+  <value column="Name" original="Invoice Contact">جهة اتصال الفاتورة</value>
+ </row>
+ <row id="8479" trl="Y">
+  <value column="Name" original="Copy Lines">نسخ البنود</value>
+ </row>
+ <row id="8480" trl="Y">
+  <value column="Name" original="Invoice Location">عنوان الفاتورة</value>
+ </row>
+ <row id="8481" trl="Y">
+  <value column="Name" original="Invoice Partner">شريك الفاتورة</value>
+ </row>
+ <row id="8482" trl="Y">
+  <value column="Name" original="Self-Service">الخدمة الذاتية</value>
+ </row>
+ <row id="8501" trl="Y">
+  <value column="Name" original="Process Order">معالجة الطلب</value>
+ </row>
+ <row id="8517" trl="Y">
+  <value column="Name" original="Process Order">معالجة الطلب</value>
+ </row>
+ <row id="8556" trl="Y">
+  <value column="Name" original="Copy Lines">نسخ البنود</value>
+ </row>
+ <row id="8557" trl="Y">
+  <value column="Name" original="Self-Service">الخدمة الذاتية</value>
+ </row>
+ <row id="8589" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="8611" trl="Y">
+  <value column="Name" original="Self-Service">الخدمة الذاتية</value>
+ </row>
+ <row id="8612" trl="Y">
+  <value column="Name" original="Self-Service">الخدمة الذاتية</value>
+ </row>
+ <row id="8613" trl="Y">
+  <value column="Name" original="Self-Service">الخدمة الذاتية</value>
+ </row>
+ <row id="8614" trl="Y">
+  <value column="Name" original="Self-Service">الخدمة الذاتية</value>
+ </row>
+ <row id="8615" trl="Y">
+  <value column="Name" original="Self-Service">الخدمة الذاتية</value>
+ </row>
+ <row id="8616" trl="Y">
+  <value column="Name" original="Self-Service">الخدمة الذاتية</value>
+ </row>
+ <row id="8618" trl="Y">
+  <value column="Name" original="Currency Type">نوع العملة</value>
+ </row>
+ <row id="8619" trl="Y">
+  <value column="Name" original="Currency Type">نوع العملة</value>
+ </row>
+ <row id="8620" trl="Y">
+  <value column="Name" original="Currency Type">نوع العملة</value>
+ </row>
+ <row id="8621" trl="Y">
+  <value column="Name" original="Currency Type">نوع العملة</value>
+ </row>
+ <row id="8622" trl="Y">
+  <value column="Name" original="Currency Type">نوع العملة</value>
+ </row>
+ <row id="8632" trl="Y">
+  <value column="Name" original="Currency Type">نوع العملة</value>
+ </row>
+ <row id="8633" trl="Y">
+  <value column="Name" original="Currency Type">نوع العملة</value>
+ </row>
+ <row id="8636" trl="Y">
+  <value column="Name" original="Currency Type">نوع العملة</value>
+ </row>
+ <row id="8642" trl="Y">
+  <value column="Name" original="Currency Type">نوع العملة</value>
+ </row>
+ <row id="8644" trl="Y">
+  <value column="Name" original="Currency Type">نوع العملة</value>
+ </row>
+ <row id="8645" trl="Y">
+  <value column="Name" original="Currency Type">نوع العملة</value>
+ </row>
+ <row id="8646" trl="Y">
+  <value column="Name" original="Currency Type">نوع العملة</value>
+ </row>
+ <row id="8648" trl="Y">
+  <value column="Name" original="Currency Type">نوع العملة</value>
+ </row>
+ <row id="8649" trl="Y">
+  <value column="Name" original="Currency Type">نوع العملة</value>
+ </row>
+ <row id="8650" trl="Y">
+  <value column="Name" original="Currency Type">نوع العملة</value>
+ </row>
+ <row id="8651" trl="Y">
+  <value column="Name" original="Currency Type">نوع العملة</value>
+ </row>
+ <row id="8652" trl="Y">
+  <value column="Name" original="Currency Type">نوع العملة</value>
+ </row>
+ <row id="8653" trl="Y">
+  <value column="Name" original="Currency Type">نوع العملة</value>
+ </row>
+ <row id="8654" trl="Y">
+  <value column="Name" original="Pay Schedule valid">جدول الدفع صالح</value>
+ </row>
+ <row id="8655" trl="Y">
+  <value column="Name" original="Pay Schedule valid">جدول الدفع صالح</value>
+ </row>
+ <row id="8657" trl="Y">
+  <value column="Name" original="Pay Schedule valid">جدول الدفع صالح</value>
+ </row>
+ <row id="8659" trl="Y">
+  <value column="Name" original="Pay Schedule valid">جدول الدفع صالح</value>
+ </row>
+ <row id="8660" trl="Y">
+  <value column="Name" original="Pay Schedule valid">جدول الدفع صالح</value>
+ </row>
+ <row id="8711" trl="Y">
+  <value column="Name" original="Currency Type">نوع العملة</value>
+ </row>
+ <row id="9009" trl="Y">
+  <value column="Name" original="Self-Service">الخدمة الذاتية</value>
+ </row>
+ <row id="9023" trl="Y">
+  <value column="Name" original="Currency Type">نوع العملة</value>
+ </row>
+ <row id="9330" trl="Y">
+  <value column="Name" original="RfQ Topic">موضوع طلب عرض السعر</value>
+ </row>
+ <row id="9342" trl="Y">
+  <value column="Name" original="Self-Service">الخدمة الذاتية</value>
+ </row>
+ <row id="9354" trl="Y">
+  <value column="Name" original="Self-Service">الخدمة الذاتية</value>
+ </row>
+ <row id="9380" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="9391" trl="Y">
+  <value column="Name" original="Self-Service">الخدمة الذاتية</value>
+ </row>
+ <row id="9410" trl="Y">
+  <value column="Name" original="Self-Service">الخدمة الذاتية</value>
+ </row>
+ <row id="9413" trl="Y">
+  <value column="Name" original="RfQ Topic">موضوع طلب عرض السعر</value>
+ </row>
+ <row id="9421" trl="Y">
+  <value column="Name" original="RfQ Topic">موضوع طلب عرض السعر</value>
+ </row>
+ <row id="9547" trl="Y">
+  <value column="Name" original="RfQ Response">رد طلب عرض السعر</value>
+ </row>
+ <row id="9548" trl="Y">
+  <value column="Name" original="RfQ Response">رد طلب عرض السعر</value>
+ </row>
+ <row id="9574" trl="Y">
+  <value column="Name" original="Credit Status">حالة الائتمان</value>
+ </row>
+ <row id="9575" trl="Y">
+  <value column="Name" original="Min Shelf Life %">الحد الأدنى لمدة الصلاحية %</value>
+ </row>
+ <row id="9576" trl="Y">
+  <value column="Name" original="Link Organization">ربط المنظمة</value>
+ </row>
+ <row id="9615" trl="Y">
+  <value column="Name" original="Representative/Agent">المندوب/الوكيل</value>
+ </row>
+ <row id="9619" trl="Y">
+  <value column="Name" original="Min Shelf Life %">الحد الأدنى لمدة الصلاحية %</value>
+ </row>
+ <row id="9620" trl="Y">
+  <value column="Name" original="Link Organization">ربط المنظمة</value>
+ </row>
+ <row id="9783" trl="Y">
+  <value column="Name" original="Credit Status">حالة الائتمان</value>
+ </row>
+ <row id="9784" trl="Y">
+  <value column="Name" original="Min Shelf Life %">الحد الأدنى لمدة الصلاحية %</value>
+ </row>
+ <row id="9785" trl="Y">
+  <value column="Name" original="Link Organization">ربط المنظمة</value>
+ </row>
+ <row id="9852" trl="Y">
+  <value column="Name" original="Credit Status">حالة الائتمان</value>
+ </row>
+ <row id="9853" trl="Y">
+  <value column="Name" original="Min Shelf Life %">الحد الأدنى لمدة الصلاحية %</value>
+ </row>
+ <row id="9854" trl="Y">
+  <value column="Name" original="Link Organization">ربط المنظمة</value>
+ </row>
+ <row id="9901" trl="Y">
+  <value column="Name" original="Credit Status">حالة الائتمان</value>
+ </row>
+ <row id="9902" trl="Y">
+  <value column="Name" original="Min Shelf Life %">الحد الأدنى لمدة الصلاحية %</value>
+ </row>
+ <row id="9903" trl="Y">
+  <value column="Name" original="Link Organization">ربط المنظمة</value>
+ </row>
+ <row id="9955" trl="Y">
+  <value column="Name" original="Credit Status">حالة الائتمان</value>
+ </row>
+ <row id="9956" trl="Y">
+  <value column="Name" original="Min Shelf Life %">الحد الأدنى لمدة الصلاحية %</value>
+ </row>
+ <row id="9957" trl="Y">
+  <value column="Name" original="Link Organization">ربط المنظمة</value>
+ </row>
+ <row id="10026" trl="Y">
+  <value column="Name" original="Requisition">طلب الشراء الداخلي</value>
+ </row>
+ <row id="10041" trl="Y">
+  <value column="Name" original="Requisition">طلب الشراء الداخلي</value>
+ </row>
+ <row id="10068" trl="Y">
+  <value column="Name" original="Copy Lines">نسخ البنود</value>
+ </row>
+ <row id="10121" trl="Y">
+  <value column="Name" original="Drop Shipment">شحن مباشر</value>
+ </row>
+ <row id="10122" trl="Y">
+  <value column="Name" original="Drop Shipment">شحن مباشر</value>
+ </row>
+ <row id="10123" trl="Y">
+  <value column="Name" original="Drop Shipment">شحن مباشر</value>
+ </row>
+ <row id="10124" trl="Y">
+  <value column="Name" original="Drop Shipment">شحن مباشر</value>
+ </row>
+ <row id="10227" trl="Y">
+  <value column="Name" original="Self-Service">الخدمة الذاتية</value>
+ </row>
+ <row id="10399" trl="Y">
+  <value column="Name" original="RMA Type">نوع تصريح الإرجاع</value>
+ </row>
+ <row id="10406" trl="Y">
+  <value column="Name" original="RMA Type">نوع تصريح الإرجاع</value>
+ </row>
+ <row id="10409" trl="Y">
+  <value column="Name" original="Drop Shipment">شحن مباشر</value>
+ </row>
+ <row id="10410" trl="Y">
+  <value column="Name" original="Drop Shipment">شحن مباشر</value>
+ </row>
+ <row id="10411" trl="Y">
+  <value column="Name" original="Drop Shipment">شحن مباشر</value>
+ </row>
+ <row id="10412" trl="Y">
+  <value column="Name" original="Drop Shipment">شحن مباشر</value>
+ </row>
+ <row id="10414" trl="Y">
+  <value column="Name" original="Drop Shipment">شحن مباشر</value>
+ </row>
+ <row id="10591" trl="Y">
+  <value column="Name" original="Open Balance">الرصيد المفتوح</value>
+ </row>
+ <row id="10592" trl="Y">
+  <value column="Name" original="Open Balance">الرصيد المفتوح</value>
+ </row>
+ <row id="10596" trl="Y">
+  <value column="Name" original="Open Balance">الرصيد المفتوح</value>
+ </row>
+ <row id="10597" trl="Y">
+  <value column="Name" original="Open Balance">الرصيد المفتوح</value>
+ </row>
+ <row id="10598" trl="Y">
+  <value column="Name" original="Open Balance">الرصيد المفتوح</value>
+ </row>
+ <row id="10601" trl="Y">
+  <value column="Name" original="Open Balance">الرصيد المفتوح</value>
+ </row>
+ <row id="10815" trl="Y">
+  <value column="Name" original="Quantity">الكمية</value>
+ </row>
+ <row id="10816" trl="Y">
+  <value column="Name" original="Price">السعر</value>
+ </row>
+ <row id="10817" trl="Y">
+  <value column="Name" original="Quantity">الكمية</value>
+ </row>
+ <row id="10818" trl="Y">
+  <value column="Name" original="Price">السعر</value>
+ </row>
+ <row id="10821" trl="Y">
+  <value column="Name" original="Quantity">الكمية</value>
+ </row>
+ <row id="10822" trl="Y">
+  <value column="Name" original="Price">السعر</value>
+ </row>
+ <row id="10823" trl="Y">
+  <value column="Name" original="Quantity">الكمية</value>
+ </row>
+ <row id="10824" trl="Y">
+  <value column="Name" original="Price">السعر</value>
+ </row>
+ <row id="10825" trl="Y">
+  <value column="Name" original="Quantity">الكمية</value>
+ </row>
+ <row id="10826" trl="Y">
+  <value column="Name" original="Quantity">الكمية</value>
+ </row>
+ <row id="10827" trl="Y">
+  <value column="Name" original="Price">السعر</value>
+ </row>
+ <row id="10828" trl="Y">
+  <value column="Name" original="Quantity">الكمية</value>
+ </row>
+ <row id="10829" trl="Y">
+  <value column="Name" original="Price">السعر</value>
+ </row>
+ <row id="10830" trl="Y">
+  <value column="Name" original="Quantity">الكمية</value>
+ </row>
+ <row id="10992" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="11208" trl="Y">
+  <value column="Name" original="Currency Type">نوع العملة</value>
+ </row>
+ <row id="11210" trl="Y">
+  <value column="Name" original="Invoice Batch">دفعة الفواتير</value>
+ </row>
+ <row id="11229" trl="Y">
+  <value column="Name" original="Invoice Batch">دفعة الفواتير</value>
+ </row>
+ <row id="11239" trl="Y">
+  <value column="Name" original="Price">السعر</value>
+ </row>
+ <row id="11241" trl="Y">
+  <value column="Name" original="Quantity">الكمية</value>
+ </row>
+ <row id="11295" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="11306" trl="Y">
+  <value column="Name" original="Drop Shipment">شحن مباشر</value>
+ </row>
+ <row id="11309" trl="Y">
+  <value column="Name" original="Freight Category">فئة الشحن</value>
+ </row>
+ <row id="11319" trl="Y">
+  <value column="Name" original="Verify BOM Structure">التحقق من هيكل قائمة المواد</value>
+ </row>
+ <row id="11329" trl="Y">
+  <value column="Name" original="Self-Service">الخدمة الذاتية</value>
+ </row>
+ <row id="11436" trl="Y">
+  <value column="Name" original="Self-Service">الخدمة الذاتية</value>
+ </row>
+ <row id="11472" trl="Y">
+  <value column="Name" original="Self-Service">الخدمة الذاتية</value>
+ </row>
+ <row id="11625" trl="Y">
+  <value column="Name" original="Self-Service">الخدمة الذاتية</value>
+ </row>
+ <row id="11631" trl="Y">
+  <value column="Name" original="Self-Service">الخدمة الذاتية</value>
+ </row>
+ <row id="11637" trl="Y">
+  <value column="Name" original="Self-Service">الخدمة الذاتية</value>
+ </row>
+ <row id="11656" trl="Y">
+  <value column="Name" original="Self-Service">الخدمة الذاتية</value>
+ </row>
+ <row id="11662" trl="Y">
+  <value column="Name" original="Self-Service">الخدمة الذاتية</value>
+ </row>
+ <row id="11671" trl="Y">
+  <value column="Name" original="Self-Service">الخدمة الذاتية</value>
+ </row>
+ <row id="11927" trl="Y">
+  <value column="Name" original="Self-Service">الخدمة الذاتية</value>
+ </row>
+ <row id="12046" trl="Y">
+  <value column="Name" original="Self-Service">الخدمة الذاتية</value>
+ </row>
+ <row id="12148" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="12161" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="12165" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="12166" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="12167" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="12168" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="12169" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="12170" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="12171" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="12172" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="12182" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="12188" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="12194" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="12250" trl="Y">
+  <value column="Name" original="Lost Sales Qty">كمية المبيعات المفقودة</value>
+ </row>
+ <row id="12253" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="12262" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="12272" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="12284" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="12308" trl="Y">
+  <value column="Name" original="Price">السعر</value>
+ </row>
+ <row id="12312" trl="Y">
+  <value column="Name" original="Quantity">الكمية</value>
+ </row>
+ <row id="12331" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="12347" trl="Y">
+  <value column="Name" original="Cost Adjustment">تسوية التكلفة</value>
+ </row>
+ <row id="12350" trl="Y">
+  <value column="Name" original="Cost Adjustment">تسوية التكلفة</value>
+ </row>
+ <row id="12352" trl="Y">
+  <value column="Name" original="Cost Adjustment">تسوية التكلفة</value>
+ </row>
+ <row id="12437" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="12457" trl="Y">
+  <value column="Name" original="Lost Sales Qty">كمية المبيعات المفقودة</value>
+ </row>
+ <row id="12462" trl="Y">
+  <value column="Name" original="Price">السعر</value>
+ </row>
+ <row id="12466" trl="Y">
+  <value column="Name" original="Quantity">الكمية</value>
+ </row>
+ <row id="12484" trl="Y">
+  <value column="Name" original="Requisition">طلب الشراء الداخلي</value>
+ </row>
+ <row id="12700" trl="Y">
+  <value column="Name" original="Min Shelf Life %">الحد الأدنى لمدة الصلاحية %</value>
+ </row>
+ <row id="12723" trl="Y">
+  <value column="Name" original="Credit Status">حالة الائتمان</value>
+ </row>
+ <row id="12724" trl="Y">
+  <value column="Name" original="Open Balance">الرصيد المفتوح</value>
+ </row>
+ <row id="12732" trl="Y">
+  <value column="Name" original="Language">اللغة</value>
+ </row>
+ <row id="12735" trl="Y">
+  <value column="Name" original="Link Organization">ربط المنظمة</value>
+ </row>
+ <row id="12744" trl="Y">
+  <value column="Name" original="Lost Sales Qty">كمية المبيعات المفقودة</value>
+ </row>
+ <row id="12996" trl="Y">
+  <value column="Name" original="Project Type">نوع المشروع</value>
+ </row>
+ <row id="13013" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="13015" trl="Y">
+  <value column="Name" original="Interest Area">مجال الاهتمام</value>
+ </row>
+ <row id="13387" trl="Y">
+  <value column="Name" original="Self-Service">الخدمة الذاتية</value>
+ </row>
+ <row id="13409" trl="Y">
+  <value column="Name" original="Self-Service">الخدمة الذاتية</value>
+ </row>
+ <row id="53257" trl="Y">
+  <value column="Name" original="Dunning Grace Date">تاريخ مهلة المطالبة</value>
+ </row>
+ <row id="53378" trl="Y">
+  <value column="Name" original="Business Partner ">الشريك التجاري</value>
+ </row>
+ <row id="53475" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="53493" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="53498" trl="Y">
+  <value column="Name" original="Quantity">الكمية</value>
+ </row>
+ <row id="53584" trl="Y">
+  <value column="Name" original="Freight Category">فئة الشحن</value>
+ </row>
+ <row id="53585" trl="Y">
+  <value column="Name" original="Drop Shipment">شحن مباشر</value>
+ </row>
+ <row id="53594" trl="Y">
+  <value column="Name" original="Verify BOM Structure">التحقق من هيكل قائمة المواد</value>
+ </row>
+ <row id="53610" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="53612" trl="Y">
+  <value column="Name" original="Self-Service">الخدمة الذاتية</value>
+ </row>
+ <row id="53625" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="53759" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="53763" trl="Y">
+  <value column="Name" original="Quantity">الكمية</value>
+ </row>
+ <row id="53776" trl="Y">
+  <value column="Name" original="Quantity">الكمية</value>
+ </row>
+ <row id="53797" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="53882" trl="Y">
+  <value column="Name" original="Freight Category">فئة الشحن</value>
+ </row>
+ <row id="53883" trl="Y">
+  <value column="Name" original="Drop Shipment">شحن مباشر</value>
+ </row>
+ <row id="53892" trl="Y">
+  <value column="Name" original="Verify BOM Structure">التحقق من هيكل قائمة المواد</value>
+ </row>
+ <row id="53908" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="53910" trl="Y">
+  <value column="Name" original="Self-Service">الخدمة الذاتية</value>
+ </row>
+ <row id="53955" trl="Y">
+  <value column="Name" original="Min Shelf Life %">الحد الأدنى لمدة الصلاحية %</value>
+ </row>
+ <row id="53985" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="54095" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="54132" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="54149" trl="Y">
+  <value column="Name" original="Quantity">الكمية</value>
+ </row>
+ <row id="54556" trl="Y">
+  <value column="Name" original="Dunning Grace Date">تاريخ مهلة المطالبة</value>
+ </row>
+ <row id="55364" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="55410" trl="Y">
+  <value column="Name" original="Drop Ship Business Partner">شريك الشحن المباشر</value>
+ </row>
+ <row id="55411" trl="Y">
+  <value column="Name" original="Drop Shipment Location">عنوان الشحن المباشر</value>
+ </row>
+ <row id="55412" trl="Y">
+  <value column="Name" original="Drop Shipment Contact">جهة اتصال الشحن المباشر</value>
+ </row>
+ <row id="55413" trl="Y">
+  <value column="Name" original="Drop Ship Business Partner">شريك الشحن المباشر</value>
+ </row>
+ <row id="55414" trl="Y">
+  <value column="Name" original="Drop Shipment Location">عنوان الشحن المباشر</value>
+ </row>
+ <row id="55415" trl="Y">
+  <value column="Name" original="Drop Shipment Contact">جهة اتصال الشحن المباشر</value>
+ </row>
+ <row id="55419" trl="Y">
+  <value column="Name" original="Drop Shipment">شحن مباشر</value>
+ </row>
+ <row id="55425" trl="Y">
+  <value column="Name" original="Drop Shipment Location">عنوان الشحن المباشر</value>
+ </row>
+ <row id="55426" trl="Y">
+  <value column="Name" original="Drop Shipment">شحن مباشر</value>
+ </row>
+ <row id="55427" trl="Y">
+  <value column="Name" original="Drop Ship Business Partner">شريك الشحن المباشر</value>
+ </row>
+ <row id="55428" trl="Y">
+  <value column="Name" original="Drop Shipment Contact">جهة اتصال الشحن المباشر</value>
+ </row>
+ <row id="55429" trl="Y">
+  <value column="Name" original="Drop Ship Business Partner">شريك الشحن المباشر</value>
+ </row>
+ <row id="55430" trl="Y">
+  <value column="Name" original="Drop Shipment Location">عنوان الشحن المباشر</value>
+ </row>
+ <row id="55431" trl="Y">
+  <value column="Name" original="Drop Shipment Contact">جهة اتصال الشحن المباشر</value>
+ </row>
+ <row id="55539" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="55744" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="56380" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="56438" trl="Y">
+  <value column="Name" original="Requisition">طلب الشراء الداخلي</value>
+ </row>
+ <row id="56446" trl="Y">
+  <value column="Name" original="Freight Category">فئة الشحن</value>
+ </row>
+ <row id="56696" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="56906" trl="Y">
+  <value column="Name" original="Promotion Code">رمز العرض الترويجي</value>
+ </row>
+ <row id="57391" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="57733" trl="Y">
+  <value column="Name" original="Drop Shipment">شحن مباشر</value>
+ </row>
+ <row id="57734" trl="Y">
+  <value column="Name" original="Drop Ship Business Partner">شريك الشحن المباشر</value>
+ </row>
+ <row id="57735" trl="Y">
+  <value column="Name" original="Drop Shipment Location">عنوان الشحن المباشر</value>
+ </row>
+ <row id="57736" trl="Y">
+  <value column="Name" original="Drop Shipment Contact">جهة اتصال الشحن المباشر</value>
+ </row>
+ <row id="57761" trl="Y">
+  <value column="Name" original="Customer Return">مرتجع العميل</value>
+ </row>
+ <row id="57765" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="57769" trl="Y">
+  <value column="Name" original="Quantity">الكمية</value>
+ </row>
+ <row id="57814" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="57829" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="57871" trl="Y">
+  <value column="Name" original="Drop Shipment">شحن مباشر</value>
+ </row>
+ <row id="57872" trl="Y">
+  <value column="Name" original="Drop Ship Business Partner">شريك الشحن المباشر</value>
+ </row>
+ <row id="57873" trl="Y">
+  <value column="Name" original="Drop Shipment Location">عنوان الشحن المباشر</value>
+ </row>
+ <row id="57874" trl="Y">
+  <value column="Name" original="Drop Shipment Contact">جهة اتصال الشحن المباشر</value>
+ </row>
+ <row id="57900" trl="Y">
+  <value column="Name" original="Return to Vendor">إرجاع إلى المورد</value>
+ </row>
+ <row id="57904" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="57908" trl="Y">
+  <value column="Name" original="Quantity">الكمية</value>
+ </row>
+ <row id="57942" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="57957" trl="Y">
+  <value column="Name" original="RMA Type">نوع تصريح الإرجاع</value>
+ </row>
+ <row id="57981" trl="Y">
+  <value column="Name" original="PO Tax exempt">معفى من ضريبة الشراء</value>
+ </row>
+ <row id="58029" trl="Y">
+  <value column="Name" original="Order Source">مصدر الطلب</value>
+ </row>
+ <row id="58037" trl="Y">
+  <value column="Name" original="Order Source">مصدر الطلب</value>
+ </row>
+ <row id="58070" trl="Y">
+  <value column="Name" original="Relation Type">نوع العلاقة</value>
+ </row>
+ <row id="58086" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="58109" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="58119" trl="Y">
+  <value column="Name" original="Quantity">الكمية</value>
+ </row>
+ <row id="58306" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="58571" trl="Y">
+  <value column="Name" original="Is Manufacturer">مُصنِّع</value>
+ </row>
+ <row id="58780" trl="Y">
+  <value column="Name" original="Order Source">مصدر الطلب</value>
+ </row>
+ <row id="59004" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="59338" trl="Y">
+  <value column="Name" original="Currency Type">نوع العملة</value>
+ </row>
+ <row id="59351" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="59376" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="59380" trl="Y">
+  <value column="Name" original="Currency Type">نوع العملة</value>
+ </row>
+ <row id="59761" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="59796" trl="Y">
+  <value column="Name" original="Freight Category">فئة الشحن</value>
+ </row>
+ <row id="59797" trl="Y">
+  <value column="Name" original="Drop Shipment">شحن مباشر</value>
+ </row>
+ <row id="59806" trl="Y">
+  <value column="Name" original="Verify BOM Structure">التحقق من هيكل قائمة المواد</value>
+ </row>
+ <row id="59822" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="59824" trl="Y">
+  <value column="Name" original="Self-Service">الخدمة الذاتية</value>
+ </row>
+ <row id="60922" trl="Y">
+  <value column="Name" original="Pay Schedule valid">جدول الدفع صالح</value>
+ </row>
+ <row id="60923" trl="Y">
+  <value column="Name" original="Pay Schedule valid">جدول الدفع صالح</value>
+ </row>
+ <row id="60927" trl="Y">
+  <value column="Name" original="Cash Plan">خطة النقدية</value>
+ </row>
+ <row id="60946" trl="Y">
+  <value column="Name" original="Cash Plan Line">بند خطة النقدية</value>
+ </row>
+ <row id="60953" trl="Y">
+  <value column="Name" original="Cash Plan">خطة النقدية</value>
+ </row>
+ <row id="60961" trl="Y">
+  <value column="Name" original="Quantity">الكمية</value>
+ </row>
+ <row id="60970" trl="Y">
+  <value column="Name" original="Cash Plan Line">بند خطة النقدية</value>
+ </row>
+ <row id="60971" trl="Y">
+  <value column="Name" original="Cash Plan Line">بند خطة النقدية</value>
+ </row>
+ <row id="60972" trl="Y">
+  <value column="Name" original="Cash Plan Line">بند خطة النقدية</value>
+ </row>
+ <row id="60973" trl="Y">
+  <value column="Name" original="Cash Plan Line">بند خطة النقدية</value>
+ </row>
+ <row id="61976" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="61977" trl="Y">
+  <value column="Name" original="Quality Test">اختبار الجودة</value>
+ </row>
+ <row id="61990" trl="Y">
+  <value column="Name" original="Quality Test">اختبار الجودة</value>
+ </row>
+ <row id="61993" trl="Y">
+  <value column="Name" original="Quality Test">اختبار الجودة</value>
+ </row>
+ <row id="62003" trl="Y">
+  <value column="Name" original="Part Type">نوع القطعة</value>
+ </row>
+ <row id="62008" trl="Y">
+  <value column="Name" original="Part Type">نوع القطعة</value>
+ </row>
+ <row id="62010" trl="Y">
+  <value column="Name" original="Part Type">نوع القطعة</value>
+ </row>
+ <row id="62250" trl="Y">
+  <value column="Name" original="Process Order">معالجة الطلب</value>
+ </row>
+ <row id="62265" trl="Y">
+  <value column="Name" original="Self-Service">الخدمة الذاتية</value>
+ </row>
+ <row id="62269" trl="Y">
+  <value column="Name" original="Invoice Partner">شريك الفاتورة</value>
+ </row>
+ <row id="62271" trl="Y">
+  <value column="Name" original="Invoice Location">عنوان الفاتورة</value>
+ </row>
+ <row id="62273" trl="Y">
+  <value column="Name" original="Invoice Contact">جهة اتصال الفاتورة</value>
+ </row>
+ <row id="62277" trl="Y">
+  <value column="Name" original="Drop Shipment">شحن مباشر</value>
+ </row>
+ <row id="62278" trl="Y">
+  <value column="Name" original="Drop Ship Business Partner">شريك الشحن المباشر</value>
+ </row>
+ <row id="62279" trl="Y">
+  <value column="Name" original="Drop Shipment Location">عنوان الشحن المباشر</value>
+ </row>
+ <row id="62280" trl="Y">
+  <value column="Name" original="Drop Shipment Contact">جهة اتصال الشحن المباشر</value>
+ </row>
+ <row id="62284" trl="Y">
+  <value column="Name" original="Freight Category">فئة الشحن</value>
+ </row>
+ <row id="62289" trl="Y">
+  <value column="Name" original="Currency Type">نوع العملة</value>
+ </row>
+ <row id="62296" trl="Y">
+  <value column="Name" original="Promotion Code">رمز العرض الترويجي</value>
+ </row>
+ <row id="62307" trl="Y">
+  <value column="Name" original="Pay Schedule valid">جدول الدفع صالح</value>
+ </row>
+ <row id="62308" trl="Y">
+  <value column="Name" original="Copy Lines">نسخ البنود</value>
+ </row>
+ <row id="62309" trl="Y">
+  <value column="Name" original="Process Order">معالجة الطلب</value>
+ </row>
+ <row id="62312" trl="Y">
+  <value column="Name" original="Order Source">مصدر الطلب</value>
+ </row>
+ <row id="62313" trl="Y">
+  <value column="Name" original="Cash Plan Line">بند خطة النقدية</value>
+ </row>
+ <row id="62317" trl="Y">
+  <value column="Name" original="Linked Order">الطلب المرتبط</value>
+ </row>
+ <row id="62346" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="62349" trl="Y">
+  <value column="Name" original="Quantity">الكمية</value>
+ </row>
+ <row id="62356" trl="Y">
+  <value column="Name" original="Price">السعر</value>
+ </row>
+ <row id="62369" trl="Y">
+  <value column="Name" original="Lost Sales Qty">كمية المبيعات المفقودة</value>
+ </row>
+ <row id="62726" trl="Y">
+  <value column="Name" original="Dunning Grace Date">تاريخ مهلة المطالبة</value>
+ </row>
+ <row id="62754" trl="Y">
+  <value column="Name" original="Min Shelf Life %">الحد الأدنى لمدة الصلاحية %</value>
+ </row>
+ <row id="62768" trl="Y">
+  <value column="Name" original="Credit Status">حالة الائتمان</value>
+ </row>
+ <row id="62769" trl="Y">
+  <value column="Name" original="Open Balance">الرصيد المفتوح</value>
+ </row>
+ <row id="62772" trl="Y">
+  <value column="Name" original="PO Tax exempt">معفى من ضريبة الشراء</value>
+ </row>
+ <row id="62779" trl="Y">
+  <value column="Name" original="Language">اللغة</value>
+ </row>
+ <row id="62897" trl="Y">
+  <value column="Name" original="Self-Service">الخدمة الذاتية</value>
+ </row>
+ <row id="62932" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="62945" trl="Y">
+  <value column="Name" original="Drop Shipment">شحن مباشر</value>
+ </row>
+ <row id="62947" trl="Y">
+  <value column="Name" original="Invoice Contact">جهة اتصال الفاتورة</value>
+ </row>
+ <row id="62948" trl="Y">
+  <value column="Name" original="Invoice Location">عنوان الفاتورة</value>
+ </row>
+ <row id="62950" trl="Y">
+  <value column="Name" original="Invoice Partner">شريك الفاتورة</value>
+ </row>
+ <row id="62952" trl="Y">
+  <value column="Name" original="Lost Sales Qty">كمية المبيعات المفقودة</value>
+ </row>
+ <row id="62962" trl="Y">
+  <value column="Name" original="Price">السعر</value>
+ </row>
+ <row id="62970" trl="Y">
+  <value column="Name" original="Quantity">الكمية</value>
+ </row>
+ <row id="200008" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="200201" trl="Y">
+  <value column="Name" original="Currency Type">نوع العملة</value>
+ </row>
+ <row id="200222" trl="Y">
+  <value column="Name" original="Currency Type">نوع العملة</value>
+ </row>
+ <row id="200271" trl="Y">
+  <value column="Name" original="Create Production from Order Line">إنشاء إنتاج من بند الطلب</value>
+ </row>
+ <row id="200272" trl="Y">
+  <value column="Name" original="Create Shipment from Order Line">إنشاء شحنة من بند الطلب</value>
+ </row>
+ <row id="200297" trl="Y">
+  <value column="Name" original="Part Type">نوع القطعة</value>
+ </row>
+ <row id="200441" trl="Y">
+  <value column="Name" original="POS Payment">دفع نقطة البيع</value>
+ </row>
+ <row id="200471" trl="Y">
+  <value column="Name" original="POS Payment">دفع نقطة البيع</value>
+ </row>
+ <row id="200524" trl="Y">
+  <value column="Name" original="GL Journal Generator">مولد قيود اليومية</value>
+ </row>
+ <row id="200527" trl="Y">
+  <value column="Name" original="GL Journal Generator">مولد قيود اليومية</value>
+ </row>
+ <row id="200599" trl="Y">
+  <value column="Name" original="Copy Lines">نسخ البنود</value>
+ </row>
+ <row id="200622" trl="Y">
+  <value column="Name" original="Is Manufacturer">مُصنِّع</value>
+ </row>
+ <row id="200678" trl="Y">
+  <value column="Name" original="Currency Type">نوع العملة</value>
+ </row>
+ <row id="200702" trl="Y">
+  <value column="Name" original="Payment Transaction">معاملة الدفع</value>
+ </row>
+ <row id="200712" trl="Y">
+  <value column="Name" original="Self-Service">الخدمة الذاتية</value>
+ </row>
+ <row id="200756" trl="Y">
+  <value column="Name" original="Quotation">عرض سعر</value>
+ </row>
+ <row id="200762" trl="Y">
+  <value column="Name" original="Online Transaction History">سجل المعاملات الإلكترونية</value>
+ </row>
+ <row id="201606" trl="Y">
+  <value column="Name" original="Invoice Location">عنوان الفاتورة</value>
+ </row>
+ <row id="201609" trl="Y">
+  <value column="Name" original="Privileged Rate">سعر تفضيلي</value>
+ </row>
+ <row id="201611" trl="Y">
+  <value column="Name" original="Linked Order">الطلب المرتبط</value>
+ </row>
+ <row id="201613" trl="Y">
+  <value column="Name" original="Online Shipping Sales Order Rate Inquiry">استعلام سعر الشحن لأمر البيع</value>
+ </row>
+ <row id="201773" trl="Y">
+  <value column="Name" original="Context Help">مساعدة سياقية</value>
+ </row>
+ <row id="201782" trl="Y">
+  <value column="Name" original="Context Help">مساعدة سياقية</value>
+ </row>
+ <row id="201805" trl="Y">
+  <value column="Name" original="Context Help">مساعدة سياقية</value>
+ </row>
+ <row id="201807" trl="Y">
+  <value column="Name" original="Context Help">مساعدة سياقية</value>
+ </row>
+ <row id="201809" trl="Y">
+  <value column="Name" original="Context Help">مساعدة سياقية</value>
+ </row>
+ <row id="201811" trl="Y">
+  <value column="Name" original="Context Help">مساعدة سياقية</value>
+ </row>
+ <row id="201814" trl="Y">
+  <value column="Name" original="Context Help">مساعدة سياقية</value>
+ </row>
+ <row id="201816" trl="Y">
+  <value column="Name" original="Context Help">مساعدة سياقية</value>
+ </row>
+ <row id="201827" trl="Y">
+  <value column="Name" original="Privileged Rate">سعر تفضيلي</value>
+ </row>
+ <row id="201875" trl="Y">
+  <value column="Name" original="Context Help">مساعدة سياقية</value>
+ </row>
+ <row id="202325" trl="Y">
+  <value column="Name" original="Cost Adjustment">تسوية التكلفة</value>
+ </row>
+ <row id="202329" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="202858" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="202866" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="204146" trl="Y">
+  <value column="Name" original="Currency Type">نوع العملة</value>
+ </row>
+ <row id="204250" trl="Y">
+  <value column="Name" original="Context Help">مساعدة سياقية</value>
+ </row>
+ <row id="204403" trl="Y">
+  <value column="Name" original="Document Status">حالة المستند</value>
+ </row>
+ <row id="204420" trl="Y">
+  <value column="Name" original="Document Status">حالة المستند</value>
+ </row>
+ <row id="204435" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="205784" trl="Y">
+  <value column="Name" original="Currency Type">نوع العملة</value>
+ </row>
+ <row id="205794" trl="Y">
+  <value column="Name" original="Self-Service">الخدمة الذاتية</value>
+ </row>
+ <row id="206515" trl="Y">
+  <value column="Name" original="Invoice Contact">جهة اتصال الفاتورة</value>
+ </row>
+ <row id="206518" trl="Y">
+  <value column="Name" original="Invoice Contact">جهة اتصال الفاتورة</value>
+ </row>
+ <row id="206699" trl="Y">
+  <value column="Name" original="Document Status">حالة المستند</value>
+ </row>
+ <row id="206709" trl="Y">
+  <value column="Name" original="Document Status">حالة المستند</value>
+ </row>
+ <row id="206717" trl="Y">
+  <value column="Name" original="Document Status">حالة المستند</value>
+ </row>
+ <row id="206775" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="206793" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="206946" trl="Y">
+  <value column="Name" original="Currency Type">نوع العملة</value>
+ </row>
+ <row id="207023" trl="Y">
+  <value column="Name" original="Label Category">فئة التسمية</value>
+ </row>
+ <row id="207024" trl="Y">
+  <value column="Name" original="Label Category">فئة التسمية</value>
+ </row>
+ <row id="207033" trl="Y">
+  <value column="Name" original="Label Category">فئة التسمية</value>
+ </row>
+ <row id="207039" trl="Y">
+  <value column="Name" original="Label Category">فئة التسمية</value>
+ </row>
+ <row id="207049" trl="Y">
+  <value column="Name" original="Label">تسمية</value>
+ </row>
+ <row id="207050" trl="Y">
+  <value column="Name" original="Label">تسمية</value>
+ </row>
+ <row id="207051" trl="Y">
+  <value column="Name" original="Label Category">فئة التسمية</value>
+ </row>
+ <row id="207057" trl="Y">
+  <value column="Name" original="Label">تسمية</value>
+ </row>
+ <row id="207103" trl="Y">
+  <value column="Name" original="Label Assignment">تعيين التسميات</value>
+ </row>
+ <row id="207104" trl="Y">
+  <value column="Name" original="Label Assignment">تعيين التسميات</value>
+ </row>
+ <row id="207105" trl="Y">
+  <value column="Name" original="Label">تسمية</value>
+ </row>
+ <row id="207632" trl="Y">
+  <value column="Name" original="Linked Order">الطلب المرتبط</value>
+ </row>
+ <row id="208206" trl="Y">
+  <value column="Name" original="Department">القسم</value>
+ </row>
+ <row id="208210" trl="Y">
+  <value column="Name" original="Cost Center">مركز التكلفة</value>
+ </row>
+ <row id="208213" trl="Y">
+  <value column="Name" original="Department">القسم</value>
+ </row>
+ <row id="208214" trl="Y">
+  <value column="Name" original="Cost Center">مركز التكلفة</value>
+ </row>
+ <row id="208482" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="208484" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="208530" trl="Y">
+  <value column="Name" original="Theme Customization">تخصيص السمة</value>
+ </row>
+ <row id="208538" trl="Y">
+  <value column="Name" original="Theme Customization">تخصيص السمة</value>
+ </row>
+ <row id="208549" trl="Y">
+  <value column="Name" original="Department">القسم</value>
+ </row>
+ <row id="208550" trl="Y">
+  <value column="Name" original="Cost Center">مركز التكلفة</value>
+ </row>
+ <row id="208551" trl="Y">
+  <value column="Name" original="Department">القسم</value>
+ </row>
+ <row id="208552" trl="Y">
+  <value column="Name" original="Cost Center">مركز التكلفة</value>
+ </row>
+ <row id="208553" trl="Y">
+  <value column="Name" original="Department">القسم</value>
+ </row>
+ <row id="208554" trl="Y">
+  <value column="Name" original="Cost Center">مركز التكلفة</value>
+ </row>
+ <row id="208555" trl="Y">
+  <value column="Name" original="Department">القسم</value>
+ </row>
+ <row id="208556" trl="Y">
+  <value column="Name" original="Cost Center">مركز التكلفة</value>
+ </row>
+ <row id="208557" trl="Y">
+  <value column="Name" original="Department">القسم</value>
+ </row>
+ <row id="208558" trl="Y">
+  <value column="Name" original="Cost Center">مركز التكلفة</value>
+ </row>
+ <row id="208559" trl="Y">
+  <value column="Name" original="Department">القسم</value>
+ </row>
+ <row id="208560" trl="Y">
+  <value column="Name" original="Cost Center">مركز التكلفة</value>
+ </row>
+ <row id="208561" trl="Y">
+  <value column="Name" original="Department">القسم</value>
+ </row>
+ <row id="208562" trl="Y">
+  <value column="Name" original="Cost Center">مركز التكلفة</value>
+ </row>
+ <row id="208563" trl="Y">
+  <value column="Name" original="Department">القسم</value>
+ </row>
+ <row id="208564" trl="Y">
+  <value column="Name" original="Cost Center">مركز التكلفة</value>
+ </row>
+ <row id="208565" trl="Y">
+  <value column="Name" original="Department">القسم</value>
+ </row>
+ <row id="208566" trl="Y">
+  <value column="Name" original="Cost Center">مركز التكلفة</value>
+ </row>
+ <row id="208567" trl="Y">
+  <value column="Name" original="Department">القسم</value>
+ </row>
+ <row id="208568" trl="Y">
+  <value column="Name" original="Cost Center">مركز التكلفة</value>
+ </row>
+ <row id="208569" trl="Y">
+  <value column="Name" original="Department">القسم</value>
+ </row>
+ <row id="208570" trl="Y">
+  <value column="Name" original="Cost Center">مركز التكلفة</value>
+ </row>
+ <row id="208571" trl="Y">
+  <value column="Name" original="Cost Center">مركز التكلفة</value>
+ </row>
+ <row id="208572" trl="Y">
+  <value column="Name" original="Department">القسم</value>
+ </row>
+ <row id="208573" trl="Y">
+  <value column="Name" original="Cost Center">مركز التكلفة</value>
+ </row>
+ <row id="208574" trl="Y">
+  <value column="Name" original="Department">القسم</value>
+ </row>
+ <row id="208575" trl="Y">
+  <value column="Name" original="Cost Center">مركز التكلفة</value>
+ </row>
+ <row id="208576" trl="Y">
+  <value column="Name" original="Department">القسم</value>
+ </row>
+ <row id="208577" trl="Y">
+  <value column="Name" original="Cost Center">مركز التكلفة</value>
+ </row>
+ <row id="208578" trl="Y">
+  <value column="Name" original="Department">القسم</value>
+ </row>
+ <row id="208579" trl="Y">
+  <value column="Name" original="Cost Center">مركز التكلفة</value>
+ </row>
+ <row id="208580" trl="Y">
+  <value column="Name" original="Department">القسم</value>
+ </row>
+ <row id="208581" trl="Y">
+  <value column="Name" original="Cost Center">مركز التكلفة</value>
+ </row>
+ <row id="208582" trl="Y">
+  <value column="Name" original="Department">القسم</value>
+ </row>
+ <row id="208583" trl="Y">
+  <value column="Name" original="Cost Center">مركز التكلفة</value>
+ </row>
+ <row id="208584" trl="Y">
+  <value column="Name" original="Department">القسم</value>
+ </row>
+ <row id="208585" trl="Y">
+  <value column="Name" original="Cost Center">مركز التكلفة</value>
+ </row>
+ <row id="208586" trl="Y">
+  <value column="Name" original="Department">القسم</value>
+ </row>
+ <row id="208587" trl="Y">
+  <value column="Name" original="Cost Center">مركز التكلفة</value>
+ </row>
+ <row id="208588" trl="Y">
+  <value column="Name" original="Department">القسم</value>
+ </row>
+ <row id="208589" trl="Y">
+  <value column="Name" original="Cost Center">مركز التكلفة</value>
+ </row>
+ <row id="208590" trl="Y">
+  <value column="Name" original="Department">القسم</value>
+ </row>
+ <row id="208591" trl="Y">
+  <value column="Name" original="Cost Center">مركز التكلفة</value>
+ </row>
+ <row id="208592" trl="Y">
+  <value column="Name" original="Department">القسم</value>
+ </row>
+ <row id="208593" trl="Y">
+  <value column="Name" original="Cost Center">مركز التكلفة</value>
+ </row>
+ <row id="208594" trl="Y">
+  <value column="Name" original="Department">القسم</value>
+ </row>
+ <row id="208595" trl="Y">
+  <value column="Name" original="Cost Center">مركز التكلفة</value>
+ </row>
+ <row id="208596" trl="Y">
+  <value column="Name" original="Department">القسم</value>
+ </row>
+ <row id="208597" trl="Y">
+  <value column="Name" original="Cost Center">مركز التكلفة</value>
+ </row>
+ <row id="208598" trl="Y">
+  <value column="Name" original="Department">القسم</value>
+ </row>
+ <row id="208599" trl="Y">
+  <value column="Name" original="Cost Center">مركز التكلفة</value>
+ </row>
+ <row id="208600" trl="Y">
+  <value column="Name" original="Department">القسم</value>
+ </row>
+ <row id="208601" trl="Y">
+  <value column="Name" original="Cost Center">مركز التكلفة</value>
+ </row>
+ <row id="208602" trl="Y">
+  <value column="Name" original="Department">القسم</value>
+ </row>
+ <row id="208603" trl="Y">
+  <value column="Name" original="Cost Center">مركز التكلفة</value>
+ </row>
+ <row id="208604" trl="Y">
+  <value column="Name" original="Department">القسم</value>
+ </row>
+ <row id="208605" trl="Y">
+  <value column="Name" original="Cost Center">مركز التكلفة</value>
+ </row>
+ <row id="208606" trl="Y">
+  <value column="Name" original="Department">القسم</value>
+ </row>
+ <row id="208607" trl="Y">
+  <value column="Name" original="Cost Center">مركز التكلفة</value>
+ </row>
+ <row id="208608" trl="Y">
+  <value column="Name" original="Department">القسم</value>
+ </row>
+ <row id="208609" trl="Y">
+  <value column="Name" original="Cost Center">مركز التكلفة</value>
+ </row>
+ <row id="208610" trl="Y">
+  <value column="Name" original="Department">القسم</value>
+ </row>
+ <row id="208611" trl="Y">
+  <value column="Name" original="Cost Center">مركز التكلفة</value>
+ </row>
+ <row id="208612" trl="Y">
+  <value column="Name" original="Department">القسم</value>
+ </row>
+ <row id="208613" trl="Y">
+  <value column="Name" original="Cost Center">مركز التكلفة</value>
+ </row>
+ <row id="208614" trl="Y">
+  <value column="Name" original="Department">القسم</value>
+ </row>
+ <row id="208615" trl="Y">
+  <value column="Name" original="Cost Center">مركز التكلفة</value>
+ </row>
+ <row id="208616" trl="Y">
+  <value column="Name" original="Department">القسم</value>
+ </row>
+ <row id="208617" trl="Y">
+  <value column="Name" original="Cost Center">مركز التكلفة</value>
+ </row>
+ <row id="208618" trl="Y">
+  <value column="Name" original="Department">القسم</value>
+ </row>
+ <row id="208619" trl="Y">
+  <value column="Name" original="Cost Center">مركز التكلفة</value>
+ </row>
+ <row id="208620" trl="Y">
+  <value column="Name" original="Department">القسم</value>
+ </row>
+ <row id="208621" trl="Y">
+  <value column="Name" original="Cost Center">مركز التكلفة</value>
+ </row>
+ <row id="208622" trl="Y">
+  <value column="Name" original="Department">القسم</value>
+ </row>
+ <row id="208623" trl="Y">
+  <value column="Name" original="Cost Center">مركز التكلفة</value>
+ </row>
+ <row id="208624" trl="Y">
+  <value column="Name" original="Department">القسم</value>
+ </row>
+ <row id="208625" trl="Y">
+  <value column="Name" original="Cost Center">مركز التكلفة</value>
+ </row>
+ <row id="208626" trl="Y">
+  <value column="Name" original="Department">القسم</value>
+ </row>
+ <row id="208627" trl="Y">
+  <value column="Name" original="Cost Center">مركز التكلفة</value>
+ </row>
+ <row id="208628" trl="Y">
+  <value column="Name" original="Department">القسم</value>
+ </row>
+ <row id="208629" trl="Y">
+  <value column="Name" original="Cost Center">مركز التكلفة</value>
+ </row>
+ <row id="208630" trl="Y">
+  <value column="Name" original="Department">القسم</value>
+ </row>
+ <row id="208631" trl="Y">
+  <value column="Name" original="Cost Center">مركز التكلفة</value>
+ </row>
+ <row id="208632" trl="Y">
+  <value column="Name" original="Department">القسم</value>
+ </row>
+ <row id="208633" trl="Y">
+  <value column="Name" original="Cost Center">مركز التكلفة</value>
+ </row>
+ <row id="208634" trl="Y">
+  <value column="Name" original="Department">القسم</value>
+ </row>
+ <row id="208635" trl="Y">
+  <value column="Name" original="Cost Center">مركز التكلفة</value>
+ </row>
+ <row id="208636" trl="Y">
+  <value column="Name" original="Department">القسم</value>
+ </row>
+ <row id="208637" trl="Y">
+  <value column="Name" original="Cost Center">مركز التكلفة</value>
+ </row>
+ <row id="208638" trl="Y">
+  <value column="Name" original="Department">القسم</value>
+ </row>
+ <row id="208639" trl="Y">
+  <value column="Name" original="Cost Center">مركز التكلفة</value>
+ </row>
+ <row id="208640" trl="Y">
+  <value column="Name" original="Department">القسم</value>
+ </row>
+ <row id="208641" trl="Y">
+  <value column="Name" original="Cost Center">مركز التكلفة</value>
+ </row>
+ <row id="208642" trl="Y">
+  <value column="Name" original="Department">القسم</value>
+ </row>
+ <row id="208643" trl="Y">
+  <value column="Name" original="Cost Center">مركز التكلفة</value>
+ </row>
+ <row id="208644" trl="Y">
+  <value column="Name" original="Department">القسم</value>
+ </row>
+ <row id="208656" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="208660" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="208672" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="208677" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+ <row id="208692" trl="Y">
+  <value column="Name" original="Quantity">الكمية</value>
+ </row>
+ <row id="208703" trl="Y">
+  <value column="Name" original="Department">القسم</value>
+ </row>
+ <row id="208704" trl="Y">
+  <value column="Name" original="Cost Center">مركز التكلفة</value>
+ </row>
+ <row id="208971" trl="Y">
+  <value column="Name" original="Document Status">حالة المستند</value>
+ </row>
+ <row id="7820206" trl="Y">
+  <value column="Name" original="Attribute Set Instance">نسخة مجموعة الخصائص</value>
+ </row>
+</idempiereTrl>
