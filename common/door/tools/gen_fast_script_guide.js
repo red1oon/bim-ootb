@@ -34,9 +34,12 @@ function needs(entry, vocab) {
 }
 const UNIT = { m: 'metres', h: 'hours', day: 'day number' };
 const inputText = (i) => '`' + i.name + '`' + (i.unit ? ' (' + (UNIT[i.unit] || i.unit) + ')' : '') + (i.required ? '' : ' (optional)');
+const oldNamesLead = 'Old names that still run, each the same as the verb it points at: ';
 function verbTable(vocab) {
-  const rows = vocab.verbs.map(e => '| `' + e.verb + '` | ' + e.title + ' | ' + (e.inputs.map(inputText).concat(e.calls && e.calls.rest ? ['further `column=value` filters (optional)'] : []).join(', ') || 'none') + ' | ' + e.harm + ' | ' + e.actors.join(', ') + ' | ' + needs(e, vocab) + ' |');
-  return ['| Verb | What it does | Inputs | Harm | Who may use it | Needs |', '|---|---|---|---|---|---|'].concat(rows).join('\n');
+  // §50 (7) bim-compiler prompts/CLI_ERP_IVR.md: an old name kept as an alias gets no row of its own; one line under the table names each and what it is now
+  const rows = vocab.verbs.filter(e => !e.alias_of).map(e => '| `' + e.verb + '` | ' + e.title + ' | ' + (e.inputs.map(inputText).concat(e.calls && e.calls.rest ? ['further `column=value` filters (optional)'] : []).join(', ') || 'none') + ' | ' + e.harm + ' | ' + e.actors.join(', ') + ' | ' + needs(e, vocab) + ' |');
+  const old = vocab.verbs.filter(e => e.alias_of).map(e => '`' + e.verb + '` → `' + e.alias_of + '`');
+  return ['| Verb | What it does | Inputs | Harm | Who may use it | Needs |', '|---|---|---|---|---|---|'].concat(rows).join('\n') + (old.length ? '\n\n' + oldNamesLead + old.join(' · ') : '');
 }
 const GEN = (md) => { const a = md.indexOf('<!-- GEN:verbs -->'), b = md.indexOf('<!-- /GEN:verbs -->'); return a < 0 || b < a ? null : { a: a + '<!-- GEN:verbs -->'.length, b }; };
 
@@ -89,7 +92,7 @@ function runBlock(run, ctx) {   // ctx {flat, root, files:[{name,text}]}
     p.stdout.on('data', d => { o += d; }); p.stderr.on('data', d => { e += d; }); const t = setTimeout(() => p.kill(), 420000); p.on('close', code => { clearTimeout(t); const back = (x) => x.split(path.join(ctx.flat, 'fast_guide_')).join('/tmp/fast_guide_'); res({ code, out: back(o).trim(), err: back(e).trim() }); });   // the run's own folder is printed as the /tmp/ path the page shows   // the timer is cleared when the command ends (it kept every --refresh alive for 7 minutes)
   });
 }
-module.exports = { parsePage, verbTable, needs, normalise, cutLines, sameOut, runBlock, makeFlatFolder, loadVocab, GEN, FLAT };
+module.exports = { oldNamesLead, parsePage, verbTable, needs, normalise, cutLines, sameOut, runBlock, makeFlatFolder, loadVocab, GEN, FLAT };
 
 if (require.main === module) (async () => {
   const a = process.argv.slice(2), pages = String(a[a.indexOf('--page') + 1] || '').split(',').filter(Boolean), L = (m) => console.log('§FAST_GUIDE_GEN ' + m);

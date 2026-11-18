@@ -89,8 +89,14 @@ function makeShell(o) {
   // one word-line (or door line): returns the envelopes of the lines it ran. print(text) for the screen, shown(line) for the `→` line
   async function run(text, io) {   // text: a word-line or a door line; or {key: 'Up'} while a pick menu is open
     const envs = [];
-    const exec = async (line, shownLine, match) => {
-      io.arrow((shownLine || line) + (match ? ' | ' + match : ''));
+    // §50 (3) bim-compiler prompts/CLI_ERP_IVR.md: a GUESS of the core (probe: cd as a kind, a record by number, then by id) shows its → line only once it answered ok; a refused guess is said in the log only (probes: W-RED1-RECORD R11 falsifier, every guess shown)
+    const exec = async (line, shownLine, match, probe) => {
+      const arrow = () => io.arrow((shownLine || line) + (match ? ' | ' + match : ''));
+      if (!probe || BREAK() === 'probes') arrow();
+      else { const e0 = await execRun(line); if (e0 && e0.status === 'ok') arrow(); else say('probe refused line=' + JSON.stringify(line) + ' status=' + (e0 && e0.status)); return e0; }
+      return execRun(line);
+    };
+    const execRun = async (line) => {
       // §22.6 the held answer: a READ line the session already ran is served from its answer (said so), never re-run; any line that is not a read forgets them all
       const key = BREAK() === 'stale' && held.size ? held.keys().next().value : line;   // W-RED1-LS falsifier: serve the answer of another line (must FAIL L1)
       if (held.has(key)) { io.print('(answer of the line above, not re-run)'); say('held line=' + JSON.stringify(line)); return Object.assign({}, held.get(key), { held: true }); }
@@ -114,7 +120,7 @@ function makeShell(o) {
     for (;;) {
       st = r.state; if (core.menuOpen(st) && io.menu) io.menu(r.screen); else r.screen.forEach(io.print); warmTo(st.building);
       if (!r.effects.length) break;
-      const ef = r.effects[0], e = await exec(ef.line, ef.shown, ef.match);
+      const ef = r.effects[0], e = await exec(ef.line, ef.shown, ef.match, ef.probe);
       if (!e) break;
       if (ef.purpose === 'run') { const v = viewOf(e, ef.match); envs.push(v); await io.show(v, ef.view, ef.draw, ef.ctx); offerOf(v); st = core.step(st, { result: { purpose: 'ran', envelope: v } }).state; r = { state: st, effects: r.effects.slice(1), screen: [] }; continue; }   // §46 A4: the record's offers follow the answer
       r = core.step(st, { result: { purpose: ef.purpose, envelope: e } });

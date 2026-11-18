@@ -661,7 +661,7 @@ function createRecord(O, a) {
     const res = persistGroup(O, tx.groupOps()), main = res.filter(o => o.table === K.table)[0] || res[res.length - 1], id = main.fields ? main.fields[K.key] : main.id;
     const saved = O.rows('SELECT * FROM ' + K.table + ' WHERE ' + K.key + '=?', [id])[0] || {};
     console.log = log; say('new kind=' + K.name + ' tab=' + tab.id + ' given=' + set.join(',') + ' fields=' + Object.keys(row).length + ' id=' + id + ' number=' + (K.numCol ? saved[K.numCol] : '') + ' ms=' + (Date.now() - t0));
-    return { number: K.numCol ? saved[K.numCol] : null, kind: K.name, table: K.table, id, docStatus: saved.docstatus == null ? null : saved.docstatus, given: set, defaulted: Object.keys(row).length - set.length, filled: Object.keys(row).filter(c => set.map(x => x.toLowerCase()).indexOf(c) < 0), record: saved, ops: res.map(o => ({ op_type: o.op_type, table: o.table })), ...(R ? { role: R.info } : {}) };
+    return { ...(K.numCol ? { number: saved[K.numCol] } : {}), kind: K.name, table: K.table, id, docStatus: saved.docstatus == null ? null : saved.docstatus, given: set, defaulted: Object.keys(row).length - set.length, filled: Object.keys(row).filter(c => set.map(x => x.toLowerCase()).indexOf(c) < 0), record: saved, ops: res.map(o => ({ op_type: o.op_type, table: o.table })), ...(R ? { role: R.info } : {}) };
   } finally { console.log = log; }
 }
 // ── mis.update / mis.delete (bim-compiler prompts/CLI_ERP_IVR.md §12): the WINDOW's edit and delete, never a raw UPDATE/DELETE ──
@@ -720,7 +720,7 @@ function updateRecord(O, a) {
     const res = persistGroup(O, tx.groupOps()), saved = O.rows('SELECT * FROM ' + K.table + ' WHERE ' + K.key + '=?', [r[K.key]])[0] || {};
     console.log = log; const changed = Object.keys(changes), derived = changed.filter(c => set.map(x => x.toLowerCase()).indexOf(c) < 0);
     say('update kind=' + K.name + ' id=' + r[K.key] + ' given=' + set.join(',') + ' changed=' + changed.join(',') + ' derived=' + derived.join(',') + (res.length ? '' : ' NO-OP') + ' ms=' + (Date.now() - t0));
-    return { number: K.numCol ? saved[K.numCol] : null, kind: K.name, table: K.table, id: r[K.key], noop: res.length === 0, given: set, changed, derived, record: saved, ops: res.map(o => ({ op_type: o.op_type, table: o.table })) };
+    return { ...(K.numCol ? { number: saved[K.numCol] } : {}), kind: K.name, table: K.table, id: r[K.key], noop: res.length === 0, given: set, changed, derived, record: saved, ops: res.map(o => ({ op_type: o.op_type, table: o.table })) };
   } finally { console.log = log; }
 }
 function deleteRecord(O, a) {
