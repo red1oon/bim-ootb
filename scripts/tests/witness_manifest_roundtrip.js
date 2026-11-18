@@ -24,10 +24,11 @@
 //   C11 a second --write changes 0 bytes; two sites added in either order give the same bytes; a removed site leaves the other order's bytes
 //   C12 nothing new reaches the browser: no site, string literal or precache entry names modules.json
 //   C13 every order-forcing candidate edge is reviewed (deps / uses / notDeps) and depsReview.tool is today's sha
-//   C14 the declared order holds: 0 refusals, deps_declared > 0     C15 owner and witnesses equal their extractors
+//   C14 the declared order holds: 0 refusals, deps_declared > 0     C15 owner equals its extractor (witnesses are not stored: B-3 REVISED, #3326)
 //   RED R6 swap a confirmed deps pair (both tags) · R7 a hand edit of one generated tag · R8 a <script src> outside the markers · R9 one manifest
 //   line with its keys reordered · R10 a dep that loads later + a boot module depending on a lazy one · R11 an owner typed by hand · R12 one
-//   candidate removed from all three lists -> INCONCLUSIVE unreviewed=1. Each must be DETECTED.
+//   candidate removed from all three lists -> INCONCLUSIVE unreviewed=1 · R13 a test-only change keeps C15 ok (#3326; FAILS on the code before it) ·
+//   R14 a `witnesses` key typed back is refused · R15 --witnesses on a non-module exits 1. Each must be DETECTED.
 // NOT JUDGED in the viewer and ERP: their load order (no deps declared there yet); R5 proves the refusal code on a synthetic edge.
 // INCONCLUSIVE: an app with 0 sites, a parse failure, a red control not detected, the vm run throws, bump or the audit prints no line, C5 judged 0.
 // Command: node scripts/tests/witness_manifest_roundtrip.js   (~1 min; --skip-c7 leaves out the bump.js dry run; --skip-c9 the git-history claim,
@@ -204,7 +205,7 @@ for (const app of SRC_APPS) {
   { const w1 = MS.write(ROOT, app), w2 = MS.write(ROOT, app, { texts: w1.out });
     const again = [...w2.out].filter(([f, t]) => t !== w1.out.get(f)).length;
     const page = m.pages ? null : Object.keys(m.order).find(f => f.endsWith('.html') && m.order[f].filter(z => z.kind === 'tag').length > 2);
-    const tagI = m.order[page].findIndex(z => z.kind === 'tag'), withSites = (adds) => { const mm = clone(m); adds.forEach(n => { mm.modules[app + '/' + n] = { v: 1, load: 'boot', lazyGroup: null, precache: true, deps: [], uses: [], notDeps: [], owner: '', witnesses: [] }; mm.order[page].splice(tagI + 1 + mm.order[page].slice(tagI + 1).findIndex(() => true), 0, { kind: 'tag', as: n }); mm.precacheOrder.splice(3, 0, n); }); return mm; };
+    const tagI = m.order[page].findIndex(z => z.kind === 'tag'), withSites = (adds) => { const mm = clone(m); adds.forEach(n => { mm.modules[app + '/' + n] = { v: 1, load: 'boot', lazyGroup: null, precache: true, deps: [], uses: [], notDeps: [], owner: '' }; mm.order[page].splice(tagI + 1 + mm.order[page].slice(tagI + 1).findIndex(() => true), 0, { kind: 'tag', as: n }); mm.precacheOrder.splice(3, 0, n); }); return mm; };
     const step = (mm, texts) => { const w = MS.write(ROOT, app, { manifest: mm, texts }); return w.fails.length ? null : w.out; };
     const both = withSites(['zz_b1_b.js', 'zz_b1_a.js']);   // the merged manifest: same lines whichever side merged first
     const ab = step(both, step(withSites(['zz_b1_a.js']))), ba = step(both, step(withSites(['zz_b1_b.js']))), ab2 = ab && step(both, ab);
@@ -222,7 +223,7 @@ for (const app of SRC_APPS) {
     claim('C12', named === 0 && pre === 0, `app=${app} sites_or_literals_naming_it=${named} precache_entries_naming_it=${pre} (comments may name it; nothing fetches it)`); }
   claim('C13', rv && !rv.unreviewed.length && info.shaOk, `app=${app} forcing_edges=${rv ? rv.forcing.length : '-'} unreviewed=${rv ? rv.unreviewed.length : '-'} review_sha=${info.shaOk ? 'same' : 'CHANGED'} unrecorded_call_uses=${rv ? rv.unrecordedUses.length : '-'} hand_deps=${info.hand}`);
   claim('C14', !info.order.errors.length && info.order.judged > 0, `app=${app} deps_declared=${info.order.judged} refusals=${info.order.errors.length}`);
-  claim('C15', !info.ownerBad && !info.witBad, `app=${app} owner_mismatch=${info.ownerBad} witnesses_mismatch=${info.witBad} owner_gap=${info.ownerGap.length} witness_gap=${info.witGap.length}`);
+  claim('C15', !info.ownerBad, `app=${app} owner_mismatch=${info.ownerBad} owner_gap=${info.ownerGap.length} witness_gap=${info.witGap.length} (witnesses are not stored: B-3 REVISED, #3326)`);
   if (rv && rv.unreviewed.length) inconclusive.push(`C13: ${app} has unreviewed=${rv.unreviewed.length} order-forcing edge(s) (§DEPS_UNREVIEWED lines): a person puts each in deps / uses / notDeps`);
   B1.m = m; B1.app = app;
 }
@@ -279,6 +280,28 @@ if (B1.m) {
   { const mm = clone(m), f = Object.keys(mm.modules).find(k => mm.modules[k].deps.length), d = mm.modules[f].deps[0]; mm.modules[f].deps = mm.modules[f].deps.slice(1);
     const c = MS.check(ROOT, app, { manifestText: MS.serialize(mm) }), u = c.info.review ? c.info.review.unreviewed.length : -1;
     redSay('R12', u === 1, `${f} -> ${d} removed from deps/uses/notDeps: unreviewed=${u} (the check reads INCONCLUSIVE, never PASS)`); }
+  // R13-R15 (owner B-3 REVISED, #3326; bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md §B-3R SPEC). ISSUE: "a PR that only ADDS A TEST naming a module fails
+  //   C15 until modules.json is regenerated" (4 PRs paid that commit on 2026-11-18). R13 plants one new test in a non-git temp tree (symlinks to this tree's
+  //   top-level entries, so tracked_files walks it and the real tree is never written) and leaves modules.json alone: C15 must stay ok AND the plant must
+  //   be seen by the extractor and by `gen_manifest.js --witnesses`. On the code before #3326 this FAILS (witnesses_mismatch=1).
+  { const tmp = fs.mkdtempSync(path.join(require('os').tmpdir(), 'w-manifest-r13-')), f = Object.keys(m.modules).find(k => /\.js$/.test(k) && !/(^|\/)lib\//.test(k));
+    try {
+      for (const n of fs.readdirSync(ROOT)) if (n !== '.git') fs.symlinkSync(path.join(ROOT, n), path.join(tmp, n));
+      const plant = 'zz_r13/tests/witness_zz_r13_plant.js';
+      fs.mkdirSync(path.join(tmp, 'zz_r13', 'tests'), { recursive: true }); fs.writeFileSync(path.join(tmp, plant), `// planted by W-MANIFEST-ROUNDTRIP R13\nrequire('../../${f}');\n`);
+      const c = MS.check(tmp, app), seen = (MS.witnessesOf(tmp, app, [f]).get(f) || []).includes(plant);
+      const cli = cp.spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'gen_manifest.js'), '--witnesses', f, '--root', tmp], { encoding: 'utf8' }), cliSeen = cli.status === 0 && cli.stdout.split('\n').some(l => l.trim() === plant);
+      const witBad = c.info.witBad || 0;   // the field the code before #3326 counted; 0 or absent after
+      redSay('R13', seen && cliSeen && !c.info.ownerBad && !witBad && !c.fails.length, `a test-only change (${plant} names ${f}), modules.json untouched: extractor_sees_it=${seen ? 'Y' : 'N'} --witnesses_sees_it=${cliSeen ? 'Y' : 'N'} owner_mismatch=${c.info.ownerBad} witnesses_mismatch=${witBad} check_fails=${c.fails.length}`);
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+  }
+  // R14: the old key typed back into one module line is refused (schema: no `witnesses` property)
+  { const raw = fs.readFileSync(path.join(ROOT, MS.sourceFile(app)), 'utf8').split('\n'), i = raw.findIndex((l, k) => k > raw.indexOf(' "modules": {') && /^  "/.test(l));
+    raw[i] = raw[i].replace(/\}(,?)$/, ',"witnesses":[]}$1'); const c = MS.check(ROOT, app, { manifestText: raw.join('\n') });
+    redSay('R14', c.fails.some(x => /schema/.test(x) && /additional/i.test(x)), `"witnesses":[] added to ${MS.sourceFile(app)}:${i + 1}: ${(c.fails[0] || 'no failure').slice(0, 120)}`); }
+  // R15: --witnesses on a file that is no module exits 1 with §MANIFEST_ERR (it never prints an empty list as an answer)
+  { const cli = cp.spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'gen_manifest.js'), '--witnesses', 'zz_no_such_module.js', '--root', ROOT], { encoding: 'utf8' });
+    redSay('R15', cli.status === 1 && /^§MANIFEST_ERR zz_no_such_module\.js is no module/m.test(cli.stdout), `--witnesses zz_no_such_module.js: exit=${cli.status}`); }
 }
 if (red.some(x => !x)) inconclusive.push('a red control was not detected');
 
