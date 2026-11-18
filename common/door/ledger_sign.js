@@ -110,7 +110,7 @@ async function verify(opfile, keyfile) {
   const db = new SQL.Database(); K.ensureTable(db);
   const cols = ['id', 'op_uuid', 'timestamp', 'op_type', 'parameters', 'input_guids', 'output_guid', 'undone', 'prev_hash', 'op_hash', 'sig', 'gid', 'branch_id', 'user_tag'];
   rows.forEach((r) => db.run('INSERT INTO kernel_ops (' + cols.join(',') + ') VALUES (' + cols.map(() => '?').join(',') + ')', cols.map((c) => r[c] !== undefined ? r[c] : null)));
-  let pub = key().pub; if (keyfile) pub = crypto.createPublicKey(crypto.createPrivateKey({ key: JSON.parse(fs.readFileSync(keyfile, 'utf8')), format: 'jwk' }));
+  let pub = key().pub; if (keyfile) { const j = JSON.parse(fs.readFileSync(keyfile, 'utf8')); pub = j.d ? crypto.createPublicKey(crypto.createPrivateKey({ key: j, format: 'jwk' })) : crypto.createPublicKey({ key: j, format: 'jwk' }); }   // a private JWK (the door's own) or a public one (the page's: ErpSigner.pubKeyJwk)
   K.setSigner({ sign: async () => null, verify: async (hex, sig) => { try { return sig ? crypto.verify('sha256', Buffer.from(hex, 'utf8'), { key: pub, dsaEncoding: 'ieee-p1363' }, Buffer.from(sig, 'hex')) : false; } catch (e) { return false; } } });
   const v = await K.verifyChain(db);
   say(v.ok ? 'verify OK len=' + v.len + ' tip=' + v.tip.slice(0, 12) : 'verify FAIL brokeAt=' + v.brokeAt + ' why=' + v.why);

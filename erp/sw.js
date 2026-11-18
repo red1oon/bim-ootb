@@ -12,7 +12,7 @@
 // bump (skipWaiting+clients.claim precache the new shell), so SWR strands a user at most one load post-deploy.
 // v1100 (2026-11-17) §19.5 (bim-compiler VOCAB_MESSAGE_CATALOG.md): the How To box's "Did you mean" line — help_search.js?v=4, common/help/help_dym.js?v=1, common/door/assist_core.js?v=1, chrome.json help.dym
 // v1101 (2026-11-17) §19.6 (bim-compiler VOCAB_MESSAGE_CATALOG.md): the How To box's `#<number>` and New — common/help/help_grammar.js?v=1, help_actions.js?v=1, chrome.json help.doc.*/help.reserved
-const CACHE_VERSION = 'v1108';   // bump on each deploy; detail goes in the commit message. History to v1063: SW_VERSION_HISTORY.md
+const CACHE_VERSION = 'v1109';   // bump on each deploy; detail goes in the commit message. History to v1063: SW_VERSION_HISTORY.md
 // v810 (2026-10-03) UI locales: a machine-catalogue entry gets the same fmt as a pack hit (de/ms login title lost its
 //   'Kernel-ERP — ' prefix — found by fetching the live page, ERP_UI_LOCALES.md §L7).
 // v809 (2026-10-03) UI locales (bim-compiler prompts/ERP_UI_LOCALES.md, W-ERP-I18N): erp_i18n.js + i18n/chrome.json +
@@ -183,6 +183,7 @@ const PRECACHE_ASSETS = [
   'erp_replay.js',
   'erp_search.js',
   'erp_signer.js',
+  'ledger_file.js',    // §55 (bim-compiler prompts/CLI_ERP_IVR.md): the page's reader/appender of the shared ledger file
   'erp_attrib.js',     // T1 (W-T1-ATTRIB): PIN → audit-metadata attribution (device key stays the signer)
   'tip_fold.js',       // T7 (W-T7-INC) fix 3: memoized tip-folds (moveDeltaFor precedent, ERP-side)
   'erp_shard.js',      // T7 (W-T7-INC) fix 4/4b: signed shard boundary + lazy verified history

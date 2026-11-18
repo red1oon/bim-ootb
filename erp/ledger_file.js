@@ -54,7 +54,8 @@
   async function appendRows(dir, name, rows, opts) {
     if (!rows || !rows.length) return { ok: true, tip: opts && opts.tip };
     var tip = (opts && opts.tip) || GENESIS, lock;
-    try { lock = await lockAcquire(dir, name, opts); } catch (e) { _say('append refused lock: ' + e.message); return { ok: false, why: 'lock' }; }
+    if (opts && opts.locked) lock = { release: function () { return Promise.resolve(); } };   // the caller (crud_overlay _withFreshSide) already holds the lock across hydrate -> seal -> append
+    else try { lock = await lockAcquire(dir, name, opts); } catch (e) { _say('append refused lock: ' + e.message); return { ok: false, why: 'lock' }; }
     try {
       var text = await _readText(dir, name), have = _rows(text), last = _tipOf(have);
       if (_brk() !== 'nocompare' && last !== tip) { _say('append refused tip moved rows=' + have.length + ' last=' + String(last).slice(0, 12) + ' known=' + String(tip).slice(0, 12)); return { ok: false, why: 'tip moved', tip: last, rows: have.length }; }
