@@ -335,8 +335,8 @@ var SEQUENCE_RULES = {
   IfcBuildingElementPart:{phase:'Architecture Envelope',sequence:5,resource:'MASON'},
   IfcDoor:{phase:'Architecture Closeup',sequence:8,resource:'CARPENTER'},
   IfcWindow:{phase:'Architecture Envelope',sequence:6,resource:'CARPENTER'},
-  IfcStair:{phase:'Architecture Envelope',sequence:6,resource:'CARPENTER'},
-  IfcStairFlight:{phase:'Architecture Envelope',sequence:6,resource:'CARPENTER'},
+  IfcStair:{phase:'Superstructure',sequence:4,resource:'CARPENTER'},
+  IfcStairFlight:{phase:'Superstructure',sequence:4,resource:'CARPENTER'},
   IfcRailing:{phase:'Architecture Envelope',sequence:6,resource:'CARPENTER'},
   IfcRamp:{phase:'Architecture Envelope',sequence:6,resource:'CONCRETE_GANG'},
   IfcRampFlight:{phase:'Architecture Envelope',sequence:6,resource:'CONCRETE_GANG'},
@@ -544,6 +544,11 @@ var SEQUENCE_NAME_OVERRIDES = [
   // phase Substructure at seq 4. Name overrides run AHEAD of the class lookup and groundworkSlabs
   // only mutates phase in place, so this rule wins for a slab that is a named finish — which is
   // correct: a wood finish floor is not slab-on-grade groundworks.
+  // ⚠ 2026-11-18 STAIRS GO UP WITH THE FRAME (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.24.1): IfcStair / IfcStairFlight moved from
+  // Architecture Envelope seq 6 to Superstructure seq 4 — permanent stairs are the site access stairs, set floor by floor with the frame
+  // (OSHA 1926.1052(b)(3) regulates walking on pan stairs before their treads are filled). This rule still copies the flight's class
+  // rule, so the stair parts below go with it; the "Architecture Envelope seq 6" target named in the notes below is the OLD flight rule.
+  // Railings are NOT moved: they go on after the flight.
   // §STAIR_MEMBER_ARCHITECTURE (2026-08-27, same witness/claim as the two rules above). A stair
   // component authored as IfcMember: the class rule sends IfcMember to Superstructure seq 3
   // (STEEL_ERECTOR, structural framing), so Duplex's stair stringer — spanning base -0.095 to top
@@ -597,8 +602,8 @@ var SEQUENCE_NAME_OVERRIDES = [
     classes: ['IfcMember', 'IfcSlab'],
     pattern: '^\\s*stair\\b',
     flags: 'i',
-    phase: 'Architecture Envelope',
-    sequence: 6,
+    phase: 'Superstructure',
+    sequence: 4,
     resource: 'CARPENTER'
   },
   {
