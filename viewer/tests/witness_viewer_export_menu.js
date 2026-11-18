@@ -120,7 +120,7 @@ const results = []; const ck = (id, ok, msg) => { results.push({ id, ok }); log(
     const words = await page.evaluate(async () => {
       const en = { pill: _trl('pill_export', null, 'Export'), db: _trl('ui_exp_db', null, 'Building (.db)') };
       let de = null;
-      try { if (window._TRL_LOADER && _TRL_LOADER.setLocale) { await _TRL_LOADER.setLocale('de_DE'); await new Promise((r) => setTimeout(r, 1500)); de = { pill: _trl('pill_export', null, 'Export'), db: _trl('ui_exp_db', null, 'Building (.db)'), bcfNone: _trl('ui_exp_bcf_none', null, 'no saved issues'), title: document.getElementById('pill-save').title }; } } catch (e) { de = { err: String(e) }; }
+      try { if (window._TRL_LOADER && window._TRL_LOADER.setLocale) { await window._TRL_LOADER.setLocale('de_DE'); await new Promise((r) => setTimeout(r, 1500)); de = { pill: _trl('pill_export', null, 'Export'), db: _trl('ui_exp_db', null, 'Building (.db)'), bcfNone: _trl('ui_exp_bcf_none', null, 'no saved issues'), title: document.getElementById('pill-save').title }; } } catch (e) { de = { err: String(e) }; }
       return { en, de };
     });
     log('§VIEWER_EXPORT_MENU_WITNESS E6 words=' + JSON.stringify(words));
