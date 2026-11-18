@@ -69,7 +69,12 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       const hit = await pg.evaluate(l => { const r = Array.from(document.querySelectorAll('span')).find(s => (s.textContent || '').indexOf(l) === 0 && s.parentElement && /\u270E/.test(s.parentElement.textContent)); if (!r) return false; r.parentElement.dispatchEvent(new PointerEvent('pointerup', { bubbles: true })); return true; }, label);   // a hub row: label + the ✎ mark
       await sleep(1500); return hit; };
     // type into the field of row <rowId> (a JSON text field): replace with fn(JSON) and fire the editor's own change event
-    const editJson = (rowId, fn) => pg.evaluate((rowId, src) => { const row = document.querySelector('[data-row-id="' + rowId + '"]'), inp = row && row.querySelector('input[type="text"]'); if (!inp) return 'no field';
+    // the editor row is rendered after the entry opens; a fixed sleep raced it on the runner (L3 'no field', bim-ootb #3333 CI run
+    // 44405784409, PASS on re-run) — so WAIT for the row by name, and on a timeout print which rows did exist.
+    const editJson = async (rowId, fn) => { await named('row ' + rowId, () => pg.waitForSelector('[data-row-id="' + rowId + '"] input[type="text"]', { timeout: 30000 }),
+        () => ({ rows: Array.from(document.querySelectorAll('[data-row-id]')).slice(0, 30).map(r => r.getAttribute('data-row-id')) }));
+      return editJsonNow(rowId, fn); };
+    const editJsonNow = (rowId, fn) => pg.evaluate((rowId, src) => { const row = document.querySelector('[data-row-id="' + rowId + '"]'), inp = row && row.querySelector('input[type="text"]'); if (!inp) return 'no field';
       const v = JSON.parse(inp.value), f = new Function('v', src); inp.value = JSON.stringify(f(v)); inp.dispatchEvent(new Event('change', { bubbles: true })); return inp.value; }, rowId, fn);
     // ---- L1 + L2: the rate pack ----
     const o1 = await openEntry('5D Rate Pack');
