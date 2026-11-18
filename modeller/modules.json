@@ -1,5 +1,5 @@
 {
- "app": "modeller", "schema": 1, "sw": "modeller/sw.js", "cacheVersion": "v299", "depsDeclared": true,
+ "app": "modeller", "schema": 1, "sw": "modeller/sw.js", "cacheVersion": "v300", "depsDeclared": true,
  "depsReview": {"by":"owner (B1-Q3, confirmed in one message)","on":"2026-11-18","tool":"5be36e5764e21887f547786edfcd6adb918d1b06f9e10c0a96924911c074ef2c"},
  "modules": {
   "common/comm/op_versions.js": {"v":1,"load":"lazy","lazyGroup":"modeller/modeller.html","precache":true,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/TEAMWORK_FRAMEWORK.md","witnesses":["erp/tests/witness_team_floor.js"]},

@@ -11,6 +11,7 @@
  *   REAL_REBAR      (LODUP_SRC_DB + LODUP_MARKS_JSON + LODUP_FRAME_JSON + LODUP_REF_IFC_REBAR) the JS beam-rebar sets exported IFC2X3 with the frame JSON: the same rooted class counts and the SAME GlobalId set as the oracle file.
  *   REAL_SHED       (LODUP_SHED_DB + LODUP_REF_IFC_SHED) the JS rebar + welds exported IFC4 with the DB frame as is: the same rooted class counts and the same GlobalId set.
  *   REAL_GUSSET     (optional LODUP_REF_IFC_GUSSET) the JS gusset joint: the same, including its IfcElementAssembly.
+ *   REAL_JOINTS     (LODUP_JOINT_DB + LODUP_FRAME_JSON; P4 FIX SPEC) the joints pack exported: the writer's MESH and the python SOLIDS PASS; BREAK_JOINTS_MESH: the old weld caps must FAIL MESH.
  *   PY_*            the python half (witness_lodup_ifc_check.py): ifcopenshell.validate 0 errors, closed wound solids, every product's bbox within 1 mm of the oracle's, names / diameters / lengths / Pset equal.
  *                   SKIP (never PASS) when ifcopenshell is not installed.
  *   DETERMINISM     two exports give the same SHA-256.
@@ -179,6 +180,15 @@ initSqlJs({ wasmBinary: wasmBinary }).then(function (SQL) {
     if (g1.ok) { var gt = Ifc.textOf(g1), gf = path.join(OUT, 'gussets_addon_js.ifc'); fs.writeFileSync(gf, gt); parityVs('REAL_GUSSET', gt, E.LODUP_REF_IFC_GUSSET, ''); if (!MAIN_BREAK) pyCheck(gf, E.LODUP_REF_IFC_GUSSET, 'GUSSET', ['--ignore-pset', 'Rule']); }
     // --ignore-pset Rule: the P5 gusset pack words the rule column from its rule rows ("+ shared fin-plate rows + gusset rows [default: ...]"), the oracle wrote "conn_rules.json / gusset_rules.json defaults":
     // a P5 wording difference (change rows were compared without the rule text), counted and printed, not an IFC defect.
+  }
+  // ---------------------------------------------------------------- REAL_JOINTS (P4 FIX SPEC): the joints pack exported IFC2X3 with the frame JSON's storeys; the writer's MESH and the python SOLIDS must PASS; the old weld caps must FAIL MESH
+  if (E.LODUP_JOINT_DB && frame) {
+    anyReal = true; var jdb = loadDb(SQL, E.LODUP_JOINT_DB), jinp = Reader.fromDb(jdb); jinp.callouts = []; jinp.inputs = {}; jinp.generated = function () { return []; };
+    var jr = Joint.run(jinp, rowsOf('joint_defaults.json'), { log: function () { } }), jels = elementsOf([{ id: 'joints', res: jr, inp: jinp }]), jo = optsBase('joints_addon.ifc', 'IFC2X3', frame), j1 = Ifc.build(jels, jo);
+    verdict('REAL_JOINTS_BUILD', j1.ok && j1.stats.mesh.open === 0 && j1.stats.mesh.closed > 0 && j1.stats.untraced === 0, 'ok=' + j1.ok + (j1.ok ? ' parts=' + j1.stats.parts + ' classes=' + JSON.stringify(j1.stats.classes) + ' mesh=' + JSON.stringify(j1.stats.mesh) + ' untraced=' + j1.stats.untraced : ' why=' + j1.why));
+    if (j1.ok && !MAIN_BREAK) { var jf = path.join(OUT, 'joints_addon_js.ifc'); fs.writeFileSync(jf, Ifc.textOf(j1)); pyCheck(jf, null, 'JOINTS');
+      var jb = Joint.run(jinp, rowsOf('joint_defaults.json'), { log: function () { }, breakWeldWinding: true }), jb1 = Ifc.build(elementsOf([{ id: 'joints', res: jb, inp: jinp }]), jo);
+      verdict('BREAK_JOINTS_MESH', jb1.ok && jb1.stats.mesh.open > 0, 'switch=on (the old weld caps): mesh=' + JSON.stringify(jb1.ok ? jb1.stats.mesh : null) + ' expected MESH=FAIL got MESH=' + (jb1.ok && jb1.stats.mesh.open > 0 ? 'FAIL' : 'PASS')); }
   }
   if (!anyReal) { verdict('REAL_PARITY', null, 'LODUP_SRC_DB / LODUP_MARKS_JSON / LODUP_FRAME_JSON / LODUP_REF_IFC_REBAR and LODUP_SHED_DB / LODUP_REF_IFC_SHED not set: the parity against the oracle files was NOT judged (SYNTH_TRUTH only)'); }
   console.log('§LODUP_IFC_OUT dir=' + OUT + ' (the exported files; private, not committed)');
