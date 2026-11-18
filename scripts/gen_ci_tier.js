@@ -11,7 +11,7 @@
 const fs = require('fs'), path = require('path'), cp = require('child_process');
 const RES = require('../witness_kit/results.js');
 const LIST = 'tests/ci_fast_tier.json';
-const BROWSER = /playwright|chromium|puppeteer|launchBrowser|find_browser/;
+const BROWSER = /playwright|chromium|puppeteer|launchBrowser|find_browser|e2e_harness/;   // e2e_harness starts puppeteer (measured: 2 runner reds, 2026-11-18)
 
 /** @returns {{list:object, why:Object<string,number>}} the list the cache says, keeping the committed `exclude` */
 function generate(root, limit) {
