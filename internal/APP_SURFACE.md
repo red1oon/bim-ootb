@@ -9,11 +9,11 @@ nothing. This index is the missing "go to definition".
 
 | | |
 |---|---:|
-| files scanned | 3436 |
-| distinct fields | 1866 |
+| files scanned | 3438 |
+| distinct fields | 1868 |
 | written only as `A.x`/`app.x` (invisible to an `APP.` grep) | 1599 |
-| read but never written (phantom) | 176 |
-| — of those, read from production code | 110 |
+| read but never written (phantom) | 178 |
+| — of those, read from production code | 112 |
 | — of those, with an untied write: NOT proven dead (R11) | 11 |
 
 ## Phantom fields — read, never written
@@ -146,9 +146,11 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP.glassReflDark` | `viewer/tests/witness_light_field_db.js:98` | no |
 | `APP.integrity` | `viewer/tests/witness_light_field_db.js:94` | no |
 | `APP.kernelOps` | `viewer/tm_lifecycle_api.js:713` | **yes** |
+| `APP.length` | `modeller/lod/joint_pack.js:342` | **yes** |
 | `APP.load` | `erp/tests/witness_bimdoc_live.js:311` | no |
 | `APP.lookup` | `erp/tests/witness_bimdoc_live.js:309` | no |
 | `APP.lvl` | `erp/ninja_stage.js:224` | **yes** |
+| `APP.map` | `modeller/lod/joint_pack.js:411` | **yes** |
 | `APP.master` | `erp/ninja_stage.js:225` | **yes** |
 | `APP.materializeZones` | `optics_hud.js:34` | **yes** |
 | `APP.n` | `modeller/dxf2analytical.js:28` | **yes** |
@@ -1723,6 +1725,7 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP.ledgerTickerCompositeOntoCanvas` | `viewer/cpe_ledger_ticker.js:241` *(as `A.`)* | 1 | 5 |
 | `APP.ledgerTickerDispose` | `viewer/cpe_ledger_ticker.js:285` *(as `A.`)* | 1 | 5 |
 | `APP.ledgerTickerRowText` | `viewer/cpe_ledger_ticker.js:263` *(as `A.`)* | 1 | 4 |
+| `APP.length` | — *phantom* | 0 | 7 |
 | `APP.libDb` | `viewer/city.js:718` *(as `A.`)* | 12 | 75 |
 | `APP.lightTheme` | `viewer/tools.js:649` *(as `A.`)* | 2 | 19 |
 | `APP.linearBeatBuild` | `viewer/cpe_linear_beat.js:47` *(as `A.`)* | 1 | 8 |
@@ -1745,6 +1748,7 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP.loadWizard` | `viewer/main.js:293` | 1 | 2 |
 | `APP.lookup` | — *phantom* | 0 | 1 |
 | `APP.lvl` | — *phantom* | 0 | 1 |
+| `APP.map` | — *phantom* | 0 | 1 |
 | `APP.markDirty` | `viewer/fx_still_refine.js:442` *(as `A.`)* | 4 | 462 |
 | `APP.markEdited` | `viewer/scene.js:678` *(as `A.`)* | 1 | 4 |
 | `APP.master` | — *phantom* | 0 | 1 |
