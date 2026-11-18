@@ -9,7 +9,7 @@ nothing. This index is the missing "go to definition".
 
 | | |
 |---|---:|
-| files scanned | 3440 |
+| files scanned | 3442 |
 | distinct fields | 1868 |
 | written only as `A.x`/`app.x` (invisible to an `APP.` grep) | 1599 |
 | read but never written (phantom) | 178 |
@@ -146,7 +146,7 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP.glassReflDark` | `viewer/tests/witness_light_field_db.js:98` | no |
 | `APP.integrity` | `viewer/tests/witness_light_field_db.js:94` | no |
 | `APP.kernelOps` | `viewer/tm_lifecycle_api.js:713` | **yes** |
-| `APP.length` | `modeller/lod/joint_pack.js:342` | **yes** |
+| `APP.length` | `modeller/lod/gusset_pack.js:30` | **yes** |
 | `APP.load` | `erp/tests/witness_bimdoc_live.js:311` | no |
 | `APP.lookup` | `erp/tests/witness_bimdoc_live.js:309` | no |
 | `APP.lvl` | `erp/ninja_stage.js:224` | **yes** |
@@ -1725,7 +1725,7 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP.ledgerTickerCompositeOntoCanvas` | `viewer/cpe_ledger_ticker.js:241` *(as `A.`)* | 1 | 5 |
 | `APP.ledgerTickerDispose` | `viewer/cpe_ledger_ticker.js:285` *(as `A.`)* | 1 | 5 |
 | `APP.ledgerTickerRowText` | `viewer/cpe_ledger_ticker.js:263` *(as `A.`)* | 1 | 4 |
-| `APP.length` | — *phantom* | 0 | 7 |
+| `APP.length` | — *phantom* | 0 | 16 |
 | `APP.libDb` | `viewer/city.js:718` *(as `A.`)* | 12 | 75 |
 | `APP.lightTheme` | `viewer/tools.js:649` *(as `A.`)* | 2 | 19 |
 | `APP.linearBeatBuild` | `viewer/cpe_linear_beat.js:47` *(as `A.`)* | 1 | 8 |
