@@ -214,6 +214,7 @@ function setupCpeSunCompass(A) {
     if (_built) return _info;
     _built = true;
     _disposed = false;
+    A._sunCompassTally = { shown: 0, held: 0 };   // §SUN_COMPASS_SHOWN — one count per bake
     var T = window.THREE;
     if (!T || !A.scene || typeof A.ifc2three !== 'function' || typeof A.sunPositionAt !== 'function') {
       console.log('§SUN_COMPASS INCONCLUSIVE — no THREE/scene/ifc2three/sun_path.js; nothing judged');
@@ -420,6 +421,7 @@ function setupCpeSunCompass(A) {
           'building) but the sun and the day-of-year are NOT: this film has no 4D cursor, and a ' +
           'sun position needs a real date. Bake with the buildup on to get them.');
       }
+      (A._sunCompassTally || (A._sunCompassTally = { shown: 0, held: 0 })).shown++;   // the rose stays drawn (§SUN_COMPASS_SHOWN)
       if (_sunRay) _sunRay.visible = false;
       if (_sunLift) _sunLift.visible = false;
       if (_sunDrop) _sunDrop.visible = false;
@@ -467,7 +469,9 @@ function setupCpeSunCompass(A) {
     //      fraction, which is what "resume as a next proper frame" means.
     // Frozen frames are also left OUT of the lit/dark tally: they are not evidence about the sun.
     var _holdAlpha = (typeof A._loadPathHudAlpha === 'number') ? A._loadPathHudAlpha : 1;
+    var _tally = A._sunCompassTally || (A._sunCompassTally = { shown: 0, held: 0 });   // §SUN_COMPASS_SHOWN
     if (_holdAlpha < 1) {
+      _tally.held++;
       if (_grp) _grp.visible = false;
       if (!_heldLogged) {
         _heldLogged = true;
@@ -477,6 +481,7 @@ function setupCpeSunCompass(A) {
       return _last;
     }
     if (_grp) _grp.visible = true;
+    _tally.shown++;
     _heldLogged = false;
 
     var sun = A.sunPositionAt(_geo.lat, _geo.lon, shown);
