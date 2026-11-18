@@ -579,15 +579,16 @@
   // EVERY non-undone op of that gid via the kernel verb (undoOp takes newest-first → REVERSE commit
   // order: status, then invoice, then ship); a gid-less op folds alone (back-compat). Group ops are
   // contiguous at the tip (one transaction), so the kernel verb never strays outside the gid — asserted.
+  // §61 (CLI_ERP_IVR): a ledger UNDO/REDO marker row is never a gesture, here or in undoOp/redoOp.
   function foldBackGroup(db, K) {
     var out = { gid: null, undone: [], labels: [] };
     try {
-      var r = db.exec('SELECT id, gid FROM kernel_ops WHERE undone=0 ORDER BY id DESC LIMIT 1');
+      var r = db.exec("SELECT id, gid FROM kernel_ops WHERE undone=0 AND op_type NOT IN ('UNDO','REDO') ORDER BY id DESC LIMIT 1");
       if (!r.length || !r[0].values.length) return out;
       out.gid = r[0].values[0][1] || null;
       var n = 1;
       if (out.gid) {
-        var c = db.exec('SELECT COUNT(*) FROM kernel_ops WHERE undone=0 AND gid=' + JSON.stringify(out.gid));
+        var c = db.exec("SELECT COUNT(*) FROM kernel_ops WHERE undone=0 AND op_type NOT IN ('UNDO','REDO') AND gid=" + JSON.stringify(out.gid));
         n = (c.length && c[0].values.length) ? Number(c[0].values[0][0]) : 1;
       }
       for (var i = 0; i < n; i++) { var u = K.undoOp(db); if (!u) break; out.undone.push(u); }
@@ -599,12 +600,12 @@
   function foldForwardGroup(db, K) {
     var out = { gid: null, redone: [], labels: [] };
     try {
-      var r = db.exec('SELECT id, gid FROM kernel_ops WHERE undone=1 ORDER BY id ASC LIMIT 1');
+      var r = db.exec("SELECT id, gid FROM kernel_ops WHERE undone=1 AND op_type NOT IN ('UNDO','REDO') ORDER BY id ASC LIMIT 1");
       if (!r.length || !r[0].values.length) return out;
       out.gid = r[0].values[0][1] || null;
       var n = 1;
       if (out.gid) {
-        var c = db.exec('SELECT COUNT(*) FROM kernel_ops WHERE undone=1 AND gid=' + JSON.stringify(out.gid));
+        var c = db.exec("SELECT COUNT(*) FROM kernel_ops WHERE undone=1 AND op_type NOT IN ('UNDO','REDO') AND gid=" + JSON.stringify(out.gid));
         n = (c.length && c[0].values.length) ? Number(c[0].values[0][0]) : 1;
       }
       for (var i = 0; i < n; i++) { var u = K.redoOp(db); if (!u) break; out.redone.push(u); }

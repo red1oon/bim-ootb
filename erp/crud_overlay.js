@@ -2272,10 +2272,33 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
   function _hydrateFromFile(SQL, K, cb) {
     _LF().readRows(LEDGER.dir, LEDGER.name).then(function (rows) {
       var db = new SQL.Database(); K.ensureTable(db); K.replayRowsInto(db, rows);
-      return _addPeers(rows).then(function () { return _admit(db, rows, K); }).then(function () { return Promise.resolve(K.verifyChain(db)); }).then(function (v) {
+      return _addPeers(rows).then(function () { return _admit(db, rows, K); }).then(function () { _applyMarkers(db, rows, K); return Promise.resolve(K.verifyChain(db)); }).then(function (v) {
         console.log('§OPLOG-HYDRATE ops=' + rows.length + ' tip=' + (v && v.tip ? v.tip : 'GENESIS') + ' source=ledger-file' + (v && v.ok === false ? ' verifyChain=FAIL(' + v.why + ')' : '') + (_EXCLUDED.rows ? ' excluded=' + _EXCLUDED.rows : '')); cb(db);
       });
     }).catch(function (e) { console.warn('§OPLOG-HYDRATE ledger-file error', e && e.message); var db = new SQL.Database(); K.ensureTable(db); cb(db); });
+  }
+  // _applyMarkers — §61 (bim-compiler prompts/CLI_ERP_IVR.md, W-LEDGER-UNDO): the file's UNDO/REDO rows, read by the ONE rule (KernelOps.foldMarkers, the door's too). A marker the page did not
+  //   admit (§59) is not applied; its targets get undone=1 in THIS in-memory sidecar only. window.__LEDGER_BREAK='nomarker' skips it (witness falsifier).
+  function _applyMarkers(db, rows, K) {
+    if (!K.foldMarkers || _ledgerBreak() === 'nomarker') return;
+    var bad = (_EXCLUDED && _EXCLUDED.why) || {}, m = K.foldMarkers(rows, function (r) { return !!bad[r.id]; });
+    if (!m.markers) return;
+    if (m.undone.length) { db.run("UPDATE kernel_ops SET undone=1 WHERE undone=0 AND op_uuid IN (" + m.undone.map(function (u) { return "'" + String(u).replace(/'/g, "''") + "'"; }).join(',') + ")"); db.__tipFoldCache = null; }
+    console.log('§LEDGER markers=' + m.markers + ' undone=' + m.undone.length);
+  }
+  // _ledgerMark — §61 rule 1: in file mode an undo/redo is ONE new signed row (UNDO/REDO, targets = the op_uuids the gesture fold just picked), committed under the file lock like any commit.
+  function _ledgerMark(K, kind, pick, after) {
+    _withFreshSide(K, function (freshDb, done) {
+      var g = pick(freshDb), list = kind === 'UNDO' ? g.undone : g.redone, ids = list.map(function (u) { return u.id; });
+      if (!ids.length) { console.log('§LEDGER ' + kind + ' nothing to ' + kind.toLowerCase()); done(); after(g, null); return; }
+      var r = freshDb.exec('SELECT op_uuid FROM kernel_ops WHERE id IN (' + ids.join(',') + ') ORDER BY id'), uuids = r.length ? r[0].values.map(function (v) { return v[0]; }) : [];
+      _serializeCommit(function () {
+        return Promise.resolve(K.commitGroup(freshDb, [{ op_type: kind, params: { op_type: kind, targets: uuids } }], _commitMeta())).then(function (res) {
+          if (!res || res.committed !== true) { console.warn('§LEDGER ' + kind + ' not committed ' + (res && res.reason)); after(g, null); return; }
+          return _sidePersist(K, freshDb, res.ids).then(function () { console.log('§LEDGER ' + kind + ' row id=' + res.ids[0] + ' targets=' + uuids.length + ' gid=' + (g.gid || 'none')); after(g, res.ids[0]); });
+        });
+      }).catch(function (e) { console.warn('§LEDGER ' + kind + ' error', e && e.message); }).then(function () { done(); }, function () { done(); });
+    });
   }
   // _admit — §59 (bim-compiler prompts/CLI_ERP_IVR.md): per-row ADMISSION. A row counts only if its signature verifies under this device's key or a pinned peer (v2: content hash, v1: op_hash; no signature: no).
   //   A group (gid) is admitted whole. Rows not admitted are marked undone=1 in THIS in-memory sidecar only (every fold reads undone=0), never in the file. Memoised by op_hash+sig. window.__LEDGER_BREAK='noenforce' skips it (witness falsifier).
@@ -2298,7 +2321,7 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
       rows.forEach(function (r) { if (r.gid != null && bad[r.id]) byGid[r.gid] = bad[r.id]; });
       rows.forEach(function (r) { if (r.gid != null && byGid[r.gid] && !bad[r.id] && !r.undone) bad[r.id] = byGid[r.gid] + '-group'; });   // the torn-group rule
       var ids = Object.keys(bad).map(Number).sort(function (a, b) { return a - b; });
-      if (ids.length) { db.run('UPDATE kernel_ops SET undone=1 WHERE id IN (' + ids.join(',') + ')'); db.__tipFoldCache = null;
+      if (ids.length) { db.run('UPDATE kernel_ops SET undone=2 WHERE id IN (' + ids.join(',') + ')'); db.__tipFoldCache = null;   // §61 rule 3: 2 = not trusted (out of every fold, which reads undone=0), never redone (redo reads undone=1)
         var why = {}; ids.forEach(function (i) { var w = String(bad[i]).replace(/-group$/, ''); why[w] = (why[w] || 0) + 1; });
         console.log('§LEDGER excluded rows=' + ids.length + ' ids=' + ids.slice(0, 20).join(',') + ' why=' + JSON.stringify(why)); }
       _EXCLUDED = { rows: ids.length, ids: ids, why: bad };
@@ -2718,7 +2741,11 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
   // glassbowl.html's foldDocOps → crudFoldBack(key,from,to) plumbing is REUSED UNCHANGED.
   function foldBackDocOp(key, fromStatus, toStatus) {
     var K = kernel();
-    if (LEDGER && _unsupported('fold-back undo (re-appends an existing id)')) return;
+    if (LEDGER && K && K.foldMarkers) {   // §61: the undo is a new UNDO row in the shared file, never a re-appended id
+      _ledgerMark(K, 'UNDO', function (db) { return CORE.foldBackGroup(db, K); }, function (g) {
+        console.log('§FOLD-BACK key=' + key + ' status=' + (toStatus || '?') + '→' + fromStatus + ' ops=' + g.undone.length + ' ledger=marker'); setDocStatus(key, fromStatus, 'completed', []); });
+      return;
+    }
     withSidecar(function (db) {
       if (db && K && typeof K.undoOp === 'function') {
         var g = CORE.foldBackGroup(db, K);
@@ -2742,7 +2769,11 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
   // the WHOLE gid in commit order when it is a group; the single op otherwise).
   function foldForwardDocOp(key, toStatus) {
     var K = kernel();
-    if (LEDGER && _unsupported('fold-forward redo (would resurrect rows the page excluded)')) return;
+    if (LEDGER && K && K.foldMarkers) {   // §61: a new REDO row; redo reads undone=1 only, so a row the page did not trust (undone=2) never comes back
+      _ledgerMark(K, 'REDO', function (db) { return CORE.foldForwardGroup(db, K); }, function (g) {
+        console.log('§FOLD-FORWARD key=' + key + ' status=→' + toStatus + ' ops=' + g.redone.length + ' ledger=marker'); setDocStatus(key, toStatus, 'completed', []); });
+      return;
+    }
     withSidecar(function (db) {
       if (db && K && typeof K.redoOp === 'function') {
         var g = CORE.foldForwardGroup(db, K);
