@@ -1,17 +1,18 @@
 // ⚠ DO NOT REMOVE — W-HQ-DYM (bim-compiler prompts/VOCAB_MESSAGE_CATALOG.md §19.5 Step 5; design prompts/HELP_QUERY_CORE_DESIGN.md D5). READ THE LOG; an exit code is not evidence.
 // ISSUE it proves or disproves: a misspelled query ("Sales Ordr", "Rechnug") gives the help boxes nothing useful; ONE separate line "Did you mean: A · B · C" (common/help/help_dym.js, the ERP box AND the shared
-// help panel, through AssistCore.nearest, the one suggester) must name what was meant, must not make things up, must not suggest 2-character names while the guard is on, must not run anything, and must not
+// help panel, through AssistCore.nearest, the one suggester) must name what was meant, must not make things up, must not flood the line with short names (§19.8: the §19.5 guard is gone since §42 S3), must not run anything, and must not
 // be a second edit-distance function.
 //   D1c (§19.5 refined 2026-11-17): a typo that itself STARTS 3+ other names is not judged by D1 (nearest() puts completions first, by design); counted per pack and printed.
 //   D1  for every pack name of 3+ characters, the name with its MIDDLE character deleted shows that name in the line. X of N, N = names per pack (ERP: 5 languages, names = the language's + the English ones;
 //       Viewer and Modeller: 18 locales each, the pack's own names). Not judged, and PRINTED per pack with the reason: the typo is itself an exact name (the top result is tier 0, so the line is not shown by rule);
 //       a 3-character name (its typo has 2 characters: the §42 S3 territory, reported as D1b, never hidden). Then the same on the REAL ERP box and the REAL Viewer/Modeller panel (typed text, DOM read).
-//   D2  a made-up word (8 random letters, seeded) shows no line, or names nothing farther than assist_core's limit max(2, floor(len/3)) by THIS witness's own edit distance.
-//   D3  no name of 2 or fewer characters is suggested while the guard is on; and the guard is EXERCISED (the unguarded suggester does suggest such names for the same probes), else INCONCLUSIVE.
+//   D2  a made-up word (8 random letters, seeded) shows no line, or names nothing farther than assist_core's limit min(max(2, floor(len/3)), len-1) (§42 S3) by THIS witness's own edit distance.
+//   D3  (§19.8) a name of 1-2 characters typed with one extra letter is in the line, or fairly outranked (3 names shown, each a completion or no farther). VACUOUS if no short name.
+//   D3b every short name shown, in every list any check produced, is within the limit of its typed text (no flood).
 //   D4  nothing runs: on the real ERP box and the real panels, picking a suggestion fills the box and searches and nothing else (0 window opens, 0 kernel_ops written, 0 palette runs, only help log lines).
 //   D5  `git grep` finds no second edit-distance function in common/help or erp (this witness's own copy, under common/help/tests, is the only one allowed and is excluded); the same grep finds the ONE in common/door.
 //   L1  the line's label is the dictionary's word for the screen language (ERP chrome.json, Viewer dictionary), not hard-coded English.
-// Red control (must FAIL D1): HQ_BREAK=nodym (the suggester returns nothing, in Node and in the pages).   Run: NODE_PATH=~/bim-ootb/node_modules:~/bim-compiler/node_modules node common/help/tests/witness_hq_dym.js [--no-pages]
+// Red controls: HQ_BREAK=nodym (the suggester returns nothing, in Node and in the pages) must FAIL D1; HQ_BREAK=guard (the §19.5 guard back) must FAIL D3.   Run: NODE_PATH=~/bim-ootb/node_modules:~/bim-compiler/node_modules node common/help/tests/witness_hq_dym.js [--no-pages]
 'use strict';
 const fs = require('fs'), path = require('path'), http = require('http'), cp = require('child_process');
 const H = require('./_hq'), k = H.kit('W-HQ-DYM'), HQ = require(H.CORE), D = require(path.join(H.ROOT, 'common', 'help', 'help_dym.js')), AC = require(path.join(H.ROOT, 'common', 'door', 'assist_core.js'));
@@ -21,7 +22,7 @@ const mid = (n) => { const c = Array.from(n), i = Math.floor(c.length / 2); retu
 // this witness's OWN edit distance (the claim D2 is checked against something independent of assist_core's)
 function dist(a, b) { a = a.toLowerCase(); b = b.toLowerCase(); const m = a.length, n = b.length; let p = []; for (let j = 0; j <= n; j++) p[j] = j;
   for (let i = 1; i <= m; i++) { const c = [i]; for (let j = 1; j <= n; j++) c[j] = Math.min(p[j] + 1, c[j - 1] + 1, p[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)); p = c; } return p[n]; }
-const limitOf = (typed) => Math.max(2, Math.floor(typed.length / 3));   // assist_core.js:29, read 2026-11-17
+const limitOf = (typed) => Math.min(Math.max(2, Math.floor(typed.length / 3)), typed.length - 1);   // assist_core.js:29 after §42 S3 (bim-ootb #3240), read 2026-11-18
 function rng(seed) { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
 const madeUp = (n, seed) => { const r = rng(seed), out = []; for (let i = 0; i < n; i++) { let w = ''; for (let j = 0; j < 8; j++) w += String.fromCharCode(97 + Math.floor(r() * 26)); out.push(w); } return out; };
 
@@ -33,7 +34,7 @@ function load() {
   packs.forEach((p) => { p.names = D.names(p.recs, { alt: p.alt }); });
 }
 const ambOf = (names) => (typo, n) => { const t = typo.toLowerCase(); let c = 0; for (const x of names) if (x !== n && x.toLowerCase().startsWith(t) && ++c >= 3) return true; return false; };   // D1c rule, the same in Node and in the pages
-const seen = [];   // every suggestion list any run produced, for D3
+const seen = [];   // every suggestion list any run produced, with its typed text {t, s}, for D3b
 
 function d1() {
   const fam = {};   // app -> {X, N, ex, short, shortX, shortMiss}
@@ -44,7 +45,7 @@ function d1() {
       const typo = mid(n), top = p.h.query(typo)[0], tier = top ? top.tier : 3;
       if (tier === 0) { tn++; return; }   // the typo is itself a name: the rule says no line
       if (ambOf(p.names)(typo, n)) { am++; return; }   // D1c (§19.5): the typo STARTS 3+ other names, so nearest() fills its 3 slots with those completions by design ('prefix' before 'nearest'); counted apart, never hidden
-      const s = D.suggest(typo, p.names, tier); seen.push(s);
+      const s = D.suggest(typo, p.names, tier); seen.push({ t: typo, s });
       if (chars(typo) <= 2) { sh++; if (s.indexOf(n) >= 0) shX++; else if (f.shMiss.length < 4) f.shMiss.push(p.id + ' "' + n + '" -> "' + typo + '" => ' + JSON.stringify(s)); return; }
       N++; if (s.indexOf(n) >= 0) X++; else if (f.miss.length < 4) f.miss.push(p.id + ' "' + n + '" -> "' + typo + '" => ' + JSON.stringify(s));
     });
@@ -54,13 +55,13 @@ function d1() {
   Object.keys(fam).forEach((app) => { const f = fam[app];
     if (!f.N) { k.incon('D1 ' + app, 'VACUOUS: no name judged'); return; }
     k.chk('D1 ' + app + ' packs: every name with its middle character deleted shows that name in the line: ' + f.X + ' of ' + f.N + ' names (not judged: ' + f.tn + ' typo-is-a-name)', f.X === f.N, f.miss.join(' ; '));
-    k.L('D1b ' + app + ' 3-character names (typed text of 2 characters, the limit of assist_core.js:29, S3 not landed): ' + f.shX + ' of ' + f.sh + ' show the source' + (f.shMiss.length ? '; e.g. ' + f.shMiss.join(' ; ') : '') + ' — reported, not a verdict claim');
+    k.L('D1b ' + app + ' 3-character names (typed text of 2 characters, the limit of assist_core.js:29 after S3 is 1): ' + f.shX + ' of ' + f.sh + ' show the source' + (f.shMiss.length ? '; e.g. ' + f.shMiss.join(' ; ') : '') + ' — reported, not a verdict claim');
   });
 }
 function d2() {
   const words = madeUp(40, 20261117); let K = 0, none = 0, within = 0, v = 0; const bad = [];
   packs.forEach((p) => words.forEach((w) => {
-    const top = p.h.query(w)[0], tier = top ? top.tier : 3, s = D.suggest(w, p.names, tier); seen.push(s); K++;
+    const top = p.h.query(w)[0], tier = top ? top.tier : 3, s = D.suggest(w, p.names, tier); seen.push({ t: w, s }); K++;
     if (!s.length) { none++; return; }
     const far = s.filter((n) => dist(w, n.replace(/-/g, '_')) > limitOf(w) && n.toLowerCase().indexOf(w) !== 0);
     if (far.length) { v++; if (bad.length < 3) bad.push(p.id + ' "' + w + '" => ' + JSON.stringify(far)); } else within++;
@@ -69,21 +70,30 @@ function d2() {
   if (!K) k.incon('D2', 'VACUOUS: nothing asked'); else k.chk('D2 a made-up word shows no line or only names within the limit (own edit distance): ' + (K - v) + ' of ' + K, v === 0, bad.join(' ; '));
 }
 function d3() {
-  let probes = 0, would = 0, got = 0, packsWith = 0; const ex = [];
+  // D3 (§19.8): with the guard gone, a real short name is offered for a one-letter typo. Probe: the name + 'x'. It must be in the line, or be
+  // outranked fairly: three names shown, each a completion of the typed text or no farther from it than the short name (nearest()'s own order).
+  let N = 0, X = 0, fair = 0, tn = 0, am = 0, packsWith = 0; const miss = [];
   packs.forEach((p) => {
     const small = p.names.filter((n) => chars(n) <= 2); if (!small.length) return; packsWith++;
-    small.forEach((s) => [s, s + 'x', 'x' + s].forEach((typed) => {
-      probes++;
-      const raw = AC.nearest(typed, p.names, 3).filter((x) => chars(x.name) <= 2);   // what the UNGUARDED suggester would offer
-      if (raw.length) { would++; if (ex.length < 3) ex.push(p.id + ' "' + typed + '" would offer ' + JSON.stringify(raw.map((x) => x.name))); }
-      const s2 = D.suggest(typed, p.names, 3); seen.push(s2); if (s2.some((n) => chars(n) <= 2)) got++;
-    }));
+    small.forEach((sn) => {
+      const typed = sn + 'x', top = p.h.query(typed)[0], tier = top ? top.tier : 3;
+      if (tier === 0) { tn++; return; }   // the typed text is itself a name: no line by rule
+      if (ambOf(p.names)(typed, sn)) { am++; return; }   // the D1c rule: it starts 3+ other names
+      const s = D.suggest(typed, p.names, tier); seen.push({ t: typed, s }); N++;
+      if (s.indexOf(sn) >= 0) { X++; return; }
+      const d0 = dist(typed, sn), ok = s.length === 3 && s.every((n) => n.toLowerCase().indexOf(typed.toLowerCase()) === 0 || dist(typed, n) <= d0);
+      if (ok) fair++; else if (miss.length < 4) miss.push(p.id + ' "' + typed + '" => ' + JSON.stringify(s) + ' (no ' + JSON.stringify(sn) + ')');
+    });
   });
-  const all = seen.reduce((n, l) => n + l.filter((x) => chars(x) <= 2).length, 0);
-  k.L('D3 packs with a name of 2 or fewer characters=' + packsWith + ' probes=' + probes + ' the unguarded suggester would offer a short name for ' + would + ' of them (e.g. ' + ex.join(' ; ') + '); guarded: ' + got + '; short names in ALL ' + seen.length + ' lists any check produced: ' + all);
-  if (!probes) k.incon('D3', 'VACUOUS: no pack holds a name of 2 or fewer characters');
-  else if (!would && !BR) k.incon('D3', 'the guard is never exercised: the unguarded suggester offers no short name for these probes');
-  else k.chk('D3 no name of 2 or fewer characters is suggested while the guard is on: ' + (seen.length - 0) + ' lists, ' + all + ' short names (unguarded would offer one for ' + would + ' of ' + probes + ' probes)', all === 0 && got === 0);
+  k.L('D3 packs with a name of 2 or fewer characters=' + packsWith + ' probes judged=' + N + ' shown=' + X + ' outranked-fairly=' + fair + ' not judged: typed-is-a-name=' + tn + ' D1c-ambiguous-prefix=' + am);
+  if (!N) k.incon('D3', 'VACUOUS: no pack holds a name of 2 or fewer characters');
+  else k.chk('D3 a short name typed with one extra letter is offered (or fairly outranked): ' + (X + fair) + ' of ' + N + ' (' + X + ' shown)', X + fair === N, miss.join(' ; '));
+  // D3b: across every list any check produced, a short name shown is within S3's limit of its typed text (own edit distance) — no flood
+  let lists = 0, short = 0, far = 0; const bad = [];
+  seen.forEach((e) => { lists++; e.s.forEach((n) => { if (chars(n) > 2) return; short++;
+    if (dist(e.t, n.replace(/-/g, '_')) > limitOf(e.t) && n.toLowerCase().indexOf(e.t.toLowerCase()) !== 0) { far++; if (bad.length < 3) bad.push('"' + e.t + '" => ' + JSON.stringify(n)); } }); });
+  k.L('D3b lists=' + lists + ' short names shown=' + short + ' (' + (lists ? (short / lists).toFixed(3) : 0) + ' per list) beyond the limit=' + far);
+  if (!lists || !short) k.incon('D3b', 'VACUOUS: ' + (lists ? 'no short name was shown in any list' : 'no list')); else k.chk('D3b every short name shown is within the limit of its typed text: ' + (short - far) + ' of ' + short, far === 0, bad.join(' ; '));
 }
 function d5() {
   const pat = 'levenshtein|damerau|editdistance|edit_distance|function lev\\b|\\blev\\(|Math\\.min\\([^)]*\\[[^]]*-[ ]*1\\]\\[';

@@ -1,5 +1,5 @@
 {
- "app": "modeller", "schema": 1, "sw": "modeller/sw.js", "cacheVersion": "v296", "depsDeclared": true,
+ "app": "modeller", "schema": 1, "sw": "modeller/sw.js", "cacheVersion": "v297", "depsDeclared": true,
  "depsReview": {"by":"owner (B1-Q3, confirmed in one message)","on":"2026-11-18","tool":"5be36e5764e21887f547786edfcd6adb918d1b06f9e10c0a96924911c074ef2c"},
  "modules": {
   "common/comm/op_versions.js": {"v":1,"load":"lazy","lazyGroup":"modeller/modeller.html","precache":true,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/TEAMWORK_FRAMEWORK.md","witnesses":["erp/tests/witness_team_floor.js"]},
@@ -12,7 +12,7 @@
   "common/door/assist_core.js": {"v":1,"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/CLI_ERP_IVR.md","witnesses":["common/door/tests/witness_assist_nearest.js","common/door/tests/witness_red1_assist.js","common/help/tests/witness_hq_dym.js"]},
   "common/drag.js": {"v":2,"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/VOCAB_MESSAGE_CATALOG.md","witnesses":["viewer/tests/witness_drag_sweep.js"]},
   "common/file_store.js": {"v":1,"load":"lazy","lazyGroup":"modeller/modeller.html","precache":true,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/BIMDOC_OPEN_FILE_STORE.md","witnesses":["common/tests/witness_file_store.js"]},
-  "common/help/help_dym.js": {"v":1,"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["common/door/assist_core.js"],"notDeps":[],"owner":["prompts/VOCAB_MESSAGE_CATALOG.md","prompts/HELP_QUERY_CORE_DESIGN.md"],"witnesses":["common/door/tests/witness_assist_nearest.js"]},
+  "common/help/help_dym.js": {"v":2,"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["common/door/assist_core.js"],"notDeps":[],"owner":["prompts/VOCAB_MESSAGE_CATALOG.md","prompts/HELP_QUERY_CORE_DESIGN.md"],"witnesses":["common/door/tests/witness_assist_nearest.js"]},
   "common/help/help_grammar.js": {"v":1,"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":[],"owner":["prompts/VOCAB_MESSAGE_CATALOG.md","prompts/HELP_QUERY_CORE_DESIGN.md"],"witnesses":[]},
   "common/help/help_guid.js": {"v":1,"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/VOCAB_MESSAGE_CATALOG.md","witnesses":[]},
   "common/help/help_panel.js": {"v":6,"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["common/help/help_dym.js","common/help/help_grammar.js","common/help/help_guid.js","common/help/help_query.js"],"notDeps":[],"owner":"prompts/VOCAB_MESSAGE_CATALOG.md","witnesses":[]},

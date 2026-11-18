@@ -6,16 +6,15 @@
 // It SUGGESTS, never acts: a pick puts a name in the box and the person's own search runs (the host's callback); nothing opens, nothing writes (design D5 option c is forbidden).
 // The edit distance is NOT here: the one suggester is AssistCore.nearest(name, names, n) (common/door/assist_core.js, the CLI session's file, never edited from here).
 //   names(records, opts)                -> distinct names of the records' n (+ a[] when opts.alt), only records opts.allowed(gate, rec) admits (the role gate, ERP)
-//   suggest(typed, names, topTier)      -> [] when the top result is tier 0 (an exact name answered) or the typed text is empty; else up to 3 names, names of GUARD_MIN_CHARS-1 or fewer characters dropped first
+//   suggest(typed, names, topTier)      -> [] when the top result is tier 0 (an exact name answered) or the typed text is empty; else up to 3 names from AssistCore.nearest over the whole pool
 //   render(host, items, label, onPick)  -> the one separate line "label: A · B · C" under the list (host = the element it lives in; removed when there is nothing to say); onPick(name)
-// Falsifier: HQ_BREAK=nodym (read the way help_query.js reads it) -> suggest() returns nothing -> W-HQ-DYM D1 FAILs.
+// Falsifiers (read the way help_query.js reads them): HQ_BREAK=nodym -> suggest() returns nothing -> W-HQ-DYM D1 FAILs.
+//   HQ_BREAK=guard -> the §19.5 guard comes back (names of 1-2 characters dropped from the pool) -> W-HQ-DYM D3 FAILs.
 (function (root) {
   'use strict';
   function brk() { return (typeof process !== 'undefined' && process.env && process.env.HQ_BREAK) || (root && root.__HQ_BREAK) || ''; }
-  // GUARD (§19.5): assist_core.js:29 still has `lim = Math.max(2, Math.floor(name.length / 3))` (CLI_ERP_IVR §42 S3 not landed), so a name of 2 or fewer characters is within the limit of
-  // almost any typed text and would be suggested for everything. Names shorter than this are dropped from the pool until S3 lands. REMOVE THIS CONSTANT (set it to 1 / delete the filter) in the one-line follow-up
-  // that follows S3's merge. Names are counted in characters (code points), so a 2-character Chinese name counts as 2, not 6.
-  var GUARD_MIN_CHARS = 3;
+  // §19.8: the §19.5 guard (names of 1-2 characters dropped from the pool) is gone. CLI_ERP_IVR §42 S3 (bim-ootb #3240) caps assist_core's limit at
+  // min(max(2, floor(len/3)), len - 1), so a short name no longer matches almost any typed text. Only the falsifier HQ_BREAK=guard brings the filter back.
   var N = 3;   // design D5: the suggester's own default (`n = n || 3`)
   function chars(s) { return Array.from(String(s)).length; }
   function assist() { return (typeof module !== 'undefined' && module.exports && typeof require === 'function') ? require('../door/assist_core.js') : (root && root.AssistCore); }
@@ -31,7 +30,7 @@
     typed = String(typed == null ? '' : typed).replace(/\s+/g, ' ').trim();
     if (!typed || topTier === 0 || brk() === 'nodym') return [];
     var AC = assist(); if (!AC || typeof AC.nearest !== 'function') return [];
-    var kept = (pool || []).filter(function (nm) { return chars(nm) >= GUARD_MIN_CHARS; });
+    var kept = brk() === 'guard' ? (pool || []).filter(function (nm) { return chars(nm) >= 3; }) : (pool || []);
     return AC.nearest(typed, kept, N).map(function (x) { return x.name; });
   }
   function render(host, items, label, onPick) {
@@ -50,6 +49,6 @@
     });
     return el;
   }
-  var api = { names: names, suggest: suggest, render: render, GUARD_MIN_CHARS: GUARD_MIN_CHARS, N: N };
+  var api = { names: names, suggest: suggest, render: render, N: N };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else if (root) root.HelpDym = api;
 })(typeof window !== 'undefined' ? window : globalThis);
