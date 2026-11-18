@@ -65,9 +65,10 @@ function namedFns(text) {
 const FNS = namedFns(src);
 const fn = FNS.find(f => f.name === 'rescheduleGanttAsap');
 assert(!!fn, 'W-ASAP-8a rescheduleGanttAsap is defined in time_machine.js (brace-matched, not a comment mention)');
+const P = require('./_gantt_pipeline.js');   // §ONE_COMMIT_PIPELINE: a verb reaches the steps through the pipeline owners
 const PIPELINE = ['_tmEditLocked(', '.rescheduleAsap(', 'retimeTaskElements(', '_tmResyncAfterRetime(',
   '_tmAnnotateCpm(', '_tmPersistEdit(', 'invalidateGanttModel(', 'computeDays(', 'drawGanttMini(', 'renderAtTime('];
-const missing = PIPELINE.filter(c => !fn || fn.body.indexOf(c) < 0);
+const missing = PIPELINE.filter(c => !fn || P.reach(fn.body, src).indexOf(c) < 0);
 console.log('§GANTT_RESCHEDULE_ASAP_WIRING pipelineCalls=' + (PIPELINE.length - missing.length) + '/' + PIPELINE.length +
   (missing.length ? ' MISSING [' + missing.join(' | ') + ']' : ''));
 assert(missing.length === 0, 'W-ASAP-8b the commit path carries the FULL 7-step pipeline — a missing step here is the ' +
@@ -76,7 +77,7 @@ assert(missing.length === 0, 'W-ASAP-8b the commit path carries the FULL 7-step 
 // The lock must be checked BEFORE the verb runs — a lock check after the write is decoration.
 assert(!!fn && fn.body.indexOf('_tmEditLocked(') < fn.body.indexOf('.rescheduleAsap('),
   'W-ASAP-8c _tmEditLocked is checked BEFORE the engine verb runs (mid-bake refusal, §S69 — the 9th edit path must not ship unlocked)');
-assert(!!fn && /_lastEdit\s*=\s*\{/.test(fn.body),
+assert(!!fn && /undo:\s*\{/.test(fn.body) && /_lastEdit\s*=\s*\{/.test(P.reach(fn.body, src)),
   'W-ASAP-8d the edit is captured into _lastEdit — pull-back is undoable via ↺ Undo exactly like a drag (its restore loop is mode-agnostic)');
 assert(/id="tm-reschedule-asap"/.test(src), 'W-ASAP-8e the transport-row button markup exists (#tm-reschedule-asap)');
 assert(/getElementById\('tm-reschedule-asap'\)/.test(src) && /rescheduleGanttAsap\(\);/.test(src),

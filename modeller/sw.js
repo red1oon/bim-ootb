@@ -37,7 +37,9 @@
 // v292 (2026-11-18) LOD Upgrade pill P3 fix 2 (prompts/MODELLER_LOD_UPGRADE_PILL.md §P3 FIX SPEC 2): Truss welds judge steel-to-steel pairs only (weld_material_gate row, lod_reader.js?v=4 meta.mat, lod_ui.js?v=3 pack loader) — modeller.html
 // v293 (2026-11-18) §14.5.3a (bim-compiler VOCAB_MESSAGE_CATALOG.md): the drag helper drops a pure translation on the first move — common/drag.js?v=2
 // v294 (2026-11-18) LOD Upgrade pill P4 (prompts/MODELLER_LOD_UPGRADE_PILL.md §P4 SPEC): lod/joint_pack.js (Steel joints) + lod/rules/joint_defaults.json + lod/packs.json + lod_reader.js?v=5 (indexed mesh, true boxes) — modeller.html
-const CACHE_VERSION = 'v294';   // bump on each deploy; per-change detail is the git commit message.
+// v295 (2026-11-18) B1 (bim-compiler CODE_ARCHITECTURE_DESIGN.md Part B; bim-ootb #3244): the modeller's module lists are written from modeller/modules.json — +2 marker lines here and in modeller.html, no list changed
+// v296 (2026-11-18) LOD Upgrade pill P5 (prompts/MODELLER_LOD_UPGRADE_PILL.md §P5 SPEC): lod/gusset_pack.js (Bracing gussets) + lod/rules/gusset_defaults.json + lod/packs.json; joint_pack.js exposes the shared kit (no ?v= literal: packs load through packs.json, precacheOrder in modules.json) — modeller.html
+const CACHE_VERSION = 'v296';   // §MANIFEST cacheVersion (written by gen_manifest.js; edit modeller/modules.json)
 const CACHE_PREFIX = 'bim-modeller-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -67,6 +69,7 @@ const LIB_PREFIX = CACHE_PREFIX + 'lib-';
 // Local files to precache on install — the modeller works offline after first visit.
 // DB files are NOT here — the resident *_extracted.db / terminal_rules.db are cached in IndexedDB.
 const PRECACHE_ASSETS = [
+  // §MANIFEST:BEGIN precache (entries here are written by scripts/gen_manifest.js from modeller/modules.json; comments are yours)
   'modeller.html',
   'rules_editor.js',                 // prompts/MODELLER_RULES_EDITOR.md (lazy, first click of #b-rules)
   '../common/drag.js',               // §14.5 THE drag helper (shared with the Viewer)
@@ -192,7 +195,9 @@ const PRECACHE_ASSETS = [
   'bay_add.js',          // §D89 add a bay (the planner)
   'clipboard.js',        // the ONE copy path (Ctrl+C / Ctrl+V, the bay copy)
   '../viewer/dxf_sheet_view.js',   // §D82 its renderer (shared with the Viewer's 2D wing)
-  'lod/lod_rules.js', 'lod/lod_registry.js', 'lod/lod_ops.js', 'lod/lod_reader.js', 'lod/lod_ui.js', 'lod/rebar_pack.js', 'lod/weld_pack.js', 'lod/layer_pack.js', 'lod/joint_pack.js', 'lod/packs.json', 'lod/rules/rebar_defaults.json', 'lod/rules/weld_defaults.json', 'lod/rules/layer_defaults.json', 'lod/rules/joint_defaults.json',   // LOD Upgrade pill (lazy, first press)
+  'lod/lod_rules.js', 'lod/lod_registry.js', 'lod/lod_ops.js', 'lod/lod_reader.js', 'lod/lod_ui.js', 'lod/rebar_pack.js', 'lod/weld_pack.js', 'lod/layer_pack.js', 'lod/joint_pack.js', 'lod/gusset_pack.js', 'lod/packs.json', 'lod/rules/rebar_defaults.json', 'lod/rules/weld_defaults.json', 'lod/rules/layer_defaults.json',   // LOD Upgrade pill (lazy, first press)
+  'lod/rules/joint_defaults.json',
+  'lod/rules/gusset_defaults.json',
   'dxf_export_ui.js',   // §DXF-EXPORT (lane L5): Export ▸ 2D drawings (DXF)
   'viewer_db_export.js',   // §D43: Export ▸ Viewer database (.db)
   'dxf2bim/ifc_extract_core.js',
@@ -210,6 +215,7 @@ const PRECACHE_ASSETS = [
   '../geomapping/data/relations_DX.json',
   '../geomapping/data/relations_SC.json',
   '../geomapping/data/alias_map.json',
+  // §MANIFEST:END precache
 ];
 
 self.addEventListener('install', (event) => {

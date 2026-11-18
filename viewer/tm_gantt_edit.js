@@ -801,6 +801,51 @@
     setTimeout(hide, others.length ? 8000 : 3600);
   }
 
+  // ── §ONE_COMMIT_PIPELINE (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.19.7) ─────────────────────────────
+  // Every Gantt edit ends here. These two functions are the ONLY callers of the pipeline steps; a verb keeps what
+  // is its own (lock check, engine verb, refusal tips) and hands over. The sequence was typed out in eight places
+  // and the copies had drifted (link re-synced only when a bar moved, unlink never rendered).
+  //
+  // _tmEditRefresh — (what, schedId): the model changed; re-derive everything that reads it, in this order:
+  //   resync (ops order + reveal index + x-ray cache; without it the canvas plays the OLD times, §GANTT_RETIME_RESYNC)
+  //   -> CPM annotate (float/critical FROM the new dates, never a date source, §S68) -> persist (survive a reload, §S70)
+  //   -> invalidate the bar model -> day ladder (which also refreshes the slider, §TM_NEEDLE_SYNC) -> redraw -> render.
+  function _tmEditRefresh(what, schedId) {
+    _tmResyncAfterRetime();
+    _tmAnnotateCpm(schedId);
+    _tmPersistEdit(what);
+    TMS.invalidateGanttModel();
+    TMS.computeDays();
+    TMS.drawGanttMini();
+    TMS.renderAtTime(TMS._cursor);
+  }
+  // _tmCommitEdit — one argument o: an engine verb has just written `tasks` (and/or `task_sequences`); carry it to the elements.
+  //   o.moved        the verb's moved list ([{id,start,finish}]); omitted/empty = no bar moved (a link or unlink)
+  //   o.tasksBefore  the `tasks` snapshot taken BEFORE the verb (retimeTaskElements needs it for the clock delta)
+  //   o.undo         { taskId, mode } writes the single-level undo record; omitted = this edit leaves none
+  //   o.log          the caller's commit line, printed after the re-time and before the refresh (the order it always had)
+  function _tmCommitEdit(o) {
+    var app = TMS.A(), moved = o.moved || [], opsBefore = {};
+    if (o.moved) {
+      var barsByTask = {}, opByGuid = {}, i;
+      for (i = 0; i < TMS._ganttTasks.length; i++) if (TMS._ganttTasks[i].taskId) barsByTask[TMS._ganttTasks[i].taskId] = TMS._ganttTasks[i];
+      // §GANTT_EDIT_UNDO — the element "before" state, from the in-memory _ops (still pre-retime here), for exactly the
+      // guids the re-time is about to touch. One guid->op hash: a scan per guid was 92 s on Terminal (3,519 x 48,428).
+      for (i = 0; i < TMS._ops.length; i++) if (TMS._ops[i].output_guid) opByGuid[TMS._ops[i].output_guid] = TMS._ops[i];
+      moved.forEach(function (m) {
+        var bar = barsByTask[m.id]; if (!bar || !bar.guids) return;
+        bar.guids.forEach(function (g) {
+          var op = opByGuid[g];
+          if (op) opsBefore[g] = { start_ts: op.start_ts, end_ts: op.end_ts, parameters: JSON.stringify(op.parameters) };
+        });
+      });
+      retimeTaskElements(app.db, barsByTask, moved, o.tasksBefore);
+    }
+    if (o.undo) _lastEdit = { schedId: o.schedId, taskId: o.undo.taskId, mode: o.undo.mode, tasksBefore: o.tasksBefore, opsBefore: opsBefore };
+    if (o.log) console.log(o.log);
+    _tmEditRefresh(o.what, o.schedId);
+  }
+
   function commitGanttDrag(bar, mode, deltaDays) {
     var _L = (typeof TMS._tmTrl === 'function') ? TMS._tmTrl : function (k, en, r) { var s = en; if (r) for (var q in r) s = s.replace('{' + q + '}', r[q]); return s; };   // S226 §R2b — sliced into vm sandboxes by witnesses
     if (_tmEditLocked('commitGanttDrag')) return;
@@ -882,36 +927,10 @@
         setTimeout(function () { tip.style.display = 'none'; }, 2600);
       }
     }
-    var barsByTask = {};
-    for (var i = 0; i < TMS._ganttTasks.length; i++) if (TMS._ganttTasks[i].taskId) barsByTask[TMS._ganttTasks[i].taskId] = TMS._ganttTasks[i];
-
-    // §GANTT_EDIT_UNDO — the element-op "before" state, captured from the in-memory _ops (still the
-    // pre-retime values at this point) for exactly the guids retimeTaskElements is about to touch.
-    // Hash the guid->op lookup ONCE (same shape as retimeTaskElements's own opByGuid below) — a
-    // linear scan per guid here was O(cascadeGuids * totalOps): measured 92s wall-clock on Terminal
-    // (3,519 guids * 48,428 ops) before this fix, unusable for an interactive drag.
-    var opsBefore = {};
-    var _opByGuidForUndo = {};
-    for (var oi2 = 0; oi2 < TMS._ops.length; oi2++) if (TMS._ops[oi2].output_guid) _opByGuidForUndo[TMS._ops[oi2].output_guid] = TMS._ops[oi2];
-    (res.moved || []).forEach(function (m) {
-      var bar2 = barsByTask[m.id]; if (!bar2 || !bar2.guids) return;
-      bar2.guids.forEach(function (g) {
-        var op = _opByGuidForUndo[g];
-        if (op) opsBefore[g] = { start_ts: op.start_ts, end_ts: op.end_ts, parameters: JSON.stringify(op.parameters) };
-      });
-    });
-
-    retimeTaskElements(app.db, barsByTask, res.moved || [], tasksBefore);
-    _lastEdit = { schedId: schedId, taskId: bar.taskId, mode: mode, tasksBefore: tasksBefore, opsBefore: opsBefore };
-    console.log('§GANTT_DRAG_COMMIT task=' + bar.taskId + ' mode=' + mode + ' deltaDays=' + deltaDays +
-      ' start=' + res.start + ' clamped=' + res.clamped + ' cascaded=' + res.cascaded);
-    _tmResyncAfterRetime();   // §GANTT_RETIME_RESYNC — without this the canvas plays the OLD times
-    _tmAnnotateCpm(schedId);   // §GANTT_CPM_ANNOTATE (§S68) — re-derive float/critical FROM the new dates
-    _tmPersistEdit('drag');   // §S70 — the edit must survive a reload
-    TMS.invalidateGanttModel();
-    TMS.computeDays();
-    TMS.drawGanttMini();
-    TMS.renderAtTime(TMS._cursor);
+    _tmCommitEdit({ what: 'drag', schedId: schedId, moved: res.moved || [], tasksBefore: tasksBefore,
+      undo: { taskId: bar.taskId, mode: mode },
+      log: '§GANTT_DRAG_COMMIT task=' + bar.taskId + ' mode=' + mode + ' deltaDays=' + deltaDays +
+      ' start=' + res.start + ' clamped=' + res.clamped + ' cascaded=' + res.cascaded });
     // §S73 — the ONLY `return true` in this function. Every refusal above returns undefined, so the
     // __tmGanttDrag test hook can report what actually happened instead of "I found the bar."
     return true;
@@ -983,29 +1002,9 @@
       return;
     }
 
-    var barsByTask = {};
-    for (var i = 0; i < TMS._ganttTasks.length; i++) if (TMS._ganttTasks[i].taskId) barsByTask[TMS._ganttTasks[i].taskId] = TMS._ganttTasks[i];
-    var opsBefore = {};
-    var _opByGuidForUndo = {};
-    for (var oi2 = 0; oi2 < TMS._ops.length; oi2++) if (TMS._ops[oi2].output_guid) _opByGuidForUndo[TMS._ops[oi2].output_guid] = TMS._ops[oi2];
-    res.moved.forEach(function (m) {
-      var bar2 = barsByTask[m.id]; if (!bar2 || !bar2.guids) return;
-      bar2.guids.forEach(function (g) {
-        var op = _opByGuidForUndo[g];
-        if (op) opsBefore[g] = { start_ts: op.start_ts, end_ts: op.end_ts, parameters: JSON.stringify(op.parameters) };
-      });
-    });
-
-    retimeTaskElements(app.db, barsByTask, res.moved, tasksBefore);
-    _lastEdit = { schedId: schedId, taskId: '(whole schedule)', mode: 'shift', tasksBefore: tasksBefore, opsBefore: opsBefore };
-    console.log('§TM_RULER_SHIFT_COMMIT schedule=' + schedId + ' deltaDays=' + deltaDays + ' tasks=' + res.moved.length);
-    _tmResyncAfterRetime();   // §GANTT_RETIME_RESYNC — without this the canvas plays the OLD times
-    _tmAnnotateCpm(schedId);   // §GANTT_CPM_ANNOTATE (§S68) — re-derive float/critical FROM the new dates
-    _tmPersistEdit('rulerShift');   // §S70 — the edit must survive a reload
-    TMS.invalidateGanttModel();
-    TMS.computeDays();
-    TMS.drawGanttMini();
-    TMS.renderAtTime(TMS._cursor);
+    _tmCommitEdit({ what: 'rulerShift', schedId: schedId, moved: res.moved || [], tasksBefore: tasksBefore,
+      undo: { taskId: '(whole schedule)', mode: 'shift' },
+      log: '§TM_RULER_SHIFT_COMMIT schedule=' + schedId + ' deltaDays=' + deltaDays + ' tasks=' + res.moved.length });
     } catch (e) { _tmEditExceptionRecover('shiftGanttSchedule', e); }   // §TM_EDIT_EXCEPTION
   }
 
@@ -1043,29 +1042,9 @@
       return;
     }
 
-    var barsByTask = {};
-    for (var i = 0; i < TMS._ganttTasks.length; i++) if (TMS._ganttTasks[i].taskId) barsByTask[TMS._ganttTasks[i].taskId] = TMS._ganttTasks[i];
-    var opsBefore = {};
-    var _opByGuidForUndo = {};
-    for (var oi3 = 0; oi3 < TMS._ops.length; oi3++) if (TMS._ops[oi3].output_guid) _opByGuidForUndo[TMS._ops[oi3].output_guid] = TMS._ops[oi3];
-    res.moved.forEach(function (m) {
-      var bar3 = barsByTask[m.id]; if (!bar3 || !bar3.guids) return;
-      bar3.guids.forEach(function (g) {
-        var op = _opByGuidForUndo[g];
-        if (op) opsBefore[g] = { start_ts: op.start_ts, end_ts: op.end_ts, parameters: JSON.stringify(op.parameters) };
-      });
-    });
-
-    retimeTaskElements(app.db, barsByTask, res.moved, tasksBefore);
-    _lastEdit = { schedId: schedId, taskId: '(' + taskIds.length + ' selected)', mode: 'group-shift', tasksBefore: tasksBefore, opsBefore: opsBefore };
-    console.log('§GANTT_GROUP_SHIFT_COMMIT tasks=' + res.moved.length + ' deltaDays=' + deltaDays);
-    _tmResyncAfterRetime();   // §GANTT_RETIME_RESYNC — without this the canvas plays the OLD times
-    _tmAnnotateCpm(schedId);   // §GANTT_CPM_ANNOTATE (§S68) — re-derive float/critical FROM the new dates
-    _tmPersistEdit('groupShift');   // §S70 — the edit must survive a reload
-    TMS.invalidateGanttModel();
-    TMS.computeDays();
-    TMS.drawGanttMini();
-    TMS.renderAtTime(TMS._cursor);
+    _tmCommitEdit({ what: 'groupShift', schedId: schedId, moved: res.moved || [], tasksBefore: tasksBefore,
+      undo: { taskId: '(' + taskIds.length + ' selected)', mode: 'group-shift' },
+      log: '§GANTT_GROUP_SHIFT_COMMIT tasks=' + res.moved.length + ' deltaDays=' + deltaDays });
     } catch (e) { _tmEditExceptionRecover('commitGanttGroupShift', e); }   // §TM_EDIT_EXCEPTION
   }
 
@@ -1119,13 +1098,7 @@
     console.log('§GANTT_EDIT_UNDO task=' + edit.taskId + ' mode=' + edit.mode +
       ' tasksRestored=' + tRestored + ' opsRestored=' + oRestored);
     say(_L('tm_undone', 'Undone: {mode} {task}', { mode: edit.mode, task: edit.taskId }));
-    _tmResyncAfterRetime();   // §GANTT_RETIME_RESYNC — without this the canvas plays the OLD times
-    _tmAnnotateCpm(edit.schedId);   // §GANTT_CPM_ANNOTATE (§S68) — re-derive float/critical FROM the new dates
-    _tmPersistEdit('undo');   // §S70 — the edit must survive a reload
-    TMS.invalidateGanttModel();
-    TMS.computeDays();
-    TMS.drawGanttMini();
-    TMS.renderAtTime(TMS._cursor);
+    _tmEditRefresh('undo', edit.schedId);
   }
 
   // ⚑ Set Baseline — replaces the dead Copy New slot. Definition user-confirmed 2026-08-05
@@ -1206,30 +1179,10 @@
       return 'nothing';
     }
 
-    var barsByTask = {};
-    for (var i = 0; i < TMS._ganttTasks.length; i++) if (TMS._ganttTasks[i].taskId) barsByTask[TMS._ganttTasks[i].taskId] = TMS._ganttTasks[i];
-    var opsBefore = {};
-    var _opByGuidForUndo = {};
-    for (var oi4 = 0; oi4 < TMS._ops.length; oi4++) if (TMS._ops[oi4].output_guid) _opByGuidForUndo[TMS._ops[oi4].output_guid] = TMS._ops[oi4];
-    res.moved.forEach(function (m) {
-      var bar4 = barsByTask[m.id]; if (!bar4 || !bar4.guids) return;
-      bar4.guids.forEach(function (g) {
-        var op = _opByGuidForUndo[g];
-        if (op) opsBefore[g] = { start_ts: op.start_ts, end_ts: op.end_ts, parameters: JSON.stringify(op.parameters) };
-      });
-    });
-
-    retimeTaskElements(app.db, barsByTask, res.moved, tasksBefore);
-    _lastEdit = { schedId: schedId, taskId: '(' + res.moved.length + ' pulled back)', mode: 'asap', tasksBefore: tasksBefore, opsBefore: opsBefore };
-    console.log('§GANTT_RESCHEDULE_ASAP_COMMIT schedule=' + schedId + ' tasks=' + res.moved.length +
-      ' daysCompressed=' + res.daysCompressed);
-    _tmResyncAfterRetime();   // §GANTT_RETIME_RESYNC — without this the canvas plays the OLD times
-    _tmAnnotateCpm(schedId);   // §GANTT_CPM_ANNOTATE (§S68) — re-derive float/critical FROM the new dates
-    _tmPersistEdit('rescheduleAsap');   // §S70 — the edit must survive a reload
-    TMS.invalidateGanttModel();
-    TMS.computeDays();
-    TMS.drawGanttMini();
-    TMS.renderAtTime(TMS._cursor);
+    _tmCommitEdit({ what: 'rescheduleAsap', schedId: schedId, moved: res.moved || [], tasksBefore: tasksBefore,
+      undo: { taskId: '(' + res.moved.length + ' pulled back)', mode: 'asap' },
+      log: '§GANTT_RESCHEDULE_ASAP_COMMIT schedule=' + schedId + ' tasks=' + res.moved.length +
+      ' daysCompressed=' + res.daysCompressed });
     say((res.moved.length === 1 ? _L('tm_compressed_one', 'Compressed 1 task') : _L('tm_compressed_many', 'Compressed {n} tasks', { n: res.moved.length })) + ' — ' +
       (res.daysCompressed > 0 ? (res.daysCompressed === 1 ? _L('tm_finish_moved_one', 'project finish moved up 1 day') : _L('tm_finish_moved_many', 'project finish moved up {d} days', { d: res.daysCompressed }))
                               : _L('tm_finish_unchanged', 'project finish unchanged (internal float closed)')));
@@ -1524,8 +1477,8 @@
     // SAME constraint-aware verb so the graph and the dates agree immediately, rather than leaving a
     // freshly-created violation on screen.
     var schedId = (TMS._taskIndex && TMS._taskIndex.scheduleId) || 'SCH_AUTHORED';
+    var linkMoved = [], tasksBeforeLink = {};
     if (SA.moveTaskCascade) {
-      var tasksBeforeLink = {};
       try {
         var tbL = app.db.exec('SELECT task_id, schedule_start, schedule_finish, schedule_duration FROM tasks WHERE schedule_id=?', [schedId]);
         if (tbL.length) tbL[0].values.forEach(function (row) { tasksBeforeLink[row[0]] = { start: row[1], finish: row[2], duration: row[3] }; });
@@ -1539,12 +1492,7 @@
       var succReal = tasksBeforeLink[succBar.taskId];
       var targetDate = succReal ? succReal.start : new Date(succBar.startTs).toISOString().slice(0, 10);
       var res = SA.moveTaskCascade(app.db, schedId, succBar.taskId, targetDate, {});
-      if (res && res.ok && res.moved && res.moved.length) {
-        var byTask = {};
-        for (var i = 0; i < TMS._ganttTasks.length; i++) if (TMS._ganttTasks[i].taskId) byTask[TMS._ganttTasks[i].taskId] = TMS._ganttTasks[i];
-        retimeTaskElements(app.db, byTask, res.moved, tasksBeforeLink);
-        _tmResyncAfterRetime();   // §GANTT_RETIME_RESYNC — without this the canvas plays the OLD times
-      }
+      if (res && res.ok && res.moved && res.moved.length) { linkMoved = res.moved; }
       // §FUTURE-5A item 6 (applied 2026-09-02, queue item B-3): the ONLY §GANTT_EDIT_CLAMP call
       // site in this file with NO on-screen feedback at all — commitGanttDrag/openGanttProps'
       // Apply already show `blockedBy`/`clampedTo` (the inline tm-gantt-tip pattern _tmSay itself
@@ -1557,11 +1505,9 @@
         _tmSay(_L('tm_linked_clamped', 'Linked, but {task} clamped to {start} — blocked by {by}', { task: succBar.taskId, start: res.start, by: res.blockedBy }), 3400);
       }
     }
-    // §GANTT_CPM_ANNOTATE (§S68) — OUTSIDE the moved-check on purpose: a new EDGE changes the graph,
-    // so it changes float and criticality even when the clamp left every date exactly where it was.
-    _tmAnnotateCpm(schedId);
-    _tmPersistEdit('link');   // §S70 — the edit must survive a reload
-    TMS.invalidateGanttModel(); TMS.computeDays(); TMS.drawGanttMini(); TMS.renderAtTime(TMS._cursor);
+    // The pipeline runs whether or not a bar moved: a new EDGE changes the graph, so it changes float and
+    // criticality even when the clamp left every date exactly where it was (§GANTT_CPM_ANNOTATE, §S68).
+    _tmCommitEdit({ what: 'link', schedId: schedId, moved: linkMoved, tasksBefore: tasksBeforeLink });
     } catch (e) { _tmEditExceptionRecover('linkGanttBars', e); }   // §TM_EDIT_EXCEPTION
   }
 
@@ -1645,9 +1591,8 @@
         if (!x || !SA.removeDependency) return;
         SA.removeDependency(app.db, x.predId, x.succId);
         console.log('§GANTT_EDIT_UNLINK pred=' + x.predId + ' succ=' + x.succId);
-        _tmAnnotateCpm(schedId);   // §GANTT_CPM_ANNOTATE (§S68) — removing an edge changes float too
-        _tmPersistEdit('unlink');   // §S70 — the edit must survive a reload
-        TMS.invalidateGanttModel(); TMS.computeDays(); TMS.drawGanttMini(); openGanttProps(bar);
+        _tmCommitEdit({ what: 'unlink', schedId: schedId });   // removing an edge changes float too (§S68)
+        openGanttProps(bar);
       };
     });
     document.getElementById('tmp-apply').onclick = function () {
@@ -1674,15 +1619,8 @@
       if (!res || !res.ok) { if (msg) msg.textContent = _L('tm_rejected', 'Rejected: {reason}', { reason: (res && res.reason) || _L('tm_unknown', 'unknown') }); return; }
       if (msg) msg.textContent = res.clamped ? _L('tm_clamped_by', 'Clamped to {start} by {by}', { start: res.start, by: res.blockedBy }) :
         _L('tm_applied_cascaded', 'Applied · {n} successor(s) cascaded', { n: res.cascaded });
-      var byTask = {};
-      for (var i = 0; i < TMS._ganttTasks.length; i++) if (TMS._ganttTasks[i].taskId) byTask[TMS._ganttTasks[i].taskId] = TMS._ganttTasks[i];
-      retimeTaskElements(app.db, byTask, res.moved || [], tasksBeforeApply);
-      _tmResyncAfterRetime();   // §GANTT_RETIME_RESYNC — without this the canvas plays the OLD times
-      _tmAnnotateCpm(schedId);   // §GANTT_CPM_ANNOTATE (§S68) — re-derive float/critical FROM the new dates
-      _tmPersistEdit('propsApply');   // §S70 — the edit must survive a reload
-      console.log('§GANTT_PROPS_APPLY task=' + bar.taskId + ' start=' + res.start +
-        ' clamped=' + res.clamped + ' cascaded=' + res.cascaded);
-      TMS.invalidateGanttModel(); TMS.computeDays(); TMS.drawGanttMini(); TMS.renderAtTime(TMS._cursor);
+      _tmCommitEdit({ what: 'propsApply', schedId: schedId, moved: res.moved || [], tasksBefore: tasksBeforeApply,
+        log: '§GANTT_PROPS_APPLY task=' + bar.taskId + ' start=' + res.start + ' clamped=' + res.clamped + ' cascaded=' + res.cascaded });
       } catch (e) { _tmEditExceptionRecover('commitGanttProps', e); }   // §TM_EDIT_EXCEPTION — the typed-apply path (props panel Apply)
     };
   }

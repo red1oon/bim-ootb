@@ -72,6 +72,17 @@ const pages = listFiles('.html').filter(h => !/\/lib\//.test(h));
 const loaders = listFiles('.js').filter(f => !/^scripts\/|\/(lib|node_modules|tests)\/|\.min\.js$|witness|(^|\/)sw\.js$/.test(f));   // scripts/ = tooling, never loaded by a page
 const PAGE_REF = /((?:src|href)\s*=\s*")([^"?#]+)\?v=(\d+)(")/g;
 const JS_REF = /((['"]))([^'"\s?#]+\.(?:js|css|json|wasm))\?v=(\d+)(\2)/g;
+// B1 (bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md Part B, "B1 BUILD SPEC" §4; bim-ootb #3244): an app with a committed <app>/modules.json is
+//   bumped IN ITS MANIFEST: the module's one `v` and the app's cacheVersion go up there, then the generator writes the app's pages, loaders,
+//   inline page literals (owner B1-Q2: they go up with their module) and sw.js. Every other referrer takes the regex path below, unchanged;
+//   a shared file (e.g. viewer/rates.js) takes both in one run. Command lines, exit codes and §BUMP lines are as before.
+const MS = require('./lib/manifest_source.js');
+const SRC = {};
+for (const app of require('./gen_manifest.js').APPS) if (MS.hasSource(ROOT, app)) {
+  const m = JSON.parse(fs.readFileSync(path.join(ROOT, MS.sourceFile(app)), 'utf8'));
+  SRC[app] = { m, owned: new Set([...Object.keys(m.order), m.sw, MS.sourceFile(app)]), bumped: new Set(), why: [] };
+}
+const ownedBy = f => Object.keys(SRC).find(a => SRC[a].owned.has(f));
 // §F.34 --changed (decision F-24): the targets are every file changed against the merge-base with origin/main (committed, working tree, untracked)
 //   that a page or loader references with ?v= (the files a bump can raise); the rest (prompts, tests, tools) are counted and skipped.
 const CHANGED = argv.includes('--changed'), CHECK = argv.includes('--check');
@@ -83,6 +94,7 @@ if (CHANGED) {
   const refd = new Set();
   for (const h of pages) for (const m of fs.readFileSync(path.join(ROOT, h), 'utf8').matchAll(PAGE_REF)) if (!/^[a-z]+:|^\/\//i.test(m[2])) refd.add(path.relative(ROOT, path.resolve(ROOT, path.dirname(h), m[2])).split(path.sep).join('/'));
   for (const l of loaders) for (const m of fs.readFileSync(path.join(ROOT, l), 'utf8').matchAll(JS_REF)) refd.add(path.relative(ROOT, path.resolve(ROOT, path.dirname(l), m[3])).split(path.sep).join('/'));
+  for (const a of Object.keys(SRC)) for (const [f, x] of Object.entries(SRC[a].m.modules)) if (x.v != null) refd.add(f);
   const pick = files.filter(f => refd.has(f));
   console.log(`§BUMP_CHANGED base=${mb.slice(0, 12)} changed=${files.length} bumpable=${pick.length} skipped=${files.length - pick.length} files=${pick.join(',')}`);
   if (!pick.length) { console.log('§BUMP_DONE targets=0 nothing to bump (no changed file is loaded with ?v=)'); process.exit(0); }
@@ -119,6 +131,7 @@ for (let depth = 0; queue.length && depth < 4; depth++) {
   round.forEach(q => done.add(q));
   if (!round.size) break;
   for (const h of pages) {
+    if (ownedBy(h)) continue;   // B1: written from its app's modules.json (below)
     let changed = false;
     const out = text(h).replace(PAGE_REF, (m, a, p, n, z) => {
       if (/^[a-z]+:|^\/\//i.test(p)) return m;
@@ -131,6 +144,7 @@ for (let depth = 0; queue.length && depth < 4; depth++) {
     if (changed) { edits.set(h, out); needSw(h, true); }
   }
   for (const f of loaders) {
+    if (ownedBy(f)) continue;
     let changed = false;
     const out = text(f).replace(JS_REF, (m, a, q, p, n, z) => {
       if (/^[a-z]+:|^\/\//i.test(p)) return m;
@@ -145,9 +159,37 @@ for (let depth = 0; queue.length && depth < 4; depth++) {
       queue.push(f);   // the loader itself changed: its own ?v= must go up too (it is precached, e.g. viewer/main.js)
     }
   }
+  for (const app of Object.keys(SRC)) {   // B1: the manifest path — one `v` per module, every site of it in the app
+    const S = SRC[app], { b0 } = MS.expand(S.m);
+    for (const mod of b0.modules) {
+      if (!round.has(mod.file) || S.bumped.has(mod.file) || mod.v == null) continue;
+      const sites = mod.sites.filter(x => x.in !== mod.file);   // a file never bumps a reference to itself
+      if (!sites.length) continue;
+      S.bumped.add(mod.file); S.m.modules[mod.file].v = mod.v + 1;
+      if (hits.has(mod.file)) hits.set(mod.file, hits.get(mod.file) + sites.length);
+      for (const x of sites) {
+        const k = x.kind === 'inline' ? 'inline' : x.in.endsWith('.html') ? 'page' : 'loader';
+        console.log(`§BUMP ${k}=${x.in} ref=${x.as} v=${mod.v}->${mod.v + 1}${k === 'loader' ? ' (lazy load list)' : k === 'inline' ? ' (inline page script, B1-Q2)' : ''} (manifest ${MS.sourceFile(app)})`);
+        S.why.push(x.in);
+        if (k === 'loader') queue.push(x.in);   // the loader changed: its own ?v= goes up next round
+      }
+    }
+  }
 }
 for (const [w, n] of hits) if (!n) { console.log(`§BUMP_ERR not_loaded_by_any_page_or_loader=${w} written=0`); process.exit(2); }
 
+for (const [sw, why] of [...swBump]) { const a = ownedBy(sw); if (a) { SRC[a].why.push(...why); swBump.delete(sw); } }
+for (const app of Object.keys(SRC)) {
+  const S = SRC[app]; if (!S.why.length) continue;
+  const n = +S.m.cacheVersion.slice(1);
+  console.log(`§BUMP sw=${S.m.sw} CACHE_VERSION v${n}->v${n + 1} (for: ${[...new Set(S.why)].join(', ')}) (manifest ${MS.sourceFile(app)})`);
+  S.m.cacheVersion = 'v' + (n + 1);
+  const w = MS.write(ROOT, app, { manifest: S.m });
+  if (w.fails.length) { w.fails.forEach(f => console.log('§BUMP_ERR manifest_write ' + f)); console.log('§BUMP_ERR the manifest could not write its files; run node scripts/gen_manifest.js --check written=0'); process.exit(1); }
+  for (const [f, t] of w.out) if (t !== text(f)) edits.set(f, t);
+  const pre = new Set(S.m.precacheOrder.map(e => path.posix.normalize(path.posix.join(app, e.split('?')[0]))));
+  for (const x of want) if (S.m.modules[x] && !pre.has(x)) console.log(`§BUMP_NOTE not_precached file=${x} sw=${S.m.sw} — normal for a lazy module; add it to precacheOrder in ${MS.sourceFile(app)} only if it must work offline`);
+}
 for (const [sw, why] of swBump) {
   const src = text(sw);
   const m = /(const CACHE_VERSION\s*=\s*'v)(\d+)(')/.exec(src);
@@ -164,7 +206,7 @@ for (const [sw, why] of swBump) {
 
 for (const w of want) {   // mentions the exact-path rule could not resolve (e.g. a page-relative path in a sub-folder loader)
   const needle = path.posix.basename(w) + '?v=';
-  for (const f of loaders) if (!edits.has(f) && text(f).includes(needle)) console.log(`§BUMP_CHECK_BY_HAND loader=${f} mentions ${needle} (not changed: path did not resolve to ${w})`);
+  for (const f of loaders) if (!edits.has(f) && !ownedBy(f) && text(f).includes(needle)) console.log(`§BUMP_CHECK_BY_HAND loader=${f} mentions ${needle} (not changed: path did not resolve to ${w})`);
 }
 
 // ---- ERP parity gate (F-16) -------------------------------------------------------------------------------------------
@@ -345,5 +387,5 @@ if (WRITE || CHECK) touchGate();
 if (CHECK) { console.log(`§BUMP_CHECK verdict=PASS key=${treeKey().slice(0, 12)} targets=${want.size} (nothing written; --write on the same tree reuses this result)`); process.exit(0); }
 
 if (WRITE) for (const [f, t] of edits) fs.writeFileSync(path.join(ROOT, f), t);
-console.log(`§BUMP_DONE targets=${want.size} pages=${[...edits.keys()].filter(f => f.endsWith('.html')).length} loaders=${[...edits.keys()].filter(f => f.endsWith('.js') && !/(^|\/)sw\.js$/.test(f)).length} sw=${swBump.size} mode=${WRITE ? 'write' : 'dry-run'} written=${WRITE ? edits.size : 0}`);
+console.log(`§BUMP_DONE targets=${want.size} pages=${[...edits.keys()].filter(f => f.endsWith('.html')).length} loaders=${[...edits.keys()].filter(f => f.endsWith('.js') && !/(^|\/)sw\.js$/.test(f)).length} sw=${swBump.size + Object.values(SRC).filter(S => S.why.length).length} mode=${WRITE ? 'write' : 'dry-run'} written=${WRITE ? edits.size : 0}`);
 if (!WRITE) console.log('dry run — nothing written. Add --write to apply, then run: node tests/audit_sw_precache.js');

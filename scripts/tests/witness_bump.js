@@ -8,6 +8,7 @@
 // Runs on a TEMP COPY of viewer/viewer.html, viewer/sw.js, erp/idempiere.html, erp/sw.js + one real target file.
 // C5 (§14 N2): a LAZY module (viewer/main.js modules[], not precached on purpose) stays lazy: its loader list and the
 // loader's own ?v= go up, PRECACHE_ASSETS is untouched, and the not-precached line is a NOTE, never a WARN.
+// C7 (B1): an inline page literal goes up with its module in a modules.json app (red on the old bump.js: BUMP_W_BUMP=<old bump.js>).
 // Prints §BUMP_W <case> PASS|FAIL and §BUMP_W_VERDICT. A no-op bump.js fails C2 (that is the red control).
 'use strict';
 const fs = require('fs');
@@ -85,6 +86,36 @@ try {
     check('C6-loader-with-its-lazy-module', r6.code === 0 && listLine === 1 && pageLine === 1 && !/§BUMP_ERR/.test(r6.out),
       `targets=viewer/main.js+${LAZY} exit=${r6.code} list_line=${listLine} page_line=${pageLine} err=${/§BUMP_ERR/.test(r6.out)}`);
   }
+  // C7 (B1, owner B1-Q2; bim-compiler CODE_ARCHITECTURE_DESIGN.md "B1 BUILD SPEC" §4/§6): in an app whose lists are written from
+  // <app>/modules.json, a module referenced ONLY by a literal inside an inline page script goes up with its module: the literal, the
+  // module's one `v` in modules.json and the app's CACHE_VERSION, and the copy still passes the manifest check. The old bump.js cannot see
+  // an inline literal (it prints §BUMP_ERR not_loaded_by_any_page_or_loader, exit 2): that is the red run.
+  {
+    const MS = require(path.join(REPO, 'scripts', 'lib', 'manifest_source.js'));
+    const app = ['modeller', 'erp', 'viewer'].find(a => MS.hasSource(REPO, a));
+    if (!app) check('C7-inline-literal-goes-up', false, 'INCONCLUSIVE no app has a modules.json');
+    else {
+      const m = JSON.parse(fs.readFileSync(path.join(REPO, MS.sourceFile(app)), 'utf8')), { b0 } = MS.expand(m);
+      const t = b0.modules.find(x => x.v != null && x.sites.length && x.sites.every(z => z.kind === 'inline') && fs.existsSync(path.join(REPO, x.file)));
+      if (!t) check('C7-inline-literal-goes-up', false, 'INCONCLUSIVE no module is referenced by inline literals only');
+      else {
+        const t2 = fs.mkdtempSync(path.join(os.tmpdir(), 'witness_bump_b1_'));
+        try {
+          for (const f of [...Object.keys(m.order), m.sw, MS.sourceFile(app), t.file]) { fs.mkdirSync(path.join(t2, path.dirname(f)), { recursive: true }); fs.copyFileSync(path.join(REPO, f), path.join(t2, f)); }
+          const site = t.sites[0], pg0 = fs.readFileSync(path.join(t2, site.in), 'utf8'), sw0 = fs.readFileSync(path.join(t2, m.sw), 'utf8');
+          let r7; try { r7 = { code: 0, out: cp.execFileSync('node', [process.env.BUMP_W_BUMP || BUMP, t.file, '--write', '--root', t2], { encoding: 'utf8' }) }; } catch (e) { r7 = { code: e.status, out: String(e.stdout || '') }; }
+          const pg1 = fs.readFileSync(path.join(t2, site.in), 'utf8'), sw1 = fs.readFileSync(path.join(t2, m.sw), 'utf8'), m1 = JSON.parse(fs.readFileSync(path.join(t2, MS.sourceFile(app)), 'utf8'));
+          const lit = new RegExp("['\"`]" + site.as.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\?v=' + (t.v + 1) + "['\"`]");
+          const line = new RegExp('^§BUMP inline=' + site.in.replace(/[./]/g, '\\$&') + ' ref=' + site.as.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ' v=' + t.v + '->' + (t.v + 1) + ' ', 'm').test(r7.out);
+          const cv0 = /CACHE_VERSION\s*=\s*'v(\d+)'/.exec(sw0)[1], cv1 = /CACHE_VERSION\s*=\s*'v(\d+)'/.exec(sw1)[1];
+          const onlyLit = changedLines(pg0, pg1).length === t.sites.filter(z => z.in === site.in).length;
+          const c = MS.check(t2, app, { skipReview: true });
+          check('C7-inline-literal-goes-up', r7.code === 0 && line && lit.test(pg1) && onlyLit && m1.modules[t.file].v === t.v + 1 && +cv1 === +cv0 + 1 && m1.cacheVersion === 'v' + cv1 && !c.fails.length,
+            `module=${t.file} inline_sites=${t.sites.length} exit=${r7.code} bump_line=${line} literal_v=${t.v}->${t.v + 1}:${lit.test(pg1)} page_lines_changed=${changedLines(pg0, pg1).length} manifest_v=${m1.modules[t.file].v} CACHE_VERSION v${cv0}->v${cv1} manifest_check_fails=${c.fails.length}${c.fails.length ? ' first=' + JSON.stringify(c.fails[0].slice(0, 120)) : ''}`);
+        } finally { fs.rmSync(t2, { recursive: true, force: true }); }
+      }
+    }
+  }
 } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
-console.log(`§BUMP_W_VERDICT ${fails ? 'FAIL' : 'PASS'} judged=6 failed=${fails}`);
+console.log(`§BUMP_W_VERDICT ${fails ? 'FAIL' : 'PASS'} judged=7 failed=${fails}`);
 process.exit(fails ? 1 : 0);

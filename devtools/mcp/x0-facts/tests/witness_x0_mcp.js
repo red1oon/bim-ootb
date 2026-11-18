@@ -126,28 +126,56 @@ const call = async (name, args) => { const r = await rpc('tools/call', { name, a
 
   // the server must not be able to reach the network: no network module in its own source, or in the lib modules it loads,
   // except lib/ship.js, whose network function (fetchBack) this server never calls. Read with the parser.
-  let net = '?';
+  let net = '?', localN = '?';
   const ts = J.loadTs(ROOT);
   if (ts) {
     const NET = new Set(['http', 'https', 'net', 'tls', 'dgram', 'http2', 'node:http', 'node:https', 'node:net', 'node:tls', 'node:dgram', 'node:http2']);
-    const requires = file => {
-      const sf = ts.createSourceFile(file, fs.readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.JS); const out = [];
+    const requires = (file, text) => {
+      const sf = ts.createSourceFile(file, text != null ? text : fs.readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.JS); const out = [];
       (function walk(n) { if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === 'require' && n.arguments[0] && ts.isStringLiteral(n.arguments[0])) out.push(n.arguments[0].text); ts.forEachChild(n, walk); })(sf);
       return out;
+    };
+    // A network module that is bound to a name and used ONLY as <name>.createServer(...) is a LOCAL listener (lib/heap_impact.js serves the
+    // headless page run on 127.0.0.1): it cannot leave the machine, so it is counted apart — the same rule as the film's offline.js
+    // (bim-compiler scripts/film_when_ai_dies/offline.js). Any other use of the binding (http.get, https.request, net.connect …) is a door.
+    const outbound = (file, text) => {
+      const src = text != null ? text : fs.readFileSync(file, 'utf8'), sf = ts.createSourceFile(file, src, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+      const bound = new Map(), uses = new Map(); let bare = 0;
+      (function walk(n) {
+        if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === 'require' && n.arguments[0] && ts.isStringLiteral(n.arguments[0]) && NET.has(n.arguments[0].text)) {
+          if (n.parent && ts.isVariableDeclaration(n.parent) && ts.isIdentifier(n.parent.name)) bound.set(n.parent.name.text, n.arguments[0].text); else bare++;
+        }
+        ts.forEachChild(n, walk);
+      })(sf);
+      (function walk(n) {
+        if (ts.isIdentifier(n) && bound.has(n.text) && !(n.parent && ts.isVariableDeclaration(n.parent) && n.parent.name === n)) {
+          const p = n.parent && ts.isPropertyAccessExpression(n.parent) && n.parent.expression === n ? n.parent.name.text : '(other)';
+          (uses.get(n.text) || uses.set(n.text, []).get(n.text)).push(p);
+        }
+        ts.forEachChild(n, walk);
+      })(sf);
+      let out = bare, local = 0;
+      for (const v of bound.keys()) { const u = uses.get(v) || []; if (u.length && u.every(x => x === 'createServer')) local++; else out++; }
+      return { out, local };
     };
     const src = fs.readFileSync(SERVER, 'utf8');
     net = requires(SERVER).filter(r => NET.has(r)).length;
     const usesFetchBack = /ship\.fetchBack|ship\.httpGet|fetch\(/.test(src.replace(/\/\/.*$/gm, ''));
-    const libNet = fs.readdirSync(LIB).filter(f => f.endsWith('.js') && f !== 'ship.js').filter(f => requires(path.join(LIB, f)).some(r => NET.has(r)));
-    check('the server imports no network module (' + net + '), never calls the one network function of the lib, and no other lib module imports one (' + libNet.length + ')', net === 0 && !usesFetchBack && libNet.length === 0);
-    net = net + libNet.length + (usesFetchBack ? 1 : 0);
+    const libFiles = fs.readdirSync(LIB).filter(f => f.endsWith('.js') && f !== 'ship.js'), doors = libFiles.map(f => Object.assign({ f }, outbound(path.join(LIB, f))));
+    const libNet = doors.filter(d => d.out), libLocal = doors.filter(d => d.local);
+    libLocal.forEach(d => console.log('  NOTE  local listener lib/' + d.f + ' (createServer only: a server on 127.0.0.1, it cannot leave the machine)'));
+    // red control: the same classifier must count a planted outbound call, and must not count a createServer-only module
+    const redOut = outbound('planted.js', "const http = require('http');\nhttp.get('http://example.invalid/');\n").out, redLoc = outbound('planted.js', "const http = require('http');\nhttp.createServer(() => {}).listen(0, '127.0.0.1');\n");
+    const redOk = check('red control: a planted http.get counts as a network door (' + redOut + '), a createServer-only module counts as local (' + redLoc.local + ' local, ' + redLoc.out + ' doors)', redOut === 1 && redLoc.local === 1 && redLoc.out === 0);
+    check('the server imports no network module (' + net + '), never calls the one network function of the lib, and no other lib module has a network door (' + libNet.length + (libNet.length ? ': ' + libNet.map(d => d.f).join(',') : '') + ')', net === 0 && !usesFetchBack && libNet.length === 0);
+    net = net + libNet.length + (usesFetchBack ? 1 : 0); localN = libLocal.length; void redOk;
   } else console.log('  NOTE  no JavaScript parser found: the network-import check and three tool checks were not judged');
   check('nothing but protocol messages on stdout (' + stray.filter(x => typeof x === 'string').length + ' stray lines)', stray.filter(x => typeof x === 'string').length === 0);
 
   child.stdin.end();
   const f = { tools: tools.length, init: yn(initOk), field: yn(fieldOk), phantom: yn(phantomOk), unknown: yn(unknownOk), tag: yn(tagOk), fake_tag: yn(fakeTagOk),
     cost: costOk === null ? '?' : yn(costOk), loaded: loadedOk === null ? '?' : yn(loadedOk), lens: yn(lensOk), context: yn(contextOk), used: yn(usedOk), check: checkOk === null ? '?' : yn(checkOk),
-    bad_tool_error: yn(badToolOk), bad_json_survives: yn(badJsonOk), network_modules: net };
+    bad_tool_error: yn(badToolOk), bad_json_survives: yn(badJsonOk), network_modules: net, local_listeners: localN };
   summary(f, fail ? 'FAIL' : (parser && toolsOk ? 'PASS' : 'INCONCLUSIVE'));
   if (fail) process.exitCode = 1;
 })().catch(e => { console.log('  FAIL witness crashed: ' + (e && e.stack)); summary({ crashed: 'Y' }, 'FAIL'); process.exitCode = 1; try { child.kill(); } catch (x) { /* gone */ } });

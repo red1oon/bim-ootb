@@ -7,7 +7,8 @@
 //   level, DefaultEvaluatee.java:167-175/:268-301 reference operator), so every till runs its own gapless number and two stations working OFFLINE never draw the same DocumentNo.
 //   D1 own series per till (interleaved) · D2 gapless 1..n per till · D3 another org's till starts its own · D4 two devices offline, own till each: no shared number
 //   D5 CONTROL: the same two devices on the shipped plain sequence DO collide (else D4 is vacuous) · D6 an order with no till: measured, and not in any till's series
-//   LEGACY arm: INCONCLUSIVE until scripts/bridge/out/docno_till_legacy.json exists (same config run on the pilot).
+//   LEGACY arm L2 (TEAMWORK §54): scripts/bridge/docno_till_legacy.js ran the same Org|Till format on the pilot (real WS orders, the same 7 saves); twin == legacy at every position + the AD_Sequence_No keys.
+//     INCONCLUSIVE with no oracle file. Falsifier DT_BREAK=tillorder (two twin positions swapped): L2 must FAIL.
 // §48.11b/§48.11c LOCAL NUMBERING (DocumentNo = OrgValue-UserValue-n, switched on with Team; erp/team_docno.js + the twin gaps G1-G4 + the fold rule docno-station):
 //   D7 solo device: no overlay, the shipped number is unchanged · D8 Team overlay: every un-prefixed DocType sequence gets the format, the BASE manifest hash is unchanged
 //   D9 order/invoice/shipment/payment each OrgValue-UserValue-n from the LOGIN context · D10 two devices, two users, offline: no shared number on any doc type
@@ -224,6 +225,17 @@ if (process.argv.indexOf('--mutants') >= 0) {                    // each mutant 
   await legacyStation(SQL);
   var LJ = path.join(BC, 'scripts/bridge/out/docno_till_legacy.json');
   if (!fs.existsSync(LJ)) { inconc++; log('§DT INCONCLUSIVE LEGACY - no oracle file ' + LJ + ' (run the same config on the pilot; until then the twin numbers are not legacy-compared)'); }
+  else {   // L2 (bim-compiler prompts/TEAMWORK_FRAMEWORK.md §54): the twin device A's 7 numbers (D1-D3 plan, then D6) == legacy's at every position, and the AD_Sequence_No keys/next values equal
+    var LT = JSON.parse(fs.readFileSync(LJ, 'utf8')), tw = got.concat([none]);
+    if (process.env.DT_BREAK === 'tillorder') { var sw = tw[0]; tw[0] = tw[1]; tw[1] = sw; }   // falsifier: two twin positions swapped, L2 must FAIL
+    var lg = (LT.numbers || []).map(function (x) { return x.documentno; }), tplan = plan.map(function (p) { return p[0]; }).concat(['none']);
+    var tk = A.q('SELECT sequencekey AS k, currentnext AS n FROM ad_sequence_no WHERE ad_sequence_id=? ORDER BY sequencekey', [SEQ]).map(function (r) { return r.k + '=' + r.n; }), lk = (LT.keys || []).map(function (r) { return r.key + '=' + r.currentnext; }).sort();
+    tk.sort();
+    log('§DT-LEGACY-TILL plan=' + tplan.join(',') + ' legacy-plan=' + (LT.plan || []).join(',') + ' legacy=' + lg.join(',') + ' twin=' + tw.join(',') + ' | keys legacy=' + lk.join(',') + ' twin=' + tk.join(','));
+    if (!lg.length || JSON.stringify(LT.plan) !== JSON.stringify(tplan) || LT.format !== PREFIX) { inconc++; log('§DT INCONCLUSIVE LEGACY - the oracle file is not this plan/format (plan=' + JSON.stringify(LT.plan) + ' format=' + LT.format + ')'); }
+    else ck('L2', 'LEGACY: the pilot (real WS orders, the same Org|Till format) and the twin number the same tills the same way: equal DocumentNo at every position (incl. another org\'s till and an order with no till), equal AD_Sequence_No keys and next values',
+      JSON.stringify(lg) === JSON.stringify(tw) && JSON.stringify(lk) === JSON.stringify(tk), 'positions=' + lg.length + ' keys=' + lk.length);
+  }
   // §51.3 C4: the limits this witness does NOT judge, stated where the code is tested (the terms runner copies them into the record)
   log('§LIMIT an author not bound to an AD_User is not judged at fold (counted)');
   log('§LIMIT two users sharing a Search Key share a series');
