@@ -47,6 +47,9 @@ function s1() {
     const pack = JSON.parse(fs.readFileSync(f, 'utf8')), ids = Object.keys(pack.fields || {});
     ids.forEach((id) => { pack.fields[id] = pack.fields[id].map((i) => (i >= 0 ? pack.texts[i] : null)); });   // [descIndex, helpIndex] -> texts
     if (BREAK === 'tamper' && ids.length) pack.fields[ids[0]][0] = (pack.fields[ids[0]][0] || '') + ' (tampered)';
+    if (!SOURCES[lang].length) {   // T5c: a MACHINE-ONLY language (ko_KR, no published pack): nothing in its help pack may exist without a published source, so the pack holds no field text
+      const nt = ids.reduce((a, id) => a + (pack.fields[id] || []).filter((t) => t != null).length, 0);
+      k.chk('S1 ' + lang + ' machine-only language (empty source list): the help pack holds no field text, so no text lacks a published source: ' + nt + ' texts, ' + ids.length + ' fields', nt === 0 && ids.length === 0); return; }
     const els = trl(lang, 'AD_Element'), flds = trl(lang, 'AD_Field');
     if (!els.some((m) => m.size)) { k.incon('S1-' + lang, 'source packs not in ' + CACHE); return; }
     let n = 0, ok = 0; const bad = [];

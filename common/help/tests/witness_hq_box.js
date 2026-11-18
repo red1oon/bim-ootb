@@ -62,7 +62,8 @@ const top5 = (list) => list.slice(0, 5).map((x) => x.id + '|' + x.tier + '|' + x
     H.LANGS.filter((l) => l !== 'en_US').forEach((lang) => {
       b5n++; const want = Object.keys(JSON.parse(fs.readFileSync(path.join(H.ERP, 'i18n', 'help', lang, 'help.json'), 'utf8')).fields || {}).length;
       const ln = page.logs.find((l) => l.indexOf('§HELP_PACK loaded lang=' + lang + ' ') === 0), got = ln ? Number((ln.match(/ fields=(\d+)/) || [])[1]) : null;
-      if (got === want && want > 0) b5ok++; else if (bad5.length < 4) bad5.push(lang + ' want fields=' + want + ' page ' + (ln ? 'fields=' + got : 'logged no §HELP_PACK line'));
+      const machineOnly = (JSON.parse(fs.readFileSync(path.join(H.ERP, 'tools', 'i18n_sources.json'), 'utf8')).sources[lang] || []).length === 0;   // T5c: ko_KR has no published pack, so its help pack is empty by rule: it must still LOAD (the §HELP_PACK line, fields=0 as committed)
+      if (got === want && (want > 0 || (machineOnly && ln))) b5ok++; else if (bad5.length < 4) bad5.push(lang + ' want fields=' + want + ' page ' + (ln ? 'fields=' + got : 'logged no §HELP_PACK line'));
     });
     k.L('B5 help packs loaded in the page: ' + b5ok + ' of ' + b5n + (bad5.length ? ' · ' + bad5.join(' ; ') : ''));
     if (!b5n) k.incon('B5', 'VACUOUS: no non-English language'); else k.chk('B5 PAGE: every screen language loads its own help pack (fields as committed): ' + b5ok + ' of ' + b5n, b5ok === b5n, bad5.join(' ; '));
