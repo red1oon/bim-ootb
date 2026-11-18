@@ -8,7 +8,7 @@
 (function () {
   'use strict';
   var TAG = '§LODUP', BASE = (function () { try { return new URL('.', document.currentScript.src).href; } catch (e) { return 'lod/'; } })();
-  var state = { ready: false, panel: null, rules: {}, edits: {}, last: {}, open: {}, runs: [], busy: false, hidden: {}, inputs: {}, frame: null, schema: 'IFC2X3', ifcLast: null };   // inputs[packId][inputId] = {json, name, summary}: a file the person loaded for a pack (P6)
+  var state = { ready: false, panel: null, rules: {}, edits: {}, last: {}, open: {}, runs: [], busy: false, hidden: {}, inputs: {}, frame: null, schema: 'IFC2X3', ifcLast: null, data: {} };   // data[packId][fileId] = an editable data file a pack declares (P8: schedule formats)   // inputs[packId][inputId] = {json, name, summary}: a file the person loaded for a pack (P6)
 
   function log(m) { console.log(TAG + ' ' + m); }
   // the download names: the opened file's name without its .db / .sqlite / .ifc extension (was "JPAM_base.db_addon_IFC2X3.ifc"; spec MODELLER_LOD_UPGRADE_PILL.md "P7 NAME FIX")
@@ -17,10 +17,12 @@
   async function boot() {
     if (state.ready) return;
     var man = await (await fetch(BASE + 'packs.json')).json();
-    for (var i = 0; i < man.packs.length; i++) await load(BASE + man.packs[i].file + '?v=4');
+    for (var i = 0; i < man.packs.length; i++) await load(BASE + man.packs[i].file + '?v=5');
     await load(BASE + 'lod_ifc.js?v=1');   // P7: the Add-on IFC writer (pure; loaded with the engine, never at boot)
+    await load(BASE + 'lod_schedule.js?v=1');   // P8: schedule tables read through a schedule format (pure)
     var Rg = window.LodRegistry, R = window.LodRules;
     for (var j = 0; j < Rg.list().length; j++) { var p = Rg.list()[j]; state.rules[p.id] = R.load(await (await fetch(BASE + p.rulesFile)).json()); state.edits[p.id] = {}; }
+    for (var d = 0; d < Rg.list().length; d++) { var pk = Rg.list()[d]; for (var df = 0; df < (pk.dataFiles || []).length; df++) { var dfile = pk.dataFiles[df]; (state.data[pk.id] = state.data[pk.id] || {})[dfile.id] = await (await fetch(BASE + dfile.file)).json(); } }
     state.ready = true; log('ready packs=' + Rg.list().map(function (p) { return p.id; }).join(','));
     window.addEventListener('bonsai:oplog', function () { try { syncTables(); applyHostHide(); refreshIfcButton(); } catch (e) { console.warn(TAG + ' sync failed ' + (e && e.message)); } });
     window.addEventListener('bonsai:refold', function () { try { applyHostHide(); } catch (e) { console.warn(TAG + ' host hide failed ' + (e && e.message)); } });
@@ -123,11 +125,40 @@
 
   // P6: a file the person loads for a pack (the pack declares it: {id, label, accept, validate(json) -> {ok, summary, why}}). Read as JSON, checked by the pack, kept in the panel state; a refused file says why and changes nothing.
   function readFile(f) { return new Promise(function (res, rej) { var fr = new FileReader(); fr.onload = function () { res(String(fr.result)); }; fr.onerror = function () { rej(new Error('read failed')); }; fr.readAsText(f); }); }
+  // P8: what a pack's input `read` hook may use: its data files (the formats validated), the schedule reader, and the DXF table reader of the 2D import (loaded on first use, with its own limits row from element_defaults.json)
+  async function inputCtx(pid) {
+    var data = state.data[pid] || {}, fv = data.formats ? window.LodSchedule.validateFormats(data.formats) : null;
+    return { data: data, formats: fv && fv.ok ? fv.list : [], formatsWhy: fv && !fv.ok ? fv.why : null, LodSchedule: window.LodSchedule,
+      dxfSheet: async function (text, name) {
+        try {
+          if (!window.DxfParser) await load(BASE + '../lib/dxf-parser.js'); if (!window.Dxf2Prep) await load(BASE + '../dxf2prep.js'); if (!window.Dxf2Beams) await load(BASE + '../dxf2beams.js'); if (!window.Dxf2Tables) await load(BASE + '../dxf2tables.js');
+          window.Dxf2Tables.setRef(await (await fetch(BASE + '../element_defaults.json')).json());
+          var P = window.DxfParser.DxfParser || window.DxfParser, dxf = new P().parseSync(text); return { ok: true, sheet: window.Dxf2Tables.read({ name: name, dxf: dxf }) };
+        } catch (e) { return { ok: false, why: 'the drawing could not be read (' + (e && e.message) + ')' }; }
+      } };
+  }
+  // P8: a pack's data file (the schedule formats) as editable JSON: Save validates it (a malformed file is refused with its reason and changes nothing), Download gives the edited file to contribute
+  function openData(key) {
+    var p = key.split('|'), pid = p[0], id = p[1], cur = (state.data[pid] || {})[id], old = document.getElementById('lu-data-ed'); if (old) old.remove();
+    var D = document.createElement('div'); D.id = 'lu-data-ed'; D.style.cssText = 'position:fixed;left:8%;right:8%;top:8%;bottom:8%;z-index:60;background:rgba(20,22,30,0.97);border:1px solid #2c303a;border-radius:12px;padding:10px;display:flex;flex-direction:column;gap:6px;color:#c7cdd8;font:12px system-ui,sans-serif';
+    D.innerHTML = '<div><b>' + esc(id) + '</b> (' + esc(pid) + ') <span class="lu-data-msg"></span></div><textarea spellcheck="false" style="flex:1;width:100%;background:#0b0f17;color:#e5e7eb;border:1px solid #334155;font:12px monospace"></textarea><div><button class="lu-data-save">Save</button> <button class="lu-data-dl">Download edits</button> <button class="lu-data-close">Close</button></div>';
+    document.body.appendChild(D); var ta = D.querySelector('textarea'), msg = D.querySelector('.lu-data-msg'); ta.value = JSON.stringify(cur, null, 1);
+    D.querySelector('.lu-data-close').onclick = function () { D.remove(); };
+    D.querySelector('.lu-data-dl').onclick = function () { download(pid + '_' + id + '.json', ta.value); log('§LODUP_DATA downloaded ' + pid + '.' + id); };
+    D.querySelector('.lu-data-save').onclick = function () { var j; try { j = JSON.parse(ta.value); } catch (e) { msg.textContent = 'refused: not valid JSON (' + e.message + ')'; log('§LODUP_DATA REFUSED ' + pid + '.' + id + ': not valid JSON'); return; }
+      var v = id === 'formats' ? window.LodSchedule.validateFormats(j) : { ok: true, summary: 'saved' }; if (!v.ok) { msg.textContent = 'refused: ' + v.why; log('§LODUP_DATA REFUSED ' + pid + '.' + id + ': ' + v.why); return; }
+      (state.data[pid] = state.data[pid] || {})[id] = j; msg.textContent = 'saved: ' + v.summary; log('§LODUP_DATA saved ' + pid + '.' + id + ' (' + v.summary + ')'); paint(); };
+  }
   function loadInput(key, accept) {
     var p = key.split('|'), pid = p[0], iid = p[1], pack = window.LodRegistry.get(pid), spec = pack && (pack.inputs || []).filter(function (i) { return i.id === iid; })[0]; if (!spec) return;
     var f = document.createElement('input'); f.type = 'file'; f.accept = accept || ''; f.style.display = 'none'; document.body.appendChild(f);
     f.onchange = async function () {
       var file = f.files && f.files[0]; f.remove(); if (!file) return;
+      if (spec.read) {   // P8: the pack reads the file itself (a marks JSON or a drawing's schedule sheet); refused files say why and change nothing
+        var rr = await spec.read(await readFile(file), file.name, await inputCtx(pid)); (rr.lines || []).forEach(function (l) { log(l); });
+        if (!rr.ok) { log('§LODUP_INPUT ' + pid + '.' + iid + ' REFUSED ' + file.name + ': ' + rr.why); if (typeof window.setStat === 'function') window.setStat(pack.label + ': ' + file.name + ' refused: ' + rr.why); return; }
+        (state.inputs[pid] = state.inputs[pid] || {})[iid] = { json: rr.json, name: file.name, summary: rr.summary }; log('§LODUP_INPUT ' + pid + '.' + iid + ' loaded ' + file.name + ' (' + rr.summary + ')'); paint(); return;
+      }
       try { var json = JSON.parse(await readFile(file)), v = spec.validate ? spec.validate(json) : { ok: true, summary: 'loaded' };
         if (!v.ok) { log('§LODUP_INPUT ' + pid + '.' + iid + ' REFUSED ' + file.name + ': ' + v.why); if (typeof window.setStat === 'function') window.setStat(pack.label + ': ' + file.name + ' refused: ' + v.why); return; }
         (state.inputs[pid] = state.inputs[pid] || {})[iid] = { json: json, name: file.name, summary: v.summary }; log('§LODUP_INPUT ' + pid + '.' + iid + ' loaded ' + file.name + ' (' + v.summary + ')');
@@ -141,16 +172,16 @@
   function liveGenCount() { var O = window.Bonsai && window.Bonsai.oplog, db = O && O.db; if (!db) return 0; try { var r = db.exec("SELECT COUNT(*) FROM kernel_ops WHERE undone=0 AND op_type='GEOM_INSERT' AND output_guid LIKE 'GEN-%'"); return r.length ? Number(r[0].values[0][0]) : 0; } catch (e) { return 0; } }
   function refreshIfcButton() {
     var P = state.panel, b = P && P.querySelector('.lu-ifc'); if (!b) return; var n = liveGenCount(); b.disabled = !n || state.busy;
-    b.title = n ? 'Write the ' + n + ' generated parts as an add-on IFC' : 'Run an upgrade first: the add-on IFC holds only generated parts';
+    b.title = n ? 'Exports out what was added from this upgrade (' + n + ' parts)' : 'Exports out what was added from this upgrade: run an upgrade first';   // owner 2026-11-18: the button is "Export (IFC)", this tip
   }
   function loadFrame() {
     var f = document.createElement('input'); f.type = 'file'; f.accept = '.json,application/json'; f.style.display = 'none'; document.body.appendChild(f);
     f.onchange = async function () {
       var file = f.files && f.files[0]; f.remove(); if (!file) return;
       try { var json = JSON.parse(await readFile(file)), v = window.LodIfc.validateFrame(json);
-        if (!v.ok) { log('§LODUP_IFC_FRAME REFUSED ' + file.name + ': ' + v.why); if (typeof window.setStat === 'function') window.setStat('Add-on IFC: ' + file.name + ' refused: ' + v.why); return; }
+        if (!v.ok) { log('§LODUP_IFC_FRAME REFUSED ' + file.name + ': ' + v.why); if (typeof window.setStat === 'function') window.setStat('Export (IFC): ' + file.name + ' refused: ' + v.why); return; }
         state.frame = { json: json, name: file.name, summary: v.summary }; log('§LODUP_IFC_FRAME loaded ' + file.name + ' (' + v.summary + ')');
-      } catch (e) { log('§LODUP_IFC_FRAME REFUSED ' + file.name + ': not valid JSON (' + (e && e.message) + ')'); if (typeof window.setStat === 'function') window.setStat('Add-on IFC: ' + file.name + ' is not valid JSON.'); return; }
+      } catch (e) { log('§LODUP_IFC_FRAME REFUSED ' + file.name + ': not valid JSON (' + (e && e.message) + ')'); if (typeof window.setStat === 'function') window.setStat('Export (IFC): ' + file.name + ' is not valid JSON.'); return; }
       paint();
     };
     f.click();
@@ -166,7 +197,7 @@
       var bdb = await window.OpenBuildingDb.get(), elev = {}; try { if (bdb && window.LodReader.has(bdb, 'storey_elevation')) { var re = bdb.exec('SELECT name, elevation_attr_m FROM storey_elevation'); if (re.length) re[0].values.forEach(function (v) { if (v[1] !== null) elev[v[0]] = Number(v[1]); }); } } catch (e) { /* no storey table: only a frame JSON can name the elevations */ }
       var schema = o.schema || state.schema, frame = o.frame !== undefined ? o.frame : (state.frame ? state.frame.json : null), model = modelName();
       var gradeOf = function (h) { var sc = (inp.sched || {})[h]; return sc && sc.Note_fy_MPa !== undefined && sc.Note_fy_MPa !== null ? { fy: sc.Note_fy_MPa, src: sc.NoteSource_fy_MPa === undefined || sc.NoteSource_fy_MPa === null ? 'None' : sc.NoteSource_fy_MPa } : null; };
-      var drv = await window.LodRegistry.kit.drive(Ifc.buildSteps(els, { schema: schema, frame: frame, elev: elev, gradeOf: gradeOf, fileName: model + '_addon_' + schema + '.ifc', breakGuid: !!o.breakGuid, kit: window.LodRegistry.kit }), { budgetMs: 25, onProgress: function (pr) { say(pr && pr.label ? pr.label + ' ' + pr.done + ' of ' + pr.total : 'Add-on IFC: working...'); } });
+      var drv = await window.LodRegistry.kit.drive(Ifc.buildSteps(els, { schema: schema, frame: frame, elev: elev, gradeOf: gradeOf, fileName: model + '_upgrade_' + schema + '.ifc', breakGuid: !!o.breakGuid, kit: window.LodRegistry.kit }), { budgetMs: 25, onProgress: function (pr) { say(pr && pr.label ? pr.label + ' ' + pr.done + ' of ' + pr.total : 'Export (IFC): working...'); } });
       var res = drv.value, st = res.stats;
       if (!res.ok) { log('§LODUP_IFC_REFUSED ' + res.why); say(res.why); return { ok: false, why: res.why, stats: st }; }
       log('§LODUP_IFC_SELECT schema=' + schema + ' elements=' + st.elements + ' classes=' + JSON.stringify(st.classes) + ' frame=' + st.frame + (Object.keys(st.skipped).length ? ' skipped_unsupported=' + JSON.stringify(st.skipped) : ''));
@@ -176,11 +207,11 @@
       try { var dg = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer()); sha = Array.prototype.map.call(new Uint8Array(dg), function (b) { return ('0' + b.toString(16)).slice(-2); }).join(''); } catch (e) { sha = null; }
       var ms = Math.round(performance.now() - t0), heap = performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : null;
       log('§LODUP_IFC_WRITTEN bytes=' + blob.size + ' sha256=' + sha + ' schema=' + schema + ' entities=' + st.entities + ' storeys=' + st.storeys + ' parts=' + st.parts + ' split=' + JSON.stringify(st.split) + ' ms=' + ms + ' maxSliceMs=' + Math.round(drv.stats.maxSliceMs) + ' slices=' + drv.stats.slices + ' heapMB=' + heap);
-      if (o.download !== false) download2(model + '_addon_' + schema + '.ifc', blob);
-      say('Add-on IFC (' + schema + '): ' + st.parts + ' parts, ' + (blob.size / 1048576).toFixed(1) + ' MB, ' + (frame ? 'your frame' : 'DB frame as is') + '.');
+      if (o.download !== false) download2(model + '_upgrade_' + schema + '.ifc', blob);
+      say('Export (IFC, ' + schema + '): ' + st.parts + ' parts, ' + (blob.size / 1048576).toFixed(1) + ' MB, ' + (frame ? 'your frame' : 'DB frame as is') + '.');
       state.ifcLast = { bytes: blob.size, sha: sha, stats: st, schema: schema };
       return { ok: true, bytes: blob.size, sha: sha, stats: st, schema: schema, blob: o.keepBlob ? blob : null, ms: ms, maxSliceMs: drv.stats.maxSliceMs };
-    } catch (e) { console.error(TAG + ' §LODUP_IFC failed ' + (e && e.stack || e)); say('Add-on IFC failed: ' + (e && e.message)); return { ok: false, why: String(e && e.message) }; }
+    } catch (e) { console.error(TAG + ' §LODUP_IFC failed ' + (e && e.stack || e)); say('Export (IFC) failed: ' + (e && e.message)); return { ok: false, why: String(e && e.message) }; }
     finally { state.busy = false; refreshIfcButton(); }
   }
   function download2(name, blob) { var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 60000); }
@@ -196,6 +227,7 @@
         '<div class="lu-s">' + (e.appliesTo ? 'applies to <span data-k="applies">' + e.appliesTo + '</span> ' + esc(e.unit || 'elements') : '<span data-k="applies">0</span> not applicable here') + '</div>' +
         '<div class="lu-s">rule rows: <span data-k="stated">' + e.stated + '</span> stated / <span data-k="default">' + e.default + '</span> defaults' + (e.unset ? ' / <span data-k="unset">' + e.unset + '</span> unset' : '') + ' <a href="#" class="lu-rules" data-rules="' + esc(e.id) + '">Rules</a></div>' +
         (e.inputs || []).map(function (i) { var got = (state.inputs[e.id] || {})[i.id]; return '<div class="lu-s"><button class="lu-load" data-load="' + esc(e.id) + '|' + esc(i.id) + '" data-accept="' + esc(i.accept || '') + '">' + esc(i.label) + '</button> <span data-k="input-' + esc(i.id) + '">' + (got ? esc(got.name) + ': ' + esc(got.summary) : 'not loaded') + '</span></div>'; }).join('') +
+        (e.dataFiles || []).map(function (d) { var j = (state.data[e.id] || {})[d.id], fv = j && window.LodSchedule ? window.LodSchedule.validateFormats(j) : null; return '<div class="lu-s"><span data-k="data-' + esc(d.id) + '">' + (fv && fv.ok ? esc(fv.summary) : (fv ? 'formats refused: ' + esc(fv.why) : 'no ' + esc(d.label.toLowerCase()))) + '</span> <a href="#" class="lu-data" data-data="' + esc(e.id) + '|' + esc(d.id) + '">' + esc(d.label) + '</a></div>'; }).join('') +
         '<div class="lu-s" data-st="' + esc(e.id) + '">' + (l ? 'last run: added ' + l.added + ' / refused ' + l.refused + ' / not built ' + l.notBuilt : 'last run: none') + '</div>';
       if (state.open[e.id]) {
         var rows = rowsOf(e.id); h += '<table class="lu-t">';
@@ -204,11 +236,12 @@
       }
       h += '</div>';
     });
-    h += '<div class="lu-s lu-ifcrow">Add-on IFC: <select class="lu-schema"><option value="IFC2X3"' + (state.schema === 'IFC2X3' ? ' selected' : '') + '>IFC2X3</option><option value="IFC4"' + (state.schema === 'IFC4' ? ' selected' : '') + '>IFC4</option></select> <button class="lu-frame">Load frame…</button> <span data-k="frame">' + (state.frame ? esc(state.frame.name) + ': ' + esc(state.frame.summary) : 'no frame: the DB frame is written as is') + '</span></div>';
-    h += '<div class="lu-dl"><button class="lu-cl">Change list (.txt)</button><button class="lu-ifc">Add-on IFC</button></div><div class="lu-s" data-st-ifc></div>';
+    h += '<div class="lu-s lu-ifcrow">Export (IFC) as <select class="lu-schema"><option value="IFC2X3"' + (state.schema === 'IFC2X3' ? ' selected' : '') + '>IFC2X3</option><option value="IFC4"' + (state.schema === 'IFC4' ? ' selected' : '') + '>IFC4</option></select> <button class="lu-frame">Load frame…</button> <span data-k="frame">' + (state.frame ? esc(state.frame.name) + ': ' + esc(state.frame.summary) : 'no frame: the DB frame is written as is') + '</span></div>';
+    h += '<div class="lu-dl"><button class="lu-cl">Change list (.txt)</button><button class="lu-ifc" title="Exports out what was added from this upgrade">Export (IFC)</button></div><div class="lu-s" data-st-ifc></div>';
     body.innerHTML = h;
     body.querySelectorAll('.lu-run').forEach(function (b) { b.onclick = function () { runPack(b.getAttribute('data-run')); }; });
     body.querySelectorAll('.lu-load').forEach(function (b) { b.onclick = function () { loadInput(b.getAttribute('data-load'), b.getAttribute('data-accept')); }; });
+    body.querySelectorAll('.lu-data').forEach(function (a) { a.onclick = function (ev) { ev.preventDefault(); openData(a.getAttribute('data-data')); }; });
     body.querySelectorAll('.lu-rules').forEach(function (a) { a.onclick = function (ev) { ev.preventDefault(); var id = a.getAttribute('data-rules'); state.open[id] = !state.open[id]; paint(); }; });
     body.querySelectorAll('input[data-rk]').forEach(function (i) { i.onchange = function () {
       var p = i.getAttribute('data-rk').split('|'), id = p[0], k = p[1], cur = rowsOf(id)[k], e = Object.assign({}, state.edits[id][k] || cur);
@@ -235,5 +268,5 @@
     if (open) await paint();
     log('§LODUP_PANEL open=' + open + ' rows=' + state.panel.querySelectorAll('.lu-row').length + ' packs=' + window.LodRegistry.list().length);
   }
-  window.LodUI = { setInput: function (pid, iid, json, name) { var spec = window.LodRegistry.get(pid).inputs.filter(function (i) { return i.id === iid; })[0], v = spec.validate(json); if (!v.ok) return v; (state.inputs[pid] = state.inputs[pid] || {})[iid] = { json: json, name: name || 'file', summary: v.summary }; return v; }, applyHostHide: applyHostHide, exportIfc: exportIfc, setFrame: function (json, name) { var v = window.LodIfc.validateFrame(json); if (!v.ok) return v; state.frame = { json: json, name: name || 'frame', summary: v.summary }; return v; }, toggle: toggle, boot: boot, runPack: runPack, paint: paint, state: state, rowsOf: rowsOf, setRow: function (id, k, row) { var m = window.LodRules.merge(rowsOf(id), (function () { var o = {}; o[k] = row; return o; })()); if (!m.refused.length) state.edits[id][k] = row; return m; }, changeListText: changeListText, syncTables: syncTables };
+  window.LodUI = { setInputText: async function (pid, iid, text, name) { var spec = window.LodRegistry.get(pid).inputs.filter(function (i) { return i.id === iid; })[0], rr = await spec.read(text, name, await inputCtx(pid)); if (rr.ok) (state.inputs[pid] = state.inputs[pid] || {})[iid] = { json: rr.json, name: name, summary: rr.summary }; return rr; }, openData: openData, setData: function (pid, id, j) { (state.data[pid] = state.data[pid] || {})[id] = j; }, setInput: function (pid, iid, json, name) { var spec = window.LodRegistry.get(pid).inputs.filter(function (i) { return i.id === iid; })[0], v = spec.validate(json); if (!v.ok) return v; var pk = window.LodRegistry.get(pid), df = (state.data[pid] || {}).formats; if (pk.attachFormat && df) { var fv = window.LodSchedule.validateFormats(df), at = pk.attachFormat(json, fv.ok ? fv.list : []); if (!at.ok) return at; json = at.json; } (state.inputs[pid] = state.inputs[pid] || {})[iid] = { json: json, name: name || 'file', summary: v.summary }; return v; }, applyHostHide: applyHostHide, exportIfc: exportIfc, setFrame: function (json, name) { var v = window.LodIfc.validateFrame(json); if (!v.ok) return v; state.frame = { json: json, name: name || 'frame', summary: v.summary }; return v; }, toggle: toggle, boot: boot, runPack: runPack, paint: paint, state: state, rowsOf: rowsOf, setRow: function (id, k, row) { var m = window.LodRules.merge(rowsOf(id), (function () { var o = {}; o[k] = row; return o; })()); if (!m.refused.length) state.edits[id][k] = row; return m; }, changeListText: changeListText, syncTables: syncTables };
 })();

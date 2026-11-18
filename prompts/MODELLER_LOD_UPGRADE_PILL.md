@@ -433,3 +433,19 @@ The first entry is the existing layout, id `revit-s401-style`, `status: "one bui
 - JOIN: on the Hospital model the pack applies to 0 and says why (no beam name matches the format's `mark_regex`; 1,970 steel `IfcBeam`), never a silent 0.
 - REGRESSION: W-LODUP-BEAMBARS unchanged (306 sets, 92/92 joined, the same 7 STATED mismatches) with the join now read from the format.
 **Not in this phase:** the Hospital has no concrete beam schedule in the model; its value from the Upgrade button is Steel joints / Bracing gussets (a separate measured run, owner's call).
+
+## P8 RESULT (2026-11-18)
+Built: `lod/rules/schedule_formats.json` (one entry, `revit-s401-style`, status "one building"); `lod/lod_schedule.js` (validateFormats / detect / toMarks / read: the JS twin of `s401_marks.py`, its `COLS` now the format's `columns`); `beambar_pack.js` reads the join from the schedule's `_format` (the three join rows left `beambar_defaults.json`: 18 -> 15 rows), `readSchedule` takes a `.json` or a `.dxf`, a `JOIN` log line says why a model joins nothing; `lod_ui.js` a generic input `read` hook (ctx: the pack's data files, the schedule reader, the 2D import's DXF table reader loaded on first use with its own `element_defaults.json` limits), a **Formats** link with a JSON editor (Save validates, Download edits); `lod_registry.js` describes a pack's `dataFiles`. Cache v302.
+| Check | Result |
+|---|---|
+| W-LODUP-SCHEDFMT PARITY_MARKS | the S-401 sheet through the format: **22 / 22 marks equal** to the proven file (every field, every cell text, every citation); `§LODUP_SCHED_MARKS ... beam_tables=3 marks=22 skipped_rows=0 unparsed_cells=0 -> PASS` = the Python's own line |
+| FORMAT_DETECT / READ_HOOK / NO_FORMAT | exactly one format; the pack reader on the .dxf and on the .json both carry `_format`; a .json naming no format while 2 exist is refused; the sheet with the entry removed is refused, its headings listed |
+| SECOND_FIRM | a schedule with headings `MARK / B / D / BOT / TOP / SIDE / LINKS` refused first; ONE entry added (data only) -> 2 marks equal to the hand-derived truth; a model named `Concrete beam B1` joins through it (the steel beam does not); through the S-401 entry it joins 0 |
+| AMBIGUOUS | two matching formats refused, both named |
+| JOIN_HOSPITAL | `in_model=1970 names_matching_mark_regex=0`; the panel says "no IfcBeam name matches the format revit-s401-style (1970 IfcBeam in the model)" |
+| Live (real Modeller page, Shed model, software GL) | row shows "1 format(s): revit-s401-style (one building)" and accepts `.dxf`; Load schedule… with the S-401 DXF: "22 marks read from the drawing (format revit-s401-style, one building)"; Formats editor: a save without `join` refused with its reason (the shipped entry kept), a valid edit saved |
+| Regressions | REBAR, WELDS, LAYERS, JOINTS, GUSSETS, **BEAMBARS (92/92 joined, 306/306 sets, the same 7 STATED mismatches on 2 beams)**, NEIGHBOURS, YIELD, IFC (real, incl. REAL_JOINTS): all exit 0, summaries failed=none; W-MANIFEST-ROUNDTRIP 13/13 |
+
+## EXPORT NAME (2026-11-18, owner)
+Owner, verbatim: *"The term is dubious ... Why call it add-on IFC? Why not diff or something that user will know why"* → *"Export (IFC)? This seems not ambigous, intuitive. Can have a mouse hover tooltip 'Exports out what was added from this upgrade'"*.
+The panel button **Add-on IFC** becomes **Export (IFC)**, its tip *"Exports out what was added from this upgrade"* (with the part count once a run has added parts); the schema row reads "Export (IFC) as IFC2X3 | IFC4"; the status line "Export (IFC, IFC2X3): 470 parts, 50.7 MB, ..."; the file `<model>_upgrade_<schema>.ifc` (was `_addon_`). Code identifiers (`lu-ifc`, `exportIfc`, `§LODUP_IFC_*`) are unchanged. Witness: the guide-snapshot capture asserts the label, the tip and the saved file name from the real page (`§GUIDESNAP_*`); the LODUP witnesses re-pin `lod_ui.js`. Cache v304, `lod_ui.js?v=8`.

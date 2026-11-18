@@ -161,12 +161,34 @@
     return { ok: true, count: keys.length, summary: keys.length + ' marks' };
   }
   function marksOf(inp) { var u = inp && inp.inputs && inp.inputs.beambars, s = u && u.schedule; if (!s) return null; var o = {}; Object.keys(s).sort().forEach(function (k) { if (k.charAt(0) !== '_') o[k] = s[k]; }); return o; }
-  function joinOf(inp, RULES, MARKS) {   // host element -> mark (rule rows host_class + mark_regex + mark_source)
-    var rv = function (k) { if (!RULES[k]) throw new Error('rule row missing: ' + k); return RULES[k].value; }, cls = rv('host_class'), RX = new RegExp(rv('mark_regex')), src = rv('mark_source'), META = inp.meta, hosts = [], HM = {};
+  // P8: the join (which beam reads which schedule row) belongs to the schedule FORMAT, not to the geometry rule rows: lod/rules/schedule_formats.json, carried on the loaded schedule as _format
+  function formatOf(inp) { var u = inp && inp.inputs && inp.inputs.beambars, s = u && u.schedule; return (s && s._format && s._format.join) ? s._format : null; }
+  function joinOf(inp, RULES, MARKS) {   // host element -> mark (the format's join: host_class + mark_regex group 1 on mark_source)
+    var F = formatOf(inp), META = inp.meta, hosts = [], HM = {}; if (!F) return { hosts: [], HM: {}, unjoined: [], format: null };
+    var cls = F.join.host_class, RX = new RegExp(F.join.mark_regex), src = F.join.mark_source, nCls = 0;
     Object.keys(META).sort().forEach(function (g) {
-      if (META[g].cls !== cls) return; var text = src === 'element_name' ? META[g].name : ((inp.sched || {})[g] || {})[src], m = RX.exec(text || ''); if (!m) return; hosts.push(g); HM[g] = m[1];
+      if (META[g].cls !== cls) return; nCls++; var text = src === 'element_name' ? META[g].name : ((inp.sched || {})[g] || {})[src], m = RX.exec(text || ''); if (!m) return; hosts.push(g); HM[g] = m[1];
     });
-    return { hosts: hosts, HM: HM, unjoined: hosts.filter(function (g) { return !MARKS || !(HM[g] in MARKS); }) };
+    return { hosts: hosts, HM: HM, unjoined: hosts.filter(function (g) { return !MARKS || !(HM[g] in MARKS); }), format: F, classCount: nCls };
+  }
+  // P8: one entry for both files "Load schedule…" takes. ctx (from lod_ui.js / the witness) = {formats: [...], LodSchedule, dxfSheet: async (text, name) -> {ok, sheet, why}}
+  function attachFormat(json, formats, wantId) {   // a marks JSON names its format in _format (an id) or, when exactly one format exists, takes it; else refused
+    var id = wantId || (typeof json._format === 'string' ? json._format : null), list = formats || [], f = id ? list.filter(function (x) { return x.id === id; })[0] : (list.length === 1 ? list[0] : null);
+    if (!f) return { ok: false, why: id ? 'the file names schedule format "' + id + '", which is not in the formats list' : 'the file names no schedule format (_format) and ' + list.length + ' formats exist: name one' };
+    var o = {}; Object.keys(json).forEach(function (k) { if (k !== '_format') o[k] = json[k]; }); o._format = f; return { ok: true, json: o, format: f };
+  }
+  async function readSchedule(text, name, ctx) {
+    var lines = [];
+    if (/\.dxf$/i.test(name || '')) {
+      var d = await ctx.dxfSheet(text, name); if (!d.ok) return { ok: false, why: d.why };
+      var r = ctx.LodSchedule.read(d.sheet, ctx.formats, name); if (r.detect) lines.push(r.detect); if (r.line) lines.push(r.line);
+      if (!r.ok) return { ok: false, why: r.why, lines: lines };
+      var a = attachFormat(r.marks, ctx.formats, r.format.id), v = validateMarks(a.json); if (!v.ok) return { ok: false, why: v.why, lines: lines };
+      return { ok: true, json: a.json, lines: lines, summary: v.count + ' marks read from the drawing (format ' + r.format.id + ', ' + (r.format.status || 'status not stated') + ')' };
+    }
+    var j; try { j = JSON.parse(text); } catch (e) { return { ok: false, why: 'not valid JSON (' + e.message + ')' }; }
+    var v2 = validateMarks(j); if (!v2.ok) return v2; var a2 = attachFormat(j, ctx.formats); if (!a2.ok) return a2;
+    return { ok: true, json: a2.json, summary: v2.count + ' marks (format ' + a2.format.id + ', ' + (a2.format.status || 'status not stated') + ')' };
   }
 
   // ---------------------------------------------------------------- the run
@@ -174,15 +196,17 @@
   function* runSteps(inp, RULES, opts) {
     opts = opts || {}; var LOG = opts.log || function () { }, t0 = Date.now(), P = '§LODUP_BEAMBAR_';
     var rv = function (k) { if (!RULES[k]) throw new Error('rule row missing: ' + k); return RULES[k].value; };
-    var SIDES = parseInt(rv('bar_sides'), 10), G = RB.make(SIDES), STOCK = rv('stock_length_mm') / 1000.0, META = inp.meta, HC = rv('host_class');
+    var SIDES = parseInt(rv('bar_sides'), 10), G = RB.make(SIDES), STOCK = rv('stock_length_mm') / 1000.0, META = inp.meta, FMT = formatOf(inp), HC = FMT ? FMT.join.host_class : 'IfcBeam';
     var COVER = rv('beam_cover_mm') / 1000.0, MINCL = rv('beam_min_clear_mm') / 1000.0, LAYCL = rv('beam_layer_clear_mm') / 1000.0, STEP = rv('beam_sample_step_mm') / 1000.0, MARG = rv('beam_fit_margin_mm') / 1000.0;
     var BREAK = !!opts.breakCover, PLC = BREAK ? 0.0 : COVER, THR = PLC > 0 ? PLC + MARG : -0.0005;   // the break switch changes PLACEMENT only; the witnesses judge against the rule row
     var MARKS = marksOf(inp), empty = { parts: [], changes: [], stats: { added: 0, notBuilt: 0, refused: 0, addedVerts: 0, appliesTo: 0, judged: 0, ms: 0 }, audit: { hosts: [], HM: {}, unjoined: [], REC: {}, MARKS: {}, used: {}, refusedLines: [] } };
     if (!MARKS) { LOG(P + 'RUN VACUOUS no schedule loaded: nothing to join -> INCONCLUSIVE'); empty.stats.say = 'Load a schedule (marks JSON) first.'; return empty; }
+    if (!FMT) { LOG(P + 'RUN VACUOUS the schedule carries no schedule format (_format): nothing says how a beam finds its row -> INCONCLUSIVE'); empty.stats.say = 'The loaded schedule names no schedule format.'; return empty; }
     LOG(P + 'MODE break=' + (BREAK ? 1 : 0) + ' cover_rule_mm=' + fmtG(COVER * 1000) + ' placement_cover_mm=' + fmtG(PLC * 1000) + ' min_clear_mm=' + fmtG(MINCL * 1000) + ' layer_clear_mm=' + fmtG(LAYCL * 1000) + ' sample_step_mm=' + fmtG(STEP * 1000));
     var J = joinOf(inp, RULES, MARKS), hosts = J.hosts, HM = J.HM, unjoined = J.unjoined, used = {};
     hosts.forEach(function (g) { if (HM[g] in MARKS) used[HM[g]] = (used[HM[g]] || 0) + 1; });
     var unused = Object.keys(MARKS).filter(function (m) { return !(m in used); }).sort();
+    LOG(P + 'JOIN format=' + FMT.id + ' (' + (FMT.status || '-') + ') host_class=' + HC + ' in_model=' + J.classCount + ' names_matching_mark_regex=' + hosts.length + (hosts.length ? '' : ' -> INCONCLUSIVE: no ' + HC + ' name matches this format\'s mark_regex, nothing is joined (a format for this model\'s naming is needed)'));
     LOG(P + 'INPUT host_class=' + HC + ' hosts=' + hosts.length + ' schedule_marks=' + Object.keys(MARKS).length + ' marks_used=' + Object.keys(used).length + ' marks_unused=' + pyList(unused));
     var parts = [], CH = [], addedVerts = 0, REC = {}, nLines = 0, nLinesOk = 0, nCand = 0, nCandOk = 0, refusedLines = [];
     var change = function (kind, guid, cls, host, rule, detail) { CH.push({ kind: kind, guid: guid, cls: cls, host: host, rule: rule, detail: detail }); };
@@ -314,7 +338,7 @@
     var heap = (typeof performance !== 'undefined' && performance.memory) ? Math.round(performance.memory.usedJSHeapSize / 1048576) : null, ms = Date.now() - t0;
     LOG(P + 'SUMMARY added=' + cnt.ADDED + ' not_built=' + cnt.NOT_BUILT + ' refused=' + cnt.REFUSED + ' sets=' + parts.length + ' addedVerts=' + addedVerts + ' ms=' + ms + ' heapMB=' + heap + (parts.length ? '' : ' INCONCLUSIVE (no beam joined a schedule mark: nothing was judged)'));
     return { parts: parts, changes: CH, stats: { added: cnt.ADDED, notBuilt: cnt.NOT_BUILT, refused: cnt.REFUSED, addedVerts: addedVerts, appliesTo: hosts.length - unjoined.length, judged: hosts.length - unjoined.length, beamsBuilt: built, barLines: nLines, barLinesPlaced: nLinesOk, stirrupPositions: nCand, stirrupLoopsPlaced: nCandOk, ms: ms,
-      say: parts.length ? undefined : 'Beam rebar: no beam joined a schedule mark (' + hosts.length + ' beams matched, ' + Object.keys(MARKS).length + ' marks loaded).' },
+      say: parts.length ? undefined : (hosts.length ? 'Beam rebar: no beam joined a schedule mark (' + hosts.length + ' beams matched, ' + Object.keys(MARKS).length + ' marks loaded).' : 'Beam rebar: no ' + HC + ' name matches the format ' + FMT.id + ' (' + J.classCount + ' ' + HC + ' in the model).') },
       audit: { hosts: hosts, HM: HM, unjoined: unjoined, REC: REC, MARKS: MARKS, used: used, unused: unused, refusedLines: refusedLines, COVER: COVER, MINCL: MINCL, STOCK: STOCK, SIDES: SIDES, RB_NV: SIDES * 4 * 3, LOOP_NV: 4 * SIDES * 2 * 3 } };
   }
 
@@ -324,8 +348,9 @@
     try { var J = joinOf(inp, rows, MARKS); return J.hosts.length - J.unjoined.length; } catch (e) { return 0; }
   }
   var API = { id: 'beambars', label: 'Beam rebar (schedule)', unit: 'beams', rulesFile: 'rules/beambar_defaults.json', run: run, runSteps: runSteps, appliesTo: appliesTo,
-    inputs: [{ id: 'schedule', label: 'Load schedule…', accept: '.json,application/json', validate: validateMarks }],
-    validateMarks: validateMarks, parseSide: parseSide, joinOf: joinOf, TriSet: TriSet, planAngle: planAngle, modalZ: modalZ, roundHalfEven: roundHalfEven };
+    inputs: [{ id: 'schedule', label: 'Load schedule…', accept: '.json,application/json,.dxf', validate: validateMarks, read: readSchedule }],
+    dataFiles: [{ id: 'formats', label: 'Formats', file: 'rules/schedule_formats.json' }],   // P8: editable data the pack reads (the panel's Formats link); validated by LodSchedule.validateFormats
+    validateMarks: validateMarks, attachFormat: attachFormat, readSchedule: readSchedule, formatOf: formatOf, parseSide: parseSide, joinOf: joinOf, TriSet: TriSet, planAngle: planAngle, modalZ: modalZ, roundHalfEven: roundHalfEven };
   if (typeof window !== 'undefined' && window.LodRegistry) window.LodRegistry.register(API);   // browser: the pack registers itself; adding a pack needs no dialog change
   return API;
 });

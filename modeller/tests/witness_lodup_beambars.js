@@ -25,7 +25,7 @@ var Rules = require(path.join(ROOT, 'lod/lod_rules.js')), Rebar = require(path.j
   Reader = require(path.join(ROOT, 'lod/lod_reader.js')), Registry = require(path.join(ROOT, 'lod/lod_registry.js'));
 var initSqlJs = require(path.join(ROOT, 'lib', 'sql-wasm.js')), wasmBinary = fs.readFileSync(path.join(ROOT, 'lib', 'sql-wasm.wasm'));
 var SRC = process.env.LODUP_SRC_DB, ORA = process.env.LODUP_ORACLE_DB, MARKS_FILE = process.env.LODUP_MARKS_JSON, ORA_LOG = process.env.LODUP_ORACLE_LOG, MAIN_BREAK = process.env.LODUP_BREAK === '1';
-var LOD_UI_SHA = process.env.LODUP_UI_SHA || '03791bfb8a26caea76027d97a954ce47a0aafa5947a8d5fad6db0a40bfcde037';   // lod/lod_ui.js as of the P7 NAME FIX (download names drop the .db; the P7 file was 37e57cb76e4092bf); as of P7 (the Add-on IFC row + sliced run driver; the P6 file was dfb5d321c6f86f8c); the P1-P5 witnesses carry the same constant
+var LOD_UI_SHA = process.env.LODUP_UI_SHA || 'f44fcfdee5cefb091d661419fdde29a131ecc59d9818dd58d2ff3ef2f98a5e7f';   // lod/lod_ui.js as of the EXPORT NAME (owner: "Export (IFC)"; the P8 file was bb35df181b869aa8); as of P8 (Formats link, Load schedule reads a .dxf; the NAME FIX file was 03791bfb8a26caea); as of the P7 NAME FIX (download names drop the .db; the P7 file was 37e57cb76e4092bf); as of P7 (the Add-on IFC row + sliced run driver; the P6 file was dfb5d321c6f86f8c); the P1-P5 witnesses carry the same constant
 var FAILS = [], INCONC = [], VTOL = 1e-5, SIDES = 8, RB_NV = SIDES * 4 * 3, LOOP_NV = 4 * SIDES * 2 * 3;   // 0.01 mm
 function verdict(name, ok, line) { var v = ok === null ? 'INCONCLUSIVE' : ok ? 'PASS' : 'FAIL'; console.log('§LODUP_' + name + ' ' + line + ' -> ' + v); if (v === 'FAIL') FAILS.push(name); if (v === 'INCONCLUSIVE') INCONC.push(name); return v; }
 function q(db, sql, bind) { var st = db.prepare(sql), out = []; if (bind) st.bind(bind); while (st.step()) out.push(st.get()); st.free(); return out; }
@@ -168,7 +168,8 @@ initSqlJs({ wasmBinary: wasmBinary }).then(function (SQL) {
   else { srcDb = synthetic(SQL); marks = SYN_MARKS; }
   console.log('§LODUP_MODE pack=beambars source=' + (REAL ? 'LODUP_SRC_DB (real)' : 'SYNTHETIC fixture (LODUP_SRC_DB / LODUP_ORACLE_DB / LODUP_MARKS_JSON unset)') + ' oracle=' + (REAL ? 'LODUP_ORACLE_DB' + (oLog ? ' + LODUP_ORACLE_LOG' : '') : 'none'));
   var inp = Reader.fromDb(srcDb), inpNo = Object.assign({}, inp);   // inpNo: no schedule loaded
-  inp.inputs = { beambars: { schedule: marks } };
+  var FORMATS = JSON.parse(fs.readFileSync(path.join(ROOT, 'lod/rules/schedule_formats.json'), 'utf8')).formats, att = function (m, list) { return Pack.attachFormat(m, list || FORMATS).json; };   // P8: the join lives in the schedule format
+  inp.inputs = { beambars: { schedule: att(marks) } };
   var RULES = Rules.load(JSON.parse(fs.readFileSync(path.join(ROOT, 'lod/rules/beambar_defaults.json'), 'utf8'))), RC = Rules.counts(RULES);
   console.log('§LODUP_RULES pack=beambars rows=' + RC.total + ' stated=' + RC.stated + ' default=' + RC.default + ' unset=' + RC.unset);
   var run = function (rows, o, inpX) { return Pack.run(inpX || inp, rows, Object.assign({ log: function (l) { console.log(l); } }, o || {})); };
@@ -265,12 +266,12 @@ initSqlJs({ wasmBinary: wasmBinary }).then(function (SQL) {
       t1 = Rules.merge(RULES, { beam_cover_mm: { value: 50, source: 'stated: test edit' } }), t2 = Rules.merge(t1.rows, { beam_cover_mm: { value: 30, source: 'default: attempt' } }), r50 = Pack.run(inp2, t1.rows, { log: function () { } });
     var len = function (rr) { var g = rr.parts.filter(function (p) { return /-BOT$/.test(p.guid); })[0]; return g ? barChunks(written([g], meta2)[g.guid])[0].length * 1000 : null; };
     var l40 = len(base), l50 = len(r50), dL = l40 - l50;
-    var rx = Rules.merge(RULES, { mark_regex: { value: ':(ZZ[0-9]+)\\(', source: 'stated: test edit' } }), rj = Pack.run(inp2, rx.rows, { log: function () { } });
+    var fx = Object.assign({}, FORMATS[0], { join: Object.assign({}, FORMATS[0].join, { mark_regex: ':(ZZ[0-9]+)\\(' }) }), rj = Pack.run(Object.assign({}, inp2, { inputs: { beambars: { schedule: att(marks, [fx]) } } }), RULES, { log: function () { } });   // P8: the join is edited in the FORMAT
     var one = A.hosts.filter(function (g) { return A.HM[g] === A.HM[two[0]]; })[0], marks2 = {}; Object.keys(marks).forEach(function (k) { if (k !== A.HM[two[0]]) marks2[k] = marks[k]; });
-    var inp3 = Object.assign({}, inp2, { inputs: { beambars: { schedule: marks2 } } }), r3 = Pack.run(inp3, RULES, { log: function () { } }), nbRows = r3.changes.filter(function (c) { return c.kind === 'NOT_BUILT' && /No schedule row/.test(c.rule); });
+    var inp3 = Object.assign({}, inp2, { inputs: { beambars: { schedule: att(marks2) } } }), r3 = Pack.run(inp3, RULES, { log: function () { } }), nbRows = r3.changes.filter(function (c) { return c.kind === 'NOT_BUILT' && /No schedule row/.test(c.rule); });
     var noSrc = Object.keys(RULES).filter(function (k) { return !/^(default|stated|unset)/.test(String(RULES[k].source)); });
     verdict('RULES', base.parts.length > 0 && l40 !== null && Math.abs(dL - 20) < (REAL ? 0.5 : 0.05) && t2.refused.length === 1 && t2.rows.beam_cover_mm.value === 50 && rj.parts.length === 0 && nbRows.length >= 1 && noSrc.length === 0,
-      'cover 40 -> 50 (stated): a bar is ' + (l40 && l40.toFixed(2)) + ' -> ' + (l50 && l50.toFixed(2)) + ' mm (shorter by ' + (dL && dL.toFixed(2)) + ' = 2 x 10 within ' + (REAL ? '0.5 mm: the real beam end is not a plain box face' : '0.05 mm') + '); a default edit over the stated row refused=' + t2.refused.length + '; mark_regex edited to match nothing: parts=' + rj.parts.length + '; mark "' + A.HM[two[0]] + '" removed from the schedule: NOT_BUILT "No schedule row" rows=' + nbRows.length + ' (nothing guessed); rows=' + RC.total + ' all with a source (' + noSrc.length + ' without)');
+      'cover 40 -> 50 (stated): a bar is ' + (l40 && l40.toFixed(2)) + ' -> ' + (l50 && l50.toFixed(2)) + ' mm (shorter by ' + (dL && dL.toFixed(2)) + ' = 2 x 10 within ' + (REAL ? '0.5 mm: the real beam end is not a plain box face' : '0.05 mm') + '); a default edit over the stated row refused=' + t2.refused.length + '; the format mark_regex edited to match nothing: parts=' + rj.parts.length + '; mark "' + A.HM[two[0]] + '" removed from the schedule: NOT_BUILT "No schedule row" rows=' + nbRows.length + ' (nothing guessed); rows=' + RC.total + ' all with a source (' + noSrc.length + ' without)');
   })();
 
   // ---- DETERMINISM: two runs, the same op hash

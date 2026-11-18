@@ -27,7 +27,7 @@ async function main() {
     var id = PLAN[k][0], envKey = PLAN[k][1], dbp = E[envKey];
     if (!dbp || (id === 'beambars' && !E.LODUP_MARKS_JSON)) { verdict(id.toUpperCase(), null, 'pack=' + id + ' ' + envKey + (id === 'beambars' ? ' / LODUP_MARKS_JSON' : '') + ' not set: not judged'); continue; }
     if (!cache[dbp]) cache[dbp] = new SQL.Database(new Uint8Array(fs.readFileSync(dbp)));
-    var inp = Reader.fromDb(cache[dbp]); inp.callouts = []; inp.inputs = id === 'beambars' ? { beambars: { schedule: JSON.parse(fs.readFileSync(E.LODUP_MARKS_JSON, 'utf8')) } } : {}; inp.generated = function () { return []; };
+    var inp = Reader.fromDb(cache[dbp]); inp.callouts = []; inp.inputs = id === 'beambars' ? { beambars: { schedule: Packs.beambars.attachFormat(JSON.parse(fs.readFileSync(E.LODUP_MARKS_JSON, 'utf8')), JSON.parse(fs.readFileSync(path.join(ROOT, 'lod/rules/schedule_formats.json'), 'utf8')).formats).json } } : {}; inp.generated = function () { return []; };
     var P = Packs[id], rows = rowsFor(id), t0 = Date.now(), a = P.run(inp, rows, { log: function () { } }), tSync = Date.now() - t0;
     t0 = Date.now(); var d = await Reg.kit.drive(P.runSteps(inp, rows, { log: function () { } }), { budgetMs: 25, wait: function () { return new Promise(function (r) { setImmediate(r); }); } }), tDriven = Date.now() - t0, b = d.value;
     var same = hashOf(a) === hashOf(b) && a.parts.length === b.parts.length, mx = d.stats.maxSliceMs;
