@@ -474,6 +474,7 @@ function describe(O, a) { if (!a.kind) refuse('--kind is required'); return OC.d
 // ask --question Q [--lang L] [--role R] [--user U]: the help question box at the terminal (bim-compiler prompts/VOCAB_MESSAGE_CATALOG.md §13, witness W-ERP-ASK). The SAME index the page's How To box
 //   builds (erp/help_search.js indexFrom) over this dictionary and the help pack of the chosen language (lang_rule.js: --lang, the stated user's preference, LANG, client 0). Reads only.
 //   --role: only the windows that role may open (AD_Window_Access), and its client for the language; without it every active window.
+//   The processes and reports are the P/R leaves of that role's menu (roleMenu, the tree erp.menu walks; the page's menu().processes): CLI_ERP_IVR §60.
 function ask(O, a) {
   if (!a.question || !String(a.question).trim()) refuse('--question is required');
   const E = path.join(ROOT, 'erp'), LR = require('./lang_rule.js'), HS = require(path.join(E, 'help_search.js'));
@@ -487,9 +488,12 @@ function ask(O, a) {
   const log = console.log; console.log = () => {}; let fsm; try { fsm = require(path.join(E, 'ad_docfsm.js')); } finally { console.log = log; }
   const ids = (roleId != null ? O.rows("SELECT DISTINCT a.ad_window_id AS w FROM ad_window_access a JOIN ad_window w ON w.ad_window_id=a.ad_window_id WHERE a.ad_role_id=? AND a.isactive='Y' AND w.isactive='Y'", [roleId])
     : O.rows("SELECT ad_window_id AS w FROM ad_window WHERE isactive='Y'")).map((r) => Number(r.w));
-  const idx = HS.indexFrom({ q: (sql) => O.rows(sql), en, pack: pk, fsm, windowIds: ids }), c = idx.ask(String(a.question));
+  // the processes and reports of the role's menu: the P/R leaves of the same tree erp.menu walks, as the page's menu().processes (idempiere.html:1677, :3144; CLI_ERP_IVR §60)
+  const pset = new Set(); (function leaves(ns) { (ns || []).forEach((n) => { if (n.children && n.children.length) leaves(n.children); else if ((n.action === 'P' || n.action === 'R') && n.processId != null) pset.add(Number(n.processId)); }); })(roleMenu(O, roleId).tree);
+  const pids = [...pset];
+  const idx = HS.indexFrom({ q: (sql) => O.rows(sql), en, pack: pk, fsm, windowIds: ids, processIds: pids }), c = idx.ask(String(a.question));
   const text = (h) => String(h || '').replace(/<[^>]+>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
-  say('ASK lang=' + L.lang + ' by=' + L.by + ' pack=' + (pk ? L.lang : 'en_US') + ' howto=' + (idx.localHowto ? L.lang : 'en_US') + ' windows=' + ids.length + ' window=' + (c.window ? c.window.id : 'none') + ' action=' + (c.action ? c.action.code : 'none') + ' matched=' + JSON.stringify(c.matched));
+  say('ASK lang=' + L.lang + ' by=' + L.by + ' pack=' + (pk ? L.lang : 'en_US') + ' howto=' + (idx.localHowto ? L.lang : 'en_US') + ' windows=' + ids.length + ' window=' + (c.window ? c.window.id : 'none') + ' processes=' + pids.length + ' process=' + (c.process ? c.process.id : 'none') + ' action=' + (c.action ? c.action.code : 'none') + ' matched=' + JSON.stringify(c.matched));
   // the card as lines for a person (red1 prints an answer's summary): the labels the page uses (erp/i18n/chrome.json help.*), resolved as ErpI18n.t resolves them in the page:
   //   the dictionary's element name for that language (ref el:<id>, erp/i18n/<lang>.json AD_Element_Trl) when there is one, else the labelled machine entry, else English
   const cat = (() => { try { return JSON.parse(fs.readFileSync(path.join(E, 'i18n', 'chrome.json'), 'utf8')).keys || {}; } catch (e) { return {}; } })();
@@ -499,13 +503,14 @@ function ask(O, a) {
     v = v || (k && k.en) || en; return args ? v.replace(/\{(\d)\}/g, (x, i) => (args[i] != null ? args[i] : '')) : v; };
   const lines = [];
   if (c.window) lines.push(T('help.window', 'Window') + ': ' + c.window.name);
+  if (c.process) lines.push((c.process.report ? T('help.report', 'Report') : T('help.process', 'Process')) + ': ' + c.process.name);   // the page's row, in the page's place (idempiere.html:3235)
   if (c.action) { lines.push(T('help.action', 'Action') + ': ' + c.action.name + ' — ' + (c.action.description || '')); lines.push('  ' + T('help.allowed', 'Allowed when the document is') + ': ' + c.action.allowedFrom.join(', '));
     if (c.action.alternatives.length) lines.push('  ' + T('help.also', 'Also') + ': ' + c.action.alternatives.map((x) => x.name).join(', ')); }
   if (c.cli) lines.push('CLI: ' + (c.cli.line || T('help.cliNote', '{0} is offered for {1}, not for {2}', [c.cli.verb, c.cli.offeredFor || '-', c.cli.kind || '-'])));
   if (c.guide) lines.push(T('help.guide', 'Guide') + ': ' + c.guide.title + ' ' + c.guide.url);
   if (c.howto) { lines.push(''); if (!idx.localHowto && L.lang !== 'en_US') lines.push(T('help.english', '(English)')); lines.push(text(c.howto.html)); if (c.howto.translated) lines.push('(' + T('help.translated', 'Translated by the build session, not reviewed by a native speaker') + ')'); }
-  if (!c.window && !c.action && !c.howto) lines.push(T('help.none', 'No match in the dictionary or the how-to rows.'));
-  return { question: c.question, lang: L.lang, langBy: L.by, howtoLang: idx.localHowto ? L.lang : 'en_US', window: c.window, action: c.action, cli: c.cli, guide: c.guide,
+  if (!c.window && !c.action && !c.howto && !c.process) lines.push(T('help.none', 'No match in the dictionary or the how-to rows.'));
+  return { question: c.question, lang: L.lang, langBy: L.by, howtoLang: idx.localHowto ? L.lang : 'en_US', window: c.window, process: c.process || null, processes: pids.length, action: c.action, cli: c.cli, guide: c.guide,
     howto: c.howto ? { name: c.howto.name, window: c.howto.ad_window_id, text: text(c.howto.html), translated: c.howto.translated || null } : null, matched: c.matched, summary: lines.join('\n') };
 }
 function read(O, a) {   // by --id: unchanged. By --number: the resolver names the record, then the same read by its key
@@ -1097,15 +1102,20 @@ const DIFF_BREAK = process.env.MISDIFF_BREAK || '';   // W-MIS-DIFF falsifiers: 
 // ── mis.menu (bim-compiler prompts/CLI_ERP_IVR.md §21): the menu as the page builds it — erp/ad_parser.js getMenuTree + erp/idmp_session.js scopeMenu with the role's grant sets
 // (idempiere.html buildMenu L1613-1622). Nothing re-derived here: this only adds, for a window leaf, the kind its first tab shows (what the list screen opens on), and the find filter.
 const MENU_BREAK = process.env.MENU_BREAK || '';   // W-MIS-MENU falsifiers: noscope | wrongtab
-function menuOf(O, a) {
+// the role's menu tree, as the page renders it (ad_parser.getMenuTree + idmp_session.scopeMenu); no role = the whole tree. menuOf walks it; ask takes its P/R leaves (CLI_ERP_IVR §60)
+function roleMenu(O, roleArg) {
   const quiet = (f) => { const log = console.log; console.log = (...x) => say(x.join(' ')); try { return f(); } finally { console.log = log; } };   // the modules' § lines go to stderr; stdout is the answer
   const ADP = quiet(() => require(path.join(ROOT, 'erp', 'ad_parser.js'))), SES = quiet(() => require(path.join(ROOT, 'erp', 'idmp_session.js'))), AC = require(path.join(ROOT, 'erp', 'ad_access.js'));
   // idmp_session finds the MRole port as window.AdAccess (its page hook, L42); the page loads ad_access.js first. Here the same module is lent for these calls only, and taken back.
   const withAccess = (f) => quiet(() => { const had = Object.prototype.hasOwnProperty.call(globalThis, 'window'), w0 = globalThis.window; globalThis.window = Object.assign({}, had ? w0 : {}, { AdAccess: AC }); try { return f(); } finally { if (had) globalThis.window = w0; else delete globalThis.window; } });
   let role = null;
-  if (a.role != null) { role = O.rows('SELECT ad_role_id AS id, name FROM ad_role WHERE ad_role_id=?', [Number(a.role)])[0]; if (!role) refuse('unknown role ' + a.role + ': no AD_Role with that id'); }
+  if (roleArg != null) { role = O.rows('SELECT ad_role_id AS id, name FROM ad_role WHERE ad_role_id=?', [Number(roleArg)])[0]; if (!role) refuse('unknown role ' + roleArg + ': no AD_Role with that id'); }
   const roots = quiet(() => ADP.getMenuTree(O.db));
   const tree = role && MENU_BREAK !== 'noscope' ? withAccess(() => SES.scopeMenu(roots, SES.accessibleWindows(O.db, role.id), SES.accessibleProcesses(O.db, role.id), SES.accessibleForms(O.db, role.id))).tree : roots;
+  return { role, tree };
+}
+function menuOf(O, a) {
+  const { role, tree } = roleMenu(O, a.role);
   const tabOf = {}, kindOf = (w) => { if (w == null) return null; if (w in tabOf) return tabOf[w];
     const ts = OC.windowTabs(O.rows, Number(w)), r = MENU_BREAK === 'wrongtab' ? ts[ts.length - 1] : ts[0]; return (tabOf[w] = r ? r.tablename : null); };   // the window's first tab in THE window order (object_cli windowTabs); wrongtab = its last
   let leaves = 0, folders = 0, windows = 0;
