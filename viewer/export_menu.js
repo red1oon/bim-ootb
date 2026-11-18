@@ -5,20 +5,21 @@
  */
 // export_menu.js — the Viewer's ONE Export menu (bim-ootb prompts/VIEWER_IFC_EXPORT_BY_DISCIPLINE.md §(a); witness viewer/tests/witness_viewer_export_menu.js).
 // The toolbar pill id 'save' (panels.js) opens it. Three items, no new writer: Building (.db) = A.saveModelDb (scene.js, Ctrl+S unchanged), IFC (whole building) =
-// A.exportIFC (import.js, same worker; the open building's own bytes when it is not an IndexedDB import), BCF (issues) = A.exportBcf (bcf_export.js).
+// A.exportIfcShared (ifc_export_shared.js: the Modeller's lod_ifc.js writer fed with the open building, monolith or split meta+geo; step (b) of prompts/VIEWER_IFC_EXPORT_BY_DISCIPLINE.md), BCF (issues) = A.exportBcf (bcf_export.js).
 // The panel is the Modeller Export pill's idiom (modeller.html initExportMenu): same panel, hover row, outside-click close. Every user-visible action logs §VIEWER_EXPORT_MENU.
 function setupExportMenu(A) {
   'use strict';
   var panel = null, anchorEl = null, opening = false;
   function T(key, dflt) { return (typeof window._trl === 'function') ? window._trl(key, null, dflt) : dflt; }
 
-  // The bytes the IFC worker reads: only a single-file building that carries the extractor's geometry tables (element_instances + component_geometries).
+  // The IFC item needs the building's element tables and a geometry table: in A.db (a monolith) or in A.libDb (a split meta+geo pair).
   function ifcInput() {
     if (!A.db) return { ok: false, why: 'no_building' };
-    if (A.libDb && A.libDb !== A.db) return { ok: false, why: 'split' };
+    if (!window.LodIfc || !window.LodReader || !A.exportIfcShared) return { ok: false, why: 'writer_not_loaded' };
     try {
-      var r = A.db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('element_instances','component_geometries','elements_meta')");
-      if (!r.length || r[0].values.length < 3) return { ok: false, why: 'no_geometry_tables' };
+      var has = function (db, t) { return db.exec("SELECT 1 FROM sqlite_master WHERE type='table' AND name='" + t + "'").length > 0; };
+      var geo = (A.libDb && A.libDb !== A.db) ? A.libDb : A.db;
+      if (!has(A.db, 'elements_meta') || !has(A.db, 'element_instances') || !has(A.db, 'element_transforms') || !(has(geo, 'component_geometries') || has(geo, 'base_geometries'))) return { ok: false, why: 'no_geometry_tables' };
     } catch (e) { return { ok: false, why: 'unreadable' }; }
     return { ok: true };
   }
@@ -27,17 +28,24 @@ function setupExportMenu(A) {
     try { n = (await A._getAllIssues()).length; } catch (e) { n = 0; }
     return [
       { key: 'db', label: T('ui_exp_db', 'Building (.db)'), sub: T('pill_save', 'Save Building') + ' · Ctrl+S', enabled: !!A.db, why: A.db ? '' : 'no_building' },
-      { key: 'ifc', label: T('ui_exp_ifc', 'IFC (whole building)'), sub: ifc.ok ? '.ifc' : T('ui_exp_ifc_none', 'needs a single-file building with geometry tables'), enabled: ifc.ok, why: ifc.ok ? '' : ifc.why },
+      { key: 'ifc', label: T('ui_exp_ifc', 'IFC (whole building)'), sub: ifc.ok ? T('ui_exp_ifc_tip', 'the whole building') + ' · .ifc' : T('ui_exp_ifc_none', 'needs a building with geometry tables'), tip: T('ui_exp_ifc_tip', 'the whole building'), schema: ifc.ok, enabled: ifc.ok, why: ifc.ok ? '' : ifc.why },
       { key: 'bcf', label: T('ui_exp_bcf', 'BCF (issues)'), sub: n ? n + ' · .bcfzip' : T('ui_exp_bcf_none', 'no saved issues'), enabled: n > 0, why: n ? '' : 'no_saved_issues', issues: n }
     ];
   }
   async function run(key) {
     if (key === 'db') { console.log('§VIEWER_EXPORT_MENU item=db action=saveModelDb'); if (A.saveModelDb) return A.saveModelDb(); }
     else if (key === 'ifc') {
-      var name = (A.activeBuilding || 'building');
-      console.log('§VIEWER_EXPORT_MENU item=ifc action=exportIFC building=' + name + ' scope=whole');
-      if (A.exportIFC) return A.exportIFC(name, { dbBytes: A.db.export() });
+      var name = (A.activeBuilding || 'building'), schema = A.ifcSchemaChoice ? A.ifcSchemaChoice() : 'IFC4';
+      console.log('§VIEWER_EXPORT_MENU item=ifc action=exportIfcShared building=' + name + ' scope=whole schema=' + schema);
+      if (A.exportIfcShared) return A.exportIfcShared({ name: name, schema: schema });
     } else if (key === 'bcf') { console.log('§VIEWER_EXPORT_MENU item=bcf action=exportBcf'); if (A.exportBcf) return A.exportBcf(); }
+  }
+  // IFC4 (default) / IFC2X3: two small buttons inside the IFC row (not rows of their own: the menu keeps exactly three items); a tap on one chooses the schema and does not export.
+  function schemaToggle() {
+    var cur = A.ifcSchemaChoice ? A.ifcSchemaChoice() : 'IFC4';
+    return '<span class="ve-schema" style="margin-left:auto;display:flex;gap:4px">' + ['IFC4', 'IFC2X3'].map(function (s) {
+      return '<span class="ve-sch" data-schema="' + s + '" aria-pressed="' + (s === cur) + '" style="padding:2px 6px;border-radius:6px;font-size:10px;border:1px solid ' + (s === cur ? '#5b8def' : '#2c303a') + ';color:' + (s === cur ? '#dfe6f5' : '#7b8494') + ';background:' + (s === cur ? '#26324a' : 'transparent') + '">' + s + '</span>';
+    }).join('') + '</span>';
   }
   function close() { if (panel) panel.style.display = 'none'; if (anchorEl) anchorEl.classList.remove('on'); }
   function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
@@ -63,9 +71,16 @@ function setupExportMenu(A) {
       var h = '<div style="font-size:10px;letter-spacing:.14em;color:#5b6473;margin:2px 4px 8px;text-transform:uppercase">' + esc(T('pill_export', 'Export')) + '</div>';
       items.forEach(function (it) {
         h += '<div class="ve-row" data-key="' + it.key + '" data-disabled="' + (it.enabled ? '0' : '1') + '" data-why="' + esc(it.why) + '" aria-disabled="' + (it.enabled ? 'false' : 'true') + '" style="display:flex;align-items:center;gap:9px;padding:7px 8px;border-radius:8px;' +
-          'cursor:' + (it.enabled ? 'pointer' : 'not-allowed') + ';opacity:' + (it.enabled ? '1' : '.45') + '"><span class="ve-label">' + esc(it.label) + '<br><span class="ve-sub" style="color:#5b6473;font-size:10.5px">' + esc(it.sub) + '</span></span></div>';
+          'cursor:' + (it.enabled ? 'pointer' : 'not-allowed') + ';opacity:' + (it.enabled ? '1' : '.45') + '"' + (it.tip ? ' title="' + esc(it.tip) + '"' : '') + '><span class="ve-label">' + esc(it.label) + '<br><span class="ve-sub" style="color:#5b6473;font-size:10.5px">' + esc(it.sub) + '</span></span>' +
+          (it.schema ? schemaToggle() : '') + '</div>';
       });
       panel.innerHTML = h;
+      Array.prototype.forEach.call(panel.querySelectorAll('.ve-sch'), function (b) {
+        b.onclick = function (e) {
+          e.stopPropagation(); var s = b.getAttribute('data-schema'); if (A.setIfcSchemaChoice) A.setIfcSchemaChoice(s); console.log('§VIEWER_EXPORT_MENU ifc_schema=' + s);
+          Array.prototype.forEach.call(panel.querySelectorAll('.ve-sch'), function (o) { var on = o.getAttribute('data-schema') === s; o.setAttribute('aria-pressed', on); o.style.borderColor = on ? '#5b8def' : '#2c303a'; o.style.color = on ? '#dfe6f5' : '#7b8494'; o.style.background = on ? '#26324a' : 'transparent'; });
+        };
+      });
       Array.prototype.forEach.call(panel.querySelectorAll('.ve-row'), function (d) {
         d.onmouseover = function () { if (d.getAttribute('data-disabled') === '0') d.style.background = '#23262e'; };
         d.onmouseout = function () { d.style.background = 'transparent'; };

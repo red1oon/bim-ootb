@@ -686,101 +686,32 @@ function setupImport(A) {
   };
 
   // ── S229: Export IFC from IndexedDB ──
-  // §VIEWER_EXPORT_MENU: opts.dbBytes = the open single-file building's own DB bytes (the Export menu, export_menu.js) when it is not an IndexedDB import; the worker and what it writes are unchanged.
+  // The ONE IFC writer (prompts/VIEWER_IFC_EXPORT_BY_DISCIPLINE.md (b)): the stored import record's DB(s) are opened and handed to A.exportIfcShared (ifc_export_shared.js -> modeller/lod/lod_ifc.js), the same
+  // path the Export pill's IFC item runs for the open building. A split record (metaDb + geoDb) is read in place. opts.dbBytes = an open single-file building's own bytes (kept for callers that hold only bytes).
+  // ifc_export_worker.js stays on disk, loaded by nothing, until step (e) removes it.
   A.exportIFC = async function(key, opts) {
     var record = (opts && opts.dbBytes) ? { extractedDb: opts.dbBytes } : await getImport(key);
     if (!record) { alert('Building not found'); return; }
+    if (!A.exportIfcShared) { alert('IFC export is not available'); return; }
 
     // S233: Read versioned DB (wizard-modified), not legacy v1
-    var dbBuf;
+    var dbBuf, geoBuf = null;
     if (record.versions && record.versions.length > 0) {
       dbBuf = record.versions[record.latestVersion || 0].db;
+    } else if (record.metaDb && record.geoDb) {
+      dbBuf = record.metaDb; geoBuf = record.geoDb;
     } else {
       dbBuf = record.extractedDb;
     }
     if (!dbBuf) { alert('No DB data'); return; }
 
-    // Load sql.js if needed
     var SQL = await initSqlJs({ locateFile: function(f) { return (f === 'sql-wasm.wasm' ? '../common/lib/' : 'lib/') + f; } });
-    var db = new SQL.Database(new Uint8Array(dbBuf));
-
-    var elements = [], transforms = [], geometries = [];
-    var meta = { buildingName: key.replace(/\.(ifc|obj|stl|dae|glb|gltf|3ds|fbx)$/i, '') };
-
+    var db = new SQL.Database(new Uint8Array(dbBuf)), geo = geoBuf ? new SQL.Database(new Uint8Array(geoBuf)) : null;
     try {
-      var pmRows = db.exec("SELECT key, value FROM project_metadata");
-      if (pmRows.length > 0) {
-        for (var r = 0; r < pmRows[0].values.length; r++) {
-          if (pmRows[0].values[r][0] === 'building_name') meta.buildingName = pmRows[0].values[r][1];
-          if (pmRows[0].values[r][0] === 'project_name') meta.projectName = pmRows[0].values[r][1];
-        }
-      }
-    } catch(e) {}
-
-    try {
-      var elRows = db.exec("SELECT guid, ifc_class, element_name, storey, discipline, material_rgba FROM elements_meta");
-      if (elRows.length > 0) {
-        for (var r = 0; r < elRows[0].values.length; r++) {
-          var row = elRows[0].values[r];
-          elements.push({ guid: row[0], ifcClass: row[1], name: row[2], storey: row[3], discipline: row[4], material: row[5] });
-        }
-      }
-    } catch(e) { alert('Error reading elements: ' + e.message); return; }
-
-    try {
-      var txRows = db.exec("SELECT guid, center_x, center_y, center_z FROM element_transforms");
-      if (txRows.length > 0) {
-        for (var r = 0; r < txRows[0].values.length; r++) {
-          var row = txRows[0].values[r];
-          transforms.push({ guid: row[0], cx: row[1], cy: row[2], cz: row[3] });
-        }
-      }
-    } catch(e) {}
-
-    try {
-      var geoRows = db.exec("SELECT ei.guid, cg.vertices, cg.faces FROM element_instances ei JOIN component_geometries cg ON ei.geometry_hash = cg.geometry_hash");
-      if (geoRows.length > 0) {
-        for (var r = 0; r < geoRows[0].values.length; r++) {
-          var row = geoRows[0].values[r];
-          geometries.push({ guid: row[0], vertices: row[1], faces: row[2] });
-        }
-      }
-    } catch(e) {}
-
-    db.close();
-
-    var status = _importStatusEl();
-    if (status) status.textContent = 'Exporting IFC (' + elements.length + ' elements)...';
-
-    var worker = new Worker(new URL('ifc_export_worker.js?v=2', location.href).href);
-    worker.onmessage = function(e) {
-      var msg = e.data;
-      if (msg.type === 'progress') {
-        if (status) status.textContent = msg.phase;
-        return;
-      }
-      if (msg.type === 'error') {
-        if (status) status.textContent = 'Export failed: ' + msg.message;
-        worker.terminate();
-        return;
-      }
-      if (msg.type === 'done') {
-        var blob = new Blob([msg.ifcData], { type: 'application/octet-stream' });
-        var a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = meta.buildingName + '.ifc';
-        a.click();
-        URL.revokeObjectURL(a.href);
-        if (status) status.textContent = 'Downloaded ' + meta.buildingName + '.ifc (' + (msg.ifcData.byteLength / 1024).toFixed(0) + ' KB)';
-        console.log('[S229] §EXPORT_IFC key=' + key + ' size=' + (msg.ifcData.byteLength / 1024).toFixed(0) + 'KB');
-        worker.terminate();
-      }
-    };
-    worker.onerror = function(err) {
-      if (status) status.textContent = 'Export error: ' + err.message;
-      worker.terminate();
-    };
-    worker.postMessage({ elements: elements, transforms: transforms, geometries: geometries, meta: meta });
+      var nm = key;
+      try { var pm = db.exec("SELECT value FROM project_metadata WHERE key = 'building_name'"); if (pm.length && pm[0].values.length && pm[0].values[0][0]) nm = pm[0].values[0][0]; } catch(e) {}
+      return await A.exportIfcShared({ db: db, libDb: geo, name: nm });
+    } finally { try { db.close(); } catch(e) {} if (geo) { try { geo.close(); } catch(e) {} } }
   };
 
   // ── Wire up drop zone + file picker ──
