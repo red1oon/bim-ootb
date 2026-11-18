@@ -9,7 +9,7 @@ nothing. This index is the missing "go to definition".
 
 | | |
 |---|---:|
-| files scanned | 3454 |
+| files scanned | 3458 |
 | distinct fields | 1868 |
 | written only as `A.x`/`app.x` (invisible to an `APP.` grep) | 1599 |
 | read but never written (phantom) | 178 |
@@ -146,11 +146,11 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP.glassReflDark` | `viewer/tests/witness_light_field_db.js:98` | no |
 | `APP.integrity` | `viewer/tests/witness_light_field_db.js:94` | no |
 | `APP.kernelOps` | `viewer/tm_lifecycle_api.js:713` | **yes** |
-| `APP.length` | `modeller/lod/gusset_pack.js:30` | **yes** |
+| `APP.length` | `modeller/lod/gusset_pack.js:31` | **yes** |
 | `APP.load` | `erp/tests/witness_bimdoc_live.js:311` | no |
 | `APP.lookup` | `erp/tests/witness_bimdoc_live.js:309` | no |
 | `APP.lvl` | `erp/ninja_stage.js:224` | **yes** |
-| `APP.map` | `modeller/lod/joint_pack.js:425` | **yes** |
+| `APP.map` | `modeller/lod/joint_pack.js:432` | **yes** |
 | `APP.master` | `erp/ninja_stage.js:225` | **yes** |
 | `APP.materializeZones` | `optics_hud.js:34` | **yes** |
 | `APP.n` | `modeller/dxf2analytical.js:28` | **yes** |
