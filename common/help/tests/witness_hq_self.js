@@ -32,7 +32,7 @@ function bim() {
   const howto = JSON.parse(fs.readFileSync(path.join(H.ROOT, 'viewer', 'help', 'howto.json'), 'utf8')).pills;
   const mod = fs.readFileSync(path.join(H.ROOT, 'modeller', 'modeller.html'), 'utf8');
   const block = (head, end) => { const a = mod.indexOf(head), b = mod.indexOf(end, a); return a < 0 || b < 0 ? '' : mod.slice(a, b); };
-  const barLines = block('<div id="bar">', '</div>').split('\n').filter((l) => /<button id="/.test(l) && /class="ic"/.test(l) && /<span>/.test(l)).length;
+  const barLines = block('<div id="bar">', '</div>').split('\n').filter((l) => /<button id="/.test(l) && /class="ic"/.test(l) && (/<span>/.test(l) || /title="|aria-label="/.test(l))).length;   // a glyph-only pill (no <span>: b-lodup) counts when it carries a title / aria-label, the same rule as modeller/tools/help_records.js barButtons
   const keyLines = (block('const KEY_ROWS = [', '\n    ];').match(/^\s*\['<[^\n]*',\s*'[^']+',\s*'[^']+'\]/gm) || []).length;
   const secLines = (block('const SECTIONS = [', '\n  ];').match(/^\s*\['[^']+',/gm) || []).length;
   const want = { viewer: { pill: n(/^pill_/) - n(/^pill_sched4d_gen$/) + 5,   // the dictionary's pill rows, less the 4D pill's second TITLE row (panels.js _syncSched4dTitle), plus the 5 keyboard-only rows (ui_cmd_zoom_in / zoom_out / maxq / populate / hover_name)

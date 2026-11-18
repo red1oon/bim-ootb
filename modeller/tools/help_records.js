@@ -26,7 +26,7 @@ function sourceOf(src) {
 function barButtons(src) {
   const a = src.indexOf('<div id="bar">'); if (a < 0) throw new Error('modeller.html: #bar not found');
   const blk = src.slice(a, src.indexOf('</div>', a)), out = []; const re = /<button id="([^"]+)"([^>]*)>([\s\S]*?)<\/button>/g; let m;
-  while ((m = re.exec(blk))) { if (!/class="ic"/.test(m[3])) continue; const s = m[3].match(/<span>([\s\S]*?)<\/span>/); if (s) out.push({ id: m[1], name: tidy(unesc(s[1])) }); }
+  while ((m = re.exec(blk))) { if (!/class="ic"/.test(m[3])) continue; const s = m[3].match(/<span>([\s\S]*?)<\/span>/), ti = m[2].match(/title="([^"]*)"/), al = m[2].match(/aria-label="([^"]*)"/), nm = s ? s[1] : (ti ? ti[1] : (al ? al[1] : null)); if (nm) out.push({ id: m[1], name: tidy(unesc(nm)) }); }   // a glyph-only pill (no <span>, e.g. b-lodup, owner 2026-11-18 'just the arrow') is named by its title (then aria-label), as the live help panel names it
   return out;
 }
 function dictionary(lang) {   // English text -> the locale's text, as locale_loader.js _dictBuild makes it
