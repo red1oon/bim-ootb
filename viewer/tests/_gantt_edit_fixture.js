@@ -68,6 +68,10 @@ async function playedChain(bld) {
   if (!mp.ok) return { failed: 'no played layer: ' + mp.reason };
   db.run('CREATE TABLE IF NOT EXISTS kernel_ops (id INTEGER PRIMARY KEY, timestamp INTEGER NOT NULL, op_type TEXT NOT NULL, parameters TEXT NOT NULL, input_guids TEXT, output_guid TEXT, undone INTEGER DEFAULT 0)');
   db.run("DELETE FROM kernel_ops WHERE op_type='ELEMENT_PLACE'");
+  // The index the live viewer creates before any edit (viewer/tm_gantt_build.js:50, §SE-7c): retimeTaskElements and Undo run one
+  // UPDATE ... WHERE output_guid=? per element, a full table scan per row without it. Missing here, Clinic spent 94 % of an edit
+  // witness in SQLite and Terminal / Hospital ran past 25 min (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.22.5).
+  db.run('CREATE INDEX IF NOT EXISTS idx_kernel_ops_guid ON kernel_ops(output_guid)');
   const ins = db.prepare('INSERT INTO kernel_ops (timestamp,op_type,parameters,input_guids,output_guid,undone) VALUES(?,?,?,?,?,0)');
   db.run('BEGIN');
   rawEls.forEach(e => { const p = mp.play[e.guid]; if (!p) return;
@@ -109,6 +113,10 @@ async function make(o) {
   // ops in loadOps' shape, each task's elements laid end to end across its own window
   db.run('CREATE TABLE IF NOT EXISTS kernel_ops (id INTEGER PRIMARY KEY, timestamp INTEGER NOT NULL, op_type TEXT NOT NULL, parameters TEXT NOT NULL, input_guids TEXT, output_guid TEXT, undone INTEGER DEFAULT 0)');
   db.run("DELETE FROM kernel_ops WHERE op_type='ELEMENT_PLACE'");
+  // The index the live viewer creates before any edit (viewer/tm_gantt_build.js:50, §SE-7c): retimeTaskElements and Undo run one
+  // UPDATE ... WHERE output_guid=? per element, a full table scan per row without it. Missing here, Clinic spent 94 % of an edit
+  // witness in SQLite and Terminal / Hospital ran past 25 min (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.22.5).
+  db.run('CREATE INDEX IF NOT EXISTS idx_kernel_ops_guid ON kernel_ops(output_guid)');
   const win = {}; q("SELECT task_id, name, schedule_start, schedule_finish FROM tasks WHERE schedule_id=? AND (is_summary IS NULL OR is_summary=0)", [schedId])
     .forEach(r => { win[r[0]] = { s: Date.parse(r[2] + 'T00:00:00Z'), e: Date.parse(r[3] + 'T00:00:00Z') }; });
   const byTask = {}; q('SELECT task_id, guid FROM task_elements ORDER BY task_id, guid').forEach(r => { (byTask[r[0]] = byTask[r[0]] || []).push(r[1]); });
