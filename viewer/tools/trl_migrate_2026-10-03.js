@@ -30,9 +30,9 @@ function birthPack(code) {
 }
 
 (function main() {
-  const existing = fs.existsSync(T.I18N) ? fs.readdirSync(T.I18N).filter(f => /^AD_Message_Trl_.*\.xml$/.test(f)) : [];
+  const existing = fs.existsSync(T.dirOf('machine')) ? fs.readdirSync(T.dirOf('machine')).filter(f => /^AD_Message_Trl_.*\.xml$/.test(f)) : [];
   if (existing.length && !force) { log('REFUSED — ' + existing.length + ' AD_Message_Trl_*.xml already exist; the XML is the source now. --force re-creates the birth state.'); process.exit(2); }
-  fs.mkdirSync(T.I18N, { recursive: true });
+  fs.mkdirSync(T.dirOf('machine'), { recursive: true });
 
   // 1. the base: en_MY labels in declaration order → ids from MAX_OFFICIAL_ID+1
   const base = birthPack(T.BASE).data;

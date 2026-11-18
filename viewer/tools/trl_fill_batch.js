@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// T4: this tool edits viewer/i18n/machine/ (AI-written, lowest priority); hand-checked rows live in viewer/i18n/own/ and win over them.
 // trl_fill_batch.js — FILL translations for EXISTING keys (AD_Message, or BIM_Element since T2: a term key goes to BIM_Element_Trl_<lang>.xml) whose row in the _Trl_<lang>.xml is still
 // trl="N" (English kept). The counterpart of trl_add_batch.js, which only adds NEW keys. Spec: bim-compiler
 // prompts/VOCAB_MESSAGE_CATALOG.md §14.2. Refuses (writes nothing, exit 1) on: a key not in ad_message_base.csv, an

@@ -237,11 +237,11 @@ const find = (lines, re) => { for (let i = lines.length - 1; i >= 0; i--) if (re
   // ── (3) FORMAT — Python xml.etree as the independent oracle; the CSV is the truth for `original` ──────────────
   const py = cp.spawnSync('python3', ['-c', `
 import xml.etree.ElementTree as ET, glob, json, os, sys, csv
-d = sys.argv[1]; base = {}
+d = sys.argv[1]; md = os.path.join(d, 'machine'); base = {}   # T4: the base csv stays in i18n/, the xml sources are in machine/
 with open(os.path.join(d, 'ad_message_base.csv'), newline='', encoding='utf-8') as f:
     for row in csv.DictReader(f): base[int(row['ad_message_id'])] = row
 out = {'files': {}, 'base': len(base), 'badIds': [i for i in base if i <= 999999]}
-for fn in sorted(glob.glob(os.path.join(d, 'AD_Message_Trl_*.xml'))):
+for fn in sorted(glob.glob(os.path.join(md, 'AD_Message_Trl_*.xml'))):
     lang = os.path.basename(fn)[len('AD_Message_Trl_'):-4]; r = ET.parse(fn).getroot(); rows = r.findall('row')
     ids = [int(x.get('id')) for x in rows]
     bad = []

@@ -12,28 +12,49 @@
 const fs = require('fs'), path = require('path');
 const T = require('./trl_common');
 
-// join one table's base rows with its _Trl xml for `lang`; returns {entries:[{id,tbl,value,text}], rows, translated, untranslated, file}
-function joinTable(tbl, table, base, lang, xmlPath) {
+// join one table's base rows with its _Trl xml sources for `lang` (T4, TRL_TRILOGY_STANDARD.md S-3/S-4). The sources are read in priority order T.SOURCES (own, then machine): for each
+// base id the first source that has a USABLE row (its `original` equals today's English) wins, whatever its trl flag (an own trl="N" row deliberately keeps the English). A lower
+// source's row for an id a higher source won is kept on disk and counted `shadowed`. A row whose `original` differs from today's English is `stale`: counted, never used.
+// Each base id lands in exactly ONE class: shadowed (a lower row sits under the winner), else kept (a trl="Y" winner), else untranslated  =>  kept + shadowed + untranslatedIds = base rows.
+// returns {entries, rows, translated, untranslated (rows left in English, incl. a winner trl="N"), kept, shadowed, untranslatedIds, stale, usedOwn, usedMachine, files}
+function joinTable(tbl, table, base, lang, fileOf) {
   const byId = new Map(base.map(r => [r.id, r]));
   if (byId.size !== base.length) throw new Error('duplicate ids in the ' + table + ' base csv');
   base.forEach(r => { if (!(r.id > T.MAX_OFFICIAL_ID)) throw new Error(table + ' id ' + r.id + ' is not above MAX_OFFICIAL_ID'); });
-  const entries = []; let translated = 0, untranslated = 0;
-  if (lang === T.BASE) { base.forEach(r => entries.push({ id: r.id, tbl, value: r.value, text: r.msgtext })); return { entries, rows: base.length, translated: 0, untranslated: 0, file: null }; }
-  if (!fs.existsSync(xmlPath)) { if (!base.length) return { entries, rows: 0, translated: 0, untranslated: 0, file: null }; throw new Error('missing ' + path.basename(xmlPath)); }
-  const problems = [], x = T.parseTrlXml(fs.readFileSync(xmlPath, 'utf8')), seen = new Set();
-  if (x.language !== lang) problems.push('language attr ' + x.language + ' != ' + lang);
-  if (x.table !== table) problems.push('table attr ' + x.table + ' != ' + table);
-  x.rows.forEach(r => {
-    const b = byId.get(r.id);
-    if (!b) { problems.push('row ' + r.id + ' not in base'); return; }
-    if (seen.has(r.id)) problems.push('row ' + r.id + ' duplicated'); seen.add(r.id);
-    if (r.original !== b.msgtext) problems.push('row ' + r.id + ' original != base text');
-    if (r.tipOriginal !== '') problems.push('row ' + r.id + ' MsgTip original not empty');
-    if (r.trl === 'Y') { entries.push({ id: b.id, tbl, value: b.value, text: r.text }); translated++; } else { entries.push({ id: b.id, tbl, value: b.value, text: b.msgtext }); untranslated++; }
+  const entries = [], z = { entries, rows: base.length, translated: 0, untranslated: 0, kept: 0, shadowed: 0, untranslatedIds: 0, stale: 0, usedOwn: 0, usedMachine: 0, files: [] };
+  if (lang === T.BASE) { base.forEach(r => entries.push({ id: r.id, tbl, value: r.value, text: r.msgtext })); z.rows = base.length; return z; }
+  const problems = [], rowsBy = {};   // source -> Map(id -> row)
+  T.SOURCES.forEach(src => {
+    const xmlPath = fileOf(lang, src), m = rowsBy[src] = new Map();
+    if (!fs.existsSync(xmlPath)) { if (src === 'machine' && base.length) throw new Error('missing machine/' + path.basename(xmlPath)); return; }
+    const x = T.parseTrlXml(fs.readFileSync(xmlPath, 'utf8')), tag = src + '/' + path.basename(xmlPath);
+    if (x.language !== lang) problems.push(tag + ': language attr ' + x.language + ' != ' + lang);
+    if (x.table !== table) problems.push(tag + ': table attr ' + x.table + ' != ' + table);
+    x.rows.forEach(r => {
+      const b = byId.get(r.id);
+      if (!b) { problems.push(tag + ': row ' + r.id + ' not in base'); return; }
+      if (m.has(r.id)) problems.push(tag + ': row ' + r.id + ' duplicated');
+      if (r.tipOriginal !== '') problems.push(tag + ': row ' + r.id + ' MsgTip original not empty');
+      m.set(r.id, r);
+    });
+    if (m.size) z.files.push(src === 'machine' ? path.basename(xmlPath) : src + '/' + path.basename(xmlPath));
   });
-  base.forEach(b => { if (!seen.has(b.id)) { problems.push('base ' + b.id + ' ' + b.value + ' missing from xml'); entries.push({ id: b.id, tbl, value: b.value, text: b.msgtext }); untranslated++; } });
-  if (problems.length) throw new Error(path.basename(xmlPath) + ': ' + problems.slice(0, 5).join('; ') + (problems.length > 5 ? ' (+' + (problems.length - 5) + ')' : ''));
-  return { entries, rows: x.rows.length, translated, untranslated, file: path.basename(xmlPath) };
+  base.forEach(b => { if (!rowsBy.machine.has(b.id)) problems.push('machine: base ' + b.id + ' ' + b.value + ' missing from xml'); });   // machine/ is complete; own/ is sparse by design
+  if (problems.length) throw new Error(problems.slice(0, 5).join('; ') + (problems.length > 5 ? ' (+' + (problems.length - 5) + ')' : ''));
+  base.forEach(b => {
+    let win = null, winAt = -1, shadowedHere = 0;
+    T.SOURCES.forEach((src, i) => {
+      const r = rowsBy[src].get(b.id); if (!r) return;
+      if (r.original !== b.msgtext) { z.stale++; return; }                 // stale: counted, never used
+      if (!win) { win = r; winAt = i; }
+    });
+    if (win) T.SOURCES.forEach((src, i) => { if (i > winAt && rowsBy[src].get(b.id)) shadowedHere++; });   // a lower source's row under the winner: kept on disk, not used
+    const yes = !!win && win.trl === 'Y';
+    entries.push({ id: b.id, tbl, value: b.value, text: yes ? win.text : b.msgtext });
+    if (yes) { z.translated++; if (T.SOURCES[winAt] === 'own') z.usedOwn++; else z.usedMachine++; } else z.untranslated++;
+    if (shadowedHere) z.shadowed++; else if (yes) z.kept++; else z.untranslatedIds++;
+  });
+  return z;
 }
 function buildAll() {
   const base = T.readBase(), terms = T.readTerms();
@@ -41,13 +62,14 @@ function buildAll() {
   if (both.length) throw new Error(both.length + ' keys are in BOTH ad_message_base.csv and bim_element_base.csv (a key lives in ONE table): ' + both.slice(0, 5).map(r => r.value).join(','));
   const out = {};
   T.LOCALES.forEach(lang => {
-    const a = joinTable(0, 'AD_Message', base, lang, T.xmlFile(lang)), e = joinTable(1, 'BIM_Element', terms, lang, T.elementXmlFile(lang));
+    const a = joinTable(0, 'AD_Message', base, lang, T.xmlFile), e = joinTable(1, 'BIM_Element', terms, lang, T.elementXmlFile);
     const labels = {};
     a.entries.concat(e.entries).sort((p, q) => p.id - q.id || p.tbl - q.tbl).forEach(r => { labels[r.value] = r.text; });
-    const from = ['ad_message_base.csv'].concat(a.file ? [a.file] : []).concat(terms.length ? ['bim_element_base.csv'].concat(e.file ? [e.file] : []) : []);
+    const from = ['ad_message_base.csv'].concat(a.files).concat(terms.length ? ['bim_element_base.csv'].concat(e.files) : []);   // machine/ file names as before; an own/ file that holds rows is added as own/<name>
     const built = { from, rows: a.rows + e.rows, translated: a.translated + e.translated, untranslated: a.untranslated + e.untranslated };
     out[lang] = lang === T.BASE ? { language: lang, table: 'AD_Message', base: true, built, labels } : { language: lang, table: 'AD_Message', built, labels };
     out[lang].tables = { AD_Message: a.rows, BIM_Element: e.rows };
+    Object.defineProperty(out[lang], 'stats', { value: { AD_Message: a, BIM_Element: e } });   // for the log only: non-enumerable, never serialised
     out[lang].terms = terms.map(r => r.value);   // T3: the pack names its term keys, so a page can look a term up BY KEY and keep it out of any by-English path
   });
   return out;
@@ -62,6 +84,8 @@ if (require.main === module) {
     const same = fs.existsSync(file) && fs.readFileSync(file, 'utf8') === text;
     if (!same) { diff++; if (!check) fs.writeFileSync(file, text); }
     const b = all[lang].built;
+    if (lang !== T.BASE) ['AD_Message', 'BIM_Element'].forEach(tn => { const z = all[lang].stats[tn];   // S-4: per table and locale; kept + shadowed + untranslated = base rows
+      console.log('§TRL_BUILD_SRC lang=' + lang + ' table=' + tn + ' base=' + z.rows + ' kept=' + z.kept + ' used(own=' + z.usedOwn + ' machine=' + z.usedMachine + ') shadowed=' + z.shadowed + ' stale=' + z.stale + ' untranslated=' + z.untranslatedIds + (z.kept + z.shadowed + z.untranslatedIds === z.rows ? '' : ' SUM-MISMATCH')); });
     console.log('§TRL_BUILD lang=' + lang + ' rows=' + b.rows + ' translated=' + b.translated + ' untranslated=' + b.untranslated + ' AD_Message=' + all[lang].tables.AD_Message + ' BIM_Element=' + all[lang].tables.BIM_Element + ' json=' + (same ? 'unchanged' : (check ? 'STALE' : 'written')));
   });
   console.log('§TRL_BUILD ' + (check ? 'check' : 'done') + ' locales=' + Object.keys(all).length + ' changed=' + diff);
