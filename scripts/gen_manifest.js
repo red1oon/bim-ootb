@@ -254,8 +254,17 @@ module.exports = { APPS, SCHEMA, buildApp, readSites, swFrame, regenerate, rende
 if (require.main === module) {
   const argv = process.argv.slice(2), opt = k => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : null; };
   const root = path.resolve(opt('--root') || path.join(__dirname, '..'));
+  if (opt('--witnesses')) {
+    // B-3 REVISED (#3326; bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md §B-3R SPEC): a module's tests are worked out when asked, never stored.
+    const f = opt('--witnesses').replace(/^\.\//, ''), apps = opt('--app') ? [opt('--app')] : APPS.filter(a => MS.hasSource(root, a));
+    const app = apps.find(a => MS.hasSource(root, a) && JSON.parse(fs.readFileSync(path.join(root, MS.sourceFile(a)), 'utf8')).modules[f]);
+    if (!app) { console.log(`§MANIFEST_ERR ${f} is no module of ${apps.map(MS.sourceFile).join(', ') || 'any modules.json'}`); process.exit(1); }
+    const w = MS.witnessesOf(root, app, [f]).get(f);
+    console.log(`§MANIFEST_WITNESSES app=${app} file=${f} n=${w.length}`); w.forEach(t => console.log('  ' + t));
+    process.exit(0);
+  }
   if (opt('--write') || opt('--init')) {
-    // B1: --write <app> regenerates the app's owned files from <app>/modules.json and refreshes its extracted fields (owner, witnesses,
+    // B1: --write <app> regenerates the app's owned files from <app>/modules.json and refreshes its extracted fields (owner,
     //   call-time `uses`); --init <app> creates modules.json ONCE from today's files (deps = the reviewed order-forcing edges).
     const app = opt('--write') || opt('--init'), lines = [];
     let m;
@@ -279,7 +288,7 @@ if (require.main === module) {
     console.log(`§MANIFEST_WRITE app=${app} files=${w.out.size} written=${n}`);
     process.exit(0);
   }
-  if (!argv.includes('--check')) { console.error('usage: node scripts/gen_manifest.js --check [--root DIR] [--out FILE] | --write <app> | --init <app> [--not-deps a>b,…] [--as-uses a>b,…] [--by WHO --on DATE]'); process.exit(1); }
+  if (!argv.includes('--check')) { console.error('usage: node scripts/gen_manifest.js --check [--root DIR] [--out FILE] | --write <app> | --witnesses <file> [--app A] | --init <app> [--not-deps a>b,…] [--as-uses a>b,…] [--by WHO --on DATE]'); process.exit(1); }
   const r = check(root);
   r.fails.forEach(f => console.log('§MANIFEST_FAIL ' + f));
   r.lines.forEach(l => console.log(l));
