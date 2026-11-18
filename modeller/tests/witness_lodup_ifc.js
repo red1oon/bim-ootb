@@ -136,7 +136,7 @@ initSqlJs({ wasmBinary: wasmBinary }).then(function (SQL) {
   var optsBase = function (fileName, schema, fr, elev, gradeOf) { return { schema: schema, frame: fr, elev: elev || {}, fileName: fileName, gradeOf: gradeOf, breakGuid: MAIN_BREAK }; };
   // ---------------------------------------------------------------- REAL_REBAR: the beam-rebar sets of the base model, IFC2X3, the frame JSON
   if (E.LODUP_SRC_DB && E.LODUP_MARKS_JSON && frame && E.LODUP_REF_IFC_REBAR) {
-    anyReal = true; var db = loadDb(SQL, E.LODUP_SRC_DB), inp = Reader.fromDb(db); inp.callouts = []; inp.inputs = { beambars: { schedule: JSON.parse(fs.readFileSync(E.LODUP_MARKS_JSON, 'utf8')) } }; inp.generated = function () { return []; };
+    anyReal = true; var db = loadDb(SQL, E.LODUP_SRC_DB), inp = Reader.fromDb(db); inp.callouts = []; inp.inputs = { beambars: { schedule: Beam.attachFormat(JSON.parse(fs.readFileSync(E.LODUP_MARKS_JSON, 'utf8')), JSON.parse(fs.readFileSync(path.join(ROOT, 'lod/rules/schedule_formats.json'), 'utf8')).formats).json } }; inp.generated = function () { return []; };
     var t0 = Date.now(), res = Beam.run(inp, rowsOf('beambar_defaults.json'), { log: function () { } }), els = elementsOf([{ id: 'beambars', res: res, inp: inp }]);
     console.log('§LODUP_IFC_MODE real rebar: ' + res.parts.length + ' sets built in ' + (Date.now() - t0) + ' ms (source LODUP_SRC_DB, marks LODUP_MARKS_JSON, frame LODUP_FRAME_JSON, oracle LODUP_REF_IFC_REBAR) break_guid=' + (MAIN_BREAK ? 1 : 0));
     var o1 = optsBase('beam_rebar_addon.ifc', 'IFC2X3', frame), t1 = Date.now(), r1 = Ifc.build(els, o1), ms1 = Date.now() - t1;

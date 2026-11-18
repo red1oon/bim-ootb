@@ -41,7 +41,8 @@
 // v296 (2026-11-18) LOD Upgrade pill P5 (prompts/MODELLER_LOD_UPGRADE_PILL.md §P5 SPEC): lod/gusset_pack.js (Bracing gussets) + lod/rules/gusset_defaults.json + lod/packs.json; joint_pack.js exposes the shared kit (no ?v= literal: packs load through packs.json, precacheOrder in modules.json) — modeller.html
 // v300 (2026-11-18) LOD Upgrade P4 FIX (prompts/MODELLER_LOD_UPGRADE_PILL.md §P4 FIX SPEC): lod/joint_pack.js fin-plate weld beads wound outward and consistently (no URL change; this bump re-fetches it)
 // v301 (2026-11-18) LOD Upgrade P7 NAME FIX (prompts/MODELLER_LOD_UPGRADE_PILL.md): lod/lod_ui.js?v=6, the download names drop the opened file's .db
-const CACHE_VERSION = 'v302';   // §MANIFEST cacheVersion (written by gen_manifest.js; edit modeller/modules.json)
+// v303 (2026-11-18) LOD Upgrade P8 (v302 was taken by a concurrent main change) (prompts/MODELLER_LOD_UPGRADE_PILL.md §P8 SPEC): lod/lod_schedule.js + lod/rules/schedule_formats.json; beambar_pack join from the format; lod_ui.js?v=7 (Formats link, Load schedule reads a .dxf), lod_registry.js?v=5
+const CACHE_VERSION = 'v303';   // §MANIFEST cacheVersion (written by gen_manifest.js; edit modeller/modules.json)
 const CACHE_PREFIX = 'bim-modeller-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -197,7 +198,7 @@ const PRECACHE_ASSETS = [
   'bay_add.js',          // §D89 add a bay (the planner)
   'clipboard.js',        // the ONE copy path (Ctrl+C / Ctrl+V, the bay copy)
   '../viewer/dxf_sheet_view.js',   // §D82 its renderer (shared with the Viewer's 2D wing)
-  'lod/lod_rules.js', 'lod/lod_registry.js', 'lod/lod_ops.js', 'lod/lod_reader.js', 'lod/lod_ui.js', 'lod/lod_ifc.js', 'lod/rebar_pack.js', 'lod/weld_pack.js', 'lod/layer_pack.js', 'lod/joint_pack.js', 'lod/gusset_pack.js', 'lod/beambar_pack.js', 'lod/packs.json', 'lod/rules/rebar_defaults.json',   // LOD Upgrade pill (lazy, first press)
+  'lod/lod_rules.js', 'lod/lod_registry.js', 'lod/lod_ops.js', 'lod/lod_reader.js', 'lod/lod_ui.js', 'lod/lod_ifc.js', 'lod/lod_schedule.js', 'lod/rebar_pack.js', 'lod/weld_pack.js', 'lod/layer_pack.js', 'lod/joint_pack.js', 'lod/gusset_pack.js', 'lod/beambar_pack.js', 'lod/packs.json', 'lod/rules/rebar_defaults.json',   // LOD Upgrade pill (lazy, first press)
   'lod/rules/weld_defaults.json',
   'lod/rules/layer_defaults.json',
   'lod/rules/joint_defaults.json',
