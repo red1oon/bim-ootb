@@ -204,7 +204,7 @@ function describe(O, a) {
 
 // ── op-log: append-only JSONL; replayed into memory ──
 function oplogFile(a, file) { return a.oplog || process.env.BIM_OBJECT_OPLOG || path.join(os.homedir(), '.cache', 'bim_object', path.basename(file) + '.ops.jsonl'); }
-function readOps(f) { try { return fs.readFileSync(f, 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l)); } catch (e) { return []; } }
+function readOps(f) { try { return require('./ledger_sign.js').parseOps(fs.readFileSync(f, 'utf8')); } catch (e) { return []; } }   // a bare legacy line or a signed row (ledger_sign.js)
 function applyOp(db, rows, op) {   // the generic fold: a CRUD op onto a table. No table is named; the key column is the op's own idCol, else <table>_id.
   const t = op.table, idc = op.idCol || t + '_id';
   if (op.op_type === 'CRUD_CREATE') {
@@ -241,7 +241,7 @@ function keyOf(O, o) {
 }
 function persist(O, ops) {
   fs.mkdirSync(path.dirname(O.opfile), { recursive: true });
-  ops.forEach(o => { keyOf(O, o); o.t = o.t || new Date().toISOString(); fs.appendFileSync(O.opfile, JSON.stringify(o, (k, v) => v instanceof Uint8Array ? undefined : v) + '\n'); applyOp(O.db, O.rows, o); O.ops.push(o); });
+  ops.forEach(o => { keyOf(O, o); o.t = o.t || new Date().toISOString(); require('./ledger_sign.js').append(O.opfile, [o], { replacer: (k, v) => v instanceof Uint8Array ? undefined : v }); applyOp(O.db, O.rows, o); O.ops.push(o); });   // ledger_sign.js: chained + signed (§52)
 }
 function record(O, a) {
   if (!a.uu) refuse('a record needs --uu');

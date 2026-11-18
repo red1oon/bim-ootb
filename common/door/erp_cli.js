@@ -18,7 +18,7 @@
 'use strict';
 const fs = require('fs'), path = require('path');
 const ROOT = path.join(__dirname, '..', '..');
-const OC = require('./object_cli.js'), DP = require('./door_plugins.js');
+const OC = require('./object_cli.js'), DP = require('./door_plugins.js'), LS = require('./ledger_sign.js');
 const say = (s) => process.stderr.write('§ERP ' + s + '\n');
 const BREAK = process.env.ERP_BREAK || '';   // witness falsifiers: 'actor' (the answer depends on who asks) · 'norole' (the role filter is skipped) · 'wrongcode' (close runs the void action) · 'firstmatch' (an ambiguous number takes the first) · 'neighbour' (a number resolves to the next record)
 class Refused extends Error {}
@@ -129,7 +129,7 @@ async function boot(a) {
   const tp = Date.now(); await DP.startBuiltins(O, { staged });
   if (snapLater) { try { keep(snapLater); say('snapshot-written plugins=started'); } catch (e) { say('snapshot-unsaved ' + e.message); } }
   say('plugins ms=' + (Date.now() - tp) + ' staged=' + staged + ' boot_so_far_ms=' + (Date.now() - t0));
-  O.opfile = opfile; O.ops = raw ? (() => { try { return raw.toString('utf8').split('\n').filter(Boolean).map(l => JSON.parse(l)); } catch (e) { return []; } })() : OC.readOps(O.opfile);   // the same bytes the image was checked against
+  O.opfile = opfile; O.ops = raw ? (() => { try { return LS.parseOps(raw.toString('utf8')); } catch (e) { return []; } })() : OC.readOps(O.opfile);   // the same bytes the image was checked against
   const skip = img ? img.ops : 0;
   const known = {}; O.rows("SELECT lower(name) AS n FROM sqlite_master WHERE type='table'").forEach(r => { known[r.n] = 1; });
   let colDirty = false;   // an AD_Column row was replayed: the next op on a data table may need that column made first
@@ -424,7 +424,7 @@ function persistGroup(O, ops) {   // each op is resolved against the rows the ea
   try { ops.forEach((op, i) => { at = op; const o = resolveOne(O, op, ids, i, cols); OC.applyOp(O.db, O.rows, o); res.push(o); }); O.db.run('RELEASE erp_group'); }
   catch (e) { if (at) e = new Error(String(e && e.message || e) + ' [op ' + at.op_type + ' on ' + at.table + ']'); O.db.run('ROLLBACK TO erp_group'); O.db.run('RELEASE erp_group'); throw e; }
   fs.mkdirSync(path.dirname(O.opfile), { recursive: true });
-  res.forEach(o => { o.t = o.t || new Date().toISOString(); if (O.defer) O.defer.push(o); else { fs.appendFileSync(O.opfile, JSON.stringify(o) + '\n'); O.ops.push(o); } });   // O.defer: a line that is one transaction (§12.15) keeps its groups until it commits
+  res.forEach(o => { o.t = o.t || new Date().toISOString(); if (O.defer) O.defer.push(o); else { LS.append(O.opfile, [o]); O.ops.push(o); } });   // O.defer: a line that is one transaction (§12.15) keeps its groups until it commits
   return res;
 }
 // ── complete | void | close | reverse | prepare: ONE function; the subcommand only picks the DocumentEngine action code (DocumentEngine.java ACTION_Complete CO, ACTION_Void VO, ACTION_Close CL, ACTION_Reverse_Correct RC) ──
@@ -935,7 +935,7 @@ async function ninjaExec(O, a) {
   if (csvT) {
     const bad = loads.filter(l => !(l.loaded > 0) && l.rows > 0)[0];
     if (bad && CSV_BREAK !== 'keepmodel') { O.db.run('ROLLBACK TO ninja_csv'); O.db.run('RELEASE ninja_csv'); O.defer = null; refuse('nothing was written: the table was not made because its lines do not load (' + bad.why + (bad.rejected && bad.rejected.length ? ': ' + bad.rejected.slice(0, 5).map(r => 'line ' + r.row + ' ' + r.why.join(' | ')).join('; ') : '') + '). Legacy Ninja makes the table and its lines in one transaction'); }
-    O.db.run('RELEASE ninja_csv'); const held = O.defer; O.defer = null; held.forEach(o => { fs.appendFileSync(O.opfile, JSON.stringify(o) + '\n'); O.ops.push(o); });
+    O.db.run('RELEASE ninja_csv'); const held = O.defer; O.defer = null; LS.append(O.opfile, held); held.forEach(o => O.ops.push(o));
   }
   const mem = process.memoryUsage();
   say('ninja_exec bundle=' + model.bundleName + ' tables=' + shape.length + ' windows=' + out.windows.length + ' detail_tabs=' + out.detailTabs + ' ops=' + out.ops + ' ' + JSON.stringify(out.opSummary) + ' tables_made=' + out.tablesMade + ' data=' + loads.map(l => l.sheet.trim() + ':' + l.loaded + '/' + l.rows).join(',') + ' skipped=' + skipped.length + ' sha256=' + sha.slice(0, 12) + ' ms=' + (Date.now() - t0) + ' rss_mb=' + Math.round(mem.rss / 1048576) + ' heap_mb=' + Math.round(mem.heapUsed / 1048576));

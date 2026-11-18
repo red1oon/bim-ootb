@@ -10,7 +10,7 @@ const { kit, tmp, ROOT, DOOR } = require('./_kit');
 const k = kit('W-DOOR-STAMP');
 (async () => {
   const dir = path.dirname(tmp('ds_')), env = Object.assign({ BIM_OBJECT_OPLOG: path.join(dir, 'ops.jsonl'), BIM_DOOR_JOURNAL: path.join(dir, 'j.jsonl') }, process.env.STAMP_BREAK ? { STAMP_BREAK: process.env.STAMP_BREAK } : {});
-  const ops = () => { try { return fs.readFileSync(env.BIM_OBJECT_OPLOG, 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l)); } catch (e) { return []; } };
+  const ops = () => { try { return require('../ledger_sign.js').parseOps(fs.readFileSync(env.BIM_OBJECT_OPLOG, 'utf8')); } catch (e) { return []; } };
   const door = (line) => new Promise((res) => { let o = ''; const p = cp.spawn(process.execPath, [DOOR, '--actor', 'human', line], { cwd: dir, env: Object.assign({}, process.env, env), stdio: ['ignore', 'pipe', 'ignore'] }); p.stdout.on('data', d => { o += d; }); p.on('close', () => { let j = null; try { j = JSON.parse(o); } catch (e) { /* null */ } res(j || { status: 'unparseable', why: o.slice(0, 100) }); }); });
   const sq = (q) => JSON.parse(cp.spawnSync('sqlite3', ['-readonly', '-json', path.join(ROOT, 'erp/ad_seed.db'), q], { encoding: 'utf8' }).stdout || '[]');
   const ok = (j) => j && j.status === 'ok', TS = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/, UU = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;

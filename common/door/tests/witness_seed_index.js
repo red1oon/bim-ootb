@@ -43,7 +43,7 @@ async function pass(label, breakIdx) {
   const ov = /§ERP index-overlay ensure created=(\d+) present=(\d+) skipped=(\d+) analyze_ms=(-?\d+) ms=(\d+)/.exec(out.sum.err) || /INDEX_OVERLAY ensure created=(\d+) present=(\d+) skipped=(\d+) analyze_ms=(-?\d+) ms=(\d+)/.exec(out.sum.err);
   const lc = /§ERP new kind=.* ms=(\d+)/.exec(out.group.err);
   const snapFile = fs.existsSync(env.ERP_SNAPSHOT_DIR) ? fs.readdirSync(env.ERP_SNAPSHOT_DIR).filter(f => /^ad_seed-.*\.db$/.test(f)).map(f => path.join(env.ERP_SNAPSHOT_DIR, f))[0] : null;
-  return { d, out, ov, lc, snapFile, ops: fs.readFileSync(env.BIM_OBJECT_OPLOG, 'utf8') };
+  return { d, out, ov, lc, snapFile, ops: require('../ledger_sign.js').parseOps(fs.readFileSync(env.BIM_OBJECT_OPLOG, 'utf8')).map(o => JSON.stringify(o)).join('\n') };   // the OPS of the log (§52: a signed row's uuid and hashes differ per run)
 }
 
 (async () => {

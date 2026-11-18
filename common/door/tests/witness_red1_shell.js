@@ -45,7 +45,8 @@ const k = kit('W-RED1-SHELL'), RED1 = path.join(ROOT, 'common/door/red1.js'), BR
   const eA = fresh('S2a'), eB = fresh('S2b');
   const sess = await run(RED1, eA, [], L3.join('\n') + '\n', BRK === 'twice' ? 'twice' : '');
   for (const l of L3) await door(eB, l);
-  const opsA = lines(logOf('S2a')).slice(nBase), opsB = lines(logOf('S2b')).slice(nBase), jA = lines(jOf('S2a')), jB = lines(jOf('S2b'));
+  const opsOf = (f) => { try { return require('../ledger_sign.js').parseOps(fs.readFileSync(f, 'utf8')).map(o => JSON.stringify(o)); } catch (x) { return []; } };   // the OPS (a signed row's uuid, hashes and signature differ per run)
+  const opsA = opsOf(logOf('S2a')).slice(nBase), opsB = opsOf(logOf('S2b')).slice(nBase), jA = lines(jOf('S2a')), jB = lines(jOf('S2b'));
   const sessOk = (sess.err.match(/^§RED1 line verb=.*status=ok/mg) || []).length;
   if (!opsB.length) k.incon('S2', 'the one-by-one run wrote no op: nothing to compare');
   else k.chk('S2 a session of 3 lines writes the same ops and the same number of journal records as the 3 lines run one by one (each line once)',

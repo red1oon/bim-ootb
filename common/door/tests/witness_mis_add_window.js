@@ -14,7 +14,7 @@ const k = kit('W-MIS-ADD');
   fs.writeFileSync(path.join(dir, 'AST_Bad.csv'), 'Column,Type,Length\nCost,Money,\nName,String,long\nAST_Bad_UU,,\n');
   const envOf = (n) => Object.assign({ BIM_OBJECT_OPLOG: path.join(dir, n + '.ops.jsonl'), BIM_DOOR_JOURNAL: path.join(dir, n + '.j.jsonl') }, brk);
   const nops = (e) => { try { return fs.readFileSync(e.BIM_OBJECT_OPLOG, 'utf8').split('\n').filter(Boolean).length; } catch (x) { return 0; } };
-  const ops = (e) => { try { return fs.readFileSync(e.BIM_OBJECT_OPLOG, 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l)); } catch (x) { return []; } };
+  const ops = (e) => { try { return require('../ledger_sign.js').parseOps(fs.readFileSync(e.BIM_OBJECT_OPLOG, 'utf8')); } catch (x) { return []; } };
   const doorE = (e, actor) => (line) => new Promise((res) => { let o = ''; const p = cp.spawn(process.execPath, [DOOR, '--actor', actor || 'human', line], { cwd: dir, env: Object.assign({}, process.env, e), stdio: ['ignore', 'pipe', 'ignore'] }); p.stdout.on('data', d => { o += d; }); p.on('close', () => { let j = null; try { j = JSON.parse(o); } catch (x) { /* null */ } res(j || { status: 'unparseable', why: o.slice(0, 120) }); }); });
   const E1 = envOf('one'), door = doorE(E1), ok = (j) => j && j.status === 'ok', ref = (j, re) => j && j.status === 'refused' && re.test(String(j.why));
   const sq = (q) => JSON.parse(cp.spawnSync('sqlite3', ['-readonly', '-json', path.join(ROOT, 'erp/ad_seed.db'), q], { encoding: 'utf8' }).stdout || '[]');

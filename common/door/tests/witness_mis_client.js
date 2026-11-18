@@ -14,7 +14,7 @@ const k = kit('W-MIS-CLIENT');
   const sq = (q) => JSON.parse(cp.spawnSync('sqlite3', ['-readonly', '-json', SEED, q], { encoding: 'utf8' }).stdout || '[]');
   const door = (line) => run(DOOR, ['--actor', 'human', line], env).then(r => { try { return JSON.parse(r.out); } catch (x) { return { status: 'unparseable', why: String(r.out).slice(0, 160) }; } });
   // the op the door wrote for a value, read back from the op-log (the record as replayed, not the answer's own word)
-  const opOf = (value) => { let rows = []; try { rows = fs.readFileSync(env.BIM_OBJECT_OPLOG, 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l)); } catch (e) { return null; }
+  const opOf = (value) => { let rows = []; try { rows = require('../ledger_sign.js').parseOps(fs.readFileSync(env.BIM_OBJECT_OPLOG, 'utf8')); } catch (e) { return null; }
     return rows.filter(o => o.op_type === 'CRUD_CREATE' && o.table === 'm_product_category' && o.fields && o.fields.value === value)[0] || null; };
   // legacy's login pick, re-derived: Login.getOrgs (client 0 + the role's client, all orgs or AD_Role_OrgAccess, by Name, summaries dropped with no org tree), 11 kept when offered, else the first
   const pick = (role) => { const r = sq('SELECT ad_client_id AS c, isaccessallorgs AS a FROM ad_role WHERE ad_role_id=' + role)[0];
