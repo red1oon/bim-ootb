@@ -314,7 +314,7 @@
     NO_PATH: 'gap: no clear path to the support web', NO_ROOM: 'gap: not enough clear web depth for the minimum bolts', NO_T: 'gap: support wall thickness not measurable', CLASH: 'gap: rule detail would clash (refused)'
   };
   function genJoint(cx, j, G, opts) {
-    var rv = cx.rv, M = cx.meshes, meta = cx.meta, idx = indexOf(cx.inp), i, k;
+    var rv = cx.rv, M = cx.meshes, meta = cx.meta, idx = indexOf(cx.inp), i, k, BREAK_WW = !!(opts && opts.breakWeldWinding);   // P4 FIX SPEC red control
     var d_b = rv('bolt_diameter_mm'), pitch = rv('bolt_pitch_mm'), e_used = rv('edge_used_mm'), e_min = rv('edge_min_mm'), tp = rv('plate_thickness_mm'), hole = rv('hole_diameter_mm'), tol = rv('clash_tolerance_mm'), wr = rv('washer_od_mm') / 2, TABLE = weldTable(rv('weld_min_table_mm'));
     var NEAR = rv('near_end_window_m');
     var mb = M.get(j.guid), V = mb.V, T = M.soup(j.guid), nTri = T.length / 9, fr = frameOf(V), c = fr.c, U = fr.U, ua = U[2], Ep = j.end_point;
@@ -429,7 +429,11 @@
     var fillet = function (L, a0f, a1f, w_face, dd0, dd1, leg, sw, sa) {
       var A = [[a0f, w_face], [a0f, w_face + sw * leg], [a0f + sa * leg, w_face]], B = [[a1f, w_face], [a1f, w_face + sw * leg], [a1f + sa * leg, w_face]];
       for (var q = 0; q < 3; q++) { var p0 = A[q], q0 = A[(q + 1) % 3], p1 = B[q], q1 = B[(q + 1) % 3]; quad(L, wp(p0[0], p0[1], dd0), wp(q0[0], q0[1], dd0), wp(q1[0], q1[1], dd1), wp(p1[0], p1[1], dd1)); }
-      L.push(A.map(function (x) { return wp(x[0], x[1], dd0); })); L.push(B.slice().reverse().map(function (x) { return wp(x[0], x[1], dd1); }));
+      // P4 FIX SPEC (MODELLER_LOD_UPGRADE_PILL.md): the d0 cap runs opposite to the side quads' d0 edges (the section reversed), the d1 cap as the section; then the bead is turned outward by its signed volume
+      if (BREAK_WW) { L.push(A.map(function (x) { return wp(x[0], x[1], dd0); })); L.push(B.slice().reverse().map(function (x) { return wp(x[0], x[1], dd1); })); return; }   // the red control: the old caps
+      L.push(A.slice().reverse().map(function (x) { return wp(x[0], x[1], dd0); })); L.push(B.map(function (x) { return wp(x[0], x[1], dd1); }));
+      var n0 = L.length - 8, vol = 0, t3, m; for (m = n0; m < L.length; m++) { t3 = L[m]; vol += (t3[0][0] * (t3[1][1] * t3[2][2] - t3[1][2] * t3[2][1]) - t3[0][1] * (t3[1][0] * t3[2][2] - t3[1][2] * t3[2][0]) + t3[0][2] * (t3[1][0] * t3[2][1] - t3[1][1] * t3[2][0])) / 6; }
+      if (vol < 0) for (m = n0; m < L.length; m++) L[m] = [L[m][0], L[m][2], L[m][1]];
     };
     fillet(tris_w, a1lo, a1hi, w_plus, d0, d1, wl, -1, -1); fillet(tris_w, a1lo, a1hi, w_plus + tp, d0, d1, wl, +1, -1);
     var flat = function (L) { var o = new Float64Array(L.length * 9), q = 0; L.forEach(function (t3) { for (var m = 0; m < 3; m++) { o[q++] = t3[m][0]; o[q++] = t3[m][1]; o[q++] = t3[m][2]; } }); return o; };
@@ -515,7 +519,7 @@
   function run(inp, RULES, opts) { return YK.drain(runSteps(inp, RULES, opts)); }
   function* runSteps(inp, RULES, opts) {
     opts = opts || {}; var LOG = opts.log || function () { }, t0 = nowMs(), cx = makeCtx(inp, RULES, LOG), rv = cx.rv, meta = cx.meta;
-    LOG('§LODUP_JOINT_MODE clash_check=' + (opts.noClash ? 'OFF(break)' : 'on') + ' rolled_only=' + rv('rolled_section_only') + ' bolts=M' + rv('bolt_diameter_mm') + ' plate=' + rv('plate_thickness_mm') + ' table=' + JSON.stringify(weldTable(rv('weld_min_table_mm'))));
+    LOG('§LODUP_JOINT_MODE clash_check=' + (opts.noClash ? 'OFF(break)' : 'on') + ' weld_winding=' + (opts.breakWeldWinding ? 'OLD(break)' : 'fixed') + ' rolled_only=' + rv('rolled_section_only') + ' bolts=M' + rv('bolt_diameter_mm') + ' plate=' + rv('plate_thickness_mm') + ' table=' + JSON.stringify(weldTable(rv('weld_min_table_mm'))));
     var S = yield* surveySteps(cx), t1 = nowMs(), rows = S.rows, parts = [], CH = [], out = [], reasons = {}, clashBy = {}, G = seedGenerated(inp, opts, 'GEN-CR-'), ruleFail = [], addedVerts = 0, judged = 0, skippedAll = {}, gen = [];
     LOG('§LODUP_JOINT_NEIGHBOURS model_as_read + live_parts_of_other_packs=' + Object.keys(G).length + (opts.noGenerated ? ' (OFF: the old behaviour, break switch)' : '') + ' (op-log parts seeded as clash neighbours, the same rule for every pack)');
     var bump = function (k) { reasons[k] = (reasons[k] || 0) + 1; };
