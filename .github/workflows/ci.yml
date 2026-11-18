@@ -131,6 +131,23 @@ jobs:
           echo "$v"
           if [ "$rc" -ne 0 ] || ! printf '%s' "$v" | grep -q 'verdict=PASS'; then exit 1; fi
 
+      # W-4D-EDITOR-CI (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.21.3, §Q.22.4): the four Gantt-editor witnesses on the PLAYED
+      # layer of the one building db the repo tracks as a real file (HHS_Office_Federated_extracted.db, 75 MB, no LFS). Before this,
+      # no CI step ran any 4D gate, so another lane could break the editor unseen. Needs nothing outside the checkout (measured with an
+      # empty HOME: 36-92 s each). Exit 0 alone is not a pass: each must print its summary with fail=0 inconclusive=0.
+      - name: 4D Gantt editor witnesses on the played layer (W-4D-EDITOR-CI)
+        run: |
+          set -u; failed=""; mkdir -p logs
+          for p in "one_commit_pipeline OCP W_OCP" "undo_every_edit UE W_UE" "reorder RO W_RO" "shift_links GL W_GL"; do
+            set -- $p; log=logs/ci_4d_$1.log; rc=0
+            (cd viewer && env BLD_DIR="$GITHUB_WORKSPACE/buildings" "$2_BLD=HHS_Office_Federated" timeout 600 node "tests/witness_gantt_$1.js" < /dev/null) > "$log" 2>&1 || rc=$?
+            v=$(grep -aoE "§$3_SUMMARY.*" "$log" | tail -1 || true)
+            echo "§4D_EDITOR_CI $1 exit=$rc :: $v"
+            if [ "$rc" -ne 0 ] || ! printf '%s' "$v" | grep -qE 'fail=0 inconclusive=0'; then failed="$failed $1"; tail -20 "$log"; fi
+          done
+          if [ -n "$failed" ]; then echo "§4D_EDITOR_CI verdict=FAIL failed=${failed# }"; exit 1; fi
+          echo "§4D_EDITOR_CI checked=4 verdict=PASS"
+
       - name: Dependency candidates agree with a real run (W-DEPS-CAND)
         run: |
           set -u; mkdir -p logs; rc=0
