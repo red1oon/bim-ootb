@@ -1131,11 +1131,15 @@
       return { ok: true, skipped: 'no_schedule_gate', floating: 0, total: 0, guids: [], ms: ms() };
     var els = _buildXrayElements();
     if (!els || !els.length) return { ok: true, skipped: 'no_geometry', floating: 0, total: 0, guids: [], ms: ms() };
-    var sched = {};
+    var sched = {}, _untimed = 0;
     for (var i = 0; i < TMS._ops.length; i++) {
       var o = TMS._ops[i];
       var g = o.output_guid || (o.input_guids && o.input_guids.length && o.input_guids[0]);
-      if (g) sched[g] = { start: o.timestamp, end: o.end_ts || o.timestamp };
+      // The op's start is `start_ts` — the field loadOps (tm_core.js) returns and retimeTaskElements writes. This read
+      // `o.timestamp`, which no op carries: every start was undefined, the gate judged nothing and granted every lock
+      // (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.19.2). An op with no numeric start is not judged, and is counted.
+      if (g && typeof o.start_ts === 'number') { sched[g] = { start: o.start_ts, end: o.end_ts || o.start_ts }; }
+      else if (g) _untimed++;
     }
     // audit only elements that are scheduled AND have real geometry — §4D_NOGEO parked elements
     // (zero bbox at origin) can neither bear nor hang and sit at project end by design
@@ -1196,7 +1200,7 @@
     return { ok: n <= base.floating && ma.midair <= base.midair,
       floating: n, midair: ma.midair, baseFloating: base.floating, baseMidair: base.midair,
       dFloating: n - base.floating, dMidair: ma.midair - base.midair,
-      total: audited.length, guids: guids, allGuids: allGuids, ms: ms() };
+      total: audited.length, untimed: _untimed, guids: guids, allGuids: allGuids, ms: ms() };
   }
 
   // §GANTT_LOCK_DELTA — the physics state at the moment editing STARTED. Captured on 🔒→🔓 so the
@@ -1213,7 +1217,8 @@
     (v.allGuids || v.guids || []).forEach(function (g) { gset[g] = 1; });
     _lockBaseline = { floating: v.floating, midair: v.midair, guidSet: gset };
     console.log('§GANTT_LOCK_BASELINE floating=' + v.floating + ' midair=' + v.midair +
-      ' total=' + v.total + ' ms=' + v.ms + ' (edit start — a lock is refused only on an INCREASE)');
+      ' total=' + v.total + ' opsWithNoStart=' + (v.untimed || 0) + ' ms=' + v.ms + ' (edit start — a lock is refused only on an INCREASE)' +
+      (v.total === 0 ? '  INCONCLUSIVE — nothing was judged' + (v.skipped ? ' (' + v.skipped + ')' : '') : ''));
     return _lockBaseline;
   }
 
