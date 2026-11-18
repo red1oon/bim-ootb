@@ -8,8 +8,8 @@
    "bim_element_base.csv",
    "BIM_Element_Trl_bl_BD.xml"
   ],
-  "rows": 1100,
-  "translated": 997,
+  "rows": 1107,
+  "translated": 1004,
   "untranslated": 103
  },
  "labels": {
@@ -1112,10 +1112,17 @@
   "ui_exp_ifc": "IFC (pura building)",
   "ui_exp_bcf": "BCF (shomossha)",
   "ui_exp_bcf_none": "kono shongrokkhito shomossha nei",
-  "ui_exp_ifc_none": "jyamiti table shoho ek-file building dorkar"
+  "ui_exp_ifc_none": "jyamiti table shoho ek-file building dorkar",
+  "ui_exp_sched": "Shomoyshuchi",
+  "ui_exp_sched_tip": "bhoboner kajer shomoyshuchi, MS Project ba Primavera P6-er jonno",
+  "ui_exp_sched_none": "shomoyshuchi toiri korte ekbar Time Machine kholun",
+  "ui_exp_5d": "5D khoroch",
+  "ui_exp_5d_tip": "khorocher workbook (Excel): poriman talika, upokoron, shrom, jantropati",
+  "pillc_export_4": "Shomoyshuchi (MSP / PMXML / XER): MS Project ba Primavera P6-er jonno kajer shomoyshuchi, Time Machine toiri na kora porjonto dhushor",
+  "pillc_export_5": "5D khoroch: 4D/5D page theke khorocher workbook (.xlsx)"
  },
  "tables": {
-  "AD_Message": 947,
+  "AD_Message": 954,
   "BIM_Element": 153
  },
  "terms": [

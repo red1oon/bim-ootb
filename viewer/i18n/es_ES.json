@@ -8,8 +8,8 @@
    "bim_element_base.csv",
    "BIM_Element_Trl_es_ES.xml"
   ],
-  "rows": 1100,
-  "translated": 1059,
+  "rows": 1107,
+  "translated": 1066,
   "untranslated": 41
  },
  "labels": {
@@ -1112,10 +1112,17 @@
   "ui_exp_ifc": "IFC (todo el edificio)",
   "ui_exp_bcf": "BCF (incidencias)",
   "ui_exp_bcf_none": "no hay incidencias guardadas",
-  "ui_exp_ifc_none": "requiere un edificio de un solo archivo con tablas de geometría"
+  "ui_exp_ifc_none": "requiere un edificio de un solo archivo con tablas de geometría",
+  "ui_exp_sched": "Cronograma",
+  "ui_exp_sched_tip": "el cronograma de obra del edificio, para MS Project o Primavera P6",
+  "ui_exp_sched_none": "abra una vez la Time Machine para crear el cronograma",
+  "ui_exp_5d": "Coste 5D",
+  "ui_exp_5d_tip": "libro de costes (Excel): mediciones, materiales, mano de obra, equipos",
+  "pillc_export_4": "Cronograma (MSP / PMXML / XER): el cronograma de obra para MS Project o Primavera P6, en gris hasta que la Time Machine cree uno",
+  "pillc_export_5": "Coste 5D: un libro de costes (.xlsx) desde la página 4D/5D"
  },
  "tables": {
-  "AD_Message": 947,
+  "AD_Message": 954,
   "BIM_Element": 153
  },
  "terms": [

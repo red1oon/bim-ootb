@@ -8,8 +8,8 @@
    "bim_element_base.csv",
    "BIM_Element_Trl_ms_MY.xml"
   ],
-  "rows": 1100,
-  "translated": 997,
+  "rows": 1107,
+  "translated": 1004,
   "untranslated": 103
  },
  "labels": {
@@ -1112,10 +1112,17 @@
   "ui_exp_ifc": "IFC (seluruh bangunan)",
   "ui_exp_bcf": "BCF (isu)",
   "ui_exp_bcf_none": "tiada isu tersimpan",
-  "ui_exp_ifc_none": "perlukan bangunan satu fail dengan jadual geometri"
+  "ui_exp_ifc_none": "perlukan bangunan satu fail dengan jadual geometri",
+  "ui_exp_sched": "Jadual",
+  "ui_exp_sched_tip": "jadual kerja bangunan, untuk MS Project atau Primavera P6",
+  "ui_exp_sched_none": "buka Time Machine sekali untuk menghasilkan jadual",
+  "ui_exp_5d": "Kos 5D",
+  "ui_exp_5d_tip": "buku kerja kos (Excel): bil kuantiti, bahan, buruh, peralatan",
+  "pillc_export_4": "Jadual (MSP / PMXML / XER): jadual kerja untuk MS Project atau Primavera P6, kelabu sehingga Time Machine menghasilkannya",
+  "pillc_export_5": "Kos 5D: buku kerja kos (.xlsx) dari halaman 4D/5D"
  },
  "tables": {
-  "AD_Message": 947,
+  "AD_Message": 954,
   "BIM_Element": 153
  },
  "terms": [

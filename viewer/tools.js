@@ -593,7 +593,8 @@ function setupTools(A) {
   };
 
   // 4D/5D Export
-  A.export4D5D = function() {
+  // opts.exportKind ('5d', from the Export menu, prompts/VIEWER_IFC_EXPORT_BY_DISCIPLINE.md §(b2)) adds &export=5d so boq_charts.html writes the cost workbook itself; no argument = today's behaviour.
+  A.export4D5D = function(opts) {
     if (!A.db || !A.activeBuilding) { A.status.textContent = typeof _TRL!=='undefined'&&_TRL.ui_select_building||'Select a building first.'; return; }
     const bld = A.activeBuilding;
     const dbParam = new URLSearchParams(location.search).get('db') || 'yourproject_extracted.db';
@@ -604,7 +605,8 @@ function setupTools(A) {
     if (diffDbUrl) diffParam = '&diffdb=' + encodeURIComponent(diffDbUrl);
 
     var cacheBust = '&v=' + Date.now();
-    var chartsUrl = 'boq_charts.html?db=' + encodeURIComponent(dbParam) + '&bld=' + bld + diffParam + cacheBust;
+    var exportParam = (opts && opts.exportKind) ? '&export=' + encodeURIComponent(opts.exportKind) : '';
+    var chartsUrl = 'boq_charts.html?db=' + encodeURIComponent(dbParam) + '&bld=' + bld + diffParam + exportParam + cacheBust;
     window.open(chartsUrl, '_blank');
     A.status.textContent = (typeof _TRL!=='undefined'&&_TRL.ui_analytics_opened||'4D/5D analytics opened for {name}').replace('{name}', bld);
   };
