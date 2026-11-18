@@ -468,7 +468,9 @@ function setupPanels(A) {
     setInterval(function() { if (existing.style.display !== 'none') _refreshCinemaRowIcons(); }, 500);
 
     // Draggable + pointer isolation
-    if (A._makeDraggable) A._makeDraggable(existing);
+    // §14.5.3a D2: this runs in setupPanels, before setupMeasure defines A._makeDraggable (so the old guarded call never ran);
+    // call the one helper itself. common/drag.js loads before main.js (viewer.html), so it is always there.
+    if (window.CommonDrag) window.CommonDrag.make(existing); else console.warn('§DRAG_MISSING sunglass panel: common/drag.js not loaded');
     existing.addEventListener('pointerdown', function(e) { e.stopPropagation(); });
 
     console.log('§COLOR_PALETTE built with bim-panel + icon slider rows');

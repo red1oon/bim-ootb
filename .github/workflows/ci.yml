@@ -101,6 +101,18 @@ jobs:
           echo "$v"
           if [ "$rc" -ne 0 ] || ! printf '%s' "$v" | grep -q 'verdict=PASS'; then exit 1; fi
 
+      # W-DEPS-CAND (bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md Part B, B1 §3; #3244): the dependency-candidate tool classifies
+      # every read (load / call, guarded or not) the same way RUNNING the fixture scripts in both orders does, and every file:line it
+      # cites on the modeller really holds the name. Dev-side; writes nothing. Exit 0 alone is not a pass: it must print verdict=PASS.
+      - name: Dependency candidates agree with a real run (W-DEPS-CAND)
+        run: |
+          set -u; mkdir -p logs; rc=0
+          node scripts/tests/witness_deps_candidates.js < /dev/null > logs/ci_deps_candidates.log 2>&1 || rc=$?
+          grep -E 'ok=N|§DEPS_W_(FAIL|INCONCLUSIVE|CITE_MISS|RED)' logs/ci_deps_candidates.log || true
+          v=$(grep -E '^§DEPS_W ' logs/ci_deps_candidates.log | tail -1 || true)
+          echo "$v"
+          if [ "$rc" -ne 0 ] || ! printf '%s' "$v" | grep -q 'verdict=PASS'; then exit 1; fi
+
   e2e-tests:
     # pinned: ubuntu-latest is rolling to 26.04, where `playwright install chromium` fails
     # ("Playwright does not support chromium on ubuntu26.04-x64", bim-ootb #3220 run 44147388376)

@@ -45,6 +45,7 @@
   Object.defineProperty(TMS, '_ganttAxisStart', { get: function () { return _ganttAxisStart; }, set: function (v) { _ganttAxisStart = v; }, enumerable: true });
   Object.defineProperty(TMS, '_ganttAxisEnd', { get: function () { return _ganttAxisEnd; }, set: function (v) { _ganttAxisEnd = v; }, enumerable: true });
   Object.defineProperty(TMS, '_days', { get: function () { return _days; }, set: function (v) { _days = v; }, enumerable: true });
+  Object.defineProperty(TMS, '_dayOrigin', { get: function () { return _dayOrigin; }, set: function (v) { _dayOrigin = v; }, enumerable: true });
   Object.defineProperty(TMS, '_anchorDay', { get: function () { return _anchorDay; }, set: function (v) { _anchorDay = v; }, enumerable: true });
   Object.defineProperty(TMS, '_anchorHr', { get: function () { return _anchorHr; }, set: function (v) { _anchorHr = v; }, enumerable: true });
   Object.defineProperty(TMS, '_savedVisibility', { get: function () { return _savedVisibility; }, set: function (v) { _savedVisibility = v; }, enumerable: true });
@@ -161,6 +162,7 @@
   var _ganttAxisStart = 0;
   var _ganttAxisEnd = 0;
   var _days = [];          // distinct day start timestamps
+  var _dayOrigin = null;   // first instant of work: day 0 of the ladder, the counter and the ruler (GanttModel.dayParts)
   var _anchorDay = null;
   var _anchorHr = null;
   var _savedVisibility = [];
@@ -364,9 +366,12 @@
     var _axIdx = null;
     try { _axIdx = TMS.buildTaskIndex(); } catch (e) { _axIdx = null; }
     var r = GM.computeDays(_placeOps(), _axIdx && _axIdx.tasks);
-    _days = r.days;
+    _days = r.days; _dayOrigin = r.dayOrigin;
     if (r.projectStart !== null) { _projectStart = r.projectStart; _projectEnd = r.projectEnd; }
     _ganttAxisStart = r.axisStart; _ganttAxisEnd = r.axisEnd;
+    // §TM_NEEDLE_SYNC: the ladder just changed, so the slider's range and notch follow it HERE — every edit path
+    // ends in this function and none of them refreshed the slider (bim-compiler 4D_MODEL_INTEGRITY.md §Q.19.5).
+    TMS.anchorFromCursor(); TMS.configSlider();
     // (G-3 fix 2026-08-11: a stale byte-duplicate of the axis block sat here reading `_ops` —
     // bookkeeping ops included — and OVERWROTE the qualified axis, so the display axis absorbed
     // BUILDING_OPEN. Removed; GanttModel.computeDays is now the single authority.)

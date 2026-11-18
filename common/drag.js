@@ -83,6 +83,11 @@
           if (Math.abs(e.clientX - ox) + Math.abs(e.clientY - oy) < 4) return;  // still a tap
           moved = true; dragging = true;
           try { el.setPointerCapture(pid); } catch (err) {}                      // now a real drag
+          // §14.5.3a D1: a panel placed with a pure translation (e.g. top:50% + translateY(-50%)) would jump by that offset,
+          // because sx/sy are its on-screen rect while left/top are written under the transform. Drop the translation once,
+          // so the panel stays where it is seen. A scale or rotate transform is left alone.
+          var _tf = window.getComputedStyle ? getComputedStyle(el).transform : 'none';
+          if (_tf && _tf !== 'none' && /^matrix\(1, 0, 0, 1, [-0-9.e]+, [-0-9.e]+\)$/.test(_tf)) { el.style.transform = 'none'; console.log('§DRAG_UNTRANSFORM id=' + (el.id || '-') + ' was=' + _tf); }
           e.preventDefault();
         }
         el.style.left = (sx + e.clientX - ox) + 'px';
