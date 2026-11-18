@@ -1,6 +1,6 @@
 // ⚠ DO NOT REMOVE — W-ERP-OPIMAGE (bim-compiler prompts/ERP_MIS_WINDOW_FROM_CSV.md §12.10: the op-log image, so a line does not replay the whole op-log). READ THE LOG; an exit code is not evidence.
 //   G1 ISSUE (a line answers differently when it starts from the image) · G2 ISSUE (the image holds other rows than a full replay makes)
-//   G3 ISSUE (the image hides what the op-log says: a line added later is not seen, or an EDITED log still gives the old result) · G4 ISSUE (the image is never used, or saves nothing)
+//   G3 ISSUE (the image hides what the op-log says: a line added later is not seen, or an EDITED log still gives the old result; since CLI_ERP_IVR §62 an edited signed line is a FORGED line the door leaves out, as the page does) · G4 ISSUE (the image is never used, or saves nothing)
 //   G5 ISSUE (images pile up: one whose op-log is gone is never deleted; temp files are left)
 //   Falsifiers: ERP_BREAK=staleimage (the prefix is not checked: must FAIL G3) · noimage (must FAIL G4). An op-log below the threshold gives INCONCLUSIVE, never PASS.
 //   Run: node common/door/tests/witness_erp_opimage.js > common/door/tests/logs/erp_opimage.log 2>&1
@@ -61,10 +61,10 @@ const k = kit('W-ERP-OPIMAGE'), BRK = process.env.ERP_BREAK || '';
 
   // ── G3 it follows the log: a line added after the image is seen; an EDITED log gives the edited result
   const add = await run(ON, 'mis.new kind=PR_Patient Name=Devi'), l1 = await run(ON, 'mis.list kind=PR_Patient'), n1 = ((l1.answer || {}).rows || []).map(r => r.Name).join();
-  const txt = fs.readFileSync(LOG, 'utf8'), edited = txt.replace('"name":"Aminah"', '"name":"Zainab"').replace('\\"name\\":\\"Aminah\\"', '\\"name\\":\\"Zainab\\"'); fs.writeFileSync(LOG, edited);   // a signed row holds the op as an escaped string inside parameters (the edit breaks its hash on purpose: a boot replays, it does not verify)
+  const txt = fs.readFileSync(LOG, 'utf8'), edited = txt.replace('"name":"Aminah"', '"name":"Zainab"').replace('\\"name\\":\\"Aminah\\"', '\\"name\\":\\"Zainab\\"'); fs.writeFileSync(LOG, edited);   // a signed row holds the op as an escaped string inside parameters (the edit breaks its signature on purpose: since §62 the boot ADMITS rows by signature, so the edited row is left out)
   const l2 = await run(ON, 'mis.list kind=PR_Patient'), n2 = ((l2.answer || {}).rows || []).map(r => r.Name).join(), l3 = await run(OFF, 'mis.list kind=PR_Patient'), n3 = ((l3.answer || {}).rows || []).map(r => r.Name).join();
   if (edited === txt) k.incon('G3', 'the op-log holds no patient named Aminah to edit');
-  else k.chk('G3 it follows the op-log: a patient added after the image is listed; after an earlier line of the log is edited (Aminah becomes Zainab) the next line shows Zainab, as a full replay does', ok(add) && /Devi/.test(n1) && /Aminah/.test(n1) && /Zainab/.test(n2) && !/Aminah/.test(n2) && n2 === n3, 'after the add: ' + n1 + ' · after the edit, with the image on: ' + n2 + ' · with it off: ' + n3);
+  else k.chk('G3 it follows the op-log: a patient added after the image is listed; after an earlier line of the log is edited (Aminah becomes Zainab) that forged line is left out (neither name, §62), as a full replay does', ok(add) && /Devi/.test(n1) && /Aminah/.test(n1) && !/Zainab/.test(n2) && !/Aminah/.test(n2) && n2 === n3, 'after the add: ' + n1 + ' · after the edit, with the image on: ' + n2 + ' · with it off: ' + n3);
 
   // ── G5 housekeeping: the deleted op-log's image is gone once another image is written (the edit above forced one); no temp file
   const left = sides(), gone = side2 ? (!fs.existsSync(side2.file) && left.filter(f => /\.json$/.test(f)).map(f => JSON.parse(fs.readFileSync(path.join(snapDir, f), 'utf8'))).filter(j => j.oplog === LOG2).length === 0) : null;

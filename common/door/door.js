@@ -297,7 +297,7 @@ function createDoor(opts) {
       let out = '', err = '';
       const p = spawn(process.execPath, [file].concat(argv), { env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
       p.stdout.on('data', d => { out += d; }); p.stderr.on('data', d => { err += d; });
-      p.on('close', code => res({ code, out: out.trim(), err: err.trim() }));
+      p.on('close', code => { err.split('\n').filter(l => /^§LEDGER (excluded|unpinned|revoked) /.test(l)).forEach(l => process.stderr.write(l + '\n')); res({ code, out: out.trim(), err: err.trim() }); });   // §62: a row the door did not count is said where a person sees it
     });
   }
   function engineResult(entry, base, r) {   // each engine's own exit contract -> the envelope's status; its JSON stays inside, unchanged

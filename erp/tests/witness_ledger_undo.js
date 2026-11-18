@@ -77,8 +77,12 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     await fwd(); const t3 = await read(), r3 = rowsOf(t3), f3 = await fold(), m3 = r3[r3.length - 1], p3 = JSON.parse(m3.parameters || '{}');
     judge('U3 fold-forward: the EARLIEST undone gesture comes back (the first edit), +1 REDO row', f3 && f3.desc === v1 && r3.length === r2.length + 1 && m3.op_type === 'REDO' && JSON.stringify(p3.targets) === JSON.stringify([u1row.op_uuid]), JSON.stringify(f3 && f3.desc && f3.desc.slice(-3)) + ' targets=' + JSON.stringify(p3.targets));
     // U5 (before the reload; the file as it is now)
+    // §62: the door admits only keys it trusts, so U5 first trusts this browser's key at the door, as the owner would (ledger_sign.js trust <fp>)
+    const pkid = await page.evaluate(() => window.ErpSigner.pubKeyHex), pfp = crypto.createHash('sha256').update(Buffer.from(pkid, 'hex')).digest('hex').slice(0, 16).replace(/(.{4})(?=.)/g, '$1-');
+    const cf = path.join(dir, 'copy.jsonl'); fs.writeFileSync(cf, t3); const tr = cp.spawnSync(process.execPath, [path.join(REPO, 'common/door/ledger_sign.js'), 'trust', pfp, cf], { encoding: 'utf8', env: Object.assign({}, process.env, { RED1_LEDGER_ROSTER: path.join(dir, 'roster.json') }) });
+    process.env.RED1_LEDGER_ROSTER = path.join(dir, 'roster.json');
     const d5 = doorRead(t3);
-    judge('U5 the REAL door (door.js mis.read) over the same file reads the same Description as the page (' + JSON.stringify(d5.desc && String(d5.desc).slice(-3)) + ')', d5.desc === v1, d5.err);
+    judge('U5 the REAL door (door.js mis.read), with this browser\'s key trusted at the door (§62), over the same file reads the same Description as the page (' + JSON.stringify(d5.desc && String(d5.desc).slice(-3)) + ')', tr.status === 0 && d5.desc === v1, (tr.stdout || '').trim() + ' ' + d5.err);
     // U4
     await page.reload({ waitUntil: 'load' }); await page.waitForFunction(() => window.LedgerUi && document.getElementById('erp-ledger-pill'), null, { timeout: 60000 }); await inject();
     const on4 = await waitOn(25000); await sleep(1500); const f4 = await fold();

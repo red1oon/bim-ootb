@@ -11,7 +11,7 @@
   'use strict';
   if (typeof global.showDirectoryPicker !== 'function') { try { console.log('§LEDGERUI no showDirectoryPicker (this browser keeps the IndexedDB log)'); } catch (e) {} return; }
   var NAME = (function () { try { return new URLSearchParams(location.search).get('ledger') || 'ad_seed.db.ops.jsonl'; } catch (e) { return 'ad_seed.db.ops.jsonl'; } })();
-  var DB = 'bim_erp_ledger', ST = 'h', RS = 'roster', KEY = 'handle', state = 'off', pill = null, trust = null, handle = null;
+  var DB = 'bim_erp_ledger', ST = 'h', RS = 'roster', KEY = 'handle', state = 'off', pill = null, trust = null, handle = null, keysBtn = null, panel = null;
   function brk() { return global.__LEDGER_UI_BREAK || ''; }
   function say(s) { try { console.log('§LEDGERUI ' + s); } catch (e) {} }
   function idb() { return new Promise(function (res, rej) { var q = indexedDB.open(DB, 2); q.onupgradeneeded = function () { if (!q.result.objectStoreNames.contains(ST)) q.result.createObjectStore(ST); if (!q.result.objectStoreNames.contains(RS)) q.result.createObjectStore(RS); }; q.onsuccess = function () { res(q.result); }; q.onerror = function () { rej(q.error); }; }); }
@@ -29,6 +29,7 @@
   }
   function paint() {
     if (trust) { var u = state === 'on' ? unpinned() : []; trust.style.display = u.length ? '' : 'none'; if (u.length) { trust.textContent = 'Trust key ' + u[0].fp + '? (' + u[0].rows + ' rows)'; trust.title = 'Compare with: node common/door/ledger_sign.js key'; } }
+    if (keysBtn) { keysBtn.style.display = state === 'on' ? '' : 'none'; if (state !== 'on' && panel) panel.style.display = 'none'; }
     if (pill) { pill.textContent = text(); pill.setAttribute('data-state', state); pill.title = state === 'on' ? 'Click to detach (the file stays)' : state === 'regrant' ? 'The browser needs your OK to use ' + (handle && handle.name) + ' again' : 'Choose the folder the door (red1>) writes to, so both share one ledger file'; } }
   function mount() {
     if (pill || !document.body) return;
@@ -37,7 +38,33 @@
     pill.addEventListener('click', onClick); document.body.appendChild(pill);
     trust = document.createElement('button'); trust.id = 'erp-ledger-trust'; trust.type = 'button'; trust.style.cssText = 'position:fixed;left:12px;bottom:44px;z-index:9999;font:12px system-ui,sans-serif;padding:4px 10px;border-radius:12px;border:1px solid #c60;background:#fff4e5;color:#222;cursor:pointer;display:none';
     trust.addEventListener('click', function () { var u = unpinned()[0]; if (!u) return; global.__crud.ledgerPin(u.kid).then(function (r) { if (r && r.ok) return saveRoster(r.roster).then(function () { say('trusted key fp=' + u.fp); paint(); }); }); });
-    document.body.appendChild(trust); paint();
+    document.body.appendChild(trust);
+    // §62 (bim-compiler prompts/CLI_ERP_IVR.md): the Keys panel = this browser's own fingerprint (compare it with `node common/door/ledger_sign.js keys` before `trust` at the door) and each trusted key with Untrust
+    keysBtn = document.createElement('button'); keysBtn.id = 'erp-ledger-keys'; keysBtn.type = 'button'; keysBtn.textContent = 'Keys';
+    keysBtn.style.cssText = 'position:fixed;left:12px;bottom:76px;z-index:9999;font:12px system-ui,sans-serif;padding:4px 10px;border-radius:12px;border:1px solid #888;background:#fff;color:#222;cursor:pointer;display:none';
+    keysBtn.addEventListener('click', function () { if (panel.style.display === 'none') showKeys(); else panel.style.display = 'none'; });
+    panel = document.createElement('div'); panel.id = 'erp-ledger-keypanel';
+    panel.style.cssText = 'position:fixed;left:12px;bottom:108px;z-index:9999;font:12px system-ui,sans-serif;padding:8px 10px;border-radius:8px;border:1px solid #888;background:#fff;color:#222;display:none;max-width:360px';
+    document.body.appendChild(keysBtn); document.body.appendChild(panel); paint();
+  }
+  function showKeys() {
+    var C = global.__crud, own = global.ErpSigner && global.ErpSigner.pubKeyHex, list = C && C.ledgerRoster ? C.ledgerRoster() : [];
+    Promise.all([own].concat(list).map(function (k) { return k && C.ledgerFp ? C.ledgerFp(k) : Promise.resolve('?'); })).then(function (fps) {
+      panel.innerHTML = '';
+      var me = document.createElement('div'); me.id = 'erp-ledger-ownfp'; me.textContent = 'This browser: ' + fps[0]; me.title = 'Before you trust this browser at the door, compare: node common/door/ledger_sign.js keys'; panel.appendChild(me);
+      if (!list.length) { var none = document.createElement('div'); none.textContent = 'No other key is trusted.'; panel.appendChild(none); }
+      list.forEach(function (kid, i) {
+        var row = document.createElement('div'), b = document.createElement('button');
+        row.textContent = 'Trusted: ' + fps[i + 1] + ' '; b.type = 'button'; b.className = 'erp-ledger-untrust'; b.setAttribute('data-fp', fps[i + 1]); b.textContent = 'Untrust';
+        b.addEventListener('click', function () {
+          if (brk() === 'nounpin') { say('untrust skipped (falsifier)'); return; }
+          C.ledgerUnpin(kid).then(function (r) { if (r && r.ok) return saveRoster(r.roster).then(function () { say('untrusted key fp=' + fps[i + 1]); paint(); showKeys(); }); });
+        });
+        row.appendChild(b); panel.appendChild(row);
+      });
+      panel.style.display = '';
+      say('keys panel own=' + fps[0] + ' trusted=' + list.length);
+    });
   }
   function ready() { return new Promise(function (res) { var n = 0; (function poll() { if (global.__crud && global.__crud.attachLedger && global.ErpSigner && global.ErpSigner.pubKeyHex && global.LedgerFile) return res(true); if (++n > 300) return res(false); setTimeout(poll, 200); })(); }); }
   function attach(h) {
@@ -67,6 +94,6 @@
     });
     global.addEventListener('overlay:committed', function () { if (state === 'on') setTimeout(paint, 600); });
   }
-  global.LedgerUi = { state: function () { return state; }, text: text, name: NAME, click: onClick };
+  global.LedgerUi = { state: function () { return state; }, text: text, name: NAME, click: onClick, showKeys: function () { showKeys(); } };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
 })(typeof window !== 'undefined' ? window : this);
