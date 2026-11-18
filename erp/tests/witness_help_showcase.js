@@ -3,7 +3,7 @@
 //   S3 ISSUE (a plain question does not find the window and the action) · S4 ISSUE (a how-to link that goes nowhere, or a card link that does not open)
 //   S5 ISSUE (how-to text that the guide does not say)
 //   §12: S1 also covers the pack's names · S6 ISSUE (a Chinese question finds nothing: words split on spaces) · S7 ISSUE (with 中文 chosen, the how-to is still English, or its links go nowhere) · S6de/S7de the same in Deutsch
-//   Falsifiers: HS_BREAK=tamper FAILs S1 · nophrase FAILs S3 · deadlink FAILs S4 · nocjk FAILs S6 · nomsgtrl FAILs S2c. Each claim can say VACUOUS / INCONCLUSIVE.
+//   §19.11: S0 ISSUE (a screen language with no help pack). Falsifiers: HS_BREAK=droplang FAILs S0 · tamper FAILs S1 · nophrase FAILs S3 · deadlink FAILs S4 · nocjk FAILs S6 · nomsgtrl FAILs S2c. Each claim can say VACUOUS / INCONCLUSIVE.
 // Run: node erp/tests/witness_help_showcase.js   (after node erp/tools/build_help_pack.js; ERP_TRL_CACHE / PW / GUIDE override paths)
 'use strict';
 const fs = require('fs'), os = require('os'), path = require('path'), http = require('http'), cp = require('child_process');
@@ -14,7 +14,10 @@ const CACHE = process.env.ERP_TRL_CACHE || path.join(os.homedir(), '.cache', 'er
 const BREAK = process.env.HS_BREAK || '';
 const PW = process.env.PW || path.join(os.homedir(), 'bim-ootb', 'tests', 'node_modules', 'playwright');
 const SEED = path.join(ERP, 'ad_seed.db');
-const SOURCES = { fr_FR: ['nmicoud_fr_FR', 'x_fr352/fr_FR'], de_DE: ['bxservice_tbayen.translations/data/de_DE'], ja_JP: ['JPiere_japanese-translation'], zh_CN: ['x_zh_CN/zh_CN'] };
+// §19.11 step 1: the languages and their pinned packs = erp/tools/i18n_sources.json (the list both builders read; DATA, not the builders' code). The XML READING below stays the witness's own.
+const SOURCES = (() => { const j = JSON.parse(fs.readFileSync(path.join(ERP, 'tools', 'i18n_sources.json'), 'utf8')).sources, o = {}; Object.keys(j).forEach((l) => { o[l] = j[l].map((x) => x.dir); }); return o; })();
+// a pack's files carry the PACK's own code (es_ES <- *_es_CO.xml, ar <- *_ar_DZ / *_ar_TN): every <Table>_Trl_*.xml of the folder, sorted, each its own source
+const trl = (lang, t) => [].concat(...SOURCES[lang].map((d) => { const dir = path.join(CACHE, d); return fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => f.startsWith(t + '_Trl_') && f.endsWith('.xml')).sort().map((f) => xmlTexts(path.join(dir, f))) : []; }));
 const q = (sql) => { const r = cp.spawnSync('sqlite3', ['-readonly', '-json', SEED, sql], { encoding: 'utf8', maxBuffer: 1 << 29 }); if (r.status !== 0) throw new Error(r.stderr); return JSON.parse(r.stdout || '[]'); };
 // the witness's OWN reader of the published XML (not the builder's): every <value> text of a table, by row id
 function xmlTexts(file) {
@@ -27,6 +30,16 @@ function xmlTexts(file) {
   }
   return m;
 }
+// §19.11 step 1 S2 ISSUE (a screen language with no help pack = English help in a translated screen): the help packs built == the screen packs built (erp/i18n/index.json locales). Red HS_BREAK=droplang drops one help pack from the reading.
+function s0() {
+  const screen = JSON.parse(fs.readFileSync(path.join(ERP, 'i18n', 'index.json'), 'utf8')).locales.map((l) => l.code).filter((c) => c !== 'en_US').sort();
+  let help = fs.readdirSync(HELP).filter((d) => d !== 'en_US' && fs.existsSync(path.join(HELP, d, 'help.json'))).sort();
+  if (BREAK === 'droplang') help = help.slice(1);
+  const miss = screen.filter((c) => help.indexOf(c) < 0), extra = help.filter((c) => screen.indexOf(c) < 0);
+  k.L('S0 screen packs=' + screen.length + ' (' + screen.join(',') + ') help packs=' + help.length + ' (' + help.join(',') + ')');
+  if (!screen.length) { k.incon('S0', 'VACUOUS: no screen language'); return; }
+  k.chk('S0 every screen language has its help pack, and no other: ' + (screen.length - miss.length) + ' of ' + screen.length, !miss.length && !extra.length, (miss.length ? 'missing ' + miss.join(',') : '') + (extra.length ? ' extra ' + extra.join(',') : ''));
+}
 function s1() {
   const fieldEl = new Map(); q('SELECT f.ad_field_id fid, c.ad_element_id eid FROM ad_field f JOIN ad_column c ON c.ad_column_id=f.ad_column_id').forEach((r) => fieldEl.set(String(r.fid), String(r.eid)));
   Object.keys(SOURCES).forEach((lang) => {
@@ -34,7 +47,7 @@ function s1() {
     const pack = JSON.parse(fs.readFileSync(f, 'utf8')), ids = Object.keys(pack.fields || {});
     ids.forEach((id) => { pack.fields[id] = pack.fields[id].map((i) => (i >= 0 ? pack.texts[i] : null)); });   // [descIndex, helpIndex] -> texts
     if (BREAK === 'tamper' && ids.length) pack.fields[ids[0]][0] = (pack.fields[ids[0]][0] || '') + ' (tampered)';
-    const els = SOURCES[lang].map((d) => xmlTexts(path.join(CACHE, d, 'AD_Element_Trl_' + lang + '.xml'))), flds = SOURCES[lang].map((d) => xmlTexts(path.join(CACHE, d, 'AD_Field_Trl_' + lang + '.xml')));
+    const els = trl(lang, 'AD_Element'), flds = trl(lang, 'AD_Field');
     if (!els.some((m) => m.size)) { k.incon('S1-' + lang, 'source packs not in ' + CACHE); return; }
     let n = 0, ok = 0; const bad = [];
     ids.forEach((id) => (pack.fields[id] || []).forEach((txt) => {
@@ -54,14 +67,19 @@ function s1names() {
     const f = path.join(HELP, lang, 'help.json'); if (!fs.existsSync(f)) return; const pack = JSON.parse(fs.readFileSync(f, 'utf8')), nm = pack.names;
     if (!nm) { k.incon('S1n-' + lang, 'no names in the pack'); return; }
     if (BREAK === 'tamper') { const w = Object.keys(nm.windows)[0]; if (w) nm.windows[w] += ' (tampered)'; }
-    const X = (t) => SOURCES[lang].map((d) => xmlTexts(path.join(CACHE, d, t + '_Trl_' + lang + '.xml')));
-    const W = X('AD_Window'), T = X('AD_Table'), R = X('AD_Ref_List'), has = (srcs, id, txt) => srcs.some((m) => m.has(String(id)) && Array.from(m.get(String(id))).some((v) => v.trim() === txt));
+    const X = (t) => trl(lang, t);
+    const W = X('AD_Window'), T = X('AD_Table'), R = X('AD_Ref_List'), P = X('AD_Process'), has = (srcs, id, txt) => srcs.some((m) => m.has(String(id)) && Array.from(m.get(String(id))).some((v) => v.trim() === txt));
     let n = 0, ok = 0; const bad = [];
     const chk = (srcs, id, txt, tag) => { n++; if (has(srcs, id, txt)) ok++; else if (bad.length < 2) bad.push(tag + ':' + JSON.stringify(txt)); };
     Object.keys(nm.windows).forEach((id) => chk(W, id, nm.windows[id], 'w' + id)); Object.keys(nm.tables).forEach((id) => chk(T, id, nm.tables[id], 't' + id));
     Object.keys(nm.actions).forEach((c) => chk(R, rl['a:' + c], nm.actions[c], 'a' + c)); Object.keys(nm.statuses).forEach((c) => chk(R, rl['s:' + c], nm.statuses[c], 's' + c));
-    if (!n) { k.incon('S1n-' + lang, 'VACUOUS: no names'); return; }
-    k.chk('S1 ' + lang + ' every pack NAME occurs in the published pack (window, table, action, status rows)', ok === n, ok + '/' + n + (bad.length ? ' first not found: ' + bad.join(' | ') : ''));
+    Object.keys(nm.processes || {}).forEach((id) => chk(P, id, nm.processes[id], 'p' + id));   // §19.10 the process names
+    if (!n) {   // §19.11: no name in the pack is right ONLY when the language's sources publish no file for those tables (ar: element/field/menu rows only); judged, not skipped
+      const nf = ['AD_Window', 'AD_Table', 'AD_Ref_List', 'AD_Process'].reduce((a, t) => a + X(t).length, 0);
+      k.chk('S1 ' + lang + ' the pack has no names and its sources publish no window/table/list/process file: ' + nf + ' such files', nf === 0, nf ? 'names missing from the pack' : '');
+      return;
+    }
+    k.chk('S1 ' + lang + ' every pack NAME occurs in the published pack (window, table, action, status, process rows)', ok === n, ok + '/' + n + (bad.length ? ' first not found: ' + bad.join(' | ') : ''));
   });
 }
 function s5() {
@@ -189,5 +207,5 @@ async function browser() {
 (async function main() {
   if (!fs.existsSync(SEED) || fs.statSync(SEED).size < 1e6) { k.incon('ALL', 'no usable seed'); return k.end(); }
   k.L('break=' + (BREAK || 'none'));
-  s1(); s1names(); s5(); await browser(); k.end();
+  s0(); s1(); s1names(); s5(); await browser(); k.end();
 })().catch((e) => { console.log('§W-HELP-SHOWCASE CRASH ' + (e && e.stack || e)); process.exit(3); });

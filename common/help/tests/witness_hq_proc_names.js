@@ -1,7 +1,7 @@
 // ⚠ DO NOT REMOVE — W-HQ-PROC-NAMES (bim-compiler prompts/VOCAB_MESSAGE_CATALOG.md §19.10 Step 10). READ THE LOG (common/help/tests/logs/w_hq_proc_names.log); an exit code is not evidence.
 // ISSUE it proves or disproves (CARDINAL RULE, twin of legacy): a person working in French, German, Japanese or Chinese who types a process's name IN THAT LANGUAGE finds it, as legacy's
 // translated menu shows it. Before §19.10 every process record carried the English AD_Process.Name in every language.
-// N comes from the translation files themselves: the witness's OWN reading of AD_Process_Trl_<lang>.xml in each source of build_help_pack.js SOURCES (first source wins; a name counts as
+// N comes from the translation files themselves: the witness's OWN reading of every AD_Process_Trl_*.xml in each source of build_help_pack.js SOURCES (first source wins; a name counts as
 // translated when present and not equal to its English original), over the active processes of ad_seed.db.
 //   P1 the pack holds them: help.json names.processes == the witness's own reading, X of N (missing, wrong and extra counted apart).
 //   P2 the record shows them: in HelpSearch.indexFrom (the page's path), each such process's record has n = the translated name and the English dictionary name among its other names a, X of N.
@@ -34,8 +34,16 @@ function ownRead(file) {
   const en = JSON.parse(fs.readFileSync(path.join(H.ERP, 'i18n', 'help', 'en_US', 'help.json'), 'utf8'));
   k.L('active processes=' + procs.length + ' role=' + ROLE + ' menu processes/reports=' + pids.length + ' break=' + (BR || 'none') + ' cache=' + BP.CACHE);
   Object.keys(BP.SOURCES).forEach((lang) => {
-    const files = BP.SOURCES[lang].map((d) => ownRead(path.join(BP.CACHE, d, 'AD_Process_Trl_' + lang + '.xml')));
-    if (files.every((f) => f === null)) { k.incon('P1 ' + lang, 'no AD_Process_Trl file in the cache for this language'); return; }
+    // §19.11: a pack's files carry the PACK's own code (es_ES <- *_es_CO.xml, ar <- *_ar_DZ / *_ar_TN): every AD_Process_Trl_*.xml of each folder, sorted, each its own source
+    const files = [].concat(...BP.SOURCES[lang].map((d) => { const dir = path.join(BP.CACHE, d); return fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => /^AD_Process_Trl_.*\.xml$/.test(f)).sort().map((f) => ownRead(path.join(dir, f))) : []; }));
+    if (!files.length) {   // §19.11: the language's published packs carry no process translation (ar): judged, not skipped. The pack must hold none and every record keeps the dictionary's English name
+      const pk0 = JSON.parse(fs.readFileSync(path.join(H.ERP, 'i18n', 'help', lang, 'help.json'), 'utf8')), got0 = Object.keys((pk0.names && pk0.names.processes) || {}).length;
+      const idx0 = HS.indexFrom({ q: H.q, en, pack: pk0, fsm, windowIds: ids, processIds: pids }), recs0 = idx0.records.filter((r) => r.k === 'process'), eng0 = recs0.filter((r) => r.n === eng[r.gate[1]]).length;
+      k.L('§HQ_PROC_NAMES lang=' + lang + ' no AD_Process_Trl file in any source (' + BP.SOURCES[lang].join(', ') + '): pack=' + got0 + ' records keeping English=' + eng0 + ' of ' + recs0.length);
+      if (!recs0.length) k.incon('P1 ' + lang, 'VACUOUS: no process record');
+      else k.chk('P1 ' + lang + ' no published process translation: the pack holds none (' + got0 + ') and every record keeps its English name: ' + eng0 + ' of ' + recs0.length, got0 === 0 && eng0 === recs0.length);
+      return;
+    }
     const want = {};
     procs.forEach((p) => { for (const f of files) { const r = f && f[String(p.id)]; if (r && sp(r[0]) !== '' && sp(r[0]) !== sp(r[1])) { want[p.id] = r[0].trim(); break; } } });
     const N = Object.keys(want).length;

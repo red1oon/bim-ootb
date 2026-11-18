@@ -7,7 +7,7 @@ const fs = require('fs'), path = require('path'), cp = require('child_process');
 const ERP = path.join(__dirname, '..'), HELP = path.join(ERP, 'i18n', 'help');
 const SEED = process.env.ERP_SEED_DB || path.join(ERP, 'ad_seed.db');
 const CORE = require(path.join(ERP, 'help_records_core.js')), KINDS = CORE.kinds;
-const LANGS = ['en_US', 'fr_FR', 'de_DE', 'ja_JP', 'zh_CN'];
+const LANGS = ['en_US'].concat(Object.keys(JSON.parse(fs.readFileSync(path.join(ERP, 'tools', 'i18n_sources.json'), 'utf8')).sources));   // §19.11 step 1: the one list
 const q = (sql) => { const r = cp.spawnSync('sqlite3', ['-readonly', '-json', SEED, sql], { encoding: 'utf8', maxBuffer: 1 << 29 }); if (r.status !== 0) throw new Error(r.stderr); return JSON.parse(r.stdout || '[]'); };
 const readPack = (lang) => JSON.parse(fs.readFileSync(path.join(HELP, lang, 'help.json'), 'utf8'));
 const load = (lang) => CORE.build({ q, en: readPack('en_US'), pack: lang === 'en_US' ? null : readPack(lang) });

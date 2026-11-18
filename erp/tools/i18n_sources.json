@@ -1,0 +1,62 @@
+{
+ "spec": "bim-compiler prompts/VOCAB_MESSAGE_CATALOG.md §19.11 step 1 (one list); prompts/ERP_UI_LOCALES.md §L2 (the packs)",
+ "note": "lang -> the published iDempiere/ADempiere language packs, first wins on a conflict. Read by erp/tools/build_i18n.py (screen packs) and erp/tools/build_help_pack.js (help packs); no copy anywhere else.",
+ "sources": {
+  "fr_FR": [
+   {
+    "dir": "nmicoud_fr_FR",
+    "from": "github.com/nmicoud/fr_FR@17bbc28b (iDempiere 12 export, maintainer N. Micoud — wiki.idempiere.org/en/Translations)"
+   },
+   {
+    "dir": "x_fr352/fr_FR",
+    "from": "sourceforge.net/projects/adempiere/files/Language Packs/Francais/Latest Stable and Alpha/adempiere_fr_FR_352.tgz (ADempiere 3.5.2, 2008-10-01) — fills rows the work-in-progress iDempiere pack lacks"
+   }
+  ],
+  "es_ES": [
+   {
+    "dir": "gq/es_CO",
+    "from": "github.com/globalqss/globalqss-idempiere-lco@31b1442b es_CO (GlobalQSS, Colombian Spanish; no es_ES pack is published — served for es_ES, labelled)"
+   }
+  ],
+  "de_DE": [
+   {
+    "dir": "bxservice_tbayen.translations/data/de_DE",
+    "from": "github.com/bxservice/tbayen.translations@c88fe319 de_DE (T. Bayen / Team Germany)"
+   }
+  ],
+  "ar": [
+   {
+    "dir": "djoudi_ar_DZ/ar_DZ",
+    "from": "github.com/djoudi/ar_DZ@d1c2c3dc ar_DZ (A. Djoudi, work in progress, 2020)"
+   },
+   {
+    "dir": "x_ar/arabic language By Najeh",
+    "from": "sourceforge.net/projects/adempiere/files/Language Packs/Arabic/Beta Release by Najeh/arabic_language_By_Najeh.rar ar_TN (2008-02-05)"
+   }
+  ],
+  "zh_CN": [
+   {
+    "dir": "x_zh_CN/zh_CN",
+    "from": "sourceforge.net/projects/adempiere/files/Language Packs/Chinese/Release 352 Packages/zh_CN.zip (ADempiere 3.5.2, 2008-08-20)"
+   }
+  ],
+  "ja_JP": [
+   {
+    "dir": "JPiere_japanese-translation",
+    "from": "github.com/JPiere/japanese-translation@b5547855 ja_JP (H. Hagiwara / JPiere)"
+   }
+  ],
+  "ms_MY": [
+   {
+    "dir": "x_ms_MY/ms_MY",
+    "from": "sourceforge.net/projects/adempiere/files/Language Packs/Bahasa Malaysia/First Bahasa Release - Beta/ms_MY.zip (2008-11-25)"
+   }
+  ],
+  "th_TH": [
+   {
+    "dir": "x_th_TH.350/th_TH.350",
+    "from": "sourceforge.net/projects/adempiere/files/Language Packs/Thailand/ADempiere Thai Language/th_TH.350.zip (Saeree/Grandlinux, 2008-06-16)"
+   }
+  ]
+ }
+}
