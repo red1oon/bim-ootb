@@ -23,7 +23,7 @@
   function saveRoster(list) { return idb().then(function (d) { return new Promise(function (res) { var t = d.transaction(RS, 'readwrite'); t.objectStore(RS).put(list, 'keys'); t.oncomplete = function () { res(); }; t.onerror = function () { res(); }; }); }).catch(function () {}); }
   function unpinned() { var i = global.__crud && global.__crud.ledgerInfo ? global.__crud.ledgerInfo() : null; return (i && i.unpinned) || []; }
   function text() {
-    if (state === 'on') { var i = global.__crud && global.__crud.ledgerInfo ? global.__crud.ledgerInfo() : {}; return 'Ledger: ' + (handle && handle.name) + ' · ' + (i.rows == null ? '?' : i.rows) + ' rows'; }
+    if (state === 'on') { var i = global.__crud && global.__crud.ledgerInfo ? global.__crud.ledgerInfo() : {}, ex = i.excluded && i.excluded.rows ? ' · ' + i.excluded.rows + ' rows not trusted' : ''; return 'Ledger: ' + (handle && handle.name) + ' · ' + (i.rows == null ? '?' : i.rows) + ' rows' + ex; }
     if (state === 'regrant') return 'Ledger: click to re-grant';
     return 'Ledger: off';
   }
