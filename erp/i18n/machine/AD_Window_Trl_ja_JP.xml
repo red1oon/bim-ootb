@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!--ERP screen names (AD_Window, by id). ERP machine source (not a published language pack) — translated for this app by Claude (Anthropic), 2026-11, moved from erp/i18n/machine/ja_JP.json {English: text}, applied by build_i18n.py machine_fill by erp/tools/trl_move_machine_2026-11-18.py (TRL_TRILOGY_STANDARD.md T5a); no human review.-->
+<!--<!DOCTYPE idempiereTrl PUBLIC "-//iDempiere//DTD iDempiere Translation 1.0//EN" "https://raw.githubusercontent.com/idempiere/idempiere/refs/heads/master/utils_dev/trl/idempiereTrl.dtd">-->
+<idempiereTrl language="ja_JP" table="AD_Window">
+ <row id="53134" trl="Y">
+  <value column="Name" original="Cash Plan">資金計画</value>
+ </row>
+ <row id="53141" trl="Y">
+  <value column="Name" original="Maintenance Request">保守依頼</value>
+ </row>
+ <row id="200008" trl="Y">
+  <value column="Name" original="POS Payment">POS支払</value>
+ </row>
+ <row id="200013" trl="Y">
+  <value column="Name" original="GL Journal Generator">仕訳生成</value>
+ </row>
+ <row id="200017" trl="Y">
+  <value column="Name" original="Payment Transaction">支払取引</value>
+ </row>
+ <row id="200018" trl="Y">
+  <value column="Name" original="Online Transaction History">オンライン取引履歴</value>
+ </row>
+ <row id="200105" trl="Y">
+  <value column="Name" original="Bank/Cash Transfer">銀行/現金振替</value>
+ </row>
+ <row id="200110" trl="Y">
+  <value column="Name" original="Info Window Customization">情報ウィンドウのカスタマイズ</value>
+ </row>
+ <row id="200120" trl="Y">
+  <value column="Name" original="Tenant level messages">テナントレベルのメッセージ</value>
+ </row>
+ <row id="200128" trl="Y">
+  <value column="Name" original="Label Category">ラベルカテゴリ</value>
+ </row>
+ <row id="200129" trl="Y">
+  <value column="Name" original="Label">ラベル</value>
+ </row>
+ <row id="200130" trl="Y">
+  <value column="Name" original="Label Assignment">ラベル割当</value>
+ </row>
+ <row id="200148" trl="Y">
+  <value column="Name" original="Department">部門</value>
+ </row>
+ <row id="200149" trl="Y">
+  <value column="Name" original="Cost Center">コストセンター</value>
+ </row>
+ <row id="200151" trl="Y">
+  <value column="Name" original="Theme Customization">テーマのカスタマイズ</value>
+ </row>
+</idempiereTrl>

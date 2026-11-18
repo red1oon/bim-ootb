@@ -22,11 +22,14 @@
 #   absent   — ID not in ad_seed.db
 # Text is passed through Util.cleanAmp (org.compiere.util.Util:593 — drops the first '&' mnemonic marker not followed by a space).
 import csv, re, glob, json, os, sqlite3, sys, xml.etree.ElementTree as ET
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import trl_xml   # the legacy Translation XML reader/writer of the ERP's own machine/ source (TRL_TRILOGY_STANDARD.md T5a)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ERP = os.path.dirname(HERE)
 CACHE = os.environ.get('ERP_TRL_CACHE', os.path.expanduser('~/.cache/erp_trl'))
-OUT = os.path.join(ERP, 'i18n')
+OUT = os.environ.get('ERP_I18N_OUT', os.path.join(ERP, 'i18n'))   # the witness points this at a fixture copy
+MACH = os.path.join(OUT, 'machine')   # T5a: the ERP's own machine text, legacy XML: <T>_Trl_<lang>.xml (one file per table and language), AI-written, LOWEST priority
 
 SOURCES = {   # lang -> list of (dir under CACHE, provenance) — first wins on a conflict. §19.11 (VOCAB_MESSAGE_CATALOG): the ONE list lives in i18n_sources.json, read by this file and build_help_pack.js
   lang: [(x['dir'], x['from']) for x in v] for lang, v in json.load(open(os.path.join(HERE, 'i18n_sources.json'), encoding='utf-8'))['sources'].items()
@@ -129,20 +132,29 @@ def build(lang, srcs, base):
                     st['kept'] += 1
     return out, stats
 
+MSTAT = {}   # lang -> {table: [kept, shadowed, stale]} for the §I18N-BUILD machine-src lines
 def machine_fill(lang, out, db):
-    """Labelled machine supplement (ERP_UI_LOCALES.md §L2b): i18n/machine/<lang>.json = {English: translation}, written
-    for this app (NOT from any language pack) and applied ONLY to a menu / window / tab / field label that the packs
-    left untranslated, resolved with the SAME rules the page uses (erp_i18n.js menuName/fieldName). Emitted into
-    separate <T>_Trl_m maps so the page counts src=machine apart from src=pack."""
-    fn = os.path.join(OUT, 'machine', lang + '.json')
-    if not os.path.exists(fn): return {}
-    M = json.load(open(fn, encoding='utf-8'))
+    """Labelled machine supplement (ERP_UI_LOCALES.md §L2b; T5a: legacy XML, BY ID): machine/<T>_Trl_<lang>.xml, written for this app
+    (NOT from any language pack) and applied ONLY to a menu / window / tab / field label that the packs left untranslated, resolved
+    with the SAME rules the page uses (erp_i18n.js menuName/fieldName). A row whose id the packs already translate is SHADOWED
+    (kept in the file, counted, never used: a published row always wins); a row whose `original` is not today's English is STALE
+    (counted, never used). Emitted into separate <T>_Trl_m maps so the page counts src=machine apart from src=pack."""
+    tabs = ['AD_Menu', 'AD_Window', 'AD_Tab', 'AD_Field']
+    files = {t: os.path.join(MACH, '%s_Trl_%s.xml' % (t, lang)) for t in tabs}
+    if not any(os.path.exists(f) for f in files.values()): return {}
+    R = {t: trl_xml.read(files[t]) for t in tabs}
+    st = MSTAT[lang] = {t: [0, 0, 0] for t in tabs}   # kept, shadowed, stale
     T = lambda t, i: out.get(t + '_Trl', {}).get(str(int(i))) if i is not None else None
-    m = {'AD_Menu': {}, 'AD_Window': {}, 'AD_Tab': {}, 'AD_Field': {}}
-    for wid, name in db.execute('SELECT AD_Window_ID, Name FROM AD_Window'):
-        if not T('AD_Window', wid) and (name or '').strip() in M: m['AD_Window'][str(int(wid))] = M[name.strip()]
-    for tid, name in db.execute('SELECT AD_Tab_ID, Name FROM AD_Tab'):
-        if not T('AD_Tab', tid) and (name or '').strip() in M: m['AD_Tab'][str(int(tid))] = M[name.strip()]
+    m = {t: {} for t in tabs}
+    def put(t, i, name, packed):
+        r = R[t].get(int(i))
+        if r is None: return
+        if norm(r[1]) != norm(name or ''): st[t][2] += 1; return        # stale
+        if r[0] != 'Y': return
+        if packed: st[t][1] += 1; return                                  # shadowed by a published row
+        m[t][str(int(i))] = r[2]; st[t][0] += 1
+    for wid, name in db.execute('SELECT AD_Window_ID, Name FROM AD_Window'): put('AD_Window', wid, name, bool(T('AD_Window', wid)))
+    for tid, name in db.execute('SELECT AD_Tab_ID, Name FROM AD_Tab'): put('AD_Tab', tid, name, bool(T('AD_Tab', tid)))
     for mid, name, central, action, wid, pid, fid in db.execute('SELECT AD_Menu_ID, Name, IsCentrallyMaintained, Action, AD_Window_ID, AD_Process_ID, AD_Form_ID FROM AD_Menu'):
         v = None
         if central == 'Y':
@@ -150,7 +162,7 @@ def machine_fill(lang, out, db):
             elif action in ('P', 'R') and pid: v = T('AD_Process', pid)
             elif action == 'X' and fid: v = T('AD_Form', fid)
         v = v or T('AD_Menu', mid)
-        if not v and (name or '').strip() in M: m['AD_Menu'][str(int(mid))] = M[name.strip()]
+        put('AD_Menu', mid, name, bool(v))
     q = ('SELECT f.AD_Field_ID, f.Name, f.IsCentrallyMaintained, c.AD_Element_ID, c.AD_Process_ID, w.IsSOTrx FROM AD_Field f '
          'JOIN AD_Tab t ON t.AD_Tab_ID=f.AD_Tab_ID JOIN AD_Window w ON w.AD_Window_ID=t.AD_Window_ID '
          'LEFT JOIN AD_Column c ON c.AD_Column_ID=f.AD_Column_ID')
@@ -161,9 +173,36 @@ def machine_fill(lang, out, db):
             elif el is not None:
                 e = T('AD_Element', el); v = (e[1] if (so == 'N' and e and e[1]) else (e[0] if e else None))
         v = v or T('AD_Field', fid)
-        if not v and (name or '').strip() in M: m['AD_Field'][str(int(fid))] = M[name.strip()]
+        put('AD_Field', fid, name, bool(v))
     for t in m: out[t + '_Trl_m'] = m[t]
     return {t: len(v) for t, v in m.items()}
+
+CHROME_DOC = ('App chrome catalogue for idempiere.html (bim-compiler prompts/ERP_UI_LOCALES.md §L3). Resolution per key, per locale: (1) ref "msg:<AD_Message.Value>" / "el:<AD_Element_ID>" → that locale\'s iDempiere language pack (src=pack), wrapped by fmt; (2) else machine[locale] — translated for this app by Claude (Anthropic), NOT from any iDempiere pack (src=machine); (3) else en (src=none). en is the exact English the page shows today.')
+CHROME_LANGS = ['fr_FR', 'es_ES', 'de_DE', 'ar', 'zh_CN', 'ja_JP', 'ms_MY', 'th_TH', 'pt_BR', 'id_ID']   # the order of chrome.json's machine{} objects
+def build_chrome():
+    """T5a: erp/i18n/chrome.json is a BUILD OUTPUT: the catalogue chrome_base.csv (id, key, English, ref, fmt) + the per-language machine text of
+    machine/AD_Message_Trl_<lang>.xml (app-own ids >= 1000000). The page resolves a key exactly as before: ref -> pack, else machine[locale], else English."""
+    keys = {}; byid = {}
+    with open(os.path.join(OUT, 'chrome_base.csv'), newline='', encoding='utf-8') as f:
+        for r in csv.DictReader(f):
+            e = {'en': r['msgtext']}
+            if r['ref']: e['ref'] = r['ref']
+            if r['fmt']: e['fmt'] = r['fmt']
+            if r.get('html') == 'Y': e['html'] = True   # the key's English is markup (login.sub)
+            keys[r['value']] = e; byid[int(r['ad_message_id'])] = (r['value'], r['msgtext'])
+    stat = {}
+    for lang in CHROME_LANGS:
+        rows = trl_xml.read(os.path.join(MACH, 'AD_Message_Trl_%s.xml' % lang)); kept = stale = 0
+        for rid, (trl, orig, text) in sorted(rows.items()):
+            if rid not in byid: continue                      # a real AD_Message id (not a chrome key): not part of the chrome catalogue
+            k, en = byid[rid]
+            if norm(orig) != norm(en): stale += 1; continue    # stale: counted, never used
+            if trl != 'Y': continue
+            keys[k].setdefault('machine', {})[lang] = text; kept += 1
+        stat[lang] = (kept, stale)
+    doc = {'_doc': CHROME_DOC, 'keys': keys}
+    with open(os.path.join(OUT, 'chrome.json'), 'w', encoding='utf-8') as f: f.write(json.dumps(doc, ensure_ascii=False, indent=1))
+    print('§I18N-BUILD chrome keys=%d machine rows kept/stale per language: %s' % (len(keys), ' '.join('%s=%d/%d' % (l, k, s) for l, (k, s) in stat.items() if k or s)))
 
 def main():
     db = sqlite3.connect(os.path.join(ERP, 'ad_seed.db'))
@@ -181,14 +220,16 @@ def main():
         counts = {t: stats[t]['kept'] for t in TABLES}
         detail = {t: dict(stats[t]) for t in TABLES}
         doc = {'lang': lang, 'dir': dirn, 'native': native, 'sources': [p for _, p in srcs], 'counts': counts, 'detail': detail,
-               'machineCounts': mstats, 'machineSource': 'i18n/machine/%s.json — translated for this app by Claude (Anthropic); NOT a language pack' % lang if mstats else None}
+               'machineCounts': mstats, 'machineSource': 'i18n/machine/<T>_Trl_%s.xml — translated for this app by Claude (Anthropic); NOT a language pack' % lang if mstats else None}
         doc.update(out)
         fn = os.path.join(OUT, lang + '.json')
         with open(fn, 'w', encoding='utf-8') as f: json.dump(doc, f, ensure_ascii=False, separators=(',', ':'), sort_keys=True)
         index['locales'].append({'code': lang, 'dir': dirn, 'native': native, 'file': 'i18n/' + lang + '.json',
                                  'sources': doc['sources'], 'counts': counts, 'machineCounts': mstats, 'bytes': os.path.getsize(fn)})
+        if lang in MSTAT: print('§I18N-BUILD machine-src lang=%s %s' % (lang, ' '.join('%s=kept:%d/shadowed:%d/stale:%d' % (t, *v) for t, v in MSTAT[lang].items())))
         print('§I18N-BUILD lang=%s bytes=%d machine=%s %s' % (lang, os.path.getsize(fn), json.dumps(mstats, separators=(',', ':')), ' '.join(
             '%s=%d/%d(drift=%d,repurposed=%d,unofficial=%d,same=%d,absent=%d)' % (t, s['kept'], s['rows'], s['stale'], s['repurposed'], s['unofficial'], s['same'], s['absent']) for t, s in stats.items())))
+    build_chrome()
     with open(os.path.join(OUT, 'index.json'), 'w', encoding='utf-8') as f: json.dump(index, f, ensure_ascii=False, indent=1)
     print('§I18N-BUILD recovered-by-regex files=%d %s' % (len(RECOVERED), ' '.join(RECOVERED)))
     print('§I18N-BUILD index locales=%d → %s' % (len(index['locales']), os.path.join(OUT, 'index.json')))

@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!--ERP screen names (AD_Menu, by id). ERP machine source (not a published language pack) — translated for this app by Claude (Anthropic), 2026-11, moved from erp/i18n/machine/zh_CN.json {English: text}, applied by build_i18n.py machine_fill by erp/tools/trl_move_machine_2026-11-18.py (TRL_TRILOGY_STANDARD.md T5a); no human review.-->
+<!--<!DOCTYPE idempiereTrl PUBLIC "-//iDempiere//DTD iDempiere Translation 1.0//EN" "https://raw.githubusercontent.com/idempiere/idempiere/refs/heads/master/utils_dev/trl/idempiereTrl.dtd">-->
+<idempiereTrl language="zh_CN" table="AD_Menu">
+ <row id="53139" trl="Y">
+  <value column="Name" original="Asset Transactions ">资产交易</value>
+ </row>
+ <row id="53190" trl="Y">
+  <value column="Name" original="Bank/Cash Transfer Process">银行/现金转账处理</value>
+ </row>
+ <row id="53242" trl="Y">
+  <value column="Name" original="Returns">退货</value>
+ </row>
+ <row id="53253" trl="Y">
+  <value column="Name" original="Storage per Product">按产品库存</value>
+ </row>
+ <row id="53288" trl="Y">
+  <value column="Name" original="Automatic account reconciliation">自动科目对账</value>
+ </row>
+ <row id="53289" trl="Y">
+  <value column="Name" original="Accounting Fact Reconciliation (manual)">会计分录对账（手工）</value>
+ </row>
+ <row id="53290" trl="Y">
+  <value column="Name" original="Unreconciled accounting facts">未对账会计分录</value>
+ </row>
+ <row id="53296" trl="Y">
+  <value column="Name" original="Manufacturing">制造</value>
+ </row>
+ <row id="53299" trl="Y">
+  <value column="Name" original="Validate BOM Flags">校验物料清单标志</value>
+ </row>
+ <row id="53300" trl="Y">
+  <value column="Name" original="Verify BOM Structure">验证物料清单结构</value>
+ </row>
+ <row id="53301" trl="Y">
+  <value column="Name" original="Rollup BOM Cost">汇总物料清单成本</value>
+ </row>
+ <row id="53302" trl="Y">
+  <value column="Name" original="BOM Viewer">物料清单查看器</value>
+ </row>
+ <row id="53314" trl="Y">
+  <value column="Name" original="Cash Flow Report">现金流量报表</value>
+ </row>
+ <row id="53338" trl="Y">
+  <value column="Name" original="Maintenance Request">维护请求</value>
+ </row>
+ <row id="53339" trl="Y">
+  <value column="Name" original="Setup">设置</value>
+ </row>
+ <row id="53352" trl="Y">
+  <value column="Name" original="Universal substitution">通用替代</value>
+ </row>
+ <row id="53353" trl="Y">
+  <value column="Name" original="Indented Bill of Material">缩进式物料清单</value>
+ </row>
+ <row id="53354" trl="Y">
+  <value column="Name" original="Replenish Report">补货报表</value>
+ </row>
+ <row id="53363" trl="Y">
+  <value column="Name" original="Sales Management">销售管理</value>
+ </row>
+ <row id="53885" trl="Y">
+  <value column="Name" original="Revenue Recognition Run">收入确认运行</value>
+ </row>
+ <row id="200043" trl="Y">
+  <value column="Name" original="Bank Register Report">银行登记报表</value>
+ </row>
+ <row id="200045" trl="Y">
+  <value column="Name" original="Simple Fact View">简单分录视图</value>
+ </row>
+ <row id="200098" trl="Y">
+  <value column="Name" original="Generate Production from Project">从项目生成生产</value>
+ </row>
+ <row id="200166" trl="Y">
+  <value column="Name" original="Recreate Storage Reservation">重建库存预留</value>
+ </row>
+ <row id="1000000" trl="Y">
+  <value column="Name" original="Office">办公室</value>
+ </row>
+ <row id="1000001" trl="Y">
+  <value column="Name" original="Work Shop">车间</value>
+ </row>
+</idempiereTrl>

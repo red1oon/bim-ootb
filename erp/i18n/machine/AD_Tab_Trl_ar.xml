@@ -1,0 +1,230 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!--ERP screen names (AD_Tab, by id). ERP machine source (not a published language pack) — translated for this app by Claude (Anthropic), 2026-11, moved from erp/i18n/machine/ar.json {English: text}, applied by build_i18n.py machine_fill by erp/tools/trl_move_machine_2026-11-18.py (TRL_TRILOGY_STANDARD.md T5a); no human review.-->
+<!--<!DOCTYPE idempiereTrl PUBLIC "-//iDempiere//DTD iDempiere Translation 1.0//EN" "https://raw.githubusercontent.com/idempiere/idempiere/refs/heads/master/utils_dev/trl/idempiereTrl.dtd">-->
+<idempiereTrl language="ar" table="AD_Tab">
+ <row id="112" trl="Y">
+  <value column="Name" original="Language">اللغة</value>
+ </row>
+ <row id="154" trl="Y">
+  <value column="Name" original="Location">العنوان</value>
+ </row>
+ <row id="183" trl="Y">
+  <value column="Name" original="Price">السعر</value>
+ </row>
+ <row id="186" trl="Y">
+  <value column="Name" original="Order">الطلب</value>
+ </row>
+ <row id="187" trl="Y">
+  <value column="Name" original="Order Line">بند الطلب</value>
+ </row>
+ <row id="212" trl="Y">
+  <value column="Name" original="Customer Accounting">محاسبة العملاء</value>
+ </row>
+ <row id="213" trl="Y">
+  <value column="Name" original="Vendor Accounting">محاسبة الموردين</value>
+ </row>
+ <row id="220" trl="Y">
+  <value column="Name" original="Business Partner">الشريك التجاري</value>
+ </row>
+ <row id="222" trl="Y">
+  <value column="Name" original="Location">العنوان</value>
+ </row>
+ <row id="226" trl="Y">
+  <value column="Name" original="Bank Account">الحساب البنكي</value>
+ </row>
+ <row id="236" trl="Y">
+  <value column="Name" original="Order Tax">ضريبة الطلب</value>
+ </row>
+ <row id="271" trl="Y">
+  <value column="Name" original="Invoice Tax">ضريبة الفاتورة</value>
+ </row>
+ <row id="292" trl="Y">
+  <value column="Name" original="Invoice Tax">ضريبة الفاتورة</value>
+ </row>
+ <row id="295" trl="Y">
+  <value column="Name" original="Order Tax">ضريبة الطلب</value>
+ </row>
+ <row id="341" trl="Y">
+  <value column="Name" original="Payment Batch">دفعة المدفوعات</value>
+ </row>
+ <row id="344" trl="Y">
+  <value column="Name" original="Request">الطلب</value>
+ </row>
+ <row id="379" trl="Y">
+  <value column="Name" original="Revenue Recognition Run">تشغيل الاعتراف بالإيراد</value>
+ </row>
+ <row id="393" trl="Y">
+  <value column="Name" original="Window Customization">تخصيص النوافذ</value>
+ </row>
+ <row id="402" trl="Y">
+  <value column="Name" original="Request">الطلب</value>
+ </row>
+ <row id="420" trl="Y">
+  <value column="Name" original="Price">السعر</value>
+ </row>
+ <row id="421" trl="Y">
+  <value column="Name" original="Price">السعر</value>
+ </row>
+ <row id="438" trl="Y">
+  <value column="Name" original="Interest Area">مجال الاهتمام</value>
+ </row>
+ <row id="439" trl="Y">
+  <value column="Name" original="Interest Area">مجال الاهتمام</value>
+ </row>
+ <row id="460" trl="Y">
+  <value column="Name" original="Payment Schedule">جدول الدفع</value>
+ </row>
+ <row id="472" trl="Y">
+  <value column="Name" original="Label">تسمية</value>
+ </row>
+ <row id="476" trl="Y">
+  <value column="Name" original="Project Type">نوع المشروع</value>
+ </row>
+ <row id="496" trl="Y">
+  <value column="Name" original="Contact (User)">جهة الاتصال (المستخدم)</value>
+ </row>
+ <row id="502" trl="Y">
+  <value column="Name" original="Payment Schedule">جدول الدفع</value>
+ </row>
+ <row id="512" trl="Y">
+  <value column="Name" original="Order">الطلب</value>
+ </row>
+ <row id="514" trl="Y">
+  <value column="Name" original="Freight Category">فئة الشحن</value>
+ </row>
+ <row id="562" trl="Y">
+  <value column="Name" original="Business Partner">الشريك التجاري</value>
+ </row>
+ <row id="617" trl="Y">
+  <value column="Name" original="Quantity">الكمية</value>
+ </row>
+ <row id="628" trl="Y">
+  <value column="Name" original="Customer RMA">تصريح إرجاع العميل</value>
+ </row>
+ <row id="633" trl="Y">
+  <value column="Name" original="Dunning Run">تشغيل المطالبات</value>
+ </row>
+ <row id="641" trl="Y">
+  <value column="Name" original="Requisition">طلب الشراء الداخلي</value>
+ </row>
+ <row id="660" trl="Y">
+  <value column="Name" original="RMA Type">نوع تصريح الإرجاع</value>
+ </row>
+ <row id="669" trl="Y">
+  <value column="Name" original="Business Partner">الشريك التجاري</value>
+ </row>
+ <row id="694" trl="Y">
+  <value column="Name" original="Invoice Batch">دفعة الفواتير</value>
+ </row>
+ <row id="756" trl="Y">
+  <value column="Name" original="BP Access">صلاحية الشريك</value>
+ </row>
+ <row id="53047" trl="Y">
+  <value column="Name" original="Business Partner">الشريك التجاري</value>
+ </row>
+ <row id="53101" trl="Y">
+  <value column="Name" original="Interest Area">مجال الاهتمام</value>
+ </row>
+ <row id="53104" trl="Y">
+  <value column="Name" original="Business Partner">الشريك التجاري</value>
+ </row>
+ <row id="53106" trl="Y">
+  <value column="Name" original="Bank Account">الحساب البنكي</value>
+ </row>
+ <row id="53107" trl="Y">
+  <value column="Name" original="Location">العنوان</value>
+ </row>
+ <row id="53108" trl="Y">
+  <value column="Name" original="Contact (User)">جهة الاتصال (المستخدم)</value>
+ </row>
+ <row id="53109" trl="Y">
+  <value column="Name" original="Department">القسم</value>
+ </row>
+ <row id="53271" trl="Y">
+  <value column="Name" original="Customer Return">مرتجع العميل</value>
+ </row>
+ <row id="53276" trl="Y">
+  <value column="Name" original="Return to Vendor">إرجاع إلى المورد</value>
+ </row>
+ <row id="53280" trl="Y">
+  <value column="Name" original="Vendor RMA">تصريح الإرجاع إلى المورد</value>
+ </row>
+ <row id="53284" trl="Y">
+  <value column="Name" original="Order Source">مصدر الطلب</value>
+ </row>
+ <row id="53285" trl="Y">
+  <value column="Name" original="Relation Type">نوع العلاقة</value>
+ </row>
+ <row id="53373" trl="Y">
+  <value column="Name" original="Payment Schedule">جدول الدفع</value>
+ </row>
+ <row id="53374" trl="Y">
+  <value column="Name" original="Payment Schedule">جدول الدفع</value>
+ </row>
+ <row id="53375" trl="Y">
+  <value column="Name" original="Payment Schedule">جدول الدفع</value>
+ </row>
+ <row id="53376" trl="Y">
+  <value column="Name" original="Cash Plan">خطة النقدية</value>
+ </row>
+ <row id="53377" trl="Y">
+  <value column="Name" original="Cash Plan Line">بند خطة النقدية</value>
+ </row>
+ <row id="53401" trl="Y">
+  <value column="Name" original="Request">الطلب</value>
+ </row>
+ <row id="53409" trl="Y">
+  <value column="Name" original="Order">الطلب</value>
+ </row>
+ <row id="53436" trl="Y">
+  <value column="Name" original="Order Line">بند الطلب</value>
+ </row>
+ <row id="200015" trl="Y">
+  <value column="Name" original="POS Payment">دفع نقطة البيع</value>
+ </row>
+ <row id="200016" trl="Y">
+  <value column="Name" original="POS Payment">دفع نقطة البيع</value>
+ </row>
+ <row id="200020" trl="Y">
+  <value column="Name" original="GL Journal Generator">مولد قيود اليومية</value>
+ </row>
+ <row id="200027" trl="Y">
+  <value column="Name" original="Payment Transaction">معاملة الدفع</value>
+ </row>
+ <row id="200029" trl="Y">
+  <value column="Name" original="Online Transaction History">سجل المعاملات الإلكترونية</value>
+ </row>
+ <row id="200040" trl="Y">
+  <value column="Name" original="Shipping Accounts">حسابات الشحن</value>
+ </row>
+ <row id="200074" trl="Y">
+  <value column="Name" original="Context Help">مساعدة سياقية</value>
+ </row>
+ <row id="200102" trl="Y">
+  <value column="Name" original="Cost Adjustment">تسوية التكلفة</value>
+ </row>
+ <row id="200234" trl="Y">
+  <value column="Name" original="Process Customization">تخصيص العمليات</value>
+ </row>
+ <row id="200280" trl="Y">
+  <value column="Name" original="Info Window Customization">تخصيص نافذة المعلومات</value>
+ </row>
+ <row id="200302" trl="Y">
+  <value column="Name" original="Tenant level messages">رسائل مستوى المستأجر</value>
+ </row>
+ <row id="200317" trl="Y">
+  <value column="Name" original="Label Category">فئة التسمية</value>
+ </row>
+ <row id="200320" trl="Y">
+  <value column="Name" original="Label">تسمية</value>
+ </row>
+ <row id="200383" trl="Y">
+  <value column="Name" original="Department">القسم</value>
+ </row>
+ <row id="200384" trl="Y">
+  <value column="Name" original="Cost Center">مركز التكلفة</value>
+ </row>
+ <row id="200386" trl="Y">
+  <value column="Name" original="Theme Customization">تخصيص السمة</value>
+ </row>
+</idempiereTrl>

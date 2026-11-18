@@ -1,0 +1,713 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!--ERP screen names (AD_Field, by id). ERP machine source (not a published language pack) — translated for this app by Claude (Anthropic), 2026-11, moved from erp/i18n/machine/th_TH.json {English: text}, applied by build_i18n.py machine_fill by erp/tools/trl_move_machine_2026-11-18.py (TRL_TRILOGY_STANDARD.md T5a); no human review.-->
+<!--<!DOCTYPE idempiereTrl PUBLIC "-//iDempiere//DTD iDempiere Translation 1.0//EN" "https://raw.githubusercontent.com/idempiere/idempiere/refs/heads/master/utils_dev/trl/idempiereTrl.dtd">-->
+<idempiereTrl language="th_TH" table="AD_Field">
+ <row id="3747" trl="Y">
+  <value column="Name" original="Verify BOM Structure">ตรวจสอบโครงสร้างสูตรการผลิต</value>
+ </row>
+ <row id="5317" trl="Y">
+  <value column="Name" original="Verify BOM Structure">ตรวจสอบโครงสร้างสูตรการผลิต</value>
+ </row>
+ <row id="5436" trl="Y">
+  <value column="Name" original="Verify BOM Structure">ตรวจสอบโครงสร้างสูตรการผลิต</value>
+ </row>
+ <row id="5534" trl="Y">
+  <value column="Name" original="Verify BOM Structure">ตรวจสอบโครงสร้างสูตรการผลิต</value>
+ </row>
+ <row id="7470" trl="Y">
+  <value column="Name" original="Verify BOM Structure">ตรวจสอบโครงสร้างสูตรการผลิต</value>
+ </row>
+ <row id="9615" trl="Y">
+  <value column="Name" original="Representative/Agent">ตัวแทน</value>
+ </row>
+ <row id="10121" trl="Y">
+  <value column="Name" original="Drop Shipment">การส่งตรง</value>
+ </row>
+ <row id="10122" trl="Y">
+  <value column="Name" original="Drop Shipment">การส่งตรง</value>
+ </row>
+ <row id="10123" trl="Y">
+  <value column="Name" original="Drop Shipment">การส่งตรง</value>
+ </row>
+ <row id="10124" trl="Y">
+  <value column="Name" original="Drop Shipment">การส่งตรง</value>
+ </row>
+ <row id="10409" trl="Y">
+  <value column="Name" original="Drop Shipment">การส่งตรง</value>
+ </row>
+ <row id="10410" trl="Y">
+  <value column="Name" original="Drop Shipment">การส่งตรง</value>
+ </row>
+ <row id="10411" trl="Y">
+  <value column="Name" original="Drop Shipment">การส่งตรง</value>
+ </row>
+ <row id="10412" trl="Y">
+  <value column="Name" original="Drop Shipment">การส่งตรง</value>
+ </row>
+ <row id="10414" trl="Y">
+  <value column="Name" original="Drop Shipment">การส่งตรง</value>
+ </row>
+ <row id="11306" trl="Y">
+  <value column="Name" original="Drop Shipment">การส่งตรง</value>
+ </row>
+ <row id="11319" trl="Y">
+  <value column="Name" original="Verify BOM Structure">ตรวจสอบโครงสร้างสูตรการผลิต</value>
+ </row>
+ <row id="12250" trl="Y">
+  <value column="Name" original="Lost Sales Qty">จำนวนยอดขายที่สูญเสีย</value>
+ </row>
+ <row id="12347" trl="Y">
+  <value column="Name" original="Cost Adjustment">ปรับปรุงต้นทุน</value>
+ </row>
+ <row id="12350" trl="Y">
+  <value column="Name" original="Cost Adjustment">ปรับปรุงต้นทุน</value>
+ </row>
+ <row id="12352" trl="Y">
+  <value column="Name" original="Cost Adjustment">ปรับปรุงต้นทุน</value>
+ </row>
+ <row id="12457" trl="Y">
+  <value column="Name" original="Lost Sales Qty">จำนวนยอดขายที่สูญเสีย</value>
+ </row>
+ <row id="12744" trl="Y">
+  <value column="Name" original="Lost Sales Qty">จำนวนยอดขายที่สูญเสีย</value>
+ </row>
+ <row id="53257" trl="Y">
+  <value column="Name" original="Dunning Grace Date">วันผ่อนผันการทวงถาม</value>
+ </row>
+ <row id="53585" trl="Y">
+  <value column="Name" original="Drop Shipment">การส่งตรง</value>
+ </row>
+ <row id="53594" trl="Y">
+  <value column="Name" original="Verify BOM Structure">ตรวจสอบโครงสร้างสูตรการผลิต</value>
+ </row>
+ <row id="53883" trl="Y">
+  <value column="Name" original="Drop Shipment">การส่งตรง</value>
+ </row>
+ <row id="53892" trl="Y">
+  <value column="Name" original="Verify BOM Structure">ตรวจสอบโครงสร้างสูตรการผลิต</value>
+ </row>
+ <row id="54556" trl="Y">
+  <value column="Name" original="Dunning Grace Date">วันผ่อนผันการทวงถาม</value>
+ </row>
+ <row id="55410" trl="Y">
+  <value column="Name" original="Drop Ship Business Partner">คู่ค้าสำหรับการส่งตรง</value>
+ </row>
+ <row id="55411" trl="Y">
+  <value column="Name" original="Drop Shipment Location">ที่อยู่การส่งตรง</value>
+ </row>
+ <row id="55412" trl="Y">
+  <value column="Name" original="Drop Shipment Contact">ผู้ติดต่อการส่งตรง</value>
+ </row>
+ <row id="55413" trl="Y">
+  <value column="Name" original="Drop Ship Business Partner">คู่ค้าสำหรับการส่งตรง</value>
+ </row>
+ <row id="55414" trl="Y">
+  <value column="Name" original="Drop Shipment Location">ที่อยู่การส่งตรง</value>
+ </row>
+ <row id="55415" trl="Y">
+  <value column="Name" original="Drop Shipment Contact">ผู้ติดต่อการส่งตรง</value>
+ </row>
+ <row id="55419" trl="Y">
+  <value column="Name" original="Drop Shipment">การส่งตรง</value>
+ </row>
+ <row id="55425" trl="Y">
+  <value column="Name" original="Drop Shipment Location">ที่อยู่การส่งตรง</value>
+ </row>
+ <row id="55426" trl="Y">
+  <value column="Name" original="Drop Shipment">การส่งตรง</value>
+ </row>
+ <row id="55427" trl="Y">
+  <value column="Name" original="Drop Ship Business Partner">คู่ค้าสำหรับการส่งตรง</value>
+ </row>
+ <row id="55428" trl="Y">
+  <value column="Name" original="Drop Shipment Contact">ผู้ติดต่อการส่งตรง</value>
+ </row>
+ <row id="55429" trl="Y">
+  <value column="Name" original="Drop Ship Business Partner">คู่ค้าสำหรับการส่งตรง</value>
+ </row>
+ <row id="55430" trl="Y">
+  <value column="Name" original="Drop Shipment Location">ที่อยู่การส่งตรง</value>
+ </row>
+ <row id="55431" trl="Y">
+  <value column="Name" original="Drop Shipment Contact">ผู้ติดต่อการส่งตรง</value>
+ </row>
+ <row id="56906" trl="Y">
+  <value column="Name" original="Promotion Code">รหัสโปรโมชัน</value>
+ </row>
+ <row id="57733" trl="Y">
+  <value column="Name" original="Drop Shipment">การส่งตรง</value>
+ </row>
+ <row id="57734" trl="Y">
+  <value column="Name" original="Drop Ship Business Partner">คู่ค้าสำหรับการส่งตรง</value>
+ </row>
+ <row id="57735" trl="Y">
+  <value column="Name" original="Drop Shipment Location">ที่อยู่การส่งตรง</value>
+ </row>
+ <row id="57736" trl="Y">
+  <value column="Name" original="Drop Shipment Contact">ผู้ติดต่อการส่งตรง</value>
+ </row>
+ <row id="57761" trl="Y">
+  <value column="Name" original="Customer Return">การคืนสินค้าของลูกค้า</value>
+ </row>
+ <row id="57871" trl="Y">
+  <value column="Name" original="Drop Shipment">การส่งตรง</value>
+ </row>
+ <row id="57872" trl="Y">
+  <value column="Name" original="Drop Ship Business Partner">คู่ค้าสำหรับการส่งตรง</value>
+ </row>
+ <row id="57873" trl="Y">
+  <value column="Name" original="Drop Shipment Location">ที่อยู่การส่งตรง</value>
+ </row>
+ <row id="57874" trl="Y">
+  <value column="Name" original="Drop Shipment Contact">ผู้ติดต่อการส่งตรง</value>
+ </row>
+ <row id="57900" trl="Y">
+  <value column="Name" original="Return to Vendor">คืนสินค้าให้ผู้จำหน่าย</value>
+ </row>
+ <row id="57981" trl="Y">
+  <value column="Name" original="PO Tax exempt">ยกเว้นภาษีการซื้อ</value>
+ </row>
+ <row id="58029" trl="Y">
+  <value column="Name" original="Order Source">แหล่งที่มาของคำสั่ง</value>
+ </row>
+ <row id="58037" trl="Y">
+  <value column="Name" original="Order Source">แหล่งที่มาของคำสั่ง</value>
+ </row>
+ <row id="58070" trl="Y">
+  <value column="Name" original="Relation Type">ประเภทความสัมพันธ์</value>
+ </row>
+ <row id="58571" trl="Y">
+  <value column="Name" original="Is Manufacturer">เป็นผู้ผลิต</value>
+ </row>
+ <row id="58780" trl="Y">
+  <value column="Name" original="Order Source">แหล่งที่มาของคำสั่ง</value>
+ </row>
+ <row id="59797" trl="Y">
+  <value column="Name" original="Drop Shipment">การส่งตรง</value>
+ </row>
+ <row id="59806" trl="Y">
+  <value column="Name" original="Verify BOM Structure">ตรวจสอบโครงสร้างสูตรการผลิต</value>
+ </row>
+ <row id="60927" trl="Y">
+  <value column="Name" original="Cash Plan">แผนเงินสด</value>
+ </row>
+ <row id="60946" trl="Y">
+  <value column="Name" original="Cash Plan Line">รายการแผนเงินสด</value>
+ </row>
+ <row id="60953" trl="Y">
+  <value column="Name" original="Cash Plan">แผนเงินสด</value>
+ </row>
+ <row id="60970" trl="Y">
+  <value column="Name" original="Cash Plan Line">รายการแผนเงินสด</value>
+ </row>
+ <row id="60971" trl="Y">
+  <value column="Name" original="Cash Plan Line">รายการแผนเงินสด</value>
+ </row>
+ <row id="60972" trl="Y">
+  <value column="Name" original="Cash Plan Line">รายการแผนเงินสด</value>
+ </row>
+ <row id="60973" trl="Y">
+  <value column="Name" original="Cash Plan Line">รายการแผนเงินสด</value>
+ </row>
+ <row id="61977" trl="Y">
+  <value column="Name" original="Quality Test">การทดสอบคุณภาพ</value>
+ </row>
+ <row id="61990" trl="Y">
+  <value column="Name" original="Quality Test">การทดสอบคุณภาพ</value>
+ </row>
+ <row id="61993" trl="Y">
+  <value column="Name" original="Quality Test">การทดสอบคุณภาพ</value>
+ </row>
+ <row id="62003" trl="Y">
+  <value column="Name" original="Part Type">ประเภทชิ้นส่วน</value>
+ </row>
+ <row id="62008" trl="Y">
+  <value column="Name" original="Part Type">ประเภทชิ้นส่วน</value>
+ </row>
+ <row id="62010" trl="Y">
+  <value column="Name" original="Part Type">ประเภทชิ้นส่วน</value>
+ </row>
+ <row id="62277" trl="Y">
+  <value column="Name" original="Drop Shipment">การส่งตรง</value>
+ </row>
+ <row id="62278" trl="Y">
+  <value column="Name" original="Drop Ship Business Partner">คู่ค้าสำหรับการส่งตรง</value>
+ </row>
+ <row id="62279" trl="Y">
+  <value column="Name" original="Drop Shipment Location">ที่อยู่การส่งตรง</value>
+ </row>
+ <row id="62280" trl="Y">
+  <value column="Name" original="Drop Shipment Contact">ผู้ติดต่อการส่งตรง</value>
+ </row>
+ <row id="62296" trl="Y">
+  <value column="Name" original="Promotion Code">รหัสโปรโมชัน</value>
+ </row>
+ <row id="62312" trl="Y">
+  <value column="Name" original="Order Source">แหล่งที่มาของคำสั่ง</value>
+ </row>
+ <row id="62313" trl="Y">
+  <value column="Name" original="Cash Plan Line">รายการแผนเงินสด</value>
+ </row>
+ <row id="62317" trl="Y">
+  <value column="Name" original="Linked Order">ใบสั่งที่เชื่อมโยง</value>
+ </row>
+ <row id="62369" trl="Y">
+  <value column="Name" original="Lost Sales Qty">จำนวนยอดขายที่สูญเสีย</value>
+ </row>
+ <row id="62726" trl="Y">
+  <value column="Name" original="Dunning Grace Date">วันผ่อนผันการทวงถาม</value>
+ </row>
+ <row id="62772" trl="Y">
+  <value column="Name" original="PO Tax exempt">ยกเว้นภาษีการซื้อ</value>
+ </row>
+ <row id="62945" trl="Y">
+  <value column="Name" original="Drop Shipment">การส่งตรง</value>
+ </row>
+ <row id="62952" trl="Y">
+  <value column="Name" original="Lost Sales Qty">จำนวนยอดขายที่สูญเสีย</value>
+ </row>
+ <row id="200271" trl="Y">
+  <value column="Name" original="Create Production from Order Line">สร้างการผลิตจากรายการสั่งซื้อ</value>
+ </row>
+ <row id="200272" trl="Y">
+  <value column="Name" original="Create Shipment from Order Line">สร้างการจัดส่งจากรายการสั่งซื้อ</value>
+ </row>
+ <row id="200297" trl="Y">
+  <value column="Name" original="Part Type">ประเภทชิ้นส่วน</value>
+ </row>
+ <row id="200441" trl="Y">
+  <value column="Name" original="POS Payment">การชำระเงิน POS</value>
+ </row>
+ <row id="200471" trl="Y">
+  <value column="Name" original="POS Payment">การชำระเงิน POS</value>
+ </row>
+ <row id="200524" trl="Y">
+  <value column="Name" original="GL Journal Generator">ตัวสร้างสมุดรายวัน</value>
+ </row>
+ <row id="200527" trl="Y">
+  <value column="Name" original="GL Journal Generator">ตัวสร้างสมุดรายวัน</value>
+ </row>
+ <row id="200622" trl="Y">
+  <value column="Name" original="Is Manufacturer">เป็นผู้ผลิต</value>
+ </row>
+ <row id="200702" trl="Y">
+  <value column="Name" original="Payment Transaction">ธุรกรรมการชำระเงิน</value>
+ </row>
+ <row id="200756" trl="Y">
+  <value column="Name" original="Quotation">ใบเสนอราคา</value>
+ </row>
+ <row id="200762" trl="Y">
+  <value column="Name" original="Online Transaction History">ประวัติธุรกรรมออนไลน์</value>
+ </row>
+ <row id="201609" trl="Y">
+  <value column="Name" original="Privileged Rate">อัตราพิเศษ</value>
+ </row>
+ <row id="201611" trl="Y">
+  <value column="Name" original="Linked Order">ใบสั่งที่เชื่อมโยง</value>
+ </row>
+ <row id="201613" trl="Y">
+  <value column="Name" original="Online Shipping Sales Order Rate Inquiry">สอบถามค่าขนส่งออนไลน์ของใบสั่งขาย</value>
+ </row>
+ <row id="201773" trl="Y">
+  <value column="Name" original="Context Help">ความช่วยเหลือตามบริบท</value>
+ </row>
+ <row id="201782" trl="Y">
+  <value column="Name" original="Context Help">ความช่วยเหลือตามบริบท</value>
+ </row>
+ <row id="201805" trl="Y">
+  <value column="Name" original="Context Help">ความช่วยเหลือตามบริบท</value>
+ </row>
+ <row id="201807" trl="Y">
+  <value column="Name" original="Context Help">ความช่วยเหลือตามบริบท</value>
+ </row>
+ <row id="201809" trl="Y">
+  <value column="Name" original="Context Help">ความช่วยเหลือตามบริบท</value>
+ </row>
+ <row id="201811" trl="Y">
+  <value column="Name" original="Context Help">ความช่วยเหลือตามบริบท</value>
+ </row>
+ <row id="201814" trl="Y">
+  <value column="Name" original="Context Help">ความช่วยเหลือตามบริบท</value>
+ </row>
+ <row id="201816" trl="Y">
+  <value column="Name" original="Context Help">ความช่วยเหลือตามบริบท</value>
+ </row>
+ <row id="201827" trl="Y">
+  <value column="Name" original="Privileged Rate">อัตราพิเศษ</value>
+ </row>
+ <row id="201875" trl="Y">
+  <value column="Name" original="Context Help">ความช่วยเหลือตามบริบท</value>
+ </row>
+ <row id="202325" trl="Y">
+  <value column="Name" original="Cost Adjustment">ปรับปรุงต้นทุน</value>
+ </row>
+ <row id="204250" trl="Y">
+  <value column="Name" original="Context Help">ความช่วยเหลือตามบริบท</value>
+ </row>
+ <row id="204403" trl="Y">
+  <value column="Name" original="Document Status">สถานะเอกสาร</value>
+ </row>
+ <row id="204420" trl="Y">
+  <value column="Name" original="Document Status">สถานะเอกสาร</value>
+ </row>
+ <row id="206699" trl="Y">
+  <value column="Name" original="Document Status">สถานะเอกสาร</value>
+ </row>
+ <row id="206709" trl="Y">
+  <value column="Name" original="Document Status">สถานะเอกสาร</value>
+ </row>
+ <row id="206717" trl="Y">
+  <value column="Name" original="Document Status">สถานะเอกสาร</value>
+ </row>
+ <row id="207023" trl="Y">
+  <value column="Name" original="Label Category">หมวดป้ายกำกับ</value>
+ </row>
+ <row id="207024" trl="Y">
+  <value column="Name" original="Label Category">หมวดป้ายกำกับ</value>
+ </row>
+ <row id="207033" trl="Y">
+  <value column="Name" original="Label Category">หมวดป้ายกำกับ</value>
+ </row>
+ <row id="207039" trl="Y">
+  <value column="Name" original="Label Category">หมวดป้ายกำกับ</value>
+ </row>
+ <row id="207049" trl="Y">
+  <value column="Name" original="Label">ป้ายกำกับ</value>
+ </row>
+ <row id="207050" trl="Y">
+  <value column="Name" original="Label">ป้ายกำกับ</value>
+ </row>
+ <row id="207051" trl="Y">
+  <value column="Name" original="Label Category">หมวดป้ายกำกับ</value>
+ </row>
+ <row id="207057" trl="Y">
+  <value column="Name" original="Label">ป้ายกำกับ</value>
+ </row>
+ <row id="207103" trl="Y">
+  <value column="Name" original="Label Assignment">การกำหนดป้ายกำกับ</value>
+ </row>
+ <row id="207104" trl="Y">
+  <value column="Name" original="Label Assignment">การกำหนดป้ายกำกับ</value>
+ </row>
+ <row id="207105" trl="Y">
+  <value column="Name" original="Label">ป้ายกำกับ</value>
+ </row>
+ <row id="207632" trl="Y">
+  <value column="Name" original="Linked Order">ใบสั่งที่เชื่อมโยง</value>
+ </row>
+ <row id="208206" trl="Y">
+  <value column="Name" original="Department">แผนก</value>
+ </row>
+ <row id="208210" trl="Y">
+  <value column="Name" original="Cost Center">ศูนย์ต้นทุน</value>
+ </row>
+ <row id="208213" trl="Y">
+  <value column="Name" original="Department">แผนก</value>
+ </row>
+ <row id="208214" trl="Y">
+  <value column="Name" original="Cost Center">ศูนย์ต้นทุน</value>
+ </row>
+ <row id="208530" trl="Y">
+  <value column="Name" original="Theme Customization">ปรับแต่งธีม</value>
+ </row>
+ <row id="208538" trl="Y">
+  <value column="Name" original="Theme Customization">ปรับแต่งธีม</value>
+ </row>
+ <row id="208549" trl="Y">
+  <value column="Name" original="Department">แผนก</value>
+ </row>
+ <row id="208550" trl="Y">
+  <value column="Name" original="Cost Center">ศูนย์ต้นทุน</value>
+ </row>
+ <row id="208551" trl="Y">
+  <value column="Name" original="Department">แผนก</value>
+ </row>
+ <row id="208552" trl="Y">
+  <value column="Name" original="Cost Center">ศูนย์ต้นทุน</value>
+ </row>
+ <row id="208553" trl="Y">
+  <value column="Name" original="Department">แผนก</value>
+ </row>
+ <row id="208554" trl="Y">
+  <value column="Name" original="Cost Center">ศูนย์ต้นทุน</value>
+ </row>
+ <row id="208555" trl="Y">
+  <value column="Name" original="Department">แผนก</value>
+ </row>
+ <row id="208556" trl="Y">
+  <value column="Name" original="Cost Center">ศูนย์ต้นทุน</value>
+ </row>
+ <row id="208557" trl="Y">
+  <value column="Name" original="Department">แผนก</value>
+ </row>
+ <row id="208558" trl="Y">
+  <value column="Name" original="Cost Center">ศูนย์ต้นทุน</value>
+ </row>
+ <row id="208559" trl="Y">
+  <value column="Name" original="Department">แผนก</value>
+ </row>
+ <row id="208560" trl="Y">
+  <value column="Name" original="Cost Center">ศูนย์ต้นทุน</value>
+ </row>
+ <row id="208561" trl="Y">
+  <value column="Name" original="Department">แผนก</value>
+ </row>
+ <row id="208562" trl="Y">
+  <value column="Name" original="Cost Center">ศูนย์ต้นทุน</value>
+ </row>
+ <row id="208563" trl="Y">
+  <value column="Name" original="Department">แผนก</value>
+ </row>
+ <row id="208564" trl="Y">
+  <value column="Name" original="Cost Center">ศูนย์ต้นทุน</value>
+ </row>
+ <row id="208565" trl="Y">
+  <value column="Name" original="Department">แผนก</value>
+ </row>
+ <row id="208566" trl="Y">
+  <value column="Name" original="Cost Center">ศูนย์ต้นทุน</value>
+ </row>
+ <row id="208567" trl="Y">
+  <value column="Name" original="Department">แผนก</value>
+ </row>
+ <row id="208568" trl="Y">
+  <value column="Name" original="Cost Center">ศูนย์ต้นทุน</value>
+ </row>
+ <row id="208569" trl="Y">
+  <value column="Name" original="Department">แผนก</value>
+ </row>
+ <row id="208570" trl="Y">
+  <value column="Name" original="Cost Center">ศูนย์ต้นทุน</value>
+ </row>
+ <row id="208571" trl="Y">
+  <value column="Name" original="Cost Center">ศูนย์ต้นทุน</value>
+ </row>
+ <row id="208572" trl="Y">
+  <value column="Name" original="Department">แผนก</value>
+ </row>
+ <row id="208573" trl="Y">
+  <value column="Name" original="Cost Center">ศูนย์ต้นทุน</value>
+ </row>
+ <row id="208574" trl="Y">
+  <value column="Name" original="Department">แผนก</value>
+ </row>
+ <row id="208575" trl="Y">
+  <value column="Name" original="Cost Center">ศูนย์ต้นทุน</value>
+ </row>
+ <row id="208576" trl="Y">
+  <value column="Name" original="Department">แผนก</value>
+ </row>
+ <row id="208577" trl="Y">
+  <value column="Name" original="Cost Center">ศูนย์ต้นทุน</value>
+ </row>
+ <row id="208578" trl="Y">
+  <value column="Name" original="Department">แผนก</value>
+ </row>
+ <row id="208579" trl="Y">
+  <value column="Name" original="Cost Center">ศูนย์ต้นทุน</value>
+ </row>
+ <row id="208580" trl="Y">
+  <value column="Name" original="Department">แผนก</value>
+ </row>
+ <row id="208581" trl="Y">
+  <value column="Name" original="Cost Center">ศูนย์ต้นทุน</value>
+ </row>
+ <row id="208582" trl="Y">
+  <value column="Name" original="Department">แผนก</value>
+ </row>
+ <row id="208583" trl="Y">
+  <value column="Name" original="Cost Center">ศูนย์ต้นทุน</value>
+ </row>
+ <row id="208584" trl="Y">
+  <value column="Name" original="Department">แผนก</value>
+ </row>
+ <row id="208585" trl="Y">
+  <value column="Name" original="Cost Center">ศูนย์ต้นทุน</value>
+ </row>
+ <row id="208586" trl="Y">
+  <value column="Name" original="Department">แผนก</value>
+ </row>
+ <row id="208587" trl="Y">
+  <value column="Name" original="Cost Center">ศูนย์ต้นทุน</value>
+ </row>
+ <row id="208588" trl="Y">
+  <value column="Name" original="Department">แผนก</value>
+ </row>
+ <row id="208589" trl="Y">
+  <value column="Name" original="Cost Center">ศูนย์ต้นทุน</value>
+ </row>
+ <row id="208590" trl="Y">
+  <value column="Name" original="Department">แผนก</value>
+ </row>
+ <row id="208591" trl="Y">
+  <value column="Name" original="Cost Center">ศูนย์ต้นทุน</value>
+ </row>
+ <row id="208592" trl="Y">
+  <value column="Name" original="Department">แผนก</value>
+ </row>
+ <row id="208593" trl="Y">
+  <value column="Name" original="Cost Center">ศูนย์ต้นทุน</value>
+ </row>
+ <row id="208594" trl="Y">
+  <value column="Name" original="Department">แผนก</value>
+ </row>
+ <row id="208595" trl="Y">
+  <value column="Name" original="Cost Center">ศูนย์ต้นทุน</value>
+ </row>
+ <row id="208596" trl="Y">
+  <value column="Name" original="Department">แผนก</value>
+ </row>
+ <row id="208597" trl="Y">
+  <value column="Name" original="Cost Center">ศูนย์ต้นทุน</value>
+ </row>
+ <row id="208598" trl="Y">
+  <value column="Name" original="Department">แผนก</value>
+ </row>
+ <row id="208599" trl="Y">
+  <value column="Name" original="Cost Center">ศูนย์ต้นทุน</value>
+ </row>
+ <row id="208600" trl="Y">
+  <value column="Name" original="Department">แผนก</value>
+ </row>
+ <row id="208601" trl="Y">
+  <value column="Name" original="Cost Center">ศูนย์ต้นทุน</value>
+ </row>
+ <row id="208602" trl="Y">
+  <value column="Name" original="Department">แผนก</value>
+ </row>
+ <row id="208603" trl="Y">
+  <value column="Name" original="Cost Center">ศูนย์ต้นทุน</value>
+ </row>
+ <row id="208604" trl="Y">
+  <value column="Name" original="Department">แผนก</value>
+ </row>
+ <row id="208605" trl="Y">
+  <value column="Name" original="Cost Center">ศูนย์ต้นทุน</value>
+ </row>
+ <row id="208606" trl="Y">
+  <value column="Name" original="Department">แผนก</value>
+ </row>
+ <row id="208607" trl="Y">
+  <value column="Name" original="Cost Center">ศูนย์ต้นทุน</value>
+ </row>
+ <row id="208608" trl="Y">
+  <value column="Name" original="Department">แผนก</value>
+ </row>
+ <row id="208609" trl="Y">
+  <value column="Name" original="Cost Center">ศูนย์ต้นทุน</value>
+ </row>
+ <row id="208610" trl="Y">
+  <value column="Name" original="Department">แผนก</value>
+ </row>
+ <row id="208611" trl="Y">
+  <value column="Name" original="Cost Center">ศูนย์ต้นทุน</value>
+ </row>
+ <row id="208612" trl="Y">
+  <value column="Name" original="Department">แผนก</value>
+ </row>
+ <row id="208613" trl="Y">
+  <value column="Name" original="Cost Center">ศูนย์ต้นทุน</value>
+ </row>
+ <row id="208614" trl="Y">
+  <value column="Name" original="Department">แผนก</value>
+ </row>
+ <row id="208615" trl="Y">
+  <value column="Name" original="Cost Center">ศูนย์ต้นทุน</value>
+ </row>
+ <row id="208616" trl="Y">
+  <value column="Name" original="Department">แผนก</value>
+ </row>
+ <row id="208617" trl="Y">
+  <value column="Name" original="Cost Center">ศูนย์ต้นทุน</value>
+ </row>
+ <row id="208618" trl="Y">
+  <value column="Name" original="Department">แผนก</value>
+ </row>
+ <row id="208619" trl="Y">
+  <value column="Name" original="Cost Center">ศูนย์ต้นทุน</value>
+ </row>
+ <row id="208620" trl="Y">
+  <value column="Name" original="Department">แผนก</value>
+ </row>
+ <row id="208621" trl="Y">
+  <value column="Name" original="Cost Center">ศูนย์ต้นทุน</value>
+ </row>
+ <row id="208622" trl="Y">
+  <value column="Name" original="Department">แผนก</value>
+ </row>
+ <row id="208623" trl="Y">
+  <value column="Name" original="Cost Center">ศูนย์ต้นทุน</value>
+ </row>
+ <row id="208624" trl="Y">
+  <value column="Name" original="Department">แผนก</value>
+ </row>
+ <row id="208625" trl="Y">
+  <value column="Name" original="Cost Center">ศูนย์ต้นทุน</value>
+ </row>
+ <row id="208626" trl="Y">
+  <value column="Name" original="Department">แผนก</value>
+ </row>
+ <row id="208627" trl="Y">
+  <value column="Name" original="Cost Center">ศูนย์ต้นทุน</value>
+ </row>
+ <row id="208628" trl="Y">
+  <value column="Name" original="Department">แผนก</value>
+ </row>
+ <row id="208629" trl="Y">
+  <value column="Name" original="Cost Center">ศูนย์ต้นทุน</value>
+ </row>
+ <row id="208630" trl="Y">
+  <value column="Name" original="Department">แผนก</value>
+ </row>
+ <row id="208631" trl="Y">
+  <value column="Name" original="Cost Center">ศูนย์ต้นทุน</value>
+ </row>
+ <row id="208632" trl="Y">
+  <value column="Name" original="Department">แผนก</value>
+ </row>
+ <row id="208633" trl="Y">
+  <value column="Name" original="Cost Center">ศูนย์ต้นทุน</value>
+ </row>
+ <row id="208634" trl="Y">
+  <value column="Name" original="Department">แผนก</value>
+ </row>
+ <row id="208635" trl="Y">
+  <value column="Name" original="Cost Center">ศูนย์ต้นทุน</value>
+ </row>
+ <row id="208636" trl="Y">
+  <value column="Name" original="Department">แผนก</value>
+ </row>
+ <row id="208637" trl="Y">
+  <value column="Name" original="Cost Center">ศูนย์ต้นทุน</value>
+ </row>
+ <row id="208638" trl="Y">
+  <value column="Name" original="Department">แผนก</value>
+ </row>
+ <row id="208639" trl="Y">
+  <value column="Name" original="Cost Center">ศูนย์ต้นทุน</value>
+ </row>
+ <row id="208640" trl="Y">
+  <value column="Name" original="Department">แผนก</value>
+ </row>
+ <row id="208641" trl="Y">
+  <value column="Name" original="Cost Center">ศูนย์ต้นทุน</value>
+ </row>
+ <row id="208642" trl="Y">
+  <value column="Name" original="Department">แผนก</value>
+ </row>
+ <row id="208643" trl="Y">
+  <value column="Name" original="Cost Center">ศูนย์ต้นทุน</value>
+ </row>
+ <row id="208644" trl="Y">
+  <value column="Name" original="Department">แผนก</value>
+ </row>
+ <row id="208703" trl="Y">
+  <value column="Name" original="Department">แผนก</value>
+ </row>
+ <row id="208704" trl="Y">
+  <value column="Name" original="Cost Center">ศูนย์ต้นทุน</value>
+ </row>
+ <row id="208971" trl="Y">
+  <value column="Name" original="Document Status">สถานะเอกสาร</value>
+ </row>
+</idempiereTrl>

@@ -1,0 +1,2261 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!--ERP screen names (AD_Field, by id). ERP machine source (not a published language pack) — translated for this app by Claude (Anthropic), 2026-11, moved from erp/i18n/machine/fr_FR.json {English: text}, applied by build_i18n.py machine_fill by erp/tools/trl_move_machine_2026-11-18.py (TRL_TRILOGY_STANDARD.md T5a); no human review.-->
+<!--<!DOCTYPE idempiereTrl PUBLIC "-//iDempiere//DTD iDempiere Translation 1.0//EN" "https://raw.githubusercontent.com/idempiere/idempiere/refs/heads/master/utils_dev/trl/idempiereTrl.dtd">-->
+<idempiereTrl language="fr_FR" table="AD_Field">
+ <row id="108" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="115" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="121" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="128" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="144" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="153" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="192" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="195" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="203" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="215" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="231" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="237" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="242" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="301" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="318" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="325" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="340" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="352" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="362" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="381" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="388" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="399" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="407" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="418" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="442" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="454" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="468" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="474" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="494" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="505" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="605" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="617" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="644" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="668" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="677" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="687" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="702" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="725" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="796" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="949" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="957" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="971" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="991" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="994" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="1019" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="1067" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="1086" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="1126" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="1156" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="1177" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="1237" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="1354" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="1385" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="1394" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="1398" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="1407" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="1424" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="1451" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="1523" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="2133" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="2162" trl="Y">
+  <value column="Name" original="Rating">Évaluation</value>
+ </row>
+ <row id="2245" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="2263" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="2289" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="2296" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="2388" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="2530" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="2541" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="2552" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="2560" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="2617" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="2683" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="2692" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="2703" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="2713" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="2722" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="2731" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="2892" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="2959" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="2991" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="3010" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="3020" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="3175" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="3297" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="3352" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="3366" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="3398" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="3429" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="3478" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="3510" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="3618" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="3627" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="3718" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="3747" trl="Y">
+  <value column="Name" original="Verify BOM Structure">Vérifier la structure de nomenclature</value>
+ </row>
+ <row id="3906" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="3996" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="4012" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="4329" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="4407" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="4466" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="4482" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="4506" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="4530" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="4565" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="4586" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="4630" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="4646" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="4681" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="4693" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="4711" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="4734" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="4746" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="4751" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="4781" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="4792" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="4802" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="4829" trl="Y">
+  <value column="Name" original="Revenue Recognition Run">Exécution de la reconnaissance des revenus</value>
+ </row>
+ <row id="4923" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="4930" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="4938" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="5024" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="5037" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="5048" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="5235" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="5286" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="5317" trl="Y">
+  <value column="Name" original="Verify BOM Structure">Vérifier la structure de nomenclature</value>
+ </row>
+ <row id="5399" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="5407" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="5436" trl="Y">
+  <value column="Name" original="Verify BOM Structure">Vérifier la structure de nomenclature</value>
+ </row>
+ <row id="5443" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="5458" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="5476" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="5492" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="5505" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="5534" trl="Y">
+  <value column="Name" original="Verify BOM Structure">Vérifier la structure de nomenclature</value>
+ </row>
+ <row id="5545" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="5636" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="5665" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="5700" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="5713" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="5786" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="5863" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="5867" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="5935" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="5981" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="6025" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="6048" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="6077" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="6110" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="6117" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="6158" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="6183" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="6259" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="6278" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="6356" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="6365" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="6369" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="6377" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="6386" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="6400" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="6586" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="6625" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="6638" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="6651" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="6662" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="6706" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="6743" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="6784" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="6798" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="6819" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="6832" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="6900" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="6998" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="7011" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="7032" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="7073" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="7156" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="7248" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="7336" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="7383" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="7406" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="7417" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="7423" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="7455" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="7470" trl="Y">
+  <value column="Name" original="Verify BOM Structure">Vérifier la structure de nomenclature</value>
+ </row>
+ <row id="7481" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="7490" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="7520" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="7541" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="7546" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="7559" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="7569" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="7584" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="7594" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="7597" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="7605" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="7614" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="7654" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="7841" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="7847" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="7866" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="7916" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="7974" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="8094" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="8151" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="8174" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="8216" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="8274" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="8282" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="8381" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="8420" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="8450" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="8488" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="8534" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="8574" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="8638" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="8684" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="8737" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="8775" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="8852" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="8880" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="8885" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="8894" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="8904" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="8919" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="8923" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="8939" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="9035" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="9046" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="9207" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="9252" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="9272" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="9287" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="9291" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="9309" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="9310" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="9324" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="9366" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="9381" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="9411" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="9439" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="9447" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="9452" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="9500" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="9521" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="9525" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="9542" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="9583" trl="Y">
+  <value column="Name" original="Rating">Évaluation</value>
+ </row>
+ <row id="9792" trl="Y">
+  <value column="Name" original="Rating">Évaluation</value>
+ </row>
+ <row id="9860" trl="Y">
+  <value column="Name" original="Rating">Évaluation</value>
+ </row>
+ <row id="9877" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="9910" trl="Y">
+  <value column="Name" original="Rating">Évaluation</value>
+ </row>
+ <row id="9928" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="9964" trl="Y">
+  <value column="Name" original="Rating">Évaluation</value>
+ </row>
+ <row id="9983" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="10005" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="10032" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="10036" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="10072" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="10118" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="10131" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="10147" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="10174" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="10204" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="10210" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="10232" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="10254" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="10294" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="10351" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="10363" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="10387" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="10392" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="10394" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="10405" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="10429" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="10540" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="10574" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="10602" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="10637" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="10644" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="10759" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="10767" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="10778" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="10789" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="10795" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="10954" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="10965" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="10995" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="11015" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="11016" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="11107" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="11160" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="11213" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="11253" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="11270" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="11289" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="11300" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="11319" trl="Y">
+  <value column="Name" original="Verify BOM Structure">Vérifier la structure de nomenclature</value>
+ </row>
+ <row id="11351" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="11359" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="11372" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="11380" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="11386" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="11554" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="11599" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="11686" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="11693" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="11702" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="11712" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="11719" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="11731" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="11750" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="11863" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="11874" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="11941" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="12012" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="12024" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="12093" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="12150" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="12243" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="12255" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="12356" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="12357" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="12428" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="12448" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="12478" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="12532" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="12567" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="12597" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="12631" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="12650" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="12651" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="12720" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="12730" trl="Y">
+  <value column="Name" original="Rating">Évaluation</value>
+ </row>
+ <row id="12820" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="12835" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="12843" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="12851" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="12859" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="12942" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="12968" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="13001" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="13039" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="13065" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="13115" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="13379" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="13394" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="13501" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="13512" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="13574" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="13586" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="13595" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="13610" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="13734" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="13745" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="50014" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="50040" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="50163" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="51010" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="53257" trl="Y">
+  <value column="Name" original="Dunning Grace Date">Date de grâce de relance</value>
+ </row>
+ <row id="53275" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="53292" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="53372" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="53419" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="53429" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="53466" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="53486" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="53567" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="53594" trl="Y">
+  <value column="Name" original="Verify BOM Structure">Vérifier la structure de nomenclature</value>
+ </row>
+ <row id="53652" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="53666" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="53727" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="53752" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="53788" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="53815" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="53865" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="53892" trl="Y">
+  <value column="Name" original="Verify BOM Structure">Vérifier la structure de nomenclature</value>
+ </row>
+ <row id="53949" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="53981" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="54061" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="54090" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="54130" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="54297" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="54306" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="54339" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="54369" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="54393" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="54407" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="54556" trl="Y">
+  <value column="Name" original="Dunning Grace Date">Date de grâce de relance</value>
+ </row>
+ <row id="54567" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="54576" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="54588" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="54605" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="54618" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="54627" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="54637" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="54655" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="54664" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="54676" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="54989" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="55019" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="55172" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="55451" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="55480" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="55497" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="55535" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="55740" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="55779" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="55808" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="56212" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="56220" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="56237" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="56245" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="56258" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="56341" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="56357" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="56388" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="56421" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="56631" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="56639" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="56648" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="56707" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="56786" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="56906" trl="Y">
+  <value column="Name" original="Promotion Code">Code promotionnel</value>
+ </row>
+ <row id="56925" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="56957" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="56966" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="56976" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="56983" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="56988" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="56996" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="57004" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="57018" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="57330" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="57716" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="57768" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="57798" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="57850" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="57907" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="57937" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="57954" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="57975" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="57988" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="58029" trl="Y">
+  <value column="Name" original="Order Source">Origine de la commande</value>
+ </row>
+ <row id="58034" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="58037" trl="Y">
+  <value column="Name" original="Order Source">Origine de la commande</value>
+ </row>
+ <row id="58066" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="58070" trl="Y">
+  <value column="Name" original="Relation Type">Type de relation</value>
+ </row>
+ <row id="58090" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="58110" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="58310" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="58571" trl="Y">
+  <value column="Name" original="Is Manufacturer">Est fabricant</value>
+ </row>
+ <row id="58780" trl="Y">
+  <value column="Name" original="Order Source">Origine de la commande</value>
+ </row>
+ <row id="59007" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="59012" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="59072" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="59109" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="59125" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="59246" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="59324" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="59396" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="59488" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="59600" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="59610" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="59741" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="59763" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="59779" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="59806" trl="Y">
+  <value column="Name" original="Verify BOM Structure">Vérifier la structure de nomenclature</value>
+ </row>
+ <row id="59833" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="60876" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="60927" trl="Y">
+  <value column="Name" original="Cash Plan">Plan de trésorerie</value>
+ </row>
+ <row id="60931" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="60946" trl="Y">
+  <value column="Name" original="Cash Plan Line">Ligne du plan de trésorerie</value>
+ </row>
+ <row id="60953" trl="Y">
+  <value column="Name" original="Cash Plan">Plan de trésorerie</value>
+ </row>
+ <row id="60960" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="60970" trl="Y">
+  <value column="Name" original="Cash Plan Line">Ligne du plan de trésorerie</value>
+ </row>
+ <row id="60971" trl="Y">
+  <value column="Name" original="Cash Plan Line">Ligne du plan de trésorerie</value>
+ </row>
+ <row id="60972" trl="Y">
+  <value column="Name" original="Cash Plan Line">Ligne du plan de trésorerie</value>
+ </row>
+ <row id="60973" trl="Y">
+  <value column="Name" original="Cash Plan Line">Ligne du plan de trésorerie</value>
+ </row>
+ <row id="61718" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="61745" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="61770" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="61790" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="61816" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="61828" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="61853" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="61861" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="61977" trl="Y">
+  <value column="Name" original="Quality Test">Test qualité</value>
+ </row>
+ <row id="61978" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="61988" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="61990" trl="Y">
+  <value column="Name" original="Quality Test">Test qualité</value>
+ </row>
+ <row id="61993" trl="Y">
+  <value column="Name" original="Quality Test">Test qualité</value>
+ </row>
+ <row id="62001" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="62003" trl="Y">
+  <value column="Name" original="Part Type">Type de pièce</value>
+ </row>
+ <row id="62008" trl="Y">
+  <value column="Name" original="Part Type">Type de pièce</value>
+ </row>
+ <row id="62010" trl="Y">
+  <value column="Name" original="Part Type">Type de pièce</value>
+ </row>
+ <row id="62129" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="62159" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="62174" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="62197" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="62263" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="62296" trl="Y">
+  <value column="Name" original="Promotion Code">Code promotionnel</value>
+ </row>
+ <row id="62312" trl="Y">
+  <value column="Name" original="Order Source">Origine de la commande</value>
+ </row>
+ <row id="62313" trl="Y">
+  <value column="Name" original="Cash Plan Line">Ligne du plan de trésorerie</value>
+ </row>
+ <row id="62317" trl="Y">
+  <value column="Name" original="Linked Order">Commande liée</value>
+ </row>
+ <row id="62348" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="62387" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="62415" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="62450" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="62666" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="62678" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="62691" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="62704" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="62726" trl="Y">
+  <value column="Name" original="Dunning Grace Date">Date de grâce de relance</value>
+ </row>
+ <row id="62765" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="62777" trl="Y">
+  <value column="Name" original="Rating">Évaluation</value>
+ </row>
+ <row id="62802" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="62826" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="62995" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="74743" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="200016" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="200191" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="200217" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="200297" trl="Y">
+  <value column="Name" original="Part Type">Type de pièce</value>
+ </row>
+ <row id="200416" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="200441" trl="Y">
+  <value column="Name" original="POS Payment">Paiement PDV</value>
+ </row>
+ <row id="200471" trl="Y">
+  <value column="Name" original="POS Payment">Paiement PDV</value>
+ </row>
+ <row id="200494" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="200514" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="200524" trl="Y">
+  <value column="Name" original="GL Journal Generator">Générateur d'écritures</value>
+ </row>
+ <row id="200527" trl="Y">
+  <value column="Name" original="GL Journal Generator">Générateur d'écritures</value>
+ </row>
+ <row id="200529" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="200562" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="200622" trl="Y">
+  <value column="Name" original="Is Manufacturer">Est fabricant</value>
+ </row>
+ <row id="200684" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="200702" trl="Y">
+  <value column="Name" original="Payment Transaction">Transaction de paiement</value>
+ </row>
+ <row id="200756" trl="Y">
+  <value column="Name" original="Quotation">Devis</value>
+ </row>
+ <row id="200762" trl="Y">
+  <value column="Name" original="Online Transaction History">Historique des transactions en ligne</value>
+ </row>
+ <row id="200913" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="201191" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="201200" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="201223" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="201291" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="201300" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="201323" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="201328" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="201373" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="201388" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="201403" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="201414" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="201427" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="201459" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="201475" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="201486" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="201499" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="201518" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="201583" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="201611" trl="Y">
+  <value column="Name" original="Linked Order">Commande liée</value>
+ </row>
+ <row id="201613" trl="Y">
+  <value column="Name" original="Online Shipping Sales Order Rate Inquiry">Demande de tarif d'expédition en ligne</value>
+ </row>
+ <row id="201699" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="201772" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="201831" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="201845" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="202202" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="202225" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="202240" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="202264" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="202301" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="202330" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="202372" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="202407" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="202435" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="202499" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="202712" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="202721" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="202747" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="202757" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="202774" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="202783" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="202800" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="202819" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="203045" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="203271" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="203289" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="203319" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="203450" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="203806" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="203840" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="204199" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="204228" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="204402" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="204403" trl="Y">
+  <value column="Name" original="Document Status">Statut des documents</value>
+ </row>
+ <row id="204420" trl="Y">
+  <value column="Name" original="Document Status">Statut des documents</value>
+ </row>
+ <row id="205147" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="205158" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="205178" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="205249" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="205262" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="205684" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="205764" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="205908" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="205929" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="205969" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="205996" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="206019" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="206152" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="206161" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="206301" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="206411" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="206416" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="206434" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="206473" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="206488" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="206554" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="206616" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="206699" trl="Y">
+  <value column="Name" original="Document Status">Statut des documents</value>
+ </row>
+ <row id="206709" trl="Y">
+  <value column="Name" original="Document Status">Statut des documents</value>
+ </row>
+ <row id="206717" trl="Y">
+  <value column="Name" original="Document Status">Statut des documents</value>
+ </row>
+ <row id="206924" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="206936" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="207022" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="207030" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="207041" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="207048" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="207049" trl="Y">
+  <value column="Name" original="Label">Étiquette</value>
+ </row>
+ <row id="207050" trl="Y">
+  <value column="Name" original="Label">Étiquette</value>
+ </row>
+ <row id="207057" trl="Y">
+  <value column="Name" original="Label">Étiquette</value>
+ </row>
+ <row id="207059" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="207067" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="207102" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="207103" trl="Y">
+  <value column="Name" original="Label Assignment">Affectation d'étiquettes</value>
+ </row>
+ <row id="207104" trl="Y">
+  <value column="Name" original="Label Assignment">Affectation d'étiquettes</value>
+ </row>
+ <row id="207105" trl="Y">
+  <value column="Name" original="Label">Étiquette</value>
+ </row>
+ <row id="207577" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="207632" trl="Y">
+  <value column="Name" original="Linked Order">Commande liée</value>
+ </row>
+ <row id="207700" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="207731" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="207741" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="207809" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="207955" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="208206" trl="Y">
+  <value column="Name" original="Department">Service</value>
+ </row>
+ <row id="208210" trl="Y">
+  <value column="Name" original="Cost Center">Centre de coûts</value>
+ </row>
+ <row id="208213" trl="Y">
+  <value column="Name" original="Department">Service</value>
+ </row>
+ <row id="208214" trl="Y">
+  <value column="Name" original="Cost Center">Centre de coûts</value>
+ </row>
+ <row id="208362" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="208529" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="208530" trl="Y">
+  <value column="Name" original="Theme Customization">Personnalisation du thème</value>
+ </row>
+ <row id="208538" trl="Y">
+  <value column="Name" original="Theme Customization">Personnalisation du thème</value>
+ </row>
+ <row id="208549" trl="Y">
+  <value column="Name" original="Department">Service</value>
+ </row>
+ <row id="208550" trl="Y">
+  <value column="Name" original="Cost Center">Centre de coûts</value>
+ </row>
+ <row id="208551" trl="Y">
+  <value column="Name" original="Department">Service</value>
+ </row>
+ <row id="208552" trl="Y">
+  <value column="Name" original="Cost Center">Centre de coûts</value>
+ </row>
+ <row id="208553" trl="Y">
+  <value column="Name" original="Department">Service</value>
+ </row>
+ <row id="208554" trl="Y">
+  <value column="Name" original="Cost Center">Centre de coûts</value>
+ </row>
+ <row id="208555" trl="Y">
+  <value column="Name" original="Department">Service</value>
+ </row>
+ <row id="208556" trl="Y">
+  <value column="Name" original="Cost Center">Centre de coûts</value>
+ </row>
+ <row id="208557" trl="Y">
+  <value column="Name" original="Department">Service</value>
+ </row>
+ <row id="208558" trl="Y">
+  <value column="Name" original="Cost Center">Centre de coûts</value>
+ </row>
+ <row id="208559" trl="Y">
+  <value column="Name" original="Department">Service</value>
+ </row>
+ <row id="208560" trl="Y">
+  <value column="Name" original="Cost Center">Centre de coûts</value>
+ </row>
+ <row id="208561" trl="Y">
+  <value column="Name" original="Department">Service</value>
+ </row>
+ <row id="208562" trl="Y">
+  <value column="Name" original="Cost Center">Centre de coûts</value>
+ </row>
+ <row id="208563" trl="Y">
+  <value column="Name" original="Department">Service</value>
+ </row>
+ <row id="208564" trl="Y">
+  <value column="Name" original="Cost Center">Centre de coûts</value>
+ </row>
+ <row id="208565" trl="Y">
+  <value column="Name" original="Department">Service</value>
+ </row>
+ <row id="208566" trl="Y">
+  <value column="Name" original="Cost Center">Centre de coûts</value>
+ </row>
+ <row id="208567" trl="Y">
+  <value column="Name" original="Department">Service</value>
+ </row>
+ <row id="208568" trl="Y">
+  <value column="Name" original="Cost Center">Centre de coûts</value>
+ </row>
+ <row id="208569" trl="Y">
+  <value column="Name" original="Department">Service</value>
+ </row>
+ <row id="208570" trl="Y">
+  <value column="Name" original="Cost Center">Centre de coûts</value>
+ </row>
+ <row id="208571" trl="Y">
+  <value column="Name" original="Cost Center">Centre de coûts</value>
+ </row>
+ <row id="208572" trl="Y">
+  <value column="Name" original="Department">Service</value>
+ </row>
+ <row id="208573" trl="Y">
+  <value column="Name" original="Cost Center">Centre de coûts</value>
+ </row>
+ <row id="208574" trl="Y">
+  <value column="Name" original="Department">Service</value>
+ </row>
+ <row id="208575" trl="Y">
+  <value column="Name" original="Cost Center">Centre de coûts</value>
+ </row>
+ <row id="208576" trl="Y">
+  <value column="Name" original="Department">Service</value>
+ </row>
+ <row id="208577" trl="Y">
+  <value column="Name" original="Cost Center">Centre de coûts</value>
+ </row>
+ <row id="208578" trl="Y">
+  <value column="Name" original="Department">Service</value>
+ </row>
+ <row id="208579" trl="Y">
+  <value column="Name" original="Cost Center">Centre de coûts</value>
+ </row>
+ <row id="208580" trl="Y">
+  <value column="Name" original="Department">Service</value>
+ </row>
+ <row id="208581" trl="Y">
+  <value column="Name" original="Cost Center">Centre de coûts</value>
+ </row>
+ <row id="208582" trl="Y">
+  <value column="Name" original="Department">Service</value>
+ </row>
+ <row id="208583" trl="Y">
+  <value column="Name" original="Cost Center">Centre de coûts</value>
+ </row>
+ <row id="208584" trl="Y">
+  <value column="Name" original="Department">Service</value>
+ </row>
+ <row id="208585" trl="Y">
+  <value column="Name" original="Cost Center">Centre de coûts</value>
+ </row>
+ <row id="208586" trl="Y">
+  <value column="Name" original="Department">Service</value>
+ </row>
+ <row id="208587" trl="Y">
+  <value column="Name" original="Cost Center">Centre de coûts</value>
+ </row>
+ <row id="208588" trl="Y">
+  <value column="Name" original="Department">Service</value>
+ </row>
+ <row id="208589" trl="Y">
+  <value column="Name" original="Cost Center">Centre de coûts</value>
+ </row>
+ <row id="208590" trl="Y">
+  <value column="Name" original="Department">Service</value>
+ </row>
+ <row id="208591" trl="Y">
+  <value column="Name" original="Cost Center">Centre de coûts</value>
+ </row>
+ <row id="208592" trl="Y">
+  <value column="Name" original="Department">Service</value>
+ </row>
+ <row id="208593" trl="Y">
+  <value column="Name" original="Cost Center">Centre de coûts</value>
+ </row>
+ <row id="208594" trl="Y">
+  <value column="Name" original="Department">Service</value>
+ </row>
+ <row id="208595" trl="Y">
+  <value column="Name" original="Cost Center">Centre de coûts</value>
+ </row>
+ <row id="208596" trl="Y">
+  <value column="Name" original="Department">Service</value>
+ </row>
+ <row id="208597" trl="Y">
+  <value column="Name" original="Cost Center">Centre de coûts</value>
+ </row>
+ <row id="208598" trl="Y">
+  <value column="Name" original="Department">Service</value>
+ </row>
+ <row id="208599" trl="Y">
+  <value column="Name" original="Cost Center">Centre de coûts</value>
+ </row>
+ <row id="208600" trl="Y">
+  <value column="Name" original="Department">Service</value>
+ </row>
+ <row id="208601" trl="Y">
+  <value column="Name" original="Cost Center">Centre de coûts</value>
+ </row>
+ <row id="208602" trl="Y">
+  <value column="Name" original="Department">Service</value>
+ </row>
+ <row id="208603" trl="Y">
+  <value column="Name" original="Cost Center">Centre de coûts</value>
+ </row>
+ <row id="208604" trl="Y">
+  <value column="Name" original="Department">Service</value>
+ </row>
+ <row id="208605" trl="Y">
+  <value column="Name" original="Cost Center">Centre de coûts</value>
+ </row>
+ <row id="208606" trl="Y">
+  <value column="Name" original="Department">Service</value>
+ </row>
+ <row id="208607" trl="Y">
+  <value column="Name" original="Cost Center">Centre de coûts</value>
+ </row>
+ <row id="208608" trl="Y">
+  <value column="Name" original="Department">Service</value>
+ </row>
+ <row id="208609" trl="Y">
+  <value column="Name" original="Cost Center">Centre de coûts</value>
+ </row>
+ <row id="208610" trl="Y">
+  <value column="Name" original="Department">Service</value>
+ </row>
+ <row id="208611" trl="Y">
+  <value column="Name" original="Cost Center">Centre de coûts</value>
+ </row>
+ <row id="208612" trl="Y">
+  <value column="Name" original="Department">Service</value>
+ </row>
+ <row id="208613" trl="Y">
+  <value column="Name" original="Cost Center">Centre de coûts</value>
+ </row>
+ <row id="208614" trl="Y">
+  <value column="Name" original="Department">Service</value>
+ </row>
+ <row id="208615" trl="Y">
+  <value column="Name" original="Cost Center">Centre de coûts</value>
+ </row>
+ <row id="208616" trl="Y">
+  <value column="Name" original="Department">Service</value>
+ </row>
+ <row id="208617" trl="Y">
+  <value column="Name" original="Cost Center">Centre de coûts</value>
+ </row>
+ <row id="208618" trl="Y">
+  <value column="Name" original="Department">Service</value>
+ </row>
+ <row id="208619" trl="Y">
+  <value column="Name" original="Cost Center">Centre de coûts</value>
+ </row>
+ <row id="208620" trl="Y">
+  <value column="Name" original="Department">Service</value>
+ </row>
+ <row id="208621" trl="Y">
+  <value column="Name" original="Cost Center">Centre de coûts</value>
+ </row>
+ <row id="208622" trl="Y">
+  <value column="Name" original="Department">Service</value>
+ </row>
+ <row id="208623" trl="Y">
+  <value column="Name" original="Cost Center">Centre de coûts</value>
+ </row>
+ <row id="208624" trl="Y">
+  <value column="Name" original="Department">Service</value>
+ </row>
+ <row id="208625" trl="Y">
+  <value column="Name" original="Cost Center">Centre de coûts</value>
+ </row>
+ <row id="208626" trl="Y">
+  <value column="Name" original="Department">Service</value>
+ </row>
+ <row id="208627" trl="Y">
+  <value column="Name" original="Cost Center">Centre de coûts</value>
+ </row>
+ <row id="208628" trl="Y">
+  <value column="Name" original="Department">Service</value>
+ </row>
+ <row id="208629" trl="Y">
+  <value column="Name" original="Cost Center">Centre de coûts</value>
+ </row>
+ <row id="208630" trl="Y">
+  <value column="Name" original="Department">Service</value>
+ </row>
+ <row id="208631" trl="Y">
+  <value column="Name" original="Cost Center">Centre de coûts</value>
+ </row>
+ <row id="208632" trl="Y">
+  <value column="Name" original="Department">Service</value>
+ </row>
+ <row id="208633" trl="Y">
+  <value column="Name" original="Cost Center">Centre de coûts</value>
+ </row>
+ <row id="208634" trl="Y">
+  <value column="Name" original="Department">Service</value>
+ </row>
+ <row id="208635" trl="Y">
+  <value column="Name" original="Cost Center">Centre de coûts</value>
+ </row>
+ <row id="208636" trl="Y">
+  <value column="Name" original="Department">Service</value>
+ </row>
+ <row id="208637" trl="Y">
+  <value column="Name" original="Cost Center">Centre de coûts</value>
+ </row>
+ <row id="208638" trl="Y">
+  <value column="Name" original="Department">Service</value>
+ </row>
+ <row id="208639" trl="Y">
+  <value column="Name" original="Cost Center">Centre de coûts</value>
+ </row>
+ <row id="208640" trl="Y">
+  <value column="Name" original="Department">Service</value>
+ </row>
+ <row id="208641" trl="Y">
+  <value column="Name" original="Cost Center">Centre de coûts</value>
+ </row>
+ <row id="208642" trl="Y">
+  <value column="Name" original="Department">Service</value>
+ </row>
+ <row id="208643" trl="Y">
+  <value column="Name" original="Cost Center">Centre de coûts</value>
+ </row>
+ <row id="208644" trl="Y">
+  <value column="Name" original="Department">Service</value>
+ </row>
+ <row id="208703" trl="Y">
+  <value column="Name" original="Department">Service</value>
+ </row>
+ <row id="208704" trl="Y">
+  <value column="Name" original="Cost Center">Centre de coûts</value>
+ </row>
+ <row id="208779" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="208853" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="208971" trl="Y">
+  <value column="Name" original="Document Status">Statut des documents</value>
+ </row>
+ <row id="1000006" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="7300016" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+ <row id="7820006" trl="Y">
+  <value column="Name" original="Description">Description</value>
+ </row>
+</idempiereTrl>

@@ -1,0 +1,155 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!--ERP screen names (AD_Window, by id). ERP machine source (not a published language pack) — translated for this app by Claude (Anthropic), 2026-11, moved from erp/i18n/machine/ms_MY.json {English: text}, applied by build_i18n.py machine_fill by erp/tools/trl_move_machine_2026-11-18.py (TRL_TRILOGY_STANDARD.md T5a); no human review.-->
+<!--<!DOCTYPE idempiereTrl PUBLIC "-//iDempiere//DTD iDempiere Translation 1.0//EN" "https://raw.githubusercontent.com/idempiere/idempiere/refs/heads/master/utils_dev/trl/idempiereTrl.dtd">-->
+<idempiereTrl language="ms_MY" table="AD_Window">
+ <row id="109" trl="Y">
+  <value column="Name" original="Tenant">Penyewa</value>
+ </row>
+ <row id="132" trl="Y">
+  <value column="Name" original="GL Journal Batch">Kelompok Jurnal Lejar Am</value>
+ </row>
+ <row id="147" trl="Y">
+  <value column="Name" original="Invoice Schedule">Jadual Invois</value>
+ </row>
+ <row id="162" trl="Y">
+  <value column="Name" original="Accounting Fact Details">Butiran Fakta Perakaunan</value>
+ </row>
+ <row id="168" trl="Y">
+  <value column="Name" original="Physical Inventory">Inventori Fizikal</value>
+ </row>
+ <row id="178" trl="Y">
+  <value column="Name" original="Greeting">Ucapan Sapaan</value>
+ </row>
+ <row id="180" trl="Y">
+  <value column="Name" original="Report View">Paparan Laporan</value>
+ </row>
+ <row id="194" trl="Y">
+  <value column="Name" original="Bank/Cash Statement">Penyata Bank/Tunai</value>
+ </row>
+ <row id="204" trl="Y">
+  <value column="Name" original="Mail Template">Templat Mel</value>
+ </row>
+ <row id="245" trl="Y">
+  <value column="Name" original="Interest Area">Bidang Minat</value>
+ </row>
+ <row id="255" trl="Y">
+  <value column="Name" original="Accounting Fact Balances">Baki Fakta Perakaunan</value>
+ </row>
+ <row id="282" trl="Y">
+  <value column="Name" original="Freight Category">Kategori Tambang</value>
+ </row>
+ <row id="314" trl="Y">
+  <value column="Name" original="RfQ Topic">Topik RfQ</value>
+ </row>
+ <row id="320" trl="Y">
+  <value column="Name" original="Customer RMA">RMA Pelanggan</value>
+ </row>
+ <row id="322" trl="Y">
+  <value column="Name" original="Requisition">Permohonan Pembelian</value>
+ </row>
+ <row id="324" trl="Y">
+  <value column="Name" original="RfQ Response">Jawapan RfQ</value>
+ </row>
+ <row id="331" trl="Y">
+  <value column="Name" original="RMA Type">Jenis RMA</value>
+ </row>
+ <row id="342" trl="Y">
+  <value column="Name" original="Invoice Batch">Kelompok Invois</value>
+ </row>
+ <row id="358" trl="Y">
+  <value column="Name" original="Attribute Set Instance">Contoh Set Atribut</value>
+ </row>
+ <row id="363" trl="Y">
+  <value column="Name" original="System Issue Report">Laporan Isu Sistem</value>
+ </row>
+ <row id="53006" trl="Y">
+  <value column="Name" original="Bill of Materials and Formula">Bil Bahan dan Formula</value>
+ </row>
+ <row id="53097" trl="Y">
+  <value column="Name" original="Customer Return">Pulangan Pelanggan</value>
+ </row>
+ <row id="53098" trl="Y">
+  <value column="Name" original="Return to Vendor">Pulangan kepada Pembekal</value>
+ </row>
+ <row id="53099" trl="Y">
+  <value column="Name" original="Vendor RMA">RMA Pembekal</value>
+ </row>
+ <row id="53101" trl="Y">
+  <value column="Name" original="Order Source">Sumber Pesanan</value>
+ </row>
+ <row id="53102" trl="Y">
+  <value column="Name" original="Relation Type">Jenis Hubungan</value>
+ </row>
+ <row id="53127" trl="Y">
+  <value column="Name" original="Production (Single Product)">Pengeluaran (Produk Tunggal)</value>
+ </row>
+ <row id="53134" trl="Y">
+  <value column="Name" original="Cash Plan">Pelan Tunai</value>
+ </row>
+ <row id="53141" trl="Y">
+  <value column="Name" original="Maintenance Request">Permintaan Penyelenggaraan</value>
+ </row>
+ <row id="53149" trl="Y">
+  <value column="Name" original="Quality Test">Ujian Kualiti</value>
+ </row>
+ <row id="53150" trl="Y">
+  <value column="Name" original="Part Type">Jenis Bahagian</value>
+ </row>
+ <row id="200005" trl="Y">
+  <value column="Name" original="GL Journal">Jurnal Lejar Am</value>
+ </row>
+ <row id="200008" trl="Y">
+  <value column="Name" original="POS Payment">Bayaran POS</value>
+ </row>
+ <row id="200013" trl="Y">
+  <value column="Name" original="GL Journal Generator">Penjana Jurnal Lejar Am</value>
+ </row>
+ <row id="200017" trl="Y">
+  <value column="Name" original="Payment Transaction">Transaksi Bayaran</value>
+ </row>
+ <row id="200018" trl="Y">
+  <value column="Name" original="Online Transaction History">Sejarah Transaksi Dalam Talian</value>
+ </row>
+ <row id="200031" trl="Y">
+  <value column="Name" original="Payments into Batch">Bayaran ke Kelompok</value>
+ </row>
+ <row id="200034" trl="Y">
+  <value column="Name" original="Context Help">Bantuan Konteks</value>
+ </row>
+ <row id="200043" trl="Y">
+  <value column="Name" original="Cost Adjustment">Pelarasan Kos</value>
+ </row>
+ <row id="200090" trl="Y">
+  <value column="Name" original="Document Status">Status Dokumen</value>
+ </row>
+ <row id="200095" trl="Y">
+  <value column="Name" original="Process Customization">Penyesuaian Proses</value>
+ </row>
+ <row id="200105" trl="Y">
+  <value column="Name" original="Bank/Cash Transfer">Pindahan Bank/Tunai</value>
+ </row>
+ <row id="200110" trl="Y">
+  <value column="Name" original="Info Window Customization">Penyesuaian Tetingkap Info</value>
+ </row>
+ <row id="200120" trl="Y">
+  <value column="Name" original="Tenant level messages">Mesej peringkat penyewa</value>
+ </row>
+ <row id="200128" trl="Y">
+  <value column="Name" original="Label Category">Kategori Label</value>
+ </row>
+ <row id="200129" trl="Y">
+  <value column="Name" original="Label">Label</value>
+ </row>
+ <row id="200130" trl="Y">
+  <value column="Name" original="Label Assignment">Penetapan Label</value>
+ </row>
+ <row id="200148" trl="Y">
+  <value column="Name" original="Department">Jabatan</value>
+ </row>
+ <row id="200149" trl="Y">
+  <value column="Name" original="Cost Center">Pusat Kos</value>
+ </row>
+ <row id="200151" trl="Y">
+  <value column="Name" original="Theme Customization">Penyesuaian Tema</value>
+ </row>
+</idempiereTrl>
