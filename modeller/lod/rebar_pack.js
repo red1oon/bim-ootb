@@ -13,10 +13,11 @@
 // OPTS   {breakCover: bool (the red control: bars placed with no cover, INSIDE must FAIL), log: fn(line)}
 // OUTPUT {parts:[{guid, cls, name, storey, disc, building, tris:Float64Array, parents:[guid], rgba}], changes:[{kind,guid,cls,host,rule,detail}], setDims, audit, stats}
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory();
-  else root.LodRebarPack = factory();
-})(typeof self !== 'undefined' ? self : this, function () {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./lod_registry.js'));
+  else root.LodRebarPack = factory(root.LodRegistry);
+})(typeof self !== 'undefined' ? self : this, function (REG) {
   'use strict';
+  var K = REG.kit;   // the yield kit (lod_registry.js, P7)
   var IN = 0.0254;   // inches -> metres, exact by definition
   var RB_RGBA = '0.45,0.20,0.12,1.000';
 
@@ -99,7 +100,8 @@
   }
   function flat(tris) { var o = new Float64Array(tris.length * 9), i = 0; tris.forEach(function (t) { for (var k = 0; k < 3; k++) { o[i++] = t[k][0]; o[i++] = t[k][1]; o[i++] = t[k][2]; } }); return o; }
 
-  function run(inp, RULES, opts) {
+  function run(inp, RULES, opts) { return K.drain(runSteps(inp, RULES, opts)); }
+  function* runSteps(inp, RULES, opts) {
     opts = opts || {}; var LOG = opts.log || function () { };
     var rv = function (k) { if (!RULES[k]) throw new Error('rule row missing: ' + k); return RULES[k].value; };
     var SIDES = parseInt(rv('bar_sides'), 10), G = make(SIDES);
@@ -121,15 +123,15 @@
     var F_IDS = byClass('IfcFooting').filter(function (g) { return sched(g).Sched_Footing_L_Bar !== undefined; });
     var C_IDS = byClass('IfcColumn').filter(function (g) { return sched(g).Sched_Column_Main_Bar !== undefined; });
     var BOX = {}, refused = {}, judged = 0;
-    F_IDS.concat(C_IDS).sort().forEach(function (g) {
+    yield* K.each(F_IDS.concat(C_IDS).sort(), function (g) {
       var V = inp.world(g); if (V && V.length) judged++;   // judged = scheduled elements whose mesh the run can read
       if (!V || !V.length || !isBox(V)) { refused[g] = 'mesh is not an axis-aligned box'; return; }
       BOX[g] = aabb(V);
-    });
+    }, 'Rebar: reading element');
     LOG('§LODUP_REBAR_INPUT footings_with_schedule=' + F_IDS.length + ' column_pieces_with_schedule=' + C_IDS.length + ' boxes_ok=' + Object.keys(BOX).length + ' refused=' + Object.keys(refused).length);
     var statedFooting = function (g) { var s = sched(g); return [parseDiaSpacing(s.Sched_Footing_L_Bar), parseDiaSpacing(s.Sched_Footing_S_Bar)]; };
     var nAddedF = 0, fCounts = {}, nFootBars = 0, fSets = 0;
-    F_IDS.slice().sort().forEach(function (g) {
+    yield* K.each(F_IDS.slice().sort(), function (g) {
       if (refused[g]) { change('REFUSED', g, META[g].cls, g, 'Footing mesh', refused[g]); return; }
       var s = sched(g), LS = statedFooting(g), L = LS[0], Sb = LS[1];
       if (!L || !Sb) { change('REFUSED', g, META[g].cls, g, 'Footing mesh', 'could not parse stated bars L="' + S(s.Sched_Footing_L_Bar) + '" S="' + S(s.Sched_Footing_S_Bar) + '"'); return; }
@@ -160,24 +162,24 @@
           k + ': stated "' + st + '" (' + S(s.SchedSource_footing) + ') | ' + n + ' bars (spec formula alone gives ' + nSpec + ') | each ' + (blen * 1000).toFixed(1) + ' mm long, runs along ' + 'xy'[axRun] + ' | centred in the cover-bounded span (margin ' + (marg * 1000).toFixed(2) + ' mm beyond cover) | storey ' + META[g].storey);
         fCounts[g + '|' + k] = [n, nSpec]; nAddedF++; nFootBars += n;
       });
-    });
+    }, 'Rebar: footing');
     fSets = nAddedF;
     LOG('§LODUP_REBAR_FOOTING sets_added=' + nAddedF + ' footings=' + (F_IDS.length - F_IDS.filter(function (g) { return refused[g]; }).length) + ' bars=' + nFootBars);
 
     // ---- columns: group the pieces into drawn columns by plan position
     var groups = [];
-    C_IDS.slice().sort().forEach(function (g) {
+    yield* K.each(C_IDS.slice().sort(), function (g) {
       if (refused[g]) { change('REFUSED', g, 'IfcColumn', g, 'Column bars', refused[g]); return; }
       var lo = BOX[g][0], hi = BOX[g][1], c = [(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2], hit = false;
       for (var i = 0; i < groups.length; i++) { var Gi = groups[i]; if (Math.abs(Gi.c[0] - c[0]) <= 0.002 && Math.abs(Gi.c[1] - c[1]) <= 0.002) { Gi.pieces.push(g); hit = true; break; } }
       if (!hit) groups.push({ c: c, pieces: [g] });
-    });
+    }, 'Rebar: column piece');
     var sizes = {}; groups.forEach(function (Gr) { sizes[Gr.pieces.length] = (sizes[Gr.pieces.length] || 0) + 1; });
     var sizeKeys = Object.keys(sizes).sort(function (a, b) { return a - b; });
     LOG('§LODUP_REBAR_COLGROUP drawn_columns=' + groups.length + ' pieces_per_column=' + JSON.stringify(sizes) + ' -> ' + (sizeKeys.length === 1 && sizeKeys[0] === '3' ? 'PASS' : 'FAIL'));
     var FOOT = {}; F_IDS.forEach(function (g) { if (BOX[g]) FOOT[g] = BOX[g]; });
     var nMain = 0, nTieA = 0, nTieB = 0, zoneGov = {}, nCols = 0, sampleL = null, sampleL6 = null;
-    groups.slice().sort(function (p, q) { return p.c[0] - q.c[0] || p.c[1] - q.c[1]; }).forEach(function (Gr) {
+    yield* K.each(groups.slice().sort(function (p, q) { return p.c[0] - q.c[0] || p.c[1] - q.c[1]; }), function (Gr) {
       var pcs = Gr.pieces.slice().sort(function (a, b) { return (BOX[a][0][2] - BOX[b][0][2]) || (a < b ? -1 : a > b ? 1 : 0); }), host0 = pcs[0];
       var refuse = function (why) { pcs.forEach(function (g) { change('REFUSED', g, 'IfcColumn', host0, 'Column bars', why); }); };
       if (pcs.length !== 3) { refuse(pcs.length + ' pieces at this plan position, expected 3'); return; }
@@ -239,7 +241,7 @@
         });
       });
       nCols++; if (sampleL === null) { sampleL = H; sampleL6 = zoneL6; }
-    });
+    }, 'Rebar: column');
     LOG('§LODUP_REBAR_ZONE columns=' + nCols + ' governs=' + JSON.stringify(zoneGov) + ' (' + ZLABEL + '=' + ZONE_STATED.toFixed(4) + ' m; L/6 per column logged in the change list)' + (nCols ? ' sample_L=' + sampleL.toFixed(4) + ' L/6=' + sampleL6.toFixed(4) : ''));
     LOG('§LODUP_REBAR_ASSUMED tie_hooks=' + rv('tie_hooks_modelled') + ' cross_ties=' + rv('cross_ties_modelled') + ' laps=' + rv('laps_modelled') + ' stock_checked_bars=' + (nAddedF + nMain));
 
@@ -263,7 +265,7 @@
     var n = 0; Object.keys(meta).forEach(function (g) { var c = meta[g].cls, s = sched[g]; if (!s) return; if ((c === 'IfcFooting' && s.Sched_Footing_L_Bar !== undefined) || (c === 'IfcColumn' && s.Sched_Column_Main_Bar !== undefined)) n++; });
     return n;
   }
-  var API = { id: 'rebar', label: 'Rebar (from schedules)', rulesFile: 'rules/rebar_defaults.json', run: run,
+  var API = { id: 'rebar', label: 'Rebar (from schedules)', rulesFile: 'rules/rebar_defaults.json', run: run, runSteps: runSteps,
     appliesTo: function (inp, rows) { if (!rows) return appliesTo(inp.meta, inp.sched || {}); try { return run(inp, rows, { log: function () { } }).stats.judged; } catch (e) { return 0; } },   // with rule rows: what the run judges (read-only dry run)
     fmtG: fmtG, parse: { diaSpacing: parseDiaSpacing, main: parseMain }, RB_RGBA: RB_RGBA, IN: IN, make: make };   // make(SIDES) -> {prism, tieLoop}: the bar and tie geometry, reused by beambar_pack.js (P6)
   if (typeof window !== 'undefined' && window.LodRegistry) window.LodRegistry.register(API);   // browser: the pack registers itself; adding a pack needs no dialog change

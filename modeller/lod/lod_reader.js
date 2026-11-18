@@ -87,23 +87,26 @@
       }
       stM.reset(); return out;
     }
-    function boxes() {
-      if (boxC) return boxC; boxC = {}; if (!canWorld) return boxC;
-      var st2 = db.prepare('SELECT i.guid, c.vertices, t.center_x, t.center_y, t.center_z, t.rotation_x, t.rotation_y, t.rotation_z FROM element_instances i JOIN ' + gtbl + ' c USING(geometry_hash) JOIN element_transforms t USING(guid) ORDER BY i.guid');
+    // boxesSteps(kit): the same read as a generator (P7): after every element, when the kit's time slice is used up it yields, so the first survey of a big model does not hold the page for the whole read.
+    // boxes() drains it with no kit (never yields): the same loop, the same order, the same result. The memo is set only when the read completes.
+    function* boxesSteps(kit) {
+      if (boxC) return boxC; var tmp = {}; if (!canWorld) { boxC = tmp; return boxC; }
+      var st2 = db.prepare('SELECT i.guid, c.vertices, t.center_x, t.center_y, t.center_z, t.rotation_x, t.rotation_y, t.rotation_z FROM element_instances i JOIN ' + gtbl + ' c USING(geometry_hash) JOIN element_transforms t USING(guid) ORDER BY i.guid'), n = 0;
       while (st2.step()) {
         var row = st2.get(), b = row[1], f = new Float32Array(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength)); if (!f.length) continue;
         var W = placeAll(f, [0, row[2], row[3], row[4]], row[5] || 0, row[6] || 0, row[7] || 0), lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
         for (var i = 0; i < W.length; i += 3) for (var a = 0; a < 3; a++) { var v = W[i + a]; if (v < lo[a]) lo[a] = v; if (v > hi[a]) hi[a] = v; }
-        boxC[row[0]] = [lo, hi];
+        tmp[row[0]] = [lo, hi]; if (kit && kit.due()) yield kit.state.prog;
       }
-      st2.free(); return boxC;
+      st2.free(); boxC = tmp; return boxC;
     }
+    function boxes() { var g = boxesSteps(null), r = g.next(); while (!r.done) r = g.next(); return r.value; }
     // meta.rgba (host colour), read apart so a DB without the column still opens
     if (has(db, 'elements_meta')) { try { var rc = db.exec('SELECT guid, material_rgba FROM elements_meta'); if (rc.length) rc[0].values.forEach(function (v) { if (meta[v[0]]) meta[v[0]].rgba = v[1]; }); } catch (e) { /* no colour column: parts take the pack default */ } }
     // meta.mat = the stated material (elements_meta.material_name), meta.layerMats = the materials of its layer set: what a material gate (e.g. the weld pack's steel rule) reads
     if (has(db, 'elements_meta')) { try { var rm = db.exec('SELECT guid, material_name FROM elements_meta'); if (rm.length) rm[0].values.forEach(function (v) { if (meta[v[0]]) meta[v[0]].mat = v[1]; }); } catch (e) { /* no material column */ } }
     if (has(db, 'rel_material_layer_set') && has(db, 'material_layers')) { try { var rl = db.exec('SELECT r.element_guid, l.material_name FROM rel_material_layer_set r JOIN material_layers l ON l.layer_set_name = r.layer_set_name ORDER BY r.element_guid, l.sequence'); if (rl.length) rl[0].values.forEach(function (v) { if (meta[v[0]]) (meta[v[0]].layerMats = meta[v[0]].layerMats || []).push(v[1]); }); } catch (e) { /* no layer materials */ } }
-    return { meta: meta, sched: sched, world: world, mesh: worldMesh, boxes: boxes, src: db, canWorld: canWorld, layers: layerApi(db) };
+    return { meta: meta, sched: sched, world: world, mesh: worldMesh, boxes: boxes, boxesSteps: boxesSteps, src: db, canWorld: canWorld, layers: layerApi(db) };
   }
   return { fromDb: fromDb, has: has };
 });

@@ -31,5 +31,36 @@
     });
   }
   function clear() { packs = {}; order = []; }
-  return { register: register, list: list, get: get, describe: describe, clear: clear };
+
+  // ---- P7 yield kit (prompts/MODELLER_LOD_UPGRADE_PILL.md "P7 SPEC" item 2). A pack's run is written ONCE as a generator, runSteps(inp, rows, opts); run() = drain(runSteps()) so the node witnesses,
+  // appliesTo() dry runs and the browser all execute the SAME code in the same order (byte-identical results). The loops of a run are written `yield* kit.each(list, fn)`: fn is the old forEach callback
+  // (its `return` is still a continue); after each item, if the time slice is used up, the generator yields {label, done, total} and the browser driver gives the page a turn (the §LOD400-STALL
+  // chunk-yield pattern of bonsai_kernel.js / kernel_ops.js: a slice, then a macrotask). In drain mode the deadline is Infinity, so nothing ever yields and the order of work is unchanged.
+  var now = function () { return (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now(); };
+  var Y = { deadline: Infinity, prog: null, maxSlice: 0, yields: 0, sliceStart: 0 };
+  function due() { return now() >= Y.deadline; }
+  function* each(list, fn, label) {   // label (outer loops only) sets the progress line; an inner loop without one yields the current progress
+    var n = list.length, i;
+    for (i = 0; i < n; i++) {
+      if (label) Y.prog = { label: label, done: i, total: n };
+      fn(list[i], i, list);
+      if (now() >= Y.deadline) { if (label) Y.prog = { label: label, done: i + 1, total: n }; yield Y.prog; }
+    }
+  }
+  function* maybe() { if (now() >= Y.deadline) yield Y.prog; }   // a yield point inside a long loop body that is not an `each` loop
+  function drain(gen) { var saved = Y.deadline; Y.deadline = Infinity; try { var r = gen.next(); while (!r.done) r = gen.next(); return r.value; } finally { Y.deadline = saved; } }
+  // the browser driver: runs the generator in slices of budgetMs, then awaits a macrotask so the page can paint / handle input. onProgress(prog, stats) after every slice; returns the generator's result.
+  // stats = {slices, maxSliceMs, totalMs}: the longest single slice is the longest main-thread stretch this run held the page (a slice ends at the first item boundary after the budget).
+  async function drive(gen, o) {
+    o = o || {}; var budget = o.budgetMs || 25, wait = o.wait || function () { return new Promise(function (r) { setTimeout(r, 0); }); }, st = { slices: 0, maxSliceMs: 0, totalMs: 0 }, t00 = now(), saved = Y.deadline;
+    try {
+      for (;;) {
+        var t0 = now(); Y.deadline = t0 + budget; var r = gen.next(), dt = now() - t0; st.slices++; if (dt > st.maxSliceMs) st.maxSliceMs = dt;
+        if (r.done) { st.totalMs = now() - t00; return { value: r.value, stats: st }; }
+        if (o.onProgress) o.onProgress(r.value, st); await wait();
+      }
+    } finally { Y.deadline = saved; }
+  }
+  var kit = { each: each, maybe: maybe, drain: drain, drive: drive, due: due, state: Y };
+  return { register: register, list: list, get: get, describe: describe, clear: clear, kit: kit };
 });
