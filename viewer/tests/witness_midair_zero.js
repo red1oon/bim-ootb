@@ -116,7 +116,19 @@ const tmSrc = __readSrc(path.join(__dirname, '..', 'time_machine.js'), 'utf8');
 
 let pass = 0, fail = 0;
 function assert(cond, msg) { if (cond) { pass++; console.log('  PASS ' + msg); } else { fail++; console.log('  FAIL ' + msg); } }
-function finish() { console.log('\n§MIDAIR_ZERO_SUMMARY pass=' + pass + ' fail=' + fail); process.exit(fail ? 1 : 0); }
+// §Q.22.2 item 2 (bim-compiler prompts/4D_MODEL_INTEGRITY.md): a building with no entry in baselines/midair.json is a dropped-in
+// model — its locked claims are REPORTED (NOLOCK, with the measured value), never failed "locked at undefined"; fail=0 with
+// nolock>0 exits 2 (INCONCLUSIVE). The non-lock claims (W-MZ-2n, -4b, -7) are still judged on it.
+let nolock = 0; const nolockBlds = new Set();
+function lockedEq(lockTable, bld, got, msg) {
+  if (typeof lockTable[bld] !== 'number') { nolock++; nolockBlds.add(bld); console.log('  NOLOCK ' + msg + ' got=' + got + ' — no lock for this building: reported, not judged'); return; }
+  assert(got === lockTable[bld], msg);
+}
+function finish() {
+  console.log('\n§MIDAIR_ZERO_SUMMARY pass=' + pass + ' fail=' + fail + ' nolock=' + nolock +
+    (nolock ? ' — locked claims INCONCLUSIVE on ' + [...nolockBlds].join(',') : ''));
+  process.exit(fail ? 1 : (nolock ? 2 : 0));
+}
 
 function sliceFn(src, name, which, optional) {
   let from = 0;
@@ -568,11 +580,11 @@ function census(items) {
         ' embBranchFired=' + (emb > 0 ? 'YES' : 'no (0 embedded among midair here — flag CAN fire: clause is the judge\'s own, exercised fleet-wide)') +
         ' lateBranchFired=' + (late > 0 ? 'YES' : 'no') +
         ' — profiled MUST equal the locked baseline or the assert below goes red');
-      assert(profTotal === CPM_MIDAIR_BASELINE[bld],
+      lockedEq(CPM_MIDAIR_BASELINE, bld, profTotal,
         'W-S51d ' + bld + ' residue profile covers EXACTLY the locked midair population (profiled=' + profTotal +
         ' locked=' + CPM_MIDAIR_BASELINE[bld] + ') — a profile over a different population than the lock is the §S46 subset trap');
     }
-    assert(floatPost === CPM_FLOAT_AFTER_BASELINE[bld],
+    lockedEq(CPM_FLOAT_AFTER_BASELINE, bld, floatPost,
       'W-MZ-8 ' + bld + ' the measured TRADE is locked at ' + CPM_FLOAT_AFTER_BASELINE[bld] + ' (got ' + floatPost +
       '; auditFloating ' + floatPre + ' -> ' + floatPost + ') — CPM authoring can leave a dependent starting ' +
       'before its own support FINISHES (auditFloating\'s measure), a DIFFERENT invariant than midair (starting ' +
@@ -602,10 +614,10 @@ function census(items) {
       assert(nsOnlyW + nsOnlyE + coOnlyW + coOnlyE === 0,
         'W-MZ-2n ' + bld + ' the two named sets re-derived by this witness equal the engine\'s, member for member (struct-no-support ' +
         after.structNoSup.size + ' vs ' + engNS.size + ', contact-only ' + after.contactOnly.size + ' vs ' + engCO.size + ')');
-      assert(unnamed === CPM_MIDAIR_UNNAMED_BASELINE[bld],
+      lockedEq(CPM_MIDAIR_UNNAMED_BASELINE, bld, unnamed,
         'W-MZ-2u ' + bld + ' census midair OUTSIDE the named sets (struct-no-support, contact-only, ground seed) locked at ' + CPM_MIDAIR_UNNAMED_BASELINE[bld] + ' (got ' + unnamed + ')');
     }
-    assert(after.midair === CPM_MIDAIR_BASELINE[bld],
+    lockedEq(CPM_MIDAIR_BASELINE, bld, after.midair,
       'W-MZ-2 ' + bld + ' strict midair locked at ' + CPM_MIDAIR_BASELINE[bld] + ' (got ' + after.midair +
       (after.worst.length ? ', worst ' + after.worst[0].cls + ' start=' + after.worst[0].start.toFixed(1) +
       'd firstSupport=' + after.worst[0].sup.toFixed(1) + 'd' : '') + ') — every building runs the graph engine (§GRAPH_EVERYWHERE); the split by named set is on §MZ_SPLIT');
@@ -622,7 +634,7 @@ function census(items) {
         ', the moved element itself flagged=' + caught + ', it is ' + (probeNamed ? 'a NAMED element' : 'UNNAMED — it raises the locked unnamed count') + ')');
       it.s = keepS; it.e = keepE;
     } else { assert(false, 'W-MZ-7 ' + bld + ' no probe candidate found — census produced nothing to test with'); }
-    assert(after.orphan === CPM_ORPHAN_BASELINE[bld],
+    lockedEq(CPM_ORPHAN_BASELINE, bld, after.orphan,
       'W-MZ-4 ' + bld + ' orphans (NOT ground-connected — unreachable from classified ground along the support chain, §GROUND_CONNECTED) locked at ' +
       CPM_ORPHAN_BASELINE[bld] + ' (got ' + after.orphan + ', seedMode=' + after.seedMode +
       ') — an extraction/classification limit, reported never gated, purely geometric (same either display-authoring path)');

@@ -309,7 +309,8 @@ function build(bld, force, want, hooks) {   // hooks.onDb(db, res) — READ-ONLY
         db.close();
       } catch (e) { err = e; }
       console.log = _l; console.warn = _w;
-      if (err || !sched) { console.log('§CACHE_FAIL ' + bld + ' ' + (err ? err.message : 'no displaySchedule')); return null; }
+      if (err || !sched) { console.log('§CACHE_FAIL ' + bld + ' ' + (err ? err.message : 'no displaySchedule') +
+        (err && /no such column/.test(err.message) ? ' — old extraction schema: re-extract this model' : '')); return null; }
       const flat = {};
       for (const g in sched) flat[g] = { s: sched[g].start, e: sched[g].end };
       fs.mkdirSync(d, { recursive: true });
@@ -354,6 +355,13 @@ if (require.main === module) {
     process.exit(0);
   }
   const list = args.filter(a => a[0] !== '-');
-  (async () => { for (const b of (list.length ? list : ['Duplex', 'HHS_Office_Federated', 'Hospital', 'Terminal'])) await build(b, force); })()
+  // §CACHE_EXIT (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.22.2 item 1): a building that did not build is a non-zero exit,
+  // never only a log line — 12 models ended on §CACHE_FAIL and this script still exited 0 (§Q.21.2).
+  (async () => {
+    const failed = []; let built = 0;
+    for (const b of (list.length ? list : ['Duplex', 'HHS_Office_Federated', 'Hospital', 'Terminal'])) { if (await build(b, force)) built++; else failed.push(b); }
+    console.log('§CACHE_EXIT built=' + built + ' failed=' + failed.length + (failed.length ? ' [' + failed.join(',') + ']' : ''));
+    if (failed.length) process.exitCode = 1;
+  })()
     .catch(e => { console.error('§CACHE_ERROR ' + (e && e.stack || e)); process.exit(2); });
 }
