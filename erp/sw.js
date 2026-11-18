@@ -12,7 +12,7 @@
 // bump (skipWaiting+clients.claim precache the new shell), so SWR strands a user at most one load post-deploy.
 // v1100 (2026-11-17) §19.5 (bim-compiler VOCAB_MESSAGE_CATALOG.md): the How To box's "Did you mean" line — help_search.js?v=4, common/help/help_dym.js?v=1, common/door/assist_core.js?v=1, chrome.json help.dym
 // v1101 (2026-11-17) §19.6 (bim-compiler VOCAB_MESSAGE_CATALOG.md): the How To box's `#<number>` and New — common/help/help_grammar.js?v=1, help_actions.js?v=1, chrome.json help.doc.*/help.reserved
-const CACHE_VERSION = 'v1115';   // bump on each deploy; detail goes in the commit message. History to v1063: SW_VERSION_HISTORY.md
+const CACHE_VERSION = 'v1116';   // bump on each deploy; detail goes in the commit message. History to v1063: SW_VERSION_HISTORY.md
 // v810 (2026-10-03) UI locales: a machine-catalogue entry gets the same fmt as a pack hit (de/ms login title lost its
 //   'Kernel-ERP — ' prefix — found by fetching the live page, ERP_UI_LOCALES.md §L7).
 // v809 (2026-10-03) UI locales (bim-compiler prompts/ERP_UI_LOCALES.md, W-ERP-I18N): erp_i18n.js + i18n/chrome.json +
@@ -88,7 +88,7 @@ const PRECACHE_ASSETS = [
   'ad_official_indexes.js',   // HS3: legacy's official dictionary indexes (generated list)
   'ad_ddl_notnull.js',   // CAPEX_DASHBOARD §5.73 G2: legacy's NOT NULL columns (generated list), read by model_layer.js notNullError
   'ad_index_overlay.js',
-  'ad_docvalue_wf.js', 'ad_docvalue_overlay.js', 'ad_taxcat_overlay.js', 'ad_hba_seed_overlay.js',   // W-DOCVALUE-WF: document-value workflow rows, boot overlay outside the team base hash   // HS3: ... created as a boot overlay (window.AdIndexOverlay), outside the team base hash
+  'ad_ctxhelp_rows.js', 'ad_ctxhelp_overlay.js', 'ad_docvalue_wf.js', 'ad_docvalue_overlay.js', 'ad_taxcat_overlay.js', 'ad_hba_seed_overlay.js',   // W-DOCVALUE-WF: document-value workflow rows, boot overlay outside the team base hash   // HS3: ... created as a boot overlay (window.AdIndexOverlay), outside the team base hash
   'seed_patch.js',   // F1: the one applier of patches/ad_seed.db.sql, heals duplicate rows
   'ad_import_tables.js',   // TEAM_REPLICATION_PLUGIN_STUDY §13.2 B1 — the I_Order physical table as a boot overlay (window.AdImportTables), W-IMPORT-ORDER
   'borrower.html',        // W-MF-SEED / TEAMWORK_FRAMEWORK §40: the borrower page (a thin Team device over a hidden engine frame)

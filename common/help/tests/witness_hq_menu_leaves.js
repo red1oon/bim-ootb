@@ -1,8 +1,8 @@
 // ⚠ DO NOT REMOVE — W-HQ-MENU-LEAVES (bim-compiler prompts/VOCAB_MESSAGE_CATALOG.md §19.14 Step 11). READ THE LOG (common/help/tests/logs/w_hq_menu_leaves*.log); an exit code is not evidence.
 // ISSUE it proves or disproves (CARDINAL RULE, twin of legacy): legacy's menu search lists every entry of the role's menu, forms (X), workflows (F), info windows (I) and tasks (T) included, and legacy's
 // menu hides an entry the role cannot open (MTree.java:663-670). Before §19.14 the twin's help box listed none of the four kinds, and the twin's menu showed F / I entries the role has no access to.
-//   M1 the menu matches legacy's rule: the page's menu().leaves == the witness's own SQL reading (X entries with ad_form_access, F with ad_workflow_access, I with ad_infowindow_access, T all: the seed
-//      has no AD_Task_Access, the named residual), role 102. Red: the page served main's idmp_session.js (no F / I gate) FAILs M1.
+//   M1 the menu matches legacy's rule: the page's menu().leaves == the witness's own SQL reading (X entries with ad_form_access, F with ad_workflow_access, I with ad_infowindow_access, T with legacy's own
+//      ad_task_access read from Postgres, §19.16 C1), role 102. Red: the page served main's idmp_session.js (no F / I gate) FAILs M1.
 //   M2 the names are the menu's: in each built language, each admitted entry's record name == the text of its row in the real page's menu. X of N per language. Red HQ_BREAK=nomenunames (the
 //      witness drops names.menus from the packs it builds its records from) FAILs wherever a translation exists.
 //   M3 the box lists them: each admitted entry x 2 probes (its first 2 characters; a 3-character slice from its middle) x the built languages: every entry legacy's filter shows (the witness's own
@@ -20,10 +20,14 @@ const own = (labels, typed) => {   // the witness's own reading of MenuSearchCon
   return labels.filter((l) => { const x = del(String(l).toLowerCase().replace(/\s+/g, ' ').trim()); return c.length < 3 ? x.startsWith(c) : x.includes(c); });
 };
 // the witness's own SQL reading of the role's X / F / I / T menu entries (the page's menu() is judged against it)
-const allLeaves = H.q("SELECT ad_menu_id AS id, action AS a, name AS n, ad_form_id AS f, ad_workflow_id AS w, ad_infowindow_id AS i FROM ad_menu WHERE isactive='Y' AND issummary='N' AND action IN ('X','F','I','T') ORDER BY ad_menu_id");
+const allLeaves = H.q("SELECT ad_menu_id AS id, action AS a, name AS n, ad_form_id AS f, ad_workflow_id AS w, ad_infowindow_id AS i, ad_task_id AS t FROM ad_menu WHERE isactive='Y' AND issummary='N' AND action IN ('X','F','I','T') ORDER BY ad_menu_id");
 const grant = (t, col) => new Set(H.q('SELECT ' + col + " AS id FROM " + t + ' WHERE ad_role_id=' + ROLE + " AND isactive='Y'").map((r) => Number(r.id)));
-const G = { X: grant('ad_form_access', 'ad_form_id'), F: grant('ad_workflow_access', 'ad_workflow_id'), I: grant('ad_infowindow_access', 'ad_infowindow_id') };
-const canOpen = (m) => m.a === 'X' ? G.X.has(Number(m.f)) : m.a === 'F' ? G.F.has(Number(m.w)) : m.a === 'I' ? G.I.has(Number(m.i)) : true;
+// §19.16 C1: task grants are read from LEGACY's own ad_task_access (the seed has none; the page gets them from the ad_ctxhelp_overlay.js boot overlay), so the oracle is not the overlay under test.
+//   Legacy unreachable -> T is not judged (TASKS_JUDGED=false, an INCONCLUSIVE line), never assumed.
+const legacyTasks = (() => { const r = cp.spawnSync('docker', ['exec', 'postgres', 'psql', '-U', 'adempiere', '-d', 'idempiere', '-At', '-c', "set search_path=adempiere; select ad_task_id from ad_task_access where ad_role_id=" + ROLE + " and isactive='Y'"], { encoding: 'utf8' });
+  return r.status === 0 ? new Set(r.stdout.split('\n').filter((x) => /^\d+$/.test(x)).map(Number)) : null; })(), TASKS_JUDGED = !!legacyTasks;
+const G = { X: grant('ad_form_access', 'ad_form_id'), F: grant('ad_workflow_access', 'ad_workflow_id'), I: grant('ad_infowindow_access', 'ad_infowindow_id'), T: legacyTasks };
+const canOpen = (m) => m.a === 'X' ? G.X.has(Number(m.f)) : m.a === 'F' ? G.F.has(Number(m.w)) : m.a === 'I' ? G.I.has(Number(m.i)) : TASKS_JUDGED ? G.T.has(Number(m.t)) : true;
 const admitted = allLeaves.filter(canOpen).map((m) => Number(m.id)), aset = new Set(admitted), hidden = allLeaves.filter((m) => !aset.has(Number(m.id)));
 const ids = H.q('SELECT DISTINCT a.ad_window_id AS w FROM ad_window_access a JOIN ad_window w ON w.ad_window_id=a.ad_window_id WHERE a.ad_role_id=' + ROLE + " AND a.isactive='Y' AND w.isactive='Y'").map((r) => Number(r.w));
 const en = JSON.parse(fs.readFileSync(path.join(H.ERP, 'i18n', 'help', 'en_US', 'help.json'), 'utf8'));
@@ -115,6 +119,7 @@ async function pagePart() {
 
 (async function main() {
   if (!H.seedOk()) { k.incon('ALL', 'no usable ad_seed.db (an LFS stub?)'); return k.end(); }
+  if (!TASKS_JUDGED) k.incon('M1 T', 'legacy Postgres unreachable: task entries not judged (shown as before)'); else k.L('legacy ad_task_access role=' + ROLE + ' tasks=' + legacyTasks.size);
   nodePart();
   if (!process.env.NOPAGE) await pagePart();
   k.end();
