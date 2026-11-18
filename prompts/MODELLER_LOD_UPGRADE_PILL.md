@@ -106,3 +106,28 @@ Deviations and findings: (1) the 208,896 rebar vertices, as the Python run, are 
 - BREAK: option `breakWinding` (the old inward caps) must make WELD_WINDING FAIL; `LODUP_BREAK=1` makes the main run the broken run (expected exit through the same FAIL).
 - COST: `§LODUP_COST pack=welds addedVerts= modelVerts= heapMB=`.
 - Also re-run W-LODUP-REBAR (must still PASS), then ONE headless real-Modeller run (Shed open, the pill, the chooser lists Rebar + Truss welds, Run welds, read `§LODUP_*` incl. COST, Undo, Redo).
+
+## P2 RESULT (2026-11-18) — Truss welds
+Built: `modeller/lod/weld_pack.js` (port of `rebar_from_schedule.py` section B: plate frames, member axes, SAT + ray-parity + clip contacts, two fillet beads per contact, outward end caps, the 26 refusals), `lod/rules/weld_defaults.json` (6 rows, all `default:`: the AISC 360-16 J2.4 table written as `6:3, 13:5, 19:6, 999:8`, contact end tolerance, parallel limit, the two name patterns), one line in `lod/packs.json`. `lod_ui.js` is untouched (sha256 equals the P1 file; the witness asserts it). `lod_ops.js` gained one generic field: `attach:[guids]` is written as `params.attached_to` with no `element_parts` row. modeller `sw.js` v289, `lod_ops.js?v=2`, precache audit 296 found / 0 missing, `gen_app_surface.js` run, `witness_x0_appdef.js` PASS.
+
+Witness `modeller/tests/witness_lodup_welds.js` (node; `LODUP_SRC_DB`, `LODUP_ORACLE_DB`, optional `LODUP_ORACLE_LOG`; unset = a synthetic fixture judged by hand-derived truth, parity then INCONCLUSIVE). Logs: scratchpad `lodup_p2_parity.log`, `lodup_p2_break.log`, `lodup_p2_synth.log`, `lodup_p2_rebar_rerun.log`, `lodup_p2_live.log`, `lodup_p2_audit_sw.log`, `lodup_p2_surface.log`, `lodup_p2_x0.log`.
+| Check | Shed result vs `SHED_rebar.db` |
+|---|---|
+| PARITY_WELDS | 338 / 338 guids (member, end, plate), none only on one side; built by end: A 117, B 104, AB 0, T 117 |
+| PARITY_SCAN | contacts 364 = end 225 + through 139, 10 members without contact = the oracle log |
+| PARITY_REFUSED | 26 / 26 rows, 0 differing; all 26 carry the one reason "member axis not parallel to the plate plane ..." |
+| PARITY_CHANGELIST | 374 / 374 rows (338 ADDED, 10 NOT_BUILT, 26 REFUSED), 0 differing (kind, guid, class, host, rule text, detail text, order) |
+| PARITY_VERTICES | 16,224 world vertices in 338 welds, names equal, max delta 0.000014 mm (limit 0.01) |
+| SIZE | 676 beads, every leg 5.0 mm = J2.4 row for 6.35 mm, names read in the witness |
+| WELD_WINDING | 676 beads, 0 not closed / inconsistent, min signed volume 3225.5 mm3 |
+| CENTRE | 338 ops, own bbox centre, 0 off; `generated:welds`; `attached_to` member + plate; 0 `parts_of`, 0 `element_parts` rows |
+| DETERMINISM / RULES / CHANGELIST_TXT | same op hash on two runs; an edited J2.4 row changes the leg (5 to 7 mm), a default edit over a stated row refused; 374 data lines |
+| REGISTRY | chooser model `rebar,welds`, labels "Rebar (from schedules)" and "Truss welds", one more pack adds one row, `lod_ui.js` is the P1 file |
+| BREAK | `breakWinding` (the old inward caps): WELD_WINDING FAIL, 676 of 676 beads; `LODUP_BREAK=1` main run exits 0 through the same FAIL (it also fails PARITY_VERTICES, as expected) |
+| W-LODUP-REBAR re-run | still PASS (256 / 256 sets, 208,896 vertices, 291 / 291 rows, break FAIL as designed) |
+| Synthetic fixture | SYNTH_TRUTH PASS (1 end, 1 through, 1 refused across the face, 1 not built; 100 mm and 500 mm overlaps), parity INCONCLUSIVE |
+`§LODUP_COST pack=welds addedVerts=16224 modelVerts=33168 addedPct=48.91 heapMB=2.76`.
+
+Real Modeller (headless, software GL, served from a `git archive` of the branch on port 8772): Shed open; the pill is the arrow only, 0 requests under `lod/` before the press, 10 after; the chooser lists 2 rows = the registry (`rebar` applies to 128, `welds` applies to 168, weld rules 0 stated / 6 default / 0 unset). Run welds: `§LODUP_WELD_SCAN contacts=364 (225 / 139)`, `§LODUP_RUN pack=welds ops=338 ids_contiguous=true verify=true added=338 refused=26 notBuilt=10 element_parts=0 ms=521`, `§LODUP_COST pack=welds addedVerts=16224 heapMB=60`; 338 scene meshes / 16,224 vertices drawn and visible; `upgrade_changes` 374 (338 / 26 / 10); change list 374 data lines. A second Run is refused (338 of 338 already in the model). Undo removes all 338 ops and empties `upgrade_changes`; Redo brings back 338 / 374.
+
+Deviations and findings: (1) The weld parts are `attached_to`, not `parts_of`: the oracle writes no `element_parts` row for a weld, and `arc_editable.js` hides every `element_parts` parent on reload, which would hide the steel members. Spec §2 said `parts_of`; this is stricter and matches the oracle. (2) The member axis is the largest-eigenvalue direction of the covariance of the triangle-soup vertices, as in the oracle; a box member's axis therefore tilts by a fraction of a degree (corners repeat unevenly). Inherited, not fixed (parity is the rule); the synthetic fixture tolerates 8 mm for that reason. The sign rule (largest component positive, which fixes end A) could flip by rounding for a member at exactly 45 degrees between two axes; on the Shed all 338 guids, which carry the end letter, equal the oracle's, so none did. (3) The small helpers (vector maths, `{:g}` twin) are duplicated from `rebar_pack.js`; a shared `lod_util.js` is the follow-up once a third pack lands (it would need a loader-list line in `modeller.html`). (4) The two name patterns the oracle hard-codes are rule rows here (`plate_thickness_name_pattern`, `member_leg_name_pattern`); the J2.4 table row is a string so the panel's edit box round-trips it.
