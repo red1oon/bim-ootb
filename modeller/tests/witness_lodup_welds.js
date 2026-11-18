@@ -197,7 +197,7 @@ initSqlJs({ wasmBinary: wasmBinary }).then(function (SQL) {
   var ruleFilesOk = Registry.list().every(function (p) { return fs.existsSync(path.join(ROOT, 'lod', p.rulesFile)); }), d1 = Registry.describe(inp, rowsOf, Rules);
   Registry.register({ id: 'dummy', label: 'Dummy (test pack)', appliesTo: function () { return 0; }, run: function () { return { parts: [], changes: [] }; } });
   var d2 = Registry.describe(inp, rowsOf, Rules), wRow = d1.filter(function (x) { return x.id === 'welds'; })[0];
-  verdict('REGISTRY', d1.map(function (x) { return x.id; }).join() === 'rebar,welds' && manIds.join() === 'rebar,welds' && filesOk && ruleFilesOk && wRow && wRow.label === 'Truss welds' && wRow.appliesTo === applies && d2.length === d1.length + 1 && uiSha === P1_LOD_UI_SHA,
+  verdict('REGISTRY', d1.map(function (x) { return x.id; }).join() === 'rebar,welds' && manIds.slice(0, 2).join() === 'rebar,welds' && filesOk && ruleFilesOk && wRow && wRow.label === 'Truss welds' && wRow.appliesTo === applies && d2.length === d1.length + 1 && uiSha === P1_LOD_UI_SHA,
     'listed=' + d1.map(function (x) { return x.id + ':"' + x.label + '"'; }).join(',') + ' packs.json=' + manIds.join() + ' pack_files_exist=' + filesOk + ' rules_files_exist=' + ruleFilesOk + ' welds_applies_to=' + (wRow && wRow.appliesTo) + ' after_one_more=' + d2.length + ' lod_ui_js_is_the_P1_file=' + (uiSha === P1_LOD_UI_SHA) + ' (the dialog renders exactly describe(); no UI code changed)');
 
   // ---- cost (PERF BUDGET)

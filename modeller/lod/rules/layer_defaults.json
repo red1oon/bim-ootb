@@ -1,0 +1,7 @@
+{
+ "_about": "Rule rows for the LOD Upgrade pack 'Layers' (bim-ootb prompts/MODELLER_LOD_UPGRADE_PILL.md section 3 and P3 SPEC). Constants of the extractor's layer split (BIMCompiler DAGCompiler/python/extractIFCtoDB.py), kept as data. Every row: value, unit, source. A stated value always wins over a default. Change a row, re-run; no code change. No project values are kept in this file.",
+ "layer_tol_mm": {"value": 0.5, "unit": "mm", "source": "default: extractor LAYER_TOL (boundary and extent alignment tolerance of the layer split)"},
+ "layer_sum_tol_mm": {"value": 0.001, "unit": "mm", "source": "default: extractor LAYER_SUM_TOL (the authored layer thicknesses must re-sum to the authored total)"},
+ "layer_volume_rtol": {"value": 0.0001, "unit": "relative", "source": "default: extractor LAYER_VOL_RTOL (the slab volumes must re-sum to the envelope volume)"},
+ "layer_min_count": {"value": 2, "unit": "layers", "source": "default: extractor (a layer set is split only when the usage declares more than one layer)"}
+}

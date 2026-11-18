@@ -32,7 +32,8 @@
 // v287 (2026-11-18) §19.7 (bim-compiler VOCAB_MESSAGE_CATALOG.md): legacy's label order inside the help core's tiers 1 and 2 — common/help/help_query.js?v=2
 // v288 (2026-11-18) LOD Upgrade pill P1 (prompts/MODELLER_LOD_UPGRADE_PILL.md): lazy lod/*.js (rules engine, registry, rebar pack, op builder, reader, dialog) + lod/packs.json + lod/rules/rebar_defaults.json — modeller.html
 // v289 (2026-11-18) LOD Upgrade pill P2 (prompts/MODELLER_LOD_UPGRADE_PILL.md §P2 SPEC): lod/weld_pack.js (Truss welds) + lod/rules/weld_defaults.json + lod/packs.json + lod_ops.js?v=2 (attached_to) — modeller.html
-const CACHE_VERSION = 'v289';   // bump on each deploy; per-change detail is the git commit message.
+// v290 (2026-11-18) LOD Upgrade pill P3 (prompts/MODELLER_LOD_UPGRADE_PILL.md §P3 SPEC): lod/layer_pack.js (Layers) + lod/rules/layer_defaults.json + lod/packs.json + lod_reader.js?v=2 (layer-set inputs) — modeller.html
+const CACHE_VERSION = 'v290';   // bump on each deploy; per-change detail is the git commit message.
 const CACHE_PREFIX = 'bim-modeller-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -187,7 +188,7 @@ const PRECACHE_ASSETS = [
   'bay_add.js',          // §D89 add a bay (the planner)
   'clipboard.js',        // the ONE copy path (Ctrl+C / Ctrl+V, the bay copy)
   '../viewer/dxf_sheet_view.js',   // §D82 its renderer (shared with the Viewer's 2D wing)
-  'lod/lod_rules.js', 'lod/lod_registry.js', 'lod/lod_ops.js', 'lod/lod_reader.js', 'lod/lod_ui.js', 'lod/rebar_pack.js', 'lod/weld_pack.js', 'lod/packs.json', 'lod/rules/rebar_defaults.json', 'lod/rules/weld_defaults.json',   // LOD Upgrade pill (lazy, first press)
+  'lod/lod_rules.js', 'lod/lod_registry.js', 'lod/lod_ops.js', 'lod/lod_reader.js', 'lod/lod_ui.js', 'lod/rebar_pack.js', 'lod/weld_pack.js', 'lod/layer_pack.js', 'lod/packs.json', 'lod/rules/rebar_defaults.json', 'lod/rules/weld_defaults.json', 'lod/rules/layer_defaults.json',   // LOD Upgrade pill (lazy, first press)
   'dxf_export_ui.js',   // §DXF-EXPORT (lane L5): Export ▸ 2D drawings (DXF)
   'viewer_db_export.js',   // §D43: Export ▸ Viewer database (.db)
   'dxf2bim/ifc_extract_core.js',
