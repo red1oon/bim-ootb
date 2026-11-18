@@ -219,6 +219,7 @@
 })();
 </script>
 
+<!-- §MANIFEST:BEGIN modeller tags (script tags here are written by scripts/gen_manifest.js from modeller/modules.json; comments are yours) -->
 <!-- Bonsai kernel host (classic global window.Bonsai) — author() spawns the worker lazily. -->
 <!-- §CUT-MOVE (prompts/SPEC_GEOM_CUT_MOVE.md): the ONE definition of GEOM_CUT_MOVE — zero deps, loaded first; the
      module worker imports the SAME file (self.CutMove); bonsai_ifc / gridmove / itemdrag read window.CutMove at call time. -->
@@ -362,6 +363,7 @@ if (window.WholeHistory && WholeHistory.mount) WholeHistory.mount({ page: 'model
 <!-- §15.15.1 the ONE Team icon: its panel (Start a team / Join / avatar / setup) must exist even while team mode is off, so these three small scripts load on every page; they draw nothing until the icon is clicked. -->
 <script>window.TEAM_PANEL_AUTO_OPEN = true;</script>
 <script src="../common/comm/team_defaults.js?v=1"></script><script src="../common/comm/team_avatars.js?v=1"></script><script src="../common/comm/team_panel.js?v=3"></script>
+<!-- §MANIFEST:END modeller tags -->
 <script>if (/[?&]team=1(&|$)/.test(location.search) || (function () { try { return localStorage.getItem('teamMode') === '1'; } catch (e) { return false; } })()) { ['../common/comm/team_trial.js', '../common/comm/comm_envelope.js', '../common/comm/comm_order.js', '../common/comm/team_keys.js', '../common/comm/comm_roster.js', '../common/comm/comm_admit.js',
   '../common/comm/comm_pipe.js', '../common/comm/comm_store.js', '../common/comm/team_people.js', '../common/comm/team_focus.js', '../common/comm/team_people_ui.js', '../common/comm/team_trust.js?v=1', '../common/comm/team_scope.js?v=1', '../common/comm/op_versions.js?v=1', '../common/comm/team_versions.js?v=6', 'team_plan.js?v=1', 'team_sync.js?v=11'].forEach(function (f) { document.write('<script src="' + f + '"><\/script>'); }); }</script>
 <!-- §b-teams (§15.15.1, 2026-10-25): THE Team control. Not in a team (or team mode off) -> the Team panel: Start a team / Join / avatar / setup.

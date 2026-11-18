@@ -35,7 +35,8 @@
 // v290 (2026-11-18) LOD Upgrade pill P3 (prompts/MODELLER_LOD_UPGRADE_PILL.md §P3 SPEC): lod/layer_pack.js (Layers) + lod/rules/layer_defaults.json + lod/packs.json + lod_reader.js?v=2 (layer-set inputs) — modeller.html
 // v291 (2026-11-18) LOD Upgrade pill P3 fix (prompts/MODELLER_LOD_UPGRADE_PILL.md §P3 FIX SPEC): live host hide, lod_reader.js?v=3 (base_geometries + rotation), appliesTo = what the run judges (lod_registry.js?v=2, lod_ui.js?v=2) — modeller.html
 // v292 (2026-11-18) LOD Upgrade pill P3 fix 2 (prompts/MODELLER_LOD_UPGRADE_PILL.md §P3 FIX SPEC 2): Truss welds judge steel-to-steel pairs only (weld_material_gate row, lod_reader.js?v=4 meta.mat, lod_ui.js?v=3 pack loader) — modeller.html
-const CACHE_VERSION = 'v292';   // bump on each deploy; per-change detail is the git commit message.
+// v293 (2026-11-18) B1 (bim-compiler CODE_ARCHITECTURE_DESIGN.md Part B; bim-ootb #3244): the modeller's module lists are written from modeller/modules.json — +2 marker lines here and in modeller.html, no list changed
+const CACHE_VERSION = 'v293';   // §MANIFEST cacheVersion (written by gen_manifest.js; edit modeller/modules.json)
 const CACHE_PREFIX = 'bim-modeller-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -65,6 +66,7 @@ const LIB_PREFIX = CACHE_PREFIX + 'lib-';
 // Local files to precache on install — the modeller works offline after first visit.
 // DB files are NOT here — the resident *_extracted.db / terminal_rules.db are cached in IndexedDB.
 const PRECACHE_ASSETS = [
+  // §MANIFEST:BEGIN precache (entries here are written by scripts/gen_manifest.js from modeller/modules.json; comments are yours)
   'modeller.html',
   'rules_editor.js',                 // prompts/MODELLER_RULES_EDITOR.md (lazy, first click of #b-rules)
   '../common/drag.js',               // §14.5 THE drag helper (shared with the Viewer)
@@ -208,6 +210,7 @@ const PRECACHE_ASSETS = [
   '../geomapping/data/relations_DX.json',
   '../geomapping/data/relations_SC.json',
   '../geomapping/data/alias_map.json',
+  // §MANIFEST:END precache
 ];
 
 self.addEventListener('install', (event) => {
