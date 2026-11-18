@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 // # ⚠ DO NOT REMOVE — lod_reader.js: reads the open building's sql.js DB into the input every LOD Upgrade pack takes. Read the §LODUP_* log after every run.
 // meta {guid:{cls,name,storey,disc,building}}, sched {guid:{name:value}} (element_dxf2bim), world(guid) -> Float64Array (the element's MESH in world space, rotation applied; never the DB rtree, spec §5), from component_geometries or base_geometries.
+// P4 adds mesh(guid) (indexed world mesh), boxes() (TRUE per-element boxes from the meshes) and src (the DB object: the key a pack caches on).
 // Read-only. A table the DB lacks gives an empty set, never an invented one.
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
@@ -65,12 +66,44 @@
       }
       st.reset(); return out;
     }
+    // P4 (joints): the INDEXED world mesh {V: Float64Array xyz of every stored vertex, F: Uint32Array triangle indices | null (= V is already a soup)} and the TRUE world box of every element
+    // (min / max of the element's own mesh, never the DB rtree: spec section 5). boxes() reads every element once with one statement and is memoised per reader.
+    function placeAll(f, row, rx, ry, rz) {   // the same placement as world(): R(rx,ry,rz) v + centre
+      var out = new Float64Array(f.length);
+      if (!rx && !ry && !rz) { for (var i = 0; i < f.length; i += 3) { out[i] = f[i] + row[1]; out[i + 1] = f[i + 1] + row[2]; out[i + 2] = f[i + 2] + row[3]; } return out; }
+      var ca = Math.cos(rx), sa = Math.sin(rx), cb = Math.cos(ry), sb = Math.sin(ry), cc = Math.cos(rz), sc = Math.sin(rz), m00 = cb * cc, m01 = sa * sb * cc - ca * sc, m02 = ca * sb * cc + sa * sc, m10 = cb * sc, m11 = sa * sb * sc + ca * cc, m12 = ca * sb * sc - sa * cc, m20 = -sb, m21 = sa * cb, m22 = ca * cb;
+      for (var j = 0; j < f.length; j += 3) { var x = f[j], y = f[j + 1], z = f[j + 2]; out[j] = m00 * x + m01 * y + m02 * z + row[1]; out[j + 1] = m10 * x + m11 * y + m12 * z + row[2]; out[j + 2] = m20 * x + m21 * y + m22 * z + row[3]; }
+      return out;
+    }
+    var stM = null, boxC = null;
+    function worldMesh(guid) {
+      if (!canWorld) return null;
+      if (!stM) stM = db.prepare('SELECT c.vertices, c.faces, t.center_x, t.center_y, t.center_z, t.rotation_x, t.rotation_y, t.rotation_z FROM element_instances i JOIN ' + gtbl + ' c USING(geometry_hash) JOIN element_transforms t USING(guid) WHERE i.guid = ?');
+      stM.bind([guid]); var out = null;
+      if (stM.step()) {
+        var row = stM.get(), b = row[0], f = new Float32Array(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength)), fb = row[1], F = null;
+        if (fb && fb.byteLength >= 12) F = new Uint32Array(fb.buffer.slice(fb.byteOffset, fb.byteOffset + fb.byteLength));
+        out = { V: placeAll(f, [0, row[2], row[3], row[4]], row[5] || 0, row[6] || 0, row[7] || 0), F: F };
+      }
+      stM.reset(); return out;
+    }
+    function boxes() {
+      if (boxC) return boxC; boxC = {}; if (!canWorld) return boxC;
+      var st2 = db.prepare('SELECT i.guid, c.vertices, t.center_x, t.center_y, t.center_z, t.rotation_x, t.rotation_y, t.rotation_z FROM element_instances i JOIN ' + gtbl + ' c USING(geometry_hash) JOIN element_transforms t USING(guid) ORDER BY i.guid');
+      while (st2.step()) {
+        var row = st2.get(), b = row[1], f = new Float32Array(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength)); if (!f.length) continue;
+        var W = placeAll(f, [0, row[2], row[3], row[4]], row[5] || 0, row[6] || 0, row[7] || 0), lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+        for (var i = 0; i < W.length; i += 3) for (var a = 0; a < 3; a++) { var v = W[i + a]; if (v < lo[a]) lo[a] = v; if (v > hi[a]) hi[a] = v; }
+        boxC[row[0]] = [lo, hi];
+      }
+      st2.free(); return boxC;
+    }
     // meta.rgba (host colour), read apart so a DB without the column still opens
     if (has(db, 'elements_meta')) { try { var rc = db.exec('SELECT guid, material_rgba FROM elements_meta'); if (rc.length) rc[0].values.forEach(function (v) { if (meta[v[0]]) meta[v[0]].rgba = v[1]; }); } catch (e) { /* no colour column: parts take the pack default */ } }
     // meta.mat = the stated material (elements_meta.material_name), meta.layerMats = the materials of its layer set: what a material gate (e.g. the weld pack's steel rule) reads
     if (has(db, 'elements_meta')) { try { var rm = db.exec('SELECT guid, material_name FROM elements_meta'); if (rm.length) rm[0].values.forEach(function (v) { if (meta[v[0]]) meta[v[0]].mat = v[1]; }); } catch (e) { /* no material column */ } }
     if (has(db, 'rel_material_layer_set') && has(db, 'material_layers')) { try { var rl = db.exec('SELECT r.element_guid, l.material_name FROM rel_material_layer_set r JOIN material_layers l ON l.layer_set_name = r.layer_set_name ORDER BY r.element_guid, l.sequence'); if (rl.length) rl[0].values.forEach(function (v) { if (meta[v[0]]) (meta[v[0]].layerMats = meta[v[0]].layerMats || []).push(v[1]); }); } catch (e) { /* no layer materials */ } }
-    return { meta: meta, sched: sched, world: world, canWorld: canWorld, layers: layerApi(db) };
+    return { meta: meta, sched: sched, world: world, mesh: worldMesh, boxes: boxes, src: db, canWorld: canWorld, layers: layerApi(db) };
   }
   return { fromDb: fromDb, has: has };
 });

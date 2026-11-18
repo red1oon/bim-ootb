@@ -35,7 +35,8 @@
 // v290 (2026-11-18) LOD Upgrade pill P3 (prompts/MODELLER_LOD_UPGRADE_PILL.md §P3 SPEC): lod/layer_pack.js (Layers) + lod/rules/layer_defaults.json + lod/packs.json + lod_reader.js?v=2 (layer-set inputs) — modeller.html
 // v291 (2026-11-18) LOD Upgrade pill P3 fix (prompts/MODELLER_LOD_UPGRADE_PILL.md §P3 FIX SPEC): live host hide, lod_reader.js?v=3 (base_geometries + rotation), appliesTo = what the run judges (lod_registry.js?v=2, lod_ui.js?v=2) — modeller.html
 // v292 (2026-11-18) LOD Upgrade pill P3 fix 2 (prompts/MODELLER_LOD_UPGRADE_PILL.md §P3 FIX SPEC 2): Truss welds judge steel-to-steel pairs only (weld_material_gate row, lod_reader.js?v=4 meta.mat, lod_ui.js?v=3 pack loader) — modeller.html
-const CACHE_VERSION = 'v292';   // bump on each deploy; per-change detail is the git commit message.
+// v293 (2026-11-18) LOD Upgrade pill P4 (prompts/MODELLER_LOD_UPGRADE_PILL.md §P4 SPEC): lod/joint_pack.js (Steel joints) + lod/rules/joint_defaults.json + lod/packs.json + lod_reader.js?v=5 (indexed mesh, true boxes) — modeller.html
+const CACHE_VERSION = 'v293';   // bump on each deploy; per-change detail is the git commit message.
 const CACHE_PREFIX = 'bim-modeller-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -190,7 +191,7 @@ const PRECACHE_ASSETS = [
   'bay_add.js',          // §D89 add a bay (the planner)
   'clipboard.js',        // the ONE copy path (Ctrl+C / Ctrl+V, the bay copy)
   '../viewer/dxf_sheet_view.js',   // §D82 its renderer (shared with the Viewer's 2D wing)
-  'lod/lod_rules.js', 'lod/lod_registry.js', 'lod/lod_ops.js', 'lod/lod_reader.js', 'lod/lod_ui.js', 'lod/rebar_pack.js', 'lod/weld_pack.js', 'lod/layer_pack.js', 'lod/packs.json', 'lod/rules/rebar_defaults.json', 'lod/rules/weld_defaults.json', 'lod/rules/layer_defaults.json',   // LOD Upgrade pill (lazy, first press)
+  'lod/lod_rules.js', 'lod/lod_registry.js', 'lod/lod_ops.js', 'lod/lod_reader.js', 'lod/lod_ui.js', 'lod/rebar_pack.js', 'lod/weld_pack.js', 'lod/layer_pack.js', 'lod/joint_pack.js', 'lod/packs.json', 'lod/rules/rebar_defaults.json', 'lod/rules/weld_defaults.json', 'lod/rules/layer_defaults.json', 'lod/rules/joint_defaults.json',   // LOD Upgrade pill (lazy, first press)
   'dxf_export_ui.js',   // §DXF-EXPORT (lane L5): Export ▸ 2D drawings (DXF)
   'viewer_db_export.js',   // §D43: Export ▸ Viewer database (.db)
   'dxf2bim/ifc_extract_core.js',
