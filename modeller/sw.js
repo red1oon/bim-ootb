@@ -41,7 +41,7 @@
 // v296 (2026-11-18) LOD Upgrade pill P5 (prompts/MODELLER_LOD_UPGRADE_PILL.md §P5 SPEC): lod/gusset_pack.js (Bracing gussets) + lod/rules/gusset_defaults.json + lod/packs.json; joint_pack.js exposes the shared kit (no ?v= literal: packs load through packs.json, precacheOrder in modules.json) — modeller.html
 // v300 (2026-11-18) LOD Upgrade P4 FIX (prompts/MODELLER_LOD_UPGRADE_PILL.md §P4 FIX SPEC): lod/joint_pack.js fin-plate weld beads wound outward and consistently (no URL change; this bump re-fetches it)
 // v301 (2026-11-18) LOD Upgrade P7 NAME FIX (prompts/MODELLER_LOD_UPGRADE_PILL.md): lod/lod_ui.js?v=6, the download names drop the opened file's .db
-const CACHE_VERSION = 'v301';   // §MANIFEST cacheVersion (written by gen_manifest.js; edit modeller/modules.json)
+const CACHE_VERSION = 'v302';   // §MANIFEST cacheVersion (written by gen_manifest.js; edit modeller/modules.json)
 const CACHE_PREFIX = 'bim-modeller-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -209,6 +209,7 @@ const PRECACHE_ASSETS = [
   'dxf2bim/std2d.js', 'dxf2bim/std2d_scopes.js', 'dxf2bim/std2d_geom.js', 'dxf2bim/std2d_dxf.js', 'dxf2bim/std2d_marks.js', 'dxf2bim/polygon-clipping.js', 'dxf2bim/ifc_extract_core.js',
   // Cross-surface broker — lives in viewer/ (shared), precache for offline Connect.
   '../viewer/connect_scene.js',
+  '../common/i18n/lang_choice.js',
   '../viewer/locale_loader.js',  // S226 §R3 — the Modeller's UI language (shared loader; i18n/<code>.json cache on first use)
   '../viewer/lib/room_walker.js',  // §MODELLER-ROOM-INJECT — shared RoomWalker (same file the Viewer's ensureRooms uses)
   '../viewer/dagevu_catalog.json',  // §CATALOG-PATH — bonsai_library.js catalog (shared with the Viewer)
