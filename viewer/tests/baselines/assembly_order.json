@@ -2,13 +2,13 @@
  "buildings": {
   "Hospital": {
    "dbFile": "Hospital_meta.db",
-   "codeKey": "6933c0e9b6e7",
+   "codeKey": "06222403ec1b",
    "midair": 0,
    "filingParity": 0,
    "classes": {
     "IfcBeam": {
      "midair": 0,
-     "unjudgedStruct": 13,
+     "unjudgedStruct": 8,
      "contactOnly": 0
     },
     "IfcBuildingElementProxy": {
@@ -30,7 +30,7 @@
   },
   "Terminal": {
    "dbFile": "Terminal_meta.db",
-   "codeKey": "6933c0e9b6e7",
+   "codeKey": "06222403ec1b",
    "midair": 0,
    "filingParity": 0,
    "classes": {
@@ -68,25 +68,25 @@
   },
   "Duplex": {
    "dbFile": "Duplex_extracted.db",
-   "codeKey": "6933c0e9b6e7",
-   "midair": 2,
-   "filingParity": 2,
+   "codeKey": "06222403ec1b",
+   "midair": 0,
+   "filingParity": 0,
    "classes": {
     "IfcFlowSegment": {
      "midair": 0,
      "unjudgedStruct": 0,
      "contactOnly": 2
     },
-    "IfcWallStandardCase": {
-     "midair": 2,
-     "unjudgedStruct": 0,
+    "IfcMember": {
+     "midair": 0,
+     "unjudgedStruct": 4,
      "contactOnly": 0
     }
    }
   },
   "HHS_Office_Federated": {
    "dbFile": "HHS_Office_Federated_extracted.db",
-   "codeKey": "6933c0e9b6e7",
+   "codeKey": "06222403ec1b",
    "midair": 0,
    "filingParity": 0,
    "classes": {
@@ -124,17 +124,12 @@
      "midair": 0,
      "unjudgedStruct": 1,
      "contactOnly": 0
-    },
-    "IfcStairFlight": {
-     "midair": 0,
-     "unjudgedStruct": 2,
-     "contactOnly": 0
     }
    }
   },
   "Clinic": {
    "dbFile": "Clinic_meta.db",
-   "codeKey": "6933c0e9b6e7",
+   "codeKey": "06222403ec1b",
    "midair": 0,
    "filingParity": 0,
    "classes": {
@@ -163,9 +158,9 @@
      "unjudgedStruct": 0,
      "contactOnly": 3
     },
-    "IfcStairFlight": {
+    "IfcMember": {
      "midair": 0,
-     "unjudgedStruct": 2,
+     "unjudgedStruct": 1,
      "contactOnly": 0
     },
     "IfcWallStandardCase": {
@@ -177,7 +172,7 @@
   },
   "JKR": {
    "dbFile": "JKR_extracted.db",
-   "codeKey": "6933c0e9b6e7",
+   "codeKey": "06222403ec1b",
    "midair": 0,
    "filingParity": 0,
    "classes": {
@@ -210,13 +205,13 @@
   },
   "LTU_AHouse": {
    "dbFile": "LTU_AHouse_meta.db",
-   "codeKey": "6933c0e9b6e7",
+   "codeKey": "06222403ec1b",
    "midair": 1,
    "filingParity": 0,
    "classes": {
     "IfcBeam": {
      "midair": 0,
-     "unjudgedStruct": 93,
+     "unjudgedStruct": 91,
      "contactOnly": 0
     },
     "IfcBuildingElementProxy": {
@@ -226,7 +221,7 @@
     },
     "IfcColumn": {
      "midair": 0,
-     "unjudgedStruct": 275,
+     "unjudgedStruct": 271,
      "contactOnly": 0
     },
     "IfcCovering": {
@@ -276,12 +271,17 @@
     },
     "IfcSlab": {
      "midair": 0,
-     "unjudgedStruct": 74,
+     "unjudgedStruct": 68,
+     "contactOnly": 0
+    },
+    "IfcStair": {
+     "midair": 0,
+     "unjudgedStruct": 20,
      "contactOnly": 0
     },
     "IfcStairFlight": {
      "midair": 0,
-     "unjudgedStruct": 6,
+     "unjudgedStruct": 2,
      "contactOnly": 0
     },
     "IfcWall": {
@@ -291,7 +291,7 @@
     },
     "IfcWallStandardCase": {
      "midair": 0,
-     "unjudgedStruct": 24,
+     "unjudgedStruct": 25,
      "contactOnly": 18
     },
     "IfcWindow": {

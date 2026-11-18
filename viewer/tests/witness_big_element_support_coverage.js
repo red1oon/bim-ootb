@@ -128,13 +128,15 @@ const BUILDINGS = [
   // latent by construction (no shipped building models the class; Terminal's real piles arrive
   // via the IfcSlab name-override). TOTAL 250→246.
   { file: 'Terminal_extracted.db',             name: 'Terminal', bms: true,  expectedUnchecked: 36 },   // was bms:false/279; 32->36 §S64
+  // RE-LOCK 2026-11-18 (stairs with the frame, bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.24.1) — Hospital 172 -> 155, Clinic 21 -> 20,
+  // LTU_AHouse 624 -> 617: stair flights now in the structural pool give big elements a checked support. Measured, all three FELL.
   // RE-LOCK 2026-11-18 — Hospital 177 -> 172 (big 4314 -> 4290), Clinic 22 -> 21 (big 440 -> 425). Bisected to bim-ootb #1551
   // (name overrides, 2026-09-02): 28 Hospital foundation walls became Substructure — 24 are big and now exempt, and the 5
   // partitions standing on them gained a bearing candidate. Evidence: bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.14.2.
-  { file: 'Hospital_extracted.db',             name: 'Hospital', bms: true,  expectedUnchecked: 172 },  // was 503
+  { file: 'Hospital_extracted.db',             name: 'Hospital', bms: true,  expectedUnchecked: 155 },  // was 503
   { file: 'Duplex_extracted.db',               name: 'Duplex',   bms: true,  expectedUnchecked: 2 },    // was 6 — SoG override, see above
   { file: 'HHS_Office_Federated_extracted.db', name: 'HHS',      bms: false, expectedUnchecked: 14 },   // was 21; 13->17 §S64; 17->14 §STAIR_FLIGHT_GRID_VISIBILITY audit twin (see below)
-  { file: 'Clinic_extracted.db',               name: 'Clinic',   bms: true,  expectedUnchecked: 21 },   // count HELD, mix changed (see 3)
+  { file: 'Clinic_extracted.db',               name: 'Clinic',   bms: true,  expectedUnchecked: 20 },   // count HELD, mix changed (see 3)
   // Coverage extended 2026-08-11 (chase-to-zero pass) — first witness coverage for these two; the
   // 5-building locked set above is UNTOUCHED (its 246 total stands; these rows are additive).
   // LTU_AHouse: the LIVE-SERVED vintage (_meta.db — streaming.js §6.9 serves the split pair to real
@@ -147,7 +149,7 @@ const BUILDINGS = [
   // member in a mutual pair never converges — measured Clinic 43k pushes/400 sweeps).
   // JKR: bms=false (zero seq-1 elements — its foundation slabs are authored plain IfcSlab at the
   // z≈84m site datum), unchecked=6, floating=81 (same steel co-planar family: CHS members/columns).
-  { file: 'LTU_AHouse_meta.db',                name: 'LTU_AHouse', bms: true,  expectedUnchecked: 624 },   // 611->626 §S64; 626->624 §STAIR_FLIGHT_GRID_VISIBILITY audit twin (see below)
+  { file: 'LTU_AHouse_meta.db',                name: 'LTU_AHouse', bms: true,  expectedUnchecked: 617 },   // 611->626 §S64; 626->624 §STAIR_FLIGHT_GRID_VISIBILITY audit twin (see below)
   { file: 'JKR_extracted.db',                  name: 'JKR',        bms: false, expectedUnchecked: 6 },
 ];
 
