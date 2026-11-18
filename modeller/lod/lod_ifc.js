@@ -12,6 +12,9 @@
 //        site:{location_m:[x,y,z], ref_direction:[c,s], latitude:[d,m,s,ms], longitude:[d,m,s,ms], elevation_m}, storey_elevations_m:{"STOREY NAME": z}}. A storey with no elevation is refused: no invented elevation.
 // CLASS MAP  IfcReinforcingBar (NominalDiameter, CrossSectionArea, BarLength, BarRole; a set of mixed diameters is split by diameter, as the oracle does) | IfcPlate, IfcMechanicalFastener, IfcFastener (grouped per joint in an
 //        IfcElementAssembly when the id ends -PL / -BT / -WD) | IfcBuildingElementPart (the layer parts, material = the layer's) ; Pset BIMC_Upgrade {HostGlobalId, Rule, Detail, Status, GeneratedElementId, ...}.
+// ANY ELEMENT (opts.anyElement, the Viewer's whole-building export; prompts/VIEWER_IFC_EXPORT_BY_DISCIPLINE.md "(b) SPEC"): an element NOT flagged part:true is written as a generic product through GENMAP (the full attribute list of the schema;
+//        a class the schema lacks is GENERALISED to its nearest ancestor, source class kept in ObjectType; a class with no mapping is an IfcBuildingElementProxy, ObjectType = the source class; both COUNTED per source class, never dropped).
+//        Extra element fields: {rgba 'r,g,b,a'}. A storey with no stated elevation is written with Elevation $ (no z invented); an element with no storey is contained in the IfcBuilding. Without anyElement nothing above changes.
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
   else root.LodIfc = factory();
@@ -24,6 +27,97 @@
   var TSTAMP = '2026-11-18T00:00:00', TS = 1795046400, APP_VERSION = '2026-11-18';   // fixed (the oracle's), so two exports are byte-identical
   var NS_HEX = '6f6b7a10-2b4e-4b4e-9b1e-1c0de0bb1d17'.replace(/-/g, '');             // the oracle's (and the delta IFC's) fixed namespace: the same element id gives the same GlobalId in every add-on file
   var JOINT_CLS = { IfcPlate: 1, IfcMechanicalFastener: 1, IfcFastener: 1 }, SUFFIXES = ['-PL', '-BT', '-WD'], LIGATURE_WORDS = ['stirrup', 'tie', 'ligature'], SECTION_SIDES = 8;
+  var GENMAP = {   // source class -> [IFC2X3, IFC4] -> [written class, the attributes after Tag]; built from the IFC schemas (ifcopenshell), see prompts/VIEWER_IFC_EXPORT_BY_DISCIPLINE.md (b) SPEC
+    'IfcActuator': [['IfcDistributionControlElement',['$']], ['IfcActuator',['.NOTDEFINED.']]],
+    'IfcAirTerminal': [['IfcFlowTerminal',[]], ['IfcAirTerminal',['.NOTDEFINED.']]],
+    'IfcAlarm': [['IfcDistributionControlElement',['$']], ['IfcAlarm',['.NOTDEFINED.']]],
+    'IfcAudioVisualAppliance': [['IfcFlowTerminal',[]], ['IfcAudioVisualAppliance',['.NOTDEFINED.']]],
+    'IfcBeam': [['IfcBeam',[]], ['IfcBeam',['.NOTDEFINED.']]],
+    'IfcBeamStandardCase': [['IfcBeam',[]], ['IfcBeam',['.NOTDEFINED.']]],
+    'IfcBoiler': [['IfcEnergyConversionDevice',[]], ['IfcBoiler',['.NOTDEFINED.']]],
+    'IfcBuildingElementPart': [['IfcBuildingElementPart',[]], ['IfcBuildingElementPart',['.NOTDEFINED.']]],
+    'IfcBuildingElementProxy': [['IfcBuildingElementProxy',['$']], ['IfcBuildingElementProxy',['.NOTDEFINED.']]],
+    'IfcCableCarrierFitting': [['IfcFlowFitting',[]], ['IfcCableCarrierFitting',['.NOTDEFINED.']]],
+    'IfcCableCarrierSegment': [['IfcFlowSegment',[]], ['IfcCableCarrierSegment',['.NOTDEFINED.']]],
+    'IfcCableSegment': [['IfcFlowSegment',[]], ['IfcCableSegment',['.NOTDEFINED.']]],
+    'IfcChiller': [['IfcEnergyConversionDevice',[]], ['IfcChiller',['.NOTDEFINED.']]],
+    'IfcCoil': [['IfcEnergyConversionDevice',[]], ['IfcCoil',['.NOTDEFINED.']]],
+    'IfcColumn': [['IfcColumn',[]], ['IfcColumn',['.NOTDEFINED.']]],
+    'IfcColumnStandardCase': [['IfcColumn',[]], ['IfcColumn',['.NOTDEFINED.']]],
+    'IfcCommunicationsAppliance': [['IfcFlowTerminal',[]], ['IfcCommunicationsAppliance',['.NOTDEFINED.']]],
+    'IfcCompressor': [['IfcFlowMovingDevice',[]], ['IfcCompressor',['.NOTDEFINED.']]],
+    'IfcController': [['IfcDistributionControlElement',['$']], ['IfcController',['.NOTDEFINED.']]],
+    'IfcCovering': [['IfcCovering',['$']], ['IfcCovering',['.NOTDEFINED.']]],
+    'IfcCurtainWall': [['IfcCurtainWall',[]], ['IfcCurtainWall',['.NOTDEFINED.']]],
+    'IfcDiscreteAccessory': [['IfcDiscreteAccessory',[]], ['IfcDiscreteAccessory',['.NOTDEFINED.']]],
+    'IfcDistributionControlElement': [['IfcDistributionControlElement',['$']], ['IfcDistributionControlElement',[]]],
+    'IfcDistributionElement': [['IfcDistributionElement',[]], ['IfcDistributionElement',[]]],
+    'IfcDoor': [['IfcDoor',['$','$']], ['IfcDoor',['$','$','.NOTDEFINED.','$','$']]],
+    'IfcDuctFitting': [['IfcFlowFitting',[]], ['IfcDuctFitting',['.NOTDEFINED.']]],
+    'IfcDuctSegment': [['IfcFlowSegment',[]], ['IfcDuctSegment',['.NOTDEFINED.']]],
+    'IfcElectricAppliance': [['IfcFlowTerminal',[]], ['IfcElectricAppliance',['.NOTDEFINED.']]],
+    'IfcElectricDistributionBoard': [['IfcFlowController',[]], ['IfcElectricDistributionBoard',['.NOTDEFINED.']]],
+    'IfcElementAssembly': [['IfcElementAssembly',['$','.NOTDEFINED.']], ['IfcElementAssembly',['$','.NOTDEFINED.']]],
+    'IfcEnergyConversionDevice': [['IfcEnergyConversionDevice',[]], ['IfcEnergyConversionDevice',[]]],
+    'IfcFan': [['IfcFlowMovingDevice',[]], ['IfcFan',['.NOTDEFINED.']]],
+    'IfcFastener': [['IfcFastener',[]], ['IfcFastener',['.NOTDEFINED.']]],
+    'IfcFilter': [['IfcFlowTreatmentDevice',[]], ['IfcFilter',['.NOTDEFINED.']]],
+    'IfcFireSuppressionTerminal': [['IfcFlowTerminal',[]], ['IfcFireSuppressionTerminal',['.NOTDEFINED.']]],
+    'IfcFlowController': [['IfcFlowController',[]], ['IfcFlowController',[]]],
+    'IfcFlowFitting': [['IfcFlowFitting',[]], ['IfcFlowFitting',[]]],
+    'IfcFlowMovingDevice': [['IfcFlowMovingDevice',[]], ['IfcFlowMovingDevice',[]]],
+    'IfcFlowSegment': [['IfcFlowSegment',[]], ['IfcFlowSegment',[]]],
+    'IfcFlowStorageDevice': [['IfcFlowStorageDevice',[]], ['IfcFlowStorageDevice',[]]],
+    'IfcFlowTerminal': [['IfcFlowTerminal',[]], ['IfcFlowTerminal',[]]],
+    'IfcFlowTreatmentDevice': [['IfcFlowTreatmentDevice',[]], ['IfcFlowTreatmentDevice',[]]],
+    'IfcFooting': [['IfcFooting',['.NOTDEFINED.']], ['IfcFooting',['.NOTDEFINED.']]],
+    'IfcFurnishingElement': [['IfcFurnishingElement',[]], ['IfcFurnishingElement',[]]],
+    'IfcFurniture': [['IfcFurnishingElement',[]], ['IfcFurniture',['.NOTDEFINED.']]],
+    'IfcJunctionBox': [['IfcFlowFitting',[]], ['IfcJunctionBox',['.NOTDEFINED.']]],
+    'IfcLightFixture': [['IfcFlowTerminal',[]], ['IfcLightFixture',['.NOTDEFINED.']]],
+    'IfcMechanicalFastener': [['IfcMechanicalFastener',['$','$']], ['IfcMechanicalFastener',['$','$','.NOTDEFINED.']]],
+    'IfcMember': [['IfcMember',[]], ['IfcMember',['.NOTDEFINED.']]],
+    'IfcMemberStandardCase': [['IfcMember',[]], ['IfcMember',['.NOTDEFINED.']]],
+    'IfcOpeningElement': [['IfcOpeningElement',[]], ['IfcOpeningElement',['.NOTDEFINED.']]],
+    'IfcOutlet': [['IfcFlowTerminal',[]], ['IfcOutlet',['.NOTDEFINED.']]],
+    'IfcPile': [['IfcPile',['.NOTDEFINED.','$']], ['IfcPile',['.NOTDEFINED.','$']]],
+    'IfcPipeFitting': [['IfcFlowFitting',[]], ['IfcPipeFitting',['.NOTDEFINED.']]],
+    'IfcPipeSegment': [['IfcFlowSegment',[]], ['IfcPipeSegment',['.NOTDEFINED.']]],
+    'IfcPlate': [['IfcPlate',[]], ['IfcPlate',['.NOTDEFINED.']]],
+    'IfcPlateStandardCase': [['IfcPlate',[]], ['IfcPlate',['.NOTDEFINED.']]],
+    'IfcProtectiveDevice': [['IfcFlowController',[]], ['IfcProtectiveDevice',['.NOTDEFINED.']]],
+    'IfcPump': [['IfcFlowMovingDevice',[]], ['IfcPump',['.NOTDEFINED.']]],
+    'IfcRailing': [['IfcRailing',['$']], ['IfcRailing',['.NOTDEFINED.']]],
+    'IfcRamp': [['IfcRamp',['.NOTDEFINED.']], ['IfcRamp',['.NOTDEFINED.']]],
+    'IfcRampFlight': [['IfcRampFlight',[]], ['IfcRampFlight',['.NOTDEFINED.']]],
+    'IfcRoof': [['IfcRoof',['.NOTDEFINED.']], ['IfcRoof',['.NOTDEFINED.']]],
+    'IfcSanitaryTerminal': [['IfcFlowTerminal',[]], ['IfcSanitaryTerminal',['.NOTDEFINED.']]],
+    'IfcSensor': [['IfcDistributionControlElement',['$']], ['IfcSensor',['.NOTDEFINED.']]],
+    'IfcSlab': [['IfcSlab',['$']], ['IfcSlab',['.NOTDEFINED.']]],
+    'IfcSlabElementedCase': [['IfcSlab',['$']], ['IfcSlab',['.NOTDEFINED.']]],
+    'IfcSlabStandardCase': [['IfcSlab',['$']], ['IfcSlab',['.NOTDEFINED.']]],
+    'IfcStackTerminal': [['IfcFlowTerminal',[]], ['IfcStackTerminal',['.NOTDEFINED.']]],
+    'IfcStair': [['IfcStair',['.NOTDEFINED.']], ['IfcStair',['.NOTDEFINED.']]],
+    'IfcStairFlight': [['IfcStairFlight',['$','$','$','$']], ['IfcStairFlight',['$','$','$','$','.NOTDEFINED.']]],
+    'IfcSwitchingDevice': [['IfcFlowController',[]], ['IfcSwitchingDevice',['.NOTDEFINED.']]],
+    'IfcSystemFurnitureElement': [['IfcFurnishingElement',[]], ['IfcSystemFurnitureElement',['.NOTDEFINED.']]],
+    'IfcTank': [['IfcFlowStorageDevice',[]], ['IfcTank',['.NOTDEFINED.']]],
+    'IfcTransformer': [['IfcEnergyConversionDevice',[]], ['IfcTransformer',['.NOTDEFINED.']]],
+    'IfcTransportElement': [['IfcTransportElement',['$','$','$']], ['IfcTransportElement',['.NOTDEFINED.']]],
+    'IfcUnitaryEquipment': [['IfcEnergyConversionDevice',[]], ['IfcUnitaryEquipment',['.NOTDEFINED.']]],
+    'IfcValve': [['IfcFlowController',[]], ['IfcValve',['.NOTDEFINED.']]],
+    'IfcWall': [['IfcWall',[]], ['IfcWall',['.NOTDEFINED.']]],
+    'IfcWallStandardCase': [['IfcWall',[]], ['IfcWall',['.NOTDEFINED.']]],
+    'IfcWasteTerminal': [['IfcFlowTerminal',[]], ['IfcWasteTerminal',['.NOTDEFINED.']]],
+    'IfcWindow': [['IfcWindow',['$','$']], ['IfcWindow',['$','$','.NOTDEFINED.','$','$']]]
+  };
+  var PROXY_TAIL = { IFC2X3: ['$'], IFC4: ['.NOTDEFINED.'] };   // IfcBuildingElementProxy: CompositionType (2X3) / PredefinedType (4), after Tag
+  function genClass(src, schema, noPredefined) {   // -> {cls, tail, kind: 'mapped'|'generalised'|'proxy'}
+    var m = GENMAP[src], pick = m ? m[schema === 'IFC4' ? 1 : 0] : null;
+    if (!pick || src === 'IfcBuildingElementProxy') { var pt = PROXY_TAIL[schema]; if (noPredefined && schema === 'IFC4') pt = []; return { cls: 'IfcBuildingElementProxy', tail: pt, kind: src === 'IfcBuildingElementProxy' ? 'mapped' : 'proxy' }; }
+    var tail = pick[1]; if (noPredefined && schema === 'IFC4') tail = tail.filter(function (t) { return t !== '.NOTDEFINED.'; });   // the red control: PredefinedType dropped, so the attribute list is short
+    return { cls: pick[0], tail: tail, kind: pick[0] === src ? 'mapped' : 'generalised' };
+  }
 
   // ---- SHA-1 (UUID5 needs it, and the browser has only the async one): bytes -> 20 bytes
   function sha1(bytes) {
@@ -191,34 +285,35 @@
     var ELEV = (FR.storey_elevations_m && Object.keys(FR.storey_elevations_m).length) ? FR.storey_elevations_m : (opts.elev || {});   // the frame's elevations; else the DB's own storey table
     var cs = 1, sn = 0, TSITE = [0, 0, 0]; if (SITE) { var nn = Math.hypot(SITE.ref_direction[0], SITE.ref_direction[1]); cs = SITE.ref_direction[0] / nn; sn = SITE.ref_direction[1] / nn; TSITE = SITE.location_m; }
     var els = elements.slice().sort(function (a, b) { return a.guid < b.guid ? -1 : a.guid > b.guid ? 1 : 0; }), supported = [], skipped = {};
-    els.forEach(function (e) { if (e.cls === 'IfcReinforcingBar' || JOINT_CLS[e.cls] || e.cls === 'IfcBuildingElementPart') supported.push(e); else skipped[e.cls] = (skipped[e.cls] || 0) + 1; });
+    var ANY = !!opts.anyElement, noPre = !!opts.breakPredefined;
+    els.forEach(function (e) { if (ANY && !e.part) supported.push(e); else if (e.cls === 'IfcReinforcingBar' || JOINT_CLS[e.cls] || e.cls === 'IfcBuildingElementPart') supported.push(e); else skipped[e.cls] = (skipped[e.cls] || 0) + 1; });
     var res = { ok: false, why: null, stats: { elements: supported.length, skipped: skipped } };
-    if (!supported.length) { res.why = 'No generated part to write: run an upgrade first.'; return res; }
-    var missing = {}; supported.forEach(function (e) { if (!(e.storey in ELEV)) missing[e.storey] = 1; });
+    if (!supported.length) { res.why = ANY ? 'No element with geometry to write.' : 'No generated part to write: run an upgrade first.'; return res; }
+    var missing = {}; if (!ANY) supported.forEach(function (e) { if (!(e.storey in ELEV)) missing[e.storey] = 1; });
     if (Object.keys(missing).length) { res.why = 'Storey ' + Object.keys(missing).map(function (s) { return '"' + s + '"'; }).join(', ') + ' has no elevation: load a frame JSON that lists it under storey_elevations_m (no elevation is invented).'; res.stats.missingStoreys = Object.keys(missing); return res; }
-    var classes = {}; supported.forEach(function (e) { classes[e.cls] = (classes[e.cls] || 0) + 1; });
+    var classes = {}; if (!ANY) supported.forEach(function (e) { classes[e.cls] = (classes[e.cls] || 0) + 1; });
     var nid = 0, chunks = [], buf = [], bytes = 0, mesh = { closed: 0, open: 0, openTwoSided: 0, flipped: 0, degenerate: 0 };
     function ent(txt) { var n = ++nid; buf.push('#' + n + '=' + txt + ';'); if (buf.length >= 20000) flush(); return '#' + n; }
     function flush() { var t = buf.join('\n') + '\n'; chunks.push(t); bytes += t.length; buf = []; }
     var pt3 = function (x, y, z) { return ent('IFCCARTESIANPOINT((' + real(x) + ',' + real(y) + ',' + real(z) + '))'); };
     var frameTxt = hasFrame ? 'frame: ' + (FR.frame_name || 'given frame') + ' (shift_m=[' + SHIFT.map(pyFloat).join(', ') + '])' : 'frame: DB frame written as is (no frame file given)';
-    var header = 'ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION((' + str(SCHEMA === 'IFC2X3' ? 'ViewDefinition [CoordinationView_V2.0]' : 'ViewDefinition [ReferenceView_V1.2]') + ',' + str('LOD 400 add-on: generated parts only; ' + frameTxt) + "),'2;1');\n" +
+    var header = 'ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION((' + str(SCHEMA === 'IFC2X3' ? 'ViewDefinition [CoordinationView_V2.0]' : 'ViewDefinition [ReferenceView_V1.2]') + ',' + str(ANY ? (opts.description || 'BIMCompiler Viewer export: the whole building; ' + frameTxt) : 'LOD 400 add-on: generated parts only; ' + frameTxt) + "),'2;1');\n" +
       'FILE_NAME(' + str(name) + ',' + str(TSTAMP) + ",(''),(''),'BIMCompiler Modeller','BIMCompiler LOD Upgrade','');\nFILE_SCHEMA((" + str(SCHEMA) + '));\nENDSEC;\nDATA;\n';
     // owner history, units, contexts, project, site, building
     var person = ent("IFCPERSON($," + str('BIMCompiler') + ',$,$,$,$,$,$)'), org = ent('IFCORGANIZATION($,' + str('BIMCompiler') + ',$,$,$)'), po = ent('IFCPERSONANDORGANIZATION(' + person + ',' + org + ',$)');
-    var app = ent('IFCAPPLICATION(' + org + ',' + str(APP_VERSION) + ',' + str('BIMCompiler LOD 400 parts export') + ',' + str('BIMC') + ')'), oh = ent('IFCOWNERHISTORY(' + po + ',' + app + ',$,.ADDED.,$,$,$,' + TS + ')');
+    var app = ent('IFCAPPLICATION(' + org + ',' + str(APP_VERSION) + ',' + str(ANY ? 'BIMCompiler Viewer IFC export' : 'BIMCompiler LOD 400 parts export') + ',' + str('BIMC') + ')'), oh = ent('IFCOWNERHISTORY(' + po + ',' + app + ',$,.ADDED.,$,$,$,' + TS + ')');
     var O = pt3(0, 0, 0), Zd = ent('IFCDIRECTION((0.,0.,1.))'), Xd = ent('IFCDIRECTION((1.,0.,0.))'), A0 = ent('IFCAXIS2PLACEMENT3D(' + O + ',' + Zd + ',' + Xd + ')');
     var ctx = ent("IFCGEOMETRICREPRESENTATIONCONTEXT($,'Model',3,1.E-05," + A0 + ',$)'), body = ent("IFCGEOMETRICREPRESENTATIONSUBCONTEXT('Body','Model',*,*,*,*," + ctx + ',$,.MODEL_VIEW.,$)');
     var units = ent('IFCUNITASSIGNMENT((' + [ent('IFCSIUNIT(*,.LENGTHUNIT.,$,.METRE.)'), ent('IFCSIUNIT(*,.AREAUNIT.,$,.SQUARE_METRE.)'), ent('IFCSIUNIT(*,.VOLUMEUNIT.,$,.CUBIC_METRE.)'), ent('IFCSIUNIT(*,.PLANEANGLEUNIT.,$,.RADIAN.)')].join(',') + '))');
-    ent('IFCPROJECT(' + str(gid('project')) + ',' + oh + ',' + str(FR.project_name || 'LOD 400 add-on') + ',$,$,$,$,(' + ctx + '),' + units + ')'); var projId = '#' + nid;
+    ent('IFCPROJECT(' + str(gid('project')) + ',' + oh + ',' + str(FR.project_name || (ANY ? (opts.projectName || 'Building') : 'LOD 400 add-on')) + ',$,$,$,$,(' + ctx + '),' + units + ')'); var projId = '#' + nid;
     var siteLoc = pt3(TSITE[0], TSITE[1], TSITE[2]), siteAx = ent('IFCAXIS2PLACEMENT3D(' + siteLoc + ',' + ent('IFCDIRECTION((0.,0.,1.))') + ',' + ent('IFCDIRECTION((' + real(cs) + ',' + real(sn) + ',0.))') + ')'), siteLp = ent('IFCLOCALPLACEMENT($,' + siteAx + ')');
     var ll = SITE && SITE.latitude ? '(' + SITE.latitude.join(',') + '),(' + SITE.longitude.join(',') + '),' + real(SITE.elevation_m || 0) : '$,$,$';
     var site = ent('IFCSITE(' + str(gid('site')) + ',' + oh + ',' + str('Site') + ',$,$,' + siteLp + ',$,$,.ELEMENT.,' + ll + ',$,$)');
-    var bldLp = ent('IFCLOCALPLACEMENT(' + siteLp + ',' + A0 + ')'), bld = ent('IFCBUILDING(' + str(gid('building')) + ',' + oh + ',' + str('LOD 400 add-on') + ',$,$,' + bldLp + ',$,$,.ELEMENT.,$,$,$)');
+    var bldLp = ent('IFCLOCALPLACEMENT(' + siteLp + ',' + A0 + ')'), bld = ent('IFCBUILDING(' + str(gid('building')) + ',' + oh + ',' + str(ANY ? (opts.buildingName || 'Building') : 'LOD 400 add-on') + ',$,$,' + bldLp + ',$,$,.ELEMENT.,$,$,$)');
     ent('IFCRELAGGREGATES(' + str(gid('agg-ps')) + ',' + oh + ',$,$,' + projId + ',(' + site + '))'); ent('IFCRELAGGREGATES(' + str(gid('agg-sb')) + ',' + oh + ',$,$,' + site + ',(' + bld + '))');
-    var STOREYS = {}, STOREY_LP = {}, CONTAINED = {}, MATS = {}, GROUPS = {}, groupOrder = [], nParts = 0, split = {}, mixed = [];
+    var noElev = [], STOREYS = {}, STOREY_LP = {}, CONTAINED = {}, MATS = {}, GROUPS = {}, groupOrder = [], nParts = 0, split = {}, mixed = [];
     function storey(nm) {
-      if (!STOREYS[nm]) { var z = ELEV[nm], lp = ent('IFCLOCALPLACEMENT(' + bldLp + ',' + ent('IFCAXIS2PLACEMENT3D(' + pt3(0, 0, z) + ',$,$)') + ')'); STOREY_LP[nm] = lp; STOREYS[nm] = ent('IFCBUILDINGSTOREY(' + str(gid('storey:' + nm)) + ',' + oh + ',' + str(nm) + ',$,$,' + lp + ',$,$,.ELEMENT.,' + real(z) + ')'); }
+      if (!STOREYS[nm]) { var z = ELEV[nm], known = z !== undefined, lp = ent('IFCLOCALPLACEMENT(' + bldLp + ',' + ent('IFCAXIS2PLACEMENT3D(' + pt3(0, 0, known ? z : 0) + ',$,$)') + ')'); STOREY_LP[nm] = lp; STOREYS[nm] = ent('IFCBUILDINGSTOREY(' + str(gid('storey:' + nm)) + ',' + oh + ',' + str(nm) + ',$,$,' + lp + ',$,$,.ELEMENT.,' + (known ? real(z) : '$') + ')'); if (!known) noElev.push(nm); }
       return STOREYS[nm];
     }
     function material(nm) { if (!MATS[nm]) MATS[nm] = { id: ent('IFCMATERIAL(' + str(nm) + (SCHEMA === 'IFC4' ? ',$,$' : '') + ')'), els: [] }; return MATS[nm]; }
@@ -231,9 +326,16 @@
       var ps = ent('IFCPROPERTYSET(' + str(gid('pset:' + key + ':' + psetName)) + ',' + oh + ',' + str(psetName) + ',$,(' + vals.join(',') + '))');
       ent('IFCRELDEFINESBYPROPERTIES(' + str(gid('rel:' + key + ':' + psetName)) + ',' + oh + ',$,$,(' + obj + '),' + ps + ')');
     }
+    var STYLES = {}, BLDCONT = [], gen = { written: 0, byClass: {}, proxied: {}, generalised: {}, noStorey: 0 };
+    function styleOf(rgba) {   // one IfcPresentationStyleAssignment per distinct colour (ANY mode); null when the element states none
+      if (!rgba) return null; var c = String(rgba).split(',').map(Number); if (c.length < 3 || c.some(function (x, i) { return i < 4 && c[i] !== c[i]; })) return null;
+      var f = function (x) { x = x > 1 ? x / 255 : x; return Math.round(x * 1e4) / 1e4; }, a = c.length > 3 ? c[3] : 1; a = a > 1 ? a / 255 : a; var k = [f(c[0]), f(c[1]), f(c[2]), Math.round(a * 1e4) / 1e4].join(',');
+      if (!STYLES[k]) { var col = ent('IFCCOLOURRGB($,' + real(f(c[0])) + ',' + real(f(c[1])) + ',' + real(f(c[2])) + ')'), rnd = ent('IFCSURFACESTYLERENDERING(' + col + ',' + real(Math.round((1 - a) * 1e4) / 1e4) + ',$,$,$,$,$,$,.FLAT.)'), ss = ent("IFCSURFACESTYLE('',.BOTH.,(" + rnd + '))'); STYLES[k] = ent('IFCPRESENTATIONSTYLEASSIGNMENT((' + ss + '))'); }
+      return STYLES[k];
+    }
     // the geometry of one set of components, in the storey's local frame (the site rotation), as IfcFacetedBrep (IFC2X3) / one IfcTriangulatedFaceSet (IFC4)
     function geometry(e, comps, c0) {
-      var z = ELEV[e.storey], loc = function (x, y, zz) { var dx = x - c0[0], dy = y - c0[1], dz = zz - c0[2]; return [r6(cs * dx + sn * dy), r6(-sn * dx + cs * dy), r6(dz)]; }, rep, ci, t, q;
+      var z = ELEV[e.storey] === undefined ? 0 : ELEV[e.storey], loc = function (x, y, zz) { var dx = x - c0[0], dy = y - c0[1], dz = zz - c0[2]; return [r6(cs * dx + sn * dy), r6(-sn * dx + cs * dy), r6(dz)]; }, rep, repItems, ci, t, q;
       if (SCHEMA === 'IFC2X3') {
         var items = [];
         for (ci = 0; ci < comps.length; ci++) {
@@ -241,7 +343,7 @@
           for (t = 0; t < T.length; t += 9) { var pa = ptOf(T[t], T[t + 1], T[t + 2]), pb = ptOf(T[t + 3], T[t + 4], T[t + 5]), pc = ptOf(T[t + 6], T[t + 7], T[t + 8]); faces.push(ent('IFCFACE((' + ent('IFCFACEOUTERBOUND(' + ent('IFCPOLYLOOP((' + pa + ',' + pb + ',' + pc + '))') + ',.T.)') + '))')); }
           items.push(ent('IFCFACETEDBREP(' + ent('IFCCLOSEDSHELL((' + faces.join(',') + '))') + ')'));
         }
-        rep = ent("IFCSHAPEREPRESENTATION(" + body + ",'Body','Brep',(" + items.join(',') + '))');
+        rep = ent("IFCSHAPEREPRESENTATION(" + body + ",'Body','Brep',(" + items.join(',') + '))'); repItems = items;
       } else {
         var idx = {}, coords = [], tris = [], allClosed = true;
         for (ci = 0; ci < comps.length; ci++) {
@@ -249,21 +351,21 @@
           for (t = 0; t < T2.length; t += 9) { var row = []; for (q = 0; q < 9; q += 3) { var l = loc(T2[t + q], T2[t + q + 1], T2[t + q + 2]), kk = l[0] + ',' + l[1] + ',' + l[2]; if (idx[kk] === undefined) { idx[kk] = coords.length + 1; coords.push('(' + real(l[0]) + ',' + real(l[1]) + ',' + real(l[2]) + ')'); } row.push(idx[kk]); } tris.push('(' + row.join(',') + ')'); }
         }
         var fs = ent('IFCTRIANGULATEDFACESET(' + ent('IFCCARTESIANPOINTLIST3D((' + coords.join(',') + '))') + ',$,' + (allClosed ? '.T.' : '.F.') + ',(' + tris.join(',') + '),$)');
-        rep = ent("IFCSHAPEREPRESENTATION(" + body + ",'Body','Tessellation',(" + fs + '))');
+        rep = ent("IFCSHAPEREPRESENTATION(" + body + ",'Body','Tessellation',(" + fs + '))'); repItems = [fs];
       }
       var cx = c0[0] - TSITE[0], cy = c0[1] - TSITE[1];   // placement: (c0 - site) in the site frame, minus the storey elevation
-      var lp = pt3(cs * cx + sn * cy, -sn * cx + cs * cy, c0[2] - TSITE[2] - z), lpl = ent('IFCLOCALPLACEMENT(' + STOREY_LP[e.storey] + ',' + ent('IFCAXIS2PLACEMENT3D(' + lp + ',$,$)') + ')');
-      return { shape: ent('IFCPRODUCTDEFINITIONSHAPE($,$,(' + rep + '))'), lp: lpl, locPoint: lp };
+      var lp = pt3(cs * cx + sn * cy, -sn * cx + cs * cy, c0[2] - TSITE[2] - z), lpl = ent('IFCLOCALPLACEMENT(' + (STOREY_LP[e.storey] || bldLp) + ',' + ent('IFCAXIS2PLACEMENT3D(' + lp + ',$,$)') + ')');
+      return { shape: ent('IFCPRODUCTDEFINITIONSHAPE($,$,(' + rep + '))'), lp: lpl, locPoint: lp, items: repItems };
     }
     var sec = function (dd) { return SECTION_SIDES / 2 * Math.pow(dd / 2000.0, 2) * Math.sin(2 * Math.PI / SECTION_SIDES); };
     var fails = [], untraced = 0, n = supported.length, ei;
     // storeys first, in the order the parts need them (as the oracle creates them on first use)
     for (ei = 0; ei < n; ei++) {
-      var e = supported[ei]; K.state.prog = { label: 'Add-on IFC: part', done: ei, total: n }; storey(e.storey);
+      var e = supported[ei]; K.state.prog = { label: ANY ? 'IFC: element' : 'Add-on IFC: part', done: ei, total: n }; var isGen = ANY && !e.part, hasSt = !isGen || (!!e.storey && e.storey !== 'Unknown'); if (hasSt) storey(e.storey);
       var cr = yield* components(e.tris, SHIFT, mesh, K), comps = cr.comps, c0 = cr.c0, cls = e.cls, sname = shortName(e.name), status = JOINT_CLS[cls] ? 'configuration only, capacity not checked' : 'ADDED (generated by rule, not authored)', gparts = [];
       if (e.detail === null || e.detail === undefined) untraced++;
       var groups = [[null, comps.map(function (_, i) { return i; })]], dias = [], asg = null;
-      if (cls === 'IfcReinforcingBar') {
+      if (cls === 'IfcReinforcingBar' && !isGen) {
         dias = statedDias(e.detail); if (!dias.length) { fails.push('no stated diameter parsed for ' + e.guid); continue; }
         asg = comps.map(function (c) { if (dias.length === 1) return dias[0]; var th = thicknessMm(c.T); return dias.reduce(function (best, x) { return Math.abs(th / x - (1 + Math.cos(Math.PI / SECTION_SIDES)) / 2) < Math.abs(th / best - (1 + Math.cos(Math.PI / SECTION_SIDES)) / 2) ? x : best; }, dias[0]); });
         var byD = {}; asg.forEach(function (d, i) { (byD[d] = byD[d] || []).push(i); }); groups = Object.keys(byD).map(parseFloat).sort(function (a, b) { return a - b; }).map(function (d) { return [d, byD[d]]; });
@@ -272,6 +374,14 @@
       for (var gi = 0; gi < groups.length; gi++) {
         var key = groups[gi][0], sub = groups[gi][1].map(function (i) { return comps[i]; }), eid = groups.length === 1 ? e.guid : e.guid + '#T' + fmtG(key);
         if (gi > 0) split[cls] = (split[cls] || 0) + 1;
+        if (isGen) {   // ANY ELEMENT: a generic product, the full attribute list of the schema (GENMAP); the source class stays in ObjectType when it was generalised or proxied
+          var gc = genClass(cls, SCHEMA, noPre), gg = geometry(e, sub, c0), sty = styleOf(e.rgba), gattrs = [str(gid(e.guid)), oh, str(e.name || ''), '$', gc.kind === 'mapped' ? '$' : str(cls), gg.lp, gg.shape, str(e.guid)];
+          if (sty) gg.items.forEach(function (it) { ent('IFCSTYLEDITEM(' + it + ',(' + sty + '),$)'); });
+          var gEnt = ent(gc.cls.toUpperCase() + '(' + gattrs.concat(gc.tail).join(',') + ')'); gen.written++; classes[gc.cls] = (classes[gc.cls] || 0) + 1;
+          var bc = gen.byClass[cls] = gen.byClass[cls] || { cls: gc.cls, n: 0, kind: gc.kind }; bc.n++; if (gc.kind === 'proxy') gen.proxied[cls] = (gen.proxied[cls] || 0) + 1; else if (gc.kind === 'generalised') gen.generalised[cls] = (gen.generalised[cls] || 0) + 1;
+          if (hasSt) (CONTAINED[e.storey] = CONTAINED[e.storey] || []).push(gEnt); else { BLDCONT.push(gEnt); gen.noStorey++; }
+          continue;
+        }
         var geo = geometry(e, sub, c0), attrs = [str(gid(eid)), oh, str(sname + (groups.length > 1 ? ' (T' + fmtG(key) + ' bars)' : '')), str(e.name), '$', geo.lp, geo.shape, str(e.guid)], mname, extra = {}, tail = [];
         if (cls === 'IfcReinforcingBar') {
           var d = key, Ls = sub.filter(function (c) { return c.closed; }).map(function (c) { return c.vol / sec(d); }), sl = statedLen(e.detail), statedOne = sl && sl[0] === sl[1];
@@ -307,10 +417,12 @@
     });
     Object.keys(MATS).sort().forEach(function (nm) { if (MATS[nm].els.length) ent('IFCRELASSOCIATESMATERIAL(' + str(gid('mat:' + nm)) + ',' + oh + ',$,$,(' + MATS[nm].els.join(',') + '),' + MATS[nm].id + ')'); });
     Object.keys(CONTAINED).sort().forEach(function (nm) { ent('IFCRELCONTAINEDINSPATIALSTRUCTURE(' + str(gid('cont:' + nm)) + ',' + oh + ',$,$,(' + CONTAINED[nm].join(',') + '),' + STOREYS[nm] + ')'); });
+    if (BLDCONT.length) ent('IFCRELCONTAINEDINSPATIALSTRUCTURE(' + str(gid('cont:building')) + ',' + oh + ',$,$,(' + BLDCONT.join(',') + '),' + bld + ')');
     ent('IFCRELAGGREGATES(' + str(gid('agg-bs')) + ',' + oh + ',$,$,' + bld + ',(' + Object.keys(STOREYS).sort().map(function (k) { return STOREYS[k]; }).join(',') + '))');
     flush();
     var parts = [header].concat(chunks, ['ENDSEC;\nEND-ISO-10303-21;\n']), total = 0; parts.forEach(function (p) { total += p.length; });
     res.ok = true; res.parts = parts; res.chars = total; res.schema = SCHEMA; res.stats = { elements: n, skipped: skipped, classes: classes, split: split, mixed: mixed, mesh: mesh, storeys: Object.keys(STOREYS).length, untraced: untraced, parts: nParts, frame: hasFrame ? 'given' : 'DB frame as is', entities: nid };
+    if (ANY) { res.stats.byClass = gen.byClass; res.stats.proxied = gen.proxied; res.stats.generalised = gen.generalised; res.stats.noStorey = gen.noStorey; res.stats.storeysNoElevation = noElev.slice().sort(); res.stats.written = gen.written; res.stats.styles = Object.keys(STYLES).length; }
     return res;
   }
   function build(elements, opts) { return drain(buildSteps(elements, opts)); }
