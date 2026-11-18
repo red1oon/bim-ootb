@@ -34,7 +34,7 @@ function read(file) {
     const m = o.message || {};
     if (m.usage && m.id) {
       if (seen.has(m.id)) t.dupCopies++;   // a streamed reply is written more than once: count it once
-      else { seen.add(m.id); t.replies++; const u = m.usage; t.input += u.input_tokens || 0; t.cacheWrite += u.cache_creation_input_tokens || 0; t.cacheRead += u.cache_read_input_tokens || 0; t.output += u.output_tokens || 0; if (m.model) t.models.add(m.model); }
+      else { seen.add(m.id); t.replies++; const u = m.usage; t.input += u.input_tokens || 0; t.cacheWrite += u.cache_creation_input_tokens || 0; t.cacheRead += u.cache_read_input_tokens || 0; t.output += u.output_tokens || 0; if (m.model && !m.model.startsWith('<')) t.models.add(m.model); }
     }
     for (const c of Array.isArray(m.content) ? m.content : []) {
       if (c && c.type === 'tool_use' && c.input && typeof c.input.command === 'string') for (const w of c.input.command.match(/\bwitness_[a-z0-9_]+\.js\b/g) || []) t.witnesses.add(w);
