@@ -171,7 +171,7 @@ function runOnce(f) {
   });
   const timedOut = r.error && r.error.code === 'ETIMEDOUT';
   const out = (r.stdout || '') + (r.stderr || '');
-  RESULTS.record(path.join(__dirname, '..'), path.resolve(TESTS_DIR, f), { out: timedOut ? out + '\nverdict=FAIL (timeout)' : out, exit: timedOut ? 124 : r.status, seconds: (Date.now() - t0) / 1000 });
+  RESULTS.record(path.join(__dirname, '..'), path.resolve(TESTS_DIR, f), { out: timedOut ? out + '\nverdict=FAIL (timeout)' : out, exit: timedOut ? 124 : r.status, seconds: (Date.now() - t0) / 1000, cwd: path.relative(path.join(__dirname, '..'), TESTS_DIR) });
   return { ok: !timedOut && r.status === 0, code: timedOut ? 'TIMEOUT' : r.status, out };
 }
 

@@ -25,7 +25,7 @@ files.forEach(f => {
   const t0 = Date.now(), r = cp.spawnSync('node', [f].concat(a), { encoding: 'utf8', timeout: 590000, env: process.env }), out = (r.stdout || '') + (r.stderr || '');
   const hasFail = /§FAIL|^FAIL|^\s*(❌|✗)| FAIL [1-9]/m.test(out) || /§W-[A-Z-]+ FAIL/.test(out), skip = /§SKIP/.test(out);
   let st; if (r.status === 0 && !hasFail) st = skip ? 'SKIP' : 'PASS'; else if (ENVSIG.test(out) && !hasFail) st = 'ENV'; else st = 'FAIL';
-  RESULTS.record(path.join(__dirname, '..', '..'), path.resolve(f), { out: out + (st === 'ENV' ? '\nverdict=INCONCLUSIVE (ENV: a missing input on this machine)' : st === 'SKIP' ? '\nverdict=SKIP' : ''), exit: r.status, seconds: (Date.now() - t0) / 1000 });   // E-2: last run in ~/.cache
+  RESULTS.record(path.join(__dirname, '..', '..'), path.resolve(f), { out: out + (st === 'ENV' ? '\nverdict=INCONCLUSIVE (ENV: a missing input on this machine)' : st === 'SKIP' ? '\nverdict=SKIP' : ''), exit: r.status, seconds: (Date.now() - t0) / 1000, cwd: path.relative(path.join(__dirname, '..', '..'), process.cwd()) });   // E-2: last run in ~/.cache
   res[name] = st; console.log((st + '    ').slice(0, 5) + ' ' + name + '  (' + ((Date.now() - t0) / 1000).toFixed(1) + 's' + (st !== 'PASS' ? ', ' + (out.split('\n').filter(l => /§SKIP|MISSING|Error|ENOENT|FAIL/.test(l))[0] || '').replace(/\s+/g, ' ').slice(0, 110) : '') + ')');
 });
 const counts = {}; Object.values(res).forEach(s => { counts[s] = (counts[s] || 0) + 1; });
