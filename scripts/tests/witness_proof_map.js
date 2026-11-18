@@ -5,7 +5,7 @@
 // Read the log after every run: exit code is not evidence. Verdict line: §PROOF_MAP_W … verdict=PASS|FAIL|INCONCLUSIVE.
 // PROVES: scripts/gen_proof_map.js, witness_kit/proves.js, witness_kit/results.js
 // ISSUE THIS PROVES OR DISPROVES: "the proof map loses a module, believes a PROVES: line that names no file, shows an INCONCLUSIVE run as a
-//   pass, or shows a run as current after the witness changed".
+//   pass, shows a run as current after the witness changed, or shows a stored, stale "named by" list instead of the tests on disk (#3326)".
 // INDEPENDENT SOURCE: a temp git repo built here with known modules, PROVES: lines and cache entries, and the real modeller's own counts
 //   (module lines of modules.json; PROVES: lines found by a plain text grep).
 // RED CONTROLS (must be detected): a PROVES: line naming a missing file (bad_paths=1, exit 1) · a cached INCONCLUSIVE · a witness edited after its run.
@@ -24,17 +24,20 @@ try {
   // the temp repo
   const repo = path.join(tmp, 'repo'), g = (...a) => cp.execFileSync('git', ['-c', 'core.hooksPath=/dev/null', '-c', 'user.email=w@x', '-c', 'user.name=w', ...a], { cwd: repo, encoding: 'utf8' });
   fs.mkdirSync(path.join(repo, 'app', 'tests'), { recursive: true });
-  const mod = (w) => ({ v: 1, load: 'boot', lazyGroup: null, precache: true, deps: [], uses: [], notDeps: [], owner: '', witnesses: w });
-  fs.writeFileSync(path.join(repo, 'app', 'modules.json'), JSON.stringify({ modules: { 'app/a.js': mod([]), 'app/b.js': mod(['app/tests/witness_named.js']), 'app/c.js': mod([]) } }));
+  // B-3 REVISED (#3326): modules.json stores no witnesses; "named by" comes from witnessesOf() over the tests on disk at each run.
+  const mod = () => ({ v: 1, load: 'boot', lazyGroup: null, precache: true, deps: [], uses: [], notDeps: [], owner: '' });
+  fs.writeFileSync(path.join(repo, 'app', 'modules.json'), JSON.stringify({ modules: { 'app/a.js': mod(), 'app/b.js': mod(), 'app/c.js': mod() } }));
   ['a', 'b', 'c'].forEach(n => fs.writeFileSync(path.join(repo, 'app', n + '.js'), '// ' + n + '\n'));
   fs.writeFileSync(path.join(repo, 'app', 'tests', 'witness_a.js'), '#!/usr/bin/env node\n// PROVES: app/a.js R1\n// ISSUE …\nconsole.log("verdict=INCONCLUSIVE")\n');
-  fs.writeFileSync(path.join(repo, 'app', 'tests', 'witness_named.js'), '// names app/b.js\n');
+  fs.writeFileSync(path.join(repo, 'app', 'tests', 'witness_named.js'), '// only a comment names app/c.js: not counted\nrequire("../b.js");\n');
   g('init', '-q'); g('add', '.'); g('commit', '-qm', 'one');
   RES.record(repo, 'app/tests/witness_a.js', { out: 'verdict=INCONCLUSIVE', exit: 0, seconds: 1 });
   RES.record(repo, 'app/tests/witness_named.js', { out: 'verdict=PASS', exit: 0, seconds: 1 });
   let r = PM.build(repo, 'app');
   const a = r.rows.find(x => x.module === 'app/a.js'), b = r.rows.find(x => x.module === 'app/b.js'), c = r.rows.find(x => x.module === 'app/c.js');
   check('states', a.state === 'proven' && b.state === 'named-only' && c.state === 'unproven' && r.summary.modules === 3, `a=${a.state} b=${b.state} c=${c.state}`);
+  check('named_live_not_stored', !/witnesses/.test(fs.readFileSync(path.join(repo, 'app', 'modules.json'), 'utf8')) && b.named.length === 1 && b.named[0].witness === 'app/tests/witness_named.js' && !c.named.length,
+    `no stored list; b named by ${b.named.map(x => x.witness)} · c (named in a comment only) named=${c.named.length}`);
   check('red_inconclusive_shown', a.proven[0].verdict === 'INCONCLUSIVE' && a.proven[0].rules.join() === 'R1' && r.summary.inconclusive === 1, `a proven by ${a.proven[0].witness} [${a.proven[0].verdict}] rules=${a.proven[0].rules}`);
   check('fresh_not_stale', a.proven[0].stale === false && b.named[0].verdict === 'PASS' && b.named[0].stale === false, `a stale=${a.proven[0].stale} b=${b.named[0].verdict} stale=${b.named[0].stale}`);
   fs.appendFileSync(path.join(repo, 'app', 'tests', 'witness_a.js'), '// edited after its run\n'); g('commit', '-qam', 'two');

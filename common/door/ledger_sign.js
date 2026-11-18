@@ -60,8 +60,17 @@ function seal(prev, id, op, opts) {   // op: the door's op object -> a kernel_op
   return row;
 }
 const isRow = (j) => j && j.parameters !== undefined && j.op_hash !== undefined;
-function opOf(j) { if (!isRow(j)) return j; const p = JSON.parse(j.parameters); delete p._sigv; delete p.signed_by; return p; }
-function parseOps(text) { return String(text).split('\n').filter(Boolean).map((l) => opOf(JSON.parse(l))); }
+function opOf(j) { if (!isRow(j)) return j; const p = JSON.parse(j.parameters); delete p._sigv; delete p.signed_by; if (p.op_type == null) p.op_type = j.op_type; return p; }   // a PAGE row keeps its op_type on the row, not in parameters (§61 U5: without this the door skipped every page edit)
+// the door's replay of the file. §61 (bim-compiler prompts/CLI_ERP_IVR.md): an UNDO/REDO row is read by the page's own rule (KernelOps.foldMarkers), so a row the page undid is
+//   not replayed here either; the marker rows themselves are not ops. Stated limit: the door does not judge signatures yet, so it applies every marker in the file.
+//   LEDGER_UNDO_BREAK=doornomarker skips it (witness falsifier).
+function parseOps(text) {
+  const js = String(text).split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  if (!js.some((j) => isRow(j) && (j.op_type === 'UNDO' || j.op_type === 'REDO')) || process.env.LEDGER_UNDO_BREAK === 'doornomarker') return js.filter((j) => !(isRow(j) && (j.op_type === 'UNDO' || j.op_type === 'REDO'))).map(opOf);
+  const m = kernel().foldMarkers(js.filter(isRow)), out = new Set(m.undone);
+  say('markers=' + m.markers + ' undone=' + m.undone.length);
+  return js.filter((j) => !(isRow(j) && (j.op_type === 'UNDO' || j.op_type === 'REDO' || out.has(j.op_uuid)))).map(opOf);
+}
 
 // ── the lock ──
 const nap = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);

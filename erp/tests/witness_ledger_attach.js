@@ -9,7 +9,7 @@
  *   A4 the door appends 2 ops to the copy, the copy goes back; a page op then re-hydrates: the file holds page + door + page rows, the page's verifyChain (door key added as peer) is ok
  *   A5 attach to a file the door already wrote (M rows) with the page's history of N: M+N rows, the N rebased onto the tip (ids M+1..), v2 signatures unchanged, one chain
  *   A6 attach again to the first folder: nothing joined twice (op_uuid dedupe)
- *   A7 fold-back undo in file mode is refused with §LEDGER unsupported and changes nothing
+ *   A7 fold-back undo in file mode appends ONE new UNDO row (CLI_ERP_IVR §61; it was refused before §61), the earlier bytes unchanged, no id repeated
  *   A8 the file lock spans the commit: with a door's lock file present the page's commit does NOT run, then runs when the lock goes
  * Falsifiers: LEDGER_ATTACH_BREAK=nojoin -> A1 FAIL; LEDGER_ATTACH_BREAK=nolock -> A8 FAIL.
  */
@@ -83,10 +83,10 @@ const judge = (id, ok, ev) => { if (ok === null) inc++; else if (ok) pass++; els
     const a6 = await page.evaluate(async () => { window.__crud.detachLedger(); await new Promise((r) => setTimeout(r, 300)); const d = await window.__opfs('L2'); const before = (await window.__read('L2')).split('\n').filter(Boolean).length; const r = await window.__crud.attachLedger(d, 'ops.jsonl'); return { r, before, after: (await window.__read('L2')).split('\n').filter(Boolean).length }; });
     judge('A6 attach again to the same folder: nothing is joined twice', a6.r.ok === true && a6.r.joined === 0 && a6.before === a6.after, JSON.stringify(a6));
     // A7
-    const n7 = LOG.length, a7b = (await page.evaluate(() => window.__read('L2'))).length;
-    await page.evaluate(() => window.crudFoldBack && window.crudFoldBack('ad_field', 'DR', 'CO')); await page.waitForTimeout(300);
-    const a7 = (await page.evaluate(() => window.__read('L2'))).length, l7 = LOG.slice(n7).filter((l) => /§LEDGER unsupported/.test(l));
-    judge('A7 fold-back undo in file mode is refused (§LEDGER unsupported) and the file is unchanged', l7.length === 1 && a7 === a7b, 'lines=' + l7.length + ' bytes ' + a7b + '->' + a7);
+    const t7b = await page.evaluate(() => window.__read('L2'));
+    await page.evaluate(() => window.crudFoldBack && window.crudFoldBack('ad_field', 'DR', 'CO')); await page.waitForTimeout(1800);
+    const t7 = await page.evaluate(() => window.__read('L2')), r7b = t7b.split('\n').filter(Boolean), r7 = t7.split('\n').filter(Boolean).map(JSON.parse), m7 = r7[r7.length - 1];
+    judge('A7 fold-back undo in file mode appends ONE UNDO row (§61), the earlier bytes unchanged, no id repeated', t7.startsWith(t7b) && r7.length === r7b.length + 1 && m7.op_type === 'UNDO' && new Set(r7.map((r) => r.id)).size === r7.length, 'rows ' + r7b.length + '->' + r7.length + ' last=' + m7.op_type);
     // A8: the lock spans the commit
     const a8 = await page.evaluate(async () => {
       const d = await window.__opfs('L2'), lk = await d.getFileHandle('ops.jsonl.lock', { create: true }), w = await lk.createWritable(); await w.write('pid:1'); await w.close();

@@ -15,7 +15,9 @@ const fs = require('fs'), path = require('path'), crypto = require('crypto');
 const P = path.posix;
 const GM = () => require('../gen_manifest.js');   // lazy: gen_manifest requires this file too
 
-const MOD_KEYS = ['v', 'load', 'lazyGroup', 'precache', 'deps', 'uses', 'notDeps', 'owner', 'witnesses'];
+// No `witnesses` key (owner B-3 REVISED 2026-11-19, bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md §B-3R SPEC; #3326): a stored copy went stale with every new
+//   test anywhere and failed C15 on test-only PRs. witnessesOf() below answers when asked; serialize() drops a leftover key, so --write cleans an old line.
+const MOD_KEYS = ['v', 'load', 'lazyGroup', 'precache', 'deps', 'uses', 'notDeps', 'owner'];
 const SITE_KEYS = ['kind', 'as', 'onerror', 'q'];
 const INLINE_KEYS = ['deps', 'uses', 'notDeps'];
 const FORCING = new Set(['load', 'load-guarded', 'import']);
@@ -29,7 +31,7 @@ const SCHEMA = { type: 'object', additionalProperties: false,
     modules: { type: 'object', minProperties: 1, additionalProperties: { type: 'object', additionalProperties: false, required: MOD_KEYS, properties: {
       v: { type: ['integer', 'null'], minimum: 0 }, load: { enum: ['boot', 'lazy'] }, lazyGroup: { type: ['string', 'null'] }, precache: { type: 'boolean' },
       deps: { type: 'array', items: { type: 'string' } }, uses: { type: 'array', items: { type: 'string' } }, notDeps: { type: 'array', items: { type: 'string' } },
-      owner: { anyOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' }, minItems: 2 }] }, witnesses: { type: 'array', items: { type: 'string' } } } } },
+      owner: { anyOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' }, minItems: 2 }] } } } },
     inline: { type: 'object', additionalProperties: { type: 'object', additionalProperties: false, required: INLINE_KEYS, properties: {
       deps: { type: 'array', items: { type: 'string' } }, uses: { type: 'array', items: { type: 'string' } }, notDeps: { type: 'array', items: { type: 'string' } } } } },
     order: { type: 'object', additionalProperties: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['kind', 'as'], properties: {   // no site-level v (B1)
@@ -217,12 +219,10 @@ function review(root, app, m) {
 }
 const recOf = (m, from) => m.modules[from] || m.inline[from] || null;
 
-/** --write's refresh of the extracted fields: owner, witnesses, and the call-time / import edges into `uses`. */
+/** --write's refresh of the extracted fields: owner, and the call-time / import edges into `uses`. */
 function refresh(root, app, m, lines) {
   const files = Object.keys(m.modules).filter(f => /\.m?js$/.test(f) && fs.existsSync(path.join(root, f)));
   for (const f of Object.keys(m.modules)) m.modules[f].owner = files.includes(f) ? ownerOf(fs.readFileSync(path.join(root, f), 'utf8')) : '';
-  const w = witnessesOf(root, app, Object.keys(m.modules));
-  for (const f of Object.keys(m.modules)) m.modules[f].witnesses = w.get(f) || [];
   const rv = review(root, app, m); let added = 0;
   for (const e of rv.unrecordedUses) { const rec = recOf(m, e.from) || (m.inline[e.from] = { deps: [], uses: [], notDeps: [] }); rec.uses = [...new Set([...rec.uses, e.to])].sort(); added++; }
   lines.push(`§MANIFEST_REFRESH app=${app} owner_gap=${Object.values(m.modules).filter(x => x.owner === '').length} uses_added=${added} unreviewed_forcing=${rv.unreviewed.length}`);
@@ -277,14 +277,13 @@ function check(root, app, o) {
     if (!rv.unreviewed.length && !info.shaOk) lines.push(`§DEPS_REVIEW_STALE tool_sha_now=${rv.sha} depsReview.tool=${m.depsReview.tool || '-'} (the order-forcing list changed since the review; re-read it, then set depsReview)`);
     const hand = []; for (const [from, rec] of Object.entries(m.modules).concat(Object.entries(m.inline))) for (const d of rec.deps) if (!rv.forcing.some(e => e.from === from && e.to === d)) hand.push(from + '->' + d);
     hand.forEach(x => lines.push('§DEPS_HAND ' + x)); info.hand = hand.length;
-    const files = Object.keys(m.modules), wit = witnessesOf(root, app, files); let ownerBad = 0, witBad = 0;
+    const files = Object.keys(m.modules), wit = witnessesOf(root, app, files); let ownerBad = 0;
     for (const f of files) {
       const want = /\.m?js$/.test(f) && fs.existsSync(path.join(root, f)) ? ownerOf(read(f)) : '';
       if (JSON.stringify(want) !== JSON.stringify(m.modules[f].owner)) { ownerBad++; lines.push(`§MANIFEST_C15_MISS module=${f} field=owner manifest=${JSON.stringify(m.modules[f].owner)} extractor=${JSON.stringify(want)}`); }
-      if (JSON.stringify(wit.get(f)) !== JSON.stringify(m.modules[f].witnesses)) { witBad++; lines.push(`§MANIFEST_C15_MISS module=${f} field=witnesses manifest=${m.modules[f].witnesses.length} extractor=${wit.get(f).length} (run: node scripts/gen_manifest.js --write ${app})`); }
     }
-    info.ownerBad = ownerBad; info.witBad = witBad;
-    info.ownerGap = files.filter(f => m.modules[f].owner === '' && /\.m?js$/.test(f) && !/(^|\/)lib\//.test(f)); info.witGap = files.filter(f => !m.modules[f].witnesses.length && /\.m?js$/.test(f) && !/(^|\/)lib\//.test(f));
+    info.ownerBad = ownerBad;
+    info.ownerGap = files.filter(f => m.modules[f].owner === '' && /\.m?js$/.test(f) && !/(^|\/)lib\//.test(f)); info.witGap = files.filter(f => !wit.get(f).length && /\.m?js$/.test(f) && !/(^|\/)lib\//.test(f));
     lines.push(`§MANIFEST_OWNER_GAP app=${app} n=${info.ownerGap.length} modules=${info.ownerGap.join(',')}`);
     lines.push(`§MANIFEST_WITNESS_GAP app=${app} n=${info.witGap.length} modules=${info.witGap.join(',')}`);
   }
@@ -335,7 +334,7 @@ function init(root, app, o) {
   const m = { app, schema: 1, sw: b0.sw, cacheVersion: b0.cacheVersion, depsDeclared: true, depsReview: { by: o.by || '', on: o.on || '', tool: '' }, modules: {}, inline: {}, order: {}, precacheOrder: b0.precacheOrder.slice() };
   for (const x of b0.modules) {
     const vs = new Set(x.sites.map(s => s.v)); if (vs.size > 1) fails.push(`${x.file}: its sites carry different numbers (${[...vs].join(',')}); one v per module needs them equal first`);
-    m.modules[x.file] = { v: x.v, load: x.load, lazyGroup: x.lazyGroup, precache: x.precache, deps: [], uses: [], notDeps: [], owner: '', witnesses: [] };
+    m.modules[x.file] = { v: x.v, load: x.load, lazyGroup: x.lazyGroup, precache: x.precache, deps: [], uses: [], notDeps: [], owner: '' };
   }
   for (const f of frames.keys()) if (f !== b0.sw) m.order[f] = [];
   for (const x of b0.modules) for (const s of x.sites) m.order[s.in][s.at] = Object.assign({ kind: s.kind, as: s.as }, s.onerror != null ? { onerror: s.onerror } : {}, s.q ? { q: s.q } : {});
