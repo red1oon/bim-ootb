@@ -190,17 +190,19 @@ function ownerOf(src) {
   const names = [...new Set(head.match(OWNER_RE) || [])];
   return names.length === 0 ? '' : names.length === 1 ? names[0] : names;
 }
-/** Tracked test files whose text names a module's file inside a string literal (resolved from the test's folder, the app folder or the repo root). */
+/** Tracked test files whose text names a module's file inside a string literal, resolved from the test's folder, the repo root, or — only for a test
+ *  inside the app's own folder or one that spells the app folder ('modeller', "modeller/…") — the app folder (a bare 'sw.js' in a devtools test is not the modeller's sw.js: measured, bim-ootb #3266 CI). */
 function witnessesOf(root, app, files) {
   const set = new Set(files), out = new Map(files.map(f => [f, new Set()]));
   const ls = cp.execFileSync('git', ['ls-files'], { cwd: root, encoding: 'utf8', maxBuffer: 1 << 28 }).split('\n').filter(f => /(^|\/)tests?\/.*\.(m?js|cjs|py|sh)$/.test(f));
   const STR = /(['"`])((?:(?!\1)[^\\\n]|\\.){1,300}?)\1/g;
   for (const t of ls) {
     let src; try { src = fs.readFileSync(path.join(root, t), 'utf8'); } catch (e) { continue; }
+    const inApp = t.startsWith(app + '/') || new RegExp("['\"`]" + app + "(['\"`]|/)").test(src);   // the test lives in the app, or spells the app folder itself
     for (const mm of src.matchAll(STR)) {
       const v = mm[2].split('?')[0].replace(/^\.\//, '');
       if (!/\.(m?js|json|wasm|css|html)$/.test(v) || /\$\{/.test(v)) continue;
-      for (const c of [P.normalize(P.join(P.dirname(t), v)), P.normalize(P.join(app, v)), P.normalize(v.replace(/^\//, ''))]) if (set.has(c)) out.get(c).add(t);
+      for (const c of [P.normalize(P.join(P.dirname(t), v)), ...(inApp ? [P.normalize(P.join(app, v))] : []), P.normalize(v.replace(/^\//, ''))]) if (set.has(c)) out.get(c).add(t);
     }
   }
   return new Map([...out].map(([f, s]) => [f, [...s].sort()]));
