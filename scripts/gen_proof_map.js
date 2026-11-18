@@ -4,7 +4,7 @@
 // # ⚠ DO NOT REMOVE — SPEC: bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md Part E, "E1 BUILD SPEC" (owner E-1: `PROVES:` line; E-2: last run in ~/.cache).
 // ISSUE: nothing says which witness proves which module, or what it last said. This prints, per module of <app>/modules.json:
 //   proven by  — witnesses whose PROVES: line names it (strong)
-//   named by   — B1's extracted `witnesses` (the test names the file in a string: weaker, shown apart)
+//   named by   — tests whose text names the file in a string (weaker, shown apart), from witnessesOf() each run: not stored (B-3 REVISED, #3326)
 //   each with its last cached verdict (witness_kit/results.js) and `stale` when the module or the witness changed after that run's commit.
 //   INCONCLUSIVE is never shown as PASS; a witness never run through a runner says `no run recorded`. Dev-side; writes nothing in the tree.
 // USE:  node scripts/gen_proof_map.js modeller [--root DIR] [--out FILE] [--quiet]
@@ -33,10 +33,11 @@ function build(root, app) {
       (proves.get(p.file) || proves.set(p.file, []).get(p.file)).push({ witness: t, rules: p.rules });
     }
   }
+  const named = require('./lib/manifest_source.js').witnessesOf(root, app, Object.keys(m.modules));
   const run = (mod, w) => { const r = RES.last(w); if (!r) return { verdict: 'no run recorded' }; const st = changedSince(root, r.head, [mod, w]); return { verdict: r.verdict, from_exit: r.from_exit, at: r.at, seconds: r.seconds, stale: st }; };
   const rows = Object.keys(m.modules).sort().filter(f => /\.m?js$/.test(f) && !/(^|\/)lib\//.test(f)).map(f => {
     const pr = (proves.get(f) || []).map(x => Object.assign({ witness: x.witness, rules: x.rules }, run(f, x.witness)));
-    const nm = m.modules[f].witnesses.filter(w => !pr.some(x => x.witness === w)).map(w => Object.assign({ witness: w }, run(f, w)));
+    const nm = (named.get(f) || []).filter(w => !pr.some(x => x.witness === w)).map(w => Object.assign({ witness: w }, run(f, w)));
     return { module: f, owner: m.modules[f].owner, proven: pr, named: nm, state: pr.length ? 'proven' : nm.length ? 'named-only' : 'unproven' };
   });
   const all = rows.flatMap(r => r.proven.concat(r.named));
