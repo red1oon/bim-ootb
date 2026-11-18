@@ -169,20 +169,6 @@
     }
     return any ? Float64Array.from(out) : null;
   }
-  // P6: the clash neighbours of a pack = the model as read PLUS every live generated part of the OTHER packs in the op-log (inp.generated(): world soups rebuilt from the op rows, lod_ops.fromOps).
-  // So Run Joints then Run Gussets (either order) cannot overlap. Skipped: this pack's own parts (a re-run is refused anyway), aggregate children of a host (parts_of: layers, rebar: duplicates of their hosts,
-  // the same rule as the PREFIX skip of the model), and any guid the model already holds. opts.noGenerated = the old behaviour (the red control of W-LODUP-NEIGHBOURS).
-  function seedGenerated(inp, opts, ownPrefix) {
-    var G = {}; if (!inp || (opts && opts.noGenerated)) return G;
-    var L = typeof inp.generated === 'function' ? inp.generated() : (inp.generated || []);
-    L.forEach(function (p) {
-      if (!p || !p.tris || !p.tris.length || String(p.guid).indexOf(ownPrefix) === 0 || (p.parents && p.parents.length) || (inp.meta && inp.meta[p.guid])) return;
-      var lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity], A = p.tris, q, a; for (q = 0; q < A.length; q += 3) for (a = 0; a < 3; a++) { if (A[q + a] < lo[a]) lo[a] = A[q + a]; if (A[q + a] > hi[a]) hi[a] = A[q + a]; }
-      G[p.guid] = { box: [lo, hi], tris: A, cls: p.cls, name: p.name, seeded: true };
-    });
-    return G;
-  }
-  function seededItems(G) { return Object.keys(G).filter(function (g) { return G[g].seeded; }).sort().map(function (g) { return { guid: g, tris: G[g].tris }; }); }
   // ---- meshes on demand with a size budget (a neighbour is read when a ray or a clash test needs it; first in, first out)
   // A big mesh (more than GRID_MIN triangles) is never expanded to a soup: its triangles are found through a uniform grid built once, and only the triangles near the query are copied out.
   var GRID_MIN = 4000;
@@ -481,12 +467,12 @@
 
   // ---- the independent re-check on the WRITTEN parts: every part's surface (triangle centroids) must lie inside no other element's solid.
   // items: [{guid, beam, support, kind:'PL'|'BT'|'WD', tris: Float64Array (world)}]. Used by run() on its own parts and by the witness on parts rebuilt from the op-log rows.
-  function clearPost(inp, RULES, items, log, extraParts) {
-    var cx = makeCtx(inp, RULES, log), M = cx.meshes, idx = indexOf(inp), pmax = cx.rv('parity_max_triangles'), fails = [], skippedSet = {}, boxOf = {}, allX = items.concat(extraParts || []);   // extraParts (P6): live generated parts of other packs, solids to test against, never judged here
-    allX.forEach(function (it) { var lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity], A = it.tris; for (var q = 0; q < A.length; q += 3) for (var a = 0; a < 3; a++) { if (A[q + a] < lo[a]) lo[a] = A[q + a]; if (A[q + a] > hi[a]) hi[a] = A[q + a]; } boxOf[it.guid] = [lo, hi]; });
+  function clearPost(inp, RULES, items, log) {
+    var cx = makeCtx(inp, RULES, log), M = cx.meshes, idx = indexOf(inp), pmax = cx.rv('parity_max_triangles'), fails = [], skippedSet = {}, boxOf = {};
+    items.forEach(function (it) { var lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity], A = it.tris; for (var q = 0; q < A.length; q += 3) for (var a = 0; a < 3; a++) { if (A[q + a] < lo[a]) lo[a] = A[q + a]; if (A[q + a] > hi[a]) hi[a] = A[q + a]; } boxOf[it.guid] = [lo, hi]; });
     items.forEach(function (it) {
       var b = boxOf[it.guid], lo = b[0], hi = b[1], A = it.tris, base = it.guid.replace(/-(PL|BT|WD)$/, '');
-      var others = idx.query(lo, hi).filter(function (g) { return g !== it.beam; }), extra = allX.filter(function (o) { return o.guid.indexOf(base) !== 0 && boxOf[o.guid][0][0] <= hi[0] && boxOf[o.guid][0][1] <= hi[1] && boxOf[o.guid][0][2] <= hi[2] && boxOf[o.guid][1][0] >= lo[0] && boxOf[o.guid][1][1] >= lo[1] && boxOf[o.guid][1][2] >= lo[2]; });
+      var others = idx.query(lo, hi).filter(function (g) { return g !== it.beam; }), extra = items.filter(function (o) { return o.guid.indexOf(base) !== 0 && boxOf[o.guid][0][0] <= hi[0] && boxOf[o.guid][0][1] <= hi[1] && boxOf[o.guid][0][2] <= hi[2] && boxOf[o.guid][1][0] >= lo[0] && boxOf[o.guid][1][1] >= lo[1] && boxOf[o.guid][1][2] >= lo[2]; });
       var nTr = A.length / 9, pts = [], step = Math.max(1, Math.floor(nTr / 40)), q, bad = null;
       for (q = 0; q < nTr; q += step) pts.push([(A[9 * q] + A[9 * q + 3] + A[9 * q + 6]) / 3, (A[9 * q + 1] + A[9 * q + 4] + A[9 * q + 7]) / 3, (A[9 * q + 2] + A[9 * q + 5] + A[9 * q + 8]) / 3]);
       others.forEach(function (g) {
@@ -504,8 +490,7 @@
   function run(inp, RULES, opts) {
     opts = opts || {}; var LOG = opts.log || function () { }, t0 = nowMs(), cx = makeCtx(inp, RULES, LOG), rv = cx.rv, meta = cx.meta;
     LOG('§LODUP_JOINT_MODE clash_check=' + (opts.noClash ? 'OFF(break)' : 'on') + ' rolled_only=' + rv('rolled_section_only') + ' bolts=M' + rv('bolt_diameter_mm') + ' plate=' + rv('plate_thickness_mm') + ' table=' + JSON.stringify(weldTable(rv('weld_min_table_mm'))));
-    var S = survey(cx), t1 = nowMs(), rows = S.rows, parts = [], CH = [], out = [], reasons = {}, clashBy = {}, G = seedGenerated(inp, opts, 'GEN-CR-'), ruleFail = [], addedVerts = 0, judged = 0, skippedAll = {}, gen = [];
-    LOG('§LODUP_JOINT_NEIGHBOURS model_as_read + live_parts_of_other_packs=' + Object.keys(G).length + (opts.noGenerated ? ' (OFF: the old behaviour, break switch)' : '') + ' (op-log parts seeded as clash neighbours, the same rule for every pack)');
+    var S = survey(cx), t1 = nowMs(), rows = S.rows, parts = [], CH = [], out = [], reasons = {}, clashBy = {}, G = {}, ruleFail = [], addedVerts = 0, judged = 0, skippedAll = {}, gen = [];
     var bump = function (k) { reasons[k] = (reasons[k] || 0) + 1; };
     var change = function (kind, guid, cls, host, rule, detail) { CH.push({ kind: kind, guid: guid, cls: cls, host: host, rule: rule, detail: detail }); };
     var lab = LABEL, ruleTxt = 'Fin plate joint (single plate shear): AISC 360-16 rows + defaults [' + RULES.bolt_pitch_mm.source + ']; configuration only, capacity not checked';
@@ -534,7 +519,7 @@
       out.push(Object.assign({}, j, { result: 'GENERATED', n_bolts: r.n_bolts, plate_H: r.H, plate_L: r.plate_L, web_mm: r.web_mm, front_skew_mm: r.front_skew_mm, weld_mm: r.wl, support_t_measured_mm: r.t_sup, tw_measured_mm: r.tw_meas, zone_mm: r.zone, tie_margin_mm: Math.min.apply(null, r.tieMargins), measured: r.measured, neighbours_tested: r.nb, checks: r.chk }));
       gen.push(out[out.length - 1]); bump('generated');
     });
-    var t2 = nowMs(), items = parts.map(function (p) { return { guid: p.guid, beam: p.beam, support: p.support, kind: p.kind, tris: p.tris }; }), post = clearPost(inp, RULES, items, function () { }, seededItems(G));
+    var t2 = nowMs(), items = parts.map(function (p) { return { guid: p.guid, beam: p.beam, support: p.support, kind: p.kind, tris: p.tris }; }), post = clearPost(inp, RULES, items, function () { });
     post.skipped.forEach(function (g) { skippedAll[g] = 1; });
     LOG('§LODUP_JOINT_PARITY_SKIPPED elements=' + Object.keys(skippedAll).length + ' ' + Object.keys(skippedAll).sort().map(function (g) { return String(meta[g].name).replace(/:\d+$/, ''); }).filter(function (v, i2, a) { return a.indexOf(v) === i2; }).join(', '));
     LOG('§LODUP_JOINT_CLEAR_POST parts_checked=' + parts.length + ' failures=' + post.fails.length + ' -> ' + (!parts.length ? 'INCONCLUSIVE' : (post.fails.length ? 'FAIL ' + JSON.stringify(post.fails.slice(0, 3)) : 'PASS')));
@@ -570,7 +555,7 @@
   }
   var API = { id: 'joints', label: 'Steel joints', unit: 'beam ends', rulesFile: 'rules/joint_defaults.json', run: run, appliesTo: appliesTo, clearPost: clearPost, survey: function (inp, RULES, log) { return survey(makeCtx(inp, RULES, log)); }, weldTable: weldTable, weldMin: weldMin, frameOf: frameOf, eig3: eig3, REASON: REASON,
     // P5 (gussets): the primitives the gusset pack REUSES (survey, true-box index, meshes with the triangle grid, rays, ray parity, vector helpers); not a second copy
-    kit: { seedGenerated: seedGenerated, seededItems: seededItems, makeCtx: makeCtx, survey: survey, surveyCached: surveyCached, indexOf: indexOf, trisInBox: trisInBox, rayAll: rayAll, rayFirst: rayFirst, inside: inside, unit: unit, sub: sub, add: add, mul: mul, dot: dot, cross: cross, norm: norm, median: median, fx: fx, fmtG: fmtG, nowMs: nowMs, RGBA: RGBA, CLS: CLS, LABEL: LABEL } };
+    kit: { makeCtx: makeCtx, survey: survey, surveyCached: surveyCached, indexOf: indexOf, trisInBox: trisInBox, rayAll: rayAll, rayFirst: rayFirst, inside: inside, unit: unit, sub: sub, add: add, mul: mul, dot: dot, cross: cross, norm: norm, median: median, fx: fx, fmtG: fmtG, nowMs: nowMs, RGBA: RGBA, CLS: CLS, LABEL: LABEL } };
   if (typeof window !== 'undefined' && window.LodRegistry) window.LodRegistry.register(API);   // browser: the pack registers itself; adding a pack needs no dialog change
   return API;
 });

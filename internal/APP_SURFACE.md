@@ -9,7 +9,7 @@ nothing. This index is the missing "go to definition".
 
 | | |
 |---|---:|
-| files scanned | 3445 |
+| files scanned | 3448 |
 | distinct fields | 1868 |
 | written only as `A.x`/`app.x` (invisible to an `APP.` grep) | 1599 |
 | read but never written (phantom) | 178 |
@@ -150,7 +150,7 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP.load` | `erp/tests/witness_bimdoc_live.js:311` | no |
 | `APP.lookup` | `erp/tests/witness_bimdoc_live.js:309` | no |
 | `APP.lvl` | `erp/ninja_stage.js:224` | **yes** |
-| `APP.map` | `modeller/lod/joint_pack.js:425` | **yes** |
+| `APP.map` | `modeller/lod/joint_pack.js:411` | **yes** |
 | `APP.master` | `erp/ninja_stage.js:225` | **yes** |
 | `APP.materializeZones` | `optics_hud.js:34` | **yes** |
 | `APP.n` | `modeller/dxf2analytical.js:28` | **yes** |
@@ -1508,7 +1508,7 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP.dayCounterLiveStart` | `viewer/cpe_day_counter.js:147` *(as `A.`)* | 1 | 1 |
 | `APP.dayCounterLiveStop` | `viewer/cpe_day_counter.js:171` *(as `A.`)* | 1 | 1 |
 | `APP.dayCounterLiveTick` | `viewer/cpe_day_counter.js:156` *(as `A.`)* | 1 | 1 |
-| `APP.db` | `viewer/city.js:717` *(as `A.`)* | 14 | 859 |
+| `APP.db` | `viewer/city.js:717` *(as `A.`)* | 14 | 853 |
 | `APP.dbQuery` | `viewer/helpers.js:116` *(as `A.`)* | 2 | 714 |
 | `APP.dbQueryFirst` | `viewer/helpers.js:130` *(as `A.`)* | 1 | 11 |
 | `APP.deleteImported` | `viewer/import.js:599` *(as `A.`)* | 1 | 4 |
@@ -1725,7 +1725,7 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP.ledgerTickerCompositeOntoCanvas` | `viewer/cpe_ledger_ticker.js:241` *(as `A.`)* | 1 | 5 |
 | `APP.ledgerTickerDispose` | `viewer/cpe_ledger_ticker.js:285` *(as `A.`)* | 1 | 5 |
 | `APP.ledgerTickerRowText` | `viewer/cpe_ledger_ticker.js:263` *(as `A.`)* | 1 | 4 |
-| `APP.length` | — *phantom* | 0 | 17 |
+| `APP.length` | — *phantom* | 0 | 16 |
 | `APP.libDb` | `viewer/city.js:718` *(as `A.`)* | 12 | 75 |
 | `APP.lightTheme` | `viewer/tools.js:649` *(as `A.`)* | 2 | 19 |
 | `APP.linearBeatBuild` | `viewer/cpe_linear_beat.js:47` *(as `A.`)* | 1 | 8 |

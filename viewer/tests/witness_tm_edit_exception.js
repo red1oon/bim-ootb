@@ -152,6 +152,7 @@ function run(opts) {
     sliceFn(tmSrc, '_tmVisibleOtherPanels') + '\n' +
     sliceFn(tmSrc, '_tmSayException') + '\n' +
     sliceFn(tmSrc, '_tmEditExceptionRecover') + '\n' +
+    sliceFn(tmSrc, '_tmEditSnapshot') + '\n' +   // §UNDO_EVERY_EDIT: every verb takes the one snapshot before its engine call
     sliceFn(tmSrc, 'commitGanttDrag') + '\n' +
     sliceFn(tmSrc, 'shiftGanttSchedule') + '\n' +
     'this.__drag = commitGanttDrag; this.__shift = shiftGanttSchedule;', sandbox);

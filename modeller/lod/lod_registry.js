@@ -27,7 +27,7 @@
   function describe(inp, rowsOf, rules) {
     return list().map(function (p) {
       var rows = rowsOf(p.id) || {}, c = rules ? rules.counts(rows) : { stated: 0, default: 0, unset: 0 };
-      return { id: p.id, label: p.label, unit: p.unit || 'elements', appliesTo: applies(p, inp, rows), stated: c.stated, default: c.default, unset: c.unset, inputs: (p.inputs || []).map(function (i) { return { id: i.id, label: i.label, accept: i.accept }; }) };   // inputs (P6): a file the person loads for this pack (e.g. a schedule); the dialog draws one button per declared input
+      return { id: p.id, label: p.label, unit: p.unit || 'elements', appliesTo: applies(p, inp, rows), stated: c.stated, default: c.default, unset: c.unset };
     });
   }
   function clear() { packs = {}; order = []; }

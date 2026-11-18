@@ -265,7 +265,7 @@
   }
   var API = { id: 'rebar', label: 'Rebar (from schedules)', rulesFile: 'rules/rebar_defaults.json', run: run,
     appliesTo: function (inp, rows) { if (!rows) return appliesTo(inp.meta, inp.sched || {}); try { return run(inp, rows, { log: function () { } }).stats.judged; } catch (e) { return 0; } },   // with rule rows: what the run judges (read-only dry run)
-    fmtG: fmtG, parse: { diaSpacing: parseDiaSpacing, main: parseMain }, RB_RGBA: RB_RGBA, IN: IN, make: make };   // make(SIDES) -> {prism, tieLoop}: the bar and tie geometry, reused by beambar_pack.js (P6)
+    fmtG: fmtG, parse: { diaSpacing: parseDiaSpacing, main: parseMain }, RB_RGBA: RB_RGBA, IN: IN };
   if (typeof window !== 'undefined' && window.LodRegistry) window.LodRegistry.register(API);   // browser: the pack registers itself; adding a pack needs no dialog change
   return API;
 });

@@ -29,19 +29,6 @@
     });
     return { assets: assets, ops: ops, elementParts: rows };
   }
-  // P6: the live generated parts, back from op-log rows (one {guid, params} per GEOM_INSERT row; assetOf(hash) -> {v: Float32Array|Array, f?: Uint32Array|Array}).
-  // World soup = the stored float32 vertices + the part's own centre (placement.x/y, placement.z + half the stored bbox height: the inverse of build()). A pack seeds its clash neighbours from this
-  // (joint_pack kit.seedGenerated), so a later pack sees an earlier pack's parts. Parts whose mesh is not found are skipped (never invented).
-  function fromOps(rows, assetOf) {
-    var out = [];
-    (rows || []).forEach(function (r) {
-      var P = r.params || {}, a = P.realGeomHash ? assetOf(P.realGeomHash) : null, pl = P.placement, bb = P.bbox; if (!a || !a.v || !pl || !bb) return;
-      var v = a.v, f = a.f, cx = pl.x, cy = pl.y, cz = pl.z + (bb[5] - bb[4]) / 2, n = f && f.length ? f.length : v.length / 3, W = new Float64Array(n * 3), i, k;
-      for (i = 0; i < n; i++) { k = 3 * (f && f.length ? f[i] : i); W[3 * i] = v[k] + cx; W[3 * i + 1] = v[k + 1] + cy; W[3 * i + 2] = v[k + 2] + cz; }
-      out.push({ guid: r.guid, cls: P.ifc_class, name: P.name, pack: String(P.provenance || '').replace(/^generated:/, ''), tris: W, parents: (P.parts_of || []).slice(), attach: (P.attached_to || []).slice() });
-    });
-    return out;
-  }
   // the change list, written FROM the rows (one line per row: seq | change | element id | IFC class | host GlobalId | rule | detail)
   function changeText(changes, head) {
     var cnt = { ADDED: 0, NOT_BUILT: 0, REFUSED: 0 }; changes.forEach(function (c) { cnt[c.kind]++; });
@@ -56,5 +43,5 @@
     changes.forEach(function (c, i) { L.push([i + 1, c.kind, c.guid, c.cls, c.host, c.rule, c.detail].join(' | ')); });
     return L.join('\n') + '\n';
   }
-  return { build: build, changeText: changeText, colorInt: colorInt, fromOps: fromOps };
+  return { build: build, changeText: changeText, colorInt: colorInt };
 });

@@ -17,10 +17,9 @@ var ERP = path.join(__dirname, '..'), log = console.log, PGDB = process.env.UDP4
 var G = require(path.join(ERP, 'ad_gridtab.js')), ADP = require(path.join(ERP, 'ad_parser.js'));
 var initSqlJs = require(path.join(ERP, 'sqljs', 'sql-wasm.js'));
 var LOGIN = process.env.UDP4_LOGIN === 'system' ? { client: 0, org: 0, role: 0, user: 100, wh: 0 } : { client: 11, org: 11, role: 102, user: 101, wh: 103 };   // GardenAdmin, or System (UDP4_LOGIN=system)
-var HOST_TZ = Intl.DateTimeFormat().resolvedOptions().timeZone;   // CLI_ERP_IVR §47: legacy's getDate() runs in the SERVER's session time zone (the JVM's, = this host's); a UTC psql session moved 'Updated>getDate()-1' by the offset (window 264: 12 vs 1)
 function psql(sql) {
   return cp.execFileSync('docker', ['exec', '-i', 'postgres', 'psql', '-v', 'ON_ERROR_STOP=1', '-U', 'postgres', '-d', PGDB, '-tAq'],
-    { input: 'SET search_path=adempiere;\nSET TimeZone=' + "'" + HOST_TZ + "'" + ';\n' + sql, encoding: 'utf8', maxBuffer: 1 << 30 }).trim();
+    { input: 'SET search_path=adempiere;\n' + sql, encoding: 'utf8', maxBuffer: 1 << 30 }).trim();
 }
 function pgRows(sql) { return JSON.parse(psql("SELECT coalesce(json_agg(t),'[]') FROM (" + sql + ') t')); }
 function oracle(body) {
@@ -42,11 +41,8 @@ function oracle(body) {
   // the login's org access on the PILOT (the data is the pilot's): MRole org access list
   var orgs = pgRows('SELECT ad_org_id FROM ad_role_orgaccess WHERE ad_role_id=' + LOGIN.role + " AND isactive='Y'").map(function (r) { return r.ad_org_id; });
   var orgClause = role[2] === 'Y' ? null : 'AD_Org_ID IN (' + [0].concat(orgs).filter(function (v, i, a) { return a.indexOf(v) === i; }).join(',') + ')';
-  // CLI_ERP_IVR §47: a window is the SAME window only by id AND name - ids from 1000000 are instance-local (on the bimdoc server 1000000 is "BIM Document", in the seed "Meter Log")
-  var pilotWin = {}; pgRows("SELECT ad_window_id, name FROM ad_window WHERE isactive='Y'").forEach(function (w) { pilotWin[w.ad_window_id] = w.name; });
-  var seedWins = q1("SELECT AD_Window_ID, WindowType, IsSOTrx, Name FROM AD_Window WHERE IsActive='Y' ORDER BY AD_Window_ID"), otherWin = seedWins.filter(function (w) { return pilotWin[w[0]] != null && pilotWin[w[0]] !== w[3]; });
-  if (otherWin.length) log('§UDP4E skipped ' + otherWin.length + ' window id(s) that name a DIFFERENT window on this server: ' + otherWin.map(function (w) { return w[0] + ' seed="' + w[3] + '" server="' + pilotWin[w[0]] + '"'; }).join(', '));
-  var wins = seedWins.filter(function (w) { return pilotWin[w[0]] === w[3]; });
+  var pilotWin = {}; pgRows("SELECT ad_window_id FROM ad_window WHERE isactive='Y'").forEach(function (w) { pilotWin[w.ad_window_id] = 1; });
+  var wins = q1("SELECT AD_Window_ID, WindowType, IsSOTrx FROM AD_Window WHERE IsActive='Y' ORDER BY AD_Window_ID").filter(function (w) { return pilotWin[w[0]]; });
   if (process.env.UDP4_WINDOWS) wins = wins.slice(0, +process.env.UDP4_WINDOWS);
   log('§UDP4E windows in both dictionaries=' + wins.length);
   var A = { judged: 0, same: 0, bad: [], oracleErr: [] }, B = { judged: 0, same: 0, bad: [], empty: 0, noProcessed: [] };

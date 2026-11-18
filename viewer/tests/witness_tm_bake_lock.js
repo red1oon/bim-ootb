@@ -70,6 +70,7 @@ function run(flags) {
   vm.runInContext(
     sliceFn(tmSrc, '_tmBusyRecording') + '\n' +
     sliceFn(tmSrc, '_tmEditLocked') + '\n' +      // §S69: the refusal now lives in one helper
+    sliceFn(tmSrc, '_tmEditSnapshot') + '\n' +   // §UNDO_EVERY_EDIT: every verb takes the one snapshot before its engine call
     sliceFn(tmSrc, 'commitGanttDrag') + '\n' +
     sliceFn(tmSrc, 'generateGanttSchedule') + '\n' +
     sliceFn(tmSrc, 'shiftGanttSchedule') + '\n' +
