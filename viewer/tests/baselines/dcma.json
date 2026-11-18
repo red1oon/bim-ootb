@@ -67,7 +67,7 @@
    "noCritical": 0
   },
   "Hospital": {
-   "logic": 2,
+   "logic": 0,
    "leads": 0,
    "lags": 0,
    "nonFs": 0,
@@ -80,7 +80,7 @@
    "noCritical": 0
   },
   "LTU_AHouse": {
-   "logic": 1,
+   "logic": 0,
    "leads": 0,
    "lags": 0,
    "nonFs": 0,
