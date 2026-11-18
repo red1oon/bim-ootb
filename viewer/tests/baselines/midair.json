@@ -3,23 +3,23 @@
  "_relocked": "2026-08-21 — §S50 cell-grain schedule (bim-ootb #1442), carried unchanged through §S51 (#1444). float_after_cpm ONLY re-locked 2026-08-22 (§S64): HHS 889->884, LTU_AHouse 5023->4998, JKR 1222->1212 — auditFloating shed false positives when its tPool was made to mirror hangGate's elPool and its wall pool given wallCarries' carry-at-top bound. NO schedule time changed (both fixes are inside auditFloating, which no gate reads); midair and orphans are byte-identical on all 7, which is the proof this was the audit and not the engine.",
  "float_after_cpm": {
   "_what": "W-MZ-8 — ScheduleGate.auditFloating AFTER _displayTimeline. The measured TRADE: a dependent may start before its support FINISHES. Deliberate and named, never silent.",
-  "Terminal": 592,
-  "Hospital": 1414,
-  "Duplex": 7,
-  "HHS_Office_Federated": 244,
-  "Clinic": 171,
-  "LTU_AHouse": 3044,
-  "JKR": 433
+  "Terminal": 501,
+  "Hospital": 1573,
+  "Duplex": 4,
+  "HHS_Office_Federated": 237,
+  "Clinic": 168,
+  "LTU_AHouse": 2934,
+  "JKR": 434
  },
  "midair": {
   "_what": "W-MZ-2 — this witness's own census(): elements appearing before the first thing they touch. Every building runs the graph engine since 2026-11-17; the split of this number by named set is midair_unnamed (W-MZ-2u) and the §MZ_SPLIT log line.",
-  "Terminal": 527,
-  "Hospital": 33,
-  "Duplex": 1,
-  "HHS_Office_Federated": 23,
-  "Clinic": 50,
-  "LTU_AHouse": 544,
-  "JKR": 23
+  "Terminal": 529,
+  "Hospital": 27,
+  "Duplex": 5,
+  "HHS_Office_Federated": 22,
+  "Clinic": 57,
+  "LTU_AHouse": 520,
+  "JKR": 21
  },
  "zda_display_float": {
   "_what": "W-ZDA-4a — the floating census under DISPLAY-AUTHORED windows vs the raw-authored baseline, from witness_zone_display_authoring.js. The display path IS measurably worse and always has been; this locks the exact pair so a CHANGE reddens, replacing an inequality assert that shipped permanently red. base = raw-authored windows + shipped rescale/sweep/parity; display = display-authored windows, rescale + parity, no sweep. Deliberately NOT a % threshold — that judge transfer was tried and retracted.",
@@ -58,5 +58,6 @@
  },
  "_relocked_2026_11_18": "float_after_cpm + midair re-locked ONCE and midair_unnamed added, read off the FAIL lines of a -1 placeholder run. Cause and per-building numbers: bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.10 (bisect of the stale locks), §Q.12, §Q.13 (D-steps, graph engine everywhere) and §Q.14.1 (this re-lock).",
  "_relocked_2026_11_18b": "HHS_Office_Federated + JKR only, read off a -1 placeholder run: the ground-band seed rule (owner 2026-11-18; bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.17). In this witness's pipeline both carry no classified ground.",
- "_relocked_2026_11_18c": "Terminal + LTU_AHouse only, read off the FAIL lines of a real run: concrete beams take the concrete gang at 9.4 beams/gang-day (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.18). midair_unnamed stays 0 on both and the named sets still equal the engine's."
+ "_relocked_2026_11_18c": "Terminal + LTU_AHouse only, read off the FAIL lines of a real run: concrete beams take the concrete gang at 9.4 beams/gang-day (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.18). midair_unnamed stays 0 on both and the named sets still equal the engine's.",
+ "_relocked_2026_11_18_stairs_with_frame": "bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.24.1: IfcStair/IfcStairFlight + stair parts Architecture Envelope 6 -> Superstructure 4 (permanent stairs go up with the frame). Measured from the run, not typed. W-MZ-2 {\"Terminal\": 529, \"Hospital\": 27, \"Duplex\": 5, \"HHS_Office_Federated\": 22, \"Clinic\": 57, \"LTU_AHouse\": 520, \"JKR\": 21}; W-MZ-8 {\"Terminal\": 501, \"Hospital\": 1573, \"Duplex\": 4, \"HHS_Office_Federated\": 237, \"Clinic\": 168, \"LTU_AHouse\": 2934, \"JKR\": 434}. W-MZ-2u (midair outside the named sets) unchanged at its lock on all seven: every move is inside the named no-support sets (Duplex +4 = its four stair members at ground level -0.10 m). Played-layer out of order 3 -> 1."
 }
