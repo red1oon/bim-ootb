@@ -3,7 +3,7 @@
 //   S3 ISSUE (a plain question does not find the window and the action) · S4 ISSUE (a how-to link that goes nowhere, or a card link that does not open)
 //   S5 ISSUE (how-to text that the guide does not say)
 //   §12: S1 also covers the pack's names · S6 ISSUE (a Chinese question finds nothing: words split on spaces) · S7 ISSUE (with 中文 chosen, the how-to is still English, or its links go nowhere) · S6de/S7de the same in Deutsch
-//   §19.11: S0 ISSUE (a screen language with no help pack). Falsifiers: HS_BREAK=droplang FAILs S0 · tamper FAILs S1 · nophrase FAILs S3 · deadlink FAILs S4 · nocjk FAILs S6 · nomsgtrl FAILs S2c. Each claim can say VACUOUS / INCONCLUSIVE.
+//   §19.11: S0 ISSUE (a screen language with no help pack). Falsifiers: HS_BREAK=droplang FAILs S0 · droplocale FAILs T2 (§19.11 step 2) · tamper FAILs S1 · nophrase FAILs S3 · deadlink FAILs S4 · nocjk FAILs S6 · nomsgtrl FAILs S2c. Each claim can say VACUOUS / INCONCLUSIVE.
 // Run: node erp/tests/witness_help_showcase.js   (after node erp/tools/build_help_pack.js; ERP_TRL_CACHE / PW / GUIDE override paths)
 'use strict';
 const fs = require('fs'), os = require('os'), path = require('path'), http = require('http'), cp = require('child_process');
@@ -112,6 +112,15 @@ async function browser() {
   try {
     await page.goto('http://localhost:' + port + '/erp/idempiere.html?seed=ad_seed.db&login=GardenAdmin', { waitUntil: 'networkidle', timeout: 60000 });
     await page.waitForFunction(() => window.__idmpHowto && window.__idmpFieldHelp && window.__idmpFieldHelp.menu().windows.length > 0, null, { timeout: 30000 });
+    // §19.11 step 2 T2 ISSUE (a language the packs are built for that the page's pickers never offer, or a wrong direction/name): the page's static ErpI18n.LOCALES == erp/i18n/index.json locales (code, dir, native). Red HS_BREAK=droplocale drops one from the reading.
+    {
+      const want = JSON.parse(fs.readFileSync(path.join(ERP, 'i18n', 'index.json'), 'utf8')).locales.map((l) => [l.code, l.dir, l.native].join('|')).sort();
+      let have = (await page.evaluate(() => ErpI18n.LOCALES.map((l) => [l.code, l.dir, l.native].join('|')))).sort();
+      if (BREAK === 'droplocale') have = have.slice(1);
+      const miss = want.filter((x) => have.indexOf(x) < 0), extra = have.filter((x) => want.indexOf(x) < 0);
+      k.L('T2 page LOCALES=' + have.length + ' index.json locales=' + want.length);
+      k.chk('T2 the page offers every built language, with its direction and own name: ' + (want.length - miss.length) + ' of ' + want.length, !miss.length && !extra.length, (miss.length ? 'not offered ' + miss.join(',') : '') + (extra.length ? ' not built ' + extra.join(',') : ''));
+    }
     for (let i = 0; i < 40 && !logs.some((l) => /^§HELP_SEARCH index/.test(l)); i++) await page.waitForTimeout(250);
     k.L((logs.find((l) => /^§HELP_SEARCH index/.test(l)) || 'NO §HELP_SEARCH index line') + ' pageErrors=' + errs.length + (errs.length ? ' first=' + errs[0].slice(0, 80) : ''));
     // S3: the question set

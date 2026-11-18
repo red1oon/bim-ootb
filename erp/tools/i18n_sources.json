@@ -1,6 +1,6 @@
 {
  "spec": "bim-compiler prompts/VOCAB_MESSAGE_CATALOG.md §19.11 step 1 (one list); prompts/ERP_UI_LOCALES.md §L2 (the packs)",
- "note": "lang -> the published iDempiere/ADempiere language packs, first wins on a conflict. Read by erp/tools/build_i18n.py (screen packs) and erp/tools/build_help_pack.js (help packs); no copy anywhere else.",
+ "note": "lang -> the published iDempiere/ADempiere language packs, first wins on a conflict. Read by erp/tools/build_i18n.py (screen packs) and erp/tools/build_help_pack.js (help packs); no copy anywhere else. meta = per language: writing direction, its own name, the <html lang> code (pt_BR / id_ID names as the BIM Viewer chooser shows them).",
  "sources": {
   "fr_FR": [
    {
@@ -57,6 +57,75 @@
     "dir": "x_th_TH.350/th_TH.350",
     "from": "sourceforge.net/projects/adempiere/files/Language Packs/Thailand/ADempiere Thai Language/th_TH.350.zip (Saeree/Grandlinux, 2008-06-16)"
    }
+  ],
+  "pt_BR": [
+   {
+    "dir": "devcoffee_pt_br/pt_BR",
+    "from": "github.com/devcoffee/idempiere-pt_br@10231021 pt_BR (DevCoffee, iDempiere 11 export \"COF #1259 - v11 review\", 2023-05-15; no licence stated)"
+   }
+  ],
+  "id_ID": [
+   {
+    "dir": "uthadehikaru_in_ID/in_ID",
+    "from": "github.com/uthadehikaru/idempiere-indonesia-localization@b9273a80 in_ID (iDempiere 13 export, 2026-02-12; Java legacy code in_ID served as id_ID; no licence stated)"
+   }
   ]
+ },
+ "meta": {
+  "en_US": {
+   "dir": "ltr",
+   "native": "English",
+   "html": "en"
+  },
+  "fr_FR": {
+   "dir": "ltr",
+   "native": "Français",
+   "html": "fr"
+  },
+  "es_ES": {
+   "dir": "ltr",
+   "native": "Español",
+   "html": "es"
+  },
+  "de_DE": {
+   "dir": "ltr",
+   "native": "Deutsch",
+   "html": "de"
+  },
+  "ar": {
+   "dir": "rtl",
+   "native": "العربية",
+   "html": "ar"
+  },
+  "zh_CN": {
+   "dir": "ltr",
+   "native": "中文 (简体)",
+   "html": "zh-CN"
+  },
+  "ja_JP": {
+   "dir": "ltr",
+   "native": "日本語",
+   "html": "ja"
+  },
+  "ms_MY": {
+   "dir": "ltr",
+   "native": "Bahasa Melayu",
+   "html": "ms"
+  },
+  "th_TH": {
+   "dir": "ltr",
+   "native": "ไทย",
+   "html": "th"
+  },
+  "pt_BR": {
+   "dir": "ltr",
+   "native": "Português",
+   "html": "pt-BR"
+  },
+  "id_ID": {
+   "dir": "ltr",
+   "native": "Bahasa Indonesia",
+   "html": "id"
+  }
  }
 }

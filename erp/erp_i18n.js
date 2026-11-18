@@ -26,7 +26,9 @@
     { code: 'zh_CN', native: '中文 (简体)', dir: 'ltr', html: 'zh-CN' },
     { code: 'ja_JP', native: '日本語', dir: 'ltr', html: 'ja' },
     { code: 'ms_MY', native: 'Bahasa Melayu', dir: 'ltr', html: 'ms' },
-    { code: 'th_TH', native: 'ไทย', dir: 'ltr', html: 'th' }
+    { code: 'th_TH', native: 'ไทย', dir: 'ltr', html: 'th' },
+    { code: 'pt_BR', native: 'Português', dir: 'ltr', html: 'pt-BR' },   // §19.11 step 2 (VOCAB_MESSAGE_CATALOG); this list == erp/tools/i18n_sources.json meta (W-ERP-I18N L0)
+    { code: 'id_ID', native: 'Bahasa Indonesia', dir: 'ltr', html: 'id' }
   ];
   var BASE = 'en_US', LS_KEY = 'erp.lang';
   var _lang = BASE, _pack = null, _packs = {}, _cat = null, _catP = null, _listeners = [];
