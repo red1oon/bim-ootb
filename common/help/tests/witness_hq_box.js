@@ -23,7 +23,7 @@ const top5 = (list) => list.slice(0, 5).map((x) => x.id + '|' + x.tier + '|' + x
   const ids = H.q('SELECT DISTINCT a.ad_window_id AS w FROM ad_window_access a JOIN ad_window w ON w.ad_window_id=a.ad_window_id WHERE a.ad_role_id=' + ROLE + " AND a.isactive='Y' AND w.isactive='Y' ORDER BY 1").map((r) => Number(r.w));
   const en = JSON.parse(fs.readFileSync(path.join(H.ERP, 'i18n', 'help', 'en_US', 'help.json'), 'utf8'));
   const packOf = (lang) => (lang === 'en_US' ? null : JSON.parse(fs.readFileSync(path.join(H.ERP, 'i18n', 'help', lang, 'help.json'), 'utf8')));
-  const gateOf = (set, pset) => (g) => g[0] === 'window' ? set.has(g[1]) : !!(pset && g[0] === 'process' && pset.has(g[1]));   // §19.9: the page's gate also admits the role's menu processes
+  const gateOf = (set, pset, lset) => (g) => g[0] === 'window' ? set.has(g[1]) : g[0] === 'process' ? !!(pset && pset.has(g[1])) : !!(lset && g[0] === 'menu' && lset.has(g[1]));   // §19.9 the role's menu processes; §19.14 its form / workflow / info / task entries (menu().leaves)
   const perLang = {};
   // ---- B0 + B1 (Node) ----
   let b0n = 0, b0ok = 0, b1n = 0, b1ok = 0, b1nonempty = 0; const bad1 = [], bad0 = [];
@@ -48,11 +48,11 @@ const top5 = (list) => list.slice(0, 5).map((x) => x.id + '|' + x.tier + '|' + x
     for (const lang of H.LANGS) {
       const line = lang === 'en_US' ? page.firstIndexLine : await page.setLang(lang);
       if (!line) { k.incon('B2-' + lang, 'the page did not build its index in ' + lang); continue; }
-      const L = perLang[lang], mm = await page.pg.evaluate(() => window.__idmpFieldHelp.menu()), set = new Set(mm.windows), pset = new Set(mm.processes || []);
+      const L = perLang[lang], mm = await page.pg.evaluate(() => window.__idmpFieldHelp.menu()), set = new Set(mm.windows), pset = new Set(mm.processes || []), lset = new Set(mm.leaves || []);
       const got = await page.pg.evaluate((qs) => { const ix = window.__idmpHowto.index(); return { rec: ix.records, hits: qs.map((s) => window.__idmpHowto.ask(s).hits.map((x) => x.id + '|' + x.tier + '|' + x.score).join(',')) }; }, L.qs);
       const have = new Set(got.rec.map((r) => r.id)), missing = L.p.index.records.filter((r) => !have.has(r.id)).length, extra = got.rec.filter((r) => !L.p.index.records.some((x) => x.id === r.id)).map((r) => r.id);
       const h = HQ.create(Object.assign({}, L.p.index, { records: got.rec }), { text: L.p.text }); let ok = 0, ne = 0;
-      L.qs.forEach((s, i) => { const b = top5(h.query(s, gateOf(set, pset))); if (b) ne++; if (got.hits[i] === b) ok++; else if (bad2.length < 2) bad2.push(lang + ' "' + s + '" page=' + got.hits[i].slice(0, 80) + ' core=' + b.slice(0, 80)); });
+      L.qs.forEach((s, i) => { const b = top5(h.query(s, gateOf(set, pset, lset))); if (b) ne++; if (got.hits[i] === b) ok++; else if (bad2.length < 2) bad2.push(lang + ' "' + s + '" page=' + got.hits[i].slice(0, 80) + ' core=' + b.slice(0, 80)); });
       b2n += L.qs.length; b2ok += ok; b2ne += ne;
       k.L('lang=' + lang + ' page records=' + got.rec.length + ' index.json records missing from the page=' + missing + ' run-time extras=' + extra.length + (extra.length ? ' (' + extra.slice(0, 8).join(',') + ')' : '') + ' · queries=' + L.qs.length + ' page==core top-5: ' + ok);
       if (missing) k.chk('B2 ' + lang + ' no index.json record is missing from the page\'s run-time records', false, missing + ' missing');

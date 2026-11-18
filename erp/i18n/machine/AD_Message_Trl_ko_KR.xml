@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<!--ERP chrome (AD_Message, app-own ids 1000000+). ERP machine source (not a published language pack) — Korean written for this app by Claude (Anthropic), 2026-11-18, erp/tools/trl_batch_2026-11-18_ko_chrome.py (TRL_TRILOGY_STANDARD.md T5c); no human review; Viewer Korean reused where the English is the same.-->
+<!--ERP chrome (AD_Message, app-own ids 1000000+). ERP machine source (not a published language pack) — Korean written for this app by Claude (Anthropic), 2026-11-18, erp/tools/trl_batch_2026-11-18_ko_chrome.py (TRL_TRILOGY_STANDARD.md T5c); no human review; Viewer Korean reused where the English is the same. Rows 1000058-1000061 added 2026-11-19 by erp/tools/trl_batch_2026-11-19_ko_chrome_help_kinds.py (VOCAB_MESSAGE_CATALOG.md §19.14).-->
 <!--<!DOCTYPE idempiereTrl PUBLIC "-//iDempiere//DTD iDempiere Translation 1.0//EN" "https://raw.githubusercontent.com/idempiere/idempiere/refs/heads/master/utils_dev/trl/idempiereTrl.dtd">-->
 <idempiereTrl language="ko_KR" table="AD_Message">
  <row id="1000000" trl="Y">
@@ -232,6 +232,22 @@
  </row>
  <row id="1000057" trl="Y">
   <value column="MsgText" original="@ is reserved and does nothing yet">@는 예약되어 있으며 아직 아무 기능이 없습니다</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000058" trl="Y">
+  <value column="MsgText" original="Special Form">특수 양식</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000059" trl="Y">
+  <value column="MsgText" original="Workflow">워크플로</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000060" trl="Y">
+  <value column="MsgText" original="Info Window">정보 창</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000061" trl="Y">
+  <value column="MsgText" original="OS Task">OS 작업</value>
   <value column="MsgTip" original=""/>
  </row>
 </idempiereTrl>

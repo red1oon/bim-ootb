@@ -12,7 +12,7 @@
 // bump (skipWaiting+clients.claim precache the new shell), so SWR strands a user at most one load post-deploy.
 // v1100 (2026-11-17) §19.5 (bim-compiler VOCAB_MESSAGE_CATALOG.md): the How To box's "Did you mean" line — help_search.js?v=4, common/help/help_dym.js?v=1, common/door/assist_core.js?v=1, chrome.json help.dym
 // v1101 (2026-11-17) §19.6 (bim-compiler VOCAB_MESSAGE_CATALOG.md): the How To box's `#<number>` and New — common/help/help_grammar.js?v=1, help_actions.js?v=1, chrome.json help.doc.*/help.reserved
-const CACHE_VERSION = 'v1112';   // bump on each deploy; detail goes in the commit message. History to v1063: SW_VERSION_HISTORY.md
+const CACHE_VERSION = 'v1113';   // bump on each deploy; detail goes in the commit message. History to v1063: SW_VERSION_HISTORY.md
 // v810 (2026-10-03) UI locales: a machine-catalogue entry gets the same fmt as a pack hit (de/ms login title lost its
 //   'Kernel-ERP — ' prefix — found by fetching the live page, ERP_UI_LOCALES.md §L7).
 // v809 (2026-10-03) UI locales (bim-compiler prompts/ERP_UI_LOCALES.md, W-ERP-I18N): erp_i18n.js + i18n/chrome.json +
@@ -99,6 +99,7 @@ const PRECACHE_ASSETS = [
   'kitchen.html', 'kitchen.js', 'kds_core.js', 'kds_link.js', 'till_kds.js',   // P2: the standalone kitchen screen + the till's Send Order (prompts/POS_PLUGIN_LOCAL_FIRST.md §19)
   'slipverify/slipverify.js',   // the one standard slip-verify interface; adapters load by convention (slipverify/<class>.js)
   'slipverify/slipok.js',
+  'menu_name.js',       // VOCAB_MESSAGE_CATALOG §19.14 — the ONE menu-name rule (erp_i18n.js menuName + the help pack builder)
   'erp_i18n.js',        // UI locales (ERP_UI_LOCALES.md) — the switch + resolvers
   'i18n/chrome.json',   // UI locales — chrome catalogue (login card / header / toolbar)
   'i18n/index.json',    // UI locales — locale list + per-pack provenance/coverage

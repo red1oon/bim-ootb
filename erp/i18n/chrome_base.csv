@@ -57,3 +57,7 @@ ad_message_id,value,msgtext,msgtype,ref,fmt,html
 1000055,help.doc.none,No document #{0},I,,,
 1000056,help.doc.more,more,I,,,
 1000057,help.reserved,@ is reserved and does nothing yet,I,,,
+1000058,help.form,Special Form,I,el:1298,,
+1000059,help.workflow,Workflow,I,el:144,,
+1000060,help.info,Info Window,I,el:3068,,
+1000061,help.task,OS Task,I,el:128,,

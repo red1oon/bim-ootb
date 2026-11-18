@@ -57,7 +57,7 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'applica
   // ── K4 + RED ──
   let browser, srv;
   try {
-    srv = http.createServer((req, res) => { const p = decodeURIComponent(req.url.split('?')[0]); if (p === '/__shim.html') { res.writeHead(200, { 'Content-Type': 'text/html' }); return res.end('<!doctype html><meta charset="utf-8"><script src="/erp/erp_i18n.js"></script>'); }
+    srv = http.createServer((req, res) => { const p = decodeURIComponent(req.url.split('?')[0]); if (p === '/__shim.html') { res.writeHead(200, { 'Content-Type': 'text/html' }); return res.end('<!doctype html><meta charset="utf-8"><script src="/erp/menu_name.js"></script><script src="/erp/erp_i18n.js"></script>'); }
       fs.readFile(path.join(ROOT, p), (e, b) => { if (e) { res.writeHead(404); res.end(); return; } res.writeHead(200, { 'Content-Type': MIME[path.extname(p)] || 'application/octet-stream' }); res.end(b); }); });
     await new Promise(r => srv.listen(0, r)); const base = 'http://localhost:' + srv.address().port, { chromium } = require(PW); browser = await chromium.launch({ headless: true, args: ['--disable-gpu'] });
     const chrome = JSON.parse(fs.readFileSync(path.join(I18N, 'chrome.json'), 'utf8')).keys, ids = {}; fs.readFileSync(path.join(I18N, 'chrome_base.csv'), 'utf8').split('\n').slice(1).forEach(l => { const m = l.match(/^(\d+),([^,]+),/); if (m) ids[m[2]] = Number(m[1]); });

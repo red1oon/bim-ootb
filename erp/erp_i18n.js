@@ -116,14 +116,9 @@
   }
 
   // ── resolvers (SynchronizeTerminology semantics) ──
-  function menuName(node) {
-    var c = _menuCentralSet()[Math.round(Number(node.id))], v = null;
-    if (c) {
-      if (node.action === 'W' && node.windowId) v = _trl('AD_Window', node.windowId);
-      else if ((node.action === 'P' || node.action === 'R') && node.processId) v = _trl('AD_Process', node.processId);
-      else if (node.action === 'X' && node.formId) v = _trl('AD_Form', node.formId);
-    }
-    return _orM(v || _trl('AD_Menu', node.id), 'AD_Menu', node.id);
+  function menuName(node) {   // §19.14: the rule lives in menu_name.js (MenuName.of), shared with the help pack builder; this keeps no copy
+    var r = global.MenuName.of(node, _pack, !!_menuCentralSet()[Math.round(Number(node.id))]);
+    _src = r.machine ? 'machine' : 'pack'; return r.name;
   }
   function fieldName(windowId, f) {
     var meta = _fieldMetaFor(windowId)[Math.round(Number(f.id))], v = null;

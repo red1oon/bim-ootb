@@ -231,6 +231,16 @@
     return set;
   }
 
+  // ── §19.14: the workflows / info windows the role may open (MRole.getWorkflowAccess / getInfoAccess) ──
+  // {workflow, info}: each a map keyed by id, or null when the DB has no such access table (that kind is then not judged).
+  function accessibleLeaves(db, roleId) {
+    var ctx = roleContextFor(db, roleId), out = { workflow: null, info: null };
+    if (!ctx) { console.log('§IDMP-SESSION accessibleLeaves role=' + roleId + ' source=NONE(no-AdAccess) workflow/info not judged'); return out; }
+    ['workflow', 'info'].forEach(function (k) { if (ctx[k]) { var set = {}; ctx[k].forEach(function (rw, id) { set[id] = { rw: !!rw }; }); out[k] = set; } });
+    console.log('§IDMP-SESSION accessibleLeaves role=' + roleId + ' workflows=' + (out.workflow ? Object.keys(out.workflow).length : 'n/a') + ' infos=' + (out.info ? Object.keys(out.info).length : 'n/a') + ' source=AdAccess');
+    return out;
+  }
+
   // ── record-level gate (MRole.canView + org/client scope) — exposed for callers that read/write
   // an actual record, not just a menu entry. NOT wired into every CRUD call site in this pass (that
   // is a whole-app integration, out of scope for the 4 Role/Window/Process/Form access rows this
@@ -242,14 +252,15 @@
     return ctx.gateRecord(tableAccessLevel, record);
   }
 
-  // ── prune the AD_Menu tree to the role's accessible windows/processes/forms ──
+  // ── prune the AD_Menu tree to the role's accessible windows/processes/forms/workflows/info windows ──
   // Hide action='W' leaves whose windowId ∉ winSet; with procSet/formSet given (§AD-MENU-PRF-LIVE),
-  // also hide 'P'/'R' leaves whose processId ∉ procSet and 'X' leaves whose formId ∉ formSet;
-  // then drop summary folders left empty. 'F' (workflow) / 'I' / 'T' leaves stay unscoped — this
-  // seed's ad_menu carries no workflow/task/info id column to gate on (named residual). Returns a
-  // new pruned tree (input is not mutated) plus visible/total counts per gated kind.
-  function scopeMenu(roots, winSet, procSet, formSet) {
-    var total = {}, visible = {};
+  // also hide 'P'/'R' leaves whose processId ∉ procSet and 'X' leaves whose formId ∉ formSet; with leafSets
+  // given (VOCAB_MESSAGE_CATALOG §19.14, MTree.java:663-670), 'F' leaves whose workflowId ∉ leafSets.workflow
+  // and 'I' leaves whose infoWindowId ∉ leafSets.info; then drop summary folders left empty. A kind whose set is
+  // null is not judged. 'T' (task) leaves stay unscoped: the seed has no AD_Task_Access table (named residual).
+  // Returns a new pruned tree (input is not mutated) plus visible/total counts per gated kind.
+  function scopeMenu(roots, winSet, procSet, formSet, leafSets) {
+    var total = {}, visible = {}, ls = leafSets || {}, leafGate = { F: ['workflowId', ls.workflow], I: ['infoWindowId', ls.info] }, totalL = { F: {}, I: {} }, visibleL = { F: {}, I: {} };
     var totalP = {}, visibleP = {}, totalF = {}, visibleF = {};
     function prune(node) {
       var isFolder = node.isSummary || (node.children && node.children.length);
@@ -274,15 +285,25 @@
         if (!formSet[fid]) return null;                      // form the role can't open → drop
         visibleF[fid] = 1;
       }
+      var lg = leafGate[node.action];
+      if (lg && lg[1] && node[lg[0]] != null) {
+        var lid = Number(node[lg[0]]); totalL[node.action][lid] = 1;
+        if (!lg[1][lid]) return null;                        // workflow / info window the role can't open → drop
+        visibleL[node.action][lid] = 1;
+      }
       return node;
     }
     var tree = (roots || []).map(prune).filter(Boolean);
     var out = { tree: tree, visible: Object.keys(visible).length, total: Object.keys(total).length,
                 visibleProcs: Object.keys(visibleP).length, totalProcs: Object.keys(totalP).length,
-                visibleForms: Object.keys(visibleF).length, totalForms: Object.keys(totalF).length };
+                visibleForms: Object.keys(visibleF).length, totalForms: Object.keys(totalF).length,
+                visibleWorkflows: Object.keys(visibleL.F).length, totalWorkflows: Object.keys(totalL.F).length,
+                visibleInfos: Object.keys(visibleL.I).length, totalInfos: Object.keys(totalL.I).length };
     console.log('§IDMP-SESSION scopeMenu visibleWindows=' + out.visible + '/' + out.total +
       (procSet ? ' visibleProcs=' + out.visibleProcs + '/' + out.totalProcs : '') +
       (formSet ? ' visibleForms=' + out.visibleForms + '/' + out.totalForms : '') +
+      (ls.workflow ? ' visibleWorkflows=' + out.visibleWorkflows + '/' + out.totalWorkflows : '') +
+      (ls.info ? ' visibleInfos=' + out.visibleInfos + '/' + out.totalInfos : '') +
       ' roots=' + tree.length);
     return out;
   }
@@ -303,6 +324,7 @@
     var winSet = accessibleWindows(db, role.id);
     var procSet = accessibleProcesses(db, role.id);            // §AD-MENU-PRF-LIVE
     var formSet = accessibleForms(db, role.id);
+    var leafSets = accessibleLeaves(db, role.id);              // §19.14 F / I menu leaves
     // ROLE GATE for accounting (iDempiere MRole.isShowAcct): a role WITHOUT IsShowAcct sees NO accounting —
     // no Posted column/button, no acct tabs. Read it onto the role so the host can gate the Posted affordance.
     // Defensive: some col-intersect tenant shards may lack the column → default N (hide), never throw.
@@ -313,7 +335,7 @@
     console.log('§IDMP-SESSION acctGate role=' + role.id + ' isShowAcct=' + role.isShowAcct + ' source=ad_role.isshowacct');
     return {
       user: user, role: role, client: client, org: org,
-      roles: roles, orgs: orgs, winSet: winSet, procSet: procSet, formSet: formSet
+      roles: roles, orgs: orgs, winSet: winSet, procSet: procSet, formSet: formSet, leafSets: leafSets
     };
   }
 
@@ -330,6 +352,7 @@
     accessibleWindows: accessibleWindows,
     accessibleProcesses: accessibleProcesses,
     accessibleForms: accessibleForms,
+    accessibleLeaves: accessibleLeaves,
     scopeMenu: scopeMenu,
     buildContext: buildContext,
     roleContextFor: roleContextFor,   // W-ACCESS-HARDEN: the real AdAccess.RoleContext, for callers that need canView/orgs/clients directly

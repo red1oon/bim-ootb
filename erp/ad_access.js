@@ -72,6 +72,8 @@
     this.win           = o.win  || new Map();    // AD_Window_ID  -> isReadWrite(bool)
     this.proc          = o.proc || new Map();    // AD_Process_ID -> isReadWrite(bool)
     this.form          = o.form || new Map();    // AD_Form_ID    -> isReadWrite(bool)
+    this.workflow      = o.workflow || null;     // AD_Workflow_ID   -> isReadWrite(bool) (MRole.getWorkflowAccess); null = no ad_workflow_access table (not judged)
+    this.info          = o.info || null;         // AD_InfoWindow_ID -> true (MRole.getInfoAccess); null = no ad_infowindow_access table (not judged)
     this.entityTypes   = toSet(o.entityTypes);   // entitytype values the role's dictionary scope allows
     // canUpdate inputs (MRole.java:825-950 loadOrgAccess, :1369 loadTableAccess) — additive, absent = empty
     this.clientId      = o.clientId != null ? o.clientId : null;                 // MRole.getAD_Client_ID
@@ -324,6 +326,12 @@
       .forEach(function (r) { proc.set(r.id, r.rw === 'Y'); });
     db.prepare("SELECT ad_form_id AS id, isreadwrite AS rw FROM ad_form_access WHERE ad_role_id=? AND isactive='Y'").all(roleId)
       .forEach(function (r) { form.set(r.id, r.rw === 'Y'); });
+    // workflow / info window grants (MTree.java:665-670 hides a menu leaf the role cannot open); a DB without the table is not judged (null)
+    var workflow = null, info = null;
+    if (hasTable(db, 'ad_workflow_access')) { workflow = new Map(); db.prepare("SELECT ad_workflow_id AS id, isreadwrite AS rw FROM ad_workflow_access WHERE ad_role_id=? AND isactive='Y'").all(roleId)
+      .forEach(function (r) { workflow.set(r.id, r.rw === 'Y'); }); }
+    if (hasTable(db, 'ad_infowindow_access')) { info = new Map(); db.prepare("SELECT ad_infowindow_id AS id FROM ad_infowindow_access WHERE ad_role_id=? AND isactive='Y'").all(roleId)
+      .forEach(function (r) { info.set(r.id, true); }); }
     // org access: prefer the explicit ad_role_orgaccess table if it exists; else the role's home org + 0.
     var orgs = [];
     var hasOrgAccess = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='ad_role_orgaccess'").get();
@@ -363,7 +371,7 @@
       docActRoles: docActRoles, docTypes: docTypes,
       AD_Role_ID: role.ad_role_id, name: role.name, userLevel: role.userlevel,
       isAccessAllOrgs: role.isaccessallorgs === 'Y',
-      orgs: orgs, clients: [role.ad_client_id], win: win, proc: proc, form: form, entityTypes: entityTypes,
+      orgs: orgs, clients: [role.ad_client_id], win: win, proc: proc, form: form, workflow: workflow, info: info, entityTypes: entityTypes,
       clientId: Number(role.ad_client_id), orgAccess: orgAccess, tableAccess: tableAccess, useUserOrgAccess: useUser,
       columnAccess: columnAccess, recordAccess: recordAccess, isPersonalAccess: personal, orgTreeId: orgTree
     });

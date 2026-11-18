@@ -856,6 +856,34 @@
     "id_ID": "@ dicadangkan dan belum melakukan apa pun",
     "ko_KR": "@는 예약되어 있으며 아직 아무 기능이 없습니다"
    }
+  },
+  "help.form": {
+   "en": "Special Form",
+   "ref": "el:1298",
+   "machine": {
+    "ko_KR": "특수 양식"
+   }
+  },
+  "help.workflow": {
+   "en": "Workflow",
+   "ref": "el:144",
+   "machine": {
+    "ko_KR": "워크플로"
+   }
+  },
+  "help.info": {
+   "en": "Info Window",
+   "ref": "el:3068",
+   "machine": {
+    "ko_KR": "정보 창"
+   }
+  },
+  "help.task": {
+   "en": "OS Task",
+   "ref": "el:128",
+   "machine": {
+    "ko_KR": "OS 작업"
+   }
   }
  }
 }
