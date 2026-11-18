@@ -2063,7 +2063,10 @@
     var stmtTe = db.prepare('INSERT OR IGNORE INTO task_elements VALUES (?,?)');
     inst.tasks.forEach(function (t) {
       stmtTk.run([t.id, schedId, rootId, t.phase + ' — ' + t.storey, 'CONSTRUCTION', 0,
-        _addDays(start, t.sDays), _addDays(start, t.eDays), 'P' + t.days + 'D', null, 'PLANNED']);
+        _addDays(start, t.sDays), _addDays(start, t.eDays), 'P' + t.days + 'D',
+        // §DCMA_RESOURCE (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.25.2 item 1): the DRIVING trade — the one whose crew-days set this
+        // task's duration (priceCell's bottleneck, "TRADE(cap)") — is the task's primary resource, as P6 carries it. Read, never chosen.
+        t.bottleneck ? String(t.bottleneck).replace(/\(\d+\)$/, '') : null, 'PLANNED']);
       for (var i = 0; i < t.guids.length; i++) stmtTe.run([t.id, t.guids[i]]);
     });
     stmtTk.free(); stmtTe.free();
@@ -2081,6 +2084,11 @@
       ' edges=' + inst.edges.length + ' (withinLevel=' + wl + ' acrossLevels=' + al + ')' +
       ' elements=' + elements.length + ' totalDays=' + inst.totalDays +
       ' — every lag is the TEMPLATE\'s, none derived from the dates it constrains');
+    // §DCMA_FLOAT (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.25.2 item 2): write early/late dates, float and criticality onto the task
+    // rows at GENERATION through the one owner, computeCpm — it already ran after every edit (tm_gantt_edit.js:588), never here, so a
+    // freshly generated schedule (and its P6 export) carried no float. fixedDates: the dates are the solve's, only float is derived.
+    { var _cpmR = null; try { _cpmR = computeCpm(db, schedId, { fixedDates: true }); } catch (eC) { _cpmR = { ok: false, reason: String(eC && eC.message || eC) }; }
+      console.log('§DCMA_FLOAT schedule=' + schedId + ' ' + (_cpmR && !_cpmR.error && _cpmR.ok !== false ? 'written tasks=' + ((_cpmR.tasks || []).length) + ' critical=' + ((_cpmR.criticalIds || []).length) + ' projectDuration=' + _cpmR.projectDuration : 'FAILED ' + JSON.stringify(_cpmR).slice(0, 160))); }
     // §TPL_MOVIE_BINDS_BARS — bind the movie to the bars we just authored, from the SAME task
     // objects, so the two can never be computed off different grids.
     // §TPL_LAYER_ORDER — topological layers of the SHIPPED contact graph's bearing relation.
