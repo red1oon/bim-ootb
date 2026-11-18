@@ -9,6 +9,8 @@
     { "name": "Viewer in Chrome (localhost:8000)", "type": "chrome", "request": "launch", "url": "http://localhost:8000/viewer/viewer.html", "webRoot": "${workspaceFolder}" },
     { "name": "ERP (iDempiere client) in Chrome", "type": "chrome", "request": "launch", "url": "http://localhost:8000/erp/idempiere.html", "webRoot": "${workspaceFolder}" },
     { "name": "Modeller in Chrome", "type": "chrome", "request": "launch", "url": "http://localhost:8000/modeller/modeller.html", "webRoot": "${workspaceFolder}" },
+    // §F.41 (#3330): any page of the apps (ERP has 13): open the .html file in the editor, then start this.
+    { "name": "This page in Chrome (the open .html)", "type": "chrome", "request": "launch", "url": "http://localhost:8000/${relativeFile}", "webRoot": "${workspaceFolder}" },
     { "name": "Node: this witness / script", "type": "node", "request": "launch", "program": "${file}", "cwd": "${workspaceFolder}", "console": "integratedTerminal", "skipFiles": ["<node_internals>/**"] }
   ]
 }

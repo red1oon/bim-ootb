@@ -80,6 +80,7 @@
   {"file":"modeller/tests/witness_dxf_wing_back.js","reason":"probe 2026-11-18: FAIL exit=2 —     at modeller/tests/witness_dxf_wing_back.js:24:75 { |   code: 'ERR_INVALID_ARG_TYPE' | }"},
   {"file":"modeller/tests/witness_dxf_wing_vs_straight.js","reason":"probe 2026-11-18: FAIL exit=1 —     at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:128:12) |     at node:internal/main/run_main_module:28:49 | Node.js v18.19.1"},
   {"file":"modeller/tests/witness_dxf_yellow_page.js","reason":"runner 2026-11-18: MISSING input — origin/master:docs/DXF2BIM_Yellow_List.md (a bim-compiler page)"},
-  {"file":"modeller/tests/witness_reg_report.js","reason":"runner 2026-11-18: INCONCLUSIVE — no marked shed set at ~/Videos/dxf2bim_film_work/why/cli/marked"}
+  {"file":"modeller/tests/witness_reg_report.js","reason":"runner 2026-11-18: INCONCLUSIVE — no marked shed set at ~/Videos/dxf2bim_film_work/why/cli/marked"},
+  {"file":"scripts/tests/witness_vsc_operational.js","reason":"measured 2026-11-19: ~110 s (it starts lint, the runners and setup --dry-run through their VS Code routes, 30 s timeout each; limit 10 s). Run it locally before a PR that adds an entry point (bim-compiler CODE_ARCHITECTURE_DESIGN.md §F.41)."}
  ]
 }
