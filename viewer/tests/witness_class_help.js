@@ -106,9 +106,9 @@ ck('C4c', shipped.has('IfcWallStandardCase') ? (one('fr_FR', 'IfcWallStandardCas
 PACK = JSON.parse(fs.readFileSync(path.join(ROOT, 'viewer', 'i18n', 'de_DE.json'), 'utf8')).labels;
 ck('C4d', P.model('IfcNoSuchThing', 'de') === null, 'unknown class: no block');
 // C7 — read the XML (the source), not the built pack: trl="Y" per locale for the shipped ifccls_ rows
-{ const base = new Map(T.readBase().map(r => [r.value, r.id])); const want = classes.map(c => base.get('ifccls_' + c)); const bad = [];
+{ const base = new Map(T.readTerms().map(r => [r.value, r.id])); const want = classes.map(c => base.get('ifccls_' + c)); const bad = [];   // T2: ifccls_ rows live in BIM_Element
   for (const loc of T.LOCALES.filter(l => l !== T.BASE)) {
-    const x = T.parseTrlXml(fs.readFileSync(T.xmlFile(loc), 'utf8')), y = new Map(x.rows.map(r => [r.id, r.trl]));
+    const x = T.parseTrlXml(fs.readFileSync(T.elementXmlFile(loc), 'utf8')), y = new Map(x.rows.map(r => [r.id, r.trl]));
     const n = want.filter(id => y.get(id) === 'Y').length, english = /^en_/.test(loc);
     log('§CLASS_HELP_TRL locale=' + loc + ' ours_translated=' + n + '/' + want.length);
     if (english ? n !== 0 : n !== want.length) bad.push(loc + '=' + n);
@@ -116,7 +116,7 @@ ck('C4d', P.model('IfcNoSuchThing', 'de') === null, 'unknown class: no block');
   ck('C7', !bad.length && want.every(Boolean), 'our sentence translated in every non-English locale, none in en_*' + (bad.length ? ' BAD ' + bad.join(',') : '')); }
 // C8 — the fill tool: idempotent, and it refuses to overwrite a translation (files untouched)
 { const cp = require('child_process'), crypto = require('crypto');
-  const hash = () => crypto.createHash('sha1').update(T.LOCALES.filter(l => l !== T.BASE).map(l => fs.readFileSync(T.xmlFile(l))).join('')).digest('hex');
+  const hash = () => crypto.createHash('sha1').update(T.LOCALES.filter(l => l !== T.BASE).map(l => fs.readFileSync(T.xmlFile(l)) + fs.readFileSync(T.elementXmlFile(l))).join('')).digest('hex');
   const tool = path.join(ROOT, 'viewer', 'tools', 'trl_fill_batch.js'), shipped = path.join(ROOT, 'viewer', 'tools', 'trl_batch_2026-11-17_ifccls_fill.js');
   const h0 = hash();
   const r1 = cp.spawnSync('node', [tool, shipped], { encoding: 'utf8' });

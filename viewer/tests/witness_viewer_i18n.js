@@ -72,13 +72,18 @@ const server = http.createServer((req, res) => {
 });
 
 // ── the dictionary (sources, not the built JSON) ─────────────────────────────────────────────────────────────────
-const BASE = T.readBase();                                   // [{id, value, msgtext, msgtype}]
-const EN_BY_TEXT = new Map(); BASE.forEach(r => { if (!EN_BY_TEXT.has(r.msgtext)) EN_BY_TEXT.set(r.msgtext, []); EN_BY_TEXT.get(r.msgtext).push(r); });
+const BASE = T.readBase();                                   // [{id, value, msgtext, msgtype}] — AD_Message
+const TERMS = T.readTerms();                                 // T2: BIM_Element (the terminology table) — judged exactly like messages: it is part of the dictionary the page shows
+const DICT = BASE.concat(TERMS);
+const EN_BY_TEXT = new Map(); DICT.forEach(r => { if (!EN_BY_TEXT.has(r.msgtext)) EN_BY_TEXT.set(r.msgtext, []); EN_BY_TEXT.get(r.msgtext).push(r); });
 const BY_ID = new Map(BASE.map(r => [r.id, r]));
 const XML = {};                                              // lang -> { byValue: Map(value -> {trl, text}) }
 T.LOCALES.filter(l => l !== T.BASE).forEach(lang => {
   const x = T.parseTrlXml(fs.readFileSync(T.xmlFile(lang), 'utf8'));
   const byValue = new Map(); x.rows.forEach(r => { const b = BY_ID.get(r.id); if (b) byValue.set(b.value, { trl: r.trl, text: r.text }); });
+  const xt = T.parseTrlXml(fs.readFileSync(T.elementXmlFile(lang), 'utf8')), TBY = new Map(TERMS.map(r => [r.id, r]));   // T2: the term rows of this locale
+  xt.rows.forEach(r => { const b = TBY.get(r.id); if (b) byValue.set(b.value, { trl: r.trl, text: r.text }); });
+  x.rows = x.rows.concat(xt.rows);
   XML[lang] = { byValue, textSet: new Set(x.rows.filter(r => r.trl === 'Y').map(r => r.text)),
     tplPrefixes: Array.from(new Set(x.rows.filter(r => r.trl === 'Y' && r.text !== r.original).map(r => { const i = r.text.indexOf('{'); return i >= 4 ? r.text.slice(0, i) : ''; }).filter(Boolean))) };   // S226 §R2b
 });
@@ -96,13 +101,13 @@ const ALLOW_STRINGS = new Set(['count doors', 'floor 1 walls', 'total cost', 'sh
 // (#whatif-panel, whatif_panel.js) is opened for real when sql.js + erp/ad_seed.db are reachable — §TRL_WHATIF open=yes|no.
 const TM_DRAWER = '#time-machine-panel', TM_MIN_STRINGS = 40;
 const HELP_MIN_STRINGS = 10;   // S226 §R2d — the Help palette: 38 pill rows + keyboard rows + placeholder + tooltips
-const EN_TEXTS_DESC = Array.from(new Set(BASE.map(r => r.msgtext))).filter(t => t.length >= 3).sort((a, b) => b.length - a.length);   // every base msgtext, longest first, stripped from a string before the English heuristic
+const EN_TEXTS_DESC = Array.from(new Set(DICT.map(r => r.msgtext))).filter(t => t.length >= 3).sort((a, b) => b.length - a.length);   // every base msgtext, longest first, stripped from a string before the English heuristic
 // S226 §R2b — TEMPLATE SLOTS. A msgtext holding {placeholders} ('Compressed {n} tasks', 'drag to slip · official {a}→{b}') never
 // appears on screen verbatim; the screen shows it filled in. Its static PREFIX (text before the first '{', ≥ 4 chars) identifies
 // the family: a string starting with the English prefix is a SLOT, and for locale X it counts as translated only when it starts
 // with X's own template prefix (X's text ≠ English) or X affirms the same text — otherwise it is still the English = a leak.
 const tplPrefix = (s) => { const i = s.indexOf('{'); return i > 0 ? s.slice(0, i) : ''; };
-const EN_TPL = []; (() => { const m = new Map(); BASE.forEach(r => { const p = tplPrefix(r.msgtext); if (p.length >= 4 && !EN_BY_TEXT.has(p)) { if (!m.has(p)) m.set(p, []); m.get(p).push(r); } }); m.forEach((rows, prefix) => EN_TPL.push({ prefix, rows })); EN_TPL.sort((a, b) => b.prefix.length - a.prefix.length); })();
+const EN_TPL = []; (() => { const m = new Map(); DICT.forEach(r => { const p = tplPrefix(r.msgtext); if (p.length >= 4 && !EN_BY_TEXT.has(p)) { if (!m.has(p)) m.set(p, []); m.get(p).push(r); } }); m.forEach((rows, prefix) => EN_TPL.push({ prefix, rows })); EN_TPL.sort((a, b) => b.prefix.length - a.prefix.length); })();
 const norm = (s) => String(s).replace(/\s+/g, ' ').trim();
 function englishLooking(s) {   // the heuristic used on the ENGLISH baseline only: a Latin word ≥3 letters that is not allow-listed
   if (ALLOW_STRINGS.has(norm(s))) return false;
@@ -275,7 +280,7 @@ print(json.dumps(out))`, T.I18N], { encoding: 'utf8' });
     const dec = (s) => s.replace(/&mdash;/g, '—').replace(/&larr;/g, '←').replace(/&rarr;/g, '→').replace(/&hellip;/g, '…').replace(/&times;/g, '×').replace(/&middot;/g, '·')
       .replace(/&amp;/g, '&').replace(/&#8595;/g, '↓').replace(/&#10133;/g, '➕').replace(/&quot;/g, '"').replace(/&#(\d+);/g, (m, d) => String.fromCodePoint(Number(d)));
     const unjs = (s) => s.replace(/\\u([0-9a-fA-F]{4})/g, (m, h) => String.fromCharCode(parseInt(h, 16))).replace(/\\n/g, '\n').replace(/\\'/g, "'").replace(/\\\\/g, '\\');
-    const byValue = new Map(BASE.map(r => [r.value, r.msgtext]));
+    const byValue = new Map(DICT.map(r => [r.value, r.msgtext]));
     const mism = [], unknown = []; let checked = 0;
     const files = ['index.html', 'viewer/viewer.html', 'viewer/boq_charts.html', 'viewer/clash_report.html', 'viewer/mep_report.html',
       ...fs.readdirSync(VIEWER).filter(f => /\.js$/.test(f)).map(f => 'viewer/' + f)];

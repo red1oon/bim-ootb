@@ -4,7 +4,9 @@
  "built": {
   "from": [
    "ad_message_base.csv",
-   "AD_Message_Trl_es_ES.xml"
+   "AD_Message_Trl_es_ES.xml",
+   "bim_element_base.csv",
+   "BIM_Element_Trl_es_ES.xml"
   ],
   "rows": 1091,
   "translated": 1050,
@@ -1102,5 +1104,9 @@
   "ui_help_doc_none": "Ningún elemento",
   "ui_help_doc_more": "más",
   "ui_help_reserved": "@ está reservado y aún no hace nada"
+ },
+ "tables": {
+  "AD_Message": 938,
+  "BIM_Element": 153
  }
 }

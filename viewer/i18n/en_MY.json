@@ -4,7 +4,8 @@
  "base": true,
  "built": {
   "from": [
-   "ad_message_base.csv"
+   "ad_message_base.csv",
+   "bim_element_base.csv"
   ],
   "rows": 1091,
   "translated": 0,
@@ -1102,5 +1103,9 @@
   "ui_help_doc_none": "No element",
   "ui_help_doc_more": "more",
   "ui_help_reserved": "@ is reserved and does nothing yet"
+ },
+ "tables": {
+  "AD_Message": 938,
+  "BIM_Element": 153
  }
 }
