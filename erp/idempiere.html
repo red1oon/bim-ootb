@@ -841,6 +841,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
 <!-- §S60 physical split: the pure CORE (window.CrudCore) — MUST load before crud_overlay.js -->
 <script src="crud_core.js?v=11"></script>
 <script src="crud_overlay.js?v=47"></script>
+<script src="ledger_ui.js?v=1"></script>
 <!-- TEAMWORK_FRAMEWORK.md §13.1 (W1, W-TEAM-SO): the local comm layer + erp/team_sync.js — written ONLY when the page is opened with ?team=1
      (otherwise no script tag, no DOM, no global: the page is byte-for-byte what it was). Parser-blocking so TeamSync exists before the first commit. -->
 <script src="../common/comm/team_defaults.js?v=1"></script><script src="../common/comm/team_trial.js?v=1"></script><script src="../common/comm/team_avatars.js?v=1"></script><script src="../common/comm/team_panel.js?v=4"></script><!-- §13.8: setup values + trial rule + the Team pill's panel (inert until opened) -->
