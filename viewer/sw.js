@@ -266,7 +266,8 @@
 // v1735 (2026-11-17) §19.6 (bim-compiler VOCAB_MESSAGE_CATALOG.md): `#<GlobalId prefix>` in the help panel — help_panel.js?v=6, common/help/help_grammar.js?v=1, help_guid.js?v=1, scene.js?v=81, nf_panel_search.js?v=3, dictionary ui_help_doc_usage/_none/_more/ui_help_reserved
 // v1737 (2026-11-18) §PARTS_VIEW (prompts/VIEWER_ELEMENT_PARTS.md): parts_view.js?v=1 (lazy) + main.js?v=64; a DB with element_parts rows shows the parts instead of their host
 // v1742 (2026-11-18) §S-G4 (prompts/VIEWER_ELEMENT_PARTS.md): scene.js?v=82 (editable fields keep their keys), parts_view.js?v=2 (parts view = base filter), navigate_engine.js?v=2, main.js?v=65
-const CACHE_VERSION = 'v1746';
+// v1747 (2026-11-18) §TM_NEEDLE_SYNC (bim-compiler 4D_MODEL_INTEGRITY.md §Q.19.5): gantt_model.js?v=2, tm_core.js?v=2, tm_panel.js?v=2, tm_gantt_edit.js?v=4, tm_dash.js?v=2 — slider, day counter, ruler and the active bar frame read one day grid and the canvas's own instant
+const CACHE_VERSION = 'v1747';
 // v1637 (rebase of PR #1191/#1196) §CLASS_UNMATCHED_INHERITED + §EXACT_LOOKUP_BLINDSPOT: rates/ifc_schema_hierarchy.json added to PRECACHE_ASSETS; schedule_author.js/proj_fold.js/boq_charts.html/schedule_read_4d.js/tm_sched_xray.js classify via the schema hierarchy.
 // v1636 (rebase of PR #1317) §ARCH_AREA_WEIGHT/§VOL_WEIGHT/§FOOTING_M3: schedule_author.js, time_machine parts, rates.js and rates/*.json changed install DURATIONS (area/volume weighting, IfcFooting priced M3); all precached cache-first, so a client holding the old cache would keep the flat times forever.
 // v1635 (rebase of PR #676, BCF half only) §BCF_EXPORT: bcf_export.js added to PRECACHE_ASSETS; viewer.html loads it + Export BCF button in the Issues toolbar; main.js wires setupBcfExport/exportIssuesBcf. The Open-button IFC half of #676 was superseded by main's A._openIfcFiles.

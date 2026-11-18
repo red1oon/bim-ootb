@@ -166,8 +166,10 @@
         ctx.fillText(task.storey.substring(0, 8), marginL - 4, y + barH / 2);
       }
 
-      // Active highlight: cursor is within this task's time range
-      var isActive = (TMS._cursor >= task.startTs && TMS._cursor <= task.endTs);
+      // Active highlight: cursor is within this task's time range — HALF-OPEN, the rule the canvas builds by
+      // (start <= cursor < end, renderAtTime). With <= a finished bar stayed framed at its own end instant, which is
+      // where every slider stop on a day boundary lands (§TM_NEEDLE_SYNC).
+      var isActive = (TMS._cursor >= task.startTs && TMS._cursor < task.endTs);
 
       // §GANTT_PALETTE: fills at full opacity — 0.8 flattened what little contrast the old palette
       // had. The families carry the distinction now, so the bars can be read at a glance.
@@ -287,7 +289,7 @@
     // §S260c: Auto-scroll Gantt drawer to keep active bar visible during playback
     if (TMS._playing && box.scrollHeight > box.clientHeight) {
       for (var ai = 0; ai < numTasks; ai++) {
-        if (TMS._cursor >= TMS._ganttTasks[ai].startTs && TMS._cursor <= TMS._ganttTasks[ai].endTs) {
+        if (TMS._cursor >= TMS._ganttTasks[ai].startTs && TMS._cursor < TMS._ganttTasks[ai].endTs) {
           var activeY = ai * rowH;
           var scrollTarget = activeY - box.clientHeight / 2;
           if (Math.abs(box.scrollTop - scrollTarget) > rowH * 2) {

@@ -116,8 +116,11 @@
     for (var i = 0; i < _RULER_STEPS.length; i++) {
       if (_RULER_STEPS[i] * pxPerDay >= 80) { step = _RULER_STEPS[i]; break; }
     }
+    // §TM_NEEDLE_SYNC: ticks sit on the programme's day grid (the ladder's origin), numbered from it — the same
+    // day the counter reads. An axis that starts before the first work (an earlier task window) gets negative days.
+    var origin = (TMS._dayOrigin != null) ? TMS._dayOrigin : TMS._ganttAxisStart;
     var ticks = [];
-    for (var d = 0; d <= totalDays; d += step) ticks.push({ day: Math.round(d), ts: TMS._ganttAxisStart + d * 86400000 });
+    for (var d = Math.ceil((TMS._ganttAxisStart - origin) / 86400000 / step) * step; origin + d * 86400000 <= TMS._ganttAxisEnd; d += step) ticks.push({ day: d, ts: origin + d * 86400000 });
     return { ticks: ticks, step: step, totalDays: totalDays };
   }
 

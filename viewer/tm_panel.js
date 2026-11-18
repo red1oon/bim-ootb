@@ -50,18 +50,31 @@
     if (label) label.textContent = d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
     if (status) status.textContent = _L('tm_status_placed', '{n} placed | {names}', { n: placed, names: activeNames.join(', ') || _L('tm_idle', 'idle') });
     if (bigCounter) {
-      var elapsedMs = TMS._cursor - TMS._projectStart;
-      var totalDays = Math.floor(elapsedMs / 86400000);
-      var remainHrs = Math.floor((elapsedMs % 86400000) / 3600000);
-      bigCounter.textContent = _L('tm_mode_day', 'DAY') + ' ' + totalDays + ' \u2502 ' + _L('tm_mode_hr', 'HR') + ' ' + remainHrs;
+      var dp = _tmDayParts(TMS._cursor);
+      bigCounter.textContent = _L('tm_mode_day', 'DAY') + ' ' + dp.day + ' \u2502 ' + _L('tm_mode_hr', 'HR') + ' ' + dp.hr;
     }
+  }
+
+  // §TM_NEEDLE_SYNC — the programme day / hour / minute / second of an instant, from the ONE owner
+  // (GanttModel.dayParts over the ladder's own origin). The counter, the anchor and the slider all read this.
+  function _tmDayParts(ms) {
+    var GM = (typeof window !== 'undefined' && window.GanttModel) || null;
+    var origin = (TMS._dayOrigin != null) ? TMS._dayOrigin : TMS._projectStart + 1;
+    if (!GM) return { day: 0, hr: 0, min: 0, sec: 0, dayStart: origin };
+    return GM.dayParts(ms, origin);
+  }
+  // The cursor a slider notch writes: the LAST instant of the notch (so its work shows done and reading the cursor
+  // back gives the same notch), or the end of the programme when the programme ends inside it.
+  function _tmNotchEnd(start, len) {
+    var end = start + len;
+    return (TMS._projectEnd > start && TMS._projectEnd <= end) ? TMS._projectEnd : end - 1;
   }
 
   // ── Anchor from cursor ──
   function anchorFromCursor() {
-    var d = new Date(TMS._cursor);
-    TMS._anchorDay = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-    TMS._anchorHr = d.getHours();
+    var dp = _tmDayParts(TMS._cursor);
+    TMS._anchorDay = dp.dayStart;
+    TMS._anchorHr = dp.hr;
   }
 
   // ── Tick size in ms based on mode ──
@@ -703,6 +716,7 @@
 
   function configSlider() {
     var slider = document.getElementById('tm-slider');
+    if (!slider) return;   // no panel (silent / bake-owned activation)
     if (TMS._mode === 'DAY') {
       slider.min = 0;
       slider.max = Math.max(TMS._days.length - 1, 0);
@@ -718,7 +732,7 @@
       slider.value = (TMS._anchorHr !== null) ? TMS._anchorHr : 12;
     } else {
       slider.min = 0; slider.max = 59;
-      slider.value = new Date(TMS._cursor).getSeconds();
+      slider.value = _tmDayParts(TMS._cursor).sec;
     }
   }
 
@@ -731,16 +745,16 @@
     if (TMS._mode === 'DAY') {
       var dayIdx = Math.min(val, TMS._days.length - 1);
       TMS._anchorDay = TMS._days[dayIdx];
-      targetMs = TMS._anchorDay + 86400000; // end of that day
+      targetMs = _tmNotchEnd(TMS._anchorDay, 86400000); // end of that day
     } else if (TMS._mode === 'HR') {
       TMS._anchorHr = val;
       if (TMS._anchorDay === null && TMS._days.length) TMS._anchorDay = TMS._days[0];
-      targetMs = (TMS._anchorDay || TMS._projectStart) + (val + 1) * 3600000;
+      targetMs = _tmNotchEnd((TMS._anchorDay || TMS._projectStart) + val * 3600000, 3600000);
     } else {
       if (TMS._anchorDay === null && TMS._days.length) TMS._anchorDay = TMS._days[0];
       if (TMS._anchorHr === null) TMS._anchorHr = 0;
-      var anchorMinute = new Date(TMS._cursor).getMinutes();
-      targetMs = (TMS._anchorDay || TMS._projectStart) + TMS._anchorHr * 3600000 + anchorMinute * 60000 + (val + 1) * 1000;
+      var anchorMinute = _tmDayParts(TMS._cursor).min;
+      targetMs = _tmNotchEnd((TMS._anchorDay || TMS._projectStart) + TMS._anchorHr * 3600000 + anchorMinute * 60000 + val * 1000, 1000);
     }
 
     TMS.renderAtTime(targetMs);
