@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
 //
-// # ⚠ DO NOT REMOVE — WITNESS W-DEPLOY-VERSION-JSON (bim-ootb #2949; found by X0 Navigator's Fetch back, 2026-11-13)
+// # ⚠ DO NOT REMOVE — WITNESS W-DEPLOY-VERSION-JSON (bim-ootb #2949; found by Code Facts' Fetch back, 2026-11-13)
 // ISSUE THIS PROVES OR DISPROVES: "the deploy writes an erp/version.json that is not valid JSON" — it did, whenever the merged
 //   commit's subject held two (#N) (an issue and a PR): the `pr` field got two numbers on two lines.
 // HOW: the stamp step's OWN shell lines are read from .github/workflows/deploy-pages.yml and run here with the commit subject

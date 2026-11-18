@@ -3,7 +3,7 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches: [main]
-  # A person can publish main from their own machine (X0 Navigator "5 · Deploy main now", gh workflow run): a CI-bot merge
+  # A person can publish main from their own machine (Code Facts "5 · Deploy main now", gh workflow run): a CI-bot merge
   # starts no workflow, so this is how it goes live (bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md §F.29, #3105).
   workflow_dispatch:
 
@@ -51,7 +51,7 @@ jobs:
       # The zips are therefore still COMMITTED, so both publishers serve them.
       # The fix is a repository setting, not code: Settings ▸ Pages ▸ Source = "GitHub Actions"
       # (build_type "workflow"), which makes this workflow the only publisher.
-      # Check after any merge: X0 Navigator ▸ Run & Ship ▸ Fetch back must say PASS
+      # Check after any merge: Code Facts ▸ Run & Ship ▸ Fetch back must say PASS
       # (bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md §F.13).
       - name: Build the shipped agent zips from their source directories
         run: node erp/tools/build_agent_zips.js

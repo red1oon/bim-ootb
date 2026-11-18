@@ -1,0 +1,112 @@
+{
+  "name": "code-facts",
+  "displayName": "BIM DevTools: Code Facts",
+  "description": "Read-only code navigation for bim-ootb, answered from the repo's own generated files: where an APP field is set, and which rule a \u00a7TAG stands for. No AI, no network, no dependencies.",
+  "version": "0.1.0",
+  "publisher": "bim-devtools",
+  "license": "MIT",
+  "private": true,
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "extension.js",
+  "activationEvents": [
+    "onLanguage:javascript",
+    "onView:codeFactsRunShip"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "codeFacts.rebuildIndexes",
+        "title": "Code Facts: Rebuild indexes"
+      },
+      {
+        "command": "codeFacts.costIfDeployed",
+        "title": "Code Facts: Cost if deployed (start-up and offline-cache bytes vs main)"
+      },
+      {
+        "command": "codeFacts.bumpButton",
+        "title": "Code Facts: Bump (check the changed files in the background, then press again to write)"
+      },
+      {
+        "command": "codeFacts.heapImpact",
+        "title": "Code Facts: Memory of the three pages (headless, vs main)"
+      },
+      {
+        "command": "codeFacts.contextForFile",
+        "title": "Code Facts: Context for this file (what the indexes say about it; copied for an assistant)"
+      },
+      {
+        "command": "codeFacts.newWitnessForFile",
+        "title": "Code Facts: New witness for this file (facts pre-filled; FAILs until you fill it)"
+      },
+      {
+        "command": "codeFacts.bumpThisFile",
+        "title": "Code Facts: Bump the cache version for this file (shows the change first, then asks)"
+      },
+      {
+        "command": "codeFacts.openLogLine",
+        "title": "Code Facts: Open the log line behind a value"
+      },
+      {
+        "command": "codeFacts.shipRunLocal",
+        "title": "Code Facts: Run local (serve the repo, show each app's URL and version on disk)"
+      },
+      {
+        "command": "codeFacts.shipCheck",
+        "title": "Code Facts: Check (syntax, precache audit, cache-version bump)"
+      },
+      {
+        "command": "codeFacts.shipFetchBack",
+        "title": "Code Facts: Fetch back (is the live site on main? uses the network)"
+      },
+      {
+        "command": "codeFacts.shipDeploy",
+        "title": "Code Facts: Deploy main now (GitHub Pages, with your gh login on this machine)"
+      }
+    ],
+    "configuration": {
+      "title": "BIM DevTools",
+      "properties": {
+        "bimDevtools.compilerRoot": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the bim-compiler checkout, whose prompts/ and docs/ are also searched for \u00a7TAGs. Empty = a sibling folder ../bim-compiler next to bim-ootb."
+        },
+        "bimDevtools.extraLogDirs": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["~/.cache/bim4d"],
+          "description": "Folders outside the repo whose saved logs are also read for \"values beside the code\" (read-only, sub-folders included). A log counts only if it carries a \u00a7LOG_STAMP line. Empty list = only the checkout's own logs/."
+        },
+        "bimDevtools.costBaseRef": {
+          "type": "string",
+          "default": "origin/main",
+          "description": "The git ref \"Cost if deployed\" compares the working tree against."
+        },
+        "bimDevtools.heapPages": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["viewer/viewer.html", "erp/idempiere.html", "modeller/modeller.html"],
+          "description": "The pages \"Memory of the three pages\" boots headless (no building beyond each page's own default sample) and compares against the cost base ref."
+        },
+        "bimDevtools.liveSite": {
+          "type": "string",
+          "default": "",
+          "description": "The live site \"Fetch back\" reads. Empty = derived from the git remote (https://<owner>.github.io/<repo>)."
+        }
+      }
+    },
+    "views": {
+      "explorer": [
+        {
+          "id": "codeFactsRunShip",
+          "name": "Run & Ship"
+        }
+      ]
+    }
+  }
+}

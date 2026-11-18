@@ -159,7 +159,7 @@ for (const n of names) {
 }
 fs.mkdirSync(OUT_DIR, { recursive: true });
 fs.writeFileSync(path.join(OUT_DIR, 'APP_SURFACE.md'), L.join('\n') + '\n');
-// R12: every site, as data, for a tool that lists references (X0 Navigator "Find All References"). Written ONLY into a
+// R12: every site, as data, for a tool that lists references (Code Facts "Find All References"). Written ONLY into a
 // private output folder (APPSURF_OUT) and only when asked (APPSURF_SITES=1): the repo's committed index stays one file.
 if (process.env.APPSURF_SITES === '1' && process.env.APPSURF_OUT) {
   const sites = {};
