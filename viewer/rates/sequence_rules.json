@@ -82,15 +82,15 @@
     },
     {
       "id": "stair_member_architecture",
-      "_why": "2026-08-27 §W_D0 C2/C3. A stair component authored as IfcMember lands at Superstructure seq 3 (structural framing) and was scheduled on DAY 0, three phases ahead of the IfcStairFlight it belongs to. Target copied verbatim from IfcStairFlight's own class rule. MEASURED under the class gate: Duplex 4 of 4, HHS 0 of 1450, Hospital 0 of 7127, Terminal 0 of 442. — WIDENED TO IfcSlab 2026-09-02 (AGENT_QUEUE.md A-15, spec 4D_MODEL_INTEGRITY.md §J.6.4 item 2): the same defect in a different export class, a stair TREAD authored as IfcSlab, which resolves to Superstructure seq 4 and is scheduled on day 0 ahead of the IfcStairFlight it hangs on (§W_D0 C3 HHS played layer: hanging{IfcSlab:3} waitingOn{IfcSlab<-IfcStairFlight|seq6}). MEASURED under this rule's own ^\\s*stair\\b pattern over the persisted cache of all four buildings (119,568 elements): IfcSlab named Stair* = HHS 4 of 83 (all 'Stair:Massiv - Stufen Naturstein:*', all seq 4), Duplex 0/21, Hospital 0/35, Terminal 0/705 — four elements fleet-wide, zero false positives. ⚠ CORRECTION to the older 'reclassifying IfcSlab moves it out of the support pool' premise (repeated in this file's furniture_tier1_safeguard note and in §J.6.4): supportPool is `e.seq <= 4 || (e.cls === 'IfcSlab' && e.seq > 4) || e.cls === 'IfcStairFlight'`, so the SECOND clause keeps an IfcSlab in the pool at any sequence — verified before/after on the cache, 4 in and 4 in. The removal consequence is real for IfcMember only.",
+      "_why": "2026-08-27 §W_D0 C2/C3. A stair component authored as IfcMember lands at Superstructure seq 3 (structural framing) and was scheduled on DAY 0, three phases ahead of the IfcStairFlight it belongs to. Target copied verbatim from IfcStairFlight's own class rule. MEASURED under the class gate: Duplex 4 of 4, HHS 0 of 1450, Hospital 0 of 7127, Terminal 0 of 442. — WIDENED TO IfcSlab 2026-09-02 (AGENT_QUEUE.md A-15, spec 4D_MODEL_INTEGRITY.md §J.6.4 item 2): the same defect in a different export class, a stair TREAD authored as IfcSlab, which resolves to Superstructure seq 4 and is scheduled on day 0 ahead of the IfcStairFlight it hangs on (§W_D0 C3 HHS played layer: hanging{IfcSlab:3} waitingOn{IfcSlab<-IfcStairFlight|seq6}). MEASURED under this rule's own ^\\s*stair\\b pattern over the persisted cache of all four buildings (119,568 elements): IfcSlab named Stair* = HHS 4 of 83 (all 'Stair:Massiv - Stufen Naturstein:*', all seq 4), Duplex 0/21, Hospital 0/35, Terminal 0/705 — four elements fleet-wide, zero false positives. ⚠ CORRECTION to the older 'reclassifying IfcSlab moves it out of the support pool' premise (repeated in this file's furniture_tier1_safeguard note and in §J.6.4): supportPool is `e.seq <= 4 || (e.cls === 'IfcSlab' && e.seq > 4) || e.cls === 'IfcStairFlight'`, so the SECOND clause keeps an IfcSlab in the pool at any sequence — verified before/after on the cache, 4 in and 4 in. The removal consequence is real for IfcMember only. — 2026-11-18 STAIRS GO UP WITH THE FRAME (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.24.1): IfcStair / IfcStairFlight now Superstructure seq 4 (permanent stairs are the site access stairs, installed floor by floor with the frame; OSHA 1926.1052(b)(3)); this rule still copies the flight's class rule, so stair parts follow it there. Railings stay Architecture Envelope seq 6, after the flight.",
       "classes": [
         "IfcMember",
         "IfcSlab"
       ],
       "pattern": "^\\s*stair\\b",
       "flags": "i",
-      "phase": "Architecture Envelope",
-      "sequence": 6,
+      "phase": "Superstructure",
+      "sequence": 4,
       "resource": "CARPENTER"
     },
     {
@@ -323,13 +323,13 @@
       "resource": "CARPENTER"
     },
     "IfcStair": {
-      "phase": "Architecture Envelope",
-      "sequence": 6,
+      "phase": "Superstructure",
+      "sequence": 4,
       "resource": "CARPENTER"
     },
     "IfcStairFlight": {
-      "phase": "Architecture Envelope",
-      "sequence": 6,
+      "phase": "Superstructure",
+      "sequence": 4,
       "resource": "CARPENTER"
     },
     "IfcRailing": {
