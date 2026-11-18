@@ -1,2 +1,2 @@
 {"_about": "The LOD Upgrade packs, in dialog order. A new pack = a new file here (it registers itself in LodRegistry) + one line; the toolbar pill and the dialog need no change. Each pack names its own rulesFile.",
- "packs": [{"id": "rebar", "file": "rebar_pack.js"}, {"id": "welds", "file": "weld_pack.js"}, {"id": "layers", "file": "layer_pack.js"}, {"id": "joints", "file": "joint_pack.js"}, {"id": "gussets", "file": "gusset_pack.js"}]}
+ "packs": [{"id": "rebar", "file": "rebar_pack.js"}, {"id": "welds", "file": "weld_pack.js"}, {"id": "layers", "file": "layer_pack.js"}, {"id": "joints", "file": "joint_pack.js"}, {"id": "gussets", "file": "gusset_pack.js"}, {"id": "beambars", "file": "beambar_pack.js"}]}
