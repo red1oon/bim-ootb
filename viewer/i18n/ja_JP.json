@@ -8,8 +8,8 @@
    "bim_element_base.csv",
    "BIM_Element_Trl_ja_JP.xml"
   ],
-  "rows": 1100,
-  "translated": 1015,
+  "rows": 1107,
+  "translated": 1022,
   "untranslated": 85
  },
  "labels": {
@@ -1112,10 +1112,17 @@
   "ui_exp_ifc": "IFC（建物全体）",
   "ui_exp_bcf": "BCF（課題）",
   "ui_exp_bcf_none": "保存された課題はありません",
-  "ui_exp_ifc_none": "ジオメトリテーブルを持つ単一ファイルの建物が必要です"
+  "ui_exp_ifc_none": "ジオメトリテーブルを持つ単一ファイルの建物が必要です",
+  "ui_exp_sched": "工程表",
+  "ui_exp_sched_tip": "建物の施工工程表（MS Project または Primavera P6 用）",
+  "ui_exp_sched_none": "Time Machine を一度開いて工程表を作成してください",
+  "ui_exp_5d": "5D コスト",
+  "ui_exp_5d_tip": "コストのブック（Excel）：数量明細、材料、労務、機械",
+  "pillc_export_4": "工程表（MSP / PMXML / XER）：MS Project または Primavera P6 用の施工工程表、Time Machine が作成するまでグレー表示",
+  "pillc_export_5": "5D コスト：4D/5D ページからのコストのブック (.xlsx)"
  },
  "tables": {
-  "AD_Message": 947,
+  "AD_Message": 954,
   "BIM_Element": 153
  },
  "terms": [

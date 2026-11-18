@@ -8,9 +8,9 @@
    "bim_element_base.csv",
    "BIM_Element_Trl_en_GB.xml"
   ],
-  "rows": 1100,
+  "rows": 1107,
   "translated": 10,
-  "untranslated": 1090
+  "untranslated": 1097
  },
  "labels": {
   "source_app": "BIM OOTB — Frictionless BIM",
@@ -1112,10 +1112,17 @@
   "ui_exp_ifc": "IFC (whole building)",
   "ui_exp_bcf": "BCF (issues)",
   "ui_exp_bcf_none": "no saved issues",
-  "ui_exp_ifc_none": "needs a single-file building with geometry tables"
+  "ui_exp_ifc_none": "needs a single-file building with geometry tables",
+  "ui_exp_sched": "Schedule",
+  "ui_exp_sched_tip": "the building's work schedule, for MS Project or Primavera P6",
+  "ui_exp_sched_none": "open the Time Machine once to make the schedule",
+  "ui_exp_5d": "5D cost",
+  "ui_exp_5d_tip": "cost workbook (Excel): bill of quantities, materials, labour, equipment",
+  "pillc_export_4": "Schedule (MSP / PMXML / XER): the work schedule for MS Project or Primavera P6, greyed until the Time Machine has made one",
+  "pillc_export_5": "5D cost: a cost workbook (.xlsx) from the 4D/5D page"
  },
  "tables": {
-  "AD_Message": 947,
+  "AD_Message": 954,
   "BIM_Element": 153
  },
  "terms": [

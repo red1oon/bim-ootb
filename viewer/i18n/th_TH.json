@@ -8,8 +8,8 @@
    "bim_element_base.csv",
    "BIM_Element_Trl_th_TH.xml"
   ],
-  "rows": 1100,
-  "translated": 997,
+  "rows": 1107,
+  "translated": 1004,
   "untranslated": 103
  },
  "labels": {
@@ -1112,10 +1112,17 @@
   "ui_exp_ifc": "IFC (ทั้งอาคาร)",
   "ui_exp_bcf": "BCF (ปัญหา)",
   "ui_exp_bcf_none": "ไม่มีปัญหาที่บันทึกไว้",
-  "ui_exp_ifc_none": "ต้องเป็นอาคารไฟล์เดียวที่มีตารางเรขาคณิต"
+  "ui_exp_ifc_none": "ต้องเป็นอาคารไฟล์เดียวที่มีตารางเรขาคณิต",
+  "ui_exp_sched": "กำหนดการ",
+  "ui_exp_sched_tip": "กำหนดการก่อสร้างของอาคาร สำหรับ MS Project หรือ Primavera P6",
+  "ui_exp_sched_none": "เปิด Time Machine หนึ่งครั้งเพื่อสร้างกำหนดการ",
+  "ui_exp_5d": "ต้นทุน 5D",
+  "ui_exp_5d_tip": "สมุดงานต้นทุน (Excel): ใบแสดงปริมาณงาน วัสดุ แรงงาน อุปกรณ์",
+  "pillc_export_4": "กำหนดการ (MSP / PMXML / XER): กำหนดการก่อสร้างสำหรับ MS Project หรือ Primavera P6 เป็นสีเทาจนกว่า Time Machine จะสร้างขึ้น",
+  "pillc_export_5": "ต้นทุน 5D: สมุดงานต้นทุน (.xlsx) จากหน้า 4D/5D"
  },
  "tables": {
-  "AD_Message": 947,
+  "AD_Message": 954,
   "BIM_Element": 153
  },
  "terms": [

@@ -8,8 +8,8 @@
    "bim_element_base.csv",
    "BIM_Element_Trl_zh_CN.xml"
   ],
-  "rows": 1100,
-  "translated": 997,
+  "rows": 1107,
+  "translated": 1004,
   "untranslated": 103
  },
  "labels": {
@@ -1112,10 +1112,17 @@
   "ui_exp_ifc": "IFC（整栋建筑）",
   "ui_exp_bcf": "BCF（问题）",
   "ui_exp_bcf_none": "没有已保存的问题",
-  "ui_exp_ifc_none": "需要带几何表的单文件建筑"
+  "ui_exp_ifc_none": "需要带几何表的单文件建筑",
+  "ui_exp_sched": "进度计划",
+  "ui_exp_sched_tip": "建筑的施工进度计划，供 MS Project 或 Primavera P6 使用",
+  "ui_exp_sched_none": "先打开一次 Time Machine 以生成进度计划",
+  "ui_exp_5d": "5D 成本",
+  "ui_exp_5d_tip": "成本工作簿（Excel）：工程量清单、材料、人工、设备",
+  "pillc_export_4": "进度计划（MSP / PMXML / XER）：供 MS Project 或 Primavera P6 使用的施工进度计划，Time Machine 生成之前为灰色",
+  "pillc_export_5": "5D 成本：来自 4D/5D 页面的成本工作簿 (.xlsx)"
  },
  "tables": {
-  "AD_Message": 947,
+  "AD_Message": 954,
   "BIM_Element": 153
  },
  "terms": [

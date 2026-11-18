@@ -477,4 +477,5 @@ async function save5D() {
   _log('[S226] §CHART_SUMMARY 5D: ' + _chartTestPass + ' PASS, ' + _chartTestFail + ' FAIL');
   _downloadLog('5D');
   _chartTestPass = 0; _chartTestFail = 0;
+  return filename;   // the Viewer's Export menu (export=5d) logs the name it asked for; the button ignores it
 }

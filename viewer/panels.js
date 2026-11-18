@@ -1334,7 +1334,7 @@ function setupPanels(A) {
       // trlKey = the dictionary key stem ('pill_export', 'pillc_export_<n>') so the saved-order id stays 'save'.
       { id: 'save',       name: 'Export',  key: 'Ctrl+S', trlKey: 'export', icon: I.save.svg,
         fn: function() { if (A.openExportMenu) A.openExportMenu(document.getElementById('pill-save')); },
-        children: [ { name: 'Building (.db): same as Save Building, Ctrl+S' }, { name: 'IFC (whole building): an .ifc file for other BIM tools' }, { name: 'BCF (issues): saved issues as a .bcfzip, greyed until one exists' } ] },
+        children: [ { name: 'Building (.db): same as Save Building, Ctrl+S' }, { name: 'IFC (whole building): an .ifc file for other BIM tools' }, { name: 'BCF (issues): saved issues as a .bcfzip, greyed until one exists' }, { name: 'Schedule (MSP / PMXML / XER): the work schedule for MS Project or Primavera P6, greyed until the Time Machine has made one' }, { name: '5D cost: a cost workbook (.xlsx) from the 4D/5D page' } ] },
       // §LOD400 (bim-compiler prompts/LOD400_UPGRADER.md §H): auto-upgrader pill — step 1 weld+smooth on the open building's geometry tables.
       { id: 'lod400',     name: 'LOD400 Upgrade', icon: I.box.svg,
         fn: function() { if (window.LOD400 && window.LOD400.openPanel) window.LOD400.openPanel(A); },

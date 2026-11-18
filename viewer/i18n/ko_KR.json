@@ -8,8 +8,8 @@
    "bim_element_base.csv",
    "BIM_Element_Trl_ko_KR.xml"
   ],
-  "rows": 1100,
-  "translated": 997,
+  "rows": 1107,
+  "translated": 1004,
   "untranslated": 103
  },
  "labels": {
@@ -1112,10 +1112,17 @@
   "ui_exp_ifc": "IFC (건물 전체)",
   "ui_exp_bcf": "BCF (이슈)",
   "ui_exp_bcf_none": "저장된 이슈 없음",
-  "ui_exp_ifc_none": "지오메트리 테이블이 있는 단일 파일 건물이 필요합니다"
+  "ui_exp_ifc_none": "지오메트리 테이블이 있는 단일 파일 건물이 필요합니다",
+  "ui_exp_sched": "공정표",
+  "ui_exp_sched_tip": "건물의 시공 공정표 (MS Project 또는 Primavera P6용)",
+  "ui_exp_sched_none": "Time Machine을 한 번 열어 공정표를 만드세요",
+  "ui_exp_5d": "5D 비용",
+  "ui_exp_5d_tip": "비용 통합 문서 (Excel): 수량 내역서, 자재, 노무, 장비",
+  "pillc_export_4": "공정표 (MSP / PMXML / XER): MS Project 또는 Primavera P6용 시공 공정표, Time Machine이 만들기 전까지 회색",
+  "pillc_export_5": "5D 비용: 4D/5D 페이지의 비용 통합 문서 (.xlsx)"
  },
  "tables": {
-  "AD_Message": 947,
+  "AD_Message": 954,
   "BIM_Element": 153
  },
  "terms": [

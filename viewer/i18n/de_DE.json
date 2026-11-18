@@ -8,8 +8,8 @@
    "bim_element_base.csv",
    "BIM_Element_Trl_de_DE.xml"
   ],
-  "rows": 1100,
-  "translated": 1015,
+  "rows": 1107,
+  "translated": 1022,
   "untranslated": 85
  },
  "labels": {
@@ -1112,10 +1112,17 @@
   "ui_exp_ifc": "IFC (ganzes Gebäude)",
   "ui_exp_bcf": "BCF (Probleme)",
   "ui_exp_bcf_none": "keine gespeicherten Probleme",
-  "ui_exp_ifc_none": "braucht ein Ein-Datei-Gebäude mit Geometrietabellen"
+  "ui_exp_ifc_none": "braucht ein Ein-Datei-Gebäude mit Geometrietabellen",
+  "ui_exp_sched": "Terminplan",
+  "ui_exp_sched_tip": "der Bauablaufplan des Gebäudes, für MS Project oder Primavera P6",
+  "ui_exp_sched_none": "öffnen Sie einmal die Time Machine, um den Terminplan zu erstellen",
+  "ui_exp_5d": "5D-Kosten",
+  "ui_exp_5d_tip": "Kostenarbeitsmappe (Excel): Leistungsverzeichnis, Material, Arbeit, Geräte",
+  "pillc_export_4": "Terminplan (MSP / PMXML / XER): der Bauablaufplan für MS Project oder Primavera P6, ausgegraut bis die Time Machine einen erstellt hat",
+  "pillc_export_5": "5D-Kosten: eine Kostenarbeitsmappe (.xlsx) von der 4D/5D-Seite"
  },
  "tables": {
-  "AD_Message": 947,
+  "AD_Message": 954,
   "BIM_Element": 153
  },
  "terms": [

@@ -8,8 +8,8 @@
    "bim_element_base.csv",
    "BIM_Element_Trl_bn_BD.xml"
   ],
-  "rows": 1100,
-  "translated": 997,
+  "rows": 1107,
+  "translated": 1004,
   "untranslated": 103
  },
  "labels": {
@@ -1112,10 +1112,17 @@
   "ui_exp_ifc": "IFC (পুরো ভবন)",
   "ui_exp_bcf": "BCF (সমস্যা)",
   "ui_exp_bcf_none": "কোনো সংরক্ষিত সমস্যা নেই",
-  "ui_exp_ifc_none": "জ্যামিতি টেবিলসহ একক-ফাইল ভবন দরকার"
+  "ui_exp_ifc_none": "জ্যামিতি টেবিলসহ একক-ফাইল ভবন দরকার",
+  "ui_exp_sched": "সময়সূচি",
+  "ui_exp_sched_tip": "ভবনের কাজের সময়সূচি, MS Project বা Primavera P6 এর জন্য",
+  "ui_exp_sched_none": "সময়সূচি তৈরি করতে একবার Time Machine খুলুন",
+  "ui_exp_5d": "5D খরচ",
+  "ui_exp_5d_tip": "খরচের ওয়ার্কবুক (Excel): পরিমাণের তালিকা, উপকরণ, শ্রম, যন্ত্রপাতি",
+  "pillc_export_4": "সময়সূচি (MSP / PMXML / XER): MS Project বা Primavera P6 এর জন্য কাজের সময়সূচি, Time Machine তৈরি না করা পর্যন্ত ধূসর",
+  "pillc_export_5": "5D খরচ: 4D/5D পাতা থেকে খরচের ওয়ার্কবুক (.xlsx)"
  },
  "tables": {
-  "AD_Message": 947,
+  "AD_Message": 954,
   "BIM_Element": 153
  },
  "terms": [
