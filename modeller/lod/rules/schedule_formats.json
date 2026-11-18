@@ -1,0 +1,47 @@
+{
+ "_doc": "Schedule formats for the Beam rebar pack (prompts/MODELLER_LOD_UPGRADE_PILL.md P8 SPEC). One entry per firm's table layout: how a schedule table is recognised (key_column + required headings), which heading is which field (columns, case-insensitive regexes), how bar text is read, and how a beam in the model finds its row (join). The building's own bars are never kept here: they come from its own drawing. status stays 'one building' until a second building passes.",
+ "formats": [
+  {
+   "id": "revit-s401-style",
+   "label": "Beam schedule, Revit S-401 style",
+   "status": "one building",
+   "source": "observed on one private Revit-exported set (sheet S-401, 2 beam tables, 22 marks); not yet tested on a second building. Patterns copied from BIMCompiler scripts/lod/s401_marks.py COLS.",
+   "key_column": "^Type Mark$",
+   "columns": {
+    "bottom_a": "BOTTOM\\s*\\(A\\)",
+    "bottom_add": "ADD\\s*BOTTOM",
+    "hanger": "HANGER",
+    "top_d": "TOP\\s*\\(D\\)",
+    "top_e": "TOP\\s*\\(E\\)",
+    "end_outer": "END\\s*/\\s*OUTER",
+    "end_inner": "END\\s*/\\s*INNER",
+    "balance_outer": "BALANCE\\s*/\\s*OUTER",
+    "balance_inner": "BALANCE\\s*/\\s*INNER",
+    "side": "SIDE\\s*BARS",
+    "w": "^Width",
+    "h": "^Depth"
+   },
+   "required": [
+    "bottom_a",
+    "top_d",
+    "side",
+    "end_outer",
+    "w",
+    "h"
+   ],
+   "bar_split": "[+,&]",
+   "bar_grammar": "^\\s*(\\d+)\\s*[TtΦ@]?\\s*(\\d+)",
+   "stirrup_grammar": "(\\d+)\\s*T\\s*(\\d+)\\s*-\\s*(\\d+)",
+   "empty_cell": [
+    "",
+    "-"
+   ],
+   "join": {
+    "host_class": "IfcBeam",
+    "mark_source": "element_name",
+    "mark_regex": ":([A-Za-z]+[0-9]+)\\(",
+    "source": "observed on the same set: Revit names like 'Beam - Concrete - Rectangular (M):GB1(300x600):<id>' (group 1 = the type mark); on the Hospital model it matches 0 of 1,970 IfcBeam (steel)"
+   }
+  }
+ ]
+}

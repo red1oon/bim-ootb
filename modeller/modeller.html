@@ -3707,7 +3707,7 @@ let _lodupLoading = null;
 document.getElementById('b-lodup').onclick = async function () {
   try {
     const load = src => new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('load failed ' + src)); document.head.appendChild(s); });
-    if (!window.LodUI) _lodupLoading = _lodupLoading || (async () => { for (const f of ['lod/lod_rules.js?v=1', 'lod/lod_registry.js?v=4', 'lod/lod_ops.js?v=4', 'lod/lod_reader.js?v=6', 'lod/lod_ui.js?v=6']) await load(f); })().catch(e => { _lodupLoading = null; throw e; });
+    if (!window.LodUI) _lodupLoading = _lodupLoading || (async () => { for (const f of ['lod/lod_rules.js?v=1', 'lod/lod_registry.js?v=5', 'lod/lod_ops.js?v=4', 'lod/lod_reader.js?v=6', 'lod/lod_ui.js?v=7']) await load(f); })().catch(e => { _lodupLoading = null; throw e; });
     await _lodupLoading; await window.LodUI.toggle();
   } catch (err) { setStat('FAIL ' + (err && err.message || err)); console.warn('§LODUP load fail ' + err); }
 };

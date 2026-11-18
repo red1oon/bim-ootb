@@ -74,20 +74,5 @@
   "value": 12000,
   "unit": "mm",
   "source": "default: ours (12 m stock bar length used only for the no-lap flag)"
- },
- "host_class": {
-  "value": "IfcBeam",
-  "unit": "-",
-  "source": "default: ours (the IFC class the schedule marks are joined to)"
- },
- "mark_source": {
-  "value": "element_name",
-  "unit": "-",
-  "source": "default: ours (where the type mark is read: element_name, or the name of an element_dxf2bim row; a Pset Reference can be used once the model carries it)"
- },
- "mark_regex": {
-  "value": ":([A-Za-z]+[0-9]+)\\(",
-  "unit": "regex",
-  "source": "default: ours (group 1 = the type mark in a name like 'Beam - Concrete - Rectangular (M):GB1(300x600):<id>'; edit it for another naming)"
  }
 }
