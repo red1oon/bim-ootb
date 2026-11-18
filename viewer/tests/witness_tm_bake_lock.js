@@ -167,13 +167,14 @@ function namedFns(text) {
   return out;
 }
 const FNS = namedFns(tmSrc);
-const MUTATORS = ['retimeTaskElements(', '.moveTaskCascade(', '.shiftSchedule(', '.shiftTasks(',
+const MUTATORS = ['_tmCommitEdit(', '_tmEditRefresh(', 'retimeTaskElements(', '.moveTaskCascade(', '.shiftSchedule(', '.shiftTasks(',
                   '.rescheduleAsap(', '.materializeZones(', '.addDependency(', '.removeDependency('];
 // Skip the wrappers that are not user-facing edit ENTRY points: the pre-materialize bootstrap runs
 // before any film exists, and the helper/model builders below are called BY the guarded verbs.
 // _materializeNativeSchedule is the ONLY name-based exemption, and W-TBL-5d below asserts the
 // property that earns it rather than taking the name on trust.
-const NOT_ENTRY = ['retimeTaskElements', '_tmEditLocked', 'buildGanttTasks', '_materializeNativeSchedule'];
+const NOT_ENTRY = ['retimeTaskElements', '_tmEditLocked', 'buildGanttTasks', '_materializeNativeSchedule',
+  '_tmCommitEdit', '_tmEditRefresh'];   // §ONE_COMMIT_PIPELINE: the pipeline owners are called BY the guarded verbs
 const mutating = FNS.filter(f => !NOT_ENTRY.includes(f.name) &&
   MUTATORS.some(v => f.body.indexOf(v) >= 0) &&
   // the innermost named function only — an outer function containing a guarded inner one would

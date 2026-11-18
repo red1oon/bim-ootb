@@ -66,7 +66,8 @@ function enclosingFn(callIdx) {
 }
 
 // Every CALL of retimeTaskElements (the declaration is skipped by requiring no `function ` prefix).
-const CALL = 'retimeTaskElements(';
+const P = require('./_gantt_pipeline.js');   // §ONE_COMMIT_PIPELINE: a verb reaches the steps through the pipeline owners
+const CALL = P.COMMIT_CALL;   // was retimeTaskElements( — every edit now commits through this one call
 const sites = [];
 for (let i = src.indexOf(CALL); i >= 0; i = src.indexOf(CALL, i + 1)) {
   if (/function\s+$/.test(src.slice(Math.max(0, i - 12), i))) continue;   // the declaration itself
@@ -74,7 +75,7 @@ for (let i = src.indexOf(CALL); i >= 0; i = src.indexOf(CALL, i + 1)) {
 }
 const lineOf = idx => src.slice(0, idx).split('\n').length;
 
-assert(sites.length >= 5, 'W-RESYNC-0 retimeTaskElements call sites found (n=' + sites.length +
+assert(sites.length >= 5, 'W-RESYNC-0 edit commit sites (_tmCommitEdit) found (n=' + sites.length +
   ') — a 0 here means the function was renamed and this witness went blind, not that the wiring is clean');
 
 const missing = [];
@@ -85,7 +86,7 @@ for (const s of sites) {
   const key = fn.name + ':' + fn.start;
   if (seen[key]) continue;
   seen[key] = 1;
-  if (fn.body.indexOf('_tmResyncAfterRetime(') < 0) missing.push(fn.name + '() at line ' + lineOf(fn.start) + ' (retime at line ' + lineOf(s) + ')');
+  if (P.reach(fn.body, src).indexOf('_tmResyncAfterRetime(') < 0) missing.push(fn.name + '() at line ' + lineOf(fn.start) + ' (retime at line ' + lineOf(s) + ')');
 }
 console.log('§GANTT_RETIME_RESYNC_WIRING callSites=' + sites.length + ' distinctFns=' + Object.keys(seen).length +
   ' missingResync=' + missing.length + (missing.length ? ' [' + missing.join(' | ') + ']' : ''));

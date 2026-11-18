@@ -64,13 +64,14 @@ function enclosingFn(callIdx) {
 }
 const lineOf = idx => src.slice(0, idx).split('\n').length;
 
-const CALL = 'retimeTaskElements(';
+const P = require('./_gantt_pipeline.js');   // §ONE_COMMIT_PIPELINE: a verb reaches the steps through the pipeline owners
+const CALL = P.COMMIT_CALL;   // was retimeTaskElements( — every edit now commits through this one call
 const sites = [];
 for (let i = src.indexOf(CALL); i >= 0; i = src.indexOf(CALL, i + 1)) {
   if (/function\s+$/.test(src.slice(Math.max(0, i - 12), i))) continue;   // the declaration itself
   sites.push(i);
 }
-assert(sites.length >= 5, 'W-CPM-0 retimeTaskElements call sites found (n=' + sites.length +
+assert(sites.length >= 5, 'W-CPM-0 edit commit sites (_tmCommitEdit) found (n=' + sites.length +
   ') — a 0 here means the function was renamed and this witness went blind, not that the wiring is clean');
 
 const missing = [], seen = {};
@@ -80,7 +81,7 @@ for (const s of sites) {
   const key = fn.name + ':' + fn.start;
   if (seen[key]) continue;
   seen[key] = 1;
-  if (fn.body.indexOf('_tmAnnotateCpm(') < 0) missing.push(fn.name + '() at line ' + lineOf(fn.start));
+  if (P.reach(fn.body, src).indexOf('_tmAnnotateCpm(') < 0) missing.push(fn.name + '() at line ' + lineOf(fn.start));
 }
 console.log('§GANTT_CPM_ANNOTATE_WIRING retimeSites=' + sites.length + ' distinctFns=' + Object.keys(seen).length +
   ' missingAnnotate=' + missing.length + (missing.length ? ' [' + missing.join(' | ') + ']' : ''));
@@ -90,14 +91,14 @@ assert(missing.length === 0, 'W-CPM-1 every function that re-times elements also
 // Undo does NOT call retimeTaskElements (it restores kernel_ops rows directly), so the gate above
 // cannot see it — yet undoing an edit must un-colour the bars that edit coloured. Checked by name.
 const undoFn = FNS.find(f => f.name === 'undoLastGanttEdit');
-assert(!!undoFn && undoFn.body.indexOf('_tmAnnotateCpm(') >= 0,
+assert(!!undoFn && P.reach(undoFn.body, src).indexOf('_tmAnnotateCpm(') >= 0,
   'W-CPM-1b undoLastGanttEdit re-annotates too — an undo that leaves the OLD critical path painted is the §S67 bug in a new costume');
 
 // The graph itself changes float even when no date moves — both edge verbs must re-annotate.
 const linkFn = FNS.find(f => f.name === 'linkGanttBars');
-assert(!!linkFn && linkFn.body.indexOf('_tmAnnotateCpm(') >= 0, 'W-CPM-1c linkGanttBars re-annotates (a new edge changes float with no date move)');
+assert(!!linkFn && P.reach(linkFn.body, src).indexOf('_tmAnnotateCpm(') >= 0, 'W-CPM-1c linkGanttBars re-annotates (a new edge changes float with no date move)');
 const propsFn = FNS.find(f => f.name === 'openGanttProps');
-assert(!!propsFn && (propsFn.body.match(/_tmAnnotateCpm\(/g) || []).length >= 2,
+assert(!!propsFn && (propsFn.body.match(/_tmCommitEdit\(/g) || []).length >= 2 && P.reach(propsFn.body, src).indexOf('_tmAnnotateCpm(') >= 0,
   'W-CPM-1d openGanttProps re-annotates on BOTH its write paths (typed apply AND unlink)');
 
 const annFn = FNS.find(f => f.name === '_tmAnnotateCpm');

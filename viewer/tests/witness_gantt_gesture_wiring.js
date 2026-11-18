@@ -83,7 +83,7 @@ const NEED = [
   ['rescheduleGanttAsap',   ['_tmEditLocked(', '_tmResyncAfterRetime(', '_tmAnnotateCpm(', '_tmPersistEdit(']]
 ];
 NEED.forEach(function (spec) {
-  const body = fnBody(spec[0]);
+  const body = fnBody(spec[0]) ? require('./_gantt_pipeline.js').reach(fnBody(spec[0]), src) : '';   // §ONE_COMMIT_PIPELINE
   const missing = spec[1].filter(c => body.indexOf(c) < 0);
   assert(body.length > 0 && missing.length === 0,
     'W-GEST-3 ' + spec[0] + ' carries bake-lock + resync + CPM re-annotate + persist' +
