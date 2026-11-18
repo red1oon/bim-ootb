@@ -2352,6 +2352,19 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
       _hydrateSide(_IDB, _SQL, K, function (db) { SIDE = db; resolve({ ok: true, roster: _ROSTER.slice() }); });
     });
   }
+  // ledgerUnpin — §62 (bim-compiler prompts/CLI_ERP_IVR.md, W-LEDGER-ROSTER): take trust back. The key leaves the roster AND the signer's peers, the sidecar is re-read from the file, so its rows stop counting
+  //   (all of them, past ones too: the file has no trusted clock). Resolves {ok, roster}; the caller (ledger_ui.js) saves the roster.
+  function ledgerUnpin(kid) {
+    var K = kernel();
+    return new Promise(function (resolve) {
+      if (!LEDGER || !K || !_SQL) { resolve({ ok: false, reason: 'not attached' }); return; }
+      _ROSTER = _ROSTER.filter(function (k) { return k !== kid; }); _ADMIT = {};
+      if (global.ErpSigner && global.ErpSigner.removePeer) global.ErpSigner.removePeer(kid);
+      console.log('§LEDGER untrusted key ' + kid.slice(0, 16) + '...');
+      _hydrateSide(_IDB, _SQL, K, function (db) { SIDE = db; resolve({ ok: true, roster: _ROSTER.slice() }); });
+    });
+  }
+  function ledgerRoster() { return _ROSTER.slice(); }
   // _withFreshSide — Implementing ERP_OPLOG_APPEND_ONLY_FIX.md F3/F4 — Witness: W-COMMIT-LOCK.
   // Re-hydrates SIDE from the ops store's CURRENT contents (a full read-all + replay via _hydrateSide —
   // correctness over micro-perf for this CORE pass; §Cross-tab coordination: "either is correct, the
@@ -3557,7 +3570,7 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
                     foldBack: foldBackDocOp, foldForward: foldForwardDocOp,  // §A-GRAIL: fold via scrub
                     setStatus: setDocStatus, statusBar: function () { return statusBar; }, pulseProc: pulseProc,
                     kernelDb: function () { return SIDE; }, withSidecar: withSidecar,
-                    attachLedger: attachLedger, detachLedger: detachLedger, ledgerInfo: ledgerInfo, ledgerSetRoster: ledgerSetRoster, ledgerPin: ledgerPin,   // §55: the shared ledger file
+                    attachLedger: attachLedger, detachLedger: detachLedger, ledgerInfo: ledgerInfo, ledgerSetRoster: ledgerSetRoster, ledgerPin: ledgerPin, ledgerUnpin: ledgerUnpin, ledgerRoster: ledgerRoster, ledgerFp: _fp,   // §55: the shared ledger file
                     // FS-17 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2o): erp_persist_ui.restore REPLACES the op-log
                     // (ErpReplicaClient.replayAndVerify DELETEs + re-seals) and then calls __crud.persist() — which did not
                     // exist, so a restore was lost on reload (poc_persist_wire W6, red on main). The append-only `ops` store is

@@ -12,6 +12,7 @@
 //   verify(opfile, key?)  the page's own KernelOps.verifyChain over the log
 //   Key: ~/.config/red1/door_key.json (JWK, dir 0700, file 0600; $RED1_DOOR_KEY names another). A file on disk is not a non-extractable key; that is the cost of a CLI.
 // Run: node common/door/ledger_sign.js verify <opfile> [keyfile]   |   node common/door/ledger_sign.js key   (the door key's fingerprint, to pin it in the page: §58)
+//      keys [opfile] | trust <fp> [opfile] | untrust <fp> [opfile]   (§62: the door's own roster; replayOps admits by it)
 'use strict';
 const fs = require('fs'), path = require('path'), os = require('os'), vm = require('vm'), crypto = require('crypto');
 const ROOT = path.join(__dirname, '..', '..');
@@ -72,6 +73,68 @@ function parseOps(text) {
   return js.filter((j) => !(isRow(j) && (j.op_type === 'UNDO' || j.op_type === 'REDO' || out.has(j.op_uuid)))).map(opOf);
 }
 
+// ── §62 (bim-compiler prompts/CLI_ERP_IVR.md, W-LEDGER-ROSTER): the door's roster of trusted keys, and admission = the page's §59 rule ──
+//   roster: ~/.config/red1/ledger_roster.json beside the door key ($RED1_LEDGER_ROSTER names another): {trusted:[{kid,fp,at}], revoked:[{kid,fp,at}]}. kid = the SPKI hex a row's signed_by carries.
+//   A row counts only if its signature verifies under this door's key or a trusted one (v2: the content hash, v1: op_hash); none: not admitted. A group whole. DOOR_ROSTER_BREAK=noadmit skips it (falsifier).
+function rosterFile() { return process.env.RED1_LEDGER_ROSTER || path.join(path.dirname(keyFile()), 'ledger_roster.json'); }
+function loadRoster() { try { const j = JSON.parse(fs.readFileSync(rosterFile(), 'utf8')); return { trusted: j.trusted || [], revoked: j.revoked || [] }; } catch (e) { return { trusted: [], revoked: [] }; } }
+function saveRoster(r) { const f = rosterFile(); fs.mkdirSync(path.dirname(f), { recursive: true, mode: 0o700 }); const tmp = f + '.' + process.pid + '.tmp'; fs.writeFileSync(tmp, JSON.stringify(r, null, 1), { mode: 0o600 }); fs.renameSync(tmp, f); }
+const fpOf = (kid) => crypto.createHash('sha256').update(Buffer.from(kid, 'hex')).digest('hex').slice(0, 16).replace(/(.{4})(?=.)/g, '$1-');   // = the page's _fp (crud_overlay.js) and the `key` command
+const PUB = {};
+function verifyWith(kid, hex, sig) { try { const k = PUB[kid] || (PUB[kid] = crypto.createPublicKey({ key: Buffer.from(kid, 'hex'), format: 'der', type: 'spki' })); return crypto.verify('sha256', Buffer.from(hex, 'utf8'), { key: k, dsaEncoding: 'ieee-p1363' }, Buffer.from(sig, 'hex')); } catch (e) { return false; } }
+const signerOf = (r) => { try { return JSON.parse(r.parameters).signed_by || null; } catch (e) { return null; } };
+function admit(rows) {   // rows = signed rows of the file -> { bad: {id: why}, unk: {kid: rows} }
+  const K = kernel(), R = loadRoster(), own = key().kid, trusted = [own].concat(R.trusted.map((t) => t.kid)), revoked = new Set(R.revoked.map((t) => t.kid)), bad = {}, unk = {};
+  rows.forEach((r) => {
+    const by = signerOf(r);
+    if (!r.sig) { bad[r.id] = 'unsigned'; return; }
+    const h = K._isV2(r.parameters) ? sha('cs2|' + K._canonicalV2(r)) : r.op_hash;
+    const order = trusted.indexOf(by) >= 0 ? [by].concat(trusted.filter((k) => k !== by)) : trusted;   // the page's order: the named key if trusted, then the rest
+    if (order.some((k) => verifyWith(k, h, r.sig))) return;
+    const why = by && trusted.indexOf(by) < 0 ? (revoked.has(by) ? 'revoked' : 'unpinned') : 'forged';
+    bad[r.id] = why; if (why !== 'forged') unk[by] = (unk[by] || 0) + 1;
+  });
+  const gbad = {}; rows.forEach((r) => { if (r.gid != null && bad[r.id]) gbad[r.gid] = bad[r.id]; });
+  rows.forEach((r) => { if (r.gid != null && gbad[r.gid] && !bad[r.id]) bad[r.id] = gbad[r.gid] + '-group'; });   // the torn-group rule
+  return { bad, unk };
+}
+// replayOps(text): the ops the DOOR replays = the admitted rows (and bare legacy lines, the door's own from before it signed), with §61's markers applied. ops.lines = each op's line index in
+//   the file (non-empty lines), so the op-log image (erp_cli.js) can tell whether the rows it applied in a prefix are still the ones that count. parseOps (below) stays the raw reader.
+function replayOps(text) {
+  const all = String(text).split('\n').filter(Boolean).map((l) => JSON.parse(l)), rows = all.filter(isRow);
+  let bad = {};
+  if (rows.length && process.env.DOOR_ROSTER_BREAK !== 'noadmit') {
+    const a = admit(rows); bad = a.bad; const ids = Object.keys(bad);
+    if (ids.length) { const why = {}; ids.forEach((i) => { const w = String(bad[i]).replace(/-group$/, ''); why[w] = (why[w] || 0) + 1; }); say('excluded rows=' + ids.length + ' why=' + JSON.stringify(why)); }
+    Object.keys(a.unk).forEach((k) => say((bad && loadRoster().revoked.some((t) => t.kid === k) ? 'revoked' : 'unpinned') + ' key fp=' + fpOf(k) + ' rows=' + a.unk[k] + ' (trust it: node common/door/ledger_sign.js trust ' + fpOf(k) + ')'));
+  }
+  const kept = all.map((j, i) => ({ j, i })).filter((x) => !(isRow(x.j) && bad[x.j.id]));
+  const isMark = (j) => isRow(j) && (j.op_type === 'UNDO' || j.op_type === 'REDO');
+  let out = new Set();
+  if (kept.some((x) => isMark(x.j)) && process.env.LEDGER_UNDO_BREAK !== 'doornomarker') { const m = kernel().foldMarkers(kept.filter((x) => isRow(x.j)).map((x) => x.j)); out = new Set(m.undone); say('markers=' + m.markers + ' undone=' + m.undone.length); }
+  const fin = kept.filter((x) => !isMark(x.j) && !(isRow(x.j) && out.has(x.j.op_uuid))), ops = fin.map((x) => opOf(x.j));
+  Object.defineProperty(ops, 'lines', { value: fin.map((x) => x.i), enumerable: false });
+  return ops;
+}
+// keys(opfile): every key that signed rows in the file, with its standing
+function keysOf(opfile) {
+  const R = loadRoster(), own = key().kid, n = {};
+  let txt = ''; try { txt = fs.readFileSync(opfile, 'utf8'); } catch (e) { /* no file */ }
+  txt.split('\n').filter(Boolean).map((l) => JSON.parse(l)).filter(isRow).forEach((r) => { const k = signerOf(r) || '(unsigned)'; n[k] = (n[k] || 0) + 1; });
+  const st = (k) => k === own ? 'this door' : R.trusted.some((t) => t.kid === k) ? 'trusted' : R.revoked.some((t) => t.kid === k) ? 'revoked' : 'unknown';
+  return { door: fpOf(own), keys: Object.keys(n).map((k) => ({ kid: k, fp: k === '(unsigned)' ? '-' : fpOf(k), rows: n[k], status: k === '(unsigned)' ? 'unsigned' : st(k) })) };
+}
+function trustFp(fp, opfile, on) {   // on=true: trust, false: untrust (revoke). The key is found by its fingerprint among the file's signers, else in the roster
+  const R = loadRoster(), ks = keysOf(opfile).keys.filter((k) => k.fp === fp).map((k) => k.kid).concat(R.trusted.concat(R.revoked).filter((t) => t.fp === fp).map((t) => t.kid));
+  const kid = ks[0]; if (!kid) return { ok: false, why: 'no key with fingerprint ' + fp + ' signed a row of ' + opfile + ' or is in the roster' };
+  if (kid === key().kid) return { ok: false, why: 'that is this door\'s own key' };
+  const at = new Date().toISOString();
+  R.trusted = R.trusted.filter((t) => t.kid !== kid); R.revoked = R.revoked.filter((t) => t.kid !== kid);
+  (on ? R.trusted : R.revoked).push({ kid, fp, at }); saveRoster(R);
+  say((on ? 'trusted' : 'revoked') + ' key fp=' + fp + ' roster=' + rosterFile());
+  return { ok: true, kid, fp, roster: rosterFile() };
+}
+
 // ── the lock ──
 const nap = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 function lock(f) {
@@ -126,10 +189,13 @@ async function verify(opfile, keyfile) {
   return v;
 }
 
-module.exports = { parseOps, append, verify, key, keyFile, seal, isRow, GENESIS };
+module.exports = { parseOps, replayOps, admit, keysOf, trustFp, loadRoster, rosterFile, fpOf, append, verify, key, keyFile, seal, isRow, GENESIS };
 if (require.main === module) {
   const [cmd, f, kf] = process.argv.slice(2);
   if (cmd === 'key') { const k = key(), fp = crypto.createHash('sha256').update(k.pub.export({ type: 'spki', format: 'der' })).digest('hex').slice(0, 16).replace(/(.{4})(?=.)/g, '$1-'); console.log('door key fingerprint ' + fp + '  file ' + keyFile()); process.exit(0); }   // the owner compares this with the fingerprint the page shows before pinning (bim-compiler prompts/CLI_ERP_IVR.md §58)
-  if (cmd !== 'verify' || !f) { console.error('usage: node common/door/ledger_sign.js verify <opfile> [keyfile] | key'); process.exit(2); }
+  const logOf = (x) => x || process.env.BIM_OBJECT_OPLOG || path.join(os.homedir(), '.cache', 'bim_object', 'ad_seed.db.ops.jsonl');   // the door's default op-log (object_cli oplogFile, the ERP seed)
+  if (cmd === 'keys') { const k = keysOf(logOf(f)); console.log('this door ' + k.door); k.keys.forEach((x) => console.log(x.fp + '  ' + x.status + '  rows=' + x.rows)); process.exit(0); }   // §62
+  if (cmd === 'trust' || cmd === 'untrust') { if (!f) { console.error('usage: ledger_sign.js ' + cmd + ' <fingerprint> [opfile]'); process.exit(2); } const r = trustFp(f, logOf(kf), cmd === 'trust'); console.log(r.ok ? (cmd === 'trust' ? 'trusted ' : 'untrusted ') + r.fp : 'refused: ' + r.why); process.exit(r.ok ? 0 : 3); }
+  if (cmd !== 'verify' || !f) { console.error('usage: node common/door/ledger_sign.js verify <opfile> [keyfile] | key | keys [opfile] | trust <fp> [opfile] | untrust <fp> [opfile]'); process.exit(2); }
   verify(f, kf).then((v) => process.exit(v.ok ? 0 : 3), (e) => { console.error('§LEDGER error ' + e.message); process.exit(1); });
 }

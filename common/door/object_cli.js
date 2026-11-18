@@ -204,7 +204,7 @@ function describe(O, a) {
 
 // ── op-log: append-only JSONL; replayed into memory ──
 function oplogFile(a, file) { return a.oplog || process.env.BIM_OBJECT_OPLOG || path.join(os.homedir(), '.cache', 'bim_object', path.basename(file) + '.ops.jsonl'); }
-function readOps(f) { try { return require('./ledger_sign.js').parseOps(fs.readFileSync(f, 'utf8')); } catch (e) { return []; } }   // a bare legacy line or a signed row (ledger_sign.js)
+function readOps(f) { try { return require('./ledger_sign.js').replayOps(fs.readFileSync(f, 'utf8')); } catch (e) { return []; } }   // a bare legacy line or a signed row (ledger_sign.js)
 function applyOp(db, rows, op) {   // the generic fold: a CRUD op onto a table. No table is named; the key column is the op's own idCol, else <table>_id.
   const t = op.table, idc = op.idCol || t + '_id';
   if (op.op_type === 'CRUD_CREATE') {
