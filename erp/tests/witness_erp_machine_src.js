@@ -39,9 +39,9 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'applica
   const bad1 = [];
   PACKS.filter(l => l !== 'en_US').forEach(l => { const o = gitJson('erp/i18n/' + l + '.json'), n = JSON.parse(fs.readFileSync(path.join(I18N, l + '.json'), 'utf8')); if (!o) { bad1.push(l + ':no-before'); return; }
     const ks = new Set(Object.keys(o).concat(Object.keys(n))); ks.delete('machineSource'); const diff = Array.from(ks).filter(k => JSON.stringify(o[k]) !== JSON.stringify(n[k])); if (diff.length) bad1.push(l + ':' + diff.slice(0, 3)); });
-  const oc = gitJson('erp/i18n/chrome.json'), nc = JSON.parse(fs.readFileSync(path.join(I18N, 'chrome.json'), 'utf8')), norm = (c) => JSON.stringify(c, (k, v) => (v && typeof v === 'object' && !Array.isArray(v) && k === 'machine') ? Object.keys(v).sort().reduce((a, x) => (a[x] = v[x], a), {}) : v);
+  const oc = gitJson('erp/i18n/chrome.json'), nc = JSON.parse(fs.readFileSync(path.join(I18N, 'chrome.json'), 'utf8')), sortKeys = (v) => Array.isArray(v) ? v.map(sortKeys) : (v && typeof v === 'object') ? Object.keys(v).sort().reduce((a, k) => (a[k] = sortKeys(v[k]), a), {}) : v, norm = (c) => JSON.stringify(sortKeys(c));   // object member order is not a label
   const chromeEq = !!oc && norm(oc.keys) === norm(nc.keys) && oc._doc === nc._doc;
-  chk('S1 the ' + (PACKS.length - 1) + ' built screen packs are label-equal to ' + BEFORE_REF + ' (every key and map; only `machineSource` text differs) and chrome.json is label-equal (machine{} order normalised): ' + (PACKS.length - 1 - bad1.length) + ' of ' + (PACKS.length - 1) + ' packs, chrome ' + chromeEq, bad1.length === 0 && chromeEq, bad1.join(' | '));
+  chk('S1 the ' + (PACKS.length - 1) + ' built screen packs are label-equal to ' + BEFORE_REF + ' (every key and map; only `machineSource` text differs) and chrome.json is label-equal (member order normalised): ' + (PACKS.length - 1 - bad1.length) + ' of ' + (PACKS.length - 1) + ' packs, chrome ' + chromeEq, bad1.length === 0 && chromeEq, bad1.join(' | '));
   // ── S2 ──
   const left = fs.readdirSync(MACH).filter(f => /\.json$/.test(f)), eng = {};
   TABS.forEach(t => { const col = t === 'AD_Menu' ? 'AD_Menu' : t; eng[t] = new Map(sq('SELECT ' + col + '_ID AS id, Name AS n FROM ' + col).map(r => [r.id, r.n])); });
