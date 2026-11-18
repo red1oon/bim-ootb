@@ -8,8 +8,8 @@
    "bim_element_base.csv",
    "BIM_Element_Trl_af_ZA.xml"
   ],
-  "rows": 1107,
-  "translated": 1004,
+  "rows": 1111,
+  "translated": 1008,
   "untranslated": 103
  },
  "labels": {
@@ -1119,10 +1119,14 @@
   "ui_exp_5d": "5D-koste",
   "ui_exp_5d_tip": "kostewerkboek (Excel): hoeveelhedelys, materiaal, arbeid, toerusting",
   "pillc_export_4": "Skedule (MSP / PMXML / XER): die werkskedule vir MS Project of Primavera P6, grys totdat die Time Machine een geskep het",
-  "pillc_export_5": "5D-koste: 'n kostewerkboek (.xlsx) vanaf die 4D/5D-bladsy"
+  "pillc_export_5": "5D-koste: 'n kostewerkboek (.xlsx) vanaf die 4D/5D-bladsy",
+  "ui_exp_scope_whole": "Hele gebou",
+  "ui_exp_scope_find": "Find-keuse ({n})",
+  "ui_exp_scope_find_tip": "die {n} elemente wat Find geïsoleer het",
+  "ui_exp_scope_none": "Isoleer eers met Find"
  },
  "tables": {
-  "AD_Message": 954,
+  "AD_Message": 958,
   "BIM_Element": 153
  },
  "terms": [

@@ -8,8 +8,8 @@
    "bim_element_base.csv",
    "BIM_Element_Trl_th_TH.xml"
   ],
-  "rows": 1107,
-  "translated": 1004,
+  "rows": 1111,
+  "translated": 1008,
   "untranslated": 103
  },
  "labels": {
@@ -1119,10 +1119,14 @@
   "ui_exp_5d": "ต้นทุน 5D",
   "ui_exp_5d_tip": "สมุดงานต้นทุน (Excel): ใบแสดงปริมาณงาน วัสดุ แรงงาน อุปกรณ์",
   "pillc_export_4": "กำหนดการ (MSP / PMXML / XER): กำหนดการก่อสร้างสำหรับ MS Project หรือ Primavera P6 เป็นสีเทาจนกว่า Time Machine จะสร้างขึ้น",
-  "pillc_export_5": "ต้นทุน 5D: สมุดงานต้นทุน (.xlsx) จากหน้า 4D/5D"
+  "pillc_export_5": "ต้นทุน 5D: สมุดงานต้นทุน (.xlsx) จากหน้า 4D/5D",
+  "ui_exp_scope_whole": "ทั้งอาคาร",
+  "ui_exp_scope_find": "ที่เลือกจาก Find ({n})",
+  "ui_exp_scope_find_tip": "{n} องค์ประกอบที่ Find แยกไว้",
+  "ui_exp_scope_none": "ใช้ Find แยกองค์ประกอบก่อน"
  },
  "tables": {
-  "AD_Message": 954,
+  "AD_Message": 958,
   "BIM_Element": 153
  },
  "terms": [

@@ -55,7 +55,7 @@ async function playedChain(bld) {
   const SQL = await initSqlJs({ wasmBinary: fs.readFileSync(path.join(ROOT, 'modeller', 'lib', 'sql-wasm.wasm')) });
   const db = new SQL.Database(new Uint8Array(fs.readFileSync(dbf.path)));
   const tmsb = TMP.buildSandbox({ tmSrc: tmSrc, SA: SA, SG: SG, CP: CP, GM: GM, SS: SS, LABOR_RATES: rsb.LABOR_RATES, console: console });
-  const base = { start: CACHE.PROJECT_START, laborRates: rsb.LABOR_RATES, rates: rsb.RATES, nameOverrides: rsb.SEQUENCE_NAME_OVERRIDES,
+  const base = { start: CACHE.PROJECT_START, laborRates: rsb.LABOR_RATES, rates: rsb.RATES, nameOverrides: rsb.SEQUENCE_NAME_OVERRIDES, disciplineTrades: rsb.SEQUENCE_DISCIPLINE_TRADE,
     defaultRule: rsb.SEQUENCE_DEFAULT, scheduleGate: SG, shiftHours: T.calendar.hours_per_shift, template: T, db: db,
     displayRemap: tmsb._tmDisplayRemap, genVersion: gcv };
   const rawEls = SA._buildScheduleElements(db, rsb.SEQUENCE_RULES, base);

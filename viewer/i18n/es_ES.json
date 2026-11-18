@@ -8,8 +8,8 @@
    "bim_element_base.csv",
    "BIM_Element_Trl_es_ES.xml"
   ],
-  "rows": 1107,
-  "translated": 1066,
+  "rows": 1111,
+  "translated": 1070,
   "untranslated": 41
  },
  "labels": {
@@ -1119,10 +1119,14 @@
   "ui_exp_5d": "Coste 5D",
   "ui_exp_5d_tip": "libro de costes (Excel): mediciones, materiales, mano de obra, equipos",
   "pillc_export_4": "Cronograma (MSP / PMXML / XER): el cronograma de obra para MS Project o Primavera P6, en gris hasta que la Time Machine cree uno",
-  "pillc_export_5": "Coste 5D: un libro de costes (.xlsx) desde la página 4D/5D"
+  "pillc_export_5": "Coste 5D: un libro de costes (.xlsx) desde la página 4D/5D",
+  "ui_exp_scope_whole": "Todo el edificio",
+  "ui_exp_scope_find": "Selección de Find ({n})",
+  "ui_exp_scope_find_tip": "los {n} elementos que Find ha aislado",
+  "ui_exp_scope_none": "Primero aísle con Find"
  },
  "tables": {
-  "AD_Message": 954,
+  "AD_Message": 958,
   "BIM_Element": 153
  },
  "terms": [

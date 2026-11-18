@@ -8,8 +8,8 @@
    "bim_element_base.csv",
    "BIM_Element_Trl_id_ID.xml"
   ],
-  "rows": 1107,
-  "translated": 1004,
+  "rows": 1111,
+  "translated": 1008,
   "untranslated": 103
  },
  "labels": {
@@ -1119,10 +1119,14 @@
   "ui_exp_5d": "Biaya 5D",
   "ui_exp_5d_tip": "buku kerja biaya (Excel): daftar kuantitas, material, tenaga kerja, peralatan",
   "pillc_export_4": "Jadwal (MSP / PMXML / XER): jadwal kerja untuk MS Project atau Primavera P6, abu-abu sampai Time Machine membuatnya",
-  "pillc_export_5": "Biaya 5D: buku kerja biaya (.xlsx) dari halaman 4D/5D"
+  "pillc_export_5": "Biaya 5D: buku kerja biaya (.xlsx) dari halaman 4D/5D",
+  "ui_exp_scope_whole": "Seluruh bangunan",
+  "ui_exp_scope_find": "Pilihan Find ({n})",
+  "ui_exp_scope_find_tip": "{n} elemen yang diisolasi oleh Find",
+  "ui_exp_scope_none": "Gunakan Find dan isolasi dahulu"
  },
  "tables": {
-  "AD_Message": 954,
+  "AD_Message": 958,
   "BIM_Element": 153
  },
  "terms": [

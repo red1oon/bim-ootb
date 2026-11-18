@@ -13,6 +13,15 @@
 //                   a _IFC2X3.ifc; the item is ENABLED for a split building (it was greyed before). Judged from page state and § lines, never from a screenshot.
 //   RED CONTROL     IFC_EXPORT_RED=nopredefined drops PredefinedType from every IFC4 product: S2 must FAIL (exit 1).
 //   INCONCLUSIVE    printed (never PASS) when nothing was judged; a sub-check whose input is absent is listed under inconclusive=.
+// STEP (c) (prompts/VIEWER_IFC_EXPORT_BY_DISCIPLINE.md "(c) SPEC"), ISSUE: "a user cannot export only the elements Find has isolated; the IFC row always writes the whole building."
+//   S1 SELECT       node, GardenWorld + HHS_Office (HHS IFC4 only): four selections built by SQL from elements_meta (one discipline, one class, one storey, the class + 3 guids absent from the DB): the Tag of every product
+//                   in the file (read back by a node reader that needs no python) = exactly sel INTERSECT has-geometry; written + noGeometry + notInDb = selected; every exported product's entity (its attributes with every #ref replaced
+//                   by the hash of what it points to, plus its colour styles) hashes the same as the product the whole-building file holds for that guid (the selection is a filter, never a second writer).
+//   S1 EMPTY        an empty Set and null: collect walks nothing / the whole building (node); the page's A.exportIfcShared({scope:'selection'}) gives why=no_isolate and no file (LIVE_SEL).
+//   S2 / S6         ifcopenshell.validate 0 errors and one SHA-256 over two exports, on every selection file (IFC4 + IFC2X3 on GardenWorld, IFC4 on HHS_Office).
+//   LIVE_SEL        the real page: Find's own search box + Isolate button (real keys and mouse) makes A.activeGuidFilter; the Export menu's Find chip shows N = the isolate size and is enabled; a tap on it chooses and writes nothing;
+//                   the IFC row downloads <building>_selection_IFC4.ifc equal to the node writer's bytes for the same set; Find's Show all greys the chip again (why=no_isolate) and the scope falls back to whole; an EMPTY isolate set is not an isolate.
+//   RED CONTROL     IFC_EXPORT_RED=noselfilter makes collect ignore the selection: S1 must FAIL (exit 1).
 // Run:  node viewer/tests/witness_ifc_export_sel.js            (python3 + ifcopenshell for S2; puppeteer from ~/bim-compiler/node_modules for LIVE; starts its own python http.server and kills it by PID)
 //       IFC_SEL_SKIP_LIVE=1 / IFC_SEL_SKIP_BIG=1 shorten the run (the skipped parts are listed as inconclusive, never PASS).
 'use strict';
@@ -53,6 +62,92 @@ function py(file) {
   return JSON.parse(m[1]);
 }
 const fmtMap = (o) => '{' + Object.keys(o).sort().map((k) => k + ':' + o[k]).join(',') + '}';
+
+
+// ---- step (c): a node reader of the .ifc text (no python needed) --------------------------------------------------------------------
+// attrs of one entity line split at the top level (strings and parentheses respected)
+function splitAttrs(a) {
+  const out = []; let d = 0, q = false, cur = '';
+  for (let i = 0; i < a.length; i++) {
+    const c = a[i];
+    if (q) { cur += c; if (c === "'") { if (a[i + 1] === "'") { cur += "'"; i++; } else q = false; } continue; }
+    if (c === "'") { q = true; cur += c; } else if (c === '(') { d++; cur += c; } else if (c === ')') { d--; cur += c; } else if (c === ',' && d === 0) { out.push(cur); cur = ''; } else cur += c;
+  }
+  out.push(cur); return out;
+}
+const unq = (t) => (t && t[0] === "'" && t[t.length - 1] === "'") ? t.slice(1, -1).replace(/''/g, "'") : null;
+// parse(file, dbGuids): {tags: Map guid -> hash of the product's entity (attributes with refs resolved + its colour styles), classes: Map guid -> IFC class}; the Tag is the 8th attribute of every IfcElement
+function readIfc(file, dbGuids) {
+  const txt = fs.readFileSync(file, 'utf8'), lines = new Map(), styled = new Map(), tagLine = new Map(); let m;
+  const re = /^#(\d+)=([A-Z0-9_]+)\((.*)\);$/gm;
+  while ((m = re.exec(txt)) !== null) { lines.set(+m[1], [m[2], m[3]]); }
+  const memo = new Map(), sha = (t) => crypto.createHash('sha1').update(t).digest('hex');
+  const canon = (a) => a.replace(/'(?:[^']|'')*'|#(\d+)/g, (x, d) => d ? '<' + h(+d) + '>' : x);
+  function h(id) {
+    if (memo.has(id)) return memo.get(id); const e = lines.get(id); if (!e) return 'MISSING' + id; memo.set(id, 'CYCLE' + id);
+    const st = styled.get(id), r = sha(e[0] + '(' + canon(e[1]) + ')' + (st ? '|' + st.slice().sort().join(',') : '')); memo.set(id, r); return r;
+  }
+  lines.forEach((e, id) => { if (e[0] === 'IFCSTYLEDITEM') { const a = splitAttrs(e[1]), ref = /^#(\d+)$/.exec(a[0]); if (ref) { const k = +ref[1]; if (!styled.has(k)) styled.set(k, []); styled.get(k).push(sha(canon(a.slice(1).join(',')))); } } });
+  const tags = new Map(), classes = new Map(); let dupTag = 0;
+  lines.forEach((e, id) => {
+    if (/^IFCREL/.test(e[0]) || e[0] === 'IFCPROJECT' || e[0] === 'IFCSITE' || e[0] === 'IFCBUILDING' || e[0] === 'IFCBUILDINGSTOREY') return;
+    const a = splitAttrs(e[1]); if (a.length < 8) return; const t = unq(a[7]); if (t === null || !dbGuids.has(t)) return;
+    if (tags.has(t)) dupTag++; tags.set(t, h(id)); classes.set(t, e[0]);
+  });
+  return { tags, classes, dupTag, lines: lines.size, text: txt.slice(0, 4000) };
+}
+// the four fixed selections of one building, by SQL from elements_meta (deterministic): the value whose count is closest to 10% of the rows (3 .. rows-1), per column
+function pickSels(db) {
+  const total = db.exec('SELECT COUNT(*) FROM elements_meta')[0].values[0][0], out = [], skipped = [], absent = ['ABSENT_GUID_1', 'ABSENT_GUID_2', 'ABSENT_GUID_3'];
+  for (const [kind, col] of [['discipline', 'discipline'], ['class', 'ifc_class'], ['storey', 'storey']]) {
+    const r = db.exec('SELECT ' + col + ', COUNT(*) FROM elements_meta WHERE ' + col + " IS NOT NULL AND " + col + " <> '' GROUP BY 1 ORDER BY 1"), vals = (r.length ? r[0].values : []).filter((v) => v[1] >= 3 && v[1] < total);
+    if (!vals.length) { skipped.push(kind + ': no ' + col + ' value with 3..' + (total - 1) + ' of ' + total + ' rows'); continue; }
+    vals.sort((a, b) => Math.abs(a[1] - total / 10) - Math.abs(b[1] - total / 10) || (a[0] < b[0] ? -1 : 1));
+    const g = db.exec('SELECT guid FROM elements_meta WHERE ' + col + ' = ? ORDER BY guid', [vals[0][0]])[0].values.map((v) => v[0]);
+    out.push({ kind, value: vals[0][0], sel: new Set(g) });
+  }
+  const cls = out.find((o) => o.kind === 'class'); if (cls) out.push({ kind: 'class+3absent', value: cls.value + ' + 3 guids absent from the DB', sel: new Set(Array.from(cls.sel).concat(absent)), absent: 3 });
+  return { sels: out, skipped, total };
+}
+// S1 + S2 + S6 for the selections of one monolith building; whole = runCase's output (the whole-building files per schema)
+function runSelections(label, SQL, db, whole, schemas, red) {
+  const dbGuids = new Set(db.exec('SELECT guid FROM elements_meta')[0].values.map((v) => v[0])), P = pickSels(db);
+  P.skipped.forEach((w) => inc('S1:' + label + ':' + w.split(':')[0], w + ': that selection was not judged'));
+  if (!P.sels.length) { inc('S1:' + label, 'no selection could be built: nothing judged'); return; }
+  for (const schema of schemas) {
+    const W = whole[schema]; if (!W) { inc('S1:' + label + ':' + schema, 'no whole-building file to compare with'); continue; }
+    const wcol = W.col, hasGeo = new Set(wcol.elements.map((e) => e.guid)), noGeoAll = new Set(wcol.noGeometryList), wf = readIfc(W.file, dbGuids);
+    for (const S of P.sels) {
+      const tag = label + ':' + S.kind + ':' + schema, name = label + '_selection_' + schema + '.ifc', opts = { schema, name, buildingName: label, projectName: label };
+      const col = X.collect(db, null, S.sel, { ignoreSel: red === 'noselfilter' }), res = X.build(col, opts);
+      if (!res.ok) { ck('S1:' + tag, false, 'the writer refused: ' + res.why); continue; }
+      const dir = path.join(OUTDIR, 'sel_' + S.kind.replace(/\W+/g, '_')); fs.mkdirSync(dir, { recursive: true }); const file = path.join(dir, name), h1 = hashParts(res.parts, file);
+      log(X.selLine(col, res, schema));
+      const expected = new Set(Array.from(S.sel).filter((g) => hasGeo.has(g))), expNoGeo = Array.from(S.sel).filter((g) => noGeoAll.has(g)).length, expNotInDb = Array.from(S.sel).filter((g) => !dbGuids.has(g)).length;
+      const sf = readIfc(file, dbGuids), tagSet = new Set(sf.tags.keys());
+      const missing = Array.from(expected).filter((g) => !tagSet.has(g)), extra = Array.from(tagSet).filter((g) => !expected.has(g));
+      let eqBad = 0, eqN = 0; sf.tags.forEach((hv, g) => { if (wf.tags.has(g)) { eqN++; if (wf.tags.get(g) !== hv) eqBad++; } else eqBad++; });
+      const cnt = res.stats.written + col.noGeometryList.length + (col.census.notInDb || 0), selN = S.sel.size;
+      const descOk = new RegExp('what Find has isolated \\(' + expected.size + ' of ' + wcol.elements.length + ' elements with geometry\\)').test(sf.text);
+      log('§IFC_SEL_S1 ' + tag + ' selected=' + selN + ' expected(has geometry)=' + expected.size + ' inFile=' + tagSet.size + ' missing=' + missing.length + ' extra=' + extra.length + ' written=' + res.stats.written + ' noGeometry=' + col.noGeometryList.length + ' notInDb=' + (col.census.notInDb || 0) + ' entityEq=' + eqN + '/' + sf.tags.size + ' entityBad=' + eqBad + ' dupTag=' + sf.dupTag + ' mode=' + col.mode);
+      if (expected.size === 0) { inc('S1:' + tag, 'the selection holds no element with geometry: not judged'); continue; }
+      ck('S1:' + tag, missing.length === 0 && extra.length === 0 && res.stats.written === expected.size && col.noGeometryList.length === expNoGeo && (col.census.notInDb || 0) === expNotInDb && cnt === selN && eqBad === 0 && eqN === expected.size && sf.dupTag === 0 && col.mode === 'selection' && descOk,
+        'Tags in the file = sel INTERSECT has-geometry (' + expected.size + ' of ' + selN + '; missing ' + missing.length + (missing.length ? ' e.g. ' + missing.slice(0, 3).join(',') : '') + ', extra ' + extra.length + (extra.length ? ' e.g. ' + extra.slice(0, 3).join(',') : '') + '); written ' + res.stats.written + ' + noGeometry ' + col.noGeometryList.length + ' + notInDb ' + (col.census.notInDb || 0) + ' = ' + cnt + ' (selected ' + selN + '); ' + eqN + ' products, ' + eqBad + ' differ from the whole-building file\'s product for the same guid; description names the selection: ' + descOk);
+      // S6
+      const h2 = hashParts(X.build(X.collect(db, null, S.sel, { ignoreSel: red === 'noselfilter' }), opts).parts, null);
+      ck('S6:' + tag, h1.sha === h2.sha && h1.bytes === h2.bytes, 'two selection exports: ' + h1.sha.slice(0, 16) + ' / ' + h2.sha.slice(0, 16) + ' (' + h1.bytes + ' B)');
+      // S2
+      if (red) continue;
+      const p = py(file);
+      if (p.skip) inc('S2:' + tag, 'ifcopenshell not importable (' + p.why + '): validity NOT judged');
+      else if (p.error) ck('S2:' + tag, false, p.error);
+      else { log('§IFC_SEL_PY label=' + label + ' selection=' + S.kind + ' schema=' + p.schema + ' validate_errors=' + p.validate_errors + ' products=' + p.products + ' dupGlobalIds=' + p.dupGlobalIds + ' first=' + JSON.stringify(p.first_errors.slice(0, 2))); ck('S2:' + tag, p.validate_errors === 0 && p.schema === schema && p.dupGlobalIds === 0 && p.products === expected.size, 'ifcopenshell.validate on ' + schema + ' ' + label + ' selection ' + S.kind + ' (' + S.value + '): ' + p.validate_errors + ' errors (0 required), ' + p.products + ' products (' + expected.size + ' expected)'); }
+    }
+  }
+  // S1 EMPTY at the collect level: an empty Set walks nothing, null walks the whole building
+  const ce = X.collect(db, null, new Set()), cn = X.collect(db, null, null);
+  ck('S1EMPTY:' + label + ':collect', ce.elements.length === 0 && ce.census.selected === 0 && cn.elements.length === whole[schemas[0]].col.elements.length && cn.mode === 'whole', 'collect(empty Set) walks ' + ce.elements.length + ' elements (selected=' + ce.census.selected + '); collect(null) is the whole building (' + cn.elements.length + ' elements, mode=' + cn.mode + ')');
+}
 
 // one case: export twice (S6), validate the first (S2), count (COUNT); returns the first export
 function runCase(label, SQL, mono, geoDb, rows, schemas, red) {
@@ -104,6 +199,7 @@ function runCase(label, SQL, mono, geoDb, rows, schemas, red) {
       const gwBytes = fs.readFileSync(GW), gw = new SQL.Database(new Uint8Array(gwBytes)), gwRows = dbCounts(gw);
       // --- 1. MONOLITH, small (both schemas) -------------------------------------------------------
       const m1 = runCase('GardenWorld', SQL, gw, null, gwRows, RED ? ['IFC4'] : ['IFC4', 'IFC2X3'], RED === 'nopredefined');
+      if (!RED || RED === 'noselfilter') runSelections('GardenWorld', SQL, gw, m1, RED ? ['IFC4'] : ['IFC4', 'IFC2X3'], RED);
       // --- 2. SPLIT derived from it, same bytes -----------------------------------------------------
       if (!RED) {
         const sp = splitDb(SQL, gwBytes), m2 = runCase('GardenWorld', SQL, sp.meta, sp.geo, gwRows, ['IFC4', 'IFC2X3'], false);
@@ -114,6 +210,7 @@ function runCase(label, SQL, mono, geoDb, rows, schemas, red) {
           if (isSqlite(HHS)) {
             const hb = fs.readFileSync(HHS), hdb = new SQL.Database(new Uint8Array(hb)), hrows = dbCounts(hdb);
             const mh = runCase('HHS_Office', SQL, hdb, null, hrows, ['IFC4'], false);
+            runSelections('HHS_Office', SQL, hdb, mh, ['IFC4'], '');
             const hsp = splitDb(SQL, hb), ms = runCase('HHS_Office', SQL, hsp.meta, hsp.geo, hrows, ['IFC4', 'IFC2X3'], false);
             ck('SPLIT_EQ_MONO:HHS_Office:IFC4', !!(mh.IFC4 && ms.IFC4 && mh.IFC4.sha === ms.IFC4.sha), 'split pair vs monolith: ' + (ms.IFC4 && ms.IFC4.sha.slice(0, 16)) + ' / ' + (mh.IFC4 && mh.IFC4.sha.slice(0, 16)));
           } else inc('MONO_HHS', 'buildings/HHS_Office_Federated_extracted.db is absent or an LFS pointer');
@@ -162,7 +259,10 @@ function runCase(label, SQL, mono, geoDb, rows, schemas, red) {
           if (await panelShown()) return true;
           const vis = () => page.evaluate(() => { const r = document.getElementById('pill-save').getBoundingClientRect(); return r.width > 4 && r.height > 4; });
           for (let attempt = 0; attempt < 4; attempt++) {
-            for (let i = 0; i < 40 && !(await vis()); i++) { try { await page.click('#mobile-trigger'); } catch (e) { /* not shown yet: wait */ } await sl(500); }
+            for (let i = 0; i < 40 && !(await vis()); i++) {
+              const wh = await page.evaluate(() => { const w = document.getElementById('wh-close'); return !!(w && w.getBoundingClientRect().width > 0); }); if (wh) { try { await page.click('#wh-close'); log('  [' + tag + ' step] walk engaged late -> left with its own X'); } catch (e) { /* gone */ } }
+              try { await page.click('#mobile-trigger'); } catch (e) { /* not shown yet: wait */ } await sl(500);
+            }
             if (await vis()) {
               const r = await page.evaluate(() => { const b = document.getElementById('pill-save').getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; }); await page.mouse.click(r.x, r.y);
               for (let i = 0; i < 24; i++) { await sl(250); if (await panelShown()) return true; }
@@ -173,12 +273,14 @@ function runCase(label, SQL, mono, geoDb, rows, schemas, red) {
           return false;
         };
         const clickSel = async (sel) => { const r = await page.evaluate((s) => { const d = document.querySelector(s); if (!d) return null; const b = d.getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; }, sel); if (!r) return false; await page.mouse.click(r.x, r.y); return true; };
+        // the title line of a row, as a finger would (step (c): the IFC row's scope chips sit under its label, so the row centre is a chip)
+        const clickTitle = async (key) => { const r = await page.evaluate((k) => { const d = document.querySelector('#v-export-panel .ve-row[data-key="' + k + '"]'); if (!d) return null; const b = d.getBoundingClientRect(); return { x: b.x + 28, y: b.y + 14 }; }, key); if (!r) return false; await page.mouse.click(r.x, r.y); return true; };
         if (!(await openMenu())) { inc('LIVE:' + tag, 'the Export pill never opened the menu'); return; }
         const rows = await page.evaluate(() => Array.from(document.querySelectorAll('#v-export-panel .ve-row')).map((d) => ({ key: d.getAttribute('data-key'), disabled: d.getAttribute('data-disabled') === '1', why: d.getAttribute('data-why'), title: d.getAttribute('title') || '', text: d.textContent.trim().replace(/\s+/g, ' ') })));
         const ifcRow = rows.find((r) => r.key === 'ifc');
         ck('LIVE_MENU:' + tag, rows.map((r) => r.key).join(',') === 'db,ifc,bcf,schedule,cost5d' && !!ifcRow && !ifcRow.disabled && /whole building/.test(ifcRow.title) && /IFC4/.test(ifcRow.text) && /IFC2X3/.test(ifcRow.text), 'menu rows ' + JSON.stringify(rows.map((r) => r.key)) + '; IFC row enabled=' + (ifcRow && !ifcRow.disabled) + ' why=' + (ifcRow && ifcRow.why) + ' tip=' + JSON.stringify(ifcRow && ifcRow.title) + ' text=' + JSON.stringify(ifcRow && ifcRow.text));
         // IFC4 (default)
-        let n0 = files().filter((f) => /\.ifc$/.test(f)).length; await clickSel('#v-export-panel .ve-row[data-key="ifc"] .ve-label');
+        let n0 = files().filter((f) => /\.ifc$/.test(f)).length; await clickTitle('ifc');
         const f4 = await waitFile(/_IFC4\.ifc$/, 0, 180000);
         const last = await page.evaluate(() => ({ last: APP._ifcExportLast || null, status: (document.getElementById('import-status') || document.getElementById('status') || {}).textContent })); const mb = f4 ? fs.statSync(path.join(dl, f4)).size : 0;
         const nodeX = (() => { const dbN = tag === 'monolith' ? new SQL.Database(new Uint8Array(gwB)) : sp.meta, geoN = tag === 'monolith' ? null : sp.geo, nm = st.ab.replace(/\.(ifc|db)$/i, '').replace(/_(extracted|meta)$/i, ''); const col = X.collect(dbN, geoN), res = X.build(col, { schema: 'IFC4', name: nm + '_IFC4.ifc', buildingName: nm, projectName: nm }); return Object.assign({ n: res.stats.written }, hashParts(res.parts, null)); })();
@@ -193,13 +295,85 @@ function runCase(label, SQL, mono, geoDb, rows, schemas, red) {
         // IFC2X3 through the schema toggle
         await openMenu(); await clickSel('#v-export-panel .ve-sch[data-schema="IFC2X3"]'); await sl(300);
         const pressed = await page.evaluate(() => Array.from(document.querySelectorAll('#v-export-panel .ve-sch')).map((b) => b.getAttribute('data-schema') + ':' + b.getAttribute('aria-pressed')).join(','));
-        await clickSel('#v-export-panel .ve-row[data-key="ifc"] .ve-label');
+        await clickTitle('ifc');
         const f2 = await waitFile(/_IFC2X3\.ifc$/, 0, 180000); const head2 = f2 ? fs.readFileSync(path.join(dl, f2)).slice(0, 2000).toString() : '';
         ck('LIVE_IFC2X3:' + tag, !!(f2 && /FILE_SCHEMA\(\('IFC2X3'\)\)/.test(head2) && /IFC4:false/.test(pressed) && /IFC2X3:true/.test(pressed)), 'toggle ' + pressed + ' -> ' + f2 + ' header ' + JSON.stringify((/FILE_SCHEMA\(\([^)]*\)\)/.exec(head2) || [''])[0]));
         await page.evaluate(() => { try { APP.setIfcSchemaChoice('IFC4'); } catch (e) { } });
         // the refusal path: a building over the limit is refused with its reason in the status line and writes NO file
         const nBefore = files().length, ref = await page.evaluate(async () => { const r = await APP.exportIfcShared({ schema: 'IFC4', maxMB: -1, download: true }); return { ok: r.ok, why: r.why, status: (document.getElementById('import-status') || document.getElementById('status') || {}).textContent }; }); await sl(800);
         ck('LIVE_REFUSE:' + tag, ref.ok === false && ref.why === 'too_large' && /too large for the browser/.test(ref.status || '') && files().length === nBefore, 'over-limit export refused: ' + JSON.stringify(ref) + '; files before/after ' + nBefore + '/' + files().length);
+
+        // ---- LIVE_SEL (step (c)): Find's own search box + Isolate button make the isolate; the Export menu's Find chip follows it ----
+        const nm0 = st.ab.replace(/\.(ifc|db)$/i, '').replace(/_(extracted|meta)$/i, '');
+        const menuIfc = () => page.evaluate(() => { const d = document.querySelector('#v-export-panel .ve-row[data-key="ifc"]'); if (!d) return null; const ch = Array.from(d.querySelectorAll('.ve-scope')).map((c) => ({ scope: c.getAttribute('data-scope'), off: c.getAttribute('data-disabled') === '1', why: c.getAttribute('data-why') || '', on: c.getAttribute('aria-pressed') === 'true', text: c.textContent.trim() })); return { chips: ch, sub: (d.querySelector('.ve-sub') || {}).textContent, title: d.getAttribute('title') || '', hint: (d.querySelector('.ve-hint') || {}).textContent || '', nRows: document.querySelectorAll('#v-export-panel .ve-row').length }; });
+        const closeMenu = async () => { if (await panelShown()) { await page.keyboard.press('Escape'); await sl(300); } };
+        // 1. nothing isolated: the Find chip is disabled with its reason, the default scope is whole; an EMPTY isolate set is not an isolate; the page's writer refuses a selection export with why=no_isolate and writes nothing
+        await closeMenu(); await page.evaluate(() => { APP.filterByGuids(null); }); await sl(300);
+        await openMenu(); const m0 = await menuIfc(); const fch0 = m0 && m0.chips.find((c) => c.scope === 'selection');
+        ck('LIVE_SEL_NONE:' + tag, !!(m0 && m0.nRows === 5 && fch0 && fch0.off && fch0.why === 'no_isolate' && /\(0\)/.test(fch0.text) && /Find and isolate first/.test(m0.hint) && m0.chips.find((c) => c.scope === 'whole' && c.on)), 'no isolate: Find chip ' + JSON.stringify(fch0) + ', hint ' + JSON.stringify(m0 && m0.hint) + ', rows ' + (m0 && m0.nRows) + ', whole chip pressed');
+        await closeMenu();
+        await page.evaluate(() => { APP.filterByGuids(new Set()); }); await sl(300);
+        await openMenu(); const mE = await menuIfc(); const fchE = mE && mE.chips.find((c) => c.scope === 'selection');
+        ck('LIVE_SEL_EMPTYSET:' + tag, !!(fchE && fchE.off && fchE.why === 'no_isolate'), 'an EMPTY isolate set (the merged-ghost lens uses it) is not an isolate: Find chip ' + JSON.stringify(fchE));
+        await closeMenu(); await page.evaluate(() => { APP.filterByGuids(null); }); await sl(300);
+        const nF0 = files().length, ref0 = await page.evaluate(async () => { const o = {}; for (const k of ['empty', 'null', 'none']) { const r = await APP.exportIfcShared({ scope: 'selection', sel: k === 'empty' ? new Set() : k === 'null' ? null : undefined, download: true }); o[k] = { ok: r.ok, why: r.why }; } return o; }); await sl(800);
+        ck('S1EMPTY:' + tag + ':page', ['empty', 'null', 'none'].every((k) => ref0[k].ok === false && ref0[k].why === 'no_isolate') && files().length === nF0, 'A.exportIfcShared({scope:selection}) with an empty Set / null / no isolate: ' + JSON.stringify(ref0) + '; files before/after ' + nF0 + '/' + files().length);
+        // 2. Find's own search + Isolate (real keys, real mouse)
+        await page.evaluate(() => { document.activeElement && document.activeElement.blur && document.activeElement.blur(); });
+        await page.keyboard.press('f');
+        let findOpen = false; for (let i = 0; i < 20 && !findOpen; i++) { await sl(300); findOpen = await page.evaluate(() => { const p = document.getElementById('find-panel') || document.querySelector('#find-name'); const n = document.getElementById('find-name'); return !!(n && n.getBoundingClientRect().width > 0); }); }
+        if (!findOpen) { await page.evaluate(() => { if (APP.openFindPanel) APP.openFindPanel(''); }); await sl(800); findOpen = await page.evaluate(() => { const n = document.getElementById('find-name'); return !!(n && n.getBoundingClientRect().width > 0); }); log('  [' + tag + ' note] the f key did not open Find; A.openFindPanel used'); }
+        if (!findOpen) { inc('LIVE_SEL:' + tag, 'the Find panel never opened'); await ctx.close(); return; }
+        const FIND_Q = 'rack';
+        // Find's Isolate button is shown by updateIsolateBar() (nf_isolate_drill.js), which runs from Show all (clearIsolate) and from the isolate calls: the real route to it is a group tap (the bar appears with Show all),
+        // the typed filter, Show all (the bar now offers Isolate for the typed filter), then Isolate. Every step is a real mouse click or key press.
+        const rowXY = await page.evaluate(() => { const e = document.querySelector('#find-tree .find-tree-row'); if (!e) return null; const t = e.querySelectorAll('span')[1] || e; const b = t.getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; });
+        if (!rowXY) { inc('LIVE_SEL:' + tag, 'the Find outliner showed no group row to tap'); await ctx.close(); return; }
+        await page.mouse.click(rowXY.x, rowXY.y); await sl(1200);
+        await page.click('#find-name'); await page.keyboard.type(FIND_Q, { delay: 60 });
+        const visOf = (id) => page.evaluate((i) => { const b = document.getElementById(i); return !!(b && b.getBoundingClientRect().width > 0 && getComputedStyle(b).display !== 'none'); }, id);
+        const clickId = async (id) => { const r = await page.evaluate((i) => { const b = document.getElementById(i).getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; }, id); await page.mouse.click(r.x, r.y); };
+        let saVisible = false; for (let i = 0; i < 40 && !saVisible; i++) { await sl(300); saVisible = (await visOf('find-showall-btn')) && /found/.test(await page.evaluate(() => document.getElementById('find-count').innerText)); }
+        if (saVisible) { await clickId('find-showall-btn'); await sl(900); }
+        let isoVisible = false; for (let i = 0; i < 20 && !isoVisible; i++) { await sl(300); isoVisible = await visOf('find-isolate-btn'); }
+        if (!isoVisible) { inc('LIVE_SEL:' + tag, 'Find showed no Isolate button for the text "' + FIND_Q + '"'); await ctx.close(); return; }
+        const rIso = await page.evaluate(() => { const b = document.getElementById('find-isolate-btn').getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; }); await page.mouse.click(rIso.x, rIso.y);
+        let isoN = 0; for (let i = 0; i < 30 && !isoN; i++) { await sl(300); isoN = await page.evaluate(() => (APP.activeGuidFilter && APP.activeGuidFilter.size) || 0); }
+        const isoSet = await page.evaluate(() => Array.from(APP.activeGuidFilter || []).sort());
+        const sqlSet = (tag === 'monolith' ? new SQL.Database(new Uint8Array(gwB)) : sp.meta).exec("SELECT guid FROM elements_meta WHERE LOWER(element_name) LIKE '%rack%' OR LOWER(ifc_class) LIKE '%rack%' ORDER BY guid")[0].values.map((v) => v[0]).sort();
+        log('§IFC_EXPORT_SEL_LIVE tag=' + tag + ' find_text=' + JSON.stringify(FIND_Q) + ' isolate=' + isoN + ' sql_expected=' + sqlSet.length);
+        ck('LIVE_SEL_ISOLATE:' + tag, isoN > 0 && isoSet.join('|') === sqlSet.join('|'), 'Find\'s Isolate button (real click) left A.activeGuidFilter = ' + isoN + ' guids; the same guids as the SQL for "' + FIND_Q + '" (' + sqlSet.length + ')');
+        // 3. the menu follows the isolate
+        const nFilesA = files().length; await openMenu(); const m1 = await menuIfc(); const fch1 = m1 && m1.chips.find((c) => c.scope === 'selection');
+        const openLine = lines.filter((l) => /§VIEWER_EXPORT_MENU open=true/.test(l)).pop() || '';
+        ck('LIVE_SEL_CHIP:' + tag, !!(m1 && m1.nRows === 5 && fch1 && !fch1.off && fch1.text === 'Find selection (' + isoN + ')' && m1.chips.find((c) => c.scope === 'whole' && c.on) && /find_chip=enabled n=/.test(openLine) && openLine.indexOf('n=' + isoN) > 0), 'Find chip ' + JSON.stringify(fch1) + ' (N = A.activeGuidFilter.size = ' + isoN + '), rows ' + (m1 && m1.nRows) + '; open line: ' + openLine.slice(-90));
+        // 4. a tap on the chip chooses and writes nothing
+        await clickSel('#v-export-panel .ve-scope[data-scope="selection"]'); await sl(400);
+        const m2 = await menuIfc(), ch2 = await page.evaluate(() => APP.ifcScopeChoice());
+        ck('LIVE_SEL_CHOOSE:' + tag, !!(m2 && m2.chips.find((c) => c.scope === 'selection' && c.on) && /Find has isolated/.test(m2.sub || '') && ('' + m2.sub).indexOf(String(isoN)) >= 0 && ch2 === 'selection' && files().length === nFilesA && lines.some((l) => /§VIEWER_EXPORT_MENU ifc_scope=selection/.test(l))), 'chip tap: scope=' + ch2 + ', sub-line ' + JSON.stringify(m2 && m2.sub) + ', files before/after ' + nFilesA + '/' + files().length);
+        // 5. the IFC row exports the isolate
+        const selLinesBefore = lines.filter((l) => /§IFC_EXPORT_SEL mode=selection/.test(l)).length;
+        await clickTitle('ifc'); const fs1 = await waitFile(/_selection_IFC4\.ifc$/, 0, 180000);
+        const lastS = await page.evaluate(() => ({ last: APP._ifcExportLast || null, status: (document.getElementById('import-status') || document.getElementById('status') || {}).textContent }));
+        const nodeS = (() => { const dbN = tag === 'monolith' ? new SQL.Database(new Uint8Array(gwB)) : sp.meta, geoN = tag === 'monolith' ? null : sp.geo, col = X.collect(dbN, geoN, new Set(isoSet)), res = X.build(col, { schema: 'IFC4', name: nm0 + '_selection_IFC4.ifc', buildingName: nm0, projectName: nm0 }); return Object.assign({ n: res.stats.written, col }, hashParts(res.parts, null)); })();
+        const liveShaS = fs1 ? crypto.createHash('sha256').update(fs.readFileSync(path.join(dl, fs1))).digest('hex') : null;
+        const selLine = lines.filter((l) => /§IFC_EXPORT_SEL mode=selection/.test(l)).pop() || '', menuLine = lines.filter((l) => /§VIEWER_EXPORT_MENU item=ifc action=exportIfcShared/.test(l)).pop() || '';
+        log('§IFC_EXPORT_SEL_LIVE tag=' + tag + ' selection file=' + fs1 + ' status=' + JSON.stringify(lastS.status) + ' menuLine=' + menuLine);
+        ck('LIVE_SEL_EXPORT:' + tag, !!(fs1 && fs1 === nm0 + '_selection_IFC4.ifc' && lastS.last && lastS.last.ok && lastS.last.scope === 'selection' && lastS.status === 'IFC (IFC4): ' + nodeS.n + ' elements (Find selection), ' + (fs.statSync(path.join(dl, fs1)).size / 1048576).toFixed(1) + ' MB' && lines.filter((l) => /§IFC_EXPORT_SEL mode=selection/.test(l)).length === selLinesBefore + 1 && new RegExp('mode=selection .* selected=' + isoN + ' notInDb=0 written=' + nodeS.n + ' ').test(selLine) && new RegExp('scope=selection n=' + isoN + ' schema=IFC4$').test(menuLine)),
+          'download ' + fs1 + '; status ' + JSON.stringify(lastS.status) + '; §IFC_EXPORT_SEL mode=selection selected=' + isoN + ' written=' + nodeS.n);
+        ck('LIVE_SEL_EQ_NODE:' + tag, !!(liveShaS && liveShaS === nodeS.sha), 'the page selection file equals the node writer\'s bytes for the same set: ' + (liveShaS && liveShaS.slice(0, 16)) + ' / ' + nodeS.sha.slice(0, 16));
+        const pvS = fs1 ? py(path.join(dl, fs1)) : { error: 'no file' };
+        if (pvS.skip) inc('LIVE_SEL_VALID:' + tag, 'ifcopenshell not importable'); else ck('LIVE_SEL_VALID:' + tag, !pvS.error && pvS.validate_errors === 0 && pvS.products === nodeS.n, 'the downloaded selection file: ' + (pvS.error || pvS.validate_errors + ' validate errors, ' + pvS.products + ' products (' + nodeS.n + ' expected)'));
+        // 6. Find's Show all clears the isolate: the chip greys again and the scope falls back to whole
+        await page.evaluate(() => { const b = document.getElementById('find-showall-btn'); if (b && b.getBoundingClientRect().width > 0) { const r = b.getBoundingClientRect(); window.__showAllXY = { x: r.x + r.width / 2, y: r.y + r.height / 2 }; } else window.__showAllXY = null; });
+        const sa = await page.evaluate(() => window.__showAllXY); if (sa) await page.mouse.click(sa.x, sa.y); await sl(600);
+        const cleared = await page.evaluate(() => !APP.activeGuidFilter);
+        await closeMenu(); await openMenu(); const m3 = await menuIfc(), fch3 = m3 && m3.chips.find((c) => c.scope === 'selection'), ch3 = await page.evaluate(() => APP.ifcScopeChoice());
+        ck('LIVE_SEL_CLEAR:' + tag, !!(sa && cleared && fch3 && fch3.off && fch3.why === 'no_isolate' && ch3 === 'whole' && m3.chips.find((c) => c.scope === 'whole' && c.on) && /whole building/.test(m3.title)), 'Find\'s Show all (real click): isolate cleared=' + cleared + '; Find chip ' + JSON.stringify(fch3) + '; scope falls back to ' + ch3);
+        await clickTitle('ifc'); await sl(2500);
+        const lastW = await page.evaluate(() => APP._ifcExportLast && { scope: APP._ifcExportLast.scope, file: APP._ifcExportLast.file });
+        ck('LIVE_SEL_FALLBACK:' + tag, !!(lastW && lastW.scope === 'whole' && lines.filter((l) => /§VIEWER_EXPORT_MENU item=ifc action=exportIfcShared .* scope=whole /.test(l)).length >= 2), 'after the isolate was cleared the IFC row writes the whole building: ' + JSON.stringify(lastW));
+        await closeMenu();
         ck('LIVE_NOERR:' + tag, errs.length === 0, 'no page error (' + errs.length + ')');
         await ctx.close();
       };
