@@ -8,8 +8,8 @@
    "bim_element_base.csv",
    "BIM_Element_Trl_zh_CN.xml"
   ],
-  "rows": 1107,
-  "translated": 1004,
+  "rows": 1111,
+  "translated": 1008,
   "untranslated": 103
  },
  "labels": {
@@ -1119,10 +1119,14 @@
   "ui_exp_5d": "5D 成本",
   "ui_exp_5d_tip": "成本工作簿（Excel）：工程量清单、材料、人工、设备",
   "pillc_export_4": "进度计划（MSP / PMXML / XER）：供 MS Project 或 Primavera P6 使用的施工进度计划，Time Machine 生成之前为灰色",
-  "pillc_export_5": "5D 成本：来自 4D/5D 页面的成本工作簿 (.xlsx)"
+  "pillc_export_5": "5D 成本：来自 4D/5D 页面的成本工作簿 (.xlsx)",
+  "ui_exp_scope_whole": "整栋建筑",
+  "ui_exp_scope_find": "Find 选择 ({n})",
+  "ui_exp_scope_find_tip": "Find 已隔离的 {n} 个构件",
+  "ui_exp_scope_none": "请先用 Find 隔离"
  },
  "tables": {
-  "AD_Message": 954,
+  "AD_Message": 958,
   "BIM_Element": 153
  },
  "terms": [

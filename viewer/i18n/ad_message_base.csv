@@ -962,3 +962,7 @@ CPM reads the dates the drag produced — it never changes one.",I
 1001104,ui_exp_5d_tip,"cost workbook (Excel): bill of quantities, materials, labour, equipment",I
 1001105,pillc_export_4,"Schedule (MSP / PMXML / XER): the work schedule for MS Project or Primavera P6, greyed until the Time Machine has made one",I
 1001106,pillc_export_5,5D cost: a cost workbook (.xlsx) from the 4D/5D page,I
+1001107,ui_exp_scope_whole,Whole building,I
+1001108,ui_exp_scope_find,Find selection ({n}),I
+1001109,ui_exp_scope_find_tip,the {n} elements Find has isolated,I
+1001110,ui_exp_scope_none,Find and isolate first,I

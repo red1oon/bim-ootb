@@ -8,8 +8,8 @@
    "bim_element_base.csv",
    "BIM_Element_Trl_bl_BD.xml"
   ],
-  "rows": 1107,
-  "translated": 1004,
+  "rows": 1111,
+  "translated": 1008,
   "untranslated": 103
  },
  "labels": {
@@ -1119,10 +1119,14 @@
   "ui_exp_5d": "5D khoroch",
   "ui_exp_5d_tip": "khorocher workbook (Excel): poriman talika, upokoron, shrom, jantropati",
   "pillc_export_4": "Shomoyshuchi (MSP / PMXML / XER): MS Project ba Primavera P6-er jonno kajer shomoyshuchi, Time Machine toiri na kora porjonto dhushor",
-  "pillc_export_5": "5D khoroch: 4D/5D page theke khorocher workbook (.xlsx)"
+  "pillc_export_5": "5D khoroch: 4D/5D page theke khorocher workbook (.xlsx)",
+  "ui_exp_scope_whole": "Pura building",
+  "ui_exp_scope_find": "Find nirbachon ({n})",
+  "ui_exp_scope_find_tip": "Find je {n}ti upadan alada koreche",
+  "ui_exp_scope_none": "Age Find diye alada korun"
  },
  "tables": {
-  "AD_Message": 954,
+  "AD_Message": 958,
   "BIM_Element": 153
  },
  "terms": [

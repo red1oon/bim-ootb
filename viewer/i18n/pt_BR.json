@@ -8,8 +8,8 @@
    "bim_element_base.csv",
    "BIM_Element_Trl_pt_BR.xml"
   ],
-  "rows": 1107,
-  "translated": 1100,
+  "rows": 1111,
+  "translated": 1104,
   "untranslated": 7
  },
  "labels": {
@@ -1119,10 +1119,14 @@
   "ui_exp_5d": "Custo 5D",
   "ui_exp_5d_tip": "planilha de custos (Excel): quantitativos, materiais, mão de obra, equipamentos",
   "pillc_export_4": "Cronograma (MSP / PMXML / XER): o cronograma de obra para MS Project ou Primavera P6, cinza até o Time Machine criar um",
-  "pillc_export_5": "Custo 5D: uma planilha de custos (.xlsx) da página 4D/5D"
+  "pillc_export_5": "Custo 5D: uma planilha de custos (.xlsx) da página 4D/5D",
+  "ui_exp_scope_whole": "Edifício inteiro",
+  "ui_exp_scope_find": "Seleção do Find ({n})",
+  "ui_exp_scope_find_tip": "os {n} elementos isolados pelo Find",
+  "ui_exp_scope_none": "Isole primeiro com o Find"
  },
  "tables": {
-  "AD_Message": 954,
+  "AD_Message": 958,
   "BIM_Element": 153
  },
  "terms": [
