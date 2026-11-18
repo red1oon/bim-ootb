@@ -11,6 +11,8 @@
   var state = { ready: false, panel: null, rules: {}, edits: {}, last: {}, open: {}, runs: [], busy: false, hidden: {}, inputs: {}, frame: null, schema: 'IFC2X3', ifcLast: null };   // inputs[packId][inputId] = {json, name, summary}: a file the person loaded for a pack (P6)
 
   function log(m) { console.log(TAG + ' ' + m); }
+  // the download names: the opened file's name without its .db / .sqlite / .ifc extension (was "JPAM_base.db_addon_IFC2X3.ifc"; spec MODELLER_LOD_UPGRADE_PILL.md "P7 NAME FIX")
+  function modelName() { return String(window.__dwName || 'model').replace(/\.(db|sqlite|sqlite3|ifc)$/i, ''); }
   function load(src) { return new Promise(function (res, rej) { var s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = function () { rej(new Error('load failed ' + src)); }; document.head.appendChild(s); }); }
   async function boot() {
     if (state.ready) return;
@@ -116,7 +118,7 @@
     if (!state.runs.length) return null; syncTables();
     var O = window.Bonsai.oplog, rows = O.db.exec('SELECT seq, change, guid, ifc_class, host_guid, rule, detail FROM upgrade_changes ORDER BY seq'), ch = rows.length ? rows[0].values.map(function (v) { return { kind: v[1], guid: v[2], cls: v[3], host: v[4], rule: v[5], detail: v[6] }; }) : [];
     var rc = window.LodRules.counts(rowsOf(state.runs[state.runs.length - 1].pack));
-    return window.LodOps.changeText(ch, { model: window.__dwName || 'model', pack: state.runs.map(function (r) { return r.pack; }).join('+'), rules: rc });
+    return window.LodOps.changeText(ch, { model: modelName(), pack: state.runs.map(function (r) { return r.pack; }).join('+'), rules: rc });
   }
 
   // P6: a file the person loads for a pack (the pack declares it: {id, label, accept, validate(json) -> {ok, summary, why}}). Read as JSON, checked by the pack, kept in the panel state; a refused file says why and changes nothing.
@@ -162,7 +164,7 @@
       if (r.length) r[0].values.forEach(function (v) { if (!ch[v[0]]) ch[v[0]] = { host: v[1], rule: v[2], detail: v[3] }; });
       var els = gen.map(function (p) { var c = ch[p.guid] || {}; return { guid: p.guid, cls: p.cls, name: p.name, storey: p.storey, host: c.host || (p.parents && p.parents[0]) || null, rule: c.rule || null, detail: c.detail === undefined ? null : c.detail, tris: p.tris }; });
       var bdb = await window.OpenBuildingDb.get(), elev = {}; try { if (bdb && window.LodReader.has(bdb, 'storey_elevation')) { var re = bdb.exec('SELECT name, elevation_attr_m FROM storey_elevation'); if (re.length) re[0].values.forEach(function (v) { if (v[1] !== null) elev[v[0]] = Number(v[1]); }); } } catch (e) { /* no storey table: only a frame JSON can name the elevations */ }
-      var schema = o.schema || state.schema, frame = o.frame !== undefined ? o.frame : (state.frame ? state.frame.json : null), model = window.__dwName || 'model';
+      var schema = o.schema || state.schema, frame = o.frame !== undefined ? o.frame : (state.frame ? state.frame.json : null), model = modelName();
       var gradeOf = function (h) { var sc = (inp.sched || {})[h]; return sc && sc.Note_fy_MPa !== undefined && sc.Note_fy_MPa !== null ? { fy: sc.Note_fy_MPa, src: sc.NoteSource_fy_MPa === undefined || sc.NoteSource_fy_MPa === null ? 'None' : sc.NoteSource_fy_MPa } : null; };
       var drv = await window.LodRegistry.kit.drive(Ifc.buildSteps(els, { schema: schema, frame: frame, elev: elev, gradeOf: gradeOf, fileName: model + '_addon_' + schema + '.ifc', breakGuid: !!o.breakGuid, kit: window.LodRegistry.kit }), { budgetMs: 25, onProgress: function (pr) { say(pr && pr.label ? pr.label + ' ' + pr.done + ' of ' + pr.total : 'Add-on IFC: working...'); } });
       var res = drv.value, st = res.stats;
@@ -216,7 +218,7 @@
       paint(); }; });
     body.querySelector('.lu-schema').onchange = function () { state.schema = this.value; };
     body.querySelector('.lu-frame').onclick = loadFrame; body.querySelector('.lu-ifc').onclick = function () { exportIfc({}); }; refreshIfcButton();
-    body.querySelector('.lu-cl').onclick = function () { var t = changeListText(); if (!t) { if (typeof window.setStat === 'function') window.setStat('Change list: run an upgrade first.'); return; } download((window.__dwName || 'model') + '_upgrade_changes.txt', t); log('§LODUP_CHANGELIST downloaded lines=' + t.split('\n').length); };
+    body.querySelector('.lu-cl').onclick = function () { var t = changeListText(); if (!t) { if (typeof window.setStat === 'function') window.setStat('Change list: run an upgrade first.'); return; } download(modelName() + '_upgrade_changes.txt', t); log('§LODUP_CHANGELIST downloaded lines=' + t.split('\n').length); };
   }
   function buildPanel() {
     var P = document.createElement('div'); P.id = 'm-lodup-panel';
