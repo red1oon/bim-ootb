@@ -35,7 +35,7 @@ const server = http.createServer((req, res) => { const p = decodeURIComponent(re
   fs.stat(fp, (e, st) => { if (e || st.isDirectory()) { res.writeHead(404); return res.end(); } res.writeHead(200, { 'Content-Type': MIME[path.extname(p)] || 'application/octet-stream' }); fs.createReadStream(fp).pipe(res); }); });
 
 // ── the dictionary (sources) ──
-const BASE = T.readBase(); const BY_ID = new Map(BASE.map(r => [r.id, r]));
+const BASE0 = T.readBase(), TERMS = T.readTerms(), BASE = BASE0.concat(TERMS); const BY_ID = new Map(BASE0.map(r => [r.id, r]));   // T2: AD_Message + BIM_Element are one dictionary
 const EN_BY_TEXT = new Map(); BASE.forEach(r => { if (!EN_BY_TEXT.has(r.msgtext)) EN_BY_TEXT.set(r.msgtext, []); EN_BY_TEXT.get(r.msgtext).push(r); });
 const tplRe = (s) => { const names = []; const src = s.split(/(\{\w+\})/).map(p => { const m = p.match(/^\{(\w+)\}$/); if (m) { names.push(m[1]); return '(.+?)'; } return p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }).join('');
   return names.length && src.replace(/\(\.\+\?\)/g, '').length >= 3 ? new RegExp('^' + src + '$') : null; };
@@ -43,6 +43,7 @@ const EN_TPL = BASE.filter(r => /\{\w+\}/.test(r.msgtext)).map(r => ({ r, re: tp
 const XML = {};
 T.LOCALES.filter(l => l !== T.BASE).forEach(lang => { const x = T.parseTrlXml(fs.readFileSync(T.xmlFile(lang), 'utf8')); const byValue = new Map();
   x.rows.forEach(r => { const b = BY_ID.get(r.id); if (b) byValue.set(b.value, { trl: r.trl, text: r.text }); });
+  const xt = T.parseTrlXml(fs.readFileSync(T.elementXmlFile(lang), 'utf8')), TBY = new Map(TERMS.map(r => [r.id, r])); xt.rows.forEach(r => { const b = TBY.get(r.id); if (b) byValue.set(b.value, { trl: r.trl, text: r.text }); }); x.rows = x.rows.concat(xt.rows);
   XML[lang] = { byValue, textSet: new Set(x.rows.filter(r => r.trl === 'Y').map(r => r.text)),
     tpl: x.rows.filter(r => r.trl === 'Y' && /\{\w+\}/.test(r.text)).map(r => tplRe(r.text)).filter(Boolean) }; });
 

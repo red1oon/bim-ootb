@@ -4,7 +4,9 @@
  "built": {
   "from": [
    "ad_message_base.csv",
-   "AD_Message_Trl_ja_JP.xml"
+   "AD_Message_Trl_ja_JP.xml",
+   "bim_element_base.csv",
+   "BIM_Element_Trl_ja_JP.xml"
   ],
   "rows": 1091,
   "translated": 1006,
@@ -1102,5 +1104,9 @@
   "ui_help_doc_none": "要素がありません",
   "ui_help_doc_more": "件あります",
   "ui_help_reserved": "@ は予約済みで、まだ何もしません"
+ },
+ "tables": {
+  "AD_Message": 938,
+  "BIM_Element": 153
  }
 }

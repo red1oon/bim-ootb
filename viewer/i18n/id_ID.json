@@ -4,7 +4,9 @@
  "built": {
   "from": [
    "ad_message_base.csv",
-   "AD_Message_Trl_id_ID.xml"
+   "AD_Message_Trl_id_ID.xml",
+   "bim_element_base.csv",
+   "BIM_Element_Trl_id_ID.xml"
   ],
   "rows": 1091,
   "translated": 988,
@@ -1102,5 +1104,9 @@
   "ui_help_doc_none": "Tidak ada elemen",
   "ui_help_doc_more": "lagi",
   "ui_help_reserved": "@ dicadangkan dan belum melakukan apa pun"
+ },
+ "tables": {
+  "AD_Message": 938,
+  "BIM_Element": 153
  }
 }

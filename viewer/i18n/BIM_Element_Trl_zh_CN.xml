@@ -1,0 +1,770 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!--BIM OOTB Viewer — BIM_Element_Trl zh_CN — the TERMINOLOGY table (IFC classes: our plain description ifccls_*, buildingSMART definition ifcdef_*), same format as AD_Element_Trl (org.compiere.install.Translation export). Rows 1000867-1001023 moved unchanged (id, text, trl flag) from AD_Message_Trl_zh_CN.xml by viewer/tools/trl_move_terms_2026-11-18.js. Provenance per row, from the batches: ifccls_* = machine translation by Claude (Anthropic), 2026-11-17, NOT from a published iDempiere language pack (viewer/tools/trl_batch_2026-11-17_ifccls.js, _ifccls_fill.js); ifcdef_* = buildingSMART bSDD IFC 4.3 text VERBATIM, CC BY-ND 4.0, never reworded (trl_batch_2026-11-17_ifcdef.js, _ifcdef_types.js).-->
+<!--<!DOCTYPE idempiereTrl PUBLIC "-//iDempiere//DTD iDempiere Translation 1.0//EN" "https://raw.githubusercontent.com/idempiere/idempiere/refs/heads/master/utils_dev/trl/idempiereTrl.dtd">-->
+<idempiereTrl language="zh_CN" table="BIM_Element">
+ <row id="1000867" trl="N">
+  <value column="Name" original="An air terminal is a terminating or origination point for the transfer of air between distribution system(s) and one or more spaces. It can also be used for the transfer of air between adjacent spaces.">An air terminal is a terminating or origination point for the transfer of air between distribution system(s) and one or more spaces. It can also be used for the transfer of air between adjacent spaces.</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000868" trl="N">
+  <value column="Name" original="EN">EN</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000869" trl="N">
+  <value column="Name" original="An alarm is a device that signals the existence of a condition or situation that is outside the boundaries of normal expectation or that activates such a device.">An alarm is a device that signals the existence of a condition or situation that is outside the boundaries of normal expectation or that activates such a device.</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000870" trl="N">
+  <value column="Name" original="EN">EN</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000871" trl="N">
+  <value column="Name" original="An [[IfcBeam]] is typically a horizontal, or nearly horizontal, structural member that is capable of withstanding load primarily by resisting bending. It may also represent such a member from an architectural point of view. It is not required to be load bearing.">An [[IfcBeam]] is typically a horizontal, or nearly horizontal, structural member that is capable of withstanding load primarily by resisting bending. It may also represent such a member from an architectural point of view. It is not required to be load bearing.</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000872" trl="N">
+  <value column="Name" original="EN">EN</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000873" trl="N">
+  <value column="Name" original="[[IfcBuildingElementPart]] represents major components as subordinate parts of a building element. Typical usage examples include precast concrete sandwich walls, where the layers may have different geometry representations. In this case the layered material representation does not sufficiently describe the element. Each layer is represented by an own instance of the [[IfcBuildingElementPart]] with its own geometry description.">[[IfcBuildingElementPart]] represents major components as subordinate parts of a building element. Typical usage examples include precast concrete sandwich walls, where the layers may have different geometry representations. In this case the layered material representation does not sufficiently describe the element. Each layer is represented by an own instance of the [[IfcBuildingElementPart]] with its own geometry description.</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000874" trl="N">
+  <value column="Name" original="EN">EN</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000875" trl="N">
+  <value column="Name" original="The [[IfcBuildingElementProxy]] is a proxy definition that provides the same functionality as subtypes of [[IfcBuiltElement]], but without having a predefined meaning of the special type of building element it represents.">The [[IfcBuildingElementProxy]] is a proxy definition that provides the same functionality as subtypes of [[IfcBuiltElement]], but without having a predefined meaning of the special type of building element it represents.</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000876" trl="N">
+  <value column="Name" original="EN">EN</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000877" trl="N">
+  <value column="Name" original="A cable carrier fitting is a fitting that is placed at junction or transition in a cable carrier system.">A cable carrier fitting is a fitting that is placed at junction or transition in a cable carrier system.</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000878" trl="N">
+  <value column="Name" original="EN">EN</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000879" trl="N">
+  <value column="Name" original="A cable carrier segment is a flow segment that is specifically used to carry and support cabling.">A cable carrier segment is a flow segment that is specifically used to carry and support cabling.</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000880" trl="N">
+  <value column="Name" original="EN">EN</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000881" trl="N">
+  <value column="Name" original="An [[IfcColumn]] is a vertical structural or architectural member which often is aligned with a structural grid intersection. In most cases it represents a vertical, or nearly vertical, structural member that transmits, through compression, the weight of the structure above to other structural elements below. It may also represent such a member from an architectural point of view in which case it may represent a non load bearing element. Whether it is a structural load bearing element or a non-load bearing element is determined by the [[Pset_ColumnCommon]].[[LoadBearing]] property.">An [[IfcColumn]] is a vertical structural or architectural member which often is aligned with a structural grid intersection. In most cases it represents a vertical, or nearly vertical, structural member that transmits, through compression, the weight of the structure above to other structural elements below. It may also represent such a member from an architectural point of view in which case it may represent a non load bearing element. Whether it is a structural load bearing element or a non-load bearing element is determined by the [[Pset_ColumnCommon]].[[LoadBearing]] property.</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000882" trl="N">
+  <value column="Name" original="EN">EN</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000883" trl="N">
+  <value column="Name" original="A controller is a device that monitors inputs and controls outputs within a building automation system.">A controller is a device that monitors inputs and controls outputs within a building automation system.</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000884" trl="N">
+  <value column="Name" original="EN">EN</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000885" trl="N">
+  <value column="Name" original="A covering is an element which covers some part of another element and is fully dependent on that other element. The [[IfcCovering]] defines the occurrence of a covering type, that (if given) is expressed by the IfcCoveringType.">A covering is an element which covers some part of another element and is fully dependent on that other element. The [[IfcCovering]] defines the occurrence of a covering type, that (if given) is expressed by the IfcCoveringType.</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000886" trl="N">
+  <value column="Name" original="EN">EN</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000887" trl="N">
+  <value column="Name" original="A curtain wall is a wall of a building which is an assembly of components, hung from the edge of the floor/roof structure rather than bearing on a floor. Curtain wall is represented as a building element assembly and implemented as a subtype of [[IfcBuiltElement]] that uses an IfcRelAggregates relationship. A curtain wall is often external, but using [[Pset_CurtainWallCommon]].[[IsExternal]] can be used to define interior curtain walls.">A curtain wall is a wall of a building which is an assembly of components, hung from the edge of the floor/roof structure rather than bearing on a floor. Curtain wall is represented as a building element assembly and implemented as a subtype of [[IfcBuiltElement]] that uses an IfcRelAggregates relationship. A curtain wall is often external, but using [[Pset_CurtainWallCommon]].[[IsExternal]] can be used to define interior curtain walls.</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000888" trl="N">
+  <value column="Name" original="EN">EN</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000889" trl="N">
+  <value column="Name" original="The distribution element [[IfcDistributionControlElement]] defines occurrence elements of a building automation control system that are used to impart control over elements of a distribution system.">The distribution element [[IfcDistributionControlElement]] defines occurrence elements of a building automation control system that are used to impart control over elements of a distribution system.</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000890" trl="N">
+  <value column="Name" original="EN">EN</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000891" trl="N">
+  <value column="Name" original="The door is a built element that is predominately used to provide controlled access for people, goods, animals and vehicles. It includes constructions with hinged, pivoted, sliding, and additionally revolving and folding operations.">The door is a built element that is predominately used to provide controlled access for people, goods, animals and vehicles. It includes constructions with hinged, pivoted, sliding, and additionally revolving and folding operations.</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000892" trl="N">
+  <value column="Name" original="EN">EN</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000893" trl="N">
+  <value column="Name" original="A duct fitting is a junction or transition in a ducted flow distribution system or used to connect duct segments, resulting in changes in flow characteristics to the fluid such as direction and flow rate.">A duct fitting is a junction or transition in a ducted flow distribution system or used to connect duct segments, resulting in changes in flow characteristics to the fluid such as direction and flow rate.</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000894" trl="N">
+  <value column="Name" original="EN">EN</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000895" trl="N">
+  <value column="Name" original="A duct segment is used to typically join two sections of duct network.">A duct segment is used to typically join two sections of duct network.</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000896" trl="N">
+  <value column="Name" original="EN">EN</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000897" trl="N">
+  <value column="Name" original="An electric appliance is a device intended for consumer usage that is powered by electricity.">An electric appliance is a device intended for consumer usage that is powered by electricity.</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000898" trl="N">
+  <value column="Name" original="EN">EN</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000899" trl="N">
+  <value column="Name" original="The distribution flow element [[IfcEnergyConversionDevice]] defines the occurrence of a device used to perform energy conversion or heat transfer and typically participates in a flow distribution system. Its type is defined by IfcEnergyConversionDeviceType or its subtypes.">The distribution flow element [[IfcEnergyConversionDevice]] defines the occurrence of a device used to perform energy conversion or heat transfer and typically participates in a flow distribution system. Its type is defined by IfcEnergyConversionDeviceType or its subtypes.</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000900" trl="N">
+  <value column="Name" original="EN">EN</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000901" trl="N">
+  <value column="Name" original="A fire suppression terminal has the purpose of delivering a fluid (gas or liquid) that will suppress a fire.">A fire suppression terminal has the purpose of delivering a fluid (gas or liquid) that will suppress a fire.</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000902" trl="N">
+  <value column="Name" original="EN">EN</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000903" trl="N">
+  <value column="Name" original="The distribution flow element [[IfcFlowController]] defines the occurrence of elements of a distribution system that are used to regulate flow through a distribution system. Examples include dampers, valves, switches, and relays. Its type is defined by IfcFlowControllerType or subtypes.">The distribution flow element [[IfcFlowController]] defines the occurrence of elements of a distribution system that are used to regulate flow through a distribution system. Examples include dampers, valves, switches, and relays. Its type is defined by IfcFlowControllerType or subtypes.</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000904" trl="N">
+  <value column="Name" original="EN">EN</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000905" trl="N">
+  <value column="Name" original="The distribution flow element [[IfcFlowFitting]] defines the occurrence of a junction or transition in a flow distribution system, such as an elbow or tee. Its type is defined by IfcFlowFittingType or its subtypes.">The distribution flow element [[IfcFlowFitting]] defines the occurrence of a junction or transition in a flow distribution system, such as an elbow or tee. Its type is defined by IfcFlowFittingType or its subtypes.</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000906" trl="N">
+  <value column="Name" original="EN">EN</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000907" trl="N">
+  <value column="Name" original="The distribution flow element [[IfcFlowMovingDevice]] defines the occurrence of an apparatus used to distribute, circulate or perform conveyance of fluids, including liquids and gases (such as a pump or fan), and typically participates in a flow distribution system. Its type is defined by IfcFlowMovingDeviceType or its subtypes.">The distribution flow element [[IfcFlowMovingDevice]] defines the occurrence of an apparatus used to distribute, circulate or perform conveyance of fluids, including liquids and gases (such as a pump or fan), and typically participates in a flow distribution system. Its type is defined by IfcFlowMovingDeviceType or its subtypes.</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000908" trl="N">
+  <value column="Name" original="EN">EN</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000909" trl="N">
+  <value column="Name" original="The distribution flow element [[IfcFlowSegment]] defines the occurrence of a segment of a flow distribution system.">The distribution flow element [[IfcFlowSegment]] defines the occurrence of a segment of a flow distribution system.</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000910" trl="N">
+  <value column="Name" original="EN">EN</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000911" trl="N">
+  <value column="Name" original="The distribution flow element [[IfcFlowStorageDevice]] defines the occurrence of a device that participates in a distribution system and is used for temporary storage (such as a tank). Its type is defined by IfcFlowStorageDeviceType or its subtypes.">The distribution flow element [[IfcFlowStorageDevice]] defines the occurrence of a device that participates in a distribution system and is used for temporary storage (such as a tank). Its type is defined by IfcFlowStorageDeviceType or its subtypes.</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000912" trl="N">
+  <value column="Name" original="EN">EN</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000913" trl="N">
+  <value column="Name" original="The distribution flow element [[IfcFlowTerminal]] defines the occurrence of a permanently attached element that acts as a terminus or beginning of a distribution system (such as an air outlet, drain, water closet, or sink). A terminal is typically a point at which a system interfaces with an external environment. Its type is defined by IfcFlowTerminalType or its subtypes.">The distribution flow element [[IfcFlowTerminal]] defines the occurrence of a permanently attached element that acts as a terminus or beginning of a distribution system (such as an air outlet, drain, water closet, or sink). A terminal is typically a point at which a system interfaces with an external environment. Its type is defined by IfcFlowTerminalType or its subtypes.</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000914" trl="N">
+  <value column="Name" original="EN">EN</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000915" trl="N">
+  <value column="Name" original="The distribution flow element [[IfcFlowTreatmentDevice]] defines the occurrence of a device typically used to remove unwanted matter from a fluid, either liquid or gas, and typically participates in a flow distribution system. Its type is defined by IfcFlowTreatmentDeviceType or its subtypes.">The distribution flow element [[IfcFlowTreatmentDevice]] defines the occurrence of a device typically used to remove unwanted matter from a fluid, either liquid or gas, and typically participates in a flow distribution system. Its type is defined by IfcFlowTreatmentDeviceType or its subtypes.</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000916" trl="N">
+  <value column="Name" original="EN">EN</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000917" trl="N">
+  <value column="Name" original="A footing is a part of the foundation of a structure that spreads and transmits the load to the soil. A footing is also characterized as shallow foundation, where the loads are transferred to the ground near the surface.">A footing is a part of the foundation of a structure that spreads and transmits the load to the soil. A footing is also characterized as shallow foundation, where the loads are transferred to the ground near the surface.</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000918" trl="N">
+  <value column="Name" original="EN">EN</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000919" trl="N">
+  <value column="Name" original="A furnishing element is a generalization of all furniture related objects. Furnishing objects are characterized as being">A furnishing element is a generalization of all furniture related objects. Furnishing objects are characterized as being</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000920" trl="N">
+  <value column="Name" original="EN">EN</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000921" trl="N">
+  <value column="Name" original="Furniture defines complete furnishings such as a table, desk, chair, or cabinet, which may or may not be permanently attached to a building structure.">Furniture defines complete furnishings such as a table, desk, chair, or cabinet, which may or may not be permanently attached to a building structure.</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000922" trl="N">
+  <value column="Name" original="EN">EN</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000923" trl="N">
+  <value column="Name" original="A light fixture is a container that is designed for the purpose of housing one or more lamps and optionally devices that control, restrict or vary their emission.">A light fixture is a container that is designed for the purpose of housing one or more lamps and optionally devices that control, restrict or vary their emission.</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000924" trl="N">
+  <value column="Name" original="EN">EN</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000925" trl="N">
+  <value column="Name" original="An [[IfcMember]] is a structural member designed to carry loads between or beyond points of support. It is not required to be load bearing. The orientation of the member (being horizontal, vertical or sloped) is not relevant to its definition (in contrary to [[IfcBeam]] and [[IfcColumn]]). An [[IfcMember]] represents a linear structural element from an architectural or structural modeling point of view and shall be used if it cannot be expressed more specifically as either an [[IfcBeam]] or an [[IfcColumn]].">An [[IfcMember]] is a structural member designed to carry loads between or beyond points of support. It is not required to be load bearing. The orientation of the member (being horizontal, vertical or sloped) is not relevant to its definition (in contrary to [[IfcBeam]] and [[IfcColumn]]). An [[IfcMember]] represents a linear structural element from an architectural or structural modeling point of view and shall be used if it cannot be expressed more specifically as either an [[IfcBeam]] or an [[IfcColumn]].</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000926" trl="N">
+  <value column="Name" original="EN">EN</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000927" trl="N">
+  <value column="Name" original="The opening element stands for opening, recess or chase, all reflecting voids. It represents a void within any element that has physical manifestation. Openings can be inserted into walls, slabs, beams, columns, or other elements.">The opening element stands for opening, recess or chase, all reflecting voids. It represents a void within any element that has physical manifestation. Openings can be inserted into walls, slabs, beams, columns, or other elements.</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000928" trl="N">
+  <value column="Name" original="EN">EN</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000929" trl="N">
+  <value column="Name" original="A pipe fitting is a junction or transition in a piping flow distribution system used to connect pipe segments, resulting in changes in flow characteristics to the fluid such as direction or flow rate.">A pipe fitting is a junction or transition in a piping flow distribution system used to connect pipe segments, resulting in changes in flow characteristics to the fluid such as direction or flow rate.</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000930" trl="N">
+  <value column="Name" original="EN">EN</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000931" trl="N">
+  <value column="Name" original="A pipe segment is used to typically join two sections of a piping network.">A pipe segment is used to typically join two sections of a piping network.</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000932" trl="N">
+  <value column="Name" original="EN">EN</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000933" trl="N">
+  <value column="Name" original="An [[IfcPlate]] is a planar and often flat part with constant thickness. A plate may carry loads between or beyond points of support, or provide stiffening. The location of the plate (being horizontal, vertical or sloped) is not relevant to its definition.">An [[IfcPlate]] is a planar and often flat part with constant thickness. A plate may carry loads between or beyond points of support, or provide stiffening. The location of the plate (being horizontal, vertical or sloped) is not relevant to its definition.</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000934" trl="N">
+  <value column="Name" original="EN">EN</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000935" trl="N">
+  <value column="Name" original="The railing is a frame assembly adjacent to human or vehicle circulation spaces and at some space boundaries where it is used in lieu of walls or to complement walls. Designed as an optional physical support, or to prevent injury or damage, either by falling or collision.">The railing is a frame assembly adjacent to human or vehicle circulation spaces and at some space boundaries where it is used in lieu of walls or to complement walls. Designed as an optional physical support, or to prevent injury or damage, either by falling or collision.</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000936" trl="N">
+  <value column="Name" original="EN">EN</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000937" trl="N">
+  <value column="Name" original="A ramp is a vertical passageway which provides a human or vehicle circulation link between one floor level and another floor level at a different elevation. It may include a landing as an intermediate floor slab. A ramp normally does not include steps.">A ramp is a vertical passageway which provides a human or vehicle circulation link between one floor level and another floor level at a different elevation. It may include a landing as an intermediate floor slab. A ramp normally does not include steps.</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000938" trl="N">
+  <value column="Name" original="EN">EN</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000939" trl="N">
+  <value column="Name" original="A ramp comprises a single inclined segment, or several inclined segments that are connected by a horizontal segment, referred to as a landing. A ramp flight is the single inclined segment and part of the ramp construction. In case of single flight ramps, the ramp flight and the ramp are identical.">A ramp comprises a single inclined segment, or several inclined segments that are connected by a horizontal segment, referred to as a landing. A ramp flight is the single inclined segment and part of the ramp construction. In case of single flight ramps, the ramp flight and the ramp are identical.</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000940" trl="N">
+  <value column="Name" original="EN">EN</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000941" trl="N">
+  <value column="Name" original="A reinforcing bar is usually made of steel with manufactured deformations in the surface, and used in concrete and masonry construction to provide additional strength. A single instance of this class may represent one or many of actual rebars, for example a row of rebars.">A reinforcing bar is usually made of steel with manufactured deformations in the surface, and used in concrete and masonry construction to provide additional strength. A single instance of this class may represent one or many of actual rebars, for example a row of rebars.</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000942" trl="N">
+  <value column="Name" original="EN">EN</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000943" trl="N">
+  <value column="Name" original="A roof is the covering of the top part of a building, it protects the building against the effects of weather.">A roof is the covering of the top part of a building, it protects the building against the effects of weather.</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000944" trl="N">
+  <value column="Name" original="EN">EN</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000945" trl="N">
+  <value column="Name" original="A slab is a component of the construction that may enclose a space vertically. The slab may provide the lower support (floor) or upper construction (roof slab) in any space in a building.">A slab is a component of the construction that may enclose a space vertically. The slab may provide the lower support (floor) or upper construction (roof slab) in any space in a building.</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000946" trl="N">
+  <value column="Name" original="EN">EN</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000947" trl="N">
+  <value column="Name" original="A stair is a vertical passageway allowing occupants to walk (step) from one floor level to another floor level at a different elevation. It may include a landing as an intermediate floor slab.">A stair is a vertical passageway allowing occupants to walk (step) from one floor level to another floor level at a different elevation. It may include a landing as an intermediate floor slab.</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000948" trl="N">
+  <value column="Name" original="EN">EN</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000949" trl="N">
+  <value column="Name" original="A stair flight is an assembly of building components in a single 'run' of stair steps (not interrupted by a landing). The stair steps and any stringers are included in the stair flight. A winder is also regarded a part of a stair flight.">A stair flight is an assembly of building components in a single 'run' of stair steps (not interrupted by a landing). The stair steps and any stringers are included in the stair flight. A winder is also regarded a part of a stair flight.</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000950" trl="N">
+  <value column="Name" original="EN">EN</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000951" trl="N">
+  <value column="Name" original="A switch is used in a cable distribution system (electrical circuit) to control or modulate the flow of electricity.">A switch is used in a cable distribution system (electrical circuit) to control or modulate the flow of electricity.</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000952" trl="N">
+  <value column="Name" original="EN">EN</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000953" trl="N">
+  <value column="Name" original="A system furniture element defines components of modular furniture which are not directly placed in a building structure but aggregated inside furniture.">A system furniture element defines components of modular furniture which are not directly placed in a building structure but aggregated inside furniture.</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000954" trl="N">
+  <value column="Name" original="EN">EN</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000955" trl="N">
+  <value column="Name" original="A transport element is a generalization of all transport related objects that move people, animals or goods within a Facility. The [[IfcTransportElement]] defines the occurrence of a transport element, that (if given), is expressed by the IfcTransportElementType.">A transport element is a generalization of all transport related objects that move people, animals or goods within a Facility. The [[IfcTransportElement]] defines the occurrence of a transport element, that (if given), is expressed by the IfcTransportElementType.</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000956" trl="N">
+  <value column="Name" original="EN">EN</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000957" trl="N">
+  <value column="Name" original="A valve is used in a building services piping distribution system to control or modulate the flow of the fluid.">A valve is used in a building services piping distribution system to control or modulate the flow of the fluid.</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000958" trl="N">
+  <value column="Name" original="EN">EN</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000959" trl="N">
+  <value column="Name" original="The wall represents a vertical construction that may bound or subdivide spaces. Wall are usually vertical, or nearly vertical, planar elements, often designed to bear structural loads. A wall is however not required to be load bearing.">The wall represents a vertical construction that may bound or subdivide spaces. Wall are usually vertical, or nearly vertical, planar elements, often designed to bear structural loads. A wall is however not required to be load bearing.</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000960" trl="N">
+  <value column="Name" original="EN">EN</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000961" trl="N">
+  <value column="Name" original="The window is a building element that is predominately used to provide natural light and fresh air. It includes vertical opening but also horizontal opening such as skylights or light domes. It includes constructions with swinging, pivoting, sliding, or revolving panels and fixed panels. A window consists of a lining and one or several panels.">The window is a building element that is predominately used to provide natural light and fresh air. It includes vertical opening but also horizontal opening such as skylights or light domes. It includes constructions with swinging, pivoting, sliding, or revolving panels and fixed panels. A window consists of a lining and one or several panels.</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000962" trl="N">
+  <value column="Name" original="EN">EN</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000963" trl="Y">
+  <value column="Name" original="An air outlet or inlet, such as a grille or diffuser, where ducted air enters or leaves a room.">风管空气进出房间的风口，例如格栅或散流器。</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000964" trl="Y">
+  <value column="Name" original="A device that warns people of fire or another danger by sound or light, such as a bell, siren or beacon.">用声音或灯光警告火灾或其他危险的装置，例如警铃、警笛或警示灯。</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000965" trl="Y">
+  <value column="Name" original="A horizontal or nearly horizontal structural member that carries loads across a span, usually onto columns or walls.">水平或接近水平的结构构件，承受跨度上的荷载，通常传给柱或墙。</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000966" trl="Y">
+  <value column="Name" original="One part of a larger building element, such as a single layer or piece of a wall or slab, kept as its own object.">较大构件的一部分，例如墙或楼板的某一层或某一块，作为独立对象保存。</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000967" trl="Y">
+  <value column="Name" original="An element that the source model did not give a specific type, so it is kept as a general building element.">源模型未指定具体类型的构件，作为一般建筑构件保存。</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000968" trl="Y">
+  <value column="Name" original="A fitting that joins, bends or branches cable trays, cable ladders or trunking.">连接、弯折或分支电缆桥架、梯架或线槽的配件。</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000969" trl="Y">
+  <value column="Name" original="A straight run of cable tray, cable ladder, trunking or conduit that carries and protects cables.">承载并保护电缆的直段电缆桥架、梯架、线槽或导管。</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000970" trl="Y">
+  <value column="Name" original="A vertical structural member that carries loads from beams and slabs down towards the foundations.">把梁和楼板的荷载向下传到基础的竖向结构构件。</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000971" trl="Y">
+  <value column="Name" original="A device that controls a system from the signals it receives, such as a thermostat, timer or control panel.">根据接收到的信号控制系统的装置，例如温控器、定时器或控制面板。</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000972" trl="Y">
+  <value column="Name" original="A finishing layer over another element, such as a ceiling, floor finish, cladding or insulation.">覆盖在其他构件上的饰面层，例如吊顶、地面饰面、外墙挂板或保温层。</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000973" trl="Y">
+  <value column="Name" original="An outer wall of panels, often glass, hung on a frame fixed to the building; it carries no floor loads.">由面板（多为玻璃）挂在固定于建筑的框架上组成的外墙，不承受楼面荷载。</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000974" trl="Y">
+  <value column="Name" original="A control or sensing device of a building system, such as a sensor or actuator, with no more specific type.">建筑设备系统中的控制或检测装置，例如传感器或执行器，没有更具体的类型。</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000975" trl="Y">
+  <value column="Name" original="A door: a leaf in its frame that opens to let people pass through a wall or partition.">门：装在门框中的门扇，打开后可穿过墙或隔墙。</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000976" trl="Y">
+  <value column="Name" original="A duct piece that joins, bends, branches or changes the size of air ducts.">连接、弯折、分支或改变风管尺寸的风管配件。</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000977" trl="Y">
+  <value column="Name" original="A straight length of air duct that carries air between equipment and rooms.">在设备和房间之间输送空气的直段风管。</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000978" trl="Y">
+  <value column="Name" original="An electrical appliance connected to the building supply, such as a fridge, oven or water heater.">接入建筑电源的电器，例如冰箱、烤箱或热水器。</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000979" trl="Y">
+  <value column="Name" original="Equipment that turns one form of energy into another, such as a boiler, chiller or transformer, with no more specific type.">把一种能量转换为另一种的设备，例如锅炉、冷水机组或变压器，没有更具体的类型。</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000980" trl="Y">
+  <value column="Name" original="A fire-fighting outlet, such as a sprinkler head, hose reel or fire hydrant.">消防出水点，例如喷淋头、消防软管卷盘或消火栓。</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000981" trl="Y">
+  <value column="Name" original="A device that regulates flow in a pipe, duct or circuit, such as a valve, damper or switch, with no more specific type.">调节管道、风管或电路中流量的装置，例如阀门、风阀或开关，没有更具体的类型。</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000982" trl="Y">
+  <value column="Name" original="A fitting that joins, bends or branches pipes, ducts or cable runs, with no more specific type.">连接、弯折或分支管道、风管或电缆线路的配件，没有更具体的类型。</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000983" trl="Y">
+  <value column="Name" original="A type of gauge or meter, such as a pressure gauge, thermometer or voltmeter.">一种仪表类型，例如压力表、温度计或电压表。</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000984" trl="Y">
+  <value column="Name" original="Equipment that moves a fluid, such as a pump, fan or compressor, with no more specific type.">输送流体的设备，例如水泵、风机或压缩机，没有更具体的类型。</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000985" trl="Y">
+  <value column="Name" original="A straight run of pipe, duct or cable carrier, with no more specific type.">直段管道、风管或电缆桥架，没有更具体的类型。</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000986" trl="Y">
+  <value column="Name" original="Equipment that stores a fluid or energy, such as a tank or battery, with no more specific type.">储存流体或能量的设备，例如水箱或蓄电池，没有更具体的类型。</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000987" trl="Y">
+  <value column="Name" original="The end point where a system serves a room or a person, such as a tap, light or socket, with no more specific type.">系统为房间或人提供服务的末端，例如水龙头、灯具或插座，没有更具体的类型。</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000988" trl="Y">
+  <value column="Name" original="Equipment that cleans or treats a fluid, such as a filter or separator, with no more specific type.">净化或处理流体的设备，例如过滤器或分离器，没有更具体的类型。</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000989" trl="Y">
+  <value column="Name" original="A foundation element, such as a pad or strip footing, that spreads the load of the building into the ground.">把建筑荷载分散到地基中的基础构件，例如独立基础或条形基础。</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000990" trl="Y">
+  <value column="Name" original="A piece of furniture or equipment placed in a room, with no more specific type.">放在房间里的家具或设备，没有更具体的类型。</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000991" trl="Y">
+  <value column="Name" original="Furniture, such as a table, chair, bed, desk or cabinet.">家具，例如桌子、椅子、床、书桌或柜子。</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000992" trl="Y">
+  <value column="Name" original="A light fitting (luminaire) that holds lamps and lights a space.">安装灯泡并照亮空间的灯具。</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000993" trl="Y">
+  <value column="Name" original="A structural or framing piece that is not a main beam or column, such as a brace, stud, mullion or purlin.">不属于主梁或柱的结构或骨架构件，例如支撑、龙骨、竖梃或檩条。</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000994" trl="Y">
+  <value column="Name" original="A void cut into a wall, slab or other element, usually for a door or window or to let services pass.">在墙、楼板或其他构件上开的洞口，通常用于门窗或管线穿过。</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000995" trl="Y">
+  <value column="Name" original="A pipe piece that joins, bends, branches or changes the size of pipes, such as an elbow, tee or reducer.">连接、弯折、分支或变径的管件，例如弯头、三通或异径管。</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000996" trl="Y">
+  <value column="Name" original="A straight length of pipe that carries water, gas or another fluid.">输送水、燃气或其他流体的直段管道。</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000997" trl="Y">
+  <value column="Name" original="A thin flat element, such as a steel plate or a glass panel in a curtain wall.">薄而平的构件，例如钢板或幕墙中的玻璃面板。</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000998" trl="Y">
+  <value column="Name" original="A guard rail, handrail or balustrade, for example along a stair, ramp or balcony edge.">栏杆、扶手或护栏，例如沿楼梯、坡道或阳台边设置。</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1000999" trl="Y">
+  <value column="Name" original="A sloped walkway joining two levels, made of one or more ramp flights and landings.">连接两个楼层的坡道，由一个或多个坡段和平台组成。</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1001000" trl="Y">
+  <value column="Name" original="One sloped run of a ramp between two landings.">坡道在两个平台之间的一段斜坡。</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1001001" trl="Y">
+  <value column="Name" original="A steel reinforcing bar (rebar) set inside concrete to carry tension.">放在混凝土中承受拉力的钢筋。</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1001002" trl="Y">
+  <value column="Name" original="The roof: the top covering of a building, made of slabs, beams and other parts.">屋顶：建筑顶部的覆盖，由屋面板、梁等部件组成。</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1001003" trl="Y">
+  <value column="Name" original="A type of sensor that detects a condition, such as smoke, heat, temperature or movement.">一种检测某种状态的传感器类型，例如烟雾、热量、温度或移动。</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1001004" trl="Y">
+  <value column="Name" original="A flat horizontal or nearly horizontal element, such as a floor, roof slab or landing, usually of concrete.">水平或接近水平的平板构件，例如楼板、屋面板或楼梯平台，通常为混凝土。</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1001005" trl="Y">
+  <value column="Name" original="A stair joining two levels, made of one or more flights and landings.">连接两个楼层的楼梯，由一个或多个梯段和平台组成。</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1001006" trl="Y">
+  <value column="Name" original="One run of steps of a stair between two landings.">楼梯在两个平台之间的一段台阶。</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1001007" trl="Y">
+  <value column="Name" original="A device that turns an electrical circuit on or off, such as a switch, circuit breaker or contactor.">接通或断开电路的装置，例如开关、断路器或接触器。</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1001008" trl="Y">
+  <value column="Name" original="A part of a modular office furniture system, such as a screen panel, work surface or storage unit.">模块化办公家具系统的部件，例如屏风板、工作台面或储物单元。</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1001009" trl="Y">
+  <value column="Name" original="Equipment that moves people or goods, such as a lift (elevator), escalator or moving walkway.">运送人员或货物的设备，例如电梯、自动扶梯或自动人行道。</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1001010" trl="Y">
+  <value column="Name" original="A valve that opens, closes or regulates the flow in a pipe.">打开、关闭或调节管道中流量的阀门。</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1001011" trl="Y">
+  <value column="Name" original="A wall: a vertical element that divides or encloses spaces; it may or may not carry load.">墙：分隔或围合空间的竖向构件，可以是承重墙，也可以不是。</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1001012" trl="Y">
+  <value column="Name" original="A wall of even thickness along its length (an older IFC name, treated today as a plain wall).">沿长度方向厚度不变的墙（旧的 IFC 名称，现在按普通墙处理）。</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1001013" trl="Y">
+  <value column="Name" original="A window: a framed opening, usually glazed, that lets in light and air.">窗：带框的开口，通常装有玻璃，让光线和空气进入。</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1001018" trl="N">
+  <value column="Name" original="A flow instrument reads and displays the value of a particular property of a system at a point, or displays the difference in the value of a property between two points.">A flow instrument reads and displays the value of a particular property of a system at a point, or displays the difference in the value of a property between two points.</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1001019" trl="N">
+  <value column="Name" original="EN">EN</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1001020" trl="N">
+  <value column="Name" original="IfcFlowInstrument">IfcFlowInstrument</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1001021" trl="N">
+  <value column="Name" original="A sensor is a device that measures a physical quantity and converts it into a signal which can be read by an observer or by an instrument.">A sensor is a device that measures a physical quantity and converts it into a signal which can be read by an observer or by an instrument.</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1001022" trl="N">
+  <value column="Name" original="EN">EN</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+ <row id="1001023" trl="N">
+  <value column="Name" original="IfcSensor">IfcSensor</value>
+  <value column="Description" original=""/>
+  <value column="Help" original=""/>
+ </row>
+</idempiereTrl>
