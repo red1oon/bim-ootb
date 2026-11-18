@@ -7,7 +7,7 @@
 //   and X0 Navigator running" — or, step by step, exactly where they get stuck. Every problem is a §FROM_SCRATCH_GAP line, never hidden.
 // HOW: S1 prerequisites · S2 `git archive origin/main` (= the ZIP: tracked files only, no .git, LFS files as pointers) into an empty temp folder ·
 //   S3 `python3 -m http.server` there (Guide §3 step 3) · S4 the three pages headless (Playwright's Chromium already on this machine): HTTP failures,
-//   console errors, outside hosts, the first words a newcomer sees · S5 `node devtools/vscode/pack.js` in the download, installed into a THROWAWAY
+//   console errors, outside hosts, the first words a newcomer sees · S5 `node scripts/setup.js` in the download (§F.39: deps, the 3 dev tools, X0 packed + installed into a THROWAWAY
 //   --extensions-dir (never the owner's VS Code profile). No second clone (one clone per repo). No screenshot is evidence here: text and numbers only.
 // Verdict: PASS = every step RAN (gaps are reported, they are the guide's to-do list) · INCONCLUSIVE = a step could not run on this machine.
 // Command: node scripts/tests/witness_from_scratch.js [--keep]   (~2 min; --keep leaves the temp folder for a look)
@@ -73,19 +73,15 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'w-from-scratch-')), DL = path
   }
   srv.kill();
 
-  // S5 X0 Navigator from the download
+  // S5 the setup script from the download (§F.39): deps, the three dev tools, X0 packed + installed into a throwaway folder (no --install: the owner's profile is not touched)
   if (ran.S2) {
-    const pk = sh('node', ['devtools/vscode/pack.js'], { cwd: DL });
-    const vsix = fs.existsSync(path.join(DL, 'devtools', 'vscode', 'dist')) ? fs.readdirSync(path.join(DL, 'devtools', 'vscode', 'dist')).filter(f => f.endsWith('.vsix')) : [];
-    say(`  §FROM_SCRATCH_S5_PACK exit=${pk.status} vsix=${vsix.join(',') || '-'}`);
-    if (!vsix.length) gap('S5', 'node devtools/vscode/pack.js made no .vsix: ' + pk.out.slice(-160));
-    else if (pre.code) {
-      const ext = path.join(tmp, 'vscode-ext'), ud = path.join(tmp, 'vscode-user');
-      const ins = sh('code', ['--extensions-dir', ext, '--user-data-dir', ud, '--install-extension', path.join(DL, 'devtools', 'vscode', 'dist', vsix[0])], { timeout: 120000 });
-      const ls = sh('code', ['--extensions-dir', ext, '--user-data-dir', ud, '--list-extensions'], { timeout: 60000 });
-      const ok = /x0-navigator/.test(ls.out);
-      say(`  §FROM_SCRATCH_S5_INSTALL exit=${ins.status} listed=${ok ? 'Y' : 'N'} (throwaway --extensions-dir; the owner's VS Code profile is not touched)`);
-      if (!ok) gap('S5', 'the .vsix did not install: ' + ins.out.slice(-160)); else ran.S5 = true;
+    if (!fs.existsSync(path.join(DL, 'scripts', 'setup.js'))) gap('S5', 'scripts/setup.js is not in the download');
+    else {
+      const su = sh('node', ['scripts/setup.js'], { cwd: DL, timeout: 600000 }), vs = (/§SETUP_VSC .*/.exec(su.out) || [''])[0], fin = (/§SETUP steps=.*/.exec(su.out) || [''])[0];
+      say(`  §FROM_SCRATCH_S5_SETUP exit=${su.status} ${fin}`); say(`  ${vs}`);
+      (su.out.match(/§SETUP_GAP .*/g) || []).forEach(g => say('    ' + g));
+      if (!/verdict=PASS/.test(fin)) gap('S5', 'node scripts/setup.js did not end PASS: ' + (fin || su.out.slice(-160)));
+      else if (!pre.code) gap('S5', 'VS Code (`code`) is not on this machine: X0 install not exercised'); else ran.S5 = true;
     }
   }
 

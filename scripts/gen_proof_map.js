@@ -11,7 +11,7 @@
 // Witness: scripts/tests/witness_proof_map.js (W-PROOF-MAP). Read the log: the §PROOF_MAP line is the result.
 'use strict';
 const fs = require('fs'), path = require('path'), cp = require('child_process');
-const { provesOf } = require('../witness_kit/proves.js'), RES = require('../witness_kit/results.js');
+const { trackedFiles } = require('./lib/tracked_files.js'), { provesOf } = require('../witness_kit/proves.js'), RES = require('../witness_kit/results.js');
 
 function changedSince(root, head, files) {
   if (!head) return null;
@@ -23,7 +23,7 @@ function changedSince(root, head, files) {
  */
 function build(root, app) {
   const m = JSON.parse(fs.readFileSync(path.join(root, app, 'modules.json'), 'utf8'));
-  const tests = cp.execFileSync('git', ['ls-files'], { cwd: root, encoding: 'utf8', maxBuffer: 1 << 28 }).split('\n').filter(f => /(^|\/)tests?\/[^/]*witness[^/]*\.(js|mjs)$/.test(f));
+  const tests = trackedFiles(root).filter(f => /(^|\/)tests?\/[^/]*witness[^/]*\.(js|mjs)$/.test(f));
   const proves = new Map(), bad = []; let lines = 0;
   for (const t of tests) {
     let src; try { src = fs.readFileSync(path.join(root, t), 'utf8'); } catch (e) { continue; }

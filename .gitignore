@@ -101,3 +101,6 @@ capex/site_copy.json
 # F.21 slice 2: generated per machine (holds the absolute repo path for vscode:// links)
 devtools/hover/trace_index.json
 devtools/hover/erp_index.json
+
+# node scripts/setup.js: the throwaway VS Code folders and cache (§F.39)
+.setup/

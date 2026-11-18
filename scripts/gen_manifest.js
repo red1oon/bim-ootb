@@ -17,7 +17,7 @@
 'use strict';
 const fs = require('fs'), path = require('path'), cp = require('child_process');
 const R = require('./lib/page_refs.js');
-const MS = require('./lib/manifest_source.js');
+const MS = require('./lib/manifest_source.js'), { trackedFiles } = require('./lib/tracked_files.js');
 const P = path.posix;
 
 const APPS = ['viewer', 'erp', 'modeller'];   // a folder with a tracked sw.js that Part B names (decision D1)
@@ -91,7 +91,7 @@ function swFrame(swFile, swSrc, notes) {
  *   {start,end,sw:'precache',i} or {start,end,sw:'cv'}; any other slot is filled by the manifest site with the same `at`.
  */
 function buildApp(root, app) {
-  const ls = cp.execFileSync('git', ['ls-files', app + '/'], { cwd: root, encoding: 'utf8', maxBuffer: 1 << 26 }).split('\n').filter(Boolean);
+  const ls = trackedFiles(root, app + '/');
   const read = f => fs.readFileSync(path.join(root, f), 'utf8'), exists = f => fs.existsSync(path.join(root, f));
   const notes = { parseFail: [], nonCanonical: [], resolveDiff: [], partial: 0, nonJsInline: 0, unversionedTags: 0, inlineSites: 0, external: 0, missing: [], swProblems: [] };
   const frames = new Map(), perFile = [];
@@ -221,7 +221,7 @@ function check(root) {
     const below = dis.reduce((n, x) => { const mx = Math.max(...x.sites.map(s => s.v || 0)); return n + x.sites.filter(s => s.v != null && s.v < mx).length; }, 0);
     const modFiles = new Set(m.modules.map(x => x.file)), preFiles = m.precacheOrder.map(e => P.normalize(P.join(app, e.split('?')[0])));
     const dup = m.precacheOrder.length - new Set(m.precacheOrder).size, mjs = m.precacheOrder.filter(e => /^plugins\/.*\.mjs$/.test(e)).length;
-    const mjsDisk = app === 'erp' ? cp.execFileSync('git', ['ls-files', 'erp/plugins/*.mjs'], { cwd: root, encoding: 'utf8' }).split('\n').filter(Boolean).length : 0;
+    const mjsDisk = app === 'erp' ? trackedFiles(root, 'erp/plugins/').filter(f => f.endsWith('.mjs')).length : 0;
     lines.push(`§MANIFEST_APP app=${app} pages=${m.pages.length} loaders=${m.loaders.length} modules=${m.modules.length} boot=${boot.length} lazy=${lazy.length} sites=${sitesOf} tag=${k.tag} asset=${k.asset} inline=${k.inline} lazy_sites=${k.lazy} precache=${m.precacheOrder.length} cacheVersion=${m.cacheVersion}`);
     lines.push(`§MANIFEST_VERSIONS app=${app} versioned_modules=${m.modules.filter(x => x.sites.some(s => s.v != null)).length} one_version=${m.modules.filter(x => x.v != null).length} disagree=${dis.length} sites_below_max=${below}` + (dis.length ? ' files=' + dis.map(x => x.file).join(',') : ''));
     lines.push(`§MANIFEST_UNVERSIONED app=${app} tags_without_v=${a.notes.unversionedTags} external_url_sites=${a.notes.external}`);
