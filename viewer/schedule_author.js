@@ -146,6 +146,26 @@
     var d = c.map[guid];
     return d ? (table[d] || null) : null;
   }
+  // _pipeTrade(db, guid, rule, table) — §PIPE_TRADES (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.28): when the class rule gives
+  // PLUMBER and the element's discipline names another pipe crew (rates.js SEQUENCE_DISCIPLINE_TRADE), that crew lays it. Phase and
+  // sequence unchanged. Same cached guid->discipline read as civilRuleFor; no discipline column -> the rule as given.
+  var _pipeCache = (typeof WeakMap !== 'undefined') ? new WeakMap() : null;
+  function _pipeTrade(db, guid, rule, table) {
+    table = table || global.SEQUENCE_DISCIPLINE_TRADE || (typeof globalThis !== 'undefined' && globalThis.SEQUENCE_DISCIPLINE_TRADE) || null;
+    if (!rule || rule.resource !== 'PLUMBER' || !table || !db || !guid) return rule;
+    var c = _pipeCache && _pipeCache.get(db);
+    if (!c || c.table !== table) {
+      var map = {}, keys = Object.keys(table);
+      try {
+        var r = db.exec('SELECT guid, discipline FROM elements_meta WHERE discipline IN (' + keys.map(function () { return '?'; }).join(',') + ')', keys);
+        if (r.length) r[0].values.forEach(function (row) { map[row[0]] = table[row[1]]; });
+      } catch (e) { /* no discipline column */ }
+      c = { table: table, map: map, moved: 0 }; if (_pipeCache) _pipeCache.set(db, c);
+    }
+    var t = c.map[guid]; if (!t) return rule;
+    c.moved++;
+    var o = {}; for (var k in rule) o[k] = rule[k]; o.resource = t; return o;
+  }
   function matchNameOverride(cls, name, nameOverrides) {
     if (!name || !nameOverrides) return null;
     for (var i = 0; i < nameOverrides.length; i++) {
@@ -846,7 +866,7 @@
       // §STOREY_DATUM — in datum mode the level is the band containing the element's BASE.
       var storey = _datumMode ? _bandOf(cz - bz / 2) : assignStoreyByZ(rawStorey, cz);
       var ov = civilRuleFor(db, guid, opts.civilRules) || matchNameOverride(cls, name, nameOverrides);   // §CIVIL_PHASE
-      var rule = ov || matchRule(cls, rules, dflt, hierarchy);
+      var rule = _pipeTrade(db, guid, ov || matchRule(cls, rules, dflt, hierarchy), opts.disciplineTrades);
       var realQty = (_frag.fragmented[cls] && _frag.area[guid] != null) ? _frag.area[guid] : null;
       // §HEAVY_MEMBER_SPEED_LIMIT: only when this element has real geometry (bx/by/bz not all the
       // LEFT JOIN's COALESCE(...,0) default) and its class has a real measured average — else null,
@@ -880,6 +900,14 @@
         noGeo: (bx === 0 && by === 0 && bz === 0 && cx === 0 && cy === 0 && cz === 0)
       };
     }).filter(function (e) { return !e.noGeo; });
+    // §PIPE_TRADES (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.28.4) — which pipe crew lays how many elements and how many install
+    // hours, plus the total over ALL trades: routing by discipline must move work between crews, never change the sum.
+    (function () {
+      var pc = { PLUMBER: [0, 0], SPRINKLER_FITTER: [0, 0], PIPEFITTER: [0, 0] }, tot = 0;
+      _bseList.forEach(function (e) { tot += e.installSecs || 0; var b = pc[e.resource]; if (b) { b[0]++; b[1] += e.installSecs || 0; } });
+      console.log('§PIPE_TRADES ' + Object.keys(pc).map(function (k) { return k + '=' + pc[k][0] + 'el/' + (pc[k][1] / 3600).toFixed(1) + 'h'; }).join(' ') +
+        ' installHoursAll=' + (tot / 3600).toFixed(1) + ' elements=' + _bseList.length);
+    })();
     _reclassGroundworkSlabs(_bseList, 'schedule_author');
     _applyBearingWalls(_bseList, 'schedule_author');
     // §STOREY_DATUM — SAY WHICH PATH RAN AND WHAT IT COST. A pass that cannot report a no-op is
@@ -2312,7 +2340,7 @@
     elems.forEach(function (e) {
       var ov = civilRuleFor(db, e.guid, opts.civilRules) || matchNameOverride(e.cls, e.name, nameOverrides);   // §CIVIL_PHASE
       if (ov) nameOverridden++;
-      var rule = ov || matchRule(e.cls, rules, dflt, hierarchy);
+      var rule = _pipeTrade(db, e.guid, ov || matchRule(e.cls, rules, dflt, hierarchy), opts.disciplineTrades);
       var p = phases[rule.phase];
       if (!p) { p = phases[rule.phase] = { name: rule.phase, seq: rule.sequence, guids: [], resourceSecs: {}, storeys: {} }; }
       if (rule.sequence < p.seq) p.seq = rule.sequence;   // phase ordered by its earliest rule
@@ -2577,7 +2605,7 @@
       if (er.length && er[0].values.length) {
         er[0].values.forEach(function (row) {
           var guid = row[0], cls = row[1], storey = row[2];
-          var rule = civilRuleFor(db, guid, opts && opts.civilRules) || matchRule(cls, rules, dflt, hierarchy);   // §CIVIL_PHASE
+          var rule = _pipeTrade(db, guid, civilRuleFor(db, guid, opts && opts.civilRules) || matchRule(cls, rules, dflt, hierarchy), opts && opts.disciplineTrades);   // §CIVIL_PHASE · §PIPE_TRADES
           var resKey = rule.resource || '__NONE__';
           var realQty = (_frag.fragmented[cls] && _frag.area[guid] != null) ? _frag.area[guid] : null;
           resourceSecs[resKey] = (resourceSecs[resKey] || 0) + _installSecs(cls, rule, laborRates, realQty);
