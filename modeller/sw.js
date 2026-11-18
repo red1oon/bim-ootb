@@ -43,7 +43,7 @@
 // v301 (2026-11-18) LOD Upgrade P7 NAME FIX (prompts/MODELLER_LOD_UPGRADE_PILL.md): lod/lod_ui.js?v=6, the download names drop the opened file's .db
 // v303 (2026-11-18) LOD Upgrade P8 (v302 was taken by a concurrent main change) (prompts/MODELLER_LOD_UPGRADE_PILL.md §P8 SPEC): lod/lod_schedule.js + lod/rules/schedule_formats.json; beambar_pack join from the format; lod_ui.js?v=7 (Formats link, Load schedule reads a .dxf), lod_registry.js?v=5
 // v304 (2026-11-18) LOD Upgrade EXPORT NAME (prompts/MODELLER_LOD_UPGRADE_PILL.md): lod_ui.js?v=8, the button is "Export (IFC)" with the tip "Exports out what was added from this upgrade"; file <model>_upgrade_<schema>.ifc
-const CACHE_VERSION = 'v308';   // §MANIFEST cacheVersion (written by gen_manifest.js; edit modeller/modules.json)
+const CACHE_VERSION = 'v309';   // §MANIFEST cacheVersion (written by gen_manifest.js; edit modeller/modules.json)
 const CACHE_PREFIX = 'bim-modeller-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 

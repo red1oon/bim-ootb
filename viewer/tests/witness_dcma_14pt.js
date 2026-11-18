@@ -27,7 +27,7 @@ function score(T, L) {
     fs: L.filter(x => (x.ty || 'FS') === 'FS').length, constraints: 0,
     floatKnown: T.filter(t => typeof t.tf === 'number').length, highFloat: T.filter(t => t.tf > 44).length, negFloat: T.filter(t => t.tf < 0).length,
     highDur: T.filter(t => dur(t) > 44).length, invalid: T.filter(t => isNaN(day(t.s)) || isNaN(day(t.f)) || day(t.f) < day(t.s)).length,
-    noResource: T.filter(t => !t.resource).length, critical: T.filter(t => t.tf === 0).length };
+    noResource: T.filter(t => !t.resource && !t.ms).length, critical: T.filter(t => t.tf === 0).length };
 }
 function checks(m) {   // [id, name, value-as-printed, DCMA verdict, ratchet key, number]
   const p = (a, b) => b ? +(100 * a / b).toFixed(1) : 0;
@@ -55,6 +55,8 @@ function checks(m) {   // [id, name, value-as-printed, DCMA verdict, ratchet key
     if (!P || !P.db) { console.log('§DCMA_BLD ' + bld + ' INCONCLUSIVE ' + JSON.stringify(P).slice(0, 140)); inc++; continue; }
     const q = (s, a) => { const st = P.db.prepare(s); st.bind(a || []); const o = []; while (st.step()) o.push(st.getAsObject()); st.free(); return o; };
     const T = q('SELECT task_id id, schedule_start s, schedule_finish f, resource, total_float tf FROM tasks WHERE schedule_id=? AND (is_summary IS NULL OR is_summary=0)', [P.schedId]);
+    // DCMA judges activities with duration > 0 (Deltek: 'only activities baselined with a duration greater than 0d'): milestones exempt from 8 and 10
+    T.forEach(t => { t.ms = String(t.s).slice(0, 10) === String(t.f).slice(0, 10); });
     T.forEach(t => { t.tf = (t.tf == null || t.tf === '') ? null : Number(t.tf); });   // computeCpm stores float as TEXT (tasks.total_float)
     const L = q('SELECT predecessor_id p, successor_id s, sequence_type ty, lag_days lag FROM task_sequences');
     const m = score(T, L), B = lock.buildings[bld];
