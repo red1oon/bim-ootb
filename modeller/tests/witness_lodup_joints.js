@@ -252,7 +252,7 @@ initSqlJs({ wasmBinary: wasmBinary }).then(function (SQL) {
   var ruleFilesOk = Registry.list().every(function (p) { return !p.rulesFile || fs.existsSync(path.join(ROOT, 'lod', p.rulesFile)); }), d1 = Registry.describe(inp, rowsOf, Rules);
   Registry.register({ id: 'dummy', label: 'Dummy (test pack)', appliesTo: function () { return 0; }, run: function () { return { parts: [], changes: [] }; } });
   var d2 = Registry.describe(inp, rowsOf, Rules), jRow = d1.filter(function (x) { return x.id === 'joints'; })[0];
-  verdict('REGISTRY', d1.map(function (x) { return x.id; }).join() === 'rebar,welds,layers,joints' && manIds.join() === 'rebar,welds,layers,joints' && filesOk && ruleFilesOk && jRow && jRow.label === 'Steel joints' && jRow.appliesTo === applies && jRow.stated === RC.stated && jRow.default === RC.default && d2.length === d1.length + 1 && uiSha === P1_LOD_UI_SHA,
+  verdict('REGISTRY', d1.map(function (x) { return x.id; }).join() === 'rebar,welds,layers,joints' && manIds.slice(0, 4).join() === 'rebar,welds,layers,joints' && filesOk && ruleFilesOk && jRow && jRow.label === 'Steel joints' && jRow.appliesTo === applies && jRow.stated === RC.stated && jRow.default === RC.default && d2.length === d1.length + 1 && uiSha === P1_LOD_UI_SHA,
     'listed=' + d1.map(function (x) { return x.id + ':"' + x.label + '"(' + x.appliesTo + ')'; }).join(',') + ' packs.json=' + manIds.join() + ' pack_files_exist=' + filesOk + ' rules_files_exist=' + ruleFilesOk + ' joints_applies_to=' + (jRow && jRow.appliesTo) + ' after_one_more=' + d2.length + ' lod_ui_js_is_the_P3_file=' + (uiSha === P1_LOD_UI_SHA) + ' (the dialog renders exactly describe(); no UI code changed)');
 
   // ---- cost (PERF BUDGET)

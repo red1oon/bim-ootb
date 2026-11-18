@@ -540,17 +540,22 @@
       audit: { survey: rows, results: out, reasons: reasons, clashBy: clashBy, ruleFail: ruleFail, post: post, generated: gen, skipped: Object.keys(skippedAll).sort() } };
   }
 
-  // the panel's measured count: the beam ends whose support is a steel web, found by the survey (read-only; cached per open model + rule rows)
+  // the survey, cached per open model + the rows the survey itself reads (P5: the gusset pack asks for the same survey, so the chooser surveys once). Read-only: callers must not change the returned rows.
+  var SURVEY_KEYS = ['member_material_gate', 'member_name_include', 'member_name_exclude', 'concrete_name_pattern', 'support_reach_mm', 'survey_ray_back_mm', 'survey_depth_rays', 'survey_width_rays', 'survey_depth_span', 'survey_width_span', 'angle_web_min_deg', 'angle_inline_max_deg', 'cope_jump_mm'];
   var SURVEY_CACHE = typeof WeakMap !== 'undefined' ? new WeakMap() : null;
+  function surveyCached(inp, rows) {
+    var key = JSON.stringify(SURVEY_KEYS.map(function (k) { return rows[k] ? rows[k].value : null; })), c = SURVEY_CACHE && inp.src && typeof inp.src === 'object' ? SURVEY_CACHE.get(inp.src) : null;
+    if (c && c.key === key) return c.S;
+    var S = survey(makeCtx(inp, rows, function () { })); if (SURVEY_CACHE && inp.src && typeof inp.src === 'object') SURVEY_CACHE.set(inp.src, { key: key, S: S }); return S;
+  }
+  // the panel's measured count: the beam ends whose support is a steel web, found by the survey (read-only; cached per open model + rule rows)
   function appliesTo(inp, rows) {
     if (!rows) { var n = 0; Object.keys(inp.meta).forEach(function (g) { var c = inp.meta[g].cls; if (c === 'IfcBeam' || c === 'IfcMember') n++; }); return n; }
-    try {
-      var key = JSON.stringify(rows), c = SURVEY_CACHE && inp.src && typeof inp.src === 'object' ? SURVEY_CACHE.get(inp.src) : null;
-      if (c && c.key === key) return c.n;
-      var S = survey(makeCtx(inp, rows, function () { })), n2 = S.counts.STEEL_WEB || 0; if (SURVEY_CACHE && inp.src && typeof inp.src === 'object') SURVEY_CACHE.set(inp.src, { key: key, n: n2 }); return n2;
-    } catch (e) { return 0; }
+    try { return surveyCached(inp, rows).counts.STEEL_WEB || 0; } catch (e) { return 0; }
   }
-  var API = { id: 'joints', label: 'Steel joints', unit: 'beam ends', rulesFile: 'rules/joint_defaults.json', run: run, appliesTo: appliesTo, clearPost: clearPost, survey: function (inp, RULES, log) { return survey(makeCtx(inp, RULES, log)); }, weldTable: weldTable, weldMin: weldMin, frameOf: frameOf, eig3: eig3, REASON: REASON };
+  var API = { id: 'joints', label: 'Steel joints', unit: 'beam ends', rulesFile: 'rules/joint_defaults.json', run: run, appliesTo: appliesTo, clearPost: clearPost, survey: function (inp, RULES, log) { return survey(makeCtx(inp, RULES, log)); }, weldTable: weldTable, weldMin: weldMin, frameOf: frameOf, eig3: eig3, REASON: REASON,
+    // P5 (gussets): the primitives the gusset pack REUSES (survey, true-box index, meshes with the triangle grid, rays, ray parity, vector helpers); not a second copy
+    kit: { makeCtx: makeCtx, survey: survey, surveyCached: surveyCached, indexOf: indexOf, trisInBox: trisInBox, rayAll: rayAll, rayFirst: rayFirst, inside: inside, unit: unit, sub: sub, add: add, mul: mul, dot: dot, cross: cross, norm: norm, median: median, fx: fx, fmtG: fmtG, nowMs: nowMs, RGBA: RGBA, CLS: CLS, LABEL: LABEL } };
   if (typeof window !== 'undefined' && window.LodRegistry) window.LodRegistry.register(API);   // browser: the pack registers itself; adding a pack needs no dialog change
   return API;
 });
