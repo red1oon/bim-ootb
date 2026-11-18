@@ -89,7 +89,9 @@ const verbFn = SA_FNS.find(f => f.name === 'rescheduleAsap');
 assert(!!verbFn, 'W-ASAP-8g ScheduleAuthor.rescheduleAsap is a REAL brace-matched function in schedule_author.js');
 assert(/rescheduleAsap:\s*rescheduleAsap/.test(SA_SRC), 'W-ASAP-8h it is exported on the API map (an unexported verb is unreachable from the TM)');
 const mtcFn = SA_FNS.find(f => f.name === 'moveTaskCascade');
-assert(!!mtcFn && mtcFn.body.indexOf('push-only: never pull a successor earlier') >= 0,
+// §GANTT_REORDER (2026-11-18): the cascade loop now lives in _cascadePush, shared by moveTaskCascade and swapTasks
+const cpFn = SA_FNS.find(f => f.name === '_cascadePush');
+assert(!!mtcFn && mtcFn.body.indexOf('_cascadePush(') >= 0 && !!cpFn && cpFn.body.indexOf('push-only: never pull a successor earlier') >= 0,
   'W-ASAP-9 moveTaskCascade STILL declares push-only — the explicit action did not change the implicit drag\'s ' +
   'semantics (the product decision: pull-back is a deliberate trigger, never a drag side-effect)');
 
