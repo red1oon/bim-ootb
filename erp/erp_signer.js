@@ -32,6 +32,13 @@
 
   // makeSigner — bind a keypair (or any {privateKey, publicKey}) to the kernel's signer contract.
   // sign(hashHex) -> Promise<sigHex> ; verify(hashHex, sigHex) -> Promise<bool>.
+  // PEERS (bim-compiler prompts/CLI_ERP_IVR.md §55): public keys of OTHER devices that write the same ledger file (the door). verify tries this device's key, then each peer's.
+  // The list is filled by addPeer(spkiHex); the roster the page builds from the file's own `signed_by` is trust-on-first-use (integrity, not provenance).
+  var PEERS = [];
+  function addPeer(spkiHex) {
+    if (!subtle || !spkiHex || PEERS.some(function (p) { return p.kid === spkiHex; })) return Promise.resolve(false);
+    return subtle.importKey('spki', _unhex(spkiHex), GEN_ALG, true, ['verify']).then(function (k) { PEERS.push({ kid: spkiHex, key: k }); return true; }).catch(function () { return false; });
+  }
   function makeSigner(keyPair) {
     return {
       sign: function (hashHex) {
@@ -39,8 +46,11 @@
       },
       verify: function (hashHex, sigHex) {
         if (!sigHex) return Promise.resolve(false);
-        return subtle.verify(SIGN_ALG, keyPair.publicKey, _unhex(sigHex), _bytes(hashHex))
-                     .catch(function () { return false; });
+        var msg = _bytes(hashHex), sig = _unhex(sigHex);
+        return subtle.verify(SIGN_ALG, keyPair.publicKey, sig, msg).catch(function () { return false; }).then(function (ok) {
+          if (ok || !PEERS.length) return ok;
+          return PEERS.reduce(function (acc, p) { return acc.then(function (done) { return done ? true : subtle.verify(SIGN_ALG, p.key, sig, msg).catch(function () { return false; }); }); }, Promise.resolve(false));
+        });
       }
     };
   }
@@ -98,7 +108,7 @@
     });
   }
 
-  var API = { mintKeypair: mintKeypair, makeSigner: makeSigner, loadOrMint: loadOrMint, installSigner: installSigner };
+  var API = { mintKeypair: mintKeypair, makeSigner: makeSigner, loadOrMint: loadOrMint, installSigner: installSigner, addPeer: addPeer };
   if (typeof window !== 'undefined') window.ErpSigner = API;   // browser-pure (window-only, like kernel_ops.js — no `module` global, keeps the no-undef CI gate green)
   console.log('§SIGN_LOADED erp_signer.js (W-SIGN edge keypair, ECDSA P-256)');
 })();
