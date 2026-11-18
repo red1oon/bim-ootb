@@ -66,7 +66,7 @@
   function loadHelpIndex(code) {
     if (code !== 'en_US' && !HELP_LANGS[code]) return Promise.resolve(null);
     if (_hIdx[code]) return Promise.resolve(_hIdx[code]);
-    return _fetchJson('i18n/help/' + code + '/index.json').then(function (p) { _hIdx[code] = p; console.log('§HELP_PACK index loaded lang=' + code + ' records=' + (p.records || []).length + ' vocab=' + (p.vocab || []).length); return p; })
+    return _fetchJson('i18n/help/' + code + '/index.json').then(function (p) { _hIdx[code] = p; console.log('§HELP_PACK index loaded lang=' + code + ' records=' + (p.records ? p.records.length : 'header-only') + ' vocab=' + (p.vocab || []).length); return p; })   // §19.10: the file ships its header only, the records are made in the page
       .catch(function (e) { console.warn('§HELP_PACK index load-fail lang=' + code + ' ' + e.message); return null; });
   }
   function preload(codes) {

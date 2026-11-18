@@ -110,9 +110,10 @@ function buildHowto(windows) {
 function buildNames(lang) {
   const read = (table) => SOURCES[lang].map((d) => parseTrl(findFile(d, table, lang) || ''));
   const pick = (srcs, id) => { for (const s of srcs) { const r = s[String(id)]; if (r && translated(r.Name)) return r.Name[0].trim(); } return null; };
-  const W = read('AD_Window'), T = read('AD_Table'), R = read('AD_Ref_List'), out = { windows: {}, tables: {}, actions: {}, statuses: {} };
+  const W = read('AD_Window'), T = read('AD_Table'), R = read('AD_Ref_List'), P = read('AD_Process'), out = { windows: {}, tables: {}, actions: {}, statuses: {}, processes: {} };
   q("SELECT ad_window_id wid FROM ad_window WHERE isactive='Y'").forEach((r) => { const n = pick(W, r.wid); if (n) out.windows[r.wid] = n; });
   q("SELECT ad_table_id tid FROM ad_table WHERE isactive='Y' AND ad_window_id IS NOT NULL").forEach((r) => { const n = pick(T, r.tid); if (n) out.tables[r.tid] = n; });
+  q("SELECT ad_process_id pid FROM ad_process WHERE isactive='Y'").forEach((r) => { const n = pick(P, r.pid); if (n) out.processes[r.pid] = n; });   // §19.10 the process / report names (AD_Process_Trl), read as the window names are
   q("SELECT ad_ref_list_id rid, ad_reference_id ref, value v FROM ad_ref_list WHERE ad_reference_id IN (131,135) AND isactive='Y' AND value<>'--'").forEach((r) => { const n = pick(R, r.rid); if (n) out[r.ref === 135 ? 'actions' : 'statuses'][r.v] = n; });
   return out;
 }
@@ -139,7 +140,7 @@ function buildActions() {
   });
   return out;
 }
-(function main() {
+function main() {
   const log = console.log; console.log = () => {}; const fsmCheck = require(path.join(ERP, 'ad_docfsm.js')); console.log = log; void fsmCheck;
   // the role's menu windows are not known at build time; the linker uses every active window of the seed (the page drops a link whose window is not on the menu)
   const windows = q("SELECT ad_window_id wid, name wnm FROM ad_window WHERE isactive='Y'").map((w) => ({ id: Number(w.wid), name: String(w.wnm) }));   // aliases differ from column names: sqlite3 -json keeps a same-named column's own case
@@ -158,6 +159,8 @@ function buildActions() {
     const names = buildNames(lang), hl = buildHowtoLang(lang, names, howto);
     fs.writeFileSync(f, JSON.stringify(Object.assign({ lang, spec: en.spec, sources: SOURCES[lang], texts, fields, names }, hl.length ? { howto: hl } : {})));
     console.log('§HELP_PACK ' + lang + ' fields=' + b.n + ' of ' + b.total + ' texts=' + texts.length + ' stale-original=' + b.stale + ' names windows=' + Object.keys(names.windows).length + ' tables=' + Object.keys(names.tables).length +
-      ' actions=' + Object.keys(names.actions).length + ' statuses=' + Object.keys(names.statuses).length + ' howto=' + hl.length + ' links=' + hl.reduce((a, r) => a + (r.html.match(/data-help-win=/g) || []).length, 0) + ' bytes=' + fs.statSync(f).size);
+      ' actions=' + Object.keys(names.actions).length + ' statuses=' + Object.keys(names.statuses).length + ' processes=' + Object.keys(names.processes).length + ' howto=' + hl.length + ' links=' + hl.reduce((a, r) => a + (r.html.match(/data-help-win=/g) || []).length, 0) + ' bytes=' + fs.statSync(f).size);
   });
-})();
+}
+// §19.10: the witnesses read the SAME source list (W-HQ-PROC-NAMES), never a copy of it
+if (require.main === module) main(); else module.exports = { SOURCES, CACHE };

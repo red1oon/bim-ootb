@@ -1,7 +1,7 @@
 // ⚠ DO NOT REMOVE — W-HQ-BOX (bim-compiler prompts/VOCAB_MESSAGE_CATALOG.md §19.3 Step 3; design prompts/HELP_QUERY_CORE_DESIGN.md §2 D1 D3, §6 step 3). READ THE LOG; an exit code is not evidence.
 // ISSUE it proves or disproves: after the wiring, ONE ranker answers. The ERP help box (in the real page) and the shell's erp.ask (Node) must show the list HelpQuery itself gives for the same words, the role gate
 // applied after ranking. N comes from the dictionary-built packs: the RANK-TWIN query list (every window, process, action and status name, each how-to title, each multi-word name's first word) in every built language.
-//   B0 the run-time record builder == the build tool's: HelpSearch.indexFrom(...).records equals the committed index.json records, per language (N = records; both are made by HelpRecords.build).
+//   B0 the run-time record builder == the build tool's: HelpSearch.indexFrom(...).records equals the build tool's records (§19.10: the adapter's load(), the ERP index.json ships its header only), per language (N = records; both are made by HelpRecords.build).
 //   B1 Node: for every query, indexFrom(...).ask(q).hits (the card's top 5) == HelpQuery.create(index.json).query(q, role gate) top 5, as id|tier|score text (X of N).
 //   B2 PAGE: the same through the real widget, window.__idmpHowto.ask(q).hits, against HelpQuery over the page's own records and the page's role menu (X of N). The records the page made beyond index.json are listed (run-time dictionary rows), none may be missing.
 //   B3 DOOR: the real door line `erp.ask question=...` for the fixture questions (erp/tests/fixtures/help_questions.json) answers the same window / action / how-to as the in-process card (X of N).
@@ -36,7 +36,7 @@ const top5 = (list) => list.slice(0, 5).map((x) => x.id + '|' + x.tier + '|' + x
     b1n += qs.length; b1ok += ok; b1nonempty += ne; perLang[lang] = { p, qs, idx };
     k.L('lang=' + lang + ' records=' + theirs.length + ' runtime==index.json: ' + (eq === theirs.length) + ' · queries=' + qs.length + ' box==core top-5: ' + ok + ' (non-empty lists ' + ne + ')');
   });
-  if (!b0n) k.incon('B0', 'no records judged'); else k.chk('B0 the run-time records equal the committed index.json records: ' + b0ok + ' of ' + b0n + ' records', b0ok === b0n, bad0.join(' ; '));
+  if (!b0n) k.incon('B0', 'no records judged'); else k.chk('B0 the run-time records equal the build tool\'s records (§19.10: the ERP file ships its header only, so these are the adapter\'s load()): ' + b0ok + ' of ' + b0n + ' records', b0ok === b0n, bad0.join(' ; '));
   if (!b1n || !b1nonempty) k.incon('B1', 'VACUOUS: queries=' + b1n + ' non-empty=' + b1nonempty); else k.chk('B1 Node: the box\'s top 5 == HelpQuery\'s top 5 (role gate after ranking): ' + b1ok + ' of ' + b1n + ' queries', b1ok === b1n, bad1.join(' ; '));
   // ---- B2 (page) ----
   let page; try { page = await H.erpPage({ HS: BR }); } catch (e) { k.incon('B2', 'no headless chromium / page: ' + String(e.message).split('\n')[0]); page = null; }
