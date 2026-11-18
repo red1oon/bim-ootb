@@ -48,21 +48,8 @@ if (npi >= 0) {
 const targets = argv.filter((a, i) => !a.startsWith('--') && !(ri >= 0 && i === ri + 1) && !(npi >= 0 && i === npi + 1));
 if (!targets.length && !argv.includes('--changed')) { console.error('usage: node scripts/bump.js <file…> | --changed [--check | --write] [--root DIR]'); process.exit(1); }
 
-function listFiles(ext) {
-  try {
-    return cp.execSync(`git ls-files "*${ext}"`, { cwd: ROOT, stdio: ['ignore', 'pipe', 'ignore'] }).toString().split('\n').filter(Boolean);
-  } catch (e) {   // not a git tree (temp copy): walk it
-    const out = [];
-    (function w(d) {
-      for (const n of fs.readdirSync(path.join(ROOT, d))) {
-        if (n === 'node_modules' || n === '.git') continue;
-        const r = d ? d + '/' + n : n; const st = fs.statSync(path.join(ROOT, r));
-        if (st.isDirectory()) w(r); else if (r.endsWith(ext)) out.push(r);
-      }
-    })('');
-    return out;
-  }
-}
+const { trackedFiles } = require('./lib/tracked_files.js');   // git ls-files, or a walk when the folder is no git tree (a ZIP, a temp copy): §F.39
+const listFiles = ext => trackedFiles(ROOT).filter(f => f.endsWith(ext));
 const rel = p => path.relative(ROOT, p).split(path.sep).join('/');
 
 // LAZY LOADING IS KEPT AS IS (bim-compiler prompts/EDITOR_MAINTAINABILITY_STUDY.md §14 N2): a lazy module's ?v= lives in a
