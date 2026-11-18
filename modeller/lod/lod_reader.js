@@ -1,7 +1,7 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
 // SPDX-License-Identifier: MIT
 // # ⚠ DO NOT REMOVE — lod_reader.js: reads the open building's sql.js DB into the input every LOD Upgrade pack takes. Read the §LODUP_* log after every run.
-// meta {guid:{cls,name,storey,disc,building}}, sched {guid:{name:value}} (element_dxf2bim), world(guid) -> Float64Array (the element's MESH in world space; never the DB rtree, spec §5).
+// meta {guid:{cls,name,storey,disc,building}}, sched {guid:{name:value}} (element_dxf2bim), world(guid) -> Float64Array (the element's MESH in world space, rotation applied; never the DB rtree, spec §5), from component_geometries or base_geometries.
 // Read-only. A table the DB lacks gives an empty set, never an invented one.
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
@@ -14,7 +14,7 @@
   // index(hash) component_geometry_layers rows (the extractor already sliced this hash) or []; transform(guid) centre + Euler (radians) as the extractor stored them.
   function layerApi(db) {
     if (!has(db, 'rel_material_layer_set') || !has(db, 'material_layers') || !has(db, 'element_instances') || !has(db, 'element_transforms')) return null;
-    var tbl = has(db, 'component_geometries') ? 'component_geometries' : has(db, 'base_geometries') ? 'base_geometries' : null; if (!tbl) return null;
+    var tbl = geomTable(db); if (!tbl) return null;
     var hasIdx = has(db, 'component_geometry_layers'), hostsC = null, setC = {}, meshC = {}, idxC = {};
     function f32(b) { return new Float32Array(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength)); }
     function i32(b) { return new Int32Array(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength)); }
@@ -44,16 +44,25 @@
       }
     };
   }
+  // ONE reader, both schemas: component_geometries (library / split DBs) else base_geometries (extractor DBs, blobs inline)
+  function geomTable(db) { return has(db, 'component_geometries') ? 'component_geometries' : has(db, 'base_geometries') ? 'base_geometries' : null; }
   function fromDb(db) {
     var meta = {}, sched = {};
     if (has(db, 'elements_meta')) { var r = db.exec('SELECT guid, ifc_class, element_name, storey, discipline, building FROM elements_meta ORDER BY guid'); if (r.length) r[0].values.forEach(function (v) { meta[v[0]] = { cls: v[1], name: v[2] || '', storey: v[3], disc: v[4], building: v[5] }; }); }
     if (has(db, 'element_dxf2bim')) { var s = db.exec('SELECT guid, name, value FROM element_dxf2bim ORDER BY guid, name'); if (s.length) s[0].values.forEach(function (v) { (sched[v[0]] = sched[v[0]] || {})[v[1]] = v[2]; }); }
-    var canWorld = has(db, 'element_instances') && has(db, 'component_geometries') && has(db, 'element_transforms'), st = null;
-    function world(guid) {
+    var gtbl = geomTable(db), canWorld = has(db, 'element_instances') && !!gtbl && has(db, 'element_transforms'), st = null;
+    function world(guid) {   // the element's mesh in the extractor frame: world = R(rx,ry,rz) v + centre (R as the extractor decomposed it; the identity when the angles are 0)
       if (!canWorld) return null;
-      if (!st) st = db.prepare('SELECT c.vertices, t.center_x, t.center_y, t.center_z FROM element_instances i JOIN component_geometries c USING(geometry_hash) JOIN element_transforms t USING(guid) WHERE i.guid = ?');
+      if (!st) st = db.prepare('SELECT c.vertices, t.center_x, t.center_y, t.center_z, t.rotation_x, t.rotation_y, t.rotation_z FROM element_instances i JOIN ' + gtbl + ' c USING(geometry_hash) JOIN element_transforms t USING(guid) WHERE i.guid = ?');
       st.bind([guid]); var out = null;
-      if (st.step()) { var row = st.get(), b = row[0], buf = b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength), f = new Float32Array(buf); out = new Float64Array(f.length); for (var i = 0; i < f.length; i += 3) { out[i] = f[i] + row[1]; out[i + 1] = f[i + 1] + row[2]; out[i + 2] = f[i + 2] + row[3]; } }
+      if (st.step()) {
+        var row = st.get(), b = row[0], buf = b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength), f = new Float32Array(buf), rx = row[4] || 0, ry = row[5] || 0, rz = row[6] || 0; out = new Float64Array(f.length);
+        if (!rx && !ry && !rz) { for (var i = 0; i < f.length; i += 3) { out[i] = f[i] + row[1]; out[i + 1] = f[i + 1] + row[2]; out[i + 2] = f[i + 2] + row[3]; } }
+        else {
+          var ca = Math.cos(rx), sa = Math.sin(rx), cb = Math.cos(ry), sb = Math.sin(ry), cc = Math.cos(rz), sc = Math.sin(rz), m00 = cb * cc, m01 = sa * sb * cc - ca * sc, m02 = ca * sb * cc + sa * sc, m10 = cb * sc, m11 = sa * sb * sc + ca * cc, m12 = ca * sb * sc - sa * cc, m20 = -sb, m21 = sa * cb, m22 = ca * cb;
+          for (var j = 0; j < f.length; j += 3) { var x = f[j], y = f[j + 1], z = f[j + 2]; out[j] = m00 * x + m01 * y + m02 * z + row[1]; out[j + 1] = m10 * x + m11 * y + m12 * z + row[2]; out[j + 2] = m20 * x + m21 * y + m22 * z + row[3]; }
+        }
+      }
       st.reset(); return out;
     }
     // meta.rgba (host colour), read apart so a DB without the column still opens

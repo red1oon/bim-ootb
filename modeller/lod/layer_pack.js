@@ -285,7 +285,7 @@
     var TOL = rv('layer_tol_mm') / 1000, SUMTOL = rv('layer_sum_tol_mm') / 1000, VRT = rv('layer_volume_rtol'), MINC = rv('layer_min_count'), META = inp.meta, L = inp.layers;
     LOG('§LODUP_LAYER_MODE ignoreSense=' + (IGN ? 1 : 0) + ' tol_mm=' + (TOL * 1000) + ' sum_tol_mm=' + (SUMTOL * 1000) + ' volume_rtol=' + VRT);
     var parts = [], CH = [], refused = [], addedVerts = 0, nStored = 0, nSliced = 0, clipped = 0, audit = { hosts: [], refused: refused };
-    if (!L) { LOG('§LODUP_LAYER_SCAN hosts=0 INCONCLUSIVE (the model carries no layer-set tables: nothing was judged)'); return { parts: parts, changes: CH, stats: { added: 0, notBuilt: 0, refused: 0, addedVerts: 0, appliesTo: 0 }, audit: audit }; }
+    if (!L) { LOG('§LODUP_LAYER_SCAN hosts=0 INCONCLUSIVE (the model carries no layer-set tables: nothing was judged)'); return { parts: parts, changes: CH, stats: { added: 0, notBuilt: 0, refused: 0, addedVerts: 0, appliesTo: 0, judged: 0 }, audit: audit }; }
     var hosts = L.hosts().filter(function (h) { return h.count >= MINC; });
     LOG('§LODUP_LAYER_SCAN hosts=' + hosts.length + (hosts.length ? '' : ' INCONCLUSIVE (no multi-layer element: nothing was judged)'));
 
@@ -300,7 +300,7 @@
     refused.slice().sort(function (a, b) { return a.hash < b.hash ? -1 : a.hash > b.hash ? 1 : a.guid < b.guid ? -1 : a.guid > b.guid ? 1 : 0; }).forEach(function (r) { CH.push({ kind: 'REFUSED', guid: r.guid, cls: r.cls, host: r.guid, rule: 'Layer split', detail: '"' + r.name + '" | ' + r.reason + ' (§LAYER-REFUSE)' }); });
     LOG('§LODUP_LAYER_BUILT hosts_split=' + audit.hosts.length + ' parts=' + parts.length + ' refused=' + refused.length + ' state: stored_slabs_verified=' + nStored + ' envelope_sliced=' + nSliced + ' layers_clipped=' + clipped);
     LOG('§LODUP_LAYER_SUMMARY added=' + parts.length + ' refused=' + refused.length + ' addedVerts=' + addedVerts + (parts.length ? '' : ' INCONCLUSIVE (no layer part built: nothing was judged)'));
-    return { parts: parts, changes: CH, stats: { added: parts.length, notBuilt: 0, refused: refused.length, addedVerts: addedVerts, appliesTo: hosts.length, hostsSplit: audit.hosts.length, stored: nStored, sliced: nSliced }, audit: audit };
+    return { parts: parts, changes: CH, stats: { added: parts.length, notBuilt: 0, refused: refused.length, addedVerts: addedVerts, appliesTo: hosts.length, judged: hosts.length, hostsSplit: audit.hosts.length, stored: nStored, sliced: nSliced }, audit: audit };
 
     // ---- one host -> its parts (throws Refusal). The checks run in the extractor's order.
     function host(h, m) {
@@ -363,7 +363,7 @@
   }
 
   // how many elements the pack applies to (the panel's measured count): the multi-layer elements with a stored mesh
-  function appliesTo(inp) { return inp.layers ? inp.layers.hosts().length : 0; }
+  function appliesTo(inp, rows) { if (!inp.layers) return 0; if (!rows) return inp.layers.hosts().length; try { return run(inp, rows, { log: function () { } }).stats.judged; } catch (e) { return 0; } }   // with rule rows: the multi-layer elements the run judges (split or refused), read-only dry run
   var API = { id: 'layers', label: 'Layers', rulesFile: 'rules/layer_defaults.json', run: run, appliesTo: appliesTo, rotMat: rotMat, layerIntervals: layerIntervals, weldMesh: weldMesh };
   if (typeof window !== 'undefined' && window.LodRegistry) window.LodRegistry.register(API);   // browser: the pack registers itself; adding a pack needs no dialog change
   return API;

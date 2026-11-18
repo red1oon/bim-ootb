@@ -120,9 +120,9 @@
     // ------------------------------------------------ A. footings and columns
     var F_IDS = byClass('IfcFooting').filter(function (g) { return sched(g).Sched_Footing_L_Bar !== undefined; });
     var C_IDS = byClass('IfcColumn').filter(function (g) { return sched(g).Sched_Column_Main_Bar !== undefined; });
-    var BOX = {}, refused = {};
+    var BOX = {}, refused = {}, judged = 0;
     F_IDS.concat(C_IDS).sort().forEach(function (g) {
-      var V = inp.world(g);
+      var V = inp.world(g); if (V && V.length) judged++;   // judged = scheduled elements whose mesh the run can read
       if (!V || !V.length || !isBox(V)) { refused[g] = 'mesh is not an axis-aligned box'; return; }
       BOX[g] = aabb(V);
     });
@@ -254,7 +254,7 @@
 
     var cnt = { ADDED: 0, NOT_BUILT: 0, REFUSED: 0 }; CH.forEach(function (c) { cnt[c.kind]++; });
     LOG('§LODUP_REBAR_SUMMARY added=' + cnt.ADDED + ' not_built=' + cnt.NOT_BUILT + ' refused=' + cnt.REFUSED + ' sets=' + parts.length + ' addedVerts=' + addedVerts + (parts.length ? '' : ' INCONCLUSIVE (the model has no footing or column with a schedule row: nothing was judged)'));
-    return { parts: parts, changes: CH, setDims: setDims, stats: { added: cnt.ADDED, notBuilt: cnt.NOT_BUILT, refused: cnt.REFUSED, addedVerts: addedVerts, appliesTo: F_IDS.length + C_IDS.length, fSets: fSets, nMain: nMain, nTieA: nTieA, nTieB: nTieB },
+    return { parts: parts, changes: CH, setDims: setDims, stats: { added: cnt.ADDED, notBuilt: cnt.NOT_BUILT, refused: cnt.REFUSED, addedVerts: addedVerts, appliesTo: F_IDS.length + C_IDS.length, judged: judged, fSets: fSets, nMain: nMain, nTieA: nTieA, nTieB: nTieB },
       audit: { F_IDS: F_IDS, C_IDS: C_IDS, BOX: BOX, refused: refused, groups: groups, fCounts: fCounts, SIDES: SIDES, COVER_F: COVER_F, COVER_C: COVER_C, ZONE_STATED: ZONE_STATED } };
   }
 
@@ -264,7 +264,7 @@
     return n;
   }
   var API = { id: 'rebar', label: 'Rebar (from schedules)', rulesFile: 'rules/rebar_defaults.json', run: run,
-    appliesTo: function (inp) { return appliesTo(inp.meta, inp.sched || {}); },
+    appliesTo: function (inp, rows) { if (!rows) return appliesTo(inp.meta, inp.sched || {}); try { return run(inp, rows, { log: function () { } }).stats.judged; } catch (e) { return 0; } },   // with rule rows: what the run judges (read-only dry run)
     fmtG: fmtG, parse: { diaSpacing: parseDiaSpacing, main: parseMain }, RB_RGBA: RB_RGBA, IN: IN };
   if (typeof window !== 'undefined' && window.LodRegistry) window.LodRegistry.register(API);   // browser: the pack registers itself; adding a pack needs no dialog change
   return API;

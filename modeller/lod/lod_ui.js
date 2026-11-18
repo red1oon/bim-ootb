@@ -8,18 +8,19 @@
 (function () {
   'use strict';
   var TAG = '§LODUP', BASE = (function () { try { return new URL('.', document.currentScript.src).href; } catch (e) { return 'lod/'; } })();
-  var state = { ready: false, panel: null, rules: {}, edits: {}, last: {}, open: {}, runs: [], busy: false };
+  var state = { ready: false, panel: null, rules: {}, edits: {}, last: {}, open: {}, runs: [], busy: false, hidden: {} };
 
   function log(m) { console.log(TAG + ' ' + m); }
   function load(src) { return new Promise(function (res, rej) { var s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = function () { rej(new Error('load failed ' + src)); }; document.head.appendChild(s); }); }
   async function boot() {
     if (state.ready) return;
     var man = await (await fetch(BASE + 'packs.json')).json();
-    for (var i = 0; i < man.packs.length; i++) await load(BASE + man.packs[i].file + '?v=1');
+    for (var i = 0; i < man.packs.length; i++) await load(BASE + man.packs[i].file + '?v=2');
     var Rg = window.LodRegistry, R = window.LodRules;
     for (var j = 0; j < Rg.list().length; j++) { var p = Rg.list()[j]; state.rules[p.id] = R.load(await (await fetch(BASE + p.rulesFile)).json()); state.edits[p.id] = {}; }
     state.ready = true; log('ready packs=' + Rg.list().map(function (p) { return p.id; }).join(','));
-    window.addEventListener('bonsai:oplog', function () { try { syncTables(); } catch (e) { console.warn(TAG + ' sync failed ' + (e && e.message)); } });
+    window.addEventListener('bonsai:oplog', function () { try { syncTables(); applyHostHide(); } catch (e) { console.warn(TAG + ' sync failed ' + (e && e.message)); } });
+    window.addEventListener('bonsai:refold', function () { try { applyHostHide(); } catch (e) { console.warn(TAG + ' host hide failed ' + (e && e.message)); } });
   }
   function rowsOf(id) { return window.LodRules.merge(state.rules[id], state.edits[id]).rows; }
   async function input() {
@@ -46,6 +47,18 @@
     log('§LODUP_TABLES element_parts=' + parts.length + ' upgrade_changes=' + seq + ' live_generated=' + Object.keys(live).length);
   }
 
+  // The seed rule (#3232, arc_editable.js §MOD_PARTS_VIEW) applied LIVE: a parent with parts present is not drawn. Derived from the live ops after every op-log event and every re-fold,
+  // so Undo shows the parent again and Redo hides it again (a re-fold rebuilds meshes visible; this puts the lens back). Uses Bonsai.setFeatureVisible, the Outliner eye seam.
+  function applyHostHide() {
+    var B = window.Bonsai, O = B && B.oplog, db = O && O.db; if (!db || typeof B.setFeatureVisible !== 'function') return;
+    var want = {}, r = db.exec("SELECT parameters FROM kernel_ops WHERE undone=0 AND output_guid LIKE 'GEN-%'");
+    if (r.length) r[0].values.forEach(function (v) { var P; try { P = JSON.parse(v[0]); } catch (e) { return; } (P.parts_of || []).forEach(function (h) { want[h] = 1; }); });
+    var fm = window.__arcFidByGuid || {}, back = 0, hid = 0;
+    Object.keys(state.hidden).forEach(function (h) { if (want[h]) return; var f = fm[h]; if (f != null && B.setFeatureVisible(f, true)) back++; delete state.hidden[h]; });
+    Object.keys(want).forEach(function (h) { var f = fm[h]; if (f != null && B.setFeatureVisible(f, false)) { state.hidden[h] = 1; hid++; } });
+    if (hid || back || Object.keys(state.hidden).length) log('§LODUP_HOSTS parents_with_parts=' + Object.keys(want).length + ' hidden_now=' + Object.keys(state.hidden).length + ' restored=' + back + ' (a parent with parts present is not drawn: the seed rule, live)');
+  }
+
   async function runPack(id) {
     var Rg = window.LodRegistry, pack = Rg.get(id), O = window.Bonsai.oplog, Lb = window.Bonsai.library, st = state.panel.querySelector('[data-st="' + id + '"]');
     var say = function (t) { if (st) st.textContent = t; if (typeof window.setStat === 'function') window.setStat(t); };
@@ -68,7 +81,7 @@
       var fid = {}, gbf = {}; built.ops.forEach(function (o, i) { fid[o.outputGuid] = cr.ids[i]; gbf[cr.ids[i]] = o.outputGuid; });
       window.__arcFidByGuid = Object.assign({}, window.__arcFidByGuid || {}, fid); window.__arcGuidByFid = Object.assign({}, window.__arcGuidByFid || {}, gbf);
       state.runs = state.runs.filter(function (r) { return r.pack !== id; }); state.runs.push({ pack: id, gid: cr.gid, changes: res.changes, rules: window.LodRules.counts(rows) });
-      syncTables(); if (O._save) O._save();
+      syncTables(); applyHostHide(); if (O._save) O._save();
       state.last[id] = Object.assign({}, res.stats, { ms: Math.round(performance.now() - t0), gid: cr.gid });
       var heap = performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : null;
       log('§LODUP_RUN pack=' + id + ' ops=' + built.ops.length + ' ids_contiguous=' + okIds + ' gid=' + cr.gid + ' verify=' + cr.verify + ' tip=' + String(cr.tip || '').slice(0, 12) + ' added=' + res.stats.added + ' refused=' + res.stats.refused + ' notBuilt=' + res.stats.notBuilt + ' element_parts=' + built.elementParts.length + ' ms=' + state.last[id].ms);
@@ -96,7 +109,7 @@
     d.forEach(function (e) {
       var l = state.last[e.id];
       h += '<div class="lu-row" data-id="' + esc(e.id) + '"><div class="lu-h"><b>' + esc(e.label) + '</b><button class="lu-run" data-run="' + esc(e.id) + '">Run</button></div>' +
-        '<div class="lu-s">applies to <span data-k="applies">' + e.appliesTo + '</span> elements</div>' +
+        '<div class="lu-s">' + (e.appliesTo ? 'applies to <span data-k="applies">' + e.appliesTo + '</span> ' + esc(e.unit || 'elements') : '<span data-k="applies">0</span> not applicable here') + '</div>' +
         '<div class="lu-s">rule rows: <span data-k="stated">' + e.stated + '</span> stated / <span data-k="default">' + e.default + '</span> defaults' + (e.unset ? ' / <span data-k="unset">' + e.unset + '</span> unset' : '') + ' <a href="#" class="lu-rules" data-rules="' + esc(e.id) + '">Rules</a></div>' +
         '<div class="lu-s" data-st="' + esc(e.id) + '">' + (l ? 'last run: added ' + l.added + ' / refused ' + l.refused + ' / not built ' + l.notBuilt : 'last run: none') + '</div>';
       if (state.open[e.id]) {
@@ -133,5 +146,5 @@
     if (open) await paint();
     log('§LODUP_PANEL open=' + open + ' rows=' + state.panel.querySelectorAll('.lu-row').length + ' packs=' + window.LodRegistry.list().length);
   }
-  window.LodUI = { toggle: toggle, boot: boot, runPack: runPack, paint: paint, state: state, rowsOf: rowsOf, setRow: function (id, k, row) { var m = window.LodRules.merge(rowsOf(id), (function () { var o = {}; o[k] = row; return o; })()); if (!m.refused.length) state.edits[id][k] = row; return m; }, changeListText: changeListText, syncTables: syncTables };
+  window.LodUI = { applyHostHide: applyHostHide, toggle: toggle, boot: boot, runPack: runPack, paint: paint, state: state, rowsOf: rowsOf, setRow: function (id, k, row) { var m = window.LodRules.merge(rowsOf(id), (function () { var o = {}; o[k] = row; return o; })()); if (!m.refused.length) state.edits[id][k] = row; return m; }, changeListText: changeListText, syncTables: syncTables };
 })();

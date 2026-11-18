@@ -23,7 +23,7 @@ var Rules = require(path.join(ROOT, 'lod/lod_rules.js')), Pack = require(path.jo
   Ops = require(path.join(ROOT, 'lod/lod_ops.js')), Reader = require(path.join(ROOT, 'lod/lod_reader.js')), Registry = require(path.join(ROOT, 'lod/lod_registry.js'));
 var initSqlJs = require(path.join(ROOT, 'lib', 'sql-wasm.js')), wasmBinary = fs.readFileSync(path.join(ROOT, 'lib', 'sql-wasm.wasm'));
 var SRC = process.env.LODUP_SRC_DB, ORA = process.env.LODUP_ORACLE_DB, ENV = process.env.LODUP_ENVELOPE_DB, MAIN_BREAK = process.env.LODUP_BREAK === '1';
-var P1_LOD_UI_SHA = 'c6c4ac30b19aa529ba122c8a7359f1773312195ea72364b210273e5d86743544';   // lod/lod_ui.js as merged in P1 (#3238): P3 must not edit the dialog
+var P1_LOD_UI_SHA = 'b5e5fe358485f51f194ad58f0b56ebba02eaa776d398bdd48ae06a7ebab1e740';   // lod/lod_ui.js as of the P3 fix (live host hide + 'not applicable here'); it was the P1 file (c6c4ac30...) until then
 var FAILS = [], INCONC = [], VTOL = 1e-5;   // 0.01 mm
 function verdict(name, ok, line) { var v = ok === null ? 'INCONCLUSIVE' : ok ? 'PASS' : 'FAIL'; console.log('§LODUP_' + name + ' ' + line + ' -> ' + v); if (v === 'FAIL') FAILS.push(name); if (v === 'INCONCLUSIVE') INCONC.push(name); return v; }
 function q(db, sql, args) { var st = db.prepare(sql), out = []; if (args) st.bind(args); while (st.step()) out.push(st.get()); st.free(); return out; }
@@ -156,7 +156,7 @@ initSqlJs({ wasmBinary: wasmBinary }).then(function (SQL) {
   console.log('§LODUP_RULES pack=layers rows=' + RC.total + ' stated=' + RC.stated + ' default=' + RC.default + ' unset=' + RC.unset);
   var mkInp = function (db) { var rd = Reader.fromDb(db); return { meta: rd.meta, sched: rd.sched, world: rd.world, layers: rd.layers, callouts: [] }; };
   var inp = mkInp(srcDb), logs = [], run = function (i, o) { logs.length = 0; return Pack.run(i, RULES, Object.assign({ log: function (l) { logs.push(l); console.log(l); } }, o || {})); };
-  var R = run(inp, { ignoreSense: MAIN_BREAK }), parts = R.parts, applies = Pack.appliesTo(inp);
+  var R = run(inp, { ignoreSense: MAIN_BREAK }), parts = R.parts, applies = Pack.appliesTo(inp, RULES);
   verdict('NONVACUOUS', parts.length ? true : (applies ? false : null), 'applies_to=' + applies + ' hosts_split=' + R.stats.hostsSplit + ' parts=' + parts.length + ' refused=' + R.stats.refused + ' added_verts=' + R.stats.addedVerts + (parts.length ? '' : ' (nothing judged)'));
 
   var syn = synthetic(SQL, true), SI = mkInp(syn), SR = Pack.run(SI, RULES, { log: function (l) { console.log('[synth] ' + l); } });
@@ -213,6 +213,32 @@ initSqlJs({ wasmBinary: wasmBinary }).then(function (SQL) {
   var epOk = built.elementParts.length === parts.length && built.elementParts.every(function (r, i) { return r.parent_guid === parts[i].host && r.child_guid === parts[i].guid && r.child_class === 'IfcBuildingElementPart' && r.parent_class === (inp.meta[r.parent_guid] && inp.meta[r.parent_guid].cls); });
   verdict('CENTRE', built.ops.length ? (cBad === 0 && poBad === 0 && epOk) : null, 'ops=' + built.ops.length + ' centre_not_own_bbox_centre=' + cBad + ' max_delta_m=' + maxC.toExponential(2) + ' parts_of_wrong=' + poBad + ' element_parts_rows=' + built.elementParts.length + ' (host -> part, P1 seeding hides the host) ok=' + epOk + ' parts_whose_centre_equals_their_host_centre=' + onHost + ' (a layer sits on the host centre only if it is the middle layer of a symmetric stack)');
 
+  // ---- READER_WORLD: lod_reader.js world() reads component_geometries OR base_geometries and applies the rotation: the world mesh of each split host spans exactly the union of its parts
+  (function () {
+    var bad = 0, n = 0, maxd = 0, byH = {}; parts.forEach(function (p) { (byH[p.host] = byH[p.host] || []).push(p); });
+    Object.keys(byH).forEach(function (h) {
+      var w = inp.world(h); if (!w || !w.length) { bad++; return; } var hb = bboxOf(w), lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+      byH[h].forEach(function (p) { var b = bboxOf(p.tris); for (var a = 0; a < 3; a++) { if (b[0][a] < lo[a]) lo[a] = b[0][a]; if (b[1][a] > hi[a]) hi[a] = b[1][a]; } });
+      var d = 0; for (var a2 = 0; a2 < 3; a2++) d = Math.max(d, Math.abs(hb[0][a2] - lo[a2]), Math.abs(hb[1][a2] - hi[a2])); n++; if (d > maxd) maxd = d; if (d > 1e-4) bad++;
+    });
+    var rot = q(srcDb, 'SELECT COUNT(*) FROM element_transforms WHERE abs(rotation_z) > 1e-9').map(function (v) { return v[0]; })[0];
+    verdict('READER_WORLD', n ? (bad === 0 && inp.layers && (new RegExp('base_geometries|component_geometries')).test(inp.layers.table)) : null, 'hosts=' + n + ' schema=' + (inp.layers && inp.layers.table) + ' canWorld=' + (Reader.fromDb(srcDb).canWorld) + ' world_bbox_vs_union_of_parts_max_delta_mm=' + (maxd * 1000).toFixed(4) + ' mismatched_hosts=' + bad + ' elements_with_rotation_z=' + rot + ' (limit 0.1 mm: the stored mesh is float32)');
+  })();
+
+  // ---- APPLIES: each pack's appliesTo = what its OWN run judges (read-only dry run), the dialog's number is that same count, zero = "not applicable here"
+  (function () {
+    var rowsFor = function (pk) { return pk.id === 'layers' ? RULES : !pk.rulesFile ? {} : Rules.load(JSON.parse(fs.readFileSync(path.join(ROOT, 'lod', pk.rulesFile), 'utf8'))); };
+    Registry.clear(); Registry.register(Rebar); Registry.register(Weld); Registry.register(Pack);
+    var desc = Registry.describe(inp, function (id) { return rowsFor(Registry.get(id)); }, Rules), line = [], bad = [];
+    Registry.list().forEach(function (pk) {
+      var rows = rowsFor(pk), rr = pk.run(inp, rows, { log: function () { } }), judged = rr.stats.judged, ap = pk.appliesTo(inp, rows), dd = desc.filter(function (x) { return x.id === pk.id; })[0].appliesTo, cheap = pk.appliesTo(inp);
+      if (typeof judged !== 'number' || ap !== judged || dd !== judged) bad.push(pk.id + ' appliesTo=' + ap + ' dialog=' + dd + ' run_judged=' + judged);
+      line.push(pk.id + ':judged=' + judged + (cheap !== judged ? '(the old row count said ' + cheap + ')' : '') + (judged === 0 ? ' not-applicable-here' : ''));
+    });
+    var weldDry = Weld.run(inp, rowsFor(Weld), { log: function () { } });
+    verdict('APPLIES', bad.length ? false : true, line.join(' ') + ' welds_contacts=' + weldDry.stats.contacts + ' mismatches=' + bad.length + (bad[0] ? ' first=' + bad[0] : '') + ' (the dry run is read only: the packs are pure)');
+  })();
+
   // ---- DETERMINISM: two runs, same op hash
   function opHash(rr) { var b = Ops.build(rr.parts, 'layers', inp.meta), h = crypto.createHash('sha256'); h.update(JSON.stringify(b.ops)); b.assets.forEach(function (a) { h.update(Buffer.from(a.v.buffer)); }); h.update(JSON.stringify(b.elementParts)); h.update(JSON.stringify(rr.changes)); return h.digest('hex'); }
   var h1 = opHash(R), h2 = opHash(run(inp, { ignoreSense: MAIN_BREAK }));
@@ -249,7 +275,7 @@ initSqlJs({ wasmBinary: wasmBinary }).then(function (SQL) {
   Registry.register({ id: 'dummy', label: 'Dummy (test pack)', appliesTo: function () { return 0; }, run: function () { return { parts: [], changes: [] }; } });
   var d2 = Registry.describe(inp, rowsOf, Rules), lRow = d1.filter(function (x) { return x.id === 'layers'; })[0];
   verdict('REGISTRY', d1.map(function (x) { return x.id; }).join() === 'rebar,welds,layers' && manIds.join() === 'rebar,welds,layers' && filesOk && ruleFilesOk && lRow && lRow.label === 'Layers' && lRow.appliesTo === applies && lRow.stated === RC.stated && lRow.default === RC.default && d2.length === d1.length + 1 && uiSha === P1_LOD_UI_SHA,
-    'listed=' + d1.map(function (x) { return x.id + ':"' + x.label + '"(' + x.appliesTo + ')'; }).join(',') + ' packs.json=' + manIds.join() + ' pack_files_exist=' + filesOk + ' rules_files_exist=' + ruleFilesOk + ' layers_applies_to=' + (lRow && lRow.appliesTo) + ' after_one_more=' + d2.length + ' lod_ui_js_is_the_P1_file=' + (uiSha === P1_LOD_UI_SHA));
+    'listed=' + d1.map(function (x) { return x.id + ':"' + x.label + '"(' + x.appliesTo + ')'; }).join(',') + ' packs.json=' + manIds.join() + ' pack_files_exist=' + filesOk + ' rules_files_exist=' + ruleFilesOk + ' layers_applies_to=' + (lRow && lRow.appliesTo) + ' after_one_more=' + d2.length + ' lod_ui_js_is_the_P3_fix_file=' + (uiSha === P1_LOD_UI_SHA));
 
   // ---- cost (PERF BUDGET)
   var modelVerts = 0; try { var r1 = q(srcDb, 'SELECT SUM(length(b.vertices) / 12) FROM element_instances i JOIN ' + (inp.layers ? inp.layers.table : 'component_geometries') + ' b USING(geometry_hash)'); modelVerts = r1.length && r1[0][0] ? r1[0][0] : 0; } catch (e) { modelVerts = 0; }

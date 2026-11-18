@@ -17,10 +17,17 @@
   function list() { return order.map(function (id) { return packs[id]; }); }
   function get(id) { return packs[id] || null; }
   // the dialog's model: one entry per registered pack, in registration order. inp = the open model's input; rowsOf(id) = the pack's merged rule rows. The dialog renders ONLY this list.
+  // appliesTo = what the pack's own run would JUDGE on this model (P3 fix): appliesTo(inp, rows) is a read-only dry run of the pack, cached per (input, pack, rule rows); 0 = "not applicable here".
+  var memo = (typeof WeakMap !== 'undefined') ? new WeakMap() : null;
+  function applies(p, inp, rows) {
+    var key = p.id + '|' + JSON.stringify(rows), c = memo && inp && typeof inp === 'object' ? (memo.get(inp) || memo.set(inp, {}).get(inp)) : null;
+    if (c && key in c) return c[key];
+    var n = p.appliesTo(inp, rows); if (c) c[key] = n; return n;
+  }
   function describe(inp, rowsOf, rules) {
     return list().map(function (p) {
       var rows = rowsOf(p.id) || {}, c = rules ? rules.counts(rows) : { stated: 0, default: 0, unset: 0 };
-      return { id: p.id, label: p.label, appliesTo: p.appliesTo(inp), stated: c.stated, default: c.default, unset: c.unset };
+      return { id: p.id, label: p.label, unit: p.unit || 'elements', appliesTo: applies(p, inp, rows), stated: c.stated, default: c.default, unset: c.unset };
     });
   }
   function clear() { packs = {}; order = []; }

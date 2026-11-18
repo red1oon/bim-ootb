@@ -229,7 +229,7 @@
     LOG('§LODUP_WELD_BUILT welds=' + nWeld + ' skipped=' + weldSkipped.length);
     var cnt = { ADDED: 0, NOT_BUILT: 0, REFUSED: 0 }; CH.forEach(function (c) { cnt[c.kind]++; });
     LOG('§LODUP_WELD_SUMMARY added=' + cnt.ADDED + ' not_built=' + cnt.NOT_BUILT + ' refused=' + cnt.REFUSED + ' addedVerts=' + addedVerts + (parts.length ? '' : ' INCONCLUSIVE (no weld built: nothing was judged)'));
-    return { parts: parts, changes: CH, stats: { added: cnt.ADDED, notBuilt: cnt.NOT_BUILT, refused: cnt.REFUSED, addedVerts: addedVerts, appliesTo: MEM.length, contacts: contacts.length, endContacts: nEndC, throughContacts: nThr, touchOnly: touchOnly },
+    return { parts: parts, changes: CH, stats: { added: cnt.ADDED, notBuilt: cnt.NOT_BUILT, refused: cnt.REFUSED, addedVerts: addedVerts, appliesTo: MEM.length, judged: contacts.length, contacts: contacts.length, endContacts: nEndC, throughContacts: nThr, touchOnly: touchOnly },
       audit: { contacts: contacts, weldInfo: weldInfo, skipped: weldSkipped, noContact: noContact, PF: PF, MEM: MEM, PLT: PLT, table: TABLE } };
   }
 
@@ -238,7 +238,9 @@
     var m = 0, p = 0; Object.keys(meta).forEach(function (g) { var c = meta[g].cls; if (c === 'IfcMember') m++; else if (c === 'IfcPlate') p++; });
     return p ? m : 0;
   }
-  var API = { id: 'welds', label: 'Truss welds', rulesFile: 'rules/weld_defaults.json', run: run, appliesTo: function (inp) { return appliesTo(inp.meta); },
+  var API = { id: 'welds', label: 'Truss welds', unit: 'member-plate contacts', rulesFile: 'rules/weld_defaults.json', run: run,
+    appliesTo: function (inp, rows) { if (!rows) return appliesTo(inp.meta); try { return run(inp, rows, { log: function () { } }).stats.judged; } catch (e) { return 0; } },   // with rule rows: the member-plate contacts the run finds (same test), read-only dry run
+   
     fmtG: fmtG, weldTable: weldTable, weldMin: weldMin, WD_RGBA: WD_RGBA, IN: IN };
   if (typeof window !== 'undefined' && window.LodRegistry) window.LodRegistry.register(API);   // browser: the pack registers itself; adding a pack needs no dialog change
   return API;
