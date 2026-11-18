@@ -19,7 +19,7 @@
   // sources viewer/i18n/ad_message_base.csv (AD_Message) ⋈ viewer/i18n/AD_Message_Trl_<lang>.xml. locales/<code>.js
   // keeps only the COST data (currency, rate attribution, rates). Never edit the JSON — edit the XML and rebuild.
   var I18N_BASE = _thisScript.src.replace(/[^/]*$/, '') + 'i18n/';
-  var LOCALE_VERSION = 11; // bump to invalidate cached locale packs (v7 = S226 §R2 split: labels JSON + cost .js; v8 = §R2d Help + §R3 Modeller rows; v9 = VOCAB_MESSAGE_CATALOG §14.1 class text; v10 = §14.2 types + 10 locales; v11 = §14.3 How To words)
+  var LOCALE_VERSION = 12; // bump to invalidate cached locale packs (v7 = S226 §R2 split: labels JSON + cost .js; v8 = §R2d Help + §R3 Modeller rows; v9 = VOCAB_MESSAGE_CATALOG §14.1 class text; v10 = §14.2 types + 10 locales; v11 = §14.3 How To words; v12 = T2/T3: the pack lists its BIM_Element term keys)
 
   // ── The one language choice (bim-compiler prompts/TRL_TRILOGY_STANDARD.md S-5, T1): common/i18n/lang_choice.js owns the key 'bim.lang', the precedence and the
   //    mapping table that used to live here as LOCALE_MAP. A page loads it BEFORE this file; without it the loader degrades to ?lang= / its old key / en_MY (logged).
@@ -163,6 +163,10 @@
   // ── S226 §R2: fetch the built label pack i18n/<code>.json (localStorage cache, then network) ──
   // Resolves to {} when nothing can be loaded: the page then shows the English that is already in its markup /
   // _trl() defaults — honestly, and W-VIEWER-I18N counts it as a leak. Logs one §TRL_LABELS line per load.
+  // T3 (bim-compiler prompts/TRL_TRILOGY_STANDARD.md S-2): the pack names its TERM keys (BIM_Element: IFC class text). A term is looked up BY KEY (_trl('ifccls_IfcWall')),
+  // never by matching its English, so the dictionary page below leaves them out (the English of a term attribute such as ifcdef_<C>_lang = 'EN' is also a UI word).
+  var _termKeys = {};
+  function _noteTerms(list) { if (list && list.length) list.forEach(function(k) { _termKeys[k] = 1; }); }
   function fetchLabels(code, callback) {
     var cacheKey = 'bim_ootb_trl_' + code;
     function done(src, labels, extra) {
@@ -173,7 +177,7 @@
     try {
       var cached = JSON.parse(localStorage.getItem(cacheKey));
       if (cached && cached.labels && cached.v === LOCALE_VERSION && cached.ts && Date.now() - cached.ts < 7 * 24 * 60 * 60 * 1000) {
-        done('cached', cached.labels); return;
+        _noteTerms(cached.terms); done('cached', cached.labels); return;
       }
     } catch(e) { /* cache miss */ }
     if (window._STANDALONE) { done('standalone', {}); return; }
@@ -182,7 +186,8 @@
       return resp.json();
     }).then(function(pack) {
       var labels = (pack && pack.labels) || {};
-      try { localStorage.setItem(cacheKey, JSON.stringify({ labels: labels, ts: Date.now(), v: LOCALE_VERSION })); } catch(e) { /* storage full */ }
+      _noteTerms(pack && pack.terms);
+      try { localStorage.setItem(cacheKey, JSON.stringify({ labels: labels, terms: (pack && pack.terms) || [], ts: Date.now(), v: LOCALE_VERSION })); } catch(e) { /* storage full */ }
       var b = pack && pack.built;
       done('fetched', labels, b ? 'translated=' + b.translated + ' untranslated=' + b.untranslated : '');
     }).catch(function(err) {
@@ -426,12 +431,12 @@
   var _DICT_ATTRS = ['title', 'placeholder', 'aria-label'];
   function _dictBuild(labels) {
     var m = {}, en = _dict.en || {};
-    Object.keys(en).forEach(function(k) { var e = en[k], v = labels[k]; if (typeof e === 'string' && e.trim().length > 1 && typeof v === 'string' && v && !m[e.trim()]) m[e.trim()] = v; });
+    Object.keys(en).forEach(function(k) { var e = en[k], v = labels[k]; if (_termKeys[k]) return; if (typeof e === 'string' && e.trim().length > 1 && typeof v === 'string' && v && !m[e.trim()]) m[e.trim()] = v; });
     _dict.map = m;
     // templates: an English msgtext with {name} slots ('{n} features', 'Confidence {p}% mean') matches a WHOLE value of that shape;
     // the captured values are put into the locale's own template by name (a locale may reorder them)
     var tp = [];
-    Object.keys(en).forEach(function(k) { var e = en[k], v = labels[k]; if (typeof e !== 'string' || typeof v !== 'string' || !v || !/\{\w+\}/.test(e)) return;
+    Object.keys(en).forEach(function(k) { var e = en[k], v = labels[k]; if (_termKeys[k]) return; if (typeof e !== 'string' || typeof v !== 'string' || !v || !/\{\w+\}/.test(e)) return;
       var names = [], src = e.trim().split(/(\{\w+\})/).map(function(part) { var mm = part.match(/^\{(\w+)\}$/); if (mm) { names.push(mm[1]); return '(.+?)'; } return part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }).join('');
       if (!names.length || src.replace(/\(\.\+\?\)/g, '').length < 3) return;   // a bare '{x}' would match anything
       tp.push({ re: new RegExp('^' + src + '$'), names: names, to: v }); });
