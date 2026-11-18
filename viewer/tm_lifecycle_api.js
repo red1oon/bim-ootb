@@ -348,6 +348,29 @@
 
     // §S260c: Check IDB for cached Gantt JSON
     cacheGet('gantt').then(async function(cachedOps) {   // §GANTT_REFOLD_HANG: awaits chunked injectGantt
+      // §TM_PLAY_SCHEDULE_FRESH (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.31): a DB that carries a STORED schedule older than this
+      // code is regenerated HERE, before the cached play order or kernel_ops are trusted — otherwise the picture is built from the old grid
+      // while buildTaskIndex later regenerates the Gantt (§Q.30: the HHS film replayed its September grid). Same regen body as the Gantt
+      // (TMS._regenStaleScheduleNow); the play order derived from the replaced schedule is dropped so injectGantt rebuilds it once.
+      try {
+        var _SAf = (typeof window !== 'undefined') && window.ScheduleAuthor;
+        var _actF = (_SAf && _SAf.activeSchedule && app && app.db) ? _SAf.activeSchedule(app.db, { currentGenVersion: TMS._GANTT_CACHE_VERSION }) : null;
+        if (_actF && _actF.stale) {
+          if (typeof window.initRateTemplate === 'function') await window.initRateTemplate();   // the pack's labour, as the cold path
+          if (TMS._load4DTemplate) await TMS._load4DTemplate();                                    // §TPL_WIRED, as the cold path
+          var _rgF = TMS._regenStaleScheduleNow ? TMS._regenStaleScheduleNow(app.db, 'activate') : { ran: false, ok: false, reason: 'no-helper' };
+          var _dropF = 0;
+          if (_rgF.ran && _rgF.ok) {
+            cacheDel('gantt'); cachedOps = null;
+            try { app.db.run("DELETE FROM kernel_ops WHERE op_type = 'ELEMENT_PLACE'"); } catch (eK) {}
+            _dropF = 1;
+          }
+          console.log('§TM_PLAY_SCHEDULE_FRESH where=activate stale=1 regen=' + (_rgF.ran ? 'ran/' + (_rgF.ok ? 'ok' : 'FAIL') : 'skip ' + _rgF.reason) +
+            ' genVersion=' + _actF.genVersion + '->' + TMS._GANTT_CACHE_VERSION + ' droppedPlayOrder=' + _dropF);
+        } else {
+          console.log('§TM_PLAY_SCHEDULE_FRESH where=activate stale=0 schedule=' + (_actF ? _actF.id + ' genVersion=' + _actF.genVersion : 'none'));
+        }
+      } catch (eF) { console.log('§TM_PLAY_SCHEDULE_FRESH where=activate ERROR ' + (eF && eF.message)); }
       // §S260e: Only use cache if it has ELEMENT_PLACE ops (not just picks)
       var _hasCachedPlaces = cachedOps && cachedOps.length > 0 &&
         cachedOps.some(function(o) { return o.op_type === 'ELEMENT_PLACE'; });

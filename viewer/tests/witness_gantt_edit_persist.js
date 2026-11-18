@@ -124,8 +124,8 @@ assert(!!undoFn && P.reach(undoFn.body, src).indexOf('_tmPersistEdit(') >= 0,
   'W-PERS-1b undoLastGanttEdit persists too — it mutates by restoring rows directly, so the wiring gate above cannot see it, and an un-persisted undo would silently come back on reload');
 
 // ── W-PERS-2: the deliberate exemption stays exempt.
-const btiFn = FNS.find(f => f.name === 'buildTaskIndex');
-assert(!!btiFn && btiFn.body.indexOf('_tmPersistEdit(') < 0,
+const btiFn = FNS.find(f => f.name === 'buildTaskIndex'), rgFn = FNS.find(f => f.name === '_regenStaleScheduleNow');   // §Q.31: the regen body moved here
+assert(!!btiFn && btiFn.body.indexOf('_tmPersistEdit(') < 0 && !!rgFn && rgFn.body.indexOf('_tmPersistEdit(') < 0,
   'W-PERS-2 buildTaskIndex (the §GANTT_SCHEDULE_STALE regen) does NOT persist — it runs on a plain page load, and wiring it would put a whole-db IDB write (252MB on Hospital) on every ordinary visit');
 
 // ── W-PERS-3: behaviour, in a sandbox. What persistDb actually receives.

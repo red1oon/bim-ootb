@@ -122,7 +122,7 @@ function makeTM(o) {   // o: { ops, idx | db, bld, SA, rules, gcv, logs }
   const rulerVar = (/^[ \t]*var _RULER_STEPS = \[[^\]]*\];/m.exec(tmSrc) || [''])[0];
   if (!rulerVar) throw new Error('_RULER_STEPS not found in the time_machine family');
   const code = [rulerVar].concat(SLICED.map(n => sliceFn(tmSrc, n))).concat([
-    o.db ? sliceFn(tmSrc, 'buildTaskIndex') : 'function buildTaskIndex() { return __idx; }',
+    o.db ? sliceFn(tmSrc, '_regenStaleScheduleNow') + '\n' + sliceFn(tmSrc, 'buildTaskIndex') : 'function buildTaskIndex() { return __idx; }',   // §Q.31: the regen is its own function now
     'function renderAtTime(ms) { _prevCursor = _cursor; _cursor = ms; }',   // the cursor write only; no scene here
     'function wireGanttResize() {} function wireGanttRulerShift() {} function _tmAnnotateCpm() {} function _tmPersistEdit() {}',
     'function _tmRebuildXrayCache() {} function _tmSay() {} function setTimeout() {} function tickMs() { return 3200000; }',
