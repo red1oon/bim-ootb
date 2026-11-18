@@ -157,6 +157,28 @@ jobs:
           echo "$v"
           if [ "$rc" -ne 0 ] || ! printf '%s' "$v" | grep -q 'verdict=PASS'; then exit 1; fi
 
+  # W-JSON-4D5D-LIVE (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.24.3, §Q.25.3): a real headless browser drives the LIVE Viewer's
+  # Settings > Edit Project JSON (5D rate pack + 4D template): edit, save, reload, the Viewer prices / schedules with the edit, Reset
+  # restores. Runs ONLY on the GitHub runner, never on a developer's machine (a headless GPU run beside a live tab has crashed it).
+  # It reads the deployed site, so it checks what users get, not this branch's code. Sandbox pass: run 44291708491, judged=6 fail=0.
+  live-json-editor:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with: { lfs: false }
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - name: puppeteer where the witness looks for it
+        run: mkdir -p "$HOME/bim-compiler" && cd "$HOME/bim-compiler" && npm init -y >/dev/null && npm i puppeteer@22.15.0 >/dev/null 2>&1 && ls node_modules/puppeteer/package.json
+      - name: Live JSON editing reaches pricing and the 4D template (W-JSON-4D5D-LIVE)
+        run: |
+          set -u; mkdir -p logs; rc=0
+          node viewer/tests/witness_json_4d5d_live.js < /dev/null > logs/ci_json_live.log 2>&1 || rc=$?
+          grep -aE '§PASS|§FAIL|§LIVE_GL|§LIVE_WAIT|§W-JSON' logs/ci_json_live.log || tail -30 logs/ci_json_live.log
+          v=$(grep -aE '^§W-JSON-4D5D-LIVE ' logs/ci_json_live.log | tail -1 || true)
+          if [ "$rc" -ne 0 ] || ! printf '%s' "$v" | grep -q ' PASS '; then exit 1; fi
+
   e2e-tests:
     # pinned: ubuntu-latest is rolling to 26.04, where `playwright install chromium` fails
     # ("Playwright does not support chromium on ubuntu26.04-x64", bim-ootb #3220 run 44147388376)
