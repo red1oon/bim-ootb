@@ -8,8 +8,8 @@
    "bim_element_base.csv",
    "BIM_Element_Trl_bn_BD.xml"
   ],
-  "rows": 1111,
-  "translated": 1008,
+  "rows": 1115,
+  "translated": 1012,
   "untranslated": 103
  },
  "labels": {
@@ -1123,10 +1123,14 @@
   "ui_exp_scope_whole": "পুরো ভবন",
   "ui_exp_scope_find": "Find নির্বাচন ({n})",
   "ui_exp_scope_find_tip": "Find যে {n}টি উপাদান আলাদা করেছে",
-  "ui_exp_scope_none": "আগে Find দিয়ে আলাদা করুন"
+  "ui_exp_scope_none": "আগে Find দিয়ে আলাদা করুন",
+  "ui_exp_frame": "ফ্রেম…",
+  "ui_exp_frame_tip": "ফাইলটি আপনাদের যৌথ স্থানাঙ্কে বসান: একটি ফ্রেম ফাইল (JSON) বেছে নিন",
+  "ui_exp_frame_db": "ডেটাবেস ফ্রেম",
+  "ui_exp_frame_refused": "প্রত্যাখ্যাত"
  },
  "tables": {
-  "AD_Message": 958,
+  "AD_Message": 962,
   "BIM_Element": 153
  },
  "terms": [

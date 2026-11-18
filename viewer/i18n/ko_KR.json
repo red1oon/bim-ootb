@@ -8,8 +8,8 @@
    "bim_element_base.csv",
    "BIM_Element_Trl_ko_KR.xml"
   ],
-  "rows": 1111,
-  "translated": 1008,
+  "rows": 1115,
+  "translated": 1012,
   "untranslated": 103
  },
  "labels": {
@@ -1123,10 +1123,14 @@
   "ui_exp_scope_whole": "건물 전체",
   "ui_exp_scope_find": "Find 선택 ({n})",
   "ui_exp_scope_find_tip": "Find가 분리한 {n}개 요소",
-  "ui_exp_scope_none": "먼저 Find로 분리하세요"
+  "ui_exp_scope_none": "먼저 Find로 분리하세요",
+  "ui_exp_frame": "좌표 프레임…",
+  "ui_exp_frame_tip": "파일을 공유 좌표에 배치: 프레임 파일 (JSON) 선택",
+  "ui_exp_frame_db": "DB 좌표",
+  "ui_exp_frame_refused": "거부됨"
  },
  "tables": {
-  "AD_Message": 958,
+  "AD_Message": 962,
   "BIM_Element": 153
  },
  "terms": [

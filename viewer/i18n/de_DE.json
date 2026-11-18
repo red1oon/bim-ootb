@@ -8,8 +8,8 @@
    "bim_element_base.csv",
    "BIM_Element_Trl_de_DE.xml"
   ],
-  "rows": 1111,
-  "translated": 1026,
+  "rows": 1115,
+  "translated": 1030,
   "untranslated": 85
  },
  "labels": {
@@ -1123,10 +1123,14 @@
   "ui_exp_scope_whole": "Ganzes Gebäude",
   "ui_exp_scope_find": "Find-Auswahl ({n})",
   "ui_exp_scope_find_tip": "die {n} Elemente, die Find isoliert hat",
-  "ui_exp_scope_none": "Zuerst mit Find isolieren"
+  "ui_exp_scope_none": "Zuerst mit Find isolieren",
+  "ui_exp_frame": "Rahmen…",
+  "ui_exp_frame_tip": "Die Datei in Ihre gemeinsamen Koordinaten setzen: Rahmendatei (JSON) wählen",
+  "ui_exp_frame_db": "DB-Rahmen",
+  "ui_exp_frame_refused": "abgelehnt"
  },
  "tables": {
-  "AD_Message": 958,
+  "AD_Message": 962,
   "BIM_Element": 153
  },
  "terms": [

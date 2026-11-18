@@ -8,8 +8,8 @@
    "bim_element_base.csv",
    "BIM_Element_Trl_af_ZA.xml"
   ],
-  "rows": 1111,
-  "translated": 1008,
+  "rows": 1115,
+  "translated": 1012,
   "untranslated": 103
  },
  "labels": {
@@ -1123,10 +1123,14 @@
   "ui_exp_scope_whole": "Hele gebou",
   "ui_exp_scope_find": "Find-keuse ({n})",
   "ui_exp_scope_find_tip": "die {n} elemente wat Find geïsoleer het",
-  "ui_exp_scope_none": "Isoleer eers met Find"
+  "ui_exp_scope_none": "Isoleer eers met Find",
+  "ui_exp_frame": "Raam…",
+  "ui_exp_frame_tip": "Plaas die lêer in julle gedeelde koördinate: kies 'n raamlêer (JSON)",
+  "ui_exp_frame_db": "DB-raam",
+  "ui_exp_frame_refused": "geweier"
  },
  "tables": {
-  "AD_Message": 958,
+  "AD_Message": 962,
   "BIM_Element": 153
  },
  "terms": [

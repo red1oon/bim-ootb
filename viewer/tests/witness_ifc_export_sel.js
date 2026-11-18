@@ -22,6 +22,11 @@
 //   LIVE_SEL        the real page: Find's own search box + Isolate button (real keys and mouse) makes A.activeGuidFilter; the Export menu's Find chip shows N = the isolate size and is enabled; a tap on it chooses and writes nothing;
 //                   the IFC row downloads <building>_selection_IFC4.ifc equal to the node writer's bytes for the same set; Find's Show all greys the chip again (why=no_isolate) and the scope falls back to whole; an EMPTY isolate set is not an isolate.
 //   RED CONTROL     IFC_EXPORT_RED=noselfilter makes collect ignore the selection: S1 must FAIL (exit 1).
+// STEP (d) (prompts/VIEWER_IFC_EXPORT_BY_DISCIPLINE.md "(d) SPEC", checks in witness_ifc_export_sel_d.js + witness_ifc_export_sel_d_check.py), ISSUE: "an upgraded building exported from the Viewer is not the add-on file the Modeller writes: generic parts, no materials / psets / part relations."
+//   S3 PARTS / S4 MATERIAL + PSET / GID   a fixture (GardenWorld + generated parts, relations, psets, valid GlobalIds) and the real HHS_Office_Federated_2d + HHS_Office (GID): python reads back aggregates, containment, materials, typed psets, GlobalIds.
+//   S5 PARITY     (env only: EXPORT_REAL_DB [+ EXPORT_REAL_DB_GUSSET], EXPORT_FRAME_JSON, EXPORT_REF_IFC_REBAR [+ EXPORT_REF_IFC_GUSSET]) the generated rows exported IFC2X3 with the frame = the reference add-on files: class counts, GlobalIds, bbox <= 1 mm, attributes. Unset = INCONCLUSIVE.
+//   LIVE_FRAME    the real page: the Frame control (real file chooser) reads a frame JSON; its summary is in the row's sub-line; the export equals the node writer's bytes with that frame; a refused file keeps the previous choice; the x chip returns to the DB frame.
+//   RED CONTROLS  IFC_EXPORT_RED=noparts must FAIL S3 (and S5 when its env is set); IFC_EXPORT_RED=nopsets must FAIL S4.
 // Run:  node viewer/tests/witness_ifc_export_sel.js            (python3 + ifcopenshell for S2; puppeteer from ~/bim-compiler/node_modules for LIVE; starts its own python http.server and kills it by PID)
 //       IFC_SEL_SKIP_LIVE=1 / IFC_SEL_SKIP_BIG=1 shorten the run (the skipped parts are listed as inconclusive, never PASS).
 'use strict';
@@ -36,7 +41,7 @@ const results = [], inconclusive = [];
 const ck = (id, ok, msg) => { results.push({ id, ok }); log((ok ? '§PASS ' : '§FAIL ') + id + ' ' + msg); };
 const inc = (id, why) => { inconclusive.push(id); log('§INCONCLUSIVE ' + id + ' ' + why); };
 const initSqlJs = require(require.resolve('sql.js', { paths: [path.join(ROOT, 'node_modules'), path.join(os.homedir(), 'bim-ootb', 'node_modules'), path.join(os.homedir(), 'bim-compiler', 'node_modules')] }));
-const X = require('../ifc_export_shared.js');
+const X = require('../ifc_export_shared.js'), LodIfc = require('../../modeller/lod/lod_ifc.js');
 const OUTDIR = fs.mkdtempSync(path.join(os.tmpdir(), 'ifcsel-'));
 const isSqlite = (p) => { try { const fd = fs.openSync(p, 'r'); const b = Buffer.alloc(16); fs.readSync(fd, b, 0, 16, 0); fs.closeSync(fd); return b.toString('latin1', 0, 15) === 'SQLite format 3' && fs.statSync(p).size > 8192; } catch (e) { return false; } };
 
@@ -181,13 +186,13 @@ function runCase(label, SQL, mono, geoDb, rows, schemas, red) {
       ck('COUNT:' + tag0 + ':' + schema, bad.length === 0 && sumDb === col.census.rows && sumW === st.written && p.products === st.written && fileClassSum === st.written && sumW + sumNg === sumDb && col.noGeometryList.length === sumNg && objtOk,
         'DB rows ' + sumDb + ' = written ' + sumW + ' + no-geometry ' + sumNg + '; file holds ' + p.products + ' products; proxied ' + prox + ' ' + fmtMap(st.proxied || {}) + ', generalised ' + gen + ' ' + fmtMap(st.generalised || {}) + ', ObjectType kept=' + objtOk + (bad.length ? ' MISMATCH ' + bad.join(' ') : '') + '; no-geometry listed: ' + fmtMap(ng));
     }
-    out[schema] = { sha: h1.sha, bytes: h1.bytes, file, written: res.stats.written, col };
+    out[schema] = { sha: h1.sha, bytes: h1.bytes, file, written: res.stats.written, col, res };
   }
   return out;
 }
 
 (async () => {
-  const SQL = await initSqlJs(); let browser = null, srv = null; const temp = [];
+  const SQL = await initSqlJs(); let browser = null, srv = null, dStep = null; const temp = [];
   const cleanup = () => { temp.forEach((f) => { try { fs.unlinkSync(f); } catch (e) { } }); };
   const finish = async (code) => { cleanup(); fs.writeFileSync(LOGF, OUT.join('\n') + '\n'); try { if (browser) await browser.close(); } catch (e) { } try { if (srv) srv.kill(); } catch (e) { } process.exit(code); };
   try {
@@ -199,6 +204,14 @@ function runCase(label, SQL, mono, geoDb, rows, schemas, red) {
       const gwBytes = fs.readFileSync(GW), gw = new SQL.Database(new Uint8Array(gwBytes)), gwRows = dbCounts(gw);
       // --- 1. MONOLITH, small (both schemas) -------------------------------------------------------
       const m1 = runCase('GardenWorld', SQL, gw, null, gwRows, RED ? ['IFC4'] : ['IFC4', 'IFC2X3'], RED === 'nopredefined');
+      // --- 1b. STEP (d): parts, materials, property sets, part relations, kept GlobalIds (fixture + real HHS_Office_Federated_2d) and the real parity S5 (env only)
+      if (!RED || RED === 'noparts' || RED === 'nopsets') {
+        const D = require('./witness_ifc_export_sel_d.js')({ SQL, X, L: LodIfc, ck, inc, log, py, RED, OUTDIR, hashParts, splitAttrs, unq, ROOT }); dStep = D;
+        D.runFixture(gwBytes);
+        const H2 = path.join(ROOT, 'buildings', 'HHS_Office_Federated_2d.db');
+        if (isSqlite(H2)) D.runHhs2d(fs.readFileSync(H2)); else inc('S3:HHS2d', 'buildings/HHS_Office_Federated_2d.db is absent or an LFS pointer');
+        D.runS5();
+      }
       if (!RED || RED === 'noselfilter') runSelections('GardenWorld', SQL, gw, m1, RED ? ['IFC4'] : ['IFC4', 'IFC2X3'], RED);
       // --- 2. SPLIT derived from it, same bytes -----------------------------------------------------
       if (!RED) {
@@ -211,6 +224,7 @@ function runCase(label, SQL, mono, geoDb, rows, schemas, red) {
             const hb = fs.readFileSync(HHS), hdb = new SQL.Database(new Uint8Array(hb)), hrows = dbCounts(hdb);
             const mh = runCase('HHS_Office', SQL, hdb, null, hrows, ['IFC4'], false);
             runSelections('HHS_Office', SQL, hdb, mh, ['IFC4'], '');
+            if (dStep && mh.IFC4) dStep.gidCheck('HHS_Office', hdb, mh.IFC4.col, mh.IFC4.res, mh.IFC4.file);
             const hsp = splitDb(SQL, hb), ms = runCase('HHS_Office', SQL, hsp.meta, hsp.geo, hrows, ['IFC4', 'IFC2X3'], false);
             ck('SPLIT_EQ_MONO:HHS_Office:IFC4', !!(mh.IFC4 && ms.IFC4 && mh.IFC4.sha === ms.IFC4.sha), 'split pair vs monolith: ' + (ms.IFC4 && ms.IFC4.sha.slice(0, 16)) + ' / ' + (mh.IFC4 && mh.IFC4.sha.slice(0, 16)));
           } else inc('MONO_HHS', 'buildings/HHS_Office_Federated_extracted.db is absent or an LFS pointer');
@@ -303,6 +317,38 @@ function runCase(label, SQL, mono, geoDb, rows, schemas, red) {
         const nBefore = files().length, ref = await page.evaluate(async () => { const r = await APP.exportIfcShared({ schema: 'IFC4', maxMB: -1, download: true }); return { ok: r.ok, why: r.why, status: (document.getElementById('import-status') || document.getElementById('status') || {}).textContent }; }); await sl(800);
         ck('LIVE_REFUSE:' + tag, ref.ok === false && ref.why === 'too_large' && /too large for the browser/.test(ref.status || '') && files().length === nBefore, 'over-limit export refused: ' + JSON.stringify(ref) + '; files before/after ' + nBefore + '/' + files().length);
 
+        // ---- LIVE_FRAME (step (d)): the Frame control of the IFC row (real file chooser), the export with that frame, a refused file, the x chip ----
+        if (!RED) {
+          const nmF = st.ab.replace(/\.(ifc|db)$/i, '').replace(/_(extracted|meta)$/i, ''), frameJ = { frame_name: 'witness frame', project_name: 'Witness', shift_m: [10, 20, 0], site: { location_m: [1, 2, 0], ref_direction: [1, 0] } };
+          const fF = path.join(os.tmpdir(), 'ifcsel_frame_ok.json'), fBad = path.join(os.tmpdir(), 'ifcsel_frame_bad.json'), fTxt = path.join(os.tmpdir(), 'ifcsel_frame_txt.json');
+          fs.writeFileSync(fF, JSON.stringify(frameJ)); fs.writeFileSync(fBad, JSON.stringify({ shift_m: [1, 2] })); fs.writeFileSync(fTxt, 'this is not json'); temp.push(fF, fBad, fTxt);
+          const nodeFrame = (frame) => { const dbN = tag === 'monolith' ? new SQL.Database(new Uint8Array(gwB)) : sp.meta, geoN = tag === 'monolith' ? null : sp.geo, col = X.collect(dbN, geoN, null), res = X.build(col, { schema: 'IFC4', name: nmF + '_IFC4.ifc', buildingName: nmF, projectName: nmF, frame: frame || null }); return crypto.createHash('sha256').update(res.parts.join('')).digest('hex'); };
+          const pick = async (file) => { await closeMenuF(); if (!(await openMenu())) return false; const [ch] = await Promise.all([page.waitForFileChooser({ timeout: 20000 }), clickSel('#v-export-panel .ve-frame')]); await ch.accept([file]); await sl(700); return true; };
+          const closeMenuF = async () => { if (await panelShown()) { await page.keyboard.press('Escape'); await sl(300); } };
+          const subOf = () => page.evaluate(() => { const d = document.querySelector('#v-export-panel .ve-row[data-key="ifc"] .ve-sub'); return d ? d.textContent : null; });
+          const stat = () => page.evaluate(() => (document.getElementById('import-status') || document.getElementById('status') || {}).textContent);
+          const newFile = async (act) => { const before = new Set(files()); await act(); for (let i = 0; i < 360; i++) { const hit = files().filter((f) => !before.has(f)); if (hit.length) return hit[0]; await sl(500); } return null; };
+          let okPick = false; try { okPick = await pick(fF); } catch (e) { log('  [' + tag + ' note] frame chooser: ' + e.message); }
+          if (!okPick) inc('LIVE_FRAME:' + tag, 'the Frame control did not open a file chooser');
+          else {
+            const choice = await page.evaluate(() => APP.ifcFrameChoice()), sub1 = await subOf(), nFilesF0 = files().length;
+            ck('LIVE_FRAME_CHOOSE:' + tag, !!(choice && choice.name === 'ifcsel_frame_ok.json' && /ifcsel_frame_ok\.json/.test(sub1 || '') && /shift/.test(sub1 || '') && files().length === nFilesF0 && lines.some((l) => /§VIEWER_EXPORT_MENU ifc_frame=ifcsel_frame_ok\.json/.test(l)) && lines.some((l) => /§IFC_EXPORT_SEL_FRAME loaded ifcsel_frame_ok\.json/.test(l))), 'a frame file read by the real file chooser: choice ' + JSON.stringify(choice) + ', sub-line ' + JSON.stringify(sub1) + ', no file written by choosing');
+            if (await panelShown()) { await page.keyboard.press('Escape'); await sl(300); }
+            await openMenu(); const fw = await newFile(async () => { await clickTitle('ifc'); });
+            const bytesF = fw ? fs.readFileSync(path.join(dl, fw)) : Buffer.alloc(0), shaF = crypto.createHash('sha256').update(bytesF).digest('hex'), headF = bytesF.slice(0, 2500).toString();
+            const selF = lines.filter((l) => /§IFC_EXPORT_SEL mode=whole/.test(l)).pop() || '', menuF = lines.filter((l) => /§VIEWER_EXPORT_MENU item=ifc action=exportIfcShared/.test(l)).pop() || '';
+            ck('LIVE_FRAME_EXPORT:' + tag, !!(fw && /_IFC4\.ifc$/.test(fw) && shaF === nodeFrame(frameJ) && /frame: witness frame \(shift_m=\[10\.0, 20\.0, 0\.0\]\)/.test(headF) && / frame=ifcsel_frame_ok\.json /.test(selF) && /frame=ifcsel_frame_ok\.json$/.test(menuF)), 'the export with the chosen frame (' + fw + ') equals the node writer\'s bytes with the same frame (' + shaF.slice(0, 16) + ' / ' + nodeFrame(frameJ).slice(0, 16) + '); the file description states the frame; §IFC_EXPORT_SEL ... frame=ifcsel_frame_ok.json; menu line ' + menuF.slice(-60));
+            // a refused frame states why and keeps the previous choice; a file that is not JSON the same
+            await pick(fBad); const c2 = await page.evaluate(() => APP.ifcFrameChoice()), st2 = await stat(); await pick(fTxt); const c3 = await page.evaluate(() => APP.ifcFrameChoice()), st3 = await stat();
+            ck('LIVE_FRAME_REFUSE:' + tag, !!(c2 && c2.name === 'ifcsel_frame_ok.json' && c3 && c3.name === 'ifcsel_frame_ok.json' && /refused: shift_m must be three numbers/.test(st2 || '') && /refused: not valid JSON/.test(st3 || '') && lines.some((l) => /§IFC_EXPORT_SEL_FRAME REFUSED ifcsel_frame_bad\.json/.test(l))), 'a frame file with shift_m of two numbers and a file that is not JSON are refused with their reason and the previous choice stays: ' + JSON.stringify(st2) + ' / ' + JSON.stringify(st3) + ' / choice ' + JSON.stringify(c3));
+            // the x chip: back to the DB frame
+            if (!(await panelShown())) await openMenu(); await clickSel('#v-export-panel .ve-frame-clear'); await sl(500);
+            const c4 = await page.evaluate(() => APP.ifcFrameChoice()), sub4 = await subOf(); await closeMenuF(); await openMenu();
+            const fw2 = await newFile(async () => { await clickTitle('ifc'); }), sha2 = fw2 ? crypto.createHash('sha256').update(fs.readFileSync(path.join(dl, fw2))).digest('hex') : null;
+            ck('LIVE_FRAME_CLEAR:' + tag, !!(c4 === null && /DB frame/.test(sub4 || '') && sha2 && sha2 === nodeFrame(null) && lines.filter((l) => /§IFC_EXPORT_SEL mode=whole/.test(l)).pop().indexOf(' frame=db ') > 0), 'the x chip clears the frame: choice ' + JSON.stringify(c4) + ', sub-line ' + JSON.stringify(sub4) + '; the next export equals the node writer\'s bytes without a frame (' + (sha2 && sha2.slice(0, 16)) + ' / ' + nodeFrame(null).slice(0, 16) + ')');
+            await closeMenuF();
+          }
+        }
         // ---- LIVE_SEL (step (c)): Find's own search box + Isolate button make the isolate; the Export menu's Find chip follows it ----
         const nm0 = st.ab.replace(/\.(ifc|db)$/i, '').replace(/_(extracted|meta)$/i, '');
         const menuIfc = () => page.evaluate(() => { const d = document.querySelector('#v-export-panel .ve-row[data-key="ifc"]'); if (!d) return null; const ch = Array.from(d.querySelectorAll('.ve-scope')).map((c) => ({ scope: c.getAttribute('data-scope'), off: c.getAttribute('data-disabled') === '1', why: c.getAttribute('data-why') || '', on: c.getAttribute('aria-pressed') === 'true', text: c.textContent.trim() })); return { chips: ch, sub: (d.querySelector('.ve-sub') || {}).textContent, title: d.getAttribute('title') || '', hint: (d.querySelector('.ve-hint') || {}).textContent || '', nRows: document.querySelectorAll('#v-export-panel .ve-row').length }; });

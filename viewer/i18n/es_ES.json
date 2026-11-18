@@ -8,8 +8,8 @@
    "bim_element_base.csv",
    "BIM_Element_Trl_es_ES.xml"
   ],
-  "rows": 1111,
-  "translated": 1070,
+  "rows": 1115,
+  "translated": 1074,
   "untranslated": 41
  },
  "labels": {
@@ -1123,10 +1123,14 @@
   "ui_exp_scope_whole": "Todo el edificio",
   "ui_exp_scope_find": "Selección de Find ({n})",
   "ui_exp_scope_find_tip": "los {n} elementos que Find ha aislado",
-  "ui_exp_scope_none": "Primero aísle con Find"
+  "ui_exp_scope_none": "Primero aísle con Find",
+  "ui_exp_frame": "Marco…",
+  "ui_exp_frame_tip": "Colocar el archivo en sus coordenadas compartidas: elija un archivo de marco (JSON)",
+  "ui_exp_frame_db": "marco de la base",
+  "ui_exp_frame_refused": "rechazado"
  },
  "tables": {
-  "AD_Message": 958,
+  "AD_Message": 962,
   "BIM_Element": 153
  },
  "terms": [

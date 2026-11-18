@@ -8,8 +8,8 @@
    "bim_element_base.csv",
    "BIM_Element_Trl_ms_MY.xml"
   ],
-  "rows": 1111,
-  "translated": 1008,
+  "rows": 1115,
+  "translated": 1012,
   "untranslated": 103
  },
  "labels": {
@@ -1123,10 +1123,14 @@
   "ui_exp_scope_whole": "Seluruh bangunan",
   "ui_exp_scope_find": "Pilihan Find ({n})",
   "ui_exp_scope_find_tip": "{n} elemen yang diasingkan oleh Find",
-  "ui_exp_scope_none": "Gunakan Find dan asingkan dahulu"
+  "ui_exp_scope_none": "Gunakan Find dan asingkan dahulu",
+  "ui_exp_frame": "Bingkai…",
+  "ui_exp_frame_tip": "Letakkan fail dalam koordinat kongsi anda: pilih fail bingkai (JSON)",
+  "ui_exp_frame_db": "bingkai pangkalan data",
+  "ui_exp_frame_refused": "ditolak"
  },
  "tables": {
-  "AD_Message": 958,
+  "AD_Message": 962,
   "BIM_Element": 153
  },
  "terms": [
