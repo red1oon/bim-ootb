@@ -236,7 +236,7 @@ function build(bld, force, want, hooks) {   // hooks.onDb(db, res) — READ-ONLY
         const tmsb = TMP.buildSandbox({ tmSrc: tmSrc, SA: SA, SG: SG, CP: CP, GM: GM, SS: SS,
           LABOR_RATES: sb.LABOR_RATES, console: console });
         const base = { start: PROJECT_START, laborRates: sb.LABOR_RATES, rates: sb.RATES,
-          nameOverrides: sb.SEQUENCE_NAME_OVERRIDES, defaultRule: sb.SEQUENCE_DEFAULT,
+          nameOverrides: sb.SEQUENCE_NAME_OVERRIDES, disciplineTrades: sb.SEQUENCE_DISCIPLINE_TRADE, defaultRule: sb.SEQUENCE_DEFAULT,
           scheduleGate: SG, shiftHours: T.calendar.hours_per_shift, template: T, db: db,
           // §ZONE_DISPLAY_AUTHORING — the hook every real UI call site passes. Without it this run
           // authors windows from the RAW solve and never runs the CPM display pass, i.e. it is not

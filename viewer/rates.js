@@ -144,6 +144,17 @@ var LABOR_RATES = {
     rate_per_day: 165, crew_size: 2, max_crews: 2, trade: 'Pipefitter (Skilled)',
     productivity: {IfcPipe:25,IfcPipeSegment:25,IfcPipeFitting:15,IfcFlowSegment:20,IfcFlowFitting:15,IfcFlowStorageDevice:4,IfcFlowTreatmentDevice:4,IfcDistributionElement:8,IfcValve:20,IfcFireSuppressionTerminal:25}
   },
+  // §PIPE_TRADES (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.28): fire protection and mechanical piping are their own crews on site
+  // (sprinkler fitters, pipefitters), working beside the plumbers. Rate, crew size, crew cap and productivity COPIED from PLUMBER
+  // (the §S65 copy-from-sibling method) — only the crew identity is new, no number is.
+  SPRINKLER_FITTER: {
+    rate_per_day: 165, crew_size: 2, max_crews: 2, trade: 'Sprinkler Fitter (Skilled)',
+    productivity: {IfcPipe:25,IfcPipeSegment:25,IfcPipeFitting:15,IfcFlowSegment:20,IfcFlowFitting:15,IfcFlowStorageDevice:4,IfcFlowTreatmentDevice:4,IfcDistributionElement:8,IfcValve:20,IfcFireSuppressionTerminal:25}
+  },
+  PIPEFITTER: {
+    rate_per_day: 165, crew_size: 2, max_crews: 2, trade: 'Pipefitter (Skilled)',
+    productivity: {IfcPipe:25,IfcPipeSegment:25,IfcPipeFitting:15,IfcFlowSegment:20,IfcFlowFitting:15,IfcFlowStorageDevice:4,IfcFlowTreatmentDevice:4,IfcDistributionElement:8,IfcValve:20,IfcFireSuppressionTerminal:25}
+  },
   ELECTRICIAN: {
     rate_per_day: 175, crew_size: 2, max_crews: 2, trade: 'Electrician (Skilled)',
     productivity: {IfcCableCarrier:30,IfcCableCarrierSegment:30,IfcLightFixture:20,IfcOutlet:25,IfcElectricAppliance:15,IfcFlowController:10,IfcSwitchingDevice:10,IfcAlarm:25,IfcController:10,IfcDistributionControlElement:10,IfcActuator:10,IfcSensor:10,IfcFlowInstrument:10,IfcProtectiveDeviceTrippingUnit:10,IfcUnitaryControlElement:10}
@@ -360,6 +371,13 @@ var SEQUENCE_DEFAULT = {phase:'Architecture Envelope',sequence:6,resource:'MASON
 // stay at their structural seq). This is the IN-FILE SYNC DEFAULT: every page that prices (viewer.html since RATES_SOURCE_OF_TRUTH
 // §6.5, mep_report.html, boq_charts.html, the Modeller's §S8) then loads rates/sequence_rules.json over it, and the Time Machine
 // waits for that. Keep it identical to the JSON's NAME_OVERRIDES (same convention as SEQUENCE_RULES above; witness_sequence_template_lock.js).
+// §PIPE_TRADES (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.28): the crew for PIPE work by the element's own discipline
+// (elements_meta.discipline). Applied ONLY where the class rule already says PLUMBER — phase and sequence never change, only which
+// crew lays the pipe. Measured cause: one PLUMBER crew carried fire protection + heating + cooling + mechanical piping, and was the
+// whole duration of every DCMA check-8 task (Hospital L3 63 of 64 crew-days, LTU Plan_1 173 of 174). PLB / SAN stay with PLUMBER.
+// The generic 'MEP' tag is NOT mapped: in a single-model building (Duplex, HHS) it covers ALL services incl. domestic plumbing, so it
+// cannot name a crew; only the specific system tags do.
+var SEQUENCE_DISCIPLINE_TRADE = { FP: 'SPRINKLER_FITTER', HEAT: 'PIPEFITTER', COOL: 'PIPEFITTER' };
 // §CIVIL_PHASE (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §Q) — phase by DISCIPLINE for civil models,
 // consulted before the class rule ONLY when an element's discipline is one of these civil codes (import_worker.js
 // CIVIL_DISCS, from file names). Building disciplines never match → building schedules unchanged (NON-IMPACT rule).
