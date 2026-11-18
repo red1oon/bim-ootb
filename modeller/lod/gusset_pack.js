@@ -310,6 +310,7 @@
     var S = K.survey(cx), t1 = nowMs(), ends = S.rows.filter(function (r) { return r.cls === 'STEEL_SKEW'; }), FLAG = rv('filler_flag_mm');
     LOG('§LODUP_GUSSET_JUDGED judged=' + ends.length + ' (STEEL_SKEW ends of the survey)' + (ends.length ? '' : ' INCONCLUSIVE (no angle brace end: nothing was judged)'));
     var parts = [], CH = [], out = [], reasons = {}, clashBy = {}, G = K.seedGenerated(inp, opts, 'GEN-GU-'), ruleFail = [], addedVerts = 0, judged = 0, skippedAll = {}, gen = [], eccAll = [];
+    LOG('§LODUP_GUSSET_NEIGHBOURS model_as_read + live_parts_of_other_packs=' + Object.keys(G).length + (opts.noGenerated ? ' (OFF: the old behaviour, break switch)' : '') + ' (op-log parts seeded as clash neighbours, the same rule for every pack)');
     var bump = function (k) { reasons[k] = (reasons[k] || 0) + 1; };
     var change = function (kind, guid, cls, host, rule, detail) { CH.push({ kind: kind, guid: guid, cls: cls, host: host, rule: rule, detail: detail }); };
     var RULE = 'Gusset connection: AISC 360-16 detailing limits (J2.4, J2.2b, J3.3, J3.4M, J3.5, J5.2 filler tag) + shared fin-plate rows + gusset rows [' + RULES.filler_max_mm.source + ']; configuration only, capacity not checked';

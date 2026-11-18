@@ -505,6 +505,7 @@
     opts = opts || {}; var LOG = opts.log || function () { }, t0 = nowMs(), cx = makeCtx(inp, RULES, LOG), rv = cx.rv, meta = cx.meta;
     LOG('§LODUP_JOINT_MODE clash_check=' + (opts.noClash ? 'OFF(break)' : 'on') + ' rolled_only=' + rv('rolled_section_only') + ' bolts=M' + rv('bolt_diameter_mm') + ' plate=' + rv('plate_thickness_mm') + ' table=' + JSON.stringify(weldTable(rv('weld_min_table_mm'))));
     var S = survey(cx), t1 = nowMs(), rows = S.rows, parts = [], CH = [], out = [], reasons = {}, clashBy = {}, G = seedGenerated(inp, opts, 'GEN-CR-'), ruleFail = [], addedVerts = 0, judged = 0, skippedAll = {}, gen = [];
+    LOG('§LODUP_JOINT_NEIGHBOURS model_as_read + live_parts_of_other_packs=' + Object.keys(G).length + (opts.noGenerated ? ' (OFF: the old behaviour, break switch)' : '') + ' (op-log parts seeded as clash neighbours, the same rule for every pack)');
     var bump = function (k) { reasons[k] = (reasons[k] || 0) + 1; };
     var change = function (kind, guid, cls, host, rule, detail) { CH.push({ kind: kind, guid: guid, cls: cls, host: host, rule: rule, detail: detail }); };
     var lab = LABEL, ruleTxt = 'Fin plate joint (single plate shear): AISC 360-16 rows + defaults [' + RULES.bolt_pitch_mm.source + ']; configuration only, capacity not checked';
