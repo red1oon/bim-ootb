@@ -38,6 +38,7 @@ const CASES = [
   { id: 'IFBRANCH', pubs: { 'p_if.js': 'window.PubH = { v: 1 };' }, reader: 'window.__seen_H = 0; if (window.PubH) { window.__seen_H = PubH.v; }', probe: '__seen_H', want: 'load-guarded' },
   { id: 'OPTCHAIN', pubs: { 'p_opt.js': 'window.PubK = { v: 1 };' }, reader: 'window.__seen_K = window.PubK?.v === 1;', probe: '__seen_K', want: 'load-guarded' },
   { id: 'TRY', pubs: { 'p_try.js': 'window.PubL = { v: 1 };' }, reader: 'try { window.__seen_L = PubL.v; } catch (e) { window.__seen_L = 0; }', probe: '__seen_L', want: 'load-guarded' },
+  { id: 'EARLYRET', pubs: { 'p_early.js': 'window.PubO = { v: 1 };' }, reader: "window.__seen_O = 0; (function () { if (!window.PubO) { return; } var o1 = window.PubO; window.__seen_O = o1.v; })();", probe: '__seen_O', want: 'load-guarded' },
   { id: 'CALL', pubs: { 'p_call.js': 'window.PubI = { v: 1 };' }, reader: 'window.R_I = function () { return PubI.v; };', call: 'R_I', want: 'call', readerFirstOnPage: true },
   { id: 'CALLG', pubs: { 'p_callg.js': 'window.PubJ = { v: 1 };' }, reader: "window.R_J = function () { return typeof PubJ !== 'undefined' ? PubJ.v : 0; };", call: 'R_J', want: 'call-guarded' },
   { id: 'MEMBER', pubs: { 'p_ns1.js': 'window.NS = window.NS || {}; NS.a = { v: 1 };', 'p_ns2.js': 'window.NS = window.NS || {}; NS.b = { v: 2 };' },

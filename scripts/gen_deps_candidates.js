@@ -98,6 +98,9 @@ function facts(src, o) {
     return null;
   };
   const mentions = (t, name) => { let hit = false; (function w(n) { if (hit || !n || typeof n.type !== 'string') return; if ((n.type === 'Identifier' || n.type === 'MemberExpression') && globalName(n) === name) { hit = true; return; } for (const k of KEYS[n.type] || []) { const v = n[k]; if (Array.isArray(v)) v.forEach(w); else if (v && typeof v === 'object') w(v); } })(t); return hit; };
+  // an earlier statement of the same block is `if (<mentions name>) return|throw …` (the guard-and-bail shape)
+  const exits = s => s && (s.type === 'ReturnStatement' || s.type === 'ThrowStatement' || (s.type === 'BlockStatement' && s.body.length && exits(s.body[s.body.length - 1])));
+  const earlyExit = (body, n, name) => { for (const s of body) { if (s === n) return false; if (s.type === 'IfStatement' && exits(s.consequent) && mentions(s.test, name)) return true; } return false; };
   const classify = (node, name) => {
     let n = node, guarded = false;
     for (let q = parent.get(n); q; n = q, q = parent.get(q)) {
@@ -106,6 +109,7 @@ function facts(src, o) {
       else if (q.type === 'IfStatement' || q.type === 'ConditionalExpression' || q.type === 'WhileStatement') { if (q.test === n || mentions(q.test, name)) guarded = true; }
       else if (q.type === 'ChainExpression' || (q.type === 'MemberExpression' && q.optional) || (q.type === 'CallExpression' && q.optional)) guarded = true;
       else if (q.type === 'TryStatement' && q.block === n) guarded = true;
+      else if ((q.type === 'BlockStatement' || q.type === 'Program') && earlyExit(q.body, n, name)) guarded = true;
       if (isFn(q) && !isIife(q)) return guarded ? 'call-guarded' : 'call';
     }
     return guarded ? 'load-guarded' : 'load';
