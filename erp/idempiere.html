@@ -551,10 +551,10 @@
 <script src="error_beacon.js?v=1" onerror="console.warn('§LOAD_FAIL error_beacon.js — field-error capture disabled')"></script><!-- SYSTEM_MONITOR_WIDGETS §H — minimal field-error beacon (G2 seed); loads early to catch boot errors -->
 <script src="vfs_detect.js?v=1"></script>
 <script src="seed_key.js?v=1"></script><!-- SEAM F10 — the ONE seed IDB key owner (window.ERP_SEED_KEY); before first idb use + system_monitor -->
-<script src="../common/i18n/lang_choice.js?v=1"></script><script src="erp_i18n.js?v=10"></script><!-- UI locales (bim-compiler prompts/ERP_UI_LOCALES.md) — W-ERP-I18N -->
-<script src="ad_parser.js?v=27"></script>
+<script src="../common/i18n/lang_choice.js?v=1"></script><script src="menu_name.js?v=1"></script><script src="erp_i18n.js?v=11"></script><!-- UI locales (bim-compiler prompts/ERP_UI_LOCALES.md) — W-ERP-I18N -->
+<script src="ad_parser.js?v=28"></script>
 <script src="field_help.js?v=1"></script>
-<script src="../common/help/help_query.js?v=2"></script><script src="../common/door/assist_core.js?v=1"></script><script src="../common/help/help_dym.js?v=2"></script><script src="help_records_core.js?v=2"></script><script src="help_search.js?v=5"></script><script src="../common/help/help_grammar.js?v=1"></script><script src="help_actions.js?v=1"></script><!-- VOCAB_MESSAGE_CATALOG §10 H2: the How To question box (deterministic, no AI inside) — W-HELP-SHOWCASE S3 --><!-- VOCAB_MESSAGE_CATALOG §7 P1b: ONE field tooltip setter + the Tool Tip panel (legacy WEditor / HelpController) — W-FIELD-HELP -->
+<script src="../common/help/help_query.js?v=2"></script><script src="../common/door/assist_core.js?v=1"></script><script src="../common/help/help_dym.js?v=2"></script><script src="help_records_core.js?v=3"></script><script src="help_search.js?v=6"></script><script src="../common/help/help_grammar.js?v=1"></script><script src="help_actions.js?v=1"></script><!-- VOCAB_MESSAGE_CATALOG §10 H2: the How To question box (deterministic, no AI inside) — W-HELP-SHOWCASE S3 --><!-- VOCAB_MESSAGE_CATALOG §7 P1b: ONE field tooltip setter + the Tool Tip panel (legacy WEditor / HelpController) — W-FIELD-HELP -->
 <!-- UI_UNPARK_RESUME.md — proven AD engines (source of truth: bim-compiler build/erp/): logic evaluator
      (W-LOGIC-EVAL 3044/3044) · DocAction FSM (W-*-FSM, 22 tables) · beforeSave hooks (W-*-SAVE, 12 installers). -->
 <script src="ad_evaluator.js?v=24"></script>
@@ -576,9 +576,9 @@
 <!-- W-ACCESS-HARDEN (ERP_PROJECT_REVIEW.md §2.1): the MRole-faithful gate engine, twin of
      build/erp/ad_access.js. Loaded BEFORE idmp_session.js, which now delegates its access
      decisions to window.AdAccess instead of computing them independently. -->
-<script src="ad_access.js?v=4"></script>
+<script src="ad_access.js?v=5"></script>
 <script src="doc_actions.js?v=1"></script><!-- the ONE getValidActions + checkActionAccess join (page, seam, door) -->
-<script src="idmp_session.js?v=25"></script>
+<script src="idmp_session.js?v=26"></script>
 <!-- DESCRIPTOR SEAM (IDEMPIERE_2.md §pivot, renderer #2) — one chrome, N dictionaries. AD = first descriptor
      (facets ARE ADParser/ADData/IdmpSession above, verbatim). MUST load after those three. -->
 <script src="erp_descriptor.js?v=1"></script>
@@ -945,6 +945,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   var _curKeyByTab = {};     // tabIndex -> current record key (this window)
   var _curQ = null;          // the active tab's query contract { tm, q, where } — the op-log fold admits created rows through it
   var _procMenuIds = {};    // AD_Process ids on the role's menu (W-FIELD-HELP F5)
+  var _leafMenuIds = {};    // §19.14 AD_Menu ids of the role's X / F / I / T menu entries (the help box's gate)
   var _winByName = {};       // AD window name (lowercased) -> windowId — built as the menu renders; drives IdmpHost.focus
 
   function $(id) { return document.getElementById(id); }
@@ -1645,9 +1646,10 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     if (window.ErpI18n) ErpI18n.applyMenuTree(roots);   // AD_Menu_Trl / central Window|Process|Form _Trl (§L1); English kept on node._en
     // Role-scope: prune W leaves the role can't open + P/R ∉ ad_process_access + X ∉ ad_form_access
     // + empty folders (docs §3b.1 + §AD-MENU-PRF-LIVE). Sets from buildContext (real grant rows).
-    var scoped = (_session && SES && SES.scopeMenu) ? SES.scopeMenu(roots, _session.winSet, _session.procSet, _session.formSet) : { tree: roots, visible: 0, total: 0 };
+    var scoped = (_session && SES && SES.scopeMenu) ? SES.scopeMenu(roots, _session.winSet, _session.procSet, _session.formSet, _session.leafSets) : { tree: roots, visible: 0, total: 0 };
     _lastMenu = scoped;
     var tree = $('idmp-tree'); tree.innerHTML = '';
+    _winByName = {}; _procMenuIds = {}; _leafMenuIds = {};   // §19.14: the menu's id sets are the CURRENT role's (renderNode refills them); kept across a role switch they let the help box admit the old role's entries
     var groups = 0, leaves = 0;
     scoped.tree.forEach(function (n) { var r = renderNode(n); tree.appendChild(r.dom); groups += r.groups; leaves += r.leaves; });
     console.log('§IDEMPIERE menu groups=' + groups + ' leaves=' + leaves + ' visibleWindows=' + scoped.visible + '/' + scoped.total + ' source=ad_menu handAuthored=0');
@@ -1675,6 +1677,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       leaves++;
       if (node.action === 'W' && node.windowId) _winByName[(node._en || node.name || '').toLowerCase()] = Number(node.windowId);  // name->id for IdmpHost.focus (English key, locale-proof)
       if ((node.action === 'P' || node.action === 'R') && node.processId) _procMenuIds[Number(node.processId)] = 1;   // §7 the role's menu processes (W-FIELD-HELP F5 denominator)
+      if ('XFIT'.indexOf(node.action) >= 0 && node.action) _leafMenuIds[Number(node.id)] = 1;   // §19.14 the role's form / workflow / info / task entries (the help box's gate)
       row.addEventListener('click', function () {
         document.querySelectorAll('.idmp-row.leaf.active').forEach(function (e) { e.classList.remove('active'); });
         row.classList.add('active');
@@ -3126,6 +3129,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         if (nw) { ev.preventDefault(); _howtoNew(Number(nw.getAttribute('data-help-new'))); return; }
         var pr = ev.target.closest ? ev.target.closest('a[data-help-proc]') : null;   // §19.9: a process / report of the role's menu opens as from the menu
         if (pr) { ev.preventDefault(); var pid = Number(pr.getAttribute('data-help-proc')), pon = window.__idmpFieldHelp.menu().processes.indexOf(pid) >= 0; console.log('§HELP_LINK process=' + pid + ' onMenu=' + pon); if (pon) openProcess(pid, pr.textContent); else status('Not on this role\'s menu (process ' + pid + ')'); return; }
+        var lf = ev.target.closest ? ev.target.closest('a[data-help-menu]') : null;   // §19.14: a form / workflow / info / task entry: click THAT menu entry, so the box opens exactly what the menu opens
+        if (lf) { ev.preventDefault(); var mid = Number(lf.getAttribute('data-help-menu')), row = document.querySelector('#idmp-tree .idmp-row.leaf[data-menu-id="' + mid + '"]'); console.log('§HELP_LINK menu=' + mid + ' onMenu=' + !!row); if (row) row.click(); else status('Not on this role\'s menu (menu entry ' + mid + ')'); return; }
         var a = ev.target.closest ? ev.target.closest('a[data-help-win]') : null; if (!a) return; ev.preventDefault();
         var wid = Number(a.getAttribute('data-help-win')), on = window.__idmpFieldHelp.menu().windows.indexOf(wid) >= 0;
         console.log('§HELP_LINK window=' + wid + ' onMenu=' + on);
@@ -3141,7 +3146,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var lang = ErpI18n.lang;
     return Promise.all([ErpI18n.loadHelp('en_US'), lang === 'en_US' ? Promise.resolve(null) : ErpI18n.loadHelp(lang), ErpI18n.loadHelpIndex(lang)]).then(function (r) {
       if (!r[0]) return; _howtoPack = r[0];
-      _howtoIdx = HelpSearch.indexFrom({ q: _sqlRows, en: r[0], pack: r[1], fsm: window.AdDocFsm, windowIds: window.__idmpFieldHelp.menu().windows, processIds: window.__idmpFieldHelp.menu().processes, hq: r[2] });   // §19.9 the role's menu processes too
+      _howtoIdx = HelpSearch.indexFrom({ q: _sqlRows, en: r[0], pack: r[1], fsm: window.AdDocFsm, windowIds: window.__idmpFieldHelp.menu().windows, processIds: window.__idmpFieldHelp.menu().processes, menuIds: window.__idmpFieldHelp.menu().leaves, hq: r[2] });   // §19.9 the role's menu processes too
       _howtoLocal = _howtoIdx.localHowto; _howtoRows = (_howtoLocal ? r[1].howto : r[0].howto) || [];
       console.log('§HELP_SEARCH index lang=' + lang + ' windows=' + _howtoIdx.counts.windows + ' records=' + _howtoIdx.counts.records + ' actions=' + _howtoIdx.counts.actions + ' statuses=' + _howtoIdx.counts.statuses + ' howto=' + _howtoIdx.counts.howto + (_howtoLocal ? ' (' + lang + ')' : ' (en_US)') + ' phrases=' + _howtoIdx.size.phrases + ' vocab=' + ((r[2] && r[2].vocab) ? r[2].vocab.length : 'none'));
       _howtoCtx();
@@ -3233,6 +3238,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     if (c.window) h += '<div class="hs-row"><span class="hs-k">' + escH(_T('help.window', 'Window')) + '</span><a href="#" data-help-win="' + c.window.id + '">' + escH(c.window.name) + '</a>' +
       (window.HelpActions && HelpActions.canNew(_session && _session.winSet, c.window.id) && _winNewable(c.window.id) ? ' <a href="#" class="hs-new" data-help-new="' + c.window.id + '">' + escH(_T('tb.new', 'New')) + '</a>' : '') + '</div>';
     if (c.process) h += '<div class="hs-row"><span class="hs-k">' + escH(c.process.report ? _T('help.report', 'Report') : _T('help.process', 'Process')) + '</span><a href="#" data-help-proc="' + c.process.id + '">' + escH(c.process.name) + '</a></div>';   // §19.9
+    if (c.leaf) h += '<div class="hs-row"><span class="hs-k">' + escH(_T('help.' + c.leaf.kind, c.leaf.kind)) + '</span><a href="#" data-help-menu="' + c.leaf.menuId + '">' + escH(c.leaf.name) + '</a></div>';   // §19.14 the label is a dictionary element (chrome.json help.form / .workflow / .info / .task)
     if (c.action) {
       h += '<div class="hs-row"><span class="hs-k">' + escH(_T('help.action', 'Action')) + '</span>' + escH(c.action.name) + ' — ' + escH(c.action.description || '') +
         '<div class="hs-sub">' + escH(_T('help.allowed', 'Allowed when the document is')) + ': ' + escH(c.action.allowedFrom.join(', ')) + '</div>' +
@@ -3251,7 +3257,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   state: function () { var tab = _curTab(), rec = _records[_recIdx]; return { win: _activeWin, openWins: Object.keys(_openWins).length, table: tab ? tab.tableName : null, key: tab && rec ? recVal(rec, _keyCol(tab)) : null, docno: rec ? recVal(rec, 'DocumentNo') : null, newMode: !!_newMode, inlineForm: !!document.getElementById('idmp-inline-mount'), roleOrgWhere: (window.APP && window.APP.roleOrgWhere) || null, roleId: _session && _session.role ? _session.role.id : null, userId: _session && _session.user ? _session.user.id : null, clientId: _session && _session.client ? _session.client.id : null, rw: _session && _session.winSet ? Object.keys(_session.winSet).filter(function (k) { return _session.winSet[k].rw; }).map(Number) : [] }; } };   // W-HELP-SHOWCASE's handle (the real widget, no second renderer)
   // W-FIELD-HELP's handle on the REAL render paths (no second renderer): the role's menu windows/processes, the read-only form, the parameter form.
   window.__idmpFieldHelp = {
-    menu: function () { var w = {}; Object.keys(_winByName).forEach(function (k) { w[_winByName[k]] = 1; }); return { windows: Object.keys(w).map(Number), processes: Object.keys(_procMenuIds).map(Number) }; },
+    menu: function () { var w = {}; Object.keys(_winByName).forEach(function (k) { w[_winByName[k]] = 1; }); return { windows: Object.keys(w).map(Number), processes: Object.keys(_procMenuIds).map(Number), leaves: Object.keys(_leafMenuIds).map(Number) }; },
     windowModel: function (wid) { return ADP.getWindow(db, wid); },
     readonlyForm: function (tab, rec) { var f = el('div', 'idmp-form'); _appendReadonlyFields(f, tab, rec || null); return f; },
     procForm: function (pid) { var proc = window.AdProcess.readProcess(_b3(window.__idmpDb), pid); if (!proc.paras.length) return null; _procRecord = null; renderProcParamForm(proc); return proc; }

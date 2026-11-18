@@ -11,7 +11,8 @@
 //   §19.5 card.dym = up to 3 names (HelpDym over the role's record names) when the top ranked hit is not tier 0; the box shows them as one separate line, a pick searches, nothing runs.
 //   3 the how-to: the matched window's own row first, else the core's best-ranked how-to row. card.hits = the core's top 5 (after the role gate) = what W-HQ-BOX compares to HelpQuery directly.
 //   §19.9 card.process = the best-ranked process or report of the role's menu in the top 5 hits ({id, name, report}); the page shows it as a Process / Report row that opens like the menu (openProcess).
-// Falsifiers: HS_BREAK=nophrase (no dictionary phrase matching -> S3 FAILs) · nocjk (CJK read as words, not characters -> S6 FAILs) · revhits (card.hits reversed in this environment -> W-HQ-BOX FAILs) · winonly (§19.9: the gate admits windows only -> W-HQ-LEGACY-SUPERSET L6/L7 FAIL).
+//   §19.14 card.leaf = the best-ranked form / workflow / info window / task entry of the role's menu in the top 5 hits ({menuId, kind, name}); the page's row clicks that menu entry (the menu's own handler).
+// Falsifiers: HS_BREAK=nophrase (no dictionary phrase matching -> S3 FAILs) · nocjk (CJK read as words, not characters -> S6 FAILs) · revhits (card.hits reversed in this environment -> W-HQ-BOX FAILs) · winonly (§19.9: the gate admits windows only -> W-HQ-LEGACY-SUPERSET L6/L7 FAIL) · noleaf (§19.14: the gate drops menu entries -> W-HQ-MENU-LEAVES M3/M4 FAIL).
 (function (root) {
   'use strict';
   var BREAK = (typeof process !== 'undefined' && process.env && process.env.HS_BREAK) || (root && root.__HS_BREAK) || '';
@@ -61,8 +62,9 @@
       if (win) howto.forEach(function (r) { if (!own && r.ad_window_id === win.id) own = r; });   // the matched window's own row first (a lookup, not a score)
       hits.forEach(function (x) { if (!top && x.k === 'howto' && howById[x.id]) top = howById[x.id]; });
       var proc = null; hits.slice(0, 5).forEach(function (x) { if (!proc && x.k === 'process' && x.rec.gate) proc = { id: x.rec.gate[1], name: x.rec.n, report: !!(o.reports && o.reports[x.rec.gate[1]]) }; });   // §19.9
+      var leaf = null; hits.slice(0, 5).forEach(function (x) { if (!leaf && x.rec.gate && x.rec.gate[0] === 'menu') leaf = { menuId: x.rec.gate[1], kind: x.k, name: x.rec.n }; });   // §19.14
       var shown = hits.slice(0, 5).map(function (x) { return { id: x.id, k: x.k, tier: x.tier, score: x.score }; }); if (BREAK === 'revhits') shown.reverse();
-      var card = { question: String(question), words: ws, cjk: cjk, matched: matched, window: win ? { id: win.id, name: win.name } : null, action: null, cli: null, guide: null, howto: own || top, process: proc, hits: shown, dym: o.dym ? o.dym(String(question), hits) : [] };   // §19.5 the "Did you mean" names (common/help/help_dym.js): [] when the top result is tier 0
+      var card = { question: String(question), words: ws, cjk: cjk, matched: matched, window: win ? { id: win.id, name: win.name } : null, action: null, cli: null, guide: null, howto: own || top, process: proc, leaf: leaf, hits: shown, dym: o.dym ? o.dym(String(question), hits) : [] };   // §19.5 the "Did you mean" names (common/help/help_dym.js): [] when the top result is tier 0
       if (act) {
         var a = act.a, kind = win && o.kindOf ? o.kindOf(win.id) : null;
         card.action = { code: act.code, name: a.name, description: a.description, allowedFrom: a.allowedFrom || [], alternatives: act.alt || [] };   // 'reverse' = Reverse - Accrual AND Reverse - Correct: both named
@@ -85,20 +87,21 @@
     if (typeof module !== 'undefined' && module.exports && typeof require === 'function') { try { return JSON.parse(require('fs').readFileSync(require('path').join(__dirname, 'i18n', 'help', lang, 'index.json'), 'utf8')); } catch (e) { /* no file: {} */ } }
     return {};
   }
-  // indexFrom({q, en, pack, fsm, windowIds, processIds, hq}) — THE one way to build the index from the dictionary (the page, the witness and the CLI's erp.ask all call it):
+  // indexFrom({q, en, pack, fsm, windowIds, processIds, menuIds, hq}) — THE one way to build the index from the dictionary (the page, the witness and the CLI's erp.ask all call it):
   //   q(sql) -> rows (any handle); en = the en_US help pack (actions, how-to); pack = the screen language's pack or null (names, how-to); fsm = AdDocFsm (TRANSITION); windowIds = the role's menu windows;
   //   hq = the language's index.json (only its header is read; optional in Node). The RECORDS are made by HelpRecords.build (erp/help_records_core.js, the build tool's function) and ranked by HelpQuery.
   //   Names: the language's first (shown), the English ones also matched. How-to: the language's rows when the pack has them, else the English rows (marked by the caller).
   //   The role gate is applied AFTER ranking (design D3): a record is shown when it is a window of the role's menu (windowIds) or a how-to row of one, or (§19.9) a process/report of the role's menu (processIds,
-  //   optional: without it the gate is windows-only, as erp.ask still calls it). Doctype records are not admitted (legacy's menu search has no doctypes).
+  //   optional: without it the gate is windows-only, as erp.ask still calls it), or (§19.14) a form / workflow / info window / task entry of the role's menu (menuIds = AD_Menu_IDs, optional). Doctype records are not admitted (legacy's menu search has no doctypes).
   function indexFrom(c) {
     var q = c.q, en = c.en || {}, pk = c.pack || null, nm = (pk && pk.names) || { windows: {}, tables: {}, actions: {}, statuses: {} }, ids = c.windowIds || [], idset = {}, HR = dep('HelpRecords', './help_records_core.js'), HQ = dep('HelpQuery', '../common/help/help_query.js');
     ids.forEach(function (i) { idset[i] = 1; });
     var pset = {}, reports = {}; if (BREAK !== 'winonly') (c.processIds || []).forEach(function (i) { pset[Number(i)] = 1; });
     if (Object.keys(pset).length) q("SELECT ad_process_id AS id FROM ad_process WHERE isreport='Y'").forEach(function (r) { if (pset[Number(r.id)]) reports[Number(r.id)] = 1; });   // the menu's own kind: R = a report
+    var mset = {}; if (BREAK !== 'noleaf') (c.menuIds || []).forEach(function (i) { mset[Number(i)] = 1; });   // §19.14
     var built = HR.build({ q: q, en: en, pack: pk }), hdr = headerOf(c, (pk && pk.lang) || 'en_US');
     var handle = HQ.create({ kinds: built.kinds, records: built.records, bm25: hdr.bm25, weights: hdr.weights, nospace: hdr.nospace, vocab: hdr.vocab }, { text: built.resolve });   // lazy: the index is made on the first query (D8)
-    var allowed = function (gate) { return gate[0] === 'window' ? !!idset[gate[1]] : (gate[0] === 'process' && !!pset[gate[1]]); };
+    var GATES = { window: idset, process: pset, menu: mset }, allowed = function (gate) { var set = GATES[gate[0]]; return !!(set && set[gate[1]]); };
     var wins = built.records.filter(function (r) { return r.k === 'window' && allowed(r.gate); }).map(function (r) { return { id: r.gate[1], name: r.n, alt: r.a || [] }; });
     var stEn = {}; q("SELECT value AS v, name AS n FROM ad_ref_list WHERE ad_reference_id=131 AND isactive='Y'").forEach(function (r) { stEn[r.v] = String(r.n); });
     var stName = function (code) { return nm.statuses[code] || stEn[code] || code; }, enAct = en.actions || {}, acts = {};

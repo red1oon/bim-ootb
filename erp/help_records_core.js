@@ -4,13 +4,13 @@
 // and the run time (erp/help_search.js indexFrom, q = the live dictionary handle, packs as the page loaded them). PURE: no require, no fs, no DOM; runs unchanged in Node and in the page.
 // It only LISTS records from sources that already exist; it ranks nothing and invents nothing:
 //   window   every active AD_Window (name: the language's from the help pack's names.windows, else the dictionary's; the dictionary's English name and the window's own table names are other names `a`)
-//   process  every active AD_Process · doctype every active C_DocType · action AD_Ref_List 135 (description = the English pack's text) · status AD_Ref_List 131
+//   process  every active AD_Process · form / workflow / info / task (§19.14) every active AD_Menu leaf of action X / F / I / T, named as the MENU names it (help pack names.menus, built by erp/menu_name.js), gate ['menu', AD_Menu_ID] · doctype every active C_DocType · action AD_Ref_List 135 (description = the English pack's text) · status AD_Ref_List 131
 //   howto    the how-to rows the ERP help box shows: the language pack's rows when it has them, else the English rows
 // Text is never copied into a record: d / h are an INTEGER into one virtual text list, text(i) = pack.texts[i] for i < pack.texts.length, then the how-to texts, then the action descriptions.
 // `gate` = [kind, id] is opaque to the query core; the page's role gate reads it. Actions and statuses carry no gate.
 (function (root) {
   'use strict';
-  var KINDS = ['window', 'process', 'doctype', 'action', 'status', 'howto'];
+  var KINDS = ['window', 'process', 'form', 'workflow', 'info', 'task', 'doctype', 'action', 'status', 'howto'];
   function howtoText(r) { return (r.source && r.source.translation ? r.source.translation : (r.source && r.source.sentences) || []).join(' '); }
   function rowsOf(en, pack) { return (pack && pack.howto && pack.howto.length) ? pack.howto : (en.howto || []); }
   // the virtual text list beyond pack.texts: [how-to texts in row order..., action descriptions in code order...]
@@ -43,6 +43,8 @@
     });
     q("SELECT ad_process_id AS id, name AS n FROM ad_process WHERE isactive='Y' ORDER BY ad_process_id").forEach(function (p) { var t = (nm.processes || {})[String(p.id)], n = t || String(p.n), r = withA({ id: 'process/' + p.id, k: 'process', n: n }, alts(n, t ? [String(p.n)] : [])); r.gate = ['process', Number(p.id)]; recs.push(r); });   // §19.10 the language's name (help pack names.processes), the dictionary's English name another name `a`, as windows
     q("SELECT c_doctype_id AS id, name AS n FROM c_doctype WHERE isactive='Y' ORDER BY c_doctype_id").forEach(function (d) { recs.push({ id: 'doctype/' + d.id, k: 'doctype', n: String(d.n), gate: ['doctype', Number(d.id)] }); });
+    var LEAF = { X: 'form', F: 'workflow', I: 'info', T: 'task' };   // §19.14 legacy's menu kinds (AbstractMenuPanel.java:204-228); a record per menu ENTRY, as legacy's menu search lists entries
+    q("SELECT ad_menu_id AS id, action AS a, name AS n FROM ad_menu WHERE isactive='Y' AND issummary='N' AND action IN ('X','F','I','T') ORDER BY ad_menu_id").forEach(function (m) { var t = (nm.menus || {})[String(m.id)], en0 = String(m.n || '').trim(), n = t || en0, r = withA({ id: 'menu/' + m.id, k: LEAF[m.a], n: n }, alts(n, t ? [en0] : [])); r.gate = ['menu', Number(m.id)]; recs.push(r); });
     var codes = Object.keys(en.actions || {}).sort();
     q("SELECT value AS v, name AS n FROM ad_ref_list WHERE ad_reference_id=135 AND isactive='Y' AND value<>'--' ORDER BY value").forEach(function (r) {
       var t = nm.actions[r.v], n = t || String(r.n), a = alts(n, t ? [String(r.n)] : []), ci = codes.indexOf(r.v), rec = withA({ id: 'action/' + r.v, k: 'action', n: n }, a);

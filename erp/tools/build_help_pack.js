@@ -113,6 +113,10 @@ function buildNames(lang) {
   q("SELECT ad_window_id wid FROM ad_window WHERE isactive='Y'").forEach((r) => { const n = pick(W, r.wid); if (n) out.windows[r.wid] = n; });
   q("SELECT ad_table_id tid FROM ad_table WHERE isactive='Y' AND ad_window_id IS NOT NULL").forEach((r) => { const n = pick(T, r.tid); if (n) out.tables[r.tid] = n; });
   q("SELECT ad_process_id pid FROM ad_process WHERE isactive='Y'").forEach((r) => { const n = pick(P, r.pid); if (n) out.processes[r.pid] = n; });   // §19.10 the process / report names (AD_Process_Trl), read as the window names are
+  // §19.14 the form / workflow / info window / task menu entries: the name the MENU shows in this language (erp/menu_name.js, the menu's own rule, over the committed screen pack)
+  const MN = require(path.join(ERP, 'menu_name.js')), sf = path.join(ERP, 'i18n', lang + '.json'), screen = fs.existsSync(sf) ? JSON.parse(fs.readFileSync(sf, 'utf8')) : null; out.menus = {};
+  q("SELECT ad_menu_id id, action a, ad_window_id w, ad_process_id p, ad_form_id f, iscentrallymaintained c FROM ad_menu WHERE isactive='Y' AND issummary='N' AND action IN ('X','F','I','T')").forEach((r) => {
+    const n = MN.of({ id: r.id, action: r.a, windowId: r.w, processId: r.p, formId: r.f }, screen, r.c === 'Y').name; if (n) out.menus[r.id] = n; });
   q("SELECT ad_ref_list_id rid, ad_reference_id ref, value v FROM ad_ref_list WHERE ad_reference_id IN (131,135) AND isactive='Y' AND value<>'--'").forEach((r) => { const n = pick(R, r.rid); if (n) out[r.ref === 135 ? 'actions' : 'statuses'][r.v] = n; });
   return out;
 }
@@ -158,7 +162,7 @@ function main() {
     const names = buildNames(lang), hl = buildHowtoLang(lang, names, howto);
     fs.writeFileSync(f, JSON.stringify(Object.assign({ lang, spec: en.spec, sources: SOURCES[lang], texts, fields, names }, hl.length ? { howto: hl } : {})));
     console.log('§HELP_PACK ' + lang + ' fields=' + b.n + ' of ' + b.total + ' texts=' + texts.length + ' stale-original=' + b.stale + ' names windows=' + Object.keys(names.windows).length + ' tables=' + Object.keys(names.tables).length +
-      ' actions=' + Object.keys(names.actions).length + ' statuses=' + Object.keys(names.statuses).length + ' processes=' + Object.keys(names.processes).length + ' howto=' + hl.length + ' links=' + hl.reduce((a, r) => a + (r.html.match(/data-help-win=/g) || []).length, 0) + ' bytes=' + fs.statSync(f).size);
+      ' actions=' + Object.keys(names.actions).length + ' statuses=' + Object.keys(names.statuses).length + ' processes=' + Object.keys(names.processes).length + ' menus=' + Object.keys(names.menus).length + ' howto=' + hl.length + ' links=' + hl.reduce((a, r) => a + (r.html.match(/data-help-win=/g) || []).length, 0) + ' bytes=' + fs.statSync(f).size);
   });
 }
 // §19.10: the witnesses read the SAME source list (W-HQ-PROC-NAMES), never a copy of it

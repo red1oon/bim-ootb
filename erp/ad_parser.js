@@ -150,7 +150,7 @@
     // Get all menu nodes
     var menuR = db.exec(
       'SELECT m.AD_Menu_ID, m.Name, m.Description, m.IsSummary, m.Action, m.AD_Window_ID, ' +
-      'm.AD_Process_ID, m.AD_Form_ID ' +                       // §AD-MENU-PRF-LIVE — P/R leaves carry the process, X the form
+      'm.AD_Process_ID, m.AD_Form_ID, m.AD_Workflow_ID, m.AD_Task_ID, m.AD_InfoWindow_ID ' +   // §AD-MENU-PRF-LIVE — P/R leaves carry the process, X the form; §19.14 F the workflow, T the task, I the info window
       'FROM AD_Menu m WHERE m.IsActive = \'Y\' ORDER BY m.Name');
     if (!menuR.length) { console.log('§AD_PARSER getMenuTree no menus'); return []; }
 
@@ -159,7 +159,7 @@
       menuMap[row[0]] = {
         id: row[0], name: (row[1] || '').trim(), description: row[2],
         isSummary: row[3] === 'Y', action: row[4], windowId: row[5],
-        processId: row[6], formId: row[7],
+        processId: row[6], formId: row[7], workflowId: row[8], taskId: row[9], infoWindowId: row[10],
         children: []
       };
     });
