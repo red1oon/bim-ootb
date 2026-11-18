@@ -966,3 +966,7 @@ CPM reads the dates the drag produced — it never changes one.",I
 1001108,ui_exp_scope_find,Find selection ({n}),I
 1001109,ui_exp_scope_find_tip,the {n} elements Find has isolated,I
 1001110,ui_exp_scope_none,Find and isolate first,I
+1001111,ui_exp_frame,Frame…,I
+1001112,ui_exp_frame_tip,Place the file in your shared coordinates: choose a frame file (JSON),I
+1001113,ui_exp_frame_db,DB frame,I
+1001114,ui_exp_frame_refused,refused,I

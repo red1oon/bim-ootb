@@ -7,7 +7,7 @@
    "ad_message_base.csv",
    "bim_element_base.csv"
   ],
-  "rows": 1111,
+  "rows": 1115,
   "translated": 0,
   "untranslated": 0
  },
@@ -1122,10 +1122,14 @@
   "ui_exp_scope_whole": "Whole building",
   "ui_exp_scope_find": "Find selection ({n})",
   "ui_exp_scope_find_tip": "the {n} elements Find has isolated",
-  "ui_exp_scope_none": "Find and isolate first"
+  "ui_exp_scope_none": "Find and isolate first",
+  "ui_exp_frame": "Frame…",
+  "ui_exp_frame_tip": "Place the file in your shared coordinates: choose a frame file (JSON)",
+  "ui_exp_frame_db": "DB frame",
+  "ui_exp_frame_refused": "refused"
  },
  "tables": {
-  "AD_Message": 958,
+  "AD_Message": 962,
   "BIM_Element": 153
  },
  "terms": [

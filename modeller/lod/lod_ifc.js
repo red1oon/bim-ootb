@@ -15,6 +15,9 @@
 // ANY ELEMENT (opts.anyElement, the Viewer's whole-building export; prompts/VIEWER_IFC_EXPORT_BY_DISCIPLINE.md "(b) SPEC"): an element NOT flagged part:true is written as a generic product through GENMAP (the full attribute list of the schema;
 //        a class the schema lacks is GENERALISED to its nearest ancestor, source class kept in ObjectType; a class with no mapping is an IfcBuildingElementProxy, ObjectType = the source class; both COUNTED per source class, never dropped).
 //        Extra element fields: {rgba 'r,g,b,a'}. A storey with no stated elevation is written with Elevation $ (no z invented); an element with no storey is contained in the IfcBuilding. Without anyElement nothing above changes.
+// ANY ELEMENT, step (d) (prompts/VIEWER_IFC_EXPORT_BY_DISCIPLINE.md "(d) SPEC"): with anyElement an element flagged part:true still goes through the PARTS path below, exactly as the Modeller writes it (a rebar set with no stated diameter is written as a generic product and counted, not refused);
+//        generic elements may carry {mat (IfcMaterial name), psets {pset: {name: string|number|boolean}}, keepGid (the DB guid is a valid unique GlobalId: written as is), parent {guid, gid, elementId} (an element_parts row)}. Written parent + child -> one IfcRelAggregates per parent
+//        (the child is then not contained in a storey); a child without its parent carries Pset BIMC_Part. The Modeller never sets anyElement: its bytes do not move.
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
   else root.LodIfc = factory();
@@ -291,13 +294,13 @@
     if (!supported.length) { res.why = ANY ? 'No element with geometry to write.' : 'No generated part to write: run an upgrade first.'; return res; }
     var missing = {}; if (!ANY) supported.forEach(function (e) { if (!(e.storey in ELEV)) missing[e.storey] = 1; });
     if (Object.keys(missing).length) { res.why = 'Storey ' + Object.keys(missing).map(function (s) { return '"' + s + '"'; }).join(', ') + ' has no elevation: load a frame JSON that lists it under storey_elevations_m (no elevation is invented).'; res.stats.missingStoreys = Object.keys(missing); return res; }
-    var classes = {}; if (!ANY) supported.forEach(function (e) { classes[e.cls] = (classes[e.cls] || 0) + 1; });
+    var classes = {}; supported.forEach(function (e) { if (!ANY || e.part) classes[e.cls] = (classes[e.cls] || 0) + 1; });
     var nid = 0, chunks = [], buf = [], bytes = 0, mesh = { closed: 0, open: 0, openTwoSided: 0, flipped: 0, degenerate: 0 };
     function ent(txt) { var n = ++nid; buf.push('#' + n + '=' + txt + ';'); if (buf.length >= 20000) flush(); return '#' + n; }
     function flush() { var t = buf.join('\n') + '\n'; chunks.push(t); bytes += t.length; buf = []; }
     var pt3 = function (x, y, z) { return ent('IFCCARTESIANPOINT((' + real(x) + ',' + real(y) + ',' + real(z) + '))'); };
     var frameTxt = hasFrame ? 'frame: ' + (FR.frame_name || 'given frame') + ' (shift_m=[' + SHIFT.map(pyFloat).join(', ') + '])' : 'frame: DB frame written as is (no frame file given)';
-    var header = 'ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION((' + str(SCHEMA === 'IFC2X3' ? 'ViewDefinition [CoordinationView_V2.0]' : 'ViewDefinition [ReferenceView_V1.2]') + ',' + str(ANY ? (opts.description || 'BIMCompiler Viewer export: the whole building; ' + frameTxt) : 'LOD 400 add-on: generated parts only; ' + frameTxt) + "),'2;1');\n" +
+    var header = 'ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION((' + str(SCHEMA === 'IFC2X3' ? 'ViewDefinition [CoordinationView_V2.0]' : 'ViewDefinition [ReferenceView_V1.2]') + ',' + str(ANY ? (opts.description || 'BIMCompiler Viewer export: the whole building') + '; ' + frameTxt : 'LOD 400 add-on: generated parts only; ' + frameTxt) + "),'2;1');\n" +
       'FILE_NAME(' + str(name) + ',' + str(TSTAMP) + ",(''),(''),'BIMCompiler Modeller','BIMCompiler LOD Upgrade','');\nFILE_SCHEMA((" + str(SCHEMA) + '));\nENDSEC;\nDATA;\n';
     // owner history, units, contexts, project, site, building
     var person = ent("IFCPERSON($," + str('BIMCompiler') + ',$,$,$,$,$,$)'), org = ent('IFCORGANIZATION($,' + str('BIMCompiler') + ',$,$,$)'), po = ent('IFCPERSONANDORGANIZATION(' + person + ',' + org + ',$)');
@@ -317,16 +320,16 @@
       return STOREYS[nm];
     }
     function material(nm) { if (!MATS[nm]) MATS[nm] = { id: ent('IFCMATERIAL(' + str(nm) + (SCHEMA === 'IFC4' ? ',$,$' : '') + ')'), els: [] }; return MATS[nm]; }
-    function pset(obj, psetName, props, key) {
+    function pset(obj, psetName, props, key, plain) {
       var vals = []; Object.keys(props).forEach(function (kk) {
         var v = props[kk]; if (v === null || v === undefined) return; var nv;
-        if (typeof v === 'number') nv = 'IFCREAL(' + real(v) + ')'; else if (kk === 'Detail' || kk === 'Rule') nv = 'IFCTEXT(' + str(v) + ')'; else nv = 'IFCLABEL(' + str(v) + ')';
+        if (typeof v === 'boolean') nv = 'IFCBOOLEAN(' + (v ? '.T.' : '.F.') + ')'; else if (typeof v === 'number') nv = 'IFCREAL(' + real(v) + ')'; else if (!plain && (kk === 'Detail' || kk === 'Rule')) nv = 'IFCTEXT(' + str(v) + ')'; else nv = 'IFCLABEL(' + str(v) + ')';
         vals.push(ent('IFCPROPERTYSINGLEVALUE(' + str(kk) + ',$,' + nv + ',$)'));
       });
       var ps = ent('IFCPROPERTYSET(' + str(gid('pset:' + key + ':' + psetName)) + ',' + oh + ',' + str(psetName) + ',$,(' + vals.join(',') + '))');
       ent('IFCRELDEFINESBYPROPERTIES(' + str(gid('rel:' + key + ':' + psetName)) + ',' + oh + ',$,$,(' + obj + '),' + ps + ')');
     }
-    var STYLES = {}, BLDCONT = [], gen = { written: 0, byClass: {}, proxied: {}, generalised: {}, noStorey: 0 };
+    var STYLES = {}, BLDCONT = [], gen = { written: 0, byClass: {}, proxied: {}, generalised: {}, noStorey: 0 }, PEND = [], WR = {}, dx = { partClasses: {}, assemblies: 0, noMaterial: 0, psets: 0, props: 0, aggregates: 0, orphanParts: 0, gidKept: 0, gidDerived: 0, partsAsGeneric: 0 };
     function styleOf(rgba) {   // one IfcPresentationStyleAssignment per distinct colour (ANY mode); null when the element states none
       if (!rgba) return null; var c = String(rgba).split(',').map(Number); if (c.length < 3 || c.some(function (x, i) { return i < 4 && c[i] !== c[i]; })) return null;
       var f = function (x) { x = x > 1 ? x / 255 : x; return Math.round(x * 1e4) / 1e4; }, a = c.length > 3 ? c[3] : 1; a = a > 1 ? a / 255 : a; var k = [f(c[0]), f(c[1]), f(c[2]), Math.round(a * 1e4) / 1e4].join(',');
@@ -361,7 +364,7 @@
     var fails = [], untraced = 0, n = supported.length, ei;
     // storeys first, in the order the parts need them (as the oracle creates them on first use)
     for (ei = 0; ei < n; ei++) {
-      var e = supported[ei]; K.state.prog = { label: ANY ? 'IFC: element' : 'Add-on IFC: part', done: ei, total: n }; var isGen = ANY && !e.part, hasSt = !isGen || (!!e.storey && e.storey !== 'Unknown'); if (hasSt) storey(e.storey);
+      var e = supported[ei]; K.state.prog = { label: ANY ? 'IFC: element' : 'Add-on IFC: part', done: ei, total: n }; var partFb = ANY && !!e.part && e.cls === 'IfcReinforcingBar' && !statedDias(e.detail).length, isGen = ANY && (!e.part || partFb), hasSt = (!isGen && !ANY) || (!!e.storey && e.storey !== 'Unknown'); if (partFb) dx.partsAsGeneric++; if (hasSt) storey(e.storey);
       var cr = yield* components(e.tris, SHIFT, mesh, K), comps = cr.comps, c0 = cr.c0, cls = e.cls, sname = shortName(e.name), status = JOINT_CLS[cls] ? 'configuration only, capacity not checked' : 'ADDED (generated by rule, not authored)', gparts = [];
       if (e.detail === null || e.detail === undefined) untraced++;
       var groups = [[null, comps.map(function (_, i) { return i; })]], dias = [], asg = null;
@@ -375,11 +378,14 @@
         var key = groups[gi][0], sub = groups[gi][1].map(function (i) { return comps[i]; }), eid = groups.length === 1 ? e.guid : e.guid + '#T' + fmtG(key);
         if (gi > 0) split[cls] = (split[cls] || 0) + 1;
         if (isGen) {   // ANY ELEMENT: a generic product, the full attribute list of the schema (GENMAP); the source class stays in ObjectType when it was generalised or proxied
-          var gc = genClass(cls, SCHEMA, noPre), gg = geometry(e, sub, c0), sty = styleOf(e.rgba), gattrs = [str(gid(e.guid)), oh, str(e.name || ''), '$', gc.kind === 'mapped' ? '$' : str(cls), gg.lp, gg.shape, str(e.guid)];
+          var gc = genClass(cls, SCHEMA, noPre), gg = geometry(e, sub, c0), sty = styleOf(e.rgba), keep = !!e.keepGid && !opts.breakGuid, gattrs = [str(keep ? e.guid : gid(e.guid)), oh, str(e.name || ''), '$', gc.kind === 'mapped' ? '$' : str(cls), gg.lp, gg.shape, str(e.guid)];
           if (sty) gg.items.forEach(function (it) { ent('IFCSTYLEDITEM(' + it + ',(' + sty + '),$)'); });
           var gEnt = ent(gc.cls.toUpperCase() + '(' + gattrs.concat(gc.tail).join(',') + ')'); gen.written++; classes[gc.cls] = (classes[gc.cls] || 0) + 1;
           var bc = gen.byClass[cls] = gen.byClass[cls] || { cls: gc.cls, n: 0, kind: gc.kind }; bc.n++; if (gc.kind === 'proxy') gen.proxied[cls] = (gen.proxied[cls] || 0) + 1; else if (gc.kind === 'generalised') gen.generalised[cls] = (gen.generalised[cls] || 0) + 1;
-          if (hasSt) (CONTAINED[e.storey] = CONTAINED[e.storey] || []).push(gEnt); else { BLDCONT.push(gEnt); gen.noStorey++; }
+          if (keep) dx.gidKept++; else dx.gidDerived++; (WR[e.guid] = WR[e.guid] || []).push(gEnt); if (!hasSt) gen.noStorey++;
+          if (e.mat) material(String(e.mat)).els.push(gEnt); else dx.noMaterial++;
+          if (e.psets) Object.keys(e.psets).sort().forEach(function (pn) { var pr = e.psets[pn], nms = Object.keys(pr).sort().filter(function (k) { return pr[k] !== null && pr[k] !== undefined; }), srt = {}; if (!nms.length) return; nms.forEach(function (k) { srt[k] = pr[k]; }); pset(gEnt, pn, srt, e.guid, true); dx.psets++; dx.props += nms.length; });
+          PEND.push({ ent: gEnt, guid: e.guid, storey: hasSt ? e.storey : null, parent: e.parent || null, gen: !partFb });
           continue;
         }
         var geo = geometry(e, sub, c0), attrs = [str(gid(eid)), oh, str(sname + (groups.length > 1 ? ' (T' + fmtG(key) + ' bars)' : '')), str(e.name), '$', geo.lp, geo.shape, str(e.guid)], mname, extra = {}, tail = [];
@@ -401,20 +407,34 @@
           else tail = SCHEMA === 'IFC4' ? ['.NOTDEFINED.'] : [];   // IfcPlate
         }
         var entId = ent(cls.toUpperCase() + '(' + attrs.concat(tail).join(',') + ')'); nParts++; material(mname).els.push(entId);
+        if (ANY) { dx.partClasses[cls] = (dx.partClasses[cls] || 0) + 1; (WR[e.guid] = WR[e.guid] || []).push(entId); if (gi === 0) { var pbc = gen.byClass[cls] = gen.byClass[cls] || { cls: cls, n: 0, kind: 'part' }; pbc.n++; gen.written++; if (!hasSt) gen.noStorey++; } }
         var props = { HostGlobalId: e.host, Rule: e.rule, Detail: e.detail, Status: status, GeneratedElementId: e.guid }; Object.keys(extra).forEach(function (kk) { props[kk] = extra[kk]; });
         pset(entId, 'BIMC_Upgrade', props, eid);
         var base = null; for (var si = 0; si < SUFFIXES.length; si++) if (e.guid.length > SUFFIXES[si].length && e.guid.slice(-SUFFIXES[si].length) === SUFFIXES[si]) { base = e.guid.slice(0, -SUFFIXES[si].length); break; }
-        if (base && JOINT_CLS[cls]) { var gk = base + '\u0000' + e.storey; if (!GROUPS[gk]) { GROUPS[gk] = { base: base, storey: e.storey, parts: [], first: geo.locPoint }; groupOrder.push(gk); } GROUPS[gk].parts.push(entId); }
+        if (base && JOINT_CLS[cls] && (!ANY || hasSt)) { var gk = base + '\u0000' + e.storey; if (!GROUPS[gk]) { GROUPS[gk] = { base: base, storey: e.storey, parts: [], first: geo.locPoint }; groupOrder.push(gk); } GROUPS[gk].parts.push(entId); }
+        else if (ANY) PEND.push({ ent: entId, guid: e.guid, storey: hasSt ? e.storey : null, parent: e.parent || null, gen: false });
         else (CONTAINED[e.storey] = CONTAINED[e.storey] || []).push(entId);
       }
       if (K.due()) yield K.state.prog;
     }
     if (fails.length) { res.why = fails[0]; return res; }
+    var AGG = {}, AGGO = [];
+    if (ANY) {   // step (d): who is aggregated under a written parent (once), who is contained in a storey, who is a child without its parent (BIMC_Part)
+      var PAR = {}; PEND.forEach(function (p) { if (p.parent) PAR[p.guid] = p.parent.guid; });
+      var cyclic = function (child, par) { var g = par, hop = 0; while (g !== undefined && hop++ < 1000) { if (g === child) return true; g = PAR[g]; } return false; };
+      PEND.forEach(function (p) {
+        var par = p.parent, wr = par ? WR[par.guid] : null;
+        if (par && par.guid !== p.guid && wr && wr.length === 1 && !cyclic(p.guid, par.guid)) { if (!AGG[par.guid]) { AGG[par.guid] = []; AGGO.push(par.guid); } AGG[par.guid].push(p); return; }
+        if (par) { dx.orphanParts++; if (p.gen) pset(p.ent, 'BIMC_Part', { ParentGlobalId: par.gid || null, ParentElementId: par.elementId || par.guid }, p.guid, true); }
+        if (p.storey !== null) (CONTAINED[p.storey] = CONTAINED[p.storey] || []).push(p.ent); else BLDCONT.push(p.ent);
+      });
+    }
     groupOrder.forEach(function (gk) {
       var g = GROUPS[gk], lp = ent('IFCLOCALPLACEMENT(' + STOREY_LP[g.storey] + ',' + ent('IFCAXIS2PLACEMENT3D(' + g.first + ',$,$)') + ')');
       var asm = ent('IFCELEMENTASSEMBLY(' + str(gid(g.base)) + ',' + oh + ',' + str('Connection assembly ' + g.base) + ',$,' + str('Steel connection (rule-based)') + ',' + lp + ',$,$,.NOTDEFINED.,.NOTDEFINED.)');
       ent('IFCRELAGGREGATES(' + str(gid('agg:' + g.base)) + ',' + oh + ',$,$,' + asm + ',(' + g.parts.join(',') + '))'); (CONTAINED[g.storey] = CONTAINED[g.storey] || []).push(asm); classes.IfcElementAssembly = (classes.IfcElementAssembly || 0) + 1;
     });
+    AGGO.sort().forEach(function (pg) { var kids = AGG[pg].slice().sort(function (a, b) { return a.guid < b.guid ? -1 : a.guid > b.guid ? 1 : 0; }); ent('IFCRELAGGREGATES(' + str(gid('parts:' + pg)) + ',' + oh + ',$,$,' + WR[pg][0] + ',(' + kids.map(function (k) { return k.ent; }).join(',') + '))'); dx.aggregates++; });
     Object.keys(MATS).sort().forEach(function (nm) { if (MATS[nm].els.length) ent('IFCRELASSOCIATESMATERIAL(' + str(gid('mat:' + nm)) + ',' + oh + ',$,$,(' + MATS[nm].els.join(',') + '),' + MATS[nm].id + ')'); });
     Object.keys(CONTAINED).sort().forEach(function (nm) { ent('IFCRELCONTAINEDINSPATIALSTRUCTURE(' + str(gid('cont:' + nm)) + ',' + oh + ',$,$,(' + CONTAINED[nm].join(',') + '),' + STOREYS[nm] + ')'); });
     if (BLDCONT.length) ent('IFCRELCONTAINEDINSPATIALSTRUCTURE(' + str(gid('cont:building')) + ',' + oh + ',$,$,(' + BLDCONT.join(',') + '),' + bld + ')');
@@ -422,7 +442,9 @@
     flush();
     var parts = [header].concat(chunks, ['ENDSEC;\nEND-ISO-10303-21;\n']), total = 0; parts.forEach(function (p) { total += p.length; });
     res.ok = true; res.parts = parts; res.chars = total; res.schema = SCHEMA; res.stats = { elements: n, skipped: skipped, classes: classes, split: split, mixed: mixed, mesh: mesh, storeys: Object.keys(STOREYS).length, untraced: untraced, parts: nParts, frame: hasFrame ? 'given' : 'DB frame as is', entities: nid };
-    if (ANY) { res.stats.byClass = gen.byClass; res.stats.proxied = gen.proxied; res.stats.generalised = gen.generalised; res.stats.noStorey = gen.noStorey; res.stats.storeysNoElevation = noElev.slice().sort(); res.stats.written = gen.written; res.stats.styles = Object.keys(STYLES).length; }
+    if (ANY) { res.stats.byClass = gen.byClass; res.stats.proxied = gen.proxied; res.stats.generalised = gen.generalised; res.stats.noStorey = gen.noStorey; res.stats.storeysNoElevation = noElev.slice().sort(); res.stats.written = gen.written; res.stats.styles = Object.keys(STYLES).length;
+      res.stats.partClasses = dx.partClasses; res.stats.assemblies = groupOrder.length; res.stats.materials = Object.keys(MATS).filter(function (k) { return MATS[k].els.length; }).length; res.stats.noMaterial = dx.noMaterial; res.stats.psets = dx.psets; res.stats.props = dx.props;
+      res.stats.aggregates = dx.aggregates; res.stats.orphanParts = dx.orphanParts; res.stats.gidKept = dx.gidKept; res.stats.gidDerived = dx.gidDerived; res.stats.partsAsGeneric = dx.partsAsGeneric; }
     return res;
   }
   function build(elements, opts) { return drain(buildSteps(elements, opts)); }

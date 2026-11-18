@@ -18,7 +18,7 @@
     if (state.ready) return;
     var man = await (await fetch(BASE + 'packs.json')).json();
     for (var i = 0; i < man.packs.length; i++) await load(BASE + man.packs[i].file + '?v=5');
-    await load(BASE + 'lod_ifc.js?v=1');   // P7: the Add-on IFC writer (pure; loaded with the engine, never at boot)
+    await load(BASE + 'lod_ifc.js?v=2');   // P7: the Add-on IFC writer (pure; loaded with the engine, never at boot)
     await load(BASE + 'lod_schedule.js?v=1');   // P8: schedule tables read through a schedule format (pure)
     var Rg = window.LodRegistry, R = window.LodRules;
     for (var j = 0; j < Rg.list().length; j++) { var p = Rg.list()[j]; state.rules[p.id] = R.load(await (await fetch(BASE + p.rulesFile)).json()); state.edits[p.id] = {}; }

@@ -8,8 +8,8 @@
    "bim_element_base.csv",
    "BIM_Element_Trl_id_ID.xml"
   ],
-  "rows": 1111,
-  "translated": 1008,
+  "rows": 1115,
+  "translated": 1012,
   "untranslated": 103
  },
  "labels": {
@@ -1123,10 +1123,14 @@
   "ui_exp_scope_whole": "Seluruh bangunan",
   "ui_exp_scope_find": "Pilihan Find ({n})",
   "ui_exp_scope_find_tip": "{n} elemen yang diisolasi oleh Find",
-  "ui_exp_scope_none": "Gunakan Find dan isolasi dahulu"
+  "ui_exp_scope_none": "Gunakan Find dan isolasi dahulu",
+  "ui_exp_frame": "Kerangka…",
+  "ui_exp_frame_tip": "Tempatkan berkas pada koordinat bersama Anda: pilih berkas kerangka (JSON)",
+  "ui_exp_frame_db": "kerangka basis data",
+  "ui_exp_frame_refused": "ditolak"
  },
  "tables": {
-  "AD_Message": 958,
+  "AD_Message": 962,
   "BIM_Element": 153
  },
  "terms": [

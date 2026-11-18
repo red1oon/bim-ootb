@@ -8,8 +8,8 @@
    "bim_element_base.csv",
    "BIM_Element_Trl_pt_BR.xml"
   ],
-  "rows": 1111,
-  "translated": 1104,
+  "rows": 1115,
+  "translated": 1108,
   "untranslated": 7
  },
  "labels": {
@@ -1123,10 +1123,14 @@
   "ui_exp_scope_whole": "Edifício inteiro",
   "ui_exp_scope_find": "Seleção do Find ({n})",
   "ui_exp_scope_find_tip": "os {n} elementos isolados pelo Find",
-  "ui_exp_scope_none": "Isole primeiro com o Find"
+  "ui_exp_scope_none": "Isole primeiro com o Find",
+  "ui_exp_frame": "Referencial…",
+  "ui_exp_frame_tip": "Colocar o arquivo nas suas coordenadas compartilhadas: escolha um arquivo de referencial (JSON)",
+  "ui_exp_frame_db": "referencial do banco",
+  "ui_exp_frame_refused": "recusado"
  },
  "tables": {
-  "AD_Message": 958,
+  "AD_Message": 962,
   "BIM_Element": 153
  },
  "terms": [

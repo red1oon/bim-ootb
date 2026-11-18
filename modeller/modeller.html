@@ -322,7 +322,7 @@ if (window.WholeHistory && WholeHistory.mount) WholeHistory.mount({ page: 'model
      (viewer/i18n), translating by exact English text (dictionary page) incl. panels built later; flag button #header-flag-btn. -->
 <script>window.__TRL_INPLACE = true; window.__TRL_DICT_PAGE = true;</script>
 <script src="../viewer/locale_loader.js?v=16"></script>
-<script src="edit_delta_ui.js?v=15" onerror="console.warn('§S8 LOAD_FAIL edit_delta_ui.js')"></script>
+<script src="edit_delta_ui.js?v=16" onerror="console.warn('§S8 LOAD_FAIL edit_delta_ui.js')"></script>
 <!-- §S9 (TM_4D5D_VARIANCE_LANE §S9): "ERP ▸ Project Order" for the selected parts. Lazy: the Viewer-side ERP owners load only when the button is clicked. -->
 <script src="proj_order_ui.js?v=10" onerror="console.warn('§S9 LOAD_FAIL proj_order_ui.js')"></script>
 <!-- Real-placement gate (WalkerDoctrine.md §10): the ONE shared resolveRealPlacement() every leaf placement
@@ -3708,7 +3708,7 @@ let _lodupLoading = null;
 document.getElementById('b-lodup').onclick = async function () {
   try {
     const load = src => new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('load failed ' + src)); document.head.appendChild(s); });
-    if (!window.LodUI) _lodupLoading = _lodupLoading || (async () => { for (const f of ['lod/lod_rules.js?v=1', 'lod/lod_registry.js?v=5', 'lod/lod_ops.js?v=4', 'lod/lod_reader.js?v=7', 'lod/lod_ui.js?v=8']) await load(f); })().catch(e => { _lodupLoading = null; throw e; });
+    if (!window.LodUI) _lodupLoading = _lodupLoading || (async () => { for (const f of ['lod/lod_rules.js?v=1', 'lod/lod_registry.js?v=5', 'lod/lod_ops.js?v=4', 'lod/lod_reader.js?v=7', 'lod/lod_ui.js?v=9']) await load(f); })().catch(e => { _lodupLoading = null; throw e; });
     await _lodupLoading; await window.LodUI.toggle();
   } catch (err) { setStat('FAIL ' + (err && err.message || err)); console.warn('§LODUP load fail ' + err); }
 };
@@ -3716,7 +3716,7 @@ document.getElementById('b-lodup').onclick = async function () {
 let _regRepLoading = null;
 async function doRegReport() {
   try {
-    if (!window.RegReportUI) _regRepLoading = _regRepLoading || new Promise((res, rej) => { const s = document.createElement('script'); s.src = 'reg_report_ui.js?v=4'; s.onload = res; s.onerror = () => { _regRepLoading = null; rej(new Error('load failed reg_report_ui.js')); }; document.head.appendChild(s); });
+    if (!window.RegReportUI) _regRepLoading = _regRepLoading || new Promise((res, rej) => { const s = document.createElement('script'); s.src = 'reg_report_ui.js?v=5'; s.onload = res; s.onerror = () => { _regRepLoading = null; rej(new Error('load failed reg_report_ui.js')); }; document.head.appendChild(s); });
     await _regRepLoading; await window.RegReportUI.open(setStat);
   } catch (err) { setStat('FAIL ' + (err && err.message || err)); console.warn('§REG_REPORT_UI fail ' + err); }
 }
@@ -3726,7 +3726,7 @@ let _analyticalLoading = null;
 async function doAnalytical() {
   try {
     const load = src => new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('load failed ' + src)); document.head.appendChild(s); });
-    if (!window.RegReportUI) _analyticalLoading = _analyticalLoading || load('reg_report_ui.js?v=4').catch(e => { _analyticalLoading = null; throw e; });
+    if (!window.RegReportUI) _analyticalLoading = _analyticalLoading || load('reg_report_ui.js?v=5').catch(e => { _analyticalLoading = null; throw e; });
     await _analyticalLoading;
     const eng = await window.RegReportUI.engine();   // web-ifc, sql.js, the extractor core, Dxf2Ifc, LoadSummary: the owners the Regulatory Report loads
     if (!window.Dxf2Analytical) await load('dxf2analytical.js?v=4');

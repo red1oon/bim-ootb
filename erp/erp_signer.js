@@ -35,6 +35,7 @@
   // PEERS (bim-compiler prompts/CLI_ERP_IVR.md §55): public keys of OTHER devices that write the same ledger file (the door). verify tries this device's key, then each peer's.
   // The list is filled by addPeer(spkiHex); the roster the page builds from the file's own `signed_by` is trust-on-first-use (integrity, not provenance).
   var PEERS = [];
+  function removePeer(spkiHex) { var n = PEERS.length; PEERS = PEERS.filter(function (p) { return p.kid !== spkiHex; }); return PEERS.length < n; }   // §62: an untrusted key stops verifying at once
   function addPeer(spkiHex) {
     if (!subtle || !spkiHex || PEERS.some(function (p) { return p.kid === spkiHex; })) return Promise.resolve(false);
     return subtle.importKey('spki', _unhex(spkiHex), GEN_ALG, true, ['verify']).then(function (k) { PEERS.push({ kid: spkiHex, key: k }); return true; }).catch(function () { return false; });
@@ -110,7 +111,7 @@
     });
   }
 
-  var API = { mintKeypair: mintKeypair, makeSigner: makeSigner, loadOrMint: loadOrMint, installSigner: installSigner, addPeer: addPeer, verify: function (h, sg) { return API._signer ? API._signer.verify(h, sg) : Promise.resolve(false); } };
+  var API = { mintKeypair: mintKeypair, makeSigner: makeSigner, loadOrMint: loadOrMint, installSigner: installSigner, addPeer: addPeer, removePeer: removePeer, verify: function (h, sg) { return API._signer ? API._signer.verify(h, sg) : Promise.resolve(false); } };
   if (typeof window !== 'undefined') window.ErpSigner = API;   // browser-pure (window-only, like kernel_ops.js — no `module` global, keeps the no-undef CI gate green)
   console.log('§SIGN_LOADED erp_signer.js (W-SIGN edge keypair, ECDSA P-256)');
 })();

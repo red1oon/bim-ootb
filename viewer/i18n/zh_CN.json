@@ -8,8 +8,8 @@
    "bim_element_base.csv",
    "BIM_Element_Trl_zh_CN.xml"
   ],
-  "rows": 1111,
-  "translated": 1008,
+  "rows": 1115,
+  "translated": 1012,
   "untranslated": 103
  },
  "labels": {
@@ -1123,10 +1123,14 @@
   "ui_exp_scope_whole": "整栋建筑",
   "ui_exp_scope_find": "Find 选择 ({n})",
   "ui_exp_scope_find_tip": "Find 已隔离的 {n} 个构件",
-  "ui_exp_scope_none": "请先用 Find 隔离"
+  "ui_exp_scope_none": "请先用 Find 隔离",
+  "ui_exp_frame": "坐标框架…",
+  "ui_exp_frame_tip": "把文件放入你们的共享坐标：选择框架文件 (JSON)",
+  "ui_exp_frame_db": "数据库坐标",
+  "ui_exp_frame_refused": "已拒绝"
  },
  "tables": {
-  "AD_Message": 958,
+  "AD_Message": 962,
   "BIM_Element": 153
  },
  "terms": [

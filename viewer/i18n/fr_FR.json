@@ -8,8 +8,8 @@
    "bim_element_base.csv",
    "BIM_Element_Trl_fr_FR.xml"
   ],
-  "rows": 1111,
-  "translated": 1008,
+  "rows": 1115,
+  "translated": 1012,
   "untranslated": 103
  },
  "labels": {
@@ -1123,10 +1123,14 @@
   "ui_exp_scope_whole": "Bâtiment entier",
   "ui_exp_scope_find": "Sélection Find ({n})",
   "ui_exp_scope_find_tip": "les {n} éléments isolés par Find",
-  "ui_exp_scope_none": "Isolez d'abord avec Find"
+  "ui_exp_scope_none": "Isolez d'abord avec Find",
+  "ui_exp_frame": "Repère…",
+  "ui_exp_frame_tip": "Placer le fichier dans vos coordonnées partagées : choisir un fichier de repère (JSON)",
+  "ui_exp_frame_db": "repère de la base",
+  "ui_exp_frame_refused": "refusé"
  },
  "tables": {
-  "AD_Message": 958,
+  "AD_Message": 962,
   "BIM_Element": 153
  },
  "terms": [
