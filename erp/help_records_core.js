@@ -41,7 +41,7 @@
       (tabs[w.id] || []).forEach(function (tb) { o.push(String(tb.tn)); if (nm.tables[String(tb.tid)]) o.push(nm.tables[String(tb.tid)]); });
       var r = withA({ id: 'window/' + w.id, k: 'window', n: n }, alts(n, o)); r.gate = ['window', Number(w.id)]; recs.push(r);
     });
-    q("SELECT ad_process_id AS id, name AS n FROM ad_process WHERE isactive='Y' ORDER BY ad_process_id").forEach(function (p) { recs.push({ id: 'process/' + p.id, k: 'process', n: String(p.n), gate: ['process', Number(p.id)] }); });
+    q("SELECT ad_process_id AS id, name AS n FROM ad_process WHERE isactive='Y' ORDER BY ad_process_id").forEach(function (p) { var t = (nm.processes || {})[String(p.id)], n = t || String(p.n), r = withA({ id: 'process/' + p.id, k: 'process', n: n }, alts(n, t ? [String(p.n)] : [])); r.gate = ['process', Number(p.id)]; recs.push(r); });   // §19.10 the language's name (help pack names.processes), the dictionary's English name another name `a`, as windows
     q("SELECT c_doctype_id AS id, name AS n FROM c_doctype WHERE isactive='Y' ORDER BY c_doctype_id").forEach(function (d) { recs.push({ id: 'doctype/' + d.id, k: 'doctype', n: String(d.n), gate: ['doctype', Number(d.id)] }); });
     var codes = Object.keys(en.actions || {}).sort();
     q("SELECT value AS v, name AS n FROM ad_ref_list WHERE ad_reference_id=135 AND isactive='Y' AND value<>'--' ORDER BY value").forEach(function (r) {

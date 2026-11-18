@@ -11,4 +11,5 @@ const LANGS = ['en_US', 'fr_FR', 'de_DE', 'ja_JP', 'zh_CN'];
 const q = (sql) => { const r = cp.spawnSync('sqlite3', ['-readonly', '-json', SEED, sql], { encoding: 'utf8', maxBuffer: 1 << 29 }); if (r.status !== 0) throw new Error(r.stderr); return JSON.parse(r.stdout || '[]'); };
 const readPack = (lang) => JSON.parse(fs.readFileSync(path.join(HELP, lang, 'help.json'), 'utf8'));
 const load = (lang) => CORE.build({ q, en: readPack('en_US'), pack: lang === 'en_US' ? null : readPack(lang) });
-module.exports = { app: 'erp', kinds: KINDS, langs: LANGS, load, resolver: CORE.resolver, extraTexts: CORE.extraTexts, outFile: (lang) => path.join(HELP, lang, 'index.json') };
+// §19.10: the page rebuilds the records from the live dictionary (erp/help_search.js indexFrom) and reads only the header of index.json, so the file ships the header only (runtimeRecords).
+module.exports = { app: 'erp', runtimeRecords: true, kinds: KINDS, langs: LANGS, load, resolver: CORE.resolver, extraTexts: CORE.extraTexts, outFile: (lang) => path.join(HELP, lang, 'index.json') };
