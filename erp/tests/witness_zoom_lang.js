@@ -51,7 +51,9 @@ for (const id of ['viewer', 'timemachine']) {
 
 // ── (b) Viewer loader ──
 const loaderSrc = fs.readFileSync(path.join(ROOT, 'viewer/locale_loader.js'), 'utf8');
-function loadLoader(src, url, store) {
+// T1 (TRL_TRILOGY_STANDARD.md S-5): the mapping table (ar -> ar_SA) and the precedence moved to common/i18n/lang_choice.js; the loader runs on top of it, as the pages load it
+const lcSrc = fs.readFileSync(path.join(ROOT, 'common/i18n/lang_choice.js'), 'utf8');
+function loadLoader(src, url, store, lc) {
   const logs = []; const u = new URL(url);
   const el = () => ({ style: {}, classList: { toggle() {}, add() {}, remove() {} }, children: [], appendChild(c) { this.children.push(c); }, contains: () => false, getBoundingClientRect: () => ({ bottom: 0, left: 0 }) });
   const body = el(), head = el();
@@ -64,15 +66,15 @@ function loadLoader(src, url, store) {
     document: { getElementsByTagName: () => [{ src: 'http://h/viewer/locale_loader.js' }], getElementById: () => null, createElement: el, body, head, addEventListener() {}, querySelectorAll: () => [] },
     console: { log: m => logs.push(String(m)), warn() {} }, setTimeout() {}, CustomEvent: function () {}
   };
-  vm.runInNewContext(src, sandbox);
+  vm.createContext(sandbox); vm.runInContext(lc === undefined ? lcSrc : lc, sandbox); vm.runInContext(src, sandbox);
   return { L: win._TRL_LOADER, logs, loc, body };
 }
 const VIEWER_CODES = loaderSrc.match(/code: '[a-z]{2}_[A-Z]{2}'/g).map(s => s.slice(7, -1));
-function checkB(src, label) {
+function checkB(src, label, lc) {
   let ok = 0, n = 0;
   for (const c of codes) {
     n++;
-    const r = loadLoader(src, 'http://h/viewer/viewer.html?bld=Hospital&lang=' + c, {});
+    const r = loadLoader(src, 'http://h/viewer/viewer.html?bld=Hospital&lang=' + c, {}, lc);
     const got = r.L.detectLocale(); const line = r.logs.find(l => l.startsWith('§TRL_DETECT')) || '';
     const same = VIEWER_CODES.includes(got) && got.split('_')[0] === c.split('_')[0] && / src=url(-mapped)? /.test(line);
     if (same) ok++; else console.log('  ' + label + ' miss ' + c + ' → ' + got + ' | ' + line);
@@ -97,11 +99,11 @@ W(b.n > 0 && b.ok === b.n, '(b) Viewer picks the same language for ' + b.ok + '/
   }
 }
 
-// ── (c) negative control: strip §R1.2 → 'ar' must fail ──
-const stripped = loaderSrc.replace(/    \/\/ 1b\. S226 §R1\.2[\s\S]*?\n    }\n/, '');
-W(stripped !== loaderSrc, '(c) §R1.2 block located and removed for the control');
-const c = checkB(stripped, 'c');
-W(c.ok < c.n, '(c) without §R1.2 the check FAILS (' + c.ok + '/' + c.n + ') — (b) is able to fail');
+// ── (c) negative control: strip the §R1.2 mapping (now the 'ar' rows of lang_choice.js MAP) → 'ar' must fail ──
+const strippedLc = lcSrc.replace(/    'ar': 'ar_SA', 'ar-SA': 'ar_SA', 'ar-sa': 'ar_SA',\n/, '');
+W(strippedLc !== lcSrc, '(c) the ar → ar_SA mapping rows located and removed for the control');
+const c = checkB(loaderSrc, 'c', strippedLc);
+W(c.ok < c.n, '(c) without the mapping the check FAILS (' + c.ok + '/' + c.n + ') — (b) is able to fail');
 
 const verdict = codes.length === 0 ? 'INCONCLUSIVE' : (fail ? 'FAIL' : 'PASS');
 console.log('§W-ZOOM-LANG ' + verdict + ' pass=' + pass + ' fail=' + fail);
