@@ -646,7 +646,7 @@
 <!-- MIGRATE_ERP_PICKER.md §SPEC — still loaded: the login front-door tenant picker (ErpPicker.manifest). -->
 <script src="erp_picker.js?v=6"></script>
 <!-- Kanban write path — engine seam (window.ERP) + the lens chrome + the reusable host (publish/persist). -->
-<script src="kernel_ops.js?v=7"></script>
+<script src="kernel_ops.js?v=8"></script>
 <script src="op_upcaster.js?v=1"></script><!-- D2 (prompts/D2_REMEDY_VERSIONING.md): schema_version stamp + read-time upcaster registry -->
 <script>/* D2: make schema_version stamping the default write seam. install() self-guards (logs SKIPPED if the
    kernel lacks setVersionStamper), so this is safe; stamping is forward-only + inert to every reducer
@@ -839,8 +839,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
 <script src="tip_fold.js?v=2"></script>
 <script src="erp_shard.js?v=1"></script>
 <!-- §S60 physical split: the pure CORE (window.CrudCore) — MUST load before crud_overlay.js -->
-<script src="crud_core.js?v=11"></script>
-<script src="crud_overlay.js?v=49"></script>
+<script src="crud_core.js?v=12"></script>
+<script src="crud_overlay.js?v=50"></script>
 <script src="ledger_ui.js?v=3"></script>
 <!-- TEAMWORK_FRAMEWORK.md §13.1 (W1, W-TEAM-SO): the local comm layer + erp/team_sync.js — written ONLY when the page is opened with ?team=1
      (otherwise no script tag, no DOM, no global: the page is byte-for-byte what it was). Parser-blocking so TeamSync exists before the first commit. -->

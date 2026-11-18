@@ -5,7 +5,7 @@
  *   one), a group whole; rows not admitted are marked undone in the in-memory sidecar only, so every window's fold ignores them. The observable here is C_BPartner 112's ReferenceNo in the page's tip fold.
  *   E1 unpinned door rows (ReferenceNo door-2): the fold does NOT show door-2; excluded.rows = 2 · E2 the Trust click: the fold shows door-2, excluded 0
  *   E3 a forged row (third key, signed_by = the pinned door's) setting FORGED: excluded as forged, the fold keeps door-2 · E4 a torn group (one door-signed + one forged row sharing a gid): both excluded
- *   E5 a page op still commits and shows; the file keeps the excluded rows byte for byte · E6 fold-forward in file mode is refused · E7 reload: pin persists, forged rows stay excluded, door rows admitted
+ *   E5 a page op still commits and shows; the file keeps the excluded rows byte for byte · E6 fold-forward (redo) in file mode never re-admits an excluded row (CLI_ERP_IVR §61: redo is allowed now, it reads undone=1 only) · E7 reload: pin persists, forged rows stay excluded, door rows admitted
  * Falsifier: LEDGER_ENFORCE_BREAK=noenforce (window.__LEDGER_BREAK) -> E1 FAIL and E3 FAIL.
  */
 'use strict';
@@ -68,9 +68,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     const before = await read(); const e5 = await page.evaluate(() => window.__edit()); await sleep(1500); const after = await read(), f5 = await fold();
     judge('E5 a page op still commits and shows (description ' + JSON.stringify(f5 && f5.desc) + '); the file keeps every excluded row byte for byte', !e5.timeout && after.startsWith(before) && after.length > before.length && f5 && f5.desc === e5.v, 'bytes ' + before.length + ' -> ' + after.length);
     // E6
-    const n6 = LOG.length; await page.evaluate(() => window.crudFoldForward && window.crudFoldForward('x', 'y')); await sleep(400);
-    const l6 = LOG.slice(n6).filter((l) => /§LEDGER unsupported/.test(l)), i6 = await info();
-    judge('E6 fold-forward (redo) in file mode is refused and the excluded rows stay excluded', l6.length === 1 && i6.excluded.ids.indexOf(f3row.id) >= 0, 'lines=' + l6.length);
+    await page.evaluate(() => window.crudFoldForward && window.crudFoldForward('x', 'y')); await sleep(1800);
+    const i6 = await info(), f6 = await fold();
+    judge('E6 fold-forward (redo) in file mode (allowed since §61) never re-admits an excluded row: the forged and torn rows stay excluded, the fold never shows FORGED/T2', i6.excluded.ids.indexOf(f3row.id) >= 0 && i6.excluded.ids.indexOf(bad.id) >= 0 && f6 && f6.ref !== 'FORGED' && f6.ref !== 'T2', JSON.stringify(f6) + ' excluded=' + JSON.stringify(i6.excluded.ids));
     // E7: reload
     const exBefore = (await info()).excluded.ids.length;
     await page.reload({ waitUntil: 'load' }); await page.waitForFunction(() => window.LedgerUi && document.getElementById('erp-ledger-pill'), null, { timeout: 60000 }); await inject();
