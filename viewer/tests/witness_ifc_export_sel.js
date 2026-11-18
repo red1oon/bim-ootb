@@ -176,7 +176,7 @@ function runCase(label, SQL, mono, geoDb, rows, schemas, red) {
         if (!(await openMenu())) { inc('LIVE:' + tag, 'the Export pill never opened the menu'); return; }
         const rows = await page.evaluate(() => Array.from(document.querySelectorAll('#v-export-panel .ve-row')).map((d) => ({ key: d.getAttribute('data-key'), disabled: d.getAttribute('data-disabled') === '1', why: d.getAttribute('data-why'), title: d.getAttribute('title') || '', text: d.textContent.trim().replace(/\s+/g, ' ') })));
         const ifcRow = rows.find((r) => r.key === 'ifc');
-        ck('LIVE_MENU:' + tag, rows.map((r) => r.key).join(',') === 'db,ifc,bcf' && !!ifcRow && !ifcRow.disabled && /whole building/.test(ifcRow.title) && /IFC4/.test(ifcRow.text) && /IFC2X3/.test(ifcRow.text), 'menu rows ' + JSON.stringify(rows.map((r) => r.key)) + '; IFC row enabled=' + (ifcRow && !ifcRow.disabled) + ' why=' + (ifcRow && ifcRow.why) + ' tip=' + JSON.stringify(ifcRow && ifcRow.title) + ' text=' + JSON.stringify(ifcRow && ifcRow.text));
+        ck('LIVE_MENU:' + tag, rows.map((r) => r.key).join(',') === 'db,ifc,bcf,schedule,cost5d' && !!ifcRow && !ifcRow.disabled && /whole building/.test(ifcRow.title) && /IFC4/.test(ifcRow.text) && /IFC2X3/.test(ifcRow.text), 'menu rows ' + JSON.stringify(rows.map((r) => r.key)) + '; IFC row enabled=' + (ifcRow && !ifcRow.disabled) + ' why=' + (ifcRow && ifcRow.why) + ' tip=' + JSON.stringify(ifcRow && ifcRow.title) + ' text=' + JSON.stringify(ifcRow && ifcRow.text));
         // IFC4 (default)
         let n0 = files().filter((f) => /\.ifc$/.test(f)).length; await clickSel('#v-export-panel .ve-row[data-key="ifc"] .ve-label');
         const f4 = await waitFile(/_IFC4\.ifc$/, 0, 180000);

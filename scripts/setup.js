@@ -2,15 +2,15 @@
 // SPDX-License-Identifier: MIT
 //
 // # ⚠ DO NOT REMOVE — SPEC: bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md §F.39 (bim-ootb #3297). Witness: scripts/tests/witness_setup.js (W-SETUP). Read the output: exit code is not evidence.
-// ONE command from a fresh GitHub ZIP download to a working dev setup:   node scripts/setup.js [--open] [--install] [--serve [port]] [--no-x0] [--dry-run]
+// ONE command from a fresh GitHub ZIP download to a working dev setup:   node scripts/setup.js [--open] [--install] [--serve [port]] [--no-code-facts] [--dry-run]
 //   S1 prerequisites · S2 npm ci (the lockfile's versions; the manifest/bump tools need espree) · S3 the three dev tools run in THIS folder and their own verdict lines are read ·
-//   S4 the VS Code side: X0 packed + installed, .vscode/ tasks, snippets, launch, recommended extensions counted · S5 the next lines to serve / open.
+//   S4 the VS Code side: Code Facts packed + installed, .vscode/ tasks, snippets, launch, recommended extensions counted · S5 the next lines to serve / open.
 // Idempotent. Never touches your VS Code profile unless --install (default: a throwaway extensions + user-data folder under <folder>/.setup/). No network except `npm ci`
 // (+ the Marketplace for the recommended extensions under --install). No git init, no writes outside the folder. One § line per step; the last line is §SETUP … verdict=.
 'use strict';
 const fs = require('fs'), path = require('path'), cp = require('child_process');
 const ROOT = path.resolve(__dirname, '..'), argv = process.argv.slice(2), has = f => argv.includes(f);
-const DRY = has('--dry-run'), INSTALL = has('--install'), OPEN = has('--open'), NOX0 = has('--no-x0'), si = argv.indexOf('--serve');
+const DRY = has('--dry-run'), INSTALL = has('--install'), OPEN = has('--open'), NOX0 = has('--no-code-facts'), si = argv.indexOf('--serve');
 const SERVE = si >= 0 ? (/^\d+$/.test(argv[si + 1] || '') ? +argv[si + 1] : 8000) : 0;
 const CODE_FIX = "VS Code: Command Palette > Shell Command: Install 'code' command in PATH (or install from https://code.visualstudio.com), then run node scripts/setup.js again";
 const say = s => console.log(s), gaps = []; let steps = 0, ok = 0;
@@ -66,25 +66,25 @@ step(() => {
   try { cnt.snippets = Object.keys(jsonc(path.join(V, 'witness.code-snippets'))).length; } catch (e) { cnt.snippets = 0; }
   try { cnt.launch = jsonc(path.join(V, 'launch.json')).configurations.length > 0 ? 'Y' : 'N'; } catch (e) { cnt.launch = 'N'; }
   let rec = []; try { rec = jsonc(path.join(V, 'extensions.json')).recommendations || []; } catch (e) { /* none */ }
-  let x0 = 'skipped', eslint = rec.length ? 'recommended' : 'none';
-  if (DRY) x0 = NOX0 ? 'skipped' : 'would-install';
+  let cfState = 'skipped', eslint = rec.length ? 'recommended' : 'none';
+  if (DRY) cfState = NOX0 ? 'skipped' : 'would-install';
   else if (!NOX0) {
     const p = run(process.execPath, ['devtools/vscode/pack.js']), vsix = (/file=(\S+\.vsix)/.exec(p.out) || [])[1];
-    if (!p.ok || !vsix) gap('S4', 'packing X0 failed: ' + last(p.out));
+    if (!p.ok || !vsix) gap('S4', 'packing Code Facts failed: ' + last(p.out));
     else if (!code) gap('S4', "VS Code's code command is not on PATH", CODE_FIX, !(INSTALL || OPEN));
     else {
       const a = ['--install-extension', vsix];
       if (!INSTALL) { fs.mkdirSync(vsc.extDir, { recursive: true }); fs.mkdirSync(vsc.userDir, { recursive: true }); a.push('--extensions-dir', vsc.extDir, '--user-data-dir', vsc.userDir); }
-      const r = run('code', a, codeEnv); x0 = r.ok && /successfully installed|already installed/i.test(r.out) ? 'installed' : 'FAIL';
-      if (x0 === 'FAIL') gap('S4', 'code --install-extension failed: ' + last(r.out));
-      if (INSTALL && x0 === 'installed') {
+      const r = run('code', a, codeEnv); cfState = r.ok && /successfully installed|already installed/i.test(r.out) ? 'installed' : 'FAIL';
+      if (cfState === 'FAIL') gap('S4', 'code --install-extension failed: ' + last(r.out));
+      if (INSTALL && cfState === 'installed') {
         const bad = rec.filter(id => !run('code', ['--install-extension', id]).ok); eslint = bad.length ? 'FAIL:' + bad.join(',') : 'installed';
         if (bad.length) gap('S4', 'could not install ' + bad.join(','), 'check the network (the Marketplace), then run node scripts/setup.js --install again');
       }
     }
   }
   if (!code && NOX0 && (INSTALL || OPEN)) gap('S4', "VS Code's code command is not on PATH", CODE_FIX);
-  say(`§SETUP_VSC code=${code || 'missing'} x0=${x0} eslint=${eslint} tasks=${cnt.tasks} snippets=${cnt.snippets} launch=${cnt.launch} mode=${vsc.mode} ext_dir=${INSTALL ? 'user' : vsc.extDir}`);
+  say(`§SETUP_VSC code=${code || 'missing'} codefacts=${cfState} eslint=${eslint} tasks=${cnt.tasks} snippets=${cnt.snippets} launch=${cnt.launch} mode=${vsc.mode} ext_dir=${INSTALL ? 'user' : vsc.extDir}`);
 });
 // S5
 const openArgs = vsc.mode === 'throwaway' ? ['--extensions-dir', vsc.extDir, '--user-data-dir', vsc.userDir, ROOT] : [ROOT];

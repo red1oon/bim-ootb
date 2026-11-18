@@ -8,8 +8,8 @@
    "bim_element_base.csv",
    "BIM_Element_Trl_af_ZA.xml"
   ],
-  "rows": 1100,
-  "translated": 997,
+  "rows": 1107,
+  "translated": 1004,
   "untranslated": 103
  },
  "labels": {
@@ -1112,10 +1112,17 @@
   "ui_exp_ifc": "IFC (hele gebou)",
   "ui_exp_bcf": "BCF (kwessies)",
   "ui_exp_bcf_none": "geen gestoorde kwessies nie",
-  "ui_exp_ifc_none": "het 'n eenlêer-gebou met meetkundetabelle nodig"
+  "ui_exp_ifc_none": "het 'n eenlêer-gebou met meetkundetabelle nodig",
+  "ui_exp_sched": "Skedule",
+  "ui_exp_sched_tip": "die gebou se werkskedule, vir MS Project of Primavera P6",
+  "ui_exp_sched_none": "maak die Time Machine een keer oop om die skedule te skep",
+  "ui_exp_5d": "5D-koste",
+  "ui_exp_5d_tip": "kostewerkboek (Excel): hoeveelhedelys, materiaal, arbeid, toerusting",
+  "pillc_export_4": "Skedule (MSP / PMXML / XER): die werkskedule vir MS Project of Primavera P6, grys totdat die Time Machine een geskep het",
+  "pillc_export_5": "5D-koste: 'n kostewerkboek (.xlsx) vanaf die 4D/5D-bladsy"
  },
  "tables": {
-  "AD_Message": 947,
+  "AD_Message": 954,
   "BIM_Element": 153
  },
  "terms": [

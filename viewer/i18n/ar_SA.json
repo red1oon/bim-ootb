@@ -8,8 +8,8 @@
    "bim_element_base.csv",
    "BIM_Element_Trl_ar_SA.xml"
   ],
-  "rows": 1100,
-  "translated": 997,
+  "rows": 1107,
+  "translated": 1004,
   "untranslated": 103
  },
  "labels": {
@@ -1112,10 +1112,17 @@
   "ui_exp_ifc": "IFC (المبنى كاملاً)",
   "ui_exp_bcf": "BCF (المشكلات)",
   "ui_exp_bcf_none": "لا توجد مشكلات محفوظة",
-  "ui_exp_ifc_none": "يتطلب مبنى بملف واحد يحتوي على جداول الهندسة"
+  "ui_exp_ifc_none": "يتطلب مبنى بملف واحد يحتوي على جداول الهندسة",
+  "ui_exp_sched": "الجدول الزمني",
+  "ui_exp_sched_tip": "الجدول الزمني لأعمال المبنى، لبرنامج MS Project أو Primavera P6",
+  "ui_exp_sched_none": "افتح Time Machine مرة واحدة لإنشاء الجدول الزمني",
+  "ui_exp_5d": "تكلفة 5D",
+  "ui_exp_5d_tip": "مصنّف التكلفة (Excel): جدول الكميات والمواد والعمالة والمعدات",
+  "pillc_export_4": "الجدول الزمني (MSP / PMXML / XER): الجدول الزمني للأعمال لبرنامج MS Project أو Primavera P6، معطّل حتى ينشئه Time Machine",
+  "pillc_export_5": "تكلفة 5D: مصنّف تكلفة (.xlsx) من صفحة 4D/5D"
  },
  "tables": {
-  "AD_Message": 947,
+  "AD_Message": 954,
   "BIM_Element": 153
  },
  "terms": [

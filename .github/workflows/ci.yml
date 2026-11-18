@@ -59,22 +59,22 @@ jobs:
       - name: Ground texture engine (S280g)
         run: node tests/test_ground_texture.js
 
-      # W-X0-CI (bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md §F.24, #3089): the node-only X0 Navigator witnesses
+      # W-CODEFACTS-CI (bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md §F.24, #3089): the node-only Code Facts witnesses
       # that run in seconds. Exit 0 alone is not a pass (a witness can exit 0 with INCONCLUSIVE): each must also print verdict=PASS.
       # deploy_cost and context are left out: they parse with the TypeScript inside VS Code (scripts/lib/find_ts.js, no npm install),
       # which a runner does not have, so here they report INCONCLUSIVE (measured on this PR's first run). Run them locally.
-      - name: X0 Navigator witnesses (node only)
+      - name: Code Facts witnesses (node only)
         run: |
           set -u; failed=""; mkdir -p logs
           for w in isolation lens appdef core_pure; do
-            f=devtools/vscode/x0-navigator/tests/witness_x0_$w.js; log=logs/ci_x0_$w.log
+            f=devtools/vscode/code-facts/tests/witness_codefacts_$w.js; log=logs/ci_codefacts_$w.log
             rc=0; node "$f" < /dev/null > "$log" 2>&1 || rc=$?
             v=$(grep -E 'verdict=[A-Z]+' "$log" | tail -1 || true)
-            echo "§X0_CI $w exit=$rc :: $v"
+            echo "§CODEFACTS_CI $w exit=$rc :: $v"
             if [ "$rc" -ne 0 ] || ! printf '%s' "$v" | grep -q 'verdict=PASS'; then failed="$failed $w"; tail -20 "$log"; fi
           done
-          if [ -n "$failed" ]; then echo "§X0_CI verdict=FAIL failed=${failed# }"; exit 1; fi
-          echo "§X0_CI checked=4 verdict=PASS"
+          if [ -n "$failed" ]; then echo "§CODEFACTS_CI verdict=FAIL failed=${failed# }"; exit 1; fi
+          echo "§CODEFACTS_CI checked=4 verdict=PASS"
 
       # W-CORE-PURE (bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md Part A, A3; #3180): no core file (ERP processes, callouts,
       # models, posting, the 4D schedule maths) calls a clock, random numbers or the network itself; it asks the installed edge.

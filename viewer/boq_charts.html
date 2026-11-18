@@ -69,7 +69,7 @@
      (the single existing "which schedule is active" verb — not a fourth copy of it). -->
 <script src="schedule_author.js?v=17"></script>
 <script src="schedule_read_4d.js?v=2"></script>
-<script src="export_5d.js?v=1"></script>
+<script src="export_5d.js?v=2"></script>
 <script src="export_4d.js?v=1"></script>
 
 <script>
@@ -1530,6 +1530,12 @@ async function init() {
   }
 
   renderCharts();
+  // §BOQ_AUTO_EXPORT (bim-ootb prompts/VIEWER_IFC_EXPORT_BY_DISCIPLINE.md §(b2)): the Viewer's Export menu opens this page with export=5d and
+  // expects the cost workbook to be written once the charts exist, by the SAME save5D() the 5D button calls. No parameter = nothing here runs.
+  if (params.get('export') === '5d') {
+    if (typeof save5D !== 'function' || typeof ExcelJS === 'undefined') console.log('§BOQ_AUTO_EXPORT kind=5d skipped reason=' + (typeof save5D !== 'function' ? 'save5d_missing' : 'exceljs_missing'));
+    else save5D().then(function(f) { console.log('§BOQ_AUTO_EXPORT kind=5d file=' + f); }, function(e) { console.log('§BOQ_AUTO_EXPORT kind=5d skipped reason=' + ((e && e.message) || e)); });
+  }
 }
 
 // ============================================================================

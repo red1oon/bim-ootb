@@ -1,0 +1,146 @@
+{
+ "measured": "2026-11-18, pre-rename tree origin/main ce04a4d8, node_modules linked from the shared checkout, compiler root = a current bim-compiler master",
+ "note": "verdict words as they stood BEFORE the rename. FAIL/INCONCLUSIVE rows are the machine state of that day (a stamped §HOSTED_BEFORE_HOST log in ~/.cache/bim4d fails ACTIVATE; the ship_check text differs by 15 chars in CLI verb check; no Playwright browser for heap_impact), not the rename.",
+ "witnesses": {
+  "witness_codefacts_mcp": {
+   "was": "witness_x0_mcp",
+   "path": "devtools/mcp/code-facts/tests/witness_codefacts_mcp.js",
+   "tag": "CODEFACTS_MCP",
+   "verdict": "PASS",
+   "exit": 0
+  },
+  "witness_codefacts_activate": {
+   "was": "witness_x0_activate",
+   "path": "devtools/vscode/code-facts/tests/witness_codefacts_activate.js",
+   "tag": "CODEFACTS_ACTIVATE",
+   "verdict": "FAIL",
+   "exit": 1
+  },
+  "witness_codefacts_appdef": {
+   "was": "witness_x0_appdef",
+   "path": "devtools/vscode/code-facts/tests/witness_codefacts_appdef.js",
+   "tag": "CODEFACTS_APPDEF",
+   "verdict": "PASS",
+   "exit": 0
+  },
+  "witness_codefacts_bump_button": {
+   "was": "witness_x0_bump_button",
+   "path": "devtools/vscode/code-facts/tests/witness_codefacts_bump_button.js",
+   "tag": "CODEFACTS_BUMP_BUTTON",
+   "verdict": "PASS",
+   "exit": 0
+  },
+  "witness_codefacts_catalog": {
+   "was": "witness_x0_catalog",
+   "path": "devtools/vscode/code-facts/tests/witness_codefacts_catalog.js",
+   "tag": "CODEFACTS_CATALOG_W",
+   "verdict": "PASS",
+   "exit": 0
+  },
+  "witness_codefacts_context": {
+   "was": "witness_x0_context",
+   "path": "devtools/vscode/code-facts/tests/witness_codefacts_context.js",
+   "tag": "CODEFACTS_CONTEXT",
+   "verdict": "PASS",
+   "exit": 0
+  },
+  "witness_codefacts_core_pure": {
+   "was": "witness_x0_core_pure",
+   "path": "devtools/vscode/code-facts/tests/witness_codefacts_core_pure.js",
+   "tag": "CODEFACTS_CORE_PURE_W",
+   "verdict": "PASS",
+   "exit": 0
+  },
+  "witness_codefacts_deploy_cost": {
+   "was": "witness_x0_deploy_cost",
+   "path": "devtools/vscode/code-facts/tests/witness_codefacts_deploy_cost.js",
+   "tag": "PERF_IMPACT",
+   "verdict": "PASS",
+   "exit": 0
+  },
+  "witness_codefacts_deploy": {
+   "was": "witness_x0_deploy",
+   "path": "devtools/vscode/code-facts/tests/witness_codefacts_deploy.js",
+   "tag": "CODEFACTS_DEPLOY_W",
+   "verdict": "PASS",
+   "exit": 0
+  },
+  "witness_codefacts_fresh": {
+   "was": "witness_x0_fresh",
+   "path": "devtools/vscode/code-facts/tests/witness_codefacts_fresh.js",
+   "tag": "CODEFACTS_FRESH",
+   "verdict": "PASS",
+   "exit": 0
+  },
+  "witness_codefacts_heap_impact": {
+   "was": "witness_x0_heap_impact",
+   "path": "devtools/vscode/code-facts/tests/witness_codefacts_heap_impact.js",
+   "tag": "HEAP_W",
+   "verdict": "INCONCLUSIVE",
+   "exit": 2
+  },
+  "witness_codefacts_isolation": {
+   "was": "witness_x0_isolation",
+   "path": "devtools/vscode/code-facts/tests/witness_codefacts_isolation.js",
+   "tag": "CODEFACTS_ISOLATION",
+   "verdict": "PASS",
+   "exit": 0
+  },
+  "witness_codefacts_lens": {
+   "was": "witness_x0_lens",
+   "path": "devtools/vscode/code-facts/tests/witness_codefacts_lens.js",
+   "tag": "LENS",
+   "verdict": "PASS",
+   "exit": 0
+  },
+  "witness_codefacts_newwit": {
+   "was": "witness_x0_newwit",
+   "path": "devtools/vscode/code-facts/tests/witness_codefacts_newwit.js",
+   "tag": "CODEFACTS_NEWWIT_W",
+   "verdict": "PASS",
+   "exit": 0
+  },
+  "witness_codefacts_refs": {
+   "was": "witness_x0_refs",
+   "path": "devtools/vscode/code-facts/tests/witness_codefacts_refs.js",
+   "tag": "CODEFACTS_REFS",
+   "verdict": "PASS",
+   "exit": 0
+  },
+  "witness_codefacts_ship": {
+   "was": "witness_x0_ship",
+   "path": "devtools/vscode/code-facts/tests/witness_codefacts_ship.js",
+   "tag": "SHIP_PANEL",
+   "verdict": "PASS",
+   "exit": 0
+  },
+  "witness_codefacts_stamp": {
+   "was": "witness_x0_stamp",
+   "path": "devtools/vscode/code-facts/tests/witness_codefacts_stamp.js",
+   "tag": "CODEFACTS_STAMP_W",
+   "verdict": "PASS",
+   "exit": 0
+  },
+  "witness_codefacts_taghover": {
+   "was": "witness_x0_taghover",
+   "path": "devtools/vscode/code-facts/tests/witness_codefacts_taghover.js",
+   "tag": "DEVTK_SPEC",
+   "verdict": "PASS",
+   "exit": 0
+  },
+  "witness_codefacts_cli": {
+   "was": "witness_x0_cli",
+   "path": "devtools/code-facts/tests/witness_codefacts_cli.js",
+   "tag": "CODEFACTS_CLI",
+   "verdict": "FAIL",
+   "exit": 1
+  },
+  "witness_codefacts_session": {
+   "was": "witness_x0_session",
+   "path": "devtools/code-facts/tests/witness_codefacts_session.js",
+   "tag": "CODEFACTS_SESSION_W",
+   "verdict": "PASS",
+   "exit": 0
+  }
+ }
+}

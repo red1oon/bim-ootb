@@ -1839,10 +1839,10 @@
   function tmExportMSProject() {
     var _L = (typeof TMS._tmTrl === 'function') ? TMS._tmTrl : function (k, en, r) { var s = en; if (r) for (var q in r) s = s.replace('{' + q + '}', r[q]); return s; };   // S226 §R2b — sliced into vm sandboxes by witnesses
     var app = TMS.A(), SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
-    if (!app || !app.db || !SA || !SA.wbsTree) { _tmP6Say(_L('tm_no_schedule_export', 'No schedule to export')); return; }
+    if (!app || !app.db || !SA || !SA.wbsTree) { _tmP6Say(_L('tm_no_schedule_export', 'No schedule to export')); return { ok: false, why: 'no_schedule' }; }
     var schedId = _tmP6SchedId();
     var tree = SA.wbsTree(app.db, schedId);
-    if (!tree.length) { _tmP6Say(_L('tm_no_tasks_export', 'No tasks to export')); return; }
+    if (!tree.length) { _tmP6Say(_L('tm_no_tasks_export', 'No tasks to export')); return { ok: false, why: 'no_tasks' }; }
     var deps = SA.listDependencies ? SA.listDependencies(app.db, schedId) : [];
     var predByTask = {};
     deps.forEach(function (d) { (predByTask[d.succId] = predByTask[d.succId] || []).push(d); });
@@ -1897,8 +1897,10 @@
 
     var fname = name + '_schedule.xml';
     _tmP6Download(xml.join(''), 'application/xml', fname);
-    _tmP6Say(_L('tm_exported_msp', 'Exported {n} tasks / {m} links to MS Project XML ({file}).', { n: rows.length, m: deps.length, file: fname }));
+    var _msg = _L('tm_exported_msp', 'Exported {n} tasks / {m} links to MS Project XML ({file}).', { n: rows.length, m: deps.length, file: fname });
+    _tmP6Say(_msg);
     console.log('§TM_EXPORT_MSP tasks=' + rows.length + ' links=' + deps.length + ' file=' + fname);
+    return { ok: true, file: fname, tasks: rows.length, links: deps.length, msg: _msg };
   }
 
   // §X7 port — Primavera PMXML / XER writers. SAME (tree, deps) input tmExportMSProject reads —
@@ -1907,12 +1909,12 @@
   function _tmExportP6(kind, writeFn, ext, mime, label) {
     var _L = (typeof TMS._tmTrl === 'function') ? TMS._tmTrl : function (k, en, r) { var s = en; if (r) for (var q in r) s = s.replace('{' + q + '}', r[q]); return s; };   // S226 §R2b — sliced into vm sandboxes by witnesses
     var app = TMS.A(), SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
-    if (!app || !app.db || !SA || !SA.wbsTree) { _tmP6Say(_L('tm_no_schedule_export', 'No schedule to export')); return; }
+    if (!app || !app.db || !SA || !SA.wbsTree) { _tmP6Say(_L('tm_no_schedule_export', 'No schedule to export')); return { ok: false, why: 'no_schedule' }; }
     var FSx = (typeof window !== 'undefined') && window.ForeignSchedule;
-    if (!FSx || !FSx[writeFn]) { _tmP6Say(_L('tm_interop_not_loaded', 'Interop module not loaded — reopen the P6/MSP section')); return; }
+    if (!FSx || !FSx[writeFn]) { _tmP6Say(_L('tm_interop_not_loaded', 'Interop module not loaded — reopen the P6/MSP section')); return { ok: false, why: 'interop_not_loaded' }; }
     var schedId = _tmP6SchedId();
     var tree = SA.wbsTree(app.db, schedId);
-    if (!tree.length) { _tmP6Say(_L('tm_no_tasks_export', 'No tasks to export')); return; }
+    if (!tree.length) { _tmP6Say(_L('tm_no_tasks_export', 'No tasks to export')); return { ok: false, why: 'no_tasks' }; }
     var deps = SA.listDependencies ? SA.listDependencies(app.db, schedId) : [];
     var name = _tmP6BaseName(app);
     var out = FSx[writeFn](tree, deps, { hpd: 8, projectId: schedId, projectName: name });
@@ -1920,11 +1922,20 @@
     var fname = name + '_schedule.' + ext;
     _tmP6Download(out, mime, fname);
     var leafCount = 0; (function walk(ns) { (ns || []).forEach(function (n) { if (!n.isSummary) leafCount++; walk(n.children); }); })(tree);
-    _tmP6Say(_L('tm_exported_p6', 'Exported {n} tasks / {m} links to {label} ({file}). Some fields (WBS code, EPS-level activity codes, resource assignments, global calendars, baselines) are not carried — P6 itself drops most of these on cross-DB import.', { n: leafCount, m: deps.length, label: label, file: fname }));
+    var _msg = _L('tm_exported_p6', 'Exported {n} tasks / {m} links to {label} ({file}). Some fields (WBS code, EPS-level activity codes, resource assignments, global calendars, baselines) are not carried — P6 itself drops most of these on cross-DB import.', { n: leafCount, m: deps.length, label: label, file: fname });
+    _tmP6Say(_msg);
     console.log('§TM_EXPORT_' + kind + ' tasks=' + leafCount + ' links=' + deps.length + ' file=' + fname);
+    return { ok: true, file: fname, tasks: leafCount, links: deps.length, msg: _msg };
   }
-  function tmExportPMXML() { _tmExportP6('PMXML', 'toPMXML', 'xml', 'application/xml', 'Primavera PMXML'); }
-  function tmExportXER() { _tmExportP6('XER', 'toXER', 'xer', 'text/plain', 'Primavera XER'); }
+  function tmExportPMXML() { return _tmExportP6('PMXML', 'toPMXML', 'xml', 'application/xml', 'Primavera PMXML'); }
+  function tmExportXER() { return _tmExportP6('XER', 'toXER', 'xer', 'text/plain', 'Primavera XER'); }
+  // §VIEWER_EXPORT_MENU (bim-ootb prompts/VIEWER_IFC_EXPORT_BY_DISCIPLINE.md §(b2)): the Viewer's Export menu reaches the SAME three writers the drawer buttons call.
+  // Loads the interop modules first (promise-cached, the drawer's own loader), then calls tmExportMSProject / tmExportPMXML / tmExportXER unchanged. Never generates a schedule.
+  window.tmExportSchedule = function (kind) {
+    var fn = { msp: tmExportMSProject, pmxml: tmExportPMXML, xer: tmExportXER }[kind];
+    if (!fn) return Promise.resolve({ ok: false, why: 'unknown_kind' });
+    return _tmLoadP6Modules().then(function () { return fn(); }, function (e) { return { ok: false, why: 'interop_load_failed', err: e && e.message }; });
+  };
 
   // §4D_SCHEDULE_DIFF port — grade an IMPORTED P6/MSP schedule's per-phase durations against OUR
   // own real-quantity + labor-rate estimate for THIS building. Only meaningful on a captured

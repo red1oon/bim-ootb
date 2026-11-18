@@ -8,8 +8,8 @@
    "bim_element_base.csv",
    "BIM_Element_Trl_fr_FR.xml"
   ],
-  "rows": 1100,
-  "translated": 997,
+  "rows": 1107,
+  "translated": 1004,
   "untranslated": 103
  },
  "labels": {
@@ -1112,10 +1112,17 @@
   "ui_exp_ifc": "IFC (tout le bâtiment)",
   "ui_exp_bcf": "BCF (problèmes)",
   "ui_exp_bcf_none": "aucun problème enregistré",
-  "ui_exp_ifc_none": "nécessite un bâtiment en un seul fichier avec tables de géométrie"
+  "ui_exp_ifc_none": "nécessite un bâtiment en un seul fichier avec tables de géométrie",
+  "ui_exp_sched": "Planning",
+  "ui_exp_sched_tip": "le planning des travaux du bâtiment, pour MS Project ou Primavera P6",
+  "ui_exp_sched_none": "ouvrez une fois la Time Machine pour créer le planning",
+  "ui_exp_5d": "Coût 5D",
+  "ui_exp_5d_tip": "classeur des coûts (Excel) : bordereau des quantités, matériaux, main-d'œuvre, équipements",
+  "pillc_export_4": "Planning (MSP / PMXML / XER) : le planning des travaux pour MS Project ou Primavera P6, grisé tant que la Time Machine n'en a pas créé un",
+  "pillc_export_5": "Coût 5D : un classeur des coûts (.xlsx) depuis la page 4D/5D"
  },
  "tables": {
-  "AD_Message": 947,
+  "AD_Message": 954,
   "BIM_Element": 153
  },
  "terms": [

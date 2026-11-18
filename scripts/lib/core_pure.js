@@ -2,7 +2,7 @@
 //
 // # ⚠ DO NOT REMOVE — SPEC: bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md Part A (A3 W-CORE-PURE SPEC; decisions A-1, A-4, A-7) + §F.35.
 // The ONE scanner and the ONE list for "a core file reads a clock, random numbers or the network itself instead of the installed edge".
-// Used by erp/tests/witness_core_pure.js (CI) and by X0 Navigator (the warning in the editor). Dev-side only: nothing here reaches the browser.
+// Used by erp/tests/witness_core_pure.js (CI) and by Code Facts (the warning in the editor). Dev-side only: nothing here reaches the browser.
 // A parser scan (espree), never a regex: a comment or a string that only mentions Date.now() is not a call.
 'use strict';
 const path = require('path');
