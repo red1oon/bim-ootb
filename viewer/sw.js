@@ -269,8 +269,8 @@
 // v1747 (2026-11-18) §TM_NEEDLE_SYNC (bim-compiler 4D_MODEL_INTEGRITY.md §Q.19.5): gantt_model.js?v=2, tm_core.js?v=2, tm_panel.js?v=2, tm_gantt_edit.js?v=4, tm_dash.js?v=2 — slider, day counter, ruler and the active bar frame read one day grid and the canvas's own instant
 // v1748 (2026-11-18) §ONE_COMMIT_PIPELINE (bim-compiler 4D_MODEL_INTEGRITY.md §Q.19.7): tm_gantt_edit.js?v=5 — every Gantt edit commits through one pipeline (_tmCommitEdit / _tmEditRefresh)
 // v1750 (2026-11-18) §UNDO_EVERY_EDIT (bim-compiler 4D_MODEL_INTEGRITY.md §Q.19.9): tm_gantt_edit.js?v=6 — one Undo takes back every Gantt edit (link, unlink and typed dates included)
-// v1751 (2026-11-18) §GANTT_REORDER (bim-compiler 4D_MODEL_INTEGRITY.md §Q.19.11): tm_gantt_edit.js?v=7, schedule_author.js?v=21 (boq_charts.html ?v=13) — Shift-drop a bar on another to swap their places; the typed panel has the same as a row
-const CACHE_VERSION = 'v1751';
+// v1752 (2026-11-18) §GANTT_REORDER (bim-compiler 4D_MODEL_INTEGRITY.md §Q.19.11): tm_gantt_edit.js?v=8, schedule_author.js?v=22 (boq_charts.html ?v=14; modeller lazy ?v=16) — Shift-drop a bar on another to swap their places; the typed panel has the same as a row
+const CACHE_VERSION = 'v1752';
 // v1637 (rebase of PR #1191/#1196) §CLASS_UNMATCHED_INHERITED + §EXACT_LOOKUP_BLINDSPOT: rates/ifc_schema_hierarchy.json added to PRECACHE_ASSETS; schedule_author.js/proj_fold.js/boq_charts.html/schedule_read_4d.js/tm_sched_xray.js classify via the schema hierarchy.
 // v1636 (rebase of PR #1317) §ARCH_AREA_WEIGHT/§VOL_WEIGHT/§FOOTING_M3: schedule_author.js, time_machine parts, rates.js and rates/*.json changed install DURATIONS (area/volume weighting, IfcFooting priced M3); all precached cache-first, so a client holding the old cache would keep the flat times forever.
 // v1635 (rebase of PR #676, BCF half only) §BCF_EXPORT: bcf_export.js added to PRECACHE_ASSETS; viewer.html loads it + Export BCF button in the Issues toolbar; main.js wires setupBcfExport/exportIssuesBcf. The Open-button IFC half of #676 was superseded by main's A._openIfcFiles.
