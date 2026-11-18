@@ -1,5 +1,5 @@
 {
- "app": "modeller", "schema": 1, "sw": "modeller/sw.js", "cacheVersion": "v311", "depsDeclared": true,
+ "app": "modeller", "schema": 1, "sw": "modeller/sw.js", "cacheVersion": "v312", "depsDeclared": true,
  "depsReview": {"by":"owner (B1-Q3, confirmed in one message)","on":"2026-11-18","tool":"5be36e5764e21887f547786edfcd6adb918d1b06f9e10c0a96924911c074ef2c"},
  "modules": {
   "common/comm/op_versions.js": {"v":1,"load":"lazy","lazyGroup":"modeller/modeller.html","precache":true,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/TEAMWORK_FRAMEWORK.md"},
@@ -55,7 +55,7 @@
   "modeller/dxf2impact.js": {"v":1,"load":"lazy","lazyGroup":"modeller/dxf_meta_editor.js","precache":true,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/DXF2BIM_ARCHITECT_REVIEW.md"},
   "modeller/dxf_export_ui.js": {"v":2,"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["modeller/dxf2bim/ifc_extract_core.js","modeller/dxf_import_ui.js","modeller/str_walker_outliner.js"],"notDeps":[],"owner":"prompts/DXF2BIM_MODELLER_LANE.md"},
   "modeller/dxf_import_ui.js": {"v":23,"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["modeller/arc_editable.js","modeller/bay_add.js","modeller/bonsai_grid.js","modeller/bonsai_library.js","modeller/bonsai_oplog.js","modeller/edit_delta_ui.js","viewer/edit_delta.js","viewer/locale_loader.js","viewer/rates.js"],"notDeps":[],"owner":"prompts/DXF2BIM_MODELLER_LANE.md"},
-  "modeller/edit_delta_ui.js": {"v":15,"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["modeller/bonsai_oplog.js","modeller/open_building_db.js","viewer/edit_delta.js","viewer/locale_loader.js","viewer/rates.js","viewer/schedule_author.js"],"notDeps":[],"owner":["prompts/TM_4D5D_VARIANCE_LANE.md","prompts/RATES_SOURCE_OF_TRUTH.md"]},
+  "modeller/edit_delta_ui.js": {"v":16,"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["modeller/bonsai_oplog.js","modeller/open_building_db.js","viewer/edit_delta.js","viewer/locale_loader.js","viewer/rates.js","viewer/schedule_author.js"],"notDeps":[],"owner":["prompts/TM_4D5D_VARIANCE_LANE.md","prompts/RATES_SOURCE_OF_TRUTH.md"]},
   "modeller/edit_report.js": {"v":4,"load":"lazy","lazyGroup":"modeller/modeller.html","precache":true,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/MODELLER_MASTER.md"},
   "modeller/edit_report_coverage.json": {"v":1,"load":"lazy","lazyGroup":"modeller/modeller.html","precache":true,"deps":[],"uses":[],"notDeps":[],"owner":""},
   "modeller/edit_report_panel.js": {"v":3,"load":"lazy","lazyGroup":"modeller/modeller.html","precache":true,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/MODELLER_MASTER.md"},
@@ -79,7 +79,7 @@
   "modeller/props_panel.js": {"v":2,"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/DXF2BIM_ARCHITECT_REVIEW.md"},
   "modeller/real_geometry.js": {"v":2,"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":[],"owner":""},
   "modeller/real_placement_resolver.js": {"v":1,"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":[],"owner":""},
-  "modeller/reg_report_ui.js": {"v":4,"load":"lazy","lazyGroup":"modeller/modeller.html","precache":true,"deps":[],"uses":["modeller/dxf2bim/ifc_extract_core.js","modeller/dxf2ifc.js","modeller/dxf_import_ui.js","modeller/load_summary.js","viewer/locale_loader.js","viewer/rates.js"],"notDeps":[],"owner":"prompts/DXF2BIM_ARCHITECT_REVIEW.md"},
+  "modeller/reg_report_ui.js": {"v":5,"load":"lazy","lazyGroup":"modeller/modeller.html","precache":true,"deps":[],"uses":["modeller/dxf2bim/ifc_extract_core.js","modeller/dxf2ifc.js","modeller/dxf_import_ui.js","modeller/load_summary.js","viewer/locale_loader.js","viewer/rates.js"],"notDeps":[],"owner":"prompts/DXF2BIM_ARCHITECT_REVIEW.md"},
   "modeller/routewalker.js": {"v":10,"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["modeller/real_placement_resolver.js"],"notDeps":[],"owner":""},
   "modeller/rules_editor.js": {"v":5,"load":"lazy","lazyGroup":"modeller/modeller.html","precache":true,"deps":[],"uses":["common/settings_editor.js","common/walk_rules.js","modeller/str_walker_outliner.js"],"notDeps":[],"owner":"prompts/MODELLER_RULES_EDITOR.md"},
   "modeller/save_catalog.js": {"v":1,"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":[],"owner":""},
@@ -106,8 +106,8 @@
   "viewer/proj_control.js": {"v":1,"load":"lazy","lazyGroup":"modeller/proj_order_ui.js","precache":false,"deps":[],"uses":[],"notDeps":[],"owner":""},
   "viewer/proj_fold.js": {"v":4,"load":"lazy","lazyGroup":"modeller/proj_order_ui.js","precache":false,"deps":[],"uses":["viewer/rates.js","viewer/schedule_author.js"],"notDeps":[],"owner":"prompts/BIM_TO_PROJECT.md"},
   "viewer/proj_order_state.js": {"v":4,"load":"lazy","lazyGroup":"modeller/proj_order_ui.js","precache":false,"deps":[],"uses":["viewer/edit_delta.js"],"notDeps":[],"owner":"prompts/TM_4D5D_VARIANCE_LANE.md"},
-  "viewer/rates.js": {"v":14,"load":"lazy","lazyGroup":"modeller/edit_delta_ui.js","precache":false,"deps":[],"uses":["viewer/locale_loader.js","viewer/schedule_author.js"],"notDeps":[],"owner":""},
-  "viewer/schedule_author.js": {"v":20,"load":"lazy","lazyGroup":"modeller/edit_delta_ui.js","precache":false,"deps":[],"uses":["viewer/rates.js"],"notDeps":[],"owner":""},
+  "viewer/rates.js": {"v":15,"load":"lazy","lazyGroup":"modeller/edit_delta_ui.js","precache":false,"deps":[],"uses":["viewer/locale_loader.js","viewer/schedule_author.js"],"notDeps":[],"owner":""},
+  "viewer/schedule_author.js": {"v":21,"load":"lazy","lazyGroup":"modeller/edit_delta_ui.js","precache":false,"deps":[],"uses":["viewer/rates.js"],"notDeps":[],"owner":""},
   "viewer/vo_fold.js": {"v":2,"load":"lazy","lazyGroup":"modeller/proj_order_ui.js","precache":false,"deps":[],"uses":[],"notDeps":[],"owner":""}
  },
  "inline": {

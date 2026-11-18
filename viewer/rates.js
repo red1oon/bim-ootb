@@ -138,7 +138,10 @@ function getSMMSection(ifcClass) {
 var LABOR_RATES = {
   HVAC_TECH: {
     rate_per_day: 185, crew_size: 2, max_crews: 2, trade: 'HVAC Technician (Skilled)',
-    productivity: {IfcDuct:18,IfcDuctSegment:18,IfcDuctFitting:12,IfcFlowMovingDevice:4,IfcEnergyConversionDevice:3,IfcFlowTerminal:12,IfcAirTerminal:20}
+    productivity: {IfcDuct:18,IfcDuctSegment:18,IfcDuctFitting:12,IfcFlowSegment:18,IfcFlowFitting:12,IfcFlowTreatmentDevice:4,IfcFlowMovingDevice:4,IfcEnergyConversionDevice:3,IfcFlowTerminal:12,IfcAirTerminal:20}
+    // IfcFlowSegment / IfcFlowFitting: §Q.29 — COPIED from this crew's own IfcDuctSegment / IfcDuctFitting (a generic flow segment carrying
+    // air IS a duct). IfcFlowTreatmentDevice: 4 COPIED from PLUMBER's row for the same class (LTU's ACMV ones are duct silencers:
+    // Lindab CADENZA / MORENDO / SLCU). Reached only through SEQUENCE_DISCIPLINE_TRADE.ACMV; the class rule still sends them to PLUMBER.
   },
   PLUMBER: {
     rate_per_day: 165, crew_size: 2, max_crews: 2, trade: 'Pipefitter (Skilled)',
@@ -377,7 +380,7 @@ var SEQUENCE_DEFAULT = {phase:'Architecture Envelope',sequence:6,resource:'MASON
 // whole duration of every DCMA check-8 task (Hospital L3 63 of 64 crew-days, LTU Plan_1 173 of 174). PLB / SAN stay with PLUMBER.
 // The generic 'MEP' tag is NOT mapped: in a single-model building (Duplex, HHS) it covers ALL services incl. domestic plumbing, so it
 // cannot name a crew; only the specific system tags do.
-var SEQUENCE_DISCIPLINE_TRADE = { FP: 'SPRINKLER_FITTER', HEAT: 'PIPEFITTER', COOL: 'PIPEFITTER' };
+var SEQUENCE_DISCIPLINE_TRADE = { FP: 'SPRINKLER_FITTER', HEAT: 'PIPEFITTER', COOL: 'PIPEFITTER', ACMV: 'HVAC_TECH' };   // ACMV: §Q.29 (generic IfcFlow* ductwork)
 // §CIVIL_PHASE (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §Q) — phase by DISCIPLINE for civil models,
 // consulted before the class rule ONLY when an element's discipline is one of these civil codes (import_worker.js
 // CIVIL_DISCS, from file names). Building disciplines never match → building schedules unchanged (NON-IMPACT rule).

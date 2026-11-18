@@ -903,7 +903,7 @@
     // §PIPE_TRADES (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.28.4) — which pipe crew lays how many elements and how many install
     // hours, plus the total over ALL trades: routing by discipline must move work between crews, never change the sum.
     (function () {
-      var pc = { PLUMBER: [0, 0], SPRINKLER_FITTER: [0, 0], PIPEFITTER: [0, 0] }, tot = 0;
+      var pc = { PLUMBER: [0, 0], SPRINKLER_FITTER: [0, 0], PIPEFITTER: [0, 0], HVAC_TECH: [0, 0] }, tot = 0;   // HVAC_TECH: §Q.29
       _bseList.forEach(function (e) { tot += e.installSecs || 0; var b = pc[e.resource]; if (b) { b[0]++; b[1] += e.installSecs || 0; } });
       console.log('§PIPE_TRADES ' + Object.keys(pc).map(function (k) { return k + '=' + pc[k][0] + 'el/' + (pc[k][1] / 3600).toFixed(1) + 'h'; }).join(' ') +
         ' installHoursAll=' + (tot / 3600).toFixed(1) + ' elements=' + _bseList.length);
