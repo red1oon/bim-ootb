@@ -686,8 +686,9 @@ function setupImport(A) {
   };
 
   // ── S229: Export IFC from IndexedDB ──
-  A.exportIFC = async function(key) {
-    var record = await getImport(key);
+  // §VIEWER_EXPORT_MENU: opts.dbBytes = the open single-file building's own DB bytes (the Export menu, export_menu.js) when it is not an IndexedDB import; the worker and what it writes are unchanged.
+  A.exportIFC = async function(key, opts) {
+    var record = (opts && opts.dbBytes) ? { extractedDb: opts.dbBytes } : await getImport(key);
     if (!record) { alert('Building not found'); return; }
 
     // S233: Read versioned DB (wizard-modified), not legacy v1

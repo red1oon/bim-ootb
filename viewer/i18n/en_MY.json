@@ -7,7 +7,7 @@
    "ad_message_base.csv",
    "bim_element_base.csv"
   ],
-  "rows": 1091,
+  "rows": 1100,
   "translated": 0,
   "untranslated": 0
  },
@@ -1102,10 +1102,19 @@
   "ui_help_doc_usage": "Type # then at least 4 characters of an element GlobalId",
   "ui_help_doc_none": "No element",
   "ui_help_doc_more": "more",
-  "ui_help_reserved": "@ is reserved and does nothing yet"
+  "ui_help_reserved": "@ is reserved and does nothing yet",
+  "pill_export": "Export",
+  "pillc_export_1": "Building (.db): same as Save Building, Ctrl+S",
+  "pillc_export_2": "IFC (whole building): an .ifc file for other BIM tools",
+  "pillc_export_3": "BCF (issues): saved issues as a .bcfzip, greyed until one exists",
+  "ui_exp_db": "Building (.db)",
+  "ui_exp_ifc": "IFC (whole building)",
+  "ui_exp_bcf": "BCF (issues)",
+  "ui_exp_bcf_none": "no saved issues",
+  "ui_exp_ifc_none": "needs a single-file building with geometry tables"
  },
  "tables": {
-  "AD_Message": 938,
+  "AD_Message": 947,
   "BIM_Element": 153
  }
 }

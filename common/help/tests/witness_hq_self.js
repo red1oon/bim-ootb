@@ -27,7 +27,8 @@ function erp() {
 // §19.4: the Viewer and Modeller packs, 18 locales each. S0 counts the SOURCE independently of the adapter (the dictionary's own pill rows, howto.json, modeller.html's lines), so a thin pack cannot pass vacuously.
 function bim() {
   const T = require(require('path').join(H.ROOT, 'viewer', 'tools', 'trl_common')), fs = require('fs'), path = require('path'), BASE = T.readBase();
-  const n = (re) => BASE.filter((r) => re.test(r.value)).length;
+  // RETIRED rows: the dictionary is append-only, so pill_save / pillc_save_* stay after the pill 'save' took trlKey 'export' (panels.js, §VIEWER_EXPORT_MENU); no live pill reads them, so they are not source rows.
+  const RETIRED = /^(pill_save|pillc_save_\d+)$/, n = (re) => BASE.filter((r) => re.test(r.value) && !RETIRED.test(r.value)).length;
   const howto = JSON.parse(fs.readFileSync(path.join(H.ROOT, 'viewer', 'help', 'howto.json'), 'utf8')).pills;
   const mod = fs.readFileSync(path.join(H.ROOT, 'modeller', 'modeller.html'), 'utf8');
   const block = (head, end) => { const a = mod.indexOf(head), b = mod.indexOf(end, a); return a < 0 || b < 0 ? '' : mod.slice(a, b); };

@@ -8,8 +8,8 @@
    "bim_element_base.csv",
    "BIM_Element_Trl_af_ZA.xml"
   ],
-  "rows": 1091,
-  "translated": 988,
+  "rows": 1100,
+  "translated": 997,
   "untranslated": 103
  },
  "labels": {
@@ -1103,10 +1103,19 @@
   "ui_help_doc_usage": "Tik # en dan minstens 4 karakters van 'n element se GlobalId",
   "ui_help_doc_none": "Geen element",
   "ui_help_doc_more": "meer",
-  "ui_help_reserved": "@ is gereserveer en doen nog niks"
+  "ui_help_reserved": "@ is gereserveer en doen nog niks",
+  "pill_export": "Voer uit",
+  "pillc_export_1": "Gebou (.db): dieselfde as Stoor gebou, Ctrl+S",
+  "pillc_export_2": "IFC (hele gebou): 'n .ifc-lêer vir ander BIM-gereedskap",
+  "pillc_export_3": "BCF (kwessies): gestoorde kwessies as .bcfzip, grys totdat daar een is",
+  "ui_exp_db": "Gebou (.db)",
+  "ui_exp_ifc": "IFC (hele gebou)",
+  "ui_exp_bcf": "BCF (kwessies)",
+  "ui_exp_bcf_none": "geen gestoorde kwessies nie",
+  "ui_exp_ifc_none": "het 'n eenlêer-gebou met meetkundetabelle nodig"
  },
  "tables": {
-  "AD_Message": 938,
+  "AD_Message": 947,
   "BIM_Element": 153
  }
 }

@@ -946,3 +946,12 @@ CPM reads the dates the drag produced — it never changes one.",I
 1001088,ui_help_doc_none,No element,I
 1001089,ui_help_doc_more,more,I
 1001090,ui_help_reserved,@ is reserved and does nothing yet,I
+1001091,pill_export,Export,I
+1001092,pillc_export_1,"Building (.db): same as Save Building, Ctrl+S",I
+1001093,pillc_export_2,IFC (whole building): an .ifc file for other BIM tools,I
+1001094,pillc_export_3,"BCF (issues): saved issues as a .bcfzip, greyed until one exists",I
+1001095,ui_exp_db,Building (.db),I
+1001096,ui_exp_ifc,IFC (whole building),I
+1001097,ui_exp_bcf,BCF (issues),I
+1001098,ui_exp_bcf_none,no saved issues,I
+1001099,ui_exp_ifc_none,needs a single-file building with geometry tables,I

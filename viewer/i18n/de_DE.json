@@ -8,8 +8,8 @@
    "bim_element_base.csv",
    "BIM_Element_Trl_de_DE.xml"
   ],
-  "rows": 1091,
-  "translated": 1006,
+  "rows": 1100,
+  "translated": 1015,
   "untranslated": 85
  },
  "labels": {
@@ -1103,10 +1103,19 @@
   "ui_help_doc_usage": "# eingeben, dann mindestens 4 Zeichen der GlobalId eines Elements",
   "ui_help_doc_none": "Kein Element",
   "ui_help_doc_more": "weitere",
-  "ui_help_reserved": "@ ist reserviert und tut noch nichts"
+  "ui_help_reserved": "@ ist reserviert und tut noch nichts",
+  "pill_export": "Exportieren",
+  "pillc_export_1": "Gebäude (.db): wie Gebäude speichern, Ctrl+S",
+  "pillc_export_2": "IFC (ganzes Gebäude): eine .ifc-Datei für andere BIM-Werkzeuge",
+  "pillc_export_3": "BCF (Probleme): gespeicherte Probleme als .bcfzip, ausgegraut bis eines existiert",
+  "ui_exp_db": "Gebäude (.db)",
+  "ui_exp_ifc": "IFC (ganzes Gebäude)",
+  "ui_exp_bcf": "BCF (Probleme)",
+  "ui_exp_bcf_none": "keine gespeicherten Probleme",
+  "ui_exp_ifc_none": "braucht ein Ein-Datei-Gebäude mit Geometrietabellen"
  },
  "tables": {
-  "AD_Message": 938,
+  "AD_Message": 947,
   "BIM_Element": 153
  }
 }

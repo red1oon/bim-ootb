@@ -271,7 +271,8 @@
 // v1750 (2026-11-18) §UNDO_EVERY_EDIT (bim-compiler 4D_MODEL_INTEGRITY.md §Q.19.9): tm_gantt_edit.js?v=6 — one Undo takes back every Gantt edit (link, unlink and typed dates included)
 // v1752 (2026-11-18) §GANTT_REORDER (bim-compiler 4D_MODEL_INTEGRITY.md §Q.19.11): tm_gantt_edit.js?v=8, schedule_author.js?v=22 (boq_charts.html ?v=14; modeller lazy ?v=16) — Shift-drop a bar on another to swap their places; the typed panel has the same as a row
 // v1753 (2026-11-18) §GANTT_GROUP_LINKS (bim-compiler 4D_MODEL_INTEGRITY.md §Q.19.13): tm_gantt_edit.js, schedule_author.js — a group drag stops at an outside predecessor and pushes an outside successor
-const CACHE_VERSION = 'v1754';
+// v1755 (2026-11-18) §VIEWER_EXPORT_MENU (bim-ootb VIEWER_IFC_EXPORT_BY_DISCIPLINE.md §(a)): export_menu.js added to PRECACHE_ASSETS; the toolbar Save Building pill is now Export (Building .db / IFC / BCF); panels.js?v=53 import.js?v=17 main.js?v=66; i18n packs carry the 9 new rows
+const CACHE_VERSION = 'v1755';
 // v1637 (rebase of PR #1191/#1196) §CLASS_UNMATCHED_INHERITED + §EXACT_LOOKUP_BLINDSPOT: rates/ifc_schema_hierarchy.json added to PRECACHE_ASSETS; schedule_author.js/proj_fold.js/boq_charts.html/schedule_read_4d.js/tm_sched_xray.js classify via the schema hierarchy.
 // v1636 (rebase of PR #1317) §ARCH_AREA_WEIGHT/§VOL_WEIGHT/§FOOTING_M3: schedule_author.js, time_machine parts, rates.js and rates/*.json changed install DURATIONS (area/volume weighting, IfcFooting priced M3); all precached cache-first, so a client holding the old cache would keep the flat times forever.
 // v1635 (rebase of PR #676, BCF half only) §BCF_EXPORT: bcf_export.js added to PRECACHE_ASSETS; viewer.html loads it + Export BCF button in the Issues toolbar; main.js wires setupBcfExport/exportIssuesBcf. The Open-button IFC half of #676 was superseded by main's A._openIfcFiles.
@@ -1125,6 +1126,7 @@ const PRECACHE_ASSETS = [
   'issues.js',
   'excel.js',
   'bcf_export.js',
+  'export_menu.js',
   'walk.js',
   'city.js',
   'rates.js',
