@@ -35,7 +35,7 @@ async function main() {
     var line = 'pack=' + id + ' parts=' + a.parts.length + ' sync_ms=' + tSync + ' driven_ms=' + tDriven + ' slices=' + d.stats.slices + ' maxSliceMs=' + Math.round(mx) + ' limit_ms=' + Math.round(lim) + ' sha=' + hashOf(a).slice(0, 16);
     console.log('§LODUP_YIELD_RUN ' + line);
     verdict('SAME_' + id.toUpperCase(), a.parts.length ? same : null, 'sync_vs_driven_identical=' + same + ' parts=' + a.parts.length + (a.parts.length ? '' : ' (nothing built: not judged)'));
-    verdict('SLICES_' + id.toUpperCase(), a.parts.length ? d.stats.slices > 1 : null, 'slices=' + d.stats.slices);
+    verdict('SLICES_' + id.toUpperCase(), a.parts.length && d.stats.slices > 1 ? true : null, 'slices=' + d.stats.slices + (d.stats.slices > 1 ? '' : ' (the whole run fit in one 25 ms slice: nothing to yield, so the drive was not judged; INCONCLUSIVE per the header, never PASS)'));
     verdict('LIMIT_' + id.toUpperCase(), a.parts.length ? okLimit : null, 'maxSliceMs=' + Math.round(mx) + ' limit_ms=' + Math.round(lim) + (id === 'joints' || id === 'gussets' ? ' (one fifth of the sync run)' : ''));
     if (id === 'beambars') {   // the red control: one slice for the whole run must FAIL the limit
       var dd = await Reg.kit.drive(P.runSteps(inp, rows, { log: function () { } }), { budgetMs: 1e9 }), brk = dd.stats.maxSliceMs;

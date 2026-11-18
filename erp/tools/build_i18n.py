@@ -28,22 +28,11 @@ ERP = os.path.dirname(HERE)
 CACHE = os.environ.get('ERP_TRL_CACHE', os.path.expanduser('~/.cache/erp_trl'))
 OUT = os.path.join(ERP, 'i18n')
 
-SOURCES = {   # lang -> list of (dir under CACHE, provenance) — first wins on a conflict
-  'fr_FR': [('nmicoud_fr_FR', 'github.com/nmicoud/fr_FR@17bbc28b (iDempiere 12 export, maintainer N. Micoud — wiki.idempiere.org/en/Translations)'),
-            ('x_fr352/fr_FR', 'sourceforge.net/projects/adempiere/files/Language Packs/Francais/Latest Stable and Alpha/adempiere_fr_FR_352.tgz (ADempiere 3.5.2, 2008-10-01) — fills rows the work-in-progress iDempiere pack lacks')],
-  'es_ES': [('gq/es_CO', 'github.com/globalqss/globalqss-idempiere-lco@31b1442b es_CO (GlobalQSS, Colombian Spanish; no es_ES pack is published — served for es_ES, labelled)')],
-  'de_DE': [('bxservice_tbayen.translations/data/de_DE', 'github.com/bxservice/tbayen.translations@c88fe319 de_DE (T. Bayen / Team Germany)')],
-  'ar':    [('djoudi_ar_DZ/ar_DZ', 'github.com/djoudi/ar_DZ@d1c2c3dc ar_DZ (A. Djoudi, work in progress, 2020)'),
-            ('x_ar/arabic language By Najeh', 'sourceforge.net/projects/adempiere/files/Language Packs/Arabic/Beta Release by Najeh/arabic_language_By_Najeh.rar ar_TN (2008-02-05)')],
-  'zh_CN': [('x_zh_CN/zh_CN', 'sourceforge.net/projects/adempiere/files/Language Packs/Chinese/Release 352 Packages/zh_CN.zip (ADempiere 3.5.2, 2008-08-20)')],
-  'ja_JP': [('JPiere_japanese-translation', 'github.com/JPiere/japanese-translation@b5547855 ja_JP (H. Hagiwara / JPiere)')],
-  'ms_MY': [('x_ms_MY/ms_MY', 'sourceforge.net/projects/adempiere/files/Language Packs/Bahasa Malaysia/First Bahasa Release - Beta/ms_MY.zip (2008-11-25)')],
-  'th_TH': [('x_th_TH.350/th_TH.350', 'sourceforge.net/projects/adempiere/files/Language Packs/Thailand/ADempiere Thai Language/th_TH.350.zip (Saeree/Grandlinux, 2008-06-16)')],
+SOURCES = {   # lang -> list of (dir under CACHE, provenance) — first wins on a conflict. §19.11 (VOCAB_MESSAGE_CATALOG): the ONE list lives in i18n_sources.json, read by this file and build_help_pack.js
+  lang: [(x['dir'], x['from']) for x in v] for lang, v in json.load(open(os.path.join(HERE, 'i18n_sources.json'), encoding='utf-8'))['sources'].items()
 }
-META = {   # dir = writing direction; native = CLDR autonym (the language's own name for itself)
-  'en_US': ('ltr', 'English'), 'fr_FR': ('ltr', 'Français'), 'es_ES': ('ltr', 'Español'), 'de_DE': ('ltr', 'Deutsch'),
-  'ar': ('rtl', 'العربية'), 'zh_CN': ('ltr', '中文 (简体)'), 'ja_JP': ('ltr', '日本語'), 'ms_MY': ('ltr', 'Bahasa Melayu'),
-  'th_TH': ('ltr', 'ไทย'),
+META = {   # dir = writing direction; native = CLDR autonym (the language's own name for itself). §19.11 step 2: read from i18n_sources.json `meta`
+  lang: (x['dir'], x['native']) for lang, x in json.load(open(os.path.join(HERE, 'i18n_sources.json'), encoding='utf-8'))['meta'].items()
 }
 # trl table -> (base table in ad_seed.db, id column, name column)
 TABLES = {

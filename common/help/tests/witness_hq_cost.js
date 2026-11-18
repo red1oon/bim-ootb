@@ -6,7 +6,7 @@
 //   Q1 `§HQ_LOAD builds=`: no index is made by loading the page / binding the box (before the first question). Q2 `§HQ_READY ms=`: the index is made once, on the first query, <= 150 ms.
 //   Q3 `§HQ_QUERY n= p50= p95=`: per query (HelpSearch idx.search = the core query + role gate) p95 <= 16 ms with the CPU slowed 4x (phone class); `§HQ_ASK` the whole card, informational.
 //   Q4 `§HQ_HEAP delta=`: heap after forced GC, with the index made vs not, <= 2 MB (CDP Runtime.getHeapUsage; INCONCLUSIVE where it cannot be read). A line says OVER(budget) when exceeded, and the check FAILs.
-// Red controls (must FAIL): HQ_BREAK=eager (the core makes the index in create(): C3 in Node, Q1 in the page) · HQ_BREAK=bloat (every measured size doubled: C1 must say OVER).   Run: node common/help/tests/witness_hq_cost.js
+// Red controls (must FAIL): HQ_BREAK=eager (the core makes the index in create(): C3 in Node, Q1 in the page) · HQ_BREAK=shiprecords (§19.10: the ERP file ships its records again: C1 must say OVER on fr_FR, de_DE, ja_JP). (HQ_BREAK=bloat, size doubled, was RETIRED in §19.10: a ~5 KB header doubled stays under budget, so it could no longer fail.)   Run: node common/help/tests/witness_hq_cost.js
 'use strict';
 const fs = require('fs'), path = require('path');
 const H = require('./_hq'), k = H.kit('W-HQ-COST'), BR = process.env.HQ_BREAK || '';
@@ -15,7 +15,7 @@ const BUILD = require(path.join(H.ROOT, 'common', 'help', 'tools', 'build_help_i
   if (!H.seedOk()) { k.incon('ALL', 'no usable ad_seed.db (an LFS stub?)'); return k.end(); }
   let total = 0, ready = [];
   H.LANGS.forEach((lang) => {
-    const b = BUILD.build(ADAPTER, lang), bytes = BR === 'bloat' ? b.bytes * 2 : b.bytes; total += b.ms;
+    const b = BUILD.build(BR === 'shiprecords' ? Object.assign({}, ADAPTER, { runtimeRecords: false }) : ADAPTER, lang), bytes = b.bytes; total += b.ms;   // §19.10 red shiprecords: the records back in the file
     k.out(BUILD.line(lang, Object.assign({}, b, { bytes })));
     k.chk('C1 ' + lang + ' index.json <= ' + BUILD.BUDGET + ' bytes: ' + bytes, bytes <= BUILD.BUDGET, bytes > BUILD.BUDGET ? 'OVER by ' + (bytes - BUILD.BUDGET) : '');
     const strip = (t) => { const o = JSON.parse(t); delete o.built; return JSON.stringify(o); }, f = ADAPTER.outFile(lang);

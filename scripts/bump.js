@@ -77,6 +77,7 @@ const JS_REF = /((['"]))([^'"\s?#]+\.(?:js|css|json|wasm))\?v=(\d+)(\2)/g;
 //   inline page literals (owner B1-Q2: they go up with their module) and sw.js. Every other referrer takes the regex path below, unchanged;
 //   a shared file (e.g. viewer/rates.js) takes both in one run. Command lines, exit codes and §BUMP lines are as before.
 const MS = require('./lib/manifest_source.js');
+const RESULTS = require(path.join(__dirname, '..', 'witness_kit', 'results.js'));   // E-2: the touch gate's runs are recorded too
 const SRC = {};
 for (const app of require('./gen_manifest.js').APPS) if (MS.hasSource(ROOT, app)) {
   const m = JSON.parse(fs.readFileSync(path.join(ROOT, MS.sourceFile(app)), 'utf8'));
@@ -333,6 +334,7 @@ function touchGate() {
   const runOne = (tree, f) => {
     const s0 = Date.now(), r = cp.spawnSync('node', [path.join(tree, f)], { cwd: path.join(tree, path.dirname(path.dirname(f))), encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 1 << 28, timeout: 5 * 60 * 1000 });
     const lines = ((r.stdout || '') + (r.stderr || '')).split('\n').filter(l => /VERDICT|verdict=/.test(l));
+    if (tree === ROOT) RESULTS.record(ROOT, f, { out: (r.stdout || '') + (r.stderr || ''), exit: r.status == null ? 124 : r.status, seconds: (Date.now() - s0) / 1000, cwd: path.dirname(path.dirname(f)) });   // E-2: last run in ~/.cache
     return { code: r.status === 0 ? 0 : 1, secs: Math.round((Date.now() - s0) / 1000), last: (lines[lines.length - 1] || '').trim().slice(0, 160) };
   };
   const home = process.env.BUMP_PARITY_HOME || path.join(os.homedir(), '.cache', 'bim_bridge');

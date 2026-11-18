@@ -26,7 +26,9 @@
     { code: 'zh_CN', native: '中文 (简体)', dir: 'ltr', html: 'zh-CN' },
     { code: 'ja_JP', native: '日本語', dir: 'ltr', html: 'ja' },
     { code: 'ms_MY', native: 'Bahasa Melayu', dir: 'ltr', html: 'ms' },
-    { code: 'th_TH', native: 'ไทย', dir: 'ltr', html: 'th' }
+    { code: 'th_TH', native: 'ไทย', dir: 'ltr', html: 'th' },
+    { code: 'pt_BR', native: 'Português', dir: 'ltr', html: 'pt-BR' },   // §19.11 step 2 (VOCAB_MESSAGE_CATALOG); this list == erp/tools/i18n_sources.json meta (W-ERP-I18N L0)
+    { code: 'id_ID', native: 'Bahasa Indonesia', dir: 'ltr', html: 'id' }
   ];
   var BASE = 'en_US', LS_KEY = 'erp.lang';
   var _lang = BASE, _pack = null, _packs = {}, _cat = null, _catP = null, _listeners = [];
@@ -54,9 +56,9 @@
   // §10 H1 (bim-compiler prompts/VOCAB_MESSAGE_CATALOG.md, D1): the help pack is a SEPARATE lazy file per language, fetched through THIS loader
   //   when the language is chosen (i18n/help/<lang>/help.json, built by tools/build_help_pack.js from the same published packs), never in ad_seed.db.
   //   Pilot languages only (D2); en_US carries the how-to rows. A missing pack leaves the English help (logged), as legacy shows untranslated text.
-  var HELP_LANGS = { fr_FR: 1, de_DE: 1, ja_JP: 1, zh_CN: 1 }, _helps = {}, _help = null;
+  var _helps = {}, _help = null;   // §19.11 step 1: every screen locale (LOCALES) has its help pack, both built from erp/tools/i18n_sources.json; no second language list
   function loadHelp(code) {
-    if (code !== 'en_US' && !HELP_LANGS[code]) return Promise.resolve(null);
+    if (!_loc(code)) return Promise.resolve(null);
     if (_helps[code]) return Promise.resolve(_helps[code]);
     return _fetchJson('i18n/help/' + code + '/help.json').then(function (p) { _helps[code] = p; console.log('§HELP_PACK loaded lang=' + code + ' fields=' + Object.keys(p.fields || {}).length + ' howto=' + (p.howto || []).length); return p; })
       .catch(function (e) { console.warn('§HELP_PACK load-fail lang=' + code + ' ' + e.message); return null; });
@@ -64,9 +66,9 @@
   // §19.3: the language's help INDEX (i18n/help/<lang>/index.json, built by common/help/tools/build_help_index.js): the page reads its header (vocab, bm25, weights) for HelpQuery; null when absent (the name tiers still work)
   var _hIdx = {};
   function loadHelpIndex(code) {
-    if (code !== 'en_US' && !HELP_LANGS[code]) return Promise.resolve(null);
+    if (!_loc(code)) return Promise.resolve(null);
     if (_hIdx[code]) return Promise.resolve(_hIdx[code]);
-    return _fetchJson('i18n/help/' + code + '/index.json').then(function (p) { _hIdx[code] = p; console.log('§HELP_PACK index loaded lang=' + code + ' records=' + (p.records || []).length + ' vocab=' + (p.vocab || []).length); return p; })
+    return _fetchJson('i18n/help/' + code + '/index.json').then(function (p) { _hIdx[code] = p; console.log('§HELP_PACK index loaded lang=' + code + ' records=' + (p.records ? p.records.length : 'header-only') + ' vocab=' + (p.vocab || []).length); return p; })   // §19.10: the file ships its header only, the records are made in the page
       .catch(function (e) { console.warn('§HELP_PACK index load-fail lang=' + code + ' ' + e.message); return null; });
   }
   function preload(codes) {

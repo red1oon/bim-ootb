@@ -6,7 +6,7 @@ const fs = require('fs'), os = require('os'), path = require('path'), cp = requi
 const ROOT = path.join(__dirname, '..', '..', '..'), CORE = path.join(ROOT, 'common', 'help', 'help_query.js'), ERP = path.join(ROOT, 'erp');
 const SEED = path.join(ERP, 'ad_seed.db');
 const PW = process.env.PW || path.join(os.homedir(), 'bim-ootb', 'tests', 'node_modules', 'playwright');
-const LANGS = ['en_US', 'fr_FR', 'de_DE', 'ja_JP', 'zh_CN'];
+const LANGS = require(path.join(ERP, 'tools', 'help_records.js')).langs;   // §19.11 step 1: en_US + erp/tools/i18n_sources.json, the list the packs are built from
 function kit(tag) {
   const k = { pass: 0, fail: 0, inc: 0 }, br = process.env.HQ_BREAK || '';
   fs.mkdirSync(path.join(__dirname, 'logs'), { recursive: true });
@@ -23,8 +23,10 @@ const q = (sql) => { const r = cp.spawnSync('sqlite3', ['-readonly', '-json', SE
 const seedOk = () => fs.existsSync(SEED) && fs.statSync(SEED).size > 1e6;   // an LFS stub is a few bytes
 const idxFile = (lang) => path.join(ERP, 'i18n', 'help', lang, 'index.json'), packFile = (lang) => path.join(ERP, 'i18n', 'help', lang, 'help.json');
 // pack(lang) -> {index, text(i)}: the committed index.json + the resolver rebuilt from the two help packs the page loads (the adapter's own resolver)
+// §19.10: the ERP file ships the header only (runtimeRecords); its records then come from the adapter's own load(lang), the pure builder the page runs (no second copy)
 function pack(lang) {
   const A = require(path.join(ERP, 'tools', 'help_records.js')), index = JSON.parse(fs.readFileSync(idxFile(lang), 'utf8'));
+  if (!index.records) index.records = A.load(lang).records;
   const en = JSON.parse(fs.readFileSync(packFile('en_US'), 'utf8')), pk = lang === 'en_US' ? en : JSON.parse(fs.readFileSync(packFile(lang), 'utf8'));
   return { lang, index, text: A.resolver(en, pk) };
 }

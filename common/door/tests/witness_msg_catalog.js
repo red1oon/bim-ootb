@@ -65,7 +65,7 @@ const VARIANTS = { plain: { buildings: ['Duplex'] }, nob: { buildings: [] }, int
 function cores(v) { return { o: oldW ? mk(oldW, false, VARIANTS[v]) : null, n: mk(newW, true, VARIANTS[v]) }; }
 const C = { plain: cores('plain'), nob: cores('nob'), inter: cores('inter') };
 const res = (f) => { try { return JSON.stringify(f()); } catch (e) { return 'THROW ' + e.message; } };
-let steps = 0; const diffs = [];
+let steps = 0, probeExcused = 0; const diffs = [];
 const where = (a, b) => { let i = 0; while (i < a.length && a[i] === b[i]) i++; const f = Math.max(0, i - 50); return 'at char ' + i + ' old=…' + a.slice(f, i + 70) + ' new=…' + b.slice(f, i + 70); };   // the first differing place, with its context
 // one case = a chain of inputs from a state; each core walks its OWN state chain; every step result is compared
 function chain(v, label, st0, inputs) {
@@ -74,7 +74,10 @@ function chain(v, label, st0, inputs) {
     steps++;
     let ro = null, rn = null;
     const a = c.o ? res(() => { ro = c.o.step(so, inp); return ro; }) : null, b = res(() => { rn = c.n.step(sn, inp); return rn; });
-    if (c.o && a !== b) diffs.push(label + '#' + i + ' ' + where(a, b));
+    // §50 (3) bim-compiler prompts/CLI_ERP_IVR.md: a cd guess carries probe:true (red1 shows its → line only once it answered), by design, judged by W-RED1-RECORD R11 and W-RED1-CD C1.
+    //   Excused only when that flag is the WHOLE difference: the step is compared again with ,"probe":true taken out of the new answer.
+    if (c.o && a !== b && typeof b === 'string' && a === b.replace(/,"probe":true/g, '')) probeExcused++;
+    else if (c.o && a !== b) diffs.push(label + '#' + i + ' ' + where(a, b));
     so = ro ? ro.state : so; sn = rn ? rn.state : sn;
   });
 }
@@ -143,6 +146,7 @@ Object.keys(VARIANTS).forEach(v => ['', 'bim', 'mis', 'erp', 'verbs', 'zzz', '_'
 }));
 
 // ── verdicts ──
+if (probeExcused) k.L('M1 excused ' + probeExcused + ' step(s) whose only difference is the cd guess flag probe:true (§50 (3), W-RED1-RECORD R11)');
 { const ex = diffs.filter(d => /\/role 102#/.test(d)); if (ex.length) { k.L('M1 excused ' + ex.length + ' role 102 step(s): the new role-client read line (§30 L1, W-RED1-LOGIN)'); for (let i = diffs.length - 1; i >= 0; i--) if (/\/role 102#/.test(diffs[i])) diffs.splice(i, 1); } }
 k.L('M1 base=' + BASE + (oldSrc ? '' : ' (git show failed: ' + String(baseR.stderr).trim().slice(0, 120) + ')') + ' steps=' + steps + ' (helpText ' + helps + ') diffs=' + diffs.length);
 diffs.slice(0, 12).forEach(d => k.L('M1 DIFF ' + d));

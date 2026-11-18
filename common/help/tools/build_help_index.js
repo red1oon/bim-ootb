@@ -4,7 +4,8 @@
 // The ONLY place Intl.Segmenter runs: it makes the per-language `vocab` word list (the distinct word-like segments of 2+ characters, in no-space scripts, over every name and text of the
 // language's records) and the header says which Node and ICU made it. At query time the core never calls the segmenter, so the page and the shell split alike by construction.
 // Usage: node common/help/tools/build_help_index.js [--app erp] [--lang en_US,fr_FR,...] [--out <dir>]   (default: the adapter's own committed path, <app>/i18n/help/<lang>/index.json)
-// An adapter (<app>/tools/help_records.js) LISTS records; this file never names a table or a kind. Budget (design D8): index.json <= 100 KB per language, the line says OVER if not.
+// An adapter (<app>/tools/help_records.js) LISTS records; this file never names a table or a kind. Budget (design D8): index.json <= 100 KB per language (the bytes written), the line says OVER if not.
+// §19.10: `runtimeRecords: true` in an adapter = its page makes the records itself (the ERP, from the live dictionary), so the written file holds the header only.
 'use strict';
 const fs = require('fs'), path = require('path'), zlib = require('zlib');
 const ROOT = path.join(__dirname, '..', '..', '..');
@@ -25,10 +26,11 @@ function build(adapter, lang) {
   const t0 = Date.now(), d = adapter.load(lang), recs = d.records;   // the adapter's records are already in the deterministic order (kind order, then id), made by the one pure builder
   const idx = Object.assign({ v: 1, app: adapter.app, lang, spec: 'bim-compiler prompts/HELP_QUERY_CORE_DESIGN.md', built: { tool: 'build_help_index.js', node: process.versions.node, icu: process.versions.icu } },
     HEADER, { kinds: d.kinds, ntexts: d.ntexts, nospace: NOSPACE, vocab: vocabOf(lang, recs, d.resolve), records: recs });
-  const text = JSON.stringify(idx);
-  return { index: idx, text, bytes: Buffer.byteLength(text), gzip: zlib.gzipSync(text).length, ms: Date.now() - t0 };
+  // §19.10 (VOCAB_MESSAGE_CATALOG.md): an adapter whose page rebuilds the records from its own dictionary (runtimeRecords) ships the header only; the records stay in memory for the vocab and the witnesses
+  const shipped = adapter.runtimeRecords ? Object.assign({}, idx, { records: undefined }) : idx, text = JSON.stringify(shipped);
+  return { index: idx, text, shipped: adapter.runtimeRecords ? 'header' : 'records', bytes: Buffer.byteLength(text), gzip: zlib.gzipSync(text).length, ms: Date.now() - t0 };
 }
-function line(lang, b) { return '§HQ_BUILD lang=' + lang + ' records=' + b.index.records.length + ' vocab=' + b.index.vocab.length + ' bytes=' + b.bytes + ' gzip=' + b.gzip + ' ms=' + b.ms + ' node=' + process.versions.node + ' icu=' + process.versions.icu + (b.bytes > BUDGET ? ' OVER(' + BUDGET + ')' : ' ok(<=' + BUDGET + ')'); }
+function line(lang, b) { return '§HQ_BUILD lang=' + lang + ' records=' + b.index.records.length + ' shipped=' + (b.shipped || 'records') + ' vocab=' + b.index.vocab.length + ' bytes=' + b.bytes + ' gzip=' + b.gzip + ' ms=' + b.ms + ' node=' + process.versions.node + ' icu=' + process.versions.icu + (b.bytes > BUDGET ? ' OVER(' + BUDGET + ')' : ' ok(<=' + BUDGET + ')'); }
 module.exports = { build, line, BUDGET, NOSPACE };
 if (require.main === module) {
   const arg = (k, d) => { const i = process.argv.indexOf('--' + k); return i > 0 ? process.argv[i + 1] : d; };

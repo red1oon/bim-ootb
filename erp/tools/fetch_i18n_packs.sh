@@ -25,6 +25,8 @@ gh_pin gq globalqss/globalqss-idempiere-lco 31b1442b7656db8b011a5b71352445242525
 gh_pin bxservice_tbayen.translations bxservice/tbayen.translations c88fe31960b8dc6b527d7a64d74ac052a3f4e848
 gh_pin djoudi_ar_DZ djoudi/ar_DZ d1c2c3dcb5f9551d2dac9bbc58eeae374c35a348
 gh_pin JPiere_japanese-translation JPiere/japanese-translation b5547855eebd5bcf96562bbc14f414790038c1ff
+gh_pin devcoffee_pt_br devcoffee/idempiere-pt_br 102310214c24729435a77fd5155dd6657afe9f15 pt_BR   # §19.11 step 2 (VOCAB_MESSAGE_CATALOG)
+gh_pin uthadehikaru_in_ID uthadehikaru/idempiere-indonesia-localization b9273a80ec54e9731619189d7299f77425fda1cf in_ID   # §19.11 step 2; the pack's code is in_ID
 sf() {   # file url dir unpack
   local f=$1 u=$2 d=$3
   [ -s "$f" ] || curl -sfL -o "$f" "$u" || { bad "$u"; return; }

@@ -1,7 +1,8 @@
 // ⚠ DO NOT REMOVE — W-HQ-BOX (bim-compiler prompts/VOCAB_MESSAGE_CATALOG.md §19.3 Step 3; design prompts/HELP_QUERY_CORE_DESIGN.md §2 D1 D3, §6 step 3). READ THE LOG; an exit code is not evidence.
 // ISSUE it proves or disproves: after the wiring, ONE ranker answers. The ERP help box (in the real page) and the shell's erp.ask (Node) must show the list HelpQuery itself gives for the same words, the role gate
 // applied after ranking. N comes from the dictionary-built packs: the RANK-TWIN query list (every window, process, action and status name, each how-to title, each multi-word name's first word) in every built language.
-//   B0 the run-time record builder == the build tool's: HelpSearch.indexFrom(...).records equals the committed index.json records, per language (N = records; both are made by HelpRecords.build).
+//   B5 (§19.11) PAGE: every screen language's help pack reaches the page (`§HELP_PACK loaded lang= fields=` as committed). Red BOX_OLD_I18N=<main's erp_i18n.js before §19.11> FAILs it.
+//   B0 the run-time record builder == the build tool's: HelpSearch.indexFrom(...).records equals the build tool's records (§19.10: the adapter's load(), the ERP index.json ships its header only), per language (N = records; both are made by HelpRecords.build).
 //   B1 Node: for every query, indexFrom(...).ask(q).hits (the card's top 5) == HelpQuery.create(index.json).query(q, role gate) top 5, as id|tier|score text (X of N).
 //   B2 PAGE: the same through the real widget, window.__idmpHowto.ask(q).hits, against HelpQuery over the page's own records and the page's role menu (X of N). The records the page made beyond index.json are listed (run-time dictionary rows), none may be missing.
 //   B3 DOOR: the real door line `erp.ask question=...` for the fixture questions (erp/tests/fixtures/help_questions.json) answers the same window / action / how-to as the in-process card (X of N).
@@ -36,10 +37,11 @@ const top5 = (list) => list.slice(0, 5).map((x) => x.id + '|' + x.tier + '|' + x
     b1n += qs.length; b1ok += ok; b1nonempty += ne; perLang[lang] = { p, qs, idx };
     k.L('lang=' + lang + ' records=' + theirs.length + ' runtime==index.json: ' + (eq === theirs.length) + ' · queries=' + qs.length + ' box==core top-5: ' + ok + ' (non-empty lists ' + ne + ')');
   });
-  if (!b0n) k.incon('B0', 'no records judged'); else k.chk('B0 the run-time records equal the committed index.json records: ' + b0ok + ' of ' + b0n + ' records', b0ok === b0n, bad0.join(' ; '));
+  if (!b0n) k.incon('B0', 'no records judged'); else k.chk('B0 the run-time records equal the build tool\'s records (§19.10: the ERP file ships its header only, so these are the adapter\'s load()): ' + b0ok + ' of ' + b0n + ' records', b0ok === b0n, bad0.join(' ; '));
   if (!b1n || !b1nonempty) k.incon('B1', 'VACUOUS: queries=' + b1n + ' non-empty=' + b1nonempty); else k.chk('B1 Node: the box\'s top 5 == HelpQuery\'s top 5 (role gate after ranking): ' + b1ok + ' of ' + b1n + ' queries', b1ok === b1n, bad1.join(' ; '));
   // ---- B2 (page) ----
-  let page; try { page = await H.erpPage({ HS: BR }); } catch (e) { k.incon('B2', 'no headless chromium / page: ' + String(e.message).split('\n')[0]); page = null; }
+  // §19.11 red: BOX_OLD_I18N=<file> serves that erp_i18n.js instead (e.g. main's before §19.11, whose HELP_LANGS held 4): B5 must FAIL for es_ES, ar, ms_MY, th_TH
+  let page; try { page = await H.erpPage({ HS: BR }, process.env.BOX_OLD_I18N ? { '/erp/erp_i18n.js': process.env.BOX_OLD_I18N } : undefined); } catch (e) { k.incon('B2', 'no headless chromium / page: ' + String(e.message).split('\n')[0]); page = null; }
   if (page) try {
     k.L('chromium ' + page.version + ' (--disable-gpu) page errors at load=' + page.errs.length + ' ' + (page.firstIndexLine || 'NO index line').slice(0, 120));
     let b2n = 0, b2ok = 0, b2ne = 0; const bad2 = [];
@@ -55,6 +57,15 @@ const top5 = (list) => list.slice(0, 5).map((x) => x.id + '|' + x.tier + '|' + x
       k.L('lang=' + lang + ' page records=' + got.rec.length + ' index.json records missing from the page=' + missing + ' run-time extras=' + extra.length + (extra.length ? ' (' + extra.slice(0, 8).join(',') + ')' : '') + ' · queries=' + L.qs.length + ' page==core top-5: ' + ok);
       if (missing) k.chk('B2 ' + lang + ' no index.json record is missing from the page\'s run-time records', false, missing + ' missing');
     }
+    // §19.11 step 1 S5: every screen language's help pack REACHES the page: its `§HELP_PACK loaded lang=<l> fields=<n>` line, n = the committed pack's field count
+    let b5n = 0, b5ok = 0; const bad5 = [];
+    H.LANGS.filter((l) => l !== 'en_US').forEach((lang) => {
+      b5n++; const want = Object.keys(JSON.parse(fs.readFileSync(path.join(H.ERP, 'i18n', 'help', lang, 'help.json'), 'utf8')).fields || {}).length;
+      const ln = page.logs.find((l) => l.indexOf('§HELP_PACK loaded lang=' + lang + ' ') === 0), got = ln ? Number((ln.match(/ fields=(\d+)/) || [])[1]) : null;
+      if (got === want && want > 0) b5ok++; else if (bad5.length < 4) bad5.push(lang + ' want fields=' + want + ' page ' + (ln ? 'fields=' + got : 'logged no §HELP_PACK line'));
+    });
+    k.L('B5 help packs loaded in the page: ' + b5ok + ' of ' + b5n + (bad5.length ? ' · ' + bad5.join(' ; ') : ''));
+    if (!b5n) k.incon('B5', 'VACUOUS: no non-English language'); else k.chk('B5 PAGE: every screen language loads its own help pack (fields as committed): ' + b5ok + ' of ' + b5n, b5ok === b5n, bad5.join(' ; '));
     if (!b2n || !b2ne) k.incon('B2', 'VACUOUS: queries=' + b2n); else k.chk('B2 PAGE: the box\'s top 5 (window.__idmpHowto.ask) == HelpQuery\'s top 5 over the page\'s records and role menu: ' + b2ok + ' of ' + b2n + ' queries', b2ok === b2n, bad2.join(' ; '));
     // ---- B4 (§19.9, page): the role's menu processes in the box; the page's menu == the witness's own SQL reading; a Process row opens through the menu's openProcess ----
     await page.setLang('en_US');

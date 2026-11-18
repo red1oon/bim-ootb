@@ -25,7 +25,7 @@ var Rules = require(path.join(ROOT, 'lod/lod_rules.js')), Rebar = require(path.j
   Reader = require(path.join(ROOT, 'lod/lod_reader.js')), Registry = require(path.join(ROOT, 'lod/lod_registry.js'));
 var initSqlJs = require(path.join(ROOT, 'lib', 'sql-wasm.js')), wasmBinary = fs.readFileSync(path.join(ROOT, 'lib', 'sql-wasm.wasm'));
 var SRC = process.env.LODUP_SRC_DB, ORA = process.env.LODUP_ORACLE_DB, MARKS_FILE = process.env.LODUP_MARKS_JSON, ORA_LOG = process.env.LODUP_ORACLE_LOG, MAIN_BREAK = process.env.LODUP_BREAK === '1';
-var LOD_UI_SHA = process.env.LODUP_UI_SHA || '37e57cb76e4092bf43dceb11062a870511119d8efac42a27706372329b5fb096';   // lod/lod_ui.js as of P7 (the Add-on IFC row + sliced run driver; the P6 file was dfb5d321c6f86f8c); the P1-P5 witnesses carry the same constant
+var LOD_UI_SHA = process.env.LODUP_UI_SHA || '03791bfb8a26caea76027d97a954ce47a0aafa5947a8d5fad6db0a40bfcde037';   // lod/lod_ui.js as of the P7 NAME FIX (download names drop the .db; the P7 file was 37e57cb76e4092bf); as of P7 (the Add-on IFC row + sliced run driver; the P6 file was dfb5d321c6f86f8c); the P1-P5 witnesses carry the same constant
 var FAILS = [], INCONC = [], VTOL = 1e-5, SIDES = 8, RB_NV = SIDES * 4 * 3, LOOP_NV = 4 * SIDES * 2 * 3;   // 0.01 mm
 function verdict(name, ok, line) { var v = ok === null ? 'INCONCLUSIVE' : ok ? 'PASS' : 'FAIL'; console.log('§LODUP_' + name + ' ' + line + ' -> ' + v); if (v === 'FAIL') FAILS.push(name); if (v === 'INCONCLUSIVE') INCONC.push(name); return v; }
 function q(db, sql, bind) { var st = db.prepare(sql), out = []; if (bind) st.bind(bind); while (st.step()) out.push(st.get()); st.free(); return out; }

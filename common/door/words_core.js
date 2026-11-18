@@ -168,7 +168,7 @@
         }
         if (p === 'cd-kind') {
           if (ok) { st.kind = env.answer.kind; st.columns = pick(env.answer.properties || []).cols; st.props = slim(env.answer.properties); screen.push(M('words.cd_kind_ok', st.building, st.kind, (env.answer.properties || []).length, st.columns.join(', '))); return out(); }
-          effects.push({ line: lineOf('mis.describe', { kind: pcName(st.pendingCd) }), purpose: 'cd-erp' }); return out();
+          effects.push({ line: lineOf('mis.describe', { kind: pcName(st.pendingCd) }), purpose: 'cd-erp', probe: true }); return out();
         }
         if (p === 'cd-erp') {
           var pc = typeof st.pendingCd === 'string' ? { name: st.pendingCd } : st.pendingCd;   // a plain `cd X` keeps its text (string); a record or alternative reading is an object
@@ -179,11 +179,11 @@
             if (pc.id != null || pc.ref != null) {   // §29.1: a record named with the kind: its row is read next (by id from a link, by number or name as typed)
               st.pendingRead = { ref: pc.ref != null ? pc.ref : null, id: pc.id != null ? pc.id : null, by: pc.id != null ? 'id' : 'number' };
               var ra = pc.id != null ? { kind: st.erp, id: pc.id } : { kind: st.erp, number: pc.ref }; ctxArgs(st, verbs['mis.read'], ra);
-              effects.push({ line: lineOf('mis.read', ra), purpose: 'rec-read' }); return out(); }
+              effects.push({ line: lineOf('mis.read', ra), purpose: 'rec-read', probe: true }); return out(); }
             screen.push(M('words.cd_erp_ok', st.erp, (env.answer.properties || []).length, st.ecolumns.join(', '))); return out(); }
-          if (pc.alt) { st.pendingCd = { name: pc.alt.name, ref: pc.alt.ref, first: pc.first }; effects.push({ line: lineOf('mis.describe', { kind: pc.alt.name }), purpose: 'cd-erp' }); return out(); }   // `cd Project Hospital`: the whole text is no kind, so the first word is
+          if (pc.alt) { st.pendingCd = { name: pc.alt.name, ref: pc.alt.ref, first: pc.first }; effects.push({ line: lineOf('mis.describe', { kind: pc.alt.name }), purpose: 'cd-erp', probe: true }); return out(); }   // `cd Project Hospital`: the whole text is no kind, so the first word is
           if (st.erp && !st.rec && typeof st.pendingCd === 'string' && brk !== 'nokindrec') {   // §45 K3: in a kind, a name that is no building, kind or window is a record of that kind (`cd 100` = `cd Order 100`); the walk is kept (nokindrec: W-RED1-RECORD falsifier, must FAIL R10)
-            var kr = st.pendingCd; st.pendingCd = null; st.pendingRead = { ref: kr, id: null, by: 'number', unknown: kr }; var ka = { kind: st.erp, number: kr }; ctxArgs(st, verbs['mis.read'], ka); effects.push({ line: lineOf('mis.read', ka), purpose: 'rec-read' }); return out(); }
+            var kr = st.pendingCd; st.pendingCd = null; st.pendingRead = { ref: kr, id: null, by: 'number', unknown: kr }; var ka = { kind: st.erp, number: kr }; ctxArgs(st, verbs['mis.read'], ka); effects.push({ line: lineOf('mis.read', ka), purpose: 'rec-read', probe: true }); return out(); }
           st.pendingCd = null; var nm = pc.first || pc.name;
           screen.push(buildings.length ? M('words.cd_unknown_buildings', nm, buildings.join(', ')) : M('words.cd_unknown', nm)); return out();
         }
@@ -191,7 +191,7 @@
           var hq = st.pendingHash; delete st.pendingHash; var HA = ok && env.answer, all = [];
           if (!HA || !Array.isArray(HA.hits)) { screen.push(M('words.hash_none', hq, env.why || M('words.answer_no_rows'))); return out(); }
           HA.hits.forEach(function (h) { h.records.forEach(function (r) { all.push({ h: h, r: r }); }); });
-          if (all.length === 1) { if (st.mwalk) st.mwalk = null; st.pendingCd = { name: all[0].h.kind, id: all[0].r.id }; effects.push({ line: lineOf('mis.describe', { kind: all[0].h.kind }), purpose: 'cd-erp' }); return out(); }
+          if (all.length === 1) { if (st.mwalk) st.mwalk = null; st.pendingCd = { name: all[0].h.kind, id: all[0].r.id }; effects.push({ line: lineOf('mis.describe', { kind: all[0].h.kind }), purpose: 'cd-erp', probe: true }); return out(); }
           screen.push(M('words.hash_many', hq, all.length, HA.hits.length));
           HA.hits.forEach(function (h) { screen.push(M('words.hash_window', h.window.name, h.kind, h.definition)); h.records.forEach(function (r) { screen.push(M('words.hash_record', h.kind, r.number, quote(h.kind), r.id)); }); });
           return out();
@@ -204,7 +204,7 @@
             screen.push(M('words.cd_record_ok', st.erp, st.rec.label, (st.etabs || []).length, (st.etabs || []).map(function (t) { return t.tab; }).join(', ')));
             if ((st.eprops || []).some(function (q) { return q.name === 'DocStatus'; }) && verbs['erp.actions']) { var aa = { kind: st.erp, id: String(st.rec.id) }; ctxArgs(st, verbs['erp.actions'], aa); effects.push({ line: lineOf('erp.actions', aa), purpose: 'rec-actions' }); }   // §40 C3: a document's legal actions for the role, read once on entry
             return out(); }
-          if (pr.by === 'number' && pr.ref != null && /^\d+$/.test(String(pr.ref))) { pr.by = 'id'; pr.why = env.why || null; var rb = { kind: st.erp, id: pr.ref }; ctxArgs(st, verbs['mis.read'], rb); effects.push({ line: lineOf('mis.read', rb), purpose: 'rec-read' }); return out(); }   // a whole number is a DocumentNo first, then an id
+          if (pr.by === 'number' && pr.ref != null && /^\d+$/.test(String(pr.ref))) { pr.by = 'id'; pr.why = env.why || null; var rb = { kind: st.erp, id: pr.ref }; ctxArgs(st, verbs['mis.read'], rb); effects.push({ line: lineOf('mis.read', rb), purpose: 'rec-read', probe: true }); return out(); }   // a whole number is a DocumentNo first, then an id
           if (pr.unknown != null && !pr.why) { st.pendingRead = null; screen.push(buildings.length ? M('words.cd_unknown_buildings', pr.unknown, buildings.join(', ')) : M('words.cd_unknown', pr.unknown)); return out(); }   // §45 K3: not a record either: the message of before (a whole number that was refused as a number keeps that reason, e.g. two records carry it)
           st.pendingRead = null; screen.push(M('words.cd_record_none', st.erp, pr.ref != null ? pr.ref : pr.id, (pr.why || env.why || M('words.answer_no_rows')))); return out();   // the first refusal (as a number) is the one that says why, e.g. two records carry it
         }
@@ -232,7 +232,7 @@
           if (!ok) { screen.push(M('words.link_fail', plk.link.kind, st.building, env.why || M('words.answer_no_rows'))); return out(); }
           var lid = got(env.answer, plk.link.id);
           if (lid == null || brk === 'nolink') { screen.push(M('words.link_none', plk.link.kind, st.building, plk.link.then || '')); return out(); }
-          st.pendingCd = { name: plk.link.kind, id: lid, up: [snap(st)] }; effects.push({ line: lineOf('mis.describe', { kind: plk.link.kind }), purpose: 'cd-erp' }); return out();
+          st.pendingCd = { name: plk.link.kind, id: lid, up: [snap(st)] }; effects.push({ line: lineOf('mis.describe', { kind: plk.link.kind }), purpose: 'cd-erp', probe: true }); return out();
         }
         return out();
       }
@@ -304,7 +304,7 @@
         if (st.mwalk && !st.erp && !st.building) {   // §40 C5: in the walk, cd names a child of the node (exact, case-blind, then ONE prefix)
           var mc = menuChild(st, arg);
           if (mc && mc.children) { st.mwalk.path.push(mc.name); menuList(st, screen); return out(); }
-          if (mc && mc.action === 'W' && mc.kind) { st.pendingCd = { name: mc.kind, first: mc.name, menu: true }; effects.push({ line: lineOf('mis.describe', { kind: mc.kind }), purpose: 'cd-erp' }); return out(); }
+          if (mc && mc.action === 'W' && mc.kind) { st.pendingCd = { name: mc.kind, first: mc.name, menu: true }; effects.push({ line: lineOf('mis.describe', { kind: mc.kind }), purpose: 'cd-erp', probe: true }); return out(); }
           if (mc && (mc.action === 'P' || mc.action === 'R')) { screen.push(M('words.menu_leaf_run', mc.name)); return out(); }
           if (mc) { screen.push(M('words.menu_leaf_page', mc.name)); return out(); }
           st.mwalk = null;   // not a child: the cd goes on as typed and the walk is left
@@ -317,8 +317,8 @@
         var tk = toks.slice(1), pcd = { name: arg, first: arg };
         if (tk.length > 1) { var rest = tk.slice(1).map(function (t) { return t.text; }).join(' '); if (tk[0].quoted) pcd = { name: tk[0].text, ref: rest, first: arg }; else pcd.alt = { name: tk[0].text, ref: rest }; }   // `cd "Business Partner" Joe`: the first word is the kind; `cd Project Hospital`: the whole text first, then the first word
         st.pendingCd = (pcd.alt || pcd.ref != null) ? pcd : arg;
-        if (st.building) effects.push({ line: lineOf('object.describe', { building: st.building, kind: pcd.name }), purpose: 'cd-kind' });
-        else effects.push({ line: lineOf('mis.describe', { kind: pcd.name }), purpose: 'cd-erp' });
+        if (st.building) effects.push({ line: lineOf('object.describe', { building: st.building, kind: pcd.name }), purpose: 'cd-kind', probe: true });
+        else effects.push({ line: lineOf('mis.describe', { kind: pcd.name }), purpose: 'cd-erp', probe: true });
         return out();
       }
       if (w === 'menu') {   // §40 C5: the menu walked as places (`red1 menu` one-shot stays the full-screen menu, §21)

@@ -7,8 +7,9 @@ const fs = require('fs'), path = require('path'), cp = require('child_process');
 const ERP = path.join(__dirname, '..'), HELP = path.join(ERP, 'i18n', 'help');
 const SEED = process.env.ERP_SEED_DB || path.join(ERP, 'ad_seed.db');
 const CORE = require(path.join(ERP, 'help_records_core.js')), KINDS = CORE.kinds;
-const LANGS = ['en_US', 'fr_FR', 'de_DE', 'ja_JP', 'zh_CN'];
+const LANGS = ['en_US'].concat(Object.keys(JSON.parse(fs.readFileSync(path.join(ERP, 'tools', 'i18n_sources.json'), 'utf8')).sources));   // §19.11 step 1: the one list
 const q = (sql) => { const r = cp.spawnSync('sqlite3', ['-readonly', '-json', SEED, sql], { encoding: 'utf8', maxBuffer: 1 << 29 }); if (r.status !== 0) throw new Error(r.stderr); return JSON.parse(r.stdout || '[]'); };
 const readPack = (lang) => JSON.parse(fs.readFileSync(path.join(HELP, lang, 'help.json'), 'utf8'));
 const load = (lang) => CORE.build({ q, en: readPack('en_US'), pack: lang === 'en_US' ? null : readPack(lang) });
-module.exports = { app: 'erp', kinds: KINDS, langs: LANGS, load, resolver: CORE.resolver, extraTexts: CORE.extraTexts, outFile: (lang) => path.join(HELP, lang, 'index.json') };
+// §19.10: the page rebuilds the records from the live dictionary (erp/help_search.js indexFrom) and reads only the header of index.json, so the file ships the header only (runtimeRecords).
+module.exports = { app: 'erp', runtimeRecords: true, kinds: KINDS, langs: LANGS, load, resolver: CORE.resolver, extraTexts: CORE.extraTexts, outFile: (lang) => path.join(HELP, lang, 'index.json') };

@@ -43,8 +43,12 @@ const decimals = (s) => (String(s).match(/\d+\.\d+/g) || []);
     tableMd = md.slice(g.a, g.b).trim();
     const want = G.verbTable(cmpVocab);
     k.chk('T1 the verb table on the page equals the table generated from verbs.json (cell for cell)', tableMd === want, 'page rows=' + (tableMd.split('\n').length - 2) + ' vocabulary=' + cmpVocab.verbs.length);
-    const names = tableMd.split('\n').slice(2).map(r => (/^\| `([^`]+)`/.exec(r) || [])[1]);
-    k.chk('T2 the table names equal the vocabulary names, in order', JSON.stringify(names) === JSON.stringify(cmpVocab.verbs.map(v => v.verb)), names.length + ' names');
+    const names = tableMd.split('\n').slice(2).filter(r => /^\|/.test(r)).map(r => (/^\| `([^`]+)`/.exec(r) || [])[1]);
+    k.chk('T2 the table names equal the vocabulary names that are not old names, in order', JSON.stringify(names) === JSON.stringify(cmpVocab.verbs.filter(v => !v.alias_of).map(v => v.verb)), names.length + ' names');
+    // T3 (§50 (7)): the old names are one line under the table, each with the verb it points at, exactly the vocabulary's alias_of entries
+    const oldLine = tableMd.split('\n').filter(r => r.indexOf(G.oldNamesLead) === 0)[0] || '', pairs = [...oldLine.matchAll(/`([^`]+)` → `([^`]+)`/g)].map(m => m[1] + '>' + m[2]);
+    const wantPairs = cmpVocab.verbs.filter(v => v.alias_of).map(v => v.verb + '>' + v.alias_of);
+    k.chk('T3 the old-name line names exactly the vocabulary\'s old names and what each is now (' + wantPairs.length + ')', JSON.stringify(pairs) === JSON.stringify(wantPairs), pairs.length + ' pairs on the page');
   }
 
   // F: nothing outside a run block; the download lines

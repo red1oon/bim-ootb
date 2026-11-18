@@ -15,6 +15,7 @@
  *   PARITY_VALUES     bolts, plate height, weld leg exact; plate length, web thickness, support wall, the measured clause values within the oracle's own rounding.
  *   CLEAR_POST        the independent re-check on the parts REBUILT FROM THE OP-LOG ROWS (float32 relative vertices + centre, what the Modeller stores): no part surface inside another solid.
  *   BREAK_CHECK       the clash check switched off: the same re-check on the written result must FAIL.
+ *   WINDING           (P4 FIX SPEC) every component of every part closed, every directed edge once, signed volume > 0; BREAK_WINDING: the old weld caps must FAIL it. PARITY_VERTICES compares triangles as vertex sets.
  *   CENTRE / DETERMINISM / REGISTRY / RULES / GATE / CHANGELIST_TXT as the P1-P3 witnesses.
  * Inputs by environment only (no project path in the repo): LODUP_SRC_DB (the extracted building DB the survey ran on), LODUP_ORACLE_DB (the oracle's output DB), LODUP_ORACLE_DIR (the folder with
  * joint_survey.json, gen_result.json and log/gen_run1.log); all read only. Any unset -> a SYNTHETIC fixture with hand-derived truth (stated on the first line); parity is then INCONCLUSIVE, never PASS.
@@ -27,7 +28,7 @@ var Rules = require(path.join(ROOT, 'lod/lod_rules.js')), Pack = require(path.jo
   Layer = require(path.join(ROOT, 'lod/layer_pack.js')), Ops = require(path.join(ROOT, 'lod/lod_ops.js')), Reader = require(path.join(ROOT, 'lod/lod_reader.js')), Registry = require(path.join(ROOT, 'lod/lod_registry.js'));
 var initSqlJs = require(path.join(ROOT, 'lib', 'sql-wasm.js')), wasmBinary = fs.readFileSync(path.join(ROOT, 'lib', 'sql-wasm.wasm'));
 var SRC = process.env.LODUP_SRC_DB, ORA = process.env.LODUP_ORACLE_DB, ODIR = process.env.LODUP_ORACLE_DIR, MAIN_BREAK = process.env.LODUP_BREAK === '1';
-var P1_LOD_UI_SHA = '37e57cb76e4092bf43dceb11062a870511119d8efac42a27706372329b5fb096';   // lod/lod_ui.js as of P7 (it gained the Add-on IFC row and the sliced run driver; the P6 file was dfb5d321c6f86f8c); lod/lod_ui.js as of P6 (it gained the declared-input button row and the live-neighbours reader; the P3 file was 703b8250e980def7); lod/lod_ui.js as of the P3 fix; P4 does not edit it
+var P1_LOD_UI_SHA = '03791bfb8a26caea76027d97a954ce47a0aafa5947a8d5fad6db0a40bfcde037';   // lod/lod_ui.js as of the P7 NAME FIX (download names drop the .db; the P7 file was 37e57cb76e4092bf); as of P7 (it gained the Add-on IFC row and the sliced run driver; the P6 file was dfb5d321c6f86f8c); lod/lod_ui.js as of P6 (it gained the declared-input button row and the live-neighbours reader; the P3 file was 703b8250e980def7); lod/lod_ui.js as of the P3 fix; P4 does not edit it
 var FAILS = [], INCONC = [], VTOL = 1e-5;   // 0.01 mm
 function verdict(name, ok, line) { var v = ok === null ? 'INCONCLUSIVE' : ok ? 'PASS' : 'FAIL'; console.log('§LODUP_' + name + ' ' + line + ' -> ' + v); if (v === 'FAIL') FAILS.push(name); if (v === 'INCONCLUSIVE') INCONC.push(name); return v; }
 function q(db, sql) { var r = db.exec(sql); return r.length ? r[0].values : []; }
@@ -173,7 +174,12 @@ initSqlJs({ wasmBinary: wasmBinary }).then(function (SQL) {
     var ora = {}; q(oraDb, "SELECT i.guid, c.vertices, t.center_x, t.center_y, t.center_z FROM element_instances i JOIN component_geometries c USING(geometry_hash) JOIN element_transforms t USING(guid) WHERE i.guid LIKE 'GEN-CR-%' ORDER BY i.guid")
       .forEach(function (v) { var b = v[1], f = new Float32Array(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength)), W = new Float64Array(f.length); for (var i = 0; i < f.length; i += 3) { W[i] = f[i] + v[2]; W[i + 1] = f[i + 1] + v[3]; W[i + 2] = f[i + 2] + v[4]; } ora[v[0]] = W; });
     var vcBad = 0, maxD = 0, nVert = 0, off = {}, perPart = {};
-    mIds.forEach(function (g) { if (!ora[g]) return; var a = mine[g].tris, b = ora[g]; if (a.length !== b.length) { vcBad++; return; } nVert += a.length / 3; var d = 0; for (var i = 0; i < a.length; i++) { var dd = Math.abs(a[i] - b[i]); if (dd > d) d = dd; } perPart[g] = d; if (d > maxD) maxD = d; if (d > VTOL) off[g.replace(/-(PL|BT|WD)$/, '')] = Math.max(off[g.replace(/-(PL|BT|WD)$/, '')] || 0, d); });
+    // P4 FIX SPEC: each triangle is compared as a vertex SET (the best of its 6 vertex orders), so a winding fixed here and not in the oracle is still judged on positions; the re-wound triangles are counted
+    var PERM = [[0, 1, 2], [1, 2, 0], [2, 0, 1], [0, 2, 1], [2, 1, 0], [1, 0, 2]], rewound = {};
+    mIds.forEach(function (g) { if (!ora[g]) return; var a = mine[g].tris, b = ora[g]; if (a.length !== b.length) { vcBad++; return; } nVert += a.length / 3; var d = 0;
+      for (var t = 0; t < a.length; t += 9) { var best = Infinity, bp = 0; PERM.forEach(function (pm, pi) { var m = 0; for (var k = 0; k < 3; k++) for (var c = 0; c < 3; c++) { var dd = Math.abs(a[t + 3 * k + c] - b[t + 3 * pm[k] + c]); if (dd > m) m = dd; } if (m < best) { best = m; bp = pi; } }); if (best > d) d = best; if (bp > 2) rewound[g.slice(-2)] = (rewound[g.slice(-2)] || 0) + 1; }
+      perPart[g] = d; if (d > maxD) maxD = d; if (d > VTOL) off[g.replace(/-(PL|BT|WD)$/, '')] = Math.max(off[g.replace(/-(PL|BT|WD)$/, '')] || 0, d); });
+    console.log('§LODUP_JOINT_REWOUND triangles whose winding differs from the oracle (the P4 FIX SPEC weld caps; positions equal) by part kind: ' + JSON.stringify(rewound));
     var offList = Object.keys(off).sort().map(function (k) { var jr = A.generated.filter(function (x) { return 'GEN-CR-' + x.guid + '-' + (x.end > 0 ? 'B' : 'A') === k; })[0]; return k + ' delta_mm=' + (off[k] * 1000).toFixed(4) + ' tie_margin_mm=' + (jr ? jr.tie_margin_mm.toFixed(4) : '?'); });
     var tieJoints = A.generated.filter(function (x) { return x.tie_margin_mm <= 0.01; }).length;
     verdict('PARITY_VERTICES', vcBad === 0 && nVert > 0 && Object.keys(off).length === 0, 'parts_compared=' + Object.keys(perPart).length + ' vertices_compared=' + nVert + ' vertex_count_mismatch_parts=' + vcBad + ' max_world_delta_mm=' + (maxD * 1000).toFixed(6) + ' tolerance=0.01 mm | joints decided inside the tie band (plate end half way between two 2 mm samples, margin <= 0.01 mm)=' + tieJoints + ' of ' + A.generated.length + ' (the deeper sample wins; rule fixed after the first run, see the spec)' + (offList.length ? ' | joints outside tolerance: ' + offList.slice(0, 10).join('; ') : ' | joints outside tolerance: none'));
@@ -181,7 +187,7 @@ initSqlJs({ wasmBinary: wasmBinary }).then(function (SQL) {
       [['n_bolts', 0], ['plate_H', 1e-6], ['weld_mm', 0]].forEach(function (kv) { if (Math.abs(o[kv[0]] - j[kv[0]]) > kv[1]) valBad.push([j.guid, kv[0], o[kv[0]], j[kv[0]]]); });
       if (Math.abs(o.plate_L - j.plate_L) > 0.01) valBad.push([j.guid, 'plate_L', o.plate_L, j.plate_L]); if (Math.abs(o.tw_measured_mm - j.tw_measured_mm) > 0.006) valBad.push([j.guid, 'tw', o.tw_measured_mm, j.tw_measured_mm]);
       if (Math.abs(o.support_t_measured_mm - j.support_t_measured_mm) > 0.051) valBad.push([j.guid, 'support_t', o.support_t_measured_mm, j.support_t_measured_mm]); if (Math.abs(o.web_mm - j.web_mm) > 0.051) valBad.push([j.guid, 'web_mm', o.web_mm, j.web_mm]);
-      Object.keys(o.measured).forEach(function (k) { if (Math.abs(o.measured[k] - j.measured[k]) > 0.011) valBad.push([j.guid, 'measured.' + k, o.measured[k], j.measured[k]]); });
+      Object.keys(o.measured || {}).forEach(function (k) { if (!j.measured || Math.abs(o.measured[k] - j.measured[k]) > 0.011) valBad.push([j.guid, 'measured.' + k, o.measured[k], j.measured[k]]); });
       if (Object.keys(j.checks).some(function (k) { return !j.checks[k]; })) valBad.push([j.guid, 'a clause check failed']); });
     verdict('PARITY_VALUES', A.generated.length > 0 && !valBad.length, 'joints=' + A.generated.length + ' differing_values=' + valBad.length + ' (bolts, plate height, weld exact; plate length 0.01 mm; web 0.006 mm, wall and clear web within the oracle\'s 0.1 rounding; the 7 measured clause values 0.011 mm) clause_failures=' + A.ruleFail.length + (valBad[0] ? ' first=' + JSON.stringify(valBad[0]) : ''));
   }
@@ -233,6 +239,20 @@ initSqlJs({ wasmBinary: wasmBinary }).then(function (SQL) {
   var h1 = opHash(R), h2 = opHash(run(RULES, { noClash: MAIN_BREAK }));
   verdict('DETERMINISM', parts.length ? h1 === h2 : null, 'run1=' + h1.slice(0, 16) + ' run2=' + h2.slice(0, 16));
 
+  // ---- WINDING (P4 FIX SPEC): every component of every generated part closed, every directed edge used once, signed volume > 0. The red control: the old weld caps must FAIL it.
+  function windBad(P) { var bad = { open: 0, inconsistent: 0, inward: 0 }, comps = 0;
+    P.forEach(function (p) { var t = p.tris, key = function (i) { return t[i].toFixed(6) + ',' + t[i + 1].toFixed(6) + ',' + t[i + 2].toFixed(6); }, n = t.length / 9, V = [], par = [], f = function (x) { while (par[x] !== x) x = par[x] = par[par[x]]; return x; }, byV = {}, i, k;
+      for (i = 0; i < n; i++) { V.push([key(9 * i), key(9 * i + 3), key(9 * i + 6)]); par.push(i); }
+      V.forEach(function (v, i2) { v.forEach(function (kk) { if (byV[kk] !== undefined) par[f(i2)] = f(byV[kk]); else byV[kk] = i2; }); });
+      var C = {}; for (i = 0; i < n; i++) (C[f(i)] = C[f(i)] || []).push(i);
+      Object.keys(C).forEach(function (r) { comps++; var E = {}, D = {}, vol = 0; C[r].forEach(function (ti) { var v = V[ti], o = 9 * ti; for (k = 0; k < 3; k++) { var a = v[k], b = v[(k + 1) % 3]; E[a < b ? a + '|' + b : b + '|' + a] = (E[a < b ? a + '|' + b : b + '|' + a] || 0) + 1; D[a + '>' + b] = (D[a + '>' + b] || 0) + 1; }
+          vol += (t[o] * (t[o + 4] * t[o + 8] - t[o + 5] * t[o + 7]) - t[o + 1] * (t[o + 3] * t[o + 8] - t[o + 5] * t[o + 6]) + t[o + 2] * (t[o + 3] * t[o + 7] - t[o + 4] * t[o + 6])) / 6; });
+        if (Object.keys(E).some(function (e) { return E[e] !== 2; })) bad.open++; else if (Object.keys(D).some(function (e) { return D[e] !== 1; })) bad.inconsistent++; else if (vol <= 0) bad.inward++; }); });
+    bad.components = comps; bad.total = bad.open + bad.inconsistent + bad.inward; return bad; }
+  var WB = windBad(parts);
+  verdict('WINDING', parts.length ? WB.total === 0 : null, 'parts=' + parts.length + ' components=' + WB.components + ' open=' + WB.open + ' inconsistent=' + WB.inconsistent + ' inward=' + WB.inward + ' (each component closed, every directed edge once, signed volume > 0)');
+  if (parts.length && !MAIN_BREAK) { var RW = run(RULES, { breakWeldWinding: true }), WB2 = windBad(RW.parts);
+    verdict('BREAK_WINDING', WB2.total > 0, 'switch=on (the old weld caps): ' + WB2.total + ' bad components of ' + WB2.components + ' (inconsistent=' + WB2.inconsistent + ' inward=' + WB2.inward + ') expected WINDING=FAIL got WINDING=' + (WB2.total ? 'FAIL' : 'PASS')); }
   // ---- BREAK: the clash check switched off; the same re-check on the written result must FAIL (a clash check that cannot fail is not a check)
   if (!MAIN_BREAK) {
     var RB = Pack.run(inp, RULES, { noClash: true, log: function () { } }), wb = written(RB.parts, inp.meta), cb = RB.parts.length ? Pack.clearPost(inp, RULES, wb, function () { }) : null;
