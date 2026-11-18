@@ -38,7 +38,7 @@
       var P = r.params || {}, a = P.realGeomHash ? assetOf(P.realGeomHash) : null, pl = P.placement, bb = P.bbox; if (!a || !a.v || !pl || !bb) return;
       var v = a.v, f = a.f, cx = pl.x, cy = pl.y, cz = pl.z + (bb[5] - bb[4]) / 2, n = f && f.length ? f.length : v.length / 3, W = new Float64Array(n * 3), i, k;
       for (i = 0; i < n; i++) { k = 3 * (f && f.length ? f[i] : i); W[3 * i] = v[k] + cx; W[3 * i + 1] = v[k + 1] + cy; W[3 * i + 2] = v[k + 2] + cz; }
-      out.push({ guid: r.guid, cls: P.ifc_class, name: P.name, pack: String(P.provenance || '').replace(/^generated:/, ''), tris: W, parents: (P.parts_of || []).slice(), attach: (P.attached_to || []).slice() });
+      out.push({ guid: r.guid, cls: P.ifc_class, name: P.name, storey: P.storey, pack: String(P.provenance || '').replace(/^generated:/, ''), tris: W, parents: (P.parts_of || []).slice(), attach: (P.attached_to || []).slice() });
     });
     return out;
   }

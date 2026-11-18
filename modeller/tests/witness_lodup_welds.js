@@ -24,7 +24,7 @@ var Rules = require(path.join(ROOT, 'lod/lod_rules.js')), Pack = require(path.jo
   Reader = require(path.join(ROOT, 'lod/lod_reader.js')), Registry = require(path.join(ROOT, 'lod/lod_registry.js'));
 var initSqlJs = require(path.join(ROOT, 'lib', 'sql-wasm.js')), wasmBinary = fs.readFileSync(path.join(ROOT, 'lib', 'sql-wasm.wasm'));
 var SRC = process.env.LODUP_SRC_DB, ORA = process.env.LODUP_ORACLE_DB, MAIN_BREAK = process.env.LODUP_BREAK === '1';
-var P1_LOD_UI_SHA = 'dfb5d321c6f86f8c8437fe64e2c2c86cc3097a300edeb095aaee2fc201d608d2';   // lod/lod_ui.js as of P6 (it gained the declared-input button row and the live-neighbours reader; the P3 file was 703b8250e980def7); lod/lod_ui.js as of the P3 fix (live host hide + 'not applicable here'); it was the P1 file (c6c4ac30...) until then
+var P1_LOD_UI_SHA = '37e57cb76e4092bf43dceb11062a870511119d8efac42a27706372329b5fb096';   // lod/lod_ui.js as of P7 (it gained the Add-on IFC row and the sliced run driver; the P6 file was dfb5d321c6f86f8c); lod/lod_ui.js as of P6 (it gained the declared-input button row and the live-neighbours reader; the P3 file was 703b8250e980def7); lod/lod_ui.js as of the P3 fix (live host hide + 'not applicable here'); it was the P1 file (c6c4ac30...) until then
 var FAILS = [], INCONC = [];
 function verdict(name, ok, line) { var v = ok === null ? 'INCONCLUSIVE' : ok ? 'PASS' : 'FAIL'; console.log('§LODUP_' + name + ' ' + line + ' -> ' + v); if (v === 'FAIL') FAILS.push(name); if (v === 'INCONCLUSIVE') INCONC.push(name); return v; }
 function q(db, sql) { var r = db.exec(sql); return r.length ? r[0].values : []; }

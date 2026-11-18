@@ -25,7 +25,7 @@ var Rules = require(path.join(ROOT, 'lod/lod_rules.js')), Rebar = require(path.j
   Reader = require(path.join(ROOT, 'lod/lod_reader.js')), Registry = require(path.join(ROOT, 'lod/lod_registry.js'));
 var initSqlJs = require(path.join(ROOT, 'lib', 'sql-wasm.js')), wasmBinary = fs.readFileSync(path.join(ROOT, 'lib', 'sql-wasm.wasm'));
 var SRC = process.env.LODUP_SRC_DB, ORA = process.env.LODUP_ORACLE_DB, MARKS_FILE = process.env.LODUP_MARKS_JSON, ORA_LOG = process.env.LODUP_ORACLE_LOG, MAIN_BREAK = process.env.LODUP_BREAK === '1';
-var LOD_UI_SHA = process.env.LODUP_UI_SHA || 'dfb5d321c6f86f8c8437fe64e2c2c86cc3097a300edeb095aaee2fc201d608d2';   // lod/lod_ui.js as of P6 (the file input row); the P1-P5 witnesses carry the same constant
+var LOD_UI_SHA = process.env.LODUP_UI_SHA || '37e57cb76e4092bf43dceb11062a870511119d8efac42a27706372329b5fb096';   // lod/lod_ui.js as of P7 (the Add-on IFC row + sliced run driver; the P6 file was dfb5d321c6f86f8c); the P1-P5 witnesses carry the same constant
 var FAILS = [], INCONC = [], VTOL = 1e-5, SIDES = 8, RB_NV = SIDES * 4 * 3, LOOP_NV = 4 * SIDES * 2 * 3;   // 0.01 mm
 function verdict(name, ok, line) { var v = ok === null ? 'INCONCLUSIVE' : ok ? 'PASS' : 'FAIL'; console.log('§LODUP_' + name + ' ' + line + ' -> ' + v); if (v === 'FAIL') FAILS.push(name); if (v === 'INCONCLUSIVE') INCONC.push(name); return v; }
 function q(db, sql, bind) { var st = db.prepare(sql), out = []; if (bind) st.bind(bind); while (st.step()) out.push(st.get()); st.free(); return out; }
@@ -297,7 +297,7 @@ initSqlJs({ wasmBinary: wasmBinary }).then(function (SQL) {
   Registry.register({ id: 'dummy', label: 'Dummy (test pack)', appliesTo: function () { return 0; }, run: function () { return { parts: [], changes: [] }; } });
   var d2 = Registry.describe(inp, rowsOf, Rules);
   verdict('REGISTRY', d1.map(function (x) { return x.id; }).join() === 'rebar,welds,layers,joints,gussets,beambars' && manIds.join() === 'rebar,welds,layers,joints,gussets,beambars' && filesOk && ruleFilesOk && bRow && bRow.label === 'Beam rebar (schedule)' && bRow.appliesTo === applies && dNo.appliesTo === 0 &&
-    bRow.inputs && bRow.inputs.length === 1 && bRow.inputs[0].id === 'schedule' && /Load schedule/.test(bRow.inputs[0].label) && d2.length === d1.length + 1 && (LOD_UI_SHA === 'dfb5d321c6f86f8c8437fe64e2c2c86cc3097a300edeb095aaee2fc201d608d2' ? null : uiSha === LOD_UI_SHA) !== false,
+    bRow.inputs && bRow.inputs.length === 1 && bRow.inputs[0].id === 'schedule' && /Load schedule/.test(bRow.inputs[0].label) && d2.length === d1.length + 1 && (uiSha === LOD_UI_SHA) !== false,
     'listed=' + d1.map(function (x) { return x.id + ':"' + x.label + '"(' + x.appliesTo + ')'; }).join(',') + ' packs.json=' + manIds.join() + ' pack_files_exist=' + filesOk + ' rules_files_exist=' + ruleFilesOk + ' beambars_applies_to=' + (bRow && bRow.appliesTo) + ' (0 without a schedule: ' + (dNo && dNo.appliesTo) + ') input="' + (bRow && bRow.inputs && bRow.inputs[0] && bRow.inputs[0].label) + '" after_one_more=' + d2.length + ' lod_ui_sha=' + uiSha.slice(0, 16));
 
   // ---- cost (PERF BUDGET)
