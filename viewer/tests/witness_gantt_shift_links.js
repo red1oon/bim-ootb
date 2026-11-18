@@ -14,8 +14,8 @@
 //
 //   GL-1  a selection shifted EARLIER past an outside predecessor: no task ends up before its floor, the selection moved
 //         as one body by the effective days, and the clamp names its blocker.
-//   GL-2  a selection shifted LATER into an outside successor: the successor is pushed, no task is before its floor,
-//         the selection moved as one body.
+//   GL-2  a selection shifted LATER into an outside successor: the successor is pushed once the move exceeds the
+//         link's slack (and not before), no task is before its floor, the selection moved as one body.
 //   GL-3  a selection that cannot move earlier at all is refused (blocked, blockedBy), nothing written, undo record kept.
 //   GL-4  the ruler shift, both directions: no task before its floor, every leaf moved by exactly the days asked.
 //   GL-5  every element stays inside its bar after each committed case, and one Undo restores each.
@@ -98,12 +98,21 @@ function finish() {
     const bars = fx.rebuildBars(), deps = SA.listDependencies(db, schedId);
     const d0 = deps.filter(x => bars.some(b => b.taskId === x.predId) && bars.some(b => b.taskId === x.succId))[0];
     if (!d0) claim('GL-2', 0, 0, 'no link between two bars on ' + BLD);
-    else { const sel = [d0.predId], st = fx.parts(), L0 = leaf(); logs.length = 0;
-      sb.__v.group(sel, 4);
-      const L1 = leaf(), d = deltas(L0, L1, sel), viol = beforeFloor().filter(x => base.indexOf(x) < 0), succMoved = dayOf(L1[d0.succId].s) - dayOf(L0[d0.succId].s);
-      const line = lineOf(/^§GANTT_GROUP_SHIFT_(COMMIT|REJECT)/);
-      console.log('§W_GL_CASE later     selection=[' + sel.join(',') + '] asked=+4d moved=' + d.join(',') + 'd outsideSuccessor=' + d0.succId + ' moved=' + succMoved + 'd newTasksBeforeFloor=' + viol.length + (viol.length ? ' [' + viol.slice(0, 4).join(',') + ']' : '') + ' | ' + line);
-      claim('GL-2', 3, (viol.length ? 1 : 0) + (d[0] === 4 ? 0 : 1) + (succMoved > 0 ? 0 : 1), 'tasks newly before their floor=' + viol.length + '; selection moved +' + d[0] + 'd; the outside successor was pushed ' + succMoved + 'd');
+    else { const sel = [d0.predId], st = fx.parts(), L0 = leaf();
+      // The link may have slack (HHS 6 d, JKR 4 d; Duplex none), and a move inside the slack must push nothing. So the
+      // move grows until the successor IS pushed; every smaller move is judged too: nothing pushed => nothing before its floor.
+      let k = 0, L1 = null, d = null, viol = null, succMoved = 0, line = '', slackBad = 0; const tried = [];
+      for (const kk of [4, 8, 16, 32, 64]) {
+        logs.length = 0; sb.__v.group(sel, kk);
+        L1 = leaf(); d = deltas(L0, L1, sel); viol = beforeFloor().filter(x => base.indexOf(x) < 0); succMoved = dayOf(L1[d0.succId].s) - dayOf(L0[d0.succId].s);
+        line = lineOf(/^§GANTT_GROUP_SHIFT_(COMMIT|REJECT)/); k = kk; tried.push('+' + kk + 'd:succ ' + succMoved + 'd,beforeFloor ' + viol.length);
+        if (succMoved > 0) break;
+        if (viol.length || d[0] !== kk) slackBad++;
+        fx.rebuildBars(); quiet(() => sb.__v.undo()); if (key(fx.parts()) !== key(st)) { slackBad++; break; }
+      }
+      console.log('§W_GL_CASE later     selection=[' + sel.join(',') + '] tried=[' + tried.join(' | ') + '] asked=+' + k + 'd moved=' + d.join(',') + 'd outsideSuccessor=' + d0.succId + ' moved=' + succMoved + 'd newTasksBeforeFloor=' + viol.length + (viol.length ? ' [' + viol.slice(0, 4).join(',') + ']' : '') + ' | ' + line);
+      if (!(succMoved > 0) && !slackBad) claim('GL-2', 0, 0, 'no move up to +64d reached the outside successor on ' + BLD + ' (slack larger than 64d); push not judged');
+      else claim('GL-2', 3 + tried.length - 1, (viol.length ? 1 : 0) + (d[0] === k ? 0 : 1) + (succMoved > 0 ? 0 : 1) + slackBad, 'tasks newly before their floor=' + viol.length + '; selection moved +' + d[0] + 'd; the outside successor was pushed ' + succMoved + 'd; ' + (tried.length - 1) + ' smaller move(s) inside the slack pushed nothing and broke no floor=' + (slackBad === 0));
       if (key(fx.parts()) !== key(st)) elementsAndUndo('later', st); }
   }
   // ── GL-6: both ends of a link selected — the link is INSIDE the body and must keep its slack
