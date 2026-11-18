@@ -400,7 +400,7 @@ function resolveOne(O, op, ids, i, cols) {
   }
   if (o.op_type === 'CRUD_CREATE') {
     Object.keys(o.fields).forEach(k => { o.fields[k] = ref(o.fields[k]); });
-    if (phys) { if (o.fields[idc] == null) { const m = O.rows('SELECT max(' + idc + ') AS m FROM ' + t)[0]; o.fields[idc] = Math.max(1, Number(m && m.m || 0) + 1); } ids[i] = o.fields[idc]; o.idCol = idc; }
+    if (phys) { if (o.fields[idc] == null) { const m = O.rows('SELECT max(' + idc + ') AS m FROM ' + t)[0]; o.fields[idc] = Math.max(1, Number(m && m.m || 0) + 1); } ids[i] = o.fields[idc]; o.idCol = idc; o.keyKept = true; }   // keyKept: the page's fold keeps this key, not -opId (bim-compiler prompts/CLI_ERP_IVR.md §49)
     else { o.idCol = colsOf(t).filter(c => /_uu$/.test(c) && o.fields[c] != null)[0] || Object.keys(o.fields)[0]; ids[i] = o.fields[o.idCol]; o.keyless = true; }
     // the host's stamp on a new row (bim-compiler prompts/CLI_ERP_IVR.md §20): PO.setStandardDefaults (PO.java L1973-2001) and the UU (L3545-3556). The model layer leaves them to the host commit
     // (model_layer.js L389); the page's host does it at its fold (crud_core.js L452-470); this is the door's. Written INTO the op, so a replay reads these values and never makes new ones.

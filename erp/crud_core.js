@@ -448,7 +448,7 @@
         try { p = JSON.parse(row[2]); } catch (e) { return; }
         if (!p || String(p.table || '').toLowerCase() !== want) return;
         if (type === 'CRUD_CREATE') {
-          var synth = -opId;                                  // synthetic, collision-free, durable pk for the new row
+          var synth = _keptKey(p, pkCol); if (synth == null) synth = -opId;   // synthetic, collision-free, durable pk for the new row; a host-resolved op (keyKept, the door) keeps its own key (bim-compiler prompts/CLI_ERP_IVR.md §49)
           var nr = {}; var f = p.fields || {}; for (var c in f) if (f.hasOwnProperty(c)) nr[c] = f[c];
           // Task 1 — iDempiere setStandardDefaults parity: fill audit+tenant cols from the recorded stdDefaults.
           // §ADORGID-CASING (ERP_BUSINESS_CYCLE_E2E.md §Fix 2026-07-22) — these keys were previously written in
@@ -1142,7 +1142,8 @@
       var opId = row[0], opType = row[1], ts = row[3], p;
       try { p = JSON.parse(row[2]); } catch (e) { return; }
       var t = p && String(p.table || '').toLowerCase(); if (!t || (want && t !== want)) return;
-      var id = opType === 'CRUD_CREATE' ? String(-opId) : String(p.id); if (rid !== null && id !== rid) return;
+      var kk = opType === 'CRUD_CREATE' ? _keptKey(p, p.idCol || (t + '_id')) : null;   // §49: a keyKept create is logged under its own key (its idCol, as the door wrote it)
+      var id = opType === 'CRUD_CREATE' ? String(kk != null ? kk : -opId) : String(p.id); if (rid !== null && id !== rid) return;
       var R = rule(t); if (!R) return;
       var st = stateOf(t, R, id), seq = 0;
       var push = function (ev, actor, col, o, n) {
@@ -1361,6 +1362,13 @@
   }
 
   // case-insensitive key lookup in an object (CREATE.fields / UPDATE.changes use varied AD column casing).
+  // _keptKey(p, pkCol) - bim-compiler prompts/CLI_ERP_IVR.md §49 (W-ONE-FOLD): a CRUD_CREATE whose host already resolved its key (the door, erp_cli resolveOne / object_cli persist)
+  //   says so with keyKept:true; its positive integer key is the record's key, as legacy keeps a received key (PO.saveNew PO.java:3530-3535, model_layer keepKey). Any other op -> null (-opId, unchanged).
+  function _keptKey(p, pkCol) {
+    if (!p || p.keyKept !== true || !p.fields || !pkCol) return null;
+    var k = _ciKey(p.fields, String(pkCol).toLowerCase()), v = k != null ? Number(p.fields[k]) : NaN;
+    return (Number.isInteger(v) && v > 0) ? v : null;
+  }
   function _ciKey(obj, lowerCol) {
     if (!obj) return null;
     var keys = Object.keys(obj);
