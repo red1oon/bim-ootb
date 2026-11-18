@@ -31,10 +31,8 @@ OUT = os.path.join(ERP, 'i18n')
 SOURCES = {   # lang -> list of (dir under CACHE, provenance) — first wins on a conflict. §19.11 (VOCAB_MESSAGE_CATALOG): the ONE list lives in i18n_sources.json, read by this file and build_help_pack.js
   lang: [(x['dir'], x['from']) for x in v] for lang, v in json.load(open(os.path.join(HERE, 'i18n_sources.json'), encoding='utf-8'))['sources'].items()
 }
-META = {   # dir = writing direction; native = CLDR autonym (the language's own name for itself)
-  'en_US': ('ltr', 'English'), 'fr_FR': ('ltr', 'Français'), 'es_ES': ('ltr', 'Español'), 'de_DE': ('ltr', 'Deutsch'),
-  'ar': ('rtl', 'العربية'), 'zh_CN': ('ltr', '中文 (简体)'), 'ja_JP': ('ltr', '日本語'), 'ms_MY': ('ltr', 'Bahasa Melayu'),
-  'th_TH': ('ltr', 'ไทย'),
+META = {   # dir = writing direction; native = CLDR autonym (the language's own name for itself). §19.11 step 2: read from i18n_sources.json `meta`
+  lang: (x['dir'], x['native']) for lang, x in json.load(open(os.path.join(HERE, 'i18n_sources.json'), encoding='utf-8'))['meta'].items()
 }
 # trl table -> (base table in ad_seed.db, id column, name column)
 TABLES = {

@@ -228,6 +228,50 @@
     "AD_Field": 236
    },
    "bytes": 275655
+  },
+  {
+   "code": "pt_BR",
+   "dir": "ltr",
+   "native": "Português",
+   "file": "i18n/pt_BR.json",
+   "sources": [
+    "github.com/devcoffee/idempiere-pt_br@10231021 pt_BR (DevCoffee, iDempiere 11 export \"COF #1259 - v11 review\", 2023-05-15; no licence stated)"
+   ],
+   "counts": {
+    "AD_Menu": 46,
+    "AD_Window": 305,
+    "AD_Tab": 856,
+    "AD_Field": 42,
+    "AD_Element": 3436,
+    "AD_Process": 342,
+    "AD_Form": 26,
+    "AD_Ref_List": 1014,
+    "AD_Message": 1187
+   },
+   "machineCounts": {},
+   "bytes": 259806
+  },
+  {
+   "code": "id_ID",
+   "dir": "ltr",
+   "native": "Bahasa Indonesia",
+   "file": "i18n/id_ID.json",
+   "sources": [
+    "github.com/uthadehikaru/idempiere-indonesia-localization@b9273a80 in_ID (iDempiere 13 export, 2026-02-12; Java legacy code in_ID served as id_ID; no licence stated)"
+   ],
+   "counts": {
+    "AD_Menu": 41,
+    "AD_Window": 341,
+    "AD_Tab": 946,
+    "AD_Field": 126,
+    "AD_Element": 3120,
+    "AD_Process": 394,
+    "AD_Form": 34,
+    "AD_Ref_List": 1088,
+    "AD_Message": 1664
+   },
+   "machineCounts": {},
+   "bytes": 247262
   }
  ]
 }
