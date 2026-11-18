@@ -45,7 +45,7 @@ const sliced = [
   // rather than stubbed — it is five lines and slicing the real one keeps the sandbox honest about
   // what the guard actually does (with no recording flag set on the fake app, it returns false).
   '_tmEditLocked',
-  'loadOps', '_retimeSpan', 'retimeTaskElements', 'commitGanttDrag', 'undoLastGanttEdit'
+  'loadOps', '_retimeSpan', 'retimeTaskElements', '_tmEditRefresh', '_tmCommitEdit', 'commitGanttDrag', 'undoLastGanttEdit'
 ].map(function (n) { return sliceFn(tmSrc, n); }).join('\n');
 
 const BLD_DIR = process.env.BLD_DIR || path.join(require('os').homedir(), 'bim-ootb', 'buildings');

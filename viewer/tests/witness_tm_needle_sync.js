@@ -91,7 +91,7 @@ function recCtx() {
 }
 const SLICED = ['loadOps', '_placeOps', 'computeDays', '_tmDayParts', '_tmNotchEnd', 'updateStatus', 'anchorFromCursor', 'configSlider', 'onSlide',
   'invalidateGanttModel', 'buildGanttTasks', 'ganttRulerTicks', 'drawGanttRuler', 'drawGanttMini',
-  '_retimeSpan', 'retimeTaskElements', '_tmResyncAfterRetime', '_tmBusyRecording', '_tmEditLocked', 'commitGanttDrag'];
+  '_retimeSpan', 'retimeTaskElements', '_tmResyncAfterRetime', '_tmBusyRecording', '_tmEditLocked', '_tmEditRefresh', '_tmCommitEdit', 'commitGanttDrag'];
 function makeTM(o) {   // o: { ops, idx | db, bld, SA, rules, gcv, logs }
   const dom = {
     'tm-slider': { min: 0, max: 100, value: 50 },

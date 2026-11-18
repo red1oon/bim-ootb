@@ -292,7 +292,7 @@ function sliceNamed(src, name) {
 
   // ── Drive the SHIPPED commit path and capture its own log line.
   var captured = [];
-  var sliced = ['_tmBusyRecording', '_tmEditLocked', '_retimeSpan', 'retimeTaskElements', 'commitGanttDrag']
+  var sliced = ['_tmBusyRecording', '_tmEditLocked', '_retimeSpan', 'retimeTaskElements', '_tmEditRefresh', '_tmCommitEdit', 'commitGanttDrag']
     .map(function (n) { return sliceNamed(txt, n); }).join('\n');
   var sandbox = {
     console: { log: function () { captured.push(Array.prototype.join.call(arguments, ' ')); }, warn: function () {} },
