@@ -65,6 +65,7 @@ const wins = () => { try { return cp.execSync('xwininfo -root -tree | grep -E "^
     judge('R3 a real door process on the same on-disk file made order ' + no + ' (c_order_id ' + oid + '): the file grew ' + n3 + ' -> ' + r3.length + ' rows', !!no && !!oid && r3.length > n3, JSON.stringify(h && h.status));
     // R4
     await page.evaluate(() => window.__edit()); await sleep(1500);
+    await page.click('#erp-ledger-trust'); await sleep(1500);   // §58: the door's key is unpinned until the Trust click (the fingerprint the owner compares with `ledger_sign.js key`)
     const seen = oid ? await page.evaluate((id) => window.__crud.withTipQuery((q) => q('SELECT documentno FROM c_order WHERE c_order_id = ?', [id])), oid) : [], ch4 = await page.evaluate(() => window.__chain()), r4 = rows();
     judge('R4 the page, after its next op, HAS the door\'s order in its tip fold; verifyChain ok over ' + r4.length + ' rows, 2 keys', Array.isArray(seen) && seen.length === 1 && String(seen[0].documentno) === String(no) && ch4.ok === true && ch4.len === r4.length && new Set(r4.map((x) => JSON.parse(x.parameters).signed_by)).size === 2, JSON.stringify(seen) + ' ' + JSON.stringify(ch4));
     // R5

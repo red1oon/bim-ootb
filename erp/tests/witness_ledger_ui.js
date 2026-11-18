@@ -75,6 +75,7 @@ const FILE = 'ad_seed.db.ops.jsonl';
     else {
       await page.evaluate((t) => window.__write(t), fs.readFileSync(copy, 'utf8'));
       await page.evaluate(() => window.__edit()); await page.waitForTimeout(1500);   // the commit re-hydrates the sidecar from the file
+      await page.waitForTimeout(800); await page.click('#erp-ledger-trust'); await page.waitForTimeout(1500);   // §58: the door's key is unpinned until the owner's Trust click
       const seen = await page.evaluate((id) => window.__crud.withTipQuery((q) => q('SELECT documentno FROM c_order WHERE c_order_id = ?', [id])), oid), fin = rows(await page.evaluate(() => window.__read())), ch9 = await page.evaluate(() => window.__chain());
       judge('U9 an order made by a REAL door process (no. ' + no + ', c_order_id ' + oid + ') is in the page: its tip fold has the row; file ' + fin.length + ' rows, 2 keys, verifyChain ok', Array.isArray(seen) && seen.length === 1 && String(seen[0].documentno) === String(no) && new Set(fin.map((r) => JSON.parse(r.parameters).signed_by)).size === 2 && ch9.ok === true, 'tip rows=' + JSON.stringify(seen) + ' ' + JSON.stringify(ch9));
     }
