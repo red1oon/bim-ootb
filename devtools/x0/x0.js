@@ -11,7 +11,7 @@
 'use strict';
 const path = require('path'), cp = require('child_process');
 const argv = process.argv.slice(2);
-const flags = new Set(['--root', '--compiler-root', '--extra-logs']);
+const flags = new Set(['--root', '--compiler-root', '--extra-logs', '--transcript']);
 const pos = argv.filter((a, i) => !flags.has(a) && !flags.has(argv[i - 1]));
 const S = require(path.join(__dirname, '..', 'mcp', 'x0-facts', 'server.js'));   // reads --root / --compiler-root from the same argv
 const tool = n => S.TOOLS.find(t => t.name === n);
@@ -30,6 +30,7 @@ const VERBS = [
 const EXTRA = [
   ['pure', 'the core-purity scan (W-CORE-PURE), its verdict line', 'x0 pure'],
   ['bump', 'scripts/bump.js with your arguments (dry run unless --write)', 'x0 bump modeller/arc_editable.js'],
+  ['session', 'one Claude Code session: tokens, PRs, URL load change (last | history [N] | --transcript F)', 'x0 session last'],
 ];
 function help(verb) {
   if (verb) {
@@ -49,6 +50,18 @@ if (require.main === module) (async () => {
   const [verb, ...rest] = pos;
   if (!verb || verb === 'help') { const t = help(rest[0]); if (t == null) { process.stderr.write(help()); process.exit(1); } process.stdout.write(t); return; }
   if (verb === 'pure') { process.exitCode = run(path.join(S.ROOT, 'erp', 'tests', 'witness_core_pure.js'), []); return; }
+  if (verb === 'session') {   // §F.37 (owner F-26): local files only; --hook = the SessionEnd hook (stdin JSON; prints to stderr, exit 2 = shown to the user)
+    const SS = require(path.join(__dirname, 'session.js'));
+    if (rest[0] === 'history') { process.stdout.write(SS.history(+rest[1] || 10) + '\n'); return; }
+    let file = null, hook = argv.includes('--hook');
+    const ti = argv.indexOf('--transcript'); if (ti >= 0) file = argv[ti + 1];
+    if (hook) { try { const j = JSON.parse(require('fs').readFileSync(0, 'utf8') || '{}'); file = j.transcript_path || null; } catch (e) { file = null; } }
+    if (!file) file = SS.lastTranscript(process.cwd());
+    if (!file) { process.stderr.write('x0 session: no Claude Code transcript found for ' + process.cwd() + ' (pass --transcript <file>)\n'); process.exit(1); }
+    const r = SS.summarise(file, S.ROOT);
+    if (hook) { process.stderr.write(r.text + '\n'); process.exit(2); }
+    process.stdout.write(r.text + '\n' + r.line + '\n'); return;
+  }
   if (verb === 'bump') { process.exitCode = run(path.join(S.ROOT, 'scripts', 'bump.js'), argv.slice(argv.indexOf('bump') + 1)); return; }
   const v = VERBS.find(x => x[0] === verb);
   if (!v) { process.stderr.write('x0: unknown verb "' + verb + '"\n' + help()); process.exit(1); }
