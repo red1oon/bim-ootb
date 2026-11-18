@@ -7,7 +7,7 @@
 // INPUT  in.meta   {guid: {cls, name, storey, disc, building}}       every element of the open model
 //        in.world(guid) -> Float64Array xyz triangle soup, or null  the element's world mesh (the MESH, never the DB rtree: spec §5)
 // RULES  rule rows {key: {value, unit, source}} (lod/rules/weld_defaults.json, lod_rules.js)
-// OPTS   {breakWinding: bool (the red control: the pre-2026-11-18 inward end caps; WELD_WINDING must then FAIL), log: fn(line)}
+// OPTS   {noMaterialGate: bool (the red control: weld any member to any plate), breakWinding: bool (the red control: the pre-2026-11-18 inward end caps; WELD_WINDING must then FAIL), log: fn(line)}
 // OUTPUT {parts:[{guid, cls, name, storey, disc, building, tris:Float64Array, parents:[], attach:[member, plate], rgba}], changes:[{kind,guid,cls,host,rule,detail}], stats, audit}
 // A weld is attached to its member and plate, not an aggregate child of either (the oracle writes no element_parts row for it; element_parts would hide the member on reload): parents = [], attach = [member, plate].
 (function (root, factory) {
@@ -150,13 +150,18 @@
   function weldMin(table, tMm) { for (var i = 0; i < table.length; i++) if (tMm <= table[i][0]) return table[i][1]; return null; }
 
   function run(inp, RULES, opts) {
-    opts = opts || {}; var LOG = opts.log || function () { }, BREAK = !!opts.breakWinding;
+    opts = opts || {}; var LOG = opts.log || function () { }, BREAK = !!opts.breakWinding, NOGATE = !!opts.noMaterialGate;
     var rv = function (k) { if (!RULES[k]) throw new Error('rule row missing: ' + k); return RULES[k].value; };
     var END_TOL = rv('weld_contact_end_tol_mm') / 1000, PAR = rv('weld_axis_parallel_max'), TABLE = weldTable(rv('weld_min_table_mm')), RE_T = new RegExp(rv('plate_thickness_name_pattern')), RE_M = new RegExp(rv('member_leg_name_pattern'));
     var META = inp.meta, allG = Object.keys(META).sort(), byClass = function (cl) { return allG.filter(function (g) { return META[g].cls === cl; }); };
     LOG('§LODUP_WELD_MODE break=' + (BREAK ? 1 : 0) + ' end_tol_mm=' + fmtG(END_TOL * 1000) + ' parallel_max=' + fmtG(PAR) + ' table=' + JSON.stringify(TABLE));
     var parts = [], CH = [], addedVerts = 0, change = function (kind, guid, cls, host, rule, detail) { CH.push({ kind: kind, guid: guid, cls: cls, host: host, rule: rule, detail: detail }); };
     var MEM = byClass('IfcMember'), PLT = byClass('IfcPlate'), MV = {}, PV = {}, PF = {}, noMesh = [], i;
+    // material gate (P3 FIX SPEC 2): only steel members and steel plates are judged; anything else is outside the welded-truss rule (not refused, not listed)
+    var gateWords = (function () { var v = RULES.weld_material_gate ? RULES.weld_material_gate.value : []; if (typeof v === 'string') v = v.split(','); return (v || []).map(function (x) { return String(x).trim().toLowerCase(); }).filter(Boolean); })();
+    var steel = function (g) { if (!gateWords.length || NOGATE) return true; var m = META[g], mats = [m.mat].concat(m.layerMats || []).filter(function (x) { return x !== null && x !== undefined; }).map(function (x) { return String(x).toLowerCase(); }); return mats.some(function (t) { return gateWords.some(function (w) { return t.indexOf(w) >= 0; }); }); };
+    var memAll = MEM.length, pltAll = PLT.length; MEM = MEM.filter(steel); PLT = PLT.filter(steel);
+    LOG('§LODUP_WELD_GATE words=' + JSON.stringify(gateWords) + (NOGATE ? ' OFF(break)' : '') + ' members_steel=' + MEM.length + ' plates_steel=' + PLT.length + ' members_gated_out=' + (memAll - MEM.length) + ' plates_gated_out=' + (pltAll - PLT.length) + ((MEM.length && PLT.length) ? '' : ' (nothing left to judge)'));
     MEM = MEM.filter(function (g) { var w = inp.world(g); if (!w || !w.length) { noMesh.push(g); return false; } MV[g] = w; return true; });
     PLT = PLT.filter(function (g) { var w = inp.world(g); if (!w || !w.length) { noMesh.push(g); return false; } PV[g] = w; return true; });
     PLT.forEach(function (g) { var R = plateFrame(PV[g]), cp = mean(PV[g]), L = toLocal(PV[g], cp, R), bb = aabb(L); PF[g] = { R: R, cp: cp, lo: bb[0], hi: bb[1] }; });
@@ -229,7 +234,7 @@
     LOG('§LODUP_WELD_BUILT welds=' + nWeld + ' skipped=' + weldSkipped.length);
     var cnt = { ADDED: 0, NOT_BUILT: 0, REFUSED: 0 }; CH.forEach(function (c) { cnt[c.kind]++; });
     LOG('§LODUP_WELD_SUMMARY added=' + cnt.ADDED + ' not_built=' + cnt.NOT_BUILT + ' refused=' + cnt.REFUSED + ' addedVerts=' + addedVerts + (parts.length ? '' : ' INCONCLUSIVE (no weld built: nothing was judged)'));
-    return { parts: parts, changes: CH, stats: { added: cnt.ADDED, notBuilt: cnt.NOT_BUILT, refused: cnt.REFUSED, addedVerts: addedVerts, appliesTo: MEM.length, contacts: contacts.length, endContacts: nEndC, throughContacts: nThr, touchOnly: touchOnly },
+    return { parts: parts, changes: CH, stats: { added: cnt.ADDED, notBuilt: cnt.NOT_BUILT, refused: cnt.REFUSED, addedVerts: addedVerts, appliesTo: MEM.length, judged: contacts.length, contacts: contacts.length, endContacts: nEndC, throughContacts: nThr, touchOnly: touchOnly },
       audit: { contacts: contacts, weldInfo: weldInfo, skipped: weldSkipped, noContact: noContact, PF: PF, MEM: MEM, PLT: PLT, table: TABLE } };
   }
 
@@ -238,7 +243,9 @@
     var m = 0, p = 0; Object.keys(meta).forEach(function (g) { var c = meta[g].cls; if (c === 'IfcMember') m++; else if (c === 'IfcPlate') p++; });
     return p ? m : 0;
   }
-  var API = { id: 'welds', label: 'Truss welds', rulesFile: 'rules/weld_defaults.json', run: run, appliesTo: function (inp) { return appliesTo(inp.meta); },
+  var API = { id: 'welds', label: 'Truss welds', unit: 'member-plate contacts', rulesFile: 'rules/weld_defaults.json', run: run,
+    appliesTo: function (inp, rows) { if (!rows) return appliesTo(inp.meta); try { return run(inp, rows, { log: function () { } }).stats.judged; } catch (e) { return 0; } },   // with rule rows: the member-plate contacts the run finds (same test), read-only dry run
+   
     fmtG: fmtG, weldTable: weldTable, weldMin: weldMin, WD_RGBA: WD_RGBA, IN: IN };
   if (typeof window !== 'undefined' && window.LodRegistry) window.LodRegistry.register(API);   // browser: the pack registers itself; adding a pack needs no dialog change
   return API;

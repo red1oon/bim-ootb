@@ -24,7 +24,7 @@ var Rules = require(path.join(ROOT, 'lod/lod_rules.js')), Pack = require(path.jo
   Reader = require(path.join(ROOT, 'lod/lod_reader.js')), Registry = require(path.join(ROOT, 'lod/lod_registry.js'));
 var initSqlJs = require(path.join(ROOT, 'lib', 'sql-wasm.js')), wasmBinary = fs.readFileSync(path.join(ROOT, 'lib', 'sql-wasm.wasm'));
 var SRC = process.env.LODUP_SRC_DB, ORA = process.env.LODUP_ORACLE_DB, MAIN_BREAK = process.env.LODUP_BREAK === '1';
-var P1_LOD_UI_SHA = 'c6c4ac30b19aa529ba122c8a7359f1773312195ea72364b210273e5d86743544';   // lod/lod_ui.js as merged in P1 (#3238): P2 must not edit the dialog
+var P1_LOD_UI_SHA = '703b8250e980def7551665b7bb433ffc30cf92b1de0dc86b39bd4fe1ddba685e';   // lod/lod_ui.js as of the P3 fix (live host hide + 'not applicable here'); it was the P1 file (c6c4ac30...) until then
 var FAILS = [], INCONC = [];
 function verdict(name, ok, line) { var v = ok === null ? 'INCONCLUSIVE' : ok ? 'PASS' : 'FAIL'; console.log('§LODUP_' + name + ' ' + line + ' -> ' + v); if (v === 'FAIL') FAILS.push(name); if (v === 'INCONCLUSIVE') INCONC.push(name); return v; }
 function q(db, sql) { var r = db.exec(sql); return r.length ? r[0].values : []; }
@@ -91,7 +91,7 @@ initSqlJs({ wasmBinary: wasmBinary }).then(function (SQL) {
   var base = Rules.load(JSON.parse(fs.readFileSync(path.join(ROOT, 'lod/rules/weld_defaults.json'), 'utf8'))), RULES = base, RC = Rules.counts(RULES);
   console.log('§LODUP_RULES pack=welds rows=' + RC.total + ' stated=' + RC.stated + ' default=' + RC.default + ' unset=' + RC.unset);
   var logs = [], run = function (rows, o) { logs.length = 0; return Pack.run(inp, rows, Object.assign({ log: function (l) { logs.push(l); console.log(l); } }, o || {})); };
-  var R = run(RULES, { breakWinding: MAIN_BREAK }), parts = R.parts, A = R.audit, applies = Pack.appliesTo(inp);
+  var R = run(RULES, { breakWinding: MAIN_BREAK }), parts = R.parts, A = R.audit, applies = Pack.appliesTo(inp, RULES);   // P3 fix: the member-plate contacts the run finds
   verdict('NONVACUOUS', parts.length ? true : (applies ? false : null), 'applies_to=' + applies + ' welds=' + parts.length + ' added_verts=' + R.stats.addedVerts + (parts.length ? '' : ' (nothing judged)'));
   var mine = {}; parts.forEach(function (p) { mine[p.guid] = p; });
   var win = winding(parts);
@@ -174,6 +174,15 @@ initSqlJs({ wasmBinary: wasmBinary }).then(function (SQL) {
   void w1; void w2;
   verdict('RULES', R2 ? (Math.abs(sizeEdited - 7) < 0.01 && t2.refused.length === 1 && t2.rows.weld_min_table_mm.value === '6:3, 13:7, 19:8, 999:10') : null, 'edited_table_13mm_row 5 -> 7 mm (a 6.35 mm part) gives leg=' + (sizeEdited === null ? '-' : sizeEdited.toFixed(3)) + ' mm; a default edit over the stated row refused=' + t2.refused.length + ' shipped_rows stated=' + RC.stated + ' default=' + RC.default + ' unset=' + RC.unset);
 
+  // ---- GATE: only steel members and steel plates are judged (P3 FIX SPEC 2): re-label the plates as concrete -> nothing judged; gate off (red control) -> the contacts come back
+  (function () {
+    var meta2 = {}; Object.keys(inp.meta).forEach(function (g) { meta2[g] = Object.assign({}, inp.meta[g]); if (meta2[g].cls === 'IfcPlate') meta2[g].mat = 'Concrete - Precast'; });
+    var inp2 = Object.assign({}, inp, { meta: meta2 }), on = Pack.run(inp, RULES, { log: function () { } }), cut = Pack.run(inp2, RULES, { log: function () { } }), off = Pack.run(inp2, RULES, { log: function () { }, noMaterialGate: true });
+    var asStr = Rules.merge(RULES, { weld_material_gate: { value: 'steel, iron', source: 'stated: test edit' } }).rows, viaStr = Pack.run(inp, asStr, { log: function () { } });
+    verdict('GATE', on.stats.contacts > 0 ? (cut.stats.judged === 0 && cut.parts.length === 0 && off.stats.contacts === on.stats.contacts && viaStr.stats.contacts === on.stats.contacts) : null,
+      'steel plates+members: contacts=' + on.stats.contacts + ' | plates relabelled concrete: judged=' + cut.stats.judged + ' welds=' + cut.parts.length + ' | gate off on that input: contacts=' + off.stats.contacts + ' | a comma-separated string value behaves as the list: contacts=' + viaStr.stats.contacts);
+  })();
+
   // ---- DETERMINISM: two runs, same op hash
   function opHash(rr) { var b = Ops.build(rr.parts, 'welds', inp.meta), h = crypto.createHash('sha256'); h.update(JSON.stringify(b.ops)); b.assets.forEach(function (a) { h.update(Buffer.from(a.v.buffer)); }); h.update(JSON.stringify(b.elementParts)); h.update(JSON.stringify(rr.changes)); return h.digest('hex'); }
   var h1 = opHash(R), h2 = opHash(run(RULES, { breakWinding: MAIN_BREAK }));
@@ -197,8 +206,8 @@ initSqlJs({ wasmBinary: wasmBinary }).then(function (SQL) {
   var ruleFilesOk = Registry.list().every(function (p) { return fs.existsSync(path.join(ROOT, 'lod', p.rulesFile)); }), d1 = Registry.describe(inp, rowsOf, Rules);
   Registry.register({ id: 'dummy', label: 'Dummy (test pack)', appliesTo: function () { return 0; }, run: function () { return { parts: [], changes: [] }; } });
   var d2 = Registry.describe(inp, rowsOf, Rules), wRow = d1.filter(function (x) { return x.id === 'welds'; })[0];
-  verdict('REGISTRY', d1.map(function (x) { return x.id; }).join() === 'rebar,welds' && manIds.join() === 'rebar,welds' && filesOk && ruleFilesOk && wRow && wRow.label === 'Truss welds' && wRow.appliesTo === applies && d2.length === d1.length + 1 && uiSha === P1_LOD_UI_SHA,
-    'listed=' + d1.map(function (x) { return x.id + ':"' + x.label + '"'; }).join(',') + ' packs.json=' + manIds.join() + ' pack_files_exist=' + filesOk + ' rules_files_exist=' + ruleFilesOk + ' welds_applies_to=' + (wRow && wRow.appliesTo) + ' after_one_more=' + d2.length + ' lod_ui_js_is_the_P1_file=' + (uiSha === P1_LOD_UI_SHA) + ' (the dialog renders exactly describe(); no UI code changed)');
+  verdict('REGISTRY', d1.map(function (x) { return x.id; }).join() === 'rebar,welds' && manIds.slice(0, 2).join() === 'rebar,welds' && filesOk && ruleFilesOk && wRow && wRow.label === 'Truss welds' && wRow.appliesTo === applies && d2.length === d1.length + 1 && uiSha === P1_LOD_UI_SHA,
+    'listed=' + d1.map(function (x) { return x.id + ':"' + x.label + '"'; }).join(',') + ' packs.json=' + manIds.join() + ' pack_files_exist=' + filesOk + ' rules_files_exist=' + ruleFilesOk + ' welds_applies_to=' + (wRow && wRow.appliesTo) + ' after_one_more=' + d2.length + ' lod_ui_js_is_the_P3_fix_file=' + (uiSha === P1_LOD_UI_SHA) + ' (the dialog renders exactly describe(); no UI code changed)');
 
   // ---- cost (PERF BUDGET)
   var srcVerts = 0; Object.keys(inp.meta).forEach(function (g) { var w = inp.world(g); if (w) srcVerts += w.length / 3; });

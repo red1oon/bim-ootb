@@ -75,7 +75,7 @@ initSqlJs({ wasmBinary: wasmBinary }).then(function (SQL) {
   }
   var logs = [], run = function (rows, o) { logs.length = 0; var r = Pack.run(inp, rows, Object.assign({ log: function (l) { logs.push(l); console.log(l); } }, o || {})); return r; };
   var R = run(RULES, { breakCover: MAIN_BREAK }), parts = R.parts, A = R.audit;
-  var applies = Pack.appliesTo(inp);
+  var applies = Pack.appliesTo(inp, RULES);   // P3 fix: what the run judges (read-only dry run), not a count of rows
   verdict('NONVACUOUS', parts.length ? true : (applies ? false : null), 'applies_to=' + applies + ' parts=' + parts.length + ' added_verts=' + R.stats.addedVerts + (parts.length ? '' : ' (nothing judged)'));
 
   // ---- P1 PARITY
