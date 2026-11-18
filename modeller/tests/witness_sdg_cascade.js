@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 /**
+ * PROVES: modeller/sdg_cascade.js
  * W-SDG-CASCADE-MODELLER — §SDG-CASCADE value witness (PURE NODE, REAL SampleHouse). The hosted-by ride: a moved
  * HOST (wall) drags its hosted FILLINGS (door/window) by the SAME delta, over the REAL rel_fills_host edges
  * resolved through the §ARC-1 featureId↔guid bridge. Exercises the REAL foldInsert (the ride math) + CrossEdges

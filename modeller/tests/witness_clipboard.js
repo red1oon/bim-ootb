@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 // ⚠ DO NOT REMOVE — W-CLIPBOARD (BIMCompiler prompts/MODELLER_CLIPBOARD_COPY_PASTE.md §REGROUND 2026-10-28). Read the log after every run.
+// PROVES: modeller/clipboard.js
 // THE ISSUE THIS PROVES OR DISPROVES: the Modeller had no copy that carries relations. "Add a bay" cloned a source's GEOM_INSERT params itself, so a copy had no hole, no door,
 // and none of its source's later edits (a moved / stretched source was copied at its pre-edit place and size). Pure, node, a built op log:
 //   C1 a wall with a cut + its door (one fills edge): the copy = wall + door + the cut + the cut's move + the door's slide; the cut's parent = the copied wall, its void = source + shift,

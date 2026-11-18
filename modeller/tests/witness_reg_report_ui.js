@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 /**
+ * PROVES: modeller/reg_report_ui.js
  * # ⚠ DO NOT REMOVE — W-REG-REPORT-UI: prompts/DXF2BIM_ARCHITECT_REVIEW.md RR.6 (the Modeller's Export ▸ Regulatory Report…). Read the log after every run.
  *
  * THE ISSUE THIS PROVES OR DISPROVES: the report was CLI-only; a page that composes it a second time would drift from the CLI (different engines loaded, a rule

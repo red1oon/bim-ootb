@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 /**
+ * PROVES: modeller/grid_kinematics.js
  * # ⚠ DO NOT REMOVE — W-GRIDKINEMATICS-REAL-DUPLEX: Tier 3 of prompts/GRID_KINEMATICS_SANDBOX_PROOF.md's
  * sandbox (§2 Tier 3 — "real building data, Tier 1's engine, still zero browser"). Loads Duplex_extracted.db's
  * REAL element_transforms/elements_meta via sql.js and feeds the REAL positions DIRECTLY into Tier 1's pure

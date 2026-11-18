@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 /**
+ * PROVES: modeller/sdg_gate.js
  * W-SDG-GATE — §GATE-1 value witness (PURE NODE, REAL SampleHouse). The RED/ORANGE conformity gate: after a
  * move/ride, flag the hard violations the edit BROKE (RED) and soft accept/ignore (ORANGE), delta-honestly (a
  * pre-existing as-extracted overlap is NOT flagged). Pure geometry over MEASURED seeded AABBs + RECOVERED edges.

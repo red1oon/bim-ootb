@@ -4,6 +4,7 @@
 // usage: NODE_PATH=~/bim-compiler/node_modules node modeller/tests/run_all_witnesses.js [--update] [--only <substring>]
 'use strict';
 const fs = require('fs'), path = require('path'), cp = require('child_process');
+const RESULTS = require(path.join(__dirname, '..', '..', 'witness_kit', 'results.js'));   // E-2 (bim-compiler CODE_ARCHITECTURE_DESIGN.md Part E, E1)
 const T = __dirname, V = path.join(T, '..', '..', 'viewer', 'tests'), BASE = path.join(T, 'witness_status_baseline.json');
 const upd = process.argv.includes('--update'), only = process.argv.includes('--only') ? process.argv[process.argv.indexOf('--only') + 1] : null;
 const files = fs.readdirSync(T).filter(f => /^witness_(dxf_.*|ifc_valid|ifc_open_one|viewer_db_export|walked_export|format|standards_pack|ids|reg_report|reg_report_ui)\.js$/.test(f)).sort().map(f => path.join(T, f)).concat([path.join(V, 'witness_info_dxf2bim.js')]).filter(f => !only || f.includes(only));
@@ -24,6 +25,7 @@ files.forEach(f => {
   const t0 = Date.now(), r = cp.spawnSync('node', [f].concat(a), { encoding: 'utf8', timeout: 590000, env: process.env }), out = (r.stdout || '') + (r.stderr || '');
   const hasFail = /§FAIL|^FAIL|^\s*(❌|✗)| FAIL [1-9]/m.test(out) || /§W-[A-Z-]+ FAIL/.test(out), skip = /§SKIP/.test(out);
   let st; if (r.status === 0 && !hasFail) st = skip ? 'SKIP' : 'PASS'; else if (ENVSIG.test(out) && !hasFail) st = 'ENV'; else st = 'FAIL';
+  RESULTS.record(path.join(__dirname, '..', '..'), path.resolve(f), { out: out + (st === 'ENV' ? '\nverdict=INCONCLUSIVE (ENV: a missing input on this machine)' : st === 'SKIP' ? '\nverdict=SKIP' : ''), exit: r.status, seconds: (Date.now() - t0) / 1000 });   // E-2: last run in ~/.cache
   res[name] = st; console.log((st + '    ').slice(0, 5) + ' ' + name + '  (' + ((Date.now() - t0) / 1000).toFixed(1) + 's' + (st !== 'PASS' ? ', ' + (out.split('\n').filter(l => /§SKIP|MISSING|Error|ENOENT|FAIL/.test(l))[0] || '').replace(/\s+/g, ' ').slice(0, 110) : '') + ')');
 });
 const counts = {}; Object.values(res).forEach(s => { counts[s] = (counts[s] || 0) + 1; });
