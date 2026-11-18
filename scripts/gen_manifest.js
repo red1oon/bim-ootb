@@ -17,6 +17,7 @@
 'use strict';
 const fs = require('fs'), path = require('path'), cp = require('child_process');
 const R = require('./lib/page_refs.js');
+const MS = require('./lib/manifest_source.js');
 const P = path.posix;
 
 const APPS = ['viewer', 'erp', 'modeller'];   // a folder with a tracked sw.js that Part B names (decision D1)
@@ -36,6 +37,52 @@ const SCHEMA = { type: 'object', additionalProperties: false,
         lazyGroup: { type: ['string', 'null'] }, precache: { type: 'boolean' }, v: { type: ['integer', 'null'] }, sites: { type: 'array', minItems: 1, items: SITE } } } } } };
 
 /**
+ * The sites of one owned file, in file order. A page: script tags, versioned assets, whole literals in its JS inline bodies.
+ * Any other file (a loader): whole 'file?v=N' literals. Returns null when a loader does not parse (counted in notes.parseFail).
+ * @returns {null|{start:number,end:number,kind:string,as:string,v:(number|null),onerror?:string,q?:string}[]}
+ */
+function readSites(file, src, notes) {
+  notes = notes || { parseFail: [], nonCanonical: [], partial: 0, nonJsInline: 0, unversionedTags: 0, inlineSites: 0 };
+  const sites = [];
+  if (file.endsWith('.html')) {
+    const h = R.readHtml(src);
+    for (const t of h.tags) {
+      if (!t.canonical) notes.nonCanonical.push(file + ': ' + t.raw.slice(0, 120));
+      if (t.v == null) notes.unversionedTags++;
+      const s = { start: t.start, end: t.end, kind: 'tag', as: t.as, v: t.v }; if (t.onerror != null) s.onerror = t.onerror; sites.push(s);
+    }
+    for (const a of h.assets) sites.push({ start: a.start, end: a.end, kind: 'asset', as: a.as, v: a.v });
+    for (const b of h.inline) {
+      if (b.type && !/javascript|module/i.test(b.type)) { notes.nonJsInline++; continue; }   // importmap, json …: not JS, counted
+      const j = R.readJsSites(src.slice(b.start, b.end), b.start);
+      if (!j.parsed) { notes.parseFail.push(file + ' (inline script at byte ' + b.start + ')'); continue; }
+      notes.partial += j.partial; notes.inlineSites += j.sites.length;
+      for (const s of j.sites) sites.push(Object.assign({ start: s.start, end: s.end, kind: 'inline', as: s.as, v: s.v }, s.q === "'" ? {} : { q: s.q }));
+    }
+    return sites.sort((a, b) => a.start - b.start);
+  }
+  const j = R.readJsSites(src);
+  if (!j.parsed) { notes.parseFail.push(file); return null; }
+  notes.partial += j.partial;
+  return j.sites.map(s => Object.assign({ start: s.start, end: s.end, kind: 'lazy', as: s.as, v: s.v }, s.q === "'" ? {} : { q: s.q }));
+}
+
+/** A service worker's slots: each PRECACHE_ASSETS entry {sw:'precache',i} and the CACHE_VERSION literal {sw:'cv'}, in file order. */
+function swFrame(swFile, swSrc, notes) {
+  notes = notes || { parseFail: [], swProblems: [] };
+  const sw = R.readSw(swSrc);
+  if (!sw.parsed) notes.parseFail.push(swFile);
+  if (sw.parsed && (!sw.cacheVersion || sw.cacheVersionCount !== 1)) notes.swProblems.push(swFile + ": CACHE_VERSION must be exactly one  const CACHE_VERSION = 'v<digits>'");
+  if (sw.parsed && !sw.precache) notes.swProblems.push(swFile + ': PRECACHE_ASSETS array not found');
+  if (sw.nonLiteral) notes.swProblems.push(swFile + ': ' + sw.nonLiteral + ' PRECACHE_ASSETS element(s) are not plain string literals');
+  const pre = sw.precache || [];
+  if (pre.some(e => e.q !== "'")) notes.swProblems.push(swFile + ': a PRECACHE_ASSETS entry is not single-quoted');
+  const slots = pre.map((e, i) => ({ start: e.start, end: e.end, sw: 'precache', i }));
+  if (sw.cacheVersion) slots.push({ start: sw.cacheVersion.start, end: sw.cacheVersion.end, sw: 'cv' });
+  return { sw, pre, slots: slots.sort((a, b) => a.start - b.start) };
+}
+
+/**
  * Build one app's manifest and the frames of its owned files.
  * @param {string} root - bim-ootb tree
  * @param {string} app - 'viewer' | 'erp' | 'modeller'
@@ -50,44 +97,20 @@ function buildApp(root, app) {
   const frames = new Map(), perFile = [];
   const pages = ls.filter(f => f.endsWith('.html') && !/(^|\/)(lib|tests?)\//.test(f));
   for (const pg of pages) {
-    const src = read(pg), h = R.readHtml(src), sites = [];
-    for (const t of h.tags) {
-      if (!t.canonical) notes.nonCanonical.push(pg + ': ' + t.raw.slice(0, 120));
-      if (t.v == null) notes.unversionedTags++;
-      const s = { start: t.start, end: t.end, kind: 'tag', as: t.as, v: t.v }; if (t.onerror != null) s.onerror = t.onerror; sites.push(s);
-    }
-    for (const a of h.assets) sites.push({ start: a.start, end: a.end, kind: 'asset', as: a.as, v: a.v });
-    for (const b of h.inline) {
-      if (b.type && !/javascript|module/i.test(b.type)) { notes.nonJsInline++; continue; }   // importmap, json …: not JS, counted
-      const j = R.readJsSites(src.slice(b.start, b.end), b.start);
-      if (!j.parsed) { notes.parseFail.push(pg + ' (inline script at byte ' + b.start + ')'); continue; }
-      notes.partial += j.partial; notes.inlineSites += j.sites.length;
-      for (const s of j.sites) sites.push(Object.assign({ start: s.start, end: s.end, kind: 'inline', as: s.as, v: s.v }, s.q === "'" ? {} : { q: s.q }));
-    }
+    const src = read(pg), sites = readSites(pg, src, notes);
     if (sites.length) perFile.push({ file: pg, src, sites, base: P.dirname(pg) });   // a page with no site is not owned
   }
   const pageHas = new Set(perFile.filter(f => f.sites.length).map(f => f.file)), loaders = [];
   for (const f of ls.filter(f => f.endsWith('.js') && !SKIP_JS.test(f))) {
     const src = read(f); if (src.indexOf('?v=') < 0) continue;
-    const j = R.readJsSites(src);
-    if (!j.parsed) { notes.parseFail.push(f); continue; }
-    notes.partial += j.partial;
-    if (!j.sites.length) continue;
+    const sites = readSites(f, src, notes);
+    if (!sites || !sites.length) continue;
     loaders.push(f);
-    perFile.push({ file: f, src, base: P.dirname(f), loader: true,
-      sites: j.sites.map(s => Object.assign({ start: s.start, end: s.end, kind: 'lazy', as: s.as, v: s.v }, s.q === "'" ? {} : { q: s.q })) });
+    perFile.push({ file: f, src, base: P.dirname(f), loader: true, sites });
   }
   // the service worker
-  const swFile = app + '/sw.js', swSrc = read(swFile), sw = R.readSw(swSrc);
-  if (!sw.parsed) notes.parseFail.push(swFile);
-  if (sw.parsed && (!sw.cacheVersion || sw.cacheVersionCount !== 1)) notes.swProblems.push(swFile + ": CACHE_VERSION must be exactly one  const CACHE_VERSION = 'v<digits>'");
-  if (sw.parsed && !sw.precache) notes.swProblems.push(swFile + ': PRECACHE_ASSETS array not found');
-  if (sw.nonLiteral) notes.swProblems.push(swFile + ': ' + sw.nonLiteral + ' PRECACHE_ASSETS element(s) are not plain string literals');
-  const pre = sw.precache || [];
-  if (pre.some(e => e.q !== "'")) notes.swProblems.push(swFile + ': a PRECACHE_ASSETS entry is not single-quoted');
-  const swSlots = pre.map((e, i) => ({ start: e.start, end: e.end, sw: 'precache', i }));
-  if (sw.cacheVersion) swSlots.push({ start: sw.cacheVersion.start, end: sw.cacheVersion.end, sw: 'cv' });
-  frames.set(swFile, { src: swSrc, slots: swSlots.sort((a, b) => a.start - b.start) });
+  const swFile = app + '/sw.js', swSrc = read(swFile), swf = swFrame(swFile, swSrc, notes), sw = swf.sw, pre = swf.pre;
+  frames.set(swFile, { src: swSrc, slots: swf.slots });
   const precached = new Set(pre.map(e => P.normalize(P.join(app, e.as.split('?')[0]))));
 
   // modules, in first-appearance order: the pages with the most tags first, then the loaders
@@ -209,27 +232,61 @@ function check(root) {
     lines.push(`§MANIFEST_RESOLVE_DIFF app=${app} loader_literals_resolved_from_the_app_folder=${a.notes.resolveDiff.length}` + (a.notes.resolveDiff.length ? ' ' + a.notes.resolveDiff.join(' | ') : ''));
     a.notes.nonCanonical.forEach(x => lines.push('§MANIFEST_NONCANONICAL ' + x));
     const oc = checkOrder(m); a.order = oc;
+    if (MS.hasSource(root, app)) {   // B1: this app's lists are WRITTEN from <app>/modules.json — check the source, its markers, its declared order
+      const sc = MS.check(root, app); a.source = sc;
+      sc.fails.forEach(f => fails.push(f)); sc.lines.forEach(l => lines.push(l));
+      a.order = sc.info.order || { judged: 0, errors: [] };
+      const rv = sc.info.review;
+      lines.push(`§MANIFEST_SOURCE app=${app} file=${MS.sourceFile(app)} files=${sc.info.files} identical=${sc.info.identical}/${sc.info.files} deps_declared=${a.order.judged} order_errors=${a.order.errors.length} unreviewed=${rv ? rv.unreviewed.length : '-'} review_sha=${sc.info.shaOk ? 'same' : 'CHANGED'} hand_deps=${sc.info.hand} unrecorded_uses=${rv ? rv.unrecordedUses.length : '-'} owner_gap=${(sc.info.ownerGap || []).length} witness_gap=${(sc.info.witGap || []).length}`);
+    }
     apps.push(a);
   }
   const sites = tot.tag + tot.asset + tot.inline + tot.lazy;
-  const verdict = fails.length ? 'FAIL' : (apps.some(a => !a.manifest.modules.length) ? 'INCONCLUSIVE' : 'PASS');
+  const unrev = apps.reduce((n, a) => n + (a.source && a.source.info.review ? a.source.info.review.unreviewed.length + (a.source.info.shaOk ? 0 : 1) : 0), 0);
+  const verdict = fails.length ? 'FAIL' : (apps.some(a => !a.manifest.modules.length) || unrev ? 'INCONCLUSIVE' : 'PASS');
   const deps = apps.reduce((n, a) => n + a.order.judged, 0);
-  lines.push(`§MANIFEST_CHECK apps=${apps.length} files=${tot.files} identical=${tot.identical}/${tot.files} sites=${sites} tag=${tot.tag} asset=${tot.asset} inline=${tot.inline} lazy=${tot.lazy} precache=${tot.precache} order_check=${deps ? (apps.some(a => a.order.errors.length) ? 'FAIL' : 'PASS') : 'NOT-JUDGED'} deps_declared=${deps} written=0 verdict=${verdict}`);
+  lines.push(`§MANIFEST_CHECK apps=${apps.length} files=${tot.files} identical=${tot.identical}/${tot.files} sites=${sites} tag=${tot.tag} asset=${tot.asset} inline=${tot.inline} lazy=${tot.lazy} precache=${tot.precache} order_check=${deps ? (apps.some(a => a.order.errors.length) ? 'FAIL' : unrev ? 'INCONCLUSIVE' : 'PASS') : 'NOT-JUDGED'} deps_declared=${deps} unreviewed=${unrev} source=${apps.filter(a => a.source).map(a => a.manifest.app).join(',') || '-'} written=0 verdict=${verdict}`);
   return { apps, lines, fails, verdict, tot };
 }
 
-module.exports = { APPS, SCHEMA, buildApp, regenerate, renderSite, frameText, checkOrder, check };
+module.exports = { APPS, SCHEMA, buildApp, readSites, swFrame, regenerate, renderSite, frameText, checkOrder, check };
 
 if (require.main === module) {
-  const argv = process.argv.slice(2), ri = argv.indexOf('--root'), oi = argv.indexOf('--out');
-  if (!argv.includes('--check')) { console.error('usage: node scripts/gen_manifest.js --check [--root DIR] [--out FILE]   (B0 is check mode only: it writes nothing in the tree)'); process.exit(1); }
-  const root = path.resolve(ri >= 0 ? argv[ri + 1] : path.join(__dirname, '..'));
+  const argv = process.argv.slice(2), opt = k => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : null; };
+  const root = path.resolve(opt('--root') || path.join(__dirname, '..'));
+  if (opt('--write') || opt('--init')) {
+    // B1: --write <app> regenerates the app's owned files from <app>/modules.json and refreshes its extracted fields (owner, witnesses,
+    //   call-time `uses`); --init <app> creates modules.json ONCE from today's files (deps = the reviewed order-forcing edges).
+    const app = opt('--write') || opt('--init'), lines = [];
+    let m;
+    if (opt('--init')) {
+      if (MS.hasSource(root, app)) { console.log(`§MANIFEST_ERR ${MS.sourceFile(app)} exists; --init runs once`); process.exit(1); }
+      const split = k => (opt(k) || '').split(',').map(x => x.trim()).filter(Boolean);
+      const r = MS.init(root, app, { notDeps: split('--not-deps'), asUses: split('--as-uses'), by: opt('--by') || '', on: opt('--on') || '' });
+      r.fails.forEach(f => console.log('§MANIFEST_FAIL ' + f)); r.lines.forEach(l => console.log(l));
+      console.log(`§MANIFEST_INIT app=${app} modules=${Object.keys(r.m.modules).length} inline_readers=${Object.keys(r.m.inline).length} deps=${r.counts.deps} notDeps=${r.counts.notDeps} uses=${r.counts.uses} tool_sha=${r.m.depsReview.tool}`);
+      if (r.fails.length) process.exit(1);
+      m = r.m;
+    } else {
+      m = JSON.parse(fs.readFileSync(path.join(root, MS.sourceFile(app)), 'utf8'));
+      MS.refresh(root, app, m, lines);
+    }
+    const w = MS.write(root, app, { manifest: m });
+    w.fails.forEach(f => console.log('§MANIFEST_FAIL ' + f)); lines.concat(w.lines).forEach(l => console.log(l));
+    if (w.fails.length) { console.log('§MANIFEST_WRITE written=0 (nothing written: fix the lines above)'); process.exit(1); }
+    let n = 0;
+    for (const [f, t] of w.out) { const p = path.join(root, f), cur = fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : null; if (cur !== t) { fs.writeFileSync(p, t); n++; console.log('§MANIFEST_WROTE file=' + f); } }
+    console.log(`§MANIFEST_WRITE app=${app} files=${w.out.size} written=${n}`);
+    process.exit(0);
+  }
+  if (!argv.includes('--check')) { console.error('usage: node scripts/gen_manifest.js --check [--root DIR] [--out FILE] | --write <app> | --init <app> [--not-deps a>b,…] [--as-uses a>b,…] [--by WHO --on DATE]'); process.exit(1); }
   const r = check(root);
   r.fails.forEach(f => console.log('§MANIFEST_FAIL ' + f));
   r.lines.forEach(l => console.log(l));
+  const oi = argv.indexOf('--out');
   if (oi >= 0) {
     const out = path.resolve(argv[oi + 1]);
-    if (!path.relative(root, out).startsWith('..')) { console.log('§MANIFEST_ERR --out must be outside the tree (B0 commits no manifest)'); process.exit(1); }
+    if (!path.relative(root, out).startsWith('..')) { console.log('§MANIFEST_ERR --out must be outside the tree'); process.exit(1); }
     fs.writeFileSync(out, JSON.stringify(r.apps.map(a => a.manifest), null, 1)); console.log('§MANIFEST_OUT file=' + out);
   }
   process.exit(r.verdict === 'PASS' ? 0 : 1);
