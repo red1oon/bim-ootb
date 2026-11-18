@@ -280,13 +280,13 @@
 
   // ---- the independent re-check on the WRITTEN parts: every part's surface (triangle centroids, nudged 2 % to the inside except welds) must lie inside no other solid.
   // items: [{guid, beam, support, kind:'PL'|'BT'|'WD', atype, tris: Float64Array (world)}]. The brace is exempt (bolted angle); the support only where welded (the welds; a lap plate; a T plate is judged by the exact test before writing).
-  function clearPost(inp, RULES, items, log) {
-    var cx = K.makeCtx(inp, RULES, log), M = cx.meshes, idx = K.indexOf(inp), pmax = cx.rv('parity_max_triangles'), fails = [], skippedSet = {}, boxOf = {};
-    items.forEach(function (it) { boxOf[it.guid] = bboxOf(it.tris); });
+  function clearPost(inp, RULES, items, log, extraParts) {
+    var cx = K.makeCtx(inp, RULES, log), M = cx.meshes, idx = K.indexOf(inp), pmax = cx.rv('parity_max_triangles'), fails = [], skippedSet = {}, boxOf = {}, allX = items.concat(extraParts || []);   // extraParts (P6): live generated parts of other packs
+    allX.forEach(function (it) { boxOf[it.guid] = bboxOf(it.tris); });
     items.forEach(function (it) {
       var b = boxOf[it.guid], lo = b[0], hi = b[1], A = it.tris, base = it.guid.replace(/-(PL|BT|WD)$/, '');
       var others = idx.query(lo, hi).filter(function (g) { return g !== it.beam && !startsAny(g, ['GEN-LY-', 'GEN-RB-']) && g.indexOf(base + '-') !== 0; });
-      var extra = items.filter(function (o) { return o.guid.indexOf(base + '-') !== 0 && boxOf[o.guid][0][0] <= hi[0] && boxOf[o.guid][0][1] <= hi[1] && boxOf[o.guid][0][2] <= hi[2] && boxOf[o.guid][1][0] >= lo[0] && boxOf[o.guid][1][1] >= lo[1] && boxOf[o.guid][1][2] >= lo[2]; });
+      var extra = allX.filter(function (o) { return o.guid.indexOf(base + '-') !== 0 && boxOf[o.guid][0][0] <= hi[0] && boxOf[o.guid][0][1] <= hi[1] && boxOf[o.guid][0][2] <= hi[2] && boxOf[o.guid][1][0] >= lo[0] && boxOf[o.guid][1][1] >= lo[1] && boxOf[o.guid][1][2] >= lo[2]; });
       var nTr = A.length / 9, pts = [], cen = [0, 0, 0], q, bad = null, u;
       for (q = 0; q < A.length; q += 3) { cen[0] += A[q]; cen[1] += A[q + 1]; cen[2] += A[q + 2]; } cen = [cen[0] / (A.length / 3), cen[1] / (A.length / 3), cen[2] / (A.length / 3)];
       var step = Math.max(1, Math.floor(nTr / 400));
@@ -309,7 +309,7 @@
     LOG('§LODUP_GUSSET_MODE clash_check=' + (opts.noClash ? 'OFF(break)' : 'on') + ' bolts=' + rv('bolts_min') + ' x M' + rv('bolt_diameter_mm') + ' pitch=' + rv('bolt_pitch_mm') + ' edge=' + rv('edge_used_mm') + ' filler_max=' + rv('filler_max_mm') + ' filler_flag=' + rv('filler_flag_mm') + ' plane_tol_deg=' + rv('plane_tol_deg') + ' reach=' + rv('support_reach_mm') + ' flange_fraction=' + rv('flange_interval_max_fraction'));
     var S = K.survey(cx), t1 = nowMs(), ends = S.rows.filter(function (r) { return r.cls === 'STEEL_SKEW'; }), FLAG = rv('filler_flag_mm');
     LOG('§LODUP_GUSSET_JUDGED judged=' + ends.length + ' (STEEL_SKEW ends of the survey)' + (ends.length ? '' : ' INCONCLUSIVE (no angle brace end: nothing was judged)'));
-    var parts = [], CH = [], out = [], reasons = {}, clashBy = {}, G = {}, ruleFail = [], addedVerts = 0, judged = 0, skippedAll = {}, gen = [], eccAll = [];
+    var parts = [], CH = [], out = [], reasons = {}, clashBy = {}, G = K.seedGenerated(inp, opts, 'GEN-GU-'), ruleFail = [], addedVerts = 0, judged = 0, skippedAll = {}, gen = [], eccAll = [];
     var bump = function (k) { reasons[k] = (reasons[k] || 0) + 1; };
     var change = function (kind, guid, cls, host, rule, detail) { CH.push({ kind: kind, guid: guid, cls: cls, host: host, rule: rule, detail: detail }); };
     var RULE = 'Gusset connection: AISC 360-16 detailing limits (J2.4, J2.2b, J3.3, J3.4M, J3.5, J5.2 filler tag) + shared fin-plate rows + gusset rows [' + RULES.filler_max_mm.source + ']; configuration only, capacity not checked';
@@ -336,7 +336,7 @@
       });
       out.push(Object.assign({}, j, r, { Fp: undefined, Fb: undefined, Fw: undefined })); gen.push(out[out.length - 1]); bump('generated');
     });
-    var t2 = nowMs(), items = parts.map(function (p) { return { guid: p.guid, beam: p.beam, support: p.support, kind: p.kind, atype: p.atype, tris: p.tris }; }), post = clearPost(inp, RULES, items, function () { });
+    var t2 = nowMs(), items = parts.map(function (p) { return { guid: p.guid, beam: p.beam, support: p.support, kind: p.kind, atype: p.atype, tris: p.tris }; }), post = clearPost(inp, RULES, items, function () { }, K.seededItems(G));
     post.skipped.forEach(function (g) { skippedAll[g] = 1; });
     var nClash = reasons.REFUSED_CLASH || 0, skNames = Object.keys(skippedAll).sort().map(function (g) { return tname(meta[g].name); }).filter(function (v, i2, a) { return a.indexOf(v) === i2; });
     LOG('§LODUP_GUSSET_RULES joints=' + gen.length + ' clause_failures=' + ruleFail.length + ' (measured on the built meshes; checks per joint=14) -> ' + (!gen.length ? 'INCONCLUSIVE' : (ruleFail.length ? 'FAIL ' + JSON.stringify(ruleFail.slice(0, 3)) : 'PASS')));
