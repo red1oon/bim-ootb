@@ -1,0 +1,9 @@
+{
+ "_about": "Fillet-weld rule rows for the LOD Upgrade pack 'Truss welds' (bim-ootb prompts/MODELLER_LOD_UPGRADE_PILL.md section 3 and P2 SPEC; ported from bim-compiler scripts/lod/rebar_defaults.json weld rows). Every row: value, unit, source. source = 'stated: <where the drawing says it>' | 'default: <standard and table>' | 'default: ours (...)' | 'unset: ...'. A stated value always wins over a default, and a row filled in with a 'stated:' source wins over a default. Change a row, re-run; no code change. No project values are kept in this file.",
+ "weld_min_table_mm": {"value": "6:3, 13:5, 19:6, 999:8", "unit": "thinner part up to mm : minimum fillet leg mm", "source": "default: AISC 360-16 Table J2.4"},
+ "weld_length_rule": {"value": "overlap length along the member axis", "unit": "-", "source": "default: ours"},
+ "weld_contact_end_tol_mm": {"value": 1.0, "unit": "mm", "source": "default: ours (an overlap that reaches within this distance of a member end is an end contact)"},
+ "weld_axis_parallel_max": {"value": 0.05, "unit": "-", "source": "default: ours (largest |member axis . plate normal| for a bead to be laid; above it the member lies across the plate face and the contact is refused, not welded)"},
+ "plate_thickness_name_pattern": {"value": "(\\d+(?:/\\d+)?)\"\\s*Thickness", "unit": "regex on the plate name, group 1 = inches", "source": "default: ours (plate names carry 'N\" Thickness'; when absent the plate's measured thickness is used)"},
+ "member_leg_name_pattern": {"value": "x(\\d+/\\d+)\"", "unit": "regex on the member name, group 1 = inches", "source": "default: ours (angle names end 'x1/4\"'; when absent only the plate thickness governs)"}
+}
