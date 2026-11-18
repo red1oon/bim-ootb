@@ -48,6 +48,7 @@ function buildAll() {
     const built = { from, rows: a.rows + e.rows, translated: a.translated + e.translated, untranslated: a.untranslated + e.untranslated };
     out[lang] = lang === T.BASE ? { language: lang, table: 'AD_Message', base: true, built, labels } : { language: lang, table: 'AD_Message', built, labels };
     out[lang].tables = { AD_Message: a.rows, BIM_Element: e.rows };
+    out[lang].terms = terms.map(r => r.value);   // T3: the pack names its term keys, so a page can look a term up BY KEY and keep it out of any by-English path
   });
   return out;
 }
