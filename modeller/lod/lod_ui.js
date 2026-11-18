@@ -8,7 +8,7 @@
 (function () {
   'use strict';
   var TAG = '§LODUP', BASE = (function () { try { return new URL('.', document.currentScript.src).href; } catch (e) { return 'lod/'; } })();
-  var state = { ready: false, panel: null, rules: {}, edits: {}, last: {}, open: {}, runs: [], busy: false, hidden: {} };
+  var state = { ready: false, panel: null, rules: {}, edits: {}, last: {}, open: {}, runs: [], busy: false, hidden: {}, inputs: {} };   // inputs[packId][inputId] = {json, name, summary}: a file the person loaded for a pack (P6)
 
   function log(m) { console.log(TAG + ' ' + m); }
   function load(src) { return new Promise(function (res, rej) { var s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = function () { rej(new Error('load failed ' + src)); }; document.head.appendChild(s); }); }
@@ -25,7 +25,20 @@
   function rowsOf(id) { return window.LodRules.merge(state.rules[id], state.edits[id]).rows; }
   async function input() {
     var db = await window.OpenBuildingDb.get(); if (!db) return null;
-    var inp = window.LodReader.fromDb(db); inp.callouts = []; return inp;
+    var inp = window.LodReader.fromDb(db); inp.callouts = [];
+    inp.inputs = {}; Object.keys(state.inputs).forEach(function (pid) { inp.inputs[pid] = {}; Object.keys(state.inputs[pid]).forEach(function (iid) { inp.inputs[pid][iid] = state.inputs[pid][iid].json; }); });
+    inp.generated = liveGenerated(); return inp;
+  }
+  // P6: the live generated parts of every pack (undone = 0), world soups rebuilt from the op rows + the registered meshes. A pack seeds its clash neighbours from this (joint_pack kit.seedGenerated), so Run Joints
+  // then Run Gussets cannot overlap. Lazy: read only when a run asks (rebar sets are megabytes), once per input().
+  function liveGenerated() {
+    var memo = null;
+    return function () {
+      if (memo) return memo; var B = window.Bonsai, O = B && B.oplog, db = O && O.db, Lb = B && B.library; if (!db || !Lb || !Lb._geom) return (memo = []);
+      var r = db.exec("SELECT output_guid, parameters FROM kernel_ops WHERE undone=0 AND op_type='GEOM_INSERT' AND output_guid LIKE 'GEN-%' ORDER BY id"), rows = [];
+      if (r.length) r[0].values.forEach(function (v) { try { rows.push({ guid: v[0], params: JSON.parse(v[1]) }); } catch (e) { /* an unreadable row is not a neighbour */ } });
+      memo = window.LodOps.fromOps(rows, function (h) { return Lb._geom['rg:' + h]; }); log('§LODUP_NEIGHBOURS live_generated_parts=' + memo.length + ' (the model as read + these op-log parts are every pack\'s clash neighbours)'); return memo;
+    };
   }
 
   // element_parts + upgrade_changes, derived from the live ops (Undo / Redo keep them honest)
@@ -67,7 +80,7 @@
       var t0 = performance.now(), inp = await input(); if (!inp) { say('Open a building first.'); return; }
       var rows = rowsOf(id), lines = [], res = pack.run(inp, rows, { log: function (l) { lines.push(l); console.log(l); } });
       state.metaLast = inp.meta;
-      if (!res.parts.length) { log('§LODUP_RUN pack=' + id + ' VACUOUS nothing to add (applies_to=' + pack.appliesTo(inp) + ') -> INCONCLUSIVE'); say(pack.label + ': nothing to add (' + res.stats.refused + ' refused, ' + res.stats.notBuilt + ' not built).'); state.last[id] = res.stats; paint(); return; }
+      if (!res.parts.length) { log('§LODUP_RUN pack=' + id + ' VACUOUS nothing to add (applies_to=' + pack.appliesTo(inp) + ') -> INCONCLUSIVE'); say(res.stats.say || (pack.label + ': nothing to add (' + res.stats.refused + ' refused, ' + res.stats.notBuilt + ' not built).')); state.last[id] = res.stats; paint(); return; }
       var warn = res.stats.addedVerts > 1e6;   // PERF BUDGET: a phone-class tab holds about 4 M vertices whole
       if (warn && typeof window.confirm === 'function' && !window.confirm('This adds ' + res.stats.addedVerts.toLocaleString() + ' vertices (over 1 M). A phone-class device may not hold it. Continue?')) { say('Cancelled.'); return; }
       var built = window.LodOps.build(res.parts, id, inp.meta), db = await O._ensureDb();
@@ -100,6 +113,21 @@
     return window.LodOps.changeText(ch, { model: window.__dwName || 'model', pack: state.runs.map(function (r) { return r.pack; }).join('+'), rules: rc });
   }
 
+  // P6: a file the person loads for a pack (the pack declares it: {id, label, accept, validate(json) -> {ok, summary, why}}). Read as JSON, checked by the pack, kept in the panel state; a refused file says why and changes nothing.
+  function readFile(f) { return new Promise(function (res, rej) { var fr = new FileReader(); fr.onload = function () { res(String(fr.result)); }; fr.onerror = function () { rej(new Error('read failed')); }; fr.readAsText(f); }); }
+  function loadInput(key, accept) {
+    var p = key.split('|'), pid = p[0], iid = p[1], pack = window.LodRegistry.get(pid), spec = pack && (pack.inputs || []).filter(function (i) { return i.id === iid; })[0]; if (!spec) return;
+    var f = document.createElement('input'); f.type = 'file'; f.accept = accept || ''; f.style.display = 'none'; document.body.appendChild(f);
+    f.onchange = async function () {
+      var file = f.files && f.files[0]; f.remove(); if (!file) return;
+      try { var json = JSON.parse(await readFile(file)), v = spec.validate ? spec.validate(json) : { ok: true, summary: 'loaded' };
+        if (!v.ok) { log('§LODUP_INPUT ' + pid + '.' + iid + ' REFUSED ' + file.name + ': ' + v.why); if (typeof window.setStat === 'function') window.setStat(pack.label + ': ' + file.name + ' refused: ' + v.why); return; }
+        (state.inputs[pid] = state.inputs[pid] || {})[iid] = { json: json, name: file.name, summary: v.summary }; log('§LODUP_INPUT ' + pid + '.' + iid + ' loaded ' + file.name + ' (' + v.summary + ')');
+      } catch (e) { log('§LODUP_INPUT ' + pid + '.' + iid + ' REFUSED ' + file.name + ': not valid JSON (' + (e && e.message) + ')'); if (typeof window.setStat === 'function') window.setStat(pack.label + ': ' + file.name + ' is not valid JSON.'); return; }
+      paint();
+    };
+    f.click();
+  }
   function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
   async function paint() {
     var P = state.panel; if (!P) return; var Rg = window.LodRegistry, inp = null; try { inp = await input(); } catch (e) { inp = null; }
@@ -111,6 +139,7 @@
       h += '<div class="lu-row" data-id="' + esc(e.id) + '"><div class="lu-h"><b>' + esc(e.label) + '</b><button class="lu-run" data-run="' + esc(e.id) + '">Run</button></div>' +
         '<div class="lu-s">' + (e.appliesTo ? 'applies to <span data-k="applies">' + e.appliesTo + '</span> ' + esc(e.unit || 'elements') : '<span data-k="applies">0</span> not applicable here') + '</div>' +
         '<div class="lu-s">rule rows: <span data-k="stated">' + e.stated + '</span> stated / <span data-k="default">' + e.default + '</span> defaults' + (e.unset ? ' / <span data-k="unset">' + e.unset + '</span> unset' : '') + ' <a href="#" class="lu-rules" data-rules="' + esc(e.id) + '">Rules</a></div>' +
+        (e.inputs || []).map(function (i) { var got = (state.inputs[e.id] || {})[i.id]; return '<div class="lu-s"><button class="lu-load" data-load="' + esc(e.id) + '|' + esc(i.id) + '" data-accept="' + esc(i.accept || '') + '">' + esc(i.label) + '</button> <span data-k="input-' + esc(i.id) + '">' + (got ? esc(got.name) + ': ' + esc(got.summary) : 'not loaded') + '</span></div>'; }).join('') +
         '<div class="lu-s" data-st="' + esc(e.id) + '">' + (l ? 'last run: added ' + l.added + ' / refused ' + l.refused + ' / not built ' + l.notBuilt : 'last run: none') + '</div>';
       if (state.open[e.id]) {
         var rows = rowsOf(e.id); h += '<table class="lu-t">';
@@ -122,6 +151,7 @@
     h += '<div class="lu-dl"><button class="lu-cl">Change list (.txt)</button><button class="lu-ifc" disabled title="Add-on IFC arrives in P7">Add-on IFC</button></div>';
     body.innerHTML = h;
     body.querySelectorAll('.lu-run').forEach(function (b) { b.onclick = function () { runPack(b.getAttribute('data-run')); }; });
+    body.querySelectorAll('.lu-load').forEach(function (b) { b.onclick = function () { loadInput(b.getAttribute('data-load'), b.getAttribute('data-accept')); }; });
     body.querySelectorAll('.lu-rules').forEach(function (a) { a.onclick = function (ev) { ev.preventDefault(); var id = a.getAttribute('data-rules'); state.open[id] = !state.open[id]; paint(); }; });
     body.querySelectorAll('input[data-rk]').forEach(function (i) { i.onchange = function () {
       var p = i.getAttribute('data-rk').split('|'), id = p[0], k = p[1], cur = rowsOf(id)[k], e = Object.assign({}, state.edits[id][k] || cur);
@@ -146,5 +176,5 @@
     if (open) await paint();
     log('§LODUP_PANEL open=' + open + ' rows=' + state.panel.querySelectorAll('.lu-row').length + ' packs=' + window.LodRegistry.list().length);
   }
-  window.LodUI = { applyHostHide: applyHostHide, toggle: toggle, boot: boot, runPack: runPack, paint: paint, state: state, rowsOf: rowsOf, setRow: function (id, k, row) { var m = window.LodRules.merge(rowsOf(id), (function () { var o = {}; o[k] = row; return o; })()); if (!m.refused.length) state.edits[id][k] = row; return m; }, changeListText: changeListText, syncTables: syncTables };
+  window.LodUI = { setInput: function (pid, iid, json, name) { var spec = window.LodRegistry.get(pid).inputs.filter(function (i) { return i.id === iid; })[0], v = spec.validate(json); if (!v.ok) return v; (state.inputs[pid] = state.inputs[pid] || {})[iid] = { json: json, name: name || 'file', summary: v.summary }; return v; }, applyHostHide: applyHostHide, toggle: toggle, boot: boot, runPack: runPack, paint: paint, state: state, rowsOf: rowsOf, setRow: function (id, k, row) { var m = window.LodRules.merge(rowsOf(id), (function () { var o = {}; o[k] = row; return o; })()); if (!m.refused.length) state.edits[id][k] = row; return m; }, changeListText: changeListText, syncTables: syncTables };
 })();
