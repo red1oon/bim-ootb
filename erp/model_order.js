@@ -323,7 +323,7 @@
       var m = fire(trx, 'BEFORE_REACTIVATE', 'c_order', o); if (m) { T.msg(trx, m); return false; }                            // :3048-3050
       var d = T.dt(trx, o.c_doctype_id);
       if (!T.periodOpen(trx, o.dateacct, d.docbasetype, o.ad_org_id)) { T.msg(trx, '@PeriodClosed@'); return false; }             // :3053 testPeriodOpen (throws)
-      if (!(Number(o.c_doctype_id) > 0) || !Y(d.iscanbereactivated)) { T.msg(trx, String(T.msgText(trx, 'DocTypeCannotBeReactivated')).replace('{0}', d.name)); return false; }   // :3056-3059
+      if (!ML.idSet(o.c_doctype_id) || !Y(d.iscanbereactivated)) { T.msg(trx, String(T.msgText(trx, 'DocTypeCannotBeReactivated')).replace('{0}', d.name)); return false; }   // :3056-3059
       var sub = d.docsubtypeso;
       if (Y(o.issotrx) && (sub === 'WI' || sub === 'WP' || sub === 'WR')) { if (!createReversals(trx, o)) return false; }          // :3062-3070 OnCredit / Warehouse / POS
       o = trx.get('c_order', o.c_order_id);
