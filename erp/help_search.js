@@ -107,7 +107,7 @@
     var reach = {}, T = (c.fsm && c.fsm.TRANSITION) || {}; Object.keys(T).forEach(function (code) { Object.keys(T[code]).forEach(function (from) { var to = T[code][from]; if (to && to !== from) { (reach[to] = reach[to] || []); if (reach[to].indexOf(code) < 0) reach[to].push(code); } }); });
     var statuses = {}; Object.keys(stEn).forEach(function (code) { statuses[code] = [stEn[code]].concat(nm.statuses[code] ? [nm.statuses[code]] : []); });
     var howto = (pk && pk.howto && pk.howto.length) ? pk.howto : (en.howto || []);
-    var kindOf = function (wid) { var r = q('SELECT tb.name AS tn, tb.tablename AS tt FROM ad_tab t JOIN ad_table tb ON tb.ad_table_id=t.ad_table_id WHERE t.tablevel=0 AND t.ad_window_id=' + Number(wid) + ' ORDER BY t.seqno LIMIT 1')[0]; return r ? { name: String(r.tn), table: String(r.tt) } : null; };
+    var kindOf = function (wid) { var r = q('SELECT tb.name AS tn, tb.tablename AS tt FROM ad_tab t JOIN ad_table tb ON tb.ad_table_id=t.ad_table_id WHERE t.isactive=\'Y\' AND t.ad_window_id=' + Number(wid) + ' ORDER BY t.seqno, t.ad_tab_id LIMIT 1')[0]; return r ? { name: String(r.tn), table: String(r.tt) } : null; };   // the window's first tab: the same rule as common/door/object_cli.js windowTabs (bim-compiler prompts/CLI_ERP_IVR.md §51)
     var search = function (question) { return handle.query(String(question), allowed); };
     var DYM = dep('HelpDym', '../common/help/help_dym.js'), dymNames = null;   // §19.5: the names of the role's records (the language's + the English `a`), made on the first miss, never at load (D8)
     var dym = function (question, hits) { if (!dymNames) dymNames = DYM.names(built.records, { alt: true, allowed: allowed }); return DYM.suggest(question, dymNames, hits.length ? hits[0].tier : 3); };
