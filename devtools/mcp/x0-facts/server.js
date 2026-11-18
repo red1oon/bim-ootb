@@ -164,6 +164,9 @@ async function handle(msg) {
   return err(id, -32601, 'Method not found: ' + method);
 }
 
+module.exports = { TOOLS, ROOT, COMPILER };   // §F.36: the x0 terminal command (devtools/x0/x0.js) runs these same tools
+if (require.main !== module) return;
+
 let chain = Promise.resolve();
 readline.createInterface({ input: process.stdin, terminal: false }).on('line', line => {
   if (!line.trim()) return;
