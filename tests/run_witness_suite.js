@@ -162,14 +162,17 @@ function summaryOf(out) {
 let green = 0, newRed = 0, knownRed = 0, fixed = 0, flakyN = 0;
 const newRedList = [], fixedList = [], flakyList = [];
 
+const RESULTS = require(path.join(__dirname, '..', 'witness_kit', 'results.js'));   // E-2 (bim-compiler CODE_ARCHITECTURE_DESIGN.md Part E, E1): last run per witness in ~/.cache
 function runOnce(f) {
+  const t0 = Date.now();
   const r = spawnSync('node', [f], {
     cwd: TESTS_DIR, encoding: 'utf8', timeout: TIMEOUT_S * 1000,
     env: Object.assign({}, process.env, { BLD_DIR: BLD_DIR })
   });
   const timedOut = r.error && r.error.code === 'ETIMEDOUT';
-  return { ok: !timedOut && r.status === 0, code: timedOut ? 'TIMEOUT' : r.status,
-           out: (r.stdout || '') + (r.stderr || '') };
+  const out = (r.stdout || '') + (r.stderr || '');
+  RESULTS.record(path.join(__dirname, '..'), path.resolve(TESTS_DIR, f), { out: timedOut ? out + '\nverdict=FAIL (timeout)' : out, exit: timedOut ? 124 : r.status, seconds: (Date.now() - t0) / 1000 });
+  return { ok: !timedOut && r.status === 0, code: timedOut ? 'TIMEOUT' : r.status, out };
 }
 
 for (const f of files) {

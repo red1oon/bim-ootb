@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 /**
+ * PROVES: modeller/grid_span_gate.js
  * # ⚠ DO NOT REMOVE — W-GRID-SPAN-GATE (MODELLER_MASTER §GRID-SPAN-GATE SPEC 2026-10-02, row 38)
  * SCOPE: real Open of HospitalGarage -> Move Grid -> real mouse drag of gridline y8 -> bays coloured by the EXISTING span
  * rule (str_walker.js SW_SPAN_RULES) -> RED release opens "Add one more?" -> one gesture, one undo. READ THE §-LOG after every run.

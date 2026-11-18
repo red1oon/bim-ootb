@@ -106,6 +106,17 @@ jobs:
       # W-DEPS-CAND (bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md Part B, B1 §3; #3244): the dependency-candidate tool classifies
       # every read (load / call, guarded or not) the same way RUNNING the fixture scripts in both orders does, and every file:line it
       # cites on the modeller really holds the name. Dev-side; writes nothing. Exit 0 alone is not a pass: it must print verdict=PASS.
+      # W-PROOF-MAP (bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md Part E, E1): which witness proves which modeller module (PROVES: lines, owner E-1);
+      # a PROVES: line naming a missing file fails here; a cached INCONCLUSIVE is never shown as a pass; a run older than its witness is stale.
+      - name: Proof map stays honest (W-PROOF-MAP)
+        run: |
+          set -u; mkdir -p logs; rc=0
+          node scripts/tests/witness_proof_map.js < /dev/null > logs/ci_proof_map.log 2>&1 || rc=$?
+          grep -E 'ok=N|§PROOF_MAP_BAD' logs/ci_proof_map.log || true
+          v=$(grep -E '^§PROOF_MAP_W ' logs/ci_proof_map.log | tail -1 || true)
+          echo "$v"
+          if [ "$rc" -ne 0 ] || ! printf '%s' "$v" | grep -q 'verdict=PASS'; then exit 1; fi
+
       - name: Dependency candidates agree with a real run (W-DEPS-CAND)
         run: |
           set -u; mkdir -p logs; rc=0

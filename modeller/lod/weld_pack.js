@@ -11,10 +11,11 @@
 // OUTPUT {parts:[{guid, cls, name, storey, disc, building, tris:Float64Array, parents:[], attach:[member, plate], rgba}], changes:[{kind,guid,cls,host,rule,detail}], stats, audit}
 // A weld is attached to its member and plate, not an aggregate child of either (the oracle writes no element_parts row for it; element_parts would hide the member on reload): parents = [], attach = [member, plate].
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory();
-  else root.LodWeldPack = factory();
-})(typeof self !== 'undefined' ? self : this, function () {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./lod_registry.js'));
+  else root.LodWeldPack = factory(root.LodRegistry);
+})(typeof self !== 'undefined' ? self : this, function (REG) {
   'use strict';
+  var K = REG.kit;   // the yield kit (lod_registry.js, P7)
   var IN = 0.0254, WD_RGBA = '0.40,0.34,0.30,1.000';
 
   // ---- formatting twins of Python's format specs
@@ -149,7 +150,8 @@
   }
   function weldMin(table, tMm) { for (var i = 0; i < table.length; i++) if (tMm <= table[i][0]) return table[i][1]; return null; }
 
-  function run(inp, RULES, opts) {
+  function run(inp, RULES, opts) { return K.drain(runSteps(inp, RULES, opts)); }
+  function* runSteps(inp, RULES, opts) {
     opts = opts || {}; var LOG = opts.log || function () { }, BREAK = !!opts.breakWinding, NOGATE = !!opts.noMaterialGate;
     var rv = function (k) { if (!RULES[k]) throw new Error('rule row missing: ' + k); return RULES[k].value; };
     var END_TOL = rv('weld_contact_end_tol_mm') / 1000, PAR = rv('weld_axis_parallel_max'), TABLE = weldTable(rv('weld_min_table_mm')), RE_T = new RegExp(rv('plate_thickness_name_pattern')), RE_M = new RegExp(rv('member_leg_name_pattern'));
@@ -169,7 +171,7 @@
     var contacts = [], touchOnly = 0, noContact = [], weldInfo = {}, skippedKeys = {}, weldSkipped = [];
 
     // ---- contact scan: member x plate
-    MEM.forEach(function (gm) {
+    yield* K.each(MEM, function (gm) {
       var VM = MV[gm], ma = memberAxis(VM), c0 = ma.c0, a = ma.a, slo = Infinity, shi = -Infinity, bm = aabb(VM), mlo = bm[0], mhi = bm[1], nCon = 0;
       for (i = 0; i < VM.length; i += 3) { var s = (VM[i] - c0[0]) * a[0] + (VM[i + 1] - c0[1]) * a[1] + (VM[i + 2] - c0[2]) * a[2]; if (s < slo) slo = s; if (s > shi) shi = s; }
       PLT.forEach(function (gp) {
@@ -190,14 +192,14 @@
         contacts.push({ m: gm, p: gp, s0: s0, s1: s1, end: end, a: a, c0: c0, slo: slo, shi: shi }); nCon++;
       });
       if (nCon === 0) noContact.push(gm);
-    });
+    }, 'Welds: member');
     var nEndC = contacts.filter(function (r) { return r.end !== 'T'; }).length, nThr = contacts.length - nEndC;
     LOG('§LODUP_WELD_SCAN members=' + MEM.length + ' plates=' + PLT.length + ' contacts=' + contacts.length + ' end_contacts=' + nEndC + ' through_contacts=' + nThr + ' touch_only=' + touchOnly + ' members_without_any_contact=' + noContact.length + (noMesh.length ? ' no_mesh=' + noMesh.length : '') + ((MEM.length && PLT.length) ? '' : ' INCONCLUSIVE (the model has no member or no plate: nothing was judged)'));
 
     // ---- the welds
     var nWeld = 0;
     noMesh.forEach(function (g) { if (META[g].cls === 'IfcMember') change('REFUSED', g, 'IfcMember', g, 'Weld', 'the member has no mesh'); });
-    contacts.slice().sort(function (p, q) { return p.m < q.m ? -1 : p.m > q.m ? 1 : p.p < q.p ? -1 : p.p > q.p ? 1 : 0; }).forEach(function (rec) {
+    yield* K.each(contacts.slice().sort(function (p, q) { return p.m < q.m ? -1 : p.m > q.m ? 1 : p.p < q.p ? -1 : p.p > q.p ? 1 : 0; }), function (rec) {
       var gm = rec.m, gp = rec.p, f = PF[gp], R = f.R, cp = f.cp, lo = f.lo, hi = f.hi, VM = MV[gm];
       var tp = thickIn(META[gp].name, RE_T), tm = thickIn(META[gm].name, RE_M);
       if (tp === null) tp = hi[2] - lo[2];                                // measured, only if the name gives none
@@ -228,7 +230,7 @@
       change('ADDED', guid, 'IfcFastener', gm, 'Fillet weld, AISC 360-16 Table J2.4 minimum for the thinner part (' + fx(thin * 1000, 2) + ' mm -> ' + fmtG(wsz) + ' mm) [' + RULES.weld_min_table_mm.source + ']; length = overlap length [default: ours]',
         'member "' + m0.name + '" ' + (rec.end === 'T' ? 'through contact (mid-span, clipped overlap with the plate box)' : 'end ' + rec.end) + ' -> gusset plate ' + gp + ' "' + META[gp].name + '" | overlap along the member ' + fx(Lw * 1000, 1) + ' mm | beads on the +face of the plate at the two outer edges of the member | plate t=' + fx(tp * 1000, 2) + ' mm, member leg t=' + (tm === null ? '-' : fx(tm * 1000, 2) + ' mm') + ' | storey ' + m0.storey);
       weldInfo[guid] = { m: gm, end: rec.end, p: gp, size: wsz, len: Lw, thin: thin }; nWeld++;
-    });
+    }, 'Welds: weld');
     noContact.slice().sort().forEach(function (gm) { change('NOT_BUILT', gm, 'IfcMember', gm, 'Weld: member has no contact with a gusset plate', '"' + META[gm].name + '" | counted, not welded'); });
     weldSkipped.forEach(function (w) { change('REFUSED', w[0], 'IfcMember', w[0], 'Weld', 'plate ' + w[1] + ': ' + w[2]); });
     LOG('§LODUP_WELD_BUILT welds=' + nWeld + ' skipped=' + weldSkipped.length);
@@ -243,7 +245,7 @@
     var m = 0, p = 0; Object.keys(meta).forEach(function (g) { var c = meta[g].cls; if (c === 'IfcMember') m++; else if (c === 'IfcPlate') p++; });
     return p ? m : 0;
   }
-  var API = { id: 'welds', label: 'Truss welds', unit: 'member-plate contacts', rulesFile: 'rules/weld_defaults.json', run: run,
+  var API = { id: 'welds', label: 'Truss welds', unit: 'member-plate contacts', rulesFile: 'rules/weld_defaults.json', run: run, runSteps: runSteps,
     appliesTo: function (inp, rows) { if (!rows) return appliesTo(inp.meta); try { return run(inp, rows, { log: function () { } }).stats.judged; } catch (e) { return 0; } },   // with rule rows: the member-plate contacts the run finds (same test), read-only dry run
    
     fmtG: fmtG, weldTable: weldTable, weldMin: weldMin, WD_RGBA: WD_RGBA, IN: IN };

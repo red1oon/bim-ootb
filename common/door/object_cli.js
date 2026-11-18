@@ -230,9 +230,18 @@ async function boot(a) {
   say('replay ops=' + O.ops.length + ' oplog=' + O.opfile);
   return O;
 }
+// keyOf - a create on a table with a physical key column is logged WITH its key (max+1, the value applyOp would pick at every replay) and keyKept, so a replay never picks a new
+//   one and the page's fold keeps it (bim-compiler prompts/CLI_ERP_IVR.md §49, W-ONE-FOLD K1). erp_cli.js resolveOne does the same for an engine group.
+function keyOf(O, o) {
+  if (!o || o.op_type !== 'CRUD_CREATE' || !o.fields || !o.table) return;
+  const idc = o.idCol || o.table + '_id';
+  if (!O.rows('PRAGMA table_info(' + o.table + ')').some(c => String(c.name).toLowerCase() === idc)) return;
+  if (o.fields[idc] == null) { const m = O.rows('SELECT max(' + idc + ') AS m FROM ' + o.table)[0]; o.fields[idc] = Math.max(1, Number(m && m.m || 0) + 1); }
+  o.idCol = idc; o.keyKept = true;
+}
 function persist(O, ops) {
   fs.mkdirSync(path.dirname(O.opfile), { recursive: true });
-  ops.forEach(o => { o.t = o.t || new Date().toISOString(); fs.appendFileSync(O.opfile, JSON.stringify(o, (k, v) => v instanceof Uint8Array ? undefined : v) + '\n'); applyOp(O.db, O.rows, o); O.ops.push(o); });
+  ops.forEach(o => { keyOf(O, o); o.t = o.t || new Date().toISOString(); fs.appendFileSync(O.opfile, JSON.stringify(o, (k, v) => v instanceof Uint8Array ? undefined : v) + '\n'); applyOp(O.db, O.rows, o); O.ops.push(o); });
 }
 function record(O, a) {
   if (!a.uu) refuse('a record needs --uu');
@@ -454,4 +463,4 @@ async function main(argv) {
   }
 }
 if (require.main === module) main(process.argv.slice(2)).then(c => process.exit(c));
-module.exports = { stamp, today, noProperty, roleRows, tabsOf, windowTabs, roleFor, roleCtx, accessOf, main, describe, read, update, attach, history, count, list, sum, group, decSum, boot, open, kindOf, columnsOf, childTabs, applyOp, loadChunker, Refused, oplogFile, readOps };
+module.exports = { stamp, today, noProperty, roleRows, tabsOf, windowTabs, roleFor, roleCtx, accessOf, main, describe, read, update, attach, history, count, list, sum, group, decSum, boot, open, kindOf, columnsOf, childTabs, applyOp, loadChunker, Refused, oplogFile, readOps, persist };

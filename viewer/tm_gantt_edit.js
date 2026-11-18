@@ -1022,7 +1022,7 @@
     if (_tmEditLocked('commitGanttGroupShift')) return;   // §TM_BAKE_LOCK (§S69)
     var app = TMS.A();
     var SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
-    if (!app || !app.db || !SA || !SA.shiftTasks) {
+    if (!app || !app.db || !SA || !SA.shiftTasksCascade) {
       console.log('§GANTT_GROUP_SHIFT_REJECT reason=ScheduleAuthor_not_loaded');
       _tmSay(_L('tm_not_available', 'Not available'));   // §TM_SILENT_REFUSAL
       return;
@@ -1033,16 +1033,22 @@
     var snap = _tmEditSnapshot(schedId);
 
     try {   // §TM_EDIT_EXCEPTION — engine verb through final repaint
-    var res = SA.shiftTasks(app.db, taskIds, deltaDays);
+    // §GANTT_GROUP_LINKS (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.19.13): the group obeys the links that cross
+    // the selection — stopped by an outside predecessor, pushing an outside successor — as a single drag does.
+    var res = SA.shiftTasksCascade(app.db, schedId, taskIds, deltaDays, {});
     if (!res || !res.ok) {
-      console.log('§GANTT_GROUP_SHIFT_REJECT reason=' + ((res && res.reason) || 'unknown'));
-      _tmSay(_L('tm_cannot_move_group', 'Cannot move group — {reason}', { reason: (res && res.reason) || _L('tm_no_schedule', 'no schedule') }));   // §TM_SILENT_REFUSAL
+      console.log('§GANTT_GROUP_SHIFT_REJECT reason=' + ((res && res.reason) || 'unknown') + (res && res.blockedBy ? ' task=' + res.task + ' blockedBy=' + res.blockedBy : ''));
+      _tmSay(res && res.reason === 'blocked'
+        ? _L('tm_group_blocked', 'Cannot move earlier — {task} must still follow {by}', { task: res.task, by: res.blockedBy })
+        : _L('tm_cannot_move_group', 'Cannot move group — {reason}', { reason: (res && res.reason) || _L('tm_no_schedule', 'no schedule') }), 3400);   // §TM_SILENT_REFUSAL
       return;
     }
+    if (res.clamped) _tmSay(_L('tm_group_clamped', 'Moved {d}d, not {r}d — {task} must still follow {by}', { d: res.deltaDays, r: res.requested, task: res.task, by: res.blockedBy }), 3400);
 
     _tmCommitEdit({ what: 'groupShift', schedId: schedId, moved: res.moved || [], snap: snap,
       undo: { taskId: '(' + taskIds.length + ' selected)', mode: 'group-shift' },
-      log: '§GANTT_GROUP_SHIFT_COMMIT tasks=' + res.moved.length + ' deltaDays=' + deltaDays });
+      log: '§GANTT_GROUP_SHIFT_COMMIT tasks=' + res.moved.length + ' deltaDays=' + res.deltaDays + ' requested=' + deltaDays +
+        ' clamped=' + res.clamped + (res.clamped ? ' blockedBy=' + res.blockedBy : '') + ' cascaded=' + res.cascaded });
     } catch (e) { _tmEditExceptionRecover('commitGanttGroupShift', e); }   // §TM_EDIT_EXCEPTION
   }
 
@@ -1421,7 +1427,8 @@
       if (drop && drop.bar !== d.bar && drop.bar.taskId && d.bar.taskId &&
           Math.abs(e.clientY - d.y0) >= 14) {
         _dragConsumed = true;
-        linkGanttBars(d.bar, drop.bar);
+        if (e.shiftKey) swapGanttBars(d.bar, drop.bar);   // §GANTT_REORDER: Shift-drop exchanges the two bars' places
+        else linkGanttBars(d.bar, drop.bar);
         return;
       }
       if (!d.moved || !d.days) return;          // a click, not a drag — let the seek handler have it
@@ -1451,6 +1458,46 @@
       _dragConsumed = true; openGanttProps(hit.bar);
     });
   }
+
+  // §GANTT_REORDER — exchange two bars' places in one gesture (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.19.11).
+  // The engine verb (ScheduleAuthor.swapTasks) is atomic and names why it refuses; this function keeps the lock check,
+  // the verb and the tip, and commits through the one pipeline, so the elements follow and one ↺ Undo takes it back.
+  // Whether the new order can be BUILT is the lock gate's question (verifyGanttIntegrity), not this function's.
+  // Returns true = committed; undefined = refused.
+  function swapGanttBars(barA, barB) {
+    var _L = (typeof TMS._tmTrl === 'function') ? TMS._tmTrl : function (k, en, r) { var s = en; if (r) for (var q in r) s = s.replace('{' + q + '}', r[q]); return s; };   // S226 §R2b — sliced into vm sandboxes by witnesses
+    if (_tmEditLocked('swapGanttBars')) return;   // §TM_BAKE_LOCK (§S69)
+    var app = TMS.A(), SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
+    if (!app || !app.db || !SA || !SA.swapTasks) { console.log('§GANTT_REORDER_REJECT reason=ScheduleAuthor_not_loaded'); _tmSay(_L('tm_not_available', 'Not available')); return; }
+    if (!barA || !barB || !barA.taskId || !barB.taskId) { console.log('§GANTT_REORDER_REJECT reason=bar_has_no_task'); _tmSay(_L('tm_not_editable', 'Not editable — no schedule task on this bar')); return; }
+    var schedId = (TMS._taskIndex && TMS._taskIndex.scheduleId) || 'SCH_AUTHORED';
+    var snap = _tmEditSnapshot(schedId);
+    try {   // §TM_EDIT_EXCEPTION — engine verb through the final repaint
+    var res = SA.swapTasks(app.db, schedId, barA.taskId, barB.taskId, {});
+    if (!res || !res.ok) {
+      var why = (res && res.reason) || 'unknown';
+      console.log('§GANTT_REORDER_REJECT a=' + barA.taskId + ' b=' + barB.taskId + ' reason=' + why + (res && res.blockedBy ? ' blockedBy=' + res.blockedBy : ''));
+      _tmSay(why === 'blocked' ? _L('tm_swap_blocked', 'Cannot swap — {task} must still follow {by}', { task: res.task, by: res.blockedBy })
+        : why === 'bars_overlap' ? _L('tm_swap_overlap', 'Cannot swap — these two bars run at the same time')
+        : why === 'cycle' ? _L('tm_refused_cycle', 'Refused — that link would create a cycle')
+        : _L('tm_rejected', 'Rejected: {reason}', { reason: why }), 3400);
+      return;
+    }
+    _tmCommitEdit({ what: 'reorder', schedId: schedId, moved: res.moved || [], snap: snap,
+      undo: { taskId: res.b.id + ' ⇄ ' + res.a.id, mode: 'reorder' },
+      log: '§GANTT_REORDER_COMMIT nowFirst=' + res.b.id + ' nowSecond=' + res.a.id + ' reversedLink=' + res.reversedLink +
+        ' clamped=' + res.clamped + ' cascaded=' + res.cascaded });
+    _tmSay(_L('tm_swapped', 'Swapped: {first} now before {second}', { first: res.b.id, second: res.a.id }) +
+      (res.clamped ? ' — ' + _L('tm_swap_clamped', '{task} held back by {by}', { task: res.a.id, by: res.blockedBy }) : ''), 3400);
+    return true;
+    } catch (e) { _tmEditExceptionRecover('swapGanttBars', e); }   // §TM_EDIT_EXCEPTION
+  }
+  // Test hook (diagnostic only, same contract as __tmGanttDrag): true = committed, false = refused, 'notFound'.
+  window.__tmGanttSwap = function (aId, bId) {
+    var a = null, b = null;
+    for (var i = 0; i < TMS._ganttTasks.length; i++) { if (TMS._ganttTasks[i].taskId === aId) a = TMS._ganttTasks[i]; if (TMS._ganttTasks[i].taskId === bId) b = TMS._ganttTasks[i]; }
+    return (a && b) ? swapGanttBars(a, b) === true : 'notFound';
+  };
 
   // §GANTT_LINK (E3) — create a real FS dependency, guarded by the EXISTING wouldCycle. A cyclic
   // schedule is invalid, so the guard refuses rather than "fixing" it silently.
@@ -1573,6 +1620,11 @@
       '<div style="display:flex;gap:4px;align-items:center;margin-bottom:6px">' + _L('tm_finish', 'Finish') +
         '<input id="tmp-f" type="date" value="' + realF + '" style="flex:1;font-size:11px"></div>' +
       '<div style="margin-bottom:4px;color:#8a97a5">' + _L('tm_dependencies', 'Dependencies') + '</div>' + depHtml +
+      // §GANTT_REORDER — the touch path for "exchange places" (the canvas gesture is Shift-drop)
+      '<div style="display:flex;gap:4px;align-items:center;margin-top:6px">' + _L('tm_swap_with', '⇄ Swap places with') +
+        '<select id="tmp-swap" style="flex:1;font-size:11px;min-width:0"><option value=""></option>' +
+        TMS._ganttTasks.filter(function (t) { return t.taskId && t.taskId !== bar.taskId; }).map(function (t) {
+          return '<option value="' + t.taskId + '">' + (t.taskName || (t.phase + ' — ' + t.storey)) + '</option>'; }).join('') + '</select></div>' +
       '<div style="display:flex;gap:6px;margin-top:8px">' +
         '<button id="tmp-apply" style="flex:1;font-size:11px">' + _L('tm_apply', 'Apply') + '</button>' +
         '<button id="tmp-close" style="font-size:11px">' + _L('ui_close', 'Close') + '</button></div>' +
@@ -1580,6 +1632,14 @@
     box.style.display = 'block';
     console.log('§GANTT_PROPS_OPEN task=' + bar.taskId + ' deps=' + deps.length + ' elements=' + bar.count);
     document.getElementById('tmp-close').onclick = function () { box.style.display = 'none'; };
+    var swapSel = document.getElementById('tmp-swap');
+    if (swapSel) swapSel.onchange = function () {
+      var other = null, id = swapSel.value;
+      for (var si = 0; si < TMS._ganttTasks.length; si++) if (TMS._ganttTasks[si].taskId === id) other = TMS._ganttTasks[si];
+      if (!other) return;
+      box.style.display = 'none';
+      swapGanttBars(bar, other);   // takes the edit lock itself (§TM_BAKE_LOCK)
+    };
     box.querySelectorAll('[data-unlink]').forEach(function (btn) {
       btn.onclick = function () {
         // §TM_BAKE_LOCK (§S69) — on the WRITE, not on opening the panel: reading a task's dates

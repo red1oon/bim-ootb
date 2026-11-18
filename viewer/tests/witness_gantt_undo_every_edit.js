@@ -10,10 +10,10 @@
 // building db, real engine verbs). Unlink and typed dates run through the shipped openGanttProps and its own click
 // handlers, on a DOM stub.
 //
-//   UE-1  for each of the nine edits — move, resize, ruler shift, group shift, pull-back, link, link forcing a move,
-//         unlink, typed dates — the state before == the state after the edit + ONE Undo. State = every `tasks` row of
+//   UE-1  for each of the ten edits — move, resize, ruler shift, group shift, pull-back, link, link forcing a move,
+//         reorder, unlink, typed dates — the state before == the state after the edit + ONE Undo. State = every `tasks` row of
 //         the schedule (summary rows included), every link, every element op in the db and in memory.
-//   UE-2  each of the nine changed the state (a row that changed nothing is INCONCLUSIVE, not a pass) and left an undo
+//   UE-2  each of the ten changed the state (a row that changed nothing is INCONCLUSIVE, not a pass) and left an undo
 //         record of its own.
 //   UE-3  a second Undo changes nothing and says so.
 //   UE-4  a refused edit (a link that would make a cycle) leaves the previous undo record untouched.
@@ -43,7 +43,7 @@ function finish() {
 
 // ── UE-5: one snapshot owner (source) ─────────────────────────────────────────────────────────
 {
-  const VERBS = ['commitGanttDrag', 'shiftGanttSchedule', 'commitGanttGroupShift', 'rescheduleGanttAsap', 'linkGanttBars', 'openGanttProps'];
+  const VERBS = ['commitGanttDrag', 'shiftGanttSchedule', 'commitGanttGroupShift', 'rescheduleGanttAsap', 'linkGanttBars', 'openGanttProps', 'swapGanttBars'];
   const own = VERBS.filter(n => FN[n] && /SELECT[^;]*schedule_duration[^;]*FROM tasks/.test(stripComments(FN[n])));
   let calls = 0, noUndo = 0; const where = [];
   VERBS.forEach(n => { const code = stripComments(FN[n] || ''); let i = -1;
@@ -68,7 +68,7 @@ function finish() {
     return (dom[id] = e);
   }
   const document = { getElementById: id => (id === 'time-machine-panel' ? null : el(id)), createElement: () => el('tm-gantt-props'), body: { appendChild() {} } };
-  const fx = await FX.make({ bld: BLD, extraNames: ['openGanttProps'], document: document });
+  const fx = await FX.make({ bld: BLD, extraNames: ['openGanttProps', 'swapGanttBars'], document: document });
   if (fx.missing || fx.failed) { claim('UE-1', 0, 0, 'no fixture: ' + (fx.missing || fx.failed)); return finish(); }
   const sb = fx.sb, SA = fx.SA, db = fx.db, schedId = fx.schedId, logs = fx.logs;
   const key = p => p.tasks + '/' + p.links + '/' + p.opsDb + '/' + p.opsMem;
@@ -87,6 +87,9 @@ function finish() {
     ['link', bars => sb.__v.link(bars[0], bars[bars.length - 1])],
     ['link forcing a move', bars => { for (let i = 0; i < bars.length; i++) for (let j = 0; j < bars.length; j++)
         if (i !== j && bars[j].startTs < bars[i].endTs && !SA.wouldCycle(db, bars[i].taskId, bars[j].taskId)) return sb.__v.link(bars[i], bars[j]);
+      return 'noPair'; }],
+    ['reorder (swap places)', bars => { for (let i = 0; i < bars.length; i++) for (let j = i + 1; j < bars.length; j++)
+        if (SA.swapTasks(db, schedId, bars[i].taskId, bars[j].taskId, { dryRun: true }).ok) return sb.__v.swapGanttBars(bars[i], bars[j]);
       return 'noPair'; }],
     ['unlink', bars => { const d = deps()[0]; if (!d) return 'noDeps'; const bar = bars.filter(b => b.taskId === d.succId || b.taskId === d.predId)[0];
         sb.__v.props(bar); const btn = el('tm-gantt-props')._buttons[0]; if (!btn || !btn.onclick) return 'noButton'; btn.onclick(); return 'clicked'; }],

@@ -11,10 +11,11 @@
 // OPTS   {ignoreSense: bool (the red control: the direction sense is ignored, every stack runs from the positive end), log: fn(line)}
 // OUTPUT {parts:[{guid, cls, name, storey, disc, building, tris:Float64Array world xyz soup, parents:[host], rgba, host, seq, th, path}], changes, stats, audit}
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory();
-  else root.LodLayerPack = factory();
-})(typeof self !== 'undefined' ? self : this, function () {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./lod_registry.js'));
+  else root.LodLayerPack = factory(root.LodRegistry);
+})(typeof self !== 'undefined' ? self : this, function (REG) {
   'use strict';
+  var K = REG.kit;   // the yield kit (lod_registry.js, P7)
   var AXIS = { AXIS1: 0, AXIS2: 1, AXIS3: 2 };
 
   function Refusal(msg) { this.message = msg; }                         // §LAYER-REFUSE: authored data missing / ambiguous for a deterministic slice. Never guess.
@@ -279,7 +280,8 @@
   }
   function spanAxis(v, F, fs, fc, k) { var mn = Infinity, mx = -Infinity; for (var t = fs; t < fs + fc; t++) for (var e = 0; e < 3; e++) { var x = v[3 * F[3 * t + e] + k]; if (x <= mn) mn = x; if (x >= mx) mx = x; } return [mn, mx]; }
 
-  function run(inp, RULES, opts) {
+  function run(inp, RULES, opts) { return K.drain(runSteps(inp, RULES, opts)); }
+  function* runSteps(inp, RULES, opts) {
     opts = opts || {}; var LOG = opts.log || function () { }, IGN = !!opts.ignoreSense;
     var rv = function (k) { if (!RULES[k]) throw new Error('rule row missing: ' + k); return RULES[k].value; };
     var TOL = rv('layer_tol_mm') / 1000, SUMTOL = rv('layer_sum_tol_mm') / 1000, VRT = rv('layer_volume_rtol'), MINC = rv('layer_min_count'), META = inp.meta, L = inp.layers;
@@ -289,13 +291,13 @@
     var hosts = L.hosts().filter(function (h) { return h.count >= MINC; });
     LOG('§LODUP_LAYER_SCAN hosts=' + hosts.length + (hosts.length ? '' : ' INCONCLUSIVE (no multi-layer element: nothing was judged)'));
 
-    hosts.forEach(function (h) {
+    yield* K.each(hosts, function (h) {
       var m = META[h.guid] || { cls: '?', name: '?', storey: null, disc: null, building: null }, why = null, got = null;
       try { got = host(h, m); } catch (e) { if (e instanceof Refusal) why = e.message; else throw e; }
       if (why !== null) { refused.push({ guid: h.guid, hash: h.hash, cls: m.cls, name: m.name, reason: why }); LOG('§LODUP_LAYER_REFUSE guid=' + h.guid + ' hash=' + h.hash + ' — ' + why); return; }
       got.forEach(function (p) { parts.push(p.part); CH.push(p.change); addedVerts += p.part.tris.length / 3; }); if (got.path === 'stored') nStored++; else nSliced++; if (got.clipped) { clipped += got.clipped.length; LOG('§LODUP_LAYER_CLIP guid=' + h.guid + ' set=' + reprStr(h.set) + ': layers [' + got.clipped.join(', ') + '] clipped away by the authored geometry — rows omitted (the ' + got.length + ' remaining slabs are the element\'s real material)'); }
       audit.hosts.push({ guid: h.guid, hash: h.hash, path: got.path, layers: got.length, dir: h.dir, sense: h.sense, total: h.total });
-    });
+    }, 'Layers: host');
     // the extractor lists refusals in hash order; the change rows follow it
     refused.slice().sort(function (a, b) { return a.hash < b.hash ? -1 : a.hash > b.hash ? 1 : a.guid < b.guid ? -1 : a.guid > b.guid ? 1 : 0; }).forEach(function (r) { CH.push({ kind: 'REFUSED', guid: r.guid, cls: r.cls, host: r.guid, rule: 'Layer split', detail: '"' + r.name + '" | ' + r.reason + ' (§LAYER-REFUSE)' }); });
     LOG('§LODUP_LAYER_BUILT hosts_split=' + audit.hosts.length + ' parts=' + parts.length + ' refused=' + refused.length + ' state: stored_slabs_verified=' + nStored + ' envelope_sliced=' + nSliced + ' layers_clipped=' + clipped);
@@ -364,7 +366,7 @@
 
   // how many elements the pack applies to (the panel's measured count): the multi-layer elements with a stored mesh
   function appliesTo(inp, rows) { if (!inp.layers) return 0; if (!rows) return inp.layers.hosts().length; try { return run(inp, rows, { log: function () { } }).stats.judged; } catch (e) { return 0; } }   // with rule rows: the multi-layer elements the run judges (split or refused), read-only dry run
-  var API = { id: 'layers', label: 'Layers', rulesFile: 'rules/layer_defaults.json', run: run, appliesTo: appliesTo, rotMat: rotMat, layerIntervals: layerIntervals, weldMesh: weldMesh };
+  var API = { id: 'layers', label: 'Layers', rulesFile: 'rules/layer_defaults.json', run: run, runSteps: runSteps, appliesTo: appliesTo, rotMat: rotMat, layerIntervals: layerIntervals, weldMesh: weldMesh };
   if (typeof window !== 'undefined' && window.LodRegistry) window.LodRegistry.register(API);   // browser: the pack registers itself; adding a pack needs no dialog change
   return API;
 });

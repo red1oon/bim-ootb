@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 /**
+ * PROVES: modeller/edit_report.js
  * # ⚠ DO NOT REMOVE — W-EDIT-REPORT (bim-compiler prompts/MODELLER_MASTER.md §EDIT-REPORT, row 41). READ THE §-LOG after every run.
  * Real Open, real toolbar, real mouse, numbers only. Each claim names the issue it proves or disproves:
  *   W0  pure: a table without its NOT-checked line, a refused check reading as a zero, a population change hidden behind a delta

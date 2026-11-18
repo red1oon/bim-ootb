@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 /**
+ * PROVES: modeller/arc_editable.js
  * W-ARC-EDITABLE — §ARC-1 value witness (RESUME_ARC_EDITABLE_SUBSTRATE.md). PURE NODE (sql.js, no browser):
  * prove the REAL ARC building seeds as gizmo-editable, guid-carrying GEOM_INSERT op-rows, landing on the MEASURED
  * geometry with NO invention. Exercises the REAL foldInsert (raw-bbox path) + REAL KernelOps.commitGroup.

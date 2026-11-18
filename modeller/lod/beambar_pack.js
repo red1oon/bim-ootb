@@ -12,10 +12,11 @@
 // OPTS   {breakCover: bool (the red control: bars and stirrups placed with no cover; INSIDE must FAIL), log: fn(line)}
 // OUTPUT {parts:[{guid, cls, name, storey, disc, building, tris, parents:[beam], rgba}], changes:[{kind,guid,cls,host,rule,detail}], stats, audit}
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory(require('./rebar_pack.js'));
-  else root.LodBeamBarPack = factory(root.LodRebarPack);
-})(typeof self !== 'undefined' ? self : this, function (RB) {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./rebar_pack.js'), require('./lod_registry.js'));
+  else root.LodBeamBarPack = factory(root.LodRebarPack, root.LodRegistry);
+})(typeof self !== 'undefined' ? self : this, function (RB, REG) {
   'use strict';
+  var K = REG.kit;   // the yield kit (lod_registry.js, P7): run is one generator, drained in node and driven in slices in the browser
   if (!RB || !RB.make) throw new Error('§LODUP_BEAMBAR beambar_pack.js needs rebar_pack.js loaded first (lod/packs.json lists rebar before beambars)');
   var fmtG = RB.fmtG, RB_RGBA = RB.RB_RGBA;
 
@@ -169,7 +170,8 @@
   }
 
   // ---------------------------------------------------------------- the run
-  function run(inp, RULES, opts) {
+  function run(inp, RULES, opts) { return K.drain(runSteps(inp, RULES, opts)); }
+  function* runSteps(inp, RULES, opts) {
     opts = opts || {}; var LOG = opts.log || function () { }, t0 = Date.now(), P = '§LODUP_BEAMBAR_';
     var rv = function (k) { if (!RULES[k]) throw new Error('rule row missing: ' + k); return RULES[k].value; };
     var SIDES = parseInt(rv('bar_sides'), 10), G = RB.make(SIDES), STOCK = rv('stock_length_mm') / 1000.0, META = inp.meta, HC = rv('host_class');
@@ -187,7 +189,7 @@
     var writePart = function (guid, name, g0, tris) { var m = META[g0]; parts.push({ guid: guid, cls: 'IfcReinforcingBar', name: name, storey: m.storey, disc: m.disc, building: m.building, tris: flat(tris), parents: [g0], rgba: RB_RGBA }); addedVerts += tris.length * 3; };
     unjoined.forEach(function (g) { change('NOT_BUILT', g, HC, g, 'No schedule row for the type mark; nothing guessed', '"' + META[g].name + '" | mark "' + HM[g] + '" is not in the schedule | storey ' + META[g].storey); });
 
-    function buildBeam(gb) {
+    function* buildBeam(gb) {
       var mk = HM[gb], row = MARKS[mk], m = inp.mesh ? inp.mesh(gb) : (inp.world(gb) ? { V: inp.world(gb), F: null } : null), T9 = soupOf(m), nV = T9.length / 3, i, a;
       var o = [0, 0, 0]; for (i = 0; i < nV; i++) for (a = 0; a < 3; a++) o[a] += T9[3 * i + a]; o = [o[0] / nV, o[1] / nV, o[2] / nV];
       var ang = planAngle(T9) * (Math.PI / 180), c_ = Math.cos(ang), s_ = Math.sin(ang), u3 = [c_, s_, 0.0], v3 = [-s_, c_, 0.0], z3 = [0.0, 0.0, 1.0];
@@ -238,13 +240,13 @@
       if (sideWhy) info.notes.push(sideWhy);
       // ---- bars: the stretch of each line that lies inside the mesh with the cover kept
       var BARS = {}, lens = {}; info.lap = [];
-      lines.forEach(function (ln) {
+      function* barLine(ln) {
         var name = ln[0], v = ln[1], z = ln[2], d = ln[3]; nLines++; var r = d / 2000.0;
         var e1 = cross(u3, Math.abs(u3[0]) < 0.9 ? [1.0, 0, 0] : [0, 1.0, 0]), e1n = norm(e1); e1 = [e1[0] / e1n, e1[1] / e1n, e1[2] / e1n]; var e2 = cross(u3, e1), ring = [], k;
         for (k = 0; k < SIDES; k++) { var t = 2 * Math.PI * k / SIDES; ring.push(add(mul(e1, r * Math.cos(t)), mul(e2, r * Math.sin(t)))); }
         var us = arange(lo[0], hi[0], STEP); us.push(hi[0]);
         var okAt = function (u) { var c = loc2w(u, v, z); for (var q = 0; q < SIDES; q++) if (!TS.clear(add(c, ring[q]), THR)) return false; return true; };
-        var good = us.map(okAt), best = null, ii = 0, jj;
+        var good = [], best = null, ii = 0, jj, qs; for (qs = 0; qs < us.length; qs++) { good.push(okAt(us[qs])); if (K.due()) yield K.state.prog; }
         while (ii < us.length) { if (good[ii]) { jj = ii; while (jj + 1 < us.length && good[jj + 1]) jj++; if (best === null || jj - ii > best[1] - best[0]) best = [ii, jj]; ii = jj + 1; } else ii++; }
         if (best === null) { refusedLines.push([gb, name, d, 'no stretch of this line is inside the mesh with the cover kept']); return; }
         var refine = function (g_, b_) { for (var q = 0; q < 30; q++) { var m_ = (g_ + b_) / 2; if (okAt(m_)) g_ = m_; else b_ = m_; } return g_; };
@@ -252,7 +254,8 @@
         if (ub - ua <= 2 * r + 1e-6) { refusedLines.push([gb, name, d, 'inside stretch ' + fx(1000 * (ub - ua), 1) + ' mm is shorter than the bar diameter']); return; }
         var P0 = loc2w(ua, v, z), P1 = loc2w(ub, v, z); (BARS[name] = BARS[name] || []).push.apply(BARS[name], G.prism(P0, P1, r)); (lens[name] = lens[name] || []).push(ub - ua); nLinesOk++;
         if (ub - ua > STOCK) info.lap.push([name, d, ub - ua]);
-      });
+      }
+      for (var li = 0; li < lines.length; li++) { yield* barLine(lines[li]); if (K.due()) yield K.state.prog; }
       info.bar_lens = lens; info.bar_tris = BARS;
       // ---- stirrups: closed outer loops at the stated spacing, each must fit the mesh with the cover kept
       var hx = Wd / 2 - PLC - ds / 2 - 2 * MARG, hy = Hd / 2 - PLC - ds / 2 - 2 * MARG, vc = (lo[1] + hi[1]) / 2, zc = (lo[2] + hi[2]) / 2, tl = G.tieLoop(vc, zc, 0.0, hx, hy, ds / 2);   // the tie frame (X, Y, Z) = (v, z, u)
@@ -260,16 +263,16 @@
       var tw = tl.map(function (t) { return t.map(toW); }), seen = {}, uniq = [];
       tw.forEach(function (t) { t.forEach(function (p) { var q = [Math.round(p[0] * 1e9) / 1e9, Math.round(p[1] * 1e9) / 1e9, Math.round(p[2] * 1e9) / 1e9], key = q.join(','); if (!seen[key]) { seen[key] = 1; uniq.push(q); } }); });
       var starts = [], u0 = lo[0] + PLC + ds / 2 + 2 * MARG, k2 = 0; while (u0 + k2 * sp <= hi[0] - PLC - ds / 2 - 2 * MARG + 1e-9) { starts.push(u0 + k2 * sp); k2++; }
-      var fits = starts.map(function (u) { for (var q = 0; q < uniq.length; q++) if (!TS.clear([uniq[q][0] + u * u3[0], uniq[q][1] + u * u3[1], uniq[q][2] + u * u3[2]], THR)) return false; return true; });
+      var fits = []; for (var fi = 0; fi < starts.length; fi++) { var u = starts[fi], ok1 = true; for (var q = 0; q < uniq.length; q++) if (!TS.clear([uniq[q][0] + u * u3[0], uniq[q][1] + u * u3[1], uniq[q][2] + u * u3[2]], THR)) { ok1 = false; break; } fits.push(ok1); if (K.due()) yield K.state.prog; }
       nCand += starts.length; var nOk = fits.filter(Boolean).length; nCandOk += nOk;
       info.stirrup_candidates = starts.length; info.stirrup_placed = nOk; info.stirrup_u = starts.filter(function (u, q) { return fits[q]; });
       info.stirrup_tris = info.stirrup_u.map(function (u) { return tw.map(function (t) { return t.map(function (p) { return [p[0] + u * u3[0], p[1] + u * u3[1], p[2] + u * u3[2]]; }); }); });
       REC[gb] = info; info.TS = TS; info.loc2w = loc2w; return info;
     }
 
-    hosts.forEach(function (gb) {
+    function* beamStep(gb) {
       if (unjoined.indexOf(gb) >= 0) return;
-      var info = buildBeam(gb), mk = info.mark, row = MARKS[mk];
+      var info = yield* buildBeam(gb), mk = info.mark, row = MARKS[mk];
       if (info.ds === undefined) { change('NOT_BUILT', gb, HC, gb, 'Schedule row has no readable stirrup', 'mark ' + mk + ' | ' + pyList(info.notes)); return; }
       var stor = META[gb].storey, src = row.source || '';
       var DESC = { BOT: ['Bottom bars', 'bottom', 'bottom (A + ADD B)'], TOP: ['Top bars', 'top', 'top (D + E)'], SIDE: ['Side bars', 'side', 'side'] };
@@ -298,7 +301,8 @@
       if (row.stirrup_inner) nb.push('inner legs ' + row.stirrup_inner);
       if (row.stirrup_balance && JSON.stringify(row.stirrup_balance) !== JSON.stringify(row.stirrup)) nb.push('balance zone T' + row.stirrup_balance[0] + '-' + row.stirrup_balance[1] + ' (end-zone spacing used over the full length: zone length not stated)');
       if (nb.length) change('NOT_BUILT', gb, HC, gb, 'Stated on the schedule, not modelled', 'mark ' + mk + ' (' + src + ') | ' + nb.join('; '));
-    });
+    }
+    for (var hi = 0; hi < hosts.length; hi++) { K.state.prog = { label: 'Beam rebar: beam', done: hi, total: hosts.length }; yield* beamStep(hosts[hi]); if (K.due()) { K.state.prog = { label: 'Beam rebar: beam', done: hi + 1, total: hosts.length }; yield K.state.prog; } }
     refusedLines.forEach(function (r) { change('REFUSED', 'GEN-RB-' + r[0] + '-' + r[1], 'IfcReinforcingBar', r[0], 'Bar line T' + r[2] + ' (' + r[1] + '): not placed', r[3]); });
     var built = hosts.filter(function (g) { return REC[g] && REC[g].ds !== undefined; }).length, cnt = { ADDED: 0, NOT_BUILT: 0, REFUSED: 0 }; CH.forEach(function (c) { cnt[c.kind]++; });
     LOG(P + 'BUILT beams_built=' + built + ' sets_added=' + cnt.ADDED + ' bar_lines=' + nLines + ' bar_lines_placed=' + nLinesOk + ' stirrup_positions=' + nCand + ' stirrup_loops_placed=' + nCandOk);
@@ -319,7 +323,7 @@
     var MARKS = marksOf(inp); if (!MARKS || !rows) return 0;
     try { var J = joinOf(inp, rows, MARKS); return J.hosts.length - J.unjoined.length; } catch (e) { return 0; }
   }
-  var API = { id: 'beambars', label: 'Beam rebar (schedule)', unit: 'beams', rulesFile: 'rules/beambar_defaults.json', run: run, appliesTo: appliesTo,
+  var API = { id: 'beambars', label: 'Beam rebar (schedule)', unit: 'beams', rulesFile: 'rules/beambar_defaults.json', run: run, runSteps: runSteps, appliesTo: appliesTo,
     inputs: [{ id: 'schedule', label: 'Load schedule…', accept: '.json,application/json', validate: validateMarks }],
     validateMarks: validateMarks, parseSide: parseSide, joinOf: joinOf, TriSet: TriSet, planAngle: planAngle, modalZ: modalZ, roundHalfEven: roundHalfEven };
   if (typeof window !== 'undefined' && window.LodRegistry) window.LodRegistry.register(API);   // browser: the pack registers itself; adding a pack needs no dialog change

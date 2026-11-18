@@ -12,10 +12,11 @@
 // A joint part is attached to its beam, not an aggregate child of it (element_parts would hide the beam on reload): parents = [], attach = [beam] (the same rule as the welds).
 // The generated part is NOT tuned to the oracle: where a number flips a decision the witness lists the joint with its margin.
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory();
-  else root.LodJointPack = factory();
-})(typeof self !== 'undefined' ? self : this, function () {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./lod_registry.js'));
+  else root.LodJointPack = factory(root.LodRegistry);
+})(typeof self !== 'undefined' ? self : this, function (REG) {
   'use strict';
+  var YK = REG.kit;   // the yield kit (lod_registry.js, P7)
   var RGBA = { PL: '0.55,0.57,0.60,1', BT: '0.32,0.33,0.36,1', WD: '0.40,0.34,0.30,1' }, CLS = { PL: 'IfcPlate', BT: 'IfcMechanicalFastener', WD: 'IfcFastener' };
   var LABEL = '(rules: AISC 360-16 + defaults; configuration only, capacity not checked)';
   var nowMs = function () { return (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now(); };
@@ -256,21 +257,26 @@
   }
 
   // ---- STEP 1: the survey. For every steel member end: rays from the end face along the outward beam axis; the element hit by most rays is the support.
-  function survey(cx) {
+  function survey(cx) { return YK.drain(surveySteps(cx)); }
+  function* surveySteps(cx) {
+    if (cx.inp.boxesSteps) yield* cx.inp.boxesSteps(YK);   // read the element boxes in slices (memoised per reader), before indexOf asks for them
     var rv = cx.rv, REACH = rv('support_reach_mm') / 1000, BACK = rv('survey_ray_back_mm') / 1000, idx = indexOf(cx.inp), rows = [], meta = cx.meta, M = cx.meshes;
     var allG = Object.keys(meta).sort(), members = allG.filter(function (g) { return cx.isMember(g) && M.get(g) && M.get(g).V.length; });
     var gateOut = allG.filter(function (g) { var c = meta[g].cls; return (c === 'IfcBeam' || c === 'IfcMember') && cx.info(g).steelAny && !cx.matOk(meta[g]); }).length;
     cx.log('§LODUP_JOINT_GATE words=' + JSON.stringify(cx.words) + ' members_steel=' + members.length + ' members_gated_out_by_material=' + gateOut + (members.length ? '' : ' (nothing left to judge)'));
     var ndep = rv('survey_depth_rays'), nwid = rv('survey_width_rays'), sdep = rv('survey_depth_span'), swid = rv('survey_width_span'), angW = rv('angle_web_min_deg'), angI = rv('angle_inline_max_deg'), cope = rv('cope_jump_mm') / 1000;
-    members.forEach(function (g) {
+    for (var mi = 0; mi < members.length; mi++) {
+      var g = members[mi]; YK.state.prog = { label: 'Steel joints: surveying member', done: mi, total: members.length };
       var m = M.get(g), V = m.V, fr = frameOf(V), c = fr.c, ua = fr.ua, ud = fr.ud, uw = fr.uw, i;
       var amin = Infinity, amax = -Infinity, dmin = Infinity, dmax = -Infinity, wmin = Infinity, wmax = -Infinity;
       for (i = 0; i < V.length; i += 3) { var d = [V[i] - c[0], V[i + 1] - c[1], V[i + 2] - c[2]], pa = dot(d, ua), pd = dot(d, ud), pw = dot(d, uw); if (pa < amin) amin = pa; if (pa > amax) amax = pa; if (pd < dmin) dmin = pd; if (pd > dmax) dmax = pd; if (pw < wmin) wmin = pw; if (pw > wmax) wmax = pw; }
       var dc = (dmax + dmin) / 2, wc = (wmax + wmin) / 2, Dm = dmax - dmin, Bm = wmax - wmin;
-      [[1, amax], [-1, amin]].forEach(function (se) {
+      var endList = [[1, amax], [-1, amin]];
+      for (var ee = 0; ee < 2; ee++) {
+        var se = endList[ee];
         var sgn = se[0], E = add(c, mul(ua, se[1])), axis = mul(ua, sgn), rr = REACH + Math.max(Dm, Bm), lo = [E[0] - rr, E[1] - rr, E[2] - rr], hi = [E[0] + rr, E[1] + rr, E[2] + rr];
         var cands = idx.query(lo, hi).filter(function (x) { return x !== g; }), tris = [];
-        cands.forEach(function (x) { var T = M.trisIn(x, lo, hi); if (T) tris.push([x, T]); });
+        for (var ci = 0; ci < cands.length; ci++) { var T = M.trisIn(cands[ci], lo, hi); if (T) tris.push([cands[ci], T]); if (YK.due()) yield YK.state.prog; }
         var hits = [], hitIdx = {};   // insertion-ordered support -> clearances
         var dds = linspace(-sdep, sdep, ndep).map(function (f) { return f * Dm + dc; }), wws = linspace(-swid, swid, nwid).map(function (f) { return f * Bm + wc; }), Ec = sub(E, c), ed = dot(Ec, ud), ew = dot(Ec, uw);
         dds.forEach(function (dd) { wws.forEach(function (ww) {
@@ -287,15 +293,16 @@
           if (!(best[2] in hitIdx)) { hitIdx[best[2]] = hits.length; hits.push([best[2], []]); }
           hits[hitIdx[best[2]]][1].push(best[1]);
         }); });
-        if (!hits.length) { rows.push({ guid: g, name: meta[g].name, end: sgn, end_point: E, cls: 'NONE' }); return; }
+        if (!hits.length) { rows.push({ guid: g, name: meta[g].name, end: sgn, end_point: E, cls: 'NONE' }); continue; }
         var sup = hits[0]; hits.forEach(function (h) { if (h[1].length > sup[1].length) sup = h; });   // max(): the first of the most-hit supports
         var cl = sup[1], supG = sup[0], Us = axisOf(M.get(supG).V), ang = Math.acos(Math.min(1, Math.abs(dot(ua, Us)))) * 180 / Math.PI, inf2 = cx.info(supG), cls;
         if (inf2.steelAny) cls = ang >= angW ? 'STEEL_WEB' : (ang < angI ? 'STEEL_INLINE' : 'STEEL_SKEW'); else if (inf2.conc) cls = 'CONCRETE'; else cls = 'OTHER';
         var near = Math.min.apply(null, cl), far = Math.max.apply(null, cl), nHit = 0; hits.forEach(function (h) { nHit += h[1].length; });
         rows.push({ guid: g, name: meta[g].name, end: sgn, end_point: E, cls: cls, support: supG, support_name: meta[supG].name, support_class: meta[supG].cls, angle: round1(ang), rays_hit: nHit, rays_support: cl.length,
           clear_min_mm: round1(near * 1000), clear_max_mm: round1(far * 1000), cope_needed: cls === 'STEEL_WEB' && (far - near) > cope, D_mm: round1(Dm * 1000), B_mm: round1(Bm * 1000) });
-      });
-    });
+        if (YK.due()) yield YK.state.prog;
+      }
+    }
     var cnt = {}; rows.forEach(function (r) { cnt[r.cls] = (cnt[r.cls] || 0) + 1; });
     cx.log('§LODUP_JOINT_SURVEY members=' + members.length + ' ends=' + rows.length + ' ' + Object.keys(cnt).sort().map(function (k) { return k + '=' + cnt[k]; }).join(' ') + ' cope_needed=' + rows.filter(function (r) { return r.cope_needed; }).length + (rows.length ? '' : ' INCONCLUSIVE (no steel member end: nothing was judged)'));
     return { rows: rows, members: members.length, counts: cnt };
@@ -481,35 +488,40 @@
 
   // ---- the independent re-check on the WRITTEN parts: every part's surface (triangle centroids) must lie inside no other element's solid.
   // items: [{guid, beam, support, kind:'PL'|'BT'|'WD', tris: Float64Array (world)}]. Used by run() on its own parts and by the witness on parts rebuilt from the op-log rows.
-  function clearPost(inp, RULES, items, log, extraParts) {
+  function clearPost(inp, RULES, items, log, extraParts) { return YK.drain(clearPostSteps(inp, RULES, items, log, extraParts)); }
+  function* clearPostSteps(inp, RULES, items, log, extraParts) {
     var cx = makeCtx(inp, RULES, log), M = cx.meshes, idx = indexOf(inp), pmax = cx.rv('parity_max_triangles'), fails = [], skippedSet = {}, boxOf = {}, allX = items.concat(extraParts || []);   // extraParts (P6): live generated parts of other packs, solids to test against, never judged here
     allX.forEach(function (it) { var lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity], A = it.tris; for (var q = 0; q < A.length; q += 3) for (var a = 0; a < 3; a++) { if (A[q + a] < lo[a]) lo[a] = A[q + a]; if (A[q + a] > hi[a]) hi[a] = A[q + a]; } boxOf[it.guid] = [lo, hi]; });
-    items.forEach(function (it) {
+    for (var ii0 = 0; ii0 < items.length; ii0++) {
+      var it = items[ii0]; YK.state.prog = { label: 'Steel joints: checking part', done: ii0, total: items.length };
       var b = boxOf[it.guid], lo = b[0], hi = b[1], A = it.tris, base = it.guid.replace(/-(PL|BT|WD)$/, '');
       var others = idx.query(lo, hi).filter(function (g) { return g !== it.beam; }), extra = allX.filter(function (o) { return o.guid.indexOf(base) !== 0 && boxOf[o.guid][0][0] <= hi[0] && boxOf[o.guid][0][1] <= hi[1] && boxOf[o.guid][0][2] <= hi[2] && boxOf[o.guid][1][0] >= lo[0] && boxOf[o.guid][1][1] >= lo[1] && boxOf[o.guid][1][2] >= lo[2]; });
       var nTr = A.length / 9, pts = [], step = Math.max(1, Math.floor(nTr / 40)), q, bad = null;
       for (q = 0; q < nTr; q += step) pts.push([(A[9 * q] + A[9 * q + 3] + A[9 * q + 6]) / 3, (A[9 * q + 1] + A[9 * q + 4] + A[9 * q + 7]) / 3, (A[9 * q + 2] + A[9 * q + 5] + A[9 * q + 8]) / 3]);
-      others.forEach(function (g) {
-        if (bad) return; if (g === it.support && (it.kind === 'PL' || it.kind === 'WD')) return;   // the plate bears on the support face by design (tested by the box test before writing)
-        var nT2 = M.ntri(g); if (!nT2) return; if (nT2 > pmax) { skippedSet[g] = 1; return; }
+      for (var oi = 0; oi < others.length; oi++) {
+        var g = others[oi]; if (YK.due()) yield YK.state.prog;
+        if (bad) continue; if (g === it.support && (it.kind === 'PL' || it.kind === 'WD')) continue;   // the plate bears on the support face by design (tested by the box test before writing)
+        var nT2 = M.ntri(g); if (!nT2) continue; if (nT2 > pmax) { skippedSet[g] = 1; continue; }
         var bx = idx.box(g), Tg = null;   // a point outside a neighbour's own box is not inside it (the ray-parity test on an open mesh could otherwise answer 'odd' far away)
-        for (var u = 0; u < pts.length; u++) { var P = pts[u]; if (!(P[0] >= bx[0][0] && P[1] >= bx[0][1] && P[2] >= bx[0][2] && P[0] <= bx[1][0] && P[1] <= bx[1][1] && P[2] <= bx[1][2])) continue; if (!Tg) Tg = M.soup(g); if (inside(P, Tg)) { bad = [it.guid, g]; return; } }
-      });
-      extra.forEach(function (o) { if (bad) return; if (o.tris.length / 9 > pmax) return; for (var u = 0; u < pts.length; u++) if (inside(pts[u], o.tris)) { bad = [it.guid, o.guid]; return; } });
+        for (var u = 0; u < pts.length; u++) { var P = pts[u]; if (!(P[0] >= bx[0][0] && P[1] >= bx[0][1] && P[2] >= bx[0][2] && P[0] <= bx[1][0] && P[1] <= bx[1][1] && P[2] <= bx[1][2])) continue; if (!Tg) Tg = M.soup(g); if (inside(P, Tg)) { bad = [it.guid, g]; break; } if (YK.due()) yield YK.state.prog; }
+      }
+      for (var xi = 0; xi < extra.length; xi++) { var o = extra[xi]; if (bad) break; if (o.tris.length / 9 > pmax) continue; for (var u = 0; u < pts.length; u++) if (inside(pts[u], o.tris)) { bad = [it.guid, o.guid]; break; } if (YK.due()) yield YK.state.prog; }
       if (bad) fails.push(bad);
-    });
+      if (YK.due()) yield YK.state.prog;
+    }
     return { fails: fails, checked: items.length, skipped: Object.keys(skippedSet).sort() };
   }
 
-  function run(inp, RULES, opts) {
+  function run(inp, RULES, opts) { return YK.drain(runSteps(inp, RULES, opts)); }
+  function* runSteps(inp, RULES, opts) {
     opts = opts || {}; var LOG = opts.log || function () { }, t0 = nowMs(), cx = makeCtx(inp, RULES, LOG), rv = cx.rv, meta = cx.meta;
     LOG('§LODUP_JOINT_MODE clash_check=' + (opts.noClash ? 'OFF(break)' : 'on') + ' rolled_only=' + rv('rolled_section_only') + ' bolts=M' + rv('bolt_diameter_mm') + ' plate=' + rv('plate_thickness_mm') + ' table=' + JSON.stringify(weldTable(rv('weld_min_table_mm'))));
-    var S = survey(cx), t1 = nowMs(), rows = S.rows, parts = [], CH = [], out = [], reasons = {}, clashBy = {}, G = seedGenerated(inp, opts, 'GEN-CR-'), ruleFail = [], addedVerts = 0, judged = 0, skippedAll = {}, gen = [];
+    var S = yield* surveySteps(cx), t1 = nowMs(), rows = S.rows, parts = [], CH = [], out = [], reasons = {}, clashBy = {}, G = seedGenerated(inp, opts, 'GEN-CR-'), ruleFail = [], addedVerts = 0, judged = 0, skippedAll = {}, gen = [];
     LOG('§LODUP_JOINT_NEIGHBOURS model_as_read + live_parts_of_other_packs=' + Object.keys(G).length + (opts.noGenerated ? ' (OFF: the old behaviour, break switch)' : '') + ' (op-log parts seeded as clash neighbours, the same rule for every pack)');
     var bump = function (k) { reasons[k] = (reasons[k] || 0) + 1; };
     var change = function (kind, guid, cls, host, rule, detail) { CH.push({ kind: kind, guid: guid, cls: cls, host: host, rule: rule, detail: detail }); };
     var lab = LABEL, ruleTxt = 'Fin plate joint (single plate shear): AISC 360-16 rows + defaults [' + RULES.bolt_pitch_mm.source + ']; configuration only, capacity not checked';
-    rows.forEach(function (j) {
+    yield* YK.each(rows, function (j) {
       var endL = j.end > 0 ? 'B' : 'A', hostM = meta[j.guid];
       var refuse = function (res, reason, extra) { bump(reason); out.push(Object.assign({}, j, { result: res }, extra || {})); change('REFUSED', j.guid, hostM.cls, j.guid, 'Fin plate joint', 'end ' + endL + (j.support ? ' -> support ' + j.support + ' "' + j.support_name + '"' : '') + ': ' + reason + (extra && extra.note ? ' | ' + extra.note : '')); };
       if (j.cls !== 'STEEL_WEB') { bump('gap: ' + j.cls); out.push(Object.assign({}, j, { result: 'GAP' })); change('REFUSED', j.guid, hostM.cls, j.guid, 'Fin plate joint', 'end ' + endL + ': gap: ' + j.cls + (j.support ? ' (support ' + j.support + ' "' + j.support_name + '")' : ' (nothing within reach of the end)') + ' | not detailed by this pack'); return; }
@@ -533,8 +545,8 @@
       });
       out.push(Object.assign({}, j, { result: 'GENERATED', n_bolts: r.n_bolts, plate_H: r.H, plate_L: r.plate_L, web_mm: r.web_mm, front_skew_mm: r.front_skew_mm, weld_mm: r.wl, support_t_measured_mm: r.t_sup, tw_measured_mm: r.tw_meas, zone_mm: r.zone, tie_margin_mm: Math.min.apply(null, r.tieMargins), measured: r.measured, neighbours_tested: r.nb, checks: r.chk }));
       gen.push(out[out.length - 1]); bump('generated');
-    });
-    var t2 = nowMs(), items = parts.map(function (p) { return { guid: p.guid, beam: p.beam, support: p.support, kind: p.kind, tris: p.tris }; }), post = clearPost(inp, RULES, items, function () { }, seededItems(G));
+    }, 'Steel joints: beam end');
+    var t2 = nowMs(), items = parts.map(function (p) { return { guid: p.guid, beam: p.beam, support: p.support, kind: p.kind, tris: p.tris }; }), post = yield* clearPostSteps(inp, RULES, items, function () { }, seededItems(G));
     post.skipped.forEach(function (g) { skippedAll[g] = 1; });
     LOG('§LODUP_JOINT_PARITY_SKIPPED elements=' + Object.keys(skippedAll).length + ' ' + Object.keys(skippedAll).sort().map(function (g) { return String(meta[g].name).replace(/:\d+$/, ''); }).filter(function (v, i2, a) { return a.indexOf(v) === i2; }).join(', '));
     LOG('§LODUP_JOINT_CLEAR_POST parts_checked=' + parts.length + ' failures=' + post.fails.length + ' -> ' + (!parts.length ? 'INCONCLUSIVE' : (post.fails.length ? 'FAIL ' + JSON.stringify(post.fails.slice(0, 3)) : 'PASS')));
@@ -568,9 +580,9 @@
     if (!rows) { var n = 0; Object.keys(inp.meta).forEach(function (g) { var c = inp.meta[g].cls; if (c === 'IfcBeam' || c === 'IfcMember') n++; }); return n; }
     try { return surveyCached(inp, rows).counts.STEEL_WEB || 0; } catch (e) { return 0; }
   }
-  var API = { id: 'joints', label: 'Steel joints', unit: 'beam ends', rulesFile: 'rules/joint_defaults.json', run: run, appliesTo: appliesTo, clearPost: clearPost, survey: function (inp, RULES, log) { return survey(makeCtx(inp, RULES, log)); }, weldTable: weldTable, weldMin: weldMin, frameOf: frameOf, eig3: eig3, REASON: REASON,
+  var API = { id: 'joints', label: 'Steel joints', unit: 'beam ends', rulesFile: 'rules/joint_defaults.json', run: run, runSteps: runSteps, appliesTo: appliesTo, clearPost: clearPost, survey: function (inp, RULES, log) { return survey(makeCtx(inp, RULES, log)); }, weldTable: weldTable, weldMin: weldMin, frameOf: frameOf, eig3: eig3, REASON: REASON,
     // P5 (gussets): the primitives the gusset pack REUSES (survey, true-box index, meshes with the triangle grid, rays, ray parity, vector helpers); not a second copy
-    kit: { seedGenerated: seedGenerated, seededItems: seededItems, makeCtx: makeCtx, survey: survey, surveyCached: surveyCached, indexOf: indexOf, trisInBox: trisInBox, rayAll: rayAll, rayFirst: rayFirst, inside: inside, unit: unit, sub: sub, add: add, mul: mul, dot: dot, cross: cross, norm: norm, median: median, fx: fx, fmtG: fmtG, nowMs: nowMs, RGBA: RGBA, CLS: CLS, LABEL: LABEL } };
+    kit: { surveySteps: surveySteps, clearPostSteps: clearPostSteps, seedGenerated: seedGenerated, seededItems: seededItems, makeCtx: makeCtx, survey: survey, surveyCached: surveyCached, indexOf: indexOf, trisInBox: trisInBox, rayAll: rayAll, rayFirst: rayFirst, inside: inside, unit: unit, sub: sub, add: add, mul: mul, dot: dot, cross: cross, norm: norm, median: median, fx: fx, fmtG: fmtG, nowMs: nowMs, RGBA: RGBA, CLS: CLS, LABEL: LABEL } };
   if (typeof window !== 'undefined' && window.LodRegistry) window.LodRegistry.register(API);   // browser: the pack registers itself; adding a pack needs no dialog change
   return API;
 });
