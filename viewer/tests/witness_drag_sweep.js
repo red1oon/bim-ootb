@@ -1,4 +1,5 @@
 // ⚠ DO NOT REMOVE — W-DRAG-SWEEP (bim-compiler prompts/VOCAB_MESSAGE_CATALOG.md §14.5.3). READ THE LOG; an exit code is not evidence.
+// PROVES: common/drag.js
 // ISSUE it proves or disproves: §14.5 moved A._makeDraggable into common/drag.js verbatim, but only 2 of its 13 callers were ever
 // dragged by a witness. A caller whose panel no longer drags would pass every other witness. This drags EVERY caller it can reach.
 //   N  = a static scan: each `_makeDraggable(` / `makeDraggable(` / `CommonDrag.make(` call in viewer/ and common/ (definitions,

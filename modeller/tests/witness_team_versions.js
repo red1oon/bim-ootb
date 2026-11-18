@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// PROVES: common/comm/team_versions.js
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
 // SPDX-License-Identifier: MIT
 // ⚠ DO NOT REMOVE — Scope: W-VERSIONS-MODELLER, bim-compiler prompts/TEAMWORK_FRAMEWORK.md §16.32 (event versioning in the MODELLER host). READ THE LOG after every run — the exit code is not evidence.

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 /**
+ * PROVES: modeller/dagevu_engine.js
  * # ⚠ DO NOT REMOVE — W-DAGEVU-ENGINE: §DAGEVU value witness (PURE NODE, REAL SampleHouse substrate).
  * Implementing prompts/SPEC_DAGEVU_ENGINE.md §5. Read the log after every run — exit code alone is not evidence.
  *

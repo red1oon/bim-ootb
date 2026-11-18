@@ -2,6 +2,7 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
 // SPDX-License-Identifier: MIT
 // # ⚠ DO NOT REMOVE — W-FILESTORE, prompts/BIMDOC_OPEN_FILE_STORE.md §4. Read the log after every run; exit code is not evidence.
+// PROVES: common/file_store.js
 // ISSUES IT EXPOSES: (D) the same attachment bytes stored twice; (H) a store that hands back bytes whose hash is not their name, or opens
 // an absent entry; (S) a row delete that removes bytes another row still needs, or a sweep that leaves orphans; (O) "Open in Viewer /
 // Modeller" that does not reach the app's own open route, or that opens a refused entry anyway; (Z) a page with no ?open= that changes.

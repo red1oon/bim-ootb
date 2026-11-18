@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// PROVES: modeller/team_plan.js
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
 // SPDX-License-Identifier: MIT
 // ⚠ DO NOT REMOVE — Scope: W-PLAN-MODELLER, bim-compiler prompts/TEAMWORK_FRAMEWORK.md §24 (step 5a: the Modeller's shared-op list is DERIVED from the compiled plan). READ THE LOG after every run —

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 /**
+ * PROVES: modeller/grid_kinematics.js
  * # ⚠ DO NOT REMOVE — W-GRIDKINEMATICS-PURE: Tier 1 of prompts/GRID_KINEMATICS_SANDBOX_PROOF.md's sandbox
  * (§2 Tier 1 — "pure math, zero browser, zero THREE, zero DOM, the cheapest most rigorous tier"). Proves
  * grid_kinematics.js's own _findBestGrid/dragGrid math against HAND-COMPUTED fixtures (every expected number
