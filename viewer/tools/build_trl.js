@@ -85,7 +85,7 @@ if (require.main === module) {
     if (!same) { diff++; if (!check) fs.writeFileSync(file, text); }
     const b = all[lang].built;
     if (lang !== T.BASE) ['AD_Message', 'BIM_Element'].forEach(tn => { const z = all[lang].stats[tn];   // S-4: per table and locale; kept + shadowed + untranslated = base rows
-      console.log('§TRL_BUILD_SRC lang=' + lang + ' table=' + tn + ' base=' + z.rows + ' kept=' + z.kept + ' (own=' + z.usedOwn + ' machine=' + z.usedMachine + ') shadowed=' + z.shadowed + ' stale=' + z.stale + ' untranslated=' + z.untranslatedIds + (z.kept + z.shadowed + z.untranslatedIds === z.rows ? '' : ' SUM-MISMATCH')); });
+      console.log('§TRL_BUILD_SRC lang=' + lang + ' table=' + tn + ' base=' + z.rows + ' kept=' + z.kept + ' used(own=' + z.usedOwn + ' machine=' + z.usedMachine + ') shadowed=' + z.shadowed + ' stale=' + z.stale + ' untranslated=' + z.untranslatedIds + (z.kept + z.shadowed + z.untranslatedIds === z.rows ? '' : ' SUM-MISMATCH')); });
     console.log('§TRL_BUILD lang=' + lang + ' rows=' + b.rows + ' translated=' + b.translated + ' untranslated=' + b.untranslated + ' AD_Message=' + all[lang].tables.AD_Message + ' BIM_Element=' + all[lang].tables.BIM_Element + ' json=' + (same ? 'unchanged' : (check ? 'STALE' : 'written')));
   });
   console.log('§TRL_BUILD ' + (check ? 'check' : 'done') + ' locales=' + Object.keys(all).length + ' changed=' + diff);

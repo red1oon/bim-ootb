@@ -61,7 +61,9 @@ function judgeB(dir, before) {
     const b = before[lang], a = JSON.parse(fs.readFileSync(path.join(dir, lang + '.json'), 'utf8'));
     const keys = Object.keys(b.labels), sub = {}; keys.forEach(k => { if (k in a.labels) sub[k] = a.labels[k]; });
     const missing = keys.filter(k => !(k in a.labels)), changed = keys.filter(k => k in a.labels && a.labels[k] !== b.labels[k]);
-    const eqText = ser(sub) === ser(b.labels), eqCounts = a.built.rows === b.built.rows && a.built.translated === b.built.translated && a.built.untranslated === b.built.untranslated;
+    const added = Object.keys(a.labels).length - keys.length, eqText = ser(sub) === ser(b.labels);
+    // built counts equal as they were; keys added to the dictionary since BEFORE_REF (other lanes) only grow rows, and translated + untranslated must still sum to rows
+    const eqCounts = added === 0 ? (a.built.rows === b.built.rows && a.built.translated === b.built.translated && a.built.untranslated === b.built.untranslated) : (a.built.rows === b.built.rows + added && (lang === T.BASE || a.built.translated + a.built.untranslated === a.built.rows) && a.built.translated >= b.built.translated);
     rows.push({ lang, ok: eqText && eqCounts && !missing.length && !changed.length, keys: keys.length, added: Object.keys(a.labels).length - keys.length, missing, changed, eqCounts });
   });
   return rows;
