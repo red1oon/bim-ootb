@@ -317,42 +317,12 @@ async function partB(bld, rulesJsonRules, A) {
   const where0 = bld + ' edit';
   const dbf = CACHE.resolveDbFile(bld);
   if (!dbf.path || !A) { claim('NS-7', where0, 0, 0, 'no db or no persisted run for ' + bld + ' — the edit chain judged nothing'); return; }
-  const SG = require(path.join(V, 'schedule_gate.js')); global.ScheduleGate = SG;
-  const SA = require(path.join(V, 'schedule_author.js'));
-  const SS = require(path.join(V, 'support_sweep.js')); global.SupportSweep = SS;
-  const CP = require(path.join(V, 'cpm_schedule.js')); global.CpmSchedule = CP;
-  global.GanttModel = GM;
-  globalThis.RoomWalker = require(path.join(V, 'lib', 'room_walker.js'));
-  globalThis.LevelDeriver = require(path.join(V, 'lib', 'level_deriver.js'));
-  globalThis.LocationAxis = require(path.join(V, 'location_axis.js'));
-  const TMP = require(path.join(ROOT, 'scripts', 'lib', 'tm_played_layer.js'));
-  const T = JSON.parse(__readSrc(path.join(V, 'rates', '4D_template.json'), 'utf8'));
-  const rsb = { console: { log() {}, warn() {}, error() {} } }; vm.createContext(rsb); vm.runInContext(__readSrc(path.join(V, 'rates.js'), 'utf8'), rsb);
-  const gcv = +((/var _GANTT_CACHE_VERSION = (\d+);/.exec(tmSrc) || [])[1] || 0);
-  const initSqlJs = require(path.join(ROOT, 'modeller', 'lib', 'sql-wasm.js'));
-  const SQL = await initSqlJs({ wasmBinary: fs.readFileSync(path.join(ROOT, 'modeller', 'lib', 'sql-wasm.wasm')) });
-  const db0 = new SQL.Database(new Uint8Array(fs.readFileSync(dbf.path)));
-  // the cache build's own chain (scripts/cache_4d_run.js build()), with the pipeline's §-log left on the terminal
-  const tmsb = TMP.buildSandbox({ tmSrc: tmSrc, SA: SA, SG: SG, CP: CP, GM: GM, SS: SS, LABOR_RATES: rsb.LABOR_RATES, console: console });
-  const base = { start: CACHE.PROJECT_START, laborRates: rsb.LABOR_RATES, rates: rsb.RATES, nameOverrides: rsb.SEQUENCE_NAME_OVERRIDES,
-    defaultRule: rsb.SEQUENCE_DEFAULT, scheduleGate: SG, shiftHours: T.calendar.hours_per_shift, template: T, db: db0,
-    displayRemap: tmsb._tmDisplayRemap, genVersion: gcv };
-  const rawEls = SA._buildScheduleElements(db0, rsb.SEQUENCE_RULES, base);
-  globalThis.APP = { db: db0 };
-  const res = SA.materializeZones(db0, rsb.SEQUENCE_RULES, base);
-  delete globalThis.APP;
-  const tasks = res && res.tasks ? res.tasks.map(t => ({ id: t.id, sDays: t.sDays, eDays: t.eDays, phase: t.phase, storey: t.storey, guids: t.guids })) : null;
-  const mp = tasks ? TMP.mirrorInjectGantt({ sb: tmsb, elements: rawEls, tasks: tasks, db: db0, startISO: base.start, applyTiling: true, log: console.log }) : { ok: false, reason: 'no tasks' };
-  if (!mp.ok) { claim('NS-7', where0, 0, 0, 'the chain produced no played layer: ' + mp.reason); return; }
+  // the building as the viewer holds it after a 4D generate — the ONE chain, tests/_gantt_edit_fixture.js playedChain
+  const PC = await require('./_gantt_edit_fixture.js').playedChain(bld);
+  if (PC.missing || PC.failed) { claim('NS-7', where0, 0, 0, 'the chain produced no played layer: ' + (PC.missing || PC.failed)); return; }
+  const SA = PC.SA, SQL = PC.SQL, gcv = PC.gcv, db0 = PC.db, mp = { play: PC.play };
   const persisted = CACHE.layerOf(A.run, 'played').map; let diff = 0, nP = 0;
   for (const g in mp.play) { nP++; const p = persisted[g]; if (!p || p.s !== mp.play[g].s || p.e !== mp.play[g].e) diff++; }
-  db0.run('CREATE TABLE IF NOT EXISTS kernel_ops (id INTEGER PRIMARY KEY, timestamp INTEGER NOT NULL, op_type TEXT NOT NULL, parameters TEXT NOT NULL, input_guids TEXT, output_guid TEXT, undone INTEGER DEFAULT 0)');
-  db0.run("DELETE FROM kernel_ops WHERE op_type='ELEMENT_PLACE'");
-  const ins = db0.prepare('INSERT INTO kernel_ops (timestamp,op_type,parameters,input_guids,output_guid,undone) VALUES(?,?,?,?,?,0)');
-  db0.run('BEGIN');
-  rawEls.forEach(e => { const p = mp.play[e.guid]; if (!p) return;
-    ins.run([p.s, 'ELEMENT_PLACE', JSON.stringify({ _end_ts: p.e, storey: e.storey, phase: e.phase, cls: e.cls, name: e.name || '' }), '[]', e.guid]); });
-  db0.run('COMMIT'); ins.free();
   const bytes = db0.export(); db0.close();
 
   ZONES.forEach((tz, zi) => {
