@@ -20,11 +20,17 @@ const GUIDE_URL = 'https://red1oon.github.io/BIMCompiler/ERPUserGuide/';
 // §19.11 step 1 (VOCAB_MESSAGE_CATALOG): the ONE source list, erp/tools/i18n_sources.json, also read by build_i18n.py (the screen packs): every screen language gets its help pack, no copy of the list here
 const SOURCES = (() => { const j = JSON.parse(fs.readFileSync(path.join(__dirname, 'i18n_sources.json'), 'utf8')).sources, o = {}; Object.keys(j).forEach((l) => { o[l] = j[l].map((x) => x.dir); }); return o; })();
 // H4: the trade-cycle how-to rows: window -> the guide section (heading text as in the guide, its mkdocs anchor)
+//   §19.17 F1: all 8 sections of "The standard flow". `window` = the row's own window (help.json, the How To widget), `also` = the other windows the section walks, `process` = the
+//   processes / reports it names (CtxType P when there is no window). ONE AD_CtxHelp per section, linked from every target's first tab / the process (legacy's FK is on them).
 const HOWTO = [
   { window: 143, heading: '### 1 · Sales Order', anchor: '1-sales-order' },
   { window: 169, heading: '### 2 · Shipment', anchor: '2-shipment' },
   { window: 167, heading: '### 3 · Customer Invoice → AR', anchor: '3-customer-invoice-ar' },
   { window: 195, heading: '### 4 · Receipt & Allocation', anchor: '4-receipt-allocation' },
+  { window: null, process: [53267], sotrx: 'N', heading: '### 5 · Replenishment', anchor: '5-replenishment' },
+  { window: 181, also: [184, 183, 107], sotrx: 'N', heading: '### 6 · Purchase Order → Receipt → Vendor Invoice → Match', anchor: '6-purchase-order-receipt-vendor-invoice-match' },
+  { window: 200005, also: [194], heading: '### 7 · Final accounts', anchor: '7-final-accounts' },
+  { window: 216, process: [310], heading: '### 8 · Financial reporting', anchor: '8-financial-reporting' },
 ];
 const q = (sql) => { const r = cp.spawnSync('sqlite3', ['-readonly', '-json', SEED, sql], { encoding: 'utf8', maxBuffer: 1 << 29 }); if (r.status !== 0) throw new Error(r.stderr); return JSON.parse(r.stdout || '[]'); };
 const ent = (s) => s.replace(/&(#x[0-9a-f]+|#\d+|amp|lt|gt|quot|apos);/gi, (m, e) => e[0] === '#' ? String.fromCodePoint(e[1] === 'x' || e[1] === 'X' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10)) : { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" }[e.toLowerCase()]);
@@ -94,18 +100,20 @@ const md = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '
 function buildHowto(windows) {
   // link targets: each window's exact name, plus each table's dictionary Name and TableName -> the table's own window (AD_Table.AD_Window_ID)
   const wid = {}; windows.forEach((w) => { wid[w.id] = 1; });
-  const targets = windows.slice();
+  const targets = windows.slice(), targetsPO = windows.slice();   // §19.17 F1: a buy-side section (HOWTO sotrx 'N') links a table term to AD_Table.PO_Window_ID when it has one - legacy's zoom rule by IsSOTrx
   //   a table term links only as a WHOLE bold/code term of the guide (<b>Invoice</b>, <code>M_InOut</code>), never a System-only dictionary table (AccessLevel 4)
-  q("SELECT tablename tt, name tn, ad_window_id tw FROM ad_table WHERE isactive='Y' AND ad_window_id IS NOT NULL AND accesslevel<>'4'").forEach((t) => { if (wid[t.tw]) { targets.push({ id: Number(t.tw), name: String(t.tt), whole: true }); targets.push({ id: Number(t.tw), name: String(t.tn), whole: true }); } });
-  const g = readGuide(), lines = g.split('\n'), link = linker(targets), rows = [];
+  q("SELECT tablename tt, name tn, ad_window_id tw, po_window_id tp FROM ad_table WHERE isactive='Y' AND ad_window_id IS NOT NULL AND accesslevel<>'4'").forEach((t) => {
+    if (wid[t.tw]) { targets.push({ id: Number(t.tw), name: String(t.tt), whole: true }); targets.push({ id: Number(t.tw), name: String(t.tn), whole: true }); }
+    const pw = t.tp != null && wid[t.tp] ? Number(t.tp) : (wid[t.tw] ? Number(t.tw) : null); if (pw != null) { targetsPO.push({ id: pw, name: String(t.tt), whole: true }); targetsPO.push({ id: pw, name: String(t.tn), whole: true }); } });
+  const g = readGuide(), lines = g.split('\n'), linkSO = linker(targets), linkPO = linker(targetsPO), rows = [];
   HOWTO.forEach((h, k) => {
     const at = lines.indexOf(h.heading); if (at < 0) throw new Error('guide heading not found: ' + h.heading);
     const body = []; for (let i = at + 1; i < lines.length && !/^#{1,3} /.test(lines[i]); i++) body.push(lines[i]);
     const paras = body.join('\n').split(/\n\s*\n/).map((p) => p.trim()).filter((p) => p && !p.startsWith('>'));   // the proof asides (> *Proven by* …) left out
-    const win = windows.find((w) => w.id === h.window), title = h.heading.replace(/^#+\s*/, '');
-    rows.push({ id: k + 1, ctxtype: 'W', ad_window_id: h.window, name: title, window: win ? win.name : null,
+    const win = windows.find((w) => w.id === h.window), title = h.heading.replace(/^#+\s*/, ''), link = h.sotrx === 'N' ? linkPO : linkSO;
+    rows.push({ id: k + 1, ctxtype: 'W', ad_window_id: h.window, windows: [h.window].concat(h.also || []).filter((w) => w != null), ad_process_id: (h.process || [])[0] || null, name: title, window: win ? win.name : null,
       source: { guide: 'docs/ERPUserGuide.md', heading: h.heading, url: GUIDE_URL + '#' + h.anchor, sentences: paras },
-      html: paras.map((p) => '<p>' + link(md(p.replace(/\s*\n\s*/g, ' '))) + '</p>').join('') });
+      html: paras.map((p) => /^- /.test(p) ? '<ul>' + p.split(/\n- /).map((it) => '<li>' + md(it.replace(/^- /, '').replace(/\s*\n\s*/g, ' ')) + '</li>').join('') + '</ul>' : '<p>' + md(p.replace(/\s*\n\s*/g, ' ')) + '</p>').map(link).join('') });
   });
   return rows;
 }
@@ -134,7 +142,7 @@ function readCtxTrl(file) {
 }
 const MACHINE_DIR = path.join(ERP, 'i18n', 'machine');
 const machineCtxFile = (lang) => path.join(MACHINE_DIR, 'AD_CtxHelpMsg_Trl_' + lang + '.xml');
-const linkParas = (html, link) => { const m = /^(<p><strong>[\s\S]*?<\/strong><\/p>)([\s\S]*)$/.exec(html), head = m ? m[1] : '', rest = m ? m[2] : html; return head + (rest.match(/<p>[\s\S]*?<\/p>/g) || []).map((x) => '<p>' + link(x.slice(3, -4)) + '</p>').join(''); };
+const linkParas = (html, link) => { const m = /^(<p><strong>[\s\S]*?<\/strong><\/p>)([\s\S]*)$/.exec(html), head = m ? m[1] : '', rest = m ? m[2] : html; return head + (rest.match(/<(p|ul)>[\s\S]*?<\/(p|ul)>/g) || []).map((x) => x.startsWith('<ul>') ? link(x) : '<p>' + link(x.slice(3, -4)) + '</p>').join(''); };
 // per language, per English message (legacy's + ours): the FIRST translated row wins - published sources in i18n_sources.json order, then machine/ (linked with that language's window names)
 function buildCtxTrl(lang, msgIds, link) {
   const pub = [].concat(...SOURCES[lang].map((d) => trlFiles(d, 'AD_CtxHelpMsg').map(readCtxTrl))), mach = readCtxTrl(machineCtxFile(lang)), out = [];
@@ -149,19 +157,20 @@ function buildCtxHelpRows(howto, trl) {
   const lit = (v) => v == null ? 'NULL' : typeof v === 'number' ? String(v) : "'" + String(v).replace(/'/g, "''") + "'", t = guideTime(), rows = [], links = [];
   const ins = (table, o) => 'INSERT OR IGNORE INTO ' + table + ' (' + Object.keys(o).join(', ') + ') VALUES (' + Object.keys(o).map((k) => lit(o[k])).join(', ') + ')';
   howto.forEach((h, k) => {
-    const id = APP_ID0 + k, tab = q('SELECT ad_tab_id t FROM ad_tab WHERE ad_window_id=' + Number(h.ad_window_id) + " AND tablevel=0 AND isactive='Y' ORDER BY seqno, ad_tab_id LIMIT 1")[0];
-    if (!tab) throw new Error('window ' + h.ad_window_id + ' has no first tab');
-    rows.push(ins('ad_ctxhelp', { ad_client_id: 0, ad_ctxhelp_id: id, ad_ctxhelp_uu: uuidOf('ad_ctxhelp|' + id), ad_org_id: 0, created: t, createdby: 100, ctxtype: 'T', description: h.source.url, isactive: 'Y', name: h.name, updated: t, updatedby: 100 }));
+    const id = APP_ID0 + k, H = HOWTO[k], tabs = h.windows.map((w) => { const r = q('SELECT ad_tab_id t FROM ad_tab WHERE ad_window_id=' + Number(w) + " AND tablevel=0 AND isactive='Y' ORDER BY seqno, ad_tab_id LIMIT 1")[0]; if (!r) throw new Error('window ' + w + ' has no first tab'); return { window: w, tab: Number(r.t) }; });
+    const procs = (H.process || []).map((pid) => { if (!q('SELECT 1 x FROM ad_process WHERE ad_process_id=' + Number(pid) + " AND isactive='Y'").length) throw new Error('process ' + pid + ' not active'); return Number(pid); });
+    rows.push(ins('ad_ctxhelp', { ad_client_id: 0, ad_ctxhelp_id: id, ad_ctxhelp_uu: uuidOf('ad_ctxhelp|' + id), ad_org_id: 0, created: t, createdby: 100, ctxtype: tabs.length ? 'T' : 'P', description: h.source.url, isactive: 'Y', name: h.name, updated: t, updatedby: 100 }));
     rows.push(ins('ad_ctxhelpmsg', { ad_client_id: 0, ad_ctxhelp_id: id, ad_ctxhelpmsg_id: id, ad_ctxhelpmsg_uu: uuidOf('ad_ctxhelpmsg|' + id), ad_org_id: 0, created: t, createdby: 100, isactive: 'Y', line: null, msgtext: titleP(h.name) + h.html, updated: t, updatedby: 100 }));
-    rows.push('UPDATE ad_tab SET ad_ctxhelp_id=' + id + ' WHERE ad_tab_id=' + Number(tab.t) + ' AND ad_ctxhelp_id IS NULL');
-    links.push({ help: id, window: h.ad_window_id, tab: Number(tab.t), name: h.name });
+    tabs.forEach((x) => rows.push('UPDATE ad_tab SET ad_ctxhelp_id=' + id + ' WHERE ad_tab_id=' + x.tab + ' AND ad_ctxhelp_id IS NULL'));
+    procs.forEach((pid) => rows.push('UPDATE ad_process SET ad_ctxhelp_id=' + id + ' WHERE ad_process_id=' + pid + ' AND ad_ctxhelp_id IS NULL'));
+    links.push({ help: id, name: h.name, tabs, processes: procs });
   });
   (trl || []).forEach((r) => rows.push(ins('ad_ctxhelpmsg_trl', { ad_client_id: 0, ad_ctxhelpmsg_id: r.id, ad_ctxhelpmsg_trl_uu: uuidOf('ad_ctxhelpmsg_trl|' + r.id + '|' + r.lang), ad_language: r.lang, ad_org_id: 0, created: t, createdby: 100, isactive: 'Y', istranslated: r.istranslated, msgtext: r.text, updated: t, updatedby: 100 })));
   const trlBy = {}; (trl || []).forEach((r) => { trlBy[r.lang + ':' + r.source] = (trlBy[r.lang + ':' + r.source] || 0) + 1; });
   const L = { spec: 'bim-compiler prompts/VOCAB_MESSAGE_CATALOG.md §19.16 C2', source: 'docs/ERPUserGuide.md The standard flow (build_help_pack.js HOWTO)', time: t, links, rows };
   fs.writeFileSync(path.join(ERP, 'ad_ctxhelp_app_rows.js'), '// GENERATED by erp/tools/build_help_pack.js from docs/ERPUserGuide.md - do not edit by hand. Applied by ad_ctxhelp_overlay.js after legacy\'s rows (boot overlay, outside the team base hash).\n' +
     '(function (g) { var L = ' + JSON.stringify(L, null, 0).replace(/,"rows":\[/, ',\n"rows": [\n').replace(/","(INSERT|UPDATE)/g, '",\n"$1') + ';\n  if (typeof module !== "undefined" && module.exports) module.exports = L; g.AD_CTXHELP_APP_ROWS = L; })(typeof window !== "undefined" ? window : globalThis);\n');
-  console.log('§CTXHELP_APP_ROWS helps=' + howto.length + ' statements=' + rows.length + ' trl=' + (trl || []).length + ' ' + JSON.stringify(trlBy) + ' links=' + links.map((x) => x.window + '>' + x.tab).join(',') + ' time=' + t);
+  console.log('§CTXHELP_APP_ROWS helps=' + howto.length + ' statements=' + rows.length + ' trl=' + (trl || []).length + ' ' + JSON.stringify(trlBy) + ' links=' + links.map((x) => x.help + ':' + x.tabs.map((y) => y.window + '>' + y.tab).concat(x.processes.map((y) => 'P' + y)).join('+')).join(',') + ' time=' + t);
 }
 // §12 H1b: the names of the language, from its own published XML (first source wins, translated = present and not the English original):
 //   windows (AD_Window_Trl), tables (AD_Table_Trl), actions (AD_Ref_List_Trl of DocAction 135, by code), statuses (AD_Ref_List_Trl of DocStatus 131, by code).
@@ -188,8 +197,8 @@ function buildHowtoLang(lang, names, enRows, trl) {
     const mr = raw[r.id];
     const en = enRows[r.id - APP_ID0]; if (!en) throw new Error(lang + ' how-to message ' + r.id + ' has no English row');
     const m = /^<p><strong>([\s\S]*?)<\/strong><\/p>([\s\S]*)$/.exec(r.text); if (!m) throw new Error(lang + ' message ' + r.id + ' has no title paragraph');
-    return { id: en.id, ctxtype: 'W', ad_window_id: en.ad_window_id, name: ent(m[1].replace(/<[^>]+>/g, '')), window: names.windows[en.ad_window_id] || en.window, kind: en.kind, table: en.table, translated: MACHINE_LABEL,
-      source: { guide: en.source.guide, heading: en.source.heading, url: en.source.url, sentences: en.source.sentences, translation: (mr.text.replace(/^<p><strong>[\s\S]*?<\/strong><\/p>/, '').match(/<p>[\s\S]*?<\/p>/g) || []).map((x) => unmd(x.slice(3, -4))) },
+    return { id: en.id, ctxtype: 'W', ad_window_id: en.ad_window_id, windows: en.windows, ad_process_id: en.ad_process_id, name: ent(m[1].replace(/<[^>]+>/g, '')), window: names.windows[en.ad_window_id] || en.window, kind: en.kind, table: en.table, translated: MACHINE_LABEL,
+      source: { guide: en.source.guide, heading: en.source.heading, url: en.source.url, sentences: en.source.sentences, translation: (mr.text.replace(/^<p><strong>[\s\S]*?<\/strong><\/p>/, '').match(/<(p|ul)>[\s\S]*?<\/(p|ul)>/g) || []).map((x) => x.startsWith('<ul>') ? unmd(x.replace(/<\/li>/g, ' ').replace(/<\/?(ul|li)>/g, '')).trim() : unmd(x.slice(3, -4))) },
       html: m[2] };
   });
 }
@@ -209,7 +218,7 @@ function main() {
   const log = console.log; console.log = () => {}; const fsmCheck = require(path.join(ERP, 'ad_docfsm.js')); console.log = log; void fsmCheck;
   // the role's menu windows are not known at build time; the linker uses every active window of the seed (the page drops a link whose window is not on the menu)
   const windows = q("SELECT ad_window_id wid, name wnm FROM ad_window WHERE isactive='Y'").map((w) => ({ id: Number(w.wid), name: String(w.wnm) }));   // aliases differ from column names: sqlite3 -json keeps a same-named column's own case
-  const tables = {}; q("SELECT t.ad_window_id w, tb.name tn, tb.tablename tt FROM ad_tab t JOIN ad_table tb ON tb.ad_table_id=t.ad_table_id WHERE t.tablevel=0 AND t.isactive='Y' AND t.ad_window_id IN (" + HOWTO.map((h) => h.window).join(',') + ") ORDER BY t.seqno").forEach((r) => { if (!tables[r.w]) tables[r.w] = { kind: r.tn, table: r.tt }; });
+  const tables = {}; q("SELECT t.ad_window_id w, tb.name tn, tb.tablename tt FROM ad_tab t JOIN ad_table tb ON tb.ad_table_id=t.ad_table_id WHERE t.tablevel=0 AND t.isactive='Y' AND t.ad_window_id IN (" + HOWTO.map((h) => h.window).filter((w) => w != null).join(',') + ") ORDER BY t.seqno").forEach((r) => { if (!tables[r.w]) tables[r.w] = { kind: r.tn, table: r.tt }; });
   fs.mkdirSync(path.join(OUT, 'en_US'), { recursive: true });
   const howto = buildHowto(windows).map((r) => Object.assign(r, { kind: (tables[r.ad_window_id] || {}).kind || null, table: (tables[r.ad_window_id] || {}).table || null }));
   const en = { lang: 'en_US', spec: 'bim-compiler prompts/VOCAB_MESSAGE_CATALOG.md §10', built: 'build_help_pack.js', howto, actions: buildActions() };
