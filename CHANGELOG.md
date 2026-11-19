@@ -4,6 +4,34 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.94.0](https://github.com/red1oon/bim-ootb/compare/v1.93.0...v1.94.0) (2026-11-19)
+
+
+### ✨ Features
+
+* **4d:** DCMA 14-point - task rows carry their driving trade and CPM float at generation; witness_dcma_14pt is gate 14 (ratchet) ([#3307](https://github.com/red1oon/bim-ootb/issues/3307)) ([8d9f9a7](https://github.com/red1oon/bim-ootb/commit/8d9f9a7124a63ee8999fe69861c709c513ff6748))
+* **devtools:** W-VSC-OPERATIONAL - every operational entry point runs from VS Code (§F.41) ([#3332](https://github.com/red1oon/bim-ootb/issues/3332)) ([f2a34bf](https://github.com/red1oon/bim-ootb/commit/f2a34bf8381bf55f4ece30b65897f3d5c35e8bcf)), closes [#3330](https://github.com/red1oon/bim-ootb/issues/3330)
+* **setup:** node scripts/setup.js — ZIP/tarball to a working dev setup, VS Code side included ([#3298](https://github.com/red1oon/bim-ootb/issues/3298)) ([a2227c3](https://github.com/red1oon/bim-ootb/commit/a2227c39cd86397ef5933f498ae1e28030376b4a))
+* **viewer:** IFC export writes generated parts, materials, psets, part relations, kept GlobalIds and a frame file (step d) ([#3331](https://github.com/red1oon/bim-ootb/issues/3331)) ([3d73e04](https://github.com/red1oon/bim-ootb/commit/3d73e04d48c44c16a5dc8cb9e24efb420794dd58))
+* **viewer:** IFC of what Find has isolated - scope chips in the Export menu (step c) ([#3323](https://github.com/red1oon/bim-ootb/issues/3323)) ([fd85aa4](https://github.com/red1oon/bim-ootb/commit/fd85aa4c3d467d63ead128a9b6790e090b907f3c))
+* **viewer:** ONE Export pill - Building (.db) / IFC / BCF (IFC export by selection, step a) ([#3300](https://github.com/red1oon/bim-ootb/issues/3300)) ([a938786](https://github.com/red1oon/bim-ootb/commit/a938786fff072307df21b7a7cc3845423bb4ff79))
+* **viewer:** Schedule (MSP / PMXML / XER) and 5D cost rows in the Export menu (IFC export by selection, step b2) ([#3319](https://github.com/red1oon/bim-ootb/issues/3319)) ([d04188e](https://github.com/red1oon/bim-ootb/commit/d04188e1a980ee9f3d4e837c76849e84e4955969))
+* **viewer:** the Viewer's IFC goes through the Modeller's shared writer - any element, IFC4/IFC2X3, split meta+geo (IFC export step b) ([#3309](https://github.com/red1oon/bim-ootb/issues/3309)) ([90e1cba](https://github.com/red1oon/bim-ootb/commit/90e1cbaf1252ea171ff6d74bddc0c838ed2f1d67))
+
+
+### 🐛 Fixes
+
+* **4d:** a dropped-in model with no lock is reported, not failed; cache_4d_run exits 1 on a failed build ([#3286](https://github.com/red1oon/bim-ootb/issues/3286)) ([6f89f59](https://github.com/red1oon/bim-ootb/commit/6f89f5969780959840bf969669ccb76fa1f60a3d))
+* **4d:** DCMA check 1 - open trade-chain ends tie to one 'Project Complete' finish milestone ([#3315](https://github.com/red1oon/bim-ootb/issues/3315)) ([d41888f](https://github.com/red1oon/bim-ootb/commit/d41888ffd4c72ea58a5b3dc30406c1730ec633ca))
+* **4d:** ductwork modelled as generic IfcFlow* goes to the duct crew (ACMV -&gt; HVAC_TECH), not plumbers (§Q.29) ([#3333](https://github.com/red1oon/bim-ootb/issues/3333)) ([b0c856e](https://github.com/red1oon/bim-ootb/commit/b0c856ef428e35ed00d11eb4bae5a0a8dff6253b))
+* **4d:** floors wait for every carrier under them; curtain-wall parts are façade, not frame (§E1_ALL_CARRIERS + §ASSEMBLY_RULE) ([#3342](https://github.com/red1oon/bim-ootb/issues/3342)) ([1bd72ae](https://github.com/red1oon/bim-ootb/commit/1bd72aeef059e166738167209fcbc0f9cbf215df))
+* **4d:** pipe work by its own crew - sprinkler fitter / pipefitter / plumber by element discipline (§PIPE_TRADES) ([#3322](https://github.com/red1oon/bim-ootb/issues/3322)) ([4e587fc](https://github.com/red1oon/bim-ootb/commit/4e587fcd25fda06eba05c87c05004e9ffd6cbbc8))
+* **4d:** stairs go up with the frame - IfcStair/IfcStairFlight + stair parts Architecture Envelope 6 -&gt; Superstructure 4; railings stay after ([#3305](https://github.com/red1oon/bim-ootb/issues/3305)) ([deb6239](https://github.com/red1oon/bim-ootb/commit/deb6239ceaa2de5e465550aeab06a8e830b50d9b))
+* **altc:** Alt+C refuses to bake a stale tab; the log counts the frames the compass was shown (§ALTC_FRESH_BUILD) ([#3329](https://github.com/red1oon/bim-ootb/issues/3329)) ([020c970](https://github.com/red1oon/bim-ootb/commit/020c97004c7147106d71e7892d85a85ed80cc4fb))
+* **capex:** read job names each missing web-service type and fails when the dashboard cannot work (§5.89) ([#3339](https://github.com/red1oon/bim-ootb/issues/3339)) ([1aa26e2](https://github.com/red1oon/bim-ootb/commit/1aa26e2a9aa472a7c4d6b2b76dd7b82cd2b1f78d))
+* **manifest:** modules.json stops storing per-module witnesses; the extractor answers (B-3 REVISED) ([#3327](https://github.com/red1oon/bim-ootb/issues/3327)) ([248cefd](https://github.com/red1oon/bim-ootb/commit/248cefdcdc5b4a43e6821ebb1d536ea4e596c7b8)), closes [#3326](https://github.com/red1oon/bim-ootb/issues/3326)
+* **tm:** the picture plays the schedule the Gantt shows - a stale stored schedule is regenerated BEFORE the play order is built (§Q.31) ([#3337](https://github.com/red1oon/bim-ootb/issues/3337)) ([e14bfa7](https://github.com/red1oon/bim-ootb/commit/e14bfa717fffac20ae3e4e2c11d65978a5938d2a))
+
 ## [1.93.0](https://github.com/red1oon/bim-ootb/compare/v1.92.0...v1.93.0) (2026-11-18)
 
 
