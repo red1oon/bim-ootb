@@ -13,9 +13,12 @@
 //   K1 each legacy row is in the twin with equal values, the twin's other rows are exactly the app file's (id >= 1000000, client 0); K2 an edited app message survives a second
 //   ensure; K6 LEGACY's lookup (MCtxHelpMsg.getCtxHelpID for CTXTYPE_Tab + get's message query, ported as SQL) finds each how-to on its window's first tab, and its text == the
 //   guide section's own paragraphs, read HERE from the guide; K3 the page's Find window counts legacy's + the app's rows and shows every name.
+//   §19.16 C3 (new K7): the translations in legacy's own table: every TRANSLATED published AD_CtxHelpMsg_Trl row of the packs (i18n_sources.json, read HERE) is a twin row with the
+//   pack's text; every machine row (erp/i18n/machine/AD_CtxHelpMsg_Trl_<lang>.xml) is a twin row, linked, IsTranslated N; none shadows a published row; each language's help.json
+//   how-to (name + html) is unchanged against origin/main (the JSON -> XML move lost nothing). Reds C3: CTX_BREAK=nomachine -> K7 FAIL; CTX_BREAK=pubtext -> K7 FAIL.
 //   Reds C2: CTX_BREAK=nolink (the app file without its AD_Tab updates) -> K6 FAIL; CTX_BREAK=dropsec (one how-to dropped) -> K6 FAIL.
 // Reds: CTX_BREAK=nomsg (the rows file without its ad_ctxhelpmsg row) -> K1 FAIL; CTX_BREAK=patch (one line appended to the hashed patch) -> K5 FAIL; CTX_BREAK=nooverlay (page without the overlay) -> K3 FAIL.
-// Run: node erp/tests/witness_ctxhelp_overlay.js   Env: CTX_BREAK=nomsg|patch|nooverlay|nolink|dropsec  NOPAGE=1
+// Run: node erp/tests/witness_ctxhelp_overlay.js   Env: CTX_BREAK=nomsg|patch|nooverlay|nolink|dropsec|nomachine|pubtext  NOPAGE=1
 'use strict';
 const fs = require('fs'), path = require('path'), cp = require('child_process'), crypto = require('crypto');
 const ERP = path.join(__dirname, '..'), ROOT = path.join(ERP, '..'), BR = process.env.CTX_BREAK || '';
@@ -42,12 +45,13 @@ function rowsData() {   // the overlay's data; CTX_BREAK=nomsg drops the ad_ctxh
 function appData() {   // the app's how-to rows; CTX_BREAK=nolink drops the AD_Tab links, dropsec drops the last how-to (its 2 rows + its link)
   const A = JSON.parse(JSON.stringify(require(path.join(ERP, 'ad_ctxhelp_app_rows.js'))));
   if (BR === 'nolink') A.rows = A.rows.filter((s) => !/^UPDATE ad_tab /.test(s));
+  if (BR === 'nomachine') A.rows = A.rows.filter((s) => !/^INSERT OR IGNORE INTO ad_ctxhelpmsg_trl \(ad_client_id, ad_ctxhelpmsg_id, [^)]*\) VALUES \(0, 1\d{6},/.test(s));
   if (BR === 'dropsec') { const last = A.links.pop(); A.rows = A.rows.filter((s) => s.indexOf(String(last.help)) < 0); }
   return A;
 }
 const APP_ID0 = 1000000;
 const norm = (x) => String(x == null ? '' : x).replace(/^(\d{4}-\d\d-\d\d)T(\d\d:\d\d:\d\d).*$/, '$1 $2').replace(/\.0+$/, '');
-const plain = (h) => String(h || '').replace(/<[^>]+>/g, '').replace(/&(amp|lt|gt|quot|#39);/g, (m, e) => ({ amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'" }[e])).split(/\s+/).filter(Boolean).join(' ');
+const plain = (h) => String(h || '').replace(/<\/p>/g, ' ').replace(/<[^>]+>/g, '').replace(/&(amp|lt|gt|quot|#39);/g, (m, e) => ({ amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'" }[e])).split(/\s+/).filter(Boolean).join(' ');
 function guideSection(guide, name) {   // the guide's own paragraphs under '### <name>', proof asides (> ...) left out, markdown marks removed - read here, not from the builder
   const lines = guide.split('\n'), at = lines.indexOf('### ' + name); if (at < 0) return null;
   const body = []; for (let i = at + 1; i < lines.length && !/^#{1,3} /.test(lines[i]); i++) body.push(lines[i]);
@@ -92,13 +96,13 @@ async function nodePart() {
         const diff = tw ? T.cols.filter((c) => norm(tw[c]) !== norm(o[c])) : ['missing'];
         if (!diff.length) rowEq++; else miss.push(T.t + ' ' + key(o) + ' differs: ' + diff.join(',')); });
       const tr = db.exec('SELECT ' + T.pk.join(',') + ', ad_client_id FROM ' + T.t)[0];
-      (tr ? tr.values : []).forEach((v) => { const k = v.slice(0, T.pk.length).map(String).join('|'); if (lkeys[k]) return; extra++; if (Number(v[0]) >= APP_ID0 && Number(v[v.length - 1]) === 0) extraOk++; else miss.push(T.t + ' extra row ' + k + ' not app-own'); });
+      (tr ? tr.values : []).forEach((v) => { const k = v.slice(0, T.pk.length).map(String).join('|'); if (lkeys[k]) return; extra++; if (Number(v[v.length - 1]) === 0) extraOk++; else miss.push(T.t + ' extra row ' + k + ' not client 0'); });   // which rows: the count check (twin == legacy + app) already says they are the app file's
     });
-    L('K1 legacy rows equal ' + rowEq + ' of ' + rowN + '; twin-only rows ' + extra + ', app-own (id >= ' + APP_ID0 + ', client 0) ' + extraOk);
+    L('K1 legacy rows equal ' + rowEq + ' of ' + rowN + '; twin-only rows ' + extra + ', client 0 ' + extraOk);
     const linkT = PG("select table_name from information_schema.columns where table_schema='adempiere' and column_name='ad_ctxhelp_id' and table_name not in ('" + TABLES.join("','") + "') order by 1") || [];
     const seedHas = linkT.filter((t) => colsOf(db, t).length), linkOk = seedHas.filter((t) => colsOf(db, t).indexOf('ad_ctxhelp_id') >= 0);
     L('K1 link column ad_ctxhelp_id: legacy tables ' + linkT.length + ', in the seed ' + seedHas.length + ', carry it ' + linkOk.length + ' (' + seedHas.filter((t) => linkOk.indexOf(t) < 0).join(',') + ' missing)');
-    chk('K1 the overlay is legacy\'s + the app\'s: columns ' + colOk + ' of 6, row counts (legacy + app) ' + cntOk + ' of 6, legacy rows equal ' + rowEq + ' of ' + rowN + ', twin-only rows app-own ' + extraOk + ' of ' + extra + ', link column ' + linkOk.length + ' of ' + seedHas.length,
+    chk('K1 the overlay is legacy\'s + the app\'s: columns ' + colOk + ' of 6, row counts (legacy + app) ' + cntOk + ' of 6, legacy rows equal ' + rowEq + ' of ' + rowN + ', twin-only rows client 0 ' + extraOk + ' of ' + extra + ', link column ' + linkOk.length + ' of ' + seedHas.length,
       colOk === 6 && cntOk === 6 && rowN > 0 && rowEq === rowN && extraOk === extra && seedHas.length > 0 && linkOk.length === seedHas.length, miss.join(' ; '));
   }
   // K2 idempotent
@@ -123,7 +127,7 @@ async function nodePart() {
       const hid = (exec1(db6, "SELECT t.AD_CtxHelp_ID FROM AD_Tab t, AD_CtxHelp h WHERE t.AD_CtxHelp_ID=h.AD_CtxHelp_ID AND t.IsActive='Y' AND h.IsActive='Y' AND h.AD_Client_ID IN (0, " + CLIENT + ") AND h.AD_Org_ID IN (0, " + ORG + ") AND t.AD_Tab_ID=" + x.tab + ' ORDER BY h.AD_Client_ID DESC, h.AD_Org_ID DESC, h.AD_CtxHelp_ID DESC')[0] || [])[0];
       // MCtxHelpMsg.get: the message (MCtxHelpMsg.java:96-100)
       const msg = hid ? (exec1(db6, "SELECT msgtext FROM AD_CtxHelpMsg WHERE IsActive = 'Y' AND AD_Client_ID IN (0, " + CLIENT + ")  AND AD_Org_ID IN (0, " + ORG + ")  AND AD_CtxHelp_ID = " + hid + ' ORDER BY AD_Client_ID DESC, AD_Org_ID DESC, AD_CtxHelpMsg_ID DESC')[0] || [])[0] : null;
-      const ct = hid ? (exec1(db6, 'SELECT ctxtype FROM ad_ctxhelp WHERE ad_ctxhelp_id=' + hid)[0] || [])[0] : null, want = guideSection(guide, x.name), got = plain(msg);
+      const ct = hid ? (exec1(db6, 'SELECT ctxtype FROM ad_ctxhelp WHERE ad_ctxhelp_id=' + hid)[0] || [])[0] : null, gs = guideSection(guide, x.name), want = gs == null ? null : x.name + ' ' + gs, got = plain(msg);   // §19.16 C3: the heading is MsgText's first paragraph
       if (msg) found++; else bad.push('window ' + x.window + ' tab ' + x.tab + ': no message');
       if (msg && want && got === want) same++; else if (msg) bad.push('window ' + x.window + ' text differs from the guide (' + got.length + ' vs ' + (want || '').length + ' chars)');
       if (ct === 'T') typeT++;
@@ -131,6 +135,33 @@ async function nodePart() {
     });
     chk('K6 legacy\'s lookup finds the how-to on the first tab ' + found + ' of ' + full.length + ', text == the guide ' + same + ' of ' + full.length + ', CtxType T ' + typeT + ' of ' + full.length,
       full.length > 0 && found === full.length && same === full.length && typeT === full.length, bad.join(' ; '));
+  }
+  // K7 the translations (C3), on db6
+  {
+    const SRC = require(path.join(ERP, 'tools', 'build_help_pack.js')), CACHE = SRC.CACHE, langs = Object.keys(SRC.SOURCES);
+    if (BR === 'pubtext') db6.run("UPDATE ad_ctxhelpmsg_trl SET msgtext=(SELECT msgtext FROM ad_ctxhelpmsg WHERE ad_ctxhelpmsg_id=200000) WHERE ad_ctxhelpmsg_id=200000 AND ad_language='de_DE'");
+    const readX = (f) => { const o = {}; if (!fs.existsSync(f)) return o; const x = fs.readFileSync(f, 'utf8'), re = /<row id="(\d+)"[^>]*>([\s\S]*?)<\/row>/g; let m;   // read HERE (not the builder's reader): CDATA or escaped text
+      const de = (t) => t.replace(/&#10;/g, '\n').replace(/&#13;/g, '\r').replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+      while ((m = re.exec(x))) { const v = /<value column="MsgText"[^>]*?original="([^"]*)"[^>]*?(?:\/>|>([\s\S]*?)<\/value>)/.exec(m[2]); if (!v) continue; const b = v[2] || '', cd = /^\s*<!\[CDATA\[([\s\S]*?)\]\]>\s*$/.exec(b); o[m[1]] = { orig: de(v[1]), text: cd ? cd[1] : de(b) }; }
+      return o; };
+    const tw = (id, lang) => { const r = db6.exec('SELECT msgtext, istranslated FROM ad_ctxhelpmsg_trl WHERE ad_ctxhelpmsg_id=? AND ad_language=?', [Number(id), lang])[0]; return r ? { text: r.values[0][0], it: r.values[0][1] } : null; };
+    const msgs = {}; exec1(db6, 'SELECT ad_ctxhelpmsg_id FROM ad_ctxhelpmsg').forEach((v) => { msgs[v[0]] = 1; });
+    const sq = (t) => String(t || '').split(/\s+/).filter(Boolean).join(' ');
+    let pN = 0, pOk = 0, mN = 0, mOk = 0, shadow = 0, hN = 0, hOk = 0; const bad = [], pubKey = {};
+    langs.forEach((lang) => {
+      SRC.SOURCES[lang].forEach((d) => { const dir = path.join(CACHE, d); if (!fs.existsSync(dir)) return; fs.readdirSync(dir).filter((f) => /^AD_CtxHelpMsg_Trl_.*\.xml$/.test(f)).sort().forEach((f) => {
+        const X = readX(path.join(dir, f)); Object.keys(X).forEach((id) => { if (!msgs[id] || pubKey[id + '|' + lang] || sq(X[id].text) === '' || sq(X[id].text) === sq(X[id].orig)) return; pubKey[id + '|' + lang] = 1; pN++;
+          const t = tw(id, lang); if (t && t.text === X[id].text) pOk++; else bad.push('published ' + id + ' ' + lang + (t ? ' text differs' : ' missing')); }); }); });
+      const M = readX(path.join(ERP, 'i18n', 'machine', 'AD_CtxHelpMsg_Trl_' + lang + '.xml'));
+      Object.keys(M).forEach((id) => { mN++; if (pubKey[id + '|' + lang]) { shadow++; return; } const t = tw(id, lang), unl = t ? t.text.replace(/<a href="#" data-help-win="\d+">([^<]*)<\/a>/g, '$1') : null;
+        if (t && unl === M[id].text && t.it === 'N' && /data-help-win=/.test(t.text) === /<b>/.test(M[id].text)) mOk++; else bad.push('machine ' + id + ' ' + lang + (t ? ' text/link/IsTranslated differs' : ' missing')); });
+      let mainJ = null; try { mainJ = JSON.parse(cp.execSync('git show origin/main:erp/i18n/help/' + lang + '/help.json', { cwd: ROOT, maxBuffer: 1 << 28, encoding: 'utf8' })); } catch (e) {}
+      const cur = JSON.parse(fs.readFileSync(path.join(ERP, 'i18n', 'help', lang, 'help.json'), 'utf8'));
+      ((mainJ && mainJ.howto) || []).forEach((h, k) => { hN++; const c = (cur.howto || [])[k]; if (c && c.name === h.name && c.html === h.html) hOk++; else bad.push('help.json ' + lang + ' how-to ' + k + ' changed'); });
+      L('K7 ' + lang + ' published ' + Object.keys(pubKey).filter((k) => k.endsWith('|' + lang)).length + ', machine ' + Object.keys(M).length);
+    });
+    chk('K7 translations in legacy\'s table: published ' + pOk + ' of ' + pN + ', machine ' + mOk + ' of ' + mN + ' (linked, IsTranslated N), shadowed ' + shadow + ', help.json how-to unchanged ' + hOk + ' of ' + hN,
+      pN > 0 && pOk === pN && mN > 0 && mOk === mN && shadow === 0 && hOk === hN, bad.join(' ; '));
   }
   // K5 the team base
   const seedBuf = fs.readFileSync(H.SEED), pt = (rel) => fs.readFileSync(path.join(ERP, 'patches', rel), 'utf8');

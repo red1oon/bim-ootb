@@ -119,21 +119,49 @@ function uuidOf(name) {   // RFC 4122 name-based (v5, SHA-1, URL namespace): the
   h[6] = (h[6] & 0x0f) | 0x50; h[8] = (h[8] & 0x3f) | 0x80; const x = h.subarray(0, 16).toString('hex');
   return x.slice(0, 8) + '-' + x.slice(8, 12) + '-' + x.slice(12, 16) + '-' + x.slice(16, 20) + '-' + x.slice(20);
 }
-function buildCtxHelpRows(howto) {
+const titleP = (name) => '<p><strong>' + md(name) + '</strong></p>';   // §19.16 C3: the title is MsgText's first paragraph (legacy's own fallback shape, HelpController.renderCtxHelp:345-347); AD_CtxHelp.Name has no _Trl and is never shown
+const MACHINE_LABEL = 'build session, not reviewed by a native speaker';
+// §19.16 C3: read a legacy Translation XML of AD_CtxHelpMsg_Trl - CDATA and xml:space aware (parseTrl's regex is not) -> { id: { trl, original, text } }
+function readCtxTrl(file) {
+  const out = {}; if (!fs.existsSync(file)) return out;
+  const x = fs.readFileSync(file, 'utf8'), rowRe = /<row id="(\d+)"([^>]*)>([\s\S]*?)<\/row>/g;
+  let m; while ((m = rowRe.exec(x))) {
+    const v = /<value column="MsgText"([^>]*?)(?:\/>|>([\s\S]*?)<\/value>)/.exec(m[3]); if (!v) continue;
+    const orig = (/original="([^"]*)"/.exec(v[1]) || [])[1] || '', body = v[2] || '', cd = /^\s*<!\[CDATA\[([\s\S]*?)\]\]>\s*$/.exec(body);
+    out[m[1]] = { trl: ((/trl="([YN])"/.exec(m[2]) || [])[1]) || 'N', original: ent(orig), text: cd ? cd[1] : ent(body) };
+  }
+  return out;
+}
+const MACHINE_DIR = path.join(ERP, 'i18n', 'machine');
+const machineCtxFile = (lang) => path.join(MACHINE_DIR, 'AD_CtxHelpMsg_Trl_' + lang + '.xml');
+const linkParas = (html, link) => { const m = /^(<p><strong>[\s\S]*?<\/strong><\/p>)([\s\S]*)$/.exec(html), head = m ? m[1] : '', rest = m ? m[2] : html; return head + (rest.match(/<p>[\s\S]*?<\/p>/g) || []).map((x) => '<p>' + link(x.slice(3, -4)) + '</p>').join(''); };
+// per language, per English message (legacy's + ours): the FIRST translated row wins - published sources in i18n_sources.json order, then machine/ (linked with that language's window names)
+function buildCtxTrl(lang, msgIds, link) {
+  const pub = [].concat(...SOURCES[lang].map((d) => trlFiles(d, 'AD_CtxHelpMsg').map(readCtxTrl))), mach = readCtxTrl(machineCtxFile(lang)), out = [];
+  const tr = (r) => r && norm(r.text) !== '' && norm(r.text) !== norm(r.original);
+  msgIds.forEach((id) => {
+    const p = pub.find((x) => tr(x[id])); if (p) { out.push({ id, lang, source: 'published', istranslated: p[id].trl, text: p[id].text }); return; }
+    const mr = mach[id]; if (tr(mr)) out.push({ id, lang, source: 'machine', istranslated: 'N', text: linkParas(mr.text, link) });
+  });
+  return out;
+}
+function buildCtxHelpRows(howto, trl) {
   const lit = (v) => v == null ? 'NULL' : typeof v === 'number' ? String(v) : "'" + String(v).replace(/'/g, "''") + "'", t = guideTime(), rows = [], links = [];
   const ins = (table, o) => 'INSERT OR IGNORE INTO ' + table + ' (' + Object.keys(o).join(', ') + ') VALUES (' + Object.keys(o).map((k) => lit(o[k])).join(', ') + ')';
   howto.forEach((h, k) => {
     const id = APP_ID0 + k, tab = q('SELECT ad_tab_id t FROM ad_tab WHERE ad_window_id=' + Number(h.ad_window_id) + " AND tablevel=0 AND isactive='Y' ORDER BY seqno, ad_tab_id LIMIT 1")[0];
     if (!tab) throw new Error('window ' + h.ad_window_id + ' has no first tab');
     rows.push(ins('ad_ctxhelp', { ad_client_id: 0, ad_ctxhelp_id: id, ad_ctxhelp_uu: uuidOf('ad_ctxhelp|' + id), ad_org_id: 0, created: t, createdby: 100, ctxtype: 'T', description: h.source.url, isactive: 'Y', name: h.name, updated: t, updatedby: 100 }));
-    rows.push(ins('ad_ctxhelpmsg', { ad_client_id: 0, ad_ctxhelp_id: id, ad_ctxhelpmsg_id: id, ad_ctxhelpmsg_uu: uuidOf('ad_ctxhelpmsg|' + id), ad_org_id: 0, created: t, createdby: 100, isactive: 'Y', line: null, msgtext: h.html, updated: t, updatedby: 100 }));
+    rows.push(ins('ad_ctxhelpmsg', { ad_client_id: 0, ad_ctxhelp_id: id, ad_ctxhelpmsg_id: id, ad_ctxhelpmsg_uu: uuidOf('ad_ctxhelpmsg|' + id), ad_org_id: 0, created: t, createdby: 100, isactive: 'Y', line: null, msgtext: titleP(h.name) + h.html, updated: t, updatedby: 100 }));
     rows.push('UPDATE ad_tab SET ad_ctxhelp_id=' + id + ' WHERE ad_tab_id=' + Number(tab.t) + ' AND ad_ctxhelp_id IS NULL');
     links.push({ help: id, window: h.ad_window_id, tab: Number(tab.t), name: h.name });
   });
+  (trl || []).forEach((r) => rows.push(ins('ad_ctxhelpmsg_trl', { ad_client_id: 0, ad_ctxhelpmsg_id: r.id, ad_ctxhelpmsg_trl_uu: uuidOf('ad_ctxhelpmsg_trl|' + r.id + '|' + r.lang), ad_language: r.lang, ad_org_id: 0, created: t, createdby: 100, isactive: 'Y', istranslated: r.istranslated, msgtext: r.text, updated: t, updatedby: 100 })));
+  const trlBy = {}; (trl || []).forEach((r) => { trlBy[r.lang + ':' + r.source] = (trlBy[r.lang + ':' + r.source] || 0) + 1; });
   const L = { spec: 'bim-compiler prompts/VOCAB_MESSAGE_CATALOG.md §19.16 C2', source: 'docs/ERPUserGuide.md The standard flow (build_help_pack.js HOWTO)', time: t, links, rows };
   fs.writeFileSync(path.join(ERP, 'ad_ctxhelp_app_rows.js'), '// GENERATED by erp/tools/build_help_pack.js from docs/ERPUserGuide.md - do not edit by hand. Applied by ad_ctxhelp_overlay.js after legacy\'s rows (boot overlay, outside the team base hash).\n' +
     '(function (g) { var L = ' + JSON.stringify(L, null, 0).replace(/,"rows":\[/, ',\n"rows": [\n').replace(/","(INSERT|UPDATE)/g, '",\n"$1') + ';\n  if (typeof module !== "undefined" && module.exports) module.exports = L; g.AD_CTXHELP_APP_ROWS = L; })(typeof window !== "undefined" ? window : globalThis);\n');
-  console.log('§CTXHELP_APP_ROWS helps=' + howto.length + ' statements=' + rows.length + ' links=' + links.map((x) => x.window + '>' + x.tab).join(',') + ' time=' + t);
+  console.log('§CTXHELP_APP_ROWS helps=' + howto.length + ' statements=' + rows.length + ' trl=' + (trl || []).length + ' ' + JSON.stringify(trlBy) + ' links=' + links.map((x) => x.window + '>' + x.tab).join(',') + ' time=' + t);
 }
 // §12 H1b: the names of the language, from its own published XML (first source wins, translated = present and not the English original):
 //   windows (AD_Window_Trl), tables (AD_Table_Trl), actions (AD_Ref_List_Trl of DocAction 135, by code), statuses (AD_Ref_List_Trl of DocStatus 131, by code).
@@ -151,15 +179,18 @@ function buildNames(lang) {
   q("SELECT ad_ref_list_id rid, ad_reference_id ref, value v FROM ad_ref_list WHERE ad_reference_id IN (131,135) AND isactive='Y' AND value<>'--'").forEach((r) => { const n = pick(R, r.rid); if (n) out[r.ref === 135 ? 'actions' : 'statuses'][r.v] = n; });
   return out;
 }
-// §12 H1b: the how-to rows of a language = the build session's translation file erp/tools/help_howto_<lang>.json, linked by the SAME linker with that language's window names
-function buildHowtoLang(lang, names, enRows) {
-  const f = path.join(__dirname, 'help_howto_' + lang + '.json'); if (!fs.existsSync(f)) return [];
-  const src = JSON.parse(fs.readFileSync(f, 'utf8')), link = linker(Object.keys(names.windows).map((id) => ({ id: Number(id), name: names.windows[id], whole: true })));   // a TRANSLATED row links a window name only as a whole bold term, in every language (CJK has no case: 菜单 'menu'; German nouns are all capitalised: 'Produkt')
-  return src.rows.map((r, k) => {
-    const en = enRows.find((e) => e.ad_window_id === r.window); if (!en) throw new Error(lang + ' how-to row for window ' + r.window + ' has no English row');
-    return { id: en.id, ctxtype: 'W', ad_window_id: r.window, name: r.name, window: names.windows[r.window] || en.window, kind: en.kind, table: en.table, translated: src.translated,
-      source: { guide: en.source.guide, heading: en.source.heading, url: en.source.url, sentences: en.source.sentences, translation: r.sentences },
-      html: r.sentences.map((p) => '<p>' + link(md(p)) + '</p>').join('') };
+// §12 H1b / §19.16 C3: the how-to rows of a language = its machine AD_CtxHelpMsg_Trl rows (erp/i18n/machine/AD_CtxHelpMsg_Trl_<lang>.xml, legacy's Translation XML; was
+//   tools/help_howto_<lang>.json), already linked by buildCtxTrl: the title paragraph -> name, the rest -> html. A published row is not a how-to of ours.
+const unmd = (h) => ent(h.replace(/<b>([^<]*)<\/b>/g, '**$1**').replace(/<i>([^<]*)<\/i>/g, '*$1*').replace(/<code>([^<]*)<\/code>/g, '`$1`'));   // md() reversed: the translator's own sentences, as the JSON kept them
+function buildHowtoLang(lang, names, enRows, trl) {
+  const raw = readCtxTrl(machineCtxFile(lang));
+  return trl.filter((r) => r.source === 'machine' && r.id >= APP_ID0).map((r) => {
+    const mr = raw[r.id];
+    const en = enRows[r.id - APP_ID0]; if (!en) throw new Error(lang + ' how-to message ' + r.id + ' has no English row');
+    const m = /^<p><strong>([\s\S]*?)<\/strong><\/p>([\s\S]*)$/.exec(r.text); if (!m) throw new Error(lang + ' message ' + r.id + ' has no title paragraph');
+    return { id: en.id, ctxtype: 'W', ad_window_id: en.ad_window_id, name: ent(m[1].replace(/<[^>]+>/g, '')), window: names.windows[en.ad_window_id] || en.window, kind: en.kind, table: en.table, translated: MACHINE_LABEL,
+      source: { guide: en.source.guide, heading: en.source.heading, url: en.source.url, sentences: en.source.sentences, translation: (mr.text.replace(/^<p><strong>[\s\S]*?<\/strong><\/p>/, '').match(/<p>[\s\S]*?<\/p>/g) || []).map((x) => unmd(x.slice(3, -4))) },
+      html: m[2] };
   });
 }
 function buildActions() {
@@ -183,7 +214,7 @@ function main() {
   const howto = buildHowto(windows).map((r) => Object.assign(r, { kind: (tables[r.ad_window_id] || {}).kind || null, table: (tables[r.ad_window_id] || {}).table || null }));
   const en = { lang: 'en_US', spec: 'bim-compiler prompts/VOCAB_MESSAGE_CATALOG.md §10', built: 'build_help_pack.js', howto, actions: buildActions() };
   fs.writeFileSync(path.join(OUT, 'en_US', 'help.json'), JSON.stringify(en));
-  buildCtxHelpRows(howto);
+  const msgIds = require(path.join(ERP, 'ad_ctxhelp_rows.js')).rows.filter((x) => /^INSERT OR IGNORE INTO ad_ctxhelpmsg \(/.test(x)).map((x) => Number(/VALUES \(\d+, \d+, (\d+),/.exec(x)[1])).concat(howto.map((h, k) => APP_ID0 + k)), allTrl = [];
   console.log('§HELP_PACK en_US howto=' + howto.length + ' links=' + howto.reduce((a, r) => a + (r.html.match(/data-help-win=/g) || []).length, 0) + ' actions=' + Object.keys(en.actions).length + ' bytes=' + fs.statSync(path.join(OUT, 'en_US', 'help.json')).size);
   Object.keys(SOURCES).forEach((lang) => {
     const b = buildFields(lang); fs.mkdirSync(path.join(OUT, lang), { recursive: true });
@@ -191,11 +222,13 @@ function main() {
     // each distinct text once: fields[id] = [descIndex, helpIndex] into texts (-1 = none) — 3,374 distinct texts carry 14,961 German fields (PERF BUDGET: no duplicate buffers)
     const texts = [], ix = new Map(), fields = {};
     Object.keys(b.fields).forEach((id) => { fields[id] = b.fields[id].map((t) => { if (t == null) return -1; if (!ix.has(t)) { ix.set(t, texts.length); texts.push(t); } return ix.get(t); }); });
-    const names = buildNames(lang), hl = buildHowtoLang(lang, names, howto);
+    const names = buildNames(lang), wlink = linker(Object.keys(names.windows).map((id) => ({ id: Number(id), name: names.windows[id], whole: true })));   // a TRANSLATED row links a window name only as a whole bold term, in every language (CJK has no case: 菜单 'menu'; German nouns are all capitalised: 'Produkt')
+    const trl = buildCtxTrl(lang, msgIds, wlink), hl = buildHowtoLang(lang, names, howto, trl); allTrl.push(...trl);
     fs.writeFileSync(f, JSON.stringify(Object.assign({ lang, spec: en.spec, sources: SOURCES[lang], texts, fields, names }, hl.length ? { howto: hl } : {})));
     console.log('§HELP_PACK ' + lang + ' fields=' + b.n + ' of ' + b.total + ' texts=' + texts.length + ' stale-original=' + b.stale + ' names windows=' + Object.keys(names.windows).length + ' tables=' + Object.keys(names.tables).length +
-      ' actions=' + Object.keys(names.actions).length + ' statuses=' + Object.keys(names.statuses).length + ' processes=' + Object.keys(names.processes).length + ' menus=' + Object.keys(names.menus).length + ' howto=' + hl.length + ' links=' + hl.reduce((a, r) => a + (r.html.match(/data-help-win=/g) || []).length, 0) + ' bytes=' + fs.statSync(f).size);
+      ' ctxtrl=' + trl.length + ' actions=' + Object.keys(names.actions).length + ' statuses=' + Object.keys(names.statuses).length + ' processes=' + Object.keys(names.processes).length + ' menus=' + Object.keys(names.menus).length + ' howto=' + hl.length + ' links=' + hl.reduce((a, r) => a + (r.html.match(/data-help-win=/g) || []).length, 0) + ' bytes=' + fs.statSync(f).size);
   });
+  buildCtxHelpRows(howto, allTrl);
 }
 // §19.10: the witnesses read the SAME source list (W-HQ-PROC-NAMES), never a copy of it
-if (require.main === module) main(); else module.exports = { SOURCES, CACHE };
+if (require.main === module) main(); else module.exports = { SOURCES, CACHE, md, readCtxTrl, titleP, machineCtxFile };
