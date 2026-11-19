@@ -5,7 +5,7 @@
 //             Legacy's rule (SynchronizeTerminology): a centrally maintained field takes its column's AD_Element translation (PO_ text in an
 //             IsSOTrx='N' window when present); otherwise its own AD_Field_Trl row. A text counts as translated when present and not equal to
 //             its English original. First source wins (the build_i18n.py order).
-//   howto   — AD_CtxHelp-shaped rows (ctxtype W) for the trade-cycle windows: sentences copied from docs/ERPUserGuide.md "The standard flow"
+//   howto   — AD_CtxHelp-shaped rows (ctxtype W; the same rows in legacy's own shape, CtxType T: erp/ad_ctxhelp_app_rows.js, §19.16 C2) for the trade-cycle windows: sentences copied from docs/ERPUserGuide.md "The standard flow"
 //             §1-§4 (bim-compiler), proof asides left out, the guide section linked; window names linked at build time (H3, ONE linker).
 //   actions — AD_Ref_List 135 (DocAction) name/description, the statuses an action is allowed from (AdDocFsm.TRANSITION), the CLI verb
 //             (common/door/verbs.json, the verb whose description says "Runs DocAction <code>", with its own input names).
@@ -65,6 +65,11 @@ function readGuide() {
   const i = process.argv.indexOf('--guide'); if (i > 0) return fs.readFileSync(process.argv[i + 1], 'utf8');
   return cp.execSync('git -C ' + JSON.stringify(path.join(os.homedir(), 'bim-compiler')) + ' show origin/master:docs/ERPUserGuide.md', { encoding: 'utf8', maxBuffer: 1 << 26 });
 }
+// §19.16 C2: the guide's own time (its last commit, or the file's mtime with --guide), the Created / Updated of the context-help rows, so a rebuild is stable
+function guideTime() {
+  const i = process.argv.indexOf('--guide'); if (i > 0) return fs.statSync(process.argv[i + 1]).mtime.toISOString().replace('T', ' ').slice(0, 19);
+  return cp.execSync('git -C ' + JSON.stringify(path.join(os.homedir(), 'bim-compiler')) + ' log -1 --format=%ci origin/master -- docs/ERPUserGuide.md', { encoding: 'utf8' }).trim().slice(0, 19);
+}
 // H3: ONE linker — a window's exact name in the text becomes a link (case-sensitive, longest name first, whole words, each name once)
 function linker(windows) {
   const names = windows.slice().sort((a, b) => b.name.length - a.name.length);
@@ -103,6 +108,32 @@ function buildHowto(windows) {
       html: paras.map((p) => '<p>' + link(md(p.replace(/\s*\n\s*/g, ' '))) + '</p>').join('') });
   });
   return rows;
+}
+// §19.16 C2 (VOCAB_MESSAGE_CATALOG): the same how-to rows in LEGACY's shape — AD_CtxHelp (CtxType T) + AD_CtxHelpMsg, linked from the window's first tab
+//   (AD_Tab.AD_CtxHelp_ID, the column legacy's MCtxHelpMsg.getCtxHelpID reads for CTXTYPE_Tab). App-own ids 1000000+ (the twin gives a new record -opId). Written to
+//   erp/ad_ctxhelp_app_rows.js, applied by the ONE boot overlay (ad_ctxhelp_overlay.js) after legacy's rows; INSERT OR IGNORE, and the link only when the tab has none,
+//   so a re-applied overlay never overwrites an edit. Outside the hashed patches (Team BASE hash).
+const APP_ID0 = 1000000;
+function uuidOf(name) {   // RFC 4122 name-based (v5, SHA-1, URL namespace): the same row gets the same _UU on every rebuild
+  const ns = Buffer.from('6ba7b8119dad11d180b400c04fd430c8', 'hex'), h = require('crypto').createHash('sha1').update(Buffer.concat([ns, Buffer.from('kernel-erp:' + name, 'utf8')])).digest();
+  h[6] = (h[6] & 0x0f) | 0x50; h[8] = (h[8] & 0x3f) | 0x80; const x = h.subarray(0, 16).toString('hex');
+  return x.slice(0, 8) + '-' + x.slice(8, 12) + '-' + x.slice(12, 16) + '-' + x.slice(16, 20) + '-' + x.slice(20);
+}
+function buildCtxHelpRows(howto) {
+  const lit = (v) => v == null ? 'NULL' : typeof v === 'number' ? String(v) : "'" + String(v).replace(/'/g, "''") + "'", t = guideTime(), rows = [], links = [];
+  const ins = (table, o) => 'INSERT OR IGNORE INTO ' + table + ' (' + Object.keys(o).join(', ') + ') VALUES (' + Object.keys(o).map((k) => lit(o[k])).join(', ') + ')';
+  howto.forEach((h, k) => {
+    const id = APP_ID0 + k, tab = q('SELECT ad_tab_id t FROM ad_tab WHERE ad_window_id=' + Number(h.ad_window_id) + " AND tablevel=0 AND isactive='Y' ORDER BY seqno, ad_tab_id LIMIT 1")[0];
+    if (!tab) throw new Error('window ' + h.ad_window_id + ' has no first tab');
+    rows.push(ins('ad_ctxhelp', { ad_client_id: 0, ad_ctxhelp_id: id, ad_ctxhelp_uu: uuidOf('ad_ctxhelp|' + id), ad_org_id: 0, created: t, createdby: 100, ctxtype: 'T', description: h.source.url, isactive: 'Y', name: h.name, updated: t, updatedby: 100 }));
+    rows.push(ins('ad_ctxhelpmsg', { ad_client_id: 0, ad_ctxhelp_id: id, ad_ctxhelpmsg_id: id, ad_ctxhelpmsg_uu: uuidOf('ad_ctxhelpmsg|' + id), ad_org_id: 0, created: t, createdby: 100, isactive: 'Y', line: null, msgtext: h.html, updated: t, updatedby: 100 }));
+    rows.push('UPDATE ad_tab SET ad_ctxhelp_id=' + id + ' WHERE ad_tab_id=' + Number(tab.t) + ' AND ad_ctxhelp_id IS NULL');
+    links.push({ help: id, window: h.ad_window_id, tab: Number(tab.t), name: h.name });
+  });
+  const L = { spec: 'bim-compiler prompts/VOCAB_MESSAGE_CATALOG.md §19.16 C2', source: 'docs/ERPUserGuide.md The standard flow (build_help_pack.js HOWTO)', time: t, links, rows };
+  fs.writeFileSync(path.join(ERP, 'ad_ctxhelp_app_rows.js'), '// GENERATED by erp/tools/build_help_pack.js from docs/ERPUserGuide.md - do not edit by hand. Applied by ad_ctxhelp_overlay.js after legacy\'s rows (boot overlay, outside the team base hash).\n' +
+    '(function (g) { var L = ' + JSON.stringify(L, null, 0).replace(/,"rows":\[/, ',\n"rows": [\n').replace(/","(INSERT|UPDATE)/g, '",\n"$1') + ';\n  if (typeof module !== "undefined" && module.exports) module.exports = L; g.AD_CTXHELP_APP_ROWS = L; })(typeof window !== "undefined" ? window : globalThis);\n');
+  console.log('§CTXHELP_APP_ROWS helps=' + howto.length + ' statements=' + rows.length + ' links=' + links.map((x) => x.window + '>' + x.tab).join(',') + ' time=' + t);
 }
 // §12 H1b: the names of the language, from its own published XML (first source wins, translated = present and not the English original):
 //   windows (AD_Window_Trl), tables (AD_Table_Trl), actions (AD_Ref_List_Trl of DocAction 135, by code), statuses (AD_Ref_List_Trl of DocStatus 131, by code).
@@ -152,6 +183,7 @@ function main() {
   const howto = buildHowto(windows).map((r) => Object.assign(r, { kind: (tables[r.ad_window_id] || {}).kind || null, table: (tables[r.ad_window_id] || {}).table || null }));
   const en = { lang: 'en_US', spec: 'bim-compiler prompts/VOCAB_MESSAGE_CATALOG.md §10', built: 'build_help_pack.js', howto, actions: buildActions() };
   fs.writeFileSync(path.join(OUT, 'en_US', 'help.json'), JSON.stringify(en));
+  buildCtxHelpRows(howto);
   console.log('§HELP_PACK en_US howto=' + howto.length + ' links=' + howto.reduce((a, r) => a + (r.html.match(/data-help-win=/g) || []).length, 0) + ' actions=' + Object.keys(en.actions).length + ' bytes=' + fs.statSync(path.join(OUT, 'en_US', 'help.json')).size);
   Object.keys(SOURCES).forEach((lang) => {
     const b = buildFields(lang); fs.mkdirSync(path.join(OUT, lang), { recursive: true });
