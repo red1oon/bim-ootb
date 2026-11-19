@@ -43,10 +43,12 @@
   // ── B2.8 Viewer database ── q(sql) -> array of row arrays (sql.js: db.exec(sql)[0].values)
   var ROWS_SQL = "SELECT m.ifc_class, coalesce(m.material_name,''), b.minX, b.maxX, b.minY, b.maxY, b.minZ, b.maxZ FROM elements_meta m LEFT JOIN element_world_bbox b ON b.guid = m.guid";
   var TABLES_SQL = "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name";
+  var OLD_COUNT = typeof process !== 'undefined' && process.env && process.env.UAT_OPT_BREAK === '1';   // W-UAT-COMPARE-OPTIONAL's break switch only (the pre-§5.90 count)
   function r3(v) { return v === null || v === undefined ? null : Math.round(Number(v) * 1000) / 1000; }
   function summarizeDb(q) {
     var rows = q(ROWS_SQL).map(function (r) { return [r[0], r[1]].concat(r.slice(2).map(r3)); }), tables = {};
-    q(TABLES_SQL).forEach(function (t) { tables[t[0]] = Number((q('SELECT COUNT(*) FROM "' + t[0] + '"')[0] || [0])[0]); });
+    // §5.90: project_metadata's building_type is written only when the type is STATED (guide B2.2c's optional Accept all), so it is not counted: a tester who skips that optional step is not failed for it
+    q(TABLES_SQL).forEach(function (t) { tables[t[0]] = Number((q('SELECT COUNT(*) FROM "' + t[0] + '"' + (t[0] === 'project_metadata' && !OLD_COUNT ? " WHERE key <> 'building_type'" : ''))[0] || [0])[0]); });
     return { rows: rows, tables: tables };
   }
   function multisetDiff(a, b) {
