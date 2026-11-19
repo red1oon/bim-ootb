@@ -9,8 +9,13 @@
 //   K2 idempotent: a second ensure() adds 0 rows, 0 tables, 0 columns, and no key repeats.
 //   K3 end of the chain, the REAL page (idempiere.html, GardenAdmin): the menu entry "Context Help" opens window 200034 and its first tab shows legacy's row (its name).
 //   K5 the Team BASE does not move: the seed + its two hashed patches hash (team_sync.js hashBase manifest, rebuilt here) the same on this tree as on origin/main.
+//   §19.16 C2 (amended K1/K2/K3, new K6): the app's own how-to rows (ad_ctxhelp_app_rows.js, from the user guide) are ADDED to legacy's, never in place of them:
+//   K1 each legacy row is in the twin with equal values, the twin's other rows are exactly the app file's (id >= 1000000, client 0); K2 an edited app message survives a second
+//   ensure; K6 LEGACY's lookup (MCtxHelpMsg.getCtxHelpID for CTXTYPE_Tab + get's message query, ported as SQL) finds each how-to on its window's first tab, and its text == the
+//   guide section's own paragraphs, read HERE from the guide; K3 the page's Find window counts legacy's + the app's rows and shows every name.
+//   Reds C2: CTX_BREAK=nolink (the app file without its AD_Tab updates) -> K6 FAIL; CTX_BREAK=dropsec (one how-to dropped) -> K6 FAIL.
 // Reds: CTX_BREAK=nomsg (the rows file without its ad_ctxhelpmsg row) -> K1 FAIL; CTX_BREAK=patch (one line appended to the hashed patch) -> K5 FAIL; CTX_BREAK=nooverlay (page without the overlay) -> K3 FAIL.
-// Run: node erp/tests/witness_ctxhelp_overlay.js   Env: CTX_BREAK=nomsg|patch|nooverlay  NOPAGE=1
+// Run: node erp/tests/witness_ctxhelp_overlay.js   Env: CTX_BREAK=nomsg|patch|nooverlay|nolink|dropsec  NOPAGE=1
 'use strict';
 const fs = require('fs'), path = require('path'), cp = require('child_process'), crypto = require('crypto');
 const ERP = path.join(__dirname, '..'), ROOT = path.join(ERP, '..'), BR = process.env.CTX_BREAK || '';
@@ -34,6 +39,20 @@ function rowsData() {   // the overlay's data; CTX_BREAK=nomsg drops the ad_ctxh
   if (BR === 'nomsg') D.rows = D.rows.filter((s) => !/^INSERT OR IGNORE INTO ad_ctxhelpmsg /.test(s));
   return D;
 }
+function appData() {   // the app's how-to rows; CTX_BREAK=nolink drops the AD_Tab links, dropsec drops the last how-to (its 2 rows + its link)
+  const A = JSON.parse(JSON.stringify(require(path.join(ERP, 'ad_ctxhelp_app_rows.js'))));
+  if (BR === 'nolink') A.rows = A.rows.filter((s) => !/^UPDATE ad_tab /.test(s));
+  if (BR === 'dropsec') { const last = A.links.pop(); A.rows = A.rows.filter((s) => s.indexOf(String(last.help)) < 0); }
+  return A;
+}
+const APP_ID0 = 1000000;
+const norm = (x) => String(x == null ? '' : x).replace(/^(\d{4}-\d\d-\d\d)T(\d\d:\d\d:\d\d).*$/, '$1 $2').replace(/\.0+$/, '');
+const plain = (h) => String(h || '').replace(/<[^>]+>/g, '').replace(/&(amp|lt|gt|quot|#39);/g, (m, e) => ({ amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'" }[e])).split(/\s+/).filter(Boolean).join(' ');
+function guideSection(guide, name) {   // the guide's own paragraphs under '### <name>', proof asides (> ...) left out, markdown marks removed - read here, not from the builder
+  const lines = guide.split('\n'), at = lines.indexOf('### ' + name); if (at < 0) return null;
+  const body = []; for (let i = at + 1; i < lines.length && !/^#{1,3} /.test(lines[i]); i++) body.push(lines[i]);
+  return body.join('\n').split(/\n\s*\n/).map((x) => x.trim()).filter((x) => x && !x.startsWith('>')).map((x) => x.replace(/\*\*([^*]+)\*\*/g, '$1').replace(/\*([^*]+)\*/g, '$1').replace(/`([^`]+)`/g, '$1')).join(' ').split(/\s+/).filter(Boolean).join(' ');
+}
 function baseHash(seedBuf, patchTexts) {   // team_sync.js:173-176 hashBase, rebuilt in node: seed sha256 + size, then each patch by position
   const sha = (b) => crypto.createHash('sha256').update(b).digest('hex');
   let man = 'seed ' + sha(seedBuf) + ' ' + seedBuf.length + '\n'; patchTexts.forEach((t, i) => { man += '--patch ' + i + (t == null ? ' MISSING' : '\n' + t) + '\n'; });
@@ -48,7 +67,8 @@ async function nodePart() {
   const before = TABLES.filter((t) => colsOf(db, t).length);
   L('before the overlay: tables present ' + before.length + ' of ' + TABLES.length + ' (' + (before.join(',') || 'none') + ')');
   const O = require(path.join(ERP, 'ad_ctxhelp_overlay.js')), D = rowsData();
-  global.AD_CTXHELP_ROWS = D;
+  global.AD_CTXHELP_ROWS = D; const A = appData(); global.AD_CTXHELP_APP_ROWS = A;
+  const appCount = (t) => A.rows.filter((s) => s.indexOf('INSERT OR IGNORE INTO ' + t + ' (') === 0).length;
   const lg = console.log; let line = ''; console.log = (m) => { line = String(m); }; const r1 = O.ensure(db); console.log = lg; L('first ' + line);
   // K1 against legacy, read here
   const legacyCols = PG("select table_name, string_agg(column_name, ',' order by ordinal_position) from information_schema.columns where table_schema='adempiere' and table_name in ('" + TABLES.join("','") + "') group by 1");
@@ -61,19 +81,57 @@ async function nodePart() {
       if (mine === want && want) colOk++; else miss.push(t + ' columns differ');
       const lcnt = Number((PG('select count(*) from ' + t) || ['-1'])[0]), tcnt = Number(exec1(db, 'SELECT count(*) FROM ' + t)[0][0]);
       L('K1 ' + t + ' columns=' + colsOf(db, t).length + ' legacy=' + want.split(',').length + ' rows twin=' + tcnt + ' legacy=' + lcnt);
-      if (lcnt === tcnt && lcnt >= 0) cntOk++; else miss.push(t + ' rows ' + tcnt + ' != legacy ' + lcnt);
+      if (lcnt >= 0 && tcnt === lcnt + appCount(t)) cntOk++; else miss.push(t + ' rows ' + tcnt + ' != legacy ' + lcnt + ' + app ' + appCount(t));
     });
+    // each legacy row of the 4 context-help tables is in the twin with equal values (by key); the twin's other rows are the app's (id >= 1000000, client 0)
+    let rowN = 0, rowEq = 0, extra = 0, extraOk = 0;
+    D.tables.forEach((T) => {
+      const lj = PG('select coalesce(json_agg(x), \'[]\') from ' + T.t + ' x'), lrows = lj ? JSON.parse(lj[0]) : [], key = (o) => T.pk.map((k) => String(o[k])).join('|'), lkeys = {};
+      lrows.forEach((o) => { rowN++; lkeys[key(o)] = 1; const r = db.exec('SELECT * FROM ' + T.t + ' WHERE ' + T.pk.map((k) => k + '=?').join(' AND '), T.pk.map((k) => o[k]))[0];
+        const tw = r ? Object.fromEntries(r.columns.map((c, i) => [c.toLowerCase(), r.values[0][i]])) : null;
+        const diff = tw ? T.cols.filter((c) => norm(tw[c]) !== norm(o[c])) : ['missing'];
+        if (!diff.length) rowEq++; else miss.push(T.t + ' ' + key(o) + ' differs: ' + diff.join(',')); });
+      const tr = db.exec('SELECT ' + T.pk.join(',') + ', ad_client_id FROM ' + T.t)[0];
+      (tr ? tr.values : []).forEach((v) => { const k = v.slice(0, T.pk.length).map(String).join('|'); if (lkeys[k]) return; extra++; if (Number(v[0]) >= APP_ID0 && Number(v[v.length - 1]) === 0) extraOk++; else miss.push(T.t + ' extra row ' + k + ' not app-own'); });
+    });
+    L('K1 legacy rows equal ' + rowEq + ' of ' + rowN + '; twin-only rows ' + extra + ', app-own (id >= ' + APP_ID0 + ', client 0) ' + extraOk);
     const linkT = PG("select table_name from information_schema.columns where table_schema='adempiere' and column_name='ad_ctxhelp_id' and table_name not in ('" + TABLES.join("','") + "') order by 1") || [];
     const seedHas = linkT.filter((t) => colsOf(db, t).length), linkOk = seedHas.filter((t) => colsOf(db, t).indexOf('ad_ctxhelp_id') >= 0);
     L('K1 link column ad_ctxhelp_id: legacy tables ' + linkT.length + ', in the seed ' + seedHas.length + ', carry it ' + linkOk.length + ' (' + seedHas.filter((t) => linkOk.indexOf(t) < 0).join(',') + ' missing)');
-    chk('K1 the overlay is legacy\'s: columns ' + colOk + ' of 6, row counts ' + cntOk + ' of 6, link column ' + linkOk.length + ' of ' + seedHas.length, colOk === 6 && cntOk === 6 && seedHas.length > 0 && linkOk.length === seedHas.length, miss.join(' ; '));
+    chk('K1 the overlay is legacy\'s + the app\'s: columns ' + colOk + ' of 6, row counts (legacy + app) ' + cntOk + ' of 6, legacy rows equal ' + rowEq + ' of ' + rowN + ', twin-only rows app-own ' + extraOk + ' of ' + extra + ', link column ' + linkOk.length + ' of ' + seedHas.length,
+      colOk === 6 && cntOk === 6 && rowN > 0 && rowEq === rowN && extraOk === extra && seedHas.length > 0 && linkOk.length === seedHas.length, miss.join(' ; '));
   }
   // K2 idempotent
+  const EDIT = 'edited by a tenant admin (W-CTXHELP-OVERLAY K2)'; db.run('UPDATE ad_ctxhelpmsg SET msgtext=? WHERE ad_ctxhelpmsg_id=?', [EDIT, APP_ID0]);
   console.log = (m) => { line = String(m); }; const r2 = O.ensure(db); console.log = lg; L('second ' + line);
+  const kept = (exec1(db, 'SELECT msgtext FROM ad_ctxhelpmsg WHERE ad_ctxhelpmsg_id=' + APP_ID0)[0] || [])[0] === EDIT; L('K2 edited app message ' + APP_ID0 + ' kept after the second ensure: ' + kept);
   const keys = D.tables.map((T) => { const n = Number(exec1(db, 'SELECT count(*) FROM ' + T.t)[0][0]), d = Number(exec1(db, 'SELECT count(*) FROM (SELECT DISTINCT ' + T.pk.join(',') + ' FROM ' + T.t + ')')[0][0]); return { t: T.t, n, d }; });
   const dup = keys.filter((x) => x.n !== x.d);
-  chk('K2 a second ensure adds nothing: rows=' + r2.rows + ' tables=' + r2.tables + ', key repeats in ' + dup.length + ' of ' + keys.length + ' tables (first run added rows=' + r1.rows + ')',
-    r2.rows === 0 && r2.tables === 0 && dup.length === 0 && r1.rows > 0, dup.map((x) => x.t).join(','));
+  chk('K2 a second ensure adds nothing: rows=' + r2.rows + ' tables=' + r2.tables + ', key repeats in ' + dup.length + ' of ' + keys.length + ' tables (first run added rows=' + r1.rows + ' app=' + r1.app + ')',
+    r2.rows === 0 && r2.app === 0 && r2.tables === 0 && dup.length === 0 && r1.rows > 0 && r1.app > 0 && kept, dup.map((x) => x.t).join(',') + (kept ? '' : ' edit overwritten'));
+  // K6 legacy's own lookup finds each how-to on its window's first tab (fresh db, one ensure)
+  const db6 = new SQL.Database(new Uint8Array(fs.readFileSync(H.SEED)));
+  fs.readFileSync(path.join(ERP, 'patches', 'ad_seed.db.sql'), 'utf8').split(/;\s*\n/).forEach((st) => { st = st.replace(/^\s*--[^\n]*\n?/gm, '').trim(); if (st) { try { db6.run(st); } catch (e) {} } });
+  console.log = () => {}; O.ensure(db6); console.log = lg;
+  const CLIENT = 11, ORG = 0, full = require(path.join(ERP, 'ad_ctxhelp_app_rows.js')).links;   // the denominator = the generated file's how-tos, not the (maybe broken) applied set
+  let guide = null; try { guide = cp.execSync('git -C ' + JSON.stringify(path.join(require('os').homedir(), 'bim-compiler')) + ' show origin/master:docs/ERPUserGuide.md', { encoding: 'utf8', maxBuffer: 1 << 26 }); } catch (e) {}
+  if (!guide) incon('K6', 'the guide (bim-compiler origin/master docs/ERPUserGuide.md) not readable');
+  else {
+    let found = 0, same = 0, typeT = 0; const bad = [];
+    full.forEach((x) => {
+      // MCtxHelpMsg.getCtxHelpID, CTXTYPE_Tab (MCtxHelpMsg.java:170-204)
+      const hid = (exec1(db6, "SELECT t.AD_CtxHelp_ID FROM AD_Tab t, AD_CtxHelp h WHERE t.AD_CtxHelp_ID=h.AD_CtxHelp_ID AND t.IsActive='Y' AND h.IsActive='Y' AND h.AD_Client_ID IN (0, " + CLIENT + ") AND h.AD_Org_ID IN (0, " + ORG + ") AND t.AD_Tab_ID=" + x.tab + ' ORDER BY h.AD_Client_ID DESC, h.AD_Org_ID DESC, h.AD_CtxHelp_ID DESC')[0] || [])[0];
+      // MCtxHelpMsg.get: the message (MCtxHelpMsg.java:96-100)
+      const msg = hid ? (exec1(db6, "SELECT msgtext FROM AD_CtxHelpMsg WHERE IsActive = 'Y' AND AD_Client_ID IN (0, " + CLIENT + ")  AND AD_Org_ID IN (0, " + ORG + ")  AND AD_CtxHelp_ID = " + hid + ' ORDER BY AD_Client_ID DESC, AD_Org_ID DESC, AD_CtxHelpMsg_ID DESC')[0] || [])[0] : null;
+      const ct = hid ? (exec1(db6, 'SELECT ctxtype FROM ad_ctxhelp WHERE ad_ctxhelp_id=' + hid)[0] || [])[0] : null, want = guideSection(guide, x.name), got = plain(msg);
+      if (msg) found++; else bad.push('window ' + x.window + ' tab ' + x.tab + ': no message');
+      if (msg && want && got === want) same++; else if (msg) bad.push('window ' + x.window + ' text differs from the guide (' + got.length + ' vs ' + (want || '').length + ' chars)');
+      if (ct === 'T') typeT++;
+      L('K6 window ' + x.window + ' tab ' + x.tab + ' -> help ' + (hid || 'none') + ' ctxtype=' + ct + ' text ' + (msg ? (got === want ? '== guide' : 'DIFFERS') : 'none') + ' "' + got.slice(0, 60) + '"');
+    });
+    chk('K6 legacy\'s lookup finds the how-to on the first tab ' + found + ' of ' + full.length + ', text == the guide ' + same + ' of ' + full.length + ', CtxType T ' + typeT + ' of ' + full.length,
+      full.length > 0 && found === full.length && same === full.length && typeT === full.length, bad.join(' ; '));
+  }
   // K5 the team base
   const seedBuf = fs.readFileSync(H.SEED), pt = (rel) => fs.readFileSync(path.join(ERP, 'patches', rel), 'utf8');
   const mainT = (rel) => { try { return cp.execSync('git show origin/main:erp/patches/' + rel, { cwd: ROOT, maxBuffer: 1 << 26, encoding: 'utf8' }); } catch (e) { return null; } };
@@ -85,7 +143,7 @@ async function nodePart() {
 async function pagePart() {
   const over = BR === 'nooverlay' ? { '/erp/ad_ctxhelp_rows.js': path.join(require('os').tmpdir(), 'ctx_empty_' + process.pid + '.js') } : null;
   if (over) fs.writeFileSync(over['/erp/ad_ctxhelp_rows.js'], '');
-  const want = PG("select name from ad_ctxhelp order by ad_ctxhelp_id");
+  const lw = PG("select name from ad_ctxhelp order by ad_ctxhelp_id"), want = lw && lw.length ? lw.concat(require(path.join(ERP, 'ad_ctxhelp_app_rows.js')).links.map((x) => x.name)) : lw;   // §19.16 C2: legacy's + the app's
   const P = await H.erpPage(null, over);
   try {
     L('page chromium ' + P.version + ' ' + (P.logs.filter((l) => l.indexOf('§CTXHELP_OVERLAY') === 0).pop() || 'no §CTXHELP_OVERLAY line'));
@@ -96,12 +154,16 @@ async function pagePart() {
     let findTxt = ''; for (let i = 0; i < 20 && !findTxt; i++) { await P.pg.waitForTimeout(250); findTxt = await P.pg.evaluate(() => { const o = document.querySelector('#idmp-find-ov'); return o ? o.innerText : ''; }); }
     const recs = (/Records = (\d+)/.exec(findTxt) || [])[1]; L('K3 find window ' + (findTxt ? 'open, Records = ' + recs : 'not shown'));
     if (findTxt) await P.pg.evaluate(() => document.querySelector('#idmp-find-ov [data-find-ok]').click());
+    // §19.16 C2: with several rows the tab opens on the FIRST record as a form (AD_Tab single row, as legacy); the user's Grid Toggle shows them all (poc_toggle_save_live.js way)
+    for (let i = 0; i < 20; i++) { await P.pg.waitForTimeout(250); if (await P.pg.evaluate(() => !!document.querySelector('#idmp-content #idmp-form, #idmp-content .idmp-form, .idmp-grid'))) break; }
+    if (await P.pg.evaluate(() => !!document.querySelector('#idmp-content #idmp-form, #idmp-content .idmp-form'))) { await P.pg.click('#idmp-toolbar [data-tb="toggle"]'); await P.pg.waitForTimeout(900); }
+    L('K3 grid rows on screen ' + await P.pg.$$eval('.idmp-grid tbody tr[data-ad-record]', (e) => e.length));
     // a single-row tab shows the name in an input box (innerText has no values), so the values are read too
     let txt = ''; for (let i = 0; i < 40; i++) { await P.pg.waitForTimeout(250); txt = await P.pg.evaluate(() => document.body.innerText + '\n' + Array.from(document.querySelectorAll('input,textarea')).map((e) => e.value).join('\n')); if (want && want.every((w) => txt.indexOf(w) >= 0)) break; }
     const opened = P.logs.slice(n0).filter((l) => l.indexOf('§IDEMPIERE window=') === 0).join(' | ');
     L('K3 ' + (opened || 'no §IDEMPIERE window line') + ' legacy names=' + JSON.stringify(want));
     if (!want || !want.length) incon('K3', 'legacy Postgres unreachable or no ad_ctxhelp row');
-    else chk('K3 the Context Help window opens on the twin and shows legacy\'s ' + want.length + ' row(s): ' + want.filter((w) => txt.indexOf(w) >= 0).length + ' of ' + want.length + ' names on screen', /\(200034\)/.test(opened) && want.every((w) => txt.indexOf(w) >= 0));
+    else chk('K3 the Context Help window opens on the twin, Find says Records = ' + recs + ' (want ' + want.length + '), and shows legacy\'s + the app\'s ' + want.length + ' row(s): ' + want.filter((w) => txt.indexOf(w) >= 0).length + ' of ' + want.length + ' names on screen', /\(200034\)/.test(opened) && Number(recs) === want.length && want.every((w) => txt.indexOf(w) >= 0));
     if (P.errs.length) L('page errors: ' + P.errs.slice(0, 3).join(' | '));
   } finally { await P.close(); if (over) fs.unlinkSync(over['/erp/ad_ctxhelp_rows.js']); }
 }

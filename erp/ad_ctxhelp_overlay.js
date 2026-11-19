@@ -8,6 +8,8 @@
   'use strict';
   function log(m) { try { console.log(m); } catch (e) {} }
   function data() { return global.AD_CTXHELP_ROWS || (typeof module !== 'undefined' && module.exports ? require('./ad_ctxhelp_rows.js') : null); }
+  // §19.16 C2: the app's own how-to rows in legacy's shape (CtxType T + the AD_Tab link), generated from the user guide by tools/build_help_pack.js; applied after legacy's
+  function appData() { if (global.AD_CTXHELP_APP_ROWS) return global.AD_CTXHELP_APP_ROWS; if (typeof module !== 'undefined' && module.exports) { try { return require('./ad_ctxhelp_app_rows.js'); } catch (e) {} } return null; }
   function colsOf(db, t) { var r = db.exec('PRAGMA table_info("' + t + '")'); return r.length ? r[0].values.map(function (v) { return String(v[1]).toLowerCase(); }) : []; }
   // ensure(db) - a sql.js Database. Returns { tables, rows, skipped, ms }: tables created, rows inserted (INSERT OR IGNORE on the key, so a tenant's row is never overwritten).
   function ensure(db) {
@@ -15,12 +17,14 @@
     if (!D) { log('§CTXHELP_OVERLAY ensure SKIPPED no ad_ctxhelp_rows.js'); return { tables: 0, rows: 0, skipped: 0, ms: 0 }; }
     D.tables.forEach(function (T) { if (!colsOf(db, T.t).length) { db.run(T.ddl); made++; } });
     D.rows.forEach(function (st) { try { db.run(st); ok += db.getRowsModified(); } catch (e) { skip++; } });
-    var out = { tables: made, rows: ok, skipped: skip, ms: Date.now() - t0 };
-    log('§CTXHELP_OVERLAY ensure tables=' + made + '/' + D.tables.length + ' rows=' + ok + '/' + D.rows.length + ' skipped=' + skip + ' ms=' + out.ms +
+    var A = appData(), app = 0, appN = A && A.rows ? A.rows.length : 0;
+    if (A && A.rows) A.rows.forEach(function (st) { try { db.run(st); app += db.getRowsModified(); } catch (e) { skip++; } });
+    var out = { tables: made, rows: ok, app: app, skipped: skip, ms: Date.now() - t0 };
+    log('§CTXHELP_OVERLAY ensure tables=' + made + '/' + D.tables.length + ' rows=' + ok + '/' + D.rows.length + ' app=' + app + '/' + appN + ' skipped=' + skip + ' ms=' + out.ms +
       ' (legacy context help tables; boot overlay, outside the team base hash)');
     return out;
   }
-  var API = { ensure: ensure, data: data };
+  var API = { ensure: ensure, data: data, appData: appData };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   global.AdCtxHelpOverlay = API;
 })(typeof window !== 'undefined' ? window : globalThis);
