@@ -81,7 +81,7 @@ const ROOT = process.env.CACHE_4D_DIR || path.join(HOME, '.cache', 'bim4d');
 const TMP = require(path.join(__dirname, 'lib', 'tm_played_layer.js'));
 // §Q.33.11 — the viewer plays <db> + buildings/patches/<db>.sql (scene.js A._applyPendingPatch); so does this run, through the SAME chunker (lib/apply_building_patch.js).
 // CACHE_PATCHES = agg (default: the rel_aggregates statements only) | all (the whole patch, as the browser) | 0 (raw file, the pre-§Q.33.11 behaviour).
-// What WOULD be applied is part of the cache key. Why 'agg' is the default: lib/apply_building_patch.js header.
+// What WOULD be applied is part of the cache key. Default 'all' (the DB the viewer plays, §Q.35.3); history of the old 'agg' default: lib/apply_building_patch.js header.
 const BP = require(path.join(__dirname, 'lib', 'apply_building_patch.js'));
 const usePatches = () => BP.mode() !== '0';
 
