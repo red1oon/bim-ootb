@@ -25,4 +25,9 @@ A.loadLegacy(cfg, null, { all: /site_copy\.json$/.test(out) }).then(d => {
   d.meta.takenAt = new Date().toISOString();
   fs.writeFileSync(out, JSON.stringify(d));
   console.log('§DASH_LEGACY_SNAPSHOT base=' + base + ' ' + A.ENTITIES.map(e => e + '=' + d[e].length).join(' ') + ' unavailable=[' + d.unavailable.join(',') + '] -> ' + out);
+  // §5.89: say WHY each table is missing, and fail when a table the dashboard cannot do without is missing (a read of nothing is not a success)
+  d.unavailable.forEach(e => console.log('§DASH_LEGACY_UNAVAILABLE entity=' + e + ' optional=' + (A.OPTIONAL.indexOf(e) >= 0 ? 'yes' : 'no') + ' reason=' + (d.meta['err_' + e] || 'no rows')));
+  const req = d.unavailable.filter(e => A.OPTIONAL.indexOf(e) < 0), opt = d.unavailable.filter(e => A.OPTIONAL.indexOf(e) >= 0);
+  if (req.length) { console.log('§DASH_LEGACY_READ_VERDICT FAIL required_missing=[' + req.join(',') + '] fix=apply capex/legacy/ws/migration/iD13/postgresql/202611042300_CAPEX-WS-READ.sql (UAT Guide A2), then restart iDempiere'); process.exitCode = 1; }
+  else console.log('§DASH_LEGACY_READ_VERDICT PASS optional_missing=[' + opt.join(',') + ']');
 }).catch(e => { console.error('§DASH_LEGACY_SNAPSHOT FAIL ' + e.message + (e.cause ? ' (' + e.cause.code + ')' : '')); process.exit(1); });
