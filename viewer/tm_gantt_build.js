@@ -286,7 +286,8 @@
       if (_chainPts) { if (_civ) _chainCivil++; else _chainKept++; }
       var ov = _civ || matchNameOverride(cls, elName);   // §CIVIL_PHASE
       if (ov) nameOverrides++;
-      var rule = ov || matchRule(cls);
+      var _SAa = window.ScheduleAuthor;
+      var rule = ov || (_SAa && _SAa.assemblyRule ? _SAa.assemblyRule(db, row[0], matchRule(cls), function (pc) { return matchRule(pc); }) : matchRule(cls));   // §ASSEMBLY_RULE
       var seq = rule.sequence, phase = rule.phase;
 
       return {

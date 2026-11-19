@@ -322,7 +322,8 @@
       var cls = row[1], elName = row[2] || '', rawStorey = row[3] || '_UNKNOWN', cz = row[4] || 0, bz = row[5] || 0;
       var cx = row[6] || 0, cy = row[7] || 0, bx = row[8] || 0, by = row[9] || 0;
       var storey = assignStoreyByZ(rawStorey, cz);
-      var rule = _civilRule(db, row[0]) || matchRule(cls, elName);   // §CIVIL_PHASE
+      var _SAa = (typeof window !== 'undefined' && window.ScheduleAuthor) || null;
+      var rule = _civilRule(db, row[0]) || (_SAa && _SAa.assemblyRule ? _SAa.assemblyRule(db, row[0], matchRule(cls, elName), function (pc) { return matchRule(pc, ''); }) : matchRule(cls, elName));   // §CIVIL_PHASE · §ASSEMBLY_RULE (same classification as the scheduler)
       return {
         guid: row[0], cls: cls, storey: storey,
         base_z: cz - bz / 2, top_z: cz + bz / 2,
@@ -780,7 +781,7 @@
         if (!cls) return;
         var ov = _civilRule(db, guid) || (SA.matchNameOverride ? SA.matchNameOverride(cls, nm, NO) : null);   // §CIVIL_PHASE
         if (ov) ovN++;
-        var rule = ov || SA.matchRule(cls, SR, SD);
+        var rule = ov || (SA.assemblyRule ? SA.assemblyRule(db, guid, SA.matchRule(cls, SR, SD), function (pc) { return SA.matchRule(pc, SR, SD); }) : SA.matchRule(cls, SR, SD));   // §ASSEMBLY_RULE (cost recompute = scheduler, §HR_COST_AGREE)
         var bx = row[3] || 0, by = row[4] || 0, bz = row[5] || 0;
         var realQty = (frag.fragmented[cls] && frag.area[guid] != null) ? frag.area[guid] : null;
         var hasGeom = bx > 0 || by > 0 || bz > 0;

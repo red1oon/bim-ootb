@@ -146,6 +146,38 @@
     var d = c.map[guid];
     return d ? (table[d] || null) : null;
   }
+  // assemblyRule(db, guid, rule, ruleOfClass) — §ASSEMBLY_RULE (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.33.9). A part whose own class
+  // rule is Superstructure but whose DECLARED assembly (rel_aggregates parent) has a non-structural rule takes the assembly's rule: a
+  // curtain-wall mullion (IfcMember) or panel (IfcPlate) is façade work, not frame — filed as structure it "carried" the floors (§Q.32).
+  // Extracted fact only: no rel_aggregates table (or no parent row) -> the rule as given. ruleOfClass(cls) is the caller's own class lookup,
+  // so the scheduler and the renderer (tm_sched_xray.js) classify the parent the same way they classify everything else. ONE owner.
+  var _asmCache = (typeof WeakMap !== 'undefined') ? new WeakMap() : null;
+  function assemblyRule(db, guid, rule, ruleOfClass) {
+    if (!rule || rule.phase !== 'Superstructure' || !db || !guid || typeof ruleOfClass !== 'function') return rule;
+    var c = _asmCache && _asmCache.get(db);
+    if (!c) {
+      c = { parentCls: {}, rows: 0, has: false, moved: {}, logged: false };
+      try {
+        var r = db.exec('SELECT a.child_guid, p.ifc_class FROM rel_aggregates a JOIN elements_meta p ON p.guid = a.parent_guid');
+        c.has = true;
+        if (r.length) r[0].values.forEach(function (row) { c.parentCls[row[0]] = row[1]; c.rows++; });
+      } catch (e) { /* no rel_aggregates table — nothing declared */ }
+      if (_asmCache) _asmCache.set(db, c);
+      console.log('§ASSEMBLY_RULE dbHasAggregates=' + (c.has ? 1 : 0) + ' joinedRows=' + c.rows +
+        ' — a Superstructure part of a non-structural assembly takes the assembly\'s rule (counts per parent|child on §ASSEMBLY_RULE_MOVED)');
+    }
+    var pc = c.parentCls[guid]; if (!pc) return rule;
+    var pr = ruleOfClass(pc);
+    if (!pr || pr.phase === 'Superstructure') return rule;
+    var k = pc; c.moved[k] = (c.moved[k] || 0) + 1;
+    var o = {}; for (var q in pr) o[q] = pr[q];
+    return o;
+  }
+  function assemblyRuleReport(db) {
+    var c = _asmCache && _asmCache.get(db); if (!c) return null;
+    console.log('§ASSEMBLY_RULE_MOVED ' + JSON.stringify(c.moved));
+    return c.moved;
+  }
   // _pipeTrade(db, guid, rule, table) — §PIPE_TRADES (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.28): when the class rule gives
   // PLUMBER and the element's discipline names another pipe crew (rates.js SEQUENCE_DISCIPLINE_TRADE), that crew lays it. Phase and
   // sequence unchanged. Same cached guid->discipline read as civilRuleFor; no discipline column -> the rule as given.
@@ -866,7 +898,7 @@
       // §STOREY_DATUM — in datum mode the level is the band containing the element's BASE.
       var storey = _datumMode ? _bandOf(cz - bz / 2) : assignStoreyByZ(rawStorey, cz);
       var ov = civilRuleFor(db, guid, opts.civilRules) || matchNameOverride(cls, name, nameOverrides);   // §CIVIL_PHASE
-      var rule = _pipeTrade(db, guid, ov || matchRule(cls, rules, dflt, hierarchy), opts.disciplineTrades);
+      var rule = _pipeTrade(db, guid, ov || assemblyRule(db, guid, matchRule(cls, rules, dflt, hierarchy), function (pc) { return matchRule(pc, rules, dflt, hierarchy); }), opts.disciplineTrades);   // §ASSEMBLY_RULE
       var realQty = (_frag.fragmented[cls] && _frag.area[guid] != null) ? _frag.area[guid] : null;
       // §HEAVY_MEMBER_SPEED_LIMIT: only when this element has real geometry (bx/by/bz not all the
       // LEFT JOIN's COALESCE(...,0) default) and its class has a real measured average — else null,
@@ -2340,7 +2372,7 @@
     elems.forEach(function (e) {
       var ov = civilRuleFor(db, e.guid, opts.civilRules) || matchNameOverride(e.cls, e.name, nameOverrides);   // §CIVIL_PHASE
       if (ov) nameOverridden++;
-      var rule = _pipeTrade(db, e.guid, ov || matchRule(e.cls, rules, dflt, hierarchy), opts.disciplineTrades);
+      var rule = _pipeTrade(db, e.guid, ov || assemblyRule(db, e.guid, matchRule(e.cls, rules, dflt, hierarchy), function (pc) { return matchRule(pc, rules, dflt, hierarchy); }), opts.disciplineTrades);   // §ASSEMBLY_RULE
       var p = phases[rule.phase];
       if (!p) { p = phases[rule.phase] = { name: rule.phase, seq: rule.sequence, guids: [], resourceSecs: {}, storeys: {} }; }
       if (rule.sequence < p.seq) p.seq = rule.sequence;   // phase ordered by its earliest rule
@@ -2605,7 +2637,7 @@
       if (er.length && er[0].values.length) {
         er[0].values.forEach(function (row) {
           var guid = row[0], cls = row[1], storey = row[2];
-          var rule = _pipeTrade(db, guid, civilRuleFor(db, guid, opts && opts.civilRules) || matchRule(cls, rules, dflt, hierarchy), opts && opts.disciplineTrades);   // §CIVIL_PHASE · §PIPE_TRADES
+          var rule = _pipeTrade(db, guid, civilRuleFor(db, guid, opts && opts.civilRules) || assemblyRule(db, guid, matchRule(cls, rules, dflt, hierarchy), function (pc) { return matchRule(pc, rules, dflt, hierarchy); }), opts && opts.disciplineTrades);   // §CIVIL_PHASE · §PIPE_TRADES
           var resKey = rule.resource || '__NONE__';
           var realQty = (_frag.fragmented[cls] && _frag.area[guid] != null) ? _frag.area[guid] : null;
           resourceSecs[resKey] = (resourceSecs[resKey] || 0) + _installSecs(cls, rule, laborRates, realQty);
@@ -3754,6 +3786,8 @@
   }
 
   var API = {
+    assemblyRule: assemblyRule,   // §ASSEMBLY_RULE — the renderer's rule lookup calls this too (one classification)
+    assemblyRuleReport: assemblyRuleReport,
     _cacheKeyFor: _cacheKeyFor,
     persistUrlFor: persistUrlFor,   // §PERSIST_TARGET: the url every persistDb(app.db, …) caller passes   // §S70: read and write MUST derive the slot the same way
     matchRule: matchRule,

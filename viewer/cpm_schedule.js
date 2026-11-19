@@ -405,6 +405,34 @@
     }
     counts.e1fs = e1fs;
 
+    // §E1_ALL_CARRIERS (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.33.9) — a floor/roof PLATE (a structural element wider than it is tall in
+    // BOTH plan directions) that rests on >= 2 pool carriers waits for ALL of them, not only for the one E1 elected. Practice: a slab is cast
+    // once the columns/walls/beams under it are up; physics as the renderer already applies it (tm_sched_xray.js _buildXraySupportCache
+    // maxCarrierEnd). Measured before: the HHS L2 slab played day 1.09, its 87 columns finished day 9.22 (§Q.33.9). Carrier = pool contact whose
+    // top meets the plate's underside (S.bz < T.bz-EPS, T.bz-GAP <= S.tz <= T.bz+GAP). Every edge points strictly below -> above, so these
+    // edges cannot close a cycle among themselves; FS, physics bucket 'e1all'.
+    var e1all = 0, e1allPlates = 0, e1allSkipNoPool = 0, EPS = SG.EPS, GAP = SG.GAP;
+    if (SG.supportPool) {
+      for (i = 0; i < n; i++) {
+        var Tp = items[i], lp = G.contacts[i];
+        if (!lp || lp.length < 2 || !SG.supportPool(Tp)) continue;
+        var hgt = Tp.tz - Tp.bz, dxp = Tp.x1 - Tp.x0, dyp = Tp.y1 - Tp.y0;
+        if (!(hgt < dxp && hgt < dyp)) continue;                          // a plate, not a beam / column / wall
+        var carriers = [];
+        for (var kp = 0; kp < lp.length; kp++) {
+          var jp = lp[kp], Sp = items[jp];
+          if (!SG.supportPool(Sp)) continue;
+          if (Sp.bz < Tp.bz - EPS && Sp.tz >= Tp.bz - GAP && Sp.tz <= Tp.bz + GAP) carriers.push(jp);
+        }
+        if (carriers.length < 2) continue;
+        e1allPlates++;
+        for (var cp = 0; cp < carriers.length; cp++) { if (carriers[cp] !== des[i]) { addEdge(carriers[cp], i, FS, 1, 'e1all'); e1all++; } }
+      }
+    } else e1allSkipNoPool = 1;
+    counts.e1all = e1all; counts.e1allPlates = e1allPlates;
+    if (typeof console !== 'undefined') console.log('§E1_ALL_CARRIERS plates=' + e1allPlates + ' edges=' + e1all +
+      (e1allSkipNoPool ? ' INCONCLUSIVE no supportPool' : '') + ' — a floor/roof plate waits for every structural carrier under it, not one');
+
     // E2 — host/opening pairs, FS (same element shape ScheduleGate's own pairs functions take)
     var gateEls = items.map(function (it) {
       return { guid: it.guid, cls: it.cls, seq: it.seq, x0: it.x0, x1: it.x1, y0: it.y0, y1: it.y1,
