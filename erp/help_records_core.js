@@ -55,7 +55,7 @@
     });
     rows.forEach(function (r, i) {
       var e = (en.howto || []).find(function (x) { return x.ad_window_id === r.ad_window_id; }), rec = withA({ id: 'howto/' + r.id, k: 'howto', n: String(r.name) }, alts(r.name, e ? [e.name] : []));
-      rec.h = T + i; rec.gate = ['window', Number(r.ad_window_id)]; recs.push(rec);
+      rec.h = T + i; rec.gate = r.ad_window_id != null ? ['window', Number(r.ad_window_id)] : ['process', Number(r.ad_process_id)]; recs.push(rec);   // §19.17 F1: a process-only how-to (CtxType P) is gated on its process
     });
     var order = {}; KINDS.forEach(function (k, i) { order[k] = i; });
     recs.sort(function (a, b) { return order[a.k] - order[b.k] || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0); });   // deterministic: kind order, then id (UTF-16 code units)

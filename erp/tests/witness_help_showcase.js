@@ -90,8 +90,8 @@ function s5() {
   try { guide = process.env.GUIDE ? fs.readFileSync(process.env.GUIDE, 'utf8') : cp.execSync('git -C ' + JSON.stringify(path.join(os.homedir(), 'bim-compiler')) + ' show origin/master:docs/ERPUserGuide.md', { encoding: 'utf8', maxBuffer: 1 << 26 }); } catch (e) { k.incon('S5', 'guide not readable'); return; }
   const en = JSON.parse(fs.readFileSync(path.join(HELP, 'en_US', 'help.json'), 'utf8')), rows = en.howto || [];
   if (!rows.length) { k.incon('S5', 'VACUOUS: no how-to rows'); return; }
-  const flat = (t) => t.replace(/<[^>]+>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
-  const mdFlat = (t) => t.replace(/\*\*([^*]+)\*\*/g, '$1').replace(/\*([^*]+)\*/g, '$1').replace(/`([^`]+)`/g, '$1').replace(/\s+/g, ' ').trim();
+  const flat = (t) => t.replace(/<\/(p|li)>/g, ' ').replace(/<[^>]+>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();   // §19.17 F1: a block end is a word break (a guide list renders as <ul><li>)
+  const mdFlat = (t) => t.replace(/^- /gm, '').replace(/\*\*([^*]+)\*\*/g, '$1').replace(/\*([^*]+)\*/g, '$1').replace(/`([^`]+)`/g, '$1').replace(/\s+/g, ' ').trim();
   let ok = 0; const bad = [];
   rows.forEach((r) => {
     const headOk = guide.split('\n').indexOf(r.source.heading) >= 0, sentOk = r.source.sentences.every((s) => guide.indexOf(s) >= 0);
