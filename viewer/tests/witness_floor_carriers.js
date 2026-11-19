@@ -17,7 +17,7 @@ const CACHE = require(path.join(ROOT, 'scripts', 'cache_4d_run.js'));
 const BP = require(path.join(ROOT, 'scripts', 'lib', 'apply_building_patch.js'));
 const BLDS = process.argv.slice(2).length ? process.argv.slice(2) : ['Duplex', 'HHS_Office_Federated', 'JKR', 'Clinic', 'Terminal', 'Hospital', 'LTU_AHouse'];
 const EPS = 0.05, GAP = 0.5;
-const CROSS_LOCK = { Duplex: 0, HHS_Office_Federated: 0, JKR: 0, Clinic: 1, Terminal: 0, Hospital: 0, LTU_AHouse: 755 };   // measured, §Q.33.10; Terminal 25 -> 0 by §RUNG_RUN_LABEL (§Q.35.1)
+const CROSS_LOCK = { Duplex: 0, HHS_Office_Federated: 0, JKR: 0, Clinic: 1, Terminal: 0, Hospital: 0, LTU_AHouse: 109 };   // measured, §Q.33.10; Terminal 25 -> 0 by §RUNG_RUN_LABEL (§Q.35.1); LTU 755 -> 109 judging the patched DB (§Q.35.3)
 let pass = 0, fail = 0, inc = 0;
 const say = (id, b, ok, d) => { console.log('  ' + (ok === null ? 'INCONCLUSIVE' : ok ? 'PASS' : 'FAIL') + ' ' + id + ' ' + b + ' — ' + d); ok === null ? inc++ : ok ? pass++ : fail++; };
 (async () => {

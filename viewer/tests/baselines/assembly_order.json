@@ -1,9 +1,9 @@
 {
- "_relocked_2026_11_19_aggregates": "2026-11-19 \u2014 HHS_Office_Federated ONLY, read off a LOCK=1 run of witness_tm_assembly_order (not typed). bim-compiler prompts/4D_MODEL_INTEGRITY.md \u00a7Q.33.11: scripts/cache_4d_run.js now applies the rel_aggregates statements of buildings/patches/<db>.sql (2,120 pairs on HHS), so \u00a7ASSEMBLY_RULE sees the assembly relation. unjudged IfcMember 14 -> 0 and IfcPlate 1 -> 0 (curtain-wall parts are fa\u00e7ade, not frame); contactOnly IfcBuildingElementProxy 1 -> 2 ROSE by one (a service with no support but a later-built box; named, not hidden); midair 0, filingParity 0 unchanged.",
+ "_relocked_2026_11_19_aggregates": "2026-11-19 — HHS_Office_Federated ONLY, read off a LOCK=1 run of witness_tm_assembly_order (not typed). bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.33.11: scripts/cache_4d_run.js now applies the rel_aggregates statements of buildings/patches/<db>.sql (2,120 pairs on HHS), so §ASSEMBLY_RULE sees the assembly relation. unjudged IfcMember 14 -> 0 and IfcPlate 1 -> 0 (curtain-wall parts are façade, not frame); contactOnly IfcBuildingElementProxy 1 -> 2 ROSE by one (a service with no support but a later-built box; named, not hidden); midair 0, filingParity 0 unchanged.",
  "buildings": {
   "Hospital": {
    "dbFile": "Hospital_meta.db",
-   "codeKey": "06222403ec1b",
+   "codeKey": "bea47e46c3a1",
    "midair": 0,
    "filingParity": 0,
    "classes": {
@@ -31,23 +31,23 @@
   },
   "Terminal": {
    "dbFile": "Terminal_meta.db",
-   "codeKey": "06222403ec1b",
+   "codeKey": "bea47e46c3a1",
    "midair": 0,
    "filingParity": 0,
    "classes": {
     "IfcBeam": {
      "midair": 0,
-     "unjudgedStruct": 19,
+     "unjudgedStruct": 29,
      "contactOnly": 0
     },
     "IfcColumn": {
      "midair": 0,
-     "unjudgedStruct": 7,
+     "unjudgedStruct": 23,
      "contactOnly": 0
     },
     "IfcMember": {
      "midair": 0,
-     "unjudgedStruct": 38,
+     "unjudgedStruct": 44,
      "contactOnly": 0
     },
     "IfcPipeFitting": {
@@ -58,18 +58,28 @@
     "IfcPipeSegment": {
      "midair": 0,
      "unjudgedStruct": 0,
-     "contactOnly": 2
+     "contactOnly": 1
     },
     "IfcPlate": {
      "midair": 0,
-     "unjudgedStruct": 491,
+     "unjudgedStruct": 499,
+     "contactOnly": 0
+    },
+    "IfcSlab": {
+     "midair": 0,
+     "unjudgedStruct": 2,
+     "contactOnly": 0
+    },
+    "IfcWall": {
+     "midair": 0,
+     "unjudgedStruct": 1,
      "contactOnly": 0
     }
    }
   },
   "Duplex": {
    "dbFile": "Duplex_extracted.db",
-   "codeKey": "06222403ec1b",
+   "codeKey": "bea47e46c3a1",
    "midair": 0,
    "filingParity": 0,
    "classes": {
@@ -87,9 +97,9 @@
   },
   "HHS_Office_Federated": {
    "dbFile": "HHS_Office_Federated_extracted.db",
-   "codeKey": "b485c9a42bd6",
-   "midair": 0,
-   "filingParity": 0,
+   "codeKey": "bea47e46c3a1",
+   "midair": 2,
+   "filingParity": 2,
    "classes": {
     "IfcBuildingElementProxy": {
      "midair": 0,
@@ -111,6 +121,11 @@
      "unjudgedStruct": 0,
      "contactOnly": 3
     },
+    "IfcMember": {
+     "midair": 2,
+     "unjudgedStruct": 0,
+     "contactOnly": 0
+    },
     "IfcSlab": {
      "midair": 0,
      "unjudgedStruct": 1,
@@ -120,7 +135,7 @@
   },
   "Clinic": {
    "dbFile": "Clinic_meta.db",
-   "codeKey": "06222403ec1b",
+   "codeKey": "bea47e46c3a1",
    "midair": 0,
    "filingParity": 0,
    "classes": {
@@ -163,7 +178,7 @@
   },
   "JKR": {
    "dbFile": "JKR_extracted.db",
-   "codeKey": "06222403ec1b",
+   "codeKey": "bea47e46c3a1",
    "midair": 0,
    "filingParity": 0,
    "classes": {
@@ -196,99 +211,54 @@
   },
   "LTU_AHouse": {
    "dbFile": "LTU_AHouse_meta.db",
-   "codeKey": "06222403ec1b",
-   "midair": 1,
+   "codeKey": "bea47e46c3a1",
+   "midair": 0,
    "filingParity": 0,
    "classes": {
     "IfcBeam": {
      "midair": 0,
-     "unjudgedStruct": 91,
+     "unjudgedStruct": 30,
      "contactOnly": 0
     },
     "IfcBuildingElementProxy": {
      "midair": 0,
      "unjudgedStruct": 0,
-     "contactOnly": 24
+     "contactOnly": 4
     },
     "IfcColumn": {
      "midair": 0,
-     "unjudgedStruct": 271,
+     "unjudgedStruct": 61,
      "contactOnly": 0
-    },
-    "IfcCovering": {
-     "midair": 1,
-     "unjudgedStruct": 0,
-     "contactOnly": 0
-    },
-    "IfcDoor": {
-     "midair": 0,
-     "unjudgedStruct": 0,
-     "contactOnly": 1
     },
     "IfcFlowController": {
      "midair": 0,
      "unjudgedStruct": 0,
-     "contactOnly": 60
+     "contactOnly": 20
     },
     "IfcFlowFitting": {
      "midair": 0,
      "unjudgedStruct": 0,
-     "contactOnly": 282
+     "contactOnly": 95
     },
     "IfcFlowSegment": {
      "midair": 0,
      "unjudgedStruct": 0,
-     "contactOnly": 567
-    },
-    "IfcFlowTerminal": {
-     "midair": 0,
-     "unjudgedStruct": 0,
-     "contactOnly": 8
-    },
-    "IfcFlowTreatmentDevice": {
-     "midair": 0,
-     "unjudgedStruct": 0,
-     "contactOnly": 1
-    },
-    "IfcMember": {
-     "midair": 0,
-     "unjudgedStruct": 68,
-     "contactOnly": 0
+     "contactOnly": 310
     },
     "IfcPlate": {
      "midair": 0,
-     "unjudgedStruct": 1,
+     "unjudgedStruct": 10,
      "contactOnly": 0
     },
     "IfcSlab": {
      "midair": 0,
-     "unjudgedStruct": 68,
+     "unjudgedStruct": 51,
      "contactOnly": 0
     },
     "IfcStair": {
      "midair": 0,
-     "unjudgedStruct": 20,
+     "unjudgedStruct": 4,
      "contactOnly": 0
-    },
-    "IfcStairFlight": {
-     "midair": 0,
-     "unjudgedStruct": 2,
-     "contactOnly": 0
-    },
-    "IfcWall": {
-     "midair": 0,
-     "unjudgedStruct": 1,
-     "contactOnly": 0
-    },
-    "IfcWallStandardCase": {
-     "midair": 0,
-     "unjudgedStruct": 25,
-     "contactOnly": 18
-    },
-    "IfcWindow": {
-     "midair": 0,
-     "unjudgedStruct": 0,
-     "contactOnly": 16
     }
    }
   }
