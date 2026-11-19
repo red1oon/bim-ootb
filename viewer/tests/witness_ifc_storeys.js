@@ -39,6 +39,14 @@ const FT = '#1=IFCSIUNIT(*,.LENGTHUNIT.,$,.METRE.);\n#2=IFCDIMENSIONALEXPONENTS(
   chk('U5 the import z offset puts the row in the geometry frame', e.rows[0].elevation_attr_m === 3, 'z=' + e.rows[0].elevation_attr_m);
   const f = read(step('#1=IFCSIUNIT(*,.TIMEUNIT.,$,.SECOND.);', '#1', [['L1', '5.']]));
   chk('U6 no length unit: nothing assumed, the row is skipped and counted', f.scale === null && f.rows.length === 0 && f.skipped === 1, 'skipped=' + f.skipped);
+  // U7 (§Q.36): ISO 10303-21 string escapes in a storey name. Hand calculation: \S\E = chr(0x45 + 128) = Å (U+00C5); \X2\00C5\X0\ = Å; \X\C5 = Å.
+  { const txt = step(M, '#1', [['V\\S\\ENING 1', '2.7'], ['V\\X2\\00C5\\X0\\N 2', '6.'], ['V\\X\\C5N 3', '9.3']]), want = ['V\u00c5NING 1', 'V\u00c5N 2', 'V\u00c5N 3'];
+    const tmp = path.join(os.tmpdir(), 'w_storey_u7_' + process.pid + '.ifc'); fs.writeFileSync(tmp, txt);
+    const out = cp.execFileSync('python3', ['-P', path.join(__dirname, '..', '..', 'tools', 'ifc_storeys_patch.py'), tmp], { stdio: ['ignore', 'pipe', 'ignore'] }).toString(); fs.unlinkSync(tmp);
+    const pyN = []; out.split('\n').forEach(l => { const m = /^INSERT OR REPLACE INTO storey_elevation VALUES \('[^']*','(.*?)',/.exec(l); if (m) pyN.push(m[1]); });
+    const jsN = read(txt).rows.map(r => r.name);
+    chk('U7 a STEP-escaped storey name reads as its text in the patch tool', JSON.stringify(pyN) === JSON.stringify(want), JSON.stringify(pyN));
+    chk('U7b and the web-ifc reader gives the same three names', JSON.stringify(jsN) === JSON.stringify(want), JSON.stringify(jsN)); }
   // Frame test: the owner's judge, on the new candidate.
   const SQL = await require(path.join(NM, 'sql.js'))();
   const mk = (rows) => { const db = new SQL.Database(); db.run('CREATE TABLE spatial_structure (guid TEXT, type TEXT, name TEXT, center_z REAL)'); db.run("INSERT INTO spatial_structure VALUES ('x','IfcBuildingStorey','C0',0.5),('y','IfcBuildingStorey','C1',6.5)");
@@ -74,12 +82,14 @@ const FT = '#1=IFCSIUNIT(*,.LENGTHUNIT.,$,.METRE.);\n#2=IFCDIMENSIONALEXPONENTS(
   if (!ifcs.length) console.log('§W_STOREY REAL INCONCLUSIVE no --ifc given, the real-file legs were not judged');
   else {
     const patch = cp.execFileSync('python3', ['-P', path.join(__dirname, '..', '..', 'tools', 'ifc_storeys_patch.py')].concat(ifcs), { maxBuffer: 1 << 26, stdio: ['ignore', 'pipe', 'inherit'] }).toString();
-    const py = {}; patch.split('\n').forEach(l => { const m = /^INSERT OR REPLACE INTO storey_elevation VALUES \('([^']*)','(.*?)',([-\d.e]+),/.exec(l); if (m) py[m[1]] = +m[3]; });
-    let n = 0, worst = 0;
+    const py = {}, pyName = {}; patch.split('\n').forEach(l => { const m = /^INSERT OR REPLACE INTO storey_elevation VALUES \('([^']*)','(.*?)',([-\d.e]+),/.exec(l); if (m) { py[m[1]] = +m[3]; pyName[m[1]] = m[2].replace(/''/g, "'"); } });
+    let n = 0, worst = 0, nameDiff = [];
     ifcs.forEach(file => { const id = api.OpenModel(new Uint8Array(fs.readFileSync(file)), { COORDINATE_TO_ORIGIN: false }); const r = S.read(api, id, WebIFC, norm, 0); api.CloseModel(id);
       console.log('§W_STOREY REAL file unitScale=' + r.scale + ' rows=' + r.rows.length + ' skipped=' + r.skipped);
-      r.rows.forEach(x => { n++; worst = Math.max(worst, Math.abs(x.elevation_attr_m - py[x.guid])); }); });
+      r.rows.forEach(x => { n++; worst = Math.max(worst, Math.abs(x.elevation_attr_m - py[x.guid])); if (pyName[x.guid] !== x.name) nameDiff.push(JSON.stringify(x.name) + '!=' + JSON.stringify(pyName[x.guid])); }); });
     chk('R1 two independent readers agree on every storey of the real files', n > 0 && worst < 1e-9, 'storeys=' + n + ' worstDiff=' + worst);
+    // ISSUE: R1 compared metres only, so a name the patch tool left STEP-escaped (LTU: V\S\ENING 1) matched no elements_meta.storey and nothing said so (bim-compiler 4D_MODEL_INTEGRITY §Q.36).
+    chk('R1n the two readers give the same storey NAME on every storey of the real files', n > 0 && nameDiff.length === 0, 'storeys=' + n + ' nameDiffs=' + nameDiff.length + ' ' + nameDiff.slice(0, 4).join(' '));
   }
   const pdb = arg('--patched')[0];
   if (pdb) {
