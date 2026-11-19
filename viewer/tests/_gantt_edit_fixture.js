@@ -54,6 +54,9 @@ async function playedChain(bld) {
   const initSqlJs = require(path.join(ROOT, 'modeller', 'lib', 'sql-wasm.js'));
   const SQL = await initSqlJs({ wasmBinary: fs.readFileSync(path.join(ROOT, 'modeller', 'lib', 'sql-wasm.wasm')) });
   const db = new SQL.Database(new Uint8Array(fs.readFileSync(dbf.path)));
+  // §Q.33.11: the same patch step cache_4d_run.build() runs on the db it persists (one implementation, scripts/lib/apply_building_patch.js), so this
+  // chain and the persisted played layer it is compared with start from the same db. CACHE_PATCHES selects the mode for both.
+  require(path.join(ROOT, 'scripts', 'lib', 'apply_building_patch.js')).applyTo(db, dbf.path, console.log);
   const tmsb = TMP.buildSandbox({ tmSrc: tmSrc, SA: SA, SG: SG, CP: CP, GM: GM, SS: SS, LABOR_RATES: rsb.LABOR_RATES, console: console });
   const base = { start: CACHE.PROJECT_START, laborRates: rsb.LABOR_RATES, rates: rsb.RATES, nameOverrides: rsb.SEQUENCE_NAME_OVERRIDES, disciplineTrades: rsb.SEQUENCE_DISCIPLINE_TRADE,
     defaultRule: rsb.SEQUENCE_DEFAULT, scheduleGate: SG, shiftHours: T.calendar.hours_per_shift, template: T, db: db,

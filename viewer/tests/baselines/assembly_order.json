@@ -1,4 +1,5 @@
 {
+ "_relocked_2026_11_19_aggregates": "2026-11-19 \u2014 HHS_Office_Federated ONLY, read off a LOCK=1 run of witness_tm_assembly_order (not typed). bim-compiler prompts/4D_MODEL_INTEGRITY.md \u00a7Q.33.11: scripts/cache_4d_run.js now applies the rel_aggregates statements of buildings/patches/<db>.sql (2,120 pairs on HHS), so \u00a7ASSEMBLY_RULE sees the assembly relation. unjudged IfcMember 14 -> 0 and IfcPlate 1 -> 0 (curtain-wall parts are fa\u00e7ade, not frame); contactOnly IfcBuildingElementProxy 1 -> 2 ROSE by one (a service with no support but a later-built box; named, not hidden); midair 0, filingParity 0 unchanged.",
  "buildings": {
   "Hospital": {
    "dbFile": "Hospital_meta.db",
@@ -86,14 +87,14 @@
   },
   "HHS_Office_Federated": {
    "dbFile": "HHS_Office_Federated_extracted.db",
-   "codeKey": "06222403ec1b",
+   "codeKey": "b485c9a42bd6",
    "midair": 0,
    "filingParity": 0,
    "classes": {
     "IfcBuildingElementProxy": {
      "midair": 0,
      "unjudgedStruct": 0,
-     "contactOnly": 1
+     "contactOnly": 2
     },
     "IfcFlowFitting": {
      "midair": 0,
@@ -109,16 +110,6 @@
      "midair": 0,
      "unjudgedStruct": 0,
      "contactOnly": 3
-    },
-    "IfcMember": {
-     "midair": 0,
-     "unjudgedStruct": 14,
-     "contactOnly": 0
-    },
-    "IfcPlate": {
-     "midair": 0,
-     "unjudgedStruct": 1,
-     "contactOnly": 0
     },
     "IfcSlab": {
      "midair": 0,
