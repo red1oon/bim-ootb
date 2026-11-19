@@ -738,6 +738,38 @@
   // distinct NAMES (a name can sit on two rungs 1e-6 apart, e.g. Terminal's 44 rungs → 22 names).
   // `legacySource` is what #1551's emptiness rule would have picked, so the §-line can say whether
   // this choice CHANGED anything (PRIMAL LAW clause 4: a pass must be able to report its own no-op).
+  // §RUNG_RUN_LABEL (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.34): a storey NAME is one floor only across a CONTIGUOUS run of
+  // ladder rungs. A federated model can declare the same name on rungs another name's rung sits between (Terminal: the observatory
+  // file's storeys repeat 15.027 m lower) — banding by name then merges two floors into one task. Each extra run of a repeated name
+  // is labelled "<name> @<first rung z>"; the run holding the most element bases keeps the plain name. No tolerance constant.
+  function _rungRunLabels(ladder, sortedBz) {
+    var runs = [], byName = {};
+    for (var i = 0; i < ladder.length; i++) {
+      var last = runs[runs.length - 1];
+      if (last && last.name === ladder[i].name) last.hi = i;
+      else { runs.push({ name: ladder[i].name, lo: i, hi: i, n: 0 }); }
+    }
+    runs.forEach(function (r) { (byName[r.name] = byName[r.name] || []).push(r); });
+    for (var e = 0; e < sortedBz.length; e++) {
+      var k = _ladderBandIndex(ladder, sortedBz[e]);
+      for (var ri = 0; ri < runs.length; ri++) if (k >= runs[ri].lo && k <= runs[ri].hi) { runs[ri].n++; break; }
+    }
+    var relabelled = [], out = ladder.map(function (r) { return { name: r.name, z: r.z }; });
+    Object.keys(byName).forEach(function (nm) {
+      var rs = byName[nm]; if (rs.length < 2) return;
+      var keep = rs.reduce(function (a, b) { return b.n > a.n ? b : a; });
+      rs.forEach(function (r) {
+        if (r === keep) return;
+        var lab = nm + ' @' + ladder[r.lo].z.toFixed(2);
+        for (var j = r.lo; j <= r.hi; j++) out[j].name = lab;
+        relabelled.push(lab + '(n=' + r.n + ')');
+      });
+    });
+    console.log('§RUNG_RUN_LABEL rungs=' + ladder.length + ' runs=' + runs.length + ' repeatedNames=' +
+      Object.keys(byName).filter(function (n) { return byName[n].length > 1; }).length + ' relabelledRuns=' + relabelled.length +
+      (relabelled.length ? ' ' + relabelled.join(' | ') : ' — every storey name is one contiguous run (no-op)'));
+    return out;
+  }
   function _chooseStoreyDatum(cands, ezs) {
     var sorted = ezs.slice().sort(function (a, b) { return a - b; });
     var n = sorted.length;
@@ -767,6 +799,7 @@
       if (inFrame && !chosen) chosen = rep;
     }
     if (chosen) {
+      chosen.ladder = _rungRunLabels(chosen.ladder, sorted);
       return { mode: 'DECLARED', source: chosen.source, ladder: chosen.ladder, lo: chosen.lo, hi: chosen.hi,
         rungsUsed: chosen.rungsUsed, reason: 'IN_FRAME', legacySource: legacy, ez: ez, candidates: report };
     }
