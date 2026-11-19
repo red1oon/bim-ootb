@@ -738,6 +738,36 @@
   // distinct NAMES (a name can sit on two rungs 1e-6 apart, e.g. Terminal's 44 rungs → 22 names).
   // `legacySource` is what #1551's emptiness rule would have picked, so the §-line can say whether
   // this choice CHANGED anything (PRIMAL LAW clause 4: a pass must be able to report its own no-op).
+  // §RUNG_RUN_LABEL (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.34/§Q.35.1, ruling R1): a storey NAME is one floor only across a
+  // CONTIGUOUS run of ladder rungs. A federated model can declare the same name on rungs that another name's rung sits between
+  // (Terminal: the observatory file's storeys repeat 15.027 m lower) — banding by name then merges two floors into one task. Each extra
+  // run of a repeated name is labelled "<name> @<first rung z>"; the run holding the most element bases keeps the plain name. Pure; no
+  // tolerance constant. Datum mode only (the caller); the frame verb _chooseStoreyDatum is left unchanged for its own witness.
+  function _rungRunLabels(ladder, sortedBz) {
+    var runs = [], byName = {};
+    for (var i = 0; i < ladder.length; i++) {
+      var last = runs[runs.length - 1];
+      if (last && last.name === ladder[i].name) last.hi = i;
+      else runs.push({ name: ladder[i].name, lo: i, hi: i, n: 0 });
+    }
+    runs.forEach(function (r) { (byName[r.name] = byName[r.name] || []).push(r); });
+    for (var e = 0; e < sortedBz.length; e++) {
+      var k = _ladderBandIndex(ladder, sortedBz[e]);
+      for (var ri = 0; ri < runs.length; ri++) if (k >= runs[ri].lo && k <= runs[ri].hi) { runs[ri].n++; break; }
+    }
+    var relabelled = [], out = ladder.map(function (r) { return { name: r.name, z: r.z }; });
+    Object.keys(byName).forEach(function (nm) {
+      var rs = byName[nm]; if (rs.length < 2) return;
+      var keep = rs.reduce(function (a, b) { return b.n > a.n ? b : a; });
+      rs.forEach(function (r) {
+        if (r === keep) return;
+        var lab = nm + ' @' + ladder[r.lo].z.toFixed(2);
+        for (var j = r.lo; j <= r.hi; j++) out[j].name = lab;
+        relabelled.push(lab + '(n=' + r.n + ')');
+      });
+    });
+    return { ladder: out, runs: runs.length, repeatedNames: Object.keys(byName).filter(function (n) { return byName[n].length > 1; }).length, relabelled: relabelled };
+  }
   function _chooseStoreyDatum(cands, ezs) {
     var sorted = ezs.slice().sort(function (a, b) { return a - b; });
     var n = sorted.length;
@@ -857,8 +887,16 @@
       _ezs.push(cz - bz / 2);
     });
     var _frame = _chooseStoreyDatum(_storeyDatumCandidates(db), _ezs);
-    var _bands = _frame.ladder;
     var _datumMode = _frame.mode === 'DECLARED';
+    var _rr = null;
+    if (_datumMode) {   // §RUNG_RUN_LABEL — ruling R1: the ladder, not the name, owns the floor
+      _rr = _rungRunLabels(_frame.ladder, _ezs.slice().sort(function (a, b) { return a - b; }));
+      _frame.ladder = _rr.ladder;
+      console.log('§RUNG_RUN_LABEL rungs=' + _rr.ladder.length + ' runs=' + _rr.runs + ' repeatedNames=' + _rr.repeatedNames +
+        ' relabelledRuns=' + _rr.relabelled.length + (_rr.relabelled.length ? ' ' + _rr.relabelled.join(' | ')
+          : ' (no-op — every storey name is one contiguous run of the ladder)'));
+    }
+    var _bands = _frame.ladder;
 
     var storeyZs = {};
     r[0].values.forEach(function (row) {
@@ -989,6 +1027,11 @@
         (_datumMode ? 'banding on ' + _frame.source + ' instead'
           : 'NO candidate in frame → declared path REFUSED, label inference runs (DEGRADE, not disable)'));
     });
+    // §Q.35.1: the band identity the merge map must use in datum mode (materializeZones reads it; never enumerable, so no element loop sees it)
+    // Scoped to the defect R1 fixes: only where a name REPEATS on the ladder (§RUNG_RUN_LABEL relabelled a run). Elsewhere the old merge
+    // path is kept byte-identical — feeding the ladder there would switch the merge ON for DBs where it never ran (JKR: two rungs 1 cm apart
+    // would fold the ~81 m level below the ladder into the ground floor, programme 50 -> 56 d; measured §Q.35.2, a separate decision).
+    Object.defineProperty(_bseList, 'storeyLadder', { value: (_datumMode && _rr && _rr.relabelled.length) ? _bands : null, enumerable: false });
     return _bseList;
   }
 
@@ -1185,7 +1228,7 @@
     var byId = {};
     T.phases.forEach(function (p) { byId[p.id] = p; });
 
-    var tasks = [], edges = [], reports = [], taskAt = {}, totalDays = 0, _ladderBridged = 0,
+    var tasks = [], edges = [], reports = [], taskAt = {}, totalDays = 0, _ladderBridged = 0, _bridgeEdges = 0,
         phaseLatestTask = {};
     levels.forEach(function (lv, li) {
       var prevOnLevel = null;   // for the BRIDGED within-level chain (_empty_phase_rule)
@@ -1313,6 +1356,7 @@
         // bridge walk's hit), so siblings that share a predecessor are not chained to each other. Building
         // templates never declare it → this branch is never taken for them.
         var _edgePred = (T.placement === 'logic') ? ((_bridge && _bridge.task) || null) : prevOnLevel;
+        var _inbound = edges.length;
         if (_edgePred) {
           edges.push({ predId: _edgePred.id, succId: t.id, type: (wl && wl.type) || 'FS',
                        lagDays: wl ? (wl.lag_days || 0) : 0, kind: 'within_level' });
@@ -1329,9 +1373,17 @@
                                    lagDays: ladder[p.id].lag_days || 0, kind: 'across_levels' }); break; }
           }
         }
+        // §TPL_BRIDGE_EDGE (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.35.1): the within_level bridge above RAISED this task's start
+        // from a predecessor phase on this or a lower level, but no edge recorded it when the task is the first on its level — a
+        // start date with no logic behind it (DCMA check 1). Record the bridge as the edge, only when nothing else links in.
+        if (edges.length === _inbound && _bridge && _bridge.task) {
+          edges.push({ predId: _bridge.task.id, succId: t.id, type: 'FS', lagDays: 0, kind: 'within_level_bridged' });
+          _bridgeEdges++;
+        }
         prevOnLevel = t;
       });
     });
+    console.log('§TPL_BRIDGE_EDGE added=' + _bridgeEdges + ' — first-on-level tasks whose start came from the within_level bridge now carry that link (0 = every task was already linked)');
     console.log('§TPL_LADDER_BRIDGE gatedByBridge=' + _ladderBridged + '/' + tasks.length +
       ' — a phase whose predecessor was DROPPED on the level below now takes its start from the ' +
       'nearest level that has one, or from its within_level predecessor chain; 0 = no task needed it');
@@ -1511,7 +1563,14 @@
     // the query throws, storeyMergeMap stays null, deriveZones falls back to its pre-§S18 behavior
     // byte-identically; no building regresses for not having been regenerated yet).
     var storeyMergeMap = null;
-    if (SG.deriveStoreyMergeMap) {
+    if (SG.deriveStoreyMergeMap && elements.storeyLadder) {
+      // §Q.35.1 (ruling R1): datum mode — the merge map is fed the run-labelled LADDER (one row per rung), so "are two names one floor?"
+      // chains RUNGS within GAP; the raw spatial_structure rows would merge a name by the median of rows that sit on two floors (§Q.34).
+      storeyMergeMap = SG.deriveStoreyMergeMap(elements.storeyLadder.map(function (r) { return { type: 'IfcBuildingStorey', name: r.name, elevation: r.z }; }));
+      var _mergedL = 0;
+      for (var _mkl in storeyMergeMap) if (storeyMergeMap[_mkl] !== _mkl) _mergedL++;
+      console.log('§S18_STOREY_MERGE source=ladder names=' + Object.keys(storeyMergeMap).length + ' merged=' + _mergedL);
+    } else if (SG.deriveStoreyMergeMap) {
       try {
         var _ssRes = db.exec("SELECT type,name,elevation FROM spatial_structure WHERE type='IfcBuildingStorey' AND elevation IS NOT NULL");
         if (_ssRes.length) {
@@ -1520,7 +1579,7 @@
           storeyMergeMap = SG.deriveStoreyMergeMap(_ssRows);
           var _mergedN = 0;
           for (var _mk in storeyMergeMap) if (storeyMergeMap[_mk] !== _mk) _mergedN++;
-          console.log('§S18_STOREY_MERGE names=' + Object.keys(storeyMergeMap).length + ' merged=' + _mergedN);
+          console.log('§S18_STOREY_MERGE source=spatial_structure names=' + Object.keys(storeyMergeMap).length + ' merged=' + _mergedN);
         }
       } catch (e) { console.log('§S18_STOREY_MERGE_FAIL ' + e.message + ' — no elevation data, bands unmerged'); }
     }
@@ -3811,6 +3870,7 @@
     _storeyDatumCandidates: _storeyDatumCandidates,
     _chooseStoreyDatum: _chooseStoreyDatum,
     _storeyLadder: _storeyLadder,
+    _rungRunLabels: _rungRunLabels,
     // §STOREY_RUNG_VOTE (2026-09-15, Fable review of item 15) — exported so cpe_storey_reveal.js can
     // band a per-element base-Z on the SAME ladder verb this file uses to decide which rungs are
     // populated, instead of re-deriving a nearest-neighbour test of its own.
