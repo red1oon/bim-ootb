@@ -24,7 +24,15 @@ def split_args(s):
     out.append(cur.strip())
     return out
 
-def unquote(s): return s[1:-1].replace("''", "'") if s.startswith("'") else None
+def step_decode(s):
+    """ISO 10303-21 string escapes -> text: \\X2\\hhhh..\\X0\\ (UCS-2), \\X4\\..\\X0\\ (UCS-4), \\X\\hh (8-bit), \\S\\c (c + 128, ISO 8859-1)."""
+    s = re.sub(r'\\X2\\((?:[0-9A-Fa-f]{4})+)\\X0\\', lambda m: ''.join(chr(int(m.group(1)[i:i+4], 16)) for i in range(0, len(m.group(1)), 4)), s)
+    s = re.sub(r'\\X4\\((?:[0-9A-Fa-f]{8})+)\\X0\\', lambda m: ''.join(chr(int(m.group(1)[i:i+8], 16)) for i in range(0, len(m.group(1)), 8)), s)
+    s = re.sub(r'\\X\\([0-9A-Fa-f]{2})', lambda m: chr(int(m.group(1), 16)), s)
+    s = re.sub(r'\\S\\(.)', lambda m: chr(ord(m.group(1)) + 128), s)
+    return s.replace('\\\\', '\\')
+
+def unquote(s): return step_decode(s[1:-1].replace("''", "'")) if s.startswith("'") else None
 
 def scale_of(lines, ref):
     m = lines.get(ref)

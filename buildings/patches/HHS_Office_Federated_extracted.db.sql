@@ -7721,3 +7721,23 @@ INSERT OR REPLACE INTO geometry_wind_flip VALUES ('f2a7272f2fd22454', 220, 'wf1:
 INSERT OR REPLACE INTO geometry_wind_flip VALUES ('abc83f2843d1b361', 416, 'wf1:weld1e-4:pair2same');
 INSERT OR REPLACE INTO geometry_wind_flip VALUES ('31cf87cd0f98f9ae', 160, 'wf1:weld1e-4:pair2same');
 -- §WIND_FLIP END
+
+-- >>> BEGIN §IFC_STOREYS (tools/ifc_storeys_patch.py over opensourceBIM_HHS_Office_{architect,construction,MEP}.ifc — regenerated block, do not hand-edit)
+-- §IFC_STOREYS HHS_Office_Federated (2026-11-20, bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.36.2): the only storey rungs this DB had were the COMPILED rows above
+-- (center_z = a mean of element centres, and one named Unknown at 4.148 m that is no floor). The three files declare the same four storeys; every value is
+-- IfcBuildingStorey.Elevation x the file's IfcSIUnit prefix (MILLI). Idempotent (DELETE then INSERT). Witness: viewer/tests/witness_ifc_storeys.js.
+CREATE TABLE IF NOT EXISTS storey_elevation (guid TEXT PRIMARY KEY, name TEXT, elevation_attr_m REAL, placement_z_m REAL);
+DELETE FROM storey_elevation;
+INSERT OR REPLACE INTO storey_elevation VALUES ('3sNneo5Gv8wgOKGFawgf8K','Level 1',0.0942,NULL);
+INSERT OR REPLACE INTO storey_elevation VALUES ('3sNneo5Gv8wgOKGFawgf8N','Level 2',3.8,NULL);
+INSERT OR REPLACE INTO storey_elevation VALUES ('3sNneo5Gv8wgOKGFawgf8M','Level 3',7.3,NULL);
+INSERT OR REPLACE INTO storey_elevation VALUES ('3sNneo5Gv8wgOKGFawgf8P','Roof Level',10.9,NULL);
+INSERT OR REPLACE INTO storey_elevation VALUES ('3sNneo5Gv8wgOKGFawgf8K','Level 1',0.0942,NULL);
+INSERT OR REPLACE INTO storey_elevation VALUES ('3sNneo5Gv8wgOKGFawgf8N','Level 2',3.8,NULL);
+INSERT OR REPLACE INTO storey_elevation VALUES ('3sNneo5Gv8wgOKGFawgf8M','Level 3',7.3,NULL);
+INSERT OR REPLACE INTO storey_elevation VALUES ('3sNneo5Gv8wgOKGFawgf8P','Roof Level',10.9,NULL);
+INSERT OR REPLACE INTO storey_elevation VALUES ('3sNneo5Gv8wgOKGFawgf8K','Level 1',0.0942,NULL);
+INSERT OR REPLACE INTO storey_elevation VALUES ('3sNneo5Gv8wgOKGFawgf8N','Level 2',3.8,NULL);
+INSERT OR REPLACE INTO storey_elevation VALUES ('3sNneo5Gv8wgOKGFawgf8M','Level 3',7.3,NULL);
+INSERT OR REPLACE INTO storey_elevation VALUES ('3sNneo5Gv8wgOKGFawgf8P','Roof Level',10.9,NULL);
+-- <<< END §IFC_STOREYS

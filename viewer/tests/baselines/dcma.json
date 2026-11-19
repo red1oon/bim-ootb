@@ -85,9 +85,9 @@
    "lags": 0,
    "nonFs": 0,
    "constraints": 0,
-   "highFloat": 72,
+   "highFloat": 34,
    "negFloat": 0,
-   "highDur": 3,
+   "highDur": 4,
    "invalid": 0,
    "noResource": 0,
    "noCritical": 0
