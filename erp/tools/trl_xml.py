@@ -1,7 +1,7 @@
 # trl_xml.py — read/write the legacy Translation XML (org.compiere.install.Translation export) for the ERP's own `machine/` source.
 # Same shape the Viewer's viewer/tools/trl_common.js writes (TRL_TRILOGY_STANDARD.md S-1): one file per table and language,
 # <idempiereTrl language= table=>, <row id= trl=>, <value column=X original="English">translated</value>. Rows are matched by ID.
-# AD_Message rows carry MsgText + MsgTip; every other table here carries Name only (T5c: screen names, not Description / Help).
+# AD_Message rows carry MsgText + MsgTip; AD_CtxHelpMsg rows carry MsgText only (VOCAB §19.16 C3: the how-to HTML); every other table here carries Name only (T5c: screen names, not Description / Help).
 import os, re, xml.etree.ElementTree as ET
 
 DTD = ('<!--<!DOCTYPE idempiereTrl PUBLIC "-//iDempiere//DTD iDempiere Translation 1.0//EN" '
@@ -19,6 +19,8 @@ def write(path, lang, table, comment, rows):
         if table == 'AD_Message':
             out.append('  <value column="MsgText" original="%s">%s</value>' % (_a(orig), _x(text)))
             out.append('  <value column="MsgTip" original=""/>')
+        elif table == 'AD_CtxHelpMsg':
+            out.append('  <value column="MsgText" original="%s">%s</value>' % (_a(orig), _x(text)))
         else:
             out.append('  <value column="Name" original="%s">%s</value>' % (_a(orig), _x(text)))
         out.append(' </row>')
@@ -31,7 +33,7 @@ def read(path):
     if not os.path.exists(path): return {}
     root = ET.parse(path).getroot(); rows = {}
     for r in root.iter('row'):
-        col = 'MsgText' if root.get('table') == 'AD_Message' else 'Name'
+        col = 'MsgText' if root.get('table') in ('AD_Message', 'AD_CtxHelpMsg') else 'Name'
         v = next((x for x in r.iter('value') if x.get('column') == col), None)
         if v is None: raise ValueError('%s: row %s has no %s' % (path, r.get('id'), col))
         rows[int(r.get('id'))] = (r.get('trl'), v.get('original') or '', v.text or '')
