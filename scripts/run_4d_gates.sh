@@ -12,7 +12,7 @@ LOG_DIR="${LOG_DIR:-$ROOT/logs}"; mkdir -p "$LOG_DIR"
 LOG="$LOG_DIR/4d_gates_$(date -u +%Y%m%dT%H%M%SZ).log"
 GATES=(witness_tm_assembly_order witness_midair_zero witness_gantt_lock_integrity witness_gantt_edit_coherence
        witness_tm_edit_exception witness_tm_reveal_within_bar witness_big_element_support_coverage witness_curtain_wall_opening
-       witness_tm_needle_sync witness_gantt_one_commit_pipeline witness_gantt_undo_every_edit witness_gantt_reorder witness_gantt_shift_links witness_dcma_14pt witness_floor_carriers)
+       witness_tm_needle_sync witness_gantt_one_commit_pipeline witness_gantt_undo_every_edit witness_gantt_reorder witness_gantt_shift_links witness_dcma_14pt witness_floor_carriers witness_apply_building_patch)
 node "$ROOT/scripts/log_stamp.js" "run_4d_gates ${BLDS[*]}" > "$LOG"
 echo "§GATES_STEP cache ${BLDS[*]}" >> "$LOG"
 (cd "$ROOT" && node scripts/cache_4d_run.js "${BLDS[@]}") >> "$LOG" 2>&1; cacheRc=$?

@@ -14,6 +14,7 @@ const fs = require('fs'), path = require('path');
 const ROOT = process.env.FC_ROOT || path.join(__dirname, '..', '..');   // FC_ROOT: judge another tree's persisted runs (e.g. main, for a before/after)
 const BLD = process.env.BLD_DIR || path.join(require('os').homedir(), 'bim-ootb', 'buildings');
 const CACHE = require(path.join(ROOT, 'scripts', 'cache_4d_run.js'));
+const BP = require(path.join(ROOT, 'scripts', 'lib', 'apply_building_patch.js'));
 const BLDS = process.argv.slice(2).length ? process.argv.slice(2) : ['Duplex', 'HHS_Office_Federated', 'JKR', 'Clinic', 'Terminal', 'Hospital', 'LTU_AHouse'];
 const EPS = 0.05, GAP = 0.5;
 const CROSS_LOCK = { Duplex: 0, HHS_Office_Federated: 0, JKR: 0, Clinic: 1, Terminal: 25, Hospital: 0, LTU_AHouse: 755 };   // measured, §Q.33.10
@@ -55,9 +56,12 @@ const say = (id, b, ok, d) => { console.log('  ' + (ok === null ? 'INCONCLUSIVE'
     const dbPath = run.dbFile ? path.join(BLD, run.dbFile) : null;
     if (!SQL || !dbPath || !fs.existsSync(dbPath)) { say('W-FC-2', b, null, 'db not readable: ' + dbPath); continue; }
     const db = new SQL.Database(new Uint8Array(fs.readFileSync(dbPath)));
+    // §Q.33.11: judge the DB the run was built from — raw file + the viewer's patch (scripts/lib/apply_building_patch.js), exactly as cache_4d_run did
+    const pr = run.patched ? BP.applyTo(db, run.dbFile, console.log, run.patched) : null;
+    if (run.patched && (!pr || pr.failed.length)) { say('W-FC-2', b, null, 'patch did not apply (' + (pr && pr.failed.map(f => f.err).join('; ')) + ') — judged nothing'); db.close(); continue; }
     let rows = null; try { const r = db.exec("SELECT a.child_guid FROM rel_aggregates a JOIN elements_meta p ON p.guid=a.parent_guid WHERE p.ifc_class='IfcCurtainWall'"); rows = r.length ? r[0].values.map(v => v[0]) : []; } catch (e) { rows = null; }
     db.close();
-    if (rows === null) { say('W-FC-2', b, null, 'no rel_aggregates table — curtain-wall parts cannot be told from structure (extractor does not carry it)'); continue; }
+    if (rows === null) { say('W-FC-2', b, null, 'no rel_aggregates table (raw file' + (run.patched ? ' + viewer patch' : ', patch not applied') + ') — curtain-wall parts cannot be told from structure'); continue; }
     if (!rows.length) { say('W-FC-2', b, null, 'no curtain-wall children declared'); continue; }
     const byG = new Map(els.map(e => [e.guid, e])), still = rows.filter(g => byG.has(g) && byG.get(g).phase === 'Superstructure');
     say('W-FC-2', b, still.length === 0, 'curtain-wall children=' + rows.length + ' stillSuperstructure=' + still.length);

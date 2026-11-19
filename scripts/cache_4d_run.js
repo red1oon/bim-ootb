@@ -79,6 +79,11 @@ const PROJECT_START = '2026-01-01';
 const BLD = process.env.BLD_DIR || path.join(HOME, 'bim-ootb', 'buildings');
 const ROOT = process.env.CACHE_4D_DIR || path.join(HOME, '.cache', 'bim4d');
 const TMP = require(path.join(__dirname, 'lib', 'tm_played_layer.js'));
+// §Q.33.11 — the viewer plays <db> + buildings/patches/<db>.sql (scene.js A._applyPendingPatch); so does this run, through the SAME chunker (lib/apply_building_patch.js).
+// CACHE_PATCHES = agg (default: the rel_aggregates statements only) | all (the whole patch, as the browser) | 0 (raw file, the pre-§Q.33.11 behaviour).
+// What WOULD be applied is part of the cache key. Why 'agg' is the default: lib/apply_building_patch.js header.
+const BP = require(path.join(__dirname, 'lib', 'apply_building_patch.js'));
+const usePatches = () => BP.mode() !== '0';
 
 const INPUTS = ['schedule_gate.js', 'schedule_author.js', 'support_sweep.js', 'cpm_schedule.js',
                 'rates.js', 'rates/4D_template.json',
@@ -118,8 +123,9 @@ function codeKey() {
   return h.digest('hex').slice(0, 12);
 }
 function dbKey(file) {
-  const st = fs.statSync(file);
-  return crypto.createHash('sha1').update(st.size + ':' + st.mtimeMs).digest('hex').slice(0, 12);
+  const st = fs.statSync(file), pk = BP.patchKey(file);
+  // no patch (or CACHE_PATCHES=0) -> the key is exactly what it was before §Q.33.11, so existing raw-DB runs keep their cache dir
+  return crypto.createHash('sha1').update(st.size + ':' + st.mtimeMs + (pk ? ':patch=' + pk : '')).digest('hex').slice(0, 12);
 }
 
 // sqliteProblem(file) — null when the file is a readable SQLite database, else WHY it is not. A
@@ -190,7 +196,7 @@ function read(bld, want) {
   const j = JSON.parse(__readSrc(path.join(d, 'run.json'), 'utf8'));
   return { els: j.els, play: j.play || null, sched: j.sched, display: j.sched,
     playStats: j.playStats || null, storeys: j.storeys || null, tasks: j.tasks || null,
-    dbFile: j.dbFile || null, dbKind: j.dbKind || null, builtAt: j.builtAt || null,
+    dbFile: j.dbFile || null, dbKind: j.dbKind || null, patched: !!j.patched, builtAt: j.builtAt || null,
     log: __readSrc(path.join(d, 'witness.log'), 'utf8'), dir: d };
 }
 
@@ -221,8 +227,12 @@ function build(bld, force, want, hooks) {   // hooks.onDb(db, res) — READ-ONLY
   const sb = { console: { log() {}, warn() {}, error() {} } };
   vm.createContext(sb); vm.runInContext(__readSrc(path.join(V, 'rates.js'), 'utf8'), sb);
 
-  const initSqlJs = require(path.join(HOME, 'bim-ootb', 'node_modules', 'sql.js'));
-  return initSqlJs({ locateFile: f => path.join(HOME, 'bim-ootb', 'node_modules', 'sql.js', 'dist', f) })
+  // §Q.33.11: mode 'all' needs the engine the viewer ships (viewer/lib/sql-wasm.*, has the r-tree module LTU_AHouse_meta.db.sql uses); npm sql.js has none.
+  // Modes 'agg' and '0' keep the npm engine exactly as before.
+  const shipped = BP.mode() === 'all';
+  const initSqlJs = shipped ? require(path.join(V, 'lib', 'sql-wasm.js')) : require(path.join(HOME, 'bim-ootb', 'node_modules', 'sql.js'));
+  return (shipped ? initSqlJs({ wasmBinary: fs.readFileSync(path.join(V, 'lib', 'sql-wasm.wasm')) })
+                  : initSqlJs({ locateFile: f => path.join(HOME, 'bim-ootb', 'node_modules', 'sql.js', 'dist', f) }))
     .then(SQL => {
       const lines = [];
       const _l = console.log, _w = console.warn;
@@ -232,6 +242,7 @@ function build(bld, force, want, hooks) {   // hooks.onDb(db, res) — READ-ONLY
       let els = null, sched = null, play = null, playStats = null, storeys = null, tasks = null, err = null;
       try {
         const db = new SQL.Database(new Uint8Array(__readSrc(file)));
+        BP.applyTo(db, file, console.log);
         // §CACHE_PLAYED_LAYER — the live time_machine.js functions, sliced (never re-typed).
         const tmsb = TMP.buildSandbox({ tmSrc: tmSrc, SA: SA, SG: SG, CP: CP, GM: GM, SS: SS,
           LABOR_RATES: sb.LABOR_RATES, console: console });
@@ -317,7 +328,7 @@ function build(bld, force, want, hooks) {   // hooks.onDb(db, res) — READ-ONLY
       // §LOG_STAMP first: which code produced this log (bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md §F.7). Not a cache-key input.
       fs.writeFileSync(path.join(d, 'witness.log'), require('./log_stamp').stampLine(path.join(__dirname, '..'), 'cache_4d_run ' + bld) + '\n' + lines.join('\n') + '\n');
       fs.writeFileSync(path.join(d, 'run.json'), JSON.stringify({ bld: bld, builtAt: new Date().toISOString(),
-        codeKey: codeKey(), dbFile: path.basename(file), dbKind: dbf.kind, dbReason: dbf.reason, els: els,
+        codeKey: codeKey(), dbFile: path.basename(file), dbKind: dbf.kind, patched: BP.patchKey(file) ? BP.mode() : false, dbReason: dbf.reason, els: els,
         sched: flat, play: play, playStats: playStats, storeys: storeys, tasks: tasks }));
       console.log('§CACHE_BUILT ' + bld + ' dbFile=' + path.basename(file) + ' kind=' + dbf.kind +
         ' n=' + els.length + ' scheduled=' + Object.keys(flat).length +
