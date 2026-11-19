@@ -23,12 +23,12 @@ const top5 = (list) => list.slice(0, 5).map((x) => x.id + '|' + x.tier + '|' + x
   const ids = H.q('SELECT DISTINCT a.ad_window_id AS w FROM ad_window_access a JOIN ad_window w ON w.ad_window_id=a.ad_window_id WHERE a.ad_role_id=' + ROLE + " AND a.isactive='Y' AND w.isactive='Y' ORDER BY 1").map((r) => Number(r.w));
   const en = JSON.parse(fs.readFileSync(path.join(H.ERP, 'i18n', 'help', 'en_US', 'help.json'), 'utf8'));
   const packOf = (lang) => (lang === 'en_US' ? null : JSON.parse(fs.readFileSync(path.join(H.ERP, 'i18n', 'help', lang, 'help.json'), 'utf8')));
-  const gateOf = (set, pset, lset) => (g) => g[0] === 'window' ? set.has(g[1]) : g[0] === 'process' ? !!(pset && pset.has(g[1])) : !!(lset && g[0] === 'menu' && lset.has(g[1]));   // §19.9 the role's menu processes; §19.14 its form / workflow / info / task entries (menu().leaves)
+  const gateOf = (set, pset, lset) => { const one = (g) => g[0] === 'window' ? set.has(g[1]) : g[0] === 'process' ? !!(pset && pset.has(g[1])) : !!(lset && g[0] === 'menu' && lset.has(g[1])); const gate = (g) => g[0] === 'any' ? g[1].some(gate) : one(g); return gate; };   // §19.9 the role's menu processes; §19.14 its form / workflow / info / task entries (menu().leaves); §19.16 C4: an 'any' gate (a how-to linked from several windows / processes) is the role's when any part is
   const perLang = {};
   // ---- B0 + B1 (Node) ----
   let b0n = 0, b0ok = 0, b1n = 0, b1ok = 0, b1nonempty = 0; const bad1 = [], bad0 = [];
   H.LANGS.forEach((lang) => {
-    const p = H.pack(lang), pk = packOf(lang), idx = HS.indexFrom({ q: H.q, en, pack: pk, fsm, windowIds: ids });
+    const p = H.pack(lang), pk = packOf(lang), idx = HS.indexFrom({ q: H.q, howtoQ: H.hq, en, pack: pk, fsm, windowIds: ids });
     const mine = idx.records.map((r) => JSON.stringify(r)), theirs = p.index.records.map((r) => JSON.stringify(r));
     let eq = mine.length === theirs.length ? 0 : -1; if (eq === 0) mine.forEach((s, i) => { if (s === theirs[i]) eq++; });
     b0n += theirs.length; b0ok += Math.max(eq, 0); if (eq !== theirs.length && bad0.length < 2) bad0.push(lang + ' runtime=' + mine.length + ' index.json=' + theirs.length + ' equal=' + eq);
@@ -92,7 +92,7 @@ const top5 = (list) => list.slice(0, 5).map((x) => x.id + '|' + x.tier + '|' + x
   const FX = JSON.parse(fs.readFileSync(path.join(H.ERP, 'tests', 'fixtures', 'help_questions.json'), 'utf8')), allIds = H.q("SELECT ad_window_id AS w FROM ad_window WHERE isactive='Y'").map((r) => Number(r.w));
   let b3n = 0, b3ok = 0; const bad3 = [];
   for (const lang of ['en_US', 'zh_CN', 'de_DE']) {
-    const idx = HS.indexFrom({ q: H.q, en, pack: packOf(lang), fsm, windowIds: allIds });
+    const idx = HS.indexFrom({ q: H.q, howtoQ: H.hq, en, pack: packOf(lang), fsm, windowIds: allIds });
     for (const x of (FX[LANGFX[lang]] || [])) {
       const r = await run(DOOR, ['--actor', 'human', 'erp.ask question="' + x.q.replace(/"/g, '') + '" lang=' + lang], { LANG: 'en_US.UTF-8', BIM_DOOR_USER: '' });
       let j = null; try { j = JSON.parse(r.out.split('\n').filter((l) => l.trim().startsWith('{')).pop()); } catch (e) { j = null; }

@@ -5,7 +5,7 @@
 //             Legacy's rule (SynchronizeTerminology): a centrally maintained field takes its column's AD_Element translation (PO_ text in an
 //             IsSOTrx='N' window when present); otherwise its own AD_Field_Trl row. A text counts as translated when present and not equal to
 //             its English original. First source wins (the build_i18n.py order).
-//   howto   — AD_CtxHelp-shaped rows (ctxtype W; the same rows in legacy's own shape, CtxType T: erp/ad_ctxhelp_app_rows.js, §19.16 C2) for the trade-cycle windows: sentences copied from docs/ERPUserGuide.md "The standard flow"
+//   how-to  — NOT in help.json since §19.16 C4: legacy's context help (AD_CtxHelp T/P + AD_CtxHelpMsg + _Trl) in erp/ad_ctxhelp_app_rows.js, read by erp/ctx_help.js; for the trade-cycle windows: sentences copied from docs/ERPUserGuide.md "The standard flow"
 //             §1-§4 (bim-compiler), proof asides left out, the guide section linked; window names linked at build time (H3, ONE linker).
 //   actions — AD_Ref_List 135 (DocAction) name/description, the statuses an action is allowed from (AdDocFsm.TRANSITION), the CLI verb
 //             (common/door/verbs.json, the verb whose description says "Runs DocAction <code>", with its own input names).
@@ -128,7 +128,6 @@ function uuidOf(name) {   // RFC 4122 name-based (v5, SHA-1, URL namespace): the
   return x.slice(0, 8) + '-' + x.slice(8, 12) + '-' + x.slice(12, 16) + '-' + x.slice(16, 20) + '-' + x.slice(20);
 }
 const titleP = (name) => '<p><strong>' + md(name) + '</strong></p>';   // §19.16 C3: the title is MsgText's first paragraph (legacy's own fallback shape, HelpController.renderCtxHelp:345-347); AD_CtxHelp.Name has no _Trl and is never shown
-const MACHINE_LABEL = 'build session, not reviewed by a native speaker';
 // §19.16 C3: read a legacy Translation XML of AD_CtxHelpMsg_Trl - CDATA and xml:space aware (parseTrl's regex is not) -> { id: { trl, original, text } }
 function readCtxTrl(file) {
   const out = {}; if (!fs.existsSync(file)) return out;
@@ -188,20 +187,6 @@ function buildNames(lang) {
   q("SELECT ad_ref_list_id rid, ad_reference_id ref, value v FROM ad_ref_list WHERE ad_reference_id IN (131,135) AND isactive='Y' AND value<>'--'").forEach((r) => { const n = pick(R, r.rid); if (n) out[r.ref === 135 ? 'actions' : 'statuses'][r.v] = n; });
   return out;
 }
-// §12 H1b / §19.16 C3: the how-to rows of a language = its machine AD_CtxHelpMsg_Trl rows (erp/i18n/machine/AD_CtxHelpMsg_Trl_<lang>.xml, legacy's Translation XML; was
-//   tools/help_howto_<lang>.json), already linked by buildCtxTrl: the title paragraph -> name, the rest -> html. A published row is not a how-to of ours.
-const unmd = (h) => ent(h.replace(/<b>([^<]*)<\/b>/g, '**$1**').replace(/<i>([^<]*)<\/i>/g, '*$1*').replace(/<code>([^<]*)<\/code>/g, '`$1`'));   // md() reversed: the translator's own sentences, as the JSON kept them
-function buildHowtoLang(lang, names, enRows, trl) {
-  const raw = readCtxTrl(machineCtxFile(lang));
-  return trl.filter((r) => r.source === 'machine' && r.id >= APP_ID0).map((r) => {
-    const mr = raw[r.id];
-    const en = enRows[r.id - APP_ID0]; if (!en) throw new Error(lang + ' how-to message ' + r.id + ' has no English row');
-    const m = /^<p><strong>([\s\S]*?)<\/strong><\/p>([\s\S]*)$/.exec(r.text); if (!m) throw new Error(lang + ' message ' + r.id + ' has no title paragraph');
-    return { id: en.id, ctxtype: 'W', ad_window_id: en.ad_window_id, windows: en.windows, ad_process_id: en.ad_process_id, name: ent(m[1].replace(/<[^>]+>/g, '')), window: names.windows[en.ad_window_id] || en.window, kind: en.kind, table: en.table, translated: MACHINE_LABEL,
-      source: { guide: en.source.guide, heading: en.source.heading, url: en.source.url, sentences: en.source.sentences, translation: (mr.text.replace(/^<p><strong>[\s\S]*?<\/strong><\/p>/, '').match(/<(p|ul)>[\s\S]*?<\/(p|ul)>/g) || []).map((x) => x.startsWith('<ul>') ? unmd(x.replace(/<\/li>/g, ' ').replace(/<\/?(ul|li)>/g, '')).trim() : unmd(x.slice(3, -4))) },
-      html: m[2] };
-  });
-}
 function buildActions() {
   const fsm = require(path.join(ERP, 'ad_docfsm.js'));
   const st = {}; q("SELECT value v, name n FROM ad_ref_list WHERE ad_reference_id=131 AND isactive='Y'").forEach((r) => { st[r.v] = r.n; });
@@ -221,10 +206,10 @@ function main() {
   const tables = {}; q("SELECT t.ad_window_id w, tb.name tn, tb.tablename tt FROM ad_tab t JOIN ad_table tb ON tb.ad_table_id=t.ad_table_id WHERE t.tablevel=0 AND t.isactive='Y' AND t.ad_window_id IN (" + HOWTO.map((h) => h.window).filter((w) => w != null).join(',') + ") ORDER BY t.seqno").forEach((r) => { if (!tables[r.w]) tables[r.w] = { kind: r.tn, table: r.tt }; });
   fs.mkdirSync(path.join(OUT, 'en_US'), { recursive: true });
   const howto = buildHowto(windows).map((r) => Object.assign(r, { kind: (tables[r.ad_window_id] || {}).kind || null, table: (tables[r.ad_window_id] || {}).table || null }));
-  const en = { lang: 'en_US', spec: 'bim-compiler prompts/VOCAB_MESSAGE_CATALOG.md §10', built: 'build_help_pack.js', howto, actions: buildActions() };
+  const en = { lang: 'en_US', spec: 'bim-compiler prompts/VOCAB_MESSAGE_CATALOG.md §10', built: 'build_help_pack.js', actions: buildActions() };   // §19.16 C4: no `howto` here: it is legacy's context help (ad_ctxhelp_app_rows.js), read by erp/ctx_help.js
   fs.writeFileSync(path.join(OUT, 'en_US', 'help.json'), JSON.stringify(en));
   const msgIds = require(path.join(ERP, 'ad_ctxhelp_rows.js')).rows.filter((x) => /^INSERT OR IGNORE INTO ad_ctxhelpmsg \(/.test(x)).map((x) => Number(/VALUES \(\d+, \d+, (\d+),/.exec(x)[1])).concat(howto.map((h, k) => APP_ID0 + k)), allTrl = [];
-  console.log('§HELP_PACK en_US howto=' + howto.length + ' links=' + howto.reduce((a, r) => a + (r.html.match(/data-help-win=/g) || []).length, 0) + ' actions=' + Object.keys(en.actions).length + ' bytes=' + fs.statSync(path.join(OUT, 'en_US', 'help.json')).size);
+  console.log('§HELP_PACK en_US how-to rows=' + howto.length + ' (to the context help, not help.json) links=' + howto.reduce((a, r) => a + (r.html.match(/data-help-win=/g) || []).length, 0) + ' actions=' + Object.keys(en.actions).length + ' bytes=' + fs.statSync(path.join(OUT, 'en_US', 'help.json')).size);
   Object.keys(SOURCES).forEach((lang) => {
     const b = buildFields(lang); fs.mkdirSync(path.join(OUT, lang), { recursive: true });
     const f = path.join(OUT, lang, 'help.json');
@@ -232,10 +217,10 @@ function main() {
     const texts = [], ix = new Map(), fields = {};
     Object.keys(b.fields).forEach((id) => { fields[id] = b.fields[id].map((t) => { if (t == null) return -1; if (!ix.has(t)) { ix.set(t, texts.length); texts.push(t); } return ix.get(t); }); });
     const names = buildNames(lang), wlink = linker(Object.keys(names.windows).map((id) => ({ id: Number(id), name: names.windows[id], whole: true })));   // a TRANSLATED row links a window name only as a whole bold term, in every language (CJK has no case: 菜单 'menu'; German nouns are all capitalised: 'Produkt')
-    const trl = buildCtxTrl(lang, msgIds, wlink), hl = buildHowtoLang(lang, names, howto, trl); allTrl.push(...trl);
-    fs.writeFileSync(f, JSON.stringify(Object.assign({ lang, spec: en.spec, sources: SOURCES[lang], texts, fields, names }, hl.length ? { howto: hl } : {})));
+    const trl = buildCtxTrl(lang, msgIds, wlink); allTrl.push(...trl);
+    fs.writeFileSync(f, JSON.stringify({ lang, spec: en.spec, sources: SOURCES[lang], texts, fields, names }));
     console.log('§HELP_PACK ' + lang + ' fields=' + b.n + ' of ' + b.total + ' texts=' + texts.length + ' stale-original=' + b.stale + ' names windows=' + Object.keys(names.windows).length + ' tables=' + Object.keys(names.tables).length +
-      ' ctxtrl=' + trl.length + ' actions=' + Object.keys(names.actions).length + ' statuses=' + Object.keys(names.statuses).length + ' processes=' + Object.keys(names.processes).length + ' menus=' + Object.keys(names.menus).length + ' howto=' + hl.length + ' links=' + hl.reduce((a, r) => a + (r.html.match(/data-help-win=/g) || []).length, 0) + ' bytes=' + fs.statSync(f).size);
+      ' ctxtrl=' + trl.length + ' actions=' + Object.keys(names.actions).length + ' statuses=' + Object.keys(names.statuses).length + ' processes=' + Object.keys(names.processes).length + ' menus=' + Object.keys(names.menus).length + ' bytes=' + fs.statSync(f).size);
   });
   buildCtxHelpRows(howto, allTrl);
 }

@@ -496,7 +496,9 @@ function ask(O, a) {
   // the processes and reports of the role's menu: the P/R leaves of the same tree erp.menu walks, as the page's menu().processes (idempiere.html:1677, :3144; CLI_ERP_IVR §60)
   const pset = new Set(); (function leaves(ns) { (ns || []).forEach((n) => { if (n.children && n.children.length) leaves(n.children); else if ((n.action === 'P' || n.action === 'R') && n.processId != null) pset.add(Number(n.processId)); }); })(roleMenu(O, roleId).tree);
   const pids = [...pset];
-  const idx = HS.indexFrom({ q: (sql) => O.rows(sql), en, pack: pk, fsm, windowIds: ids, processIds: pids }), c = idx.ask(String(a.question));
+  // §19.16 C4 (VOCAB_MESSAGE_CATALOG): the how-to lives in legacy's context-help tables, a boot overlay the page applies at load; the door's booted DB gets the same overlay (idempotent)
+  { const lg = console.log; console.log = () => {}; try { require(path.join(E, 'ad_ctxhelp_overlay.js')).ensure(O.db); } catch (e) { say('ctxhelp-overlay error ' + e.message); } finally { console.log = lg; } }
+  const idx = HS.indexFrom({ q: (sql) => O.rows(sql), en, pack: pk, fsm, windowIds: ids, processIds: pids, client: client || 0 }), c = idx.ask(String(a.question));
   const text = (h) => String(h || '').replace(/<[^>]+>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
   say('ASK lang=' + L.lang + ' by=' + L.by + ' pack=' + (pk ? L.lang : 'en_US') + ' howto=' + (idx.localHowto ? L.lang : 'en_US') + ' windows=' + ids.length + ' window=' + (c.window ? c.window.id : 'none') + ' processes=' + pids.length + ' process=' + (c.process ? c.process.id : 'none') + ' action=' + (c.action ? c.action.code : 'none') + ' matched=' + JSON.stringify(c.matched));
   // the card as lines for a person (red1 prints an answer's summary): the labels the page uses (erp/i18n/chrome.json help.*), resolved as ErpI18n.t resolves them in the page:
@@ -513,7 +515,7 @@ function ask(O, a) {
     if (c.action.alternatives.length) lines.push('  ' + T('help.also', 'Also') + ': ' + c.action.alternatives.map((x) => x.name).join(', ')); }
   if (c.cli) lines.push('CLI: ' + (c.cli.line || T('help.cliNote', '{0} is offered for {1}, not for {2}', [c.cli.verb, c.cli.offeredFor || '-', c.cli.kind || '-'])));
   if (c.guide) lines.push(T('help.guide', 'Guide') + ': ' + c.guide.title + ' ' + c.guide.url);
-  if (c.howto) { lines.push(''); if (!idx.localHowto && L.lang !== 'en_US') lines.push(T('help.english', '(English)')); lines.push(text(c.howto.html)); if (c.howto.translated) lines.push('(' + T('help.translated', 'Translated by the build session, not reviewed by a native speaker') + ')'); }
+  if (c.howto) { lines.push(''); if (c.howto.english) lines.push(T('help.english', '(English)')); lines.push(text(c.howto.html)); if (c.howto.translated) lines.push('(' + T('help.translated', 'Translated by the build session, not reviewed by a native speaker') + ')'); }   // §19.16 C4: per row, the language lacks this one
   if (!c.window && !c.action && !c.howto && !c.process) lines.push(T('help.none', 'No match in the dictionary or the how-to rows.'));
   return { question: c.question, lang: L.lang, langBy: L.by, howtoLang: idx.localHowto ? L.lang : 'en_US', window: c.window, process: c.process || null, processes: pids.length, action: c.action, cli: c.cli, guide: c.guide,
     howto: c.howto ? { name: c.howto.name, window: c.howto.ad_window_id, text: text(c.howto.html), translated: c.howto.translated || null } : null, matched: c.matched, summary: lines.join('\n') };

@@ -10,6 +10,10 @@ const CORE = require(path.join(ERP, 'help_records_core.js')), KINDS = CORE.kinds
 const LANGS = ['en_US'].concat(Object.keys(JSON.parse(fs.readFileSync(path.join(ERP, 'tools', 'i18n_sources.json'), 'utf8')).sources));   // §19.11 step 1: the one list
 const q = (sql) => { const r = cp.spawnSync('sqlite3', ['-readonly', '-json', SEED, sql], { encoding: 'utf8', maxBuffer: 1 << 29 }); if (r.status !== 0) throw new Error(r.stderr); return JSON.parse(r.stdout || '[]'); };
 const readPack = (lang) => JSON.parse(fs.readFileSync(path.join(HELP, lang, 'help.json'), 'utf8'));
-const load = (lang) => CORE.build({ q, en: readPack('en_US'), pack: lang === 'en_US' ? null : readPack(lang) });
+// §19.16 C4: the how-to rows are legacy's context help, read by the ONE reader (erp/ctx_help.js) over the page's DB view (help_db.js: seed + hashed patches + the context-help overlay),
+//   never from help.json; the other records keep reading the raw seed (q above)
+const CH = require(path.join(ERP, 'ctx_help.js')), HDB = require('./help_db.js');
+const packs = (lang) => { const en = Object.assign(readPack('en_US'), { howto: CH.howto(HDB.q, 'en_US') }), pk = lang === 'en_US' ? null : Object.assign(readPack(lang), { howto: CH.howto(HDB.q, lang) }); return { en, pk }; };
+const load = (lang) => { const P = packs(lang); return CORE.build({ q, en: P.en, pack: P.pk }); };
 // §19.10: the page rebuilds the records from the live dictionary (erp/help_search.js indexFrom) and reads only the header of index.json, so the file ships the header only (runtimeRecords).
-module.exports = { app: 'erp', runtimeRecords: true, kinds: KINDS, langs: LANGS, load, resolver: CORE.resolver, extraTexts: CORE.extraTexts, outFile: (lang) => path.join(HELP, lang, 'index.json') };
+module.exports = { app: 'erp', runtimeRecords: true, kinds: KINDS, langs: LANGS, load, packs, resolver: CORE.resolver, extraTexts: CORE.extraTexts, outFile: (lang) => path.join(HELP, lang, 'index.json') };

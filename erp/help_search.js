@@ -37,7 +37,7 @@
     Object.keys(o.statuses || {}).forEach(function (st) { var to = (o.reach || {})[st] || []; if (!to.length || !acts[to[0]]) return;
       (o.statuses[st] || []).forEach(function (n) { add(n, 'action', { code: to[0], a: acts[to[0]], viaStatus: n, more: to.slice(1) }); }); });
     phrases.sort(function (x, y) { return y.str.length - x.str.length || y.ws.length - x.ws.length; });
-    var howto = o.howto || [], hasHowto = {}, howById = {}; howto.forEach(function (r) { hasHowto[r.ad_window_id] = r; howById['howto/' + r.id] = r; });
+    var howto = o.howto || [], hasHowto = {}, howById = {}; howto.forEach(function (r) { (r.windows && r.windows.length ? r.windows : (r.ad_window_id != null ? [r.ad_window_id] : [])).forEach(function (w) { if (!hasHowto[w]) hasHowto[w] = r; }); howById['howto/' + r.id] = r; });   // §19.17 F1: a how-to serves every window it is linked from
     var altsOf = function (code, len, str) { return phrases.filter(function (x) { return x.kind === 'action' && x.str === str && x.ref.code !== code; }).map(function (x) { return { code: x.ref.code, name: x.ref.a.name }; }).filter(function (v, i, arr) { return arr.findIndex(function (y) { return y.code === v.code; }) === i; }); };
     function hit(ph, matched, st) {
       if (ph.kind === 'window') { st.win = ph.ref; matched.push('window:' + ph.str); }   // the LAST window phrase wins
@@ -55,11 +55,12 @@
       }
       var hits = o.search ? o.search(question) : [];   // THE ranking: the one query core (tiers, then BM25, a total order), after the role gate
       if (BREAK !== 'nophrase' && !st.win) {   // no exact window phrase: the best-ranked window of the list; inside one tier a window that has a how-to row comes first (the help covers it), then the core's own order
-        var bw = null; hits.forEach(function (x) { if (x.k !== 'window') return; if (!bw || (x.tier === bw.tier && hasHowto[x.rec.gate[1]] && !hasHowto[bw.rec.gate[1]])) bw = x; });
+        var spec = function (w) { var r = hasHowto[w]; return r ? 1 / Math.max(1, (r.windows || []).length) : 0; };   // §19.16 C4: on a tie, the window whose how-to is its OWN (linked from fewer windows) wins
+        var bw = null; hits.forEach(function (x) { if (x.k !== 'window') return; if (!bw || (x.tier === bw.tier && spec(x.rec.gate[1]) > spec(bw.rec.gate[1]))) bw = x; });
         if (bw) { st.win = { id: bw.rec.gate[1], name: bw.rec.n }; matched.push('window~' + flat(bw.rec.n) + ' (tier ' + bw.tier + ' score ' + bw.score + ')'); }
       }
       var win = st.win, act = st.act, own = null, top = null;
-      if (win) howto.forEach(function (r) { if (!own && r.ad_window_id === win.id) own = r; });   // the matched window's own row first (a lookup, not a score)
+      if (win) own = hasHowto[win.id] || null;   // the matched window's own row first (a lookup, not a score)
       hits.forEach(function (x) { if (!top && x.k === 'howto' && howById[x.id]) top = howById[x.id]; });
       var proc = null; hits.slice(0, 5).forEach(function (x) { if (!proc && x.k === 'process' && x.rec.gate) proc = { id: x.rec.gate[1], name: x.rec.n, report: !!(o.reports && o.reports[x.rec.gate[1]]) }; });   // §19.9
       var leaf = null; hits.slice(0, 5).forEach(function (x) { if (!leaf && x.rec.gate && x.rec.gate[0] === 'menu') leaf = { menuId: x.rec.gate[1], kind: x.k, name: x.rec.n }; });   // §19.14
@@ -94,14 +95,17 @@
   //   The role gate is applied AFTER ranking (design D3): a record is shown when it is a window of the role's menu (windowIds) or a how-to row of one, or (§19.9) a process/report of the role's menu (processIds,
   //   optional: without it the gate is windows-only, as erp.ask still calls it), or (§19.14) a form / workflow / info window / task entry of the role's menu (menuIds = AD_Menu_IDs, optional). Doctype records are not admitted (legacy's menu search has no doctypes).
   function indexFrom(c) {
-    var q = c.q, en = c.en || {}, pk = c.pack || null, nm = (pk && pk.names) || { windows: {}, tables: {}, actions: {}, statuses: {} }, ids = c.windowIds || [], idset = {}, HR = dep('HelpRecords', './help_records_core.js'), HQ = dep('HelpQuery', '../common/help/help_query.js');
+    var q = c.q, en = c.en || {}, pk = c.pack || null, CH = dep('CtxHelp', './ctx_help.js'), hq2 = c.howtoQ || q, hlang = (pk && pk.lang) || 'en_US', ho = { client: c.client, org: c.org };
+    // §19.16 C4: the how-to rows come from legacy's context-help tables through the ONE reader (erp/ctx_help.js), never from help.json; per row the language's text, else English
+    en = Object.assign({}, en, { howto: CH.howto(hq2, 'en_US', ho) }); if (pk) pk = Object.assign({}, pk, { howto: CH.howto(hq2, hlang, ho) });
+    var nm = (pk && pk.names) || { windows: {}, tables: {}, actions: {}, statuses: {} }, ids = c.windowIds || [], idset = {}, HR = dep('HelpRecords', './help_records_core.js'), HQ = dep('HelpQuery', '../common/help/help_query.js');
     ids.forEach(function (i) { idset[i] = 1; });
     var pset = {}, reports = {}; if (BREAK !== 'winonly') (c.processIds || []).forEach(function (i) { pset[Number(i)] = 1; });
     if (Object.keys(pset).length) q("SELECT ad_process_id AS id FROM ad_process WHERE isreport='Y'").forEach(function (r) { if (pset[Number(r.id)]) reports[Number(r.id)] = 1; });   // the menu's own kind: R = a report
     var mset = {}; if (BREAK !== 'noleaf') (c.menuIds || []).forEach(function (i) { mset[Number(i)] = 1; });   // §19.14
     var built = HR.build({ q: q, en: en, pack: pk }), hdr = headerOf(c, (pk && pk.lang) || 'en_US');
     var handle = HQ.create({ kinds: built.kinds, records: built.records, bm25: hdr.bm25, weights: hdr.weights, nospace: hdr.nospace, vocab: hdr.vocab }, { text: built.resolve });   // lazy: the index is made on the first query (D8)
-    var GATES = { window: idset, process: pset, menu: mset }, allowed = function (gate) { var set = GATES[gate[0]]; return !!(set && set[gate[1]]); };
+    var GATES = { window: idset, process: pset, menu: mset }, allowed = function (gate) { if (gate[0] === 'any') return gate[1].some(allowed); var set = GATES[gate[0]]; return !!(set && set[gate[1]]); };   // §19.17 F1: a how-to is shown when ANY of its windows / processes is the role's
     var wins = built.records.filter(function (r) { return r.k === 'window' && allowed(r.gate); }).map(function (r) { return { id: r.gate[1], name: r.n, alt: r.a || [] }; });
     var stEn = {}; q("SELECT value AS v, name AS n FROM ad_ref_list WHERE ad_reference_id=131 AND isactive='Y'").forEach(function (r) { stEn[r.v] = String(r.n); });
     var stName = function (code) { return nm.statuses[code] || stEn[code] || code; }, enAct = en.actions || {}, acts = {};
@@ -116,7 +120,7 @@
     var dym = function (question, hits) { if (!dymNames) dymNames = DYM.names(built.records, { alt: true, allowed: allowed }); return DYM.suggest(question, dymNames, hits.length ? hits[0].tier : 3); };
     var idx = makeIndex({ windows: wins, actions: acts, statuses: statuses, reach: reach, howto: howto, kindOf: kindOf, search: search, dym: dym, reports: reports });
     idx.search = search; idx.core = handle; idx.records = built.records;   // W-HQ-BOX / W-HQ-COST read these; the card's own list is card.hits
-    idx.localHowto = !!(pk && pk.howto && pk.howto.length); idx.counts = { windows: wins.length, records: built.records.length, actions: Object.keys(acts).length, statuses: Object.keys(statuses).length, howto: howto.length };
+    idx.howtoRows = howto; idx.localHowto = !!(pk && howto.some(function (r) { return !r.english; })); idx.counts = { windows: wins.length, records: built.records.length, actions: Object.keys(acts).length, statuses: Object.keys(statuses).length, howto: howto.length };   // §19.16 C4: the rows the page's How To panel shows; per row `english` marks a row the language lacks
     return idx;
   }
   var api = { makeIndex: makeIndex, indexFrom: indexFrom, words: words, flat: flat };
