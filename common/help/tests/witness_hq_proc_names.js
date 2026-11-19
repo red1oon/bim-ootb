@@ -38,7 +38,7 @@ function ownRead(file) {
     const files = [].concat(...BP.SOURCES[lang].map((d) => { const dir = path.join(BP.CACHE, d); return fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => /^AD_Process_Trl_.*\.xml$/.test(f)).sort().map((f) => ownRead(path.join(dir, f))) : []; }));
     if (!files.length) {   // §19.11: the language's published packs carry no process translation (ar): judged, not skipped. The pack must hold none and every record keeps the dictionary's English name
       const pk0 = JSON.parse(fs.readFileSync(path.join(H.ERP, 'i18n', 'help', lang, 'help.json'), 'utf8')), got0 = Object.keys((pk0.names && pk0.names.processes) || {}).length;
-      const idx0 = HS.indexFrom({ q: H.q, en, pack: pk0, fsm, windowIds: ids, processIds: pids }), recs0 = idx0.records.filter((r) => r.k === 'process'), eng0 = recs0.filter((r) => r.n === eng[r.gate[1]]).length;
+      const idx0 = HS.indexFrom({ q: H.q, howtoQ: H.hq, en, pack: pk0, fsm, windowIds: ids, processIds: pids }), recs0 = idx0.records.filter((r) => r.k === 'process'), eng0 = recs0.filter((r) => r.n === eng[r.gate[1]]).length;
       k.L('§HQ_PROC_NAMES lang=' + lang + ' no AD_Process_Trl file in any source (' + BP.SOURCES[lang].join(', ') + '): pack=' + got0 + ' records keeping English=' + eng0 + ' of ' + recs0.length);
       if (!recs0.length) k.incon('P1 ' + lang, 'VACUOUS: no process record');
       else k.chk('P1 ' + lang + ' no published process translation: the pack holds none (' + got0 + ') and every record keeps its English name: ' + eng0 + ' of ' + recs0.length, got0 === 0 && eng0 === recs0.length);
@@ -54,7 +54,7 @@ function ownRead(file) {
     const extra = Object.keys(got).filter((id) => !(id in want)).length;
     k.chk('P1 ' + lang + ' the pack holds the translated process names: ' + ok1 + ' of ' + N + ' (missing ' + missing + ', wrong ' + wrong + ', extra ' + extra + ')', ok1 === N && extra === 0, bad1.join(' ; '));
     if (BR === 'noprocnames' && pk.names) delete pk.names.processes;   // the red control, in memory only
-    const idx = HS.indexFrom({ q: H.q, en, pack: pk, fsm, windowIds: ids, processIds: pids }), rec = {};
+    const idx = HS.indexFrom({ q: H.q, howtoQ: H.hq, en, pack: pk, fsm, windowIds: ids, processIds: pids }), rec = {};
     idx.records.forEach((r) => { if (r.k === 'process') rec[r.gate[1]] = r; });
     let ok2 = 0; const bad2 = [];
     Object.keys(want).forEach((id) => { const r = rec[id], a = (r && r.a) || []; if (r && r.n === want[id] && (sp(want[id]).toLowerCase() === sp(eng[id]).toLowerCase() || a.indexOf(sp(eng[id])) >= 0)) ok2++; else if (bad2.length < 3) bad2.push(id + ' n=' + JSON.stringify(r && r.n) + ' a=' + JSON.stringify(a)); });

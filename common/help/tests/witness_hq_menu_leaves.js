@@ -41,7 +41,7 @@ function nodePart() {
     ' hidden: ' + hidden.map((m) => m.a + ':' + m.id + ' ' + JSON.stringify(String(m.n).trim())).join(', ') + ' break=' + (process.env.HS_BREAK || BR || 'none'));
   let N = 0, X = 0, U = 0, lHits = 0, lIn = 0, cN = 0, cX = 0, cSame = 0, stray = 0, outN = 0, outRow = 0; const miss = [], cMiss = [], strayEx = [];
   H.LANGS.forEach((lang) => {
-    const idx = HS.indexFrom({ q: H.q, en, pack: packOf(lang), fsm, windowIds: ids, menuIds: admitted });
+    const idx = HS.indexFrom({ q: H.q, howtoQ: H.hq, en, pack: packOf(lang), fsm, windowIds: ids, menuIds: admitted });
     const recs = idx.records.filter((r) => r.gate && r.gate[0] === 'menu'), mine = recs.filter((r) => aset.has(r.gate[1])).map((r) => ({ id: r.gate[1], name: r.n, k: r.k }));
     recNames[lang] = {}; mine.forEach((m) => { recNames[lang][m.id] = m.name; });
     const names = mine.map((m) => m.name), byName = {}; names.forEach((n) => { byName[n] = (byName[n] || 0) + 1; });

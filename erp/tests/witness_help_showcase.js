@@ -88,14 +88,17 @@ function s1names() {
 function s5() {
   let guide = null;
   try { guide = process.env.GUIDE ? fs.readFileSync(process.env.GUIDE, 'utf8') : cp.execSync('git -C ' + JSON.stringify(path.join(os.homedir(), 'bim-compiler')) + ' show origin/master:docs/ERPUserGuide.md', { encoding: 'utf8', maxBuffer: 1 << 26 }); } catch (e) { k.incon('S5', 'guide not readable'); return; }
-  const en = JSON.parse(fs.readFileSync(path.join(HELP, 'en_US', 'help.json'), 'utf8')), rows = en.howto || [];
+  // §19.16 C4: the how-to rows are legacy's context help, read by the ONE reader over the page's DB view (help.json holds none any more)
+  const rows = require(path.join(HELP, '..', '..', 'ctx_help.js')).howto(require(path.join(HELP, '..', '..', 'tools', 'help_db.js')).q, 'en_US');
   if (!rows.length) { k.incon('S5', 'VACUOUS: no how-to rows'); return; }
   const flat = (t) => t.replace(/<\/(p|li)>/g, ' ').replace(/<[^>]+>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();   // §19.17 F1: a block end is a word break (a guide list renders as <ul><li>)
   const mdFlat = (t) => t.replace(/^- /gm, '').replace(/\*\*([^*]+)\*\*/g, '$1').replace(/\*([^*]+)\*/g, '$1').replace(/`([^`]+)`/g, '$1').replace(/\s+/g, ' ').trim();
   let ok = 0; const bad = [];
   rows.forEach((r) => {
-    const headOk = guide.split('\n').indexOf(r.source.heading) >= 0, sentOk = r.source.sentences.every((s) => guide.indexOf(s) >= 0);
-    const htmlOk = flat(r.html) === r.source.sentences.map(mdFlat).join(' ');   // the shown text is exactly the guide's sentences, nothing added
+    const gl = guide.split('\n'), at = gl.indexOf('### ' + r.name), headOk = at >= 0, body = [];   // the guide section the row names, read HERE from the guide
+    if (headOk) for (let i = at + 1; i < gl.length && !/^#{1,3} /.test(gl[i]); i++) body.push(gl[i]);
+    const paras = body.join('\n').split(/\n\s*\n/).map((x) => x.trim()).filter((x) => x && !x.startsWith('>')), sentOk = paras.length > 0;
+    const htmlOk = flat(r.html) === paras.map(mdFlat).join(' ');   // the shown text is exactly the guide's sentences, nothing added
     if (headOk && sentOk && htmlOk) ok++; else bad.push(r.name + ' heading=' + headOk + ' sentences=' + sentOk + ' text=' + htmlOk);
   });
   k.chk('S5 every how-to row is the guide section it names, word for word (proof asides left out)', ok === rows.length, ok + '/' + rows.length + (bad.length ? ' ' + bad.join(' | ') : ''));

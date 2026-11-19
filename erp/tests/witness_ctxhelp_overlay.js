@@ -18,7 +18,7 @@
 //   how-to (name + html) is unchanged against origin/main (the JSON -> XML move lost nothing). Reds C3: CTX_BREAK=nomachine -> K7 FAIL; CTX_BREAK=pubtext -> K7 FAIL.
 //   Reds C2: CTX_BREAK=nolink (the app file without its AD_Tab updates) -> K6 FAIL; CTX_BREAK=dropsec (one how-to dropped) -> K6 FAIL.
 // Reds: CTX_BREAK=nomsg (the rows file without its ad_ctxhelpmsg row) -> K1 FAIL; CTX_BREAK=patch (one line appended to the hashed patch) -> K5 FAIL; CTX_BREAK=nooverlay (page without the overlay) -> K3 FAIL.
-// Run: node erp/tests/witness_ctxhelp_overlay.js   Env: CTX_BREAK=nomsg|patch|nooverlay|nolink|noproc|dropsec|nomachine|pubtext  NOPAGE=1
+// Run: node erp/tests/witness_ctxhelp_overlay.js   Env: CTX_BREAK=nomsg|patch|nooverlay|nolink|noproc|dropsec|nomachine|pubtext|rawseed  NOPAGE=1
 'use strict';
 const fs = require('fs'), path = require('path'), cp = require('child_process'), crypto = require('crypto');
 const ERP = path.join(__dirname, '..'), ROOT = path.join(ERP, '..'), BR = process.env.CTX_BREAK || '';
@@ -154,6 +154,9 @@ async function nodePart() {
     const msgs = {}; exec1(db6, 'SELECT ad_ctxhelpmsg_id FROM ad_ctxhelpmsg').forEach((v) => { msgs[v[0]] = 1; });
     const sq = (t) => String(t || '').split(/\s+/).filter(Boolean).join(' ');
     let pN = 0, pOk = 0, mN = 0, mOk = 0, shadow = 0, hN = 0, hOk = 0; const bad = [], pubKey = {};
+    const CH = require(path.join(ERP, 'ctx_help.js')), q6 = (sql) => { const r = db6.exec(sql)[0]; return r ? r.values.map((v) => Object.fromEntries(r.columns.map((c, i) => [c.toLowerCase(), v[i]]))) : []; };
+    if (BR === 'rawseed') { const raw = new SQL.Database(new Uint8Array(fs.readFileSync(H.SEED))); CH.howto = ((f) => (q, l) => f((sql) => { const r = raw.exec(sql)[0]; return r ? r.values.map((v) => Object.fromEntries(r.columns.map((c, i) => [c.toLowerCase(), v[i]]))) : []; }, l))(CH.howto); }   // the red: the reader over the RAW seed
+    let mainEn = null; try { mainEn = JSON.parse(cp.execSync('git show ' + (process.env.HOWTO_REF || 'c7beb3e6') + ':erp/i18n/help/en_US/help.json', { cwd: ROOT, maxBuffer: 1 << 28, encoding: 'utf8' })); } catch (e) {}
     langs.forEach((lang) => {
       SRC.SOURCES[lang].forEach((d) => { const dir = path.join(CACHE, d); if (!fs.existsSync(dir)) return; fs.readdirSync(dir).filter((f) => /^AD_CtxHelpMsg_Trl_.*\.xml$/.test(f)).sort().forEach((f) => {
         const X = readX(path.join(dir, f)); Object.keys(X).forEach((id) => { if (!msgs[id] || pubKey[id + '|' + lang] || sq(X[id].text) === '' || sq(X[id].text) === sq(X[id].orig)) return; pubKey[id + '|' + lang] = 1; pN++;
@@ -162,12 +165,14 @@ async function nodePart() {
       const winNames = Object.values((JSON.parse(fs.readFileSync(path.join(ERP, 'i18n', 'help', lang, 'help.json'), 'utf8')).names || {}).windows || {});
       Object.keys(M).forEach((id) => { mN++; if (pubKey[id + '|' + lang]) { shadow++; return; } const t = tw(id, lang), unl = t ? t.text.replace(/<a href="#" data-help-win="\d+">([^<]*)<\/a>/g, '$1') : null;
         if (t && unl === M[id].text && t.it === 'N' && /data-help-win=/.test(t.text) === winNames.some((n) => M[id].text.indexOf('<b>' + n.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</b>') >= 0)) mOk++; else bad.push('machine ' + id + ' ' + lang + (t ? ' differs: text=' + (unl === M[id].text) + ' it=' + t.it + ' link=' + /data-help-win=/.test(t.text) : ' missing')); });   // linked exactly when a bold term is one of the language's window names
-      let mainJ = null; try { mainJ = JSON.parse(cp.execSync('git show origin/main:erp/i18n/help/' + lang + '/help.json', { cwd: ROOT, maxBuffer: 1 << 28, encoding: 'utf8' })); } catch (e) {}
-      const cur = JSON.parse(fs.readFileSync(path.join(ERP, 'i18n', 'help', lang, 'help.json'), 'utf8'));
-      ((mainJ && mainJ.howto) || []).forEach((h, k) => { hN++; const c = (cur.howto || [])[k]; if (c && c.name === h.name && c.html === h.html) hOk++; else bad.push('help.json ' + lang + ' how-to ' + k + ' changed'); });
+      let mainJ = null; try { mainJ = JSON.parse(cp.execSync('git show ' + (process.env.HOWTO_REF || 'c7beb3e6') + ':erp/i18n/help/' + lang + '/help.json', { cwd: ROOT, maxBuffer: 1 << 28, encoding: 'utf8' })); } catch (e) {}
+      // K8 (§19.16 C4): THE reader (erp/ctx_help.js) over this page DB returns what main's help.json carried (name, html, guide URL), per row; a row the language lacks is the English one, marked
+      const R = CH.howto(q6, lang), enMain = (mainEn && mainEn.howto) || [], lm = (mainJ && mainJ.howto) || [];
+      enMain.forEach((e, k) => { hN++; const want = lm.find((h) => h.ad_window_id === e.ad_window_id && h.name !== undefined && (h.windows || []).join() === (e.windows || []).join()) || e, got = R[k], eng = want === e;
+        if (got && got.name === want.name && got.html === want.html && got.source.url === e.source.url && !!got.english === eng) hOk++; else bad.push('reader ' + lang + ' row ' + k + (got ? ' differs (name ' + (got.name === want.name) + ', html ' + (got.html === want.html) + ', english ' + !!got.english + ')' : ' missing')); });
       L('K7 ' + lang + ' published ' + Object.keys(pubKey).filter((k) => k.endsWith('|' + lang)).length + ', machine ' + Object.keys(M).length);
     });
-    chk('K7 translations in legacy\'s table: published ' + pOk + ' of ' + pN + ', machine ' + mOk + ' of ' + mN + ' (linked, IsTranslated N), shadowed ' + shadow + ', help.json how-to unchanged ' + hOk + ' of ' + hN,
+    chk('K7 translations in legacy\'s table: published ' + pOk + ' of ' + pN + ', machine ' + mOk + ' of ' + mN + ' (linked, IsTranslated N), shadowed ' + shadow + ' | K8 the reader == the last help.json how-to (F1, ' + (process.env.HOWTO_REF || 'c7beb3e6') + ') ' + hOk + ' of ' + hN,
       pN > 0 && pOk === pN && mN > 0 && mOk === mN && shadow === 0 && hOk === hN, bad.join(' ; '));
   }
   // K5 the team base

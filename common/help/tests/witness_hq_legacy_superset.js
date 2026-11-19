@@ -36,7 +36,7 @@ const own = (names, typed) => {   // the witness's OWN reading of MenuSearchCont
   k.L('role=' + ROLE + ' menu windows=' + ids.length + ' break=' + (process.env.HQ_BREAK || 'none'));
   H.LANGS.forEach((lang) => {
     const pk = lang === 'en_US' ? null : JSON.parse(fs.readFileSync(path.join(H.ERP, 'i18n', 'help', lang, 'help.json'), 'utf8'));
-    const idx = HS.indexFrom({ q: H.q, en, pack: pk, fsm, windowIds: ids, processIds: pids });
+    const idx = HS.indexFrom({ q: H.q, howtoQ: H.hq, en, pack: pk, fsm, windowIds: ids, processIds: pids });
     const menu = idx.records.filter((r) => r.k === 'window' && ids.indexOf(r.gate[1]) >= 0).map((r) => ({ id: r.gate[1], name: r.n }));   // the role's menu, labelled in this language
     const names = menu.map((m) => m.name);
     let n = 0, x = 0, lh = 0, li = 0;

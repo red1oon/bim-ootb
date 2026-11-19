@@ -27,7 +27,7 @@ const idxFile = (lang) => path.join(ERP, 'i18n', 'help', lang, 'index.json'), pa
 function pack(lang) {
   const A = require(path.join(ERP, 'tools', 'help_records.js')), index = JSON.parse(fs.readFileSync(idxFile(lang), 'utf8'));
   if (!index.records) index.records = A.load(lang).records;
-  const en = JSON.parse(fs.readFileSync(packFile('en_US'), 'utf8')), pk = lang === 'en_US' ? en : JSON.parse(fs.readFileSync(packFile(lang), 'utf8'));
+  const P = A.packs(lang), en = P.en, pk = lang === 'en_US' ? en : P.pk;   // §19.16 C4: the packs + the how-to from legacy's context help (erp/ctx_help.js), as the page builds them
   return { lang, index, text: A.resolver(en, pk) };
 }
 // the integers a pack's records use, as an object {i: text}, to send to a page (it has no file system)
@@ -82,4 +82,6 @@ function roleSeed() {
   sh("UPDATE ad_window_access SET isreadwrite='N' WHERE ad_window_id % 2 = 0");
   return { file: tmp, targets: tg, tablesWithRows: withRows, unTables, unWins, cleanup: () => { try { fs.unlinkSync(tmp); } catch (e) {} } };
 }
-module.exports = { PW, roleSeed, erpPage, kit, q, seedOk, pack, textsUsed, queries, page, lines, LANGS, ROOT, CORE, ERP, SEED, BIM_APPS, BIM_LOCALES, bimFile, bimPack };
+// §19.16 C4: the how-to rows live in the context-help boot overlay; hq reads the page's DB view of them (erp/tools/help_db.js). Pass it as indexFrom's howtoQ.
+const hq = (sql) => require(path.join(ERP, 'tools', 'help_db.js')).q(sql);
+module.exports = { PW, roleSeed, erpPage, kit, q, hq, seedOk, pack, textsUsed, queries, page, lines, LANGS, ROOT, CORE, ERP, SEED, BIM_APPS, BIM_LOCALES, bimFile, bimPack };
