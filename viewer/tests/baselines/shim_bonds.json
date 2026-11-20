@@ -17,17 +17,17 @@
   },
   "JKR": {
    "n": 8985,
-   "bonded": 5781,
+   "bonded": 5762,
    "db": "JKR_extracted.db",
    "ceilingCrossLevel": 0,
-   "earlyVsHost": 53
+   "earlyVsHost": 0
   },
   "Clinic": {
    "n": 16071,
    "bonded": 14552,
    "db": "Clinic_meta.db",
    "ceilingCrossLevel": 0,
-   "earlyVsHost": 100
+   "earlyVsHost": 70
   },
   "Terminal": {
    "n": 48428,
@@ -45,10 +45,10 @@
   },
   "LTU_AHouse": {
    "n": 122330,
-   "bonded": 105577,
+   "bonded": 84875,
    "db": "LTU_AHouse_meta.db",
    "ceilingCrossLevel": 0,
-   "earlyVsHost": 269
+   "earlyVsHost": 30
   }
  }
 }

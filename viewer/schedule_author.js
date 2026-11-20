@@ -979,7 +979,7 @@
         ' installHoursAll=' + (tot / 3600).toFixed(1) + ' elements=' + _bseList.length);
     })();
     _reclassGroundworkSlabs(_bseList, 'schedule_author');
-    _applyBearingWalls(_bseList, 'schedule_author');
+    _applyBearingWalls(_bseList, 'schedule_author', db);
     // §STOREY_DATUM — SAY WHICH PATH RAN AND WHAT IT COST. A pass that cannot report a no-op is
     // not a pass (CLAUDE.md PRIMAL LAW clause 4): `relabelled` counts elements whose level differs
     // from the label they arrived with, so 0 in datum mode means the declared datums changed
@@ -1042,11 +1042,11 @@
   // §BEARING_WALL (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.6 D1) — ONE shared definition and ONE mutation
   // (ScheduleGate.applyBearingWalls), called by all three element recipes (this one, tm_gantt_build's inline
   // builder, tm_sched_xray's _buildXrayElements) so the task grid, the movie and the lock gate promote the SAME walls.
-  function _applyBearingWalls(list, who) {
+  function _applyBearingWalls(list, who, db) {
     var SG = (global && global.ScheduleGate) ||
              (typeof globalThis !== 'undefined' && globalThis.ScheduleGate) ||
              (typeof window !== 'undefined' && window.ScheduleGate) || null;
-    if (SG && SG.applyGeometryReclass) SG.applyGeometryReclass(list, who);   // bearing walls, then ceilings (§Q.39)
+    if (SG && SG.applyGeometryReclass) SG.applyGeometryReclass(list, who, db);   // db: §Q.44, the file's own covering types   // bearing walls, then ceilings (§Q.39)
     else if (SG && SG.applyBearingWalls) SG.applyBearingWalls(list, who);
   }
   function _reclassGroundworkSlabs(list, who) {

@@ -26,8 +26,9 @@ function aggregates(run, SQL) {
   if (!dbPath || !fs.existsSync(dbPath)) { out.why = 'db not readable: ' + dbPath; return out; }
   const db = new SQL.Database(new Uint8Array(fs.readFileSync(dbPath)));
   try {
-    const pr = run.patched ? quiet(() => BP.applyTo(db, run.dbFile, () => {}, run.patched)) : null;
+    const pr = run.patched ? quiet(() => BP.applyTo(db, run.dbFile, () => {}, typeof run.patched === 'string' ? run.patched : undefined))   /* the cache reader hands back a boolean; `true` used to select the aggregates-only text, so the judge never saw the rest of the patch (§Q.44) */ : null;
     if (run.patched && (!pr || pr.failed.length)) { out.why = 'patch did not apply'; return out; }
+    quiet(() => SB.readDeclaredTypes(db, 'judge'));   // §Q.44: a fresh compute reads the same declared covering types the solve read
     let r;
     try { r = db.exec('SELECT a.child_guid, a.parent_guid, p.ifc_class FROM rel_aggregates a LEFT JOIN elements_meta p ON p.guid = a.parent_guid'); }
     catch (e) { out.why = 'no rel_aggregates table'; return out; }
@@ -54,4 +55,21 @@ function fresh(run, items, G, SQL, table) {
   const agg = aggregates(run, SQL);
   return { agg: agg, res: SB.compute(items, G, { EPS: SG.EPS, GAP: SG.GAP, parentOf: agg.parentOf, parentCls: agg.parentCls, table: table }) };
 }
-module.exports = { sql, load, fresh, aggregates, SB, SG, CACHE, PK };
+// declaredTypes(run, SQL) -> { ok, n, map: {guid: PredefinedType}, by, why } read from the db the run was built from (raw file + the viewer's patch).
+// Also sets the bond module's registry to this building's types (a judge that recomputes must use the building it is judging).
+function declaredTypes(run, SQL) {
+  const out = { ok: false, n: 0, map: {}, by: {}, why: '' };
+  const dbPath = run.dbFile ? path.join(BLD, run.dbFile) : null;
+  if (!dbPath || !fs.existsSync(dbPath)) { out.why = 'db not readable'; return out; }
+  const db = new SQL.Database(new Uint8Array(fs.readFileSync(dbPath)));
+  try {
+    const pr = run.patched ? quiet(() => BP.applyTo(db, run.dbFile, () => {}, typeof run.patched === 'string' ? run.patched : undefined)) : null;
+    if (run.patched && (!pr || pr.failed.length)) { out.why = 'patch did not apply'; return out; }
+    out.ok = true;
+    try { const r = db.exec('SELECT guid, predefined_type FROM element_predefined_type'); if (r.length) r[0].values.forEach(v => { out.map[v[0]] = v[1]; out.n++; out.by[v[1]] = (out.by[v[1]] || 0) + 1; }); }
+    catch (e) { out.why = 'no element_predefined_type table: every covering is undeclared'; }
+    SB.declareTypes(out.n ? out.map : null);
+    return out;
+  } finally { db.close(); }
+}
+module.exports = { declaredTypes, sql, load, fresh, aggregates, SB, SG, CACHE, PK };

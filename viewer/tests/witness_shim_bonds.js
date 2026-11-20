@@ -92,7 +92,7 @@ function b10(X) {
     let under = 0, earlySame = 0, earlyCross = 0;
     for (let i = 0; i < n; i++) {
       const h = res.host[i];
-      if (res.kind[i] !== 'fixture' || SB.capOf(res, i) !== 'hangs-below' || h < 0 || res.kind[h] !== 'covering' || SB.capOf(res, h) !== 'hangs-below') continue;
+      if (res.kind[i] !== 'fixture' || SB.capOf(res, i) !== 'hangs-below' || h < 0 || (res.kind[h] !== 'covering' && res.kind[h] !== 'ceiling') || SB.capOf(res, h) !== 'hangs-below') continue;
       under++; if (!(items[h].e > items[i].s + 1)) continue;
       if (lvlOf[items[i].guid] === lvlOf[items[h].guid]) earlySame++; else earlyCross++;
     }
@@ -116,6 +116,21 @@ function b10(X) {
     // 884 façade parts had a nearer offerer; a façade plate "joined" a slab 13 m above it.
     const far = b10(X);
     say('B10', b, far.judged ? far.through === 0 && far.apart === 0 : null, 'hung / joined bonds judged=' + far.judged + ' with an offerer between element and host=' + far.through + ' joins that do not touch=' + far.apart + (far.sample ? ' e.g. ' + far.sample : ''));
+    // B11 — §Q.44: A COVERING IS WHAT ITS FILE SAYS. Read from the db the run was built from (raw file + patch), independently of the solve:
+    // every covering with a declared PredefinedType has the kind that type gives (CEILING -> ceiling, FLOORING -> floor_finish, any other ->
+    // covering_other), every undeclared one is 'covering', and no covering_other is bonded or hosts a fitting. A building with no table is
+    // judged too (declared=0: all 'covering') and says so — never a silent default. Before the rule LTU scheduled 12,038 pieces of pipe
+    // lagging (declared INSULATION) as ceilings.
+    const dt = R.declaredTypes(X.run, SQL), want = t => t === 'CEILING' ? 'ceiling' : t === 'FLOORING' ? 'floor_finish' : 'covering_other';
+    let covN = 0, declN = 0, wrongKind = 0, otherUsed = 0;
+    for (let i = 0; i < n; i++) {
+      if (items[i].cls !== 'IfcCovering' || agg.parentCls[items[i].guid] === 'IfcCurtainWall' || (agg.parentCls[items[i].guid] || '').indexOf('IfcStair') === 0) continue;
+      covN++; const t = dt.map[items[i].guid]; if (t) declN++;
+      if (res.kind[i] !== (t ? want(t) : 'covering')) wrongKind++;
+      if (res.kind[i] === 'covering_other' && res.outcome[i] === O.BONDED) otherUsed++;
+    }
+    for (let i = 0; i < n; i++) if (res.host[i] >= 0 && res.kind[res.host[i]] === 'covering_other') otherUsed++;
+    say('B11', b, covN ? (dt.ok === false ? null : wrongKind === 0 && otherUsed === 0) : null, covN ? 'coverings=' + covN + ' declared=' + declN + ' (' + (dt.why || JSON.stringify(dt.by)) + ') kind not the declared one=' + wrongKind + ' other-type covering bonded or hosting=' + otherUsed : 'no covering');
     // B7 — ratchet: the bonded count may not fall
     const base = lock.buildings[b];
     if (process.env.LOCK === '1') { lock.buildings[b] = { n: n, bonded: bonded, db: X.run.dbFile, ceilingCrossLevel: earlyCross, earlyVsHost: earlyHost }; say('B7', b, true, 'LOCK=1 bonded=' + bonded + ' of ' + n + ' written'); }
@@ -137,6 +152,15 @@ function b10(X) {
     const keep = SB.REL.joins; SB.REL.joins = 'any';
     let fr2 = null; try { const Xr2 = R.load(rb2, SQL, SB.TABLE); fr2 = Xr2 ? b10(Xr2) : null; } finally { SB.REL.joins = keep; }
     say('RED10', rb2, fr2 ? fr2.apart > 0 : null, fr2 ? 'with joins = any, B10 finds ' + fr2.apart + ' joins that do not touch (must be > 0: the witness can fail)' : 'not loadable');
+  }
+  // RED CONTROL for B11 — with the declared types withheld, a building that declares non-ceilings (LTU: INSULATION) must show ceilings by bond.
+  const rb3 = ALL.indexOf('LTU_AHouse') >= 0 ? 'LTU_AHouse' : (ALL.indexOf('JKR') >= 0 ? 'JKR' : null);
+  if (!rb3) say('RED11', '-', null, 'neither LTU_AHouse nor JKR in this run — the B11 red control was not exercised');
+  else {
+    const Xr3 = R.load(rb3, SQL), dt3 = Xr3 ? R.declaredTypes(Xr3.run, SQL) : null; let asCeil = null;
+    if (Xr3 && dt3 && dt3.n) { SB.declareTypes(null); const r3 = SB.compute(Xr3.items, Xr3.G, { EPS: R.SG.EPS, GAP: R.SG.GAP, parentOf: Xr3.agg.parentOf, parentCls: Xr3.agg.parentCls }); SB.declareTypes(dt3.map);
+      asCeil = 0; for (let i = 0; i < r3.n; i++) { const t = dt3.map[Xr3.items[i].guid]; if (t && t !== 'CEILING' && r3.kind[i] === 'covering' && SB.capOf(r3, i) === 'hangs-below') asCeil++; } }
+    say('RED11', rb3, asCeil === null ? null : asCeil > 0, asCeil === null ? 'no declared types readable' : 'with the declared types withheld, ' + asCeil + ' coverings the file declares NOT a ceiling bond hangs-below and would be scheduled as ceilings (must be > 0: the witness can fail)');
   }
   console.log('§W_SHIM_VERDICT pass=' + pass + ' fail=' + fail + ' inconclusive=' + inc + (fail ? '  FAIL' : inc && !pass ? '  INCONCLUSIVE' : '  PASS'));
   process.exit(fail ? 1 : (pass ? 0 : 2));

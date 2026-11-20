@@ -284,6 +284,7 @@ function build(bld, force, want, hooks) {   // hooks.onDb(db, res) — READ-ONLY
           try {
             const SB = require(path.join(V, 'shim_bonds.js')), PK = require('./lib/shim_bonds_pack.js');
             const bItems = els.filter(e => play[e.guid]), agg = PK.aggFromDb(db);
+            { const _lq = console.log; console.log = function () {}; try { SB.readDeclaredTypes(db, 'cache'); } finally { console.log = _lq; } }   // §Q.44: the same declared types the solve read
             const _lb = console.log; console.log = function () {}; let bG; try { bG = CP.contactGraph(bItems); } finally { console.log = _lb; }
             if (bG.ok) { bonds = PK.pack(SB.compute(bItems, bG, { EPS: SG.EPS, GAP: SG.GAP, parentOf: agg.parentOf, parentCls: agg.parentCls }), bItems, agg, SB); console.log(PK.line(bld, bonds)); }
             else console.log('§SHIM_BONDS ' + bld + ' INCONCLUSIVE — contact graph not ok; no bond table persisted');
