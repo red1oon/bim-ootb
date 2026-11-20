@@ -1,0 +1,51 @@
+{
+  "schema": "oci-patch-provenance/1",
+  "generated_at": "2026-11-20T01:32:05.534Z",
+  "bucket": "bim-ootb",
+  "engine": {
+    "worktree": "/tmp/wt-4d-ltu-served",
+    "sha": "d6df80bc29d16809deb221d088728344f0ac1508",
+    "behind_origin_main": 0,
+    "ahead_origin_main": 0,
+    "clean": true,
+    "dirty_paths": []
+  },
+  "served_db": {
+    "object": "buildings/LTU_AHouse_meta.db",
+    "etag": "6469d064-3cf0-4aa3-9e26-e3bf649b60c1",
+    "content-md5": "Jenf0zqoAC4FX6aYS/JGGA==",
+    "size": "19141186",
+    "last-modified": "Sat, 29 Aug 2026 19:50:13 GMT",
+    "content-encoding": "gzip"
+  },
+  "artifact": {
+    "file": "buildings/patches/LTU_AHouse_meta.db.sql",
+    "bytes": 4832,
+    "md5": "fae2591b2d9a98df0d2c83dad62108ba",
+    "md5_b64": "+uJZGy2amN8NLIPa1iEIug==",
+    "object": "buildings/patches/LTU_AHouse_meta.db.sql",
+    "content_type": "application/sql"
+  },
+  "target": {
+    "exists": false
+  },
+  "verification": {
+    "cmd": "test \"$(sqlite3 \"$GATE_DB\" \"select (select count(*) from storey_elevation)=38 and (select count(*) from storey_elevation s join spatial_structure p on p.guid=s.guid and p.name=s.name and p.type='IfcBuildingStorey')=38 and (select count(*) from elements_meta)=122330 and (select count(distinct storey) from elements_meta where storey<>'Unknown' and storey not in (select name from storey_elevation))=0\")\" = 1 && node viewer/tests/witness_ifc_storeys.js --patched \"$GATE_DB\"",
+    "exit": 0,
+    "tail": [
+      "§W_STOREY LIMIT a millimetre ladder read at scale 1 with rung 0 still passes the frame test: chosen=storey_elevation. So U1-U3 + R1 guard the unit, not the frame test.",
+      "§W_STOREY R0 both JS routes write one storey_elevation: same storeys, same metres PASS import 4 open 4 worst 3.89910326248355e-13",
+      "§W_STOREY REAL INCONCLUSIVE no --ifc given, the real-file legs were not judged",
+      "§W_STOREY R2 ladder strictly rising in metres, inside a sane building height PASS 0 2.7 6 9.3 12 12.3 15.3 16",
+      "§W_STOREY OPEN the choice between those two lines is a sequence ruling (§J.4), not judged here",
+      "§W_STOREY VERDICT pass=13 fail=0"
+    ]
+  },
+  "verdict": "PASS",
+  "failures": [],
+  "uploaded": {
+    "at": "2026-11-20T01:32:07.530Z",
+    "etag": "f92a66f0-e128-4242-a222-a37bf1a317e6",
+    "verified": true
+  }
+}
