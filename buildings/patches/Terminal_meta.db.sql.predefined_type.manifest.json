@@ -1,0 +1,49 @@
+{
+  "schema": "oci-patch-provenance/1",
+  "generated_at": "2026-11-20T07:50:44.139Z",
+  "bucket": "bim-ootb",
+  "engine": {
+    "worktree": "/tmp/wt-4d-upload",
+    "sha": "797556932cdd89f14c33ad3eabb377eea4b19289",
+    "behind_origin_main": 0,
+    "ahead_origin_main": 0,
+    "clean": true,
+    "dirty_paths": []
+  },
+  "served_db": {
+    "object": "buildings/Terminal_meta.db",
+    "etag": "f6270727-0c77-45cf-af91-72a4958afde5",
+    "content-md5": "XtgMPqVHct5X+A4o5XmGfA==",
+    "size": "2440936",
+    "last-modified": "Fri, 28 Aug 2026 15:47:37 GMT",
+    "content-encoding": "gzip"
+  },
+  "artifact": {
+    "file": "../../home/red1/.cache/bim4d/q47_upload_2026-11-20/upload/Terminal_meta.db.sql",
+    "bytes": 4303515,
+    "md5": "2c222b471529a63179eb77aec3afe14e",
+    "md5_b64": "LCIrRxUppjF563euw6/hTg==",
+    "object": "buildings/patches/Terminal_meta.db.sql",
+    "content_type": "application/sql"
+  },
+  "target": {
+    "exists": true,
+    "etag": "5dc518c3-16d5-4b92-b2ba-59139bcce48f",
+    "size": "4302971",
+    "last-modified": "Fri, 28 Aug 2026 00:55:35 GMT"
+  },
+  "verification": {
+    "cmd": "bash -c 'r=$(sqlite3 $GATE_DB \"select (select count(*) from element_predefined_type) || char(124) || (select count(*) from element_predefined_type t join elements_meta m on m.guid=t.guid where m.ifc_class=char(73,102,99,67,111,118,101,114,105,110,103)) || char(124) || (select count(*) from elements_meta where ifc_class=char(73,102,99,67,111,118,101,114,105,110,103)) || char(124) || (select group_concat(distinct predefined_type) from element_predefined_type)\"); e=$(sqlite3 $GATE_DB \"select count(*) from elements_meta\"); echo VERIFY rows,joinToCovering,coveringsInServedDb,types = $r elementsInServedDb=$e; [ \"$r\" = \"82|82|82|CEILING\" ]'",
+    "exit": 0,
+    "tail": [
+      "VERIFY rows,joinToCovering,coveringsInServedDb,types = 82|82|82|CEILING elementsInServedDb=48428"
+    ]
+  },
+  "verdict": "PASS",
+  "failures": [],
+  "uploaded": {
+    "at": "2026-11-20T07:50:47.008Z",
+    "etag": "dd498bb4-aa49-4038-8875-881613ac6004",
+    "verified": true
+  }
+}

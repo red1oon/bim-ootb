@@ -1,0 +1,49 @@
+{
+  "schema": "oci-patch-provenance/1",
+  "generated_at": "2026-11-20T07:51:52.423Z",
+  "bucket": "bim-ootb",
+  "engine": {
+    "worktree": "/tmp/wt-4d-upload",
+    "sha": "797556932cdd89f14c33ad3eabb377eea4b19289",
+    "behind_origin_main": 0,
+    "ahead_origin_main": 0,
+    "clean": true,
+    "dirty_paths": []
+  },
+  "served_db": {
+    "object": "buildings/Hospital_meta.db",
+    "etag": "a84c5022-e123-45f0-b93a-be52cf82fa3b",
+    "content-md5": "S4DRfFRDGYsXcxoXfqsH8Q==",
+    "size": "4163894",
+    "last-modified": "Sat, 15 Aug 2026 17:20:49 GMT",
+    "content-encoding": "gzip"
+  },
+  "artifact": {
+    "file": "../../home/red1/.cache/bim4d/q47_upload_2026-11-20/upload/Hospital_meta.db.sql",
+    "bytes": 2594859,
+    "md5": "27116deb11ccfcdd517cf7e26904c08f",
+    "md5_b64": "JxFt6xHM/N1RfPfiaQTAjw==",
+    "object": "buildings/patches/Hospital_meta.db.sql",
+    "content_type": "application/sql"
+  },
+  "target": {
+    "exists": true,
+    "etag": "d4e7313d-d053-41a7-ace9-edf1bdf7e723",
+    "size": "2594309",
+    "last-modified": "Tue, 20 Oct 2026 18:03:53 GMT"
+  },
+  "verification": {
+    "cmd": "bash -c 'r=$(sqlite3 $GATE_DB \"select (select count(*) from element_predefined_type) || char(124) || (select count(*) from element_predefined_type t join elements_meta m on m.guid=t.guid where m.ifc_class=char(73,102,99,67,111,118,101,114,105,110,103)) || char(124) || (select count(*) from elements_meta where ifc_class=char(73,102,99,67,111,118,101,114,105,110,103)) || char(124) || (select group_concat(distinct predefined_type) from element_predefined_type)\"); e=$(sqlite3 $GATE_DB \"select count(*) from elements_meta\"); echo VERIFY rows,joinToCovering,coveringsInServedDb,types = $r elementsInServedDb=$e; [ \"$r\" = \"602|602|602|CEILING\" ]'",
+    "exit": 0,
+    "tail": [
+      "VERIFY rows,joinToCovering,coveringsInServedDb,types = 602|602|602|CEILING elementsInServedDb=64150"
+    ]
+  },
+  "verdict": "PASS",
+  "failures": [],
+  "uploaded": {
+    "at": "2026-11-20T07:51:55.031Z",
+    "etag": "a5cca94c-14df-4412-9847-b997c255ea96",
+    "verified": true
+  }
+}
