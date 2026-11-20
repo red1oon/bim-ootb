@@ -47,7 +47,8 @@ const G = require(path.join(ROOT, 'scripts', 'gen_manifest.js')), R = require(pa
 const clone = o => JSON.parse(JSON.stringify(o));
 const SKIP_C7 = process.argv.includes('--skip-c7'), SKIP_C9 = process.argv.includes('--skip-c9');
 const MS = require(path.join(ROOT, 'scripts', 'lib', 'manifest_source.js'));
-const SRC_APPS = G.APPS.filter(a => MS.hasSource(ROOT, a)), NCLAIMS = 7 + 4 + (SRC_APPS.includes('erp') ? 1 : 0) + 8 * SRC_APPS.length - (SKIP_C7 ? 1 : 0) - (SKIP_C9 ? SRC_APPS.length : 0);   // C8-C15 once per source app; C20 once ERP is one
+const SRC_APPS = G.APPS.filter(a => MS.hasSource(ROOT, a)), NCLAIMS0 = 7 + 8 * SRC_APPS.length - (SKIP_C7 ? 1 : 0) - (SKIP_C9 ? SRC_APPS.length : 0);   // C1-C7, and C8-C15 once per source app
+let NCLAIMS = NCLAIMS0;   // + C16-C18 per app with differing site numbers, C19 for ERP, C20 per such source app (set below)
 // the two regexes of scripts/bump.js (PAGE_REF, JS_REF), quoted here as the independent second reader
 const PAGE_REF = /((?:src|href)\s*=\s*")([^"?#]+)\?v=(\d+)(")/g, JS_REF = /((['"]))([^'"\s?#]+\.(?:js|css|json|wasm))\?v=(\d+)(\2)/g;
 const RAW_TAG = /<script[^>]+src=/g, count = (s, re) => (s.match(re) || []).length;
@@ -316,9 +317,13 @@ if (B1.m) {
 //   Until erp/modules.json is committed (B2 part 2) ERP is switched HERE, in memory and in temp trees (trial=Y): MS.init on the real tree, marker pairs
 //   placed by a fixture rule (a new pair where two tags are more than 500 lines apart), every candidate edge kept as `uses` (the order review is part 2,
 //   so ERP's load order is NOT judged here). The real tree is never written.
-const B2 = { siteV: 0, pinned: 0, trial: '-' };
-{
-  const app = 'erp', a = r.apps.find(x => x.manifest.app === app), trial = !MS.hasSource(ROOT, app), os = require('os');
+// B3 (#3377): the block runs for EVERY app whose pages load a module under different numbers (ERP and the viewer; the modeller has none).
+const B2 = { siteV: 0, pinned: 0, trial: 'N', multi: 0 };
+const B2_APPS = r.apps.filter(a => a.manifest.modules.some(x => new Set(x.sites.map(z => z.v)).size > 1));
+NCLAIMS = NCLAIMS0 + 3 * B2_APPS.length + (B2_APPS.some(a => a.manifest.app === 'erp') ? 1 : 0) + B2_APPS.filter(a => MS.hasSource(ROOT, a.manifest.app)).length;
+if (!B2_APPS.length) inconclusive.push('no app has a module with differing site numbers (C16-C18 would judge nothing)');
+for (const a of B2_APPS) {
+  const app = a.manifest.app, trial = !MS.hasSource(ROOT, app), os = require('os');
   const rd = f => fs.readFileSync(path.join(ROOT, f), 'utf8'), ls = (s, i) => s.lastIndexOf('\n', i - 1) + 1, le = (s, i) => { const e = s.indexOf('\n', i); return e < 0 ? s.length : e + 1; };
   let m, texts = new Map();
   if (trial) {
@@ -339,14 +344,14 @@ const B2 = { siteV: 0, pinned: 0, trial: '-' };
   const setEff = (mm, f, s, v) => { if (v === mm.modules[MS.targetOf(mm, f, s.as)].v) delete s.v; else s.v = v; };
   const base = chk(m), own = [], pins = [];
   for (const f of Object.keys(m.order)) m.order[f].forEach((s, at) => { if ('v' in s) own.push({ f, at, s }); if (s.pin) pins.push({ f, at, s }); });
-  B2.siteV = own.length; B2.pinned = pins.length; B2.trial = trial ? 'Y' : 'N';
+  B2.siteV += own.length; B2.pinned += pins.length; if (trial) B2.trial = 'Y';
   base.fails.slice(0, 8).forEach(x => say('  §MANIFEST_B2_FAIL ' + x));
   // C16 — the site numbers are exactly today's disagreements, judged against B0's reader of the committed tree
   { const key = x => JSON.stringify(x.sites.map(z => [z.in, z.at, z.kind, z.as, z.v]).sort()), read = new Map(a.manifest.modules.map(x => [x.file, x])); let differ = 0, want = 0;
     for (const x of MS.expand(m).b0.modules) { const y = read.get(x.file); if (!y || key(x) !== key(y)) { differ++; if (differ < 6) say('  §MANIFEST_C16_MISS module=' + x.file); } }
     for (const y of a.manifest.modules) { const nums = y.sites.map(z => z.v).filter(v => v != null); if (nums.length) want += y.sites.filter(z => z.v !== Math.max(...nums)).length; }
     if (!own.length) inconclusive.push('C16: 0 sites carry their own v (C16 and C17 would judge nothing)');
-    claim('C16', !base.fails.length && !differ && own.length === want && own.length > 0, `app=${app} trial=${B2.trial} check_fails=${base.fails.length} driven_files=${base.info.identical}/${base.info.files} marker_pairs=${base.info.pairs || 0} modules_differing_from_reader=${differ} site_v=${own.length} reader_says=${want} (below the module's highest ${own.filter(o => o.s.v != null).length}, no ?v= ${own.filter(o => o.s.v == null).length}) pinned=${pins.length}`); }
+    claim('C16', !base.fails.length && !differ && own.length === want && own.length > 0, `app=${app} trial=${trial ? 'Y' : 'N'} check_fails=${base.fails.length} driven_files=${base.info.identical}/${base.info.files} marker_pairs=${base.info.pairs || 0} modules_differing_from_reader=${differ} site_v=${own.length} reader_says=${want} (below the module's highest ${own.filter(o => o.s.v != null).length}, no ?v= ${own.filter(o => o.s.v == null).length}) pinned=${pins.length}`); }
   // C17-C19 in temp trees: A = the files as committed (bump.js's regex path, untouched code), B = the same with modules.json + markers (the manifest path)
   const tA = fs.mkdtempSync(path.join(os.tmpdir(), 'w-manifest-b2a-')), tB = fs.mkdtempSync(path.join(os.tmpdir(), 'w-manifest-b2b-')), home = fs.mkdtempSync(path.join(os.tmpdir(), 'w-manifest-b2h-'));
   try {
@@ -354,7 +359,8 @@ const B2 = { siteV: 0, pinned: 0, trial: '-' };
     const targets = multi.filter(f => fs.existsSync(path.join(ROOT, f)) && MS.expand(m).b0.modules.find(x => x.file === f).sites.every(z => z.kind === 'tag' || z.kind === 'lazy'));
     const put = (t, f, s) => { fs.mkdirSync(path.dirname(path.join(t, f)), { recursive: true }); fs.writeFileSync(path.join(t, f), s); };
     for (const f of owned) { put(tA, f, rd(f)); put(tB, f, text(f)); }
-    for (const f of [...targets, app + '/icons.js'].filter((f, i, l) => l.indexOf(f) === i && !owned.includes(f))) { put(tA, f, rd(f)); put(tB, f, rd(f)); }
+    const chg = targets[0];   // the module a later branch 'changes' in C18
+    for (const f of targets.filter(f => !owned.includes(f))) { put(tA, f, rd(f)); put(tB, f, rd(f)); }
     put(tB, MS.sourceFile(app), MS.serialize(m));
     const env = Object.assign({}, process.env, { BUMP_PARITY: 'off', BUMP_PARITY_HOME: home });
     const bump = (t, args) => cp.spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'bump.js'), ...args, '--root', t], { encoding: 'utf8', env, maxBuffer: 1 << 26 });
@@ -368,20 +374,20 @@ const B2 = { siteV: 0, pinned: 0, trial: '-' };
       claim('C17', ra.status === 0 && rb.status === 0 && !diff.length && moved > 1 && la === lb && la > targets.length, `app=${app} modules_bumped=${targets.length} (${targets.map(f => path.basename(f)).join(',')}) regex_exit=${ra.status} manifest_exit=${rb.status} bump_lines=${la}/${lb} files_changed=${moved} files_differing=${diff.length}/${owned.length}`);
     }
     // C19 — the deploy stamp's own pattern still reads the version from the sw.js the generator wrote
-    { const yml = rd('.github/workflows/deploy-pages.yml'), has = yml.includes(`grep -oE "CACHE_VERSION = '[^']+'" erp/sw.js`), mm = JSON.parse(get(tB, MS.sourceFile(app)));
+    if (app === 'erp') { const yml = rd('.github/workflows/deploy-pages.yml'), has = yml.includes(`grep -oE "CACHE_VERSION = '[^']+'" erp/sw.js`), mm = JSON.parse(get(tB, MS.sourceFile(app)));
       const hit = /CACHE_VERSION = '([^']+)'/.exec(get(tB, m.sw));
       if (!has) inconclusive.push('C19: deploy-pages.yml no longer holds the stamp pattern this claim quotes');
       claim('C19', has && hit && hit[1] === mm.cacheVersion && (!targets.length || mm.cacheVersion !== m.cacheVersion), `app=${app} stamp_reads=${hit ? hit[1] : '-'} manifest=${mm.cacheVersion} before_the_bump=${m.cacheVersion}`); }
     // C18 — the pinned literals never move: named as a target (same refusal as the regex path), and on a branch that changed sw.js (--changed)
-    if (!pins.length) { inconclusive.push('C18: no pinned site'); claim('C18', false, 'judged nothing'); }
+    if (!pins.length || !chg) { inconclusive.push('C18: ' + app + ' has no pinned site, or no module to change'); claim('C18', false, 'judged nothing'); }
     else {
       const lit = t => pins.map(p => { const s = G.readSites(p.f, get(t, p.f))[p.at]; return p.f + ':' + s.as + '?v=' + s.v; }).join(' '), before = lit(tB);
       const da = bump(tA, [m.sw]), db = bump(tB, [m.sw]), errA = /^§BUMP_ERR not_loaded_by_any_page_or_loader/m.test(da.stdout), errB = /^§BUMP_ERR not_loaded_by_any_page_or_loader/m.test(db.stdout);
       const git = (args, extra) => cp.execFileSync('git', args, { cwd: tB, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], env: Object.assign({}, process.env, { GIT_AUTHOR_NAME: 'w', GIT_AUTHOR_EMAIL: 'w@w', GIT_COMMITTER_NAME: 'w', GIT_COMMITTER_EMAIL: 'w@w' }, extra || {}) }).trim();
       git(['init', '-q']); git(['add', '-A']); const c = git(['commit-tree', git(['write-tree']), '-m', 'base']); git(['update-ref', 'HEAD', c]); git(['update-ref', 'refs/remotes/origin/main', c]);
-      fs.appendFileSync(path.join(tB, m.sw), '// changed on this branch\n'); fs.appendFileSync(path.join(tB, app, 'icons.js'), '// changed on this branch\n');
+      fs.appendFileSync(path.join(tB, m.sw), '// changed on this branch\n'); fs.appendFileSync(path.join(tB, chg), '// changed on this branch\n');
       const ch = bump(tB, ['--changed', '--write']), files = (/^§BUMP_CHANGED .* files=(\S*)/m.exec(ch.stdout) || [])[1] || '', swLines = (ch.stdout.match(/^§BUMP \w+=\S+ ref=sw\.js .*$/mg) || []).length, after = lit(tB);
-      claim('C18', da.status === 2 && db.status === 2 && errA && errB && ch.status === 0 && files === app + '/icons.js' && swLines === 0 && after === before, `app=${app} pinned=${pins.length} named_as_target: regex_exit=${da.status} manifest_exit=${db.status} · --changed (sw.js + icons.js changed): exit=${ch.status} bumpable=${files || '-'} sw_lines=${swLines} literals ${before === after ? 'unchanged' : 'MOVED'} (${after})`);
+      claim('C18', da.status === 2 && db.status === 2 && errA && errB && ch.status === 0 && files === chg && swLines === 0 && after === before, `app=${app} pinned=${pins.length} named_as_target: regex_exit=${da.status} manifest_exit=${db.status} · --changed (sw.js + ${path.basename(chg)} changed): exit=${ch.status} bumpable=${files || '-'} sw_lines=${swLines} literals ${before === after ? 'unchanged' : 'MOVED'} (${after})`);
       // R20: without `pin` the same target raises the register literal
       { const mm = JSON.parse(get(tB, MS.sourceFile(app))); Object.values(mm.order).forEach(l => l.forEach(s => { delete s.pin; })); put(tB, MS.sourceFile(app), MS.serialize(mm));
         const o = bump(tB, [m.sw]).stdout, n = (o.match(/^§BUMP inline=\S+ ref=sw\.js v=\d+->\d+/mg) || []).length;
@@ -402,8 +408,8 @@ const B2 = { siteV: 0, pinned: 0, trial: '-' };
     const oc = MS.order(m, ROOT);
     if (!pairsJ) inconclusive.push('C20: no deps pair with both ends as tags of one page');
     claim('C20', pairsJ > 0 && !wrong && !oc.errors.length, `app=${app} deps_declared=${oc.judged} pairs_judged=${pairsJ} page_placements_judged=${placed} pairs_on_2plus_pages=${multi.length} out_of_order_in_the_pages=${wrong} generator_refusals=${oc.errors.length}`);
-    if (!multi.length) { inconclusive.push('R21: no deps pair with both ends as tags on 2+ pages'); redSay('R21', false, 'judged nothing'); }
-    else { const [f, d, on] = multi[0], pg = on[on.length - 1], mm = clone(m), ix = k => mm.order[pg].findIndex(z => z.kind === 'tag' && MS.targetOf(mm, pg, z.as) === k), i = ix(f), j = ix(d), t = mm.order[pg][i]; mm.order[pg][i] = mm.order[pg][j]; mm.order[pg][j] = t;
+    B2.multi += multi.length;
+    if (multi.length) { const [f, d, on] = multi[0], pg = on[on.length - 1], mm = clone(m), ix = k => mm.order[pg].findIndex(z => z.kind === 'tag' && MS.targetOf(mm, pg, z.as) === k), i = ix(f), j = ix(d), t = mm.order[pg][i]; mm.order[pg][i] = mm.order[pg][j]; mm.order[pg][j] = t;
       const e = MS.order(mm, ROOT).errors; redSay('R21', e.length > 0 && e.every(x => x.startsWith(pg + ':')), `${f} and its dep ${d} swapped on ${pg} only (right on ${on.length - 1} other page(s)): ${e.length} refusal(s), all naming ${pg}`); }
   }
   // R16-R19 on the manifest and texts above (in memory)
@@ -422,6 +428,7 @@ const B2 = { siteV: 0, pinned: 0, trial: '-' };
     else { const src = text(page), e = /<!-- §MANIFEST:END \S+ tags -->\n/.exec(src), at = e.index + e[0].length, tx = new Map(texts); tx.set(page, src.slice(0, at) + '<script src="zz_planted.js?v=1"></script>\n' + src.slice(at));
       const c = chk(m, tx); redSay('R19', c.fails.some(x => /outside the §MANIFEST markers \(zz_planted\.js\)/.test(x)), `a <script src> planted between the two marker pairs of ${page} (line ${src.slice(0, at).split('\n').length}): ${c.fails.filter(x => /outside the §MANIFEST/.test(x)).length} refusal(s)`); } }
 }
+if (B2_APPS.some(a => MS.hasSource(ROOT, a.manifest.app)) && !B2.multi) inconclusive.push('R21: no source app has a deps pair with both ends as tags on 2+ pages');
 if (red.some(x => !x)) inconclusive.push('a red control was not detected');
 
 const { Witness } = require(path.join(ROOT, 'witness_kit', 'contract.js'));

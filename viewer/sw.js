@@ -288,7 +288,7 @@
 // v1778 (2026-11-20) §Q.47 (bim-compiler 4D_MODEL_INTEGRITY.md): the §IFC_PREDEFINED_TYPE blocks uploaded to the bucket's patches; _GANTT_CACHE_VERSION 52 so stored schedules regenerate with them. No script change.
 // v1779 (2026-11-20) §Q.48 (bim-compiler 4D_MODEL_INTEGRITY.md): shim_bonds.js?v=5 — a slab filed as a finish is kind floor_finish; _GANTT_CACHE_VERSION 53.
 // v1780 (2026-11-20) §INSULATION_WITH_PIPE (bim-compiler 4D_MODEL_INTEGRITY.md §Q.49): shim_bonds / schedule_author / cpm_schedule bumped — a covering declared INSULATION is filed with the pipe it wraps; _GANTT_CACHE_VERSION 54.
-const CACHE_VERSION = 'v1780';
+const CACHE_VERSION = 'v1781';
 // v1637 (rebase of PR #1191/#1196) §CLASS_UNMATCHED_INHERITED + §EXACT_LOOKUP_BLINDSPOT: rates/ifc_schema_hierarchy.json added to PRECACHE_ASSETS; schedule_author.js/proj_fold.js/boq_charts.html/schedule_read_4d.js/tm_sched_xray.js classify via the schema hierarchy.
 // v1636 (rebase of PR #1317) §ARCH_AREA_WEIGHT/§VOL_WEIGHT/§FOOTING_M3: schedule_author.js, time_machine parts, rates.js and rates/*.json changed install DURATIONS (area/volume weighting, IfcFooting priced M3); all precached cache-first, so a client holding the old cache would keep the flat times forever.
 // v1635 (rebase of PR #676, BCF half only) §BCF_EXPORT: bcf_export.js added to PRECACHE_ASSETS; viewer.html loads it + Export BCF button in the Issues toolbar; main.js wires setupBcfExport/exportIssuesBcf. The Open-button IFC half of #676 was superseded by main's A._openIfcFiles.
@@ -1081,6 +1081,7 @@ const CDN_ASSETS = [
 // Local files to precache on install — viewer works fully offline after first visit.
 // DB files are NOT here — they're cached in IndexedDB by A.cachedFetch().
 const PRECACHE_ASSETS = [
+  // §MANIFEST:BEGIN precache (entries here are written by scripts/gen_manifest.js from viewer/modules.json; comments are yours)
   // Entry points
   'viewer.html',
   'boq_charts.html',
@@ -1329,6 +1330,7 @@ const PRECACHE_ASSETS = [
   '../erp/bigdecimal.js', '../erp/ad_docfsm.js', 'blue_fold.js', 'proj_fold.js', 'vo_fold.js',
   'proj_control.js', 'erp_push_plan.js', 'erp_rest_push.js', 'whatif.js', 'whatif_panel.js', 'vo_approve.js', 'proj_period.js',
   'proj_claim.js',
+  // §MANIFEST:END precache
 ];
 
 self.addEventListener('install', (event) => {

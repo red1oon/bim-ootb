@@ -4,7 +4,9 @@
 <meta charset="utf-8">
 <title data-trl="title_mep">BIM OOTB — MEP Bill of Quantities</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- §MANIFEST:BEGIN viewer tags (script tags here are written by scripts/gen_manifest.js from viewer/modules.json; comments are yours) -->
 <script src="lib/chart.umd.min.js"></script>
+<!-- §MANIFEST:END viewer tags -->
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
   body { background:#1a1a2e; color:#e0e0e0; font-family:Segoe UI,sans-serif; padding:20px; }
@@ -55,11 +57,13 @@
 <div id="report-content" data-trl="ui_loading_ellipsis">Loading...</div>
 <div id="status"></div>
 
+<!-- §MANIFEST:BEGIN viewer tags (script tags here are written by scripts/gen_manifest.js from viewer/modules.json; comments are yours) -->
 <script src="../common/lib/sql-wasm.js"></script>
 <script src="rates.js?v=15"></script>
 <script src="provisional_totals.js?v=1"></script>
 <script src="analysis_sidecar.js?v=2"></script>
 <script src="../common/i18n/lang_choice.js?v=1"></script><script src="locale_loader.js?v=16"></script>
+<!-- §MANIFEST:END viewer tags -->
 
 <script>
 var params = new URLSearchParams(location.search);
