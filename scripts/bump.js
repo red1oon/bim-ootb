@@ -82,7 +82,7 @@ if (CHANGED) {
   const refd = new Set();
   for (const h of pages) for (const m of fs.readFileSync(path.join(ROOT, h), 'utf8').matchAll(PAGE_REF)) if (!/^[a-z]+:|^\/\//i.test(m[2])) refd.add(path.relative(ROOT, path.resolve(ROOT, path.dirname(h), m[2])).split(path.sep).join('/'));
   for (const l of loaders) for (const m of fs.readFileSync(path.join(ROOT, l), 'utf8').matchAll(JS_REF)) refd.add(path.relative(ROOT, path.resolve(ROOT, path.dirname(l), m[3])).split(path.sep).join('/'));
-  for (const a of Object.keys(SRC)) for (const [f, x] of Object.entries(SRC[a].m.modules)) if (x.v != null) refd.add(f);
+  for (const a of Object.keys(SRC)) for (const mod of MS.expand(SRC[a].m).b0.modules) if (MS.bumpSites(mod).length) refd.add(mod.file);   // B2: a module whose only sites are pinned is no bump target
   const pick = files.filter(f => refd.has(f));
   console.log(`§BUMP_CHANGED base=${mb.slice(0, 12)} changed=${files.length} bumpable=${pick.length} skipped=${files.length - pick.length} files=${pick.join(',')}`);
   if (!pick.length) { console.log('§BUMP_DONE targets=0 nothing to bump (no changed file is loaded with ?v=)'); process.exit(0); }
@@ -151,13 +151,13 @@ for (let depth = 0; queue.length && depth < 4; depth++) {
     const S = SRC[app], { b0 } = MS.expand(S.m);
     for (const mod of b0.modules) {
       if (!round.has(mod.file) || S.bumped.has(mod.file) || mod.v == null) continue;
-      const sites = mod.sites.filter(x => x.in !== mod.file);   // a file never bumps a reference to itself
+      const sites = MS.bumpSites(mod);   // versioned, not pinned, never the file's reference to itself
       if (!sites.length) continue;
-      S.bumped.add(mod.file); S.m.modules[mod.file].v = mod.v + 1;
+      S.bumped.add(mod.file); MS.raise(S.m, mod.file);   // B2: each site goes up by one from ITS OWN number, as the regex path above does
       if (hits.has(mod.file)) hits.set(mod.file, hits.get(mod.file) + sites.length);
       for (const x of sites) {
         const k = x.kind === 'inline' ? 'inline' : x.in.endsWith('.html') ? 'page' : 'loader';
-        console.log(`§BUMP ${k}=${x.in} ref=${x.as} v=${mod.v}->${mod.v + 1}${k === 'loader' ? ' (lazy load list)' : k === 'inline' ? ' (inline page script, B1-Q2)' : ''} (manifest ${MS.sourceFile(app)})`);
+        console.log(`§BUMP ${k}=${x.in} ref=${x.as} v=${x.v}->${x.v + 1}${k === 'loader' ? ' (lazy load list)' : k === 'inline' ? ' (inline page script, B1-Q2)' : ''} (manifest ${MS.sourceFile(app)})`);
         S.why.push(x.in);
         if (k === 'loader') queue.push(x.in);   // the loader changed: its own ?v= goes up next round
       }

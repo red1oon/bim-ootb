@@ -223,7 +223,7 @@
    {"kind":"inline","as":"../common/comm/team_versions.js"},
    {"kind":"inline","as":"team_plan.js"},
    {"kind":"inline","as":"team_sync.js"},
-   {"kind":"inline","as":"sw.js"},
+   {"kind":"inline","as":"sw.js","pin":true},
    {"kind":"inline","as":"rules_editor.js"},
    {"kind":"inline","as":"edit_report_coverage.json"},
    {"kind":"inline","as":"edit_report.js"},
