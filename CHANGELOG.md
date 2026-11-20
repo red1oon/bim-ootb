@@ -4,6 +4,21 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.96.0](https://github.com/red1oon/bim-ootb/compare/v1.95.0...v1.96.0) (2026-11-20)
+
+
+### ✨ Features
+
+* **4d:** pipe and duct insulation goes on with the pipe it wraps (§Q.49, §INSULATION_WITH_PIPE) ([#3375](https://github.com/red1oon/bim-ootb/issues/3375)) ([0c27edc](https://github.com/red1oon/bim-ootb/commit/0c27edc97682842eb5c04fce03f8824d0896edc8))
+* **erp:** ERP's pages, loaders and sw.js are written from erp/modules.json (B2 part 2, the switch) ([#3373](https://github.com/red1oon/bim-ootb/issues/3373)) ([e4c7356](https://github.com/red1oon/bim-ootb/commit/e4c7356aa2c7bcec5b5c9ff3212f2c5b3972fbd9))
+* **manifest:** B2 part 1 - the module-list generator learns per-site numbers, several marker pairs and pinned literals (no ERP file changes) ([#3367](https://github.com/red1oon/bim-ootb/issues/3367)) ([1cedcf2](https://github.com/red1oon/bim-ootb/commit/1cedcf2fb39892fe14821f8148ce4a67bc335271)), closes [#3365](https://github.com/red1oon/bim-ootb/issues/3365)
+* **viewer:** the viewer's pages, loaders and sw.js are written from viewer/modules.json (B3, the switch) ([#3378](https://github.com/red1oon/bim-ootb/issues/3378)) ([14bb498](https://github.com/red1oon/bim-ootb/commit/14bb498ff1d024a8ed11f9852ab52c73b0349d15)), closes [#3377](https://github.com/red1oon/bim-ootb/issues/3377)
+
+
+### 🐛 Fixes
+
+* **4d:** a slab filed as a finish is a floor finish in the bond table - tiles no longer carry pipes (§Q.48) ([#3372](https://github.com/red1oon/bim-ootb/issues/3372)) ([fd7aa8a](https://github.com/red1oon/bim-ootb/commit/fd7aa8a6b334b3ab703d686ebe44a1ebfe245d92))
+
 ## [1.95.0](https://github.com/red1oon/bim-ootb/compare/v1.94.0...v1.95.0) (2026-11-20)
 
 
