@@ -27,9 +27,14 @@ function build() {
   process.stderr.write('§HELP_DB built ' + path.basename(f) + ' patches=' + PATCHES.length + ' rows=' + (D.rows.length + A.rows.length) + ' ms=' + (Date.now() - t0) + (r.stderr ? ' errors=' + r.stderr.split('\n').filter(Boolean).length : '') + '\n');
   return f;
 }
+// §19.17 F5 follow-up (W-HQ-COST C1b): every q is one sqlite3 process, and the reader asks the same questions again for each language (the helps, their tabs, the English
+//   messages). With 17 helps that took the 12-language index build from under 10 s to 15 s. The file never changes under one key, so an answer is kept per statement.
+const memo = new Map();
 function q(sql) {
   if (!file) file = build();
+  if (memo.has(sql)) return JSON.parse(memo.get(sql));
   const r = cp.spawnSync('sqlite3', ['-readonly', '-json', file, sql], { encoding: 'utf8', maxBuffer: 1 << 29 }); if (r.status !== 0) throw new Error(r.stderr);
+  memo.set(sql, r.stdout || '[]');
   return JSON.parse(r.stdout || '[]');
 }
 module.exports = { q, file: () => (file = file || build()) };
