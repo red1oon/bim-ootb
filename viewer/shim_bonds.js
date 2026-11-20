@@ -43,7 +43,9 @@
     if (c === 'IfcFooting' || c === 'IfcPile') return 'footing';
     if (c === 'IfcColumn') return 'column';
     if (c === 'IfcBeam') return 'beam';
-    if (c === 'IfcSlab') return (e.seq === 1 || e.phase === 'Substructure') ? 'ground_slab' : 'slab';
+    // §Q.48: a slab the run files as a FINISH (a 13 mm tile 'floor', §W_D0 C2) is a floor finish — it bears on a slab and offers nothing;
+    // as a `slab` it was the "first offerer above" of the pipes under it (Duplex: 32 pipes waited for the tiler).
+    if (c === 'IfcSlab') return (e.seq === 1 || e.phase === 'Substructure') ? 'ground_slab' : (e.phase === 'Finishes' ? 'floor_finish' : 'slab');
     if (c.indexOf('IfcWall') === 0) return (typeof e.seq === 'number' && e.seq <= 4) ? 'bearing_wall' : 'wall';
     if (STAIR[c]) return 'stair';
     if (c === 'IfcCovering') {

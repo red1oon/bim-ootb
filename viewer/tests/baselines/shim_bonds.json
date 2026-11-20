@@ -3,10 +3,10 @@
  "buildings": {
   "Duplex": {
    "n": 1119,
-   "bonded": 1008,
+   "bonded": 1009,
    "db": "Duplex_extracted.db",
    "ceilingCrossLevel": 0,
-   "earlyVsHost": 37
+   "earlyVsHost": 32
   },
   "HHS_Office_Federated": {
    "n": 6839,
