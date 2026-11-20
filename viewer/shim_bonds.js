@@ -256,14 +256,40 @@
   // ONE mutation, called by every element recipe through ScheduleGate.applyGeometryReclass. els carry base_z / top_z.
   function applyCeilings(els, who, deps) {
     deps = deps || {};
-    var SG = deps.SG || global.ScheduleGate, CP = deps.CP || global.CpmSchedule, t0 = Date.now(), i, cov = 0;
-    for (i = 0; i < els.length; i++) if (els[i].cls === 'IfcCovering') cov++;
-    if (!cov) { console.log('§CEILING_CLOSEUP recipe=' + who + ' coverings=0 — nothing to judge (VACUOUS)'); return 0; }
+    var SG = deps.SG || global.ScheduleGate, CP = deps.CP || global.CpmSchedule, t0 = Date.now(), i, cov = 0, slabCand = 0;
+    for (i = 0; i < els.length; i++) {
+      if (els[i].cls === 'IfcCovering') cov++;
+      else if (els[i].cls === 'IfcSlab' && els[i].phase !== 'Superstructure' && els[i].phase !== 'Substructure') slabCand++;   // §Q.46 candidates
+    }
+    if (!cov) console.log('§CEILING_CLOSEUP recipe=' + who + ' coverings=0 — nothing to judge (VACUOUS)');
+    if (!slabCand) console.log('§CARRYING_SLAB recipe=' + who + ' promoted=0 — every slab is already filed as structure (VACUOUS)');
+    if (!cov && !slabCand) return 0;
     if (!SG || !CP || !CP.contactGraph) { console.log('§CEILING_CLOSEUP recipe=' + who + ' INACTIVE — contact owner not loaded; coverings=' + cov + ' keep the class rule'); return 0; }
     var items = els.map(function (e) { return { guid: e.guid, cls: e.cls, seq: e.seq, phase: e.phase, x0: e.x0, x1: e.x1, y0: e.y0, y1: e.y1, bz: e.base_z, tz: e.top_z }; });
     var G = CP.contactGraph(items);
     if (!G.ok) { console.log('§CEILING_CLOSEUP recipe=' + who + ' INACTIVE — contact graph unavailable; coverings=' + cov + ' keep the class rule'); return 0; }
     var res = compute(items, G, { EPS: SG.EPS, GAP: SG.GAP }), ceil = 0, floor = 0, unb = 0, decl = 0, declCeil = 0, other = 0;
+    // §CARRYING_SLAB (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.46; rule B of §Q.33.2: a host whose phase comes later is moved up). A slab
+    // filed outside structure (a roof deck named "Basic Roof" is envelope by name) that a column or a bearing wall BEARS ON is structure:
+    // Superstructure, sequence 4, what any slab is. Measured: Clinic 1 slab carrying 65 bearing walls + 2 columns scheduled a task before it;
+    // the other six buildings 0. Resource, rate and install time unchanged. Read from the same bond pass as the ceilings — no second graph.
+    if (slabCand) {
+      var carry = {}, carrying = 0, promoted = 0, was = {};
+      for (i = 0; i < els.length; i++) {
+        if ((res.kind[i] !== 'column' && res.kind[i] !== 'bearing_wall') || capOf(res, i) !== 'bears-on-top') continue;
+        var hsC = res.hosts[i] || [];
+        for (var hc = 0; hc < hsC.length; hc++) {
+          var sj = hsC[hc], se = els[sj];
+          if (se.cls !== 'IfcSlab' || se.phase === 'Superstructure' || se.phase === 'Substructure') continue;
+          carry[sj] = (carry[sj] || 0) + 1; carrying++;
+        }
+      }
+      for (var ck in carry) { var ce = els[ck]; was[ce.phase + '/seq' + ce.seq] = (was[ce.phase + '/seq' + ce.seq] || 0) + 1; ce.phase = 'Superstructure'; ce.seq = 4; promoted++; }
+      console.log('§CARRYING_SLAB recipe=' + who + ' candidates(slabs filed outside structure)=' + slabCand + ' promoted=' + promoted + ' carrying=' + carrying +
+        (promoted ? ' byWas=' + JSON.stringify(was) + ' — a slab a column or bearing wall bears on is Superstructure, sequence 4 (trade, rate, install time unchanged)'
+                  : ' — NO-OP: no column or bearing wall bears on a slab filed outside structure'));
+    }
+    if (!cov) return 0;
     for (i = 0; i < els.length; i++) {
       var kd = res.kind[i];
       if (kd === 'ceiling') { els[i].phase = 'Architecture Closeup'; els[i].seq = 8; ceil++; decl++; declCeil++; continue; }   // §Q.44: declared — the fact, whatever its bond
