@@ -16,9 +16,13 @@
 //   §19.16 C3 (new K7): the translations in legacy's own table: every TRANSLATED published AD_CtxHelpMsg_Trl row of the packs (i18n_sources.json, read HERE) is a twin row with the
 //   pack's text; every machine row (erp/i18n/machine/AD_CtxHelpMsg_Trl_<lang>.xml) is a twin row, linked, IsTranslated N; none shadows a published row; each language's help.json
 //   how-to (name + html) is unchanged against origin/main (the JSON -> XML move lost nothing). Reds C3: CTX_BREAK=nomachine -> K7 FAIL; CTX_BREAK=pubtext -> K7 FAIL.
+//   §19.17 F5 (K6 / K7 / K8 widened): the SECOND guide, docs/ERP_FirstSetup.md, at TAB level. Legacy shows ONE message per tab / process, so a target named by several sections
+//   holds them in ONE message, in source order, each under its own heading. K6's denominator = every tab / process the spec's mapping (build_help_pack.js SECTIONS) names;
+//   K7: a machine row translates one SECTION, the twin row is built section by section (English where no translation: nothing vanishes on a translated screen);
+//   K8: the reader returns every help, also one that sits only on a SUB tab. Red F5: CTX_BREAK=nosetup (the rows file before the setup guide) -> K6 FAIL on its targets.
 //   Reds C2: CTX_BREAK=nolink (the app file without its AD_Tab updates) -> K6 FAIL; CTX_BREAK=dropsec (one how-to dropped) -> K6 FAIL.
 // Reds: CTX_BREAK=nomsg (the rows file without its ad_ctxhelpmsg row) -> K1 FAIL; CTX_BREAK=patch (one line appended to the hashed patch) -> K5 FAIL; CTX_BREAK=nooverlay (page without the overlay) -> K3 FAIL.
-// Run: node erp/tests/witness_ctxhelp_overlay.js   Env: CTX_BREAK=nomsg|patch|nooverlay|nolink|noproc|dropsec|nomachine|pubtext|rawseed  NOPAGE=1
+// Run: node erp/tests/witness_ctxhelp_overlay.js   Env: CTX_BREAK=nomsg|patch|nooverlay|nolink|noproc|dropsec|nosetup|nomachine|pubtext|rawseed  NOPAGE=1
 'use strict';
 const fs = require('fs'), path = require('path'), cp = require('child_process'), crypto = require('crypto');
 const ERP = path.join(__dirname, '..'), ROOT = path.join(ERP, '..'), BR = process.env.CTX_BREAK || '';
@@ -48,15 +52,22 @@ function appData() {   // the app's how-to rows; CTX_BREAK=nolink drops the AD_T
   if (BR === 'noproc') A.rows = A.rows.filter((s) => !/^UPDATE ad_process /.test(s));   // §19.17 F1: the process targets (CtxType P) lose their link
   if (BR === 'nomachine') A.rows = A.rows.filter((s) => !/^INSERT OR IGNORE INTO ad_ctxhelpmsg_trl \(ad_client_id, ad_ctxhelpmsg_id, [^)]*\) VALUES \(0, 1\d{6},/.test(s));
   if (BR === 'dropsec') { const last = A.links.pop(); A.rows = A.rows.filter((s) => s.indexOf(String(last.help)) < 0); }
+  if (BR === 'nosetup') {   // §19.17 F5: the rows file as it was before the setup guide (main at C4, 56f54c87): the setup guide's tabs / processes lose their sections
+    const f = path.join(require('os').tmpdir(), 'ctx_nosetup_' + process.pid + '.js'); fs.writeFileSync(f, cp.execSync('git show ' + (process.env.NOSETUP_REF || '56f54c87') + ':erp/ad_ctxhelp_app_rows.js', { cwd: ROOT, maxBuffer: 1 << 26, encoding: 'utf8' }));
+    try { return JSON.parse(JSON.stringify(require(f))); } finally { fs.unlinkSync(f); }
+  }
   return A;
 }
 const APP_ID0 = 1000000;
 const norm = (x) => String(x == null ? '' : x).replace(/^(\d{4}-\d\d-\d\d)T(\d\d:\d\d:\d\d).*$/, '$1 $2').replace(/\.0+$/, '');
-const plain = (h) => String(h || '').replace(/<\/(p|li)>/g, ' ').replace(/<[^>]+>/g, '').replace(/&(amp|lt|gt|quot|#39);/g, (m, e) => ({ amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'" }[e])).split(/\s+/).filter(Boolean).join(' ');
-function guideSection(guide, name) {   // the guide's own paragraphs under '### <name>', proof asides (> ...) left out, markdown marks removed - read here, not from the builder
-  const lines = guide.split('\n'), at = lines.indexOf('### ' + name); if (at < 0) return null;
+const plain = (h) => String(h || '').replace(/<\/(p|li)>|<(ul|ol)>/g, ' ').replace(/<[^>]+>/g, '').replace(/&(amp|lt|gt|quot|#39);/g, (m, e) => ({ amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'" }[e])).split(/\s+/).filter(Boolean).join(' ');
+const headingText = (h) => h.replace(/^#+\s*/, '').replace(/\*([^*]+)\*/g, '$1');
+function guideSection(guide, heading, doc) {   // a guide's own text under its heading, read here, not from the builder. Left out: proof asides (the user guide's `> ...`, the setup guide's *(Verified ...)*), pictures, rules; list and sub-heading marks and markdown marks removed
+  const lines = guide.split('\n'), at = lines.indexOf(heading); if (at < 0) return null;
   const body = []; for (let i = at + 1; i < lines.length && !/^#{1,3} /.test(lines[i]); i++) body.push(lines[i]);
-  return body.join('\n').split(/\n\s*\n/).map((x) => x.trim()).filter((x) => x && !x.startsWith('>')).map((x) => x.replace(/^- /gm, '').replace(/\*\*([^*]+)\*\*/g, '$1').replace(/\*([^*]+)\*/g, '$1').replace(/`([^`]+)`/g, '$1')).join(' ').split(/\s+/).filter(Boolean).join(' ');
+  let t = body.join('\n'); if (doc === 'FS') t = t.replace(/\*\(Verified[\s\S]*?\)\*/g, '').split('\n').filter((l) => !/^\s*!\[/.test(l) && !/^---\s*$/.test(l)).join('\n');
+  return t.split(/\n\s*\n/).map((x) => x.trim()).filter((x) => x && !x.startsWith('>')).map((x) => x.replace(/^\s*(- |\d+\. |#### )/gm, '')
+    .replace(/`([^`]+)`/g, (m, c) => c.replace(/\*/g, '\u0001')).replace(/\*\*([^*]+)\*\*/g, '$1').replace(/\*([^*]+)\*/g, '$1').replace(/\u0001/g, '*')).join(' ').split(/\s+/).filter(Boolean).join(' ');
 }
 function baseHash(seedBuf, patchTexts) {   // team_sync.js:173-176 hashBase, rebuilt in node: seed sha256 + size, then each patch by position
   const sha = (b) => crypto.createHash('sha256').update(b).digest('hex');
@@ -114,66 +125,91 @@ async function nodePart() {
   const dup = keys.filter((x) => x.n !== x.d);
   chk('K2 a second ensure adds nothing: rows=' + r2.rows + ' tables=' + r2.tables + ', key repeats in ' + dup.length + ' of ' + keys.length + ' tables (first run added rows=' + r1.rows + ' app=' + r1.app + ')',
     r2.rows === 0 && r2.app === 0 && r2.tables === 0 && dup.length === 0 && r1.rows > 0 && r1.app > 0 && kept, dup.map((x) => x.t).join(',') + (kept ? '' : ' edit overwritten'));
-  // K6 legacy's own lookup finds each how-to on its window's first tab (fresh db, one ensure)
+  // K6 legacy's own lookup finds, on every tab / process the two guides' sections name, ONE message holding those sections in source order (fresh db, one ensure)
   const db6 = new SQL.Database(new Uint8Array(fs.readFileSync(H.SEED)));
   fs.readFileSync(path.join(ERP, 'patches', 'ad_seed.db.sql'), 'utf8').split(/;\s*\n/).forEach((st) => { st = st.replace(/^\s*--[^\n]*\n?/gm, '').trim(); if (st) { try { db6.run(st); } catch (e) {} } });
   console.log = () => {}; O.ensure(db6); console.log = lg;
-  const CLIENT = 11, ORG = 0, full = require(path.join(ERP, 'ad_ctxhelp_app_rows.js')).links;   // the denominator = the generated file's how-tos, not the (maybe broken) applied set
-  let guide = null; try { guide = cp.execSync('git -C ' + JSON.stringify(path.join(require('os').homedir(), 'bim-compiler')) + ' show origin/master:docs/ERPUserGuide.md', { encoding: 'utf8', maxBuffer: 1 << 26 }); } catch (e) {}
-  if (!guide) incon('K6', 'the guide (bim-compiler origin/master docs/ERPUserGuide.md) not readable');
+  const CLIENT = 11, ORG = 0, full = require(path.join(ERP, 'ad_ctxhelp_app_rows.js')).links;   // the generated file's helps, not the (maybe broken) applied set
+  const SRC = require(path.join(ERP, 'tools', 'build_help_pack.js')), docs = {};
+  Object.keys(SRC.DOCS).forEach((d) => { try { docs[d] = cp.execSync('git -C ' + JSON.stringify(path.join(require('os').homedir(), 'bim-compiler')) + ' show origin/master:' + SRC.DOCS[d].file, { encoding: 'utf8', maxBuffer: 1 << 26 }); } catch (e) {} });
+  const helpOf = (kind, id) => (full.find((x) => kind === 'T' ? x.tabs.some((y) => y.tab === id) : x.processes.indexOf(id) >= 0) || {});
+  if (Object.keys(SRC.DOCS).some((d) => !docs[d])) incon('K6', 'a source guide (bim-compiler origin/master ' + Object.keys(SRC.DOCS).filter((d) => !docs[d]).map((d) => SRC.DOCS[d].file).join(', ') + ') not readable');
   else {
+    // the DENOMINATOR is the spec's mapping (build_help_pack.js SECTIONS: section -> windows / tabs / processes), resolved HERE against the page DB; the text is read HERE from the guides
+    const firstTab = (w) => Number((exec1(db6, 'SELECT ad_tab_id FROM ad_tab WHERE ad_window_id=' + Number(w) + " AND tablevel=0 AND isactive='Y' ORDER BY seqno, ad_tab_id LIMIT 1")[0] || [])[0]);
+    const byTarget = {}, order = [], secN = {}, secOk = {};
+    SRC.SECTIONS.forEach((s) => {
+      const tabs = (s.doc === 'UG' ? [s.window].concat(s.also || []) : [s.window]).filter((w) => w != null).map(firstTab).concat(s.tabs || []);
+      tabs.map((t) => 'T' + t).concat((s.process || []).map((p) => 'P' + p)).forEach((k) => { if (!byTarget[k]) { byTarget[k] = []; order.push(k); } byTarget[k].push(s); });
+      secN[s.key] = 0; secOk[s.key] = 0;
+    });
     let tN = 0, found = 0, same = 0, typeOk = 0; const bad = [];
     const lookup = (table, col, rid) =>   // MCtxHelpMsg.getCtxHelpID (MCtxHelpMsg.java:170-204): CTXTYPE_Tab -> AD_Tab, CTXTYPE_Process -> AD_Process; no CtxType filter
       (exec1(db6, 'SELECT t.AD_CtxHelp_ID FROM ' + table + " t, AD_CtxHelp h WHERE t.AD_CtxHelp_ID=h.AD_CtxHelp_ID AND t.IsActive='Y' AND h.IsActive='Y' AND h.AD_Client_ID IN (0, " + CLIENT + ") AND h.AD_Org_ID IN (0, " + ORG + ') AND t.' + col + '=' + rid + ' ORDER BY h.AD_Client_ID DESC, h.AD_Org_ID DESC, h.AD_CtxHelp_ID DESC')[0] || [])[0];
-    full.forEach((x) => {
-      const gs = guideSection(guide, x.name), want = gs == null ? null : x.name + ' ' + gs, wantType = x.tabs.length ? 'T' : 'P';   // §19.16 C3: the heading is MsgText's first paragraph; §19.17 F1: T when the section has a window
-      const targets = x.tabs.map((y) => ({ what: 'window ' + y.window + ' tab ' + y.tab, hid: lookup('AD_Tab', 'AD_Tab_ID', y.tab) })).concat(x.processes.map((pid) => ({ what: 'process ' + pid, hid: lookup('AD_Process', 'AD_Process_ID', pid) })));
-      targets.forEach((tg) => {
-        tN++;
-        // MCtxHelpMsg.get: the message (MCtxHelpMsg.java:96-100)
-        const msg = tg.hid ? (exec1(db6, "SELECT msgtext FROM AD_CtxHelpMsg WHERE IsActive = 'Y' AND AD_Client_ID IN (0, " + CLIENT + ")  AND AD_Org_ID IN (0, " + ORG + ")  AND AD_CtxHelp_ID = " + tg.hid + ' ORDER BY AD_Client_ID DESC, AD_Org_ID DESC, AD_CtxHelpMsg_ID DESC')[0] || [])[0] : null;
-        const ct = tg.hid ? (exec1(db6, 'SELECT ctxtype FROM ad_ctxhelp WHERE ad_ctxhelp_id=' + tg.hid)[0] || [])[0] : null, got = plain(msg);
-        if (msg && Number(tg.hid) === x.help) found++; else bad.push(tg.what + ': ' + (msg ? 'another help ' + tg.hid : 'no message'));
-        if (msg && want && got === want) same++; else if (msg) bad.push(tg.what + ' text differs from the guide (' + got.length + ' vs ' + (want || '').length + ' chars)');
-        if (ct === wantType) typeOk++;
-        L('K6 ' + tg.what + ' -> help ' + (tg.hid || 'none') + ' ctxtype=' + ct + ' text ' + (msg ? (got === want ? '== guide' : 'DIFFERS') : 'none') + ' "' + got.slice(0, 60) + '"');
-      });
+    order.forEach((k) => {
+      const kind = k[0], rid = Number(k.slice(1)), secs = byTarget[k], what = (kind === 'T' ? 'tab ' : 'process ') + rid + ' [' + secs.map((s) => s.key).join('+') + ']';
+      const hid = kind === 'T' ? lookup('AD_Tab', 'AD_Tab_ID', rid) : lookup('AD_Process', 'AD_Process_ID', rid), exp = helpOf(kind, rid);
+      // each section = its heading then its own paragraphs (C3: the heading is a <p><strong> paragraph), in source order: the standard flow first, then the setup guide
+      const parts = secs.map((s) => { const t = guideSection(docs[s.doc], s.heading, s.doc); return t == null ? null : (headingText(s.heading) + ' ' + t).trim(); }), want = parts.indexOf(null) >= 0 ? null : parts.join(' ');
+      tN++; secs.forEach((s) => { secN[s.key]++; });
+      // MCtxHelpMsg.get: the message (MCtxHelpMsg.java:96-100)
+      const msg = hid ? (exec1(db6, "SELECT msgtext FROM AD_CtxHelpMsg WHERE IsActive = 'Y' AND AD_Client_ID IN (0, " + CLIENT + ")  AND AD_Org_ID IN (0, " + ORG + ")  AND AD_CtxHelp_ID = " + hid + ' ORDER BY AD_Client_ID DESC, AD_Org_ID DESC, AD_CtxHelpMsg_ID DESC')[0] || [])[0] : null;
+      const ct = hid ? (exec1(db6, 'SELECT ctxtype FROM ad_ctxhelp WHERE ad_ctxhelp_id=' + hid)[0] || [])[0] : null, got = plain(msg);
+      if (msg && Number(hid) === exp.help) found++; else bad.push(what + ': ' + (msg ? 'another help ' + hid : 'no message'));
+      if (msg && want && got === want) { same++; secs.forEach((s) => { secOk[s.key]++; }); } else if (msg) bad.push(what + ' text differs from the guides (' + got.length + ' vs ' + (want || '').length + ' chars)');
+      if (exp.help != null && ct === (exp.tabs.length ? 'T' : 'P')) typeOk++;
+      L('K6 ' + what + ' -> help ' + (hid || 'none') + ' ctxtype=' + ct + ' text ' + (msg ? (got === want ? '== guides' : 'DIFFERS') : 'none') + ' ' + got.length + ' chars "' + got.slice(0, 50) + '"');
     });
-    chk('K6 legacy\'s lookup finds its section\'s how-to on ' + found + ' of ' + tN + ' targets (' + full.length + ' sections), text == the guide ' + same + ' of ' + tN + ', CtxType right ' + typeOk + ' of ' + tN,
-      tN > 0 && found === tN && same === tN && typeOk === tN, bad.join(' ; '));
+    const sK = Object.keys(secN), sOk = sK.filter((x) => secN[x] > 0 && secOk[x] === secN[x]), byDoc = (d) => SRC.SECTIONS.filter((s) => s.doc === d);
+    L('K6 sections on every one of their targets: ' + Object.keys(SRC.DOCS).map((d) => SRC.DOCS[d].file + ' ' + byDoc(d).filter((s) => sOk.indexOf(s.key) >= 0).length + ' of ' + byDoc(d).length).join(', '));
+    chk('K6 legacy\'s lookup finds the help of ' + found + ' of ' + tN + ' targets (tabs + processes named by ' + sK.length + ' sections of the two guides), its text == those sections\' own text in source order ' + same + ' of ' + tN + ', CtxType right ' + typeOk + ' of ' + tN + '; sections whole on all their targets ' + sOk.length + ' of ' + sK.length,
+      tN > 0 && found === tN && same === tN && typeOk === tN && sOk.length === sK.length, bad.join(' ; '));
   }
   // K7 the translations (C3), on db6
   {
-    const SRC = require(path.join(ERP, 'tools', 'build_help_pack.js')), CACHE = SRC.CACHE, langs = Object.keys(SRC.SOURCES);
+    const CACHE = SRC.CACHE, langs = Object.keys(SRC.SOURCES);
     if (BR === 'pubtext') db6.run("UPDATE ad_ctxhelpmsg_trl SET msgtext=(SELECT msgtext FROM ad_ctxhelpmsg WHERE ad_ctxhelpmsg_id=200000) WHERE ad_ctxhelpmsg_id=200000 AND ad_language='de_DE'");
     const readX = (f) => { const o = {}; if (!fs.existsSync(f)) return o; const x = fs.readFileSync(f, 'utf8'), re = /<row id="(\d+)"[^>]*>([\s\S]*?)<\/row>/g; let m;   // read HERE (not the builder's reader): CDATA or escaped text
       const de = (t) => t.replace(/&#10;/g, '\n').replace(/&#13;/g, '\r').replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
       while ((m = re.exec(x))) { const v = /<value column="MsgText"[^>]*?original="([^"]*)"[^>]*?(?:\/>|>([\s\S]*?)<\/value>)/.exec(m[2]); if (!v) continue; const b = v[2] || '', cd = /^\s*<!\[CDATA\[([\s\S]*?)\]\]>\s*$/.exec(b); o[m[1]] = { orig: de(v[1]), text: cd ? cd[1] : de(b) }; }
       return o; };
     const tw = (id, lang) => { const r = db6.exec('SELECT msgtext, istranslated FROM ad_ctxhelpmsg_trl WHERE ad_ctxhelpmsg_id=? AND ad_language=?', [Number(id), lang])[0]; return r ? { text: r.values[0][0], it: r.values[0][1] } : null; };
-    const msgs = {}; exec1(db6, 'SELECT ad_ctxhelpmsg_id FROM ad_ctxhelpmsg').forEach((v) => { msgs[v[0]] = 1; });
-    const sq = (t) => String(t || '').split(/\s+/).filter(Boolean).join(' ');
-    let pN = 0, pOk = 0, mN = 0, mOk = 0, shadow = 0, hN = 0, hOk = 0; const bad = [], pubKey = {};
+    const msgs = {}; exec1(db6, 'SELECT ad_ctxhelpmsg_id, msgtext FROM ad_ctxhelpmsg').forEach((v) => { msgs[v[0]] = String(v[1]); });
+    const sq = (t) => String(t || '').split(/\s+/).filter(Boolean).join(' '), unl = (t) => String(t || '').replace(/<a href="#" data-help-win="\d+">([^<]*)<\/a>/g, '$1');
+    const cut = (t) => String(t || '').split(/(?=<p><strong>)/), secOf = {}; SRC.SECTIONS.forEach((s) => { secOf[s.key] = s; });   // a message's sections: each starts at its <p><strong>heading</strong></p>
+    let pN = 0, pOk = 0, mN = 0, mOk = 0, uN = 0, uOk = 0, shadow = 0, hN = 0, hOk = 0; const bad = [], pubKey = {};
     const CH = require(path.join(ERP, 'ctx_help.js')), q6 = (sql) => { const r = db6.exec(sql)[0]; return r ? r.values.map((v) => Object.fromEntries(r.columns.map((c, i) => [c.toLowerCase(), v[i]]))) : []; };
     if (BR === 'rawseed') { const raw = new SQL.Database(new Uint8Array(fs.readFileSync(H.SEED))); CH.howto = ((f) => (q, l) => f((sql) => { const r = raw.exec(sql)[0]; return r ? r.values.map((v) => Object.fromEntries(r.columns.map((c, i) => [c.toLowerCase(), v[i]]))) : []; }, l))(CH.howto); }   // the red: the reader over the RAW seed
-    let mainEn = null; try { mainEn = JSON.parse(cp.execSync('git show ' + (process.env.HOWTO_REF || 'c7beb3e6') + ':erp/i18n/help/en_US/help.json', { cwd: ROOT, maxBuffer: 1 << 28, encoding: 'utf8' })); } catch (e) {}
+    const set = (a) => a.map(Number).filter((v, i, x) => x.indexOf(v) === i).sort((a1, b1) => a1 - b1).join(',');
     langs.forEach((lang) => {
       SRC.SOURCES[lang].forEach((d) => { const dir = path.join(CACHE, d); if (!fs.existsSync(dir)) return; fs.readdirSync(dir).filter((f) => /^AD_CtxHelpMsg_Trl_.*\.xml$/.test(f)).sort().forEach((f) => {
-        const X = readX(path.join(dir, f)); Object.keys(X).forEach((id) => { if (!msgs[id] || pubKey[id + '|' + lang] || sq(X[id].text) === '' || sq(X[id].text) === sq(X[id].orig)) return; pubKey[id + '|' + lang] = 1; pN++;
+        const X = readX(path.join(dir, f)); Object.keys(X).forEach((id) => { if (msgs[id] == null || pubKey[id + '|' + lang] || sq(X[id].text) === '' || sq(X[id].text) === sq(X[id].orig)) return; pubKey[id + '|' + lang] = 1; pN++;
           const t = tw(id, lang); if (t && t.text === X[id].text) pOk++; else bad.push('published ' + id + ' ' + lang + (t ? ' text differs' : ' missing')); }); }); });
-      const M = readX(path.join(ERP, 'i18n', 'machine', 'AD_CtxHelpMsg_Trl_' + lang + '.xml'));
+      const M = readX(path.join(ERP, 'i18n', 'machine', 'AD_CtxHelpMsg_Trl_' + lang + '.xml')), trM = (id) => id != null && M[id] && sq(M[id].text) !== '' && sq(M[id].text) !== sq(M[id].orig);
       const winNames = Object.values((JSON.parse(fs.readFileSync(path.join(ERP, 'i18n', 'help', lang, 'help.json'), 'utf8')).names || {}).windows || {});
-      Object.keys(M).forEach((id) => { mN++; if (pubKey[id + '|' + lang]) { shadow++; return; } const t = tw(id, lang), unl = t ? t.text.replace(/<a href="#" data-help-win="\d+">([^<]*)<\/a>/g, '$1') : null;
-        if (t && unl === M[id].text && t.it === 'N' && /data-help-win=/.test(t.text) === winNames.some((n) => M[id].text.indexOf('<b>' + n.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</b>') >= 0)) mOk++; else bad.push('machine ' + id + ' ' + lang + (t ? ' differs: text=' + (unl === M[id].text) + ' it=' + t.it + ' link=' + /data-help-win=/.test(t.text) : ' missing')); });   // linked exactly when a bold term is one of the language's window names
-      let mainJ = null; try { mainJ = JSON.parse(cp.execSync('git show ' + (process.env.HOWTO_REF || 'c7beb3e6') + ':erp/i18n/help/' + lang + '/help.json', { cwd: ROOT, maxBuffer: 1 << 28, encoding: 'utf8' })); } catch (e) {}
-      // K8 (§19.16 C4): THE reader (erp/ctx_help.js) over this page DB returns what main's help.json carried (name, html, guide URL), per row; a row the language lacks is the English one, marked
-      const R = CH.howto(q6, lang), enMain = (mainEn && mainEn.howto) || [], lm = (mainJ && mainJ.howto) || [];
-      enMain.forEach((e, k) => { hN++; const want = lm.find((h) => h.ad_window_id === e.ad_window_id && h.name !== undefined && (h.windows || []).join() === (e.windows || []).join()) || e, got = R[k], eng = want === e;
-        if (got && got.name === want.name && got.html === want.html && got.source.url === e.source.url && !!got.english === eng) hOk++; else bad.push('reader ' + lang + ' row ' + k + (got ? ' differs (name ' + (got.name === want.name) + ', html ' + (got.html === want.html) + ', english ' + !!got.english + ')' : ' missing')); });
-      L('K7 ' + lang + ' published ' + Object.keys(pubKey).filter((k) => k.endsWith('|' + lang)).length + ', machine ' + Object.keys(M).length);
+      const bold = (text) => winNames.some((n) => text.indexOf('<b>' + n.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</b>') >= 0);
+      // §19.17 F5: a machine row translates ONE section (its trlId). A help with a machine section has ONE twin row = its sections in order, the machine text where there is one
+      //   (linked exactly when a bold term is one of the language's window names), the English section where there is none; IsTranslated N; never over a published row.
+      Object.keys(M).forEach((id) => { uN++; if (full.some((x) => x.sections.some((k) => String(secOf[k].trlId) === id))) uOk++; else bad.push('machine row ' + id + ' ' + lang + ' translates no section in use'); });
+      full.forEach((x) => {
+        if (!x.sections.some((k) => trM(secOf[k].trlId))) return;
+        if (pubKey[x.help + '|' + lang]) { shadow++; return; }
+        mN++; const t = tw(x.help, lang), en = cut(msgs[x.help]), parts = t ? cut(t.text) : [];
+        const want = x.sections.map((k, i) => trM(secOf[k].trlId) ? M[secOf[k].trlId].text : unl(en[i])).join('');
+        const linkOk = parts.length === x.sections.length && x.sections.every((k, i) => !trM(secOf[k].trlId) || /data-help-win=/.test(parts[i]) === bold(M[secOf[k].trlId].text));
+        if (t && unl(t.text) === want && t.it === 'N' && linkOk) mOk++; else bad.push('machine help ' + x.help + ' ' + lang + (t ? ' differs: text=' + (unl(t.text) === want) + ' it=' + t.it + ' link=' + linkOk : ' missing'));
+      });
+      // K8 (§19.16 C4, re-based in §19.17 F5): THE reader (erp/ctx_help.js) over this page DB returns every help of the generated file: its title = the first heading, its html = the
+      //   rest (the language's row when it has one, else the English one, marked), and the places it serves = every linked tab's window (SUB tabs too) and every linked process.
+      const R = CH.howto(q6, lang);
+      full.forEach((x) => { hN++; const got = R.find((r) => r.id === x.help), t = tw(x.help, lang), m = /^<p><strong>([\s\S]*?)<\/strong><\/p>([\s\S]*)$/.exec(t ? t.text : (msgs[x.help] || ''));
+        const url = (exec1(db6, 'SELECT description FROM ad_ctxhelp WHERE ad_ctxhelp_id=' + x.help)[0] || [])[0];
+        const c = got && m ? { name: sq(got.name) === plain(m[1]), html: got.html === m[2], english: !!got.english === !t, windows: set(got.windows) === set(x.tabs.map((y) => y.window)), tabs: set(got.tabs) === set(x.tabs.map((y) => y.tab)), processes: set(got.processes) === set(x.processes), url: got.source.url === url } : null;
+        if (c && Object.keys(c).every((k) => c[k])) hOk++; else bad.push('reader ' + lang + ' help ' + x.help + (c ? ' differs: ' + Object.keys(c).filter((k) => !c[k]).join(',') : ' missing')); });
+      L('K7 ' + lang + ' published ' + Object.keys(pubKey).filter((k) => k.endsWith('|' + lang)).length + ', machine rows ' + Object.keys(M).length + ', reader rows ' + R.length);
     });
-    chk('K7 translations in legacy\'s table: published ' + pOk + ' of ' + pN + ', machine ' + mOk + ' of ' + mN + ' (linked, IsTranslated N), shadowed ' + shadow + ' | K8 the reader == the last help.json how-to (F1, ' + (process.env.HOWTO_REF || 'c7beb3e6') + ') ' + hOk + ' of ' + hN,
-      pN > 0 && pOk === pN && mN > 0 && mOk === mN && shadow === 0 && hOk === hN, bad.join(' ; '));
+    chk('K7 translations in legacy\'s table: published ' + pOk + ' of ' + pN + ', helps with a machine section ' + mOk + ' of ' + mN + ' (section by section, linked, IsTranslated N), machine rows in use ' + uOk + ' of ' + uN + ', shadowed ' + shadow + ' | K8 the reader == the page DB\'s helps (title, html, language, windows incl. sub tabs, processes, guide URL) ' + hOk + ' of ' + hN,
+      pN > 0 && pOk === pN && mN > 0 && mOk === mN && uOk === uN && shadow === 0 && hN > 0 && hOk === hN, bad.slice(0, 12).join(' ; ') + (bad.length > 12 ? ' ; +' + (bad.length - 12) + ' more' : ''));
   }
   // K5 the team base
   const seedBuf = fs.readFileSync(H.SEED), pt = (rel) => fs.readFileSync(path.join(ERP, 'patches', rel), 'utf8');

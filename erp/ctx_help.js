@@ -15,7 +15,7 @@
   var num = function (v) { var n = Number(v); return isFinite(n) ? n : 0; }, str = function (s) { return "'" + String(s).replace(/'/g, "''") + "'"; };
   function has(q) { try { return q("SELECT count(*) AS n FROM ad_ctxhelp").length > 0; } catch (e) { return false; } }
   function ent(s) { return String(s).replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&'); }
-  function plainParas(html) { return (String(html || '').match(/<(p|ul)>[\s\S]*?<\/(p|ul)>/g) || []).map(function (b) { return ent(b.replace(/<\/li>/g, ' ').replace(/<[^>]+>/g, '')).replace(/\s+/g, ' ').trim(); }); }
+  function plainParas(html) { return (String(html || '').match(/<(p|ul|ol)>[\s\S]*?<\/\1>/g) || []).map(function (b) { return ent(b.replace(/<\/li>|<ul>/g, ' ').replace(/<[^>]+>/g, '')).replace(/\s+/g, ' ').trim(); }); }
   // the guide page the help's Description URL names, as its docs file (the mkdocs site serves docs/<Page>.md at .../<Page>/): the link text the How To panel shows
   function guideOf(url) { var m = /\/([A-Za-z0-9_]+)\/(?:#.*)?$/.exec(String(url || '')); return m ? 'docs/' + m[1] + '.md' : null; }
   function split(text) { var m = /^<p><strong>([\s\S]*?)<\/strong><\/p>([\s\S]*)$/.exec(String(text || '')); return m ? { title: ent(m[1].replace(/<[^>]+>/g, '')), html: m[2] } : { title: null, html: String(text || '') }; }
@@ -37,13 +37,14 @@
     return hid != null ? msgOf(q, hid, o) : null;
   }
   // howto(q, lang, o) -> [{ id, ctxtype, ad_window_id, windows, tabs, ad_process_id, processes, name, name_en, window, kind, table, html, translated, english, source: { url, sentences, translation } }]
-  //   windows = every window whose FIRST tab (tablevel 0) links the help, in window id order (legacy stores no order between the tabs of one help); ad_window_id = the first of
-  //   them. A caller gates and matches on ANY of `windows` / `processes`, never on ad_window_id alone.
+  //   windows = every window one of whose tabs links the help, header tabs (tablevel 0) first, then in window id order (legacy stores no order between the tabs of one help);
+  //   ad_window_id = the first of them. A caller gates and matches on ANY of `windows` / `processes`, never on ad_window_id alone. §19.17 F5: a help may sit on a SUB tab
+  //   (Order Line, a partner's Location) and its text may hold several sections, each under its own <p><strong>heading</strong></p>; the first heading is the title.
   function howto(q, lang, o) {
     if (!has(q)) return [];
     var c = num(o && o.client), g = num(o && o.org), L = lang || 'en_US';
     var helps = q("SELECT ad_ctxhelp_id AS id, ctxtype AS ct, name AS n, description AS d FROM ad_ctxhelp WHERE isactive='Y' AND ctxtype IN ('T','P') AND ad_client_id IN (0, " + c + ') AND ad_org_id IN (0, ' + g + ') ORDER BY ad_ctxhelp_id');
-    var tabs = q("SELECT t.ad_ctxhelp_id AS h, t.ad_window_id AS w, t.ad_tab_id AS tab, tb.name AS tn, tb.tablename AS tt, w.name AS wn FROM ad_tab t JOIN ad_window w ON w.ad_window_id=t.ad_window_id JOIN ad_table tb ON tb.ad_table_id=t.ad_table_id WHERE t.ad_ctxhelp_id IS NOT NULL AND t.isactive='Y' AND t.tablevel=0 AND w.isactive='Y' ORDER BY t.ad_window_id");
+    var tabs = q("SELECT t.ad_ctxhelp_id AS h, t.ad_window_id AS w, t.ad_tab_id AS tab, tb.name AS tn, tb.tablename AS tt, w.name AS wn FROM ad_tab t JOIN ad_window w ON w.ad_window_id=t.ad_window_id JOIN ad_table tb ON tb.ad_table_id=t.ad_table_id WHERE t.ad_ctxhelp_id IS NOT NULL AND t.isactive='Y' AND w.isactive='Y' ORDER BY t.tablevel, t.ad_window_id, t.seqno, t.ad_tab_id");
     var procs = q("SELECT ad_ctxhelp_id AS h, ad_process_id AS p FROM ad_process WHERE ad_ctxhelp_id IS NOT NULL AND isactive='Y' ORDER BY ad_process_id");
     var out = [];
     helps.forEach(function (h) {
@@ -51,7 +52,7 @@
       var tl = L === 'en_US' ? en : msgOf(q, hid, { client: c, org: g, lang: L }), ts = tabs.filter(function (t) { return num(t.h) === hid; }), ps = procs.filter(function (p) { return num(p.h) === hid; });
       if (!ts.length && !ps.length) return;   // a help no tab or process links is not a how-to of a place (legacy shows it nowhere)
       var E = split(en.base), X = split(tl.text), local = tl.lang === L && L !== 'en_US', first = ts[0];
-      out.push({ id: hid, ctxtype: String(h.ct), ad_window_id: first ? num(first.w) : null, windows: ts.map(function (t) { return num(t.w); }), tabs: ts.map(function (t) { return num(t.tab); }),
+      out.push({ id: hid, ctxtype: String(h.ct), ad_window_id: first ? num(first.w) : null, windows: ts.map(function (t) { return num(t.w); }).filter(function (w, i, a) { return a.indexOf(w) === i; }), tabs: ts.map(function (t) { return num(t.tab); }),
         ad_process_id: ps.length ? num(ps[0].p) : null, processes: ps.map(function (p) { return num(p.p); }),
         name: (local ? X.title : E.title) || String(h.n), name_en: E.title || String(h.n), window: first ? String(first.wn) : null, kind: first ? String(first.tn) : null, table: first ? String(first.tt) : null,
         html: local ? X.html : E.html, english: L !== 'en_US' && !local, translated: local && tl.istranslated === 'N' ? MACHINE : null, published: local && tl.istranslated !== 'N',   // `translated` = the machine label the page and the CLI print (a published row needs none)
