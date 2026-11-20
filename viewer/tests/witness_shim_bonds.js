@@ -86,9 +86,19 @@ function b4(X) {
     const baseX = lock.buildings[b];
     if (process.env.LOCK !== '1') say('B8x', b, under && baseX && typeof baseX.ceilingCrossLevel === 'number' ? earlyCross <= baseX.ceilingCrossLevel : null,
       under ? 'cross-level (S4, hung-filing chain) early fittings=' + earlyCross + ' lock=' + (baseX && baseX.ceilingCrossLevel) : 'no fitting hangs from a ceiling');
+    // B9 — §E1_BOND_CARRIERS (bim-compiler 4D_MODEL_INTEGRITY §Q.42): how many bonded elements (relay excluded) still START before one of their
+    // hosts ENDS on the played layer. With the bonds as carriers in the solve the order inside a bar honours them; what is left is a host filed
+    // in a LATER task (filing, not ordering). A named ratchet: may not grow. Before the switch: JKR 105, Clinic 397, Terminal 193, Hospital 805, LTU 301.
+    let earlyHost = 0;
+    for (let i = 0; i < n; i++) {
+      if (res.outcome[i] !== O.BONDED || SB.capOf(res, i) === 'continues-same-kind') continue;
+      if ((res.hosts[i] || []).some(j => items[j].e > items[i].s + 1)) earlyHost++;
+    }
+    const base9 = lock.buildings[b];
+    if (process.env.LOCK !== '1') say('B9', b, base9 && typeof base9.earlyVsHost === 'number' ? earlyHost <= base9.earlyVsHost : null, 'bonded elements starting before a host ends=' + earlyHost + ' lock=' + (base9 && base9.earlyVsHost));
     // B7 — ratchet: the bonded count may not fall
     const base = lock.buildings[b];
-    if (process.env.LOCK === '1') { lock.buildings[b] = { n: n, bonded: bonded, db: X.run.dbFile, ceilingCrossLevel: earlyCross }; say('B7', b, true, 'LOCK=1 bonded=' + bonded + ' of ' + n + ' written'); }
+    if (process.env.LOCK === '1') { lock.buildings[b] = { n: n, bonded: bonded, db: X.run.dbFile, ceilingCrossLevel: earlyCross, earlyVsHost: earlyHost }; say('B7', b, true, 'LOCK=1 bonded=' + bonded + ' of ' + n + ' written'); }
     else say('B7', b, base ? (base.n === n ? bonded >= base.bonded : null) : null, base ? (base.n === n ? 'bonded=' + bonded + ' lock=' + base.bonded : 'population changed (' + base.n + ' -> ' + n + ') — re-lock from a run') : 'no baseline — run with LOCK=1');
   }
   if (process.env.LOCK === '1') fs.writeFileSync(LOCK_FILE, JSON.stringify(lock, null, 1) + '\n');

@@ -388,10 +388,10 @@
     var out = new Array(n);           // out[u] = [{to, kind, type}]
     for (i = 0; i < n; i++) out[i] = null;
     var counts = { e1: 0, e2h: 0, e2o: 0, e3: 0, e4: 0, member: 0, stragglers: 0 };
-    // §E1_BOND_CARRIERS flag (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.41) — default OFF. Browser: window.__TPL_BOND_CARRIERS; node: env
-    // TPL_BOND_CARRIERS=1 (the TPL_LEVEL_SOURCE pattern). `have` remembers the edges already in the graph, only when the flag is on.
+    // §E1_BOND_CARRIERS switch (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.41, default ON since §Q.42). Off for a comparison run only:
+    // browser window.__TPL_BOND_CARRIERS = false; node env TPL_BOND_CARRIERS=0. `have` remembers the edges already in the graph.
     var _envB = (typeof process !== 'undefined' && process && process.env) ? process.env : {};
-    var bondOn = !!(global.__TPL_BOND_CARRIERS || _envB.TPL_BOND_CARRIERS === '1'), have = bondOn ? new Set() : null;
+    var bondOn = !(global.__TPL_BOND_CARRIERS === false || _envB.TPL_BOND_CARRIERS === '0'), have = bondOn ? new Set() : null;
     function addEdge(u, v, kind, type, bucket) {
       (out[u] || (out[u] = [])).push({ to: v, kind: kind, type: type });
       counts[bucket]++;
@@ -438,15 +438,15 @@
     if (typeof console !== 'undefined') console.log('§E1_ALL_CARRIERS plates=' + e1allPlates + ' edges=' + e1all +
       (e1allSkipNoPool ? ' INCONCLUSIVE no supportPool' : '') + ' — a floor/roof plate waits for every structural carrier under it, not one');
 
-    // §E1_BOND_CARRIERS (§Q.41, S3c redesigned — flag, default off) — the shim-anchor bond's hosts are ADDED as carriers; nothing the election
+    // §E1_BOND_CARRIERS (§Q.41, S3c redesigned; default on since §Q.42) — the shim-anchor bond's hosts are ADDED as carriers; nothing the election
     // named is taken away (§Q.40.1: replacing the elected support made 27 Terminal fittings run ahead of it). An element bonded bears-on-top /
     // hangs-below waits for each bond host to FINISH; one bonded fixes-on-side / opening-accepts / joins goes in WITH its host (start-to-start,
     // as an embedded contact does). continues-same-kind draws no order (rule C); a ground seed has no host.
-    var e1bond = 0, e1bondEls = 0, e1bondBy = {};
+    var e1bond = 0, e1bondEls = 0, e1bondBy = {}, e1bondReversed = 0;
     if (bondOn) {
       var SBg = global.ShimBonds || null;
       if (!SBg && typeof module !== 'undefined' && module.exports && typeof require === 'function') { try { SBg = require('./shim_bonds.js'); } catch (eSBg) { SBg = null; } }
-      if (!SBg || !SBg.compute) { if (typeof console !== 'undefined') console.log('§E1_BOND_CARRIERS INACTIVE — shim_bonds.js not loaded (flag was on)'); }
+      if (!SBg || !SBg.compute) { if (typeof console !== 'undefined') console.log('§E1_BOND_CARRIERS INACTIVE — shim_bonds.js not loaded; the graph carries only the edges of the election'); }
       else {
         var bresG = SBg.compute(items, G, { EPS: EPS, GAP: GAP });
         for (i = 0; i < n; i++) {
@@ -455,14 +455,18 @@
           var kindB = (capB === 'bears-on-top' || capB === 'hangs-below') ? FS : SS, addedB = 0;
           for (var hb = 0; hb < hsB.length; hb++) {
             var uB = hsB[hb]; if (uB === i || have.has(uB * n + i)) continue;
+            // §Q.42: a bond never runs AGAINST an edge the graph already has. Measured (Terminal): the election said T rests on S, S's bond
+            // said S fixes onto T — the two start-to-start edges closed a loop, the pair became one lift and T was tiled ahead of its support.
+            if (have.has(i * n + uB)) { e1bondReversed++; continue; }
             addEdge(uB, i, kindB, 1, 'e1bond'); addedB++;
           }
           if (addedB) { e1bond += addedB; e1bondEls++; e1bondBy[capB] = (e1bondBy[capB] || 0) + addedB; }
         }
         if (typeof console !== 'undefined') console.log('§E1_BOND_CARRIERS on edges=' + e1bond + ' elements=' + e1bondEls + ' byNeed=' + JSON.stringify(e1bondBy) +
-          ' bonded=' + (bresG.counts.bonded || 0) + ' of ' + n + ' — bond hosts added as carriers beside the election (FLAG, §Q.41)');
+          ' skippedAgainstAnExistingEdge=' + e1bondReversed + ' bonded=' + (bresG.counts.bonded || 0) + ' of ' + n + ' — bond hosts added as carriers beside the election (§Q.41 / §Q.42; off: TPL_BOND_CARRIERS=0)');
       }
     }
+    if (!bondOn && typeof console !== 'undefined') console.log('§E1_BOND_CARRIERS off (switched off for this run) — the graph carries only the edges of the election');
     counts.e1bond = e1bond;
 
     // E2 — host/opening pairs, FS (same element shape ScheduleGate's own pairs functions take)
