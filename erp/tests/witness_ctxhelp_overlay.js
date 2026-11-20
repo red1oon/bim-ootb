@@ -20,9 +20,10 @@
 //   holds them in ONE message, in source order, each under its own heading. K6's denominator = every tab / process the spec's mapping (build_help_pack.js SECTIONS) names;
 //   K7: a machine row translates one SECTION, the twin row is built section by section (English where no translation: nothing vanishes on a translated screen);
 //   K8: the reader returns every help, also one that sits only on a SUB tab. Red F5: CTX_BREAK=nosetup (the rows file before the setup guide) -> K6 FAIL on its targets.
+//   §19.16 C5 (K9): a tenant admin types their own message in the Context Help window; with no reload, and after one, the help box shows it (their row first, legacy's client order).
 //   Reds C2: CTX_BREAK=nolink (the app file without its AD_Tab updates) -> K6 FAIL; CTX_BREAK=dropsec (one how-to dropped) -> K6 FAIL.
 // Reds: CTX_BREAK=nomsg (the rows file without its ad_ctxhelpmsg row) -> K1 FAIL; CTX_BREAK=patch (one line appended to the hashed patch) -> K5 FAIL; CTX_BREAK=nooverlay (page without the overlay) -> K3 FAIL.
-// Run: node erp/tests/witness_ctxhelp_overlay.js   Env: CTX_BREAK=nomsg|patch|nooverlay|nolink|noproc|dropsec|nosetup|nomachine|pubtext|rawseed  NOPAGE=1
+// Run: node erp/tests/witness_ctxhelp_overlay.js   Env: CTX_BREAK=nomsg|patch|nooverlay|nolink|noproc|dropsec|nosetup|nomachine|pubtext|rawseed|nolisten|nowait|noclientorder  NOPAGE=1  ONLYEDIT=1 (K9 alone)
 'use strict';
 const fs = require('fs'), path = require('path'), cp = require('child_process'), crypto = require('crypto');
 const ERP = path.join(__dirname, '..'), ROOT = path.join(ERP, '..'), BR = process.env.CTX_BREAK || '';
@@ -247,9 +248,63 @@ async function pagePart() {
   } finally { await P.close(); if (over) fs.unlinkSync(over['/erp/ad_ctxhelp_rows.js']); }
 }
 
+// K9 (§19.16 C5) the end of the chain, in the REAL page as a tenant admin (GardenAdmin, client 11): Context Help -> the Sales Order help -> Message tab -> New -> MsgText ->
+//   Save. ISSUE: the help index was built once at login, so a saved message was not shown until a reload. Claims: (a) the save is the tenant's OWN row (client 11) and System's
+//   row is untouched; (b) with NO reload the reader's row, the How To panel on Sales Order and the question box's answer show the new text; (c) after a reload they still do.
+//   Reds: CTX_BREAK=nolisten (the page without the rebuild on save) -> (b) FAIL; CTX_BREAK=noclientorder (a reader that ignores legacy's client order) -> (b) and (c) FAIL; CTX_BREAK=nowait (the index built without waiting for the saved changes) -> (c) FAIL.
+async function editPart() {
+  const HELP = 1000000, TITLE = 'Our own Sales Order rule', BODY = 'Ask the credit desk before you complete (W-CTXHELP-OVERLAY K9).', TEXT = '<p><strong>' + TITLE + '</strong></p><p>' + BODY + '</p>';
+  const tmp = (n, src, a, b) => { const f = path.join(require('os').tmpdir(), 'ctx_' + n + '_' + process.pid), s = fs.readFileSync(path.join(ERP, src), 'utf8'); if (s.indexOf(a) < 0) throw new Error('red ' + n + ': its text is not in ' + src); fs.writeFileSync(f, s.split(a).join(b)); return f; };
+  let over = null;
+  if (BR === 'nolisten') over = { '/erp/idempiere.html': tmp('nolisten.html', 'idempiere.html', "t.indexOf('ad_ctxhelp') === 0", 'false') };
+  if (BR === 'nowait') over = { '/erp/idempiere.html': tmp('nowait.html', 'idempiere.html', "ErpI18n.loadHelpIndex(lang), side])", "ErpI18n.loadHelpIndex(lang)])") };
+  if (BR === 'noclientorder') over = { '/erp/ctx_help.js': tmp('noclientorder.js', 'ctx_help.js', "' ORDER BY ad_client_id DESC, ad_org_id DESC, ad_ctxhelpmsg_id DESC'", "' ORDER BY ad_client_id, ad_org_id, ad_ctxhelpmsg_id DESC'") };
+  const P = await H.erpPage(null, over), pg = P.pg;
+  const shown = async (tag) => {   // what a person sees: the reader's row, the panel on Sales Order (window 143), the answer card
+    await pg.evaluate(() => { const r = document.querySelector('#idmp-tree .idmp-row.leaf[data-menu-id="129"]'); if (r) r.click(); });
+    for (let i = 0; i < 40; i++) { await pg.waitForTimeout(250); if (await pg.evaluate(() => /\(143\)/.test(document.title) || !!document.querySelector('#idmp-howto-ctx') && document.querySelector('#idmp-howto-ctx').innerText.length > 0)) break; }
+    await pg.waitForTimeout(600);
+    const o = await pg.evaluate((id) => { const I = window.__idmpHowto.index(), r = (I.howtoRows || []).find((x) => x.id === id), c = window.__idmpHowto.ask('how do I complete a sales order');
+      return { row: r ? r.name + ' | ' + r.html : null, panel: (document.querySelector('#idmp-howto-ctx') || {}).innerText || '', card: (document.querySelector('#idmp-howto-card') || {}).innerText || '', cardRow: c && c.howto ? c.howto.id : null }; }, HELP);
+    L('K9 ' + tag + ' reader row "' + String(o.row).slice(0, 70) + '" panel "' + o.panel.replace(/\s+/g, ' ').slice(0, 70) + '" card how-to=' + o.cardRow + ' "' + o.card.replace(/\s+/g, ' ').slice(-70) + '"');
+    return { row: o.row === TITLE + ' | <p>' + BODY + '</p>', panel: o.panel.indexOf(TITLE) >= 0 && o.panel.indexOf(BODY) >= 0, card: o.cardRow === HELP && o.card.indexOf(BODY) >= 0 };
+  };
+  const rowsOf = () => pg.evaluate((id) => window.__tipRead.rows('SELECT ad_client_id AS c, msgtext AS t FROM ad_ctxhelpmsg WHERE ad_ctxhelp_id=' + id + ' ORDER BY ad_client_id'), HELP);
+  try {
+    const sys0 = (await rowsOf()).filter((r) => Number(r.c) === 0).map((r) => r.t).join('');
+    if (!sys0) { incon('K9', 'the Sales Order help ' + HELP + ' has no System message on the page'); return; }
+    const before = await shown('before the edit');
+    if (before.row || before.panel) { incon('K9', 'the tenant text is already there before the edit (a dirty browser profile?)'); return; }
+    // the user's path: menu -> Find OK -> grid -> the help's row -> Message tab -> New -> type -> Save
+    await pg.evaluate(() => document.querySelector('#idmp-tree .idmp-row.leaf[data-menu-id="200038"]').click());
+    await pg.waitForSelector('#idmp-find-ov [data-find-ok]', { timeout: 10000 }); await pg.click('#idmp-find-ov [data-find-ok]'); await pg.waitForTimeout(1500);
+    if (await pg.evaluate(() => !!document.querySelector('#idmp-content #idmp-form, #idmp-content .idmp-form'))) { await pg.click('#idmp-toolbar [data-tb="toggle"]'); await pg.waitForTimeout(900); }
+    const picked = await pg.evaluate((id) => { const tr = [...document.querySelectorAll('.idmp-grid tbody tr[data-ad-record]')].find((x) => x.getAttribute('data-ad-record') === String(id)); if (tr) tr.click(); return !!tr; }, HELP);
+    if (!picked) { incon('K9', 'help ' + HELP + ' is not a row of the Context Help grid'); return; }
+    await pg.waitForTimeout(800); await pg.click('#idmp-tabstrip >> text=Message'); await pg.waitForTimeout(1500);
+    await pg.click('#idmp-toolbar [data-tb="new"]'); await pg.waitForSelector('#idmp-inline-mount [data-col="msgtext"]', { timeout: 10000 }); await pg.waitForTimeout(700);
+    const ta = pg.locator('#idmp-inline-mount [data-col="msgtext"]').first(); await ta.fill(TEXT); await ta.blur().catch(() => {});
+    const n0 = P.logs.length; await pg.click('#idmp-toolbar [data-tb="save"]'); await pg.waitForTimeout(2500);
+    const val = P.logs.slice(n0).filter((l) => /^§CRUD validate key=ad_ctxhelpmsg /.test(l)).pop() || '', per = P.logs.slice(n0).filter((l) => /^§CRUD-PERSIST key=ad_ctxhelpmsg /.test(l)).pop() || '';
+    L('K9 save: ' + (val || 'no §CRUD validate line') + ' | ' + (per || 'no §CRUD-PERSIST line').slice(0, 200));
+    const rows = await rowsOf(), mine = rows.filter((r) => Number(r.c) === 11), sys1 = rows.filter((r) => Number(r.c) === 0).map((r) => r.t).join('');
+    L('K9 rows of help ' + HELP + ' after the save: ' + rows.map((r) => 'client ' + r.c + ' ' + String(r.t).length + ' chars').join(', ') + '; System row unchanged=' + (sys1 === sys0));
+    const a = /verb=create ok/.test(val) && /verifyChain=ok/.test(per) && mine.length === 1 && mine[0].t === TEXT && sys1 === sys0;
+    const b = await shown('after the save, no reload');
+    await pg.reload({ waitUntil: 'networkidle', timeout: 60000 });
+    await pg.waitForFunction(() => window.__idmpHowto && window.__idmpHowto.index() && window.__idmpFieldHelp && window.__idmpFieldHelp.menu().windows.length > 0, null, { timeout: 60000 });
+    const c = await shown('after a reload'), rows2 = await rowsOf();
+    L('K9 rows after the reload: ' + rows2.map((r) => 'client ' + r.c + ' ' + String(r.t).length + ' chars').join(', '));
+    const all = (o) => o.row && o.panel && o.card;
+    chk('K9 a tenant\'s own message, typed in the Context Help window: (a) saved as client 11, signed, System\'s row untouched: ' + a + '; (b) shown with no reload: reader ' + b.row + ', panel ' + b.panel + ', answer card ' + b.card + '; (c) after a reload: reader ' + c.row + ', panel ' + c.panel + ', answer card ' + c.card,
+      a && all(b) && all(c) && rows2.filter((r) => Number(r.c) === 11).length === 1);
+    if (P.errs.length) L('K9 page errors: ' + P.errs.slice(0, 3).join(' | '));
+  } finally { await P.close(); if (over) Object.keys(over).forEach((k) => { try { fs.unlinkSync(over[k]); } catch (e) {} }); }
+}
+
 (async function main() {
   if (!H.seedOk()) { incon('ALL', 'no usable ad_seed.db (an LFS stub?)'); }
-  else { await nodePart(); if (!process.env.NOPAGE) await pagePart(); }
+  else { if (!process.env.ONLYEDIT) await nodePart(); if (!process.env.NOPAGE) { if (!process.env.ONLYEDIT) await pagePart(); await editPart(); } }
   const v = K.fail ? 'FAIL' : (K.inc || !K.pass ? 'INCONCLUSIVE' : 'PASS');
   out('§WITNESS_CTXHELP_OVERLAY pass=' + K.pass + ' fail=' + K.fail + ' inconclusive=' + K.inc + ' verdict=' + v + (BR ? ' CTX_BREAK=' + BR : ''));
   process.exitCode = v === 'PASS' ? 0 : 1;

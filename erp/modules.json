@@ -1,5 +1,5 @@
 {
- "app": "erp", "schema": 1, "sw": "erp/sw.js", "cacheVersion": "v1122", "depsDeclared": true,
+ "app": "erp", "schema": 1, "sw": "erp/sw.js", "cacheVersion": "v1123", "depsDeclared": true,
  "depsReview": {"by":"owner","on":"2026-11-20","tool":"3a99c239f84c1a7e1b66cd7efbf75f58e3f583f0d5350c28a8d13172a1e0814c"},
  "modules": {
   "common/about_diy.js": {"v":3,"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["erp/erp_persist_ui.js"],"notDeps":[],"owner":"prompts/ABOUT_BOX_CONSOLIDATE.md"},

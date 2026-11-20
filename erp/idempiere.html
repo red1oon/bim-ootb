@@ -3124,6 +3124,9 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     if (!title.__hb) {
       title.__hb = true;
       title.addEventListener('click', function () { $('idmp-help').classList.toggle('howto-closed'); });
+      // §19.16 C5: a saved context-help row is shown at once. Legacy keeps the message in a cache named by its table (MCtxHelpMsg.java:51), reset when a row of it is saved;
+      //   here the help index is rebuilt when a context-help table commits.
+      window.addEventListener('overlay:committed', function (e) { var t = e && e.detail && e.detail.table ? String(e.detail.table).toLowerCase() : ''; if (t.indexOf('ad_ctxhelp') === 0) { console.log('§HELP_CTX rebuild after save table=' + t); _howtoBuild(); } });
       qbox.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') _howtoAsk(qbox.value); });
       $('idmp-howto').addEventListener('click', function (ev) {
         var d = ev.target.closest ? ev.target.closest('a[data-help-doc]') : null;   // §19.6: a listed document opens read-only
@@ -3147,7 +3150,10 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   var _howtoLangBound = false, _howtoLocal = false, _howtoRows = [];
   function _howtoBuild() {
     var lang = ErpI18n.lang;
-    return Promise.all([ErpI18n.loadHelp('en_US'), lang === 'en_US' ? Promise.resolve(null) : ErpI18n.loadHelp(lang), ErpI18n.loadHelpIndex(lang)]).then(function (r) {
+    // §19.16 C5: the saved changes (the signed op-log) load after the page; the context help is read through them, so the index waits for them. Without the wait a
+    //   tenant's own help message was in the database after a reload but the help box showed System's text.
+    var side = new Promise(function (res) { var c = window.__crud; if (c && typeof c.withSidecar === 'function') c.withSidecar(function () { res(); }); else res(); });
+    return Promise.all([ErpI18n.loadHelp('en_US'), lang === 'en_US' ? Promise.resolve(null) : ErpI18n.loadHelp(lang), ErpI18n.loadHelpIndex(lang), side]).then(function (r) {
       if (!r[0]) return; _howtoPack = r[0];
       _howtoIdx = HelpSearch.indexFrom({ q: _sqlRows, en: r[0], pack: r[1], fsm: window.AdDocFsm, windowIds: window.__idmpFieldHelp.menu().windows, processIds: window.__idmpFieldHelp.menu().processes, menuIds: window.__idmpFieldHelp.menu().leaves, hq: r[2], client: _session && _session.client ? _session.client.id : 0, org: _session && _session.org ? _session.org.id : 0 });   // §19.9 the role's menu processes too
       _howtoLocal = _howtoIdx.localHowto; _howtoRows = _howtoIdx.howtoRows || [];   // §19.16 C4: from legacy's context-help tables (erp/ctx_help.js) in the login's client / org, per row the language's or English
