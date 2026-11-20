@@ -35,7 +35,7 @@
 //   C18 the pinned service-worker register literals never move: named as a target, or on a branch that changed sw.js (--changed)
 //   C19 the deploy stamp's pattern (deploy-pages.yml) reads the manifest's cacheVersion from the generated sw.js
 //   RED R16 a module's numbers on two pages swapped · R17 a site v deleted · R18 a site v equal to its module's · R19 a <script src> between two
-//   marker pairs · R20 `pin` removed, then sw.js bumped. (The spec numbers these R13-R17; R13-R15 were taken by #3326.) ERP's load order: not judged.
+//   marker pairs · R20 `pin` removed, then sw.js bumped · R21 a deps pair swapped on ONE of the pages that hold both (C20: the order holds on every page). (The spec numbers these R13-R17; R13-R15 were taken by #3326.) ERP's load order: not judged.
 // NOT JUDGED in the viewer and ERP: their load order (no deps declared there yet); R5 proves the refusal code on a synthetic edge.
 // INCONCLUSIVE: an app with 0 sites, a parse failure, a red control not detected, the vm run throws, bump or the audit prints no line, C5 judged 0.
 // Command: node scripts/tests/witness_manifest_roundtrip.js   (~1 min; --skip-c7 leaves out the bump.js dry run; --skip-c9 the git-history claim,
@@ -47,7 +47,7 @@ const G = require(path.join(ROOT, 'scripts', 'gen_manifest.js')), R = require(pa
 const clone = o => JSON.parse(JSON.stringify(o));
 const SKIP_C7 = process.argv.includes('--skip-c7'), SKIP_C9 = process.argv.includes('--skip-c9');
 const MS = require(path.join(ROOT, 'scripts', 'lib', 'manifest_source.js'));
-const SRC_APPS = G.APPS.filter(a => MS.hasSource(ROOT, a)), NCLAIMS = 7 + 4 + (SRC_APPS.length ? 8 : 0) - (SKIP_C7 ? 1 : 0) - (SRC_APPS.length && SKIP_C9 ? 1 : 0);
+const SRC_APPS = G.APPS.filter(a => MS.hasSource(ROOT, a)), NCLAIMS = 7 + 4 + (SRC_APPS.includes('erp') ? 1 : 0) + 8 * SRC_APPS.length - (SKIP_C7 ? 1 : 0) - (SKIP_C9 ? SRC_APPS.length : 0);   // C8-C15 once per source app; C20 once ERP is one
 // the two regexes of scripts/bump.js (PAGE_REF, JS_REF), quoted here as the independent second reader
 const PAGE_REF = /((?:src|href)\s*=\s*")([^"?#]+)\?v=(\d+)(")/g, JS_REF = /((['"]))([^'"\s?#]+\.(?:js|css|json|wasm))\?v=(\d+)(\2)/g;
 const RAW_TAG = /<script[^>]+src=/g, count = (s, re) => (s.match(re) || []).length;
@@ -203,8 +203,9 @@ for (const app of SRC_APPS) {
   }
   // C10 — the manifest = the files as B0's reader sees them, and the sw.js vm run
   { const { b0 } = MS.expand(m), read = new Map(a.manifest.modules.map(x => [x.file, x])); let bad = 0;
-    const key = x => JSON.stringify([x.v, x.load, x.precache, x.sites.map(z => [z.in, z.at, z.kind, z.as, z.v, z.onerror || null, z.q || null]).sort()]);
-    for (const x of b0.modules) { const y = read.get(x.file); if (!y || key(x) !== key(y) || (x.load === 'lazy' && !x.sites.some(z => z.in === x.lazyGroup))) { bad++; if (bad < 6) say('  §MANIFEST_C10_MISS module=' + x.file); } }
+    const top = x => { const n = x.sites.map(z => z.v).filter(v => v != null); return n.length ? Math.max(...n) : null; };   // B2: a module's v is its highest site number (the reader says null when they differ)
+    const key = x => JSON.stringify([top(x), x.load, x.precache, x.sites.map(z => [z.in, z.at, z.kind, z.as, z.v, z.onerror || null, z.q || null]).sort()]);
+    for (const x of b0.modules) { const y = read.get(x.file); if (!y || key(x) !== key(y) || x.v !== top(y) || (x.load === 'lazy' && !x.sites.some(z => z.in === x.lazyGroup))) { bad++; if (bad < 6) say('  §MANIFEST_C10_MISS module=' + x.file); } }
     bad += [...read.keys()].filter(f => !m.modules[f]).length;
     const vmOk = vmOut[app] && vmOut[app].V === m.cacheVersion && JSON.stringify(vmOut[app].P) === JSON.stringify(m.precacheOrder);
     claim('C10', !bad && vmOk, `app=${app} modules=${b0.modules.length} reader_modules=${read.size} differ=${bad} sw_vm=${vmOk ? 'same' : 'DIFFERS'}`); }
@@ -361,7 +362,7 @@ const B2 = { siteV: 0, pinned: 0, trial: '-' };
     if (!targets.length) { inconclusive.push('C17: no module with differing site numbers whose sites are all tags / loader literals'); claim('C17', false, 'judged nothing'); }
     else {
       const ra = bump(tA, [...targets, '--write']), rb = bump(tB, [...targets, '--write']);
-      const diff = owned.filter(f => get(tA, f) !== unmark(get(tB, f))), moved = owned.filter(f => get(tA, f) !== rd(f)).length;
+      const diff = owned.filter(f => unmark(get(tA, f)) !== unmark(get(tB, f))), moved = owned.filter(f => get(tA, f) !== rd(f)).length;
       const la = (ra.stdout.match(/^§BUMP (?:page|loader)=.*$/mg) || []).length, lb = (rb.stdout.match(/^§BUMP (?:page|loader)=.*$/mg) || []).length;
       diff.slice(0, 5).forEach(f => say('  §MANIFEST_C17_MISS file=' + f + ' the manifest bump wrote other bytes than the regex bump'));
       claim('C17', ra.status === 0 && rb.status === 0 && !diff.length && moved > 1 && la === lb && la > targets.length, `app=${app} modules_bumped=${targets.length} (${targets.map(f => path.basename(f)).join(',')}) regex_exit=${ra.status} manifest_exit=${rb.status} bump_lines=${la}/${lb} files_changed=${moved} files_differing=${diff.length}/${owned.length}`);
@@ -387,6 +388,24 @@ const B2 = { siteV: 0, pinned: 0, trial: '-' };
         redSay('R20', n === pins.length, `"pin" removed from ${pins.length} register literal(s), then bump ${m.sw}: ${n} would be raised`); }
     }
   } finally { for (const t of [tA, tB, home]) fs.rmSync(t, { recursive: true, force: true }); }
+  // C20 + R21 (the spec's R18) — only once the app is a SOURCE (its deps are declared): the order holds on EVERY page where both ends are tags,
+  //   judged against the pages' own bytes (the tag positions page_refs reads), not against the manifest's `order`.
+  if (!trial) {
+    const pagesOf = Object.keys(m.order).filter(f => f.endsWith('.html')), pos = new Map();
+    for (const pg of pagesOf) { const mp = new Map(); R.readHtml(rd(pg)).tags.forEach(t => { const k = MS.targetOf(m, pg, t.as); if (!mp.has(k)) mp.set(k, t.start); }); pos.set(pg, mp); }
+    let pairsJ = 0, placed = 0, wrong = 0; const multi = [];
+    for (const [f, x] of Object.entries(m.modules)) for (const d of x.deps) {
+      const on = pagesOf.filter(pg => pos.get(pg).has(f) && pos.get(pg).has(d)); if (!on.length) continue;
+      pairsJ++; placed += on.length; if (on.length > 1) multi.push([f, d, on]);
+      on.forEach(pg => { if (pos.get(pg).get(d) > pos.get(pg).get(f)) { wrong++; say(`  §MANIFEST_C20_MISS page=${pg} ${d} loads after ${f}`); } });
+    }
+    const oc = MS.order(m, ROOT);
+    if (!pairsJ) inconclusive.push('C20: no deps pair with both ends as tags of one page');
+    claim('C20', pairsJ > 0 && !wrong && !oc.errors.length, `app=${app} deps_declared=${oc.judged} pairs_judged=${pairsJ} page_placements_judged=${placed} pairs_on_2plus_pages=${multi.length} out_of_order_in_the_pages=${wrong} generator_refusals=${oc.errors.length}`);
+    if (!multi.length) { inconclusive.push('R21: no deps pair with both ends as tags on 2+ pages'); redSay('R21', false, 'judged nothing'); }
+    else { const [f, d, on] = multi[0], pg = on[on.length - 1], mm = clone(m), ix = k => mm.order[pg].findIndex(z => z.kind === 'tag' && MS.targetOf(mm, pg, z.as) === k), i = ix(f), j = ix(d), t = mm.order[pg][i]; mm.order[pg][i] = mm.order[pg][j]; mm.order[pg][j] = t;
+      const e = MS.order(mm, ROOT).errors; redSay('R21', e.length > 0 && e.every(x => x.startsWith(pg + ':')), `${f} and its dep ${d} swapped on ${pg} only (right on ${on.length - 1} other page(s)): ${e.length} refusal(s), all naming ${pg}`); }
+  }
   // R16-R19 on the manifest and texts above (in memory)
   { const cand = own.filter(o => o.s.v != null).map(o => ({ o, other: Object.keys(m.order).filter(f => f !== o.f && f.endsWith('.html')).map(f => ({ f, at: m.order[f].findIndex(s => MS.targetOf(m, f, s.as) === MS.targetOf(m, o.f, o.s.as) && eff(m, f, s) != null && eff(m, f, s) !== o.s.v) })).find(x => x.at >= 0) })).find(x => x.other && x.o.f.endsWith('.html'));
     if (!cand) { inconclusive.push('R16: no module with two different numbers on two pages'); redSay('R16', false, 'judged nothing'); }
@@ -410,7 +429,7 @@ const res = Witness('MANIFEST_ROUNDTRIP')
   .population(() => rows)
   .schema({ type: 'object', required: ['file', 'app', 'sites', 'identical'], properties: { file: { type: 'string', minLength: 1 }, sites: { type: 'integer', minimum: 1 }, identical: { const: true } } })
   .invariant('every owned file regenerates byte-identical from its app manifest', rs => rs.every(x => x.identical))
-  .invariant('every claim agrees with its independent source (C1-C7, C16-C19, and C8-C15 for a source app)', () => claims.length === NCLAIMS && claims.every(c => c.ok))
+  .invariant('every claim agrees with its independent source (C1-C7, C16-C20, and C8-C15 for each source app)', () => claims.length === NCLAIMS && claims.every(c => c.ok))
   .redControl(rs => { const m = clone(V.manifest), [p, q] = pair(m), k = p.s.at; p.s.at = q.s.at; q.s.at = k; const g = G.regenerate(m, V.frames, MAIN); return rs.map(x => x.file === MAIN ? Object.assign({}, x, { identical: g.ok && g.text === V.frames.get(MAIN).src }) : x); })
   .run();
 const identical = rows.filter(x => x.identical).length, t = r.tot, order = r.apps.reduce((n, a) => n + a.order.judged, 0);

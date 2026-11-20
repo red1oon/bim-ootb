@@ -548,6 +548,7 @@
   <aside id="idmp-help" style="display:none"><div class="idmp-help-title" id="idmp-help-title">Tool Tip</div><div id="idmp-help-tooltip"></div><div class="idmp-help-title" id="idmp-howto-title">How To</div><div id="idmp-howto"><input id="idmp-howto-q" type="search" autocomplete="off"><div id="idmp-howto-card"></div><div id="idmp-howto-ctx"></div></div></aside><!-- §7 P1b: legacy East panel, Tool Tip widget (HelpController.java:136-150) -->
 </div>
 
+<!-- §MANIFEST:BEGIN erp tags (script tags here are written by scripts/gen_manifest.js from erp/modules.json; comments are yours) -->
 <script src="error_beacon.js?v=1" onerror="console.warn('§LOAD_FAIL error_beacon.js — field-error capture disabled')"></script><!-- SYSTEM_MONITOR_WIDGETS §H — minimal field-error beacon (G2 seed); loads early to catch boot errors -->
 <script src="vfs_detect.js?v=1"></script>
 <script src="seed_key.js?v=1"></script><!-- SEAM F10 — the ONE seed IDB key owner (window.ERP_SEED_KEY); before first idb use + system_monitor -->
@@ -863,6 +864,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
      seams (loaded above, so BlueFuture must come AFTER it for the rail to mount, but the seams read lazily so order
      is safe). W-BLUE-FUTURE-LIVE. -->
 <script src="blue_future.js?v=1"></script>
+<!-- §MANIFEST:END erp tags -->
 <script>
 (function () {
   'use strict';
@@ -8157,6 +8159,7 @@ window.__helpIdmpKeymap = {
   "c_allocationline":{ "window": "Allocation",          "table": "c_allocationline", "coverage": "partial" }
 };
 </script>
+<!-- §MANIFEST:BEGIN erp tags (script tags here are written by scripts/gen_manifest.js from erp/modules.json; comments are yours) -->
 <script src="help_overlay.js?v=23"></script>
 <script src="help_idmp.js?v=22"></script>
 <script>
@@ -8178,5 +8181,6 @@ if ('serviceWorker' in navigator) {
 }
 </script>
 <script src="overlay/boot.js"></script><!-- OVERLAY seam (ERP_DEPTH_FILM.md §EXTENSION-LAYER LAW): the only reference to erp/overlay/ ; ?overlay=0 = pure core -->
+<!-- §MANIFEST:END erp tags -->
 </body>
 </html>
