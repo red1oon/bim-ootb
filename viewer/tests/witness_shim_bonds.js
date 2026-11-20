@@ -121,7 +121,7 @@ function b10(X) {
     // covering_other), every undeclared one is 'covering', and no covering_other is bonded or hosts a fitting. A building with no table is
     // judged too (declared=0: all 'covering') and says so — never a silent default. Before the rule LTU scheduled 12,038 pieces of pipe
     // lagging (declared INSULATION) as ceilings.
-    const dt = R.declaredTypes(X.run, SQL), want = t => t === 'CEILING' ? 'ceiling' : t === 'FLOORING' ? 'floor_finish' : 'covering_other';
+    const dt = R.declaredTypes(X.run, SQL), want = t => t === 'CEILING' ? 'ceiling' : t === 'FLOORING' ? 'floor_finish' : t === 'INSULATION' ? 'insulation' : 'covering_other';
     let covN = 0, declN = 0, wrongKind = 0, otherUsed = 0;
     for (let i = 0; i < n; i++) {
       if (items[i].cls !== 'IfcCovering' || agg.parentCls[items[i].guid] === 'IfcCurtainWall' || (agg.parentCls[items[i].guid] || '').indexOf('IfcStair') === 0) continue;

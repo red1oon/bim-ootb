@@ -287,7 +287,8 @@
 // v1777 (2026-11-20) §CARRYING_SLAB (bim-compiler 4D_MODEL_INTEGRITY.md §Q.46): shim_bonds.js?v=4 — a slab a column or bearing wall bears on is Superstructure; _GANTT_CACHE_VERSION 51.
 // v1778 (2026-11-20) §Q.47 (bim-compiler 4D_MODEL_INTEGRITY.md): the §IFC_PREDEFINED_TYPE blocks uploaded to the bucket's patches; _GANTT_CACHE_VERSION 52 so stored schedules regenerate with them. No script change.
 // v1779 (2026-11-20) §Q.48 (bim-compiler 4D_MODEL_INTEGRITY.md): shim_bonds.js?v=5 — a slab filed as a finish is kind floor_finish; _GANTT_CACHE_VERSION 53.
-const CACHE_VERSION = 'v1779';
+// v1780 (2026-11-20) §INSULATION_WITH_PIPE (bim-compiler 4D_MODEL_INTEGRITY.md §Q.49): shim_bonds / schedule_author / cpm_schedule bumped — a covering declared INSULATION is filed with the pipe it wraps; _GANTT_CACHE_VERSION 54.
+const CACHE_VERSION = 'v1780';
 // v1637 (rebase of PR #1191/#1196) §CLASS_UNMATCHED_INHERITED + §EXACT_LOOKUP_BLINDSPOT: rates/ifc_schema_hierarchy.json added to PRECACHE_ASSETS; schedule_author.js/proj_fold.js/boq_charts.html/schedule_read_4d.js/tm_sched_xray.js classify via the schema hierarchy.
 // v1636 (rebase of PR #1317) §ARCH_AREA_WEIGHT/§VOL_WEIGHT/§FOOTING_M3: schedule_author.js, time_machine parts, rates.js and rates/*.json changed install DURATIONS (area/volume weighting, IfcFooting priced M3); all precached cache-first, so a client holding the old cache would keep the flat times forever.
 // v1635 (rebase of PR #676, BCF half only) §BCF_EXPORT: bcf_export.js added to PRECACHE_ASSETS; viewer.html loads it + Export BCF button in the Issues toolbar; main.js wires setupBcfExport/exportIssuesBcf. The Open-button IFC half of #676 was superseded by main's A._openIfcFiles.

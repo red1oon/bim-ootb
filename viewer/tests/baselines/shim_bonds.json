@@ -45,10 +45,10 @@
   },
   "LTU_AHouse": {
    "n": 122330,
-   "bonded": 84875,
+   "bonded": 108804,
    "db": "LTU_AHouse_meta.db",
    "ceilingCrossLevel": 0,
-   "earlyVsHost": 30
+   "earlyVsHost": 28
   }
  }
 }

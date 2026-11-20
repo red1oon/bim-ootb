@@ -452,7 +452,7 @@
         for (i = 0; i < n; i++) {
           var capB = SBg.capOf(bresG, i), hsB = bresG.hosts[i];
           if (!capB || !hsB || capB === 'continues-same-kind' || capB === 'ground') continue;
-          var kindB = (capB === 'bears-on-top' || capB === 'hangs-below') ? FS : SS, addedB = 0;
+          var kindB = (capB === 'bears-on-top' || capB === 'hangs-below' || capB === 'wraps') ? FS : SS, addedB = 0;   // wraps: §Q.49, lagging after its pipe
           for (var hb = 0; hb < hsB.length; hb++) {
             var uB = hsB[hb]; if (uB === i || have.has(uB * n + i)) continue;
             // §Q.42: a bond never runs AGAINST an edge the graph already has. Measured (Terminal): the election said T rests on S, S's bond
