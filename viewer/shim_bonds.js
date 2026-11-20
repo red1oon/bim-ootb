@@ -1,7 +1,8 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
 // SPDX-License-Identifier: MIT
 // # ⚠ DO NOT REMOVE — shim_bonds.js. SCOPE: bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.37.2 (stage S1 of the shim-anchor model, §Q.33).
-// REPORT ONLY: nothing in the viewer loads this file and no schedule reads it. Read the §SHIM_* lines after every run; exit code is not evidence.
+// The bond TABLE is report only (no schedule reads a host from it yet, §Q.37 S3c). ONE fact is read by the schedule since §Q.39: a covering
+// bonded hangs-below is a ceiling (applyCeilings). Read the §SHIM_* / §CEILING_CLOSEUP lines after every run; exit code is not evidence.
 //
 // WHAT IT ANSWERS: "which thing(s) carries T, and by which NEED?" — a two-sided bond: T's need meets a host's offer.
 // WHAT IT DOES NOT DO: test contact. Candidates are CpmSchedule.contactGraph(items).contacts (the one owner, §I row 1); this file only
@@ -182,7 +183,36 @@
     var row = res.table[res.kind[i]]; return row && row[res.need[i]] ? row[res.need[i]].src : null;
   }
 
-  var API = { kindOf: kindOf, TABLE: TABLE, REL: REL, OUT: OUT, relsOf: relsOf, compute: compute, capOf: capOf, srcOf: srcOf };
+  // ── §CEILING_CLOSEUP (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.39; owner ruling 2026-11-20: standard practice, on every building) ──
+  // Per level the trade order is rough-in -> close-up -> MEP final -> finishes: a suspended ceiling is closed BEFORE the fittings that hang
+  // from it, a floor finish is laid last. The class rule files every IfcCovering as Finishes; the BOND says which it is — a covering bonded
+  // hangs-below is a ceiling (-> Architecture Closeup, sequence 8), one bonded bears-on-top is a floor finish (unchanged), an unbonded one
+  // keeps the class rule and is counted. Resource, rate and install time are NOT changed (pattern: ScheduleGate.applyBearingWalls).
+  // ONE mutation, called by every element recipe through ScheduleGate.applyGeometryReclass. els carry base_z / top_z.
+  function applyCeilings(els, who, deps) {
+    deps = deps || {};
+    var SG = deps.SG || global.ScheduleGate, CP = deps.CP || global.CpmSchedule, t0 = Date.now(), i, cov = 0;
+    for (i = 0; i < els.length; i++) if (els[i].cls === 'IfcCovering') cov++;
+    if (!cov) { console.log('§CEILING_CLOSEUP recipe=' + who + ' coverings=0 — nothing to judge (VACUOUS)'); return 0; }
+    if (!SG || !CP || !CP.contactGraph) { console.log('§CEILING_CLOSEUP recipe=' + who + ' INACTIVE — contact owner not loaded; coverings=' + cov + ' keep the class rule'); return 0; }
+    var items = els.map(function (e) { return { guid: e.guid, cls: e.cls, seq: e.seq, phase: e.phase, x0: e.x0, x1: e.x1, y0: e.y0, y1: e.y1, bz: e.base_z, tz: e.top_z }; });
+    var G = CP.contactGraph(items);
+    if (!G.ok) { console.log('§CEILING_CLOSEUP recipe=' + who + ' INACTIVE — contact graph unavailable; coverings=' + cov + ' keep the class rule'); return 0; }
+    var res = compute(items, G, { EPS: SG.EPS, GAP: SG.GAP }), ceil = 0, floor = 0, unb = 0;
+    for (i = 0; i < els.length; i++) {
+      if (res.kind[i] !== 'covering') continue;
+      var cap = capOf(res, i);
+      if (cap === 'hangs-below') { els[i].phase = 'Architecture Closeup'; els[i].seq = 8; ceil++; }
+      else if (cap === 'bears-on-top') floor++;
+      else unb++;
+    }
+    console.log('§CEILING_CLOSEUP recipe=' + who + ' coverings=' + cov + ' ceilings=' + ceil + ' floorFinish=' + floor + ' unbonded=' + unb + ' ms=' + (Date.now() - t0) +
+      (ceil ? ' — a ceiling (bonded hangs-below) is close-up work, sequence 8, before the fittings that hang from it; trade, rate, install time unchanged'
+            : ' — NO-OP: no covering is bonded hangs-below'));
+    return ceil;
+  }
+
+  var API = { kindOf: kindOf, TABLE: TABLE, REL: REL, OUT: OUT, relsOf: relsOf, compute: compute, capOf: capOf, srcOf: srcOf, applyCeilings: applyCeilings };
   global.ShimBonds = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
 })(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this));

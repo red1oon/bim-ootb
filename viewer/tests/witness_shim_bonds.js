@@ -69,9 +69,26 @@ function b4(X) {
       if (res.outcome[i] === O.BONDED && res.host[i] >= 0 && agg.parentOf[items[res.host[i]].guid] === p) own++;
     }
     say('B6', b, land ? own === land : null, land ? 'landings touching an anchored part of their own stair=' + land + ' bonded inside it=' + own : 'no declared stair landing with an anchored sibling contact (aggregates=' + (agg.has ? 'present' : 'absent') + ')');
+    // B8 — §CEILING_CLOSEUP (bim-compiler 4D_MODEL_INTEGRITY §Q.39, standard practice on every building): a fitting that hangs from a CEILING (a
+    // covering itself bonded hangs-below) does not start before that ceiling ends on the played layer. Before the rule every such fitting did
+    // (JKR 151, Clinic 291, Terminal 76 of 156, Hospital 44, LTU 23, counting any covering host). B8 = the pairs filed on ONE level: must be 0.
+    // B8x = the pairs filed on two levels (the ceiling was filed with the slab it hangs from, §D6; its fitting was not) — the hung-filing chain,
+    // stage S4: a named ratchet, may not grow.
+    const lvlOf = {}; (X.run.tasks || []).forEach(t => (t.guids || []).forEach(g => { lvlOf[g] = t.storey; }));
+    let under = 0, earlySame = 0, earlyCross = 0;
+    for (let i = 0; i < n; i++) {
+      const h = res.host[i];
+      if (res.kind[i] !== 'fixture' || SB.capOf(res, i) !== 'hangs-below' || h < 0 || res.kind[h] !== 'covering' || SB.capOf(res, h) !== 'hangs-below') continue;
+      under++; if (!(items[h].e > items[i].s + 1)) continue;
+      if (lvlOf[items[i].guid] === lvlOf[items[h].guid]) earlySame++; else earlyCross++;
+    }
+    say('B8', b, under ? earlySame === 0 : null, under ? 'fittings hanging from a ceiling=' + under + ' starting before it ends, same level=' + earlySame : 'no fitting hangs from a ceiling');
+    const baseX = lock.buildings[b];
+    if (process.env.LOCK !== '1') say('B8x', b, under && baseX && typeof baseX.ceilingCrossLevel === 'number' ? earlyCross <= baseX.ceilingCrossLevel : null,
+      under ? 'cross-level (S4, hung-filing chain) early fittings=' + earlyCross + ' lock=' + (baseX && baseX.ceilingCrossLevel) : 'no fitting hangs from a ceiling');
     // B7 — ratchet: the bonded count may not fall
     const base = lock.buildings[b];
-    if (process.env.LOCK === '1') { lock.buildings[b] = { n: n, bonded: bonded, db: X.run.dbFile }; say('B7', b, true, 'LOCK=1 bonded=' + bonded + ' of ' + n + ' written'); }
+    if (process.env.LOCK === '1') { lock.buildings[b] = { n: n, bonded: bonded, db: X.run.dbFile, ceilingCrossLevel: earlyCross }; say('B7', b, true, 'LOCK=1 bonded=' + bonded + ' of ' + n + ' written'); }
     else say('B7', b, base ? (base.n === n ? bonded >= base.bonded : null) : null, base ? (base.n === n ? 'bonded=' + bonded + ' lock=' + base.bonded : 'population changed (' + base.n + ' -> ' + n + ') — re-lock from a run') : 'no baseline — run with LOCK=1');
   }
   if (process.env.LOCK === '1') fs.writeFileSync(LOCK_FILE, JSON.stringify(lock, null, 1) + '\n');

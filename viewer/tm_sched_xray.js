@@ -340,7 +340,7 @@
     // §GANTT_OVERRIDE.
     // §BEARING_WALL (4D_MODEL_INTEGRITY.md §Q.6 D1) — same shared mutation the other two recipes call, so the
     // lock gate judges the walls the schedule promoted.
-    if (typeof ScheduleGate !== 'undefined' && ScheduleGate.applyBearingWalls) ScheduleGate.applyBearingWalls(elements, 'xray');
+    if (typeof ScheduleGate !== 'undefined' && ScheduleGate.applyGeometryReclass) ScheduleGate.applyGeometryReclass(elements, 'xray');   // bearing walls, then ceilings (§Q.39 §CEILING_CLOSEUP)
     var _lp = _promoteRoofLoadPath(elements);
     return elements;
   }

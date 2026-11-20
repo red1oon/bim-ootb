@@ -2,7 +2,7 @@
   "meta": {
     "id": "4d_template",
     "name": "Core 4D Programme Template",
-    "version": "1.2.0",
+    "version": "1.3.0",
     "what": "THE core Gantt programme every building instance copies from: a checked-in, reviewable, witnessed programme SKELETON — phases, per-level activities, the dependency logic between them, and the two physical rules (work content, crew capacity) that bound any schedule derived from it. Authored once here instead of emerging at runtime from a geometry solve and being discarded on reload.",
     "not_this_file": "sequence_rules.json is a CLASSIFICATION table (ifc_class -> phase/sequence/trade + labour productivity). It answers 'which phase does this element belong to'. It cannot answer 'what is the programme'. The two files are used together: this one is the shape, that one is the lookup.",
     "what_this_file_authors": "EXACTLY three things: calendar, duration_rule, capacity_rule + dependencies. Everything else in this file (the phase set, each phase's sequence, each phase's trades) is EXTRACTED from sequence_rules.json and gated against drift. v1.0.0's header claimed this file was 'the only place a fact is authored' — that overclaimed, and its own provenance line contradicted it. Stated as the three, it is exact.",
@@ -79,7 +79,7 @@
     },
     {
       "id": "architecture_closeup", "name": "Architecture Closeup", "sequence": 8,
-      "trades": ["CARPENTER"],
+      "trades": ["CARPENTER", "FINISHER"],
       "replicate_per_level": true,
       "scope": "level",
       "_scope": "Internal fabric closed up AFTER first fix: doors, and anything hung on or into a wall once the services inside it are in.",

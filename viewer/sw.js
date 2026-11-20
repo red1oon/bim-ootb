@@ -278,7 +278,8 @@
 // v1763 (2026-11-19) §VIEWER_EXPORT_MENU (main was at v1762, the pipe-trades fix) (bim-ootb VIEWER_IFC_EXPORT_BY_DISCIPLINE.md §(c)): the IFC row gets scope chips Whole building | Find selection (N) (A.activeGuidFilter -> A.exportIfcShared({scope:'selection'}), file <building>_selection_<schema>.ifc); export_menu.js?v=4 ifc_export_shared.js?v=2; i18n packs carry 4 new rows
 // v1765 (2026-11-19) §IFC_EXPORT_SHARED (main was at v1764) (bim-ootb VIEWER_IFC_EXPORT_BY_DISCIPLINE.md (d)): the IFC export writes generated parts through the parts path, materials, property sets, part relations (IfcRelAggregates / Pset BIMC_Part), kept source GlobalIds, and takes a frame JSON (the Frame control of the IFC row); lod_ifc.js?v=2 ifc_export_shared.js?v=3 export_menu.js?v=5; i18n packs carry 4 new rows
 // v1770 (2026-11-20) §IFC_STOREYS (bim-compiler 4D_MODEL_INTEGRITY.md §Q.36): buildings/patches for LTU_AHouse_meta.db + HHS_Office_Federated_extracted.db carry storey_elevation (the files' own IfcBuildingStorey.Elevation); _GANTT_CACHE_VERSION 44 -> 45 regenerates stored schedules.
-const CACHE_VERSION = 'v1770';
+// v1771 (2026-11-20) §CEILING_CLOSEUP (bim-compiler 4D_MODEL_INTEGRITY.md §Q.39): shim_bonds.js added to PRECACHE_ASSETS and loaded by viewer.html; schedule_gate.js?v=6 applyGeometryReclass (bearing walls, then ceilings) called by schedule_author.js?v=29, tm_gantt_build.js?v=4, tm_sched_xray.js?v=3; rates/4D_template.json 1.3.0 (FINISHER works in close-up); _GANTT_CACHE_VERSION 45 -> 46.
+const CACHE_VERSION = 'v1771';
 // v1637 (rebase of PR #1191/#1196) §CLASS_UNMATCHED_INHERITED + §EXACT_LOOKUP_BLINDSPOT: rates/ifc_schema_hierarchy.json added to PRECACHE_ASSETS; schedule_author.js/proj_fold.js/boq_charts.html/schedule_read_4d.js/tm_sched_xray.js classify via the schema hierarchy.
 // v1636 (rebase of PR #1317) §ARCH_AREA_WEIGHT/§VOL_WEIGHT/§FOOTING_M3: schedule_author.js, time_machine parts, rates.js and rates/*.json changed install DURATIONS (area/volume weighting, IfcFooting priced M3); all precached cache-first, so a client holding the old cache would keep the flat times forever.
 // v1635 (rebase of PR #676, BCF half only) §BCF_EXPORT: bcf_export.js added to PRECACHE_ASSETS; viewer.html loads it + Export BCF button in the Issues toolbar; main.js wires setupBcfExport/exportIssuesBcf. The Open-button IFC half of #676 was superseded by main's A._openIfcFiles.
@@ -1211,6 +1212,7 @@ const PRECACHE_ASSETS = [
   'lib/level_deriver.js',   // §S50 — vertical axis of the cell-grain schedule
   'location_axis.js',       // §S50 — rooms injection; lib/room_walker.js is network-first below
   'cpm_schedule.js',
+  'shim_bonds.js',
   'gantt_model.js',      // §S53 (F3) — the Gantt bar model, extracted from time_machine.js
   'zone_index.js',       // §S62 — median-Z storey banding, extracted from time_machine.js
   'support_sweep.js',    // §S58 — support-order physics, extracted from time_machine.js

@@ -4,37 +4,44 @@
   "Duplex": {
    "n": 1119,
    "bonded": 1009,
-   "db": "Duplex_extracted.db"
+   "db": "Duplex_extracted.db",
+   "ceilingCrossLevel": 0
   },
   "HHS_Office_Federated": {
    "n": 6839,
    "bonded": 5811,
-   "db": "HHS_Office_Federated_extracted.db"
+   "db": "HHS_Office_Federated_extracted.db",
+   "ceilingCrossLevel": 0
   },
   "JKR": {
    "n": 8985,
    "bonded": 5797,
-   "db": "JKR_extracted.db"
+   "db": "JKR_extracted.db",
+   "ceilingCrossLevel": 0
   },
   "Clinic": {
    "n": 16071,
    "bonded": 14723,
-   "db": "Clinic_meta.db"
+   "db": "Clinic_meta.db",
+   "ceilingCrossLevel": 10
   },
   "Terminal": {
    "n": 48428,
    "bonded": 10034,
-   "db": "Terminal_meta.db"
+   "db": "Terminal_meta.db",
+   "ceilingCrossLevel": 44
   },
   "Hospital": {
    "n": 63182,
    "bonded": 55260,
-   "db": "Hospital_meta.db"
+   "db": "Hospital_meta.db",
+   "ceilingCrossLevel": 14
   },
   "LTU_AHouse": {
    "n": 122330,
    "bonded": 105776,
-   "db": "LTU_AHouse_meta.db"
+   "db": "LTU_AHouse_meta.db",
+   "ceilingCrossLevel": 2
   }
  }
 }

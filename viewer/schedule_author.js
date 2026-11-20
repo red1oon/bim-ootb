@@ -1046,7 +1046,8 @@
     var SG = (global && global.ScheduleGate) ||
              (typeof globalThis !== 'undefined' && globalThis.ScheduleGate) ||
              (typeof window !== 'undefined' && window.ScheduleGate) || null;
-    if (SG && SG.applyBearingWalls) SG.applyBearingWalls(list, who);
+    if (SG && SG.applyGeometryReclass) SG.applyGeometryReclass(list, who);   // bearing walls, then ceilings (§Q.39)
+    else if (SG && SG.applyBearingWalls) SG.applyBearingWalls(list, who);
   }
   function _reclassGroundworkSlabs(list, who) {
     // schedule_gate.js self-registers on its own wrapper global (globalThis in node, window in the

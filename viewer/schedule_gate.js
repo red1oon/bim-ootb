@@ -1500,13 +1500,27 @@
       ' — a wall that is the only structure under a structural element is Superstructure, seq 2 like a column or seq 3 when it stands on a beam (rate, trade, install time unchanged)');
     return n;
   }
+  // applyGeometryReclass(els, who) — every reclassification a recipe owes to geometry, in the one order that is right: bearing walls first
+  // (§Q.6 D1), then ceilings (§Q.39 §CEILING_CLOSEUP — the bond's kinds read the promoted walls). All three element recipes call THIS, so the
+  // task grid, the movie and the lock gate move the same elements. In node a missing ShimBonds / CpmSchedule global is required here, so no
+  // harness can run without the rule; in the browser viewer.html loads both.
+  function applyGeometryReclass(els, who) {
+    var n = applyBearingWalls(els, who);
+    var SB = global.ShimBonds, CP = global.CpmSchedule;
+    if ((!SB || !CP) && typeof module !== 'undefined' && module.exports && typeof require === 'function') {
+      try { if (!CP) { CP = require('./cpm_schedule.js'); if (!global.CpmSchedule) global.CpmSchedule = CP; } if (!SB) SB = require('./shim_bonds.js'); } catch (e) { /* reported just below */ }
+    }
+    if (SB && SB.applyCeilings) SB.applyCeilings(els, who, { SG: API, CP: CP });
+    else console.log('§CEILING_CLOSEUP recipe=' + who + ' INACTIVE — shim_bonds.js not loaded; coverings keep the class rule');
+    return n;
+  }
   function supportPool(e) {
     return e.seq <= 4 ||                                   // PASS-A structure
            (e.cls === 'IfcSlab' && e.seq > 4 && e.phase !== 'Finishes') ||           // §DEQ_V1 promoted roof slab
            e.cls === 'IfcStairFlight';                     // §STAIR_FLIGHT_GRID_VISIBILITY
   }
 
-  var API = { supportPool: supportPool, computeSchedule: computeSchedule, collapsePhase: collapsePhase, elementsInPhase: elementsInPhase, auditFloating: auditFloating, deriveBandRanks: deriveBandRanks, deriveZones: deriveZones, deriveStoreyMergeMap: deriveStoreyMergeMap, hostPairs: hostPairs, openingPairs: openingPairs, groundworkSlabs: groundworkSlabs, bearingWalls: bearingWalls, applyBearingWalls: applyBearingWalls, CELL: CELL, EPS: EPS, GAP: GAP, GROUND_BAND: GROUND_BAND, BIG_ELEMENT_VOL: BIG_ELEMENT_VOL, MAX_CREWS_DEFAULT: MAX_CREWS_DEFAULT, SHIFT_MS: SHIFT_MS, DAY_MS: DAY_MS, toProductive: toProductive, toWall: toWall };
+  var API = { applyGeometryReclass: applyGeometryReclass, supportPool: supportPool, computeSchedule: computeSchedule, collapsePhase: collapsePhase, elementsInPhase: elementsInPhase, auditFloating: auditFloating, deriveBandRanks: deriveBandRanks, deriveZones: deriveZones, deriveStoreyMergeMap: deriveStoreyMergeMap, hostPairs: hostPairs, openingPairs: openingPairs, groundworkSlabs: groundworkSlabs, bearingWalls: bearingWalls, applyBearingWalls: applyBearingWalls, CELL: CELL, EPS: EPS, GAP: GAP, GROUND_BAND: GROUND_BAND, BIG_ELEMENT_VOL: BIG_ELEMENT_VOL, MAX_CREWS_DEFAULT: MAX_CREWS_DEFAULT, SHIFT_MS: SHIFT_MS, DAY_MS: DAY_MS, toProductive: toProductive, toWall: toWall };
   global.ScheduleGate = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
 })(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this));
