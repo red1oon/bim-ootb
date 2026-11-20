@@ -18,10 +18,13 @@ const GM = () => require('../gen_manifest.js');   // lazy: gen_manifest requires
 // No `witnesses` key (owner B-3 REVISED 2026-11-19, bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md §B-3R SPEC; #3326): a stored copy went stale with every new
 //   test anywhere and failed C15 on test-only PRs. witnessesOf() below answers when asked; serialize() drops a leftover key, so --write cleans an old line.
 const MOD_KEYS = ['v', 'load', 'lazyGroup', 'precache', 'deps', 'uses', 'notDeps', 'owner'];
-const SITE_KEYS = ['kind', 'as', 'onerror', 'q'];
+// B2 (bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md Part B, "B2 BUILD SPEC"; bim-ootb #3365): a site may carry its own `v` (pages that load one
+//   module under different numbers keep them until B4-HASH; null = a tag with no ?v= of a module versioned elsewhere) and `pin` (bump never raises it).
+const SITE_KEYS = ['kind', 'as', 'v', 'onerror', 'q', 'pin'];
 const INLINE_KEYS = ['deps', 'uses', 'notDeps'];
 const FORCING = new Set(['load', 'load-guarded', 'import']);
 const BEGIN_TAGS = /<!-- §MANIFEST:BEGIN (\S+) tags\b[^\n]*-->/, END_TAGS = /<!-- §MANIFEST:END (\S+) tags -->/;
+const BEGIN_TAGS_G = new RegExp(BEGIN_TAGS.source, 'g'), END_TAGS_G = new RegExp(END_TAGS.source, 'g');
 const BEGIN_PRE = /\/\/ §MANIFEST:BEGIN precache\b/, END_PRE = /\/\/ §MANIFEST:END precache\b/;
 const SCHEMA = { type: 'object', additionalProperties: false,
   required: ['app', 'schema', 'sw', 'cacheVersion', 'depsDeclared', 'depsReview', 'modules', 'inline', 'order', 'precacheOrder'],
@@ -34,8 +37,8 @@ const SCHEMA = { type: 'object', additionalProperties: false,
       owner: { anyOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' }, minItems: 2 }] } } } },
     inline: { type: 'object', additionalProperties: { type: 'object', additionalProperties: false, required: INLINE_KEYS, properties: {
       deps: { type: 'array', items: { type: 'string' } }, uses: { type: 'array', items: { type: 'string' } }, notDeps: { type: 'array', items: { type: 'string' } } } } },
-    order: { type: 'object', additionalProperties: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['kind', 'as'], properties: {   // no site-level v (B1)
-      kind: { enum: ['tag', 'asset', 'inline', 'lazy'] }, as: { type: 'string', minLength: 1 }, onerror: { type: 'string' }, q: { enum: ['"', '`'] } } } } },
+    order: { type: 'object', additionalProperties: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['kind', 'as'], properties: {
+      kind: { enum: ['tag', 'asset', 'inline', 'lazy'] }, as: { type: 'string', minLength: 1 }, v: { type: ['integer', 'null'], minimum: 0 }, onerror: { type: 'string' }, q: { enum: ['"', '`'] }, pin: { const: true } } } } },
     precacheOrder: { type: 'array', minItems: 1, items: { type: 'string' } } } };
 
 const sourceFile = app => app + '/modules.json';
@@ -81,12 +84,25 @@ function expand(m) {
   for (const f of sortKeys(m.order)) m.order[f].forEach((s, at) => {
     const t = targetOf(m, f, s.as), mod = mods.get(t);
     if (!mod) { fails.push(`${f}: site ${at} (${s.as}) names ${t}, which has no line in modules`); return; }
-    mod.sites.push(Object.assign({ in: f, at, kind: s.kind, as: s.as, v: mod.v }, s.onerror != null ? { onerror: s.onerror } : {}, s.q ? { q: s.q } : {}));
+    mod.sites.push(Object.assign({ in: f, at, kind: s.kind, as: s.as, v: 'v' in s ? s.v : mod.v }, s.onerror != null ? { onerror: s.onerror } : {}, s.q ? { q: s.q } : {}, s.pin ? { pin: true } : {}));
   });
   for (const mod of mods.values()) if (!mod.sites.length) fails.push(`modules: ${mod.file} has no site in order`);
   const files = sortKeys(m.order);
   return { b0: { app: m.app, sw: m.sw, cacheVersion: m.cacheVersion, depsDeclared: m.depsDeclared, pages: files.filter(f => f.endsWith('.html')), loaders: files.filter(f => !f.endsWith('.html')),
     modules: [...mods.values()], precacheOrder: m.precacheOrder.slice() }, fails };
+}
+
+/** The sites of an expanded module that a bump raises: versioned, not pinned, not the file's reference to itself. */
+const bumpSites = mod => mod.sites.filter(x => x.in !== mod.file && !x.pin && x.v != null);
+/** One bump of one module, today's arithmetic (every reference goes up by one from its own number): the module's `v` and each site `v` + 1; a pinned
+ *  site keeps its number (it gets its own `v` when it had none), a null stays null. */
+function raise(m, file) {
+  const old = m.modules[file].v;
+  for (const f of Object.keys(m.order)) for (const s of m.order[f]) {
+    if (targetOf(m, f, s.as) !== file) continue;
+    if (s.pin) { if (!('v' in s)) s.v = old; } else if ('v' in s && s.v != null) s.v += 1;
+  }
+  m.modules[file].v = old + 1;
 }
 
 // ---- alignment: a tag / precache entry added to or removed from the manifest becomes a line added to / removed from the file
@@ -240,6 +256,11 @@ function check(root, app, o) {
   const Ajv = require(path.join(__dirname, '..', '..', 'node_modules', 'ajv')), v = new Ajv({ allErrors: true, allowUnionTypes: true }).compile(SCHEMA);
   if (!v(m)) { fails.push(sourceFile(app) + ': schema: ' + new Ajv().errorsText(v.errors)); return { lines, fails, info }; }
   if (serialize(m) !== raw) { const a = serialize(m).split('\n'), b = raw.split('\n'), i = a.findIndex((x, k) => x !== b[k]); fails.push(`${sourceFile(app)}:${i + 1} is not canonical (keys in a fixed order, one record per line); run: node scripts/gen_manifest.js --write ${app}`); }
+  for (const f of sortKeys(m.order)) m.order[f].forEach((s, at) => {   // a site `v` exists only where it differs from (and is below) its module's
+    if (!('v' in s)) return;
+    const mod = m.modules[targetOf(m, f, s.as)]; if (!mod) return;
+    if (mod.v == null || s.v === mod.v || (s.v != null && s.v > mod.v)) fails.push(`${sourceFile(app)}: order ${f} site ${at} (${s.as}) carries v=${s.v} beside its module's v=${mod.v}: not canonical (a site v is written only when it is lower than the module's, or null for a tag with no ?v=)`);
+  });
   const w = write(root, app, { manifest: JSON.parse(raw), texts: o.texts });
   fails.push(...w.fails);
   const read = f => o.texts && o.texts.has(f) ? o.texts.get(f) : fs.readFileSync(path.join(root, f), 'utf8');
@@ -255,11 +276,15 @@ function check(root, app, o) {
   info.files = w.out.size; info.identical = identical;
   // markers: every script tag of a page with a marker pair sits between them; every precache entry sits between the sw.js pair
   for (const f of sortKeys(m.order).filter(f => f.endsWith('.html'))) {
-    const src = read(f), b = BEGIN_TAGS.exec(src), e = END_TAGS.exec(src), tags = R.readHtml(src).tags;
-    if (!b && !e && tags.length <= 1) continue;
-    if (!b || !e || e.index < b.index) { fails.push(`${f}: needs one <!-- §MANIFEST:BEGIN ${app} tags … --> … <!-- §MANIFEST:END ${app} tags --> pair`); continue; }
-    const out = tags.filter(t => t.start < b.index || t.end > e.index);
-    out.forEach(t => fails.push(`${f}:${src.slice(0, t.start).split('\n').length} a <script src> outside the §MANIFEST markers (${t.as}); script tags are written from ${sourceFile(app)}`));
+    const src = read(f), B = [...src.matchAll(BEGIN_TAGS_G)], E = [...src.matchAll(END_TAGS_G)], tags = R.readHtml(src).tags, ln = i => src.slice(0, i).split('\n').length;
+    if (!B.length && !E.length && tags.length <= 1) continue;
+    if (!B.length || !E.length) { fails.push(`${f}: needs one <!-- §MANIFEST:BEGIN ${app} tags … --> … <!-- §MANIFEST:END ${app} tags --> pair`); continue; }
+    // any number of pairs (B2: a page whose tags sit in groups far apart), in order, never nested
+    if (B.length !== E.length || B.some((b, i) => b.index > E[i].index || (i && E[i - 1].index > b.index))) { fails.push(`${f}: its §MANIFEST:BEGIN / §MANIFEST:END ${app} tags markers are not pairs in order (${B.length} BEGIN, ${E.length} END)`); continue; }
+    const inPair = t => B.findIndex((b, i) => t.start > b.index && t.end < E[i].index);
+    tags.filter(t => inPair(t) < 0).forEach(t => fails.push(`${f}:${ln(t.start)} a <script src> outside the §MANIFEST markers (${t.as}); script tags are written from ${sourceFile(app)}`));
+    B.forEach((b, i) => { if (!tags.some(t => inPair(t) === i)) fails.push(`${f}:${ln(b.index)} a §MANIFEST marker pair with no script tag in it`); });
+    info.pairs = (info.pairs || 0) + B.length;
   }
   { const src = read(m.sw), b = BEGIN_PRE.exec(src), e = END_PRE.exec(src), sf = G.swFrame(m.sw, src);
     if (!b || !e) fails.push(`${m.sw}: needs the // §MANIFEST:BEGIN precache … // §MANIFEST:END precache pair`);
@@ -333,11 +358,12 @@ function init(root, app, o) {
   const G = GM(), { manifest: b0, frames } = G.buildApp(root, app), fails = [];
   const m = { app, schema: 1, sw: b0.sw, cacheVersion: b0.cacheVersion, depsDeclared: true, depsReview: { by: o.by || '', on: o.on || '', tool: '' }, modules: {}, inline: {}, order: {}, precacheOrder: b0.precacheOrder.slice() };
   for (const x of b0.modules) {
-    const vs = new Set(x.sites.map(s => s.v)); if (vs.size > 1) fails.push(`${x.file}: its sites carry different numbers (${[...vs].join(',')}); one v per module needs them equal first`);
-    m.modules[x.file] = { v: x.v, load: x.load, lazyGroup: x.lazyGroup, precache: x.precache, deps: [], uses: [], notDeps: [], owner: '' };
+    const nums = x.sites.map(s => s.v).filter(v => v != null);   // B2: the module's v is its highest number today; a site that differs keeps its own
+    m.modules[x.file] = { v: nums.length ? Math.max(...nums) : null, load: x.load, lazyGroup: x.lazyGroup, precache: x.precache, deps: [], uses: [], notDeps: [], owner: '' };
   }
   for (const f of frames.keys()) if (f !== b0.sw) m.order[f] = [];
-  for (const x of b0.modules) for (const s of x.sites) m.order[s.in][s.at] = Object.assign({ kind: s.kind, as: s.as }, s.onerror != null ? { onerror: s.onerror } : {}, s.q ? { q: s.q } : {});
+  for (const x of b0.modules) for (const s of x.sites) m.order[s.in][s.at] = Object.assign({ kind: s.kind, as: s.as }, s.v !== m.modules[x.file].v ? { v: s.v } : {}, s.onerror != null ? { onerror: s.onerror } : {}, s.q ? { q: s.q } : {},
+    s.kind === 'inline' && x.file === b0.sw ? { pin: true } : {});   // the address the service worker is registered under: no bump raises it
   const not = new Set(o.notDeps || []), uses = new Set(o.asUses || []);
   const rv = review(root, app, m);
   for (const e of rv.r.edges) {
@@ -351,4 +377,4 @@ function init(root, app, o) {
   return { m, fails, lines, counts: { deps: Object.values(m.modules).concat(Object.values(m.inline)).reduce((n, r) => n + r.deps.length, 0), notDeps: Object.values(m.modules).concat(Object.values(m.inline)).reduce((n, r) => n + r.notDeps.length, 0), uses: Object.values(m.modules).concat(Object.values(m.inline)).reduce((n, r) => n + r.uses.length, 0) } };
 }
 
-module.exports = { SCHEMA, sourceFile, hasSource, serialize, expand, targetOf, align, write, check, order, init, refresh, review, ownerOf, witnessesOf, FORCING, BEGIN_TAGS, END_TAGS, BEGIN_PRE, END_PRE };
+module.exports = { SCHEMA, sourceFile, hasSource, serialize, expand, targetOf, bumpSites, raise, align, write, check, order, init, refresh, review, ownerOf, witnessesOf, FORCING, BEGIN_TAGS, END_TAGS, BEGIN_PRE, END_PRE };

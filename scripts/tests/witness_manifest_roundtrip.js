@@ -29,6 +29,13 @@
 //   line with its keys reordered · R10 a dep that loads later + a boot module depending on a lazy one · R11 an owner typed by hand · R12 one
 //   candidate removed from all three lists -> INCONCLUSIVE unreviewed=1 · R13 a test-only change keeps C15 ok (#3326; FAILS on the code before it) ·
 //   R14 a `witnesses` key typed back is refused · R15 --witnesses on a non-module exits 1. Each must be DETECTED.
+// B2 part 1 ("B2 BUILD SPEC"; #3365), ERP switched in memory and in temp trees until erp/modules.json exists (trial=Y):
+//   C16 the sites that carry their own `v` are exactly the ones B0's reader finds off their module's highest number (and every site equals the reader's)
+//   C17 a bump of the modules with differing numbers writes the bytes bump.js's regex path writes on the same files (each site +1 from its own number)
+//   C18 the pinned service-worker register literals never move: named as a target, or on a branch that changed sw.js (--changed)
+//   C19 the deploy stamp's pattern (deploy-pages.yml) reads the manifest's cacheVersion from the generated sw.js
+//   RED R16 a module's numbers on two pages swapped · R17 a site v deleted · R18 a site v equal to its module's · R19 a <script src> between two
+//   marker pairs · R20 `pin` removed, then sw.js bumped. (The spec numbers these R13-R17; R13-R15 were taken by #3326.) ERP's load order: not judged.
 // NOT JUDGED in the viewer and ERP: their load order (no deps declared there yet); R5 proves the refusal code on a synthetic edge.
 // INCONCLUSIVE: an app with 0 sites, a parse failure, a red control not detected, the vm run throws, bump or the audit prints no line, C5 judged 0.
 // Command: node scripts/tests/witness_manifest_roundtrip.js   (~1 min; --skip-c7 leaves out the bump.js dry run; --skip-c9 the git-history claim,
@@ -40,7 +47,7 @@ const G = require(path.join(ROOT, 'scripts', 'gen_manifest.js')), R = require(pa
 const clone = o => JSON.parse(JSON.stringify(o));
 const SKIP_C7 = process.argv.includes('--skip-c7'), SKIP_C9 = process.argv.includes('--skip-c9');
 const MS = require(path.join(ROOT, 'scripts', 'lib', 'manifest_source.js'));
-const SRC_APPS = G.APPS.filter(a => MS.hasSource(ROOT, a)), NCLAIMS = 7 + (SRC_APPS.length ? 8 : 0) - (SKIP_C7 ? 1 : 0) - (SRC_APPS.length && SKIP_C9 ? 1 : 0);
+const SRC_APPS = G.APPS.filter(a => MS.hasSource(ROOT, a)), NCLAIMS = 7 + 4 + (SRC_APPS.length ? 8 : 0) - (SKIP_C7 ? 1 : 0) - (SRC_APPS.length && SKIP_C9 ? 1 : 0);
 // the two regexes of scripts/bump.js (PAGE_REF, JS_REF), quoted here as the independent second reader
 const PAGE_REF = /((?:src|href)\s*=\s*")([^"?#]+)\?v=(\d+)(")/g, JS_REF = /((['"]))([^'"\s?#]+\.(?:js|css|json|wasm))\?v=(\d+)(\2)/g;
 const RAW_TAG = /<script[^>]+src=/g, count = (s, re) => (s.match(re) || []).length;
@@ -303,6 +310,99 @@ if (B1.m) {
   { const cli = cp.spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'gen_manifest.js'), '--witnesses', 'zz_no_such_module.js', '--root', ROOT], { encoding: 'utf8' });
     redSay('R15', cli.status === 1 && /^§MANIFEST_ERR zz_no_such_module\.js is no module/m.test(cli.stdout), `--witnesses zz_no_such_module.js: exit=${cli.status}`); }
 }
+// ---- B2 part 1 (bim-compiler CODE_ARCHITECTURE_DESIGN.md Part B, "B2 BUILD SPEC"; #3365). ISSUE: "an app whose pages load one module under DIFFERENT
+//   numbers (ERP: 10 modules) cannot be written from one modules.json without changing a byte, and its bumps cannot keep today's arithmetic".
+//   Until erp/modules.json is committed (B2 part 2) ERP is switched HERE, in memory and in temp trees (trial=Y): MS.init on the real tree, marker pairs
+//   placed by a fixture rule (a new pair where two tags are more than 500 lines apart), every candidate edge kept as `uses` (the order review is part 2,
+//   so ERP's load order is NOT judged here). The real tree is never written.
+const B2 = { siteV: 0, pinned: 0, trial: '-' };
+{
+  const app = 'erp', a = r.apps.find(x => x.manifest.app === app), trial = !MS.hasSource(ROOT, app), os = require('os');
+  const rd = f => fs.readFileSync(path.join(ROOT, f), 'utf8'), ls = (s, i) => s.lastIndexOf('\n', i - 1) + 1, le = (s, i) => { const e = s.indexOf('\n', i); return e < 0 ? s.length : e + 1; };
+  let m, texts = new Map();
+  if (trial) {
+    m = MS.init(ROOT, app, { by: 'witness-trial' }).m;
+    for (const rec of Object.values(m.modules).concat(Object.values(m.inline))) { rec.uses = [...new Set([...rec.uses, ...rec.deps])].sort(); rec.deps = []; }
+    for (const f of Object.keys(m.order).filter(f => f.endsWith('.html'))) {
+      let src = rd(f); const tags = R.readHtml(src).tags; if (tags.length <= 1) continue;
+      const line = i => src.slice(0, i).split('\n').length, groups = [[tags[0]]];
+      for (let i = 1; i < tags.length; i++) { if (line(tags[i].start) - line(tags[i - 1].end) > 500) groups.push([]); groups[groups.length - 1].push(tags[i]); }
+      for (const g of groups.reverse()) { const e = le(src, g[g.length - 1].end), b = ls(src, g[0].start); src = src.slice(0, b) + `<!-- §MANIFEST:BEGIN ${app} tags -->\n` + src.slice(b, e) + `<!-- §MANIFEST:END ${app} tags -->\n` + src.slice(e); }
+      texts.set(f, src);
+    }
+    { let src = rd(m.sw); const pre = G.swFrame(m.sw, src).pre, e = le(src, pre[pre.length - 1].end), b = ls(src, pre[0].start);
+      texts.set(m.sw, src.slice(0, b) + '// §MANIFEST:BEGIN precache\n' + src.slice(b, e) + '// §MANIFEST:END precache\n' + src.slice(e)); }
+  } else m = JSON.parse(rd(MS.sourceFile(app)));
+  const text = f => texts.has(f) ? texts.get(f) : rd(f), chk = (mm, tx) => MS.check(ROOT, app, { manifestText: MS.serialize(mm), texts: tx || texts, skipReview: true });
+  const eff = (mm, f, s) => 'v' in s ? s.v : mm.modules[MS.targetOf(mm, f, s.as)].v;
+  const setEff = (mm, f, s, v) => { if (v === mm.modules[MS.targetOf(mm, f, s.as)].v) delete s.v; else s.v = v; };
+  const base = chk(m), own = [], pins = [];
+  for (const f of Object.keys(m.order)) m.order[f].forEach((s, at) => { if ('v' in s) own.push({ f, at, s }); if (s.pin) pins.push({ f, at, s }); });
+  B2.siteV = own.length; B2.pinned = pins.length; B2.trial = trial ? 'Y' : 'N';
+  base.fails.slice(0, 8).forEach(x => say('  §MANIFEST_B2_FAIL ' + x));
+  // C16 — the site numbers are exactly today's disagreements, judged against B0's reader of the committed tree
+  { const key = x => JSON.stringify(x.sites.map(z => [z.in, z.at, z.kind, z.as, z.v]).sort()), read = new Map(a.manifest.modules.map(x => [x.file, x])); let differ = 0, want = 0;
+    for (const x of MS.expand(m).b0.modules) { const y = read.get(x.file); if (!y || key(x) !== key(y)) { differ++; if (differ < 6) say('  §MANIFEST_C16_MISS module=' + x.file); } }
+    for (const y of a.manifest.modules) { const nums = y.sites.map(z => z.v).filter(v => v != null); if (nums.length) want += y.sites.filter(z => z.v !== Math.max(...nums)).length; }
+    if (!own.length) inconclusive.push('C16: 0 sites carry their own v (C16 and C17 would judge nothing)');
+    claim('C16', !base.fails.length && !differ && own.length === want && own.length > 0, `app=${app} trial=${B2.trial} check_fails=${base.fails.length} driven_files=${base.info.identical}/${base.info.files} marker_pairs=${base.info.pairs || 0} modules_differing_from_reader=${differ} site_v=${own.length} reader_says=${want} (below the module's highest ${own.filter(o => o.s.v != null).length}, no ?v= ${own.filter(o => o.s.v == null).length}) pinned=${pins.length}`); }
+  // C17-C19 in temp trees: A = the files as committed (bump.js's regex path, untouched code), B = the same with modules.json + markers (the manifest path)
+  const tA = fs.mkdtempSync(path.join(os.tmpdir(), 'w-manifest-b2a-')), tB = fs.mkdtempSync(path.join(os.tmpdir(), 'w-manifest-b2b-')), home = fs.mkdtempSync(path.join(os.tmpdir(), 'w-manifest-b2h-'));
+  try {
+    const owned = [...Object.keys(m.order), m.sw], multi = Object.keys(m.modules).filter(f => own.some(o => MS.targetOf(m, o.f, o.s.as) === f));
+    const targets = multi.filter(f => fs.existsSync(path.join(ROOT, f)) && MS.expand(m).b0.modules.find(x => x.file === f).sites.every(z => z.kind === 'tag' || z.kind === 'lazy'));
+    const put = (t, f, s) => { fs.mkdirSync(path.dirname(path.join(t, f)), { recursive: true }); fs.writeFileSync(path.join(t, f), s); };
+    for (const f of owned) { put(tA, f, rd(f)); put(tB, f, text(f)); }
+    for (const f of [...targets, app + '/icons.js'].filter((f, i, l) => l.indexOf(f) === i && !owned.includes(f))) { put(tA, f, rd(f)); put(tB, f, rd(f)); }
+    put(tB, MS.sourceFile(app), MS.serialize(m));
+    const env = Object.assign({}, process.env, { BUMP_PARITY: 'off', BUMP_PARITY_HOME: home });
+    const bump = (t, args) => cp.spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'bump.js'), ...args, '--root', t], { encoding: 'utf8', env, maxBuffer: 1 << 26 });
+    const unmark = s => s.split('\n').filter(l => !/§MANIFEST:(BEGIN|END)\b/.test(l)).join('\n'), get = (t, f) => fs.readFileSync(path.join(t, f), 'utf8');
+    if (!targets.length) { inconclusive.push('C17: no module with differing site numbers whose sites are all tags / loader literals'); claim('C17', false, 'judged nothing'); }
+    else {
+      const ra = bump(tA, [...targets, '--write']), rb = bump(tB, [...targets, '--write']);
+      const diff = owned.filter(f => get(tA, f) !== unmark(get(tB, f))), moved = owned.filter(f => get(tA, f) !== rd(f)).length;
+      const la = (ra.stdout.match(/^§BUMP (?:page|loader)=.*$/mg) || []).length, lb = (rb.stdout.match(/^§BUMP (?:page|loader)=.*$/mg) || []).length;
+      diff.slice(0, 5).forEach(f => say('  §MANIFEST_C17_MISS file=' + f + ' the manifest bump wrote other bytes than the regex bump'));
+      claim('C17', ra.status === 0 && rb.status === 0 && !diff.length && moved > 1 && la === lb && la > targets.length, `app=${app} modules_bumped=${targets.length} (${targets.map(f => path.basename(f)).join(',')}) regex_exit=${ra.status} manifest_exit=${rb.status} bump_lines=${la}/${lb} files_changed=${moved} files_differing=${diff.length}/${owned.length}`);
+    }
+    // C19 — the deploy stamp's own pattern still reads the version from the sw.js the generator wrote
+    { const yml = rd('.github/workflows/deploy-pages.yml'), has = yml.includes(`grep -oE "CACHE_VERSION = '[^']+'" erp/sw.js`), mm = JSON.parse(get(tB, MS.sourceFile(app)));
+      const hit = /CACHE_VERSION = '([^']+)'/.exec(get(tB, m.sw));
+      if (!has) inconclusive.push('C19: deploy-pages.yml no longer holds the stamp pattern this claim quotes');
+      claim('C19', has && hit && hit[1] === mm.cacheVersion && (!targets.length || mm.cacheVersion !== m.cacheVersion), `app=${app} stamp_reads=${hit ? hit[1] : '-'} manifest=${mm.cacheVersion} before_the_bump=${m.cacheVersion}`); }
+    // C18 — the pinned literals never move: named as a target (same refusal as the regex path), and on a branch that changed sw.js (--changed)
+    if (!pins.length) { inconclusive.push('C18: no pinned site'); claim('C18', false, 'judged nothing'); }
+    else {
+      const lit = t => pins.map(p => { const s = G.readSites(p.f, get(t, p.f))[p.at]; return p.f + ':' + s.as + '?v=' + s.v; }).join(' '), before = lit(tB);
+      const da = bump(tA, [m.sw]), db = bump(tB, [m.sw]), errA = /^§BUMP_ERR not_loaded_by_any_page_or_loader/m.test(da.stdout), errB = /^§BUMP_ERR not_loaded_by_any_page_or_loader/m.test(db.stdout);
+      const git = (args, extra) => cp.execFileSync('git', args, { cwd: tB, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], env: Object.assign({}, process.env, { GIT_AUTHOR_NAME: 'w', GIT_AUTHOR_EMAIL: 'w@w', GIT_COMMITTER_NAME: 'w', GIT_COMMITTER_EMAIL: 'w@w' }, extra || {}) }).trim();
+      git(['init', '-q']); git(['add', '-A']); const c = git(['commit-tree', git(['write-tree']), '-m', 'base']); git(['update-ref', 'HEAD', c]); git(['update-ref', 'refs/remotes/origin/main', c]);
+      fs.appendFileSync(path.join(tB, m.sw), '// changed on this branch\n'); fs.appendFileSync(path.join(tB, app, 'icons.js'), '// changed on this branch\n');
+      const ch = bump(tB, ['--changed', '--write']), files = (/^§BUMP_CHANGED .* files=(\S*)/m.exec(ch.stdout) || [])[1] || '', swLines = (ch.stdout.match(/^§BUMP \w+=\S+ ref=sw\.js .*$/mg) || []).length, after = lit(tB);
+      claim('C18', da.status === 2 && db.status === 2 && errA && errB && ch.status === 0 && files === app + '/icons.js' && swLines === 0 && after === before, `app=${app} pinned=${pins.length} named_as_target: regex_exit=${da.status} manifest_exit=${db.status} · --changed (sw.js + icons.js changed): exit=${ch.status} bumpable=${files || '-'} sw_lines=${swLines} literals ${before === after ? 'unchanged' : 'MOVED'} (${after})`);
+      // R20: without `pin` the same target raises the register literal
+      { const mm = JSON.parse(get(tB, MS.sourceFile(app))); Object.values(mm.order).forEach(l => l.forEach(s => { delete s.pin; })); put(tB, MS.sourceFile(app), MS.serialize(mm));
+        const o = bump(tB, [m.sw]).stdout, n = (o.match(/^§BUMP inline=\S+ ref=sw\.js v=\d+->\d+/mg) || []).length;
+        redSay('R20', n === pins.length, `"pin" removed from ${pins.length} register literal(s), then bump ${m.sw}: ${n} would be raised`); }
+    }
+  } finally { for (const t of [tA, tB, home]) fs.rmSync(t, { recursive: true, force: true }); }
+  // R16-R19 on the manifest and texts above (in memory)
+  { const cand = own.filter(o => o.s.v != null).map(o => ({ o, other: Object.keys(m.order).filter(f => f !== o.f && f.endsWith('.html')).map(f => ({ f, at: m.order[f].findIndex(s => MS.targetOf(m, f, s.as) === MS.targetOf(m, o.f, o.s.as) && eff(m, f, s) != null && eff(m, f, s) !== o.s.v) })).find(x => x.at >= 0) })).find(x => x.other && x.o.f.endsWith('.html'));
+    if (!cand) { inconclusive.push('R16: no module with two different numbers on two pages'); redSay('R16', false, 'judged nothing'); }
+    else { const mm = clone(m), s1 = mm.order[cand.o.f][cand.o.at], s2 = mm.order[cand.other.f][cand.other.at], v1 = eff(mm, cand.o.f, s1), v2 = eff(mm, cand.other.f, s2); setEff(mm, cand.o.f, s1, v2); setEff(mm, cand.other.f, s2, v1);
+      const c = chk(mm), n1 = c.fails.some(x => x.startsWith(cand.o.f + ':') && /differs/.test(x)), n2 = c.fails.some(x => x.startsWith(cand.other.f + ':') && /differs/.test(x));
+      redSay('R16', n1 && n2, `${s1.as}: its numbers on ${cand.o.f} (${v1}) and ${cand.other.f} (${v2}) swapped in the manifest: refusal naming each page ${n1 ? 'Y' : 'N'}/${n2 ? 'Y' : 'N'}`); } }
+  if (own.length) {
+    { const mm = clone(m), o = own[0]; delete mm.order[o.f][o.at].v; const c = chk(mm); redSay('R17', c.fails.some(x => x.startsWith(o.f + ':') && /differs/.test(x)), `the site v of ${o.s.as} on ${o.f} deleted: ${c.fails.filter(x => /differs/.test(x)).length} refusal(s)`); }
+    { const mm = clone(m), f = Object.keys(mm.order).find(k => mm.order[k].some(s => !('v' in s) && mm.modules[MS.targetOf(mm, k, s.as)].v != null)), s = mm.order[f].find(z => !('v' in z) && mm.modules[MS.targetOf(mm, f, z.as)].v != null); s.v = mm.modules[MS.targetOf(mm, f, s.as)].v;
+      const c = chk(mm); redSay('R18', c.fails.some(x => /not canonical/.test(x) && x.includes('(' + s.as + ')')), `a site v equal to its module's typed on ${s.as} in ${f}: ${c.fails.filter(x => /not canonical/.test(x)).length} refusal(s)`); }
+  } else { redSay('R17', false, 'judged nothing'); redSay('R18', false, 'judged nothing'); }
+  { const page = Object.keys(m.order).find(f => f.endsWith('.html') && (text(f).match(/§MANIFEST:END \S+ tags/g) || []).length > 1);
+    if (!page) { inconclusive.push('R19: no page with two marker pairs'); redSay('R19', false, 'judged nothing'); }
+    else { const src = text(page), e = /<!-- §MANIFEST:END \S+ tags -->\n/.exec(src), at = e.index + e[0].length, tx = new Map(texts); tx.set(page, src.slice(0, at) + '<script src="zz_planted.js?v=1"></script>\n' + src.slice(at));
+      const c = chk(m, tx); redSay('R19', c.fails.some(x => /outside the §MANIFEST markers \(zz_planted\.js\)/.test(x)), `a <script src> planted between the two marker pairs of ${page} (line ${src.slice(0, at).split('\n').length}): ${c.fails.filter(x => /outside the §MANIFEST/.test(x)).length} refusal(s)`); } }
+}
 if (red.some(x => !x)) inconclusive.push('a red control was not detected');
 
 const { Witness } = require(path.join(ROOT, 'witness_kit', 'contract.js'));
@@ -310,11 +410,11 @@ const res = Witness('MANIFEST_ROUNDTRIP')
   .population(() => rows)
   .schema({ type: 'object', required: ['file', 'app', 'sites', 'identical'], properties: { file: { type: 'string', minLength: 1 }, sites: { type: 'integer', minimum: 1 }, identical: { const: true } } })
   .invariant('every owned file regenerates byte-identical from its app manifest', rs => rs.every(x => x.identical))
-  .invariant('every claim agrees with its independent source (C1-C7, and C8-C15 for a source app)', () => claims.length === NCLAIMS && claims.every(c => c.ok))
+  .invariant('every claim agrees with its independent source (C1-C7, C16-C19, and C8-C15 for a source app)', () => claims.length === NCLAIMS && claims.every(c => c.ok))
   .redControl(rs => { const m = clone(V.manifest), [p, q] = pair(m), k = p.s.at; p.s.at = q.s.at; q.s.at = k; const g = G.regenerate(m, V.frames, MAIN); return rs.map(x => x.file === MAIN ? Object.assign({}, x, { identical: g.ok && g.text === V.frames.get(MAIN).src }) : x); })
   .run();
 const identical = rows.filter(x => x.identical).length, t = r.tot, order = r.apps.reduce((n, a) => n + a.order.judged, 0);
 const verdict = inconclusive.length ? 'INCONCLUSIVE' : (res.fail || r.verdict !== 'PASS' || claims.some(c => !c.ok)) ? 'FAIL' : 'PASS';
 inconclusive.forEach(x => say('  §MANIFEST_INCONCLUSIVE ' + x));
-say(`§MANIFEST_ROUNDTRIP apps=${r.apps.length} source=${SRC_APPS.join(',') || '-'} files=${rows.length} sites=${t.tag + t.asset + t.inline + t.lazy} tag=${t.tag} asset=${t.asset} inline=${t.inline} lazy=${t.lazy} precache=${t.precache} identical=${identical}/${rows.length} driven=${driven}/${drivenOf} sw_vm=${swVm}/${r.apps.length} claims=${claims.filter(c => c.ok).length}/${NCLAIMS}${SKIP_C7 ? ' c7=NOT-RUN' : ''}${SRC_APPS.length && SKIP_C9 ? ' c9=NOT-RUN' : ''} red=${red.filter(Boolean).length}/${red.length} order_check=${order ? (B1.unreviewed ? 'INCONCLUSIVE' : r.apps.some(a => a.order.errors.length) ? 'FAIL' : 'PASS') : 'NOT-JUDGED'} deps_declared=${B1.declared} unreviewed=${B1.unreviewed} owner_gap=${B1.ownerGap} witness_gap=${B1.witGap} verdict=${verdict}`);
+say(`§MANIFEST_ROUNDTRIP apps=${r.apps.length} source=${SRC_APPS.join(',') || '-'} files=${rows.length} sites=${t.tag + t.asset + t.inline + t.lazy} tag=${t.tag} asset=${t.asset} inline=${t.inline} lazy=${t.lazy} precache=${t.precache} identical=${identical}/${rows.length} driven=${driven}/${drivenOf} sw_vm=${swVm}/${r.apps.length} claims=${claims.filter(c => c.ok).length}/${NCLAIMS}${SKIP_C7 ? ' c7=NOT-RUN' : ''}${SRC_APPS.length && SKIP_C9 ? ' c9=NOT-RUN' : ''} red=${red.filter(Boolean).length}/${red.length} order_check=${order ? (B1.unreviewed ? 'INCONCLUSIVE' : r.apps.some(a => a.order.errors.length) ? 'FAIL' : 'PASS') : 'NOT-JUDGED'} deps_declared=${B1.declared} unreviewed=${B1.unreviewed} owner_gap=${B1.ownerGap} witness_gap=${B1.witGap} b2_trial=${B2.trial} site_v=${B2.siteV} pinned=${B2.pinned} verdict=${verdict}`);
 if (verdict !== 'PASS') process.exitCode = 1;
