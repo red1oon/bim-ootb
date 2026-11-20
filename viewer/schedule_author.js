@@ -1138,6 +1138,9 @@
       for (var bi = 0; bi < items.length; bi++) {
         var bh = bres.host[bi];
         if (bh >= 0 && bh !== des[bi] && SBm.capOf(bres, bi) === 'hangs-below' && SBm.capOf(bres, bh) === 'hangs-below') { also[bi] = bh; alsoN++; }
+        // §Q.49: lagging is also held by the pipe it WRAPS (and a piece that continues a run, by the piece before it) — the same second-carrier
+        // rule, one more kind: it is filed no lower than its pipe, so it cannot sit in a bar that ends before the pipe's bar starts.
+        else if (bh >= 0 && bh !== des[bi] && bres.kind[bi] === 'insulation') { also[bi] = bh; alsoN++; }
       }
     }
     var hung = {}, moved = 0, byPhase = {}, toLevel = {}, otherRel = 0, unranked = 0, judged = 0, chained = 0;

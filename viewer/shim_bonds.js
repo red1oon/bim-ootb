@@ -53,7 +53,7 @@
       // read once per db (readDeclaredTypes). Undeclared -> 'covering' (both needs, the bond decides — the rule before §Q.44, unchanged).
       var pt = e.ptype || DECLARED[e.guid];
       if (!pt) return 'covering';
-      return pt === 'CEILING' ? 'ceiling' : (pt === 'FLOORING' ? 'floor_finish' : 'covering_other');   // insulation, molding, cladding …: no row, offers nothing
+      return pt === 'CEILING' ? 'ceiling' : (pt === 'FLOORING' ? 'floor_finish' : (pt === 'INSULATION' ? 'insulation' : 'covering_other'));   // §Q.49 insulation goes with its pipe; molding, cladding …: no row, offers nothing
     }
     if (c === 'IfcWindow' || c === 'IfcDoor') return 'opening_fill';
     if (FIXTURE_CEILING[c]) return 'fixture';
@@ -68,7 +68,7 @@
   // (§Q.33.6 item 2: footing/column -> beam -> slab -> bearing wall -> the rest) + count (one | all) + where the row comes from.
   // src: 'dry-run' = the owner's §Q.33.3 dry run, row for row · 'mined' = a rule_shim row (terminal_rules / duplex_rules, §SHIM-FACING)
   //      'proposed' = added by the S1 session so hosts can anchor at all; NOT signed off — counted separately on §SHIM_TABLE_SOURCE.
-  var REL = { 'bears-on-top': 'below', 'hangs-below': 'above', 'fixes-on-side': 'spans', 'opening-accepts': 'spans', 'continues-same-kind': 'any', 'joins': 'touch' };
+  var REL = { 'bears-on-top': 'below', 'hangs-below': 'above', 'fixes-on-side': 'spans', 'opening-accepts': 'spans', 'continues-same-kind': 'any', 'joins': 'touch', 'wraps': 'touch' };
   var BEARERS = ['footing', 'column', 'beam', 'slab', 'ground_slab', 'bearing_wall'];
   var TABLE = {
     footing:      [{ cap: 'ground', src: 'dry-run' }],
@@ -92,6 +92,8 @@
                    { cap: 'hangs-below', hosts: ['slab', 'beam'], count: 'one', src: 'dry-run' }],
     ceiling:      [{ cap: 'hangs-below', hosts: ['slab', 'beam'], count: 'one', src: 'dry-run' }],          // §Q.44: declared CEILING
     floor_finish: [{ cap: 'bears-on-top', hosts: ['slab', 'ground_slab'], count: 'one', src: 'dry-run' }],   // §Q.44: declared FLOORING
+    insulation:   [{ cap: 'wraps', hosts: ['segment', 'fitting'], count: 'one', src: 'proposed' },
+                   { cap: 'continues-same-kind', hosts: ['insulation'], count: 'one', src: 'proposed' }],    // a piece with no pipe box of its own follows the run it belongs to (rule C)          // §Q.49 (owner 2026-11-20): declared INSULATION goes on after the pipe it wraps
     opening_fill: [{ cap: 'opening-accepts', hosts: ['bearing_wall', 'wall'], count: 'one', src: 'dry-run' }],
     fixture:      [{ cap: 'hangs-below', hosts: ['ceiling', 'covering'], count: 'one', src: 'mined' },
                    { cap: 'hangs-below', hosts: ['slab', 'beam'], count: 'one', src: 'dry-run' },
@@ -270,7 +272,7 @@
     var items = els.map(function (e) { return { guid: e.guid, cls: e.cls, seq: e.seq, phase: e.phase, x0: e.x0, x1: e.x1, y0: e.y0, y1: e.y1, bz: e.base_z, tz: e.top_z }; });
     var G = CP.contactGraph(items);
     if (!G.ok) { console.log('§CEILING_CLOSEUP recipe=' + who + ' INACTIVE — contact graph unavailable; coverings=' + cov + ' keep the class rule'); return 0; }
-    var res = compute(items, G, { EPS: SG.EPS, GAP: SG.GAP }), ceil = 0, floor = 0, unb = 0, decl = 0, declCeil = 0, other = 0;
+    var res = compute(items, G, { EPS: SG.EPS, GAP: SG.GAP }), ceil = 0, floor = 0, unb = 0, decl = 0, declCeil = 0, other = 0, insMoved = 0, insLeft = 0, insRelay = 0, insTo = {};
     // §CARRYING_SLAB (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.46; rule B of §Q.33.2: a host whose phase comes later is moved up). A slab
     // filed outside structure (a roof deck named "Basic Roof" is envelope by name) that a column or a bearing wall BEARS ON is structure:
     // Superstructure, sequence 4, what any slab is. Measured: Clinic 1 slab carrying 65 bearing walls + 2 columns scheduled a task before it;
@@ -296,6 +298,17 @@
       var kd = res.kind[i];
       if (kd === 'ceiling') { els[i].phase = 'Architecture Closeup'; els[i].seq = 8; ceil++; decl++; declCeil++; continue; }   // §Q.44: declared — the fact, whatever its bond
       if (kd === 'floor_finish') { floor++; decl++; continue; }
+      if (kd === 'insulation') {                                                                                                // §Q.49: with the pipe it wraps — the host's own phase
+        decl++; var ih = res.host[i];
+                // A piece that only CONTINUES a run takes the phase of the pipe at the head of that run (walk the relay; hosts are in earlier waves, so it ends).
+        var icap = capOf(res, i), ihop = 0;
+        while (icap === 'continues-same-kind' && ih >= 0 && res.kind[ih] === 'insulation' && ihop++ < 4096) { icap = capOf(res, ih); ih = res.host[ih]; if (icap === 'continues-same-kind') insRelay += 0; }
+        // SEQUENCE = just after its pipe (the pipe's + 0.5: an ORDINAL half-step, not a duration). Three versions measured on LTU (§Q.49.1):
+        // the pipe's own sequence -> the pipe elects its lagging (39 midair); the class rule's 10 -> the lagging elects a fitting of MEP
+        // Final, sequence 9, a task that starts later (28 midair). Half a step after the pipe, §D7 skips both ways round.
+        if (icap === 'wraps' && ih >= 0) { els[i].phase = els[ih].phase; if (typeof els[ih].seq === 'number') els[i].seq = els[ih].seq + 0.5; insMoved++; if (ihop) insRelay++; insTo[els[ih].phase] = (insTo[els[ih].phase] || 0) + 1; } else insLeft++;
+        continue;
+      }
       if (kd === 'covering_other') { other++; decl++; continue; }                                                               // insulation, molding, cladding: keeps the class rule
       if (kd !== 'covering') continue;
       var cap = capOf(res, i);
@@ -303,6 +316,8 @@
       else if (cap === 'bears-on-top') floor++;
       else unb++;
     }
+    if (insMoved || insLeft) console.log('§INSULATION_WITH_PIPE recipe=' + who + ' declaredInsulation=' + (insMoved + insLeft) + ' movedToItsPipesPhase=' + insMoved + ' (ofWhichViaItsRun=' + insRelay + ') to=' + JSON.stringify(insTo) + ' noPipeTouching(keepsTheClassRule)=' + insLeft + ' — lagging goes on after the pipe it wraps (finish-to-start); trade, rate, install time unchanged');
+    else console.log('§INSULATION_WITH_PIPE recipe=' + who + ' declaredInsulation=0 — nothing to judge (VACUOUS)');
     console.log('§CEILING_CLOSEUP recipe=' + who + ' coverings=' + cov + ' ceilings=' + ceil + ' floorFinish=' + floor + ' unbonded=' + unb + ' ms=' + (Date.now() - t0) +
       ' declaredType=' + decl + ' (ceilingByDeclaration=' + declCeil + ' otherDeclared=' + other + ' source=' + DECLARED_SRC + ')' +
       (ceil ? ' — a ceiling (declared CEILING, or undeclared and bonded hangs-below) is close-up work, sequence 8, before the fittings that hang from it; trade, rate, install time unchanged'
