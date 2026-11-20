@@ -1,0 +1,49 @@
+{
+  "schema": "oci-patch-provenance/1",
+  "generated_at": "2026-11-20T07:52:02.996Z",
+  "bucket": "bim-ootb",
+  "engine": {
+    "worktree": "/tmp/wt-4d-upload",
+    "sha": "797556932cdd89f14c33ad3eabb377eea4b19289",
+    "behind_origin_main": 0,
+    "ahead_origin_main": 0,
+    "clean": true,
+    "dirty_paths": []
+  },
+  "served_db": {
+    "object": "buildings/LTU_AHouse_meta.db",
+    "etag": "6469d064-3cf0-4aa3-9e26-e3bf649b60c1",
+    "content-md5": "Jenf0zqoAC4FX6aYS/JGGA==",
+    "size": "19141186",
+    "last-modified": "Sat, 29 Aug 2026 19:50:13 GMT",
+    "content-encoding": "gzip"
+  },
+  "artifact": {
+    "file": "../../home/red1/.cache/bim4d/q47_upload_2026-11-20/upload/LTU_AHouse_meta.db.sql",
+    "bytes": 5557,
+    "md5": "beb10edc8c5bbf239ff329311f416dde",
+    "md5_b64": "vrEO3IxbvyOf8ykxH0Ft3g==",
+    "object": "buildings/patches/LTU_AHouse_meta.db.sql",
+    "content_type": "application/sql"
+  },
+  "target": {
+    "exists": true,
+    "etag": "f92a66f0-e128-4242-a222-a37bf1a317e6",
+    "size": "4832",
+    "last-modified": "Fri, 20 Nov 2026 01:32:06 GMT"
+  },
+  "verification": {
+    "cmd": "bash -c 'r=$(sqlite3 $GATE_DB \"select (select count(*) from element_predefined_type) || char(124) || (select count(*) from element_predefined_type t join elements_meta m on m.guid=t.guid where m.ifc_class=char(73,102,99,67,111,118,101,114,105,110,103)) || char(124) || (select count(*) from elements_meta where ifc_class=char(73,102,99,67,111,118,101,114,105,110,103)) || char(124) || (select group_concat(distinct predefined_type) from element_predefined_type)\"); e=$(sqlite3 $GATE_DB \"select count(*) from elements_meta\"); echo VERIFY rows,joinToCovering,coveringsInServedDb,types = $r elementsInServedDb=$e; [ \"$r\" = \"24321|24321|24321|INSULATION\" ]'",
+    "exit": 0,
+    "tail": [
+      "VERIFY rows,joinToCovering,coveringsInServedDb,types = 24321|24321|24321|INSULATION elementsInServedDb=122330"
+    ]
+  },
+  "verdict": "PASS",
+  "failures": [],
+  "uploaded": {
+    "at": "2026-11-20T07:52:05.239Z",
+    "etag": "1aaf58fb-85a8-421e-bb72-0cb189c8e511",
+    "verified": true
+  }
+}

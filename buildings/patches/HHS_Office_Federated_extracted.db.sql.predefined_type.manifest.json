@@ -1,0 +1,49 @@
+{
+  "schema": "oci-patch-provenance/1",
+  "generated_at": "2026-11-20T07:45:59.904Z",
+  "bucket": "bim-ootb",
+  "engine": {
+    "worktree": "/tmp/wt-4d-upload",
+    "sha": "797556932cdd89f14c33ad3eabb377eea4b19289",
+    "behind_origin_main": 0,
+    "ahead_origin_main": 0,
+    "clean": true,
+    "dirty_paths": []
+  },
+  "served_db": {
+    "object": "buildings/HHS_Office_Federated_extracted.db",
+    "etag": "b651eb84-21b5-405e-a008-c483d5826b3a",
+    "content-md5": "VLumEYLVqkvdgsahwX42KA==",
+    "size": "75579392",
+    "last-modified": "Mon, 06 Jul 2026 02:42:24 GMT",
+    "content-encoding": null
+  },
+  "artifact": {
+    "file": "../../home/red1/.cache/bim4d/q47_upload_2026-11-20/upload/HHS_Office_Federated_extracted.db.sql",
+    "bytes": 353781,
+    "md5": "00765ddfe314b393c50b3a37c2df3841",
+    "md5_b64": "AHZd3+MUs5PFCzo3wt84QQ==",
+    "object": "buildings/patches/HHS_Office_Federated_extracted.db.sql",
+    "content_type": "application/sql"
+  },
+  "target": {
+    "exists": true,
+    "etag": "74d72fce-59e2-452f-80ed-655b307850da",
+    "size": "353072",
+    "last-modified": "Mon, 10 Aug 2026 03:30:11 GMT"
+  },
+  "verification": {
+    "cmd": "bash -c 'r=$(sqlite3 $GATE_DB \"select (select count(*) from element_predefined_type) || char(124) || (select count(*) from element_predefined_type t join elements_meta m on m.guid=t.guid where m.ifc_class=char(73,102,99,67,111,118,101,114,105,110,103)) || char(124) || (select count(*) from elements_meta where ifc_class=char(73,102,99,67,111,118,101,114,105,110,103)) || char(124) || (select group_concat(distinct predefined_type) from element_predefined_type)\"); e=$(sqlite3 $GATE_DB \"select count(*) from elements_meta\"); echo VERIFY rows,joinToCovering,coveringsInServedDb,types = $r elementsInServedDb=$e; [ \"$r\" = \"43|43|43|CEILING\" ]'",
+    "exit": 0,
+    "tail": [
+      "VERIFY rows,joinToCovering,coveringsInServedDb,types = 43|43|43|CEILING elementsInServedDb=6880"
+    ]
+  },
+  "verdict": "PASS",
+  "failures": [],
+  "uploaded": {
+    "at": "2026-11-20T07:46:01.653Z",
+    "etag": "8b3b4df1-f861-47e4-ab77-67e62fcd243d",
+    "verified": true
+  }
+}
