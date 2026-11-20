@@ -86,6 +86,7 @@ const BP = require(path.join(__dirname, 'lib', 'apply_building_patch.js'));
 const usePatches = () => BP.mode() !== '0';
 
 const INPUTS = ['schedule_gate.js', 'schedule_author.js', 'support_sweep.js', 'cpm_schedule.js',
+                'shim_bonds.js',   // §Q.37 S2: the persisted bond table is this file's output — a table change must rebuild the run
                 'rates.js', 'rates/4D_template.json',
                 // §CACHE_PLAYED_LAYER: the played layer is produced by these — a change to any of
                 // them changes what the movie reveals, so it must change the cache key too.
@@ -195,7 +196,7 @@ function read(bld, want) {
   if (!d || !fs.existsSync(path.join(d, 'run.json'))) return null;
   const j = JSON.parse(__readSrc(path.join(d, 'run.json'), 'utf8'));
   return { els: j.els, play: j.play || null, sched: j.sched, display: j.sched,
-    playStats: j.playStats || null, storeys: j.storeys || null, tasks: j.tasks || null,
+    playStats: j.playStats || null, storeys: j.storeys || null, tasks: j.tasks || null, bonds: j.bonds || null,
     dbFile: j.dbFile || null, dbKind: j.dbKind || null, patched: !!j.patched, builtAt: j.builtAt || null,
     log: __readSrc(path.join(d, 'witness.log'), 'utf8'), dir: d };
 }
@@ -239,7 +240,7 @@ function build(bld, force, want, hooks) {   // hooks.onDb(db, res) — READ-ONLY
       // TEE, not suppress: the §-log is the evidence, so it goes to the file AND to the terminal.
       console.log = function () { const s = Array.prototype.join.call(arguments, ' '); lines.push(s); _l(s); };
       console.warn = function () { const s = Array.prototype.join.call(arguments, ' '); lines.push(s); _w(s); };
-      let els = null, sched = null, play = null, playStats = null, storeys = null, tasks = null, err = null;
+      let els = null, sched = null, play = null, playStats = null, storeys = null, tasks = null, bonds = null, err = null;
       try {
         const db = new SQL.Database(new Uint8Array(__readSrc(file)));
         BP.applyTo(db, file, console.log);
@@ -276,6 +277,18 @@ function build(bld, force, want, hooks) {   // hooks.onDb(db, res) — READ-ONLY
           else console.log('§CACHE_PLAY_FAIL ' + bld + ' ' + mp.reason + ' — the played layer is NOT persisted for this run');
         }
         delete globalThis.APP;
+        // §SHIM_BONDS (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.37 S2) — the shim-anchor bond table of the played layer, computed ONCE here and
+        // persisted in run.json `bonds`, so every later judge reads it and none recomputes. REPORT ONLY: no schedule reads it. The owners'
+        // own § lines (contactGraph) are already in this log from the solve, so they are not printed a second time.
+        if (play) {
+          try {
+            const SB = require(path.join(V, 'shim_bonds.js')), PK = require('./lib/shim_bonds_pack.js');
+            const bItems = els.filter(e => play[e.guid]), agg = PK.aggFromDb(db);
+            const _lb = console.log; console.log = function () {}; let bG; try { bG = CP.contactGraph(bItems); } finally { console.log = _lb; }
+            if (bG.ok) { bonds = PK.pack(SB.compute(bItems, bG, { EPS: SG.EPS, GAP: SG.GAP, parentOf: agg.parentOf, parentCls: agg.parentCls }), bItems, agg, SB); console.log(PK.line(bld, bonds)); }
+            else console.log('§SHIM_BONDS ' + bld + ' INCONCLUSIVE — contact graph not ok; no bond table persisted');
+          } catch (eB) { console.log('§SHIM_BONDS_FAIL ' + bld + ' ' + eB.message + ' — no bond table persisted (the run itself is unaffected)'); }
+        }
         // The IFC's OWN declared spatial structure, persisted alongside the run so a witness can
         // compare "storeys the model declares" against "bands the schedule invents" without a
         // tolerance constant anywhere. Absent on some shipped DBs (Duplex/Hospital have no
@@ -329,7 +342,7 @@ function build(bld, force, want, hooks) {   // hooks.onDb(db, res) — READ-ONLY
       fs.writeFileSync(path.join(d, 'witness.log'), require('./log_stamp').stampLine(path.join(__dirname, '..'), 'cache_4d_run ' + bld) + '\n' + lines.join('\n') + '\n');
       fs.writeFileSync(path.join(d, 'run.json'), JSON.stringify({ bld: bld, builtAt: new Date().toISOString(),
         codeKey: codeKey(), dbFile: path.basename(file), dbKind: dbf.kind, patched: BP.patchKey(file) ? BP.mode() : false, dbReason: dbf.reason, els: els,
-        sched: flat, play: play, playStats: playStats, storeys: storeys, tasks: tasks }));
+        sched: flat, play: play, playStats: playStats, storeys: storeys, tasks: tasks, bonds: bonds }));
       console.log('§CACHE_BUILT ' + bld + ' dbFile=' + path.basename(file) + ' kind=' + dbf.kind +
         ' n=' + els.length + ' scheduled=' + Object.keys(flat).length +
         ' logLines=' + lines.length + ' declaredStoreys=' + (storeys ? storeys.length : 'ABSENT') + ' -> ' + d);

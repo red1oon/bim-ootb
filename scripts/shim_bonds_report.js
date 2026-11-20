@@ -20,7 +20,7 @@ const top = (m, n) => Object.keys(m).sort((a, b) => m[b] - m[a] || (a < b ? -1 :
     console.log('§SHIM_BONDS ' + b + ' db=' + X.run.dbFile + ' layer=played n=' + n + ' bonded=' + (c[O.BONDED] || 0) + ' (' + (100 * (c[O.BONDED] || 0) / n).toFixed(1) + '%)' +
       ' lostUntabled=' + (c[O.UNTABLED] || 0) + ' lostNoContact=' + (c[O.NOCONTACT] || 0) + ' lostNoHost=' + (c[O.NOHOST] || 0) + ' lostUnanchored=' + (c[O.UNANCHORED] || 0) +
       ' misplaced=' + (c[O.MISPLACED] || 0) + ' seeds=' + res.seeds + ' waves=' + res.waves + ' angleUnverified=' + (c[O.BONDED] || 0) + ' (boxes only, §Q.37 S6)' +
-      ' aggregates=' + (agg.has ? Object.keys(agg.parentOf).length : 'NONE(' + agg.why + ')') + (b === 'LTU_AHouse' ? '  ⚠ local Aug-10 DB, not the served pair (§Q.36.5)' : ''));
+      ' aggregates=' + (agg.has ? (agg.pairs != null ? agg.pairs : Object.keys(agg.parentOf).length) : 'NONE(' + agg.why + ')') + ' source=' + X.source + (b === 'LTU_AHouse' ? '  ⚠ local Aug-10 DB, not the served pair (§Q.36.5)' : ''));
     const byKind = {}, bySrc = {}, untabled = {}, vs = { same: 0, other: 0, bondOnly: 0, electionOnly: 0, neither: 0 }, vsOther = {}, move = {}, moveN = { n: 0 };
     for (let i = 0; i < n; i++) {
       const k = res.kind[i] || '(untabled)', o = res.outcome[i], row = byKind[k] || (byKind[k] = { n: 0, out: {}, cap: {} });
