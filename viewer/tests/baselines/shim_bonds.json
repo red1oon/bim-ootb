@@ -1,0 +1,40 @@
+{
+ "_what": "W-SHIM-BONDS B7 ratchet: bonded count per building, measured (LOCK=1 writes it)",
+ "buildings": {
+  "Duplex": {
+   "n": 1119,
+   "bonded": 1009,
+   "db": "Duplex_extracted.db"
+  },
+  "HHS_Office_Federated": {
+   "n": 6839,
+   "bonded": 5811,
+   "db": "HHS_Office_Federated_extracted.db"
+  },
+  "JKR": {
+   "n": 8985,
+   "bonded": 5797,
+   "db": "JKR_extracted.db"
+  },
+  "Clinic": {
+   "n": 16071,
+   "bonded": 14723,
+   "db": "Clinic_meta.db"
+  },
+  "Terminal": {
+   "n": 48428,
+   "bonded": 10034,
+   "db": "Terminal_meta.db"
+  },
+  "Hospital": {
+   "n": 63182,
+   "bonded": 55260,
+   "db": "Hospital_meta.db"
+  },
+  "LTU_AHouse": {
+   "n": 122330,
+   "bonded": 104191,
+   "db": "LTU_AHouse_meta.db"
+  }
+ }
+}
