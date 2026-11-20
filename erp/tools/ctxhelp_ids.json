@@ -1,0 +1,19 @@
+{"note":"AD_CtxHelp ids of the app's own how-to (1000000+), written by build_help_pack.js assignIds: id -> the section keys of that help. Never reuse or renumber an id (VOCAB_MESSAGE_CATALOG 19.17 F5).","ids":{
+"1000000":["UG1","FS7","FS9"],
+"1000001":["UG2"],
+"1000002":["UG3"],
+"1000003":["UG4"],
+"1000004":["UG5"],
+"1000005":["UG6"],
+"1000006":["UG7"],
+"1000007":["UG8"],
+"1000008":["UG6","FSD"],
+"1000009":["UG8","FS11"],
+"1000010":["FS3"],
+"1000011":["FS4","FS5"],
+"1000012":["FS6"],
+"1000013":["FS6a"],
+"1000014":["FS6b"],
+"1000015":["FS8"],
+"1000016":["FS11b"]
+}}
