@@ -1,7 +1,7 @@
 // ⚠ DO NOT REMOVE — W-HELP-SHOWCASE (bim-compiler prompts/VOCAB_MESSAGE_CATALOG.md §10: help pack, question search, auto-links, how-to). READ THE LOG; an exit code is not evidence.
 //   S1 ISSUE (a help pack text that no published pack holds = invented) · S2 ISSUE (the chosen language does not reach the tooltip / panel, or English drifts)
 //   S3 ISSUE (a plain question does not find the window and the action) · S4 ISSUE (a how-to link that goes nowhere, or a card link that does not open)
-//   S5 ISSUE (how-to text that the guide does not say)
+//   S5 moved to W-CTXHELP-OVERLAY K6 (§19.17 F5)
 //   §12: S1 also covers the pack's names · S6 ISSUE (a Chinese question finds nothing: words split on spaces) · S7 ISSUE (with 中文 chosen, the how-to is still English, or its links go nowhere) · S6de/S7de the same in Deutsch
 //   §19.11: S0 ISSUE (a screen language with no help pack). Falsifiers: HS_BREAK=droplang FAILs S0 · droplocale FAILs T2 (§19.11 step 2) · tamper FAILs S1 · nophrase FAILs S3 · deadlink FAILs S4 · nocjk FAILs S6 · nomsgtrl FAILs S2c. Each claim can say VACUOUS / INCONCLUSIVE.
 // Run: node erp/tests/witness_help_showcase.js   (after node erp/tools/build_help_pack.js; ERP_TRL_CACHE / PW / GUIDE override paths)
@@ -85,24 +85,7 @@ function s1names() {
     k.chk('S1 ' + lang + ' every pack NAME occurs in the published pack (window, table, action, status, process rows)', ok === n, ok + '/' + n + (bad.length ? ' first not found: ' + bad.join(' | ') : ''));
   });
 }
-function s5() {
-  let guide = null;
-  try { guide = process.env.GUIDE ? fs.readFileSync(process.env.GUIDE, 'utf8') : cp.execSync('git -C ' + JSON.stringify(path.join(os.homedir(), 'bim-compiler')) + ' show origin/master:docs/ERPUserGuide.md', { encoding: 'utf8', maxBuffer: 1 << 26 }); } catch (e) { k.incon('S5', 'guide not readable'); return; }
-  // §19.16 C4: the how-to rows are legacy's context help, read by the ONE reader over the page's DB view (help.json holds none any more)
-  const rows = require(path.join(HELP, '..', '..', 'ctx_help.js')).howto(require(path.join(HELP, '..', '..', 'tools', 'help_db.js')).q, 'en_US');
-  if (!rows.length) { k.incon('S5', 'VACUOUS: no how-to rows'); return; }
-  const flat = (t) => t.replace(/<\/(p|li)>/g, ' ').replace(/<[^>]+>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();   // §19.17 F1: a block end is a word break (a guide list renders as <ul><li>)
-  const mdFlat = (t) => t.replace(/^- /gm, '').replace(/\*\*([^*]+)\*\*/g, '$1').replace(/\*([^*]+)\*/g, '$1').replace(/`([^`]+)`/g, '$1').replace(/\s+/g, ' ').trim();
-  let ok = 0; const bad = [];
-  rows.forEach((r) => {
-    const gl = guide.split('\n'), at = gl.indexOf('### ' + r.name), headOk = at >= 0, body = [];   // the guide section the row names, read HERE from the guide
-    if (headOk) for (let i = at + 1; i < gl.length && !/^#{1,3} /.test(gl[i]); i++) body.push(gl[i]);
-    const paras = body.join('\n').split(/\n\s*\n/).map((x) => x.trim()).filter((x) => x && !x.startsWith('>')), sentOk = paras.length > 0;
-    const htmlOk = flat(r.html) === paras.map(mdFlat).join(' ');   // the shown text is exactly the guide's sentences, nothing added
-    if (headOk && sentOk && htmlOk) ok++; else bad.push(r.name + ' heading=' + headOk + ' sentences=' + sentOk + ' text=' + htmlOk);
-  });
-  k.chk('S5 every how-to row is the guide section it names, word for word (proof asides left out)', ok === rows.length, ok + '/' + rows.length + (bad.length ? ' ' + bad.join(' | ') : ''));
-}
+// S5 (a how-to row == its guide section, word for word) moved to W-CTXHELP-OVERLAY K6 in §19.17 F5: one check, both guides, every tab / process, with reds (nosetup, dropsec)
 // ---------- the browser part: S2, S3, S4 in the real page (served from the repo root, as live) ----------
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json', '.db': 'application/octet-stream', '.css': 'text/css', '.wasm': 'application/wasm', '.sql': 'text/plain', '.png': 'image/png' };
 const serve = () => new Promise((r) => { const s = http.createServer((req, res) => { const p = decodeURIComponent(req.url.split('?')[0]); fs.readFile(path.join(ROOT, p), (e, b) => { if (e) { res.writeHead(404); res.end(); return; } res.writeHead(200, { 'Content-Type': MIME[path.extname(p)] || 'application/octet-stream' }); res.end(b); }); }); s.listen(0, () => r(s)); });
@@ -222,5 +205,5 @@ async function browser() {
 (async function main() {
   if (!fs.existsSync(SEED) || fs.statSync(SEED).size < 1e6) { k.incon('ALL', 'no usable seed'); return k.end(); }
   k.L('break=' + (BREAK || 'none'));
-  s0(); s1(); s1names(); s5(); await browser(); k.end();
+  s0(); s1(); s1names(); await browser(); k.end();
 })().catch((e) => { console.log('§W-HELP-SHOWCASE CRASH ' + (e && e.stack || e)); process.exit(3); });
