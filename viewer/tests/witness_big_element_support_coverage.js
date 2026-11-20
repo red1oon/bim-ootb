@@ -149,7 +149,7 @@ const BUILDINGS = [
   // member in a mutual pair never converges — measured Clinic 43k pushes/400 sweeps).
   // JKR: bms=false (zero seq-1 elements — its foundation slabs are authored plain IfcSlab at the
   // z≈84m site datum), unchecked=6, floating=81 (same steel co-planar family: CHS members/columns).
-  { file: 'LTU_AHouse_meta.db',                name: 'LTU_AHouse', bms: true,  expectedUnchecked: 617 },   // 611->626 §S64; 626->624 §STAIR_FLIGHT_GRID_VISIBILITY audit twin (see below)
+  { file: 'LTU_AHouse_meta.db',                name: 'LTU_AHouse', bms: true,  expectedUnchecked: 116 },   // 617 -> 116 (2026-11-20): measured on the SERVED pair + storey patch; 617 was the local Aug-10 file no user loads (bim-compiler 4D_MODEL_INTEGRITY §Q.38)   // 611->626 §S64; 626->624 §STAIR_FLIGHT_GRID_VISIBILITY audit twin (see below)
   { file: 'JKR_extracted.db',                  name: 'JKR',        bms: false, expectedUnchecked: 6 },
 ];
 

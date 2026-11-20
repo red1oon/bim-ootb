@@ -8,7 +8,7 @@
     "Duplex": 1,
     "HHS_Office_Federated": 226,
     "Clinic": 162,
-    "LTU_AHouse": 3081,
+    "LTU_AHouse": 5513,
     "JKR": 416
   },
   "midair": {
@@ -18,7 +18,7 @@
     "Duplex": 5,
     "HHS_Office_Federated": 23,
     "Clinic": 57,
-    "LTU_AHouse": 538,
+    "LTU_AHouse": 242,
     "JKR": 17
   },
   "zda_display_float": {
@@ -43,7 +43,7 @@
     "Duplex": 0,
     "HHS_Office_Federated": 44,
     "Clinic": 27,
-    "LTU_AHouse": 3288,
+    "LTU_AHouse": 1382,
     "JKR": 2
   },
   "midair_unnamed": {
@@ -60,5 +60,6 @@
   "_relocked_2026_11_18b": "HHS_Office_Federated + JKR only, read off a -1 placeholder run: the ground-band seed rule (owner 2026-11-18; bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.17). In this witness's pipeline both carry no classified ground.",
   "_relocked_2026_11_18c": "Terminal + LTU_AHouse only, read off the FAIL lines of a real run: concrete beams take the concrete gang at 9.4 beams/gang-day (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.18). midair_unnamed stays 0 on both and the named sets still equal the engine's.",
   "_relocked_2026_11_18_stairs_with_frame": "bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.24.1: IfcStair/IfcStairFlight + stair parts Architecture Envelope 6 -> Superstructure 4 (permanent stairs go up with the frame). Measured from the run, not typed. W-MZ-2 {\"Terminal\": 529, \"Hospital\": 27, \"Duplex\": 5, \"HHS_Office_Federated\": 22, \"Clinic\": 57, \"LTU_AHouse\": 520, \"JKR\": 21}; W-MZ-8 {\"Terminal\": 501, \"Hospital\": 1573, \"Duplex\": 4, \"HHS_Office_Federated\": 237, \"Clinic\": 168, \"LTU_AHouse\": 2934, \"JKR\": 434}. W-MZ-2u (midair outside the named sets) unchanged at its lock on all seven: every move is inside the named no-support sets (Duplex +4 = its four stair members at ground level -0.10 m). Played-layer out of order 3 -> 1.",
-  "_relocked_2026_11_19_floors": "2026-11-19 — bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.33.9: §ASSEMBLY_RULE (curtain-wall parts take the curtain wall's Envelope rule) + §E1_ALL_CARRIERS (a floor/roof plate waits for EVERY structural carrier under it). Values read off the measured FAIL lines of run_4d_gates.sh on fix/4d-floors-carriers. float_after_cpm {\"Terminal\": 501, \"Hospital\": 1573, \"Duplex\": 4, \"HHS_Office_Federated\": 237, \"Clinic\": 168, \"LTU_AHouse\": 2934, \"JKR\": 434} -> {\"Terminal\": 385, \"Hospital\": 1349, \"Duplex\": 1, \"HHS_Office_Federated\": 226, \"Clinic\": 162, \"LTU_AHouse\": 3081, \"JKR\": 416} (better on 6 of 7; LTU +147). midair {\"Terminal\": 529, \"HHS_Office_Federated\": 22, \"LTU_AHouse\": 520, \"JKR\": 21} -> {\"Terminal\": 530, \"HHS_Office_Federated\": 23, \"LTU_AHouse\": 538, \"JKR\": 17}; §MZ_SPLIT UNNAMED=0 on all 7 — every midair element stays in a named set (struct-no-support / contact-only / ground seed)."
+  "_relocked_2026_11_19_floors": "2026-11-19 — bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.33.9: §ASSEMBLY_RULE (curtain-wall parts take the curtain wall's Envelope rule) + §E1_ALL_CARRIERS (a floor/roof plate waits for EVERY structural carrier under it). Values read off the measured FAIL lines of run_4d_gates.sh on fix/4d-floors-carriers. float_after_cpm {\"Terminal\": 501, \"Hospital\": 1573, \"Duplex\": 4, \"HHS_Office_Federated\": 237, \"Clinic\": 168, \"LTU_AHouse\": 2934, \"JKR\": 434} -> {\"Terminal\": 385, \"Hospital\": 1349, \"Duplex\": 1, \"HHS_Office_Federated\": 226, \"Clinic\": 162, \"LTU_AHouse\": 3081, \"JKR\": 416} (better on 6 of 7; LTU +147). midair {\"Terminal\": 529, \"HHS_Office_Federated\": 22, \"LTU_AHouse\": 520, \"JKR\": 21} -> {\"Terminal\": 530, \"HHS_Office_Federated\": 23, \"LTU_AHouse\": 538, \"JKR\": 17}; §MZ_SPLIT UNNAMED=0 on all 7 — every midair element stays in a named set (struct-no-support / contact-only / ground seed).",
+  "_relocked_2026_11_20_ltu_served": "2026-11-20 — LTU_AHouse ONLY, read off a run on the SERVED pair (OCI buildings/LTU_AHouse_meta.db + _geo.db, re-imported 2026-08-29) with the storey-only patch; the old values were measured on a local Aug-10 file no user loads (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.36.5 / §Q.38). midair 538 -> 242 and orphans 3288 -> 1382 FELL; float_after_cpm 3081 -> 5513 ROSE (auditFloating 2070 -> 5513: a dependent starting before its support FINISHES) — named, not hidden; midair_unnamed 0 unchanged."
 }
