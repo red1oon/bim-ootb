@@ -849,6 +849,7 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
   "three/examples/jsm/postprocessing/Pass.js": "./lib/Pass.js"
 } }
 </script>
+<!-- §MANIFEST:BEGIN viewer tags (script tags here are written by scripts/gen_manifest.js from viewer/modules.json; comments are yours) -->
 <script src="sky_occlusion.js?v=3" onerror="console.warn('§LOAD_FAIL sky_occlusion.js')"></script>
 <script src="light_zones.js?v=28" onerror="console.warn('§LOAD_FAIL light_zones.js')"></script>
 <script src="still_fault.js?v=14" onerror="console.warn('§LOAD_FAIL still_fault.js')"></script>
@@ -1192,6 +1193,7 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
 <!-- §S8 EDIT→Δ (TM_4D5D_VARIANCE_LANE §S8): ONE pure Δ function + the Viewer's Connect 'identity' subscriber (P3). -->
 <script src="edit_delta.js?v=4" onerror="console.warn('§LOAD_FAIL edit_delta.js')"></script>
 <script src="edit_delta_viewer.js?v=2" onerror="console.warn('§LOAD_FAIL edit_delta_viewer.js')"></script>
+<!-- §MANIFEST:END viewer tags -->
 <!-- Styled tooltip bubbles for [data-trl-title] buttons — appended to body, not clipped by overflow:hidden -->
 <style>#ootb-tip{display:none;position:fixed;z-index:9990;background:rgba(10,10,30,0.92);color:#4fc3f7;font-size:11px;padding:3px 10px;border-radius:4px;border:1px solid rgba(79,195,247,0.35);pointer-events:none;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,0.4)}</style>
 <script>
@@ -1305,6 +1307,8 @@ window.addEventListener('beforeinstallprompt', function(e) {
 });
 </script>
 <!-- §GI_LIVE (2026-09-23): Alt+S bounce still — desktop + WebGPU + three r186 only; elsewhere it logs §GI_STILL_OFF and Alt+S is unchanged -->
+<!-- §MANIFEST:BEGIN viewer tags (script tags here are written by scripts/gen_manifest.js from viewer/modules.json; comments are yours) -->
 <script src="gi_still.js?v=52" onerror="console.warn('§LOAD_FAIL gi_still.js — Alt+S bounce disabled')"></script>
+<!-- §MANIFEST:END viewer tags -->
 </body>
 </html>

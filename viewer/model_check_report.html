@@ -46,9 +46,11 @@
 <h1>Road Model Check — compliance mock-up</h1>
 <div class="subtitle" id="info">Loading...</div>
 <div id="report-content"></div>
+<!-- §MANIFEST:BEGIN viewer tags (script tags here are written by scripts/gen_manifest.js from viewer/modules.json; comments are yours) -->
 <script src="../common/lib/sql-wasm.js"></script>
 <script src="road_check.js?v=1"></script>
 <script src="earthworks_volume.js?v=1"></script>
+<!-- §MANIFEST:END viewer tags -->
 <script>
 var params = new URLSearchParams(location.search);
 var DB_URL = params.get('db') || '';

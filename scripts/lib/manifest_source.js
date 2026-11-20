@@ -146,7 +146,11 @@ function align(src, have, want, insertable, lines, file, entry) {
     const le = lineEnd(src, h.end), ind = indentAt(src, h.start);
     // B2 (#3370): more sites follow on the anchor's line (ERP pages keep several tags on one line): the new site stays on that line, right after
     //   its anchor, so the file's order is the manifest's and removing it again gives back the same bytes
-    if (have.some(x => x !== h && x.start >= h.end && x.start < le)) { ops.push({ at: h.end, del: 0, ins: ls.map(l => entry ? ', ' + l.replace(/,$/, '') : l).join('') }); continue; }
+    if (have.some(x => x !== h && x.start >= h.end && x.start < le)) {
+      // a precache entry goes in AFTER the separator that follows its anchor and repeats that separator (B3, #3377: 'a','b' and 'a', 'b' both come back byte-identical on removal)
+      const sep = entry ? (/^\s*,[ \t]*/.exec(src.slice(h.end)) || [','])[0] : '';
+      ops.push({ at: h.end + sep.length, del: 0, ins: ls.map(l => entry ? l.replace(/,$/, '') + sep : l).join('') }); continue;
+    }
     if (entry && !/^\s*,/.test(src.slice(h.end, le))) ops.push({ at: h.end, del: 0, ins: ',' });
     ops.push({ at: le, del: 0, ins: ls.map(l => '\n' + ind + l).join('') });
   }
