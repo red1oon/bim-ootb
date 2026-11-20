@@ -1504,12 +1504,13 @@
   // (§Q.6 D1), then ceilings (§Q.39 §CEILING_CLOSEUP — the bond's kinds read the promoted walls). All three element recipes call THIS, so the
   // task grid, the movie and the lock gate move the same elements. In node a missing ShimBonds / CpmSchedule global is required here, so no
   // harness can run without the rule; in the browser viewer.html loads both.
-  function applyGeometryReclass(els, who) {
+  function applyGeometryReclass(els, who, db) {
     var n = applyBearingWalls(els, who);
     var SB = global.ShimBonds, CP = global.CpmSchedule;
     if ((!SB || !CP) && typeof module !== 'undefined' && module.exports && typeof require === 'function') {
       try { if (!CP) { CP = require('./cpm_schedule.js'); if (!global.CpmSchedule) global.CpmSchedule = CP; } if (!SB) SB = require('./shim_bonds.js'); } catch (e) { /* reported just below */ }
     }
+    if (SB && SB.readDeclaredTypes && db) SB.readDeclaredTypes(db, who);   // §Q.44: the file's own covering types, before any kind is read
     if (SB && SB.applyCeilings) SB.applyCeilings(els, who, { SG: API, CP: CP });
     else console.log('§CEILING_CLOSEUP recipe=' + who + ' INACTIVE — shim_bonds.js not loaded; coverings keep the class rule');
     return n;

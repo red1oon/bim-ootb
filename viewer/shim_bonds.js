@@ -22,6 +22,20 @@
   var SEGMENT = { IfcFlowSegment: 1, IfcPipeSegment: 1, IfcDuctSegment: 1, IfcCableCarrierSegment: 1, IfcCableSegment: 1 };
   var FITTING = { IfcFlowFitting: 1, IfcPipeFitting: 1, IfcDuctFitting: 1, IfcCableCarrierFitting: 1, IfcCableFitting: 1 };
   var STAIR = { IfcStair: 1, IfcStairFlight: 1, IfcRamp: 1, IfcRampFlight: 1 };
+  // §Q.44 — the declared types of the db being scheduled: { guid: PredefinedType }. One reader (readDeclaredTypes), replaced whole per db.
+  var DECLARED = {}, DECLARED_SRC = 'none';
+  function readDeclaredTypes(db, who) {
+    var m = {}, n = 0, by = {}, why = '';
+    try {
+      var r = db.exec('SELECT guid, predefined_type FROM element_predefined_type');
+      if (r.length) r[0].values.forEach(function (v) { if (v[1]) { m[v[0]] = v[1]; n++; by[v[1]] = (by[v[1]] || 0) + 1; } });
+    } catch (e) { why = 'no element_predefined_type table'; }
+    DECLARED = m; DECLARED_SRC = n ? 'element_predefined_type' : 'none';
+    console.log('§COVERING_TYPE recipe=' + (who || '?') + ' declared=' + n + (n ? ' byType=' + JSON.stringify(by) + ' — a covering is what its file says (CEILING -> close-up, FLOORING -> floor finish, any other type: neither)'
+      : ' — NONE (' + (why || 'table empty') + '): every covering keeps the bond rule of §Q.39 (hangs-below = ceiling)'));
+    return n;
+  }
+  function declareTypes(map) { DECLARED = map || {}; DECLARED_SRC = map ? 'given' : 'none'; }
   function kindOf(e, parentCls) {
     var c = e.cls || '';
     if (parentCls === 'IfcCurtainWall') return 'facade_part';
@@ -32,7 +46,13 @@
     if (c === 'IfcSlab') return (e.seq === 1 || e.phase === 'Substructure') ? 'ground_slab' : 'slab';
     if (c.indexOf('IfcWall') === 0) return (typeof e.seq === 'number' && e.seq <= 4) ? 'bearing_wall' : 'wall';
     if (STAIR[c]) return 'stair';
-    if (c === 'IfcCovering') return 'covering';
+    if (c === 'IfcCovering') {
+      // §Q.44 — what a covering IS comes from the file: IfcCovering.PredefinedType, carried by the patch table element_predefined_type and
+      // read once per db (readDeclaredTypes). Undeclared -> 'covering' (both needs, the bond decides — the rule before §Q.44, unchanged).
+      var pt = e.ptype || DECLARED[e.guid];
+      if (!pt) return 'covering';
+      return pt === 'CEILING' ? 'ceiling' : (pt === 'FLOORING' ? 'floor_finish' : 'covering_other');   // insulation, molding, cladding …: no row, offers nothing
+    }
     if (c === 'IfcWindow' || c === 'IfcDoor') return 'opening_fill';
     if (FIXTURE_CEILING[c]) return 'fixture';
     if (FIXTURE_WALL[c]) return 'fixture_wall';
@@ -68,8 +88,10 @@
                    { cap: 'continues-same-kind', hosts: ['facade_part'], count: 'one', src: 'dry-run' }],
     covering:     [{ cap: 'bears-on-top', hosts: ['slab', 'ground_slab'], count: 'one', src: 'dry-run' },
                    { cap: 'hangs-below', hosts: ['slab', 'beam'], count: 'one', src: 'dry-run' }],
+    ceiling:      [{ cap: 'hangs-below', hosts: ['slab', 'beam'], count: 'one', src: 'dry-run' }],          // §Q.44: declared CEILING
+    floor_finish: [{ cap: 'bears-on-top', hosts: ['slab', 'ground_slab'], count: 'one', src: 'dry-run' }],   // §Q.44: declared FLOORING
     opening_fill: [{ cap: 'opening-accepts', hosts: ['bearing_wall', 'wall'], count: 'one', src: 'dry-run' }],
-    fixture:      [{ cap: 'hangs-below', hosts: ['covering'], count: 'one', src: 'mined' },
+    fixture:      [{ cap: 'hangs-below', hosts: ['ceiling', 'covering'], count: 'one', src: 'mined' },
                    { cap: 'hangs-below', hosts: ['slab', 'beam'], count: 'one', src: 'dry-run' },
                    { cap: 'fixes-on-side', hosts: ['bearing_wall', 'wall'], count: 'one', src: 'mined' }],
     fixture_wall: [{ cap: 'fixes-on-side', hosts: ['bearing_wall', 'wall'], count: 'one', src: 'mined' }],
@@ -241,21 +263,26 @@
     var items = els.map(function (e) { return { guid: e.guid, cls: e.cls, seq: e.seq, phase: e.phase, x0: e.x0, x1: e.x1, y0: e.y0, y1: e.y1, bz: e.base_z, tz: e.top_z }; });
     var G = CP.contactGraph(items);
     if (!G.ok) { console.log('§CEILING_CLOSEUP recipe=' + who + ' INACTIVE — contact graph unavailable; coverings=' + cov + ' keep the class rule'); return 0; }
-    var res = compute(items, G, { EPS: SG.EPS, GAP: SG.GAP }), ceil = 0, floor = 0, unb = 0;
+    var res = compute(items, G, { EPS: SG.EPS, GAP: SG.GAP }), ceil = 0, floor = 0, unb = 0, decl = 0, declCeil = 0, other = 0;
     for (i = 0; i < els.length; i++) {
-      if (res.kind[i] !== 'covering') continue;
+      var kd = res.kind[i];
+      if (kd === 'ceiling') { els[i].phase = 'Architecture Closeup'; els[i].seq = 8; ceil++; decl++; declCeil++; continue; }   // §Q.44: declared — the fact, whatever its bond
+      if (kd === 'floor_finish') { floor++; decl++; continue; }
+      if (kd === 'covering_other') { other++; decl++; continue; }                                                               // insulation, molding, cladding: keeps the class rule
+      if (kd !== 'covering') continue;
       var cap = capOf(res, i);
       if (cap === 'hangs-below') { els[i].phase = 'Architecture Closeup'; els[i].seq = 8; ceil++; }
       else if (cap === 'bears-on-top') floor++;
       else unb++;
     }
     console.log('§CEILING_CLOSEUP recipe=' + who + ' coverings=' + cov + ' ceilings=' + ceil + ' floorFinish=' + floor + ' unbonded=' + unb + ' ms=' + (Date.now() - t0) +
-      (ceil ? ' — a ceiling (bonded hangs-below) is close-up work, sequence 8, before the fittings that hang from it; trade, rate, install time unchanged'
-            : ' — NO-OP: no covering is bonded hangs-below'));
+      ' declaredType=' + decl + ' (ceilingByDeclaration=' + declCeil + ' otherDeclared=' + other + ' source=' + DECLARED_SRC + ')' +
+      (ceil ? ' — a ceiling (declared CEILING, or undeclared and bonded hangs-below) is close-up work, sequence 8, before the fittings that hang from it; trade, rate, install time unchanged'
+            : ' — NO-OP: no covering is a ceiling'));
     return ceil;
   }
 
-  var API = { kindOf: kindOf, TABLE: TABLE, REL: REL, OUT: OUT, relsOf: relsOf, compute: compute, capOf: capOf, srcOf: srcOf, applyCeilings: applyCeilings };
+  var API = { readDeclaredTypes: readDeclaredTypes, declareTypes: declareTypes, kindOf: kindOf, TABLE: TABLE, REL: REL, OUT: OUT, relsOf: relsOf, compute: compute, capOf: capOf, srcOf: srcOf, applyCeilings: applyCeilings };
   global.ShimBonds = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
 })(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this));

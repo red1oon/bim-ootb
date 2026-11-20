@@ -330,7 +330,7 @@
     }
 
     // §BEARING_WALL (4D_MODEL_INTEGRITY.md §Q.6 D1) — same shared mutation the other two recipes call.
-    if (typeof ScheduleGate !== 'undefined' && ScheduleGate.applyGeometryReclass) ScheduleGate.applyGeometryReclass(elements, 'time_machine');   // bearing walls, then ceilings (§Q.39 §CEILING_CLOSEUP)
+    if (typeof ScheduleGate !== 'undefined' && ScheduleGate.applyGeometryReclass) ScheduleGate.applyGeometryReclass(elements, 'time_machine', db);   // bearing walls, then ceilings (§Q.39 §CEILING_CLOSEUP)
 
     // §4D_ROOF_LOAD_PATH M1 + §4D_WALLS_BEFORE_ROOF M4 — roof/load-path promotion, shared
     // classifier (full doctrine comments live on _promoteRoofLoadPath above, moved there verbatim
