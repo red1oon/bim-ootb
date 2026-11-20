@@ -23,25 +23,25 @@
    "n": 16071,
    "bonded": 14723,
    "db": "Clinic_meta.db",
-   "ceilingCrossLevel": 10
+   "ceilingCrossLevel": 0
   },
   "Terminal": {
    "n": 48428,
    "bonded": 10034,
    "db": "Terminal_meta.db",
-   "ceilingCrossLevel": 44
+   "ceilingCrossLevel": 0
   },
   "Hospital": {
    "n": 63182,
    "bonded": 55260,
    "db": "Hospital_meta.db",
-   "ceilingCrossLevel": 14
+   "ceilingCrossLevel": 0
   },
   "LTU_AHouse": {
    "n": 122330,
    "bonded": 105776,
    "db": "LTU_AHouse_meta.db",
-   "ceilingCrossLevel": 2
+   "ceilingCrossLevel": 0
   }
  }
 }
