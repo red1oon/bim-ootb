@@ -3,10 +3,10 @@
  "buildings": {
   "Duplex": {
    "n": 1119,
-   "bonded": 1009,
+   "bonded": 1008,
    "db": "Duplex_extracted.db",
    "ceilingCrossLevel": 0,
-   "earlyVsHost": 73
+   "earlyVsHost": 37
   },
   "HHS_Office_Federated": {
    "n": 6839,
@@ -17,38 +17,38 @@
   },
   "JKR": {
    "n": 8985,
-   "bonded": 5797,
+   "bonded": 5781,
    "db": "JKR_extracted.db",
    "ceilingCrossLevel": 0,
-   "earlyVsHost": 19
+   "earlyVsHost": 53
   },
   "Clinic": {
    "n": 16071,
-   "bonded": 14723,
+   "bonded": 14552,
    "db": "Clinic_meta.db",
    "ceilingCrossLevel": 0,
-   "earlyVsHost": 112
+   "earlyVsHost": 100
   },
   "Terminal": {
    "n": 48428,
-   "bonded": 10034,
+   "bonded": 9914,
    "db": "Terminal_meta.db",
    "ceilingCrossLevel": 0,
-   "earlyVsHost": 170
+   "earlyVsHost": 55
   },
   "Hospital": {
    "n": 63182,
-   "bonded": 55260,
+   "bonded": 54110,
    "db": "Hospital_meta.db",
    "ceilingCrossLevel": 0,
-   "earlyVsHost": 168
+   "earlyVsHost": 4
   },
   "LTU_AHouse": {
    "n": 122330,
-   "bonded": 105776,
+   "bonded": 105577,
    "db": "LTU_AHouse_meta.db",
    "ceilingCrossLevel": 0,
-   "earlyVsHost": 132
+   "earlyVsHost": 269
   }
  }
 }

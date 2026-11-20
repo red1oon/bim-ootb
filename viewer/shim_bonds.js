@@ -46,7 +46,7 @@
   // (§Q.33.6 item 2: footing/column -> beam -> slab -> bearing wall -> the rest) + count (one | all) + where the row comes from.
   // src: 'dry-run' = the owner's §Q.33.3 dry run, row for row · 'mined' = a rule_shim row (terminal_rules / duplex_rules, §SHIM-FACING)
   //      'proposed' = added by the S1 session so hosts can anchor at all; NOT signed off — counted separately on §SHIM_TABLE_SOURCE.
-  var REL = { 'bears-on-top': 'below', 'hangs-below': 'above', 'fixes-on-side': 'spans', 'opening-accepts': 'spans', 'continues-same-kind': 'any', 'joins': 'any' };
+  var REL = { 'bears-on-top': 'below', 'hangs-below': 'above', 'fixes-on-side': 'spans', 'opening-accepts': 'spans', 'continues-same-kind': 'any', 'joins': 'touch' };
   var BEARERS = ['footing', 'column', 'beam', 'slab', 'ground_slab', 'bearing_wall'];
   var TABLE = {
     footing:      [{ cap: 'ground', src: 'dry-run' }],
@@ -88,7 +88,31 @@
     var below = S.bz < T.bz - EPS && S.tz >= T.bz - GAP, spans = S.bz <= T.bz + EPS && S.tz >= T.tz - EPS;
     return { below: below, spans: spans, above: !below && !spans };
   }
-  function relOk(want, S, T, EPS, GAP) { return want === 'any' || relsOf(S, T, EPS, GAP)[want] === true; }
+  // §Q.43 rule J — `joins` is a TOUCH: the two height ranges meet (GAP = the contact owner's own bearing constant, no new number). The contact
+  // list holds everything above T in plan with no upper limit, so `any` let a façade plate "join" a slab 13 m over it (Hospital, measured).
+  function relOk(want, S, T, EPS, GAP) {
+    if (want === 'any') return true;
+    if (want === 'touch') return S.bz <= T.tz + GAP && S.tz >= T.bz - GAP;
+    return relsOf(S, T, EPS, GAP)[want] === true;
+  }
+  // §Q.43 rule N — THE FIRST OFFERER ABOVE. aboveFloor(...) = the two lowest TOPS among T's contacts that are above T and whose kind offers
+  // `hangs-below` to T's kind in ANY row (anchored or not: it is in the way either way). A candidate j is occluded when another such offerer
+  // lies wholly below it. Occlusion on the boxes the contact owner already holds; no distance constant.
+  function aboveOfferers(row) {
+    var o = {}, r, h;
+    for (r = 0; r < row.length; r++) if (REL[row[r].cap] === 'above') for (h = 0; h < row[r].hosts.length; h++) o[row[r].hosts[h]] = 1;
+    return o;
+  }
+  function aboveFloor(T, list, items, kind, off, EPS, GAP) {
+    var m1 = Infinity, i1 = -1, m2 = Infinity;
+    for (var c = 0; c < list.length; c++) {
+      var j = list[c]; if (!off[kind[j]] || !relsOf(items[j], T, EPS, GAP).above) continue;
+      var tz = items[j].tz;
+      if (tz < m1) { m2 = m1; m1 = tz; i1 = j; } else if (tz < m2) m2 = tz;
+    }
+    return { m1: m1, i1: i1, m2: m2 };
+  }
+  function occluded(j, fl, items, EPS) { return (j === fl.i1 ? fl.m2 : fl.m1) <= items[j].bz + EPS; }
   function planOverlap(S, T) {
     var dx = Math.min(S.x1, T.x1) - Math.max(S.x0, T.x0), dy = Math.min(S.y1, T.y1) - Math.max(S.y0, T.y0);
     return (dx > 0 ? dx : 0) * (dy > 0 ? dy : 0);
@@ -123,31 +147,49 @@
     // tryBond(i, w): the first need in row order met by a contact anchored in a wave < w. Best host = tier, then plan overlap, then guid.
     function tryBond(ti, w) {
       var T = items[ti], row = table[kind[ti]], list = G.contacts[ti]; if (!row || !list) return false;
+      var fl = null;
       for (var r = 0; r < row.length; r++) {
         var nd = row[r]; if (nd.cap === 'ground') continue;
         var want = REL[nd.cap], best = -1, bestTier = 99, bestArea = -1, all = [];
+        if (want === 'above' && !fl) fl = aboveFloor(T, list, items, kind, aboveOfferers(row), EPS, GAP);
         for (var c = 0; c < list.length; c++) {
           var j = list[c]; if (wave[j] < 0 || wave[j] >= w) continue;
           var tier = nd.hosts.indexOf(kind[j]); if (tier < 0) continue;
           if (nd.sibling && !(parentOf[T.guid] && parentOf[T.guid] === parentOf[items[j].guid])) continue;
           if (!relOk(want, items[j], T, EPS, GAP)) continue;
+          if (want === 'above' && occluded(j, fl, items, EPS)) continue;
           all.push(j);
           var area = planOverlap(items[j], T);
           if (tier < bestTier || (tier === bestTier && (area > bestArea || (area === bestArea && String(items[j].guid) < String(items[best].guid))))) { best = j; bestTier = tier; bestArea = area; }
         }
         if (best >= 0) { need[ti] = r; host[ti] = best; hosts[ti] = nd.count === 'all' ? all : [best]; return true; }
+        // §Q.43.1 — WAIT FOR THE FIRST OFFERER ABOVE. If what T would hang from is there but not anchored yet, T does not fall through to a later
+        // need (a relay from a neighbouring piece, which draws no order): it waits for that offerer's wave. Released after the waves run dry.
+        if (want === 'above' && !noDefer) {
+          for (var c2 = 0; c2 < list.length; c2++) {
+            var j3 = list[c2];
+            if (wave[j3] < 0 && nd.hosts.indexOf(kind[j3]) >= 0 && relOk(want, items[j3], T, EPS, GAP) && !occluded(j3, fl, items, EPS)) { if (!deferred[ti]) { deferred[ti] = 1; deferredN++; } return false; }
+          }
+        }
       }
       return false;
     }
-    var w = 0;
-    while (frontier.length) {
-      w++;
-      var cand = {}, next = [];
-      for (q = 0; q < frontier.length; q++) { var d = dependants[frontier[q]]; if (d) for (k = 0; k < d.length; k++) if (wave[d[k]] < 0) cand[d[k]] = 1; }
-      var ids = Object.keys(cand).map(Number).sort(function (a, b) { return a - b; });
-      for (q = 0; q < ids.length; q++) if (tryBond(ids[q], w)) next.push(ids[q]);
-      for (q = 0; q < next.length; q++) { wave[next[q]] = w; outcome[next[q]] = OUT.BONDED; }   // committed after the scan: a host qualifies only from an EARLIER wave
-      frontier = next;
+    var w = 0, noDefer = false, deferred = new Uint8Array(n), deferredN = 0, released = 0;
+    for (var pass = 0; pass < 2; pass++) {
+      while (frontier.length) {
+        w++;
+        var cand = {}, next = [];
+        for (q = 0; q < frontier.length; q++) { var d = dependants[frontier[q]]; if (d) for (k = 0; k < d.length; k++) if (wave[d[k]] < 0) cand[d[k]] = 1; }
+        var ids = Object.keys(cand).map(Number).sort(function (a, b) { return a - b; });
+        for (q = 0; q < ids.length; q++) if (tryBond(ids[q], w)) next.push(ids[q]);
+        for (q = 0; q < next.length; q++) { wave[next[q]] = w; outcome[next[q]] = OUT.BONDED; }   // committed after the scan: a host qualifies only from an EARLIER wave
+        frontier = next;
+      }
+      if (pass === 1 || !deferredN) break;
+      // release: the offerer never anchored — the waiting elements take whatever later need an anchored contact meets, then the waves go on
+      noDefer = true; w++;
+      for (i = 0; i < n; i++) if (deferred[i] && wave[i] < 0 && tryBond(i, w)) frontier.push(i);
+      for (q = 0; q < frontier.length; q++) { wave[frontier[q]] = w; outcome[frontier[q]] = OUT.BONDED; released++; }
     }
     // everything never anchored gets exactly one reason
     for (i = 0; i < n; i++) {
@@ -155,20 +197,21 @@
       var row = kind[i] && table[kind[i]], li2 = G.contacts[i];
       if (!row) { outcome[i] = OUT.UNTABLED; continue; }
       if (!li2 || !li2.length) { outcome[i] = OUT.NOCONTACT; continue; }
-      var rightKind = false, rightRel = false;
+      var rightKind = false, rightRel = false, fl2 = null;
       for (var r2 = 0; r2 < row.length && !rightRel; r2++) {
         var nd2 = row[r2]; if (nd2.cap === 'ground') continue;
+        if (REL[nd2.cap] === 'above' && !fl2) fl2 = aboveFloor(items[i], li2, items, kind, aboveOfferers(row), EPS, GAP);
         for (k = 0; k < li2.length; k++) {
           var j2 = li2[k]; if (nd2.hosts.indexOf(kind[j2]) < 0) continue;
           if (nd2.sibling && !(parentOf[items[i].guid] && parentOf[items[i].guid] === parentOf[items[j2].guid])) continue;
           rightKind = true;
-          if (relOk(REL[nd2.cap], items[j2], items[i], EPS, GAP)) { rightRel = true; break; }
+          if (relOk(REL[nd2.cap], items[j2], items[i], EPS, GAP) && !(REL[nd2.cap] === 'above' && occluded(j2, fl2, items, EPS))) { rightRel = true; break; }
         }
       }
       outcome[i] = rightRel ? OUT.UNANCHORED : rightKind ? OUT.MISPLACED : OUT.NOHOST;
     }
     var counts = {}; for (i = 0; i < n; i++) counts[outcome[i]] = (counts[outcome[i]] || 0) + 1;
-    return { n: n, kind: kind, outcome: outcome, need: need, host: host, hosts: hosts, wave: wave, seeds: seeds, waves: w, counts: counts, table: table };
+    return { n: n, kind: kind, outcome: outcome, need: need, host: host, hosts: hosts, wave: wave, seeds: seeds, waves: w, counts: counts, table: table, waited: deferredN, released: released };
   }
 
   // capOf(res, i) — the capability an element bonded by ('ground' for a seed), or null.

@@ -4,12 +4,12 @@
   "float_after_cpm": {
     "_what": "W-MZ-8 — ScheduleGate.auditFloating AFTER _displayTimeline. The measured TRADE: a dependent may start before its support FINISHES. Deliberate and named, never silent.",
     "Terminal": 385,
-    "Hospital": 976,
+    "Hospital": 1160,
     "Duplex": 0,
     "HHS_Office_Federated": 214,
     "Clinic": 128,
-    "LTU_AHouse": 2658,
-    "JKR": 423
+    "LTU_AHouse": 3347,
+    "JKR": 449
   },
   "midair": {
     "_what": "W-MZ-2 — this witness's own census(): elements appearing before the first thing they touch. Every building runs the graph engine since 2026-11-17; the split of this number by named set is midair_unnamed (W-MZ-2u) and the §MZ_SPLIT log line.",
@@ -18,7 +18,7 @@
     "Duplex": 5,
     "HHS_Office_Federated": 23,
     "Clinic": 59,
-    "LTU_AHouse": 245,
+    "LTU_AHouse": 250,
     "JKR": 13
   },
   "zda_display_float": {
@@ -63,5 +63,6 @@
   "_relocked_2026_11_19_floors": "2026-11-19 — bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.33.9: §ASSEMBLY_RULE (curtain-wall parts take the curtain wall's Envelope rule) + §E1_ALL_CARRIERS (a floor/roof plate waits for EVERY structural carrier under it). Values read off the measured FAIL lines of run_4d_gates.sh on fix/4d-floors-carriers. float_after_cpm {\"Terminal\": 501, \"Hospital\": 1573, \"Duplex\": 4, \"HHS_Office_Federated\": 237, \"Clinic\": 168, \"LTU_AHouse\": 2934, \"JKR\": 434} -> {\"Terminal\": 385, \"Hospital\": 1349, \"Duplex\": 1, \"HHS_Office_Federated\": 226, \"Clinic\": 162, \"LTU_AHouse\": 3081, \"JKR\": 416} (better on 6 of 7; LTU +147). midair {\"Terminal\": 529, \"HHS_Office_Federated\": 22, \"LTU_AHouse\": 520, \"JKR\": 21} -> {\"Terminal\": 530, \"HHS_Office_Federated\": 23, \"LTU_AHouse\": 538, \"JKR\": 17}; §MZ_SPLIT UNNAMED=0 on all 7 — every midair element stays in a named set (struct-no-support / contact-only / ground seed).",
   "_relocked_2026_11_20_ltu_served": "2026-11-20 — LTU_AHouse ONLY, read off a run on the SERVED pair (OCI buildings/LTU_AHouse_meta.db + _geo.db, re-imported 2026-08-29) with the storey-only patch; the old values were measured on a local Aug-10 file no user loads (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.36.5 / §Q.38). midair 538 -> 242 and orphans 3288 -> 1382 FELL; float_after_cpm 3081 -> 5513 ROSE (auditFloating 2070 -> 5513: a dependent starting before its support FINISHES) — named, not hidden; midair_unnamed 0 unchanged.",
   "_relocked_2026_11_20_ceiling_closeup": "2026-11-20 — §CEILING_CLOSEUP (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.39: a suspended ceiling is close-up work on every building). Read off the gate run. float_after_cpm: HHS 226 -> 216 and Hospital 1349 -> 1337 FELL; JKR 416 -> 464 and LTU 5513 -> 5579 ROSE (ceilings now start in close-up, some before a touching element finishes — auditFloating's measure). Strict midair Hospital 27 -> 30 ROSE by three, all inside the named sets (midair_unnamed 0 unchanged). Duplex, Clinic, Terminal unchanged.",
+  "_relocked_2026_11_20_first_offerer": "2026-11-20 — §Q.43 (bim-compiler prompts/4D_MODEL_INTEGRITY.md): a hung bond is the FIRST offerer above and a join is a touch, so the false carriers of §Q.42 (a slab up to 13 m above, through other floors) are gone from the solve. float_after_cpm Hospital 976 -> 1160 (1,337 before any bond carrier), LTU 2658 -> 3347 (5,579 before), JKR 423 -> 449 (464 before); strict midair LTU 245 -> 250 (all inside the named sets, UNNAMED=0). ScheduleGate.auditFloating on the PLAYED layer is unchanged on all seven (270 / 440 / 160; probe_float_v2.log). Read off the FAIL lines of the run.",
   "_relocked_2026_11_20_bond_carriers": "2026-11-20 — §E1_BOND_CARRIERS on by default (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.42: shim-anchor bond hosts are carriers in the solve beside the election). Read off the gate run. float_after_cpm FELL on six: Hospital 1337 -> 976, LTU 5579 -> 2658, Clinic 162 -> 128, JKR 464 -> 423, HHS 216 -> 214, Duplex 1 -> 0 (Terminal unchanged). Strict midair: Hospital 30 -> 28 and JKR 17 -> 13 FELL; Clinic 57 -> 59 ROSE (+2 struct-no-support) and LTU 242 -> 245 ROSE (+2 contact-only, +1 ground seed) — all inside the named sets of elements with NO elected support (model gaps), midair_unnamed 0 unchanged, played midair 0 on all seven."
 }

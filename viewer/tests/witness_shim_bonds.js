@@ -31,6 +31,20 @@ function b4(X) {
   }
   return { judged, bad };
 }
+// b10(X) — hung bonds with an offerer between the element and its host, and `joins` bonds that do not touch. Returns { judged, through, apart, sample }.
+function b10(X) {
+  const { items, res, G } = X, EPS = R.SG.EPS, GAP = R.SG.GAP; let judged = 0, through = 0, apart = 0, sample = '';
+  for (let i = 0; i < res.n; i++) {
+    const h = res.host[i]; if (res.outcome[i] !== O.BONDED || h < 0) continue;
+    const cap = SB.capOf(res, i), T = items[i], H = items[h];
+    if (cap === 'joins') { judged++; if (!(H.bz <= T.tz + GAP && H.tz >= T.bz - GAP)) { apart++; if (!sample) sample = T.guid + ' joins ' + H.guid + ' gap=' + Math.max(H.bz - T.tz, T.bz - H.tz).toFixed(2) + ' m'; } continue; }
+    if (cap !== 'hangs-below') continue; judged++;
+    const off = {}; res.table[res.kind[i]].forEach(nd => { if (SB.REL[nd.cap] === 'above') nd.hosts.forEach(k => { off[k] = 1; }); });
+    const hit = (G.contacts[i] || []).find(j => j !== h && off[res.kind[j]] && SB.relsOf(items[j], T, EPS, GAP).above && items[j].tz <= H.bz + EPS);
+    if (hit !== undefined) { through++; if (!sample) sample = T.guid + ' hangs from ' + H.guid + ' (base z ' + H.bz.toFixed(2) + ') through ' + items[hit].guid + ' (' + res.kind[hit] + ', top z ' + items[hit].tz.toFixed(2) + ')'; }
+  }
+  return { judged, through, apart, sample };
+}
 (async () => {
   const SQL = await R.sql();
   for (const b of ALL) {
@@ -96,6 +110,12 @@ function b4(X) {
     }
     const base9 = lock.buildings[b];
     if (process.env.LOCK !== '1') say('B9', b, base9 && typeof base9.earlyVsHost === 'number' ? earlyHost <= base9.earlyVsHost : null, 'bonded elements starting before a host ends=' + earlyHost + ' lock=' + (base9 && base9.earlyVsHost));
+    // B10 — §Q.43 (bim-compiler 4D_MODEL_INTEGRITY): THE HOST IS WHAT THE ELEMENT MEETS. Judged on the result, independently of how compute()
+    // chose: (N) no element bonded `hangs-below` has another offerer of its kind's hung needs lying wholly between it and its host;
+    // (J) every `joins` bond is a touch (the two height ranges meet within the contact owner's GAP). Before the rule: Hospital 9,573 segments and
+    // 884 façade parts had a nearer offerer; a façade plate "joined" a slab 13 m above it.
+    const far = b10(X);
+    say('B10', b, far.judged ? far.through === 0 && far.apart === 0 : null, 'hung / joined bonds judged=' + far.judged + ' with an offerer between element and host=' + far.through + ' joins that do not touch=' + far.apart + (far.sample ? ' e.g. ' + far.sample : ''));
     // B7 — ratchet: the bonded count may not fall
     const base = lock.buildings[b];
     if (process.env.LOCK === '1') { lock.buildings[b] = { n: n, bonded: bonded, db: X.run.dbFile, ceilingCrossLevel: earlyCross, earlyVsHost: earlyHost }; say('B7', b, true, 'LOCK=1 bonded=' + bonded + ' of ' + n + ' written'); }
@@ -109,6 +129,14 @@ function b4(X) {
     const bad = JSON.parse(JSON.stringify(SB.TABLE)); bad.slab[0].hosts = ['facade_part'].concat(bad.slab[0].hosts);
     const Xr = R.load(rb, SQL, bad), fr = Xr ? b4(Xr) : null;
     say('RED', rb, fr ? fr.bad.length > 0 : null, fr ? 'with a façade part offered as a slab bearer B4 finds ' + fr.bad.length + ' (must be > 0: the witness can fail)' : 'not loadable');
+  }
+  // RED CONTROL for B10 — with `joins` relaxed back to `any` (the table before §Q.43) a building with façade parts must show joins that do not touch.
+  const rb2 = ALL.indexOf('Hospital') >= 0 ? 'Hospital' : (ALL.indexOf('Clinic') >= 0 ? 'Clinic' : null);
+  if (!rb2) say('RED10', '-', null, 'neither Hospital nor Clinic in this run — the B10 red control was not exercised');
+  else {
+    const keep = SB.REL.joins; SB.REL.joins = 'any';
+    let fr2 = null; try { const Xr2 = R.load(rb2, SQL, SB.TABLE); fr2 = Xr2 ? b10(Xr2) : null; } finally { SB.REL.joins = keep; }
+    say('RED10', rb2, fr2 ? fr2.apart > 0 : null, fr2 ? 'with joins = any, B10 finds ' + fr2.apart + ' joins that do not touch (must be > 0: the witness can fail)' : 'not loadable');
   }
   console.log('§W_SHIM_VERDICT pass=' + pass + ' fail=' + fail + ' inconclusive=' + inc + (fail ? '  FAIL' : inc && !pass ? '  INCONCLUSIVE' : '  PASS'));
   process.exit(fail ? 1 : (pass ? 0 : 2));
