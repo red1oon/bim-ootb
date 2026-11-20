@@ -1131,15 +1131,14 @@
     // elected support), and the bond for every hung element (Hospital MEP Rough-in moved 3,184 -> 7,000, programme 262 -> 273 d).
     var SBm = (global && global.ShimBonds) || g.ShimBonds || (typeof window !== 'undefined' && window.ShimBonds) || null;
     if (!SBm && typeof module !== 'undefined' && module.exports && typeof require === 'function') { try { SBm = require('./shim_bonds.js'); } catch (eSB) { SBm = null; } }
-    var also = null, alsoN = 0, raisedByBond = 0, bondsMs = 0;
+    var also = null, alsoN = 0, raisedByBond = 0;
     if (SBm && SBm.compute) {
-      var _tb = Date.now(), bres = SBm.compute(items, G, { EPS: EPS, GAP: GAP });
+      var bres = SBm.compute(items, G, { EPS: EPS, GAP: GAP });   // cost: see §CEILING_CLOSEUP ms= (the same pass); no clock is read in this core file
       also = new Int32Array(items.length).fill(-1);
       for (var bi = 0; bi < items.length; bi++) {
         var bh = bres.host[bi];
         if (bh >= 0 && bh !== des[bi] && SBm.capOf(bres, bi) === 'hangs-below' && SBm.capOf(bres, bh) === 'hangs-below') { also[bi] = bh; alsoN++; }
       }
-      bondsMs = Date.now() - _tb;
     }
     var hung = {}, moved = 0, byPhase = {}, toLevel = {}, otherRel = 0, unranked = 0, judged = 0, chained = 0;
     // §Q.13 (2026-11-17): ANY elected relation, and TRANSITIVE. (1) The first cut moved hung elements only and left an
@@ -1199,7 +1198,7 @@
     console.log('§D6_HANG_FILING elements=' + items.length + ' electedSupportOnAHigherLevel=' + judged + ' movedToCarrierLevel=' + moved +
       ' ofWhichBearingOrEmbedded=' + otherRel + ' viaChain=' + chained + ' unrankedLevel(left)=' + unranked +
       ' byPhase=' + JSON.stringify(byPhase) + ' toLevels=' + Object.keys(toLevel).length +
-      ' chain=' + (also ? 'election+ceiling-bond secondCarriers=' + alsoN + ' raisedByBond=' + raisedByBond + ' bondsMs=' + bondsMs : 'election'));
+      ' chain=' + (also ? 'election+ceiling-bond secondCarriers=' + alsoN + ' raisedByBond=' + raisedByBond : 'election'));
     if (!moved) return null;
     return { keyOf: function (el) { return hung[el.guid] || collapse(el.storey); }, hangMoved: moved };
   }
