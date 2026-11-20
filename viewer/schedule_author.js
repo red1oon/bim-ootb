@@ -1122,6 +1122,25 @@
     if (!G.ok) { console.log('§D6_HANG_FILING INACTIVE — contact graph unavailable'); return null; }
     var des = CP.designatedSupport(items, G), SG = g.ScheduleGate || (global && global.ScheduleGate);
     var EPS = SG.EPS, GAP = SG.GAP, rank = function (k) { return (bandRank && bandRank[k] != null) ? bandRank[k] : null; };
+    // §Q.40 (S4, 2026-11-20) — A FITTING IS ALSO HELD BY THE CEILING IT HANGS FROM. The election prefers a pool contact (§S26.2), so a fitting
+    // under a ceiling elects a wall or slab, never the ceiling: the ceiling was filed with its slab (the level above) and the fitting stayed
+    // below (Hospital: fittings in MEP_Final_Level_3 under a ceiling in Architecture_Closeup_Level_4). `also[i]` is that SECOND carrier — the
+    // bond's host where the element hangs below a carrier that itself hangs (ShimBonds, on the contact graph already built here). The level an
+    // element is filed on is then the highest along BOTH chains: it cannot be built before its elected support, nor before its ceiling.
+    // Measured and NOT adopted (§Q.40.1): the bond INSTEAD of the election (Terminal played midair 0 -> 27: the fitting then ran ahead of its
+    // elected support), and the bond for every hung element (Hospital MEP Rough-in moved 3,184 -> 7,000, programme 262 -> 273 d).
+    var SBm = (global && global.ShimBonds) || g.ShimBonds || (typeof window !== 'undefined' && window.ShimBonds) || null;
+    if (!SBm && typeof module !== 'undefined' && module.exports && typeof require === 'function') { try { SBm = require('./shim_bonds.js'); } catch (eSB) { SBm = null; } }
+    var also = null, alsoN = 0, raisedByBond = 0, bondsMs = 0;
+    if (SBm && SBm.compute) {
+      var _tb = Date.now(), bres = SBm.compute(items, G, { EPS: EPS, GAP: GAP });
+      also = new Int32Array(items.length).fill(-1);
+      for (var bi = 0; bi < items.length; bi++) {
+        var bh = bres.host[bi];
+        if (bh >= 0 && bh !== des[bi] && SBm.capOf(bres, bi) === 'hangs-below' && SBm.capOf(bres, bh) === 'hangs-below') { also[bi] = bh; alsoN++; }
+      }
+      bondsMs = Date.now() - _tb;
+    }
     var hung = {}, moved = 0, byPhase = {}, toLevel = {}, otherRel = 0, unranked = 0, judged = 0, chained = 0;
     // §Q.13 (2026-11-17): ANY elected relation, and TRANSITIVE. (1) The first cut moved hung elements only and left an
     // element whose BEARER is filed on a higher-ranked label where it was (Terminal 363: 205 roof plates in
@@ -1151,21 +1170,36 @@
         st[w] = 2;
       }
     }
+    // the second carrier, to a fixed point: max over both chains (monotone on a finite set of ranks, so it ends; the election's own
+    // chain is already closed by the walk above, so this only does work where a bond raises something)
+    if (also && alsoN) {
+      var again = true, guard = 0;
+      while (again && guard++ < 64) {
+        again = false;
+        for (i = 0; i < n; i++) {
+          var c1 = also[i], c2 = des[i], up = -1;
+          if (c1 >= 0 && !isNaN(effRank[c1]) && !isNaN(effRank[i]) && effRank[c1] > effRank[i]) up = c1;
+          if (c2 >= 0 && !isNaN(effRank[c2]) && !isNaN(effRank[i]) && effRank[c2] > effRank[up >= 0 ? up : i]) up = c2;
+          if (up >= 0) { if (up === c1) raisedByBond++; effRank[i] = effRank[up]; effKey[i] = effKey[up]; again = true; }
+        }
+      }
+    }
     for (i = 0; i < n; i++) {
       var own = collapse(elements[i].storey);
-      if (des[i] >= 0 && (rank(own) == null || isNaN(effRank[i]))) { unranked++; continue; }
+      if ((des[i] >= 0 || (also && also[i] >= 0)) && (rank(own) == null || isNaN(effRank[i]))) { unranked++; continue; }
       if (effKey[i] === own) continue;
       judged++;
-      var S = items[des[i]], T2 = items[i];
-      if (effKey[i] !== collapse(elements[des[i]].storey)) chained++;      // moved further than its direct support's own label
-      if ((S.bz < T2.bz - EPS && S.tz >= T2.bz - GAP) || (S.bz <= T2.bz + EPS && S.tz >= T2.tz - EPS)) otherRel++;
+      var S = des[i] >= 0 ? items[des[i]] : null, T2 = items[i];
+      if (!S || effKey[i] !== collapse(elements[des[i]].storey)) chained++;      // moved further than its direct support's own label
+      if (S && ((S.bz < T2.bz - EPS && S.tz >= T2.bz - GAP) || (S.bz <= T2.bz + EPS && S.tz >= T2.tz - EPS))) otherRel++;
       hung[T2.guid] = effKey[i]; moved++;
       byPhase[elements[i].phase || '_'] = (byPhase[elements[i].phase || '_'] || 0) + 1;
       toLevel[effKey[i]] = (toLevel[effKey[i]] || 0) + 1;
     }
     console.log('§D6_HANG_FILING elements=' + items.length + ' electedSupportOnAHigherLevel=' + judged + ' movedToCarrierLevel=' + moved +
       ' ofWhichBearingOrEmbedded=' + otherRel + ' viaChain=' + chained + ' unrankedLevel(left)=' + unranked +
-      ' byPhase=' + JSON.stringify(byPhase) + ' toLevels=' + Object.keys(toLevel).length);
+      ' byPhase=' + JSON.stringify(byPhase) + ' toLevels=' + Object.keys(toLevel).length +
+      ' chain=' + (also ? 'election+ceiling-bond secondCarriers=' + alsoN + ' raisedByBond=' + raisedByBond + ' bondsMs=' + bondsMs : 'election'));
     if (!moved) return null;
     return { keyOf: function (el) { return hung[el.guid] || collapse(el.storey); }, hangMoved: moved };
   }
