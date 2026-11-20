@@ -4,6 +4,31 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.95.0](https://github.com/red1oon/bim-ootb/compare/v1.94.0...v1.95.0) (2026-11-20)
+
+
+### ✨ Features
+
+* **4d:** bond hosts are carriers in the solve by default - the order inside every bar follows the bonds (§E1_BOND_CARRIERS on) ([#3360](https://github.com/red1oon/bim-ootb/issues/3360)) ([6bebced](https://github.com/red1oon/bim-ootb/commit/6bebced96eb78963b896f95a659790eb2f830dd1))
+* **4d:** bond hosts can be added as carriers in the solve, behind a flag (default off) - stage S3c redesigned ([#3359](https://github.com/red1oon/bim-ootb/issues/3359)) ([ca5a7ae](https://github.com/red1oon/bim-ootb/commit/ca5a7ae3b0e738a4436d016c05c522dccc57a293))
+* **4d:** shim-anchor bond table, report only (stage S1) - who carries each element and by which need; gate 17 witness_shim_bonds ([#3353](https://github.com/red1oon/bim-ootb/issues/3353)) ([688aa8c](https://github.com/red1oon/bim-ootb/commit/688aa8cd3f29de306bbe86634fa2f3b86198a39f))
+* **4d:** the bond table is computed once and persisted with each run (stage S2) - judges read run.json bonds, none recomputes ([#3354](https://github.com/red1oon/bim-ootb/issues/3354)) ([f1fdc28](https://github.com/red1oon/bim-ootb/commit/f1fdc287ba8748db3ffd4508371280598cece379))
+
+
+### 🐛 Fixes
+
+* **4d:** a covering is what its file declares (IfcCovering.PredefinedType) - pipe lagging is not a ceiling (§Q.44) ([#3362](https://github.com/red1oon/bim-ootb/issues/3362)) ([c4e5f82](https://github.com/red1oon/bim-ootb/commit/c4e5f82ea108ee5b5e48f034af00c96f69db2cd9))
+* **4d:** a fitting is also held by the ceiling it hangs from (stage S4) ([#3358](https://github.com/red1oon/bim-ootb/issues/3358)) ([bf0c1bb](https://github.com/red1oon/bim-ootb/commit/bf0c1bb266c0ece62c89258ead9c32f859e357c2))
+* **4d:** a hung bond is the first offerer above and a join is a touch - no carrier through another floor (§Q.43) ([#3361](https://github.com/red1oon/bim-ootb/issues/3361)) ([378e349](https://github.com/red1oon/bim-ootb/commit/378e3499c7d9554ae873c51d8518f330a92f35b5))
+* **4d:** a slab that structure stands on is structure - Clinic's first-floor deck (§Q.46, §CARRYING_SLAB) ([#3364](https://github.com/red1oon/bim-ootb/issues/3364)) ([7975569](https://github.com/red1oon/bim-ootb/commit/797556932cdd89f14c33ad3eabb377eea4b19289))
+* **4d:** in datum mode the ladder, not the storey name, owns the floor (§RUNG_RUN_LABEL) + bridged first-on-level tasks keep their link (§TPL_BRIDGE_EDGE) (§Q.35.1) ([#3347](https://github.com/red1oon/bim-ootb/issues/3347)) ([0ff3808](https://github.com/red1oon/bim-ootb/commit/0ff380863bcb2b13373f29e812a8454e55570b3a))
+* **4d:** LTU + HHS get the storey elevations their IFC files declare (§IFC_STOREYS patches) - floors come from the file, not from guessed names (§Q.36) ([#3352](https://github.com/red1oon/bim-ootb/issues/3352)) ([2a7e03b](https://github.com/red1oon/bim-ootb/commit/2a7e03b1cf0264ec70ce2465c7032bce56aa4344))
+* **4d:** LTU patch is the storey block only, and the gates judge the served LTU pair (re-locked from that run) ([#3355](https://github.com/red1oon/bim-ootb/issues/3355)) ([d6df80b](https://github.com/red1oon/bim-ootb/commit/d6df80bc29d16809deb221d088728344f0ac1508))
+* **4d:** standard practice on every building - a suspended ceiling is close-up work, before the fittings that hang from it (§CEILING_CLOSEUP) ([#3357](https://github.com/red1oon/bim-ootb/issues/3357)) ([0756560](https://github.com/red1oon/bim-ootb/commit/0756560c45c3e609f8c6ee59ce074fc9db9363e5))
+* **4d:** Terminal's coverings carry their declared type too - 82 of 82 CEILING (§Q.45) ([#3363](https://github.com/red1oon/bim-ootb/issues/3363)) ([1f788a9](https://github.com/red1oon/bim-ootb/commit/1f788a9d8cae264c3da1188e41f27f2334b95191))
+* **4d:** the 4D gates judge the DB the viewer plays — whole patch by default (CACHE_PATCHES=all, ruling R2, §Q.35.3) ([#3348](https://github.com/red1oon/bim-ootb/issues/3348)) ([f8397bd](https://github.com/red1oon/bim-ootb/commit/f8397bd33fd8d428c18bc7c4d24a707c27d79042))
+* **capex/uat:** the checker no longer fails a tester who skips the optional Accept all (§5.90, W-UAT-COMPARE-OPTIONAL 5/0) ([#3345](https://github.com/red1oon/bim-ootb/issues/3345)) ([7cb8356](https://github.com/red1oon/bim-ootb/commit/7cb83563e9d058031300bb7c72d7052e7ae77c52))
+
 ## [1.94.0](https://github.com/red1oon/bim-ootb/compare/v1.93.0...v1.94.0) (2026-11-19)
 
 
