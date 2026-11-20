@@ -1,0 +1,49 @@
+{
+  "schema": "oci-patch-provenance/1",
+  "generated_at": "2026-11-20T07:53:22.024Z",
+  "bucket": "bim-ootb",
+  "engine": {
+    "worktree": "/tmp/wt-4d-upload",
+    "sha": "922f28bad081a2823d5c306b18347a8728494d8c",
+    "behind_origin_main": 0,
+    "ahead_origin_main": 1,
+    "clean": true,
+    "dirty_paths": []
+  },
+  "served_db": {
+    "object": "buildings/Clinic.db",
+    "etag": "93af8176-18a0-4221-9aa9-3f1f19597507",
+    "content-md5": "L+8J4xhb4tVtBw4ALOvxlg==",
+    "size": "51313125",
+    "last-modified": "Sun, 30 Aug 2026 14:10:48 GMT",
+    "content-encoding": "gzip"
+  },
+  "artifact": {
+    "file": "../../home/red1/.cache/bim4d/q47_upload_2026-11-20/upload/Clinic.db.sql",
+    "bytes": 7838,
+    "md5": "e959004c3b76225181188fbb8391f8ce",
+    "md5_b64": "6VkATDt2IlGBGI+7g5H4zg==",
+    "object": "buildings/patches/Clinic.db.sql",
+    "content_type": "application/sql"
+  },
+  "target": {
+    "exists": true,
+    "etag": "b98f7c62-5e70-455e-82ee-2649c4f9bf67",
+    "size": "7285",
+    "last-modified": "Wed, 21 Oct 2026 21:11:06 GMT"
+  },
+  "verification": {
+    "cmd": "bash -c 'r=$(sqlite3 $GATE_DB \"select (select count(*) from element_predefined_type) || char(124) || (select count(*) from element_predefined_type t join elements_meta m on m.guid=t.guid where m.ifc_class=char(73,102,99,67,111,118,101,114,105,110,103)) || char(124) || (select count(*) from elements_meta where ifc_class=char(73,102,99,67,111,118,101,114,105,110,103)) || char(124) || (select group_concat(distinct predefined_type) from element_predefined_type)\"); e=$(sqlite3 $GATE_DB \"select count(*) from elements_meta\"); echo VERIFY rows,joinToCovering,coveringsInServedDb,types = $r elementsInServedDb=$e; [ \"$r\" = \"250|250|250|CEILING\" ]'",
+    "exit": 0,
+    "tail": [
+      "VERIFY rows,joinToCovering,coveringsInServedDb,types = 250|250|250|CEILING elementsInServedDb=16071"
+    ]
+  },
+  "verdict": "PASS",
+  "failures": [],
+  "uploaded": {
+    "at": "2026-11-20T07:53:23.823Z",
+    "etag": "532baae9-732d-4041-89b7-c45877795533",
+    "verified": true
+  }
+}
