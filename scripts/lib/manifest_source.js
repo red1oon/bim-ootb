@@ -144,10 +144,15 @@ function align(src, have, want, insertable, lines, file, entry) {
   }
   for (const [h, ls] of after) {
     const le = lineEnd(src, h.end), ind = indentAt(src, h.start);
+    // B2 (#3370): more sites follow on the anchor's line (ERP pages keep several tags on one line): the new site stays on that line, right after
+    //   its anchor, so the file's order is the manifest's and removing it again gives back the same bytes
+    if (have.some(x => x !== h && x.start >= h.end && x.start < le)) { ops.push({ at: h.end, del: 0, ins: ls.map(l => entry ? ', ' + l.replace(/,$/, '') : l).join('') }); continue; }
     if (entry && !/^\s*,/.test(src.slice(h.end, le))) ops.push({ at: h.end, del: 0, ins: ',' });
     ops.push({ at: le, del: 0, ins: ls.map(l => '\n' + ind + l).join('') });
   }
-  for (const [h, ls] of before) { const st = lineStart(src, h.start), ind = indentAt(src, h.start); ops.push({ at: st, del: 0, ins: ls.map(l => ind + l + '\n').join('') }); }
+  for (const [h, ls] of before) { const st = lineStart(src, h.start), ind = indentAt(src, h.start);
+    if (have.some(x => x !== h && x.end <= h.start && x.end > st)) { ops.push({ at: h.start, del: 0, ins: ls.map(l => entry ? l.replace(/,$/, '') + ', ' : l).join('') }); continue; }
+    ops.push({ at: st, del: 0, ins: ls.map(l => ind + l + '\n').join('') }); }
   const why = ops.find(o => o.why); if (why) return { why: why.why };
   ops.sort((a, b) => b.at - a.at || b.del - a.del);
   let out = src; for (const o of ops) out = out.slice(0, o.at) + o.ins + out.slice(o.at + o.del);

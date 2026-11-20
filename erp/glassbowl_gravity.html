@@ -154,7 +154,9 @@ if('serviceWorker' in navigator){addEventListener('load',function(){navigator.se
   <span id="prov">extracted from glassbowl_data.db · 0 invented</span></div>
 <div id="hint">drag the <b>gravity ball</b> ↑ down to the AD dictionary · up into a record's lines &nbsp;·&nbsp; tap a bubble</div>
 
+<!-- §MANIFEST:BEGIN erp tags (script tags here are written by scripts/gen_manifest.js from erp/modules.json; comments are yours) -->
 <script src="../common/whole_history.js?v=4" onerror="console.warn('§WHOLE-HIST whole_history.js absent — local scrub only')"></script>
+<!-- §MANIFEST:END erp tags -->
 <script>
 "use strict";
 
@@ -797,9 +799,11 @@ setTimeout(()=>hint.style.opacity=0,5000);
 try{if(window.WholeHistory){WholeHistory.mount({page:'gravity',rootPrefix:'../',launcher:false});WholeHistory.registerLocalRestore(function(v){applyView(v);});WholeHistory.consumeRestore('gravity',function(v){applyView(v);});}}catch(e){}  /* launcher:false — World History is launched from the W pill now, not the bottom-left clock */
 </script>
 <!-- §GRV-PILLS — shared ⋯ pill registry (same renderer as glassbowl/idempiere): home · undo · redo · edit · showme. -->
+<!-- §MANIFEST:BEGIN erp tags (script tags here are written by scripts/gen_manifest.js from erp/modules.json; comments are yours) -->
 <script src="icons.js?v=3"></script>
 <script src="../common/pill_builder.js?v=1"></script>
 <script src="glassbowl_pills.js?v=5"></script>
+<!-- §MANIFEST:END erp tags -->
 <script>(function(){
   function _hintOn(){var h=document.getElementById('hint');return !!(h&&getComputedStyle(h).display!=='none'&&parseFloat(getComputedStyle(h).opacity)>0.05);}
   function _toggleHint(){var h=document.getElementById('hint');if(!h)return;var on=_hintOn();h.style.display='';h.style.opacity=on?'0':'1';}
