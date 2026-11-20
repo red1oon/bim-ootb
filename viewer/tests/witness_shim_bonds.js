@@ -37,7 +37,7 @@ function b4(X) {
     const X = R.load(b, SQL);
     if (!X) { say('B0', b, null, 'no persisted run / played layer / contact graph — judged nothing (run: node scripts/cache_4d_run.js ' + b + ')'); continue; }
     const { items, res, G, agg } = X, n = res.n, c = res.counts, bonded = c[O.BONDED] || 0;
-    console.log('§W_SHIM ' + b + ' db=' + X.run.dbFile + ' n=' + n + ' bonded=' + bonded + ' seeds=' + res.seeds + ' waves=' + res.waves + ' aggregates=' + (agg.has ? Object.keys(agg.parentOf).length : 'NONE'));
+    console.log('§W_SHIM ' + b + ' db=' + X.run.dbFile + ' n=' + n + ' bonded=' + bonded + ' seeds=' + res.seeds + ' waves=' + res.waves + ' aggregates=' + (agg.has ? (agg.pairs != null ? agg.pairs : Object.keys(agg.parentOf).length) : 'NONE') + ' source=' + X.source);
     // B1 — total: one outcome each, and the counts add up
     const known = new Set(Object.keys(O).map(k => O[k])); let unk = 0, sum = 0;
     for (let i = 0; i < n; i++) if (!known.has(res.outcome[i])) unk++;
@@ -47,9 +47,9 @@ function b4(X) {
     let edges = 0, backward = 0;
     for (let i = 0; i < n; i++) (res.hosts[i] || []).forEach(j => { edges++; if (!(res.wave[j] >= 0 && res.wave[j] < res.wave[i])) backward++; });
     say('B2', b, edges ? backward === 0 : null, 'bond edges=' + edges + ' with a host not in an earlier wave=' + backward + ' (0 = no cycle possible)');
-    // B3 — deterministic: a second computation over the same inputs gives the same table
-    const res2 = SB.compute(items, G, { EPS: R.SG.EPS, GAP: R.SG.GAP, parentOf: agg.parentOf, parentCls: agg.parentCls });
-    say('B3', b, hashOf(res) === hashOf(res2), 'two computations hash ' + hashOf(res) + ' / ' + hashOf(res2));
+    // B3 — the table a judge READS is the table a fresh computation gives (persisted run, §Q.37 S2); without a persisted table: two computations agree
+    const fr = X.fresh().res, viaStore = X.source === 'persisted';
+    say('B3', b, hashOf(res) === hashOf(fr), (viaStore ? 'persisted table ' : 'computed table (run carries none for this table) ') + hashOf(res) + ' vs fresh computation ' + hashOf(fr));
     // B4 — structure is never hosted by a façade part and never hangs
     const f = b4(X);
     say('B4', b, f.judged ? f.bad.length === 0 : null, 'bonded slabs/beams/columns judged=' + f.judged + ' hosted by façade or bonded hangs-below=' + f.bad.length + (f.bad.length ? ' e.g. ' + f.bad.slice(0, 3).join(',') : ''));
