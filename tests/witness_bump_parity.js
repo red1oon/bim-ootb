@@ -28,7 +28,10 @@ const vhtml = rd('viewer/viewer.html');
 const vm = [...vhtml.matchAll(/src="([a-z0-9_]+\.js)\?v=(\d+)"/g)].find(x => fs.existsSync(path.join(REPO, 'viewer', x[1])));
 if (!em || !vm) { console.log('§BUMP_PARITY_W_VERDICT INCONCLUSIVE no erp/ or viewer/ target with ?v= found'); process.exit(1); }
 const ERP = 'erp/' + em[1], NON = 'viewer/' + vm[1];
-const FILES = ['erp/idempiere.html', 'erp/sw.js', ERP, 'viewer/viewer.html', 'viewer/sw.js', NON];
+// B3-OUT (#3379): bump.js's regex path is deleted, so the temp copy holds the two apps' modules.json and every file their `order` names (the manifest writes them all):
+//   the same targets and assertions now run on the manifest path.
+const MANI = ['erp', 'viewer'].flatMap(a => { const m = JSON.parse(rd(a + '/modules.json')); return [a + '/modules.json', m.sw, ...Object.keys(m.order)]; });
+const FILES = [...new Set(['erp/idempiere.html', 'erp/sw.js', ERP, 'viewer/viewer.html', 'viewer/sw.js', NON, ...MANI])];
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'witness_bump_parity_'));
 const root = path.join(tmp, 'root'), home = path.join(tmp, 'home'), stubDir = path.join(tmp, 'stub');
