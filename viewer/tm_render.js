@@ -167,7 +167,7 @@
     // gate -- _placedMeshes/_frontierCentroids/_shadowCasters are built in the single-mesh branch
     // below, which is unconditional (never skipped) regardless of _incrOK. Only the EDGE tick
     // (shadow flag flips) needs a forced full pass, to (re)seed Batched/Instanced shadow flags.
-    var _sig = TMS._tmSceneSig(app);
+    var _sig = TMS._tmSceneSig(app) + '|' + lingerMs;   // §TM_TRANSITIONS: same key the index was built for
     // §PERF_INCR_DEFER (TM_STREAM_REBUILD_COALESCE.md; CPE_4D_PERF_MEM_FINDINGS.md §3-R5): TM
     // active WHILE a big building still streams = every batch bumps _metaGen = a full 50-159ms
     // index rebuild per batch (10+ on LTU, 0.5-2s stacked) — and each rebuild forced mode=full
@@ -274,7 +274,7 @@
         // same one condition into `showReal` here removes the ghost path entirely and closes the
         // BatchedMesh/InstancedMesh gap the same way, in one place: nothing appears until its own
         // support is actually finished, full stop — never a ghost, never an early solid.
-        var isStagedNow = !isFrontier && (TMS._tmXraySolidifyTs[g] !== undefined && cursorMs < TMS._tmXraySolidifyTs[g]);
+        var isStagedNow = !isFrontier && TMS._tmHeld(g, cursorMs);
         // §DLOD_TM landmine-5 guard (double-draw): hideForProxy can only be true for placed-only
         // elements — isFrontier already excludes it, so real-mesh and box visibility stay disjoint.
         var hideForProxy = _dlodOn && isPlaced && !isFrontier && !isRecent && !TMS._dlodInView(g);
@@ -359,7 +359,7 @@
           // §XRAY_STAGING_REMOVED — same gate as the single-mesh branch: this population (mostly
           // MEP, batched for performance) previously had NO staging check at all and showed fully
           // solid before its own support finished — the worse half of the bug this removal closes.
-          var bStaged = !frontier[bg] && (TMS._tmXraySolidifyTs[bg] !== undefined && cursorMs < TMS._tmXraySolidifyTs[bg]);
+          var bStaged = !frontier[bg] && TMS._tmHeld(bg, cursorMs);
           var bShow = (placed[bg] || frontier[bg] || recent[bg] !== undefined) && !bHideForProxy && !bStaged && _isoShown(bg);   // §TM_ISOLATE
           if (_bdW && _bdW[bg]) {
             TMS._bdSeen(bg, 'BM', bShow, null);
@@ -435,7 +435,7 @@
           var ig = metas[mi].guid;
           var iHideForProxy = _dlodOn && !!placed[ig] && !frontier[ig] && recent[ig] === undefined && !TMS._dlodInView(ig);
           // §XRAY_STAGING_REMOVED — same gate as the single-mesh/BatchedMesh branches.
-          var iStaged = !frontier[ig] && (TMS._tmXraySolidifyTs[ig] !== undefined && cursorMs < TMS._tmXraySolidifyTs[ig]);
+          var iStaged = !frontier[ig] && TMS._tmHeld(ig, cursorMs);
           var iShow = (placed[ig] || frontier[ig] || recent[ig] !== undefined) && !iHideForProxy && !iStaged && _isoShown(ig);   // §TM_ISOLATE
           if (_bdW && _bdW[ig]) {
             TMS._bdSeen(ig, 'IM', iShow, null);
