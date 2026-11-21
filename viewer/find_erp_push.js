@@ -328,6 +328,13 @@
         return RP.pushProjectOrder(cfg, plan).then(function (r) {
           console.log('[RP-C] §PROJ_PUSH_LEGACY base=' + tgt.base + ' project="' + building + '" projectId=' + r.projectId + ' created=' + JSON.stringify(r.created));
           if (A.status) A.status.textContent = 'iDempiere Project #' + r.projectId + ' · created ' + JSON.stringify(r.created);
+          // bim-compiler prompts/FILM_UAT_GUIDE.md §5.18 L3: after a legacy push, "open ↗" opens THAT iDempiere's Project, not the browser ERP (which a /bimootb bundle does not carry):
+          // its WebUI zoom by URL (AdempiereWebUI.processParameters: Action=Zoom&TableName&Record_ID), the same link the CAPEX dashboard's ERP ↗ uses (capex/dash.js legacyUi).
+          if (elErpOpen && r.projectId != null) {
+            var lurl = String(tgt.base).replace(/\/+$/, '') + '/webui/index.zul?Action=Zoom&TableName=C_Project&Record_ID=' + encodeURIComponent(r.projectId);
+            elErpOpen.setAttribute('href', lurl); elErpOpen.style.display = 'inline-block'; elErpOpen.title = 'Open this Project Order in iDempiere';
+            console.log('[RP-C] §PROJ_PUSH_LINK_LEGACY project=' + r.projectId + ' url=' + lurl);
+          }
           return r;
         });
       }).catch(function (e) {
