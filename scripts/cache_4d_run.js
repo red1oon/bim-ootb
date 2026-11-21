@@ -88,6 +88,8 @@ const usePatches = () => BP.mode() !== '0';
 const INPUTS = ['schedule_gate.js', 'schedule_author.js', 'support_sweep.js', 'cpm_schedule.js',
                 'shim_bonds.js',   // §Q.37 S2: the persisted bond table is this file's output — a table change must rebuild the run
                 'rates.js', 'rates/4D_template.json',
+                // §RATES_AS_THE_VIEWER (§Q.56): the viewer boots rates.js and then REPLACES its tables from these files; so does this run now.
+                'rates/sequence_rules.json', 'rates/ifc_schema_hierarchy.json', 'rates/' + (process.env.RATES_PACK || 'cidb2024_my') + '.json',
                 // §CACHE_PLAYED_LAYER: the played layer is produced by these — a change to any of
                 // them changes what the movie reveals, so it must change the cache key too.
                 'time_machine.js', 'gantt_model.js', 'location_axis.js',
@@ -235,6 +237,22 @@ function build(bld, force, want, hooks) {   // hooks.onDb(db, res) — READ-ONLY
   return (shipped ? initSqlJs({ wasmBinary: fs.readFileSync(path.join(V, 'lib', 'sql-wasm.wasm')) })
                   : initSqlJs({ locateFile: f => path.join(HOME, 'bim-ootb', 'node_modules', 'sql.js', 'dist', f) }))
     .then(SQL => {
+      // §RATES_AS_THE_VIEWER (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.56) — the viewer does not schedule with rates.js's built-in tables: at boot
+      // it runs _initRateTemplateOnce(), which replaces the sequence / labour rules from rates/sequence_rules.json and loads a rate pack. This run
+      // used the built-in tables (measured, JKR: 4,526 install hours and 46 days here, 4,962 hours and 52 days in the browser, same model, same rules).
+      // The viewer's OWN boot function is called here on the same files; nothing is re-typed. The pack is pinned (RATES_PACK, default the viewer's
+      // own default 'cidb2024_my') because the viewer picks it from the page language — a judge must name the pack it judged.
+      const PACK = process.env.RATES_PACK || 'cidb2024_my';
+      if (typeof sb._initRateTemplateOnce !== 'function') { console.log('§RATES_AS_THE_VIEWER MISSING rates.js has no _initRateTemplateOnce — built-in tables used; this is NOT what the viewer schedules with'); return SQL; }
+      sb.localStorage = { getItem() { return null; } }; sb.URLSearchParams = URLSearchParams; sb.window = { location: { search: '?rates=' + PACK } };
+      sb.fetch = url => { const f = path.join(V, 'rates', String(url).split('/').pop().split('?')[0]);
+        return Promise.resolve(fs.existsSync(f) ? { ok: true, status: 200, json: () => Promise.resolve(JSON.parse(__readSrc(f, 'utf8'))) } : { ok: false, status: 404, json: () => Promise.reject(new Error('404')) }); };
+      const said = []; sb.console = { log(m) { said.push(String(m)); }, warn(m) { said.push(String(m)); }, error(m) { said.push(String(m)); } };
+      return Promise.resolve(sb._initRateTemplateOnce()).catch(e => { said.push('§RATES_AS_THE_VIEWER_FAIL ' + (e && e.message)); }).then(() => {
+        sb.__ratesSaid = said.filter(m => /^§(RATES_JSON|QTO_RATES_LOADED|RATE_LOCALE_MAP|RATE_PACK_SEQUENCE_IGNORED|RATES_AS_THE_VIEWER_FAIL)/.test(m));
+        sb.console = { log() {}, warn() {}, error() {} }; return SQL; });
+    })
+    .then(SQL => {
       const lines = [];
       const _l = console.log, _w = console.warn;
       // TEE, not suppress: the §-log is the evidence, so it goes to the file AND to the terminal.
@@ -243,6 +261,7 @@ function build(bld, force, want, hooks) {   // hooks.onDb(db, res) — READ-ONLY
       let els = null, sched = null, play = null, playStats = null, storeys = null, tasks = null, bonds = null, err = null;
       try {
         const db = new SQL.Database(new Uint8Array(__readSrc(file)));
+        (sb.__ratesSaid || []).forEach(m => console.log(m)); console.log('§RATES_AS_THE_VIEWER pack=' + (process.env.RATES_PACK || 'cidb2024_my') + ' loadedLines=' + (sb.__ratesSaid || []).length + ' — the tables the viewer schedules with (its own boot function, its own files)');
         BP.applyTo(db, file, console.log);
         if (BP.mode() === 'all') BP.composeTo(db, console.log);   // §Q.55: the db as the viewer loads it — patch, then the compose step (its rows are then left out by ScheduleGate.ensureElementBox)
         // §CACHE_PLAYED_LAYER — the live time_machine.js functions, sliced (never re-typed).
