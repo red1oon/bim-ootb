@@ -382,16 +382,53 @@
   // any later group, a hammock edge can never close a cycle — the combined graph is acyclic by
   // construction except for pure-physics cycles (contracted in solve()). Stragglers are counted,
   // never hidden.
+  // ══ §SITE_ORDER (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.57) — FOUR SIMPLE TRUTHS OF A BUILDING SITE, AS ORDER ══════════════════════
+  // The election above names ONE support per element; a column elects the column under it, so nothing made it wait for the floor it stands
+  // on (product judge, Hospital: 377 elements up before their floor, a Level 2 column 5.9 days before its slab). These are not elections and
+  // not tolerances to tune — each is one sentence, and each becomes "finish the first before starting the second":
+  //   floor  what stands on a floor waits for that floor          — the structural slab directly under me (nearest top under my base)
+  //   under  what rests on something waits for it                 — everything of my own or an earlier trade whose top is at my base
+  //   wall   what sits in a wall waits for the wall               — a window / door and the wall that spans its height (widest overlap)
+  //   frame  glass waits for the frame it sits in                 — a panel and the framing members whose boxes touch it
+  // Every pair runs from a LOWER base to a higher one (floor, under) or from a host to what it holds (wall, frame). Returns [{u, v, rule}].
+  // Pure: items only, the contact owner's own EPS / GAP / CELL. The judge (bim-ootb scripts/lib/schedule_crawler.js) states the same truths
+  // on its own, on the product's played times, and is not this code.
+  function siteOrderPairs(items, SG) {
+    var CELL = SG.CELL, EPS = SG.EPS, GAP = SG.GAP, n = items.length, grid = {}, i, c, cs, k, out = [];
+    function cellsOf(e) { var o = [], a, b; for (a = Math.floor(e.x0 / CELL); a <= Math.floor(e.x1 / CELL); a++) for (b = Math.floor(e.y0 / CELL); b <= Math.floor(e.y1 / CELL); b++) o.push(a + ',' + b); return o; }
+    for (i = 0; i < n; i++) { cs = cellsOf(items[i]); for (c = 0; c < cs.length; c++) (grid[cs[c]] || (grid[cs[c]] = [])).push(i); }
+    function isFloor(e) { return e.cls === 'IfcSlab' && (e.phase === 'Superstructure' || e.phase === 'Substructure'); }
+    var stamp = new Int32Array(n);
+    for (i = 0; i < n; i++) {
+      var T = items[i], floor = -1, wall = -1, wallA = 0, isFill = (T.cls === 'IfcWindow' || T.cls === 'IfcDoor'), isGlass = (T.cls === 'IfcPlate');
+      cs = cellsOf(T);
+      for (c = 0; c < cs.length; c++) { var arr = grid[cs[c]];
+        for (k = 0; k < arr.length; k++) { var j = arr[k]; if (j === i || stamp[j] === i + 1) continue; stamp[j] = i + 1;
+          var S = items[j], ox = Math.min(S.x1, T.x1) - Math.max(S.x0, T.x0), oy = Math.min(S.y1, T.y1) - Math.max(S.y0, T.y0);
+          if (isGlass && S.cls === 'IfcMember' && ox >= -EPS && oy >= -EPS && S.bz <= T.tz + EPS && S.tz >= T.bz - EPS) out.push({ u: j, v: i, rule: 'frame' });
+          if (!(ox > 0 && oy > 0)) continue;
+          if (S.bz < T.bz - EPS) {
+            if (Math.abs(S.tz - T.bz) <= EPS && !(typeof S.seq === 'number' && typeof T.seq === 'number' && S.seq > T.seq)) out.push({ u: j, v: i, rule: 'under' });
+            if (isFloor(S) && S.tz <= T.bz + GAP && (floor < 0 || S.tz > items[floor].tz)) floor = j;
+          }
+          if (isFill && S.cls.indexOf('IfcWall') === 0 && S.bz <= T.bz + EPS && S.tz >= T.tz - EPS && ox * oy > wallA) { wall = j; wallA = ox * oy; }
+        } }
+      if (floor >= 0 && !isFloor(T) && T.phase !== 'Substructure') out.push({ u: floor, v: i, rule: 'floor' });
+      if (wall >= 0) out.push({ u: wall, v: i, rule: 'wall' });
+    }
+    return out;
+  }
+
   function buildGraph(items, G) {
     var SG = (typeof global.ScheduleGate !== 'undefined') ? global.ScheduleGate : ScheduleGate;
     var n = items.length, i, k;
     var out = new Array(n);           // out[u] = [{to, kind, type}]
     for (i = 0; i < n; i++) out[i] = null;
-    var counts = { e1: 0, e2h: 0, e2o: 0, e3: 0, e4: 0, member: 0, stragglers: 0 };
+    var counts = { e1: 0, e2h: 0, e2o: 0, e3: 0, e4: 0, member: 0, stragglers: 0, site: 0 };
     // §E1_BOND_CARRIERS switch (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.41, default ON since §Q.42). Off for a comparison run only:
     // browser window.__TPL_BOND_CARRIERS = false; node env TPL_BOND_CARRIERS=0. `have` remembers the edges already in the graph.
     var _envB = (typeof process !== 'undefined' && process && process.env) ? process.env : {};
-    var bondOn = !(global.__TPL_BOND_CARRIERS === false || _envB.TPL_BOND_CARRIERS === '0'), have = bondOn ? new Set() : null;
+    var bondOn = !(global.__TPL_BOND_CARRIERS === false || _envB.TPL_BOND_CARRIERS === '0'), have = new Set();
     function addEdge(u, v, kind, type, bucket) {
       (out[u] || (out[u] = [])).push({ to: v, kind: kind, type: type });
       counts[bucket]++;
@@ -468,6 +505,20 @@
     }
     if (!bondOn && typeof console !== 'undefined') console.log('§E1_BOND_CARRIERS off (switched off for this run) — the graph carries only the edges of the election');
     counts.e1bond = e1bond;
+
+    // §SITE_ORDER — the four truths as finish-to-start edges (physics bucket). An edge that would run AGAINST one the graph already has is not
+    // added and is counted (the same discipline as §Q.42): the truths never fight the election, they complete it. Off for a comparison run
+    // only: browser window.__SITE_ORDER = false; node env SITE_ORDER=0.
+    var siteOn = !(global.__SITE_ORDER === false || _envB.SITE_ORDER === '0'), siteBy = { floor: 0, under: 0, wall: 0, frame: 0 }, siteAgainst = 0, siteHad = 0;
+    if (siteOn) {
+      var sop = siteOrderPairs(items, SG);
+      for (var sq = 0; sq < sop.length; sq++) { var pS = sop[sq];
+        if (have.has(pS.u * n + pS.v)) { siteHad++; continue; }
+        if (have.has(pS.v * n + pS.u)) { siteAgainst++; continue; }
+        addEdge(pS.u, pS.v, FS, 1, 'site'); siteBy[pS.rule]++; }
+    }
+    if (typeof console !== 'undefined') console.log('§SITE_ORDER ' + (siteOn ? 'on' : 'off') + ' edges=' + counts.site + ' byTruth=' + JSON.stringify(siteBy) + ' alreadyInTheGraph=' + siteHad +
+      ' skippedAgainstAnExistingEdge=' + siteAgainst + ' — floor before what stands on it, what is under before what rests on it, wall before its window, frame before its glass');
 
     // E2 — host/opening pairs, FS (same element shape ScheduleGate's own pairs functions take)
     var gateEls = items.map(function (it) {
