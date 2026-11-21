@@ -60,6 +60,6 @@
     });
     return out;
   }
-  var api = { msg: msg, howto: howto, has: has, split: split, MACHINE: MACHINE };
+  var api = { msg: msg, howto: howto, has: has, split: split, guideOf: guideOf, MACHINE: MACHINE };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else if (root) root.CtxHelp = api;
 })(typeof window !== 'undefined' ? window : this);

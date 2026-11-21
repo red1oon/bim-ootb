@@ -61,11 +61,13 @@
   function loadHelp(code) {
     if (!_loc(code)) return Promise.resolve(null);
     if (_helps[code]) return Promise.resolve(_helps[code]);
-    return _fetchJson('i18n/help/' + code + '/help.json').then(function (p) { _helps[code] = p; console.log('§HELP_PACK loaded lang=' + code + ' fields=' + Object.keys(p.fields || {}).length + ' howto=' + (p.howto || []).length); return p; })
+    return _fetchJson('i18n/help/' + code + '/help.json').then(function (p) { _helps[code] = p; console.log('§HELP_PACK loaded lang=' + code + ' fields=' + Object.keys(p.fields || {}).length + ' tabs=' + Object.keys(p.tabs || {}).length + ' processes=' + Object.keys(p.processes || {}).length + ' howto=' + (p.howto || []).length); return p; })
       .catch(function (e) { console.warn('§HELP_PACK load-fail lang=' + code + ' ' + e.message); return null; });
   }
   // §19.3: the language's help INDEX (i18n/help/<lang>/index.json, built by common/help/tools/build_help_index.js): the page reads its header (vocab, bm25, weights) for HelpQuery; null when absent (the name tiers still work)
   var _hIdx = {};
+  // §19.17 F4: [description, help] of a tab ('tabs') or a process ('processes') in the screen language, null per column when the pack has no translation (then English)
+  function recHelp(kind, id) { var x = (_help && _help[kind] && id != null) ? _help[kind][String(Math.round(Number(id)))] : null, tx = _help && _help.texts; return x ? [x[0] >= 0 ? tx[x[0]] : null, x[1] >= 0 ? tx[x[1]] : null] : [null, null]; }
   function loadHelpIndex(code) {
     if (!_loc(code)) return Promise.resolve(null);
     if (_hIdx[code]) return Promise.resolve(_hIdx[code]);
@@ -149,6 +151,9 @@
     (win.tabs || []).forEach(function (t) {
       if (t._en == null) t._en = t.name;
       var tv = _pack ? _orM(_trl('AD_Tab', t.id), 'AD_Tab', t.id) : null; t.name = tv || t._en; _count('tab', !!tv, _src);
+      // §19.17 F4: the tab's translated Description / Help (AD_Tab_Trl, the help pack), English kept on _enDesc/_enHelp: legacy's How To panel shows them when the tab has no context help
+      if (t._enDesc === undefined) { t._enDesc = t.description; t._enHelp = t.help; }
+      var th = recHelp('tabs', t.id); t.description = th[0] != null ? th[0] : t._enDesc; t.help = th[1] != null ? th[1] : t._enHelp;
       (t.fields || []).forEach(function (f) {
         if (f._en == null) f._en = f.name;
         var fv = (_pack && f.id != null) ? fieldName(win.id, f) : null;
@@ -251,6 +256,6 @@
     initial: initial, set: set, preload: preload, onChange: onChange, picker: picker, bindDb: bindDb,
     t: t, has: function (k) { return !!(_cat && _cat[k]); }, msg: msg, element: element, refList: refList, applyDom: applyDom,
     applyMenuTree: applyMenuTree, applyWindow: applyWindow, windowName: windowName, menuName: menuName, fieldName: fieldName,
-    loadCatalogue: loadCatalogue, loadHelp: loadHelp, loadHelpIndex: loadHelpIndex, get help() { return _help; }, stats: function () { return JSON.parse(JSON.stringify(_stats)); }
+    loadCatalogue: loadCatalogue, loadHelp: loadHelp, loadHelpIndex: loadHelpIndex, get help() { return _help; }, recHelp: recHelp, stats: function () { return JSON.parse(JSON.stringify(_stats)); }
   };
 })(typeof window !== 'undefined' ? window : this);

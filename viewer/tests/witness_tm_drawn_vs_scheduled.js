@@ -164,6 +164,24 @@ function pageInstrument() {
     }
     return { per, drawnTotal };
   };
+  // §Q.54 W4 — slot for slot: the canvas as the incremental path left it at cursor c vs a forced FULL pass at the same c.
+  // Returns how many elements differ (drawn in one, not in the other) — a per-class total can hide two opposite errors.
+  D.equiv = function (c) {
+    window.tmSetCursor(c); const a = D.drawn();
+    window.__forceFull = true; window.tmSetCursor(c); const b = D.drawn();
+    let onlyDelta = 0, onlyFull = 0; const eg = [];
+    for (const g in a) if (!b[g]) { onlyDelta++; if (eg.length < 5) eg.push('+' + g); }
+    for (const g in b) if (!a[g]) { onlyFull++; if (eg.length < 5) eg.push('-' + g); }
+    let n = 0; for (const g in b) n++;
+    return { onlyDelta, onlyFull, drawnFull: n, eg };
+  };
+  // one census reduced to totals (the phase sweeps below do not need the per-class table)
+  D.tot = function (c) {
+    const r = D.census(c), t = { sched: 0, drawn: 0, missing: 0, staged: 0, oth: 0, absent: 0, extra: 0 };
+    for (const cls in r.per) { const R = r.per[cls]; t.sched += R.sched; t.drawn += R.drawn; t.missing += R.missing; t.staged += R.staged; t.oth += R.othM + R.othB + R.othI; t.absent += R.absent; t.extra += R.extra; }
+    return t;
+  };
+  D.authored = function () { try { const r = A.db.exec('SELECT 1 FROM schedules WHERE display_authored=1 LIMIT 1'); return !!(r.length && r[0].values.length); } catch (e) { return false; } };
   D.discCensus = function () {
     // at the current filter state, per discipline: elements with a representation vs drawn
     const drawn = D.drawn(), per = Object.create(null);
@@ -223,6 +241,9 @@ function pageInstrument() {
     const idx = await page.evaluate(() => window.__dvs.index());
     log(`§DVS_INDEX ops=${idx.ops} rep=M:${idx.rep.M} B:${idx.rep.B} I:${idx.rep.I} none:${idx.rep.none} xrayMapN=${idx.xrayN} xrayStaged=${idx.xrayStaged}`);
     if (!idx.ops) { inconclusive('0 ELEMENT_PLACE ops in page'); process.exitCode = 2; return; }
+    // PRIMAL LAW 4: with no element represented in the scene nothing can be drawn, every scheduled element is "absent", and every claim
+    // below passes on an empty population (measured 2026-11-22: a meta-only load printed pass=6 fail=0 with drawn=0 at every sample).
+    if (idx.rep.M + idx.rep.B + idx.rep.I === 0) { inconclusive('no element has a representation in the scene (geometry not loaded): rep none=' + idx.rep.none); process.exitCode = 2; return; }
 
     // ── sweep: t in [0,1] coarse + a fine band; monotonic so the shipped delta path runs as in a bake
     const ts = new Set();
@@ -243,6 +264,8 @@ function pageInstrument() {
       const focus = FOCUS.map(cls => { const R = r.per[cls]; return R ? `${cls}=${R.drawn}/${R.sched}${R.missing ? ' miss=' + R.missing + '(staged=' + R.staged + ' M=' + R.othM + ' B=' + R.othB + ' I=' + R.othI + ')' : ''}` : `${cls}=n/a`; }).join(' ');
       log(`§DVS_SAMPLE t=${t.toFixed(3)} film_s=${(t * TOPOUT_SEC).toFixed(1)} day=${((c - bk.projectStart) / 86400000).toFixed(1)} sched=${tot.sched} drawn=${tot.drawn} missing=${tot.missing} staged=${tot.staged} other=${tot.oth} absent=${tot.absent} extra=${tot.extra} | ${focus}`);
     }
+    // §Q.54 W4 at the end of the forward play — taken HERE, before the forced full passes below repair the canvas.
+    const e0Fwd = await page.evaluate(cc => window.__dvs.equiv(cc), bk.projectEnd);
     // the end cursor, delta path (as the bake's last buildup frame) vs a forced FULL pass: a placed,
     // un-staged element the delta path left hidden is drawn by the full pass — that difference IS the
     // delta-index defect, isolated from the §XRAY gate (which hides nothing at the end).
@@ -261,6 +284,39 @@ function pageInstrument() {
       const f = await page.evaluate(cc => window.__dvs.census(cc, { forceFull: true }), c);
       let diff = 0; for (const cls in f.per) { const a = d.per[cls] || { drawn: 0 }, b = f.per[cls]; if (a.drawn !== b.drawn) diff += Math.abs(a.drawn - b.drawn); }
       log(`§DVS_DELTA_VS_FULL t=${t} drawnDelta=${d.drawnTotal} drawnFull=${f.drawnTotal} perClassDiff=${diff}`);
+    }
+
+    // ── §Q.54 (bim-compiler prompts/4D_MODEL_INTEGRITY.md) — THE CANVAS IS A FUNCTION OF THE CURSOR. The sweep above is one path (play
+    // forward). The same samples are now reached by scrubbing BACK and by JUMPS; at each the canvas must equal the schedule (W2, W3) and,
+    // at the end of each path, equal a forced full pass slot for slot (W4). A forced full pass repairs the canvas, so it is run only at
+    // the END of a path — never inside one, or the path under test would be healed before it is judged.
+    const phaseRows = [];
+    async function path_(name, list) {
+      let maxMiss = 0, maxOth = 0, maxStaged = 0, maxExtra = 0, worst = null;
+      for (const t of list) {
+        const c = Math.round(bk.projectStart + t * span), r = await page.evaluate(cc => window.__dvs.tot(cc), c);
+        if (r.missing > maxMiss) { maxMiss = r.missing; worst = t; }
+        maxOth = Math.max(maxOth, r.oth); maxStaged = Math.max(maxStaged, r.staged); maxExtra = Math.max(maxExtra, r.extra);
+      }
+      const endT = list[list.length - 1], e = await page.evaluate(cc => window.__dvs.equiv(cc), Math.round(bk.projectStart + endT * span));
+      log(`§DVS_PATH path=${name} samples=${list.length} maxMissing=${maxMiss} (held=${maxStaged} slotLeftHidden=${maxOth}) maxExtra(drawn, not yet scheduled)=${maxExtra} worst@t=${worst === null ? 'none' : worst} | at the end t=${endT}: incremental vs full differ on ${e.onlyDelta + e.onlyFull} elements (onlyIncremental=${e.onlyDelta} onlyFull=${e.onlyFull} drawnFull=${e.drawnFull})${e.eg.length ? ' e.g. ' + e.eg.join(' ') : ''}`);
+      phaseRows.push({ kind: 'path', cls: name, maxMissing: maxMiss, maxStaged, maxOther: maxOth, maxExtra, maxAbsent: 0, tMissLo: -1, tMissHi: -1, worstT: worst === null ? -1 : worst, worstSched: list.length });
+      phaseRows.push({ kind: 'equiv', cls: name, maxMissing: e.onlyFull, maxStaged: 0, maxOther: e.onlyFull, maxExtra: e.onlyDelta, maxAbsent: 0, tMissLo: -1, tMissHi: -1, worstT: endT, worstSched: e.drawnFull });
+    }
+    {
+      const e0 = e0Fwd;
+      log(`§DVS_PATH path=forward(end) incremental vs full differ on ${e0.onlyDelta + e0.onlyFull} elements (onlyIncremental=${e0.onlyDelta} onlyFull=${e0.onlyFull} drawnFull=${e0.drawnFull})${e0.eg.length ? ' e.g. ' + e0.eg.join(' ') : ''}`);
+      phaseRows.push({ kind: 'equiv', cls: 'forward', maxMissing: e0.onlyFull, maxStaged: 0, maxOther: e0.onlyFull, maxExtra: e0.onlyDelta, maxAbsent: 0, tMissLo: -1, tMissHi: -1, worstT: 1, worstSched: e0.drawnFull });
+      const coarse = []; for (let i = 0; i <= SAMPLES; i++) coarse.push(+(i / SAMPLES).toFixed(4));
+      await path_('back', coarse.slice().reverse());                                   // W2: scrub back, end -> start
+      await path_('forward-again', coarse);                                            // and forward again over a canvas that has been scrubbed
+      let seed = 20261122; const rnd = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+      const jumps = []; for (let i = 0; i < 40; i++) jumps.push(+rnd().toFixed(4));
+      await path_('jumps', jumps);                                                     // W3: 40 seeded jumps, long and short
+      const authored = await page.evaluate(() => window.__dvs.authored());
+      log(`§DVS_HOLD display_authored=${authored} heldInMap=${idx.xrayStaged} — on a schedule the solve authored the hold must be empty (§TM_HOLD_OWNER)`);
+      if (authored) phaseRows.push({ kind: 'hold', cls: 'display_authored', maxMissing: idx.xrayStaged, maxStaged: idx.xrayStaged, maxOther: 0, maxExtra: 0, maxAbsent: 0, tMissLo: -1, tMissHi: -1, worstT: -1, worstSched: idx.ops });
+      else log('§DVS_HOLD VACUOUS — schedule not authored by the solve; the empty-hold claim is not judged');
     }
 
     // ── per-class verdict rows (VACUOUS classes named, not judged)
@@ -285,7 +341,8 @@ function pageInstrument() {
     for (const r of rows.slice(0, 25)) if (r.maxMissing || r.maxExtra || FOCUS.includes(r.cls))
       log(`§DVS_CLASS cls=${r.cls} maxMissing=${r.maxMissing} (staged=${r.maxStaged} other=${r.maxOther} absent=${r.maxAbsent}) extra=${r.maxExtra} missWindow_t=${r.tMissLo}..${r.tMissHi} film_s=${r.tMissLo < 0 ? 'none' : (r.tMissLo * TOPOUT_SEC).toFixed(1) + '..' + (r.tMissHi * TOPOUT_SEC).toFixed(1)} worst@t=${r.worstT} sched=${r.worstSched}`);
     if (vacuous.length) log(`§DVS_VACUOUS classes with 0 scheduled at every sample (not judged): ${vacuous.length}`);
-    if (!drawnChanged) log('§DVS_NOOP the drawn total never changed across the sweep — the cursor did not move the scene');
+    if (!drawnChanged) { log('§DVS_NOOP the drawn total never changed across the sweep — the cursor did not move the scene'); inconclusive('NO-OP: the cursor did not move the scene'); process.exitCode = 2; return; }
+    phaseRows.forEach(r => rows.push(r));
 
     // ── reveal: the SAME verb the reveal calls (A.filterDiscs, cinema_maxq.js §CPE_DISCIPLINE_REVEAL) at the end cursor
     if (REVEAL) {
@@ -320,11 +377,11 @@ function pageInstrument() {
   Witness('tm_drawn_vs_scheduled')
     .population(() => verdictRows)
     .schema({ type: 'object', required: ['kind', 'cls', 'maxMissing', 'maxStaged', 'maxOther', 'maxExtra', 'worstSched'],
-      properties: { kind: { enum: ['sweep', 'reveal'] }, cls: { type: 'string', minLength: 1 },
+      properties: { kind: { enum: ['sweep', 'reveal', 'path', 'equiv', 'hold'] }, cls: { type: 'string', minLength: 1 },
         maxMissing: { type: 'integer', minimum: 0 }, maxStaged: { type: 'integer', minimum: 0 }, maxOther: { type: 'integer', minimum: 0 },
         maxExtra: { type: 'integer', minimum: 0 }, worstSched: { type: 'integer', minimum: 0 } } })
     // the issue: a scheduled element not drawn — split so the log names the mechanism, but BOTH halves fail the witness
-    .invariant('scheduled-elements-are-drawn (no §XRAY-staged miss)', rs => rs.every(r => r.kind !== 'sweep' || r.maxStaged === 0))
+    .invariant('scheduled-elements-are-drawn (no element held back by the canvas: sweep, every path, and an empty hold on a solve-authored schedule)', rs => rs.every(r => r.kind === 'reveal' || r.maxStaged === 0))
     .invariant('scheduled-elements-are-drawn (no mesh/batched/instanced slot left hidden)', rs => rs.every(r => r.maxOther === 0))
     .invariant('no-future-element-drawn / no cross-discipline leak in a reveal slot', rs => rs.every(r => r.maxExtra === 0))
     .redControl(rs => { const c = rs.map(r => Object.assign({}, r)); if (c[0]) { c[0].maxOther = 1; c[0].maxStaged = 1; } return c; })

@@ -4,8 +4,8 @@
 // Claims:
 //   W-CWS-1 GATE ON REAL DATA: the shipped isCivilModel() SQL (sliced from streaming.js) is false on every fleet building DB and
 //           true on CivilWorksPath.db. VACUOUS if no fleet DB is found.
-//   W-CWS-2 BUILDINGS UNCHANGED: with isCivilModel()=false the new _tmBuildEventIndex (sliced from time_machine.js) builds an index
-//           byte-identical to origin/main's, on the same inputs including staged elements.
+//   W-CWS-2 EVERY MODEL (§Q.54 C3): a building with a held slot visits its mesh at the reveal tick too; with nothing held the building
+//           index is byte-identical to origin/main's.
 //   W-CWS-3 BUG REPRODUCED + FIXED: civil, a staged slot whose solidify time falls in a tick with no own event —
 //           origin/main's index says "skip" (the bug), the new index says "visit".
 // Run: cd <wt>/viewer && node tests/witness_cw_solidify_event.js   — READ tests/witness_cw_solidify_event.log.
@@ -30,7 +30,9 @@ function makeIndexer(src) {
     _tmBuildEventIndex(st.app, st.linger); return { ev: _evMesh, has: _tmHasEventIn };`);
 }
 const cur = require('./_split_families.js').readSource(path.join(V, 'time_machine.js'), 'utf8');   // split-aware: the original text of a split module
-const old = cp.execSync('git show origin/main:viewer/time_machine.js', { cwd: V, maxBuffer: 64 << 20 }).toString();
+// origin/main's text: time_machine.js is a split family since the file split, the index lives in its `core` part (the single-file read
+// returned a 34-line loader and this witness died on 'slice miss' — a dead witness on main, repaired here).
+const old = cp.execSync('git show origin/main:viewer/tm_core.js', { cwd: V, maxBuffer: 64 << 20 }).toString();
 S('§W-CWS — civil-only solidify events in the Time Machine delta index');
 
 // W-CWS-1 — real gate
@@ -59,15 +61,23 @@ const run = (src, civil) => { const st = { ops, sol, linger, logs: [], app: Obje
   const r = makeIndexer(src)(st); r.logs = st.logs; return r; };
 const ser = ev => JSON.stringify(Object.keys(ev).sort().map(k => [k, Array.from(ev[k])]));
 
-// W-CWS-2 — building identical
-const bNew = run(cur, false), bOld = run(old, false);
-ok(ser(bNew.ev) === ser(bOld.ev), 'building index byte-identical to origin/main', ser(bNew.ev));
-ok(bNew.logs.some(l => /§CW_SOLIDIFY_EVENT civil=false added=0/.test(l)), 'building logs civil=false added=0', bNew.logs.join(' | '));
+// W-CWS-2 — EVERY MODEL (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.54 C3, 2026-11-22; was "buildings unchanged"): a hold instant is a
+// transition on a building too. With NO held element the building index is still byte-identical to origin/main's; with one, the building
+// index visits the mesh at the reveal tick exactly as the civil one does (the claim that buildings skip it was the defect, measured on Hospital).
+const runSol = (src, civil, solMap) => { const st = { ops, sol: solMap, linger, logs: [], app: Object.assign({ isCivilModel: () => civil }, meta) };
+  const r = makeIndexer(src)(st); r.logs = st.logs; return r; };
+const bNone = runSol(cur, false, {}), bOldNone = runSol(old, false, {});
+ok(ser(bNone.ev) === ser(bOldNone.ev), 'building, nothing held: index byte-identical to origin/main', ser(bNone.ev));
+const bNew = run(cur, false);
+ok(bNew.has(bNew.ev[7], 4.9 * D, 5.1 * D) === true, 'building, one held slot: the index visits mesh 7 at its reveal tick');
+ok(bNew.logs.some(l => /§CW_SOLIDIFY_EVENT civil=false added=1/.test(l)), 'building logs civil=false added=1', bNew.logs.join(' | '));
 
 // W-CWS-3 — the tick (4.9 d, 5.1 d] contains only B's reveal
 const cNew = run(cur, true), cOld = run(old, true), lo = 4.9 * D, hi = 5.1 * D;
 const oldVisit = cOld.has(cOld.ev[7], lo, hi), newVisit = cNew.has(cNew.ev[7], lo, hi);
-ok(oldVisit === false, 'origin/main skips mesh 7 at B\'s reveal tick (bug reproduced)', 'visit=' + oldVisit);
+ok(oldVisit === true, 'origin/main (civil fix already merged) visits mesh 7 on a civil model', 'visit=' + oldVisit);
+const bOld = run(old, false), bOldVisit = bOld.has(bOld.ev[7], lo, hi);
+ok(bOldVisit === false, 'RED CONTROL: origin/main SKIPS mesh 7 at the reveal tick on a BUILDING (the defect §Q.54 C3 closes, reproduced)', 'visit=' + bOldVisit);
 ok(newVisit === true, 'fix visits mesh 7 at B\'s reveal tick', 'visit=' + newVisit);
 ok(cNew.logs.some(l => /§CW_SOLIDIFY_EVENT civil=true added=1/.test(l)), 'civil logs civil=true added=1');
 

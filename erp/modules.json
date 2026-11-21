@@ -1,5 +1,5 @@
 {
- "app": "erp", "schema": 1, "sw": "erp/sw.js", "cacheVersion": "v1123", "depsDeclared": true,
+ "app": "erp", "schema": 1, "sw": "erp/sw.js", "cacheVersion": "v1124", "depsDeclared": true,
  "depsReview": {"by":"owner","on":"2026-11-20","tool":"3a99c239f84c1a7e1b66cd7efbf75f58e3f583f0d5350c28a8d13172a1e0814c"},
  "modules": {
   "common/about_diy.js": {"v":3,"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["erp/erp_persist_ui.js"],"notDeps":[],"owner":"prompts/ABOUT_BOX_CONSOLIDATE.md"},
@@ -96,7 +96,7 @@
   "erp/chat_lens.js": {"v":null,"load":"boot","lazyGroup":null,"precache":false,"deps":[],"uses":["erp/user_names.js"],"notDeps":[],"owner":"prompts/MOBILE_CHAT_LENS.md"},
   "erp/crud_core.js": {"v":12,"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["erp/ad_evaluator.js","erp/blue_future.js","erp/tip_fold.js"],"notDeps":[],"owner":"prompts/SCRIPT_LENGTH_REFACTOR_SEAMS.md"},
   "erp/crud_overlay.js": {"v":51,"load":"boot","lazyGroup":null,"precache":true,"deps":["erp/crud_core.js"],"uses":["erp/ad_callout.js","erp/ad_modelval.js","erp/ad_modelval_bridge.js","erp/ad_process.js","erp/ad_rule.js","erp/ad_valrule.js","erp/bim_orders_overlay.js","erp/erp_engine.js","erp/erp_i18n.js","erp/erp_relay_client.js","erp/erp_signer.js","erp/erp_sync_fsm.js","erp/erp_sync_relay.js","erp/field_help.js","erp/genesis.js","erp/idmp_history.js","erp/kernel_ops.js","erp/ledger_file.js","erp/model_asi.js","erp/model_layer.js","erp/model_trade.js","erp/overlay/boot.js","erp/plugin_overlay.js","erp/post_resolver.js"],"notDeps":[],"owner":"prompts/CRUD_OVERLAY.md"},
-  "erp/ctx_help.js": {"v":3,"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/VOCAB_MESSAGE_CATALOG.md"},
+  "erp/ctx_help.js": {"v":4,"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/VOCAB_MESSAGE_CATALOG.md"},
   "erp/db_export_safe.js": {"v":1,"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/FINANCIALS_GROUNDING.md"},
   "erp/doc_actions.js": {"v":1,"load":"boot","lazyGroup":null,"precache":true,"deps":["erp/ad_access.js","erp/ad_docfsm.js"],"uses":[],"notDeps":[],"owner":"prompts/NEURO_SYMBOLIC_ORDER_CONTRACT.md"},
   "erp/doc_cycle_validator.js": {"v":1,"load":"boot","lazyGroup":null,"precache":false,"deps":[],"uses":[],"notDeps":[],"owner":""},
@@ -105,7 +105,7 @@
   "erp/erp_attrib.js": {"v":1,"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":["erp/genesis.js"],"owner":["prompts/FABLE5_WRAPUP_2026-07-03.md","prompts/KERNEL_TIMEBOMB_AUDIT_2026-07-03.md"]},
   "erp/erp_descriptor.js": {"v":1,"load":"boot","lazyGroup":null,"precache":true,"deps":["erp/ad_data.js","erp/ad_parser.js","erp/idmp_session.js"],"uses":[],"notDeps":[],"owner":""},
   "erp/erp_engine.js": {"v":3,"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["erp/bigdecimal.js"],"notDeps":[],"owner":""},
-  "erp/erp_i18n.js": {"v":11,"load":"boot","lazyGroup":null,"precache":true,"deps":["common/i18n/lang_choice.js"],"uses":["erp/menu_name.js","erp/overlay/boot.js"],"notDeps":[],"owner":"prompts/ERP_UI_LOCALES.md"},
+  "erp/erp_i18n.js": {"v":12,"load":"boot","lazyGroup":null,"precache":true,"deps":["common/i18n/lang_choice.js"],"uses":["erp/menu_name.js","erp/overlay/boot.js"],"notDeps":[],"owner":"prompts/ERP_UI_LOCALES.md"},
   "erp/erp_kernel.js": {"v":1,"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["erp/kernel_ops.js"],"notDeps":[],"owner":""},
   "erp/erp_period_close.js": {"v":null,"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/PERIOD_CLOSE_FOLD_POC.md"},
   "erp/erp_persist_ui.js": {"v":2,"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["erp/crud_overlay.js","erp/erp_period_close.js","erp/erp_replica_client.js","erp/erp_signer.js","erp/genesis.js","erp/kernel_ops.js"],"notDeps":[],"owner":"prompts/ERP_SUBSTRATE_INTEGRATION.md"},
