@@ -1,5 +1,5 @@
 {
- "app": "erp", "schema": 1, "sw": "erp/sw.js", "cacheVersion": "v1124", "depsDeclared": true,
+ "app": "erp", "schema": 1, "sw": "erp/sw.js", "cacheVersion": "v1125", "depsDeclared": true,
  "depsReview": {"by":"session (owner to confirm the not-plain edge: capex/index.html#inline0 -> erp/genesis.js)","on":"2026-11-22","tool":"91f9dd03f8e75bd0f4e3e01609181e4c4837d5d176ff320153dd95a9481b8c76"},
  "modules": {
   "capex/adapters.js": {"v":null,"load":"boot","lazyGroup":null,"precache":false,"deps":[],"uses":["erp/overlay/boot.js"],"notDeps":[],"owner":"prompts/CAPEX_DASHBOARD.md"},
