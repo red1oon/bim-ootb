@@ -97,6 +97,7 @@ async function runOne(root, tag, bld) {
   R.early = items.length ? ma.midair : null; R.nopath = items.length ? ma.orphans : null;
   // the crawler: simple truths, one element at a time, on what the product played (scripts/lib/schedule_crawler.js) + the screenplay a person can read
   const cr = CRAWLER.crawl(items, PARENT[bld] || {}); Object.assign(R, cr.counts);
+  fs.writeFileSync(path.join(dir, bld + '.items.json'), JSON.stringify({ parent: PARENT[bld] || {}, items: items }));   // what was judged, for scripts/proto_method_order.js
   // the same facts for the film (bim-compiler scripts/film_4d_true_box/render.py): per element its played days, phase, true box, and whether it breaks a truth when it appears
   { let f0 = Infinity; items.forEach(e => { if (e.s < f0) f0 = e.s; }); const brk = new Set(ma.guids || []); Object.keys(cr.guids).forEach(k => cr.guids[k].forEach(g => brk.add(g))); const np = new Set(ma.orphanGuids || []);
     fs.writeFileSync(path.join(dir, bld + '.film.json'), JSON.stringify({ run: tag + ' ' + P.commit, days: (P.projectEnd - P.projectStart) / DAY, n: items.length, broken: brk.size, nopath: np.size,
