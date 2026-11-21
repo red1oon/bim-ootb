@@ -985,7 +985,12 @@
       } else {
         TMS._ogSupportSweep(_allScheduled, _cap.win);
       }
-      TMS._cjpJudgeParity(_allScheduled, _cap.win);   // §CROSSTASK_JUDGE_PARITY — judge/repair parity, window-bounded
+      // §ONE_ORDER_OWNER (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.56): on a schedule the one solve authored, this pass does not run either.
+      // It moves an element to the first thing it touches — and a footing touches only what stands ON it, so it was pushed BEHIND its own load:
+      // product judge, Hospital, 458 elements pushed up to 12.1 days, 450 of them footings, from day 0 to day 10.7 (LTU: up to 174 days). The node
+      // copy the gates judge never ran it. Imported / captured schedules keep it, with the sweep above.
+      if (_cjpDisplayAuthored) console.log('§CROSSTASK_JUDGE_PARITY skipped — display-authored: the solve owns order (§ONE_ORDER_OWNER)');
+      else TMS._cjpJudgeParity(_allScheduled, _cap.win);   // §CROSSTASK_JUDGE_PARITY — judge/repair parity, window-bounded
       _s4Mark('capBranchPreWrite');
       // §GANTT_REFOLD_HANG (fix/gantt-refold-hang, synced 2026-08-12 — CPE_4D_PERF_MEM_FINDINGS.md
       // §3-R2): the inline BEGIN→per-row UPDATE→COMMIT loop was the measured §WRITE_LOOP_TIMING
