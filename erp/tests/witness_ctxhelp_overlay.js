@@ -23,7 +23,8 @@
 //   §19.16 C5 (K9): a tenant admin types their own message in the Context Help window; with no reload, and after one, the help box shows it (their row first, legacy's client order).
 //   Reds C2: CTX_BREAK=nolink (the app file without its AD_Tab updates) -> K6 FAIL; CTX_BREAK=dropsec (one how-to dropped) -> K6 FAIL.
 // Reds: CTX_BREAK=nomsg (the rows file without its ad_ctxhelpmsg row) -> K1 FAIL; CTX_BREAK=patch (one line appended to the hashed patch) -> K5 FAIL; CTX_BREAK=nooverlay (page without the overlay) -> K3 FAIL.
-// Run: node erp/tests/witness_ctxhelp_overlay.js   Env: CTX_BREAK=nomsg|patch|nooverlay|nolink|noproc|dropsec|nosetup|nomachine|pubtext|rawseed|nolisten|nowait|noclientorder  NOPAGE=1  ONLYEDIT=1 (K9 alone)
+//   §19.17 F4 (K10): the How To panel follows the place in view (tab / process / Home), as legacy's renderCtxHelp; with no message a tab shows its own Name / Description / Help.
+// Run: node erp/tests/witness_ctxhelp_overlay.js   Env: CTX_BREAK=nomsg|patch|nooverlay|nolink|noproc|dropsec|nosetup|nomachine|pubtext|rawseed|nolisten|nowait|noclientorder|winkey|nodict|notabtrl  NOPAGE=1  ONLYEDIT=1 (K9 alone)  ONLYTABS=1 (K10 alone)
 'use strict';
 const fs = require('fs'), path = require('path'), cp = require('child_process'), crypto = require('crypto');
 const ERP = path.join(__dirname, '..'), ROOT = path.join(ERP, '..'), BR = process.env.CTX_BREAK || '';
@@ -302,9 +303,109 @@ async function editPart() {
   } finally { await P.close(); if (over) Object.keys(over).forEach((k) => { try { fs.unlinkSync(over[k]); } catch (e) {} }); }
 }
 
+// K10 (§19.17 F4) the How To panel follows the PLACE in view, as legacy's HelpController.renderCtxHelp: (T, the selected tab) on every tab change
+//   (AbstractADWindowContent.java:1564), (P, the process) when a menu process opens (ProcessDialog.java:234), (H, 0) with no window (WindowContainer.java:436).
+//   ISSUE: the panel was keyed on the WINDOW (the first help of the window), so a sub tab with its own help (Order Line 187, Location 222) showed the header's,
+//   a tab with no help showed nothing (legacy shows its own Name / Description / Help), and the Home welcome was shown nowhere.
+//   ORACLE, in node: legacy's lookup (the K6 SQL) + MCtxHelpMsg.get's message order over the twin DB; the tab's own text from the seed (en_US) and from legacy's
+//   published AD_Tab_Trl XML read HERE (de_DE). DENOMINATOR: every active tab of every window that holds a linked tab, every linked process, on the role's menu (printed).
+//   Reds: CTX_BREAK=winkey (keyed on the window's first tab) -> sub tabs FAIL; CTX_BREAK=nodict (no dictionary text) -> no-help tabs FAIL; CTX_BREAK=notabtrl (no tab translations) -> de_DE FAIL.
+async function twinDb(SQL) {
+  const db = new SQL.Database(new Uint8Array(fs.readFileSync(H.SEED)));
+  fs.readFileSync(path.join(ERP, 'patches', 'ad_seed.db.sql'), 'utf8').split(/;\s*\n/).forEach((st) => { st = st.replace(/^\s*--[^\n]*\n?/gm, '').trim(); if (st) { try { db.run(st); } catch (e) {} } });
+  const lg = console.log; console.log = () => {}; global.AD_CTXHELP_ROWS = require(path.join(ERP, 'ad_ctxhelp_rows.js')); global.AD_CTXHELP_APP_ROWS = require(path.join(ERP, 'ad_ctxhelp_app_rows.js'));
+  require(path.join(ERP, 'ad_ctxhelp_overlay.js')).ensure(db); console.log = lg; return db;
+}
+function xmlTrl(lang, table) {   // legacy's published <Table>_Trl XML for the language, first TRANSLATED source wins (read here, not from the builder's output)
+  const SRC = require(path.join(ERP, 'tools', 'build_help_pack.js')), out = {};
+  const dec = (t) => String(t).replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&#39;/g, "'").replace(/&amp;/g, '&');
+  (SRC.SOURCES[lang] || []).forEach((dir) => { const d = path.join(SRC.CACHE, dir); if (!fs.existsSync(d)) return;
+    fs.readdirSync(d).filter((f) => f.startsWith(table + '_Trl_') && f.endsWith('.xml')).sort().forEach((f) => { const x = fs.readFileSync(path.join(d, f), 'utf8'), rr = /<row id="(\d+)"[^>]*>([\s\S]*?)<\/row>/g; let m;
+      while ((m = rr.exec(x))) { const o = out[m[1]] = out[m[1]] || {}, vr = /<value column="([^"]+)" original="([^"]*)"\s*(?:\/>|>([\s\S]*?)<\/value>)/g; let v;
+        while ((v = vr.exec(m[2]))) { const t = dec(v[3] || '').trim(), orig = dec(v[2] || '').trim(); if (o[v[1]] == null && t && t !== orig) o[v[1]] = t; } } }); });
+  return out;
+}
+async function tabPart() {
+  const SQL = await initSqlJs(), db = await twinDb(SQL), CL = 11, OG = 0;
+  const sq = (t) => String(t == null ? '' : t).replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&(amp|lt|gt|quot|#39);/g, (m, e) => ({ amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'" }[e])).replace(/\s+/g, ' ').trim();
+  const look = (table, col, rid) => (exec1(db, 'SELECT t.AD_CtxHelp_ID FROM ' + table + " t, AD_CtxHelp h WHERE t.AD_CtxHelp_ID=h.AD_CtxHelp_ID AND t.IsActive='Y' AND h.IsActive='Y' AND h.AD_Client_ID IN (0, " + CL + ') AND h.AD_Org_ID IN (0, ' + OG + ') AND t.' + col + '=' + rid + ' ORDER BY h.AD_Client_ID DESC, h.AD_Org_ID DESC, h.AD_CtxHelp_ID DESC')[0] || [])[0];
+  const homeId = (exec1(db, "SELECT AD_CtxHelp_ID FROM AD_CtxHelp WHERE IsActive='Y' AND CtxType='H' AND AD_Client_ID IN (0, " + CL + ') ORDER BY AD_Client_ID DESC, AD_CtxHelp_ID DESC')[0] || [])[0];
+  const msgText = (hid, lang) => {   // MCtxHelpMsg.get: the tenant's / org's row first; get_Translation: the _Trl row of the language when present
+    const m = exec1(db, "SELECT AD_CtxHelpMsg_ID, MsgText FROM AD_CtxHelpMsg WHERE IsActive='Y' AND AD_Client_ID IN (0, " + CL + ') AND AD_Org_ID IN (0, ' + OG + ') AND AD_CtxHelp_ID=' + hid + ' ORDER BY AD_Client_ID DESC, AD_Org_ID DESC, AD_CtxHelpMsg_ID DESC')[0]; if (!m) return null;
+    const t = lang === 'en_US' ? null : (exec1(db, "SELECT MsgText FROM AD_CtxHelpMsg_Trl WHERE IsActive='Y' AND AD_CtxHelpMsg_ID=" + m[0] + " AND AD_Language='" + lang + "'")[0] || [])[0];
+    return t != null ? String(t) : String(m[1]); };
+  const firstWords = (html) => { const tm = /^<p><strong>([\s\S]*?)<\/strong><\/p>/.exec(html); return sq(tm ? tm[1] : html).slice(0, 40); };
+  const wins = exec1(db, "SELECT DISTINCT AD_Window_ID FROM AD_Tab WHERE AD_CtxHelp_ID IS NOT NULL AND IsActive='Y' ORDER BY 1").map((v) => Number(v[0]));
+  const procs = exec1(db, "SELECT AD_Process_ID FROM AD_Process WHERE AD_CtxHelp_ID IS NOT NULL AND IsActive='Y' ORDER BY 1").map((v) => Number(v[0]));
+  const linked = exec1(db, "SELECT AD_Tab_ID FROM AD_Tab WHERE AD_CtxHelp_ID IS NOT NULL AND IsActive='Y' ORDER BY 1").map((v) => Number(v[0])), msgSeen = {};
+  const tabRows = {}; exec1(db, "SELECT AD_Tab_ID, AD_Window_ID, Name, Description, Help FROM AD_Tab WHERE IsActive='Y' AND AD_Window_ID IN (" + wins.join(',') + ')').forEach((v) => { tabRows[v[0]] = { w: Number(v[1]), name: v[2], desc: v[3], help: v[4] }; });
+  const menuOf = (col, id) => (exec1(db, "SELECT AD_Menu_ID FROM AD_Menu WHERE IsActive='Y' AND " + col + '=' + id + ' ORDER BY AD_Menu_ID')[0] || [])[0];
+  const deScreen = JSON.parse(fs.readFileSync(path.join(ERP, 'i18n', 'de_DE.json'), 'utf8')), deTab = xmlTrl('de_DE', 'AD_Tab');
+  L('K10 oracle: windows with a linked tab ' + wins.length + ' (' + wins.join(',') + '), tabs ' + Object.keys(tabRows).length + ', linked processes ' + procs.length + ' (' + procs.join(',') + '), Home help ' + homeId + ', de_DE AD_Tab_Trl translated rows ' + Object.keys(deTab).length);
+  if (!Object.keys(deTab).length) incon('K10', 'no de_DE AD_Tab_Trl XML in the cache (~/.cache/erp_trl): the de_DE expectation cannot be read');
+  const tmp = (n, src, a, b) => { const f = path.join(require('os').tmpdir(), 'ctx_' + n + '_' + process.pid), t = fs.readFileSync(path.join(ERP, src), 'utf8'); if (t.indexOf(a) < 0) throw new Error('red ' + n + ': its text is not in ' + src); fs.writeFileSync(f, t.split(a).join(b)); return f; };
+  let over = null;
+  if (BR === 'winkey') over = { '/erp/idempiere.html': tmp('winkey.html', 'idempiere.html', 'var tab = _activeWin != null ? _curTab() : null;', 'var tab = _activeWin != null ? ((_curWin() || {}).tabs || [])[0] : null;') };
+  if (BR === 'nodict') over = { '/erp/idempiere.html': tmp('nodict.html', 'idempiere.html', "h = _ctxDict(pl); if (h) src = 'dict';", "h = '';") };
+  if (BR === 'notabtrl') over = { '/erp/erp_i18n.js': tmp('notabtrl.js', 'erp_i18n.js', "var th = recHelp('tabs', t.id);", 'var th = [null, null];') };
+  const P = await H.erpPage(null, over), pg = P.pg;
+  const ctxLines = (from) => P.logs.slice(from).filter((l) => l.indexOf('§HELP_CTX ') === 0);
+  const panel = () => pg.evaluate(() => ({ title: (document.getElementById('idmp-howto-title') || {}).textContent || '', text: ((document.getElementById('idmp-howto-ctx') || {}).innerText || '').replace(/\s+/g, ' ').trim() }));
+  const waitCtx = async (from, re, n) => { for (let i = 0; i < (n || 50); i++) { const l = ctxLines(from).filter((x) => re.test(x)).pop(); if (l) { await pg.waitForTimeout(150); return l; } await pg.waitForTimeout(100); } return null; };
+  const R = { en_US: { ok: 0, n: 0, bad: [] }, de_DE: { ok: 0, n: 0, bad: [] } }, kinds = { msg: 0, dict: 0 };
+  const judge = (lang, what, line, pn, hid, expect) => {
+    const r = R[lang]; r.n++; const howto = line ? (/ howto=(\S+)/.exec(line) || [])[1] : null, want = hid != null ? String(hid) : 'none';
+    const good = !!line && howto === want && expect.every((e) => !e || sq(pn.text).indexOf(sq(e)) >= 0);
+    if (good) r.ok++; else r.bad.push(what + ' (log ' + (line ? 'howto=' + howto : 'none') + ', want ' + want + '; panel "' + pn.text.slice(0, 60) + '"; want ' + JSON.stringify(expect.filter(Boolean)) + ')');
+  };
+  try {
+    // Home: no window yet
+    const hl = (await waitCtx(0, / type=H /)) || '', hp = await panel();
+    L('K10 home: ' + (hl || 'no §HELP_CTX line') + ' | title "' + hp.title + '" panel "' + hp.text.slice(0, 50) + '"');
+    const home = / type=H /.test(hl) && new RegExp(' howto=' + homeId + ' ').test(hl) && hp.title === 'Getting Started' && hp.text.indexOf(sq(msgText(homeId, 'en_US')).slice(0, 20)) >= 0;
+    const onMenu = await pg.evaluate(() => Array.from(document.querySelectorAll('#idmp-tree .idmp-row.leaf[data-menu-id]')).map((e) => Number(e.getAttribute('data-menu-id'))));
+    const sweep = async (lang) => {
+      for (const w of wins) {
+        const mid = menuOf('AD_Window_ID', w); if (!mid || onMenu.indexOf(Number(mid)) < 0) { L('K10 ' + lang + ' window ' + w + ' not on the role\'s menu (menu ' + mid + '), skipped'); continue; }
+        const n0 = P.logs.length; await pg.evaluate((m) => document.querySelector('#idmp-tree .idmp-row.leaf[data-menu-id="' + m + '"]').click(), mid);
+        for (let i = 0; i < 20; i++) { await pg.waitForTimeout(150); if (await pg.evaluate(() => !!document.querySelector('#idmp-find-ov [data-find-ok]'))) { await pg.click('#idmp-find-ov [data-find-ok]'); break; } if (ctxLines(n0).some((l) => / type=T /.test(l))) break; }
+        const ids = Object.keys(tabRows).filter((t) => tabRows[t].w === w).map(Number), nStrip = await pg.evaluate(() => document.querySelectorAll('#idmp-tabstrip .idmp-adtab').length);
+        if (nStrip !== ids.length) L('K10 ' + lang + ' window ' + w + ' tab strip ' + nStrip + ' != active tabs ' + ids.length);
+        const seen = {};
+        for (let i = 0; i < nStrip; i++) {
+          const n1 = P.logs.length; if (i > 0) await pg.evaluate((k) => document.querySelectorAll('#idmp-tabstrip .idmp-adtab')[k].click(), i);
+          const line = i === 0 ? (await waitCtx(n0, / type=T /)) : await waitCtx(n1, / type=T /, 25), tid = line ? Number((/ type=T id=(\d+)/.exec(line) || [])[1]) : null, pn = await panel();
+          const tr = tid != null ? tabRows[tid] : null; if (tid != null) seen[tid] = 1;
+          if (!tr) { if (line) judge(lang, 'window ' + w + ' tab #' + i + ' (an unknown tab id)', line, pn, -1, []); continue; }   // no line: counted once below as 'never shown'
+          const hid = look('AD_Tab', 'AD_Tab_ID', tid), en = lang === 'en_US';
+          if (hid != null) { kinds.msg++; msgSeen[tid] = 1; judge(lang, 'tab ' + tid, line, pn, hid, [firstWords(msgText(hid, lang))]); }
+          else { kinds.dict++; const nm = en ? tr.name : ((deScreen.AD_Tab_Trl || {})[String(tid)] || tr.name), x = en ? {} : (deTab[String(tid)] || {});
+            judge(lang, 'tab ' + tid + ' (no help)', line, pn, null, [nm, sq(en ? tr.help : (x.Help || tr.help)).slice(0, 40) || sq(en ? tr.desc : (x.Description || tr.desc)).slice(0, 40)]); }
+        }
+        ids.filter((t) => !seen[t]).forEach((t) => { R[lang].n++; R[lang].bad.push('tab ' + t + ' of window ' + w + ' never shown'); });
+      }
+      for (const pid of procs) {
+        const mid = menuOf('AD_Process_ID', pid); if (!mid || onMenu.indexOf(Number(mid)) < 0) { L('K10 ' + lang + ' process ' + pid + ' not on the role\'s menu (menu ' + mid + '), skipped'); continue; }
+        const n0 = P.logs.length; await pg.evaluate((m) => document.querySelector('#idmp-tree .idmp-row.leaf[data-menu-id="' + m + '"]').click(), mid);
+        const line = await waitCtx(n0, new RegExp(' type=P id=' + pid + ' ')), pn = await panel(), hid = look('AD_Process', 'AD_Process_ID', pid);
+        judge(lang, 'process ' + pid, line, pn, hid, [firstWords(msgText(hid, lang))]);
+      }
+      L('K10 ' + lang + ' ' + R[lang].ok + ' of ' + R[lang].n + ' places right' + (R[lang].bad.length ? '; wrong: ' + R[lang].bad.slice(0, 6).join(' ; ') : ''));
+    };
+    await sweep('en_US');
+    const dl = await P.setLang('de_DE'); L('K10 ' + (dl || 'no §HELP_SEARCH index lang=de_DE line'));
+    if (dl) await sweep('de_DE');
+    L('K10 places judged: with a message ' + kinds.msg + ', dictionary text ' + kinds.dict + '; linked tabs ' + linked.length + ' (' + linked.join(',') + '), shown with their message ' + Object.keys(msgSeen).length + (linked.some((t) => !msgSeen[t]) ? ' MISSING ' + linked.filter((t) => !msgSeen[t]).join(',') : ''));
+    chk('K10 the How To panel follows the place in view: Home (help ' + homeId + ', "Getting Started") ' + home + '; en_US ' + R.en_US.ok + ' of ' + R.en_US.n + '; de_DE ' + R.de_DE.ok + ' of ' + R.de_DE.n + ' (tabs + processes; message ' + kinds.msg + ', own dictionary text ' + kinds.dict + ')',
+      home && R.en_US.n > 0 && R.en_US.ok === R.en_US.n && R.de_DE.n > 0 && R.de_DE.ok === R.de_DE.n && kinds.msg > 0 && kinds.dict > 0 && linked.every((t) => msgSeen[t]));
+    if (P.errs.length) L('K10 page errors: ' + P.errs.slice(0, 3).join(' | '));
+  } finally { await P.close(); if (over) Object.keys(over).forEach((k) => { try { fs.unlinkSync(over[k]); } catch (e) {} }); }
+}
+
 (async function main() {
   if (!H.seedOk()) { incon('ALL', 'no usable ad_seed.db (an LFS stub?)'); }
-  else { if (!process.env.ONLYEDIT) await nodePart(); if (!process.env.NOPAGE) { if (!process.env.ONLYEDIT) await pagePart(); await editPart(); } }
+  else if (process.env.ONLYTABS) await tabPart();
+  else { if (!process.env.ONLYEDIT) await nodePart(); if (!process.env.NOPAGE) { if (!process.env.ONLYEDIT) await pagePart(); await editPart(); await tabPart(); } }
   const v = K.fail ? 'FAIL' : (K.inc || !K.pass ? 'INCONCLUSIVE' : 'PASS');
   out('§WITNESS_CTXHELP_OVERLAY pass=' + K.pass + ' fail=' + K.fail + ' inconclusive=' + K.inc + ' verdict=' + v + (BR ? ' CTX_BREAK=' + BR : ''));
   process.exitCode = v === 'PASS' ? 0 : 1;

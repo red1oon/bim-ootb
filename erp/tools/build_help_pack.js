@@ -88,6 +88,14 @@ function buildFields(lang) {
   return { fields: out, n, stale, total: rows.length };
 }
 
+// §19.17 F4: the translated Description / Help of a TAB and a PROCESS (AD_Tab_Trl / AD_Process_Trl), first translated source wins as for fields. Legacy's
+//   HelpController.renderCtxHelp shows them when the tab / process has no context-help message (HelpController.java:338-410).
+function buildRecTrl(lang, table, sql) {
+  const srcs = srcFiles(lang, table), out = {}; let n = 0;
+  const pick = (id, col) => { for (const s of srcs) { const r = s[String(id)]; if (r && translated(r[col])) return r[col][0]; } return null; };
+  q(sql).forEach((r) => { const d = pick(r.id, 'Description'), h = pick(r.id, 'Help'); if (d != null || h != null) { out[r.id] = [d, h]; n++; } });
+  return { recs: out, n };
+}
 function readGuide(doc) {
   const D = DOCS[doc || 'UG'], i = process.argv.indexOf(D.arg); if (i > 0) return fs.readFileSync(process.argv[i + 1], 'utf8');
   return cp.execSync('git -C ' + JSON.stringify(path.join(os.homedir(), 'bim-compiler')) + ' show origin/master:' + D.file, { encoding: 'utf8', maxBuffer: 1 << 26 });
@@ -283,11 +291,15 @@ function main() {
     const f = path.join(OUT, lang, 'help.json');
     // each distinct text once: fields[id] = [descIndex, helpIndex] into texts (-1 = none) — 3,374 distinct texts carry 14,961 German fields (PERF BUDGET: no duplicate buffers)
     const texts = [], ix = new Map(), fields = {};
-    Object.keys(b.fields).forEach((id) => { fields[id] = b.fields[id].map((t) => { if (t == null) return -1; if (!ix.has(t)) { ix.set(t, texts.length); texts.push(t); } return ix.get(t); }); });
+    const at = (t) => { if (t == null) return -1; if (!ix.has(t)) { ix.set(t, texts.length); texts.push(t); } return ix.get(t); };
+    Object.keys(b.fields).forEach((id) => { fields[id] = b.fields[id].map(at); });
+    // §19.17 F4: tabs[id] / processes[id] = [descIndex, helpIndex], the same texts array
+    const TB = buildRecTrl(lang, 'AD_Tab', "SELECT ad_tab_id id FROM ad_tab WHERE isactive='Y'"), PR = buildRecTrl(lang, 'AD_Process', "SELECT ad_process_id id FROM ad_process WHERE isactive='Y'"), tabs = {}, processes = {};
+    Object.keys(TB.recs).forEach((id) => { tabs[id] = TB.recs[id].map(at); }); Object.keys(PR.recs).forEach((id) => { processes[id] = PR.recs[id].map(at); });
     const names = buildNames(lang), wlink = linker(Object.keys(names.windows).map((id) => ({ id: Number(id), name: names.windows[id], whole: true })));   // a TRANSLATED row links a window name only as a whole bold term, in every language (CJK has no case: 菜单 'menu'; German nouns are all capitalised: 'Produkt')
     const trl = buildCtxTrl(lang, legacyIds, helps, wlink); allTrl.push(...trl);
-    fs.writeFileSync(f, JSON.stringify({ lang, spec: en.spec, sources: SOURCES[lang], texts, fields, names }));
-    console.log('§HELP_PACK ' + lang + ' fields=' + b.n + ' of ' + b.total + ' texts=' + texts.length + ' stale-original=' + b.stale + ' names windows=' + Object.keys(names.windows).length + ' tables=' + Object.keys(names.tables).length +
+    fs.writeFileSync(f, JSON.stringify({ lang, spec: en.spec, sources: SOURCES[lang], texts, fields, tabs, processes, names }));
+    console.log('§HELP_PACK ' + lang + ' fields=' + b.n + ' of ' + b.total + ' tabs=' + TB.n + ' processes-help=' + PR.n + ' texts=' + texts.length + ' stale-original=' + b.stale + ' names windows=' + Object.keys(names.windows).length + ' tables=' + Object.keys(names.tables).length +
       ' ctxtrl=' + trl.length + ' actions=' + Object.keys(names.actions).length + ' statuses=' + Object.keys(names.statuses).length + ' processes=' + Object.keys(names.processes).length + ' menus=' + Object.keys(names.menus).length + ' bytes=' + fs.statSync(f).size);
   });
   buildCtxHelpRows(helps, allTrl);
