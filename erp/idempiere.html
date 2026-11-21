@@ -95,6 +95,7 @@
   /* §10 H2/H4: the How To widget (legacy's Context Help place) + the question box, a twin extra (D3) */
   #idmp-help.howto-closed #idmp-howto { display:none; }
   #idmp-howto { padding:6px 10px; font-size:12px; line-height:1.4; overflow-wrap:anywhere; }
+  #idmp-howto-ctx hr.hs-sep { border:0; border-top:1px solid #d0d7de; margin:8px 0; }   /* §19.17 F2: legacy's own text above, our message below */
   #idmp-howto-q { width:100%; box-sizing:border-box; margin:0 0 6px; padding:4px 6px; font-size:12px; }
   #idmp-howto p { margin:0 0 6px; }
   #idmp-howto .hs-card { border:1px solid var(--idmp-border); border-radius:4px; padding:6px; margin-bottom:8px; }
@@ -3196,9 +3197,12 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     if (m) {
       var X = CtxHelp.split(m.text), E = CtxHelp.split(m.base), d = (_sqlRows('SELECT description AS d FROM ad_ctxhelp WHERE ad_ctxhelp_id=' + Number(m.ctxhelpId))[0] || {}).d, g = CtxHelp.guideOf(d);
       var row = { english: lang !== 'en_US' && m.lang === 'en_US', translated: m.lang !== 'en_US' && m.istranslated === 'N' };
-      h = (X.title ? '<div class="hs-row"><b>' + escH(X.title) + '</b></div>' : '') + _howtoEnglish(row) + _howtoLinks(X.html) + _howtoTrlNote(row) +
+      // §19.17 F2 (owner 2026-11-22, a kernel-side extension, D3): legacy shows the message INSTEAD of the record's own text (HelpController.java:305 vs :338); the twin keeps
+      //   legacy's own block first, then our message under a thin rule, so a legacy user loses no words they know
+      var dic = pl.type !== 'H' ? _ctxDict(pl) : '';
+      h = (dic ? dic + '<hr class="hs-sep">' : '') + (X.title ? '<div class="hs-row"><b>' + escH(X.title) + '</b></div>' : '') + _howtoEnglish(row) + _howtoLinks(X.html) + _howtoTrlNote(row) +
         (d ? '<div class="hs-sub"><a href="' + escH(d) + '" target="_blank" rel="noopener">' + escH((g || d) + (E.title ? ' · ' + E.title : '')) + '</a></div>' : '');
-      src = 'msg';
+      src = dic ? 'dict+msg' : 'msg';
     } else if (pl.type !== 'H') { h = _ctxDict(pl); if (h) src = 'dict'; }
     box.innerHTML = h;
     // W-CTXHELP-OVERLAY K10 + W-HELP-SHOWCASE S4/S7 read this line (window= first, howto= the help id, lang= the text's own language)
