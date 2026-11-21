@@ -552,10 +552,10 @@
 <script src="error_beacon.js?v=1" onerror="console.warn('§LOAD_FAIL error_beacon.js — field-error capture disabled')"></script><!-- SYSTEM_MONITOR_WIDGETS §H — minimal field-error beacon (G2 seed); loads early to catch boot errors -->
 <script src="vfs_detect.js?v=1"></script>
 <script src="seed_key.js?v=1"></script><!-- SEAM F10 — the ONE seed IDB key owner (window.ERP_SEED_KEY); before first idb use + system_monitor -->
-<script src="../common/i18n/lang_choice.js?v=1"></script><script src="menu_name.js?v=1"></script><script src="erp_i18n.js?v=11"></script><!-- UI locales (bim-compiler prompts/ERP_UI_LOCALES.md) — W-ERP-I18N -->
+<script src="../common/i18n/lang_choice.js?v=1"></script><script src="menu_name.js?v=1"></script><script src="erp_i18n.js?v=12"></script><!-- UI locales (bim-compiler prompts/ERP_UI_LOCALES.md) — W-ERP-I18N -->
 <script src="ad_parser.js?v=28"></script>
 <script src="field_help.js?v=1"></script>
-<script src="ctx_help.js?v=3"></script><script src="../common/help/help_query.js?v=2"></script><script src="../common/door/assist_core.js?v=1"></script><script src="../common/help/help_dym.js?v=2"></script><script src="help_records_core.js?v=5"></script><script src="help_search.js?v=7"></script><script src="../common/help/help_grammar.js?v=1"></script><script src="help_actions.js?v=1"></script><!-- VOCAB_MESSAGE_CATALOG §10 H2: the How To question box (deterministic, no AI inside) — W-HELP-SHOWCASE S3 --><!-- VOCAB_MESSAGE_CATALOG §7 P1b: ONE field tooltip setter + the Tool Tip panel (legacy WEditor / HelpController) — W-FIELD-HELP -->
+<script src="ctx_help.js?v=4"></script><script src="../common/help/help_query.js?v=2"></script><script src="../common/door/assist_core.js?v=1"></script><script src="../common/help/help_dym.js?v=2"></script><script src="help_records_core.js?v=5"></script><script src="help_search.js?v=7"></script><script src="../common/help/help_grammar.js?v=1"></script><script src="help_actions.js?v=1"></script><!-- VOCAB_MESSAGE_CATALOG §10 H2: the How To question box (deterministic, no AI inside) — W-HELP-SHOWCASE S3 --><!-- VOCAB_MESSAGE_CATALOG §7 P1b: ONE field tooltip setter + the Tool Tip panel (legacy WEditor / HelpController) — W-FIELD-HELP -->
 <!-- UI_UNPARK_RESUME.md — proven AD engines (source of truth: bim-compiler build/erp/): logic evaluator
      (W-LOGIC-EVAL 3044/3044) · DocAction FSM (W-*-FSM, 22 tables) · beforeSave hooks (W-*-SAVE, 12 installers). -->
 <script src="ad_evaluator.js?v=24"></script>
@@ -1788,7 +1788,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   }
   function renderWinTabs() {
     var bar = $('idmp-wintabs'); bar.innerHTML = '';
-    _howtoCtx();   // §10 H4: the How To widget follows the window in view (legacy renderCtxHelp on window activation)
+    _howtoCtx();   // §10 H4 / §19.17 F4: the How To widget follows the place in view (legacy renderCtxHelp on window activation, ADWindowContent.java:164)
     Object.keys(_openWins).forEach(function (idStr) {
       var id = Number(idStr), o = _openWins[id];
       var t = el('div', 'idmp-wintab' + (id === _activeWin ? ' active' : ''));
@@ -2732,6 +2732,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   function renderActiveTab() {
     _newMode = null;   // P3 — any tab switch / grid reload exits new-record mode (untouched New auto-discards, nothing committed)
     _drillSaved = null; _drillActive = false;   // a real reload supersedes any dashboard drill-narrowing
+    _ctxProc = null; _howtoCtx();   // §19.17 F4: every tab change passes here; legacy updateHelpContext(T, selected tab) (AbstractADWindowContent.java:1564)
     var tab = _curTab(); if (!tab) return;
     if (!tab.tableName) { _records = []; _recIdx = 0; $('idmp-content').innerHTML = '<div id="idmp-placeholder">Tab has no table.</div>'; return; }
     // Honest: ad_seed.db carries AD metadata for ALL windows but DATA for a curated subset only.
@@ -3147,7 +3148,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     _howtoBuild();
   }
   // §12 H2b: ONE index builder (HelpSearch.indexFrom, the same the witness and the CLI's erp.ask call): the screen language's names + the English ones, its how-to rows when the pack has them
-  var _howtoLangBound = false, _howtoLocal = false, _howtoRows = [];
+  var _howtoLangBound = false, _howtoLocal = false;
   function _howtoBuild() {
     var lang = ErpI18n.lang;
     // §19.16 C5: the saved changes (the signed op-log) load after the page; the context help is read through them, so the index waits for them. Without the wait a
@@ -3156,9 +3157,9 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     return Promise.all([ErpI18n.loadHelp('en_US'), lang === 'en_US' ? Promise.resolve(null) : ErpI18n.loadHelp(lang), ErpI18n.loadHelpIndex(lang), side]).then(function (r) {
       if (!r[0]) return; _howtoPack = r[0];
       _howtoIdx = HelpSearch.indexFrom({ q: _sqlRows, en: r[0], pack: r[1], fsm: window.AdDocFsm, windowIds: window.__idmpFieldHelp.menu().windows, processIds: window.__idmpFieldHelp.menu().processes, menuIds: window.__idmpFieldHelp.menu().leaves, hq: r[2], client: _session && _session.client ? _session.client.id : 0, org: _session && _session.org ? _session.org.id : 0 });   // §19.9 the role's menu processes too
-      _howtoLocal = _howtoIdx.localHowto; _howtoRows = _howtoIdx.howtoRows || [];   // §19.16 C4: from legacy's context-help tables (erp/ctx_help.js) in the login's client / org, per row the language's or English
+      _howtoLocal = _howtoIdx.localHowto;   // §19.16 C4: from legacy's context-help tables (erp/ctx_help.js) in the login's client / org, per row the language's or English
       console.log('§HELP_SEARCH index lang=' + lang + ' windows=' + _howtoIdx.counts.windows + ' records=' + _howtoIdx.counts.records + ' actions=' + _howtoIdx.counts.actions + ' statuses=' + _howtoIdx.counts.statuses + ' howto=' + _howtoIdx.counts.howto + (_howtoLocal ? ' (' + lang + ')' : ' (en_US)') + ' phrases=' + _howtoIdx.size.phrases + ' vocab=' + ((r[2] && r[2].vocab) ? r[2].vocab.length : 'none'));
-      _howtoCtx();
+      _howtoCtx();   // the index or the language changed: render again
     });
   }
   function _howtoLinks(html) {   // the pack's links, as built; HS_BREAK=deadlink points them nowhere (W-HELP-SHOWCASE S4 falsifier)
@@ -3167,11 +3168,41 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   // the how-to row is the screen language's when the pack has one; otherwise the English row, marked (§10/§12); a translated row says it is the build session's
   function _howtoEnglish(row) { return (window.ErpI18n && ErpI18n.lang !== 'en_US' && row && row.english) ? '<p class="hs-lang">' + escH(_T('help.english', '(English)')) + '</p>' : ''; }
   function _howtoTrlNote(row) { return row && row.translated ? '<div class="hs-sub">' + escH(_T('help.translated', 'Translated by the build session, not reviewed by a native speaker')) + '</div>' : ''; }
-  function _howtoCtx() {
-    var box = $('idmp-howto-ctx'); if (!box || !_howtoPack) return;
-    var row = null; _howtoRows.forEach(function (r) { if (!row && (r.windows || [r.ad_window_id]).indexOf(_activeWin) >= 0) row = r; });   // §19.17 F1: a section serves every window it walks (its AD_CtxHelp is linked from each first tab)
-    box.innerHTML = row ? '<div class="hs-row"><b>' + escH(row.name) + '</b></div>' + _howtoEnglish(row) + _howtoLinks(row.html) + _howtoTrlNote(row) + '<div class="hs-sub"><a href="' + escH(row.source.url) + '" target="_blank" rel="noopener">' + escH(row.source.guide) + ' · ' + escH(row.source.heading.replace(/^#+\s*/, '')) + '</a></div>' : '';
-    console.log('§HELP_CTX window=' + _activeWin + ' howto=' + (row ? row.id : 'none') + ' lang=' + (row && !row.english && ErpI18n.lang !== 'en_US' ? ErpI18n.lang : 'en_US'));   // §19.16 C4: the row's own language (a published row carries no machine label)
+  // §19.17 F4 (VOCAB_MESSAGE_CATALOG.md): the How To widget = legacy's HelpController.renderCtxHelp (HelpController.java:280-470) for the PLACE in view:
+  //   (T, the selected tab) when a window is in view (AbstractADWindowContent.java:470 / :1564, ADWindowContent.java:164), (P, the process) while a menu-launched
+  //   process is open (ProcessDialog.java:234), (H, 0) with no window (WindowContainer.java:436). The message by legacy's lookup (CtxHelp.msg, the ONE reader); with no
+  //   message, a tab / process shows its own Name / Description / Help in the screen language (the help pack's AD_Tab_Trl / AD_Process_Trl, else English). The entity
+  //   type is shown only with IsShowTechnicalInfOnHelp (default N, X_AD_UserPreference.java:45): not shown. Title: GettingStarted for H, else HowTo.
+  var _ctxProc = null;
+  function _ctxPlace() {
+    if (_ctxProc != null) return { type: 'P', id: _ctxProc };
+    var tab = _activeWin != null ? _curTab() : null;
+    return tab ? { type: 'T', id: Number(tab.id), tab: tab } : { type: 'H', id: 0 };
+  }
+  function _ctxDict(pl) {   // renderCtxHelp's no-message branch: <p><strong>Name</strong></p><p><em>Description</em></p><p>Help</p>
+    var n = null, d = null, h = null;
+    if (pl.type === 'T' && pl.tab) { n = pl.tab.name; d = pl.tab.description; h = pl.tab.help; }
+    else if (pl.type === 'P') { var r = _sqlRows('SELECT name, description, help FROM ad_process WHERE ad_process_id=' + Number(pl.id))[0] || {}, x = (window.ErpI18n && ErpI18n.recHelp) ? ErpI18n.recHelp('processes', pl.id) : [null, null], hp = window.ErpI18n && ErpI18n.help;
+      n = (hp && hp.names && hp.names.processes && hp.names.processes[String(pl.id)]) || r.name; d = x[0] != null ? x[0] : r.description; h = x[1] != null ? x[1] : r.help; }
+    var o = ''; if (n) o += '<p><strong>' + escH(n) + '</strong></p>'; if (d) o += '<p><em>' + escH(d) + '</em></p>'; if (h) o += '<p>' + escH(h) + '</p>';
+    return o;
+  }
+  function _howtoCtx() {   // renders and logs on every call (no skip when the place is the same: the § line is the evidence each time, W-HELP-SHOWCASE S7)
+    var box = $('idmp-howto-ctx'); if (!box || !_howtoPack || !window.CtxHelp) return;
+    var pl = _ctxPlace(), lang = (window.ErpI18n && ErpI18n.lang) || 'en_US';
+    var title = $('idmp-howto-title'); if (title) title.textContent = pl.type === 'H' ? _msgL('GettingStarted', 'Getting Started') : _msgL('HowTo', 'How To');
+    var ho = { client: _session && _session.client ? _session.client.id : 0, org: _session && _session.org ? _session.org.id : 0, lang: lang };
+    var m = CtxHelp.msg(_sqlRows, pl.type, pl.id, ho), h = '', src = 'none';
+    if (m) {
+      var X = CtxHelp.split(m.text), E = CtxHelp.split(m.base), d = (_sqlRows('SELECT description AS d FROM ad_ctxhelp WHERE ad_ctxhelp_id=' + Number(m.ctxhelpId))[0] || {}).d, g = CtxHelp.guideOf(d);
+      var row = { english: lang !== 'en_US' && m.lang === 'en_US', translated: m.lang !== 'en_US' && m.istranslated === 'N' };
+      h = (X.title ? '<div class="hs-row"><b>' + escH(X.title) + '</b></div>' : '') + _howtoEnglish(row) + _howtoLinks(X.html) + _howtoTrlNote(row) +
+        (d ? '<div class="hs-sub"><a href="' + escH(d) + '" target="_blank" rel="noopener">' + escH((g || d) + (E.title ? ' · ' + E.title : '')) + '</a></div>' : '');
+      src = 'msg';
+    } else if (pl.type !== 'H') { h = _ctxDict(pl); if (h) src = 'dict'; }
+    box.innerHTML = h;
+    // W-CTXHELP-OVERLAY K10 + W-HELP-SHOWCASE S4/S7 read this line (window= first, howto= the help id, lang= the text's own language)
+    console.log('§HELP_CTX window=' + _activeWin + ' type=' + pl.type + ' id=' + pl.id + ' howto=' + (m ? m.ctxhelpId : 'none') + ' shown=' + src + ' lang=' + (m && m.lang !== 'en_US' ? m.lang : (src === 'dict' && lang !== 'en_US' ? lang : 'en_US')));
   }
   // §19.5 (VOCAB_MESSAGE_CATALOG.md): ONE separate line "Did you mean: A · B · C" under the card (HelpDym, common/help/help_dym.js, shared with the help panel). A pick fills the box and asks; nothing opens or runs.
   function _howtoDym(names) {
@@ -4699,6 +4730,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   }
   function _openProcessNow(processId, name, rec) {
     _procRecord = rec || null;   // a button-launched process carries its record (Record_ID); a menu launch carries none
+    if (!rec) { _ctxProc = Number(processId); _howtoCtx(); }   // §19.17 F4: a menu-launched process: legacy ProcessDialog.java:234 updateHelpContext(P, id) (a button's ProcessModalDialog does not)
     if (!window.AdProcess) { status('Process engine not loaded'); return; }
     _ensureProcHandlers();
     var b = _b3(window.__idmpDb), proc;
