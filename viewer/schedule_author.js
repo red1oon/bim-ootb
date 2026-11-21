@@ -117,6 +117,11 @@
   // and REFERENCE disciplines = rates.js CIVIL_RATES rows whose measure is 'NONE' (chainage labels, right-of-way: setting-out
   // references, never built). `alias` = the elements_meta alias in the caller's SQL ('m' or '' for none). Fleet: no reference
   // discipline rows → the predicate selects exactly the rows the old inline clause did. COALESCE: a NULL discipline stays in.
+  // §ELEMENT_BOX (§Q.55): every 4D read of "where is an element" goes through the one owner's view, never element_transforms directly.
+  function _EB(db) {
+    var SG = (global && global.ScheduleGate) || (typeof globalThis !== 'undefined' && globalThis.ScheduleGate) || (typeof window !== 'undefined' && window.ScheduleGate) || null;
+    return (SG && SG.ensureElementBox) ? SG.ensureElementBox(db) : 'element_transforms';
+  }
   function scheduledWhere(alias, rates) {
     var a = alias ? alias + '.' : '';
     // node: `global` is module.exports, so the harness's rates.js globals are read from globalThis
@@ -317,7 +322,7 @@
     var r;
     try {
       r = db.exec("SELECT m.ifc_class, COUNT(*), SUM(" + _AREA_EXPR + ") FROM elements_meta m " +
-        "JOIN element_transforms t ON m.guid=t.guid WHERE t.bbox_x IS NOT NULL AND t.bbox_x>0 " +
+        "JOIN " + _EB(db) + " t ON m.guid=t.guid WHERE t.bbox_x IS NOT NULL AND t.bbox_x>0 " +
         "AND m.ifc_class IN (" + q(m2Classes) + ") GROUP BY m.ifc_class");
     } catch (e) {   // no element_transforms table (e.g. a stripped test DB) — degrade to count-based
       // §S58 (§S58.2): this catch fires on ANY throw, not just the commented stripped-DB case, and
@@ -336,7 +341,7 @@
       });
     }
     if (!fragClasses.length) return out;
-    var ar = db.exec("SELECT m.guid, " + _AREA_EXPR + " FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid " +
+    var ar = db.exec("SELECT m.guid, " + _AREA_EXPR + " FROM elements_meta m JOIN " + _EB(db) + " t ON m.guid=t.guid " +
       "WHERE t.bbox_x IS NOT NULL AND t.bbox_x>0 AND m.ifc_class IN (" + q(fragClasses) + ")");
     if (ar.length && ar[0].values.length) ar[0].values.forEach(function (row) { out.area[row[0]] = row[1] || 0; });
     fragClasses.forEach(function (cls) {
@@ -376,7 +381,7 @@
     var r;
     try {
       r = db.exec("SELECT m.ifc_class, COUNT(*), SUM(" + LEN_EXPR + ") FROM elements_meta m " +
-        "JOIN element_transforms t ON m.guid=t.guid WHERE t.bbox_x IS NOT NULL AND t.bbox_x>0 " +
+        "JOIN " + _EB(db) + " t ON m.guid=t.guid WHERE t.bbox_x IS NOT NULL AND t.bbox_x>0 " +
         "AND m.ifc_class IN (" + q(mClasses) + ") GROUP BY m.ifc_class");
     } catch (e) {   // no element_transforms table — degrade to flat (no weighting)
       // §S58 (§S58.2): same silent-revert as above — §HEAVY_MEMBER_SPEED_LIMIT stops firing and
@@ -394,7 +399,7 @@
       });
     }
     if (!haveClasses.length) return out;
-    var lr = db.exec("SELECT m.guid, " + LEN_EXPR + " FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid " +
+    var lr = db.exec("SELECT m.guid, " + LEN_EXPR + " FROM elements_meta m JOIN " + _EB(db) + " t ON m.guid=t.guid " +
       "WHERE t.bbox_x IS NOT NULL AND t.bbox_x>0 AND m.ifc_class IN (" + q(haveClasses) + ")");
     if (lr.length && lr[0].values.length) lr[0].values.forEach(function (row) { out.length[row[0]] = row[1] || 0; });
     console.log('§HEAVY_MEMBER_SPEED_LIMIT classes=' + haveClasses.length + ' [' +
@@ -445,7 +450,7 @@
       // halved (510,960 -> 258,260) and monotonicity broke. Zero-area elements now fall through to
       // flat, the same honest-degrade the realQty and lengthRatio branches already use.
       r = db.exec('SELECT m.ifc_class, COUNT(*), SUM(' + _AREA_EXPR + ') FROM elements_meta m ' +
-        'JOIN element_transforms t ON m.guid=t.guid WHERE t.bbox_x IS NOT NULL AND t.bbox_x>0 ' +
+        'JOIN ' + _EB(db) + ' t ON m.guid=t.guid WHERE t.bbox_x IS NOT NULL AND t.bbox_x>0 ' +
         'AND (' + _AREA_EXPR + ') > 0 AND m.ifc_class IN (' + q(m2) + ') GROUP BY m.ifc_class');
     } catch (e) { return out; }   // no element_transforms — degrade to flat, exactly as before
     var have = [], mixed = [];
@@ -482,7 +487,7 @@
         ' — a class total is only preserved when every element shares one secsPerUnit');
       if (!have.length) return out;
     }
-    var ar = db.exec('SELECT m.guid, ' + _AREA_EXPR + ' FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid ' +
+    var ar = db.exec('SELECT m.guid, ' + _AREA_EXPR + ' FROM elements_meta m JOIN ' + _EB(db) + ' t ON m.guid=t.guid ' +
       'WHERE t.bbox_x IS NOT NULL AND t.bbox_x>0 AND (' + _AREA_EXPR + ') > 0 AND m.ifc_class IN (' + q(have) + ')');
     if (ar.length && ar[0].values.length) ar[0].values.forEach(function (row) { out.area[row[0]] = row[1] || 0; });
     console.log('§ARCH_AREA_WEIGHT classes=' + have.length + ' [' +
@@ -531,7 +536,7 @@
       // The average MUST be taken over exactly the elements that will receive a ratio, or
       // mean(ratio) != 1 and the class total moves — the one thing this form exists to prevent.
       r = db.exec('SELECT m.ifc_class, COUNT(*), SUM(' + _VOL_EXPR + ') FROM elements_meta m ' +
-        'JOIN element_transforms t ON m.guid=t.guid WHERE t.bbox_x IS NOT NULL AND t.bbox_x>0 ' +
+        'JOIN ' + _EB(db) + ' t ON m.guid=t.guid WHERE t.bbox_x IS NOT NULL AND t.bbox_x>0 ' +
         'AND (' + _VOL_EXPR + ') > 0 AND m.ifc_class IN (' + q(m3) + ') GROUP BY m.ifc_class');
     } catch (e) { return out; }   // no element_transforms — degrade to flat, exactly as before
     var have = [], mixed = [];
@@ -568,7 +573,7 @@
         ' — a class total is only preserved when every element shares one secsPerUnit');
       if (!have.length) return out;
     }
-    var vr = db.exec('SELECT m.guid, ' + _VOL_EXPR + ' FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid ' +
+    var vr = db.exec('SELECT m.guid, ' + _VOL_EXPR + ' FROM elements_meta m JOIN ' + _EB(db) + ' t ON m.guid=t.guid ' +
       'WHERE t.bbox_x IS NOT NULL AND t.bbox_x>0 AND (' + _VOL_EXPR + ') > 0 AND m.ifc_class IN (' + q(have) + ')');
     if (vr.length && vr[0].values.length) vr[0].values.forEach(function (row) { out.volume[row[0]] = row[1] || 0; });
     console.log('§VOL_WEIGHT classes=' + have.length + ' [' +
@@ -835,7 +840,7 @@
     var r = db.exec("SELECT m.guid, m.ifc_class, COALESCE(m.element_name,''), COALESCE(m.storey,'_UNKNOWN'), " +
       "COALESCE(t.center_x,0), COALESCE(t.center_y,0), COALESCE(t.center_z,0), " +
       "COALESCE(t.bbox_x,0), COALESCE(t.bbox_y,0), COALESCE(t.bbox_z,0) " +
-      "FROM elements_meta m LEFT JOIN element_transforms t ON t.guid=m.guid " +
+      "FROM elements_meta m LEFT JOIN " + _EB(db) + " t ON t.guid=m.guid " +
       "WHERE " + scheduledWhere('m'));
     if (!r.length || !r[0].values.length) return [];
 
@@ -2821,7 +2826,7 @@
       "JOIN tasks tk ON tk.task_id=te.task_id AND tk.schedule_id='" + scheduleId +
       "' AND (tk.is_summary IS NULL OR tk.is_summary=0) " +
       "JOIN elements_meta m ON m.guid=te.guid " +
-      "JOIN element_transforms t ON t.guid=te.guid " +
+      "JOIN " + _EB(db) + " t ON t.guid=te.guid " +
       "WHERE t.bbox_x IS NOT NULL AND t.bbox_x>0";
     var er = db.exec(q);
     var total = 0;

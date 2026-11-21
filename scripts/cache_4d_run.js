@@ -244,6 +244,7 @@ function build(bld, force, want, hooks) {   // hooks.onDb(db, res) — READ-ONLY
       try {
         const db = new SQL.Database(new Uint8Array(__readSrc(file)));
         BP.applyTo(db, file, console.log);
+        if (BP.mode() === 'all') BP.composeTo(db, console.log);   // §Q.55: the db as the viewer loads it — patch, then the compose step (its rows are then left out by ScheduleGate.ensureElementBox)
         // §CACHE_PLAYED_LAYER — the live time_machine.js functions, sliced (never re-typed).
         const tmsb = TMP.buildSandbox({ tmSrc: tmSrc, SA: SA, SG: SG, CP: CP, GM: GM, SS: SS,
           LABOR_RATES: sb.LABOR_RATES, console: console });

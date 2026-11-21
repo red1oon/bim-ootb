@@ -2027,12 +2027,15 @@ async function setupScene(A) {
     if (stBuf.length) statements.push(stBuf.join('\n'));  // trailing content with no `;` (comment-only tail, etc.)
     // §OBJ_DICT (NEURO_SYMBOLIC_ORDER_CONTRACT.md §0.8): ALTER TABLE .. ADD COLUMN has no IF NOT EXISTS, so a patch that adds a column is not idempotent by itself.
     // Run each such statement on its own and skip exactly "duplicate column name" (the column is already there = the patch is already applied); any other error still throws.
-    var CHUNK = 500, batch = [], chunks = 0, skipped = 0, flush = function() { if (batch.length) { db.run(batch.join('\n')); chunks++; batch = []; } };
+    // §PATCH_CHUNK_BYTES (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.55): a chunk is bounded by BYTES as well as by count. db.run hands the
+    // text to the engine through its stack; 500 statements of a generated block (multi-row INSERTs, ~18 KB each) made one 1.5 MB string and
+    // the engine died with "memory access out of bounds" — the whole patch rolled back (LTU, measured in node on the shipped engine).
+    var CHUNK = 500, CHUNK_BYTES = 262144, batch = [], batchBytes = 0, chunks = 0, skipped = 0, flush = function() { if (batch.length) { db.run(batch.join('\n')); chunks++; batch = []; batchBytes = 0; } };
     for (var i = 0; i < statements.length; i++) {
       if (/^\s*(--[^\n]*\n\s*)*ALTER\s+TABLE\s+\S+\s+ADD\s+COLUMN\b/i.test(statements[i])) {
         flush();
         try { db.run(statements[i]); chunks++; } catch (e) { if (/duplicate column name/i.test(e && e.message)) skipped++; else throw e; }
-      } else { batch.push(statements[i]); if (batch.length >= CHUNK) flush(); }
+      } else { if (batch.length && batchBytes + statements[i].length > CHUNK_BYTES) flush(); batch.push(statements[i]); batchBytes += statements[i].length; if (batch.length >= CHUNK) flush(); }
     }
     flush();
     if (skipped) console.log('§PATCH_ADDCOL_SKIP ' + skipped + ' ALTER .. ADD COLUMN already applied (idempotent re-apply)');

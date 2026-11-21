@@ -185,7 +185,7 @@
         'COALESCE(t.center_x, 0) as cx, COALESCE(t.center_y, 0) as cy, ' +
         'COALESCE(t.bbox_x, 0) as bx, COALESCE(t.bbox_y, 0) as by ' +
         'FROM elements_meta m ' +
-        'LEFT JOIN element_transforms t ON t.guid = m.guid ' +
+        'LEFT JOIN ' + ScheduleGate.ensureElementBox(db) + ' t ON t.guid = m.guid ' +   // §ELEMENT_BOX (§Q.55): the one owner of the 4D box
         "WHERE " + TMS._scheduledWhere('m') + " " +
         'ORDER BY cz, COALESCE(t.center_x, 0), COALESCE(t.center_y, 0)'
       );
