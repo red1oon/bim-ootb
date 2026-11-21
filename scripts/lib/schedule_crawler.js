@@ -39,7 +39,7 @@ function crawl(items, parentOf) {
     let under = [], floor = null, wall = null, wallA = 0;
     for (const S of N) { if (S === T) continue; const a = ovl(S, T); if (!a) continue;
       if (Math.abs(S.tz - T.bz) <= TOUCH && S.bz < T.bz - TOUCH && !(typeof S.seq === 'number' && typeof T.seq === 'number' && S.seq > T.seq)) under.push(S);   // a LATER trade under me (a light under a beam) is hung from me, not carrying me
-      if (isFloor(S) && S.tz <= T.bz + 0.3 && (!floor || S.tz > floor.tz)) floor = S;
+      if (isFloor(S) && S.bz < T.bz - TOUCH && S.tz <= T.bz + 0.3 && (!floor || S.tz > floor.tz)) floor = S;   // my floor starts BELOW me (a slab I hang under is not my floor)
       if ((T.cls === 'IfcWindow' || T.cls === 'IfcDoor') && S.cls.indexOf('IfcWall') === 0 && S.bz <= T.bz + TOUCH && S.tz >= T.tz - TOUCH && a > wallA) { wall = S; wallA = a; } }
     if (under.length) { judged.onNothing++; const first = under.reduce((m, S) => S.s < m.s ? S : m); if (first.s > T.s + 60000) F.onNothing.push([T, first]); }
     if (floor && !isFloor(T) && T.phase !== 'Substructure') { judged.beforeFloor++; if (floor.s > T.s + 60000) F.beforeFloor.push([T, floor]); }
