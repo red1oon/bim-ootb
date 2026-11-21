@@ -1558,7 +1558,7 @@ async function setupScene(A) {
       tx.oncomplete = resolve; tx.onerror = resolve;
     });
     console.log('§OPEN_DB cached key=' + key + ' bytes=' + bytes.byteLength + ' → navigate');
-    location.assign('viewer.html?db=' + encodeURIComponent(dbUrl) + '&lib=' + encodeURIComponent(dbUrl) + '&ghost=1');
+    location.assign('viewer.html?db=' + encodeURIComponent(dbUrl) + '&lib=' + encodeURIComponent(dbUrl) + '&ghost=1' + A._erpParams());
   };
 
   // Split-DB sibling of _openDbBytes — for a meta.db + geo.db pair (from a local file-pair open, or
@@ -1599,7 +1599,7 @@ async function setupScene(A) {
       for (var _pi = 0; _pi < _parts.length; _pi++) await window.ImportKey.importRekey(_st, key, _parts[_pi]);
     } catch (eRk) { console.warn('§IMPORT_KEY_REKEY_ERR ' + (eRk && eRk.message)); }
     console.log('§OPEN_DB_SPLIT cached key=' + key + ' meta=' + metaBytes.byteLength + ' geo=' + geoBytes.byteLength + ' → navigate');
-    location.assign('viewer.html?db=' + encodeURIComponent(extractedUrl) + '&lib=' + encodeURIComponent(extractedUrl) + '&ghost=1');
+    location.assign('viewer.html?db=' + encodeURIComponent(extractedUrl) + '&lib=' + encodeURIComponent(extractedUrl) + '&ghost=1' + A._erpParams());
   };
 
   // §SM-7.1 step 5 — source IFC in the SAME door. No new import path: route to the existing
@@ -1634,6 +1634,14 @@ async function setupScene(A) {
     await A._openDbBytes(out.buildingName + '.db', new Uint8Array(bytes));
   };
 
+  // bim-compiler prompts/FILM_UAT_GUIDE.md §5.18 L4: opening a file reloads the Viewer at ?db=…; the iDempiere sign-in context it was opened with (erp, erpUser, erpClient,
+  // erpRole, erpOrg, erpWarehouse: config.js LEGACY_ERP_CTX, never the password) is carried across, else › ERP asks for ids nobody knows (measured: the window came up empty).
+  A._erpParams = function() {
+    var p = new URLSearchParams(location.search), out = '', n = 0;
+    ['erp', 'erpUser', 'erpClient', 'erpRole', 'erpOrg', 'erpWarehouse'].forEach(function(k) { var v = p.get(k); if (v != null && v !== '') { out += '&' + k + '=' + encodeURIComponent(v); n++; } });
+    if (n) console.log('§OPEN_DB_ERP_CTX carried=' + n);
+    return out;
+  };
   A.openModelDb = async function() {
     // Native Open… (Chromium FSA). Fallback = hidden <input type=file>.
     if (window.showOpenFilePicker) {
