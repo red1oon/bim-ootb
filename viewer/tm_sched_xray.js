@@ -501,6 +501,23 @@
   // construction order, where the cache IS valid again and must not stay cleared).
   function _tmRebuildXrayCache() {
     var _xt0 = performance.now();
+    // §TM_TRANSITIONS (§Q.54 C3): the hold map is an input of the event index — whoever rebuilds the map drops the index, here, once.
+    TMS._evMesh = null; TMS._evSig = ''; TMS._incrPrimed = false;
+    // §TM_HOLD_OWNER (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.54 C2) — on a schedule the one solve authored
+    // (schedules.display_authored=1, the SAME flag §OG_SWEEP_SKIP / §CAP_RESCALE_SKIP key on) the hold is EMPTY. The hold is the strict
+    // "appear only after the LAST carrier under you has finished" bar; its guard half (_ogSupportSweep) has been skipped on these
+    // schedules since 2026-08-16 because the solve owns order there — the canvas half kept running, so the canvas hid elements the
+    // schedule, the Gantt and the scrubber all show as built (Hospital: 281 held, 192 of them columns). Imported / captured / civil
+    // schedules (flag absent or 0) keep the hold: nothing else orders them.
+    var _hApp = TMS.A(), _hAuth = false;
+    try { var _hR = _hApp && _hApp.db && _hApp.db.exec('SELECT 1 FROM schedules WHERE display_authored=1 LIMIT 1'); _hAuth = !!(_hR && _hR.length && _hR[0].values.length); }
+    catch (eH) { /* legacy DB without the column — the hold stays */ }
+    if (_hAuth) {
+      TMS._tmXraySolidifyTs = {}; TMS._tmXrayStagedTotal = 0; TMS._tmXraySolidifiedN = 0;
+      console.log('§TM_HOLD_OWNER display_authored=1 held=0 — the solve owns order; the canvas draws what the op says (no second support test)');
+      return;
+    }
+    console.log('§TM_HOLD_OWNER display_authored=0 — schedule not authored by the solve: the hold applies (see §XRAY_EDGES)');
     var _xrSched = {};
     // opsSig: rolling hash over (guid, end_ts), computed in the pass that already builds _xrSched —
     // no extra traversal. This is what makes every re-key path self-correcting WITHOUT a special

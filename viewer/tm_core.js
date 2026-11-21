@@ -34,6 +34,7 @@
   TMS._tmSceneSig = _tmSceneSig;
   TMS._tmBuildEventIndex = _tmBuildEventIndex;
   TMS._tmHasEventIn = _tmHasEventIn;
+  TMS._tmHeld = _tmHeld;
   Object.defineProperty(TMS, '_active', { get: function () { return _active; }, set: function (v) { _active = v; }, enumerable: true });
   Object.defineProperty(TMS, '_tmEnabledGI', { get: function () { return _tmEnabledGI; }, set: function (v) { _tmEnabledGI = v; }, enumerable: true });
   Object.defineProperty(TMS, '_panel', { get: function () { return _panel; }, set: function (v) { _panel = v; }, enumerable: true });
@@ -1499,13 +1500,14 @@
       if (!g) continue;
       (guidT[g] || (guidT[g] = [])).push(op.start_ts, op.end_ts, op.end_ts + lingerMs);
     }
-    // §CW_SOLIDIFY_EVENT (CIVIL ONLY — bim-compiler prompts/CWRoadBakeIssues.md Issue A). A staged element becomes
-    // visible at _tmXraySolidifyTs (another element's end), which was not an event of ITS mesh, so the delta skip
-    // below could pass over that mesh and leave the slot hidden for the rest of the film (road v6: 12,112/19,559
-    // staged, 4/8 watched slabs never drawn). Gated on app.isCivilModel(): buildings build the identical index.
+    // §TM_TRANSITIONS (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.54 C3) — the index holds EVERY instant at which a term of
+    // "is it drawn" changes, for every model. The hold (_tmHeld below) is such a term: a held element appears at its hold time, which is
+    // another element's end and so not an op instant of its own mesh. This was added for civil models only (§CW_SOLIDIFY_EVENT, road film
+    // v6: slots hidden for the rest of the film) while buildings kept the index without it — witness_tm_drawn_vs_scheduled, Hospital,
+    // 2026-11-22: 156 scheduled elements still hidden at the END of a forward play, 0 after a forced full pass.
     var _cwOn = !!(app.isCivilModel && app.isCivilModel()), _cwN = 0;
-    if (_cwOn) for (var _cg in _tmXraySolidifyTs) { (guidT[_cg] || (guidT[_cg] = [])).push(_tmXraySolidifyTs[_cg]); _cwN++; }
-    console.log('§CW_SOLIDIFY_EVENT civil=' + _cwOn + ' added=' + _cwN + (_cwOn ? '' : ' (building: index unchanged)'));
+    for (var _cg in _tmXraySolidifyTs) { (guidT[_cg] || (guidT[_cg] = [])).push(_tmXraySolidifyTs[_cg]); _cwN++; }
+    console.log('§CW_SOLIDIFY_EVENT civil=' + _cwOn + ' added=' + _cwN + ' (hold instants are transitions on every model, §TM_TRANSITIONS)');
     var byMesh = Object.create(null), k, metas, j, arr, ts;
     function addAll(meshId, guid) {
       ts = guidT[guid];
@@ -1531,10 +1533,17 @@
       a.sort();
       _evMesh[k] = a; meshes++; events += a.length;
     }
-    _evSig = _tmSceneSig(app);
+    _evSig = _tmSceneSig(app) + '|' + lingerMs;   // the linger instant is in the index: a speed change re-derives it (§TM_TRANSITIONS)
     _incrPrimed = false;   // index changed -> require a fresh full pass before skipping again
     console.log('§PERF_INCR_INDEX built meshes=' + meshes + ' events=' + events +
                 ' ms=' + (performance.now() - t0).toFixed(1));
+  }
+
+  // §TM_HELD (§Q.54 C2/C3) — the ONE test of the hold term of "is it drawn": true while the cursor is before the element's hold time.
+  // Its instants are in the event index above (same map, same owner); no caller may test _tmXraySolidifyTs inline.
+  function _tmHeld(guid, cursorMs) {
+    var h = _tmXraySolidifyTs[guid];
+    return h !== undefined && cursorMs < h;
   }
 
   // Any transition strictly inside (lo, hi]? Binary search the sorted array.
