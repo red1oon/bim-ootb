@@ -20,7 +20,7 @@ const GM = () => require('../gen_manifest.js');   // lazy: gen_manifest requires
 const MOD_KEYS = ['v', 'load', 'lazyGroup', 'precache', 'deps', 'uses', 'notDeps', 'owner'];
 // B2 (bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md Part B, "B2 BUILD SPEC"; bim-ootb #3365): a site may carry its own `v` (pages that load one
 //   module under different numbers keep them until B4-HASH; null = a tag with no ?v= of a module versioned elsewhere) and `pin` (bump never raises it).
-const SITE_KEYS = ['kind', 'as', 'v', 'onerror', 'q', 'pin'];
+const SITE_KEYS = ['kind', 'as', 'v', 'onerror', 'q', 'pin', 'keep'];   // B3-OUT-Q1: `keep` = the tag's other attributes, verbatim
 const INLINE_KEYS = ['deps', 'uses', 'notDeps'];
 const FORCING = new Set(['load', 'load-guarded', 'import']);
 const BEGIN_TAGS = /<!-- §MANIFEST:BEGIN (\S+) tags\b[^\n]*-->/, END_TAGS = /<!-- §MANIFEST:END (\S+) tags -->/;
@@ -38,7 +38,7 @@ const SCHEMA = { type: 'object', additionalProperties: false,
     inline: { type: 'object', additionalProperties: { type: 'object', additionalProperties: false, required: INLINE_KEYS, properties: {
       deps: { type: 'array', items: { type: 'string' } }, uses: { type: 'array', items: { type: 'string' } }, notDeps: { type: 'array', items: { type: 'string' } } } } },
     order: { type: 'object', additionalProperties: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['kind', 'as'], properties: {
-      kind: { enum: ['tag', 'asset', 'inline', 'lazy'] }, as: { type: 'string', minLength: 1 }, v: { type: ['integer', 'null'], minimum: 0 }, onerror: { type: 'string' }, q: { enum: ['"', '`'] }, pin: { const: true } } } } },
+      kind: { enum: ['tag', 'asset', 'inline', 'lazy'] }, as: { type: 'string', minLength: 1 }, v: { type: ['integer', 'null'], minimum: 0 }, onerror: { type: 'string' }, q: { enum: ['"', '`'] }, pin: { const: true }, keep: { type: 'array', items: { type: 'string' }, minItems: 2, maxItems: 2 } } } } },
     precacheOrder: { type: 'array', minItems: 1, items: { type: 'string' } } } };
 
 const sourceFile = app => app + '/modules.json';
@@ -84,7 +84,7 @@ function expand(m) {
   for (const f of sortKeys(m.order)) m.order[f].forEach((s, at) => {
     const t = targetOf(m, f, s.as), mod = mods.get(t);
     if (!mod) { fails.push(`${f}: site ${at} (${s.as}) names ${t}, which has no line in modules`); return; }
-    mod.sites.push(Object.assign({ in: f, at, kind: s.kind, as: s.as, v: 'v' in s ? s.v : mod.v }, s.onerror != null ? { onerror: s.onerror } : {}, s.q ? { q: s.q } : {}, s.pin ? { pin: true } : {}));
+    mod.sites.push(Object.assign({ in: f, at, kind: s.kind, as: s.as, v: 'v' in s ? s.v : mod.v }, s.onerror != null ? { onerror: s.onerror } : {}, s.q ? { q: s.q } : {}, s.pin ? { pin: true } : {}, s.keep ? { keep: s.keep } : {}));
   });
   for (const mod of mods.values()) if (!mod.sites.length) fails.push(`modules: ${mod.file} has no site in order`);
   const files = sortKeys(m.order);
@@ -371,7 +371,7 @@ function init(root, app, o) {
     m.modules[x.file] = { v: nums.length ? Math.max(...nums) : null, load: x.load, lazyGroup: x.lazyGroup, precache: x.precache, deps: [], uses: [], notDeps: [], owner: '' };
   }
   for (const f of frames.keys()) if (f !== b0.sw) m.order[f] = [];
-  for (const x of b0.modules) for (const s of x.sites) m.order[s.in][s.at] = Object.assign({ kind: s.kind, as: s.as }, s.v !== m.modules[x.file].v ? { v: s.v } : {}, s.onerror != null ? { onerror: s.onerror } : {}, s.q ? { q: s.q } : {},
+  for (const x of b0.modules) for (const s of x.sites) m.order[s.in][s.at] = Object.assign({ kind: s.kind, as: s.as }, s.v !== m.modules[x.file].v ? { v: s.v } : {}, s.onerror != null ? { onerror: s.onerror } : {}, s.q ? { q: s.q } : {}, s.keep ? { keep: s.keep } : {},
     s.kind === 'inline' && x.file === b0.sw ? { pin: true } : {});   // the address the service worker is registered under: no bump raises it
   const not = new Set(o.notDeps || []), uses = new Set(o.asUses || []);
   const rv = review(root, app, m);
@@ -425,16 +425,17 @@ function adopt(root, app, files, o) {
       if (!ext && !f.endsWith('.html') && !exists(t) && exists(P.normalize(P.join(app, s.as)))) t = P.normalize(P.join(app, s.as));   // a loader's literal: fetched from the page's folder
       if (!ext && !exists(t)) lines.push(`§ADOPT_MISSING file=${f} site=${at} as=${s.as} target=${t} (a tag for a file that is not on disk is kept as it is, listed as a module, counted by §MANIFEST_MISSING)`);
       if (!touched.has(t)) touched.set(t, f);
-      return Object.assign({ kind: s.kind, as: s.as, v: s.v }, s.onerror != null ? { onerror: s.onerror } : {}, s.q ? { q: s.q } : {});
+      return Object.assign({ kind: s.kind, as: s.as, v: s.v }, s.onerror != null ? { onerror: s.onerror } : {}, s.q ? { q: s.q } : {}, s.keep ? { keep: s.keep } : {});
     });
-    if (f.endsWith('.html')) {   // the marker pair: from the first tag's line to the last tag's line; nothing else of the page is touched
-      const tags = R.readHtml(src).tags;
-      if (tags.length) {
-        const b = src.lastIndexOf('\n', tags[0].start - 1) + 1, e0 = src.indexOf('\n', tags[tags.length - 1].end), e = e0 < 0 ? src.length : e0 + 1;
-        if (e0 < 0) src += '\n';
-        src = src.slice(0, b) + `<!-- §MANIFEST:BEGIN ${app} tags (script tags here are written by scripts/gen_manifest.js from ${sourceFile(app)}; comments are yours) -->\n` + src.slice(b, e0 < 0 ? src.length : e) + `<!-- §MANIFEST:END ${app} tags -->\n` + src.slice(e0 < 0 ? src.length : e);
-        texts.set(f, src);
+    if (f.endsWith('.html')) {   // the marker pairs: a group of tags (a new group where two tags are more than 25 lines apart, as B2 / B3 placed them) from its first tag's line to its last tag's line
+      const tags = R.readHtml(src).tags, line = i => src.slice(0, i).split('\n').length, groups = [];
+      tags.forEach((t, k) => { if (!k || line(t.start) - line(tags[k - 1].end) > 25) groups.push([]); groups[groups.length - 1].push(t); });
+      if (src[src.length - 1] !== '\n') src += '\n';
+      for (const g of groups.reverse()) {
+        const b = src.lastIndexOf('\n', g[0].start - 1) + 1, e0 = src.indexOf('\n', g[g.length - 1].end), e = e0 < 0 ? src.length : e0 + 1;
+        src = src.slice(0, b) + `<!-- §MANIFEST:BEGIN ${app} tags (script tags here are written by scripts/gen_manifest.js from ${sourceFile(app)}; comments are yours) -->\n` + src.slice(b, e) + `<!-- §MANIFEST:END ${app} tags -->\n` + src.slice(e);
       }
+      if (groups.length) texts.set(f, src);
     }
   }
   if (fails.length) return { m, fails, lines, texts };
@@ -463,7 +464,7 @@ function adopt(root, app, files, o) {
   m.depsReview.tool = rv1.sha; if (o.by) m.depsReview.by = o.by; if (o.on) m.depsReview.on = o.on;
   refresh(root, app, m, lines);
   const sitesN = files.reduce((n, f) => n + m.order[f].length, 0);
-  lines.push(`§MANIFEST_ADOPT app=${app} files=${files.join(',')} sites=${sitesN} modules_added=${[...touched.keys()].filter(t => !oldV.has(t)).length} modules_touched=${touched.size} marker_pairs=${texts.size} new_forcing=${rv0.r.edges.filter(e => e.state === 'new' && FORCING.has(e.cls)).length} tool_sha=${m.depsReview.tool}`);
+  lines.push(`§MANIFEST_ADOPT app=${app} files=${files.join(',')} sites=${sitesN} modules_added=${[...touched.keys()].filter(t => !oldV.has(t)).length} modules_touched=${touched.size} marker_pairs=${[...texts.values()].reduce((n, t) => n + (t.match(/§MANIFEST:BEGIN/g) || []).length, 0)} new_forcing=${rv0.r.edges.filter(e => e.state === 'new' && FORCING.has(e.cls)).length} tool_sha=${m.depsReview.tool}`);
   return { m, fails, lines, texts };
 }
 

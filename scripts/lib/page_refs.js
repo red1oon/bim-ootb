@@ -21,7 +21,7 @@ const RAW_TEXT = new Set(['script', 'style', 'textarea', 'title']);
  * @param {string} src
  * @returns {{tags:object[], assets:object[], inline:object[], comments:number}}
  *   tags: `<script src>` elements, {start,end,as,v,onerror,canonical,raw}; canonical=false when the tag is not one of the two shapes
- *     the generator can write (`<script src="X"></script>` with an optional `onerror="…"`).
+ *     the generator can write (`<script src="X"></script>` with an optional `onerror="…"`); a tag with OTHER attributes carries `keep` = [text before the src value's opening quote, text after its closing quote] and is canonical (B3-OUT-Q1).
  *   assets: any other attribute value that is a whole `file?v=N` (link href, img src …), {start,end,as,v} = the value's range.
  *   inline: `<script>` elements with a body, {start,end,type} = the body's range.
  */
@@ -57,7 +57,10 @@ function readHtml(src) {
         const w = WHOLE.exec(s.value), oe = get('onerror');
         const as = w ? w[1] : s.value, v = w ? +w[2] : null, onerror = oe ? oe.value : null;
         const raw = src.slice(lt, gt);
-        out.tags.push({ start: lt, end: gt, as, v, onerror, raw, canonical: raw === renderTag({ as, v, onerror }) });
+        // B3-OUT-Q1 (bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md "B3-OUT ADDENDUM"): a tag with attributes other than src / onerror (data-*, async, line breaks)
+        //   keeps them verbatim: `keep` = [the text from `<script` up to the opening quote of the src value, the text after its closing quote]; the generator owns only the value.
+        const extra = attrs.some(x => x.name !== 'src' && x.name !== 'onerror') && s.q === '"', keep = extra ? [src.slice(lt + 7, s.vs - 1), src.slice(s.ve + 1, gt)] : null;
+        out.tags.push({ start: lt, end: gt, as, v, onerror: keep ? null : onerror, keep, raw, canonical: raw === renderTag({ as, v, onerror: keep ? null : onerror, keep }) });
       } else if (bodyEnd > open) out.inline.push({ start: open, end: bodyEnd, type: (get('type') || {}).value || '' });
       i = gt; continue;
     }
@@ -70,6 +73,7 @@ function readHtml(src) {
 
 /** The one spelling the generator writes for a script tag. */
 function renderTag(t) {
+  if (t.keep) return '<script' + t.keep[0] + '"' + t.as + (t.v == null ? '' : '?v=' + t.v) + '"' + t.keep[1];   // B3-OUT-Q1: the other attributes are the page's, kept verbatim
   return '<script src="' + t.as + (t.v == null ? '' : '?v=' + t.v) + '"' + (t.onerror == null ? '' : ' onerror="' + t.onerror + '"') + '></script>';
 }
 

@@ -27,7 +27,7 @@ const FROZEN = ['archive/gallery.html'];
 const SKIP_JS = /(^|\/)(lib|node_modules|tests?)\/|\.min\.js$|witness|(^|\/)sw\.js$/;
 const SITE = { type: 'object', required: ['in', 'at', 'kind', 'as', 'v'], additionalProperties: false, properties: {
   in: { type: 'string', minLength: 1 }, at: { type: 'integer', minimum: 0 }, kind: { enum: ['tag', 'asset', 'inline', 'lazy'] },
-  as: { type: 'string', minLength: 1 }, v: { type: ['integer', 'null'], minimum: 0 }, onerror: { type: 'string' }, q: { enum: ['"', '`'] } } };
+  as: { type: 'string', minLength: 1 }, v: { type: ['integer', 'null'], minimum: 0 }, onerror: { type: 'string' }, q: { enum: ['"', '`'] }, keep: { type: 'array', items: { type: 'string' }, minItems: 2, maxItems: 2 } } };
 const SCHEMA = { type: 'object', additionalProperties: false,
   required: ['app', 'sw', 'cacheVersion', 'depsDeclared', 'pages', 'loaders', 'modules', 'precacheOrder'],
   properties: {
@@ -52,7 +52,7 @@ function readSites(file, src, notes) {
     for (const t of h.tags) {
       if (!t.canonical) notes.nonCanonical.push(file + ': ' + t.raw.slice(0, 120));
       if (t.v == null) notes.unversionedTags++;
-      const s = { start: t.start, end: t.end, kind: 'tag', as: t.as, v: t.v }; if (t.onerror != null) s.onerror = t.onerror; sites.push(s);
+      const s = { start: t.start, end: t.end, kind: 'tag', as: t.as, v: t.v }; if (t.onerror != null) s.onerror = t.onerror; if (t.keep) s.keep = t.keep; sites.push(s);
     }
     for (const a of h.assets) sites.push({ start: a.start, end: a.end, kind: 'asset', as: a.as, v: a.v });
     for (const b of h.inline) {
@@ -147,7 +147,7 @@ function buildApp(root, app, opts) {
       if (!ext && !exists(target)) notes.missing.push(f.file + ' -> ' + target);
       if (!mods.has(target)) mods.set(target, { file: target, deps: [], load: 'lazy', lazyGroup: null, precache: precached.has(target), v: null, sites: [] });
       const site = { in: f.file, at, kind: s.kind, as: s.as, v: s.v };
-      if (s.onerror != null) site.onerror = s.onerror; if (s.q) site.q = s.q;
+      if (s.onerror != null) site.onerror = s.onerror; if (s.q) site.q = s.q; if (s.keep) site.keep = s.keep;
       mods.get(target).sites.push(site);
     });
   }
