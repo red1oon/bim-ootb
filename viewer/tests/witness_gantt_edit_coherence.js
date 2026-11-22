@@ -218,12 +218,13 @@ function sliceNamed(src, name) {
   // VACUOUS-aware: if the fork emitted nothing at all we cannot say which model ran, and that is
   // an INCONCLUSIVE state, not a pass. It is reported as a FAIL because a witness that cannot see
   // its own subject is exactly the §CRISIS this claim exists to prevent recurring.
-  var _d6Line = _seen.filter(function (l) { return l.indexOf('§D6_HANG_FILING') === 0; }).pop() || '(no §D6_HANG_FILING line)';
-  var _layerLine = _seen.filter(function (l) { return l.indexOf('§TPL_LAYER_SELFCHECK') === 0; }).pop() || '(no §TPL_LAYER_SELFCHECK line)';
-  var _inactive = _seen.filter(function (l) { return /§D6_HANG_FILING INACTIVE|§TPL_LAYER_ORDER_FAIL|pass did not run/.test(l); });
-  check('G-COH-11 the-grid-under-test-is-the-SHIPPED-grid-hang-filing-and-layer-order-both-ran',
-    _inactive.length === 0 && /^§D6_HANG_FILING elements=/.test(_d6Line) && /^§TPL_LAYER_SELFCHECK applied=/.test(_layerLine),
-    _inactive.length ? 'INACTIVE: ' + _inactive.join(' | ').slice(0, 300) : (_d6Line.slice(0, 160) + ' || ' + _layerLine.slice(0, 120)));
+  // G-COH-11 (re-pointed 2026-11-22, bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.66): the grid is filed by §METHOD_LOCATION and ordered by §METHOD_ORDER —
+  // hang filing and the layer-order pass are deleted. The claim is unchanged in kind: the two owners of the shipped grid both ran, and neither was a no-op.
+  var _locLine = _seen.filter(function (l) { return l.indexOf('§METHOD_LOCATION') === 0; }).pop() || '(no §METHOD_LOCATION line)';
+  var _ordLine = _seen.filter(function (l) { return l.indexOf('§METHOD_ORDER') === 0; }).pop() || '(no §METHOD_ORDER line)';
+  check('G-COH-11 the-grid-under-test-is-the-SHIPPED-grid-method-location-and-method-order-both-ran',
+    /^§METHOD_LOCATION levels=\d+/.test(_locLine) && /^§METHOD_ORDER on elements=[1-9]/.test(_ordLine),
+    _locLine.slice(0, 140) + ' || ' + _ordLine.slice(0, 100));
   check('G-COH-10 the-model-under-test-is-the-CANONICAL-template-path',
     _isCanonical,
     _modelLine ? _modelLine.slice(0, 120)
