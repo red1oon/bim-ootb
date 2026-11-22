@@ -4,6 +4,21 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.97.0](https://github.com/red1oon/bim-ootb/compare/v1.96.0...v1.97.0) (2026-11-22)
+
+
+### ✨ Features
+
+* **4d:** order the build-up by method x location (§Q.59) ([#3389](https://github.com/red1oon/bim-ootb/issues/3389)) ([eb389e0](https://github.com/red1oon/bim-ootb/commit/eb389e017f5b1d8fa7cb58ad338161e177da947e))
+* **manifest:** B3-OUT — outside referrers written from the app lists, gallery frozen, bump.js regex path deleted ([#3385](https://github.com/red1oon/bim-ootb/issues/3385)) ([0fa163b](https://github.com/red1oon/bim-ootb/commit/0fa163b82c5306b9f7b1d3cc7bfd0289c306d0f2))
+
+
+### 🐛 Fixes
+
+* **4d:** the Time Machine canvas is a function of the cursor (§Q.54 C2+C3, §TM_HOLD_OWNER, §TM_TRANSITIONS) ([#3381](https://github.com/red1oon/bim-ootb/issues/3381)) ([7021e6c](https://github.com/red1oon/bim-ootb/commit/7021e6cb45b773b97c4f0973dc9b2c7b6b9a6981))
+* **viewer:** after a legacy push, "open ↗" opens that iDempiere's Project, not the browser ERP ([#3383](https://github.com/red1oon/bim-ootb/issues/3383)) ([1581f9c](https://github.com/red1oon/bim-ootb/commit/1581f9ca129d41db8a69a87404dcd9537c1988b4))
+* **viewer:** opening a file keeps the iDempiere sign-in context (erp, erpUser…erpWarehouse) ([#3386](https://github.com/red1oon/bim-ootb/issues/3386)) ([76c2c64](https://github.com/red1oon/bim-ootb/commit/76c2c648159e8f4c98bfaab3da32d92423c357f2))
+
 ## [1.96.0](https://github.com/red1oon/bim-ootb/compare/v1.95.0...v1.96.0) (2026-11-20)
 
 
