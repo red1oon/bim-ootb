@@ -1101,116 +1101,6 @@
   // the time it looks. LevelDeriver (viewer/lib/level_deriver.js) answers the same question from the
   // FROZEN DB instead and is not exposed to that rewrite (see _deriverLevelAxis's header for the
   // read-path proof). Default stays the old path until the swap is deliberately flipped.
-  // ══ §D6_HANG_FILING (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.9 F4a, §Q.9.4 D6 — 2026-11-17) ══
-  // ONE FILING. The owner's §S47.3 ruling (2026-08-21): an element suspended from above is filed by what it hangs
-  // from. The cell solve obeys it (cpm_schedule.js _cellFiling); the task grid filed the same element by its own
-  // storey, so its bar could END before the bar of the structure it hangs from STARTED, and the played layer —
-  // which re-tiles inside the TASK window — threw the solve's order away (measured: Terminal 2,180 elements,
-  // 723 of them services in one ceiling-level bar hanging from a roof built 18 days later).
-  // Rule, read from the ELECTION as extraction (CpmSchedule.contactGraph / designatedSupport — the owners, §I;
-  // nothing is re-derived): an element whose elected support is a CARRIER ABOVE it, on a level that ranks higher
-  // than its own, takes that level in the task grid. Its phase, trade, rate and install time do not change — it
-  // moves from (its phase, its storey) to (its phase, its carrier's storey). Per element, never a task edge.
-  // Returns a levelAxis with keyOf only (rankOf stays the grid's own), or null when nothing can be judged.
-  function _hangFilingAxis(elements, collapse, bandRank) {
-    var g = (typeof globalThis !== 'undefined') ? globalThis : {};
-    var CP = (global && global.CpmSchedule) || g.CpmSchedule || (typeof window !== 'undefined' && window.CpmSchedule) || null;
-    if (!CP || !CP.contactGraph || !CP.designatedSupport) {
-      console.log('§D6_HANG_FILING INACTIVE — CpmSchedule not loaded; the grid files by storey alone');
-      return null;
-    }
-    collapse = collapse || function (x) { return x; };
-    var items = elements.map(function (e) {
-      return { guid: e.guid, cls: e.cls, seq: e.seq, phase: e.phase, x0: e.x0, x1: e.x1, y0: e.y0, y1: e.y1, bz: e.base_z, tz: e.top_z };
-    });
-    var G = CP.contactGraph(items);
-    if (!G.ok) { console.log('§D6_HANG_FILING INACTIVE — contact graph unavailable'); return null; }
-    var des = CP.designatedSupport(items, G), SG = g.ScheduleGate || (global && global.ScheduleGate);
-    var EPS = SG.EPS, GAP = SG.GAP, rank = function (k) { return (bandRank && bandRank[k] != null) ? bandRank[k] : null; };
-    // §Q.40 (S4, 2026-11-20) — A FITTING IS ALSO HELD BY THE CEILING IT HANGS FROM. The election prefers a pool contact (§S26.2), so a fitting
-    // under a ceiling elects a wall or slab, never the ceiling: the ceiling was filed with its slab (the level above) and the fitting stayed
-    // below (Hospital: fittings in MEP_Final_Level_3 under a ceiling in Architecture_Closeup_Level_4). `also[i]` is that SECOND carrier — the
-    // bond's host where the element hangs below a carrier that itself hangs (ShimBonds, on the contact graph already built here). The level an
-    // element is filed on is then the highest along BOTH chains: it cannot be built before its elected support, nor before its ceiling.
-    // Measured and NOT adopted (§Q.40.1): the bond INSTEAD of the election (Terminal played midair 0 -> 27: the fitting then ran ahead of its
-    // elected support), and the bond for every hung element (Hospital MEP Rough-in moved 3,184 -> 7,000, programme 262 -> 273 d).
-    var SBm = (global && global.ShimBonds) || g.ShimBonds || (typeof window !== 'undefined' && window.ShimBonds) || null;
-    if (!SBm && typeof module !== 'undefined' && module.exports && typeof require === 'function') { try { SBm = require('./shim_bonds.js'); } catch (eSB) { SBm = null; } }
-    var also = null, alsoN = 0, raisedByBond = 0;
-    if (SBm && SBm.compute) {
-      var bres = SBm.compute(items, G, { EPS: EPS, GAP: GAP });   // cost: see §CEILING_CLOSEUP ms= (the same pass); no clock is read in this core file
-      also = new Int32Array(items.length).fill(-1);
-      for (var bi = 0; bi < items.length; bi++) {
-        var bh = bres.host[bi];
-        if (bh >= 0 && bh !== des[bi] && SBm.capOf(bres, bi) === 'hangs-below' && SBm.capOf(bres, bh) === 'hangs-below') { also[bi] = bh; alsoN++; }
-        // §Q.49: lagging is also held by the pipe it WRAPS (and a piece that continues a run, by the piece before it) — the same second-carrier
-        // rule, one more kind: it is filed no lower than its pipe, so it cannot sit in a bar that ends before the pipe's bar starts.
-        else if (bh >= 0 && bh !== des[bi] && bres.kind[bi] === 'insulation') { also[bi] = bh; alsoN++; }
-      }
-    }
-    var hung = {}, moved = 0, byPhase = {}, toLevel = {}, otherRel = 0, unranked = 0, judged = 0, chained = 0;
-    // §Q.13 (2026-11-17): ANY elected relation, and TRANSITIVE. (1) The first cut moved hung elements only and left an
-    // element whose BEARER is filed on a higher-ranked label where it was (Terminal 363: 205 roof plates in
-    // `Ceiling Level 03` resting on members filed in `04 THIRD FLOOR`, a bar that starts later). An element cannot be
-    // built before what it stands on any more than before what it hangs from. (2) One pass is not closed: when T moves
-    // up to its support's level, whatever T supports is left in a bar that now ends before T's (measured, single pass:
-    // LTU 6,680 -> 6,947). So the level an element is filed on is the highest level along its chain of elected supports:
-    // eff(i) = max(own, eff(support(i))). Each element elects at most one support, so the chain is a simple walk; a
-    // ring of mutual supports takes the ring's highest level.
-    var n = items.length, effKey = new Array(n), effRank = new Float64Array(n), st = new Uint8Array(n), i, k;
-    for (i = 0; i < n; i++) {
-      effKey[i] = collapse(elements[i].storey);
-      var r0 = rank(effKey[i]); effRank[i] = (r0 == null) ? NaN : r0;
-    }
-    for (i = 0; i < n; i++) {
-      if (st[i]) continue;
-      var walk = [], u = i;
-      while (u >= 0 && !st[u]) { st[u] = 1; walk.push(u); u = des[u]; }
-      if (u >= 0 && st[u] === 1) {                             // a ring: every member takes the ring's highest level
-        var at = walk.indexOf(u), bk = null, br = -Infinity;
-        for (k = at; k < walk.length; k++) if (effRank[walk[k]] > br) { br = effRank[walk[k]]; bk = effKey[walk[k]]; }
-        for (k = at; k < walk.length; k++) if (bk != null && !isNaN(effRank[walk[k]])) { effRank[walk[k]] = br; effKey[walk[k]] = bk; }
-      }
-      for (k = walk.length - 1; k >= 0; k--) {                 // supports first, back down the walk
-        var w = walk[k], a = des[w];
-        if (a >= 0 && !isNaN(effRank[w]) && !isNaN(effRank[a]) && effRank[a] > effRank[w]) { effRank[w] = effRank[a]; effKey[w] = effKey[a]; }
-        st[w] = 2;
-      }
-    }
-    // the second carrier, to a fixed point: max over both chains (monotone on a finite set of ranks, so it ends; the election's own
-    // chain is already closed by the walk above, so this only does work where a bond raises something)
-    if (also && alsoN) {
-      var again = true, guard = 0;
-      while (again && guard++ < 64) {
-        again = false;
-        for (i = 0; i < n; i++) {
-          var c1 = also[i], c2 = des[i], up = -1;
-          if (c1 >= 0 && !isNaN(effRank[c1]) && !isNaN(effRank[i]) && effRank[c1] > effRank[i]) up = c1;
-          if (c2 >= 0 && !isNaN(effRank[c2]) && !isNaN(effRank[i]) && effRank[c2] > effRank[up >= 0 ? up : i]) up = c2;
-          if (up >= 0) { if (up === c1) raisedByBond++; effRank[i] = effRank[up]; effKey[i] = effKey[up]; again = true; }
-        }
-      }
-    }
-    for (i = 0; i < n; i++) {
-      var own = collapse(elements[i].storey);
-      if ((des[i] >= 0 || (also && also[i] >= 0)) && (rank(own) == null || isNaN(effRank[i]))) { unranked++; continue; }
-      if (effKey[i] === own) continue;
-      judged++;
-      var S = des[i] >= 0 ? items[des[i]] : null, T2 = items[i];
-      if (!S || effKey[i] !== collapse(elements[des[i]].storey)) chained++;      // moved further than its direct support's own label
-      if (S && ((S.bz < T2.bz - EPS && S.tz >= T2.bz - GAP) || (S.bz <= T2.bz + EPS && S.tz >= T2.tz - EPS))) otherRel++;
-      hung[T2.guid] = effKey[i]; moved++;
-      byPhase[elements[i].phase || '_'] = (byPhase[elements[i].phase || '_'] || 0) + 1;
-      toLevel[effKey[i]] = (toLevel[effKey[i]] || 0) + 1;
-    }
-    console.log('§D6_HANG_FILING elements=' + items.length + ' electedSupportOnAHigherLevel=' + judged + ' movedToCarrierLevel=' + moved +
-      ' ofWhichBearingOrEmbedded=' + otherRel + ' viaChain=' + chained + ' unrankedLevel(left)=' + unranked +
-      ' byPhase=' + JSON.stringify(byPhase) + ' toLevels=' + Object.keys(toLevel).length +
-      ' chain=' + (also ? 'election+ceiling-bond secondCarriers=' + alsoN + ' raisedByBond=' + raisedByBond : 'election'));
-    if (!moved) return null;
-    return { keyOf: function (el) { return hung[el.guid] || collapse(el.storey); }, hangMoved: moved };
-  }
-
   function instantiateTemplate(elements, T, laborRates, shiftHours, bandRank, collapse, levelAxis) {
     laborRates = laborRates || {};
     var shiftSecs = (shiftHours > 0 ? shiftHours : (T.calendar && T.calendar.hours_per_shift) || 24) * 3600;
@@ -1864,13 +1754,8 @@
     return METHOD_STEPS.indexOf((c === 'IfcMember' || c === 'IfcPlate') ? 'curtain wall' : (c === 'IfcWindow' || c === 'IfcDoor') ? 'windows and doors'
       : (c === 'IfcRailing' || c.indexOf('IfcStair') === 0) ? 'stairs and railings' : 'shell');
   }
-  function methodOrderOn() {
-    var env = (typeof process !== 'undefined' && process && process.env) ? process.env : {}, G = (typeof globalThis !== 'undefined') ? globalThis : global;
-    return !(G.__METHOD_ORDER === false || env.METHOD_ORDER === '0');
-  }
-  // methodRank(items) -> { guid: rank } or null when switched off. items: [{guid, cls, phase, bz|base_z, tz|top_z}]. Ranks compare inside one bar.
+  // methodRank(items, db) -> { guid: rank }. items: [{guid, cls, phase, bz|base_z, tz|top_z}]. Ranks compare inside one bar.
   function methodRank(items, db) {
-    if (!methodOrderOn()) { console.log('§METHOD_ORDER off — the order inside a bar stays the solve\'s'); return null; }
     // at one base the frame goes before its glass (pl); then the lower top first
     var rows = items.map(function (e) { return { g: e.guid, st: methodStep(e.cls, e.phase), bz: e.bz != null ? e.bz : e.base_z, tz: e.tz != null ? e.tz : e.top_z, pl: e.cls === 'IfcPlate' ? 1 : 0, mb: e.cls === 'IfcMember' };
     });
@@ -2272,8 +2157,8 @@
       ' effective=' + (_useAxis ? 'deriver' : 'storey') + ' probe=on');
     // §D6_HANG_FILING (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.9.4 D6, §Q.12) — only on the default storey axis;
     // the opt-in deriver axis is left exactly as it was.
-    // §METHOD_ORDER: the level a piece is filed on is its LOCATION (a height band by its base); the election files nothing. Off: the hang-filing axis, as before.
-    var _gridAxis = _useAxis || (methodOrderOn() ? _methodLocationAxis(elements, collapse, SG.EPS) : _hangFilingAxis(elements, collapse, bandRank));
+    // §METHOD_ORDER: the level a piece is filed on is its LOCATION (a height band by its base); the election files nothing.
+    var _gridAxis = _useAxis || _methodLocationAxis(elements, collapse, SG.EPS);
     var inst = instantiateTemplate(elements, T, laborRates, opts.shiftHours, bandRank, collapse, _gridAxis);
     if (!inst.tasks.length) { console.log('§AUTHOR_TPL_FAIL reason=no_tasks'); return { ok: false, reason: 'no_tasks' }; }
 
@@ -2359,130 +2244,9 @@
     // freshly generated schedule (and its P6 export) carried no float. fixedDates: the dates are the solve's, only float is derived.
     { var _cpmR = null; try { _cpmR = computeCpm(db, schedId, { fixedDates: true }); } catch (eC) { _cpmR = { ok: false, reason: String(eC && eC.message || eC) }; }
       console.log('§DCMA_FLOAT schedule=' + schedId + ' ' + (_cpmR && !_cpmR.error && _cpmR.ok !== false ? 'written tasks=' + ((_cpmR.tasks || []).length) + ' critical=' + ((_cpmR.criticalIds || []).length) + ' projectDuration=' + _cpmR.projectDuration : 'FAILED ' + JSON.stringify(_cpmR).slice(0, 160))); }
-    // §TPL_MOVIE_BINDS_BARS — bind the movie to the bars we just authored, from the SAME task
-    // objects, so the two can never be computed off different grids.
-    // §TPL_LAYER_ORDER — topological layers of the SHIPPED contact graph's bearing relation.
-    // Kahn over "who rests on whom": an element is in layer 0 when nothing it rests on is still
-    // unplaced. Cycles (a data defect) fall out in one block and are laid out after everything
-    // acyclic, never looped on.
-    var _layerOf = (function () {
-      try {
-        // This module's IIFE parameter is named `global` and is `self||this` — in node that is
-        // NOT globalThis, so a bare `global.SupportSweep` MISSES a module that registered itself
-        // properly. Exactly the trap _writeBarSchedule's _reg() and _reclassGroundworkSlabs both
-        // already document; check all three. (I hit it: the layer block returned null silently and
-        // the whole pass was a no-op, with identical numbers hiding it.)
-        var SSw = (global && global.SupportSweep) ||
-                  (typeof globalThis !== 'undefined' && globalThis.SupportSweep) ||
-                  (typeof window !== 'undefined' && window.SupportSweep) || null;
-        if (!SSw || !SSw.contactGraph) { console.log('§TPL_LAYER_ORDER_FAIL SupportSweep not loaded — task interiors stay in solve order'); return null; }
-        var items = elements.map(function (e) {
-          return { guid: e.guid, cls: e.cls, seq: e.seq, x0: e.x0, x1: e.x1, y0: e.y0, y1: e.y1,
-                   bz: e.base_z, tz: e.top_z };
-        });
-        var Gc = SSw.contactGraph(items);
-        if (!Gc.ok) return null;
-        var EPSl = SG.EPS, GAPl = SG.GAP;
-        var below = new Array(items.length);
-        for (var i2 = 0; i2 < items.length; i2++) {
-          var lst = Gc.contacts[i2], b2 = [];
-          if (lst) for (var q = 0; q < lst.length; q++) {
-            var S2 = items[lst[q]], T2 = items[i2];
-            // §I.5c FIX (bim-compiler 4D_MODEL_INTEGRITY.md) — this used to also require
-            // `S2.tz <= T2.bz + GAPl`, an upper bound that belongs only to auditFloating's WALL
-            // pool (§I.1 copy 3), applied here to EVERY contact. That discarded ~32% of Hospital's
-            // real bearing edges (supports whose top sits above the base they carry) from the
-            // layer pass's own graph, though it still claimed to run on "the SHIPPED contact
-            // graph's bearing relation". Now matches SupportSweep.contactGraph's own predicate
-            // (support_sweep.js `_ogSupportSweep`/`contactGraph`: no upper bound) exactly.
-            if (S2.bz < T2.bz - EPSl && S2.tz >= T2.bz - GAPl) b2.push(lst[q]);
-          }
-          below[i2] = b2;
-        }
-        // No artificial layer cap. A real cycle is caught by the no-progress break below; a
-        // fixed 64 silently dumped 1322 Hospital elements into one 'cyclic' bucket and cost
-        // 968 inversions that read as a cycle problem when it was my own constant.
-        var lay = new Int32Array(items.length).fill(-1), left = items.length, cur = 0;
-        while (left > 0) {
-          var progressed = false;
-          for (var i3 = 0; i3 < items.length; i3++) {
-            if (lay[i3] >= 0) continue;
-            var ready = true;
-            // A support placed in THIS round does not make its load ready: the load goes one layer later. Without `=== cur`
-            // an element whose support sits earlier in the scan landed in the support's own layer (§TPL_LAYER_SELFCHECK
-            // supportedInSAMElayer; bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.15.2).
-            for (var r = 0; r < below[i3].length; r++) { var lb = lay[below[i3][r]]; if (lb < 0 || lb === cur) { ready = false; break; } }
-            if (ready) { lay[i3] = cur; left--; progressed = true; }
-          }
-          if (!progressed) break;                  // cycle: everything remaining shares one layer
-          cur++;
-        }
-        var map = {}, unresolved = 0;
-        for (var i4 = 0; i4 < items.length; i4++) {
-          map[items[i4].guid] = lay[i4] >= 0 ? lay[i4] : cur;
-          if (lay[i4] < 0) unresolved++;
-        }
-        console.log('§TPL_LAYER_ORDER layers=' + cur + ' cyclic=' + unresolved +
-          ' — elements are laid out inside their task in SUPPORT order, not solve order');
-        return map;
-      } catch (e) { console.log('§TPL_LAYER_ORDER_FAIL ' + e.message); return null; }
-    })();
+    // §TPL_MOVIE_BINDS_BARS — bind the movie to the bars we just authored, from the SAME task objects, so the two can never be computed off different grids.
     var _mRank = methodRank(elements, db);   // §METHOD_ORDER
-    var _rm = remapSolveToTasks(schedule, inst.tasks, start, _layerOf, _mRank);
-    // §TPL_LAYER_SELFCHECK — A PASS MUST PROVE IT DID SOMETHING AND THAT IT WORKED.
-    // Written because the layer pass above shipped BROKEN and silent: it returned null on a
-    // shadowed `global`, changed nothing, and emitted numbers IDENTICAL to the previous run. A
-    // no-op is indistinguishable from a working pass unless the pass counts its own effect.
-    //   applied     = did the layer map exist at all. 0 => the pass did not run.
-    //   moved       = elements whose interval differs from the solve-order layout. 0 => no-op.
-    //   stillInverted = bearing pairs INSIDE one task where the supported element still starts
-    //                   before its support ends. This is the thing the pass exists to remove; it
-    //                   must be 0, and if it is not the pass is not doing its job.
-    try {
-      var _no = remapSolveToTasks(schedule, inst.tasks, start, null).schedule;
-      var _mv = 0;
-      for (var _g in _rm.schedule) if (!_no[_g] || _no[_g].start !== _rm.schedule[_g].start) _mv++;
-      var _taskOf = {};
-      inst.tasks.forEach(function (tk) { tk.guids.forEach(function (g) { _taskOf[g] = tk.id || tk.taskId || tk.name; }); });
-      var _inv = 0, _byG = {}, _invSameLayer = 0, _invLowerLayer = 0, _invHigherLayer = 0, _invSameLift = 0, _invMaxMs = 0, _invNames = [];
-      elements.forEach(function (e) { _byG[e.guid] = e; });
-      var _SSc = (global && global.SupportSweep) ||
-                 (typeof globalThis !== 'undefined' && globalThis.SupportSweep) || null;
-      if (_SSc && _SSc.contactGraph) {
-        var _it = elements.map(function (e) {
-          return { guid: e.guid, cls: e.cls, seq: e.seq, x0: e.x0, x1: e.x1, y0: e.y0, y1: e.y1,
-                   bz: e.base_z, tz: e.top_z };
-        });
-        var _Gc = _SSc.contactGraph(_it);
-        if (_Gc.ok) for (var _i = 0; _i < _it.length; _i++) {
-          var _l2 = _Gc.contacts[_i]; if (!_l2) continue;
-          var _T = _it[_i], _ts = _rm.schedule[_T.guid]; if (!_ts) continue;
-          for (var _q = 0; _q < _l2.length; _q++) {
-            var _S = _it[_l2[_q]], _ss = _rm.schedule[_S.guid]; if (!_ss) continue;
-            if (_taskOf[_S.guid] !== _taskOf[_T.guid]) continue;          // same task only
-            // §I.5c FIX — same narrowing dropped as above, so the self-check judges the SAME
-            // population the pass now actually lays out, not a pre-filtered subset of it.
-            if (!(_S.bz < _T.bz - SG.EPS && _S.tz >= _T.bz - SG.GAP)) continue;
-            if (_ts.start < _ss.end - 1) {
-              _inv++;
-              // WHICH kind of pair: the support's layer against the supported element's, and whether the solve put them in one lift
-              var _lS = _layerOf ? _layerOf[_S.guid] : null, _lT = _layerOf ? _layerOf[_T.guid] : null;
-              if (_lS === _lT) _invSameLayer++; else if (_lT < _lS) _invLowerLayer++; else _invHigherLayer++;
-              var _fS = schedule[_S.guid] && schedule[_S.guid].lift, _fT = schedule[_T.guid] && schedule[_T.guid].lift;
-              if (_fS != null && _fS >= 0 && _fS === _fT) _invSameLift++;
-              if (_ss.end - _ts.start > _invMaxMs) _invMaxMs = _ss.end - _ts.start;
-              if (_invNames.length < 5) _invNames.push(_T.cls + '<-' + _S.cls + ' L' + _lT + '/' + _lS + ' ' + _taskOf[_T.guid]);
-            }
-          }
-        }
-      }
-      console.log('§TPL_LAYER_SELFCHECK applied=' + (_layerOf ? 1 : 0) + ' moved=' + _mv + '/' + _rm.mapped +
-        ' stillInverted=' + _inv + ' (supportedInSAMElayer=' + _invSameLayer + ' inLOWERlayer=' + _invLowerLayer + ' inHIGHERlayer=' + _invHigherLayer +
-        ' sameLift=' + _invSameLift + ' maxOverlapMs=' + _invMaxMs + (_invNames.length ? ' e.g. ' + _invNames.join(' | ') : '') + ') ' +
-        (!_layerOf ? 'FAIL pass did not run'
-         : _mv === 0 ? 'FAIL pass ran but moved nothing — a no-op that looks like a success'
-         : _inv === 0 ? 'PASS' : 'FAIL support order still violated inside a task'));
-    } catch (e) { console.log('§TPL_LAYER_SELFCHECK_ERROR ' + e.message); }
+    var _rm = remapSolveToTasks(schedule, inst.tasks, start, null, _mRank);
     // ⚠ WORDING CORRECTED 2026-09-02 (bim-compiler 4D_GANTT_TM_REFACTOR.md §TM_REVEAL_SHIPPED,
     // queue item A-0). This line used to end "every element now PLAYS inside the bar that claims
     // it". That was never true of THIS map: `displaySchedule` is returned below and
