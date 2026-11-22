@@ -1,6 +1,6 @@
 {
- "app": "erp", "schema": 1, "sw": "erp/sw.js", "cacheVersion": "v1127", "depsDeclared": true,
- "depsReview": {"by":"owner","on":"2026-11-22","tool":"91f9dd03f8e75bd0f4e3e01609181e4c4837d5d176ff320153dd95a9481b8c76"},
+ "app": "erp", "schema": 1, "sw": "erp/sw.js", "cacheVersion": "v1128", "depsDeclared": true,
+ "depsReview": {"by":"owner","on":"2026-11-22","tool":"96e165c5d9362479e020cd2f37b67999ec1d824633fc1503903ba0dc4c2c9ce1"},
  "modules": {
   "capex/adapters.js": {"v":null,"load":"boot","lazyGroup":null,"precache":false,"deps":[],"uses":["erp/overlay/boot.js"],"notDeps":[],"owner":"prompts/CAPEX_DASHBOARD.md"},
   "capex/dash.js": {"v":null,"load":"boot","lazyGroup":null,"precache":false,"deps":["capex/adapters.js","capex/tiles.js"],"uses":["capex/pa_tiles.js","erp/ad_callout.js","erp/goal_engine.js","erp/overlay/boot.js"],"notDeps":[],"owner":"prompts/CAPEX_DASHBOARD.md"},
@@ -256,6 +256,7 @@
   "erp/processes/ProjectClose.js": {"v":2,"load":"boot","lazyGroup":null,"precache":true,"deps":["erp/ad_process.js"],"uses":["erp/model_project.js"],"notDeps":[],"owner":"prompts/ERP_IDEMPIERE_UX_PARITY.md"},
   "erp/processes/ProjectGenOrder.js": {"v":1,"load":"boot","lazyGroup":null,"precache":true,"deps":["erp/ad_process.js"],"uses":["erp/model_project.js"],"notDeps":[],"owner":"prompts/ERP_IDEMPIERE_UX_PARITY.md"},
   "erp/processes/ProjectGenPO.js": {"v":2,"load":"boot","lazyGroup":null,"precache":true,"deps":["erp/ad_process.js"],"uses":["erp/model_project.js"],"notDeps":[],"owner":"prompts/ERP_IDEMPIERE_UX_PARITY.md"},
+  "erp/processes/ProjectIssue.js": {"v":1,"load":"boot","lazyGroup":null,"precache":true,"deps":["erp/ad_process.js"],"uses":[],"notDeps":[],"owner":"prompts/CAPEX_DASHBOARD.md"},
   "erp/processes/ProjectPhaseGenOrder.js": {"v":2,"load":"boot","lazyGroup":null,"precache":true,"deps":["erp/ad_process.js"],"uses":[],"notDeps":[],"owner":"prompts/ERP_IDEMPIERE_UX_PARITY.md"},
   "erp/processes/ProjectSetType.js": {"v":1,"load":"boot","lazyGroup":null,"precache":true,"deps":["erp/ad_process.js"],"uses":["erp/model_project.js"],"notDeps":[],"owner":"prompts/ERP_IDEMPIERE_UX_PARITY.md"},
   "erp/processes/RMACreateOrder.js": {"v":1,"load":"boot","lazyGroup":null,"precache":true,"deps":["erp/ad_process.js"],"uses":[],"notDeps":[],"owner":""},
@@ -627,6 +628,7 @@
    {"kind":"tag","as":"processes/ProjectClose.js"},
    {"kind":"tag","as":"processes/ProjectGenOrder.js"},
    {"kind":"tag","as":"processes/ProjectGenPO.js"},
+   {"kind":"tag","as":"processes/ProjectIssue.js"},
    {"kind":"tag","as":"processes/ProjectSetType.js"},
    {"kind":"tag","as":"processes/ProjectPhaseGenOrder.js"},
    {"kind":"tag","as":"processes/SalesOrderRateInquiryProcess.js"},
@@ -976,6 +978,7 @@
   "processes/ProjectClose.js",
   "processes/ProjectGenOrder.js",
   "processes/ProjectGenPO.js",
+  "processes/ProjectIssue.js",
   "processes/ProjectSetType.js",
   "processes/ProjectPhaseGenOrder.js",
   "processes/SalesOrderRateInquiryProcess.js",
