@@ -26,7 +26,7 @@
 //   §19.17 F7 (K6 widened, new K11): a message over MsgText's FieldLength keeps whole blocks and ends with a link to the guide section; every row fits (red CTX_BREAK=nofit).
 //   §19.17 F2 (K10 widened): where a place has a message, the record's own Name / Description / Help comes FIRST, then the message (red CTX_BREAK=nodictfirst).
 //   §19.17 F4 (K10): the How To panel follows the place in view (tab / process / Home), as legacy's renderCtxHelp; with no message a tab shows its own Name / Description / Help.
-// Run: node erp/tests/witness_ctxhelp_overlay.js   Env: CTX_BREAK=nomsg|patch|nooverlay|nolink|noproc|dropsec|nosetup|nomachine|pubtext|rawseed|nolisten|nowait|noclientorder|winkey|nodict|notabtrl|nodictfirst|nofit  NOPAGE=1  ONLYEDIT=1 (K9 alone)  ONLYTABS=1 (K10 alone)
+// Run: node erp/tests/witness_ctxhelp_overlay.js   Env: CTX_BREAK=nomsg|patch|nooverlay|nolink|noproc|dropsec|nosetup|nomachine|pubtext|rawseed|nolisten|nowait|noclientorder|winkey|nodict|notabtrl|nodictfirst|nofit|labelmsg  NOPAGE=1  ONLYEDIT=1 (K9 alone)  ONLYTABS=1 (K10 alone)
 'use strict';
 const fs = require('fs'), path = require('path'), cp = require('child_process'), crypto = require('crypto');
 const ERP = path.join(__dirname, '..'), ROOT = path.join(ERP, '..'), BR = process.env.CTX_BREAK || '';
@@ -283,11 +283,13 @@ async function pagePart() {
 //   row is untouched; (b) with NO reload the reader's row, the How To panel on Sales Order and the question box's answer show the new text; (c) after a reload they still do.
 //   Reds: CTX_BREAK=nolisten (the page without the rebuild on save) -> (b) FAIL; CTX_BREAK=noclientorder (a reader that ignores legacy's client order) -> (b) and (c) FAIL; CTX_BREAK=nowait (the index built without waiting for the saved changes) -> (c) FAIL.
 async function editPart() {
+  const SEC1 = String((require(path.join(ERP, 'ad_ctxhelp_app_rows.js')).links.find((x) => x.help === 1000000) || {}).name || '').split(' + ')[0];   // §19.17 F6.2: help 1000000's first section title
   const HELP = 1000000, TITLE = 'Our own Sales Order rule', BODY = 'Ask the credit desk before you complete (W-CTXHELP-OVERLAY K9).', TEXT = '<p><strong>' + TITLE + '</strong></p><p>' + BODY + '</p>';
   const tmp = (n, src, a, b) => { const f = path.join(require('os').tmpdir(), 'ctx_' + n + '_' + process.pid), s = fs.readFileSync(path.join(ERP, src), 'utf8'); if (s.indexOf(a) < 0) throw new Error('red ' + n + ': its text is not in ' + src); fs.writeFileSync(f, s.split(a).join(b)); return f; };
   let over = null;
   if (BR === 'nolisten') over = { '/erp/idempiere.html': tmp('nolisten.html', 'idempiere.html', "t.indexOf('ad_ctxhelp') === 0", 'false') };
   if (BR === 'nowait') over = { '/erp/idempiere.html': tmp('nowait.html', 'idempiere.html', "ErpI18n.loadHelpIndex(lang), side])", "ErpI18n.loadHelpIndex(lang)])") };
+  if (BR === 'labelmsg') over = { '/erp/idempiere.html': tmp('labelmsg.html', 'idempiere.html', "var sec = hr.n != null ? String(hr.n).split(' + ')[0] : E.title;", 'var sec = E.title;') };   // §19.17 F6.2 red
   if (BR === 'noclientorder') over = { '/erp/ctx_help.js': tmp('noclientorder.js', 'ctx_help.js', "' ORDER BY ad_client_id DESC, ad_org_id DESC, ad_ctxhelpmsg_id DESC'", "' ORDER BY ad_client_id, ad_org_id, ad_ctxhelpmsg_id DESC'") };
   const P = await H.erpPage(null, over), pg = P.pg;
   const shown = async (tag) => {   // what a person sees: the reader's row, the panel on Sales Order (window 143), the answer card
@@ -295,9 +297,12 @@ async function editPart() {
     for (let i = 0; i < 40; i++) { await pg.waitForTimeout(250); if (await pg.evaluate(() => /\(143\)/.test(document.title) || !!document.querySelector('#idmp-howto-ctx') && document.querySelector('#idmp-howto-ctx').innerText.length > 0)) break; }
     await pg.waitForTimeout(600);
     const o = await pg.evaluate((id) => { const I = window.__idmpHowto.index(), r = (I.howtoRows || []).find((x) => x.id === id), c = window.__idmpHowto.ask('how do I complete a sales order');
-      return { row: r ? r.name + ' | ' + r.html : null, panel: (document.querySelector('#idmp-howto-ctx') || {}).innerText || '', card: (document.querySelector('#idmp-howto-card') || {}).innerText || '', cardRow: c && c.howto ? c.howto.id : null }; }, HELP);
+      return { row: r ? r.name + ' | ' + r.html : null, panel: (document.querySelector('#idmp-howto-ctx') || {}).innerText || '', card: (document.querySelector('#idmp-howto-card') || {}).innerText || '', cardRow: c && c.howto ? c.howto.id : null,
+        label: ((Array.from(document.querySelectorAll('#idmp-howto-ctx .hs-sub a')).pop()) || {}).textContent || '' }; }, HELP);   // §19.17 F6.2: the guide link's label
     L('K9 ' + tag + ' reader row "' + String(o.row).slice(0, 70) + '" panel "' + o.panel.replace(/\s+/g, ' ').slice(0, 70) + '" card how-to=' + o.cardRow + ' "' + o.card.replace(/\s+/g, ' ').slice(-70) + '"');
-    return { row: o.row === TITLE + ' | <p>' + BODY + '</p>', panel: o.panel.indexOf(TITLE) >= 0 && o.panel.indexOf(BODY) >= 0, card: o.cardRow === HELP && o.card.indexOf(BODY) >= 0 };
+    L('K9 ' + tag + ' guide link "' + o.label + '"');
+    return { row: o.row === TITLE + ' | <p>' + BODY + '</p>', panel: o.panel.indexOf(TITLE) >= 0 && o.panel.indexOf(BODY) >= 0, card: o.cardRow === HELP && o.card.indexOf(BODY) >= 0,
+      label: o.label.indexOf(' · ' + SEC1) > 0 && o.label.indexOf(TITLE) < 0 };   // §19.17 F6.2: names the section (the help's Name up to " + "), never the tenant's title
   };
   const rowsOf = () => pg.evaluate((id) => window.__tipRead.rows('SELECT ad_client_id AS c, msgtext AS t FROM ad_ctxhelpmsg WHERE ad_ctxhelp_id=' + id + ' ORDER BY ad_client_id'), HELP);
   try {
@@ -325,8 +330,8 @@ async function editPart() {
     await pg.waitForFunction(() => window.__idmpHowto && window.__idmpHowto.index() && window.__idmpFieldHelp && window.__idmpFieldHelp.menu().windows.length > 0, null, { timeout: 60000 });
     const c = await shown('after a reload'), rows2 = await rowsOf();
     L('K9 rows after the reload: ' + rows2.map((r) => 'client ' + r.c + ' ' + String(r.t).length + ' chars').join(', '));
-    const all = (o) => o.row && o.panel && o.card;
-    chk('K9 a tenant\'s own message, typed in the Context Help window: (a) saved as client 11, signed, System\'s row untouched: ' + a + '; (b) shown with no reload: reader ' + b.row + ', panel ' + b.panel + ', answer card ' + b.card + '; (c) after a reload: reader ' + c.row + ', panel ' + c.panel + ', answer card ' + c.card,
+    const all = (o) => o.row && o.panel && o.card && o.label;
+    chk('K9 a tenant\'s own message, typed in the Context Help window: (a) saved as client 11, signed, System\'s row untouched: ' + a + '; (b) shown with no reload: reader ' + b.row + ', panel ' + b.panel + ', answer card ' + b.card + ', guide link names the section ' + b.label + '; (c) after a reload: reader ' + c.row + ', panel ' + c.panel + ', answer card ' + c.card + ', link ' + c.label,
       a && all(b) && all(c) && rows2.filter((r) => Number(r.c) === 11).length === 1);
     if (P.errs.length) L('K9 page errors: ' + P.errs.slice(0, 3).join(' | '));
   } finally { await P.close(); if (over) Object.keys(over).forEach((k) => { try { fs.unlinkSync(over[k]); } catch (e) {} }); }
