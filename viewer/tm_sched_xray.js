@@ -1067,7 +1067,7 @@
   // WHAT IT DOES NOT DO, ON PURPOSE: a superstructure level's slab SET stays compact — _installSecs
   // prices every IfcSlab at a flat 823 s (0.8% of Hospital L3's labour) and the cell order lays a
   // level out trade-by-trade — both rulings, neither this function's to change (spec §D).
-  function _tmTilePlayWithinTasks(disp, cap, displayAuthored) {
+  function _tmTilePlayWithinTasks(disp, cap, displayAuthored, rankOf) {   // rankOf: §METHOD_ORDER (ScheduleAuthor.methodRank), absent = the solve's order
     if (!cap || !cap.win || !cap.guidTask) {
       console.log('§TM_REVEAL_TILED skip reason=no dated task windows (_cap null) — affine rescale kept');
       return null;
@@ -1097,7 +1097,7 @@
       console.log('§TM_REVEAL_TILED skip reason=no element resolves to a dated task — affine rescale kept');
       return null;
     }
-    var r = SA.remapSolveToTasks(disp, tasks, new Date(base).toISOString(), null);
+    var r = SA.remapSolveToTasks(disp, tasks, new Date(base).toISOString(), null, rankOf || null);
     console.log('§TM_REVEAL_TILED tasks=' + tasks.length + ' mapped=' + r.mapped + ' skipped=' + skipped +
       ' degenerate=' + r.degenerateTasks +
       ' — each element plays its own CPM-duration share of its bar, CPM order kept, no dead air (was: per-task affine, §TM_ELEMENT_WINDOW_RESCALE)');

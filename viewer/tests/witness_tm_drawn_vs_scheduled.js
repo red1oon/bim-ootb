@@ -67,7 +67,7 @@ const server = http.createServer((req, res) => {
   try {
     const u = decodeURIComponent(req.url.split('?')[0]);
     let fp = path.join(ROOT, u.replace(/^\/+/, ''));
-    if (!fs.existsSync(fp) && u.startsWith('/buildings/')) fp = path.join(BLD_DIR, u.slice('/buildings/'.length));
+    if ((!fs.existsSync(fp) || fs.statSync(fp).size === 0) && u.startsWith('/buildings/')) fp = path.join(BLD_DIR, u.slice('/buildings/'.length));   // a 0-byte placeholder in the checkout is not the building (SampleCastle, §Q.58.1)
     if (fs.existsSync(fp) && fs.statSync(fp).isDirectory()) fp = path.join(fp, 'index.html');
     if (!fs.existsSync(fp)) { res.writeHead(404); res.end('404'); return; }
     const st = fs.statSync(fp);

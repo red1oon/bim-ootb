@@ -20,7 +20,9 @@ for (const b of blds) {
   const CELL = 4, grid = {}, cellsOf = e => { const o = []; for (let i = Math.floor(e.x0 / CELL); i <= Math.floor(e.x1 / CELL); i++) for (let j = Math.floor(e.y0 / CELL); j <= Math.floor(e.y1 / CELL); j++) o.push(i + ',' + j); return o; };
   const floors = items.filter(e => e.cls === 'IfcSlab' && (e.phase === 'Superstructure' || e.phase === 'Substructure'));
   floors.forEach(f => cellsOf(f).forEach(c => (grid[c] = grid[c] || []).push(f)));
-  const floorZ = e => { let z = -Infinity; cellsOf(e).forEach(c => (grid[c] || []).forEach(f => { if (f !== e && f.bz < e.bz - 0.05 && f.tz <= e.bz + 0.3 && Math.min(f.x1, e.x1) > Math.max(f.x0, e.x0) && Math.min(f.y1, e.y1) > Math.max(f.y0, e.y0) && f.tz > z) z = f.tz; })); return z === -Infinity ? -1e9 : Math.round(z * 2) / 2; };
+  const LV = Array.from(new Set(floors.map(f => f.tz)));
+  const floorZ = e => { let z = -Infinity; cellsOf(e).forEach(c => (grid[c] || []).forEach(f => { if (f !== e && f.bz < e.bz - 0.05 && f.tz <= e.bz + 0.3 && Math.min(f.x1, e.x1) > Math.max(f.x0, e.x0) && Math.min(f.y1, e.y1) > Math.max(f.y0, e.y0) && f.tz > z) z = f.tz; })); if (z === -Infinity) LV.forEach(l => { if (l <= e.bz + 0.3 && l > z) z = l; });   // no floor straight under (a window in an outer wall sits past the slab edge): the highest floor level at or below my base
+    return z === -Infinity ? -1e9 : Math.round(z * 2) / 2; };
   const STEP = t => t === 'glazing' ? FIT.indexOf('glass framing') : (FIT.indexOf(t) < 0 ? FIT.length : FIT.indexOf(t));   // a curtain wall goes up frame and glass together, bottom row first
   // inside a step: from the bottom up by BASE (what something rests on always starts lower than it does)
   const key = e => { const t = CR.trade(e); if (t === 'foundations' || t === 'frame and slabs') return [0, 0, 0, e.bz, e.tz];
