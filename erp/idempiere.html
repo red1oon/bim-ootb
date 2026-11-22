@@ -3196,13 +3196,15 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var ho = { client: _session && _session.client ? _session.client.id : 0, org: _session && _session.org ? _session.org.id : 0, lang: lang };
     var m = CtxHelp.msg(_sqlRows, pl.type, pl.id, ho), h = '', src = 'none';
     if (m) {
-      var X = CtxHelp.split(m.text), E = CtxHelp.split(m.base), d = (_sqlRows('SELECT description AS d FROM ad_ctxhelp WHERE ad_ctxhelp_id=' + Number(m.ctxhelpId))[0] || {}).d, g = CtxHelp.guideOf(d);
+      var X = CtxHelp.split(m.text), E = CtxHelp.split(m.base), hr = _sqlRows('SELECT description AS d, name AS n FROM ad_ctxhelp WHERE ad_ctxhelp_id=' + Number(m.ctxhelpId))[0] || {}, d = hr.d, g = CtxHelp.guideOf(d);
+      // §19.17 F6.2: the link's label names the guide SECTION its URL points at (the help's Name up to its first " + ", F5), never the message's heading (a tenant's own title)
+      var sec = hr.n != null ? String(hr.n).split(' + ')[0] : E.title;
       var row = { english: lang !== 'en_US' && m.lang === 'en_US', translated: m.lang !== 'en_US' && m.istranslated === 'N' };
       // §19.17 F2 (owner 2026-11-22, a kernel-side extension, D3): legacy shows the message INSTEAD of the record's own text (HelpController.java:305 vs :338); the twin keeps
       //   legacy's own block first, then our message under a thin rule, so a legacy user loses no words they know
       var dic = pl.type !== 'H' ? _ctxDict(pl) : '';
       h = (dic ? dic + '<hr class="hs-sep">' : '') + (X.title ? '<div class="hs-row"><b>' + escH(X.title) + '</b></div>' : '') + _howtoEnglish(row) + _howtoLinks(X.html) + _howtoTrlNote(row) +
-        (d ? '<div class="hs-sub"><a href="' + escH(d) + '" target="_blank" rel="noopener">' + escH((g || d) + (E.title ? ' · ' + E.title : '')) + '</a></div>' : '');
+        (d ? '<div class="hs-sub"><a href="' + escH(d) + '" target="_blank" rel="noopener">' + escH((g || d) + (sec ? ' · ' + sec : '')) + '</a></div>' : '');
       src = dic ? 'dict+msg' : 'msg';
     } else if (pl.type !== 'H') { h = _ctxDict(pl); if (h) src = 'dict'; }
     box.innerHTML = h;
