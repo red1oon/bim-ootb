@@ -1,0 +1,301 @@
+{
+ "spec": "§19.17 F6",
+ "file": "legacy/local_sql/postgresql/202611161933_KernelERP_ContextHelp.sql",
+ "targets": [
+  {
+   "kind": "T",
+   "id": 186,
+   "help": 1000000,
+   "huu": "2296041b-0c8b-550a-abab-7b73e9c6df3b",
+   "muu": "498dcddc-a565-5776-bee2-9ad650a68660",
+   "sections": [
+    "UG1",
+    "FS7",
+    "FS9"
+   ],
+   "langs": [
+    "en",
+    "de_DE",
+    "zh_CN"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 257,
+   "help": 1000001,
+   "huu": "88553452-b4a3-594f-936c-51f8d4303780",
+   "muu": "d2297abb-346f-57dd-ace4-141a5691feca",
+   "sections": [
+    "UG2"
+   ],
+   "langs": [
+    "en",
+    "de_DE",
+    "zh_CN"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 263,
+   "help": 1000002,
+   "huu": "5839dce2-b7ee-59e4-beed-f7c1271e6fb2",
+   "muu": "07e57b25-c992-597a-b4e2-ce816573562f",
+   "sections": [
+    "UG3"
+   ],
+   "langs": [
+    "en",
+    "de_DE",
+    "zh_CN"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 330,
+   "help": 1000003,
+   "huu": "58ae1a39-20e8-5ab9-9089-6877e251d3e2",
+   "muu": "4cf1f1b2-4333-5e98-88c0-ce70292497c6",
+   "sections": [
+    "UG4"
+   ],
+   "langs": [
+    "en",
+    "de_DE",
+    "zh_CN"
+   ]
+  },
+  {
+   "kind": "P",
+   "id": 53267,
+   "help": 1000004,
+   "huu": "1f798628-92aa-5b4e-af9e-f2f7bd7716ae",
+   "muu": "ca6f0143-c5d5-53be-9d2d-0d05ac4caf86",
+   "sections": [
+    "UG5"
+   ],
+   "langs": [
+    "en",
+    "de_DE"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 296,
+   "help": 1000005,
+   "huu": "6c52a0ab-f6bd-5348-8bd5-92cbe3fa97b1",
+   "muu": "c04e9747-db51-55b6-adfb-b40c8ff9d3fb",
+   "sections": [
+    "UG6"
+   ],
+   "langs": [
+    "en",
+    "de_DE"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 290,
+   "help": 1000005,
+   "huu": "480d15a5-d980-51cc-8eb7-e0f3733b6354",
+   "muu": "683b047e-3942-59c9-a14f-dae2b3f55850",
+   "sections": [
+    "UG6"
+   ],
+   "langs": [
+    "en",
+    "de_DE"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 408,
+   "help": 1000005,
+   "huu": "dd7d7d3e-3d73-5dfc-9743-754d4554a6ed",
+   "muu": "6512ec99-5f00-5ea8-93bb-6e939d247bf8",
+   "sections": [
+    "UG6"
+   ],
+   "langs": [
+    "en",
+    "de_DE"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 200007,
+   "help": 1000006,
+   "huu": "7b1ff739-18bc-5fa8-81a5-0e46eb8222c2",
+   "muu": "6754eff5-dfd2-501e-bcce-9825e79de1e2",
+   "sections": [
+    "UG7"
+   ],
+   "langs": [
+    "en",
+    "de_DE"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 328,
+   "help": 1000006,
+   "huu": "a3fa2108-b913-5d37-8a11-b23fd0a23b5b",
+   "muu": "5659d136-e2ea-5f05-ad39-cca99c4ae513",
+   "sections": [
+    "UG7"
+   ],
+   "langs": [
+    "en",
+    "de_DE"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 372,
+   "help": 1000007,
+   "huu": "83765705-ba68-5d84-8dd7-17a23550b2d4",
+   "muu": "2c335202-1b9a-5e7f-824a-3c5ccd5ab7a9",
+   "sections": [
+    "UG8"
+   ],
+   "langs": [
+    "en",
+    "de_DE"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 294,
+   "help": 1000008,
+   "huu": "58265c07-f5bc-52c2-9cc6-3527dace43ca",
+   "muu": "ec5dc447-1992-5aef-8bec-f1b676a82be0",
+   "sections": [
+    "UG6",
+    "FSD"
+   ],
+   "langs": [
+    "en",
+    "de_DE"
+   ]
+  },
+  {
+   "kind": "P",
+   "id": 310,
+   "help": 1000009,
+   "huu": "c5a8669f-379e-531a-bd14-82a28f75cb9a",
+   "muu": "61117643-f154-576d-9592-2d811e160ae2",
+   "sections": [
+    "UG8",
+    "FS11"
+   ],
+   "langs": [
+    "en",
+    "de_DE"
+   ]
+  },
+  {
+   "kind": "P",
+   "id": 53161,
+   "help": 1000010,
+   "huu": "84ebdec5-3004-5104-8e20-cc3ca101b187",
+   "muu": "7d7a82d4-c97c-5ac2-86f1-9c57c6af2ea4",
+   "sections": [
+    "FS3"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 220,
+   "help": 1000011,
+   "huu": "8c8578db-ab6d-5140-8f23-db1ae9ee6998",
+   "muu": "fe8c9927-4ad3-563d-a28b-2e886ddc1501",
+   "sections": [
+    "FS4",
+    "FS5"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 180,
+   "help": 1000012,
+   "huu": "08699e03-ed59-59de-8c56-6164cae8b394",
+   "muu": "6a7586ba-f33b-5172-b32c-7b3872fa51d8",
+   "sections": [
+    "FS6"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 177,
+   "help": 1000012,
+   "huu": "3fc84fe1-aa8f-5091-8d1e-55d0d406bf89",
+   "muu": "ada92c8b-70a5-5bbe-881e-48d1070685df",
+   "sections": [
+    "FS6"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 222,
+   "help": 1000013,
+   "huu": "03f7acd4-c92c-5691-b512-e8b7e7e88fca",
+   "muu": "f1ff05b1-2bc7-52d7-8f3d-9ba1718b12d4",
+   "sections": [
+    "FS6a"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 191,
+   "help": 1000014,
+   "huu": "c5467cc3-be0e-53c6-8164-361a3789e223",
+   "muu": "65f1ede8-1f49-5c32-ab39-379f3274f819",
+   "sections": [
+    "FS6b"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 187,
+   "help": 1000015,
+   "huu": "80767731-31bc-5f82-a689-de60f2817f05",
+   "muu": "d036dc1d-52ad-52e5-8587-e2992e600196",
+   "sections": [
+    "FS8"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "P",
+   "id": 238,
+   "help": 1000016,
+   "huu": "dec11355-15a3-51ac-974c-89db562b7b12",
+   "muu": "d96ea342-74ee-5742-a5cd-9244f7f20aad",
+   "sections": [
+    "FS11b"
+   ],
+   "langs": [
+    "en"
+   ]
+  }
+ ]
+}
