@@ -154,7 +154,7 @@
     A.showRoadReport = function () {
       if (!(A.isCivilModel && A.isCivilModel())) { console.log('§ROAD_REPORT VACUOUS not a civil model — the road report is civil-only'); return Promise.resolve(null); }
       var t0 = performance.now();
-      var ld = (typeof window.loadJsonWithOverrides === 'function') ? window.loadJsonWithOverrides('std_values.json?v=3', 'json_std_values') : fetch('std_values.json?v=3').then(function (r) { return r.json(); });
+      var ld = (typeof window.loadJsonWithOverrides === 'function') ? window.loadJsonWithOverrides('std_values.json?v=b7233355', 'json_std_values') : fetch('std_values.json?v=b7233355').then(function (r) { return r.json(); });
       return ld.then(function (std) {
         var C = A.chainage ? A.chainage.read(std) : null;
         // speed zones: reuse a derived result; else derive into a detached host (same owner, no second engine)

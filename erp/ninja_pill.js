@@ -48,7 +48,7 @@
     if (_xlsxReady) return _xlsxReady;
     _xlsxReady = new Promise(function (res, rej) {
       var s = document.createElement('script');
-      s.src = 'xlsx.mini.min.js?v=1';
+      s.src = 'xlsx.mini.min.js?v=3120abba';
       s.onload = function () { console.log('§NINJA-PILL xlsx=loaded'); res(global.XLSX); };
       s.onerror = function () { _xlsxReady = null; rej(new Error('xlsx.mini.min.js failed to load')); };
       document.head.appendChild(s);

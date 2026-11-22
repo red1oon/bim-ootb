@@ -6,7 +6,7 @@
 import { OcctKernel } from './lib/kernel/index.js';
 // §CUT-MOVE (prompts/SPEC_GEOM_CUT_MOVE.md): the ONE definition of GEOM_CUT_MOVE's meaning — a classic triple-export
 // script evaluated here as a module (it binds `self.CutMove`; the main thread's <script> binds window.CutMove).
-import './cut_move.js?v=2';
+import './cut_move.js?v=4ab16113';
 const CutMove = self.CutMove;
 
 let kernelPromise = null;

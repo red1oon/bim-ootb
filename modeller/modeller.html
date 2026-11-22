@@ -223,22 +223,22 @@
 <!-- Bonsai kernel host (classic global window.Bonsai) — author() spawns the worker lazily. -->
 <!-- §CUT-MOVE (prompts/SPEC_GEOM_CUT_MOVE.md): the ONE definition of GEOM_CUT_MOVE — zero deps, loaded first; the
      module worker imports the SAME file (self.CutMove); bonsai_ifc / gridmove / itemdrag read window.CutMove at call time. -->
-<script src="cut_move.js?v=2" onerror="console.warn('§CUT-MOVE LOAD_FAIL cut_move.js')"></script>
-<script src="bonsai_kernel.js?v=13" onerror="console.warn('§BONSAI LOAD_FAIL bonsai_kernel.js')"></script>
+<script src="cut_move.js?v=4ab16113" onerror="console.warn('§CUT-MOVE LOAD_FAIL cut_move.js')"></script>
+<script src="bonsai_kernel.js?v=3d2d5267" onerror="console.warn('§BONSAI LOAD_FAIL bonsai_kernel.js')"></script>
 <!-- Bonsai 2D sketch front: planegcs constraint solver -> solved profile -> GEOM_EXTRUDE_POLY. -->
-<script src="bonsai_sketch.js?v=2" onerror="console.warn('§SKETCH LOAD_FAIL bonsai_sketch.js')"></script>
+<script src="bonsai_sketch.js?v=de0f190b" onerror="console.warn('§SKETCH LOAD_FAIL bonsai_sketch.js')"></script>
 <!-- Signed op-log engine (shipped kernel_ops: hash chain + edge signature) + sql.js it commits into. -->
-<script src="../common/lib/sql-wasm.js" onerror="console.warn('§OPLOG LOAD_FAIL sql-wasm.js')"></script>
-<script src="kernel_ops.js?v=9" onerror="console.warn('§OPLOG LOAD_FAIL kernel_ops.js')"></script>
+<script src="../common/lib/sql-wasm.js?v=d2cb6865" onerror="console.warn('§OPLOG LOAD_FAIL sql-wasm.js')"></script>
+<script src="kernel_ops.js?v=6baa3293" onerror="console.warn('§OPLOG LOAD_FAIL kernel_ops.js')"></script>
 <!-- Bonsai feature tree: the SIGNED op-log; geometry is a fold over it; history scrubber replays the recipe. -->
-<script src="bonsai_oplog.js?v=13" onerror="console.warn('§OPLOG LOAD_FAIL bonsai_oplog.js')"></script>
+<script src="bonsai_oplog.js?v=3ac2f4db" onerror="console.warn('§OPLOG LOAD_FAIL bonsai_oplog.js')"></script>
 <!-- §WORLD-HIST-MODELLER (RESUME_WORLD_HISTORY_DEDUP_RESTORE.md 4-step handoff): the SAME cross-page
      "W" log (common/whole_history.js) the Viewer/iDempiere/Gravity already write to. Loaded BEFORE
      history_bar.js so its internal WholeHistory.record mirror (the BUILDING_OPEN doc-type) has a live
      target instead of silently falling back to the un-deduped inline write. Modeller follows the viewer
      LANE PARTITION — W only (open/view the log), no fork/refold, no long-press bomb-clear drawer (that
      richer pill-drawer framework belongs to viewer/panels.js + erp/idmp_pills.js, not this page). -->
-<script src="../common/whole_history.js?v=1" onerror="console.warn('§WHOLE LOAD_FAIL whole_history.js')"></script>
+<script src="../common/whole_history.js?v=61725eb1" onerror="console.warn('§WHOLE LOAD_FAIL whole_history.js')"></script>
 <script>
 if (window.WholeHistory && WholeHistory.mount) WholeHistory.mount({ page: 'modeller', rootPrefix: '../', launcher: false });
 (function () {
@@ -252,121 +252,121 @@ if (window.WholeHistory && WholeHistory.mount) WholeHistory.mount({ page: 'model
      tree engine the Viewer runs (common/history_bar.js), reused — not a second branch mechanism. The
      adapter wraps Bonsai.oplog.commit/commitGesture so every real edit lands as one tree node. -->
 <!-- §14.5 (bim-compiler VOCAB_MESSAGE_CATALOG.md): THE help panel + THE drag helper, the same files the Viewer loads. -->
-<script src="../common/drag.js?v=2" onerror="console.warn('§HELP LOAD_FAIL drag.js')"></script>
-<script src="../common/help/help_query.js?v=2" onerror="console.warn('§HELP LOAD_FAIL help_query.js')"></script>
-<script src="../common/door/assist_core.js?v=1" onerror="console.warn('§HELP LOAD_FAIL assist_core.js')"></script>
-<script src="../common/help/help_dym.js?v=2" onerror="console.warn('§HELP LOAD_FAIL help_dym.js')"></script>
-<script src="../common/help/help_grammar.js?v=1" onerror="console.warn('§HELP LOAD_FAIL help_grammar.js')"></script>
-<script src="../common/help/help_guid.js?v=1" onerror="console.warn('§HELP LOAD_FAIL help_guid.js')"></script>
-<script src="../common/help/help_panel.js?v=6" onerror="console.warn('§HELP LOAD_FAIL help_panel.js')"></script>
-<script src="../common/history_bar.js?v=3" onerror="console.warn('§MHIST LOAD_FAIL history_bar.js')"></script>
-<script src="modeller_history.js?v=8" onerror="console.warn('§MHIST LOAD_FAIL modeller_history.js')"></script>
+<script src="../common/drag.js?v=20a68351" onerror="console.warn('§HELP LOAD_FAIL drag.js')"></script>
+<script src="../common/help/help_query.js?v=864b524f" onerror="console.warn('§HELP LOAD_FAIL help_query.js')"></script>
+<script src="../common/door/assist_core.js?v=c30385be" onerror="console.warn('§HELP LOAD_FAIL assist_core.js')"></script>
+<script src="../common/help/help_dym.js?v=ca3018d5" onerror="console.warn('§HELP LOAD_FAIL help_dym.js')"></script>
+<script src="../common/help/help_grammar.js?v=1f6eeb69" onerror="console.warn('§HELP LOAD_FAIL help_grammar.js')"></script>
+<script src="../common/help/help_guid.js?v=65750c2e" onerror="console.warn('§HELP LOAD_FAIL help_guid.js')"></script>
+<script src="../common/help/help_panel.js?v=ff314743" onerror="console.warn('§HELP LOAD_FAIL help_panel.js')"></script>
+<script src="../common/history_bar.js?v=8966bb7d" onerror="console.warn('§MHIST LOAD_FAIL history_bar.js')"></script>
+<script src="modeller_history.js?v=03ee118f" onerror="console.warn('§MHIST LOAD_FAIL modeller_history.js')"></script>
 <!-- Bonsai IFC export: the authored op-log -> a standards IFC4 file via web-ifc (author->sign->export). -->
-<script src="../common/lib/web-ifc-api-iife.js" onerror="console.warn('§IFC LOAD_FAIL web-ifc-api-iife.js')"></script>
-<script src="dxf2ifc.js?v=1" onerror="console.warn('§IFC LOAD_FAIL dxf2ifc.js')"></script>
-<script src="open_building_db.js?v=2" onerror="console.warn('§PROPS LOAD_FAIL open_building_db.js')"></script>
-<script src="props_panel.js?v=2" onerror="console.warn('§PROPS LOAD_FAIL props_panel.js')"></script>
-<script src="bonsai_ifc.js?v=8" onerror="console.warn('§IFC LOAD_FAIL bonsai_ifc.js')"></script>
-<script src="bcf_export.js?v=1" onerror="console.warn('§BCF LOAD_FAIL bcf_export.js')"></script>
+<script src="../common/lib/web-ifc-api-iife.js?v=68415521" onerror="console.warn('§IFC LOAD_FAIL web-ifc-api-iife.js')"></script>
+<script src="dxf2ifc.js?v=8c2c8d82" onerror="console.warn('§IFC LOAD_FAIL dxf2ifc.js')"></script>
+<script src="open_building_db.js?v=bbfef623" onerror="console.warn('§PROPS LOAD_FAIL open_building_db.js')"></script>
+<script src="props_panel.js?v=46309c80" onerror="console.warn('§PROPS LOAD_FAIL props_panel.js')"></script>
+<script src="bonsai_ifc.js?v=9bf8d287" onerror="console.warn('§IFC LOAD_FAIL bonsai_ifc.js')"></script>
+<script src="bcf_export.js?v=cf4e5acf" onerror="console.warn('§BCF LOAD_FAIL bcf_export.js')"></script>
 <!-- DXF2BIM lane L3 (prompts/DXF2BIM_MODELLER_LANE.md §L3): Open ▸ 2D drawings (.dxf) → canvas → Convert. Loads its pipeline lazily. -->
-<script src="dxf_export_ui.js?v=2" onerror="console.warn('§DXF-EXPORT LOAD_FAIL dxf_export_ui.js')"></script>
-<script src="viewer_db_export.js?v=3" onerror="console.warn('§VIEWERDB LOAD_FAIL viewer_db_export.js')"></script>
-<script src="dxf_import_ui.js?v=23" onerror="console.warn('§DXF-IMPORT LOAD_FAIL dxf_import_ui.js')"></script>
+<script src="dxf_export_ui.js?v=e11b2b24" onerror="console.warn('§DXF-EXPORT LOAD_FAIL dxf_export_ui.js')"></script>
+<script src="viewer_db_export.js?v=ad5ba922" onerror="console.warn('§VIEWERDB LOAD_FAIL viewer_db_export.js')"></script>
+<script src="dxf_import_ui.js?v=8756b78f" onerror="console.warn('§DXF-IMPORT LOAD_FAIL dxf_import_ui.js')"></script>
 <!-- Bonsai architectural authoring grid: column grid on the sketch plane + snap-to-grid (2D correlation). -->
-<script src="bonsai_grid.js?v=2" onerror="console.warn('§GRID LOAD_FAIL bonsai_grid.js')"></script>
+<script src="bonsai_grid.js?v=e4d92c05" onerror="console.warn('§GRID LOAD_FAIL bonsai_grid.js')"></script>
 <!-- Grid Kinematics engine (§S270, pure recompose math) + the modeller adapter (gridline-drag → GEOM_GRID_MOVE). -->
-<script src="grid_kinematics.js" onerror="console.warn('§GRIDMOVE LOAD_FAIL grid_kinematics.js')"></script>
-<script src="bonsai_gridmove.js?v=4" onerror="console.warn('§GRIDMOVE LOAD_FAIL bonsai_gridmove.js')"></script>
+<script src="grid_kinematics.js?v=06ff0665" onerror="console.warn('§GRIDMOVE LOAD_FAIL grid_kinematics.js')"></script>
+<script src="bonsai_gridmove.js?v=8e2e0b4a" onerror="console.warn('§GRIDMOVE LOAD_FAIL bonsai_gridmove.js')"></script>
 <!-- Bonsai-faithful Outliner (the richer Find): Blender-style feature tree over the signed op-log. -->
-<script src="bonsai_outliner.js?v=15" onerror="console.warn('§OUTLINER LOAD_FAIL bonsai_outliner.js')"></script>
+<script src="bonsai_outliner.js?v=704446c3" onerror="console.warn('§OUTLINER LOAD_FAIL bonsai_outliner.js')"></script>
 <!-- BOM Tree composition facet (the ARC BOM editor): Open any extracted.db → seed an editable BOM tree; re-parent = signed op. -->
-<script src="bom_tree.js?v=4" onerror="console.warn('§BOMTREE LOAD_FAIL bom_tree.js')"></script>
-<script src="bom_tree_outliner.js?v=4" onerror="console.warn('§BOMTREE LOAD_FAIL bom_tree_outliner.js')"></script>
+<script src="bom_tree.js?v=1a2e7fb0" onerror="console.warn('§BOMTREE LOAD_FAIL bom_tree.js')"></script>
+<script src="bom_tree_outliner.js?v=bb868805" onerror="console.warn('§BOMTREE LOAD_FAIL bom_tree_outliner.js')"></script>
 <!-- Cross-edges: the typed SDG lateral edges (abuts/...) derived on-the-fly from the bbox substrate. -->
-<script src="cross_edges.js?v=5" onerror="console.warn('§XEDGE LOAD_FAIL cross_edges.js')"></script>
+<script src="cross_edges.js?v=1b92b819" onerror="console.warn('§XEDGE LOAD_FAIL cross_edges.js')"></script>
 <!-- Real per-element geometry (component_geometries/base_geometries) — read+recentre, no THREE/DOM deps.
      Loaded BEFORE arc_editable.js (its factory takes window.RealGeometry as a dependency). -->
-<script src="real_geometry.js?v=2" onerror="console.warn('§REALGEOM LOAD_FAIL real_geometry.js')"></script>
-<script src="arc_editable.js?v=9" onerror="console.warn('§ARC LOAD_FAIL arc_editable.js')"></script>
-<script src="sdg_cascade.js?v=1" onerror="console.warn('§SDG LOAD_FAIL sdg_cascade.js')"></script>
-<script src="clipboard.js?v=1" onerror="console.warn('§CLIPBOARD LOAD_FAIL clipboard.js')"></script>
-<script src="sdg_gate.js?v=5" onerror="console.warn('§GATE LOAD_FAIL sdg_gate.js')"></script>
+<script src="real_geometry.js?v=d0fc48a7" onerror="console.warn('§REALGEOM LOAD_FAIL real_geometry.js')"></script>
+<script src="arc_editable.js?v=07dc583f" onerror="console.warn('§ARC LOAD_FAIL arc_editable.js')"></script>
+<script src="sdg_cascade.js?v=4c99b8af" onerror="console.warn('§SDG LOAD_FAIL sdg_cascade.js')"></script>
+<script src="clipboard.js?v=04d9e7f3" onerror="console.warn('§CLIPBOARD LOAD_FAIL clipboard.js')"></script>
+<script src="sdg_gate.js?v=b928714d" onerror="console.warn('§GATE LOAD_FAIL sdg_gate.js')"></script>
 <!-- §DAGEVU: relationship-edge engine (anchor-default hosted openings) — wraps sdg_cascade + sdg_gate above. -->
-<script src="dagevu_engine.js?v=1" onerror="console.warn('§DAGEVU LOAD_FAIL dagevu_engine.js')"></script>
+<script src="dagevu_engine.js?v=7af76f04" onerror="console.warn('§DAGEVU LOAD_FAIL dagevu_engine.js')"></script>
 <!-- §SAVE-1/2 (MODELLER_SAVE_COMPLETEIT.md): Save = validated snapshot promotion. sdg_save.js = pure
      classify/plan-op core (auto-heal planning); save_catalog.js = the shared landing-page IndexedDB
      versions[]/latestVersion catalog writer (same store import_own.js reads/writes). -->
-<script src="sdg_save.js?v=1" onerror="console.warn('§SAVE LOAD_FAIL sdg_save.js')"></script>
-<script src="save_catalog.js?v=1" onerror="console.warn('§SAVE LOAD_FAIL save_catalog.js')"></script>
+<script src="sdg_save.js?v=dde51e49" onerror="console.warn('§SAVE LOAD_FAIL sdg_save.js')"></script>
+<script src="save_catalog.js?v=77435247" onerror="console.warn('§SAVE LOAD_FAIL save_catalog.js')"></script>
 <!-- STR Walker (STR_ROUTEWALKING_SPEC.md): STR is a WALKED discipline. Open an STR building → walk the structure
      (skeleton f(grid) + tessellated systems); a grid drag re-walks + surfaces a cited structural exception. -->
-<script src="str_walker.js?v=4" onerror="console.warn('§STRWALK LOAD_FAIL str_walker.js')"></script>
-<script src="walker_confidence.js?v=2" onerror="console.warn('§STRWALK LOAD_FAIL walker_confidence.js')"></script>
+<script src="str_walker.js?v=6632b620" onerror="console.warn('§STRWALK LOAD_FAIL str_walker.js')"></script>
+<script src="walker_confidence.js?v=8ecd4f4e" onerror="console.warn('§STRWALK LOAD_FAIL walker_confidence.js')"></script>
 <!-- §GEOMAP-WIRE (RESUME_IFC_BOM_GEOMAPPING.md §WIRE-SPEC): IFC→BOM classifier + bridge — AUDIT-ONLY channel
      (op substrate provably untouched, W-GEOMAP-WIRE W1). Load-failure tolerant: the ARC seed gates on
      window.GeomapBridge && gmReady(), so a missing/failed script just means "no audit", never a broken seed. -->
-<script src="../geomapping/classify_geom.js?v=1" onerror="console.warn('§GEOMAP LOAD_FAIL classify_geom.js')"></script>
-<script src="../geomapping/geomap_bridge.js?v=1" onerror="console.warn('§GEOMAP LOAD_FAIL geomap_bridge.js')"></script>
-<script src="str_walker_bridge.js?v=10" onerror="console.warn('§STRWALK LOAD_FAIL str_walker_bridge.js')"></script>
-<script src="grid_span_gate.js?v=3" onerror="console.warn('§GRID-SPAN LOAD_FAIL grid_span_gate.js')"></script>
-<script src="../viewer/lib/room_walker.js?v=3" onerror="console.warn('§MODELLER-ROOM-INJECT LOAD_FAIL room_walker.js')"></script>
-<script src="str_walker_outliner.js?v=28" onerror="console.warn('§STRWALK LOAD_FAIL str_walker_outliner.js')"></script>
+<script src="../geomapping/classify_geom.js?v=fd414332" onerror="console.warn('§GEOMAP LOAD_FAIL classify_geom.js')"></script>
+<script src="../geomapping/geomap_bridge.js?v=b3b134e8" onerror="console.warn('§GEOMAP LOAD_FAIL geomap_bridge.js')"></script>
+<script src="str_walker_bridge.js?v=cd9cef57" onerror="console.warn('§STRWALK LOAD_FAIL str_walker_bridge.js')"></script>
+<script src="grid_span_gate.js?v=fe1e387f" onerror="console.warn('§GRID-SPAN LOAD_FAIL grid_span_gate.js')"></script>
+<script src="../viewer/lib/room_walker.js?v=ec1b5507" onerror="console.warn('§MODELLER-ROOM-INJECT LOAD_FAIL room_walker.js')"></script>
+<script src="str_walker_outliner.js?v=9bf06dea" onerror="console.warn('§STRWALK LOAD_FAIL str_walker_outliner.js')"></script>
 <!-- Bonsai library: insert a real catalog component (assemble, don't draw) as ONE signed GEOM_INSERT op @ LOD. -->
-<script src="bonsai_library.js?v=25" onerror="console.warn('§LIBRARY LOAD_FAIL bonsai_library.js')"></script>
+<script src="bonsai_library.js?v=3c589c5c" onerror="console.warn('§LIBRARY LOAD_FAIL bonsai_library.js')"></script>
 <!-- Connect Scene broker (prompts/CONNECT_SCENE_SPEC.md): shared cross-surface CONTEXT (selection/timeline/
      identity) over the one signed op-log; surfaces stay separate, only context crosses. Opt-in toggle. -->
-<script src="../viewer/connect_scene.js?v=2" onerror="console.warn('§CONNECT LOAD_FAIL connect_scene.js')"></script>
-<script src="../common/i18n/lang_choice.js?v=1"></script>
+<script src="../viewer/connect_scene.js?v=37d0108d" onerror="console.warn('§CONNECT LOAD_FAIL connect_scene.js')"></script>
+<script src="../common/i18n/lang_choice.js?v=593c6e40"></script>
 <!-- §S8 (TM_4D5D_VARIANCE_LANE §S8): hover/click on an EDITED element shows its material-cost + labour Δ. Loads the Viewer-side owners LAZILY on first use. -->
 <!-- S226 §R3 (bim-compiler prompts/S226_localisation.md): the Modeller speaks the film languages — the SHARED loader + dictionary
      (viewer/i18n), translating by exact English text (dictionary page) incl. panels built later; flag button #header-flag-btn. -->
 <script>window.__TRL_INPLACE = true; window.__TRL_DICT_PAGE = true;</script>
-<script src="../viewer/locale_loader.js?v=16"></script>
-<script src="edit_delta_ui.js?v=18" onerror="console.warn('§S8 LOAD_FAIL edit_delta_ui.js')"></script>
+<script src="../viewer/locale_loader.js?v=5572a747"></script>
+<script src="edit_delta_ui.js?v=e082670c" onerror="console.warn('§S8 LOAD_FAIL edit_delta_ui.js')"></script>
 <!-- §S9 (TM_4D5D_VARIANCE_LANE §S9): "ERP ▸ Project Order" for the selected parts. Lazy: the Viewer-side ERP owners load only when the button is clicked. -->
-<script src="proj_order_ui.js?v=10" onerror="console.warn('§S9 LOAD_FAIL proj_order_ui.js')"></script>
+<script src="proj_order_ui.js?v=12743215" onerror="console.warn('§S9 LOAD_FAIL proj_order_ui.js')"></script>
 <!-- Real-placement gate (WalkerDoctrine.md §10): the ONE shared resolveRealPlacement() every leaf placement
      (fixture, pipe, future component) must route through instead of inventing a bbox constant. Loaded BEFORE
      routewalker.js, whose _rwPlaceFromBOM (Path B fixture placement) is its first wired call site. -->
-<script src="real_placement_resolver.js?v=1" onerror="console.warn('§RPR LOAD_FAIL real_placement_resolver.js')"></script>
+<script src="real_placement_resolver.js?v=56ff5f8a" onerror="console.warn('§RPR LOAD_FAIL real_placement_resolver.js')"></script>
 <!-- ROOM_MOVE_AND_ITEM_DRAG_SPEC.md §2/§3 — two INDEPENDENT capabilities that share the op-log commit discipline
      and the refuse-not-fabricate placement gate, but keep separate ops, tools and witnesses (spec §0).
      bonsai_roommove.js CALLS sdg_cascade.js (loaded above) for its second hop; bonsai_itemdrag.js CALLS
      real_placement_resolver.js (loaded immediately above) as its up-front gate — both load AFTER their
      dependencies, and both are additive: neither modifies the grid, BOM or walker modules. -->
-<script src="bonsai_roommove.js?v=1" onerror="console.warn('§ROOMMOVE LOAD_FAIL bonsai_roommove.js')"></script>
-<script src="bonsai_itemdrag.js?v=4" onerror="console.warn('§ITEMDRAG LOAD_FAIL bonsai_itemdrag.js')"></script>
+<script src="bonsai_roommove.js?v=9e9b7753" onerror="console.warn('§ROOMMOVE LOAD_FAIL bonsai_roommove.js')"></script>
+<script src="bonsai_itemdrag.js?v=8f4a6f20" onerror="console.warn('§ITEMDRAG LOAD_FAIL bonsai_itemdrag.js')"></script>
 <!-- RouteWalker (port of RouteWalker.java): routes MEP from real mep_rw.db recipes. rwRouteSegments→rwSweepOps
      bridge the routed runs to signed GEOM_SWEEP ops, so a dropped building's MEP folds into the op-log. -->
-<script src="routewalker.js?v=10" onerror="console.warn('§RW LOAD_FAIL routewalker.js')"></script>
+<script src="routewalker.js?v=1ff6b592" onerror="console.warn('§RW LOAD_FAIL routewalker.js')"></script>
 <!-- DiscWalker: the ONE shared discipline-walker engine (Placer/Router/Gate) reading the MEASURED
      terminal_rules.db (mined off Terminal). Supersedes the thin mep_rw.db recipes for the disc-node walk —
      every disc walks on ANY opened building from rules measured off a real coordinated building. -->
-<script src="../common/walk_rules.js?v=4" onerror="console.warn('§WALK_RULES LOAD_FAIL walk_rules.js')"></script>
-<script src="native_props.js?v=1" onerror="console.warn('§DW LOAD_FAIL native_props.js')"></script>
-<script src="disc_walker.js?v=25" onerror="console.warn('§DW LOAD_FAIL disc_walker.js')"></script>
+<script src="../common/walk_rules.js?v=998eaa27" onerror="console.warn('§WALK_RULES LOAD_FAIL walk_rules.js')"></script>
+<script src="native_props.js?v=637dacaf" onerror="console.warn('§DW LOAD_FAIL native_props.js')"></script>
+<script src="disc_walker.js?v=e12d5a82" onerror="console.warn('§DW LOAD_FAIL disc_walker.js')"></script>
 <!-- §I5 per-instance hide (SPEC_INSTANCE_HIDE.md §I5d): Walked-Fixtures Outliner category — one row per
      walked instance (windowed via §V4 OL_CHUNK), eye = hide that exact instanceId. Witness: W-E2E-INSTHIDE. -->
-<script src="dw_instances_outliner.js?v=1" onerror="console.warn('§DWINST LOAD_FAIL dw_instances_outliner.js')"></script>
+<script src="dw_instances_outliner.js?v=9db17192" onerror="console.warn('§DWINST LOAD_FAIL dw_instances_outliner.js')"></script>
 <!-- Building Parts Outliner category (Stairway/Lift Shaft/Plant Room) — Modeller-side port of the
      Viewer's Parts axis (viewer/navigate_find.js @ d04ddd5). Reads window.__dwBuf (the open building's
      substrate), same accessor disc_walker.js/modeller.html already use. hideWhenEmpty. -->
-<script src="building_parts_outliner.js?v=1" onerror="console.warn('§BUILDING-PARTS-OUTLINER LOAD_FAIL building_parts_outliner.js')"></script>
-<script src="seed_trunk.js?v=1" onerror="console.warn('§ST LOAD_FAIL seed_trunk.js')"></script>
+<script src="building_parts_outliner.js?v=184b67f4" onerror="console.warn('§BUILDING-PARTS-OUTLINER LOAD_FAIL building_parts_outliner.js')"></script>
+<script src="seed_trunk.js?v=9243288a" onerror="console.warn('§ST LOAD_FAIL seed_trunk.js')"></script>
 <!-- §TEAMS-EMBED — GATED Teams overlay over the live scene (teams/ROADMAP.md §S11). ONE inert guarded script:
      OFF by default (no flag) → init() returns immediately, NO pill/pane/module-fetch = pixel-identical. ON
      (localStorage.teamsEmbed='1' | ?teams=1) → a distinct floating Teams pill mounts; click → contextual dots
      on the Outliner rows + a presence pane. Additive, reversible. Witness: modeller/tests/wire_teams_embed_modeller.js. -->
-<script src="teams_embed.js?v=1" onerror="console.warn('§TEAMS-EMBED teams_embed.js absent — modeller runs without the Teams overlay')"></script>
+<script src="teams_embed.js?v=4bc6e400" onerror="console.warn('§TEAMS-EMBED teams_embed.js absent — modeller runs without the Teams overlay')"></script>
 <script>if (window.TeamsEmbedBim && window.TeamsEmbedBim.init) window.TeamsEmbedBim.init();</script>
 <!-- TEAMWORK_FRAMEWORK.md §15 (Modeller case, W-TEAM-MODELLER): the local comm layer + modeller/team_sync.js — written ONLY when the page is opened with ?team=1 or
      localStorage.teamMode==='1' (the ERP's switch). Otherwise no script tag, no DOM, no global: the page is byte-for-byte what it was. Parser-blocking so TeamSyncModeller exists before the first commit. -->
 <!-- §15.15.1 the ONE Team icon: its panel (Start a team / Join / avatar / setup) must exist even while team mode is off, so these three small scripts load on every page; they draw nothing until the icon is clicked. -->
 <script>window.TEAM_PANEL_AUTO_OPEN = true;</script>
-<script src="../common/comm/team_defaults.js?v=1"></script><script src="../common/comm/team_avatars.js?v=1"></script><script src="../common/comm/team_panel.js?v=3"></script>
+<script src="../common/comm/team_defaults.js?v=22ee9150"></script><script src="../common/comm/team_avatars.js?v=3b9fbee9"></script><script src="../common/comm/team_panel.js?v=4c46906c"></script>
 <!-- §MANIFEST:END modeller tags -->
 <script>if (/[?&]team=1(&|$)/.test(location.search) || (function () { try { return localStorage.getItem('teamMode') === '1'; } catch (e) { return false; } })()) { ['../common/comm/team_trial.js', '../common/comm/comm_envelope.js', '../common/comm/comm_order.js', '../common/comm/team_keys.js', '../common/comm/comm_roster.js', '../common/comm/comm_admit.js',
-  '../common/comm/comm_pipe.js', '../common/comm/comm_store.js', '../common/comm/team_people.js', '../common/comm/team_focus.js', '../common/comm/team_people_ui.js', '../common/comm/team_trust.js?v=1', '../common/comm/team_scope.js?v=1', '../common/comm/op_versions.js?v=1', '../common/comm/team_versions.js?v=6', 'team_plan.js?v=1', 'team_sync.js?v=11'].forEach(function (f) { document.write('<script src="' + f + '"><\/script>'); }); }</script>
+  '../common/comm/comm_pipe.js', '../common/comm/comm_store.js', '../common/comm/team_people.js', '../common/comm/team_focus.js', '../common/comm/team_people_ui.js', '../common/comm/team_trust.js?v=049fbe68', '../common/comm/team_scope.js?v=c452fae8', '../common/comm/op_versions.js?v=5a61a8df', '../common/comm/team_versions.js?v=6967626d', 'team_plan.js?v=04594d59', 'team_sync.js?v=c1a9e98c'].forEach(function (f) { document.write('<script src="' + f + '"><\/script>'); }); }</script>
 <!-- §b-teams (§15.15.1, 2026-10-25): THE Team control. Not in a team (or team mode off) -> the Team panel: Start a team / Join / avatar / setup.
      Enrolled -> the People popover under this icon. The older Teams overlay (dots on the Outliner rows, same-browser presence) is no longer behind this button:
      it is reached from the panel ("Show dots on this machine"). Supersedes the 2026-07-04 note that forwarded this click to the overlay pill. -->
@@ -732,7 +732,7 @@ function _xrayReapply(src) {
 window.Bonsai.decor.register('xray', () => { _xrayReapply('refold'); return _xrayOn ? 'on' : 'off'; });   // §B1-ROW1 (was its own listener)
 // prompts/MODELLER_RULES_EDITOR.md (W-E2E-RULES-EDIT): the walker's rules as JSON in the project's ONE JSON editor; loaded on first click
 { const bR = document.getElementById('b-rules'); let _rl = null;
-  if (bR) bR.onclick = async () => { try { if (!window.RulesEditor) { _rl = _rl || new Promise((ok, no) => { const sc = document.createElement('script'); sc.src = 'rules_editor.js?v=5'; sc.onload = ok; sc.onerror = () => no(new Error('rules_editor.js failed to load')); document.head.appendChild(sc); }); await _rl; }
+  if (bR) bR.onclick = async () => { try { if (!window.RulesEditor) { _rl = _rl || new Promise((ok, no) => { const sc = document.createElement('script'); sc.src = 'rules_editor.js?v=abc3cb8f'; sc.onload = ok; sc.onerror = () => no(new Error('rules_editor.js failed to load')); document.head.appendChild(sc); }); await _rl; }
     if (document.getElementById('rules-ed')) window.RulesEditor.close(); else await window.RulesEditor.open(); } catch (e) { _rl = null; console.warn('§RULES-EDIT load failed ' + (e && e.message)); } }; }
 const bXray = document.getElementById('b-xray');
 function paintXray() { if (bXray) bXray.classList.toggle('on', _xrayOn); }
@@ -2415,7 +2415,7 @@ function gmStatText(dg, r2, preview) {
 // After a committed grid move: what changed, what was checked, red ink before → after, and what was NOT checked. Reports only: the edit stands
 // and nothing here can stop or alter it. edit_report_coverage.json is generated by witness_edit_report_coverage.js; without it there is no report.
 let _erCoverage = null, _erLast = null;
-function _erLoadCoverage() { if (!_erCoverage) _erCoverage = fetch('edit_report_coverage.json?v=1').then(r => r.ok ? r.json() : null).catch(() => null); return _erCoverage; }
+function _erLoadCoverage() { if (!_erCoverage) _erCoverage = fetch('edit_report_coverage.json?v=02d85dc5').then(r => r.ok ? r.json() : null).catch(() => null); return _erCoverage; }
 function _erSpanState() {
   const GS = window.GridSpanGate, info = window.swbGateInfo && window.swbGateInfo();
   if (!GS) return { refused: 'the span check did not load' };
@@ -2434,13 +2434,13 @@ let _erModsP = null;
 function _ensureEditReport() {
   if (window.EditReport && window.EditReportPanel) return Promise.resolve(true);
   const one = (src) => new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error(src + ' did not load')); document.head.appendChild(s); });
-  if (!_erModsP) _erModsP = one('edit_report.js?v=4').then(() => one('edit_report_panel.js?v=3')).then(() => { console.log('§EDIT_REPORT modules loaded on first use'); return true; }).catch(e => { _erModsP = null; throw e; });
+  if (!_erModsP) _erModsP = one('edit_report.js?v=bbe67c1b').then(() => one('edit_report_panel.js?v=4567afaa')).then(() => { console.log('§EDIT_REPORT modules loaded on first use'); return true; }).catch(e => { _erModsP = null; throw e; });
   return _erModsP;
 }
 // §20.2.10 the real-shape check loads with the report, on the first committed grid move (never at open): edit_shapes.js, then clash_narrow.js + the vendored BVH. Resolves true/false, never throws.
 let _erShapeP = null;
 function _ensureEditShapes() {
-  if (!_erShapeP) _erShapeP = new Promise((res) => { const s = document.createElement('script'); s.src = 'edit_shapes.js?v=1'; s.onload = res; s.onerror = () => res(); document.head.appendChild(s); })
+  if (!_erShapeP) _erShapeP = new Promise((res) => { const s = document.createElement('script'); s.src = 'edit_shapes.js?v=a59bc27f'; s.onload = res; s.onerror = () => res(); document.head.appendChild(s); })
     .then(() => window.EditShapes ? window.EditShapes.load() : (window.__editShapesLoadError = 'edit_shapes.js did not load', false)).catch(() => false);
   return _erShapeP;
 }
@@ -2523,7 +2523,7 @@ function _shiftRows(axis, th) {
 let _bayAddP = null;
 function _ensureBayAdd() {
   if (window.BayAdd) return Promise.resolve(true);
-  if (!_bayAddP) _bayAddP = new Promise((res, rej) => { const s = document.createElement('script'); s.src = 'bay_add.js?v=3'; s.onload = () => { console.log('§BLOCK-SHIFT bay_add.js loaded on first use'); res(true); }; s.onerror = () => { _bayAddP = null; rej(new Error('bay_add.js did not load')); }; document.head.appendChild(s); });
+  if (!_bayAddP) _bayAddP = new Promise((res, rej) => { const s = document.createElement('script'); s.src = 'bay_add.js?v=3675c1a1'; s.onload = () => { console.log('§BLOCK-SHIFT bay_add.js loaded on first use'); res(true); }; s.onerror = () => { _bayAddP = null; rej(new Error('bay_add.js did not load')); }; document.head.appendChild(s); });
   return _bayAddP;
 }
 window.__gridShift = async (id, delta) => {
@@ -3708,7 +3708,7 @@ let _lodupLoading = null;
 document.getElementById('b-lodup').onclick = async function () {
   try {
     const load = src => new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('load failed ' + src)); document.head.appendChild(s); });
-    if (!window.LodUI) _lodupLoading = _lodupLoading || (async () => { for (const f of ['lod/lod_rules.js?v=1', 'lod/lod_registry.js?v=5', 'lod/lod_ops.js?v=4', 'lod/lod_reader.js?v=7', 'lod/lod_ui.js?v=9']) await load(f); })().catch(e => { _lodupLoading = null; throw e; });
+    if (!window.LodUI) _lodupLoading = _lodupLoading || (async () => { for (const f of ['lod/lod_rules.js?v=d6d69b01', 'lod/lod_registry.js?v=6a3c3b6d', 'lod/lod_ops.js?v=19feafbb', 'lod/lod_reader.js?v=1deebe60', 'lod/lod_ui.js?v=923d9ca7']) await load(f); })().catch(e => { _lodupLoading = null; throw e; });
     await _lodupLoading; await window.LodUI.toggle();
   } catch (err) { setStat('FAIL ' + (err && err.message || err)); console.warn('§LODUP load fail ' + err); }
 };
@@ -3716,7 +3716,7 @@ document.getElementById('b-lodup').onclick = async function () {
 let _regRepLoading = null;
 async function doRegReport() {
   try {
-    if (!window.RegReportUI) _regRepLoading = _regRepLoading || new Promise((res, rej) => { const s = document.createElement('script'); s.src = 'reg_report_ui.js?v=5'; s.onload = res; s.onerror = () => { _regRepLoading = null; rej(new Error('load failed reg_report_ui.js')); }; document.head.appendChild(s); });
+    if (!window.RegReportUI) _regRepLoading = _regRepLoading || new Promise((res, rej) => { const s = document.createElement('script'); s.src = 'reg_report_ui.js?v=bb2f59db'; s.onload = res; s.onerror = () => { _regRepLoading = null; rej(new Error('load failed reg_report_ui.js')); }; document.head.appendChild(s); });
     await _regRepLoading; await window.RegReportUI.open(setStat);
   } catch (err) { setStat('FAIL ' + (err && err.message || err)); console.warn('§REG_REPORT_UI fail ' + err); }
 }
@@ -3726,10 +3726,10 @@ let _analyticalLoading = null;
 async function doAnalytical() {
   try {
     const load = src => new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('load failed ' + src)); document.head.appendChild(s); });
-    if (!window.RegReportUI) _analyticalLoading = _analyticalLoading || load('reg_report_ui.js?v=5').catch(e => { _analyticalLoading = null; throw e; });
+    if (!window.RegReportUI) _analyticalLoading = _analyticalLoading || load('reg_report_ui.js?v=bb2f59db').catch(e => { _analyticalLoading = null; throw e; });
     await _analyticalLoading;
     const eng = await window.RegReportUI.engine();   // web-ifc, sql.js, the extractor core, Dxf2Ifc, LoadSummary: the owners the Regulatory Report loads
-    if (!window.Dxf2Analytical) await load('dxf2analytical.js?v=4');
+    if (!window.Dxf2Analytical) await load('dxf2analytical.js?v=dfb8a04e');
     const R = window.DxfImportUI && window.DxfImportUI.state && window.DxfImportUI.state.gate && window.DxfImportUI.state.gate.R;
     let bytes, values = {}, sources = {}, name = window.__dwName || 'model';
     if (R && R.els && R.els.length) {
@@ -6518,7 +6518,7 @@ console.log('§MODELLER scene ready supported=' + (window.Bonsai ? window.Bonsai
   var go = function () { window.FileStore.openFromUrl(routes, setStat).catch(function (e) { console.log('§FILESTORE-OPEN REFUSED reason=' + (e && e.message)); setStat('Could not open the attachment: ' + (e && e.message)); }); };
   if (!SWo || !window.DxfImportUI) { console.log('§FILESTORE-OPEN REFUSED reason=modeller-not-ready'); setStat('Could not open the attachment: the Modeller did not get ready'); return; }
   if (window.FileStore) return go();
-  var sc = document.createElement('script'); sc.src = '../common/file_store.js?v=1'; sc.onload = go;
+  var sc = document.createElement('script'); sc.src = '../common/file_store.js?v=0610e492'; sc.onload = go;
   sc.onerror = function () { console.warn('§LOAD_FAIL file_store.js'); setStat('Could not open the attachment: the file store did not load'); };
   document.head.appendChild(sc);
 })();

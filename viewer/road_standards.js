@@ -130,7 +130,7 @@
     };
     A.showRoadStandards = function () {
       if (!(A.isCivilModel && A.isCivilModel())) { console.log('§SIGN_CHECK VACUOUS not a civil model — Road standards is civil-only'); return null; }
-      var loader = (typeof window.loadJsonWithOverrides === 'function') ? window.loadJsonWithOverrides('std_values.json?v=3', 'json_std_values') : fetch('std_values.json?v=3').then(function (r) { return r.json(); });
+      var loader = (typeof window.loadJsonWithOverrides === 'function') ? window.loadJsonWithOverrides('std_values.json?v=b7233355', 'json_std_values') : fetch('std_values.json?v=b7233355').then(function (r) { return r.json(); });
       return loader.then(function (std) {
         var res = checkSigns(objQuery, std, { log: console.log });
         A._roadStdResult = res; A._roadStdStd = std;

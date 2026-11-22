@@ -88,7 +88,7 @@ function num(x) { return x == null ? null : Number(x); }
   var h = baseOracle();
   check('TABLE', 'base-hash', 'the team BASE hash (seed + the two hashed patch files) is byte-identical to origin/main: this change touched no hashed file (a teams-wide base-mismatch otherwise)', h === BASE_PIN, { got: h, pin: BASE_PIN });
   var hSrc = read('idempiere.html'), swSrc = read('sw.js'), aitSrc = read('ad_import_tables.js'), kSrc = read('ws_kernel.js'), sSrc = read('ws_server.js');
-  check('TABLE', 'wiring', 'the port is booted where ImportOrder is: idempiere.html loads processes/ImportInvoice.js, sw.js precaches it, ensure() calls ensureInvoice, the kernel and server boot ensure()', /<script src="processes\/ImportInvoice\.js\?v=\d+"/.test(hSrc) && /'processes\/ImportInvoice\.js'/.test(swSrc) && /ensureInvoice\(db\);\s*\n\s*return made;/.test(aitSrc) &&
+  check('TABLE', 'wiring', 'the port is booted where ImportOrder is: idempiere.html loads processes/ImportInvoice.js, sw.js precaches it, ensure() calls ensureInvoice, the kernel and server boot ensure()', /<script src="processes\/ImportInvoice\.js\?v=[0-9a-f]+"/.test(hSrc) && /'processes\/ImportInvoice\.js'/.test(swSrc) && /ensureInvoice\(db\);\s*\n\s*return made;/.test(aitSrc) &&
     /require\('\.\/ad_import_tables\.js'\)\.ensure\(db\)/.test(kSrc) && /require\('\.\/ad_import_tables\.js'\)\.ensure\(db\)/.test(sSrc), { html: /ImportInvoice/.test(hSrc), sw: /ImportInvoice/.test(swSrc), ait: /ensureInvoice\(db\);/.test(aitSrc) });
   if (AR.m) AR.m.ensure(db);
   var K = reqERP('ws_kernel.js'), k = K.build(db), ML = k.ML, AP = reqERP('ad_process.js');

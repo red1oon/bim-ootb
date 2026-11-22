@@ -424,7 +424,7 @@
       if (window.RoomWalker) return;
       await new Promise(function(resolve, reject) {
         var s = document.createElement('script');
-        s.src = 'lib/room_walker.js?v=3'; // v3: §ROOM_WALKER_VERSION_STAMP stages 1+2 (ROOM_INJECTOR_NEEDLE.md)
+        s.src = 'lib/room_walker.js?v=ec1b5507'; // v3: §ROOM_WALKER_VERSION_STAMP stages 1+2 (ROOM_INJECTOR_NEEDLE.md)
         s.onload = function() { resolve(); };
         s.onerror = function() { reject(new Error('room_walker.js load failed')); };
         document.head.appendChild(s);

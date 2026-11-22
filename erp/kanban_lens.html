@@ -34,11 +34,11 @@
 <!-- STEP-0 host engine — publish window.ERP (the ENGINE_CONTRACT §1 seam) so drag→dispatch is a REAL
      signed write. Same modules + boot as spike_writepath.html (consume the seam, never fork a verb). -->
 <!-- §MANIFEST:BEGIN erp tags (script tags here are written by scripts/gen_manifest.js from erp/modules.json; comments are yours) -->
-<script src="kernel_ops.js?v=6"></script>
-<script src="erp_signer.js?v=4"></script>
-<script src="erp_kernel.js?v=1"></script>
-<script src="erp_seam.js?v=1"></script>
-<script src="kanban_lens.js?v=4"></script>
+<script src="kernel_ops.js?v=17526c49"></script>
+<script src="erp_signer.js?v=2e0ea5d3"></script>
+<script src="erp_kernel.js?v=f049d9f2"></script>
+<script src="erp_seam.js?v=fe7eea8e"></script>
+<script src="kanban_lens.js?v=4e99d86d"></script>
 <!-- §MANIFEST:END erp tags -->
 <script>
 (function () {
@@ -142,7 +142,7 @@
 
     // wfmc state machine — folded from manifest.json (the SAME engine state machine the kernel uses).
     var wfmc = {};
-    try { wfmc = (await (await fetch('manifest.json?v=1')).json()).wfmc || {}; }
+    try { wfmc = (await (await fetch('manifest.json?v=773e8baa')).json()).wfmc || {}; }
     catch (e) { log('manifest load failed: ' + e.message); }
     window.__kanbanDb = db; window.__wfmc = wfmc;   // exposed for the witness/host
 

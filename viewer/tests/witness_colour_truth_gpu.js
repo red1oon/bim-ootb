@@ -147,7 +147,7 @@ const f3 = c => c.rgb.map(v => isNaN(v) ? '-' : v.toFixed(1)).join(',');
     X.L.filter(t => /§PLACEHOLDER_COLOUR|§PLACEHOLDER_CLASS|§PORCELAIN|§MEP_HUE_TALLY/.test(t)).forEach(t => S('   ' + t.slice(0, 400)));
     ['IfcBeam', 'IfcMember', 'IfcColumn', 'IfcPipeSegment', 'IfcDuctSegment', 'porcelain'].forEach(c => S('   §MATERIALS ' + X.label + ' ' + c + ' ' + JSON.stringify(X.materials ? X.materials[c] || {} : 'n/a'))); }
   // ### ALTS-ALL FIX 12 (4): the AFTER arm must serve the tree this witness runs in (was hard-coded v1476 / ?v=78)
-  const TSW = (/CACHE_VERSION = '([^']+)'/.exec(fs.readFileSync(path.join(__dirname, '..', 'sw.js'), 'utf8')) || [])[1], TSV = (/streaming\.js\?v=(\d+)/.exec(fs.readFileSync(path.join(__dirname, '..', 'viewer.html'), 'utf8')) || [])[1];
+  const TSW = (/CACHE_VERSION = '([^']+)'/.exec(fs.readFileSync(path.join(__dirname, '..', 'sw.js'), 'utf8')) || [])[1], TSV = (/streaming\.js\?v=([0-9a-f]+)/.exec(fs.readFileSync(path.join(__dirname, '..', 'viewer.html'), 'utf8')) || [])[1];
   const boot = !B.error && !A.error && A.sw === TSW && new RegExp('streaming\\.js\\?v=' + TSV + '\\b').test(A.v || '') && !B.pageErrors && !A.pageErrors;
   V(boot ? true : null, 'instrument: both arms booted, AFTER serves this tree (sw ' + TSW + ' + streaming.js?v=' + TSV + '), no page errors', 'before ' + B.sw + ' / after ' + A.sw + ' ' + A.v);
   const phLine = A.L.find(t => /^§PLACEHOLDER_COLOUR bld=Hospital/.test(t)) || '', porcLine = A.L.find(t => /^§PORCELAIN bld=Hospital/.test(t)) || '';

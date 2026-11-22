@@ -470,7 +470,7 @@
   function _ensureXLSX(doc) {
     if (global.XLSX) return Promise.resolve(global.XLSX);
     return new Promise(function (res, rej) {
-      var s = doc.createElement('script'); s.src = 'xlsx.mini.min.js?v=1';
+      var s = doc.createElement('script'); s.src = 'xlsx.mini.min.js?v=3120abba';
       s.onload = function () { console.log('§NINJA-PILL-DOM xlsx=loaded'); res(global.XLSX); };
       s.onerror = function () { rej(new Error('xlsx.mini.min.js failed to load')); };
       doc.head.appendChild(s);

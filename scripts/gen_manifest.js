@@ -234,7 +234,8 @@ function check(root) {
     m.modules.forEach(x => x.sites.forEach(s => k[s.kind]++));
     Object.keys(k).forEach(x => { tot[x] += k[x]; }); tot.precache += m.precacheOrder.length;
     const boot = m.modules.filter(x => x.load === 'boot'), lazy = m.modules.filter(x => x.load === 'lazy');
-    const dis = m.modules.filter(x => new Set(x.sites.filter(s => s.v != null).map(s => s.v)).size > 1);   // B4-HASH: a module whose sites carry two different codes (a code is one per file)
+    const pinned = new Set(); if (MS.hasSource(root, app)) { const mj = JSON.parse(fs.readFileSync(path.join(root, MS.sourceFile(app)), 'utf8')); for (const f of Object.keys(mj.order)) mj.order[f].forEach((z, at) => { if (z.pin) pinned.add(f + '#' + at); }); }
+    const dis = m.modules.filter(x => new Set(x.sites.filter(s => s.v != null && !pinned.has(s.in + '#' + s.at)).map(s => s.v)).size > 1);   // B4-HASH: a module whose sites carry two different codes (a code is one per file; a pinned register line keeps its own literal)
     const modFiles = new Set(m.modules.map(x => x.file)), preFiles = m.precacheOrder.map(e => P.normalize(P.join(app, e.split('?')[0])));
     const dup = m.precacheOrder.length - new Set(m.precacheOrder).size, mjs = m.precacheOrder.filter(e => /^plugins\/.*\.mjs$/.test(e)).length;
     const mjsDisk = app === 'erp' ? trackedFiles(root, 'erp/plugins/').filter(f => f.endsWith('.mjs')).length : 0;
@@ -313,7 +314,7 @@ if (require.main === module) {
       m = JSON.parse(fs.readFileSync(path.join(root, MS.sourceFile(app)), 'utf8'));
       MS.refresh(root, app, m, lines);
     }
-    const w = MS.write(root, app, { manifest: m, raise: true });   // B4-HASH: a code that changed in the app's own folder steps CACHE_VERSION once (nothing changed: nothing raised)
+    const w = MS.write(root, app, { manifest: m, raise: !opt('--init') });   // B4-HASH: a code that changed in the app's own folder steps CACHE_VERSION once (nothing changed: nothing raised); --init is the one-time switch of an app with no list yet: it keeps the version
     if (w.cacheVersion) lines.push(`§MANIFEST_CACHE_VERSION app=${app} ${w.cacheVersion.from}->${w.cacheVersion.to} (the code of ${w.changes.filter(c => c.inApp).length} site(s) in ${path.posix.dirname(m.sw)}/ changed)`);
     w.fails.forEach(f => console.log('§MANIFEST_FAIL ' + f)); lines.concat(w.lines).forEach(l => console.log(l));
     if (w.fails.length) { console.log('§MANIFEST_WRITE written=0 (nothing written: fix the lines above)'); process.exit(1); }

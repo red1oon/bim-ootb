@@ -98,12 +98,12 @@
     });
   }
   async function ensureDeps() {
-    if (!window.ERPEngine) await loadScript('../erp/erp_engine.js?v=3');
-    if (!window.AdDocFsm) await loadScript('../erp/ad_docfsm.js?v=1');
+    if (!window.ERPEngine) await loadScript('../erp/erp_engine.js?v=d0e42b82');
+    if (!window.AdDocFsm) await loadScript('../erp/ad_docfsm.js?v=1cb0f9df');
     // §S-2b POS-shipment route deps: BigDecimal BEFORE pos_core (its UMD factory reads root.BigDecimal)
-    if (!window.BigDecimal) await loadScript('../erp/bigdecimal.js?v=2');
-    if (!window.POSCore) await loadScript('../erp/pos_core.js?v=3');
-    if (!window.InOutConfirm) await loadScript('../erp/inout_confirm.js?v=1');
+    if (!window.BigDecimal) await loadScript('../erp/bigdecimal.js?v=5a328efd');
+    if (!window.POSCore) await loadScript('../erp/pos_core.js?v=e0009850');
+    if (!window.InOutConfirm) await loadScript('../erp/inout_confirm.js?v=772e9d7b');
     if (!W.erpDb) {
       var buf = new Uint8Array(await APP.cachedFetch('../erp/ad_seed.db'));
       W.erpDb = new A._SQL.Database(buf);

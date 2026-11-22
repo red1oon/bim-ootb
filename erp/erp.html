@@ -79,23 +79,23 @@
 
 <!-- §INSTANT Phase 1: globe renders from initbubble.json in <300ms -->
 <!-- §MANIFEST:BEGIN erp tags (script tags here are written by scripts/gen_manifest.js from erp/modules.json; comments are yours) -->
-<script src="vfs_detect.js?v=1"></script>
-<script src="seed_key.js?v=1"></script><!-- SEAM F10 — the ONE seed IDB key owner (window.ERP_SEED_KEY) -->
-<script src="ad_graph.js?v=26"></script>
+<script src="vfs_detect.js?v=41669193"></script>
+<script src="seed_key.js?v=cad9fe70"></script><!-- SEAM F10 — the ONE seed IDB key owner (window.ERP_SEED_KEY) -->
+<script src="ad_graph.js?v=1d41edac"></script>
 <!-- AD logic-expression evaluator (window.AdEvaluator) — ad_ui.js reads it to hide fields whose AD DisplayLogic is false for a record (§AD-DISPLAYLOGIC-LIVE). MUST precede ad_ui.js. -->
-<script src="ad_evaluator.js?v=24"></script>
-<script src="ad_ui.js?v=31"></script>
+<script src="ad_evaluator.js?v=8929f41d"></script>
+<script src="ad_ui.js?v=4aa5d835"></script>
 
 <!-- idempiereUI.md I1 — BIM pill bar, registry-driven from pills.json (the idempiere pill launches
      idempiere.html, renderer #1). icons.js = verbatim icon set; pill_builder.js used as-is. -->
-<script src="icons.js?v=26"></script>
-<script src="overlay_kit.js?v=1"></script>
+<script src="icons.js?v=62c0ebcc"></script>
+<script src="overlay_kit.js?v=59d72c93"></script>
 <!-- ABOUT_BOX_CONSOLIDATE.md — the ONE shared About/DIY modal (Help pill → AboutDIY.open). -->
-<script src="../common/about_diy.js?v=3"></script>
-<script src="erp_picker.js?v=30"></script>
-<script src="../common/pill_builder.js?v=1"></script>
-<script src="doc_cycle_validator.js?v=1"></script>
-<script src="erp_pills.js?v=34"></script>
+<script src="../common/about_diy.js?v=8a736d7e"></script>
+<script src="erp_picker.js?v=ca871157"></script>
+<script src="../common/pill_builder.js?v=5724a4ca"></script>
+<script src="doc_cycle_validator.js?v=2e6f6be0"></script>
+<script src="erp_pills.js?v=b1dc7384"></script>
 <!-- §MANIFEST:END erp tags -->
 <script>
 // Phase 1: Instant constellation — fetch initbubble.json, then init
@@ -105,12 +105,12 @@ var _shellReady = false;
   var _tBoot = performance.now();
 
   // Compiled manifest — structure for the 7 curated windows (parallel, non-blocking).
-  fetch('manifest.json?v=24').then(function(r) { return r.json(); }).then(function(mf) {
+  fetch('manifest.json?v=773e8baa').then(function(r) { return r.json(); }).then(function(mf) {
     window.AD_MANIFEST = mf;
     console.log('§BENCH manifest loaded windows=' + Object.keys(mf.windows || {}).length);
   }).catch(function(e) { console.log('§BENCH manifest fetch failed: ' + e.message); });
 
-  fetch('initbubble.json?v=24').then(function(r) { return r.json(); }).then(function(data) {
+  fetch('initbubble.json?v=2077d3ec').then(function(r) { return r.json(); }).then(function(data) {
     window.INIT_BUBBLES = data;
 
     var params = new URLSearchParams(window.location.search);

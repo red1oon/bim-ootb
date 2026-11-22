@@ -2739,7 +2739,7 @@
         if (!A2.filmLayer) A2.filmLayer = MQS._filmLayerRegister;
         A2.__cease3DProbe = MQS._cease3D;   // witness hook only (W-DRAWN-FILM-FRAME C1/C2): the shipped sweep, called as is
         var ready = window.setupCpeDrawnServices ? Promise.resolve() : (A2._drawnSvcP = A2._drawnSvcP || new Promise(function(res, rej) {
-          var s = document.createElement('script'); s.src = new URL('cpe_drawn_services.js?v=2', document.baseURI).href;
+          var s = document.createElement('script'); s.src = new URL('cpe_drawn_services.js?v=eaf312ff', document.baseURI).href;
           s.onload = function() { console.log('§DRAWN-SERVICES cpe_drawn_services.js loaded on first use'); res(true); };
           s.onerror = function() { A2._drawnSvcP = null; rej(new Error('load failed cpe_drawn_services.js')); }; document.head.appendChild(s); }));
         return ready.then(function() { if (!A2.drawnServicesApply) window.setupCpeDrawnServices(A2); var r = A2.drawnServicesApply(!!on); A2.drawnOnlyView(!!on); return r; });

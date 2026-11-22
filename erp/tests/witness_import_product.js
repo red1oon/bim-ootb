@@ -53,7 +53,7 @@ function read(f) { try { return fs.readFileSync(path.join(ERP, f), 'utf8'); } ca
     var missing = dict.filter(function (c) { return phys.indexOf(c) < 0; });
     check('TABLE', 'ensure', 'i_product is created by ensure(db) (n>=1, then 0) with every one of the 58 dictionary columns', n1 >= 1 && n2 === 0 && !missing.length && phys.length >= 58, { n1: n1, n2: n2, missing: missing, phys: phys.length });
   });
-  check('TABLE', 'wiring', 'idempiere.html loads processes/ImportProduct.js and sw.js precaches it', /<script src="processes\/ImportProduct\.js\?v=\d+"/.test(read('idempiere.html')) && /'processes\/ImportProduct\.js'/.test(read('sw.js')), {});
+  check('TABLE', 'wiring', 'idempiere.html loads processes/ImportProduct.js and sw.js precaches it', /<script src="processes\/ImportProduct\.js\?v=[0-9a-f]+"/.test(read('idempiere.html')) && /'processes\/ImportProduct\.js'/.test(read('sw.js')), {});
   var AR = null; try { AR = reqERP('ad_rule.js'); AR.ensure(db); } catch (e) {}
   var K = reqERP('ws_kernel.js'), k = K.build(db), ML = k.ML, AP = reqERP('ad_process.js');
   var S = { clientId: 11, orgId: 11, userId: 100, roleId: 102, warehouseId: 103, actor: 'witness:import-product' };

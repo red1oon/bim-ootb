@@ -189,7 +189,7 @@ function setupTools(A) {
 
   A._loadGroundConfig = function() {
     if (A._groundConfig) return Promise.resolve(A._groundConfig);
-    return fetch('ground_config.json?v=2')
+    return fetch('ground_config.json?v=3b6a7ad9')
       .then(function(r) { return r.json(); })
       .then(function(j) { A._groundConfig = j; return j; })
       .catch(function(e) {

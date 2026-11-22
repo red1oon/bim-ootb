@@ -19,7 +19,7 @@ function setupEarthworksOverlay(A) {
   function _civil() { return !!(A.db && A.isCivilModel && A.isCivilModel() && typeof A.civilRouteAt === 'function'); }
   function _std() {
     if (_cfg) return Promise.resolve(_cfg);
-    var ld = (typeof window.loadJsonWithOverrides === 'function') ? window.loadJsonWithOverrides('std_values.json?v=3', 'json_std_values') : fetch('std_values.json?v=3').then(function (r) { return r.json(); });
+    var ld = (typeof window.loadJsonWithOverrides === 'function') ? window.loadJsonWithOverrides('std_values.json?v=b7233355', 'json_std_values') : fetch('std_values.json?v=b7233355').then(function (r) { return r.json(); });
     return ld.then(function (s) { A._civilStd = A._civilStd || s; _cfg = { cut: s._cut_fill || {}, mm: (s.geometric && s.geometric.model_map) || {} }; return _cfg; });
   }
   function _hex(h, d) { var m = /^#?([0-9a-f]{6})$/i.exec(h || ''); var v = parseInt(m ? m[1] : d, 16); return [(v >> 16 & 255) / 255, (v >> 8 & 255) / 255, (v & 255) / 255]; }

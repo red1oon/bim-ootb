@@ -171,11 +171,11 @@ async function initViewer() {
         // v2 (VIEWER_FIND_PANEL_ROOM_ACCURACY.md §10, 2026-07-22): classifyUtilityRooms/utilityContentClass
         // gain an additive opts.ignoreDoorExemption (default false = identical display behavior); the
         // routing caller (room_graph.js) passes true. A stale v1 cache would ignore the new arg.
-        '../common/room_habitability.js?v=2',
+        '../common/room_habitability.js?v=a6b7cc8f',
         // PATH_LEGAL_SEGMENTS.md §G3-REVISED — pack/unpack + lookup for the offline-precomputed
         // per-storey walkable raster; must load BEFORE room_graph.js (buildGraph() references
         // window.StoreyRaster when it reads storey_walkable_raster).
-        '../common/storey_raster.js?v=1',
+        '../common/storey_raster.js?v=9addae90',
         // §STOREY_FOOTPRINT_NOT_LOADED (MEP_CLASH_REVEAL_MOVIE.md §59.7 D2, 2026-09-11) — the
         // flood-fill that tells a real exterior side of a door apart from an enclosed internal
         // void (atrium/shaft). room_graph.js:84 binds window.StoreyFootprint at factory time and
@@ -186,7 +186,7 @@ async function initViewer() {
         // Same class as §HALLWAY-BACKBONE-NOT-LOADED below: witness_exit_detection.js requires
         // this file and passes in Node, which is no evidence at all that the browser path runs it.
         // Must load BEFORE room_graph.js, for the identical reason storey_raster.js above does.
-        '../common/storey_footprint.js?v=1',
+        '../common/storey_footprint.js?v=d81e3224',
         // VIEWER_FIND_PANEL_ROOM_ACCURACY.md §7 — room-to-room adjacency graph + pathfinding,
         // consumed by navigate_find.js's Room axis "Path" sub-mode. Same lazy-load rationale as
         // room_habitability.js above (only needed alongside navigate_find.js itself).
@@ -202,17 +202,17 @@ async function initViewer() {
         // rooms are tagged too (the door-exempt display default missed them); exclude CORRIDOR_ROOM nodes.
         // v8 (ROOM_GRAPH_REAL_AABB.md §4 item 3, 2026-09-18): buildGraph() gains an OPTIONAL
         // opts.doorRealXY — no behaviour change unless a caller passes one (see below).
-        '../common/room_graph.js?v=14',
+        '../common/room_graph.js?v=6d9b636d',
         // ROOM_GRAPH_REAL_AABB.md §4 item 3 — real_geometry.js is the SAME module cross_edges.js
         // (modeller) already uses; the Viewer never loaded it before this. Pure DB read, no THREE/DOM
         // dep (see its own header) — safe alongside room_graph.js's lazy-load discipline. Must load
         // BEFORE door_real_position.js (soft dependency, but load order avoids the first-call lazy-
         // require race that file's own header explains).
-        '../modeller/real_geometry.js?v=1',
+        '../modeller/real_geometry.js?v=d0fc48a7',
         // door_real_position.js resolves a door's real world-AABB centre (yaw-only), feeding
         // room_graph.js's new opts.doorRealXY above — kept OUT of room_graph.js itself so that file
         // stays DB/file I/O-free (dual-mode node+browser, see its own header).
-        '../common/door_real_position.js?v=1',
+        '../common/door_real_position.js?v=3dd3a6c2',
         // §HALLWAY-BACKBONE-NOT-LOADED (2026-07-14, real bug found via live browser check — every
         // corridor/spine/Hall-Corridor-label feature built this session had been silently no-oping
         // in the browser, despite passing every Node-based witness, because this line never
@@ -222,32 +222,32 @@ async function initViewer() {
         // (room_graph.js's HallwayBackbone read happens inside buildGraph(), called later — fine)
         // but hallway_backbone.js itself reads window.RoomGraph at its OWN top-level IIFE execution
         // (getStairGroups() reuse), so room_graph.js must already exist by the time this runs.
-        '../common/hallway_backbone.js?v=1',
+        '../common/hallway_backbone.js?v=bee0efa1',
         // v49 (FLY_TOUR_CORRIDOR_GRAPH.md, 2026-07-16): A.ensureRooms + A.getRoomGraph extraction.
         // §S59 candidate 2 (SCRIPT_LENGTH_REFACTOR_SEAMS.md, 2026-08-23): the Find panel's 5D-cost/
         // ERP-push block, extracted from navigate_find.js. Must load BEFORE navigate_find.js — its
         // init() calls FindErpPush.create() at closure-build time (honest §ERP_PUSH_MODULE_ABSENT
         // no-op if missing, but then every › ERP surface is inert).
-        'find_erp_push.js?v=7',
+        'find_erp_push.js?v=a3e62071',
         // v58 (§S59, 2026-08-23): ERP-push block extracted to find_erp_push.js above — a stale v57
         // would still carry its own copy AND the new wiring would never run.
         // FIND_ASK_ANSWERS.md: Ask mode — must load before navigate_find.js (its init() mounts it)
-        'find_ask_grammar.js?v=1',
-        'find_ask.js?v=4',
-        'nf_ui_history.js?v=1',
-        'nf_tree_lens.js?v=2',
-        'nf_highlight_cost.js?v=3',
-        'nf_room.js?v=1',
-        'nf_trees.js?v=1',
-        'nf_isolate_drill.js?v=2',
-        'nf_panel_search.js?v=3',
+        'find_ask_grammar.js?v=25baf589',
+        'find_ask.js?v=ff268438',
+        'nf_ui_history.js?v=12c6f649',
+        'nf_tree_lens.js?v=0cc7f10e',
+        'nf_highlight_cost.js?v=58a0bd68',
+        'nf_room.js?v=7b2dc985',
+        'nf_trees.js?v=c18fc73d',
+        'nf_isolate_drill.js?v=3282c383',
+        'nf_panel_search.js?v=a76b028f',
         // navigate_find.js is now the setup shell for the nf_*.js parts above (move-only split, scripts/split_closure.js)
-        'navigate_find.js?v=65',
-        'navigate_grid.js?v=1',
-        'navigate_path.js?v=1',
-        'navigate_engine.js?v=2',
-        'navigate_controls.js?v=2',
-        'navigate.js?v=10'
+        'navigate_find.js?v=77fb578f',
+        'navigate_grid.js?v=d1058f02',
+        'navigate_path.js?v=de95e1ee',
+        'navigate_engine.js?v=c4636ad9',
+        'navigate_controls.js?v=feb11165',
+        'navigate.js?v=8c8aec40'
       ];
       function loadNext(i) {
         if (i >= modules.length) {
@@ -299,7 +299,7 @@ async function initViewer() {
         return;
       }
       var s = document.createElement('script');
-      s.src = 'wizard.js?v=4';
+      s.src = 'wizard.js?v=92603562';
       s.onload = function() {
         APP._wizardLoaded = true;
         console.log('[S239] §WIZARD_LAZY_LOADED');
@@ -1054,7 +1054,7 @@ async function initViewer() {
     var ready = function () { return typeof APP._openIfcFiles === 'function' && !!APP.importMultiIFC; };
     var whenReady = function (n) { if (ready()) return go(); if (n > 240) { console.log('§FILESTORE-OPEN REFUSED reason=viewer-not-ready'); return say('Could not open the attachment: the Viewer did not get ready'); } setTimeout(function () { whenReady(n + 1); }, 250); };
     if (window.FileStore) return whenReady(0);
-    var sc = document.createElement('script'); sc.src = '../common/file_store.js?v=1';
+    var sc = document.createElement('script'); sc.src = '../common/file_store.js?v=0610e492';
     sc.onload = function () { whenReady(0); };
     sc.onerror = function () { console.warn('§LOAD_FAIL file_store.js'); say('Could not open the attachment: the file store did not load'); };
     document.head.appendChild(sc);
@@ -1320,7 +1320,7 @@ async function initViewer() {
         if (ppN && ppN[0] && ppN[0][0] > 0) {
           var ppReady = new Promise(function(res, rej) {
             if (window.setupPartsView) return res();
-            var s = document.createElement('script'); s.src = new URL('parts_view.js?v=2', document.baseURI).href;
+            var s = document.createElement('script'); s.src = new URL('parts_view.js?v=e86ff3db', document.baseURI).href;
             s.onload = res; s.onerror = function() { rej(new Error('load failed parts_view.js')); }; document.head.appendChild(s);
           });
           var ppChecks = 0, ppTimer = setInterval(function() {
