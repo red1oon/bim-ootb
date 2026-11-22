@@ -65,4 +65,16 @@ function crawl(items, parentOf) {
   const counts = {}; Object.keys(F).forEach(r => { counts[r] = judged[r] ? F[r].length : null; });
   return { counts, judged, lines, guids: Object.fromEntries(Object.keys(F).map(r => [r, F[r].map(p => p[0].guid)])) };
 }
-module.exports = { crawl, trade };
+// splitEarly(items, SS, SG) — the SHIPPED judge (SupportSweep.midairAudit: "starts before its elected support is finished"), split by whether the finding can be
+// a truth about support at all (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.59). The election names ONE support per element from plan overlap, so it also names
+//   far  — a support that does not touch the element (boxes more than the owner's GAP apart in height): SampleCastle, 32 ground-floor windows "carried" by a slab 3 m up;
+//   tie  — a neighbour that starts at the SAME height (bases within the owner's EPS): two footings side by side, a pipe and its fitting. Neither stands on the other.
+// `early` is what is left: the support touches and is lower or higher than the element. far and tie are counted and printed, never ruled on.
+function splitEarly(items, SS, SG) {
+  const q = console.log; console.log = () => {}; let ma, des; try { ma = SS.midairAudit(items); des = SS.designatedSupport(items, SS.contactGraph(items)); } finally { console.log = q; }
+  const bad = new Set(ma.guids || []), early = [], far = [], tie = [];
+  items.forEach((T, i) => { if (!bad.has(T.guid) || des[i] < 0) return; const S = items[des[i]];
+    if (Math.max(S.bz - T.tz, T.bz - S.tz) > SG.GAP) far.push(T.guid); else if (Math.abs(S.bz - T.bz) <= SG.EPS) tie.push(T.guid); else early.push(T.guid); });
+  return { ma, early, far, tie };
+}
+module.exports = { crawl, trade, splitEarly };

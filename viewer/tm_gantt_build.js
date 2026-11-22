@@ -614,7 +614,7 @@
       var _pdaR = db.exec('SELECT 1 FROM schedules WHERE display_authored=1 LIMIT 1');
       _playDisplayAuthored = !!(_pdaR.length && _pdaR[0].values.length);
     } catch (ePda) { /* legacy DB without the column — affine rescale stays */ }
-    var _mRankPlay = (_playDisplayAuthored && window.ScheduleAuthor && window.ScheduleAuthor.methodRank) ? window.ScheduleAuthor.methodRank(_twItems) : null;   // §METHOD_ORDER
+    var _mRankPlay = (_playDisplayAuthored && window.ScheduleAuthor && window.ScheduleAuthor.methodRank) ? window.ScheduleAuthor.methodRank(_twItems, db) : null;   // §METHOD_ORDER
     var _tiledPlay = TMS._tmTilePlayWithinTasks(_disp, _cap, _playDisplayAuthored, _mRankPlay);
     function _tmRescaleToTaskWindow(guid, s) {
       // §TM_REVEAL_TILED — the tiled interval wins when one exists (see _tmTilePlayWithinTasks).

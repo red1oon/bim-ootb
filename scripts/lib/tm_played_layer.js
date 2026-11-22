@@ -184,7 +184,7 @@ function mirrorInjectGantt(o) {
     if (o.applyTiling) {
       if (typeof sb._tmTilePlayWithinTasks === 'function') {
         const SAm = sb.window && sb.window.ScheduleAuthor;   // §METHOD_ORDER, as injectGantt
-        tiledMap = sb._tmTilePlayWithinTasks(disp, sb._cap, displayAuthored, (displayAuthored && SAm && SAm.methodRank) ? SAm.methodRank(twItems) : null);
+        tiledMap = sb._tmTilePlayWithinTasks(disp, sb._cap, displayAuthored, (displayAuthored && SAm && SAm.methodRank) ? SAm.methodRank(twItems, o.db) : null);
       } else {
         log('§TM_PLAYED_LAYER tiling UNAVAILABLE — this time_machine.js revision has no ' +
             '_tmTilePlayWithinTasks (pre-#1605); the played layer below is the affine, not the tiling');

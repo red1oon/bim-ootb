@@ -12,7 +12,7 @@
 //   copy     elements the browser plays that the node copy (cache_4d_run.js of the same checkout) does not, or the reverse, or at another start (> 1 h)
 //   box      played elements whose 4D box (the node copy's) is not the mesh's box (> the contact owner's EPS)
 //   early    elements that start before their support is finished — the shipped judge (SupportSweep.midairAudit of --root) on the TRUE boxes, browser times
-//            (only where the elected support TOUCHES the element; the rest is printed as earlyFar — §Q.59)
+//            (only where the elected support TOUCHES the element and is lower or higher than it; the rest is printed as earlyFar / earlyTie — §Q.59)
 //   nopath   elements with no support path to the ground, same judge, same boxes
 //   onNothing / beforeFloor / beforeWall / beforeFrame   the crawler's simple truths (scripts/lib/schedule_crawler.js), with a screenplay per building
 // USE:  node scripts/product_judge.js run --root <checkout> --tag <name> <Building ...>      (Duplex HHS_Office_Federated JKR Clinic Terminal Hospital LTU_AHouse)
@@ -94,14 +94,11 @@ async function runOne(root, tag, bld) {
   const items = []; let unjudged = 0;
   guids.forEach(g => { const t = tb[g], e = els[g]; if (!t || !e) { unjudged++; return; }
     items.push({ guid: g, cls: e.cls, seq: e.seq, phase: e.phase, storey: e.storey, x0: t[0], x1: t[1], y0: t[2], y1: t[3], bz: t[4], tz: t[5], s: ops[g][0], e: ops[g][1] }); });
-  const q = console.log; console.log = () => {}; let ma; try { ma = SS.midairAudit(items); } finally { console.log = q; }
-  // §Q.59 — `early` counts an element only when the support the shipped judge elected for it TOUCHES it (the two boxes are within the owner's own GAP
-  // in height). The election also names supports that do not touch: SampleCastle, 32 ground-floor windows (top 2.67 m) "carried" by a slab at 5.67 m,
-  // with the first-floor windows in between. Those are counted apart (earlyFar) and printed, not ruled on: a piece cannot be early for something 3 m away.
-  let far = new Set();
-  if (items.length && SS.contactGraph && SS.designatedSupport) { console.log = () => {}; let des; try { des = SS.designatedSupport(items, SS.contactGraph(items)); } finally { console.log = q; }
-    const bad = new Set(ma.guids || []); items.forEach((T, i) => { if (!bad.has(T.guid) || des[i] < 0) return; const S = items[des[i]]; if (Math.max(S.bz - T.tz, T.bz - S.tz) > SG.GAP) far.add(T.guid); }); }
-  ma.guids = (ma.guids || []).filter(g => !far.has(g));
+  let ma;
+  // §Q.59 — `early` = the shipped judge's findings whose elected support TOUCHES the element and is lower or higher than it (scripts/lib/schedule_crawler.js
+  // splitEarly). Supports that do not touch (far) and same-height neighbours (tie) are counted and printed, not ruled on.
+  const sp = items.length ? CRAWLER.splitEarly(items, SS, SG) : { ma: { guids: [], orphans: 0 }, early: [], far: [], tie: [] };
+  const far = new Set(sp.far), tie = sp.tie.length; ma = sp.ma; ma.guids = sp.early;
   R.early = items.length ? ma.guids.length : null; R.nopath = items.length ? ma.orphans : null;
   // the crawler: simple truths, one element at a time, on what the product played (scripts/lib/schedule_crawler.js) + the screenplay a person can read
   const cr = CRAWLER.crawl(items, PARENT[bld] || {}); Object.assign(R, cr.counts);
@@ -115,10 +112,10 @@ async function runOne(root, tag, bld) {
     'broken truths: ' + Object.keys(cr.counts).map(k => k + ' ' + cr.counts[k] + ' of ' + cr.judged[k]).join(' · ')].concat(cr.lines).join('\n') + '\n');
   const res = { tag, bld, root, commit: P.commit, elements: guids.length, days: +((P.projectEnd - P.projectStart) / DAY).toFixed(1), drawable: P.rep.M + P.rep.B + P.rep.I, rules: R,
     detail: { paths: paths.map(r => r.cls + ':' + (r.maxMissing + r.maxExtra)).join(' '), incrementalVsFull: eq, heldByCanvas: P.heldInMap, onlyBrowser: onlyB, onlyCopy: onlyN, otherStart: late, commonShiftH: shiftH, parkedNoGeometry: parked,
-      copyElements: L ? Object.keys(L.map).length : null, unjudged, noTruth, earlyFar: far.size, earlyGuids: (ma.guids || []).slice(0, 2000), nopathGuids: (ma.orphanGuids || []).slice(0, 2000) }, secs: Math.round((Date.now() - t0) / 1000) };
+      copyElements: L ? Object.keys(L.map).length : null, unjudged, noTruth, earlyFar: far.size, earlyTie: tie, earlyGuids: (ma.guids || []).slice(0, 2000), nopathGuids: (ma.orphanGuids || []).slice(0, 2000) }, secs: Math.round((Date.now() - t0) / 1000) };
   fs.writeFileSync(path.join(dir, bld + '.json'), JSON.stringify(res));
   console.log('§PRODUCT ' + tag + ' ' + bld + ' commit=' + res.commit + ' elements=' + res.elements + ' days=' + res.days + ' drawable=' + res.drawable + ' | ' + RULES.map(k => k + '=' + (R[k] === null ? 'INCONCLUSIVE' : R[k])).join(' ') +
-    ' | canvas[' + res.detail.paths + ' incrVsFull:' + eq + ' held:' + P.heldInMap + '] copy[onlyBrowser:' + onlyB + ' onlyCopy:' + onlyN + ' otherStart:' + late + ' commonShiftH:' + shiftH + ' parkedNoGeometry:' + parked + '] earlyFar=' + far.size + ' (elected support does not touch: counted, not ruled) unjudged=' + unjudged + ' secs=' + res.secs);
+    ' | canvas[' + res.detail.paths + ' incrVsFull:' + eq + ' held:' + P.heldInMap + '] copy[onlyBrowser:' + onlyB + ' onlyCopy:' + onlyN + ' otherStart:' + late + ' commonShiftH:' + shiftH + ' parkedNoGeometry:' + parked + '] earlyFar=' + far.size + ' earlyTie=' + tie + ' (elected support does not touch / starts at the same height: counted, not ruled) unjudged=' + unjudged + ' secs=' + res.secs);
   return res;
 }
 

@@ -1855,12 +1855,13 @@
   // No contact test, no election, no solve time. The bar itself (phase x level) is the template's; this only orders its members.
   // METHOD_STEPS: the envelope phase is one bar holding several steps; every other phase is one step. The SHELL (walls, roof, decks and every other
   // envelope piece) goes up as one step from the bottom — a zinc flashing modelled as a wall sits on the roof build-up it covers, so "all walls, then
-  // the roof" is wrong on a real roof (SampleCastle). Then what goes INTO the shell: glass framing, its glass, windows and doors, stairs and railings.
-  var METHOD_STEPS = ['shell', 'glass framing', 'glazing', 'windows and doors', 'stairs and railings'];
+  // the roof" is wrong on a real roof (SampleCastle). Then what goes INTO the shell: the curtain wall (frame and glass together, row by row from the
+  // bottom — "all framing, then all glass" puts an upper mullion in before the glass it stands on: HHS, 388), windows and doors, stairs and railings.
+  var METHOD_STEPS = ['shell', 'curtain wall', 'windows and doors', 'stairs and railings'];
   function methodStep(cls, phase) {
     if (phase !== 'Architecture Envelope' && phase !== 'Architecture') return 0;
     var c = cls || '';
-    return METHOD_STEPS.indexOf(c === 'IfcMember' ? 'glass framing' : c === 'IfcPlate' ? 'glazing' : (c === 'IfcWindow' || c === 'IfcDoor') ? 'windows and doors'
+    return METHOD_STEPS.indexOf((c === 'IfcMember' || c === 'IfcPlate') ? 'curtain wall' : (c === 'IfcWindow' || c === 'IfcDoor') ? 'windows and doors'
       : (c === 'IfcRailing' || c.indexOf('IfcStair') === 0) ? 'stairs and railings' : 'shell');
   }
   function methodOrderOn() {
@@ -1868,13 +1869,24 @@
     return !(G.__METHOD_ORDER === false || env.METHOD_ORDER === '0');
   }
   // methodRank(items) -> { guid: rank } or null when switched off. items: [{guid, cls, phase, bz|base_z, tz|top_z}]. Ranks compare inside one bar.
-  function methodRank(items) {
+  function methodRank(items, db) {
     if (!methodOrderOn()) { console.log('§METHOD_ORDER off — the order inside a bar stays the solve\'s'); return null; }
-    var rows = items.map(function (e) { return { g: e.guid, st: methodStep(e.cls, e.phase), bz: e.bz != null ? e.bz : e.base_z, tz: e.tz != null ? e.tz : e.top_z }; });
-    rows.sort(function (x, y) { return x.st - y.st || x.bz - y.bz || x.tz - y.tz || (x.g < y.g ? -1 : x.g > y.g ? 1 : 0); });
+    // at one base the frame goes before its glass (pl); then the lower top first
+    var rows = items.map(function (e) { return { g: e.guid, st: methodStep(e.cls, e.phase), bz: e.bz != null ? e.bz : e.base_z, tz: e.tz != null ? e.tz : e.top_z, pl: e.cls === 'IfcPlate' ? 1 : 0, mb: e.cls === 'IfcMember' };
+    });
+    // A curtain wall goes up frame first: a panel never goes in before the first member of ITS OWN curtain wall (the assembly the file declares,
+    // rel_aggregates). A bottom panel modelled 12 cm below the lowest member (HHS: 11 of 31 curtain walls) takes that member's base. No table = no change.
+    var raised = 0;
+    if (db) try {
+      var ra = db.exec('SELECT child_guid, parent_guid FROM rel_aggregates'), par = {}, low = {}, ri;
+      if (ra.length) ra[0].values.forEach(function (v) { par[v[0]] = v[1]; });
+      for (ri = 0; ri < rows.length; ri++) if (rows[ri].mb && par[rows[ri].g] != null) { var pk = par[rows[ri].g]; if (low[pk] == null || rows[ri].bz < low[pk]) low[pk] = rows[ri].bz; }
+      for (ri = 0; ri < rows.length; ri++) if (rows[ri].pl && par[rows[ri].g] != null && low[par[rows[ri].g]] > rows[ri].bz) { rows[ri].bz = low[par[rows[ri].g]]; raised++; }
+    } catch (eRa) { /* no rel_aggregates table: panels keep their own base */ }
+    rows.sort(function (x, y) { return x.st - y.st || x.bz - y.bz || x.pl - y.pl || x.tz - y.tz || (x.g < y.g ? -1 : x.g > y.g ? 1 : 0); });
     var out = {}, byStep = {};
     for (var i = 0; i < rows.length; i++) { out[rows[i].g] = i; byStep[rows[i].st] = (byStep[rows[i].st] || 0) + 1; }
-    console.log('§METHOD_ORDER on elements=' + rows.length + ' — inside a bar: method step, then bottom-up by base (no solve order, no support layers)');
+    console.log('§METHOD_ORDER on elements=' + rows.length + ' panelsHeldForTheirFrame=' + raised + ' — inside a bar: method step, then bottom-up by base (no solve order, no support layers)');
     return out;
   }
   // _methodLocationAxis(elements, collapse) -> { keyOf, rankOf } for instantiateTemplate: WHERE a piece is, for the bar grid (§Q.59).
@@ -1883,7 +1895,7 @@
   // names the pieces arrive with: levels in the order of their middle (median base); a level starts at its lowest piece that is above the middle of
   // the level below (a stray piece carrying the name far below is not the level's start). No tolerance constant. Where the names already are
   // bands by base (a declared storey datum, §STOREY_DATUM) this returns the same filing.
-  function _methodLocationAxis(elements, collapse) {
+  function _methodLocationAxis(elements, collapse, eps) {   // eps: the contact owner's own EPS (ScheduleGate.EPS) — a base a hair under a level's start is ON that level
     var by = {}, i, k;
     for (i = 0; i < elements.length; i++) { k = collapse(elements[i].storey); (by[k] = by[k] || []).push(elements[i].base_z); }
     var lv = Object.keys(by).map(function (n) { var z = by[n].slice().sort(function (a, b) { return a - b; }); return { name: n, z: z, med: z[z.length >> 1] }; })
@@ -1899,7 +1911,7 @@
     bands.forEach(function (b, bi) { rank[b.name] = bi; });
     for (i = 0; i < elements.length; i++) {
       var bz = elements[i].base_z, at = 0;
-      for (k = 0; k < bands.length; k++) if (bz >= bands[k].from) at = k;
+      for (k = 0; k < bands.length; k++) if (bz >= bands[k].from - (eps || 0)) at = k;   // LTU: a window base 2.6999 and its wall's 2.7000 are one level (23 windows were filed a level below their wall)
       keyByGuid[elements[i].guid] = bands[at].name; n[bands[at].name] = (n[bands[at].name] || 0) + 1;
       if (bands[at].name !== collapse(elements[i].storey)) moved++;
     }
@@ -2261,7 +2273,7 @@
     // §D6_HANG_FILING (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.9.4 D6, §Q.12) — only on the default storey axis;
     // the opt-in deriver axis is left exactly as it was.
     // §METHOD_ORDER: the level a piece is filed on is its LOCATION (a height band by its base); the election files nothing. Off: the hang-filing axis, as before.
-    var _gridAxis = _useAxis || (methodOrderOn() ? _methodLocationAxis(elements, collapse) : _hangFilingAxis(elements, collapse, bandRank));
+    var _gridAxis = _useAxis || (methodOrderOn() ? _methodLocationAxis(elements, collapse, SG.EPS) : _hangFilingAxis(elements, collapse, bandRank));
     var inst = instantiateTemplate(elements, T, laborRates, opts.shiftHours, bandRank, collapse, _gridAxis);
     if (!inst.tasks.length) { console.log('§AUTHOR_TPL_FAIL reason=no_tasks'); return { ok: false, reason: 'no_tasks' }; }
 
@@ -2415,7 +2427,7 @@
         return map;
       } catch (e) { console.log('§TPL_LAYER_ORDER_FAIL ' + e.message); return null; }
     })();
-    var _mRank = methodRank(elements);   // §METHOD_ORDER
+    var _mRank = methodRank(elements, db);   // §METHOD_ORDER
     var _rm = remapSolveToTasks(schedule, inst.tasks, start, _layerOf, _mRank);
     // §TPL_LAYER_SELFCHECK — A PASS MUST PROVE IT DID SOMETHING AND THAT IT WORKED.
     // Written because the layer pass above shipped BROKEN and silent: it returned null on a
