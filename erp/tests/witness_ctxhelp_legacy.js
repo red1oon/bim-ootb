@@ -14,7 +14,8 @@
 //   L4 ids: every new row's id was taken from the site's sequence (>= its CurrentNext before the apply), none is a fixed number.
 //   L5 a target that already has a site help keeps it (one tab is given legacy's Home help first, inside the transaction).
 //   L6 every message and translation <= the site's own AD_Column.FieldLength of MsgText.
-// Reds: LEG_BREAK=noconflict (no ON CONFLICT) -> L3 FAIL; LEG_BREAK=nodict (no own text) -> L1 FAIL; LEG_BREAK=nolinkguard (links over a site's help) -> L5 FAIL.
+//   L7 (§19.17 F6.1) no dead link: the twin's window links reach legacy as plain bold terms; the guide links stay.
+// Reds: LEG_BREAK=oldscript (the script before F6.1) -> L7 FAIL; LEG_BREAK=noconflict (no ON CONFLICT) -> L3 FAIL; LEG_BREAK=nodict (no own text) -> L1 FAIL; LEG_BREAK=nolinkguard (links over a site's help) -> L5 FAIL.
 // Run: node erp/tests/witness_ctxhelp_legacy.js   Needs: docker postgres up with the idempiere_pilot DB, else INCONCLUSIVE.
 'use strict';
 const fs = require('fs'), path = require('path'), cp = require('child_process');
@@ -35,12 +36,15 @@ const KEEP_TAB = 187;   // L5: Order Line gets legacy's Home help (200000) befor
 (function main() {
   const T = JSON.parse(fs.readFileSync(path.join(ERP, 'legacy', 'ctxhelp_targets.json'), 'utf8')), file = path.join(ERP, T.file);
   let sql = fs.readFileSync(file, 'utf8');
+  if (BR === 'oldscript') sql = cp.execFileSync('git', ['-C', path.join(ERP, '..'), 'show', (process.env.OLD_REF || 'debd3c0e') + ':erp/' + T.file], { encoding: 'utf8', maxBuffer: 1 << 28 });   // §19.17 F6.1 red: the script before the fix
   if (BR === 'noconflict') sql = sql.replace(/\nON CONFLICT[^\n]*;/g, ';');
   if (BR === 'nodict') sql = sql.split("'<p><strong>' || r.Name || '</strong></p>' || COALESCE('<p><em>' || NULLIF(r.Description, '') || '</em></p>', '') || COALESCE('<p>' || NULLIF(r.Help, '') || '</p>', '') || '<hr>'").join("''");
   if (BR === 'nolinkguard') sql = sql.split(' AND AD_CtxHelp_ID IS NULL;').join(';');
   L('script ' + T.file + ' ' + sql.length + ' chars, targets ' + T.targets.length + ', db ' + DB + ', break ' + (BR || 'none'));
   const app = require(path.join(ERP, 'ad_ctxhelp_app_rows.js')), twin = {};   // the twin's English message per help (proven against the guides by W-CTXHELP-OVERLAY K6)
-  app.rows.filter((r) => /^INSERT OR IGNORE INTO ad_ctxhelpmsg \(/.test(r)).forEach((r) => { const m = /VALUES \(0, (\d+), \d+, '[^']*', 0, '[^']*', 100, 'Y', NULL, '((?:[^']|'')*)'/.exec(r); if (m) twin[m[1]] = m[2].replace(/''/g, "'"); });
+  // §19.17 F6.1: legacy gets the twin's window / process links as plain bold terms (no handler there); everything else is the twin's text as is. The old script (red) keeps them.
+  const asLegacy = (h) => BR === 'oldscript' ? h : h.replace(/<a [^>]*data-help-(?:win|proc)="[^"]*"[^>]*>([\s\S]*?)<\/a>/g, '<b>$1</b>');
+  app.rows.filter((r) => /^INSERT OR IGNORE INTO ad_ctxhelpmsg \(/.test(r)).forEach((r) => { const m = /VALUES \(0, (\d+), \d+, '[^']*', 0, '[^']*', 100, 'Y', NULL, '((?:[^']|'')*)'/.exec(r); if (m) twin[m[1]] = asLegacy(m[2].replace(/''/g, "'")); });
   const tabs = T.targets.filter((t) => t.kind === 'T').map((t) => t.id), procs = T.targets.filter((t) => t.kind === 'P').map((t) => t.id);
   const seqQ = "SELECT '§SEQ|' || (SELECT CurrentNext FROM AD_Sequence WHERE Name='AD_CtxHelp' AND IsTableID='Y') || '|' || (SELECT CurrentNext FROM AD_Sequence WHERE Name='AD_CtxHelpMsg' AND IsTableID='Y');";
   const dictQ = (tb, ids) => "SELECT '§D|' || json_build_object('kind', '" + (tb === 'AD_Tab' ? 'T' : 'P') + "', 'id', r." + tb + "_ID, 'name', r.Name, 'desc', r.Description, 'help', r.Help, 'trl', (SELECT json_object_agg(x.AD_Language, json_build_object('name', x.Name, 'desc', x.Description, 'help', x.Help)) FROM " + tb + '_Trl x WHERE x.' + tb + '_ID=r.' + tb + '_ID))::text FROM ' + tb + ' r WHERE r.' + tb + '_ID IN (' + (ids.join(',') || '0') + ');';
@@ -101,6 +105,11 @@ const KEEP_TAB = 187;   // L5: Order Line gets legacy's Home help (200000) befor
   const base = seqs[0] ? Math.min(...seqs[0]) : NaN, fresh = ids.filter((i) => i >= base);
   chk('L4 ids from the site\'s sequences: ' + fresh.length + ' of ' + ids.length + ' new rows >= CurrentNext before the apply (' + base + '); sequences advanced ' + (seqs[1] ? seqs[1].map((v, i) => v - seqs[0][i]).join(' / ') : '?'), ids.length > 0 && fresh.length === ids.length);
   chk('L5 a tab that already has a site help keeps it: tab ' + KEEP_TAB + ' help ' + keep0 + ' -> ' + keep1, keep0 && keep0 !== 'null' && keep1 === keep0);
+  // L7 (§19.17 F6.1) no dead link reaches legacy: no message or translation on the pilot holds a data-help- attribute or an href="#"; the guide links (https) are kept
+  const texts = Object.values(J).filter((j) => j.uu && T.targets.some((t) => t.huu === j.uu)).reduce((a, j) => a.concat([j.msg], Object.values(j.trl || {})), []).filter((x) => x != null);
+  const dead = texts.filter((x) => /data-help-|href="#"/.test(x)).length, guideLinks = texts.reduce((a, x) => a + (x.match(/<a href="https:\/\/[^"]+" target="_blank">/g) || []).length, 0);
+  L('L7 our messages + translations on the pilot ' + texts.length + ', with a dead link ' + dead + ', guide links kept ' + guideLinks);
+  chk('L7 no dead link reaches legacy: ' + (texts.length - dead) + ' of ' + texts.length + ' messages and translations have no data-help- / href="#" link; guide links kept ' + guideLinks, texts.length > 0 && dead === 0 && guideLinks > 0);
   const allMsg = Object.values(J).filter((j) => j.msg != null), over = allMsg.filter((j) => j.msg.length > LM).length + Object.values(J).reduce((a, j) => a + Object.values(j.trl || {}).filter((m) => m.length > LT).length, 0);
   chk('L6 every message and translation fits the site\'s MsgText length (' + LM + ' / ' + LT + '): over = ' + over, LM > 0 && allMsg.length > 0 && over === 0);
   if (!done) L('the transaction did not reach ROLLBACK (psql stopped on an error); a stopped psql session rolls back its open transaction');
