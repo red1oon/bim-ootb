@@ -72,6 +72,9 @@ function setupNlp(A) {
     heating:'HEAT', heat:'HEAT',
   };
 
+  // CIDB 2024 Material Rates — from rates.js (shared RATES object)
+  function calcCost(ifc_class, qty) { return getRate(ifc_class) * qty; }
+
   function discCode(word) {
     return DISC_MAP[word.toLowerCase()] || word.toUpperCase();
   }
@@ -131,6 +134,39 @@ function setupNlp(A) {
                 WHERE (${ifc.sql}) ${bld.sql} GROUP BY ifc_class`,
           params: [...ifc.params, ...bld.params],
           desc: `count ${singularize(m[1])}`
+        };
+      }},
+    // Cost: "total cost", "cost of beams" — computed from RATES × element count (same as 4D/5D)
+    { re: /^total\s+cost$/i,
+      fn: () => {
+        const bld = bldFilter('WHERE');
+        return {
+          sql: `SELECT ifc_class, ${_pc()} as qty FROM elements_meta ${bld.sql} GROUP BY ifc_class ORDER BY qty DESC`,
+          params: [...bld.params],
+          desc: 'total building cost',
+          costMode: 'total'
+        };
+      }},
+    { re: /^cost\s+(?:of\s+)?(\w+)$/i,
+      fn: m => {
+        const d = DISC_MAP[m[1].toLowerCase()];
+        if (d) {
+          const bld = bldFilter(true);
+          return {
+            sql: `SELECT ifc_class, ${_pc()} as qty FROM elements_meta
+                  WHERE discipline = ? ${bld.sql} GROUP BY ifc_class ORDER BY qty DESC`,
+            params: [d, ...bld.params],
+            desc: `cost of ${m[1]}`,
+            costMode: 'disc'
+          };
+        }
+        const ifc = ifcLike(m[1]); const bld = bldFilter();
+        return {
+          sql: `SELECT ifc_class, ${_pc()} as qty FROM elements_meta
+                WHERE (${ifc.sql}) ${bld.sql} GROUP BY ifc_class ORDER BY qty DESC`,
+          params: [...ifc.params, ...bld.params],
+          desc: `cost of ${singularize(m[1])}`,
+          costMode: 'element'
         };
       }},
     // Quantity: "total area", "total length pipes" — element count (no QTO table needed)
@@ -247,39 +283,6 @@ function setupNlp(A) {
     _storeyBld = A.activeBuilding; return _storeyCache;
   }
 
-  // ── "total cost" / "cost of beams" / "cost of structure level 1" — §COST_ONE_BASIS (owner 2026-11-22; spec prompts/CAPEX_DASHBOARD.md §COST-ONE-BASIS):
-  // the decoder names the elements; the price is rate x quantity in the rate's own unit, the SAME function the Find bar and the > ERP push use
-  // (A.costBasis -> find_erp_push.js basisAmount -> ProjFold.lineAmounts). No rate lookup, no count x rate, no fallback price lives in this file.
-  function runCost(d) {
-    const bld = bldFilter(d.whereSql ? true : 'WHERE');
-    const sql = d.sql + ' ' + bld.sql;
-    const params = [...(d.params || []), ...bld.params];
-    console.log('[S211] §NLP_SQL ' + sql.replace(/\s+/g, ' ').substring(0, 120));
-    const go = () => {
-      let guids = [];
-      try { const r = A.db.exec(sql, params); guids = r.length ? r[0].values.map(v => v[0]) : []; } catch (e) { showToast('Query error: ' + e.message, null, 'warn'); console.log('[S211] §NLP_ERR ' + e.message); return; }
-      if (!guids.length) { showToast((typeof _TRL!=='undefined'&&_TRL.ui_no_results||'No results for "{q}"').replace('{q}', d.desc), null, 'info'); console.log('[S211] §NLP_EMPTY desc="' + d.desc + '"'); return; }
-      const cb = A.costBasis(new Set(guids));
-      if (!cb) { showToast('Nothing costable — this model has no element sizes', null, 'info'); console.log('[S211] §ASK_COST INCONCLUSIVE desc="' + d.desc + '" elements=' + guids.length + ' reason=no-priced-rows'); return; }
-      const rowsNZ = cb.detail.filter(x => Number(x.amount) !== 0);
-      Promise.all([A.costText(cb.cur, cb.exact)].concat(rowsNZ.map(x => A.costText(cb.cur, x.amount)))).then(texts => {
-        const txt = texts[0];
-        const cur2 = typeof _TRL!=='undefined'&&_TRL.cur2||'USD', rate = typeof _TRL!=='undefined'&&_TRL.cur_rate||3.91;
-        const second = Number(cb.exact) / rate;
-        const unpricedN = Object.keys(cb.unpriced || {}).length;
-        const summary = txt + ' (' + cur2 + ' ' + second.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 0}) + ') \u2014 ' + d.desc;
-        const vals = rowsNZ.map((x, i) => [x.cls, x.qty + ' ' + x.unit, x.rate, texts[i + 1]]);
-        showToast(summary, { cols: ['ifc_class', 'qty (rate unit)', 'rate', 'cost'], vals, parsed: { desc: d.desc } }, 'ok');
-        rowsNZ.forEach(x => console.log('[S211] §ASK_COST_ROW cls=' + x.cls + ' unit=' + x.unit + ' rate=' + x.rate + ' qty=' + x.qty + ' amount=' + x.amount));
-        console.log('[S211] §ASK_COST scope="' + d.desc + '" elements=' + cb.elements + ' exact=' + cb.exact + ' text="' + txt + '" lines=' + cb.lines + ' tasks=' + cb.tasks + ' cur=' + cb.cur + ' pack=' + cb.pack +
-          ' billedZero=' + unpricedN + (unpricedN ? '[' + Object.keys(cb.unpriced).join(',') + ']' : '') + ' ms=' + cb.ms + ' basis=find_bar');
-      });
-    };
-    if (typeof A.costBasis === 'function') go();
-    else if (typeof A.loadNavigate === 'function') A.loadNavigate().then(go, e => { showToast('Cost needs the Find panel: ' + e.message, null, 'warn'); });
-    else showToast('Cost needs the Find panel', null, 'warn');
-  }
-
   function executeQuery(text) {
     if (!A.db) { showToast('No building loaded', null, 'warn'); return; }
     // NLP2026: typed natural-language decoder (decoder.js). Tries first; on no-match it
@@ -287,7 +290,6 @@ function setupNlp(A) {
     if (typeof BimDecoder !== 'undefined') {
       try {
         const d = BimDecoder.decode(text, { storeys: _nlpStoreys(), countExpr: ProvTotals.count(A.db, 'guid', 'decoder') });
-        if (d && d.kind === 'cost') { runCost(d); return; }   // §COST_ONE_BASIS: priced by the Find bar's own basis, never here
         if (d && d.kind !== 'none') {
           const cur = typeof _TRL!=='undefined'&&_TRL.cur||'RM',
                 cur2 = typeof _TRL!=='undefined'&&_TRL.cur2||'USD',
@@ -335,7 +337,32 @@ function setupNlp(A) {
       const vals = rows[0].values;
       // Format summary
       let summary = '';
-      if (cols.includes('count')) {
+      if (parsed.costMode) {
+        // Cost mode: compute from RATES × qty (same as 4D/5D boq_charts)
+        const clsIdx = cols.indexOf('ifc_class');
+        const qtyIdx = cols.indexOf('qty');
+        let totalCost = 0;
+        const costRows = [];
+        for (const r of vals) {
+          const cls = r[clsIdx];
+          const qty = r[qtyIdx] || 0;
+          const cost = calcCost(cls, qty);
+          totalCost += cost;
+          var _cur = typeof _TRL!=='undefined'&&_TRL.cur||'RM';
+          if (cost > 0) costRows.push([cls, qty, _cur + ' ' + cost.toLocaleString()]);
+        }
+        var _cur = typeof _TRL!=='undefined'&&_TRL.cur||'RM';
+        var _cur2 = typeof _TRL!=='undefined'&&_TRL.cur2||'USD';
+        var _rate = typeof _TRL!=='undefined'&&_TRL.cur_rate||3.91;
+        const usd = totalCost / _rate;
+        summary = _cur + ' ' + totalCost.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 0}) +
+          ' (' + _cur2 + ' ' + usd.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 0}) + ') \u2014 ' + parsed.desc;
+        // Replace vals with cost breakdown for Details view
+        if (costRows.length) {
+          rows[0].columns = ['ifc_class', 'qty', 'cost'];
+          rows[0].values = costRows;
+        }
+      } else if (cols.includes('count')) {
         const total = vals.reduce((s, r) => s + (r[cols.indexOf('count')] || 0), 0);
         summary = total.toLocaleString() + ' ' + parsed.desc;
       } else {
