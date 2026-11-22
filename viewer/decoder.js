@@ -13,7 +13,7 @@
 //
 // WHAT IT UNDERSTANDS (plain typed English, tolerant of filler/order/case):
 //   • count / show   "how many doors"  "show me all the doors"  "doors"
-//   • cost           "total cost"  "how much do the doors cost"  "cost of structural"   (plan = the guids; nlp.js prices them, one basis)
+//   • cost           "total cost"  "how much do the doors cost"  "cost of structural"
 //   • real dimension "total area of walls" (m²)  "pipe length" (m)   ← from qto_cache.qty
 //   • compound       "doors and windows"
 //   • storey scope   "doors on level 2"  "ground floor walls"  (resolved vs real storeys)
@@ -209,16 +209,16 @@
         sql: `SELECT ${dim} AS label, ${C} AS count FROM elements_meta${w} GROUP BY ${dim} ORDER BY count ${dir} LIMIT 1`, params };
     }
 
-    // ── COST — which elements the sentence means; the PRICE is not decoded here. §COST_ONE_BASIS (owner 2026-11-22): the cost of a model is
-    //    rate x quantity in the rate's own unit, one pricing for every readout (nf_highlight_cost.js A.costBasis), so the plan carries the guids only.
+    // ── COST (qto_cache: material+labour+equipment) ──
     if (isCost && !dimM) {
       const where = [], params = []; let scope = 'total building';
       if (nouns) { where.push(nouns.sql); params.push(...nouns.params); scope = nouns.label; }
       if (disc) { where.push('discipline = ?'); params.push(disc.code); scope = disc.word; }
       if (storey) { where.push(storey.sql); params.push(...storey.params); scope += ' ' + storey.label; }
       const w = where.length ? ' WHERE ' + where.join(' AND ') : '';
-      return { kind: 'cost', desc: scope === 'total building' ? 'total building cost' : 'cost of ' + scope,
-        sql: 'SELECT guid FROM elements_meta' + w, params, whereSql: w };
+      return { kind: 'cost', desc: 'cost of ' + scope,
+        sql: 'SELECT ROUND(SUM(COALESCE(material_cost,0)+COALESCE(labour_cost,0)+COALESCE(equipment_cost,0))) AS cost, '
+           + 'SUM(element_count) AS elems FROM qto_cache' + w, params };
     }
 
     // ── REAL QTO dimension (area M2 / length M / volume M3) from extracted qty ──
@@ -263,6 +263,13 @@
     const run = (sql, p) => { const r = exec(sql, p || []); return (r && r[0]) ? r[0] : { columns: [], values: [] }; };
     if (!d || d.kind === 'none') return { kind: 'none', summary: '', guids: [], table: { cols: [], vals: [] } };
 
+    if (d.kind === 'cost') {
+      const v = (run(d.sql, d.params).values[0]) || [0, 0];
+      const cost = v[0] || 0, elems = v[1] || 0;
+      return { kind: 'cost', guids: [],
+        summary: `${cur} ${fmt(cost)} (${cur2} ${fmt(cost / rate)}) — ${d.desc}`,
+        table: { cols: ['metric', 'value'], vals: [['total', cur + ' ' + fmt(cost)], ['elements', fmt(elems)]] } };
+    }
     if (d.kind === 'qto') {
       const v = (run(d.sql, d.params).values[0]) || [0, 0];
       const unit = { M2: 'm²', M: 'm', M3: 'm³' }[d.uom] || '';

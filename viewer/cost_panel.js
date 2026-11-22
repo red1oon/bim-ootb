@@ -10,9 +10,16 @@
   var body  = null;   // content div (innerHTML goes here, not on panel)
   var prev  = null;   // previous snapshot {qty, area, vol} per class for variance
 
-  // Δ Cost = the change in the bay's cost between two drags, each cost priced by the ONE basis (nf_highlight_cost.js A.costBasis:
-  // the pack's rate x quantity in the rate's own unit, as the Find bar and the > ERP push price). §COST_ONE_BASIS 2026-11-22: this panel
-  // had its own hard-coded per-m3 rate table (not the pack's) and a 100/m3 fallback for unlisted classes; both are gone.
+  // Default unit rates (cost per m³) by IFC class — generic construction estimates
+  var UNIT_RATES = {
+    'IfcWall': 250, 'IfcWallStandardCase': 250,
+    'IfcSlab': 200, 'IfcColumn': 400, 'IfcBeam': 350,
+    'IfcDoor': 800, 'IfcDoorStandardCase': 800,
+    'IfcWindow': 900, 'IfcCurtainWall': 600,
+    'IfcCovering': 120, 'IfcRailing': 180,
+    'IfcStair': 500, 'IfcRoof': 300, 'IfcFooting': 150
+  };
+  var defaultRate = 100; // fallback for unlisted classes
 
   function createPanel() {
     panel = document.createElement('div');
@@ -89,22 +96,13 @@
       return;
     }
 
-    // the bay's cost per class, priced by the one basis; null (shown as a dash) when the Find module is not loaded or nothing is priceable
-    var costBy = null;
-    try {
-      var gr = APP.db.exec('SELECT m.guid FROM elements_meta m JOIN element_transforms t ON m.guid = t.guid WHERE t.center_x BETWEEN ? AND ? AND t.center_y BETWEEN ? AND ?', [x1, x2, y1, y2]);
-      var cb = (typeof APP.costBasis === 'function' && gr.length) ? APP.costBasis(new Set(gr[0].values.map(function (v) { return v[0]; }))) : null;
-      if (cb) { costBy = {}; cb.detail.forEach(function (d) { var c = d.cls.split(':')[0]; costBy[c] = (costBy[c] || 0) + Number(d.amount); }); }
-      console.log('§GRID_3D_COST ' + (cb ? 'exact=' + cb.exact + ' lines=' + cb.lines + ' pack=' + cb.pack : 'INCONCLUSIVE no priced rows or Find module not loaded'));
-    } catch (e) { console.log('§GRID_3D_COST_ERR ' + e.message); }
-
     // Build current snapshot for variance comparison
     var curr = {};
     var totalQty = 0, totalArea = 0, totalVol = 0;
     r[0].values.forEach(function (row) {
       var cls = row[0] || '';
       var qty = row[1] || 0, area = row[2] || 0, vol = row[3] || 0;
-      curr[cls] = { qty: qty, area: area, vol: vol, cost: costBy ? (costBy[cls] || 0) : null };
+      curr[cls] = { qty: qty, area: area, vol: vol };
       totalQty  += qty;
       totalArea += area;
       totalVol  += vol;
@@ -135,10 +133,11 @@
       if (hasPrev) {
         var dq = p ? qty - p.qty : qty;
         var dv = p ? vol - p.vol : vol;
-        var deltaCost = (costBy && prev[cls] && prev[cls].cost != null) ? curr[cls].cost - prev[cls].cost : (costBy && !p ? curr[cls].cost : null);
+        var rate = UNIT_RATES[cls] || defaultRate;
+        var deltaCost = dv * rate;
         html += '<td style="text-align:right">' + fmtDelta(dq) + '</td>' +
                 '<td style="text-align:right">' + fmtDeltaF(dv, 2) + '</td>' +
-                '<td style="text-align:right">' + (deltaCost == null ? '\u2014' : fmtDeltaF(deltaCost, 0)) + '</td>';
+                '<td style="text-align:right">' + fmtDeltaF(deltaCost, 0) + '</td>';
       }
       html += '</tr>';
     });
@@ -148,12 +147,13 @@
       for (var pc in prev) {
         if (!curr[pc]) {
           var short = pc.replace('Ifc', '').replace('StandardCase', '');
-          var pcDeltaCost = prev[pc].cost != null ? -prev[pc].cost : null;
+          var pcRate = UNIT_RATES[pc] || defaultRate;
+          var pcDeltaCost = -prev[pc].vol * pcRate;
           html += '<tr style="color:#ff5252"><td>' + short + '</td>' +
                   '<td style="text-align:right">0</td><td>-</td><td>-</td>' +
                   '<td style="text-align:right">' + fmtDelta(-prev[pc].qty) + '</td>' +
                   '<td style="text-align:right">' + fmtDeltaF(-prev[pc].vol, 2) + '</td>' +
-                  '<td style="text-align:right">' + (pcDeltaCost == null ? '\u2014' : fmtDeltaF(pcDeltaCost, 0)) + '</td></tr>';
+                  '<td style="text-align:right">' + fmtDeltaF(pcDeltaCost, 0) + '</td></tr>';
         }
       }
     }
@@ -168,14 +168,18 @@
             '<td style="text-align:right"><b>' + totalArea.toFixed(1) + '</b></td>' +
             '<td style="text-align:right"><b>' + totalVol.toFixed(2) + '</b></td>';
     if (hasPrev) {
-      // total Δ Cost = this bay's priced total minus the last drag's (null when either drag could not be priced)
-      var totalDeltaCost = null, curTot = 0, prevTot = 0, allPriced = !!costBy;
-      for (var ck in curr) curTot += curr[ck].cost || 0;
-      for (var dk in prev) { if (prev[dk].cost == null) allPriced = false; prevTot += prev[dk].cost || 0; }
-      if (allPriced) totalDeltaCost = curTot - prevTot;
+      // Compute total Δ Cost across all classes
+      var totalDeltaCost = 0;
+      for (var ck in curr) {
+        var pv = prev[ck] ? prev[ck].vol : 0;
+        totalDeltaCost += (curr[ck].vol - pv) * (UNIT_RATES[ck] || defaultRate);
+      }
+      for (var dk in prev) {
+        if (!curr[dk]) totalDeltaCost += -prev[dk].vol * (UNIT_RATES[dk] || defaultRate);
+      }
       html += '<td style="text-align:right"><b>' + fmtDelta(totalQty - prevTotQty) + '</b></td>' +
               '<td style="text-align:right"><b>' + fmtDeltaF(totalVol - prevTotVol, 2) + '</b></td>' +
-              '<td style="text-align:right"><b>' + (totalDeltaCost == null ? '\u2014' : fmtDeltaF(totalDeltaCost, 0)) + '</b></td>';
+              '<td style="text-align:right"><b>' + fmtDeltaF(totalDeltaCost, 0) + '</b></td>';
     }
     html += '</tr></table>';
 
