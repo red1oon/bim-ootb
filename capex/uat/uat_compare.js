@@ -65,15 +65,16 @@
     var ok = d.onlyA.length === 0 && d.onlyB.length === 0 && tables.length === 0 && tester.rows.length > 0;
     return { verdict: ok ? 'PASS' : 'FAIL', elements: tester.rows.length, reference: reference.rows.length, onlyReference: d.onlyA, onlyYours: d.onlyB, tables: tables };
   }
-  // ── B2.9 / B3.1 lines read off the Viewer ── numbers compared without their digit grouping (96,839 = 96.839 = 96 839), words as given
-  function normLine(s) { return String(s || '').replace(/\(\d+ instanced groups?\)\.?/i, '').replace(/(\d)[,.   ](?=\d{3}\b)/g, '$1').replace(/\s+/g, ' ').trim(); }
+  // ── B2.9 / B3.1 lines read off the Viewer ── numbers compared without their digit grouping (96,839 = 96.839 = 96 839), words as given;
+  //    cents (one cost basis, CAPEX_DASHBOARD.md §COST-ONE-BASIS): a decimal mark ',' before 1-2 digits reads as '.' (355,097.98 = 355.097,98)
+  function normLine(s) { return String(s || '').replace(/\(\d+ instanced groups?\)\.?/i, '').replace(/(\d)[,.   ](?=\d{3}\b)/g, '$1').replace(/(\d),(\d{1,2})\b/g, '$1.$2').replace(/\s+/g, ' ').trim(); }
   function compareLine(expected, given, pick) {
     if (!given || !String(given).trim()) return { verdict: 'NOT GIVEN', expected: expected };
     var e = normLine(expected), g = normLine(given);
     if (pick) { var me = pick.exec(e), mg = pick.exec(g); e = me ? me[0] : e; g = mg ? mg[0] : null; }
     return { verdict: g !== null && e === g ? 'PASS' : 'FAIL', expected: expected, yours: given };
   }
-  var ELEMENTS = /SHED \d+ elements/, COST = /[A-Z]{2,4} \d+ \([A-Z]{2,4} \d+\)/;
+  var ELEMENTS = /SHED \d+ elements/, COST = /[A-Z]{2,4} \d+(\.\d{1,2})? \([A-Z]{2,4} \d+(\.\d{1,2})?\)/;
   // ── the whole marking ── manifest = the pack's manifest.json; inputs = { marked: {name:text}|null, refMarked: {name:text}, db: summary|null, refDb: summary, viewerLine, costLine }
   function judge(manifest, inputs, deps) {
     var E = manifest.expected, rows = [];
