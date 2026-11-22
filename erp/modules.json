@@ -1,7 +1,11 @@
 {
  "app": "erp", "schema": 1, "sw": "erp/sw.js", "cacheVersion": "v1125", "depsDeclared": true,
- "depsReview": {"by":"owner","on":"2026-11-20","tool":"3a99c239f84c1a7e1b66cd7efbf75f58e3f583f0d5350c28a8d13172a1e0814c"},
+ "depsReview": {"by":"owner","on":"2026-11-22","tool":"91f9dd03f8e75bd0f4e3e01609181e4c4837d5d176ff320153dd95a9481b8c76"},
  "modules": {
+  "capex/adapters.js": {"v":null,"load":"boot","lazyGroup":null,"precache":false,"deps":[],"uses":["erp/overlay/boot.js"],"notDeps":[],"owner":"prompts/CAPEX_DASHBOARD.md"},
+  "capex/dash.js": {"v":null,"load":"boot","lazyGroup":null,"precache":false,"deps":["capex/adapters.js","capex/tiles.js"],"uses":["capex/pa_tiles.js","erp/ad_callout.js","erp/goal_engine.js","erp/overlay/boot.js"],"notDeps":[],"owner":"prompts/CAPEX_DASHBOARD.md"},
+  "capex/pa_tiles.js": {"v":null,"load":"boot","lazyGroup":null,"precache":false,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/CAPEX_DASHBOARD.md"},
+  "capex/tiles.js": {"v":null,"load":"boot","lazyGroup":null,"precache":false,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/CAPEX_DASHBOARD.md"},
   "common/about_diy.js": {"v":3,"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["erp/erp_persist_ui.js"],"notDeps":[],"owner":"prompts/ABOUT_BOX_CONSOLIDATE.md"},
   "common/comm/comm_pipe.js": {"v":null,"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["erp/overlay/boot.js"],"notDeps":[],"owner":"prompts/TEAMWORK_FRAMEWORK.md"},
   "common/comm/op_versions.js": {"v":1,"load":"lazy","lazyGroup":"erp/idempiere.html","precache":true,"deps":[],"uses":["erp/genesis.js"],"notDeps":[],"owner":"prompts/TEAMWORK_FRAMEWORK.md"},
@@ -301,6 +305,7 @@
   "viewer/connect_scene.js": {"v":1,"load":"boot","lazyGroup":null,"precache":false,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/CONNECT_SCENE_SPEC.md"}
  },
  "inline": {
+  "capex/index.html#inline0": {"deps":["erp/ad_callout.js"],"uses":[],"notDeps":["erp/genesis.js"]},
   "erp/chat_lens.html#inline0": {"deps":["erp/chat_lens.js"],"uses":[],"notDeps":["erp/overlay/boot.js"]},
   "erp/erp.html#inline0": {"deps":[],"uses":["erp/ad_ui.js"],"notDeps":["erp/overlay/boot.js"]},
   "erp/erp.html#inline1": {"deps":[],"uses":["erp/ad_ui.js","erp/erp_persist_ui.js","erp/erp_signer.js","erp/kernel_ops.js","erp/overlay/boot.js","erp/seed_key.js","erp/vfs_detect.js"],"notDeps":[]},
@@ -314,12 +319,24 @@
   "erp/glassbowl_gravity.html#inline2": {"deps":[],"uses":["common/whole_history.js","erp/glassbowl_pills.js"],"notDeps":[]},
   "erp/idempiere.html#inline0": {"deps":["erp/kernel_ops.js","erp/op_upcaster.js"],"uses":[],"notDeps":[]},
   "erp/idempiere.html#inline1": {"deps":["erp/ad_callout.js"],"uses":[],"notDeps":["erp/genesis.js"]},
-  "erp/idempiere.html#inline4": {"deps":["erp/ad_data.js","erp/ad_lens.js","erp/ad_parser.js","erp/crud_overlay.js","erp/erp_descriptor.js","erp/idmp_session.js"],"uses":["common/about_diy.js","common/comm/team_panel.js","common/help/help_dym.js","common/help/help_grammar.js","common/help/help_query.js","common/history_tap.js","common/whole_history.js","erp/accts_posted.js","erp/ad_attachment.js","erp/ad_callout.js","erp/ad_ctxhelp_overlay.js","erp/ad_docfsm.js","erp/ad_docvalue_overlay.js","erp/ad_evaluator.js","erp/ad_find.js","erp/ad_form_generic.js","erp/ad_gridtab.js","erp/ad_hba_seed_overlay.js","erp/ad_import_tables.js","erp/ad_index_overlay.js","erp/ad_infowin.js","erp/ad_modelval.js","erp/ad_process.js","erp/ad_recent.js","erp/ad_rule.js","erp/ad_statusline.js","erp/ad_taxcat_overlay.js","erp/ad_toolbar.js","erp/bim_orders_overlay.js","erp/blue_future.js","erp/crud_core.js","erp/db_export_safe.js","erp/doc_actions.js","erp/doc_poster.js","erp/erp_engine.js","erp/erp_i18n.js","erp/erp_picker.js","erp/erp_postings.js","erp/erp_preview.js","erp/erp_signer.js","erp/field_help.js","erp/genesis.js","erp/help_actions.js","erp/help_overlay.js","erp/help_records_core.js","erp/help_search.js","erp/icons.js","erp/idmp_history.js","erp/idmp_pills.js","erp/kanban_host.js","erp/kanban_lens.js","erp/kernel_ops.js","erp/model_layer.js","erp/overlay/boot.js","erp/overlay_kit.js","erp/plugin_overlay.js","erp/plugin_release.js","erp/post_resolver.js","erp/report_overlay.js","erp/rule_fold.js","erp/seed_key.js","erp/seed_patch.js","erp/system_monitor.js","erp/system_tenant.js","erp/teams_embed.js","erp/user_names.js","erp/vfs_detect.js","erp/zoom_across.js","viewer/connect_scene.js"],"notDeps":[]},
+  "erp/idempiere.html#inline4": {"deps":["erp/ad_data.js","erp/ad_lens.js","erp/ad_parser.js","erp/crud_overlay.js","erp/erp_descriptor.js","erp/idmp_session.js"],"uses":["common/about_diy.js","common/comm/team_panel.js","common/help/help_dym.js","common/help/help_grammar.js","common/help/help_query.js","common/history_tap.js","common/whole_history.js","erp/accts_posted.js","erp/ad_attachment.js","erp/ad_callout.js","erp/ad_ctxhelp_overlay.js","erp/ad_docfsm.js","erp/ad_docvalue_overlay.js","erp/ad_evaluator.js","erp/ad_find.js","erp/ad_form_generic.js","erp/ad_gridtab.js","erp/ad_hba_seed_overlay.js","erp/ad_import_tables.js","erp/ad_index_overlay.js","erp/ad_infowin.js","erp/ad_modelval.js","erp/ad_process.js","erp/ad_recent.js","erp/ad_rule.js","erp/ad_statusline.js","erp/ad_taxcat_overlay.js","erp/ad_toolbar.js","erp/bim_orders_overlay.js","erp/blue_future.js","erp/crud_core.js","erp/ctx_help.js","erp/db_export_safe.js","erp/doc_actions.js","erp/doc_poster.js","erp/erp_engine.js","erp/erp_i18n.js","erp/erp_picker.js","erp/erp_postings.js","erp/erp_preview.js","erp/erp_signer.js","erp/field_help.js","erp/genesis.js","erp/help_actions.js","erp/help_overlay.js","erp/help_records_core.js","erp/help_search.js","erp/icons.js","erp/idmp_history.js","erp/idmp_pills.js","erp/kanban_host.js","erp/kanban_lens.js","erp/kernel_ops.js","erp/model_layer.js","erp/overlay/boot.js","erp/overlay_kit.js","erp/plugin_overlay.js","erp/plugin_release.js","erp/post_resolver.js","erp/report_overlay.js","erp/rule_fold.js","erp/seed_key.js","erp/seed_patch.js","erp/system_monitor.js","erp/system_tenant.js","erp/teams_embed.js","erp/user_names.js","erp/vfs_detect.js","erp/zoom_across.js","viewer/connect_scene.js"],"notDeps":[]},
   "erp/kanban_lens.html#inline0": {"deps":[],"uses":["erp/erp_kernel.js","erp/erp_seam.js","erp/erp_signer.js","erp/kanban_lens.js","erp/kernel_ops.js","erp/overlay/boot.js"],"notDeps":[]},
   "erp/pivot_lens.html#inline0": {"deps":[],"uses":["erp/overlay/boot.js"],"notDeps":[]},
   "erp/spike_writepath.html#inline0": {"deps":["erp/erp_kernel.js","erp/erp_postings.js","erp/erp_seam.js"],"uses":["erp/erp_signer.js","erp/kernel_ops.js","erp/overlay/boot.js"],"notDeps":[]}
  },
  "order": {
+  "capex/index.html": [
+   {"kind":"tag","as":"tiles.js"},
+   {"kind":"tag","as":"../erp/layered_registry.js"},
+   {"kind":"tag","as":"../erp/bigdecimal.js"},
+   {"kind":"tag","as":"../erp/db_export_safe.js"},
+   {"kind":"tag","as":"../erp/ad_callout.js"},
+   {"kind":"tag","as":"../erp/callouts/sqlfn.js"},
+   {"kind":"tag","as":"../erp/goal_engine.js"},
+   {"kind":"tag","as":"pa_tiles.js"},
+   {"kind":"tag","as":"adapters.js"},
+   {"kind":"tag","as":"dash.js"}
+  ],
   "erp/ad_attachment.js": [
    {"kind":"lazy","as":"../common/file_store.js"}
   ],

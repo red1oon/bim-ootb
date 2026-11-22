@@ -9,6 +9,8 @@
 // C5 (§14 N2): a LAZY module (viewer/main.js modules[], not precached on purpose) stays lazy: its loader list and the
 // loader's own ?v= go up, PRECACHE_ASSETS is untouched, and the not-precached line is a NOTE, never a WARN.
 // C7 (B1): an inline page literal goes up with its module in a modules.json app (red on the old bump.js: BUMP_W_BUMP=<old bump.js>).
+// B3-OUT (#3379): bump.js's regex path is deleted, so C1, C2, C5 and C6 (which ran on a copy of the viewer pages WITHOUT viewer/modules.json, i.e. on the regex path) now run on
+//   the manifest path: the temp copy also holds viewer/modules.json and every file its `order` names (the manifest writes them all). Same targets, same assertions, none deleted.
 // Prints §BUMP_W <case> PASS|FAIL and §BUMP_W_VERDICT. A no-op bump.js fails C2 (that is the red control).
 'use strict';
 const fs = require('fs');
@@ -29,8 +31,9 @@ const mainSrc = fs.readFileSync(path.join(REPO, 'viewer/main.js'), 'utf8');
 const lz = [...mainSrc.matchAll(/'([a-z0-9_]+\.js)\?v=(\d+)'/g)].find(x => fs.existsSync(path.join(REPO, 'viewer', x[1])) && !html.includes(x[1] + '?v='));
 const LAZY = lz ? 'viewer/' + lz[1] : null;
 
+const VMAN = JSON.parse(fs.readFileSync(path.join(REPO, 'viewer/modules.json'), 'utf8'));
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'witness_bump_'));
-for (const f of [...COPY, TARGET, ...(LAZY ? [LAZY] : []), 'viewer/__unloaded_probe.js']) {
+for (const f of [...new Set([...COPY, 'viewer/modules.json', ...Object.keys(VMAN.order)]), TARGET, ...(LAZY ? [LAZY] : []), 'viewer/__unloaded_probe.js']) {
   fs.mkdirSync(path.join(tmp, path.dirname(f)), { recursive: true });
   if (f.endsWith('__unloaded_probe.js')) fs.writeFileSync(path.join(tmp, f), '// exists, but no page loads it\n');
   else fs.copyFileSync(path.join(REPO, f), path.join(tmp, f));

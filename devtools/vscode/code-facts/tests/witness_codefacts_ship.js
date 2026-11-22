@@ -67,24 +67,27 @@ if (!J.loadTs(ROOT)) { summary({ parser: 'N' }, 'INCONCLUSIVE'); process.exit(0)
   const g2 = a => cp.spawnSync('git', a, { cwd: FX, encoding: 'utf8' });
   g2(['init', '-q']);
   w2('scripts/lib/find_ts.js', fs.readFileSync(path.join(ROOT, 'scripts', 'lib', 'find_ts.js'), 'utf8'));
-  w2('app/sw.js', "const CACHE_VERSION = 'v7';\nconst PRECACHE_ASSETS = [\n  'page.html',\n  'a.js',\n];\n");
-  w2('app/page.html', '<script src="a.js?v=3"></script>\n'); w2('app/a.js', 'var a = 1;\n'); w2('app/loose.js', 'var loose = 1;\n');
+  w2('viewer/sw.js', "const CACHE_VERSION = 'v7';\nconst PRECACHE_ASSETS = [\n  'page.html',\n  'a.js',\n];\n");
+  w2('viewer/page.html', '<script src="a.js?v=3"></script>\n'); w2('viewer/a.js', 'var a = 1;\n'); w2('viewer/loose.js', 'var loose = 1;\n');
+  g2(['add', '-A']); g2(['-c', 'user.name=w', '-c', 'user.email=w@example.invalid', '-c', 'commit.gpgsign=false', 'commit', '-q', '--no-verify', '-m', 'files']);
+  // B3-OUT (#3379): bump.js's regex path is deleted, so this fixture app is the viewer with a modules.json written by the repo's own --init (it was `app/`, no list: the regex path)
+  const ini = cp.spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'gen_manifest.js'), '--init', 'viewer', '--root', FX], { encoding: 'utf8' }); if (ini.status !== 0) console.log('    §SHIP_FIXTURE_INIT exit=' + ini.status + ' ' + (ini.stdout || '').slice(-200));
   g2(['add', '-A']); g2(['-c', 'user.name=w', '-c', 'user.email=w@example.invalid', '-c', 'commit.gpgsign=false', 'commit', '-q', '--no-verify', '-m', 'base']);
   const read2 = rel => fs.readFileSync(path.join(FX, rel), 'utf8');
-  const n0 = S.needsBump(FX, 'app/a.js', 'HEAD');
-  w2('app/a.js', 'var a = 2;\n'); w2('app/loose.js', 'var loose = 2;\n');
-  const n1 = S.needsBump(FX, 'app/a.js', 'HEAD'), nLoose = S.needsBump(FX, 'app/loose.js', 'HEAD');
-  const needOk = check('one file: an edited cached file needs a bump, and the app and version are named (' + JSON.stringify(n1) + ')', !!n1 && n1.app === 'app' && n1.version === 'v7' && n1.sw === 'app/sw.js');
+  const n0 = S.needsBump(FX, 'viewer/a.js', 'HEAD');
+  w2('viewer/a.js', 'var a = 2;\n'); w2('viewer/loose.js', 'var loose = 2;\n');
+  const n1 = S.needsBump(FX, 'viewer/a.js', 'HEAD'), nLoose = S.needsBump(FX, 'viewer/loose.js', 'HEAD');
+  const needOk = check('one file: an edited cached file needs a bump, and the app and version are named (' + JSON.stringify(n1) + ')', !!n1 && n1.app === 'viewer' && n1.version === 'v7' && n1.sw === 'viewer/sw.js');
   const needRedOk = check('red controls: the same file BEFORE the edit, and an edited file no cache list names, are not flagged', n0 === null && nLoose === null);
-  const before = read2('app/sw.js') + read2('app/page.html');
-  const dry = S.bump(FX, 'app/a.js', false, process.execPath, ROOT); dry.lines.forEach(l => console.log('    ' + l.slice(0, 200)));
-  const dryOk = check('the dry run (the repo\'s own scripts/bump.js) names both edits and writes nothing', dry.ok && dry.lines.some(l => /BUMP sw=app\/sw\.js CACHE_VERSION v7->v8/.test(l)) && dry.lines.some(l => /ref=.*v=3->4/.test(l)) &&
-    read2('app/sw.js') + read2('app/page.html') === before && /mode=dry exit=0 verdict=PASS/.test(dry.lines[dry.lines.length - 1]));
-  const wr = S.bump(FX, 'app/a.js', true, process.execPath, ROOT);
-  const n2 = S.needsBump(FX, 'app/a.js', 'HEAD'), c2 = S.check(FX, 'HEAD');
+  const before = read2('viewer/sw.js') + read2('viewer/page.html');
+  const dry = S.bump(FX, 'viewer/a.js', false, process.execPath, ROOT); dry.lines.forEach(l => console.log('    ' + l.slice(0, 200)));
+  const dryOk = check('the dry run (the repo\'s own scripts/bump.js) names both edits and writes nothing', dry.ok && dry.lines.some(l => /BUMP sw=viewer\/sw\.js CACHE_VERSION v7->v8/.test(l)) && dry.lines.some(l => /ref=.*v=3->4/.test(l)) &&
+    read2('viewer/sw.js') + read2('viewer/page.html') === before && /mode=dry exit=0 verdict=PASS/.test(dry.lines[dry.lines.length - 1]));
+  const wr = S.bump(FX, 'viewer/a.js', true, process.execPath, ROOT);
+  const n2 = S.needsBump(FX, 'viewer/a.js', 'HEAD'), c2 = S.check(FX, 'HEAD');
   const appliedOk = check('the applied bump raises CACHE_VERSION to v8 and the page\'s ?v= to 4; after it the file is no longer flagged and Check passes',
-    wr.ok && /CACHE_VERSION = 'v8'/.test(read2('app/sw.js')) && /a\.js\?v=4/.test(read2('app/page.html')) && n2 === null && c2.ok);
-  const noScript = S.bump(FX, 'app/a.js', false, process.execPath);
+    wr.ok && /CACHE_VERSION = 'v8'/.test(read2('viewer/sw.js')) && /a\.js\?v=4/.test(read2('viewer/page.html')) && n2 === null && c2.ok);
+  const noScript = S.bump(FX, 'viewer/a.js', false, process.execPath);
   check('a repo without scripts/bump.js → INCONCLUSIVE, nothing run', !noScript.ok && /verdict=INCONCLUSIVE/.test(noScript.lines[0]));
   fs.rmSync(FX, { recursive: true, force: true });
 

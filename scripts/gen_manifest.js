@@ -21,10 +21,13 @@ const MS = require('./lib/manifest_source.js'), { trackedFiles } = require('./li
 const P = path.posix;
 
 const APPS = ['viewer', 'erp', 'modeller'];   // a folder with a tracked sw.js that Part B names (decision D1)
+// B3-OUT (bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md Part B, "B3-OUT BUILD SPEC", decision B3-Q3, owner 2026-11-21): a file that holds `?v=` sites, belongs to
+//   no app and is never written. archive/gallery.html is an old copy of the landing page: counted by the witness (C22), never owned, never bumped (C23).
+const FROZEN = ['archive/gallery.html'];
 const SKIP_JS = /(^|\/)(lib|node_modules|tests?)\/|\.min\.js$|witness|(^|\/)sw\.js$/;
 const SITE = { type: 'object', required: ['in', 'at', 'kind', 'as', 'v'], additionalProperties: false, properties: {
   in: { type: 'string', minLength: 1 }, at: { type: 'integer', minimum: 0 }, kind: { enum: ['tag', 'asset', 'inline', 'lazy'] },
-  as: { type: 'string', minLength: 1 }, v: { type: ['integer', 'null'], minimum: 0 }, onerror: { type: 'string' }, q: { enum: ['"', '`'] } } };
+  as: { type: 'string', minLength: 1 }, v: { type: ['integer', 'null'], minimum: 0 }, onerror: { type: 'string' }, q: { enum: ['"', '`'] }, keep: { type: 'array', items: { type: 'string' }, minItems: 2, maxItems: 2 } } };
 const SCHEMA = { type: 'object', additionalProperties: false,
   required: ['app', 'sw', 'cacheVersion', 'depsDeclared', 'pages', 'loaders', 'modules', 'precacheOrder'],
   properties: {
@@ -49,7 +52,7 @@ function readSites(file, src, notes) {
     for (const t of h.tags) {
       if (!t.canonical) notes.nonCanonical.push(file + ': ' + t.raw.slice(0, 120));
       if (t.v == null) notes.unversionedTags++;
-      const s = { start: t.start, end: t.end, kind: 'tag', as: t.as, v: t.v }; if (t.onerror != null) s.onerror = t.onerror; sites.push(s);
+      const s = { start: t.start, end: t.end, kind: 'tag', as: t.as, v: t.v }; if (t.onerror != null) s.onerror = t.onerror; if (t.keep) s.keep = t.keep; sites.push(s);
     }
     for (const a of h.assets) sites.push({ start: a.start, end: a.end, kind: 'asset', as: a.as, v: a.v });
     for (const b of h.inline) {
@@ -90,7 +93,8 @@ function swFrame(swFile, swSrc, notes) {
  *   frames: per owned file, its committed text and the slots (byte ranges) the generator fills; a slot of sw.js is
  *   {start,end,sw:'precache',i} or {start,end,sw:'cv'}; any other slot is filled by the manifest site with the same `at`.
  */
-function buildApp(root, app) {
+function buildApp(root, app, opts) {
+  opts = opts || {};
   const ls = trackedFiles(root, app + '/');
   const read = f => fs.readFileSync(path.join(root, f), 'utf8'), exists = f => fs.existsSync(path.join(root, f));
   const notes = { parseFail: [], nonCanonical: [], resolveDiff: [], partial: 0, nonJsInline: 0, unversionedTags: 0, inlineSites: 0, external: 0, missing: [], swProblems: [] };
@@ -100,7 +104,20 @@ function buildApp(root, app) {
     const src = read(pg), sites = readSites(pg, src, notes);
     if (sites.length) perFile.push({ file: pg, src, sites, base: P.dirname(pg) });   // a page with no site is not owned
   }
+  // B3-OUT: the files outside the app folder that the app's modules.json owns (index.html, import_own.js, capex/index.html) are read like the app's own; the list
+  //   is the manifest's `order` keys (opts.manifest: one not yet on disk, e.g. --adopt's), never a guess about which files outside the folder load a module
+  const outside = (opts.manifest || (MS.hasSource(root, app) ? JSON.parse(read(MS.sourceFile(app))) : null) || { order: {} }).order;
+  const extra = Object.keys(outside).filter(f => !f.startsWith(app + '/') && exists(f)).sort();
+  for (const f of extra.filter(f => f.endsWith('.html'))) {
+    const src = read(f), sites = readSites(f, src, notes);
+    if (sites.length) perFile.push({ file: f, src, sites, base: P.dirname(f) });
+  }
   const pageHas = new Set(perFile.filter(f => f.sites.length).map(f => f.file)), loaders = [];
+  for (const f of extra.filter(f => !f.endsWith('.html'))) {
+    const src = read(f), sites = readSites(f, src, notes);
+    if (!sites || !sites.length) continue;
+    loaders.push(f); perFile.push({ file: f, src, base: P.dirname(f), loader: true, sites });
+  }
   for (const f of ls.filter(f => f.endsWith('.js') && !SKIP_JS.test(f))) {
     const src = read(f); if (src.indexOf('?v=') < 0) continue;
     const sites = readSites(f, src, notes);
@@ -130,7 +147,7 @@ function buildApp(root, app) {
       if (!ext && !exists(target)) notes.missing.push(f.file + ' -> ' + target);
       if (!mods.has(target)) mods.set(target, { file: target, deps: [], load: 'lazy', lazyGroup: null, precache: precached.has(target), v: null, sites: [] });
       const site = { in: f.file, at, kind: s.kind, as: s.as, v: s.v };
-      if (s.onerror != null) site.onerror = s.onerror; if (s.q) site.q = s.q;
+      if (s.onerror != null) site.onerror = s.onerror; if (s.q) site.q = s.q; if (s.keep) site.keep = s.keep;
       mods.get(target).sites.push(site);
     });
   }
@@ -249,7 +266,7 @@ function check(root) {
   return { apps, lines, fails, verdict, tot };
 }
 
-module.exports = { APPS, SCHEMA, buildApp, readSites, swFrame, regenerate, renderSite, frameText, checkOrder, check };
+module.exports = { APPS, FROZEN, SCHEMA, buildApp, readSites, swFrame, regenerate, renderSite, frameText, checkOrder, check };
 
 if (require.main === module) {
   const argv = process.argv.slice(2), opt = k => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : null; };
@@ -261,6 +278,22 @@ if (require.main === module) {
     if (!app) { console.log(`§MANIFEST_ERR ${f} is no module of ${apps.map(MS.sourceFile).join(', ') || 'any modules.json'}`); process.exit(1); }
     const w = MS.witnessesOf(root, app, [f]).get(f);
     console.log(`§MANIFEST_WITNESSES app=${app} file=${f} n=${w.length}`); w.forEach(t => console.log('  ' + t));
+    process.exit(0);
+  }
+  if (opt('--adopt')) {
+    // B3-OUT: --adopt <app> <file…> brings files outside the app folder into <app>/modules.json, once (see manifest_source.js adopt); it writes the marker pair and the lists, nothing else.
+    const app = opt('--adopt'), rest = argv.slice(argv.indexOf('--adopt') + 2), stop = rest.findIndex(x => x.startsWith('--')), files = stop < 0 ? rest : rest.slice(0, stop);
+    if (!APPS.includes(app) || !MS.hasSource(root, app)) { console.log(`§MANIFEST_ERR --adopt names ${app}, which has no modules.json`); process.exit(1); }
+    const split = k => (opt(k) || '').split(',').map(x => x.trim()).filter(Boolean);
+    const r = MS.adopt(root, app, files, { notDeps: split('--not-deps'), asUses: split('--as-uses'), by: opt('--by') || '', on: opt('--on') || '' });
+    r.fails.forEach(f => console.log('§MANIFEST_FAIL ' + f)); r.lines.forEach(l => console.log(l));
+    if (r.fails.length) { console.log('§MANIFEST_ADOPT written=0 (nothing written: fix the lines above)'); process.exit(1); }
+    const w = MS.write(root, app, { manifest: r.m, texts: r.texts });
+    w.fails.forEach(f => console.log('§MANIFEST_FAIL ' + f)); w.lines.forEach(l => console.log(l));
+    if (w.fails.length) { console.log('§MANIFEST_ADOPT written=0 (nothing written: fix the lines above)'); process.exit(1); }
+    let n = 0;
+    for (const [f, t] of w.out) { const p = path.join(root, f), cur = fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : null; if (cur !== t) { fs.writeFileSync(p, t); n++; console.log('§MANIFEST_WROTE file=' + f); } }
+    console.log(`§MANIFEST_ADOPT_DONE app=${app} files=${w.out.size} written=${n}`);
     process.exit(0);
   }
   if (opt('--write') || opt('--init')) {
@@ -288,7 +321,7 @@ if (require.main === module) {
     console.log(`§MANIFEST_WRITE app=${app} files=${w.out.size} written=${n}`);
     process.exit(0);
   }
-  if (!argv.includes('--check')) { console.error('usage: node scripts/gen_manifest.js --check [--root DIR] [--out FILE] | --write <app> | --witnesses <file> [--app A] | --init <app> [--not-deps a>b,…] [--as-uses a>b,…] [--by WHO --on DATE]'); process.exit(1); }
+  if (!argv.includes('--check')) { console.error('usage: node scripts/gen_manifest.js --check [--root DIR] [--out FILE] | --write <app> | --witnesses <file> [--app A] | --adopt <app> <file…> [--not-deps a>b,…] [--as-uses a>b,…] [--by WHO --on DATE] | --init <app> [--not-deps a>b,…] [--as-uses a>b,…] [--by WHO --on DATE]'); process.exit(1); }
   const r = check(root);
   r.fails.forEach(f => console.log('§MANIFEST_FAIL ' + f));
   r.lines.forEach(l => console.log(l));
