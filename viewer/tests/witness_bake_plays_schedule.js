@@ -130,6 +130,40 @@ async function main() {
       'W-BAKE-5 ' + B + ' the film starts at day 0 and ends at the last completion — no truncated tail');
 
     // ── THE POINT: work-paced, not calendar-paced ─────────────────────────────────────────────
+    // ── W-BAKE-8 (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.63) — THE MODE THE FILM ACTUALLY RUNS ────────────────────────────────
+    // ISSUE IT EXPOSES: W-BAKE-3 above judges BUILDUP_EVEN_TEMPO=false with no film length — a mode no film has used since 2026-08. The shipped
+    // film runs even tempo WITH the 10 s onset blend (totalSec given), and that blend ran the cursor backwards on a real bake (Hospital, frames
+    // 74-137). So: the shipped flags, a real film length, one sample per frame — on this building's schedule AND on a schedule whose work is
+    // back-loaded (the shape that broke it). The control computes the unguarded blend on the same input and must go backwards there, or the
+    // population is empty and the claim says INCONCLUSIVE.
+    {
+      const onsetSec = +((mqSrc.match(/var ONSET_BLEND_SEC = (\d+)/) || [])[1] || 0), evenTempo = /var BUILDUP_EVEN_TEMPO = true/.test(mqSrc);
+      const FILM_SEC = 82, FRAMES = 1230;
+      const runShipped = (sch, span) => {
+        const box = { console: { log: () => {} }, Math: Math, window: { tmWorkSchedule: () => sch }, BUILDUP_EVEN_TEMPO: evenTempo, ONSET_BLEND_SEC: onsetSec };
+        box.window.window = box.window; vm.createContext(box);
+        vm.runInContext('var _wpSched = null, _wpTried = false, _wpOnsetTried = false, _fcIdx = null;\n' + sliceFn(mqSrc, '_workPacingArm') + '\n' + sliceFn(mqSrc, '_workCursorAt') + '\nthis.__cursor = _workCursorAt;', box);
+        let back = 0, prev = -Infinity, worst = 0;
+        for (let f = 0; f <= FRAMES; f++) { const c = box.__cursor(f / FRAMES, span, FILM_SEC); if (c < prev) { back++; worst = Math.max(worst, prev - c); } prev = Math.max(prev, c); }
+        return { back, worstDays: worst / 86400000 };
+      };
+      const unguarded = (sch, span) => {   // the blend as it shipped before §CPE_ONSET_BLEND_MONOTONE, on the same input
+        const U = Math.min(0.5, onsetSec / FILM_SEC); let back = 0, prev = -Infinity;
+        for (let f = 0; f <= FRAMES; f++) { const t = f / FRAMES, cal = span.projectStart + t * (span.projectEnd - span.projectStart); let c = cal;
+          if (t < U) { const k = Math.max(1, Math.min(sch.total, Math.round(t * sch.total))), el = sch.ends[k - 1]; c = el + (cal - el) * (t / U); }
+          if (c < prev) back++; prev = Math.max(prev, c); }
+        return back;
+      };
+      const real = runShipped(ws, bk);
+      // back-loaded: the same number of completions, all of them in the second half of the calendar
+      const half = projectStart + (projectEnd - projectStart) / 2, late = Float64Array.from(ws.ends, (e, i) => half + (projectEnd - half) * (i + 1) / ws.total);
+      const lateSch = Object.assign({}, ws, { ends: late }), lateShipped = runShipped(lateSch, bk), lateControl = unguarded(lateSch, bk);
+      assert(evenTempo && onsetSec > 0, 'W-BAKE-8a ' + B + ' the witness runs the shipped flags (even tempo=' + evenTempo + ', onset blend=' + onsetSec + ' s) — not a mode the film does not use');
+      assert(real.back === 0, 'W-BAKE-8b ' + B + ' shipped mode, ' + FILM_SEC + ' s film, ' + (FRAMES + 1) + ' frames: the cursor never runs backwards on this schedule (' + real.back + ' frames back, worst ' + real.worstDays.toFixed(2) + ' d; the unguarded blend: ' + unguarded(ws, bk) + ')');
+      if (lateControl === 0) { console.log('  INCONCLUSIVE W-BAKE-8c ' + B + ' the back-loaded control does not make the unguarded blend go backwards — nothing was judged'); fail++; }
+      else assert(lateShipped.back === 0, 'W-BAKE-8c ' + B + ' back-loaded work (the shape that broke the Hospital bake): shipped cursor ' + lateShipped.back + ' frames back, where the unguarded blend goes back on ' + lateControl + ' frames');
+    }
+
     // If _workCursorAt ignored the schedule it would be a straight line from start to end. Measure
     // the largest divergence from that line as a share of the span; a real building is front-loaded,
     // so this must be materially non-zero. This is the check that fails if the film ever goes back
