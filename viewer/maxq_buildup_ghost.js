@@ -184,6 +184,12 @@
           // blendedMs === calMs exactly at the handoff instant, no seam).
           var w = t / onsetU;
           var blendedMs = elMs + (calMs - elMs) * w;
+          // §CPE_ONSET_BLEND_MONOTONE (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.63; Witness: witness_bake_plays_schedule.js W-BAKE-8).
+          // The blend exists to HOLD BACK a front-loaded opening (work-paced instant BEHIND the calendar). Where the work-paced instant is AHEAD of
+          // the calendar there is no burst to tame, and blending down from it toward the calendar ran the cursor BACKWARDS: Hospital bake 2026-11-22,
+          // frames 74-137, day 39.5 -> 35.8, two floor slabs drawn, hidden and drawn again (about 200 pieces at the worst frame). There the film is
+          // already on the calendar: return it. Both branches rise with t and meet where the two instants are equal, so the cursor never goes back.
+          if (elMs >= calMs) blendedMs = calMs;
           if (!_wpTried) {
             _wpTried = true;
             console.log('§CPE_BUILDUP_PACING mode=even-calendar+onset-blend (§CPE_BUILDUP_ONSET_BLEND) ' +
