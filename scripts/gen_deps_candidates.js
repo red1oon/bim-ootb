@@ -163,11 +163,11 @@ function facts(src, o) {
 function candidates(root, app, o) {
   o = o || {};
   const GM = require('./gen_manifest.js');
-  const { manifest: m, frames } = GM.buildApp(root, app);
+  const { manifest: m, frames } = GM.buildApp(root, app, { manifest: o.manifest && !Array.isArray(o.manifest.modules) ? o.manifest : null });
   const fails = [], readers = [], skipped = [];
   for (const mod of m.modules) {
     const f = mod.file;
-    if (/^[a-z][a-z0-9+.-]*:|^\/\//i.test(f) || !/\.m?js$/.test(f) || SKIP.test(f)) { skipped.push(f); continue; }
+    if (/^[a-z][a-z0-9+.-]*:|^\/\//i.test(f) || !/\.m?js$/.test(f) || SKIP.test(f) || !fs.existsSync(path.join(root, f))) { skipped.push(f); continue; }   // B3-OUT: a tag for a file that is not on disk (index.html's viewer/bonsai_kernel.js) has nothing to read
     const src = fs.readFileSync(path.join(root, f), 'utf8'), x = facts(src, { module: /\.mjs$/.test(f) });
     if (!x) { fails.push('cannot parse ' + f); continue; }
     readers.push({ id: f, file: f, dir: P.dirname(f), x, mod });

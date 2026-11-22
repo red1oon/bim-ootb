@@ -10,7 +10,7 @@
 const fs = require('fs'), path = require('path'), initSqlJs = require('sql.js');
 const ROOT = path.join(__dirname, '..', '..'), BLD = 'HHS_Office_Federated', BREAK = process.env.BREAK === '1';
 const BASE = process.env.PILOT_BASE || 'http://localhost:8088', PASS = process.env.PILOT_PASS || 'GardenAdmin';
-const CTX = { user: 'GardenAdmin', clientId: '11', roleId: '1200003', orgId: '11', warehouseId: '103' };
+const CTX = { user: 'GardenAdmin', clientId: '11', roleId: process.env.PILOT_ROLE || '1200003', orgId: '11', warehouseId: '103' };   // PILOT_ROLE: a role that includes "BIM OOTB Push" (bim-compiler FILM_UAT_GUIDE §5.18: :8108 uses 102)
 const STAMP = new Date().toISOString().replace(/\D/g, '').slice(2, 14), PROJ = 'HHS_VIEWER_PUSH_' + STAMP, PROJ_BAD = 'HHS_VIEWER_PUSH_' + STAMP + '_BADPW', BADPW = 'WRONGPW_' + Math.random().toString(36).slice(2, 10);
 // every WS round trip is counted (erp_rest_push.js binds fetch at load, so wrap BEFORE the require)
 let fetchCalls = 0; const _realFetch = globalThis.fetch; globalThis.fetch = function () { fetchCalls++; return _realFetch.apply(this, arguments); };
@@ -51,6 +51,9 @@ const lc = o => { const r = {}; for (const k in o) r[k.toLowerCase()] = o[k]; re
   function openErp() {
     const edb = new SQL.Database(fs.readFileSync(path.join(ROOT, 'erp', 'ad_seed.db')));
     fs.readFileSync(path.join(ROOT, 'erp', 'patches', 'ad_seed.db.sql'), 'utf8').split(/;\s*\n/).forEach(st => { st = st.replace(/^\s*--[^\n]*\n?/gm, '').trim(); if (st) try { edb.run(st); } catch (e) {} });
+    // the store opens as the viewer's ProjOrderState.openStore opens it (CAPEX §5.11, #2563): the ERP's boot overlays. Without them a NEW product has no C_TaxCategory_ID and a fresh
+    // iDempiere refuses it (bim-compiler FILM_UAT_GUIDE §5.18: :8108 had no HHS products yet; the pilot hid this because its products already existed from earlier pushes)
+    for (const m of ['ad_docvalue_overlay.js', 'ad_taxcat_overlay.js']) { const r = require(path.join(ROOT, 'erp', m)).ensure(edb); console.log('§W_VPL_STORE overlay ' + m + ' ' + JSON.stringify(r && (r.filled != null ? { filled: r.filled, left: r.left } : r))); }
     return edb;
   }
   // the viewer's globals, as the browser has them (read at call time by find_erp_push.js)
@@ -84,11 +87,11 @@ const lc = o => { const r = {}; for (const k in o) r[k.toLowerCase()] = o[k]; re
   function tab(building, target, answers) {
     const edb = openErp();
     globalThis.ProjOrderState = { storeStamp: () => Promise.resolve('w'), openStore: () => Promise.resolve({ db: edb }), shared: () => Promise.resolve({ db: edb, stamp: 'w' }), persistShared: () => Promise.resolve(true), invalidateShared: () => {} };
-    const asks = [];
+    const asks = [], link = { href: null, style: {}, title: '', setAttribute(k, v) { if (k === 'href') this.href = v; } };   // the "open ↗" element (§5.18 L3)
     const A = { activeBuilding: building, db: bdb, _SQL: SQL, status: { textContent: '' }, DB_URL: 'witness://' + BLD, cachedFetch: () => Promise.reject(new Error('not used')), LEGACY_ERP: target, LEGACY_ERP_CTX: Object.assign({}, CTX) };
-    const api = FEP.create({ A, getLastSelSet: () => new Set(guids), selectionPriced, getLastSelLabel: () => 'all', cur: () => 'USD',
+    const api = FEP.create({ A, elErpOpen: link, getLastSelSet: () => new Set(guids), selectionPriced, getLastSelLabel: () => 'all', cur: () => 'USD',
       askErpLogin: (ask) => { asks.push(ask); const a = answers[Math.min(asks.length - 1, answers.length - 1)]; return Promise.resolve(a === null ? null : { user: ask.prefill.user, pass: a, clientId: +ask.prefill.clientId, roleId: +ask.prefill.roleId, orgId: +ask.prefill.orgId, warehouseId: +ask.prefill.warehouseId }); } });
-    return { A, api, edb, asks, push: async () => { const from = allLogs.length, f0 = fetchCalls; await api.pushToErp(); return { logs: allLogs.slice(from), calls: fetchCalls - f0 }; } };
+    return { A, api, edb, asks, link, push: async () => { const from = allLogs.length, f0 = fetchCalls; await api.pushToErp(); return { logs: allLogs.slice(from), calls: fetchCalls - f0 }; } };
   }
   const grab = (logs, re) => logs.find(s => re.test(s)) || '';
 
@@ -106,6 +109,9 @@ const lc = o => { const r = {}; for (const k in o) r[k.toLowerCase()] = o[k]; re
   const L1 = grab(r1.logs, /§PROJ_PUSH_LEGACY base=/), m1 = L1.match(/projectId=(\d+) created=(\{.*\})/), pid1 = m1 ? +m1[1] : null, cr1 = m1 ? JSON.parse(m1[2]) : null;
   console.log('§W_VPL_PROJECT ' + PROJ + ' legacy C_Project_ID=' + pid1 + ' (left in place on the pilot; never deleted)');
   check('PUSH reached legacy: §PROJ_PUSH_LEGACY with a project id', !!m1 && cr1.projects === 1, L1.slice(0, 200));
+  // §5.18 L3: after the legacy push, "open ↗" is THAT iDempiere's WebUI zoom on the pushed project (not the browser ERP, which a /bimootb bundle does not carry)
+  const wantLink = BASE.replace(/\/+$/, '') + '/webui/index.zul?Action=Zoom&TableName=C_Project&Record_ID=' + pid1;
+  check('OPEN LINK after the legacy push = its WebUI zoom on the pushed project', !!pid1 && T1.link.href === wantLink && T1.link.style.display === 'inline-block', 'href=' + T1.link.href);
   check('DIALOG asked once, with the URL-param prefill + the target base', T1.asks.length === 1 && JSON.stringify(T1.asks[0].prefill) === JSON.stringify(CTX) && T1.asks[0].base === BASE);
   // legacy == the local fold
   const lp = pid1 ? (await legacyRows('C_Project', 'C_Project', [{ column: 'Value', val: PROJ }]))[0] : null;
