@@ -883,7 +883,7 @@
     var rows;
     try {
       rows = app.dbQuery("SELECT t.guid, t.center_x, t.center_y, t.center_z, t.bbox_x, t.bbox_y, t.bbox_z, m.discipline" +
-        " FROM element_transforms t JOIN elements_meta m ON m.guid = t.guid WHERE t.center_x IS NOT NULL") || [];
+        " FROM " + ((typeof ScheduleGate !== 'undefined' && ScheduleGate.ensureElementBox && app.db) ? ScheduleGate.ensureElementBox(app.db) : 'element_transforms') + " t JOIN elements_meta m ON m.guid = t.guid WHERE t.center_x IS NOT NULL") || [];   // §ELEMENT_BOX (§Q.55): a proxy box stands where the mesh is
     } catch (e) { console.log('§DLOD_TM_BUILD_SKIP query ' + e.message); return; }
     var byDisc = {};
     for (var i = 0; i < rows.length; i++) {

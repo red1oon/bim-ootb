@@ -1521,7 +1521,48 @@
            e.cls === 'IfcStairFlight';                     // §STAIR_FLIGHT_GRID_VISIBILITY
   }
 
-  var API = { applyGeometryReclass: applyGeometryReclass, supportPool: supportPool, computeSchedule: computeSchedule, collapsePhase: collapsePhase, elementsInPhase: elementsInPhase, auditFloating: auditFloating, deriveBandRanks: deriveBandRanks, deriveZones: deriveZones, deriveStoreyMergeMap: deriveStoreyMergeMap, hostPairs: hostPairs, openingPairs: openingPairs, groundworkSlabs: groundworkSlabs, bearingWalls: bearingWalls, applyBearingWalls: applyBearingWalls, CELL: CELL, EPS: EPS, GAP: GAP, GROUND_BAND: GROUND_BAND, BIG_ELEMENT_VOL: BIG_ELEMENT_VOL, MAX_CREWS_DEFAULT: MAX_CREWS_DEFAULT, SHIFT_MS: SHIFT_MS, DAY_MS: DAY_MS, toProductive: toProductive, toWall: toWall };
+
+  // ══ §ELEMENT_BOX (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.55) — THE ONE OWNER OF "WHERE IS AN ELEMENT, FOR 4D" ══════════════════
+  // element_transforms does not say what the 4D model needs, twice over (both measured 2026-11-22):
+  //   (a) center_* is the point the mesh is PLACED at, not the middle of its box — 28,809 of 266,954 played elements on seven buildings were
+  //       scheduled and judged on a box up to 38 m from the drawn mesh (size right, centre wrong);
+  //   (b) in the browser the table also holds the containers scene.js §NOGEO_COMPOSE gives a union box (transform_source =
+  //       'composed_aggregate': a curtain wall, a roof, a stair with no geometry of its own) — the gate run never saw them, so the browser
+  //       scheduled 63,415 elements over 287 days where the gates judged 63,182 over 262 (Hospital).
+  // ensureElementBox(db) defines the TEMP view `element_box` — same columns as element_transforms, the centre moved by the element's row in
+  // element_box_offset (an extracted fact: the middle of its own mesh box in the mesh's local frame; no row = 0), and no composed-container
+  // rows — and returns the name a 4D reader must select from. A reader changes one word. Drawing does not use it (the mesh is placed at
+  // center_*, correctly). On any failure it returns 'element_transforms' and says so: an old DB is unchanged, never broken.
+  var _ebSeen = (typeof WeakMap !== 'undefined') ? new WeakMap() : null;
+  function ensureElementBox(db) {
+    if (!db || !db.exec) return 'element_transforms';
+    try {
+      var cols = db.exec("PRAGMA table_info('element_transforms')"), hasSrc = false, i;
+      if (!cols.length) return 'element_transforms';
+      for (i = 0; i < cols[0].values.length; i++) if (cols[0].values[i][1] === 'transform_source') hasSrc = true;
+      db.exec('CREATE TABLE IF NOT EXISTS element_box_offset (guid TEXT PRIMARY KEY, ox REAL NOT NULL, oy REAL NOT NULL, oz REAL NOT NULL)');
+      var sig = (hasSrc ? 's' : '-');
+      if (!_ebSeen || _ebSeen.get(db) !== sig) {
+        db.exec('DROP VIEW IF EXISTS temp.element_box');
+        db.exec('CREATE TEMP VIEW element_box AS SELECT t.guid AS guid, ' +
+          't.center_x + COALESCE(o.ox, 0) AS center_x, t.center_y + COALESCE(o.oy, 0) AS center_y, t.center_z + COALESCE(o.oz, 0) AS center_z, ' +
+          't.bbox_x AS bbox_x, t.bbox_y AS bbox_y, t.bbox_z AS bbox_z ' +
+          'FROM main.element_transforms t LEFT JOIN main.element_box_offset o ON o.guid = t.guid' +
+          (hasSrc ? " WHERE COALESCE(t.transform_source, '') != 'composed_aggregate'" : ''));
+        var nOff = db.exec('SELECT COUNT(*) FROM element_box_offset')[0].values[0][0];
+        var nComp = hasSrc ? db.exec("SELECT COUNT(*) FROM element_transforms WHERE transform_source = 'composed_aggregate'")[0].values[0][0] : 0;
+        console.log('§ELEMENT_BOX view ready offsets=' + nOff + (nOff ? '' : ' (NONE: no element_box_offset rows for this db — boxes are center ± bbox/2, the box may not be where the mesh is)') +
+          ' composedContainersLeftOut=' + nComp + ' — the 4D box is the box of the drawn mesh; a container with no geometry of its own is not work');
+        if (_ebSeen) _ebSeen.set(db, sig);
+      }
+      return 'element_box';
+    } catch (e) {
+      console.log('§ELEMENT_BOX_FAIL ' + (e && e.message) + ' — readers fall back to element_transforms (boxes unverified)');
+      return 'element_transforms';
+    }
+  }
+
+  var API = { ensureElementBox: ensureElementBox, applyGeometryReclass: applyGeometryReclass, supportPool: supportPool, computeSchedule: computeSchedule, collapsePhase: collapsePhase, elementsInPhase: elementsInPhase, auditFloating: auditFloating, deriveBandRanks: deriveBandRanks, deriveZones: deriveZones, deriveStoreyMergeMap: deriveStoreyMergeMap, hostPairs: hostPairs, openingPairs: openingPairs, groundworkSlabs: groundworkSlabs, bearingWalls: bearingWalls, applyBearingWalls: applyBearingWalls, CELL: CELL, EPS: EPS, GAP: GAP, GROUND_BAND: GROUND_BAND, BIG_ELEMENT_VOL: BIG_ELEMENT_VOL, MAX_CREWS_DEFAULT: MAX_CREWS_DEFAULT, SHIFT_MS: SHIFT_MS, DAY_MS: DAY_MS, toProductive: toProductive, toWall: toWall };
   global.ScheduleGate = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
 })(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this));

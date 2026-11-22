@@ -38,7 +38,8 @@ const fs = require('fs'), path = require('path'), http = require('http'), os = r
 const puppeteer = require('/home/red1/bim-compiler/node_modules/puppeteer');
 const { Witness } = require('../../witness_kit/contract');
 
-const ROOT = path.resolve(__dirname, '..', '..');
+const ROOT = process.env.ROOT ? path.resolve(process.env.ROOT) : path.resolve(__dirname, '..', '..');   // ROOT=<another checkout>: judge THAT product with this instrument (scripts/product_judge.js)
+const DUMP = process.env.DUMP || '';   // DUMP=<file.json>: what the product played (every op) and what each path found, for scripts/product_judge.js
 const BLD = process.env.BLD || 'Hospital_silent_local';
 const BLD_DIR = process.env.BLD_DIR || path.join(os.homedir(), 'bim-ootb', 'buildings');
 const GPU = process.env.GPU || 'real';
@@ -66,7 +67,7 @@ const server = http.createServer((req, res) => {
   try {
     const u = decodeURIComponent(req.url.split('?')[0]);
     let fp = path.join(ROOT, u.replace(/^\/+/, ''));
-    if (!fs.existsSync(fp) && u.startsWith('/buildings/')) fp = path.join(BLD_DIR, u.slice('/buildings/'.length));
+    if ((!fs.existsSync(fp) || fs.statSync(fp).size === 0) && u.startsWith('/buildings/')) fp = path.join(BLD_DIR, u.slice('/buildings/'.length));   // a 0-byte placeholder in the checkout is not the building (SampleCastle, §Q.58.1)
     if (fs.existsSync(fp) && fs.statSync(fp).isDirectory()) fp = path.join(fp, 'index.html');
     if (!fs.existsSync(fp)) { res.writeHead(404); res.end('404'); return; }
     const st = fs.statSync(fp);
@@ -93,7 +94,7 @@ function pageInstrument() {
     const rows = r.length ? r[0].values : [];
     for (const row of rows) {
       let p = {}; try { p = JSON.parse(row[2] || '{}'); } catch (e) {}
-      sched[row[0]] = { s: row[1], e: p._end_ts || (row[1] + 60000), cls: p.cls || '?' };
+      sched[row[0]] = { s: row[1], e: p._end_ts || (row[1] + 60000), cls: p.cls || '?', phase: p.phase || '' };
     }
     const disc = Object.create(null);
     const r2 = A.db.exec('SELECT guid, discipline, ifc_class FROM elements_meta');
@@ -181,6 +182,7 @@ function pageInstrument() {
     for (const cls in r.per) { const R = r.per[cls]; t.sched += R.sched; t.drawn += R.drawn; t.missing += R.missing; t.staged += R.staged; t.oth += R.othM + R.othB + R.othI; t.absent += R.absent; t.extra += R.extra; }
     return t;
   };
+  D.dump = function () { const o = {}; for (const g in D.sched) { const x = D.sched[g]; o[g] = [x.s, x.e, x.cls, x.phase, D.rep[g] || '']; } return o; };
   D.authored = function () { try { const r = A.db.exec('SELECT 1 FROM schedules WHERE display_authored=1 LIMIT 1'); return !!(r.length && r[0].values.length); } catch (e) { return false; } };
   D.discCensus = function () {
     // at the current filter state, per discipline: elements with a representation vs drawn
@@ -217,7 +219,8 @@ function pageInstrument() {
 
   let verdictRows = [];
   try {
-    const url = `http://127.0.0.1:${PORT}/viewer/viewer.html?db=/buildings/${BLD}.db`;
+    // the rate pack is PINNED: the viewer picks it from the page language, and the pack changes the install hours, so the days. A judge names what it judged.
+    const url = `http://127.0.0.1:${PORT}/viewer/viewer.html?db=/buildings/${BLD}.db&rates=${process.env.RATES_PACK || 'cidb2024_my'}`;
     log('§DVS_NAV ' + url);
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 120000 });
     await page.waitForFunction(() => window.APP && window.APP.renderer && window.APP.camera && typeof window.tmActivateForBake === 'function', { timeout: LOAD_MS });
@@ -319,6 +322,16 @@ function pageInstrument() {
       else log('§DVS_HOLD VACUOUS — schedule not authored by the solve; the empty-hold claim is not judged');
     }
 
+    if (DUMP) {
+      const ops = await page.evaluate(() => window.__dvs.dump());
+      let swMiss = 0, swExtra = 0, swHeld = 0;
+      for (const p of perT) for (const cls in p.r.per) { /* per sample totals */ }
+      for (const p of perT) { let m = 0, x = 0, h = 0; for (const cls in p.r.per) { const R = p.r.per[cls]; m += R.missing; x += R.extra; h += R.staged; } swMiss = Math.max(swMiss, m); swExtra = Math.max(swExtra, x); swHeld = Math.max(swHeld, h); }
+      fs.writeFileSync(DUMP, JSON.stringify({ root: ROOT, commit, bld: BLD, building: await page.evaluate(() => window.APP.activeBuilding), projectStart: bk.projectStart, projectEnd: bk.projectEnd,
+        rep: idx.rep, heldInMap: idx.xrayStaged, forward: { maxMissing: swMiss, maxExtra: swExtra, held: swHeld, equivDiff: e0Fwd.onlyDelta + e0Fwd.onlyFull },
+        paths: phaseRows, ops }));
+      log('§DVS_DUMP ' + DUMP + ' ops=' + Object.keys(ops).length);
+    }
     // ── per-class verdict rows (VACUOUS classes named, not judged)
     const classes = new Set(); perT.forEach(p => Object.keys(p.r.per).forEach(c => classes.add(c)));
     const vacuous = [], rows = [];

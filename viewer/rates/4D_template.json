@@ -137,6 +137,13 @@
       { "pred": "finishes",       "succ": "finishes",       "type": "FS", "lag_days": 0, "level_offset": 1,
         "_why": "§4D_BAND_MONOTONIC. One FINISHER pool for the building." }
     ],
+    "deck_over": {
+      "pred": "superstructure",
+      "succ": "architecture_envelope",
+      "type": "FS",
+      "lag_days": 0,
+      "_why": "METHOD (bim-compiler prompts/4D_MODEL_INTEGRITY.md \u00a7Q.59): work inside a level starts once the deck OVER it is built \u2014 the frame bar of the nearest level above. A window, a partition or a pipe hung from the soffit does not go in under open sky. Attaches to the FIRST fit-out bar that exists on the level (the declared successor, or the next phase after it when that one is empty: _empty_phase_rule). The top level has no deck over it and takes no edge."
+    },
     "_overlap": "USER RULING 2026-08-25: 'wont it be safer to avoid the hell — we make phases packed but sequential? User can then just drag them overlap if they want. As long it is editable.' Adopted. Every lag is 0 and every type is FS: phases are PACKED (no dead air, min_days 1) and STRICTLY SEQUENTIAL within a level, with the ladder above across levels. An overlap is then a deliberate EDIT a human drags in on the TM Gantt, never something a solver produced and nobody authorised.\n\nThis is not the expensive choice, which is why it is the safe one. MEASURED on HHS_Office_Federated (2026-08-25): the packed-sequential programme is 49 days against the current overlapping engine's 46.9 — +4%, two days, and it is crew-legal on every trade where the engine needed a repair pass to become so. The old fear that serialising costs a much longer film is not supported by the numbers on this building."
   }
 }

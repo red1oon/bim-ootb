@@ -185,7 +185,7 @@
         'COALESCE(t.center_x, 0) as cx, COALESCE(t.center_y, 0) as cy, ' +
         'COALESCE(t.bbox_x, 0) as bx, COALESCE(t.bbox_y, 0) as by ' +
         'FROM elements_meta m ' +
-        'LEFT JOIN element_transforms t ON t.guid = m.guid ' +
+        'LEFT JOIN ' + ScheduleGate.ensureElementBox(db) + ' t ON t.guid = m.guid ' +   // §ELEMENT_BOX (§Q.55): the one owner of the 4D box
         "WHERE " + TMS._scheduledWhere('m') + " " +
         'ORDER BY cz, COALESCE(t.center_x, 0), COALESCE(t.center_y, 0)'
       );
@@ -614,7 +614,8 @@
       var _pdaR = db.exec('SELECT 1 FROM schedules WHERE display_authored=1 LIMIT 1');
       _playDisplayAuthored = !!(_pdaR.length && _pdaR[0].values.length);
     } catch (ePda) { /* legacy DB without the column — affine rescale stays */ }
-    var _tiledPlay = TMS._tmTilePlayWithinTasks(_disp, _cap, _playDisplayAuthored);
+    var _mRankPlay = (_playDisplayAuthored && window.ScheduleAuthor && window.ScheduleAuthor.methodRank) ? window.ScheduleAuthor.methodRank(_twItems, db) : null;   // §METHOD_ORDER
+    var _tiledPlay = TMS._tmTilePlayWithinTasks(_disp, _cap, _playDisplayAuthored, _mRankPlay);
     function _tmRescaleToTaskWindow(guid, s) {
       // §TM_REVEAL_TILED — the tiled interval wins when one exists (see _tmTilePlayWithinTasks).
       // Everything below is the affine fallback, byte-identical for every element and every
@@ -985,7 +986,12 @@
       } else {
         TMS._ogSupportSweep(_allScheduled, _cap.win);
       }
-      TMS._cjpJudgeParity(_allScheduled, _cap.win);   // §CROSSTASK_JUDGE_PARITY — judge/repair parity, window-bounded
+      // §ONE_ORDER_OWNER (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.56): on a schedule the one solve authored, this pass does not run either.
+      // It moves an element to the first thing it touches — and a footing touches only what stands ON it, so it was pushed BEHIND its own load:
+      // product judge, Hospital, 458 elements pushed up to 12.1 days, 450 of them footings, from day 0 to day 10.7 (LTU: up to 174 days). The node
+      // copy the gates judge never ran it. Imported / captured schedules keep it, with the sweep above.
+      if (_cjpDisplayAuthored) console.log('§CROSSTASK_JUDGE_PARITY skipped — display-authored: the solve owns order (§ONE_ORDER_OWNER)');
+      else TMS._cjpJudgeParity(_allScheduled, _cap.win);   // §CROSSTASK_JUDGE_PARITY — judge/repair parity, window-bounded
       _s4Mark('capBranchPreWrite');
       // §GANTT_REFOLD_HANG (fix/gantt-refold-hang, synced 2026-08-12 — CPE_4D_PERF_MEM_FINDINGS.md
       // §3-R2): the inline BEGIN→per-row UPDATE→COMMIT loop was the measured §WRITE_LOOP_TIMING

@@ -74,4 +74,19 @@ function applyTo(db, dbFile, log, m) {
   }
   return res;
 }
-module.exports = { mode, patchDir, patchFilesFor, patchKey, applyTo };
+// composeTo(db, log) — the viewer's §NOGEO_COMPOSE step (scene.js A.composeGhostsFromAggregates, run by streaming.js right after the patch on every load),
+// SLICED from the shipped file. The node run used to skip it, so the browser scheduled containers the gates never saw (Hospital 63,415 elements / 287 d
+// vs 63,182 / 262 d; bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.54.1). Returns { composed, unresolved } or null when the function is not there.
+let _composer = null;
+function composeTo(db, log) {
+  log = log || console.log;
+  if (_composer === null) {
+    const src = readSrc(path.join(REPO, 'viewer', 'scene.js'), 'utf8'), i = src.indexOf('A.composeGhostsFromAggregates = function');
+    const mark = '\n  };\n', j = i < 0 ? -1 : src.indexOf(mark, i);
+    if (j < 0) { _composer = false; }
+    else { const A = {}; new Function('A', 'console', src.slice(i, j + mark.length))(A, { log: function () { log(Array.prototype.join.call(arguments, ' ')); }, warn: function () { log(Array.prototype.join.call(arguments, ' ')); } }); _composer = A.composeGhostsFromAggregates; }
+  }
+  if (!_composer) { log('§COMPOSE_NODE_MISSING A.composeGhostsFromAggregates not found in viewer/scene.js — the node db is NOT loaded as the viewer loads it'); return null; }
+  return _composer(db);
+}
+module.exports = { mode, patchDir, patchFilesFor, patchKey, applyTo, composeTo };

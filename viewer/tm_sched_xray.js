@@ -306,7 +306,7 @@
         'COALESCE(t.center_x, 0) as cx, COALESCE(t.center_y, 0) as cy, ' +
         'COALESCE(t.bbox_x, 0) as bx, COALESCE(t.bbox_y, 0) as by ' +
         'FROM elements_meta m ' +
-        'LEFT JOIN element_transforms t ON t.guid = m.guid ' +
+        'LEFT JOIN ' + ScheduleGate.ensureElementBox(db) + ' t ON t.guid = m.guid ' +   // §ELEMENT_BOX (§Q.55)
         "WHERE " + _scheduledWhere('m')
       );
     } catch (e) { console.log('§XRAY_BUILD_EMPTY reason=query-threw ' + (e && e.message)); return null; }
@@ -788,7 +788,7 @@
       var rr = db.exec(
         'SELECT m.guid, m.ifc_class, m.element_name, ' +
         'COALESCE(t.bbox_x, 0) as bx, COALESCE(t.bbox_y, 0) as by, COALESCE(t.bbox_z, 0) as bz ' +
-        'FROM elements_meta m LEFT JOIN element_transforms t ON t.guid = m.guid ' +
+        'FROM elements_meta m LEFT JOIN ' + ScheduleGate.ensureElementBox(db) + ' t ON t.guid = m.guid ' +   // §ELEMENT_BOX (§Q.55)
         "WHERE " + _scheduledWhere('m'));
       if (!rr || !rr.length) return null;
       var basis = SR._productivity_basis_secs || 28800;
@@ -1067,7 +1067,7 @@
   // WHAT IT DOES NOT DO, ON PURPOSE: a superstructure level's slab SET stays compact — _installSecs
   // prices every IfcSlab at a flat 823 s (0.8% of Hospital L3's labour) and the cell order lays a
   // level out trade-by-trade — both rulings, neither this function's to change (spec §D).
-  function _tmTilePlayWithinTasks(disp, cap, displayAuthored) {
+  function _tmTilePlayWithinTasks(disp, cap, displayAuthored, rankOf) {   // rankOf: §METHOD_ORDER (ScheduleAuthor.methodRank), absent = the solve's order
     if (!cap || !cap.win || !cap.guidTask) {
       console.log('§TM_REVEAL_TILED skip reason=no dated task windows (_cap null) — affine rescale kept');
       return null;
@@ -1097,7 +1097,7 @@
       console.log('§TM_REVEAL_TILED skip reason=no element resolves to a dated task — affine rescale kept');
       return null;
     }
-    var r = SA.remapSolveToTasks(disp, tasks, new Date(base).toISOString(), null);
+    var r = SA.remapSolveToTasks(disp, tasks, new Date(base).toISOString(), null, rankOf || null);
     console.log('§TM_REVEAL_TILED tasks=' + tasks.length + ' mapped=' + r.mapped + ' skipped=' + skipped +
       ' degenerate=' + r.degenerateTasks +
       ' — each element plays its own CPM-duration share of its bar, CPM order kept, no dead air (was: per-task affine, §TM_ELEMENT_WINDOW_RESCALE)');

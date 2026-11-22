@@ -117,6 +117,11 @@
   // and REFERENCE disciplines = rates.js CIVIL_RATES rows whose measure is 'NONE' (chainage labels, right-of-way: setting-out
   // references, never built). `alias` = the elements_meta alias in the caller's SQL ('m' or '' for none). Fleet: no reference
   // discipline rows → the predicate selects exactly the rows the old inline clause did. COALESCE: a NULL discipline stays in.
+  // §ELEMENT_BOX (§Q.55): every 4D read of "where is an element" goes through the one owner's view, never element_transforms directly.
+  function _EB(db) {
+    var SG = (global && global.ScheduleGate) || (typeof globalThis !== 'undefined' && globalThis.ScheduleGate) || (typeof window !== 'undefined' && window.ScheduleGate) || null;
+    return (SG && SG.ensureElementBox) ? SG.ensureElementBox(db) : 'element_transforms';
+  }
   function scheduledWhere(alias, rates) {
     var a = alias ? alias + '.' : '';
     // node: `global` is module.exports, so the harness's rates.js globals are read from globalThis
@@ -317,7 +322,7 @@
     var r;
     try {
       r = db.exec("SELECT m.ifc_class, COUNT(*), SUM(" + _AREA_EXPR + ") FROM elements_meta m " +
-        "JOIN element_transforms t ON m.guid=t.guid WHERE t.bbox_x IS NOT NULL AND t.bbox_x>0 " +
+        "JOIN " + _EB(db) + " t ON m.guid=t.guid WHERE t.bbox_x IS NOT NULL AND t.bbox_x>0 " +
         "AND m.ifc_class IN (" + q(m2Classes) + ") GROUP BY m.ifc_class");
     } catch (e) {   // no element_transforms table (e.g. a stripped test DB) — degrade to count-based
       // §S58 (§S58.2): this catch fires on ANY throw, not just the commented stripped-DB case, and
@@ -336,7 +341,7 @@
       });
     }
     if (!fragClasses.length) return out;
-    var ar = db.exec("SELECT m.guid, " + _AREA_EXPR + " FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid " +
+    var ar = db.exec("SELECT m.guid, " + _AREA_EXPR + " FROM elements_meta m JOIN " + _EB(db) + " t ON m.guid=t.guid " +
       "WHERE t.bbox_x IS NOT NULL AND t.bbox_x>0 AND m.ifc_class IN (" + q(fragClasses) + ")");
     if (ar.length && ar[0].values.length) ar[0].values.forEach(function (row) { out.area[row[0]] = row[1] || 0; });
     fragClasses.forEach(function (cls) {
@@ -376,7 +381,7 @@
     var r;
     try {
       r = db.exec("SELECT m.ifc_class, COUNT(*), SUM(" + LEN_EXPR + ") FROM elements_meta m " +
-        "JOIN element_transforms t ON m.guid=t.guid WHERE t.bbox_x IS NOT NULL AND t.bbox_x>0 " +
+        "JOIN " + _EB(db) + " t ON m.guid=t.guid WHERE t.bbox_x IS NOT NULL AND t.bbox_x>0 " +
         "AND m.ifc_class IN (" + q(mClasses) + ") GROUP BY m.ifc_class");
     } catch (e) {   // no element_transforms table — degrade to flat (no weighting)
       // §S58 (§S58.2): same silent-revert as above — §HEAVY_MEMBER_SPEED_LIMIT stops firing and
@@ -394,7 +399,7 @@
       });
     }
     if (!haveClasses.length) return out;
-    var lr = db.exec("SELECT m.guid, " + LEN_EXPR + " FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid " +
+    var lr = db.exec("SELECT m.guid, " + LEN_EXPR + " FROM elements_meta m JOIN " + _EB(db) + " t ON m.guid=t.guid " +
       "WHERE t.bbox_x IS NOT NULL AND t.bbox_x>0 AND m.ifc_class IN (" + q(haveClasses) + ")");
     if (lr.length && lr[0].values.length) lr[0].values.forEach(function (row) { out.length[row[0]] = row[1] || 0; });
     console.log('§HEAVY_MEMBER_SPEED_LIMIT classes=' + haveClasses.length + ' [' +
@@ -445,7 +450,7 @@
       // halved (510,960 -> 258,260) and monotonicity broke. Zero-area elements now fall through to
       // flat, the same honest-degrade the realQty and lengthRatio branches already use.
       r = db.exec('SELECT m.ifc_class, COUNT(*), SUM(' + _AREA_EXPR + ') FROM elements_meta m ' +
-        'JOIN element_transforms t ON m.guid=t.guid WHERE t.bbox_x IS NOT NULL AND t.bbox_x>0 ' +
+        'JOIN ' + _EB(db) + ' t ON m.guid=t.guid WHERE t.bbox_x IS NOT NULL AND t.bbox_x>0 ' +
         'AND (' + _AREA_EXPR + ') > 0 AND m.ifc_class IN (' + q(m2) + ') GROUP BY m.ifc_class');
     } catch (e) { return out; }   // no element_transforms — degrade to flat, exactly as before
     var have = [], mixed = [];
@@ -482,7 +487,7 @@
         ' — a class total is only preserved when every element shares one secsPerUnit');
       if (!have.length) return out;
     }
-    var ar = db.exec('SELECT m.guid, ' + _AREA_EXPR + ' FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid ' +
+    var ar = db.exec('SELECT m.guid, ' + _AREA_EXPR + ' FROM elements_meta m JOIN ' + _EB(db) + ' t ON m.guid=t.guid ' +
       'WHERE t.bbox_x IS NOT NULL AND t.bbox_x>0 AND (' + _AREA_EXPR + ') > 0 AND m.ifc_class IN (' + q(have) + ')');
     if (ar.length && ar[0].values.length) ar[0].values.forEach(function (row) { out.area[row[0]] = row[1] || 0; });
     console.log('§ARCH_AREA_WEIGHT classes=' + have.length + ' [' +
@@ -531,7 +536,7 @@
       // The average MUST be taken over exactly the elements that will receive a ratio, or
       // mean(ratio) != 1 and the class total moves — the one thing this form exists to prevent.
       r = db.exec('SELECT m.ifc_class, COUNT(*), SUM(' + _VOL_EXPR + ') FROM elements_meta m ' +
-        'JOIN element_transforms t ON m.guid=t.guid WHERE t.bbox_x IS NOT NULL AND t.bbox_x>0 ' +
+        'JOIN ' + _EB(db) + ' t ON m.guid=t.guid WHERE t.bbox_x IS NOT NULL AND t.bbox_x>0 ' +
         'AND (' + _VOL_EXPR + ') > 0 AND m.ifc_class IN (' + q(m3) + ') GROUP BY m.ifc_class');
     } catch (e) { return out; }   // no element_transforms — degrade to flat, exactly as before
     var have = [], mixed = [];
@@ -568,7 +573,7 @@
         ' — a class total is only preserved when every element shares one secsPerUnit');
       if (!have.length) return out;
     }
-    var vr = db.exec('SELECT m.guid, ' + _VOL_EXPR + ' FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid ' +
+    var vr = db.exec('SELECT m.guid, ' + _VOL_EXPR + ' FROM elements_meta m JOIN ' + _EB(db) + ' t ON m.guid=t.guid ' +
       'WHERE t.bbox_x IS NOT NULL AND t.bbox_x>0 AND (' + _VOL_EXPR + ') > 0 AND m.ifc_class IN (' + q(have) + ')');
     if (vr.length && vr[0].values.length) vr[0].values.forEach(function (row) { out.volume[row[0]] = row[1] || 0; });
     console.log('§VOL_WEIGHT classes=' + have.length + ' [' +
@@ -835,7 +840,7 @@
     var r = db.exec("SELECT m.guid, m.ifc_class, COALESCE(m.element_name,''), COALESCE(m.storey,'_UNKNOWN'), " +
       "COALESCE(t.center_x,0), COALESCE(t.center_y,0), COALESCE(t.center_z,0), " +
       "COALESCE(t.bbox_x,0), COALESCE(t.bbox_y,0), COALESCE(t.bbox_z,0) " +
-      "FROM elements_meta m LEFT JOIN element_transforms t ON t.guid=m.guid " +
+      "FROM elements_meta m LEFT JOIN " + _EB(db) + " t ON t.guid=m.guid " +
       "WHERE " + scheduledWhere('m'));
     if (!r.length || !r[0].values.length) return [];
 
@@ -1420,6 +1425,22 @@
         prevOnLevel = t;
       });
     });
+    // §DECK_OVER (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.59) — dependencies.deck_over: the first fit-out bar of a level waits for the frame bar of
+    // the nearest level ABOVE (the deck over it). Declared by the template; a template without the key (civil) gets no such edge. The levelling pass
+    // below walks the edges in order and moves each successor behind its predecessors, so the edge needs no date arithmetic here.
+    var _dk = T.dependencies.deck_over, _deckEdges = 0, _deckNoDeck = 0;
+    if (_dk && byId[_dk.pred] && byId[_dk.succ]) {
+      var _succAt = T.phases.indexOf(byId[_dk.succ]);
+      levels.forEach(function (lv, li) {
+        var first = null, deck = null, pi, d;
+        for (pi = _succAt; pi < T.phases.length && !first; pi++) if (T.phases[pi].scope !== 'building') first = taskAt[T.phases[pi].name + '||' + lv] || null;
+        if (!first) return;
+        for (d = li + 1; d < levels.length && !deck; d++) deck = taskAt[byId[_dk.pred].name + '||' + levels[d]] || null;
+        if (!deck) { _deckNoDeck++; return; }
+        edges.push({ predId: deck.id, succId: first.id, type: _dk.type || 'FS', lagDays: _dk.lag_days || 0, kind: 'deck_over' }); _deckEdges++;
+      });
+      console.log('§DECK_OVER edges=' + _deckEdges + ' levelsWithNoDeckAbove=' + _deckNoDeck + ' — the first fit-out bar of a level waits for the frame bar of the level above (the deck over it)');
+    }
     console.log('§TPL_BRIDGE_EDGE added=' + _bridgeEdges + ' — first-on-level tasks whose start came from the within_level bridge now carry that link (0 = every task was already linked)');
     console.log('§TPL_LADDER_BRIDGE gatedByBridge=' + _ladderBridged + '/' + tasks.length +
       ' — a phase whose predecessor was DROPPED on the level below now takes its start from the ' +
@@ -1828,7 +1849,78 @@
   // relation, computed once from the SHIPPED contact graph (never re-derived — 4D_BAR_MODEL.md
   // §10.1 rule 1). Layer 0 is everything resting on ground or on nothing; layer n rests on layer
   // n-1. Ties break on guid so the result is deterministic.
-  function remapSolveToTasks(solve, tasks, startISO, layerOf) {
+  // ══ §METHOD_ORDER (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.58 / §Q.59) — ORDER INSIDE A BAR = METHOD, THEN BOTTOM-UP ═══════════════════
+  // The one owner of "in what order do the pieces of one bar go up?". As 4D tools in the industry order a build-up: a declared METHOD (the steps of
+  // a trade, in sequence), and inside a step from the bottom up by the piece's own BASE (what something rests on always starts lower than it does).
+  // No contact test, no election, no solve time. The bar itself (phase x level) is the template's; this only orders its members.
+  // METHOD_STEPS: the envelope phase is one bar holding several steps; every other phase is one step. The SHELL (walls, roof, decks and every other
+  // envelope piece) goes up as one step from the bottom — a zinc flashing modelled as a wall sits on the roof build-up it covers, so "all walls, then
+  // the roof" is wrong on a real roof (SampleCastle). Then what goes INTO the shell: the curtain wall (frame and glass together, row by row from the
+  // bottom — "all framing, then all glass" puts an upper mullion in before the glass it stands on: HHS, 388), windows and doors, stairs and railings.
+  var METHOD_STEPS = ['shell', 'curtain wall', 'windows and doors', 'stairs and railings'];
+  function methodStep(cls, phase) {
+    if (phase !== 'Architecture Envelope' && phase !== 'Architecture') return 0;
+    var c = cls || '';
+    return METHOD_STEPS.indexOf((c === 'IfcMember' || c === 'IfcPlate') ? 'curtain wall' : (c === 'IfcWindow' || c === 'IfcDoor') ? 'windows and doors'
+      : (c === 'IfcRailing' || c.indexOf('IfcStair') === 0) ? 'stairs and railings' : 'shell');
+  }
+  function methodOrderOn() {
+    var env = (typeof process !== 'undefined' && process && process.env) ? process.env : {}, G = (typeof globalThis !== 'undefined') ? globalThis : global;
+    return !(G.__METHOD_ORDER === false || env.METHOD_ORDER === '0');
+  }
+  // methodRank(items) -> { guid: rank } or null when switched off. items: [{guid, cls, phase, bz|base_z, tz|top_z}]. Ranks compare inside one bar.
+  function methodRank(items, db) {
+    if (!methodOrderOn()) { console.log('§METHOD_ORDER off — the order inside a bar stays the solve\'s'); return null; }
+    // at one base the frame goes before its glass (pl); then the lower top first
+    var rows = items.map(function (e) { return { g: e.guid, st: methodStep(e.cls, e.phase), bz: e.bz != null ? e.bz : e.base_z, tz: e.tz != null ? e.tz : e.top_z, pl: e.cls === 'IfcPlate' ? 1 : 0, mb: e.cls === 'IfcMember' };
+    });
+    // A curtain wall goes up frame first: a panel never goes in before the first member of ITS OWN curtain wall (the assembly the file declares,
+    // rel_aggregates). A bottom panel modelled 12 cm below the lowest member (HHS: 11 of 31 curtain walls) takes that member's base. No table = no change.
+    var raised = 0;
+    if (db) try {
+      var ra = db.exec('SELECT child_guid, parent_guid FROM rel_aggregates'), par = {}, low = {}, ri;
+      if (ra.length) ra[0].values.forEach(function (v) { par[v[0]] = v[1]; });
+      for (ri = 0; ri < rows.length; ri++) if (rows[ri].mb && par[rows[ri].g] != null) { var pk = par[rows[ri].g]; if (low[pk] == null || rows[ri].bz < low[pk]) low[pk] = rows[ri].bz; }
+      for (ri = 0; ri < rows.length; ri++) if (rows[ri].pl && par[rows[ri].g] != null && low[par[rows[ri].g]] > rows[ri].bz) { rows[ri].bz = low[par[rows[ri].g]]; raised++; }
+    } catch (eRa) { /* no rel_aggregates table: panels keep their own base */ }
+    rows.sort(function (x, y) { return x.st - y.st || x.bz - y.bz || x.pl - y.pl || x.tz - y.tz || (x.g < y.g ? -1 : x.g > y.g ? 1 : 0); });
+    var out = {}, byStep = {};
+    for (var i = 0; i < rows.length; i++) { out[rows[i].g] = i; byStep[rows[i].st] = (byStep[rows[i].st] || 0) + 1; }
+    console.log('§METHOD_ORDER on elements=' + rows.length + ' panelsHeldForTheirFrame=' + raised + ' — inside a bar: method step, then bottom-up by base (no solve order, no support layers)');
+    return out;
+  }
+  // _methodLocationAxis(elements, collapse) -> { keyOf, rankOf } for instantiateTemplate: WHERE a piece is, for the bar grid (§Q.59).
+  // A level is a HEIGHT BAND and a piece is on the level whose band holds its BASE — so nothing is ever filed below what it stands on, whatever
+  // level name its file gave it (SampleCastle: an outer wall leaf named "ground floor" starts beside the first-floor slab). The bands come from the
+  // names the pieces arrive with: levels in the order of their middle (median base); a level starts at its lowest piece that is above the middle of
+  // the level below (a stray piece carrying the name far below is not the level's start). No tolerance constant. Where the names already are
+  // bands by base (a declared storey datum, §STOREY_DATUM) this returns the same filing.
+  function _methodLocationAxis(elements, collapse, eps) {   // eps: the contact owner's own EPS (ScheduleGate.EPS) — a base a hair under a level's start is ON that level
+    var by = {}, i, k;
+    for (i = 0; i < elements.length; i++) { k = collapse(elements[i].storey); (by[k] = by[k] || []).push(elements[i].base_z); }
+    var lv = Object.keys(by).map(function (n) { var z = by[n].slice().sort(function (a, b) { return a - b; }); return { name: n, z: z, med: z[z.length >> 1] }; })
+      .sort(function (a, b) { return a.med - b.med || (a.name < b.name ? -1 : 1); });
+    var bands = [];
+    for (i = 0; i < lv.length; i++) {
+      var from = -Infinity;
+      if (i > 0) { var pm = lv[i - 1].med, zz = lv[i].z; from = Infinity; for (k = 0; k < zz.length; k++) if (zz[k] > pm) { from = zz[k]; break; } }
+      if (from === Infinity || (bands.length && from <= bands[bands.length - 1].from)) continue;   // a name with nothing above the level below is not a level of its own
+      bands.push({ name: lv[i].name, from: from });
+    }
+    var keyByGuid = {}, rank = {}, moved = 0, n = {};
+    bands.forEach(function (b, bi) { rank[b.name] = bi; });
+    for (i = 0; i < elements.length; i++) {
+      var bz = elements[i].base_z, at = 0;
+      for (k = 0; k < bands.length; k++) if (bz >= bands[k].from - (eps || 0)) at = k;   // LTU: a window base 2.6999 and its wall's 2.7000 are one level (23 windows were filed a level below their wall)
+      keyByGuid[elements[i].guid] = bands[at].name; n[bands[at].name] = (n[bands[at].name] || 0) + 1;
+      if (bands[at].name !== collapse(elements[i].storey)) moved++;
+    }
+    console.log('§METHOD_LOCATION levels=' + bands.length + ' of ' + lv.length + ' names · filedOnAnotherLevelThanItsName=' + moved + '/' + elements.length + ' · ' +
+      bands.map(function (b) { return b.name + ' from ' + (isFinite(b.from) ? b.from.toFixed(2) : 'the bottom') + ' (' + (n[b.name] || 0) + ')'; }).join(' | ') +
+      (bands.length < 2 ? ' — NO-OP: one level, nothing is located' : ''));
+    return { keyOf: function (el) { return keyByGuid[el.guid]; }, rankOf: function (key) { return rank[key] != null ? rank[key] : 1e9; } };
+  }
+  function remapSolveToTasks(solve, tasks, startISO, layerOf, rankOf) {
     var base = Date.parse(startISO || '2026-01-01');
     var out = {}, degenerate = 0, mapped = 0;
     for (var i = 0; i < tasks.length; i++) {
@@ -1860,6 +1952,16 @@
       // crew-leveling. Clamp, do not replace.
       var mine = t.guids.filter(function (x) { return solve[x]; });
       if (span <= 0) degenerate++;
+      if (rankOf) {   // §METHOD_ORDER: one lane across the whole window, members in method order, each as wide as its own duration share
+        var mo = mine.slice().sort(function (x, y) { var rx = rankOf[x] != null ? rankOf[x] : 1e12, ry = rankOf[y] != null ? rankOf[y] : 1e12; return rx - ry || (x < y ? -1 : 1); });
+        var md = mo.map(function (g) { return Math.max(1, solve[g].end - solve[g].start); }), mt = md.reduce(function (a, b) { return a + b; }, 0), mc = 0;
+        for (var mq = 0; mq < mo.length; mq++) {
+          var ms0 = Math.round(wS + (mc / mt) * (wE - wS)); mc += md[mq];
+          var ms1 = Math.round(wS + (mc / mt) * (wE - wS)); if (ms1 <= ms0) ms1 = ms0 + 1;
+          out[mo[mq]] = { start: ms0, end: ms1 }; mapped++;
+        }
+        continue;
+      }
       var byLayer = {}, layers = [];
       for (var k = 0; k < mine.length; k++) {
         var lk = (layerOf && layerOf[mine[k]] != null) ? layerOf[mine[k]] : 0;
@@ -2170,7 +2272,8 @@
       ' effective=' + (_useAxis ? 'deriver' : 'storey') + ' probe=on');
     // §D6_HANG_FILING (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.9.4 D6, §Q.12) — only on the default storey axis;
     // the opt-in deriver axis is left exactly as it was.
-    var _gridAxis = _useAxis || _hangFilingAxis(elements, collapse, bandRank);
+    // §METHOD_ORDER: the level a piece is filed on is its LOCATION (a height band by its base); the election files nothing. Off: the hang-filing axis, as before.
+    var _gridAxis = _useAxis || (methodOrderOn() ? _methodLocationAxis(elements, collapse, SG.EPS) : _hangFilingAxis(elements, collapse, bandRank));
     var inst = instantiateTemplate(elements, T, laborRates, opts.shiftHours, bandRank, collapse, _gridAxis);
     if (!inst.tasks.length) { console.log('§AUTHOR_TPL_FAIL reason=no_tasks'); return { ok: false, reason: 'no_tasks' }; }
 
@@ -2324,7 +2427,8 @@
         return map;
       } catch (e) { console.log('§TPL_LAYER_ORDER_FAIL ' + e.message); return null; }
     })();
-    var _rm = remapSolveToTasks(schedule, inst.tasks, start, _layerOf);
+    var _mRank = methodRank(elements, db);   // §METHOD_ORDER
+    var _rm = remapSolveToTasks(schedule, inst.tasks, start, _layerOf, _mRank);
     // §TPL_LAYER_SELFCHECK — A PASS MUST PROVE IT DID SOMETHING AND THAT IT WORKED.
     // Written because the layer pass above shipped BROKEN and silent: it returned null on a
     // shadowed `global`, changed nothing, and emitted numbers IDENTICAL to the previous run. A
@@ -2821,7 +2925,7 @@
       "JOIN tasks tk ON tk.task_id=te.task_id AND tk.schedule_id='" + scheduleId +
       "' AND (tk.is_summary IS NULL OR tk.is_summary=0) " +
       "JOIN elements_meta m ON m.guid=te.guid " +
-      "JOIN element_transforms t ON t.guid=te.guid " +
+      "JOIN " + _EB(db) + " t ON t.guid=te.guid " +
       "WHERE t.bbox_x IS NOT NULL AND t.bbox_x>0";
     var er = db.exec(q);
     var total = 0;
@@ -3918,6 +4022,7 @@
     _deriverLevelAxis: _deriverLevelAxis,
     _logLevelDisagreement: _logLevelDisagreement,
     remapSolveToTasks: remapSolveToTasks,
+    methodRank: methodRank, methodStep: methodStep, METHOD_STEPS: METHOD_STEPS,
     scheduleContiguous: scheduleContiguous,
     activeSchedule: activeSchedule,
     assignElement: assignElement,
