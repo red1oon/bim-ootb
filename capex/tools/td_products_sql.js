@@ -2,7 +2,11 @@
 // SPDX-License-Identifier: MIT
 // ⚠ DO NOT REMOVE — generator of capex/plugin/testdata_2pack/202611141500_CAPEX-TD-CONSTRUCTION-PRODUCTS.sql (bim-ootb prompts/CAPEX_DASHBOARD.md §5.82).
 // The SQL is WRITTEN BY THIS FILE from viewer/rates/pwd2024_bd.json, never by hand. Read the §TDP lines after every run.
-// Usage: node capex/tools/td_products_sql.js [--out <file>] [--rates <json>]   (no --out: prints to stdout)
+// ALSO WRITES (same rate data, same run, IU2 bim-ootb prompts/CAPEX_DASHBOARD.md §INTERNAL-UAT IU2) the Kernel 2Pack zip <ts>_CAPEX-TD-CONSTRUCTION-PRODUCTS_kernel.zip that the Kernel ERP applies with its generic Pack In
+// (erp/pipo_packin.js): the .sql above is for legacy PostgreSQL only and is unchanged by it. Drift between the two outputs is caught by capex/tests/witness_td_products_kernel.js (W-TD-PRODUCTS-KERNEL).
+// Usage: node capex/tools/td_products_sql.js [--out <file>] [--rates <json>] [--zip <file>]
+//   --out <file>   the PostgreSQL script; the Kernel zip is written NEXT TO it (same folder) unless --zip says otherwise
+//   --zip <file>   the Kernel zip's path (with no --out the SQL goes to stdout and no zip is written unless this is given)
 'use strict';
 const fs = require('fs'), path = require('path');
 const REPO = path.join(__dirname, '..', '..');
@@ -74,3 +78,50 @@ AND NOT EXISTS (SELECT 1 FROM M_Cost x WHERE x.AD_Client_ID=11 AND x.AD_Org_ID=0
 const sql = o.join('\n') + '\n';
 if (arg('--out')) fs.writeFileSync(arg('--out'), sql); else process.stdout.write(sql);
 console.error(`§TDP products=${items.length} fx=${FX} bytes=${sql.length}`);
+
+// ── the Kernel 2Pack zip (IU2) ─────────────────────────────────────────────────────────────────────────────────────────────
+// Records by the format erp/pipo_packin.js reads (what erp/pipo_packout.js writes): <Table type="table"> with one child per column, reference="uuid"|"id" + reference-key for a foreign key.
+// Stock GardenWorld rows are referenced by their UUID (the same rows on legacy and on the Kernel); the rows this file creates carry the SAME md5-derived UUID the PostgreSQL script gives them.
+// Pack In saves every record through the model layer (legacy's PO.saveEx): MProductCategory.afterSave inserts the category's M_Product_Category_Acct row for EVERY client schema from C_AcctSchema_Default (erp/model_master.js
+// :180), MProduct.afterSave the M_Product_Acct rows and the Standard Material M_Cost row of every schema with cost 0 (:197-199, mcostCreate :101). Those two tables have no single key column and the auto-created rows carry a
+// random UUID, so a pack RECORD for them (found only by <Table>_UU / <Table>_ID, pipo_packin.js :178-181) would be a second, account-less row (measured 2026-11-23: "null value in column p_revenue_acct"). They are
+// therefore carried as <SQLStatement> elements (SQLStatementElementHandler, the 2Pack's own element, run by Pack In in its savepoint), which say what the PostgreSQL script says in the same words.
+const SCHEMA_UU = '9db0c692-f2ac-4f97-8f7a-94230ced44db';        // C_AcctSchema 101 GardenWorld US/A/US Dollar (AD_ClientInfo.C_AcctSchema1_ID of client 11)
+const PLV_UU = '5389417d-523c-4893-9749-e3900075ba20';           // M_PriceList_Version 103 "Purchase 2003"
+const TAXCAT_UU = '90aaa4de-67dd-4d5b-9142-efb6b783053d';        // C_TaxCategory 107 Standard (the client's default)
+const UOM_UU = { M3: 'bim-uom-m3', M2: 'bim-uom-m2', KG: 'c0776c7c-f653-4663-89ed-cb2bf92b6998' };   // C_UOM 990002 Cubic Meter, 990001 Square Meter (the Kernel seed's), 50001 kilogram
+const CLIENT = { id: 11, value: 'GardenWorld', name: 'GardenWorld', uu: '3268b9a8-10d8-466d-96e5-aa01166408fa' };
+const md5uu = k => { const h = require('crypto').createHash('md5').update(k).digest('hex'); return h.slice(0, 8) + '-' + h.slice(8, 12) + '-' + h.slice(12, 16) + '-' + h.slice(16, 20) + '-' + h.slice(20); };   // = md5(k)::uuid
+const xe = v => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const rec = (table, cols) => '    <' + table + ' type="table">\n' + cols.map(([n, v, ref]) => {
+  if (ref) return '        <' + n + ' reference="uuid" reference-key="' + ref + '">' + xe(v) + '</' + n + '>';
+  return v === '' ? '        <' + n + '/>' : '        <' + n + '>' + xe(v) + '</' + n + '>'; }).join('\n') + '\n    </' + table + '>';
+const sqlst = st => '    <SQLStatement type="custom">\n        <DBType>ALL</DBType>\n        <statement><![CDATA[' + st + ']]></statement>\n    </SQLStatement>';
+// a numeric column is written the way Pack Out writes it (no trailing zeros: 115.525, not 115.5250), because Pack In decides Same / Update by comparing the column's text with the pack's
+const num = p => String(Number(cost(p)));
+const recs = [];
+const catUU = md5uu('capex-td-products:category');
+recs.push(rec('M_Product_Category', [['AD_Org_ID', 0], ['IsActive', 'Y'], ['Name', 'Construction'], ['Description', 'Building and construction materials at standard cost (PWD Schedule of Rates)'], ['Value', 'Construction'], ['IsDefault', 'N'], ['PlannedMargin', 0], ['IsSelfService', 'N'], ['M_Product_Category_UU', catUU]]));
+recs.push(sqlst("UPDATE M_Product_Category_Acct SET CostingMethod='S' WHERE M_Product_Category_ID=(SELECT M_Product_Category_ID FROM M_Product_Category WHERE AD_Client_ID=11 AND Value='Construction')"));
+recs.push(rec('C_AcctSchema', [['CostingMethod', 'S'], ['C_AcctSchema_UU', SCHEMA_UU]]));
+for (const p of items) {
+  const val = 'PWD-' + p.item, nm = baseName(p), tag = `PWD SoR 2022 item ${p.item} p${p.page}: ${p.rate} BDT/${p.unit} = ${cost(p)} USD at ${FX}. `, desc = tag + (p.desc.length > 255 - tag.length ? p.desc.slice(0, 255 - tag.length - 3) + '...' : p.desc);
+  const pu = md5uu('capex-td-products:product:' + val);
+  recs.push(rec('M_Product', [['AD_Org_ID', 0], ['IsActive', 'Y'], ['Name', nm], ['Description', desc], ['IsSummary', 'N'], ['C_UOM_ID', UOM_UU[p.unit], 'C_UOM'], ['IsStocked', 'Y'], ['IsPurchased', 'Y'], ['IsSold', 'N'], ['Value', val],
+    ['M_Product_Category_ID', catUU, 'M_Product_Category'], ['C_TaxCategory_ID', TAXCAT_UU, 'C_TaxCategory'], ['Discontinued', 'N'], ['IsBOM', 'N'], ['IsVerified', 'N'], ['ProductType', 'I'], ['M_Product_UU', pu]]));
+  recs.push(rec('M_ProductPrice', [['AD_Org_ID', 0], ['IsActive', 'Y'], ['M_PriceList_Version_ID', PLV_UU, 'M_PriceList_Version'], ['M_Product_ID', pu, 'M_Product'], ['PriceList', num(p)], ['PriceStd', num(p)], ['PriceLimit', num(p)], ['M_ProductPrice_UU', md5uu('capex-td-products:price:' + val)]]));
+  recs.push(sqlst(`UPDATE M_Cost SET CurrentCostPrice=${cost(p)} WHERE AD_Client_ID=11 AND AD_Org_ID=0 AND M_AttributeSetInstance_ID=0 AND M_Product_ID=(SELECT M_Product_ID FROM M_Product WHERE AD_Client_ID=11 AND Value='${val}') AND M_CostElement_ID=(SELECT M_CostElement_ID FROM M_CostElement WHERE AD_Client_ID=11 AND CostElementType='M' AND CostingMethod='S') AND C_AcctSchema_ID IN (SELECT s.C_AcctSchema_ID FROM C_AcctSchema s WHERE s.AD_Client_ID=11 AND s.C_Currency_ID=(SELECT l.C_Currency_ID FROM M_PriceList_Version v JOIN M_PriceList l ON l.M_PriceList_ID=v.M_PriceList_ID WHERE v.M_PriceList_Version_UU='${PLV_UU}'))`));
+}
+const PKNAME = 'CAPEXTDConstructionProducts', STAMP = '2026-11-14 15:00:00';
+const packXml = '<?xml version="1.0" encoding="UTF-8"?><idempiere Name="' + PKNAME + '" Version="1.0.0" idempiereVersion="13" DataBaseVersion="2026-11-14" Description="' + xe(`CAPEX test data: ${items.length} construction products at STANDARD cost (PWD Schedule of Rates 2022, ${FX} BDT per USD), their Construction category, and the primary accounting schema costed by Standard. Kernel twin of ${NAME}`).replace(/"/g, '&quot;') +
+  '" Author="bim-ootb" AuthorEmail="" CreatedDate="' + STAMP + '.0" UpdatedDate="' + STAMP + '.0" PackOutVersion="100" UpdateDictionary="false" Client="' + CLIENT.id + '-' + CLIENT.value + '-' + CLIENT.name + '" AD_Client_UU="' + CLIENT.uu + '">\n' + recs.join('\n') + '\n</idempiere>\n';
+const docXml = '<?xml version="1.0" encoding="UTF-8"?><idempiereDocument><header>' + PKNAME + ' Package Description</header><H3>Package Name:</H3><packagename>' + PKNAME + '</packagename><file>File: PackOut.xml</file><filedirectory>Directory: \\dict\\</filedirectory></idempiereDocument>';
+const zipPath = arg('--zip') || (arg('--out') ? path.join(path.dirname(arg('--out')), NAME.replace(/\.sql$/, '_kernel.zip')) : null);
+if (zipPath) {
+  // Node 18's CompressionStream lacks 'deflate-raw' (the zip writer runs in the browser, where it exists): the SAME writer (erp/pipo_packout.js zip) gets it from zlib here, nothing else changes (as capex/tools/td_pack.js)
+  try { new CompressionStream('deflate-raw'); } catch (e) { const zlib = require('zlib'), Native = globalThis.CompressionStream; globalThis.CompressionStream = function (fmt) { if (fmt !== 'deflate-raw') return new Native(fmt); const parts = []; return new TransformStream({ transform(c) { parts.push(Buffer.from(c)); }, flush(ctl) { ctl.enqueue(new Uint8Array(zlib.deflateRawSync(Buffer.concat(parts)))); } }); }; }
+  require(path.join(REPO, 'erp/pipo_packout.js')).zip([{ path: PKNAME + '/dict/PackOut.xml', data: packXml }, { path: PKNAME + '/doc/' + PKNAME + 'Doc.xml', data: docXml }]).then(bytes => {
+    fs.mkdirSync(path.dirname(zipPath), { recursive: true }); fs.writeFileSync(zipPath, Buffer.from(bytes));
+    console.error(`§TDP zip file=${path.relative(REPO, zipPath)} bytes=${bytes.length} products=${items.length} records=${recs.length} (Kernel 2Pack, applied by Pack In)`);
+  }).catch(e => { console.error('§TDP FAIL zip ' + (e && e.stack || e)); process.exit(4); });
+}
