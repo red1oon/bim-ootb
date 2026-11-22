@@ -251,7 +251,7 @@ function buildCtxTrl(lang, legacyIds, helps, link) {
     // §19.17 F7: each language fitted on its own text; a translated section's link carries its translated title
     const parts = h.sections.map((s, i) => { const t = tr(mach[s.trlId]) ? linkParas(mach[s.trlId].text, link) : h.parts[i], m = /^<p><strong>([\s\S]*?)<\/strong><\/p>/.exec(t); return { html: t, url: s.url, title: m ? ent(m[1].replace(/<[^>]+>/g, '')) : s.name, key: s.key }; });
     const f = fitParts(parts, msgLen()); fitLog(h.id, lang, f);
-    out.push({ id: h.id, lang, source: 'machine', istranslated: 'N', text: f.text });
+    out.push({ id: h.id, lang, source: 'machine', istranslated: 'N', text: f.text, parts });   // parts (unfitted): the legacy script fits them at apply time (§19.17 F6)
   });
   return out;
 }
@@ -329,6 +329,61 @@ function main() {
       ' ctxtrl=' + trl.length + ' actions=' + Object.keys(names.actions).length + ' statuses=' + Object.keys(names.statuses).length + ' processes=' + Object.keys(names.processes).length + ' menus=' + Object.keys(names.menus).length + ' bytes=' + fs.statSync(f).size);
   });
   buildCtxHelpRows(helps, allTrl);
+  buildLegacySql(helps, allTrl);
+}
+
+// §19.17 F6 (owner 2026-11-22: "let legacy has the harmless CMS ... via migration scripts", "Copy own text in"): the SAME helps as ONE PostgreSQL script for a legacy site's
+//   migration/local_sql/postgresql/ (applied by RUN_SyncDB, legacy's migration/local_sql/README.txt). Legacy's code and tables are untouched; only rows in its own tables.
+//   - one AD_CtxHelp + AD_CtxHelpMsg PER TARGET (tab / process): its message starts with that record's OWN Name / Description / Help, built at APPLY time from the site's
+//     AD_Tab (AD_Process) and, per site language, AD_Tab_Trl (AD_Process_Trl), as legacy's HelpController.renderCtxHelp draws them (:338-364), then <hr>, then our blocks;
+//   - the F7 rule in SQL: whole blocks while dictionary + blocks + the guide link fit the site's own AD_Column.FieldLength of MsgText;
+//   - every row keyed on its UUID (a site's ids start at 1000000, as ours: fixed ids would collide): COALESCE(the row's id, nextidfunc) + ON CONFLICT (uu) DO UPDATE only
+//     when the text differs, so a second apply changes nothing; a tab / process that already has a help keeps it (AD_CtxHelp_ID IS NULL guard).
+const LEGACY_DIR = path.join(ERP, 'legacy', 'local_sql', 'postgresql');
+const lit = (x) => x == null ? 'NULL' : "'" + String(x).replace(/'/g, "''") + "'";
+function buildLegacySql(helps, trl) {
+  const seq = (t) => "nextidfunc((SELECT AD_Sequence_ID FROM AD_Sequence WHERE Name='" + t + "' AND IsTableID='Y')::integer, 'N')";
+  const lim = (t) => "(SELECT c.FieldLength FROM AD_Column c JOIN AD_Table tb ON tb.AD_Table_ID=c.AD_Table_ID WHERE tb.TableName='" + t + "' AND c.ColumnName='MsgText')";
+  const dict = (a) => "'<p><strong>' || " + a + ".Name || '</strong></p>' || COALESCE('<p><em>' || NULLIF(" + a + ".Description, '') || '</em></p>', '') || COALESCE('<p>' || NULLIF(" + a + ".Help, '') || '</p>', '') || '<hr>'";
+  const fit = (d, l, m) => "(SELECT x.dict || COALESCE(string_agg(b.html, '' ORDER BY b.k) FILTER (WHERE b.k <= x.j), '') || COALESCE(max(b.more) FILTER (WHERE b.k = x.j + 1), '')" +
+    " FROM (SELECT y.dict, y.l, COALESCE((SELECT min(c.k) FROM (SELECT k, sum(length(html)) OVER (ORDER BY k) AS cum, nextlen FROM blk WHERE lang = y.l) c WHERE length(y.dict) + c.cum + c.nextlen > y.lim) - 1, (SELECT max(k) FROM blk WHERE lang = y.l)) AS j" +
+    " FROM (SELECT " + d + " AS dict, " + l + " AS l, " + m + " AS lim) y) x JOIN blk b ON b.lang = x.l GROUP BY x.dict, x.j)";
+  const blocksOf = (parts) => { const bl = []; parts.forEach((pp) => (pp.html.match(BLOCK_RE) || []).forEach((x) => bl.push({ x, p: pp }))); return bl; };
+  const out = [], targets = [];
+  helps.forEach((h) => {
+    const langs = [['en', h.sections.map((sx, i) => ({ html: h.parts[i], url: sx.url, title: sx.name, key: sx.key }))]].concat(trl.filter((r) => r.id === h.id && r.source === 'machine' && r.parts).map((r) => [r.lang, r.parts]));
+    const vals = []; langs.forEach(([lg, parts]) => { const bl = blocksOf(parts); bl.forEach((b, i) => { const nx = bl[i + 1]; vals.push('(' + lit(lg) + ', ' + (i + 1) + ', ' + lit(b.x) + ', ' + lit(moreLink(b.p)) + ', ' + (nx ? moreLink(nx.p).length : 0) + ')'); }); });
+    const blk = 'WITH blk(lang, k, html, more, nextlen) AS (VALUES\n  ' + vals.join(',\n  ') + ')\n';
+    h.tabs.map((t) => ({ kind: 'T', id: t.tab, T: 'AD_Tab', name: (q('SELECT name n FROM ad_tab WHERE ad_tab_id=' + Number(t.tab))[0] || {}).n }))
+      .concat(h.processes.map((pid) => ({ kind: 'P', id: pid, T: 'AD_Process', name: (q('SELECT name n FROM ad_process WHERE ad_process_id=' + Number(pid))[0] || {}).n }))).forEach((g) => {
+      const huu = uuidOf('legacy|ad_ctxhelp|' + g.kind + g.id), muu = uuidOf('legacy|ad_ctxhelpmsg|' + g.kind + g.id), url = h.sections[0].url;
+      const name = h.tabs.length + h.processes.length > 1 ? h.name + ' (' + g.name + ')' : h.name; if (name.length > 120) throw new Error('F6: AD_CtxHelp.Name is 120 long: ' + name);
+      targets.push({ kind: g.kind, id: g.id, help: h.id, huu, muu, sections: h.keys, langs: langs.map((x) => x[0]) });
+      out.push('-- ' + (g.kind === 'T' ? 'tab' : 'process') + ' ' + g.id + ' ' + g.name + ': ' + h.keys.join(' + ') + ' (twin help ' + h.id + ')',
+        'INSERT INTO AD_CtxHelp (AD_CtxHelp_ID, AD_CtxHelp_UU, AD_Client_ID, AD_Org_ID, Created, CreatedBy, Updated, UpdatedBy, IsActive, CtxType, Name, Description)\n' +
+        'SELECT COALESCE((SELECT AD_CtxHelp_ID FROM AD_CtxHelp WHERE AD_CtxHelp_UU=' + lit(huu) + '), ' + seq('AD_CtxHelp') + '), ' + lit(huu) + ", 0, 0, now(), 100, now(), 100, 'Y', '" + g.kind + "', " + lit(name) + ', ' + lit(url) + '\n' +
+        'ON CONFLICT (AD_CtxHelp_UU) DO UPDATE SET Name=EXCLUDED.Name, Description=EXCLUDED.Description, Updated=now() WHERE (AD_CtxHelp.Name, AD_CtxHelp.Description) IS DISTINCT FROM (EXCLUDED.Name, EXCLUDED.Description);',
+        blk + 'INSERT INTO AD_CtxHelpMsg (AD_CtxHelpMsg_ID, AD_CtxHelpMsg_UU, AD_CtxHelp_ID, AD_Client_ID, AD_Org_ID, Created, CreatedBy, Updated, UpdatedBy, IsActive, MsgText)\n' +
+        'SELECT COALESCE((SELECT AD_CtxHelpMsg_ID FROM AD_CtxHelpMsg WHERE AD_CtxHelpMsg_UU=' + lit(muu) + '), ' + seq('AD_CtxHelpMsg') + '), ' + lit(muu) + ", toRecordId('AD_CtxHelp', " + lit(huu) + "), 0, 0, now(), 100, now(), 100, 'Y', " +
+        fit(dict('r'), "'en'", lim('AD_CtxHelpMsg')) + '\nFROM ' + g.T + ' r WHERE r.' + g.T + '_ID=' + g.id + '\n' +
+        'ON CONFLICT (AD_CtxHelpMsg_UU) DO UPDATE SET MsgText=EXCLUDED.MsgText, Updated=now() WHERE AD_CtxHelpMsg.MsgText IS DISTINCT FROM EXCLUDED.MsgText;',
+        blk + 'INSERT INTO AD_CtxHelpMsg_Trl (AD_CtxHelpMsg_ID, AD_Language, AD_CtxHelpMsg_Trl_UU, AD_Client_ID, AD_Org_ID, Created, CreatedBy, Updated, UpdatedBy, IsActive, IsTranslated, MsgText)\n' +
+        "SELECT toRecordId('AD_CtxHelpMsg', " + lit(muu) + "), r.AD_Language, generate_uuid(), 0, 0, now(), 100, now(), 100, 'Y', 'N', " +
+        fit(dict('r'), "CASE WHEN EXISTS (SELECT 1 FROM blk WHERE lang = r.AD_Language) THEN r.AD_Language ELSE 'en' END", lim('AD_CtxHelpMsg_Trl')) + '\nFROM ' + g.T + '_Trl r WHERE r.' + g.T + '_ID=' + g.id + '\n' +
+        'ON CONFLICT (AD_CtxHelpMsg_ID, AD_Language) DO UPDATE SET MsgText=EXCLUDED.MsgText, Updated=now() WHERE AD_CtxHelpMsg_Trl.MsgText IS DISTINCT FROM EXCLUDED.MsgText;',
+        'UPDATE ' + g.T + " SET AD_CtxHelp_ID=toRecordId('AD_CtxHelp', " + lit(huu) + '), Updated=now() WHERE ' + g.T + '_ID=' + g.id + ' AND AD_CtxHelp_ID IS NULL;', '');
+    });
+  });
+  const ts = helps.map((h) => h.time).sort().pop().replace(/[^0-9]/g, '').slice(0, 12), file = path.join(LEGACY_DIR, ts + '_KernelERP_ContextHelp.sql');
+  fs.mkdirSync(LEGACY_DIR, { recursive: true }); fs.readdirSync(LEGACY_DIR).filter((f) => /_KernelERP_ContextHelp\.sql$/.test(f) && path.join(LEGACY_DIR, f) !== file).forEach((f) => fs.unlinkSync(path.join(LEGACY_DIR, f)));
+  const head = ['-- GENERATED by bim-ootb erp/tools/build_help_pack.js (bim-compiler prompts/VOCAB_MESSAGE_CATALOG.md §19.17 F6) - do not edit by hand.',
+    '-- Kernel ERP how-to topics as iDempiere Context Help, from docs/ERPUserGuide.md and docs/ERP_FirstSetup.md (https://red1oon.github.io/BIMCompiler/).',
+    '-- Apply: copy to <idempiere>/migration/local_sql/postgresql/ and run RUN_SyncDB. Adds rows to AD_CtxHelp, AD_CtxHelpMsg, AD_CtxHelpMsg_Trl and sets AD_CtxHelp_ID on the',
+    '-- ' + targets.length + ' tabs / processes below only where it is empty. Each message starts with that tab\'s own Name / Description / Help in each of your languages, read here from',
+    '-- your dictionary. Rows are keyed on the UUIDs below; applying it again changes nothing. A newer file of this name updates the same rows.', ''];
+  fs.writeFileSync(file, head.concat(out).join('\n'));
+  fs.writeFileSync(path.join(ERP, 'legacy', 'ctxhelp_targets.json'), JSON.stringify({ spec: '§19.17 F6', file: path.relative(ERP, file), targets }, null, 1) + '\n');   // the witness's denominator
+  console.log('§CTXHELP_LEGACY_SQL file=' + path.relative(ROOT, file) + ' targets=' + targets.length + ' (' + targets.filter((t) => t.kind === 'T').length + ' tabs, ' + targets.filter((t) => t.kind === 'P').length + ' processes) statements=' + (out.length - targets.length * 2) + ' bytes=' + fs.statSync(file).size + ' langs=' + JSON.stringify([...new Set([].concat(...targets.map((t) => t.langs)))]));
 }
 // §19.10: the witnesses read the SAME source list (W-HQ-PROC-NAMES), never a copy of it
 if (require.main === module) main(); else module.exports = { SOURCES, CACHE, md, readCtxTrl, titleP, machineCtxFile, SECTIONS, DOCS };
