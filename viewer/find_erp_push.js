@@ -348,31 +348,23 @@
     // pushBasis(set): the rows the push folds (bim-compiler prompts/CLI_ERP_IVR.md §32 F1) — ONE place, used by the push and by the Find bar's cost.
     // the programme the viewer already holds (prompts/CAPEX_DASHBOARD.md §5.5 R1-f): the active schedule in the building db, if any — the order then carries the
     // Gantt's own dates, one task per bar, rows split per bar; none → the fold writes no dates (NO_4D_SCHEDULE). Never a computed schedule.
-    function _pushBasis(set, opts) {
+    function _pushBasis(set) {
       var PF = global.ProjFold, sched4D = null;
       try { sched4D = (PF && PF.scheduleFromDb && A.db) ? PF.scheduleFromDb(A.db, global._4dTemplate || null, global.ScheduleAuthor) : null; } catch (e) { sched4D = null; console.log('[RP-C] §PROJ_PUSH_SCHEDULE_ERR ' + e.message); }
       if (_CENTS_BREAK === 'nosplit') sched4D = null;   // W-FIND-CENTS falsifier: the bar ignores the schedule (must FAIL B2)
-      var priced = D.selectionPriced(set, opts);   // the whole selection first: keeps _selectionPriced's size cap (a capped result is refused below, as before)
+      var priced = D.selectionPriced(set);   // the whole selection first: keeps _selectionPriced's size cap (a capped result is refused below, as before)
       if (sched4D && priced && !priced.capped && priced.rows.length)
-        priced = PF.pricedPerTask(Array.from(set), sched4D, function (sub) { return D.selectionPriced(new Set(sub), opts); });
+        priced = PF.pricedPerTask(Array.from(set), sched4D, function (sub) { return D.selectionPriced(new Set(sub)); });
       return { sched4D: sched4D, priced: priced };
     }
     // basisAmount(set): what the push would post for this selection — ProjFold.lineAmounts over the push's own rows (§32 F1); null = nothing to price; capped = too large
-    function _basisAmount(set, opts) {
+    function _basisAmount(set) {
       var PF = global.ProjFold; if (!PF || !PF.lineAmounts || !set || !set.size) return null;
-      var b = _pushBasis(set, opts), p = b.priced; if (!p) return null;
+      var b = _pushBasis(set), p = b.priced; if (!p) return null;
       if (p.capped) return { capped: true, elements: p.elements };
       if (_CENTS_BREAK === 'introws') return { capped: false, elements: p.elements, totalExact: String(p.rows.reduce(function (s, r) { return s + r.cost; }, 0)), lines: p.rows.length, tasks: b.sched4D ? b.sched4D.tasks.length : 0 };   // falsifier: the old whole units per row (must FAIL B1, B3)
       var LA = PF.lineAmounts(p.rows);
-      // detail: the lines summed per class key (a class's lines across 4D tasks), exact — what Ask's Details table lists
-      var dBy = {}, dOrder = [], unpriced = {}, ZERO = _BD().ZERO;
-      LA.lines.forEach(function (l) {
-        var d = dBy[l.key]; if (!d) { d = dBy[l.key] = { cls: l.key, unit: l.rows[0].unit, rate: l.rate, qty: 0, amount: ZERO }; dOrder.push(l.key); }
-        d.qty += l.qty; d.amount = d.amount.add(l.amount);
-      });
-      p.rows.forEach(function (r) { if (!r.rate) unpriced[r.cls] = (unpriced[r.cls] || 0) + r.count; });   // a class billed at rate 0 (the pack lists none, or lists 0) is named, never guessed at
-      return { capped: false, elements: p.elements, totalExact: LA.total.toString(), lines: LA.lines.length, tasks: b.sched4D ? b.sched4D.tasks.length : 0,
-        detail: dOrder.map(function (k) { var d = dBy[k]; return { cls: d.cls, unit: d.unit, rate: d.rate, qty: Math.round(d.qty * 1000) / 1000, amount: d.amount.toString() }; }), unpriced: unpriced };
+      return { capped: false, elements: p.elements, totalExact: LA.total.toString(), lines: LA.lines.length, tasks: b.sched4D ? b.sched4D.tasks.length : 0 };
     }
     // the order currency's precision (C_Currency.StdPrecision), found as the fold finds the currency (ISO_Code, else CurSymbol: 'RM' -> MYR), read once from the ERP db the push opens; null = not known yet / not found
     var _precOf = {};

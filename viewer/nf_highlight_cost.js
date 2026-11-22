@@ -503,12 +503,11 @@
     function _pack() { return (typeof window !== 'undefined' && window.RATE_TEMPLATE_NAME) || 'hardcoded'; }
     // Priced rows for a selection at (disc,cls,storey) granularity — the apply5DRates shape the fold
     // engine (proj_fold.js) consumes. ONE source for both the bar cost (Task A) and the > to ERP push (Task C).
-    // opts.uncapped: the whole-model readouts (Ask "total cost") price every element; the Find bar keeps its cap.
-    function _selectionPriced(set, opts) {
+    function _selectionPriced(set) {
       var R = _rates();
       if (!set || !set.size || !A.dbQuery) return null;
       var guids = []; set.forEach(function (g) { guids.push(g); });
-      if (guids.length > _SELCOST_CAP && !(opts && opts.uncapped)) return { capped: true, elements: guids.length, rows: [] };
+      if (guids.length > _SELCOST_CAP) return { capped: true, elements: guids.length, rows: [] };
       var agg = {}; // disc|cls|storey → {disc,cls,storey,cnt,len,area,vol}
       for (var i = 0; i < guids.length; i += 900) {
         var chunk = guids.slice(i, i + 900);
@@ -543,21 +542,6 @@
       if (p.capped) { console.log('[RP-C] §FIND_COST_SKIP elems=' + p.elements + ' > cap=' + _SELCOST_CAP); return { capped: true, elements: p.elements, cost: 0, cur: _cur(), pack: _pack() }; }
       return { capped: false, elements: p.elements, costExact: p.totalExact, lines: p.lines, tasks: p.tasks, cur: _cur(), pack: _pack(), ms: Date.now() - t0 };
     }
-    // ── §COST_ONE_BASIS (owner 2026-11-22): the cost of a model is rate x quantity in the rate's own unit, ONE function. Every readout
-    // that shows a model/selection cost (the Find bar, the > ERP push, Ask "total cost") goes through here: _pushBasis -> ProjFold.lineAmounts.
-    // A.costBasis(set) -> { exact, elements, lines, tasks, detail:[{cls,unit,qty,rate,amount}], cur, pack, ms } | null (nothing to price)
-    // A.costText(cur, exact) -> Promise<string>: the amount at the order currency's precision, as the bar paints it.
-    A.costBasis = function (set) {
-      var t0 = Date.now(), p = _erpPush && _erpPush.basisAmount ? _erpPush.basisAmount(set, { uncapped: true }) : null;
-      if (!p) return null;
-      return { exact: p.totalExact, elements: p.elements, lines: p.lines, tasks: p.tasks, detail: p.detail, unpriced: p.unpriced, cur: _cur(), pack: _pack(), ms: Date.now() - t0 };
-    };
-    A.costText = function (cur, exact) {
-      if (!_erpPush) return Promise.resolve(cur + ' ' + exact);
-      var known = _erpPush.precisionNow(cur);
-      if (known !== undefined) return Promise.resolve(_erpPush.centsText(cur, exact, known));
-      return _erpPush.precision(cur).then(function (prec) { return _erpPush.centsText(cur, exact, prec); }, function () { return _erpPush.centsText(cur, exact, null); });
-    };
     function _updateSelCost(set, scopeLabel) {
       NF._lastSelSet = (set && set.size) ? set : null;            // remember selection for the > to ERP push
       NF._lastSelLabel = scopeLabel || '';
