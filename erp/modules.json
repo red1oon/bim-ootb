@@ -1,5 +1,5 @@
 {
- "app": "erp", "schema": 1, "sw": "erp/sw.js", "cacheVersion": "v1125", "depsDeclared": true,
+ "app": "erp", "schema": 1, "sw": "erp/sw.js", "cacheVersion": "v1126", "depsDeclared": true,
  "depsReview": {"by":"owner","on":"2026-11-22","tool":"91f9dd03f8e75bd0f4e3e01609181e4c4837d5d176ff320153dd95a9481b8c76"},
  "modules": {
   "capex/adapters.js": {"v":null,"load":"boot","lazyGroup":null,"precache":false,"deps":[],"uses":["erp/overlay/boot.js"],"notDeps":[],"owner":"prompts/CAPEX_DASHBOARD.md"},
@@ -32,7 +32,7 @@
   "erp/ad_access.js": {"v":6,"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":[],"owner":""},
   "erp/ad_attachment.js": {"v":2,"load":"lazy","lazyGroup":"erp/idempiere.html","precache":true,"deps":[],"uses":["common/file_store.js","erp/genesis.js"],"notDeps":[],"owner":"prompts/ERP_IDEMPIERE_UX_PARITY.md"},
   "erp/ad_callout.js": {"v":11,"load":"boot","lazyGroup":null,"precache":true,"deps":["erp/bigdecimal.js"],"uses":["erp/layered_registry.js"],"notDeps":[],"owner":"prompts/ERP_IDEMPIERE_UX_PARITY.md"},
-  "erp/ad_ctxhelp_app_rows.js": {"v":5,"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":[],"owner":""},
+  "erp/ad_ctxhelp_app_rows.js": {"v":6,"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":[],"owner":""},
   "erp/ad_ctxhelp_overlay.js": {"v":4,"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["erp/ad_ctxhelp_app_rows.js","erp/ad_ctxhelp_rows.js"],"notDeps":[],"owner":"prompts/VOCAB_MESSAGE_CATALOG.md"},
   "erp/ad_ctxhelp_rows.js": {"v":2,"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":[],"owner":""},
   "erp/ad_data.js": {"v":23,"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["erp/erp_i18n.js","erp/kernel_ops.js"],"notDeps":[],"owner":""},

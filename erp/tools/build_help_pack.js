@@ -178,6 +178,29 @@ function assignIds(sigs) {
   fs.writeFileSync(IDS_FILE, JSON.stringify({ note: reg.note, ids: sorted }, null, 0).replace(/("\d+":)/g, '\n$1').replace(/\}\}$/, '\n}}') + '\n');
   return out;
 }
+// §19.17 F7 (owner 2026-11-22: "Whole paragraphs + link"): legacy's AD_CtxHelpMsg.MsgText / _Trl.MsgText are FieldLength 2000 (AD_Column, read from the seed, never a
+//   number here); the twin's SQLite never enforced it, so 4 rows were over (3,047 / 2,450 / de 2,493 / zh 2,287). A message over the limit keeps WHOLE blocks (<p> / <ul> /
+//   <ol>) in order and ends with one link to the guide section where it stops: the section's own title + " …", its guide URL. Nothing is reworded.
+let _msgLen = null;
+function msgLen() {
+  if (_msgLen != null) return _msgLen;
+  const r = q("SELECT c.fieldlength n FROM ad_column c JOIN ad_table t ON t.ad_table_id=c.ad_table_id WHERE lower(t.tablename)='ad_ctxhelpmsg' AND lower(c.columnname)='msgtext'")[0];
+  if (!r || !(Number(r.n) > 0)) throw new Error('F7: AD_CtxHelpMsg.MsgText FieldLength not found in the seed');
+  return (_msgLen = Number(r.n));
+}
+const BLOCK_RE = /<(p|ul|ol)>[\s\S]*?<\/\1>/g;
+const attr = (x) => String(x).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+const moreLink = (p) => '<p><a href="' + attr(p.url) + '" target="_blank">' + attr(p.title) + ' …</a></p>';
+// parts = [{ html, url, title, key }] in source order -> { text, full, cut } (cut = the key of the section where the text stops, null when it fits whole)
+function fitParts(parts, max) {
+  const all = parts.map((p) => p.html).join(''); if (all.length <= max) return { text: all, full: all.length, cut: null };
+  const blocks = []; parts.forEach((p) => { const b = p.html.match(BLOCK_RE) || []; if (b.join('') !== p.html) throw new Error('F7: section ' + p.key + ' is not whole blocks'); b.forEach((x) => blocks.push({ x, p })); });
+  let out = '', i = 0;
+  for (; i < blocks.length; i++) { const next = blocks[i + 1]; if ((out + blocks[i].x + (next ? moreLink(next.p) : '')).length > max) break; out += blocks[i].x; }
+  if (i === 0) throw new Error('F7: the first block of ' + blocks[0].p.key + ' alone is over ' + max);
+  return { text: out + moreLink(blocks[i].p), full: all.length, cut: blocks[i].p.key };
+}
+const fitLog = (id, lang, f) => { if (f.cut) console.log('§CTXHELP_FIT help=' + id + ' lang=' + lang + ' full=' + f.full + ' kept=' + f.text.length + ' cut_at=' + f.cut + ' max=' + msgLen()); };
 // one help per distinct section list: every tab / process -> the sections that name it, in SECTIONS order; the targets with the same list share the help
 function buildHelps(sections) {
   const by = {}, order = [];
@@ -187,7 +210,7 @@ function buildHelps(sections) {
     const h = helps[at[sig]]; if (k[0] === 'T') h.tabs.push(by[k].v); else h.processes.push(by[k].v); });
   const ids = assignIds(helps.map((h) => h.keys));
   helps.forEach((h) => { h.id = ids[h.keys.join('+')]; h.name = h.sections.map((s) => s.name).join(' + '); if (h.name.length > 120) throw new Error('AD_CtxHelp.Name is 120 long: ' + h.name);
-    h.parts = h.sections.map((s) => titleP(s.name) + s.html); h.msgtext = h.parts.join(''); h.time = h.sections.map((s) => s.time).sort().pop(); });
+    h.parts = h.sections.map((s) => titleP(s.name) + s.html); const f = fitParts(h.sections.map((s, i) => ({ html: h.parts[i], url: s.url, title: s.name, key: s.key })), msgLen()); fitLog(h.id, 'en_US', f); h.msgtext = f.text; h.time = h.sections.map((s) => s.time).sort().pop(); });
   return helps.sort((a, b) => a.id - b.id);
 }
 // §19.16 C2 (VOCAB_MESSAGE_CATALOG): the same how-to rows in LEGACY's shape — AD_CtxHelp (CtxType T) + AD_CtxHelpMsg, linked from the window's first tab
@@ -225,7 +248,10 @@ function buildCtxTrl(lang, legacyIds, helps, link) {
   legacyIds.forEach(published);
   helps.forEach((h) => {
     if (published(h.id) || !h.sections.some((s) => tr(mach[s.trlId]))) return;
-    out.push({ id: h.id, lang, source: 'machine', istranslated: 'N', text: h.sections.map((s, i) => tr(mach[s.trlId]) ? linkParas(mach[s.trlId].text, link) : h.parts[i]).join('') });
+    // §19.17 F7: each language fitted on its own text; a translated section's link carries its translated title
+    const parts = h.sections.map((s, i) => { const t = tr(mach[s.trlId]) ? linkParas(mach[s.trlId].text, link) : h.parts[i], m = /^<p><strong>([\s\S]*?)<\/strong><\/p>/.exec(t); return { html: t, url: s.url, title: m ? ent(m[1].replace(/<[^>]+>/g, '')) : s.name, key: s.key }; });
+    const f = fitParts(parts, msgLen()); fitLog(h.id, lang, f);
+    out.push({ id: h.id, lang, source: 'machine', istranslated: 'N', text: f.text });
   });
   return out;
 }

@@ -23,9 +23,10 @@
 //   §19.16 C5 (K9): a tenant admin types their own message in the Context Help window; with no reload, and after one, the help box shows it (their row first, legacy's client order).
 //   Reds C2: CTX_BREAK=nolink (the app file without its AD_Tab updates) -> K6 FAIL; CTX_BREAK=dropsec (one how-to dropped) -> K6 FAIL.
 // Reds: CTX_BREAK=nomsg (the rows file without its ad_ctxhelpmsg row) -> K1 FAIL; CTX_BREAK=patch (one line appended to the hashed patch) -> K5 FAIL; CTX_BREAK=nooverlay (page without the overlay) -> K3 FAIL.
+//   §19.17 F7 (K6 widened, new K11): a message over MsgText's FieldLength keeps whole blocks and ends with a link to the guide section; every row fits (red CTX_BREAK=nofit).
 //   §19.17 F2 (K10 widened): where a place has a message, the record's own Name / Description / Help comes FIRST, then the message (red CTX_BREAK=nodictfirst).
 //   §19.17 F4 (K10): the How To panel follows the place in view (tab / process / Home), as legacy's renderCtxHelp; with no message a tab shows its own Name / Description / Help.
-// Run: node erp/tests/witness_ctxhelp_overlay.js   Env: CTX_BREAK=nomsg|patch|nooverlay|nolink|noproc|dropsec|nosetup|nomachine|pubtext|rawseed|nolisten|nowait|noclientorder|winkey|nodict|notabtrl|nodictfirst  NOPAGE=1  ONLYEDIT=1 (K9 alone)  ONLYTABS=1 (K10 alone)
+// Run: node erp/tests/witness_ctxhelp_overlay.js   Env: CTX_BREAK=nomsg|patch|nooverlay|nolink|noproc|dropsec|nosetup|nomachine|pubtext|rawseed|nolisten|nowait|noclientorder|winkey|nodict|notabtrl|nodictfirst|nofit  NOPAGE=1  ONLYEDIT=1 (K9 alone)  ONLYTABS=1 (K10 alone)
 'use strict';
 const fs = require('fs'), path = require('path'), cp = require('child_process'), crypto = require('crypto');
 const ERP = path.join(__dirname, '..'), ROOT = path.join(ERP, '..'), BR = process.env.CTX_BREAK || '';
@@ -55,6 +56,10 @@ function appData() {   // the app's how-to rows; CTX_BREAK=nolink drops the AD_T
   if (BR === 'noproc') A.rows = A.rows.filter((s) => !/^UPDATE ad_process /.test(s));   // §19.17 F1: the process targets (CtxType P) lose their link
   if (BR === 'nomachine') A.rows = A.rows.filter((s) => !/^INSERT OR IGNORE INTO ad_ctxhelpmsg_trl \(ad_client_id, ad_ctxhelpmsg_id, [^)]*\) VALUES \(0, 1\d{6},/.test(s));
   if (BR === 'dropsec') { const last = A.links.pop(); A.rows = A.rows.filter((s) => s.indexOf(String(last.help)) < 0); }
+  if (BR === 'nofit') {   // §19.17 F7 red: the rows file before the fit (main at F2) - 4 rows over AD_CtxHelpMsg.MsgText's FieldLength
+    const f = path.join(require('os').tmpdir(), 'ctx_nofit_' + process.pid + '.js'); fs.writeFileSync(f, cp.execSync('git show ' + (process.env.NOFIT_REF || '0fa163b8') + ':erp/ad_ctxhelp_app_rows.js', { cwd: ROOT, maxBuffer: 1 << 26, encoding: 'utf8' }));
+    try { return JSON.parse(JSON.stringify(require(f))); } finally { fs.unlinkSync(f); }
+  }
   if (BR === 'nosetup') {   // §19.17 F5: the rows file as it was before the setup guide (main at C4, 56f54c87): the setup guide's tabs / processes lose their sections
     const f = path.join(require('os').tmpdir(), 'ctx_nosetup_' + process.pid + '.js'); fs.writeFileSync(f, cp.execSync('git show ' + (process.env.NOSETUP_REF || '56f54c87') + ':erp/ad_ctxhelp_app_rows.js', { cwd: ROOT, maxBuffer: 1 << 26, encoding: 'utf8' }));
     try { return JSON.parse(JSON.stringify(require(f))); } finally { fs.unlinkSync(f); }
@@ -147,6 +152,7 @@ async function nodePart() {
       secN[s.key] = 0; secOk[s.key] = 0;
     });
     let tN = 0, found = 0, same = 0, typeOk = 0; const bad = [];
+    let cutN = 0; const secCut = {}, MSGLEN = Number((exec1(db6, "SELECT c.FieldLength FROM AD_Column c JOIN AD_Table t ON t.AD_Table_ID=c.AD_Table_ID WHERE lower(t.TableName)='ad_ctxhelpmsg' AND lower(c.ColumnName)='msgtext'")[0] || [])[0]);   // §19.17 F7: legacy's own column length, read from the dictionary
     const lookup = (table, col, rid) =>   // MCtxHelpMsg.getCtxHelpID (MCtxHelpMsg.java:170-204): CTXTYPE_Tab -> AD_Tab, CTXTYPE_Process -> AD_Process; no CtxType filter
       (exec1(db6, 'SELECT t.AD_CtxHelp_ID FROM ' + table + " t, AD_CtxHelp h WHERE t.AD_CtxHelp_ID=h.AD_CtxHelp_ID AND t.IsActive='Y' AND h.IsActive='Y' AND h.AD_Client_ID IN (0, " + CLIENT + ") AND h.AD_Org_ID IN (0, " + ORG + ') AND t.' + col + '=' + rid + ' ORDER BY h.AD_Client_ID DESC, h.AD_Org_ID DESC, h.AD_CtxHelp_ID DESC')[0] || [])[0];
     order.forEach((k) => {
@@ -157,17 +163,32 @@ async function nodePart() {
       tN++; secs.forEach((s) => { secN[s.key]++; });
       // MCtxHelpMsg.get: the message (MCtxHelpMsg.java:96-100)
       const msg = hid ? (exec1(db6, "SELECT msgtext FROM AD_CtxHelpMsg WHERE IsActive = 'Y' AND AD_Client_ID IN (0, " + CLIENT + ")  AND AD_Org_ID IN (0, " + ORG + ")  AND AD_CtxHelp_ID = " + hid + ' ORDER BY AD_Client_ID DESC, AD_Org_ID DESC, AD_CtxHelpMsg_ID DESC')[0] || [])[0] : null;
-      const ct = hid ? (exec1(db6, 'SELECT ctxtype FROM ad_ctxhelp WHERE ad_ctxhelp_id=' + hid)[0] || [])[0] : null, got = plain(msg);
+      // §19.17 F7: a message over AD_CtxHelpMsg.MsgText's FieldLength keeps whole blocks and ends with ONE link to the guide section where it stops (title + " …")
+      const more = msg ? /<p><a href="([^"]*)" target="_blank">([^<]*) …<\/a><\/p>$/.exec(msg) : null, body = more ? msg.slice(0, more.index) : msg;
+      const ct = hid ? (exec1(db6, 'SELECT ctxtype FROM ad_ctxhelp WHERE ad_ctxhelp_id=' + hid)[0] || [])[0] : null, got = plain(body);
+      const cutSec = more ? secs.find((s) => SRC.DOCS[s.doc].url + '#' + s.anchor === more[1].replace(/&amp;/g, '&')) : null;
+      const cutOk = !!(more && want && cutSec && got.length < want.length && (want + ' ').indexOf(got + ' ') === 0 && msg.length <= MSGLEN);
       if (msg && Number(hid) === exp.help) found++; else bad.push(what + ': ' + (msg ? 'another help ' + hid : 'no message'));
-      if (msg && want && got === want) { same++; secs.forEach((s) => { secOk[s.key]++; }); } else if (msg) bad.push(what + ' text differs from the guides (' + got.length + ' vs ' + (want || '').length + ' chars)');
+      if (msg && want && !more && got === want) { same++; secs.forEach((s) => { secOk[s.key]++; }); }
+      else if (cutOk) { same++; cutN++; L('K6 ' + what + ' cut at the limit: ' + msg.length + ' of max ' + MSGLEN + ' chars, the guide text starts it word for word, link to ' + cutSec.key + ' "' + more[2] + '"');
+        const at = secs.indexOf(cutSec); secs.forEach((s, i) => { if (i < at) secOk[s.key]++; else secCut[s.key] = 1; }); }
+      else if (msg) bad.push(what + ' text differs from the guides (' + got.length + ' vs ' + (want || '').length + ' chars' + (more ? ', a cut link to ' + more[1] : '') + ')');
       if (exp.help != null && ct === (exp.tabs.length ? 'T' : 'P')) typeOk++;
       L('K6 ' + what + ' -> help ' + (hid || 'none') + ' ctxtype=' + ct + ' text ' + (msg ? (got === want ? '== guides' : 'DIFFERS') : 'none') + ' ' + got.length + ' chars "' + got.slice(0, 50) + '"');
     });
-    const sK = Object.keys(secN), sOk = sK.filter((x) => secN[x] > 0 && secOk[x] === secN[x]), byDoc = (d) => SRC.SECTIONS.filter((s) => s.doc === d);
+    const sK = Object.keys(secN), sOk = sK.filter((x) => secN[x] > 0 && (secOk[x] === secN[x] || secCut[x])), byDoc = (d) => SRC.SECTIONS.filter((s) => s.doc === d);
     L('K6 sections on every one of their targets: ' + Object.keys(SRC.DOCS).map((d) => SRC.DOCS[d].file + ' ' + byDoc(d).filter((s) => sOk.indexOf(s.key) >= 0).length + ' of ' + byDoc(d).length).join(', '));
-    chk('K6 legacy\'s lookup finds the help of ' + found + ' of ' + tN + ' targets (tabs + processes named by ' + sK.length + ' sections of the two guides), its text == those sections\' own text in source order ' + same + ' of ' + tN + ', CtxType right ' + typeOk + ' of ' + tN + '; sections whole on all their targets ' + sOk.length + ' of ' + sK.length,
+    chk('K6 legacy\'s lookup finds the help of ' + found + ' of ' + tN + ' targets (tabs + processes named by ' + sK.length + ' sections of the two guides), its text == those sections\' own text in source order ' + same + ' of ' + tN + ' (' + cutN + ' cut at whole blocks at the ' + MSGLEN + '-char limit, ending in the guide link)' + ', CtxType right ' + typeOk + ' of ' + tN + '; sections whole on all their targets ' + sOk.length + ' of ' + sK.length,
       tN > 0 && found === tN && same === tN && typeOk === tN && sOk.length === sK.length, bad.join(' ; '));
   }
+  // K11 (§19.17 F7) every context-help message row fits legacy's column: AD_CtxHelpMsg.MsgText and AD_CtxHelpMsg_Trl.MsgText FieldLength (the dictionary, read here; varchar(2000)
+  //   in legacy, so a longer row is refused there and fails the twin's own field check). Red: CTX_BREAK=nofit (the rows file before the fit) -> FAIL.
+  { const lim = (t) => Number((exec1(db6, "SELECT c.FieldLength FROM AD_Column c JOIN AD_Table tb ON tb.AD_Table_ID=c.AD_Table_ID WHERE lower(tb.TableName)='" + t + "' AND lower(c.ColumnName)='msgtext'")[0] || [])[0]);
+    const lm = lim('ad_ctxhelpmsg'), lt = lim('ad_ctxhelpmsg_trl'), m = exec1(db6, 'SELECT AD_CtxHelpMsg_ID, length(MsgText) FROM AD_CtxHelpMsg'), t = exec1(db6, 'SELECT AD_CtxHelpMsg_ID, AD_Language, length(MsgText) FROM AD_CtxHelpMsg_Trl');
+    const over = m.filter((r) => r[1] > lm).map((r) => 'msg ' + r[0] + ' ' + r[1]).concat(t.filter((r) => r[2] > lt).map((r) => 'trl ' + r[0] + '/' + r[1] + ' ' + r[2]));
+    L('K11 limits MsgText ' + lm + ' / _Trl ' + lt + '; longest message ' + Math.max(...m.map((r) => r[1])) + ', longest translation ' + Math.max(...t.map((r) => r[2])));
+    if (!(lm > 0) || !(lt > 0)) incon('K11', 'no FieldLength for MsgText in the dictionary');
+    else chk('K11 every context-help message fits the column: ' + (m.length - over.filter((x) => x.startsWith('msg')).length) + ' of ' + m.length + ' messages <= ' + lm + ', ' + (t.length - over.filter((x) => x.startsWith('trl')).length) + ' of ' + t.length + ' translations <= ' + lt, over.length === 0 && m.length > 0, over.join(' ; ')); }
   // K7 the translations (C3), on db6
   {
     const CACHE = SRC.CACHE, langs = Object.keys(SRC.SOURCES);
@@ -194,13 +215,20 @@ async function nodePart() {
       // §19.17 F5: a machine row translates ONE section (its trlId). A help with a machine section has ONE twin row = its sections in order, the machine text where there is one
       //   (linked exactly when a bold term is one of the language's window names), the English section where there is none; IsTranslated N; never over a published row.
       Object.keys(M).forEach((id) => { uN++; if (full.some((x) => x.sections.some((k) => String(secOf[k].trlId) === id))) uOk++; else bad.push('machine row ' + id + ' ' + lang + ' translates no section in use'); });
+      const LIM7 = Number((exec1(db6, "SELECT c.FieldLength FROM AD_Column c JOIN AD_Table tb ON tb.AD_Table_ID=c.AD_Table_ID WHERE lower(tb.TableName)='ad_ctxhelpmsg_trl' AND lower(c.ColumnName)='msgtext'")[0] || [])[0]);
       full.forEach((x) => {
         if (!x.sections.some((k) => trM(secOf[k].trlId))) return;
         if (pubKey[x.help + '|' + lang]) { shadow++; return; }
         mN++; const t = tw(x.help, lang), en = cut(msgs[x.help]), parts = t ? cut(t.text) : [];
         const want = x.sections.map((k, i) => trM(secOf[k].trlId) ? M[secOf[k].trlId].text : unl(en[i])).join('');
-        const linkOk = parts.length === x.sections.length && x.sections.every((k, i) => !trM(secOf[k].trlId) || /data-help-win=/.test(parts[i]) === bold(M[secOf[k].trlId].text));
-        if (t && unl(t.text) === want && t.it === 'N' && linkOk) mOk++; else bad.push('machine help ' + x.help + ' ' + lang + (t ? ' differs: text=' + (unl(t.text) === want) + ' it=' + t.it + ' link=' + linkOk : ' missing'));
+        // §19.17 F7: a row over MsgText's FieldLength keeps whole blocks of `want` and ends with ONE link to the guide section where it stops
+        const mo = t ? /<p><a href="([^"]*)" target="_blank">([^<]*) …<\/a><\/p>$/.exec(t.text) : null, tb = mo ? unl(t.text.slice(0, mo.index)) : (t ? unl(t.text) : null);
+        //   the oracle for a cut row is word space, as K6: each section = its machine text, or the English GUIDE section read here (the English message is itself cut)
+        const wantW = mo ? x.sections.map((k) => trM(secOf[k].trlId) ? plain(M[secOf[k].trlId].text) : (headingText(secOf[k].heading) + ' ' + (guideSection(docs[secOf[k].doc], secOf[k].heading, secOf[k].doc) || '')).trim()).join(' ') : null;
+        const textOk = t && (mo ? (plain(tb).length < wantW.length && (wantW + ' ').indexOf(plain(tb) + ' ') === 0 && t.text.length <= LIM7) : tb === want);
+        if (mo) L('K7 ' + lang + ' help ' + x.help + ' cut at the limit: ' + t.text.length + ' of max ' + LIM7 + ' chars, the full text starts it word for word: ' + textOk + ', link "' + mo[2] + '"');
+        const linkOk = (mo ? parts.length <= x.sections.length : parts.length === x.sections.length) && x.sections.every((k, i) => i >= parts.length || !trM(secOf[k].trlId) || /data-help-win=/.test(parts[i]) === bold(M[secOf[k].trlId].text));
+        if (t && textOk && t.it === 'N' && linkOk) mOk++; else bad.push('machine help ' + x.help + ' ' + lang + (t ? ' differs: text=' + textOk + ' it=' + t.it + ' link=' + linkOk : ' missing'));
       });
       // K8 (§19.16 C4, re-based in §19.17 F5): THE reader (erp/ctx_help.js) over this page DB returns every help of the generated file: its title = the first heading, its html = the
       //   rest (the language's row when it has one, else the English one, marked), and the places it serves = every linked tab's window (SUB tabs too) and every linked process.
