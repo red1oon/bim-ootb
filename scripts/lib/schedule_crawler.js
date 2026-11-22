@@ -69,12 +69,17 @@ function crawl(items, parentOf) {
 // a truth about support at all (bim-compiler prompts/4D_MODEL_INTEGRITY.md §Q.59). The election names ONE support per element from plan overlap, so it also names
 //   far  — a support that does not touch the element (boxes more than the owner's GAP apart in height): SampleCastle, 32 ground-floor windows "carried" by a slab 3 m up;
 //   tie  — a neighbour that starts at the SAME height (bases within the owner's EPS): two footings side by side, a pipe and its fitting. Neither stands on the other.
-// `early` is what is left: the support touches and is lower or higher than the element. far and tie are counted and printed, never ruled on.
+//   stack — the support stands ON the element (see below).
+// `early` is what is left: the support touches and is lower or higher than the element. far, tie and stack are counted and printed, never ruled on.
 function splitEarly(items, SS, SG) {
   const q = console.log; console.log = () => {}; let ma, des; try { ma = SS.midairAudit(items); des = SS.designatedSupport(items, SS.contactGraph(items)); } finally { console.log = q; }
-  const bad = new Set(ma.guids || []), early = [], far = [], tie = [];
+  const bad = new Set(ma.guids || []), early = [], far = [], tie = [], stack = [];
   items.forEach((T, i) => { if (!bad.has(T.guid) || des[i] < 0) return; const S = items[des[i]];
-    if (Math.max(S.bz - T.tz, T.bz - S.tz) > SG.GAP) far.push(T.guid); else if (Math.abs(S.bz - T.bz) <= SG.EPS) tie.push(T.guid); else early.push(T.guid); });
-  return { ma, early, far, tie };
+    if (Math.max(S.bz - T.tz, T.bz - S.tz) > SG.GAP) far.push(T.guid); else if (Math.abs(S.bz - T.bz) <= SG.EPS) tie.push(T.guid);
+    // stack — the named support sits ON the piece by the crawler's own truth (its base at the piece's top, not a later trade): "T hangs from S" and "S stands on T"
+    // cannot both be obeyed, no order satisfies both judges, and the simple truth (bottom-up) is the one a person on site accepts. Duplex: a duct tap under its fitting.
+    else if (Math.abs(T.tz - S.bz) <= TOUCH && T.bz < S.bz - TOUCH && !(typeof T.seq === 'number' && typeof S.seq === 'number' && T.seq > S.seq) && ovl(S, T)) stack.push(T.guid);
+    else early.push(T.guid); });
+  return { ma, early, far, tie, stack };
 }
 module.exports = { crawl, trade, splitEarly };
