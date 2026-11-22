@@ -348,7 +348,9 @@ function buildLegacySql(helps, trl) {
   const fit = (d, l, m) => "(SELECT x.dict || COALESCE(string_agg(b.html, '' ORDER BY b.k) FILTER (WHERE b.k <= x.j), '') || COALESCE(max(b.more) FILTER (WHERE b.k = x.j + 1), '')" +
     " FROM (SELECT y.dict, y.l, COALESCE((SELECT min(c.k) FROM (SELECT k, sum(length(html)) OVER (ORDER BY k) AS cum, nextlen FROM blk WHERE lang = y.l) c WHERE length(y.dict) + c.cum + c.nextlen > y.lim) - 1, (SELECT max(k) FROM blk WHERE lang = y.l)) AS j" +
     " FROM (SELECT " + d + " AS dict, " + l + " AS l, " + m + " AS lim) y) x JOIN blk b ON b.lang = x.l GROUP BY x.dict, x.j)";
-  const blocksOf = (parts) => { const bl = []; parts.forEach((pp) => (pp.html.match(BLOCK_RE) || []).forEach((x) => bl.push({ x, p: pp }))); return bl; };
+  // §19.17 F6.1: the twin's window / process links (<a href="#" data-help-win|proc>) do nothing in legacy (no handler): there they are a plain bold term; the guide links (https) stay
+  const unlink = (h) => h.replace(/<a [^>]*data-help-(?:win|proc)="[^"]*"[^>]*>([\s\S]*?)<\/a>/g, '<b>$1</b>');
+  const blocksOf = (parts) => { const bl = []; parts.forEach((pp) => (unlink(pp.html).match(BLOCK_RE) || []).forEach((x) => bl.push({ x, p: pp }))); return bl; };
   const out = [], targets = [];
   helps.forEach((h) => {
     const langs = [['en', h.sections.map((sx, i) => ({ html: h.parts[i], url: sx.url, title: sx.name, key: sx.key }))]].concat(trl.filter((r) => r.id === h.id && r.source === 'machine' && r.parts).map((r) => [r.lang, r.parts]));
