@@ -15,11 +15,11 @@
   function Y(v) { return v === 'Y' || v === true; }
   function mod(n) { var NODE = typeof module !== 'undefined' && module.exports; return NODE ? require('./' + n) : (typeof window !== 'undefined' ? window : globalThis)[{ model_asi: 'ModelAsi', model_cost: 'ModelCost', model_master: 'ModelMaster' }[n]]; }
 
-  // updateBalanceAmt :543-595: cost = MCost.getCost(product, asi, as, org, costingMethod, MovementQty, 0, true, MovementDate, null, false) -> project.ProjectBalanceAmt += cost
+  // updateBalanceAmt :543-595: cost = MCost.getCost(product, asi, as, org, as.getCostingMethod(), MovementQty, 0, true, MovementDate, null, false) -> project.ProjectBalanceAmt += cost
   function updateBalanceAmt(trx, pi) {
     var MC = mod('model_cost'), MM = mod('model_master'), p = T.product(trx, pi.m_product_id), as = MM.clientAcctSchemas(trx, pi.ad_client_id)[0], cost = null;
     if (nz(pi.m_inoutline_id) || nz(pi.s_timeexpenseline_id)) trx.say('§MODEL-UNPORTED-DEP MProjectIssue.updateBalanceAmt inOutLine.getPOCost / expenseLine.getLaborCost (:559-566) - cost taken from MCost like the plain issue');
-    cost = MC.getProductCosts(trx, p, pi.m_attributesetinstance_id || 0, as, pi.ad_org_id, null, D(pi.movementqty), 0, true, pi.movementdate, null, false);
+    cost = MC.getProductCosts(trx, p, pi.m_attributesetinstance_id || 0, as, pi.ad_org_id, as.costingmethod, D(pi.movementqty), 0, true, pi.movementdate, null, false);   // :577 as.getCostingMethod(): the SCHEMA's method, not null (MCost.getCost :136-138 would then take the product CATEGORY's first; ledger row 12, W-PROJECT-ISSUE-COST)
     if (cost != null) { var proj = trx.get('c_project', pi.c_project_id); trx.update('c_project', proj, { projectbalanceamt: N(D(proj.projectbalanceamt).add(D(cost))) }); }
     if (Number(pi.reversal_id || 0) < 0 && (cost == null || D(cost).signum() <= 0)) throw new Error('Product: (' + p.name + ') is not present at Locator: (' + pi.m_locator_id + ') for ASI: (' + (pi.m_attributesetinstance_id || 0) + ')');   // :583-592 literally `getReversal_ID() < 0`: a NEGATIVE id only (the Java never tests an unset id), so a plain issue never throws here
     return cost;
