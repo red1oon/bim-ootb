@@ -13,7 +13,9 @@ let espree;
 try { espree = require(path.join(__dirname, '..', '..', 'node_modules', 'espree')); }
 catch (e) { console.error('§NEED_DEPS espree is not installed: run  node scripts/setup.js'); process.exit(3); }   // §F.39: one line, not a stack trace
 
-const WHOLE = /^([^\s?#'"`<>]+\.(?:js|css|json|wasm|mjs))\?v=(\d+)$/;   // the whole value is file?v=digits
+// B4-HASH (bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md Part B, "B4-HASH BUILD SPEC"): the code after `?v=` is the first 8 hex of the file's SHA-256; a legacy counting number
+//   (the pinned service-worker register lines keep theirs) is still read. `v` is a STRING everywhere (a number would lose the leading zeros of a hex code).
+const WHOLE = /^([^\s?#'"`<>]+\.(?:js|css|json|wasm|mjs))\?v=(\d+|[0-9a-f]{8})$/;   // the whole value is file?v=<digits | 8 hex>
 const RAW_TEXT = new Set(['script', 'style', 'textarea', 'title']);
 
 /**
@@ -55,7 +57,7 @@ function readHtml(src) {
       const c = low.indexOf('</script', open), bodyEnd = c < 0 ? n : c, gt = c < 0 ? n : src.indexOf('>', c) + 1, s = get('src');
       if (s) {
         const w = WHOLE.exec(s.value), oe = get('onerror');
-        const as = w ? w[1] : s.value, v = w ? +w[2] : null, onerror = oe ? oe.value : null;
+        const as = w ? w[1] : s.value, v = w ? w[2] : null, onerror = oe ? oe.value : null;
         const raw = src.slice(lt, gt);
         // B3-OUT-Q1 (bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md "B3-OUT ADDENDUM"): a tag with attributes other than src / onerror (data-*, async, line breaks)
         //   keeps them verbatim: `keep` = [the text from `<script` up to the opening quote of the src value, the text after its closing quote]; the generator owns only the value.
@@ -64,7 +66,7 @@ function readHtml(src) {
       } else if (bodyEnd > open) out.inline.push({ start: open, end: bodyEnd, type: (get('type') || {}).value || '' });
       i = gt; continue;
     }
-    for (const a of attrs) { const w = a.q && a.value != null && WHOLE.exec(a.value); if (w) out.assets.push({ start: a.vs, end: a.ve, as: w[1], v: +w[2] }); }
+    for (const a of attrs) { const w = a.q && a.value != null && WHOLE.exec(a.value); if (w) out.assets.push({ start: a.vs, end: a.ve, as: w[1], v: w[2] }); }
     if (RAW_TEXT.has(name)) { const c = low.indexOf('</' + name, open); i = c < 0 ? n : c; continue; }
     i = open;
   }
@@ -102,7 +104,7 @@ function readJsSites(src, offset) {
   walk(ast, n => {
     if (n.type === 'Literal' && typeof n.value === 'string') {
       const w = WHOLE.exec(n.value), raw = body.slice(n.range[0], n.range[1]);
-      if (w && raw === raw[0] + n.value + raw[0]) out.sites.push({ start: off + n.range[0], end: off + n.range[1], as: w[1], v: +w[2], q: raw[0] });
+      if (w && raw === raw[0] + n.value + raw[0]) out.sites.push({ start: off + n.range[0], end: off + n.range[1], as: w[1], v: w[2], q: raw[0] });
       else if (n.value.indexOf('?v=') >= 0) out.partial++;
     } else if (n.type === 'TemplateElement' && n.value && String(n.value.raw).indexOf('?v=') >= 0) out.partial++;
   });

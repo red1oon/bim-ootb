@@ -3,17 +3,17 @@
 // SPDX-License-Identifier: MIT
 //
 // # ⚠ DO NOT REMOVE — SPEC (W-BUMP), bim-compiler prompts/EDITOR_MAINTAINABILITY_STUDY.md §8 S5
-// ISSUE: a precached file edited by hand is served STALE, with no error, unless three other edits are made too:
-//        its `?v=N` in every page that loads it, and `CACHE_VERSION` in that page's service worker. Doing that by
+// ISSUE: a precached file edited by hand is served STALE, with no error, unless two other edits are made too:
+//        its `?v=` code in every page that loads it, and `CACHE_VERSION` in that page's service worker. Doing that by
 //        hand is the commonest way a by-hand fix "doesn't work" (MODELLER_MASTER: "check the service-worker
 //        CACHE_VERSION and whether the file is precached").
-// WHAT:  for each file given, raise it in the modules.json of every app that lists it (the module's one `v` and every site of it: page tags, a loader's
-//        `'<path>?v=N'` lazy-list literals, inline page literals), then the changed loader's own ?v= (it is precached); add 1 to the app's CACHE_VERSION
-//        once, for a site in a file of the app's own folder only (B3-OUT rule 5: no service worker serves a file outside it). Lazy loading is kept as
-//        is: a not-precached file gets a NOTE (normal for lazy modules), never an edit to PRECACHE_ASSETS.
-//        B3-OUT (bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md Part B, "B3-OUT BUILD SPEC"; bim-ootb #3379): the old regex path (any page / loader no manifest
-//        owns) is DELETED. A file no modules.json lists is not edited; a target none names exits 2. `archive/gallery.html` is FROZEN (gen_manifest.js).
-//        DRY RUN by default — prints what it would change. --write applies. Touches nothing else.
+// WHAT:  B4-HASH (bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md Part B, "B4-HASH BUILD SPEC"; bim-ootb #3397): NO number is raised any more. Every `?v=` a list writes (page tags, a loader's
+//        `'<path>?v=CODE'` lazy-list literals, inline page literals) is the first 8 hex of the SHA-256 of the file it names, as the file stands now; a loader's own code follows its children's
+//        (children first). The press writes ALL stale codes of every app that lists a file given (so it cannot miss a page) and adds 1 to that app's CACHE_VERSION once, when the code of a
+//        site in a file of the app's own folder changed (B3-OUT rule 5: no service worker serves a file outside it); nothing changed, nothing written, nothing raised.
+//        A not-precached file gets a NOTE (normal for lazy modules), never an edit to PRECACHE_ASSETS. A file no modules.json lists with a coded site exits 2.
+//        `archive/gallery.html` is FROZEN (gen_manifest.js). `--check` of gen_manifest.js refuses a code that is not its file's (CI's net for a forgotten press).
+//        DRY RUN by default — prints what it would change, and one §BUMP_CODE line per target. --write applies. Touches nothing else.
 // USE:   node scripts/bump.js viewer/still_fault.js            (dry run)
 //        node scripts/bump.js --changed [--check|--write]     (§F.34: every changed file a page loads; --check = both gates, nothing written)
 //        node scripts/bump.js viewer/still_fault.js --write    (apply; then run tests/audit_sw_precache.js)
@@ -54,28 +54,32 @@ const { trackedFiles } = require('./lib/tracked_files.js');   // git ls-files, o
 const listFiles = ext => trackedFiles(ROOT).filter(f => f.endsWith(ext));
 const rel = p => path.relative(ROOT, p).split(path.sep).join('/');
 
-// B1 (bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md Part B, "B1 BUILD SPEC" §4; bim-ootb #3244): an app with a committed <app>/modules.json is
-//   bumped IN ITS MANIFEST: the module's one `v` and the app's cacheVersion go up there, then the generator writes the app's pages, loaders,
-//   inline page literals (owner B1-Q2: they go up with their module) and sw.js. A shared file (e.g. viewer/rates.js) goes up in every app that lists it
-//   in one run. Command lines, exit codes and §BUMP lines are as before.
+// B4-HASH (bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md Part B, "B4-HASH BUILD SPEC" §4-§5; bim-ootb #3397): the press has NO arithmetic left. Every list owner (modules.json) writes
+//   every `?v=` it holds as the first 8 hex of the SHA-256 of the target file's bytes (children first: a loader's bytes hold its children's codes), and steps the app's CACHE_VERSION
+//   by one when the code of a site in a file of the app's own folder changed. The press writes ALL stale codes of the apps that list a target (so it cannot miss a page); a target
+//   no list gives a coded site to exits 2 as before. Command lines, exit codes, the parity gate and the touch gate are as before.
 const MS = require('./lib/manifest_source.js');
 const RESULTS = require(path.join(__dirname, '..', 'witness_kit', 'results.js'));   // E-2: the touch gate's runs are recorded too
 const SRC = {};
 for (const app of require('./gen_manifest.js').APPS) if (MS.hasSource(ROOT, app)) {
   const m = JSON.parse(fs.readFileSync(path.join(ROOT, MS.sourceFile(app)), 'utf8'));
-  SRC[app] = { m, dir: path.posix.dirname(m.sw), bumped: new Set(), why: [] };
+  SRC[app] = { m, dir: path.posix.dirname(m.sw), w: null };
 }
+// what a press would write, per app, once: the plan (which sites carry which file's code) and the changes
+for (const app of Object.keys(SRC)) {
+  const S = SRC[app]; S.w = MS.write(ROOT, app, { manifest: S.m, raise: true });
+  if (S.w.fails.length) { S.w.fails.forEach(f => console.log('§BUMP_ERR manifest_write ' + f)); console.log('§BUMP_ERR the manifest could not write its files; run node scripts/gen_manifest.js --check written=0'); process.exit(1); }
+}
+const codedBy = f => Object.values(SRC).reduce((n, S) => n + (S.w.coded.get(f) || 0), 0);   // how many sites carry file f's code
 // §F.34 --changed (decision F-24): the targets are every file changed against the merge-base with origin/main (committed, working tree, untracked)
-//   that a modules.json lists with a raisable ?v= site (the files a bump can raise); the rest (prompts, tests, tools) are counted and skipped.
+//   that a modules.json lists with a coded site (the files a press can write a code for); the rest (prompts, tests, tools) are counted and skipped.
 const CHANGED = argv.includes('--changed'), CHECK = argv.includes('--check');
 if (CHANGED) {
   const g = a => { try { return cp.execFileSync('git', a, { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }); } catch (e) { return null; } };
   const mb = (g(['merge-base', 'HEAD', 'origin/main']) || '').trim();
   if (!mb) { console.log('§BUMP_ERR changed_needs_git_and_origin_main written=0'); process.exit(1); }
   const files = [...new Set(((g(['diff', '--name-only', mb]) || '') + (g(['ls-files', '--others', '--exclude-standard']) || '')).split('\n').filter(f => f && fs.existsSync(path.join(ROOT, f))))];
-  const refd = new Set();
-  for (const a of Object.keys(SRC)) for (const mod of MS.expand(SRC[a].m).b0.modules) if (MS.bumpSites(mod).length) refd.add(mod.file);   // B2: a module whose only sites are pinned is no bump target
-  const pick = files.filter(f => refd.has(f));
+  const pick = files.filter(f => codedBy(f) > 0);   // a module whose only sites are pinned is no target
   console.log(`§BUMP_CHANGED base=${mb.slice(0, 12)} changed=${files.length} bumpable=${pick.length} skipped=${files.length - pick.length} files=${pick.join(',')}`);
   if (!pick.length) { console.log('§BUMP_DONE targets=0 nothing to bump (no changed file is loaded with ?v=)'); process.exit(0); }
   targets.push(...pick);
@@ -86,47 +90,23 @@ for (const t of targets) {
   if (!fs.existsSync(abs)) { console.log(`§BUMP_ERR missing=${t} written=0`); process.exit(2); }
   want.add(rel(abs));
 }
+for (const w of want) if (!codedBy(w)) { console.log(`§BUMP_ERR not_loaded_by_any_page_or_loader=${w} written=0`); process.exit(2); }
 
 const edits = new Map();          // file -> new text
-const hits = new Map([...want].map(w => [w, 0]));
 const text = f => (edits.has(f) ? edits.get(f) : fs.readFileSync(path.join(ROOT, f), 'utf8'));
-let queue = [...want]; const done = new Set();
-for (let depth = 0; queue.length && depth < 4; depth++) {
-  const round = new Set(queue.filter(q => !done.has(q))); queue = [];
-  round.forEach(q => done.add(q));
-  if (!round.size) break;
-  for (const app of Object.keys(SRC)) {   // B1: the manifest path — one `v` per module, every site of it in the app
-    const S = SRC[app], { b0 } = MS.expand(S.m);
-    for (const mod of b0.modules) {
-      if (!round.has(mod.file) || S.bumped.has(mod.file) || mod.v == null) continue;
-      const sites = MS.bumpSites(mod);   // versioned, not pinned, never the file's reference to itself
-      if (!sites.length) continue;
-      S.bumped.add(mod.file); MS.raise(S.m, mod.file);   // B2: each site goes up by one from ITS OWN number
-      if (hits.has(mod.file)) hits.set(mod.file, hits.get(mod.file) + sites.length);
-      for (const x of sites) {
-        const k = x.kind === 'inline' ? 'inline' : x.in.endsWith('.html') ? 'page' : 'loader';
-        console.log(`§BUMP ${k}=${x.in} ref=${x.as} v=${x.v}->${x.v + 1}${k === 'loader' ? ' (lazy load list)' : k === 'inline' ? ' (inline page script, B1-Q2)' : ''} (manifest ${MS.sourceFile(app)})`);
-        if (x.in.startsWith(S.dir + '/')) S.why.push(x.in);   // B3-OUT rule 5: a site in a file outside the app's folder is served by no sw.js of the app: it adds nothing to CACHE_VERSION
-        if (k === 'loader') queue.push(x.in);   // the loader changed: its own ?v= goes up next round
-      }
-    }
-  }
-}
-for (const [w, n] of hits) if (!n) { console.log(`§BUMP_ERR not_loaded_by_any_page_or_loader=${w} written=0`); process.exit(2); }
-
 for (const app of Object.keys(SRC)) {
-  const S = SRC[app]; if (!S.bumped.size) continue;
-  if (S.why.length) {
-    const n = +S.m.cacheVersion.slice(1);
-    console.log(`§BUMP sw=${S.m.sw} CACHE_VERSION v${n}->v${n + 1} (for: ${[...new Set(S.why)].join(', ')}) (manifest ${MS.sourceFile(app)})`);
-    S.m.cacheVersion = 'v' + (n + 1);
+  const S = SRC[app];
+  for (const x of S.w.changes) {
+    const k = x.kind === 'inline' ? 'inline' : x.in.endsWith('.html') ? 'page' : 'loader';
+    console.log(`§BUMP ${k}=${x.in} ref=${x.as} v=${x.from == null ? '-' : x.from}->${x.to}${k === 'loader' ? ' (lazy load list)' : k === 'inline' ? ' (inline page script, B1-Q2)' : ''} (manifest ${MS.sourceFile(app)})`);
   }
-  const w = MS.write(ROOT, app, { manifest: S.m });
-  if (w.fails.length) { w.fails.forEach(f => console.log('§BUMP_ERR manifest_write ' + f)); console.log('§BUMP_ERR the manifest could not write its files; run node scripts/gen_manifest.js --check written=0'); process.exit(1); }
-  for (const [f, t] of w.out) if (t !== text(f)) edits.set(f, t);
+  if (S.w.cacheVersion) console.log(`§BUMP sw=${S.m.sw} CACHE_VERSION ${S.w.cacheVersion.from}->${S.w.cacheVersion.to} (for: ${[...new Set(S.w.changes.filter(c => c.inApp).map(c => c.in))].join(', ')}) (manifest ${MS.sourceFile(app)})`);
+  for (const [f, t] of S.w.out) if (t !== text(f)) edits.set(f, t);
   const pre = new Set(S.m.precacheOrder.map(e => path.posix.normalize(path.posix.join(app, e.split('?')[0]))));
   for (const x of want) if (S.m.modules[x] && !pre.has(x) && x.startsWith(S.dir + '/')) console.log(`§BUMP_NOTE not_precached file=${x} sw=${S.m.sw} — normal for a lazy module; add it to precacheOrder in ${MS.sourceFile(app)} only if it must work offline`);
 }
+// the code each target has now (the first 8 hex of its bytes as the press leaves them), and what the press had to write for it
+for (const w of want) { const buf = edits.has(w) ? Buffer.from(edits.get(w), 'utf8') : fs.readFileSync(path.join(ROOT, w)); console.log(`§BUMP_CODE file=${w} code=${MS.hash8(buf)} sites=${codedBy(w)} stale=${Object.values(SRC).reduce((n, S) => n + S.w.changes.filter(c => c.target === w).length, 0)}`); }
 
 // ---- ERP parity gate (F-16) -------------------------------------------------------------------------------------------
 // §F.32: the witnesses the bridge script names (`witness_x` with a witness_x.js beside it) and those whose source, or a local module it requires
@@ -307,5 +287,5 @@ if (WRITE || CHECK) touchGate();
 if (CHECK) { console.log(`§BUMP_CHECK verdict=PASS key=${treeKey().slice(0, 12)} targets=${want.size} (nothing written; --write on the same tree reuses this result)`); process.exit(0); }
 
 if (WRITE) for (const [f, t] of edits) fs.writeFileSync(path.join(ROOT, f), t);
-console.log(`§BUMP_DONE targets=${want.size} pages=${[...edits.keys()].filter(f => f.endsWith('.html')).length} loaders=${[...edits.keys()].filter(f => f.endsWith('.js') && !/(^|\/)sw\.js$/.test(f)).length} sw=${Object.values(SRC).filter(S => S.why.length).length} mode=${WRITE ? 'write' : 'dry-run'} written=${WRITE ? edits.size : 0}`);
+console.log(`§BUMP_DONE targets=${want.size} pages=${[...edits.keys()].filter(f => f.endsWith('.html')).length} loaders=${[...edits.keys()].filter(f => f.endsWith('.js') && !/(^|\/)sw\.js$/.test(f)).length} sw=${Object.values(SRC).filter(S => S.w.cacheVersion).length} mode=${WRITE ? 'write' : 'dry-run'} written=${WRITE ? edits.size : 0}`);
 if (!WRITE) console.log('dry run — nothing written. Add --write to apply, then run: node tests/audit_sw_precache.js');

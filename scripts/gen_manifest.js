@@ -27,7 +27,7 @@ const FROZEN = ['archive/gallery.html'];
 const SKIP_JS = /(^|\/)(lib|node_modules|tests?)\/|\.min\.js$|witness|(^|\/)sw\.js$/;
 const SITE = { type: 'object', required: ['in', 'at', 'kind', 'as', 'v'], additionalProperties: false, properties: {
   in: { type: 'string', minLength: 1 }, at: { type: 'integer', minimum: 0 }, kind: { enum: ['tag', 'asset', 'inline', 'lazy'] },
-  as: { type: 'string', minLength: 1 }, v: { type: ['integer', 'null'], minimum: 0 }, onerror: { type: 'string' }, q: { enum: ['"', '`'] }, keep: { type: 'array', items: { type: 'string' }, minItems: 2, maxItems: 2 } } };
+  as: { type: 'string', minLength: 1 }, v: { type: ['string', 'null'] }, onerror: { type: 'string' }, q: { enum: ['"', '`'] }, keep: { type: 'array', items: { type: 'string' }, minItems: 2, maxItems: 2 } } };
 const SCHEMA = { type: 'object', additionalProperties: false,
   required: ['app', 'sw', 'cacheVersion', 'depsDeclared', 'pages', 'loaders', 'modules', 'precacheOrder'],
   properties: {
@@ -37,7 +37,7 @@ const SCHEMA = { type: 'object', additionalProperties: false,
     modules: { type: 'array', minItems: 1, items: { type: 'object', additionalProperties: false,
       required: ['file', 'deps', 'load', 'lazyGroup', 'precache', 'v', 'sites'],
       properties: { file: { type: 'string', minLength: 1 }, deps: { type: 'array', items: { type: 'string' } }, load: { enum: ['boot', 'lazy'] },
-        lazyGroup: { type: ['string', 'null'] }, precache: { type: 'boolean' }, v: { type: ['integer', 'null'] }, sites: { type: 'array', minItems: 1, items: SITE } } } } } };
+        lazyGroup: { type: ['string', 'null'] }, precache: { type: 'boolean' }, v: { type: ['string', 'null'] }, sites: { type: 'array', minItems: 1, items: SITE } } } } } };
 
 /**
  * The sites of one owned file, in file order. A page: script tags, versioned assets, whole literals in its JS inline bodies.
@@ -234,13 +234,12 @@ function check(root) {
     m.modules.forEach(x => x.sites.forEach(s => k[s.kind]++));
     Object.keys(k).forEach(x => { tot[x] += k[x]; }); tot.precache += m.precacheOrder.length;
     const boot = m.modules.filter(x => x.load === 'boot'), lazy = m.modules.filter(x => x.load === 'lazy');
-    const dis = m.modules.filter(x => new Set(x.sites.filter(s => s.v != null).map(s => s.v)).size > 1);
-    const below = dis.reduce((n, x) => { const mx = Math.max(...x.sites.map(s => s.v || 0)); return n + x.sites.filter(s => s.v != null && s.v < mx).length; }, 0);
+    const dis = m.modules.filter(x => new Set(x.sites.filter(s => s.v != null).map(s => s.v)).size > 1);   // B4-HASH: a module whose sites carry two different codes (a code is one per file)
     const modFiles = new Set(m.modules.map(x => x.file)), preFiles = m.precacheOrder.map(e => P.normalize(P.join(app, e.split('?')[0])));
     const dup = m.precacheOrder.length - new Set(m.precacheOrder).size, mjs = m.precacheOrder.filter(e => /^plugins\/.*\.mjs$/.test(e)).length;
     const mjsDisk = app === 'erp' ? trackedFiles(root, 'erp/plugins/').filter(f => f.endsWith('.mjs')).length : 0;
     lines.push(`§MANIFEST_APP app=${app} pages=${m.pages.length} loaders=${m.loaders.length} modules=${m.modules.length} boot=${boot.length} lazy=${lazy.length} sites=${sitesOf} tag=${k.tag} asset=${k.asset} inline=${k.inline} lazy_sites=${k.lazy} precache=${m.precacheOrder.length} cacheVersion=${m.cacheVersion}`);
-    lines.push(`§MANIFEST_VERSIONS app=${app} versioned_modules=${m.modules.filter(x => x.sites.some(s => s.v != null)).length} one_version=${m.modules.filter(x => x.v != null).length} disagree=${dis.length} sites_below_max=${below}` + (dis.length ? ' files=' + dis.map(x => x.file).join(',') : ''));
+    lines.push(`§MANIFEST_VERSIONS app=${app} versioned_modules=${m.modules.filter(x => x.sites.some(s => s.v != null)).length} one_version=${m.modules.filter(x => x.v != null).length} disagree=${dis.length}` + (dis.length ? ' files=' + dis.map(x => x.file).join(',') : ''));
     lines.push(`§MANIFEST_UNVERSIONED app=${app} tags_without_v=${a.notes.unversionedTags} external_url_sites=${a.notes.external}`);
     lines.push(`§MANIFEST_INLINE_SITES app=${app} inline_sites=${k.inline} (literals in inline page scripts: bump.js does not see these) partial_literals=${a.notes.partial} non_js_inline_blocks=${a.notes.nonJsInline}`);
     lines.push(`§MANIFEST_MISSING app=${app} targets_not_on_disk=${a.notes.missing.length}` + (a.notes.missing.length ? ' ' + a.notes.missing.join(' | ') : ''));
@@ -254,6 +253,7 @@ function check(root) {
       sc.fails.forEach(f => fails.push(f)); sc.lines.forEach(l => lines.push(l));
       a.order = sc.info.order || { judged: 0, errors: [] };
       const rv = sc.info.review;
+      { const c = sc.info.coded, k = sc.info.kept; if (c) lines.push(`§MANIFEST_CODES app=${app} coded_sites=${[...c.values()].reduce((n, x) => n + x, 0)} modules_coded=${c.size} stale=${sc.info.stale} kept: pinned=${k.pin} other_site=${k.external} self=${k.self} not_on_disk=${k.missing} (a code = the first 8 hex of the file's SHA-256; stale = a site whose file changed since the last press)`); }
       lines.push(`§MANIFEST_SOURCE app=${app} file=${MS.sourceFile(app)} files=${sc.info.files} identical=${sc.info.identical}/${sc.info.files} deps_declared=${a.order.judged} order_errors=${a.order.errors.length} unreviewed=${rv ? rv.unreviewed.length : '-'} review_sha=${sc.info.shaOk ? 'same' : 'CHANGED'} hand_deps=${sc.info.hand} unrecorded_uses=${rv ? rv.unrecordedUses.length : '-'} owner_gap=${(sc.info.ownerGap || []).length} witness_gap=${(sc.info.witGap || []).length}`);
     }
     apps.push(a);
@@ -288,7 +288,7 @@ if (require.main === module) {
     const r = MS.adopt(root, app, files, { notDeps: split('--not-deps'), asUses: split('--as-uses'), by: opt('--by') || '', on: opt('--on') || '' });
     r.fails.forEach(f => console.log('§MANIFEST_FAIL ' + f)); r.lines.forEach(l => console.log(l));
     if (r.fails.length) { console.log('§MANIFEST_ADOPT written=0 (nothing written: fix the lines above)'); process.exit(1); }
-    const w = MS.write(root, app, { manifest: r.m, texts: r.texts });
+    const w = MS.write(root, app, { manifest: r.m, texts: r.texts, raise: true });
     w.fails.forEach(f => console.log('§MANIFEST_FAIL ' + f)); w.lines.forEach(l => console.log(l));
     if (w.fails.length) { console.log('§MANIFEST_ADOPT written=0 (nothing written: fix the lines above)'); process.exit(1); }
     let n = 0;
@@ -313,7 +313,8 @@ if (require.main === module) {
       m = JSON.parse(fs.readFileSync(path.join(root, MS.sourceFile(app)), 'utf8'));
       MS.refresh(root, app, m, lines);
     }
-    const w = MS.write(root, app, { manifest: m });
+    const w = MS.write(root, app, { manifest: m, raise: true });   // B4-HASH: a code that changed in the app's own folder steps CACHE_VERSION once (nothing changed: nothing raised)
+    if (w.cacheVersion) lines.push(`§MANIFEST_CACHE_VERSION app=${app} ${w.cacheVersion.from}->${w.cacheVersion.to} (the code of ${w.changes.filter(c => c.inApp).length} site(s) in ${path.posix.dirname(m.sw)}/ changed)`);
     w.fails.forEach(f => console.log('§MANIFEST_FAIL ' + f)); lines.concat(w.lines).forEach(l => console.log(l));
     if (w.fails.length) { console.log('§MANIFEST_WRITE written=0 (nothing written: fix the lines above)'); process.exit(1); }
     let n = 0;
