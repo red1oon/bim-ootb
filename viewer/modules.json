@@ -1,5 +1,5 @@
 {
- "app": "viewer", "schema": 1, "sw": "viewer/sw.js", "cacheVersion": "v1787", "depsDeclared": true,
+ "app": "viewer", "schema": 1, "sw": "viewer/sw.js", "cacheVersion": "v1788", "depsDeclared": true,
  "depsReview": {"by":"owner","on":"2026-11-20","tool":"15f5c504b1572cb216b474b22cdb44848bc1edee8f61266e997c25294ef69051"},
  "modules": {
   "//gc.zgo.at/count.js": {"v":null,"load":"boot","lazyGroup":null,"precache":false,"deps":[],"uses":[],"notDeps":[],"owner":""},
@@ -292,7 +292,7 @@
   "viewer/surface_r10.js": {"v":1,"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/PHOTOREAL_STILL_RENDER.md"},
   "viewer/sw.js": {"v":594,"load":"lazy","lazyGroup":"viewer/viewer.html","precache":false,"deps":[],"uses":[],"notDeps":[],"owner":["prompts/MODELLER_ONE_FRAME.md","prompts/BIMDOC_OPEN_FILE_STORE.md","prompts/CLI_ERP_IVR.md","prompts/VIEWER_ELEMENT_PARTS.md"]},
   "viewer/time_machine.js": {"v":87,"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":[],"owner":""},
-  "viewer/tm_core.js": {"v":4,"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["viewer/config.js","viewer/gantt_model.js","viewer/loader.js","viewer/main.js"],"notDeps":[],"owner":""},
+  "viewer/tm_core.js": {"v":4,"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["viewer/config.js","viewer/gantt_model.js","viewer/loader.js","viewer/main.js","viewer/schedule_gate.js"],"notDeps":[],"owner":""},
   "viewer/tm_dash.js": {"v":4,"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["viewer/rates.js"],"notDeps":[],"owner":""},
   "viewer/tm_gantt_build.js": {"v":6,"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["viewer/main.js","viewer/rates.js","viewer/schedule_author.js","viewer/schedule_gate.js","viewer/support_sweep.js"],"notDeps":[],"owner":""},
   "viewer/tm_gantt_edit.js": {"v":10,"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["viewer/foreign_schedule.js","viewer/gantt_model.js","viewer/rates.js","viewer/scene.js","viewer/schedule_author.js","viewer/schedule_diff.js","viewer/schedule_gate.js","viewer/tm_lifecycle_api.js"],"notDeps":[],"owner":""},
