@@ -560,7 +560,7 @@ NCLAIMS += 4 + 6;   // C22-C25 and (B4-HASH) C26-C31
       claim('C26', pop.length > 0 && !wrong.length, `tree=${OLD ? 'OLD ' + T : 'this'} judged=${pop.length} sites of ${targetsOf.size} files (bytes: git=${gitN} disk=${targetsOf.size - gitN}) wrong=${wrong.length}`);
       // C27 ONE-CODE: no file has two codes (a pinned register line keeps its own literal and is not in the population)
       const byT = new Map(); for (const x of pop) { if (!byT.has(x.t)) byT.set(x.t, new Set()); byT.get(x.t).add(x.v); }
-      const dis = [...byT].filter(([, v]) => v.size > 1).map(([t]) => t);
+      const dis = [...byT].filter(([, v]) => [...v].filter(c => c != null).length > 1).map(([t]) => t);   // a site with no code is C31's, not a second code
       claim('C27', pop.length > 0 && !dis.length, `modules=${byT.size} disagree=${dis.length}${dis.length ? ' (' + dis.slice(0, 8).join(',') + ')' : ''}`);
       // C31 ALL-LOCAL: every file that is in the repo has a code (the 37 own files and the lib/ copies included; other sites' addresses and the pinned lines are not in the population)
       const unc = pop.filter(x => x.v == null), uncM = [...new Set(unc.map(x => x.t))];
@@ -605,7 +605,7 @@ NCLAIMS += 4 + 6;   // C22-C25 and (B4-HASH) C26-C31
         const p27 = pop.map((z, k) => k === i ? Object.assign({}, z, { v: '00000000' }) : z), n27 = p27.filter(x => x.v !== codeOf(x.t)).length;
         redSay('R27', i >= 0 && n27 === wrong.length + 1, `C26's rule on the same sites with ${pop[i] ? pop[i].f + ':' + pop[i].line : '-'} rewritten to ?v=00000000: wrong ${wrong.length} -> ${n27}`);
         const p28 = pop.map((z, k) => k === j ? Object.assign({}, z, { v: '11111111' }) : z), m28 = new Map(); for (const x of p28) { if (!m28.has(x.t)) m28.set(x.t, new Set()); m28.get(x.t).add(x.v); }
-        redSay('R28', j >= 0 && [...m28].filter(([, v]) => v.size > 1).length === dis.length + 1, `C27's rule with one of two sites of ${pop[j] ? pop[j].t : '-'} given another code: disagree ${dis.length} -> ${[...m28].filter(([, v]) => v.size > 1).length}`);
+        redSay('R28', j >= 0 && [...m28].filter(([, v]) => [...v].filter(c => c != null).length > 1).length === dis.length + 1, `C27's rule with one of two sites of ${pop[j] ? pop[j].t : '-'} given another code: disagree ${dis.length} -> ${[...m28].filter(([, v]) => [...v].filter(c => c != null).length > 1).length}`);
         const p29 = pop.map((z, k) => k === i ? Object.assign({}, z, { v: null }) : z);
         redSay('R29', i >= 0 && p29.filter(x => x.v == null).length === unc.length + 1, `C31's rule with the code of ${pop[i] ? pop[i].f + ':' + pop[i].line : '-'} removed: uncoded ${unc.length} -> ${p29.filter(x => x.v == null).length}`); }
     }

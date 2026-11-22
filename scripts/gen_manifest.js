@@ -12,6 +12,8 @@
 //        deps is [] everywhere and the order check prints NOT-JUDGED, never PASS.
 // USE:   node scripts/gen_manifest.js --check [--root DIR] [--out FILE]
 // EXIT:  0 every owned file regenerates byte-identical · 1 a file differs / a list is not plain literals / schema / unstable
+// B4-HASH (bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md Part B, "B4-HASH BUILD SPEC"; bim-ootb #3397): in a source app (a modules.json) every `?v=` is the first 8 hex of the SHA-256 of the file it names,
+//        written by --write / scripts/bump.js and REFUSED when stale by --check ("<file> changed but <page>:<line> still says ?v=<old>; run: node scripts/bump.js <file> --write"). modules.json holds no `v`.
 // Read the log after every run: the §MANIFEST_* lines are the result, the exit code is not.
 // Witness: scripts/tests/witness_manifest_roundtrip.js (W-MANIFEST-ROUNDTRIP).
 'use strict';

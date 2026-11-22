@@ -10,6 +10,8 @@
 //        write (manifest + the files' hand-kept text -> new file texts; a tag or precache entry added to / removed from the manifest is
 //        inserted / removed on its own line) · check · init (one-time, from today's files) · the owner / witnesses extractors.
 //        Dev-side only: no page, loader or sw.js names modules.json, and it is not precached (claim C12).
+// B4-HASH (bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md Part B, "B4-HASH BUILD SPEC"; bim-ootb #3397): write() also computes every `?v=` (the first 8 hex of the SHA-256 of the file's bytes, children first),
+//   steps CACHE_VERSION when the code of a site in the app's own folder changed (opts.raise), and check() refuses a stale code naming the file, the page:line and the command. No `v` in modules.json.
 'use strict';
 const fs = require('fs'), path = require('path'), crypto = require('crypto');
 const P = path.posix;
