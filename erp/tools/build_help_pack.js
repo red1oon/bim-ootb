@@ -249,7 +249,9 @@ function buildCtxTrl(lang, legacyIds, helps, link) {
   helps.forEach((h) => {
     if (published(h.id) || !h.sections.some((s) => tr(mach[s.trlId]))) return;
     // §19.17 F7: each language fitted on its own text; a translated section's link carries its translated title
-    const parts = h.sections.map((s, i) => { const t = tr(mach[s.trlId]) ? linkParas(mach[s.trlId].text, link) : h.parts[i], m = /^<p><strong>([\s\S]*?)<\/strong><\/p>/.exec(t); return { html: t, url: s.url, title: m ? ent(m[1].replace(/<[^>]+>/g, '')) : s.name, key: s.key }; });
+    const parts = h.sections.map((s, i) => { const t = tr(mach[s.trlId]) ? linkParas(mach[s.trlId].text, link) : h.parts[i], m = /^<p><strong>([\s\S]*?)<\/strong><\/p>/.exec(t); return { html: t, url: s.url, title: m ? ent(m[1].replace(/<[^>]+>/g, '')) : s.name, key: s.key, own: tr(mach[s.trlId]) }; })
+      // §19.19: the sections in the reader's language FIRST, then the English ones (in source order each): new English content never pushes out text already translated
+      .sort((a, b) => (b.own ? 1 : 0) - (a.own ? 1 : 0));
     const f = fitParts(parts, msgLen()); fitLog(h.id, lang, f);
     out.push({ id: h.id, lang, source: 'machine', istranslated: 'N', text: f.text, parts });   // parts (unfitted): the legacy script fits them at apply time (§19.17 F6)
   });
@@ -260,7 +262,7 @@ function buildCtxHelpRows(helps, trl) {
   const ins = (table, o) => 'INSERT OR IGNORE INTO ' + table + ' (' + Object.keys(o).join(', ') + ') VALUES (' + Object.keys(o).map((k) => lit(o[k])).join(', ') + ')';
   helps.forEach((h) => {
     const id = h.id, t = h.time; timeOf[id] = t;
-    rows.push(ins('ad_ctxhelp', { ad_client_id: 0, ad_ctxhelp_id: id, ad_ctxhelp_uu: uuidOf('ad_ctxhelp|' + id), ad_org_id: 0, created: t, createdby: 100, ctxtype: h.tabs.length ? 'T' : 'P', description: h.sections[0].url, isactive: 'Y', name: h.name, updated: t, updatedby: 100 }));
+    rows.push(ins('ad_ctxhelp', { ad_client_id: 0, ad_ctxhelp_id: id, ad_ctxhelp_uu: uuidOf('ad_ctxhelp|' + id), ad_org_id: 0, created: t, createdby: 100, ctxtype: h.tabs.length ? 'T' : 'P', description: (h.sections.find((x) => x.doc !== 'DV') || h.sections[0]).url, isactive: 'Y', name: h.name, updated: t, updatedby: 100 }));
     rows.push(ins('ad_ctxhelpmsg', { ad_client_id: 0, ad_ctxhelp_id: id, ad_ctxhelpmsg_id: id, ad_ctxhelpmsg_uu: uuidOf('ad_ctxhelpmsg|' + id), ad_org_id: 0, created: t, createdby: 100, isactive: 'Y', line: null, msgtext: h.msgtext, updated: t, updatedby: 100 }));
     h.tabs.forEach((x) => rows.push('UPDATE ad_tab SET ad_ctxhelp_id=' + id + ' WHERE ad_tab_id=' + x.tab + ' AND ad_ctxhelp_id IS NULL'));
     h.processes.forEach((pid) => rows.push('UPDATE ad_process SET ad_ctxhelp_id=' + id + ' WHERE ad_process_id=' + pid + ' AND ad_ctxhelp_id IS NULL'));
@@ -302,12 +304,101 @@ function buildActions() {
   });
   return out;
 }
+// §19.19 (VOCAB_MESSAGE_CATALOG, amended 2026-11-23): DERIVED how-to sections, one per window, from three named sources and nothing else:
+//   the dictionary (ad_seed.db: what must exist first, the tabs, the action name), legacy's DocAction source (erp/tools/legacy_rules.json, legacy_rules.js:
+//   the refusal messages of prepareIt/completeIt and the cited effects) and legacy's recorded run (erp/tools/legacy_run_facts.json, run_facts.js: which of those
+//   a legacy run SHOWED, MATCH scenarios only). The wording around the facts is a fixed template; every name and message is read, never written.
+//   A derived section comes FIRST in its help: it has no other home, while a guide section that is cut at MsgText's limit keeps its link to the guide (F7).
+const DV_URL = 'https://red1oon.github.io/BIMCompiler/LegacyOracleAdapterSpec/';   // the parallel-run method page: where the legacy facts come from
+const DV_PILOT = [143, 141];   // §19.19 pilot: Sales Order (a document) and Payment Term (a setup window)
+// the CORE menu (owner 2026-10-04: trade cycle + accounting) = these legacy menu folders and everything under them (AD_TreeNodeMM)
+const CORE_MENU = [166, 203, 236, 183, 278, 280, 164, 165, 167];
+const readJson = (f) => { const p = path.join(__dirname, f); return fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, 'utf8')) : null; };
+function coreWindows() {
+  return q('WITH RECURSIVE sub(node) AS (SELECT node_id FROM ad_treenodemm WHERE node_id IN (' + CORE_MENU.join(',') + ') UNION SELECT t.node_id FROM ad_treenodemm t JOIN sub s ON t.parent_id = s.node) ' +
+    "SELECT DISTINCT m.ad_window_id w FROM sub s JOIN ad_menu m ON m.ad_menu_id = s.node WHERE m.issummary='N' AND m.isactive='Y' AND m.action='W' AND m.ad_window_id IS NOT NULL").map((r) => Number(r.w));
+}
+const winRow = (w) => q('SELECT name n, issotrx so FROM ad_window WHERE ad_window_id=' + Number(w))[0];
+const headTab = (w) => q('SELECT t.ad_tab_id tab, t.ad_table_id tb, b.tablename tn FROM ad_tab t JOIN ad_table b ON b.ad_table_id=t.ad_table_id WHERE t.ad_window_id=' + Number(w) + " AND t.tablevel=0 AND t.isactive='Y' ORDER BY t.seqno, t.ad_tab_id LIMIT 1")[0];
+const isDoc = (tb) => q('SELECT 1 x FROM ad_column WHERE ad_table_id=' + Number(tb) + " AND columnname='DocAction' AND isactive='Y'").length > 0;
+// part 1 rule: a displayed, editable, mandatory reference field with no default (column or field), not the tenant / org / key / parent link
+function mustExist(tab, sotrx) {
+  return q('SELECT f.name fn, c.columnname cn, c.ad_reference_id r, c.ad_reference_value_id rv FROM ad_field f JOIN ad_column c ON c.ad_column_id=f.ad_column_id WHERE f.ad_tab_id=' + Number(tab) +
+    " AND f.isactive='Y' AND f.isdisplayed='Y' AND c.isactive='Y' AND coalesce(nullif(f.ismandatory,''), c.ismandatory)='Y' AND c.isupdateable='Y' AND coalesce(f.isreadonly,'N')='N'" +
+    " AND coalesce(c.iskey,'N')='N' AND coalesce(c.isparent,'N')='N' AND coalesce(c.defaultvalue,'')='' AND coalesce(f.defaultvalue,'')='' AND c.ad_reference_id IN (18,19,30)" +
+    " AND c.columnname NOT IN ('AD_Client_ID','AD_Org_ID') ORDER BY f.seqno, f.ad_field_id").map((f) => {
+    // legacy's reference rule: Table / Search with a value reference -> AD_Ref_Table; TableDir (or a bare Search) -> the table named by the column without _ID
+    const viaRef = (Number(f.r) === 18 || Number(f.r) === 30) && f.rv != null ? q('SELECT ad_table_id t FROM ad_ref_table WHERE ad_reference_id=' + Number(f.rv))[0] : null;
+    const t = viaRef ? q('SELECT ad_table_id t, ad_window_id w, po_window_id p FROM ad_table WHERE ad_table_id=' + Number(viaRef.t))[0]
+      : q("SELECT ad_table_id t, ad_window_id w, po_window_id p FROM ad_table WHERE lower(tablename)=lower('" + String(f.cn).replace(/_ID$/i, '').replace(/'/g, "''") + "')")[0];
+    const win = t ? (sotrx === 'N' && t.p != null ? Number(t.p) : t.w != null ? Number(t.w) : null) : null;
+    return { field: String(f.fn), column: String(f.cn), table: t ? Number(t.t) : null, window: win, wname: win != null ? (winRow(win) || {}).n : null };
+  });
+}
+const wlink = (id, name) => '<a href="#" data-help-win="' + id + '">' + md(String(name)) + '</a>';
+const quote = (s) => '“' + md(s) + '”';
+function derivedSections(ids, opts) {   // opts.facts / opts.rules: another copy of the two inputs (W-CTXHELP-DERIVED D3 feeds the facts with every verdict flipped)
+  const R = (opts && opts.rules) || readJson('legacy_rules.json'), F = (opts && opts.facts) || readJson('legacy_run_facts.json'), core = coreWindows(), rows = [], vac = [];
+  if (!R || !F) throw new Error('§19.19: erp/tools/legacy_rules.json and legacy_run_facts.json are needed (node erp/tools/legacy_rules.js; node erp/tools/run_facts.js --log ... --bridge ...)');
+  const subOf = {}; q('SELECT c_doctype_id d, docsubtypeso s FROM c_doctype').forEach((r) => { subOf[r.d] = r.s; });
+  const seen = (pred) => F.scenarios.filter((s) => s.verdict === 'MATCH' && pred(s));   // D3: MATCH only, so the twin is proved to do the same
+  // a proof op on one legacy key: '>=1' / '==0' on a count; 'reserved=ordered' on the order-line quantities 'product:ordered/reserved/delivered/invoiced' (|-joined)
+  const opOk = (v, op) => { if (op === 'reserved=ordered') { const l = String(v).split('|').map((x) => x.split(':')[1].split('/').map(Number)); return l.length > 0 && l.every((x) => x[0] !== 0 && x[1] === x[0]); }
+    const n = Number(v); return op === '>=1' ? n >= 1 : op === '==0' ? n === 0 : false; };
+  const coreDocs = core.map((w) => ({ w, h: headTab(w), r: winRow(w) })).filter((x) => x.h && x.r && isDoc(x.h.tb));
+  ids.forEach((w) => {
+    const W = winRow(w), H = headTab(w); if (!W || !H) throw new Error('§19.19: window ' + w + ' has no head tab');
+    const doc = isDoc(H.tb), html = [], facts = [];
+    // part 1: what must exist first (documents), or which core documents need this record (setup windows)
+    const need = mustExist(H.tab, W.so);
+    if (need.length) html.push('<p><b>Before you start.</b> These must exist first: ' + need.map((n) => n.window != null && n.wname ? (n.wname === n.field ? wlink(n.window, n.wname) : md(n.field) + ' (' + wlink(n.window, n.wname) + ')') : md(n.field)).join(', ') + '.</p>');
+    else vac.push(w + ' part1 no-mandatory-reference');
+    if (!doc) {
+      const by = coreDocs.filter((d) => d.w !== w && mustExist(d.h.tab, d.r.so).some((n) => n.table === Number(H.tb)));
+      if (by.length) html.push('<p><b>Needed by.</b> Each of these asks for one on its header: ' + by.map((d) => wlink(d.w, d.r.n)).join(', ') + '.</p>');
+      else vac.push(w + ' part1 needed-by-none');
+    }
+    // part 2: the tabs in order, then the action that completes a document
+    const tabs = q('SELECT name n FROM ad_tab WHERE ad_window_id=' + Number(w) + " AND isactive='Y' AND tablevel<=1 ORDER BY seqno, ad_tab_id").map((t) => '<b>' + md(String(t.n)) + '</b>');
+    const co = doc ? (q("SELECT name n FROM ad_ref_list WHERE ad_reference_id=135 AND value='CO' AND isactive='Y'")[0] || {}).n : null;
+    html.push('<p><b>Do it.</b> ' + (tabs.length > 1 ? 'Fill ' + tabs[0] + ', then ' + tabs.slice(1).join(', ') : 'Fill ' + tabs[0]) + (co ? '; then the Document Action <b>' + md(co) + '</b>.' : '.') + '</p>');
+    if (doc) {
+      const C = R.classes[H.tn], E = R.effects.filter((e) => e.table === H.tn);
+      // part 3: what Complete does, per document subtype, from the cited source; ✓ when a MATCH legacy scenario of that subtype shows it
+      const nm = (ref, v) => (q('SELECT name n FROM ad_ref_list WHERE ad_reference_id=' + ref + " AND value='" + v + "' AND isactive='Y'")[0] || {}).n || v;
+      const fill = (t) => t.replace(/\{status:(\w+)\}/g, (m, v) => nm(131, v)).replace(/\{action:(\w+)\}/g, (m, v) => nm(135, v));
+      if (E.length) {
+        const li = E.map((e) => {
+          const set = e.when === 'all' ? null : e.when;
+          const runs = e.proof && set ? seen((s) => s.table === H.tn && s.legacy.outcome === 'COMPLETED' && set.indexOf(subOf[s.doctype]) >= 0 && s.legacy[e.proof.key] != null && opOk(s.legacy[e.proof.key], e.proof.op)) : [];
+          facts.push({ part: 3, id: e.id, src: e.file + ':' + e.line, runs: runs.map((s) => s.id) });
+          const who = set ? md(set.map((v) => R.subtypes[v] || v).join(', ')) + (e.flagName ? ' (' + md(e.flagName.subtype) + ' if <i>' + md(e.flagName.column) + '</i>)' : '') + ': ' : 'Then ';
+          return '<li>' + who + md(fill(e.text)) + (runs.length ? ' ✓' : '') + '</li>';
+        });
+        html.push('<p><b>What Complete does.</b></p><ul>' + li.join('') + '</ul>');
+      } else vac.push(w + ' part3 no-cited-effect');
+      // part 4: legacy's own refusal messages: the source's prepareIt / completeIt messages, then those a legacy run showed (a validator / credit manager message is not a literal in the class)
+      const runRef = seen((s) => s.table === H.tn && s.legacy.outcome === 'REJECTED' && s.refusal);
+      const msgs = (C && C.refusals ? C.refusals.map((r) => ({ text: r.text, src: C.file + ':' + r.line })) : []);
+      runRef.forEach((s) => { if (!msgs.some((m) => m.text === s.refusal.text)) msgs.push({ text: s.refusal.text, src: 'run' }); });
+      if (msgs.length) {
+        html.push('<p><b>When it refuses</b>, legacy says: ' + msgs.map((m) => { const r = runRef.filter((s) => s.refusal.text === m.text); facts.push({ part: 4, text: m.text, src: m.src, runs: r.map((s) => s.id) });
+          return quote(m.text) + (r.length ? ' ✓' : ''); }).join('; ') + '.</p>');
+      } else vac.push(w + ' part4 no-refusal-source');
+    }
+    html.push('<p><i>' + (doc ? 'Read from iDempiere\'s ' + md(R.classes[H.tn] ? R.classes[H.tn].file.split('/').pop() : H.tn) + ' and the dictionary. ✓ = seen in a legacy run of ' + F.logTime.slice(0, 10) + '.' : 'Read from the dictionary.') + '</i></p>');
+    facts.forEach((f) => console.log('§CTXHELP_DERIVED_FACT window=' + w + ' part=' + f.part + ' ' + (f.id || JSON.stringify(f.text)) + ' src=' + f.src + ' runs=' + (f.runs.join(',') || '-')));
+    rows.push({ key: 'DV' + w, doc: 'DV', trlId: null, name: String(W.n), time: (doc ? F.logTime : guideTime('UG')).replace('T', ' ').slice(0, 19), url: DV_URL, tabs: [{ window: Number(w), tab: Number(H.tab) }], processes: [], html: html.join('') });
+  });
+  console.log('§CTXHELP_DERIVED windows=' + ids.length + ' of core ' + core.length + ' sections=' + rows.length + ' facts_log=' + F.log + ' source=' + R.source.head.slice(0, 10) + ' ' + vac.map((v) => 'VACUOUS ' + v).join(' '));
+  return rows;
+}
 function main() {
   const log = console.log; console.log = () => {}; const fsmCheck = require(path.join(ERP, 'ad_docfsm.js')); console.log = log; void fsmCheck;
   // the role's menu windows are not known at build time; the linker uses every active window of the seed (the page drops a link whose window is not on the menu)
   const windows = q("SELECT ad_window_id wid, name wnm FROM ad_window WHERE isactive='Y'").map((w) => ({ id: Number(w.wid), name: String(w.wnm) }));   // aliases differ from column names: sqlite3 -json keeps a same-named column's own case
   fs.mkdirSync(path.join(OUT, 'en_US'), { recursive: true });
-  const sections = buildSections(windows), helps = buildHelps(sections);
+  const sections = derivedSections(DV_PILOT).concat(buildSections(windows)), helps = buildHelps(sections);   // §19.19: derived first (no other home)
   const en = { lang: 'en_US', spec: 'bim-compiler prompts/VOCAB_MESSAGE_CATALOG.md §10', built: 'build_help_pack.js', actions: buildActions() };   // §19.16 C4: no `howto` here: it is legacy's context help (ad_ctxhelp_app_rows.js), read by erp/ctx_help.js
   fs.writeFileSync(path.join(OUT, 'en_US', 'help.json'), JSON.stringify(en));
   const legacyIds = require(path.join(ERP, 'ad_ctxhelp_rows.js')).rows.filter((x) => /^INSERT OR IGNORE INTO ad_ctxhelpmsg \(/.test(x)).map((x) => Number(/VALUES \(\d+, \d+, (\d+),/.exec(x)[1])), allTrl = [];
@@ -358,7 +449,7 @@ function buildLegacySql(helps, trl) {
     const blk = 'WITH blk(lang, k, html, more, nextlen) AS (VALUES\n  ' + vals.join(',\n  ') + ')\n';
     h.tabs.map((t) => ({ kind: 'T', id: t.tab, T: 'AD_Tab', name: (q('SELECT name n FROM ad_tab WHERE ad_tab_id=' + Number(t.tab))[0] || {}).n }))
       .concat(h.processes.map((pid) => ({ kind: 'P', id: pid, T: 'AD_Process', name: (q('SELECT name n FROM ad_process WHERE ad_process_id=' + Number(pid))[0] || {}).n }))).forEach((g) => {
-      const huu = uuidOf('legacy|ad_ctxhelp|' + g.kind + g.id), muu = uuidOf('legacy|ad_ctxhelpmsg|' + g.kind + g.id), url = h.sections[0].url;
+      const huu = uuidOf('legacy|ad_ctxhelp|' + g.kind + g.id), muu = uuidOf('legacy|ad_ctxhelpmsg|' + g.kind + g.id), url = (h.sections.find((x) => x.doc !== 'DV') || h.sections[0]).url;
       const name = h.tabs.length + h.processes.length > 1 ? h.name + ' (' + g.name + ')' : h.name; if (name.length > 120) throw new Error('F6: AD_CtxHelp.Name is 120 long: ' + name);
       targets.push({ kind: g.kind, id: g.id, help: h.id, huu, muu, sections: h.keys, langs: langs.map((x) => x[0]) });
       out.push('-- ' + (g.kind === 'T' ? 'tab' : 'process') + ' ' + g.id + ' ' + g.name + ': ' + h.keys.join(' + ') + ' (twin help ' + h.id + ')',
@@ -388,4 +479,4 @@ function buildLegacySql(helps, trl) {
   console.log('§CTXHELP_LEGACY_SQL file=' + path.relative(ROOT, file) + ' targets=' + targets.length + ' (' + targets.filter((t) => t.kind === 'T').length + ' tabs, ' + targets.filter((t) => t.kind === 'P').length + ' processes) statements=' + (out.length - targets.length * 2) + ' bytes=' + fs.statSync(file).size + ' langs=' + JSON.stringify([...new Set([].concat(...targets.map((t) => t.langs)))]));
 }
 // §19.10: the witnesses read the SAME source list (W-HQ-PROC-NAMES), never a copy of it
-if (require.main === module) main(); else module.exports = { SOURCES, CACHE, md, readCtxTrl, titleP, machineCtxFile, SECTIONS, DOCS };
+if (require.main === module) main(); else module.exports = { SOURCES, CACHE, md, readCtxTrl, titleP, machineCtxFile, SECTIONS, DOCS, derivedSections, DV_PILOT, coreWindows, mustExist, headTab, isDoc };

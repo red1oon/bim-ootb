@@ -1,0 +1,26 @@
+{
+ "spec": "bim-compiler prompts/VOCAB_MESSAGE_CATALOG.md §19.19 (amended 2026-11-23: legacy's DocAction source is the rule source, the recorded runs are the proof)",
+ "note": "What a Document Action DOES, read from legacy's source by hand and cited by file + line. legacy_rules.js checks that each cited line still holds its token (a moved line = FAIL). 'when' = the DocSubTypeSO values (AD_Ref_List 148) the code tests, never 'the rest' (Quotation, Proposal and Prepay each take their own branch, MOrder.java:2124-2145); 'flag' = a C_DocType column the code also tests for one subtype. 'text' is the template wording: {status:XX} = AD_Ref_List 131 name, {action:XX} = AD_Ref_List 135 name. 'proof' = the legacy run key that shows the effect on a MATCH scenario of that subtype.",
+ "effects": [
+  { "id": "C_Order.CO.shipment", "table": "C_Order", "action": "CO", "file": "org/compiere/model/MOrder.java", "line": 2178, "token": "evalAutoGenerateInOutRule(DocSubTypeSO, dt.isAutoGenerateInout())",
+    "rule": { "file": "org/compiere/model/MOrder.java", "line": 2254, "token": "private boolean evalAutoGenerateInOutRule" },
+    "when": ["WI", "WP", "WR"], "flag": { "subtype": "PR", "column": "IsAutoGenerateInout", "line": 2258, "token": "DOCSUBTYPESO_PrepayOrder.equals(docSubTypeSO) && isAutoGenerateInout" },
+    "text": "also creates and completes the shipment", "proof": { "key": "shipments_completed", "op": ">=1" } },
+  { "id": "C_Order.CO.invoice", "table": "C_Order", "action": "CO", "file": "org/compiere/model/MOrder.java", "line": 2198, "token": "MDocType.DOCSUBTYPESO_POSOrder.equals(DocSubTypeSO)",
+    "when": ["WR", "WI"], "flag": { "subtype": "PR", "column": "IsAutoGenerateInvoice", "line": 2200, "token": "DOCSUBTYPESO_PrepayOrder.equals(DocSubTypeSO) && dt.isAutoGenerateInvoice()" },
+    "text": "also creates the invoice", "proof": { "key": "invoices", "op": ">=1" } },
+  { "id": "C_Order.CO.reserve", "table": "C_Order", "action": "CO", "file": "org/compiere/model/MOrder.java", "line": 1656, "token": "if (!evalAutoGenerateInOutRule(dt.getDocSubTypeSO(), dt.isAutoGenerateInout()))",
+    "when": ["SO"], "text": "reserves the ordered quantity; shipment and invoice are made next", "proof": { "key": "ol_qty", "op": "reserved=ordered" } },
+  { "id": "C_Order.CO.quotation", "table": "C_Order", "action": "CO", "file": "org/compiere/model/MOrder.java", "line": 2129, "token": "reserveStock(dt, getLines(true, MOrderLine.COLUMNNAME_M_Product_ID));",
+    "rule": { "file": "org/compiere/model/MOrder.java", "line": 2124, "token": "MDocType.DOCSUBTYPESO_Proposal.equals(DocSubTypeSO)" },
+    "when": ["OB"], "text": "reserves the quantity and creates nothing else" },
+  { "id": "C_Order.CO.proposal", "table": "C_Order", "action": "CO", "file": "org/compiere/model/MOrder.java", "line": 1931, "token": "boolean binding = !dt.isProposal();",
+    "rule": { "file": "org/compiere/model/MOrder.java", "line": 2124, "token": "MDocType.DOCSUBTYPESO_Proposal.equals(DocSubTypeSO)" },
+    "when": ["ON"], "text": "reserves nothing and creates nothing else" },
+  { "id": "C_Order.CO.prepay", "table": "C_Order", "action": "CO", "file": "org/compiere/model/MOrder.java", "line": 2145, "token": "return DocAction.STATUS_WaitingPayment;",
+    "rule": { "file": "org/compiere/model/MOrder.java", "line": 2141, "token": "MDocType.DOCSUBTYPESO_PrepayOrder.equals(DocSubTypeSO)" },
+    "when": ["PR"], "text": "waits for a payment (status {status:WP})" },
+  { "id": "C_Order.CO.next", "table": "C_Order", "action": "CO", "file": "org/compiere/model/MOrder.java", "line": 2244, "token": "setDocAction(DOCACTION_Close);",
+    "when": "all", "text": "the next action offered is {action:CL}" }
+ ]
+}

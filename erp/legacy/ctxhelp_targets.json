@@ -1,6 +1,6 @@
 {
  "spec": "§19.17 F6",
- "file": "legacy/local_sql/postgresql/202611161933_KernelERP_ContextHelp.sql",
+ "file": "legacy/local_sql/postgresql/202611230453_KernelERP_ContextHelp.sql",
  "targets": [
   {
    "kind": "T",
@@ -9,6 +9,7 @@
    "huu": "2296041b-0c8b-550a-abab-7b73e9c6df3b",
    "muu": "498dcddc-a565-5776-bee2-9ad650a68660",
    "sections": [
+    "DV143",
     "UG1",
     "FS7",
     "FS9"
@@ -292,6 +293,19 @@
    "muu": "d96ea342-74ee-5742-a5cd-9244f7f20aad",
    "sections": [
     "FS11b"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 184,
+   "help": 1000017,
+   "huu": "6e1d0142-e739-5d55-915a-9d0ffcef13ae",
+   "muu": "7bf8fc87-199b-5661-9827-7eaa0327b00f",
+   "sections": [
+    "DV141"
    ],
    "langs": [
     "en"

@@ -1,0 +1,517 @@
+{
+ "spec": "bim-compiler prompts/VOCAB_MESSAGE_CATALOG.md §19.19",
+ "log": "run_20261123_124747_m3meta.log",
+ "logTime": "2026-11-23T04:53:14.320Z",
+ "sources": {
+  "witness_m3_gap.js": "d4cdf338a88abf51a762e3697bf651d0648aca8dc95419b2dc3441dbd24f3e3a",
+  "cycle_o2c.js": "7f3fd1cc2a317dec37981167b3a4436a95702dbaf2a4b03881916256fe1af5e1"
+ },
+ "legacyDb": "idempiere_pilot",
+ "counts": {
+  "scn": 83,
+  "meta": 24,
+  "kept": 24
+ },
+ "scenarios": [
+  {
+   "id": "S1-pos-sale",
+   "verdict": "MATCH",
+   "table": "C_Order",
+   "doctype": 135,
+   "legacy": {
+    "outcome": "COMPLETED",
+    "docstatus": "CO",
+    "lines": "123:1:6175",
+    "total_cents": 6175,
+    "shipments": 1,
+    "shipments_completed": 1,
+    "invoices": 1,
+    "stock_delta": "{\"123\":-1}",
+    "postings": "518:DR6175/CR0|758:DR0/CR6175",
+    "postings_shipment": "REFUSED:Posted=E",
+    "postings_euro": "518:DR5249/CR0|758:DR0/CR5249",
+    "postings_shipment_euro": "REFUSED:Posted=E",
+    "line_tax": "123:104",
+    "order_tax": "104:6175:0",
+    "grand_total_cents": 6175,
+    "invoice_tax": "104:6175:0",
+    "cost_qty_delta": "{}"
+   },
+   "refusal": null
+  },
+  {
+   "id": "S2-product-not-on-pricelist",
+   "verdict": "MATCH",
+   "table": "C_Order",
+   "doctype": 135,
+   "legacy": {
+    "outcome": "REJECTED",
+    "reason": "Cannot save record in C_OrderLine: Product is not on Price List -> Line No:10, Product: St"
+   },
+   "refusal": {
+    "value": "ProductNotOnPriceList",
+    "text": "Product is not on Price List"
+   }
+  },
+  {
+   "id": "S3-client-keyed-price",
+   "verdict": "SQLITE-GAP",
+   "table": "C_Order",
+   "doctype": 135,
+   "legacy": {
+    "outcome": "COMPLETED",
+    "docstatus": "CO",
+    "lines": "123:1:1000",
+    "total_cents": 1000,
+    "shipments": 1,
+    "shipments_completed": 1,
+    "invoices": 1,
+    "stock_delta": "{\"123\":-1}",
+    "postings": "518:DR1000/CR0|758:DR0/CR1000",
+    "postings_shipment": "REFUSED:Posted=E",
+    "postings_euro": "518:DR850/CR0|758:DR0/CR850",
+    "postings_shipment_euro": "REFUSED:Posted=E",
+    "line_tax": "123:104",
+    "order_tax": "104:1000:0",
+    "grand_total_cents": 1000,
+    "invoice_tax": "104:1000:0",
+    "cost_qty_delta": "{}"
+   },
+   "refusal": null
+  },
+  {
+   "id": "S2b-keyed-price-product-not-on-pricelist",
+   "verdict": "MATCH",
+   "table": "C_Order",
+   "doctype": 135,
+   "legacy": {
+    "outcome": "REJECTED",
+    "reason": "Cannot save record in C_OrderLine: Product is not on Price List -> Line No:10, Product: St"
+   },
+   "refusal": {
+    "value": "ProductNotOnPriceList",
+    "text": "Product is not on Price List"
+   }
+  },
+  {
+   "id": "S11-pos-sale-costed-product",
+   "verdict": "MATCH",
+   "table": "C_Order",
+   "doctype": 135,
+   "legacy": {
+    "outcome": "COMPLETED",
+    "docstatus": "CO",
+    "lines": "137:1:300",
+    "total_cents": 300,
+    "shipments": 1,
+    "shipments_completed": 1,
+    "invoices": 1,
+    "stock_delta": "{\"137\":-1}",
+    "postings": "518:DR300/CR0|758:DR0/CR300",
+    "postings_shipment": "430:DR270/CR0|742:DR0/CR270",
+    "postings_euro": "518:DR255/CR0|758:DR0/CR255",
+    "postings_shipment_euro": "430:DR230/CR0|742:DR0/CR230",
+    "line_tax": "137:104",
+    "order_tax": "104:300:0",
+    "grand_total_cents": 300,
+    "invoice_tax": "104:300:0",
+    "cost_qty_delta": "{\"137\":-1}"
+   },
+   "refusal": null
+  },
+  {
+   "id": "S4-unknown-product",
+   "verdict": "MATCH",
+   "table": "C_Order",
+   "doctype": 135,
+   "legacy": {
+    "outcome": "REJECTED",
+    "reason": "Cannot save record in C_OrderLine: Foreign ID 999999 not found in M_Product_ID"
+   },
+   "refusal": null
+  },
+  {
+   "id": "S6-standard-order",
+   "verdict": "MATCH",
+   "table": "C_Order",
+   "doctype": 132,
+   "legacy": {
+    "outcome": "COMPLETED",
+    "docstatus": "CO",
+    "lines": "123:1:6175",
+    "total_cents": 6175,
+    "shipments": 0,
+    "shipments_completed": 0,
+    "invoices": 0,
+    "stock_delta": "{}",
+    "postings": "none",
+    "postings_shipment": "none",
+    "postings_euro": "none",
+    "postings_shipment_euro": "none",
+    "line_tax": "123:104",
+    "order_tax": "104:6175:0",
+    "grand_total_cents": 6175,
+    "invoice_tax": "none",
+    "cost_qty_delta": "{}"
+   },
+   "refusal": null
+  },
+  {
+   "id": "S13a-pos-sale-over-credit-limit",
+   "verdict": "MATCH",
+   "table": "C_Order",
+   "doctype": 135,
+   "legacy": {
+    "outcome": "REJECTED",
+    "reason": "Failed when processing document: Business Partner with this Order over Credit Hold - Open "
+   },
+   "refusal": {
+    "value": "BPartnerOverOCreditHold",
+    "text": "Business Partner with this Order over Credit Hold"
+   }
+  },
+  {
+   "id": "S13b-standard-order-over-credit-limit",
+   "verdict": "MATCH",
+   "table": "C_Order",
+   "doctype": 132,
+   "legacy": {
+    "outcome": "REJECTED",
+    "reason": "Failed when processing document: Business Partner with this Order over Credit Hold - Open "
+   },
+   "refusal": {
+    "value": "BPartnerOverOCreditHold",
+    "text": "Business Partner with this Order over Credit Hold"
+   }
+  },
+  {
+   "id": "T1-pos-sale-taxed-org12-ct",
+   "verdict": "MATCH",
+   "table": "C_Order",
+   "doctype": 135,
+   "legacy": {
+    "outcome": "COMPLETED",
+    "docstatus": "CO",
+    "lines": "123:1:6175",
+    "total_cents": 6175,
+    "shipments": 1,
+    "shipments_completed": 1,
+    "invoices": 1,
+    "stock_delta": "{\"123\":-1}",
+    "postings": "518:DR6546/CR0|596:DR0/CR371|758:DR0/CR6175",
+    "postings_shipment": "REFUSED:Posted=E",
+    "postings_euro": "518:DR5564/CR0|596:DR0/CR315|758:DR0/CR5249",
+    "postings_shipment_euro": "REFUSED:Posted=E",
+    "line_tax": "123:105",
+    "order_tax": "105:6175:371",
+    "grand_total_cents": 6546,
+    "invoice_tax": "105:6175:371",
+    "cost_qty_delta": "{}"
+   },
+   "refusal": null
+  },
+  {
+   "id": "S14a-pos-order-negative-qty",
+   "verdict": "MATCH",
+   "table": "C_Order",
+   "doctype": 135,
+   "legacy": {
+    "outcome": "COMPLETED",
+    "docstatus": "CO",
+    "lines": "123:-1:6175",
+    "total_cents": -6175,
+    "shipments": 1,
+    "shipments_completed": 1,
+    "invoices": 1,
+    "stock_delta": "{\"123\":1}",
+    "postings": "518:DR-6175/CR0|758:DR0/CR-6175",
+    "postings_shipment": "430:DR-4869/CR0|742:DR0/CR-4869",
+    "postings_euro": "518:DR-5249/CR0|758:DR0/CR-5249",
+    "postings_shipment_euro": "430:DR-4139/CR0|742:DR0/CR-4139",
+    "line_tax": "123:104",
+    "order_tax": "104:-6175:0",
+    "grand_total_cents": -6175,
+    "invoice_tax": "104:-6175:0",
+    "cost_qty_delta": "{\"123\":1}"
+   },
+   "refusal": null
+  },
+  {
+   "id": "S14b-standard-order-negative-qty",
+   "verdict": "MATCH",
+   "table": "C_Order",
+   "doctype": 132,
+   "legacy": {
+    "outcome": "COMPLETED",
+    "docstatus": "CO",
+    "lines": "123:-1:6175",
+    "total_cents": -6175,
+    "shipments": 0,
+    "shipments_completed": 0,
+    "invoices": 0,
+    "stock_delta": "{}",
+    "postings": "none",
+    "postings_shipment": "none",
+    "postings_euro": "none",
+    "postings_shipment_euro": "none",
+    "line_tax": "123:104",
+    "order_tax": "104:-6175:0",
+    "grand_total_cents": -6175,
+    "invoice_tax": "none",
+    "cost_qty_delta": "{}"
+   },
+   "refusal": null
+  },
+  {
+   "id": "S14c-pos-order-zero-qty",
+   "verdict": "MATCH",
+   "table": "C_Order",
+   "doctype": 135,
+   "legacy": {
+    "outcome": "COMPLETED",
+    "docstatus": "CO",
+    "lines": "123:0:6175",
+    "total_cents": 0,
+    "shipments": 1,
+    "shipments_completed": 1,
+    "invoices": 1,
+    "stock_delta": "{}",
+    "postings": "none",
+    "postings_shipment": "none",
+    "postings_euro": "none",
+    "postings_shipment_euro": "none",
+    "line_tax": "123:104",
+    "order_tax": "104:0:0",
+    "grand_total_cents": 0,
+    "invoice_tax": "104:0:0",
+    "cost_qty_delta": "{}"
+   },
+   "refusal": null
+  },
+  {
+   "id": "S13c-pos-sale-large-no-credit-limit",
+   "verdict": "MATCH",
+   "table": "C_Order",
+   "doctype": 135,
+   "legacy": {
+    "outcome": "COMPLETED",
+    "docstatus": "CO",
+    "lines": "123:200:6175",
+    "total_cents": 1235000,
+    "shipments": 1,
+    "shipments_completed": 1,
+    "invoices": 1,
+    "stock_delta": "{\"123\":-200}",
+    "postings": "518:DR1235000/CR0|758:DR0/CR1235000",
+    "postings_shipment": "REFUSED:Posted=E",
+    "postings_euro": "518:DR1049750/CR0|758:DR0/CR1049750",
+    "postings_shipment_euro": "REFUSED:Posted=E",
+    "line_tax": "123:104",
+    "order_tax": "104:1235000:0",
+    "grand_total_cents": 1235000,
+    "invoice_tax": "104:1235000:0",
+    "cost_qty_delta": "{}"
+   },
+   "refusal": null
+  },
+  {
+   "id": "S7a-pos-sale-beyond-onhand",
+   "verdict": "MATCH",
+   "table": "C_Order",
+   "doctype": 135,
+   "legacy": {
+    "outcome": "COMPLETED",
+    "docstatus": "CO",
+    "lines": "128:6:2375",
+    "total_cents": 14250,
+    "shipments": 1,
+    "shipments_completed": 1,
+    "invoices": 1,
+    "stock_delta": "{\"128\":-6}",
+    "postings": "518:DR14250/CR0|758:DR0/CR14250",
+    "postings_shipment": "REFUSED:Posted=E",
+    "postings_euro": "518:DR12113/CR0|758:DR0/CR12113",
+    "postings_shipment_euro": "REFUSED:Posted=E",
+    "line_tax": "128:104",
+    "order_tax": "104:14250:0",
+    "grand_total_cents": 14250,
+    "invoice_tax": "104:14250:0",
+    "cost_qty_delta": "{}"
+   },
+   "refusal": null
+  },
+  {
+   "id": "S7b-standard-order-beyond-onhand",
+   "verdict": "MATCH",
+   "table": "C_Order",
+   "doctype": 132,
+   "legacy": {
+    "outcome": "COMPLETED",
+    "docstatus": "CO",
+    "lines": "128:6:2375",
+    "total_cents": 14250,
+    "shipments": 0,
+    "shipments_completed": 0,
+    "invoices": 0,
+    "stock_delta": "{}",
+    "postings": "none",
+    "postings_shipment": "none",
+    "postings_euro": "none",
+    "postings_shipment_euro": "none",
+    "line_tax": "128:104",
+    "order_tax": "104:14250:0",
+    "grand_total_cents": 14250,
+    "invoice_tax": "none",
+    "cost_qty_delta": "{}"
+   },
+   "refusal": null
+  },
+  {
+   "id": "S8a-pos-sale-past-dated-open-period",
+   "verdict": "MATCH",
+   "table": "C_Order",
+   "doctype": 135,
+   "legacy": {
+    "outcome": "COMPLETED",
+    "docstatus": "CO",
+    "lines": "123:1:6175",
+    "total_cents": 6175,
+    "shipments": 1,
+    "shipments_completed": 1,
+    "invoices": 1,
+    "stock_delta": "{\"123\":-1}",
+    "postings": "518:DR6175/CR0|758:DR0/CR6175",
+    "postings_shipment": "REFUSED:Posted=E",
+    "postings_euro": "518:DR5249/CR0|758:DR0/CR5249",
+    "postings_shipment_euro": "REFUSED:Posted=E",
+    "line_tax": "123:104",
+    "order_tax": "104:6175:0",
+    "grand_total_cents": 6175,
+    "invoice_tax": "104:6175:0",
+    "cost_qty_delta": "{}"
+   },
+   "refusal": null
+  },
+  {
+   "id": "S8b-pos-sale-date-without-period",
+   "verdict": "MATCH",
+   "table": "C_Order",
+   "doctype": 135,
+   "legacy": {
+    "outcome": "REJECTED",
+    "reason": "Cannot save record in C_OrderLine: Product is not on Price List -> Line No:10, Product: Oa"
+   },
+   "refusal": {
+    "value": "ProductNotOnPriceList",
+    "text": "Product is not on Price List"
+   }
+  },
+  {
+   "id": "S8c-pos-sale-beyond-open-future",
+   "verdict": "MATCH",
+   "table": "C_Order",
+   "doctype": 135,
+   "legacy": {
+    "outcome": "REJECTED",
+    "reason": "Failed when processing document: Period Closed"
+   },
+   "refusal": {
+    "value": "PeriodClosed",
+    "text": "Period Closed"
+   }
+  },
+  {
+   "id": "S8d-pos-sale-before-open-history",
+   "verdict": "MATCH",
+   "table": "C_Order",
+   "doctype": 135,
+   "legacy": {
+    "outcome": "REJECTED",
+    "reason": "Cannot save record in C_OrderLine: Product is not on Price List -> Line No:10, Product: Oa"
+   },
+   "refusal": {
+    "value": "ProductNotOnPriceList",
+    "text": "Product is not on Price List"
+   }
+  },
+  {
+   "id": "O2C1-SO",
+   "verdict": "MATCH",
+   "table": "C_Order",
+   "doctype": 132,
+   "legacy": {
+    "outcome": "COMPLETED",
+    "docstatus": "CO",
+    "lines": "137:2:300:104",
+    "order_tax": "104:600:0",
+    "grand_total": 600,
+    "ol_qty": "137:2/2/0/0",
+    "bp_delta": "0/0",
+    "stock_delta": "0",
+    "cost_qty_delta": "0"
+   },
+   "refusal": null
+  },
+  {
+   "id": "O2C2-SHIP",
+   "verdict": "MATCH",
+   "table": "M_InOut",
+   "doctype": 120,
+   "legacy": {
+    "outcome": "COMPLETED",
+    "ship_status": "CO",
+    "ship_lines": "137:2",
+    "books": "430:DR540/CR0|742:DR0/CR540",
+    "books_euro": "430:DR460/CR0|742:DR0/CR460",
+    "ol_qty": "137:2/0/2/0",
+    "bp_delta": "0/0",
+    "stock_delta": "-2",
+    "cost_qty_delta": "-2"
+   },
+   "refusal": null
+  },
+  {
+   "id": "O2C3-INV",
+   "verdict": "MATCH",
+   "table": "C_Invoice",
+   "doctype": 116,
+   "legacy": {
+    "outcome": "COMPLETED",
+    "inv_status": "CO",
+    "inv_lines": "137:2:300:104",
+    "invoice_tax": "104:600:0",
+    "grand_total": 600,
+    "ispaid": "N",
+    "books": "518:DR600/CR0|758:DR0/CR600",
+    "books_euro": "518:DR510/CR0|758:DR0/CR510",
+    "ol_qty": "137:2/0/2/2",
+    "bp_delta": "600/600",
+    "stock_delta": "-2",
+    "cost_qty_delta": "-2"
+   },
+   "refusal": null
+  },
+  {
+   "id": "O2C4-PAY",
+   "verdict": "MATCH",
+   "table": "C_Payment",
+   "doctype": 119,
+   "legacy": {
+    "outcome": "COMPLETED",
+    "pay_status": "CO",
+    "isallocated": "Y",
+    "ispaid": "Y",
+    "allocations": "CO:600:inv:pay",
+    "books": "509:DR600/CR0|511:DR0/CR600",
+    "books_euro": "509:DR510/CR0|511:DR0/CR510",
+    "books_alloc": "511:DR600/CR0|518:DR0/CR600",
+    "books_alloc_euro": "511:DR510/CR0|518:DR0/CR510",
+    "ol_qty": "137:2/0/2/2",
+    "bp_delta": "0/0",
+    "stock_delta": "-2",
+    "cost_qty_delta": "-2"
+   },
+   "refusal": null
+  }
+ ]
+}
