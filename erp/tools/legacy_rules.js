@@ -78,14 +78,21 @@ function build(srcDir, db, tables) {
   const listOf = {}, refNames = (table, column) => { const k = table + '.' + column; if (listOf[k]) return listOf[k];
     const r = psql(db, { cols: 'x.ref, x.rv, x.en', q: "SELECT c.ad_reference_id ref, c.ad_reference_value_id rv, e.name en FROM ad_column c JOIN ad_table t ON t.ad_table_id=c.ad_table_id JOIN ad_element e ON e.ad_element_id=c.ad_element_id WHERE t.tablename='" + table + "' AND c.columnname='" + column + "'" })[0];
     if (!r) throw new Error('§LEGACY_RULES no column ' + k + ' in legacy\'s dictionary');
-    const o = {}; if (Number(r[0]) === 20) { o.Y = r[2] + ': Yes'; o.N = r[2] + ': No'; } else if (/_ID$/.test(column)) { o['<>0'] = 'with ' + r[2]; o['0'] = 'without ' + r[2]; } else if (r[1] != null) psql(db, { cols: 'x.value, x.name', q: 'SELECT value, name FROM ad_ref_list WHERE ad_reference_id=' + Number(r[1]) + " AND isactive='Y'" }).forEach(([v, n]) => { o[v] = n; });
+    const o = { '': 'no ' + r[2] };   // '' = the column is empty (a standard Purchase Order has no SO Sub Type)
+    if (Number(r[0]) === 20) { o.Y = r[2] + ': Yes'; o.N = r[2] + ': No'; } else if (/_ID$/.test(column)) { o['<>0'] = 'with ' + r[2]; o['0'] = 'without ' + r[2]; } else if (r[1] != null) psql(db, { cols: 'x.value, x.name', q: 'SELECT value, name FROM ad_ref_list WHERE ad_reference_id=' + Number(r[1]) + " AND isactive='Y'" }).forEach(([v, n]) => { o[v] = n; });
     return (listOf[k] = o); };
   const norm = (w) => w === 'all' || w == null ? 'all' : Array.isArray(w) ? { column: 'DocSubTypeSO', table: 'C_DocType', values: w } : w;
+  const one = (x, w) => { const names = refNames(w.table, w.column); w.values.forEach((v) => { if (names[v] == null) throw new Error('§LEGACY_RULES ' + x.id + ': ' + w.column + ' has no value ' + v); });
+    const elem = (psql(db, { cols: 'x.n', q: "SELECT e.name n FROM ad_column c JOIN ad_table t ON t.ad_table_id=c.ad_table_id JOIN ad_element e ON e.ad_element_id=c.ad_element_id WHERE t.tablename='" + w.table + "' AND c.columnname='" + w.column + "'" })[0] || [])[0];
+    const lab = w.column === 'IsSOTrx' ? null : w.table === 'C_DocType' || /_ID$/.test(w.column) || w.values.some((v) => /: (Yes|No)$/.test(names[v])) ? w.values.map((v) => names[v]).join(', ') : elem + ' ' + w.values.map((v) => names[v]).join(', ');
+    return { names: w.values.map((v) => names[v]), label: lab }; };
   E.effects.filter((x) => tables.indexOf(x.table) >= 0).forEach((x) => {
     const checks = [[x.file, x.line, x.token]].concat(x.rule ? [[x.rule.file, x.rule.line, x.rule.token]] : [], x.flag ? [[x.file, x.flag.line, x.flag.token]] : []);
     const bad = checks.filter((c) => !lineHas(c[0], c[1], c[2])).map((c) => c[0] + ':' + c[1]);
     if (bad.length) throw new Error('§LEGACY_RULES_DRIFT ' + x.id + ' cited line no longer holds its token: ' + bad.join(', '));
-    const w = norm(x.when), names = w === 'all' ? null : refNames(w.table, w.column); if (names) w.values.forEach((v) => { if (names[v] == null) throw new Error('§LEGACY_RULES ' + x.id + ': ' + w.column + ' has no value ' + v); });
+    const w = norm(x.when);
+    if (w !== 'all' && w.and) { const parts = w.and.map((c) => one(x, c)); effects.push(Object.assign({}, x, { when: w, whenNames: [].concat(...parts.map((p) => p.names)), whenLabel: parts.map((p) => p.label).filter(Boolean).join(' with '), flagName: null })); return; }
+    const names = w === 'all' ? null : refNames(w.table, w.column); if (names) w.values.forEach((v) => { if (names[v] == null) throw new Error('§LEGACY_RULES ' + x.id + ': ' + w.column + ' has no value ' + v); });
     // the label before an effect: none for IsSOTrx (the window already shows one side), a doc type's kinds by name, a document column as '<element> <names>' when it is a list
     const elem = w === 'all' ? null : (psql(db, { cols: 'x.n', q: "SELECT e.name n FROM ad_column c JOIN ad_table t ON t.ad_table_id=c.ad_table_id JOIN ad_element e ON e.ad_element_id=c.ad_element_id WHERE t.tablename='" + w.table + "' AND c.columnname='" + w.column + "'" })[0] || [])[0];
     const label = w === 'all' || w.column === 'IsSOTrx' ? null : w.table === 'C_DocType' || /_ID$/.test(w.column) || w.values.some((v) => /: (Yes|No)$/.test(names[v])) ? w.values.map((v) => names[v]).join(', ') : elem + ' ' + w.values.map((v) => names[v]).join(', ');

@@ -1405,6 +1405,48 @@
    "flagName": null
   },
   {
+   "id": "C_Order.CO.ordered",
+   "table": "C_Order",
+   "action": "CO",
+   "file": "org/compiere/model/MOrder.java",
+   "line": 1656,
+   "token": "if (!evalAutoGenerateInOutRule(dt.getDocSubTypeSO(), dt.isAutoGenerateInout()))",
+   "rule": {
+    "file": "org/compiere/model/MOrder.java",
+    "line": 2008,
+    "token": "difference, isSOTrx, get_TrxName(), tracer))"
+   },
+   "when": {
+    "and": [
+     {
+      "column": "DocBaseType",
+      "table": "C_DocType",
+      "values": [
+       "POO"
+      ]
+     },
+     {
+      "column": "DocSubTypeSO",
+      "table": "C_DocType",
+      "values": [
+       ""
+      ]
+     }
+    ]
+   },
+   "text": "adds the ordered quantity to the warehouse's ordered stock; receipt and invoice are made next",
+   "proof": {
+    "key": "ol_qty",
+    "op": "reserved=ordered"
+   },
+   "whenNames": [
+    "Purchase Order",
+    "no SO Sub Type"
+   ],
+   "whenLabel": "Purchase Order with no SO Sub Type",
+   "flagName": null
+  },
+  {
    "id": "C_Order.CO.quotation",
    "table": "C_Order",
    "action": "CO",
